@@ -21,7 +21,7 @@ void WrResultSerializer::putQueryParams(const QueryResults* results) {
 	if (opts_.flags & kResultsWithPayloadTypes) {
 		assert(opts_.ptVersions.data());
 		if (int(opts_.ptVersions.size()) != results->getMergedNSCount()) {
-			logPrintf(LogWarning, "ptVersionsCount != results->getMergedNSCount: %d != %d. Client's meta data can become incosistent.",
+			logPrintf(LogWarning, "ptVersionsCount != results->GetMergedNSCount: %d != %d. Client's meta data can become incosistent.",
 					  opts_.ptVersions.size(), results->getMergedNSCount());
 		}
 		int cnt = 0, totalCnt = std::min(results->getMergedNSCount(), int(opts_.ptVersions.size()));
@@ -70,7 +70,7 @@ void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool
 
 	if (opts_.flags & kResultsWithItemID) {
 		PutVarUint(itemRef.Id());
-		PutVarUint(itemRef.Value().GetLSN());
+		PutVarUint(int64_t(itemRef.Value().GetLSN()));
 	}
 
 	if (opts_.flags & kResultsWithNsID) {

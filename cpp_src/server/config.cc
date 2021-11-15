@@ -32,6 +32,7 @@ void ServerConfig::Reset() {
 	RemoveSvc = false;
 	SvcMode = false;
 #endif
+	EnableCluster = false;
 	StartWithErrors = false;
 	EnableSecurity = false;
 	DebugPprof = false;
@@ -41,6 +42,8 @@ void ServerConfig::Reset() {
 	Autorepair = false;
 	EnableConnectionsStats = true;
 	TxIdleTimeout = std::chrono::seconds(600);
+	HttpReadTimeout = std::chrono::seconds(0);
+	HttpWriteTimeout = std::chrono::seconds(20);
 	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
 	MaxHttpReqSize = 2 * 1024 * 1024;
@@ -104,6 +107,9 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
 	args::ValueFlag<string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
+	args::Flag enableClusterF(netGroup, "",
+							  "Enable RAFT-cluster support. This will also implicitly enable 'dedicated' threading mode for RPC-server",
+							  {"enable-cluster"});
 	args::ValueFlag<string> rpcThreadingModeF(netGroup, "RTHREADING", "RPC connections threading mode: shared or dedicated",
 											  {'X', "rpc-threading"}, RPCThreadingMode, args::Options::Single);
 	args::ValueFlag<string> httpThreadingModeF(netGroup, "HTHREADING", "HTTP connections threading mode: shared or dedicated",
@@ -117,10 +123,15 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 #endif
 	args::ValueFlag<string> webRootF(netGroup, "PATH", "web root. This path if set overrides linked-in resources", {'w', "webroot"},
 									 WebRoot, args::Options::Single);
-	args::ValueFlag<size_t> maxUpdatesSizeF(netGroup, "", "Maximum cached updates size", {"updatessize"}, MaxUpdatesSize,
-											args::Options::Single);
+	args::ValueFlag<int> httpReadTimeoutF(netGroup, "", "timeout (s) for HTTP read operations (i.e. selects, get meta and others)",
+										  {"http-read-timeout"}, HttpReadTimeout.count(), args::Options::Single);
+	args::ValueFlag<int> httpWriteTimeoutF(netGroup, "", "timeout (s) for HTTP write operations (i.e. selects, get meta and others)",
+										   {"http-write-timeout"}, HttpWriteTimeout.count(), args::Options::Single);
+	args::ValueFlag<size_t> maxUpdatesSizeF(
+		netGroup, "", "Maximum cached updates size for async or cluster replication. Min value is 1000000 bytes. '0' means unlimited",
+		{"updatessize"}, MaxUpdatesSize, args::Options::Single);
 	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});
-	args::ValueFlag<int> txIdleTimeoutF(dbGroup, "", "http transactions idle timeout (s)", {"tx-idle-timeout"}, TxIdleTimeout.count(),
+	args::ValueFlag<int> txIdleTimeoutF(netGroup, "", "http transactions idle timeout (s)", {"tx-idle-timeout"}, TxIdleTimeout.count(),
 										args::Options::Single);
 
 	args::Group metricsGroup(parser, "Metrics options");
@@ -171,6 +182,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (logLevelF) LogLevel = args::get(logLevelF);
 	if (httpAddrF) HTTPAddr = args::get(httpAddrF);
 	if (rpcAddrF) RPCAddr = args::get(rpcAddrF);
+	if (enableClusterF) EnableCluster = args::get(enableClusterF);
 	if (rpcThreadingModeF) RPCThreadingMode = args::get(rpcThreadingModeF);
 	if (httpThreadingModeF) HttpThreadingMode = args::get(httpThreadingModeF);
 	if (webRootF) WebRoot = args::get(webRootF);
@@ -198,11 +210,13 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (prometheusF) EnablePrometheus = args::get(prometheusF);
 	if (prometheusPeriodF) PrometheusCollectPeriod = std::chrono::milliseconds(args::get(prometheusPeriodF));
 	if (clientsConnectionsStatF) EnableConnectionsStats = args::get(clientsConnectionsStatF);
+	if (httpReadTimeoutF) HttpReadTimeout = std::chrono::seconds(args::get(httpReadTimeoutF));
+	if (httpWriteTimeoutF) HttpWriteTimeout = std::chrono::seconds(args::get(httpWriteTimeoutF));
 	if (logAllocsF) DebugAllocs = args::get(logAllocsF);
 	if (txIdleTimeoutF) TxIdleTimeout = std::chrono::seconds(args::get(txIdleTimeoutF));
 	if (maxUpdatesSizeF) MaxUpdatesSize = args::get(maxUpdatesSizeF);
 
-	return 0;
+	return Error();
 }
 
 reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
@@ -218,6 +232,7 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		RpcLog = root["logger"]["rpclog"].As<std::string>(RpcLog);
 		HTTPAddr = root["net"]["httpaddr"].As<std::string>(HTTPAddr);
 		RPCAddr = root["net"]["rpcaddr"].As<std::string>(RPCAddr);
+		EnableCluster = root["net"]["enable_cluster"].As<bool>(EnableCluster);
 		RPCThreadingMode = root["net"]["rpc_threading"].As<std::string>(RPCThreadingMode);
 		HttpThreadingMode = root["net"]["http_threading"].As<std::string>(HttpThreadingMode);
 		WebRoot = root["net"]["webroot"].As<std::string>(WebRoot);
@@ -226,6 +241,8 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		EnableGRPC = root["net"]["grpc"].As<bool>(EnableGRPC);
 		GRPCAddr = root["net"]["grpcaddr"].As<std::string>(GRPCAddr);
 		TxIdleTimeout = std::chrono::seconds(root["net"]["tx_idle_timeout"].As<int>(TxIdleTimeout.count()));
+		HttpReadTimeout = std::chrono::seconds(root["net"]["http_read_timeout"].As<int>(HttpReadTimeout.count()));
+		HttpWriteTimeout = std::chrono::seconds(root["net"]["http_write_timeout"].As<int>(HttpWriteTimeout.count()));
 		MaxHttpReqSize = root["net"]["max_http_body_size"].As<std::size_t>(MaxHttpReqSize);
 		EnablePrometheus = root["metrics"]["prometheus"].As<bool>(EnablePrometheus);
 		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].As<int>(PrometheusCollectPeriod.count()));
@@ -240,7 +257,7 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 	} catch (const Yaml::Exception &ex) {
 		return Error(errParams, "%s", ex.Message());
 	}
-	return 0;
+	return Error();
 }
 
 }  // namespace reindexer_server

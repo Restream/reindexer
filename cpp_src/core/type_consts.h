@@ -119,6 +119,14 @@ enum ErrorCode {
 	errParseMsgPack = 24,
 	errParseProtobuf = 25,
 	errUpdatesLost = 26,
+	errWrongReplicationData = 27,
+	errUpdateReplication = 28,
+	errClusterConsensus = 29,
+	errTerminated = 30,
+	errTxDoesntExist = 31,
+	errAlreadyConnected = 32,
+	errTxInvalidLeader = 33,
+	errAlreadyProxied = 34
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };
@@ -183,7 +191,6 @@ typedef enum StotageOpt {
 	kStorageOptFillCache = 1 << 4,
 	kStorageOptSync = 1 << 5,
 	kStorageOptLazyLoad = 1 << 6,
-	kStorageOptSlaveMode = 1 << 7,
 	kStorageOptAutorepair = 1 << 9,
 } StorageOpt;
 
@@ -210,7 +217,6 @@ typedef struct StorageOpts {
 	bool IsFillCache() const { return options & kStorageOptFillCache; }
 	bool IsSync() const { return options & kStorageOptSync; }
 	bool IsLazyLoad() const { return options & kStorageOptLazyLoad; }
-	bool IsSlaveMode() const { return options & kStorageOptSlaveMode; }
 	bool IsAutorepair() const { return options & kStorageOptAutorepair; }
 
 	StorageOpts& Enabled(bool value = true) {
@@ -245,11 +251,6 @@ typedef struct StorageOpts {
 
 	StorageOpts& LazyLoad(bool value = true) {
 		options = value ? options | kStorageOptLazyLoad : options & ~(kStorageOptLazyLoad);
-		return *this;
-	}
-
-	StorageOpts& SlaveMode(bool value = true) {
-		options = value ? options | kStorageOptSlaveMode : options & ~(kStorageOptSlaveMode);
 		return *this;
 	}
 
@@ -330,6 +331,8 @@ typedef struct ConnectOpts {
 } ConnectOpts;
 
 enum IndexValueType { NotSet = -1, SetByJsonPath = -2 };
+enum ShardingKeyType { ShardingProxyOff = -2 };
+enum ShardingAlgorithmType { ByValue };
 
 enum SubscriptionOpt {
 	kSubscriptionOptIncrementSubscription = 1 << 0,

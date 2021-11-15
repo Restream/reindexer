@@ -4,7 +4,6 @@
 #include "core/namespacedef.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
-#include "tools/logger.h"
 #include "vendor/gason/gason.h"
 
 namespace reindexer {
@@ -107,12 +106,7 @@ Error RPCClientMock::modifyItem(std::string_view nsName, Item& item, int mode, s
 	}
 
 	WrSerializer ser;
-	if (item.impl_->GetPrecepts().size()) {
-		ser.PutVarUint(item.impl_->GetPrecepts().size());
-		for (auto& p : item.impl_->GetPrecepts()) {
-			ser.PutVString(p);
-		}
-	}
+	item.impl_->GetPrecepts(ser);
 
 	bool withNetTimeout = (netTimeout.count() > 0);
 	for (int tryCount = 0;; tryCount++) {
@@ -171,12 +165,8 @@ Error RPCClientMock::modifyItem(std::string_view nsName, Item& item, int mode, s
 Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mode, cproto::ClientConnection* conn, seconds netTimeout,
 									 const InternalRdxContext& ctx, int format) {
 	WrSerializer ser;
-	if (item->impl_->GetPrecepts().size()) {
-		ser.PutVarUint(item->impl_->GetPrecepts().size());
-		for (auto& p : item->impl_->GetPrecepts()) {
-			ser.PutVString(p);
-		}
-	}
+	item->impl_->GetPrecepts(ser);
+
 	if (!conn) conn = getConn();
 
 	std::string_view data;
@@ -312,8 +302,8 @@ Error RPCClientMock::selectImpl(const Query& query, QueryResults& result, cproto
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 	h_vector<int32_t, 4> vers;
 	for (auto& ns : nsArray) {
-		shared_lock<shared_timed_mutex> lck(ns->lck_);
-		vers.push_back(ns->tagsMatcher_.version() ^ ns->tagsMatcher_.stateToken());
+		auto tm = ns->GetTagsMatcher();
+		vers.push_back(tm.version() ^ tm.stateToken());
 	}
 	vec2pack(vers, pser);
 

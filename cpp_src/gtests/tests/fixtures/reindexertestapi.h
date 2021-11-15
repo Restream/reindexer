@@ -1,5 +1,6 @@
 #pragma once
 #include <gtest/gtest.h>
+#include <chrono>
 #include <memory>
 #include <string>
 #include <tuple>
@@ -19,10 +20,12 @@ public:
 	using ItemType = typename DB::ItemT;
 	using QueryResultsType = typename DB::QueryResultsT;
 
+	static constexpr auto kBasicTimeout = std::chrono::seconds(200);
+
 	ReindexerTestApi() : reindexer(std::shared_ptr<DB>(new DB)) {}
 	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		auto err = reindexer::Error();
-		for (auto field : fields) {
+		for (auto &field : fields) {
 			std::string indexName = std::get<0>(field);
 			std::string fieldType = std::get<1>(field);
 			std::string indexType = std::get<2>(field);
@@ -53,7 +56,17 @@ public:
 	reindexer::Error Commit(std::string_view ns) { return reindexer->Commit(ns); }
 	void Upsert(std::string_view ns, ItemType &item) {
 		assert(!!item);
-		auto err = reindexer->Upsert(ns, item);
+		auto err = reindexer->WithTimeout(kBasicTimeout).Upsert(ns, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	void Delete(std::string_view ns, ItemType &item) {
+		assert(!!item);
+		auto err = reindexer->WithTimeout(kBasicTimeout).Delete(ns, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	void Upsert(std::string_view ns, ItemType &item, std::function<void(const reindexer::Error &)> cmpl) {
+		assert(!!item);
+		auto err = reindexer->WithTimeout(kBasicTimeout).WithCompletion(cmpl).Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	void PrintQueryResults(const std::string &ns, const QueryResultsType &res) {

@@ -3,7 +3,6 @@
 #include "core/cjson/baseencoder.h"
 #include "core/keyvalue/p_string.h"
 #include "net/cproto/coroclientconnection.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 namespace client {
@@ -14,7 +13,7 @@ CoroQueryResults::CoroQueryResults(int fetchFlags)
 	: conn_(nullptr), queryID_(0), fetchOffset_(0), fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0) {}
 
 CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsArray &&nsArray, int fetchFlags, int fetchAmount,
-								   seconds timeout)
+								   milliseconds timeout)
 	: conn_(conn),
 	  nsArray_(std::move(nsArray)),
 	  queryID_(0),
@@ -24,9 +23,22 @@ CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsAr
 	  requestTimeout_(timeout) {}
 
 CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsArray &&nsArray, std::string_view rawResult, int queryID,
-								   int fetchFlags, int fetchAmount, seconds timeout)
+								   int fetchFlags, int fetchAmount, milliseconds timeout)
 	: CoroQueryResults(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout) {
 	Bind(rawResult, queryID);
+}
+
+CoroQueryResults::CoroQueryResults(NsArray &&nsArray, Item &item) : CoroQueryResults() {
+	nsArray_ = std::move(nsArray);
+	queryParams_.totalcount = 0;
+	queryParams_.qcount = 1;
+	queryParams_.count = 1;
+	queryParams_.flags = kResultsCJson;
+	std::string_view itemData = item.GetCJSON();
+	rawResult_.resize(itemData.size() + sizeof(uint32_t));
+	uint32_t dataSize = itemData.size();
+	memcpy(&rawResult_[0], &dataSize, sizeof(uint32_t));
+	memcpy(&rawResult_[0] + sizeof(uint32_t), itemData.data(), itemData.size());
 }
 
 void CoroQueryResults::Bind(std::string_view rawResult, int queryID) {
@@ -35,19 +47,13 @@ void CoroQueryResults::Bind(std::string_view rawResult, int queryID) {
 
 	try {
 		ser.GetRawQueryParams(queryParams_, [&ser, this](int nsIdx) {
-			uint32_t stateToken = ser.GetVarUint();
-			int version = ser.GetVarUint();
-
-			bool skip = nsArray_[nsIdx]->tagsMatcher_.version() >= version && nsArray_[nsIdx]->tagsMatcher_.stateToken() == stateToken;
-			if (skip) {
-				TagsMatcher().deserialize(ser);
-				// PayloadType("tmp").clone()->deserialize(ser);
-			} else {
-				nsArray_[nsIdx]->tagsMatcher_ = TagsMatcher();
-				nsArray_[nsIdx]->tagsMatcher_.deserialize(ser, version, stateToken);
-				// nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
-				// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
-			}
+			const uint32_t stateToken = ser.GetVarUint();
+			const int version = ser.GetVarUint();
+			TagsMatcher newTm;
+			newTm.deserialize(ser, version, stateToken);
+			nsArray_[nsIdx]->TryReplaceTagsMatcher(std::move(newTm));
+			// nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
+			// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
 			PayloadType("tmp").clone()->deserialize(ser);
 		});
 	} catch (const Error &err) {
@@ -61,8 +67,8 @@ void CoroQueryResults::Bind(std::string_view rawResult, int queryID) {
 void CoroQueryResults::fetchNextResults() {
 	using std::chrono::seconds;
 	int flags = fetchFlags_ ? (fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
-	auto ret = conn_->Call({cproto::kCmdFetchResults, requestTimeout_, milliseconds(0), nullptr}, queryID_, flags,
-						   queryParams_.count + fetchOffset_, fetchAmount_);
+	auto ret = conn_->Call({cproto::kCmdFetchResults, requestTimeout_, milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr},
+						   queryID_, flags, queryParams_.count + fetchOffset_, fetchAmount_);
 	if (!ret.Status().ok()) {
 		throw ret.Status();
 	}
@@ -82,11 +88,35 @@ void CoroQueryResults::fetchNextResults() {
 h_vector<std::string_view, 1> CoroQueryResults::GetNamespaces() const {
 	h_vector<std::string_view, 1> ret;
 	ret.reserve(nsArray_.size());
-	for (auto &ns : nsArray_) ret.push_back(ns->name_);
+	for (auto &ns : nsArray_) ret.emplace_back(ns->name);
 	return ret;
 }
 
-TagsMatcher CoroQueryResults::getTagsMatcher(int nsid) const { return nsArray_[nsid]->tagsMatcher_; }
+TagsMatcher CoroQueryResults::GetTagsMatcher(int nsid) const noexcept {
+	assert(nsid < int(nsArray_.size()));
+	return nsArray_[nsid]->GetTagsMatcher();
+}
+
+TagsMatcher CoroQueryResults::GetTagsMatcher(std::string_view nsName) const noexcept {
+	auto it = std::find_if(nsArray_.begin(), nsArray_.end(), [&nsName](Namespace *ns) { return (std::string_view(ns->name) == nsName); });
+	if (it == nsArray_.end()) {
+		return TagsMatcher();
+	}
+	return (*it)->GetTagsMatcher();
+}
+
+PayloadType CoroQueryResults::GetPayloadType(int nsid) const noexcept {
+	assert(nsid < int(nsArray_.size()));
+	return nsArray_[nsid]->payloadType;
+}
+
+PayloadType CoroQueryResults::GetPayloadType(std::string_view nsName) const noexcept {
+	auto it = std::find_if(nsArray_.begin(), nsArray_.end(), [&nsName](Namespace *ns) { return (std::string_view(ns->name) == nsName); });
+	if (it == nsArray_.end()) {
+		return PayloadType();
+	}
+	return (*it)->payloadType;
+}
 
 class AdditionalRank : public IAdditionalDatasource<JsonBuilder> {
 public:
@@ -98,8 +128,8 @@ private:
 	double rank_;
 };
 
-void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializer &wrser, bool withHdrLen) {
-	auto tm = qr_->getTagsMatcher(itemParams_.nsid);
+void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializer &wrser, bool withHdrLen) const {
+	auto tm = qr_->GetTagsMatcher(itemParams_.nsid);
 	JsonEncoder enc(&tm);
 	JsonBuilder builder(wrser, ObjType::TypePlain);
 	if (qr_->NeedOutputRank()) {
@@ -188,6 +218,7 @@ Item CoroQueryResults::Iterator::GetItem() {
 	try {
 		Error err;
 		Item item = qr_->nsArray_[itemParams_.nsid]->NewItem();
+		item.setID(itemParams_.id);
 		switch (qr_->queryParams_.flags & kResultsFormatMask) {
 			case kResultsMsgPack: {
 				size_t offset = 0;
@@ -203,6 +234,8 @@ Item CoroQueryResults::Iterator::GetItem() {
 				err = item.FromJSON(itemParams_.data, &endp);
 				break;
 			}
+			case kResultsPure:
+				break;
 			default:
 				return Item();
 		}
@@ -234,14 +267,25 @@ void CoroQueryResults::Iterator::readNext() {
 	if (nextPos_ != 0) return;
 
 	std::string_view rawResult(qr_->rawResult_.data(), qr_->rawResult_.size());
-
 	ResultSerializer ser(rawResult.substr(pos_));
 
 	try {
-		itemParams_ = ser.GetItemParams(qr_->queryParams_.flags);
+		itemParams_ = ser.GetItemData(qr_->queryParams_.flags);
+		joinedData_.clear();
 		if (qr_->queryParams_.flags & kResultsWithJoined) {
-			int joinedCnt = ser.GetVarUint();
-			(void)joinedCnt;
+			int format = qr_->queryParams_.flags & kResultsFormatMask;
+			(void)format;
+			assert(format == kResultsCJson);
+			int joinedFields = ser.GetVarUint();
+			for (int i = 0; i < joinedFields; ++i) {
+				int itemsCount = ser.GetVarUint();
+				h_vector<ResultSerializer::ItemParams, 1> joined;
+				joined.reserve(itemsCount);
+				for (int j = 0; j < itemsCount; ++j) {
+					joined.emplace_back(ser.GetItemData(qr_->queryParams_.flags));
+				}
+				joinedData_.emplace_back(std::move(joined));
+			}
 		}
 		nextPos_ = pos_ + ser.Pos();
 	} catch (const Error &err) {
@@ -255,7 +299,6 @@ CoroQueryResults::Iterator &CoroQueryResults::Iterator::operator++() {
 		idx_++;
 		pos_ = nextPos_;
 		nextPos_ = 0;
-
 		if (idx_ != qr_->queryParams_.qcount && idx_ == qr_->queryParams_.count + qr_->fetchOffset_) {
 			const_cast<CoroQueryResults *>(qr_)->fetchNextResults();
 			pos_ = 0;

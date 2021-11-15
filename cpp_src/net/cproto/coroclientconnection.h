@@ -11,6 +11,7 @@
 #include "estl/atomic_unique_ptr.h"
 #include "estl/h_vector.h"
 #include "net/manualconnection.h"
+#include "tools/lsn.h"
 #include "urlparser/urlparser.h"
 
 namespace reindexer {
@@ -58,11 +59,14 @@ protected:
 };
 
 struct CommandParams {
-	CommandParams(CmdCode c, seconds n, milliseconds e, const IRdxCancelContext *ctx)
-		: cmd(c), netTimeout(n), execTimeout(e), cancelCtx(ctx) {}
+	CommandParams(CmdCode c, milliseconds n, milliseconds e, lsn_t l, int sId, int shId, const IRdxCancelContext *ctx)
+		: cmd(c), netTimeout(n), execTimeout(e), lsn(l), serverId(sId), shardId(shId), cancelCtx(ctx) {}
 	CmdCode cmd;
-	seconds netTimeout;
+	milliseconds netTimeout;
 	milliseconds execTimeout;
+	lsn_t lsn;
+	int serverId;
+	int shardId;
 	const IRdxCancelContext *cancelCtx;
 };
 
@@ -70,6 +74,8 @@ class CoroClientConnection {
 public:
 	using UpdatesHandlerT = std::function<void(const CoroRPCAnswer &ans)>;
 	using FatalErrorHandlerT = std::function<void(Error err)>;
+	using TimePointT = std::chrono::high_resolution_clock::time_point;
+	using ConnectionStateHandlerT = std::function<void(const Error &)>;
 
 	struct Options {
 		Options()
@@ -80,8 +86,8 @@ public:
 			  expectedClusterID(-1),
 			  reconnectAttempts(),
 			  enableCompression(false) {}
-		Options(seconds _loginTimeout, seconds _keepAliveTimeout, bool _createDB, bool _hasExpectedClusterID, int _expectedClusterID,
-				int _reconnectAttempts, bool _enableCompression, std::string _appName)
+		Options(milliseconds _loginTimeout, milliseconds _keepAliveTimeout, bool _createDB, bool _hasExpectedClusterID,
+				int _expectedClusterID, int _reconnectAttempts, bool _enableCompression, std::string _appName)
 			: loginTimeout(_loginTimeout),
 			  keepAliveTimeout(_keepAliveTimeout),
 			  createDB(_createDB),
@@ -91,8 +97,8 @@ public:
 			  enableCompression(_enableCompression),
 			  appName(std::move(_appName)) {}
 
-		seconds loginTimeout;
-		seconds keepAliveTimeout;
+		milliseconds loginTimeout;
+		milliseconds keepAliveTimeout;
 		bool createDB;
 		bool hasExpectedClusterID;
 		int expectedClusterID;
@@ -111,10 +117,9 @@ public:
 	void Start(ev::dynamic_loop &loop, ConnectData connectData);
 	void Stop();
 	bool IsRunning() const noexcept { return isRunning_; }
-	Error Status(seconds netTimeout, milliseconds execTimeout, const IRdxCancelContext *ctx);
-	seconds Now() const noexcept { return seconds(now_); }
-	void SetUpdatesHandler(UpdatesHandlerT handler) noexcept { updatesHandler_ = std::move(handler); }
-	void SetFatalErrorHandler(FatalErrorHandlerT handler) noexcept { fatalErrorHandler_ = std::move(handler); }
+	Error Status(bool forceCheck, milliseconds netTimeout, milliseconds execTimeout, const IRdxCancelContext *ctx);
+	TimePointT Now() const noexcept { return now_; }
+	void SetConnectionStateHandler(ConnectionStateHandlerT handler) noexcept { connectionStateHandler_ = std::move(handler); }
 
 	template <typename... Argss>
 	CoroRPCAnswer Call(const CommandParams &opts, const Argss &... argss) {
@@ -125,10 +130,10 @@ public:
 
 private:
 	struct RPCData {
-		RPCData() : seq(0), used(false), deadline(0), cancelCtx(nullptr), rspCh(1) {}
+		RPCData() : seq(0), used(false), deadline(TimePointT()), cancelCtx(nullptr), rspCh(1) {}
 		uint32_t seq;
 		bool used;
-		seconds deadline;
+		TimePointT deadline;
 		const reindexer::IRdxCancelContext *cancelCtx;
 		coroutine::channel<CoroRPCAnswer> rspCh;
 	};
@@ -168,9 +173,8 @@ private:
 	void readerRoutine();
 	void deadlineRoutine();
 	void pingerRoutine();
-	void updatesRoutine();
 
-	uint32_t now_;
+	TimePointT now_;
 	bool terminate_ = false;
 	bool isRunning_ = false;
 	ev::dynamic_loop *loop_ = nullptr;
@@ -184,9 +188,7 @@ private:
 	coroutine::channel<MarkedChunk> wrCh_;
 	coroutine::channel<uint32_t> seqNums_;
 	ConnectData connectData_;
-	UpdatesHandlerT updatesHandler_;
-	FatalErrorHandlerT fatalErrorHandler_;
-	coroutine::channel<CoroRPCAnswer> updatesCh_;
+	ConnectionStateHandlerT connectionStateHandler_;
 	coroutine::wait_group wg_;
 	coroutine::wait_group readWg_;
 	bool loggedIn_ = false;

@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.2.5"
+  version: "4.0.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1711,6 +1711,38 @@ paths:
         500:
           $ref: "#/responses/UnexpectedError"
 
+  /db/{database}/namespaces/%23replicationstats/items:
+    get:
+      tags:
+      - "system"
+      summary: "Get replication statistics"
+      description: "This operation will return detailed informatiom about replication status on this node or cluster"
+      operationId: "getGlobalReplicationStats"
+      parameters:
+      - name: "database"
+        in: path
+        type: string
+        description: "Database name"
+        required: true
+      - name: "filter"
+        in: query
+        type: string
+        description: "Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'. Has to filter by 'type' field: either 'async' or 'cluster'"
+        required: true
+      responses:
+        200:
+          description: "successful operation"
+          schema:
+            $ref: "#/definitions/GlobalReplicationStats"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
   /db/{database}/namespaces/%23memstats/items:
     get:
       tags:
@@ -1967,8 +1999,6 @@ definitions:
             - client_version
             - app_name
             - tx_count
-            - is_subscribed
-            - updates_filter
           properties:
             connection_id:
               type: integer
@@ -2009,9 +2039,6 @@ definitions:
             send_buf_bytes:
               type: integer
               description: "Send buffer size"
-            pended_updates:
-              type: integer
-              description: "Pended updates count"
             last_send_ts:
               type: integer
               description: "Timestamp of last send operation (ms)"
@@ -2024,29 +2051,119 @@ definitions:
             recv_rate:
               type: integer
               description: "Current recv rate (bytes/s)"
-            is_subscribed:
-              type: boolean
-              description: "Status of updates subscription"
-            updates_filter:
+
+  ReplicationSyncStat:
+    type: object
+    required:
+      - count
+      - avg_time_us
+      - max_time_us
+    properties:
+      count:
+        description: "Syncs count"
+        type: integer
+      avg_time_us:
+        description: "Average sync time"
+        type: integer
+      max_time_us:
+        description: "Max sync time"
+        type: integer
+
+  GlobalReplicationStats:
+    type: object
+    properties:
+      total_items:
+        description: "Total replication stat items count"
+        type: integer
+      items:
+        type: array
+        items:
+          type: object
+          required:
+            - type
+            - wal_sync
+            - force_sync
+            - pending_updates_count
+            - allocated_updates_count
+            - allocated_updates_size
+            - nodes
+          properties:
+            type:
+              description: "Replication type. Either 'async' or 'cluster'"
+              type: string
+            wal_sync:
+              $ref: "#/definitions/ReplicationSyncStat"
+            force_sync:
+              $ref: "#/definitions/ReplicationSyncStat"
+            initial_sync:
               type: object
-              description: "Updates filter for this client"
+              required:
+                - wal_sync
+                - force_sync
+                - total_time_us
               properties:
-                namespaces:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                        description: "Namespace name"
-                      filters:
-                        type: array
-                        description: "Filtering conditions set"
-                        items:
-                          type: object
-            updates_lost:
+                wal_sync:
+                  $ref: "#/definitions/ReplicationSyncStat"
+                force_sync:
+                  $ref: "#/definitions/ReplicationSyncStat"
+                total_time_us:
+                  description: "Total time of initial sync"
+                  type: integer
+            pending_updates_count:
+              description: "count of online updates, awaiting replication"
               type: integer
-              description: "Updates lost call count"
+            allocated_updates_count:
+              description: "count of online updates, awaiting deallocation"
+              type: integer
+            allocated_updates_size:
+              description: "total online updates' size in bytes"
+              type: integer
+            nodes:
+              type: array
+              description: "info about each node"
+              items:
+                type: object
+                required:
+                  - dsn
+                  - server_id
+                  - pending_updates_count
+                  - role
+                  - status
+                  - namespaces
+                properties:
+                  dsn:
+                    description: "node's dsn"
+                    type: string
+                  server_id:
+                    description: "node's server id"
+                    type: integer
+                  pending_updates_count:
+                    description: "online updates, awaiting replication to this node"
+                    type: integer
+                  status:
+                    description: "network status"
+                    type: string
+                    enum:
+                      - none
+                      - offline
+                      - online
+                  role:
+                    description: "replication role"
+                    type: string
+                    enum:
+                      - none
+                      - follower
+                      - leader
+                      - candidate
+                  is_synchronized:
+                    description: "shows synchroniztion state for raft-cluster node (false if node is outdated)"
+                    type: boolean
+                  namespaces:
+                    description: "list of namespaces, which are configure for this node"
+                    type: array
+                    items:
+                      type: string
+
   Databases:
     type: object
     properties:
@@ -3413,6 +3530,8 @@ definitions:
           $ref: "#/definitions/NamespacesConfig"
       replication:
         $ref: "#/definitions/ReplicationConfig"
+      async_replication:
+        $ref: "#/definitions/AsyncReplicationConfig"
       action:
         $ref: "#/definitions/ActionCommand"
     discriminator: "type"
@@ -3490,49 +3609,79 @@ definitions:
 
   ReplicationConfig:
     type: object
+    properties:
+      server_id:
+        type: integer
+        description: "ID of the current node. Must be unique for each node in cluster"
+      cluster_id:
+        type: integer
+        description: "Cluser ID - must be same for client and for master"
+
+  AsyncReplicationConfig:
+    type: object
+    required:
+      - role
+      - nodes
+      - namespaces
     properties:  
       role:
         type: string
         description: "Replication role"
         enum:
           - none
-          - slave
-          - master
-      master_dsn:
-        type: string
-        description: "DSN to master. Only cproto schema is supported"
+          - follower
+          - leader
       app_name:
         type: string
         description: "Application name, used by replicator as a login tag"
-      timeout_sec:
+      online_updates_timeout_sec:
         type: integer
-        description: "Network timeout for communication with master, in seconds"
+        description: "Network timeout for communication with followers (for force and wal synchronization), in seconds"
+      sync_timeout_sec:
+        type: integer
+        description: "Network timeout for communication with followers (for force and wal synchronization), in seconds"
       enable_compression:
         type: boolean
         description: "Enable network traffic compression"
-      cluster_id:
+      max_wal_depth_on_force_sync:
         type: integer
-        description: "Cluser ID - must be same for client and for master"
-      force_sync_on_logic_error:
-        type: boolean
-        description: "force resync on logic error conditions"
-      force_sync_on_wrong_data_hash:
-        type: boolean
-        description: "force resync on wrong data hash conditions"
+        description: "Maximum number of WAL records, which will be copied after force-sync"
       namespaces:
         type: array
-        description: "List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave"
+        description: "General list of namespaces for replication. Empty means all of the namespaces. All replicated namespaces will become read only for followers"
         items:
           type: string
+      nodes:
+        type: array
+        description: "Followers list"
+        items:
+          type: object
+          required:
+            - dsn
+          properties:
+            dsn:
+              type: string
+              description: "Follower's DSN. Must have cproto-scheme"
+            namespaces:
+              type: array
+              description: "List of namespaces to replicate on this specific node. Empty means all of the namespaces. If field doesn't exists, then general list will be used"
+              items:
+                type: string
 
   ActionCommand:
     type: object
+    required:
+      - command
     properties:  
       command:
         type: string
         description: "Command to execute"
         enum:
           - restart_replication
+          - reset_replication_role
+      namespace:
+        type: string
+        description: "Namespace name for reset_replication_role. May be empty"
 
   BeginTransactionResponse:
     type: "object"
@@ -3540,4 +3689,3 @@ definitions:
       tx_id:
         type: "string"
         description: "Unique transaction id"
-

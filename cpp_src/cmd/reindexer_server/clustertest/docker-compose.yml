@@ -1,0 +1,60 @@
+version: '3.4'
+
+services:
+  node0:
+    image: reindexer/reindexer-cluster:test
+    environment:
+      - RX_CLUSTER_NODES=5
+      - RX_SERVER_ID=0
+    ports:
+      - "9088:9088"
+      - "6534:6534"
+    volumes:
+       - rxnode0:/db
+  node1:
+    image: reindexer/reindexer-cluster:test
+    environment:
+      - RX_CLUSTER_NODES=5
+      - RX_SERVER_ID=1
+    ports:
+      - "9089:9088"
+      - "6535:6534"
+    volumes:
+       - rxnode1:/db
+  node2:
+    image: reindexer/reindexer-cluster:test
+    environment:
+      - RX_CLUSTER_NODES=5
+      - RX_SERVER_ID=2
+    ports:
+      - "9090:9088"
+      - "6536:6534"
+    volumes:
+       - rxnode2:/db
+  node3:
+    image: reindexer/reindexer-cluster:test
+    environment:
+      - RX_CLUSTER_NODES=5
+      - RX_SERVER_ID=3
+    ports:
+      - "9091:9088"
+      - "6537:6534"
+    volumes:
+       - rxnode3:/db
+  node4:
+    image: reindexer/reindexer-cluster:test
+    environment:
+      - RX_CLUSTER_NODES=5
+      - RX_SERVER_ID=4
+    ports:
+      - "9092:9088"
+      - "6538:6534"
+    volumes:
+       - rxnode4:/db
+volumes:
+  rxnode0:
+  rxnode1:
+  rxnode2:
+  rxnode3:
+  rxnode4:
+

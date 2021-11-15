@@ -215,7 +215,7 @@ func TestDescribe(t *testing.T) {
 		panic(err)
 	}
 
-	ksystemNamespaceCount := 7
+	ksystemNamespaceCount := 8
 	if len(results) != len(tnamespaces)+ksystemNamespaceCount {
 		panic(fmt.Sprintf("wait %d namespaces, got %d", len(tnamespaces)+ksystemNamespaceCount, len(results)))
 	}

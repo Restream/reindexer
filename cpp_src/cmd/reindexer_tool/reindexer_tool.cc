@@ -121,7 +121,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (dsn.compare(0, 9, "cproto://") == 0) {
-		reindexer::client::ReindexerConfig config;
+		reindexer::client::CoroReindexerConfig config;
 		config.EnableCompression = true;
 		config.AppName = args::get(appName);
 		CommandsProcessor<reindexer::client::CoroReindexer> commandsProcessor(args::get(outFileName), args::get(fileName),

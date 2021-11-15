@@ -11,8 +11,21 @@ void Transaction::Modify(Query&& query) {
 	if (conn_) {
 		WrSerializer ser;
 		query.Serialize(ser);
-		auto ret = conn_->Call({cproto::kCmdUpdateQueryTx, RequestTimeout_, execTimeout_, nullptr}, ser.Slice(), txId_).Status();
+		Error ret;
+		switch (query.type_) {
+			case QueryUpdate: {
+				ret = conn_->Call({cproto::kCmdUpdateQueryTx, RequestTimeout_, execTimeout_, nullptr}, ser.Slice(), txId_).Status();
+				break;
+			}
+			case QueryDelete: {
+				ret = conn_->Call({cproto::kCmdDeleteQueryTx, RequestTimeout_, execTimeout_, nullptr}, ser.Slice(), txId_).Status();
+				break;
+			}
+			default:
+				throw(Error(errParams, "Incorrect query type in transaction modify %d", query.type_));
+		}
 		if (!ret.ok()) throw ret;
+		return;
 	}
 	throw Error(errLogic, "Connection pointer in transaction is nullptr.");
 }
@@ -32,11 +45,13 @@ void Transaction::addTxItem(Item&& item, ItemModifyMode mode) {
 				InternalRdxContext ctx;
 				ctx = ctx.WithTimeout(execTimeout_);
 				auto err = rpcClient_->Select(Query(nsName_).Limit(0), qr, ctx, conn_);
-				if (!err.ok()) throw Error(errLogic, "Can't update TagsMatcher");
+				if (!err.ok()) {
+					throw Error(errLogic, "Can't update TagsMatcher");
+				}
 
 				auto newItem = NewItem();
 				char* endp = nullptr;
-				err = newItem.FromJSON(item.impl_->GetJSON(), &endp);
+				err = newItem.FromJSON(item.GetJSON(), &endp);
 				if (!err.ok()) throw err;
 				item = std::move(newItem);
 			} else {

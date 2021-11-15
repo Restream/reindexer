@@ -18,6 +18,8 @@ void manual_connection::attach(ev::dynamic_loop &loop) noexcept {
 	assert(!attached_);
 	io_.set<manual_connection, &manual_connection::io_callback>(this);
 	io_.set(loop);
+	connect_timer_.set<manual_connection, &manual_connection::connect_timer_cb>(this);
+	connect_timer_.set(loop);
 	if (stats_) stats_->attach(loop);
 	if (cur_events_) io_.start(sock_.fd(), cur_events_);
 	attached_ = true;
@@ -27,12 +29,15 @@ void manual_connection::detach() noexcept {
 	assert(attached_);
 	io_.stop();
 	io_.reset();
+	connect_timer_.stop();
+	connect_timer_.reset();
 	if (stats_) stats_->detach();
 	attached_ = false;
 }
 
 void manual_connection::close_conn(int err) {
 	state_ = conn_state::init;
+	connect_timer_.stop();
 	if (sock_.valid()) {
 		io_.stop();
 		sock_.close();
@@ -60,6 +65,7 @@ void manual_connection::restart(int fd) {
 }
 
 int manual_connection::async_connect(std::string_view addr) noexcept {
+	connect_timer_.stop();
 	if (state_ == conn_state::connected || state_ == conn_state::connecting) {
 		close_conn(k_sock_closed_err);
 	}
@@ -68,11 +74,14 @@ int manual_connection::async_connect(std::string_view addr) noexcept {
 	if (ret == 0) {
 		state_ = conn_state::connected;
 		return 0;
-	} else if (!sock_.would_block(sock_.last_error())) {
+	} else if (!sock_.valid() || !sock_.would_block(sock_.last_error())) {
 		state_ = conn_state::init;
 		return -1;
 	}
 	state_ = conn_state::connecting;
+	if (connect_timeout_.count() > 0) {
+		connect_timer_.start(double(connect_timeout_.count()) / 1000);
+	}
 	add_io_events(ev::WRITE);
 	return 0;
 }
@@ -188,8 +197,11 @@ void manual_connection::io_callback(ev::io &, int revents) {
 	}
 }
 
+void manual_connection::connect_timer_cb(ev::timer &, int) { close_conn(k_connect_timeout_err); }
+
 void manual_connection::write_cb() {
 	if (state_ == conn_state::connecting && sock_.valid()) {
+		connect_timer_.stop();
 		state_ = conn_state::connected;
 	}
 	if (w_data_.buf.size()) {

@@ -5,6 +5,7 @@
 #include "core/txstats.h"
 #include "estl/shared_mutex.h"
 #include "namespaceimpl.h"
+#include "tools/flagguard.h"
 
 namespace reindexer {
 
@@ -12,14 +13,16 @@ namespace reindexer {
 
 class Namespace {
 public:
-	Namespace(const string &name, UpdatesObservers &observers) : ns_(std::make_shared<NamespaceImpl>(name, observers)) {}
+	Namespace(const string &name, std::optional<int32_t> stateToken, cluster::INsDataReplicator *clusterizator)
+		: ns_(std::make_shared<NamespaceImpl>(name, std::move(stateToken), clusterizator)) {}
 	Namespace(NamespaceImpl::Ptr ns) : ns_(std::move(ns)) {}
 	typedef shared_ptr<Namespace> Ptr;
 
-	void CommitTransaction(Transaction &tx, QueryResults &result, const RdxContext &ctx);
+	void CommitTransaction(Transaction &tx, QueryResults &result, const NsContext &ctx);
 	string GetName(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::GetName)(ctx); }
 	bool IsSystem(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::IsSystem)(ctx); }
 	bool IsTemporary(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::IsTemporary)(ctx); }
+	void SetNsVersion(lsn_t version, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::SetNsVersion)(version, ctx); }
 	void EnableStorage(const string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx) {
 		handleInvalidation(NamespaceImpl::EnableStorage)(path, opts, storageType, ctx);
 	}
@@ -32,25 +35,33 @@ public:
 	void SetSchema(std::string_view schema, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::SetSchema)(schema, ctx); }
 	string GetSchema(int format, const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::GetSchema)(format, ctx); }
 	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::GetSchemaPtr)(ctx); }
-	void Insert(Item &item, const NsContext &ctx) { handleInvalidation(NamespaceImpl::Insert)(item, ctx); }
-	void Insert(Item &item, QueryResults &qr, const NsContext &ctx) { nsFuncWrapper<&NamespaceImpl::Insert>(item, qr, ctx); }
-	void Update(Item &item, const NsContext &ctx) {
-		nsFuncWrapper<void (NamespaceImpl::*)(Item &, const NsContext &), &NamespaceImpl::Update>(item, ctx);
+	void Insert(Item &item, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::Insert)(item, ctx); }
+	void Insert(Item &item, QueryResults &qr, const RdxContext &ctx) {
+		nsFuncWrapper<&NamespaceImpl::modifyItem, ModeInsert>(item, qr, ctx);
 	}
-	void Update(Item &item, QueryResults &qr, const NsContext &ctx) { nsFuncWrapper<&NamespaceImpl::Update>(item, qr, ctx); }
-	void Update(const Query &query, QueryResults &result, const NsContext &ctx) {
-		nsFuncWrapper<&NamespaceImpl::Update>(query, result, ctx);
+	void Update(Item &item, const RdxContext &ctx) {
+		nsFuncWrapper<void (NamespaceImpl::*)(Item &, const RdxContext &), &NamespaceImpl::Update>(item, ctx);
 	}
-	void Upsert(Item &item, const NsContext &ctx) { handleInvalidation(NamespaceImpl::Upsert)(item, ctx); }
-	void Upsert(Item &item, QueryResults &qr, const NsContext &ctx) { nsFuncWrapper<&NamespaceImpl::Upsert>(item, qr, ctx); }
-	void Delete(Item &item, const NsContext &ctx) {
-		nsFuncWrapper<void (NamespaceImpl::*)(Item &, const NsContext &), &NamespaceImpl::Delete>(item, ctx);
+	void Update(Item &item, QueryResults &qr, const RdxContext &ctx) {
+		nsFuncWrapper<&NamespaceImpl::modifyItem, ModeUpdate>(item, qr, ctx);
 	}
-	void Delete(Item &item, QueryResults &qr, const NsContext &ctx) { nsFuncWrapper<&NamespaceImpl::Delete>(item, qr, ctx); }
-	void Delete(const Query &query, QueryResults &result, const NsContext &ctx) {
-		nsFuncWrapper<&NamespaceImpl::Delete>(query, result, ctx);
+	void Update(const Query &query, QueryResults &result, const RdxContext &ctx) {
+		nsFuncWrapper<&NamespaceImpl::doUpdate>(query, result, ctx);
 	}
-	void Truncate(const NsContext &ctx) { handleInvalidation(NamespaceImpl::Truncate)(ctx); }
+	void Upsert(Item &item, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::Upsert)(item, ctx); }
+	void Upsert(Item &item, QueryResults &qr, const RdxContext &ctx) {
+		nsFuncWrapper<&NamespaceImpl::modifyItem, ModeUpsert>(item, qr, ctx);
+	}
+	void Delete(Item &item, const RdxContext &ctx) {
+		nsFuncWrapper<void (NamespaceImpl::*)(Item &, const RdxContext &), &NamespaceImpl::Delete>(item, ctx);
+	}
+	void Delete(Item &item, QueryResults &qr, const RdxContext &ctx) {
+		nsFuncWrapper<&NamespaceImpl::modifyItem, ModeDelete>(item, qr, ctx);
+	}
+	void Delete(const Query &query, QueryResults &result, const RdxContext &ctx) {
+		nsFuncWrapper<&NamespaceImpl::doDelete>(query, result, ctx);
+	}
+	void Truncate(const RdxContext &ctx) { handleInvalidation(NamespaceImpl::Truncate)(ctx); }
 	void Select(QueryResults &result, SelectCtx &params, const RdxContext &ctx) {
 		handleInvalidation(NamespaceImpl::Select)(result, params, ctx);
 	}
@@ -76,10 +87,9 @@ public:
 	Item NewItem(const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::NewItem)(ctx); }
 	void ToPool(ItemImpl *item) { handleInvalidation(NamespaceImpl::ToPool)(item); }
 	string GetMeta(const string &key, const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::GetMeta)(key, ctx); }
-	void PutMeta(const string &key, std::string_view data, const NsContext &ctx) {
+	void PutMeta(const string &key, std::string_view data, const RdxContext &ctx) {
 		handleInvalidation(NamespaceImpl::PutMeta)(key, data, ctx);
 	}
-	int64_t GetSerial(const string &field) { return handleInvalidation(NamespaceImpl::GetSerial)(field); }
 	int getIndexByName(const string &index) const {
 		return nsFuncWrapper<int (NamespaceImpl::*)(const string &) const, &NamespaceImpl::getIndexByName>(index);
 	}
@@ -89,27 +99,20 @@ public:
 	void FillResult(QueryResults &result, IdSet::Ptr ids) const { handleInvalidation(NamespaceImpl::FillResult)(result, ids); }
 	void EnablePerfCounters(bool enable = true) { handleInvalidation(NamespaceImpl::EnablePerfCounters)(enable); }
 	ReplicationState GetReplState(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::GetReplState)(ctx); }
-	void SetReplLSNs(LSNPair LSNs, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::SetReplLSNs)(LSNs, ctx); }
-	void SetSlaveReplStatus(ReplicationState::Status status, const Error &error, const RdxContext &ctx) {
-		handleInvalidation(NamespaceImpl::SetSlaveReplStatus)(status, error, ctx);
-	}
-	void SetSlaveReplMasterState(MasterState state, const RdxContext &ctx) {
-		handleInvalidation(NamespaceImpl::SetSlaveReplMasterState)(state, ctx);
-	}
-	Error ReplaceTagsMatcher(const TagsMatcher &tm, const RdxContext &ctx) {
-		return handleInvalidation(NamespaceImpl::ReplaceTagsMatcher)(tm, ctx);
-	}
-	void Rename(Namespace::Ptr dst, const std::string &storagePath, const RdxContext &ctx) {
+	ReplicationStateV2 GetReplStateV2(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::GetReplStateV2)(ctx); }
+	void Rename(Namespace::Ptr dst, const std::string &storagePath, std::function<void(std::function<void()>)> replicateCb,
+				const RdxContext &ctx) {
 		if (this == dst.get() || dst == nullptr) {
 			return;
 		}
-		doRename(std::move(dst), std::string(), storagePath, ctx);
+		doRename(std::move(dst), std::string(), storagePath, std::move(replicateCb), ctx);
 	}
-	void Rename(const std::string &newName, const std::string &storagePath, const RdxContext &ctx) {
+	void Rename(const std::string &newName, const std::string &storagePath, std::function<void(std::function<void()>)> replicateCb,
+				const RdxContext &ctx) {
 		if (newName.empty()) {
 			return;
 		}
-		doRename(nullptr, newName, storagePath, ctx);
+		doRename(nullptr, newName, storagePath, std::move(replicateCb), ctx);
 	}
 	void OnConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx) {
 		NamespaceConfigData configData;
@@ -120,13 +123,19 @@ public:
 		handleInvalidation(NamespaceImpl::OnConfigUpdated)(configProvider, ctx);
 	}
 	StorageOpts GetStorageOpts(const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::GetStorageOpts)(ctx); }
-	void Refill(vector<Item> &items, const NsContext &ctx) { handleInvalidation(NamespaceImpl::Refill)(items, ctx); }
+	void Refill(vector<Item> &items, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::Refill)(items, ctx); }
+	Error SetClusterizationStatus(ClusterizationStatus &&status, const RdxContext &ctx) {
+		return handleInvalidation(NamespaceImpl::SetClusterizationStatus)(std::move(status), ctx);
+	}
+	void GetSnapshot(Snapshot &snapshot, const SnapshotOpts &opts, const RdxContext &ctx) {
+		return handleInvalidation(NamespaceImpl::GetSnapshot)(snapshot, opts, ctx);
+	}
+	void ApplySnapshotChunk(const SnapshotChunk &ch, bool isInitialLeaderSync, const RdxContext &ctx);
 
 protected:
 	friend class ReindexerImpl;
 	friend class QueryResults;
 	void updateSelectTime() const { handleInvalidation(NamespaceImpl::updateSelectTime)(); }
-	void setSlaveMode(const RdxContext &ctx) { handleInvalidation(NamespaceImpl::setSlaveMode)(ctx); }
 	NamespaceImpl::Ptr getMainNs() const { return atomicLoadMainNs(); }
 	NamespaceImpl::Ptr awaitMainNs(const RdxContext &ctx) const {
 		if (hasCopy_.load(std::memory_order_acquire)) {
@@ -137,9 +146,17 @@ protected:
 		return atomicLoadMainNs();
 	}
 
+	FieldsSet getPK(const RdxContext &ctx) const {
+		return nsFuncWrapper<FieldsSet (NamespaceImpl::*)(const RdxContext &ctx) const, &NamespaceImpl::getPK>(ctx);
+	}
+
+	PayloadType getPayloadType(const RdxContext &ctx) const {
+		return nsFuncWrapper<PayloadType (NamespaceImpl::*)(const RdxContext &ctx) const, &NamespaceImpl::getPayloadType>(ctx);
+	}
+
 private:
 	template <typename Fn, Fn fn, typename... Args>
-	typename std::result_of<Fn(NamespaceImpl, Args...)>::type nsFuncWrapper(Args &&...args) const {
+	typename std::result_of<Fn(NamespaceImpl, Args...)>::type nsFuncWrapper(Args &&... args) const {
 		while (true) {
 			try {
 				auto ns = atomicLoadMainNs();
@@ -154,32 +171,42 @@ private:
 		}
 	}
 
-	template <void (NamespaceImpl::*fn)(Item &, const NsContext &)>
-	void nsFuncWrapper(Item &item, QueryResults &qr, NsContext ctx) const {
-		nsFuncWrapper<Item, void (NamespaceImpl::*)(Item &, const NsContext &), fn>(item, qr, ctx);
+	template <void (NamespaceImpl::*fn)(Item &, int, NamespaceImpl::UpdatesContainer &, const NsContext &), int mode>
+	void nsFuncWrapper(Item &item, QueryResults &qr, const RdxContext &ctx) const {
+		nsFuncWrapper<Item, void (NamespaceImpl::*)(Item &, int, NamespaceImpl::UpdatesContainer &, const NsContext &), fn, mode>(item, qr,
+																																  ctx);
 	}
-	template <void (NamespaceImpl::*fn)(const Query &, QueryResults &, const NsContext &)>
-	void nsFuncWrapper(const Query &query, QueryResults &qr, NsContext ctx) const {
-		nsFuncWrapper<const Query, void (NamespaceImpl::*)(const Query &, QueryResults &, const NsContext &), fn>(query, qr, ctx);
+	template <void (NamespaceImpl::*fn)(const Query &, QueryResults &, NamespaceImpl::UpdatesContainer &, const NsContext &)>
+	void nsFuncWrapper(const Query &query, QueryResults &qr, const RdxContext &ctx) const {
+		nsFuncWrapper<const Query,
+					  void (NamespaceImpl::*)(const Query &, QueryResults &, NamespaceImpl::UpdatesContainer &, const NsContext &), fn>(
+			query, qr, ctx);
 	}
-	template <typename T, typename FN, FN fn>
-	void nsFuncWrapper(T &v, QueryResults &qr, NsContext ctx) const {
-		assert(!ctx.noLock);
-		ctx.NoLock();
+	template <typename T, typename FN, FN fn, int mode = 0>
+	void nsFuncWrapper(T &v, QueryResults &qr, const RdxContext &ctx) const {
+		NsContext nsCtx(ctx);
 		while (true) {
 			std::shared_ptr<NamespaceImpl> ns;
 			bool added = false;
 			try {
 				ns = atomicLoadMainNs();
-				const auto locker{ns->wLock(ctx.rdxContext)};
-				qr.AddNamespace(ns, ctx);
+
+				PerfStatCalculatorMT calc(ns->updatePerfCounter_, ns->enablePerfCounters_);
+				NamespaceImpl::UpdatesContainer pendedRepl;
+
+				CounterGuardAIR32 cg(ns->cancelCommitCnt_);
+				auto wlck = ns->dataWLock(nsCtx.rdxContext);
+				cg.Reset();
+
+				qr.AddNamespace(ns, true, nsCtx.rdxContext);
 				added = true;
 				if constexpr (std::is_same_v<T, Item>) {
-					(*ns.*fn)(v, ctx);
+					(*ns.*fn)(v, mode, pendedRepl, nsCtx);
 					qr.AddItem(v, true, false);
 				} else {
-					(*ns.*fn)(v, qr, ctx);
+					(*ns.*fn)(v, qr, pendedRepl, nsCtx);
 				}
+				ns->replicate(std::move(pendedRepl), std::move(wlck), nsCtx);
 				return;
 			} catch (const Error &e) {
 				if (e.code() != errNamespaceInvalidated) {
@@ -193,7 +220,8 @@ private:
 	}
 
 	bool needNamespaceCopy(const NamespaceImpl::Ptr &ns, const Transaction &tx) const noexcept;
-	void doRename(Namespace::Ptr dst, const std::string &newName, const std::string &storagePath, const RdxContext &ctx);
+	void doRename(Namespace::Ptr dst, const std::string &newName, const std::string &storagePath,
+				  std::function<void(std::function<void()>)> replicateCb, const RdxContext &ctx);
 	NamespaceImpl::Ptr atomicLoadMainNs() const {
 		std::lock_guard<spinlock> lck(nsPtrSpinlock_);
 		return ns_;
@@ -212,7 +240,7 @@ private:
 	std::atomic<int> startCopyPolicyTxSize_;
 	std::atomic<int> copyPolicyMultiplier_;
 	std::atomic<int> txSizeToAlwaysCopy_;
-	TxStatCounter txStatsCounter_;
+	TxStatCounter txStatsCounter_{};
 	PerfStatCounterMT commitStatsCounter_;
 	PerfStatCounterMT copyStatsCounter_;
 };

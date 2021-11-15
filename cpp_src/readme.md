@@ -31,6 +31,7 @@ While using docker, you may pass reindexer server config options via envinronmen
 - `RX_PPROF` - if RX_PPROF is not empty, enables pprof api. Disabled by default.
 - `RX_SECURITY` - if RX_SECURITY is not empty, enables authorization. Disabled by default.
 - `RX_PROMETHEUS` - if RX_PROMETHEUS is not empty, enables prometheus metrics. Disabled by default.
+- `RX_ENABLE_CLUSTER` - if RX_ENABLE_CLUSTER is not empty, allows this node to be a part of raft-cluster.
 
 ## OSX brew
 
@@ -51,7 +52,9 @@ yum update
 yum install reindexer-server
 ```
 
-Available distros: `centos-7`,`centos-8`,`fedora-30`,`fedora-31`,
+Available distros: `centos-7`,`centos-8`,`fedora-30`,`fedora-31`.
+
+To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 
 ## Ubuntu/Debian
 
@@ -62,7 +65,9 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-buster`, `ubuntu-bionic`, `ubuntu-focal`
+Available distros: `debian-buster`, `ubuntu-bionic`, `ubuntu-focal`.
+
+To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 
 ## Windows
 

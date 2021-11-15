@@ -4,7 +4,6 @@
 #include <string>
 #include "client/cororeindexer.h"
 #include "core/queryresults/queryresults.h"
-#include "replicator/updatesobserver.h"
 #include "server/dbmanager.h"
 #include "server/server.h"
 #include "thread"
@@ -29,21 +28,17 @@ public:
 	const std::string kdbName = "test";
 	const std::string kipaddress = "127.0.0.1";
 	const uint16_t kPortI = 7777;
-	const std::string kport = std::to_string(kPortI);
+	const std::string kRPCPort = std::to_string(kPortI);
+	const uint16_t kHttpPortI = 7888;
+	const std::string kHttpPort = std::to_string(kHttpPortI);
+	const uint16_t kClusterPortI = 7999;
+	const std::string kClusterPort = std::to_string(kClusterPortI);
 	const std::string kUserName = "reindexer";
 	const std::string kPassword = "reindexer";
 	const std::string kAppName = "test_app_name";
 
 	std::string GetConnectionString();
 	uint32_t StatsTxCount(reindexer::client::CoroReindexer& rx);
-
-protected:
-	class TestObserver : public reindexer::IUpdatesObserver {
-	public:
-		void OnWALUpdate(reindexer::LSNPair, std::string_view, const reindexer::WALRecord&) override {}
-		void OnUpdatesLost(std::string_view) override {}
-		void OnConnectionState(const reindexer::Error&) override {}
-	};
 
 private:
 	void ClientSelectLoop(size_t coroutines);

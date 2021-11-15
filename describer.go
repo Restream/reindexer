@@ -12,6 +12,7 @@ const (
 	PerfstatsNamespaceName        = "#perfstats"
 	QueriesperfstatsNamespaceName = "#queriesperfstats"
 	ClientsStatsNamespaceName     = "#clientsstats"
+	ReplicationStatsNamespaceName = "#replicationstats"
 )
 
 // Map from cond name to index type
@@ -89,18 +90,6 @@ type LsnT struct {
 	ServerId int `json:"server_id"`
 }
 
-// MasterReplicationState information about reindexer-master state
-type MasterReplicationState struct {
-	// Last Log Sequence Number (LSN) of applied namespace modification
-	LastLSN LsnT `json:"last_upstream_lsn"`
-	// Hashsum of all records in namespace
-	DataHash uint64 `json:"data_hash"`
-	// Data updated timestamp
-	UpdatedUnixNano int64 `json:"updated_unix_nano"`
-	// Items count in master namespace
-	DataCount int64 `json:"data_count"`
-}
-
 // NamespaceMemStat information about reindexer's namespace memory statisctics
 // and located in '#memstats' system namespace
 type NamespaceMemStat struct {
@@ -135,10 +124,8 @@ type NamespaceMemStat struct {
 	Replication struct {
 		// Last Log Sequence Number (LSN) of applied namespace modification
 		LastLSN LsnT `json:"last_lsn_v2"`
-		// If true, then namespace is in slave mode
-		SlaveMode bool `json:"slave_mode"`
-		// True enable replication
-		ReplicatorEnabled bool `json:"replicator_enabled"`
+		// Namespace version counter
+		NSVersion LsnT `json:"ns_version"`
 		// Temporary namespace flag
 		Temporary bool `json:"temporary"`
 		// Number of storage's master <-> slave switches
@@ -153,20 +140,13 @@ type NamespaceMemStat struct {
 		WalSize int64 `json:"wal_size"`
 		// Data updated timestamp
 		UpdatedUnixNano int64 `json:"updated_unix_nano"`
-		// Current replication status
-		Status string `json:"status"`
-		// Origin LSN of last replication operation
-		OriginLSN LsnT `json:"origin_lsn"`
-		// Last LSN of api operation (not from replication)
-		LastSelfLSN LsnT `json:"last_self_lsn"`
-		// Last Log Sequence Number (LSN) of applied namespace modification
-		LastUpstreamLSN LsnT `json:"last_upstream_lsn"`
-		// Last replication error code
-		ErrorCode int64 `json:"error_code"`
-		// Last replication error message
-		ErrorMessage string `json:"error_message"`
-		// Master's state
-		MasterState MasterReplicationState `json:"master_state"`
+		// Cluster info
+		ClusterizationStatus struct {
+			// Current leader server ID (for RAFT-cluster only)
+			LeadeID int `json:"leader_id"`
+			// Current role in cluster: cluster_replica, simple_replica or none
+			Role string `json:"role"`
+		} `json:"clusterization_status"`
 	} `json:"replication"`
 
 	// Indexes memory statistic
@@ -285,8 +265,6 @@ type ClientConnectionStat struct {
 	ClientVersion string `json:"client_version"`
 	// Send buffer size
 	SendBufBytes int64 `json:"send_buf_bytes"`
-	// Pended updates count
-	PendedUpdates int64 `json:"pended_updates"`
 	// Timestamp of last send operation (ms)
 	LastSendTs int64 `json:"last_send_ts"`
 	// Timestamp of last recv operation (ms)
@@ -297,22 +275,58 @@ type ClientConnectionStat struct {
 	RecvRate int `json:"recv_rate"`
 	// Active transactions count
 	TxCount int `json:"tx_count"`
-	// Status of updates subscription
-	IsSubscribed bool `json:"is_subscribed"`
-	// Updates filter for this client
-	UpdatesFilter struct {
-		Namespaces []struct {
-			// Namespace name
-			Name string `json:"name"`
-			// Filtering conditions set
-			Filters []struct {
-				// Empty
-			} `json:"filters"`
-		} `json:"namespaces"`
-	} `json:"updates_filter"`
-	// Updates lost call count
-	UpdatesLost int `json:"updates_lost"`
+}
 
+// ReplicationSyncStat WAL/force sync statistic
+type ReplicationSyncStat struct {
+	// Syncs count
+	Count int64 `json:"count"`
+	// Average sync time
+	AvgTimeUs int64 `json:"avg_time_us"`
+	// Max sync time
+	MaxTimeUs int64 `json:"max_time_us"`
+}
+
+// ReplicationStat replication statistic
+type ReplicationStat struct {
+	// Replication type: either "async" or "cluster"
+	Type string `json:"type"`
+	// Global WAL-syncs' stats
+	WALSync ReplicationSyncStat `json:"wal_sync"`
+	// Global force-syncs' stats
+	ForceSync ReplicationSyncStat `json:"force_sync"`
+	// Leader's initial sync statistic (for "cluster" type only)
+	InitialSyncStat struct {
+		// WAL-syncs' stats
+		WALSync ReplicationSyncStat `json:"wal_sync"`
+		// Force-syncs' stats
+		ForceSync ReplicationSyncStat `json:"force_sync"`
+		// Total initial sync time
+		TotalTimeUs int64 `json:"total_time_us"`
+	} `json:"initial_sync"`
+	// Count of online updates, awaiting rpelication
+	PendingUpdatesCount int64 `json:"pending_updates_count"`
+	// Total allocated online updates count (including those, which already were replicated, but was not deallocated yet)
+	AllocatedUpdatesCount int64 `json:"allocated_updates_count"`
+	// Total allocated online updates size in bytes
+	AllocatedUpdatesSize int64 `json:"allocated_updates_size"`
+	// Info about each node
+	ReplicationNodeStat []struct {
+		// Node's DSN
+		DSN string `json:"dsn"`
+		// Node's server ID
+		ServerID int `json:"server_id"`
+		// Online updates, awaiting replication to this node
+		PendingUpdatesCount int64 `json:"pending_updates_count"`
+		// Network status: "none", "online", "offline", "raft_error"
+		Status string `json:"status"`
+		// Replication role: "none", "follower", "leader", "candidate"
+		Role string `json:"role"`
+		// Node's sync state: "none", "syncing", "awaiting_resync", "online_replication", "initial_leader_sync"
+		SyncState string `json:"sync_state"`
+		// Shows synchroniztion state for raft-cluster node (false if node is outdated)
+		IsSynchronized bool `json:"is_synchronized"`
+	} `json:"nodes"`
 }
 
 // QueryPerfStat is information about query's performance statistics
@@ -324,10 +338,11 @@ type QueryPerfStat struct {
 
 // DBConfigItem is structure stored in system '#config` namespace
 type DBConfigItem struct {
-	Type        string                `json:"type"`
-	Profiling   *DBProfilingConfig    `json:"profiling,omitempty"`
-	Namespaces  *[]DBNamespacesConfig `json:"namespaces,omitempty"`
-	Replication *DBReplicationConfig  `json:"replication,omitempty"`
+	Type             string                    `json:"type"`
+	Profiling        *DBProfilingConfig        `json:"profiling,omitempty"`
+	Namespaces       *[]DBNamespacesConfig     `json:"namespaces,omitempty"`
+	Replication      *DBReplicationConfig      `json:"replication,omitempty"`
+	AsyncReplication *DBAsyncReplicationConfig `json:"async_replication,omitempty"`
 }
 
 // DBProfilingConfig is part of reindexer configuration contains profiling options
@@ -368,20 +383,48 @@ type DBNamespacesConfig struct {
 	WALSize int64 `json:"wal_size"`
 }
 
-// DBReplicationConfig is part of reindexer configuration contains replication options
-type DBReplicationConfig struct {
-	// Replication role. One of  none, slave, master
+// DBAsyncReplicationNode
+type DBAsyncReplicationNode struct {
+	// Node's DSN. It must to have cproto format (e.g. 'cproto://<ip>:<port>/<db>')
+	DSN string `json:"dsn"`
+	// List of namespaces to replicate on this specific node. If nil, list from main replication config will be used
+	Namespaces []string `json:"namespaces"`
+}
+
+// DBAsyncReplicationConfig is part of reindexer configuration contains async replication options
+type DBAsyncReplicationConfig struct {
+	// Replication role. One of: none, leader, follower
 	Role string `json:"role"`
-	// DSN to master. Only cproto schema is supported
-	MasterDSN string `json:"master_dsn"`
-	// Cluster ID - must be same for client and for master
-	ClusterID int `json:"cluster_id"`
 	// force resync on logic error conditions
 	ForceSyncOnLogicError bool `json:"force_sync_on_logic_error"`
 	// force resync on wrong data hash conditions
 	ForceSyncOnWrongDataHash bool `json:"force_sync_on_wrong_data_hash"`
+	// Network timeout for online updates (s)
+	UpdatesTimeout int `json:"online_updates_timeout_sec"`
+	// Network timeout for wal/force syncs (s)
+	SyncTimeout int `json:"sync_timeout_sec"`
+	// Number of parallel replication threads
+	SyncThreads int `json:"sync_threads"`
+	// Max number of concurrent force/wal syncs per replication thread
+	ConcurrentSyncsPerThread int `json:"syncs_per_thread"`
+	// Number of coroutines for online-updates batching (per each namespace of each node)
+	BatchingReoutines int `json:"batching_routines_count"`
+	// Enable compression for replication network operations
+	EnableCompression bool `json:"enable_compression"`
 	// List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave
 	Namespaces []string `json:"namespaces"`
+	// Reconnect interval after replication error (ms)
+	RetrySyncInterval int `json:"retry_sync_interval_msec"`
+	// List of follower-nodes for async replication
+	Nodes []DBAsyncReplicationNode `json:"nodes"`
+}
+
+// DBReplicationConfig is part of reindexer configuration contains general node settings for replication
+type DBReplicationConfig struct {
+	// Server ID - must be unique for each node (available values: 0-999)
+	ServerID int `json:"server_id"`
+	// Cluster ID - must be same for client and for master
+	ClusterID int `json:"cluster_id"`
 }
 
 // DescribeNamespaces makes a 'SELECT * FROM #namespaces' query to database.

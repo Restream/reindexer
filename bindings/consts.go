@@ -2,7 +2,7 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v3.2.5"
+const ReindexerVersion = "v4.0.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
@@ -138,22 +138,31 @@ const (
 	ConnectOptAutorepair           = 1 << 2
 	ConnectOptWarnVersion          = 1 << 4
 
-	ErrOK               = 0
-	ErrParseSQL         = 1
-	ErrQueryExec        = 2
-	ErrParams           = 3
-	ErrLogic            = 4
-	ErrParseJson        = 5
-	ErrParseDSL         = 6
-	ErrConflict         = 7
-	ErrParseBin         = 8
-	ErrForbidden        = 9
-	ErrWasRelock        = 10
-	ErrNotValid         = 11
-	ErrNetwork          = 12
-	ErrNotFound         = 13
-	ErrStateInvalidated = 14
-	ErrTimeout          = 19
-	ErrCanceled         = 20
-	ErrTagsMissmatch    = 21
+	ErrOK                   = 0
+	ErrParseSQL             = 1
+	ErrQueryExec            = 2
+	ErrParams               = 3
+	ErrLogic                = 4
+	ErrParseJson            = 5
+	ErrParseDSL             = 6
+	ErrConflict             = 7
+	ErrParseBin             = 8
+	ErrForbidden            = 9
+	ErrWasRelock            = 10
+	ErrNotValid             = 11
+	ErrNetwork              = 12
+	ErrNotFound             = 13
+	ErrStateInvalidated     = 14
+	ErrTimeout              = 19
+	ErrCanceled             = 20
+	ErrTagsMissmatch        = 21
+	ErrReplParams           = 22
+	ErrNamespaceInvalidated = 23
+	ErrParseMsgPack         = 24
+	ErrParseProtobuf        = 25
+	ErrUpdatesLost          = 26
+	ErrWrongReplicationData = 27
+	ErrUpdateReplication    = 28
+	ErrClusterConsensus     = 29
+	ErrTerminated           = 30
 )

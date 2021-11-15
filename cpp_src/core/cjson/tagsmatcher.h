@@ -12,13 +12,13 @@ namespace reindexer {
 class TagsMatcher {
 public:
 	TagsMatcher() : impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>()), updated_(false) {}
-	TagsMatcher(PayloadType payloadType)
-		: impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>(payloadType)), updated_(false) {}
+	TagsMatcher(PayloadType payloadType, int32_t stateToken = rand())
+		: impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>(payloadType, stateToken)), updated_(false) {}
 
 	int name2tag(std::string_view name) const { return impl_->name2tag(name); }
 	int name2tag(std::string_view name, bool canAdd) {
 		if (!name.data()) return 0;	 // -V547
-		int res = impl_->name2tag(name);
+		const int res = impl_->name2tag(name);
 		return res ? res : impl_.clone()->name2tag(name, canAdd, updated_);
 	}
 	int tags2field(const int16_t* path, size_t pathLen) const { return impl_->tags2field(path, pathLen); }
@@ -55,6 +55,7 @@ public:
 	}
 	void clearUpdated() { updated_ = false; }
 	void setUpdated() { updated_ = true; }
+	bool is_same(const TagsMatcher& tm) { return impl_->is_same(*tm.impl_.get()); }
 
 	bool try_merge(const TagsMatcher& tm) {
 		auto tmp = impl_;

@@ -21,6 +21,7 @@ about reindexer server and HTTP API refer to
   - [Memory Consumption](#memory-consumption)
   - [Full text search](#full-text-search)
   - [Disk Storage](#disk-storage)
+  - [Replication](#replication)
 - [Usage](#usage)
   - [SQL compatible interface](#sql-compatible-interface)
 - [Installation](#installation)
@@ -119,6 +120,10 @@ Reindexer has internal full text search engine. Full text search usage documenta
 Reindexer can store documents to and load documents from disk via LevelDB. Documents are written to the storage backend asynchronously by large batches automatically in background.
 
 When a namespace is created, all its documents are stored into RAM, so the queries on these documents run entirely in in-memory mode.
+
+### Replication
+
+Reindexer supports synchronious and asynchronious replication. Check replication documentation [here](replication.md)
 
 ## Usage
 
@@ -1259,4 +1264,5 @@ You can get help in several ways:
 
 1. Join Reindexer [Telegram group](https://t.me/reindexer)
 2. Write [an issue](https://github.com/restream/reindexer/issues/new)
+
 

@@ -455,13 +455,14 @@ void dynamic_loop::run() {
 			}
 		}
 
-		if (has_coro_tasks && running_tasks_.empty()) {
+		if (has_coro_tasks && running_tasks_.empty() && yielded_tasks_.empty()) {
 			break;
 		}
 
-		int tv = gEnableBusyLoop ? 0 : -1;
+		bool busy_loop = gEnableBusyLoop || yielded_tasks_.size();
+		int tv = busy_loop ? 0 : -1;
 
-		if (!gEnableBusyLoop && timers_.size()) {
+		if (!busy_loop && timers_.size()) {
 			tv = std::chrono::duration_cast<std::chrono::microseconds>(timers_.front()->deadline_ - now).count();
 			if (tv < 0) tv = 0;
 		}
@@ -482,8 +483,9 @@ void dynamic_loop::run() {
 			}
 		}
 		if (ret >= 0 && timers_.size()) {
-			if (!gEnableBusyLoop || !(++count % 100)) {
+			if (!busy_loop || ++count == 100) {
 				now = std::chrono::steady_clock::now();
+				count = 0;
 			}
 			while (timers_.size() && now >= timers_.front()->deadline_) {
 				auto tim = timers_.front();
@@ -491,6 +493,12 @@ void dynamic_loop::run() {
 				tim->callback(1);
 			}
 		}
+		h_vector<coroutine::routine_t, 5> yielded_tasks;
+		std::swap(yielded_tasks, yielded_tasks_);
+		for (auto id : yielded_tasks) {
+			coroutine::resume(id);
+		}
+		yielded_tasks.clear();
 	}
 	remove_coro_cb();
 }

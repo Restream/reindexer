@@ -56,6 +56,15 @@ public:
 		return url.path;
 	}
 
+	std::string db() const {
+		assert(isValid());
+		std::string::size_type pos = 0;
+		while (pos != url.path.size() && (url.path[pos] == '\\' || url.path[pos] == '/')) {
+			++pos;
+		}
+		return url.path.substr(pos);
+	}
+
 	const std::string& query() const {
 		assert(isValid());
 		return url.query;

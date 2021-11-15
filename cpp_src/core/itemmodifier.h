@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/updaterecord.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
 #include "core/query/query.h"
@@ -19,7 +20,7 @@ public:
 	ItemModifier(ItemModifier &&) = delete;
 	ItemModifier &operator=(ItemModifier &&) = delete;
 
-	void Modify(IdType itemId, const NsContext &ctx);
+	void Modify(IdType itemId, const RdxContext &ctx, h_vector<cluster::UpdateRecord, 2> &pendedRepl);
 
 private:
 	struct FieldData {
@@ -60,9 +61,9 @@ private:
 		std::string_view cjson_;
 	};
 
-	void modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values, const NsContext &);
-	void modifyCJSON(PayloadValue &pv, IdType itemId, FieldData &field, VariantArray &values, const NsContext &);
-	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl, const NsContext &);
+	void modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values, const RdxContext &);
+	void modifyCJSON(PayloadValue &pv, IdType itemId, FieldData &field, VariantArray &values, h_vector<cluster::UpdateRecord, 2> &pendedRepl, const RdxContext &);
+	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl, const RdxContext &);
 
 	NamespaceImpl &ns_;
 	const h_vector<UpdateEntry, 0> &updateEntries_;

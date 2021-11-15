@@ -6,12 +6,18 @@
 #include "tools/errors.h"
 
 namespace reindexer {
-class Replicator;
+
+class TagsMatcher;
+class ClusterProxy;
+class Transaction;
+
 namespace client {
 
 using std::vector;
 
-class ItemImpl;
+class ItemImplBase;
+class CoroReindexer;
+class Transaction;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
 /// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will not
@@ -70,39 +76,44 @@ public:
 	int NumFields();
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
-	void SetPrecepts(const vector<std::string> &precepts);
+	void SetPrecepts(vector<std::string> precepts);
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
-	bool IsTagsUpdated();
+	bool IsTagsUpdated() const;
 	/// Get state token
 	/// @return Current state token
 	int GetStateToken();
 	/// Check is item valid. If is not valid, then any futher operations with item will raise nullptr dereference
-	operator bool() const;
+	operator bool() const noexcept { return impl_ != nullptr; }
 	/// Enable Unsafe Mode<br>.
 	/// USE WITH CAUTION. In unsafe mode most of Item methods will not store  strings and slices, passed from/to application.<br>
 	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>
 	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containters in many cases invalidates references -
 	/// and in unsafe mode caller is responsibe to guarantee, that all resources passed to Item will keep valid
-	Item &Unsafe(bool enable = true);
+	Item &Unsafe(bool enable = true) noexcept;
 
 private:
-	explicit Item(ItemImpl *impl);
+	explicit Item(ItemImplBase *impl);
 	explicit Item(const Error &err);
 	void setID(int id) { id_ = id; }
 
-	std::unique_ptr<ItemImpl> impl_;
+	std::unique_ptr<ItemImplBase> impl_;
 	Error status_;
 	int id_ = -1;
 	friend class Namespace;
 	friend class QueryResults;
 	friend class RPCClient;
 	friend class CoroRPCClient;
+	friend class CoroReindexer;
 	friend class RPCClientMock;
-	friend class reindexer::Replicator;
-	friend class Transaction;
+	friend class reindexer::client::Transaction;
+	friend class reindexer::Transaction;
+	friend class reindexer::ClusterProxy;
 	friend class CoroTransaction;
+	friend class CoroQueryResults;
 	friend class SyncCoroReindexerImpl;
+	friend class SyncCoroQueryResults;
+	friend class SyncCoroTransaction;
 };
 }  // namespace client
 }  // namespace reindexer

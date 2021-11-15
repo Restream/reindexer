@@ -82,22 +82,22 @@ protected:
 	Error modifyItem(Reindexer &db, string &nsName, Item &item, QueryResults &, ItemModifyMode mode);
 	int modifyItems(http::Context &ctx, ItemModifyMode mode);
 	int modifyItemsTx(http::Context &ctx, ItemModifyMode mode);
-	int modifyItemsProtobuf(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode);
-	int modifyItemsMsgPack(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode);
-	int modifyItemsJSON(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode);
-	int modifyItemsTxMsgPack(http::Context &ctx, Transaction &tx, const vector<string> &precepts, ItemModifyMode mode);
-	int modifyItemsTxJSON(http::Context &ctx, Transaction &tx, const vector<string> &precepts, ItemModifyMode mode);
-	int queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults = false, unsigned limit = kDefaultLimit,
-					 unsigned offset = kDefaultOffset);
-	int queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
-							bool withColumns, int width = 0);
-	int queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
-							 bool withColumns, int width = 0);
-	int queryResultsJSON(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
-						 bool withColumns, int width = 0);
+	int modifyItemsProtobuf(http::Context &ctx, string &nsName, vector<string> &&precepts, ItemModifyMode mode);
+	int modifyItemsMsgPack(http::Context &ctx, string &nsName, vector<string> &&precepts, ItemModifyMode mode);
+	int modifyItemsJSON(http::Context &ctx, string &nsName, vector<std::string> &&precepts, ItemModifyMode mode);
+	int modifyItemsTxMsgPack(http::Context &ctx, Transaction &tx, vector<std::string> &&precepts, ItemModifyMode mode);
+	int modifyItemsTxJSON(http::Context &ctx, Transaction &tx, vector<std::string> &&precepts, ItemModifyMode mode);
+	int queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery = false, bool isQueryResults = false,
+					 unsigned limit = kDefaultLimit, unsigned offset = kDefaultOffset);
+	int queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
+							unsigned offset, bool withColumns, int width = 0);
+	int queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
+							 unsigned offset, bool withColumns, int width = 0);
+	int queryResultsJSON(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
+						 unsigned offset, bool withColumns, int width = 0);
 	template <typename Builder>
-	void queryResultParams(Builder &builder, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, bool withColumns,
-						   int width);
+	void queryResultParams(Builder &builder, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
+						   bool withColumns, int width);
 	int status(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
 	int jsonStatus(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
 	int msgpackStatus(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
@@ -144,7 +144,7 @@ protected:
 	static const int kDefaultOffset = 0;
 
 private:
-	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, http::Context &ctx);
+	Error execSqlQueryByType(std::string_view sqlQuery, bool &isWALQuery, reindexer::QueryResults &res, http::Context &ctx);
 };
 
 }  // namespace reindexer_server

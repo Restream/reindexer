@@ -28,7 +28,8 @@ public:
                 "   serverlog: \n"
                 "net:\n"
                 "   rpcaddr: 0.0.0.0:25677\n"
-                "   httpaddr: 0.0.0.0:44444\n";
+                "   httpaddr: 0.0.0.0:44444\n"
+                "   clusteraddr: 0.0.0.0:45444\n";
 		// clang-format on
 		auto err = server_.InitFromYAML(yaml);
 		ASSERT_TRUE(err.ok()) << err.what();

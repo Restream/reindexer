@@ -46,18 +46,38 @@ enum CmdCode : uint16_t {
 
 	kCmdSetSchema = 67,
 
-	kCmdSubscribeUpdates = 90,
-	kCmdUpdates = 91,
+	kCmdGetReplState = 68,
+	kCmdCreateTmpNamespace = 69,
+	kCmdGetSnapshot = 70,
+	kCmdFetchSnapshot = 71,
+	kCmdApplySnapshotCh = 72,
+	kCmdSetClusterizationStatus = 73,
+
+	kCmdPutTxMeta = 74,
+
+	kCmdSubscribeUpdates = 90,	// Deprecated
+	kCmdUpdates = 91,			// Deprecated
 
 	kCmdGetSQLSuggestions = 92,
 
-	kCmdCodeMax = 128
+	kCmdSuggestLeader = 100,
+	kCmdLeadersPing = 101,
+	kCmdGetRaftInfo = 102,
+	kCmdClusterControlRequest = 103,
+
+	kCmdGetSchema = 110,
+
+	kCmdCodeMax = 128,
+
 };
 
 std::string_view CmdName(uint16_t code);
 
 // Maximum number of active queries per client
 const uint32_t kMaxConcurentQueries = 256;
+
+// Maximum number of active snapshots per client
+const uint32_t kMaxConcurentSnapshots = 8;
 
 const uint32_t kCprotoMagic = 0xEEDD1132;
 const uint32_t kCprotoVersion = 0x103;

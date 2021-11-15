@@ -26,14 +26,14 @@ void ExpressionEvaluator::captureArrayContent(tokenizer& parser) {
 		tok = parser.next_token();
 		if (tok.text() == "]"sv) break;
 		if (tok.text() != ","sv) throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
-	};
+	}
 }
 
-double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValue& v) {
+double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValue& v, const NsContext& ctx) {
 	token tok = parser.peek_token(true, true);
 	if (tok.text() == "("sv) {
 		parser.next_token();
-		double val = performSumAndSubtracting(parser, v);
+		double val = performSumAndSubtracting(parser, v, ctx);
 		if (parser.next_token().text() != ")"sv) throw Error(errLogic, "')' expected in arithmetical expression");
 		return val;
 	} else if (tok.text() == "["sv) {
@@ -90,7 +90,7 @@ double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValu
 			} else {
 				SelectFuncStruct funcData = SelectFuncParser().ParseFunction(parser, true);
 				funcData.field = forField_;
-				return functionExecutor_.Execute(funcData).As<double>();
+				return functionExecutor_.Execute(funcData, ctx).As<double>();
 			}
 		}
 	} else {
@@ -99,31 +99,31 @@ double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValu
 	return 0.0;
 }
 
-double ExpressionEvaluator::performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& tok) {
-	double left = getPrimaryToken(parser, v);
+double ExpressionEvaluator::performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& tok, const NsContext& ctx) {
+	double left = getPrimaryToken(parser, v, ctx);
 	tok = parser.peek_token();
 	while (tok.text() == "|"sv) {
 		parser.next_token();
 		tok = parser.next_token();
 		if (tok.text() != "|") throw Error(errLogic, "Expected '|', not %s", tok.text());
 		state_ = StateArrayConcat;
-		getPrimaryToken(parser, v);
+		getPrimaryToken(parser, v, ctx);
 		tok = parser.peek_token();
 	}
 	return left;
 }
 
-double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& tok) {
-	double left = performArrayConcatenation(parser, v, tok);
+double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& tok, const NsContext& ctx) {
+	double left = performArrayConcatenation(parser, v, tok, ctx);
 	tok = parser.peek_token(true, true);
 	while (tok.text() == "*"sv || tok.text() == "/"sv) {
 		state_ = StateMultiplyAndDivide;
 		if (tok.text() == "*"sv) {
 			parser.next_token();
-			left *= performMultiplicationAndDivision(parser, v, tok);
+			left *= performMultiplicationAndDivision(parser, v, tok, ctx);
 		} else if (tok.text() == "/"sv) {
 			parser.next_token();
-			double val = performMultiplicationAndDivision(parser, v, tok);
+			double val = performMultiplicationAndDivision(parser, v, tok, ctx);
 			if (val == 0) throw Error(errLogic, "Division by zero!");
 			left /= val;
 		}
@@ -131,26 +131,26 @@ double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, 
 	return left;
 }
 
-double ExpressionEvaluator::performSumAndSubtracting(tokenizer& parser, const PayloadValue& v) {
+double ExpressionEvaluator::performSumAndSubtracting(tokenizer& parser, const PayloadValue& v, const NsContext& ctx) {
 	token tok;
-	double left = performMultiplicationAndDivision(parser, v, tok);
+	double left = performMultiplicationAndDivision(parser, v, tok, ctx);
 	tok = parser.peek_token(true, true);
 	while (tok.text() == "+"sv || tok.text() == "-"sv) {
 		state_ = StateSumAndSubtract;
 		if (tok.text() == "+"sv) {
 			parser.next_token(true, true);
-			left += performMultiplicationAndDivision(parser, v, tok);
+			left += performMultiplicationAndDivision(parser, v, tok, ctx);
 		} else if (tok.text() == "-"sv) {
 			parser.next_token(true, true);
-			left -= performMultiplicationAndDivision(parser, v, tok);
+			left -= performMultiplicationAndDivision(parser, v, tok, ctx);
 		}
 	}
 	return left;
 }
 
-VariantArray ExpressionEvaluator::Evaluate(tokenizer& parser, const PayloadValue& v, std::string_view forField) {
+VariantArray ExpressionEvaluator::Evaluate(tokenizer& parser, const PayloadValue& v, std::string_view forField, const NsContext& ctx) {
 	forField_ = string(forField);
-	double expressionValue = performSumAndSubtracting(parser, v);
+	double expressionValue = performSumAndSubtracting(parser, v, ctx);
 	if (arrayValues_.empty()) {
 		return {Variant(expressionValue)};
 	} else {
@@ -159,10 +159,10 @@ VariantArray ExpressionEvaluator::Evaluate(tokenizer& parser, const PayloadValue
 	}
 }
 
-VariantArray ExpressionEvaluator::Evaluate(std::string_view expr, const PayloadValue& v, std::string_view forField) {
+VariantArray ExpressionEvaluator::Evaluate(std::string_view expr, const PayloadValue& v, std::string_view forField, const NsContext& ctx) {
 	arrayValues_.clear();
 	tokenizer parser(expr);
-	return Evaluate(parser, v, forField);
+	return Evaluate(parser, v, forField, ctx);
 }
 
 }  // namespace reindexer

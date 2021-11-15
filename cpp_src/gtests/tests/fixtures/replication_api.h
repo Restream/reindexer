@@ -25,7 +25,6 @@ const auto kMaxForceSyncCmdTime = std::chrono::seconds(10);
 class ReplicationApi : public ::testing::Test {
 public:
 	static const std::string kStoragePath;
-	static const std::string kReplicationConfigFilename;
 	static const std::string kConfigNs;
 
 	void SetUp();
@@ -40,11 +39,11 @@ public:
 	// get server
 	ServerControl::Interface::Ptr GetSrv(size_t id);
 	// wait sync for ns
-	void WaitSync(const std::string &ns);
+	void WaitSync(const std::string &ns, lsn_t expectedLsn = lsn_t());
 	// force resync
 	void ForceSync();
 	// Switch master
-	void SwitchMaster(size_t id, ReplicationConfigTest::NsSet namespaces);
+	void SwitchMaster(size_t id, AsyncReplicationConfigTest::NsSet namespaces);
 	// Set WAL size
 	void SetWALSize(size_t id, int64_t size, std::string_view nsName);
 	// Get servers count

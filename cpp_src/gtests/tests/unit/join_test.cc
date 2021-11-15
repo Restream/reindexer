@@ -71,7 +71,7 @@ TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest2) {
 	CheckJoinsInComplexWhereCondition(qr);
 }
 
-TEST_F(JoinSelectsApi, SqlPasringTest) {
+TEST_F(JoinSelectsApi, SqlParsingTest) {
 	string sql =
 		"select * from books_namespace where (pages > 0 and inner join (select * from authors_namespace limit 10) on "
 		"authors_namespace.authorid = "

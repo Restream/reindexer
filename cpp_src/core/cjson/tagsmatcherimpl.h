@@ -17,7 +17,8 @@ namespace reindexer {
 class TagsMatcherImpl {
 public:
 	TagsMatcherImpl() : version_(0), stateToken_(rand()) {}
-	TagsMatcherImpl(PayloadType payloadType) : payloadType_(payloadType), version_(0), stateToken_(rand()) {}
+	TagsMatcherImpl(PayloadType payloadType, int32_t stateToken = rand())
+		: payloadType_(payloadType), version_(0), stateToken_(stateToken) {}
 	~TagsMatcherImpl() {}
 
 	TagsPath path2tag(std::string_view jsonPath) const {
@@ -78,7 +79,7 @@ public:
 						if (index == 0 && content != "0" && ev) {
 							VariantArray values = ev(content);
 							if (values.size() != 1) {
-								throw Error(errParams, "Index expression_ has wrong syntax: '%s'", content);
+								throw Error(errParams, "Index expression has wrong syntax: '%s'", content);
 							}
 							if (values.front().Type() != KeyValueDouble && values.front().Type() != KeyValueInt &&
 								values.front().Type() != KeyValueInt64) {
@@ -150,7 +151,7 @@ public:
 				if (!jsonPath.length()) continue;
 				pathIdx.clear();
 				for (auto &name : split(jsonPath, ".", true, pathParts)) {
-					pathIdx.push_back(name2tag(name, true, updated));
+					pathIdx.emplace_back(name2tag(name, true, updated));
 				}
 				pathCache_.set(pathIdx.data(), pathIdx.size(), i);
 			}
@@ -212,6 +213,7 @@ public:
 
 		return true;
 	}
+	bool is_same(const TagsMatcherImpl &tm) const { return tm.names2tags_ == names2tags_ && tm.tags2names_ == tags2names_; }
 
 	size_t size() const { return tags2names_.size(); }
 	int version() const { return version_; }

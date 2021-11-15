@@ -4,7 +4,7 @@
 namespace reindexer_server {
 
 Server::Server() : impl_(new ServerImpl) {}
-Server::~Server() {}
+Server::~Server() = default;
 Error Server::InitFromCLI(int argc, char *argv[]) { return impl_->InitFromCLI(argc, argv); }
 Error Server::InitFromFile(const char *filePath) { return impl_->InitFromFile(filePath); }
 Error Server::InitFromYAML(const string &yaml) { return impl_->InitFromYAML(yaml); }

@@ -10,6 +10,7 @@
 #include "core/type_consts.h"
 #include "tools/customhash.h"
 #include "tools/errors.h"
+#include "core/keyvalue/variant.h"
 
 using std::string;
 using std::vector;
@@ -20,6 +21,8 @@ namespace reindexer {
 
 string escapeString(std::string_view str);
 string unescapeString(std::string_view str);
+KeyValueType detectValueType(std::string_view value);
+Variant stringToVariant(std::string_view value);
 
 static inline bool isalpha(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
 static inline bool isdigit(char c) { return (c >= '0' && c <= '9'); }
@@ -84,7 +87,7 @@ string urldecode2(std::string_view str);
 int stoi(std::string_view sl);
 int64_t stoll(std::string_view sl);
 
-bool validateObjectName(std::string_view name);
+bool validateObjectName(std::string_view name, bool allowSpecialChars);
 LogLevel logLevelFromString(const string& strLogLevel);
 StrictMode strictModeFromString(const std::string& strStrictMode);
 std::string_view strictModeToString(StrictMode mode);
@@ -101,6 +104,7 @@ string randStringAlph(size_t len);
 struct nocase_equal_str {
 	using is_transparent = void;
 
+	bool operator()(std::string_view lhs, std::string_view rhs) const { return iequals(lhs, rhs); }
 	bool operator()(std::string_view lhs, const string& rhs) const { return iequals(lhs, rhs); }
 	bool operator()(const string& lhs, std::string_view rhs) const { return iequals(lhs, rhs); }
 	bool operator()(const string& lhs, const string& rhs) const { return iequals(lhs, rhs); }

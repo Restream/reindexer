@@ -19,6 +19,8 @@ std::string_view CmdName(uint16_t cmd) {
 			return "CloseDatabase"sv;
 		case kCmdDropDatabase:
 			return "DropDatabase"sv;
+		case kCmdEnumDatabases:
+			return "EnumDatabases"sv;
 		case kCmdOpenNamespace:
 			return "OpenNamespace"sv;
 		case kCmdCloseNamespace:
@@ -33,12 +35,11 @@ std::string_view CmdName(uint16_t cmd) {
 			return "AddIndex"sv;
 		case kCmdEnumNamespaces:
 			return "EnumNamespaces"sv;
-		case kCmdEnumDatabases:
-			return "EnumDatabases"sv;
 		case kCmdDropIndex:
 			return "DropIndex"sv;
 		case kCmdUpdateIndex:
 			return "UpdateIndex"sv;
+
 		case kCmdAddTxItem:
 			return "AddTxItem"sv;
 		case kCmdCommitTx:
@@ -51,6 +52,7 @@ std::string_view CmdName(uint16_t cmd) {
 			return "DeleteQueryTx"sv;
 		case kCmdUpdateQueryTx:
 			return "UpdateQueryTx"sv;
+
 		case kCmdCommit:
 			return "Commit"sv;
 		case kCmdModifyItem:
@@ -59,6 +61,7 @@ std::string_view CmdName(uint16_t cmd) {
 			return "DeleteQuery"sv;
 		case kCmdUpdateQuery:
 			return "UpdateQuery"sv;
+
 		case kCmdSelect:
 			return "Select"sv;
 		case kCmdSelectSQL:
@@ -73,12 +76,36 @@ std::string_view CmdName(uint16_t cmd) {
 			return "PutMeta"sv;
 		case kCmdEnumMeta:
 			return "EnumMeta"sv;
+		case kCmdSetSchema:
+			return "SetSchema"sv;
+		case kCmdGetReplState:
+			return "GetReplState"sv;
+		case kCmdCreateTmpNamespace:
+			return "CreateTmpNamespace"sv;
 		case kCmdSubscribeUpdates:
 			return "SubscribeUpdates"sv;
 		case kCmdUpdates:
 			return "Updates"sv;
 		case kCmdGetSQLSuggestions:
 			return "GetSQLSuggestions"sv;
+		case kCmdGetSnapshot:
+			return "GetSnapshot"sv;
+		case kCmdFetchSnapshot:
+			return "FetchSnapshot"sv;
+		case kCmdApplySnapshotCh:
+			return "ApplySnapshotChunk"sv;
+		case kCmdSetClusterizationStatus:
+			return "SetClusterizationStatus"sv;
+		case kCmdSuggestLeader:
+			return "SuggestLeader"sv;
+		case kCmdLeadersPing:
+			return "LeadersPing"sv;
+		case kCmdGetRaftInfo:
+			return "GetRaftInfo"sv;
+		case kCmdGetSchema:
+			return "GetSchema"sv;
+		case kCmdClusterControlRequest:
+			return "ClusterControlRequest"sv;
 		default:
 			return "Unknown"sv;
 	}

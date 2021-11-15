@@ -7,10 +7,10 @@
 #include "net/http/serverconnection.h"
 #include "server/pprof/gperf_profiler.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
+#include "tools/flagguard.h"
 #include "tools/logger.h"
 
 namespace reindexer {
-
 namespace net {
 
 static std::atomic_uint_fast64_t counter_;
@@ -31,7 +31,7 @@ Listener::Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared) : loo
 }
 
 Listener::Listener(ev::dynamic_loop &loop, ConnectionFactory connFactory, int maxListeners)
-	: Listener(loop, std::make_shared<Shared>(connFactory, maxListeners ? maxListeners : std::thread::hardware_concurrency())) {}
+	: Listener(loop, std::make_shared<Shared>(connFactory, (maxListeners ? maxListeners : std::thread::hardware_concurrency()) + 1)) {}
 
 Listener::~Listener() { io_.stop(); }
 
@@ -51,8 +51,12 @@ bool Listener::Bind(string addr) {
 		return false;
 	}
 
-	io_.start(shared_->sock_.fd(), ev::READ);
-	reserveStack();
+	if (shared_->count_ == 1) {
+		++shared_->count_;
+		std::thread th(&Listener::clone, shared_);
+		th.detach();
+		reserveStack();
+	}
 	return true;
 }
 
@@ -106,14 +110,14 @@ void Listener::io_accept(ev::io & /*watcher*/, int revents) {
 }
 
 void Listener::timeout_cb(ev::periodic &, int) {
-	std::unique_lock<std::mutex> lck(shared_->lck_);
-	bool enableReuseIdle = !std::getenv("REINDEXER_NOREUSEIDLE");
+	const bool enableReuseIdle = !std::getenv("REINDEXER_NOREUSEIDLE");
 
+	std::unique_lock<std::mutex> lck(shared_->lck_);
 	// Move finished connections to idle connections pool
 	for (unsigned i = 0; i < connections_.size();) {
 		if (connections_[i]->IsFinished()) {
 			connections_[i]->Detach();
-			if (enableReuseIdle) {
+			if (enableReuseIdle) {	// -V547
 				shared_->idle_.push_back(std::move(connections_[i]));
 			} else {
 				connections_[i].reset();
@@ -134,29 +138,30 @@ void Listener::timeout_cb(ev::periodic &, int) {
 	}
 
 	rebalance();
-	int curConnCount = connections_.size();
+	const size_t curConnCount = connections_.size();
 	if (curConnCount != 0) {
 		logPrintf(LogTrace, "Listener(%s) %d stats: %d connections", shared_->addr_, id_, curConnCount);
 	}
 }
 
 void Listener::rebalance() {
-	if (!std::getenv("REINDEXER_NOREBALANCE")) {
+	const bool enableRebalance = !std::getenv("REINDEXER_NOREBALANCE");
+	if (enableRebalance && this != shared_->listeners_.front()) {
 		// Try to rebalance
 		for (;;) {
-			int curConnCount = connections_.size();
-			int minConnCount = INT_MAX;
-			auto minIt = shared_->listeners_.begin();
+			const size_t curConnCount = connections_.size();
+			size_t minConnCount = std::numeric_limits<size_t>::max();
+			auto minIt = shared_->listeners_.begin() + 1;  // Rebalancing to the first listener is not allowed
 
-			for (auto it = minIt; it != shared_->listeners_.end(); it++) {
-				int connCount = (*it)->connections_.size();
+			for (auto it = minIt; it != shared_->listeners_.end(); ++it) {
+				const size_t connCount = (*it)->connections_.size();
 				if (connCount < minConnCount) {
 					minIt = it;
 					minConnCount = connCount;
 				}
 			}
 
-			if (minConnCount + 1 < curConnCount) {
+			if (minIt != shared_->listeners_.end() && minConnCount + 1 < curConnCount) {
 				logPrintf(LogInfo, "Rebalance connection from listener %d to %d", id_, (*minIt)->id_);
 				auto conn = std::move(connections_.back());
 				conn->Detach();
@@ -233,7 +238,13 @@ ForkedListener::ForkedListener(ev::dynamic_loop &loop, ConnectionFactory connFac
 	async_.start();
 }
 
-ForkedListener::~ForkedListener() { io_.stop(); }
+ForkedListener::~ForkedListener() {
+	io_.stop();
+	if (!terminating_ || runningThreadsCount_) {
+		Stop();
+	}
+	sock_.close();
+}
 
 bool ForkedListener::Bind(string addr) {
 	if (sock_.valid()) {
@@ -260,6 +271,9 @@ void ForkedListener::io_accept(ev::io & /*watcher*/, int revents) {
 		perror("got invalid event");
 		return;
 	}
+	if (terminating_) {
+		return;
+	}
 
 	auto client = sock_.accept();
 
@@ -267,47 +281,58 @@ void ForkedListener::io_accept(ev::io & /*watcher*/, int revents) {
 		return;
 	}
 
+	++runningThreadsCount_;
 	if (terminating_) {
+		--runningThreadsCount_;
 		client.close();
 		logPrintf(LogWarning, "Can't accept connection. Listener is terminating!");
 		return;
 	}
 
 	std::thread th([this, client] {
-
+		try {
 #if REINDEX_WITH_GPERFTOOLS
-		if (alloc_ext::TCMallocIsAvailable()) {
-			reindexer_server::pprof::ProfilerRegisterThread();
-		}
-#endif
-		ev::dynamic_loop loop;
-		ev::async async;
-		async.set([](ev::async &a) { a.loop.break_loop(); });
-		async.set(loop);
-		async.start();
-
-		Worker w(std::unique_ptr<IServerConnection>(connFactory_(loop, client.fd())), async);
-		auto pc = w.conn.get();
-		if (pc->IsFinished()) {	 // Connection may be closed inside Worker construction
-			pc->Detach();
-		} else {
-			std::unique_lock<std::mutex> lck(lck_);
-			logPrintf(LogTrace, "Listener (%s) dedicated thread started. %d total", addr_, workers_.size());
-			workers_.push_back(std::move(w));
-			lck.unlock();
-			while (!terminating_) {
-				loop.run();
-				if (pc->IsFinished()) {
-					pc->Detach();
-					break;
-				}
+			if (alloc_ext::TCMallocIsAvailable()) {
+				reindexer_server::pprof::ProfilerRegisterThread();
 			}
-			lck.lock();
-			auto it = std::find_if(workers_.begin(), workers_.end(), [&pc](const Worker &cw) { return cw.conn.get() == pc; });
-			assert(it != workers_.end());
-			workers_.erase(it);
-			logPrintf(LogTrace, "Listener (%s) dedicated thread finished. %d left", addr_, workers_.size());
+#endif
+			ev::dynamic_loop loop;
+			ev::async async;
+			async.set([](ev::async &a) { a.loop.break_loop(); });
+			async.set(loop);
+			async.start();
+
+			Worker w(std::unique_ptr<IServerConnection>(connFactory_(loop, client.fd())), async);
+			auto pc = w.conn.get();
+			if (pc->IsFinished()) {	 // Connection may be closed inside Worker construction
+				pc->Detach();
+			} else {
+				std::unique_lock<std::mutex> lck(lck_);
+				logPrintf(LogTrace, "Listener (%s) dedicated thread started. %d total", addr_, workers_.size());
+				workers_.push_back(std::move(w));
+				lck.unlock();
+				while (!terminating_) {
+					loop.run();
+					if (pc->IsFinished()) {
+						pc->Detach();
+						break;
+					}
+				}
+				lck.lock();
+				auto it = std::find_if(workers_.begin(), workers_.end(), [&pc](const Worker &cw) { return cw.conn.get() == pc; });
+				assert(it != workers_.end());
+				workers_.erase(it);
+				logPrintf(LogTrace, "Listener (%s) dedicated thread finished. %d left", addr_, workers_.size());
+			}
+		} catch (Error &e) {
+			logPrintf(LogError, "Unhandled excpetion in listener thread: %s", e.what());
+		} catch (std::exception &e) {
+			logPrintf(LogError, "Unhandled excpetion in listener thread: %s", e.what());
+		} catch (...) {
+			logPrintf(LogError, "Unhandled excpetion in listener thread");
 		}
+		std::unique_lock<std::mutex> lck(lck_);
+		--runningThreadsCount_;
 	});
 	th.detach();
 }
@@ -318,16 +343,16 @@ void ForkedListener::async_cb(ev::async &watcher) {
 }
 
 void ForkedListener::Stop() {
-	std::lock_guard<std::mutex> lck(lck_);
 	terminating_ = true;
 	async_.send();
+	std::unique_lock lck(lck_);
 	for (auto &worker : workers_) {
 		worker.async->send();
 	}
-	while (!workers_.empty()) {
-		lck_.unlock();
+	while (runningThreadsCount_ || !workers_.empty()) {
+		lck.unlock();
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		lck_.lock();
+		lck.lock();
 	}
 }
 

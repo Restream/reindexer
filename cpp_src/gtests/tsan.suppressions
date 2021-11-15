@@ -1,0 +1,3 @@
+# False-positive race between leveldb::MemTable::Add and leveldb::Slice::compare
+race:leveldb::MemTable::Add
+race:leveldb::Arena::AllocateNewBlock

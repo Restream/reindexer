@@ -6,7 +6,6 @@
 #include "coroutine/channel.h"
 #include "iotools.h"
 #include "net/ev/ev.h"
-#include "replicator/updatesobserver.h"
 #include "vendor/urlparser/urlparser.h"
 
 namespace reindexer_tool {
@@ -31,7 +30,7 @@ private:
 };
 
 template <typename DBInterface>
-class CommandsExecutor : public reindexer::IUpdatesObserver {
+class CommandsExecutor {
 public:
 	struct Status {
 		bool running = false;
@@ -56,6 +55,8 @@ public:
 
 protected:
 	void setStatus(Status&& status);
+	bool isHavingReplicationConfig();
+	bool isHavingReplicationConfig(WrSerializer& wser, std::string_view type);
 	Error fromFileImpl(std::istream& in);
 	Error execCommand(IExecutorsCommand& cmd);
 	template <typename... Args>
@@ -70,7 +71,7 @@ protected:
 	}
 	string getCurrentDsn(bool withPath = false) const;
 	Error queryResultsToJson(ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery, bool fstream);
-	Error getAvailableDatabases(vector<string>&);
+	Error getAvailableDatabases(std::vector<string>&);
 
 	void addCommandsSuggestions(std::string const& input, std::vector<string>& suggestions);
 	void checkForNsNameMatch(std::string_view str, std::vector<string>& suggestions);
@@ -91,15 +92,10 @@ protected:
 	Error commandQuit(const string& command);
 	Error commandSet(const string& command);
 	Error commandBench(const string& command);
-	Error commandSubscribe(const string& command);
 	Error commandProcessDatabases(const string& command);
 
 	Error seedBenchItems();
 	std::function<void(std::chrono::system_clock::time_point)> getBenchWorkerFn(std::atomic<int>& count, std::atomic<int>& errCount);
-
-	void OnWALUpdate(reindexer::LSNPair LSNs, std::string_view nsName, const reindexer::WALRecord& wrec) override final;
-	void OnConnectionState(const Error& err) override;
-	void OnUpdatesLost(std::string_view nsName) override final;
 
 	DBInterface db() { return db_.WithContext(&cancelCtx_); }
 
@@ -188,13 +184,6 @@ protected:
 	Syntax:
 		\bench <time>
 		)help"},
-		{"\\subscribe",	"Subscribe to upstream updates",&CommandsExecutor::commandSubscribe,R"help(
-	Syntax:
-		\subscribe <on|off>
-		Subscribe/unsubscribe to any updates
-		\subscribe <namespace>[ <namespace>[ ...]]
-		Subscribe to specific namespaces updates
-		)help"},
 		{"\\quit",		"Exit from tool",&CommandsExecutor::commandQuit,""},
 		{"\\help",		"Show help",&CommandsExecutor::commandHelp,""},
 		{"\\databases", "Works with available databases",&CommandsExecutor::commandProcessDatabases, R"help(
@@ -226,6 +215,7 @@ protected:
 	reindexer::coroutine::channel<bool> stopCh_;
 	std::thread executorThr_;
 	bool fromFile_ = {false};
+	bool targetHasReplicationConfig_ = {false};
 };
 
 }  // namespace reindexer_tool

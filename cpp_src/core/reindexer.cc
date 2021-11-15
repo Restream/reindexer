@@ -1,9 +1,11 @@
 #include "core/reindexer.h"
+#include "core/clusterproxy.h"
 #include "core/reindexerimpl.h"
 
 namespace reindexer {
 
-Reindexer::Reindexer(IClientsStats* clientsStats) : impl_(new ReindexerImpl(clientsStats)), owner_(true) {}
+Reindexer::Reindexer(ReindexerConfig cfg) : impl_(new ClusterProxy(std::move(cfg))), owner_(true) {}
+
 Reindexer::~Reindexer() {
 	if (owner_) {
 		delete impl_;
@@ -20,9 +22,16 @@ Error Reindexer::Connect(const string& dsn, ConnectOpts opts) { return impl_->Co
 Error Reindexer::EnableStorage(const string& storagePath, bool skipPlaceholderCheck) {
 	return impl_->EnableStorage(storagePath, skipPlaceholderCheck, ctx_);
 }
-Error Reindexer::AddNamespace(const NamespaceDef& nsDef) { return impl_->AddNamespace(nsDef, ctx_); }
-Error Reindexer::OpenNamespace(std::string_view nsName, const StorageOpts& storage) { return impl_->OpenNamespace(nsName, storage, ctx_); }
+Error Reindexer::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts) {
+	return impl_->AddNamespace(nsDef, replOpts, ctx_);
+}
+Error Reindexer::OpenNamespace(std::string_view nsName, const StorageOpts& storage, const NsReplicationOpts& replOpts) {
+	return impl_->OpenNamespace(nsName, storage, replOpts, ctx_);
+}
 Error Reindexer::DropNamespace(std::string_view nsName) { return impl_->DropNamespace(nsName, ctx_); }
+Error Reindexer::CreateTemporaryNamespace(std::string_view baseName, std::string& resultName, const StorageOpts& opts, lsn_t version) {
+	return impl_->CreateTemporaryNamespace(baseName, resultName, opts, version, ctx_);
+}
 Error Reindexer::CloseNamespace(std::string_view nsName) { return impl_->CloseNamespace(nsName, ctx_); }
 Error Reindexer::TruncateNamespace(std::string_view nsName) { return impl_->TruncateNamespace(nsName, ctx_); }
 Error Reindexer::RenameNamespace(std::string_view srcNsName, const std::string& dstNsName) {
@@ -39,7 +48,7 @@ Error Reindexer::Delete(std::string_view nsName, Item& item, QueryResults& qr) {
 Item Reindexer::NewItem(std::string_view nsName) { return impl_->NewItem(nsName, ctx_); }
 Transaction Reindexer::NewTransaction(std::string_view nsName) { return impl_->NewTransaction(nsName, ctx_); }
 Error Reindexer::CommitTransaction(Transaction& tr, QueryResults& result) { return impl_->CommitTransaction(tr, result, ctx_); }
-Error Reindexer::RollBackTransaction(Transaction& tr) { return impl_->RollBackTransaction(tr); }
+Error Reindexer::RollBackTransaction(Transaction& tr) { return impl_->RollBackTransaction(tr, ctx_); }
 Error Reindexer::GetMeta(std::string_view nsName, const string& key, string& data) { return impl_->GetMeta(nsName, key, data, ctx_); }
 Error Reindexer::PutMeta(std::string_view nsName, const string& key, std::string_view data) {
 	return impl_->PutMeta(nsName, key, data, ctx_);
@@ -49,7 +58,7 @@ Error Reindexer::Delete(const Query& q, QueryResults& result) { return impl_->De
 Error Reindexer::Select(std::string_view query, QueryResults& result) { return impl_->Select(query, result, ctx_); }
 Error Reindexer::Select(const Query& q, QueryResults& result) { return impl_->Select(q, result, ctx_); }
 Error Reindexer::Update(const Query& query, QueryResults& result) { return impl_->Update(query, result, ctx_); }
-Error Reindexer::Commit(std::string_view nsName) { return impl_->Commit(nsName); }
+Error Reindexer::Commit(std::string_view nsName) { return impl_->Commit(nsName, ctx_); }
 Error Reindexer::AddIndex(std::string_view nsName, const IndexDef& idx) { return impl_->AddIndex(nsName, idx, ctx_); }
 Error Reindexer::SetSchema(std::string_view nsName, std::string_view schema) { return impl_->SetSchema(nsName, schema, ctx_); }
 Error Reindexer::GetSchema(std::string_view nsName, int format, std::string& schema) {
@@ -59,14 +68,30 @@ Error Reindexer::UpdateIndex(std::string_view nsName, const IndexDef& idx) { ret
 Error Reindexer::DropIndex(std::string_view nsName, const IndexDef& index) { return impl_->DropIndex(nsName, index, ctx_); }
 Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts) { return impl_->EnumNamespaces(defs, opts, ctx_); }
 Error Reindexer::InitSystemNamespaces() { return impl_->InitSystemNamespaces(); }
-Error Reindexer::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
-	return impl_->SubscribeUpdates(observer, filters, opts);
-}
 Error Reindexer::GetProtobufSchema(WrSerializer& ser, vector<string>& namespaces) { return impl_->GetProtobufSchema(ser, namespaces); }
-Error Reindexer::UnsubscribeUpdates(IUpdatesObserver* observer) { return impl_->UnsubscribeUpdates(observer); }
+Error Reindexer::GetReplState(std::string_view nsName, ReplicationStateV2& state) { return impl_->GetReplState(nsName, state, ctx_); }
+Error Reindexer::SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status) {
+	return impl_->SetClusterizationStatus(nsName, status, ctx_);
+}
+Error Reindexer::GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, Snapshot& snapshot) {
+	return impl_->GetSnapshot(nsName, opts, snapshot, ctx_);
+}
+Error Reindexer::ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch) {
+	return impl_->ApplySnapshotChunk(nsName, ch, ctx_);
+}
+Error Reindexer::SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response) {
+	return impl_->SuggestLeader(suggestion, response);
+}
+Error Reindexer::LeadersPing(const cluster::NodeData& leader) { return impl_->LeadersPing(leader); }
+Error Reindexer::GetRaftInfo(cluster::RaftInfo& info) { return impl_->GetRaftInfo(info, ctx_); }
 Error Reindexer::GetSqlSuggestions(const std::string_view sqlQuery, int pos, vector<string>& suggestions) {
 	return impl_->GetSqlSuggestions(sqlQuery, pos, suggestions, ctx_);
 }
+
+Error Reindexer::ClusterControlRequest(const ClusterControlRequestData& request) { return impl_->ClusterControlRequest(request); }
+
+void Reindexer::ShutdownCluster() { impl_->ShutdownCluster(); }
+
 Error Reindexer::Status() { return impl_->Status(); }
 
 }  // namespace reindexer

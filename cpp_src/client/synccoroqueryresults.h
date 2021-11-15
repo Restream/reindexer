@@ -20,11 +20,12 @@ using std::chrono::milliseconds;
 
 class Namespace;
 using NsArray = h_vector<Namespace*, 1>;
+class SyncCoroReindexerImpl;
 class SyncCoroReindexer;
 
 class SyncCoroQueryResults {
 public:
-	SyncCoroQueryResults(SyncCoroReindexer* rx, int fetchFlags = 0);
+	SyncCoroQueryResults(int fetchFlags = 0);
 	SyncCoroQueryResults(const SyncCoroQueryResults&) = delete;
 	SyncCoroQueryResults(SyncCoroQueryResults&&) = default;
 	SyncCoroQueryResults& operator=(const SyncCoroQueryResults&) = delete;
@@ -34,7 +35,7 @@ public:
 	public:
 		Iterator(const SyncCoroQueryResults* r, const CoroQueryResults* qr, int idx, int pos, int nextPos,
 				 ResultSerializer::ItemParams itemParams)
-			: CoroQueryResults::Iterator{qr, idx, pos, nextPos, itemParams}, r_(r) {}
+			: CoroQueryResults::Iterator{qr, idx, pos, nextPos, itemParams, {}}, r_(r) {}
 		Iterator& operator++() {
 			try {
 				readNext();
@@ -65,18 +66,23 @@ public:
 	const vector<AggregationResult>& GetAggregationResults() const { return results_.queryParams_.aggResults; }
 	Error Status() { return results_.status_; }
 	h_vector<std::string_view, 1> GetNamespaces() const;
+	size_t GetNamespacesCount() const { return results_.GetNamespacesCount(); }
 	bool IsCacheEnabled() const { return results_.queryParams_.flags & kResultsWithItemID; }
 
-	TagsMatcher getTagsMatcher(int nsid) const;
+	int GetMergedNSCount() const;
+	TagsMatcher GetTagsMatcher(int nsid) const;
+	TagsMatcher GetTagsMatcher(std::string_view ns) const;
+	PayloadType GetPayloadType(int nsid) const;
+	PayloadType GetPayloadType(std::string_view ns) const;
 
 private:
 	friend class SyncCoroReindexer;
 	friend class SyncCoroReindexerImpl;
-	void Bind(std::string_view rawResult, int queryID);
 	void fetchNextResults();
+	Error setClient(SyncCoroReindexerImpl*);
 
 	CoroQueryResults results_;
-	SyncCoroReindexer* rx_;
+	SyncCoroReindexerImpl* rx_ = nullptr;
 };
 }  // namespace client
 }  // namespace reindexer

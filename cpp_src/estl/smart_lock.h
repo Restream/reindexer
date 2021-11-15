@@ -24,7 +24,7 @@ public:
 		const auto lockWard = context.BeforeLock(Mutex::mark);
 		if (chkTimeout.count() > 0 && context.isCancelable()) {
 			do {
-				ThrowOnCancel(context, "Lock was canceled on condition"sv);
+				ThrowOnCancel(context, "Context was canceled or timed out (mutex)"sv);
 			} while (unique_ ? (!mtx_->try_lock_for(chkTimeout)) : (!mtx_->try_lock_shared_for(chkTimeout)));
 		} else {
 			if (unique_) {

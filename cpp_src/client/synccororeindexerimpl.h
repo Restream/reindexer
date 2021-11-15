@@ -1,8 +1,9 @@
-#pragma once
+﻿#pragma once
 
 #include <future>
 #include <thread>
 #include "client/cororeindexer.h"
+#include "client/reindexerconfig.h"
 #include "client/synccoroqueryresults.h"
 #include "client/synccorotransaction.h"
 #include "coroutine/channel.h"
@@ -11,11 +12,13 @@
 
 namespace reindexer {
 namespace client {
-class SyncCoroTransaction;
+
 class SyncCoroReindexerImpl {
 public:
+	typedef SyncCoroQueryResults QueryResultsT;
+
 	/// Create Reindexer database object
-	SyncCoroReindexerImpl(const ReindexerConfig & = ReindexerConfig());
+	SyncCoroReindexerImpl(const CoroReindexerConfig & = CoroReindexerConfig());
 	/// Destrory Reindexer database object
 	~SyncCoroReindexerImpl();
 	SyncCoroReindexerImpl(const SyncCoroReindexerImpl &) = delete;
@@ -23,9 +26,8 @@ public:
 
 	Error Connect(const std::string &dsn, const client::ConnectOpts &opts = client::ConnectOpts());
 	Error Stop();
-	Error OpenNamespace(std::string_view nsName, const InternalRdxContext &ctx,
-						const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing());
-	Error AddNamespace(const NamespaceDef &nsDef, const InternalRdxContext &ctx);
+	Error OpenNamespace(std::string_view nsName, const InternalRdxContext &ctx, const StorageOpts &opts, const NsReplicationOpts &replOpts);
+	Error AddNamespace(const NamespaceDef &nsDef, const InternalRdxContext &ctx, const NsReplicationOpts &replOpts);
 	Error CloseNamespace(std::string_view nsName, const InternalRdxContext &ctx);
 	Error DropNamespace(std::string_view nsName, const InternalRdxContext &ctx);
 	Error TruncateNamespace(std::string_view nsName, const InternalRdxContext &ctx);
@@ -34,39 +36,44 @@ public:
 	Error UpdateIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext &ctx);
+	Error GetSchema(std::string_view nsName, int format, std::string &schema, const InternalRdxContext &ctx);
 	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
 	Error EnumDatabases(std::vector<std::string> &dbList, const InternalRdxContext &ctx);
 	Error Insert(std::string_view nsName, Item &item, const InternalRdxContext &ctx);
+	Error Insert(std::string_view nsName, Item &item, SyncCoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Update(std::string_view nsName, Item &item, const InternalRdxContext &ctx);
+	Error Update(std::string_view nsName, Item &item, SyncCoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Upsert(std::string_view nsName, Item &item, const InternalRdxContext &ctx);
+	Error Upsert(std::string_view nsName, Item &item, SyncCoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Update(const Query &query, SyncCoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Delete(std::string_view nsName, Item &item, const InternalRdxContext &ctx);
+	Error Delete(std::string_view nsName, Item &item, SyncCoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Delete(const Query &query, SyncCoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Select(std::string_view query, SyncCoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Select(const Query &query, SyncCoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Commit(std::string_view nsName);
-	Item NewItem(std::string_view nsName);
+	Item NewItem(std::string_view nsName, const InternalRdxContext &ctx);
 	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx);
 	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const InternalRdxContext &ctx);
 	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx);
 	Error GetSqlSuggestions(const std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions);
 	Error Status(const InternalRdxContext &ctx);
-	SyncCoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext &ctx);
-	Error CommitTransaction(SyncCoroTransaction &tr, const InternalRdxContext &ctx);
+	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext &ctx);
+	Error CommitTransaction(SyncCoroTransaction &tr, SyncCoroQueryResults &results, const InternalRdxContext &ctx);
 	Error RollBackTransaction(SyncCoroTransaction &tr, const InternalRdxContext &ctx);
+	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const InternalRdxContext &ctx);
 
 private:
 	friend class SyncCoroQueryResults;
 	friend class SyncCoroTransaction;
 	Error fetchResults(int flags, SyncCoroQueryResults &result);
-	Error addTxItem(SyncCoroTransaction &tr, Item &&item, ItemModifyMode mode);
-	Error modifyTx(SyncCoroTransaction &tr, Query &&q);
+	Error addTxItem(SyncCoroTransaction &tr, Item &&item, ItemModifyMode mode, lsn_t lsn);
+	Error putTxMeta(SyncCoroTransaction &tr, std::string_view key, std::string_view value, lsn_t lsn);
+	Error modifyTx(SyncCoroTransaction &tr, Query &&q, lsn_t lsn);
 	Item execNewItemTx(CoroTransaction &tr);
 	Item newItemTx(CoroTransaction &tr);
-	Error execAddTxItem(CoroTransaction &tr, Item &item, ItemModifyMode mode);
 	void threadLoopFun(std::promise<Error> &&isRunning, const string &dsn, const client::ConnectOpts &opts);
 
-	bool exit_ = false;
 	enum CmdName {
 		DbCmdNone = 0,
 		DbCmdOpenNamespace = 1,
@@ -79,13 +86,18 @@ private:
 		DbCmdUpdateIndex,
 		DbCmdDropIndex,
 		DbCmdSetSchema,
+		DbCmdGetSchema,
 		DbCmdEnumNamespaces,
 		DbCmdEnumDatabases,
 		DbCmdInsert,
+		DbCmdInsertQR,
 		DbCmdUpdate,
+		DbCmdUpdateQR,
 		DbCmdUpsert,
+		DbCmdUpsertQR,
 		DbCmdUpdateQ,
 		DbCmdDelete,
+		DbCmdDeleteQR,
 		DbCmdDeleteQ,
 		DbCmdNewItem,
 		DbCmdSelectS,
@@ -102,7 +114,9 @@ private:
 		DbCmdFetchResults,
 		DbCmdNewItemTx,
 		DbCmdAddTxItem,
+		DbCmdPutTxMeta,
 		DbCmdModifyTx,
+		DbCmdGetReplState,
 	};
 
 	struct DatabaseCommandBase {
@@ -124,8 +138,10 @@ private:
 		std::promise<R> promise;
 		std::future<R> future = promise.get_future();
 		DatabaseCommand<R, Args...> cmd(c, std::move(promise), std::forward<Args>(args)...);
-		commandsQueue_.Push(commandAsync_, &cmd);
-		future.wait();
+		auto err = commandsQueue_.Push(commandAsync_, &cmd);  // pointer on stack data. 'wait' in this function!
+		if (!err.ok()) {
+			return R(Error(errTerminated, "Client is not connected"));
+		}
 		return future.get();
 	}
 
@@ -142,25 +158,25 @@ private:
 
 	class CommandsQueue {
 	public:
-		CommandsQueue() {}
-		void Push(net::ev::async &ev, DatabaseCommandBase *cmd);
-		void Get(std::vector<DatabaseCommandBase *> &cmds);
+		Error Push(net::ev::async &ev, DatabaseCommandBase *cmd);
+		void Get(std::vector<DatabaseCommandBase *> &c);
+		void Invalidate(std::vector<DatabaseCommandBase *> &c);
+		void Init();
 
 	private:
+		bool isValid_ = false;
 		std::vector<DatabaseCommandBase *> queue_;
 		std::mutex mtx_;
 	};
-
 	CommandsQueue commandsQueue_;
 	net::ev::dynamic_loop loop_;
-	std::unique_ptr<std::thread> loopThread_;
+	std::thread loopThread_;
 	std::mutex loopThreadMtx_;
 	net::ev::async commandAsync_;
 	net::ev::async closeAsync_;
-	const ReindexerConfig conf_;
-	void coroInterpreter(reindexer::client::CoroRPCClient &rx, coroutine::channel<DatabaseCommandBase *> &chCommand,
-						 coroutine::wait_group &wg);
-};
+	const CoroReindexerConfig conf_;
 
+	void coroInterpreter(reindexer::client::CoroRPCClient &rx, coroutine::channel<DatabaseCommandBase *> &chCommand);
+};
 }  // namespace client
 }  // namespace reindexer

@@ -45,7 +45,7 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, std
 	}
 }
 
-ResultSerializer::ItemParams ResultSerializer::GetItemParams(int flags) {
+ResultSerializer::ItemParams ResultSerializer::GetItemData(int flags) {
 	ItemParams ret;
 
 	if (flags & kResultsWithItemID) {
@@ -69,6 +69,8 @@ ResultSerializer::ItemParams ResultSerializer::GetItemParams(int flags) {
 		case kResultsCJson:
 		case kResultsMsgPack:
 			ret.data = GetSlice();
+			break;
+		case kResultsPure:
 			break;
 		default:
 			throw Error(errParseBin, "Server returned data in unknown format %d", flags & kResultsFormatMask);

@@ -1,10 +1,9 @@
 package reindexer
 
 import (
-	"bytes"
 	"fmt"
-	"net/http"
-	"strings"
+	"net/url"
+	"strconv"
 	"testing"
 	"time"
 
@@ -21,31 +20,40 @@ type Data struct {
 }
 
 func TestMasterSlaveSlaveNoStorage(t *testing.T) {
+	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
+		return
+	}
+
 	adminNamespaces := []string{"admin_ns"}
 	recomNamespaces := []string{"recom_ns"}
-	rxCfg := []map[string]string{
+	rxCfg := []reindexer.DBAsyncReplicationNode{
 		{
-			"http": "127.0.0.1:10001",
-			"rpc":  "127.0.0.1:10011",
-			"db":   "adminapi",
+			DSN: "cproto://127.0.0.1:10011/adminapi",
 		}, {
-			"http": "127.0.0.1:10002",
-			"rpc":  "127.0.0.1:10012",
-			"db":   "recommendations",
+			DSN: "cproto://127.0.0.1:10012/recommendations",
 		}, {
-			"http": "127.0.0.1:10003",
-			"rpc":  "127.0.0.1:10013",
-			"db":   "frontapi",
+			DSN: "cproto://127.0.0.1:10013/frontapi",
 		},
 	}
-	rxSrv := make([]*reindexer.Reindexer, 3)
-	rxSrv[0] = serverUp(rxCfg[0], adminNamespaces)
-	rxSrv[1] = serverUp(rxCfg[1], append(adminNamespaces, recomNamespaces...))
-	rxSrv[2] = serverUp(rxCfg[2], append(adminNamespaces, recomNamespaces...))
+	var srvCfg []map[string]string
+	for i := 0; i < 3; i++ {
+		u, err := url.Parse(rxCfg[i].DSN)
+		require.NoError(t, err)
+		srvCfg = append(srvCfg, map[string]string{
+			"http": u.Hostname() + ":" + strconv.Itoa(10001+i),
+			"rpc":  u.Host,
+			"db":   u.Path[1:],
+		})
+	}
 
-	configureReplication(t, rxCfg[0]["http"], "", "master", rxCfg[0]["db"], adminNamespaces)
-	configureReplication(t, rxCfg[1]["http"], fmt.Sprintf("%s/%s", rxCfg[0]["rpc"], rxCfg[0]["db"]), "slave", rxCfg[1]["db"], adminNamespaces)
-	configureReplication(t, rxCfg[2]["http"], fmt.Sprintf("%s/%s", rxCfg[1]["rpc"], rxCfg[1]["db"]), "slave", rxCfg[2]["db"], append(adminNamespaces, recomNamespaces...))
+	rxSrv := make([]*reindexer.Reindexer, 3)
+	rxSrv[0] = serverUp(t, srvCfg[0], 0, adminNamespaces)
+	rxSrv[1] = serverUp(t, srvCfg[1], 1, append(adminNamespaces, recomNamespaces...))
+	rxSrv[2] = serverUp(t, srvCfg[2], 2, append(adminNamespaces, recomNamespaces...))
+
+	configureReplication(t, rxSrv[0], "leader", adminNamespaces, []reindexer.DBAsyncReplicationNode{rxCfg[1]})
+	configureReplication(t, rxSrv[1], "follower", append(adminNamespaces, recomNamespaces...), []reindexer.DBAsyncReplicationNode{rxCfg[2]})
+	configureReplication(t, rxSrv[2], "follower", nil, nil)
 
 	cnt, err := rxSrv[0].Insert(adminNamespaces[0], Data{A: "admin_item"})
 	require.NoError(t, err)
@@ -67,7 +75,7 @@ func TestMasterSlaveSlaveNoStorage(t *testing.T) {
 	assert.Equal(t, "admin_item", item.(*Data).A)
 }
 
-func serverUp(cfg map[string]string, ns []string) *reindexer.Reindexer {
+func serverUp(t *testing.T, cfg map[string]string, serverID int, ns []string) *reindexer.Reindexer {
 	opts := make([]interface{}, 0, 2)
 	opts = append(opts, reindexer.WithCreateDBIfMissing())
 	srvCfg := &rxConfig.ServerConfig{
@@ -82,27 +90,19 @@ func serverUp(cfg map[string]string, ns []string) *reindexer.Reindexer {
 		rx.OpenNamespace(ns[i], reindexer.DefaultNamespaceOptions(), Data{})
 	}
 
+	err := rx.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
+		Type:        "replication",
+		Replication: &reindexer.DBReplicationConfig{ServerID: serverID, ClusterID: 2},
+	})
+	require.NoError(t, err)
+
 	return rx
 }
 
-func configureReplication(t *testing.T, httpAddr, masterRPC, role, db string, ns []string) {
-	masterDSN := fmt.Sprintf("cproto://%s", masterRPC)
-
-	body := fmt.Sprintf(`{
-		"replication": {
-			"cluster_id": 2,
-				"force_sync_on_wrong_data_hash": true,
-				"role": "%s",
-				"master_dsn": "%s",
-				"namespaces": ["%s"]
-		},
-		"type": "replication"
-	}`, role, masterDSN, strings.Join(ns[:], `","`))
-
-	httpAddr = fmt.Sprintf("http://%s/api/v1/db/%s/namespaces/%%23config/items", httpAddr, db)
-	req, err := http.NewRequest(http.MethodPut, httpAddr, bytes.NewReader([]byte(body)))
-	require.NoError(t, err)
-
-	_, err = (&http.Client{}).Do(req)
+func configureReplication(t *testing.T, rx *reindexer.Reindexer, role string, ns []string, nodes []reindexer.DBAsyncReplicationNode) {
+	err := rx.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
+		Type:             "async_replication",
+		AsyncReplication: &reindexer.DBAsyncReplicationConfig{Role: role, Namespaces: ns, Nodes: nodes},
+	})
 	require.NoError(t, err)
 }

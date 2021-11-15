@@ -176,9 +176,9 @@ jobs:
         run: |
           cd build
           if [[ $OS == ubuntu* ]]; then
-            sudo dpkg -i reindexer-dev*.deb
+            sudo dpkg -i reindexer-4-dev*.deb
             sudo apt-get install -f
-            sudo dpkg -i reindexer-server*.deb
+            sudo dpkg -i reindexer-4-server*.deb
             sudo apt-get install -f
           else
             for f in reindexer-*.tar.gz; do tar -xvzf "$f"; done

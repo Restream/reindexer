@@ -11,9 +11,6 @@
 #include <chrono>
 
 namespace reindexer {
-class IUpdatesObserver;
-class UpdatesFilters;
-
 namespace client {
 using std::vector;
 using std::string;
@@ -90,6 +87,11 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param schema - JSON in JsonSchema format
 	Error SetSchema(std::string_view nsName, std::string_view schema);
+	/// Get fields schema for namespace
+	/// @param nsName - Name of namespace
+	/// @param format - type of Schema: JSON or Protobuf
+	/// @param schema - text representation of schema
+	Error GetSchema(std::string_view nsName, int format, std::string &schema);
 	/// Get list of all available namespaces
 	/// @param defs - std::vector of NamespaceDef of available namespaves
 	/// @param opts - Enumerartion options
@@ -158,15 +160,6 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys
 	Error EnumMeta(std::string_view nsName, vector<string> &keys);
-	/// Subscribe to updates of database
-	/// @param observer - Observer interface, which will receive updates
-	/// @param filters - Subscription filters set
-	/// @param opts - Subscription options (allows to either add new filters or reset them)
-	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts = SubscriptionOpts());
-	/// Unsubscribe from updates of database
-	/// Cancelation context doesn't affect this call
-	/// @param observer - Observer interface, which will be unsubscribed updates
-	Error UnsubscribeUpdates(IUpdatesObserver *observer);
 	/// Get possible suggestions for token (set by 'pos') in Sql query.
 	/// @param sqlQuery - sql query.
 	/// @param pos - position in sql query for suggestions.

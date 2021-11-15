@@ -1,3 +1,14 @@
+# Version 4.0.0 *beta* (15.11.2021)
+## Core
+- [fea] Add synchronous replication support (RAFT-like cluster)
+- [fea] Rewrite asynchronous replication logic
+
+*WARNING*: This release breaks compatibility for replication and requires reconfiguration [replication.md](replication.md)
+Storages for v3 and v4 are compatible in both ways.
+
+## Face
+[fea] Add replication statistics
+
 # Version 3.2.5 (30.10.2021)
 ## Build
 - [fix] Fix building in directories, containing dots (also fixes homebrew installation)

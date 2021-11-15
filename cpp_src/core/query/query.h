@@ -657,8 +657,8 @@ public:
 	bool HasOffset() const noexcept { return start != 0; }
 	bool IsWALQuery() const noexcept;
 	const h_vector<UpdateEntry, 0> &UpdateFields() const noexcept { return updateFields_; }
-
 	QueryType Type() const { return type_; }
+	const string &Namespace() const { return _namespace; }
 
 protected:
 	void deserialize(Serializer &ser, bool &hasJoinConditions);

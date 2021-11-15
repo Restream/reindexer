@@ -48,6 +48,7 @@ struct ServerConfig {
 	bool RemoveSvc;
 	bool SvcMode;
 #endif
+	bool EnableCluster;
 	bool EnableSecurity;
 	bool DebugPprof;
 	bool EnablePrometheus;
@@ -55,6 +56,8 @@ struct ServerConfig {
 	std::chrono::milliseconds PrometheusCollectPeriod;
 	bool DebugAllocs;
 	std::chrono::seconds TxIdleTimeout;
+	std::chrono::seconds HttpReadTimeout;
+	std::chrono::seconds HttpWriteTimeout;
 	size_t MaxUpdatesSize;
 	bool EnableGRPC;
 	string GRPCAddr;

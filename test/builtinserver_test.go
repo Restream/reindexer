@@ -16,6 +16,10 @@ type ScvTestItem struct {
 }
 
 func TestBuiltinServer(t *testing.T) {
+	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
+		return
+	}
+
 	cfg1 := config.DefaultServerConfig()
 	cfg1.Net.HTTPAddr = "0:29088"
 	cfg1.Net.RPCAddr = "0:26534"

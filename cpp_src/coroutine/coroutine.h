@@ -1,12 +1,12 @@
 #pragma once
 
-#include "vendor/koishi/include/koishi.h"
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <functional>
 #include <utility>
 #include <vector>
+#include "vendor/koishi/include/koishi.h"
 
 namespace reindexer {
 namespace coroutine {

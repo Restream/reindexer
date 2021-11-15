@@ -127,16 +127,18 @@ public:
 
 	Error FromJSON(std::string_view json);
 	void GetJSON(WrSerializer&) const;
+	std::string_view GetJSON() const noexcept;
 	Error BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt);
 	Error GetProtobufSchema(WrSerializer& schema) const;
 	int GetProtobufNsNumber() const { return protobufNsNumber_; }
 	const PrefixTree::PrefixTreeNode* GetRoot() const { return &paths_.root_; }
+	static std::string AppendProtobufNumber(std::string_view json, int protobufNsNumber);
 
 private:
 	void parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& splittedPath, bool isRequired);
 
 	PrefixTree paths_;
-	std::string originalJson_;
+	std::string originalJson_ = "{}";
 	std::string protobufSchema_;
 	Error protobufSchemaStatus_;
 	int protobufNsNumber_;

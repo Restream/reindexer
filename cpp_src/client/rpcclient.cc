@@ -5,7 +5,6 @@
 #include "core/namespacedef.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
-#include "tools/logger.h"
 #include "vendor/gason/gason.h"
 
 using std::string;
@@ -16,7 +15,7 @@ namespace client {
 
 using reindexer::net::cproto::RPCAnswer;
 
-RPCClient::RPCClient(const ReindexerConfig& config) : workers_(config.WorkerThreads), config_(config), updatesConn_(nullptr) {
+RPCClient::RPCClient(const ReindexerConfig& config) : workers_(config.WorkerThreads), config_(config) {
 	if (config_.ConnectTimeout > config_.RequestTimeout) {
 		config_.RequestTimeout = config_.ConnectTimeout;
 	}
@@ -98,18 +97,10 @@ void RPCClient::run(size_t thIdx) {
 	});
 
 	workers_[thIdx].stop_.start();
-	delayedUpdates_.clear();
 
 	for (size_t i = thIdx; int(i) < config_.ConnPoolSize; i += config_.WorkerThreads) {
 		connections_[i].reset(new cproto::ClientConnection(workers_[thIdx].loop_, &connectData_,
 														   std::bind(&RPCClient::onConnectionFail, this, std::placeholders::_1)));
-	}
-
-	ev::periodic checker;
-	if (thIdx == 0) {
-		checker.set(workers_[thIdx].loop_);
-		checker.set([this](ev::periodic&, int) { checkSubscribes(); });
-		checker.start(5, 5);
 	}
 
 	workers_[thIdx].running.store(true);
@@ -118,7 +109,6 @@ void RPCClient::run(size_t thIdx) {
 		bool doTerminate = terminate;
 		if (doTerminate) {
 			for (size_t i = thIdx; int(i) < config_.ConnPoolSize; i += config_.WorkerThreads) {
-				logPrintf(LogInfo, "Set terminate flag %d/%d %X", i, config_.ConnPoolSize, int64_t(connections_[i].get()));
 				connections_[i]->SetTerminateFlag();
 				if (connections_[i]->PendingCompletions()) {
 					doTerminate = false;
@@ -209,12 +199,7 @@ Error RPCClient::modifyItem(std::string_view nsName, Item& item, int mode, secon
 	}
 
 	WrSerializer ser;
-	if (item.impl_->GetPrecepts().size()) {
-		ser.PutVarUint(item.impl_->GetPrecepts().size());
-		for (auto& p : item.impl_->GetPrecepts()) {
-			ser.PutVString(p);
-		}
-	}
+	item.impl_->GetPrecepts(ser);
 
 	bool withNetTimeout = (netTimeout.count() > 0);
 	for (int tryCount = 0;; tryCount++) {
@@ -259,12 +244,8 @@ Error RPCClient::modifyItem(std::string_view nsName, Item& item, int mode, secon
 Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, cproto::ClientConnection* conn, seconds netTimeout,
 								 const InternalRdxContext& ctx) {
 	WrSerializer ser;
-	if (item->impl_->GetPrecepts().size()) {
-		ser.PutVarUint(item->impl_->GetPrecepts().size());
-		for (auto& p : item->impl_->GetPrecepts()) {
-			ser.PutVString(p);
-		}
-	}
+	item->impl_->GetPrecepts(ser);
+
 	if (!conn) conn = getConn();
 
 	string ns(nsName);
@@ -310,30 +291,6 @@ Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, 
 		mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), ns, int(FormatCJson), item->GetCJSON(), mode, ser.Slice(),
 		item->GetStateToken(), 0);
 	return errOK;
-}
-
-Error RPCClient::subscribeImpl(bool subscribe) {
-	Error err;
-	auto updatesConn = updatesConn_.load();
-	if (subscribe) {
-		UpdatesFilters filter = observers_.GetMergedFilter();
-		WrSerializer ser;
-		filter.GetJSON(ser);
-		if (updatesConn) {
-			err = updatesConn->Call(mkCommand(cproto::kCmdSubscribeUpdates), 1, ser.Slice()).Status();
-		} else {
-			auto conn = getConn();
-			err = conn->Call(mkCommand(cproto::kCmdSubscribeUpdates), 1, ser.Slice()).Status();
-			if (err.ok()) {
-				updatesConn_ = conn;
-			}
-			conn->SetUpdatesHandler([this](RPCAnswer&& ans, cproto::ClientConnection* conn) { onUpdates(ans, conn); });
-		}
-	} else if (updatesConn) {
-		err = updatesConn->Call(mkCommand(cproto::kCmdSubscribeUpdates), 0).Status();
-		updatesConn_ = nullptr;
-	}
-	return err;
 }
 
 Item RPCClient::NewItem(std::string_view nsName) {
@@ -400,7 +357,8 @@ Error RPCClient::Delete(const Query& query, QueryResults& result, const Internal
 		}
 	};
 
-	auto ret = conn->Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), kResultsWithItemID);
+	auto ret =
+		conn->Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 	icompl(ret, conn);
 	return ret.Status();
 }
@@ -439,11 +397,20 @@ Error RPCClient::selectImpl(std::string_view query, QueryResults& result, cproto
 
 	WrSerializer pser;
 	h_vector<int32_t, 4> vers;
+
+	NsArray nsArray;
+	Query queryNs;
+	queryNs.FromSQL(query);
+	queryNs.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
+	for (auto& ns : nsArray) {
+		auto tm = ns->GetTagsMatcher();
+		vers.push_back(tm.version() ^ tm.stateToken());
+	}
 	vec2pack(vers, pser);
 
 	if (!conn) conn = getConn();
 
-	result = QueryResults(conn, {}, ctx.cmpl(), result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
+	result = QueryResults(conn, std::move(nsArray), ctx.cmpl(), result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
 
 	auto icompl = [&result](const RPCAnswer& ret, cproto::ClientConnection* /*conn*/) {
 		try {
@@ -490,8 +457,8 @@ Error RPCClient::selectImpl(const Query& query, QueryResults& result, cproto::Cl
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 	h_vector<int32_t, 4> vers;
 	for (auto& ns : nsArray) {
-		shared_lock<shared_timed_mutex> lck(ns->lck_);
-		vers.push_back(ns->tagsMatcher_.version() ^ ns->tagsMatcher_.stateToken());
+		auto tm = ns->GetTagsMatcher();
+		vers.push_back(tm.version() ^ tm.stateToken());
 	}
 	vec2pack(vers, pser);
 
@@ -543,6 +510,18 @@ Error RPCClient::SetSchema(std::string_view nsName, std::string_view schema, con
 	return getConn()->Call(mkCommand(cproto::kCmdSetSchema, &ctx), nsName, schema).Status();
 }
 
+Error RPCClient::GetSchema(std::string_view nsName, int format, std::string& schema, const InternalRdxContext& ctx) {
+	try {
+		auto ret = getConn()->Call(mkCommand(cproto::kCmdGetSchema, &ctx), nsName, format);
+		if (ret.Status().ok()) {
+			schema = ret.GetArgs(1)[0].As<string>();
+		}
+		return ret.Status();
+	} catch (const Error& err) {
+		return err;
+	}
+}
+
 Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx) {
 	try {
 		auto ret = getConn()->Call(mkCommand(cproto::kCmdEnumNamespaces, &ctx), int(opts.options_), p_string(&opts.filter_));
@@ -584,16 +563,6 @@ Error RPCClient::EnumDatabases(vector<string>& dbList, const InternalRdxContext&
 	}
 }
 
-Error RPCClient::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
-	observers_.Add(observer, filters, opts);
-	return subscribeImpl(true);
-}
-
-Error RPCClient::UnsubscribeUpdates(IUpdatesObserver* observer) {
-	observers_.Delete(observer);
-	return subscribeImpl(!observers_.Empty());
-}
-
 Error RPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string>& suggests) {
 	try {
 		auto ret = getConn()->Call(mkCommand(cproto::kCmdGetSQLSuggestions), query, pos);
@@ -611,26 +580,6 @@ Error RPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vector<
 }
 
 Error RPCClient::Status() { return getConn()->CheckConnection(); }
-
-void RPCClient::checkSubscribes() {
-	bool subscribe = !observers_.Empty();
-
-	auto updatesConn = updatesConn_.load();
-	if (subscribe && !updatesConn_) {
-		getConn()->Call(
-			[this](const RPCAnswer& ans, cproto::ClientConnection* conn) {
-				if (ans.Status().ok()) {
-					updatesConn_ = conn;
-					observers_.OnConnectionState(errOK);
-					conn->SetUpdatesHandler([this](RPCAnswer&& ans, cproto::ClientConnection* conn) { onUpdates(ans, conn); });
-				}
-			},
-			mkCommand(cproto::kCmdSubscribeUpdates), 1);
-	} else if (!subscribe && updatesConn) {
-		updatesConn->Call([](const RPCAnswer&, cproto::ClientConnection*) {}, mkCommand(cproto::kCmdSubscribeUpdates), 0);
-		updatesConn_ = nullptr;
-	}
-}
 
 Namespace* RPCClient::getNamespace(std::string_view nsName) {
 	nsMutex_.lock_shared();
@@ -667,91 +616,6 @@ cproto::CommandParams RPCClient::mkCommand(cproto::CmdCode cmd, std::chrono::sec
 		return {cmd, reqTimeout, ctx->execTimeout(), ctx->getCancelCtx()};
 	}
 	return {cmd, reqTimeout, std::chrono::milliseconds(0), nullptr};
-}
-
-void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection* conn) {
-	if (!ans.Status().ok()) {
-		updatesConn_ = nullptr;
-		observers_.OnConnectionState(ans.Status());
-		return;
-	}
-
-	if (!delayedUpdates_.empty()) {
-		ans.EnsureHold();
-		delayedUpdates_.emplace_back(std::move(ans));
-		return;
-	}
-	cproto::Args args;
-	try {
-		args = ans.GetArgs();
-	} catch (const Error& err) {
-		logPrintf(LogError, "Parsing updates error: %s", err.what());
-		return;
-	}
-	if (args.size() == 1) {
-		std::string_view nsName(args[0]);
-		observers_.OnUpdatesLost(nsName);
-		return;
-	}
-	if (args.size() < 3) {
-		logPrintf(LogError, "Parsing updates error: args count %d", args.size());
-		return;
-	}
-	lsn_t lsn{int64_t(args[0])};
-	std::string_view nsName(args[1]);
-	std::string_view pwalRec(args[2]);
-	lsn_t originLSN;
-	if (args.size() >= 4) originLSN = lsn_t(args[3].As<int64_t>());
-	WALRecord wrec(pwalRec);
-
-	if (wrec.type == WalItemModify) {
-		// Special process for Item Modify
-		auto ns = getNamespace(nsName);
-
-		// Check if cjson with bundled tagsMatcher
-		bool bundledTagsMatcher = wrec.itemModify.itemCJson.length() > 0 && wrec.itemModify.itemCJson[0] == TAG_END;
-
-		ns->lck_.lock_shared();
-		auto tmVersion = ns->tagsMatcher_.version();
-		ns->lck_.unlock_shared();
-
-		if (tmVersion < wrec.itemModify.tmVersion && !bundledTagsMatcher) {
-			// If tagsMatcher has been updated but there is no bundled tagsMatcher in cjson
-			// then we need to ask server to send tagsMatcher.
-
-			// Delay this update and all the further updates until we get responce from server.
-			ans.EnsureHold();
-			delayedUpdates_.emplace_back(std::move(ans));
-
-			QueryResults* qr = new QueryResults;
-			Select(Query(string(nsName)).Limit(0), *qr,
-				   InternalRdxContext(nullptr,
-									  [=](const Error& err) {
-										  delete qr;
-										  // If there are delayed updates then send them to client
-										  auto uq = std::move(delayedUpdates_);
-										  delayedUpdates_.clear();
-										  if (err.ok())
-											  for (auto& a1 : uq) onUpdates(a1, conn);
-									  }),
-				   conn);
-			return;
-		} else {
-			// We have bundled tagsMatcher
-			if (bundledTagsMatcher) {
-				// printf("%s bundled tm %d to %d\n", ns->name_.c_str(), ns->tagsMatcher_.version(), wrec.itemModify.tmVersion);
-				Serializer rdser(wrec.itemModify.itemCJson);
-				rdser.GetVarUint();
-				uint32_t tmOffset = rdser.GetUInt32();
-				// read tags matcher update
-				rdser.SetPos(tmOffset);
-				std::unique_lock<shared_timed_mutex> lck(ns->lck_);
-				ns->tagsMatcher_ = TagsMatcher();
-				ns->tagsMatcher_.deserialize(rdser, wrec.itemModify.tmVersion, ns->tagsMatcher_.stateToken());
-			}
-		}
-	}
-	observers_.OnWALUpdate(LSNPair(lsn, originLSN), nsName, wrec);
 }
 
 bool RPCClient::onConnectionFail(int failedDsnIndex) {

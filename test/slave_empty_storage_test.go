@@ -18,6 +18,11 @@ type TestItemStorage struct {
 }
 
 func TestSlaveEmptyStorage(t *testing.T) {
+	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
+		return
+	}
+
+	const masterServerId = 1
 	cfgMaster := config.DefaultServerConfig()
 	cfgMaster.Net.HTTPAddr = "0:29088"
 	cfgMaster.Net.RPCAddr = "0:26534"
@@ -27,17 +32,25 @@ func TestSlaveEmptyStorage(t *testing.T) {
 	{
 		f, err := os.OpenFile(cfgMaster.Storage.Path+"/xxx/replication.conf", os.O_RDWR|os.O_CREATE, 0644)
 		assert.NoError(t, err)
-		masterConfig := `role: master  
-master_dsn: 
-timeout_sec: 60
-enable_compression: true
-cluster_id: 2
+		masterConfig := "server_id: " + strconv.Itoa(masterServerId) + "\n" +
+			"cluster_id: 1\n"
+		_, err = f.Write([]byte(masterConfig))
+		assert.NoError(t, err)
+	}
+	{
+		f, err := os.OpenFile(cfgMaster.Storage.Path+"/xxx/async_replication.conf", os.O_RDWR|os.O_CREATE, 0644)
+		assert.NoError(t, err)
+		masterConfig := `retry_sync_interval_msec: 3000
+role: leader
+syncs_per_thread: 2
+app_name: node_1
 force_sync_on_logic_error: true
 force_sync_on_wrong_data_hash: false
-retry_sync_interval_sec: 20
-online_repl_errors_threshold: 100
-namespaces: []`
-
+namespaces: []
+nodes:
+  -
+    dsn: cproto://127.0.0.1:26535/xxx
+`
 		_, err = f.Write([]byte(masterConfig))
 		assert.NoError(t, err)
 	}
@@ -48,23 +61,6 @@ namespaces: []`
 	cfgSlave.Storage.Path = "/tmp/rx_slave2"
 	os.RemoveAll(cfgSlave.Storage.Path)
 	rxSlave := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgSlave))
-	{
-		f, err := os.OpenFile(cfgSlave.Storage.Path+"/xxx/replication.conf", os.O_RDWR|os.O_CREATE, 0644)
-		assert.NoError(t, err)
-		slaveConfig := `role: slave  
-master_dsn: cproto://127.0.0.1:26534/xxx
-timeout_sec: 60
-enable_compression: true
-cluster_id: 2
-force_sync_on_logic_error: true
-force_sync_on_wrong_data_hash: false
-retry_sync_interval_sec: 20
-online_repl_errors_threshold: 100   
-namespaces: []`
-
-		_, err = f.Write([]byte(slaveConfig))
-		assert.NoError(t, err)
-	}
 
 	nsOption := reindexer.DefaultNamespaceOptions()
 	nsOption.NoStorage()

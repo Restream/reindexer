@@ -877,9 +877,9 @@ public:
 		: Data(data), No(no), Offset(offset), Type(type), Flags(flags), NextLine(nullptr) {}
 
 	enum eFlag {
-		LiteralScalarFlag,  ///< Literal scalar type, defined as "|".
-		FoldedScalarFlag,   ///< Folded scalar type, defined as "<".
-		ScalarNewlineFlag   ///< Scalar ends with a newline.
+		LiteralScalarFlag,	///< Literal scalar type, defined as "|".
+		FoldedScalarFlag,	///< Folded scalar type, defined as "<".
+		ScalarNewlineFlag	///< Scalar ends with a newline.
 	};
 
 	/**
@@ -927,10 +927,10 @@ public:
 
 	static const unsigned char FlagMask[3];
 
-	std::string Data;	  ///< Data of line.
+	std::string Data;	   ///< Data of line.
 	size_t No;			   ///< Line number.
 	size_t Offset;		   ///< Offset to first character in data.
-	Node::eType Type;	  ///< Type of line.
+	Node::eType Type;	   ///< Type of line.
 	unsigned char Flags;   ///< Flags of line.
 	ReaderLine *NextLine;  ///< Pointer to next line.
 };

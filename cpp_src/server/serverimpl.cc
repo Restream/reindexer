@@ -254,12 +254,11 @@ int ServerImpl::run() {
 	std::unique_ptr<ClientsStats> clientsStats;
 	if (config_.EnableConnectionsStats) clientsStats.reset(new ClientsStats());
 	try {
-		dbMgr_.reset(new DBManager(config_.StoragePath, !config_.EnableSecurity, clientsStats.get()));
+		dbMgr_.reset(new DBManager(config_, clientsStats.get()));
 
-		auto status = dbMgr_->Init(config_.StorageEngine, config_.StartWithErrors, config_.Autorepair);
+		auto status = dbMgr_->Init();
 		if (!status.ok()) {
 			logger_.error("Error init database manager: {0}", status.what());
-			std::cout << status.what() << std::endl;
 			return EXIT_FAILURE;
 		}
 		storageLoaded_ = true;
@@ -287,6 +286,7 @@ int ServerImpl::run() {
 			logger_.error("Can't listen RPC on '{0}'", config_.RPCAddr);
 			return EXIT_FAILURE;
 		}
+
 #ifdef WITH_GRPC
 		void *hGRPCService = nullptr;
 #if REINDEX_WITH_LIBDL
@@ -351,10 +351,12 @@ int ServerImpl::run() {
 
 		if (statsCollector) statsCollector->Stop();
 		logger_.info("Stats collector shutdown completed.");
-		rpcServer.Stop();
-		logger_.info("RPC Server shutdown completed.");
+		dbMgr_->ShutdownClusters();
+		logger_.info("Clusterization shutdown completed.");
 		httpServer.Stop();
 		logger_.info("HTTP Server shutdown completed.");
+		rpcServer.Stop();
+		logger_.info("RPC Server shutdown completed.");
 #ifdef WITH_GRPC
 #if REINDEX_WITH_LIBDL
 		if (hGRPCServiceLib && config_.EnableGRPC) {

@@ -8,8 +8,7 @@ namespace reindexer {
 template <bool GuardValue>
 class FlagGuard {
 public:
-	FlagGuard(bool& flag) : flag_(flag) { flag_ = GuardValue; }
-
+	FlagGuard(bool& flag) noexcept : flag_(flag) { flag_ = GuardValue; }
 	~FlagGuard() {
 		assert(flag_ == GuardValue);
 		flag_ = !GuardValue;
@@ -22,7 +21,11 @@ private:
 template <typename CounterT, std::memory_order MemoryOrdering>
 class CounterGuard {
 public:
-	CounterGuard(std::atomic<CounterT>& counter) noexcept : counter_(counter), owns_(true) { counter_.fetch_add(1, MemoryOrdering); }
+	CounterGuard(std::atomic<CounterT>& counter, bool increment = true) noexcept : counter_(counter), owns_(true) {
+		if (increment) {
+			counter_.fetch_add(1, MemoryOrdering);
+		}
+	}
 	void Reset() noexcept {
 		if (owns_) {
 			owns_ = false;

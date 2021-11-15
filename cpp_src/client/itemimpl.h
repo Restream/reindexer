@@ -1,72 +1,30 @@
 #pragma once
+#include "client/itemimplbase.h"
 
-#include <deque>
-#include <vector>
-#include "core/cjson/tagsmatcher.h"
-#include "core/keyvalue/key_string.h"
-#include "core/keyvalue/variant.h"
-#include "core/payload/payloadiface.h"
-#include "gason/gason.h"
-#include "tools/serializer.h"
-
-using std::vector;
+#include "debug/backtrace.h"
 
 namespace reindexer {
 namespace client {
-class ItemImpl {
+
+class SyncCoroReindexerImpl;
+class CoroRPCClient;
+class CoroQueryResults;
+
+template <typename C>
+class ItemImpl : public ItemImplBase {
 public:
-	// Construct empty item
-	ItemImpl(PayloadType type, const TagsMatcher &tagsMatcher)
-		: payloadType_(type), payloadValue_(type.TotalSize(), 0, type.TotalSize() + 0x100), tagsMatcher_(tagsMatcher) {
-		tagsMatcher_.clearUpdated();
-	}
+	ItemImpl(PayloadType type, const TagsMatcher &tagsMatcher, C *client, std::chrono::milliseconds requestTimeout)
+		: ItemImplBase(type, tagsMatcher), requestTimeout_(requestTimeout), client_(client) {}
 
-	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher &tagsMatcher)
-		: payloadType_(type), payloadValue_(v), tagsMatcher_(tagsMatcher) {
-		tagsMatcher_.clearUpdated();
-	}
-
-	ItemImpl(const ItemImpl &) = delete;
-	ItemImpl(ItemImpl &&o) = default;
-	ItemImpl &operator=(const ItemImpl &) = delete;
-	ItemImpl &operator=(ItemImpl &&) noexcept;
-
-	void SetField(int field, const VariantArray &krs);
-	Variant GetField(int field);
-
-	std::string_view GetJSON();
-	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false);
-	Error FromCJSON(ItemImpl *other);
-
-	std::string_view GetCJSON();
-	Error FromCJSON(std::string_view slice);
-
-	std::string_view GetMsgPack();
-	Error FromMsgPack(std::string_view slice, size_t &offset);
-
-	PayloadType Type() { return payloadType_; }
-	PayloadValue &Value() { return payloadValue_; }
-	Payload GetPayload() { return Payload(payloadType_, payloadValue_); }
-	ConstPayload GetConstPayload() { return ConstPayload(payloadType_, payloadValue_); }
-
-	TagsMatcher &tagsMatcher() { return tagsMatcher_; }
-
-	void SetPrecepts(const vector<string> &precepts) { precepts_ = precepts; }
-	const vector<string> &GetPrecepts() { return precepts_; }
-	void Unsafe(bool enable) { unsafe_ = enable; }
+	ItemImpl(PayloadType type, PayloadValue v, const TagsMatcher &tagsMatcher, C *client, std::chrono::milliseconds requestTimeout)
+		: ItemImplBase(type, v, tagsMatcher), requestTimeout_(requestTimeout), client_(client) {}
 
 protected:
-	// Index fields payload data
-	PayloadType payloadType_;
-	PayloadValue payloadValue_;
-	TagsMatcher tagsMatcher_;
+	Error tryToUpdateTagsMatcher() override final;
 
-	WrSerializer ser_;
-	string tupleData_;
-
-	vector<string> precepts_;
-	bool unsafe_ = false;
-	std::deque<std::string> holder_;
+	std::chrono::milliseconds requestTimeout_ = std::chrono::milliseconds{0};
+	C *client_ = nullptr;
 };
+
 }  // namespace client
 }  // namespace reindexer

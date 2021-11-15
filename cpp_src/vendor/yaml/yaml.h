@@ -405,6 +405,12 @@ public:
 	 */
 	void Clear();
 
+    /**
+     * @breif Get as string. If type is scalar, else empty.
+     *
+     */
+    const std::string &AsString() const;
+
 	/**
 	 * @breif Get node as given template type.
 	 *
@@ -499,12 +505,6 @@ public:
 	ConstIterator End() const;
 
 private:
-	/**
-	 * @breif Get as string. If type is scalar, else empty.
-	 *
-	 */
-	const std::string &AsString() const;
-
 	void *m_pImp;  ///< Implementation of node class.
 };
 

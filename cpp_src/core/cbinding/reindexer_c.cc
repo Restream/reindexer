@@ -123,8 +123,7 @@ reindexer_error reindexer_ping(uintptr_t rx) {
 	return error2c(db ? Error(errOK) : err_not_init);
 }
 
-static void procces_packed_item(Item& item, int mode, int state_token, reindexer_buffer data, const vector<string>& precepts, int format,
-								Error& err) {
+static void procces_packed_item(Item& item, int mode, int state_token, reindexer_buffer data, int format, Error& err) {
 	if (item.Status().ok()) {
 		switch (format) {
 			case FormatJson:
@@ -140,9 +139,6 @@ static void procces_packed_item(Item& item, int mode, int state_token, reindexer
 				break;
 			default:
 				err = Error(-1, "Invalid source item format %d", format);
-		}
-		if (err.ok()) {
-			item.SetPrecepts(precepts);
 		}
 	} else {
 		err = item.Status();
@@ -163,23 +159,25 @@ reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, rein
 	int format = ser.GetVarUint();
 	int mode = ser.GetVarUint();
 	int state_token = ser.GetVarUint();
-	unsigned preceptsCount = ser.GetVarUint();
-	vector<string> precepts;
-	while (preceptsCount--) {
-		precepts.push_back(string(ser.GetVString()));
-	}
 	Error err = err_not_init;
 	auto item = trw->tr_.NewItem();
-	procces_packed_item(item, mode, state_token, data, precepts, format, err);
+	procces_packed_item(item, mode, state_token, data, format, err);
 	if (err.code() == errTagsMissmatch) {
 		item = db->NewItem(trw->tr_.GetName());
 		err = item.Status();
 		if (err.ok()) {
-			procces_packed_item(item, mode, state_token, data, precepts, format, err);
+			procces_packed_item(item, mode, state_token, data, format, err);
 		}
 	}
 	if (err.ok()) {
-		trw->tr_.Modify(std::move(item), ItemModifyMode(mode));
+		unsigned preceptsCount = ser.GetVarUint();
+		vector<string> precepts;
+		precepts.reserve(preceptsCount);
+		while (preceptsCount--) {
+			precepts.emplace_back(ser.GetVString());
+		}
+		item.SetPrecepts(std::move(precepts));
+		err = trw->tr_.Modify(std::move(item), ItemModifyMode(mode));
 	}
 
 	return error2c(err);
@@ -191,11 +189,6 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 	int format = ser.GetVarUint();
 	int mode = ser.GetVarUint();
 	int state_token = ser.GetVarUint();
-	unsigned preceptsCount = ser.GetVarUint();
-	vector<string> precepts;
-	while (preceptsCount--) {
-		precepts.push_back(string(ser.GetVString()));
-	}
 
 	reindexer_resbuffer out = {0, 0, 0};
 	Error err = err_not_init;
@@ -204,11 +197,19 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 
 		Item item = rdxKeeper.db().NewItem(ns);
 
-		procces_packed_item(item, mode, state_token, data, precepts, format, err);
+		procces_packed_item(item, mode, state_token, data, format, err);
 
-		const bool needSaveItemValueInQR = !precepts.empty();
 		query_results_ptr res;
 		if (err.ok()) {
+			unsigned preceptsCount = ser.GetVarUint();
+			const bool needSaveItemValueInQR = preceptsCount;
+			vector<string> precepts;
+			precepts.reserve(preceptsCount);
+			while (preceptsCount--) {
+				precepts.emplace_back(ser.GetVString());
+			}
+			item.SetPrecepts(std::move(precepts));
+
 			res = new_results();
 			if (!res) {
 				return ret2c(err_too_many_queries, out);
@@ -577,9 +578,9 @@ reindexer_error reindexer_delete_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	q.Deserialize(ser);
 	q.type_ = QueryDelete;
 
-	trw->tr_.Modify(std::move(q));
+	Error err = trw->tr_.Modify(std::move(q));
 
-	return error2c(errOK);
+	return error2c(err);
 }
 
 reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_buffer in) {
@@ -596,9 +597,9 @@ reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	q.Deserialize(ser);
 	q.type_ = QueryUpdate;
 
-	trw->tr_.Modify(std::move(q));
+	Error err = trw->tr_.Modify(std::move(q));
 
-	return error2c(errOK);
+	return error2c(err);
 }
 
 reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int ns_id) {

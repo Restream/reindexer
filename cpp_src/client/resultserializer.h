@@ -31,7 +31,8 @@ public:
 	};
 
 	void GetRawQueryParams(QueryParams &ret, std::function<void(int nsId)> updatePayloadFunc);
-	ItemParams GetItemParams(int flags);
+	ItemParams GetItemData(int flags);
 };
-}  // namespace client
+
+}
 }  // namespace reindexer

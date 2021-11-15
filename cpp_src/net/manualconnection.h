@@ -16,6 +16,7 @@ namespace net {
 using reindexer::cbuf;
 
 constexpr int k_sock_closed_err = -1;
+constexpr int k_connect_timeout_err = -2;
 
 class manual_connection {
 public:
@@ -26,6 +27,7 @@ public:
 	manual_connection(int fd, size_t rd_buf_size, bool enable_stat);
 	virtual ~manual_connection();
 
+	void set_connect_timeout(std::chrono::milliseconds timeout) noexcept { connect_timeout_ = timeout; }
 	void close_conn(int err);
 	void attach(ev::dynamic_loop &loop) noexcept;
 	void detach() noexcept;
@@ -175,11 +177,7 @@ private:
 		if (data.size()) {
 			auto data_span = span<char>(data.data(), data.size());
 			if (send_now && state_ != conn_state::connecting) {
-				auto nwrite = write(data_span, transfer, &int_err);
-				if (!nwrite) {	// TODO: check this case
-					cb(0, 0, data);
-					return 0;
-				}
+				write(data_span, transfer, &int_err);
 			}
 			if (!send_now || (!int_err && transfer.transfered_size() < transfer.expected_size()) || sock_.would_block(int_err)) {
 				w_data_.set_cb(data_span, std::move(cb));
@@ -210,12 +208,14 @@ private:
 	void add_io_events(int events) noexcept;
 	void rm_io_events(int events) noexcept;
 	void io_callback(ev::io &watcher, int revents);
+	void connect_timer_cb(ev::timer &watcher, int);
 	void write_cb();
 	void read_cb();
 	bool read_from_buf(span<char> rd_buf, transfer_data &transfer, bool read_full) noexcept;
 
 	ev::io io_;
 	socket sock_;
+	ev::timer connect_timer_;
 	conn_state state_ = conn_state::init;
 	bool attached_ = false;
 	int cur_events_ = 0;
@@ -223,6 +223,7 @@ private:
 	async_data r_data_;
 	async_data w_data_;
 	cbuf<char> buffered_data_;
+	std::chrono::milliseconds connect_timeout_ = std::chrono::seconds(10);
 
 	std::unique_ptr<connection_stats_collector> stats_;
 };

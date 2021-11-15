@@ -41,10 +41,6 @@ void connection_stats_collector::update_write_stats(ssize_t written, size_t send
 	stat_->send_buf_bytes.store(send_buf_size, std::memory_order_relaxed);
 }
 
-void connection_stats_collector::update_pended_updates(size_t count) noexcept {
-	stat_->pended_updates.store(count, std::memory_order_relaxed);
-}
-
 void connection_stats_collector::update_send_buf_size(size_t size) noexcept {
 	stat_->send_buf_bytes.store(size, std::memory_order_relaxed);
 }

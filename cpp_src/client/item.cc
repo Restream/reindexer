@@ -9,7 +9,7 @@ Item::Item() : status_(errNotValid) {}
 
 Item::Item(Item &&other) noexcept : impl_(std::move(other.impl_)), status_(std::move(other.status_)), id_(other.id_) {}
 
-Item::Item(ItemImpl *impl) : impl_(impl) {}
+Item::Item(ItemImplBase *impl) : impl_(impl) {}
 Item::Item(const Error &err) : impl_(nullptr), status_(err) {}
 
 Item &Item::operator=(Item &&other) noexcept {
@@ -21,9 +21,7 @@ Item &Item::operator=(Item &&other) noexcept {
 	return *this;
 }
 
-Item::~Item() {}
-
-Item::operator bool() const { return impl_ != nullptr; }
+Item::~Item() = default;
 
 Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) { return impl_->FromJSON(slice, endp, pkOnly); }
 Error Item::FromCJSON(std::string_view slice) { return impl_->FromCJSON(slice); }
@@ -31,11 +29,11 @@ Error Item::FromMsgPack(std::string_view slice, size_t &offset) { return impl_->
 std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
 std::string_view Item::GetMsgPack() { return impl_->GetMsgPack(); }
-void Item::SetPrecepts(const vector<string> &precepts) { impl_->SetPrecepts(precepts); }
-bool Item::IsTagsUpdated() { return impl_->tagsMatcher().isUpdated(); }
+void Item::SetPrecepts(vector<string> precepts) { impl_->SetPrecepts(std::move(precepts)); }
+bool Item::IsTagsUpdated() const { return impl_->tagsMatcher().isUpdated(); }
 int Item::GetStateToken() { return impl_->tagsMatcher().stateToken(); }
 
-Item &Item::Unsafe(bool enable) {
+Item &Item::Unsafe(bool enable) noexcept {
 	impl_->Unsafe(enable);
 	return *this;
 }

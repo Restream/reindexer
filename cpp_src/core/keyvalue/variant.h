@@ -27,6 +27,7 @@ public:
 	explicit Variant(const char *v);
 	explicit Variant(p_string v, bool enableHold = true);
 	explicit Variant(const std::string &v);
+	explicit Variant(std::string_view v);
 	explicit Variant(const key_string &v);
 	explicit Variant(const PayloadValue &v);
 	explicit Variant(const VariantArray &values);

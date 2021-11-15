@@ -1,0 +1,221 @@
+#include "snapshot.h"
+#include <sstream>
+#include "core/cbinding/resultserializer.h"
+#include "core/cjson/baseencoder.h"
+#include "core/cjson/jsonbuilder.h"
+
+namespace reindexer {
+
+static constexpr size_t kDefaultChunkSize = 100;
+
+Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion) : tm_(std::move(tm)), nsVersion_(nsVersion) {
+	walData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));
+}
+
+Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDatahash, QueryResults &&wal,
+				   QueryResults &&raw)
+	: pt_(pt), tm_(std::move(tm)), expectedDatahash_(expectedDatahash), lastLsn_(lastLsn), nsVersion_(nsVersion) {
+	if (raw.Items().size()) {
+		rawData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));
+	} else {
+		walData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));
+	}
+
+	addRawData(std::move(raw));
+	addWalData(std::move(wal));
+	lockItems(true);
+}
+
+Snapshot &Snapshot::operator=(Snapshot &&other) {
+	lockItems(false);
+	pt_ = std::move(other.pt_);
+	tm_ = std::move(other.tm_);
+	rawData_ = std::move(other.rawData_);
+	walData_ = std::move(other.walData_);
+	expectedDatahash_ = other.expectedDatahash_;
+	lastLsn_ = other.lastLsn_;
+	nsVersion_ = other.nsVersion_;
+	return *this;
+}
+
+Snapshot::~Snapshot() {
+	// Unlock items
+	lockItems(false);
+}
+
+std::string Snapshot::Dump() {
+	std::stringstream ss;
+	ss << "Snapshot:\nNs version: " << nsVersion_ << "\nLast LSN: " << lastLsn_ << "\nDatahash: " << expectedDatahash_
+	   << "\nRaw data blocks: " << rawData_.Size() << "\nWAL data blocks: " << walData_.Size() << "\nWAL data:";
+	size_t chNum = 0;
+	size_t itemNum = 0;
+	WrSerializer ser;
+	for (auto it = Iterator{this, rawData_.Size()}; it != end(); ++it) {
+		auto ch = it.Chunk();
+		for (auto &rec : ch.Records()) {
+			ser.Reset();
+			WALRecord wrec(rec.Record());
+			wrec.Dump(ser, [](std::string_view) { return std::string("<cjson>"); });
+			ss << chNum << "." << itemNum << " LSN:" << rec.LSN() << ", type: " << wrec.type << ", dump: " << ser.Slice() << "\n";
+			++itemNum;
+		}
+		++chNum;
+	}
+	return ss.str();
+}
+
+void Snapshot::ItemsContainer::AddItem(ItemRef &&item) {
+	bool batchRecord = data_.size() && data_.back().txChunk;
+	bool requireNewChunk = data_.empty() || (data_.back().items.size() >= kDefaultChunkSize && !batchRecord);
+	bool createEmptyChunk = false;
+	if (item.Raw() && item.Value().GetCapacity()) {
+		WALRecord rec(span<uint8_t>(item.Value().Ptr(), item.Value().GetCapacity()));
+		if (rec.inTransaction != batchRecord) {
+			requireNewChunk = true;
+		}
+		batchRecord = rec.inTransaction;
+		if (rec.type == WalInitTransaction) {
+			requireNewChunk = true;
+		} else if (rec.type == WalCommitTransaction) {
+			createEmptyChunk = true;
+		}
+	}
+	if (data_.size() && data_.back().items.empty()) {
+		data_.back().items.reserve(kDefaultChunkSize);
+		data_.back().txChunk = batchRecord;
+	} else if (requireNewChunk) {
+		data_.emplace_back();
+		data_.back().items.reserve(kDefaultChunkSize);
+		data_.back().txChunk = batchRecord;
+	}
+	auto &chunk = data_.back().items;
+	chunk.emplace_back(std::move(item));
+	++itemsCount_;
+
+	if (createEmptyChunk) {
+		data_.emplace_back();
+	}
+}
+
+void Snapshot::ItemsContainer::LockItems(PayloadType pt, bool lock) {
+	for (auto &chunk : data_) {
+		for (auto &item : chunk.items) {
+			lockItem(pt, item, lock);
+		}
+	}
+}
+
+void Snapshot::ItemsContainer::lockItem(PayloadType pt, ItemRef &itemref, bool lock) {
+	if (!itemref.Value().IsFree() && !itemref.Raw()) {
+		Payload pl(pt, itemref.Value());
+		if (lock) {
+			pl.AddRefStrings();
+		} else {
+			pl.ReleaseStrings();
+		}
+	}
+}
+
+void Snapshot::addRawData(QueryResults &&qr) {
+	appendQr(rawData_, std::move(qr));
+
+	if (rawData_.Size()) {
+		WALRecord wrec(WalResetLocalWal);
+		PackedWALRecord wr;
+		wr.Pack(wrec);
+		PayloadValue val(wr.size(), wr.data());
+		val.SetLSN(lsn_t());
+		rawData_.AddItem(ItemRef(-1, val, 0, 0, true));
+	}
+}
+
+void Snapshot::addWalData(QueryResults &&qr) { appendQr(walData_, std::move(qr)); }
+
+void Snapshot::appendQr(ItemsContainer &container, QueryResults &&qr) {
+	auto &&items = qr.Items();
+	if (container.ItemsCount() > 1) {
+		throw Error(errLogic, "Snapshot already has this kind of data");
+	}
+	for (auto &&item : items) {
+		container.AddItem(std::move(item));
+	}
+}
+
+void Snapshot::lockItems(bool lock) {
+	rawData_.LockItems(pt_, lock);
+	walData_.LockItems(pt_, lock);
+}
+
+PayloadValue Snapshot::createTmItem() const {
+	WrSerializer ser;
+	ser.PutVarint(tm_.version());
+	ser.PutVarint(tm_.stateToken());
+	tm_.serialize(ser);
+	WALRecord wrec(WalTagsMatcher, ser.Slice());
+	PackedWALRecord wr;
+	wr.Pack(wrec);
+	PayloadValue val(wr.size(), wr.data());
+	val.SetLSN(lsn_t());
+	return val;
+}
+
+SnapshotChunk Snapshot::Iterator::Chunk() const {
+	bool wal = false;
+	size_t idx = idx_;
+	if (idx >= sn_->Size()) {
+		throw Error(errLogic, "Index out of range: %d", idx);
+	}
+
+	const auto *dataPtr = &sn_->rawData_;
+	if (idx >= dataPtr->Size()) {
+		wal = true;
+		idx -= dataPtr->Size();
+		dataPtr = &sn_->walData_;
+	}
+	const bool shallow = wal && sn_->rawData_.Size();
+	const auto &chunks = dataPtr->Data();
+	SnapshotChunk chunk;
+	chunk.records.reserve(chunks[idx].items.size());
+	for (auto &itemRef : chunks[idx].items) {
+		PackedWALRecord pwrec;
+		if (itemRef.Raw()) {
+			pwrec.resize(itemRef.Value().GetCapacity());
+			memcpy(pwrec.data(), itemRef.Value().Ptr(), pwrec.size());
+		} else if (shallow) {
+			assert(itemRef.Id() >= 0);
+			pwrec.Pack(WALRecord(WalShallowItem, itemRef.Id()));
+		} else {
+			ser_.Reset();
+			ConstPayload pl(sn_->pt_, itemRef.Value());
+			CJsonBuilder builder(ser_, ObjType::TypePlain);
+			CJsonEncoder cjsonEncoder(&sn_->tm_);
+
+			cjsonEncoder.Encode(&pl, builder);
+			pwrec.Pack(WALRecord(WalRawItem, itemRef.Id(), ser_.Slice()));
+		}
+		chunk.records.emplace_back(itemRef.Value().GetLSN(), std::move(pwrec));
+	}
+	chunk.MarkShallow(shallow);
+	chunk.MarkWAL(wal);
+	chunk.MarkTx(chunks[idx].txChunk);
+	chunk.MarkLast(idx == sn_->Size() - 1);
+	return chunk;
+}
+
+Snapshot::Iterator &Snapshot::Iterator::operator++() noexcept {
+	++idx_;
+	if (idx_ >= sn_->Size()) {
+		idx_ = sn_->Size();
+	}
+	return *this;
+}
+
+Snapshot::Iterator &Snapshot::Iterator::operator+(size_t delta) noexcept {
+	idx_ += delta;
+	if (idx_ >= sn_->Size()) {
+		idx_ = sn_->Size();
+	}
+	return *this;
+}
+
+}  // namespace reindexer

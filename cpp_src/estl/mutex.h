@@ -28,12 +28,12 @@ public:
 	spinlock(const spinlock&) = delete;
 	~spinlock() = default;
 
-	void lock() {
+	void lock() noexcept {
 		for (unsigned int i = 1; !try_lock(); ++i)
 			if ((i & 0xff) == 0) std::this_thread::yield();
 	}
-	bool try_lock() { return !_M_lock.test_and_set(std::memory_order_acq_rel); }
-	void unlock() { _M_lock.clear(std::memory_order_release); }
+	bool try_lock() noexcept { return !_M_lock.test_and_set(std::memory_order_acq_rel); }
+	void unlock() noexcept { _M_lock.clear(std::memory_order_release); }
 
 private:
 	std::atomic_flag _M_lock;
@@ -45,7 +45,7 @@ public:
 	~read_write_spinlock() = default;
 	read_write_spinlock(const read_write_spinlock&) = delete;
 
-	void lock_shared() {
+	void lock_shared() noexcept {
 		for (;;) {
 			int32_t currLock = lock_.load(std::memory_order_acquire);
 			while ((currLock & 0x80000000) != 0) {
@@ -62,9 +62,9 @@ public:
 		}
 	}
 
-	void unlock_shared() { --lock_; }
+	void unlock_shared() noexcept { --lock_; }
 
-	void lock() {
+	void lock() noexcept {
 		for (;;) {
 			int32_t oldLock = (lock_.load(std::memory_order_acquire) & 0x7fffffff);
 			int32_t newLock = (oldLock | 0x80000000);
@@ -77,7 +77,7 @@ public:
 		}
 	}
 
-	void unlock() { lock_ = 0; }
+	void unlock() noexcept { lock_ = 0; }
 
 private:
 	std::atomic<int32_t> lock_ = {0};
@@ -89,7 +89,7 @@ public:
 	~read_write_recursive_spinlock() = default;
 	read_write_recursive_spinlock(const read_write_recursive_spinlock&) = delete;
 
-	void lock() {
+	void lock() noexcept {
 		std::thread::id currThreadID = threadID_.load(std::memory_order_acquire);
 		if (currThreadID != std::this_thread::get_id()) {
 			read_write_spinlock::lock();
@@ -99,7 +99,7 @@ public:
 		recursiveDepth_++;
 	}
 
-	void unlock() {
+	void unlock() noexcept {
 		assert(recursiveDepth_ > 0);
 		if (--recursiveDepth_ == 0) {
 			threadID_ = std::thread::id{};

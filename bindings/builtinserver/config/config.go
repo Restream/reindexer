@@ -14,10 +14,11 @@ type StorageConf struct {
 }
 
 type NetConf struct {
-	HTTPAddr string `yaml:"httpaddr"`
-	RPCAddr  string `yaml:"rpcaddr"`
-	WebRoot  string `yaml:"webroot"`
-	Security bool   `yaml:"security"`
+	HTTPAddr    string `yaml:"httpaddr"`
+	RPCAddr     string `yaml:"rpcaddr"`
+	WebRoot     string `yaml:"webroot"`
+	Security    bool   `yaml:"security"`
+	RAFTCluster bool   `yaml:"enable_cluster"`
 }
 
 type LoggerConf struct {
@@ -37,9 +38,10 @@ type DebugConf struct {
 	Allocs bool `yaml:"allocs"`
 }
 type MetricsConf struct {
-	Prometheus    bool  `yaml:"prometheus"`
-	CollectPeriod int64 `yaml:"collect_period"`
-	ClientsStats  bool  `yaml:"clientsstats"`
+	Prometheus       bool  `yaml:"prometheus"`
+	CollectPeriod    int64 `yaml:"collect_period"`
+	ClientsStats     bool  `yaml:"clientsstats"`
+	ReplicationStats bool  `yaml:"replicationstats"`
 }
 type ServerConfig struct {
 	Storage StorageConf `yaml:"storage"`
@@ -67,9 +69,10 @@ func DefaultServerConfig() *ServerConfig {
 			Autorepair:      false,
 		},
 		Net: NetConf{
-			HTTPAddr: "0.0.0.0:9088",
-			RPCAddr:  "0.0.0.0:6534",
-			Security: false,
+			HTTPAddr:    "0.0.0.0:9088",
+			RPCAddr:     "0.0.0.0:6534",
+			Security:    false,
+			RAFTCluster: false,
 		},
 		Logger: LoggerConf{
 			ServerLog: "stdout",

@@ -19,15 +19,29 @@ var DBD *reindexer.Reindexer
 
 var tnamespaces map[string]interface{} = make(map[string]interface{}, 100)
 
+type arrayFlags []string
+
+func (i *arrayFlags) String() string {
+	return "my string representation"
+}
+
+func (i *arrayFlags) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
+var cluster arrayFlags
+
 var dsn = flag.String("dsn", "builtin:///tmp/reindex_test/", "reindex db dsn")
 var dsnSlave = flag.String("dsnslave", "", "reindex slave db dsn")
 var slaveCount = flag.Int("slavecount", 1, "reindex slave db count")
-
 var benchmarkSeedCount = flag.Int("seedcount", 500000, "count of items for benchmark seed")
 var benchmarkSeedCPU = flag.Int("seedcpu", 1, "number threads of for seeding")
+var legacyServerBinary = flag.String("legacyserver", "", "legacy server binary for compatibility check")
 
 func TestMain(m *testing.M) {
 
+	flag.Var(&cluster, "cluster", "array of reindex db dsn")
 	flag.Parse()
 
 	udsn, err := url.Parse(*dsn)
@@ -42,14 +56,30 @@ func TestMain(m *testing.M) {
 		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression(), reindexer.WithAppName("RxTestInstance")}
 	}
 
-	DB = NewReindexWrapper(*dsn, opts...)
+	DB = NewReindexWrapper(*dsn, cluster, opts...)
 	DBD = &DB.Reindexer
+	if cluster != nil {
+		dsnFollower, err := GetNodeForRole(DBD, "follower")
+		if err != nil {
+			panic(err)
+		}
+		DB = NewReindexWrapper(dsnFollower, cluster, opts...)
+		DBD = &DB.Reindexer
+	}
 	if err = DB.Status().Err; err != nil {
 		panic(err)
 	}
 
 	if *dsnSlave != "" {
 		DB.AddSlave(*dsnSlave, *slaveCount, reindexer.WithCreateDBIfMissing())
+	}
+
+	if cluster != nil {
+		clusterDsns := make([]string, 0)
+		for _, v := range cluster {
+			clusterDsns = append(clusterDsns, v)
+		}
+		DB.AddClusterNodes(clusterDsns)
 	}
 
 	if testing.Verbose() {

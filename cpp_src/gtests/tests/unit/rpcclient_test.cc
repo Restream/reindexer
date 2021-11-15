@@ -7,6 +7,9 @@
 #include "core/cjson/jsonbuilder.h"
 #include "coroutine/waitgroup.h"
 #include "net/ev/ev.h"
+#include "reindexertestapi.h"
+
+#include "core/namespace/snapshot/snapshot.h"
 
 using std::chrono::seconds;
 
@@ -148,8 +151,7 @@ TEST_F(RPCClientTestApi, SelectFromClosedNamespace) {
 	// Should not be able to Select from closed namespace
 	StartDefaultRealServer();
 	ev::dynamic_loop loop;
-	bool finished = false;
-	loop.spawn([&loop, &finished] {
+	loop.spawn([&loop]() noexcept {
 		const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ReindexerConfig config;
 		config.FetchAmount = 0;
@@ -195,11 +197,8 @@ TEST_F(RPCClientTestApi, SelectFromClosedNamespace) {
 			err = rx.Select(reindexer::Query(kNsName), qr1);
 			ASSERT_TRUE(err.ok()) << err.what();  // TODO: Namespace is not actually closing now
 		}
-
-		finished = true;
 	});
 	loop.run();
-	ASSERT_TRUE(finished);
 	StopServer();
 }
 
@@ -207,8 +206,7 @@ TEST_F(RPCClientTestApi, RenameNamespace) {
 	// Should not be able to Rename namespace
 	StartDefaultRealServer();
 	ev::dynamic_loop loop;
-	bool finished = false;
-	loop.spawn([&loop, &finished] {
+	loop.spawn([&loop]() noexcept {
 		const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ReindexerConfig config;
 		config.FetchAmount = 0;
@@ -273,11 +271,8 @@ TEST_F(RPCClientTestApi, RenameNamespace) {
 		testInList(kResultNsName, true);
 		getRowsInJSON(kResultNsName, resStrings);
 		ASSERT_TRUE(resStrings == resStringsBeforeTest);
-
-		finished = true;
 	});
 	loop.run();
-	ASSERT_TRUE(finished);
 	StopServer();
 }
 
@@ -289,10 +284,9 @@ TEST_F(RPCClientTestApi, CoroRequestTimeout) {
 	AddFakeServer(kDefaultRPCServerAddr, conf);
 	StartServer();
 	ev::dynamic_loop loop;
-	bool finished = false;
-	loop.spawn([&loop, &finished] {
-		reindexer::client::ReindexerConfig config;
-		config.RequestTimeout = seconds(1);
+	loop.spawn([&loop]() noexcept {
+		reindexer::client::CoroReindexerConfig config;
+		config.NetTimeout = seconds(1);
 		reindexer::client::CoroReindexer rx(config);
 		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -302,10 +296,8 @@ TEST_F(RPCClientTestApi, CoroRequestTimeout) {
 		loop.sleep(std::chrono::seconds(4));
 		err = rx.DropNamespace(kNamespaceName);
 		EXPECT_TRUE(err.ok()) << err.what();
-		finished = true;
 	});
 	loop.run();
-	ASSERT_TRUE(finished);
 	StopServer();
 }
 
@@ -314,8 +306,7 @@ TEST_F(RPCClientTestApi, CoroRequestCancels) {
 	AddFakeServer();
 	StartServer();
 	ev::dynamic_loop loop;
-	bool finished = false;
-	loop.spawn([&loop, &finished] {
+	loop.spawn([&loop]() noexcept {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -330,9 +321,7 @@ TEST_F(RPCClientTestApi, CoroRequestCancels) {
 		{
 			CancelRdxContext ctx;
 			coroutine::wait_group wg;
-			wg.add(1);
-			loop.spawn([&ctx, &rx, &wg] {
-				coroutine::wait_group_guard wgg(wg);
+			loop.spawn(wg, [&ctx, &rx] {
 				auto err = rx.WithContext(&ctx).AddNamespace(reindexer::NamespaceDef("MyNamespace"));
 				EXPECT_EQ(err.code(), errCanceled);
 			});
@@ -341,10 +330,8 @@ TEST_F(RPCClientTestApi, CoroRequestCancels) {
 			ctx.Cancel();
 			wg.wait();
 		}
-		finished = true;
 	});
 	loop.run();
-	ASSERT_TRUE(finished);
 	StopServer();
 }
 
@@ -353,20 +340,16 @@ TEST_F(RPCClientTestApi, CoroSuccessfullRequestWithTimeout) {
 	AddFakeServer();
 	StartServer();
 	ev::dynamic_loop loop;
-	bool finished = false;
-	loop.spawn([&loop, &finished] {
-		reindexer::client::ReindexerConfig config;
-		config.ConnectTimeout = seconds(3);
-		config.RequestTimeout = seconds(6);
+	loop.spawn([&loop]() noexcept {
+		reindexer::client::CoroReindexerConfig config;
+		config.NetTimeout = seconds(6);
 		reindexer::client::CoroReindexer rx(config);
 		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
 		EXPECT_TRUE(err.ok()) << err.what();
-		finished = true;
 	});
 	loop.run();
-	ASSERT_TRUE(finished);
 	StopServer();
 }
 
@@ -375,28 +358,24 @@ TEST_F(RPCClientTestApi, CoroErrorLoginResponse) {
 	AddFakeServer();
 	StartServer(kDefaultRPCServerAddr, errForbidden);
 	ev::dynamic_loop loop;
-	bool finished = false;
-	loop.spawn([&loop, &finished] {
+	loop.spawn([&loop]() noexcept {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
 		EXPECT_EQ(err.code(), errForbidden);
-		finished = true;
 	});
 	loop.run();
-	ASSERT_TRUE(finished);
 	StopServer();
 }
 
 TEST_F(RPCClientTestApi, CoroStatus) {
 	// Should return correct Status, based on server's state
-	std::string dbPath = string(kDbPrefix) + "/" + kDefaultRPCPort;
+	std::string dbPath = std::string(kDbPrefix) + "/" + std::to_string(kDefaultRPCPort);
 	reindexer::fs::RmDirAll(dbPath);
 	AddRealServer(dbPath);
 	ev::dynamic_loop loop;
-	bool finished = false;
-	loop.spawn([this, &loop, &finished] {
+	loop.spawn([this, &loop]() noexcept {
 		reindexer::client::CoroReindexer rx;
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
@@ -411,10 +390,8 @@ TEST_F(RPCClientTestApi, CoroStatus) {
 			err = rx.Status();
 			ASSERT_EQ(err.code(), errNetwork);
 		}
-		finished = true;
 	});
 	loop.run();
-	ASSERT_TRUE(finished);
 }
 
 TEST_F(RPCClientTestApi, CoroUpserts) {
@@ -422,13 +399,11 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 	using namespace reindexer::client;
 	using namespace reindexer::net::ev;
 	using reindexer::coroutine::wait_group;
-	using reindexer::coroutine::wait_group_guard;
 
 	StartDefaultRealServer();
 	dynamic_loop loop;
-	bool finished = false;
 
-	loop.spawn([&loop, &finished] {
+	loop.spawn([&loop]() noexcept {
 		const std::string nsName = "ns1";
 		const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ConnectOpts opts;
@@ -442,8 +417,7 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 		err = rx.AddIndex(nsName, {"id", {"id"}, "hash", "int", IndexOpts().PK()});
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		auto upsertFn = [&rx, &nsName](wait_group& wg, size_t begin, size_t cnt) {
-			wait_group_guard wgg(wg);
+		auto upsertFn = [&rx, &nsName](size_t begin, size_t cnt) {
 			for (size_t i = begin; i < begin + cnt; ++i) {
 				auto item = rx.NewItem(nsName);
 				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
@@ -460,8 +434,7 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 			}
 		};
 
-		auto txFunc = [&rx, &nsName](wait_group& wg, size_t begin, size_t cnt) {
-			wait_group_guard wgg(wg);
+		auto txFunc = [&rx, &nsName](size_t begin, size_t cnt) {
 			auto tx = rx.NewTransaction(nsName);
 			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
 			for (size_t i = begin; i < begin + cnt; ++i) {
@@ -478,12 +451,12 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 				err = tx.Upsert(std::move(item));
 				ASSERT_TRUE(err.ok()) << err.what();
 			}
-			auto err = rx.CommitTransaction(tx);
+			CoroQueryResults qrTx;
+			auto err = rx.CommitTransaction(tx, qrTx);
 			ASSERT_TRUE(err.ok()) << err.what();
 		};
 
-		auto selectFn = [&loop, &rx, &nsName](wait_group& wg, size_t cnt) {
-			wait_group_guard wgg(wg);
+		auto selectFn = [&loop, &rx, &nsName](size_t cnt) {
 			constexpr size_t kMultiplier = 9;
 			for (size_t j = 0; j < kMultiplier * cnt; ++j) {
 				if (j % kMultiplier == 0) {
@@ -503,16 +476,15 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 
 		wait_group wg;
 		constexpr size_t kCnt = 3000;
-		wg.add(9);
-		loop.spawn(std::bind(upsertFn, std::ref(wg), 0, kCnt));
-		loop.spawn(std::bind(upsertFn, std::ref(wg), kCnt, kCnt));
-		loop.spawn(std::bind(upsertFn, std::ref(wg), 2 * kCnt, kCnt));
-		loop.spawn(std::bind(upsertFn, std::ref(wg), 3 * kCnt, kCnt));
-		loop.spawn(std::bind(selectFn, std::ref(wg), 300));
-		loop.spawn(std::bind(txFunc, std::ref(wg), 4 * kCnt, 2 * kCnt));
-		loop.spawn(std::bind(txFunc, std::ref(wg), 6 * kCnt, 2 * kCnt));
-		loop.spawn(std::bind(txFunc, std::ref(wg), 8 * kCnt, 2 * kCnt));
-		loop.spawn(std::bind(selectFn, std::ref(wg), 300));
+		loop.spawn(wg, std::bind(upsertFn, 0, kCnt));
+		loop.spawn(wg, std::bind(upsertFn, kCnt, kCnt));
+		loop.spawn(wg, std::bind(upsertFn, 2 * kCnt, kCnt));
+		loop.spawn(wg, std::bind(upsertFn, 3 * kCnt, kCnt));
+		loop.spawn(wg, std::bind(selectFn, 300));
+		loop.spawn(wg, std::bind(txFunc, 4 * kCnt, 2 * kCnt));
+		loop.spawn(wg, std::bind(txFunc, 6 * kCnt, 2 * kCnt));
+		loop.spawn(wg, std::bind(txFunc, 8 * kCnt, 2 * kCnt));
+		loop.spawn(wg, std::bind(selectFn, 300));
 
 		wg.wait();
 
@@ -525,11 +497,9 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 		}
 		err = rx.Stop();
 		ASSERT_TRUE(err.ok()) << err.what();
-		finished = true;
 	});
 
 	loop.run();
-	ASSERT_TRUE(finished);
 }
 
 TEST_F(RPCClientTestApi, ServerRestart) {
@@ -550,9 +520,8 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 	// Create thread, performing upserts
 	std::thread upsertsTh([&terminate, &ready, &step] {
 		dynamic_loop loop;
-		bool finished = false;
 
-		loop.spawn([&loop, &finished, &terminate, &ready, &step] {
+		loop.spawn([&loop, &terminate, &ready, &step]() noexcept {
 			const std::string nsName = "ns1";
 			const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 			reindexer::client::ConnectOpts opts;
@@ -616,11 +585,9 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 
 			err = rx.Stop();
 			ASSERT_TRUE(err.ok()) << err.what();
-			finished = true;
 		});
 
 		loop.run();
-		ASSERT_TRUE(finished);
 	});
 	while (!ready) {  // -V776
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -641,136 +608,83 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 	upsertsTh.join();
 }
 
-TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
-	// Should be able to work with updates subscription and filtering
+TEST_F(RPCClientTestApi, TemporaryNamespaceAutoremove) {
+	// Temporary namespace must be automaticly removed after disconnect
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+
 	StartDefaultRealServer();
-	ev::dynamic_loop loop;
-	bool finished = false;
+	dynamic_loop loop;
 
-	auto mainRoutine = [this, &loop, &finished] {
-		using namespace std::string_view_literals;
-		reindexer::client::CoroReindexer rx;
+	loop.spawn([&loop]() noexcept {
 		const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
-		auto err = rx.Connect(dsn, loop, reindexer::client::ConnectOpts().CreateDBIfMissing());
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		CoroReindexer rx;
+		auto err = rx.Connect(dsn, loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		constexpr auto kNs1Name = "ns1"sv;
-		constexpr auto kNs2Name = "ns2"sv;
-		constexpr auto kNs3Name = "ns3"sv;
-		constexpr auto kNs4Name = "ns4"sv;
-		constexpr auto kNs5Name = "ns5"sv;
-
-		CreateNamespace(rx, kNs4Name);
-		CreateNamespace(rx, kNs5Name);
-
-		UpdatesReciever reciever1(loop);  // Recieves updates for ns 'n5' and 'ns1'
-		{
-			UpdatesFilters filters;
-			filters.AddFilter(kNs5Name, UpdatesFilters::Filter());
-			err = rx.SubscribeUpdates(&reciever1, filters);
-			ASSERT_TRUE(err.ok()) << err.what();
-			UpdatesFilters filters1;
-			filters1.AddFilter(kNs1Name, UpdatesFilters::Filter());
-			err = rx.SubscribeUpdates(&reciever1, filters1, SubscriptionOpts().IncrementSubscription());
-			ASSERT_TRUE(err.ok()) << err.what();
-		}
-
-		{
-			const size_t count = 50;
-			FillData(rx, kNs4Name, 0, count);
-			FillData(rx, kNs5Name, 0, count);
-			ASSERT_TRUE(reciever1.AwaitNamespaces(1));
-			ASSERT_TRUE(reciever1.AwaitItems(kNs5Name, count));
-			reciever1.Reset();
-		}
-
-		UpdatesReciever reciever2(loop);  // Recieves all the updates
-		{
-			UpdatesFilters filters;
-			err = rx.SubscribeUpdates(&reciever2, filters);
-			ASSERT_TRUE(err.ok()) << err.what();
-			UpdatesFilters filters1;
-			err = rx.SubscribeUpdates(&reciever2, filters1, SubscriptionOpts().IncrementSubscription());
-			ASSERT_TRUE(err.ok()) << err.what();
-		}
-
-		UpdatesReciever reciever3(loop);  // Recieves updates for ns 'ns4'
-		{
-			UpdatesFilters filters;
-			filters.AddFilter(kNs4Name, UpdatesFilters::Filter());
-			err = rx.SubscribeUpdates(&reciever3, filters);
-			ASSERT_TRUE(err.ok()) << err.what();
-		}
-
-		{
-			const size_t count = 100;
-			FillData(rx, kNs4Name, 0, count);
-			FillData(rx, kNs5Name, 0, count);
-			ASSERT_TRUE(reciever1.AwaitNamespaces(1));
-			ASSERT_TRUE(reciever1.AwaitItems(kNs5Name, count));
-			reciever1.Reset();
-
-			ASSERT_TRUE(reciever2.AwaitNamespaces(2));
-			ASSERT_TRUE(reciever2.AwaitItems(kNs5Name, count));
-			ASSERT_TRUE(reciever2.AwaitItems(kNs4Name, count));
-			reciever2.Reset();
-
-			ASSERT_TRUE(reciever3.AwaitNamespaces(1));
-			ASSERT_TRUE(reciever3.AwaitItems(kNs4Name, count));
-			reciever3.Reset();
-		}
-
-		err = rx.OpenNamespace(kNs1Name);
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rx.OpenNamespace(kNs2Name);
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rx.RenameNamespace(kNs1Name, string(kNs3Name));
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rx.DropNamespace(kNs2Name);
-		ASSERT_TRUE(err.ok()) << err.what();
-		{
-			ASSERT_TRUE(reciever1.AwaitNamespaces(2));
-			ASSERT_TRUE(reciever1.AwaitItems(kNs1Name, 2));
-			ASSERT_TRUE(reciever1.AwaitItems(kNs2Name, 2));
-			reciever1.Reset();
-
-			ASSERT_TRUE(reciever2.AwaitNamespaces(2));
-			ASSERT_TRUE(reciever2.AwaitItems(kNs1Name, 2));
-			ASSERT_TRUE(reciever2.AwaitItems(kNs2Name, 2));
-			reciever2.Reset();
-
-			ASSERT_TRUE(reciever3.AwaitNamespaces(2));
-			ASSERT_TRUE(reciever3.AwaitItems(kNs1Name, 2));
-			ASSERT_TRUE(reciever3.AwaitItems(kNs2Name, 2));
-			reciever3.Reset();
-		}
-
-		err = rx.UnsubscribeUpdates(&reciever1);
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rx.UnsubscribeUpdates(&reciever2);
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = rx.UnsubscribeUpdates(&reciever3);
+		std::string tmpNsName;
+		err = rx.CreateTemporaryNamespace("ns1", tmpNsName);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		{
-			const size_t count = 50;
-			FillData(rx, kNs4Name, 0, count);
-			FillData(rx, kNs5Name, 0, count);
-			loop.sleep(std::chrono::seconds(2));
-			ASSERT_TRUE(reciever1.AwaitNamespaces(0));
-			ASSERT_TRUE(reciever2.AwaitNamespaces(0));
-			ASSERT_TRUE(reciever3.AwaitNamespaces(0));
-		}
+		// Check if temporary ns was created
+		std::vector<NamespaceDef> nsList;
+		err = rx.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary());
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(nsList.size(), 0);
+		err = rx.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem());
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(nsList.size(), 1);
+		ASSERT_EQ(nsList[0].name, tmpNsName);
+
+		// Reconnect
 		err = rx.Stop();
 		ASSERT_TRUE(err.ok()) << err.what();
+		err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = rx.Status();
-		ASSERT_FALSE(err.ok());
-		finished = true;
-	};
+		// Allow server to handle disconnect
+		std::this_thread::sleep_for(std::chrono::seconds(2));
 
-	loop.spawn(mainRoutine);
+		// Check if namespce was removed
+		nsList.clear();
+		err = rx.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem());
+		ASSERT_TRUE(err.ok()) << err.what();
+		if (nsList.size() > 0) {
+			for (auto& ns : nsList) std::cerr << ns.name << std::endl;
+			ASSERT_TRUE(false);
+		}
+
+		err = rx.Stop();
+		ASSERT_TRUE(err.ok()) << err.what();
+	});
 
 	loop.run();
-	ASSERT_TRUE(finished);
+}
+
+TEST_F(RPCClientTestApi, ItemJSONWithDouble) {
+	ev::dynamic_loop loop;
+	loop.spawn([&loop]() noexcept {
+		reindexer::client::CoroReindexer rx;
+		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
+		ASSERT_TRUE(err.ok()) << err.what();
+		auto item = rx.NewItem("ns");
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+		{
+			const std::string kJSON = R"_({"id":1234,"double":0.0})_";
+			err = item.FromJSON(kJSON);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(item.GetJSON(), kJSON);
+		}
+
+		{
+			const std::string kJSON = R"_({"id":1234,"double":0.1})_";
+			err = item.FromJSON(kJSON);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(item.GetJSON(), kJSON);
+		}
+	});
+	loop.run();
 }

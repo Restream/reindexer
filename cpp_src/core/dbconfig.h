@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "cluster/config.h"
 #include "estl/fast_hash_set.h"
 #include "estl/mutex.h"
 #include "estl/shared_mutex.h"
@@ -19,7 +20,7 @@ class JsonBuilder;
 class RdxContext;
 class WrSerializer;
 
-enum ConfigType { ProfilingConf, NamespaceDataConf, ReplicationConf };
+enum ConfigType { ProfilingConf, NamespaceDataConf, AsyncReplicationConf, ReplicationConf };
 
 struct ProfilingConfigData {
 	bool queriesPerfStats = false;
@@ -43,42 +44,20 @@ struct NamespaceConfigData {
 	int64_t walSize = 4000000;
 };
 
-enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave, ReplicationReadOnly };
-
 struct ReplicationConfigData {
+	int serverID = 0;
+	int clusterID = 1;
+
 	Error FromYML(const string &yml);
+	Error FromJSON(std::string_view json);
 	Error FromJSON(const gason::JsonNode &v);
 	void GetJSON(JsonBuilder &jb) const;
 	void GetYAML(WrSerializer &ser) const;
 
-	ReplicationRole role = ReplicationNone;
-	std::string masterDSN;
-	std::string appName = "rx_slave";
-	int connPoolSize = 1;
-	int workerThreads = 1;
-	int clusterID = 1;
-	int timeoutSec = 60;
-	int retrySyncIntervalSec = 20;
-	int onlineReplErrorsThreshold = 100;
-	bool forceSyncOnLogicError = false;
-	bool forceSyncOnWrongDataHash = false;
-	fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;
-	bool enableCompression = true;
-	int serverId = 0;
-
 	bool operator==(const ReplicationConfigData &rdata) const noexcept {
-		return (role == rdata.role) && (connPoolSize == rdata.connPoolSize) && (workerThreads == rdata.workerThreads) &&
-			   (clusterID == rdata.clusterID) && (forceSyncOnLogicError == rdata.forceSyncOnLogicError) &&
-			   (forceSyncOnWrongDataHash == rdata.forceSyncOnWrongDataHash) && (masterDSN == rdata.masterDSN) &&
-			   (retrySyncIntervalSec == rdata.retrySyncIntervalSec) && (onlineReplErrorsThreshold == rdata.onlineReplErrorsThreshold) &&
-			   (timeoutSec == rdata.timeoutSec) && (namespaces == rdata.namespaces) && (enableCompression == rdata.enableCompression) &&
-			   (serverId == rdata.serverId) && (appName == rdata.appName);
+		return (clusterID == rdata.clusterID) && (serverID == rdata.serverID);
 	}
 	bool operator!=(const ReplicationConfigData &rdata) const noexcept { return !operator==(rdata); }
-
-protected:
-	static ReplicationRole str2role(const string &);
-	static std::string role2str(ReplicationRole) noexcept;
 };
 
 class DBConfigProvider {
@@ -90,16 +69,22 @@ public:
 
 	Error FromJSON(const gason::JsonNode &root);
 	void setHandler(ConfigType cfgType, std::function<void()> handler);
+	int setHandler(std::function<void(ReplicationConfigData)> handler);
+	void unsetHandler(int id);
 
 	ProfilingConfigData GetProfilingConfig();
+	cluster::AsyncReplConfigData GetAsyncReplicationConfig();
 	ReplicationConfigData GetReplicationConfig();
 	bool GetNamespaceConfig(const string &nsName, NamespaceConfigData &data);
 
 private:
 	ProfilingConfigData profilingData_;
+	cluster::AsyncReplConfigData asyncReplicationData_;
 	ReplicationConfigData replicationData_;
 	std::unordered_map<string, NamespaceConfigData> namespacesData_;
 	std::unordered_map<int, std::function<void()>> handlers_;
+	std::unordered_map<int, std::function<void(ReplicationConfigData)>> replicationConfigDataHandlers_;
+	int HandlersCounter_ = 0;
 	shared_timed_mutex mtx_;
 };
 

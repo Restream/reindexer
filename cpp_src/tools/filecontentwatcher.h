@@ -8,15 +8,18 @@ namespace reindexer {
 
 class FileContetWatcher {
 public:
-	void SetFilepath(std::string filepath, bool enable = false) noexcept {
+	FileContetWatcher(std::string filename, std::function<Error(const std::string&)> loadFromYaml,
+					  std::function<Error(const std::string&)> loadFromFile) noexcept
+		: filename_(std::move(filename)), loadFromYaml_(std::move(loadFromYaml)), loadFromFile_(std::move(loadFromFile)) {
+		assert(loadFromYaml_);
+		assert(loadFromYaml_);
+	}
+	void SetDirectory(const std::string& directory) noexcept {
 		assert(!hasFilepath_.load(std::memory_order_acquire));
-		filepath_ = std::move(filepath);
+		filepath_ = fs::JoinPath(directory, filename_);
 		auto stat = fs::StatTime(filepath_);
 		lastReplConfMTime_.store(stat.mtime, std::memory_order_relaxed);
 		hasFilepath_.store(true, std::memory_order_release);
-		if (enable) {
-			isEnabled_.store(true, std::memory_order_release);
-		}
 	}
 
 	Error Enable() noexcept {
@@ -27,27 +30,17 @@ public:
 		return errOK;
 	}
 
-	bool ReadIfFileWasModified(std::string& content) {
-		if (!isEnabled_.load(std::memory_order_acquire) || !hasFilepath_.load(std::memory_order_acquire)) {
-			return false;
+	void Check() {
+		std::string yamlReplConf;
+		const bool wasModified = readIfFileWasModified(yamlReplConf);
+		if (wasModified) {
+			hadErrorOnLastTry_ = !(loadFromYaml_(yamlReplConf).ok());
+		} else if (hadErrorOnLastTry_) {
+			// Retry to read error config once
+			// This logic adds delay between write and read, which allows writer to finish all his writes
+			hadErrorOnLastTry_ = false;
+			loadFromFile_(filename_);
 		}
-		auto stat = fs::StatTime(filepath_);
-		if (stat.mtime > 0) {
-			auto lastReplConfMTime = lastReplConfMTime_.load(std::memory_order_acquire);
-			if (lastReplConfMTime != stat.mtime) {
-				if (lastReplConfMTime_.compare_exchange_strong(lastReplConfMTime, stat.mtime, std::memory_order_acq_rel)) {
-					auto res = fs::ReadFile(filepath_, content);
-					if (res < 0) {
-						content.clear();
-					}
-					std::lock_guard<std::mutex> lck(mtx_);
-					if (content != expectedContent_) {
-						return true;
-					}
-				}
-			}
-		}
-		return false;
 	}
 
 	template <typename PredicatT>
@@ -78,13 +71,42 @@ public:
 		return errOK;
 	}
 
+	std::string_view Filename() const noexcept { return filename_; }
+
 private:
+	bool readIfFileWasModified(std::string& content) {
+		if (!isEnabled_.load(std::memory_order_acquire) || !hasFilepath_.load(std::memory_order_acquire)) {
+			return false;
+		}
+		auto stat = fs::StatTime(filepath_);
+		if (stat.mtime > 0) {
+			auto lastReplConfMTime = lastReplConfMTime_.load(std::memory_order_acquire);
+			if (lastReplConfMTime != stat.mtime) {
+				if (lastReplConfMTime_.compare_exchange_strong(lastReplConfMTime, stat.mtime, std::memory_order_acq_rel)) {
+					auto res = fs::ReadFile(filepath_, content);
+					if (res < 0) {
+						content.clear();
+					}
+					std::lock_guard<std::mutex> lck(mtx_);
+					if (content != expectedContent_) {
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	const std::string filename_;
 	std::string filepath_;
 	std::string expectedContent_;
 	std::atomic<bool> hasFilepath_{false};
 	std::atomic<bool> isEnabled_{false};
 	std::atomic<int64_t> lastReplConfMTime_{-1};
 	std::mutex mtx_;
+	std::function<Error(const std::string&)> loadFromYaml_;
+	std::function<Error(const std::string&)> loadFromFile_;
+	bool hadErrorOnLastTry_ = false;
 };
 
 }  // namespace reindexer

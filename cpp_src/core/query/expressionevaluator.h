@@ -8,19 +8,20 @@ class token;
 class tokenizer;
 class FunctionExecutor;
 class TagsMatcher;
+struct NsContext;
 
 class ExpressionEvaluator {
 public:
 	ExpressionEvaluator(const PayloadType& type, TagsMatcher& tagsMatcher, FunctionExecutor& func);
 
-	VariantArray Evaluate(tokenizer& parser, const PayloadValue& v, std::string_view forField);
-	VariantArray Evaluate(std::string_view expr, const PayloadValue& v, std::string_view forField);
+	VariantArray Evaluate(tokenizer& parser, const PayloadValue& v, std::string_view forField, const NsContext& ctx);
+	VariantArray Evaluate(std::string_view expr, const PayloadValue& v, std::string_view forField, const NsContext& ctx);
 
 private:
-	double getPrimaryToken(tokenizer& parser, const PayloadValue& v);
-	double performSumAndSubtracting(tokenizer& parser, const PayloadValue& v);
-	double performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& lastTok);
-	double performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& lastTok);
+	double getPrimaryToken(tokenizer& parser, const PayloadValue& v, const NsContext& ctx);
+	double performSumAndSubtracting(tokenizer& parser, const PayloadValue& v, const NsContext& ctx);
+	double performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& lastTok, const NsContext& ctx);
+	double performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& lastTok, const NsContext& ctx);
 
 	void captureArrayContent(tokenizer& parser);
 

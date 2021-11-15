@@ -24,11 +24,13 @@ TEST_F(TransactionApi, ConcurrencyTest) {
 	readThreads.emplace_back(std::thread([&] {
 		while (!stop.load()) {
 			SelectData(0, GetItemsCount());
+			std::this_thread::sleep_for(std::chrono::milliseconds(15));
 		}
 	}));
 	readThreads.emplace_back(std::thread([&] {
 		while (!stop.load()) {
 			SelectData(0, GetItemsCount());
+			std::this_thread::sleep_for(std::chrono::milliseconds(15));
 		}
 	}));
 

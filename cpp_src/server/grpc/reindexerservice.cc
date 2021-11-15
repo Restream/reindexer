@@ -92,7 +92,6 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		opts.Sync(request->storageoptions().sync());
 		opts.Enabled(request->storageoptions().enabled());
 		opts.FillCache(request->storageoptions().fillcache());
-		opts.SlaveMode(request->storageoptions().slavemode());
 		opts.Autorepair(request->storageoptions().autorepair());
 		opts.CreateIfMissing(request->storageoptions().createifmissing());
 		opts.VerifyChecksums(request->storageoptions().verifychecksums());
@@ -115,7 +114,6 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		nsDef.storage.Sync(request->namespace_().storageoptions().sync());
 		nsDef.storage.Enabled(request->namespace_().storageoptions().enabled());
 		nsDef.storage.FillCache(request->namespace_().storageoptions().fillcache());
-		nsDef.storage.SlaveMode(request->namespace_().storageoptions().slavemode());
 		nsDef.storage.Autorepair(request->namespace_().storageoptions().autorepair());
 		nsDef.storage.CreateIfMissing(request->namespace_().storageoptions().createifmissing());
 		nsDef.storage.VerifyChecksums(request->namespace_().storageoptions().verifychecksums());
@@ -310,7 +308,6 @@ static IndexDef toIndexDef(const Index& src) {
 				storageOpts->set_verifychecksums(src.storage.IsVerifyChecksums());
 				storageOpts->set_fillcache(src.storage.IsFillCache());
 				storageOpts->set_sync(src.storage.IsSync());
-				storageOpts->set_slavemode(src.storage.IsSlaveMode());
 				storageOpts->set_autorepair(src.storage.IsAutorepair());
 				nsdef->set_allocated_storageoptions(storageOpts);
 
@@ -453,7 +450,7 @@ Error ReindexerService::packCJSONItem(WrSerializer& wrser, reindexer::QueryResul
 	}
 	if (opts.withitemid()) {
 		wrser.PutVarUint(itemRef.Id());
-		wrser.PutVarUint(itemRef.Value().GetLSN());
+		wrser.PutVarUint(int64_t(itemRef.Value().GetLSN()));
 	}
 	if (opts.withrank()) {
 		wrser.PutVarUint(itemRef.Proc());

@@ -14,6 +14,10 @@ import (
 )
 
 func TestMultipleDSN(t *testing.T) {
+	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
+		return
+	}
+
 	ns := "items"
 	type Item struct {
 		Name string `json:"name" reindex:"name,,pk"`
@@ -21,9 +25,9 @@ func TestMultipleDSN(t *testing.T) {
 
 	t.Run("connect to next dsn if current not available", func(t *testing.T) {
 		t.Parallel()
-		srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "reindex_test_multi_dsn"}
-		srv2 := helpers.TestServer{T: t, RpcPort: "6662", HttpPort: "9962", DbName: "reindex_test_multi_dsn"}
-		srv3 := helpers.TestServer{T: t, RpcPort: "6663", HttpPort: "9963", DbName: "reindex_test_multi_dsn"}
+		srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", ClusterPort: "9861", DbName: "reindex_test_multi_dsn"}
+		srv2 := helpers.TestServer{T: t, RpcPort: "6662", HttpPort: "9962", ClusterPort: "9862", DbName: "reindex_test_multi_dsn"}
+		srv3 := helpers.TestServer{T: t, RpcPort: "6663", HttpPort: "9963", ClusterPort: "9863", DbName: "reindex_test_multi_dsn"}
 		dsn := []string{
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort),
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv2.RpcPort, srv2.DbName, srv2.RpcPort),
@@ -86,9 +90,9 @@ func TestMultipleDSN(t *testing.T) {
 
 	t.Run("return err if all srv stopped", func(t *testing.T) {
 		t.Parallel()
-		srv1 := helpers.TestServer{T: t, RpcPort: "6671", HttpPort: "9971", DbName: "reindex_test_multi_dsn"}
-		srv2 := helpers.TestServer{T: t, RpcPort: "6672", HttpPort: "9972", DbName: "reindex_test_multi_dsn"}
-		srv3 := helpers.TestServer{T: t, RpcPort: "6673", HttpPort: "9973", DbName: "reindex_test_multi_dsn"}
+		srv1 := helpers.TestServer{T: t, RpcPort: "6671", HttpPort: "9971", ClusterPort: "9871", DbName: "reindex_test_multi_dsn"}
+		srv2 := helpers.TestServer{T: t, RpcPort: "6672", HttpPort: "9972", ClusterPort: "9872", DbName: "reindex_test_multi_dsn"}
+		srv3 := helpers.TestServer{T: t, RpcPort: "6673", HttpPort: "9973", ClusterPort: "9873", DbName: "reindex_test_multi_dsn"}
 		dsn := []string{
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort),
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv2.RpcPort, srv2.DbName, srv2.RpcPort),
@@ -107,8 +111,8 @@ func TestMultipleDSN(t *testing.T) {
 	t.Run("should be possible Close(), after all srv stopped", func(t *testing.T) {
 		t.Parallel()
 
-		srv1 := helpers.TestServer{T: t, RpcPort: "6681", HttpPort: "9981", DbName: "reindex_test_multi_dsn"}
-		srv2 := helpers.TestServer{T: t, RpcPort: "6682", HttpPort: "9982", DbName: "reindex_test_multi_dsn"}
+		srv1 := helpers.TestServer{T: t, RpcPort: "6681", HttpPort: "9981", ClusterPort: "9881", DbName: "reindex_test_multi_dsn"}
+		srv2 := helpers.TestServer{T: t, RpcPort: "6682", HttpPort: "9982", ClusterPort: "9882", DbName: "reindex_test_multi_dsn"}
 		dsn := []string{
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort),
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv2.RpcPort, srv2.DbName, srv2.RpcPort),
@@ -152,7 +156,7 @@ func TestMultipleDSN(t *testing.T) {
 	t.Run("should reset cache after restart server and reconnect", func(t *testing.T) {
 		t.Parallel()
 
-		srv := helpers.TestServer{T: t, RpcPort: "6683", HttpPort: "9983", DbName: "reindex_test_multi_dsn"}
+		srv := helpers.TestServer{T: t, RpcPort: "6683", HttpPort: "9983", ClusterPort: "9883", DbName: "reindex_test_multi_dsn"}
 		dsn := []string{
 			fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv.RpcPort, srv.DbName, srv.RpcPort),
 		}
@@ -206,8 +210,12 @@ func TestMultipleDSN(t *testing.T) {
 }
 
 func TestRaceConditionsMultiDSN(t *testing.T) {
-	srv1 := helpers.TestServer{T: t, RpcPort: "6651", HttpPort: "9951", DbName: "reindex_test_multi_dsn"}
-	srv2 := helpers.TestServer{T: t, RpcPort: "6652", HttpPort: "9952", DbName: "reindex_test_multi_dsn"}
+	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
+		return
+	}
+
+	srv1 := helpers.TestServer{T: t, RpcPort: "6651", HttpPort: "9951", ClusterPort: "9851", DbName: "reindex_test_multi_dsn"}
+	srv2 := helpers.TestServer{T: t, RpcPort: "6652", HttpPort: "9952", ClusterPort: "9852", DbName: "reindex_test_multi_dsn"}
 
 	t.Run("on reconnect to next dsn", func(t *testing.T) {
 		t.Parallel()

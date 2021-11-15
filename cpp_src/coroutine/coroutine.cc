@@ -1,6 +1,8 @@
 #include "coroutine.h"
 #include <cstdio>
+#include <iterator>
 #include <thread>
+#include "tools/errors.h"
 
 namespace reindexer {
 namespace coroutine {
@@ -22,6 +24,8 @@ void ordinator::entry() {
 				func();
 			} catch (std::exception &e) {
 				fprintf(stderr, "Unhandled exception in coroutine \"%u\": %s\n", index + 1, e.what());
+			} catch (reindexer::Error &e) {
+				fprintf(stderr, "Unhandled exception in coroutine \"%u\": %s\n", index + 1, e.what().c_str());
 			} catch (...) {
 				fprintf(stderr, "Unhandled exception in coroutine \"%u\": some custom exception\n", index + 1);
 			}

@@ -5,43 +5,69 @@
 
 namespace reindexer {
 
+struct TransactionItemStep {
+	ItemImplRawData data;
+	ItemModifyMode mode;
+};
+
+struct TransactionQueryStep {
+	std::unique_ptr<Query> query;
+};
+
+struct TransactionNopStep {};
+
+struct TransactionMetaStep {
+	std::string key;
+	std::string value;
+};
+
 class TransactionStep {
 public:
-	TransactionStep(Item &&item, ItemModifyMode modifyMode) : itemData_(move(*item.impl_)), modifyMode_(modifyMode), query_(nullptr) {
+	enum class Type : uint8_t { Nop, ModifyItem, Query, PutMeta };
+
+	TransactionStep(Item &&item, ItemModifyMode modifyMode, lsn_t lsn)
+		: data_(TransactionItemStep{std::move(*item.impl_), modifyMode}), type_(Type::ModifyItem), lsn_(lsn) {
 		delete item.impl_;
 		item.impl_ = nullptr;
 	}
-	TransactionStep(Query &&query) : modifyMode_(ModeUpdate), query_(new Query(std::move(query))) {}
+	TransactionStep(lsn_t lsn) : data_(TransactionNopStep{}), type_(Type::Nop), lsn_(lsn) {}
+	TransactionStep(Query &&query, lsn_t lsn)
+		: data_(TransactionQueryStep{std::make_unique<Query>(std::move(query))}), type_(Type::Query), lsn_(lsn) {}
+	TransactionStep(std::string_view key, std::string_view value, lsn_t lsn)
+		: data_(TransactionMetaStep{std::string(key), std::string(value)}), type_(Type::PutMeta), lsn_(lsn) {}
 
 	TransactionStep(const TransactionStep &) = delete;
 	TransactionStep &operator=(const TransactionStep &) = delete;
-	TransactionStep(TransactionStep && /*rhs*/) noexcept = default;
-	TransactionStep &operator=(TransactionStep && /*rhs*/) = default;
+	TransactionStep(TransactionStep && /*rhs*/) = default;
+	TransactionStep &operator=(TransactionStep && /*rhs*/) = delete;
 
-	ItemImplRawData itemData_;
-	ItemModifyMode modifyMode_;
-	std::unique_ptr<Query> query_;
+	std::variant<TransactionItemStep, TransactionQueryStep, TransactionNopStep, TransactionMetaStep> data_;
+	Type type_;
+	const lsn_t lsn_;
 };
 
 class TransactionImpl {
 public:
 	TransactionImpl(const std::string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
-					std::shared_ptr<const Schema> schema);
+					std::shared_ptr<const Schema> schema, lsn_t lsn);
 
-	void Insert(Item &&item);
-	void Update(Item &&item);
-	void Upsert(Item &&item);
-	void Delete(Item &&item);
-	void Modify(Item &&item, ItemModifyMode mode);
-	void Modify(Query &&item);
+	void Insert(Item &&item, lsn_t lsn);
+	void Update(Item &&item, lsn_t lsn);
+	void Upsert(Item &&item, lsn_t lsn);
+	void Delete(Item &&item, lsn_t lsn);
+	void Modify(Item &&item, ItemModifyMode mode, lsn_t lsn);
+	void Modify(Query &&item, lsn_t lsn);
+	void Nop(lsn_t lsn);
+	void PutMeta(std::string_view key, std::string_view value, lsn_t lsn);
 
 	void UpdateTagsMatcherFromItem(ItemImpl *ritem);
 	Item NewItem();
 	Item GetItem(TransactionStep &&st);
+	lsn_t GetLSN() const noexcept { return lsn_; }
 
-	const std::string &GetName() { return nsName_; }
+	// const std::string &GetName() { return nsName_; }
 
-	void checkTagsMatcher(Item &item);
+	void updateTagsMatcherIfNecessary(Item &item);
 
 	PayloadType payloadType_;
 	TagsMatcher tagsMatcher_;
@@ -53,6 +79,7 @@ public:
 	bool tagsUpdated_;
 	std::mutex mtx_;
 	Transaction::time_point startTime_;
+	const lsn_t lsn_;
 };
 
 }  // namespace reindexer

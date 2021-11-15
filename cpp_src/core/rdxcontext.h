@@ -2,8 +2,8 @@
 
 #include <functional>
 #include "activity_context.h"
-#include "lsn.h"
 #include "tools/errors.h"
+#include "tools/lsn.h"
 
 namespace reindexer {
 
@@ -72,21 +72,31 @@ class RdxContext {
 public:
 	using Completion = std::function<void(const Error&)>;
 
-	RdxContext() : fromReplication_(false), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr) {}
-	RdxContext(bool fromReplication, const LSNPair& LSNs)
-		: fromReplication_(fromReplication), LSNs_(LSNs), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr) {}
-
-	RdxContext(const IRdxCancelContext* cancelCtx, Completion cmpl)
-		: fromReplication_(false), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(cancelCtx), cmpl_(cmpl) {}
-	RdxContext(std::string_view activityTracer, std::string_view user, std::string_view query, ActivityContainer& container,
-			   int connectionId, const IRdxCancelContext* cancelCtx, Completion cmpl)
-		: fromReplication_(false),
+	RdxContext() : holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr) {}
+	RdxContext(lsn_t originLsn) : originLsn_(originLsn), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr) {}
+	RdxContext(lsn_t originLsn, const IRdxCancelContext* cancelCtx, Completion cmpl, int emmiterServerId)
+		: originLsn_(originLsn),
+		  emmiterServerId_(emmiterServerId),
+		  holdStatus_(kEmpty),
+		  activityPtr_(nullptr),
+		  cancelCtx_(cancelCtx),
+		  cmpl_(cmpl) {}
+	RdxContext(lsn_t originLsn, std::string_view activityTracer, std::string_view user, std::string_view query,
+			   ActivityContainer& container, int connectionId, const IRdxCancelContext* cancelCtx, Completion cmpl, int emmiterServerId)
+		: originLsn_(originLsn),
+		  emmiterServerId_(emmiterServerId),
 		  holdStatus_(kHold),
 		  activityCtx_(activityTracer, user, query, container, connectionId),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(cmpl) {}
-	RdxContext(RdxActivityContext* ptr, const IRdxCancelContext* cancelCtx = nullptr, Completion cmpl = nullptr)
-		: fromReplication_(false), holdStatus_(ptr ? kPtr : kEmpty), activityPtr_(ptr), cancelCtx_(cancelCtx), cmpl_(cmpl) {
+	RdxContext(RdxActivityContext* ptr, lsn_t originLsn = lsn_t(), const IRdxCancelContext* cancelCtx = nullptr, Completion cmpl = nullptr,
+			   int emmiterServerId = -1)
+		: originLsn_(originLsn),
+		  emmiterServerId_(emmiterServerId),
+		  holdStatus_(ptr ? kPtr : kEmpty),
+		  activityPtr_(ptr),
+		  cancelCtx_(cancelCtx),
+		  cmpl_(cmpl) {
 #ifndef NDEBUG
 		if (holdStatus_ == kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 #endif
@@ -110,12 +120,15 @@ public:
 	RdxActivityContext::Ward BeforeIndexWork() const;
 	RdxActivityContext::Ward BeforeSelectLoop() const;
 	/// lifetime of the returning value should not exceed of the context's
-	RdxContext OnlyActivity() const { return {Activity()}; }
-	RdxActivityContext* Activity() const;
-	Completion Compl() const { return cmpl_; }
+	RdxContext OnlyActivity() const { return {Activity(), originLsn_}; }
+	RdxActivityContext* Activity() const noexcept;
+	Completion Compl() const noexcept { return cmpl_; }
+	bool NoWaitSync() const noexcept { return noWaitSync_; }
+	void WithNoWaitSync(bool val = true) noexcept { noWaitSync_ = val; }
+	bool HasEmmiterServer() const noexcept { return emmiterServerId_ >= 0; }
 
-	const bool fromReplication_;
-	LSNPair LSNs_;
+	const lsn_t originLsn_;
+	int emmiterServerId_ = -1;
 
 private:
 	enum { kHold, kPtr, kEmpty } const holdStatus_;
@@ -125,6 +138,7 @@ private:
 	};
 	const IRdxCancelContext* cancelCtx_;
 	Completion cmpl_;
+	bool noWaitSync_ = false;
 };
 
 class QueryResults;
@@ -132,18 +146,32 @@ class QueryResults;
 class InternalRdxContext {
 public:
 	InternalRdxContext() noexcept : cmpl_(nullptr) {}
+	InternalRdxContext(const InternalRdxContext&) = default;
+	InternalRdxContext(InternalRdxContext&&) = default;
 	InternalRdxContext(RdxContext::Completion cmpl, const RdxDeadlineContext ctx, std::string_view activityTracer, std::string_view user,
-					   int connectionId) noexcept
-		: cmpl_(cmpl), deadlineCtx_(std::move(ctx)), activityTracer_(activityTracer), user_(user), connectionId_(connectionId) {}
+					   int connectionId, lsn_t lsn, int emmiterServerId, int shardId) noexcept
+		: cmpl_(cmpl),
+		  deadlineCtx_(std::move(ctx)),
+		  activityTracer_(activityTracer),
+		  user_(user),
+		  connectionId_(connectionId),
+		  lsn_(lsn),
+		  emmiterServerId_(emmiterServerId),
+		  shardId_(shardId) {}
 
 	InternalRdxContext WithCompletion(RdxContext::Completion cmpl) const noexcept {
-		return InternalRdxContext(cmpl, deadlineCtx_, activityTracer_, user_, connectionId_);
+		return InternalRdxContext(cmpl, deadlineCtx_, activityTracer_, user_, connectionId_, lsn_, emmiterServerId_, shardId_);
 	}
 	InternalRdxContext WithTimeout(milliseconds timeout) const noexcept {
-		return InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()), activityTracer_, user_, connectionId_);
+		return InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()), activityTracer_, user_, connectionId_, lsn_,
+								  emmiterServerId_, shardId_);
+	}
+	InternalRdxContext WithLSN(lsn_t lsn) const noexcept {
+		return InternalRdxContext(cmpl_, deadlineCtx_, activityTracer_, user_, connectionId_, lsn, emmiterServerId_, shardId_);
 	}
 	InternalRdxContext WithCancelParent(const IRdxCancelContext* parent) const noexcept {
-		return InternalRdxContext(cmpl_, RdxDeadlineContext(deadlineCtx_.deadline(), parent), activityTracer_, user_, connectionId_);
+		return InternalRdxContext(cmpl_, RdxDeadlineContext(deadlineCtx_.deadline(), parent), activityTracer_, user_, connectionId_, lsn_,
+								  emmiterServerId_, shardId_);
 	}
 	InternalRdxContext WithActivityTracer(std::string_view activityTracer, std::string_view user,
 										  int connectionId = kNoConnectionId) const {
@@ -151,7 +179,13 @@ public:
 				   ? *this
 				   : InternalRdxContext(cmpl_, deadlineCtx_,
 										(activityTracer_.empty() ? "" : activityTracer_ + "/") + std::string(activityTracer), user,
-										connectionId);
+										connectionId, lsn_, emmiterServerId_, shardId_);
+	}
+	InternalRdxContext WithEmmiterServerId(unsigned int sId) const noexcept {
+		return InternalRdxContext(cmpl_, deadlineCtx_, activityTracer_, user_, connectionId_, lsn_, sId, shardId_);
+	}
+	InternalRdxContext WithShardId(unsigned int id) const noexcept {
+		return InternalRdxContext(cmpl_, deadlineCtx_, activityTracer_, user_, connectionId_, lsn_, emmiterServerId_, id);
 	}
 	void SetActivityTracer(std::string_view activityTracer, std::string_view user, int connectionId = kNoConnectionId) {
 		activityTracer_ = std::string(activityTracer);
@@ -161,8 +195,12 @@ public:
 
 	RdxContext CreateRdxContext(std::string_view query, ActivityContainer&) const;
 	RdxContext CreateRdxContext(std::string_view query, ActivityContainer&, QueryResults&) const;
-	RdxContext::Completion Compl() const { return cmpl_; }
-	bool NeedTraceActivity() const { return !activityTracer_.empty(); }
+	RdxContext::Completion Compl() const noexcept { return cmpl_; }
+	bool NeedTraceActivity() const noexcept { return !activityTracer_.empty(); }
+	lsn_t LSN() const noexcept { return lsn_; }
+	bool HasEmmiterID() const noexcept { return emmiterServerId_ >= 0; }
+	bool HasDeadline() const noexcept { return deadlineCtx_.IsCancelable(); }
+	int ShardId() const noexcept { return shardId_; }
 
 	static const int kNoConnectionId = -1;
 
@@ -172,6 +210,9 @@ private:
 	std::string activityTracer_;
 	std::string user_;
 	int connectionId_ = kNoConnectionId;
+	lsn_t lsn_;
+	int emmiterServerId_ = -1;
+	int shardId_ = -1;
 };
 
 }  // namespace reindexer

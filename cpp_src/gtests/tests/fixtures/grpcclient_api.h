@@ -100,7 +100,6 @@ public:
 			storageOpts->set_nsname(default_namespace);
 			storageOpts->set_enabled(false);
 			storageOpts->set_fillcache(false);
-			storageOpts->set_slavemode(false);
 			storageOpts->set_autorepair(false);
 			storageOpts->set_createifmissing(true);
 			storageOpts->set_verifychecksums(false);
@@ -148,7 +147,6 @@ public:
 			storageOpts->set_nsname(default_namespace);
 			storageOpts->set_enabled(false);
 			storageOpts->set_fillcache(false);
-			storageOpts->set_slavemode(false);
 			storageOpts->set_autorepair(false);
 			storageOpts->set_createifmissing(true);
 			storageOpts->set_verifychecksums(false);

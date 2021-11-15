@@ -4,6 +4,7 @@
 #include "core/query/query.h"
 #include "core/queryresults/queryresults.h"
 #include "core/rdxcontext.h"
+#include "core/reindexerconfig.h"
 #include "core/transaction.h"
 
 #include <chrono>
@@ -13,11 +14,19 @@ using std::vector;
 using std::string;
 using std::chrono::milliseconds;
 
-class ReindexerImpl;
-class IUpdatesObserver;
-class IClientsStats;
+class ClusterProxy;
 class ProtobufSchema;
-class UpdatesFilters;
+struct ReplicationStateV2;
+struct ClusterizationStatus;
+class SnapshotChunk;
+class Snapshot;
+struct SnapshotOpts;
+struct ClusterControlRequestData;
+
+namespace cluster {
+struct NodeData;
+struct RaftInfo;
+}  // namespace cluster
 
 /// The main Reindexer interface. Holds database object<br>
 /// *Thread safety*: All methods of Reindexer are thread safe. <br>
@@ -32,8 +41,8 @@ public:
 	using Completion = std::function<void(const Error &err)>;
 
 	/// Create Reindexer database object
-	/// @param clientsStats - object for receiving clients statistics
-	Reindexer(IClientsStats *clientsStats = nullptr);
+	/// @param cfg - general database options
+	Reindexer(ReindexerConfig cfg = ReindexerConfig());
 	/// Destrory Reindexer database object
 	~Reindexer();
 	/// Create not holding copy
@@ -60,17 +69,28 @@ public:
 	/// @param opts - Storage options. Can be one of <br>
 	/// StorageOpts::Enabled() - Enable storage. If storage is disabled, then namespace will be completely in-memory<br>
 	/// StorageOpts::CreateIfMissing () - Storage will be created, if missing
-	/// @return errOK - On success
-	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing());
+	/// @param replOpts - Namespace replication options (for replication purposes, should not be user elsewhere)
+	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing(),
+						const NsReplicationOpts &replOpts = NsReplicationOpts());
 	/// Create new namespace. Will fail, if namespace already exists
 	/// @param nsDef - NamespaceDef with namespace initial parameters
-	Error AddNamespace(const NamespaceDef &nsDef);
+	/// @param replOpts - Namespace replication options (for replication purposes, should not be user elsewhere)
+	Error AddNamespace(const NamespaceDef &nsDef, const NsReplicationOpts &replOpts = NsReplicationOpts());
 	/// Close namespace. Will free all memory resorces, associated with namespace. Forces sync changes to disk
 	/// @param nsName - Name of namespace
 	Error CloseNamespace(std::string_view nsName);
 	/// Drop namespace. Will free all memory resorces, associated with namespace and erase all files from disk
 	/// @param nsName - Name of namespace
 	Error DropNamespace(std::string_view nsName);
+	/// Create new temporary namespace with randomized name
+	/// Temporary namespace will be automatically removed on next startup
+	/// @param baseName - base name, which will be used in result name
+	/// @param resultName - name of created namespace
+	/// @param opts - Storage options. Can be one of <br>
+	/// StorageOpts::Enabled() - Enable storage. If storage is disabled, then namespace will be completely in-memory<br>
+	/// @param version - Namespace version. Should be left empty for leader reindexer instances
+	Error CreateTemporaryNamespace(std::string_view baseName, std::string &resultName, const StorageOpts &opts = StorageOpts().Enabled(),
+								   lsn_t version = lsn_t());
 	/// Delete all items from namespace
 	/// @param nsName - Name of namespace
 	Error TruncateNamespace(std::string_view nsName);
@@ -185,7 +205,7 @@ public:
 	Transaction NewTransaction(std::string_view nsName);
 	/// Commit transaction - transaction will be deleted after commit
 	/// @param tr - transaction to commit
-	/// @param result - QueryResults with IDs of changed by tx items.
+	/// @param result - QueryResults with IDs of items changed by tx.
 	Error CommitTransaction(Transaction &tr, QueryResults &result);
 	/// RollBack transaction - transaction will be deleted after rollback
 	/// Cancelation context doesn't affect this call
@@ -218,21 +238,43 @@ public:
 	/// Cancelation context doesn't affect this call
 	Error InitSystemNamespaces();
 
-	/// Subscribe to updates of database
-	/// Cancelation context doesn't affect this call
-	/// @param observer - Observer interface, which will receive updates
-	/// @param filters - Subscription filters set
-	/// @param opts - Subscription options (allows to either add new filters or reset them)
-	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts = SubscriptionOpts());
-	/// Unsubscribe from updates of database
-	/// Cancelation context doesn't affect this call
-	/// @param observer - Observer interface, which will be unsubscribed updates
-	Error UnsubscribeUpdates(IUpdatesObserver *observer);
-
 	/// Builds Protobuf schema in ser.
 	/// @param ser - schema output buffer
 	/// @param namespaces - list of namespaces to be embedded in .proto
 	Error GetProtobufSchema(WrSerializer &ser, vector<string> &namespaces);
+	/// Get namespace's replication state
+	/// @param nsName - Name of namespace
+	/// @param state - result state
+	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state);
+	/// Set namespace's clusterization status
+	/// @param nsName - Name of namespace
+	/// @param status - new status
+	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus &status);
+	/// Get namespace snapshot
+	/// @param nsName - Name of namespace
+	/// @param opts - Snapshot options:
+	/// LSN value. Starting point for snapshot. If this LSN is still available, snapshot will contain only diff (wal records)
+	/// MaxWALDepth. Max number of WAL-records in force-sync snapshot
+	/// @param snapshot - Result snapshot
+	Error GetSnapshot(std::string_view nsName, const SnapshotOpts &opts, Snapshot &snapshot);
+	/// Apply record from snapshot chunk
+	/// @param nsName - Name of namespace
+	/// @param ch - Snapshot chunk to apply
+	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch);
+
+	/// Suggest new leader info to cluster node
+	/// @param suggestion - suggested elections data
+	/// @param response - local elections data
+	Error SuggestLeader(const cluster::NodeData &suggestion, cluster::NodeData &response);
+	/// Ping RAFT node, to notify it about cluster leader status
+	/// @param data - elections data
+	Error LeadersPing(const cluster::NodeData &data);
+	/// Get RAFT information about rx node
+	/// @param info - result RAFT info (out param)
+	Error GetRaftInfo(cluster::RaftInfo &info);
+	/// Execute cluster control request
+	/// @param request - control params
+	Error ClusterControlRequest(const ClusterControlRequestData &request);
 
 	/// Add cancelable context
 	/// @param ctx - context pointer
@@ -240,6 +282,15 @@ public:
 	/// Add execution timeout to the next query
 	/// @param timeout - Execution timeout
 	Reindexer WithTimeout(milliseconds timeout) const { return Reindexer(impl_, ctx_.WithTimeout(timeout)); }
+	/// Add lsn info
+	/// @param lsn - next operation lsn
+	Reindexer WithLSN(lsn_t lsn) { return Reindexer(impl_, ctx_.WithLSN(lsn)); }
+	/// Add emmiter server id
+	/// @param id - emmiter server id
+	Reindexer WithEmmiterServerId(unsigned int id) { return Reindexer(impl_, ctx_.WithEmmiterServerId(id)); }
+	/// Add shard id
+	/// @param id - shard id
+	Reindexer WithShardId(unsigned int id) { return Reindexer(impl_, ctx_.WithShardId(id)); }
 	/// Add completion
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
 	Reindexer WithCompletion(Completion cmpl) const { return Reindexer(impl_, ctx_.WithCompletion(cmpl)); }
@@ -262,15 +313,17 @@ public:
 		ctx_.SetActivityTracer(activityTracer, user, connectionId);
 	}
 
+	void ShutdownCluster();
+
 	bool NeedTraceActivity() const;
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;
 
 private:
-	Reindexer(ReindexerImpl *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
+	Reindexer(ClusterProxy *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
 
-	ReindexerImpl *impl_;
+	ClusterProxy *impl_;
 	bool owner_;
 	InternalRdxContext ctx_;
 };

@@ -96,7 +96,6 @@ void BaseEncoder<Builder>::collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoi
 	const size_t itemsCount = ds->GetJoinedRowItemsCount(rowid);
 	if (!itemsCount) return;
 
-	string nsTagName("joined_" + ds->GetJoinedItemNamespace(rowid));
 	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(rowid), &ds->GetJoinedItemFieldsFilter(rowid));
 	for (size_t i = 0; i < itemsCount; ++i) {
 		ConstPayload pl(ds->GetJoinedItemPayload(rowid, i));

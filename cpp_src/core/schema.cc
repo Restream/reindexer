@@ -252,7 +252,7 @@ Error PrefixTree::buildProtobufSchema(ProtobufSchemaBuilder& builder, const Pref
 	return errOK;
 }
 
-Schema::Schema(std::string_view json) : paths_(), originalJson_() {
+Schema::Schema(std::string_view json) : paths_(), originalJson_("{}"sv) {
 	auto err = FromJSON(json);
 	if (!err.ok()) {
 		throw err;
@@ -267,19 +267,13 @@ Error Schema::FromJSON(std::string_view json) {
 		gason::JsonParser parser;
 		auto node = parser.Parse(json);
 		parseJsonNode(node, path, true);
-		originalJson_.assign(json.data(), json.size());
-		protobufNsNumber_ = node["x-protobuf-ns-number"].As<int>(-1);
-		if (protobufNsNumber_ == -1 && originalJson_ != "{}") {
-			protobufNsNumber_ = counter++;
-
-			// TODO: fix it
-			auto pos = originalJson_.find_last_of("}");
-			if (pos != std::string::npos) {
-				originalJson_ = originalJson_.erase(pos);
-				originalJson_ += ",\"x-protobuf-ns-number\":" + std::to_string(protobufNsNumber_) + "}";
+		if (json != "{}") {
+			protobufNsNumber_ = node["x-protobuf-ns-number"].As<int>(-1);
+			if (protobufNsNumber_ == -1) {
+				protobufNsNumber_ = counter++;
 			}
 		}
-
+		originalJson_ = AppendProtobufNumber(json, protobufNsNumber_);
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "Schema: %s\nJson: %s", ex.what(), originalJson_);
 	} catch (const Error& err) {
@@ -288,13 +282,9 @@ Error Schema::FromJSON(std::string_view json) {
 	return err;
 }
 
-void Schema::GetJSON(WrSerializer& ser) const {
-	if (!originalJson_.empty()) {
-		ser << originalJson_;
-	} else {
-		ser << "{}";
-	}
-}
+void Schema::GetJSON(WrSerializer& ser) const { ser << originalJson_; }
+
+std::string_view Schema::GetJSON() const noexcept { return originalJson_; }
 
 KeyValueType Schema::GetFieldType(const TagsPath& fieldPath, bool& isArray) const {
 	return paths_.fieldsTypes_.GetField(fieldPath, isArray);
@@ -310,6 +300,19 @@ Error Schema::BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt) {
 Error Schema::GetProtobufSchema(WrSerializer& schema) const {
 	schema.Write(protobufSchema_);
 	return protobufSchemaStatus_;
+}
+
+std::string Schema::AppendProtobufNumber(std::string_view j, int protobufNsNumber) {
+	std::string json(j);
+	if (protobufNsNumber != -1 && j != "{}") {
+		// TODO: fix it
+		auto pos = json.find_last_of("}");
+		if (pos != std::string::npos) {
+			json.erase(pos);
+			json += ",\"x-protobuf-ns-number\":" + std::to_string(protobufNsNumber) + "}";
+		}
+	}
+	return json;
 }
 
 void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& splittedPath, bool isRequired) {

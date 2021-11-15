@@ -50,6 +50,7 @@
   * [Get system information](#get-system-information)
   * [Get activity stats information](#get-activity-stats-information)
   * [Get client connection information](#get-client-connection-information)
+  * [Get replication statistics](#get-replication-statistics)
   * [Get memory stats information](#get-memory-stats-information)
   * [Get performance stats information](#get-performance-stats-information)
   * [Get SELECT queries performance stats information](#get-select-queries-performance-stats-information)
@@ -60,6 +61,7 @@
   * [AggregationResDef](#aggregationresdef)
   * [AggregationsDef](#aggregationsdef)
   * [AggregationsSortDef](#aggregationssortdef)
+  * [AsyncReplicationConfig](#asyncreplicationconfig)
   * [BeginTransactionResponse](#begintransactionresponse)
   * [CacheMemStats](#cachememstats)
   * [ClientsStats](#clientsstats)
@@ -74,6 +76,7 @@
   * [FulltextConfig](#fulltextconfig)
   * [FulltextFieldConfig](#fulltextfieldconfig)
   * [FulltextSynonym](#fulltextsynonym)
+  * [GlobalReplicationStats](#globalreplicationstats)
   * [Index](#index)
   * [IndexCacheMemStats](#indexcachememstats)
   * [IndexMemStat](#indexmemstat)
@@ -101,6 +104,7 @@
   * [QueryPerfStats](#queryperfstats)
   * [ReplicationConfig](#replicationconfig)
   * [ReplicationStats](#replicationstats)
+  * [ReplicationSyncStat](#replicationsyncstat)
   * [SchemaDef](#schemadef)
   * [SelectPerfStats](#selectperfstats)
   * [SortDef](#sortdef)
@@ -123,7 +127,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.2.5
+*Version* : 4.0.0
 
 
 ### License information
@@ -1696,6 +1700,41 @@ This operation will return detailed informatiom about all connections on the ser
 
 
 
+### Get replication statistics
+```
+GET /db/{database}/namespaces/%23replicationstats/items
+```
+
+
+#### Description
+This operation will return detailed informatiom about replication status on this node or cluster
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Query**|**filter**  <br>*required*|Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'. Has to filter by 'type' field: either 'async' or 'cluster'|string|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|[GlobalReplicationStats](#globalreplicationstats)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* system
+
+
+
 ### Get memory stats information
 ```
 GET /db/{database}/namespaces/%23memstats/items
@@ -1844,7 +1883,8 @@ This operation will update system configuration:
 
 |Name|Description|Schema|
 |---|---|---|
-|**command**  <br>*optional*|Command to execute|enum (restart_replication)|
+|**command**  <br>*required*|Command to execute|enum (restart_replication, reset_replication_role)|
+|**namespace**  <br>*optional*|Namespace name for reset_replication_role. May be empty|string|
 
 
 
@@ -1913,6 +1953,29 @@ Specifies facet aggregations results sorting order
 
 
 
+### AsyncReplicationConfig
+
+|Name|Description|Schema|
+|---|---|---|
+|**app_name**  <br>*optional*|Application name, used by replicator as a login tag|string|
+|**enable_compression**  <br>*optional*|Enable network traffic compression|boolean|
+|**max_wal_depth_on_force_sync**  <br>*optional*|Maximum number of WAL records, which will be copied after force-sync|integer|
+|**namespaces**  <br>*required*|General list of namespaces for replication. Empty means all of the namespaces. All replicated namespaces will become read only for followers|< string > array|
+|**nodes**  <br>*required*|Followers list|< [nodes](#asyncreplicationconfig-nodes) > array|
+|**online_updates_timeout_sec**  <br>*optional*|Network timeout for communication with followers (for force and wal synchronization), in seconds|integer|
+|**role**  <br>*required*|Replication role|enum (none, follower, leader)|
+|**sync_timeout_sec**  <br>*optional*|Network timeout for communication with followers (for force and wal synchronization), in seconds|integer|
+
+
+**nodes**
+
+|Name|Description|Schema|
+|---|---|---|
+|**dsn**  <br>*required*|Follower's DSN. Must have cproto-scheme|string|
+|**namespaces**  <br>*optional*|List of namespaces to replicate on this specific node. Empty means all of the namespaces. If field doesn't exists, then general list will be used|< string > array|
+
+
+
 ### BeginTransactionResponse
 
 |Name|Description|Schema|
@@ -1950,10 +2013,8 @@ Specifies facet aggregations results sorting order
 |**current_activity**  <br>*required*|Current activity|string|
 |**db_name**  <br>*required*|Database name|string|
 |**ip**  <br>*required*|Ip|string|
-|**is_subscribed**  <br>*required*|Status of updates subscription|boolean|
 |**last_recv_ts**  <br>*optional*|Timestamp of last recv operation (ms)|integer|
 |**last_send_ts**  <br>*optional*|Timestamp of last send operation (ms)|integer|
-|**pended_updates**  <br>*optional*|Pended updates count|integer|
 |**recv_bytes**  <br>*required*|Receive byte|integer|
 |**recv_rate**  <br>*optional*|Current recv rate (bytes/s)|integer|
 |**send_buf_bytes**  <br>*optional*|Send buffer size|integer|
@@ -1961,25 +2022,8 @@ Specifies facet aggregations results sorting order
 |**sent_bytes**  <br>*required*|Send byte|integer|
 |**start_time**  <br>*required*|Server start time in unix timestamp|integer|
 |**tx_count**  <br>*required*|Count of currently opened transactions for this client|integer|
-|**updates_filter**  <br>*required*|Updates filter for this client|[updates_filter](#clientsstats-updates_filter)|
-|**updates_lost**  <br>*optional*|Updates lost call count|integer|
 |**user_name**  <br>*required*|User name|string|
 |**user_rights**  <br>*required*|User right|string|
-
-
-**updates_filter**
-
-|Name|Schema|
-|---|---|
-|**namespaces**  <br>*optional*|< [namespaces](#clientsstats-updates_filter-namespaces) > array|
-
-
-**namespaces**
-
-|Name|Description|Schema|
-|---|---|---|
-|**filters**  <br>*optional*|Filtering conditions set|< object > array|
-|**name**  <br>*optional*|Namespace name|string|
 
 
 
@@ -2152,6 +2196,51 @@ Fulltext synonym definition
 |---|---|---|
 |**alternatives**  <br>*optional*|List of alternatives, which will be used for search documents|< string > array|
 |**tokens**  <br>*optional*|List source tokens in query, which will be replaced with alternatives|< string > array|
+
+
+
+### GlobalReplicationStats
+
+|Name|Description|Schema|
+|---|---|---|
+|**items**  <br>*optional*||< [items](#globalreplicationstats-items) > array|
+|**total_items**  <br>*optional*|Total replication stat items count|integer|
+
+
+**items**
+
+|Name|Description|Schema|
+|---|---|---|
+|**allocated_updates_count**  <br>*required*|count of online updates, awaiting deallocation|integer|
+|**allocated_updates_size**  <br>*required*|total online updates' size in bytes|integer|
+|**force_sync**  <br>*required*||[ReplicationSyncStat](#replicationsyncstat)|
+|**initial_sync**  <br>*optional*||[initial_sync](#globalreplicationstats-initial_sync)|
+|**nodes**  <br>*required*|info about each node|< [nodes](#globalreplicationstats-nodes) > array|
+|**pending_updates_count**  <br>*required*|count of online updates, awaiting replication|integer|
+|**type**  <br>*required*|Replication type. Either 'async' or 'cluster'|string|
+|**wal_sync**  <br>*required*||[ReplicationSyncStat](#replicationsyncstat)|
+
+
+**initial_sync**
+
+|Name|Description|Schema|
+|---|---|---|
+|**force_sync**  <br>*required*||[ReplicationSyncStat](#replicationsyncstat)|
+|**total_time_us**  <br>*required*|Total time of initial sync|integer|
+|**wal_sync**  <br>*required*||[ReplicationSyncStat](#replicationsyncstat)|
+
+
+**nodes**
+
+|Name|Description|Schema|
+|---|---|---|
+|**dsn**  <br>*required*|node's dsn|string|
+|**is_synchronized**  <br>*optional*|shows synchroniztion state for raft-cluster node (false if node is outdated)|boolean|
+|**namespaces**  <br>*required*|list of namespaces, which are configure for this node|< string > array|
+|**pending_updates_count**  <br>*required*|online updates, awaiting replication to this node|integer|
+|**role**  <br>*required*|replication role|enum (none, follower, leader, candidate)|
+|**server_id**  <br>*required*|node's server id|integer|
+|**status**  <br>*required*|network status|enum (none, offline, online)|
 
 
 
@@ -2549,15 +2638,8 @@ Performance statistics per each query
 
 |Name|Description|Schema|
 |---|---|---|
-|**app_name**  <br>*optional*|Application name, used by replicator as a login tag|string|
 |**cluster_id**  <br>*optional*|Cluser ID - must be same for client and for master|integer|
-|**enable_compression**  <br>*optional*|Enable network traffic compression|boolean|
-|**force_sync_on_logic_error**  <br>*optional*|force resync on logic error conditions|boolean|
-|**force_sync_on_wrong_data_hash**  <br>*optional*|force resync on wrong data hash conditions|boolean|
-|**master_dsn**  <br>*optional*|DSN to master. Only cproto schema is supported|string|
-|**namespaces**  <br>*optional*|List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave|< string > array|
-|**role**  <br>*optional*|Replication role|enum (none, slave, master)|
-|**timeout_sec**  <br>*optional*|Network timeout for communication with master, in seconds|integer|
+|**server_id**  <br>*optional*|ID of the current node. Must be unique for each node in cluster|integer|
 
 
 
@@ -2590,6 +2672,16 @@ State of namespace replication
 |**data_hash**  <br>*optional*|Hashsum of all records in namespace|integer|
 |**last_lsn**  <br>*optional*|Last Log Sequence Number (LSN) of applied namespace modification|integer|
 |**updated_unix_nano**  <br>*optional*|Last update time|integer|
+
+
+
+### ReplicationSyncStat
+
+|Name|Description|Schema|
+|---|---|---|
+|**avg_time_us**  <br>*required*|Average sync time|integer|
+|**count**  <br>*required*|Syncs count|integer|
+|**max_time_us**  <br>*required*|Max sync time|integer|
 
 
 
@@ -2690,6 +2782,7 @@ Specifies results sorting order
 |Name|Description|Schema|
 |---|---|---|
 |**action**  <br>*optional*||[ActionCommand](#actioncommand)|
+|**async_replication**  <br>*optional*||[AsyncReplicationConfig](#asyncreplicationconfig)|
 |**namespaces**  <br>*optional*||< [NamespacesConfig](#namespacesconfig) > array|
 |**profiling**  <br>*optional*||[ProfilingConfig](#profilingconfig)|
 |**replication**  <br>*optional*||[ReplicationConfig](#replicationconfig)|

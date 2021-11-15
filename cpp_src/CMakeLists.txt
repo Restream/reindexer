@@ -17,6 +17,7 @@ option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
 option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
 option (ENABLE_GRPC "Enable GRPC service" OFF)
+option (ENABLE_SHARDING "Enable sharding. Experimental" OFF)
 
 if (NOT GRPC_PACKAGE_PROVIDER)
    set (GRPC_PACKAGE_PROVIDER "CONFIG")
@@ -28,7 +29,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.2.5")
+set (REINDEXER_VERSION_DEFAULT "4.0.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -111,8 +112,9 @@ file (
   ${REINDEXER_SOURCE_PATH}/vendor/*
   ${REINDEXER_SOURCE_PATH}/debug/*
   ${REINDEXER_SOURCE_PATH}/net/*
-  ${REINDEXER_SOURCE_PATH}/replicator/*
+  ${REINDEXER_SOURCE_PATH}/wal/*
   ${REINDEXER_SOURCE_PATH}/coroutine/*
+  ${REINDEXER_SOURCE_PATH}/cluster/*
 )
 
 string(REGEX REPLACE "([][+*()^])" "\\\\\\1" BASE_CORO_CONTEXT_DIR "${REINDEXER_SOURCE_PATH}/vendor/koishi")
@@ -230,6 +232,11 @@ add_definitions(-DKOISHI_HAVE_POSIX_MEMALIGN)
 add_definitions(-DBUILDING_KOISHI)
 add_definitions(-DFCONTEXT_CALL=)
 include_directories(${KOISHI_PATH}/include)
+if (ENABLE_SHARDING)
+    add_definitions(-DWITH_SHARDING)
+else ()
+    list (FILTER SRCS EXCLUDE REGEX "${REINDEXER_SOURCE_PATH}/cluster/sharding/*")
+endif()
 
 list(APPEND SRCS ${KOISHI_PATH}/include/koishi.h
         ${KOISHI_PATH}/fiber.h
@@ -518,7 +525,7 @@ elseif (LINUX_ISSUE MATCHES "Ubuntu" OR LINUX_ISSUE MATCHES "Debian" OR LINUX_IS
   set(CPACK_GENERATOR "DEB")
 endif()
 
-SET(CPACK_PACKAGE_NAME "reindexer")
+SET(CPACK_PACKAGE_NAME "reindexer-4")
 SET(CPACK_PACKAGE_DESCRIPTION_SUMMARY "ReindexerDB server package")
 SET(CPACK_PACKAGE_VENDOR "Reindexer")
 SET(CPACK_PACKAGE_CONTACT "Oleg Gerasimov <ogerasimov@gmail.com>")
@@ -668,14 +675,15 @@ if (NOT WIN32)
     "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
     "core/rdxcontext.h" "core/activity_context.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"
-    "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction.h" "core/payload/payloadfieldtype.h"
+    "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction.h" "core/payload/payloadfieldtype.h" "core/reindexerconfig.h"
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
     "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h"
-    "core/expressiontree.h" "core/lsn.h" "core/cjson/tagspath.h" "estl/cow.h"
+    "core/expressiontree.h" "tools/lsn.h" "core/cjson/tagspath.h" "estl/cow.h"
     "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
-    "client/internalrdxcontext.h" "client/transaction.h"
-    "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h"
+    "client/internalrdxcontext.h" "client/transaction.h" "client/synccororeindexer.h" "client/cororeindexerconfig.h"
+    "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h" "client/connectopts.h"
+    "client/synccoroqueryresults.h" "client/synccorotransaction.h"
     "net/ev/ev.h" "vendor/koishi/include/koishi.h" "coroutine/coroutine.h" "coroutine/channel.h" "coroutine/waitgroup.h"
     "debug/backtrace.h" "debug/allocdebug.h" "debug/resolver.h" "vendor/gason/gason.h"
   )

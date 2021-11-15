@@ -5,10 +5,10 @@
 #include <mutex>
 #include <string>
 #include <vector>
-#include "core/lsn.h"
 #include "estl/span.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
+#include "tools/lsn.h"
 
 namespace reindexer {
 
@@ -38,19 +38,16 @@ struct IndexMemStat {
 	size_t GetIndexStructSize() const noexcept { return idsetPlainSize + idsetBTreeSize + sortOrdersSize + fulltextSize + columnSize; }
 };
 
-struct MasterState {
-	void GetJSON(JsonBuilder &builder);
-	void FromJSON(span<char>);
+struct ClusterizationStatus {
+	void GetJSON(WrSerializer &ser) const;
+	void GetJSON(JsonBuilder &builder) const;
+	Error FromJSON(span<char> json);
 	void FromJSON(const gason::JsonNode &root);
 
-	// LSN of last change
-	lsn_t lastUpstreamLSNm;
-	// Data hash
-	uint64_t dataHash = 0;
-	// Data count
-	int dataCount = 0;
-	// Data updated
-	uint64_t updatedUnixNano = 0;
+	enum class Role { None, ClusterReplica, SimpleReplica };
+
+	int leaderId = -1;
+	Role role = Role::None;
 };
 
 struct ReplicationState {
@@ -62,14 +59,8 @@ struct ReplicationState {
 	// LSN of last change
 	// updated from WAL when querying the structure
 	lsn_t lastLsn;
-	// Slave mode flag (only read operation enabled)
-	bool slaveMode = false;
-	// enable replication
-	bool replicatorEnabled = false;
 	// Temporary namespace flag
 	bool temporary = false;
-	// Replication error
-	Error replError = errOK;
 	// Incarnation counter
 	int incarnationCounter = 0;
 	// Data hash
@@ -78,14 +69,24 @@ struct ReplicationState {
 	int dataCount = 0;
 	// Data updated
 	uint64_t updatedUnixNano = 0;
-	// Current replication status
-	Status status = Status::None;
-	// Current master state
-	MasterState masterState;
+	// Namespace version
+	lsn_t nsVersion;
+	// Clusterization status
+	ClusterizationStatus clusterStatus;
+};
 
-	lsn_t originLSN;
-	lsn_t lastSelfLSN;
-	lsn_t lastUpstreamLSN;
+// TODO: Rename this
+struct ReplicationStateV2 {
+	void GetJSON(JsonBuilder &builder);
+	void FromJSON(span<char>);
+
+	// LSN of last change
+	// updated from WAL when querying the structure
+	lsn_t lastLsn;
+	uint64_t dataHash = 0;
+	lsn_t nsVersion;
+	//
+	ClusterizationStatus clusterStatus;
 };
 
 struct ReplicationStat : public ReplicationState {

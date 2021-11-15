@@ -12,6 +12,7 @@
 #include "net/connection.h"
 #include "net/stat.h"
 #include "tools/errors.h"
+#include "tools/lsn.h"
 
 namespace reindexer {
 namespace net {
@@ -24,7 +25,10 @@ struct RPCCall {
 	CmdCode cmd;
 	uint32_t seq;
 	Args args;
-	milliseconds execTimeout_;
+	milliseconds execTimeout;
+	lsn_t lsn;
+	int emmiterServerId;
+	int shardId;
 };
 
 struct ClientData {

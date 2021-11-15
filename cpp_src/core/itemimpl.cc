@@ -10,7 +10,6 @@
 #include "core/cjson/protobufdecoder.h"
 #include "core/keyvalue/p_string.h"
 #include "core/namespace/namespace.h"
-#include "tools/logger.h"
 
 using std::move;
 
@@ -274,6 +273,27 @@ std::string_view ItemImpl::GetCJSON(WrSerializer &ser, bool withTagsMatcher) {
 	} else {
 		encoder.Encode(&pl, builder);
 	}
+
+	return ser.Slice();
+}
+
+std::string_view ItemImpl::GetCJSONWithTm() {
+	ser_.Reset();
+	return GetCJSONWithTm(ser_);
+}
+
+std::string_view ItemImpl::GetCJSONWithTm(WrSerializer &ser) {
+	ConstPayload pl(payloadType_, payloadValue_);
+	CJsonBuilder builder(ser, ObjType::TypePlain);
+	CJsonEncoder encoder(&tagsMatcher_);
+
+	ser.PutVarUint(TAG_END);
+	int pos = ser.Len();
+	ser.PutUInt32(0);
+	encoder.Encode(&pl, builder);
+	uint32_t tmOffset = ser.Len();
+	memcpy(ser.Buf() + pos, &tmOffset, sizeof(tmOffset));
+	tagsMatcher_.serialize(ser);
 
 	return ser.Slice();
 }

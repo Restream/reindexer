@@ -16,11 +16,12 @@ import (
 var httpCl = http.DefaultClient
 
 type TestServer struct {
-	T        *testing.T
-	RpcPort  string
-	HttpPort string
-	DbName   string
-	db       *reindexer.Reindexer
+	T           *testing.T
+	RpcPort     string
+	HttpPort    string
+	ClusterPort string
+	DbName      string
+	db          *reindexer.Reindexer
 }
 
 func (srv *TestServer) Addr() string {

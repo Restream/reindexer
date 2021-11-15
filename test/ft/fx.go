@@ -13,6 +13,7 @@ var dsnSlave = flag.String("dsnslave", "", "reindex slave db dsn")
 var slaveCount = flag.Int("slavecount", 1, "reindex slave db count")
 var benchmarkSeedCount = flag.Int("seedcount", 500000, "count of items for benchmark seed")
 var benchmarkSeedCPU = flag.Int("seedcpu", 1, "number threads of for seeding")
+var legacyServerBinary = flag.String("legacyserver", "", "legacy server binary for compatibility check")
 
 func TestMain(m *testing.M) {
 	flag.Parse()

@@ -4,6 +4,7 @@
 #include "core/keyvalue/variant.h"
 #include "estl/span.h"
 #include "tools/errors.h"
+#include "tools/lsn.h"
 
 namespace reindexer {
 
@@ -14,7 +15,6 @@ class Namespace;
 
 class ItemImpl;
 class FieldRefImpl;
-class Replicator;
 class Schema;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
@@ -151,8 +151,9 @@ public:
 	/// Serialize item to CJSON.<br>
 	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation
 	/// with Item
+	/// @param withTagsMatcher - need to serialize TagsMatcher
 	/// @return data slice with CJSON
-	std::string_view GetCJSON();
+	std::string_view GetCJSON(bool withTagsMatcher = false);
 	/// Serialize item to JSON.<br>
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
 	/// operation with Item
@@ -166,10 +167,10 @@ public:
 	int GetID() const noexcept { return id_; }
 	/// Get internal version of item
 	/// @return version of item
-	int64_t GetLSN();
+	lsn_t GetLSN();
 	/// Get count of indexed field
 	/// @return count of  field
-	int NumFields();
+	int NumFields() const;
 	/// Get field by number
 	/// @param field - number of field. Must be >= 0 && < NumFields
 	/// @return FieldRef which contains reference to indexed field
@@ -182,11 +183,15 @@ public:
 	/// @param name - field name
 	/// @return name's numeric tag value
 	int GetFieldTag(std::string_view name) const;
+	/// Get field's index by name
+	/// @param name - field name
+	/// @return name's numeric field value
+	int GetFieldIndex(std::string_view name) const;
 	/// Get PK fields
 	FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
-	void SetPrecepts(const std::vector<std::string> &precepts);
+	void SetPrecepts(std::vector<std::string> precepts);
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
 	bool IsTagsUpdated();
@@ -194,19 +199,19 @@ public:
 	/// @return Current state token
 	int GetStateToken();
 	/// Check is item valid. If is not valid, then any futher operations with item will raise nullptr dereference
-	bool operator!() const { return impl_ == nullptr; }
+	bool operator!() const noexcept { return impl_ == nullptr; }
 	/// Enable Unsafe Mode<br>.
 	/// USE WITH CAUTION. In unsafe mode most of Item methods will not store  strings and slices, passed from/to application.<br>
 	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>
 	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containters in many cases invalidates references -
 	/// and in unsafe mode caller is responsibe to guarantee, that all resources passed to Item will keep valid
-	Item &Unsafe(bool enable = true);
+	Item &Unsafe(bool enable = true) noexcept;
 
 private:
 	explicit Item(ItemImpl *impl) : impl_(impl) {}
 	explicit Item(const Error &err) : impl_(nullptr), status_(err) {}
 	void setID(int id) { id_ = id; }
-	void setLSN(int64_t lsn);
+	void setLSN(lsn_t lsn);
 
 	ItemImpl *impl_;
 	Error status_;
@@ -215,12 +220,15 @@ private:
 	friend class TransactionImpl;
 	friend class ItemModifier;
 
+	friend class Transaction;
+
 	friend class QueryResults;
 	friend class ReindexerImpl;
-	friend class Replicator;
 	friend class TransactionStep;
 	friend class client::ReindexerImpl;
 	friend class client::Namespace;
+	friend class SnapshotHandler;
+	friend class ClusterProxy;
 };
 
 }  // namespace reindexer

@@ -1,12 +1,11 @@
 #include "coroclientconnection.h"
 #include <errno.h>
 #include <snappy.h>
+#include <functional>
 #include "core/rdxcontext.h"
 #include "coroclientconnection.h"
 #include "reindexer_version.h"
 #include "tools/serializer.h"
-
-#include <functional>
 
 namespace reindexer {
 namespace net {
@@ -16,21 +15,15 @@ constexpr size_t kMaxRecycledChuncks = 1500;
 constexpr size_t kMaxChunckSizeToRecycle = 2048;
 constexpr size_t kMaxParallelRPCCalls = 512;
 constexpr auto kCoroSleepGranularity = std::chrono::milliseconds(150);
-constexpr auto kDeadlineCheckInterval = std::chrono::seconds(1);
+constexpr auto kDeadlineCheckInterval = std::chrono::milliseconds(100);
 constexpr auto kKeepAliveInterval = std::chrono::seconds(30);
-constexpr size_t kUpdatesChannelSize = 128;
 constexpr size_t kReadBufReserveSize = 0x1000;
 constexpr size_t kWrChannelSize = 20;
 constexpr size_t kCntToSendNow = 30;
 constexpr size_t kDataToSendNow = 2048;
 
 CoroClientConnection::CoroClientConnection()
-	: now_(0),
-	  rpcCalls_(kMaxParallelRPCCalls),
-	  wrCh_(kWrChannelSize),
-	  seqNums_(kMaxParallelRPCCalls),
-	  updatesCh_(kUpdatesChannelSize),
-	  conn_(-1, kReadBufReserveSize, false) {
+	: rpcCalls_(kMaxParallelRPCCalls), wrCh_(kWrChannelSize), seqNums_(kMaxParallelRPCCalls), conn_(-1, kReadBufReserveSize, false) {
 	recycledChuncks_.reserve(kMaxRecycledChuncks);
 	errSyncCh_.close();
 	seqNums_.close();
@@ -50,12 +43,11 @@ void CoroClientConnection::Start(ev::dynamic_loop &loop, ConnectData connectData
 			conn_.attach(loop);
 			loop_ = &loop;
 		}
+		conn_.set_connect_timeout(connectData.opts.loginTimeout);
 
 		if (!seqNums_.opened()) {
-			wg_.add(1);
 			seqNums_.reopen();
-			loop_->spawn([this] {
-				coroutine::wait_group_guard wgg(wg_);
+			loop_->spawn(wg_, [this] {
 				for (size_t i = 1; i < seqNums_.capacity(); ++i) {
 					// seq num == 0 is reserved for login
 					seqNums_.push(i);
@@ -64,30 +56,13 @@ void CoroClientConnection::Start(ev::dynamic_loop &loop, ConnectData connectData
 		}
 
 		connectData_ = std::move(connectData);
-		if (!updatesCh_.opened()) {
-			updatesCh_.reopen();
-		}
 		if (!wrCh_.opened()) {
 			wrCh_.reopen();
 		}
 
-		wg_.add(4);
-		loop_->spawn([this] {
-			coroutine::wait_group_guard wgg(wg_);
-			writerRoutine();
-		});
-		loop_->spawn([this] {
-			coroutine::wait_group_guard wgg(wg_);
-			deadlineRoutine();
-		});
-		loop_->spawn([this] {
-			coroutine::wait_group_guard wgg(wg_);
-			pingerRoutine();
-		});
-		loop_->spawn([this] {
-			coroutine::wait_group_guard wgg(wg_);
-			updatesRoutine();
-		});
+		loop_->spawn(wg_, [this] { writerRoutine(); });
+		loop_->spawn(wg_, [this] { deadlineRoutine(); });
+		loop_->spawn(wg_, [this] { pingerRoutine(); });
 
 		isRunning_ = true;
 	}
@@ -96,7 +71,6 @@ void CoroClientConnection::Start(ev::dynamic_loop &loop, ConnectData connectData
 void CoroClientConnection::Stop() {
 	if (isRunning_) {
 		terminate_ = true;
-		updatesCh_.close();
 		wrCh_.close();
 		conn_.close_conn(k_sock_closed_err);
 		wg_.wait();
@@ -107,11 +81,11 @@ void CoroClientConnection::Stop() {
 	}
 }
 
-Error CoroClientConnection::Status(std::chrono::seconds netTimeout, std::chrono::milliseconds execTimeout, const IRdxCancelContext *ctx) {
-	if (loggedIn_) {
+Error CoroClientConnection::Status(bool forceCheck, milliseconds netTimeout, milliseconds execTimeout, const IRdxCancelContext *ctx) {
+	if (loggedIn_ && !forceCheck) {
 		return errOK;
 	}
-	return call({kCmdPing, netTimeout, execTimeout, ctx}, {}).Status();
+	return call({kCmdPing, netTimeout, execTimeout, lsn_t(), -1, IndexValueType::NotSet, ctx}, {}).Status();
 }
 
 CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &args) {
@@ -129,7 +103,7 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 		return Error(errLogic, "Client is not running");
 	}
 
-	auto deadline = opts.netTimeout.count() ? Now() + opts.netTimeout + kDeadlineCheckInterval : seconds(0);
+	auto deadline = opts.netTimeout.count() ? (Now() + opts.netTimeout + kDeadlineCheckInterval) : TimePointT();
 	auto seqp = seqNums_.pop();
 	if (!seqp.second) {
 		CoroRPCAnswer(Error(errLogic, "Unable to get seq num"));
@@ -146,7 +120,9 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 	call.cancelCtx = opts.cancelCtx;
 	CoroRPCAnswer ans;
 	try {
-		wrCh_.push(packRPC(opts.cmd, seq, args, Args{Arg{int64_t(opts.execTimeout.count())}}));
+		wrCh_.push(packRPC(
+			opts.cmd, seq, args,
+			Args{Arg{int64_t(opts.execTimeout.count())}, Arg{int64_t(opts.lsn)}, Arg{int64_t(opts.serverId)}, Arg{int64_t(opts.shardId)}}));
 		auto ansp = call.rspCh.pop();
 		if (ansp.second) {
 			ans = std::move(ansp.first);
@@ -224,7 +200,7 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 					 Arg{p_string(&connectData_.opts.appName)}};
 		constexpr uint32_t seq = 0;	 // login's seq num is always 0
 		assert(buf.size() == 0);
-		appendChunck(buf, packRPC(kCmdLogin, seq, args, Args{Arg{int64_t(0)}}).data);
+		appendChunck(buf, packRPC(kCmdLogin, seq, args, Args{Arg{int64_t(0)}, Arg{int64_t(lsn_t())}, Arg{int64_t(-1)}}).data);
 		int err = 0;
 		auto written = conn_.async_write(buf, err);
 		auto toWrite = buf.size();
@@ -238,11 +214,7 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 		(void)written;
 		(void)toWrite;
 
-		readWg_.add(1);
-		loop_->spawn([this] {
-			coroutine::wait_group_guard readWgg(readWg_);
-			readerRoutine();
-		});
+		loop_->spawn(readWg_, [this] { readerRoutine(); });
 	}
 	return errOK;
 }
@@ -264,8 +236,8 @@ void CoroClientConnection::handleFatalError(Error err) noexcept {
 			c.rspCh.push(err);
 		}
 	}
-	if (fatalErrorHandler_) {
-		fatalErrorHandler_(err);
+	if (connectionStateHandler_) {
+		connectionStateHandler_(err);
 	}
 	errSyncCh_.close();
 }
@@ -393,19 +365,17 @@ void CoroClientConnection::readerRoutine() {
 			break;
 		}
 
-		if (hdr.cmd == kCmdUpdates) {
-			if (updatesHandler_) {
-				ans.EnsureHold(getChunk());
-				updatesCh_.push(std::move(ans));
-			}
-		} else if (hdr.cmd == kCmdLogin) {
+		if (hdr.cmd == kCmdLogin) {
 			if (ans.Status().ok()) {
 				loggedIn_ = true;
+				if (connectionStateHandler_) {
+					connectionStateHandler_(Error());
+				}
 			} else {
 				// disconnect
 				closeConn(ans.Status());
 			}
-		} else {
+		} else if (hdr.cmd != kCmdUpdates) {
 			auto &rpcData = rpcCalls_[hdr.seq % rpcCalls_.size()];
 			if (!rpcData.used || rpcData.seq != hdr.seq) {
 				auto cmdSv = CmdName(hdr.cmd);
@@ -418,20 +388,20 @@ void CoroClientConnection::readerRoutine() {
 				ans.EnsureHold(getChunk());
 			}
 			rpcData.rspCh.push(std::move(ans));
+		} else {
+			fprintf(stderr, "Unexpected updates response");
 		}
 	} while (loggedIn_ && !terminate_);
 }
 
 void CoroClientConnection::deadlineRoutine() {
 	while (!terminate_) {
-		static_assert(std::chrono::duration_cast<std::chrono::seconds>(kDeadlineCheckInterval).count() >= 1,
-					  "kDeadlineCheckInterval shoul be 1 second or more");
 		loop_->granular_sleep(kDeadlineCheckInterval, kCoroSleepGranularity, terminate_);
-		now_ += std::chrono::duration_cast<std::chrono::seconds>(kDeadlineCheckInterval).count();
+		now_ += kDeadlineCheckInterval;
 
 		for (auto &c : rpcCalls_) {
 			if (!c.used) continue;
-			bool expired = (c.deadline.count() && c.deadline.count() <= now_);
+			bool expired = (c.deadline.time_since_epoch().count() && c.deadline <= now_);
 			bool canceled = (c.cancelCtx && c.cancelCtx->IsCancelable() && (c.cancelCtx->GetCancelType() == CancelType::Explicit));
 			if (expired || canceled) {
 				if (c.rspCh.opened()) {
@@ -446,24 +416,8 @@ void CoroClientConnection::pingerRoutine() {
 	while (!terminate_) {
 		loop_->granular_sleep(kKeepAliveInterval, kCoroSleepGranularity, terminate_);
 		if (conn_.state() != manual_connection::conn_state::init) {
-			call({kCmdPing, connectData_.opts.keepAliveTimeout, milliseconds(0), nullptr}, {});
+			call({kCmdPing, connectData_.opts.keepAliveTimeout, milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr}, {});
 		}
-	}
-}
-
-void CoroClientConnection::updatesRoutine() {
-	while (!terminate_) {
-		auto ansp = updatesCh_.pop();
-		if (!ansp.second) {
-			// Channel is closed
-			break;
-		}
-		auto handler = updatesHandler_;
-		auto storage = std::move(ansp.first.storage_);
-		if (handler) {
-			handler(ansp.first);
-		}
-		recycleChunk(std::move(storage));
 	}
 }
 

@@ -102,14 +102,14 @@ Item::~Item() {
 
 Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) { return impl_->FromJSON(slice, endp, pkOnly); }
 Error Item::FromCJSON(std::string_view slice, bool pkOnly) { return impl_->FromCJSON(slice, pkOnly); }
-std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
+std::string_view Item::GetCJSON(bool withTagsMatcher) { return impl_->GetCJSON(withTagsMatcher); }
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
 Error Item::FromMsgPack(std::string_view buf, size_t &offset) { return impl_->FromMsgPack(buf, offset); }
 Error Item::FromProtobuf(std::string_view sbuf) { return impl_->FromProtobuf(sbuf); }
 Error Item::GetMsgPack(WrSerializer &wrser) { return impl_->GetMsgPack(wrser); }
 Error Item::GetProtobuf(WrSerializer &wrser) { return impl_->GetProtobuf(wrser); }
 
-int Item::NumFields() { return impl_->Type().NumFields(); }
+int Item::NumFields() const { return impl_->Type().NumFields(); }
 Item::FieldRef Item::operator[](int field) const {
 	assert(field >= 0 && field < impl_->Type().NumFields());
 	return FieldRef(field, impl_);
@@ -125,18 +125,19 @@ Item::FieldRef Item::operator[](std::string_view name) const {
 }
 
 int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
+int Item::GetFieldIndex(std::string_view name) const { return impl_->FieldIndex(name); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }
-void Item::SetPrecepts(const vector<string> &precepts) { impl_->SetPrecepts(precepts); }
+void Item::SetPrecepts(vector<string> precepts) { impl_->SetPrecepts(std::move(precepts)); }
 bool Item::IsTagsUpdated() { return impl_->tagsMatcher().isUpdated(); }
 int Item::GetStateToken() { return impl_->tagsMatcher().stateToken(); }
 
-Item &Item::Unsafe(bool enable) {
+Item &Item::Unsafe(bool enable) noexcept {
 	impl_->Unsafe(enable);
 	return *this;
 }
 
-int64_t Item::GetLSN() { return impl_->Value().GetLSN(); }
-void Item::setLSN(int64_t lsn) { impl_->Value().SetLSN(lsn); }
+lsn_t Item::GetLSN() { return impl_->Value().GetLSN(); }
+void Item::setLSN(lsn_t lsn) { impl_->Value().SetLSN(lsn); }
 
 template Item::FieldRef &Item::FieldRef::operator=(span<int> arr);
 template Item::FieldRef &Item::FieldRef::operator=(span<int64_t> arr);

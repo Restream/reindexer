@@ -12,6 +12,7 @@
 #include "tools/customlocal.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
+#include "core/keyvalue/key_string.h"
 
 using std::min;
 using std::transform;
@@ -55,6 +56,63 @@ string unescapeString(std::string_view str) {
 			dst.push_back(*it);
 	}
 	return dst;
+}
+
+KeyValueType detectValueType(std::string_view value) {
+	if (value.empty()) return KeyValueUndefined;
+	static std::string_view trueToken = "true", falseToken = "false";
+	size_t i = 0;
+	bool isDouble = false, isDigit = false, isBool = false;
+	if (isdigit(value[i])) {
+		isDigit = true;
+	} else if (value.size() > 1) {
+		if (value[i] == '-' || value[i] == '+') {
+			isDigit = value[i + 1] != '.';
+		} else {
+			isBool = (value[i] == trueToken[i] || value[i] == falseToken[i]);
+		}
+	} else {
+		return KeyValueString;
+	}
+	for (++i; i < value.length() && (isDouble || isDigit || isBool); i++) {
+		if (isDigit || isDouble) {
+			if (!isdigit(value[i])) {
+				if (value[i] == '.') {
+					if (isDouble) return KeyValueString;
+					isDouble = true;
+				} else {
+					return KeyValueString;
+				}
+			}
+		} else if (isBool) {
+			isBool &= (i < trueToken.size() && trueToken[i] == value[i]) || (i < falseToken.size() && falseToken[i] == value[i]);
+		}
+	}
+	if (isDigit) {
+		if (isDouble) return KeyValueDouble;
+		return KeyValueInt64;
+	} else if (isBool) {
+		return KeyValueBool;
+	} else {
+		return KeyValueString;
+	}
+}
+
+Variant stringToVariant(std::string_view value) {
+	switch (detectValueType(value)) {
+		case KeyValueInt64:
+			return Variant(int64_t(stoll(value)));
+		case KeyValueDouble: {
+			char *p = 0;
+			return Variant(double(strtod(value.data(), &p)));
+		}
+		case KeyValueString:
+			return Variant(make_key_string(value.data(), value.length()));
+		case KeyValueBool:
+			return (value.size() == 4) ? Variant(true) : Variant(false);
+		default:
+			return Variant();
+	}
 }
 
 wstring &utf8_to_utf16(std::string_view src, wstring &dst) {
@@ -227,11 +285,6 @@ void split(std::string_view utf8Str, wstring &utf16str, vector<std::wstring> &wo
 		}
 		outSz += sz + 1;
 	}
-}
-
-string lower(string s) {
-	transform(s.begin(), s.end(), s.begin(), [](char c) { return 'A' <= c && c <= 'Z' ? c ^ 32 : c; });
-	return s;
 }
 
 bool iequals(std::string_view lhs, std::string_view rhs) {
@@ -410,12 +463,12 @@ int fast_strftime(char *buf, const tm *tm) {
 	return d - buf;
 }
 
-bool validateObjectName(std::string_view name) {
+bool validateObjectName(std::string_view name, bool allowSpecialChars) {
 	if (!name.length()) {
 		return false;
 	}
 	for (auto c : name) {
-		if (!(std::isalpha(c) || std::isdigit(c) || c == '_' || c == '-' || c == '#')) {
+		if (!(std::isalpha(c) || std::isdigit(c) || c == '_' || c == '-' || c == '#' || (c == '@' && allowSpecialChars))) {
 			return false;
 		}
 	}
@@ -501,7 +554,8 @@ int64_t stoll(std::string_view sl) {
 }
 
 std::string randStringAlph(size_t len) {
-	static const std::string symbols = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+	using namespace std::string_view_literals;
+	constexpr auto symbols = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"sv;
 	std::string result;
 	result.reserve(len);
 	while (result.size() < len) {

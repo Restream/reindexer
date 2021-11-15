@@ -5,7 +5,6 @@
 #include "estl/atomic_unique_ptr.h"
 #include "net/connection.h"
 #include "net/iserverconnection.h"
-#include "replicator/updatesobserver.h"
 
 namespace reindexer {
 namespace net {
@@ -15,14 +14,12 @@ using reindexer::h_vector;
 
 class ServerConnection : public ConnectionST, public IServerConnection, public Writer {
 public:
-	ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat, size_t maxUpdatesSize);
+	ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat);
 	~ServerConnection();
 
 	// IServerConnection interface implementation
-	static ConnectionFactory NewFactory(Dispatcher &dispatcher, bool enableStat, size_t maxUpdatesSize) {
-		return [&dispatcher, enableStat, maxUpdatesSize](ev::dynamic_loop &loop, int fd) {
-			return new ServerConnection(fd, loop, dispatcher, enableStat, maxUpdatesSize);
-		};
+	static ConnectionFactory NewFactory(Dispatcher &dispatcher, bool enableStat) {
+		return [&dispatcher, enableStat](ev::dynamic_loop &loop, int fd) { return new ServerConnection(fd, loop, dispatcher, enableStat); };
 	}
 
 	bool IsFinished() override final { return !sock_.valid(); }
@@ -32,7 +29,7 @@ public:
 
 	// Writer iterface implementation
 	void WriteRPCReturn(Context &ctx, const Args &args, const Error &status) override final { responceRPC(ctx, status, args); }
-	void CallRPC(const IRPCCall &call) override final;
+	void CallRPC(const IRPCCall & /*call*/) override final {}
 	void SetClientData(std::unique_ptr<ClientData> data) override final { clientData_ = std::move(data); }
 	ClientData *GetClientData() override final { return clientData_.get(); }
 	std::shared_ptr<connection_stat> GetConnectionStat() override final {
@@ -44,24 +41,13 @@ protected:
 	void onClose() override;
 	void handleRPC(Context &ctx);
 	void responceRPC(Context &ctx, const Error &error, const Args &args);
-	void async_cb(ev::async &) { sendUpdates(); }
-	void timeout_cb(ev::periodic &, int) { sendUpdates(); }
-	void sendUpdates();
 
 	Dispatcher &dispatcher_;
 	std::unique_ptr<ClientData> clientData_;
 	// keep here to prevent allocs
-	RPCCall call_;
+	RPCCall call_ = {kCmdPing, 0, {}, std::chrono::milliseconds(0), lsn_t(), -1, IndexValueType::NotSet};
 
-	std::vector<IRPCCall> updates_;
-	std::atomic<size_t> updatesSize_;
-	std::atomic<bool> updateLostFlag_;
-	const size_t maxUpdatesSize_;
-	std::mutex updates_mtx_;
-
-	ev::periodic updates_timeout_;
-	ev::async updates_async_;
-	bool enableSnappy_;
+	bool enableSnappy_ = false;
 };
 }  // namespace cproto
 }  // namespace net

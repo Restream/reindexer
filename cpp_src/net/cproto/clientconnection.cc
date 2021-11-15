@@ -234,9 +234,6 @@ void ClientConnection::onClose() {
 				}
 		}
 
-		std::unique_ptr<Completion> tmpUpdatesHandler(updatesHandler_.release(std::memory_order_acq_rel));
-
-		if (tmpUpdatesHandler) (*tmpUpdatesHandler)(RPCAnswer(lastError_), this);
 		mtx_.lock();
 		bufCond_.notify_all();
 		mtx_.unlock();
@@ -314,16 +311,7 @@ void ClientConnection::onRead() {
 			return;
 		}
 		rdBuf_.erase(hdr.len);
-		if (hdr.cmd == kCmdUpdates) {
-			auto handler = updatesHandler_.release(std::memory_order_acq_rel);
-			if (handler) {
-				(*handler)(std::move(ans), this);
-				Completion *expected = nullptr;
-				if (!updatesHandler_.compare_exchange_strong(expected, handler, std::memory_order_acq_rel)) {
-					delete handler;
-				}
-			}
-		} else {
+		if (hdr.cmd != kCmdUpdates) {
 			auto complPtr = completions_.data();
 			RPCCompletion *completion = &completions_[hdr.seq % completions_.size()];
 
@@ -359,6 +347,8 @@ void ClientConnection::onRead() {
 				auto cmdSv = CmdName(hdr.cmd);
 				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()), cmdSv.data());
 			}
+		} else {
+			fprintf(stderr, "Unexpected updates response");
 		}
 	}
 }
@@ -418,7 +408,9 @@ void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Ar
 	}
 
 	uint32_t seq = seq_++;
-	chunk data = packRPC(opts.cmd, seq, args, Args{Arg{int64_t(opts.execTimeout.count())}});
+	chunk data = packRPC(
+		opts.cmd, seq, args,
+		Args{Arg{int64_t(opts.execTimeout.count())}, Arg{int64_t(lsn_t())}, Arg{int64_t(-1)}, Arg{int64_t(IndexValueType::NotSet)}});
 	bool inLoopThread = loopThreadID_ == std::this_thread::get_id();
 
 	std::unique_lock<std::mutex> lck(mtx_);

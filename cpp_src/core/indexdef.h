@@ -22,7 +22,7 @@ static const int kIndexJSONWithDescribe = 0x1;
 
 struct IndexDef {
 	IndexDef();
-	IndexDef(const std::string &name);
+	explicit IndexDef(const std::string &name);
 	IndexDef(const std::string &name, const JsonPaths &jsonPaths, const std::string &indexType, const std::string &fieldType,
 			 const IndexOpts opts);
 	IndexDef(const std::string &name, const JsonPaths &jsonPaths, const std::string &indexType, const std::string &fieldType,
@@ -39,6 +39,13 @@ struct IndexDef {
 	Error FromJSON(span<char> json);
 	void FromJSON(const gason::JsonNode &jvalue);
 	void GetJSON(WrSerializer &ser, int formatFlags = 0) const;
+	size_t HeapSize() const noexcept {
+		size_t size = name_.size() + indexType_.size() + fieldType_.size() + opts_.config.size();
+		for (auto &path : jsonPaths_) {
+			size += path.size();
+		}
+		return size;
+	}
 
 public:
 	std::string name_;

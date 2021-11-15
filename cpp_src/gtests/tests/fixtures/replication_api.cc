@@ -7,7 +7,6 @@
 #include "vendor/gason/gason.h"
 
 const std::string ReplicationApi::kStoragePath = "/tmp/reindex_repl_test/";
-// const std::string ReplicationApi::kReplicationConfigFilename = "replication.conf";
 const std::string ReplicationApi::kConfigNs = "#config";
 
 bool ReplicationApi::StopServer(size_t id) {
@@ -63,10 +62,10 @@ void ReplicationApi::RestartServer(size_t id) {
 	}
 }
 
-void ReplicationApi::WaitSync(const std::string& ns) {
+void ReplicationApi::WaitSync(const std::string& ns, lsn_t expectedLsn) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(10);
-	ReplicationStateApi state{lsn_t(), lsn_t(), 0, 0, false};
+	ReplicationStateApi state;
 	while (state.lsn.isEmpty()) {
 		now += pause;
 		ASSERT_TRUE(now < kMaxSyncTime);
@@ -78,6 +77,11 @@ void ReplicationApi::WaitSync(const std::string& ns) {
 					state.lsn = lsn_t();
 					break;
 				} else if (!state.lsn.isEmpty()) {
+					if (!expectedLsn.isEmpty()) {
+						ASSERT_TRUE(state.lsn == expectedLsn)
+							<< "name: " << ns << ", actual lsn: " << int64_t(state.lsn) << " expected lsn: " << int64_t(expectedLsn)
+							<< " i = " << i << " masterId_ = " << masterId_;
+					}
 					ASSERT_EQ(state.dataHash, xstate.dataHash) << "name: " << ns << ", lsns: " << int64_t(state.lsn) << " "
 															   << int64_t(xstate.lsn) << " i = " << i << " masterId_ = " << masterId_;
 					ASSERT_EQ(state.dataCount, xstate.dataCount);
@@ -99,23 +103,31 @@ void ReplicationApi::ForceSync() {
 			std::this_thread::sleep_for(pause);
 		}
 	});
-	for (size_t i = 0; i < svc_.size(); i++) {
-		if (i != masterId_) GetSrv(i)->ForceSync();
-	}
+	GetSrv(masterId_)->ForceSync();
 	done = true;
 	awaitForceSync.join();
 }
 
-void ReplicationApi::SwitchMaster(size_t id, ReplicationConfigTest::NsSet namespaces) {
+void ReplicationApi::SwitchMaster(size_t id, AsyncReplicationConfigTest::NsSet namespaces) {
 	if (id == masterId_) return;
 	masterId_ = id;
-	ReplicationConfigTest config("master", false, true, id);
-	GetSrv(masterId_)->MakeMaster(config);
-	for (size_t i = 0; i < svc_.size(); i++) {
-		std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + masterId_) + "/node" + std::to_string(masterId_);
-		ReplicationConfigTest config("slave", false, true, i, masterDsn, "server_" + std::to_string(i), namespaces);
-		if (i != masterId_) GetSrv(i)->MakeSlave(masterId_, config);
+
+	using ReplNode = AsyncReplicationConfigTest::Node;
+	std::vector<ReplNode> followers;
+	followers.reserve(svc_.size() - 1);
+	for (size_t i = 0; i < svc_.size(); ++i) {
+		if (i != id) {
+			auto srv = svc_[i].Get();
+			auto conf = srv->GetServerConfig(ServerControl::ConfigType::Namespace);
+			conf.nodes_.clear();
+			conf.role_ = "follower";
+			srv->SetReplicationConfig(conf);
+			followers.emplace_back(ReplNode{fmt::format("cproto://127.0.0.1:{}/node{}", srv->kRpcPort, i)});
+		}
 	}
+	AsyncReplicationConfigTest config("leader", std::move(followers), false, true, id, "node" + std::to_string(masterId_),
+									  std::move(namespaces));
+	GetSrv(masterId_)->SetReplicationConfig(config);
 }
 
 void ReplicationApi::SetWALSize(size_t id, int64_t size, std::string_view nsName) { GetSrv(id)->SetWALSize(size, nsName); }
@@ -141,18 +153,19 @@ void ReplicationApi::SetUp() {
 	std::lock_guard<std::mutex> lock(m_);
 	reindexer::fs::RmDirAll(kStoragePath + "node");
 
-	for (size_t i = 0; i < kDefaultServerCount; i++) {
+	svc_.push_back(ServerControl());
+	std::vector<AsyncReplicationConfigTest::Node> followers;
+	for (size_t i = 1; i < kDefaultServerCount; ++i) {
+		const uint16_t rpcPort = uint16_t(kDefaultRpcPort) + uint16_t(i);
+		const auto dbName = "node" + std::to_string(i);
 		svc_.push_back(ServerControl());
-		svc_.back().InitServer(i, kDefaultRpcPort + i, kDefaultHttpPort + i, kStoragePath + "node/" + std::to_string(i),
-							   "node" + std::to_string(i), true);
-		if (i == 0) {
-			svc_.back().Get()->MakeMaster();
-		} else {
-			std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + 0) + "/node" + std::to_string(0);
-			ReplicationConfigTest config("slave", false, true, i, masterDsn);
-			svc_.back().Get()->MakeSlave(0, config);
-		}
+		svc_.back().InitServer(i, rpcPort, kDefaultHttpPort + i, kStoragePath + "node/" + std::to_string(i), dbName, true);
+		svc_.back().Get()->MakeFollower();
+		followers.emplace_back(AsyncReplicationConfigTest::Node{fmt::format("cproto://127.0.0.1:{}/{}", rpcPort, dbName)});
 	}
+
+	svc_.front().InitServer(0, kDefaultRpcPort, kDefaultHttpPort, kStoragePath + "node/0", "node0", true);
+	svc_.front().Get()->MakeLeader(AsyncReplicationConfigTest("leader", std::move(followers), true, true));
 }
 
 void ReplicationApi::TearDown() {
@@ -172,4 +185,5 @@ void ReplicationApi::TearDown() {
 		}
 	}
 	svc_.clear();
+	reindexer::fs::RmDirAll(kStoragePath + "node");
 }

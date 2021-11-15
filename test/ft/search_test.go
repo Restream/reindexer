@@ -133,10 +133,10 @@ func TestFTSynonymsAfterTx(t *testing.T) {
 	assert.NoError(t, err)
 
 	config := reindexer.DefaultFtFastConfig()
-	config.Synonyms = []struct{
-		Tokens[]string `json:"tokens"`
+	config.Synonyms = []struct {
+		Tokens       []string `json:"tokens"`
 		Alternatives []string `json:"alternatives"`
-	} {
+	}{
 		{
 			[]string{"word"},
 			[]string{"слово"},
@@ -171,4 +171,3 @@ func TestFTSynonymsAfterTx(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(dbItems))
 }
-

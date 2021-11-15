@@ -3,7 +3,6 @@
 #include "core/cjson/baseencoder.h"
 #include "core/keyvalue/p_string.h"
 #include "net/cproto/clientconnection.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 namespace client {
@@ -68,19 +67,9 @@ void QueryResults::Bind(std::string_view rawResult, int queryID) {
 		ser.GetRawQueryParams(queryParams_, [&ser, this](int nsIdx) {
 			uint32_t stateToken = ser.GetVarUint();
 			int version = ser.GetVarUint();
-
-			std::unique_lock<shared_timed_mutex> lck(nsArray_[nsIdx]->lck_);
-
-			bool skip = nsArray_[nsIdx]->tagsMatcher_.version() >= version && nsArray_[nsIdx]->tagsMatcher_.stateToken() == stateToken;
-			if (skip) {
-				TagsMatcher().deserialize(ser);
-				// PayloadType("tmp").clone()->deserialize(ser);
-			} else {
-				nsArray_[nsIdx]->tagsMatcher_ = TagsMatcher();
-				nsArray_[nsIdx]->tagsMatcher_.deserialize(ser, version, stateToken);
-				// nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
-				// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
-			}
+			TagsMatcher newTm;
+			newTm.deserialize(ser, version, stateToken);
+			nsArray_[nsIdx]->TryReplaceTagsMatcher(std::move(newTm));
 			PayloadType("tmp").clone()->deserialize(ser);
 		});
 	} catch (const Error &err) {
@@ -116,14 +105,11 @@ QueryResults::~QueryResults() {}
 h_vector<std::string_view, 1> QueryResults::GetNamespaces() const {
 	h_vector<std::string_view, 1> ret;
 	ret.reserve(nsArray_.size());
-	for (auto &ns : nsArray_) ret.push_back(ns->name_);
+	for (auto &ns : nsArray_) ret.push_back(ns->name);
 	return ret;
 }
 
-TagsMatcher QueryResults::getTagsMatcher(int nsid) const {
-	shared_lock<shared_timed_mutex> lck(nsArray_[nsid]->lck_);
-	return nsArray_[nsid]->tagsMatcher_;
-}
+TagsMatcher QueryResults::getTagsMatcher(int nsid) const { return nsArray_[nsid]->GetTagsMatcher(); }
 
 class AdditionalRank : public IAdditionalDatasource<JsonBuilder> {
 public:
@@ -223,11 +209,7 @@ Item QueryResults::Iterator::GetItem() {
 	readNext();
 	try {
 		Error err;
-		Item item;
-		{
-			shared_lock<shared_timed_mutex> lck(qr_->nsArray_[itemParams_.nsid]->lck_);
-			item = qr_->nsArray_[itemParams_.nsid]->NewItem();
-		}
+		Item item = qr_->nsArray_[itemParams_.nsid]->NewItem();
 		switch (qr_->queryParams_.flags & kResultsFormatMask) {
 			case kResultsMsgPack: {
 				size_t offset = 0;
@@ -278,7 +260,7 @@ void QueryResults::Iterator::readNext() {
 	ResultSerializer ser(rawResult.substr(pos_));
 
 	try {
-		itemParams_ = ser.GetItemParams(qr_->queryParams_.flags);
+		itemParams_ = ser.GetItemData(qr_->queryParams_.flags);
 		if (qr_->queryParams_.flags & kResultsWithJoined) {
 			int joinedCnt = ser.GetVarUint();
 			(void)joinedCnt;

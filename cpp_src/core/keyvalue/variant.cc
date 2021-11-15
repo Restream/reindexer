@@ -19,6 +19,8 @@ Variant::Variant(const PayloadValue &v) : type_(KeyValueComposite), hold_(true) 
 
 Variant::Variant(const string &v) : type_(KeyValueString), hold_(true) { new (cast<void>()) key_string(make_key_string(v)); }
 
+Variant::Variant(std::string_view v) : type_(KeyValueString), hold_(true) { new (cast<void>()) key_string(make_key_string(v)); }
+
 Variant::Variant(const key_string &v) : type_(KeyValueString), hold_(true) { new (cast<void>()) key_string(v); }
 Variant::Variant(const char *v) : Variant(p_string(v)) {}
 Variant::Variant(p_string v, bool enableHold) : type_(KeyValueString) {

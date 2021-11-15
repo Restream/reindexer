@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
 	lru "github.com/hashicorp/golang-lru"
 
@@ -137,6 +138,7 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 	rx.registerNamespaceImpl(QueriesperfstatsNamespaceName, opts, QueryPerfStat{})
 	rx.registerNamespaceImpl(ConfigNamespaceName, opts, DBConfigItem{})
 	rx.registerNamespaceImpl(ClientsStatsNamespaceName, opts, ClientConnectionStat{})
+	rx.registerNamespaceImpl(ReplicationStatsNamespaceName, opts, ReplicationStat{})
 	return rx
 }
 
@@ -198,25 +200,51 @@ func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, op
 		return err
 	}
 
-	for retry := 0; retry < 2; retry++ {
+	awaitReplication := false
+	const defaultMaxTries = 2
+	maxTries := defaultMaxTries
+	for retry := 0; retry < maxTries; retry++ {
+		if awaitReplication {
+			// Try to await concurrent indexes replication
+			log.Printf("Awaiting concurrent replication for '%s'\n", namespace) // TODO: Remove this log, once race in replicated ns will be fixed
+			err = nil
+			awaitReplication = false
+			time.Sleep(time.Millisecond * 300)
+		} else {
+			maxTries = defaultMaxTries
+		}
+
 		if err = db.binding.OpenNamespace(ctx, namespace, opts.enableStorage, opts.dropOnFileFormatError); err != nil {
 			break
 		}
 
 		for _, indexDef := range ns.indexes {
 			if err = db.binding.AddIndex(ctx, namespace, indexDef); err != nil {
+				if rerr, ok := err.(bindings.Error); ok && rerr.Code() == bindings.ErrWrongReplicationData {
+					awaitReplication = true
+					maxTries = 15
+					log.Printf("Replication error in '%s' during '%s' index creation\n", namespace, indexDef.Name) // TODO: Remove this log, once race in replicated ns will be fixed
+				}
 				break
 			}
+		}
+		if awaitReplication {
+			continue
 		}
 
 		if err == nil {
 			if err = db.binding.SetSchema(ctx, namespace, ns.schema); err != nil {
-				if rerr, ok := err.(bindings.Error); ok && rerr.Code() == bindings.ErrParams {
+				rerr, ok := err.(bindings.Error)
+				if ok && rerr.Code() == bindings.ErrParams {
 					// Ignore error from old server which doesn't support SetSchema
 					err = nil
-				} else {
-					break
+				} else if ok && rerr.Code() == bindings.ErrWrongReplicationData {
+					awaitReplication = true
+					maxTries = 15
+					log.Printf("Replication error in '%s' during schema setting\n", namespace) // TODO: Remove this log, once race in replicated ns will be fixed
+					continue
 				}
+				break
 			}
 		}
 
@@ -229,7 +257,6 @@ func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, op
 			db.binding.CloseNamespace(ctx, namespace)
 			break
 		}
-
 		break
 	}
 

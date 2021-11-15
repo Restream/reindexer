@@ -12,8 +12,8 @@ public:
 	ItemRef() : id_(0), proc_(0), raw_(0), valueInitialized_(false), nsid_(0) {}
 	ItemRef(IdType id, const PayloadValue& value, uint16_t proc = 0, uint16_t nsid = 0, bool raw = false)
 		: id_(id), proc_(proc), raw_(raw), valueInitialized_(true), nsid_(nsid), value_(value) {}
-	ItemRef(IdType id, unsigned sortExprResultsIdx, uint16_t proc = 0, uint16_t nsid = 0, bool raw = false)
-		: id_(id), proc_(proc), raw_(raw), valueInitialized_(false), nsid_(nsid), sortExprResultsIdx_(sortExprResultsIdx) {}
+	ItemRef(IdType id, unsigned sortExprResultsIdx, uint16_t proc = 0, uint16_t nsid = 0)
+		: id_(id), proc_(proc), raw_(0), valueInitialized_(false), nsid_(nsid), sortExprResultsIdx_(sortExprResultsIdx) {}
 	ItemRef(ItemRef&& other)
 		: id_(other.id_),
 		  proc_(other.proc_),

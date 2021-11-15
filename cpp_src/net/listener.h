@@ -119,6 +119,7 @@ protected:
 	ev::dynamic_loop &loop_;
 	ev::async async_;
 	vector<Worker> workers_;
+	std::atomic<int32_t> runningThreadsCount_ = {0};
 };
 
 }  // namespace net

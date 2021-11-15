@@ -11,6 +11,9 @@ constexpr char kNamespacesNamespace[] = "#namespaces";
 constexpr char kConfigNamespace[] = "#config";
 constexpr char kActivityStatsNamespace[] = "#activitystats";
 constexpr char kClientsStatsNamespace[] = "#clientsstats";
+constexpr char kClusterConfigNamespace[] = "#clusterconfig";
+const std::string_view kReplicationStatsNamespace = "#replicationstats";
+
 const std::vector<std::string> kDefDBConfig = {
 	R"json({
 		"type":"profiling",
@@ -43,12 +46,26 @@ const std::vector<std::string> kDefDBConfig = {
 	R"json({
 		"type":"replication",
 		"replication":{
-			"role":"none",
-			"master_dsn":"cproto://127.0.0.1:6534/db",
-			"cluster_id":2,
+			"server_id":0,
+			"cluster_id":1,
+		}
+	})json",
+	R"json({
+		"type":"async_replication",
+		"async_replication":{
+			"role": "none",
+			"sync_threads":4,
+			"syncs_per_thread":2,
+			"online_updates_timeout_sec":20,
+			"sync_timeout_sec":60,
+			"retry_sync_interval_msec":30000,
+			"enable_compression":true,
+			"batching_routines_count":100,
 			"force_sync_on_logic_error": false,
 			"force_sync_on_wrong_data_hash": false,
+			"max_wal_depth_on_force_sync":1000,
 			"namespaces":[]
+			"nodes": []
 		}
 	})json",
 	R"json({
@@ -126,15 +143,30 @@ const std::vector<NamespaceDef> kSystemNsDefs = {
 		.AddIndex("sent_bytes", "-", "int64", IndexOpts().Dense())
 		.AddIndex("recv_bytes", "-", "int64", IndexOpts().Dense())
 		.AddIndex("send_buf_bytes", "-", "int64", IndexOpts().Dense())
-		.AddIndex("pended_updates", "-", "int64", IndexOpts().Dense())
 		.AddIndex("send_rate", "-", "int64", IndexOpts().Dense())
 		.AddIndex("recv_rate", "-", "int64", IndexOpts().Dense())
 		.AddIndex("last_send_ts", "-", "int64", IndexOpts().Dense())
 		.AddIndex("last_recv_ts", "-", "int64", IndexOpts().Dense())
 		.AddIndex("client_version", "-", "string", IndexOpts().Dense())
 		.AddIndex("app_name", "-", "string", IndexOpts().Dense())
-		.AddIndex("tx_count", "-", "int64", IndexOpts().Dense())
-		.AddIndex("is_subscribed", "-", "bool", IndexOpts().Dense())
-		.AddIndex("updates_lost", "-", "int64", IndexOpts().Dense())};
+		.AddIndex("tx_count", "-", "int64", IndexOpts().Dense()),
+	NamespaceDef(std::string(kReplicationStatsNamespace), StorageOpts())
+		.AddIndex("type", "hash", "string", IndexOpts().PK())
+		.AddIndex("update_drops", "-", "int64", IndexOpts().Dense())
+		.AddIndex("pending_updates_count", "-", "int64", IndexOpts().Dense())
+		.AddIndex("pending_updates_size", "-", "int64", IndexOpts().Dense())
+		.AddIndex("wal_sync.count", "-", "int64", IndexOpts().Dense())
+		.AddIndex("wal_sync.avg_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("wal_sync.max_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("force_sync.count", "-", "int64", IndexOpts().Dense())
+		.AddIndex("force_sync.avg_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("force_sync.max_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.total_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.wal_sync.count", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.wal_sync.avg_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.wal_sync.max_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.force_sync.count", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.force_sync.avg_time_us", "-", "int64", IndexOpts().Dense())
+		.AddIndex("initial_sync.force_sync.max_time_us", "-", "int64", IndexOpts().Dense())};
 
 }  // namespace reindexer

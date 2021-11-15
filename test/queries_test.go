@@ -1506,11 +1506,12 @@ func TestEqualPosition(t *testing.T) {
 		WhereBool("test_flag", reindexer.EQ, false).
 		EqualPosition("items_array.space_id", "items_array.value").
 		MustExec(t)
-	it.Close()
+
 	assert.Equal(t, len(expectedIds), it.Count())
 	for it.Next() {
 		assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
 	}
+	it.Close()
 }
 
 type FakeTestItem TestItem

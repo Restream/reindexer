@@ -18,6 +18,10 @@ if [ -n "$RX_PROMETHEUS" ]; then
     RX_ARGS="$RX_ARGS --prometheus"
 fi
 
+if [ -n "$RX_ENABLE_CLUSTER" ]; then
+    RX_ARGS="$RX_ARGS --enable-cluster"
+fi
+
 if [ -z "$@" ]; then
    reindexer_server $RX_ARGS
 else 

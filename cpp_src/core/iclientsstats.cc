@@ -14,7 +14,6 @@ void ClientStat::GetJSON(WrSerializer& ser) const {
 	builder.Put("sent_bytes", sentBytes);
 	builder.Put("recv_bytes", recvBytes);
 	builder.Put("send_buf_bytes", sendBufBytes);
-	builder.Put("pended_updates", pendedUpdates);
 	builder.Put("send_rate", sendRate);
 	builder.Put("recv_rate", recvRate);
 	builder.Put("last_send_ts", lastSendTs);
@@ -24,13 +23,6 @@ void ClientStat::GetJSON(WrSerializer& ser) const {
 	builder.Put("client_version", clientVersion);
 	builder.Put("app_name", appName);
 	builder.Put("tx_count", txCount);
-	builder.Put("is_subscribed", isSubscribed);
-	{
-		WrSerializer serFilters;
-		updatesFilters.GetJSON(serFilters);
-		builder.Raw("updates_filter", serFilters.Slice());
-	}
-	builder.Put("updates_lost", updatesLost);
 	builder.End();
 }
 

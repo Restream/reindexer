@@ -86,7 +86,7 @@ Queries to full text index can be combined with conditions on another fields. e.
 		WhereInt("year",reindexer.GT,2010)
 ```
 
-Each result of query contains rank of match. Rank is integer from 0 to 100. 0 - lowest relevancy, 100 - best relevancy. The query Iterator has method `Rank()`, which returns rank of current result
+Each result of query contains rank of match. Rank is integer from 0 to 255. 0 - lowest relevancy, 255 - best relevancy. The query Iterator has method `Rank()`, which returns rank of current result
 
 > **Note**: `<stemmers>` see more [Stemming](https://en.wikipedia.org/wiki/Stemming).
 
@@ -161,8 +161,8 @@ It is possible to merge multiple queries results and sort final result by releva
 ```
 ## Using select functions
 It is possible to use select functions to process result data.
-For now you can use snippet and highlight
-You can not put [,)\0] symbols in functions params
+For now you can use snippet and highlight. Those functions does not work for composite fulltext indexes.
+You can not put [,)\0] symbols in functions params.
 
 highlight - only highlights text area that was found
 it has two arguments -

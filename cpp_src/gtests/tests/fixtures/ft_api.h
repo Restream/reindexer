@@ -44,8 +44,9 @@ public:
 		cfg.enableNumbersSearch = true;
 		cfg.enableWarmupOnNsCopy = true;
 		cfg.logLevel = 5;
-		cfg.mergeLimit = 20000;
-		cfg.maxStepSize = 100;
+		cfg.mergeLimit = 60000;
+		cfg.maxStepSize = 4000;
+		cfg.maxTypos = 4;
 		return cfg;
 	}
 

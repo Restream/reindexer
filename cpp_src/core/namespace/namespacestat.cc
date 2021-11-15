@@ -121,73 +121,16 @@ void IndexPerfStat::GetJSON(JsonBuilder &builder) {
 	}
 }
 
-void MasterState::GetJSON(JsonBuilder &builder) {
-	{
-		auto lastUpstreamLSNmObj = builder.Object("last_upstream_lsn");
-		lastUpstreamLSNm.GetJSON(lastUpstreamLSNmObj);
-	}
-	builder.Put("data_hash", dataHash);
-	builder.Put("data_count", dataCount);
-	builder.Put("updated_unix_nano", int64_t(updatedUnixNano));
-}
-
-void MasterState::FromJSON(span<char> json) {
-	try {
-		gason::JsonParser parser;
-		auto root = parser.Parse(json);
-		FromJSON(root);
-	} catch (const gason::Exception &ex) {
-		throw Error(errParseJson, "MasterState: %s", ex.what());
-	}
-}
-
-void LoadLsn(lsn_t &to, const gason::JsonNode &node) {
+static bool LoadLsn(lsn_t &to, const gason::JsonNode &node) {
 	if (!node.empty()) {
-		if (node.value.getTag() == gason::JSON_OBJECT)
+		if (node.value.getTag() == gason::JSON_OBJECT) {
 			to.FromJSON(node);
-		else
+		} else {
 			to = lsn_t(node.As<int64_t>());
+		}
+		return true;
 	}
-}
-
-void MasterState::FromJSON(const gason::JsonNode &root) {
-	try {
-		LoadLsn(lastUpstreamLSNm, root["last_upstream_lsn"]);
-		dataHash = root["data_hash"].As<uint64_t>();
-		dataCount = root["data_count"].As<int>();
-		updatedUnixNano = root["updated_unix_nano"].As<int64_t>();
-	} catch (const gason::Exception &ex) {
-		throw Error(errParseJson, "MasterState: %s", ex.what());
-	}
-}
-
-static std::string_view replicationStatusToStr(ReplicationState::Status status) {
-	switch (status) {
-		case ReplicationState::Status::Idle:
-			return "idle"sv;
-		case ReplicationState::Status::Error:
-			return "error"sv;
-		case ReplicationState::Status::Fatal:
-			return "fatal"sv;
-		case ReplicationState::Status::Syncing:
-			return "syncing"sv;
-		case ReplicationState::Status::None:
-		default:
-			return "none"sv;
-	}
-}
-
-static ReplicationState::Status strToReplicationStatus(std::string_view status) {
-	if (status == "idle"sv) {
-		return ReplicationState::Status::Idle;
-	} else if (status == "error"sv) {
-		return ReplicationState::Status::Error;
-	} else if (status == "fatal"sv) {
-		return ReplicationState::Status::Fatal;
-	} else if (status == "syncing"sv) {
-		return ReplicationState::Status::Syncing;
-	}
-	return ReplicationState::Status::None;
+	return false;
 }
 
 void ReplicationState::GetJSON(JsonBuilder &builder) {
@@ -196,31 +139,19 @@ void ReplicationState::GetJSON(JsonBuilder &builder) {
 		auto lastLsnObj = builder.Object("last_lsn_v2");
 		lastLsn.GetJSON(lastLsnObj);
 	}
-	builder.Put("slave_mode", slaveMode);
-	builder.Put("replicator_enabled", replicatorEnabled);
+
 	builder.Put("temporary", temporary);
 	builder.Put("incarnation_counter", incarnationCounter);
 	builder.Put("data_hash", dataHash);
 	builder.Put("data_count", dataCount);
 	builder.Put("updated_unix_nano", int64_t(updatedUnixNano));
-	builder.Put("status", replicationStatusToStr(status));
 	{
-		auto originLSNObj = builder.Object("origin_lsn");
-		originLSN.GetJSON(originLSNObj);
+		auto nsVersionObj = builder.Object("ns_version");
+		nsVersion.GetJSON(nsVersionObj);
 	}
 	{
-		auto lastSelfLSNObj = builder.Object("last_self_lsn");
-		lastSelfLSN.GetJSON(lastSelfLSNObj);
-	}
-	{
-		auto lastUpstreamLSNObj = builder.Object("last_upstream_lsn");
-		lastUpstreamLSN.GetJSON(lastUpstreamLSNObj);
-	}
-	if (replicatorEnabled) {
-		builder.Put("error_code", replError.code());
-		builder.Put("error_message", replError.what());
-		auto masterObj = builder.Object("master_state");
-		masterState.GetJSON(masterObj);
+		auto clStatusObj = builder.Object("clusterization_status");
+		clusterStatus.GetJSON(clStatusObj);
 	}
 }
 
@@ -229,30 +160,19 @@ void ReplicationState::FromJSON(span<char> json) {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
 
-		lastLsn = lsn_t(root["last_lsn"].As<int64_t>());
-		LoadLsn(lastLsn, root["last_lsn_v2"]);
+		if (!LoadLsn(lastLsn, root["last_lsn_v2"])) {
+			lastLsn = lsn_t(root["last_lsn"].As<int64_t>());
+		}
 
-		slaveMode = root["slave_mode"].As<bool>();
-		replicatorEnabled = root["replicator_enabled"].As<bool>();
 		temporary = root["temporary"].As<bool>();
 		incarnationCounter = root["incarnation_counter"].As<int>();
 		dataHash = root["data_hash"].As<uint64_t>();
 		dataCount = root["data_count"].As<int>();
 		updatedUnixNano = root["updated_unix_nano"].As<uint64_t>();
-		status = strToReplicationStatus(root["status"].As<std::string_view>());
-		LoadLsn(originLSN, root["origin_lsn"]);
-		LoadLsn(lastSelfLSN, root["last_self_lsn"]);
-		LoadLsn(lastUpstreamLSN, root["last_upstream_lsn"]);
-		if (replicatorEnabled) {
-			int errCode = root["error_code"].As<int>();
-			replError = Error(errCode, root["error_message"].As<std::string>());
-			try {
-				masterState.FromJSON(root["master_state"]);
-			} catch (const Error &e) {
-				logPrintf(LogError, "[repl] Can't load master state error %s", e.what());
-			} catch (const gason::Exception &e) {
-				logPrintf(LogError, "[repl] Can't load master state gasson error %s", e.what());
-			}
+		LoadLsn(nsVersion, root["ns_version"]);
+		auto clStatusNode = root["clusterization_status"];
+		if (!clStatusNode.empty()) {
+			clusterStatus.FromJSON(clStatusNode);
 		}
 	} catch (const gason::Exception &ex) {
 		throw Error(errParseJson, "ReplicationState: %s", ex.what());
@@ -261,10 +181,8 @@ void ReplicationState::FromJSON(span<char> json) {
 
 void ReplicationStat::GetJSON(JsonBuilder &builder) {
 	ReplicationState::GetJSON(builder);
-	if (!slaveMode) {
-		builder.Put("wal_count", walCount);
-		builder.Put("wal_size", walSize);
-	}
+	builder.Put("wal_count", walCount);
+	builder.Put("wal_size", walSize);
 }
 
 void TxPerfStat::GetJSON(JsonBuilder &builder) {
@@ -282,6 +200,74 @@ void TxPerfStat::GetJSON(JsonBuilder &builder) {
 	builder.Put("avg_copy_time_us", avgCopyTimeUs);
 	builder.Put("min_copy_time_us", minCopyTimeUs);
 	builder.Put("max_copy_time_us", maxCopyTimeUs);
+}
+
+static constexpr std::string_view nsClusterizationRoleToStr(ClusterizationStatus::Role role) noexcept {
+	switch (role) {
+		case ClusterizationStatus::Role::ClusterReplica:
+			return "cluster_replica"sv;
+		case ClusterizationStatus::Role::SimpleReplica:
+			return "simple_replica"sv;
+		case ClusterizationStatus::Role::None:
+		default:
+			return "none"sv;
+	}
+}
+
+static constexpr ClusterizationStatus::Role strToNsClusterizationRole(std::string_view role) noexcept {
+	if (role == "cluster_replica"sv) {
+		return ClusterizationStatus::Role::ClusterReplica;
+	} else if (role == "simple_replica"sv) {
+		return ClusterizationStatus::Role::SimpleReplica;
+	}
+	return ClusterizationStatus::Role::None;
+}
+
+void ClusterizationStatus::GetJSON(WrSerializer &ser) const {
+	JsonBuilder builder(ser);
+	GetJSON(builder);
+}
+
+void ClusterizationStatus::GetJSON(JsonBuilder &builder) const {
+	builder.Put("leader_id", leaderId);
+	builder.Put("role", nsClusterizationRoleToStr(role));
+}
+
+Error ClusterizationStatus::FromJSON(span<char> json) {
+	try {
+		FromJSON(gason::JsonParser().Parse(json));
+	} catch (const gason::Exception &ex) {
+		return Error(errParseJson, "ClusterizationStatus: %s", ex.what());
+	} catch (const Error &err) {
+		return err;
+	}
+	return errOK;
+}
+
+void ClusterizationStatus::FromJSON(const gason::JsonNode &root) {
+	leaderId = root["leader_id"].As<int>();
+	role = strToNsClusterizationRole(root["role"].As<std::string_view>());
+}
+
+void ReplicationStateV2::GetJSON(JsonBuilder &builder) {
+	builder.Put("last_lsn", int64_t(lastLsn));
+	builder.Put("data_hash", dataHash);
+	builder.Put("ns_version", int64_t(nsVersion));
+	auto clusterObj = builder.Object("cluster_status");
+	clusterStatus.GetJSON(clusterObj);
+}
+
+void ReplicationStateV2::FromJSON(span<char> json) {
+	try {
+		gason::JsonParser parser;
+		auto root = parser.Parse(json);
+		lastLsn = lsn_t(root["last_lsn"].As<int64_t>());
+		dataHash = root["data_hash"].As<uint64_t>();
+		nsVersion = lsn_t(root["ns_version"].As<int64_t>());
+		clusterStatus.FromJSON(root["cluster_status"]);
+	} catch (const gason::Exception &ex) {
+		throw Error(errParseJson, "ReplicationState: %s", ex.what());
+	}
 }
 
 }  // namespace reindexer

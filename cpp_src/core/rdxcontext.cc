@@ -4,12 +4,12 @@
 namespace reindexer {
 
 RdxContext::RdxContext(RdxContext&& other)
-	: fromReplication_(other.fromReplication_),
-	  LSNs_(other.LSNs_),
+	: originLsn_(other.originLsn_),
 	  holdStatus_(other.holdStatus_),
 	  activityPtr_(nullptr),
 	  cancelCtx_(other.cancelCtx_),
-	  cmpl_(other.cmpl_) {
+	  cmpl_(other.cmpl_),
+	  noWaitSync_(other.noWaitSync_) {
 	if (holdStatus_ == kHold) {
 		new (&activityCtx_) RdxActivityContext(std::move(other.activityCtx_));
 	} else if (holdStatus_ == kPtr) {
@@ -27,7 +27,7 @@ RdxContext::~RdxContext() {
 	}
 }
 
-RdxActivityContext* RdxContext::Activity() const {
+RdxActivityContext* RdxContext::Activity() const noexcept {
 	switch (holdStatus_) {
 		case kHold:
 			return &activityCtx_;
@@ -73,24 +73,21 @@ RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const {
 
 RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer) const {
 	if (activityTracer_.empty() || query.empty()) {
-		return {(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
+		return {LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_};
 	} else {
-		return {activityTracer_,
-				user_,
-				query,
-				activityContainer,
-				connectionId_,
-				(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr),
-				cmpl_};
+		return {
+			LSN(), activityTracer_, user_, query, activityContainer, connectionId_, (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr),
+			cmpl_, emmiterServerId_};
 	}
 }
 
 RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer,
 												QueryResults& qresults) const {
-	if (activityTracer_.empty() || query.empty()) return {(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
+	if (activityTracer_.empty() || query.empty())
+		return {LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_};
 	assert(!qresults.activityCtx_);
 	qresults.activityCtx_.emplace(activityTracer_, user_, query, activityContainer, connectionId_, true);
-	return {&*(qresults.activityCtx_), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
+	return {&*(qresults.activityCtx_), LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_};
 }
 
 }  // namespace reindexer

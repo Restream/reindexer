@@ -7,6 +7,7 @@
 #include "core/storage/storagetype.h"
 #include "estl/mutex.h"
 #include "estl/shared_mutex.h"
+#include "server/config.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -60,7 +61,7 @@ public:
 	/// @param login - User's login
 	/// @param password - User's password
 	AuthContext(const string &login, const string &password) : login_(login), password_(password) {}
-	/// Set expected master's replication clusted ID
+	/// Set expected leader's replication clusted ID
 	/// @param clusterID - Expected cluster ID value
 	void SetExpectedClusterID(int clusterID) {
 		checkClusterID_ = true;
@@ -113,10 +114,9 @@ static inline AuthContext MakeSystemAuthContext() { return AuthContext(kRoleSyst
 class DBManager {
 public:
 	/// Construct DBManager
-	/// @param dbpath - path to database on file system
-	/// @param noSecurity - if true, then disable all security validations and users authentication
+	/// @param config - server config reference
 	/// @param clientsStats - object for receiving clients statistics
-	DBManager(const string &dbpath, bool noSecurity, IClientsStats *clientsStats = nullptr);
+	DBManager(const ServerConfig &config, IClientsStats *clientsStats = nullptr);
 	/// Initialize database:
 	/// Read all found databases to RAM
 	/// Read user's database
@@ -124,7 +124,7 @@ public:
 	/// @param allowDBErrors - true: Ignore errors during existing DBs load; false: Return error if error occures during DBs load
 	/// @param withAutorepair - true: Enable storage autorepair feature for this DB; false: Disable storage autorepair feature for this DB
 	/// @return Error - error object
-	Error Init(const std::string &storageEngine, bool allowDBErrors, bool withAutorepair);
+	Error Init();
 	/// Authenticate user, and grant roles to database with specified dbName
 	/// @param dbName - database name. Can be empty.
 	/// @param auth - AuthContext with user credentials
@@ -142,10 +142,12 @@ public:
 	Error DropDatabase(AuthContext &auth);
 	/// Check if security disabled
 	/// @return bool - true: security checks are disabled; false: security checks are enabled
-	bool IsNoSecurity() { return noSecurity_; }
+	bool IsNoSecurity() { return !config_.EnableSecurity; }
 	/// Enum list of available databases
 	/// @return names of available databases
 	vector<string> EnumDatabases();
+
+	void ShutdownClusters();
 
 private:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::DbManager>;
@@ -158,12 +160,12 @@ private:
 
 	unordered_map<string, unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
 	unordered_map<string, UserRecord> users_;
-	string dbpath_;
+	const ServerConfig &config_;
 	Mutex mtx_;
-	bool noSecurity_;
 	datastorage::StorageType storageType_;
 
 	IClientsStats *clientsStats_ = nullptr;
+	bool clustersShutDown_ = false;
 };
 
 }  // namespace reindexer_server

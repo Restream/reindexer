@@ -9,19 +9,33 @@
 namespace reindexer {
 namespace client {
 
+class ItemCreator;
+
+// class CoroRPCClient;
+
 class Namespace {
 public:
 	typedef std::shared_ptr<Namespace> Ptr;
 
-	Namespace(const string &name);
+	Namespace(const string& name);
+
 	Item NewItem();
 
-	// protected:
-	string name_;
-	PayloadType payloadType_;
-	TagsMatcher tagsMatcher_;
+	template <typename ClientT>
+	Item NewItem(ClientT& client, std::chrono::milliseconds execTimeout);
+	void UpdateTagsMatcher(const TagsMatcher& tm);
+	void TryReplaceTagsMatcher(TagsMatcher&& tm);
+	TagsMatcher GetTagsMatcher() const {
+		shared_lock<shared_timed_mutex> lk(lck_);
+		return tagsMatcher_;
+	}
 
-	shared_timed_mutex lck_;
+	const string name;
+	const PayloadType payloadType;
+
+private:
+	TagsMatcher tagsMatcher_;
+	mutable shared_timed_mutex lck_;  // TODO: Remove this mutex. SyncCoro* classes probably have to have own copies of tm/pt
 };
 
 }  // namespace client

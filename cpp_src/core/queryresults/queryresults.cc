@@ -10,10 +10,10 @@
 
 namespace reindexer {
 
-void QueryResults::AddNamespace(std::shared_ptr<NamespaceImpl> ns, const NsContext &ctx) {
-	assert(ctx.noLock);
+void QueryResults::AddNamespace(std::shared_ptr<NamespaceImpl> ns, bool noLock, const RdxContext &ctx) {
+	assert(noLock);
 	const NamespaceImpl *nsPtr = ns.get();
-	auto strHolder = ns->StrHolder(ctx);
+	auto strHolder = ns->StrHolder(noLock, ctx);
 	const auto it =
 		std::find_if(nsData_.cbegin(), nsData_.cend(), [nsPtr](const NsDataHolder &nsData) { return nsData.ns.get() == nsPtr; });
 	if (it != nsData_.cend()) {
@@ -91,6 +91,10 @@ void QueryResults::Clear() { *this = QueryResults(); }
 void QueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator finish) { items_.erase(start, finish); }
 
 void QueryResults::Add(const ItemRef &i) { items_.push_back(i); }
+// Used to save strings when converting the client result to the server.
+// The server item is created, inserted into the result and deleted
+// so that the rows are not deleted, they are saved in the results.
+void QueryResults::SaveRawData(ItemImplRawData &&rawData) { rawDataHolder_.emplace_back(std::move(rawData)); }
 
 std::string QueryResults::Dump() const {
 	string buf;
@@ -272,6 +276,34 @@ Error QueryResults::Iterator::GetJSON(WrSerializer &ser, bool withHdrLen) {
 		} else {
 			qr_->encodeJSON(idx_, ser);
 		}
+	} catch (const Error &err) {
+		err_ = err;
+		return err;
+	}
+	return errOK;
+}
+
+Error QueryResults::Iterator::GetCJSONWithTm(WrSerializer &ser) {
+	try {
+		auto &itemRef = qr_->items_[idx_];
+		assert(qr_->ctxs.size() > itemRef.Nsid());
+		auto &ctx = qr_->ctxs[itemRef.Nsid()];
+
+		if (itemRef.Value().IsFree()) {
+			return Error(errNotFound, "Item not found");
+		}
+
+		ConstPayload pl(ctx.type_, itemRef.Value());
+		CJsonBuilder builder(ser, ObjType::TypePlain);
+		CJsonEncoder cjsonEncoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
+
+		ser.PutVarUint(TAG_END);
+		int pos = ser.Len();
+		ser.PutUInt32(0);
+		cjsonEncoder.Encode(&pl, builder);
+		uint32_t tmOffset = ser.Len();
+		memcpy(ser.Buf() + pos, &tmOffset, sizeof(tmOffset));
+		ctx.tagsMatcher_.serialize(ser);
 	} catch (const Error &err) {
 		err_ = err;
 		return err;

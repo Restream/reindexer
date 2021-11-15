@@ -361,6 +361,17 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		} else if (field.mode == FieldModeDrop) {
 			ser.PutVarUint(QueryDropField);
 			ser.PutVString(field.column);
+		} else if (field.mode == FieldModeSetJson) {
+			ser.PutVarUint(QueryUpdateObject);
+			ser.PutVString(field.column);
+			ser.PutVarUint(field.values.size());
+			ser.PutVarUint(field.values.IsArrayValue());
+			for (const Variant &val : field.values) {
+				ser.PutVarUint(0);
+				ser.PutVarUint(KeyValueString);
+				auto v = val.As<std::string>();
+				ser.PutVString(v);
+			}
 		} else {
 			throw Error(errLogic, "Unsupported item modification mode = %d", field.mode);
 		}

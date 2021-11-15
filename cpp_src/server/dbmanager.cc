@@ -20,11 +20,11 @@ using namespace std::string_view_literals;
 const std::string kUsersYAMLFilename = "users.yml";
 const std::string kUsersJSONFilename = "users.json";
 
-DBManager::DBManager(const string &dbpath, bool noSecurity, IClientsStats *clientsStats)
-	: dbpath_(dbpath), noSecurity_(noSecurity), storageType_(datastorage::StorageType::LevelDB), clientsStats_(clientsStats) {}
+DBManager::DBManager(const ServerConfig &config, IClientsStats *clientsStats)
+	: config_(config), storageType_(datastorage::StorageType::LevelDB), clientsStats_(clientsStats) {}
 
-Error DBManager::Init(const std::string &storageEngine, bool allowDBErrors, bool withAutorepair) {
-	if (!noSecurity_) {
+Error DBManager::Init() {
+	if (config_.EnableSecurity) {
 		auto status = readUsers();
 		if (!status.ok()) {
 			return status;
@@ -32,23 +32,24 @@ Error DBManager::Init(const std::string &storageEngine, bool allowDBErrors, bool
 	}
 
 	vector<fs::DirEntry> foundDb;
-	if (!dbpath_.empty() && fs::ReadDir(dbpath_, foundDb) < 0) {
-		return Error(errParams, "Can't read reindexer dir %s", dbpath_);
+	if (!config_.StoragePath.empty() && fs::ReadDir(config_.StoragePath, foundDb) < 0) {
+		return Error(errParams, "Can't read reindexer dir %s", config_.StoragePath);
 	}
 
 	try {
-		storageType_ = datastorage::StorageTypeFromString(storageEngine);
+		storageType_ = datastorage::StorageTypeFromString(config_.StorageEngine);
 	} catch (const Error &err) {
 		return err;
 	}
 
 	for (auto &de : foundDb) {
-		if (de.isDir && validateObjectName(de.name)) {
-			auto status = loadOrCreateDatabase(de.name, allowDBErrors, withAutorepair);
+		if (de.isDir && validateObjectName(de.name, false)) {
+			auto status = loadOrCreateDatabase(de.name, config_.StartWithErrors, config_.Autorepair);
 			if (!status.ok()) {
 				logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
 				if (status.code() == errNotValid) {
-					logPrintf(LogError, "Try to run:\t`reindexer_tool --dsn \"builtin://%s\" --repair`  to restore data", dbpath_);
+					logPrintf(LogError, "Try to run:\t`reindexer_tool --dsn \"builtin://%s\" --repair`  to restore data",
+							  config_.StoragePath);
 					return status;
 				}
 			}
@@ -85,10 +86,10 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 		return Error(errNotFound, "Database '%s' not found", dbName);
 	}
 	if (auth.role_ < kRoleOwner) {
-		return Error(errForbidden, "Forbidden to create database %s", dbName);
+		return Error(errForbidden, "Forbidden to create database '%s'", dbName);
 	}
-	if (!validateObjectName(dbName)) {
-		return Error(errParams, "Database name contains invalid character. Only alphas, digits,'_','-', are allowed");
+	if (!validateObjectName(dbName, false)) {
+		return Error(errParams, "Database name '%s' contains invalid character. Only alphas, digits,'_','-', are allowed", dbName);
 	}
 
 	lck = smart_lock<Mutex>(mtx_, dummyCtx, true);
@@ -112,10 +113,15 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 }
 
 Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors, bool withAutorepair, const AuthContext &auth) {
-	string storagePath = !dbpath_.empty() ? fs::JoinPath(dbpath_, dbName) : "";
+	if (clustersShutDown_) {
+		return Error(errTerminated, "DBManager is already preparing for shutdown");
+	}
+
+	string storagePath = !config_.StoragePath.empty() ? fs::JoinPath(config_.StoragePath, dbName) : "";
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
-	auto db = unique_ptr<reindexer::Reindexer>(new reindexer::Reindexer(clientsStats_));
+	auto db = unique_ptr<reindexer::Reindexer>(new reindexer::Reindexer(
+		ReindexerConfig().WithClientStats(clientsStats_).EnableRaftCluster(config_.EnableCluster).WithUpdatesSize(config_.MaxUpdatesSize)));
 	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
 	switch (storageType_) {
 		case datastorage::StorageType::LevelDB:
@@ -155,7 +161,7 @@ Error DBManager::DropDatabase(AuthContext &auth) {
 	dbs_.erase(it);
 	auth.ResetDB();
 
-	fs::RmDirAll(fs::JoinPath(dbpath_, dbName));
+	fs::RmDirAll(fs::JoinPath(config_.StoragePath, dbName));
 	return 0;
 }
 
@@ -164,6 +170,16 @@ vector<string> DBManager::EnumDatabases() {
 	vector<string> dbs;
 	for (auto &it : dbs_) dbs.push_back(it.first);
 	return dbs;
+}
+
+void DBManager::ShutdownClusters() {
+	std::unique_lock lck(mtx_);
+	if (!clustersShutDown_) {
+		for (auto &db : dbs_) {
+			db.second->ShutdownCluster();
+		}
+		clustersShutDown_ = true;
+	}
 }
 
 Error DBManager::Login(const string &dbName, AuthContext &auth) {
@@ -230,7 +246,7 @@ Error DBManager::readUsers() noexcept {
 
 Error DBManager::readUsersYAML() noexcept {
 	string content;
-	int res = fs::ReadFile(fs::JoinPath(dbpath_, kUsersYAMLFilename), content);
+	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename), content);
 	if (res < 0) return Error(errNotFound, "Can't read '%s' file", kUsersYAMLFilename);
 	Yaml::Node root;
 	try {
@@ -272,7 +288,7 @@ Error DBManager::readUsersYAML() noexcept {
 
 Error DBManager::readUsersJSON() noexcept {
 	string content;
-	int res = fs::ReadFile(fs::JoinPath(dbpath_, kUsersJSONFilename), content);
+	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersJSONFilename), content);
 	if (res < 0) return Error(errNotFound, "Can't read '%s' file", kUsersJSONFilename);
 
 	try {
@@ -309,22 +325,22 @@ Error DBManager::readUsersJSON() noexcept {
 
 Error DBManager::createDefaultUsersYAML() noexcept {
 	logPrintf(LogInfo, "Creating default %s file", kUsersYAMLFilename);
-	int res = fs::WriteFile(fs::JoinPath(dbpath_, kUsersYAMLFilename),
-							"# List of db's users, their's roles and privileges\n\n"
-							"# Username\n"
-							"reindexer:\n"
-							"  # Hash type(right now '$1' is the only value), salt and hash in BSD MD5 Crypt format\n"
-							"  # Hash may be generated via openssl tool - `openssl passwd -1 -salt MySalt MyPassword`\n"
-							"  # If hash doesn't start with '$' sign it will be used as raw password itself\n"
-							"  hash: $1$rdxsalt$VIR.dzIB8pasIdmyVGV0E/\n"
-							"  # User's roles for specific databases, * in place of db name means any database\n"
-							"  # Allowed roles:\n"
-							"  # 1) data_read - user can read data from database\n"
-							"  # 2) data_write - user can write data to database\n"
-							"  # 3) db_admin - user can manage database: kRoleDataWrite + create & delete namespaces, modify indexes\n"
-							"  # 4) owner - user has all privilegies on database: kRoleDBAdmin + create & drop database\n"
-							"  roles:\n"
-							"    *: owner\n");
+	int64_t res = fs::WriteFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename),
+								"# List of db's users, their's roles and privileges\n\n"
+								"# Username\n"
+								"reindexer:\n"
+								"  # Hash type(right now '$1' is the only value), salt and hash in BSD MD5 Crypt format\n"
+								"  # Hash may be generated via openssl tool - `openssl passwd -1 -salt MySalt MyPassword`\n"
+								"  # If hash doesn't start with '$' sign it will be used as raw password itself\n"
+								"  hash: $1$rdxsalt$VIR.dzIB8pasIdmyVGV0E/\n"
+								"  # User's roles for specific databases, * in place of db name means any database\n"
+								"  # Allowed roles:\n"
+								"  # 1) data_read - user can read data from database\n"
+								"  # 2) data_write - user can write data to database\n"
+								"  # 3) db_admin - user can manage database: kRoleDataWrite + create & delete namespaces, modify indexes\n"
+								"  # 4) owner - user has all privilegies on database: kRoleDBAdmin + create & drop database\n"
+								"  roles:\n"
+								"    *: owner\n");
 	if (res < 0) {
 		return Error(errParams, "Unable to write default config file: %s", strerror(errno));
 	}

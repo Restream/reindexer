@@ -226,10 +226,10 @@ func (tx *txTest) UpdateAsync(s interface{}, cmpl bindings.Completion) error {
 	return tx.tx.UpdateAsync(s, cmpl)
 }
 
-func (tx *txTest) UpsertAsync(s interface{}, cmpl bindings.Completion) error {
+func (tx *txTest) UpsertAsync(s interface{}, cmpl bindings.Completion, precepts ...string) error {
 	val := reflect.Indirect(reflect.ValueOf(s))
 	tx.ns.items[getPK(tx.ns, val)] = s
-	return tx.tx.UpsertAsync(s, cmpl)
+	return tx.tx.UpsertAsync(s, cmpl, precepts...)
 }
 
 func (tx *txTest) Commit() (int, error) {

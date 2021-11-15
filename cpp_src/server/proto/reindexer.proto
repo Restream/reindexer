@@ -256,6 +256,7 @@ message ConnectRequest {
 
 // Storage options for a namespace.
 message StorageOptions {
+	reserved 8;
 	// Ns name.
 	string nsName = 1;
 	// To work with physical storage or not.
@@ -278,8 +279,6 @@ message StorageOptions {
 	// Note that if it is just the process that crashes (i.e., the machine
 	// does not reboot), no writes will be lost even if sync==false.
 	bool sync = 7;
-	// To work with namespace in slave mode.
-	bool slaveMode = 8;
 	// To allow LevelDB or RocksDB to repair storage file
 	// in case it is malfunctioned.
 	bool autorepair = 9;

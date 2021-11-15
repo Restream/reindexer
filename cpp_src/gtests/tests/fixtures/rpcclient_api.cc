@@ -3,6 +3,9 @@
 #include "tools/fsops.h"
 #include "tools/stringstools.h"
 
+const std::string RPCClientTestApi::kDbPrefix = "/tmp/reindex/rpc_client_test";
+const std::string RPCClientTestApi::kDefaultRPCServerAddr = "127.0.0.1:" + std::to_string(RPCClientTestApi::kDefaultRPCPort);
+
 void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLogin) {
 	dsn_ = addr;
 	serverThread_.reset(new std::thread([this, addr, errOnLogin]() {
@@ -41,7 +44,7 @@ void RPCClientTestApi::TestServer::Stop() {
 }
 
 void RPCClientTestApi::StartDefaultRealServer() {
-	const std::string dbPath = string(kDbPrefix) + "/" + kDefaultRPCPort;
+	const std::string dbPath = kDbPrefix + "/" + std::to_string(kDefaultRPCPort);
 	reindexer::fs::RmDirAll(dbPath);
 	AddRealServer(dbPath);
 	StartServer();
@@ -51,7 +54,7 @@ void RPCClientTestApi::AddFakeServer(const std::string& addr, const RPCServerCon
 	fakeServers_.emplace(addr, std::unique_ptr<TestServer>(new TestServer(conf)));
 }
 
-void RPCClientTestApi::AddRealServer(const std::string& dbPath, const std::string& addr, uint16_t httpPort) {
+void RPCClientTestApi::AddRealServer(const std::string& dbPath, const std::string& addr, uint16_t httpPort, uint16_t clusterPort) {
 	auto res = realServers_.emplace(addr, ServerData());
 	ASSERT_TRUE(res.second);
 	// clang-format off
@@ -66,7 +69,8 @@ void RPCClientTestApi::AddRealServer(const std::string& dbPath, const std::strin
 			"   serverlog: \n"
 			"net:\n"
 			"   rpcaddr: " + addr + "\n"
-			"   httpaddr: 0.0.0.0:" + std::to_string(httpPort);
+			"   httpaddr: 0.0.0.0:" + std::to_string(httpPort) + "\n"
+			"   clusteraddr: 0.0.0.0:" + std::to_string(clusterPort);
 	// clang-format on
 	Error err = res.first->second.server->InitFromYAML(yaml);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -201,57 +205,4 @@ void RPCClientTestApi::FillData(client::CoroReindexer& rx, std::string_view nsNa
 		auto err = rx.Upsert(nsName, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-}
-
-void RPCClientTestApi::UpdatesReciever::OnWALUpdate(LSNPair, std::string_view nsName, const WALRecord&) {
-	auto found = updatesCounters_.find(nsName);
-	if (found != updatesCounters_.end()) {
-		++(found->second);
-	} else {
-		updatesCounters_.emplace(string(nsName), 1);
-	}
-}
-
-const RPCClientTestApi::UpdatesReciever::map& RPCClientTestApi::UpdatesReciever::Counters() const { return updatesCounters_; }
-
-void RPCClientTestApi::UpdatesReciever::Reset() { updatesCounters_.clear(); }
-
-void RPCClientTestApi::UpdatesReciever::Dump() const {
-	std::cerr << "Reciever dump: " << std::endl;
-	for (auto& it : Counters()) {
-		std::cerr << it.first << ": " << it.second << std::endl;
-	}
-}
-
-bool RPCClientTestApi::UpdatesReciever::AwaitNamespaces(size_t count) {
-	std::chrono::milliseconds time{0};
-	auto cycleTime = std::chrono::milliseconds(50);
-	while (Counters().size() != count) {
-		time += cycleTime;
-		if (time >= std::chrono::seconds(5)) {
-			Dump();
-			return false;
-		}
-		loop_.sleep(cycleTime);
-	}
-	return true;
-}
-
-bool RPCClientTestApi::UpdatesReciever::AwaitItems(std::string_view ns, size_t count) {
-	std::chrono::milliseconds time{0};
-	auto cycleTime = std::chrono::milliseconds(50);
-	do {
-		auto counters = Counters();
-		time += cycleTime;
-		if (time >= std::chrono::seconds(5)) {
-			Dump();
-			return false;
-		}
-
-		auto found = counters.find(ns);
-		if (found != counters.end() && found->second == count) {
-			return true;
-		}
-		loop_.sleep(cycleTime);
-	} while (true);
 }

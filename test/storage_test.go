@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
+	"path"
 	"testing"
 	"time"
 
@@ -89,7 +90,7 @@ func TestStorageChangeFormat(t *testing.T) {
 		panic(err)
 	}
 
-	tx := DB.MustBeginTx("test_items_storage")
+	tx := newTestTx(DB, "test_items_storage")
 
 	tx.Upsert(&TestItemV1{
 		ID: 1,
@@ -180,7 +181,7 @@ func TestStorageChangeFormat(t *testing.T) {
 	if udsn.Scheme == "builtin" {
 		// Test7
 		// Try to create DB on exists file path - must fail
-		ioutil.WriteFile(udsn.Path+"blocked_storage", []byte{}, os.ModePerm)
+		ioutil.WriteFile(path.Join(udsn.Path, "blocked_storage"), []byte{}, os.ModePerm)
 		assert.Error(t, DB.OpenNamespace("blocked_storage", reindexer.DefaultNamespaceOptions(), TestItemV1{}), "Expecting storage error, but it's ok")
 	}
 }

@@ -16,6 +16,7 @@ class PayloadType;
 class WrSerializer;
 struct NsContext;
 struct ResultFetchOpts;
+struct ItemImplRawData;
 class SelectFunctionsHolder;
 class NamespaceImpl;
 
@@ -60,11 +61,12 @@ public:
 		Error GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetMsgPack(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetProtobuf(WrSerializer &wrser, bool withHdrLen = true);
+		Error GetCJSONWithTm(WrSerializer &wrser);
 		// use enableHold = false only if you are sure that the item will be destroyed before the queryResults
 		Item GetItem(bool enableHold = true);
 		joins::ItemIterator GetJoined();
 		const ItemRef &GetItemRef() const { return qr_->items_[idx_]; }
-		int64_t GetLSN() const { return qr_->items_[idx_].Value().GetLSN(); }
+		lsn_t GetLSN() const { return qr_->items_[idx_].Value().GetLSN(); }
 		bool IsRaw() const;
 		std::string_view GetRaw() const;
 		Iterator &operator++();
@@ -114,7 +116,10 @@ public:
 	ItemRefVector &Items() { return items_; }
 	const ItemRefVector &Items() const { return items_; }
 	int GetJoinedNsCtxIndex(int nsid) const;
-	void AddNamespace(std::shared_ptr<NamespaceImpl>, const NsContext &);
+
+	void SaveRawData(ItemImplRawData &&);
+
+	void AddNamespace(std::shared_ptr<NamespaceImpl> ns, bool noLock, const RdxContext &);
 	void RemoveNamespace(const NamespaceImpl *ns);
 	bool IsNamespaceAdded(const NamespaceImpl *ns) const noexcept {
 		return std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder &nsData) { return nsData.ns.get() == ns; }) !=
@@ -132,6 +137,7 @@ private:
 	ItemRefVector items_;
 	std::optional<RdxActivityContext> activityCtx_;
 	friend InternalRdxContext;
+	std::vector<ItemImplRawData> rawDataHolder_;
 	friend SelectFunctionsHolder;
 	struct NsDataHolder {
 		NsDataHolder(std::shared_ptr<NamespaceImpl> &&ns_, StringsHolderPtr &&strHldr) noexcept

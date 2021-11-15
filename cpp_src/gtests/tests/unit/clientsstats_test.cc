@@ -9,8 +9,6 @@ using reindexer::net::ev::dynamic_loop;
 using reindexer::client::CoroReindexer;
 using reindexer::client::CoroQueryResults;
 using reindexer::client::CoroTransaction;
-using reindexer::UpdatesFilters;
-using reindexer::coroutine::wait_group_guard;
 using reindexer::coroutine::wait_group;
 
 TEST_F(ClientsStatsApi, ClientsStatsConcurrent) {
@@ -45,10 +43,8 @@ TEST_F(ClientsStatsApi, ClientsStatsData) {
 		std::vector<std::unique_ptr<CoroReindexer>> nClients;
 		nClients.reserve(kConnectionCount);
 		wait_group wg;
-		wg.add(kConnectionCount);
 		for (size_t i = 0; i < kConnectionCount; i++) {
-			loop.spawn([this, &loop, &nClients, &wg] {
-				wait_group_guard wgg(wg);
+			loop.spawn(wg, [this, &loop, &nClients] {
 				std::unique_ptr<CoroReindexer> clientPtr(new CoroReindexer);
 				reindexer::client::ConnectOpts opts;
 				auto err = clientPtr->Connect(GetConnectionString(), loop, opts.CreateDBIfMissing());
@@ -100,7 +96,7 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 	bool finished = false;
 
 	loop.spawn([this, &loop, &finished] {
-		reindexer::client::ReindexerConfig config;
+		reindexer::client::CoroReindexerConfig config;
 		config.AppName = kAppName;
 		CoroReindexer reindexer(config);
 		reindexer::client::ConnectOpts opts;
@@ -115,12 +111,6 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		ASSERT_FALSE(tx1.IsFree());
 		auto tx2 = reindexer.NewTransaction(nsName);
 		ASSERT_FALSE(tx2.IsFree());
-
-		TestObserver observer;
-		UpdatesFilters filters;
-		filters.AddFilter(nsName, UpdatesFilters::Filter());
-		err = reindexer.SubscribeUpdates(&observer, filters, SubscriptionOpts().IncrementSubscription());
-		ASSERT_TRUE(err.ok()) << err.what();
 
 		auto beginTs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 		loop.sleep(std::chrono::milliseconds(2000));  // Timeout to update send/recv rate
@@ -169,10 +159,6 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		EXPECT_TRUE(txCount == 2) << "tx_count =[" << txCount << "]";
 		int64_t sendBufBytes = clientsStats["send_buf_bytes"].As<int64_t>(-1);
 		EXPECT_TRUE(sendBufBytes == 0) << "sendBufBytes = [" << sendBufBytes << "]";
-		int64_t pendedUpdates = clientsStats["pended_updates"].As<int64_t>(-1);
-		EXPECT_TRUE(pendedUpdates == 0) << "pendedUpdates = [" << pendedUpdates << "]";
-		int64_t updatesLost = clientsStats["updates_lost"].As<int64_t>(-1);
-		EXPECT_TRUE(updatesLost == 0) << "updatesLost = [" << updatesLost << "]";
 		int64_t sendRate = clientsStats["send_rate"].As<int64_t>();
 		EXPECT_TRUE(sendRate > 0) << "sendRate = [" << sendRate << "]";
 		int64_t recvRate = clientsStats["recv_rate"].As<int64_t>();
@@ -183,129 +169,14 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		int64_t lastRecvTs = clientsStats["last_recv_ts"].As<int64_t>();
 		EXPECT_TRUE(lastRecvTs > beginTs) << "lastRecvTs = [" << lastRecvTs << "], beginTs = [" << beginTs << "]";
 		EXPECT_TRUE(lastRecvTs <= endTs) << "lastRecvTs = [" << lastRecvTs << "], endTs = [" << endTs << "]";
-		bool isSubscribed = clientsStats["is_subscribed"].As<bool>(false);
-		EXPECT_EQ(isSubscribed, true);
-		UpdatesFilters resultFilters;
-		resultFilters.FromJSON(clientsStats["updates_filter"]);
-		EXPECT_EQ(resultFilters, filters);
 
-		err = reindexer.CommitTransaction(tx1);
+		CoroQueryResults qr1;
+		err = reindexer.CommitTransaction(tx1, qr1);
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = reindexer.CommitTransaction(tx2);
+		CoroQueryResults qr2;
+		err = reindexer.CommitTransaction(tx2, qr2);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		finished = true;
-	});
-
-	loop.run();
-	ASSERT_TRUE(finished);
-}
-
-TEST_F(ClientsStatsApi, UpdatesFilters) {
-	// Should get correct data about client's subscription
-	RunServerInThread(true);
-	dynamic_loop loop;
-	bool finished = false;
-	loop.spawn([this, &loop, &finished] {
-		CoroReindexer reindexer;
-		reindexer::client::ConnectOpts opts;
-		auto err = reindexer.Connect(GetConnectionString(), loop, opts.CreateDBIfMissing());
-		ASSERT_TRUE(err.ok()) << err.what();
-		std::string ns1Name("ns1");
-		err = reindexer.OpenNamespace(ns1Name);
-		ASSERT_TRUE(err.ok()) << err.what();
-		std::string ns2Name("ns2");
-		err = reindexer.OpenNamespace(ns2Name);
-		ASSERT_TRUE(err.ok()) << err.what();
-		std::string ns3Name("ns3");
-		err = reindexer.OpenNamespace(ns3Name);
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		{
-			CoroQueryResults resultCs;
-			err = reindexer.Select(reindexer::Query("#clientsstats"), resultCs);
-			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(resultCs.Count(), 1);
-			auto it = resultCs.begin();
-			reindexer::WrSerializer wrser;
-			err = it.GetJSON(wrser, false);
-			ASSERT_TRUE(err.ok()) << err.what();
-			gason::JsonParser parser;
-			gason::JsonNode clientsStats = parser.Parse(wrser.Slice());
-			bool isSubscribed = clientsStats["is_subscribed"].As<bool>(true);
-			EXPECT_EQ(isSubscribed, false);
-			UpdatesFilters resultFilters;
-			resultFilters.FromJSON(clientsStats["updates_filter"]);
-			EXPECT_EQ(resultFilters, UpdatesFilters());
-		}
-
-		TestObserver observer;
-		UpdatesFilters filters1;
-		filters1.AddFilter(ns1Name, UpdatesFilters::Filter());
-		filters1.AddFilter(ns2Name, UpdatesFilters::Filter());
-		err = reindexer.SubscribeUpdates(&observer, filters1, SubscriptionOpts().IncrementSubscription());
-		ASSERT_TRUE(err.ok()) << err.what();
-
-		{
-			CoroQueryResults resultCs;
-			err = reindexer.Select(reindexer::Query("#clientsstats"), resultCs);
-			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(resultCs.Count(), 1);
-			auto it = resultCs.begin();
-			reindexer::WrSerializer wrser;
-			err = it.GetJSON(wrser, false);
-			ASSERT_TRUE(err.ok()) << err.what();
-			gason::JsonParser parser;
-			gason::JsonNode clientsStats = parser.Parse(wrser.Slice());
-			bool isSubscribed = clientsStats["is_subscribed"].As<bool>(false);
-			EXPECT_EQ(isSubscribed, true);
-			UpdatesFilters resultFilters;
-			resultFilters.FromJSON(clientsStats["updates_filter"]);
-			EXPECT_EQ(resultFilters, filters1);
-		}
-
-		UpdatesFilters filters2;
-		filters1.AddFilter(ns3Name, UpdatesFilters::Filter());
-		filters2.AddFilter(ns3Name, UpdatesFilters::Filter());
-		err = reindexer.SubscribeUpdates(&observer, filters2, SubscriptionOpts().IncrementSubscription());
-		ASSERT_TRUE(err.ok()) << err.what();
-		{
-			CoroQueryResults resultCs;
-			err = reindexer.Select(reindexer::Query("#clientsstats"), resultCs);
-			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(resultCs.Count(), 1);
-			auto it = resultCs.begin();
-			reindexer::WrSerializer wrser;
-			err = it.GetJSON(wrser, false);
-			ASSERT_TRUE(err.ok()) << err.what();
-			gason::JsonParser parser;
-			gason::JsonNode clientsStats = parser.Parse(wrser.Slice());
-			bool isSubscribed = clientsStats["is_subscribed"].As<bool>(false);
-			EXPECT_EQ(isSubscribed, true);
-			UpdatesFilters resultFilters;
-			resultFilters.FromJSON(clientsStats["updates_filter"]);
-			EXPECT_EQ(resultFilters, filters1);
-		}
-
-		err = reindexer.UnsubscribeUpdates(&observer);
-		ASSERT_TRUE(err.ok()) << err.what();
-		{
-			CoroQueryResults resultCs;
-			err = reindexer.Select(reindexer::Query("#clientsstats"), resultCs);
-			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(resultCs.Count(), 1);
-			auto it = resultCs.begin();
-			reindexer::WrSerializer wrser;
-			err = it.GetJSON(wrser, false);
-			ASSERT_TRUE(err.ok()) << err.what();
-			gason::JsonParser parser;
-			gason::JsonNode clientsStats = parser.Parse(wrser.Slice());
-			bool isSubscribed = clientsStats["is_subscribed"].As<bool>(true);
-			EXPECT_EQ(isSubscribed, false);
-			UpdatesFilters resultFilters;
-			resultFilters.FromJSON(clientsStats["updates_filter"]);
-			EXPECT_EQ(resultFilters, UpdatesFilters());
-		}
 		finished = true;
 	});
 
@@ -344,7 +215,8 @@ TEST_F(ClientsStatsApi, TxCountLimitation) {
 
 		for (size_t i = 0; i < kMaxTxCount / 2; ++i) {
 			if (i % 2) {
-				err = reindexer.CommitTransaction(txs[i]);
+				CoroQueryResults qr;
+				err = reindexer.CommitTransaction(txs[i], qr);
 			} else {
 				err = reindexer.RollBackTransaction(txs[i]);
 			}
@@ -361,7 +233,8 @@ TEST_F(ClientsStatsApi, TxCountLimitation) {
 		for (size_t i = 0; i < txs.size(); ++i) {
 			if (!txs[i].IsFree() && txs[i].Status().ok()) {
 				if (i % 2) {
-					err = reindexer.CommitTransaction(txs[i]);
+					CoroQueryResults qr;
+					err = reindexer.CommitTransaction(txs[i], qr);
 				} else {
 					err = reindexer.RollBackTransaction(txs[i]);
 				}

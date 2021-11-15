@@ -18,7 +18,6 @@
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
 #include "net/cproto/clientconnection.h"
-#include "replicator/updatesobserver.h"
 #include "tools/errors.h"
 #include "urlparser/urlparser.h"
 
@@ -57,6 +56,7 @@ public:
 	Error UpdateIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext &ctx);
+	Error GetSchema(std::string_view nsName, int format, std::string &schema, const InternalRdxContext &ctx);
 	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
 	Error EnumDatabases(vector<string> &dbList, const InternalRdxContext &ctx);
 	Error Insert(std::string_view nsName, client::Item &item, const InternalRdxContext &ctx);
@@ -76,8 +76,6 @@ public:
 	Error GetMeta(std::string_view nsName, const string &key, string &data, const InternalRdxContext &ctx);
 	Error PutMeta(std::string_view nsName, const string &key, std::string_view data, const InternalRdxContext &ctx);
 	Error EnumMeta(std::string_view nsName, vector<string> &keys, const InternalRdxContext &ctx);
-	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts = SubscriptionOpts());
-	Error UnsubscribeUpdates(IUpdatesObserver *observer);
 	Error GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string> &suggests);
 	Error Status();
 
@@ -100,15 +98,11 @@ protected:
 	Error modifyItem(std::string_view nsName, Item &item, int mode, seconds netTimeout, const InternalRdxContext &ctx);
 	Error modifyItemAsync(std::string_view nsName, Item *item, int mode, cproto::ClientConnection *, seconds netTimeout,
 						  const InternalRdxContext &ctx);
-	Error subscribeImpl(bool subscribe);
 	Namespace *getNamespace(std::string_view nsName);
 	Error startWorkers();
 	Error addConnectEntry(const string &dsn, const client::ConnectOpts &opts, size_t idx);
 	void run(size_t thIdx);
-	void onUpdates(net::cproto::RPCAnswer &ans, cproto::ClientConnection *conn);
 	bool onConnectionFail(int failedDsnIndex);
-
-	void checkSubscribes();
 
 	net::cproto::ClientConnection *getConn();
 	cproto::CommandParams mkCommand(cproto::CmdCode cmd, const InternalRdxContext *ctx = nullptr) const noexcept;
@@ -122,9 +116,6 @@ protected:
 	std::vector<worker> workers_;
 	std::atomic<unsigned> curConnIdx_;
 	ReindexerConfig config_;
-	UpdatesObservers observers_;
-	std::atomic<net::cproto::ClientConnection *> updatesConn_;
-	vector<net::cproto::RPCAnswer> delayedUpdates_;
 	cproto::ClientConnection::ConnectData connectData_;
 };
 

@@ -5,7 +5,6 @@ using reindexer::net::ev::dynamic_loop;
 using reindexer::client::CoroReindexer;
 using reindexer::client::CoroQueryResults;
 using reindexer::coroutine::wait_group;
-using reindexer::coroutine::wait_group_guard;
 
 void ClientsStatsApi::SetUp() {}
 
@@ -22,7 +21,9 @@ void ClientsStatsApi::RunServerInThread(bool statEnable) {
 		"   rpclog: \n"
 		"   serverlog: \n"
 		"net:\n"
-		"   rpcaddr: " + kipaddress + ":" + kport + "\n"
+		"   rpcaddr: " + kipaddress + ":" + kRPCPort + "\n"
+		"   httpaddr: " + kipaddress + ":" + kClusterPort + "\n"
+		"   clusteraddr: " + kipaddress + ":" + kHttpPort + "\n"
 		"   security: true\n";
 	// clang-format on
 
@@ -47,7 +48,7 @@ void ClientsStatsApi::TearDown() {
 }
 
 std::string ClientsStatsApi::GetConnectionString() {
-	std::string ret = "cproto://" + kUserName + ":" + kPassword + "@" + kipaddress + ":" + kport + "/" + kdbName;
+	std::string ret = "cproto://" + kUserName + ":" + kPassword + "@" + kipaddress + ":" + kRPCPort + "/" + kdbName;
 	return ret;
 }
 
@@ -114,10 +115,8 @@ void ClientsStatsApi::ClientSelectLoop(size_t coroutines) {
 		auto err = rx.Connect(GetConnectionString(), loop);
 		ASSERT_TRUE(err.ok()) << err.what();
 		wait_group wg;
-		wg.add(coroutines);
 		for (size_t i = 0; i < coroutines; ++i) {
-			loop.spawn([this, &rx, &wg] {
-				wait_group_guard wgg(wg);
+			loop.spawn(wg, [this, &rx] {
 				while (!stop_) {
 					reindexer::client::CoroQueryResults result;
 					auto err = rx.Select(reindexer::Query("#clientsstats"), result);

@@ -108,7 +108,7 @@ public:
 		allSetValuesS_->clear();
 	}
 
-	h_vector<T, 1> values_;
+	h_vector<T, 2> values_;
 	intrusive_ptr<ValuesSet> valuesS_, distS_;
 	intrusive_ptr<AllSetValuesSet> allSetValuesS_;
 

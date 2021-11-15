@@ -293,8 +293,10 @@ void WrSerializer::PutDouble(double v) {
 WrSerializer &WrSerializer::operator<<(double v) {
 	grow(32);
 	double_conversion::StringBuilder builder(reinterpret_cast<char *>(buf_ + len_), 32);
-	int flags =
-		double_conversion::DoubleToStringConverter::UNIQUE_ZERO | double_conversion::DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN;
+	int flags = double_conversion::DoubleToStringConverter::UNIQUE_ZERO |
+				double_conversion::DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN |
+				double_conversion::DoubleToStringConverter::EMIT_TRAILING_DECIMAL_POINT |
+				double_conversion::DoubleToStringConverter::EMIT_TRAILING_ZERO_AFTER_POINT;
 	double_conversion::DoubleToStringConverter dc(flags, NULL, NULL, 'e', -6, 21, 0, 0);
 
 	dc.ToShortest(v, &builder);

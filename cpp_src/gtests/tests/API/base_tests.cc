@@ -678,6 +678,27 @@ TEST_F(ReindexerApi, Insert) {
 	ASSERT_NO_THROW(ASSERT_EQ(selItem["value"].As<string>(), "value"));
 }
 
+TEST_F(ReindexerApi, ItemJSONWithDouble) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	ASSERT_TRUE(err.ok()) << err.what();
+	Item item = rt.reindexer->NewItem(default_namespace);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+	{
+		const std::string kJSON = R"_({"id":1234,"double":0.0})_";
+		err = item.FromJSON(kJSON);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(item.GetJSON(), kJSON);
+	}
+
+	{
+		const std::string kJSON = R"_({"id":1234,"double":0.1})_";
+		err = item.FromJSON(kJSON);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(item.GetJSON(), kJSON);
+	}
+}
+
 TEST_F(ReindexerApi, WithTimeoutInterface) {
 	using std::chrono::milliseconds;
 

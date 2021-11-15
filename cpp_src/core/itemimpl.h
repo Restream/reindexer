@@ -73,6 +73,11 @@ public:
 	void GetField(int field, VariantArray &);
 	FieldsSet PkFields() const { return pkFields_; }
 	int NameTag(std::string_view name) const { return tagsMatcher_.name2tag(name); }
+	int FieldIndex(std::string_view name) const {
+		int field = IndexValueType::NotSet;
+		payloadType_.FieldByName(name, field);
+		return field;
+	}
 
 	VariantArray GetValueByJSONPath(std::string_view jsonPath);
 
@@ -82,27 +87,29 @@ public:
 
 	std::string_view GetCJSON(bool withTagsMatcher = false);
 	std::string_view GetCJSON(WrSerializer &ser, bool withTagsMatcher = false);
+	std::string_view GetCJSONWithTm();
+	std::string_view GetCJSONWithTm(WrSerializer &ser);
 	Error FromCJSON(std::string_view slice, bool pkOnly = false);
 	Error FromMsgPack(std::string_view sbuf, size_t &offset);
 	Error FromProtobuf(std::string_view sbuf);
 	Error GetMsgPack(WrSerializer &wrser);
 	Error GetProtobuf(WrSerializer &wrser);
 
-	PayloadType Type() { return payloadType_; }
-	PayloadValue &Value() { return payloadValue_; }
-	PayloadValue &RealValue() { return realValue_; }
+	PayloadType Type() const noexcept { return payloadType_; }
+	PayloadValue &Value() noexcept { return payloadValue_; }
+	PayloadValue &RealValue() noexcept { return realValue_; }
 	Payload GetPayload() { return Payload(payloadType_, payloadValue_); }
-	ConstPayload GetConstPayload() { return ConstPayload(payloadType_, payloadValue_); }
+	ConstPayload GetConstPayload() const { return ConstPayload(payloadType_, payloadValue_); }
 	std::shared_ptr<const Schema> GetSchema() { return schema_; }
 
 	TagsMatcher &tagsMatcher() { return tagsMatcher_; }
 
-	void SetPrecepts(const vector<string> &precepts) {
-		precepts_ = precepts;
+	void SetPrecepts(vector<string> &&precepts) {
+		precepts_ = std::move(precepts);
 		cjson_ = std::string_view();
 	}
-	const vector<string> &GetPrecepts() { return precepts_; }
-	void Unsafe(bool enable) { unsafe_ = enable; }
+	const vector<string> &GetPrecepts() noexcept { return precepts_; }
+	void Unsafe(bool enable) noexcept { unsafe_ = enable; }
 	void Clear() {
 		tagsMatcher_ = TagsMatcher();
 		precepts_.clear();
@@ -114,7 +121,7 @@ public:
 		ser_ = WrSerializer();
 
 		GetPayload().Reset();
-		payloadValue_.SetLSN(-1);
+		payloadValue_.SetLSN(lsn_t());
 
 		unsafe_ = false;
 		ns_.reset();

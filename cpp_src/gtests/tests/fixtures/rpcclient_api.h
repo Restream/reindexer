@@ -5,19 +5,14 @@
 #include "rpcserver_fake.h"
 
 #include "client/reindexer.h"
-#include "replicator/updatesobserver.h"
 #include "server/server.h"
 
 #include "client/cororeindexer.h"
 
-const std::string kDefaultRPCPort = "25673";							   // -V1043
-const std::string kDefaultRPCServerAddr = "127.0.0.1:" + kDefaultRPCPort;  // -V1043
-constexpr uint16_t kDefaultHttpPort = 33333;
-
 class RPCClientTestApi : public ::testing::Test {
 public:
 	RPCClientTestApi() {}
-	virtual ~RPCClientTestApi() { StopAllServers(); }
+	virtual ~RPCClientTestApi() {}
 
 protected:
 	class CancelRdxContext : public reindexer::IRdxCancelContext {
@@ -51,34 +46,13 @@ protected:
 		RPCServerConfig conf_;
 	};
 
-	class UpdatesReciever : public IUpdatesObserver {
-	public:
-		UpdatesReciever(ev::dynamic_loop& loop) : loop_(loop) {}
-
-		void OnWALUpdate(LSNPair, std::string_view nsName, const WALRecord&) override final;
-		void OnConnectionState(const Error&) override final {}
-		void OnUpdatesLost(std::string_view) override final {}
-
-		using map = tsl::hopscotch_map<std::string, size_t, nocase_hash_str, nocase_equal_str>;
-		// using map = std::unordered_map<std::string, size_t>;
-
-		const map& Counters() const;
-		void Reset();
-		void Dump() const;
-		bool AwaitNamespaces(size_t count);
-		bool AwaitItems(std::string_view ns, size_t count);
-
-	private:
-		map updatesCounters_;
-		ev::dynamic_loop& loop_;
-	};
-
 	void SetUp() {}
-	void TearDown() {}
+	void TearDown() { StopAllServers(); }
 
 	void StartDefaultRealServer();
 	void AddFakeServer(const string& addr = kDefaultRPCServerAddr, const RPCServerConfig& conf = RPCServerConfig());
-	void AddRealServer(const std::string& dbPath, const string& addr = kDefaultRPCServerAddr, uint16_t httpPort = kDefaultHttpPort);
+	void AddRealServer(const std::string& dbPath, const string& addr = kDefaultRPCServerAddr, uint16_t httpPort = kDefaultHttpPort,
+					   uint16_t clusterPort = kDefaultClusterPort);
 	void StartServer(const string& addr = kDefaultRPCServerAddr, Error errOnLogin = Error());
 	void StopServer(const string& addr = kDefaultRPCServerAddr);
 	bool CheckIfFakeServerConnected(const string& addr = kDefaultRPCServerAddr);
@@ -90,7 +64,11 @@ protected:
 	void FillData(reindexer::client::Reindexer& rx, std::string_view nsName, int from, int count);
 	void FillData(reindexer::client::CoroReindexer& rx, std::string_view nsName, int from, int count);
 
-	const std::string_view kDbPrefix{"/tmp/reindex/rpc_client_test"};
+	static const std::string kDbPrefix;
+	static const uint16_t kDefaultRPCPort = 25673;
+	static const std::string kDefaultRPCServerAddr;
+	static const uint16_t kDefaultHttpPort = 33333;
+	static const uint16_t kDefaultClusterPort = 33833;
 
 private:
 	struct ServerData {

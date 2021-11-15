@@ -14,16 +14,14 @@ private:
 public:
 	typedef T element_type;
 
-	intrusive_ptr() : px(0) {}
+	intrusive_ptr() noexcept : px(0) {}
 
 	intrusive_ptr(T *p, bool add_ref = true) : px(p) {
 		if (px != 0 && add_ref) intrusive_ptr_add_ref(px);
 	}
 
 	template <typename U>
-	intrusive_ptr(intrusive_ptr<U> const &rhs)
-
-		: px(rhs.get()) {
+	intrusive_ptr(intrusive_ptr<U> const &rhs) : px(rhs.get()) {
 		if (px != 0) intrusive_ptr_add_ref(px);
 	}
 
@@ -36,7 +34,7 @@ public:
 	}
 
 	template <typename U>
-	intrusive_ptr &operator=(intrusive_ptr<U> const &rhs) {
+	intrusive_ptr &operator=(intrusive_ptr<U> const &rhs) noexcept {
 		this_type(rhs).swap(*this);
 		return *this;
 	}
@@ -47,12 +45,12 @@ public:
 		this_type(static_cast<intrusive_ptr &&>(rhs)).swap(*this);
 		return *this;
 	}
-	intrusive_ptr &operator=(intrusive_ptr const &rhs) {
+	intrusive_ptr &operator=(intrusive_ptr const &rhs) noexcept {
 		this_type(rhs).swap(*this);
 		return *this;
 	}
 
-	intrusive_ptr &operator=(T *rhs) {
+	intrusive_ptr &operator=(T *rhs) noexcept {
 		this_type(rhs).swap(*this);
 		return *this;
 	}
@@ -67,14 +65,14 @@ public:
 		return intrusive_ptr_is_unique(px);
 	}
 
-	T *get() const { return px; }
+	T *get() const noexcept { return px; }
 
-	T &operator*() const {
+	T &operator*() const noexcept {
 		assert(px != 0);
 		return *px;
 	}
 
-	T *operator->() const {
+	T *operator->() const noexcept {
 		assert(px != 0);
 		return px;
 	}
@@ -83,7 +81,7 @@ public:
 
 	operator unspecified_bool_type() const { return px == 0 ? 0 : &this_type::px; }
 
-	void swap(intrusive_ptr &rhs) {
+	void swap(intrusive_ptr &rhs) noexcept {
 		T *tmp = px;
 		px = rhs.px;
 		rhs.px = tmp;
@@ -157,21 +155,21 @@ template <typename T>
 class intrusive_atomic_rc_wrapper;
 
 template <typename T>
-inline static void intrusive_ptr_add_ref(intrusive_atomic_rc_wrapper<T> *x) {
+inline void intrusive_ptr_add_ref(intrusive_atomic_rc_wrapper<T> *x) {
 	if (x) {
 		x->refcount.fetch_add(1, std::memory_order_relaxed);
 	}
 }
 
 template <typename T>
-inline static void intrusive_ptr_release(intrusive_atomic_rc_wrapper<T> *x) {
+inline void intrusive_ptr_release(intrusive_atomic_rc_wrapper<T> *x) {
 	if (x && x->refcount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
 		delete x;
 	}
 }
 
 template <typename T>
-inline static bool intrusive_ptr_is_unique(intrusive_atomic_rc_wrapper<T> *x) {
+inline bool intrusive_ptr_is_unique(intrusive_atomic_rc_wrapper<T> *x) {
 	// std::memory_order_acquire - is essential for COW constructions based on intrusive_ptr
 	return !x || (x->refcount.load(std::memory_order_acquire) == 1);
 }
@@ -191,9 +189,46 @@ protected:
 	friend bool intrusive_ptr_is_unique<>(intrusive_atomic_rc_wrapper<T> *x);
 };
 
+template <typename T>
+class intrusive_rc_wrapper;
+
+template <typename T>
+inline void intrusive_ptr_add_ref(intrusive_rc_wrapper<T> *x) {
+	if (x) {
+		++x->refcount;
+	}
+}
+
+template <typename T>
+inline void intrusive_ptr_release(intrusive_rc_wrapper<T> *x) {
+	if (x && --x->refcount == 0) {
+		delete x;
+	}
+}
+
+template <typename T>
+inline bool intrusive_ptr_is_unique(intrusive_rc_wrapper<T> *x) {
+	return !x || (x->refcount == 1);
+}
+
+template <typename T>
+class intrusive_rc_wrapper : public T {
+public:
+	template <typename... Args>
+	intrusive_rc_wrapper(Args &&... args) : T(std::forward<Args>(args)...), refcount(0) {}
+	intrusive_rc_wrapper &operator=(const intrusive_rc_wrapper &) = delete;
+
+protected:
+	int refcount;
+
+	friend void intrusive_ptr_add_ref<>(intrusive_rc_wrapper<T> *x);
+	friend void intrusive_ptr_release<>(intrusive_rc_wrapper<T> *x);
+	friend bool intrusive_ptr_is_unique<>(intrusive_rc_wrapper<T> *x);
+};
+
 template <typename T, typename... Args>
 intrusive_ptr<T> make_intrusive(Args &&... args) {
-	return intrusive_ptr<T>(new T(args...));
+	return intrusive_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
 }  // namespace reindexer
