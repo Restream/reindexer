@@ -353,6 +353,8 @@ protected:
 	std::shared_ptr<Schema> schema_;
 
 	StringsHolderPtr StrHolder(const NsContext &);
+	size_t ItemsCount() const noexcept { return items_.size() - free_.size(); }
+	const NamespaceConfigData &Config() const noexcept { return config_; }
 
 private:
 	NamespaceImpl(const NamespaceImpl &src);

@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.2.5"
+  version: "3.2.6"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -3487,6 +3487,23 @@ definitions:
       wal_size:
         type: integer
         description: "Maximum WAL size for this namespace (maximum count of WAL records)"
+      max_preselect_size:
+        type: integer
+        default: 1000
+        minimum: 0
+        description: "Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied"
+      max_preselect_part:
+        type: number
+        format: "float"
+        default: 0.1
+        minimum: 0.0
+        maximum: 1.0
+        description: "Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only mmax_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied"
+      min_preselect_size:
+        type: integer
+        default: 1000
+        minimum: 0
+        description: "Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value"
 
   ReplicationConfig:
     type: object

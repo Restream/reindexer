@@ -36,7 +36,10 @@ const std::vector<std::string> kDefDBConfig = {
 				"tx_size_to_always_copy":100000,
 				"optimization_timeout_ms":800,
 				"optimization_sort_workers":4,
-				"wal_size":4000000
+				"wal_size":4000000,
+				"min_preselect_size":1000,
+				"max_preselect_size":1000,
+				"max_preselect_part":0.1
 			}
 		]
 	})json",

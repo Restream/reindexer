@@ -1,5 +1,6 @@
 #include "coroutine.h"
 #include <cstdio>
+#include <iterator>
 #include <thread>
 
 namespace reindexer {

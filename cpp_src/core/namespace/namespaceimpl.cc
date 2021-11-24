@@ -1083,7 +1083,7 @@ void NamespaceImpl::setSlaveMode(const RdxContext &ctx) {
 
 ReplicationState NamespaceImpl::getReplState() const {
 	ReplicationState ret = repl_;
-	ret.dataCount = items_.size() - free_.size();
+	ret.dataCount = ItemsCount();
 	ret.lastLsn = lsn_t(wal_.LSNCounter() - 1, serverId_);
 	return ret;
 }
@@ -1537,7 +1537,7 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 	ret.joinCache = joinCache_->GetMemStat();
 	ret.queryCache = queryCache_->GetMemStat();
 
-	ret.itemsCount = items_.size() - free_.size();
+	ret.itemsCount = ItemsCount();
 	*(static_cast<ReplicationState *>(&ret.replication)) = getReplState();
 	ret.replication.walCount = size_t(wal_.size());
 	ret.replication.walSize = wal_.heap_size();

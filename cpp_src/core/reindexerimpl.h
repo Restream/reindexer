@@ -35,7 +35,7 @@ class ReindexerImpl {
 	};
 	template <bool needUpdateSystemNs, typename MakeCtxStrFn, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg,
 			  typename... Args>
-	Error applyNsFunction(std::string_view nsName, Arg arg, Args... args, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr);
+	Error applyNsFunction(std::string_view nsName, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr, Arg arg, Args... args);
 	template <auto MemFn, typename MakeCtxStrFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr, Arg &, Args...);
 

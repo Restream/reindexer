@@ -474,8 +474,8 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 }
 
 template <bool needUpdateSystemNs, typename MakeCtxStrFn, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
-Error ReindexerImpl::applyNsFunction(std::string_view nsName, Arg arg, Args... args, const InternalRdxContext& ctx,
-									 const MakeCtxStrFn& makeCtxStr) {
+Error ReindexerImpl::applyNsFunction(std::string_view nsName, const InternalRdxContext& ctx, const MakeCtxStrFn& makeCtxStr, Arg arg,
+									 Args... args) {
 	Error err;
 	try {
 		WrSerializer ser;
@@ -523,11 +523,11 @@ Error ReindexerImpl::applyNsFunction(std::string_view nsName, const InternalRdxC
 
 #define APPLY_NS_FUNCTION1(needUpdateSys, memFn, arg)                                                                                     \
 	return applyNsFunction<needUpdateSys, decltype(makeCtxStr), void(decltype(arg), const NsContext&), &Namespace::memFn, decltype(arg)>( \
-		nsName, arg, ctx, makeCtxStr);
+		nsName, ctx, makeCtxStr, arg)
 
 #define APPLY_NS_FUNCTION2(needUpdateSys, memFn, arg1, arg2)                                                                               \
 	return applyNsFunction<needUpdateSys, decltype(makeCtxStr), void(decltype(arg1), decltype(arg2), const NsContext&), &Namespace::memFn, \
-						   decltype(arg1), decltype(arg2)>(nsName, arg1, arg2, ctx, makeCtxStr);
+						   decltype(arg1), decltype(arg2)>(nsName, ctx, makeCtxStr, arg1, arg2)
 
 Error ReindexerImpl::Insert(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {
 	const auto makeCtxStr = [nsName](WrSerializer& ser) -> WrSerializer& { return ser << "INSERT INTO " << nsName; };

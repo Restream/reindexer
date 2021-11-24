@@ -14,6 +14,9 @@ CoroReindexer::~CoroReindexer() {
 CoroReindexer::CoroReindexer(CoroReindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(rdx.ctx_) { rdx.owner_ = false; }
 CoroReindexer& CoroReindexer::operator=(CoroReindexer&& rdx) noexcept {
 	if (this != &rdx) {
+		if (owner_) {
+			delete impl_;
+		}
 		impl_ = rdx.impl_;
 		owner_ = rdx.owner_;
 		ctx_ = rdx.ctx_;

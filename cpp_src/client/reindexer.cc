@@ -14,6 +14,9 @@ Reindexer::~Reindexer() {
 Reindexer::Reindexer(Reindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(rdx.ctx_) { rdx.owner_ = false; }
 Reindexer& Reindexer::operator=(Reindexer&& rdx) noexcept {
 	if (this != &rdx) {
+		if (owner_) {
+			delete impl_;
+		}
 		impl_ = rdx.impl_;
 		owner_ = rdx.owner_;
 		ctx_ = rdx.ctx_;

@@ -366,6 +366,12 @@ type DBNamespacesConfig struct {
 	OptimizationSortWorkers int `json:"optimization_sort_workers"`
 	// Maximum WAL size for this namespace (maximum count of WAL records)
 	WALSize int64 `json:"wal_size"`
+	// Minimum preselect size for optimization of inner join by injection of filters. It is using if (MaxPreselectPart * ns.size) is less than this value
+	MinPreselectSize int64 `json:"min_preselect_size"`
+	// Maximum preselect size for optimization of inner join by injection of filters
+	MaxPreselectSize int64 `json:"max_preselect_size"`
+	// Maximum preselect part of namespace's items for optimization of inner join by injection of filters
+	MaxPreselectPart float64 `json:"max_preselect_part"`
 }
 
 // DBReplicationConfig is part of reindexer configuration contains replication options

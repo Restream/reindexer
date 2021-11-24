@@ -1,9 +1,25 @@
+# Version 3.2.6 (24.11.2021)
+## Core
+- [fix] Fix default behaviour for joins optimization from v3.2.4 and add more settings for it in #config
+
+## Build
+- [fix] Fix build for msvc 14.29.30133
+
+## Doc
+- [fix] Fix doc for FT-rank
+
+## Face
+- [fea] Add settings for inner join optimization to NS config
+- [fix] Remove ‘id’ from the ‘Also create primary key index (id)’ label
+- [fix] Fix the wrong message during the item editing
+
 # Version 3.2.5 (30.10.2021)
 ## Build
 - [fix] Fix building in directories, containing dots (also fixes homebrew installation)
 
 # Version 3.2.4 (14.10.2021)
 ## Core
+- [fea] Add e2k support
 - [fix] Fix memory leak in SetObject for non-index fields
 - [fea] Optimize join queries with filters in both main and joined query
 - [fix] Fix join queries SQL serialization
