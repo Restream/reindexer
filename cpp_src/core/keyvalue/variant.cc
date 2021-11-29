@@ -347,9 +347,15 @@ int Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) 
 		return -other.relaxCompareWithString(static_cast<p_string>(*this));
 	} else if ((Type() == KeyValueInt || Type() == KeyValueInt64 || Type() == KeyValueDouble) &&
 			   (other.Type() == KeyValueInt || other.Type() == KeyValueInt64 || other.Type() == KeyValueDouble)) {
-		const int64_t lhs = As<int64_t>();
-		const int64_t rhs = other.As<int64_t>();
-		return (lhs == rhs) ? 0 : ((lhs > rhs) ? 1 : -1);
+		if (Type() == KeyValueDouble || other.Type() == KeyValueDouble) {
+			const double lhs = As<double>();
+			const double rhs = other.As<double>();
+			return (lhs == rhs) ? 0 : ((lhs > rhs) ? 1 : -1);
+		} else {
+			const int64_t lhs = As<int64_t>();
+			const int64_t rhs = other.As<int64_t>();
+			return (lhs == rhs) ? 0 : ((lhs > rhs) ? 1 : -1);
+		}
 	} else {
 		throw Error(errParams, "Not comparable types");
 	}
@@ -578,6 +584,21 @@ VariantArray::operator Point() const {
 		throw Error(errParams, "Can't convert array of %d elements to Point", size());
 	}
 	return {(*this)[0].As<double>(), (*this)[1].As<double>()};
+}
+
+int VariantArray::RelaxCompare(const VariantArray &other, const CollateOpts &collateOpts) const {
+	auto lhsIt{cbegin()}, rhsIt{other.cbegin()};
+	auto const lhsEnd{cend()}, rhsEnd{other.cend()};
+	for (; lhsIt != lhsEnd && rhsIt != rhsEnd; ++lhsIt, ++rhsIt) {
+		const auto res = lhsIt->RelaxCompare(*rhsIt, collateOpts);
+		if (res != 0) return res;
+	}
+	if (lhsIt == lhsEnd) {
+		if (rhsIt == rhsEnd) return 0;
+		return -1;
+	} else {
+		return 1;
+	}
 }
 
 }  // namespace reindexer

@@ -223,6 +223,14 @@ public:
 	Query &&WhereComposite(const string &idx, CondType cond, const vector<VariantArray> &v) && {
 		return std::move(WhereComposite(idx, cond, v));
 	}
+	Query &WhereBetweenFields(std::string firstIdx, CondType cond, std::string secondIdx) & {
+		entries.Append(nextOp_, BetweenFieldsQueryEntry{std::move(firstIdx), cond, std::move(secondIdx)});
+		nextOp_ = OpAnd;
+		return *this;
+	}
+	Query &&WhereBetweenFields(std::string firstIdx, CondType cond, std::string secondIdx) && {
+		return std::move(WhereBetweenFields(std::move(firstIdx), cond, std::move(secondIdx)));
+	}
 
 	Query &DWithin(const string &idx, Point p, double distance) & {
 		QueryEntry qe;

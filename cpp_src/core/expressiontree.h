@@ -29,6 +29,9 @@ private:
 	size_t size_ = 1;
 };
 
+template <typename, typename...>
+struct Skip {};
+
 /// @class ExpressionTree
 /// A tree contained in vector
 /// For detailed documentation see expressiontree.md
@@ -60,15 +63,15 @@ class ExpressionTree {
 		using OverloadResolutionHelper<R, SubTree, Ts...>::resolve;
 	};
 
-	template <typename R, typename F, typename... Fs>
-	class VisitorHelper : private VisitorHelper<R, Fs...> {
+	struct TemplateTestStruct {};
+	template <typename R, typename F, bool = std::is_invocable_v<F, TemplateTestStruct&>>
+	class VisitorHelperImpl;
+	template <typename R, typename F>
+	class VisitorHelperImpl<R, F, false> {
 		using Arg = decltype(OverloadResolver<R>::resolve(std::declval<F>()));
 
 	public:
-		VisitorHelper(F&& f,
-					  Fs&&... fs) noexcept(noexcept(F{std::forward<F>(f)}) && noexcept(VisitorHelper<R, Fs...>{std::forward<Fs>(fs)...}))
-			: VisitorHelper<R, Fs...>{std::forward<Fs>(fs)...}, functor_{std::forward<F>(f)} {}
-		using VisitorHelper<R, Fs...>::operator();
+		VisitorHelperImpl(F&& f) noexcept(noexcept(F{std::forward<F>(f)})) : functor_{std::forward<F>(f)} {}
 		R operator()(const Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
 		R operator()(Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
 		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::move(arg)))) { return functor_(std::move(arg)); }
@@ -80,29 +83,96 @@ class ExpressionTree {
 		F functor_;
 	};
 	template <typename R, typename F>
-	class VisitorHelper<R, F> {
-		using Arg = decltype(OverloadResolver<R>::resolve(std::declval<F>()));
-
+	class VisitorHelperImpl<R, F, true> {
 	public:
-		VisitorHelper(F&& f) noexcept(noexcept(F{std::forward<F>(f)})) : functor_{std::forward<F>(f)} {}
-		R operator()(const Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::move(arg)))) { return functor_(std::move(arg)); }
-		R operator()(const Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Ref<Arg>&& arg) const noexcept(noexcept(std::declval<F>()(std::move(arg)))) { return functor_(std::move(arg)); }
+		VisitorHelperImpl(F&& f) noexcept(noexcept(F{std::forward<F>(f)})) : functor_{std::forward<F>(f)} {}
+		template <typename Arg>
+		R operator()(const Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) {
+			return functor_(arg);
+		}
+		template <typename Arg>
+		R operator()(Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) {
+			return functor_(arg);
+		}
+		template <typename Arg>
+		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::move(arg)))) {
+			return functor_(std::move(arg));
+		}
+		template <typename Arg>
+		R operator()(const Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) {
+			return functor_(arg);
+		}
+		template <typename Arg>
+		R operator()(Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) {
+			return functor_(arg);
+		}
+		template <typename Arg>
+		R operator()(Ref<Arg>&& arg) const noexcept(noexcept(std::declval<F>()(std::move(arg)))) {
+			return functor_(std::move(arg));
+		}
 
 	private:
 		F functor_;
 	};
+
+	template <typename R, typename F, typename... Fs>
+	class VisitorHelper : private VisitorHelperImpl<R, F>, private VisitorHelper<R, Fs...> {
+	public:
+		VisitorHelper(F&& f, Fs&&... fs) noexcept(noexcept(VisitorHelperImpl<R, F>{std::forward<F>(f)}) && noexcept(VisitorHelper<R, Fs...>{
+			std::forward<Fs>(fs)...}))
+			: VisitorHelperImpl<R, F>{std::forward<F>(f)}, VisitorHelper<R, Fs...>{std::forward<Fs>(fs)...} {}
+		using VisitorHelperImpl<R, F>::operator();
+		using VisitorHelper<R, Fs...>::operator();
+	};
+	template <typename R, typename F>
+	class VisitorHelper<R, F> : private VisitorHelperImpl<R, F> {
+	public:
+		VisitorHelper(F&& f) noexcept(noexcept(VisitorHelperImpl<R, F>{std::forward<F>(f)}))
+			: VisitorHelperImpl<R, F>{std::forward<F>(f)} {}
+		using VisitorHelperImpl<R, F>::operator();
+	};
+	template <typename T, typename... TT>
+	class SkipHelper : private SkipHelper<TT...> {
+	public:
+		using SkipHelper<TT...>::operator();
+		void operator()(const T&) const noexcept {}
+		void operator()(T&) const noexcept {}
+		void operator()(T&&) const noexcept {}
+		void operator()(const Ref<T>&) const noexcept {}
+		void operator()(Ref<T>&) const noexcept {}
+		void operator()(Ref<T>&&) const noexcept {}
+	};
+	template <typename T>
+	class SkipHelper<T> {
+	public:
+		void operator()(const T&) const noexcept {}
+		void operator()(T&) const noexcept {}
+		void operator()(T&&) const noexcept {}
+		void operator()(const Ref<T>&) const noexcept {}
+		void operator()(Ref<T>&) const noexcept {}
+		void operator()(Ref<T>&&) const noexcept {}
+	};
+	template <typename... TT, typename... Fs>
+	class VisitorHelper<void, Skip<TT...>, Fs...> : private SkipHelper<TT...>, private VisitorHelper<void, Fs...> {
+	public:
+		VisitorHelper(Skip<TT...>, Fs&&... fs) noexcept(noexcept(VisitorHelper<void, Fs...>{std::forward<Fs>(fs)...}))
+			: VisitorHelper<void, Fs...>{std::forward<Fs>(fs)...} {}
+		using SkipHelper<TT...>::operator();
+		using VisitorHelper<void, Fs...>::operator();
+	};
+	template <typename... TT>
+	class VisitorHelper<void, Skip<TT...>> : private SkipHelper<TT...> {
+	public:
+		VisitorHelper(Skip<TT...>) noexcept {}
+		using SkipHelper<TT...>::operator();
+	};
+
 	template <typename R, typename... Fs>
 	class Visitor : private VisitorHelper<R, Fs...> {
 	public:
 		Visitor(Fs&&... fs) noexcept(noexcept(VisitorHelper<R, Fs...>{std::forward<Fs>(fs)...}))
 			: VisitorHelper<R, Fs...>{std::forward<Fs>(fs)...} {}
 		using VisitorHelper<R, Fs...>::operator();
-		template <typename T>
-		std::void_t<std::is_same<R, void>> operator()(T) const noexcept {}
 	};
 
 	template <typename T, typename...>
@@ -233,12 +303,12 @@ class ExpressionTree {
 		}
 		bool operator!=(const Node& other) const { return !operator==(other); }
 
-		template <typename T = Head<Ts...>>
+		template <typename T>
 		T& Value() {
 			const static GetVisitor<T> visitor;
 			return std::visit(visitor, storage_);
 		}
-		template <typename T = Head<Ts...>>
+		template <typename T>
 		const T& Value() const {
 			const static GetVisitor<const T> visitor;
 			return std::visit(visitor, storage_);
@@ -259,7 +329,7 @@ class ExpressionTree {
 		}
 		void Append() { std::get<SubTree>(storage_).Append(); }
 		void Erase(size_t length) { std::get<SubTree>(storage_).Erase(length); }
-		/// Execute appropriate functor depending on content type, skip if no appropriate functor
+		/// Execute appropriate functor depending on content type
 		template <typename R, typename... Fs>
 		R InvokeAppropriate(Fs&&... funcs) {
 			return std::visit(Visitor<R, Fs...>{std::forward<Fs>(funcs)...}, storage_);
@@ -432,17 +502,18 @@ public:
 		assert(i < Size());
 		return i + Size(i);
 	}
-	OperationType GetOperation(size_t i) const {
+	template <typename T>
+	bool HoldsOrReferTo(size_t i) const noexcept {
+		assert(i < Size());
+		return container_[i].template HoldsOrReferTo<T>();
+	}
+	OperationType GetOperation(size_t i) const noexcept {
 		assert(i < Size());
 		return container_[i].operation;
 	}
-	void SetOperation(OperationType op, size_t i) {
+	void SetOperation(OperationType op, size_t i) noexcept {
 		assert(i < Size());
 		container_[i].operation = op;
-	}
-	bool IsValue(size_t i) const {
-		assert(i < container_.size());
-		return container_[i].IsLeaf();
 	}
 	template <typename T>
 	T& Get(size_t i) {
@@ -453,6 +524,11 @@ public:
 	const T& Get(size_t i) const {
 		assert(i < Size());
 		return container_[i].template Value<T>();
+	}
+	template <typename T>
+	void SetValue(size_t i, T&& v) {
+		assert(i < Size());
+		return container_[i].template SetValue<T>(std::forward<T>(v));
 	}
 	void Erase(size_t from, size_t to) {
 		assert(to >= from);
@@ -473,6 +549,17 @@ public:
 		for (auto& b : activeBrackets_) {
 			if (b >= to) b -= count;
 		}
+	}
+	/// Execute appropriate functor depending on content type
+	template <typename R, typename... Fs>
+	R InvokeAppropriate(size_t i, Fs&&... funcs) {
+		assert(i < container_.size());
+		return container_[i].template InvokeAppropriate<R, Fs...>(std::forward<Fs>(funcs)...);
+	}
+	template <typename R, typename... Fs>
+	R InvokeAppropriate(size_t i, Fs&&... funcs) const {
+		assert(i < container_.size());
+		return container_[i].template InvokeAppropriate<R, Fs...>(std::forward<Fs>(funcs)...);
 	}
 	/// Execute appropriate functor depending on content type for each node, skip if no appropriate functor
 	template <typename... Fs>
@@ -587,27 +674,29 @@ protected:
 
 	void append(const_iterator begin, const_iterator end) {
 		for (; begin != end; ++begin) {
-			if (begin->IsLeaf()) {
-				Append(begin->operation, begin->Value());
-			} else {
-				OpenBracket(begin->operation);
-				std::get<SubTree>(container_.back().storage_).CopyPayloadFrom(std::get<SubTree>(begin->storage_));
-				append(begin.cbegin(), begin.cend());
-				CloseBracket();
-			}
+			const OpType op = begin->operation;
+			begin->template InvokeAppropriate<void>(
+				[this, &begin, op](const SubTree& b) {
+					OpenBracket(op);
+					std::get<SubTree>(container_.back().storage_).CopyPayloadFrom(b);
+					append(begin.cbegin(), begin.cend());
+					CloseBracket();
+				},
+				[this, op](const auto& v) -> void { this->Append(op, v); });
 		}
 	}
 
 	void lazyAppend(iterator begin, iterator end) {
 		for (; begin != end; ++begin) {
-			if (begin->IsLeaf()) {
-				Append(begin->operation, Ref<Head<Ts...>>{begin->Value()});
-			} else {
-				OpenBracket(begin->operation);
-				std::get<SubTree>(container_.back().storage_).CopyPayloadFrom(std::get<SubTree>(begin->storage_));
-				lazyAppend(begin.begin(), begin.end());
-				CloseBracket();
-			}
+			const OpType op = begin->operation;
+			begin->template InvokeAppropriate<void>(
+				[this, &begin, op](const SubTree& b) {
+					OpenBracket(op);
+					std::get<SubTree>(container_.back().storage_).CopyPayloadFrom(b);
+					lazyAppend(begin.begin(), begin.end());
+					CloseBracket();
+				},
+				[this, op](auto& v) -> void { this->Append(op, Ref<std::decay_t<decltype(v)>>{v}); });
 		}
 	}
 

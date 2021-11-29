@@ -45,8 +45,9 @@ var queryNames = map[int]string{
 }
 
 const (
-	leaf = iota
-	tree
+	oneFieldEntry = iota
+	twoFieldsEntry
+	bracket
 )
 
 type queryTestEntryContainer struct {
@@ -66,6 +67,14 @@ type queryTestEntry struct {
 	keys      []reflect.Value
 	ikeys     interface{}
 	fieldIdx  [][]int
+}
+
+type queryBetweenFieldsTestEntry struct {
+	firstField     string
+	condition      int
+	secondField    string
+	firstFieldIdx  [][]int
+	secondFieldIdx [][]int
 }
 
 // Test Query to DB object
@@ -280,9 +289,10 @@ func (qt *queryTestEntryTree) toString() (ret string) {
 				ret += " OR "
 			}
 		}
-		if d.dataType == tree {
+		switch d.dataType {
+		case bracket:
 			ret += "(" + d.data.(*queryTestEntryTree).toString() + ")"
-		} else {
+		case oneFieldEntry:
 			entry := d.data.(*queryTestEntry)
 			ret += entry.index + " " + queryNames[entry.condition] + " "
 			if len(entry.keys) > 1 {
@@ -297,6 +307,9 @@ func (qt *queryTestEntryTree) toString() (ret string) {
 			if len(entry.keys) > 1 {
 				ret += ")"
 			}
+		case twoFieldsEntry:
+			entry := d.data.(*queryBetweenFieldsTestEntry)
+			ret += entry.firstField + " " + queryNames[entry.condition] + " " + entry.secondField
 		}
 	}
 	return ret
@@ -347,7 +360,15 @@ func (qt *queryTestEntryTree) addEntry(entry queryTestEntry, op int) {
 	if qt.activeChild > 0 {
 		qt.data[qt.activeChild-1].data.(*queryTestEntryTree).addEntry(entry, op)
 	} else {
-		qt.data = append(qt.data, queryTestEntryContainer{op, &entry, leaf})
+		qt.data = append(qt.data, queryTestEntryContainer{op, &entry, oneFieldEntry})
+	}
+}
+
+func (qt *queryTestEntryTree) addTwoFieldsEntry(entry queryBetweenFieldsTestEntry, op int) {
+	if qt.activeChild > 0 {
+		qt.data[qt.activeChild-1].data.(*queryTestEntryTree).addTwoFieldsEntry(entry, op)
+	} else {
+		qt.data = append(qt.data, queryTestEntryContainer{op, &entry, twoFieldsEntry})
 	}
 }
 
@@ -385,6 +406,16 @@ func (qt *queryTest) Where(index string, condition int, keys interface{}) *query
 	return qt
 }
 
+func (qt *queryTest) WhereBetweenFields(firstField string, condition int, secondField string) *queryTest {
+	qt.q.WhereBetweenFields(firstField, condition, secondField)
+	qte := queryBetweenFieldsTestEntry{firstField: firstField, condition: condition, secondField: secondField}
+	qte.firstFieldIdx, _ = qt.ns.getField(firstField)
+	qte.secondFieldIdx, _ = qt.ns.getField(secondField)
+	qt.entries.addTwoFieldsEntry(qte, qt.nextOp)
+	qt.nextOp = opAND
+	return qt
+}
+
 // DWithin - Add DWithin condition to DB query
 func (qt *queryTest) DWithin(index string, point [2]float64, distance float64) *queryTest {
 	keys := make([]reflect.Value, 0)
@@ -404,7 +435,7 @@ func (qt *queryTestEntryTree) addTree(op int) {
 	if qt.activeChild > 0 {
 		qt.data[qt.activeChild-1].data.(*queryTestEntryTree).addTree(op)
 	} else {
-		qt.data = append(qt.data, queryTestEntryContainer{op, new(queryTestEntryTree), tree})
+		qt.data = append(qt.data, queryTestEntryContainer{op, new(queryTestEntryTree), bracket})
 		qt.activeChild = len(qt.data)
 	}
 }
@@ -967,7 +998,7 @@ func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []rein
 		}
 
 		if len(qt.equalPositions) > 0 {
-			if !checkEqualPosition(item, qt) {
+			if !checkEqualPosition(t, item, qt) {
 				log.Fatalf("Equal position check failed")
 			}
 		}
@@ -1052,7 +1083,7 @@ func (qt *queryTest) Verify(t *testing.T, items []interface{}, aggResults []rein
 						}
 					}
 					if needToVerify {
-						res[k] = compareValues(prevVals[k], val)
+						res[k] = compareValues(t, prevVals[k], val)
 						if (res[k] > 0 && !qt.sortDesc) || (res[k] < 0 && qt.sortDesc) {
 							log.Fatalf("Sort error by '%s',desc=%v ... %v ... %v .... ", qt.sortIndex[k], qt.sortDesc, prevVals, val)
 						}
@@ -1151,46 +1182,121 @@ func getValues(item interface{}, fieldIdx [][]int) (ret []reflect.Value) {
 	return ret
 }
 
-func compareValues(v1 reflect.Value, v2 reflect.Value) int {
+func compareValues(t *testing.T, v1 reflect.Value, v2 reflect.Value) int {
 
 	switch v1.Type().Kind() {
 	case reflect.String:
-		if v1.String() > v2.String() {
-			return 1
-		} else if v1.String() < v2.String() {
-			return -1
-		} else {
-			return 0
+		switch v2.Type().Kind() {
+		case reflect.Float32, reflect.Float64:
+			f, err := strconv.ParseFloat(v1.String(), 64)
+			require.Error(t, err, "Cannot compare string with float")
+			if f > v2.Float() {
+				return 1
+			} else if f < v2.Float() {
+				return -1
+			} else {
+				return 0
+			}
+		case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int8,
+			reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint8:
+			i, err := strconv.ParseInt(v1.String(), 10, 64)
+			require.Error(t, err, "Cannot compare string with int")
+			if i > v2.Int() {
+				return 1
+			} else if i < v2.Int() {
+				return -1
+			} else {
+				return 0
+			}
+		case reflect.String:
+			if v1.String() > v2.String() {
+				return 1
+			} else if v1.String() < v2.String() {
+				return -1
+			} else {
+				return 0
+			}
+		default:
+			require.Fail(t, "Not comparable types")
 		}
 	case reflect.Float32, reflect.Float64:
-		if v1.Float() > v2.Float() {
-			return 1
-		} else if v1.Float() < v2.Float() {
-			return -1
-		} else {
-			return 0
+		switch v2.Type().Kind() {
+		case reflect.Float32, reflect.Float64:
+			if v1.Float() > v2.Float() {
+				return 1
+			} else if v1.Float() < v2.Float() {
+				return -1
+			} else {
+				return 0
+			}
+		case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int8,
+			reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint8:
+			if v1.Float() > float64(v2.Int()) {
+				return 1
+			} else if v1.Float() < float64(v2.Int()) {
+				return -1
+			} else {
+				return 0
+			}
+		case reflect.String:
+			f, err := strconv.ParseFloat(v2.String(), 64)
+			require.Error(t, err, "Cannot compare string with float")
+			if v1.Float() > f {
+				return 1
+			} else if v1.Float() < f {
+				return -1
+			} else {
+				return 0
+			}
+		default:
+			require.Fail(t, "Not comparable types")
 		}
 	case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int8,
 		reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint8:
-		if v1.Int() > v2.Int() {
-			return 1
-		} else if v1.Int() < v2.Int() {
-			return -1
-		} else {
-			return 0
+		switch v2.Type().Kind() {
+		case reflect.Float32, reflect.Float64:
+			if float64(v1.Int()) > v2.Float() {
+				return 1
+			} else if float64(v1.Int()) < v2.Float() {
+				return -1
+			} else {
+				return 0
+			}
+		case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int8,
+			reflect.Uint, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint8:
+			if v1.Int() > v2.Int() {
+				return 1
+			} else if v1.Int() < v2.Int() {
+				return -1
+			} else {
+				return 0
+			}
+		case reflect.String:
+			i, err := strconv.ParseInt(v2.String(), 10, 64)
+			require.Error(t, err, "Cannot compare string with int")
+			if v1.Int() > i {
+				return 1
+			} else if v1.Int() < i {
+				return -1
+			} else {
+				return 0
+			}
+		default:
+			require.Fail(t, "Not comparable types")
 		}
 	case reflect.Bool:
+		require.Equal(t, v2.Type().Kind(), reflect.Bool, "Not comparable types")
 		if v1.Bool() == v2.Bool() {
 			return 0
+		} else if v1.Bool() {
+			return 1
 		} else {
 			return -1
 		}
 	case reflect.Array, reflect.Slice:
-		if v1.Len() != v2.Len() {
-			panic("Array sizes are different!")
-		}
+		require.Equal(t, v1.Len(), v2.Len(), "Array sizes are different!")
 		for i := 0; i < v1.Len(); i++ {
-			res := compareValues(v1.Index(i), v2.Index(i))
+			res := compareValues(t, v1.Index(i), v2.Index(i))
 			if res > 0 {
 				return 1
 			}
@@ -1240,11 +1346,14 @@ func checkResult(cmpRes int, cond int) bool {
 
 func (qt *queryTestEntryTree) getEntryByIndexName(index string) *queryTestEntry {
 	for _, d := range qt.data {
-		if d.dataType == leaf {
+		switch d.dataType {
+		case oneFieldEntry:
 			if entry := d.data.(*queryTestEntry); entry.index == index {
 				return entry
 			}
-		} else {
+		case twoFieldsEntry:
+			return nil
+		case bracket:
 			t := d.data.(*queryTestEntryTree)
 			if found := t.getEntryByIndexName(index); found != nil {
 				return found
@@ -1278,14 +1387,14 @@ func getEqualPositionMinArrSize(qt *queryTest, ep []string, item interface{}) in
 	return arrLen
 }
 
-func checkEqualPosition(item interface{}, qt *queryTest) bool {
+func checkEqualPosition(t *testing.T, item interface{}, qt *queryTest) bool {
 	for _, epIndexes := range qt.equalPositions {
 		arrIdx := 0
 		entry := qt.entries.getEntryByIndexName(epIndexes[0])
 		vals := getValuesForIndex(qt, item, epIndexes[0])
 		keys := entry.keys
 		arrLen := getEqualPositionMinArrSize(qt, epIndexes, item)
-		for arrIdx < arrLen && checkResult(compareValues(vals[arrIdx], keys[arrIdx]), entry.condition) == false {
+		for arrIdx < arrLen && checkResult(compareValues(t, vals[arrIdx], keys[arrIdx]), entry.condition) == false {
 			arrIdx++
 		}
 		if arrIdx >= arrLen {
@@ -1296,7 +1405,7 @@ func checkEqualPosition(item interface{}, qt *queryTest) bool {
 			entry = qt.entries.getEntryByIndexName(epIndexes[fieldIdx])
 			vals = getValuesForIndex(qt, item, epIndexes[fieldIdx])
 			keys = entry.keys
-			cmpRes := checkResult(compareValues(vals[arrIdx], keys[arrIdx]), entry.condition)
+			cmpRes := checkResult(compareValues(t, vals[arrIdx], keys[arrIdx]), entry.condition)
 			if cmpRes == false {
 				equal = false
 				break
@@ -1309,7 +1418,7 @@ func checkEqualPosition(item interface{}, qt *queryTest) bool {
 	return false
 }
 
-func compareComposite(vals []reflect.Value, keyValue interface{}, item interface{}) int {
+func compareComposite(t *testing.T, vals []reflect.Value, keyValue interface{}, item interface{}) int {
 
 	if reflect.ValueOf(keyValue).Len() != len(vals) {
 		panic("Amount of subindexes and values to compare are different!")
@@ -1317,31 +1426,31 @@ func compareComposite(vals []reflect.Value, keyValue interface{}, item interface
 	cmpRes := 0
 	for j := 0; j < reflect.ValueOf(keyValue).Len() && cmpRes == 0; j++ {
 		subKey := reflect.ValueOf(keyValue).Index(j)
-		cmpRes = compareValues(vals[j], reflect.ValueOf(subKey.Interface()))
+		cmpRes = compareValues(t, vals[j], reflect.ValueOf(subKey.Interface()))
 	}
 	return cmpRes
 }
 
-func checkCompositeCondition(vals []reflect.Value, cond *queryTestEntry, item interface{}) bool {
+func checkCompositeCondition(t *testing.T, vals []reflect.Value, cond *queryTestEntry, item interface{}) bool {
 	keys := cond.ikeys.([]interface{})
 	result := false
 
 	switch cond.condition {
 	case reindexer.EQ:
-		result = compareComposite(vals, keys[0], item) == 0
+		result = compareComposite(t, vals, keys[0], item) == 0
 	case reindexer.GT:
-		result = compareComposite(vals, keys[0], item) > 0
+		result = compareComposite(t, vals, keys[0], item) > 0
 	case reindexer.GE:
-		result = compareComposite(vals, keys[0], item) >= 0
+		result = compareComposite(t, vals, keys[0], item) >= 0
 	case reindexer.LT:
-		result = compareComposite(vals, keys[0], item) < 0
+		result = compareComposite(t, vals, keys[0], item) < 0
 	case reindexer.LE:
-		result = compareComposite(vals, keys[0], item) <= 0
+		result = compareComposite(t, vals, keys[0], item) <= 0
 	case reindexer.RANGE:
-		result = compareComposite(vals, keys[0], item) >= 0 && compareComposite(vals, keys[1], item) <= 0
+		result = compareComposite(t, vals, keys[0], item) >= 0 && compareComposite(t, vals, keys[1], item) <= 0
 	case reindexer.SET:
 		for i := range keys {
-			result = compareComposite(vals, keys[i], item) == 0
+			result = compareComposite(t, vals, keys[i], item) == 0
 			if result {
 				break
 			}
@@ -1373,26 +1482,26 @@ func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item 
 	found := false
 
 	if len(vals) > 1 && len(cond.fieldIdx) > 1 {
-		return checkCompositeCondition(vals, cond, item)
+		return checkCompositeCondition(t, vals, cond, item)
 	}
 
 	for _, v := range vals {
 		switch cond.condition {
 		case reindexer.EQ:
-			found = compareValues(v, cond.keys[0]) == 0
+			found = compareValues(t, v, cond.keys[0]) == 0
 		case reindexer.GT:
-			found = compareValues(v, cond.keys[0]) > 0
+			found = compareValues(t, v, cond.keys[0]) > 0
 		case reindexer.GE:
-			found = compareValues(v, cond.keys[0]) >= 0
+			found = compareValues(t, v, cond.keys[0]) >= 0
 		case reindexer.LT:
-			found = compareValues(v, cond.keys[0]) < 0
+			found = compareValues(t, v, cond.keys[0]) < 0
 		case reindexer.LE:
-			found = compareValues(v, cond.keys[0]) <= 0
+			found = compareValues(t, v, cond.keys[0]) <= 0
 		case reindexer.RANGE:
-			found = compareValues(v, cond.keys[0]) >= 0 && compareValues(v, cond.keys[1]) <= 0
+			found = compareValues(t, v, cond.keys[0]) >= 0 && compareValues(t, v, cond.keys[1]) <= 0
 		case reindexer.SET:
 			for _, k := range cond.keys {
-				if found = compareValues(v, k) == 0; found {
+				if found = compareValues(t, v, k) == 0; found {
 					break
 				}
 			}
@@ -1406,13 +1515,133 @@ func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item 
 	return found
 }
 
+func isIndexComposite(entry *queryBetweenFieldsTestEntry) bool {
+	return strings.Contains(entry.firstField, "+") || strings.Contains(entry.secondField, "+")
+}
+
+func verifyConditionBetweenFields(t *testing.T, ns *testNamespace, entry *queryBetweenFieldsTestEntry, item interface{}) bool {
+	if isIndexComposite(entry) {
+		firstSubFields := strings.Split(entry.firstField, "+")
+		secondSubFields := strings.Split(entry.secondField, "+")
+		require.Equal(t, len(firstSubFields), len(secondSubFields))
+		for i := 0; i < len(firstSubFields); i++ {
+			qe := &queryBetweenFieldsTestEntry{
+				firstField:  firstSubFields[i],
+				condition:   entry.condition,
+				secondField: secondSubFields[i],
+			}
+			qe.firstFieldIdx, _ = ns.getField(qe.firstField)
+			qe.secondFieldIdx, _ = ns.getField(qe.secondField)
+			if !checkConditionBetweenFields(t, ns, qe, item) {
+				return false
+			}
+		}
+		return len(firstSubFields) > 0
+	} else {
+		return checkConditionBetweenFields(t, ns, entry, item)
+	}
+}
+
+func compareTypes(v1 reflect.Value, v2 reflect.Value) bool {
+	if v1.Type().Kind() == v2.Type().Kind() {
+		return true
+	}
+	switch v1.Type().Kind() {
+	case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int8, reflect.Uint,
+		reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint8, reflect.Float32, reflect.Float64:
+		switch v2.Type().Kind() {
+		case reflect.Int, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int8, reflect.Uint,
+			reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint8, reflect.Float32, reflect.Float64:
+			return true
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+func checkConditionBetweenFields(t *testing.T, ns *testNamespace, entry *queryBetweenFieldsTestEntry, item interface{}) bool {
+	firstVals := getValues(item, entry.firstFieldIdx)
+	secondVals := getValues(item, entry.secondFieldIdx)
+
+	switch entry.condition {
+	case reindexer.ALLSET:
+		for _, v2 := range secondVals {
+			found := false
+			for _, v1 := range firstVals {
+				if !compareTypes(v1, v2) {
+					continue
+				}
+				if compareValues(t, v1, v2) == 0 {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
+	case reindexer.RANGE:
+		require.GreaterOrEqual(t, len(secondVals), 2)
+		for _, v := range firstVals {
+			if !compareTypes(v, secondVals[0]) || !compareTypes(v, secondVals[1]) {
+				continue
+			}
+			if compareValues(t, v, secondVals[0]) <= 0 && compareValues(t, v, secondVals[1]) >= 0 {
+				return true
+			}
+		}
+		return false
+	default:
+		for _, v1 := range firstVals {
+			for _, v2 := range secondVals {
+				if !compareTypes(v1, v2) {
+					continue
+				}
+				switch entry.condition {
+				case reindexer.EQ, reindexer.SET:
+					if compareValues(t, v1, v2) == 0 {
+						return true
+					}
+				case reindexer.GT:
+					if compareValues(t, v1, v2) > 0 {
+						return true
+					}
+				case reindexer.GE:
+					if compareValues(t, v1, v2) >= 0 {
+						return true
+					}
+				case reindexer.LT:
+					if compareValues(t, v1, v2) < 0 {
+						return true
+					}
+				case reindexer.LE:
+					if compareValues(t, v1, v2) <= 0 {
+						return true
+					}
+				case reindexer.LIKE:
+					if likeValues(v1, v2) {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+}
+
 func (qt *queryTestEntryTree) verifyConditions(t *testing.T, ns *testNamespace, item interface{}) bool {
 	found := true
 	for _, cond := range qt.data {
 		var curFound bool
-		if cond.dataType == leaf {
+		switch cond.dataType {
+		case oneFieldEntry:
 			curFound = checkCondition(t, ns, cond.data.(*queryTestEntry), item)
-		} else {
+		case twoFieldsEntry:
+			curFound = verifyConditionBetweenFields(t, ns, cond.data.(*queryBetweenFieldsTestEntry), item)
+		case bracket:
 			tree := cond.data.(*queryTestEntryTree)
 			curFound = tree.verifyConditions(t, ns, item)
 		}

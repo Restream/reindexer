@@ -729,19 +729,19 @@ struct CollateComparer {
 
 TEST_F(ReindexerApi, SortByMultipleColumns) {
 	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"column1", "tree", "int", IndexOpts()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"column2", "tree", "string", IndexOpts()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"column3", "hash", "int", IndexOpts()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	const std::vector<string> possibleValues = {
 		"apple",	 "arrangment", "agreement", "banana",	"bull",	 "beech", "crocodile", "crucifix", "coat",	   "day",
@@ -752,8 +752,8 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	int stringValuedIdx = 0;
 	for (int i = 0; i < 100; ++i) {
 		Item item(rt.reindexer->NewItem(default_namespace));
-		EXPECT_TRUE(!!item);
-		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = i;
 		item["column1"] = sameOldValue;
@@ -761,7 +761,7 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 		item["column3"] = rand() % 30;
 
 		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 
 		if (i % 5 == 0) sameOldValue += 5;
 		if (i % 3 == 0) ++stringValuedIdx;
@@ -822,16 +822,16 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 
 TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
 	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"f1", "tree", "string", IndexOpts()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"f2", "tree", "int", IndexOpts()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	const vector<string> srcStrValues = {
 		"A", "A", "B", "B", "B", "C", "C",
@@ -840,15 +840,15 @@ TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
 
 	for (size_t i = 0; i < srcIntValues.size(); ++i) {
 		Item item(rt.reindexer->NewItem(default_namespace));
-		EXPECT_TRUE(!!item);
-		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = static_cast<int>(i);
 		item["f1"] = srcStrValues[i];
 		item["f2"] = srcIntValues[i];
 
 		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	err = rt.reindexer->Commit(default_namespace);
@@ -873,25 +873,25 @@ TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
 
 TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"valueInt", "hash", "int", IndexOpts()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"valueString", "hash", "string", IndexOpts()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"valueStringASCII", "hash", "string", IndexOpts().SetCollateMode(CollateASCII)});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"valueStringNumeric", "hash", "string", IndexOpts().SetCollateMode(CollateNumeric)});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"valueStringUTF8", "hash", "string", IndexOpts().SetCollateMode(CollateUTF8)});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	std::deque<int> allIntValues;
 	std::set<string> allStrValues;
@@ -901,8 +901,8 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 
 	for (int i = 0; i < 100; ++i) {
 		Item item(rt.reindexer->NewItem(default_namespace));
-		EXPECT_TRUE(!!item);
-		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = i;
 		item["valueInt"] = i;
@@ -1005,31 +1005,31 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 	vector<int> secondNamespacePKs;
 
 	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {"fk", "hash", "int", IndexOpts()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	{
 		err = rt.reindexer->OpenNamespace(secondNamespace, StorageOpts().Enabled(false));
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->AddIndex(secondNamespace, {"pk", "hash", "int", IndexOpts().PK()});
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 
 		for (int i = 0; i < 50; ++i) {
 			Item item(rt.reindexer->NewItem(secondNamespace));
-			EXPECT_TRUE(!!item);
-			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+			ASSERT_TRUE(!!item);
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 			secondNamespacePKs.push_back(i);
 			item["pk"] = i;
 
 			err = rt.reindexer->Upsert(secondNamespace, item);
-			EXPECT_TRUE(err.ok()) << err.what();
+			ASSERT_TRUE(err.ok()) << err.what();
 		}
 
 		err = rt.reindexer->Commit(secondNamespace);
@@ -1038,8 +1038,8 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 
 	for (int i = 0; i < 100; ++i) {
 		Item item(rt.reindexer->NewItem(default_namespace));
-		EXPECT_TRUE(!!item);
-		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = i;
 
@@ -1047,7 +1047,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 		item["fk"] = fk;
 
 		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	err = rt.reindexer->Commit(default_namespace);
@@ -1071,7 +1071,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
 	}
 }
 
-void TestDSLParseCorrectness(const string& testDsl) {
+static void TestDSLParseCorrectness(const string& testDsl) {
 	Query query;
 	Error err = query.FromJSON(testDsl);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -1593,20 +1593,20 @@ TEST_F(ReindexerApi, IntToStringIndexUpdate) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {kFieldId, "hash", "int", IndexOpts().PK()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	err = rt.reindexer->AddIndex(default_namespace, {kFieldNumeric, "tree", "int", IndexOpts()});
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (int i = 0; i < 100; ++i) {
 		Item item(rt.reindexer->NewItem(default_namespace));
-		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item[kFieldId] = i;
 		item[kFieldNumeric] = i * 2;
 
 		err = rt.reindexer->Upsert(default_namespace, item);
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	err = rt.reindexer->UpdateIndex(default_namespace, {kFieldNumeric, "tree", "string", IndexOpts()});
@@ -1664,4 +1664,21 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 	EXPECT_THROW(Query().FromSQL("select *, max(id) from test_namespace"), Error);
 	EXPECT_NO_THROW(Query().FromSQL("select *, count(*) from test_namespace"));
 	EXPECT_NO_THROW(Query().FromSQL("select count(*), * from test_namespace"));
+}
+
+TEST_F(ReindexerApi, EmptyJSONParsing) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	Item item(rt.reindexer->NewItem(default_namespace));
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+	err = item.FromJSON("\n");
+	EXPECT_EQ(err.code(), errParseJson);
+
+	err = item.FromJSON("\t");
+	EXPECT_EQ(err.code(), errParseJson);
+
+	err = item.FromJSON(" ");
+	EXPECT_EQ(err.code(), errParseJson);
 }

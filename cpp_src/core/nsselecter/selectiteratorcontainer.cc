@@ -39,16 +39,16 @@ void SelectIteratorContainer::sortByCost(span<unsigned> indexes, span<double> co
 		if (!IsSelectIterator(indexes[cur])) {
 			sortByCost(indexes, costs, cur + 1, next, expectedIterations);
 			if (next < to && GetOperation(indexes[next]) == OpOr && IsSelectIterator(indexes[next]) &&
-				GetSelectIterator(indexes[next]).distinct) {
+				Get<SelectIterator>(indexes[next]).distinct) {
 				throw Error(errQueryExec, "OR operator between distinct query and bracket or join");
 			}
 		} else if (next < to && GetOperation(indexes[next]) == OpOr) {
 			if (IsSelectIterator(indexes[next])) {
-				if (GetSelectIterator(indexes[cur]).distinct != GetSelectIterator(indexes[next]).distinct) {
+				if (Get<SelectIterator>(indexes[cur]).distinct != Get<SelectIterator>(indexes[next]).distinct) {
 					throw Error(errQueryExec, "OR operator between distinct and non distinct queries");
 				}
 			} else {
-				if (GetSelectIterator(indexes[cur]).distinct) {
+				if (Get<SelectIterator>(indexes[cur]).distinct) {
 					throw Error(errQueryExec, "OR operator between distinct query and bracket or join");
 				}
 			}
@@ -70,16 +70,18 @@ bool SelectIteratorContainer::markBracketsHavingJoins(iterator begin, iterator e
 	for (iterator it = begin; it != end; ++it) {
 		result = it->InvokeAppropriate<bool>(
 					 [it](SelectIteratorsBracket &b) { return (b.haveJoins = markBracketsHavingJoins(it.begin(), it.end())); },
-					 [](SelectIterator &) { return false; }, [](JoinSelectIterator &) { return true; }) ||
+					 [](SelectIterator &) { return false; }, [](JoinSelectIterator &) { return true; },
+					 [](FieldsComparator &) { return false; }, [](AlwaysFalse &) { return false; }) ||
 				 result;
 	}
 	return result;
 }
 
 bool SelectIteratorContainer::haveJoins(size_t i) const noexcept {
-	return container_[i].InvokeAppropriate<bool>([](const SelectIteratorsBracket &b) { return b.haveJoins; },
-												 [](const SelectIterator &) { return false; },
-												 [](const JoinSelectIterator &) { return true; });
+	return container_[i].InvokeAppropriate<bool>(
+		[](const SelectIteratorsBracket &b) { return b.haveJoins; }, [](const SelectIterator &) { return false; },
+		[](const FieldsComparator &) { return false; }, [](const JoinSelectIterator &) { return true; },
+		[](const AlwaysFalse &) { return false; });
 }
 
 void SelectIteratorContainer::moveJoinsToTheBeginingOfORs(span<unsigned> indexes, unsigned from, unsigned to) {
@@ -117,7 +119,8 @@ double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned cur, int e
 	return container_[indexes[cur]].InvokeAppropriate<double>(
 		[&](const SelectIteratorsBracket &) { return cost(indexes, cur + 1, cur + Size(indexes[cur]), expectedIterations); },
 		[expectedIterations](const SelectIterator &sit) { return sit.Cost(expectedIterations); },
-		[](const JoinSelectIterator &jit) { return jit.Cost(); });
+		[](const JoinSelectIterator &jit) { return jit.Cost(); },
+		[expectedIterations](const FieldsComparator &c) { return c.Cost(expectedIterations); }, [](const AlwaysFalse &) { return 1; });
 }
 
 double SelectIteratorContainer::cost(span<unsigned> indexes, unsigned from, unsigned to, int expectedIterations) const {
@@ -140,7 +143,8 @@ double SelectIteratorContainer::fullCost(span<unsigned> indexes, unsigned cur, u
 }
 
 bool SelectIteratorContainer::isIdset(const_iterator it, const_iterator end) {
-	return it->operation == OpAnd && it->HoldsOrReferTo<SelectIterator>() && it->Value().comparators_.empty() &&  // !it->Value().empty() &&
+	return it->operation == OpAnd && it->HoldsOrReferTo<SelectIterator>() &&
+		   it->Value<SelectIterator>().comparators_.empty() &&	// !it->Value().empty() &&
 		   (++it == end || it->operation != OpOr);
 }
 
@@ -171,11 +175,11 @@ void SelectIteratorContainer::CheckFirstQuery() {
 // Let iterators choose most effective algorithm
 void SelectIteratorContainer::SetExpectMaxIterations(int expectedIterations) {
 	assert(!Empty());
-	assert(IsValue(0));
+	assert(HoldsOrReferTo<SelectIterator>(0));
 	for (Container::iterator it = container_.begin() + 1; it != container_.end(); ++it) {
 		if (it->HoldsOrReferTo<SelectIterator>()) {
-			if (it->IsRef()) it->SetValue(it->Value());
-			it->Value().SetExpectMaxIterations(expectedIterations);
+			if (it->IsRef()) it->SetValue(it->Value<SelectIterator>());
+			it->Value<SelectIterator>().SetExpectMaxIterations(expectedIterations);
 		}
 	}
 }
@@ -208,6 +212,31 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 	}
 
 	return selectResults;
+}
+
+template <bool left>
+void SelectIteratorContainer::processField(FieldsComparator &fc, std::string_view field, int idxNo, const NamespaceImpl &ns) const {
+	const bool nonIndexField = (idxNo == IndexValueType::SetByJsonPath);
+	if (nonIndexField) {
+		TagsPath tagsPath = ns.tagsMatcher_.path2tag(field);
+		if (tagsPath.empty()) {
+			throw Error{errQueryExec, "Only existing fields can be compared. There are no fields with name '%s' in namespace '%s'", field,
+						ns.name_};
+		}
+		if constexpr (left) {
+			fc.SetLeftField(tagsPath);
+		} else {
+			fc.SetRightField(tagsPath);
+		}
+	} else {
+		auto &index = ns.indexes_[idxNo];
+		if constexpr (left) {
+			fc.SetCollateOpts(index->Opts().collateOpts_);
+			fc.SetLeftField(index->Fields(), index->KeyType(), index->Opts().IsArray());
+		} else {
+			fc.SetRightField(index->Fields(), index->KeyType(), index->Opts().IsArray());
+		}
+	}
 }
 
 SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns,
@@ -246,8 +275,8 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 	return index->SelectKey(qe.values, qe.condition, sortId, opts, ctx, rdxCtx);
 }
 
-void SelectIteratorContainer::processJoinEntry(const QueryEntry &qe, OpType op) {
-	auto &js = (*ctx_->joinedSelectors)[qe.joinIndex];
+void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry &jqe, OpType op) {
+	auto &js = (*ctx_->joinedSelectors)[jqe.joinIndex];
 	if (js.JoinQuery().joinEntries_.empty()) throw Error(errQueryExec, "Join without ON conditions");
 	if (js.JoinQuery().joinEntries_[0].op_ == OpOr) throw Error(errQueryExec, "The first ON condition cannot have OR operation");
 	if (js.Type() != InnerJoin && js.Type() != OrInnerJoin) throw Error(errLogic, "Not INNER JOIN in QueryEntry");
@@ -257,7 +286,7 @@ void SelectIteratorContainer::processJoinEntry(const QueryEntry &qe, OpType op) 
 		op = OpOr;
 	}
 	if (op == OpOr && lastAppendedOrClosed() == this->end()) throw Error(errQueryExec, "OR operator in first condition or after left join");
-	Append(op, JoinSelectIterator{static_cast<size_t>(qe.joinIndex)});
+	Append(op, JoinSelectIterator{static_cast<size_t>(jqe.joinIndex)});
 }
 
 void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectResults, OpType op, const NamespaceImpl &ns,
@@ -267,11 +296,11 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 			case OpOr: {
 				const iterator last = lastAppendedOrClosed();
 				if (last == this->end()) throw Error(errQueryExec, "OR operator in first condition or after left join ");
-				if (last->HoldsOrReferTo<SelectIterator>() && !last->Value().distinct) {
+				if (last->HoldsOrReferTo<SelectIterator>() && !last->Value<SelectIterator>().distinct) {
 					if (last->IsRef()) {
-						last->SetValue(last->Value());
+						last->SetValue(last->Value<SelectIterator>());
 					}
-					SelectIterator &it = last->Value();
+					SelectIterator &it = last->Value<SelectIterator>();
 					if (nonIndexField || isIndexSparse) {
 						it.Append(res);
 					} else {
@@ -289,12 +318,12 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 					// last appended is always a SelectIterator
 					const auto lastAppendedIt = lastAppendedOrClosed();
 					if (lastAppendedIt->IsRef()) {
-						lastAppendedIt->SetValue(lastAppendedIt->Value());
+						lastAppendedIt->SetValue(lastAppendedIt->Value<SelectIterator>());
 					}
-					lastAppendedIt->Value().Bind(ns.payloadType_, qe.idxNo);
-					lastAppendedIt->Value().GetMaxIterations();
-					int cur = lastAppendedIt->Value().GetMaxIterations();
-					if (lastAppendedIt->Value().comparators_.empty()) {
+					SelectIterator &lastAppended = lastAppendedIt->Value<SelectIterator>();
+					lastAppended.Bind(ns.payloadType_, qe.idxNo);
+					const int cur = lastAppended.GetMaxIterations();
+					if (lastAppended.comparators_.empty()) {
 						if (cur && cur < maxIterations_) maxIterations_ = cur;
 						if (!cur) wasZeroIterations_ = true;
 					}
@@ -305,7 +334,7 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 		}
 		if (isIndexFt) {
 			// last appended is always a SelectIterator
-			lastAppendedOrClosed()->Value().SetUnsorted();
+			lastAppendedOrClosed()->Value<SelectIterator>().SetUnsorted();
 		}
 	}
 }
@@ -315,7 +344,7 @@ void SelectIteratorContainer::processEqualPositions(const std::multimap<unsigned
 	const auto eqPoses = equalPositions.equal_range(begin);
 	for (auto it = eqPoses.first; it != eqPoses.second; ++it) {
 		assert(!it->second.empty());
-		const QueryEntry &firstQe(queries[it->second[0]]);
+		const QueryEntry &firstQe{queries.Get<QueryEntry>(it->second[0])};
 		if (firstQe.condition == CondEmpty || (firstQe.condition == CondSet && firstQe.values.empty())) {
 			throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 		}
@@ -327,7 +356,7 @@ void SelectIteratorContainer::processEqualPositions(const std::multimap<unsigned
 			if (queries.GetOperation(*qeIdxIt) != OpAnd ||
 				(queries.Next(*qeIdxIt) < end && queries.GetOperation(queries.Next(*qeIdxIt)) == OpOr))
 				throw Error(errLogic, "Only AND operation allowed for equal position!");
-			const QueryEntry &qe = queries[*qeIdxIt];
+			const QueryEntry &qe = queries.Get<QueryEntry>(*qeIdxIt);
 			if (qe.condition == CondEmpty || (qe.condition == CondSet && qe.values.empty())) {
 				throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 			}
@@ -348,26 +377,30 @@ void SelectIteratorContainer::processEqualPositions(const std::multimap<unsigned
 	}
 }
 
-void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &queries, size_t begin, size_t end,
+void SelectIteratorContainer::prepareIteratorsForSelectLoop(const QueryEntries &queries, size_t begin, size_t end,
 															const std::multimap<unsigned, EqualPosition> &equalPositions, unsigned sortId,
 															bool isQueryFt, const NamespaceImpl &ns, SelectFunction::Ptr selectFnc,
 															FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
-	size_t next = 0;
 	bool sortIndexCreated = false;
-	for (size_t i = begin; i < end; i = queries.Next(i)) {
+	for (size_t i = begin, next = begin; i != end; i = next) {
 		next = queries.Next(i);
-		auto op = queries.GetOperation(i);
-		if (queries.IsValue(i)) {
-			const QueryEntry &qe = queries[i];
-			if (qe.idxNo != IndexValueType::SetByJsonPath && isFullText(ns.indexes_[qe.idxNo]->Type()) &&
-				(op == OpOr || (i + 1 < end && queries.GetOperation(i + 1) == OpOr))) {
-				throw Error(errLogic, "OR operation is not allowed with fulltext index");
-			}
-			SelectKeyResults selectResults;
+		const OpType op = queries.GetOperation(i);
+		queries.InvokeAppropriate<void>(
+			i,
+			[&](const Bracket &) {
+				OpenBracket(op);
+				prepareIteratorsForSelectLoop(queries, i + 1, next, equalPositions, sortId, isQueryFt, ns, selectFnc, ftCtx, rdxCtx);
+				CloseBracket();
+			},
+			[&](const QueryEntry &qe) {
+				if (qe.idxNo != IndexValueType::SetByJsonPath && isFullText(ns.indexes_[qe.idxNo]->Type()) &&
+					(op == OpOr || (next < end && queries.GetOperation(next) == OpOr))) {
+					throw Error(errLogic, "OR operation is not allowed with fulltext index");
+				}
+				SelectKeyResults selectResults;
 
-			if (qe.joinIndex == QueryEntry::kNoJoins) {
 				bool isIndexFt = false, isIndexSparse = false;
-				bool nonIndexField = (qe.idxNo == IndexValueType::SetByJsonPath);
+				const bool nonIndexField = (qe.idxNo == IndexValueType::SetByJsonPath);
 
 				if (nonIndexField) {
 					auto strictMode = ns.config_.strictMode;
@@ -384,14 +417,15 @@ void SelectIteratorContainer::PrepareIteratorsForSelectLoop(const QueryEntries &
 					if (enableSortIndexOptimize) sortIndexCreated = true;
 				}
 				processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nonIndexField);
-			} else {
-				processJoinEntry(qe, op);
-			}
-		} else {
-			OpenBracket(op);
-			PrepareIteratorsForSelectLoop(queries, i + 1, queries.Next(i), equalPositions, sortId, isQueryFt, ns, selectFnc, ftCtx, rdxCtx);
-			CloseBracket();
-		}
+			},
+			[this, op](const JoinQueryEntry &jqe) { processJoinEntry(jqe, op); },
+			[&](const BetweenFieldsQueryEntry &qe) {
+				FieldsComparator fc{qe.firstIndex, qe.Condition(), qe.secondIndex, ns.payloadType_};
+				processField<true>(fc, qe.firstIndex, qe.firstIdxNo, ns);
+				processField<false>(fc, qe.secondIndex, qe.secondIdxNo, ns);
+				Append(op, std::move(fc));
+			},
+			[this, op](const AlwaysFalse &) { Append(op, AlwaysFalse{}); });
 	}
 	processEqualPositions(equalPositions, begin, end, ns, queries);
 }
@@ -432,7 +466,8 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 				// check what it does not holds join
 				if (it->InvokeAppropriate<bool>([](const SelectIteratorsBracket &b) { return !b.haveJoins; },
 												[](const SelectIterator &) { return true; },
-												[](const JoinSelectIterator &) { return false; }))
+												[](const JoinSelectIterator &) { return false; },
+												[](const FieldsComparator &) { return false; }, [](const AlwaysFalse &) { return false; }))
 					continue;
 			}
 		} else {
@@ -445,7 +480,8 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 																			match);
 			},
 			[&](SelectIterator &sit) { return checkIfSatisfyCondition<reverse, hasComparators>(sit, pv, &lastFinish, rowId, properRowId); },
-			[&](JoinSelectIterator &jit) { return checkIfSatisfyCondition(jit, pv, properRowId, match); });
+			[&](JoinSelectIterator &jit) { return checkIfSatisfyCondition(jit, pv, properRowId, match); },
+			[&pv](FieldsComparator &c) { return c.Compare(pv); }, [](AlwaysFalse &) { return false; });
 		if (it->operation == OpOr) {
 			result |= lastResult;
 			currentFinish &= (!result && lastFinish);
@@ -471,7 +507,8 @@ IdType SelectIteratorContainer::next(const_iterator it, IdType from) {
 			if (!reverse && sit.Val() > from) return sit.Val() - 1;
 			return from;
 		},
-		[from](const JoinSelectIterator &) { return from; });
+		[from](const JoinSelectIterator &) { return from; }, [from](const FieldsComparator &) { return from; },
+		[from](const AlwaysFalse &) { return from; });
 }
 
 template <bool reverse>
@@ -535,13 +572,12 @@ void SelectIteratorContainer::dump(size_t level, const_iterator begin, const_ite
 				for (size_t i = 0; i < level; ++i) {
 					ser << "   ";
 				}
-				ser << ")\n";
+				ser << ')';
 			},
-			[&ser](const SelectIterator &sit) { ser << sit.Dump() << '\n'; },
-			[&ser, &joinedSelectors](const JoinSelectIterator &jit) {
-				jit.Dump(ser, joinedSelectors);
-				ser << '\n';
-			});
+			[&ser](const SelectIterator &sit) { ser << sit.Dump(); },
+			[&ser, &joinedSelectors](const JoinSelectIterator &jit) { jit.Dump(ser, joinedSelectors); },
+			[&ser](const FieldsComparator &c) { ser << c.Dump(); }, [&ser](const AlwaysFalse &) { ser << "Always False"; });
+		ser << '\n';
 	}
 }
 

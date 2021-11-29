@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.2.6"
+  version: "3.3.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2387,6 +2387,12 @@ definitions:
           $ref: "#/definitions/FilterDef"
       join_query:
         $ref: "#/definitions/JoinedDef"
+      first_field:
+        description: "First field json path or index name for filter by two fields"
+        type: string
+      second_field:
+        description: "Second field json path or index name for filter by two fields"
+        type: string
 
   SortDef:
     description: "Specifies results sorting order"

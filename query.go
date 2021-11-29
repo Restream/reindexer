@@ -28,31 +28,33 @@ const (
 
 // Constants for query serialization
 const (
-	queryCondition         = bindings.QueryCondition
-	querySortIndex         = bindings.QuerySortIndex
-	queryJoinOn            = bindings.QueryJoinOn
-	queryLimit             = bindings.QueryLimit
-	queryOffset            = bindings.QueryOffset
-	queryReqTotal          = bindings.QueryReqTotal
-	queryDebugLevel        = bindings.QueryDebugLevel
-	queryAggregation       = bindings.QueryAggregation
-	querySelectFilter      = bindings.QuerySelectFilter
-	queryExplain           = bindings.QueryExplain
-	querySelectFunction    = bindings.QuerySelectFunction
-	queryEqualPosition     = bindings.QueryEqualPosition
-	queryUpdateField       = bindings.QueryUpdateField
-	queryEnd               = bindings.QueryEnd
-	queryAggregationLimit  = bindings.QueryAggregationLimit
-	queryAggregationOffset = bindings.QueryAggregationOffset
-	queryAggregationSort   = bindings.QueryAggregationSort
-	queryOpenBracket       = bindings.QueryOpenBracket
-	queryCloseBracket      = bindings.QueryCloseBracket
-	queryJoinCondition     = bindings.QueryJoinCondition
-	queryDropField         = bindings.QueryDropField
-	queryUpdateObject      = bindings.QueryUpdateObject
-	queryWithRank          = bindings.QueryWithRank
-	queryStrictMode        = bindings.QueryStrictMode
-	queryUpdateFieldV2     = bindings.QueryUpdateFieldV2
+	queryCondition              = bindings.QueryCondition
+	querySortIndex              = bindings.QuerySortIndex
+	queryJoinOn                 = bindings.QueryJoinOn
+	queryLimit                  = bindings.QueryLimit
+	queryOffset                 = bindings.QueryOffset
+	queryReqTotal               = bindings.QueryReqTotal
+	queryDebugLevel             = bindings.QueryDebugLevel
+	queryAggregation            = bindings.QueryAggregation
+	querySelectFilter           = bindings.QuerySelectFilter
+	queryExplain                = bindings.QueryExplain
+	querySelectFunction         = bindings.QuerySelectFunction
+	queryEqualPosition          = bindings.QueryEqualPosition
+	queryUpdateField            = bindings.QueryUpdateField
+	queryEnd                    = bindings.QueryEnd
+	queryAggregationLimit       = bindings.QueryAggregationLimit
+	queryAggregationOffset      = bindings.QueryAggregationOffset
+	queryAggregationSort        = bindings.QueryAggregationSort
+	queryOpenBracket            = bindings.QueryOpenBracket
+	queryCloseBracket           = bindings.QueryCloseBracket
+	queryJoinCondition          = bindings.QueryJoinCondition
+	queryDropField              = bindings.QueryDropField
+	queryUpdateObject           = bindings.QueryUpdateObject
+	queryWithRank               = bindings.QueryWithRank
+	queryStrictMode             = bindings.QueryStrictMode
+	queryUpdateFieldV2          = bindings.QueryUpdateFieldV2
+	queryBetweenFieldsCondition = bindings.QueryBetweenFieldsCondition
+	queryAlwaysFalseCondition   = bindings.QueryAlwaysFalseCondition
 )
 
 // Constants for calc total
@@ -276,6 +278,19 @@ func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 		q.ser.PutVarCUInt(1)
 		q.putValue(v)
 	}
+	return q
+}
+
+// Where - Add comparing two fields where condition to DB query
+// For composite indexes keys must be []interface{}, with value of each subindex
+func (q *Query) WhereBetweenFields(firstField string, condition int, secondField string) *Query {
+	q.ser.PutVarCUInt(queryBetweenFieldsCondition)
+	q.ser.PutVarCUInt(q.nextOp)
+	q.ser.PutVString(firstField)
+	q.ser.PutVarCUInt(condition)
+	q.ser.PutVString(secondField)
+	q.nextOp = opAND
+	q.queriesCount++
 	return q
 }
 

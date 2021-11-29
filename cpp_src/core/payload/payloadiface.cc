@@ -395,10 +395,12 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &fi
 				cmpRes = krefs1[i].RelaxCompare(krefs2[i], opts ? *opts : CollateOpts());
 				if (cmpRes) break;
 			}
-			if (krefs1.size() < krefs2.size()) {
-				cmpRes = -1;
-			} else if (krefs1.size() > krefs2.size()) {
-				cmpRes = 1;
+			if (cmpRes == 0) {
+				if (krefs1.size() < krefs2.size()) {
+					cmpRes = -1;
+				} else if (krefs1.size() > krefs2.size()) {
+					cmpRes = 1;
+				}
 			}
 		}
 

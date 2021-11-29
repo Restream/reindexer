@@ -1,3 +1,12 @@
+# Version 3.3.0 (29.11.2021)
+## Core
+- [fea] Allow comparison between fields in queries' filters
+- [fea] (*BREAKS COMPATIBILITY*) More strict SQL syntax: composite indexes must be enclosed in double quotes and string literals - in single quotes
+- [fix] Fix inner joins for sparse indexes
+
+## Reindexer server
+- [fix] Fix memory corruption on item modify, when json had some whitespace symbols at the end
+
 # Version 3.2.6 (24.11.2021)
 ## Core
 - [fix] Fix default behaviour for joins optimization from v3.2.4 and add more settings for it in #config

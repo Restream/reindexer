@@ -63,6 +63,7 @@ private:
 	void convertWhereValues(QueryEntry *) const;
 	const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
 	void injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &, const RdxContext &);
+	void checkStrictMode(const std::string &index, int idxNo) const;
 
 	NamespaceImpl &ns_;
 	StrictMode strictMode_;

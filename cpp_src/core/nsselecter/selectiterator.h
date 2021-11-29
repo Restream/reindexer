@@ -96,7 +96,7 @@ public:
 		return false;
 	}
 	/// @return amonut of matched items
-	int GetMatchedCount() const { return matchedCount_; }
+	int GetMatchedCount() const noexcept { return matchedCount_; }
 
 	/// Excludes last set of ids from each result
 	/// to remove duplicated keys

@@ -764,8 +764,10 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 
 		if (q._namespace.size() && q._namespace[0] == '#') {
 			string filterNsName;
-			if (q.entries.Size() == 1 && q.entries.IsValue(0) && q.entries[0].condition == CondEq && q.entries[0].values.size() == 1)
-				filterNsName = q.entries[0].values[0].As<string>();
+			if (q.entries.Size() == 1 && q.entries.HoldsOrReferTo<QueryEntry>(0)) {
+				const QueryEntry entry = q.entries.Get<QueryEntry>(0);
+				if (entry.condition == CondEq && entry.values.size() == 1) filterNsName = entry.values[0].As<string>();
+			}
 
 			syncSystemNamespaces(q._namespace, filterNsName, rdxCtx);
 		}
@@ -808,13 +810,26 @@ struct ReindexerImpl::QueryResultsContext {
 
 bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns) {
 	bool result = true;
-	jItemQ.entries.ExecuteAppropriateForEach([&jns, &result](const QueryEntry& qe) {
-		if (qe.idxNo >= 0) {
-			assert(jns->indexes_.size() > static_cast<size_t>(qe.idxNo));
-			const IndexType indexType = jns->indexes_[qe.idxNo]->Type();
-			if (isComposite(indexType) || isFullText(indexType)) result = false;
-		}
-	});
+	jItemQ.entries.ExecuteAppropriateForEach(
+		Skip<JoinQueryEntry, Bracket, AlwaysFalse>{},
+		[&jns, &result](const QueryEntry& qe) {
+			if (qe.idxNo >= 0) {
+				assert(jns->indexes_.size() > static_cast<size_t>(qe.idxNo));
+				const IndexType indexType = jns->indexes_[qe.idxNo]->Type();
+				if (isComposite(indexType) || isFullText(indexType)) result = false;
+			}
+		},
+		[&jns, &result](const BetweenFieldsQueryEntry& qe) {
+			if (qe.firstIdxNo >= 0) {
+				assert(jns->indexes_.size() > static_cast<size_t>(qe.firstIdxNo));
+				const IndexType indexType = jns->indexes_[qe.firstIdxNo]->Type();
+				if (isComposite(indexType) || isFullText(indexType)) result = false;
+			}
+			if (qe.secondIdxNo >= 0) {
+				assert(jns->indexes_.size() > static_cast<size_t>(qe.secondIdxNo));
+				if (isComposite(jns->indexes_[qe.secondIdxNo]->Type())) result = false;
+			}
+		});
 	return result;
 }
 
@@ -901,9 +916,18 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 
 		result.AddNamespace(jns, {rdxCtx, true});
 		if (preResult->dataMode == JoinPreResult::ModeValues) {
-			jItemQ.entries.ExecuteAppropriateForEach([&jns](QueryEntry& qe) {
-				if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
-			});
+			jItemQ.entries.ExecuteAppropriateForEach(
+				Skip<JoinQueryEntry, Bracket, AlwaysFalse>{},
+				[&jns](QueryEntry& qe) {
+					assert(qe.idxNo >= 0 && static_cast<size_t>(qe.idxNo) < jns->indexes_.size());
+					if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
+				},
+				[&jns](BetweenFieldsQueryEntry& qe) {
+					assert(qe.firstIdxNo >= 0 && static_cast<size_t>(qe.firstIdxNo) < jns->indexes_.size());
+					if (jns->indexes_[qe.firstIdxNo]->Opts().IsSparse()) qe.firstIdxNo = IndexValueType::SetByJsonPath;
+					assert(qe.secondIdxNo >= 0 && static_cast<size_t>(qe.secondIdxNo) < jns->indexes_.size());
+					if (jns->indexes_[qe.secondIdxNo]->Opts().IsSparse()) qe.secondIdxNo = IndexValueType::SetByJsonPath;
+				});
 			if (!preResult->values.Locked()) preResult->values.Lock();	// If not from cache
 			locks.Delete(jns);
 			jns.reset();

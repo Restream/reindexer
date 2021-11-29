@@ -465,7 +465,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField2) {
 	AddUnindexedData();
 
 	QueryResults qr;
-	Error err = rt.reindexer->Select(R"(update test_namespace set 'nested.bonus'=[{"first":1,"second":2,"third":3}] where id = 1000;)", qr);
+	Error err = rt.reindexer->Select(R"(update test_namespace set nested.bonus=[{"first":1,"second":2,"third":3}] where id = 1000;)", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
@@ -481,7 +481,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField3) {
 
 	QueryResults qr;
 	Error err =
-		rt.reindexer->Select(R"(update test_namespace set 'nested.bonus'=[{"id":1},{"id":2},{"id":3},{"id":4}] where id = 1000;)", qr);
+		rt.reindexer->Select(R"(update test_namespace set nested.bonus=[{"id":1},{"id":2},{"id":3},{"id":4}] where id = 1000;)", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
@@ -504,7 +504,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField4) {
 	AddUnindexedData();
 
 	QueryResults qr;
-	Error err = rt.reindexer->Select(R"(update test_namespace set 'nested.bonus'=[0] where id = 1000;)", qr);
+	Error err = rt.reindexer->Select(R"(update test_namespace set nested.bonus=[0] where id = 1000;)", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
@@ -1427,7 +1427,7 @@ TEST_F(NsApi, TestDropField) {
 	}
 
 	QueryResults qr2;
-	err = rt.reindexer->Select("update test_namespace drop 'nested.bonus' where id >= 1005 and id < 1010;", qr2);
+	err = rt.reindexer->Select("update test_namespace drop nested.bonus where id >= 1005 and id < 1010;", qr2);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr2.Count() == 5);
 
@@ -1459,7 +1459,7 @@ TEST_F(NsApi, TestUpdateFieldWithFunction) {
 
 	QueryResults qr;
 	Error err = rt.reindexer->Select(
-		"update test_namespace set int_field = SERIAL(), extra = SERIAL(), 'nested.timeField' = NOW(msec) where id >= 0;", qr);
+		"update test_namespace set int_field = SERIAL(), extra = SERIAL(), nested.timeField = NOW(msec) where id >= 0;", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() > 0);
 
@@ -1481,7 +1481,7 @@ TEST_F(NsApi, TestUpdateFieldWithExpressions) {
 
 	QueryResults qr;
 	Error err = rt.reindexer->Select(
-		"update test_namespace set int_field = ((7+8)*(4-3))/3, extra = (SERIAL() + 1)*3, 'nested.timeField' = int_field - 1 where id >= "
+		"update test_namespace set int_field = ((7+8)*(4-3))/3, extra = (SERIAL() + 1)*3, nested.timeField = int_field - 1 where id >= "
 		"0;",
 		qr);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -1549,44 +1549,44 @@ TEST_F(NsApi, TestModifyQueriesSqlEncoder) {
 		"'msk'";
 	Query q1;
 	q1.FromSQL(sqlUpdate);
-	EXPECT_TRUE(q1.GetSQL() == sqlUpdate) << q1.GetSQL();
+	EXPECT_EQ(q1.GetSQL(), sqlUpdate);
 	checkQueryDsl(q1);
 
 	const string sqlDrop = "UPDATE ns DROP field1,field2 WHERE a = true AND location = 'msk'";
 	Query q2;
 	q2.FromSQL(sqlDrop);
-	EXPECT_TRUE(q2.GetSQL() == sqlDrop) << q2.GetSQL();
+	EXPECT_EQ(q2.GetSQL(), sqlDrop);
 	checkQueryDsl(q2);
 
 	const string sqlUpdateWithObject =
 		R"(UPDATE ns SET field = {"id":0,"name":"apple","price":1000,"nested":{"n_id":1,"desription":"good","array":[{"id":1,"description":"first"},{"id":2,"description":"second"},{"id":3,"description":"third"}]},"bonus":7} WHERE a = true AND location = 'msk')";
 	Query q3;
 	q3.FromSQL(sqlUpdateWithObject);
-	EXPECT_TRUE(q3.GetSQL() == sqlUpdateWithObject) << q3.GetSQL();
+	EXPECT_EQ(q3.GetSQL(), sqlUpdateWithObject);
 	checkQueryDsl(q3);
 
 	const string sqlTruncate = R"(TRUNCATE ns)";
 	Query q4;
 	q4.FromSQL(sqlTruncate);
-	EXPECT_TRUE(q4.GetSQL() == sqlTruncate) << q4.GetSQL();
+	EXPECT_EQ(q4.GetSQL(), sqlTruncate);
 	checkQueryDsl(q4);
 
 	const string sqlArrayAppend = R"(UPDATE ns SET array = array||[1,2,3]||array2||objects[0].nested.prices[0])";
 	Query q5;
 	q5.FromSQL(sqlArrayAppend);
-	EXPECT_TRUE(q5.GetSQL() == sqlArrayAppend) << q5.GetSQL();
+	EXPECT_EQ(q5.GetSQL(), sqlArrayAppend);
 	checkQueryDsl(q5);
 
-	const string sqlIndexUpdate = R"(UPDATE ns SET 'objects[0].nested.prices[*]' = 'NE DOROGO!')";
+	const string sqlIndexUpdate = R"(UPDATE ns SET objects[0].nested.prices[*] = 'NE DOROGO!')";
 	Query q6;
 	q6.FromSQL(sqlIndexUpdate);
-	EXPECT_TRUE(q6.GetSQL() == sqlIndexUpdate) << q6.GetSQL();
+	EXPECT_EQ(q6.GetSQL(), sqlIndexUpdate);
 	checkQueryDsl(q6);
 
 	const string sqlSpeccharsUpdate = R"(UPDATE ns SET f1 = 'HELLO\n\r\b\f',f2 = '\t',f3 = '\"')";
 	Query q7;
 	q7.FromSQL(sqlSpeccharsUpdate);
-	EXPECT_TRUE(q7.GetSQL() == sqlSpeccharsUpdate) << q7.GetSQL();
+	EXPECT_EQ(q7.GetSQL(), sqlSpeccharsUpdate);
 	checkQueryDsl(q7);
 }
 

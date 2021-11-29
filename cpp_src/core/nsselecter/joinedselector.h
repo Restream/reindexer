@@ -107,8 +107,8 @@ private:
 	void readValuesFromRightNs(VariantArray &values, const Index &leftIndex, int rightIdxNo, const std::string &rightIndex) const;
 	template <bool byJsonPath>
 	void readValuesFromPreResult(VariantArray &values, const Index &leftIndex, int rightIdxNo, const std::string &rightIndex) const;
-	void selectFromRightNs(QueryResults &joinItemR, bool &found, bool &matchedAtLeastOnce);
-	void selectFromPreResultValues(QueryResults &joinItemR, bool &found, bool &matchedAtLeastOnce) const;
+	void selectFromRightNs(QueryResults &joinItemR, const Query &, bool &found, bool &matchedAtLeastOnce);
+	void selectFromPreResultValues(QueryResults &joinItemR, const Query &, bool &found, bool &matchedAtLeastOnce) const;
 
 	JoinType joinType_;
 	int called_, matched_;
@@ -123,7 +123,7 @@ private:
 	SelectFunctionsHolder &selectFunctions_;
 	int joinedSelectorsCount_;
 	const RdxContext &rdxCtx_;
-	bool optimized_;
+	bool optimized_{false};
 };
 using JoinedSelectors = vector<JoinedSelector>;
 

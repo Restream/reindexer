@@ -123,7 +123,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.2.5
+*Version* : 3.3.0
 
 
 ### License information
@@ -2086,8 +2086,10 @@ If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not co
 |**cond**  <br>*optional*|Condition operator|enum (EQ, GT, GE, LE, LT, RANGE, SET, EMPTY)|
 |**field**  <br>*optional*|Field json path or index name for filter|string|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
+|**first_field**  <br>*optional*|First field json path or index name for filter by two fields|string|
 |**join_query**  <br>*optional*||[JoinedDef](#joineddef)|
 |**op**  <br>*optional*|Logic operator|enum (AND, OR, NOT)|
+|**second_field**  <br>*optional*|Second field json path or index name for filter by two fields|string|
 |**value**  <br>*optional*|Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, or variable len array for SET condition|object|
 
 

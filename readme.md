@@ -232,6 +232,14 @@ As alternative to Query builder Reindexer provides SQL compatible query interfac
 
 Please note, that Query builder interface is preferable way: It have more features, and faster than SQL interface
 
+String literals should be enclosed in single quotes.
+
+Composite indexes should be enclosed in double quotes.
+
+```sql
+	SELECT * FROM items WHERE "field1+field2" = 'Vasya'
+```
+
 ## Installation
 
 Reindexer can run in 3 different modes:
@@ -344,7 +352,7 @@ Abs() means absolute value of an argument.
 
 Rank() means fulltext rank of match and is applicable only in fulltext query.
 
-ST_Distance() means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText("point(1 -3)")`
+ST_Distance() means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText('point(1 -3)')`
 
 In SQL query sort expression must be quoted.
 
@@ -388,7 +396,7 @@ query = db.Query("actors").Where("description", reindexer.EQ, "ququ").
 // Sort by geometry distance
 query = db.Query("actors").
     Join(db.Query("cities")).On("birth_place_id", reindexer.EQ, "id").
-    Sort("ST_Distance(cities.center, ST_GeomFromText(\"point(1 -3)\"))", true).
+    Sort("ST_Distance(cities.center, ST_GeomFromText('point(1 -3)'))", true).
     Sort("ST_Distance(location, cities.center)", true)
 ....
 // In SQL query:
@@ -396,7 +404,7 @@ iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY person.name ASC")
 ....
 iterator := db.ExecSQL ("SELECT * FROM actors WHERE description = 'ququ' ORDER BY 'rank() + id / 100' DESC")
 ....
-iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY 'ST_Distance(location, ST_GeomFromText(\"point(1 -3)\"))' ASC")
+iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY 'ST_Distance(location, ST_GeomFromText(\'point(1 -3)\'))' ASC")
 ```
 
 It is also possible to set a custom sort order like this
@@ -1076,7 +1084,7 @@ to OpenNamespace. e.g.
 
 The only supported geometry data type is 2D point, which implemented in Golang as `[2]float64`.
 
-In SQL, a point can be created as `ST_GeomFromText("point(1 -3)")`.
+In SQL, a point can be created as `ST_GeomFromText('point(1 -3)')`.
 
 The only supported request for geometry field is to find all points within a distance from a point.
 `DWithin(field_name, point, distance)` as on example below.
@@ -1096,7 +1104,7 @@ query1 := db.Query("items").DWithin("point_indexed", [2]float64{-1.0, 1.0}, 4.0)
 ```
 
 ```SQL
-SELECT * FROM items WHERE ST_DWithin(point_non_indexed, ST_GeomFromText("point(1 -3.5)"), 5.0);
+SELECT * FROM items WHERE ST_DWithin(point_non_indexed, ST_GeomFromText('point(1 -3.5)'), 5.0);
 ```
 
 ## Logging, debug and profiling

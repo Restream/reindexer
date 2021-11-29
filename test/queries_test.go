@@ -65,6 +65,7 @@ type TestItem struct {
 	_             struct{}        `reindex:"id+tmp,,composite,pk"`
 	_             struct{}        `reindex:"age+genre,,composite"`
 	_             struct{}        `reindex:"location+rate,,composite"`
+	_             struct{}        `reindex:"rate+age,,composite"`
 }
 
 // TestItemIDOnly test case for non-indexed fields
@@ -988,6 +989,20 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		ExecAndVerify(t)
 
 	newTestQuery(DB, namespace).Where("end_time", reindexer.GT, 10000).Not().Where("genre", reindexer.EQ, 10).Distinct(distinct).Sort(sort, desc).ExecAndVerify(t)
+	newTestQuery(DB, namespace).WhereBetweenFields("end_time", reindexer.GT, "start_time").Distinct(distinct).Sort(sort, desc).ExecAndVerify(t)
+	newTestQuery(DB, namespace).
+		WhereBetweenFields("name", reindexer.EQ, "actor.name").
+		Or().
+		OpenBracket().
+			WhereBetweenFields("exchange_rate", reindexer.GT, "pollution_rate").
+			WhereBetweenFields("year", reindexer.LE, "price_id").
+			WhereBetweenFields("packages", reindexer.GE, "exchange_rate").
+			Or().
+			WhereBetweenFields("packages", reindexer.GE, "price_id").
+		CloseBracket().
+		Distinct(distinct).
+		Sort(sort, desc).
+		ExecAndVerify(t)
 
 	if !testComposite {
 		return
@@ -1048,6 +1063,12 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 	}
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
 		Where("age+genre", reindexer.SET, compositeValues).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		WhereBetweenFields("age+genre", reindexer.GT, "rate+age").
+		Or().
+		WhereBetweenFields("age+genre", reindexer.LT, "rate+age").
 		ExecAndVerify(t)
 }
 
@@ -1178,7 +1199,7 @@ func CheckTestItemsSQLQueries(t *testing.T) {
 		newTestQuery(DB, "test_items").Where("year", reindexer.GE, 2016).Or().Where("RATE", reindexer.EQ, 1.1).Or().Where("company_name", reindexer.LIKE, likePattern).Or().Where("age_limit", reindexer.LE, int64(50)).Verify(t, res, aggResults, true)
 	}
 
-	if res, err := DB.ExecSQL("SELECT ID,'Actor.Name' FROM test_items WHERE 'actor.name' > 'bde'  LIMIT 10000000").FetchAll(); err != nil {
+	if res, err := DB.ExecSQL("SELECT ID,'Actor.Name' FROM test_items WHERE \"actor.name\" > 'bde'  LIMIT 10000000").FetchAll(); err != nil {
 		panic(err)
 	} else {
 		newTestQuery(DB, "test_items").Where("actor.name", reindexer.GT, []string{"bde"}).Verify(t, res, aggResults, false)

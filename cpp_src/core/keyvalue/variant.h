@@ -155,6 +155,7 @@ public:
 	bool IsNullValue() const;
 	KeyValueType ArrayType() const;
 	void Dump(WrSerializer &wrser) const;
+	int RelaxCompare(const VariantArray &other, const CollateOpts & = CollateOpts{}) const;
 
 private:
 	bool isArrayValue = false;

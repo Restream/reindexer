@@ -1001,41 +1001,43 @@ Error HTTPServer::modifyItem(Reindexer &db, string &nsName, Item &item, QueryRes
 int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, const vector<string> &precepts, ItemModifyMode mode) {
 	auto db = getDB(ctx, kRoleDataWrite);
 	string itemJson = ctx.body->Read();
-
-	char *jsonPtr = &itemJson[0];
-	size_t jsonLeft = itemJson.size();
-	vector<string> updatedItems;
 	int cnt = 0;
-	while (jsonPtr && *jsonPtr) {
-		Item item = db.NewItem(nsName);
-		if (!item.Status().ok()) {
-			http::HttpStatus httpStatus(item.Status());
+	vector<string> updatedItems;
 
-			return jsonStatus(ctx, httpStatus);
+	if (itemJson.size()) {
+		char *jsonPtr = &itemJson[0];
+		size_t jsonLeft = itemJson.size();
+		while (jsonPtr && *jsonPtr) {
+			Item item = db.NewItem(nsName);
+			if (!item.Status().ok()) {
+				return jsonStatus(ctx, http::HttpStatus(item.Status()));
+			}
+			char *prevPtr = jsonPtr;
+			auto str = std::string_view(jsonPtr, jsonLeft);
+			if (jsonPtr != &itemJson[0] && isBlank(str)) {
+				break;
+			}
+			auto status = item.Unsafe().FromJSON(str, &jsonPtr, mode == ModeDelete);
+			jsonLeft -= (jsonPtr - prevPtr);
+
+			if (!status.ok()) {
+				return jsonStatus(ctx, http::HttpStatus(status));
+			}
+
+			item.SetPrecepts(precepts);
+			status = modifyItem(db, nsName, item, mode);
+
+			if (!status.ok()) {
+				return jsonStatus(ctx, http::HttpStatus(status));
+			}
+
+			if (item.GetID() != -1) {
+				++cnt;
+				if (!precepts.empty()) updatedItems.push_back(string(item.GetJSON()));
+			}
 		}
-		char *prevPtr = jsonPtr;
-		auto status = item.Unsafe().FromJSON(std::string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
-		jsonLeft -= (jsonPtr - prevPtr);
-
-		if (!status.ok()) {
-			http::HttpStatus httpStatus(status);
-			return jsonStatus(ctx, httpStatus);
-		}
-
-		item.SetPrecepts(precepts);
-		status = modifyItem(db, nsName, item, mode);
-
-		if (!status.ok()) {
-			http::HttpStatus httpStatus(status);
-			return jsonStatus(ctx, httpStatus);
-		}
-
-		if (item.GetID() != -1) {
-			++cnt;
-			if (!precepts.empty()) updatedItems.push_back(string(item.GetJSON()));
-		}
+		db.Commit(nsName);
 	}
-	db.Commit(nsName);
 
 	WrSerializer ser(ctx.writer->GetChunk());
 	JsonBuilder builder(ser);
@@ -1138,25 +1140,32 @@ int HTTPServer::modifyItemsProtobuf(http::Context &ctx, string &nsName, const ve
 
 int HTTPServer::modifyItemsTxJSON(http::Context &ctx, Transaction &tx, const vector<string> &precepts, ItemModifyMode mode) {
 	string itemJson = ctx.body->Read();
-	char *jsonPtr = &itemJson[0];
-	size_t jsonLeft = itemJson.size();
-	while (jsonPtr && *jsonPtr) {
-		Item item = tx.NewItem();
-		if (!item.Status().ok()) {
-			http::HttpStatus httpStatus(item.Status());
-			return jsonStatus(ctx, httpStatus);
-		}
-		char *prevPtr = jsonPtr;
-		auto status = item.FromJSON(std::string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
-		jsonLeft -= (jsonPtr - prevPtr);
 
-		if (!status.ok()) {
-			http::HttpStatus httpStatus(status);
-			return jsonStatus(ctx, httpStatus);
-		}
+	if (itemJson.size()) {
+		char *jsonPtr = &itemJson[0];
+		size_t jsonLeft = itemJson.size();
+		while (jsonPtr && *jsonPtr) {
+			Item item = tx.NewItem();
+			if (!item.Status().ok()) {
+				http::HttpStatus httpStatus(item.Status());
+				return jsonStatus(ctx, httpStatus);
+			}
+			char *prevPtr = jsonPtr;
+			auto str = std::string_view(jsonPtr, jsonLeft);
+			if (jsonPtr != &itemJson[0] && isBlank(str)) {
+				break;
+			}
+			auto status = item.FromJSON(std::string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
+			jsonLeft -= (jsonPtr - prevPtr);
 
-		item.SetPrecepts(precepts);
-		tx.Modify(std::move(item), mode);
+			if (!status.ok()) {
+				http::HttpStatus httpStatus(status);
+				return jsonStatus(ctx, httpStatus);
+			}
+
+			item.SetPrecepts(precepts);
+			tx.Modify(std::move(item), mode);
+		}
 	}
 
 	return jsonStatus(ctx);
@@ -1194,7 +1203,7 @@ int HTTPServer::modifyItems(http::Context &ctx, ItemModifyMode mode) {
 		}
 	}
 
-	auto format = ctx.request->params.Get("format");
+	const auto format = ctx.request->params.Get("format");
 	if (format == "msgpack"sv) {
 		return modifyItemsMsgPack(ctx, nsName, precepts, mode);
 	} else if (format == "protobuf"sv) {
