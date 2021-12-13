@@ -1,3 +1,11 @@
+# Version 3.3.1 (13.12.2021)
+## Face
+- [fea] Replace the list component
+- [fix] Fix the issue related to namespace settings
+- [fix] Fix the issue related to the "Statistics -> Performance" and "Statistics -> Queries" settings
+- [fix] Fix the issue with the "load more" button for the "Aggregations" and "Explain" sections
+- [fix] Fix the issue with the empty popup during the index editing
+
 # Version 3.3.0 (29.11.2021)
 ## Core
 - [fea] Allow comparison between fields in queries' filters
