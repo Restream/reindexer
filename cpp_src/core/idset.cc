@@ -13,7 +13,7 @@ void IdSet::Commit() {
 	usingBtree_ = false;
 }
 
-string IdSetPlain::Dump() {
+string IdSetPlain::Dump() const {
 	string buf = "[";
 
 	for (int i = 0; i < static_cast<int>(size()); i++) buf += std::to_string((*this)[i]) + " ";
@@ -21,6 +21,15 @@ string IdSetPlain::Dump() {
 	buf += "]";
 
 	return buf;
+}
+
+std::ostream& operator<<(std::ostream& os, const IdSetPlain& idset) {
+	os << '[';
+	for (auto b = idset.begin(), it = b, e = idset.end(); it != e; ++it) {
+		if (it != b) os << ", ";
+		os << *it;
+	}
+	return os << ']';
 }
 
 }  // namespace reindexer

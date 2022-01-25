@@ -243,7 +243,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 															unsigned sortId, bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt,
 															bool &isIndexSparse, FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
 	auto &index = ns.indexes_[qe.idxNo];
-	isIndexFt = isFullText(index->Type());
+	isIndexFt = IsFullText(index->Type());
 	isIndexSparse = index->Opts().IsSparse();
 
 	Index::SelectOpts opts;
@@ -393,7 +393,7 @@ void SelectIteratorContainer::prepareIteratorsForSelectLoop(const QueryEntries &
 				CloseBracket();
 			},
 			[&](const QueryEntry &qe) {
-				if (qe.idxNo != IndexValueType::SetByJsonPath && isFullText(ns.indexes_[qe.idxNo]->Type()) &&
+				if (qe.idxNo != IndexValueType::SetByJsonPath && IsFullText(ns.indexes_[qe.idxNo]->Type()) &&
 					(op == OpOr || (next < end && queries.GetOperation(next) == OpOr))) {
 					throw Error(errLogic, "OR operation is not allowed with fulltext index");
 				}

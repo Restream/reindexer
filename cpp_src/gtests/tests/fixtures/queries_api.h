@@ -149,6 +149,12 @@ public:
 					 IndexDeclaration{kFieldNamePointGreeneRTree, "rtree", "point", indexesOptions[kFieldNamePointGreeneRTree], 0},
 					 IndexDeclaration{kFieldNamePointRStarRTree, "rtree", "point", indexesOptions[kFieldNamePointRStarRTree], 0}});
 		geomNsPks.push_back(kFieldNameId);
+
+		err = rt.reindexer->OpenNamespace(btreeIdxOptNs);
+		ASSERT_TRUE(err.ok()) << err.what();
+		DefineNamespaceDataset(btreeIdxOptNs, {IndexDeclaration{kFieldNameId, "tree", "int", IndexOpts().PK(), 0},
+											   IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts(), 0}});
+		btreeIdxOptNsPks.push_back(kFieldNameId);
 	}
 
 	template <typename... T>
@@ -461,6 +467,7 @@ protected:
 		if (ns == comparatorsNs) return comparatorsNsPks;
 		if (ns == forcedSortOffsetNs) return forcedSortOffsetNsPks;
 		if (ns == geomNs) return geomNsPks;
+		if (ns == btreeIdxOptNs) return btreeIdxOptNsPks;
 		std::abort();
 	}
 
@@ -1000,6 +1007,20 @@ protected:
 		}
 		Commit(geomNs);
 		lastId += geomNsSize;
+	}
+
+	void UpsertBtreeIdxOptNsItem(std::pair<int, int> values) {
+		Item item = NewItem(btreeIdxOptNs);
+		ASSERT_TRUE(item.Status().ok());
+		item[kFieldNameId] = values.first;
+		item[kFieldNameStartTime] = values.second;
+		Upsert(btreeIdxOptNs, item);
+
+		string pkString = getPkString(item, btreeIdxOptNs);
+		insertedItems[btreeIdxOptNs][pkString] = std::move(item);
+
+		Error err = Commit(btreeIdxOptNs);
+		ASSERT_TRUE(err.ok());
 	}
 
 	enum Column { First, Second };
@@ -2460,6 +2481,7 @@ protected:
 	const string forcedSortOffsetNs = "forced_sort_offset_namespace";
 	const string nsWithObject = "namespace_with_object";
 	const string geomNs = "geom_namespace";
+	const string btreeIdxOptNs = "btree_idx_opt_namespace";
 
 	const string kCompositeFieldPricePages = kFieldNamePrice + compositePlus + kFieldNamePages;
 	const string kCompositeFieldTitleName = kFieldNameTitle + compositePlus + kFieldNameName;
@@ -2473,12 +2495,14 @@ protected:
 	vector<string> comparatorsNsPks;
 	vector<string> forcedSortOffsetNsPks;
 	vector<string> geomNsPks;
+	vector<string> btreeIdxOptNsPks;
 	std::mutex m_;
 
 	int currBtreeIdsetsValue = rand() % 10000;
 	static constexpr size_t forcedSortOffsetNsSize = 1000;
 	static constexpr int forcedSortOffsetMaxValue = 1000;
 	static constexpr size_t geomNsSize = 10000;
+	static constexpr int btreeIdxOptNsSize = 10000;
 	vector<pair<int, int>> forcedSortOffsetValues;
 
 	std::unordered_map<size_t, std::map<std::string, reindexer::Point>> insertedGeomObjects;

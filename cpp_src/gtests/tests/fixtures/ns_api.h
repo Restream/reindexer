@@ -20,8 +20,8 @@ protected:
 												   IndexDeclaration{emptyField.c_str(), "hash", "string", IndexOpts(), 0}});
 	}
 
-	void FillDefaultNamespace() {
-		for (int i = 0; i < 1000; ++i) {
+	void FillDefaultNamespace(int count = 1000) {
+		for (int i = 0; i < count; ++i) {
 			Item item = NewItem(default_namespace);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 

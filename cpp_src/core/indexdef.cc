@@ -7,6 +7,7 @@
 #include "tools/logger.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
+#include "type_consts_helpers.h"
 
 namespace {
 
@@ -145,14 +146,6 @@ const vector<string> &IndexDef::Conditions() const {
 	return it->second.conditions;
 }
 
-bool isComposite(IndexType type) noexcept {
-	return type == IndexCompositeBTree || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT || type == IndexCompositeHash;
-}
-
-bool isFullText(IndexType type) noexcept {
-	return type == IndexFastFT || type == IndexFuzzyFT || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT;
-}
-
 bool isSortable(IndexType type) { return availableIndexes().at(type).caps & CapSortable; }
 
 bool isStore(IndexType type) noexcept {
@@ -256,7 +249,7 @@ void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 		// extra data for support describe.
 		// TODO: deprecate and remove it
 		builder.Put("is_sortable", isSortable(Type()));
-		builder.Put("is_fulltext", isFullText(Type()));
+		builder.Put("is_fulltext", IsFullText(Type()));
 		auto arr = builder.Array("conditions");
 		for (auto &cond : Conditions()) {
 			arr.Put(nullptr, cond);
@@ -275,7 +268,7 @@ bool validateIndexName(std::string_view name, IndexType type) noexcept {
 	}
 	for (auto c : name) {
 		if (!(std::isalpha(c) || std::isdigit(c) || c == '.' || c == '_' || c == '-')) {
-			if (!(c == '+' && isComposite(type))) {
+			if (!(c == '+' && IsComposite(type))) {
 				return false;
 			}
 		}

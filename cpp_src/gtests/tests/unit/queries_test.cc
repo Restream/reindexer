@@ -86,6 +86,26 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 }
 #endif
 
+TEST_F(QueriesApi, IndexCacheInvalidationTest) {
+	std::vector<std::pair<int, int>> data{{0, 10}, {1, 9}, {2, 8}, {3, 7}, {4, 6},	{5, 5},
+										  {6, 4},  {7, 3}, {8, 2}, {9, 1}, {10, 0}, {11, -1}};
+	for (auto values : data) {
+		UpsertBtreeIdxOptNsItem(values);
+	}
+	Query q(btreeIdxOptNs);
+	q.Where(kFieldNameId, CondSet, {3, 5, 7}).Where(kFieldNameStartTime, CondGt, 2).Debug(LogTrace);
+	std::this_thread::sleep_for(std::chrono::seconds(1));
+	for (size_t i = 0; i < 10; ++i) {
+		ExecuteAndVerify(q);
+	}
+
+	UpsertBtreeIdxOptNsItem({5, 0});
+	std::this_thread::sleep_for(std::chrono::seconds(5));
+	for (size_t i = 0; i < 10; ++i) {
+		ExecuteAndVerify(q);
+	}
+}
+
 TEST_F(QueriesApi, TransactionStress) {
 	vector<thread> pool;
 	FillDefaultNamespace(0, 350, 20);

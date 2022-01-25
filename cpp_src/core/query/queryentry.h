@@ -44,7 +44,7 @@ struct JoinQueryEntry {
 };
 
 struct QueryEntry {
-	QueryEntry(std::string idx, CondType cond, VariantArray v) : index{std::move(idx)}, condition{cond}, values{std::move(v)} {}
+	QueryEntry(std::string idx, CondType cond, VariantArray v) : index{std::move(idx)}, condition{cond}, values(std::move(v)) {}
 	QueryEntry(CondType cond, std::string idx, int idxN, bool dist = false)
 		: index(std::move(idx)), idxNo(idxN), condition(cond), distinct(dist) {}
 	QueryEntry() = default;
@@ -142,7 +142,9 @@ private:
 					ser << ")\n";
 				},
 				[&ser](const QueryEntry &qe) { ser << qe.Dump() << '\n'; },
-				[&joinedSelectors, &ser](const JoinQueryEntry &jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; });
+				[&joinedSelectors, &ser](const JoinQueryEntry &jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
+				[&ser](const BetweenFieldsQueryEntry &qe) { ser << qe.Dump() << '\n'; },
+				[&ser](const AlwaysFalse &) { ser << "AlwaysFalse" << 'n'; });
 		}
 	}
 };

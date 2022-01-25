@@ -1768,3 +1768,13 @@ TEST_F(NsApi, MsgPackFromJson) {
 	string json2(item2.GetJSON());
 	ASSERT_TRUE(json1 == json2);
 }
+
+TEST_F(NsApi, DeleteLastItems) {
+	// Check for bug with memory access after items removing
+	DefineDefaultNamespace();
+	FillDefaultNamespace(2);
+	QueryResults qr;
+	auto err = rt.reindexer->Delete(Query(default_namespace), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 2);
+}

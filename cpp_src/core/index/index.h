@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits>
+#include <bitset>
 #include <vector>
 #include "core/idset.h"
 #include "core/index/keyentry.h"
@@ -12,6 +13,7 @@
 #include "core/perfstatcounter.h"
 #include "core/selectfunc/ctx/basefunctionctx.h"
 #include "core/selectkeyresult.h"
+#include "core/type_consts_helpers.h"
 #include "indexiterator.h"
 
 namespace reindexer {
@@ -45,10 +47,10 @@ public:
 	Index(const Index&);
 	Index& operator=(const Index&) = delete;
 	virtual ~Index() = default;
-	virtual Variant Upsert(const Variant& key, IdType id) = 0;
-	virtual void Upsert(VariantArray& result, const VariantArray& keys, IdType id) = 0;
-	virtual void Delete(const Variant& key, IdType id, StringsHolder&) = 0;
-	virtual void Delete(const VariantArray& keys, IdType id, StringsHolder&) = 0;
+	virtual Variant Upsert(const Variant& key, IdType id, bool& clearCache) = 0;
+	virtual void Upsert(VariantArray& result, const VariantArray& keys, IdType id, bool& clearCache) = 0;
+	virtual void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) = 0;
+	virtual void Delete(const VariantArray& keys, IdType id, StringsHolder&, bool& clearCache) = 0;
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
 									   BaseFunctionCtx::Ptr ctx, const RdxContext&) = 0;
@@ -95,8 +97,11 @@ public:
 	}
 	virtual bool HoldsStrings() const noexcept = 0;
 	virtual void ClearCache() {}
+	virtual void ClearCache(const std::bitset<64>&) {}
 	virtual bool IsBuilt() const noexcept { return isBuilt_; }
 	virtual void MarkBuilt() noexcept { isBuilt_ = true; }
+
+	virtual void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const { dump(os, step, offset); }
 
 protected:
 	// Index type. Can be one of enum IndexType
@@ -121,6 +126,10 @@ protected:
 	// Count of sorted indexes in namespace to resereve additional space in idsets
 	int sortedIdxCount_ = 0;
 	bool isBuilt_{false};
+
+private:
+	template <typename S>
+	void dump(S& os, std::string_view step, std::string_view offset) const;
 };
 
 }  // namespace reindexer

@@ -93,6 +93,9 @@ public:
 
 	bool NeedTraceActivity() { return configProvider_.GetProfilingConfig().activityStats; }
 
+	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index,
+					const InternalRdxContext &ctx = InternalRdxContext());
+
 protected:
 	typedef contexted_shared_lock<Mutex, const RdxContext> SLock;
 	typedef contexted_unique_lock<Mutex, const RdxContext> ULock;

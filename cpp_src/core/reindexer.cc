@@ -69,4 +69,8 @@ Error Reindexer::GetSqlSuggestions(const std::string_view sqlQuery, int pos, vec
 }
 Error Reindexer::Status() { return impl_->Status(); }
 
+Error Reindexer::DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index) {
+	return impl_->DumpIndex(os, nsName, index, ctx_);
+}
+
 }  // namespace reindexer

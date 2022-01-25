@@ -1,3 +1,12 @@
+# Version 3.3.2 (25.01.2021)
+## Core
+- [fix] Fix index cache invalidation after items modification
+- [fix] Fix heap-use-after-free in 'delete *' query
+
+## Face
+- [fix] Fix the undefined fields for the "List" view
+- [fix] Fix the kebab menu for the "List" view
+
 # Version 3.3.1 (13.12.2021)
 ## Face
 - [fea] Replace the list component

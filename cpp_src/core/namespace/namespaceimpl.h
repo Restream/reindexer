@@ -3,6 +3,7 @@
 #include <atomic>
 #include <deque>
 #include <memory>
+#include <set>
 #include <thread>
 #include <vector>
 #include "core/cjson/tagsmatcher.h"
@@ -66,6 +67,25 @@ struct NsContext {
 };
 
 class NamespaceImpl {
+	class IndexesCacheCleaner {
+	public:
+		explicit IndexesCacheCleaner(NamespaceImpl &ns) : ns_{ns} {}
+		IndexesCacheCleaner(const IndexesCacheCleaner &) = delete;
+		IndexesCacheCleaner(IndexesCacheCleaner &&) = delete;
+		IndexesCacheCleaner &operator=(const IndexesCacheCleaner &) = delete;
+		IndexesCacheCleaner &operator=(IndexesCacheCleaner &&) = delete;
+		void Add(SortType s) {
+			if (s > 0) {
+				sorts_.set(s);
+			}
+		}
+		~IndexesCacheCleaner();
+
+	private:
+		NamespaceImpl &ns_;
+		std::bitset<64> sorts_;
+	};
+
 protected:
 	friend class NsSelecter;
 	friend class JoinedSelector;
@@ -215,6 +235,7 @@ public:
 	StorageOpts GetStorageOpts(const RdxContext &);
 	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext &ctx) const;
 	int getNsNumber() const { return schema_ ? schema_->GetProtobufNsNumber() : 0; }
+	IndexesCacheCleaner GetIndexesCacheCleaner() { return IndexesCacheCleaner{*this}; }
 
 protected:
 	struct SysRecordsVersions {
@@ -356,6 +377,8 @@ protected:
 	size_t ItemsCount() const noexcept { return items_.size() - free_.size(); }
 	const NamespaceConfigData &Config() const noexcept { return config_; }
 
+	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) const;
+
 private:
 	NamespaceImpl(const NamespaceImpl &src);
 
@@ -371,6 +394,7 @@ private:
 	void setSlaveMode(const RdxContext &ctx);
 
 	void removeIndex(std::unique_ptr<Index> &);
+	void dumpIndex(std::ostream &os, std::string_view index) const;
 
 	JoinCache::Ptr joinCache_;
 

@@ -235,7 +235,7 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider &configProvider, const RdxC
 void NamespaceImpl::recreateCompositeIndexes(int startIdx, int endIdx) {
 	for (int i = startIdx; i < endIdx; ++i) {
 		std::unique_ptr<reindexer::Index> &index(indexes_[i]);
-		if (isComposite(index->Type())) {
+		if (IsComposite(index->Type())) {
 			IndexDef indexDef;
 			indexDef.name_ = index->Name();
 			indexDef.opts_ = index->Opts();
@@ -275,6 +275,7 @@ void NamespaceImpl::updateItems(PayloadType oldPlType, const FieldsSet &changedF
 	Error lastErr = errOK;
 	repl_.dataHash = 0;
 	itemsDataSize_ = 0;
+	auto indexesCacheCleaner{GetIndexesCacheCleaner()};
 	for (size_t rowId = 0; rowId < items_.size(); rowId++) {
 		if (items_[rowId].IsFree()) {
 			continue;
@@ -298,19 +299,25 @@ void NamespaceImpl::updateItems(PayloadType oldPlType, const FieldsSet &changedF
 			auto &index = *indexes_[fieldIdx];
 			if ((fieldIdx == 0) || deltaFields <= 0) {
 				oldValue.Get(fieldIdx, skrefsDel, true);
-				index.Delete(skrefsDel, rowId, *strHolder_);
+				bool needClearCache{false};
+				index.Delete(skrefsDel, rowId, *strHolder_, needClearCache);
+				if (needClearCache && index.IsOrdered()) indexesCacheCleaner.Add(index.SortId());
 			}
 
 			if ((fieldIdx == 0) || deltaFields >= 0) {
 				newItem.GetPayload().Get(fieldIdx, skrefsUps);
 				krefs.resize(0);
-				index.Upsert(krefs, skrefsUps, rowId);
+				bool needClearCache{false};
+				index.Upsert(krefs, skrefsUps, rowId, needClearCache);
+				if (needClearCache && index.IsOrdered()) indexesCacheCleaner.Add(index.SortId());
 				newValue.Set(fieldIdx, krefs);
 			}
 		}
 
 		for (int fieldIdx = compositeStartIdx; fieldIdx < compositeEndIdx; ++fieldIdx) {
-			indexes_[fieldIdx]->Upsert(Variant(plNew), rowId);
+			bool needClearCache{false};
+			indexes_[fieldIdx]->Upsert(Variant(plNew), rowId, needClearCache);
+			if (needClearCache && indexes_[fieldIdx]->IsOrdered()) indexesCacheCleaner.Add(indexes_[fieldIdx]->SortId());
 		}
 
 		plCurr = std::move(plNew);
@@ -347,7 +354,7 @@ void NamespaceImpl::AddIndex(const IndexDef &indexDef, const RdxContext &ctx) {
 			throw Error(errParams, "Cannot add index '%s' in namespace '%s'. PK field can't be array", indexDef.name_, GetName(ctx));
 		} else if (isStore(indexDef.Type())) {
 			throw Error(errParams, "Cannot add index '%s' in namespace '%s'. PK field can't have '-' type", indexDef.name_, GetName(ctx));
-		} else if (isFullText(indexDef.Type())) {
+		} else if (IsFullText(indexDef.Type())) {
 			throw Error(errParams, "Cannot add index '%s' in namespace '%s'. PK field can't be fulltext index", indexDef.name_,
 						GetName(ctx));
 		}
@@ -358,6 +365,11 @@ void NamespaceImpl::AddIndex(const IndexDef &indexDef, const RdxContext &ctx) {
 	addIndex(indexDef);
 	saveIndexesToStorage();
 	addToWAL(indexDef, WalIndexAdd, ctx);
+}
+
+void NamespaceImpl::DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) const {
+	auto rlck = rLock(ctx);
+	dumpIndex(os, index);
 }
 
 void NamespaceImpl::UpdateIndex(const IndexDef &indexDef, const RdxContext &ctx) {
@@ -404,6 +416,16 @@ std::string NamespaceImpl::GetSchema(int format, const RdxContext &ctx) {
 	return std::string(ser.Slice());
 }
 
+void NamespaceImpl::dumpIndex(std::ostream &os, std::string_view index) const {
+	auto itIdxName = indexesNames_.find(index);
+	if (itIdxName == indexesNames_.end()) {
+		const char *errMsg = "Cannot dump index %s: doesn't exist";
+		logPrintf(LogError, errMsg, index);
+		throw Error(errParams, errMsg, index);
+	}
+	indexes_[itIdxName->second]->Dump(os);
+}
+
 void NamespaceImpl::dropIndex(const IndexDef &index) {
 	auto itIdxName = indexesNames_.find(index.name_);
 	if (itIdxName == indexesNames_.end()) {
@@ -447,7 +469,7 @@ void NamespaceImpl::dropIndex(const IndexDef &index) {
 		idx->SetFields(std::move(newFields));
 	}
 
-	if (!isComposite(indexToRemove->Type()) && !indexToRemove->Opts().IsSparse()) {
+	if (!IsComposite(indexToRemove->Type()) && !indexToRemove->Opts().IsSparse()) {
 		PayloadType oldPlType = payloadType_;
 		payloadType_.Drop(index.name_);
 		tagsMatcher_.UpdatePayloadType(payloadType_);
@@ -514,7 +536,7 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef &indexDef) const {
 		throw Error(errParams, "Cannot add index '%s' in namespace '%s'. PK field can't have '-' type", indexDef.name_, name_);
 	}
 
-	if (isComposite(indexDef.Type())) {
+	if (IsComposite(indexDef.Type())) {
 		verifyUpdateCompositeIndex(indexDef);
 		return;
 	}
@@ -559,7 +581,7 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 					indexes_[currentPKIndex->second]->Name());
 	}
 
-	if (isComposite(indexDef.Type())) {
+	if (IsComposite(indexDef.Type())) {
 		addCompositeIndex(indexDef);
 		return;
 	}
@@ -670,9 +692,12 @@ void NamespaceImpl::addCompositeIndex(const IndexDef &indexDef) {
 	int idxPos = indexes_.size();
 	insertIndex(Index::New(indexDef, payloadType_, fields), idxPos, indexName);
 
+	auto indexesCacheCleaner{GetIndexesCacheCleaner()};
 	for (IdType rowId = 0; rowId < int(items_.size()); rowId++) {
 		if (!items_[rowId].IsFree()) {
-			indexes_[idxPos]->Upsert(Variant(items_[rowId]), rowId);
+			bool needClearCache{false};
+			indexes_[idxPos]->Upsert(Variant(items_[rowId]), rowId, needClearCache);
+			if (needClearCache && indexes_[idxPos]->IsOrdered()) indexesCacheCleaner.Add(indexes_[idxPos]->SortId());
 		}
 	}
 	updateSortedIdxCount();
@@ -900,8 +925,11 @@ void NamespaceImpl::doDelete(IdType id) {
 	int field;
 
 	// erase from composite indexes
+	auto indexesCacheCleaner{GetIndexesCacheCleaner()};
 	for (field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
-		indexes_[field]->Delete(Variant(items_[id]), id, *strHolder_);
+		bool needClearCache{false};
+		indexes_[field]->Delete(Variant(items_[id]), id, *strHolder_, needClearCache);
+		if (needClearCache && indexes_[field]->IsOrdered()) indexesCacheCleaner.Add(indexes_[field]->SortId());
 	}
 
 	// Holder for tuple. It is required for sparse indexes will be valid
@@ -925,7 +953,9 @@ void NamespaceImpl::doDelete(IdType id) {
 			pl.Get(field, skrefs, index.Opts().IsArray());
 		}
 		// Delete value from index
-		index.Delete(skrefs, id, *strHolder_);
+		bool needClearCache{false};
+		index.Delete(skrefs, id, *strHolder_, needClearCache);
+		if (needClearCache && index.IsOrdered()) indexesCacheCleaner.Add(index.SortId());
 	} while (++field != borderIdx);
 
 	// free PayloadValue
@@ -970,13 +1000,13 @@ void NamespaceImpl::Delete(const Query &q, QueryResults &result, const NsContext
 		const_cast<Query &>(q).type_ = QueryDelete;
 		WALRecord wrec(WalUpdateQuery, q.GetSQL(ser).Slice(), ctx.inTransaction);
 		processWalRecord(wrec, ctx.rdxContext);
-	} else if (result.Count() > 0) {
+	} else {
+		WrSerializer cjson;
 		for (auto it : result) {
-			WrSerializer cjson;
+			cjson.Reset();
 			it.GetCJSON(cjson, false);
-			const int id = it.GetItemRef().Id();
 			const WALRecord wrec{WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete, ctx.inTransaction};
-			processWalRecord(wrec, ctx.rdxContext, lsn_t(items_[id].GetLSN()));
+			processWalRecord(wrec, ctx.rdxContext);
 		}
 	}
 	if (q.debugLevel >= LogInfo) {
@@ -1165,6 +1195,7 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 	// Inplace payload
 	Payload pl(payloadType_, plData);
 	Payload plNew = ritem->GetPayload();
+	auto indexesCacheCleaner{GetIndexesCacheCleaner()};
 	if (doUpdate) {
 		repl_.dataHash ^= pl.GetHash();
 		itemsDataSize_ -= plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
@@ -1172,7 +1203,9 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 
 		// Delete from composite indexes first
 		for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
-			indexes_[field]->Delete(Variant(plData), id, *strHolder_);
+			bool needClearCache{false};
+			indexes_[field]->Delete(Variant(plData), id, *strHolder_, needClearCache);
+			if (needClearCache && indexes_[field]->IsOrdered()) indexesCacheCleaner.Add(indexes_[field]->SortId());
 		}
 	}
 
@@ -1217,11 +1250,15 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 				pl.Get(field, krefs, index.Opts().IsArray());
 			}
 			if (krefs == skrefs) continue;
-			index.Delete(krefs, id, *strHolder_);
+			bool needClearCache{false};
+			index.Delete(krefs, id, *strHolder_, needClearCache);
+			if (needClearCache && index.IsOrdered()) indexesCacheCleaner.Add(index.SortId());
 		}
 		// Put value to index
 		krefs.resize(0);
-		index.Upsert(krefs, skrefs, id);
+		bool needClearCache{false};
+		index.Upsert(krefs, skrefs, id, needClearCache);
+		if (needClearCache && index.IsOrdered()) indexesCacheCleaner.Add(index.SortId());
 
 		if (!isIndexSparse) {
 			// Put value to payload
@@ -1231,7 +1268,9 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 
 	// Upsert to composite indexes
 	for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
-		indexes_[field]->Upsert(Variant(plData), id);
+		bool needClearCache{false};
+		indexes_[field]->Upsert(Variant(plData), id, needClearCache);
+		if (needClearCache && indexes_[field]->IsOrdered()) indexesCacheCleaner.Add(indexes_[field]->SortId());
 	}
 	repl_.dataHash ^= pl.GetHash();
 	itemsDataSize_ += plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
@@ -1355,7 +1394,7 @@ pair<IdType, bool> NamespaceImpl::findByPK(ItemImpl *ritem, const RdxContext &ct
 	// It is a faster alternative of "select ID from namespace where pk1 = 'item.pk1' and pk2 = 'item.pk2' "
 	// Get pkey values from pk fields
 	VariantArray krefs;
-	if (isComposite(pkIndex->Type())) {
+	if (IsComposite(pkIndex->Type())) {
 		krefs.push_back(Variant(*pl.Value()));
 	} else if (pkIndex->Opts().IsSparse()) {
 		auto f = pkIndex->Fields();
@@ -2353,6 +2392,10 @@ void NamespaceImpl::processWalRecord(const WALRecord &wrec, const RdxContext &ct
 	if (item) item->setLSN(int64_t(lsn));
 	if (!repl_.temporary) observers_->OnWALUpdate(LSNPair(lsn, ctx.fromReplication_ ? ctx.LSNs_.originLSN_ : lsn), name_, wrec);
 	if (!ctx.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
+}
+
+NamespaceImpl::IndexesCacheCleaner::~IndexesCacheCleaner() {
+	for (auto &idx : ns_.indexes_) idx->ClearCache(sorts_);
 }
 
 }  // namespace reindexer

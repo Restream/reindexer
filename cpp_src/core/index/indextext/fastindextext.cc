@@ -22,7 +22,7 @@ std::unique_ptr<Index> FastIndexText<T>::Clone() {
 }
 
 template <typename T>
-Variant FastIndexText<T>::Upsert(const Variant &key, IdType id) {
+Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache) {
 	if (key.Type() == KeyValueNull) {
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, 0)) {
 			this->isBuilt_ = false;
@@ -41,18 +41,19 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id) {
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, 0)) {
 		this->isBuilt_ = false;
 		this->cache_ft_->Clear();
+		clearCache = true;
 	}
 	this->addMemStat(keyIt);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
-		return IndexStore<typename T::key_type>::Upsert(key, id);
+		return IndexStore<typename T::key_type>::Upsert(key, id, clearCache);
 	}
 
 	return Variant(keyIt->first);
 }
 
 template <typename T>
-void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder) {
+void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool &clearCache) {
 	int delcnt = 0;
 	if (key.Type() == KeyValueNull) {
 		delcnt = this->empty_ids_.Unsorted().Erase(id);
@@ -89,9 +90,10 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 		this->addMemStat(keyIt);
 	}
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
-		IndexStore<typename T::key_type>::Delete(key, id, strHolder);
+		IndexStore<typename T::key_type>::Delete(key, id, strHolder, clearCache);
 	}
 	this->cache_ft_->Clear();
+	clearCache = true;
 }
 
 template <typename T>

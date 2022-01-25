@@ -34,6 +34,7 @@ public:
 	const std::vector<int> &StrFields() const;
 	size_t TotalSize() const;
 	std::string ToString() const;
+	void Dump(std::ostream &, std::string_view step = "  ", std::string_view offset = "") const;
 };
 
 }  // namespace reindexer

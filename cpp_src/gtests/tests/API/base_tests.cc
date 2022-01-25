@@ -717,7 +717,7 @@ TEST_F(ReindexerApi, WithTimeoutInterface) {
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-template <int collateMode>
+template <CollateMode collateMode>
 struct CollateComparer {
 	bool operator()(const string& lhs, const string& rhs) const {
 		std::string_view sl1(lhs.c_str(), lhs.length());

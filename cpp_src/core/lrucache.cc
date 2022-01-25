@@ -9,7 +9,6 @@
 
 namespace reindexer {
 
-const size_t kElemSizeOverhead = 256;
 const int kMaxHitCountToCache = 1024;
 
 template <typename K, typename V, typename hash, typename equal>

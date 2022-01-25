@@ -267,6 +267,8 @@ public:
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;
 
+	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index);
+
 private:
 	Reindexer(ReindexerImpl *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
 

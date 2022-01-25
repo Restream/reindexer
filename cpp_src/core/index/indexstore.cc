@@ -14,7 +14,7 @@ IndexStore<Point>::IndexStore(const IndexDef &idef, PayloadType payloadType, con
 }
 
 template <>
-void IndexStore<key_string>::Delete(const Variant &key, IdType id, StringsHolder &strHolder) {
+void IndexStore<key_string>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool & /*clearCache*/) {
 	if (key.Type() == KeyValueNull) return;
 	auto keyIt = str_map.find(std::string_view(key));
 	// assertf(keyIt != str_map.end(), "Delete unexists key from index '%s' id=%d", name_, id);
@@ -30,24 +30,24 @@ void IndexStore<key_string>::Delete(const Variant &key, IdType id, StringsHolder
 	(void)id;
 }
 template <typename T>
-void IndexStore<T>::Delete(const Variant & /*key*/, IdType /* id */, StringsHolder &) {}
+void IndexStore<T>::Delete(const Variant & /*key*/, IdType /* id */, StringsHolder &, bool & /*clearCache*/) {}
 
 template <typename T>
-void IndexStore<T>::Delete(const VariantArray &keys, IdType id, StringsHolder &strHolder) {
+void IndexStore<T>::Delete(const VariantArray &keys, IdType id, StringsHolder &strHolder, bool &clearCache) {
 	if (keys.empty()) {
-		Delete(Variant{}, id, strHolder);
+		Delete(Variant{}, id, strHolder, clearCache);
 	} else {
-		for (const auto &key : keys) Delete(key, id, strHolder);
+		for (const auto &key : keys) Delete(key, id, strHolder, clearCache);
 	}
 }
 
 template <>
-void IndexStore<Point>::Delete(const VariantArray & /*keys*/, IdType /*id*/, StringsHolder &) {
+void IndexStore<Point>::Delete(const VariantArray & /*keys*/, IdType /*id*/, StringsHolder &, bool & /*clearCache*/) {
 	assert(0);
 }
 
 template <>
-Variant IndexStore<key_string>::Upsert(const Variant &key, IdType /*id*/) {
+Variant IndexStore<key_string>::Upsert(const Variant &key, IdType /*id*/, bool & /*clearCache*/) {
 	if (key.Type() == KeyValueNull) return Variant();
 
 	auto keyIt = str_map.find(std::string_view(key));
@@ -61,12 +61,12 @@ Variant IndexStore<key_string>::Upsert(const Variant &key, IdType /*id*/) {
 }
 
 template <>
-Variant IndexStore<PayloadValue>::Upsert(const Variant &key, IdType /*id*/) {
+Variant IndexStore<PayloadValue>::Upsert(const Variant &key, IdType /*id*/, bool & /*clearCache*/) {
 	return Variant(key);
 }
 
 template <typename T>
-Variant IndexStore<T>::Upsert(const Variant &key, IdType id) {
+Variant IndexStore<T>::Upsert(const Variant &key, IdType id, bool & /*clearCache*/) {
 	if (!opts_.IsArray() && !opts_.IsDense() && !opts_.IsSparse() && key.Type() != KeyValueNull) {
 		idx_data.resize(std::max(id + 1, int(idx_data.size())));
 		idx_data[id] = static_cast<T>(key);
@@ -75,17 +75,17 @@ Variant IndexStore<T>::Upsert(const Variant &key, IdType id) {
 }
 
 template <typename T>
-void IndexStore<T>::Upsert(VariantArray &result, const VariantArray &keys, IdType id) {
+void IndexStore<T>::Upsert(VariantArray &result, const VariantArray &keys, IdType id, bool &clearCache) {
 	if (keys.empty()) {
-		Upsert(Variant{}, id);
+		Upsert(Variant{}, id, clearCache);
 	} else {
 		result.reserve(keys.size());
-		for (const auto &key : keys) result.emplace_back(Upsert(key, id));
+		for (const auto &key : keys) result.emplace_back(Upsert(key, id, clearCache));
 	}
 }
 
 template <>
-void IndexStore<Point>::Upsert(VariantArray & /*result*/, const VariantArray & /*keys*/, IdType /*id*/) {
+void IndexStore<Point>::Upsert(VariantArray & /*result*/, const VariantArray & /*keys*/, IdType /*id*/, bool & /*clearCache*/) {
 	assert(0);
 }
 
@@ -123,6 +123,31 @@ IndexMemStat IndexStore<T>::GetMemStat() {
 	ret.uniqKeysCount = str_map.size();
 	ret.columnSize = idx_data.size() * sizeof(T);
 	return ret;
+}
+
+template <typename T>
+template <typename S>
+void IndexStore<T>::dump(S &os, std::string_view step, std::string_view offset) const {
+	std::string newOffset{offset};
+	newOffset += step;
+	os << "{\n" << newOffset << "<Index>: ";
+	Index::Dump(os, step, newOffset);
+	os << ",\n" << newOffset << "str_map: {";
+	for (auto b = str_map.begin(), it = b, e = str_map.end(); it != e; ++it) {
+		if (it != b) os << ", ";
+		os << '{' << (*it).first << ": " << (*it).second << '}';
+	}
+	os << "},\n" << newOffset << "idx_data: [";
+	for (auto b = idx_data.cbegin(), it = b, e = idx_data.cend(); it != e; ++it) {
+		if (it != b) os << ", ";
+		os << *it;
+	}
+	os << "]\n" << offset << '}';
+}
+
+template <typename T>
+void IndexStore<T>::Dump(std::ostream &os, std::string_view step, std::string_view offset) const {
+	dump(os, step, offset);
 }
 
 std::unique_ptr<Index> IndexStore_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {

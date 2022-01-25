@@ -122,6 +122,10 @@ public:
 	StorageOpts GetStorageOpts(const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::GetStorageOpts)(ctx); }
 	void Refill(vector<Item> &items, const NsContext &ctx) { handleInvalidation(NamespaceImpl::Refill)(items, ctx); }
 
+	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) {
+		return handleInvalidation(NamespaceImpl::DumpIndex)(os, index, ctx);
+	}
+
 protected:
 	friend class ReindexerImpl;
 	friend class QueryResults;

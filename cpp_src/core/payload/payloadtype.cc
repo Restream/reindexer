@@ -1,6 +1,7 @@
 #include "payloadtype.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
+#include "core/type_consts_helpers.h"
 #include "payloadtypeimpl.h"
 #include "tools/serializer.h"
 
@@ -15,13 +16,29 @@ size_t PayloadTypeImpl::TotalSize() const {
 
 string PayloadTypeImpl::ToString() const {
 	string ret;
-
 	for (auto &f : fields_) {
 		ret += string(Variant::TypeName(f.Type())) + (f.IsArray() ? "[]" : "") + " '" + f.Name() + "'" + " json:\"";
 		for (auto &jp : f.JsonPaths()) ret += jp + ";";
 		ret += "\"\n";
 	}
 	return ret;
+}
+
+void PayloadTypeImpl::Dump(std::ostream &os, std::string_view step, std::string_view offset) const {
+	std::string newOffset{offset};
+	newOffset += step;
+	os << '{';
+	for (auto &f : fields_) {
+		os << '\n'
+		   << newOffset << KeyValueTypeToStr(f.Type()) << (f.IsArray() ? "[]" : "") << " '" << f.Name() << "'"
+		   << " json:\"";
+		for (auto &jp : f.JsonPaths()) os << jp << ";";
+		os << '"';
+	}
+	if (!fields_.empty()) {
+		os << '\n' << offset;
+	}
+	os << '}';
 }
 
 void PayloadTypeImpl::Add(PayloadFieldType f) {
@@ -177,5 +194,13 @@ int PayloadType::FieldByJsonPath(std::string_view jsonPath) const { return get()
 const vector<int> &PayloadType::StrFields() const { return get()->StrFields(); }
 size_t PayloadType::TotalSize() const { return get()->TotalSize(); }
 std::string PayloadType::ToString() const { return get()->ToString(); }
+
+void PayloadType::Dump(std::ostream &os, std::string_view step, std::string_view offset) const {
+	std::string newOffset{offset};
+	newOffset += step;
+	os << "{\n" << newOffset << "name: " << Name() << ",\n" << newOffset;
+	get()->Dump(os, step, newOffset);
+	os << '\n' << offset << '}';
+}
 
 }  // namespace reindexer

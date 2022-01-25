@@ -41,11 +41,11 @@
 #include "sparse_growth_policy.h"
 
 #ifdef __INTEL_COMPILER
-#include <immintrin.h>  // For _popcnt32 and _popcnt64
+#include <immintrin.h>	// For _popcnt32 and _popcnt64
 #endif
 
 #ifdef _MSC_VER
-#include <intrin.h>  // For __cpuid, __popcnt and __popcnt64
+#include <intrin.h>	 // For __cpuid, __popcnt and __popcnt64
 #endif
 
 #ifdef TSL_DEBUG
@@ -262,9 +262,9 @@ public:
 	using const_iterator = const value_type*;
 
 private:
-	static const size_type CAPACITY_GROWTH_STEP =
-		(Sparsity == tsl::sh::sparsity::high) ? 2
-											  : (Sparsity == tsl::sh::sparsity::medium) ? 4 : 8;  // (Sparsity == tsl::sh::sparsity::low)
+	static const size_type CAPACITY_GROWTH_STEP = (Sparsity == tsl::sh::sparsity::high)		? 2
+												  : (Sparsity == tsl::sh::sparsity::medium) ? 4
+																							: 8;  // (Sparsity == tsl::sh::sparsity::low)
 
 	/**
 	 * Bitmap size configuration.
@@ -322,7 +322,7 @@ public:
 		: m_values(nullptr), m_bitmap_vals(0), m_bitmap_deleted_vals(0), m_nb_elements(0), m_capacity(capacity), m_last_array(false) {
 		if (m_capacity > 0) {
 			m_values = alloc.allocate(m_capacity);
-			tsl_sh_assert(m_values != nullptr);  // allocate should throw if there is a failure
+			tsl_sh_assert(m_values != nullptr);	 // allocate should throw if there is a failure
 		}
 	}
 
@@ -339,7 +339,7 @@ public:
 		}
 
 		m_values = alloc.allocate(m_capacity);
-		tsl_sh_assert(m_values != nullptr);  // allocate should throw if there is a failure
+		tsl_sh_assert(m_values != nullptr);	 // allocate should throw if there is a failure
 		try {
 			for (size_type i = 0; i < other.m_nb_elements; i++) {
 				construct_value(alloc, m_values + i, other.m_values[i]);
@@ -378,7 +378,7 @@ public:
 		}
 
 		m_values = alloc.allocate(m_capacity);
-		tsl_sh_assert(m_values != nullptr);  // allocate should throw if there is a failure
+		tsl_sh_assert(m_values != nullptr);	 // allocate should throw if there is a failure
 		try {
 			for (size_type i = 0; i < other.m_nb_elements; i++) {
 				construct_value(alloc, m_values + i, std::move(other.m_values[i]));
@@ -560,10 +560,10 @@ public:
 		const slz_size_type sparse_bucket_size = deserialize_value<slz_size_type>(deserializer);
 
 		const slz_size_type bitmap_vals = deserialize_value<slz_size_type>(deserializer);
-		static_cast<void>(bitmap_vals);  // Ignore, not needed
+		static_cast<void>(bitmap_vals);	 // Ignore, not needed
 
 		const slz_size_type bitmap_deleted_vals = deserialize_value<slz_size_type>(deserializer);
-		static_cast<void>(bitmap_deleted_vals);  // Ignore, not needed
+		static_cast<void>(bitmap_deleted_vals);	 // Ignore, not needed
 
 		for (slz_size_type ivalue = 0; ivalue < sparse_bucket_size; ivalue++) {
 			sparse_hash.insert(deserialize_value<value_type>(deserializer));
@@ -930,9 +930,9 @@ public:
 			return U()(*m_sparse_array_it);
 		}
 
-		reference operator*() const { return *m_sparse_array_it; }
+		std::conditional_t<IsConst, const_reference, reference> operator*() const { return *m_sparse_array_it; }
 
-		pointer operator->() const { return std::addressof(*m_sparse_array_it); }
+		std::conditional_t<IsConst, const_pointer, pointer> operator->() const { return std::addressof(*m_sparse_array_it); }
 
 		sparse_iterator& operator++() {
 			tsl_sh_assert(m_sparse_array_it != nullptr);

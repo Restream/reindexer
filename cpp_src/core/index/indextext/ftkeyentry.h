@@ -4,6 +4,8 @@
 namespace reindexer {
 
 class FtKeyEntryData : public KeyEntry<IdSetPlain> {
+	using Base = KeyEntry<IdSetPlain>;
+
 public:
 	int vdoc_id_ = ndoc;
 	static constexpr int ndoc = -1;
@@ -12,6 +14,7 @@ public:
 	const int& VDocID() const { return vdoc_id_; }
 	FtKeyEntryData* get() { return this; }
 	const FtKeyEntryData* get() const { return this; }
+	void Dump(std::ostream& os, std::string_view step, std::string_view offset) const;
 };
 
 // IndexText need stable pointers to KeyEntry - they are used for expand idset, returned by Select from vdocs
@@ -39,6 +42,10 @@ public:
 	const int& VDocID() const { return impl_->vdoc_id_; }
 	FtKeyEntryData* get() { return impl_.get(); }
 	const FtKeyEntryData* get() const { return impl_.get(); }
+	void Dump(std::ostream& os, std::string_view step, std::string_view offset) const {
+		assert(impl_);
+		impl_->Dump(os, step, offset);
+	}
 
 protected:
 	std::unique_ptr<FtKeyEntryData> impl_;

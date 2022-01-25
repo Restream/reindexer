@@ -816,18 +816,18 @@ bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jIte
 			if (qe.idxNo >= 0) {
 				assert(jns->indexes_.size() > static_cast<size_t>(qe.idxNo));
 				const IndexType indexType = jns->indexes_[qe.idxNo]->Type();
-				if (isComposite(indexType) || isFullText(indexType)) result = false;
+				if (IsComposite(indexType) || IsFullText(indexType)) result = false;
 			}
 		},
 		[&jns, &result](const BetweenFieldsQueryEntry& qe) {
 			if (qe.firstIdxNo >= 0) {
 				assert(jns->indexes_.size() > static_cast<size_t>(qe.firstIdxNo));
 				const IndexType indexType = jns->indexes_[qe.firstIdxNo]->Type();
-				if (isComposite(indexType) || isFullText(indexType)) result = false;
+				if (IsComposite(indexType) || IsFullText(indexType)) result = false;
 			}
 			if (qe.secondIdxNo >= 0) {
 				assert(jns->indexes_.size() > static_cast<size_t>(qe.secondIdxNo));
-				if (isComposite(jns->indexes_[qe.secondIdxNo]->Type())) result = false;
+				if (IsComposite(jns->indexes_[qe.secondIdxNo]->Type())) result = false;
 			}
 		});
 	return result;
@@ -1049,6 +1049,13 @@ Error ReindexerImpl::AddIndex(std::string_view nsName, const IndexDef& indexDef,
 		return ser << "CREATE INDEX " << indexDef.name_ << " ON " << nsName;
 	};
 	return applyNsFunction<&Namespace::AddIndex>(nsName, ctx, makeCtxStr, indexDef);
+}
+
+Error ReindexerImpl::DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index, const InternalRdxContext& ctx) {
+	const auto makeCtxStr = [nsName, index](WrSerializer& ser) -> WrSerializer& {
+		return ser << "DUMP INDEX " << index << " ON " << nsName;
+	};
+	return applyNsFunction<&Namespace::DumpIndex>(nsName, ctx, makeCtxStr, os, index);
 }
 
 Error ReindexerImpl::SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext& ctx) {

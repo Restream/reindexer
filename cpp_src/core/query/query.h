@@ -455,7 +455,7 @@ public:
 	/// Changes debug level.
 	/// @param level - debug level.
 	/// @return Query object.
-	Query &Debug(int level) & {
+	Query &Debug(int level) & {	 // -V1071
 		debugLevel = level;
 		return *this;
 	}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <bitset>
 #include <variant>
 #include "core/cjson/tagspath.h"
 #include "core/type_consts.h"
@@ -137,6 +138,28 @@ public:
 	bool operator==(const FieldsSet &f) const { return (mask_ == f.mask_) && (tagsPaths_ == f.tagsPaths_); }
 	bool operator!=(const FieldsSet &f) const { return mask_ != f.mask_ || tagsPaths_ != f.tagsPaths_; }
 
+	template <typename T>
+	void Dump(T &os) const {
+		DumpFieldsPath const fieldsPathDumper{os};
+		os << "{[";
+		for (auto b = begin(), it = b, e = end(); it != e; ++it) {
+			if (it != b) os << ", ";
+			os << *it;
+		}
+		os << "], mask: " << std::bitset<64>{mask_} << ", tagsPaths: [";
+		for (auto b = tagsPaths_.cbegin(), it = b, e = tagsPaths_.cend(); it != e; ++it) {
+			if (it != b) os << ", ";
+			std::visit(fieldsPathDumper, *it);
+		}
+		os << "]}";
+		os << "], jsonPaths: [";
+		for (auto b = jsonPaths_.cbegin(), it = b, e = jsonPaths_.cend(); it != e; ++it) {
+			if (it != b) os << ", ";
+			os << *it;
+		}
+		os << "]}";
+	}
+
 protected:
 	template <typename TPath1, typename TPath2>
 	bool comparePaths(const TPath1 &lhs, const TPath2 &rhs) const {
@@ -153,6 +176,31 @@ protected:
 	/// indexes. There is a connection with
 	/// tagsPaths_: order and amount of elements.
 	h_vector<string, 1> jsonPaths_;
+
+	template <typename T>
+	class DumpFieldsPath {
+	public:
+		DumpFieldsPath(T &os) noexcept : os_{os} {}
+		void operator()(const TagsPath &tp) const {
+			os_ << '[';
+			for (auto b = tp.cbegin(), it = b, e = tp.cend(); it != e; ++it) {
+				if (it != b) os_ << ", ";
+				os_ << *it;
+			}
+			os_ << ']';
+		}
+		void operator()(const IndexedTagsPath &tp) const {
+			os_ << '[';
+			for (auto b = tp.cbegin(), it = b, e = tp.cend(); it != e; ++it) {
+				if (it != b) os_ << ", ";
+				os_ << '?';
+			}
+			os_ << ']';
+		}
+
+	private:
+		T &os_;
+	};
 };
 
 }  // namespace reindexer

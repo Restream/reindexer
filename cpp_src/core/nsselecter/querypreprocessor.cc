@@ -123,7 +123,7 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, size_t srcBegin, size_t
 bool QueryPreprocessor::ContainsFullTextIndexes() const {
 	for (auto it = cbegin().PlainIterator(), end = cend().PlainIterator(); it != end; ++it) {
 		if (it->HoldsOrReferTo<QueryEntry>() && it->Value<QueryEntry>().idxNo != IndexValueType::SetByJsonPath &&
-			isFullText(ns_.indexes_[it->Value<QueryEntry>().idxNo]->Type())) {
+			IsFullText(ns_.indexes_[it->Value<QueryEntry>().idxNo]->Type())) {
 			return true;
 		}
 	}
@@ -176,7 +176,7 @@ size_t QueryPreprocessor::substituteCompositeIndexes(size_t from, size_t to) {
 		}
 		fields.push_back(Get<QueryEntry>(cur).idxNo);
 		int found = getCompositeIndex(fields);
-		if ((found >= 0) && !isFullText(ns_.indexes_[found]->Type())) {
+		if ((found >= 0) && !IsFullText(ns_.indexes_[found]->Type())) {
 			// composite idx found: replace conditions
 			h_vector<std::pair<int, VariantArray>, 4> values;
 			CondType condition = CondEq;

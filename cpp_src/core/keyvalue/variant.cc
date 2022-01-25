@@ -374,7 +374,11 @@ size_t Variant::Hash() const {
 		case KeyValueString:
 			return hash<p_string>()(operator p_string());
 		default:
+#ifdef NDEBUG
 			abort();
+#else
+			assertf(false, "Unexpected variant type: %d", Type());
+#endif
 	}
 }
 
@@ -529,50 +533,58 @@ Variant::operator const PayloadValue &() const {
 
 bool Variant::IsNullValue() const { return type_ == KeyValueNull; }
 
-void Variant::Dump(WrSerializer &wrser) const {
+template <typename T>
+void Variant::Dump(T &os) const {
 	switch (Type()) {
 		case KeyValueString: {
 			p_string str(*this);
 			if (isPrintable(str)) {
-				wrser << '\'' << std::string_view(str) << '\'';
+				os << '\'' << std::string_view(str) << '\'';
 			} else {
-				wrser << "slice{len:" << str.length() << "}";
+				os << "slice{len:" << str.length() << "}";
 			}
 			break;
 		}
 		case KeyValueInt:
-			wrser << operator int();
+			os << operator int();
 			break;
 		case KeyValueBool:
-			wrser << operator bool();
+			os << operator bool();
 			break;
 		case KeyValueInt64:
-			wrser << operator int64_t();
+			os << operator int64_t();
 			break;
 		case KeyValueDouble:
-			wrser << operator double();
+			os << operator double();
 			break;
 		case KeyValueTuple:
-			getCompositeValues().Dump(wrser);
+			getCompositeValues().Dump(os);
 			break;
 		default:
-			wrser << "??";
+			os << "??";
 			break;
 	}
 }
+
+template void Variant::Dump(WrSerializer &) const;
+template void Variant::Dump(std::ostream &) const;
 
 bool VariantArray::IsArrayValue() const noexcept { return isArrayValue || (!isObjectValue && size() > 1); }
 bool VariantArray::IsNullValue() const { return size() == 1 && front().IsNullValue(); }
 KeyValueType VariantArray::ArrayType() const { return empty() ? KeyValueNull : front().Type(); }
 
-void VariantArray::Dump(WrSerializer &wrser) const {
-	wrser << '{';
+template <typename T>
+void VariantArray::Dump(T &os) const {
+	os << '{';
 	for (auto &arg : *this) {
-		if (&arg != &at(0)) wrser << ", ";
-		arg.Dump(wrser);
+		if (&arg != &at(0)) os << ", ";
+		arg.Dump(os);
 	}
-	wrser << '}';
+	os << '}';
 }
+
+template void VariantArray::Dump(WrSerializer &) const;
+template void VariantArray::Dump(std::ostream &) const;
 
 VariantArray::VariantArray(Point p) noexcept {
 	emplace_back(p.x);

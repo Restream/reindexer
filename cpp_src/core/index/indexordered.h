@@ -14,7 +14,7 @@ public:
 
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::SelectOpts opts,
 							   BaseFunctionCtx::Ptr ctx, const RdxContext &) override;
-	Variant Upsert(const Variant &key, IdType id) override;
+	Variant Upsert(const Variant &key, IdType id, bool &clearCache) override;
 	void MakeSortOrders(UpdateSortedContext &ctx) override;
 	IndexIterator::Ptr CreateIterator() const override;
 	std::unique_ptr<Index> Clone() override;

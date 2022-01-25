@@ -104,7 +104,8 @@ public:
 
 	bool IsNullValue() const;
 
-	void Dump(WrSerializer &wrser) const;
+	template <typename T>
+	void Dump(T &os) const;
 
 protected:
 	void convertToComposite(const PayloadType *, const FieldsSet *);
@@ -154,7 +155,8 @@ public:
 	bool IsObjectValue() const noexcept { return isObjectValue; }
 	bool IsNullValue() const;
 	KeyValueType ArrayType() const;
-	void Dump(WrSerializer &wrser) const;
+	template <typename T>
+	void Dump(T &os) const;
 	int RelaxCompare(const VariantArray &other, const CollateOpts & = CollateOpts{}) const;
 
 private:

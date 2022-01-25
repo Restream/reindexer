@@ -12,6 +12,11 @@ struct Point {
 	double x, y;
 };
 
+template <typename T>
+T& operator<<(T& os, Point p) {
+	return os << '{' << p.x << ", " << p.y << '}';
+}
+
 inline bool approxEqual(double lhs, double rhs) noexcept {
 	return std::abs(lhs - rhs) <=
 		   ((std::abs(lhs) < std::abs(rhs) ? std::abs(rhs) : std::abs(lhs)) * std::numeric_limits<double>::epsilon());

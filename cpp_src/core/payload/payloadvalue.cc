@@ -76,4 +76,6 @@ void PayloadValue::Resize(size_t oldSize, size_t newSize) {
 	p_ = pn;
 }
 
+std::ostream &operator<<(std::ostream &os, const PayloadValue &) { return os << "{TODO}"; }
+
 }  // namespace reindexer

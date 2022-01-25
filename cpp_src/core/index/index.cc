@@ -61,4 +61,34 @@ std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType payloadType,
 	}
 }
 
+template <typename S>
+void Index::dump(S& os, std::string_view step, std::string_view offset) const {
+	std::string newOffset{offset};
+	newOffset += step;
+	os << "{\n"
+	   << newOffset << "name: " << name_ << ",\n"
+	   << newOffset << "type: " << type_ << ",\n"
+	   << newOffset << "keyType: " << KeyValueTypeToStr(keyType_) << ",\n"
+	   << newOffset << "selectKeyType: " << KeyValueTypeToStr(selectKeyType_) << ",\n"
+	   << newOffset << "sortOrders: [";
+	for (size_t i = 0; i < sortOrders_.size(); ++i) {
+		if (i != 0) os << ", ";
+		os << sortOrders_[i];
+	}
+	os << "],\n" << newOffset << "sortId: " << sortId_ << ",\n" << newOffset << "opts: ";
+	opts_.Dump(os);
+	os << ",\n" << newOffset << "payloadType: ";
+	payloadType_.Dump(os, step, newOffset);
+	if (IsComposite(type_)) {
+		os << ",\n" << newOffset << "fields: ";
+		fields_.Dump(os);
+	}
+	os << ",\n"
+	   << newOffset << "sortedIdxCount: " << sortedIdxCount_ << ",\n"
+	   << newOffset << "isBuilt: " << std::boolalpha << isBuilt_ << '\n'
+	   << offset << '}';
+}
+
+template void Index::dump<std::ostream>(std::ostream&, std::string_view, std::string_view) const;
+
 }  // namespace reindexer

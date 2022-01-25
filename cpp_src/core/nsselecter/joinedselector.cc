@@ -173,7 +173,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 			continue;
 		}
 		const auto &leftIndex = leftNs_->indexes_[joinEntry.idxNo];
-		assert(!isFullText(leftIndex->Type()));
+		assert(!IsFullText(leftIndex->Type()));
 		if (leftIndex->Opts().IsSparse()) continue;
 
 		VariantArray values;

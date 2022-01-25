@@ -831,7 +831,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 					fields.push_back(ns_->indexes_[idx]->Fields().getTagsPath(0));
 				} else if (ag.type_ == AggFacet && ag.fields_.size() > 1 && ns_->indexes_[idx]->Opts().IsArray()) {
 					throw Error(errQueryExec, "Multifield facet cannot contain an array field");
-				} else if (ag.type_ == AggDistinct && isComposite(ns_->indexes_[idx]->Type())) {
+				} else if (ag.type_ == AggDistinct && IsComposite(ns_->indexes_[idx]->Type())) {
 					fields = ns_->indexes_[idx]->Fields();
 					compositeIndexFields = true;
 				}
@@ -1025,7 +1025,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 			if (costNormal == 0) return;
 
 			auto &index = ns_->indexes_[qe.idxNo];
-			if (isFullText(index->Type())) return;
+			if (IsFullText(index->Type())) return;
 
 			Index::SelectOpts opts;
 			opts.disableIdSetCache = 1;
