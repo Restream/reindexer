@@ -180,13 +180,11 @@ size_t ClusterizationApi::Cluster::InitServer(size_t id, const std::string& clus
 	assert(id < svc_.size());
 	auto& server = svc_[id];
 	auto storagePath = fs::JoinPath(defaults_.baseTestsetDbPath, "node/" + std::to_string(id));
-	server.InitServer(id, defaults_.defaultRpcPort + id, defaults_.defaultHttpPort + id,
-					  fs::JoinPath(defaults_.baseTestsetDbPath, "node/" + std::to_string(id)), "node" + std::to_string(id), true,
-					  maxUpdatesSize_);
-	server.Get()->WriteReplicationConfig(replYml);
-	server.Get()->WriteClusterConfig(clusterYml);
-	EXPECT_TRUE(StopServer(id));
-	EXPECT_TRUE(StartServer(id));
+
+	ServerControlConfig scConfig(id, defaults_.defaultRpcPort + id, defaults_.defaultHttpPort + id,
+								 fs::JoinPath(defaults_.baseTestsetDbPath, "node/" + std::to_string(id)), "node" + std::to_string(id), true,
+								 maxUpdatesSize_);
+	server.InitServerWithConfig(std::move(scConfig), replYml, clusterYml, std::string(), std::string());
 	return id;
 }
 
@@ -194,9 +192,10 @@ bool ClusterizationApi::Cluster::StartServer(size_t id) {
 	assert(id < svc_.size());
 	auto& server = svc_[id];
 	if (server.IsRunning()) return false;
-	server.InitServer(id, defaults_.defaultRpcPort + id, defaults_.defaultHttpPort + id,
-					  fs::JoinPath(defaults_.baseTestsetDbPath, "node/" + std::to_string(id)), "node" + std::to_string(id), true,
-					  maxUpdatesSize_);
+	ServerControlConfig scConfig(id, defaults_.defaultRpcPort + id, defaults_.defaultHttpPort + id,
+								 fs::JoinPath(defaults_.baseTestsetDbPath, "node/" + std::to_string(id)), "node" + std::to_string(id), true,
+								 maxUpdatesSize_);
+	server.InitServer(std::move(scConfig));
 	return true;
 }
 
@@ -281,7 +280,7 @@ void ClusterizationApi::Cluster::doWaitSync(std::string_view ns, std::vector<Ser
 		}
 		ASSERT_TRUE(now < kMaxSyncTime);
 		bool empty = true;
-		ReplicationStateApi state{lsn_t(), lsn_t(), 0, 0};
+		ReplicationStateApi state{lsn_t(), lsn_t(), 0, 0, {}, {}};
 		syncedCnt = 0;
 		for (auto& node : svc) {
 			if (node.IsRunning()) {
@@ -290,7 +289,14 @@ void ClusterizationApi::Cluster::doWaitSync(std::string_view ns, std::vector<Ser
 					state = xstate;
 					empty = false;
 				}
-				if (xstate.lsn == state.lsn && xstate.nsVersion == state.nsVersion && (expectedLsn.isEmpty() || state.lsn == expectedLsn) &&
+				if (!state.tmStatetoken.has_value() || !xstate.tmStatetoken.has_value() || !xstate.tmVersion.has_value() ||
+					!state.tmVersion.has_value()) {
+					continue;
+				}
+				const bool hasSameTms =
+					xstate.tmStatetoken.value() == state.tmStatetoken.value() && xstate.tmVersion.value() == state.tmVersion.value();
+				const bool hasSameLSN = xstate.lsn == state.lsn && xstate.nsVersion == state.nsVersion;
+				if (hasSameLSN && hasSameTms && (expectedLsn.isEmpty() || state.lsn == expectedLsn) &&
 					(expectedNsVersion.isEmpty() || state.nsVersion == expectedNsVersion)) {
 					ASSERT_EQ(xstate.dataHash, state.dataHash);
 					++syncedCnt;
@@ -313,7 +319,10 @@ void ClusterizationApi::Cluster::PrintClusterInfo(std::string_view ns, std::vect
 		std::cerr << "Node " << id << ": ";
 		if (svc[id].IsRunning()) {
 			auto xstate = svc[id].Get()->GetState(string(ns));
-			std::cerr << "{ ns_version: " << xstate.nsVersion << ", lsn: " << xstate.lsn << ", data_hash: " << xstate.dataHash << " }";
+			const std::string tmStateToken = xstate.tmStatetoken.has_value() ? std::to_string(xstate.tmStatetoken.value()) : "<none>";
+			const std::string tmVersion = xstate.tmVersion.has_value() ? std::to_string(xstate.tmVersion.value()) : "<none>";
+			std::cerr << "{ ns_version: " << xstate.nsVersion << ", lsn: " << xstate.lsn << ", data_hash: " << xstate.dataHash
+					  << ", tm_token: " << tmStateToken << ", tm_version: " << tmVersion << " }";
 		} else {
 			std::cerr << "down";
 		}

@@ -45,7 +45,7 @@ protected:
 	Dispatcher &dispatcher_;
 	std::unique_ptr<ClientData> clientData_;
 	// keep here to prevent allocs
-	RPCCall call_ = {kCmdPing, 0, {}, std::chrono::milliseconds(0), lsn_t(), -1, IndexValueType::NotSet};
+	RPCCall call_ = {kCmdPing, 0, {}, std::chrono::milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, false};
 
 	bool enableSnappy_ = false;
 };

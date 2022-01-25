@@ -54,21 +54,36 @@ Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, bool &isWALQuery
 	reindexer::Query q;
 	q.FromSQL(sqlQuery);
 	isWALQuery = q.IsWALQuery();
+	std::string_view sharding = ctx.request->params.Get("sharding");
 	switch (q.Type()) {
 		case QuerySelect: {
-			auto db = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
+			auto db = sharding == "off" ? getDB(ctx, kRoleDataRead)
+											  .WithTimeout(serverConfig_.HttpReadTimeout)
+											  .WithShardId(ShardingKeyType::ShardingProxyOff, false)
+										: getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 			return db.Select(q, res);
 		}
 		case QueryDelete: {
-			auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout);
+			auto db = sharding == "off" ? getDB(ctx, kRoleDataWrite)
+											  .WithTimeout(serverConfig_.HttpWriteTimeout())
+											  .WithShardId(ShardingKeyType::ShardingProxyOff, false)
+										: getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
+
 			return db.Delete(q, res);
 		}
 		case QueryUpdate: {
-			auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout);
+			auto db = sharding == "off" ? getDB(ctx, kRoleDataWrite)
+											  .WithTimeout(serverConfig_.HttpWriteTimeout())
+											  .WithShardId(ShardingKeyType::ShardingProxyOff, false)
+										: getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
 			return db.Update(q, res);
 		}
 		case QueryTruncate: {
-			auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout);
+			auto db = sharding == "off" ? getDB(ctx, kRoleDBAdmin)
+											  .WithTimeout(serverConfig_.HttpWriteTimeout())
+											  .WithShardId(ShardingKeyType::ShardingProxyOff, false)
+										: getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
+
 			return db.TruncateNamespace(q._namespace);
 		}
 		default:
@@ -170,7 +185,7 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteQuery(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
 	string dsl = ctx.body->Read();
 
 	reindexer::Query q;
@@ -193,7 +208,7 @@ int HTTPServer::DeleteQuery(http::Context &ctx) {
 }
 
 int HTTPServer::UpdateQuery(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
 	string dsl = ctx.body->Read();
 
 	reindexer::Query q;
@@ -360,7 +375,7 @@ int HTTPServer::GetNamespace(http::Context &ctx) {
 }
 
 int HTTPServer::PostNamespace(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 	reindexer::NamespaceDef nsdef("");
 
 	std::string body = ctx.body->Read();
@@ -378,7 +393,7 @@ int HTTPServer::PostNamespace(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteNamespace(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	if (nsName.empty()) {
@@ -396,7 +411,7 @@ int HTTPServer::DeleteNamespace(http::Context &ctx) {
 }
 
 int HTTPServer::TruncateNamespace(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	if (nsName.empty()) {
@@ -593,7 +608,7 @@ int HTTPServer::GetMetaByKey(http::Context &ctx) {
 }
 
 int HTTPServer::PutMetaByKey(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
 	const string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
@@ -644,7 +659,7 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 }
 
 int HTTPServer::PostIndex(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
@@ -680,7 +695,7 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 }
 
 int HTTPServer::PutIndex(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
@@ -700,7 +715,7 @@ int HTTPServer::PutIndex(http::Context &ctx) {
 }
 
 int HTTPServer::PutSchema(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (nsName.empty()) {
@@ -750,7 +765,7 @@ int HTTPServer::GetProtobufSchema(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteIndex(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 	IndexDef idef(urldecode2(ctx.request->urlParams[2]));
@@ -1002,43 +1017,45 @@ Error HTTPServer::modifyItem(Reindexer &db, string &nsName, Item &item, QueryRes
 }
 
 int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, vector<string> &&precepts, ItemModifyMode mode) {
-	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
 	string itemJson = ctx.body->Read();
-
-	char *jsonPtr = &itemJson[0];
-	size_t jsonLeft = itemJson.size();
-	vector<string> updatedItems;
 	int cnt = 0;
-	while (jsonPtr && *jsonPtr) {
-		Item item = db.NewItem(nsName);
-		if (!item.Status().ok()) {
-			http::HttpStatus httpStatus(item.Status());
+	vector<string> updatedItems;
 
-			return jsonStatus(ctx, httpStatus);
+	if (itemJson.size()) {
+		char *jsonPtr = &itemJson[0];
+		size_t jsonLeft = itemJson.size();
+		while (jsonPtr && *jsonPtr) {
+			Item item = db.NewItem(nsName);
+			if (!item.Status().ok()) {
+				return jsonStatus(ctx, http::HttpStatus(item.Status()));
+			}
+			char *prevPtr = jsonPtr;
+			auto str = std::string_view(jsonPtr, jsonLeft);
+			if (jsonPtr != &itemJson[0] && isBlank(str)) {
+				break;
+			}
+			auto status = item.Unsafe().FromJSON(str, &jsonPtr, mode == ModeDelete);
+			jsonLeft -= (jsonPtr - prevPtr);
+
+			if (!status.ok()) {
+				return jsonStatus(ctx, http::HttpStatus(status));
+			}
+
+			item.SetPrecepts(precepts);
+			status = modifyItem(db, nsName, item, mode);
+
+			if (!status.ok()) {
+				return jsonStatus(ctx, http::HttpStatus(status));
+			}
+
+			if (item.GetID() != -1) {
+				++cnt;
+				if (!precepts.empty()) updatedItems.push_back(string(item.GetJSON()));
+			}
 		}
-		char *prevPtr = jsonPtr;
-		auto status = item.Unsafe().FromJSON(std::string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
-		jsonLeft -= (jsonPtr - prevPtr);
-
-		if (!status.ok()) {
-			http::HttpStatus httpStatus(status);
-			return jsonStatus(ctx, httpStatus);
-		}
-
-		item.SetPrecepts(precepts);
-		status = modifyItem(db, nsName, item, mode);
-
-		if (!status.ok()) {
-			http::HttpStatus httpStatus(status);
-			return jsonStatus(ctx, httpStatus);
-		}
-
-		if (item.GetID() != -1) {
-			++cnt;
-			if (!precepts.empty()) updatedItems.push_back(string(item.GetJSON()));
-		}
+		db.Commit(nsName);
 	}
-	db.Commit(nsName);
 
 	WrSerializer ser(ctx.writer->GetChunk());
 	JsonBuilder builder(ser);
@@ -1058,7 +1075,7 @@ int HTTPServer::modifyItemsMsgPack(http::Context &ctx, string &nsName, vector<st
 	QueryResults qr;
 	int totalItems = 0;
 
-	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
 	string sbuffer = ctx.body->Read();
 
 	size_t length = sbuffer.size();
@@ -1114,7 +1131,7 @@ int HTTPServer::modifyItemsProtobuf(http::Context &ctx, string &nsName, vector<s
 		return ctx.Protobuf(reindexer::net::http::HttpStatus::errCodeToHttpStatus(err.code()), wrSer.DetachChunk());
 	};
 
-	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout);
+	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
 	Item item = db.NewItem(nsName);
 	if (!item.Status().ok()) return sendResponse(0, item.Status());
 
@@ -1142,27 +1159,32 @@ int HTTPServer::modifyItemsProtobuf(http::Context &ctx, string &nsName, vector<s
 
 int HTTPServer::modifyItemsTxJSON(http::Context &ctx, Transaction &tx, vector<string> &&precepts, ItemModifyMode mode) {
 	string itemJson = ctx.body->Read();
-	char *jsonPtr = &itemJson[0];
-	size_t jsonLeft = itemJson.size();
-	while (jsonPtr && *jsonPtr) {
-		Item item = tx.NewItem();
-		if (!item.Status().ok()) {
-			http::HttpStatus httpStatus(item.Status());
-			return jsonStatus(ctx, httpStatus);
-		}
-		char *prevPtr = jsonPtr;
-		auto status = item.FromJSON(std::string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
-		jsonLeft -= (jsonPtr - prevPtr);
 
-		if (!status.ok()) {
-			http::HttpStatus httpStatus(status);
-			return jsonStatus(ctx, httpStatus);
-		}
-
-		item.SetPrecepts(precepts);
-		auto err = tx.Modify(std::move(item), mode);
-		if (!err.ok()) {
-			return jsonStatus(ctx, http::HttpStatus(err));
+	if (itemJson.size()) {
+		char *jsonPtr = &itemJson[0];
+		size_t jsonLeft = itemJson.size();
+		while (jsonPtr && *jsonPtr) {
+			Item item = tx.NewItem();
+			if (!item.Status().ok()) {
+				http::HttpStatus httpStatus(item.Status());
+				return jsonStatus(ctx, httpStatus);
+			}
+			char *prevPtr = jsonPtr;
+			auto str = std::string_view(jsonPtr, jsonLeft);
+			if (jsonPtr != &itemJson[0] && isBlank(str)) {
+				break;
+			}
+			auto status = item.FromJSON(std::string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
+			jsonLeft -= (jsonPtr - prevPtr);
+			if (!status.ok()) {
+				http::HttpStatus httpStatus(status);
+				return jsonStatus(ctx, httpStatus);
+			}
+			item.SetPrecepts(precepts);
+			auto err = tx.Modify(std::move(item), mode);
+			if (!err.ok()) {
+				return jsonStatus(ctx, http::HttpStatus(err));
+			}
 		}
 	}
 
@@ -1204,7 +1226,7 @@ int HTTPServer::modifyItems(http::Context &ctx, ItemModifyMode mode) {
 		}
 	}
 
-	auto format = ctx.request->params.Get("format");
+	const auto format = ctx.request->params.Get("format");
 	if (format == "msgpack"sv) {
 		return modifyItemsMsgPack(ctx, nsName, std::move(precepts), mode);
 	} else if (format == "protobuf"sv) {
@@ -1216,20 +1238,20 @@ int HTTPServer::modifyItems(http::Context &ctx, ItemModifyMode mode) {
 
 int HTTPServer::modifyItemsTx(http::Context &ctx, ItemModifyMode mode) {
 	std::string dbName;
-	auto db = getDB(ctx, kRoleDataWrite, &dbName).WithTimeout(serverConfig_.HttpWriteTimeout);
-	string txId = urldecode2(ctx.request->urlParams[1]);
+	auto db = getDB(ctx, kRoleDataWrite, &dbName).WithTimeout(serverConfig_.HttpWriteTimeout());
+	std::string txId = urldecode2(ctx.request->urlParams[1]);
 	if (txId.empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Tx ID is not specified"));
 	}
 
-	vector<string> precepts;
+	std::vector<std::string> precepts;
 	for (auto &p : ctx.request->params) {
 		if ((p.name == "precepts"sv) || (p.name == "precepts[]"sv)) {
 			precepts.push_back(urldecode2(p.val));
 		}
 	}
 
-	auto format = ctx.request->params.Get("format"sv);
+	const auto format = ctx.request->params.Get("format"sv);
 	auto tx = getTx(dbName, txId);
 	return format == "msgpack"sv ? modifyItemsTxMsgPack(ctx, *tx, std::move(precepts), mode)
 								 : modifyItemsTxJSON(ctx, *tx, std::move(precepts), mode);

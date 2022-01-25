@@ -342,17 +342,22 @@ bool ServerConnection::ResponseWriter::SetConnectionClose() {
 }
 
 ssize_t ServerConnection::BodyReader::Read(void *buf, size_t size) {
-	size_t readed = conn_->rdBuf_.read(reinterpret_cast<char *>(buf), std::min(ssize_t(size), conn_->bodyLeft_));
-	conn_->bodyLeft_ -= readed;
-	return readed;
+	if (conn_->bodyLeft_ > 0) {
+		size_t readed = conn_->rdBuf_.read(reinterpret_cast<char *>(buf), std::min(ssize_t(size), conn_->bodyLeft_));
+		conn_->bodyLeft_ -= readed;
+		return readed;
+	}
+	return 0;
 }
 
 std::string ServerConnection::BodyReader::Read(size_t size) {
 	std::string ret;
-	size = std::min(ssize_t(size), conn_->bodyLeft_);
-	ret.resize(size);
-	size_t readed = conn_->rdBuf_.read(&ret[0], size);
-	conn_->bodyLeft_ -= readed;
+	if (conn_->bodyLeft_ > 0) {
+		size = std::min(ssize_t(size), conn_->bodyLeft_);
+		ret.resize(size);
+		size_t readed = conn_->rdBuf_.read(&ret[0], size);
+		conn_->bodyLeft_ -= readed;
+	}
 	return ret;
 }
 

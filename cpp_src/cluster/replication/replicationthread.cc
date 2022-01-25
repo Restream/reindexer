@@ -206,12 +206,29 @@ template <typename BehaviourParamT>
 Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 	std::vector<NamespaceDef> nsList;
 	node.requireResync = false;
-	auto integralError = thisNode.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary().WithClosed());
+	auto integralError = thisNode.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary());
 	if (!integralError.ok()) {
 		logPrintf(LogWarning, "[cluster:replicator] %d:%d Unable to enum local namespaces in node replication routine: %s", serverId_,
 				  node.uid, integralError.what());
 		return integralError;
 	}
+
+	logPrintf(LogTrace, "[cluster:replicator] %d:%d Performing ns data cleanup", serverId_, node.uid);
+	for (auto nsDataIt = node.namespaceData.begin(); nsDataIt != node.namespaceData.end();) {
+		if (!nsDataIt->second.tx.IsFree()) {
+			auto err = node.client.WithLSN(lsn_t(0, serverId_)).RollBackTransaction(nsDataIt->second.tx);
+			logPrintf(LogInfo, "[cluster:replicator] %d:%d Rollback transaction result: %s", serverId_, node.uid,
+					  err.ok() ? "OK" : ("Error:" + std::to_string(err.code()) + ". " + err.what()));
+			nsDataIt->second.tx = client::CoroTransaction();
+		}
+		if (nsDataIt->second.isClosed) {
+			nsDataIt->second.requiresTmUpdate = true;
+			++nsDataIt;
+		} else {
+			nsDataIt = node.namespaceData.erase(nsDataIt);
+		}
+	}
+
 	logPrintf(LogTrace, "[cluster:replicator] %d:%d Creating %d sync routines", serverId_, node.uid, nsList.size());
 	coroutine::wait_group localWg;
 	for (auto& ns : nsList) {
@@ -230,7 +247,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 				if (err.code() == errNotFound) {
 					nsExists = false;
 					logPrintf(LogInfo,
-							  "[cluster:replicator] %d:%d Namespace doesn't exist on remote node. Trying to get repl state for whole DB",
+							  "[cluster:replicator] %d:%d Namespace does not exist on remote node. Trying to get repl state for whole DB",
 							  serverId_, node.uid);
 					err = node.client.GetReplState(std::string_view(), replState);
 				}
@@ -335,18 +352,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 		logPrintf(LogWarning, "[cluster:replicator] %d:%d Unable to sync remote namespaces: %s", serverId_, node.uid, integralError.what());
 		return integralError;
 	}
-	statsCollector_.OnSyncStateChanged(node.uid, NodeStats::SyncState::Syncing);
 	updateNodeStatus(node.uid, NodeStats::Status::Online);
-
-	for (auto& nsDataIt : node.namespaceData) {
-		if (!nsDataIt.second.tx.IsFree()) {
-			auto err = node.client.WithLSN(lsn_t(0, serverId_)).RollBackTransaction(nsDataIt.second.tx);
-			logPrintf(LogInfo, "[cluster:replicator] %d:%d Rollback transaction result: %s", serverId_, node.uid,
-					  err.ok() ? "OK" : ("Error:" + std::to_string(err.code()) + ". " + err.what()));
-			nsDataIt.second.tx = client::CoroTransaction();
-		}
-		nsDataIt.second.requiresTmUpdate = true;
-	}
 	statsCollector_.OnSyncStateChanged(node.uid, NodeStats::SyncState::OnlineReplication);
 
 	// 4) Sending updates for this namespace
@@ -426,21 +432,27 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const std::string& 
 		if (!err.ok()) {
 			if (err.code() == errNotFound) {
 				if (requiredLsn.IsEmpty()) {
-					logPrintf(LogInfo, "[cluster:replicator] %d:%d: Namespace '%s' doesn't exist on both follower and leader", serverId_,
+					logPrintf(LogInfo, "[cluster:replicator] %d:%d: Namespace '%s' does not exist on both follower and leader", serverId_,
 							  node.uid, nsName);
 					return Error();
 				}
-				logPrintf(
-					LogInfo,
-					"[cluster:replicator] %d:%d Namespace '%s' doesn't exist on leader, but exist on follower. Trying to remove it...",
-					serverId_, node.uid, nsName);
-				auto dropRes = client.WithLSN(lsn_t(0, serverId_)).DropNamespace(nsName);
-				if (dropRes.ok()) {
-					logPrintf(LogInfo, "[cluster:replicator] %d:%d Namespace '%s' was removed", serverId_, node.uid, nsName);
+				if (node.namespaceData[nsName].isClosed) {
+					logPrintf(LogInfo, "[cluster:replicator] %d:%d Namespace '%s' is closed on leader. Skipping it", serverId_, node.uid,
+							  nsName);
+					return Error();
 				} else {
-					logPrintf(LogInfo, "[cluster:replicator] %d:%d Unable to remove namespace '%s': %s", serverId_, node.uid, nsName,
-							  dropRes.what());
-					return dropRes;
+					logPrintf(
+						LogInfo,
+						"[cluster:replicator] %d:%d Namespace '%s' does not exist on leader, but exist on follower. Trying to remove it...",
+						serverId_, node.uid, nsName);
+					auto dropRes = client.WithLSN(lsn_t(0, serverId_)).DropNamespace(nsName);
+					if (dropRes.ok()) {
+						logPrintf(LogInfo, "[cluster:replicator] %d:%d Namespace '%s' was removed", serverId_, node.uid, nsName);
+					} else {
+						logPrintf(LogInfo, "[cluster:replicator] %d:%d Unable to remove namespace '%s': %s", serverId_, node.uid, nsName,
+								  dropRes.what());
+						return dropRes;
+					}
 				}
 			}
 			return err;
@@ -671,7 +683,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 					// TODO: Find better solution?
 					logPrintf(LogTrace, "[cluster:replicator] %d:%d:%s Executing select to update tm...", serverId_, node.uid, nsName);
 					client::CoroQueryResults qr;
-					res = node.client.Select(Query(nsName).Limit(0), qr);
+					res = node.client.WithShardId(ShardingKeyType::ShardingProxyOff, false).Select(Query(nsName).Limit(0), qr);
 					if (!res.err.ok()) {
 						--node.nextUpdateId;  // Have to read this update again
 						break;
@@ -783,8 +795,11 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 			const std::string& nsName = it.GetNsName();
 			if (!bhvParam_.IsNamespaceInConfig(node.uid, nsName)) continue;
 
-			if (it.type == UpdateRecord::Type::AddNamespace) {
+			if (it.type == UpdateRecord::Type::AddNamespace || it.type == UpdateRecord::Type::DropNamespace) {
+				node.namespaceData[nsName].isClosed = false;
 				bhvParam_.OnNewNsAppearance(nsName);
+			} else if (it.type == UpdateRecord::Type::CloseNamespace) {
+				node.namespaceData[nsName].isClosed = true;
 			}
 
 			if (updatePtr->IsInvalidated()) {
@@ -838,7 +853,8 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 			case UpdateRecord::Type::ItemInsert: {
 				auto& data = std::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
 				client::Item item = client.NewItem(nsName);
-				auto err = item.Unsafe().FromCJSON(data->cjson);
+				auto err = item.Unsafe().FromCJSON(data->cjson.Slice());
+				assert(!item.IsTagsUpdated());
 				if (err.ok()) {
 					switch (rec.type) {
 						case UpdateRecord::Type::ItemUpdate:
@@ -922,7 +938,8 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 				}
 				auto& data = std::get<std::unique_ptr<ItemReplicationRecord>>(rec.data);
 				client::Item item = nsData.tx.NewItem();
-				auto err = item.Unsafe().FromCJSON(data->cjson);
+				auto err = item.Unsafe().FromCJSON(data->cjson.Slice());
+				assert(!item.IsTagsUpdated());
 				if (err.ok()) {
 					switch (rec.type) {
 						case UpdateRecord::Type::ItemUpdateTx:
@@ -949,23 +966,41 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 				q.FromSQL(data->sql);
 				return UpdateApplyStatus(nsData.tx.Modify(std::move(q), lsn), rec.type);
 			}
+			case UpdateRecord::Type::SetTagsMatcherTx: {
+				if (nsData.tx.IsFree()) {
+					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.type);
+				}
+				auto& data = std::get<std::unique_ptr<TagsMatcherReplicationRecord>>(rec.data);
+				TagsMatcher tm = data->tm;
+				return UpdateApplyStatus(nsData.tx.SetTagsMatcher(std::move(tm), lsn), rec.type);
+			}
 			case UpdateRecord::Type::AddNamespace: {
 				auto& data = std::get<std::unique_ptr<AddNamespaceReplicationRecord>>(rec.data);
 				const auto sid = rec.extLsn.NsVersion().Server();
-				// TODO: Revert this, once tm versions between followers and leader became consistant
-				// return UpdateApplyStatus(
-				//	client.WithLSN(lsn_t(0, sid)).AddNamespace(data->def, NsReplicationOpts{{data->stateToken}, rec.extLsn.NsVersion()}),
-				//	rec.type);
-				return UpdateApplyStatus(
-					client.WithLSN(lsn_t(0, sid)).AddNamespace(data->def, NsReplicationOpts{{}, rec.extLsn.NsVersion()}), rec.type);
+				auto err =
+					client.WithLSN(lsn_t(0, sid)).AddNamespace(data->def, NsReplicationOpts{{data->stateToken}, rec.extLsn.NsVersion()});
+				if (err.ok() && nsData.isClosed) {
+					nsData.isClosed = false;
+					logPrintf(LogTrace, "[cluster:replicator] %d:%d:%s Namespace is closed on leader. Scheduling resync for followers",
+							  serverId_, node.uid, nsName);
+					return UpdateApplyStatus(Error(), UpdateRecord::Type::ResyncNamespaceGeneric);	// Perform resync on ns reopen
+				}
+				nsData.isClosed = false;
+				return UpdateApplyStatus(std::move(err), rec.type);
 			}
 			case UpdateRecord::Type::DropNamespace: {
 				lsn.SetServer(serverId_);
 				auto err = client.WithLSN(lsn).DropNamespace(nsName);
+				nsData.isClosed = false;
 				if (!err.ok() && err.code() == errNotFound) {
 					return UpdateApplyStatus(Error(), rec.type);
 				}
 				return UpdateApplyStatus(std::move(err), rec.type);
+			}
+			case UpdateRecord::Type::CloseNamespace: {
+				nsData.isClosed = true;
+				logPrintf(LogTrace, "[cluster:replicator] %d:%d:%s Namespace was closed on leader", serverId_, node.uid, nsName);
+				return UpdateApplyStatus(Error(), rec.type);
 			}
 			case UpdateRecord::Type::RenameNamespace: {
 				assert(false);	// TODO: Rename is not supported yet
@@ -977,6 +1012,11 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 			case UpdateRecord::Type::ResyncNamespaceGeneric:
 			case UpdateRecord::Type::ResyncNamespaceLeaderInit:
 				return UpdateApplyStatus(Error(), rec.type);
+			case UpdateRecord::Type::SetTagsMatcher: {
+				auto& data = std::get<std::unique_ptr<TagsMatcherReplicationRecord>>(rec.data);
+				TagsMatcher tm = data->tm;
+				return UpdateApplyStatus(client.WithLSN(lsn).SetTagsMatcher(nsName, std::move(tm)), rec.type);
+			}
 			default:
 				std::abort();
 		}

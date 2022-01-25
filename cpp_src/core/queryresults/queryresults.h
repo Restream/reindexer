@@ -14,7 +14,7 @@ class Schema;
 class TagsMatcher;
 class PayloadType;
 class WrSerializer;
-struct NsContext;
+class NsContext;
 struct ResultFetchOpts;
 struct ItemImplRawData;
 class SelectFunctionsHolder;

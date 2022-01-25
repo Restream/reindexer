@@ -87,11 +87,15 @@ Error Reindexer::GetRaftInfo(cluster::RaftInfo& info) { return impl_->GetRaftInf
 Error Reindexer::GetSqlSuggestions(const std::string_view sqlQuery, int pos, vector<string>& suggestions) {
 	return impl_->GetSqlSuggestions(sqlQuery, pos, suggestions, ctx_);
 }
-
 Error Reindexer::ClusterControlRequest(const ClusterControlRequestData& request) { return impl_->ClusterControlRequest(request); }
+Error Reindexer::SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm) { return impl_->SetTagsMatcher(nsName, std::move(tm), ctx_); }
 
 void Reindexer::ShutdownCluster() { impl_->ShutdownCluster(); }
 
 Error Reindexer::Status() { return impl_->Status(); }
+
+Error Reindexer::DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index) {
+	return impl_->DumpIndex(os, nsName, index, ctx_);
+}
 
 }  // namespace reindexer

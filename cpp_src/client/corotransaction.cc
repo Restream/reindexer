@@ -19,7 +19,21 @@ Error CoroTransaction::PutMeta(std::string_view key, std::string_view value, lsn
 		return Error(errLogic, "Connection pointer in transaction is nullptr");
 	}
 	return rpcClient_->conn_
-		.Call({net::cproto::kCmdPutTxMeta, requestTimeout_, execTimeout_, lsn, -1, IndexValueType::NotSet, nullptr}, key, value, txId_)
+		.Call({net::cproto::kCmdPutTxMeta, requestTimeout_, execTimeout_, lsn, -1, IndexValueType::NotSet, nullptr, false}, key, value,
+			  txId_)
+		.Status();
+}
+
+Error CoroTransaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
+	if (!rpcClient_) {
+		return Error(errLogic, "Connection pointer in transaction is nullptr");
+	}
+	*localTm_ = std::move(tm);
+	WrSerializer ser;
+	localTm_->serialize(ser);
+	return rpcClient_->conn_
+		.Call({net::cproto::kCmdSetTagsMatcherTx, requestTimeout_, execTimeout_, lsn, -1, IndexValueType::NotSet, nullptr, false},
+			  int64_t(localTm_->stateToken()), int64_t(localTm_->version()), ser.Slice(), txId_)
 		.Status();
 }
 
@@ -32,14 +46,14 @@ Error CoroTransaction::Modify(Query&& query, lsn_t lsn) {
 	switch (query.type_) {
 		case QueryUpdate: {
 			return rpcClient_->conn_
-				.Call({cproto::kCmdUpdateQueryTx, requestTimeout_, execTimeout_, lsn, -1, IndexValueType::NotSet, nullptr}, ser.Slice(),
-					  txId_)
+				.Call({cproto::kCmdUpdateQueryTx, requestTimeout_, execTimeout_, lsn, -1, IndexValueType::NotSet, nullptr, false},
+					  ser.Slice(), txId_)
 				.Status();
 		}
 		case QueryDelete: {
 			return rpcClient_->conn_
-				.Call({cproto::kCmdDeleteQueryTx, requestTimeout_, execTimeout_, lsn, -1, IndexValueType::NotSet, nullptr}, ser.Slice(),
-					  txId_)
+				.Call({cproto::kCmdDeleteQueryTx, requestTimeout_, execTimeout_, lsn, -1, IndexValueType::NotSet, nullptr, false},
+					  ser.Slice(), txId_)
 				.Status();
 		}
 		default:
@@ -73,8 +87,8 @@ Error CoroTransaction::addTxItem(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 		itemData = p_string(&itData);
 
 		err = rpcClient_->conn_
-				  .Call({net::cproto::kCmdAddTxItem, requestTimeout_, execTimeout_, lsn, -1, IndexValueType::NotSet, nullptr}, FormatCJson,
-						itemData, mode, ser.Slice(), stateToken, txId_)
+				  .Call({net::cproto::kCmdAddTxItem, requestTimeout_, execTimeout_, lsn, -1, IndexValueType::NotSet, nullptr, false},
+						FormatCJson, itemData, mode, ser.Slice(), stateToken, txId_)
 				  .Status();
 		if (err.ok()) {
 			break;
@@ -84,8 +98,7 @@ Error CoroTransaction::addTxItem(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 		}
 
 		CoroQueryResults qr;
-		InternalRdxContext ctx;
-		ctx = ctx.WithTimeout(execTimeout_).WithShardId(ShardingKeyType::ShardingProxyOff);
+		InternalRdxContext ctx = InternalRdxContext{}.WithTimeout(execTimeout_).WithShardId(ShardingKeyType::ShardingProxyOff, false);
 		err = rpcClient_->Select(Query(ns_->name).Limit(0), qr, ctx);
 		if (!err.ok()) return Error(errLogic, "Can't update TagsMatcher");
 

@@ -119,7 +119,7 @@ Error Clusterizator::Replicate(UpdatesContainer&& recs, std::function<void()> be
 	if (replicationIsNotRequired(recs)) return errOK;
 
 	std::pair<Error, bool> res;
-	if (ctx.originLsn_.isEmpty()) {
+	if (ctx.GetOriginLSN().isEmpty()) {
 		res = updatesQueue_.Push(std::move(recs), std::move(beforeWaitF), ctx);
 	} else {
 		// Update can't be replicated to cluster from another node, so may only be replicated to async replicas
@@ -141,7 +141,7 @@ Error Clusterizator::ReplicateAsync(UpdatesContainer&& recs, const RdxContext& c
 	if (replicationIsNotRequired(recs)) return errOK;
 
 	std::pair<Error, bool> res;
-	if (ctx.originLsn_.isEmpty()) {
+	if (ctx.GetOriginLSN().isEmpty()) {
 		res = updatesQueue_.PushNowait(std::move(recs));
 	} else {
 		// Update can't be replicated to cluster from another node, so may only be replicated to async replicas

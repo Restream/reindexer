@@ -41,6 +41,7 @@ public:
 
 	size_t TotalSize() const;
 	string ToString() const;
+	void Dump(std::ostream &, std::string_view step, std::string_view offset) const;
 
 protected:
 	vector<PayloadFieldType> fields_;

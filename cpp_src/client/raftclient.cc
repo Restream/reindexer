@@ -5,7 +5,7 @@
 namespace reindexer {
 namespace client {
 
-RaftClient::RaftClient(const CoroReindexerConfig& config) : impl_(new CoroRPCClient(config)), owner_(true), ctx_() {}
+RaftClient::RaftClient(const CoroReindexerConfig& config) : impl_(new CoroRPCClient(config, nullptr)), owner_(true), ctx_() {}
 RaftClient::~RaftClient() {
 	if (owner_) {
 		delete impl_;

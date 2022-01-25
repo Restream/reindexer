@@ -23,10 +23,10 @@ const char *SQLEncoder::JoinTypeName(JoinType type) {
 }
 
 static void indexToSql(const std::string &index, WrSerializer &ser) {
-	if (index.find_first_of(".+") == string::npos) {
+	if (index.find('+') == string::npos) {
 		ser << index;
 	} else {
-		ser << '\'' << index << '\'';
+		ser << '"' << index << '"';
 	}
 }
 
@@ -107,13 +107,20 @@ void SQLEncoder::dumpMerged(WrSerializer &ser, bool stripArgs) const {
 	}
 }
 
+std::string escapeQuotes(std::string str) {
+	for (size_t i = 0; i < str.size(); ++i) {
+		if (str[i] == '\'' && (i == 0 || str[i - 1] != '\\')) str.insert(i++, 1, '\\');
+	}
+	return str;
+}
+
 void SQLEncoder::dumpOrderBy(WrSerializer &ser, bool stripArgs) const {
 	if (query_.sortingEntries_.empty()) return;
 	ser << " ORDER BY ";
 	for (size_t i = 0; i < query_.sortingEntries_.size(); ++i) {
 		const SortingEntry &sortingEntry(query_.sortingEntries_[i]);
 		if (query_.forcedSortOrder_.empty()) {
-			ser << '\'' << sortingEntry.expression << '\'';
+			ser << '\'' << escapeQuotes(sortingEntry.expression) << '\'';
 		} else {
 			ser << "FIELD(" << sortingEntry.expression;
 			if (stripArgs) {
@@ -139,8 +146,7 @@ void SQLEncoder::dumpEqualPositions(WrSerializer &ser, int parenthesisIndex) con
 		ser << " equal_position(";
 		for (size_t i = 0; i < it->second.size(); ++i) {
 			if (i != 0) ser << ",";
-			assert(query_.entries.IsValue(it->second[i]));
-			ser << query_.entries[it->second[i]].index;
+			ser << query_.entries.Get<QueryEntry>(it->second[i]).index;
 		}
 		ser << ")";
 	}
@@ -167,7 +173,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					ser << f;
 				}
 				for (const auto &se : a.sortingEntries_) {
-					ser << " ORDER BY " << '\'' << se.expression << '\'' << (se.desc ? " DESC" : " ASC");
+					ser << " ORDER BY " << '\'' << escapeQuotes(se.expression) << '\'' << (se.desc ? " DESC" : " ASC");
 				}
 
 				if (a.offset_ != 0 && !stripArgs) ser << " OFFSET " << a.offset_;
@@ -222,11 +228,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 			}
 			for (const UpdateEntry &field : query_.UpdateFields()) {
 				if (&field != &*query_.UpdateFields().begin()) ser << ',';
-				if (field.column.find('.') == string::npos) {
-					ser << field.column;
-				} else {
-					ser << "'" << field.column << "'";
-				}
+				ser << field.column;
 				if (isUpdate) {
 					ser << " = ";
 					bool isArray = (field.values.IsArrayValue() || field.values.size() > 1);
@@ -267,27 +269,26 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 								  bool stripArgs) const {
 	int encodedEntries = 0;
 	for (auto it = from; it != to; ++it) {
-		bool isLeaf = it->IsLeaf();
-		if (isLeaf && it->Value().distinct) continue;
-		if (encodedEntries++) {
-			bool orInnerJoin = false;
-			if (it->IsLeaf() && (it->Value().joinIndex != QueryEntry::kNoJoins)) {
-				if (query_.joinQueries_[it->Value().joinIndex].joinType == JoinType::OrInnerJoin) {
-					orInnerJoin = true;
-				}
-			}
+		const OpType op = it->operation;
+		if (encodedEntries) {
 			ser << ' ';
-			if (!orInnerJoin) ser << opNames[it->operation] << ' ';	 // -V547}
-		} else if (it->operation == OpNot) {
+		} else if (op == OpNot) {
 			ser << "NOT ";
 		}
-		if (!isLeaf) {
-			ser << '(';
-			dumpWhereEntries(it.cbegin(), it.cend(), ser, stripArgs);
-			ser << ')';
-		} else {
-			const QueryEntry &entry = it->Value();
-			if (entry.joinIndex == QueryEntry::kNoJoins) {
+		it->InvokeAppropriate<void>(
+			Skip<AlwaysFalse>{},
+			[&](const Bracket &) {
+				if (encodedEntries) {
+					ser << opNames[op] << ' ';
+				}
+				ser << '(';
+				dumpWhereEntries(it.cbegin(), it.cend(), ser, stripArgs);
+				ser << ')';
+			},
+			[&](const QueryEntry &entry) {
+				if (encodedEntries) {
+					ser << opNames[op] << ' ';
+				}
 				if (entry.condition == CondDWithin) {
 					ser << "ST_DWithin(";
 					indexToSql(entry.index, ser);
@@ -295,19 +296,19 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 						ser << ", ?, ?)";
 					} else {
 						assert(entry.values.size() == 2);
+						Point point;
+						double distance;
 						if (entry.values[0].Type() == KeyValueTuple) {
-							const Point point{static_cast<Point>(entry.values[0])};
-							ser << ", ST_GeomFromText('POINT(" << point.x << ' ' << point.y << ")'), " << entry.values[1].As<double>()
-								<< ')';
+							point = static_cast<Point>(entry.values[0]);
+							distance = entry.values[1].As<double>();
 						} else {
-							const Point point{static_cast<Point>(entry.values[1])};
-							ser << ", ST_GeomFromText('POINT(" << point.x << ' ' << point.y << ")'), " << entry.values[0].As<double>()
-								<< ')';
+							point = static_cast<Point>(entry.values[1]);
+							distance = entry.values[0].As<double>();
 						}
+						ser << ", ST_GeomFromText('POINT(" << point.x << ' ' << point.y << ")'), " << distance << ')';
 					}
 				} else {
 					indexToSql(entry.index, ser);
-
 					ser << ' ' << entry.condition << ' ';
 					if (entry.condition == CondEmpty || entry.condition == CondAny) {
 					} else if (stripArgs) {
@@ -322,13 +323,22 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 								ser << v.As<string>();
 							}
 						}
-						ser << ((entry.values.size() != 1) ? ")" : "");
+						if (entry.values.size() != 1) ser << ")";
 					}
 				}
-			} else {
-				SQLEncoder(query_).DumpSingleJoinQuery(entry.joinIndex, ser, stripArgs);
-			}
-		}
+			},
+			[&](const JoinQueryEntry &jqe) {
+				if (encodedEntries && query_.joinQueries_[jqe.joinIndex].joinType != JoinType::OrInnerJoin) {
+					ser << opNames[op] << ' ';
+				}
+				SQLEncoder(query_).DumpSingleJoinQuery(jqe.joinIndex, ser, stripArgs);
+			},
+			[&ser](const BetweenFieldsQueryEntry &entry) {
+				indexToSql(entry.firstIndex, ser);
+				ser << ' ' << entry.Condition() << ' ';
+				indexToSql(entry.secondIndex, ser);
+			});
+		++encodedEntries;
 	}
 	int parenthesisIndex = (from.PlainIterator() - query_.entries.begin().PlainIterator());
 	dumpEqualPositions(ser, parenthesisIndex);

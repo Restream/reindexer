@@ -20,13 +20,13 @@ public:
 
 	std::unique_ptr<Index> Clone() override;
 	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) override final;
-	Variant Upsert(const Variant& key, IdType id) override final {
+	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final {
 		this->isBuilt_ = false;
-		return IndexText<T>::Upsert(key, id);
+		return IndexText<T>::Upsert(key, id, clearCache);
 	}
-	void Delete(const Variant& key, IdType id, StringsHolder& strHolder) override final {
+	void Delete(const Variant& key, IdType id, StringsHolder& strHolder, bool& clearCache) override final {
 		this->isBuilt_ = false;
-		IndexText<T>::Delete(key, id, strHolder);
+		IndexText<T>::Delete(key, id, strHolder, clearCache);
 	}
 
 protected:

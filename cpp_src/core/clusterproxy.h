@@ -11,6 +11,9 @@ namespace sharding {
 class LocatorService;
 }
 
+constexpr size_t kClusterProxyConnCount = 8;
+constexpr size_t kClusterProxyCoroPerConn = 2;
+
 class ClusterProxy {
 public:
 	ClusterProxy(ReindexerConfig cfg);
@@ -92,12 +95,13 @@ public:
 		return impl_.GetSnapshot(nsName, opts, snapshot, ctx);
 	}
 	Error ClusterControlRequest(const ClusterControlRequestData &request) { return impl_.ClusterControlRequest(request); }
-
-	void ShutdownCluster() {
-		impl_.ShutdownCluster();
-		clusterConns_.Shutdown();
-		resetLeader();
+	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm, const InternalRdxContext &ctx) {
+		return impl_.SetTagsMatcher(nsName, std::move(tm), ctx);
 	}
+	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index, const InternalRdxContext &ctx) {
+		return impl_.DumpIndex(os, nsName, index, ctx);
+	}
+	void ShutdownCluster();
 
 private:
 	class ConnectionsMap {
@@ -114,6 +118,11 @@ private:
 					res = found->second;
 				}
 			}
+
+			client::CoroReindexerConfig cfg;
+			cfg.AppName = "cluster_proxy";
+			cfg.SyncRxCoroCount = kClusterProxyCoroPerConn;
+
 			std::lock_guard lck(mtx_);
 			if (shutdown_) {
 				throw Error(errTerminated, "Proxy is already shut down");
@@ -122,7 +131,7 @@ private:
 			if (found != conns_.end()) {
 				return res;
 			}
-			res = std::make_shared<client::SyncCoroReindexer>();
+			res = std::make_shared<client::SyncCoroReindexer>(cfg, kClusterProxyConnCount);
 			auto err = res->Connect(dsn);
 			if (!err.ok()) {
 				throw err;
@@ -140,7 +149,7 @@ private:
 
 	private:
 		shared_timed_mutex mtx_;
-		std::unordered_map<std::string, std::shared_ptr<client::SyncCoroReindexer>> conns_;
+		fast_hash_map<std::string, std::shared_ptr<client::SyncCoroReindexer>> conns_;
 		bool shutdown_ = false;
 	};
 
@@ -164,10 +173,10 @@ private:
 	void resetLeader();
 
 	template <typename Fn, Fn fn, typename FnL, FnL fnl, typename R, typename FnA, typename... Args>
-	R proxyCall(const InternalRdxContext &ctx, std::string_view nsName, FnA &action, Args &&... args);
+	R proxyCall(const InternalRdxContext &ctx, std::string_view nsName, FnA &action, Args &&...args);
 
 	template <typename FnL, FnL fnl, typename... Args>
-	Error baseFollowerAction(const InternalRdxContext &_ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader, Args &&... args);
+	Error baseFollowerAction(const InternalRdxContext &_ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader, Args &&...args);
 	template <typename FnL, FnL fnl>
 	Error itemFollowerAction(const InternalRdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader,
 							 std::string_view nsName, Item &item);
@@ -187,28 +196,32 @@ private:
 
 	reindexer::client::Item toClientItem(std::string_view ns, client::SyncCoroReindexer *connection, reindexer::Item &clientItem);
 
-	void clientToCoreQueryResults(client::SyncCoroQueryResults &, QueryResults &);
-	void clientToCoreQueryResults(const Query &query, client::SyncCoroQueryResults &, QueryResults &);
+	void clientToCoreQueryResults(client::SyncCoroQueryResults &, QueryResults &, bool, const std::unordered_set<int32_t> &stateTokenList);
+	void clientToCoreQueryResults(const Query &query, client::SyncCoroQueryResults &, QueryResults &, bool,
+								  const std::unordered_set<int32_t> &stateTokenList);
 
 	typedef std::function<void(const client::SyncCoroQueryResults::Iterator &, const client::SyncCoroQueryResults &, QueryResults &)>
 		CopyJoinResultsType;
 
-	void clientToCoreQueryResultsInternal(client::SyncCoroQueryResults &, QueryResults &,
+	void clientToCoreQueryResultsInternal(client::SyncCoroQueryResults &, QueryResults &, bool createTm,
+										  const std::unordered_set<int32_t> &stateTokenList,
 										  CopyJoinResultsType copyJoinResults = CopyJoinResultsType());
 
 	void copyJoinedData(const Query &query, const client::SyncCoroQueryResults::Iterator &it,
 						const client::SyncCoroQueryResults &clientResults, QueryResults &result);
 
-	bool isWithSharding(const InternalRdxContext &ctx) const;
+	bool isWithSharding(std::string_view nsName, const InternalRdxContext &ctx) const noexcept;
+	bool isWithSharding(const InternalRdxContext &ctx) const noexcept;
 
 	bool shouldProxyQuery(const Query &q);
 
 	template <typename Func, typename... Args>
-	Error delegateToShards(Func f, Args &&... args);
+	Error delegateToShards(Func f, Args &&...args);
 	template <typename Func, typename... Args>
-	Error delegateToShardsByNs(bool toAll, Func f, std::string_view nsName, Args &&... args);
+	Error delegateToShardsByNs(bool toAll, Func f, std::string_view nsName, Args &&...args);
 
 	Error modifyItemOnShard(std::string_view nsName, Item &item, ItemModifyMode mode);
-	Error executeQueryOnShard(const Query &query, QueryResults &result, const std::function<Error(QueryResults &)> & = {});
+	Error executeQueryOnShard(const Query &query, QueryResults &result, InternalRdxContext &,
+							  const std::function<Error(const Query &, QueryResults &)> & = {}) noexcept;
 };
 }  // namespace reindexer

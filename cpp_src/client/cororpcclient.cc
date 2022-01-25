@@ -19,7 +19,8 @@ namespace client {
 
 using reindexer::net::cproto::CoroRPCAnswer;
 
-CoroRPCClient::CoroRPCClient(const CoroReindexerConfig& config) : config_(config) {
+CoroRPCClient::CoroRPCClient(const CoroReindexerConfig& config, Namespaces::PtrT sharedNamespaces)
+	: namespaces_(sharedNamespaces ? std::move(sharedNamespaces) : make_intrusive<Namespaces::IntrusiveT>()), config_(config) {
 	conn_.SetConnectionStateHandler([this](Error err) { onConnectionState(std::move(err)); });
 }
 
@@ -66,7 +67,7 @@ Error CoroRPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 
 	if (!status.ok()) return status;
 
-	namespaces_.emplace(nsDef.name, Namespace::Ptr(new Namespace(nsDef.name)));
+	namespaces_->Add(nsDef.name);
 	return errOK;
 }
 
@@ -94,7 +95,7 @@ Error CoroRPCClient::CreateTemporaryNamespace(std::string_view baseName, std::st
 
 		if (ans.Status().ok()) {
 			resultName = ans.GetArgs(1)[0].As<std::string>();
-			namespaces_.emplace(nsDef.name, Namespace::Ptr(new Namespace(resultName)));
+			namespaces_->Add(resultName);
 		}
 		return ans.Status();
 	} catch (const Error& err) {
@@ -110,8 +111,8 @@ Error CoroRPCClient::RenameNamespace(std::string_view srcNsName, const std::stri
 	auto status = conn_.Call(mkCommand(cproto::kCmdRenameNamespace, &ctx), srcNsName, dstNsName).Status();
 	if (!status.ok() && status.code() != errTimeout) return status;
 	if (srcNsName != dstNsName) {
-		namespaces_.erase(srcNsName);
-		namespaces_.erase(dstNsName);
+		namespaces_->Erase(srcNsName);
+		namespaces_->Erase(dstNsName);
 	}
 	return status;
 }
@@ -188,7 +189,7 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, CoroQueryRe
 				netTimeout = std::chrono::duration_cast<std::chrono::milliseconds>(netDeadline - conn_.Now());
 			}
 			CoroQueryResults qr;
-			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr).WithShardId(ShardingKeyType::ShardingProxyOff);
+			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr).WithShardId(ShardingKeyType::ShardingProxyOff, false);
 			auto err = selectImpl(Query(string(nsName)).Limit(0), qr, netTimeout, ctxCompl);
 			if (err.code() == errTimeout) {
 				return Error(errTimeout, "Request timeout");
@@ -197,6 +198,7 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, CoroQueryRe
 				netTimeout = std::chrono::duration_cast<std::chrono::milliseconds>(netDeadline - conn_.Now());
 			}
 			auto newItem = NewItem(nsName);
+			if (!newItem.Status().ok()) return newItem.Status();
 			err = newItem.FromJSON(item.impl_->GetJSON());
 			if (!err.ok()) return err;
 
@@ -360,7 +362,9 @@ Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, mi
 	return ret.Status();
 }
 
-Error CoroRPCClient::Commit(std::string_view nsName) { return conn_.Call(mkCommand(cproto::kCmdCommit), nsName).Status(); }
+Error CoroRPCClient::Commit(std::string_view nsName, const InternalRdxContext& ctx) {
+	return conn_.Call(mkCommand(cproto::kCmdCommit, &ctx), nsName).Status();
+}
 
 Error CoroRPCClient::AddIndex(std::string_view nsName, const IndexDef& iDef, const InternalRdxContext& ctx) {
 	WrSerializer ser;
@@ -458,15 +462,7 @@ Error CoroRPCClient::Status(bool forceCheck, const InternalRdxContext& ctx) {
 	return conn_.Status(forceCheck, config_.NetTimeout, ctx.execTimeout(), ctx.getCancelCtx());
 }
 
-Namespace* CoroRPCClient::getNamespace(std::string_view nsName) {
-	auto nsIt = namespaces_.find(nsName);
-	if (nsIt == namespaces_.end()) {
-		string nsNames(nsName);
-		auto nsPtr = Namespace::Ptr(new Namespace(nsNames));
-		nsIt = namespaces_.emplace(std::move(nsNames), std::move(nsPtr)).first;
-	}
-	return nsIt->second.get();
-}
+Namespace* CoroRPCClient::getNamespace(std::string_view nsName) { return namespaces_->Get(nsName); }
 
 cproto::CommandParams CoroRPCClient::mkCommand(cproto::CmdCode cmd, const InternalRdxContext* ctx) const noexcept {
 	return mkCommand(cmd, config_.NetTimeout, ctx);
@@ -480,9 +476,10 @@ cproto::CommandParams CoroRPCClient::mkCommand(cproto::CmdCode cmd, milliseconds
 				ctx->lsn(),
 				ctx->emmiterServerId(),
 				ctx->shardId(),
-				ctx->getCancelCtx()};
+				ctx->getCancelCtx(),
+				ctx->IsShardingParallelExecution()};
 	}
-	return {cmd, netTimeout, std::chrono::milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr};
+	return {cmd, netTimeout, std::chrono::milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr, false};
 }
 
 CoroTransaction CoroRPCClient::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) {
@@ -573,6 +570,17 @@ Error CoroRPCClient::ApplySnapshotChunk(std::string_view nsName, const SnapshotC
 	WrSerializer ser;
 	ch.Serilize(ser);
 	return conn_.Call(mkCommand(cproto::kCmdApplySnapshotCh, &ctx), nsName, ser.Slice()).Status();
+}
+
+Error CoroRPCClient::SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, const InternalRdxContext& ctx) {
+	WrSerializer ser;
+	tm.serialize(ser);
+	auto err = conn_.Call(mkCommand(cproto::kCmdSetTagsMatcher, &ctx), nsName, int64_t(tm.stateToken()), int64_t(tm.version()), ser.Slice())
+				   .Status();
+	if (err.ok()) {
+		getNamespace(nsName)->TryReplaceTagsMatcher(std::move(tm), false);
+	}
+	return err;
 }
 
 Error CoroRPCClient::SuggestLeader(const NodeData& suggestion, NodeData& response, const InternalRdxContext& ctx) {

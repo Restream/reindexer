@@ -1,4 +1,5 @@
 #include "explaincalc.h"
+#include <sstream>
 #include "core/cbinding/reindexer_ctypes.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/namespace/namespaceimpl.h"
@@ -20,10 +21,16 @@ void ExplainCalc::LogDump(int logLevel) {
 
 	if (logLevel >= LogTrace) {
 		if (selectors_) {
-			selectors_->ExecuteAppropriateForEach([this](const SelectIterator &s) {
-				logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d, %s", s.name, s.size(), s.comparators_.size(),
-						  s.Cost(iters_), s.GetMatchedCount(), s.Dump());
-			});
+			selectors_->ExecuteAppropriateForEach(
+				Skip<JoinSelectIterator, SelectIteratorsBracket>{},
+				[this](const SelectIterator &s) {
+					logPrintf(LogInfo, "%s: %d idsets, %d comparators, cost %g, matched %d, %s", s.name, s.size(), s.comparators_.size(),
+							  s.Cost(iters_), s.GetMatchedCount(), s.Dump());
+				},
+				[this](const FieldsComparator &c) {
+					logPrintf(LogInfo, "%s: cost %g, matched %d, %s", c.Name(), c.Cost(iters_), c.GetMatchedCount(), c.Dump());
+				},
+				[](const AlwaysFalse &) { logPrintf(LogInfo, "AlwaysFalse"); });
 		}
 
 		if (jselectors_) {
@@ -142,9 +149,11 @@ string ExplainCalc::GetJSON() {
 
 std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_iterator end, int iters, JsonBuilder &builder,
 												 const JoinedSelectors *jselectors) {
-	std::string name{"("};
+	using namespace std::string_literals;
+	std::stringstream name;
+	name << '(';
 	for (const_iterator it = begin; it != end; ++it) {
-		if (it != begin) name += " ";
+		if (it != begin) name << ' ';
 		it->InvokeAppropriate<void>(
 			[&](const SelectIteratorsBracket &) {
 				auto jsonSel = builder.Object();
@@ -152,32 +161,50 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				const std::string brName{explainJSON(it.cbegin(), it.cend(), iters, jsonSelArr, jselectors)};
 				jsonSelArr.End();
 				jsonSel.Put("field", opName(it->operation) + brName);
-				name += opName(it->operation, it == begin) + brName;
+				name << opName(it->operation, it == begin) << brName;
 			},
 			[&](const SelectIterator &siter) {
 				auto jsonSel = builder.Object();
-				const bool isScanIterator = bool(siter.name == "-scan");
+				const bool isScanIterator{siter.name == "-scan"};
 				if (!isScanIterator) {
 					jsonSel.Put("keys", siter.size());
 					jsonSel.Put("comparators", siter.comparators_.size());
 					jsonSel.Put("cost", siter.Cost(iters));
 				} else {
-					jsonSel.Put("items", siter.GetMaxIterations());
+					jsonSel.Put("items", siter.GetMaxIterations(iters));
 				}
 				jsonSel.Put("field", opName(it->operation) + siter.name);
 				jsonSel.Put("matched", siter.GetMatchedCount());
 				jsonSel.Put("method", isScanIterator || siter.comparators_.size() ? "scan" : "index");
 				jsonSel.Put("type", siter.TypeName());
-				name += opName(it->operation, it == begin) + siter.name;
+				name << opName(it->operation, it == begin) << siter.name;
 			},
 			[&](const JoinSelectIterator &jiter) {
 				assert(jiter.joinIndex < jselectors->size());
 				const std::string jName{addToJSON(builder, (*jselectors)[jiter.joinIndex], it->operation)};
-				name += opName(it->operation, it == begin) + jName;
+				name << opName(it->operation, it == begin) << jName;
+			},
+			[&](const FieldsComparator &c) {
+				auto jsonSel = builder.Object();
+				jsonSel.Put("comparators", 1);
+				jsonSel.Put("field", opName(it->operation) + c.Name());
+				jsonSel.Put("cost", c.Cost(iters));
+				jsonSel.Put("method", "scan");
+				jsonSel.Put("items", iters);
+				jsonSel.Put("matched", c.GetMatchedCount());
+				jsonSel.Put("type", "TwoFieldsComparison");
+				name << opName(it->operation, it == begin) << c.Name();
+			},
+			[&](const AlwaysFalse &) {
+				auto jsonSkiped = builder.Object();
+				jsonSkiped.Put("type", "Skipped");
+				jsonSkiped.Put("description", "always "s + (it->operation == OpNot ? "true" : "false"));
+				name << opName(it->operation == OpNot ? OpAnd : it->operation, it == begin) << "Always"
+					 << (it->operation == OpNot ? "True" : "False");
 			});
 	}
-	name += ")";
-	return name;
+	name << ')';
+	return name.str();
 }
 
 ExplainCalc::Duration ExplainCalc::lap() {

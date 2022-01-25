@@ -35,9 +35,9 @@ void Namespace::UpdateTagsMatcher(const TagsMatcher& tm) {
 	}
 }
 
-void Namespace::TryReplaceTagsMatcher(TagsMatcher&& tm) {
+void Namespace::TryReplaceTagsMatcher(TagsMatcher&& tm, bool checkVersion) {
 	std::lock_guard lk(lck_);
-	if (tagsMatcher_.version() >= tm.version() && tagsMatcher_.stateToken() == tm.stateToken()) {
+	if (checkVersion && tagsMatcher_.version() >= tm.version() && tagsMatcher_.stateToken() == tm.stateToken()) {
 		return;
 	}
 	tagsMatcher_ = std::move(tm);

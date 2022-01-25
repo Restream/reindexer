@@ -21,9 +21,9 @@ using namespace std::string_view_literals;
 
 constexpr auto kStorageNotInitialized = "Storage is not initialized"sv;
 
-LevelDbStorage::LevelDbStorage() {}
+LevelDbStorage::LevelDbStorage() = default;
 
-LevelDbStorage::~LevelDbStorage() {}
+LevelDbStorage::~LevelDbStorage() = default;
 
 Error LevelDbStorage::Read(const StorageOpts& opts, std::string_view key, string& value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
@@ -110,14 +110,14 @@ UpdatesCollection* LevelDbStorage::GetUpdatesCollection() { return new LevelDbBa
 
 Error LevelDbStorage::doOpen(const string& path, const StorageOpts& opts) {
 	if (path.empty()) {
-		throw Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
+		return Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
 	}
 
 	leveldb::Options options;
 	options.create_if_missing = opts.IsCreateIfMissing();
 	options.max_open_files = 50;
 
-	leveldb::DB* db;
+	leveldb::DB* db = nullptr;
 	leveldb::Status status = leveldb::DB::Open(options, path, &db);
 	if (status.ok()) {
 		db_.reset(db);

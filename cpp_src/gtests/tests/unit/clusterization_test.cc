@@ -364,7 +364,7 @@ TEST_F(ClusterizationApi, InitialLeaderSync) {
 		std::cout << "Leader id is " << leaderId << std::endl;
 		auto stats = cluster.GetNode(leaderId)->GetReplicationStats(cluster::kClusterReplStatsType);
 		ValidateStatsOnTestEnding(leaderId, kTransitionServer, kFirstNodesGroup, kSecondNodesGroup, kClusterSize, ports, stats);
-		// Validate stats, revieved via followers (this request has to be proxied)
+		// Validate stats, recieved via followers (this request has to be proxied)
 		for (auto nodeId : kFirstNodesGroup) {
 			auto followerStats = cluster.GetNode(nodeId)->GetReplicationStats(cluster::kClusterReplStatsType);
 			ASSERT_EQ(stats, followerStats) << "Server id: " << nodeId;

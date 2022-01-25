@@ -492,3 +492,11 @@ func WithNetCompression() interface{} {
 func WithAppName(appName string) interface{} {
 	return bindings.OptionAppName{AppName: appName}
 }
+
+// WithReconnectionStrategy allows to configure the behavior during reconnect after error.
+// Strategy used for reconnect to server on connection error
+// AllowUnknownNodes allows to add dsn from cluster node, that was not set in client dsn list
+// Warning: you should not mix async and sync nodes' DSNs in initial DSNs' list, unless you really know what you are doing
+func WithReconnectionStrategy(strategy ReconnectStrategy, allowUnknownNodes bool) interface{} {
+	return bindings.OptionReconnectionStrategy{Strategy: string(strategy), AllowUnknownNodes: allowUnknownNodes}
+}

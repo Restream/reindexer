@@ -4,12 +4,13 @@
 namespace reindexer {
 
 RdxContext::RdxContext(RdxContext&& other)
-	: originLsn_(other.originLsn_),
-	  holdStatus_(other.holdStatus_),
+	: holdStatus_(other.holdStatus_),
 	  activityPtr_(nullptr),
 	  cancelCtx_(other.cancelCtx_),
 	  cmpl_(other.cmpl_),
-	  noWaitSync_(other.noWaitSync_) {
+	  noWaitSync_(other.noWaitSync_),
+	  originLsn_(other.originLsn_),
+	  shardingParallelExecution_{other.shardingParallelExecution_} {
 	if (holdStatus_ == kHold) {
 		new (&activityCtx_) RdxActivityContext(std::move(other.activityCtx_));
 	} else if (holdStatus_ == kPtr) {
@@ -73,21 +74,28 @@ RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const {
 
 RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer) const {
 	if (activityTracer_.empty() || query.empty()) {
-		return {LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_};
+		return {LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardingParallelExecution_};
 	} else {
-		return {
-			LSN(), activityTracer_, user_, query, activityContainer, connectionId_, (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr),
-			cmpl_, emmiterServerId_};
+		return {LSN(),
+				activityTracer_,
+				user_,
+				query,
+				activityContainer,
+				connectionId_,
+				(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr),
+				cmpl_,
+				emmiterServerId_,
+				shardingParallelExecution_};
 	}
 }
 
 RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer,
 												QueryResults& qresults) const {
 	if (activityTracer_.empty() || query.empty())
-		return {LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_};
+		return {LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardingParallelExecution_};
 	assert(!qresults.activityCtx_);
 	qresults.activityCtx_.emplace(activityTracer_, user_, query, activityContainer, connectionId_, true);
-	return {&*(qresults.activityCtx_), LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_};
+	return {&*(qresults.activityCtx_), LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardingParallelExecution_};
 }
 
 }  // namespace reindexer

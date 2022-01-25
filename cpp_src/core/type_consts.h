@@ -66,6 +66,8 @@ typedef enum QueryItemType {
 	QueryWithRank = 23,
 	QueryStrictMode = 24,
 	QueryUpdateFieldV2 = 25,
+	QueryBetweenFieldsCondition = 26,
+	QueryAlwaysFalseCondition = 27,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -332,7 +334,7 @@ typedef struct ConnectOpts {
 
 enum IndexValueType { NotSet = -1, SetByJsonPath = -2 };
 enum ShardingKeyType { ShardingProxyOff = -2 };
-enum ShardingAlgorithmType { ByValue };
+enum ShardingAlgorithmType { ByValue, ByRange };
 
 enum SubscriptionOpt {
 	kSubscriptionOptIncrementSubscription = 1 << 0,

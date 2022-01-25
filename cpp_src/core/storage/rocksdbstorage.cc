@@ -21,9 +21,9 @@ using namespace std::string_view_literals;
 
 constexpr auto kStorageNotInitialized = "Storage is not initialized"sv;
 
-RocksDbStorage::RocksDbStorage() {}
+RocksDbStorage::RocksDbStorage() = default;
 
-RocksDbStorage::~RocksDbStorage() {}
+RocksDbStorage::~RocksDbStorage() = default;
 
 Error RocksDbStorage::Read(const StorageOpts& opts, std::string_view key, string& value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
@@ -110,7 +110,7 @@ UpdatesCollection* RocksDbStorage::GetUpdatesCollection() { return new RocksDbBa
 
 Error RocksDbStorage::doOpen(const string& path, const StorageOpts& opts) {
 	if (path.empty()) {
-		throw Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
+		return Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
 	}
 
 	rocksdb::Options options;

@@ -5,19 +5,30 @@
 namespace reindexer {
 namespace sharding {
 
+constexpr size_t kShardingProxyConnCount = 8;
+constexpr size_t kShardingProxyCoroPerConn = 2;
+
 RoutingStrategy::RoutingStrategy(const cluster::ShardingConfig &config) : config_(config), keys_(config_) {}
 
 bool RoutingStrategy::getHostIdForQuery(const Query &q, int &hostId) const {
+	bool containsKey = false;
 	std::string_view ns = q.Namespace();
 	for (auto it = q.entries.begin(); it != q.entries.end(); ++it) {
-		if (it->IsLeaf()) {
+		if (it->HoldsOrReferTo<QueryEntry>()) {
 			bool isShardKey = false;
-			const QueryEntry &qe = it->Value();
+			const QueryEntry &qe = it->Value<QueryEntry>();
 			int id = keys_.GetShardId(ns, qe.index, qe.values, isShardKey);
 			if (isShardKey) {
-				if (id == IndexValueType::NotSet) return false;
-				if (hostId != IndexValueType::NotSet && hostId != id) return false;
-				hostId = id;
+				containsKey = true;
+				if (qe.condition != CondEq) {
+					throw Error(errLogic, "Shard key condition can only be 'Eq'");
+				}
+				if (hostId == int(ShardIdType::NotInit)) {
+					hostId = id;
+				}
+				if (hostId != id) {
+					throw Error(errLogic, "Shard key from other node");
+				}
 			}
 		}
 	}
@@ -26,30 +37,39 @@ bool RoutingStrategy::getHostIdForQuery(const Query &q, int &hostId) const {
 			bool isShardKey = false;
 			int id = keys_.GetShardId(ns, entry.column, entry.values, isShardKey);
 			if (isShardKey) {
-				if (id == IndexValueType::NotSet) return false;
-				if (hostId != IndexValueType::NotSet && hostId != id) return false;
+				if (id == int(ShardIdType::NotSet)) return false;
+				if (hostId != int(ShardIdType::NotSet) && hostId != id) return false;
 				hostId = id;
 			}
 		} else if (entry.mode == FieldModeDrop) {
 			int id = keys_.GetShardId(ns, entry.column);
-			if (id != IndexValueType::NotSet) {
-				if (hostId != IndexValueType::NotSet && hostId != id) return false;
+			if (id != int(ShardIdType::NotSet)) {
+				if (hostId != int(ShardIdType::NotSet) && hostId != id) return false;
 				hostId = id;
 			}
 		}
 	}
-	assert(hostId <= (int)config_.keys.size());
-	return true;
+	return containsKey;
 }
 
 std::vector<int> RoutingStrategy::GetHostsIds(const Query &q) const {
-	int hostId = IndexValueType::NotSet;
+	int hostId = int(ShardIdType::NotInit);
 	bool result = getHostIdForQuery(q, hostId);
+	if (!result && q.joinQueries_.size() != 0) {
+		throw Error(errLogic, "Query to all shard can't contain join");
+	}
 	for (size_t i = 0; result && i < q.joinQueries_.size(); ++i) {
 		result = getHostIdForQuery(q.joinQueries_[i], hostId);
+		if (!result) {
+			throw Error(errLogic, "Join query must contain shard key.");
+		}
 	}
-	if (result && hostId == IndexValueType::NotSet && q.count != 0) {
-		return keys_.GetShardsIds(q.Namespace());
+	if (!result) {
+		if (q.count != 0 || q.calcTotal == ModeAccurateTotal) {
+			return keys_.GetShardsIds(q.Namespace());
+		} else {  // special case for limit =0 and calcTotal != ModeAccurateTotal (update tagsMatcher)
+			return {int(ShardIdType::NotSet)};
+		}
 	}
 	return {hostId};
 }
@@ -57,7 +77,7 @@ std::vector<int> RoutingStrategy::GetHostsIds(const Query &q) const {
 int RoutingStrategy::GetHostId(std::string_view ns, const Item &item) const {
 	bool clientPt = (item.NumFields() == 1);
 	for (std::string_view index : keys_.GetIndexes(ns)) {
-		int shardId = IndexValueType::NotSet;
+		int shardId = int(ShardIdType::NotSet);
 		if (clientPt) {
 			VariantArray v = item[index];
 			if (!v.IsNullValue() && !v.empty()) {
@@ -66,31 +86,36 @@ int RoutingStrategy::GetHostId(std::string_view ns, const Item &item) const {
 			}
 		} else {
 			int field = item.GetFieldIndex(index);
-			if (field == IndexValueType::NotSet) continue;
+			if (field == int(ShardIdType::NotSet)) continue;
 			bool isShardKey = false;
 			VariantArray v = item[field];
 			shardId = keys_.GetShardId(ns, index, v, isShardKey);
 		}
-		if (shardId != IndexValueType::NotSet) {
-			assert(shardId <= int(config_.keys.size()));
+		if (shardId != int(ShardIdType::NotSet)) {
+			assert(config_.shards.find(shardId) != config_.shards.cend());
 			return shardId;
 		}
 	}
-	return IndexValueType::NotSet;
+	return int(ShardIdType::NotSet);
 }
 
 std::vector<int> RoutingStrategy::GetHostsIds(std::string_view ns) const { return keys_.GetShardsIds(ns); }
 std::vector<int> RoutingStrategy::GetHostsIds() const { return keys_.GetShardsIds(); }
 bool RoutingStrategy::IsShardingKey(std::string_view ns, std::string_view index) const {
-	return keys_.GetShardId(ns, index) != IndexValueType::NotSet;
+	return keys_.GetShardId(ns, index) != int(ShardIdType::NotSet);
 }
 
 ConnectStrategy::ConnectStrategy(const cluster::ShardingConfig &config, Connections &connections) noexcept
 	: config_(config), connections_(connections) {}
 
-std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::Connect(int shardId, bool writeOperation, Error &reconnectStatus) {
+std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::Connect(int shardId, bool writeOperation, Error &reconnectStatus,
+																	std::optional<std::string_view> ns) {
 	std::shared_lock<std::shared_mutex> rlk(connections_.m);
 
+	if (connections_.shutdown) {
+		reconnectStatus = connections_.status;
+		return {};
+	}
 	const int index = connections_.actualIndex;
 	assert(index < int(connections_.size()));
 	reconnectStatus = connections_[index]->Status();
@@ -99,37 +124,43 @@ std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::Connect(int shardId,
 	}
 
 	rlk.unlock();
-	std::unique_lock wlk(connections_.m);
+	std::lock_guard wlk(connections_.m);
 
-	if (index == connections_.actualIndex) {
-		return doReconnect(shardId, writeOperation, reconnectStatus);
-	} else {
+	if (connections_.shutdown) {
 		reconnectStatus = connections_.status;
-		if (connections_.status.ok()) {
-			return connections_[connections_.actualIndex];
-		}
 		return {};
 	}
+	if (index == connections_.actualIndex) {
+		return doReconnect(shardId, writeOperation, reconnectStatus, ns);
+	}
+	reconnectStatus = connections_.status;
+	if (connections_.status.ok()) {
+		return connections_[connections_.actualIndex];
+	}
+	return {};
 }
 
-std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::doReconnect(int shardID, bool writeOperation, Error &reconnectStatus) {
+std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::doReconnect(int shardID, bool writeOperation, Error &reconnectStatus,
+																		std::optional<std::string_view> ns) {
 	bool isProxyShard = (shardID == 0);
 	const int size = int(connections_.size());
-	const int configIndex = isProxyShard ? 0 : shardID - 1;
 
 	connections_.status = errOK;
 	std::map<int64_t, int, std::greater<>> orderByLsn;
+	if (!ns && config_.namespaces.size() == 1) {
+		ns = config_.namespaces[0].ns;
+	}
 	for (int i = 0; i < size; ++i) {
 		connections_.status = connections_[i]->Status();
 		if (!connections_.status.ok()) {
 			connections_[i]->Stop();
-			const string &dsn = isProxyShard ? config_.proxyDsns[i] : config_.keys[configIndex].hostsDsns[i];
+			const string &dsn = isProxyShard ? config_.proxyDsns[i] : config_.shards.at(shardID)[i];
 			connections_[i]->Connect(dsn);
 			connections_.status = connections_[i]->Status();
 		}
 		if (connections_.status.ok()) {
 			ReplicationStateV2 replState;
-			if (connections_[i]->GetReplState(config_.keys[configIndex].ns, replState).ok()) {
+			if (ns && connections_[i]->GetReplState(*ns, replState).ok()) {
 				orderByLsn.emplace(int64_t(replState.lastLsn), i);
 			} else {
 				size_t mirroredIndex = connections_.size() - i - 1;
@@ -160,20 +191,59 @@ LocatorService::LocatorService(ReindexerImpl &rx, const cluster::ShardingConfig 
 	  // (should always be set like this in config)
 	  isProxy_(actualShardId == 0) {}
 
-Error LocatorService::validateConfig() const {
+Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vector<cluster::ShardingConfig::Key> &keys) {
+	switch (fieldType) {
+		case KeyValueInt64:
+		case KeyValueDouble:
+		case KeyValueString:
+		case KeyValueBool:
+		case KeyValueInt:
+			try {
+				for (auto &k : keys) {
+					for (Variant &v : k.values) {
+						v.convert(fieldType, nullptr, nullptr);
+					}
+				}
+			} catch (const Error &err) {
+				return err;
+			}
+			return errOK;
+		case KeyValueComposite:
+		case KeyValueTuple:
+			return Error{errLogic, "Sharding by composite index is unsupported"};
+		default:
+			return Error{errLogic, "Unsupported field type: %s", KeyValueTypeToStr(fieldType)};
+	}
+}
+
+Error LocatorService::validateConfig() {
 	InternalRdxContext ctx;
-	for (const cluster::ShardingKey &key : config_.keys) {
+	for (auto &ns : config_.namespaces) {
 		bool nsExists = false;
-		FieldsSet pk = rx_.getPK(key.ns, nsExists, ctx);
+		FieldsSet pk = rx_.getPK(ns.ns, nsExists, ctx);
 		if (nsExists) {
-			int field = IndexValueType::NotSet;
-			PayloadType pt = rx_.getPayloadType(key.ns, ctx);
-			if (pt.FieldByName(key.index, field)) {
+						const auto ftIndexes = rx_.GetFTIndexes(ns.ns, ctx);
+			if (ftIndexes.find(ns.index) != ftIndexes.cend()) {
+				return Error(errLogic, "Sharding by full text index is not supported: %s", ns.index);
+			}
+			int field = int(ShardIdType::NotSet);
+			PayloadType pt = rx_.getPayloadType(ns.ns, ctx);
+			if (pt.FieldByName(ns.index, field)) {
 				if (!pk.contains(field)) {
-					return Error(errLogic, "Sharding key can only be PK: %s:%s", key.ns, key.index);
+					return Error(errLogic, "Sharding key can only be PK: %s:%s", ns.ns, ns.index);
+				}
+				for (const auto &k : ns.keys) {
+					if (k.shardId == 0) {
+						return Error{errParams, "Shard id 0 is reserved for proxy"};
+					}
+				}
+				const KeyValueType fieldType{pt.Field(field).Type()};
+				const Error err{convertShardingKeysValues(fieldType, ns.keys)};
+				if (!err.ok()) {
+					return err;
 				}
 			} else {
-				return Error(errLogic, "Sharding field is supposed to have index: '%s:%s'", key.ns, key.index);
+				return Error(errLogic, "Sharding field is supposed to have index: '%s:%s'", ns.ns, ns.index);
 			}
 		}
 	}
@@ -189,38 +259,41 @@ Error LocatorService::Start() {
 	}
 
 	hostsConnections_.clear();
-	hostsConnections_.reserve(config_.keys.size() + 1);	 // + proxy shard
 
 	Connections proxyConnections;
 	proxyConnections.reserve(config_.proxyDsns.size());
+	client::CoroReindexerConfig cfg;
+	cfg.AppName = "sharding_proxy";
+	cfg.SyncRxCoroCount = kShardingProxyCoroPerConn;
 
 	for (size_t i = 0; i != config_.proxyDsns.size(); ++i) {
-		proxyConnections.emplace_back(std::make_shared<client::SyncCoroReindexer>(client::SyncCoroReindexer().WithShardId(0)));
+		proxyConnections.emplace_back(
+			std::make_shared<client::SyncCoroReindexer>(client::SyncCoroReindexer(cfg, kShardingProxyConnCount).WithShardId(0, true)));
 		status = proxyConnections.back()->Connect(config_.proxyDsns[i], client::ConnectOpts().CreateDBIfMissing());
 		if (!status.ok()) {
 			return Error(errLogic, "Error connecting to sharding proxy host [%s]: %s", config_.proxyDsns[i], status.what());
 		}
 	}
-	hostsConnections_.emplace_back(std::move(proxyConnections));
+	hostsConnections_.emplace(0, std::move(proxyConnections));
 
-	for (const cluster::ShardingKey &key : config_.keys) {
+	for (const auto &[shardId, hosts] : config_.shards) {
 		Connections connections;
-		connections.reserve(key.hostsDsns.size());
-		for (const string &dsn : key.hostsDsns) {
-			size_t shardId = hostsConnections_.size();
-			auto &connection = connections.emplace_back(
-				std::make_shared<client::SyncCoroReindexer>(client::SyncCoroReindexer().WithShardId(int(shardId))));
+		connections.reserve(hosts.size());
+		for (const string &dsn : hosts) {
+			auto &connection = connections.emplace_back(std::make_shared<client::SyncCoroReindexer>(
+				client::SyncCoroReindexer(cfg, kShardingProxyConnCount).WithShardId(int(shardId), true)));
 			status = connection->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
 			if (!status.ok()) {
 				return Error(errLogic, "Error connecting to shard [%s]: %s", dsn, status.what());
 			}
 		}
-		hostsConnections_.emplace_back(std::move(connections));
+		hostsConnections_.emplace(shardId, std::move(connections));
 	}
 	return status;
 }
 
 vector<int> LocatorService::GetShardId(const Query &q) const { return routingStrategy_->GetHostsIds(q); }
+
 int LocatorService::GetShardId(std::string_view ns, const Item &item) const { return routingStrategy_->GetHostId(ns, item); }
 
 ConnectionsPtr LocatorService::GetShardsConnections(std::string_view ns, Error &status) {
@@ -233,7 +306,7 @@ ConnectionsPtr LocatorService::GetShardsConnections(std::string_view ns, Error &
 		for (auto connection : *connections) {
 			if (!connection.IsOnThisShard() && !connection.IsConnected()) {
 				ConnectStrategy connectStrategy(config_, hostsConnections_[connection.ShardId()]);
-				auto newConnection = connectStrategy.Connect(connection.ShardId(), true, status);
+				auto newConnection = connectStrategy.Connect(connection.ShardId(), true, status, ns);
 				if (status.ok()) {
 					connection.Update(newConnection);
 				} else {
@@ -246,11 +319,11 @@ ConnectionsPtr LocatorService::GetShardsConnections(std::string_view ns, Error &
 		connections = std::make_shared<std::vector<ShardConnection>>();
 		auto ids = routingStrategy_->GetHostsIds(ns);
 		if (ids.empty()) {
-			*connections = {{GetShardConnection(IndexValueType::NotSet, true, status), 0}};
+			*connections = {{GetShardConnection(int(ShardIdType::NotSet), true, status, ns), 0}};
 		} else {
 			connections->reserve(ids.size());
 			for (const int shardID : ids) {
-				connections->emplace_back(GetShardConnection(shardID, true, status), shardID);
+				connections->emplace_back(GetShardConnection(shardID, true, status, ns), shardID);
 				if (!status.ok()) return {};
 				if (connections->back().IsOnThisShard() && connections->size() > 1) {
 					connections->back() = std::move(connections->front());
@@ -266,37 +339,45 @@ ConnectionsPtr LocatorService::GetShardsConnections(std::string_view ns, Error &
 }
 
 std::vector<std::shared_ptr<client::SyncCoroReindexer>> LocatorService::GetShardsConnections(const Query &q, Error &status) {
-	return getShardsConnections(routingStrategy_->GetHostsIds(q), q.Type() != QuerySelect, status);
+	return getShardsConnections(routingStrategy_->GetHostsIds(q), q.Type() != QuerySelect, status, q._namespace);
 }
 
 std::shared_ptr<client::SyncCoroReindexer> LocatorService::GetShardConnection(std::string_view ns, const Item &item, Error &status) {
-	return GetShardConnection(routingStrategy_->GetHostId(ns, item), true, status);
+	return GetShardConnection(routingStrategy_->GetHostId(ns, item), true, status, ns);
 }
 
 std::vector<std::shared_ptr<client::SyncCoroReindexer>> LocatorService::GetShardsConnections(Error &status) {
-	return getShardsConnections(routingStrategy_->GetHostsIds(), true, status);
+	return getShardsConnections(routingStrategy_->GetHostsIds(), true, status, std::nullopt);
 }
 
-std::shared_ptr<client::SyncCoroReindexer> LocatorService::GetShardConnection(int shardId, bool writeOp, Error &status) {
-	if (shardId == IndexValueType::NotSet) {
+void LocatorService::Shutdown() {
+	for (auto &conns : hostsConnections_) {
+		conns.second.Shutdown();
+	}
+}
+
+std::shared_ptr<client::SyncCoroReindexer> LocatorService::GetShardConnection(int shardId, bool writeOp, Error &status,
+																			  std::optional<std::string_view> ns) {
+	if (shardId == int(ShardIdType::NotSet)) {
 		if (isProxy_) return {};
-		return peekHostForShard(hostsConnections_[0], 0, writeOp, status);
+		return peekHostForShard(hostsConnections_[0], 0, writeOp, status, ns);
 	}
 	if (actualShardId == shardId) {
 		return {};
 	}
-	return peekHostForShard(hostsConnections_[shardId], shardId, writeOp, status);
+	return peekHostForShard(hostsConnections_[shardId], shardId, writeOp, status, ns);
 }
 
 std::vector<std::shared_ptr<client::SyncCoroReindexer>> LocatorService::getShardsConnections(std::vector<int> &&ids, bool writeOp,
-																							 Error &status) {
+																							 Error &status,
+																							 std::optional<std::string_view> ns) {
 	if (ids.empty()) {
-		return {GetShardConnection(IndexValueType::NotSet, writeOp, status)};
+		return {GetShardConnection(int(ShardIdType::NotSet), writeOp, status, ns)};
 	}
 	std::vector<std::shared_ptr<client::SyncCoroReindexer>> connections;
 	connections.reserve(ids.size());
 	for (const int shardId : ids) {
-		connections.emplace_back(GetShardConnection(shardId, writeOp, status));
+		connections.emplace_back(GetShardConnection(shardId, writeOp, status, ns));
 		if (!status.ok()) break;
 		if (connections.back().get() == nullptr && connections.size() > 1) {
 			connections.back() = std::move(connections.front());
@@ -307,17 +388,17 @@ std::vector<std::shared_ptr<client::SyncCoroReindexer>> LocatorService::getShard
 }
 
 std::shared_ptr<client::SyncCoroReindexer> LocatorService::peekHostForShard(Connections &connections, int shardId, bool writeOp,
-																			Error &status) {
+																			Error &status, std::optional<std::string_view> ns) {
 	ConnectStrategy connectStrategy(config_, connections);
-	return connectStrategy.Connect(shardId, writeOp, status);
+	return connectStrategy.Connect(shardId, writeOp, status, ns);
 }
 
 std::shared_ptr<client::SyncCoroReindexer> LocatorService::GetProxyShardConnection(bool writeOp, Error &status) {
-	return GetShardConnection(0, writeOp, status);
+	return GetShardConnection(0, writeOp, status, std::nullopt);
 }
 
-std::shared_ptr<client::SyncCoroReindexer> LocatorService::GetConnection(int shardId, Error &status) {
-	return peekHostForShard(hostsConnections_[shardId], shardId, true, status);
+std::shared_ptr<client::SyncCoroReindexer> LocatorService::GetConnection(int shardId, Error &status, std::optional<std::string_view> ns) {
+	return peekHostForShard(hostsConnections_[shardId], shardId, true, status, ns);
 }
 
 }  // namespace sharding

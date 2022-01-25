@@ -3,6 +3,7 @@
 #include <atomic>
 #include <deque>
 #include <memory>
+#include <set>
 #include <thread>
 #include <vector>
 #include "cluster/insdatareplicator.h"
@@ -52,11 +53,12 @@ namespace SortExprFuncs {
 struct DistanceBetweenJoinedIndexesSameNs;
 }  // namespace SortExprFuncs
 
-struct NsContext {
+class NsContext {
+public:
 	NsContext(const RdxContext &rdxCtx) : rdxContext(rdxCtx) {}
 	NsContext &InTransaction(lsn_t stepLsn) noexcept {
 		inTransaction = true;
-		originLsn = stepLsn;
+		originLsn_ = stepLsn;
 		return *this;
 	}
 	NsContext &CopiedNsRequest() noexcept {
@@ -66,26 +68,47 @@ struct NsContext {
 	NsContext &InSnapshot(lsn_t stepLsn, bool wal, bool requireResync, bool initialLeaderSync) noexcept {
 		inSnapshot = true;
 		isWal = wal;
-		originLsn = stepLsn;
+		originLsn_ = stepLsn;
 		isRequireResync = requireResync;
 		isInitialLeaderSync = initialLeaderSync;
 		return *this;
 	}
-	lsn_t GetOriginLSN() const noexcept { return (inTransaction || inSnapshot) ? originLsn : rdxContext.originLsn_; }
+	lsn_t GetOriginLSN() const noexcept { return (inTransaction || inSnapshot) ? originLsn_ : rdxContext.GetOriginLSN(); }
 	bool IsForceSyncItem() const noexcept { return inSnapshot && !isWal; }
 	bool IsWalSyncItem() const noexcept { return inSnapshot && isWal; }
 
 	const RdxContext &rdxContext;
 	bool inTransaction = false;
 	bool inSnapshot = false;
-	lsn_t originLsn;
 	bool isCopiedNsRequest = false;
 	bool isWal = false;
 	bool isRequireResync = false;
 	bool isInitialLeaderSync = false;
+
+private:
+	lsn_t originLsn_;
 };
 
 class NamespaceImpl {
+	class IndexesCacheCleaner {
+	public:
+		explicit IndexesCacheCleaner(NamespaceImpl &ns) : ns_{ns} {}
+		IndexesCacheCleaner(const IndexesCacheCleaner &) = delete;
+		IndexesCacheCleaner(IndexesCacheCleaner &&) = delete;
+		IndexesCacheCleaner &operator=(const IndexesCacheCleaner &) = delete;
+		IndexesCacheCleaner &operator=(IndexesCacheCleaner &&) = delete;
+		void Add(SortType s) {
+			if (s > 0) {
+				sorts_.set(s);
+			}
+		}
+		~IndexesCacheCleaner();
+
+	private:
+		NamespaceImpl &ns_;
+		std::bitset<64> sorts_;
+	};
+
 protected:
 	friend class NsSelecter;
 	friend class JoinedSelector;
@@ -187,7 +210,7 @@ public:
 			if (readonly_.load(std::memory_order_acquire)) {
 				throw Error(errNamespaceInvalidated, "NS invalidated"sv);
 			}
-			const bool requireSync = clusterizator_ && !ctx.NoWaitSync() && ctx.originLsn_.isEmpty() && !owner_.isSystem();
+			const bool requireSync = clusterizator_ && !ctx.NoWaitSync() && ctx.GetOriginLSN().isEmpty() && !owner_.isSystem();
 			const bool isFollowerNS = owner_.repl_.clusterStatus.role == ClusterizationStatus::Role::SimpleReplica ||
 									  owner_.repl_.clusterStatus.role == ClusterizationStatus::Role::ClusterReplica;
 			bool synchronized = isFollowerNS || !requireSync || clusterizator_->IsInitialSyncDone(owner_.name_);
@@ -310,10 +333,11 @@ public:
 	void OnConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx);
 	StorageOpts GetStorageOpts(const RdxContext &);
 	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext &ctx) const;
-
+	IndexesCacheCleaner GetIndexesCacheCleaner() { return IndexesCacheCleaner{*this}; }
 	Error SetClusterizationStatus(ClusterizationStatus &&status, const RdxContext &ctx);
 	void ApplySnapshotChunk(const SnapshotChunk &ch, bool isInitialLeaderSync, const RdxContext &ctx);
 	void GetSnapshot(Snapshot &snapshot, const SnapshotOpts &opts, const RdxContext &ctx);
+	void SetTagsMatcher(TagsMatcher &&tm, const RdxContext &ctx);
 
 protected:
 	struct SysRecordsVersions {
@@ -344,29 +368,30 @@ protected:
 	void modifyItem(Item &item, int mode, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void deleteItem(Item &item, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void doModifyItem(Item &item, int mode, UpdatesContainer &pendedRepl, const NsContext &ctx, IdType suggestedId = -1);
-	void updateTagsMatcherFromItem(ItemImpl *ritem);
+	void updateTagsMatcherFromItem(ItemImpl *ritem, const NsContext &ctx);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void doDelete(IdType id);
 	void doTruncate(UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void optimizeIndexes(const NsContext &);
 	void insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const string &realName);
-	void addIndex(const IndexDef &indexDef, bool skipEqualityCheck = false);
+	void addIndex(const IndexDef &indexDef, bool disableTmVersionInc, bool skipEqualityCheck = false);
 	void doAddIndex(const IndexDef &indexDef, bool skipEqualityCheck, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void addCompositeIndex(const IndexDef &indexDef);
 	bool checkIfSameIndexExists(const IndexDef &indexDef, bool discardConfig);
 	void verifyUpdateIndex(const IndexDef &indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
-	void updateIndex(const IndexDef &indexDef);
+	void updateIndex(const IndexDef &indexDef, bool disableTmVersionInc);
 	void doUpdateIndex(const IndexDef &indexDef, UpdatesContainer &pendedRepl, const NsContext &ctx);
-	void dropIndex(const IndexDef &index);
+	void dropIndex(const IndexDef &index, bool disableTmVersionInc);
 	void doDropIndex(const IndexDef &index, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void addToWAL(const IndexDef &indexDef, WALRecType type, const NsContext &ctx);
 	void addToWAL(std::string_view json, WALRecType type, const NsContext &ctx);
 	void removeExpiredItems(RdxActivityContext *);
 	void removeExpiredStrings(RdxActivityContext *);
 	void setSchema(std::string_view schema, UpdatesContainer &pendedRepl, const NsContext &ctx);
+	void setTagsMatcher(TagsMatcher &&tm, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void replicateItem(IdType itemId, const NsContext &ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity,
-					   UpdatesContainer &pendedRepl);
+					   int oldTmVersion, UpdatesContainer &pendedRepl);
 
 	void recreateCompositeIndexes(int startIdx, int endIdx);
 	NamespaceDef getDefinition() const;
@@ -401,10 +426,11 @@ protected:
 		return locker_.DataWLock(ctx, skipClusterStatusCheck);
 	}
 	Locker::RLockT rLock(const RdxContext &ctx) const { return locker_.RLock(ctx); }
-	void checkClusterRole(const RdxContext &ctx) const { checkClusterRole(ctx.originLsn_); }
+	void checkClusterRole(const RdxContext &ctx) const { checkClusterRole(ctx.GetOriginLSN()); }
 	void checkClusterRole(lsn_t originLsn) const;
-	void checkClusterStatus(const RdxContext &ctx) const { checkClusterStatus(ctx.originLsn_); }
+	void checkClusterStatus(const RdxContext &ctx) const { checkClusterStatus(ctx.GetOriginLSN()); }
 	void checkClusterStatus(lsn_t originLsn) const;
+	void replicateTmUpdateIfRequired(UpdatesContainer &pendedRepl, int oldTmVersion, const NsContext &ctx) noexcept;
 
 	bool SortOrdersBuilt() const noexcept { return optimizationState_.load(std::memory_order_acquire) == OptimizationCompleted; }
 
@@ -440,6 +466,11 @@ protected:
 	std::shared_ptr<Schema> schema_;
 
 	StringsHolderPtr StrHolder(bool noLock, const RdxContext &);
+	std::set<std::string> GetFTIndexes(const RdxContext &) const;
+	size_t ItemsCount() const noexcept { return items_.size() - free_.size(); }
+	const NamespaceConfigData &Config() const noexcept { return config_; }
+
+	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) const;
 
 private:
 	NamespaceImpl(const NamespaceImpl &src);
@@ -457,6 +488,7 @@ private:
 	void setTemporary() { repl_.temporary = true; }
 
 	void removeIndex(std::unique_ptr<Index> &);
+	void dumpIndex(std::ostream &os, std::string_view index) const;
 
 	JoinCache::Ptr joinCache_;
 

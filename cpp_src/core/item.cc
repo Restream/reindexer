@@ -128,8 +128,8 @@ int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name)
 int Item::GetFieldIndex(std::string_view name) const { return impl_->FieldIndex(name); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }
 void Item::SetPrecepts(vector<string> precepts) { impl_->SetPrecepts(std::move(precepts)); }
-bool Item::IsTagsUpdated() { return impl_->tagsMatcher().isUpdated(); }
-int Item::GetStateToken() { return impl_->tagsMatcher().stateToken(); }
+bool Item::IsTagsUpdated() const noexcept { return impl_->tagsMatcher().isUpdated(); }
+int Item::GetStateToken() const noexcept { return impl_->tagsMatcher().stateToken(); }
 
 Item &Item::Unsafe(bool enable) noexcept {
 	impl_->Unsafe(enable);

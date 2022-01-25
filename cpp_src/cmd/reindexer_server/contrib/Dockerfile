@@ -1,4 +1,4 @@
-FROM alpine:latest AS build
+FROM alpine:3.14 AS build
 
 RUN cd /tmp && apk update && \
     apk add git curl autoconf automake libtool linux-headers g++ make libunwind-dev grpc-dev grpc protobuf-dev c-ares-dev && \

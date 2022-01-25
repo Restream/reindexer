@@ -9,7 +9,7 @@ namespace client {
 
 using namespace reindexer::net;
 
-CoroQueryResults::CoroQueryResults(int fetchFlags)
+CoroQueryResults::CoroQueryResults(int fetchFlags) noexcept
 	: conn_(nullptr), queryID_(0), fetchOffset_(0), fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0) {}
 
 CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsArray &&nsArray, int fetchFlags, int fetchAmount,
@@ -57,7 +57,6 @@ void CoroQueryResults::Bind(std::string_view rawResult, int queryID) {
 			PayloadType("tmp").clone()->deserialize(ser);
 		});
 	} catch (const Error &err) {
-		assert(false);
 		status_ = err;
 	}
 
@@ -67,8 +66,9 @@ void CoroQueryResults::Bind(std::string_view rawResult, int queryID) {
 void CoroQueryResults::fetchNextResults() {
 	using std::chrono::seconds;
 	int flags = fetchFlags_ ? (fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
-	auto ret = conn_->Call({cproto::kCmdFetchResults, requestTimeout_, milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr},
-						   queryID_, flags, queryParams_.count + fetchOffset_, fetchAmount_);
+	auto ret =
+		conn_->Call({cproto::kCmdFetchResults, requestTimeout_, milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr, false},
+					queryID_, flags, queryParams_.count + fetchOffset_, fetchAmount_);
 	if (!ret.Status().ok()) {
 		throw ret.Status();
 	}
@@ -215,8 +215,8 @@ Error CoroQueryResults::Iterator::GetCJSON(WrSerializer &wrser, bool withHdrLen)
 
 Item CoroQueryResults::Iterator::GetItem() {
 	readNext();
+	Error err;
 	try {
-		Error err;
 		Item item = qr_->nsArray_[itemParams_.nsid]->NewItem();
 		item.setID(itemParams_.id);
 		switch (qr_->queryParams_.flags & kResultsFormatMask) {
@@ -242,9 +242,10 @@ Item CoroQueryResults::Iterator::GetItem() {
 		if (err.ok()) {
 			return item;
 		}
-	} catch (const Error &) {
+	} catch (const Error &err) {
+		return Item(err);
 	}
-	return Item();
+	return Item(std::move(err));
 }
 
 int64_t CoroQueryResults::Iterator::GetLSN() {

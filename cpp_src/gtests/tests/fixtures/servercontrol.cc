@@ -3,8 +3,13 @@
 #include "cluster/config.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/queryresults/queryresults.h"
+#include "systemhelpers.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
+
+#ifndef REINDEXER_SERVER_PATH
+#define REINDEXER_SERVER_PATH ""
+#endif
 
 using namespace reindexer;
 
@@ -15,12 +20,29 @@ void WriteConfigFile(const std::string& path, const std::string& configYaml) {
 }
 
 ServerControl::Interface::~Interface() {
-	srv.Stop();
-	tr->join();
+	Stop();
+	if (tr) {
+		tr->join();
+	}
+	if (reindexerServerPIDWait != -1) {
+		auto err = reindexer::WaitEndProcess(reindexerServerPIDWait);
+		assertf(err.ok(), "WaitEndProcess error: %s", err.what());
+	}
 	stopped_ = true;
 }
 
-void ServerControl::Interface::Stop() { srv.Stop(); }
+void ServerControl::Interface::Stop() {
+	if (config_.asServerProcess) {
+		if (reindexerServerPID != -1) {
+			auto err = reindexer::EndProcess(reindexerServerPID);
+			assertf(err.ok(), "EndProcess error: %s", err.what());
+			reindexerServerPIDWait = reindexerServerPID;
+			reindexerServerPID = -1;
+		}
+	} else {
+		srv.Stop();
+	}
+}
 
 ServerControl::ServerControl() { stopped_ = new std::atomic_bool(false); }
 ServerControl::~ServerControl() {
@@ -50,12 +72,12 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 	switch (type) {
 		case ConfigType::File: {
 			std::string replConfYaml;
-			int read = fs::ReadFile(kStoragePath + "/" + dbName_ + "/" + kAsyncReplicationConfigFilename, replConfYaml);
+			int read = fs::ReadFile(config_.storagePath + "/" + config_.dbName + "/" + kAsyncReplicationConfigFilename, replConfYaml);
 			EXPECT_TRUE(read > 0) << "Repl config read error";
 			auto err = asyncReplConf.FromYML(replConfYaml);
 			EXPECT_TRUE(err.ok()) << err.what();
 			replConfYaml.clear();
-			read = fs::ReadFile(kStoragePath + "/" + dbName_ + "/" + kReplicationConfigFilename, replConfYaml);
+			read = fs::ReadFile(config_.storagePath + "/" + config_.dbName + "/" + kReplicationConfigFilename, replConfYaml);
 			EXPECT_TRUE(read > 0) << "Repl config read error";
 			err = replConf.FromYML(replConfYaml);
 			EXPECT_TRUE(err.ok()) << err.what();
@@ -128,7 +150,7 @@ void ServerControl::Interface::WriteClusterConfig(const std::string& configYaml)
 }
 
 void ServerControl::Interface::WriteShardingConfig(const std::string& configYaml) {
-	std::ofstream file(kStoragePath + "/" + dbName_ + "/" + kClusterShardingFilename, std::ios_base::trunc);
+	std::ofstream file(config_.storagePath + "/" + config_.dbName + "/" + kClusterShardingFilename, std::ios_base::trunc);
 	file << configYaml;
 	file.flush();
 }
@@ -155,65 +177,102 @@ cluster::ReplicationStats ServerControl::Interface::GetReplicationStats(std::str
 	return stats;
 }
 
-ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const std::string& StoragePath, unsigned short httpPort,
-									unsigned short rpcPort, const std::string& dbName, bool enableStats, size_t maxUpdatesSize)
-	: kClusterManagementDsn("cproto://127.0.0.1:" + std::to_string(rpcPort) + "/" + dbName),
-	  id_(id),
+std::string ServerControl::Interface::getLogName(const string& log, bool core) {
+	const char* testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
+	const char* testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+	string name;
+	name = name + "logs/" + testSetName + "/" + testName + "/" + log + "_";
+	if (!core) name += std::to_string(config_.id);
+	name += ".log";
+	return name;
+}
+
+ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConfig config, const std::string& ReplicationConfig,
+									const std::string& ClusterConfig, const std::string& ShardingConfig,
+									const std::string& AsyncReplicationConfig)
+	: kClusterManagementDsn("cproto://127.0.0.1:" + std::to_string(config.rpcPort) + "/" + config.dbName),
 	  stopped_(stopped),
-	  kStoragePath(StoragePath),
-	  kRpcPort(rpcPort),
-	  kHttpPort(httpPort),
-	  dbName_(dbName) {
-	// Init server in thread
+	  config_(std::move(config)) {
+	std::string path = reindexer::fs::JoinPath(config_.storagePath, config_.dbName);
+	reindexer::fs::MkDirAll(path);
+	WriteConfigFile(reindexer::fs::JoinPath(path, kStorageTypeFilename), "leveldb");
+	if (!ReplicationConfig.empty()) {
+		WriteReplicationConfig(ReplicationConfig);
+	}
+	if (!AsyncReplicationConfig.empty()) {
+		WriteAsyncReplicationConfig(AsyncReplicationConfig);
+	}
+	if (!ClusterConfig.empty()) {
+		WriteClusterConfig(ClusterConfig);
+	}
+	if (!ShardingConfig.empty()) {
+		WriteShardingConfig(ShardingConfig);
+	}
+	Init();
+}
+
+ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConfig config)
+	: kClusterManagementDsn("cproto://127.0.0.1:" + std::to_string(config.rpcPort) + "/" + config.dbName),
+	  stopped_(stopped),
+	  config_(std::move(config)) {
+	Init();
+}
+
+void ServerControl::Interface::Init() {
 	stopped_ = false;
-	string testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
-	string testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
-	auto getLogName = [&testSetName, &testName, &id](const string& log, bool core = false) {
-		string name("logs/" + testSetName + "/" + testName + "/" + log + "_");
-		if (!core) name += std::to_string(id);
-		name += ".log";
-		return name;
-	};
 	// clang-format off
     string yaml =
         "storage:\n"
-		"    path: " + kStoragePath + "\n"
+		"    path: " + config_.storagePath + "\n"
 		"metrics:\n"
-		"   clientsstats: " + (enableStats ? "true" : "false") + "\n"
+		"   clientsstats: " + (config_.enableStats ? "true" : "false") + "\n"
 		"   replicationstats: true\n"
         "logger:\n"
         "   loglevel: trace\n"
-        "   rpclog: " + getLogName("rpc") + "\n"
-        "   serverlog: " + getLogName("server") + "\n"
-        "   corelog: " + getLogName("core", true) + "\n"
+		"   rpclog: " + getLogName("rpc") + "\n"
+		"   serverlog: " + getLogName( "server") + "\n"
+		"   corelog: " + getLogName("core", true) + "\n"
         "net:\n"
-        "   httpaddr: 0.0.0.0:" + std::to_string(kHttpPort) + "\n"
-		"   rpcaddr: 0.0.0.0:" + std::to_string(kRpcPort) + "\n" +
+		"   httpaddr: 0.0.0.0:" + std::to_string(config_.httpPort) + "\n"
+		"   rpcaddr: 0.0.0.0:" + std::to_string(config_.rpcPort) + "\n" +
 		"   enable_cluster: true\n" +
-		(maxUpdatesSize ?
-		"   maxupdatessize:" + std::to_string(maxUpdatesSize)+"\n" : "");
-	// clang-format on
+		(config_.maxUpdatesSize ?
+		"   maxupdatessize:" + std::to_string(config_.maxUpdatesSize)+"\n" : "");
 
-	auto err = srv.InitFromYAML(yaml);
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	tr = std::unique_ptr<std::thread>(new std::thread([this]() {
-		auto res = this->srv.Start();
-		if (res != EXIT_SUCCESS) {
-			std::cerr << "Exit code: " << res << std::endl;
+	if (config_.asServerProcess) {
+		try {
+			std::vector<std::string> paramArray = getCLIParamArray(config_.enableStats, config_.maxUpdatesSize);
+			std::string reindexerServerPath(REINDEXER_SERVER_PATH);
+			if(reindexerServerPath.empty())	{ // -V547
+				throw Error(errLogic, "REINDEXER_SERVER_PATH empty");
+			}
+			reindexerServerPID = reindexer::StartProcess(reindexerServerPath, paramArray);
+		} catch (Error& e) {
+			EXPECT_TRUE(false) << e.what();
 		}
-		assert(res == EXIT_SUCCESS);
-	}));
-	while (!srv.IsRunning() || !srv.IsReady()) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	} else {
+		auto err = srv.InitFromYAML(yaml);
+		EXPECT_TRUE(err.ok()) << err.what();
+
+		tr = std::unique_ptr<std::thread>(new std::thread([this]() {
+			auto res = this->srv.Start();
+			if (res != EXIT_SUCCESS) {
+				std::cerr << "Exit code: " << res << std::endl;
+			}
+			assert(res == EXIT_SUCCESS);
+		}));
+		while (!srv.IsRunning() || !srv.IsReady()) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
 	}
 
 	// init client
-	string dsn = "cproto://127.0.0.1:" + std::to_string(kRpcPort) + "/" + dbName_;
+	string dsn = "cproto://127.0.0.1:" + std::to_string(config_.rpcPort) + "/" + config_.dbName;
+	Error err;
 	err = api.reindexer->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
 	EXPECT_TRUE(err.ok()) << err.what();
+
 	while (!api.reindexer->Status().ok()) {
-		std::cerr << api.reindexer->Status().what() << std::endl;
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 }
@@ -222,10 +281,10 @@ void ServerControl::Interface::MakeLeader(const AsyncReplicationConfigTest& conf
 	assert(config.serverId_ >= 0);
 	if (config.nodes_.empty()) {
 		AsyncReplicationConfigTest cfg("leader");
-		cfg.serverId_ = id_;
+		cfg.serverId_ = config_.id;
 		SetReplicationConfig(cfg);
 	} else {
-		assert(size_t(config.serverId_) == id_);
+		assert(size_t(config.serverId_) == config_.id);
 		assert(config.role_ == "leader");
 		SetReplicationConfig(config);
 	}
@@ -233,7 +292,7 @@ void ServerControl::Interface::MakeLeader(const AsyncReplicationConfigTest& conf
 
 void ServerControl::Interface::MakeFollower() {
 	AsyncReplicationConfigTest config("follower", std::vector<AsyncReplicationConfigTest::Node>{});
-	config.serverId_ = id_;
+	config.serverId_ = config_.id;
 	assert(config.serverId_ >= 0);
 	SetReplicationConfig(config);
 }
@@ -352,12 +411,19 @@ ServerControl::Interface::Ptr ServerControl::Get(bool wait) {
 	return interface;
 }
 
-void ServerControl::InitServer(size_t id, unsigned short rpcPort, unsigned short httpPort, const std::string& storagePath,
-							   const std::string& dbName, bool enableStats, size_t maxUpdatesSize) {
+void ServerControl::InitServer(ServerControlConfig config) {
 	WLock lock(mtx_);
-	interface =
-		std::make_shared<ServerControl::Interface>(id, *stopped_, storagePath, httpPort, rpcPort, dbName, enableStats, maxUpdatesSize);
+	interface = std::make_shared<ServerControl::Interface>(*stopped_, std::move(config));
 }
+
+void ServerControl::InitServerWithConfig(ServerControlConfig config, const std::string& ReplicationConfig, const std::string& ClusterConfig,
+							  const std::string& ShardingConfig, const std::string& AsyncReplicationConfig)
+{
+	WLock lock(mtx_);
+	interface = std::make_shared<ServerControl::Interface>(*stopped_, std::move(config),ReplicationConfig,ClusterConfig,ShardingConfig,AsyncReplicationConfig);
+}
+
+
 
 void ServerControl::Drop() {
 	WLock lock(mtx_);
@@ -379,28 +445,40 @@ bool ServerControl::DropAndWaitStop() {
 }
 
 ReplicationStateApi ServerControl::Interface::GetState(const std::string& ns) {
-	Query qr = Query("#memstats").Where("name", CondEq, ns);
-	BaseApi::QueryResultsType res;
-	auto err = api.reindexer->Select(qr, res);
-	EXPECT_TRUE(err.ok()) << err.what();
 	ReplicationStateApi state;
-	for (auto it : res) {
-		WrSerializer ser;
-		err = it.GetJSON(ser, false);
+	{
+		Query qr = Query("#memstats").Where("name", CondEq, ns);
+		BaseApi::QueryResultsType res;
+		auto err = api.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
-		gason::JsonParser parser;
-		auto root = parser.Parse(ser.Slice());
-		state.lsn.FromJSON(root["replication"]["last_lsn_v2"]);
+		for (auto it : res) {
+			WrSerializer ser;
+			err = it.GetJSON(ser, false);
+			EXPECT_TRUE(err.ok()) << err.what();
+			gason::JsonParser parser;
+			auto root = parser.Parse(ser.Slice());
+			state.lsn.FromJSON(root["replication"]["last_lsn_v2"]);
 
-		state.dataCount = root["replication"]["data_count"].As<int64_t>();
-		state.dataHash = root["replication"]["data_hash"].As<uint64_t>();
-		state.nsVersion.FromJSON(root["replication"]["ns_version"]);
+			state.dataCount = root["replication"]["data_count"].As<int64_t>();
+			state.dataHash = root["replication"]["data_hash"].As<uint64_t>();
+			state.nsVersion.FromJSON(root["replication"]["ns_version"]);
 
-		/*		std::cout << "\n"
-					  << std::hex << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount
-					  << " dataHash = " << state.dataHash << " [" << ser.c_str() << "]\n"
-					  << std::endl;
-		*/
+			/*		std::cout << "\n"
+						  << std::hex << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount
+						  << " dataHash = " << state.dataHash << " [" << ser.c_str() << "]\n"
+						  << std::endl;
+			*/
+		}
+	}
+	{
+		Query qr = Query(ns).Limit(0);
+		BaseApi::QueryResultsType res;
+		auto err = api.reindexer->Select(qr, res);
+		if (err.ok()) {
+			auto tm = res.GetTagsMatcher(ns);
+			state.tmVersion = tm.version();
+			state.tmStatetoken = tm.stateToken();
+		}
 	}
 	return state;
 }
@@ -447,6 +525,29 @@ void ServerControl::Interface::SetClusterLeader(int lederId) {
 	Error err = item.FromJSON(ser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();
 	api.Upsert("#config", item);
+}
+
+std::vector<std::string> ServerControl::Interface::getCLIParamArray(bool enableStats, size_t maxUpdatesSize) {
+	std::vector<std::string> paramArray;
+	paramArray.push_back("reindexer_server");
+	paramArray.push_back("--db=" + config_.storagePath);
+	if (enableStats) {
+		paramArray.push_back("--clientsstats");
+	}
+	paramArray.push_back("--loglevel=trace");
+	paramArray.push_back("--rpclog=" + getLogName("rpc"));
+	paramArray.push_back("--serverlog=" + getLogName("server"));
+	// paramArray.push_back("--httplog");
+	paramArray.push_back("--corelog=" + getLogName("core"));
+
+	paramArray.push_back("--httpaddr=0.0.0.0:" + std::to_string(config_.httpPort));
+	paramArray.push_back("--rpcaddr=0.0.0.0:" + std::to_string(config_.rpcPort));
+	paramArray.push_back("--enable-cluster");
+	if (maxUpdatesSize) {
+		paramArray.push_back("--updatessize=" + std::to_string(maxUpdatesSize));
+	}
+
+	return paramArray;
 }
 
 template <typename ValueT>

@@ -319,7 +319,7 @@ public:
 		}
 	}
 
-	Node::eType m_Type;  ///< Type of node.
+	Node::eType m_Type;	 ///< Type of node.
 	TypeImp *m_pImp;	 ///< Imp of type.
 };
 
@@ -1965,7 +1965,7 @@ size_t FindNotCited(const std::string &input, char token, size_t &preQuoteCount)
 			return tokenPos;
 		}
 		preQuoteCount++;
-		if (tokenPos <= currentQuote.second) {
+		while (tokenPos <= currentQuote.second) {
 			// Find next token
 			if (tokenPos + 1 == input.size()) {
 				return std::string::npos;

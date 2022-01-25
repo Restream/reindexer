@@ -61,9 +61,10 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
-void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArray &result, const VariantArray &keys, IdType id) {
+void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArray &result, const VariantArray &keys, IdType id,
+																	 bool &clearCache) {
 	if (keys.empty() || keys.IsNullValue()) {
-		Upsert(Variant{}, id);
+		Upsert(Variant{}, id, clearCache);
 		return;
 	}
 	const Point point = static_cast<Point>(keys);
@@ -78,25 +79,28 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArra
 		this->isBuilt_ = false;
 		// reset cache
 		if (this->cache_) this->cache_.reset();
+		clearCache = true;
 	}
 	this->tracker_.markUpdated(this->idx_map, keyIt);
 
 	this->addMemStat(keyIt);
 
-	result = VariantArray{keyIt->first};
+	result = VariantArray(keyIt->first);
 }
 
 template <typename KeyEntryT, template <typename, typename, typename, typename, size_t, size_t> class Splitter, size_t MaxEntries,
 		  size_t MinEntries>
-void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const VariantArray &keys, IdType id, StringsHolder &strHolder) {
+void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const VariantArray &keys, IdType id, StringsHolder &strHolder,
+																	 bool &clearCache) {
 	if (keys.empty() || keys.IsNullValue()) {
-		return Delete(Variant{}, id, strHolder);
+		return Delete(Variant{}, id, strHolder, clearCache);
 	}
 	int delcnt = 0;
 	const Point point = static_cast<Point>(keys);
 	typename Map::iterator keyIt = this->idx_map.find(point);
 	if (keyIt == this->idx_map.end()) return;
 	if (this->cache_) this->cache_.reset();
+	clearCache = true;
 	this->isBuilt_ = false;
 
 	this->delMemStat(keyIt);

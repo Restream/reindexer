@@ -86,6 +86,7 @@ public:
 	Error DeleteQueryTx(cproto::Context &ctx, p_string query, int64_t txID);
 	Error UpdateQueryTx(cproto::Context &ctx, p_string query, int64_t txID);
 	Error PutMetaTx(cproto::Context &ctx, p_string key, p_string data, int64_t txID);
+	Error SetTagsMatcherTx(cproto::Context &ctx, int64_t statetoken, int64_t version, p_string data, int64_t txID);
 
 	Error CommitTx(cproto::Context &ctx, int64_t txId, cproto::optional<int> flags);
 	Error RollbackTx(cproto::Context &ctx, int64_t txId);
@@ -113,6 +114,7 @@ public:
 	Error LeadersPing(cproto::Context &ctx, p_string leader);
 	Error GetRaftInfo(cproto::Context &ctx);
 	Error ClusterControlRequest(cproto::Context &ctx, p_string data);
+	Error SetTagsMatcher(cproto::Context &ctx, p_string ns, int64_t statetoken, int64_t version, p_string data);
 
 	Error CheckAuth(cproto::Context &ctx);
 	void Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret);

@@ -104,7 +104,7 @@ public:
 	/// Enable explain query
 	/// @param on - signaling on/off
 	/// @return Query object ready to be executed
-	Query &Explain(bool on = true) & {
+	Query &Explain(bool on = true) & {	// -V1071
 		explain_ = on;
 		return *this;
 	}
@@ -116,7 +116,7 @@ public:
 	/// @param val - value of index to be compared with.
 	/// @return Query object ready to be executed.
 	template <typename Input>
-	Query &Where(const string &idx, CondType cond, Input val) & {
+	Query &Where(const string &idx, CondType cond, Input val) & {  // -V1071
 		return Where(idx, cond, {val});
 	}
 	template <typename Input>
@@ -130,7 +130,7 @@ public:
 	/// @param l - list of index values to be compared with.
 	/// @return Query object ready to be executed.
 	template <typename T>
-	Query &Where(const string &idx, CondType cond, std::initializer_list<T> l) & {
+	Query &Where(const string &idx, CondType cond, std::initializer_list<T> l) & {	// -V1071
 		QueryEntry qe;
 		qe.condition = cond;
 		qe.index = idx;
@@ -150,7 +150,7 @@ public:
 	/// @param l - vector of index values to be compared with.
 	/// @return Query object ready to be executed.
 	template <typename T>
-	Query &Where(const string &idx, CondType cond, const std::vector<T> &l) & {
+	Query &Where(const string &idx, CondType cond, const std::vector<T> &l) & {	 // -V1071
 		QueryEntry qe;
 		qe.condition = cond;
 		qe.index = idx;
@@ -170,7 +170,7 @@ public:
 	/// @param cond - type of condition.
 	/// @param l - vector of index values to be compared with.
 	/// @return Query object ready to be executed.
-	Query &Where(const string &idx, CondType cond, const VariantArray &l) & {
+	Query &Where(const string &idx, CondType cond, const VariantArray &l) & {  // -V1071
 		QueryEntry qe;
 		qe.condition = cond;
 		qe.index = idx;
@@ -193,7 +193,7 @@ public:
 	/// in case of CondRange) belongs to "bookid" and l[0][1] (and l[1][1] in case of CondRange)
 	/// belongs to "price" indexes.
 	/// @return Query object ready to be executed.
-	Query &WhereComposite(const string &idx, CondType cond, std::initializer_list<VariantArray> l) & {
+	Query &WhereComposite(const string &idx, CondType cond, std::initializer_list<VariantArray> l) & {	// -V1071
 		QueryEntry qe;
 		qe.condition = cond;
 		qe.index = idx;
@@ -208,7 +208,7 @@ public:
 	Query &&WhereComposite(const string &idx, CondType cond, std::initializer_list<VariantArray> l) && {
 		return std::move(WhereComposite(idx, cond, std::move(l)));
 	}
-	Query &WhereComposite(const string &idx, CondType cond, const vector<VariantArray> &v) & {
+	Query &WhereComposite(const string &idx, CondType cond, const vector<VariantArray> &v) & {	// -V1071
 		QueryEntry qe;
 		qe.condition = cond;
 		qe.index = idx;
@@ -223,8 +223,16 @@ public:
 	Query &&WhereComposite(const string &idx, CondType cond, const vector<VariantArray> &v) && {
 		return std::move(WhereComposite(idx, cond, v));
 	}
+	Query &WhereBetweenFields(std::string firstIdx, CondType cond, std::string secondIdx) & {
+		entries.Append(nextOp_, BetweenFieldsQueryEntry{std::move(firstIdx), cond, std::move(secondIdx)});
+		nextOp_ = OpAnd;
+		return *this;
+	}
+	Query &&WhereBetweenFields(std::string firstIdx, CondType cond, std::string secondIdx) && {
+		return std::move(WhereBetweenFields(std::move(firstIdx), cond, std::move(secondIdx)));
+	}
 
-	Query &DWithin(const string &idx, Point p, double distance) & {
+	Query &DWithin(const string &idx, Point p, double distance) & {	 // -V1071
 		QueryEntry qe;
 		qe.condition = CondDWithin;
 		qe.index = idx;
@@ -242,7 +250,7 @@ public:
 	/// @param value - new value.
 	/// @param hasExpressions - true: value has expresions in it
 	template <typename ValueType>
-	Query &Set(string field, ValueType value, bool hasExpressions = false) & {
+	Query &Set(string field, ValueType value, bool hasExpressions = false) & {	// -V1071
 		return Set(std::move(field), {value}, hasExpressions);
 	}
 	template <typename ValueType>
@@ -254,7 +262,7 @@ public:
 	/// @param l - new value.
 	/// @param hasExpressions - true: value has expresions in it
 	template <typename ValueType>
-	Query &Set(string field, std::initializer_list<ValueType> l, bool hasExpressions = false) & {
+	Query &Set(string field, std::initializer_list<ValueType> l, bool hasExpressions = false) & {  // -V1071
 		VariantArray value;
 		value.reserve(l.size());
 		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(*it);
@@ -269,7 +277,7 @@ public:
 	/// @param l - new value.
 	/// @param hasExpressions - true: value has expresions in it
 	template <typename T>
-	Query &Set(string field, const std::vector<T> &l, bool hasExpressions = false) & {
+	Query &Set(string field, const std::vector<T> &l, bool hasExpressions = false) & {	// -V1071
 		VariantArray value;
 		value.reserve(l.size());
 		value.MarkArray();
@@ -284,7 +292,7 @@ public:
 	/// @param field - field name.
 	/// @param value - new value.
 	/// @param hasExpressions - true: value has expresions in it
-	Query &Set(string field, VariantArray value, bool hasExpressions = false) & {
+	Query &Set(string field, VariantArray value, bool hasExpressions = false) & {  // -V1071
 		updateFields_.emplace_back(std::move(field), std::move(value), FieldModeSet, hasExpressions);
 		return *this;
 	}
@@ -296,7 +304,7 @@ public:
 	/// @param value - new value.
 	/// @param hasExpressions - true: value has expresions in it
 	template <typename ValueType>
-	Query &SetObject(string field, ValueType value, bool hasExpressions = false) & {
+	Query &SetObject(string field, ValueType value, bool hasExpressions = false) & {  // -V1071
 		return SetObject(std::move(field), {value}, hasExpressions);
 	}
 	template <typename ValueType>
@@ -308,7 +316,7 @@ public:
 	/// @param l - new value.
 	/// @param hasExpressions - true: value has expresions in it
 	template <typename ValueType>
-	Query &SetObject(string field, std::initializer_list<ValueType> l, bool hasExpressions = false) & {
+	Query &SetObject(string field, std::initializer_list<ValueType> l, bool hasExpressions = false) & {	 // -V1071
 		VariantArray value;
 		value.reserve(l.size());
 		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(Variant(*it));
@@ -323,7 +331,7 @@ public:
 	/// @param l - new value.
 	/// @param hasExpressions - true: value has expresions in it
 	template <typename T>
-	Query &SetObject(string field, const std::vector<T> &l, bool hasExpressions = false) & {
+	Query &SetObject(string field, const std::vector<T> &l, bool hasExpressions = false) & {  // -V1071
 		VariantArray value;
 		value.reserve(l.size());
 		value.MarkArray();
@@ -338,13 +346,13 @@ public:
 	/// @param field - field name.
 	/// @param value - new value.
 	/// @param hasExpressions - true: value has expresions in it
-	Query &SetObject(string field, VariantArray value, bool hasExpressions = false) &;
+	Query &SetObject(string field, VariantArray value, bool hasExpressions = false) &;	// -V1071
 	Query &&SetObject(string field, VariantArray value, bool hasExpressions = false) && {
 		return std::move(SetObject(std::move(field), std::move(value), hasExpressions));
 	}
 	/// Drops a value for a field.
 	/// @param field - field name.
-	Query &Drop(string field) & {
+	Query &Drop(string field) & {  // -V1071
 		updateFields_.emplace_back(std::move(field), VariantArray(), FieldModeDrop);
 		return *this;
 	}
@@ -372,11 +380,11 @@ public:
 	/// @param op - operation type (and, or, not).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, Query &&qr) &;
+	Query &Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, Query &&qr) &;  // -V1071
 	Query &&Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, Query &&qr) && {
 		return std::move(Join(joinType, index, joinIndex, cond, op, std::move(qr)));
 	}
-	Query &Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, const Query &qr) &;
+	Query &Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, const Query &qr) &;	// -V1071
 	Query &&Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, const Query &qr) && {
 		return std::move(Join(joinType, index, joinIndex, cond, op, qr));
 	}
@@ -399,7 +407,7 @@ public:
 	Query &&InnerJoin(const string &index, const string &joinIndex, CondType cond, Query &&qr) && {
 		return std::move(InnerJoin(index, joinIndex, cond, std::move(qr)));
 	}
-	Query &InnerJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) & {
+	Query &InnerJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) & {	// -V1071
 		return Join(JoinType::InnerJoin, index, joinIndex, cond, OpAnd, qr);
 	}
 	Query &&InnerJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) && {
@@ -412,13 +420,13 @@ public:
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &LeftJoin(const string &index, const string &joinIndex, CondType cond, Query &&qr) & {
+	Query &LeftJoin(const string &index, const string &joinIndex, CondType cond, Query &&qr) & {  // -V1071
 		return Join(JoinType::LeftJoin, index, joinIndex, cond, OpAnd, std::move(qr));
 	}
 	Query &&LeftJoin(const string &index, const string &joinIndex, CondType cond, Query &&qr) && {
 		return std::move(LeftJoin(index, joinIndex, cond, std::move(qr)));
 	}
-	Query &LeftJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) & {
+	Query &LeftJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) & {  // -V1071
 		return Join(JoinType::LeftJoin, index, joinIndex, cond, OpAnd, qr);
 	}
 	Query &&LeftJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) && {
@@ -431,13 +439,13 @@ public:
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return a reference to a query object ready to be executed.
-	Query &OrInnerJoin(const string &index, const string &joinIndex, CondType cond, Query &&qr) & {
+	Query &OrInnerJoin(const string &index, const string &joinIndex, CondType cond, Query &&qr) & {	 // -V1071
 		return Join(JoinType::OrInnerJoin, index, joinIndex, cond, OpAnd, std::move(qr));
 	}
 	Query &&OrInnerJoin(const string &index, const string &joinIndex, CondType cond, Query &&qr) && {
 		return std::move(OrInnerJoin(index, joinIndex, cond, std::move(qr)));
 	}
-	Query &OrInnerJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) & {
+	Query &OrInnerJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) & {  // -V1071
 		return Join(JoinType::OrInnerJoin, index, joinIndex, cond, OpAnd, qr);
 	}
 	Query &&OrInnerJoin(const string &index, const string &joinIndex, CondType cond, const Query &qr) && {
@@ -447,7 +455,7 @@ public:
 	/// Changes debug level.
 	/// @param level - debug level.
 	/// @return Query object.
-	Query &Debug(int level) & {
+	Query &Debug(int level) & {	 // -V1071
 		debugLevel = level;
 		return *this;
 	}
@@ -456,7 +464,7 @@ public:
 	/// Changes strict mode.
 	/// @param mode - strict mode.
 	/// @return Query object.
-	Query &Strict(StrictMode mode) & {
+	Query &Strict(StrictMode mode) & {	// -V1071
 		strictMode = mode;
 		return *this;
 	}
@@ -478,7 +486,7 @@ public:
 	/// @param forcedSortOrder - list of values for forced sort order.
 	/// @return Query object.
 	template <typename T>
-	Query &Sort(const string &sort, bool desc, std::initializer_list<T> forcedSortOrder) & {
+	Query &Sort(const string &sort, bool desc, std::initializer_list<T> forcedSortOrder) & {  // -V1071
 		if (!forcedSortOrder_.empty()) throw Error(errParams, "Allowed only one forced sort order");
 		sortingEntries_.push_back({sort, desc});
 		for (const T &v : forcedSortOrder) forcedSortOrder_.emplace_back(v);
@@ -495,7 +503,7 @@ public:
 	/// @param forcedSortOrder - list of values for forced sort order.
 	/// @return Query object.
 	template <typename T>
-	Query &Sort(const string &sort, bool desc, const T &forcedSortOrder) & {
+	Query &Sort(const string &sort, bool desc, const T &forcedSortOrder) & {  // -V1071
 		if (!forcedSortOrder_.empty()) throw Error(errParams, "Allowed only one forced sort order");
 		sortingEntries_.push_back({sort, desc});
 		for (const auto &v : forcedSortOrder) forcedSortOrder_.emplace_back(v);
@@ -508,7 +516,7 @@ public:
 
 	/// Performs distinct for a certain index.
 	/// @param indexName - name of index for distict operation.
-	Query &Distinct(const string &indexName) & {
+	Query &Distinct(const string &indexName) & {  // -V1071
 		if (indexName.length()) {
 			AggregateEntry aggEntry{AggDistinct, {indexName}};
 			aggregations_.emplace_back(std::move(aggEntry));
@@ -519,7 +527,7 @@ public:
 
 	/// Sets list of columns in this namespace to be finally selected.
 	/// @param l - list of columns to be selected.
-	Query &Select(std::initializer_list<const char *> l) & {
+	Query &Select(std::initializer_list<const char *> l) & {  // -V1071
 		if (!CanAddSelectFilter()) {
 			throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 		}
@@ -538,7 +546,7 @@ public:
 	/// @param offset - index of the first row to get from result set.
 	/// @return Query object ready to be executed.
 	Query &Aggregate(AggType type, const h_vector<string, 1> &fields, const vector<pair<string, bool>> &sort = {},
-					 unsigned limit = UINT_MAX, unsigned offset = 0) & {
+					 unsigned limit = UINT_MAX, unsigned offset = 0) & {  // -V1071
 		if (!CanAddAggregation(type)) {
 			throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 		}
@@ -557,7 +565,7 @@ public:
 
 	/// Sets next operation type to Or.
 	/// @return Query object.
-	Query &Or() & {
+	Query &Or() & {	 // -V1071
 		nextOp_ = OpOr;
 		return *this;
 	}
@@ -565,7 +573,7 @@ public:
 
 	/// Sets next operation type to Not.
 	/// @return Query object.
-	Query &Not() & {
+	Query &Not() & {  // -V1071
 		nextOp_ = OpNot;
 		return *this;
 	}
@@ -573,7 +581,7 @@ public:
 
 	/// Insert open bracket to order logic operations.
 	/// @return Query object.
-	Query &OpenBracket() & {
+	Query &OpenBracket() & {  // -V1071
 		entries.OpenBracket(nextOp_);
 		nextOp_ = OpAnd;
 		return *this;
@@ -582,7 +590,7 @@ public:
 
 	/// Insert close bracket to order logic operations.
 	/// @return Query object.
-	Query &CloseBracket() & {
+	Query &CloseBracket() & {  // -V1071
 		entries.CloseBracket();
 		return *this;
 	}
@@ -592,7 +600,7 @@ public:
 	/// Analog to sql LIMIT rowsNumber.
 	/// @param limit - number of rows to get from result set.
 	/// @return Query object.
-	Query &Limit(unsigned limit) &noexcept {
+	Query &Limit(unsigned limit) &noexcept {  // -V1071
 		count = limit;
 		return *this;
 	}
@@ -602,7 +610,7 @@ public:
 	/// Analog to sql LIMIT OFFSET.
 	/// @param offset - index of the first row to get from result set.
 	/// @return Query object.
-	Query &Offset(unsigned offset) &noexcept {
+	Query &Offset(unsigned offset) &noexcept {	// -V1071
 		start = offset;
 		return *this;
 	}
@@ -610,7 +618,7 @@ public:
 
 	/// Set the total count calculation mode to Accurate
 	/// @return Query object
-	Query &ReqTotal() &noexcept {
+	Query &ReqTotal() &noexcept {  // -V1071
 		calcTotal = ModeAccurateTotal;
 		return *this;
 	}
@@ -619,7 +627,7 @@ public:
 	/// Set the total count calculation mode to Cached.
 	/// It will be use LRUCache for total count result
 	/// @return Query object
-	Query &CachedTotal() &noexcept {
+	Query &CachedTotal() &noexcept {  // -V1071
 		calcTotal = ModeCachedTotal;
 		return *this;
 	}
@@ -628,7 +636,7 @@ public:
 	/// Output fulltext rank
 	/// Allowed only with fulltext query
 	/// @return Query object
-	Query &WithRank() &noexcept {
+	Query &WithRank() &noexcept {  // -V1071
 		withRank_ = true;
 		return *this;
 	}

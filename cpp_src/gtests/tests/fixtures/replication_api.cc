@@ -32,8 +32,8 @@ bool ReplicationApi::StartServer(size_t id) {
 
 	assert(id < svc_.size());
 	if (svc_[id].IsRunning()) return false;
-	svc_[id].InitServer(id, kDefaultRpcPort + id, kDefaultHttpPort + id, kStoragePath + "node/" + std::to_string(id),
-						"node" + std::to_string(id), true);
+	svc_[id].InitServer(ServerControlConfig(id, kDefaultRpcPort + id, kDefaultHttpPort + id, kStoragePath + "node/" + std::to_string(id),
+											"node" + std::to_string(id)));
 	return true;
 }
 void ReplicationApi::RestartServer(size_t id) {
@@ -55,8 +55,8 @@ void ReplicationApi::RestartServer(size_t id) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 	}
-	svc_[id].InitServer(id, kDefaultRpcPort + id, kDefaultHttpPort + id, kStoragePath + "node/" + std::to_string(id),
-						"node" + std::to_string(id), true);
+	svc_[id].InitServer(ServerControlConfig(id, kDefaultRpcPort + id, kDefaultHttpPort + id, kStoragePath + "node/" + std::to_string(id),
+											"node" + std::to_string(id)));
 	if (id == 0) {
 		restartMutex_.unlock();
 	}
@@ -73,7 +73,8 @@ void ReplicationApi::WaitSync(const std::string& ns, lsn_t expectedLsn) {
 		for (size_t i = 0; i < svc_.size(); i++) {
 			if (i != masterId_) {
 				state = GetSrv(i)->GetState(ns);
-				if (xstate.lsn != state.lsn) {
+				if (xstate.lsn != state.lsn || xstate.nsVersion != state.nsVersion || xstate.tmVersion != state.tmVersion ||
+					xstate.tmStatetoken != state.tmStatetoken) {
 					state.lsn = lsn_t();
 					break;
 				} else if (!state.lsn.isEmpty()) {
@@ -122,7 +123,7 @@ void ReplicationApi::SwitchMaster(size_t id, AsyncReplicationConfigTest::NsSet n
 			conf.nodes_.clear();
 			conf.role_ = "follower";
 			srv->SetReplicationConfig(conf);
-			followers.emplace_back(ReplNode{fmt::format("cproto://127.0.0.1:{}/node{}", srv->kRpcPort, i)});
+			followers.emplace_back(ReplNode{fmt::format("cproto://127.0.0.1:{}/node{}", srv->RpcPort(), i)});
 		}
 	}
 	AsyncReplicationConfigTest config("leader", std::move(followers), false, true, id, "node" + std::to_string(masterId_),
@@ -159,12 +160,12 @@ void ReplicationApi::SetUp() {
 		const uint16_t rpcPort = uint16_t(kDefaultRpcPort) + uint16_t(i);
 		const auto dbName = "node" + std::to_string(i);
 		svc_.push_back(ServerControl());
-		svc_.back().InitServer(i, rpcPort, kDefaultHttpPort + i, kStoragePath + "node/" + std::to_string(i), dbName, true);
+		svc_.back().InitServer(ServerControlConfig(i, rpcPort, kDefaultHttpPort + i, kStoragePath + "node/" + std::to_string(i), dbName));
 		svc_.back().Get()->MakeFollower();
 		followers.emplace_back(AsyncReplicationConfigTest::Node{fmt::format("cproto://127.0.0.1:{}/{}", rpcPort, dbName)});
 	}
 
-	svc_.front().InitServer(0, kDefaultRpcPort, kDefaultHttpPort, kStoragePath + "node/0", "node0", true);
+	svc_.front().InitServer(ServerControlConfig(0, kDefaultRpcPort, kDefaultHttpPort, kStoragePath + "node/0", "node0"));
 	svc_.front().Get()->MakeLeader(AsyncReplicationConfigTest("leader", std::move(followers), true, true));
 }
 

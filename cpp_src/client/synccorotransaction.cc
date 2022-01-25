@@ -28,6 +28,16 @@ Error SyncCoroTransaction::PutMeta(std::string_view key, std::string_view value,
 	return Error(errBadTransaction, "Transaction is free");
 }
 
+Error SyncCoroTransaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
+	if (!IsFree()) {
+		return rx_->setTxTm(*this, std::move(tm), lsn);
+	}
+	if (!status_.ok()) {
+		return status_;
+	}
+	return Error(errBadTransaction, "Transaction is free");
+}
+
 Error SyncCoroTransaction::Modify(Query&& query, lsn_t lsn) {
 	if (!IsFree()) {
 		return rx_->modifyTx(*this, std::move(query), lsn);

@@ -26,9 +26,16 @@ public:
 private:
 	using NsName = std::string_view;
 	using IndexName = std::string_view;
-	using ValuesData = std::unordered_map<size_t, int>;
+	using ValuesData = std::unordered_map<Variant, int>;
 	using IndexesData = std::unordered_map<IndexName, ValuesData, nocase_hash_str, nocase_equal_str>;
 	std::unordered_map<NsName, IndexesData, nocase_hash_str, nocase_equal_str> keys_;
+	// ns
+	//   indexName1
+	//       value_i1 - shardNodeId1
+	//       value_i2 - shardNodeId2
+	//   indexName2
+	//       value_k1 - shardNodeId1
+	//       value_k2 - shardNodeId2
 };
 
 }  // namespace sharding

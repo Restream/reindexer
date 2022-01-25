@@ -268,3 +268,7 @@ func (server *BuiltinServer) Status(ctx context.Context) (status bindings.Status
 func (server *BuiltinServer) Ping(ctx context.Context) error {
 	return server.builtin.Ping(ctx)
 }
+
+func (binding *BuiltinServer) GetDSNs() []url.URL {
+	return nil
+}

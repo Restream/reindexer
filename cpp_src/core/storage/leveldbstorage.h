@@ -19,7 +19,7 @@ namespace datastorage {
 class LevelDbStorage : public BaseStorage {
 public:
 	LevelDbStorage();
-	~LevelDbStorage();
+	~LevelDbStorage() override;
 
 	Error Read(const StorageOpts& opts, std::string_view key, string& value) override final;
 	Error Write(const StorageOpts& opts, std::string_view key, std::string_view value) override final;

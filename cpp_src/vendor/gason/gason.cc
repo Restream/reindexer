@@ -149,10 +149,11 @@ int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &al
 	size_t size = 0;
 
 	while (l) {
-		while (isspace(*s)) {
+		while (l && isspace(*s)) {
 			++s, --l;
 			if (!l) break;
 		}
+		if (!l) break;
 		*endptr = s++;
 		--l;
 		bool negative = false;

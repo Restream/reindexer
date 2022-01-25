@@ -15,6 +15,23 @@ const (
 	ReplicationStatsNamespaceName = "#replicationstats"
 )
 
+const (
+	// Reconnect to the next node in the list
+	ReconnectStrategyNext = ReconnectStrategy("next")
+	// Reconnect to the random node in the list
+	ReconnectStrategyRandom = ReconnectStrategy("random")
+	// Reconnect to the synchnized node (which was the part of the last consensus in synchronous cluster)
+	ReconnectStrategySynchronized = ReconnectStrategy("synchronized")
+	// Always choose cluster's leader
+	ReconnectStrategyPrefferWrite = ReconnectStrategy("preffer_write")
+	// Always choose cluster's follower
+	ReconnectStrategyReadOnly = ReconnectStrategy("read_only")
+	// Choose follower, when it's possible. Otherwise reconnect to leader
+	ReconnectStrategyPrefferRead = ReconnectStrategy("preffer_read")
+)
+
+type ReconnectStrategy string
+
 // Map from cond name to index type
 var queryTypes = map[string]int{
 	"EQ":      EQ,
@@ -381,6 +398,12 @@ type DBNamespacesConfig struct {
 	OptimizationSortWorkers int `json:"optimization_sort_workers"`
 	// Maximum WAL size for this namespace (maximum count of WAL records)
 	WALSize int64 `json:"wal_size"`
+	// Minimum preselect size for optimization of inner join by injection of filters. It is using if (MaxPreselectPart * ns.size) is less than this value
+	MinPreselectSize int64 `json:"min_preselect_size"`
+	// Maximum preselect size for optimization of inner join by injection of filters
+	MaxPreselectSize int64 `json:"max_preselect_size"`
+	// Maximum preselect part of namespace's items for optimization of inner join by injection of filters
+	MaxPreselectPart float64 `json:"max_preselect_part"`
 }
 
 // DBAsyncReplicationNode

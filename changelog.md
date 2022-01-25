@@ -1,3 +1,23 @@
+# Version 4.1.0 *beta* (25.01.2021)
+## Core
+- [fea] Optimize tags updates replication
+- [fea] Add multiple connections to cluster proxy to improve parallel proxying
+
+## Reindexer server
+- [fix] Fix vector overflow in json-parsing (when json ends with '\n')
+
+## Go connector
+- [fea] Add different reconnect strategies for async and sync cluster setups
+
+## Docker
+- [fea] Add flags for http timeouts
+
+## Face
+- [fix] Fix the issue with the Replication page opening
+
+## Ported
+- [fea/fix] Port all features and fixes from v3.2.6, v3.3.0, v3.3.1 and v3.3.2
+
 # Version 4.0.0 *beta* (15.11.2021)
 ## Core
 - [fea] Add synchronous replication support (RAFT-like cluster)

@@ -7,11 +7,11 @@ constexpr size_t kMaxIterationsScaleForInnerJoinOptimization = 100;
 
 namespace reindexer {
 
-void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, bool &found, bool &matchedAtLeastOnce) {
+void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &query, bool &found, bool &matchedAtLeastOnce) {
 	assert(rightNs_);
 
 	JoinCacheRes joinResLong;
-	joinResLong.key.SetData(joinQuery_, itemQuery_);
+	joinResLong.key.SetData(joinQuery_, query);
 	rightNs_->getFromJoinCache(joinResLong);
 
 	rightNs_->getIndsideFromJoinCache(joinRes_);
@@ -23,16 +23,15 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, bool &found, boo
 		matchedAtLeastOnce = joinResLong.it.val.matchedAtLeastOnce;
 		rightNs_->FillResult(joinItemR, joinResLong.it.val.ids_);
 	} else {
-		SelectCtx ctx(itemQuery_);
+		SelectCtx ctx(query);
 		ctx.preResult = preResult_;
 		ctx.matchedAtLeastOnce = false;
 		ctx.reqMatchedOnceFlag = true;
 		ctx.skipIndexesLookup = true;
 		ctx.functions = &selectFunctions_;
 		rightNs_->Select(joinItemR, ctx, rdxCtx_);
-		if (preResult_->explainOneSelect.empty() && !joinItemR.explainResults.empty()) {
+		if (query.explain_) {
 			preResult_->explainOneSelect = joinItemR.explainResults;
-			itemQuery_.explain_ = false;
 		}
 
 		found = joinItemR.Count();
@@ -49,12 +48,12 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, bool &found, boo
 	}
 }
 
-void JoinedSelector::selectFromPreResultValues(QueryResults &joinItemR, bool &found, bool &matchedAtLeastOnce) const {
+void JoinedSelector::selectFromPreResultValues(QueryResults &joinItemR, const Query &query, bool &found, bool &matchedAtLeastOnce) const {
 	size_t matched = 0;
 	for (const ItemRef &item : preResult_->values) {
 		assert(!item.Value().IsFree());
-		if (itemQuery_.entries.CheckIfSatisfyConditions({preResult_->values.payloadType, item.Value()}, preResult_->values.tagsMatcher)) {
-			if (++matched > itemQuery_.count) break;
+		if (query.entries.CheckIfSatisfyConditions({preResult_->values.payloadType, item.Value()}, preResult_->values.tagsMatcher)) {
+			if (++matched > query.count) break;
 			found = true;
 			joinItemR.Add(item);
 		}
@@ -71,28 +70,43 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, bool 
 
 	const auto startTime = ExplainCalc::Clock::now();
 	// Put values to join conditions
-	size_t index = 0;
+	size_t i = 0;
+	if (itemQuery_.explain_ && !preResult_->explainOneSelect.empty()) itemQuery_.explain_ = false;
+	std::unique_ptr<Query> itemQueryCopy;
+	Query *itemQueryPtr = &itemQuery_;
 	for (auto &je : joinQuery_.joinEntries_) {
-		bool nonIndexedField = (je.idxNo == IndexValueType::SetByJsonPath);
-		bool isIndexSparse = !nonIndexedField && leftNs_->indexes_[je.idxNo]->Opts().IsSparse();
-		if (nonIndexedField || isIndexSparse) {
-			VariantArray &values = itemQuery_.entries.Entry(index).values;
+		const bool nonIndexedField = (je.idxNo == IndexValueType::SetByJsonPath);
+		if (nonIndexedField) {
+			VariantArray &values = itemQueryPtr->entries.Get<QueryEntry>(i).values;
 			KeyValueType type = values.empty() ? KeyValueUndefined : values[0].Type();
 			payload.GetByJsonPath(je.index_, leftNs_->tagsMatcher_, values, type);
 		} else {
-			payload.Get(je.idxNo, itemQuery_.entries.Entry(index).values);
+			const auto &index = *leftNs_->indexes_[je.idxNo];
+			const auto &fields = index.Fields();
+			if (fields.getJsonPathsLength() == 0) {
+				payload.Get(fields[0], itemQueryPtr->entries.Get<QueryEntry>(i).values);
+			} else {
+				payload.GetByJsonPath(fields.getTagsPath(0), itemQueryPtr->entries.Get<QueryEntry>(i).values, index.KeyType());
+			}
 		}
-		++index;
+		if (itemQueryPtr->entries.Get<QueryEntry>(i).values.empty()) {
+			if (itemQueryPtr == &itemQuery_) {
+				itemQueryCopy = std::unique_ptr<Query>{new Query(itemQuery_)};
+				itemQueryPtr = itemQueryCopy.get();
+			}
+			itemQueryPtr->entries.SetValue(i, AlwaysFalse{});
+		}
+		++i;
 	}
-	itemQuery_.Limit(match ? joinQuery_.count : 0);
+	itemQueryPtr->Limit(match ? joinQuery_.count : 0);
 
 	bool found = false;
 	bool matchedAtLeastOnce = false;
 	QueryResults joinItemR;
 	if (preResult_->dataMode == JoinPreResult::ModeValues) {
-		selectFromPreResultValues(joinItemR, found, matchedAtLeastOnce);
+		selectFromPreResultValues(joinItemR, *itemQueryPtr, found, matchedAtLeastOnce);
 	} else {
-		selectFromRightNs(joinItemR, found, matchedAtLeastOnce);
+		selectFromRightNs(joinItemR, *itemQueryPtr, found, matchedAtLeastOnce);
 	}
 	if (match && found) {
 		if (nsId >= static_cast<int>(result_.joined_.size())) {
@@ -159,7 +173,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 			continue;
 		}
 		const auto &leftIndex = leftNs_->indexes_[joinEntry.idxNo];
-		assert(!isFullText(leftIndex->Type()));
+		assert(!IsFullText(leftIndex->Type()));
 		if (leftIndex->Opts().IsSparse()) continue;
 
 		VariantArray values;
@@ -173,8 +187,10 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 			}
 		} else {
 			values.reserve(preResult_->values.size());
-			assert(itemQuery_.entries.IsValue(i) && itemQuery_.entries[i].index == joinEntry.joinIndex_);
-			int rightIdxNo = itemQuery_.entries[i].idxNo;
+			assert(itemQuery_.entries.HoldsOrReferTo<QueryEntry>(i));
+			const QueryEntry &qe = itemQuery_.entries.Get<QueryEntry>(i);
+			assert(qe.index == joinEntry.joinIndex_);
+			const int rightIdxNo = qe.idxNo;
 			if (rightIdxNo == IndexValueType::SetByJsonPath) {
 				readValuesFromPreResult<true>(values, *leftIndex, rightIdxNo, joinEntry.joinIndex_);
 			} else {

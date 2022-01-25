@@ -59,6 +59,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	if (!ctx.skipIndexesLookup) qPreproc.LookupQueryIndexes();
 
 	const bool isFt = qPreproc.ContainsFullTextIndexes();
+	if (isFt && rdxCtx.IsShardingParallelExecution()) {
+		throw Error{errLogic, "Full text query by several sharding hosts"};
+	}
 	if (!ctx.skipIndexesLookup && !isFt) qPreproc.SubstituteCompositeIndexes();
 	qPreproc.ConvertWhereValues();
 
@@ -153,8 +156,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		}
 		explain.AddPrepareTime();
 
-		qres.PrepareIteratorsForSelectLoop(qPreproc.GetQueryEntries(), 0, qPreproc.Size(), ctx.query.equalPositions_,
-										   ctx.sortingContext.sortId(), isFt, *ns_, fnc_, ft_ctx_, rdxCtx);
+		qres.PrepareIteratorsForSelectLoop(qPreproc.GetQueryEntries(), ctx.query.equalPositions_, ctx.sortingContext.sortId(), isFt, *ns_,
+										   fnc_, ft_ctx_, rdxCtx);
 
 		explain.AddSelectTime();
 
@@ -209,9 +212,12 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		bool reverse = !isFt && ctx.sortingContext.sortIndex() && ctx.sortingContext.entries[0].data->desc;
 
 		bool hasComparators = false;
-		qres.ExecuteAppropriateForEach([&hasComparators](const SelectIterator &it) {
-			if (it.comparators_.size()) hasComparators = true;
-		});
+		qres.ExecuteAppropriateForEach(
+			Skip<JoinSelectIterator, SelectIteratorsBracket, AlwaysFalse>{},
+			[&hasComparators](const FieldsComparator &) { hasComparators = true; },
+			[&hasComparators](const SelectIterator &it) {
+				if (it.comparators_.size()) hasComparators = true;
+			});
 
 		if (!qres.HasIdsets()) {
 			SelectKeyResult scan;
@@ -240,7 +246,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		qres.CheckFirstQuery();
 
 		// Rewing all results iterators
-		qres.ExecuteAppropriateForEach([reverse](SelectIterator &it) { it.Start(reverse); });
+		qres.ExecuteAppropriateForEach(Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysFalse>{},
+									   [reverse](SelectIterator &it) { it.Start(reverse); });
 
 		// Let iterators choose most effecive algorith
 		assert(qres.Size());
@@ -250,7 +257,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 		// do not calc total by loop, if we have only 1 condition with 1 idset
 		lctx.calcTotal = needCalcTotal &&
-						 (hasComparators || qPreproc.MoreThanOneEvaluation() || qres.Size() > 1 || qres.GetSelectIterator(0).size() > 1);
+						 (hasComparators || qPreproc.MoreThanOneEvaluation() || qres.Size() > 1 || qres.Get<SelectIterator>(0).size() > 1);
 
 		if (reverse && hasComparators && aggregationsOnly) selectLoop<true, true, true>(lctx, result, rdxCtx);
 		if (!reverse && hasComparators && aggregationsOnly) selectLoop<false, true, true>(lctx, result, rdxCtx);
@@ -264,7 +271,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		// Get total count for simple query with 1 condition and 1 idset
 		if (needCalcTotal && !lctx.calcTotal) {
 			if (!ctx.query.entries.Empty()) {
-				result.totalCount = qres.GetSelectIterator(0).GetMaxIterations();
+				result.totalCount = qres.Get<SelectIterator>(0).GetMaxIterations();
 			} else {
 				result.totalCount = ns_->items_.size() - ns_->free_.size();
 			}
@@ -594,8 +601,8 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 	}
 
 	// reserve queryresults, if we have only 1 condition with 1 idset
-	if (qres.Size() == 1 && qres.IsSelectIterator(0) && qres.GetSelectIterator(0).size() == 1) {
-		unsigned reserve = std::min(unsigned(qres.GetSelectIterator(0).GetMaxIterations()), ctx.count);
+	if (qres.Size() == 1 && qres.IsSelectIterator(0) && qres.Get<SelectIterator>(0).size() == 1) {
+		unsigned reserve = std::min(unsigned(qres.Get<SelectIterator>(0).GetMaxIterations()), ctx.count);
 		if (sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) {
 			sctx.preResult->values.reserve(initCount + reserve);
 		} else {
@@ -615,7 +622,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 	// TODO: nested conditions support. Like (A  OR B OR C) AND (X OR Z)
 	assert(!qres.Empty());
 	assert(qres.IsSelectIterator(0));
-	SelectIterator &firstIterator = qres.begin()->Value();
+	SelectIterator &firstIterator = qres.begin()->Value<SelectIterator>();
 	IdType rowId = firstIterator.Val();
 	while (firstIterator.Next(rowId) && !finish) {
 		if (rowId % kCancelCheckFrequency == 0) ThrowOnCancel(rdxCtx);
@@ -640,8 +647,8 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 			// Exclude last sets of id from each query result, so duplicated keys will
 			// be removed
 			for (auto &it : qres) {
-				if (it.HoldsOrReferTo<SelectIterator>() && it.Value().distinct) {
-					it.Value().ExcludeLastSet(pv, rowId, properRowId);
+				if (it.HoldsOrReferTo<SelectIterator>() && it.Value<SelectIterator>().distinct) {
+					it.Value<SelectIterator>().ExcludeLastSet(pv, rowId, properRowId);
 				}
 			}
 			if ((ctx.start || (ctx.count == 0)) && sortingOptions.multiColumnByBtreeIndex) {
@@ -827,7 +834,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 					fields.push_back(ns_->indexes_[idx]->Fields().getTagsPath(0));
 				} else if (ag.type_ == AggFacet && ag.fields_.size() > 1 && ns_->indexes_[idx]->Opts().IsArray()) {
 					throw Error(errQueryExec, "Multifield facet cannot contain an array field");
-				} else if (ag.type_ == AggDistinct && isComposite(ns_->indexes_[idx]->Type())) {
+				} else if (ag.type_ == AggDistinct && IsComposite(ns_->indexes_[idx]->Type())) {
 					fields = ns_->indexes_[idx]->Fields();
 					compositeIndexFields = true;
 				}
@@ -954,6 +961,7 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 				const JoinedSelectors &joinedSelectors;
 			} lCtx{false, strictMode, joinedSelectors};
 			expr.ExecuteAppropriateForEach(
+				Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value>{},
 				[this, &lCtx](SortExprFuncs::Index &exprIndex) {
 					prepareSortIndex(exprIndex.column, exprIndex.index, lCtx.skipSortingEntry, lCtx.strictMode);
 				},
@@ -1008,57 +1016,61 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 }
 
 bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, SelectCtx &ctx, const RdxContext &rdxCtx) {
-	if (qentries.Size() == 0 || (qentries.Size() == 1 && qentries.IsValue(0) && qentries[0].idxNo == ctx.sortingContext.uncommitedIndex))
+	if (qentries.Size() == 0 || (qentries.Size() == 1 && qentries.HoldsOrReferTo<QueryEntry>(0) &&
+								 qentries.Get<QueryEntry>(0).idxNo == ctx.sortingContext.uncommitedIndex))
 		return true;
 
 	size_t costNormal = ns_->items_.size() - ns_->free_.size();
 
-	qentries.ExecuteAppropriateForEach([this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe) {
-		if (qe.idxNo < 0 || qe.idxNo == ctx.sortingContext.uncommitedIndex) return;
-		if (costNormal == 0) return;
+	qentries.ExecuteAppropriateForEach(
+		Skip<Bracket, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{}, [this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe) {
+			if (qe.idxNo < 0 || qe.idxNo == ctx.sortingContext.uncommitedIndex) return;
+			if (costNormal == 0) return;
 
-		auto &index = ns_->indexes_[qe.idxNo];
-		if (isFullText(index->Type())) return;
-
-		Index::SelectOpts opts;
-		opts.disableIdSetCache = 1;
-		opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
-		opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
-
-		try {
-			SelectKeyResults reslts = index->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
-			for (const SelectKeyResult &res : reslts) {
-				if (res.comparators_.empty()) {
-					costNormal = std::min(costNormal, res.GetMaxIterations(costNormal));
-				}
-			}
-		} catch (const Error &) {
-		}
-	});
-
-	size_t costOptimized = ns_->items_.size() - ns_->free_.size();
-	costNormal *= 2;
-	if (costNormal < costOptimized) {
-		costOptimized = costNormal + 1;
-		qentries.ExecuteAppropriateForEach([this, &ctx, &rdxCtx, &costOptimized](const QueryEntry &qe) {
-			if (qe.idxNo < 0 || qe.idxNo != ctx.sortingContext.uncommitedIndex) return;
+			auto &index = ns_->indexes_[qe.idxNo];
+			if (IsFullText(index->Type())) return;
 
 			Index::SelectOpts opts;
-			opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
 			opts.disableIdSetCache = 1;
-			opts.unbuiltSortOrders = 1;
+			opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
 			opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
 
 			try {
-				SelectKeyResults reslts = ns_->indexes_[qe.idxNo]->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
+				SelectKeyResults reslts = index->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
 				for (const SelectKeyResult &res : reslts) {
 					if (res.comparators_.empty()) {
-						costOptimized = std::min(costOptimized, res.GetMaxIterations(costOptimized));
+						costNormal = std::min(costNormal, res.GetMaxIterations(costNormal));
 					}
 				}
 			} catch (const Error &) {
 			}
 		});
+
+	size_t costOptimized = ns_->items_.size() - ns_->free_.size();
+	costNormal *= 2;
+	if (costNormal < costOptimized) {
+		costOptimized = costNormal + 1;
+		qentries.ExecuteAppropriateForEach(Skip<Bracket, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{},
+										   [this, &ctx, &rdxCtx, &costOptimized](const QueryEntry &qe) {
+											   if (qe.idxNo < 0 || qe.idxNo != ctx.sortingContext.uncommitedIndex) return;
+
+											   Index::SelectOpts opts;
+											   opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
+											   opts.disableIdSetCache = 1;
+											   opts.unbuiltSortOrders = 1;
+											   opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
+
+											   try {
+												   SelectKeyResults reslts = ns_->indexes_[qe.idxNo]->SelectKey(qe.values, qe.condition, 0,
+																												opts, nullptr, rdxCtx);
+												   for (const SelectKeyResult &res : reslts) {
+													   if (res.comparators_.empty()) {
+														   costOptimized = std::min(costOptimized, res.GetMaxIterations(costOptimized));
+													   }
+												   }
+											   } catch (const Error &) {
+											   }
+										   });
 	}
 
 	return costOptimized <= costNormal;

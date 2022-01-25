@@ -1,11 +1,16 @@
 #include "cluster/config.h"
 
+#include <string_view>
+
 #include "core/cjson/jsonbuilder.h"
 #include "gason/gason.h"
+#include "tools/json2kv.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "vendor/urlparser/urlparser.h"
 #include "yaml/yaml.h"
+
+using namespace std::string_view_literals;
 
 namespace reindexer {
 namespace cluster {
@@ -431,135 +436,205 @@ std::string AsyncReplConfigData::Role2str(AsyncReplConfigData::Role role) noexce
 	}
 }
 
-Error ShardingKey::FromYML(Yaml::Node &yaml) {
-	hostsDsns.clear();
-	auto &hostsNode = yaml["dsns"];
-	for (size_t i = 0; i < hostsNode.Size(); ++i) {
-		Yaml::Node &dsnNode = hostsNode[i];
-		string dsn = "cproto://";
-		dsn.append(dsnNode["host"].As<string>());
-		dsn.push_back(':');
-		dsn.append(dsnNode["port"].As<string>());
-		dsn.push_back('/');
-		dsn.append(dsnNode["database"].As<string>());
-		hostsDsns.emplace_back(dsn);
-	}
-
-	auto readValue = [=](auto &algorithmOptionsNode) {
-		auto &valuesNode = algorithmOptionsNode["values"];
-		if (valuesNode.Type() == Yaml::Node::SequenceType) {
-			for (size_t i = 0; i < valuesNode.Size(); ++i) {
-				values.emplace_back(stringToVariant(valuesNode[i].AsString()));
-			}
-		} else {
-			values.emplace_back(stringToVariant(valuesNode.AsString()));
-		}
-	};
-
-	values.clear();
-	auto &algorithmOptionsNode = yaml["algorithm_options"];
-	if (algorithmOptionsNode.Type() == Yaml::Node::SequenceType) {
-		for (size_t i = 0; i < algorithmOptionsNode.Size(); ++i) {
-			auto &optionsNode = algorithmOptionsNode[i];
-			ShardingAlgorithmType type = ShardingAlgorithmType(optionsNode["type"].As<int>());
-			if (type == ShardingAlgorithmType::ByValue) {  // -V547
-				readValue(optionsNode);
-			} else {
-				return Error(errParams, "Unsupported sharding algorithm type: %d", int(type));
-			}
-		}
-	} else {
-		ShardingAlgorithmType type = ShardingAlgorithmType(algorithmOptionsNode["type"].As<int>());
-		if (type == ShardingAlgorithmType::ByValue) {  // -V547
-			readValue(algorithmOptionsNode);
-		} else {
-			return Error(errParams, "Unsupported sharding algorithm type: %d", int(type));
-		}
-	}
-
+Error ShardingConfig::Namespace::FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards) {
 	ns = yaml["namespace"].As<string>();
 	index = yaml["index"].As<string>();
-	shardId = yaml["shard_id"].As<int>();
+	auto &keysNode = yaml["keys"];
+	keys.clear();
+	keys.resize(keysNode.Size());
+	for (size_t i = 0; i < keys.size(); ++i) {
+		const Error err = keys[i].FromYML(keysNode[i], shards);
+		if (!err.ok()) return err;
+	}
 	return errOK;
 }
 
-string ShardingKey::ToYml() const {
-	string yaml = "  - namespace: ";
-	yaml.append(ns);
-	yaml.push_back('\n');
-
-	yaml.append("    index: ");
-	yaml.append(index);
-	yaml.push_back('\n');
-
-	if (algorithmType == ShardingAlgorithmType::ByValue) {	// -V547
-		yaml.append("    algorithm_options: ");
-		yaml.push_back('\n');
-		yaml.append("        type: by_value");
-		yaml.push_back('\n');
-		yaml.append("        values: ");
-		for (size_t i = 0; i < values.size(); ++i) {
-			yaml.append("\n          - ");
-			bool isString = (values[i].Type() == KeyValueString);
-			if (isString) yaml.push_back('"');
-			yaml.append(values[i].As<string>());
-			if (isString) yaml.push_back('"');
+Error ShardingConfig::Namespace::FromJson(const gason::JsonNode &root) {
+	try {
+		ns = root["namespace"].As<std::string>();
+		index = root["index"].As<std::string>();
+		const auto &keysNode = root["keys"];
+		keys.clear();
+		for (const auto &kNode : keysNode) {
+			keys.emplace_back();
+			const Error err = keys.back().FromJson(kNode);
+			if (!err.ok()) return err;
 		}
-		yaml.push_back('\n');
+	} catch (const Error &err) {
+		return err;
+	} catch (const gason::Exception &ex) {
+		return Error(errParseJson, "ShardingConfig::Namespace: %s", ex.what());
+	}
+	return errOK;
+}
+
+Error ShardingConfig::Key::FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards) {
+	values.clear();
+
+	shardId = yaml["shard_id"].As<int>();
+	if (shardId == 0) {
+		return Error{errParams, "Shard id 0 is reserved for proxy"};
+	}
+	if (shards.find(shardId) == shards.cend()) {
+		return Error(errParams, "Shard id %d is not specified in the config but it is used in namespace keys", shardId);
+	}
+
+	auto &valuesNode = yaml["values"];
+	auto &fromNode = yaml["from"];
+	auto &toNode = yaml["to"];
+	if (!valuesNode.IsNone()) {
+		if (!fromNode.IsNone() || !toNode.IsNone()) {
+			return Error(errParams, "Key specifies values and range at the same time");
+		}
+		algorithmType = ByValue;
+		for (size_t i = 0; i < valuesNode.Size(); ++i) {
+			values.emplace_back(stringToVariant(valuesNode[i].AsString()));
+		}
+	} else if (!fromNode.IsNone() || !toNode.IsNone()) {
+		if (fromNode.IsNone() || toNode.IsNone()) {
+			return Error(errParams, "Key's range should be specifies by 'from' and 'to'");
+		}
+		algorithmType = ByRange;
+		values.emplace_back(stringToVariant(fromNode.AsString()));
+		values.emplace_back(stringToVariant(toNode.AsString()));
 	} else {
-		throw Error(errParams, "Unsupported sharding algorithm type: %d", int(algorithmType));
-	}
-	yaml.append("    values:");
-	for (size_t i = 0; i < values.size(); ++i) {
-		yaml.append("\n      - ");
-		bool isString = (values[i].Type() == KeyValueString);
-		if (isString) yaml.push_back('"');
-		yaml.append(values[i].As<string>());
-		if (isString) yaml.push_back('"');
-	}
-	yaml.push_back('\n');
-
-	yaml.append("    dsns:");
-	for (size_t i = 0; i < hostsDsns.size(); ++i) {
-		httpparser::UrlParser parser;
-		parser.parse(hostsDsns[i]);
-		yaml.append("\n      - host: " + parser.hostname());
-		yaml.append("\n        port: " + parser.port());
-		yaml.append("\n        database: " + parser.db());
+		return Error(errParams, "Unsupported sharding algorithm type: neither values nor range are specified");
 	}
 
-	yaml.push_back('\n');
-	yaml.append("    shard_id: ");
-	yaml.append(std::to_string(shardId));
-	yaml.push_back('\n');
-	yaml.push_back('\n');
+	return errOK;
+}
 
-	return yaml;
+Error ShardingConfig::Key::FromJson(const gason::JsonNode &root) {
+	try {
+		shardId = root["shard_id"].As<int>();
+		values.clear();
+		const auto &valuesNode = root["values"];
+		if (valuesNode.empty()) {
+			const auto &fromNode = root["from"];
+			const auto &toNode = root["to"];
+			algorithmType = ByRange;
+			values.reserve(2);
+			values.emplace_back(jsonValue2Variant(fromNode.value, KeyValueUndefined));
+			values.emplace_back(jsonValue2Variant(toNode.value, KeyValueUndefined));
+		} else {
+			algorithmType = ByValue;
+			for (const auto &vNode : valuesNode) {
+				values.emplace_back(jsonValue2Variant(vNode.value, KeyValueUndefined));
+			}
+		}
+	} catch (const Error &err) {
+		return err;
+	} catch (const gason::Exception &ex) {
+		return Error(errParseJson, "ShardingConfig::Key: %s", ex.what());
+	}
+	return errOK;
+}
+
+void ShardingConfig::Namespace::GetYml(std::stringstream &yaml) const {
+	yaml << "\n  - namespace: \"" << ns << "\"\n    index: \"" << index << "\"\n    keys:";
+	for (const auto &key : keys) {
+		key.GetYml(yaml);
+	}
+}
+
+void ShardingConfig::Namespace::GetJson(JsonBuilder &jb) const {
+	jb.Put("namespace", ns);
+	jb.Put("index", index);
+	auto keysNode = jb.Array("keys");
+	for (const auto &key : keys) {
+		auto kNode = keysNode.Object(0);
+		key.GetJson(kNode);
+	}
+}
+
+void ShardingConfig::Key::GetYml(std::stringstream &yaml) const {
+	yaml << "\n      - shard_id: " << shardId << "\n        ";
+	switch (algorithmType) {
+		case ByValue:
+			yaml << "values:";
+			for (const auto &v : values) {
+				yaml << "\n          - ";
+				if (v.Type() == KeyValueString) yaml << '"';
+				yaml << v.As<std::string>();
+				if (v.Type() == KeyValueString) yaml << '"';
+			}
+			break;
+		case ByRange:
+			assert(values.size() == 2);
+			yaml << "from: ";
+			if (values[0].Type() == KeyValueString) yaml << '"';
+			yaml << values[0].As<std::string>();
+			if (values[0].Type() == KeyValueString) yaml << '"';
+			yaml << "\n        to: ";
+			if (values[1].Type() == KeyValueString) yaml << '"';
+			yaml << values[1].As<std::string>();
+			if (values[1].Type() == KeyValueString) yaml << '"';
+			break;
+	}
+}
+
+void ShardingConfig::Key::GetJson(JsonBuilder &jb) const {
+	jb.Put("shard_id", shardId);
+	switch (algorithmType) {
+		case ByValue: {
+			auto valuesNode = jb.Array("values");
+			for (const auto &v : values) valuesNode.Put(0, v);
+			break;
+		}
+		case ByRange:
+			jb.Put("from", values[0]);
+			jb.Put("to", values[1]);
+			break;
+	}
 }
 
 Error ShardingConfig::FromYML(const std::string &yaml) {
+	proxyDsns.clear();
+	namespaces.clear();
+	shards.clear();
+
 	Yaml::Node root;
 	try {
 		Yaml::Parse(root, yaml);
 
+		const auto &versionNode = root["version"];
+		if (versionNode.IsNone()) {
+			return Error(errParams, "Version of sharding config file is not specified");
+		}
+		if (const int v{versionNode.As<int>()}; v != 1) {
+			return Error(errParams, "Unsupported version of sharding config file: %d", v);
+		}
 		auto &proxyDsnsNode = root["proxy_dsns"];
+		proxyDsns.reserve(proxyDsnsNode.Size());
 		for (size_t i = 0; i < proxyDsnsNode.Size(); ++i) {
 			Yaml::Node &dsnNode = proxyDsnsNode[i];
-			string dsn = "cproto://";
-			dsn.append(dsnNode["host"].As<string>());
-			dsn.push_back(':');
-			dsn.append(dsnNode["port"].As<string>());
-			dsn.push_back('/');
-			dsn.append(dsnNode["database"].As<string>());
-			proxyDsns.emplace_back(dsn);
+			proxyDsns.emplace_back(dsnNode.AsString());
+		}
+		if (proxyDsns.empty()) {
+			return Error{errParams, "Proxy dsns are not specified"};
 		}
 
-		auto &values = root["keys"];
-		keys.clear();
-		for (size_t i = 0; i < values.Size(); ++i) {
-			ShardingKey key;
-			key.FromYML(values[i]);
-			keys.emplace_back(std::move(key));
+		auto &shardsNode = root["shards"];
+		for (size_t i = 0; i < shardsNode.Size(); ++i) {
+			size_t shardId = shardsNode[i]["shard_id"].As<int>();
+			if (shardId == 0) {
+				return Error{errParams, "Shard id 0 is reserved for proxy"};
+			}
+			if (shards.find(shardId) != shards.end()) {
+				return Error{errParams, "Dsns for shard id %u are specified twice", shardId};
+			}
+			auto &hostsNode = shardsNode[i]["dsns"];
+			shards[shardId].reserve(hostsNode.Size());
+			for (size_t i = 0; i < hostsNode.Size(); ++i) {
+				shards[shardId].emplace_back(hostsNode[i].AsString());
+			}
+		}
+
+		auto &namespacesNodes = root["namespaces"];
+		namespaces.resize(namespacesNodes.Size());
+		for (size_t i = 0; i < namespaces.size(); ++i) {
+			const Error err = namespaces[i].FromYML(namespacesNodes[i], shards);
+			if (!err.ok()) return err;
 		}
 
 		thisShardId = root["this_shard_id"].As<int>();
@@ -571,24 +646,123 @@ Error ShardingConfig::FromYML(const std::string &yaml) {
 	}
 }
 
-string ShardingConfig::ToYml() const {
-	string yaml = "proxy_dsns:";
+Error ShardingConfig::FromJson(span<char> json) {
+	try {
+		return FromJson(gason::JsonParser().Parse(json));
+	} catch (const gason::Exception &ex) {
+		return Error(errParseJson, "ShardingConfig: %s", ex.what());
+	} catch (const Error &err) {
+		return err;
+	}
+}
+
+Error ShardingConfig::FromJson(const gason::JsonNode &root) {
+	try {
+		const int v = root["version"].As<int>();
+		if (v != 1) {
+			return Error(errParams, "Unsupported version of sharding config file: %d", v);
+		}
+		proxyDsns.clear();
+		const auto &prxDsnsNode = root["proxy_dsns"];
+		for (const auto &prxDsnN : prxDsnsNode) {
+			proxyDsns.emplace_back(prxDsnN.As<std::string>());
+		}
+		namespaces.clear();
+		const auto &namespacesNode = root["namespaces"];
+		for (const auto &nsNode : namespacesNode) {
+			namespaces.emplace_back();
+			const Error err = namespaces.back().FromJson(nsNode);
+			if (!err.ok()) return err;
+		}
+		shards.clear();
+		const auto &shardsNode = root["shards"];
+		for (const auto &shrdNode : shardsNode) {
+			const int shardId = shrdNode["shard_id"].As<int>();
+			if (shards.find(shardId) != shards.end()) {
+				return Error{errParams, "Dsns for shard id %u are specified twice", shardId};
+			}
+			const auto &dsnsNode = shrdNode["dsns"];
+			for (const auto &dNode : dsnsNode) {
+				shards[shardId].emplace_back(dNode.As<std::string>());
+			}
+		}
+		thisShardId = root["this_shard_id"].As<int>();
+	} catch (const Error &err) {
+		return err;
+	} catch (const gason::Exception &ex) {
+		return Error(errParseJson, "NodeData: %s", ex.what());
+	}
+	return errOK;
+}
+
+bool operator==(const ShardingConfig &lhs, const ShardingConfig &rhs) {
+	return lhs.proxyDsns == rhs.proxyDsns && lhs.namespaces == rhs.namespaces && lhs.thisShardId == rhs.thisShardId &&
+		   lhs.shards == rhs.shards;
+}
+bool operator==(const ShardingConfig::Key &lhs, const ShardingConfig::Key &rhs) {
+	return lhs.shardId == rhs.shardId && lhs.algorithmType == rhs.algorithmType && lhs.values.RelaxCompare(rhs.values) == 0;
+}
+bool operator==(const ShardingConfig::Namespace &lhs, const ShardingConfig::Namespace &rhs) {
+	return lhs.ns == rhs.ns && lhs.index == rhs.index && lhs.keys == rhs.keys;
+}
+
+std::string ShardingConfig::GetYml() const {
+	std::stringstream yaml;
+	yaml << "version: 1\nproxy_dsns:";
 	for (size_t i = 0; i < proxyDsns.size(); ++i) {
-		httpparser::UrlParser parser;
-		parser.parse(proxyDsns[i]);
-		yaml.append("\n  - host: " + parser.hostname());
-		yaml.append("\n    port: " + parser.port());
-		yaml.append("\n    database: " + parser.db());
+		yaml << "\n  - \"" << proxyDsns[i] << '"';
 	}
-	yaml.append("\n\n");
-	yaml.append("keys:\n");
-	for (const ShardingKey &key : keys) {
-		yaml.append(key.ToYml());
+	yaml << "\nnamespaces:";
+	for (const auto &ns : namespaces) {
+		ns.GetYml(yaml);
 	}
-	yaml.append("this_shard_id: ");
-	yaml.append(std::to_string(thisShardId));
-	yaml.push_back('\n');
-	return yaml;
+	yaml << "\nshards:";
+	for (const auto &[id, dsns] : shards) {
+		yaml << "\n  - shard_id: " << id << "\n    dsns:";
+		for (const auto &d : dsns) {
+			yaml << "\n      - \"" << d << '"';
+		}
+	}
+	yaml << "\nthis_shard_id: " << thisShardId << '\n';
+	return yaml.str();
+}
+
+std::string ShardingConfig::GetJson() const {
+	WrSerializer ser;
+	GetJson(ser);
+	return std::string{ser.Slice()};
+}
+
+void ShardingConfig::GetJson(WrSerializer &ser) const {
+	JsonBuilder jb(ser);
+	GetJson(jb);
+}
+
+void ShardingConfig::GetJson(JsonBuilder &jb) const {
+	jb.Put("version", 1);
+	{
+		auto proxyDsnsNode = jb.Array("proxy_dsns");
+		for (const auto &prxDsn : proxyDsns) proxyDsnsNode.Put(0, prxDsn);
+	}
+	{
+		auto namespacesNode = jb.Array("namespaces");
+		for (const auto &ns : namespaces) {
+			auto nsNode = namespacesNode.Object(0);
+			ns.GetJson(nsNode);
+		}
+	}
+	{
+		auto shardsNode = jb.Array("shards");
+		for (const auto &[id, dsns] : shards) {
+			auto shrdNode = shardsNode.Object(0);
+			shrdNode.Put("shard_id", id);
+			auto dsnsNode = shrdNode.Array("dsns");
+			for (const auto &d : dsns) {
+				dsnsNode.Put(0, d);
+			}
+		}
+	}
+	jb.Put("this_shard_id", thisShardId);
 }
 
 }  // namespace cluster

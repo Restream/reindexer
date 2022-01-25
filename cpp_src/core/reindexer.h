@@ -275,6 +275,11 @@ public:
 	/// Execute cluster control request
 	/// @param request - control params
 	Error ClusterControlRequest(const ClusterControlRequestData &request);
+	/// Set tags matcher for replica namespace. Current tagsmatcher and new tagsmatcher have to have the same state tokens.
+	/// This request is for replicator only.
+	/// @param nsName - Name of namespace
+	/// @param tm - New tagsmatcher
+	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm);
 
 	/// Add cancelable context
 	/// @param ctx - context pointer
@@ -290,7 +295,7 @@ public:
 	Reindexer WithEmmiterServerId(unsigned int id) { return Reindexer(impl_, ctx_.WithEmmiterServerId(id)); }
 	/// Add shard id
 	/// @param id - shard id
-	Reindexer WithShardId(unsigned int id) { return Reindexer(impl_, ctx_.WithShardId(id)); }
+	Reindexer WithShardId(unsigned int id, bool parallel) { return Reindexer(impl_, ctx_.WithShardId(id, parallel)); }
 	/// Add completion
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
 	Reindexer WithCompletion(Completion cmpl) const { return Reindexer(impl_, ctx_.WithCompletion(cmpl)); }
@@ -319,6 +324,8 @@ public:
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;
+
+	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index);
 
 private:
 	Reindexer(ClusterProxy *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}

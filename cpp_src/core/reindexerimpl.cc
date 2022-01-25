@@ -43,6 +43,7 @@ constexpr char kClusterConfFilename[] = "cluster.conf";
 constexpr char kShardingConfFilename[] = "sharding.conf";
 constexpr char kReplicationConfigType[] = "replication";
 constexpr char kAsyncReplicationConfigType[] = "async_replication";
+constexpr char kShardingConfigType[] = "sharding";
 
 ReindexerImpl::ReindexerImpl(ReindexerConfig cfg)
 	: clusterizator_(new cluster::Clusterizator(*this, cfg.maxReplUpdatesSize)),
@@ -416,7 +417,7 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 		const bool isTemporary = replState.temporary;
 
 		if (!isTemporary) {
-			checkClusterRole(nsName, ctx.originLsn_);
+			checkClusterRole(nsName, ctx.GetOriginLSN());
 		}
 
 		if (dropStorage) {
@@ -429,9 +430,10 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 		}
 
 		namespaces_.erase(nsIt);
-		if (dropStorage && !isTemporary) {
+		if (!isTemporary) {
 			auto err = clusterizator_->Replicate(
-				{UpdateRecord::Type::DropNamespace, std::string(nsName), lsn_t(0, 0), lsn_t(0, 0), ctx.emmiterServerId_},
+				{dropStorage ? UpdateRecord::Type::DropNamespace : UpdateRecord::Type::CloseNamespace, std::string(nsName), lsn_t(0, 0),
+				 lsn_t(0, 0), ctx.emmiterServerId_},
 				[&wlck] {
 					assert(wlck.isClusterLck());
 					wlck.unlock();
@@ -552,6 +554,11 @@ Error ReindexerImpl::RenameNamespace(std::string_view srcNsName, const std::stri
 		return e;
 	}
 	return err;
+}
+
+Error ReindexerImpl::SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, const InternalRdxContext& ctx) {
+	const auto makeCtxStr = [nsName](WrSerializer& ser) -> WrSerializer& { return ser << "SET TAGSMATCHER " << nsName; };
+	return applyNsFunction<&Namespace::SetTagsMatcher>(nsName, ctx, makeCtxStr, std::move(tm));
 }
 
 void ReindexerImpl::ShutdownCluster() { clusterizator_->Stop(true); }
@@ -729,13 +736,13 @@ void ReindexerImpl::setClusterizationStatus(ClusterizationStatus&& status, const
 
 template <bool needUpdateSystemNs, typename MakeCtxStrFn, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
 Error ReindexerImpl::applyNsFunction(std::string_view nsName, const InternalRdxContext& ctx, const MakeCtxStrFn& makeCtxStr, Arg arg,
-									 Args... args) {
+									 Args&&... args) {
 	Error err;
 	try {
 		WrSerializer ser;
 		auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? makeCtxStr(ser).Slice() : ""sv, activities_);
 		auto ns = getNamespace(nsName, rdxCtx);
-		(*ns.*MemFn)(arg, args..., rdxCtx);
+		(*ns.*MemFn)(arg, std::forward<Args>(args)..., rdxCtx);
 		if constexpr (needUpdateSystemNs) {
 			rdxCtx.WithNoWaitSync(true);
 			updateToSystemNamespace(nsName, arg, rdxCtx);
@@ -757,17 +764,17 @@ template <typename... Args>
 struct IsVoidReturn<void (Namespace::*)(Args...)> : public std::true_type {};
 
 template <auto MemFn, typename MakeCtxStrFn, typename Arg, typename... Args>
-Error ReindexerImpl::applyNsFunction(std::string_view nsName, const InternalRdxContext& ctx, const MakeCtxStrFn& makeCtxStr, Arg& arg,
-									 Args... args) {
+Error ReindexerImpl::applyNsFunction(std::string_view nsName, const InternalRdxContext& ctx, const MakeCtxStrFn& makeCtxStr, Arg&& arg,
+									 Args&&... args) {
 	Error err;
 	try {
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? makeCtxStr(ser).Slice() : ""sv, activities_);
 		auto ns = getNamespace(nsName, rdxCtx);
 		if constexpr (IsVoidReturn<decltype(MemFn)>::value) {
-			(*ns.*MemFn)(arg, args..., rdxCtx);
+			(*ns.*MemFn)(std::forward<Arg>(arg), std::forward<Args>(args)..., rdxCtx);
 		} else {
-			arg = (*ns.*MemFn)(args..., rdxCtx);
+			arg = (*ns.*MemFn)(std::forward<Args>(args)..., rdxCtx);
 		}
 	} catch (const Error& e) {
 		err = e;
@@ -894,8 +901,8 @@ Error ReindexerImpl::CommitTransaction(Transaction& tr, QueryResults& result, co
 	try {
 		WrSerializer ser;
 		const RdxContext rdxCtx =
-			ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "COMMIT TRANSACTION "sv << tr.GetName()).Slice() : ""sv, activities_);
-		getNamespace(tr.GetName(), rdxCtx)->CommitTransaction(tr, result, rdxCtx);
+			ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "COMMIT TRANSACTION "sv << tr.GetNsName()).Slice() : ""sv, activities_);
+		getNamespace(tr.GetNsName(), rdxCtx)->CommitTransaction(tr, result, rdxCtx);
 	} catch (const Error& e) {
 		err = e;
 	}
@@ -1019,8 +1026,10 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 
 		if (q._namespace.size() && q._namespace[0] == '#') {
 			string filterNsName;
-			if (q.entries.Size() == 1 && q.entries.IsValue(0) && q.entries[0].condition == CondEq && q.entries[0].values.size() == 1)
-				filterNsName = q.entries[0].values[0].As<string>();
+			if (q.entries.Size() == 1 && q.entries.HoldsOrReferTo<QueryEntry>(0)) {
+				const QueryEntry entry = q.entries.Get<QueryEntry>(0);
+				if (entry.condition == CondEq && entry.values.size() == 1) filterNsName = entry.values[0].As<string>();
+			}
 
 			syncSystemNamespaces(q._namespace, filterNsName, rdxCtx);
 		}
@@ -1063,13 +1072,26 @@ struct ReindexerImpl::QueryResultsContext {
 
 bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns) {
 	bool result = true;
-	jItemQ.entries.ExecuteAppropriateForEach([&jns, &result](const QueryEntry& qe) {
-		if (qe.idxNo >= 0) {
-			assert(jns->indexes_.size() > static_cast<size_t>(qe.idxNo));
-			const IndexType indexType = jns->indexes_[qe.idxNo]->Type();
-			if (isComposite(indexType) || isFullText(indexType)) result = false;
-		}
-	});
+	jItemQ.entries.ExecuteAppropriateForEach(
+		Skip<JoinQueryEntry, Bracket, AlwaysFalse>{},
+		[&jns, &result](const QueryEntry& qe) {
+			if (qe.idxNo >= 0) {
+				assert(jns->indexes_.size() > static_cast<size_t>(qe.idxNo));
+				const IndexType indexType = jns->indexes_[qe.idxNo]->Type();
+				if (IsComposite(indexType) || IsFullText(indexType)) result = false;
+			}
+		},
+		[&jns, &result](const BetweenFieldsQueryEntry& qe) {
+			if (qe.firstIdxNo >= 0) {
+				assert(jns->indexes_.size() > static_cast<size_t>(qe.firstIdxNo));
+				const IndexType indexType = jns->indexes_[qe.firstIdxNo]->Type();
+				if (IsComposite(indexType) || IsFullText(indexType)) result = false;
+			}
+			if (qe.secondIdxNo >= 0) {
+				assert(jns->indexes_.size() > static_cast<size_t>(qe.secondIdxNo));
+				if (IsComposite(jns->indexes_[qe.secondIdxNo]->Type())) result = false;
+			}
+		});
 	return result;
 }
 
@@ -1156,9 +1178,18 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 
 		result.AddNamespace(jns, true, rdxCtx);
 		if (preResult->dataMode == JoinPreResult::ModeValues) {
-			jItemQ.entries.ExecuteAppropriateForEach([&jns](QueryEntry& qe) {
-				if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
-			});
+			jItemQ.entries.ExecuteAppropriateForEach(
+				Skip<JoinQueryEntry, Bracket, AlwaysFalse>{},
+				[&jns](QueryEntry& qe) {
+					assert(qe.idxNo >= 0 && static_cast<size_t>(qe.idxNo) < jns->indexes_.size());
+					if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
+				},
+				[&jns](BetweenFieldsQueryEntry& qe) {
+					assert(qe.firstIdxNo >= 0 && static_cast<size_t>(qe.firstIdxNo) < jns->indexes_.size());
+					if (jns->indexes_[qe.firstIdxNo]->Opts().IsSparse()) qe.firstIdxNo = IndexValueType::SetByJsonPath;
+					assert(qe.secondIdxNo >= 0 && static_cast<size_t>(qe.secondIdxNo) < jns->indexes_.size());
+					if (jns->indexes_[qe.secondIdxNo]->Opts().IsSparse()) qe.secondIdxNo = IndexValueType::SetByJsonPath;
+				});
 			if (!preResult->values.Locked()) preResult->values.Lock();	// If not from cache
 			locks.Delete(jns);
 			jns.reset();
@@ -1269,6 +1300,17 @@ FieldsSet ReindexerImpl::getPK(std::string_view nsName, bool& exists, const Inte
 	return it->second->getPK(rdxCtx);
 }
 
+std::set<std::string> ReindexerImpl::GetFTIndexes(std::string_view nsName, const InternalRdxContext& ctx) {
+	RdxContext rdxCtx = ctx.CreateRdxContext(""sv, activities_);
+	auto rlck = nsLock_.RLock(rdxCtx);
+	auto it = namespaces_.find(nsName);
+	if (it == namespaces_.end()) {
+		return {};
+	} else {
+		return it->second->GetFTIndexes(rdxCtx);
+	}
+}
+
 PayloadType ReindexerImpl::getPayloadType(std::string_view nsName, const InternalRdxContext& ctx) {
 	RdxContext rdxCtx = ctx.CreateRdxContext(""sv, activities_);
 	auto rlck = nsLock_.RLock(rdxCtx);
@@ -1328,6 +1370,13 @@ Error ReindexerImpl::AddIndex(std::string_view nsName, const IndexDef& indexDef,
 		return ser << "CREATE INDEX " << indexDef.name_ << " ON " << nsName;
 	};
 	return applyNsFunction<&Namespace::AddIndex>(nsName, ctx, makeCtxStr, indexDef);
+}
+
+Error ReindexerImpl::DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index, const InternalRdxContext& ctx) {
+	const auto makeCtxStr = [nsName, index](WrSerializer& ser) -> WrSerializer& {
+		return ser << "DUMP INDEX " << index << " ON " << nsName;
+	};
+	return applyNsFunction<&Namespace::DumpIndex>(nsName, ctx, makeCtxStr, os, index);
 }
 
 Error ReindexerImpl::SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext& ctx) {
@@ -1450,6 +1499,21 @@ void ReindexerImpl::createSystemNamespaces() {
 	}
 }
 
+Error ReindexerImpl::tryLoadShardingConf() {
+	Item item = NewItem(kConfigNamespace);
+	if (!item.Status().ok()) return item.Status();
+	WrSerializer ser;
+	{
+		JsonBuilder jb{ser};
+		jb.Put("type", kShardingConfigType);
+		auto shardCfgObj = jb.Object(kShardingConfigType);
+		shardingConfig_->GetJson(shardCfgObj);
+	}
+	const Error err = item.FromJSON(ser.Slice());
+	if (!err.ok()) return err;
+	return Insert(kConfigNamespace, item);
+}
+
 Error ReindexerImpl::InitSystemNamespaces() {
 	createSystemNamespaces();
 
@@ -1459,26 +1523,28 @@ Error ReindexerImpl::InitSystemNamespaces() {
 
 	bool hasBaseReplicationConfig = false;
 	bool hasAsyncReplicationConfig = false;
+	bool hasShardingConfig = false;
 	if (results.Count() == 0) {
 		// Set default config
 		for (const auto& conf : kDefDBConfig) {
-			if (!hasBaseReplicationConfig) {
+			if (!hasBaseReplicationConfig || !hasAsyncReplicationConfig || !hasShardingConfig) {
 				gason::JsonParser parser;
 				gason::JsonNode configJson = parser.Parse(std::string_view(conf));
-				if (configJson["type"].As<std::string_view>() == kReplicationConfigType) {
+				const std::string_view type = configJson["type"].As<std::string_view>();
+				if (type == kReplicationConfigType) {
 					hasBaseReplicationConfig = true;
 					if (tryLoadConfFromFile<kReplicationConfigType, ReplicationConfigData>(kReplicationConfFilename).ok()) {
 						continue;
 					}
-				}
-			}
-			if (!hasAsyncReplicationConfig) {
-				gason::JsonParser parser;
-				gason::JsonNode configJson = parser.Parse(std::string_view(conf));
-				if (configJson["type"].As<std::string_view>() == kAsyncReplicationConfigType) {
+				} else if (type == kAsyncReplicationConfigType) {
 					hasAsyncReplicationConfig = true;
 					if (tryLoadConfFromFile<kAsyncReplicationConfigType, cluster::AsyncReplConfigData>(kAsyncReplicationConfFilename)
 							.ok()) {
+						continue;
+					}
+				} else if (type == kShardingConfigType && shardingConfig_) {
+					hasShardingConfig = true;
+					if (tryLoadShardingConf().ok()) {
 						continue;
 					}
 				}
@@ -1510,6 +1576,9 @@ Error ReindexerImpl::InitSystemNamespaces() {
 	}
 	if (!hasAsyncReplicationConfig) {
 		tryLoadConfFromFile<kAsyncReplicationConfigType, cluster::AsyncReplConfigData>(kAsyncReplicationConfFilename);
+	}
+	if (!hasShardingConfig && shardingConfig_) {
+		tryLoadShardingConf();
 	}
 
 	nsVersion_.SetServer(configProvider_.GetReplicationConfig().serverID);
@@ -1582,6 +1651,9 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 			auto asyncReplConf = configProvider_.GetAsyncReplicationConfig();
 			updateConfFile(asyncReplConf, kAsyncReplicationConfFilename);
 			clusterizator_->Configure(std::move(asyncReplConf));
+		}
+		if (!configJson[kShardingConfigType].empty()) {
+			throw Error(errLogic, "Sharding configuration cannot be updated");
 		}
 
 		auto namespaces = getNamespaces(ctx);

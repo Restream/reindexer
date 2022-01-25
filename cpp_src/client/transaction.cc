@@ -42,8 +42,7 @@ void Transaction::addTxItem(Item&& item, ItemModifyMode mode) {
 				if (ret.Status().code() != errStateInvalidated || tryCount > 2) throw ret.Status();
 
 				QueryResults qr;
-				InternalRdxContext ctx;
-				ctx = ctx.WithTimeout(execTimeout_);
+				InternalRdxContext ctx = InternalRdxContext{}.WithTimeout(execTimeout_);
 				auto err = rpcClient_->Select(Query(nsName_).Limit(0), qr, ctx, conn_);
 				if (!err.ok()) {
 					throw Error(errLogic, "Can't update TagsMatcher");

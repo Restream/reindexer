@@ -1,5 +1,5 @@
 #include "synccororeindexerimpl.h"
-#include "client/cororpcclient.h"
+#include "client/connectionspool.h"
 #include "client/itemimpl.h"
 
 namespace reindexer {
@@ -7,7 +7,8 @@ namespace client {
 
 using std::chrono::milliseconds;
 
-SyncCoroReindexerImpl::SyncCoroReindexerImpl(const CoroReindexerConfig &conf) : conf_(conf) {}
+SyncCoroReindexerImpl::SyncCoroReindexerImpl(const CoroReindexerConfig &conf, size_t connCount)
+	: conf_(conf), connCount_(connCount > 0 ? connCount : 1) {}
 
 SyncCoroReindexerImpl::~SyncCoroReindexerImpl() {
 	std::unique_lock<std::mutex> lock(loopThreadMtx_);
@@ -128,8 +129,8 @@ Error SyncCoroReindexerImpl::Select(const Query &query, SyncCoroQueryResults &re
 	if (!err.ok()) return err;
 	return sendCommand<Error>(DbCmdSelectQ, query, result.results_, ctx);
 }
-Error SyncCoroReindexerImpl::Commit(std::string_view nsName) {
-	return sendCommand<Error>(DbCmdCommit, std::forward<std::string_view>(nsName));
+Error SyncCoroReindexerImpl::Commit(std::string_view nsName, const InternalRdxContext &ctx) {
+	return sendCommand<Error>(DbCmdCommit, std::forward<std::string_view>(nsName), ctx);
 }
 
 Item SyncCoroReindexerImpl::NewItem(std::string_view nsName, const InternalRdxContext &ctx) {
@@ -188,6 +189,10 @@ Error SyncCoroReindexerImpl::putTxMeta(SyncCoroTransaction &tr, std::string_view
 							  std::forward<lsn_t>(lsn));
 }
 
+Error SyncCoroReindexerImpl::setTxTm(SyncCoroTransaction &tr, TagsMatcher &&tm, lsn_t lsn) {
+	return sendCommand<Error>(DbCmdSetTxTagsMatcher, tr.tr_, std::forward<TagsMatcher>(tm), std::forward<lsn_t>(lsn));
+}
+
 Error SyncCoroReindexerImpl::modifyTx(SyncCoroTransaction &tr, Query &&q, lsn_t lsn) {
 	return sendCommand<Error>(DbCmdModifyTx, tr.tr_, std::move(q), std::forward<lsn_t>(lsn));
 }
@@ -195,139 +200,156 @@ Error SyncCoroReindexerImpl::modifyTx(SyncCoroTransaction &tr, Query &&q, lsn_t 
 Item SyncCoroReindexerImpl::newItemTx(CoroTransaction &tr) { return sendCommand<Item>(DbCmdNewItemTx, tr); }
 
 void SyncCoroReindexerImpl::threadLoopFun(std::promise<Error> &&isRunning, const string &dsn, const client::ConnectOpts &opts) {
-	coroutine::channel<DatabaseCommandBase *> chCommand;
+	ConnectionsPool<DatabaseCommandBase> connPool(connCount_, conf_);
 
 	commandAsync_.set(loop_);
-	commandAsync_.set([this, &chCommand](net::ev::async &) {
-		loop_.spawn([this, &chCommand]() {
+	commandAsync_.set([this, &connPool](net::ev::async &) {
+		loop_.spawn([this, &connPool]() {
 			std::vector<DatabaseCommandBase *> q;
 			commandsQueue_.Get(q);
 			for (size_t i = 0; i < q.size(); ++i) {
-				assert(chCommand.opened());
-				chCommand.push(q[i]);
+				auto &conn = connPool.GetConn();
+				assert(conn.IsChOpened());
+				conn.PushCmd(q[i]);
 			}
 		});
 	});
+
+	size_t runningCount = 0;
+	for (auto &conn : connPool) {
+		loop_.spawn([this, dsn, opts, &isRunning, &conn, &runningCount]() noexcept {
+			auto err = conn.rx.Connect(dsn, loop_, opts);
+			if (++runningCount == connCount_) {
+				isRunning.set_value(err);
+			}
+			coroutine::wait_group wg;
+			for (unsigned n = 0; n < conf_.SyncRxCoroCount; ++n) {
+				loop_.spawn(wg, [this, &conn]() noexcept { coroInterpreter(conn); });
+			}
+			wg.wait();
+
+			commandAsync_.stop();
+			closeAsync_.stop();
+			assert(!conn.IsChOpened());
+			conn.rx.Stop();
+		});
+	}
 	commandAsync_.start();
 
-	loop_.spawn([this, &chCommand, dsn, opts, &isRunning]() noexcept {
-		reindexer::client::CoroRPCClient rx(conf_);
-		closeAsync_.set(loop_);
-		closeAsync_.set([this, &chCommand, &rx](net::ev::async &) {
-			commandAsync_.stop();
-			loop_.spawn([this, &chCommand, &rx]() {
-				if (chCommand.opened()) {
-					rx.Stop();
-					std::vector<DatabaseCommandBase *> q;
-					commandsQueue_.Invalidate(q);
-					for (size_t i = 0; i < q.size(); ++i) {
-						assert(chCommand.opened());
-						chCommand.push(q[i]);
-					}
-					chCommand.close();
-				}
-			});
-		});
-		closeAsync_.start();
-
-		auto err = rx.Connect(dsn, loop_, opts);
-		isRunning.set_value(err);
-		coroutine::wait_group wg;
-		for (unsigned n = 0; n < conf_.syncRxCoroCount; n++) {
-			loop_.spawn(wg, std::bind(&SyncCoroReindexerImpl::coroInterpreter, this, std::ref(rx), std::ref(chCommand)));
-		}
-		wg.wait();
-
+	closeAsync_.set(loop_);
+	closeAsync_.set([this, &connPool](net::ev::async &) {
 		commandAsync_.stop();
-		closeAsync_.stop();
-		chCommand.close();
-		rx.Stop();
+		loop_.spawn([this, &connPool]() {
+			coroutine::wait_group wg;
+			for (auto &conn : connPool) {
+				if (conn.IsChOpened()) {
+					loop_.spawn(wg, [&conn] { conn.rx.Stop(); });
+				}
+			}
+			wg.wait();
+			std::vector<DatabaseCommandBase *> q;
+			commandsQueue_.Invalidate(q);
+			for (auto &conn : connPool) {
+				if (conn.IsChOpened()) {
+					for (size_t i = 0; i < q.size(); ++i) {
+						conn.PushCmd(q[i]);
+					}
+					q.clear();
+					break;
+				}
+			}
+			assert(q.empty());
+			for (auto &conn : connPool) {
+				conn.CloseCh();
+			}
+		});
 	});
+	closeAsync_.start();
 
 	loop_.run();
 	commandAsync_.stop();
 }
 
-void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx, coroutine::channel<DatabaseCommandBase *> &chCommand) {
+void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommandBase> &conn) noexcept {
 	using namespace std::placeholders;
-	for (std::pair<DatabaseCommandBase *, bool> v = chCommand.pop(); v.second == true; v = chCommand.pop()) {
+	for (std::pair<DatabaseCommandBase *, bool> v = conn.PopCmd(); v.second == true; v = conn.PopCmd()) {
 		switch (v.first->id_) {
 			case DbCmdOpenNamespace: {
 				std::function<Error(std::string_view, const InternalRdxContext &, const StorageOpts &, const NsReplicationOpts &)> f =
-					std::bind(&client::CoroRPCClient::OpenNamespace, &rx, _1, _2, _3, _4);
+					std::bind(&client::CoroRPCClient::OpenNamespace, &conn.rx, _1, _2, _3, _4);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdAddNamespace: {
 				std::function<Error(const NamespaceDef &, const InternalRdxContext &, const NsReplicationOpts &)> f =
-					std::bind(&client::CoroRPCClient::AddNamespace, &rx, _1, _2, _3);
+					std::bind(&client::CoroRPCClient::AddNamespace, &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdCloseNamespace: {
 				std::function<Error(std::string_view, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::CloseNamespace, &rx, _1, _2);
+					std::bind(&client::CoroRPCClient::CloseNamespace, &conn.rx, _1, _2);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdDropNamespace: {
 				std::function<Error(std::string_view, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::DropNamespace, &rx, _1, _2);
+					std::bind(&client::CoroRPCClient::DropNamespace, &conn.rx, _1, _2);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdTruncateNamespace: {
 				std::function<Error(std::string_view, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::TruncateNamespace, &rx, _1, _2);
+					std::bind(&client::CoroRPCClient::TruncateNamespace, &conn.rx, _1, _2);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdRenameNamespace: {
 				std::function<Error(std::string_view, const std::string &, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::RenameNamespace, &rx, _1, _2, _3);
+					std::bind(&client::CoroRPCClient::RenameNamespace, &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 
 			case DbCmdAddIndex: {
 				std::function<Error(std::string_view, const IndexDef &, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::AddIndex, &rx, _1, _2, _3);
+					std::bind(&client::CoroRPCClient::AddIndex, &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdUpdateIndex: {
 				std::function<Error(std::string_view, const IndexDef &, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::UpdateIndex, &rx, _1, _2, _3);
+					std::bind(&client::CoroRPCClient::UpdateIndex, &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdDropIndex: {
 				std::function<Error(std::string_view, const IndexDef &, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::DropIndex, &rx, _1, _2, _3);
+					std::bind(&client::CoroRPCClient::DropIndex, &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdSetSchema: {
 				std::function<Error(std::string_view, std::string_view, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::SetSchema, &rx, _1, _2, _3);
+					std::bind(&client::CoroRPCClient::SetSchema, &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdGetSchema: {
 				std::function<Error(std::string_view, int, std::string &, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::GetSchema, &rx, _1, _2, _3, _4);
+					std::bind(&client::CoroRPCClient::GetSchema, &conn.rx, _1, _2, _3, _4);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdEnumNamespaces: {
 				std::function<Error(vector<NamespaceDef> &, EnumNamespacesOpts, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::EnumNamespaces, &rx, _1, _2, _3);
+					std::bind(&client::CoroRPCClient::EnumNamespaces, &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdEnumDatabases: {
 				std::function<Error(vector<string> &, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::EnumDatabases, &rx, _1, _2);
+					std::bind(&client::CoroRPCClient::EnumDatabases, &conn.rx, _1, _2);
 				execCommand(v.first, f);
 				break;
 			}
@@ -335,7 +357,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				std::function<Error(std::string_view, Item &, const InternalRdxContext &)> f =
 					std::bind(static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, const InternalRdxContext &)>(
 								  &client::CoroRPCClient::Insert),
-							  &rx, _1, _2, _3);
+							  &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
@@ -343,7 +365,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				std::function<Error(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)> f = std::bind(
 					static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)>(
 						&client::CoroRPCClient::Insert),
-					&rx, _1, _2, _3, _4);
+					&conn.rx, _1, _2, _3, _4);
 				execCommand(v.first, f);
 				break;
 			}
@@ -352,7 +374,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				std::function<Error(std::string_view, Item &, const InternalRdxContext &)> f =
 					std::bind(static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, const InternalRdxContext &)>(
 								  &client::CoroRPCClient::Update),
-							  &rx, _1, _2, _3);
+							  &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
@@ -360,7 +382,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				std::function<Error(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)> f = std::bind(
 					static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)>(
 						&client::CoroRPCClient::Update),
-					&rx, _1, _2, _3, _4);
+					&conn.rx, _1, _2, _3, _4);
 				execCommand(v.first, f);
 
 				break;
@@ -370,7 +392,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				std::function<Error(std::string_view, Item &, const InternalRdxContext &)> f =
 					std::bind(static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, const InternalRdxContext &)>(
 								  &client::CoroRPCClient::Upsert),
-							  &rx, _1, _2, _3);
+							  &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
@@ -378,7 +400,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				std::function<Error(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)> f = std::bind(
 					static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)>(
 						&client::CoroRPCClient::Upsert),
-					&rx, _1, _2, _3, _4);
+					&conn.rx, _1, _2, _3, _4);
 				execCommand(v.first, f);
 				break;
 			}
@@ -387,7 +409,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				std::function<Error(const Query &, CoroQueryResults &, const InternalRdxContext &)> f =
 					std::bind(static_cast<Error (client::CoroRPCClient::*)(const Query &, CoroQueryResults &, const InternalRdxContext &)>(
 								  &client::CoroRPCClient::Update),
-							  &rx, _1, _2, _3);
+							  &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
@@ -395,7 +417,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				std::function<Error(std::string_view, Item &, const InternalRdxContext &)> f =
 					std::bind(static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, const InternalRdxContext &)>(
 								  &client::CoroRPCClient::Delete),
-							  &rx, _1, _2, _3);
+							  &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
@@ -403,7 +425,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				std::function<Error(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)> f = std::bind(
 					static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)>(
 						&client::CoroRPCClient::Delete),
-					&rx, _1, _2, _3, _4);
+					&conn.rx, _1, _2, _3, _4);
 				execCommand(v.first, f);
 
 				break;
@@ -412,7 +434,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				std::function<Error(const Query &, CoroQueryResults &, const InternalRdxContext &)> f =
 					std::bind(static_cast<Error (client::CoroRPCClient::*)(const Query &, CoroQueryResults &, const InternalRdxContext &)>(
 								  &client::CoroRPCClient::Delete),
-							  &rx, _1, _2, _3);
+							  &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
@@ -420,78 +442,75 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 			case DbCmdNewItem: {
 				auto cd = dynamic_cast<DatabaseCommand<Item, std::string_view, const InternalRdxContext &> *>(v.first);
 				assert(cd);
-				Item item = rx.NewItem(std::get<0>(cd->arguments), *this, std::get<1>(cd->arguments).execTimeout());
+				Item item = conn.rx.NewItem(std::get<0>(cd->arguments), *this, std::get<1>(cd->arguments).execTimeout());
 				cd->ret.set_value(std::move(item));
 				break;
 			}
 			case DbCmdSelectS: {
 				auto cd = dynamic_cast<DatabaseCommand<Error, std::string_view, CoroQueryResults &, const InternalRdxContext &> *>(v.first);
 				assert(cd);
-				Error err = rx.Select(std::get<0>(cd->arguments), std::get<1>(cd->arguments), std::get<2>(cd->arguments));
+				Error err = conn.rx.Select(std::get<0>(cd->arguments), std::get<1>(cd->arguments), std::get<2>(cd->arguments));
 				cd->ret.set_value(std::move(err));
 				break;
 			}
 			case DbCmdSelectQ: {
 				auto cd = dynamic_cast<DatabaseCommand<Error, const Query &, CoroQueryResults &, const InternalRdxContext &> *>(v.first);
 				assert(cd);
-				Error err = rx.Select(std::get<0>(cd->arguments), std::get<1>(cd->arguments), std::get<2>(cd->arguments));
+				Error err = conn.rx.Select(std::get<0>(cd->arguments), std::get<1>(cd->arguments), std::get<2>(cd->arguments));
 				cd->ret.set_value(std::move(err));
 				break;
 			}
 			case DbCmdCommit: {
-				std::function<Error(std::string_view)> f = std::bind(&client::CoroRPCClient::Commit, &rx, _1);
+				std::function<Error(std::string_view, const InternalRdxContext &)> f =
+					std::bind(&client::CoroRPCClient::Commit, &conn.rx, _1, _2);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdGetMeta: {
 				std::function<Error(std::string_view, const string &, string &, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::GetMeta, &rx, _1, _2, _3, _4);
+					std::bind(&client::CoroRPCClient::GetMeta, &conn.rx, _1, _2, _3, _4);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdPutMeta: {
 				std::function<Error(std::string_view, const string &, std::string_view, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::PutMeta, &rx, _1, _2, _3, _4);
+					std::bind(&client::CoroRPCClient::PutMeta, &conn.rx, _1, _2, _3, _4);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdEnumMeta: {
 				std::function<Error(std::string_view, vector<string> &, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::EnumMeta, &rx, _1, _2, _3);
+					std::bind(&client::CoroRPCClient::EnumMeta, &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdGetSqlSuggestions: {
 				std::function<Error(std::string_view, int, vector<string> &)> f =
-					std::bind(&client::CoroRPCClient::GetSqlSuggestions, &rx, _1, _2, _3);
+					std::bind(&client::CoroRPCClient::GetSqlSuggestions, &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdStatus: {
-				std::function<Error(const InternalRdxContext &)> f = std::bind(&client::CoroRPCClient::Status, &rx, false, _1);
+				std::function<Error(const InternalRdxContext &)> f = std::bind(&client::CoroRPCClient::Status, &conn.rx, false, _1);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdNewTransaction: {
 				auto *cd = dynamic_cast<DatabaseCommand<CoroTransaction, std::string_view, const InternalRdxContext &> *>(v.first);
 				assert(cd);
-				if (cd != nullptr) {
-					CoroTransaction coroTrans = rx.NewTransaction(std::get<0>(cd->arguments), std::get<1>(cd->arguments));
-					cd->ret.set_value(std::move(coroTrans));
-				} else {
-					assert(false);
-				}
+				CoroTransaction coroTrans = conn.rx.NewTransaction(std::get<0>(cd->arguments), std::get<1>(cd->arguments));
+				cd->ret.set_value(std::move(coroTrans));
 				break;
 			}
 			case DbCmdCommitTransaction: {
 				std::function<Error(CoroTransaction &, CoroQueryResults &, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::CommitTransaction, &rx, _1, _2, _3);
+					std::bind(&client::CoroRPCClient::CommitTransaction, &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdRollBackTransaction: {
 				std::function<Error(CoroTransaction &, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::RollBackTransaction, &rx, _1, _2);
+					std::bind(&client::CoroRPCClient::RollBackTransaction, &conn.rx, _1, _2);
 				execCommand(v.first, f);
 				break;
 			}
@@ -501,7 +520,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				assert(cd);
 				CoroQueryResults &coroResults = std::get<1>(cd->arguments);
 				auto ret = coroResults.conn_->Call({reindexer::net::cproto::kCmdFetchResults, coroResults.requestTimeout_, milliseconds(0),
-													lsn_t(), -1, IndexValueType::NotSet, nullptr},
+													lsn_t(), -1, IndexValueType::NotSet, nullptr, false},
 												   coroResults.queryID_, std::get<0>(cd->arguments),
 												   coroResults.queryParams_.count + coroResults.fetchOffset_, coroResults.fetchAmount_);
 				if (!ret.Status().ok()) {
@@ -528,7 +547,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 			case DbCmdNewItemTx: {
 				auto cd = dynamic_cast<DatabaseCommand<Item, CoroTransaction &> *>(v.first);
 				assert(cd);
-				Item item = execNewItemTx(std::get<0>(cd->arguments));
+				Item item = std::get<0>(cd->arguments).NewItem(this);
 				cd->ret.set_value(std::move(item));
 				break;
 			}
@@ -548,6 +567,13 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				cd->ret.set_value(err);
 				break;
 			}
+			case DbCmdSetTxTagsMatcher: {
+				auto cd = dynamic_cast<DatabaseCommand<Error, CoroTransaction &, TagsMatcher, lsn_t> *>(v.first);
+				assert(cd);
+				Error err = std::get<0>(cd->arguments).SetTagsMatcher(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments));
+				cd->ret.set_value(err);
+				break;
+			}
 			case DbCmdModifyTx: {
 				auto cd = dynamic_cast<DatabaseCommand<Error, CoroTransaction &, Query, lsn_t> *>(v.first);
 				assert(cd);
@@ -560,7 +586,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 						case QueryUpdate: {
 							err = tr.getConn()
 									  ->Call({cproto::kCmdUpdateQueryTx, tr.requestTimeout_, tr.execTimeout_, std::get<2>(cd->arguments),
-											  -1, IndexValueType::NotSet, nullptr},
+											  -1, IndexValueType::NotSet, nullptr, false},
 											 ser.Slice(), tr.txId_)
 									  .Status();
 							break;
@@ -568,7 +594,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 						case QueryDelete: {
 							err = tr.getConn()
 									  ->Call({cproto::kCmdDeleteQueryTx, tr.requestTimeout_, tr.execTimeout_, std::get<2>(cd->arguments),
-											  -1, IndexValueType::NotSet, nullptr},
+											  -1, IndexValueType::NotSet, nullptr, false},
 											 ser.Slice(), tr.txId_)
 									  .Status();
 							break;
@@ -582,26 +608,26 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 			}
 			case DbCmdGetReplState: {
 				std::function<Error(std::string_view, ReplicationStateV2 &, const InternalRdxContext &)> f =
-					std::bind(&client::CoroRPCClient::GetReplState, &rx, _1, _2, _3);
+					std::bind(&client::CoroRPCClient::GetReplState, &conn.rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			default:
+				assert(false);
 				break;
 		}
+		conn.OnRequestDone();
 	}
 }
 
-Item SyncCoroReindexerImpl::execNewItemTx(CoroTransaction &tr) { return tr.NewItem(this); }
-
 Error SyncCoroReindexerImpl::CommandsQueue::Push(net::ev::async &ev, DatabaseCommandBase *cmd) {
-	{
-		std::unique_lock<std::mutex> lock(mtx_);
-		if (!isValid_) {
-			return errNotValid;
-		}
-		queue_.push_back(cmd);
+	std::unique_lock<std::mutex> lock(mtx_);
+	if (!isValid_) {
+		return Error(errNotValid, "SyncCoroReindexer command queue is invalidated");
 	}
+	queue_.push_back(cmd);
+	lock.unlock();
+
 	ev.send();
 	return Error();
 }

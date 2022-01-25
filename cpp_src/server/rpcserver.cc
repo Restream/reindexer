@@ -358,7 +358,7 @@ Error RPCServer::AddTxItem(cproto::Context &ctx, int format, p_string itemData, 
 
 	err = processTxItem(static_cast<DataFormat>(format), itemData, item, static_cast<ItemModifyMode>(mode), stateToken);
 	if (err.code() == errTagsMissmatch) {
-		item = getDB(ctx, kRoleDataWrite).NewItem(tr.GetName());
+		item = getDB(ctx, kRoleDataWrite).NewItem(tr.GetNsName());
 		if (item.Status().ok()) {
 			err = processTxItem(static_cast<DataFormat>(format), itemData, item, static_cast<ItemModifyMode>(mode), stateToken);
 		} else {
@@ -409,6 +409,16 @@ Error RPCServer::PutMetaTx(cproto::Context &ctx, p_string key, p_string data, in
 
 	Transaction &tr = getTx(ctx, txID);
 	return tr.PutMeta(key, data, ctx.call->lsn);
+}
+
+Error RPCServer::SetTagsMatcherTx(cproto::Context &ctx, int64_t statetoken, int64_t version, p_string data, int64_t txID) {
+	auto db = getDB(ctx, kRoleDataWrite);
+
+	Transaction &tr = getTx(ctx, txID);
+	TagsMatcher tm;
+	Serializer ser(data);
+	tm.deserialize(ser, (int)version, (int)statetoken);
+	return tr.SetTagsMatcher(std::move(tm), ctx.call->lsn);
 }
 
 Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId, cproto::optional<int> flagsOpts) {
@@ -507,6 +517,7 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 		Serializer ser(perceptsPack);
 		const uint64_t preceptsCount = ser.GetVarUint();
 		vector<string> precepts;
+		precepts.reserve(preceptsCount);
 		for (unsigned prIndex = 0; prIndex < preceptsCount; ++prIndex) {
 			precepts.emplace_back(ser.GetVString());
 		}
@@ -624,7 +635,7 @@ Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
 			auto rx = db->WithTimeout(ctx.call->execTimeout)
 						  .WithLSN(ctx.call->lsn)
 						  .WithEmmiterServerId(ctx.call->emmiterServerId)
-						  .WithShardId(ctx.call->shardId);
+						  .WithShardId(ctx.call->shardId, ctx.call->shardingParallelExecution);
 			if (db->NeedTraceActivity()) {
 				return rx.WithActivityTracer(ctx.clientAddr, clientData->auth.Login(), clientData->connID);
 			}
@@ -997,7 +1008,7 @@ Error RPCServer::SubscribeUpdates(cproto::Context & /*ctx*/, int /*flag*/, cprot
 }
 
 Error RPCServer::SuggestLeader(cproto::Context &ctx, p_string suggestion) {
-	if (!serverConfig_.EnableCluster) {
+	if (!serverConfig_.EnableCluster()) {
 		return Error(errForbidden, "Cluster is not enabled for this node");
 	}
 	cluster::NodeData sug, res;
@@ -1015,7 +1026,7 @@ Error RPCServer::SuggestLeader(cproto::Context &ctx, p_string suggestion) {
 }
 
 Error RPCServer::LeadersPing(cproto::Context &ctx, p_string leader) {
-	if (!serverConfig_.EnableCluster) {
+	if (!serverConfig_.EnableCluster()) {
 		return Error(errForbidden, "Cluster is not enabled for this node");
 	}
 	cluster::NodeData l;
@@ -1027,11 +1038,11 @@ Error RPCServer::LeadersPing(cproto::Context &ctx, p_string leader) {
 }
 
 Error RPCServer::GetRaftInfo(cproto::Context &ctx) {
-	if (!serverConfig_.EnableCluster) {
+	if (!serverConfig_.EnableCluster()) {
 		return Error(errForbidden, "Cluster is not enabled for this node");
 	}
 	cluster::RaftInfo info;
-	auto err = getDB(ctx, kRoleDataWrite).GetRaftInfo(info);
+	auto err = getDB(ctx, kRoleDataRead).GetRaftInfo(info);
 	if (err.ok()) {
 		WrSerializer ser;
 		info.GetJSON(ser);
@@ -1048,6 +1059,17 @@ Error RPCServer::ClusterControlRequest(cproto::Context &ctx, p_string data) {
 		return err;
 	}
 	return getDB(ctx, kRoleDBAdmin).ClusterControlRequest(req);
+}
+
+Error RPCServer::SetTagsMatcher(cproto::Context &ctx, p_string ns, int64_t statetoken, int64_t version, p_string data) {
+	TagsMatcher tm;
+	Serializer ser(data);
+	try {
+		tm.deserialize(ser, (int)version, (int)statetoken);
+	} catch (Error &err) {
+		return err;
+	}
+	return getDB(ctx, kRoleDataWrite).SetTagsMatcher(ns, std::move(tm));
 }
 
 bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
@@ -1094,10 +1116,12 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher_.Register(cproto::kCmdFetchSnapshot, this, &RPCServer::FetchSnapshot);
 	dispatcher_.Register(cproto::kCmdApplySnapshotCh, this, &RPCServer::ApplySnapshotChunk);
 	dispatcher_.Register(cproto::kCmdPutTxMeta, this, &RPCServer::PutMetaTx);
+	dispatcher_.Register(cproto::kCmdSetTagsMatcherTx, this, &RPCServer::SetTagsMatcherTx);
 	dispatcher_.Register(cproto::kCmdSuggestLeader, this, &RPCServer::SuggestLeader);
 	dispatcher_.Register(cproto::kCmdLeadersPing, this, &RPCServer::LeadersPing);
 	dispatcher_.Register(cproto::kCmdGetRaftInfo, this, &RPCServer::GetRaftInfo);
 	dispatcher_.Register(cproto::kCmdClusterControlRequest, this, &RPCServer::ClusterControlRequest);
+	dispatcher_.Register(cproto::kCmdSetTagsMatcher, this, &RPCServer::SetTagsMatcher);
 	dispatcher_.Middleware(this, &RPCServer::CheckAuth);
 	dispatcher_.OnClose(this, &RPCServer::OnClose);
 	dispatcher_.OnResponse(this, &RPCServer::OnResponse);
@@ -1107,7 +1131,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	}
 
 	auto factory = cproto::ServerConnection::NewFactory(dispatcher_, serverConfig_.EnableConnectionsStats);
-	if (serverConfig_.RPCThreadingMode == ServerConfig::kDedicatedThreading || serverConfig_.EnableCluster) {
+	if (serverConfig_.RPCThreadingMode == ServerConfig::kDedicatedThreading || serverConfig_.EnableCluster()) {
 		listener_.reset(new ForkedListener(loop, factory));
 	} else {
 		listener_.reset(new Listener(loop, factory));

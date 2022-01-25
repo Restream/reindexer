@@ -47,6 +47,7 @@ public:
 			{kFieldNamePointLinearRTree, IndexOpts().RTreeType(IndexOpts::Linear)},
 			{kFieldNamePointGreeneRTree, IndexOpts().RTreeType(IndexOpts::Greene)},
 			{kFieldNamePointRStarRTree, IndexOpts().RTreeType(IndexOpts::RStar)},
+			{kFieldNameYearSparse, IndexOpts().Sparse()},
 		};
 
 		Error err = rt.reindexer->OpenNamespace(default_namespace);
@@ -75,6 +76,7 @@ public:
 													indexesOptions[kFieldNameId + compositePlus + kFieldNameTemp], 0},
 								   IndexDeclaration{string(kFieldNameAge + compositePlus + kFieldNameGenre).c_str(), "hash", "composite",
 													indexesOptions[kFieldNameAge + compositePlus + kFieldNameGenre], 0},
+								   IndexDeclaration{kFieldNameYearSparse, "hash", "string", indexesOptions[kFieldNameYearSparse], 0},
 							   });
 
 		defaultNsPks.push_back(kFieldNameId);
@@ -85,7 +87,8 @@ public:
 		DefineNamespaceDataset(joinNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 										IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameAge, "tree", "int", IndexOpts(), 0},
-										IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts(), 0}});
+										IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts(), 0},
+										IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts().Sparse(), 0}});
 		joinNsPks.push_back(kFieldNameId);
 
 		err = rt.reindexer->OpenNamespace(testSimpleNs);
@@ -110,6 +113,8 @@ public:
 			 IndexDeclaration{kFieldNameName, "text", "string", IndexOpts(), 0},
 			 IndexDeclaration{kCompositeFieldPricePages.c_str(), "hash", "composite", IndexOpts(), 0},
 			 IndexDeclaration{kCompositeFieldTitleName.c_str(), "tree", "composite", IndexOpts(), 0},
+			 IndexDeclaration{kCompositeFieldPriceTitle.c_str(), "hash", "composite", IndexOpts(), 0},
+			 IndexDeclaration{kCompositeFieldPagesTitle.c_str(), "hash", "composite", IndexOpts(), 0},
 			 IndexDeclaration{(string(kFieldNameBookid) + "+" + kFieldNameBookid2).c_str(), "hash", "composite", IndexOpts().PK(), 0}});
 
 		compositeIndexesNsPks.push_back(kFieldNameBookid);
@@ -144,6 +149,12 @@ public:
 					 IndexDeclaration{kFieldNamePointGreeneRTree, "rtree", "point", indexesOptions[kFieldNamePointGreeneRTree], 0},
 					 IndexDeclaration{kFieldNamePointRStarRTree, "rtree", "point", indexesOptions[kFieldNamePointRStarRTree], 0}});
 		geomNsPks.push_back(kFieldNameId);
+
+		err = rt.reindexer->OpenNamespace(btreeIdxOptNs);
+		ASSERT_TRUE(err.ok()) << err.what();
+		DefineNamespaceDataset(btreeIdxOptNs, {IndexDeclaration{kFieldNameId, "tree", "int", IndexOpts().PK(), 0},
+											   IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts(), 0}});
+		btreeIdxOptNsPks.push_back(kFieldNameId);
 	}
 
 	template <typename... T>
@@ -324,10 +335,23 @@ public:
 			}
 
 			bool conditionsSatisfied = checkConditions(itemr, query.entries.cbegin(), query.entries.cend(), joinedSelectors);
-			if (conditionsSatisfied) ++itemsCount;
-			EXPECT_TRUE(conditionsSatisfied) << "Item doesn't match conditions: " << itemr.GetJSON() << std::endl
-											 << "explain: " << qr.GetExplainResults();
-			if (!conditionsSatisfied) {
+			if (conditionsSatisfied) {
+				++itemsCount;
+			} else {
+				std::stringstream ss;
+				ss << "Item doesn't match conditions: " << itemr.GetJSON() << std::endl;
+				const auto& jit = qr[i].GetJoined();
+				if (jit.getJoinedItemsCount() > 0) {
+					ss << "Joined:" << std::endl;
+					for (int fIdx = 0, fCount = jit.getJoinedFieldsCount(); fIdx < fCount; ++fIdx) {
+						for (int j = 0, iCount = jit.at(fIdx).ItemsCount(); j < iCount; ++j) {
+							const auto nsCtxIdx = qr.GetJoinedNsCtxIndex(jit.at(fIdx)[j].Nsid());
+							ss << jit.at(fIdx).GetItem(j, qr.getPayloadType(nsCtxIdx), qr.getTagsMatcher(nsCtxIdx)).GetJSON() << std::endl;
+						}
+					}
+				}
+				ss << "explain: " << qr.GetExplainResults();
+				EXPECT_TRUE(conditionsSatisfied) << ss.str();
 				TEST_COUT << query.GetSQL() << std::endl;
 				PrintFailedQueryEntries(query.entries, joinedSelectors);
 			}
@@ -443,6 +467,7 @@ protected:
 		if (ns == comparatorsNs) return comparatorsNsPks;
 		if (ns == forcedSortOffsetNs) return forcedSortOffsetNsPks;
 		if (ns == geomNs) return geomNsPks;
+		if (ns == btreeIdxOptNs) return btreeIdxOptNsPks;
 		std::abort();
 	}
 
@@ -455,35 +480,57 @@ protected:
 		return ret;
 	}
 
+	static bool containsJoins(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator end) noexcept {
+		for (; it != end; ++it) {
+			if (it->InvokeAppropriate<bool>([&it](const reindexer::Bracket&) { return containsJoins(it.cbegin(), it.cend()); },
+											[](const reindexer::JoinQueryEntry&) { return true; }, [](const QueryEntry&) { return false; },
+											[](const reindexer::BetweenFieldsQueryEntry&) { return false; },
+											[](const reindexer::AlwaysFalse&) { return false; })) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	bool checkConditions(reindexer::Item& item, reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to,
 						 const std::vector<JoinedSelectorMock>& joinedSelectors) {
 		bool result = true;
 		for (; it != to; ++it) {
-			const bool isJoinEntry = it->IsLeaf() && it->Value().joinIndex != QueryEntry::kNoJoins;
 			OpType op = it->operation;
-			if (isJoinEntry && joinedSelectors[it->Value().joinIndex].Type() == OrInnerJoin) {
-				assert(op != OpNot);
-				op = OpOr;
-			}
-			if (op == OpOr) {
-				if (result && !isJoinEntry) {
-					continue;
-				}
-			} else if (!result) {
-				return false;
-			}
-			bool iterationResult = true;
-			if (it->IsLeaf()) {
-				if (it->Value().distinct) continue;
-				if (it->Value().joinIndex == QueryEntry::kNoJoins) {
-					iterationResult = checkCondition(item, it->Value());
-				} else {
-					assert(static_cast<size_t>(it->Value().joinIndex) < joinedSelectors.size());
-					iterationResult = checkCondition(item, joinedSelectors[it->Value().joinIndex]);
-				}
-			} else {
-				iterationResult = checkConditions(item, it.cbegin(), it.cend(), joinedSelectors);
-			}
+			if (op != OpOr && !result) return false;
+			bool skip = false;
+			bool const iterationResult = it->InvokeAppropriate<bool>(
+				[&](const reindexer::Bracket&) {
+					if (op == OpOr && result && !containsJoins(it.cbegin(), it.cend())) {
+						skip = true;
+						return false;
+					}
+					return checkConditions(item, it.cbegin(), it.cend(), joinedSelectors);
+				},
+				[&](const reindexer::QueryEntry& qe) {
+					if ((op == OpOr && result) || qe.distinct) {
+						skip = true;
+						return false;
+					}
+					return checkCondition(item, qe);
+				},
+				[&](const reindexer::JoinQueryEntry& jqe) {
+					assert(jqe.joinIndex < joinedSelectors.size());
+					if (joinedSelectors[jqe.joinIndex].Type() == OrInnerJoin) {
+						assert(op != OpNot);
+						op = OpOr;
+					}
+					return checkCondition(item, joinedSelectors[jqe.joinIndex]);
+				},
+				[&](const reindexer::BetweenFieldsQueryEntry& qe) {
+					if (op == OpOr && result) {
+						skip = true;
+						return false;
+					}
+					return checkCondition(item, qe);
+				},
+				[](const reindexer::AlwaysFalse&) { return false; });
+			if (skip) continue;
 			switch (op) {
 				case OpNot:
 					result = !iterationResult;
@@ -509,9 +556,10 @@ protected:
 	}
 
 	bool compareValues(CondType condition, Variant key, const VariantArray& values, const CollateOpts& opts) {
+		if (values.empty()) return false;
 		bool result = false;
 		try {
-			if (values.size()) key.convert(values[0].Type());
+			key.convert(values[0].Type());
 		} catch (const Error& err) {
 			return false;
 		}
@@ -611,7 +659,7 @@ protected:
 		}
 	}
 
-	static bool isGeomConditions(const QueryEntry& qe) { return qe.condition == CondType::CondDWithin; }
+	static bool isGeomConditions(CondType cond) noexcept { return cond == CondType::CondDWithin; }
 
 	bool checkGeomConditions(const Item& item, const QueryEntry& qentry) const {
 		assert(qentry.values.size() == 2);
@@ -674,12 +722,10 @@ protected:
 	}
 
 	bool checkCondition(Item& item, const QueryEntry& qentry) {
-		EXPECT_TRUE(item.NumFields() > 0);
-		if (isGeomConditions(qentry)) {
+		EXPECT_GT(item.NumFields(), 0);
+		if (isGeomConditions(qentry.condition)) {
 			return checkGeomConditions(item, qentry);
 		}
-
-		bool result = false;
 		const IndexOpts& opts = indexesOptions[qentry.index];
 
 		if (isIndexComposite(item, qentry)) {
@@ -700,12 +746,94 @@ protected:
 					break;
 			}
 			for (const Variant& fieldValue : fieldValues) {
-				result = compareValues(qentry.condition, fieldValue, qentry.values, opts.collateOpts_);
-				if (result) break;
+				if (compareValues(qentry.condition, fieldValue, qentry.values, opts.collateOpts_)) return true;
 			}
 		}
 
-		return result;
+		return false;
+	}
+
+	bool checkCompositeCondition(Item& item, const reindexer::BetweenFieldsQueryEntry& qentry) {
+		std::vector<std::string> firstSubIndexes, secondSubIndexes;
+		reindexer::split(qentry.firstIndex, "+", true, firstSubIndexes);
+		reindexer::split(qentry.secondIndex, "+", true, secondSubIndexes);
+		assert(firstSubIndexes.size() == secondSubIndexes.size());
+
+		reindexer::BetweenFieldsQueryEntry qe{qentry};
+		for (size_t i = 0; i < firstSubIndexes.size(); ++i) {
+			qe.firstIndex = firstSubIndexes[i];
+			qe.secondIndex = secondSubIndexes[i];
+			if (!checkCondition(item, qe)) return false;
+		}
+		return !firstSubIndexes.empty();
+	}
+
+	bool isIndexComposite(const reindexer::BetweenFieldsQueryEntry& qe) {
+		return qe.firstIndex.find('+') != std::string::npos || qe.secondIndex.find('+') != std::string::npos;
+	}
+
+	bool checkCondition(Item& item, const reindexer::BetweenFieldsQueryEntry& qentry) {
+		EXPECT_GT(item.NumFields(), 0);
+		assert(!isGeomConditions(qentry.Condition()));
+
+		const IndexOpts& opts = indexesOptions[qentry.firstIndex];
+
+		if (isIndexComposite(qentry)) {
+			return checkCompositeCondition(item, qentry);
+		}
+
+		VariantArray lValues = item[qentry.firstIndex];
+		VariantArray rValues = item[qentry.secondIndex];
+		switch (qentry.Condition()) {
+			case CondAllSet:
+				for (const auto& rv : rValues) {
+					if (!compareValues(CondSet, rv, lValues, opts.collateOpts_)) return false;
+				}
+				return true;
+			case CondRange:
+				assert(rValues.size() == 2);
+				for (const auto& lv : lValues) {
+					if (lv.RelaxCompare(rValues[0], opts.collateOpts_) >= 0 && lv.Compare(rValues[1], opts.collateOpts_) <= 0) return true;
+				}
+				return false;
+			case CondLike:
+				for (const Variant& lv : lValues) {
+					assert(lv.Type() == KeyValueString);
+					const auto lstr = *static_cast<reindexer::key_string>(lv.convert(KeyValueString));
+					for (const Variant& rv : rValues) {
+						assert(rv.Type() == KeyValueString);
+						if (isLikeSqlPattern(lstr, *static_cast<reindexer::key_string>(rv.convert(KeyValueString)))) return true;
+					}
+				}
+				return false;
+			default:
+				for (const Variant& lv : lValues) {
+					for (const Variant& rv : rValues) {
+						const int res = lv.RelaxCompare(rv, opts.collateOpts_);
+						switch (qentry.Condition()) {
+							case CondGe:
+								if (res >= 0) return true;
+								break;
+							case CondGt:
+								if (res > 0) return true;
+								break;
+							case CondLt:
+								if (res < 0) return true;
+								break;
+							case CondLe:
+								if (res <= 0) return true;
+								break;
+							case CondEq:
+							case CondSet:
+								if (res == 0) return true;
+								break;
+							default:
+								std::abort();
+						}
+					}
+				}
+				return false;
+		}
 	}
 
 	static std::vector<JoinedSelectorMock> getJoinedSelectors(const Query& query) {
@@ -725,8 +853,8 @@ protected:
 		bool result = true;
 		// check only on root level
 		for (auto it = qr.entries.cbegin(); it != qr.entries.cend(); ++it) {
-			if (!it->IsLeaf()) continue;
-			const QueryEntry& qentry = it->Value();
+			if (!it->HoldsOrReferTo<QueryEntry>()) continue;
+			const QueryEntry& qentry = it->Value<QueryEntry>();
 			if (!qentry.distinct) continue;
 
 			reindexer::VariantArray fieldValue = item[qentry.index];
@@ -798,6 +926,9 @@ protected:
 			item[kFieldNameAge] = rand() % 50;
 			item[kFieldNameName] = RandString().c_str();
 			item[kFieldNameGenre] = rand() % 50;
+			if (rand() % 4 != 0) {
+				item[kFieldNameYearSparse] = std::to_string(rand() % 50 + 2000);
+			}
 			Upsert(joinNs, item);
 			string pkString = getPkString(item, joinNs);
 			insertedItems[joinNs].emplace(std::move(pkString), std::move(item));
@@ -876,6 +1007,20 @@ protected:
 		}
 		Commit(geomNs);
 		lastId += geomNsSize;
+	}
+
+	void UpsertBtreeIdxOptNsItem(std::pair<int, int> values) {
+		Item item = NewItem(btreeIdxOptNs);
+		ASSERT_TRUE(item.Status().ok());
+		item[kFieldNameId] = values.first;
+		item[kFieldNameStartTime] = values.second;
+		Upsert(btreeIdxOptNs, item);
+
+		string pkString = getPkString(item, btreeIdxOptNs);
+		insertedItems[btreeIdxOptNs][pkString] = std::move(item);
+
+		Error err = Commit(btreeIdxOptNs);
+		ASSERT_TRUE(err.ok());
 	}
 
 	enum Column { First, Second };
@@ -1027,12 +1172,23 @@ protected:
 		return currBtreeIdsetsValue;
 	}
 
+	std::vector<std::string> RandStrVector(size_t count) {
+		std::vector<std::string> res;
+		res.reserve(count);
+		for (size_t i = 0; i < count; ++i) res.push_back(RandString());
+		return res;
+	}
+
 	Item GenerateDefaultNsItem(int idValue, size_t packagesCount) {
 		Item item = NewItem(default_namespace);
 		item[kFieldNameId] = idValue;
 		item[kFieldNameYear] = rand() % 50 + 2000;
+		if (rand() % 4 != 0) {
+			item[kFieldNameYearSparse] = std::to_string(rand() % 50 + 2000);
+		}
 		item[kFieldNameGenre] = rand() % 50;
 		item[kFieldNameName] = RandString().c_str();
+		// item[kFieldNameCountries] = RandStrVector(1 + rand() % 5); // issue #957
 		item[kFieldNameAge] = rand() % 50;
 		item[kFieldNameDescription] = RandString().c_str();
 
@@ -1055,10 +1211,11 @@ protected:
 		return item;
 	}
 
-	static std::string pointToSQL(reindexer::Point point) {
+	static std::string pointToSQL(reindexer::Point point, bool escape = false) {
 		std::ostringstream res;
 		res.precision(std::numeric_limits<double>::digits10 + 1);
-		res << "ST_GeomFromText(\"point(" << point.x << ' ' << point.y << ")\")";
+		std::string quote = escape ? "\\'" : "'";
+		res << "ST_GeomFromText(" << quote << "point(" << point.x << ' ' << point.y << ')' << quote << ')';
 		return res.str();
 	}
 
@@ -1556,6 +1713,9 @@ protected:
 							.Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210) /*.Offset(rand() % 10)*/)
 							.On(kFieldNameYear, randCond(), kFieldNameYear)
 							.Distinct(distinct));
+					ExecuteAndVerify(Query(default_namespace)
+										 .Where(kFieldNameYearSparse, CondEq, std::to_string(2000 + rand() % 60))
+										 .Distinct(distinct));
 					ExecuteAndVerify(
 						Query(default_namespace)
 							.InnerJoin(kFieldNameYear, kFieldNameYear, randCond(),
@@ -1583,7 +1743,7 @@ protected:
 					ExecuteAndVerify(Query(default_namespace)
 										 .Join(InnerJoin, Query(joinNs).Where(kFieldNameYear, CondGt, 2000 + rand() % 210))
 										 .OpenBracket()
-										 .On(kFieldNameYear, randCond(), kFieldNameYear)
+										 .On(kFieldNameYearSparse, CondLe, kFieldNameYearSparse)
 										 .Or()
 										 .On(kFieldNameName, CondEq, kFieldNameName)
 										 .Or()
@@ -1622,6 +1782,20 @@ protected:
 							.Or()
 							.Where(kFieldNameId, CondEq, RandIntVector(20, 0, 100))
 							.Distinct(distinct));
+					ExecuteAndVerify(Query(default_namespace)
+										 .WhereBetweenFields(kFieldNameGenre, CondEq, kFieldNameAge)
+										 .Sort(sortIdx, sortOrder)
+										 .Distinct(distinct));
+					ExecuteAndVerify(Query(default_namespace)
+										 .WhereBetweenFields(kFieldNameName, CondLike, kFieldNameActor)
+										 .Sort(sortIdx, sortOrder)
+										 .Distinct(distinct));
+					ExecuteAndVerify(Query(default_namespace)
+										 .WhereBetweenFields(kFieldNamePackages, CondGt, kFieldNameStartTime)
+										 .Sort(sortIdx, sortOrder)
+										 .Distinct(distinct));
+					ExecuteAndVerify(
+						Query(compositeIndexesNs).WhereBetweenFields(kCompositeFieldPriceTitle, CondEq, kCompositeFieldPagesTitle));
 				}
 			}
 		}
@@ -1880,8 +2054,9 @@ protected:
 		res << v;
 		return res.str();
 	}
-	// Checks that DSL queries with DWithin works and compares the result with the result of corresponding C++ query
+	// Checks that DSL queries works and compares the result with the result of corresponding C++ query
 	void CheckDslQueries() {
+		using namespace std::string_literals;
 		// ----------
 		reindexer::Point point{randPoint(10)};
 		double distance = randBinDouble(0, 1);
@@ -1903,9 +2078,18 @@ protected:
 			R"(]]}],"merge_queries":[],"aggregations":[]})";
 		const Query checkQuery2{Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance)};
 		checkDslQuery(dslQuery, checkQuery2);
+
+		// ----------
+		dslQuery =
+			R"({"namespace":")"s + default_namespace +
+			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"gt","first_field":")" +
+			kFieldNameStartTime + R"(","second_field":")" + kFieldNamePackages + R"("}],"merge_queries":[],"aggregations":[]})";
+		const Query checkQuery3{Query{default_namespace}.WhereBetweenFields(kFieldNameStartTime, CondGt, kFieldNamePackages)};
+		checkDslQuery(dslQuery, checkQuery3);
 	}
 
 	void CheckSqlQueries() {
+		using namespace std::string_literals;
 		string sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY year DESC LIMIT 10000000";
 		const Query checkQuery1{Query(default_namespace, 0, 10000000).Where(kFieldNameYear, CondGt, 2016).Sort(kFieldNameYear, true)};
 
@@ -2042,7 +2226,7 @@ protected:
 		point = randPoint(10);
 		distance = randBinDouble(0, 1);
 		sqlQuery = string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + pointToSQL(point) + ", " + kFieldNamePointNonIndex + ", " +
-				   toString(distance) + ") ORDER BY 'ST_Distance(" + kFieldNamePointLinearRTree + ", " + pointToSQL(point) + ")';";
+				   toString(distance) + ") ORDER BY 'ST_Distance(" + kFieldNamePointLinearRTree + ", " + pointToSQL(point, true) + ")';";
 		const Query checkQuery9{
 			Query(geomNs)
 				.DWithin(kFieldNamePointNonIndex, point, distance)
@@ -2058,6 +2242,20 @@ protected:
 
 		CompareQueryResults(sqlQuery, sqlQr9, checkQr9);
 		Verify(checkQr9, checkQuery9);
+
+		sqlQuery = "SELECT * FROM "s + default_namespace + " WHERE " + kFieldNameGenre + " >= " + kFieldNameRate + ';';
+		const Query checkQuery10{Query(default_namespace).WhereBetweenFields(kFieldNameGenre, CondGe, kFieldNameRate)};
+
+		QueryResults sqlQr10;
+		err = rt.reindexer->Select(sqlQuery, sqlQr10);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryResults checkQr10;
+		err = rt.reindexer->Select(checkQuery10, checkQr10);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CompareQueryResults(sqlQuery, sqlQr10, checkQr10);
+		Verify(checkQr10, checkQuery10);
 	}
 
 	void CheckCompositeIndexesQueries() {
@@ -2176,11 +2374,11 @@ protected:
 		TestCout() << "(";
 		for (; it != to; ++it) {
 			TestCout() << (it->operation == OpAnd ? "AND" : (it->operation == OpOr ? "OR" : "NOT"));
-			if (it->IsLeaf()) {
-				TestCout() << it->Value().Dump(js);
-			} else {
-				PrintQueryEntries(it.cbegin(), it.cend(), js);
-			}
+			it->InvokeAppropriate<void>([&it, &js](const reindexer::Bracket&) { PrintQueryEntries(it.cbegin(), it.cend(), js); },
+										[](const reindexer::QueryEntry& qe) { TestCout() << qe.Dump(); },
+										[&js](const reindexer::JoinQueryEntry& jqe) { TestCout() << jqe.Dump(js); },
+										[](const reindexer::BetweenFieldsQueryEntry& qe) { TestCout() << qe.Dump(); },
+										[](const reindexer::AlwaysFalse&) { TestCout() << "Always False"; });
 		}
 		TestCout() << ")";
 	}
@@ -2236,6 +2434,7 @@ protected:
 	const char* kFieldNameId = "id";
 	const char* kFieldNameGenre = "genre";
 	const char* kFieldNameYear = "year";
+	const char* kFieldNameYearSparse = "year_sparse";
 	const char* kFieldNamePackages = "packages";
 	const char* kFieldNameName = "name";
 	const char* kFieldNameCountries = "countries";
@@ -2282,9 +2481,12 @@ protected:
 	const string forcedSortOffsetNs = "forced_sort_offset_namespace";
 	const string nsWithObject = "namespace_with_object";
 	const string geomNs = "geom_namespace";
+	const string btreeIdxOptNs = "btree_idx_opt_namespace";
 
 	const string kCompositeFieldPricePages = kFieldNamePrice + compositePlus + kFieldNamePages;
 	const string kCompositeFieldTitleName = kFieldNameTitle + compositePlus + kFieldNameName;
+	const string kCompositeFieldPriceTitle = kFieldNamePrice + compositePlus + kFieldNameTitle;
+	const string kCompositeFieldPagesTitle = kFieldNamePages + compositePlus + kFieldNameTitle;
 
 	vector<string> defaultNsPks;
 	vector<string> simpleTestNsPks;
@@ -2293,12 +2495,14 @@ protected:
 	vector<string> comparatorsNsPks;
 	vector<string> forcedSortOffsetNsPks;
 	vector<string> geomNsPks;
+	vector<string> btreeIdxOptNsPks;
 	std::mutex m_;
 
 	int currBtreeIdsetsValue = rand() % 10000;
 	static constexpr size_t forcedSortOffsetNsSize = 1000;
 	static constexpr int forcedSortOffsetMaxValue = 1000;
 	static constexpr size_t geomNsSize = 10000;
+	static constexpr int btreeIdxOptNsSize = 10000;
 	vector<pair<int, int>> forcedSortOffsetValues;
 
 	std::unordered_map<size_t, std::map<std::string, reindexer::Point>> insertedGeomObjects;

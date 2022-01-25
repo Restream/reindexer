@@ -18,6 +18,7 @@ public:
 	Error Delete(Item&& item, lsn_t lsn = lsn_t());
 	Error Modify(Item&& item, ItemModifyMode mode, lsn_t lsn = lsn_t());
 	Error PutMeta(std::string_view key, std::string_view value, lsn_t lsn = lsn_t());
+	Error SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn);
 
 	Error Modify(Query&& query, lsn_t lsn = lsn_t());
 	bool IsFree() const { return !rx_ || !status_.ok() || tr_.txId_ == -1; }

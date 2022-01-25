@@ -13,7 +13,8 @@ Error ItemImpl<C>::tryToUpdateTagsMatcher() {
 	}
 	typename C::QueryResultsT qr;
 	Query q = Query(string(payloadType_.Name())).Limit(0);
-	Error err = client_->Select(q, qr, InternalRdxContext().WithTimeout(requestTimeout_).WithShardId(ShardingKeyType::ShardingProxyOff));
+	Error err =
+		client_->Select(q, qr, InternalRdxContext().WithTimeout(requestTimeout_).WithShardId(ShardingKeyType::ShardingProxyOff, false));
 	if (err.ok() && qr.GetNamespacesCount() > 0) {
 		TagsMatcher newTm = qr.GetTagsMatcher(0);
 		if (newTm.version() == tagsMatcher_.version()) {

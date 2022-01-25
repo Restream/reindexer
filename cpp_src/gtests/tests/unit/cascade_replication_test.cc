@@ -356,26 +356,27 @@ TEST_F(CascadeReplicationApi, ForceSync3Node) {
 	*/
 	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "ForceSync3Node"));
 	ServerControl masterSc;
-	masterSc.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
+
+	masterSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/master", "db"));
 	auto master = masterSc.Get();
 	TestNamespace1 testns(master);
 	testns.AddRows(master, 10, 1000);
 	master->MakeLeader();
 
 	ServerControl slave1;
-	slave1.InitServer(1, 7771, 7881, kBaseDbPath + "/slave1", "db", true);
+	slave1.InitServer(ServerControlConfig(1, 7771, 7881, kBaseDbPath + "/slave1", "db"));
 	slave1.Get()->MakeFollower();
-	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave1.Get()->kRpcPort));
+	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave1.Get()->RpcPort()));
 
 	ServerControl slave2;
-	slave2.InitServer(2, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
+	slave2.InitServer(ServerControlConfig(2, 7772, 7882, kBaseDbPath + "/slave2", "db"));
 	slave2.Get()->MakeFollower();
-	slave1.Get()->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave2.Get()->kRpcPort));
+	slave1.Get()->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave2.Get()->RpcPort()));
 
 	ServerControl slave3;
-	slave3.InitServer(3, 7773, 7883, kBaseDbPath + "/slave3", "db", true);
+	slave3.InitServer(ServerControlConfig(3, 7773, 7883, kBaseDbPath + "/slave3", "db"));
 	slave3.Get()->MakeFollower();
-	slave2.Get()->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave3.Get()->kRpcPort));
+	slave2.Get()->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave3.Get()->RpcPort()));
 
 	WaitSync(master, slave1.Get(), testns.nsName_);
 	WaitSync(master, slave2.Get(), testns.nsName_);
@@ -402,7 +403,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs1) {
 	// Check syncing namespaces filtering and writable namespaces on slave
 	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "NodeWithMasterAndSlaveNs1"));
 	ServerControl masterSc;
-	masterSc.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
+	masterSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/master", "db"));
 	auto master = masterSc.Get();
 	master->MakeLeader();
 	TestNamespace1 testns1(master, "ns1");
@@ -414,12 +415,12 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs1) {
 	const unsigned int c2 = 6013;
 	const unsigned int n = 121;
 	ServerControl slaveSc;
-	slaveSc.InitServer(1, 7771, 7881, kBaseDbPath + "/slave", "db", true);
+	slaveSc.InitServer(ServerControlConfig(1, 7771, 7881, kBaseDbPath + "/slave", "db"));
 	auto slave = slaveSc.Get();
 	slave->MakeFollower();
 	TestNamespace1 testns3(slave, "ns3");
 	testns3.AddRows(slave, c1, n);
-	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->kRpcPort));
+	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->RpcPort()));
 	testns3.AddRows(slave, c2, n);
 
 	WaitSync(master, slave, testns1.nsName_);
@@ -460,7 +461,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs2) {
 	const unsigned int nm = 113;
 
 	ServerControl masterSc;
-	masterSc.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
+	masterSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/master", "db"));
 	auto master = masterSc.Get();
 	TestNamespace1 testns1(master, "ns1");
 	testns1.AddRows(master, cm1, nm);
@@ -471,7 +472,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs2) {
 	const unsigned int c2 = 6007;
 	const unsigned int n = 101;
 	ServerControl slaveSc;
-	slaveSc.InitServer(0, 7771, 7881, kBaseDbPath + "/slave", "db", true);
+	slaveSc.InitServer(ServerControlConfig(0, 7771, 7881, kBaseDbPath + "/slave", "db"));
 	auto slave = slaveSc.Get();
 	slave->MakeFollower();
 	TestNamespace1 testns3(slave, "ns3");
@@ -479,7 +480,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs2) {
 	TestNamespace1 testns4(slave, "ns1");
 	testns4.AddRows(slave, c1, n);
 	master->MakeLeader(AsyncReplicationConfigTest("leader", {}, true, true, 0, "node0"));
-	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->kRpcPort), {{"ns1"}});
+	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->RpcPort()), {{"ns1"}});
 	testns3.AddRows(slave, c2, n);
 
 	WaitSync(master, slave, testns1.nsName_);
@@ -518,7 +519,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs3) {
 	const unsigned int c2 = 6001;
 	const unsigned int n = 101;
 	ServerControl masterSc;
-	masterSc.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
+	masterSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/master", "db"));
 	auto master = masterSc.Get();
 	master->MakeLeader();
 	TestNamespace1 testns1(master, "ns1");
@@ -527,7 +528,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs3) {
 	testns2.AddRows(master, 11, n);
 
 	ServerControl slaveSc;
-	slaveSc.InitServer(0, 7771, 7881, kBaseDbPath + "/slave", "db", true);
+	slaveSc.InitServer(ServerControlConfig(0, 7771, 7881, kBaseDbPath + "/slave", "db"));
 	auto slave = slaveSc.Get();
 	slave->MakeFollower();
 	TestNamespace1 testns3(slave, "ns3");
@@ -535,7 +536,7 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs3) {
 	TestNamespace1 testns4(slave, "ns1");
 	testns4.AddRows(slave, c1, n);
 	master->SetReplicationConfig(AsyncReplicationConfigTest("leader", {}, true, true, 0, "node0"));
-	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->kRpcPort), {{"ns1"}});
+	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->RpcPort()), {{"ns1"}});
 	testns3.AddRows(slave, c2, n);
 
 	ASSERT_EQ(testns1.nsName_, testns4.nsName_);
@@ -563,7 +564,7 @@ TEST_F(CascadeReplicationApi, DISABLED_RenameSlaveNs) {
 	// 3. check on master rename tmpNsName to tmpNsNameRename fail
 	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "RenameSlaveNs"));
 	ServerControl masterSc;
-	masterSc.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
+	masterSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/master", "db"));
 	auto master = masterSc.Get();
 	TestNamespace1 testns1(master, "ns1");
 	const unsigned int n = 101;
@@ -575,7 +576,7 @@ TEST_F(CascadeReplicationApi, DISABLED_RenameSlaveNs) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	ServerControl slaveSc;
-	slaveSc.InitServer(0, 7771, 7881, kBaseDbPath + "/slave", "db", true);
+	slaveSc.InitServer(ServerControlConfig(0, 7771, 7881, kBaseDbPath + "/slave", "db"));
 	auto slave = slaveSc.Get();
 	TestNamespace1 testns3(slave, "ns3");
 	unsigned int n3 = 1234;
@@ -645,21 +646,21 @@ TEST_F(CascadeReplicationApi, Node3ApplyWal) {
 		ServerControl masterSc;
 		ServerControl slave1Sc;
 		ServerControl slave2Sc;
-		masterSc.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
+		masterSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/master", "db"));
 		auto master = masterSc.Get();
 		master->MakeLeader();
 		TestNamespace1 testns1(master, kNsName);
 		testns1.AddRows(master, 3000, n);
 		// start init of slave
 		{
-			slave1Sc.InitServer(1, 7771, 7881, kBaseDbPath + "/slave1", "db", true);
-			slave2Sc.InitServer(2, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
+			slave1Sc.InitServer(ServerControlConfig(1, 7771, 7881, kBaseDbPath + "/slave1", "db"));
+			slave2Sc.InitServer(ServerControlConfig(2, 7772, 7882, kBaseDbPath + "/slave2", "db"));
 			auto slave1 = slave1Sc.Get();
 			auto slave2 = slave2Sc.Get();
 			slave1->MakeFollower();
-			master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave1->kRpcPort));
+			master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave1->RpcPort()));
 			slave2->MakeFollower();
-			slave1->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave2->kRpcPort));
+			slave1->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave2->RpcPort()));
 			WaitSync(master, slave1, kNsName);
 			WaitSync(master, slave2, kNsName);
 		}
@@ -667,19 +668,19 @@ TEST_F(CascadeReplicationApi, Node3ApplyWal) {
 
 	{
 		ServerControl masterSc;
-		masterSc.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
+		masterSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/master", "db"));
 		auto master = masterSc.Get();
 		TestNamespace1 testns1(master, kNsName);
 		testns1.AddRows(master, 30000, n);
 	}
 	ServerControl masterSc;
-	masterSc.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true);
+	masterSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/master", "db"));
 
 	ServerControl slave1Sc;
-	slave1Sc.InitServer(1, 7771, 7881, kBaseDbPath + "/slave1", "db", true);
+	slave1Sc.InitServer(ServerControlConfig(1, 7771, 7881, kBaseDbPath + "/slave1", "db"));
 
 	ServerControl slave2Sc;
-	slave2Sc.InitServer(2, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
+	slave2Sc.InitServer(ServerControlConfig(2, 7772, 7882, kBaseDbPath + "/slave2", "db"));
 
 	WaitSync(masterSc.Get(), slave1Sc.Get(), kNsName);
 	WaitSync(masterSc.Get(), slave2Sc.Get(), kNsName);
@@ -714,12 +715,12 @@ TEST_F(CascadeReplicationApi, RestrictUpdates) {
 	const std::string upDsn = "cproto://127.0.0.1:7770/db";
 	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "RestrictUpdates"));
 	ServerControl masterSc;
-	masterSc.InitServer(0, 7770, 7880, kBaseDbPath + "/master", "db", true, 1024 * 5);
+	masterSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/master", "db", true, 1024 * 5));
 	auto master = masterSc.Get();
 	master->MakeLeader();
 
 	ServerControl slaveSc;
-	slaveSc.InitServer(1, 7771, 7881, kBaseDbPath + "/slave", "db", true);
+	slaveSc.InitServer(ServerControlConfig(1, 7771, 7881, kBaseDbPath + "/slave", "db"));
 	auto slave = slaveSc.Get();
 	slave->MakeFollower();
 
@@ -734,7 +735,7 @@ TEST_F(CascadeReplicationApi, RestrictUpdates) {
 		dataString.append("xxx");
 	}
 
-	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->kRpcPort));
+	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave->RpcPort()));
 
 	for (unsigned int i = 0; i < count; i++) {
 		reindexer::client::Item item = master->api.NewItem("ns1");
@@ -780,7 +781,8 @@ TEST_F(CascadeReplicationApi, ConcurrentForceSync) {
 	auto createFollower = [&kBaseDbPath, &kDbName, &nodes, &kNsList](ServerPtr leader) {
 		size_t id = nodes.size();
 		nodes.push_back(ServerControl());
-		nodes.back().InitServer(id, kBasePort + id, kBasePort + 1000 + id, kBaseDbPath + "/slave" + std::to_string(id), kDbName, true);
+		nodes.back().InitServer(
+			ServerControlConfig(id, kBasePort + id, kBasePort + 1000 + id, kBaseDbPath + "/slave" + std::to_string(id), kDbName));
 		AsyncReplicationConfigTest::NsSet nsSet;
 		for (size_t i = 0; i < kNsSyncCount; ++i) {
 			nsSet.emplace(kNsList[i]);
@@ -788,7 +790,7 @@ TEST_F(CascadeReplicationApi, ConcurrentForceSync) {
 		auto follower = nodes.back().Get();
 		follower->SetReplicationConfig(
 			AsyncReplicationConfigTest{"follower", {}, false, true, int(id), "node_" + std::to_string(id), std::move(nsSet)});
-		leader->AddFollower(fmt::format("cproto://127.0.0.1:{}/{}", follower->kRpcPort, kDbName));
+		leader->AddFollower(fmt::format("cproto://127.0.0.1:{}/{}", follower->RpcPort(), kDbName));
 		return follower;
 	};
 
@@ -796,7 +798,7 @@ TEST_F(CascadeReplicationApi, ConcurrentForceSync) {
 	ServerPtr leader;
 	{
 		nodes.push_back(ServerControl());
-		nodes.back().InitServer(0, kBasePort, kBasePort + 1000, kBaseDbPath + "/master", kDbName, true);
+		nodes.back().InitServer(ServerControlConfig(0, kBasePort, kBasePort + 1000, kBaseDbPath + "/master", kDbName));
 		AsyncReplicationConfigTest::NsSet nsSet;
 		for (size_t i = 0; i < kNsSyncCount; ++i) {
 			nsSet.emplace(kNsList[i]);

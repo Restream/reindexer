@@ -17,14 +17,14 @@ struct CoroReindexerConfig {
 		  NetTimeout(_NetTimeout),
 		  EnableCompression(_EnableCompression),
 		  AppName(std::move(_appName)),
-		  syncRxCoroCount(_syncRxCoroCount) {}
+		  SyncRxCoroCount(_syncRxCoroCount) {}
 
 	int FetchAmount;
 	int ReconnectAttempts;
 	milliseconds NetTimeout;
 	bool EnableCompression;
 	std::string AppName;
-	unsigned int syncRxCoroCount;
+	unsigned int SyncRxCoroCount;
 };
 
 }  // namespace client

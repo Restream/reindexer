@@ -275,9 +275,9 @@ double SelectIterator::Cost(int expectedIterations) const {
 	if (forcedFirst_) return -GetMaxIterations();
 	double result{0.0};
 	if (!comparators_.empty()) {
-		result += expectedIterations + 1;
+		result = expectedIterations + 1;
 	} else if (empty()) {
-		result += GetMaxIterations();
+		result = GetMaxIterations();
 	}
 	return result + static_cast<double>(distinct ? 1 : GetMaxIterations()) * size();
 }

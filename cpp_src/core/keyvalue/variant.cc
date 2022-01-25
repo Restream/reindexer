@@ -43,7 +43,7 @@ Variant::Variant(const VariantArray &values) {
 	hold_ = true;
 }
 
-Variant::Variant(Point p) : Variant{VariantArray{p}} {}
+Variant::Variant(Point p) : Variant{VariantArray(p)} {}
 
 inline static void assertKeyType(KeyValueType got, KeyValueType exp) {
 	(void)got, (void)exp;
@@ -349,9 +349,15 @@ int Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) 
 		return -other.relaxCompareWithString(static_cast<p_string>(*this));
 	} else if ((Type() == KeyValueInt || Type() == KeyValueInt64 || Type() == KeyValueDouble) &&
 			   (other.Type() == KeyValueInt || other.Type() == KeyValueInt64 || other.Type() == KeyValueDouble)) {
-		const int64_t lhs = As<int64_t>();
-		const int64_t rhs = other.As<int64_t>();
-		return (lhs == rhs) ? 0 : ((lhs > rhs) ? 1 : -1);
+		if (Type() == KeyValueDouble || other.Type() == KeyValueDouble) {
+			const double lhs = As<double>();
+			const double rhs = other.As<double>();
+			return (lhs == rhs) ? 0 : ((lhs > rhs) ? 1 : -1);
+		} else {
+			const int64_t lhs = As<int64_t>();
+			const int64_t rhs = other.As<int64_t>();
+			return (lhs == rhs) ? 0 : ((lhs > rhs) ? 1 : -1);
+		}
 	} else {
 		throw Error(errParams, "Not comparable types");
 	}
@@ -370,7 +376,11 @@ size_t Variant::Hash() const {
 		case KeyValueString:
 			return hash<p_string>()(operator p_string());
 		default:
+#ifdef NDEBUG
 			abort();
+#else
+			assertf(false, "Unexpected variant type: %d", Type());
+#endif
 	}
 }
 
@@ -525,50 +535,58 @@ Variant::operator const PayloadValue &() const {
 
 bool Variant::IsNullValue() const { return type_ == KeyValueNull; }
 
-void Variant::Dump(WrSerializer &wrser) const {
+template <typename T>
+void Variant::Dump(T &os) const {
 	switch (Type()) {
 		case KeyValueString: {
 			p_string str(*this);
 			if (isPrintable(str)) {
-				wrser << '\'' << std::string_view(str) << '\'';
+				os << '\'' << std::string_view(str) << '\'';
 			} else {
-				wrser << "slice{len:" << str.length() << "}";
+				os << "slice{len:" << str.length() << "}";
 			}
 			break;
 		}
 		case KeyValueInt:
-			wrser << operator int();
+			os << operator int();
 			break;
 		case KeyValueBool:
-			wrser << operator bool();
+			os << operator bool();
 			break;
 		case KeyValueInt64:
-			wrser << operator int64_t();
+			os << operator int64_t();
 			break;
 		case KeyValueDouble:
-			wrser << operator double();
+			os << operator double();
 			break;
 		case KeyValueTuple:
-			getCompositeValues().Dump(wrser);
+			getCompositeValues().Dump(os);
 			break;
 		default:
-			wrser << "??";
+			os << "??";
 			break;
 	}
 }
+
+template void Variant::Dump(WrSerializer &) const;
+template void Variant::Dump(std::ostream &) const;
 
 bool VariantArray::IsArrayValue() const noexcept { return isArrayValue || (!isObjectValue && size() > 1); }
 bool VariantArray::IsNullValue() const { return size() == 1 && front().IsNullValue(); }
 KeyValueType VariantArray::ArrayType() const { return empty() ? KeyValueNull : front().Type(); }
 
-void VariantArray::Dump(WrSerializer &wrser) const {
-	wrser << '{';
+template <typename T>
+void VariantArray::Dump(T &os) const {
+	os << '{';
 	for (auto &arg : *this) {
-		if (&arg != &at(0)) wrser << ", ";
-		arg.Dump(wrser);
+		if (&arg != &at(0)) os << ", ";
+		arg.Dump(os);
 	}
-	wrser << '}';
+	os << '}';
 }
+
+template void VariantArray::Dump(WrSerializer &) const;
+template void VariantArray::Dump(std::ostream &) const;
 
 VariantArray::VariantArray(Point p) noexcept {
 	emplace_back(p.x);
@@ -580,6 +598,21 @@ VariantArray::operator Point() const {
 		throw Error(errParams, "Can't convert array of %d elements to Point", size());
 	}
 	return {(*this)[0].As<double>(), (*this)[1].As<double>()};
+}
+
+int VariantArray::RelaxCompare(const VariantArray &other, const CollateOpts &collateOpts) const {
+	auto lhsIt{cbegin()}, rhsIt{other.cbegin()};
+	auto const lhsEnd{cend()}, rhsEnd{other.cend()};
+	for (; lhsIt != lhsEnd && rhsIt != rhsEnd; ++lhsIt, ++rhsIt) {
+		const auto res = lhsIt->RelaxCompare(*rhsIt, collateOpts);
+		if (res != 0) return res;
+	}
+	if (lhsIt == lhsEnd) {
+		if (rhsIt == rhsEnd) return 0;
+		return -1;
+	} else {
+		return 1;
+	}
 }
 
 }  // namespace reindexer

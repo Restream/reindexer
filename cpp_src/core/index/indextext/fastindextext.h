@@ -25,8 +25,8 @@ public:
 	std::unique_ptr<Index> Clone() override;
 	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) override final;
 	IndexMemStat GetMemStat() override;
-	Variant Upsert(const Variant& key, IdType id) override final;
-	void Delete(const Variant& key, IdType id, StringsHolder&) override final;
+	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
+	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override final;
 	void SetOpts(const IndexOpts& opts) override final;
 
 protected:

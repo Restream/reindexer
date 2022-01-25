@@ -25,6 +25,7 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::BeginTx:
 		case Type::CommitTx:
 		case Type::DropNamespace:
+		case Type::CloseNamespace:
 		case Type::ResyncNamespaceGeneric:
 		case Type::ResyncNamespaceLeaderInit:
 			break;
@@ -36,16 +37,6 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, std::string _data)
 	: type(_type), nsName(std::move(_nsName)), extLsn(_nsVersion, _lsn), emmiterServerId(_emmiterServerId) {
 	switch (type) {
-		case Type::ItemUpdate:
-		case Type::ItemUpsert:
-		case Type::ItemDelete:
-		case Type::ItemInsert:
-		case Type::ItemUpdateTx:
-		case Type::ItemUpsertTx:
-		case Type::ItemDeleteTx:
-		case Type::ItemInsertTx:
-			data.emplace<std::unique_ptr<ItemReplicationRecord>>(new ItemReplicationRecord{std::move(_data)});
-			break;
 		case Type::RenameNamespace:
 			data.emplace<std::unique_ptr<RenameNamespaceReplicationRecord>>(new RenameNamespaceReplicationRecord{std::move(_data)});
 			break;
@@ -58,6 +49,45 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::DeleteQueryTx:
 			data.emplace<std::unique_ptr<QueryReplicationRecord>>(new QueryReplicationRecord{std::move(_data)});
 			break;
+		default:
+			assert(false);
+	}
+}
+
+UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, WrSerializer&& _data)
+	: type(_type), nsName(std::move(_nsName)), extLsn(_nsVersion, _lsn), emmiterServerId(_emmiterServerId) {
+	switch (type) {
+		case Type::ItemUpdate:
+		case Type::ItemUpsert:
+		case Type::ItemDelete:
+		case Type::ItemInsert:
+		case Type::ItemUpdateTx:
+		case Type::ItemUpsertTx:
+		case Type::ItemDeleteTx:
+		case Type::ItemInsertTx: {
+			data.emplace<std::unique_ptr<ItemReplicationRecord>>(new ItemReplicationRecord{std::move(_data)});
+			break;
+		}
+		default:
+			assert(false);
+	}
+}
+
+UpdateRecord::UpdateRecord(UpdateRecord::Type _type, std::string _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId,
+						   TagsMatcher _tm)
+	: type(_type), nsName(std::move(_nsName)), extLsn(_nsVersion, _lsn), emmiterServerId(_emmiterServerId) {
+	switch (type) {
+		case Type::SetTagsMatcher:
+		case Type::SetTagsMatcherTx: {
+			TagsMatcher tm;
+			WrSerializer wser;
+			_tm.serialize(wser);
+			Serializer ser(wser.Slice());
+			tm.deserialize(ser, _tm.version(), _tm.stateToken());
+			data.emplace<std::unique_ptr<TagsMatcherReplicationRecord>>(
+				new TagsMatcherReplicationRecord{std::move(tm), wser.Slice().size() * 4});
+			break;
+		}
 		default:
 			assert(false);
 	}
@@ -132,20 +162,21 @@ size_t UpdateRecord::DataSize() const noexcept {
 		case Type::BeginTx:
 		case Type::CommitTx:
 		case Type::DropNamespace:
+		case Type::CloseNamespace:
 		case Type::ResyncNamespaceGeneric:
 		case Type::ResyncNamespaceLeaderInit:
 		case Type::ResyncOnUpdatesDrop:
 		case Type::EmptyUpdate:
 			return 0;
-		case Type::AddNamespace: {
+		case Type::AddNamespace:
 			return std::get<std::unique_ptr<AddNamespaceReplicationRecord>>(data)->Size();
-		}
-		case Type::RenameNamespace: {
+		case Type::RenameNamespace:
 			return std::get<std::unique_ptr<RenameNamespaceReplicationRecord>>(data)->Size();
-		}
-		case Type::NodeNetworkCheck: {
+		case Type::NodeNetworkCheck:
 			return std::get<std::unique_ptr<NodeNetworkCheckRecord>>(data)->Size();
-		}
+		case Type::SetTagsMatcher:
+		case Type::SetTagsMatcherTx:
+			return std::get<std::unique_ptr<TagsMatcherReplicationRecord>>(data)->Size();
 		default:
 			std::abort();
 	}

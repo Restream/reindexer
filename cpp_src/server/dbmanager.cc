@@ -120,8 +120,10 @@ Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors, 
 	string storagePath = !config_.StoragePath.empty() ? fs::JoinPath(config_.StoragePath, dbName) : "";
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
-	auto db = unique_ptr<reindexer::Reindexer>(new reindexer::Reindexer(
-		ReindexerConfig().WithClientStats(clientsStats_).EnableRaftCluster(config_.EnableCluster).WithUpdatesSize(config_.MaxUpdatesSize)));
+	auto db = unique_ptr<reindexer::Reindexer>(new reindexer::Reindexer(ReindexerConfig()
+																			.WithClientStats(clientsStats_)
+																			.EnableRaftCluster(config_.EnableCluster())
+																			.WithUpdatesSize(config_.MaxUpdatesSize)));
 	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
 	switch (storageType_) {
 		case datastorage::StorageType::LevelDB:

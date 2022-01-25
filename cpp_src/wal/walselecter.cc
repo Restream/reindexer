@@ -28,16 +28,21 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params, bool snaps
 	int lsnIdx = -1;
 	int versionIdx = -1;
 	for (size_t i = 0; i < q.entries.Size(); ++i) {
-		if ("#lsn"sv == q.entries[i].index) {
-			lsnIdx = i;
-		} else if ("#slave_version"sv == q.entries[i].index) {
-			versionIdx = i;
-		} else {
-			throw Error(errLogic, "Unexpected index in WAL select query: %s", q.entries[i].index);
-		}
+		q.entries.InvokeAppropriate<void>(
+			i,
+			[&lsnIdx, &versionIdx, i](const QueryEntry &qe) {
+				if ("#lsn"sv == qe.index) {
+					lsnIdx = i;
+				} else if ("#slave_version"sv == qe.index) {
+					versionIdx = i;
+				} else {
+					throw Error(errLogic, "Unexpected index in WAL select query: %s", qe.index);
+				}
+			},
+			[&q](const auto &) { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
 	}
-	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries[versionIdx].values[0].As<string>());
-	auto &lsnEntry = q.entries[lsnIdx];
+	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries.Get<QueryEntry>(versionIdx).values[0].As<string>());
+	auto &lsnEntry = q.entries.Get<QueryEntry>(lsnIdx);
 	if (lsnEntry.values.size() == 1 && (lsnEntry.condition == CondGt || lsnEntry.condition == CondGe)) {
 		lsn_t fromLSN = lsn_t(std::min(lsnEntry.values[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
 		if (fromLSN.isEmpty()) throw Error(errOutdatedWAL, "Query to WAL with empty LSN, LSN counter %ld", ns_->wal_.LSNCounter());
@@ -92,7 +97,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params, bool snaps
 						if (versionIdx < 0) {
 							break;
 						}
-						if (q.entries[versionIdx].condition != CondEq || slaveVersion < kMinUnknownReplSupportRxVersion) {
+						if (q.entries.Get<QueryEntry>(versionIdx).condition != CondEq || slaveVersion < kMinUnknownReplSupportRxVersion) {
 							break;
 						}
 					}

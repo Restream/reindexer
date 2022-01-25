@@ -129,6 +129,10 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 		changing.OnChangeCallback(rx.resetCaches)
 	}
 
+	if replicationStat, ok := binding.(bindings.GetReplicationStat); ok {
+		replicationStat.GetReplicationStat(rx.getReplicationStat)
+	}
+
 	opts := &NamespaceOptions{
 		disableObjCache: true,
 	}
@@ -140,6 +144,92 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 	rx.registerNamespaceImpl(ClientsStatsNamespaceName, opts, ClientConnectionStat{})
 	rx.registerNamespaceImpl(ReplicationStatsNamespaceName, opts, ReplicationStat{})
 	return rx
+}
+
+func (db *reindexerImpl) getReplicationStat(ctx context.Context) (*bindings.ReplicationStat, error) {
+	var stat *bindings.ReplicationStat
+
+	stat, err := db.getClusterStat(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if stat == nil {
+		stat, err = db.getAsyncReplicationStat(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if stat == nil {
+		return nil, bindings.NewError("can't use WithReconnectionStrategy without configured cluster or async replication", bindings.ErrParams)
+	}
+
+	return stat, nil
+}
+
+func (db *reindexerImpl) getAsyncReplicationStat(ctx context.Context) (*bindings.ReplicationStat, error) {
+	dsns := db.binding.GetDSNs()
+	var stat *bindings.ReplicationStat
+
+	for _, dsn := range dsns {
+		dsn := fmt.Sprintf("%s://%s%s", dsn.Scheme, dsn.Host, dsn.Path)
+		db := NewReindex(dsn)
+		defer db.Close()
+		resp, err := db.Query("#config").
+			WhereString("type", EQ, bindings.ReplicationTypeAsync).
+			ExecCtx(ctx).
+			FetchOne()
+		if err != nil {
+			continue
+		}
+		statRx := resp.(*DBConfigItem).AsyncReplication
+		if statRx.Role == "leader" {
+			stat = &bindings.ReplicationStat{
+				Type:  bindings.ReplicationTypeAsync,
+				Nodes: make([]bindings.ReplicationNodeStat, 0, len(statRx.Nodes)),
+			}
+			stat.Nodes = append(stat.Nodes, bindings.ReplicationNodeStat{
+				DSN:  dsn,
+				Role: statRx.Role,
+			})
+
+			break
+		}
+	}
+
+	return stat, nil
+}
+
+func (db *reindexerImpl) getClusterStat(ctx context.Context) (*bindings.ReplicationStat, error) {
+	resp, err := db.query("#replicationstats").
+		WhereString("type", EQ, "cluster").
+		ExecCtx(ctx).
+		FetchOne()
+	if err != nil {
+		return nil, err
+	}
+
+	statRx := resp.(*ReplicationStat)
+	if len(statRx.ReplicationNodeStat) == 0 {
+		return nil, nil
+	}
+
+	stat := &bindings.ReplicationStat{
+		Type:  statRx.Type,
+		Nodes: make([]bindings.ReplicationNodeStat, 0, len(statRx.ReplicationNodeStat)),
+	}
+
+	for _, node := range statRx.ReplicationNodeStat {
+		stat.Nodes = append(stat.Nodes, bindings.ReplicationNodeStat{
+			DSN:            node.DSN,
+			Status:         node.Status,
+			IsSynchronized: node.IsSynchronized,
+			Role:           node.Role,
+		})
+	}
+
+	return stat, nil
 }
 
 // getStatus will return current db status

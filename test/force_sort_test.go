@@ -41,10 +41,14 @@ type SortOrderValues struct {
 func copyWholeTree(query *queryTest, tree *queryTestEntryTree) {
 	for _, d := range tree.data {
 		query.nextOp = d.op
-		if d.dataType == leaf {
+		switch d.dataType {
+		case oneFieldEntry:
 			entry := d.data.(*queryTestEntry)
 			query.Where(entry.index, entry.condition, entry.ikeys)
-		} else {
+		case twoFieldsEntry:
+			entry := d.data.(*queryBetweenFieldsTestEntry)
+			query.WhereBetweenFields(entry.firstField, entry.condition, entry.secondField)
+		case bracket:
 			query.OpenBracket()
 			copyWholeTree(query, tree)
 			query.CloseBracket()
@@ -108,7 +112,7 @@ func execAndVerifyForceSortOrderQuery(t *testing.T, query *queryTest) {
 		v2 := getValues(checkItems[i], sortIdx)
 		assert.Equal(t, len(v1), len(v2), "Found len(values) != len(sort) on sort index %s in item %+v", query.sortIndex, items[i])
 
-		assert.Equal(t, compareValues(v1[0], v2[0]), 0,
+		assert.Equal(t, compareValues(t, v1[0], v2[0]), 0,
 			"Sort error on index %s,desc=%v ... expected: %v ... real: %v .... ", query.sortIndex, query.sortDesc, v2[0], v1[0])
 	}
 	// }

@@ -6,8 +6,9 @@
 namespace reindexer {
 
 struct TransactionItemStep {
-	ItemImplRawData data;
 	ItemModifyMode mode;
+	bool hadTmUpdate;
+	ItemImplRawData data;
 };
 
 struct TransactionQueryStep {
@@ -21,16 +22,21 @@ struct TransactionMetaStep {
 	std::string value;
 };
 
+struct TransactionTmStep {
+	TagsMatcher tm;
+};
+
 class TransactionStep {
 public:
-	enum class Type : uint8_t { Nop, ModifyItem, Query, PutMeta };
+	enum class Type : uint8_t { Nop, ModifyItem, Query, PutMeta, SetTM };
 
 	TransactionStep(Item &&item, ItemModifyMode modifyMode, lsn_t lsn)
-		: data_(TransactionItemStep{std::move(*item.impl_), modifyMode}), type_(Type::ModifyItem), lsn_(lsn) {
+		: data_(TransactionItemStep{modifyMode, item.IsTagsUpdated(), std::move(*item.impl_)}), type_(Type::ModifyItem), lsn_(lsn) {
 		delete item.impl_;
 		item.impl_ = nullptr;
 	}
 	TransactionStep(lsn_t lsn) : data_(TransactionNopStep{}), type_(Type::Nop), lsn_(lsn) {}
+	TransactionStep(TagsMatcher tm, lsn_t lsn) : data_(TransactionTmStep{std::move(tm)}), type_(Type::SetTM), lsn_(lsn) {}
 	TransactionStep(Query &&query, lsn_t lsn)
 		: data_(TransactionQueryStep{std::make_unique<Query>(std::move(query))}), type_(Type::Query), lsn_(lsn) {}
 	TransactionStep(std::string_view key, std::string_view value, lsn_t lsn)
@@ -41,7 +47,7 @@ public:
 	TransactionStep(TransactionStep && /*rhs*/) = default;
 	TransactionStep &operator=(TransactionStep && /*rhs*/) = delete;
 
-	std::variant<TransactionItemStep, TransactionQueryStep, TransactionNopStep, TransactionMetaStep> data_;
+	std::variant<TransactionItemStep, TransactionQueryStep, TransactionNopStep, TransactionMetaStep, TransactionTmStep> data_;
 	Type type_;
 	const lsn_t lsn_;
 };
@@ -59,6 +65,7 @@ public:
 	void Modify(Query &&item, lsn_t lsn);
 	void Nop(lsn_t lsn);
 	void PutMeta(std::string_view key, std::string_view value, lsn_t lsn);
+	void SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn);
 
 	void UpdateTagsMatcherFromItem(ItemImpl *ritem);
 	Item NewItem();

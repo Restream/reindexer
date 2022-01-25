@@ -131,6 +131,17 @@ public:
 		return handleInvalidation(NamespaceImpl::GetSnapshot)(snapshot, opts, ctx);
 	}
 	void ApplySnapshotChunk(const SnapshotChunk &ch, bool isInitialLeaderSync, const RdxContext &ctx);
+	void SetTagsMatcher(TagsMatcher &&tm, const RdxContext &ctx) {
+		return handleInvalidation(NamespaceImpl::SetTagsMatcher)(std::move(tm), ctx);
+	}
+
+	std::set<std::string> GetFTIndexes(const RdxContext &ctx) const {
+		return nsFuncWrapper<std::set<std::string> (NamespaceImpl::*)(const RdxContext &) const, &NamespaceImpl::GetFTIndexes>(ctx);
+	}
+
+	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) {
+		return handleInvalidation(NamespaceImpl::DumpIndex)(os, index, ctx);
+	}
 
 protected:
 	friend class ReindexerImpl;
@@ -156,7 +167,7 @@ protected:
 
 private:
 	template <typename Fn, Fn fn, typename... Args>
-	typename std::result_of<Fn(NamespaceImpl, Args...)>::type nsFuncWrapper(Args &&... args) const {
+	typename std::result_of<Fn(NamespaceImpl, Args...)>::type nsFuncWrapper(Args &&...args) const {
 		while (true) {
 			try {
 				auto ns = atomicLoadMainNs();

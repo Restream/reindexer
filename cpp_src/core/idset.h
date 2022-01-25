@@ -71,8 +71,10 @@ public:
 	size_t BTreeSize() const noexcept { return 0; }
 	const base_idsetset *BTree() const noexcept { return nullptr; }
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
-	string Dump();
+	string Dump() const;
 };
+
+std::ostream &operator<<(std::ostream &, const IdSetPlain &);
 
 // maxmimum size of idset without building btree
 const int kMaxPlainIdsetSize = 16;

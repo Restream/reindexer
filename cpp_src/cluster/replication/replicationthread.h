@@ -88,6 +88,7 @@ public:
 		ExtendedLsn latestLsn;
 		client::CoroTransaction tx;
 		bool requiresTmUpdate = true;
+		bool isClosed = false;
 	};
 
 	struct Node {

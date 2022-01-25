@@ -224,6 +224,7 @@ public:
 		buf_[len_] = 0;
 		return reinterpret_cast<const char *>(buf_);
 	}
+	bool HasHeap() const noexcept { return buf_ != inBuf_ && cap_; }
 
 protected:
 	void grow(size_t sz);

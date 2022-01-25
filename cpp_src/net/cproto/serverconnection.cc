@@ -1,8 +1,7 @@
-
-
 #include "serverconnection.h"
 #include <errno.h>
 #include <snappy.h>
+#include "coroclientconnection.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -141,7 +140,8 @@ void ServerConnection::onRead() {
 					ctx.call->emmiterServerId = int64_t(ctxArgs[2]);
 				}
 				if (ctxArgs.size() > 3) {
-					ctx.call->shardId = int64_t(ctxArgs[3]);
+					ctx.call->shardId = int64_t(ctxArgs[3]) & ~kShardingParallelExecutionBit;
+					ctx.call->shardingParallelExecution = (int64_t{ctxArgs[3]} & kShardingParallelExecutionBit) != 0;
 				}
 			}
 

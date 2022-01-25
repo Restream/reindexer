@@ -7,7 +7,7 @@ namespace reindexer {
 
 class NamespaceImpl;
 struct SelectFuncStruct;
-struct NsContext;
+class NsContext;
 
 class FunctionExecutor {
 public:

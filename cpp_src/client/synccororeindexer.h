@@ -19,7 +19,7 @@ class SyncCoroReindexerImpl;
 class SyncCoroReindexer {
 public:
 	/// Create Reindexer database object
-	SyncCoroReindexer(const CoroReindexerConfig & = CoroReindexerConfig());
+	SyncCoroReindexer(const CoroReindexerConfig & = CoroReindexerConfig(), size_t connCount = 0);
 	SyncCoroReindexer(SyncCoroReindexer &&rdx) noexcept = default;
 	/// Destrory Reindexer database object
 	~SyncCoroReindexer();
@@ -200,7 +200,10 @@ public:
 	SyncCoroReindexer WithTimeout(milliseconds timeout) { return SyncCoroReindexer(impl_, ctx_.WithTimeout(timeout)); }
 	SyncCoroReindexer WithLSN(lsn_t lsn) { return SyncCoroReindexer(impl_, ctx_.WithLSN(lsn)); }
 	SyncCoroReindexer WithEmmiterServerId(int sId) { return SyncCoroReindexer(impl_, ctx_.WithEmmiterServerId(sId)); }
-	SyncCoroReindexer WithShardId(int id) { return SyncCoroReindexer(impl_, ctx_.WithShardId(id)); }
+	SyncCoroReindexer WithShardId(int id, bool parallel) { return SyncCoroReindexer(impl_, ctx_.WithShardId(id, parallel)); }
+	SyncCoroReindexer WithShardingParallelExecution(bool parallel) {
+		return SyncCoroReindexer{impl_, ctx_.WithShardingParallelExecution(parallel)};
+	}
 
 	typedef SyncCoroQueryResults QueryResultsT;
 	typedef Item ItemT;

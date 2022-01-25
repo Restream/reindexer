@@ -5,7 +5,7 @@
 namespace reindexer {
 namespace client {
 
-CoroReindexer::CoroReindexer(const CoroReindexerConfig& config) : impl_(new CoroRPCClient(config)), owner_(true), ctx_() {}
+CoroReindexer::CoroReindexer(const CoroReindexerConfig& config) : impl_(new CoroRPCClient(config, nullptr)), owner_(true), ctx_() {}
 CoroReindexer::~CoroReindexer() {
 	if (owner_) {
 		delete impl_;
@@ -58,7 +58,7 @@ Error CoroReindexer::EnumMeta(std::string_view nsName, vector<string>& keys) { r
 Error CoroReindexer::Delete(const Query& q, CoroQueryResults& result) { return impl_->Delete(q, result, ctx_); }
 Error CoroReindexer::Select(std::string_view query, CoroQueryResults& result) { return impl_->Select(query, result, ctx_); }
 Error CoroReindexer::Select(const Query& q, CoroQueryResults& result) { return impl_->Select(q, result, ctx_); }
-Error CoroReindexer::Commit(std::string_view nsName) { return impl_->Commit(nsName); }
+Error CoroReindexer::Commit(std::string_view nsName) { return impl_->Commit(nsName, ctx_); }
 Error CoroReindexer::AddIndex(std::string_view nsName, const IndexDef& idx) { return impl_->AddIndex(nsName, idx, ctx_); }
 Error CoroReindexer::UpdateIndex(std::string_view nsName, const IndexDef& idx) { return impl_->UpdateIndex(nsName, idx, ctx_); }
 Error CoroReindexer::DropIndex(std::string_view nsName, const IndexDef& index) { return impl_->DropIndex(nsName, index, ctx_); }
@@ -81,6 +81,9 @@ Error CoroReindexer::GetSnapshot(std::string_view nsName, const SnapshotOpts& op
 }
 Error CoroReindexer::ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk& ch) {
 	return impl_->ApplySnapshotChunk(nsName, ch, ctx_);
+}
+Error CoroReindexer::SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm) {
+	return impl_->SetTagsMatcher(nsName, std::move(tm), ctx_);
 }
 int64_t CoroReindexer::AddConnectionStateObserver(CoroReindexer::ConnectionStateHandlerT callback) {
 	return impl_->AddConnectionStateObserver(std::move(callback));

@@ -28,6 +28,27 @@ namespace client {
 
 class Snapshot;
 
+class Namespaces {
+public:
+	using IntrusiveT = intrusive_rc_wrapper<Namespaces>;
+	using PtrT = intrusive_ptr<IntrusiveT>;
+	using MapT = fast_hash_map<string, std::unique_ptr<Namespace>, nocase_hash_str, nocase_equal_str>;
+	void Add(const std::string &name) { namespaces_.emplace(name, std::make_unique<Namespace>(name)); }
+	void Erase(std::string_view name) { namespaces_.erase(name); }
+	Namespace *Get(std::string_view name) {
+		auto nsIt = namespaces_.find(name);
+		if (nsIt == namespaces_.end()) {
+			string nsName(name);
+			auto nsPtr = std::make_unique<Namespace>(nsName);
+			nsIt = namespaces_.emplace(std::move(nsName), std::move(nsPtr)).first;
+		}
+		return nsIt->second.get();
+	}
+
+private:
+	MapT namespaces_;
+};
+
 using namespace net;
 class CoroRPCClient {
 public:
@@ -35,7 +56,7 @@ public:
 	using NodeData = cluster::NodeData;
 	using RaftInfo = cluster::RaftInfo;
 	typedef std::function<void(const Error &err)> Completion;
-	CoroRPCClient(const CoroReindexerConfig &config);
+	CoroRPCClient(const CoroReindexerConfig &config, Namespaces::PtrT sharedNamespaces);
 	CoroRPCClient(const CoroRPCClient &) = delete;
 	CoroRPCClient(CoroRPCClient &&) = delete;
 	CoroRPCClient &operator=(const CoroRPCClient &) = delete;
@@ -76,7 +97,7 @@ public:
 	Error Select(const Query &query, CoroQueryResults &result, const InternalRdxContext &ctx) {
 		return selectImpl(query, result, config_.NetTimeout, ctx);
 	}
-	Error Commit(std::string_view nsName);
+	Error Commit(std::string_view nsName, const InternalRdxContext &ctx);
 	Item NewItem(std::string_view nsName);
 	template <typename C>
 	Item NewItem(std::string_view nsName, C &client, std::chrono::milliseconds execTimeout) {
@@ -99,6 +120,7 @@ public:
 	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus &status, const InternalRdxContext &ctx);
 	Error GetSnapshot(std::string_view nsName, const SnapshotOpts &opts, Snapshot &snapshot, const InternalRdxContext &ctx);
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch, const InternalRdxContext &ctx);
+	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm, const InternalRdxContext &ctx);
 
 	Error SuggestLeader(const NodeData &suggestion, NodeData &response, const InternalRdxContext &ctx);
 	Error LeadersPing(const NodeData &leader, const InternalRdxContext &ctx);
@@ -117,9 +139,6 @@ protected:
 	Namespace *getNamespace(std::string_view nsName);
 
 	void onConnectionState(Error err) noexcept {
-		if (!err.ok()) {
-			subscribed_ = false;
-		}
 		const auto observers = observers_;
 		for (auto &obs : observers) {
 			obs.second(err);
@@ -129,11 +148,9 @@ protected:
 	cproto::CommandParams mkCommand(cproto::CmdCode cmd, const InternalRdxContext *ctx = nullptr) const noexcept;
 	static cproto::CommandParams mkCommand(cproto::CmdCode cmd, milliseconds netTimeout, const InternalRdxContext *ctx) noexcept;
 
-	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
-
+	Namespaces::PtrT namespaces_;
 	CoroReindexerConfig config_;
 	cproto::CoroClientConnection conn_;
-	bool subscribed_ = false;
 	bool terminate_ = false;
 	coroutine::wait_group resubWg_;
 	ev::dynamic_loop *loop_ = nullptr;

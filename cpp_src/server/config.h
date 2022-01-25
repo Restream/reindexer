@@ -48,7 +48,6 @@ struct ServerConfig {
 	bool RemoveSvc;
 	bool SvcMode;
 #endif
-	bool EnableCluster;
 	bool EnableSecurity;
 	bool DebugPprof;
 	bool EnablePrometheus;
@@ -57,7 +56,6 @@ struct ServerConfig {
 	bool DebugAllocs;
 	std::chrono::seconds TxIdleTimeout;
 	std::chrono::seconds HttpReadTimeout;
-	std::chrono::seconds HttpWriteTimeout;
 	size_t MaxUpdatesSize;
 	bool EnableGRPC;
 	string GRPCAddr;
@@ -67,10 +65,18 @@ struct ServerConfig {
 	static const string kSharedThreading;
 	static const string kPoolThreading;
 
+	void SetEnableCluster(bool val) noexcept;
+	bool EnableCluster() const noexcept { return enableCluster_; }
+	void SetHttpWriteTimeout(std::chrono::seconds val) noexcept;
+	std::chrono::seconds HttpWriteTimeout() const noexcept { return httpWriteTimeout_; }
+
 protected:
 	Error fromYaml(Yaml::Node& root);
 
 private:
+	bool enableCluster_;
+	bool hasCustomHttpWriteTimeout_;
+	std::chrono::seconds httpWriteTimeout_;
 	vector<string> args_;
 };
 

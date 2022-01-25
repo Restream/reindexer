@@ -22,6 +22,14 @@ if [ -n "$RX_ENABLE_CLUSTER" ]; then
     RX_ARGS="$RX_ARGS --enable-cluster"
 fi
 
+if [ -n "$RX_HTTP_READ_TIMEOUT" ]; then
+    RX_ARGS="$RX_ARGS --http-read-timeout $RX_HTTP_READ_TIMEOUT"
+fi
+
+if [ -n "$RX_HTTP_WRITE_TIMEOUT" ]; then
+    RX_ARGS="$RX_ARGS --http-write-timeout $RX_HTTP_WRITE_TIMEOUT"
+fi
+
 if [ -z "$@" ]; then
    reindexer_server $RX_ARGS
 else 

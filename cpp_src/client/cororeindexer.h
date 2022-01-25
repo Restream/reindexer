@@ -195,6 +195,11 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param ch - Snapshot chunk to apply
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch);
+	/// Set tags matcher for replica namespace. Current tagsmatcher and new tagsmatcher have to have the same state tokens.
+	/// This request is for replicator only.
+	/// @param nsName - Name of namespace
+	/// @param tm - New tagsmatcher
+	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm);
 
 	/// Add observer for client's connection state. This callback will be called on each connect and disconnect
 	/// @param callback - callback functor
@@ -213,6 +218,9 @@ public:
 	/// Add lsn info
 	/// @param lsn - next operation lsn
 	CoroReindexer WithLSN(lsn_t lsn) { return CoroReindexer(impl_, ctx_.WithLSN(lsn)); }
+	/// Add shard info
+	/// @param id - shard id
+	CoroReindexer WithShardId(int id, bool parallel) { return CoroReindexer(impl_, ctx_.WithShardId(id, parallel)); }
 
 	typedef CoroQueryResults QueryResultsT;
 	typedef Item ItemT;

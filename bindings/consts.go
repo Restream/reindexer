@@ -2,7 +2,7 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v4.0.0"
+const ReindexerVersion = "v4.1.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
@@ -54,32 +54,34 @@ const (
 	ValueComposite = 10
 	ValueTuple     = 11
 
-	QueryCondition         = 0
-	QueryDistinct          = 1
-	QuerySortIndex         = 2
-	QueryJoinOn            = 3
-	QueryLimit             = 4
-	QueryOffset            = 5
-	QueryReqTotal          = 6
-	QueryDebugLevel        = 7
-	QueryAggregation       = 8
-	QuerySelectFilter      = 9
-	QuerySelectFunction    = 10
-	QueryEnd               = 11
-	QueryExplain           = 12
-	QueryEqualPosition     = 13
-	QueryUpdateField       = 14
-	QueryAggregationLimit  = 15
-	QueryAggregationOffset = 16
-	QueryAggregationSort   = 17
-	QueryOpenBracket       = 18
-	QueryCloseBracket      = 19
-	QueryJoinCondition     = 20
-	QueryDropField         = 21
-	QueryUpdateObject      = 22
-	QueryWithRank          = 23
-	QueryStrictMode        = 24
-	QueryUpdateFieldV2     = 25
+	QueryCondition              = 0
+	QueryDistinct               = 1
+	QuerySortIndex              = 2
+	QueryJoinOn                 = 3
+	QueryLimit                  = 4
+	QueryOffset                 = 5
+	QueryReqTotal               = 6
+	QueryDebugLevel             = 7
+	QueryAggregation            = 8
+	QuerySelectFilter           = 9
+	QuerySelectFunction         = 10
+	QueryEnd                    = 11
+	QueryExplain                = 12
+	QueryEqualPosition          = 13
+	QueryUpdateField            = 14
+	QueryAggregationLimit       = 15
+	QueryAggregationOffset      = 16
+	QueryAggregationSort        = 17
+	QueryOpenBracket            = 18
+	QueryCloseBracket           = 19
+	QueryJoinCondition          = 20
+	QueryDropField              = 21
+	QueryUpdateObject           = 22
+	QueryWithRank               = 23
+	QueryStrictMode             = 24
+	QueryUpdateFieldV2          = 25
+	QueryBetweenFieldsCondition = 26
+	QueryAlwaysFalseCondition   = 27
 
 	LeftJoin    = 0
 	InnerJoin   = 1
@@ -165,4 +167,9 @@ const (
 	ErrUpdateReplication    = 28
 	ErrClusterConsensus     = 29
 	ErrTerminated           = 30
+)
+
+const (
+	ReplicationTypeCluster = "cluster"
+	ReplicationTypeAsync   = "async_replication"
 )

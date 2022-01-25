@@ -1,17 +1,18 @@
 #include "shardingkeys.h"
+#include <set>
 #include "cluster/config.h"
+#include "sharding.h"
 
 namespace reindexer::sharding {
 
 ShardingKeys::ShardingKeys(const reindexer::cluster::ShardingConfig& config) {
-	// id == 0 is for proxy hosts
-	int shardId = 0;
-	for (const reindexer::cluster::ShardingKey& key : config.keys) {
-		IndexesData& indexesData = keys_[key.ns];
-		ValuesData& valuesData = indexesData[key.index];
-		++shardId;
-		for (const Variant& v : key.values) {
-			valuesData[v.Hash()] = shardId;
+	for (const auto& ns : config.namespaces) {
+		IndexesData& indexesData = keys_[ns.ns];
+		ValuesData& valuesData = indexesData[ns.index];
+		for (const auto& key : ns.keys) {
+			for (const Variant& v : key.values) {
+				valuesData[v] = key.shardId;
+			}
 		}
 	}
 }
@@ -30,30 +31,33 @@ std::vector<std::string_view> ShardingKeys::GetIndexes(std::string_view nsName) 
 
 int ShardingKeys::GetShardId(std::string_view ns, std::string_view index) const {
 	auto itNsData = keys_.find(ns);
-	if (itNsData == keys_.end()) return IndexValueType::NotSet;
+	if (itNsData == keys_.end()) return int(ShardIdType::NotSet);
 	auto itIndexData = itNsData->second.find(index);
-	if (itIndexData == itNsData->second.end()) return IndexValueType::NotSet;
+	if (itIndexData == itNsData->second.end()) return int(ShardIdType::NotSet);
 	if (itIndexData->second.size() > 0) {
 		return itIndexData->second.begin()->second;
 	}
-	return IndexValueType::NotSet;
+	return int(ShardIdType::NotSet);
 }
 
 int ShardingKeys::GetShardId(std::string_view ns, std::string_view index, const VariantArray& vals, bool& isShardKey) const {
+	isShardKey = false;
 	auto itNsData = keys_.find(ns);
-	if (itNsData == keys_.end()) return IndexValueType::NotSet;
+	if (itNsData == keys_.end()) return int(ShardIdType::NotSet);
 	auto itIndexData = itNsData->second.find(index);
-	if (itIndexData == itNsData->second.end()) return IndexValueType::NotSet;
+	if (itIndexData == itNsData->second.end()) return int(ShardIdType::NotSet);
 	isShardKey = true;
-	int shardId = IndexValueType::NotSet;
+	int shardId = int(ShardIdType::NotSet);
 	const ValuesData& valuesData = itIndexData->second;
-	for (const Variant& v : vals) {
-		auto it = valuesData.find(v.Hash());
-		if ((it == valuesData.end()) || (shardId != IndexValueType::NotSet && shardId != it->second)) {
-			return IndexValueType::NotSet;
-		}
-		shardId = it->second;
+	if (vals.empty() || vals.size() > 1) {
+		throw Error(errLogic, "Sharding key value cannot be empty or an array");
 	}
+	auto it = valuesData.find(vals[0]);
+	if ((it == valuesData.end()) || (shardId != int(ShardIdType::NotSet) && shardId != it->second)) {
+		return int(ShardIdType::NotSet);
+	}
+	shardId = it->second;
+
 	return shardId;
 }
 
@@ -61,25 +65,29 @@ std::vector<int> ShardingKeys::GetShardsIds(std::string_view ns) const {
 	auto itNsData = keys_.find(ns);
 	if (itNsData == keys_.end()) return {};
 	std::vector<int> ids;
-	ids.reserve(itNsData->second.size());
-	ids.emplace_back(0);  // with Proxy host
+	std::set<int> uniqueIds = {0};	// with Proxy host
 	for (auto itIndexData = itNsData->second.begin(); itIndexData != itNsData->second.end(); ++itIndexData) {
 		for (auto itValuesData = itIndexData->second.begin(); itValuesData != itIndexData->second.end(); ++itValuesData) {
-			ids.emplace_back(itValuesData->second);
+			uniqueIds.insert(itValuesData->second);
 		}
 	}
+	ids.reserve(uniqueIds.size());
+	std::copy(uniqueIds.begin(), uniqueIds.end(), std::back_inserter(ids));
 	return ids;
 }
 
 std::vector<int> ShardingKeys::GetShardsIds() const {
-	std::vector<int> ids = {0};
+	std::vector<int> ids;
+	std::set<int> uniqueIds = {0};
 	for (auto itNsData = keys_.begin(); itNsData != keys_.end(); ++itNsData) {
 		for (auto itIndexData = itNsData->second.begin(); itIndexData != itNsData->second.end(); ++itIndexData) {
 			for (auto itValuesData = itIndexData->second.begin(); itValuesData != itIndexData->second.end(); ++itValuesData) {
-				ids.emplace_back(itValuesData->second);
+				uniqueIds.insert(itValuesData->second);
 			}
 		}
 	}
+	ids.reserve(uniqueIds.size());
+	std::copy(uniqueIds.begin(), uniqueIds.end(), std::back_inserter(ids));
 	return ids;
 }
 

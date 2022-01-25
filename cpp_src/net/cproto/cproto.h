@@ -54,6 +54,7 @@ enum CmdCode : uint16_t {
 	kCmdSetClusterizationStatus = 73,
 
 	kCmdPutTxMeta = 74,
+	kCmdSetTagsMatcherTx = 75,
 
 	kCmdSubscribeUpdates = 90,	// Deprecated
 	kCmdUpdates = 91,			// Deprecated
@@ -64,6 +65,7 @@ enum CmdCode : uint16_t {
 	kCmdLeadersPing = 101,
 	kCmdGetRaftInfo = 102,
 	kCmdClusterControlRequest = 103,
+	kCmdSetTagsMatcher = 104,
 
 	kCmdGetSchema = 110,
 

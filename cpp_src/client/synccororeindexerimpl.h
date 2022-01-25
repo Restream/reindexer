@@ -13,12 +13,15 @@
 namespace reindexer {
 namespace client {
 
+template <typename CmdT>
+class Connection;
+
 class SyncCoroReindexerImpl {
 public:
 	typedef SyncCoroQueryResults QueryResultsT;
 
 	/// Create Reindexer database object
-	SyncCoroReindexerImpl(const CoroReindexerConfig & = CoroReindexerConfig());
+	SyncCoroReindexerImpl(const CoroReindexerConfig & = CoroReindexerConfig(), size_t connCount = 0);
 	/// Destrory Reindexer database object
 	~SyncCoroReindexerImpl();
 	SyncCoroReindexerImpl(const SyncCoroReindexerImpl &) = delete;
@@ -51,7 +54,7 @@ public:
 	Error Delete(const Query &query, SyncCoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Select(std::string_view query, SyncCoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Select(const Query &query, SyncCoroQueryResults &result, const InternalRdxContext &ctx);
-	Error Commit(std::string_view nsName);
+	Error Commit(std::string_view nsName, const InternalRdxContext &ctx);
 	Item NewItem(std::string_view nsName, const InternalRdxContext &ctx);
 	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx);
 	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const InternalRdxContext &ctx);
@@ -69,8 +72,8 @@ private:
 	Error fetchResults(int flags, SyncCoroQueryResults &result);
 	Error addTxItem(SyncCoroTransaction &tr, Item &&item, ItemModifyMode mode, lsn_t lsn);
 	Error putTxMeta(SyncCoroTransaction &tr, std::string_view key, std::string_view value, lsn_t lsn);
+	Error setTxTm(SyncCoroTransaction &tr, TagsMatcher &&tm, lsn_t lsn);
 	Error modifyTx(SyncCoroTransaction &tr, Query &&q, lsn_t lsn);
-	Item execNewItemTx(CoroTransaction &tr);
 	Item newItemTx(CoroTransaction &tr);
 	void threadLoopFun(std::promise<Error> &&isRunning, const string &dsn, const client::ConnectOpts &opts);
 
@@ -117,12 +120,13 @@ private:
 		DbCmdPutTxMeta,
 		DbCmdModifyTx,
 		DbCmdGetReplState,
+		DbCmdSetTxTagsMatcher,
 	};
 
 	struct DatabaseCommandBase {
-		DatabaseCommandBase(CmdName id) : id_(id) {}
+		DatabaseCommandBase(CmdName id) noexcept : id_(id) {}
 		CmdName id_;
-		virtual ~DatabaseCommandBase() {}
+		virtual ~DatabaseCommandBase() = default;
 	};
 
 	template <typename R, typename... P>
@@ -175,8 +179,9 @@ private:
 	net::ev::async commandAsync_;
 	net::ev::async closeAsync_;
 	const CoroReindexerConfig conf_;
+	const size_t connCount_ = 1;
 
-	void coroInterpreter(reindexer::client::CoroRPCClient &rx, coroutine::channel<DatabaseCommandBase *> &chCommand);
+	void coroInterpreter(Connection<DatabaseCommandBase> &) noexcept;
 };
 }  // namespace client
 }  // namespace reindexer

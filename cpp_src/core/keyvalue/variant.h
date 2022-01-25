@@ -105,7 +105,8 @@ public:
 
 	bool IsNullValue() const;
 
-	void Dump(WrSerializer &wrser) const;
+	template <typename T>
+	void Dump(T &os) const;
 
 protected:
 	void convertToComposite(const PayloadType *, const FieldsSet *);
@@ -139,6 +140,18 @@ protected:
 class VariantArray : public h_vector<Variant, 2> {
 public:
 	VariantArray() noexcept = default;
+	VariantArray(const VariantArray&) = default;
+	VariantArray(VariantArray&&) = default;
+	VariantArray& operator=(const VariantArray&) = default;
+	VariantArray& operator=(VariantArray&&) = default;
+
+	template <typename T>
+	VariantArray(std::initializer_list<T> l) {
+		reserve(l.size());
+		for (auto &v : l) {
+			emplace_back(std::move(v));
+		}
+	}
 	explicit VariantArray(Point) noexcept;
 	explicit operator Point() const;
 	void MarkArray() noexcept { isArrayValue = true; }
@@ -155,7 +168,9 @@ public:
 	bool IsObjectValue() const noexcept { return isObjectValue; }
 	bool IsNullValue() const;
 	KeyValueType ArrayType() const;
-	void Dump(WrSerializer &wrser) const;
+	template <typename T>
+	void Dump(T &os) const;
+	int RelaxCompare(const VariantArray &other, const CollateOpts & = CollateOpts{}) const;
 
 private:
 	bool isArrayValue = false;

@@ -8,10 +8,11 @@
 namespace reindexer {
 
 template <typename T>
-Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id) {
+Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id, bool &clearCache) {
 	if (key.Type() == KeyValueNull) {
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
 			if (this->cache_) this->cache_.reset();
+			clearCache = true;
 			this->isBuilt_ = false;
 		}
 		// Return invalid ref
@@ -28,12 +29,13 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id) {
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
 		this->isBuilt_ = false;
 		if (this->cache_) this->cache_.reset();
+		clearCache = true;
 	}
 	this->tracker_.markUpdated(this->idx_map, keyIt);
 	this->addMemStat(keyIt);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
-		return IndexStore<typename T::key_type>::Upsert(key, id);
+		return IndexStore<typename T::key_type>::Upsert(key, id, clearCache);
 	}
 
 	return Variant(keyIt->first);

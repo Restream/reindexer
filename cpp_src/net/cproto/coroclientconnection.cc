@@ -3,7 +3,6 @@
 #include <snappy.h>
 #include <functional>
 #include "core/rdxcontext.h"
-#include "coroclientconnection.h"
 #include "reindexer_version.h"
 #include "tools/serializer.h"
 
@@ -85,7 +84,7 @@ Error CoroClientConnection::Status(bool forceCheck, milliseconds netTimeout, mil
 	if (loggedIn_ && !forceCheck) {
 		return errOK;
 	}
-	return call({kCmdPing, netTimeout, execTimeout, lsn_t(), -1, IndexValueType::NotSet, ctx}, {}).Status();
+	return call({kCmdPing, netTimeout, execTimeout, lsn_t(), -1, IndexValueType::NotSet, ctx, false}, {}).Status();
 }
 
 CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &args) {
@@ -122,7 +121,8 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 	try {
 		wrCh_.push(packRPC(
 			opts.cmd, seq, args,
-			Args{Arg{int64_t(opts.execTimeout.count())}, Arg{int64_t(opts.lsn)}, Arg{int64_t(opts.serverId)}, Arg{int64_t(opts.shardId)}}));
+			Args{Arg{int64_t(opts.execTimeout.count())}, Arg{int64_t(opts.lsn)}, Arg{int64_t(opts.serverId)},
+				 Arg{opts.shardingParallelExecution ? int64_t{opts.shardId} | kShardingParallelExecutionBit : int64_t{opts.shardId}}}));
 		auto ansp = call.rspCh.pop();
 		if (ansp.second) {
 			ans = std::move(ansp.first);
@@ -416,7 +416,7 @@ void CoroClientConnection::pingerRoutine() {
 	while (!terminate_) {
 		loop_->granular_sleep(kKeepAliveInterval, kCoroSleepGranularity, terminate_);
 		if (conn_.state() != manual_connection::conn_state::init) {
-			call({kCmdPing, connectData_.opts.keepAliveTimeout, milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr}, {});
+			call({kCmdPing, connectData_.opts.keepAliveTimeout, milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr, false}, {});
 		}
 	}
 }

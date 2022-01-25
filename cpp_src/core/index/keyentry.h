@@ -40,7 +40,41 @@ public:
 		}
 		boost::sort::pdqsort(idsAsc.begin(), idsAsc.end());
 	}
+	void Dump(std::ostream& os, std::string_view step, std::string_view offset) const {
+		std::string newOffset;
+		if (ids_.size() > 10) {
+			newOffset.reserve(offset.size() + step.size() + 1);
+			newOffset += '\n';
+			newOffset += offset;
+			newOffset += step;
+		}
+		os << '{' << newOffset << "unsorted: " << Unsorted() << ',';
+		if (newOffset.empty()) {
+			os << ' ';
+		} else {
+			os << newOffset;
+		}
+		os << "sorted: [";
+		if (ids_.size() != 0) {
+			unsigned sortId = 0;
+			while (ids_.capacity() >= ids_.size() * (sortId + 1)) {
+				if (sortId != 0) os << ", ";
+				os << '[';
+				const auto sorted = Sorted(sortId);
+				for (auto b = sorted.begin(), it = b, e = sorted.end(); it != e; ++it) {
+					if (it != b) os << ", ";
+					os << *it;
+				}
+				os << ']';
+				++sortId;
+			}
+		}
+		os << ']';
+		if (!newOffset.empty()) os << '\n' << offset;
+		os << '}';
+	}
 
 	IdSetT ids_;
 };
+
 }  // namespace reindexer

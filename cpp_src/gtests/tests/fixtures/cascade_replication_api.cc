@@ -13,13 +13,28 @@ void CascadeReplicationApi::WaitSync(ServerPtr s1, ServerPtr s2, const std::stri
 	ReplicationStateApi state1, state2;
 	while (true) {
 		now += pause;
+		const std::string tmStateToken1 = state1.tmStatetoken.has_value() ? std::to_string(state1.tmStatetoken.value()) : "<none>";
+		const std::string tmStateToken2 = state2.tmStatetoken.has_value() ? std::to_string(state2.tmStatetoken.value()) : "<none>";
+		const std::string tmVersion1 = state1.tmVersion.has_value() ? std::to_string(state1.tmVersion.value()) : "<none>";
+		const std::string tmVersion2 = state2.tmVersion.has_value() ? std::to_string(state2.tmVersion.value()) : "<none>";
 		ASSERT_TRUE(now < kMaxSyncTime) << "Wait sync is too long. s1 lsn: " << state1.lsn << "; s2 lsn: " << state2.lsn
 										<< "; s1 count: " << state1.dataCount << "; s2 count: " << state2.dataCount
-										<< " s1 hash: " << state1.dataHash << "; s2 hash: " << state2.dataHash;
+										<< " s1 hash: " << state1.dataHash << "; s2 hash: " << state2.dataHash
+										<< " s1 tm_token: " << tmStateToken1 << "; s2 tm_token: " << tmStateToken2
+										<< " s1 tm_version: " << tmVersion1 << "; s2 tm_version: " << tmVersion2;
 		state1 = s1->GetState(nsName);
 		state2 = s2->GetState(nsName);
-		if (state1.lsn == state2.lsn && state1.dataCount == state2.dataCount && state1.dataHash == state2.dataHash) {
-			return;
+
+		if (state1.tmStatetoken.has_value() && state2.tmStatetoken.has_value() && state1.tmVersion.has_value() &&
+			state2.tmVersion.has_value()) {
+			const bool hasSameTms =
+				state1.tmStatetoken.value() == state2.tmStatetoken.value() && state1.tmVersion.value() == state2.tmVersion.value();
+			const bool hasSameLSN = state1.lsn == state2.lsn && state1.nsVersion == state2.nsVersion;
+
+			if (hasSameTms && hasSameLSN) {
+				ASSERT_EQ(state1.dataHash, state2.dataHash);
+				return;
+			}
 		}
 		std::this_thread::sleep_for(pause);
 	}
@@ -74,7 +89,7 @@ CascadeReplicationApi::Cluster CascadeReplicationApi::CreateConfiguration(std::v
 	for (size_t i = 0; i < clusterConfig.size(); ++i) {
 		nodes.push_back(ServerControl());
 		const int serverId = baseServerId + i;
-		nodes.back().InitServer(serverId, basePort + i, basePort + 1000 + i, dbPathMaster + std::to_string(i), "db", true);
+		nodes.back().InitServer(ServerControlConfig(serverId, basePort + i, basePort + 1000 + i, dbPathMaster + std::to_string(i), "db"));
 		const bool isFollower = clusterConfig[i].leaderId >= 0;
 		AsyncReplicationConfigTest config(isFollower ? "follower" : "leader", std::vector<ReplNode>(), false, true, serverId,
 										  "node_" + std::to_string(serverId), std::move(nsList));
@@ -83,7 +98,7 @@ CascadeReplicationApi::Cluster CascadeReplicationApi::CreateConfiguration(std::v
 
 		if (isFollower) {
 			assert(int(nodes.size()) > clusterConfig[i].leaderId + 1);
-			nodes[clusterConfig[i].leaderId].Get()->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", srv->kRpcPort),
+			nodes[clusterConfig[i].leaderId].Get()->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", srv->RpcPort()),
 																std::move(clusterConfig[i].nsList));
 		}
 	}
@@ -125,7 +140,7 @@ void CascadeReplicationApi::TestNamespace1::GetData(ServerPtr srv, std::vector<i
 void CascadeReplicationApi::Cluster::RestartServer(size_t id, int port, const std::string& dbPathMaster) {
 	assert(id < nodes_.size());
 	ShutdownServer(id);
-	nodes_[id].InitServer(id, port + id, port + 1000 + id, dbPathMaster + std::to_string(id), "db", true);
+	nodes_[id].InitServer(ServerControlConfig(id, port + id, port + 1000 + id, dbPathMaster + std::to_string(id), "db"));
 }
 
 void CascadeReplicationApi::Cluster::ShutdownServer(size_t id) {
@@ -146,7 +161,7 @@ void CascadeReplicationApi::Cluster::ShutdownServer(size_t id) {
 void CascadeReplicationApi::Cluster::InitServer(size_t id, unsigned short rpcPort, unsigned short httpPort, const std::string& storagePath,
 												const std::string& dbName, bool enableStats) {
 	assert(id < nodes_.size());
-	nodes_[id].InitServer(id, rpcPort, httpPort, storagePath, dbName, enableStats);
+	nodes_[id].InitServer(ServerControlConfig(id, rpcPort, httpPort, storagePath, dbName, enableStats));
 }
 
 CascadeReplicationApi::Cluster::~Cluster() {

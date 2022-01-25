@@ -68,11 +68,12 @@ protected:
 	TagsMatcher tagsMatcher_;
 
 	WrSerializer ser_;
-	string tupleData_;
+	std::string_view tupleData_;
+	std::unique_ptr<uint8_t[]> tupleHolder_;
 
 	vector<string> precepts_;
 	bool unsafe_ = false;
-	std::deque<std::string> holder_;
+	std::unique_ptr<char[]> holder_;
 };
 
 }  // namespace client

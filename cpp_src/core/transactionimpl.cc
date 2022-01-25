@@ -21,7 +21,9 @@ Item TransactionImpl::NewItem() {
 Item TransactionImpl::GetItem(TransactionStep &&st) {
 	std::unique_lock<std::mutex> lock(mtx_);
 	auto &data = std::get<TransactionItemStep>(st.data_);
-	return Item(new ItemImpl(payloadType_, tagsMatcher_, pkFields_, schema_, std::move(data.data)));
+	auto item = Item(new ItemImpl(payloadType_, tagsMatcher_, pkFields_, schema_, std::move(data.data)));
+	data.hadTmUpdate ? item.impl_->tagsMatcher().setUpdated() : item.impl_->tagsMatcher().clearUpdated();
+	return item;
 }
 
 TransactionImpl::TransactionImpl(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
@@ -99,6 +101,17 @@ void TransactionImpl::PutMeta(std::string_view key, std::string_view value, lsn_
 	}
 	std::unique_lock<std::mutex> lock(mtx_);
 	steps_.emplace_back(TransactionStep{key, value, lsn});
+}
+
+void TransactionImpl::SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) {
+	std::unique_lock<std::mutex> lock(mtx_);
+	if (tm.stateToken() != tagsMatcher_.stateToken()) {
+		throw Error(errParams, "Tx tm statetoken missmatch: %08X vs %08X", tagsMatcher_.stateToken(), tm.stateToken());
+	}
+	steps_.emplace_back(TransactionStep{tm, lsn});
+	tagsMatcher_ = std::move(tm);
+	tagsMatcher_.UpdatePayloadType(payloadType_, false);
+	tagsUpdated_ = true;
 }
 
 }  // namespace reindexer

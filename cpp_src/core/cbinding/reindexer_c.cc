@@ -115,7 +115,6 @@ uintptr_t init_reindexer() {
 void destroy_reindexer(uintptr_t rx) {
 	auto db = reinterpret_cast<Reindexer*>(rx);
 	delete db;
-	db = nullptr;
 }
 
 reindexer_error reindexer_ping(uintptr_t rx) {
@@ -163,7 +162,7 @@ reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, rein
 	auto item = trw->tr_.NewItem();
 	procces_packed_item(item, mode, state_token, data, format, err);
 	if (err.code() == errTagsMissmatch) {
-		item = db->NewItem(trw->tr_.GetName());
+		item = db->NewItem(trw->tr_.GetNsName());
 		err = item.Status();
 		if (err.ok()) {
 			procces_packed_item(item, mode, state_token, data, format, err);

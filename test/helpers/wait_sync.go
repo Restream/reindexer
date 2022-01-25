@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/bindings"
 	_ "github.com/restream/reindexer/bindings/builtinserver"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +18,7 @@ func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *rei
 	var masterBadLsn reindexer.LsnT
 	var slaveBadLsn reindexer.LsnT
 
-	for i := 0; i < 600*5; i++ {
+	for i := 0; i < 600; i++ {
 
 		complete = true
 
@@ -62,13 +63,39 @@ func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *rei
 			masterNsData, ok := masterMemStatMap[nsName]
 
 			if ok {
+				handleError := func(nsName string, mLSN reindexer.LsnT, sLSN reindexer.LsnT) {
+					complete = false
+					nameBad = nsName
+					masterBadLsn = mLSN
+					slaveBadLsn = sLSN
+				}
 				if slaveNsData, ok := slaveMemStatMap[nsName]; ok {
 					if slaveNsData.Replication.LastLSN != masterNsData.Replication.LastLSN || slaveNsData.Replication.NSVersion != masterNsData.Replication.NSVersion { //slave != master
-						complete = false
-						nameBad = nsName
-						masterBadLsn = masterNsData.Replication.LastLSN
-						slaveBadLsn = slaveNsData.Replication.LastLSN
+						handleError(nsName, masterNsData.Replication.LastLSN, slaveNsData.Replication.LastLSN)
 						log.Printf("%s is not synchronized: %v != %v", nsName, slaveNsData.Replication.LastLSN, masterNsData.Replication.LastLSN)
+						break
+					}
+					leaderIt := master.Query(nsName).Limit(0).Exec()
+					defer leaderIt.Close()
+					if leaderIt.Error() != nil {
+						rerr, ok := leaderIt.Error().(bindings.Error)
+						if ok && rerr.Code() == bindings.ErrNotFound {
+							// In some test cases namespace may be closed, so skipping tm validation
+							continue
+						}
+					}
+					followerIt := slave.Query(nsName).Limit(0).Exec()
+					defer followerIt.Close()
+					if leaderIt.Error() != nil || followerIt.Error() != nil {
+						handleError(nsName, masterNsData.Replication.LastLSN, slaveNsData.Replication.LastLSN)
+						log.Printf("%s unable to get tagsmatchers: leader: %v; follower: %v", nsName, leaderIt.Error(), followerIt.Error())
+						break
+					}
+					leaderTmST, leaderTmVer := leaderIt.GetTagsMatcherInfo(nsName)
+					followerTmST, followerTmVer := followerIt.GetTagsMatcherInfo(nsName)
+					if leaderTmVer < 0 || followerTmVer < 0 || leaderTmST != followerTmST || leaderTmVer != followerTmVer { //followers tagsmatcher is not equal to leader's one
+						handleError(nsName, masterNsData.Replication.LastLSN, slaveNsData.Replication.LastLSN)
+						log.Printf("%s has different tagsmatchers: (%08X:%d) vs (%08X:%d)", nsName, leaderTmST, leaderTmVer, followerTmST, followerTmVer)
 						break
 					}
 				} else {
@@ -96,7 +123,7 @@ func WaitForSyncWithMaster(t *testing.T, master *reindexer.Reindexer, slave *rei
 			return
 		}
 		log.Printf("Awaiting sync...")
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	t.Fatalf("Can't sync slave ns with master: ns \"%s\" masterlsn: %+v , slavelsn %+v", nameBad, masterBadLsn, slaveBadLsn)

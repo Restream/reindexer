@@ -13,8 +13,8 @@
 
 class MsgPackCprotoApi : public ReindexerApi {
 public:
-	MsgPackCprotoApi() {}
-	~MsgPackCprotoApi() {}
+	MsgPackCprotoApi() = default;
+	~MsgPackCprotoApi() = default;
 
 	void SetUp() {
 		reindexer::fs::RmDirAll(kDbPath);

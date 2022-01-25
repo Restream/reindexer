@@ -25,7 +25,7 @@ class CoroQueryResults {
 public:
 	using NsArray = h_vector<Namespace*, 1>;
 
-	CoroQueryResults(int fetchFlags = 0);
+	CoroQueryResults(int fetchFlags = 0) noexcept;
 	CoroQueryResults(const CoroQueryResults&) = delete;
 	CoroQueryResults(CoroQueryResults&&) = default;
 	CoroQueryResults& operator=(const CoroQueryResults&) = delete;

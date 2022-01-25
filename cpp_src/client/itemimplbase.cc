@@ -17,8 +17,9 @@ Error ItemImplBase::FromCJSON(std::string_view slice) {
 	GetPayload().Reset();
 	std::string_view data = slice;
 	if (!unsafe_) {
-		holder_.push_back(string(slice));
-		data = holder_.back();
+		holder_.reset(new char[slice.size()]);
+		std::copy(slice.begin(), slice.end(), holder_.get());
+		data = std::string_view(holder_.get(), slice.size());
 	}
 
 	Serializer rdser(data);
@@ -56,7 +57,9 @@ Error ItemImplBase::FromCJSON(std::string_view slice) {
 	}
 
 	if (err.ok()) {
-		tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
+		const auto tupleSize = ser_.Len();
+		tupleHolder_ = ser_.DetachBuf();
+		tupleData_ = std::string_view(reinterpret_cast<char *>(tupleHolder_.get()), tupleSize);
 		pl.Set(0, {Variant(p_string(&tupleData_))});
 	}
 
@@ -66,8 +69,9 @@ Error ItemImplBase::FromCJSON(std::string_view slice) {
 Error ItemImplBase::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
 	std::string_view data = slice;
 	if (!unsafe_ && endp == nullptr) {
-		holder_.emplace_back(slice);
-		data = holder_.back();
+		holder_.reset(new char[slice.size()]);
+		std::copy(slice.begin(), slice.end(), holder_.get());
+		data = std::string_view(holder_.get(), slice.size());
 	}
 
 	payloadValue_.Clone();
@@ -90,9 +94,10 @@ Error ItemImplBase::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*
 
 	if (err.ok()) {
 		// Put tuple to field[0]
-		tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
+		const auto tupleSize = ser_.Len();
+		tupleHolder_ = ser_.DetachBuf();
+		tupleData_ = std::string_view(reinterpret_cast<char *>(tupleHolder_.get()), tupleSize);
 		pl.Set(0, {Variant(p_string(&tupleData_))});
-		ser_ = WrSerializer();
 	}
 	return err;
 }
@@ -101,10 +106,19 @@ Error ItemImplBase::FromMsgPack(std::string_view buf, size_t &offset) {
 	Payload pl = GetPayload();
 	MsgPackDecoder decoder(&tagsMatcher_);
 
+	std::string_view data = buf;
+	if (!unsafe_) {
+		holder_.reset(new char[buf.size()]);
+		std::copy(buf.begin(), buf.end(), holder_.get());
+		data = std::string_view(holder_.get(), buf.size());
+	}
+
 	ser_.Reset();
-	Error err = decoder.Decode(buf, &pl, ser_, offset);
+	Error err = decoder.Decode(data, &pl, ser_, offset);
 	if (err.ok()) {
-		tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
+		const auto tupleSize = ser_.Len();
+		tupleHolder_ = ser_.DetachBuf();
+		tupleData_ = std::string_view(reinterpret_cast<char *>(tupleHolder_.get()), tupleSize);
 		pl.Set(0, {Variant(p_string(&tupleData_))});
 	}
 	return err;

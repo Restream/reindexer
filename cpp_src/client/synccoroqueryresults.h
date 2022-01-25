@@ -25,7 +25,7 @@ class SyncCoroReindexer;
 
 class SyncCoroQueryResults {
 public:
-	SyncCoroQueryResults(int fetchFlags = 0);
+	SyncCoroQueryResults(int fetchFlags = 0) noexcept : results_(fetchFlags) {}
 	SyncCoroQueryResults(const SyncCoroQueryResults&) = delete;
 	SyncCoroQueryResults(SyncCoroQueryResults&&) = default;
 	SyncCoroQueryResults& operator=(const SyncCoroQueryResults&) = delete;
@@ -34,9 +34,9 @@ public:
 	class Iterator : public CoroQueryResults::Iterator {
 	public:
 		Iterator(const SyncCoroQueryResults* r, const CoroQueryResults* qr, int idx, int pos, int nextPos,
-				 ResultSerializer::ItemParams itemParams)
+				 ResultSerializer::ItemParams itemParams) noexcept
 			: CoroQueryResults::Iterator{qr, idx, pos, nextPos, itemParams, {}}, r_(r) {}
-		Iterator& operator++() {
+		Iterator& operator++() noexcept {
 			try {
 				readNext();
 				idx_++;
@@ -55,25 +55,25 @@ public:
 		const SyncCoroQueryResults* r_;
 	};
 
-	Iterator begin() const { return Iterator{this, &results_, 0, 0, 0, {}}; }
-	Iterator end() const { return Iterator{this, &results_, results_.queryParams_.qcount, 0, 0, {}}; }
+	Iterator begin() const noexcept { return Iterator{this, &results_, 0, 0, 0, {}}; }
+	Iterator end() const noexcept { return Iterator{this, &results_, results_.queryParams_.qcount, 0, 0, {}}; }
 
-	size_t Count() const { return results_.queryParams_.qcount; }
-	int TotalCount() const { return results_.queryParams_.totalcount; }
-	bool HaveRank() const { return results_.queryParams_.flags & kResultsWithRank; }
-	bool NeedOutputRank() const { return results_.queryParams_.flags & kResultsNeedOutputRank; }
-	const string& GetExplainResults() const { return results_.queryParams_.explainResults; }
-	const vector<AggregationResult>& GetAggregationResults() const { return results_.queryParams_.aggResults; }
-	Error Status() { return results_.status_; }
-	h_vector<std::string_view, 1> GetNamespaces() const;
-	size_t GetNamespacesCount() const { return results_.GetNamespacesCount(); }
-	bool IsCacheEnabled() const { return results_.queryParams_.flags & kResultsWithItemID; }
+	size_t Count() const noexcept { return results_.queryParams_.qcount; }
+	int TotalCount() const noexcept { return results_.queryParams_.totalcount; }
+	bool HaveRank() const noexcept { return results_.queryParams_.flags & kResultsWithRank; }
+	bool NeedOutputRank() const noexcept { return results_.queryParams_.flags & kResultsNeedOutputRank; }
+	const string& GetExplainResults() const noexcept { return results_.queryParams_.explainResults; }
+	const vector<AggregationResult>& GetAggregationResults() const noexcept { return results_.queryParams_.aggResults; }
+	Error Status() const noexcept { return results_.status_; }
+	h_vector<std::string_view, 1> GetNamespaces() const { return results_.GetNamespaces(); }
+	size_t GetNamespacesCount() const noexcept { return results_.GetNamespacesCount(); }
+	bool IsCacheEnabled() const noexcept { return results_.queryParams_.flags & kResultsWithItemID; }
 
-	int GetMergedNSCount() const;
+	int GetMergedNSCount() const noexcept { return results_.nsArray_.size(); }
 	TagsMatcher GetTagsMatcher(int nsid) const;
 	TagsMatcher GetTagsMatcher(std::string_view ns) const;
-	PayloadType GetPayloadType(int nsid) const;
-	PayloadType GetPayloadType(std::string_view ns) const;
+	PayloadType GetPayloadType(int nsid) const { return results_.GetPayloadType(nsid); }
+	PayloadType GetPayloadType(std::string_view ns) const { return results_.GetPayloadType(ns); }
 
 private:
 	friend class SyncCoroReindexer;

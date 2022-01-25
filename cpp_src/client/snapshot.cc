@@ -35,9 +35,9 @@ Snapshot& Snapshot::operator=(Snapshot&& o) {
 Snapshot::~Snapshot() {
 	if (conn_ && id_ > 0) {
 		// Just close snapshot on server side
-		conn_->Call(
-			{net::cproto::kCmdFetchSnapshot, requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr},
-			id_, int64_t(-1));
+		conn_->Call({net::cproto::kCmdFetchSnapshot, requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1, IndexValueType::NotSet,
+					 nullptr, false},
+					id_, int64_t(-1));
 	}
 }
 
@@ -63,9 +63,9 @@ void Snapshot::fetchNext(size_t idx) {
 	if (!conn_) {
 		throw Error(errLogic, "Snapshot: connection is nullptr");
 	}
-	auto ret = conn_->Call(
-		{net::cproto::kCmdFetchSnapshot, requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr}, id_,
-		int64_t(idx));
+	auto ret = conn_->Call({net::cproto::kCmdFetchSnapshot, requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1,
+							IndexValueType::NotSet, nullptr, false},
+						   id_, int64_t(idx));
 	if (!ret.Status().ok()) {
 		if (ret.Status().code() == errNetwork) {
 			conn_ = nullptr;

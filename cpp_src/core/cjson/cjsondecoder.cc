@@ -50,7 +50,7 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 	}
 	if (field >= 0) {
 		if (match) {
-			Error err = errOK;
+			Error err;
 			size_t savePos = rdser.Pos();
 			KeyValueType fieldType = pl->Type().Field(field).Type();
 			if (tagType == TAG_ARRAY) {

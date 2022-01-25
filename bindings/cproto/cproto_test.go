@@ -1,3 +1,6 @@
+//go:build !unittest
+// +build !unittest
+
 package cproto
 
 import (
@@ -15,7 +18,7 @@ import (
 )
 
 func BenchmarkGetConn(b *testing.B) {
-	srv1 := helpers.TestServer{T: nil, RpcPort: "6651", HttpPort: "9951", DbName: "cproto"}
+	srv1 := helpers.TestServer{T: nil, RpcPort: "6651", HttpPort: "9951", DbName: "cproto", SrvType: helpers.ServerTypeBuiltin}
 	if err := srv1.Run(); err != nil {
 		panic(err)
 	}
@@ -30,7 +33,7 @@ func BenchmarkGetConn(b *testing.B) {
 	}
 
 	b.Run("getConn", func(b *testing.B) {
-		var conn *connection
+		var conn connection
 		ctx := context.Background()
 		for i := 0; i < b.N; i++ {
 			conn, err = binding.getConn(ctx)
@@ -59,7 +62,7 @@ func TestCprotoPool(t *testing.T) {
 	})
 
 	t.Run("rotate connections on each getConn", func(t *testing.T) {
-		srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "cproto"}
+		srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "cproto", SrvType: helpers.ServerTypeBuiltin}
 		dsn := fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort)
 
 		err := srv1.Run()
@@ -72,7 +75,7 @@ func TestCprotoPool(t *testing.T) {
 		err = c.Init([]url.URL{*u})
 		require.NoError(t, err)
 
-		conns := make(map[*connection]bool)
+		conns := make(map[connection]bool)
 		for i := 0; i < defConnPoolSize; i++ {
 			conn, err := c.getConn(context.Background())
 			require.NoError(t, err)
@@ -93,8 +96,8 @@ func TestCprotoPool(t *testing.T) {
 
 func TestCprotoStatus(t *testing.T) {
 	t.Run("check error status", func(t *testing.T) {
-		srv := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "cproto"}
-		dsn := fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv.RpcPort, srv.DbName, srv.RpcPort)
+		srv := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "cproto", SrvType: helpers.ServerTypeBuiltin}
+		dsn := srv.GetDSN()
 
 		err := srv.Run()
 		assert.NoError(t, err)

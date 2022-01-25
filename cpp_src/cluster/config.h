@@ -162,24 +162,41 @@ struct ClusterConfigData {
 	int leaderSyncConcurrentSnapshotsPerNode = 2;
 };
 
-struct ShardingKey {
-	Error FromYML(Yaml::Node &yaml);
-	string ToYml() const;
-	std::string ns;
-	std::string index;
-	VariantArray values;
-	vector<std::string> hostsDsns;
-	int shardId = IndexValueType::NotSet;
-	ShardingAlgorithmType algorithmType = ByValue;
-};
-
 struct ShardingConfig {
+	struct Key {
+		Error FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards);
+		Error FromJson(const gason::JsonNode &);
+		void GetYml(std::stringstream &) const;
+		void GetJson(JsonBuilder &) const;
+		int shardId = IndexValueType::NotSet;
+		ShardingAlgorithmType algorithmType = ByValue;
+		VariantArray values;
+	};
+	struct Namespace {
+		Error FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards);
+		Error FromJson(const gason::JsonNode &);
+		void GetYml(std::stringstream &) const;
+		void GetJson(JsonBuilder &) const;
+		std::string ns;
+		std::string index;
+		std::vector<Key> keys;
+	};
+
 	Error FromYML(const std::string &yaml);
-	string ToYml() const;
-	vector<std::string> proxyDsns;
-	vector<ShardingKey> keys;
+	Error FromJson(span<char> json);
+	Error FromJson(const gason::JsonNode &);
+	std::string GetYml() const;
+	std::string GetJson() const;
+	void GetJson(WrSerializer &) const;
+	void GetJson(JsonBuilder &) const;
+	std::vector<std::string> proxyDsns;
+	std::vector<Namespace> namespaces;
+	std::map<int, std::vector<std::string>> shards;
 	int thisShardId = IndexValueType::NotSet;
 };
+bool operator==(const ShardingConfig &, const ShardingConfig &);
+bool operator==(const ShardingConfig::Key &, const ShardingConfig::Key &);
+bool operator==(const ShardingConfig::Namespace &, const ShardingConfig::Namespace &);
 
 struct AsyncReplConfigData {
 	using NamespaceList = AsyncReplNodeConfig::NamespaceList;

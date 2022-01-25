@@ -32,7 +32,7 @@ void Transaction::updateShardIdIfNecessary(int shardId) {
 	}
 	if ((shardId_ == IndexValueType::NotSet) && !clientTransaction_) {
 		Error status;
-		if (auto connection = shardingRouter_->GetShardConnection(shardId, true, status)) {
+		if (auto connection = shardingRouter_->GetShardConnection(shardId, true, status, impl_->nsName_)) {
 			if (status.ok()) {
 				clientTransaction_ = std::make_unique<client::SyncCoroTransaction>(connection->NewTransaction(impl_->nsName_));
 			}
@@ -60,7 +60,7 @@ void Transaction::ensureShardIdIsCorrect(const Item &item) {
 
 #endif	// WITH_SHARDING
 
-const string &Transaction::GetName() {
+const string &Transaction::GetNsName() {
 	static std::string empty;
 	if (impl_) {
 		return impl_->nsName_;
@@ -150,6 +150,26 @@ Error Transaction::PutMeta(std::string_view key, std::string_view value, lsn_t l
 		}
 	} else if (impl_) {
 		impl_->PutMeta(key, value, lsn);
+	}
+	return Error();
+}
+
+Error Transaction::SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) {
+	if (lsn.isEmpty()) {
+		return Error(errLogic, "Unable to set tx tagsmatcher without lsn");
+	}
+	if (clientTransaction_ && impl_) {
+		if (!status_.ok()) {
+			return status_;
+		}
+		auto tmCopy = tm;
+		status_ = clientTransaction_->SetTagsMatcher(std::move(tmCopy), lsn);
+		if (!status_.ok()) {
+			return status_;
+		}
+		impl_->SetTagsMatcher(std::move(tm), lsn);
+	} else if (impl_) {
+		impl_->SetTagsMatcher(std::move(tm), lsn);
 	}
 	return Error();
 }

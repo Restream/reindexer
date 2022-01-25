@@ -14,7 +14,7 @@ namespace datastorage {
 class RocksDbStorage : public BaseStorage {
 public:
 	RocksDbStorage();
-	~RocksDbStorage();
+	~RocksDbStorage() override;
 
 	Error Read(const StorageOpts& opts, std::string_view key, string& value) override final;
 	Error Write(const StorageOpts& opts, std::string_view key, std::string_view value) override final;

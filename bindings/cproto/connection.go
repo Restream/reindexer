@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -74,6 +75,16 @@ const (
 	cmdCodeMax           = 128
 )
 
+type connFactory interface {
+	newConnection(ctx context.Context, params newConnParams) (connection, int64, error)
+}
+
+type connFactoryImpl struct{}
+
+func (cf *connFactoryImpl) newConnection(ctx context.Context, params newConnParams) (connection, int64, error) {
+	return newConnection(ctx, params)
+}
+
 type requestInfo struct {
 	seqNum   uint32
 	repl     sig
@@ -83,9 +94,22 @@ type requestInfo struct {
 	cmplLock sync.Mutex
 }
 
-type connection struct {
-	owner *NetCProto
-	conn  net.Conn
+type connection interface {
+	rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error)
+	rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) error
+	rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...interface{})
+	onError(err error)
+	hasError() (has bool)
+	curError() error
+	lastReadTime() time.Time
+	finalize() error
+	getConn() net.Conn
+	getSeqs() chan uint32
+	getRequestTimeout() uint32
+}
+
+type connectionImpl struct {
+	conn net.Conn
 
 	wrBuf, wrBuf2 *bytes.Buffer
 	wrKick        chan struct{}
@@ -103,19 +127,39 @@ type connection struct {
 	now    uint32
 	termCh chan struct{}
 
-	requests     [queueSize]requestInfo
-	enableSnappy int32
+	requests          [queueSize]requestInfo
+	enableSnappy      int32
+	requestTimeout    time.Duration
+	enableCompression bool
+	logger            Logger
 }
 
-func newConnection(ctx context.Context, owner *NetCProto) (c *connection, err error) {
-	c = &connection{
-		owner:  owner,
-		wrBuf:  bytes.NewBuffer(make([]byte, 0, bufsCap)),
-		wrBuf2: bytes.NewBuffer(make([]byte, 0, bufsCap)),
-		wrKick: make(chan struct{}, 1),
-		seqs:   make(chan uint32, queueSize),
-		errCh:  make(chan struct{}),
-		termCh: make(chan struct{}),
+type newConnParams struct {
+	dsn               *url.URL
+	loginTimeout      time.Duration
+	requestTimeout    time.Duration
+	createDBIfMissing bool
+	appName           string
+	enableCompression bool
+}
+
+func newConnection(
+	ctx context.Context,
+	params newConnParams,
+) (
+	connection,
+	int64,
+	error,
+) {
+	c := &connectionImpl{
+		wrBuf:             bytes.NewBuffer(make([]byte, 0, bufsCap)),
+		wrBuf2:            bytes.NewBuffer(make([]byte, 0, bufsCap)),
+		wrKick:            make(chan struct{}, 1),
+		seqs:              make(chan uint32, queueSize),
+		errCh:             make(chan struct{}),
+		termCh:            make(chan struct{}),
+		requestTimeout:    params.requestTimeout,
+		enableCompression: params.enableCompression,
 	}
 	for i := 0; i < queueSize; i++ {
 		c.seqs <- uint32(i)
@@ -124,21 +168,23 @@ func newConnection(ctx context.Context, owner *NetCProto) (c *connection, err er
 
 	go c.deadlineTicker()
 
-	intCtx, cancel := applyTimeout(ctx, uint32(owner.timeouts.LoginTimeout/time.Second))
+	intCtx, cancel := applyTimeout(ctx, uint32(params.loginTimeout))
 	if cancel != nil {
 		defer cancel()
 	}
 
-	if err = c.connect(intCtx); err != nil {
+	if err := c.connect(intCtx, params.dsn); err != nil {
 		c.onError(err)
-		return
+		return c, 0, err
 	}
 
-	if err = c.login(intCtx, owner); err != nil {
+	serverStartTS, err := c.login(intCtx, params.dsn, params.createDBIfMissing, params.appName)
+	if err != nil {
 		c.onError(err)
-		return
+		return c, 0, err
 	}
-	return
+
+	return c, serverStartTS, nil
 }
 
 func seqNumIsValid(seqNum uint32) bool {
@@ -148,7 +194,15 @@ func seqNumIsValid(seqNum uint32) bool {
 	return false
 }
 
-func (c *connection) deadlineTicker() {
+func (c *connectionImpl) logMsg(level int, fmt string, msg ...interface{}) {
+	logMtx.RLock()
+	defer logMtx.RUnlock()
+	if logger != nil {
+		logger.Printf(level, fmt, msg)
+	}
+}
+
+func (c *connectionImpl) deadlineTicker() {
 	timeout := time.Second * time.Duration(deadlineCheckPeriodSec)
 	ticker := time.NewTicker(timeout)
 	atomic.StoreUint32(&c.now, 1) // Starts from 1, so timeout value < 1s will not transform into 0 value deadline
@@ -182,9 +236,7 @@ func (c *connection) deadlineTicker() {
 					default:
 					}
 					c.seqs <- nextSeqNum(seqNum)
-					if c.owner != nil {
-						c.owner.logMsg(1, "rq: async deadline exceeded. Seq number: %v\n", seqNum)
-					}
+					c.logMsg(1, "rq: async deadline exceeded. Seq number: %v\n", seqNum)
 					cmpl(nil, context.DeadlineExceeded)
 				} else {
 					c.requests[i].cmplLock.Unlock()
@@ -194,9 +246,9 @@ func (c *connection) deadlineTicker() {
 	}
 }
 
-func (c *connection) connect(ctx context.Context) (err error) {
+func (c *connectionImpl) connect(ctx context.Context, dsn *url.URL) (err error) {
 	var d net.Dialer
-	c.conn, err = d.DialContext(ctx, "tcp", c.owner.getActiveDSN().Host)
+	c.conn, err = d.DialContext(ctx, "tcp", dsn.Host)
 	if err != nil {
 		return err
 	}
@@ -208,8 +260,7 @@ func (c *connection) connect(ctx context.Context) (err error) {
 	return
 }
 
-func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
-	dsn := owner.getActiveDSN()
+func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMissing bool, appName string) (int64, error) {
 	password, username, path := "", "", dsn.Path
 	if dsn.User != nil {
 		username = dsn.User.Username()
@@ -219,24 +270,22 @@ func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
 		path = path[1:]
 	}
 
-	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, c.owner.connectOpts.CreateDBIfMissing, false, -1, bindings.ReindexerVersion, c.owner.appName)
+	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, createDBIfMissing, false, -1, bindings.ReindexerVersion, appName)
 	if err != nil {
 		c.err = err
-		return
+		return 0, err
 	}
 	defer buf.Free()
 
+	var serverStartTS int64
 	if len(buf.args) > 1 {
-		serverStartTS := buf.args[1].(int64)
-		old := atomic.SwapInt64(&owner.serverStartTime, serverStartTS)
-		if old != 0 && old != serverStartTS {
-			atomic.StoreInt32(&c.owner.isServerChanged, 1)
-		}
+		serverStartTS = buf.args[1].(int64)
 	}
-	return
+
+	return serverStartTS, nil
 }
 
-func (c *connection) readLoop() {
+func (c *connectionImpl) readLoop() {
 	var err error
 	var hdr = make([]byte, cprotoHdrLen)
 	for {
@@ -248,7 +297,7 @@ func (c *connection) readLoop() {
 	}
 }
 
-func (c *connection) readReply(hdr []byte) (err error) {
+func (c *connectionImpl) readReply(hdr []byte) (err error) {
 	if _, err = io.ReadFull(c.rdBuf, hdr); err != nil {
 		return
 	}
@@ -271,7 +320,7 @@ func (c *connection) readReply(hdr []byte) (err error) {
 		return fmt.Errorf("Unsupported cproto version '%04X'. This client expects reindexer server v1.9.8+", version)
 	}
 
-	if c.owner.compression.EnableCompression && version >= cprotoMinSnappyVersion {
+	if c.enableCompression && version >= cprotoMinSnappyVersion {
 		enableSnappy := int32(1)
 		atomic.StoreInt32(&c.enableSnappy, enableSnappy)
 	}
@@ -319,7 +368,7 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	return
 }
 
-func (c *connection) write(buf []byte) {
+func (c *connectionImpl) write(buf []byte) {
 	c.lock.Lock()
 	c.wrBuf.Write(buf)
 	c.lock.Unlock()
@@ -329,7 +378,7 @@ func (c *connection) write(buf []byte) {
 	}
 }
 
-func (c *connection) writeLoop() {
+func (c *connectionImpl) writeLoop() {
 	for {
 		select {
 		case <-c.errCh:
@@ -364,8 +413,7 @@ func nextSeqNum(seqNum uint32) uint32 {
 	return seqNum - maxSeqNum
 }
 
-func (c *connection) packRPC(cmd int, seq uint32, execTimeout int, args ...interface{}) {
-
+func (c *connectionImpl) packRPC(cmd int, seq uint32, execTimeout int, args ...interface{}) {
 	in := newRPCEncoder(cmd, seq, atomic.LoadInt32(&c.enableSnappy) != 0)
 	for _, a := range args {
 		switch t := a.(type) {
@@ -393,7 +441,7 @@ func (c *connection) packRPC(cmd int, seq uint32, execTimeout int, args ...inter
 	in.ser.Close()
 }
 
-func (c *connection) awaitSeqNum(ctx context.Context) (seq uint32, remainingTimeout time.Duration, err error) {
+func (c *connectionImpl) awaitSeqNum(ctx context.Context) (seq uint32, remainingTimeout time.Duration, err error) {
 	select {
 	case seq = <-c.seqs:
 		if err = ctx.Err(); err != nil {
@@ -420,7 +468,7 @@ func applyTimeout(ctx context.Context, timeout uint32) (context.Context, context
 	return context.WithTimeout(ctx, time.Second*time.Duration(timeout))
 }
 
-func (c *connection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...interface{}) {
+func (c *connectionImpl) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...interface{}) {
 	if err := c.curError(); err != nil {
 		cmpl(nil, err)
 		return
@@ -459,7 +507,7 @@ func (c *connection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint3
 	return
 }
 
-func (c *connection) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error) {
+func (c *connectionImpl) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error) {
 	intCtx, cancel := applyTimeout(ctx, netTimeout)
 	if cancel != nil {
 		defer cancel()
@@ -516,13 +564,13 @@ for_loop:
 	return buf, nil
 }
 
-func (c *connection) rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) error {
+func (c *connectionImpl) rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) error {
 	buf, err := c.rpcCall(ctx, cmd, netTimeout, args...)
 	buf.Free()
 	return err
 }
 
-func (c *connection) onError(err error) {
+func (c *connectionImpl) onError(err error) {
 	c.lock.Lock()
 	if c.err == nil {
 		c.err = err
@@ -557,25 +605,41 @@ func (c *connection) onError(err error) {
 	c.lock.Unlock()
 }
 
-func (c *connection) hasError() (has bool) {
+func (c *connectionImpl) hasError() (has bool) {
 	c.lock.RLock()
 	has = c.err != nil
 	c.lock.RUnlock()
 	return
 }
 
-func (c *connection) curError() error {
+func (c *connectionImpl) curError() error {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	return c.err
 }
 
-func (c *connection) lastReadTime() time.Time {
+func (c *connectionImpl) lastReadTime() time.Time {
 	stamp := atomic.LoadInt64(&c.lastReadStamp)
 	return time.Unix(stamp, 0)
 }
 
-func (c *connection) Finalize() error {
+func (c *connectionImpl) finalize() error {
 	close(c.termCh)
+	if c.conn != nil {
+		c.conn.Close()
+	}
+
 	return nil
+}
+
+func (c *connectionImpl) getConn() net.Conn {
+	return c.conn
+}
+
+func (c *connectionImpl) getSeqs() chan uint32 {
+	return c.seqs
+}
+
+func (c *connectionImpl) getRequestTimeout() uint32 {
+	return uint32(c.requestTimeout / time.Second)
 }

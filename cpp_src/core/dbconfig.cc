@@ -54,6 +54,9 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				if (walSize > 0) {
 					data.walSize = walSize;
 				}
+				data.minPreselectSize = nsNode["min_preselect_size"].As<int64_t>(data.minPreselectSize, 0);
+				data.maxPreselectSize = nsNode["max_preselect_size"].As<int64_t>(data.maxPreselectSize, 0);
+				data.maxPreselectPart = nsNode["max_preselect_part"].As<double>(data.maxPreselectPart, 0.0, 1.0);
 				namespacesData_.emplace(nsNode["namespace"].As<string>(), std::move(data));
 			}
 			auto it = handlers_.find(NamespaceDataConf);

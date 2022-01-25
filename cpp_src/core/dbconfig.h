@@ -42,6 +42,9 @@ struct NamespaceConfigData {
 	int optimizationTimeout = 800;
 	int optimizationSortWorkers = 4;
 	int64_t walSize = 4000000;
+	int64_t minPreselectSize = 1000;
+	int64_t maxPreselectSize = 1000;
+	double maxPreselectPart = 0.1;
 };
 
 struct ReplicationConfigData {

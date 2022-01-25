@@ -14,6 +14,12 @@
 #include "tools/fsops.h"
 #include "tools/stringstools.h"
 
+#ifdef REINDEXER_WITH_SC_AS_PROCESS
+const bool kAsServerProcess = true;
+#else
+const bool kAsServerProcess = false;
+#endif
+
 struct AsyncReplicationConfigTest {
 	using NsSet = std::unordered_set<std::string, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
 
@@ -66,11 +72,36 @@ struct ReplicationStateApi {
 	reindexer::lsn_t nsVersion;
 	uint64_t dataHash = 0;
 	size_t dataCount = 0;
+	std::optional<int> tmVersion;
+	std::optional<int> tmStatetoken;
 };
 
 using BaseApi = ReindexerTestApi<reindexer::client::SyncCoroReindexer>;
 
 void WriteConfigFile(const std::string& path, const std::string& configYaml);
+
+struct ServerControlConfig {
+	ServerControlConfig() = default;
+	ServerControlConfig(size_t _id, unsigned short _rpcPort, unsigned short _httpPort, const std::string& _storagePath,
+						const std::string& _dbName, bool _enableStats = true, size_t _maxUpdatesSize = 0,
+						bool _asServerProcess = kAsServerProcess)
+		: id(_id),
+		  storagePath(_storagePath),
+		  httpPort(_httpPort),
+		  rpcPort(_rpcPort),
+		  dbName(_dbName),
+		  enableStats(_enableStats),
+		  maxUpdatesSize(_maxUpdatesSize),
+		  asServerProcess(_asServerProcess) {}
+	size_t id;
+	std::string storagePath;
+	unsigned short httpPort;
+	unsigned short rpcPort;
+	std::string dbName;
+	bool enableStats;
+	size_t maxUpdatesSize = 0;
+	bool asServerProcess = kAsServerProcess;
+};
 
 class ServerControl {
 public:
@@ -91,9 +122,11 @@ public:
 
 	struct Interface {
 		typedef std::shared_ptr<Interface> Ptr;
-		Interface(size_t id, std::atomic_bool& stopped, const std::string& StoragePath, unsigned short httpPort, unsigned short rpcPort,
-				  const std::string& dbName, bool enableStats, size_t maxUpdatesSize = 0);
+		Interface(std::atomic_bool& stopped, ServerControlConfig config);
+		Interface(std::atomic_bool& stopped, ServerControlConfig config, const std::string& ReplicationConfig,
+				  const std::string& ClusterConfig, const std::string& ShardingConfig, const std::string& AsyncReplicationConfig);
 		~Interface();
+		void Init();
 		// Stop server
 		void Stop();
 
@@ -129,18 +162,24 @@ public:
 		// get replication stats for specified replication type
 		reindexer::cluster::ReplicationStats GetReplicationStats(std::string_view type);
 
-		size_t Id() const noexcept { return id_; }
+		size_t Id() const noexcept { return config_.id; }
+		unsigned short RpcPort() { return config_.rpcPort; }
+		unsigned short HttpPort() { return config_.httpPort; }
 		std::string GetReplicationConfigFilePath() const {
-			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(kStoragePath, dbName_), kReplicationConfigFilename);
+			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kReplicationConfigFilename);
 		}
 		std::string GetAsyncReplicationConfigFilePath() const {
-			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(kStoragePath, dbName_), kAsyncReplicationConfigFilename);
+			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kAsyncReplicationConfigFilename);
 		}
 		std::string GetClusterConfigFilePath() const {
-			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(kStoragePath, dbName_), kClusterConfigFilename);
+			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kClusterConfigFilename);
 		}
 
 		reindexer_server::Server srv;
+#ifndef _WIN32
+		pid_t reindexerServerPID = -1;
+		pid_t reindexerServerPIDWait = -1;
+#endif
 		BaseApi api;
 
 		const std::string kClusterManagementDsn;
@@ -151,25 +190,27 @@ public:
 		template <typename ValueT>
 		void upsertConfigItemFromObject(std::string_view type, const ValueT& object);
 
-		size_t id_;
+		std::vector<std::string> getCLIParamArray(bool enableStats, size_t maxUpdatesSize);
+		std::string getLogName(const string& log, bool core = false);
+
 		std::unique_ptr<std::thread> tr;
 		std::atomic_bool& stopped_;
 
+		const ServerControlConfig config_;
+
 	public:
 		const std::string kAsyncReplicationConfigFilename = "async_replication.conf";
+		const std::string kStorageTypeFilename = ".reindexer.storage";
 		const std::string kReplicationConfigFilename = "replication.conf";
 		const std::string kClusterConfigFilename = "cluster.conf";
 		const std::string kClusterShardingFilename = "sharding.conf";
 		const std::string kConfigNs = "#config";
-		const std::string kStoragePath;
-		const unsigned short kRpcPort;
-		const unsigned short kHttpPort;
-		const std::string dbName_;
 	};
 	// Get server - wait means wait until server starts if no server
 	Interface::Ptr Get(bool wait = true);
-	void InitServer(size_t id, unsigned short rpcPort, unsigned short httpPort, const std::string& storagePath, const std::string& dbName,
-					bool enableStats, size_t maxUpdatesSize = 0);
+	void InitServer(ServerControlConfig config);
+	void InitServerWithConfig(ServerControlConfig config, const std::string& ReplicationConfig, const std::string& ClusterConfig,
+							  const std::string& ShardingConfig, const std::string& AsyncReplicationConfig);
 	void Drop();
 	bool IsRunning();
 	bool DropAndWaitStop();

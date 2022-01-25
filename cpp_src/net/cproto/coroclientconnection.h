@@ -58,9 +58,18 @@ protected:
 	friend class CoroClientConnection;
 };
 
+constexpr int64_t kShardingParallelExecutionBit = int64_t{1} << 63;
+
 struct CommandParams {
-	CommandParams(CmdCode c, milliseconds n, milliseconds e, lsn_t l, int sId, int shId, const IRdxCancelContext *ctx)
-		: cmd(c), netTimeout(n), execTimeout(e), lsn(l), serverId(sId), shardId(shId), cancelCtx(ctx) {}
+	CommandParams(CmdCode c, milliseconds n, milliseconds e, lsn_t l, int sId, int shId, const IRdxCancelContext *ctx, bool parallel)
+		: cmd(c),
+		  netTimeout(n),
+		  execTimeout(e),
+		  lsn(l),
+		  serverId(sId),
+		  shardId(shId),
+		  cancelCtx(ctx),
+		  shardingParallelExecution{parallel} {}
 	CmdCode cmd;
 	milliseconds netTimeout;
 	milliseconds execTimeout;
@@ -68,6 +77,7 @@ struct CommandParams {
 	int serverId;
 	int shardId;
 	const IRdxCancelContext *cancelCtx;
+	bool shardingParallelExecution;
 };
 
 class CoroClientConnection {
@@ -122,7 +132,7 @@ public:
 	void SetConnectionStateHandler(ConnectionStateHandlerT handler) noexcept { connectionStateHandler_ = std::move(handler); }
 
 	template <typename... Argss>
-	CoroRPCAnswer Call(const CommandParams &opts, const Argss &... argss) {
+	CoroRPCAnswer Call(const CommandParams &opts, const Argss &...argss) {
 		Args args;
 		args.reserve(sizeof...(argss));
 		return call(opts, args, argss...);
@@ -144,17 +154,17 @@ private:
 	};
 
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const std::string_view &val, const Argss &... argss) {
+	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const std::string_view &val, const Argss &...argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const string &val, const Argss &... argss) {
+	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const string &val, const Argss &...argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}
 	template <typename T, typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const T &val, const Argss &... argss) {
+	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const T &val, const Argss &...argss) {
 		args.push_back(Variant(val));
 		return call(opts, args, argss...);
 	}

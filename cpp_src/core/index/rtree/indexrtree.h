@@ -17,9 +17,9 @@ public:
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType, SortType, Index::SelectOpts, BaseFunctionCtx::Ptr,
 							   const RdxContext &) override;
 	using IndexUnordered<Map>::Upsert;
-	void Upsert(VariantArray &result, const VariantArray &keys, IdType id) override;
+	void Upsert(VariantArray &result, const VariantArray &keys, IdType id, bool &clearCache) override;
 	using IndexUnordered<Map>::Delete;
-	void Delete(const VariantArray &keys, IdType id, StringsHolder &) override;
+	void Delete(const VariantArray &keys, IdType id, StringsHolder &, bool &clearCache) override;
 
 	std::unique_ptr<Index> Clone() override { return std::unique_ptr<Index>{new IndexRTree(*this)}; }
 };

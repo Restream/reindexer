@@ -13,6 +13,10 @@ class PayloadTypeImpl;
 class PayloadType : public shared_cow_ptr<PayloadTypeImpl> {
 public:
 	PayloadType() = default;
+	PayloadType(PayloadType &&) = default;
+	PayloadType(const PayloadType &) = default;
+	PayloadType &operator=(PayloadType &&) = default;
+	PayloadType &operator=(const PayloadType &) = default;
 	PayloadType(const std::string &name, std::initializer_list<PayloadFieldType> fields = {});
 	PayloadType(const PayloadTypeImpl &impl);
 	~PayloadType();
@@ -30,6 +34,7 @@ public:
 	const std::vector<int> &StrFields() const;
 	size_t TotalSize() const;
 	std::string ToString() const;
+	void Dump(std::ostream &, std::string_view step = "  ", std::string_view offset = "") const;
 };
 
 }  // namespace reindexer

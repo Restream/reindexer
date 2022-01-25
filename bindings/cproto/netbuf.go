@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/restream/reindexer/bindings"
 	"github.com/golang/snappy"
@@ -14,7 +13,7 @@ var bufPool sync.Pool
 
 type NetBuffer struct {
 	buf   []byte
-	conn  *connection
+	conn  connection
 	reqID int
 	args  []interface{}
 }
@@ -26,9 +25,7 @@ func (buf *NetBuffer) Fetch(ctx context.Context, offset, limit int, asJson bool)
 	} else {
 		flags |= bindings.ResultsCJson | bindings.ResultsWithItemID
 	}
-	// fmt.Printf("cmdFetchResults(reqId=%d, offset=%d, limit=%d, json=%v, flags=%v)\n", buf.reqID, offset, limit, asJson, flags)
-	netTimeout := uint32(buf.conn.owner.timeouts.RequestTimeout / time.Second)
-	fetchBuf, err := buf.conn.rpcCall(ctx, cmdFetchResults, netTimeout, buf.reqID, flags, offset, limit)
+	fetchBuf, err := buf.conn.rpcCall(ctx, cmdFetchResults, buf.conn.getRequestTimeout(), buf.reqID, flags, offset, limit)
 	defer fetchBuf.Free()
 	if err != nil {
 		buf.close()
@@ -87,8 +84,7 @@ func (buf *NetBuffer) parseArgs() (err error) {
 
 func (buf *NetBuffer) close() {
 	if buf.needClose() {
-		netTimeout := uint32(buf.conn.owner.timeouts.RequestTimeout / time.Second)
-		closeBuf, err := buf.conn.rpcCall(context.TODO(), cmdCloseResults, netTimeout, buf.reqID)
+		closeBuf, err := buf.conn.rpcCall(context.TODO(), cmdCloseResults, buf.conn.getRequestTimeout(), buf.reqID)
 		buf.reqID = -1
 		if err != nil {
 			fmt.Printf("rx: query close error: %v", err)
@@ -97,8 +93,7 @@ func (buf *NetBuffer) close() {
 	}
 }
 
-func newNetBuffer(size int, conn *connection) (buf *NetBuffer) {
-
+func newNetBuffer(size int, conn connection) (buf *NetBuffer) {
 	obj := bufPool.Get()
 	if obj != nil {
 		buf = obj.(*NetBuffer)

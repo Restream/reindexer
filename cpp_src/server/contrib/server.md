@@ -127,7 +127,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 4.0.0
+*Version* : 4.1.0
 
 
 ### License information
@@ -1087,6 +1087,7 @@ then `limit` and `offset` from http request.
 |**Query**|**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**Query**|**offset**  <br>*optional*|Offset of first returned item|integer|
 |**Query**|**q**  <br>*required*|SQL query|string|
+|**Query**|**sharding**  <br>*optional*|if off then execute SQL query on current node|enum (true, false)|
 |**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
 |**Query**|**with_columns**  <br>*optional*|Return columns names and widths for table format output|boolean|
 
@@ -2130,8 +2131,10 @@ If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not co
 |**cond**  <br>*optional*|Condition operator|enum (EQ, GT, GE, LE, LT, RANGE, SET, EMPTY)|
 |**field**  <br>*optional*|Field json path or index name for filter|string|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
+|**first_field**  <br>*optional*|First field json path or index name for filter by two fields|string|
 |**join_query**  <br>*optional*||[JoinedDef](#joineddef)|
 |**op**  <br>*optional*|Logic operator|enum (AND, OR, NOT)|
+|**second_field**  <br>*optional*|Second field json path or index name for filter by two fields|string|
 |**value**  <br>*optional*|Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, or variable len array for SET condition|object|
 
 
@@ -2503,6 +2506,9 @@ List of meta info of the specified namespace
 |**join_cache_mode**  <br>*optional*|Join cache mode|enum (aggressive)|
 |**lazyload**  <br>*optional*|Enable namespace lazy load (namespace shoud be loaded from disk on first call, not at reindexer startup)|boolean|
 |**log_level**  <br>*optional*|Log level of queries core logger|enum (none, error, warning, info, trace)|
+|**max_preselect_part**  <br>*optional*|Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only mmax_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**max_preselect_size**  <br>*optional*|Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied  <br>**Minimum value** : `0`|integer|
+|**min_preselect_size**  <br>*optional*|Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value  <br>**Minimum value** : `0`|integer|
 |**namespace**  <br>*optional*|Name of namespace, or `*` for setting to all namespaces|string|
 |**optimization_sort_workers**  <br>*optional*|Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations|integer|
 |**optimization_timeout_ms**  <br>*optional*|Timeout before background indexes optimization start after last update. 0 - disable optimizations|integer|

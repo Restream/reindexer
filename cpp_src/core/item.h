@@ -194,10 +194,10 @@ public:
 	void SetPrecepts(std::vector<std::string> precepts);
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
-	bool IsTagsUpdated();
+	bool IsTagsUpdated() const noexcept;
 	/// Get state token
 	/// @return Current state token
-	int GetStateToken();
+	int GetStateToken() const noexcept;
 	/// Check is item valid. If is not valid, then any futher operations with item will raise nullptr dereference
 	bool operator!() const noexcept { return impl_ == nullptr; }
 	/// Enable Unsafe Mode<br>.

@@ -17,63 +17,78 @@ class PayloadIface;
 using ConstPayload = PayloadIface<const PayloadValue>;
 class TagsMatcher;
 
-struct QueryEntry {
-	const static int kNoJoins = -1;
+struct JoinQueryEntry {
+	JoinQueryEntry(size_t joinIdx) noexcept : joinIndex{joinIdx} {}
+	size_t joinIndex;
+	bool operator==(const JoinQueryEntry &other) const noexcept { return joinIndex == other.joinIndex; }
+	bool operator!=(const JoinQueryEntry &other) const noexcept { return !operator==(other); }
 
-	QueryEntry(int joinIdx) : joinIndex(joinIdx) {}
-	QueryEntry(CondType cond, const std::string &idx, int idxN, bool dist = false)
-		: index(idx), idxNo(idxN), condition(cond), distinct(dist) {}
+	template <typename JS>
+	std::string Dump(const std::vector<JS> &joinedSelectors) const {
+		WrSerializer ser;
+		const auto &js = joinedSelectors.at(joinIndex);
+		const auto &q = js.JoinQuery();
+		ser << js.Type() << " (" << q.GetSQL() << ") ON ";
+		ser << '(';
+		for (const auto &jqe : q.joinEntries_) {
+			if (&jqe != &q.joinEntries_.front()) {
+				ser << ' ' << jqe.op_ << ' ';
+			} else {
+				assert(jqe.op_ == OpAnd);
+			}
+			ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << InvertJoinCondition(jqe.condition_) << ' ' << jqe.index_;
+		}
+		ser << ')';
+		return std::string{ser.Slice()};
+	}
+};
+
+struct QueryEntry {
+	QueryEntry(std::string idx, CondType cond, VariantArray v) : index{std::move(idx)}, condition{cond}, values(std::move(v)) {}
+	QueryEntry(CondType cond, std::string idx, int idxN, bool dist = false)
+		: index(std::move(idx)), idxNo(idxN), condition(cond), distinct(dist) {}
 	QueryEntry() = default;
 
-	bool operator==(const QueryEntry &) const noexcept;
-	bool operator!=(const QueryEntry &other) const noexcept { return !operator==(other); }
+	bool operator==(const QueryEntry &) const;
+	bool operator!=(const QueryEntry &other) const { return !operator==(other); }
 
 	std::string index;
 	int idxNo = IndexValueType::NotSet;
 	CondType condition = CondType::CondAny;
 	bool distinct = false;
 	VariantArray values;
-	int joinIndex = kNoJoins;
 
-	template <typename JS>
-	std::string Dump(const std::vector<JS> &joinedSelectors) const {
-		WrSerializer ser;
-		if (joinIndex != kNoJoins) {
-			const auto &js = joinedSelectors.at(joinIndex);
-			const auto &q = js.JoinQuery();
-			ser << js.Type() << " (" << q.GetSQL() << ") ON ";
-			ser << '(';
-			for (const auto &jqe : q.joinEntries_) {
-				if (&jqe != &q.joinEntries_.front()) {
-					ser << ' ' << jqe.op_ << ' ';
-				} else {
-					assert(jqe.op_ == OpAnd);
-				}
-				ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << InvertJoinCondition(jqe.condition_) << ' ' << jqe.index_;
-			}
-			ser << ')';
-		} else if (distinct) {
-			ser << "Distinct index: " << index;
-		} else {
-			ser << index << ' ' << condition << ' ';
-			const bool severalValues = (values.size() > 1);
-			if (severalValues) ser << '(';
-			for (auto &v : values) {
-				if (&v != &*values.begin()) ser << ',';
-				ser << '\'' << v.As<std::string>() << '\'';
-			}
-			if (severalValues) ser << ')';
-		}
-		return std::string{ser.Slice()};
-	}
+	std::string Dump() const;
 };
+
+class BetweenFieldsQueryEntry {
+public:
+	BetweenFieldsQueryEntry(std::string fstIdx, CondType cond, std::string sndIdx);
+
+	bool operator==(const BetweenFieldsQueryEntry &) const noexcept;
+	bool operator!=(const BetweenFieldsQueryEntry &other) const noexcept { return !operator==(other); }
+
+	std::string firstIndex;
+	std::string secondIndex;
+	int firstIdxNo = IndexValueType::NotSet;
+	int secondIdxNo = IndexValueType::NotSet;
+
+	CondType Condition() const noexcept { return condition_; }
+	std::string Dump() const;
+
+private:
+	CondType condition_;
+};
+
+struct AlwaysFalse {};
+constexpr bool operator==(AlwaysFalse, AlwaysFalse) noexcept { return true; }
 
 struct EqualPosition : public h_vector<unsigned, 2> {};
 
 class JsonBuilder;
 
-class QueryEntries : public ExpressionTree<OpType, Bracket, 4, QueryEntry> {
-	using Base = ExpressionTree<OpType, Bracket, 4, QueryEntry>;
+class QueryEntries : public ExpressionTree<OpType, Bracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse> {
+	using Base = ExpressionTree<OpType, Bracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>;
 	QueryEntries(Base &&b) : Base{std::move(b)} {}
 
 public:
@@ -83,15 +98,6 @@ public:
 	QueryEntries &operator=(QueryEntries &&) = default;
 	QueryEntries MakeLazyCopy() & { return {makeLazyCopy()}; }
 
-	const QueryEntry &operator[](size_t i) const {
-		assert(i < container_.size());
-		return container_[i].Value();
-	}
-	QueryEntry &Entry(size_t i) {
-		assert(i < container_.size());
-		return container_[i].Value();
-	}
-
 	template <typename T>
 	std::pair<unsigned, EqualPosition> DetermineEqualPositionIndexes(const T &fields) const;
 	template <typename T>
@@ -99,7 +105,9 @@ public:
 	void ToDsl(const Query &parentQuery, JsonBuilder &builder) const { return toDsl(cbegin(), cend(), parentQuery, builder); }
 	void WriteSQLWhere(const Query &parentQuery, WrSerializer &, bool stripArgs) const;
 	void Serialize(WrSerializer &ser) const { serialize(cbegin(), cend(), ser); }
-	bool CheckIfSatisfyConditions(const ConstPayload &pl, TagsMatcher &tm) const;
+	bool CheckIfSatisfyConditions(const ConstPayload &pl, TagsMatcher &tm) const {
+		return checkIfSatisfyConditions(cbegin(), cend(), pl, tm);
+	}
 	template <typename JS>
 	std::string Dump(const std::vector<JS> &joinedSelectors) const {
 		WrSerializer ser;
@@ -113,6 +121,8 @@ private:
 	static void serialize(const_iterator it, const_iterator to, WrSerializer &);
 	static bool checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload &, TagsMatcher &);
 	static bool checkIfSatisfyCondition(const QueryEntry &, const ConstPayload &, TagsMatcher &);
+	static bool checkIfSatisfyCondition(const BetweenFieldsQueryEntry &, const ConstPayload &, TagsMatcher &);
+	static bool checkIfSatisfyCondition(const VariantArray &lValues, CondType, const VariantArray &rValues);
 	template <typename JS>
 	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS> &joinedSelectors, WrSerializer &ser) {
 		for (const_iterator it = begin; it != end; ++it) {
@@ -131,7 +141,10 @@ private:
 					}
 					ser << ")\n";
 				},
-				[&joinedSelectors, &ser](const QueryEntry &qe) { ser << qe.Dump(joinedSelectors) << '\n'; });
+				[&ser](const QueryEntry &qe) { ser << qe.Dump() << '\n'; },
+				[&joinedSelectors, &ser](const JoinQueryEntry &jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
+				[&ser](const BetweenFieldsQueryEntry &qe) { ser << qe.Dump() << '\n'; },
+				[&ser](const AlwaysFalse &) { ser << "AlwaysFalse" << 'n'; });
 		}
 	}
 };
@@ -149,8 +162,8 @@ struct UpdateEntry {
 	UpdateEntry() {}
 	UpdateEntry(std::string c, VariantArray v, FieldModifyMode m = FieldModeSet, bool e = false)
 		: column(std::move(c)), values(std::move(v)), mode(m), isExpression(e) {}
-	bool operator==(const UpdateEntry &) const;
-	bool operator!=(const UpdateEntry &) const;
+	bool operator==(const UpdateEntry &) const noexcept;
+	bool operator!=(const UpdateEntry &obj) const noexcept { return !operator==(obj); }
 	std::string column;
 	VariantArray values;
 	FieldModifyMode mode = FieldModeSet;
@@ -163,6 +176,7 @@ struct QueryJoinEntry {
 	QueryJoinEntry(OpType op, CondType cond, std::string idx, std::string jIdx)
 		: op_{op}, condition_{cond}, index_{std::move(idx)}, joinIndex_{std::move(jIdx)} {}
 	bool operator==(const QueryJoinEntry &) const noexcept;
+	bool operator!=(const QueryJoinEntry &qje) const noexcept { return !operator==(qje); }
 	OpType op_ = OpAnd;
 	CondType condition_ = CondEq;
 	std::string index_;
@@ -174,8 +188,8 @@ struct QueryJoinEntry {
 struct SortingEntry {
 	SortingEntry() {}
 	SortingEntry(const std::string &e, bool d) : expression(e), desc(d) {}
-	bool operator==(const SortingEntry &) const;
-	bool operator!=(const SortingEntry &) const;
+	bool operator==(const SortingEntry &) const noexcept;
+	bool operator!=(const SortingEntry &se) const noexcept { return !operator==(se); }
 	std::string expression;
 	bool desc = false;
 	int index = IndexValueType::NotSet;
@@ -187,8 +201,8 @@ struct AggregateEntry {
 	AggregateEntry() = default;
 	AggregateEntry(AggType type, const h_vector<std::string, 1> &fields, unsigned limit = UINT_MAX, unsigned offset = 0)
 		: type_(type), fields_(fields), limit_(limit), offset_(offset) {}
-	bool operator==(const AggregateEntry &) const;
-	bool operator!=(const AggregateEntry &) const;
+	bool operator==(const AggregateEntry &) const noexcept;
+	bool operator!=(const AggregateEntry &ae) const noexcept { return !operator==(ae); }
 	AggType type_;
 	h_vector<std::string, 1> fields_;
 	SortingEntries sortingEntries_;

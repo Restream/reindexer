@@ -13,10 +13,10 @@ public:
 		keyType_ = selectKeyType_ = Variant(a).Type();
 	}
 
-	Variant Upsert(const Variant &key, IdType id) override;
-	void Upsert(VariantArray &result, const VariantArray &keys, IdType id) override;
-	void Delete(const Variant &key, IdType id, StringsHolder &) override;
-	void Delete(const VariantArray &keys, IdType id, StringsHolder &) override;
+	Variant Upsert(const Variant &key, IdType id, bool &clearCache) override;
+	void Upsert(VariantArray &result, const VariantArray &keys, IdType id, bool &clearCache) override;
+	void Delete(const Variant &key, IdType id, StringsHolder &, bool &clearCache) override;
+	void Delete(const VariantArray &keys, IdType id, StringsHolder &, bool &clearCache) override;
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::SelectOpts res_type,
 							   BaseFunctionCtx::Ptr ctx, const RdxContext &) override;
 	void Commit() override;
@@ -24,12 +24,17 @@ public:
 	std::unique_ptr<Index> Clone() override;
 	IndexMemStat GetMemStat() override;
 	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string>; }
+	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override;
 
 protected:
 	unordered_str_map<int> str_map;
 	h_vector<T> idx_data;
 
 	IndexMemStat memStat_;
+
+private:
+	template <typename S>
+	void dump(S &os, std::string_view step, std::string_view offset) const;
 };
 
 template <>

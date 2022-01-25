@@ -51,9 +51,9 @@ func TestMasterSlaveSlaveNoStorage(t *testing.T) {
 	rxSrv[1] = serverUp(t, srvCfg[1], 1, append(adminNamespaces, recomNamespaces...))
 	rxSrv[2] = serverUp(t, srvCfg[2], 2, append(adminNamespaces, recomNamespaces...))
 
-	configureReplication(t, rxSrv[0], "leader", adminNamespaces, []reindexer.DBAsyncReplicationNode{rxCfg[1]})
-	configureReplication(t, rxSrv[1], "follower", append(adminNamespaces, recomNamespaces...), []reindexer.DBAsyncReplicationNode{rxCfg[2]})
-	configureReplication(t, rxSrv[2], "follower", nil, nil)
+	helpers.ConfigureReplication(t, rxSrv[0], "leader", adminNamespaces, []reindexer.DBAsyncReplicationNode{rxCfg[1]})
+	helpers.ConfigureReplication(t, rxSrv[1], "follower", append(adminNamespaces, recomNamespaces...), []reindexer.DBAsyncReplicationNode{rxCfg[2]})
+	helpers.ConfigureReplication(t, rxSrv[2], "follower", nil, nil)
 
 	cnt, err := rxSrv[0].Insert(adminNamespaces[0], Data{A: "admin_item"})
 	require.NoError(t, err)
@@ -97,12 +97,4 @@ func serverUp(t *testing.T, cfg map[string]string, serverID int, ns []string) *r
 	require.NoError(t, err)
 
 	return rx
-}
-
-func configureReplication(t *testing.T, rx *reindexer.Reindexer, role string, ns []string, nodes []reindexer.DBAsyncReplicationNode) {
-	err := rx.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
-		Type:             "async_replication",
-		AsyncReplication: &reindexer.DBAsyncReplicationConfig{Role: role, Namespaces: ns, Nodes: nodes},
-	})
-	require.NoError(t, err)
 }

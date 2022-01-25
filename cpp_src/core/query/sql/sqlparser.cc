@@ -262,8 +262,9 @@ int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, h
 	for (;;) {
 		auto nameWithCase = peekSqlToken(parser, FieldNameSqlToken);
 		auto tok = parser.next_token(false);
-		if (tok.type != TokenName && tok.type != TokenString)
+		if (tok.type != TokenName && tok.type != TokenString) {
 			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
+		}
 		SortingEntry sortingEntry;
 		sortingEntry.expression = string(tok.text());
 		if (sortingEntry.expression.empty()) {
@@ -273,18 +274,21 @@ int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, h
 		if (tok.text() == "("sv && nameWithCase.text() == "field"sv) {
 			parser.next_token();
 			tok = peekSqlToken(parser, FieldNameSqlToken, false);
-			if (tok.type != TokenName && tok.type != TokenString)
+			if (tok.type != TokenName) {
 				throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
+			}
 			sortingEntry.expression = string(tok.text());
 			tok = parser.next_token(false);
 			for (;;) {
 				tok = parser.next_token();
 				if (tok.text() == ")"sv) break;
-				if (tok.text() != ","sv)
+				if (tok.text() != ","sv) {
 					throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text(), parser.where());
+				}
 				tok = peekSqlToken(parser, FieldNameSqlToken);
-				if (tok.type != TokenNumber && tok.type != TokenString)
+				if (tok.type != TokenNumber && tok.type != TokenString) {
 					throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", tok.text(), parser.where());
+				}
 				forcedSortOrder_.push_back(Variant(string(tok.text())));
 				parser.next_token();
 			}
@@ -442,7 +446,7 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 			string expression(currTok.text());
 			bool inArray = false;
 			while (!eof(parser, inArray)) {
-				expression += string(parser.next_token(false).text());
+				expression += std::string{parser.next_token(false, true).text()};
 				++count;
 			}
 			if (count > 0) {
@@ -463,7 +467,7 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 
 UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 	token tok = peekSqlToken(parser, FieldNameSqlToken, false);
-	if (tok.type != TokenName && tok.type != TokenString) {
+	if (tok.type != TokenName) {
 		throw Error(errParseSQL, "Expected field name but found '%s' in query %s", tok.text(), parser.where());
 	}
 	UpdateEntry updateField;
@@ -501,8 +505,9 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 		tok = parser.next_token();
 		if (tok.text() != "|"sv) throw Error(errLogic, "Expected '|', not %s", tok.text());
 		tok = parser.next_token();
-		if (tok.type != TokenName && tok.type != TokenString)
+		if (tok.type != TokenName) {
 			throw Error(errParseSQL, "Expected field name, but found %s in query, %s", tok.text(), parser.where());
+		}
 		tok = parser.peek_token();
 		withArrayExpressions = true;
 	}
@@ -536,7 +541,7 @@ int SQLParser::updateParse(tokenizer &parser) {
 		while (!parser.end()) {
 			parser.next_token();
 			tok = peekSqlToken(parser, FieldNameSqlToken, false);
-			if (tok.type != TokenName && tok.type != TokenString) {
+			if (tok.type != TokenName) {
 				throw Error(errParseSQL, "Expected field name but found '%s' in query %s", tok.text(), parser.where());
 			}
 			query_.Drop(string(tok.text()));
@@ -593,7 +598,7 @@ int SQLParser::parseWhere(tokenizer &parser) {
 			}
 			continue;
 		}
-		if (tok.type == TokenName || tok.type == TokenString) {
+		if (tok.type == TokenName) {
 			if (iequals(tok.text(), "join"sv)) {
 				parseJoin(JoinType::LeftJoin, parser);
 			} else if (iequals(tok.text(), "left"sv)) {
@@ -614,23 +619,23 @@ int SQLParser::parseWhere(tokenizer &parser) {
 				parseDWithin(parser, nextOp);
 				nextOp = OpAnd;
 			} else {
-				QueryEntry entry;
 				// Index name
-				entry.index = string(tok.text());
+				const std::string index{tok.text()};
 
 				// Operator
+				CondType condition;
 				tok = peekSqlToken(parser, ConditionSqlToken);
 				if (tok.text() == "<>"sv) {
-					entry.condition = CondEq;
-					if (nextOp == OpAnd)
+					condition = CondEq;
+					if (nextOp == OpAnd) {
 						nextOp = OpNot;
-					else if (nextOp == OpNot)
+					} else if (nextOp == OpNot) {
 						nextOp = OpAnd;
-					else {
+					} else {
 						throw Error(errParseSQL, "<> condition with OR is not supported, %s", parser.where());
 					}
 				} else {
-					entry.condition = getCondType(tok.text());
+					condition = getCondType(tok.text());
 				}
 				parser.next_token();
 
@@ -638,29 +643,32 @@ int SQLParser::parseWhere(tokenizer &parser) {
 				if (ctx_.autocompleteMode) peekSqlToken(parser, WhereFieldValueSqlToken, false);
 				tok = parser.next_token();
 				if (iequals(tok.text(), "null"sv) || iequals(tok.text(), "empty"sv)) {
-					entry.condition = CondEmpty;
+					query_.entries.Append(nextOp, QueryEntry{index, CondEmpty, {}});
 				} else if (iequals(tok.text(), "not"sv)) {
 					tok = peekSqlToken(parser, WhereFieldNegateValueSqlToken, false);
-					if (iequals(tok.text(), "null"sv) || iequals(tok.text(), "empty"sv)) {
-						entry.condition = CondAny;
-					} else {
+					if (!iequals(tok.text(), "null"sv) && !iequals(tok.text(), "empty"sv)) {
 						throw Error(errParseSQL, "Expected NULL, but found '%s' in query, %s", tok.text(), parser.where());
 					}
+					query_.entries.Append(nextOp, QueryEntry{index, CondAny, {}});
 					tok = parser.next_token(false);
 				} else if (tok.text() == "("sv) {
+					VariantArray values;
 					for (;;) {
 						tok = parser.next_token();
 						if (tok.text() == ")"sv && tok.type == TokenSymbol) break;
-						entry.values.push_back(token2kv(tok, parser, true));
+						values.push_back(token2kv(tok, parser, true));
 						tok = parser.next_token();
 						if (tok.text() == ")"sv) break;
 						if (tok.text() != ","sv)
 							throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text(), parser.where());
 					}
+					query_.entries.Append(nextOp, QueryEntry{index, condition, std::move(values)});
+				} else if (tok.type != TokenName || toLower(tok.text()) == "true" || toLower(tok.text()) == "false") {
+					query_.entries.Append(nextOp, QueryEntry{index, condition, {token2kv(tok, parser, true)}});
+					// Second field
 				} else {
-					entry.values.push_back(token2kv(tok, parser, true));
+					query_.entries.Append(nextOp, BetweenFieldsQueryEntry{index, condition, std::string{tok.text()}});
 				}
-				query_.entries.Append(nextOp, std::move(entry));
 				nextOp = OpAnd;
 			}
 		}
@@ -710,16 +718,14 @@ void SQLParser::parseEqualPositions(tokenizer &parser) {
 	for (;;) {
 		auto nameWithCase = peekSqlToken(parser, FieldNameSqlToken);
 		tok = parser.next_token(false);
-		if (tok.type != TokenName && tok.type != TokenString) {
+		if (tok.type != TokenName) {
 			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 		}
 		bool validField = false;
 		for (auto it = query_.entries.begin_of_current_bracket(); it != query_.entries.end(); ++it) {
-			if (it->IsLeaf()) {
-				if (nameWithCase.text() == it->Value().index) {
-					validField = true;
-					break;
-				}
+			if (it->HoldsOrReferTo<QueryEntry>() && nameWithCase.text() == it->Value<QueryEntry>().index) {
+				validField = true;
+				break;
 			}
 		}
 		if (!validField) {
@@ -889,7 +895,7 @@ void SQLParser::parseJoin(JoinType type, tokenizer &parser) {
 	jparser.parseJoinEntries(parser, query_._namespace, jquery);
 
 	if (type != JoinType::LeftJoin) {
-		query_.entries.Append((type == JoinType::InnerJoin) ? OpAnd : OpOr, QueryEntry(query_.joinQueries_.size()));
+		query_.entries.Append((type == JoinType::InnerJoin) ? OpAnd : OpOr, JoinQueryEntry(query_.joinQueries_.size()));
 	}
 
 	query_.joinQueries_.emplace_back(std::move(jquery));
@@ -924,7 +930,7 @@ void SQLParser::parseMerge(tokenizer &parser) {
 
 string SQLParser::parseJoinedFieldName(tokenizer &parser, string &name) {
 	auto tok = peekSqlToken(parser, JoinedFieldNameSqlToken);
-	if (tok.type != TokenName && tok.type != TokenString) {
+	if (tok.type != TokenName) {
 		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text(), parser.where());
 	}
 
@@ -935,7 +941,7 @@ string SQLParser::parseJoinedFieldName(tokenizer &parser, string &name) {
 	name = string(tok.text().substr(0, dotPos));
 
 	tok = peekSqlToken(parser, FieldNameSqlToken);
-	if (tok.type != TokenName && tok.type != TokenString) {
+	if (tok.type != TokenName) {
 		throw Error(errParseSQL, "Expected name, but found %s, %s", tok.text(), parser.where());
 	}
 	parser.next_token();

@@ -209,17 +209,14 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 		case WalTagsMatcher: {
 			TagsMatcher tm;
 			Serializer ser(rec.data.data(), rec.data.size());
-			// TODO: Revert this, once tm versions between followers and leader became consistant
 			const auto version = ser.GetVarint();
-			(void)version;
 			const auto stateToken = ser.GetVarint();
-			(void)stateToken;
-			// tm.deserialize(ser, version, stateToken);
-			tm.deserialize(ser, ns_.tagsMatcher_.version() + 1, ns_.tagsMatcher_.stateToken());
-			// logPrintf(LogInfo, "Changing tm's statetoken on %d: %08X->%08X", ns_.wal_.GetServer(), ns_.tagsMatcher_.stateToken(),
-			//		  stateToken);
+			tm.deserialize(ser, version, stateToken);
+			logPrintf(LogInfo, "Changing tm's statetoken on %d: %08X->%08X", ns_.wal_.GetServer(), ns_.tagsMatcher_.stateToken(),
+					  stateToken);
 			ns_.tagsMatcher_ = std::move(tm);
-			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, true);
+			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, false);
+			ns_.tagsMatcher_.setUpdated();
 			ns_.saveTagsMatcherToStorage();
 			break;
 		}

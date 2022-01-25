@@ -28,9 +28,10 @@ type ExplainSelector struct {
 	// Preselect in joined namespace execution explainings
 	ExplainPreselect *ExplainResults `json:"explain_preselect,omitempty"`
 	// One of selects in joined namespace execution explainings
-	ExplainSelect *ExplainResults `json:"explain_select,omitempty"`
-	Selectors []ExplainSelector `json:"selectors,omitempty"`
+	ExplainSelect *ExplainResults   `json:"explain_select,omitempty"`
+	Selectors     []ExplainSelector `json:"selectors,omitempty"`
 }
+
 // ExplainResults presents query plan
 type ExplainResults struct {
 	// Total query execution time
@@ -451,6 +452,19 @@ func (it *Iterator) Close() {
 		it.result = nil
 		if it.query != nil {
 			it.query.close()
+		}
+	}
+}
+
+// Get namespace's tagsmatcher info
+func (it *Iterator) GetTagsMatcherInfo(nsName string) (stateToken int32, version int32) {
+	version = -1
+	for _, ns := range it.nsArray {
+		if nsName == ns.name {
+			st := ns.localCjsonState.Copy()
+			stateToken = st.StateToken
+			version = st.Version
+			return
 		}
 	}
 	return

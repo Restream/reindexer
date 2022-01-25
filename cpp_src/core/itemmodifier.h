@@ -8,13 +8,14 @@
 
 namespace reindexer {
 
-struct NsContext;
+class NsContext;
 class NamespaceImpl;
 class ExpressionEvaluator;
 
 class ItemModifier {
 public:
-	ItemModifier(const h_vector<UpdateEntry, 0> &, NamespaceImpl &ns);
+	ItemModifier(const h_vector<UpdateEntry, 0> &, NamespaceImpl &ns, h_vector<cluster::UpdateRecord, 2> &replUpdates,
+				 const NsContext &ctx);
 	ItemModifier(const ItemModifier &) = delete;
 	ItemModifier &operator=(const ItemModifier &) = delete;
 	ItemModifier(ItemModifier &&) = delete;
@@ -62,7 +63,8 @@ private:
 	};
 
 	void modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values, const RdxContext &);
-	void modifyCJSON(PayloadValue &pv, IdType itemId, FieldData &field, VariantArray &values, h_vector<cluster::UpdateRecord, 2> &pendedRepl, const RdxContext &);
+	void modifyCJSON(PayloadValue &pv, IdType itemId, FieldData &field, VariantArray &values,
+					 h_vector<cluster::UpdateRecord, 2> &pendedRepl, const RdxContext &);
 	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl, const RdxContext &);
 
 	NamespaceImpl &ns_;

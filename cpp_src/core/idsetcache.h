@@ -1,8 +1,10 @@
 #pragma once
 
+#include <bitset>
 #include "core/idset.h"
 #include "core/keyvalue/variant.h"
 #include "core/lrucache.h"
+#include "core/type_consts_helpers.h"
 
 namespace reindexer {
 
@@ -37,6 +39,13 @@ struct IdSetCacheKey {
 	VariantArray hkeys;
 };
 
+template <typename T>
+T &operator<<(T &os, const IdSetCacheKey &k) {
+	os << "{cond: " << CondTypeToStr(k.cond) << ", sort: " << k.sort << ", keys: ";
+	k.hkeys.Dump(os);
+	return os << '}';
+}
+
 struct IdSetCacheVal {
 	IdSetCacheVal() : ids(nullptr) {}
 	IdSetCacheVal(const IdSet::Ptr &i) : ids(i) {}
@@ -44,6 +53,15 @@ struct IdSetCacheVal {
 
 	IdSet::Ptr ids;
 };
+
+template <typename T>
+T &operator<<(T &os, const IdSetCacheVal &v) {
+	if (v.ids) {
+		return os << *v.ids;
+	} else {
+		return os << "[]";
+	}
+}
 
 struct equal_idset_cache_key {
 	bool operator()(const IdSetCacheKey &lhs, const IdSetCacheKey &rhs) const {
@@ -54,6 +72,13 @@ struct hash_idset_cache_key {
 	size_t operator()(const IdSetCacheKey &s) const { return (s.cond << 8) ^ (s.sort << 16) ^ s.keys->Hash(); }
 };
 
-class IdSetCache : public LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key> {};
+class IdSetCache : public LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key> {
+public:
+	void ClearSorted(const std::bitset<64> &s) {
+		if (s.any()) {
+			Clear([&s](const IdSetCacheKey &k) { return s.test(k.sort); });
+		}
+	}
+};
 
 }  // namespace reindexer

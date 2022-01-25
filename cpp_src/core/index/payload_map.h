@@ -113,6 +113,7 @@ public:
 	using typename base_hash_map::iterator;
 
 	using base_hash_map::size;
+	using base_hash_map::empty;
 	using base_hash_map::find;
 	using base_hash_map::begin;
 	using base_hash_map::end;
@@ -171,6 +172,7 @@ public:
 	using typename base_tree_map::const_reverse_iterator;
 
 	using base_tree_map::size;
+	using base_tree_map::empty;
 	using base_tree_map::begin;
 	using base_tree_map::end;
 	using base_tree_map::key_comp;

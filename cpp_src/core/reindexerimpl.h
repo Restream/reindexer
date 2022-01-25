@@ -48,9 +48,9 @@ class ReindexerImpl {
 	};
 	template <bool needUpdateSystemNs, typename MakeCtxStrFn, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg,
 			  typename... Args>
-	Error applyNsFunction(std::string_view nsName, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr, Arg arg, Args... args);
+	Error applyNsFunction(std::string_view nsName, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr, Arg arg, Args &&... args);
 	template <auto MemFn, typename MakeCtxStrFn, typename Arg, typename... Args>
-	Error applyNsFunction(std::string_view nsName, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr, Arg &, Args...);
+	Error applyNsFunction(std::string_view nsName, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr, Arg &&, Args &&...);
 
 public:
 	using Completion = std::function<void(const Error &err)>;
@@ -114,11 +114,14 @@ public:
 	Error LeadersPing(const cluster::NodeData &);
 	Error GetRaftInfo(bool allowTransitState, cluster::RaftInfo &, const InternalRdxContext &ctx);
 	Error GetLeaderDsn(std::string &dsn, unsigned short serverId, const cluster::RaftInfo &info);
+	Error ClusterControlRequest(const ClusterControlRequestData &request);
+	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm, const InternalRdxContext &ctx = InternalRdxContext());
+	void ShutdownCluster();
 
 	bool NeedTraceActivity() { return configProvider_.GetProfilingConfig().activityStats; }
 
-	Error ClusterControlRequest(const ClusterControlRequestData &request);
-	void ShutdownCluster();
+	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index,
+					const InternalRdxContext &ctx = InternalRdxContext());
 
 protected:
 	template <typename Context>
@@ -200,7 +203,7 @@ protected:
 
 		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, &ctx); }
 		WLockT DataWLock(const RdxContext &ctx) const {
-			const bool requireSync = !ctx.NoWaitSync() && ctx.originLsn_.isEmpty();
+			const bool requireSync = !ctx.NoWaitSync() && ctx.GetOriginLSN().isEmpty();
 			WLockT lck(mtx_, ctx, true);
 			auto clusterStatus = owner_.clusterStatus_;
 			const bool isFollowerDB = clusterStatus.role == ClusterizationStatus::Role::SimpleReplica ||
@@ -242,12 +245,14 @@ protected:
 	Error tryLoadConfFromFile(const std::string &filename);
 	template <char const *type, typename ConfigT>
 	Error tryLoadConfFromYAML(const std::string &yamlConf);
+	Error tryLoadShardingConf();
 
 	void backgroundRoutine();
 	Error closeNamespace(std::string_view nsName, const RdxContext &ctx, bool dropStorage);
 
 	FieldsSet getPK(std::string_view nsName, bool &exists, const InternalRdxContext &ctx);
 	PayloadType getPayloadType(std::string_view nsName, const InternalRdxContext &ctx);
+	std::set<std::string> GetFTIndexes(std::string_view nsName, const InternalRdxContext &);
 
 	Namespace::Ptr getNamespace(std::string_view nsName, const RdxContext &ctx);
 	Namespace::Ptr getNamespaceNoThrow(std::string_view nsName, const RdxContext &ctx);

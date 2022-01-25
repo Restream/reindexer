@@ -33,7 +33,7 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
 
 	token res(TokenSymbol);
 
-	if (isalpha(*cur_) || *cur_ == '_' || *cur_ == '#') {
+	if (isalpha(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '@') {
 		res.type = TokenName;
 		do {
 			if (*cur_ == '*' && *(cur_ - 1) != '[') break;
@@ -41,6 +41,26 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
 			++pos_;
 		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '@' || *cur_ == '.' ||
 									  *cur_ == '*' || *cur_ == '[' || *cur_ == ']'));
+	} else if (*cur_ == '"') {
+		res.type = TokenName;
+		const size_t startPos = ++pos_;
+		while (++cur_ != q_.end() && *cur_ != '"') {
+			if (pos_ == startPos) {
+				if (*cur_ != '#' && *cur_ != '_' && !isalpha(*cur_) && *cur_ != '@') {
+					throw Error{errParseSQL, "Identifier should starts with alpha, '_', '#' or '@', but found '%c'; %s", *cur_, where()};
+				}
+			} else if (*cur_ != '+' && *cur_ != '.' && *cur_ != '_' && *cur_ != '#' && *cur_ != '[' && *cur_ != ']' && *cur_ != '*' &&
+					   !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {
+				throw Error{errParseSQL, "Identifier should not contain '%c'; %s", *cur_, where()};
+			}
+			res.text_.push_back(to_lower ? tolower(*cur_) : *cur_);
+			++pos_;
+		}
+		if (cur_ == q_.end()) {
+			throw Error{errParseSQL, "Not found close '\"'; %s", where()};
+		}
+		++cur_;
+		++pos_;
 	} else if (isdigit(*cur_) || (!treatSignAsToken && (*cur_ == '-' || *cur_ == '+'))) {
 		res.type = TokenNumber;
 		do {
@@ -57,7 +77,7 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
 			res.text_.push_back(*cur_++);
 			++pos_;
 		} while (cur_ != q_.end() && (*cur_ == '=' || *cur_ == '>' || *cur_ == '<') && res.text_.size() < 2);
-	} else if (*cur_ == '"' || *cur_ == '\'' || *cur_ == '`') {
+	} else if (*cur_ == '\'' || *cur_ == '`') {
 		res.type = TokenString;
 		char quote_chr = *cur_++;
 		++pos_;

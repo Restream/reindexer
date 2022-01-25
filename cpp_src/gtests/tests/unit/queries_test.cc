@@ -86,6 +86,26 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 }
 #endif
 
+TEST_F(QueriesApi, IndexCacheInvalidationTest) {
+	std::vector<std::pair<int, int>> data{{0, 10}, {1, 9}, {2, 8}, {3, 7}, {4, 6},	{5, 5},
+										  {6, 4},  {7, 3}, {8, 2}, {9, 1}, {10, 0}, {11, -1}};
+	for (auto values : data) {
+		UpsertBtreeIdxOptNsItem(values);
+	}
+	Query q(btreeIdxOptNs);
+	q.Where(kFieldNameId, CondSet, {3, 5, 7}).Where(kFieldNameStartTime, CondGt, 2).Debug(LogTrace);
+	std::this_thread::sleep_for(std::chrono::seconds(1));
+	for (size_t i = 0; i < 10; ++i) {
+		ExecuteAndVerify(q);
+	}
+
+	UpsertBtreeIdxOptNsItem({5, 0});
+	std::this_thread::sleep_for(std::chrono::seconds(5));
+	for (size_t i = 0; i < 10; ++i) {
+		ExecuteAndVerify(q);
+	}
+}
+
 TEST_F(QueriesApi, TransactionStress) {
 	vector<thread> pool;
 	FillDefaultNamespace(0, 350, 20);
@@ -117,42 +137,120 @@ TEST_F(QueriesApi, TransactionStress) {
 	}
 }
 
-TEST_F(QueriesApi, QueriesSqlGenerate) {
-	const auto check = [](const string& sql) {
-		Query q;
-		q.FromSQL(sql);
-		EXPECT_EQ(sql, q.GetSQL());
-	};
+TEST_F(QueriesApi, SqlParseGenerate) {
+	using namespace std::string_literals;
+	enum Direction { PARSE = 1, GEN = 2, BOTH = PARSE | GEN };
+	struct {
+		std::string sql;
+		std::variant<Query, Error> expected;
+		Direction direction = BOTH;
+	} cases[]{
+		{"SELECT * FROM test_namespace WHERE index = 5", Query{"test_namespace"}.Where("index", CondEq, 5)},
+		{"SELECT * FROM test_namespace WHERE index LIKE 'str'", Query{"test_namespace"}.Where("index", CondLike, "str")},
+		{"SELECT * FROM test_namespace WHERE index <= field", Query{"test_namespace"}.WhereBetweenFields("index", CondLe, "field")},
+		{"SELECT * FROM test_namespace WHERE index+field = 5", Error{errParseSQL, "Expected condition operator, but found '+' in query"}},
+		{"SELECT * FROM test_namespace WHERE \"index+field\" > 5", Query{"test_namespace"}.Where("index+field", CondGt, 5)},
+		{"SELECT * FROM test_namespace WHERE \"index+field\" LIKE index2.field2",
+		 Query{"test_namespace"}.WhereBetweenFields("index+field", CondLike, "index2.field2")},
+		{"SELECT * FROM test_namespace WHERE index2.field2 <> \"index+field\"",
+		 Query{"test_namespace"}.Not().WhereBetweenFields("index2.field2", CondEq, "index+field"), PARSE},
+		{"SELECT * FROM test_namespace WHERE NOT index2.field2 = \"index+field\"",
+		 Query{"test_namespace"}.Not().WhereBetweenFields("index2.field2", CondEq, "index+field")},
+		{"SELECT * FROM test_namespace WHERE 'index+field' = 5", Error{errParseSQL, "Unexpected '=' in query, line: 1 column: 51 52"}},
+		{"SELECT * FROM test_namespace WHERE \"index\" = 5", Query{"test_namespace"}.Where("index", CondEq, 5), PARSE},
+		{"SELECT * FROM test_namespace WHERE 'index' = 5", Error{errParseSQL, "Unexpected '=' in query, line: 1 column: 45 46"}},
+		{"SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY 'year' DESC LIMIT 10000000",
+		 Query{"test_namespace"}.Select({"ID", "Year", "Genre"}).Where("year", CondGt, "2016").Sort("year", true).Limit(10000000)},
+		{"SELECT ID FROM test_namespace WHERE name LIKE 'something' AND (genre IN ('1','2','3') AND year > '2016') OR age IN "
+		 "('1','2','3','4') LIMIT 10000000",
+		 Query{"test_namespace"}
+			 .Select({"ID"})
+			 .Where("name", CondLike, "something")
+			 .OpenBracket()
+			 .Where("genre", CondSet, {"1", "2", "3"})
+			 .Where("year", CondGt, "2016")
+			 .CloseBracket()
+			 .Or()
+			 .Where("age", CondSet, {"1", "2", "3", "4"})
+			 .Limit(10000000)},
+		{"SELECT * FROM test_namespace WHERE  INNER JOIN join_ns ON test_namespace.id = join_ns.id ORDER BY 'year + join_ns.year * (5 - "
+		 "rand())'",
+		 Query{"test_namespace"}.InnerJoin("id", "id", CondEq, Query{"join_ns"}).Sort("year + join_ns.year * (5 - rand())", false)},
+		{"SELECT * FROM "s + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex + ", ST_GeomFromText('POINT(1.25 -7.25)'), 0.5)",
+		 Query{geomNs}.DWithin(kFieldNamePointNonIndex, {1.25, -7.25}, 0.5)}};
 
-	check("SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY 'year' DESC LIMIT 10000000");
-
-	check(
-		"SELECT ID FROM test_namespace WHERE name LIKE 'something' AND (genre IN ('1','2','3') AND year > '2016') OR age IN "
-		"('1','2','3','4') LIMIT 10000000");
-
-	check(
-		"SELECT * FROM test_namespace WHERE  INNER JOIN join_ns ON join_ns.id = test_namespace.id ORDER BY 'year + join_ns.year * (5 - "
-		"rand())'");
-
-	// Checks parsing and generation of SQL query with DWithin
-	check(std::string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex +
-		  ", ST_GeomFromText('POINT(1.25 -7.25)'), 0.5)");
+	for (const auto& [sql, expected, direction] : cases) {
+		if (std::holds_alternative<Query>(expected)) {
+			const Query& q = std::get<Query>(expected);
+			if (direction & GEN) {
+				EXPECT_EQ(q.GetSQL(), sql);
+			}
+			if (direction & PARSE) {
+				Query parsed;
+				try {
+					parsed.FromSQL(sql);
+				} catch (const Error& err) {
+					ADD_FAILURE() << "Unexpected error: " << err.what() << "\nSQL: " << sql;
+					continue;
+				}
+				EXPECT_EQ(parsed, q) << sql;
+			}
+		} else {
+			const Error& expectedErr = std::get<Error>(expected);
+			Query parsed;
+			try {
+				parsed.FromSQL(sql);
+				ADD_FAILURE() << "Expected error: " << expectedErr.what() << "\nSQL: " << sql;
+			} catch (const Error& err) {
+				EXPECT_EQ(err.what(), expectedErr.what()) << "\nSQL: " << sql;
+			}
+		}
+	}
 }
 
-TEST_F(QueriesApi, QueriesDslGenerate) {
-	const auto check = [](string dsl) {
-		const string expected = dsl;
-		Query q;
-		Error err = q.FromJSON(dsl);
-		ASSERT_TRUE(err.ok()) << err.what();
-		const std::string result = q.GetJSON();
-		EXPECT_EQ(expected, result);
-	};
-	// Checks parsing and generation of DSL query with DWithin
-	check(
-		std::string(R"({"namespace":")") + geomNs +
-		R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
-		kFieldNamePointLinearRTree + R"(","value":[[-9.2,-0.145],0.581]}],"merge_queries":[],"aggregations":[]})");
+TEST_F(QueriesApi, DslGenerateParse) {
+	using namespace std::string_literals;
+	enum Direction { PARSE = 1, GEN = 2, BOTH = PARSE | GEN };
+	struct {
+		std::string dsl;
+		std::variant<Query, Error> expected;
+		Direction direction = BOTH;
+	} cases[]{
+		{R"({"namespace":")"s + geomNs +
+			 R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
+			 kFieldNamePointLinearRTree + R"(","value":[[-9.2,-0.145],0.581]}],"merge_queries":[],"aggregations":[]})",
+		 Query{geomNs}.DWithin(kFieldNamePointLinearRTree, reindexer::Point{-9.2, -0.145}, 0.581)},
+		{R"({"namespace":")"s + default_namespace +
+			 R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"gt","first_field":")" +
+			 kFieldNameStartTime + R"(","second_field":")" + kFieldNamePackages + R"("}],"merge_queries":[],"aggregations":[]})",
+		 Query{Query(default_namespace).WhereBetweenFields(kFieldNameStartTime, CondGt, kFieldNamePackages)}}};
+	for (const auto& [dsl, expected, direction] : cases) {
+		if (std::holds_alternative<Query>(expected)) {
+			const Query& q = std::get<Query>(expected);
+			if (direction & GEN) {
+				EXPECT_EQ(q.GetJSON(), dsl);
+			}
+			if (direction & PARSE) {
+				Query parsed;
+				try {
+					parsed.FromJSON(dsl);
+				} catch (const Error& err) {
+					ADD_FAILURE() << "Unexpected error: " << err.what() << "\nDSL: " << dsl;
+					continue;
+				}
+				EXPECT_EQ(parsed, q) << dsl;
+			}
+		} else {
+			const Error& expectedErr = std::get<Error>(expected);
+			Query parsed;
+			try {
+				parsed.FromJSON(dsl);
+				ADD_FAILURE() << "Expected error: " << expectedErr.what() << "\nDSL: " << dsl;
+			} catch (const Error& err) {
+				EXPECT_EQ(err.what(), expectedErr.what()) << "\nDSL: " << dsl;
+			}
+		}
+	}
 }
 
 std::vector<int> generateForcedSortOrder(int maxValue, size_t size) {

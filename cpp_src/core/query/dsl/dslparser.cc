@@ -38,7 +38,7 @@ enum class Root {
 enum class Sort { Desc, Field, Values };
 enum class JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset };
 enum class JoinEntry { LeftField, RightField, Cond, Op };
-enum class Filter { Cond, Op, Field, Value, Filters, JoinQuery };
+enum class Filter { Cond, Op, Field, Value, Filters, JoinQuery, FirstField, SecondField };
 enum class Aggregation { Fields, Type, Sort, Limit, Offset };
 enum class EqualPosition { Positions };
 enum class UpdateField { Name, Type, Values, IsArray };
@@ -86,8 +86,14 @@ static const fast_str_map<JoinType> join_types = {{"inner", InnerJoin}, {"left",
 
 // additionalfor parse field 'filters'
 
-static const fast_str_map<Filter> filter_map = {{"cond", Filter::Cond},	  {"op", Filter::Op},			{"field", Filter::Field},
-												{"value", Filter::Value}, {"filters", Filter::Filters}, {"join_query", Filter::JoinQuery}};
+static const fast_str_map<Filter> filter_map = {{"cond", Filter::Cond},
+												{"op", Filter::Op},
+												{"field", Filter::Field},
+												{"value", Filter::Value},
+												{"filters", Filter::Filters},
+												{"join_query", Filter::JoinQuery},
+												{"first_field", Filter::FirstField},
+												{"second_field", Filter::SecondField}};
 
 // additional for 'filter::cond' field
 
@@ -155,7 +161,9 @@ void checkJsonValueType(JsonValue& val, std::string_view name, JsonTags... possi
 template <typename T>
 T get(fast_str_map<T> const& m, std::string_view name, std::string_view mapName) {
 	auto it = m.find(name);
-	if (it == m.end()) throw Error(errParseDSL, "Element [%s] not allowed in object of type [%s]", name, mapName);
+	if (it == m.end()) {
+		throw Error(errParseDSL, "Element [%s] not allowed in object of type [%s]", name, mapName);
+	}
 	return it->second;
 }
 
@@ -264,11 +272,12 @@ void parseSort(JsonValue& v, T& q) {
 void parseSingleJoinQuery(JsonValue& join, Query& query);
 
 void parseFilter(JsonValue& filter, Query& q) {
-	QueryEntry qe;
 	OpType op = OpAnd;
+	CondType condition{CondEq};
+	VariantArray values;
+	std::string fields[2];
 	checkJsonValueType(filter, "filter", JSON_OBJECT);
-	bool joinEntry = false;
-	enum { ENTRY, BRACKET } entryOrBracket = ENTRY;
+	enum { ENTRY, BRACKET, TWO_FIELDS_ENTRY, JOIN } entryType = ENTRY;
 	int elemsParsed = 0;
 	for (auto elem : filter) {
 		auto& v = elem->value;
@@ -276,7 +285,7 @@ void parseFilter(JsonValue& filter, Query& q) {
 		switch (get(filter_map, name, "filter"sv)) {
 			case Filter::Cond:
 				checkJsonValueType(v, name, JSON_STRING);
-				qe.condition = get(cond_map, v.toString(), "condition enum"sv);
+				condition = get(cond_map, v.toString(), "condition enum"sv);
 				break;
 
 			case Filter::Op:
@@ -285,18 +294,30 @@ void parseFilter(JsonValue& filter, Query& q) {
 				break;
 
 			case Filter::Value:
-				parseValues(v, qe.values);
+				parseValues(v, values);
 				break;
 
 			case Filter::JoinQuery:
 				checkJsonValueType(v, name, JSON_OBJECT);
 				parseSingleJoinQuery(v, q);
-				joinEntry = true;
+				entryType = JOIN;
 				break;
 
 			case Filter::Field:
 				checkJsonValueType(v, name, JSON_STRING);
-				qe.index = string(v.toString());
+				fields[0] = string(v.toString());
+				break;
+
+			case Filter::FirstField:
+				checkJsonValueType(v, name, JSON_STRING);
+				fields[0] = string(v.toString());
+				entryType = TWO_FIELDS_ENTRY;
+				break;
+
+			case Filter::SecondField:
+				checkJsonValueType(v, name, JSON_STRING);
+				fields[1] = string(v.toString());
+				entryType = TWO_FIELDS_ENTRY;
 				break;
 
 			case Filter::Filters:
@@ -304,55 +325,60 @@ void parseFilter(JsonValue& filter, Query& q) {
 				q.entries.OpenBracket(op);
 				for (auto f : v) parseFilter(f->value, q);
 				q.entries.CloseBracket();
-				entryOrBracket = BRACKET;
+				entryType = BRACKET;
 				break;
 		}
 		++elemsParsed;
 	}
 	if (elemsParsed == 0) return;
-	if (entryOrBracket == BRACKET) {
-		q.entries.SetLastOperation(op);
-		return;
-	}
-	switch (qe.condition) {
-		case CondGe:
-		case CondGt:
-		case CondEq:
-		case CondLt:
-		case CondLe:
-		case CondLike:
-			if (qe.values.size() != 1) {
-				throw Error(errLogic, "Condition %d must have exact 1 value, but %d values was provided", qe.condition, qe.values.size());
-			}
-			break;
-		case CondRange:
-			if (qe.values.size() != 2) {
-				throw Error(errLogic, "Condition RANGE must have exact 2 values, but %d values was provided", qe.values.size());
-			}
-			break;
-		case CondSet:
-		case CondAllSet:
-			if (qe.values.size() < 1) {
-				throw Error(errLogic, "Condition SET must have at least 1 value, but %d values was provided", qe.values.size());
-			}
-			break;
-		case CondAny:
-			if (qe.values.size() != 0) {
-				throw Error(errLogic, "Condition ANY must have 0 values, but %d values was provided", qe.values.size());
-			}
-			break;
-		default:
-			break;
-	}
 
-	if (joinEntry) {
-		assert(q.joinQueries_.size() > 0);
-		const auto& qjoin = q.joinQueries_.back();
-		if (qjoin.joinType != JoinType::LeftJoin) {
-			q.entries.Append((qjoin.joinType == JoinType::InnerJoin) ? OpAnd : OpOr, QueryEntry(q.joinQueries_.size() - 1));
-		}
-	} else {
-		q.entries.Append(op, std::move(qe));
+	switch (entryType) {
+		case ENTRY:
+			switch (condition) {
+				case CondGe:
+				case CondGt:
+				case CondEq:
+				case CondLt:
+				case CondLe:
+				case CondLike:
+					if (values.size() != 1) {
+						throw Error(errLogic, "Condition %d must have exact 1 value, but %d values was provided", condition, values.size());
+					}
+					break;
+				case CondRange:
+					if (values.size() != 2) {
+						throw Error(errLogic, "Condition RANGE must have exact 2 values, but %d values was provided", values.size());
+					}
+					break;
+				case CondSet:
+				case CondAllSet:
+					if (values.size() < 1) {
+						throw Error(errLogic, "Condition SET must have at least 1 value, but %d values was provided", values.size());
+					}
+					break;
+				case CondAny:
+					if (values.size() != 0) {
+						throw Error(errLogic, "Condition ANY must have 0 values, but %d values was provided", values.size());
+					}
+					break;
+				default:
+					break;
+			}
+			q.entries.Append(op, QueryEntry{std::move(fields[0]), condition, std::move(values)});
+			break;
+		case BRACKET:
+			q.entries.SetLastOperation(op);
+			break;
+		case TWO_FIELDS_ENTRY:
+			q.entries.Append(op, BetweenFieldsQueryEntry{std::move(fields[0]), condition, std::move(fields[1])});
+			break;
+		case JOIN:
+			assert(q.joinQueries_.size() > 0);
+			const auto& qjoin = q.joinQueries_.back();
+			if (qjoin.joinType != JoinType::LeftJoin) {
+				q.entries.Append((qjoin.joinType == JoinType::InnerJoin) ? OpAnd : OpOr, JoinQueryEntry(q.joinQueries_.size() - 1));
+			}
+			break;
 	}
 }
 

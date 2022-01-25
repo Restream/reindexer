@@ -200,10 +200,15 @@ type RawBinding interface {
 	Ping(ctx context.Context) error
 	Finalize() error
 	Status(ctx context.Context) Status
+	GetDSNs() []url.URL
 }
 
 type RawBindingChanging interface {
 	OnChangeCallback(f func())
+}
+
+type GetReplicationStat interface {
+	GetReplicationStat(f func(ctx context.Context) (*ReplicationStat, error))
 }
 
 var availableBindings = make(map[string]RawBinding)
@@ -276,6 +281,13 @@ type OptionAppName struct {
 	AppName string
 }
 
+// Strategy - Strategy used for reconnect to server on connection error
+// AllowUnknownNodes - Allow add dsn from cluster node, that not exist in original dsn list
+type OptionReconnectionStrategy struct {
+	Strategy          string
+	AllowUnknownNodes bool
+}
+
 type Status struct {
 	Err     error
 	CProto  StatusCProto
@@ -304,3 +316,15 @@ type StatusBuiltin struct {
 type Completion func(err error)
 
 type RawCompletion func(buf RawBuffer, err error)
+
+type ReplicationStat struct {
+	Type  string                `json:"type"`
+	Nodes []ReplicationNodeStat `json:"nodes"`
+}
+
+type ReplicationNodeStat struct {
+	DSN            string `json:"dsn"`
+	Status         string `json:"status"`
+	Role           string `json:"role"`
+	IsSynchronized bool   `json:"is_synchronized"`
+}

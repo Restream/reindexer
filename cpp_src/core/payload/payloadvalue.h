@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stddef.h>
 #include <atomic>
+#include <iosfwd>
 #include "tools/lsn.h"
 
 namespace reindexer {
@@ -66,5 +67,7 @@ protected:
 	// Data of elements, shared
 	uint8_t *p_;
 };
+
+std::ostream &operator<<(std::ostream &os, const PayloadValue &);
 
 }  // namespace reindexer

@@ -123,6 +123,7 @@ private:
 		virtual double AreaIncrease(const Rectangle&) const noexcept = 0;
 		virtual bool IsFull() const noexcept = 0;
 		virtual size_t Size() const noexcept = 0;
+		virtual bool Empty() const noexcept = 0;
 		virtual std::unique_ptr<NodeBase> Clone() const = 0;
 
 		virtual std::pair<std::unique_ptr<NodeBase>, std::unique_ptr<NodeBase>> insert(T&&, iterator& insertedIt, bool splitAvailable) = 0;
@@ -158,6 +159,7 @@ private:
 		bool IsLeaf() const noexcept override { return true; }
 		bool IsFull() const noexcept override { return data_.size() == MaxEntries; }
 		size_t Size() const noexcept override { return data_.size(); }
+		bool Empty() const noexcept override { return data_.empty(); }
 		std::unique_ptr<NodeBase> Clone() const override { return std::unique_ptr<NodeBase>{new Leaf{*this}}; }
 
 		const_iterator cbegin() const noexcept override { return {this, data_.cbegin()}; }
@@ -311,6 +313,12 @@ private:
 				result += n->Size();
 			}
 			return result;
+		}
+		bool Empty() const noexcept override {
+			for (const auto& n : data_) {
+				if (!n->Empty()) return false;
+			}
+			return true;
 		}
 		std::unique_ptr<NodeBase> Clone() const override { return std::unique_ptr<NodeBase>{new Node{*this}}; }
 
@@ -515,6 +523,7 @@ public:
 
 	RectangleTree() { root_.insert(std::unique_ptr<NodeBase>{new Leaf}); }
 	size_t size() const noexcept { return root_.Size(); }
+	bool empty() const noexcept { return root_.Empty(); }
 	std::pair<iterator, bool> insert(T&& v) {
 		const auto findRes = root_.find(Traits::GetPoint(v));
 		if (findRes.second) {

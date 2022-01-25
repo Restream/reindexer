@@ -625,6 +625,10 @@ func (binding *Builtin) Status(ctx context.Context) (status bindings.Status) {
 	return status
 }
 
+func (binding *Builtin) GetDSNs() []url.URL {
+	return nil
+}
+
 func newBufFreeBatcher() (bf *bufFreeBatcher) {
 	bf = &bufFreeBatcher{
 		bufs:   make([]*RawCBuffer, 0, 100),

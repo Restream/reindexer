@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "4.0.0"
+  version: "4.1.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1039,6 +1039,15 @@ paths:
           - json
           - msgpack
           - protobuf
+      - name: "sharding"
+        in: query
+        type: string
+        description: "if off then execute SQL query on current node"
+        required: false
+        enum:
+          - on
+          - off
+
       responses:
         200:
           description: "successful operation"
@@ -2504,6 +2513,12 @@ definitions:
           $ref: "#/definitions/FilterDef"
       join_query:
         $ref: "#/definitions/JoinedDef"
+      first_field:
+        description: "First field json path or index name for filter by two fields"
+        type: string
+      second_field:
+        description: "Second field json path or index name for filter by two fields"
+        type: string
 
   SortDef:
     description: "Specifies results sorting order"
@@ -3606,6 +3621,23 @@ definitions:
       wal_size:
         type: integer
         description: "Maximum WAL size for this namespace (maximum count of WAL records)"
+      max_preselect_size:
+        type: integer
+        default: 1000
+        minimum: 0
+        description: "Maximum preselect size for optimization of inner join by injection of filters. If max_preselect_size is 0, then only max_preselect_part will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied"
+      max_preselect_part:
+        type: number
+        format: "float"
+        default: 0.1
+        minimum: 0.0
+        maximum: 1.0
+        description: "Maximum preselect part of namespace's items for optimization of inner join by injection of filters. If max_preselect_part is 0, then only mmax_preselect_size will be used. If max_preselect_size is 0 and max_preselect_part is 0, optimization with preselect will not be applied. If max_preselect_size is 0 and max_preselect_part is 1.0, then the optimization will always be applied"
+      min_preselect_size:
+        type: integer
+        default: 1000
+        minimum: 0
+        description: "Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value"
 
   ReplicationConfig:
     type: object

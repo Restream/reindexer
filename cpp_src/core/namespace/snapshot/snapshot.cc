@@ -6,7 +6,7 @@
 
 namespace reindexer {
 
-static constexpr size_t kDefaultChunkSize = 100;
+static constexpr size_t kDefaultChunkSize = 500;
 
 Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion) : tm_(std::move(tm)), nsVersion_(nsVersion) {
 	walData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));

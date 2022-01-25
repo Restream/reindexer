@@ -60,7 +60,7 @@ struct p_string {
 	explicit p_string(const string *str) : v((uintptr_t(str) & ~tagMask) | (tagCxxstr << tagShift)) {}
 	explicit p_string(const key_string &str) : v((uintptr_t(str.get()) & ~tagMask) | (tagKeyString << tagShift)) {}
 	explicit p_string(const std::string_view *ptr) : v((uintptr_t(ptr) & ~tagMask) | (tagSlice << tagShift)) {}
-	p_string() : v(0) {}
+	p_string() noexcept = default;
 
 	operator std::string_view() const {
 		switch (type()) {
@@ -187,7 +187,7 @@ struct p_string {
 
 protected:
 	const void *ptr() const { return v ? reinterpret_cast<const void *>(v & ~tagMask) : ""; }
-	uint64_t v;
+	uint64_t v = 0;
 };
 
 }  // namespace reindexer

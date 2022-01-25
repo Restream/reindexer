@@ -69,6 +69,9 @@ public:
 		auto err = reindexer->WithTimeout(kBasicTimeout).WithCompletion(cmpl).Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
+	reindexer::Error DumpIndex(std::ostream &os, std::string_view ns, std::string_view index) {
+		return reindexer->DumpIndex(os, ns, index);
+	}
 	void PrintQueryResults(const std::string &ns, const QueryResultsType &res) {
 		if (!verbose) return;
 		{

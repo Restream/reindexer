@@ -7,8 +7,9 @@
 namespace reindexer {
 namespace client {
 
-SyncCoroReindexer::SyncCoroReindexer(const CoroReindexerConfig& config) : impl_(new SyncCoroReindexerImpl(config)), ctx_() {}
-SyncCoroReindexer::~SyncCoroReindexer() {}
+SyncCoroReindexer::SyncCoroReindexer(const CoroReindexerConfig& config, size_t connCount)
+	: impl_(new SyncCoroReindexerImpl(config, connCount)), ctx_() {}
+SyncCoroReindexer::~SyncCoroReindexer() = default;
 
 Error SyncCoroReindexer::Connect(const string& dsn, const client::ConnectOpts& opts) { return impl_->Connect(dsn, opts); }
 Error SyncCoroReindexer::Stop() { return impl_->Stop(); }
@@ -52,7 +53,7 @@ Error SyncCoroReindexer::EnumMeta(std::string_view nsName, vector<string>& keys)
 Error SyncCoroReindexer::Delete(const Query& q, SyncCoroQueryResults& result) { return impl_->Delete(q, result, ctx_); }
 Error SyncCoroReindexer::Select(std::string_view query, SyncCoroQueryResults& result) { return impl_->Select(query, result, ctx_); }
 Error SyncCoroReindexer::Select(const Query& q, SyncCoroQueryResults& result) { return impl_->Select(q, result, ctx_); }
-Error SyncCoroReindexer::Commit(std::string_view nsName) { return impl_->Commit(nsName); }
+Error SyncCoroReindexer::Commit(std::string_view nsName) { return impl_->Commit(nsName, ctx_); }
 Error SyncCoroReindexer::AddIndex(std::string_view nsName, const IndexDef& idx) { return impl_->AddIndex(nsName, idx, ctx_); }
 Error SyncCoroReindexer::UpdateIndex(std::string_view nsName, const IndexDef& idx) { return impl_->UpdateIndex(nsName, idx, ctx_); }
 Error SyncCoroReindexer::DropIndex(std::string_view nsName, const IndexDef& index) { return impl_->DropIndex(nsName, index, ctx_); }

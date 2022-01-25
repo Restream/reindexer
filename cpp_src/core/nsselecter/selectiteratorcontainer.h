@@ -1,6 +1,7 @@
 #pragma once
 #include <limits>
 #include "core/expressiontree.h"
+#include "core/nsselecter/fieldscomparator.h"
 #include "core/nsselecter/selectiterator.h"
 #include "core/selectfunc/ctx/ftctx.h"
 #include "core/selectfunc/selectfunc.h"
@@ -21,25 +22,17 @@ struct SelectIteratorsBracket : private Bracket {
 	using Bracket::Bracket;
 	using Bracket::Size;
 	using Bracket::Append;
-	void CopyPayloadFrom(const SelectIteratorsBracket &) const noexcept {}
+	void CopyPayloadFrom(const SelectIteratorsBracket &other) noexcept { haveJoins = other.haveJoins; }
 	bool haveJoins = false;
 };
 
-class SelectIteratorContainer : public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator> {
-	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator>;
+class SelectIteratorContainer
+	: public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysFalse> {
+	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysFalse>;
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr)
 		: pt_(pt), ctx_(ctx), maxIterations_(std::numeric_limits<int>::max()), wasZeroIterations_(false) {}
-
-	const SelectIterator &GetSelectIterator(size_t i) const {
-		assert(i < container_.size());
-		return container_[i].Value();
-	}
-	const JoinSelectIterator &GetJoinSelectIterator(size_t i) const {
-		assert(i < container_.size());
-		return container_[i].Value<JoinSelectIterator>();
-	}
 
 	void SortByCost(int expectedIterations);
 	bool HasIdsets() const;
@@ -47,9 +40,11 @@ public:
 	void CheckFirstQuery();
 	// Let iterators choose most effecive algorith
 	void SetExpectMaxIterations(int expectedIterations);
-	void PrepareIteratorsForSelectLoop(const QueryEntries &, size_t queriesBegin, size_t queriesEnd,
-									   const std::multimap<unsigned, EqualPosition> &equalPositions, unsigned sortId, bool isFt,
-									   const NamespaceImpl &, SelectFunction::Ptr selectFnc, FtCtx::Ptr &ftCtx, const RdxContext &);
+	void PrepareIteratorsForSelectLoop(const QueryEntries &queries, const std::multimap<unsigned, EqualPosition> &equalPositions,
+									   unsigned sortId, bool isFt, const NamespaceImpl &ns, SelectFunction::Ptr selectFnc,
+									   FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
+		prepareIteratorsForSelectLoop(queries, 0, queries.Size(), equalPositions, sortId, isFt, ns, selectFnc, ftCtx, rdxCtx);
+	}
 	template <bool reverse, bool hasComparators>
 	bool Process(PayloadValue &, bool *finish, IdType *rowId, IdType, bool match);
 
@@ -74,6 +69,9 @@ public:
 	std::string Dump() const;
 
 private:
+	void prepareIteratorsForSelectLoop(const QueryEntries &, size_t begin, size_t end,
+									   const std::multimap<unsigned, EqualPosition> &equalPositions, unsigned sortId, bool isFt,
+									   const NamespaceImpl &, SelectFunction::Ptr selectFnc, FtCtx::Ptr &ftCtx, const RdxContext &);
 	void sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
 	double fullCost(span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const;
 	double cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const;
@@ -100,7 +98,9 @@ private:
 	SelectKeyResults processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns, unsigned sortId,
 									   bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &,
 									   const RdxContext &);
-	void processJoinEntry(const QueryEntry &qe, OpType op);
+	template <bool left>
+	void processField(FieldsComparator &, std::string_view field, int idxNo, const NamespaceImpl &ns) const;
+	void processJoinEntry(const JoinQueryEntry &, OpType);
 	void processQueryEntryResults(SelectKeyResults &selectResults, OpType, const NamespaceImpl &ns, const QueryEntry &qe, bool isIndexFt,
 								  bool isIndexSparse, bool nonIndexField);
 	void processEqualPositions(const std::multimap<unsigned, EqualPosition> &equalPositions, size_t begin, size_t end,

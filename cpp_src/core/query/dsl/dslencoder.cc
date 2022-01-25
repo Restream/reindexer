@@ -65,8 +65,7 @@ void encodeEqualPositions(const Query& query, JsonBuilder& builder) {
 		auto epNodePosition = epNodePositions.Object(std::string_view());
 		auto epNodePositionArr = epNodePosition.Array("positions");
 		for (auto it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
-			assert(query.entries.IsValue(*it2));
-			epNodePositionArr.Put(nullptr, query.entries[*it2].index);
+			epNodePositionArr.Put(nullptr, query.entries.Get<QueryEntry>(*it2).index);
 		}
 	}
 }
@@ -141,24 +140,19 @@ void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder) {
 	}
 }
 
-void encodeFilter(const Query& parentQuery, const QueryEntry& qentry, JsonBuilder& builder) {
+void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {
 	if (qentry.distinct) return;
-	if (qentry.joinIndex == QueryEntry::kNoJoins) {
-		builder.Put("cond", get(cond_map, CondType(qentry.condition)));
-		builder.Put("field", qentry.index);
+	builder.Put("cond", get(cond_map, CondType(qentry.condition)));
+	builder.Put("field", qentry.index);
 
-		if (qentry.values.empty()) return;
-		if (qentry.values.size() > 1 || qentry.values[0].Type() == KeyValueTuple) {
-			auto arrNode = builder.Array("value");
-			for (const Variant& kv : qentry.values) {
-				arrNode.Put(nullptr, kv);
-			}
-		} else {
-			builder.Put("value", qentry.values[0]);
+	if (qentry.values.empty()) return;
+	if (qentry.values.size() > 1 || qentry.values[0].Type() == KeyValueTuple) {
+		auto arrNode = builder.Array("value");
+		for (const Variant& kv : qentry.values) {
+			arrNode.Put(nullptr, kv);
 		}
 	} else {
-		assert(qentry.joinIndex < int(parentQuery.joinQueries_.size()));
-		encodeSingleJoinQuery(parentQuery.joinQueries_[qentry.joinIndex], builder);
+		builder.Put("value", qentry.values[0]);
 	}
 }
 
@@ -275,16 +269,27 @@ std::string toDsl(const Query& query) {
 void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& parentQuery, JsonBuilder& builder) {
 	for (; it != to; ++it) {
 		auto node = builder.Object();
-		if (it->IsLeaf()) {
-			if (it->Value().distinct) continue;
-			if (it->Value().joinIndex == QueryEntry::kNoJoins) {
-				node.Put("op", dsl::get(dsl::op_map, it->operation));
+		node.Put("op", dsl::get(dsl::op_map, it->operation));
+		it->InvokeAppropriate<void>(
+			Skip<AlwaysFalse>{},
+			[&it, &node, &parentQuery](const Bracket&) {
+				auto arrNode = node.Array("filters");
+				toDsl(it.cbegin(), it.cend(), parentQuery, arrNode);
+			},
+			[&node](const QueryEntry& qe) {
+				if (qe.distinct) return;
+				dsl::encodeFilter(qe, node);
+			},
+			[&node, &parentQuery](const JoinQueryEntry& jqe) {
+				assert(jqe.joinIndex < parentQuery.joinQueries_.size());
+				dsl::encodeSingleJoinQuery(parentQuery.joinQueries_[jqe.joinIndex], node);
+			},
+			[&node](const BetweenFieldsQueryEntry& qe) {
+				node.Put("cond", dsl::get(dsl::cond_map, CondType(qe.Condition())));
+				node.Put("first_field", qe.firstIndex);
+				node.Put("second_field", qe.secondIndex);
 			}
-			dsl::encodeFilter(parentQuery, it->Value(), node);
-		} else {
-			auto arrNode = node.Array("filters");
-			toDsl(it.cbegin(), it.cend(), parentQuery, arrNode);
-		}
+		);
 	}
 }
 

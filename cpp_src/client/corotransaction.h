@@ -32,6 +32,7 @@ public:
 	Error Delete(Item&& item, lsn_t lsn = lsn_t()) { return addTxItem(std::move(item), ModeDelete, lsn); }
 	Error Modify(Item&& item, ItemModifyMode mode, lsn_t lsn = lsn_t()) { return addTxItem(std::move(item), mode, lsn); }
 	Error PutMeta(std::string_view key, std::string_view value, lsn_t lsn = lsn_t());
+	Error SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn);
 
 	Error Modify(Query&& query, lsn_t lsn = lsn_t());
 	bool IsFree() const noexcept { return (rpcClient_ == nullptr) || !status_.ok(); }

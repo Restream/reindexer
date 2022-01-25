@@ -325,7 +325,7 @@ uint64_t PayloadIface<T>::GetHash() const {
 
 	for (int field = 0; field < t_.NumFields(); field++) {
 		ret <<= 1;
-		auto &f = t_.Field(field);
+		const auto &f = t_.Field(field);
 		if (f.IsArray()) {
 			auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
 			ret ^= arr->len;
@@ -333,8 +333,9 @@ uint64_t PayloadIface<T>::GetHash() const {
 			for (int i = 0; i < arr->len; i++, p += f.ElemSizeof()) {
 				ret ^= PayloadFieldValue(f, p).Hash();
 			}
-		} else
+		} else {
 			ret ^= Field(field).Hash();
+		}
 	}
 	return ret;
 }
@@ -395,10 +396,12 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &fi
 				cmpRes = krefs1[i].RelaxCompare(krefs2[i], opts ? *opts : CollateOpts());
 				if (cmpRes) break;
 			}
-			if (krefs1.size() < krefs2.size()) {
-				cmpRes = -1;
-			} else if (krefs1.size() > krefs2.size()) {
-				cmpRes = 1;
+			if (cmpRes == 0) {
+				if (krefs1.size() < krefs2.size()) {
+					cmpRes = -1;
+				} else if (krefs1.size() > krefs2.size()) {
+					cmpRes = 1;
+				}
 			}
 		}
 

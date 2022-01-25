@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-Variant jsonValue2Variant(gason::JsonValue &v, KeyValueType t, std::string_view fieldName) {
+Variant jsonValue2Variant(const gason::JsonValue &v, KeyValueType t, std::string_view fieldName) {
 	switch (v.getTag()) {
 		case gason::JSON_NUMBER:
 			switch (t) {

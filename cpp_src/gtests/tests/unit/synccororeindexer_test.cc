@@ -19,7 +19,7 @@ TEST(SyncCoroRx, BaseTest) {
 	// server creation and configuration
 	ServerControl server;
 	const std::string_view nsName = "ns";
-	server.InitServer(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db", true);
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	// client creation
 	reindexer::client::SyncCoroReindexer client;
 	Error err = client.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db");
@@ -79,7 +79,7 @@ TEST(SyncCoroRx, StopServerOnQuery) {
 	// server creation and configuration
 	ServerControl server;
 	const std::string_view nsName = "ns";
-	server.InitServer(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db", true);
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	// client creation
 	reindexer::client::CoroReindexerConfig clientConf;
 	clientConf.FetchAmount = kFetchAmount;
@@ -149,7 +149,7 @@ TEST(SyncCoroRx, TestSyncCoroRx) {
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/TestSyncCoroRx");
 	reindexer::fs::RmDirAll(kTestDbPath);
 	ServerControl server;
-	server.InitServer(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db", true);
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	reindexer::client::SyncCoroReindexer client;
 	Error err = client.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db");
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -190,7 +190,7 @@ TEST(SyncCoroRx, DISABLED_TestSyncCoroRxNThread) {
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/TestSyncCoroRxNThread");
 	reindexer::fs::RmDirAll(kTestDbPath);
 	ServerControl server;
-	server.InitServer(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db", true);
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	reindexer::client::SyncCoroReindexer client;
 	client.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db");
 	client.OpenNamespace("ns_test");
@@ -235,7 +235,7 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 	reindexer::fs::RmDirAll(kTestDbPath);
 
 	ServerControl server;
-	server.InitServer(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db", true);
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	std::chrono::system_clock::time_point t1 = std::chrono::system_clock::now();
 
 	reindexer::net::ev::dynamic_loop loop;
@@ -279,54 +279,84 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 
 TEST(SyncCoroRx, RxClientNThread) {
 	reindexer::fs::RmDirAll("/tmp/RxClientNThread");
+	const std::string kDbName = "db";
+	const std::string kNsName = "ns_test";
 	ServerControl server;
-	server.InitServer(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, "/tmp/RxClientNThread", "db", true);
-	auto client = server.Get()->api.reindexer;
-	Error err = client->OpenNamespace("ns_test");
+	server.InitServer(
+		ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, "/tmp/RxClientNThread", kDbName));
+	constexpr size_t kConns = 3;
+	constexpr size_t kThreads = 10;
+	client::CoroReindexerConfig cfg;
+	cfg.AppName = "MultiConnRxClient";
+	client::SyncCoroReindexer client(cfg, kConns);
+	auto err = client.Connect(fmt::sprintf("cproto://127.0.0.1:%d/%s", kSyncCoroRxTestDefaultRpcPort, kDbName));
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = client.OpenNamespace(kNsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::IndexDef indDef("id", "hash", "int", IndexOpts().PK());
-	err = client->AddIndex("ns_test", indDef);
+	err = client.AddIndex(kNsName, indDef);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::IndexDef indDef2("index2", "hash", "int", IndexOpts());
-	err = client->AddIndex("ns_test", indDef2);
+	err = client.AddIndex(kNsName, indDef2);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	std::atomic<int> counter(kSyncCoroRxTestMaxIndex);
-	auto insertThreadFun = [&client, &counter]() {
+	auto insertThreadFun = [&client, &counter, &kNsName]() {
 		while (true) {
-			int c = counter.fetch_add(1);
+			const int c = counter.fetch_add(1);
 			if (c < kSyncCoroRxTestMaxIndex * 2) {
-				reindexer::client::Item item = client->NewItem("ns_test");
-				std::string json = R"#({"id":)#" + std::to_string(c) + R"#(, "val":)#" + "\"aaaaaaaaaaaaaaa \"" + R"#(})#";
-				reindexer::Error err = item.FromJSON(json);
+				reindexer::client::Item item = client.NewItem(kNsName);
+				const std::string json = R"#({"id":)#" + std::to_string(c) + R"#(, "val":)#" + "\"aaaaaaaaaaaaaaa \"" + R"#(})#";
+				reindexer::Error err = item.Unsafe(true).FromJSON(json);
 				ASSERT_TRUE(err.ok()) << err.what();
-				client->Upsert("ns_test", item);
+				client.Upsert(kNsName, item);
+				std::this_thread::yield();
 			} else {
 				break;
 			}
 		}
 	};
 
-	std::chrono::system_clock::time_point t1 = std::chrono::system_clock::now();
-	std::vector<std::thread> pullThread;
-	for (int i = 0; i < 10; i++) {
-		pullThread.emplace_back(std::thread(insertThreadFun));
+	std::vector<std::thread> threads;
+	threads.reserve(kThreads);
+	for (size_t i = 0; i < kThreads; i++) {
+		threads.emplace_back(std::thread(insertThreadFun));
 	}
-	for (int i = 0; i < 10; i++) {
-		pullThread[i].join();
+	for (auto& th : threads) {
+		th.join();
 	}
-	std::chrono::system_clock::time_point t2 = std::chrono::system_clock::now();
-	int dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
-	(void)dt_ms;
+
+	client::SyncCoroQueryResults qr;
+	err = client.Select(Query("#clientsstats"), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	reindexer::WrSerializer wrser;
+	size_t resultConnsCount = 0;
+	for (auto it = qr.begin(); it != qr.end(); ++it) {
+		wrser.Reset();
+		err = it.GetJSON(wrser, false);
+		ASSERT_TRUE(err.ok()) << err.what();
+		gason::JsonParser parser;
+		gason::JsonNode clientsStats = parser.Parse(wrser.Slice());
+		std::string appName = clientsStats["app_name"].As<std::string>();
+		if (appName != cfg.AppName) {
+			continue;
+		}
+		++resultConnsCount;
+		int64_t sentBytes = clientsStats["sent_bytes"].As<int64_t>();
+		EXPECT_GT(sentBytes, 0);
+		int64_t recvBytes = clientsStats["recv_bytes"].As<int64_t>();
+		EXPECT_GT(recvBytes, 0);
+	}
+	ASSERT_EQ(resultConnsCount, kConns);
 }
 
 TEST(SyncCoroRx, StopWhileWriting) {
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/StopWhileWriting");
 	reindexer::fs::RmDirAll(kTestDbPath);
 	ServerControl server;
-	server.InitServer(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db", true);
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	reindexer::client::SyncCoroReindexer client;
 	const std::string kNsName = "ns_test";
 	constexpr size_t kWritingThreadsCount = 5;

@@ -8,7 +8,7 @@ class token;
 class tokenizer;
 class FunctionExecutor;
 class TagsMatcher;
-struct NsContext;
+class NsContext;
 
 class ExpressionEvaluator {
 public:

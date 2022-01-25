@@ -230,7 +230,10 @@ func StartupServerFromBinary(t *testing.T, serverConfig *config.ServerConfig, cp
 	rx, err := AwaitServerStartup(t, cprotoDSN)
 	terminateF := func() {
 		cmd.Process.Signal(os.Interrupt)
-		cmd.Process.Wait()
+		st, err := cmd.Process.Wait()
+		require.NoError(t, err)
+		require.True(t, st.Exited())
+		require.True(t, st.Success())
 	}
 	if err != nil {
 		terminateF()
@@ -318,31 +321,41 @@ type LegacyNamespaceMemStat struct {
 }
 
 func MakeLegacyNode(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, isLeader bool, masterDSN string) (*reindexer.Reindexer, func()) {
-	os.RemoveAll(serverConfig.Storage.Path)
+	err := os.RemoveAll(serverConfig.Storage.Path)
+	require.NoError(t, err)
 	dbPath := serverConfig.Storage.Path + "/xxx/"
-	{
-		err := os.MkdirAll(dbPath, os.ModePerm)
-		require.NoError(t, err)
-		f, err := os.OpenFile(dbPath+".reindexer.storage", os.O_RDWR|os.O_CREATE, 0644)
-		require.NoError(t, err)
-		_, err = f.Write(([]byte)("leveldb"))
-		require.NoError(t, err)
-		defer f.Close()
+	writeConfigs := func() {
+		{
+			err := os.MkdirAll(dbPath, os.ModePerm)
+			require.NoError(t, err)
+			f, err := os.OpenFile(dbPath+".reindexer.storage", os.O_RDWR|os.O_CREATE, 0644)
+			require.NoError(t, err)
+			defer f.Close()
+			_, err = f.Write(([]byte)("leveldb"))
+			require.NoError(t, err)
+			err = f.Sync()
+			require.NoError(t, err)
+		}
+		{
+			f, err := os.OpenFile(dbPath+"replication.conf", os.O_RDWR|os.O_CREATE, 0644)
+			require.NoError(t, err)
+			defer f.Close()
+			role := "master"
+			if !isLeader {
+				role = "slave"
+			}
+			config := LegacyDBReplicationConfig{Role: role, MasterDSN: masterDSN, ClusterID: 1, ForceSyncOnLogicError: true, ForceSyncOnWrongDataHash: true}
+			yaml, err := yaml.Marshal(config)
+			require.NoError(t, err)
+			_, err = f.Write(yaml)
+			require.NoError(t, err)
+			err = f.Sync()
+			require.NoError(t, err)
+		}
 	}
-	f, err := os.OpenFile(dbPath+"replication.conf", os.O_RDWR|os.O_CREATE, 0644)
-	require.NoError(t, err)
-	defer f.Close()
-	rx, terminateF := StartupServerFromBinary(t, serverConfig, cprotoDSN)
-	role := "master"
-	if !isLeader {
-		role = "slave"
-	}
-	config := LegacyDBReplicationConfig{Role: role, MasterDSN: masterDSN, ClusterID: 1, ForceSyncOnLogicError: true, ForceSyncOnWrongDataHash: true}
-	yaml, err := yaml.Marshal(config)
-	require.NoError(t, err)
-	_, err = f.Write(yaml)
-	require.NoError(t, err)
-	return rx, terminateF
+
+	writeConfigs()
+	return StartupServerFromBinary(t, serverConfig, cprotoDSN)
 }
 
 func TestStorageCompatibility(t *testing.T) {
@@ -350,12 +363,12 @@ func TestStorageCompatibility(t *testing.T) {
 		t.SkipNow()
 	}
 
+	const baseStoragePath = "/tmp/reindex_test_storage_compatibility/"
 	const dataCount = 100
 	const followerServerId = 2
 	cfgFollower := config.DefaultServerConfig()
 	cfgFollower.Net.HTTPAddr = "0:30089"
 	cfgFollower.Net.RPCAddr = "0:30535"
-	cfgFollower.Storage.Path = "/tmp/rx_test/storage_compatibility_test/follower"
 	cfgFollower.Logger.LogLevel = "trace"
 	const followerCproto = "cproto://127.0.0.1:30535/xxx"
 
@@ -363,11 +376,12 @@ func TestStorageCompatibility(t *testing.T) {
 	cfgLeader := config.DefaultServerConfig()
 	cfgLeader.Net.HTTPAddr = "0:30088"
 	cfgLeader.Net.RPCAddr = "0:30534"
-	cfgLeader.Storage.Path = "/tmp/rx_test/storage_compatibility_test/leader"
 	cfgLeader.Logger.LogLevel = "trace"
 	const leaderCproto = "cproto://127.0.0.1:30534/xxx"
 
 	t.Run("backward compatibility", func(t *testing.T) {
+		cfgFollower.Storage.Path = baseStoragePath + "backward/follower"
+		cfgLeader.Storage.Path = baseStoragePath + "backward/leader"
 		fillDataOnCurrentServer := func() []interface{} {
 			rxFollower := MakeFollower(t, cfgFollower, followerServerId)
 			require.NoError(t, rxFollower.Status().Err)
@@ -376,9 +390,9 @@ func TestStorageCompatibility(t *testing.T) {
 			require.NoError(t, rxLeader.Status().Err)
 			defer rxLeader.Close()
 
-			err := rxLeader.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
+			err := rxFollower.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
 			require.NoError(t, err)
-			err = rxFollower.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
+			err = rxLeader.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
 			require.NoError(t, err)
 			FillData(t, rxLeader, dataCount)
 
@@ -388,8 +402,8 @@ func TestStorageCompatibility(t *testing.T) {
 		readDataFromLegacyServer := func() []interface{} {
 			rxLeader, terminateLeader := StartupServerFromBinary(t, cfgLeader, leaderCproto)
 			defer terminateLeader()
-			rxFollower, terminaFollower := StartupServerFromBinary(t, cfgFollower, followerCproto)
-			defer terminaFollower()
+			rxFollower, terminateFollower := StartupServerFromBinary(t, cfgFollower, followerCproto)
+			defer terminateFollower()
 			err := rxLeader.RegisterNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
 			require.NoError(t, err)
 			err = rxFollower.RegisterNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
@@ -405,15 +419,17 @@ func TestStorageCompatibility(t *testing.T) {
 	})
 
 	t.Run("forward compatibility", func(t *testing.T) {
+		cfgFollower.Storage.Path = baseStoragePath + "forward/follower"
+		cfgLeader.Storage.Path = baseStoragePath + "forward/leader"
 		fillDataOnLegacyServer := func() []interface{} {
 			rxLeader, terminateLeader := MakeLegacyLeader(t, leaderCproto, cfgLeader, leaderServerId)
 			defer terminateLeader()
 			rxFollower, terminateFollower := MakeLegacyFollower(t, followerCproto, cfgFollower, followerServerId, leaderCproto)
 			defer terminateFollower()
 
-			err := rxLeader.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
+			err := rxFollower.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
 			require.NoError(t, err)
-			err = rxFollower.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
+			err = rxLeader.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), TestItemStorage{})
 			require.NoError(t, err)
 			FillData(t, rxLeader, dataCount)
 

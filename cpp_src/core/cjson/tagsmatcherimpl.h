@@ -19,7 +19,7 @@ public:
 	TagsMatcherImpl() : version_(0), stateToken_(rand()) {}
 	TagsMatcherImpl(PayloadType payloadType, int32_t stateToken = rand())
 		: payloadType_(payloadType), version_(0), stateToken_(stateToken) {}
-	~TagsMatcherImpl() {}
+	~TagsMatcherImpl() = default;
 
 	TagsPath path2tag(std::string_view jsonPath) const {
 		bool updated = false;
@@ -213,7 +213,6 @@ public:
 
 		return true;
 	}
-	bool is_same(const TagsMatcherImpl &tm) const { return tm.names2tags_ == names2tags_ && tm.tags2names_ == tags2names_; }
 
 	size_t size() const { return tags2names_.size(); }
 	int version() const { return version_; }

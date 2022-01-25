@@ -46,13 +46,14 @@ public:
 	Error Modify(Query &&query, lsn_t lsn = lsn_t());
 	void Nop(lsn_t lsn);
 	Error PutMeta(std::string_view key, std::string_view value, lsn_t lsn = lsn_t());
+	Error SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn);
 	bool IsFree() const noexcept { return impl_ == nullptr; }
 	Item NewItem();
 	Item GetItem(TransactionStep &&st);
 	Error Status() const noexcept { return status_; }
 	lsn_t GetLSN() const noexcept;
 
-	const std::string &GetName();
+	const std::string &GetNsName();
 
 	friend class ClusterProxy;
 

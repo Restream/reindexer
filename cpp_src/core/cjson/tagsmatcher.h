@@ -55,7 +55,6 @@ public:
 	}
 	void clearUpdated() { updated_ = false; }
 	void setUpdated() { updated_ = true; }
-	bool is_same(const TagsMatcher& tm) { return impl_->is_same(*tm.impl_.get()); }
 
 	bool try_merge(const TagsMatcher& tm) {
 		auto tmp = impl_;
@@ -67,7 +66,7 @@ public:
 		return true;
 	}
 
-	void UpdatePayloadType(PayloadType payloadType, bool incVersion = true) {
+	void UpdatePayloadType(PayloadType payloadType, bool incVersion) {
 		impl_.clone()->updatePayloadType(payloadType, updated_, incVersion);
 	}
 

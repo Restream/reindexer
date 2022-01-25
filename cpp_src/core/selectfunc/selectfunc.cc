@@ -63,7 +63,7 @@ void SelectFunction::createFunc(SelectFuncStruct &data) {
 	}
 
 	// if index is composite then create function for inner use only
-	if (isComposite(nm_.getIndexType(indexNo))) {
+	if (IsComposite(nm_.getIndexType(indexNo))) {
 		std::vector<string> subIndexes;
 
 		int fieldNo = 0;
@@ -98,7 +98,7 @@ BaseFunctionCtx::Ptr SelectFunction::createFuncForProc(int indexNo) {
 	data.indexNo = indexNo;
 	int lastCjsonIdx = currCjsonFieldIdx_;
 	createFunc(data);
-	if (isComposite(nm_.getIndexType(indexNo))) {
+	if (IsComposite(nm_.getIndexType(indexNo))) {
 		auto field = nm_.getIndexFields(indexNo)[0];
 		if (field == IndexValueType::SetByJsonPath) field = lastCjsonIdx;
 		auto it = functions_.find(field);
@@ -113,7 +113,7 @@ BaseFunctionCtx::Ptr SelectFunction::createFuncForProc(int indexNo) {
 
 BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
 	// we use this hack because ft always needs ctx to generate proc in response
-	if (functions_.empty() && isFullText(nm_.getIndexType(indexNo))) {
+	if (functions_.empty() && IsFullText(nm_.getIndexType(indexNo))) {
 		return createFuncForProc(indexNo);
 	} else if (functions_.empty()) {
 		return nullptr;
@@ -122,7 +122,7 @@ BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
 	BaseFunctionCtx::Ptr ctx;
 	IndexType indexType = nm_.getIndexType(indexNo);
 
-	if (isComposite(indexType)) {
+	if (IsComposite(indexType)) {
 		int fieldNo = 0;
 		int cjsonFieldIdx = nm_.getIndexesCount();
 		for (auto field : nm_.getIndexFields(indexNo)) {
@@ -130,7 +130,7 @@ BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
 			auto it = functions_.find(field);
 			if (it != functions_.end()) {
 				it->second.fieldNo = fieldNo;
-				if (isFullText(indexType) && (it->second.type == SelectFuncStruct::kSelectFuncNone)) {
+				if (IsFullText(indexType) && (it->second.type == SelectFuncStruct::kSelectFuncNone)) {
 					it->second.type = SelectFuncStruct::kSelectFuncProc;
 				}
 				ctx = createCtx(it->second, ctx, indexType);
@@ -144,7 +144,7 @@ BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
 			ctx = createCtx(it->second, ctx, nm_.getIndexType(indexNo));
 		}
 	}
-	if (!ctx && isFullText(nm_.getIndexType(indexNo))) {
+	if (!ctx && IsFullText(nm_.getIndexType(indexNo))) {
 		return createFuncForProc(indexNo);
 	}
 	return ctx;
@@ -187,7 +187,7 @@ BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct &data, BaseFunct
 		case SelectFuncStruct::kSelectFuncSnippet:
 		case SelectFuncStruct::kSelectFuncHighlight:
 		case SelectFuncStruct::kSelectFuncProc:
-			if (isFullText(index_type)) {
+			if (IsFullText(index_type)) {
 				if (!ctx) {
 					data.ctx = make_shared<FtCtx>();
 				} else {
