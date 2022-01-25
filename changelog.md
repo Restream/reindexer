@@ -1,4 +1,4 @@
-# Version 3.3.2 (25.01.2021)
+# Version 3.3.2 (25.01.2022)
 ## Core
 - [fix] Fix index cache invalidation after items modification
 - [fix] Fix heap-use-after-free in 'delete *' query
