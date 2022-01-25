@@ -1,4 +1,4 @@
-# Version 4.1.0 *beta* (25.01.2021)
+# Version 4.1.0 *beta* (25.01.2022)
 ## Core
 - [fea] Optimize tags updates replication
 - [fea] Add multiple connections to cluster proxy to improve parallel proxying
