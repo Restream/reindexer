@@ -5,56 +5,60 @@
 namespace reindexer {
 namespace client {
 
+static const auto kBadTxStatus = Error(errBadTransaction, "Transaction is free");
+
 Error SyncCoroTransaction::Insert(Item&& item, lsn_t lsn) { return Modify(std::move(item), ModeInsert, lsn); }
 Error SyncCoroTransaction::Update(Item&& item, lsn_t lsn) { return Modify(std::move(item), ModeUpdate, lsn); }
 Error SyncCoroTransaction::Upsert(Item&& item, lsn_t lsn) { return Modify(std::move(item), ModeUpsert, lsn); }
 Error SyncCoroTransaction::Delete(Item&& item, lsn_t lsn) { return Modify(std::move(item), ModeDelete, lsn); }
 Error SyncCoroTransaction::Modify(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 	if (!IsFree()) {
-		return rx_->addTxItem(*this, std::move(item), mode, lsn);
+		auto err = rx_->addTxItem(*this, std::move(item), mode, lsn);
+		if (!err.ok()) setStatus(std::move(err));
+		return Status();
 	}
-	if (!status_.ok()) {
-		return status_;
-	}
-	return Error(errBadTransaction, "Transaction is free");
+	return Status().ok() ? kBadTxStatus : Status();
 }
 Error SyncCoroTransaction::PutMeta(std::string_view key, std::string_view value, lsn_t lsn) {
 	if (!IsFree()) {
-		return rx_->putTxMeta(*this, key, value, lsn);
+		auto err = rx_->putTxMeta(*this, key, value, lsn);
+		if (!err.ok()) setStatus(std::move(err));
+		return Status();
 	}
-	if (!status_.ok()) {
-		return status_;
-	}
-	return Error(errBadTransaction, "Transaction is free");
+	return Status().ok() ? kBadTxStatus : Status();
 }
 
 Error SyncCoroTransaction::SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) {
 	if (!IsFree()) {
-		return rx_->setTxTm(*this, std::move(tm), lsn);
+		auto err = rx_->setTxTm(*this, std::move(tm), lsn);
+		if (!err.ok()) setStatus(std::move(err));
+		return Status();
 	}
-	if (!status_.ok()) {
-		return status_;
-	}
-	return Error(errBadTransaction, "Transaction is free");
+	return Status().ok() ? kBadTxStatus : Status();
 }
 
 Error SyncCoroTransaction::Modify(Query&& query, lsn_t lsn) {
 	if (!IsFree()) {
-		return rx_->modifyTx(*this, std::move(query), lsn);
+		auto err = rx_->modifyTx(*this, std::move(query), lsn);
+		if (!err.ok()) setStatus(std::move(err));
+		return Status();
 	}
-	if (!status_.ok()) {
-		return status_;
-	}
-	return Error(errBadTransaction, "Transaction is free");
+	return Status().ok() ? kBadTxStatus : Status();
 }
 Item SyncCoroTransaction::NewItem() {
+	if (!Status().ok()) {
+		return Item(Status());
+	}
 	if (!IsFree()) {
 		return rx_->newItemTx(tr_);
 	}
-	if (!status_.ok()) {
-		return Item(status_);
+	return Item(kBadTxStatus);
+}
+
+SyncCoroTransaction::~SyncCoroTransaction() {
+	if (!IsFree()) {
+		rx_->RollBackTransaction(*this, InternalRdxContext());
 	}
-	return Item(Error(errBadTransaction, "Transaction is free"));
 }
 
 PayloadType SyncCoroTransaction::GetPayloadType() const { return tr_.GetPayloadType(); }

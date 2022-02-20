@@ -66,7 +66,7 @@ class JoinedSelector {
 
 public:
 	JoinedSelector(JoinType joinType, std::shared_ptr<NamespaceImpl> leftNs, std::shared_ptr<NamespaceImpl> rightNs, JoinCacheRes &&joinRes,
-				   Query &&itemQuery, QueryResults &result, const JoinedQuery &joinQuery, JoinPreResult::Ptr preResult,
+				   Query &&itemQuery, LocalQueryResults &result, const JoinedQuery &joinQuery, JoinPreResult::Ptr preResult,
 				   size_t joinedFieldIdx, SelectFunctionsHolder &selectFunctions, int joinedSelectorsCount, const RdxContext &rdxCtx)
 		: joinType_(joinType),
 		  called_(0),
@@ -107,8 +107,8 @@ private:
 	void readValuesFromRightNs(VariantArray &values, const Index &leftIndex, int rightIdxNo, const std::string &rightIndex) const;
 	template <bool byJsonPath>
 	void readValuesFromPreResult(VariantArray &values, const Index &leftIndex, int rightIdxNo, const std::string &rightIndex) const;
-	void selectFromRightNs(QueryResults &joinItemR, const Query &, bool &found, bool &matchedAtLeastOnce);
-	void selectFromPreResultValues(QueryResults &joinItemR, const Query &, bool &found, bool &matchedAtLeastOnce) const;
+	void selectFromRightNs(LocalQueryResults &joinItemR, const Query &, bool &found, bool &matchedAtLeastOnce);
+	void selectFromPreResultValues(LocalQueryResults &joinItemR, const Query &, bool &found, bool &matchedAtLeastOnce) const;
 
 	JoinType joinType_;
 	int called_, matched_;
@@ -116,7 +116,7 @@ private:
 	std::shared_ptr<NamespaceImpl> rightNs_;
 	JoinCacheRes joinRes_;
 	Query itemQuery_;
-	QueryResults &result_;
+	LocalQueryResults &result_;
 	const JoinedQuery &joinQuery_;
 	JoinPreResult::Ptr preResult_;
 	size_t joinedFieldIdx_;

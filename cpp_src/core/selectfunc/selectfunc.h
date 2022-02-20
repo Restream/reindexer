@@ -53,7 +53,7 @@ public:
 	SelectFunction::Ptr AddNamespace(const Query& q, const NamespaceImpl& nm, bool force);
 	/// Processing of results of an executed query.
 	/// @param res - results of query execution.
-	void Process(QueryResults& res);
+	void Process(LocalQueryResults& res);
 
 private:
 	/// Indicates if object is empty and was created wuth flag force = true.

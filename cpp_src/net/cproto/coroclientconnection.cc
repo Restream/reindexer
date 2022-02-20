@@ -69,22 +69,32 @@ void CoroClientConnection::Start(ev::dynamic_loop &loop, ConnectData connectData
 
 void CoroClientConnection::Stop() {
 	if (isRunning_) {
+		errSyncCh_.pop();
+		errSyncCh_.reopen();
+
 		terminate_ = true;
 		wrCh_.close();
 		conn_.close_conn(k_sock_closed_err);
+		const Error err(errNetwork, "Connection closed");
+		// Cancel all the system requests
+		for (auto &c : rpcCalls_) {
+			if (c.used && c.rspCh.opened() && !c.rspCh.full() && c.system) {
+				c.rspCh.push(err);
+			}
+		}
 		wg_.wait();
 		readWg_.wait();
 		terminate_ = false;
 		isRunning_ = false;
-		handleFatalError(Error(errNetwork, "Connection closed"));
+		handleFatalErrorImpl(err);
 	}
 }
 
 Error CoroClientConnection::Status(bool forceCheck, milliseconds netTimeout, milliseconds execTimeout, const IRdxCancelContext *ctx) {
-	if (loggedIn_ && !forceCheck) {
+	if (!RequiresStatusCheck() && !forceCheck) {
 		return errOK;
 	}
-	return call({kCmdPing, netTimeout, execTimeout, lsn_t(), -1, IndexValueType::NotSet, ctx, false}, {}).Status();
+	return call({kCmdPing, netTimeout, execTimeout, lsn_t(), -1, ShardingKeyType::NotSetShard, ctx, false}, {}).Status();
 }
 
 CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &args) {
@@ -117,12 +127,14 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 	call.used = true;
 	call.deadline = deadline;
 	call.cancelCtx = opts.cancelCtx;
+	call.system = (opts.cmd == kCmdPing || opts.cmd == kCmdLogin);
 	CoroRPCAnswer ans;
 	try {
 		wrCh_.push(packRPC(
 			opts.cmd, seq, args,
 			Args{Arg{int64_t(opts.execTimeout.count())}, Arg{int64_t(opts.lsn)}, Arg{int64_t(opts.serverId)},
-				 Arg{opts.shardingParallelExecution ? int64_t{opts.shardId} | kShardingParallelExecutionBit : int64_t{opts.shardId}}}));
+				 Arg{opts.shardingParallelExecution ? int64_t{opts.shardId} | kShardingParallelExecutionBit : int64_t{opts.shardId}}},
+			opts.requiredLoginTs));
 		auto ansp = call.rspCh.pop();
 		if (ansp.second) {
 			ans = std::move(ansp.first);
@@ -138,7 +150,8 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 	return ans;
 }
 
-CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs) {
+CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs,
+																std::optional<TimePointT> requiredLoginTs) {
 	CProtoHeader hdr;
 	hdr.len = 0;
 	hdr.magic = kCprotoMagic;
@@ -163,7 +176,7 @@ CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uin
 	assert(ser.Len() < size_t(std::numeric_limits<int32_t>::max()));
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 
-	return {seq, ser.DetachChunk()};
+	return {seq, requiredLoginTs, ser.DetachChunk()};
 }
 
 void CoroClientConnection::appendChunck(std::vector<char> &buf, chunk &&ch) {
@@ -177,7 +190,6 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 	assert(conn_.state() != manual_connection::conn_state::connecting);
 	if (conn_.state() == manual_connection::conn_state::init) {
 		readWg_.wait();
-		lastError_ = errOK;
 		string port = connectData_.uri.port().length() ? connectData_.uri.port() : string("6534");
 		int ret = conn_.async_connect(connectData_.uri.hostname() + ":" + port);
 		if (ret < 0) {
@@ -200,7 +212,7 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 					 Arg{p_string(&connectData_.opts.appName)}};
 		constexpr uint32_t seq = 0;	 // login's seq num is always 0
 		assert(buf.size() == 0);
-		appendChunck(buf, packRPC(kCmdLogin, seq, args, Args{Arg{int64_t(0)}, Arg{int64_t(lsn_t())}, Arg{int64_t(-1)}}).data);
+		appendChunck(buf, packRPC(kCmdLogin, seq, args, Args{Arg{int64_t(0)}, Arg{int64_t(lsn_t())}, Arg{int64_t(-1)}}, std::nullopt).data);
 		int err = 0;
 		auto written = conn_.async_write(buf, err);
 		auto toWrite = buf.size();
@@ -208,7 +220,7 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 		if (err) {
 			// TODO: handle reconnects
 			return err > 0 ? Error(errNetwork, "Connection error: %s", strerror(err))
-						   : (lastError_.ok() ? Error(errNetwork, "Unable to write login cmd: connection closed") : lastError_);
+						   : Error(errNetwork, "Unable to write login cmd: connection closed");
 		}
 		assert(written == toWrite);
 		(void)written;
@@ -219,18 +231,18 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 	return errOK;
 }
 
-void CoroClientConnection::closeConn(Error err) noexcept {
-	errSyncCh_.reopen();
-	lastError_ = err;
-	conn_.close_conn(k_sock_closed_err);
-	handleFatalError(std::move(err));
-}
-
-void CoroClientConnection::handleFatalError(Error err) noexcept {
-	if (!errSyncCh_.opened()) {
+void CoroClientConnection::handleFatalErrorFromReader(const Error &err) noexcept {
+	if (errSyncCh_.opened() || terminate_) {
+		return;
+	} else {
 		errSyncCh_.reopen();
 	}
-	loggedIn_ = false;
+	conn_.close_conn(k_sock_closed_err);
+	handleFatalErrorImpl(err);
+}
+
+void CoroClientConnection::handleFatalErrorImpl(const Error &err) noexcept {
+	setLoggedIn(false);
 	for (auto &c : rpcCalls_) {
 		if (c.used && c.rspCh.opened() && !c.rspCh.full()) {
 			c.rspCh.push(err);
@@ -240,6 +252,20 @@ void CoroClientConnection::handleFatalError(Error err) noexcept {
 		connectionStateHandler_(err);
 	}
 	errSyncCh_.close();
+}
+
+void CoroClientConnection::handleFatalErrorFromWriter(const Error &err) noexcept {
+	if (!terminate_) {
+		if (errSyncCh_.opened()) {
+			errSyncCh_.pop();
+			return;
+		} else {
+			errSyncCh_.reopen();
+		}
+		conn_.close_conn(k_sock_closed_err);
+		readWg_.wait();
+		handleFatalErrorImpl(err);
+	}
 }
 
 chunk CoroClientConnection::getChunk() noexcept {
@@ -271,24 +297,32 @@ void CoroClientConnection::writerRoutine() {
 				// channels is closed
 				return;
 			}
+			if (mch.first.requiredLoginTs.has_value() && mch.first.requiredLoginTs != LoginTs()) {
+				recycleChunk(std::move(mch.first.data));
+				auto &c = rpcCalls_[mch.first.seq % rpcCalls_.size()];
+				if (c.used && c.rspCh.opened() && !c.rspCh.full()) {
+					c.rspCh.push(
+						Error(errNetwork,
+							  "Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated"));
+				}
+				continue;
+			}
 			auto status = login(buf);
 			if (!status.ok()) {
 				recycleChunk(std::move(mch.first.data));
-				handleFatalError(status);
+				handleFatalErrorFromWriter(status);
 				continue;
 			}
 			appendChunck(buf, std::move(mch.first.data));
 			++cnt;
 		} while (cnt < kCntToSendNow && wrCh_.size());
 		int err = 0;
-		bool sendNow = cnt == kCntToSendNow || buf.size() >= kDataToSendNow;
+		const bool sendNow = cnt == kCntToSendNow || buf.size() >= kDataToSendNow;
 		auto written = conn_.async_write(buf, err, sendNow);
 		if (err) {
 			// disconnected
 			buf.clear();
-			if (lastError_.ok()) {
-				handleFatalError(Error(errNetwork, "Write error: %s", err > 0 ? strerror(err) : "Connection closed"));
-			}
+			handleFatalErrorFromWriter(Error(errNetwork, "Write error: %s", err > 0 ? strerror(err) : "Connection closed"));
 			continue;
 		}
 		assert(written == buf.size());
@@ -308,9 +342,8 @@ void CoroClientConnection::readerRoutine() {
 		auto read = conn_.async_read(buf, sizeof(CProtoHeader), err);
 		if (err) {
 			// disconnected
-			if (lastError_.ok()) {
-				handleFatalError(err > 0 ? Error(errNetwork, "Read error: %s", strerror(err)) : Error(errNetwork, "Connection closed"));
-			}
+			handleFatalErrorFromReader(err > 0 ? Error(errNetwork, "Read error: %s", strerror(err))
+											   : Error(errNetwork, "Connection closed"));
 			break;
 		}
 		assert(read == sizeof(hdr));
@@ -319,13 +352,14 @@ void CoroClientConnection::readerRoutine() {
 
 		if (hdr.magic != kCprotoMagic) {
 			// disconnect
-			closeConn(Error(errNetwork, "Invalid cproto magic=%08x", hdr.magic));
+			handleFatalErrorFromReader(Error(errNetwork, "Invalid cproto magic=%08x", hdr.magic));
 			break;
 		}
 
 		if (hdr.version < kCprotoMinCompatVersion) {
 			// disconnect
-			closeConn(Error(errParams, "Unsupported cproto version %04x. This client expects reindexer server v1.9.8+", int(hdr.version)));
+			handleFatalErrorFromReader(
+				Error(errParams, "Unsupported cproto version %04x. This client expects reindexer server v1.9.8+", int(hdr.version)));
 			break;
 		}
 
@@ -333,9 +367,8 @@ void CoroClientConnection::readerRoutine() {
 		read = conn_.async_read(buf, size_t(hdr.len), err);
 		if (err) {
 			// disconnected
-			if (lastError_.ok()) {
-				handleFatalError(err > 0 ? Error(errNetwork, "Read error: %s", strerror(err)) : Error(errNetwork, "Connection closed"));
-			}
+			handleFatalErrorFromReader(err > 0 ? Error(errNetwork, "Read error: %s", strerror(err))
+											   : Error(errNetwork, "Connection closed"));
 			break;
 		}
 		assert(read == hdr.len);
@@ -361,19 +394,19 @@ void CoroClientConnection::readerRoutine() {
 			ans.data_ = {ser.Buf() + ser.Pos(), ser.Len() - ser.Pos()};
 		} catch (const Error &err) {
 			// disconnect
-			closeConn(std::move(err));
+			handleFatalErrorFromReader(err);
 			break;
 		}
 
 		if (hdr.cmd == kCmdLogin) {
 			if (ans.Status().ok()) {
-				loggedIn_ = true;
+				setLoggedIn(true);
 				if (connectionStateHandler_) {
 					connectionStateHandler_(Error());
 				}
 			} else {
 				// disconnect
-				closeConn(ans.Status());
+				handleFatalErrorFromReader(ans.Status());
 			}
 		} else if (hdr.cmd != kCmdUpdates) {
 			auto &rpcData = rpcCalls_[hdr.seq % rpcCalls_.size()];
@@ -404,7 +437,7 @@ void CoroClientConnection::deadlineRoutine() {
 			bool expired = (c.deadline.time_since_epoch().count() && c.deadline <= now_);
 			bool canceled = (c.cancelCtx && c.cancelCtx->IsCancelable() && (c.cancelCtx->GetCancelType() == CancelType::Explicit));
 			if (expired || canceled) {
-				if (c.rspCh.opened()) {
+				if (c.rspCh.opened() && !c.rspCh.full()) {
 					c.rspCh.push(Error(expired ? errTimeout : errCanceled, expired ? "Request deadline exceeded" : "Canceled"));
 				}
 			}
@@ -413,10 +446,12 @@ void CoroClientConnection::deadlineRoutine() {
 }
 
 void CoroClientConnection::pingerRoutine() {
+	const std::chrono::milliseconds timeout =
+		connectData_.opts.keepAliveTimeout.count() > 0 ? connectData_.opts.keepAliveTimeout : kKeepAliveInterval;
 	while (!terminate_) {
 		loop_->granular_sleep(kKeepAliveInterval, kCoroSleepGranularity, terminate_);
-		if (conn_.state() != manual_connection::conn_state::init) {
-			call({kCmdPing, connectData_.opts.keepAliveTimeout, milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr, false}, {});
+		if (loggedIn_) {
+			call({kCmdPing, timeout, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false}, {});
 		}
 	}
 }

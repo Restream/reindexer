@@ -71,7 +71,7 @@ public:
 	/// @param start - number of the first row to get from selected set. Analog to sql OFFSET Offset.
 	/// @param count - number of rows to get from result set. Analog to sql LIMIT RowsCount.
 	/// @param calcTotal - calculation mode.
-	explicit Query(const string &nsName, unsigned start = 0, unsigned count = UINT_MAX, CalcTotalMode calcTotal = ModeNoTotal);
+	explicit Query(std::string nsName, unsigned start = 0, unsigned count = UINT_MAX, CalcTotalMode calcTotal = ModeNoTotal);
 
 	/// Creates an empty object.
 	Query() = default;
@@ -120,7 +120,7 @@ public:
 		return Where(idx, cond, {val});
 	}
 	template <typename Input>
-	Query &&Where(const string &idx, CondType cond, Input val) && {
+	Query &&Where(const string &idx, CondType cond, Input val) && {	 // -V1071
 		return std::move(Where<Input>(idx, cond, {val}));
 	}
 
@@ -140,7 +140,7 @@ public:
 		return *this;
 	}
 	template <typename T>
-	Query &&Where(const string &idx, CondType cond, std::initializer_list<T> l) && {
+	Query &&Where(const string &idx, CondType cond, std::initializer_list<T> l) && {  // -V1071
 		return std::move(Where<T>(idx, cond, std::move(l)));
 	}
 
@@ -161,7 +161,7 @@ public:
 		return *this;
 	}
 	template <typename T>
-	Query &&Where(const string &idx, CondType cond, const std::vector<T> &l) && {
+	Query &&Where(const string &idx, CondType cond, const std::vector<T> &l) && {  // -V1071
 		return std::move(Where<T>(idx, cond, l));
 	}
 
@@ -180,7 +180,7 @@ public:
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	Query &&Where(const string &idx, CondType cond, const VariantArray &l) && { return std::move(Where(idx, cond, l)); }
+	Query &&Where(const string &idx, CondType cond, const VariantArray &l) && { return std::move(Where(idx, cond, l)); }  // -V1071
 
 	/// Adds a condition with several values to a composite index.
 	/// @param idx - index name.
@@ -643,6 +643,9 @@ public:
 	Query &&WithRank() &&noexcept { return std::move(WithRank()); }
 	bool IsWithRank() const noexcept { return withRank_; }
 
+	Query &Merge(Query mq) &;
+	Query &&Merge(Query mq) && { return std::move(Merge(std::move(mq))); }
+
 	/// Can we add aggregation functions
 	/// or new select fields to a current query?
 	bool CanAddAggregation(AggType type) const noexcept { return type == AggDistinct || (selectFilter_.empty()); }
@@ -706,6 +709,7 @@ public:
 	JoinedQuery(JoinType jt, Query &&q) : Query(std::move(q)), joinType{jt} {}
 	using Query::Query;
 	bool operator==(const JoinedQuery &obj) const;
+	const std::string &RightNsName() const noexcept { return _namespace; }
 
 	JoinType joinType{JoinType::LeftJoin};	   /// Default join type.
 	h_vector<QueryJoinEntry, 1> joinEntries_;  /// Condition for join. Filled in each subqueries, empty in  root query

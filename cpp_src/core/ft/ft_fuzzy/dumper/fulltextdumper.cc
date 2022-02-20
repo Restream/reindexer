@@ -15,7 +15,7 @@ FullTextDumper& FullTextDumper::Init() {
 	return dumper;
 }
 
-void FullTextDumper::LogFinalData(const reindexer::QueryResults& result) {
+void FullTextDumper::LogFinalData(const reindexer::LocalQueryResults& result) {
 	if (!std::getenv(env.c_str())) return;
 
 	startThread();

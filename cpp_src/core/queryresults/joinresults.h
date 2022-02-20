@@ -5,7 +5,7 @@
 #include "core/itemimpl.h"
 #include "estl/fast_hash_map.h"
 #include "itemref.h"
-#include "queryresults.h"
+#include "localqueryresults.h"
 
 namespace reindexer {
 
@@ -37,12 +37,12 @@ using ItemOffsets = h_vector<ItemOffset, 1>;
 /// Result of joining entire NamespaceImpl
 class NamespaceResults {
 public:
-	/// Move-insertion of QueryResults (for n-th joined field)
+	/// Move-insertion of LocalQueryResults (for n-th joined field)
 	/// ItemRefs into our results container
 	/// @param rowid - rowid of item
 	/// @param fieldIdx - index of joined field
 	/// @param qr - QueryResults reference
-	void Insert(IdType rowid, size_t fieldIdx, QueryResults&& qr);
+	void Insert(IdType rowid, size_t fieldIdx, LocalQueryResults&& qr);
 
 	/// Gets/sets amount of joined selectors
 	/// @param joinedSelectorsCount - joinedSelectors.size()
@@ -52,6 +52,13 @@ public:
 	/// @returns total amount of joined items for
 	/// all the joined fields
 	size_t TotalItems() const;
+
+	/// Clear all internal data
+	void Clear() {
+		offsets_.clear();
+		items_.clear();
+		joinedSelectorsCount_ = 0;
+	}
 
 private:
 	friend class ItemIterator;
@@ -84,7 +91,7 @@ public:
 	JoinedFieldIterator& operator++();
 
 	ItemImpl GetItem(int itemIdx, const PayloadType& pt, const TagsMatcher& tm) const;
-	QueryResults ToQueryResults() const;
+	LocalQueryResults ToQueryResults() const;
 
 	int ItemsCount() const;
 
@@ -110,7 +117,8 @@ public:
 	int getJoinedFieldsCount() const;
 	int getJoinedItemsCount() const;
 
-	static ItemIterator CreateFrom(QueryResults::Iterator it);
+	static ItemIterator CreateFrom(LocalQueryResults::Iterator it);
+	static ItemIterator CreateEmpty();
 
 private:
 	const NamespaceResults* joinRes_;

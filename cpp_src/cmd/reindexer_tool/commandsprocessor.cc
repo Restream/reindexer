@@ -127,7 +127,14 @@ bool CommandsProcessor<DBInterface>::fromFile(std::istream& infile) {
 }
 
 template <typename DBInterface>
-bool CommandsProcessor<DBInterface>::Run(const std::string& command) {
+bool CommandsProcessor<DBInterface>::Run(const std::string& command, const std::string& dumpMode) {
+	if (!dumpMode.empty()) {
+		auto err = executor_.SetDumpMode(dumpMode);
+		if (!err.ok()) {
+			std::cerr << "ERROR: " << err.what() << std::endl;
+			return false;
+		}
+	}
 	if (!command.empty()) {
 		auto err = process(command);
 		if (!err.ok()) {

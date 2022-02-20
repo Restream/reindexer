@@ -105,7 +105,7 @@ public:
 	Error FetchSnapshot(cproto::Context &ctx, int id, int64_t offset);
 	Error ApplySnapshotChunk(cproto::Context &ctx, p_string ns, p_string rec);
 
-	Error GetMeta(cproto::Context &ctx, p_string ns, p_string key);
+	Error GetMeta(cproto::Context &ctx, p_string ns, p_string key, cproto::optional<int> options);
 	Error PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_string data);
 	Error EnumMeta(cproto::Context &ctx, p_string ns);
 	Error SubscribeUpdates(cproto::Context &ctx, int subscribe, cproto::optional<p_string> filterJson, cproto::optional<int> options);
@@ -127,7 +127,7 @@ protected:
 
 	Error fetchResults(cproto::Context &ctx, int reqId, const ResultFetchOpts &opts);
 	void freeQueryResults(cproto::Context &ctx, int id);
-	QueryResults &getQueryResults(cproto::Context &ctx, int &id);
+	QueryResults &getQueryResults(cproto::Context &ctx, int &id, int flags = 0);
 	Transaction &getTx(cproto::Context &ctx, int64_t id);
 	int64_t addTx(cproto::Context &ctx, std::string_view nsName);
 	void clearTx(cproto::Context &ctx, uint64_t txId);

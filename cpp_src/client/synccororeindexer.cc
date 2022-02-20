@@ -46,6 +46,9 @@ Item SyncCoroReindexer::NewItem(std::string_view nsName) { return impl_->NewItem
 Error SyncCoroReindexer::GetMeta(std::string_view nsName, const string& key, string& data) {
 	return impl_->GetMeta(nsName, key, data, ctx_);
 }
+Error SyncCoroReindexer::GetMeta(std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data) {
+	return impl_->GetMeta(nsName, key, data, ctx_);
+}
 Error SyncCoroReindexer::PutMeta(std::string_view nsName, const string& key, std::string_view data) {
 	return impl_->PutMeta(nsName, key, data, ctx_);
 }
@@ -68,7 +71,7 @@ Error SyncCoroReindexer::EnumDatabases(vector<string>& dbList) { return impl_->E
 Error SyncCoroReindexer::GetSqlSuggestions(const std::string_view sqlQuery, int pos, vector<string>& suggests) {
 	return impl_->GetSqlSuggestions(sqlQuery, pos, suggests);
 }
-Error SyncCoroReindexer::Status() { return impl_->Status(ctx_); }
+Error SyncCoroReindexer::Status(bool forceCheck) { return impl_->Status(forceCheck, ctx_); }
 
 SyncCoroTransaction SyncCoroReindexer::NewTransaction(std::string_view nsName) {
 	CoroTransaction tr = impl_->NewTransaction(nsName, ctx_);

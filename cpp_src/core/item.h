@@ -16,6 +16,7 @@ class Namespace;
 class ItemImpl;
 class FieldRefImpl;
 class Schema;
+class TagsMatcher;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
 /// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will
@@ -109,8 +110,8 @@ public:
 		FieldRef &operator=(const VariantArray &krs);
 
 	private:
-		FieldRef(int field, ItemImpl *itemImpl);
-		FieldRef(std::string_view jsonPath, ItemImpl *itemImpl);
+		FieldRef(int field, ItemImpl *itemImpl) noexcept;
+		FieldRef(std::string_view jsonPath, ItemImpl *itemImpl) noexcept;
 		ItemImpl *itemImpl_;
 		std::string_view jsonPath_;
 		int field_;
@@ -165,6 +166,9 @@ public:
 	/// Get internal ID of item
 	/// @return ID of item
 	int GetID() const noexcept { return id_; }
+	/// Get internal shardId of item
+	/// @return shardId of item
+	int GetShardID() const noexcept { return shardId_; }
 	/// Get internal version of item
 	/// @return version of item
 	lsn_t GetLSN();
@@ -174,11 +178,11 @@ public:
 	/// Get field by number
 	/// @param field - number of field. Must be >= 0 && < NumFields
 	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](int field) const;
+	FieldRef operator[](int field) const noexcept;
 	/// Get field by name
 	/// @param name - name of field
 	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](std::string_view name) const;
+	FieldRef operator[](std::string_view name) const noexcept;
 	/// Get field's name tag
 	/// @param name - field name
 	/// @return name's numeric tag value
@@ -210,12 +214,14 @@ public:
 private:
 	explicit Item(ItemImpl *impl) : impl_(impl) {}
 	explicit Item(const Error &err) : impl_(nullptr), status_(err) {}
-	void setID(int id) { id_ = id; }
+	void setID(int id) noexcept { id_ = id; }
 	void setLSN(lsn_t lsn);
+	void setShardID(int id) noexcept { shardId_ = id; }
 
 	ItemImpl *impl_;
 	Error status_;
 	int id_ = -1;
+	int shardId_ = ShardingKeyType::ProxyOff;
 	friend class NamespaceImpl;
 	friend class TransactionImpl;
 	friend class ItemModifier;
@@ -223,6 +229,7 @@ private:
 	friend class Transaction;
 
 	friend class QueryResults;
+	friend class LocalQueryResults;
 	friend class ReindexerImpl;
 	friend class TransactionStep;
 	friend class client::ReindexerImpl;

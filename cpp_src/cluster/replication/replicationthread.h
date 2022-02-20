@@ -140,6 +140,7 @@ public:
 			node.requireResync = true;
 		}
 	}
+	void SendUpdatesAsyncNotification() { updatesAsync_.send(); }
 
 	std::deque<Node> nodes;
 	net::ev::dynamic_loop loop;
@@ -151,19 +152,20 @@ private:
 	void updateNodeStatus(size_t uid, NodeStats::Status st);
 	void nodeReplicationRoutine(Node &node);
 	Error nodeReplicationImpl(Node &node);
-	void updatesNotfier() noexcept;
+	void updatesNotifier() noexcept;
 	UpdateApplyStatus handleNetworkCheckRecord(Node &node, UpdatesQueueT::UpdatePtr &updPtr, uint16_t offset, bool forceCheck,
 											   const UpdateRecord &rec) noexcept;
 
 	Error syncNamespace(Node &node, const std::string &nsName, const ReplicationStateV2 &followerState);
 	UpdateApplyStatus nodeUpdatesHandlingLoop(Node &node) noexcept;
 	bool handleUpdatesWithError(Node &node, const Error &err);
+	Error checkIfReplicationAllowed(Node &node);
 
 	UpdateApplyStatus applyUpdate(const UpdateRecord &rec, Node &node, NamespaceData &nsData) noexcept;
 	static bool isNetworkError(const Error &err) noexcept { return err.code() == errNetwork; }
 	static bool isTimeoutError(const Error &err) noexcept { return err.code() == errTimeout || err.code() == errCanceled; }
 	static bool isLeaderChangedError(const Error &err) noexcept { return err.code() == errWrongReplicationData; }
-	static bool isTxCopyError(const Error &err) noexcept { return err.code() == errTxDoesntExist; }
+	static bool isTxCopyError(const Error &err) noexcept { return err.code() == errTxDoesNotExist; }
 
 	const int serverId_ = -1;
 	uint32_t consensusCnt_ = 0;

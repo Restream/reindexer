@@ -54,6 +54,9 @@ int main(int argc, char* argv[]) {
 									Options::Single | Options::Global);
 	args::ValueFlag<string> outFileName(progOptions, "FILENAME", "send query results to file", {'o', "output"}, "",
 										Options::Single | Options::Global);
+	args::ValueFlag<string> dumpMode(progOptions, "DUMP_MODE",
+									 "dump mode for sharded databases: 'full_node' (default), 'sharded_only', 'local_only'", {"dump-mode"},
+									 "", Options::Single | Options::Global);
 
 	args::ValueFlag<int> connThreads(progOptions, "INT", "Number of threads(connections) used by db connector", {'t', "threads"}, 1,
 									 Options::Single | Options::Global);
@@ -127,12 +130,12 @@ int main(int argc, char* argv[]) {
 		CommandsProcessor<reindexer::client::CoroReindexer> commandsProcessor(args::get(outFileName), args::get(fileName),
 																			  args::get(connThreads), config);
 		err = commandsProcessor.Connect(dsn, reindexer::client::ConnectOpts().CreateDBIfMissing(createDBF && args::get(createDBF)));
-		if (err.ok()) ok = commandsProcessor.Run(args::get(command));
+		if (err.ok()) ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
 	} else if (dsn.compare(0, 10, "builtin://") == 0) {
 		reindexer::Reindexer db;
 		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(connThreads));
 		err = commandsProcessor.Connect(dsn, ConnectOpts().DisableReplication());
-		if (err.ok()) ok = commandsProcessor.Run(args::get(command));
+		if (err.ok()) ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
 	} else {
 		std::cerr << "Invalid DSN format: " << dsn << " Must begin from cproto:// or builtin://" << std::endl;
 	}

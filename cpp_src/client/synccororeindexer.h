@@ -5,6 +5,7 @@
 #include "client/synccorotransaction.h"
 #include "core/indexdef.h"
 #include "core/namespacedef.h"
+#include "core/shardedmeta.h"
 #include "internalrdxcontext.h"
 #include "net/ev/ev.h"
 
@@ -18,6 +19,9 @@ class SyncCoroReindexerImpl;
 
 class SyncCoroReindexer {
 public:
+	/// Completion routine
+	using Completion = std::function<void(const Error &err)>;
+
 	/// Create Reindexer database object
 	SyncCoroReindexer(const CoroReindexerConfig & = CoroReindexerConfig(), size_t connCount = 0);
 	SyncCoroReindexer(SyncCoroReindexer &&rdx) noexcept = default;
@@ -158,6 +162,11 @@ public:
 	/// @param key - string with meta key
 	/// @param data - output string with meta data
 	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data);
+	/// Get sharded meta data from storage by key
+	/// @param nsName - Name of namespace
+	/// @param key - string with meta key
+	/// @param data - output vector with meta data from different shards
+	Error GetMeta(std::string_view nsName, const string &key, std::vector<ShardedMeta> &data);
 	/// Put meta data to storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
@@ -173,7 +182,8 @@ public:
 	/// @param suggestions - all the suggestions for 'pos' position in query.
 	Error GetSqlSuggestions(const std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions);
 	/// Get curret connection status
-	Error Status();
+	/// @param forceCheck - forces to check status immediatlly (otherwise result of periodic check will be returned)
+	Error Status(bool forceCheck = false);
 	/// Allocate new transaction for namespace
 	/// @param nsName - Name of namespace
 	SyncCoroTransaction NewTransaction(std::string_view nsName);
@@ -194,6 +204,9 @@ public:
 	SyncCoroReindexer WithContext(const IRdxCancelContext *cancelCtx) {
 		return SyncCoroReindexer(impl_, ctx_.WithCancelContext(cancelCtx));
 	}
+	/// Add async completion. It will be executed from internal connection thread
+	/// @param cmpl - completion callback
+	SyncCoroReindexer WithCompletion(Completion cmpl) { return SyncCoroReindexer(impl_, ctx_.WithCompletion(std::move(cmpl))); }
 
 	/// Add execution timeout to the next query
 	/// @param timeout - Optional server-side execution timeout for each subquery

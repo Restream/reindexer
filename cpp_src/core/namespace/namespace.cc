@@ -10,7 +10,7 @@ namespace reindexer {
 
 #define handleInvalidation(Fn) nsFuncWrapper<decltype(&Fn), &Fn>
 
-void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const NsContext& ctx) {
+void Namespace::CommitTransaction(Transaction& tx, LocalQueryResults& result, const NsContext& ctx) {
 	auto ns = atomicLoadMainNs();
 	bool enablePerfCounters = ns->enablePerfCounters_.load(std::memory_order_relaxed);
 	if (enablePerfCounters) {
@@ -58,12 +58,21 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const N
 						throw Error(errUpdateReplication, err.what());
 					}
 				}
+			} catch (Error& e) {
+				logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) was terminated by exception:'%s'", ns->name_,
+						  e.what());
+				calc.enable_ = false;
+				nsCopy_.reset();
+				hasCopy_.store(false, std::memory_order_release);
+				throw;
 			} catch (...) {
+				logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) was terminated by unknown exception", ns->name_);
 				calc.enable_ = false;
 				nsCopy_.reset();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			}
+			logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) has succeed", ns->name_);
 			return;
 		}
 	}

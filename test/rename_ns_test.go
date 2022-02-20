@@ -42,7 +42,7 @@ func TestRenameNamespace(t *testing.T) {
 
 	for index := 0; index < 10; index++ {
 		err = DB.Upsert(testRenameNamespace, TestItem1{index, 2, "nameTest" + strconv.Itoa(index)})
-		assert.NoError(t, err, "Can't Usert data to namespace")
+		assert.NoError(t, err, "Can't Upsert data to namespace")
 	}
 	testRNdata, err := GetAllDataFromNamespace(t, testRenameNamespace)
 	assert.NoError(t, err, "Can't get data from namespace")

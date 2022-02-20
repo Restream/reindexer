@@ -48,6 +48,11 @@ type cacheItems struct {
 	items *lru.Cache
 }
 
+type cacheKey struct {
+	id      int
+	shardid int
+}
+
 func (ci *cacheItems) Reset() {
 	if ci.items == nil {
 		return
@@ -55,14 +60,14 @@ func (ci *cacheItems) Reset() {
 	ci.items.Purge()
 }
 
-func (ci *cacheItems) Remove(key int) {
+func (ci *cacheItems) Remove(key cacheKey) {
 	if ci.items == nil {
 		return
 	}
 	ci.items.Remove(key)
 }
 
-func (ci *cacheItems) Add(key int, item *cacheItem) {
+func (ci *cacheItems) Add(key cacheKey, item *cacheItem) {
 	if ci.items == nil {
 		return
 	}
@@ -76,7 +81,7 @@ func (ci *cacheItems) Len() int {
 	return ci.items.Len()
 }
 
-func (ci *cacheItems) Get(key int) (*cacheItem, bool) {
+func (ci *cacheItems) Get(key cacheKey) (*cacheItem, bool) {
 	if ci.items == nil {
 		return nil, false
 	}
@@ -92,7 +97,7 @@ type cacheItem struct {
 	// cached data
 	item interface{}
 	// version of item
-	version int
+	version LsnT
 }
 
 func newCacheItems(count uint64) (*cacheItems, error) {

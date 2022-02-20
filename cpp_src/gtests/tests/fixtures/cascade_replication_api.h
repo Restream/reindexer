@@ -39,7 +39,7 @@ public:
 		std::vector<ServerControl> nodes_;
 	};
 
-	void WaitSync(ServerPtr s1, ServerPtr s2, const std::string& nsName);
+	void WaitSync(ServerPtr s1, ServerPtr s2, const std::string& nsName) { ServerControl::WaitSync(std::move(s1), std::move(s2), nsName); }
 	void ValidateNsList(ServerPtr s, const std::vector<std::string>& expected);
 
 	class FollowerConfig {
@@ -57,5 +57,4 @@ public:
 
 protected:
 	const std::string kBaseTestsetDbPath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "rx_test/CascadeReplicationApi");
-	const std::chrono::seconds kMaxSyncTime = std::chrono::seconds(15);
 };

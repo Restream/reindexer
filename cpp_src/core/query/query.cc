@@ -13,8 +13,8 @@ using namespace std::string_view_literals;
 const std::string_view kLsnIndexName = "#lsn"sv;
 const std::string_view kSlaveVersionIndexName = "#slave_version"sv;
 
-Query::Query(const string &__namespace, unsigned _start, unsigned _count, CalcTotalMode _calcTotal)
-	: _namespace(__namespace), start(_start), count(_count), calcTotal(_calcTotal) {}
+Query::Query(std::string __namespace, unsigned _start, unsigned _count, CalcTotalMode _calcTotal)
+	: _namespace(std::move(__namespace)), start(_start), count(_count), calcTotal(_calcTotal) {}
 
 bool Query::operator==(const Query &obj) const {
 	if (entries != obj.entries) return false;
@@ -494,6 +494,11 @@ Query::OnHelperR Query::Join(JoinType joinType, const Query &q) && {
 		entries.Append((joinType == JoinType::InnerJoin) ? OpType::OpAnd : OpType::OpOr, JoinQueryEntry(joinQueries_.size() - 1));
 	}
 	return {std::move(*this), joinQueries_.back()};
+}
+
+Query &Query::Merge(Query mq) & {
+	mergeQueries_.emplace_back(JoinType::Merge, std::move(mq));
+	return *this;
 }
 
 void Query::WalkNested(bool withSelf, bool withMerged, std::function<void(const Query &q)> visitor) const {

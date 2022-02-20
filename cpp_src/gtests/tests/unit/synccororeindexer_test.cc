@@ -1,4 +1,5 @@
 #include "client/synccororeindexer.h"
+#include <condition_variable>
 #include "client/cororeindexer.h"
 #include "coroutine/waitgroup.h"
 #include "gtest/gtest.h"
@@ -11,6 +12,28 @@ using namespace reindexer;
 const int kSyncCoroRxTestMaxIndex = 1000;
 static const size_t kSyncCoroRxTestDefaultRpcPort = 8999;
 static const size_t kSyncCoroRxTestDefaultHttpPort = 9888;
+
+struct SyncCoroRxHelpers {
+	static const string kStrValue;
+
+	template <typename RxT>
+	static void FillData(RxT& client, std::string_view ns, unsigned rows, unsigned from = 0) {
+		for (unsigned i = from; i < from + rows; i++) {
+			reindexer::client::Item item = client.NewItem(ns);
+			if (item.Status().ok()) {
+				std::string json = R"#({"id":)#" + std::to_string(i) + R"#(, "val":)#" + "\"" + kStrValue + "\"" + R"#(})#";
+				auto err = item.FromJSON(json);
+				ASSERT_TRUE(err.ok()) << err.what();
+				err = client.Upsert(ns, item);
+				ASSERT_TRUE(err.ok()) << err.what();
+			} else {
+				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			}
+		}
+	}
+};
+
+const string SyncCoroRxHelpers::kStrValue = "aaaaaaaaaaaaaaa";
 
 TEST(SyncCoroRx, BaseTest) {
 	// Base test for SyncCoroReindexer client
@@ -32,24 +55,8 @@ TEST(SyncCoroRx, BaseTest) {
 	err = client.AddIndex(nsName, indDef);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	reindexer::IndexDef indDef2("index2", "hash", "int", IndexOpts());
-	err = client.AddIndex(nsName, indDef2);
-	ASSERT_TRUE(err.ok()) << err.what();
-
 	const int insRows = 200;
-	const string strValue = "aaaaaaaaaaaaaaa";
-	for (unsigned i = 0; i < insRows; i++) {
-		reindexer::client::Item item = client.NewItem(nsName);
-		if (item.Status().ok()) {
-			std::string json = R"#({"id":)#" + std::to_string(i) + R"#(, "val":)#" + "\"" + strValue + "\"" + R"#(})#";
-			err = item.FromJSON(json);
-			ASSERT_TRUE(err.ok()) << err.what();
-			err = client.Upsert(nsName, item);
-			ASSERT_TRUE(err.ok()) << err.what();
-		} else {
-			ASSERT_TRUE(err.ok()) << err.what();
-		}
-	}
+	SyncCoroRxHelpers::FillData(client, nsName, insRows);
 	reindexer::client::SyncCoroQueryResults qResults(3);
 	err = client.Select(std::string("select * from ") + std::string(nsName) + " order by id", qResults);
 
@@ -61,7 +68,7 @@ TEST(SyncCoroRx, BaseTest) {
 		try {
 			gason::JsonParser parser;
 			gason::JsonNode json = parser.Parse(wrser.Slice());
-			if (json["id"].As<unsigned int>(-1) != indx || json["val"].As<std::string_view>() != strValue) {
+			if (json["id"].As<unsigned int>(-1) != indx || json["val"].As<std::string_view>() != SyncCoroRxHelpers::kStrValue) {
 				ASSERT_TRUE(false) << "item value not correct";
 			}
 
@@ -99,19 +106,7 @@ TEST(SyncCoroRx, StopServerOnQuery) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	const int insRows = kFetchAmount * 3;
-	const string strValue = "aaaaaaaaaaaaaaa";
-	for (unsigned i = 0; i < insRows; i++) {
-		reindexer::client::Item item = client.NewItem(nsName);
-		if (item.Status().ok()) {
-			std::string json = R"#({"id":)#" + std::to_string(i) + R"#(, "val":)#" + "\"" + strValue + "\"" + R"#(})#";
-			err = item.FromJSON(json);
-			ASSERT_TRUE(err.ok()) << err.what();
-			err = client.Upsert(nsName, item);
-			ASSERT_TRUE(err.ok()) << err.what();
-		} else {
-			ASSERT_TRUE(err.ok()) << err.what();
-		}
-	}
+	SyncCoroRxHelpers::FillData(client, nsName, insRows);
 
 	reindexer::client::SyncCoroQueryResults qResults(3);
 	err = client.Select(std::string("select * from ") + std::string(nsName) + " order by id", qResults);
@@ -128,7 +123,7 @@ TEST(SyncCoroRx, StopServerOnQuery) {
 			try {
 				gason::JsonParser parser;
 				gason::JsonNode json = parser.Parse(wrser.Slice());
-				if (json["id"].As<unsigned int>(-1) != indx || json["val"].As<std::string_view>() != strValue) {
+				if (json["id"].As<unsigned int>(-1) != indx || json["val"].As<std::string_view>() != SyncCoroRxHelpers::kStrValue) {
 					ASSERT_TRUE(false) << "item value not correct id = " << json["id"].As<unsigned int>(-1)
 									   << " strVal = " << json["val"].As<std::string_view>();
 				}
@@ -164,18 +159,7 @@ TEST(SyncCoroRx, TestSyncCoroRx) {
 	err = client.AddIndex("ns_test", indDef2);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	for (unsigned i = 0; i < kSyncCoroRxTestMaxIndex; i++) {
-		reindexer::client::Item item = client.NewItem("ns_test");
-		if (item.Status().ok()) {
-			std::string json = R"#({"id":)#" + std::to_string(i) + R"#(, "val":)#" + "\"aaaaaaaaaaaaaaa \"" + R"#(})#";
-			err = item.FromJSON(json);
-			ASSERT_TRUE(err.ok()) << err.what();
-			err = client.Upsert("ns_test", item);
-			ASSERT_TRUE(err.ok()) << err.what();
-		} else {
-			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-		}
-	}
+	SyncCoroRxHelpers::FillData(client, "ns_test", kSyncCoroRxTestMaxIndex);
 	reindexer::client::SyncCoroQueryResults qResults(3);
 	client.Select("select * from ns_test", qResults);
 
@@ -252,13 +236,7 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 
 		auto insblok = [&rx, &wg](int from, int count) {
 			reindexer::coroutine::wait_group_guard wgg(wg);
-			for (int i = from; i < from + count; i++) {
-				reindexer::client::Item item = rx.NewItem("ns_c");
-				std::string json = R"#({"id":)#" + std::to_string(i) + R"#(, "val":)#" + "\"aaaaaaaaaaaaaaa \"" + R"#(})#";
-				auto err = item.FromJSON(json);
-				ASSERT_TRUE(err.ok()) << err.what();
-				rx.Upsert("ns_c", item);
-			}
+			SyncCoroRxHelpers::FillData(rx, "ns_c", count, from);
 		};
 
 		const unsigned int kcoroCount = 10;
@@ -433,4 +411,219 @@ TEST(SyncCoroRx, StopWhileWriting) {
 	for (auto& th : writingThreads) {
 		th.join();
 	}
+}
+
+TEST(SyncCoroRx, AsyncCompletions) {
+	// Check if async completions are actually asynchronous
+	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/AsyncCompletions");
+	reindexer::fs::RmDirAll(kTestDbPath);
+	const std::string kNsNames = "ns_test";
+	std::condition_variable cv;
+	std::mutex mtx;
+	ServerControl server;
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
+	auto client = server.Get()->api.reindexer;
+	Error err = client->OpenNamespace(kNsNames);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	reindexer::IndexDef indDef("id", "hash", "int", IndexOpts().PK());
+	err = client->AddIndex(kNsNames, indDef);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	size_t counter = 0;
+	constexpr size_t kItemsCount = 10;
+	std::atomic<bool> done = false;
+	std::vector<client::Item> items(kItemsCount);
+	for (auto& item : items) {
+		item = client->NewItem(kNsNames);  // NewItem can not be created async
+	}
+	for (size_t i = 0; i < kItemsCount; ++i) {
+		const std::string json = fmt::sprintf(R"#({"id": %d, "val": "aaaaaaaa"})#", i);
+		auto err = items[i].FromJSON(json);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = client
+				  ->WithCompletion([&](const Error& e) {
+					  ASSERT_TRUE(e.ok()) << e.what();
+					  auto remainingTime = std::chrono::milliseconds(5000);
+					  constexpr auto kStep = std::chrono::milliseconds(1);
+					  while (remainingTime.count()) {
+						  if (done) {
+							  break;
+						  }
+						  remainingTime -= kStep;
+						  std::this_thread::sleep_for(kStep);
+					  }
+					  assert(done.load());
+					  std::unique_lock lck(mtx);
+					  if (++counter == kItemsCount) {
+						  lck.unlock();
+						  cv.notify_one();
+					  }
+				  })
+				  .Upsert(kNsNames, items[i]);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	done = true;
+	std::unique_lock lck(mtx);
+	auto res = cv.wait_for(lck, std::chrono::seconds(20), [&counter] { return counter == kItemsCount; });
+	ASSERT_TRUE(res) << "counter = " << counter;
+}
+
+TEST(SyncCoroRx, AsyncCompletionsStop) {
+	// Check if async completions are properlu handled during client's termination
+	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/AsyncCompletionsStop");
+	reindexer::fs::RmDirAll(kTestDbPath);
+	const std::string kNsNames = "ns_test";
+	ServerControl server;
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
+	auto client = server.Get()->api.reindexer;
+	Error err = client->OpenNamespace(kNsNames);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	reindexer::IndexDef indDef("id", "hash", "int", IndexOpts().PK());
+	err = client->AddIndex(kNsNames, indDef);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	std::atomic<int> counter = 0;
+	constexpr size_t kItemsCount = 10;
+	std::vector<client::Item> items(kItemsCount);
+	for (auto& item : items) {
+		item = client->NewItem(kNsNames);  // NewItem can not be created async
+	}
+	for (size_t i = 0; i < kItemsCount; ++i) {
+		const std::string json = fmt::sprintf(R"#({"id": %d, "val": "aaaaaaaa"})#", i);
+		err = items[i].FromJSON(json);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = client->WithCompletion([&](const Error&) { ++counter; }).Upsert(kNsNames, items[i]);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	err = client->Stop();
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(counter.load(), kItemsCount);
+}
+
+TEST(SyncCoroRx, TxInvalidation) {
+	// Check if client transaction becomes invalid after reconnect
+	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/TxInvalidation");
+	reindexer::fs::RmDirAll(kTestDbPath);
+	const std::string kNsNames = "ns_test";
+	const std::string kItemContent = R"json({"id": 1})json";
+	const std::string kExpectedErrorText =
+		"Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated";
+
+	ServerControl server;
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
+	auto client = server.Get()->api.reindexer;
+	Error err = client->OpenNamespace(kNsNames);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	auto originalTx = client->NewTransaction(kNsNames);
+	ASSERT_TRUE(originalTx.Status().ok()) << originalTx.Status().what();
+
+	auto movedTx = std::move(originalTx);
+	{
+		auto item = client->NewItem(kNsNames);
+		item.FromJSON(kItemContent);
+		err = originalTx.Insert(std::move(item));
+		EXPECT_EQ(err.code(), errBadTransaction);
+		client::SyncCoroQueryResults qr;
+		err = client->CommitTransaction(originalTx, qr);
+		EXPECT_EQ(err.code(), errBadTransaction);
+	}
+	{
+		auto item = client->NewItem(kNsNames);
+		item.FromJSON(kItemContent);
+		err = movedTx.Insert(std::move(item));
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	err = client->Stop();
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = client->Connect(server.Get()->kRPCDsn);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = client->Status(true);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	auto item = client->NewItem(kNsNames);
+	item.FromJSON(kItemContent);
+	err = movedTx.Insert(std::move(item));
+	EXPECT_EQ(err.code(), errNetwork);
+	EXPECT_EQ(err.what(), kExpectedErrorText);
+	{
+		Query q = Query().Set("id", {10});
+		q.type_ = QueryType::QueryUpdate;
+		err = movedTx.Modify(std::move(q));
+		EXPECT_EQ(err.code(), errNetwork);
+		EXPECT_EQ(err.what(), kExpectedErrorText);
+	}
+	{
+		Query q;
+		q.type_ = QueryType::QueryUpdate;
+		err = movedTx.Modify(std::move(q));
+		EXPECT_EQ(err.code(), errNetwork);
+		EXPECT_EQ(err.what(), kExpectedErrorText);
+	}
+	client::SyncCoroQueryResults qr;
+	err = client->CommitTransaction(movedTx, qr);
+	EXPECT_EQ(err.code(), errNetwork);
+	EXPECT_EQ(err.what(), kExpectedErrorText);
+}
+
+TEST(SyncCoroRx, QrInvalidation) {
+	// Check if client QRs become invalid after reconnect
+	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/QrInvalidation");
+	reindexer::fs::RmDirAll(kTestDbPath);
+	const std::string kNsNames = "ns_test";
+	const std::string kExpectedErrorText =
+		"Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated";
+	const unsigned kDataCount = 500;
+	const unsigned kFetchCnt = 100;
+	client::CoroReindexerConfig cfg(kFetchCnt);
+
+	ServerControl server;
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
+
+	// Reconnect with correct options
+	auto client = std::make_unique<client::SyncCoroReindexer>(cfg);
+	Error err = client->Connect(server.Get()->kRPCDsn);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = client->Status(true);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = client->OpenNamespace(kNsNames);
+	ASSERT_TRUE(err.ok()) << err.what();
+	reindexer::IndexDef indDef("id", "hash", "int", IndexOpts().PK());
+	err = client->AddIndex(kNsNames, indDef);
+	ASSERT_TRUE(err.ok()) << err.what();
+	SyncCoroRxHelpers::FillData(*client, kNsNames, kDataCount);
+
+	client::SyncCoroQueryResults originalQr;
+	err = client->Select(Query(kNsNames), originalQr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(originalQr.Count(), kDataCount);
+	auto movedQr = std::move(originalQr);
+	EXPECT_EQ(movedQr.Count(), kDataCount);
+
+	// Check if original qr does not affect actual qr
+	for (auto& it : originalQr) {
+		(void)it;
+	}
+
+	err = client->Stop();
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = client->Connect(server.Get()->kRPCDsn);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = client->Status(true);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	unsigned idx = 0;
+	auto mit = movedQr.begin();
+	while (idx++ < kFetchCnt) {
+		ASSERT_NE(mit, movedQr.end());
+		ASSERT_TRUE(mit.Status().ok()) << mit.Status().what();
+		++mit;
+	}
+	err = mit.Status();
+	EXPECT_EQ(err.code(), errNetwork);
+	EXPECT_EQ(err.what(), kExpectedErrorText);
 }

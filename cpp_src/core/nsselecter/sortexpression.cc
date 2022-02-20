@@ -456,6 +456,7 @@ SortExpression SortExpression::Parse(const std::string_view expression, const st
 template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedSelector>&);
 template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedSelectorMock>&);
 template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedNsNameMock>&);
+template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedQuery>&);
 
 double SortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv,
 								 const joins::NamespaceResults& joinedResults, const std::vector<JoinedSelector>& js, uint8_t proc,

@@ -182,5 +182,27 @@ size_t UpdateRecord::DataSize() const noexcept {
 	}
 }
 
+struct DataCopier {
+	template <typename T>
+	void operator()(const std::unique_ptr<T>& v) const {
+		if (v) {
+			rec.data.emplace<std::unique_ptr<T>>(new T(*v));
+		}
+	}
+
+	UpdateRecord& rec;
+};
+
+UpdateRecord UpdateRecord::Clone() const {
+	UpdateRecord rec;
+	rec.type = type;
+	rec.nsName = nsName;
+	rec.extLsn = extLsn;
+	rec.emmiterServerId = emmiterServerId;
+	DataCopier visitor{rec};
+	std::visit(visitor, data);
+	return rec;
+}
+
 }  // namespace cluster
 }  // namespace reindexer

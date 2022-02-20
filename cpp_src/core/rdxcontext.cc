@@ -90,12 +90,13 @@ RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, Activity
 }
 
 RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer,
-												QueryResults& qresults) const {
+												LocalQueryResults& qresults) const {
 	if (activityTracer_.empty() || query.empty())
 		return {LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardingParallelExecution_};
 	assert(!qresults.activityCtx_);
 	qresults.activityCtx_.emplace(activityTracer_, user_, query, activityContainer, connectionId_, true);
-	return {&*(qresults.activityCtx_), LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardingParallelExecution_};
+	return {&*(qresults.activityCtx_), LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_,
+			shardingParallelExecution_};
 }
 
 }  // namespace reindexer

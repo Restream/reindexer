@@ -201,7 +201,7 @@ protected:
 	}
 
 	void PrintResultRows(QueryResults& qr) {
-		for (auto rowIt : qr) {
+		for (auto rowIt : qr.ToLocalQr()) {
 			Item item(rowIt.GetItem(false));
 			std::cout << "ROW: " << item.GetJSON() << std::endl;
 
@@ -210,7 +210,7 @@ protected:
 			for (auto joinedFieldIt = itemIt.begin(); joinedFieldIt != itemIt.end(); ++joinedFieldIt) {
 				std::cout << "JOINED: " << idx << std::endl;
 				for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
-					reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, qr.getPayloadType(1), qr.getTagsMatcher(1)));
+					reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, qr.GetPayloadType(1), qr.GetTagsMatcher(1)));
 					std::cout << joinItem.GetJSON() << std::endl;
 				}
 				std::cout << std::endl;
@@ -230,8 +230,9 @@ protected:
 			FillQueryResultFromItem(item, resultRow);
 			auto itemIt = rowIt.GetJoined();
 			auto joinedFieldIt = itemIt.begin();
-			QueryResults jres = joinedFieldIt.ToQueryResults();
-			jres.addNSContext(qr.getPayloadType(1), qr.getTagsMatcher(1), qr.getFieldsFilter(1), qr.getSchema(1));
+			LocalQueryResults jres = joinedFieldIt.ToQueryResults();
+			auto& lqr = qr.ToLocalQr();
+			jres.addNSContext(lqr.getPayloadType(1), lqr.getTagsMatcher(1), lqr.getFieldsFilter(1), lqr.getSchema(1));
 			for (auto it : jres) {
 				Item joinedItem = it.GetItem(false);
 				FillQueryResultFromItem(joinedItem, resultRow);
@@ -346,8 +347,8 @@ protected:
 						Variant authorIdFieldValue = item[authorid_fk];
 						EXPECT_TRUE((static_cast<int>(authorIdFieldValue) >= 10) && (static_cast<int>(authorIdFieldValue) <= 25));
 						for (int i = 0; i < authorNsFieldIt.ItemsCount(); ++i) {
-							reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.getPayloadType(1), qr.getTagsMatcher(1));
-							Variant authorIdFkFieldValue = itemimpl.GetField(qr.getPayloadType(1).FieldByName(authorid));
+							reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.GetPayloadType(1), qr.GetTagsMatcher(1));
+							Variant authorIdFkFieldValue = itemimpl.GetField(qr.GetPayloadType(1).FieldByName(authorid));
 							EXPECT_TRUE(authorIdFieldValue == authorIdFkFieldValue);
 						}
 					}
@@ -355,8 +356,8 @@ protected:
 						Variant genreIdFieldValue = item[genreId_fk];
 						EXPECT_TRUE(static_cast<int>(genreIdFieldValue) != 1);
 						for (int i = 0; i < genreNsFieldIt.ItemsCount(); ++i) {
-							reindexer::ItemImpl itemimpl = genreNsFieldIt.GetItem(i, qr.getPayloadType(2), qr.getTagsMatcher(2));
-							Variant genreIdFkFieldValue = itemimpl.GetField(qr.getPayloadType(2).FieldByName(genreid));
+							reindexer::ItemImpl itemimpl = genreNsFieldIt.GetItem(i, qr.GetPayloadType(2), qr.GetTagsMatcher(2));
+							Variant genreIdFkFieldValue = itemimpl.GetField(qr.GetPayloadType(2).FieldByName(genreid));
 							EXPECT_TRUE(genreIdFieldValue == genreIdFkFieldValue);
 						}
 					}
@@ -376,8 +377,8 @@ protected:
 				Variant authorIdFieldValue = item[authorid_fk];
 				EXPECT_TRUE((static_cast<int>(authorIdFieldValue) >= 300) && (static_cast<int>(authorIdFieldValue) <= 400));
 				for (int i = 0; i < authorNsFieldIt.ItemsCount(); ++i) {
-					reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.getPayloadType(3), qr.getTagsMatcher(3));
-					Variant authorIdFkFieldValue = itemimpl.GetField(qr.getPayloadType(3).FieldByName(authorid));
+					reindexer::ItemImpl itemimpl = authorNsFieldIt.GetItem(i, qr.GetPayloadType(3), qr.GetTagsMatcher(3));
+					Variant authorIdFkFieldValue = itemimpl.GetField(qr.GetPayloadType(3).FieldByName(authorid));
 					EXPECT_TRUE(authorIdFieldValue == authorIdFkFieldValue);
 				}
 				joinsNoBracketConditionsResult = true;

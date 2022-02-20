@@ -25,7 +25,7 @@ RUN ./dependencies.sh && \
 
 RUN cd build && make install -C cpp_src/server/grpc
 
-FROM alpine:latest
+FROM alpine:3.14
 
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh

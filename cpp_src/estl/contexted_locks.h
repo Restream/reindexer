@@ -69,7 +69,7 @@ public:
 		_M_lockable();
 		assert(_M_context);
 		const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
-		if (_M_chkTimeout.count() > 0 && _M_context->isCancelable()) {
+		if (_M_chkTimeout.count() > 0 && _M_context->IsCancelable()) {
 			do {
 				ThrowOnCancel(*_M_context, "Context was canceled or timed out (mutex)"sv);
 			} while (!_M_mtx->try_lock_for(_M_chkTimeout));
@@ -163,7 +163,7 @@ public:
 		_M_lockable();
 		assert(_M_context);
 		const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
-		if (_M_chkTimeout.count() > 0 && _M_context->isCancelable()) {
+		if (_M_chkTimeout.count() > 0 && _M_context->IsCancelable()) {
 			do {
 				ThrowOnCancel(*_M_context, "Context was canceled or timed out (mutex)"sv);
 			} while (!_M_mtx->try_lock_shared_for(_M_chkTimeout));

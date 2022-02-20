@@ -5,16 +5,16 @@
 namespace reindexer {
 
 class NamespaceImpl;
-class QueryResults;
+class LocalQueryResults;
 class RdxContext;
 struct SelectCtx;
 class WALSelecter {
 public:
 	WALSelecter(const NamespaceImpl *ns, bool allowTxWithoutBegining);
-	void operator()(QueryResults &result, SelectCtx &params, bool snapshot = false);
+	void operator()(LocalQueryResults &result, SelectCtx &params, bool snapshot = false);
 
 protected:
-	void putReplState(QueryResults &result);
+	void putReplState(LocalQueryResults &result);
 	const NamespaceImpl *ns_;
 	const bool allowTxWithoutBegining_;
 };

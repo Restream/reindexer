@@ -199,7 +199,7 @@ func (it *Iterator) joinedNsIndexOffset(parentNsID int) int {
 }
 
 func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank int) {
-	params := it.ser.readRawtItemParams()
+	params := it.ser.readRawtItemParams(it.rawQueryParams.shardId)
 	if (it.rawQueryParams.flags & bindings.ResultsWithPercents) != 0 {
 		rank = params.proc
 	}
@@ -223,7 +223,7 @@ func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank int) {
 		}
 		subitems := make([]interface{}, siRes)
 		for i := 0; i < siRes; i++ {
-			subparams := it.ser.readRawtItemParams()
+			subparams := it.ser.readRawtItemParams(it.rawQueryParams.shardId)
 			subitems[i], it.err = unpackItem(&it.nsArray[nsIndex+nsIndexOffset], &subparams, it.allowUnsafe, (it.rawQueryParams.flags&bindings.ResultsWithItemID) == 0, toObj)
 			if it.err != nil {
 				return

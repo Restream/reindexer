@@ -1,11 +1,11 @@
 #pragma once
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <iostream>
 #include <limits>
-#include <stddef.h>
 #include <stdexcept>
-#include <stdint.h>
 #include <string_view>
 #include <type_traits>
 #include "estl/span.h"
@@ -32,52 +32,49 @@ struct JsonString {
 		p[1] = (l >> 8) & 0xFF;
 		p[2] = (l >> 16) & 0xFF;
 	}
-	JsonString(const char *end = nullptr) : ptr(end) {}
+	JsonString(const char *end = nullptr) noexcept : ptr(end) {}
 
-	size_t length() const {
+	size_t length() const noexcept {
 		assert(ptr);
 		const uint8_t *p = reinterpret_cast<const uint8_t *>(ptr);
 		return p[0] | (p[1] << 8) | (p[2] << 16);
 	}
-	size_t size() const { return length(); }
-	const char *data() const { return ptr - length(); }
-	explicit operator std::string() const { return std::string(data(), length()); }
-	operator std::string_view() const { return std::string_view(data(), length()); }
+	size_t size() const noexcept { return length(); }
+	const char *data() const noexcept { return ptr - length(); }
+	explicit operator std::string() const { return ptr ? std::string(data(), length()) : std::string(); }
+	operator std::string_view() const noexcept { return ptr ? std::string_view(data(), length()) : std::string_view(); }
 
 	const char *ptr;
 };
 
-inline static std::ostream &operator<<(std::ostream &o, const gason::JsonString &sv) {
-	o.write(sv.data(), sv.length());
-	return o;
-}
+inline static std::ostream &operator<<(std::ostream &o, const gason::JsonString &sv) { return o.write(sv.data(), sv.length()); }
 
 union JsonValue {
-	JsonValue(double x) : fval(x) { u.tag = JSON_DOUBLE; }
-	JsonValue(int64_t x) : ival(x) { u.tag = JSON_NUMBER; }
-	JsonValue(JsonString x) : sval(x) { u.tag = JSON_STRING; }
+	JsonValue(double x) noexcept : fval(x) { u.tag = JSON_DOUBLE; }
+	JsonValue(int64_t x) noexcept : ival(x) { u.tag = JSON_NUMBER; }
+	JsonValue(JsonString x) noexcept : sval(x) { u.tag = JSON_STRING; }
 
-	JsonValue(JsonTag tag = JSON_NULL, void *payload = nullptr) {
+	JsonValue(JsonTag tag = JSON_NULL, void *payload = nullptr) noexcept {
 		u.tag = tag;
 		ival = uintptr_t(payload);
 	}
-	JsonTag getTag() const { return JsonTag(u.tag); }
+	JsonTag getTag() const noexcept { return JsonTag(u.tag); }
 
-	int64_t toNumber() const {
+	int64_t toNumber() const noexcept {
 		assert(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
 		if (getTag() == JSON_NUMBER) return ival;
 		return fval;
 	}
-	double toDouble() const {
+	double toDouble() const noexcept {
 		assert(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
 		if (getTag() == JSON_DOUBLE) return fval;
 		return ival;
 	}
-	std::string_view toString() const {
+	std::string_view toString() const noexcept {
 		assert(getTag() == JSON_STRING);
 		return sval;
 	}
-	JsonNode *toNode() const {
+	JsonNode *toNode() const noexcept {
 		assert(getTag() == JSON_ARRAY || getTag() == JSON_OBJECT);
 		return node;
 	}
@@ -135,33 +132,33 @@ struct JsonNode {
 	}
 
 	const JsonNode &operator[](std::string_view sv) const;
-	bool empty() const;
+	bool empty() const noexcept;
 	JsonNode *toNode() const;
 };
 
 struct JsonIterator {
 	JsonNode *p;
 
-	void operator++() { p = p->next; }
-	bool operator!=(const JsonIterator &x) const { return p != x.p; }
-	JsonNode *operator*() const { return p; }
-	JsonNode *operator->() const { return p; }
+	void operator++() noexcept { p = p->next; }
+	bool operator!=(const JsonIterator &x) const noexcept { return p != x.p; }
+	JsonNode *operator*() const noexcept { return p; }
+	JsonNode *operator->() const noexcept { return p; }
 };
 
 inline JsonIterator begin(JsonValue o) { return JsonIterator{o.toNode()}; }
-inline JsonIterator end(JsonValue) { return JsonIterator{nullptr}; }
+inline JsonIterator end(JsonValue) noexcept { return JsonIterator{nullptr}; }
 
 struct JsonNodeIterator {
 	const JsonNode *p;
 
-	void operator++() { p = p->next; }
-	bool operator!=(const JsonNodeIterator &x) const { return p != x.p; }
-	const JsonNode &operator*() const { return *p; }
-	const JsonNode *operator->() const { return p; }
+	void operator++() noexcept { p = p->next; }
+	bool operator!=(const JsonNodeIterator &x) const noexcept { return p != x.p; }
+	const JsonNode &operator*() const noexcept { return *p; }
+	const JsonNode *operator->() const noexcept { return p; }
 };
 
 inline JsonNodeIterator begin(const JsonNode &w) { return JsonNodeIterator{w.toNode()}; }
-inline JsonNodeIterator end(const JsonNode &) { return JsonNodeIterator{nullptr}; }
+inline JsonNodeIterator end(const JsonNode &) noexcept { return JsonNodeIterator{nullptr}; }
 
 #define JSON_ERRNO_MAP(XX)                           \
 	XX(OK, "ok")                                     \
@@ -182,7 +179,7 @@ enum JsonErrno {
 #undef XX
 };
 
-const char *jsonStrError(int err);
+const char *jsonStrError(int err) noexcept;
 
 class JsonAllocator {
 	struct Zone {
@@ -191,7 +188,7 @@ class JsonAllocator {
 	} * head;
 
 public:
-	JsonAllocator() : head(nullptr) {}
+	JsonAllocator() noexcept : head(nullptr) {}
 	JsonAllocator(const JsonAllocator &) = delete;
 	JsonAllocator &operator=(const JsonAllocator &) = delete;
 	JsonAllocator(JsonAllocator &&x) : head(x.head) { x.head = nullptr; }
@@ -204,11 +201,11 @@ public:
 		return *this;
 	}
 	~JsonAllocator() { deallocate(); }
-	void *allocate(size_t size);
-	void deallocate();
+	void *allocate(size_t size) noexcept;
+	void deallocate() noexcept;
 };
 
-int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &allocator);
+int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &allocator) noexcept;
 bool isHomogeneousArray(const JsonValue &v);
 
 // Parser wrapper

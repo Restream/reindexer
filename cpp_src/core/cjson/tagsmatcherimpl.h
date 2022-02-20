@@ -9,6 +9,7 @@
 #include "ctag.h"
 #include "tagspath.h"
 #include "tagspathcache.h"
+#include "tools/randomgenerator.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
@@ -16,9 +17,15 @@ namespace reindexer {
 
 class TagsMatcherImpl {
 public:
-	TagsMatcherImpl() : version_(0), stateToken_(rand()) {}
-	TagsMatcherImpl(PayloadType payloadType, int32_t stateToken = rand())
+	using TmListT = h_vector<const TagsMatcherImpl *, 10>;
+
+	TagsMatcherImpl() : version_(0), stateToken_(tools::RandomGenerator::gets32()) {}
+	TagsMatcherImpl(PayloadType payloadType, int32_t stateToken = tools::RandomGenerator::gets32())
 		: payloadType_(payloadType), version_(0), stateToken_(stateToken) {}
+	TagsMatcherImpl(PayloadType payloadType, const TmListT &tmList)
+		: payloadType_(payloadType), version_(0), stateToken_(tools::RandomGenerator::gets32()) {
+		createMergedTagsMatcher(tmList);
+	}
 	~TagsMatcherImpl() = default;
 
 	TagsPath path2tag(std::string_view jsonPath) const {
@@ -244,8 +251,42 @@ public:
 
 		return res + "]";
 	}
+	// Check if other tagsmatcher includes all of the tags from this tagsmatcher
+	bool isSubsetOf(const TagsMatcherImpl &otm) const {
+		for (auto &pathP : names2tags_) {
+			const auto found = otm.names2tags_.find(pathP.first);
+			if (found == otm.names2tags_.end() || found->second != pathP.second) {
+				return false;
+			}
+		}
+		return true;
+	}
 
 protected:
+	void createMergedTagsMatcher(const TmListT &tmList) {
+		// Create unique state token
+		auto found = tmList.end();
+		do {
+			found = std::find_if(tmList.begin(), tmList.end(),
+								 [this](const TagsMatcherImpl *tm) { return tm && tm->stateToken() == stateToken(); });
+			if (found != tmList.end()) {
+				stateToken_ = tools::RandomGenerator::gets32();
+			}
+		} while (found != tmList.end());
+
+		// Create merged tags list
+		for (const auto &tm : tmList) {
+			if (!tm) continue;
+
+			for (unsigned tag = 0; tag < tm->tags2names_.size(); ++tag) {
+				auto resp = names2tags_.try_emplace(tm->tags2names_[tag], tags2names_.size());
+				if (resp.second) {	// New tag
+					tags2names_.emplace_back(tm->tags2names_[tag]);
+				}
+			}
+		}
+	}
+
 	fast_hash_map<string, int, hash_str, equal_str> names2tags_;
 	vector<string> tags2names_;
 	PayloadType payloadType_;

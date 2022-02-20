@@ -1,7 +1,6 @@
 #include "joinresults.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/payload/payloadiface.h"
-#include "queryresults.h"
 
 #include <numeric>
 
@@ -59,11 +58,11 @@ ItemImpl JoinedFieldIterator::GetItem(int itemIdx, const PayloadType& pt, const 
 	return ItemImpl(pt, constItemRef.Value(), tm);
 }
 
-QueryResults JoinedFieldIterator::ToQueryResults() const {
-	if (ItemsCount() == 0) return QueryResults();
+LocalQueryResults JoinedFieldIterator::ToQueryResults() const {
+	if (ItemsCount() == 0) return LocalQueryResults();
 	ItemRefVector::const_iterator begin = joinRes_->items_.begin() + currOffset_;
 	ItemRefVector::const_iterator end = begin + ItemsCount();
-	return QueryResults(begin, end);
+	return LocalQueryResults(begin, end);
 }
 
 int JoinedFieldIterator::ItemsCount() const {
@@ -116,12 +115,17 @@ int ItemIterator::getJoinedItemsCount() const {
 	return joinedItemsCount_;
 }
 
-ItemIterator ItemIterator::CreateFrom(QueryResults::Iterator it) {
-	static NamespaceResults empty;
-	static ItemIterator ret(&empty, 0);
+ItemIterator ItemIterator::CreateFrom(LocalQueryResults::Iterator it) {
+	auto ret = ItemIterator::CreateEmpty();
 	auto& itemRef = it.qr_->Items()[it.idx_];
 	if ((itemRef.Nsid() >= it.qr_->joined_.size())) return ret;
 	return ItemIterator(&(it.qr_->joined_[itemRef.Nsid()]), itemRef.Id());
+}
+
+ItemIterator ItemIterator::CreateEmpty() {
+	static NamespaceResults empty;
+	static ItemIterator ret(&empty, 0);
+	return ret;
 }
 
 ItemOffset::ItemOffset() : field(0), offset(0), size(0) {}
@@ -134,7 +138,7 @@ bool ItemOffset::operator==(const ItemOffset& other) const {
 }
 bool ItemOffset::operator!=(const ItemOffset& other) const { return !operator==(other); }
 
-void NamespaceResults::Insert(IdType rowid, size_t fieldIdx, QueryResults&& qr) {
+void NamespaceResults::Insert(IdType rowid, size_t fieldIdx, LocalQueryResults&& qr) {
 	assert(int(fieldIdx) < joinedSelectorsCount_);
 	ItemOffsets& offsets = offsets_[rowid];
 	if (offsets.empty()) {

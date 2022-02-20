@@ -22,6 +22,7 @@ about reindexer server and HTTP API refer to
   - [Full text search](#full-text-search)
   - [Disk Storage](#disk-storage)
   - [Replication](#replication)
+  - [Sharding](#sharding)
 - [Usage](#usage)
   - [SQL compatible interface](#sql-compatible-interface)
 - [Installation](#installation)
@@ -124,6 +125,10 @@ When a namespace is created, all its documents are stored into RAM, so the queri
 ### Replication
 
 Reindexer supports synchronious and asynchronious replication. Check replication documentation [here](replication.md)
+
+### Sharding
+
+Reindexer has some basic support for sharding. Check sharding documentation [here](sharding.md)
 
 ## Usage
 

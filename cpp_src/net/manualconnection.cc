@@ -70,6 +70,7 @@ int manual_connection::async_connect(std::string_view addr) noexcept {
 		close_conn(k_sock_closed_err);
 	}
 	assert(w_data_.empty());
+	++conn_id_;
 	int ret = sock_.connect(addr);
 	if (ret == 0) {
 		state_ = conn_state::connected;
@@ -188,11 +189,14 @@ void manual_connection::rm_io_events(int events) noexcept {
 void manual_connection::io_callback(ev::io &, int revents) {
 	if (ev::ERROR & revents) return;
 
+	const auto conn_id = conn_id_;
 	if (revents & ev::READ) {
-		read_cb();
-		revents |= ev::WRITE;
+		int err = read_cb();
+		if (!err) {
+			revents |= ev::WRITE;
+		}
 	}
-	if (revents & ev::WRITE) {
+	if (revents & ev::WRITE && conn_id == conn_id_) {
 		write_cb();
 	}
 }
@@ -211,10 +215,12 @@ void manual_connection::write_cb() {
 	}
 }
 
-void manual_connection::read_cb() {
+int manual_connection::read_cb() {
+	int err = 0;
 	if (r_data_.buf.size()) {
-		read(r_data_.buf, r_data_.transfer, nullptr);
+		read(r_data_.buf, r_data_.transfer, &err);
 	}
+	return err;
 }
 
 bool manual_connection::read_from_buf(span<char> rd_buf, transfer_data &transfer, bool read_full) noexcept {

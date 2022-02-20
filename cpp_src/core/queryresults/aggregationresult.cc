@@ -16,13 +16,13 @@ namespace reindexer {
 
 using namespace std::string_view_literals;
 
-std::string_view Parameters::Value() noexcept { return "value"; }
-std::string_view Parameters::Type() noexcept { return "type"; }
-std::string_view Parameters::Facets() noexcept { return "facets"; }
-std::string_view Parameters::Count() noexcept { return "count"; }
-std::string_view Parameters::Values() noexcept { return "values"; }
-std::string_view Parameters::Distincts() noexcept { return "distincts"; }
-std::string_view Parameters::Fields() noexcept { return "fields"; }
+constexpr std::string_view Parameters::Value() noexcept { return "value"sv; }
+constexpr std::string_view Parameters::Type() noexcept { return "type"sv; }
+constexpr std::string_view Parameters::Facets() noexcept { return "facets"sv; }
+constexpr std::string_view Parameters::Count() noexcept { return "count"sv; }
+constexpr std::string_view Parameters::Values() noexcept { return "values"sv; }
+constexpr std::string_view Parameters::Distincts() noexcept { return "distincts"sv; }
+constexpr std::string_view Parameters::Fields() noexcept { return "fields"sv; }
 
 using ParametersFieldsNumbers = const std::unordered_map<std::string_view, int>;
 ParametersFieldsNumbers kParametersFieldNumbers = {{Parameters::Value(), 1},  {Parameters::Type(), 2},	 {Parameters::Count(), 1},

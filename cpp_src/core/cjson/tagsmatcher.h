@@ -5,14 +5,18 @@
 #include "core/payload/payloadtype.h"
 #include "estl/cow.h"
 #include "tagspathcache.h"
+#include "tools/randomgenerator.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
 
 class TagsMatcher {
 public:
+	struct unsafe_empty_t {};
+
 	TagsMatcher() : impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>()), updated_(false) {}
-	TagsMatcher(PayloadType payloadType, int32_t stateToken = rand())
+	TagsMatcher(unsafe_empty_t) noexcept : updated_(false) {}
+	TagsMatcher(PayloadType payloadType, int32_t stateToken = tools::RandomGenerator::gets32())
 		: impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>(payloadType, stateToken)), updated_(false) {}
 
 	int name2tag(std::string_view name) const { return impl_->name2tag(name); }
@@ -69,10 +73,22 @@ public:
 	void UpdatePayloadType(PayloadType payloadType, bool incVersion) {
 		impl_.clone()->updatePayloadType(payloadType, updated_, incVersion);
 	}
+	static TagsMatcher CreateMergedTagsMatcher(PayloadType payloadType, const std::vector<TagsMatcher>& tmList) {
+		TagsMatcherImpl::TmListT implList;
+		implList.reserve(tmList.size());
+		for (const auto& tm : tmList) {
+			implList.emplace_back(tm.impl_.get());
+		}
+		TagsMatcher tm(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>(std::move(payloadType), implList));
+		return tm;
+	}
+	bool IsSubsetOf(const TagsMatcher& otm) const { return impl_->isSubsetOf(*otm.impl_); }
 
 	string dump() const { return impl_->dumpTags() + "\n" + impl_->dumpPaths(); }
 
 protected:
+	TagsMatcher(intrusive_ptr<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>&& impl) : impl_(std::move(impl)), updated_(false) {}
+
 	shared_cow_ptr<TagsMatcherImpl> impl_;
 	bool updated_;
 };

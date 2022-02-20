@@ -7,83 +7,82 @@ namespace reindexer::sharding {
 
 ShardingKeys::ShardingKeys(const reindexer::cluster::ShardingConfig& config) {
 	for (const auto& ns : config.namespaces) {
-		IndexesData& indexesData = keys_[ns.ns];
-		ValuesData& valuesData = indexesData[ns.index];
+		NsData& nsData = keys_[ns.ns];
+		nsData.indexName = ns.index;
+		nsData.defaultShard = ns.defaultShard;
 		for (const auto& key : ns.keys) {
 			for (const Variant& v : key.values) {
-				valuesData[v] = key.shardId;
+				nsData.keysToShard[v] = key.shardId;
 			}
 		}
 	}
 }
 
-std::vector<std::string_view> ShardingKeys::GetIndexes(std::string_view nsName) const {
-	std::vector<std::string_view> indexes;
+ShardingKeys::ShardIndexWithValues ShardingKeys::GetIndex(std::string_view nsName) const {
 	auto itNsData = keys_.find(nsName);
 	if (itNsData != keys_.end()) {
-		indexes.reserve(itNsData->second.size());
-		for (auto it = itNsData->second.begin(); it != itNsData->second.end(); ++it) {
-			indexes.emplace_back(std::string_view(it->first));
-		}
+		return ShardIndexWithValues{itNsData->second.indexName, &itNsData->second.keysToShard};
 	}
-	return indexes;
+	throw Error(errLogic, "Can not find index for sharded ns [%s]", nsName);
 }
 
-int ShardingKeys::GetShardId(std::string_view ns, std::string_view index) const {
-	auto itNsData = keys_.find(ns);
-	if (itNsData == keys_.end()) return int(ShardIdType::NotSet);
-	auto itIndexData = itNsData->second.find(index);
-	if (itIndexData == itNsData->second.end()) return int(ShardIdType::NotSet);
-	if (itIndexData->second.size() > 0) {
-		return itIndexData->second.begin()->second;
+int ShardingKeys::GetDefaultHost(std::string_view nsName) const {
+	auto itNsData = keys_.find(nsName);
+	if (itNsData != keys_.end()) {
+		return itNsData->second.defaultShard;
 	}
-	return int(ShardIdType::NotSet);
+	throw Error(errLogic, "Can not find defaultShard for sharded ns [%s]", nsName);
+}
+
+bool ShardingKeys::IsShardIndex(std::string_view ns, std::string_view index) const {
+	const auto itNsData = keys_.find(ns);
+	if (itNsData == keys_.end()) return false;
+	return itNsData->second.indexName == index;
 }
 
 int ShardingKeys::GetShardId(std::string_view ns, std::string_view index, const VariantArray& vals, bool& isShardKey) const {
 	isShardKey = false;
 	auto itNsData = keys_.find(ns);
-	if (itNsData == keys_.end()) return int(ShardIdType::NotSet);
-	auto itIndexData = itNsData->second.find(index);
-	if (itIndexData == itNsData->second.end()) return int(ShardIdType::NotSet);
+	if (itNsData == keys_.end()) {
+		throw Error(errLogic, "Namespace [%s] not found", ns);
+	}
+	if (itNsData->second.indexName != index) {
+		return ShardingKeyType::ProxyOff;
+	}
 	isShardKey = true;
-	int shardId = int(ShardIdType::NotSet);
-	const ValuesData& valuesData = itIndexData->second;
+	const auto& valuesData = itNsData->second.keysToShard;
 	if (vals.empty() || vals.size() > 1) {
 		throw Error(errLogic, "Sharding key value cannot be empty or an array");
 	}
 	auto it = valuesData.find(vals[0]);
-	if ((it == valuesData.end()) || (shardId != int(ShardIdType::NotSet) && shardId != it->second)) {
-		return int(ShardIdType::NotSet);
+	if (it == valuesData.end()) {
+		return itNsData->second.defaultShard;
 	}
-	shardId = it->second;
-
-	return shardId;
+	return it->second;
 }
 
-std::vector<int> ShardingKeys::GetShardsIds(std::string_view ns) const {
+ShardIDsContainer ShardingKeys::GetShardsIds(std::string_view ns) const {
 	auto itNsData = keys_.find(ns);
-	if (itNsData == keys_.end()) return {};
-	std::vector<int> ids;
-	std::set<int> uniqueIds = {0};	// with Proxy host
-	for (auto itIndexData = itNsData->second.begin(); itIndexData != itNsData->second.end(); ++itIndexData) {
-		for (auto itValuesData = itIndexData->second.begin(); itValuesData != itIndexData->second.end(); ++itValuesData) {
-			uniqueIds.insert(itValuesData->second);
-		}
+	if (itNsData == keys_.end()) {
+		throw Error(errLogic, "Namespace [%s] not found", ns);
+	}
+	ShardIDsContainer ids;
+	std::set<int> uniqueIds = {itNsData->second.defaultShard};	 // with Default host
+	for (auto itValuesData = itNsData->second.keysToShard.begin(); itValuesData != itNsData->second.keysToShard.end(); ++itValuesData) {
+		uniqueIds.insert(itValuesData->second);
 	}
 	ids.reserve(uniqueIds.size());
 	std::copy(uniqueIds.begin(), uniqueIds.end(), std::back_inserter(ids));
 	return ids;
 }
 
-std::vector<int> ShardingKeys::GetShardsIds() const {
-	std::vector<int> ids;
-	std::set<int> uniqueIds = {0};
+ShardIDsContainer ShardingKeys::GetShardsIds() const {
+	ShardIDsContainer ids;
+	std::set<int> uniqueIds;
 	for (auto itNsData = keys_.begin(); itNsData != keys_.end(); ++itNsData) {
-		for (auto itIndexData = itNsData->second.begin(); itIndexData != itNsData->second.end(); ++itIndexData) {
-			for (auto itValuesData = itIndexData->second.begin(); itValuesData != itIndexData->second.end(); ++itValuesData) {
-				uniqueIds.insert(itValuesData->second);
-			}
+		uniqueIds.insert(itNsData->second.defaultShard);	 // with Default host
+		for (auto itValuesData = itNsData->second.keysToShard.begin(); itValuesData != itNsData->second.keysToShard.end(); ++itValuesData) {
+			uniqueIds.insert(itValuesData->second);
 		}
 	}
 	ids.reserve(uniqueIds.size());

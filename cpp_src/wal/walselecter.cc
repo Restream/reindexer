@@ -12,7 +12,7 @@ const SemVersion kMinUnknownReplSupportRxVersion("2.6.0");
 
 WALSelecter::WALSelecter(const NamespaceImpl *ns, bool allowTxWithoutBegining) : ns_(ns), allowTxWithoutBegining_(allowTxWithoutBegining) {}
 
-void WALSelecter::operator()(QueryResults &result, SelectCtx &params, bool snapshot) {
+void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool snapshot) {
 	using namespace std::string_view_literals;
 	const Query &q = params.query;
 	int count = q.count;
@@ -177,7 +177,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params, bool snaps
 	putReplState(result);
 }
 
-void WALSelecter::putReplState(QueryResults &result) {
+void WALSelecter::putReplState(LocalQueryResults &result) {
 	WrSerializer ser;
 	JsonBuilder jb(ser);
 	// prepare json with replication state

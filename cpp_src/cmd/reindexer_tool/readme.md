@@ -22,12 +22,14 @@ reindexer_tool {OPTIONS}
 
 Options
   -d[DSN],      --dsn=[DSN]              DSN to 'reindexer', like 'cproto://127.0.0.1:6534/dbname' or 'builtin:///var/lib/reindexer/dbname'
-  -f[FILENAME], --filename=[FILENAME]    execute commands from file, then exit
-  -c[COMMAND],  --command=[COMMAND]      run only single command (SQL or internal) and exit
-  -o[FILENAME], --output=[FILENAME]      send query results to file
-  -l[INT=1..5], --log=[INT=1..5]         reindexer logging level
+  -f[FILENAME], --filename=[FILENAME]    Execute commands from file, then exit
+  -c[COMMAND],  --command=[COMMAND]      Run only single command (SQL or internal) and exit
+  -o[FILENAME], --output=[FILENAME]      Send query results to file
+  -l[INT=1..5], --log=[INT=1..5]         Reindexer logging level
   -C[INT],      --connections=[INT]      Number of simulateonous connections to db
   -t[INT],      --threads=[INT]          Number of threads used by db connector (used only for bench)
+  --createdb                             Enable created database if missed
+  --dump-mode=[DUMP_MODE]                Dump mode for sharded databases: 'full_node' (default), 'sharded_only', 'local_only'
 
 ```
 
@@ -63,6 +65,15 @@ Options
 ```
 \dump [namespace1 [namespace2]...]
 ```
+
+### Dump modes
+
+There are few different dump modes to interract with sharded databases:
+1. full_node - Default mode. Dumps all data of chosen node, including sharded namespaces. However, does not dump data from other shards.
+2. sharded_only - Dumps data from sharded namespaces only (including the data from all other shards). May be usefull for resharding.
+3. local_only - Dumps data from local namespaces, excluding sharded namespaces.
+
+Dump mode is saved in the output file and will be used during restoration process.
 
 ### Manipulate namespaces
 
@@ -127,4 +138,9 @@ reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --command '\dump' --output myd
 Restore database from backup file:
 ```sh
 reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --filename mydb.rxdump
+```
+
+Backup only sharded namespaces from all of the shards into single backup file:
+```sh
+reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --command '\dump' --dump-mode=sharded_only --output mydb.rxdump
 ```

@@ -30,7 +30,7 @@ class NsSelecter {
 public:
 	NsSelecter(NamespaceImpl *parent) : ns_(parent) {}
 
-	void operator()(QueryResults &result, SelectCtx &ctx, const RdxContext &);
+	void operator()(LocalQueryResults &result, SelectCtx &ctx, const RdxContext &);
 
 private:
 	struct LoopCtx {
@@ -47,16 +47,16 @@ private:
 	};
 
 	template <bool reverse, bool haveComparators, bool aggregationsOnly>
-	void selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &);
+	void selectLoop(LoopCtx &ctx, LocalQueryResults &result, const RdxContext &);
 	template <bool desc, bool multiColumnSort, typename It>
 	It applyForcedSort(It begin, It end, const ItemComparator &, const SelectCtx &ctx);
 	template <typename It>
 	void applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator &, const SelectCtx &ctx);
 
-	void calculateSortExpressions(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &, const QueryResults &);
+	void calculateSortExpressions(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &, const LocalQueryResults &);
 	template <bool aggregationsOnly>
 	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
-						 QueryResults &result);
+						 LocalQueryResults &result);
 
 	h_vector<Aggregator, 4> getAggregators(const Query &) const;
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
@@ -66,7 +66,7 @@ private:
 									   bool &skipSortingEntry, StrictMode);
 	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc, const joins::NamespaceResults &,
 						   const JoinedSelectors &);
-	void processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext &);
+	void processLeftJoins(LocalQueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext &);
 	bool checkIfThereAreLeftJoins(SelectCtx &sctx) const;
 	template <typename It>
 	void sortResults(LoopCtx &sctx, It begin, It end, const SortingOptions &sortingOptions);

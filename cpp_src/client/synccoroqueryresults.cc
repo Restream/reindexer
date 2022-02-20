@@ -10,7 +10,8 @@ using namespace reindexer::net;
 
 void SyncCoroQueryResults::fetchNextResults() {
 	if (rx_) {
-		Error err = rx_->fetchResults(results_.fetchFlags_ ? (results_.fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson, *this);
+		Error err =
+			rx_->fetchResults(results_.i_.fetchFlags_ ? (results_.i_.fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson, *this);
 		if (!err.ok()) {
 			throw err;
 		}
@@ -25,6 +26,12 @@ Error SyncCoroQueryResults::setClient(SyncCoroReindexerImpl* rx) {
 	}
 	rx_ = rx;
 	return Error();
+}
+
+SyncCoroQueryResults::~SyncCoroQueryResults() {
+	if (rx_ && results_.holdsRemoteData()) {
+		rx_->closeResults(*this);
+	}
 }
 
 TagsMatcher SyncCoroQueryResults::GetTagsMatcher(int nsid) const { return results_.GetTagsMatcher(nsid); }

@@ -105,7 +105,7 @@ NamespaceImpl::NamespaceImpl(const string &name, std::optional<int32_t> stateTok
 	: indexes_(*this),
 	  name_(name),
 	  payloadType_(name),
-	  tagsMatcher_(payloadType_, stateToken.has_value() ? stateToken.value() : rand()),
+	  tagsMatcher_(payloadType_, stateToken.has_value() ? stateToken.value() : tools::RandomGenerator::gets32()),
 	  unflushedCount_{0},
 	  queryCache_(make_shared<QueryCache>()),
 	  locker_(clusterizator, *this),
@@ -129,12 +129,18 @@ NamespaceImpl::NamespaceImpl(const string &name, std::optional<int32_t> stateTok
 	addIndex(tupleIndexDef, false);
 	updateSelectTime();
 
-	logPrintf(LogInfo, "Namespace::Construct (%s).Workers: %d, timeout: %d, tm_statetoken: %08X", name_, config_.optimizationSortWorkers,
-			  config_.optimizationTimeout, tagsMatcher_.stateToken());
+	logPrintf(LogInfo, "Namespace::Construct (%s).Workers: %d, timeout: %d, tm_statetoken: %08X(%s)", name_,
+			  config_.optimizationSortWorkers, config_.optimizationTimeout, tagsMatcher_.stateToken(),
+			  stateToken.has_value() ? "preset" : "rand");
 }
 
 NamespaceImpl::~NamespaceImpl() {
-	flushStorage(RdxContext());
+	try {
+		flushStorage(RdxContext());
+	} catch (Error &e) {
+		logPrintf(LogInfo, "Namespace::~Namespace (%s): Error on storage flush: '%s'", name_, e.what());
+	}
+
 #ifndef NDEBUG
 	for (const auto &strHldr : strHoldersWaitingToBeDeleted_) {
 		assert(strHldr.unique());
@@ -752,7 +758,7 @@ void NamespaceImpl::Insert(Item &item, const RdxContext &ctx) { ModifyItem(item,
 
 void NamespaceImpl::Update(Item &item, const RdxContext &ctx) { ModifyItem(item, ModeUpdate, ctx); }
 
-void NamespaceImpl::Update(const Query &query, QueryResults &result, const RdxContext &ctx) {
+void NamespaceImpl::Update(const Query &query, LocalQueryResults &result, const RdxContext &ctx) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 	UpdatesContainer pendedRepl;
 
@@ -887,7 +893,7 @@ void NamespaceImpl::doTruncate(UpdatesContainer &pendedRepl, const NsContext &ct
 	pendedRepl.emplace_back(UpdateRecord::Type::Truncate, name_, wal_.LastLSN(), repl_.nsVersion, ctx.rdxContext.emmiterServerId_);
 }
 
-void NamespaceImpl::Delete(const Query &q, QueryResults &result, const RdxContext &ctx) {
+void NamespaceImpl::Delete(const Query &q, LocalQueryResults &result, const RdxContext &ctx) {
 	PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 	UpdatesContainer pendedRepl;
 
@@ -969,7 +975,7 @@ Transaction NamespaceImpl::NewTransaction(const RdxContext &ctx) {
 	return Transaction(name_, payloadType_, tagsMatcher_, pkFields(), schema_, ctx.GetOriginLSN());
 }
 
-void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, const NsContext &ctx) {
+void NamespaceImpl::CommitTransaction(Transaction &tx, LocalQueryResults &result, const NsContext &ctx) {
 	Locker::WLockT wlck;
 	if (!ctx.isCopiedNsRequest) {
 		PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
@@ -1005,7 +1011,7 @@ void NamespaceImpl::CommitTransaction(Transaction &tx, QueryResults &result, con
 				break;
 			}
 			case TransactionStep::Type::Query: {
-				QueryResults qr;
+				LocalQueryResults qr;
 				qr.AddNamespace(std::shared_ptr<NamespaceImpl>{this, [](NamespaceImpl *) {}}, true, ctx.rdxContext);
 				auto &data = std::get<TransactionQueryStep>(step.data_);
 				if (data.query->type_ == QueryDelete) {
@@ -1233,7 +1239,7 @@ void NamespaceImpl::doModifyItem(Item &item, int mode, UpdatesContainer &pendedR
 	if (suggestedId >= 0 && exists && suggestedId != realItem.first) {
 		throw Error(errParams, "Suggested ID doesn't correspond to reald ID: %d vs %d", suggestedId, realItem.first);
 	}
-	IdType id = exists ? realItem.first : createItem(newPl.RealSize(), suggestedId);
+	const IdType id = exists ? realItem.first : createItem(newPl.RealSize(), suggestedId);
 
 	replicateTmUpdateIfRequired(pendedRepl, oldTmV, ctx);
 	lsn_t lsn;
@@ -1282,16 +1288,6 @@ void NamespaceImpl::doModifyItem(Item &item, int mode, UpdatesContainer &pendedR
 									repl_.nsVersion, ctx.rdxContext.emmiterServerId_, std::move(cjson));
 			break;
 	}
-}
-
-FieldsSet NamespaceImpl::getPK(const RdxContext &ctx) const {
-	auto rlck = rLock(ctx);
-	auto it = indexesNames_.find(kPKIndexName);
-	if (it == indexesNames_.end()) {
-		throw Error(errLogic, "Namespace '%s' doesn't contain PK index", name_);
-	}
-	Index *pkIndex = indexes_[it->second].get();
-	return pkIndex->Fields();
 }
 
 PayloadType NamespaceImpl::getPayloadType(const RdxContext &ctx) const {
@@ -1438,7 +1434,7 @@ Item NamespaceImpl::newItem() {
 	return Item(impl_.release());
 }
 
-void NamespaceImpl::doUpdate(const Query &query, QueryResults &result, UpdatesContainer &pendedRepl, const NsContext &ctx) {
+void NamespaceImpl::doUpdate(const Query &query, LocalQueryResults &result, UpdatesContainer &pendedRepl, const NsContext &ctx) {
 	NsSelecter selecter(this);
 	SelectCtx selCtx(query);
 	SelectFunctionsHolder func;
@@ -1554,7 +1550,7 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext &ctx, bool stat
 	}
 }
 
-void NamespaceImpl::doDelete(const Query &q, QueryResults &result, UpdatesContainer &pendedRepl, const NsContext &ctx) {
+void NamespaceImpl::doDelete(const Query &q, LocalQueryResults &result, UpdatesContainer &pendedRepl, const NsContext &ctx) {
 	NsSelecter selecter(this);
 	SelectCtx selCtx(q);
 	selCtx.contextCollectingMode = true;
@@ -1639,7 +1635,7 @@ void NamespaceImpl::replicateTmUpdateIfRequired(UpdatesContainer &pendedRepl, in
 	}
 }
 
-void NamespaceImpl::Select(QueryResults &result, SelectCtx &params, const RdxContext &ctx) {
+void NamespaceImpl::Select(LocalQueryResults &result, SelectCtx &params, const RdxContext &ctx) {
 	if (params.query.IsWALQuery()) {
 		WALSelecter selecter(this, true);
 		selecter(result, params);
@@ -2181,7 +2177,7 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext *ctx) {
 		int64_t expirationthreshold =
 			std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() -
 			index->GetTTLValue();
-		QueryResults qr;
+		LocalQueryResults qr;
 		qr.AddNamespace(std::shared_ptr<NamespaceImpl>{this, [](NamespaceImpl *) {}}, true, ctx);
 		doDelete(Query(name_).Where(index->Name(), CondLt, expirationthreshold), qr, pendedRepl, NsContext(ctx));
 	}
@@ -2515,19 +2511,20 @@ void NamespaceImpl::setFieldsBasedOnPrecepts(ItemImpl *ritem, UpdatesContainer &
 int64_t NamespaceImpl::GetSerial(const string &field, UpdatesContainer &replUpdates, const NsContext &ctx) {
 	int64_t counter = kStorageSerialInitial;
 
-	string ser = getMeta("_SERIAL_" + field);
+	std::string key(kSerialPrefix);
+	key.append(field);
+	auto ser = getMeta(key);
 	if (ser != "") {
 		counter = reindexer::stoll(ser) + 1;
 	}
 
 	std::string s = to_string(counter);
-	std::string key = "_SERIAL_" + field;
 	putMeta(key, std::string_view(s), replUpdates, ctx);
 
 	return counter;
 }
 
-void NamespaceImpl::FillResult(QueryResults &result, IdSet::Ptr ids) const {
+void NamespaceImpl::FillResult(LocalQueryResults &result, IdSet::Ptr ids) const {
 	for (auto &id : *ids) {
 		result.Add({id, items_[id], 0, 0});
 	}

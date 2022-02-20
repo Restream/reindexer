@@ -50,6 +50,9 @@ Transaction Reindexer::NewTransaction(std::string_view nsName) { return impl_->N
 Error Reindexer::CommitTransaction(Transaction& tr, QueryResults& result) { return impl_->CommitTransaction(tr, result, ctx_); }
 Error Reindexer::RollBackTransaction(Transaction& tr) { return impl_->RollBackTransaction(tr, ctx_); }
 Error Reindexer::GetMeta(std::string_view nsName, const string& key, string& data) { return impl_->GetMeta(nsName, key, data, ctx_); }
+Error Reindexer::GetMeta(std::string_view nsName, const std::string& key, vector<ShardedMeta>& data) {
+	return impl_->GetMeta(nsName, key, data, ctx_);
+}
 Error Reindexer::PutMeta(std::string_view nsName, const string& key, std::string_view data) {
 	return impl_->PutMeta(nsName, key, data, ctx_);
 }

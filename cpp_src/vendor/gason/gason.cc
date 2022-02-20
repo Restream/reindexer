@@ -15,7 +15,7 @@ namespace gason {
 
 using double_conversion::StringToDoubleConverter;
 
-const char *jsonStrError(int err) {
+const char *jsonStrError(int err) noexcept {
 	switch (err) {
 #define XX(no, str) \
 	case JSON_##no: \
@@ -27,7 +27,7 @@ const char *jsonStrError(int err) {
 	}
 }
 
-void *JsonAllocator::allocate(size_t size) {
+void *JsonAllocator::allocate(size_t size) noexcept {
 	size = (size + 7) & ~7;
 
 	if (head && head->used + size <= JSON_ZONE_SIZE) {
@@ -50,7 +50,7 @@ void *JsonAllocator::allocate(size_t size) {
 	return (char *)zone + sizeof(Zone);
 }
 
-void JsonAllocator::deallocate() {
+void JsonAllocator::deallocate() noexcept {
 	while (head) {
 		Zone *next = head->next;
 		free(head);
@@ -72,7 +72,7 @@ static inline int char2int(char c) {
 	return (c & ~' ') - 'A' + 10;
 }
 
-bool isDouble(char *s, size_t &size) {
+static bool isDouble(char *s, size_t &size) {
 	size = 0;
 
 	if (*s == '-') {
@@ -135,7 +135,7 @@ static inline JsonValue listToValue(JsonTag tag, JsonNode *tail) {
 	return JsonValue(tag, nullptr);
 }
 
-int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &allocator) {
+int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &allocator) noexcept {
 	JsonNode *tails[JSON_STACK_SIZE];
 	JsonTag tags[JSON_STACK_SIZE];
 	JsonString keys[JSON_STACK_SIZE];
@@ -329,8 +329,9 @@ int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &al
 			tails[pos]->key = keys[pos];
 			keys[pos] = JsonString();
 		} else {
-			if ((node = (JsonNode *)allocator.allocate(sizeof(JsonNode) - sizeof(JsonString))) == nullptr) return JSON_ALLOCATION_FAILURE;
+			if ((node = (JsonNode *)allocator.allocate(sizeof(JsonNode))) == nullptr) return JSON_ALLOCATION_FAILURE;
 			tails[pos] = insertAfter(tails[pos], node);
+			tails[pos]->key = JsonString();
 		}
 		tails[pos]->value = o;
 	}
@@ -357,7 +358,7 @@ const JsonNode &JsonNode::operator[](std::string_view key) const {
 	return empty_node;
 }
 
-bool JsonNode::empty() const { return this->value.u.tag == JsonTag(JSON_EMPTY); }
+bool JsonNode::empty() const noexcept { return this->value.u.tag == JsonTag(JSON_EMPTY); }
 
 JsonNode JsonParser::Parse(span<char> str, size_t *length) {
 	char *endp = nullptr;

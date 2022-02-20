@@ -488,7 +488,7 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 
 	switch (format) {
 		case FormatJson:
-			err = item.Unsafe().FromJSON(itemData, nullptr, mode == ModeDelete);
+			err = item.Unsafe().FromJSON(itemData, nullptr, false);	 // TODO: for mode == ModeDelete deserialize PK and sharding key only
 			break;
 		case FormatCJson:
 			if (item.GetStateToken() != stateToken) {
@@ -497,7 +497,7 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 			} else {
 				// TODO: To delete an item with sharding you need
 				// not only PK fields, but all the sharding keys
-				err = item.Unsafe().FromCJSON(itemData, mode == ModeDelete);
+				err = item.Unsafe().FromCJSON(itemData, false);	 // TODO: for mode == ModeDelete deserialize PK and sharding key only
 			}
 			break;
 		case FormatMsgPack: {
@@ -561,7 +561,9 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 		}
 		if (err.ok()) {
 			if (item.GetID() != -1) {
-				qres.AddItem(item);
+				LocalQueryResults lqr;
+				lqr.AddItem(item);
+				qres.AddQr(std::move(lqr), item.GetShardID());
 			}
 		} else {
 			return err;
@@ -618,7 +620,9 @@ Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, cproto::op
 
 	int32_t ptVersion = -1;
 	int flags = kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson;
-	if (flagsOpts.hasValue()) flags = flagsOpts.value();
+	if (flagsOpts.hasValue()) {
+		flags = flagsOpts.value();
+	}
 	ResultFetchOpts opts{flags, {&ptVersion, 1}, 0, INT_MAX};
 	return sendResults(ctx, qres, -1, opts);
 }
@@ -637,6 +641,7 @@ Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
 						  .WithEmmiterServerId(ctx.call->emmiterServerId)
 						  .WithShardId(ctx.call->shardId, ctx.call->shardingParallelExecution);
 			if (db->NeedTraceActivity()) {
+				// This With* must be the last one, because it creates strings, that will be copied on each next With* statement
 				return rx.WithActivityTracer(ctx.clientAddr, clientData->auth.Login(), clientData->connID);
 			}
 			return rx;
@@ -661,8 +666,9 @@ void RPCServer::cleanupTmpNamespaces(RPCClientData &clientData, std::string_view
 }
 
 Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, int reqId, const ResultFetchOpts &opts) {
+	auto data = getClientDataSafe(ctx);
 	WrResultSerializer rser(opts);
-	bool doClose = rser.PutResults(&qres);
+	bool doClose = rser.PutResults(&qres, data->rxVersion);
 	if (doClose && reqId >= 0) {
 		freeQueryResults(ctx, reqId);
 		reqId = -1;
@@ -672,21 +678,17 @@ Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, int reqId
 	return Error();
 }
 
-Error RPCServer::processTxItem(DataFormat format, std::string_view itemData, Item &item, ItemModifyMode mode,
+Error RPCServer::processTxItem(DataFormat format, std::string_view itemData, Item &item, ItemModifyMode /*mode*/,
 							   int stateToken) const noexcept {
 	switch (format) {
 		case FormatJson:
-			// TODO: To delete an item with sharding you need
-			// not only PK fields, but all the sharding keys
-			return item.FromJSON(itemData, nullptr, mode == ModeDelete);
+			return item.FromJSON(itemData, nullptr, false);	 // TODO: for mode == ModeDelete deserialize PK and sharding key only
 		case FormatCJson:
 			if (item.GetStateToken() != stateToken) {
 				return Error(errStateInvalidated, "stateToken mismatch:  %08X, need %08X. Can't process tx item", stateToken,
 							 item.GetStateToken());
 			} else {
-				// TODO: To delete an item with sharding you need
-				// not only PK fields, but all the sharding keys
-				return item.FromCJSON(itemData, mode == ModeDelete);
+				return item.FromCJSON(itemData, false);	 // TODO: for mode == ModeDelete deserialize PK and sharding key only
 			}
 		case FormatMsgPack: {
 			size_t offset = 0;
@@ -697,20 +699,20 @@ Error RPCServer::processTxItem(DataFormat format, std::string_view itemData, Ite
 	}
 }
 
-QueryResults &RPCServer::getQueryResults(cproto::Context &ctx, int &id) {
+QueryResults &RPCServer::getQueryResults(cproto::Context &ctx, int &id, int flags) {
 	auto data = getClientDataSafe(ctx);
 
 	if (id < 0) {
 		for (id = 0; id < int(data->results.size()); ++id) {
 			if (!data->results[id].second) {
-				data->results[id] = {QueryResults(), true};
+				data->results[id] = {QueryResults(flags), true};
 				return data->results[id].first;
 			}
 		}
 
 		if (data->results.size() >= cproto::kMaxConcurentQueries) throw Error(errLogic, "Too many parallel queries");
 		id = data->results.size();
-		data->results.push_back({QueryResults(), true});
+		data->results.push_back({QueryResults(flags), true});
 	}
 
 	if (id >= int(data->results.size())) {
@@ -860,7 +862,7 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 	}
 
 	int id = -1;
-	QueryResults &qres = getQueryResults(ctx, id);
+	QueryResults &qres = getQueryResults(ctx, id, flags);
 	auto ret = getDB(ctx, kRoleDataRead).Select(query, qres);
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
@@ -874,7 +876,7 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 
 Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, int limit, p_string ptVersionsPck) {
 	int id = -1;
-	QueryResults &qres = getQueryResults(ctx, id);
+	QueryResults &qres = getQueryResults(ctx, id, flags);
 	auto ret = getDB(ctx, kRoleDataRead).Select(querySql, qres);
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
@@ -973,14 +975,30 @@ Error RPCServer::ApplySnapshotChunk(cproto::Context &ctx, p_string ns, p_string 
 
 Error RPCServer::Commit(cproto::Context &ctx, p_string ns) { return getDB(ctx, kRoleDataWrite).Commit(ns); }
 
-Error RPCServer::GetMeta(cproto::Context &ctx, p_string ns, p_string key) {
-	string data;
-	auto err = getDB(ctx, kRoleDataRead).GetMeta(ns, key.toString(), data);
-	if (!err.ok()) {
-		return err;
+Error RPCServer::GetMeta(cproto::Context &ctx, p_string ns, p_string key, cproto::optional<int> options) {
+	if (options.hasValue() && options.value() == 1) {
+		std::vector<ShardedMeta> data;
+		auto err = getDB(ctx, kRoleDataRead).GetMeta(ns, key.toString(), data);
+		if (!err.ok()) {
+			return err;
+		}
+		cproto::Args ret;
+		WrSerializer wser;
+		for (auto &d : data) {
+			wser.Reset();
+			d.GetJSON(wser);
+			ret.push_back(cproto::Arg(wser.Slice()));
+		}
+		ctx.Return(ret);
+	} else {
+		string data;
+		auto err = getDB(ctx, kRoleDataRead).GetMeta(ns, key.toString(), data);
+		if (!err.ok()) {
+			return err;
+		}
+		ctx.Return({cproto::Arg(data)});
 	}
 
-	ctx.Return({cproto::Arg(data)});
 	return Error();
 }
 
@@ -1105,7 +1123,7 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	dispatcher_.Register(cproto::kCmdFetchResults, this, &RPCServer::FetchResults);
 	dispatcher_.Register(cproto::kCmdCloseResults, this, &RPCServer::CloseResults);
 	dispatcher_.Register(cproto::kCmdGetSQLSuggestions, this, &RPCServer::GetSQLSuggestions);
-	dispatcher_.Register(cproto::kCmdGetMeta, this, &RPCServer::GetMeta);
+	dispatcher_.Register(cproto::kCmdGetMeta, this, &RPCServer::GetMeta, true);
 	dispatcher_.Register(cproto::kCmdPutMeta, this, &RPCServer::PutMeta);
 	dispatcher_.Register(cproto::kCmdEnumMeta, this, &RPCServer::EnumMeta);
 	dispatcher_.Register(cproto::kCmdSubscribeUpdates, this, &RPCServer::SubscribeUpdates, true);

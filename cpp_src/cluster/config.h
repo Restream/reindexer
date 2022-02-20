@@ -162,15 +162,22 @@ struct ClusterConfigData {
 	int leaderSyncConcurrentSnapshotsPerNode = 2;
 };
 
+constexpr size_t kDefaultShardingProxyConnCount = 6;
+constexpr size_t kDefaultShardingProxyCoroPerConn = 16;
+
 struct ShardingConfig {
 	struct Key {
-		Error FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards);
-		Error FromJson(const gason::JsonNode &);
+		Error FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards, KeyValueType &valuesType,
+					  fast_hash_set<Variant> &checkVal);
+		Error FromJson(const gason::JsonNode &, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal);
 		void GetYml(std::stringstream &) const;
 		void GetJson(JsonBuilder &) const;
-		int shardId = IndexValueType::NotSet;
+		int shardId = ShardingKeyType::ProxyOff;
 		ShardingAlgorithmType algorithmType = ByValue;
 		VariantArray values;
+
+	private:
+		Error checkValue(Variant val, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal);
 	};
 	struct Namespace {
 		Error FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards);
@@ -180,6 +187,7 @@ struct ShardingConfig {
 		std::string ns;
 		std::string index;
 		std::vector<Key> keys;
+		int defaultShard = ShardingKeyType::ProxyOff;
 	};
 
 	Error FromYML(const std::string &yaml);
@@ -189,10 +197,14 @@ struct ShardingConfig {
 	std::string GetJson() const;
 	void GetJson(WrSerializer &) const;
 	void GetJson(JsonBuilder &) const;
-	std::vector<std::string> proxyDsns;
+	Error Validate() const;
 	std::vector<Namespace> namespaces;
 	std::map<int, std::vector<std::string>> shards;
-	int thisShardId = IndexValueType::NotSet;
+	int thisShardId = ShardingKeyType::ProxyOff;
+	std::chrono::milliseconds reconnectTimeout = std::chrono::milliseconds(3000);
+	std::chrono::seconds shardsAwaitingTimeout = std::chrono::seconds(30);
+	int proxyConnCount = kDefaultShardingProxyConnCount;
+	int proxyConnConcurrency = kDefaultShardingProxyCoroPerConn;
 };
 bool operator==(const ShardingConfig &, const ShardingConfig &);
 bool operator==(const ShardingConfig::Key &, const ShardingConfig::Key &);

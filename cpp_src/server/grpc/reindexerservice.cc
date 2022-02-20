@@ -427,13 +427,13 @@ static IndexDef toIndexDef(const Index& src) {
 }
 
 Error ReindexerService::packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr) {
-	wrser.PutVarUint(qr.getMergedNSCount());
-	for (int i = 0; i < qr.getMergedNSCount(); ++i) {
+	wrser.PutVarUint(qr.GetMergedNSCount());
+	for (int i = 0; i < qr.GetMergedNSCount(); ++i) {
 		wrser.PutVarUint(i);
-		wrser.PutVString(qr.getPayloadType(i).Name());
+		wrser.PutVString(qr.GetPayloadType(i).Name());
 
-		const PayloadType& t = qr.getPayloadType(i);
-		const TagsMatcher& m = qr.getTagsMatcher(i);
+		const PayloadType& t = qr.GetPayloadType(i);
+		const TagsMatcher& m = qr.GetTagsMatcher(i);
 
 		wrser.PutVarUint(m.stateToken());
 		wrser.PutVarUint(m.version());
@@ -443,7 +443,8 @@ Error ReindexerService::packPayloadTypes(WrSerializer& wrser, const reindexer::Q
 	return errOK;
 }
 
-Error ReindexerService::packCJSONItem(WrSerializer& wrser, reindexer::QueryResults::Iterator& it, const OutputFlags& opts) {
+template <typename ItT>
+Error ReindexerService::packCJSONItem(WrSerializer& wrser, ItT& it, const OutputFlags& opts) {
 	ItemRef itemRef = it.GetItemRef();
 	if (opts.withnsid()) {
 		wrser.PutVarUint(itemRef.Nsid());
@@ -517,16 +518,13 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 					wrser.PutVarUint(jIt.getJoinedItemsCount() > 0 ? jIt.getJoinedFieldsCount() : 0);
 					if (jIt.getJoinedItemsCount() == 0) continue;
 
-					size_t joinedField = item.qr_->joined_.size();
-					for (size_t ns = 0; ns < item.GetItemRef().Nsid(); ++ns) {
-						joinedField += item.qr_->joined_[ns].GetJoinedSelectorsCount();
-					}
+					size_t joinedField = item.qr_->GetJoinedField(item.GetNsID());
 					for (auto it = jIt.begin(); it != jIt.end(); ++it, ++joinedField) {
 						wrser.PutVarUint(it.ItemsCount());
 						if (it.ItemsCount() == 0) continue;
-						QueryResults jqr = it.ToQueryResults();
-						jqr.addNSContext(qr.getPayloadType(joinedField), qr.getTagsMatcher(joinedField), qr.getFieldsFilter(joinedField),
-										 qr.getSchema(joinedField));
+						LocalQueryResults jqr = it.ToQueryResults();
+						jqr.addNSContext(qr.GetPayloadType(joinedField), qr.GetTagsMatcher(joinedField), qr.GetFieldsFilter(joinedField),
+										 qr.GetSchema(joinedField));
 						for (size_t i = 0; i < jqr.Count(); i++) packCJSONItem(wrser, jqr.begin() + i, opts);
 					}
 				}
@@ -572,8 +570,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 	if (status.ok()) {
 		response.set_data(string(wrser.Slice().data(), wrser.Slice().length()));
 		QueryResultsResponse::QueryResultsOptions* opts = response.options().New();
-		bool isWALQuery = (qr.Count() && qr.begin().IsRaw());
-		opts->set_cacheenabled(qr.IsCacheEnabled() && !isWALQuery);
+		opts->set_cacheenabled(qr.IsCacheEnabled() && !qr.IsWalQuery());
 		if (!qr.GetExplainResults().empty()) {
 			opts->set_explain(qr.GetExplainResults());
 		}

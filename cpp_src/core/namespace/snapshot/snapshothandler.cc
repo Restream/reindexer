@@ -2,14 +2,13 @@
 #include "core/namespace/namespace.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/nsselecter.h"
-#include "wal/walselecter.h"
-
 #include "tools/logger.h"
+#include "wal/walselecter.h"
 
 namespace reindexer {
 
 Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
-	QueryResults walQr;
+	LocalQueryResults walQr;
 	const auto from = opts.from;
 	try {
 		if (!from.IsCompatibleByNsVersion(ExtendedLsn(ns_.repl_.nsVersion, ns_.wal_.LastLSN()))) {
@@ -41,7 +40,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 			selecter(walQr, selCtx, true);
 		}
 
-		QueryResults fullQr;
+		LocalQueryResults fullQr;
 		{
 			Query q = Query(ns_.name_).Where("#lsn", CondAny, {});
 			SelectCtx selCtx(q);
@@ -171,7 +170,7 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			break;
 		// Update query
 		case WalUpdateQuery: {
-			QueryResults result;
+			LocalQueryResults result;
 			Query q;
 			q.FromSQL(rec.data);
 			switch (q.type_) {
@@ -300,7 +299,7 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 		}
 	}
 
-	QueryResults qr;
+	LocalQueryResults qr;
 	NsContext nsCtx = NsContext(rdxCtx);
 	nsCtx.InSnapshot(ch.Records().back().LSN(), ch.IsWAL(), ch.IsLastChunk(), isInitialLeaderSync);
 	ns_.CommitTransaction(tx, qr, nsCtx);

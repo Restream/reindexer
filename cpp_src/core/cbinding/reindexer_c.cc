@@ -4,6 +4,7 @@
 #include <string.h>
 #include <locale>
 #include <mutex>
+#include <shared_mutex>
 
 #include "cgocancelcontextpool.h"
 #include "core/cjson/baseencoder.h"
@@ -27,6 +28,9 @@ const size_t kMaxPooledResultsCap = 0x10000;
 
 static Error err_not_init(-1, "Reindexer db has not initialized");
 static Error err_too_many_queries(errLogic, "Too many parallel queries");
+
+static std::shared_mutex clientVersionMutex;
+static SemVersion clientVersion;
 
 static reindexer_error error2c(const Error& err_) {
 	reindexer_error err;
@@ -52,6 +56,7 @@ static std::string_view str2cv(reindexer_string gs) { return std::string_view(re
 
 struct QueryResultsWrapper : QueryResults {
 	WrResultSerializer ser;
+	QueryResults::ProxiedRefsStorage proxiedRefsStorage;
 };
 struct TransactionWrapper {
 	TransactionWrapper(Transaction&& tr) : tr_(std::move(tr)) {}
@@ -67,6 +72,7 @@ struct put_results_to_pool {
 	void operator()(QueryResultsWrapper* res) const {
 		std::unique_ptr<QueryResultsWrapper> results{res};
 		results->Clear();
+		results->proxiedRefsStorage = std::vector<QueryResults::Iterator::ItemRefCache>();
 		if (results->ser.Cap() > kMaxPooledResultsCap) {
 			results->ser = WrResultSerializer();
 		} else {
@@ -93,8 +99,10 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 
 	result->ser.SetOpts({flags, span<int32_t>(pt_versions, pt_versions_count), 0, INT_MAX});
 
-	result->ser.PutResults(result.get());
-
+	{
+		std::shared_lock lock(clientVersionMutex);
+		result->ser.PutResults(result.get(), clientVersion, &result->proxiedRefsStorage);
+	}
 	out->len = result->ser.Len();
 	out->data = uintptr_t(result->ser.Buf());
 	out->results_ptr = uintptr_t(result.release());
@@ -122,18 +130,20 @@ reindexer_error reindexer_ping(uintptr_t rx) {
 	return error2c(db ? Error(errOK) : err_not_init);
 }
 
-static void procces_packed_item(Item& item, int mode, int state_token, reindexer_buffer data, int format, Error& err) {
+static void procces_packed_item(Item& item, int /*mode*/, int state_token, reindexer_buffer data, int format, Error& err) {
 	if (item.Status().ok()) {
 		switch (format) {
 			case FormatJson:
-				err = item.FromJSON(std::string_view(reinterpret_cast<const char*>(data.data), data.len), 0, mode == ModeDelete);
+				err = item.FromJSON(std::string_view(reinterpret_cast<const char*>(data.data), data.len), 0,
+									false);	 // TODO: for mode == ModeDelete deserialize PK and sharding key only
 				break;
 			case FormatCJson:
 				if (item.GetStateToken() != state_token) {
 					err = Error(errStateInvalidated, "stateToken mismatch:  %08X, need %08X. Can't process item", state_token,
 								item.GetStateToken());
 				} else {
-					err = item.FromCJSON(std::string_view(reinterpret_cast<const char*>(data.data), data.len), mode == ModeDelete);
+					err = item.FromCJSON(std::string_view(reinterpret_cast<const char*>(data.data), data.len),
+										 false);  // TODO: for mode == ModeDelete deserialize PK and sharding key only
 				}
 				break;
 			default:
@@ -244,7 +254,13 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 						break;
 				}
 				if (err.ok()) {
-					res->AddItem(item);
+					try {
+						LocalQueryResults lqr;
+						lqr.AddItem(item);
+						res->AddQr(std::move(lqr));
+					} catch (Error& e) {
+						err = e;
+					}
 				}
 			}
 		}
@@ -425,8 +441,8 @@ reindexer_error reindexer_enable_storage(uintptr_t rx, reindexer_string path, re
 }
 
 reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers) {
+	SemVersion cliVersion(str2cv(client_vers));
 	if (opts.options & kConnectOptWarnVersion) {
-		SemVersion cliVersion(str2cv(client_vers));
 		SemVersion libVersion(REINDEX_VERSION);
 		if (cliVersion != libVersion) {
 			std::cerr << "Warning: Used Reindexer client version: " << str2cv(client_vers) << " with library version: " << REINDEX_VERSION
@@ -438,6 +454,8 @@ reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpt
 	if (!db) return error2c(err_not_init);
 	Error err = db->Connect(str2c(dsn), opts);
 	if (err.ok() && db->NeedTraceActivity()) db->SetActivityTracer("builtin", "");
+	std::unique_lock lock(clientVersionMutex);
+	clientVersion = std::move(cliVersion);
 	return error2c(err);
 }
 
@@ -599,25 +617,6 @@ reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	Error err = trw->tr_.Modify(std::move(q));
 
 	return error2c(err);
-}
-
-reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int ns_id) {
-	QueryResults* qr = reinterpret_cast<QueryResults*>(results_ptr);
-	cptr -= sizeof(PayloadValue::dataHeader);
-
-	PayloadValue* pv = reinterpret_cast<PayloadValue*>(&cptr);
-	auto& tagsMatcher = qr->getTagsMatcher(ns_id);
-	auto& payloadType = qr->getPayloadType(ns_id);
-
-	WrSerializer ser;
-	ConstPayload pl(payloadType, *pv);
-	CJsonBuilder builder(ser, ObjType::TypePlain);
-	CJsonEncoder cjsonEncoder(&tagsMatcher);
-
-	cjsonEncoder.Encode(&pl, builder);
-	int n = ser.Len();
-	uint8_t* p = ser.DetachBuf().release();
-	return reindexer_buffer{p, n};
 }
 
 void reindexer_free_cjson(reindexer_buffer b) { delete[] b.data; }

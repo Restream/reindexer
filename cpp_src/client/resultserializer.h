@@ -19,6 +19,7 @@ public:
 		int64_t lsn = 0;
 		std::string_view data;
 		bool raw = false;
+		int shardId = ShardingKeyType::ProxyOff;
 	};
 
 	struct QueryParams {
@@ -28,11 +29,13 @@ public:
 		int flags = 0;
 		std::vector<AggregationResult> aggResults;
 		string explainResults;
+		int64_t shardingConfigVersion = -1;
+		int shardId = ShardingKeyType::ProxyOff;
 	};
 
 	void GetRawQueryParams(QueryParams &ret, std::function<void(int nsId)> updatePayloadFunc);
-	ItemParams GetItemData(int flags);
+	ItemParams GetItemData(int flags, int shardId);
 };
 
-}
+}  // namespace client
 }  // namespace reindexer

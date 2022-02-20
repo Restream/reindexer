@@ -59,7 +59,7 @@ jobs:
           if [[ $OS == ubuntu-latest ]]; then
             cmake -DENABLE_GRPC=ON -DWITH_${{matrix.sanitizer}}=On ..
           elif [[ $OS == macos* ]]; then
-            cmake ..
+            cmake -DGH_CI_OSX=ON ..
           else
             cmake -DENABLE_GRPC=ON ..
           fi
@@ -154,7 +154,8 @@ jobs:
   test-pyreindexer:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-10.15]
+        os: [ubuntu-18.04, ubuntu-20.04]
+        #os: [ubuntu-18.04, ubuntu-20.04, macos-10.15]
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build

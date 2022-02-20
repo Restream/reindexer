@@ -348,8 +348,8 @@ void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& split
 	if (!properties.empty()) {
 		for (auto& subnode : properties) {
 			splittedPath.emplace_back(string(subnode.key));
-			bool isSubnodeRequred = (required.find(std::string_view(subnode.key)) != required.end());
-			parseJsonNode(subnode, splittedPath, isSubnodeRequred);
+			bool isSubnodeRequired = (required.find(std::string_view(subnode.key)) != required.end());
+			parseJsonNode(subnode, splittedPath, isSubnodeRequired);
 			splittedPath.pop_back();
 		}
 	}

@@ -35,7 +35,6 @@ using reindexer::datastorage::StorageType;
 class Index;
 struct SelectCtx;
 struct JoinPreResult;
-class QueryResults;
 class DBConfigProvider;
 class SelectLockUpgrader;
 class QueryPreprocessor;
@@ -45,7 +44,7 @@ class RdxActivityContext;
 class ItemComparator;
 class SortExpression;
 class ProtobufSchema;
-class QueryResults;
+class LocalQueryResults;
 class SnapshotRecord;
 class Snapshot;
 struct SnapshotOpts;
@@ -122,7 +121,7 @@ protected:
 	friend SortExpression;
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	friend class ReindexerImpl;
-	friend QueryResults;
+	friend LocalQueryResults;
 	friend class SnapshotHandler;
 
 	class NSUpdateSortedContext : public UpdateSortedContext {
@@ -289,15 +288,15 @@ public:
 
 	void Insert(Item &item, const RdxContext &ctx);
 	void Update(Item &item, const RdxContext &ctx);
-	void Update(const Query &query, QueryResults &result, const RdxContext &);
+	void Update(const Query &query, LocalQueryResults &result, const RdxContext &);
 	void Upsert(Item &item, const RdxContext &);
 	void Delete(Item &item, const RdxContext &);
-	void Delete(const Query &query, QueryResults &result, const RdxContext &);
+	void Delete(const Query &query, LocalQueryResults &result, const RdxContext &);
 	void ModifyItem(Item &item, int mode, const RdxContext &ctx);
 	void Truncate(const RdxContext &);
 	void Refill(vector<Item> &, const RdxContext &);
 
-	void Select(QueryResults &result, SelectCtx &params, const RdxContext &);
+	void Select(LocalQueryResults &result, SelectCtx &params, const RdxContext &);
 	NamespaceDef GetDefinition(const RdxContext &ctx);
 	NamespaceMemStat GetMemStat(const RdxContext &);
 	NamespacePerfStat GetPerfStat(const RdxContext &);
@@ -308,7 +307,7 @@ public:
 	void CloseStorage(const RdxContext &);
 
 	Transaction NewTransaction(const RdxContext &ctx);
-	void CommitTransaction(Transaction &tx, QueryResults &result, const NsContext &ctx);
+	void CommitTransaction(Transaction &tx, LocalQueryResults &result, const NsContext &ctx);
 
 	Item NewItem(const RdxContext &ctx);
 	void ToPool(ItemImpl *item);
@@ -320,10 +319,9 @@ public:
 
 	int getIndexByName(const string &index) const;
 	bool getIndexByName(const string &name, int &index) const;
-	FieldsSet getPK(const RdxContext &ctx) const;
 	PayloadType getPayloadType(const RdxContext &ctx) const;
 
-	void FillResult(QueryResults &result, IdSet::Ptr ids) const;
+	void FillResult(LocalQueryResults &result, IdSet::Ptr ids) const;
 
 	void EnablePerfCounters(bool enable = true) { enablePerfCounters_ = enable; }
 
@@ -362,8 +360,8 @@ protected:
 
 	void markUpdated(bool forceOptimizeAllIndexes);
 	Item newItem();
-	void doUpdate(const Query &query, QueryResults &result, UpdatesContainer &pendedRepl, const NsContext &);
-	void doDelete(const Query &query, QueryResults &result, UpdatesContainer &pendedRepl, const NsContext &);
+	void doUpdate(const Query &query, LocalQueryResults &result, UpdatesContainer &pendedRepl, const NsContext &);
+	void doDelete(const Query &query, LocalQueryResults &result, UpdatesContainer &pendedRepl, const NsContext &);
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
 	void modifyItem(Item &item, int mode, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void deleteItem(Item &item, UpdatesContainer &pendedRepl, const NsContext &ctx);
@@ -475,7 +473,7 @@ protected:
 private:
 	NamespaceImpl(const NamespaceImpl &src);
 
-	bool isSystem() const { return !name_.empty() && name_[0] == '#'; }
+	bool isSystem() const noexcept { return !name_.empty() && name_[0] == '#'; }
 	IdType createItem(size_t realSize, IdType suggestedId);
 	void deleteStorage();
 
@@ -485,7 +483,7 @@ private:
 	void replicate(cluster::UpdateRecord &&rec, Locker::WLockT &&wlck, const RdxContext &ctx);
 	void replicate(UpdatesContainer &&recs, Locker::WLockT &&wlck, const NsContext &ctx);
 
-	void setTemporary() { repl_.temporary = true; }
+	void setTemporary() noexcept { repl_.temporary = true; }
 
 	void removeIndex(std::unique_ptr<Index> &);
 	void dumpIndex(std::ostream &os, std::string_view index) const;

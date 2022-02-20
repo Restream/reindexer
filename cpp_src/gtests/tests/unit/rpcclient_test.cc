@@ -502,6 +502,89 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 	loop.run();
 }
 
+template <typename RxT>
+void ReconnectTest(RxT& rx, RPCClientTestApi& api, size_t dataCount, const std::string& nsName) {
+	typename RxT::QueryResultsT qr;
+	auto err = rx.Select(reindexer::Query(nsName), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), dataCount);
+
+	api.StopServer();
+	api.StartServer();
+	qr = typename RxT::QueryResultsT();
+	err = rx.Select(reindexer::Query(nsName), qr);
+	if (err.ok()) {
+		ASSERT_EQ(qr.Count(), dataCount);
+	} else {
+		ASSERT_EQ(err.code(), errNetwork) << err.what();
+	}
+	qr = typename RxT::QueryResultsT();
+	err = rx.Select(reindexer::Query(nsName), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), dataCount);
+
+	err = rx.Stop();
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+TEST_F(RPCClientTestApi, Reconnect) {
+	// CoroReindexer should be able to handle reconnect properly
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+
+	loop.spawn([this, &loop]() noexcept {
+		constexpr auto kDataCount = 2;
+		const std::string kNsName = "ns1";
+		const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		CoroReindexer rx;
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+		CreateNamespace(rx, kNsName);
+		FillData(rx, kNsName, 0, kDataCount);
+
+		ReconnectTest(rx, *this, kDataCount, kNsName);
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, ReconnectSyncCoroRx) {
+	// SyncCoroReindexer should be able to handle reconnect properly
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+
+	loop.spawn([this, &loop]() noexcept {
+		constexpr auto kDataCount = 2;
+		const std::string kNsName = "ns1";
+		const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		{
+			reindexer::client::ConnectOpts opts;
+			opts.CreateDBIfMissing();
+			CoroReindexer crx;
+			auto err = crx.Connect(dsn, loop, opts);
+			ASSERT_TRUE(err.ok()) << err.what();
+			CreateNamespace(crx, kNsName);
+			FillData(crx, kNsName, 0, kDataCount);
+		}
+
+		SyncCoroReindexer rx;
+		auto err = rx.Connect(dsn);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		ReconnectTest(rx, *this, kDataCount, kNsName);
+	});
+
+	loop.run();
+}
+
 TEST_F(RPCClientTestApi, ServerRestart) {
 	// Client should handle error on server's restart
 	using namespace reindexer::client;

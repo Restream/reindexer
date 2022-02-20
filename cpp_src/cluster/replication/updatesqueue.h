@@ -62,8 +62,9 @@ public:
 					if (err.ok()) {
 						++repl.approves;
 						if (repl.requireResult) {
-							status.requireResult =
-								(repl.approves == consensusCnt && repl.replicatedToEmmiter) || (isEmmiter && repl.approves >= consensusCnt);
+							status.requireResult = (repl.approves == consensusCnt && repl.replicatedToEmmiter) ||
+												   (isEmmiter && repl.approves >= consensusCnt) ||
+												   (isEmmiter && repl.errors >= consensusCnt);
 						}
 					} else {
 						++repl.errors;
@@ -76,7 +77,10 @@ public:
 					}
 					if (++repl.replicas == requiredReplicas) {
 						status.requireErasure = true;
-						assert(repl.replicatedToEmmiter);
+						if (!repl.replicatedToEmmiter) {
+							std::this_thread::sleep_for(std::chrono::seconds(2));
+						}
+						assertf(repl.replicatedToEmmiter, "Required replicas: %d", requiredReplicas);
 					}
 				} while (!replication_.compare_exchange_strong(expected, repl, std::memory_order_acquire));
 				status.hasEnoughApproves = (repl.approves >= consensusCnt);
@@ -244,6 +248,7 @@ public:
 	template <typename ContextT>
 	std::pair<Error, bool> PushAndWait(UpdatesContainerT &&data, std::function<void()> beforeWait, const ContextT &) {
 		struct {
+			size_t dataSize = 0;
 			size_t executedCnt = 0;
 			Error err;
 		} localData;
@@ -251,11 +256,12 @@ public:
 			if (!err.ok()) {
 				localData.err = std::move(err);
 			}
-			++localData.executedCnt;
-			condResultReady_.notify_all();
+			if (++localData.executedCnt == localData.dataSize) {
+				condResultReady_.notify_all();
+			}
 		};
 		std::pair<uint64_t, uint64_t> entriesRange{0, 0};
-		const size_t dataSize = data.size();
+		localData.dataSize = data.size();
 		std::deque<UpdatePtr> dropped;
 
 		std::unique_lock lck(mtx_);
@@ -263,7 +269,7 @@ public:
 			return std::make_pair(invalidationErr_, false);
 		}
 		try {
-			logPrintf(LogTrace, "[cluster:queue] Push new sync updates (%d) for %s", dataSize, data[0].GetNsName());
+			logPrintf(LogTrace, "[cluster:queue] Push new sync updates (%d) for %s", localData.dataSize, data[0].GetNsName());
 
 			entriesRange = addDataToQueue(std::move(data), &onResult, dropped);
 
@@ -277,7 +283,7 @@ public:
 			}
 			static RdxContext dummyCtx_;
 			condResultReady_.wait(
-				lck, [&localData, dataSize] { return localData.executedCnt == dataSize; },
+				lck, [&localData] { return localData.executedCnt == localData.dataSize; },
 				dummyCtx_);	 // Don't pass cancel context here, because data are already on the leader and we have to handle them
 			return std::make_pair(std::move(localData.err), true);
 		} catch (...) {
@@ -309,10 +315,9 @@ public:
 
 		return std::make_pair(Error(), true);
 	}
-	bool TokenIsInWhiteList(std::string_view token /*, std::size_t hash*/) const noexcept {
+	bool TokenIsInWhiteList(std::string_view token, std::size_t hash) const noexcept {
 		if (allowList_.has_value()) {
-			// auto found = syncallowList_->find(token, hash);
-			auto found = allowList_->find(token);
+			const auto found = allowList_->find(token, hash);
 			if (found != allowList_->end() || allowList_->empty()) {
 				return true;
 			}
@@ -344,11 +349,9 @@ private:
 		assert(onResult);
 		std::pair<uint64_t, uint64_t> res;
 		for (size_t i = 0; i < data.size(); ++i) {
-			auto id = addDataImpl<false>(std::move(data[i]), onResult);
+			res.second = addDataImpl<false>(std::move(data[i]), onResult);
 			if (i == 0) {
-				res.first = res.second = id;
-			} else if (i == data.size() - 1) {
-				res.second = id;
+				res.first = res.second;
 			}
 		}
 		dropOverflowingUpdates(dropped);

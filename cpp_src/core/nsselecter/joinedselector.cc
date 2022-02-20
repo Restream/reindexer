@@ -7,7 +7,7 @@ constexpr size_t kMaxIterationsScaleForInnerJoinOptimization = 100;
 
 namespace reindexer {
 
-void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &query, bool &found, bool &matchedAtLeastOnce) {
+void JoinedSelector::selectFromRightNs(LocalQueryResults &joinItemR, const Query &query, bool &found, bool &matchedAtLeastOnce) {
 	assert(rightNs_);
 
 	JoinCacheRes joinResLong;
@@ -48,7 +48,8 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &que
 	}
 }
 
-void JoinedSelector::selectFromPreResultValues(QueryResults &joinItemR, const Query &query, bool &found, bool &matchedAtLeastOnce) const {
+void JoinedSelector::selectFromPreResultValues(LocalQueryResults &joinItemR, const Query &query, bool &found,
+											   bool &matchedAtLeastOnce) const {
 	size_t matched = 0;
 	for (const ItemRef &item : preResult_->values) {
 		assert(!item.Value().IsFree());
@@ -102,7 +103,7 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, bool 
 
 	bool found = false;
 	bool matchedAtLeastOnce = false;
-	QueryResults joinItemR;
+	LocalQueryResults joinItemR;
 	if (preResult_->dataMode == JoinPreResult::ModeValues) {
 		selectFromPreResultValues(joinItemR, *itemQueryPtr, found, matchedAtLeastOnce);
 	} else {

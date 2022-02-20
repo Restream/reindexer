@@ -8,12 +8,14 @@
 namespace reindexer {
 namespace cluster {
 
+class Clusterizator;
+
 class AsyncDataReplicator {
 public:
 	using NsNamesHashSetT = fast_hash_set<string, nocase_hash_str, nocase_equal_str>;
 	using UpdatesQueueT = UpdatesQueuePair<UpdateRecord>;
 
-	AsyncDataReplicator(UpdatesQueueT &, ReindexerImpl &);
+	AsyncDataReplicator(UpdatesQueueT &, ReindexerImpl &, Clusterizator &);
 
 	void Configure(AsyncReplConfigData config);
 	void Configure(ReplicationConfigData config);
@@ -22,6 +24,7 @@ public:
 	void Stop(bool resetConfig = false);
 	const std::optional<AsyncReplConfigData> &Config() const noexcept { return config_; }
 	ReplicationStats GetReplicationStats() const;
+	bool NamespaceIsInAsyncConfig(std::string_view nsName) const;
 
 private:
 	bool isExpectingStartup() const noexcept;
@@ -37,6 +40,7 @@ private:
 	mutable std::mutex mtx_;
 	UpdatesQueueT &updatesQueue_;
 	ReindexerImpl &thisNode_;
+	Clusterizator &clusterizator_;
 	std::deque<AsyncReplThread> replThreads_;
 	std::optional<AsyncReplConfigData> config_;
 	std::optional<ReplicationConfigData> baseConfig_;

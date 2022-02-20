@@ -31,7 +31,11 @@ void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, IAdd
 	while (encode(nullptr, rdser, objNode, true))
 		;
 	if (ds) {
-		assert(!ds->GetJoinsDatasource());
+		if (const auto joinsDs = ds->GetJoinsDatasource()) {
+			for (size_t i = 0; i < joinsDs->GetJoinedRowsCount(); ++i) {
+				encodeJoinedItems(objNode, joinsDs, i);
+			}
+		}
 		ds->PutAdditionalFields(objNode);
 	}
 }

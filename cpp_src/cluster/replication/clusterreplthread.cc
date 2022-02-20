@@ -33,6 +33,7 @@ ClusterReplThread::ClusterReplThread(int serverId, ReindexerImpl& thisNode, cons
 				}
 				base_.DisconnectNodes();
 			}
+			base_.SendUpdatesAsyncNotification();  // To prevent stucking on updates loop
 		});
 	});
 }

@@ -2,8 +2,10 @@
 
 #include <condition_variable>
 #include <unordered_map>
+#include "core/namespacedef.h"
 #include "core/rdxcontext.h"
 #include "coroutine/channel.h"
+#include "dumpoptions.h"
 #include "iotools.h"
 #include "net/ev/ev.h"
 #include "vendor/urlparser/urlparser.h"
@@ -52,6 +54,7 @@ public:
 	Error Process(const std::string& command);
 	Error FromFile(std::istream& in);
 	Status GetStatus();
+	Error SetDumpMode(const std::string& mode);
 
 protected:
 	void setStatus(Status&& status);
@@ -98,6 +101,11 @@ protected:
 	std::function<void(std::chrono::system_clock::time_point)> getBenchWorkerFn(std::atomic<int>& count, std::atomic<int>& errCount);
 
 	DBInterface db() { return db_.WithContext(&cancelCtx_); }
+	DBInterface parametrizedDb() {
+		return (!fromFile_ || dumpMode_ == DumpOptions::Mode::ShardedOnly) ? db() : db().WithShardId(ShardingKeyType::ProxyOff, false);
+	}
+	Error filterNamespacesByDumpMode(std::vector<reindexer::NamespaceDef>& defs, DumpOptions::Mode mode);
+	Error getMergedSerialMeta(DBInterface& db, std::string_view nsName, const std::string& key, std::string& result);
 
 	struct commandDefinition {
 		string command;
@@ -198,7 +206,7 @@ protected:
          Creates new database.
          )help"}
     };
-    // clang-format on
+	// clang-format on
 
 	reindexer::net::ev::dynamic_loop loop_;
 	CancelContext cancelCtx_;
@@ -216,6 +224,7 @@ protected:
 	std::thread executorThr_;
 	bool fromFile_ = {false};
 	bool targetHasReplicationConfig_ = {false};
+	std::atomic<DumpOptions::Mode> dumpMode_ = {DumpOptions::Mode::FullNode};
 };
 
 }  // namespace reindexer_tool

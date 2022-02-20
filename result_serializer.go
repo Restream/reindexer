@@ -9,9 +9,10 @@ import (
 
 type rawResultItemParams struct {
 	id      int
-	version int
+	version LsnT
 	nsid    int
 	proc    int
+	shardid int
 	cptr    uintptr
 	data    []byte
 }
@@ -23,12 +24,14 @@ type rawResultsExtraParam struct {
 }
 
 type rawResultQueryParams struct {
-	flags          int
-	totalcount     int
-	qcount         int
-	count          int
-	aggResults     [][]byte
-	explainResults []byte
+	flags                 int
+	totalcount            int
+	qcount                int
+	count                 int
+	aggResults            [][]byte
+	explainResults        []byte
+	shardingConfigVersion int64
+	shardId               int
 }
 
 type resultSerializer struct {
@@ -43,11 +46,11 @@ func newSerializer(buf []byte) resultSerializer {
 		Serializer: cjson.NewSerializer(buf),
 	}
 }
-func (s *resultSerializer) readRawtItemParams() (v rawResultItemParams) {
+func (s *resultSerializer) readRawtItemParams(shardId int) (v rawResultItemParams) {
 
 	if (s.flags & bindings.ResultsWithItemID) != 0 {
 		v.id = int(s.GetVarUInt())
-		v.version = int(s.GetVarUInt())
+		v.version = CreateLSNFromInt64(int64(s.GetVarUInt()))
 	}
 
 	if (s.flags & bindings.ResultsWithNsID) != 0 {
@@ -56,6 +59,14 @@ func (s *resultSerializer) readRawtItemParams() (v rawResultItemParams) {
 
 	if (s.flags & bindings.ResultsWithPercents) != 0 {
 		v.proc = int(s.GetVarUInt())
+	}
+
+	if (s.flags & bindings.ResultsWithShardId) != 0 {
+		if shardId != bindings.ShardingProxyOff {
+			v.shardid = shardId
+		} else {
+			v.shardid = int(s.GetVarUInt())
+		}
 	}
 
 	switch s.flags & bindings.ResultsFormatMask {
@@ -95,20 +106,22 @@ func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayload
 
 func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
 
+	v.shardingConfigVersion = -1
+	v.shardId = -2
 	for {
-
 		tag := s.GetVarUInt()
 		if tag == bindings.QueryResultEnd {
 			break
 		}
-
-		data := s.GetBytes()
 		switch tag {
 		case bindings.QueryResultExplain:
-			v.explainResults = data
+			v.explainResults = s.GetBytes()
 		case bindings.QueryResultAggregation:
-			v.aggResults = append(v.aggResults, data)
+			v.aggResults = append(v.aggResults, s.GetBytes())
+		case bindings.QueryResultShardingVersion:
+			v.shardingConfigVersion = s.GetVarInt()
+		case bindings.QueryResultShardId:
+			v.shardId = int(s.GetVarUInt())
 		}
 	}
-	return
 }

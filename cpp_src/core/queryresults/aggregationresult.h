@@ -17,13 +17,13 @@ class WrSerializer;
 class ProtobufSchemaBuilder;
 
 struct Parameters {
-	static std::string_view Value() noexcept;
-	static std::string_view Type() noexcept;
-	static std::string_view Facets() noexcept;
-	static std::string_view Count() noexcept;
-	static std::string_view Values() noexcept;
-	static std::string_view Distincts() noexcept;
-	static std::string_view Fields() noexcept;
+	constexpr static std::string_view Value() noexcept;
+	constexpr static std::string_view Type() noexcept;
+	constexpr static std::string_view Facets() noexcept;
+	constexpr static std::string_view Count() noexcept;
+	constexpr static std::string_view Values() noexcept;
+	constexpr static std::string_view Distincts() noexcept;
+	constexpr static std::string_view Fields() noexcept;
 };
 
 template <typename T, typename K>
@@ -73,20 +73,20 @@ struct AggregationResult {
 		value = root[Parameters::Value()].template As<double>();
 		type = strToAggType(root[Parameters::Type()].template As<std::string>());
 
-		for (auto subElem : root[Parameters::Fields()]) {
-			fields.push_back(subElem.template As<std::string>());
+		for (const auto &subElem : root[Parameters::Fields()]) {
+			fields.emplace_back(subElem.template As<std::string>());
 		}
 
-		for (auto facetNode : root[Parameters::Facets()]) {
+		for (const auto &facetNode : root[Parameters::Facets()]) {
 			FacetResult facet;
 			facet.count = facetNode[Parameters::Count()].template As<int>();
-			for (auto subElem : facetNode[Parameters::Values()]) {
-				facet.values.push_back(subElem.template As<std::string>());
+			for (const auto &subElem : root[Parameters::Values()]) {
+				facet.values.emplace_back(subElem.template As<std::string>());
 			}
-			facets.push_back(facet);
+			facets.emplace_back(std::move(facet));
 		}
 
-		for (auto distinctNode : root[Parameters::Distincts()]) {
+		for (const auto &distinctNode : root[Parameters::Distincts()]) {
 			distincts.emplace_back(distinctNode.template As<std::string>());
 		}
 	}

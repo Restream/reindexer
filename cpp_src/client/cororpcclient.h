@@ -10,6 +10,7 @@
 #include "core/keyvalue/p_string.h"
 #include "core/namespacedef.h"
 #include "core/query/query.h"
+#include "core/shardedmeta.h"
 #include "coroutine/mutex.h"
 #include "coroutine/waitgroup.h"
 #include "estl/fast_hash_map.h"
@@ -108,10 +109,12 @@ public:
 		}
 	}
 	Error GetMeta(std::string_view nsName, const string &key, string &data, const InternalRdxContext &ctx);
+	Error GetMeta(std::string_view nsName, const string &key, std::vector<ShardedMeta> &data, const InternalRdxContext &ctx);
 	Error PutMeta(std::string_view nsName, const string &key, std::string_view data, const InternalRdxContext &ctx);
 	Error EnumMeta(std::string_view nsName, vector<string> &keys, const InternalRdxContext &ctx);
 	Error GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string> &suggests);
 	Error Status(bool forceCheck, const InternalRdxContext &ctx);
+	bool RequiresStatusCheck() const noexcept { return conn_.IsRunning() && conn_.RequiresStatusCheck(); }
 
 	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext &ctx);
 	Error CommitTransaction(CoroTransaction &tr, CoroQueryResults &result, const InternalRdxContext &ctx);
@@ -146,13 +149,14 @@ protected:
 	}
 
 	cproto::CommandParams mkCommand(cproto::CmdCode cmd, const InternalRdxContext *ctx = nullptr) const noexcept;
+	cproto::CommandParams mkCommand(cproto::CmdCode cmd, cproto::CoroClientConnection::TimePointT requiredTs,
+									const InternalRdxContext *ctx) const noexcept;
 	static cproto::CommandParams mkCommand(cproto::CmdCode cmd, milliseconds netTimeout, const InternalRdxContext *ctx) noexcept;
 
 	Namespaces::PtrT namespaces_;
 	CoroReindexerConfig config_;
 	cproto::CoroClientConnection conn_;
 	bool terminate_ = false;
-	coroutine::wait_group resubWg_;
 	ev::dynamic_loop *loop_ = nullptr;
 	coroutine::mutex mtx_;
 	fast_hash_map<int64_t, ConnectionStateHandlerT> observers_;

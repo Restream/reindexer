@@ -9,7 +9,7 @@ namespace cluster {
 Clusterizator::Clusterizator(ReindexerImpl& thisNode, size_t maxUpdatesSize)
 	: updatesQueue_(maxUpdatesSize),
 	  clusterReplicator_(updatesQueue_, sharedSyncState_, thisNode),
-	  asyncReplicator_(updatesQueue_, thisNode) {}
+	  asyncReplicator_(updatesQueue_, thisNode, *this) {}
 
 void Clusterizator::Configure(ReplicationConfigData replConfig) {
 	std::unique_lock<std::mutex> lck(mtx_);
@@ -109,6 +109,10 @@ RaftInfo Clusterizator::GetRaftInfo(bool allowTransitState, const RdxContext& ct
 
 bool Clusterizator::NamespaceIsInClusterConfig(std::string_view nsName) { return clusterReplicator_.NamespaceIsInClusterConfig(nsName); }
 
+bool Clusterizator::NamesapceIsInReplicationConfig(std::string_view nsName) {
+	return clusterReplicator_.NamespaceIsInClusterConfig(nsName) || asyncReplicator_.NamespaceIsInAsyncConfig(nsName);
+}
+
 Error Clusterizator::Replicate(UpdateRecord&& rec, std::function<void()> beforeWaitF, const RdxContext& ctx) {
 	UpdatesContainer recs(1);
 	recs[0] = std::move(rec);
@@ -161,19 +165,6 @@ void Clusterizator::validateConfig() const {
 	auto& asyncConf = asyncReplicator_.Config();
 	if (!asyncConf.has_value() && !clusterConf.has_value()) {
 		throw Error(errParams, "Config is not set");
-	}
-	if (asyncConf.has_value() && clusterConf.has_value()) {
-		if (!asyncConf->nodes.empty()) {
-			if (asyncConf->namespaces->Empty() || clusterConf->namespaces.empty()) {
-				throw Error(errParams, "Async and cluster replicator have intercepting namespaces. Such configuration is not allowed");
-			}
-			for (auto& ns : clusterConf->namespaces) {
-				if (asyncConf->namespaces->IsInList(ns)) {
-					throw Error(errParams,
-								"Async and cluster replicator have intercepting namespace (%s). Such configuration is not allowed", ns);
-				}
-			}
-		}
 	}
 }
 

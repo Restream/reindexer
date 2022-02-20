@@ -3,6 +3,7 @@
 #include "client/synccororeindexer.h"
 #include "core/item.h"
 #include "core/reindexerimpl.h"
+#include "core/shardedmeta.h"
 #include "estl/shared_mutex.h"
 
 namespace reindexer {
@@ -51,6 +52,7 @@ public:
 	Error RollBackTransaction(Transaction &tr, const InternalRdxContext &ctx);
 
 	Error GetMeta(std::string_view nsName, const string &key, string &data, const InternalRdxContext &ctx);
+	Error GetMeta(std::string_view nsName, const string &key, vector<ShardedMeta> &data, const InternalRdxContext &ctx);
 	Error PutMeta(std::string_view nsName, const string &key, std::string_view data, const InternalRdxContext &ctx);
 	Error EnumMeta(std::string_view nsName, vector<string> &keys, const InternalRdxContext &ctx);
 
@@ -160,10 +162,8 @@ private:
 	ConnectionsMap clusterConns_;
 	std::atomic<unsigned short> sId_;
 	int configHandlerId_;
-#ifdef WITH_SHARDING
 	std::shared_ptr<sharding::LocatorService> shardingRouter_;
 	std::atomic_bool shardingInitialized_ = {false};
-#endif	// WITH_SHARDING
 
 	std::condition_variable processPingEvent_;
 	std::mutex processPingEventMutex_;
@@ -182,46 +182,40 @@ private:
 							 std::string_view nsName, Item &item);
 	template <typename FnL, FnL fnl>
 	Error resultFollowerAction(const InternalRdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader, const Query &query,
-							   QueryResults &result);
-
+							   LocalQueryResults &result);
 	template <typename FnL, FnL fnl>
 	Error resultItemFollowerAction(const InternalRdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader,
-								   std::string_view nsName, Item &item, QueryResults &result);
-
+								   std::string_view nsName, Item &item, LocalQueryResults &result);
 	Transaction newTxFollowerAction(const InternalRdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader,
 									std::string_view nsName);
-
 	Error transactionRollBackAction(const InternalRdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader,
 									Transaction &tx);
 
 	reindexer::client::Item toClientItem(std::string_view ns, client::SyncCoroReindexer *connection, reindexer::Item &clientItem);
+	void clientToCoreQueryResults(client::SyncCoroQueryResults &, LocalQueryResults &);
 
-	void clientToCoreQueryResults(client::SyncCoroQueryResults &, QueryResults &, bool, const std::unordered_set<int32_t> &stateTokenList);
-	void clientToCoreQueryResults(const Query &query, client::SyncCoroQueryResults &, QueryResults &, bool,
-								  const std::unordered_set<int32_t> &stateTokenList);
-
-	typedef std::function<void(const client::SyncCoroQueryResults::Iterator &, const client::SyncCoroQueryResults &, QueryResults &)>
-		CopyJoinResultsType;
-
-	void clientToCoreQueryResultsInternal(client::SyncCoroQueryResults &, QueryResults &, bool createTm,
-										  const std::unordered_set<int32_t> &stateTokenList,
-										  CopyJoinResultsType copyJoinResults = CopyJoinResultsType());
-
-	void copyJoinedData(const Query &query, const client::SyncCoroQueryResults::Iterator &it,
-						const client::SyncCoroQueryResults &clientResults, QueryResults &result);
-
+	bool isWithSharding(const Query &q, const InternalRdxContext &ctx) const noexcept;
 	bool isWithSharding(std::string_view nsName, const InternalRdxContext &ctx) const noexcept;
 	bool isWithSharding(const InternalRdxContext &ctx) const noexcept;
-
 	bool shouldProxyQuery(const Query &q);
 
-	template <typename Func, typename... Args>
-	Error delegateToShards(Func f, Args &&...args);
+	template <typename Func, typename FLocal, typename... Args>
+	Error delegateToShards(Func f, const FLocal &local, Args &&...args);
 	template <typename Func, typename... Args>
 	Error delegateToShardsByNs(bool toAll, Func f, std::string_view nsName, Args &&...args);
+	typedef Error (client::SyncCoroReindexer::*ItemModifyFun)(std::string_view, client::Item &);
+	template <ItemModifyFun fn>
+	Error modifyItemOnShard(const InternalRdxContext &ctx, std::string_view nsName, Item &item,
+							const std::function<Error(std::string_view, Item &)> &localFn);
+	template <typename Func, typename T, typename P = std::function<bool(const T &)>>
+	Error collectFromShardsByNs(
+		Func f, std::string_view nsName, std::vector<T> &result, P predicated = [](const T &) noexcept { return true; });
+	typedef Error (client::SyncCoroReindexer::*ItemModifyFunQr)(std::string_view, client::Item &, client::SyncCoroQueryResults &);
+	template <ItemModifyFunQr fn>
+	Error modifyItemOnShard(const InternalRdxContext &ctx, std::string_view nsName, Item &item, QueryResults &result,
+							const std::function<Error(std::string_view, Item &, LocalQueryResults &)> &localFn);
 
-	Error modifyItemOnShard(std::string_view nsName, Item &item, ItemModifyMode mode);
-	Error executeQueryOnShard(const Query &query, QueryResults &result, InternalRdxContext &,
-							  const std::function<Error(const Query &, QueryResults &)> & = {}) noexcept;
+	Error executeQueryOnShard(const Query &query, QueryResults &result, const InternalRdxContext &,
+							  const std::function<Error(const Query &, LocalQueryResults &, const InternalRdxContext &)> & = {}) noexcept;
 };
 }  // namespace reindexer

@@ -5,30 +5,14 @@
 
 #include "core/cjson/msgpackdecoder.h"
 #include "core/cjson/tagsmatcher.h"
-#include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/payload/payloadiface.h"
+#include "itemimplrawdata.h"
 #include "tools/serializer.h"
 
 using std::vector;
 
 namespace reindexer {
-
-struct ItemImplRawData {
-	ItemImplRawData() = default;
-	ItemImplRawData(PayloadValue v) : payloadValue_(std::move(v)) {}
-	ItemImplRawData(const ItemImplRawData &) = delete;
-	ItemImplRawData(ItemImplRawData &&) = default;
-	ItemImplRawData &operator=(const ItemImplRawData &) = delete;
-	ItemImplRawData &operator=(ItemImplRawData &&) = default;
-
-	PayloadValue payloadValue_;
-	std::unique_ptr<uint8_t[]> tupleData_;
-	std::unique_ptr<char[]> sourceData_;
-	vector<string> precepts_;
-	std::unique_ptr<std::deque<std::string>> holder_;
-	std::unique_ptr<std::vector<key_string>> keyStringsHolder_;
-};
 
 class Namespace;
 class Schema;

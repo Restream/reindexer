@@ -293,7 +293,7 @@ Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderS
 						  state.nsVersion, state.lastLsn, id, nsName);
 				const ExtendedLsn remoteLsn(state.nsVersion, state.lastLsn);
 				if (nsEntry.latestLsn.IsEmpty() ||
-					(nsEntry.latestLsn.IsCompatibleByNsVersion(remoteLsn) &&
+					(nsEntry.latestLsn.IsCompatibleByNsVersion(remoteLsn) && !remoteLsn.LSN().isEmpty() &&
 					 nsEntry.latestLsn.LSN().Counter() < remoteLsn.LSN().Counter()) ||
 					(!remoteLsn.NsVersion().isEmpty() && remoteLsn.NsVersion().Counter() > nsEntry.latestLsn.NsVersion().Counter())) {
 					nsEntry.nodes.clear();

@@ -7,6 +7,7 @@
 #include "core/namespace/namespacestat.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "core/namespacedef.h"
+#include "cororpcclient.h"
 #include "gason/gason.h"
 #include "tools/errors.h"
 #include "vendor/gason/gason.h"
@@ -52,7 +53,6 @@ Error CoroRPCClient::Stop() {
 		std::lock_guard lck(mtx_);
 		terminate_ = true;
 		conn_.Stop();
-		resubWg_.wait();
 		loop_ = nullptr;
 		terminate_ = false;
 	}
@@ -159,11 +159,11 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, CoroQueryRe
 		if (ret.Status().ok()) {
 			try {
 				auto args = ret.GetArgs(2);
-				CoroQueryResults qr(&conn_, {getNamespace(nsName)}, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
+				CoroQueryResults qr(nullptr, &conn_, {getNamespace(nsName)}, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
 									config_.NetTimeout);
 				if (qr.Status().ok()) {
 					for (std::string_view ns : qr.GetNamespaces()) {
-						getNamespace(ns)->UpdateTagsMatcher(qr.GetTagsMatcher(ns));
+						getNamespace(ns)->TryReplaceTagsMatcher(qr.GetTagsMatcher(ns));
 					}
 				}
 				if (results) {
@@ -171,10 +171,14 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, CoroQueryRe
 					return results->Status();
 				}
 				if (qr.Count() == 1) {
-					if ((qr.queryParams_.flags & kResultsFormatMask) != kResultsPure) {
-						item = qr.begin().GetItem();
+					auto it = qr.begin();
+					if ((qr.i_.queryParams_.flags & kResultsFormatMask) != kResultsPure) {
+						item = it.GetItem();
 					} else {
-						item.setID(qr.begin().GetItem().GetID());
+						item.setID(it.GetID());
+						item.setShardID(it.GetShardID());
+						item.setLSN(it.GetLSN());
+						item.impl_->setTagsMatcher(qr.GetTagsMatcher(0));
 					}
 				}
 				return qr.Status();
@@ -189,7 +193,7 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, CoroQueryRe
 				netTimeout = std::chrono::duration_cast<std::chrono::milliseconds>(netDeadline - conn_.Now());
 			}
 			CoroQueryResults qr;
-			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr).WithShardId(ShardingKeyType::ShardingProxyOff, false);
+			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr).WithShardId(ShardingKeyType::ProxyOff, false);
 			auto err = selectImpl(Query(string(nsName)).Limit(0), qr, netTimeout, ctxCompl);
 			if (err.code() == errTimeout) {
 				return Error(errTimeout, "Request timeout");
@@ -220,6 +224,27 @@ Error CoroRPCClient::GetMeta(std::string_view nsName, const string& key, string&
 		auto ret = conn_.Call(mkCommand(cproto::kCmdGetMeta, &ctx), nsName, key);
 		if (ret.Status().ok()) {
 			data = ret.GetArgs(1)[0].As<string>();
+		}
+		return ret.Status();
+	} catch (const Error& err) {
+		return err;
+	}
+}
+
+Error CoroRPCClient::GetMeta(std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data,
+							 const InternalRdxContext& ctx) {
+	try {
+		const int flags = 1;
+		auto ret = conn_.Call(mkCommand(cproto::kCmdGetMeta, &ctx), nsName, key, flags);
+		if (ret.Status().ok()) {
+			auto args = ret.GetArgs();
+			data.reserve(args.size());
+			for (auto& k : args) {
+				auto json = k.As<string>();
+				data.emplace_back();
+				auto err = data.back().FromJSON(giftStr(json));
+				if (!err.ok()) return err;
+			}
 		}
 		return ret.Status();
 	} catch (const Error& err) {
@@ -262,7 +287,7 @@ Error CoroRPCClient::Delete(const Query& query, CoroQueryResults& result, const 
 	try {
 		if (ret.Status().ok()) {
 			auto args = ret.GetArgs(2);
-			result.Bind(p_string(args[0]), int(args[1]));
+			result.Bind(p_string(args[0]), int(args[1]), &query);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -283,9 +308,9 @@ Error CoroRPCClient::Update(const Query& query, CoroQueryResults& result, const 
 	try {
 		if (ret.Status().ok()) {
 			auto args = ret.GetArgs(2);
-			result.Bind(p_string(args[0]), int(args[1]));
+			result.Bind(p_string(args[0]), int(args[1]), &query);
 			for (size_t i = 0; i < nsArray.size(); ++i) {
-				getNamespace(nsArray[i]->name)->UpdateTagsMatcher(result.GetTagsMatcher(i));
+				getNamespace(nsArray[i]->name)->TryReplaceTagsMatcher(result.GetTagsMatcher(i));
 			}
 		}
 	} catch (const Error& err) {
@@ -324,19 +349,7 @@ Error CoroRPCClient::Select(std::string_view querySQL, CoroQueryResults& result,
 }
 
 Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, milliseconds netTimeout, const InternalRdxContext& ctx) {
-	bool hasJoins = !query.joinQueries_.empty();
-	if (!hasJoins) {
-		for (auto& mq : query.mergeQueries_) {
-			if (!mq.joinQueries_.empty()) {
-				hasJoins = true;
-				break;
-			}
-		}
-	}
-	int flags = result.fetchFlags_ ? result.fetchFlags_ : (kResultsWithPayloadTypes | kResultsCJson);
-	if (hasJoins) {
-		flags |= kResultsWithItemID;
-	}
+	int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithPayloadTypes | kResultsCJson);
 	CoroQueryResults::NsArray nsArray;
 	WrSerializer qser;
 	query.Serialize(qser);
@@ -348,13 +361,13 @@ Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, mi
 	}
 	WrSerializer pser;
 	vec2pack(vers, pser);
-	result = CoroQueryResults(&conn_, std::move(nsArray), result.fetchFlags_, config_.FetchAmount, config_.NetTimeout);
+	result = CoroQueryResults(&conn_, std::move(nsArray), result.i_.fetchFlags_, config_.FetchAmount, config_.NetTimeout);
 
 	auto ret = conn_.Call(mkCommand(cproto::kCmdSelect, netTimeout, &ctx), qser.Slice(), flags, config_.FetchAmount, pser.Slice());
 	try {
 		if (ret.Status().ok()) {
 			auto args = ret.GetArgs(2);
-			result.Bind(p_string(args[0]), int(args[1]));
+			result.Bind(p_string(args[0]), int(args[1]), &query);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -468,6 +481,13 @@ cproto::CommandParams CoroRPCClient::mkCommand(cproto::CmdCode cmd, const Intern
 	return mkCommand(cmd, config_.NetTimeout, ctx);
 }
 
+cproto::CommandParams CoroRPCClient::mkCommand(cproto::CmdCode cmd, cproto::CoroClientConnection::TimePointT requiredTs,
+											   const InternalRdxContext* ctx) const noexcept {
+	auto params = mkCommand(cmd, config_.NetTimeout, ctx);
+	params.requiredLoginTs.emplace(requiredTs);
+	return params;
+}
+
 cproto::CommandParams CoroRPCClient::mkCommand(cproto::CmdCode cmd, milliseconds netTimeout, const InternalRdxContext* ctx) noexcept {
 	if (ctx) {
 		return {cmd,
@@ -479,7 +499,7 @@ cproto::CommandParams CoroRPCClient::mkCommand(cproto::CmdCode cmd, milliseconds
 				ctx->getCancelCtx(),
 				ctx->IsShardingParallelExecution()};
 	}
-	return {cmd, netTimeout, std::chrono::milliseconds(0), lsn_t(), -1, IndexValueType::NotSet, nullptr, false};
+	return {cmd, netTimeout, std::chrono::milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false};
 }
 
 CoroTransaction CoroRPCClient::NewTransaction(std::string_view nsName, const InternalRdxContext& ctx) {
@@ -498,15 +518,16 @@ CoroTransaction CoroRPCClient::NewTransaction(std::string_view nsName, const Int
 
 Error CoroRPCClient::CommitTransaction(CoroTransaction& tr, CoroQueryResults& result, const InternalRdxContext& ctx) {
 	Error returnErr;
-	if (tr.rpcClient_) {
-		result = CoroQueryResults(&tr.rpcClient_->conn_, {tr.ns_}, 0, config_.FetchAmount, config_.NetTimeout);
-		auto ret = tr.rpcClient_->conn_.Call(mkCommand(cproto::kCmdCommitTx, &ctx), tr.txId_);
+	auto conn = tr.getConn();
+	if (conn) {
+		result = CoroQueryResults(conn, {tr.i_.ns_}, 0, config_.FetchAmount, config_.NetTimeout);
+		auto ret = conn->Call(mkCommand(cproto::kCmdCommitTx, tr.i_.sessionTs_, &ctx), tr.i_.txId_);
 		returnErr = ret.Status();
 		try {
 			if (ret.Status().ok()) {
 				auto args = ret.GetArgs(2);
-				result.Bind(p_string(args[0]), int(args[1]));
-				tr.ns_->UpdateTagsMatcher(result.GetTagsMatcher(0));
+				result.Bind(p_string(args[0]), int(args[1]), nullptr);
+				tr.i_.ns_->TryReplaceTagsMatcher(result.GetTagsMatcher(0));
 			}
 		} catch (const Error& err) {
 			returnErr = err;
@@ -520,8 +541,9 @@ Error CoroRPCClient::CommitTransaction(CoroTransaction& tr, CoroQueryResults& re
 
 Error CoroRPCClient::RollBackTransaction(CoroTransaction& tr, const InternalRdxContext& ctx) {
 	Error ret;
-	if (tr.rpcClient_) {
-		ret = tr.rpcClient_->conn_.Call(mkCommand(cproto::kCmdRollbackTx, &ctx), tr.txId_).Status();
+	auto conn = tr.getConn();
+	if (conn) {
+		ret = conn->Call(mkCommand(cproto::kCmdRollbackTx, tr.i_.sessionTs_, &ctx), tr.i_.txId_).Status();
 	} else {
 		ret = Error(errLogic, "connection is nullptr");
 	}

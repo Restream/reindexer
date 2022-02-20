@@ -7,19 +7,12 @@ namespace client {
 
 Item::Item() : status_(errNotValid) {}
 
-Item::Item(Item &&other) noexcept : impl_(std::move(other.impl_)), status_(std::move(other.status_)), id_(other.id_) {}
+Item::Item(Item &&other) noexcept = default;
 
 Item::Item(ItemImplBase *impl) : impl_(impl) {}
 Item::Item(const Error &err) : impl_(nullptr), status_(err) {}
 
-Item &Item::operator=(Item &&other) noexcept {
-	if (&other != this) {
-		impl_ = std::move(other.impl_);
-		status_ = std::move(other.status_);
-		id_ = other.id_;
-	}
-	return *this;
-}
+Item &Item::operator=(Item &&other) noexcept = default;
 
 Item::~Item() = default;
 

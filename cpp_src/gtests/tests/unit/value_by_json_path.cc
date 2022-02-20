@@ -110,7 +110,7 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 	err = rt.reindexer->Select(query1, qr1);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(qr1.Count() == 1);
-	Item theOnlyItem = qr1[0].GetItem(false);
+	Item theOnlyItem = qr1.begin().GetItem(false);
 	VariantArray krefs = theOnlyItem["nested.string"];
 	EXPECT_TRUE(krefs.size() == 1);
 	EXPECT_TRUE(krefs[0].As<string>() == strValueToFind.As<string>());
@@ -123,11 +123,12 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 	EXPECT_TRUE(qr2.Count() == 10);
 
 	EXPECT_TRUE(properIntValues.size() == qr2.Count());
-	for (size_t i = 0; i < properIntValues.size(); ++i) {
-		Item item = qr2[i].GetItem(false);
+	size_t i = 0;
+	for (auto& it : qr2) {
+		Item item = it.GetItem(false);
 		VariantArray krefs = item["nested.int"];
 		EXPECT_TRUE(krefs.size() == 1);
-		EXPECT_TRUE(static_cast<int64_t>(krefs[0]) == properIntValues[i]);
+		EXPECT_TRUE(static_cast<int64_t>(krefs[0]) == properIntValues[i++]);
 	}
 
 	QueryResults qr3;
@@ -235,7 +236,7 @@ TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
 		err = rt.reindexer->Select("select * from test_namespace where mac_address = '2147483648'", qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qr.Count() == 1) << qr.Count();
-		Item item = qr[0].GetItem(false);
+		Item item = qr.begin().GetItem(false);
 		Variant id = item["id"];
 		ASSERT_TRUE(static_cast<int>(id) == 2);
 		Variant value = item["mac_address"];
@@ -248,7 +249,7 @@ TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
 		err = rt.reindexer->Select(Query(default_namespace).Where("mac_address", CondEq, Variant(int64_t(2147483648))), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qr.Count() == 1) << qr.Count();
-		Item item = qr[0].GetItem(false);
+		Item item = qr.begin().GetItem(false);
 		Variant id = item["id"];
 		ASSERT_TRUE(static_cast<int>(id) == 1);
 		Variant value = item["mac_address"];

@@ -74,9 +74,9 @@ ClusterizationApi::Cluster::Cluster(net::ev::dynamic_loop& loop, size_t initialS
 			"server_id: " +
 			std::to_string(id);
 		svc_.emplace_back();
-		InitServer(i, fullClusterConf, kReplConf);
+		InitServer(i, fullClusterConf, kReplConf, initialServerId);
 		clients_.emplace_back();
-		clients_.back().Connect(svc_.back().Get(false)->kClusterManagementDsn, loop_);
+		clients_.back().Connect(svc_.back().Get(false)->kRPCDsn, loop_);
 		++id;
 	}
 }
@@ -176,9 +176,10 @@ Error ClusterizationApi::Cluster::AddRowWithErr(size_t id, std::string_view nsNa
 	return api.reindexer->Upsert(nsName, item);
 }
 
-size_t ClusterizationApi::Cluster::InitServer(size_t id, const std::string& clusterYml, const std::string& replYml) {
+size_t ClusterizationApi::Cluster::InitServer(size_t id, const std::string& clusterYml, const std::string& replYml, size_t offset) {
 	assert(id < svc_.size());
 	auto& server = svc_[id];
+	id += offset;
 	auto storagePath = fs::JoinPath(defaults_.baseTestsetDbPath, "node/" + std::to_string(id));
 
 	ServerControlConfig scConfig(id, defaults_.defaultRpcPort + id, defaults_.defaultHttpPort + id,
@@ -269,16 +270,17 @@ int ClusterizationApi::Cluster::AwaitLeader(std::chrono::seconds timeout, bool f
 }
 
 void ClusterizationApi::Cluster::doWaitSync(std::string_view ns, std::vector<ServerControl>& svc, lsn_t expectedLsn,
-											lsn_t expectedNsVersion) {
+											lsn_t expectedNsVersion, std::chrono::seconds maxSyncTime) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(100);
 	size_t syncedCnt = 0;
+	const auto syncTime = maxSyncTime.count() ? maxSyncTime : kMaxSyncTime;
 	while (syncedCnt != svc.size()) {
 		now += pause;
-		if (now >= kMaxSyncTime) {
+		if (now >= syncTime) {
 			PrintClusterInfo(ns, svc);
 		}
-		ASSERT_TRUE(now < kMaxSyncTime);
+		ASSERT_TRUE(now < syncTime);
 		bool empty = true;
 		ReplicationStateApi state{lsn_t(), lsn_t(), 0, 0, {}, {}};
 		syncedCnt = 0;
@@ -309,8 +311,9 @@ void ClusterizationApi::Cluster::doWaitSync(std::string_view ns, std::vector<Ser
 	}
 }
 
-void ClusterizationApi::Cluster::WaitSync(std::string_view ns, lsn_t expectedLsn, lsn_t expectedNsVersion) {
-	doWaitSync(ns, svc_, expectedLsn, expectedNsVersion);
+void ClusterizationApi::Cluster::WaitSync(std::string_view ns, lsn_t expectedLsn, lsn_t expectedNsVersion,
+										  std::chrono::seconds maxSyncTime) {
+	doWaitSync(ns, svc_, expectedLsn, expectedNsVersion, maxSyncTime);
 }
 
 void ClusterizationApi::Cluster::PrintClusterInfo(std::string_view ns, std::vector<ServerControl>& svc) {
@@ -444,4 +447,11 @@ void ClusterizationApi::Cluster::ChangeLeader(int& curLeaderId, int newLeaderId)
 	GetNode(curLeaderId)->SetClusterLeader(newLeaderId);
 	curLeaderId = AwaitLeader(kMaxElectionsTime);
 	ASSERT_EQ(curLeaderId, newLeaderId);
+}
+
+void ClusterizationApi::Cluster::AddAsyncNode(size_t nodeId, const std::string& dsn, std::optional<std::vector<std::string>>&& nsList) {
+	assert(nodeId < svc_.size());
+	auto asyncLeader = svc_[nodeId].Get();
+	asyncLeader->MakeLeader();
+	asyncLeader->AddFollower(dsn, std::move(nsList));
 }

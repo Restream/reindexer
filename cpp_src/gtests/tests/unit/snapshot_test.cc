@@ -162,6 +162,39 @@ TEST_F(SnapshotTestApi, ConcurrentSnapshotsLimit) {
 	loop.run();
 }
 
+TEST_F(SnapshotTestApi, SnapshotInvalidation) {
+	// Check if snapshot will be invalidated after reconnect
+	ev::dynamic_loop loop;
+	loop.spawn([this, &loop]() noexcept {
+		reindexer::client::CoroReindexer rxClient;
+		Connect(loop, rxClient);
+
+		InitNS(rxClient, kNsName);
+		FillData(rxClient, kNsName, 0);
+
+		client::Snapshot sn;
+		auto err = rxClient.GetSnapshot(kNsName, SnapshotOpts(), sn);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		err = rxClient.Stop();
+		ASSERT_TRUE(err.ok()) << err.what();
+		Connect(loop, rxClient);
+		err = rxClient.Status(true);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		try {
+			for (auto& it : sn) {
+				(void)it;
+			}
+			EXPECT_TRUE(false) << "Exception was expected";
+		} catch (Error& e) {
+			EXPECT_EQ(e.code(), errNetwork);
+			EXPECT_EQ(e.what(), "Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated");
+		}
+	});
+	loop.run();
+}
+
 TEST_F(SnapshotTestApi, MaxWALDepth) {
 	// Check if max wal depth option for snapshots is actually works
 	ev::dynamic_loop loop;

@@ -22,6 +22,7 @@ Reindexer supports async logical leader-follower replication and sync RAFT-clust
   - [Configuration](#configuration)
     - [Configuration via YML-file](#configuration-via-yml-file)
     - [Configuration via system namespace](#configuration-via-system-namespace)
+  - [Async replication of RAFT-cluster namespaces](#async-replication-of-raft-cluster-namespaces)
   - [Statistics](#statistics)
   - [Known issues and constraints](#known-issues-and-constraints)
 - [Migration from Reindexer's v3.x.x replication config](#migration-from-reindexers-v3xx-replication-config)
@@ -148,7 +149,7 @@ Then you are able to configure specific async replication via `async_replication
 
 - `role`  Replication role. May be on of
    - `none` - replication is disabled
-   - `follower` - replication as fllower
+   - `follower` - replication as follower
    - `leader` - replication as leader
 - `sync_threads` - Number of replication thread
 - `syncs_per_thread` - Max number of concurrent force/wal-syncs per each replicatio thread
@@ -302,7 +303,8 @@ reindexer_server --enable-cluster --db /tmp/rx_db
 ```
 
 #### Configuration via YML-file
-On startup reindexer_server reads reaplication and cluster config from files `replication.conf`([sample](cpp_src/cluster/replication.conf)) and `cluster.conf`([sample](cpp_src/cluster/cluster.conf)), which have to be placed in database directory.
+
+On startup reindexer_server reads replication and cluster config from files `replication.conf`([sample](cpp_src/cluster/replication.conf)) and `cluster.conf`([sample](cpp_src/cluster/cluster.conf)), which have to be placed in database directory.
 
 `replication.conf` sets general replication parameter and has to be unique for each node in cluster (those parameters also may be configured via `#config` namespace).
 
@@ -436,8 +438,26 @@ Leader of the cluster may be changed manually via `#config` namespace. For examp
 Reindexer> \upsert #config { "type":"action","action":{ "command":"set_leader_node", "server_id": 2 } }
 ```
 
+## Async replication of RAFT-cluster namespaces
 
-### Known issues and constraints
+It's possible to combine async replication and RAFT-cluster in setups like this:
+
+```
+        cluster1 (ns1, ns2)         cluster2 (ns1)
+updates -> cl10 - cl11               cl20 - cl21
+              \    /  async repl(ns2)  \    /
+               cl12 -------------------> cl22
+```
+
+In setup above there are 2 independant RAFT-clusters: `cluster1`(over `ns1` and `ns2`) and `cluster2`(over `ns1`). Also one of the nodes of the first cluster replicating its data (`ns2`) asynchronously to one of the nodes of the second cluster.
+
+Take a notice:
+- `ns2` can not taking part in second RAFT-cluster
+- asynchronous replication here still works on node-to-node basis, i.e. it replicates all of the data from `cl12` node to `cl22` node, but not to other nodes of the seconds cluster.
+ 
+
+
+## Known issues and constraints
 
 - Reindexer does not have global WAL and uses individual WAL for each namespace. Due to this peculiarity operations like `rename namespace` and `drop namespace` can not be replicated properly via force/WAL sync (only online replication is available).
 This also may lead to situation, when new leader recovers some of the dropped namespaces on initial sync.

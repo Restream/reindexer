@@ -117,7 +117,6 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 	ASSERT_TRUE(!deleteRes.Count()) << "Result of deletion must be empty";
 
 	QueryResults qres;
-	qres.Erase(qres.Items().begin(), qres.Items().end());
 	tie(err, qres) = Select(Query(SIMPLE_ITEM_NAMESPACE).Where("id", CondEq, data.id), false);
 	CHECK_SUCCESS(err);
 	ASSERT_TRUE(!qres.Count()) << "Result of selection must be empty";

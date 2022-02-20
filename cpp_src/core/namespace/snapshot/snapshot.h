@@ -10,8 +10,8 @@ class Snapshot {
 public:
 	Snapshot() = default;
 	Snapshot(TagsMatcher tm, lsn_t nsVersion);
-	Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDatahash, QueryResults &&wal,
-			 QueryResults &&raw = QueryResults());
+	Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDatahash, LocalQueryResults &&wal,
+			 LocalQueryResults &&raw = LocalQueryResults());
 	Snapshot(const Snapshot &) = delete;
 	Snapshot(Snapshot &&) = default;
 	Snapshot &operator=(const Snapshot &) = delete;
@@ -72,9 +72,9 @@ private:
 		size_t itemsCount_ = 0;
 	};
 
-	void addRawData(QueryResults &&);
-	void addWalData(QueryResults &&);
-	void appendQr(ItemsContainer &container, QueryResults &&qr);
+	void addRawData(LocalQueryResults &&);
+	void addWalData(LocalQueryResults &&);
+	void appendQr(ItemsContainer &container, LocalQueryResults &&qr);
 	void lockItems(bool lock);
 	PayloadValue createTmItem() const;
 

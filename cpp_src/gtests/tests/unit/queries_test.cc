@@ -301,10 +301,10 @@ TEST_F(QueriesApi, StrictModeTest) {
 	{
 		Query query = Query(testSimpleNs).Where(kNotExistingField, CondEmpty, 0);
 		Error err = rt.reindexer->Select(query.Strict(StrictModeNames), qr);
-		EXPECT_EQ(err.code(), errParams);
+		EXPECT_EQ(err.code(), errStrictMode);
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeIndexes), qr);
-		EXPECT_EQ(err.code(), errParams);
+		EXPECT_EQ(err.code(), errStrictMode);
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -315,10 +315,10 @@ TEST_F(QueriesApi, StrictModeTest) {
 	{
 		Query query = Query(testSimpleNs).Where(kNotExistingField, CondEq, 0);
 		Error err = rt.reindexer->Select(query.Strict(StrictModeNames), qr);
-		EXPECT_EQ(err.code(), errParams);
+		EXPECT_EQ(err.code(), errStrictMode);
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeIndexes), qr);
-		EXPECT_EQ(err.code(), errParams);
+		EXPECT_EQ(err.code(), errStrictMode);
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
 		EXPECT_TRUE(err.ok()) << err.what();

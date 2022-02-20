@@ -6,6 +6,7 @@ SET(TARGET tests)
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES})
 
 option(XML_REPORT "Enable XML xUnit report" OFF)
+option(GH_CI_OSX "Option for Github CI on OSX" OFF)
 
 include_directories(fixtures mocks)
 include_directories(${GTEST_INCLUDE_DIRS})
@@ -45,8 +46,8 @@ if (ENABLE_GRPC)
     target_link_libraries(${TARGET} reindexer_grpc_library)
 endif()
 
-if (ENABLE_SHARDING)
-    add_definitions(-DWITH_SHARDING)
+if (GH_CI_OSX)
+    add_definitions(-DRX_LONG_REPLICATION_TIMEOUT)
 endif()
 
 set (GTEST_TIMEOUT 800)

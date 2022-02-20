@@ -107,6 +107,29 @@ type LsnT struct {
 	ServerId int `json:"server_id"`
 }
 
+const kLSNCounterBitsCount = 48
+const kLSNCounterMask int64 = (int64(1) << kLSNCounterBitsCount) - int64(1)
+const kLSNDigitCountMult int64 = 1000000000000000
+
+func (lsn *LsnT) IsCompatibleWith(o LsnT) bool {
+	return lsn.ServerId == o.ServerId
+}
+
+func (lsn *LsnT) IsNewerThen(o LsnT) bool {
+	return lsn.Counter > o.Counter
+}
+
+func (lsn *LsnT) IsEmpty() bool { return lsn.Counter == kLSNDigitCountMult-1 }
+
+func CreateLSNFromInt64(v int64) LsnT {
+	if (v & kLSNCounterMask) == kLSNCounterMask {
+		return LsnT{Counter: kLSNDigitCountMult - 1, ServerId: -1}
+	}
+
+	server := v / kLSNDigitCountMult
+	return LsnT{Counter: v - server*kLSNDigitCountMult, ServerId: int(server)}
+}
+
 // NamespaceMemStat information about reindexer's namespace memory statisctics
 // and located in '#memstats' system namespace
 type NamespaceMemStat struct {

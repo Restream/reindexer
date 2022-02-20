@@ -5,7 +5,7 @@
 #include "core/query/dsl/query.json.h"
 
 using namespace reindexer;
-TEST(ShemaTest, BaseTest) {
+TEST(SchemaTest, BaseTest) {
 	static reindexer::JsonSchemaChecker check(kQueryJson,"query");
 	gason::JsonParser parser;
 
@@ -130,7 +130,7 @@ TEST(ShemaTest, BaseTest) {
 		ASSERT_FALSE(err.ok()) << err.what();
 	}
 }
-TEST(ShemaTest, AdditionalProperties) {
+TEST(SchemaTest, AdditionalProperties) {
 	const std::string scemaStr = R"#({
 		"required":["v1"],
 		"additionalProperties": true,
@@ -191,7 +191,7 @@ TEST(ShemaTest, AdditionalProperties) {
 	}
 }
 
-TEST(ShemaTest, LevelAny3) {
+TEST(SchemaTest, LevelAny3) {
 	static reindexer::JsonSchemaChecker check(kQueryJson,"query");
 	gason::JsonParser parser;
 	std::string dsl2level = R"#({

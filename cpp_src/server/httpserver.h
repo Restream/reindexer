@@ -90,14 +90,14 @@ protected:
 	int queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery = false, bool isQueryResults = false,
 					 unsigned limit = kDefaultLimit, unsigned offset = kDefaultOffset);
 	int queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
-							unsigned offset, bool withColumns, int width = 0);
+							unsigned offset, bool withColumns, int width);
 	int queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
-							 unsigned offset, bool withColumns, int width = 0);
+							 unsigned offset, bool withColumns, int width);
 	int queryResultsJSON(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
 						 unsigned offset, bool withColumns, int width = 0);
 	template <typename Builder>
-	void queryResultParams(Builder &builder, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
-						   bool withColumns, int width);
+	void queryResultParams(Builder &builder, reindexer::QueryResults &res, std::vector<std::string> &&jsonData, bool isWALQuery,
+						   bool isQueryResults, unsigned limit, bool withColumns, int width);
 	int status(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
 	int jsonStatus(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());
 	int msgpackStatus(http::Context &ctx, const http::HttpStatus &status = http::HttpStatus());

@@ -140,7 +140,7 @@ void ServerConnection::onRead() {
 					ctx.call->emmiterServerId = int64_t(ctxArgs[2]);
 				}
 				if (ctxArgs.size() > 3) {
-					ctx.call->shardId = int64_t(ctxArgs[3]) & ~kShardingParallelExecutionBit;
+					ctx.call->shardId = int(int64_t(ctxArgs[3]) & ~kShardingFlagsMask);
 					ctx.call->shardingParallelExecution = (int64_t{ctxArgs[3]} & kShardingParallelExecutionBit) != 0;
 				}
 			}

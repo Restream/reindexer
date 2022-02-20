@@ -17,14 +17,14 @@ public:
 
 	class Iterator {
 	public:
-		Iterator(const Snapshot *sn, size_t idx) : sn_(sn), idx_(idx) {}
-		const SnapshotChunk &Chunk() const { return sn_->data_; }
+		Iterator(const Snapshot *sn, size_t idx) noexcept : sn_(sn), idx_(idx) {}
+		const SnapshotChunk &Chunk() const noexcept { return sn_->i_.data_; }
 		Iterator &operator++() {
 			++idx_;
-			if (idx_ < sn_->count_) {
+			if (idx_ < sn_->i_.count_) {
 				const_cast<Snapshot *>(sn_)->fetchNext(idx_);
 			} else {
-				idx_ = sn_->count_;
+				idx_ = sn_->i_.count_;
 			}
 			return *this;
 		}
@@ -36,10 +36,10 @@ public:
 		const Snapshot *sn_;
 		size_t idx_;
 	};
-	Iterator begin() { return Iterator{this, 0}; }
-	Iterator end() { return Iterator{this, count_}; }
-	size_t Size() const noexcept { return count_; }
-	bool HasRawData() const noexcept { return rawCount_; }
+	Iterator begin() noexcept { return Iterator{this, 0}; }
+	Iterator end() noexcept { return Iterator{this, i_.count_}; }
+	size_t Size() const noexcept { return i_.count_; }
+	bool HasRawData() const noexcept { return i_.rawCount_; }
 
 private:
 	friend class CoroRPCClient;
@@ -47,14 +47,29 @@ private:
 			 std::chrono::milliseconds timeout);
 	void fetchNext(size_t idx);
 	void parseFrom(std::string_view data);
+	bool holdsRemoteData() const noexcept { return i_.conn_ && i_.id_ >= 0; }
+	void setClosed() noexcept {
+		i_.conn_ = nullptr;
+		i_.id_ = -1;
+	}
 
-	SnapshotChunk data_;
-	int id_ = -1;
-	size_t count_ = 0;
-	size_t rawCount_ = 0;
-	lsn_t nsVersion_;
-	net::cproto::CoroClientConnection *conn_;
-	std::chrono::milliseconds requestTimeout_;
+	struct Impl {
+		Impl() = default;
+		Impl(net::cproto::CoroClientConnection *conn, int id, int64_t count, int64_t rawCount, lsn_t nsVersion,
+			 std::chrono::milliseconds timeout) noexcept;
+
+		SnapshotChunk data_;
+		int id_ = -1;
+		size_t count_ = 0;
+		size_t rawCount_ = 0;
+		lsn_t nsVersion_;
+		net::cproto::CoroClientConnection *conn_;
+		std::chrono::milliseconds requestTimeout_;
+		std::chrono::steady_clock::time_point sessionTs_;
+	};
+
+	Impl i_;
+
 	friend class Iterator;
 };
 

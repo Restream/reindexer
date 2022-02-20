@@ -11,6 +11,9 @@ namespace cluster {
 
 struct ItemReplicationRecord {
 	size_t Size() const noexcept { return sizeof(ItemReplicationRecord) + (cjson.HasHeap() ? cjson.Slice().size() : 0); }
+	ItemReplicationRecord(WrSerializer&& _cjson) noexcept : cjson(std::move(_cjson)) {}
+	ItemReplicationRecord(ItemReplicationRecord&&) = default;
+	ItemReplicationRecord(const ItemReplicationRecord& o) { cjson.Write(o.cjson.Slice()); }
 
 	WrSerializer cjson;
 };
@@ -153,6 +156,7 @@ struct UpdateRecord {
 	bool IsNetworkCheckRecord() const noexcept { return type == Type::NodeNetworkCheck; }
 	size_t DataSize() const noexcept;
 	bool HasEmmiterID() const noexcept { return emmiterServerId != -1; }
+	UpdateRecord Clone() const;
 
 	Type type = Type::None;
 	std::string nsName;

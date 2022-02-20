@@ -56,7 +56,7 @@ public:
 		void DropNs(size_t id, std::string_view nsName);
 		void FillData(size_t id, std::string_view nsName, size_t from, size_t count);
 		void FillDataTx(size_t id, std::string_view nsName, size_t from, size_t count);
-		size_t InitServer(size_t id, const std::string& clusterYml, const std::string& replYml);
+		size_t InitServer(size_t id, const std::string& clusterYml, const std::string& replYml, size_t offset);
 		void AddRow(size_t id, std::string_view nsName, int pk);
 		Error AddRowWithErr(size_t id, std::string_view nsName, int pk, std::string* resultJson = nullptr);
 		bool StartServer(size_t id);
@@ -64,7 +64,8 @@ public:
 		void StopServers(size_t from, size_t to);
 		void StopServers(const std::vector<size_t>& ids);
 		int AwaitLeader(std::chrono::seconds timeout, bool fulltime = false);
-		void WaitSync(std::string_view ns, lsn_t expectedLsn = lsn_t(), lsn_t expectedNsVersion = lsn_t());
+		void WaitSync(std::string_view ns, lsn_t expectedLsn = lsn_t(), lsn_t expectedNsVersion = lsn_t(),
+					  std::chrono::seconds maxSyncTime = std::chrono::seconds());
 		static void PrintClusterInfo(std::string_view ns, std::vector<ServerControl>& svc);
 		void PrintClusterNsList(const std::vector<NamespaceData>& expected);
 		client::RaftClient& GetClient(size_t id) {
@@ -76,10 +77,11 @@ public:
 		void FillItem(BaseApi& api, BaseApi::ItemType& item, size_t id);
 		void ValidateNamespaceList(const std::vector<NamespaceData>& namespaces);
 		static void doWaitSync(std::string_view ns, std::vector<ServerControl>& svc, lsn_t expectedLsn = lsn_t(),
-							   lsn_t expectedNsVersion = lsn_t());
+							   lsn_t expectedNsVersion = lsn_t(), std::chrono::seconds maxSyncTime = std::chrono::seconds());
 		size_t GetSynchronizedNodesCount(size_t nodeId);
 		void EnablePerfStats(size_t nodeId);
 		void ChangeLeader(int& curLeaderId, int newLeaderId);
+		void AddAsyncNode(size_t nodeId, const std::string& dsn, std::optional<std::vector<std::string> >&& nsList = {});
 
 	private:
 		std::vector<ServerControl> svc_;

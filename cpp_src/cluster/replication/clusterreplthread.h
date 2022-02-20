@@ -59,7 +59,6 @@ public:
 private:
 	std::thread th;
 	coroutine::channel<bool> leadershipAwaitCh;
-	coroutine::channel<RaftInfo::Role> nextRoleCh;
 	net::ev::async roleSwitchAsync_;
 	ReplThread<ClusterThreadParam> base_;
 	SharedSyncState<> &sharedSyncState_;

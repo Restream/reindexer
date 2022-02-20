@@ -16,7 +16,7 @@ constexpr int kCancelCheckFrequency = 1000;
 
 namespace reindexer {
 
-void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxContext &rdxCtx) {
+void NsSelecter::operator()(LocalQueryResults &result, SelectCtx &ctx, const RdxContext &rdxCtx) {
 	const size_t resultInitSize = result.Count();
 	ctx.sortingContext.enableSortOrders = ns_->SortOrdersBuilt();
 	if (ns_->config_.logLevel > ctx.query.debugLevel) {
@@ -522,7 +522,7 @@ void NsSelecter::setLimitAndOffset(ItemRefVector &queryResult, size_t offset, si
 	}
 }
 
-void NsSelecter::processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext &rdxCtx) {
+void NsSelecter::processLeftJoins(LocalQueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext &rdxCtx) {
 	if (!checkIfThereAreLeftJoins(sctx)) return;
 	for (size_t i = startPos; i < qr.Count(); ++i) {
 		IdType rowid = qr[i].GetItemRef().Id();
@@ -586,7 +586,7 @@ void NsSelecter::sortResults(LoopCtx &ctx, It begin, It end, const SortingOption
 }
 
 template <bool reverse, bool hasComparators, bool aggregationsOnly>
-void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &rdxCtx) {
+void NsSelecter::selectLoop(LoopCtx &ctx, LocalQueryResults &result, const RdxContext &rdxCtx) {
 	static const JoinedSelectors emptyJoinedSelectors;
 	const auto selectLoopWard = rdxCtx.BeforeSelectLoop();
 	SelectCtx &sctx = ctx.sctx;
@@ -744,7 +744,8 @@ void NsSelecter::getSortIndexValue(const SortingContext &sortCtx, IdType rowId, 
 	}
 }
 
-void NsSelecter::calculateSortExpressions(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, const QueryResults &result) {
+void NsSelecter::calculateSortExpressions(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx,
+										  const LocalQueryResults &result) {
 	static const JoinedSelectors emptyJoinedSelectors;
 	const auto &exprs = sctx.sortingContext.expressions;
 	auto &exprResults = sctx.sortingContext.exprResults;
@@ -758,7 +759,7 @@ void NsSelecter::calculateSortExpressions(uint8_t proc, IdType rowId, IdType pro
 
 template <bool aggregationsOnly>
 void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
-								 QueryResults &result) {
+								 LocalQueryResults &result) {
 	for (auto &aggregator : aggregators) aggregator.Aggregate(ns_->items_[properRowId]);
 	if constexpr (aggregationsOnly) return;
 	if (sctx.preResult && sctx.preResult->executionMode == JoinPreResult::ModeBuild) {
@@ -897,14 +898,14 @@ void NsSelecter::prepareSortJoinedIndex(size_t nsIdx, std::string_view column, i
 
 bool NsSelecter::validateField(StrictMode strictMode, std::string_view name, const std::string &nsName, const TagsMatcher &tagsMatcher) {
 	if (strictMode == StrictModeIndexes) {
-		throw Error(errParams,
+		throw Error(errStrictMode,
 					"Current query strict mode allows sort by index fields only. There are no indexes with name '%s' in namespace '%s'",
 					name, nsName);
 	}
 	if (tagsMatcher.path2tag(name).empty()) {
 		if (strictMode == StrictModeNames) {
 			throw Error(
-				errParams,
+				errStrictMode,
 				"Current query strict mode allows sort by existing fields only. There are no fields with name '%s' in namespace '%s'", name,
 				nsName);
 		}

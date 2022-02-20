@@ -51,6 +51,9 @@ Error CoroReindexer::Upsert(std::string_view nsName, Item& item) { return impl_-
 Error CoroReindexer::Delete(std::string_view nsName, Item& item) { return impl_->Delete(nsName, item, ctx_); }
 Item CoroReindexer::NewItem(std::string_view nsName) { return impl_->NewItem(nsName, *impl_, ctx_.execTimeout()); }
 Error CoroReindexer::GetMeta(std::string_view nsName, const string& key, string& data) { return impl_->GetMeta(nsName, key, data, ctx_); }
+Error CoroReindexer::GetMeta(std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data) {
+	return impl_->GetMeta(nsName, key, data, ctx_);
+}
 Error CoroReindexer::PutMeta(std::string_view nsName, const string& key, std::string_view data) {
 	return impl_->PutMeta(nsName, key, data, ctx_);
 }

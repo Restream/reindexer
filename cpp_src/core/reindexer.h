@@ -5,6 +5,7 @@
 #include "core/queryresults/queryresults.h"
 #include "core/rdxcontext.h"
 #include "core/reindexerconfig.h"
+#include "core/shardedmeta.h"
 #include "core/transaction.h"
 
 #include <chrono>
@@ -216,6 +217,11 @@ public:
 	/// @param key - string with meta key
 	/// @param data - output string with meta data
 	Error GetMeta(std::string_view nsName, const string &key, string &data);
+	/// Get sharded meta data from storage by key
+	/// @param nsName - Name of namespace
+	/// @param key - string with meta key
+	/// @param data - output vector with meta data from different shards
+	Error GetMeta(std::string_view nsName, const string &key, vector<ShardedMeta> &data);
 	/// Put meta data to storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key

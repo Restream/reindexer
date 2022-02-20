@@ -1,11 +1,12 @@
 #include "asyncdatareplicator.h"
+#include "cluster/clusterizator.h"
 #include "core/reindexerimpl.h"
 
 namespace reindexer {
 namespace cluster {
 
-AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, ReindexerImpl& thisNode)
-	: statsCollector_(std::string(kAsyncReplStatsType)), updatesQueue_(q), thisNode_(thisNode) {}
+AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, ReindexerImpl& thisNode, Clusterizator& clusterizator)
+	: statsCollector_(std::string(kAsyncReplStatsType)), updatesQueue_(q), thisNode_(thisNode), clusterizator_(clusterizator) {}
 
 void AsyncDataReplicator::Configure(AsyncReplConfigData config) {
 	std::lock_guard lck(mtx_);
@@ -57,7 +58,9 @@ void AsyncDataReplicator::Run() {
 	}
 	if (config_->role == AsyncReplConfigData::Role::Leader) {
 		for (auto& ns : localNamespaces) {
-			thisNode_.SetClusterizationStatus(ns, ClusterizationStatus{baseConfig_->serverID, ClusterizationStatus::Role::None});
+			if (!clusterizator_.NamespaceIsInClusterConfig(ns)) {
+				thisNode_.SetClusterizationStatus(ns, ClusterizationStatus{baseConfig_->serverID, ClusterizationStatus::Role::None});
+			}
 		}
 	}
 }
@@ -76,6 +79,16 @@ ReplicationStats AsyncDataReplicator::GetReplicationStats() const {
 		node.role = RaftInfo::Role::Follower;
 	}
 	return stats;
+}
+
+bool AsyncDataReplicator::NamespaceIsInAsyncConfig(std::string_view nsName) const {
+	if (nsName.size() && (nsName[0] == '#' || nsName[0] == '@')) return false;
+
+	const UpdatesQueueT::HashT h;
+	const size_t hash = h(nsName);
+
+	std::lock_guard lck(mtx_);
+	return updatesQueue_.GetAsyncQueue()->TokenIsInWhiteList(nsName, hash);
 }
 
 bool AsyncDataReplicator::isExpectingStartup() const noexcept {

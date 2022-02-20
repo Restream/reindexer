@@ -57,32 +57,32 @@ Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, bool &isWALQuery
 	std::string_view sharding = ctx.request->params.Get("sharding");
 	switch (q.Type()) {
 		case QuerySelect: {
-			auto db = sharding == "off" ? getDB(ctx, kRoleDataRead)
-											  .WithTimeout(serverConfig_.HttpReadTimeout)
-											  .WithShardId(ShardingKeyType::ShardingProxyOff, false)
-										: getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
+			auto db =
+				sharding == "off"sv
+					? getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout).WithShardId(ShardingKeyType::ProxyOff, false)
+					: getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 			return db.Select(q, res);
 		}
 		case QueryDelete: {
-			auto db = sharding == "off" ? getDB(ctx, kRoleDataWrite)
-											  .WithTimeout(serverConfig_.HttpWriteTimeout())
-											  .WithShardId(ShardingKeyType::ShardingProxyOff, false)
-										: getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
+			auto db =
+				sharding == "off"sv
+					? getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout()).WithShardId(ShardingKeyType::ProxyOff, false)
+					: getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
 
 			return db.Delete(q, res);
 		}
 		case QueryUpdate: {
-			auto db = sharding == "off" ? getDB(ctx, kRoleDataWrite)
-											  .WithTimeout(serverConfig_.HttpWriteTimeout())
-											  .WithShardId(ShardingKeyType::ShardingProxyOff, false)
-										: getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
+			auto db =
+				sharding == "off"sv
+					? getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout()).WithShardId(ShardingKeyType::ProxyOff, false)
+					: getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
 			return db.Update(q, res);
 		}
 		case QueryTruncate: {
-			auto db = sharding == "off" ? getDB(ctx, kRoleDBAdmin)
-											  .WithTimeout(serverConfig_.HttpWriteTimeout())
-											  .WithShardId(ShardingKeyType::ShardingProxyOff, false)
-										: getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
+			auto db =
+				sharding == "off"sv
+					? getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout()).WithShardId(ShardingKeyType::ProxyOff, false)
+					: getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 
 			return db.TruncateNamespace(q._namespace);
 		}
@@ -452,7 +452,11 @@ int HTTPServer::RenameNamespace(http::Context &ctx) {
 }
 
 int HTTPServer::GetItems(http::Context &ctx) {
-	auto db = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
+	std::string_view sharding = ctx.request->params.Get("sharding");
+
+	auto db = sharding == "off"sv
+				  ? getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout).WithShardId(ShardingKeyType::ProxyOff, false)
+				  : getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 
 	string nsName = urldecode2(ctx.request->urlParams[1]);
 
@@ -507,7 +511,6 @@ int HTTPServer::GetItems(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteItems(http::Context &ctx) { return modifyItems(ctx, ModeDelete); }
-
 int HTTPServer::PutItems(http::Context &ctx) { return modifyItems(ctx, ModeUpdate); }
 int HTTPServer::PostItems(http::Context &ctx) { return modifyItems(ctx, ModeInsert); }
 int HTTPServer::PatchItems(http::Context &ctx) { return modifyItems(ctx, ModeUpsert); }
@@ -1035,7 +1038,8 @@ int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, vector<strin
 			if (jsonPtr != &itemJson[0] && isBlank(str)) {
 				break;
 			}
-			auto status = item.Unsafe().FromJSON(str, &jsonPtr, mode == ModeDelete);
+			auto status = item.Unsafe().FromJSON(str, &jsonPtr, false);	 // TODO: for mode == ModeDelete deserialize PK and sharding key
+																		 // only
 			jsonLeft -= (jsonPtr - prevPtr);
 
 			if (!status.ok()) {
@@ -1107,8 +1111,8 @@ int HTTPServer::modifyItemsMsgPack(http::Context &ctx, string &nsName, vector<st
 	msgpackBuilder.Put(kParamSuccess, true);
 	if (!precepts.empty()) {
 		auto itemsArray = msgpackBuilder.Array(kParamItems, qr.Count());
-		for (size_t i = 0; i < qr.Count(); ++i) {
-			qr[i].GetMsgPack(wrSer, false);
+		for (auto it : qr) {
+			it.GetMsgPack(wrSer, false);
 		}
 		itemsArray.End();
 	}
@@ -1174,7 +1178,8 @@ int HTTPServer::modifyItemsTxJSON(http::Context &ctx, Transaction &tx, vector<st
 			if (jsonPtr != &itemJson[0] && isBlank(str)) {
 				break;
 			}
-			auto status = item.FromJSON(std::string_view(jsonPtr, jsonLeft), &jsonPtr, mode == ModeDelete);
+			auto status = item.FromJSON(std::string_view(jsonPtr, jsonLeft), &jsonPtr,
+										false);	 // TODO: for mode == ModeDelete deserialize PK and sharding key only
 			jsonLeft -= (jsonPtr - prevPtr);
 			if (!status.ok()) {
 				http::HttpStatus httpStatus(status);
@@ -1263,23 +1268,49 @@ int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &re
 	JsonBuilder builder(wrSer);
 
 	auto iarray = builder.Array(kParamItems);
-	for (size_t i = offset; i < res.Count() && i < offset + limit; i++) {
+	auto it = res.begin() + offset;
+	std::vector<std::string> jsonData;
+	if (withColumns) {
+		size_t size = res.Count();
+		if (limit > offset && limit - offset < size) {
+			size = limit - offset;
+		}
+		jsonData.reserve(size);
+	}
+	WrSerializer itemSer;
+	auto cjsonViewer = [this, &res, &ctx](std::string_view cjson) {
+		auto item = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout).NewItem(res.GetNamespaces()[0]);
+		item.FromCJSON(cjson);
+		return string(item.GetJSON());
+	};
+
+	for (size_t i = 0; it != res.end() && i < limit; ++i, ++it) {
 		if (!isWALQuery) {
 			iarray.Raw(nullptr, "");
-			res[i].GetJSON(wrSer, false);
+			if (withColumns) {
+				itemSer.Reset();
+				it.GetJSON(itemSer, false);
+				jsonData.emplace_back(itemSer.Slice());
+				wrSer.Write(itemSer.Slice());
+			} else {
+				it.GetJSON(wrSer, false);
+			}
 		} else {
 			auto obj = iarray.Object(nullptr);
-			obj.Put(kParamLsn, int64_t(res[i].GetLSN()));
-			if (!res[i].IsRaw()) {
+			obj.Put(kParamLsn, int64_t(it.GetLSN()));
+			if (!it.IsRaw()) {
 				iarray.Raw(kParamItem, "");
-				res[i].GetJSON(wrSer, false);
+				if (withColumns) {
+					itemSer.Reset();
+					it.GetJSON(itemSer, false);
+					jsonData.emplace_back(itemSer.Slice());
+					wrSer.Write(itemSer.Slice());
+				} else {
+					it.GetJSON(wrSer, false);
+				}
 			} else {
-				reindexer::WALRecord rec(res[i].GetRaw());
-				rec.GetJSON(obj, [this, &res, &ctx](std::string_view cjson) {
-					auto item = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout).NewItem(res.GetNamespaces()[0]);
-					item.FromCJSON(cjson);
-					return string(item.GetJSON());
-				});
+				reindexer::WALRecord rec(it.GetRaw());
+				rec.GetJSON(obj, cjsonViewer);
 			}
 		}
 
@@ -1287,15 +1318,16 @@ int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &re
 	}
 	iarray.End();
 
-	if (!res.aggregationResults.empty()) {
+	auto &aggs = res.GetAggregationResults();
+	if (!aggs.empty()) {
 		auto arrNode = builder.Array(kParamAggregations);
-		for (unsigned i = 0; i < res.aggregationResults.size(); i++) {
+		for (auto &agg : aggs) {
 			arrNode.Raw(nullptr, "");
-			res.aggregationResults[i].GetJSON(wrSer);
+			agg.GetJSON(wrSer);
 		}
 	}
 
-	queryResultParams(builder, res, isWALQuery, isQueryResults, limit, withColumns, width);
+	queryResultParams(builder, res, std::move(jsonData), isWALQuery, isQueryResults, limit, withColumns, width);
 	builder.End();
 
 	return ctx.JSON(http::StatusOK, wrSer.DetachChunk());
@@ -1305,11 +1337,11 @@ int HTTPServer::queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults 
 									unsigned offset, bool withColumns, int width) {
 	int paramsToSend = 3;
 	bool withTotalItems = (!isQueryResults || limit != kDefaultLimit);
-	if (!res.aggregationResults.empty()) ++paramsToSend;
+	if (!res.GetAggregationResults().empty()) ++paramsToSend;
 	if (!res.GetExplainResults().empty()) ++paramsToSend;
 	if (withTotalItems) ++paramsToSend;
 	if (withColumns) ++paramsToSend;
-	if (isQueryResults && res.totalCount) {
+	if (isQueryResults && res.TotalCount()) {
 		if (limit == kDefaultLimit) ++paramsToSend;
 		++paramsToSend;
 	}
@@ -1317,20 +1349,36 @@ int HTTPServer::queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults 
 	WrSerializer wrSer(ctx.writer->GetChunk());
 	MsgPackBuilder msgpackBuilder(wrSer, ObjType::TypeObject, paramsToSend);
 
+	WrSerializer itemSer;
+	std::vector<std::string> jsonData;
+	if (withColumns) {
+		size_t size = res.Count();
+		if (limit > offset && limit - offset < size) {
+			size = limit - offset;
+		}
+		jsonData.reserve(size);
+	}
 	auto itemsArray = msgpackBuilder.Array(kParamItems, std::min(size_t(limit), size_t(res.Count() - offset)));
-	for (size_t i = offset; i < res.Count() && i < offset + limit; i++) {
-		res[i].GetMsgPack(wrSer, false);
+	auto it = res.begin() + offset;
+	for (size_t i = 0; it != res.end() && i < limit; ++i, ++it) {
+		it.GetMsgPack(wrSer, false);
+		if (withColumns) {
+			itemSer.Reset();
+			it.GetJSON(itemSer, false);
+			jsonData.emplace_back(itemSer.Slice());
+		}
 	}
 	itemsArray.End();
 
-	if (!res.aggregationResults.empty()) {
-		auto aggregationsArray = msgpackBuilder.Array(kParamAggregations, res.aggregationResults.size());
-		for (unsigned i = 0; i < res.aggregationResults.size(); i++) {
-			res.aggregationResults[i].GetMsgPack(wrSer);
+	if (!res.GetAggregationResults().empty()) {
+		auto &aggs = res.GetAggregationResults();
+		auto aggregationsArray = msgpackBuilder.Array(kParamAggregations, aggs.size());
+		for (auto &agg : aggs) {
+			agg.GetMsgPack(wrSer);
 		}
 	}
 
-	queryResultParams(msgpackBuilder, res, isWALQuery, isQueryResults, limit, withColumns, width);
+	queryResultParams(msgpackBuilder, res, std::move(jsonData), isWALQuery, isQueryResults, limit, withColumns, width);
 	msgpackBuilder.End();
 
 	return ctx.MSGPACK(http::StatusOK, wrSer.DetachChunk());
@@ -1342,19 +1390,34 @@ int HTTPServer::queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults
 	ProtobufBuilder protobufBuilder(&wrSer);
 
 	int itemsField = kProtoQueryResultsFields.at(kParamItems);
-	for (size_t i = offset; i < res.Count() && i < offset + limit; i++) {
+	auto &lres = res.ToLocalQr();
+	WrSerializer itemSer;
+	std::vector<std::string> jsonData;
+	if (withColumns) {
+		size_t size = res.Count();
+		if (limit > offset && limit - offset < size) {
+			size = limit - offset;
+		}
+		jsonData.reserve(size);
+	}
+	for (size_t i = offset; i < lres.Count() && i < offset + limit; i++) {
 		auto item = protobufBuilder.Object(itemsField);
-		auto it = res[i];
-		auto i1 = item.Object(res.getNsNumber(it.GetItemRef().Nsid()) + 1);
+		auto it = lres[i];
+		auto i1 = item.Object(lres.getNsNumber(it.GetItemRef().Nsid()) + 1);
 		it.GetProtobuf(wrSer, false);
 		i1.End();
 		item.End();
+		if (withColumns) {
+			itemSer.Reset();
+			it.GetJSON(itemSer, false);
+			jsonData.emplace_back(itemSer.Slice());
+		}
 	}
 
 	int aggregationField = kProtoQueryResultsFields.at(kParamAggregations);
-	for (unsigned i = 0; i < res.aggregationResults.size(); i++) {
+	for (auto &agg : res.GetAggregationResults()) {
 		auto aggregation = protobufBuilder.Object(aggregationField);
-		res.aggregationResults[i].GetProtobuf(wrSer);
+		agg.GetProtobuf(wrSer);
 		aggregation.End();
 	}
 
@@ -1372,18 +1435,18 @@ int HTTPServer::queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults
 
 	if (!isQueryResults || limit != kDefaultLimit) {
 		protobufBuilder.Put(kProtoQueryResultsFields.at(kParamTotalItems),
-							isQueryResults ? static_cast<int64_t>(res.Count()) : static_cast<int64_t>(res.totalCount));
+							isQueryResults ? static_cast<int64_t>(res.Count()) : static_cast<int64_t>(res.TotalCount()));
 	}
 
-	if (isQueryResults && res.totalCount) {
-		protobufBuilder.Put(kProtoQueryResultsFields.at(kParamQueryTotalItems), res.totalCount);
+	if (isQueryResults && res.TotalCount()) {
+		protobufBuilder.Put(kProtoQueryResultsFields.at(kParamQueryTotalItems), int(res.TotalCount()));
 		if (limit == kDefaultLimit) {
-			protobufBuilder.Put(kProtoQueryResultsFields.at(kParamTotalItems), res.totalCount);
+			protobufBuilder.Put(kProtoQueryResultsFields.at(kParamTotalItems), int(res.TotalCount()));
 		}
 	}
 
 	if (withColumns) {
-		reindexer::TableCalculator<reindexer::QueryResults> tableCalculator(res, width, limit);
+		reindexer::TableCalculator tableCalculator(std::move(jsonData), width);
 		auto &header = tableCalculator.GetHeader();
 		auto &columnsSettings = tableCalculator.GetColumnsSettings();
 		for (auto it = header.begin(); it != header.end(); ++it) {
@@ -1402,8 +1465,8 @@ int HTTPServer::queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults
 }
 
 template <typename Builder>
-void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
-								   bool withColumns, int width) {
+void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &res, std::vector<std::string> &&jsonData, bool isWALQuery,
+								   bool isQueryResults, unsigned limit, bool withColumns, int width) {
 	h_vector<std::string_view, 1> namespaces(res.GetNamespaces());
 	auto namespacesArray = builder.Array(kParamNamespaces, namespaces.size());
 	for (auto ns : namespaces) {
@@ -1418,18 +1481,18 @@ void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &re
 	}
 
 	if (!isQueryResults || limit != kDefaultLimit) {
-		builder.Put(kParamTotalItems, isQueryResults ? static_cast<int64_t>(res.Count()) : static_cast<int64_t>(res.totalCount));
+		builder.Put(kParamTotalItems, isQueryResults ? static_cast<int64_t>(res.Count()) : static_cast<int64_t>(res.TotalCount()));
 	}
 
-	if (isQueryResults && res.totalCount) {
-		builder.Put(kParamQueryTotalItems, res.totalCount);
+	if (isQueryResults && res.TotalCount()) {
+		builder.Put(kParamQueryTotalItems, int(res.TotalCount()));
 		if (limit == kDefaultLimit) {
-			builder.Put(kParamTotalItems, res.totalCount);
+			builder.Put(kParamTotalItems, int(res.TotalCount()));
 		}
 	}
 
 	if (withColumns) {
-		reindexer::TableCalculator<reindexer::QueryResults> tableCalculator(res, width, limit);
+		reindexer::TableCalculator tableCalculator(std::move(jsonData), width);
 		auto &header = tableCalculator.GetHeader();
 		auto &columnsSettings = tableCalculator.GetColumnsSettings();
 		auto headerArray = builder.Array(kParamColumns, header.size());
@@ -1454,7 +1517,7 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 	bool withColumns = ((withColumnsParam == "1") && (width > 0)) ? true : false;
 
 	if (format == "msgpack"sv) {
-		return queryResultsMsgPack(ctx, res, isQueryResults, limit, offset, withColumns, width);
+		return queryResultsMsgPack(ctx, res, isWALQuery, isQueryResults, limit, offset, withColumns, width);
 	} else if (format == "protobuf"sv) {
 		return queryResultsProtobuf(ctx, res, isWALQuery, isQueryResults, limit, offset, withColumns, width);
 	} else {

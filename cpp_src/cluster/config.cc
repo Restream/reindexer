@@ -1,8 +1,11 @@
 #include "cluster/config.h"
 
+#include <set>
 #include <string_view>
 
 #include "core/cjson/jsonbuilder.h"
+#include "core/indexdef.h"
+#include "core/type_consts_helpers.h"
 #include "gason/gason.h"
 #include "tools/json2kv.h"
 #include "tools/serializer.h"
@@ -437,13 +440,34 @@ std::string AsyncReplConfigData::Role2str(AsyncReplConfigData::Role role) noexce
 }
 
 Error ShardingConfig::Namespace::FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards) {
+	if (!yaml["namespace"].IsScalar()) {
+		return Error(errParams, "'namespace' node must be scalar.");
+	}
+
 	ns = yaml["namespace"].As<string>();
+	if (!validateObjectName(ns, false)) {
+		return Error(errParams, "Namespace name incorrect '%s'.", ns);
+	}
+	if (!yaml["index"].IsScalar()) {
+		return Error(errParams, "'index' node must be scalar.");
+	}
+
 	index = yaml["index"].As<string>();
+	if (!validateIndexName(index, IndexCompositeHash)) {
+		return Error(errParams, "Index name incorrect '%s'.", index);
+	}
+	const auto& defaultShardNode = yaml["default_shard"];
+	if (defaultShardNode.IsNone()) {
+		return Error(errParams, "Default shard id is not specified for namespace '%s'", ns);
+	}
+	defaultShard = defaultShardNode.As<int>();
 	auto &keysNode = yaml["keys"];
 	keys.clear();
 	keys.resize(keysNode.Size());
+	fast_hash_set<Variant> checkVal;
+	KeyValueType valuesType = KeyValueNull;
 	for (size_t i = 0; i < keys.size(); ++i) {
-		const Error err = keys[i].FromYML(keysNode[i], shards);
+		const Error err = keys[i].FromYML(keysNode[i], shards, valuesType, checkVal);
 		if (!err.ok()) return err;
 	}
 	return errOK;
@@ -452,12 +476,21 @@ Error ShardingConfig::Namespace::FromYML(Yaml::Node &yaml, const std::map<int, s
 Error ShardingConfig::Namespace::FromJson(const gason::JsonNode &root) {
 	try {
 		ns = root["namespace"].As<std::string>();
+		if (!validateObjectName(ns, false)) {
+			return Error(errParams, "Namespace name incorrect '%s'.", ns);
+		}
+		defaultShard = root["default_shard"].As<int>();
 		index = root["index"].As<std::string>();
+		if (!validateIndexName(index, IndexCompositeHash)) {
+			return Error(errParams, "Index name incorrect '%s'.", index);
+		}
 		const auto &keysNode = root["keys"];
 		keys.clear();
+		fast_hash_set<Variant> checkVal;
+		KeyValueType valuesType = KeyValueNull;
 		for (const auto &kNode : keysNode) {
 			keys.emplace_back();
-			const Error err = keys.back().FromJson(kNode);
+			const Error err = keys.back().FromJson(kNode, valuesType, checkVal);
 			if (!err.ok()) return err;
 		}
 	} catch (const Error &err) {
@@ -468,60 +501,102 @@ Error ShardingConfig::Namespace::FromJson(const gason::JsonNode &root) {
 	return errOK;
 }
 
-Error ShardingConfig::Key::FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards) {
-	values.clear();
-
-	shardId = yaml["shard_id"].As<int>();
-	if (shardId == 0) {
-		return Error{errParams, "Shard id 0 is reserved for proxy"};
+Error ShardingConfig::Key::checkValue(Variant val, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal) {
+	if (valuesType == KeyValueNull) {
+		valuesType = val.Type();
+	} else if (valuesType != val.Type()) {
+		return Error(errParams, "Incorrect value '%s'. Type of first value is '%s', current type is '%s'", val.As<std::string>(),
+					 KeyValueTypeToStr(valuesType), KeyValueTypeToStr(val.Type()));
 	}
+	if (checkVal.find(val) != checkVal.end()) {
+		return Error(errParams, "Incorrect value '%s'. Value already in use.", val.As<std::string>());
+	}
+	checkVal.emplace(val);
+	return errOK;
+}
+
+Error ShardingConfig::Key::FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards, KeyValueType &valuesType,
+								   fast_hash_set<Variant> &checkVal) {
+	values.clear();
+	const auto &shardIdNode = yaml["shard_id"];
+	if (shardIdNode.IsNone()) {
+		return Error(errParams, "Shard id should be specified for every namespace's keys");
+	}
+	shardId = shardIdNode.As<int>();
 	if (shards.find(shardId) == shards.cend()) {
 		return Error(errParams, "Shard id %d is not specified in the config but it is used in namespace keys", shardId);
 	}
 
 	auto &valuesNode = yaml["values"];
+#if 0
 	auto &fromNode = yaml["from"];
 	auto &toNode = yaml["to"];
+#endif
 	if (!valuesNode.IsNone()) {
-		if (!fromNode.IsNone() || !toNode.IsNone()) {
-			return Error(errParams, "Key specifies values and range at the same time");
-		}
 		algorithmType = ByValue;
 		for (size_t i = 0; i < valuesNode.Size(); ++i) {
-			values.emplace_back(stringToVariant(valuesNode[i].AsString()));
+			Variant val = stringToVariant(valuesNode[i].AsString());
+			if (val.Type() == KeyValueNull) {
+				return Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", valuesNode[i].AsString());
+			}
+			Error err = checkValue(val, valuesType, checkVal);
+			if (!err.ok()) {
+				return err;
+			}
+			values.emplace_back(val);
 		}
-	} else if (!fromNode.IsNone() || !toNode.IsNone()) {
+	}
+#if 0
+	else if (!fromNode.IsNone() || !toNode.IsNone()) {
 		if (fromNode.IsNone() || toNode.IsNone()) {
 			return Error(errParams, "Key's range should be specifies by 'from' and 'to'");
 		}
 		algorithmType = ByRange;
-		values.emplace_back(stringToVariant(fromNode.AsString()));
-		values.emplace_back(stringToVariant(toNode.AsString()));
-	} else {
+		Variant from = stringToVariant(fromNode.AsString());
+		Variant to = stringToVariant(toNode.AsString());
+		values.emplace_back(from);
+		values.emplace_back(to);
+	}
+#endif
+	else {
 		return Error(errParams, "Unsupported sharding algorithm type: neither values nor range are specified");
 	}
 
 	return errOK;
 }
 
-Error ShardingConfig::Key::FromJson(const gason::JsonNode &root) {
+Error ShardingConfig::Key::FromJson(const gason::JsonNode &root, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal) {
 	try {
 		shardId = root["shard_id"].As<int>();
 		values.clear();
 		const auto &valuesNode = root["values"];
-		if (valuesNode.empty()) {
-			const auto &fromNode = root["from"];
-			const auto &toNode = root["to"];
+#if 0
+		const auto &fromNode = root["from"];
+		const auto &toNode = root["to"];
+#endif
+		if (!valuesNode.empty()) {
+			algorithmType = ByValue;
+			for (const auto &vNode : valuesNode) {
+				Variant val = jsonValue2Variant(vNode.value, KeyValueUndefined);
+				Error err = checkValue(val, valuesType, checkVal);
+				if (!err.ok()) {
+					return err;
+				}
+				values.emplace_back(val);
+			}
+		}
+#if 0
+		else if (!fromNode.empty() && !toNode.empty()) {
 			algorithmType = ByRange;
 			values.reserve(2);
 			values.emplace_back(jsonValue2Variant(fromNode.value, KeyValueUndefined));
 			values.emplace_back(jsonValue2Variant(toNode.value, KeyValueUndefined));
-		} else {
-			algorithmType = ByValue;
-			for (const auto &vNode : valuesNode) {
-				values.emplace_back(jsonValue2Variant(vNode.value, KeyValueUndefined));
-			}
 		}
+#endif
+		else {
+			return Error(errParams, "Unsupported sharding algorithm type: neither values nor range are specified");
+		}
+
 	} catch (const Error &err) {
 		return err;
 	} catch (const gason::Exception &ex) {
@@ -531,7 +606,7 @@ Error ShardingConfig::Key::FromJson(const gason::JsonNode &root) {
 }
 
 void ShardingConfig::Namespace::GetYml(std::stringstream &yaml) const {
-	yaml << "\n  - namespace: \"" << ns << "\"\n    index: \"" << index << "\"\n    keys:";
+	yaml << "\n  - namespace: \"" << ns << "\"\n    default_shard: " << defaultShard << "\n    index: \"" << index << "\"\n    keys:";
 	for (const auto &key : keys) {
 		key.GetYml(yaml);
 	}
@@ -539,6 +614,7 @@ void ShardingConfig::Namespace::GetYml(std::stringstream &yaml) const {
 
 void ShardingConfig::Namespace::GetJson(JsonBuilder &jb) const {
 	jb.Put("namespace", ns);
+	jb.Put("default_shard", defaultShard);
 	jb.Put("index", index);
 	auto keysNode = jb.Array("keys");
 	for (const auto &key : keys) {
@@ -589,7 +665,6 @@ void ShardingConfig::Key::GetJson(JsonBuilder &jb) const {
 }
 
 Error ShardingConfig::FromYML(const std::string &yaml) {
-	proxyDsns.clear();
 	namespaces.clear();
 	shards.clear();
 
@@ -604,22 +679,10 @@ Error ShardingConfig::FromYML(const std::string &yaml) {
 		if (const int v{versionNode.As<int>()}; v != 1) {
 			return Error(errParams, "Unsupported version of sharding config file: %d", v);
 		}
-		auto &proxyDsnsNode = root["proxy_dsns"];
-		proxyDsns.reserve(proxyDsnsNode.Size());
-		for (size_t i = 0; i < proxyDsnsNode.Size(); ++i) {
-			Yaml::Node &dsnNode = proxyDsnsNode[i];
-			proxyDsns.emplace_back(dsnNode.AsString());
-		}
-		if (proxyDsns.empty()) {
-			return Error{errParams, "Proxy dsns are not specified"};
-		}
 
 		auto &shardsNode = root["shards"];
 		for (size_t i = 0; i < shardsNode.Size(); ++i) {
 			size_t shardId = shardsNode[i]["shard_id"].As<int>();
-			if (shardId == 0) {
-				return Error{errParams, "Shard id 0 is reserved for proxy"};
-			}
 			if (shards.find(shardId) != shards.end()) {
 				return Error{errParams, "Dsns for shard id %u are specified twice", shardId};
 			}
@@ -635,10 +698,19 @@ Error ShardingConfig::FromYML(const std::string &yaml) {
 		for (size_t i = 0; i < namespaces.size(); ++i) {
 			const Error err = namespaces[i].FromYML(namespacesNodes[i], shards);
 			if (!err.ok()) return err;
+			const std::string &newNsName = namespaces[i].ns;
+			if (i > 0 && std::find_if(namespaces.begin(), namespaces.begin() + i,
+									  [&newNsName](const Namespace &v) { return iequals(v.ns, newNsName); }) != namespaces.begin() + i) {
+				return Error(errParams, "Namespace '%s' already specified in the config.", newNsName);
+			}
 		}
 
 		thisShardId = root["this_shard_id"].As<int>();
-		return errOK;
+		reconnectTimeout = std::chrono::milliseconds(root["reconnect_timeout_msec"].As<int>(reconnectTimeout.count()));
+		shardsAwaitingTimeout = std::chrono::seconds(root["shards_awaiting_timeout_sec"].As<int>(shardsAwaitingTimeout.count()));
+		proxyConnCount = root["proxy_conn_count"].As<int>(proxyConnCount);
+		proxyConnConcurrency = root["proxy_conn_concurrency"].As<int>(proxyConnConcurrency);
+		return Validate();
 	} catch (const Yaml::Exception &ex) {
 		return Error(errParams, "yaml parsing error: '%s'", ex.Message());
 	} catch (const Error &err) {
@@ -662,17 +734,18 @@ Error ShardingConfig::FromJson(const gason::JsonNode &root) {
 		if (v != 1) {
 			return Error(errParams, "Unsupported version of sharding config file: %d", v);
 		}
-		proxyDsns.clear();
-		const auto &prxDsnsNode = root["proxy_dsns"];
-		for (const auto &prxDsnN : prxDsnsNode) {
-			proxyDsns.emplace_back(prxDsnN.As<std::string>());
-		}
 		namespaces.clear();
 		const auto &namespacesNode = root["namespaces"];
 		for (const auto &nsNode : namespacesNode) {
 			namespaces.emplace_back();
 			const Error err = namespaces.back().FromJson(nsNode);
 			if (!err.ok()) return err;
+			const std::string &newNsName = namespaces.back().ns;
+			if (namespaces.size() > 1 && std::find_if(namespaces.begin(), namespaces.end() - 1, [&newNsName](const Namespace &v) {
+											 return iequals(v.ns, newNsName);
+										 }) != namespaces.end() - 1) {
+				return Error(errParams, "Namespace '%s' already specified in the config.", newNsName);
+			}
 		}
 		shards.clear();
 		const auto &shardsNode = root["shards"];
@@ -687,32 +760,34 @@ Error ShardingConfig::FromJson(const gason::JsonNode &root) {
 			}
 		}
 		thisShardId = root["this_shard_id"].As<int>();
+		reconnectTimeout = std::chrono::milliseconds(root["reconnect_timeout_msec"].As<int>(reconnectTimeout.count()));
+		shardsAwaitingTimeout = std::chrono::seconds(root["shards_awaiting_timeout_sec"].As<int>(shardsAwaitingTimeout.count()));
+		proxyConnCount = root["proxy_conn_count"].As<int>(proxyConnCount);
+		proxyConnConcurrency = root["proxy_conn_concurrency"].As<int>(proxyConnConcurrency);
 	} catch (const Error &err) {
 		return err;
 	} catch (const gason::Exception &ex) {
 		return Error(errParseJson, "NodeData: %s", ex.what());
 	}
-	return errOK;
+	return Validate();
 }
 
 bool operator==(const ShardingConfig &lhs, const ShardingConfig &rhs) {
-	return lhs.proxyDsns == rhs.proxyDsns && lhs.namespaces == rhs.namespaces && lhs.thisShardId == rhs.thisShardId &&
-		   lhs.shards == rhs.shards;
+	return lhs.namespaces == rhs.namespaces && lhs.thisShardId == rhs.thisShardId &&
+		   lhs.shards == rhs.shards && lhs.reconnectTimeout == rhs.reconnectTimeout &&
+		   lhs.shardsAwaitingTimeout == rhs.shardsAwaitingTimeout && lhs.proxyConnCount == rhs.proxyConnCount &&
+		   lhs.proxyConnConcurrency == rhs.proxyConnConcurrency;
 }
 bool operator==(const ShardingConfig::Key &lhs, const ShardingConfig::Key &rhs) {
 	return lhs.shardId == rhs.shardId && lhs.algorithmType == rhs.algorithmType && lhs.values.RelaxCompare(rhs.values) == 0;
 }
 bool operator==(const ShardingConfig::Namespace &lhs, const ShardingConfig::Namespace &rhs) {
-	return lhs.ns == rhs.ns && lhs.index == rhs.index && lhs.keys == rhs.keys;
+	return lhs.ns == rhs.ns && lhs.defaultShard == rhs.defaultShard && lhs.index == rhs.index && lhs.keys == rhs.keys;
 }
 
 std::string ShardingConfig::GetYml() const {
 	std::stringstream yaml;
-	yaml << "version: 1\nproxy_dsns:";
-	for (size_t i = 0; i < proxyDsns.size(); ++i) {
-		yaml << "\n  - \"" << proxyDsns[i] << '"';
-	}
-	yaml << "\nnamespaces:";
+	yaml << "version: 1\nnamespaces:";
 	for (const auto &ns : namespaces) {
 		ns.GetYml(yaml);
 	}
@@ -723,7 +798,11 @@ std::string ShardingConfig::GetYml() const {
 			yaml << "\n      - \"" << d << '"';
 		}
 	}
-	yaml << "\nthis_shard_id: " << thisShardId << '\n';
+	yaml << "\nthis_shard_id: " << thisShardId;
+	yaml << "\nreconnect_timeout_msec: " << reconnectTimeout.count();
+	yaml << "\nshards_awaiting_timeout_sec: " << shardsAwaitingTimeout.count();
+	yaml << "\nproxy_conn_count: " << proxyConnCount;
+	yaml << "\nproxy_conn_concurrency: " << proxyConnConcurrency << '\n';
 	return yaml.str();
 }
 
@@ -740,10 +819,6 @@ void ShardingConfig::GetJson(WrSerializer &ser) const {
 
 void ShardingConfig::GetJson(JsonBuilder &jb) const {
 	jb.Put("version", 1);
-	{
-		auto proxyDsnsNode = jb.Array("proxy_dsns");
-		for (const auto &prxDsn : proxyDsns) proxyDsnsNode.Put(0, prxDsn);
-	}
 	{
 		auto namespacesNode = jb.Array("namespaces");
 		for (const auto &ns : namespaces) {
@@ -763,6 +838,42 @@ void ShardingConfig::GetJson(JsonBuilder &jb) const {
 		}
 	}
 	jb.Put("this_shard_id", thisShardId);
+	jb.Put("reconnect_timeout_msec", reconnectTimeout.count());
+	jb.Put("shards_awaiting_timeout_sec", shardsAwaitingTimeout.count());
+	jb.Put("proxy_conn_count", proxyConnCount);
+	jb.Put("proxy_conn_concurrency", proxyConnConcurrency);
+}
+
+Error ShardingConfig::Validate() const {
+	std::set<std::string> dsns;
+	for (const auto& s: shards) {
+		if (s.first < 0) {
+			return Error(errParams, "Shard id should not be less than zero");
+		}
+		for (const auto& dsn: s.second) {
+			if (!dsns.insert(dsn).second) {
+				return Error(errParams, "DSNs in shard's config should be unique. Dublicated dsn: %s", dsn);
+			}
+			httpparser::UrlParser urlParser;
+			if (!urlParser.parse(dsn)) {
+				return Error(errParams, "%s is not valid uri", dsn);
+			}
+			if (urlParser.scheme() != "cproto") {
+				return Error(errParams, "Scheme of sharding dsn must be cproto: %s", dsn);
+			}
+		}
+	}
+	for (const auto& ns: namespaces) {
+		if (shards.find(ns.defaultShard) == shards.end()) {
+			return Error(errParams, "Default shard id should be defined in shards list. Undefined default shard id: %d, for namespace: %s", ns.defaultShard, ns.ns);
+		}
+		for (const auto& k: ns.keys) {
+			if (shards.find(k.shardId) == shards.end()) {
+				return Error(errParams, "Shard id should be defined in shards list. Undefined shard id: %d, for namespace: %s", k.shardId, ns.ns);
+			}
+		}
+	}
+	return {};
 }
 
 }  // namespace cluster

@@ -149,7 +149,7 @@ BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
 	}
 	return ctx;
 }
-void SelectFunctionsHolder::Process(QueryResults &res) {
+void SelectFunctionsHolder::Process(LocalQueryResults &res) {
 	if (!querys_ || querys_->empty() || force_only_) return;
 	bool changed = false;
 

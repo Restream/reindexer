@@ -3,47 +3,36 @@
 namespace reindexer {
 namespace client {
 
-Snapshot::Snapshot(Snapshot&& o)
-	: data_(std::move(o.data_)),
-	  id_(o.id_),
-	  count_(o.count_),
-	  rawCount_(o.rawCount_),
-	  nsVersion_(o.nsVersion_),
-	  conn_(o.conn_),
-	  requestTimeout_(o.requestTimeout_) {
-	o.count_ = 0;
-	o.rawCount_ = 0;
-	o.nsVersion_ = lsn_t();
-	o.conn_ = nullptr;
+Snapshot::Snapshot(Snapshot&& o) : i_(std::move(o.i_)) {
+	o.i_.count_ = 0;
+	o.i_.rawCount_ = 0;
+	o.i_.nsVersion_ = lsn_t();
+	o.setClosed();
 }
 
 Snapshot& Snapshot::operator=(Snapshot&& o) {
-	data_ = std::move(o.data_);
-	id_ = o.id_;
-	count_ = o.count_;
-	rawCount_ = o.rawCount_;
-	nsVersion_ = o.nsVersion_;
-	conn_ = o.conn_;
-	requestTimeout_ = o.requestTimeout_;
-	o.count_ = 0;
-	o.rawCount_ = 0;
-	o.nsVersion_ = lsn_t();
-	o.conn_ = nullptr;
+	if (&o != this) {
+		i_ = std::move(o.i_);
+		o.i_.count_ = 0;
+		o.i_.rawCount_ = 0;
+		o.i_.nsVersion_ = lsn_t();
+		o.setClosed();
+	}
 	return *this;
 }
 
 Snapshot::~Snapshot() {
-	if (conn_ && id_ > 0) {
+	if (holdsRemoteData()) {
 		// Just close snapshot on server side
-		conn_->Call({net::cproto::kCmdFetchSnapshot, requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1, IndexValueType::NotSet,
-					 nullptr, false},
-					id_, int64_t(-1));
+		i_.conn_->Call({net::cproto::kCmdFetchSnapshot, i_.requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1,
+						ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
+					   i_.id_, int64_t(-1));
 	}
 }
 
 Snapshot::Snapshot(net::cproto::CoroClientConnection* conn, int id, int64_t count, int64_t rawCount, lsn_t nsVersion, std::string_view data,
 				   std::chrono::milliseconds timeout)
-	: id_(id), count_(count), rawCount_(rawCount), nsVersion_(nsVersion), conn_(conn), requestTimeout_(timeout) {
+	: i_(conn, id, count, rawCount, nsVersion, timeout) {
 	if (id < 0) {
 		throw Error(errLogic, "Unexpectd snapshot id: %d", id);
 	}
@@ -51,32 +40,32 @@ Snapshot::Snapshot(net::cproto::CoroClientConnection* conn, int id, int64_t coun
 		throw Error(errLogic, "Unexpectd snapshot size: %d", count);
 	}
 
-	if (count_ > 0) {
+	if (i_.count_ > 0) {
 		parseFrom(data);
-		if (count_ == 1) {
-			id_ = -1;
+		if (i_.count_ == 1) {
+			i_.id_ = -1;
 		}
 	}
 }
 
 void Snapshot::fetchNext(size_t idx) {
-	if (!conn_) {
-		throw Error(errLogic, "Snapshot: connection is nullptr");
+	if (!holdsRemoteData()) {
+		throw Error(errLogic, "Snapshot: client snapshot does not owns any data");
 	}
-	auto ret = conn_->Call({net::cproto::kCmdFetchSnapshot, requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1,
-							IndexValueType::NotSet, nullptr, false},
-						   id_, int64_t(idx));
+	auto ret = i_.conn_->Call({net::cproto::kCmdFetchSnapshot, i_.requestTimeout_, std::chrono::milliseconds(0), lsn_t(), -1,
+							   ShardingKeyType::NotSetShard, nullptr, false, i_.sessionTs_},
+							  i_.id_, int64_t(idx));
 	if (!ret.Status().ok()) {
 		if (ret.Status().code() == errNetwork) {
-			conn_ = nullptr;
+			setClosed();
 		}
 		throw ret.Status();
 	}
 	auto args = ret.GetArgs(1);
 	parseFrom(p_string(args[0]));
 
-	if (idx + 1 == count_) {
-		id_ = -1;
+	if (idx + 1 == i_.count_) {
+		setClosed();
 	}
 }
 
@@ -84,7 +73,17 @@ void Snapshot::parseFrom(std::string_view data) {
 	SnapshotChunk ch;
 	Serializer ser(data);
 	ch.Deserialize(ser);
-	data_ = std::move(ch);
+	i_.data_ = std::move(ch);
+}
+
+Snapshot::Impl::Impl(net::cproto::CoroClientConnection* conn, int id, int64_t count, int64_t rawCount, lsn_t nsVersion,
+					 std::chrono::milliseconds timeout) noexcept
+	: id_(id), count_(count), rawCount_(rawCount), nsVersion_(nsVersion), conn_(conn), requestTimeout_(timeout) {
+	assert(conn_);
+	const auto sessionTs = conn_->LoginTs();
+	if (sessionTs.has_value()) {
+		sessionTs_ = sessionTs.value();
+	}
 }
 
 }  // namespace client

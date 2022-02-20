@@ -28,9 +28,9 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, std
 	for (;;) {
 		int tag = GetVarUint();
 		if (tag == QueryResultEnd) break;
-		std::string_view data = GetSlice();
 		switch (tag) {
-			case QueryResultAggregation:
+			case QueryResultAggregation: {
+				std::string_view data = GetSlice();
 				ret.aggResults.push_back({});
 				if ((ret.flags & kResultsFormatMask) == kResultsMsgPack) {
 					ret.aggResults.back().FromMsgPack(giftStr(data));
@@ -38,14 +38,25 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, std
 					ret.aggResults.back().FromJSON(giftStr(data));
 				}
 				break;
-			case QueryResultExplain:
+			}
+			case QueryResultExplain: {
+				std::string_view data = GetSlice();
 				ret.explainResults = string(data);
 				break;
+			}
+			case QueryResultShardingVersion: {
+				ret.shardingConfigVersion = GetVarUint();
+				break;
+			}
+			case QueryResultShardId: {
+				ret.shardId = GetVarUint();
+				break;
+			}
 		}
 	}
 }
 
-ResultSerializer::ItemParams ResultSerializer::GetItemData(int flags) {
+ResultSerializer::ItemParams ResultSerializer::GetItemData(int flags, int shardId) {
 	ItemParams ret;
 
 	if (flags & kResultsWithItemID) {
@@ -64,6 +75,13 @@ ResultSerializer::ItemParams ResultSerializer::GetItemData(int flags) {
 		ret.raw = int(GetBool());
 	}
 
+	if (flags & kResultsWithShardId) {
+		if (shardId != ShardingKeyType::ProxyOff) {
+			ret.shardId = shardId;
+		} else {
+			ret.shardId = int(GetVarUint());
+		}
+	}
 	switch (flags & kResultsFormatMask) {
 		case kResultsJson:
 		case kResultsCJson:

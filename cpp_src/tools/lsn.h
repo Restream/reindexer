@@ -54,6 +54,7 @@ struct lsn_t {
 		payload_ = s + counter;
 	}
 	explicit operator int64_t() const noexcept { return payload_; }
+	explicit operator uint64_t() const noexcept { return static_cast<uint64_t>(payload_); }
 	lsn_t &operator++() noexcept {
 		SetCounter(Counter() + 1);
 		return *this;

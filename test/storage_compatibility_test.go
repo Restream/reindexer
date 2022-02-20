@@ -232,8 +232,7 @@ func StartupServerFromBinary(t *testing.T, serverConfig *config.ServerConfig, cp
 		cmd.Process.Signal(os.Interrupt)
 		st, err := cmd.Process.Wait()
 		require.NoError(t, err)
-		require.True(t, st.Exited())
-		require.True(t, st.Success())
+		require.Equal(t, st.ExitCode(), 0)
 	}
 	if err != nil {
 		terminateF()

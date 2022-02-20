@@ -10,8 +10,8 @@ TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	string strValueToCheck = lastStrValue;
 	Error err = rt.reindexer->Select(Query(default_namespace).Not().Where(kFieldOne, CondEq, strValueToCheck), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 		Variant kr = item[kFieldOne];
 		EXPECT_TRUE(kr.Type() == KeyValueString);
 		EXPECT_TRUE(kr.As<string>() != strValueToCheck);
@@ -24,8 +24,8 @@ TEST_F(BtreeIdsetsApi, SelectByIntField) {
 	QueryResults qr;
 	Error err = rt.reindexer->Select(Query(default_namespace).Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	for (size_t i = 0; i < qr.Count(); i++) {
-		Item item = qr[i].GetItem(false);
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 		Variant kr = item[kFieldTwo];
 		EXPECT_TRUE(kr.Type() == KeyValueInt);
 		EXPECT_TRUE(static_cast<int>(kr) >= boundaryValue);
@@ -44,8 +44,8 @@ TEST_F(BtreeIdsetsApi, SelectByBothFields) {
 										 .Where(kFieldTwo, CondGe, Variant(static_cast<int>(boundaryValue))),
 									 qr);
 	EXPECT_TRUE(err.ok()) << err.what();
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 		Variant krOne = item[kFieldOne];
 		EXPECT_TRUE(krOne.Type() == KeyValueString);
 		EXPECT_TRUE(strValueToCheck2.compare(krOne.As<string>()) > 0);
@@ -62,10 +62,10 @@ TEST_F(BtreeIdsetsApi, SortByStringField) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	Variant prev;
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 		Variant curr = item[kFieldOne];
-		if (i != 0) {
+		if (it != qr.begin()) {
 			EXPECT_TRUE(prev >= curr);
 		}
 		prev = curr;
@@ -78,10 +78,10 @@ TEST_F(BtreeIdsetsApi, SortByIntField) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	Variant prev;
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 		Variant curr = item[kFieldTwo];
-		if (i != 0) {
+		if (it != qr.begin()) {
 			EXPECT_TRUE(prev.As<int>() <= curr.As<int>());
 		}
 		prev = curr;
@@ -96,21 +96,21 @@ TEST_F(BtreeIdsetsApi, JoinSimpleNs) {
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	Variant prevFieldTwo;
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 		Variant currFieldTwo = item[kFieldTwo];
-		if (i != 0) {
+		if (it != qr.begin()) {
 			EXPECT_TRUE(currFieldTwo.As<int>() >= prevFieldTwo.As<int>());
 		}
 		prevFieldTwo = currFieldTwo;
 
 		Variant prevJoinedFk;
-		auto itemIt = qr[i].GetJoined();
+		auto itemIt = it.GetJoined();
 		reindexer::joins::JoinedFieldIterator joinedFieldIt = itemIt.begin();
 		EXPECT_TRUE(joinedFieldIt.ItemsCount() > 0);
 		for (int j = 0; j < joinedFieldIt.ItemsCount(); ++j) {
-			reindexer::ItemImpl joinedItem = joinedFieldIt.GetItem(j, qr.getPayloadType(1), qr.getTagsMatcher(1));
-			Variant joinedFkCurr = joinedItem.GetField(qr.getPayloadType(1).FieldByName(kFieldIdFk));
+			reindexer::ItemImpl joinedItem = joinedFieldIt.GetItem(j, qr.GetPayloadType(1), qr.GetTagsMatcher(1));
+			Variant joinedFkCurr = joinedItem.GetField(qr.GetPayloadType(1).FieldByName(kFieldIdFk));
 			EXPECT_TRUE(joinedFkCurr == item[kFieldId]);
 			if (j != 0) {
 				EXPECT_TRUE(joinedFkCurr >= prevJoinedFk);

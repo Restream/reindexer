@@ -24,7 +24,7 @@ public:
 	~CommandsProcessor();
 	template <typename... Args>
 	Error Connect(const string& dsn, const Args&... args);
-	bool Run(const std::string& command);
+	bool Run(const std::string& command, const std::string& dumpMode);
 
 protected:
 	bool interactive();

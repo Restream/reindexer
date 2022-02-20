@@ -54,7 +54,7 @@ yum update
 yum install reindexer-server
 ```
 
-Available distros: `centos-7`,`centos-8`,`fedora-30`,`fedora-31`.
+Available distros: `centos-7`, `fedora-30`, `fedora-31`, `fedora-34`.
 
 To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 
@@ -67,7 +67,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-buster`, `ubuntu-bionic`, `ubuntu-focal`.
+Available distros: `debian-buster`, `debian-bullseye`, `ubuntu-bionic`, `ubuntu-focal`
 
 To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 
@@ -203,6 +203,8 @@ Restore database from backup file:
 ```sh
 reindexer_tool --dsn cproto://127.0.0.1:6534/mydb --filename mydb.rxdump
 ```
+
+A bit more information about interactions between dump/restore commands and sharded namespaces may be found in [main reindexer_tool readme](cmd/reindexer_tool/readme.md)
 
 ### Replication
 

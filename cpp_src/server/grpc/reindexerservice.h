@@ -82,7 +82,8 @@ private:
 	Error getDB(const std::string& dbName, int userRole, reindexer::Reindexer** rx);
 	void removeExpiredTxCb(reindexer::net::ev::periodic&, int);
 
-	static Error packCJSONItem(WrSerializer& wrser, reindexer::QueryResults::Iterator& it, const OutputFlags& opts);
+	template <typename ItT>
+	static Error packCJSONItem(WrSerializer& wrser, ItT& it, const OutputFlags& opts);
 	static Error packPayloadTypes(WrSerializer& wrser, const reindexer::QueryResults& qr);
 
 	Error executeQuery(const std::string& dbName, const Query& q, QueryType type, reindexer::QueryResults& qr);

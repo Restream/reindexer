@@ -45,6 +45,7 @@ HttpStatusCode HttpStatus::errCodeToHttpStatus(int errCode) {
 			return StatusOK;
 		case errNotFound:
 			return StatusNotFound;
+		case errStrictMode:
 		case errParams:
 			return StatusBadRequest;
 		case errForbidden:

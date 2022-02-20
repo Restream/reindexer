@@ -12,8 +12,8 @@ Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion) : tm_(std::move(tm)), nsVers
 	walData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));
 }
 
-Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDatahash, QueryResults &&wal,
-				   QueryResults &&raw)
+Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDatahash, LocalQueryResults &&wal,
+				   LocalQueryResults &&raw)
 	: pt_(pt), tm_(std::move(tm)), expectedDatahash_(expectedDatahash), lastLsn_(lastLsn), nsVersion_(nsVersion) {
 	if (raw.Items().size()) {
 		rawData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));
@@ -116,7 +116,7 @@ void Snapshot::ItemsContainer::lockItem(PayloadType pt, ItemRef &itemref, bool l
 	}
 }
 
-void Snapshot::addRawData(QueryResults &&qr) {
+void Snapshot::addRawData(LocalQueryResults &&qr) {
 	appendQr(rawData_, std::move(qr));
 
 	if (rawData_.Size()) {
@@ -129,9 +129,9 @@ void Snapshot::addRawData(QueryResults &&qr) {
 	}
 }
 
-void Snapshot::addWalData(QueryResults &&qr) { appendQr(walData_, std::move(qr)); }
+void Snapshot::addWalData(LocalQueryResults &&qr) { appendQr(walData_, std::move(qr)); }
 
-void Snapshot::appendQr(ItemsContainer &container, QueryResults &&qr) {
+void Snapshot::appendQr(ItemsContainer &container, LocalQueryResults &&qr) {
 	auto &&items = qr.Items();
 	if (container.ItemsCount() > 1) {
 		throw Error(errLogic, "Snapshot already has this kind of data");

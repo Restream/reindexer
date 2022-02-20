@@ -1,11 +1,13 @@
 ﻿#pragma once
 
+#include <deque>
 #include <future>
 #include <thread>
 #include "client/cororeindexer.h"
 #include "client/reindexerconfig.h"
 #include "client/synccoroqueryresults.h"
 #include "client/synccorotransaction.h"
+#include "core/shardedmeta.h"
 #include "coroutine/channel.h"
 #include "coroutine/waitgroup.h"
 #include "net/ev/ev.h"
@@ -13,8 +15,11 @@
 namespace reindexer {
 namespace client {
 
+struct ConnectionsPoolData;
 template <typename CmdT>
 class Connection;
+template <typename CmdT>
+class ConnectionsPool;
 
 class SyncCoroReindexerImpl {
 public:
@@ -57,10 +62,11 @@ public:
 	Error Commit(std::string_view nsName, const InternalRdxContext &ctx);
 	Item NewItem(std::string_view nsName, const InternalRdxContext &ctx);
 	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx);
+	Error GetMeta(std::string_view nsName, const string &key, std::vector<ShardedMeta> &data, const InternalRdxContext &ctx);
 	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const InternalRdxContext &ctx);
 	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx);
 	Error GetSqlSuggestions(const std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions);
-	Error Status(const InternalRdxContext &ctx);
+	Error Status(bool forceCheck, const InternalRdxContext &ctx);
 	CoroTransaction NewTransaction(std::string_view nsName, const InternalRdxContext &ctx);
 	Error CommitTransaction(SyncCoroTransaction &tr, SyncCoroQueryResults &results, const InternalRdxContext &ctx);
 	Error RollBackTransaction(SyncCoroTransaction &tr, const InternalRdxContext &ctx);
@@ -70,12 +76,14 @@ private:
 	friend class SyncCoroQueryResults;
 	friend class SyncCoroTransaction;
 	Error fetchResults(int flags, SyncCoroQueryResults &result);
+	Error closeResults(SyncCoroQueryResults &result);
 	Error addTxItem(SyncCoroTransaction &tr, Item &&item, ItemModifyMode mode, lsn_t lsn);
 	Error putTxMeta(SyncCoroTransaction &tr, std::string_view key, std::string_view value, lsn_t lsn);
 	Error setTxTm(SyncCoroTransaction &tr, TagsMatcher &&tm, lsn_t lsn);
 	Error modifyTx(SyncCoroTransaction &tr, Query &&q, lsn_t lsn);
 	Item newItemTx(CoroTransaction &tr);
 	void threadLoopFun(std::promise<Error> &&isRunning, const string &dsn, const client::ConnectOpts &opts);
+	ConnectionsPoolData &getConnData();
 
 	enum CmdName {
 		DbCmdNone = 0,
@@ -107,6 +115,7 @@ private:
 		DbCmdSelectQ,
 		DbCmdCommit,
 		DbCmdGetMeta,
+		DbCmdGetShardedMeta,
 		DbCmdPutMeta,
 		DbCmdEnumMeta,
 		DbCmdGetSqlSuggestions,
@@ -115,6 +124,7 @@ private:
 		DbCmdCommitTransaction,
 		DbCmdRollBackTransaction,
 		DbCmdFetchResults,
+		DbCmdCloseResults,
 		DbCmdNewItemTx,
 		DbCmdAddTxItem,
 		DbCmdPutTxMeta,
@@ -123,38 +133,101 @@ private:
 		DbCmdSetTxTagsMatcher,
 	};
 
-	struct DatabaseCommandBase {
-		DatabaseCommandBase(CmdName id) noexcept : id_(id) {}
-		CmdName id_;
-		virtual ~DatabaseCommandBase() = default;
+	struct DatabaseCommandDataBase {
+		DatabaseCommandDataBase(CmdName _id, const InternalRdxContext &_ctx) noexcept : id(_id), ctx(_ctx) {}
+		CmdName id;
+		InternalRdxContext ctx;
+		virtual ~DatabaseCommandDataBase() = default;
 	};
 
 	template <typename R, typename... P>
-	struct DatabaseCommand : public DatabaseCommandBase {
+	struct DatabaseCommandData : public DatabaseCommandDataBase {
 		std::promise<R> ret;
 		std::tuple<P...> arguments;
-		DatabaseCommand(CmdName id, std::promise<R> r, P &&... p)
-			: DatabaseCommandBase(id), ret(std::move(r)), arguments(std::forward<P>(p)...) {}
+
+		DatabaseCommandData(CmdName _id, const InternalRdxContext &_ctx, P &&...p)
+			: DatabaseCommandDataBase(_id, _ctx), arguments(std::forward<P>(p)...) {}
+		DatabaseCommandData(CmdName _id, const InternalRdxContext &_ctx, std::promise<R> &&r, P &&...p)
+			: DatabaseCommandDataBase(_id, _ctx), ret(std::move(r)), arguments(std::forward<P>(p)...) {}
+		DatabaseCommandData(const DatabaseCommandData &) = delete;
+		DatabaseCommandData(DatabaseCommandData &&) = default;
+	};
+
+	class DatabaseCommand {
+	public:
+		DatabaseCommand(DatabaseCommandDataBase *cmd = nullptr) : cmd_(cmd) {}
+		template <typename DatabaseCommandDataT>
+		DatabaseCommand(DatabaseCommandDataT &&cmd) : owns_(true), cmd_(new DatabaseCommandData(std::forward<DatabaseCommandDataT>(cmd))) {}
+		DatabaseCommand(DatabaseCommand &&r) noexcept : owns_(r.owns_), cmd_(r.cmd_) { r.owns_ = false; }
+		DatabaseCommand(const DatabaseCommand &r) = delete;
+		DatabaseCommand &operator=(DatabaseCommand &&r) {
+			if (this != &r) {
+				if (owns_) {
+					delete cmd_;
+				}
+				owns_ = r.owns_;
+				cmd_ = r.cmd_;
+				r.owns_ = false;
+			}
+			return *this;
+		}
+		DatabaseCommand &operator=(const DatabaseCommand &r) = delete;
+		~DatabaseCommand() {
+			if (owns_) {
+				delete cmd_;
+			}
+		}
+
+		DatabaseCommandDataBase *Data() noexcept { return cmd_; }
+
+	private:
+		bool owns_ = false;
+		DatabaseCommandDataBase *cmd_;
 	};
 
 	template <typename R, typename... Args>
-	R sendCommand(CmdName c, Args &&... args) {
-		std::promise<R> promise;
-		std::future<R> future = promise.get_future();
-		DatabaseCommand<R, Args...> cmd(c, std::move(promise), std::forward<Args>(args)...);
-		auto err = commandsQueue_.Push(commandAsync_, &cmd);  // pointer on stack data. 'wait' in this function!
-		if (!err.ok()) {
-			return R(Error(errTerminated, "Client is not connected"));
+	R sendCommand(CmdName c, const InternalRdxContext &ctx, Args &&...args) {
+		if (!ctx.cmpl()) {
+			std::promise<R> promise;
+			std::future<R> future = promise.get_future();
+			DatabaseCommandData<R, Args...> cmd(c, ctx, std::move(promise), std::forward<Args>(args)...);
+			auto err = commandsQueue_.Push(
+				commandAsync_,
+				DatabaseCommand(static_cast<DatabaseCommandDataBase *>(&cmd)));	 // pointer to stack data. 'wait' in this function!
+			if (!err.ok()) {
+				return R(Error(errTerminated, "Client is not connected"));
+			}
+			return future.get();
 		}
-		return future.get();
+		if constexpr (std::is_same_v<R, Error>) {
+			DatabaseCommandData<R, Args...> cmd(c, ctx, std::forward<Args>(args)...);
+			auto err = commandsQueue_.Push(commandAsync_, DatabaseCommand(std::move(cmd)));
+			if (!err.ok()) {
+				return R(Error(errTerminated, "Client is not connected: %s", err.what()));
+			}
+			return R();
+		}
+		return R(Error(errForbidden, "Unable to use this method with completion callback"));
 	}
 
+	bool isNetworkError(const Error &err) { return err.code() == errNetwork; }
+	bool isNetworkError(const CoroTransaction &tx) { return isNetworkError(tx.Status()); }
+	bool isNetworkError(const Item &item) { return isNetworkError(item.Status()); }
+
 	template <typename R, typename... Args>
-	void execCommand(DatabaseCommandBase *cmd, const std::function<R(Args...)> &fun) {
-		auto cd = dynamic_cast<DatabaseCommand<R, Args...> *>(cmd);
+	void execCommand(DatabaseCommandDataBase *cmd, std::function<R(Args...)> &&fun) {
+		auto cd = dynamic_cast<DatabaseCommandData<R, Args...> *>(cmd);
 		if (cd) {
-			R r = std::apply(fun, cd->arguments);
-			cd->ret.set_value(std::move(r));
+			R r = std::apply(std::move(fun), cd->arguments);
+			if constexpr (std::is_same_v<R, Error>) {
+				if (cd->ctx.cmpl()) {
+					cd->ctx.cmpl()(r);
+				} else {
+					cd->ret.set_value(std::move(r));
+				}
+			} else {
+				cd->ret.set_value(std::move(r));
+			}
 		} else {
 			assert(false);
 		}
@@ -162,14 +235,14 @@ private:
 
 	class CommandsQueue {
 	public:
-		Error Push(net::ev::async &ev, DatabaseCommandBase *cmd);
-		void Get(std::vector<DatabaseCommandBase *> &c);
-		void Invalidate(std::vector<DatabaseCommandBase *> &c);
+		Error Push(net::ev::async &ev, DatabaseCommand &&cmd);
+		void Get(std::vector<DatabaseCommand> &c);
+		void Invalidate(std::vector<DatabaseCommand> &c);
 		void Init();
 
 	private:
 		bool isValid_ = false;
-		std::vector<DatabaseCommandBase *> queue_;
+		std::vector<DatabaseCommand> queue_;
 		std::mutex mtx_;
 	};
 	CommandsQueue commandsQueue_;
@@ -180,8 +253,9 @@ private:
 	net::ev::async closeAsync_;
 	const CoroReindexerConfig conf_;
 	const size_t connCount_ = 1;
+	std::unique_ptr<ConnectionsPoolData> connData_;
 
-	void coroInterpreter(Connection<DatabaseCommandBase> &) noexcept;
+	void coroInterpreter(Connection<DatabaseCommand> &, ConnectionsPool<DatabaseCommand> &) noexcept;
 };
 }  // namespace client
 }  // namespace reindexer

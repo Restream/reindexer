@@ -260,7 +260,7 @@ void QueryResults::Iterator::readNext() {
 	ResultSerializer ser(rawResult.substr(pos_));
 
 	try {
-		itemParams_ = ser.GetItemData(qr_->queryParams_.flags);
+		itemParams_ = ser.GetItemData(qr_->queryParams_.flags, qr_->queryParams_.shardId);
 		if (qr_->queryParams_.flags & kResultsWithJoined) {
 			int joinedCnt = ser.GetVarUint();
 			(void)joinedCnt;

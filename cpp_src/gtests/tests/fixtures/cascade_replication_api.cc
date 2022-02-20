@@ -7,39 +7,6 @@ void CascadeReplicationApi::TearDown()	// -V524
 	reindexer::fs::RmDirAll(kBaseTestsetDbPath);
 }
 
-void CascadeReplicationApi::WaitSync(ServerPtr s1, ServerPtr s2, const std::string& nsName) {
-	auto now = std::chrono::milliseconds(0);
-	const auto pause = std::chrono::milliseconds(50);
-	ReplicationStateApi state1, state2;
-	while (true) {
-		now += pause;
-		const std::string tmStateToken1 = state1.tmStatetoken.has_value() ? std::to_string(state1.tmStatetoken.value()) : "<none>";
-		const std::string tmStateToken2 = state2.tmStatetoken.has_value() ? std::to_string(state2.tmStatetoken.value()) : "<none>";
-		const std::string tmVersion1 = state1.tmVersion.has_value() ? std::to_string(state1.tmVersion.value()) : "<none>";
-		const std::string tmVersion2 = state2.tmVersion.has_value() ? std::to_string(state2.tmVersion.value()) : "<none>";
-		ASSERT_TRUE(now < kMaxSyncTime) << "Wait sync is too long. s1 lsn: " << state1.lsn << "; s2 lsn: " << state2.lsn
-										<< "; s1 count: " << state1.dataCount << "; s2 count: " << state2.dataCount
-										<< " s1 hash: " << state1.dataHash << "; s2 hash: " << state2.dataHash
-										<< " s1 tm_token: " << tmStateToken1 << "; s2 tm_token: " << tmStateToken2
-										<< " s1 tm_version: " << tmVersion1 << "; s2 tm_version: " << tmVersion2;
-		state1 = s1->GetState(nsName);
-		state2 = s2->GetState(nsName);
-
-		if (state1.tmStatetoken.has_value() && state2.tmStatetoken.has_value() && state1.tmVersion.has_value() &&
-			state2.tmVersion.has_value()) {
-			const bool hasSameTms =
-				state1.tmStatetoken.value() == state2.tmStatetoken.value() && state1.tmVersion.value() == state2.tmVersion.value();
-			const bool hasSameLSN = state1.lsn == state2.lsn && state1.nsVersion == state2.nsVersion;
-
-			if (hasSameTms && hasSameLSN) {
-				ASSERT_EQ(state1.dataHash, state2.dataHash);
-				return;
-			}
-		}
-		std::this_thread::sleep_for(pause);
-	}
-}
-
 void CascadeReplicationApi::ValidateNsList(CascadeReplicationApi::ServerPtr s, const std::vector<std::string>& expected) {
 	std::vector<reindexer::NamespaceDef> nsDefs;
 	auto err = s->api.reindexer->EnumNamespaces(nsDefs, reindexer::EnumNamespacesOpts().OnlyNames().HideSystem().WithClosed());

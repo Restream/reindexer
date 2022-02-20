@@ -210,7 +210,7 @@ private:
 	void io_callback(ev::io &watcher, int revents);
 	void connect_timer_cb(ev::timer &watcher, int);
 	void write_cb();
-	void read_cb();
+	int read_cb();
 	bool read_from_buf(span<char> rd_buf, transfer_data &transfer, bool read_full) noexcept;
 
 	ev::io io_;
@@ -219,6 +219,7 @@ private:
 	conn_state state_ = conn_state::init;
 	bool attached_ = false;
 	int cur_events_ = 0;
+	uint64_t conn_id_ = 0;
 
 	async_data r_data_;
 	async_data w_data_;

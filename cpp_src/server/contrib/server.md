@@ -127,7 +127,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 4.1.0
+*Version* : 4.2.0
 
 
 ### License information
@@ -613,6 +613,7 @@ This operation will select documents from namespace with specified filters, and 
 |**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
 |**Query**|**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**Query**|**offset**  <br>*optional*|Offset of first returned item|integer|
+|**Query**|**sharding**  <br>*optional*|if off then get items from current node only|enum (true, false)|
 |**Query**|**sort_field**  <br>*optional*|Sort Field|string|
 |**Query**|**sort_order**  <br>*optional*|Sort Order|enum (asc, desc)|
 

@@ -23,7 +23,6 @@ public:
 
 	template <typename ClientT>
 	Item NewItem(ClientT& client, std::chrono::milliseconds execTimeout);
-	void UpdateTagsMatcher(const TagsMatcher& tm);
 	void TryReplaceTagsMatcher(TagsMatcher&& tm, bool checkVersion = true);
 	TagsMatcher GetTagsMatcher() const {
 		shared_lock<shared_timed_mutex> lk(lck_);

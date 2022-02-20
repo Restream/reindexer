@@ -206,7 +206,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 		selectResults.emplace_back(std::move(res));
 	} else {
 		throw Error(
-			errParams,
+			errStrictMode,
 			"Current query strict mode allows filtering by existing fields only. There are no fields with name '%s' in namespace '%s'",
 			qe.index, ns.name_);
 	}

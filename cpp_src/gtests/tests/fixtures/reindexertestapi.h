@@ -23,6 +23,9 @@ public:
 	static constexpr auto kBasicTimeout = std::chrono::seconds(200);
 
 	ReindexerTestApi() : reindexer(std::shared_ptr<DB>(new DB)) {}
+	template <typename ConfigT>
+	ReindexerTestApi(const ConfigT &cfg) : reindexer(std::shared_ptr<DB>(new DB(cfg))) {}
+
 	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		auto err = reindexer::Error();
 		for (auto &field : fields) {

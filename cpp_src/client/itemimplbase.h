@@ -20,6 +20,7 @@ class CoroRPCClient;
 class ItemImplBase {
 public:
 	// Construct empty item
+	ItemImplBase() = default;
 	ItemImplBase(PayloadType type, const TagsMatcher &tagsMatcher)
 		: payloadType_(type), payloadValue_(type.TotalSize(), 0, type.TotalSize() + 0x100), tagsMatcher_(tagsMatcher) {
 		tagsMatcher_.clearUpdated();
@@ -53,6 +54,7 @@ public:
 	ConstPayload GetConstPayload() const { return ConstPayload(payloadType_, payloadValue_); }
 
 	TagsMatcher &tagsMatcher() noexcept { return tagsMatcher_; }
+	void setTagsMatcher(TagsMatcher tm) noexcept { tagsMatcher_ = std::move(tm); }
 
 	void SetPrecepts(vector<string> &&precepts) { precepts_ = std::move(precepts); }
 	const vector<string> &GetPrecepts() const noexcept { return precepts_; }

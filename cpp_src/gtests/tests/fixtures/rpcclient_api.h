@@ -49,6 +49,7 @@ protected:
 	void SetUp() {}
 	void TearDown() { StopAllServers(); }
 
+public:
 	void StartDefaultRealServer();
 	void AddFakeServer(const string& addr = kDefaultRPCServerAddr, const RPCServerConfig& conf = RPCServerConfig());
 	void AddRealServer(const std::string& dbPath, const string& addr = kDefaultRPCServerAddr, uint16_t httpPort = kDefaultHttpPort,

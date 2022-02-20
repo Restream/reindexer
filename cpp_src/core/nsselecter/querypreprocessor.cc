@@ -41,12 +41,12 @@ void QueryPreprocessor::checkStrictMode(const std::string &index, int idxNo) con
 	if (idxNo != IndexValueType::SetByJsonPath) return;
 	switch (strictMode_) {
 		case StrictModeIndexes:
-			throw Error(errParams,
+			throw Error(errStrictMode,
 						"Current query strict mode allows filtering by indexes only. There are no indexes with name '%s' in namespace '%s'",
 						index, ns_.name_);
 		case StrictModeNames:
 			if (ns_.tagsMatcher_.path2tag(index).empty()) {
-				throw Error(errParams,
+				throw Error(errStrictMode,
 							"Current query strict mode allows filtering by existing fields only. There are no fields with name '%s' in "
 							"namespace '%s'",
 							index, ns_.name_);
@@ -408,7 +408,7 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 							throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(joinEntry.condition_));
 					}
 					SelectCtx ctx{query};
-					QueryResults qr;
+					LocalQueryResults qr;
 					joinedSelector.RightNs()->Select(qr, ctx, rdxCtx);
 					if (qr.Count() > limit) continue;
 					assert(qr.aggregationResults.size() == 1);

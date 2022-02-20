@@ -24,17 +24,6 @@ Item Namespace::NewItem(ClientT& client, std::chrono::milliseconds execTimeout) 
 	return Item(impl);
 }
 
-void Namespace::UpdateTagsMatcher(const TagsMatcher& tm) {
-	std::lock_guard lk(lck_);
-	if (tm.version() > tagsMatcher_.version() && !tagsMatcher_.try_merge(tm)) {
-		WrSerializer wrser;
-		tm.serialize(wrser);
-		std::string_view buf = wrser.Slice();
-		Serializer ser(buf.data(), buf.length());
-		tagsMatcher_.deserialize(ser, tm.version(), tm.stateToken());
-	}
-}
-
 void Namespace::TryReplaceTagsMatcher(TagsMatcher&& tm, bool checkVersion) {
 	std::lock_guard lk(lck_);
 	if (checkVersion && tagsMatcher_.version() >= tm.version() && tagsMatcher_.stateToken() == tm.stateToken()) {

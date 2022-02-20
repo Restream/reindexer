@@ -43,17 +43,18 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() == 100);
 
-		for (size_t i = 0; i < qr.Count(); ++i) {
-			Item ritem(qr[i].GetItem(false));
-			std::string expectedName = "name" + std::to_string(i);
+		int64_t expectedSerialNumber = 0;
+		for (auto& it : qr) {
+			Item ritem(it.GetItem(false));
+			std::string expectedName = "name" + std::to_string(expectedSerialNumber);
 			Variant nameVal = ritem[kFieldName];
 			EXPECT_TRUE(nameVal.Type() == KeyValueString);
 			EXPECT_TRUE(nameVal.As<string>() == expectedName);
 
-			int64_t expectedSerialNumber = static_cast<int64_t>(i);
 			Variant serialNumberVal = ritem[kFieldSerialNumber];
 			EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
 			EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == expectedSerialNumber);
+			++expectedSerialNumber;
 		}
 	}
 
@@ -62,7 +63,7 @@ protected:
 		Error err = rt.reindexer->Select(Query(default_namespace).Where(kFieldName, CondEq, Variant("name5")), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() == 1);
-		Item ritem(qr[0].GetItem(false));
+		Item ritem(qr.begin().GetItem(false));
 		Variant nameVal = ritem[kFieldName];
 		EXPECT_TRUE(nameVal.Type() == KeyValueString);
 		EXPECT_TRUE(nameVal.As<string>() == "name5");
@@ -85,11 +86,13 @@ protected:
 		Error err = rt.reindexer->Select(Query(default_namespace).Where(kFieldSerialNumber, CondLt, Variant(static_cast<int64_t>(50))), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr.Count() == 50);
-		for (int64_t i = 0; i < static_cast<int64_t>(qr.Count()); ++i) {
-			Item ritem(qr[i].GetItem(false));
+		int64_t expectedSerialNumber = 0;
+		for (auto& it : qr) {
+			Item ritem(it.GetItem(false));
 			Variant serialNumberVal = ritem[kFieldSerialNumber];
 			EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
-			EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == i);
+			EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == expectedSerialNumber);
+			++expectedSerialNumber;
 		}
 
 		QueryResults qr2;
@@ -98,7 +101,7 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_TRUE(qr2.Count() == 1);
 
-		Item ritem(qr2[0].GetItem(false));
+		Item ritem(qr2.begin().GetItem(false));
 		Variant serialNumberVal = ritem[kFieldSerialNumber];
 		EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
 		EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == expectedValue);

@@ -7,11 +7,13 @@
 TEST_F(ReplicationLoadApi, Base) {
 	// Check replication in multithread mode with data writes and server restarts
 	std::atomic<bool> leaderWasRestarted = false;
+	const std::string kNsSome = "some";
+	const std::string kNsSome1 = "some1";
 	InitNs();
 	stop = false;
-	SetWALSize(masterId_, 100000, "some");
-	WaitSync("some");
-	WaitSync("some1");
+	SetWALSize(masterId_, 100000, kNsSome);
+	WaitSync(kNsSome);
+	WaitSync(kNsSome1);
 
 	FillData(1000);
 
@@ -36,13 +38,13 @@ TEST_F(ReplicationLoadApi, Base) {
 		}
 	});
 
-	SetWALSize(masterId_, 50000, "some");
+	SetWALSize(masterId_, 50000, kNsSome);
 	for (size_t i = 0; i < 2; ++i) {
 		if (i % 3 == 0) DeleteFromMaster();
-		SetWALSize(masterId_, (int64_t(i) + 1) * 25000, "some1");
+		SetWALSize(masterId_, (int64_t(i) + 1) * 25000, kNsSome1);
 		FillData(1000);
 		GetReplicationStats(masterId_, cluster::kAsyncReplStatsType);
-		SetWALSize(masterId_, (int64_t(i) + 1) * 50000, "some");
+		SetWALSize(masterId_, (int64_t(i) + 1) * 50000, kNsSome);
 		SimpleSelect(0);
 	}
 
@@ -53,8 +55,8 @@ TEST_F(ReplicationLoadApi, Base) {
 	statsReader.join();
 
 	ForceSync();
-	WaitSync("some");
-	WaitSync("some1");
+	WaitSync(kNsSome);
+	WaitSync(kNsSome1);
 
 	std::this_thread::sleep_for(std::chrono::seconds(1));  // Add some time for stats stabilization
 

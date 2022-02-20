@@ -7,7 +7,7 @@ MsgPackTag MsgPackValue::getTag() const {
 	return MsgPackTag(p->type);
 }
 
-MsgPackValue MsgPackValue::operator[](std::string_view key) {
+MsgPackValue MsgPackValue::operator[](std::string_view key) const {
 	if (getTag() != MSGPACK_MAP) {
 		throw reindexer::Error(errParseMsgPack, "Can't convert msgpack field '%s' to object or array", key.data());
 	}
@@ -23,8 +23,8 @@ MsgPackValue MsgPackValue::operator[](std::string_view key) {
 	return emptyValue;
 }
 
-int MsgPackValue::size() const {
-	int size = 0;
+uint32_t MsgPackValue::size() const {
+	uint32_t size = 0;
 	if (isValid()) {
 		int tag = getTag();
 		if (tag == MSGPACK_ARRAY) {
@@ -38,7 +38,7 @@ int MsgPackValue::size() const {
 
 bool MsgPackValue::isValid() const { return (p != nullptr); }
 
-MsgPackIterator::MsgPackIterator(int idx, const MsgPackValue* v) : index(idx), val(v) {}
+MsgPackIterator::MsgPackIterator(uint32_t idx, const MsgPackValue* v) : index(idx), val(v) {}
 
 void MsgPackIterator::operator++() {
 	assert(val);
@@ -48,15 +48,17 @@ void MsgPackIterator::operator++() {
 
 bool MsgPackIterator::operator!=(const MsgPackIterator& x) const { return index != x.index; }
 
-MsgPackValue MsgPackIterator::operator*() const {
+const MsgPackValue& MsgPackIterator::operator*() const {
 	assert(val && val->p);
 	int tag = val->getTag();
 	if (tag == MSGPACK_MAP) {
 		msgpack_object_kv* kv = val->p->via.map.ptr + index;
 		assert(kv);
-		return MsgPackValue{&kv->val};
+		elemValue = MsgPackValue{&kv->val};
+		return elemValue;
 	} else if (tag == MSGPACK_ARRAY) {
-		return MsgPackValue{val->p->via.array.ptr + index};
+		elemValue = MsgPackValue{val->p->via.array.ptr + index};
+		return elemValue;
 	} else {
 		return *val;
 	}

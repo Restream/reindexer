@@ -13,33 +13,32 @@ public:
 	using QueueT = UpdatesQueue<T>;
 	using UpdatesContainerT = h_vector<T, 2>;
 
-	enum class TokenType { Sync, Async, None };
+	struct Pair {
+		std::shared_ptr<QueueT> sync;
+		std::shared_ptr<QueueT> async;
+	};
 
 	UpdatesQueuePair(uint64_t maxDataSize)
 		: syncQueue_(std::make_shared<QueueT>(maxDataSize)), asyncQueue_(std::make_shared<QueueT>(maxDataSize)) {}
 
-	std::pair<std::shared_ptr<QueueT>, TokenType> GetQueue(const std::string &token) {
-		// HashT h;
-		// std::size_t hash = h(token);
-		{
-			shared_lock<MtxT> lck(mtx_);
-			std::shared_ptr<QueueT> shard;
-			const auto type = getTokenType(token);
-			switch (getTokenType(token)) {	//, hash);
-				case TokenType::Sync:
-					return std::make_pair(syncQueue_, type);
-				case TokenType::Async:
-					return std::make_pair(asyncQueue_, type);
-				default:;
-			}
+	Pair GetQueue(const std::string &token) const {
+		const HashT h;
+		const size_t hash = h(token);
+		Pair result;
+		shared_lock<MtxT> lck(mtx_);
+		if (syncQueue_->TokenIsInWhiteList(token, hash)) {
+			result.sync = syncQueue_;
 		}
-		return std::make_pair(std::shared_ptr<UpdatesQueue<T>>(), TokenType::None);
+		if (asyncQueue_->TokenIsInWhiteList(token, hash)) {
+			result.async = asyncQueue_;
+		}
+		return result;
 	}
-	std::shared_ptr<QueueT> GetSyncQueue() {
+	std::shared_ptr<QueueT> GetSyncQueue() const {
 		shared_lock<MtxT> lck;
 		return syncQueue_;
 	}
-	std::shared_ptr<QueueT> GetAsyncQueue() {
+	std::shared_ptr<QueueT> GetAsyncQueue() const {
 		shared_lock<MtxT> lck;
 		return asyncQueue_;
 	}
@@ -59,34 +58,37 @@ public:
 	}
 	template <typename ContextT>
 	std::pair<Error, bool> Push(UpdatesContainerT &&data, std::function<void()> beforeWait, const ContextT &ctx) {
-		auto shardPair = GetQueue(data[0].GetNsName());
-		switch (shardPair.second) {
-			case TokenType::Sync: {
-				return shardPair.first->PushAndWait(std::move(data), std::move(beforeWait), ctx);
+		const auto shardPair = GetQueue(data[0].GetNsName());
+		if (shardPair.sync) {
+			if (shardPair.async) {
+				shardPair.async->template PushAsync<true>(copyUpdatesContainer(data));
 			}
-			case TokenType::Async:
-				return shardPair.first->template PushAsync<true>(std::move(data));
-			default:
-				return std::make_pair(Error(), false);
+			return shardPair.sync->PushAndWait(std::move(data), std::move(beforeWait), ctx);
+		} else if (shardPair.async) {
+			return shardPair.async->template PushAsync<true>(std::move(data));
 		}
+		return std::make_pair(Error(), false);
 	}
 	std::pair<Error, bool> PushNowait(UpdatesContainerT &&data) {
-		auto shardPair = GetQueue(data[0].GetNsName());
-		switch (shardPair.second) {
-			case TokenType::Sync:
-				return shardPair.first->template PushAsync<false>(std::move(data));
-			case TokenType::Async:
-				return shardPair.first->template PushAsync<true>(std::move(data));
-			default:
-				return std::make_pair(Error(), false);
+		const auto shardPair = GetQueue(data[0].GetNsName());
+		if (shardPair.sync) {
+			if (shardPair.async) {
+				shardPair.async->template PushAsync<true>(copyUpdatesContainer(data));
+			}
+			return shardPair.sync->template PushAsync<false>(std::move(data));
+		} else if (shardPair.async) {
+			return shardPair.async->template PushAsync<true>(std::move(data));
 		}
+		return std::make_pair(Error(), false);
 	}
 	std::pair<Error, bool> PushAsync(UpdatesContainerT &&data) {
 		std::shared_ptr<QueueT> shard;
 		{
 			std::string_view token(data[0].GetNsName());
+			const HashT h;
+			const size_t hash = h(token);
 			shared_lock<MtxT> lck(mtx_);
-			if (!asyncQueue_->TokenIsInWhiteList(token)) {
+			if (!asyncQueue_->TokenIsInWhiteList(token, hash)) {
 				return std::make_pair(Error(), false);
 			}
 			shard = asyncQueue_;
@@ -95,16 +97,17 @@ public:
 	}
 
 private:
-	TokenType getTokenType(std::string_view token /*, std::size_t hash*/) const noexcept {
-		if (syncQueue_->TokenIsInWhiteList(token)) {
-			return TokenType::Sync;
-		} else if (asyncQueue_->TokenIsInWhiteList(token)) {
-			return TokenType::Async;
+	UpdatesContainerT copyUpdatesContainer(const UpdatesContainerT &data) {
+		UpdatesContainerT copy;
+		copy.reserve(data.size());
+		for (auto &d : data) {
+			copy.emplace_back(d.Clone());
+			copy.back().emmiterServerId = -1;  // async replication should not see it
 		}
-		return TokenType::None;
+		return copy;
 	}
 
-	MtxT mtx_;
+	mutable MtxT mtx_;
 	std::shared_ptr<QueueT> syncQueue_;
 	std::shared_ptr<QueueT> asyncQueue_;
 };

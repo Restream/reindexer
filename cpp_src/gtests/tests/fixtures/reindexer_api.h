@@ -26,6 +26,7 @@ using reindexer::Query;
 using reindexer::QueryEntry;
 using reindexer::QueryResults;
 using reindexer::Reindexer;
+using reindexer::LocalQueryResults;
 
 class ReindexerApi : public ::testing::Test {
 protected:
@@ -65,7 +66,7 @@ public:
 	};
 
 public:
-	const string default_namespace = "test_namespace";
+	const std::string default_namespace = "test_namespace";
 	ReindexerTestApi<reindexer::Reindexer> rt;
 
 protected:

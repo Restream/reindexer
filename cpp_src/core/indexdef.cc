@@ -49,7 +49,7 @@ static const std::unordered_map<IndexType, IndexInfo, std::hash<int>, std::equal
 	static const std::unordered_map<IndexType, IndexInfo, std::hash<int>, std::equal_to<int>> data {
 		{IndexIntHash,			{"int"s, "hash"s,				condsUsual(),	CapSortable}},
 		{IndexInt64Hash,		{"int64"s, "hash"s,				condsUsual(),	CapSortable}},
-		{IndexStrHash,			{"string"s, "hash",				condsUsual(),	CapSortable}},
+		{IndexStrHash,			{"string"s, "hash"s,			condsUsual(),	CapSortable}},
 		{IndexCompositeHash,	{"composite"s, "hash"s,			condsUsual(),	CapSortable | CapComposite}},
 		{IndexIntBTree,			{"int"s, "tree"s,				condsUsual(),	CapSortable}},
 		{IndexInt64BTree,		{"int64"s, "tree"s,				condsUsual(),	CapSortable}},

@@ -16,6 +16,7 @@
 #include <thread>
 #include "debug/backtrace.h"
 
+#include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/p_string.h"
 #include "gason/gason.h"
 #include "server/loggerwrapper.h"
@@ -804,8 +805,8 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 	PrintQueryResults(default_namespace, qr);
 
 	vector<Variant> lastValues(query.sortingEntries_.size());
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 
 		std::vector<int> cmpRes(query.sortingEntries_.size());
 		std::fill(cmpRes.begin(), cmpRes.end(), -1);
@@ -885,10 +886,12 @@ TEST_F(ReindexerApi, SortByMultipleColumnsWithLimits) {
 	EXPECT_TRUE(qr.Count() == limit) << qr.Count();
 
 	const std::vector<int> properRes = {5, 6, 7};
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		Item item = qr[i].GetItem(false);
+	size_t i = 0;
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
 		Variant kr = item["f2"];
 		EXPECT_TRUE(static_cast<int>(kr) == properRes[i]);
+		++i;
 	}
 }
 
@@ -1281,7 +1284,6 @@ TEST_F(ReindexerApi, DslFieldsTest) {
 TEST_F(ReindexerApi, DistinctQueriesEncodingTest) {
 	const string sql = "select distinct(country), distinct(city) from clients;";
 
-
 	Query q1;
 	q1.FromSQL(sql);
 	EXPECT_EQ(q1.entries.Size(), 0);
@@ -1340,9 +1342,12 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 	QueryResults qr;
 	err = rt.reindexer->WithContext(&canceledCtx).Select(Query(default_namespace), qr);
 	ASSERT_TRUE(err.code() == errCanceled);
+	qr.Clear();
+
 	string sqlQuery = ("select * from test_namespace");
 	err = rt.reindexer->WithContext(&canceledCtx).Select(sqlQuery, qr);
 	ASSERT_TRUE(err.code() == errCanceled);
+	qr.Clear();
 
 	DummyRdxContext dummyCtx;
 	err = rt.reindexer->WithContext(&dummyCtx).Select(Query(default_namespace), qr);
@@ -1391,6 +1396,7 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 
 	err = rt.reindexer->WithContext(&canceledCtx).Delete(Query(default_namespace), qr);
 	ASSERT_TRUE(err.code() == errCanceled);
+	qr.Clear();
 	err = rt.reindexer->Select(Query(default_namespace), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), 1);
@@ -1703,4 +1709,65 @@ TEST_F(ReindexerApi, EmptyJSONParsing) {
 
 	err = item.FromJSON(" ");
 	EXPECT_EQ(err.code(), errParseJson);
+}
+
+TEST_F(ReindexerApi, LargeJSONAllocations) {
+	constexpr int64_t kArrElemsCnt = 50000;
+	// Create json
+	reindexer::WrSerializer ser;
+	reindexer::JsonBuilder jb(ser);
+	jb.Put("mode", "mode");
+	auto arr = jb.Array("array");
+	for (int64_t i = 0; i < kArrElemsCnt; ++i) {
+		arr.Put(nullptr, Variant{i});
+	}
+	arr.End();
+	jb.End();
+
+	// Parse json and check keys
+	gason::JsonParser parser;
+	auto root = parser.Parse(reindexer::giftStr(ser.Slice()));
+	ASSERT_EQ(std::string_view(root["mode"].key), "mode");
+	for (auto el : root["array"]) {
+		ASSERT_EQ(std::string_view(el.key), std::string_view());
+		ASSERT_EQ(el.value.getTag(), gason::JSON_NUMBER);
+	}
+}
+
+TEST_F(ReindexerApi, Meta) {
+	const std::string kMetaKey = "key";
+	const std::string kMetaVal = "value";
+	auto& rx = *rt.reindexer;
+	std::vector<std::string> meta;
+
+	Error err = rx.OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rx.EnumMeta(default_namespace, meta);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(meta.size(), 0);
+
+	err = rx.PutMeta(default_namespace, kMetaKey, kMetaVal);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rx.EnumMeta(default_namespace, meta);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(meta.size(), 1);
+	ASSERT_EQ(meta[0], kMetaKey);
+
+	{
+		std::string data;
+		err = rx.GetMeta(default_namespace, kMetaKey, data);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(data, kMetaVal);
+	}
+
+	{
+		std::vector<reindexer::ShardedMeta> data;
+		err = rx.GetMeta(default_namespace, kMetaKey, data);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(data.size(), 1);
+		ASSERT_EQ(data[0].data, kMetaVal);
+		ASSERT_EQ(data[0].shardId, ShardingKeyType::NotSetShard);
+	}
 }

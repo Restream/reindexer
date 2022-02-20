@@ -4,6 +4,7 @@
 #include <string_view>
 #include <vector>
 #include "tools/errors.h"
+#include "tools/lsn.h"
 
 namespace reindexer {
 
@@ -67,10 +68,16 @@ public:
 	/// Get status of item
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
 	/// with Item
-	Error Status() { return status_; }
+	Error Status() const noexcept { return status_; }
 	/// Get internal ID of item
 	/// @return ID of item
 	int GetID() const noexcept { return id_; }
+	/// Get LSN of item
+	/// @return LSN of item
+	lsn_t GetLSN() const noexcept { return lsn_; }
+	/// Get internal shardId of item
+	/// @return shardId of item
+	int GetShardID() const noexcept { return shardId_; }
 	/// Get internal version of item
 	/// @return version of item
 	int NumFields();
@@ -95,11 +102,15 @@ public:
 private:
 	explicit Item(ItemImplBase *impl);
 	explicit Item(const Error &err);
-	void setID(int id) { id_ = id; }
+	void setID(int id) noexcept { id_ = id; }
+	void setLSN(lsn_t lsn) noexcept { lsn_ = lsn; }
+	void setShardID(int shardId) noexcept { shardId_ = shardId; }
 
 	std::unique_ptr<ItemImplBase> impl_;
 	Error status_;
 	int id_ = -1;
+	lsn_t lsn_;
+	int shardId_ = ShardingKeyType::ProxyOff;
 	friend class Namespace;
 	friend class QueryResults;
 	friend class RPCClient;

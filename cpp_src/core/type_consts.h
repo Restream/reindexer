@@ -125,10 +125,11 @@ enum ErrorCode {
 	errUpdateReplication = 28,
 	errClusterConsensus = 29,
 	errTerminated = 30,
-	errTxDoesntExist = 31,
+	errTxDoesNotExist = 31,
 	errAlreadyConnected = 32,
 	errTxInvalidLeader = 33,
-	errAlreadyProxied = 34
+	errAlreadyProxied = 34,
+	errStrictMode = 35,
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };
@@ -147,7 +148,13 @@ enum CalcTotalMode { ModeNoTotal, ModeCachedTotal, ModeAccurateTotal };
 
 enum DataFormat { FormatJson, FormatCJson, FormatMsgPack };
 
-enum QueryResultItemType { QueryResultEnd, QueryResultAggregation, QueryResultExplain };
+enum QueryResultItemType {
+	QueryResultEnd = 0,
+	QueryResultAggregation = 1,
+	QueryResultExplain = 2,
+	QueryResultShardingVersion = 3,
+	QueryResultShardId = 4
+};
 
 enum CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
 
@@ -176,6 +183,7 @@ enum {
 	kResultsWithJoined = 0x100,
 	kResultsWithRaw = 0x200,
 	kResultsNeedOutputRank = 0x400,
+	kResultsWithShardId = 0x800,
 };
 
 typedef enum IndexOpt {
@@ -333,7 +341,6 @@ typedef struct ConnectOpts {
 } ConnectOpts;
 
 enum IndexValueType { NotSet = -1, SetByJsonPath = -2 };
-enum ShardingKeyType { ShardingProxyOff = -2 };
 enum ShardingAlgorithmType { ByValue, ByRange };
 
 enum SubscriptionOpt {
@@ -352,3 +359,11 @@ typedef struct SubscriptionOpts {
 #endif
 	uint16_t options;
 } SubscriptionOpts;
+
+#ifdef __cplusplus
+namespace ShardingKeyType {
+enum ShardingKey { ProxyOff = -2, NotSetShard = -1 };
+}
+#endif
+
+static const char kSerialPrefix[] = "_SERIAL_";

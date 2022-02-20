@@ -18,7 +18,6 @@ option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
 option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
 option (ENABLE_GRPC "Enable GRPC service" OFF)
 option (ENABLE_SERVER_AS_PROCESS_IN_TEST "Enable run reindexer server as separate process in tests" OFF)
-option (ENABLE_SHARDING "Enable sharding. Experimental" OFF)
 
 if (NOT GRPC_PACKAGE_PROVIDER)
    set (GRPC_PACKAGE_PROVIDER "CONFIG")
@@ -30,7 +29,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "4.1.0")
+set (REINDEXER_VERSION_DEFAULT "4.2.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -233,11 +232,6 @@ add_definitions(-DKOISHI_HAVE_POSIX_MEMALIGN)
 add_definitions(-DBUILDING_KOISHI)
 add_definitions(-DFCONTEXT_CALL=)
 include_directories(${KOISHI_PATH}/include)
-if (ENABLE_SHARDING)
-    add_definitions(-DWITH_SHARDING)
-else ()
-    list (FILTER SRCS EXCLUDE REGEX "${REINDEXER_SOURCE_PATH}/cluster/sharding/*")
-endif()
 
 list(APPEND SRCS ${KOISHI_PATH}/include/koishi.h
         ${KOISHI_PATH}/fiber.h
@@ -256,6 +250,9 @@ add_definitions(-DREINDEX_CORE_BUILD=1)
 
 
 # add_definitions(-DREINDEX_FT_EXTRA_DEBUG=1)
+if (ENABLE_SERVER_AS_PROCESS_IN_TEST)
+  add_definitions(-DRX_ENABLE_CLUSTERPROXY_LOGS=1)
+endif()
 
 add_subdirectory(server/contrib)
 
@@ -678,8 +675,8 @@ if (NOT WIN32)
     "core/rdxcontext.h" "core/activity_context.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"
     "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction.h" "core/payload/payloadfieldtype.h" "core/reindexerconfig.h"
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
-    "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h"
-    "core/expressiontree.h" "tools/lsn.h" "core/cjson/tagspath.h" "estl/cow.h"
+    "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h" "core/itemimplrawdata.h"
+    "core/expressiontree.h" "tools/lsn.h" "core/cjson/tagspath.h" "estl/cow.h" "core/shardedmeta.h" "core/queryresults/localqueryresults.h"
     "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h" "client/transaction.h" "client/synccororeindexer.h" "client/cororeindexerconfig.h"

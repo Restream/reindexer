@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "4.1.0"
+  version: "4.2.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -732,6 +732,14 @@ paths:
           - json
           - msgpack
           - protobuf
+      - name: "sharding"
+        in: query
+        type: string
+        description: "if off then get items from current node only"
+        required: false
+        enum:
+          - on
+          - off
       responses:
         200:
           description: "successful operation"

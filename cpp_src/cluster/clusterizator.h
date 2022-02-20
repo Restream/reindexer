@@ -16,8 +16,6 @@ namespace cluster {
 
 class Clusterizator : public INsDataReplicator {
 public:
-	struct ControlCmd {};
-
 	Clusterizator(ReindexerImpl &thisNode, size_t maxUpdatesSize);
 
 	void Configure(ReplicationConfigData replConfig);
@@ -37,6 +35,7 @@ public:
 	Error LeadersPing(const cluster::NodeData &);
 	RaftInfo GetRaftInfo(bool allowTransitState, const RdxContext &ctx) const;
 	bool NamespaceIsInClusterConfig(std::string_view nsName);
+	bool NamesapceIsInReplicationConfig(std::string_view nsName);
 
 	Error Replicate(UpdateRecord &&rec, std::function<void()> beforeWaitF, const RdxContext &ctx) override final;
 	Error Replicate(UpdatesContainer &&recs, std::function<void()> beforeWaitF, const RdxContext &ctx) override final;

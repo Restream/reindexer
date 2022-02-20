@@ -150,7 +150,7 @@ void LeaderSyncThread::syncNamespaceImpl(bool forced, const LeaderSyncQueue::Ent
 	}
 
 	if (!tmpNsName.empty()) {
-		err = thisNode_.renameNamespace(tmpNsName, std::string(syncEntry.nsName), true);
+		err = thisNode_.renameNamespace(tmpNsName, std::string(syncEntry.nsName), true, true);
 		if (!err.ok()) {
 			throw err;
 		}

@@ -20,10 +20,10 @@ struct IRdxCancelContext {
 
 template <typename Context>
 void ThrowOnCancel(const Context& ctx, std::string_view errMsg = std::string_view()) {
-	if (!ctx.isCancelable()) return;
+	if (!ctx.IsCancelable()) return;
 
 	using namespace std::string_view_literals;
-	auto cancel = ctx.checkCancel();
+	auto cancel = ctx.CheckCancel();
 	switch (cancel) {
 		case CancelType::Explicit:
 			throw Error(errCanceled, errMsg.empty() ? "Request was canceled by context"sv : errMsg);
@@ -61,8 +61,19 @@ public:
 	bool IsCancelable() const noexcept override final {
 		return (deadline_.time_since_epoch().count() > 0) || (parent_ != nullptr && parent_->IsCancelable());
 	}
+	CancelType CheckCancel() const noexcept { return GetCancelType(); }
 	const IRdxCancelContext* parent() const noexcept { return parent_; }
-	const time_point deadline() const noexcept { return deadline_; }
+	time_point deadline() const noexcept { return deadline_; }
+	std::chrono::milliseconds GetTimeout() const noexcept {
+		if (deadline_.time_since_epoch().count() > 0) {
+			const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(deadline_ - ClockT::now());
+			if (diff.count() <= 0) {
+				return std::chrono::milliseconds(-1);
+			}
+			return diff;
+		}
+		return std::chrono::milliseconds(0);
+	}
 
 private:
 	time_point deadline_;
@@ -115,8 +126,8 @@ public:
 	RdxContext& operator=(const RdxContext&) = delete;
 	RdxContext& operator=(RdxContext&&) = delete;
 
-	bool isCancelable() const noexcept { return cancelCtx_ && cancelCtx_->IsCancelable(); }
-	CancelType checkCancel() const noexcept {
+	bool IsCancelable() const noexcept { return cancelCtx_ && cancelCtx_->IsCancelable(); }
+	CancelType CheckCancel() const noexcept {
 		if (!cancelCtx_) return CancelType::None;
 		return cancelCtx_->GetCancelType();
 	}
@@ -150,7 +161,7 @@ private:
 	bool shardingParallelExecution_ = false;
 };
 
-class QueryResults;
+class LocalQueryResults;
 
 class InternalRdxContext {
 public:
@@ -207,15 +218,27 @@ public:
 	}
 
 	RdxContext CreateRdxContext(std::string_view query, ActivityContainer&) const;
-	RdxContext CreateRdxContext(std::string_view query, ActivityContainer&, QueryResults&) const;
+	RdxContext CreateRdxContext(std::string_view query, ActivityContainer&, LocalQueryResults&) const;
 	RdxContext::Completion Compl() const noexcept { return cmpl_; }
 	bool NeedTraceActivity() const noexcept { return !activityTracer_.empty(); }
 	lsn_t LSN() const noexcept { return lsn_; }
 	bool HasEmmiterID() const noexcept { return emmiterServerId_ >= 0; }
 	bool HasDeadline() const noexcept { return deadlineCtx_.IsCancelable(); }
+	const RdxDeadlineContext* DeadlineCtx() const noexcept { return &deadlineCtx_; }
+	std::chrono::milliseconds GetTimeout() const noexcept { return deadlineCtx_.GetTimeout(); }
 	int ShardId() const noexcept { return shardId_; }
 	bool IsShardingParallelExecution() const noexcept { return shardingParallelExecution_; }
 	void SetShardingParallelExecution(bool parallel) noexcept { shardingParallelExecution_ = parallel; }
+	void SetTimeout(std::chrono::seconds timeout) noexcept {
+		const auto deadline = std::chrono::steady_clock::now() + timeout;
+		const auto curDeadlineCnt = deadlineCtx_.deadline().time_since_epoch().count();
+		if (curDeadlineCnt > 0) {
+			const auto newDeadlineCnt = deadline.time_since_epoch().count();
+			deadlineCtx_ = RdxDeadlineContext(newDeadlineCnt < curDeadlineCnt ? deadline : deadlineCtx_.deadline(), deadlineCtx_.parent());
+		} else {
+			deadlineCtx_ = RdxDeadlineContext(deadline, deadlineCtx_.parent());
+		}
+	}
 
 	static const int kNoConnectionId = -1;
 

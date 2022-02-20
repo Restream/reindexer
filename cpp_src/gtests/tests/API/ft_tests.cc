@@ -624,11 +624,13 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 		CheckResults(q, qr,
 					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
 					 false);
-		auto it = qr.begin();
+		assert(qr.IsLocal());
+		auto& lqr = qr.ToLocalQr();
+		auto it = lqr.begin();
 		if (i == 0) {
 			rank = it.GetItemRef().Proc();
 		}
-		for (const auto end = qr.end(); it != end; ++it) {
+		for (const auto end = lqr.end(); it != end; ++it) {
 			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
 		}
 	}
@@ -639,7 +641,8 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 		CheckResults(q, qr,
 					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
 					 false);
-		for (const auto& it : qr) {
+		assert(qr.IsLocal());
+		for (const auto& it : qr.ToLocalQr()) {
 			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
 		}
 	}
@@ -650,7 +653,8 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 		CheckResults(q, qr,
 					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
 					 false);
-		for (const auto& it : qr) {
+		assert(qr.IsLocal());
+		for (const auto& it : qr.ToLocalQr()) {
 			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
 		}
 	}
@@ -665,7 +669,8 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 		CheckResults(q, qr,
 					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
 					 false);
-		for (const auto& it : qr) {
+		assert(qr.IsLocal());
+		for (const auto& it : qr.ToLocalQr()) {
 			EXPECT_EQ(rank, it.GetItemRef().Proc()) << q;
 		}
 	}
@@ -676,10 +681,11 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 		CheckResults(q, qr,
 					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
 					 false);
-		auto it = qr.begin();
+		assert(qr.IsLocal());
+		auto it = qr.ToLocalQr().begin();
 		rank = it.GetItemRef().Proc() / 3;
 		++it;
-		for (const auto end = qr.end(); it != end; ++it) {
+		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
 			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
 			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
 		}
@@ -691,10 +697,11 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 		CheckResults(q, qr,
 					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
 					 false);
-		auto it = qr.begin();
+		assert(qr.IsLocal());
+		auto it = qr.ToLocalQr().begin();
 		rank = it.GetItemRef().Proc() / 3;
 		++it;
-		for (const auto end = qr.end(); it != end; ++it) {
+		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
 			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
 			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
 		}
@@ -706,10 +713,11 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 		CheckResults(q, qr,
 					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
 					 false);
-		auto it = qr.begin();
+		assert(qr.IsLocal());
+		auto it = qr.ToLocalQr().begin();
 		rank = it.GetItemRef().Proc() / 2;
 		++it;
-		for (const auto end = qr.end(); it != end; ++it) {
+		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
 			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
 			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
 		}
@@ -721,13 +729,14 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 		CheckResults(q, qr,
 					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
 					 false);
-		auto it = qr.begin();
+		assert(qr.IsLocal());
+		auto it = qr.ToLocalQr().begin();
 		rank = it.GetItemRef().Proc() / 4;
 		++it;
 		EXPECT_LE(it.GetItemRef().Proc(), (rank + 1) * 2) << q;
 		EXPECT_GE(it.GetItemRef().Proc(), (rank - 1) * 2) << q;
 		++it;
-		for (const auto end = qr.end(); it != end; ++it) {
+		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
 			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
 			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
 		}
@@ -743,10 +752,11 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 		CheckResults(q, qr,
 					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
 					 false);
-		auto it = qr.begin();
+		assert(qr.IsLocal());
+		auto it = qr.ToLocalQr().begin();
 		rank = it.GetItemRef().Proc() / (1.0 + 0.5 + 0.5 * 0.5);
 		++it;
-		for (const auto end = qr.end(); it != end; ++it) {
+		for (const auto end = qr.ToLocalQr().end(); it != end; ++it) {
 			EXPECT_LE(it.GetItemRef().Proc(), rank + 1) << q;
 			EXPECT_GE(it.GetItemRef().Proc(), rank - 1) << q;
 		}
@@ -758,7 +768,8 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 		CheckResults(q, qr,
 					 {{"!word!", "!word!", "!word!"}, {"!word!", "test", "test"}, {"test", "!word!", "test"}, {"test", "test", "!word!"}},
 					 true);
-		auto it = qr.begin();
+		assert(qr.IsLocal());
+		auto it = qr.ToLocalQr().begin();
 		rank = it.GetItemRef().Proc() / (1.5 + 0.5 * 1.3 + 0.5 * 0.5);
 		++it;
 		EXPECT_LE(it.GetItemRef().Proc(), (rank + 5) * 1.5) << q;
@@ -796,17 +807,17 @@ TEST_F(FTApi, SelectTranslitWithComma) {
 
 	auto qr = SimpleSelect("@ft1 [kt,jgtxrf");
 	EXPECT_EQ(qr.Count(), 1);
-	auto item = qr[0].GetItem(false);
+	auto item = qr.begin().GetItem(false);
 	EXPECT_EQ(item["ft1"].As<string>(), "!хлебопечка!");
 
 	qr = SimpleSelect("@ft1 \\'ktrnhjy");
 	EXPECT_EQ(qr.Count(), 1);
-	item = qr[0].GetItem(false);
+	item = qr.begin().GetItem(false);
 	EXPECT_EQ(item["ft1"].As<string>(), "!электрон!");
 
 	qr = SimpleSelect("@ft1 vfn\\'");
 	EXPECT_EQ(qr.Count(), 1);
-	item = qr[0].GetItem(false);
+	item = qr.begin().GetItem(false);
 	EXPECT_EQ(item["ft1"].As<string>(), "!матэ!");
 }
 

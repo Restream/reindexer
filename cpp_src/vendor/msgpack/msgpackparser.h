@@ -20,7 +20,7 @@ enum MsgPackTag : int {
 
 struct MsgPackValue {
 	explicit MsgPackValue(const msgpack_object* p = nullptr);
-	MsgPackValue operator[](std::string_view key);
+	MsgPackValue operator[](std::string_view key) const;
 
 	template <typename T, typename std::enable_if<(std::is_integral<T>::value || std::is_floating_point<T>::value) &&
 												  !std::is_same<T, bool>::value>::type* = nullptr>
@@ -67,19 +67,22 @@ struct MsgPackValue {
 
 	bool isValid() const;
 	MsgPackTag getTag() const;
-	int size() const;
+	uint32_t size() const;
 
 	const msgpack_object* p;
 };
 
 struct MsgPackIterator {
-	int index;
+	uint32_t index;
 	const MsgPackValue* val;
-	MsgPackIterator(int index, const MsgPackValue* val);
+	MsgPackIterator(uint32_t index, const MsgPackValue* val);
 	void operator++();
 	bool operator!=(const MsgPackIterator& x) const;
-	MsgPackValue operator*() const;
+	const MsgPackValue& operator*() const;
 	bool isValid() const;
+
+private:
+	mutable MsgPackValue elemValue;
 };
 
 inline MsgPackIterator begin(const MsgPackValue& w) { return MsgPackIterator{0, &w}; }

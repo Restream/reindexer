@@ -142,15 +142,17 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 
 	storagePath_ = storagePath;
 
-	Error res = errOK;
+	Error res;
 	if (isHaveConfig) {
 		res = openNamespace(kConfigNamespace, true, StorageOpts().Enabled().CreateIfMissing(), {}, ctx);
 	}
 	for (auto& watcher : configWatchers_) {
 		watcher.SetDirectory(storagePath_);
 	}
-	readClusterConfigFile();
-	readShardingConfigFile();
+	auto err = readClusterConfigFile();
+	if (res.ok()) res = Error(err.code(), "Failed to read cluster config file: '%s'", err.what());
+	err = readShardingConfigFile();
+	if (res.ok()) res = Error(err.code(), "Failed to read sharding config file: '%s'", err.what());
 
 	return res;
 }
@@ -160,7 +162,7 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 		if (opts.HasExpectedClusterID()) {
 			auto replConfig = configProvider_.GetReplicationConfig();
 			if (replConfig.clusterID != opts.ExpectedClusterID()) {
-				return Error(errReplParams, "Expected leader's clusted ID(%d) is not equal to actual clusted ID(%d)",
+				return Error(errReplParams, "Expected leader's cluster ID(%d) is not equal to actual cluster ID(%d)",
 							 opts.ExpectedClusterID(), replConfig.clusterID);
 			}
 		}
@@ -549,7 +551,7 @@ Error ReindexerImpl::RenameNamespace(std::string_view srcNsName, const std::stri
 				return Error(errParams, "Can't rename temporary namespace '%s'", srcNsName);
 			}
 		}
-		err = renameNamespace(srcNsName, dstNsName, !ctx.LSN().isEmpty(), ctx);
+		err = renameNamespace(srcNsName, dstNsName, !ctx.LSN().isEmpty(), false, ctx);
 	} catch (const Error& e) {
 		return e;
 	}
@@ -563,7 +565,7 @@ Error ReindexerImpl::SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, c
 
 void ReindexerImpl::ShutdownCluster() { clusterizator_->Stop(true); }
 
-Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::string& dstNsName, bool fromReplication,
+Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::string& dstNsName, bool fromReplication, bool skipResync,
 									 const InternalRdxContext& ctx) {
 	Namespace::Ptr dstNs, srcNs;
 	try {
@@ -601,6 +603,11 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 
 		auto replState = srcNs->GetReplState(rdxCtx);
 
+		if (!replState.temporary &&
+			(clusterizator_->NamesapceIsInReplicationConfig(srcNsName) || clusterizator_->NamesapceIsInReplicationConfig(dstNsName))) {
+			return Error(errParams, "Unable to rename namespace: rename replication is not supported");
+		}
+
 		auto dstIt = namespaces_.find(dstNsName);
 		auto needWalUpdate = !replState.temporary;
 		if (dstIt != namespaces_.end()) {
@@ -626,7 +633,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 				//						throw err;
 				//					}
 			};
-		} else {
+		} else if (!skipResync) {
 			replicateCb = [this, &dstNsName, &rdxCtx](std::function<void()>) {
 				auto err = clusterizator_->ReplicateAsync(
 					{UpdateRecord::Type::ResyncNamespaceGeneric, dstNsName, lsn_t(0, 0), lsn_t(0, 0), rdxCtx.emmiterServerId_}, rdxCtx);
@@ -655,12 +662,12 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 	return errOK;
 }
 
-void ReindexerImpl::readClusterConfigFile() {
+Error ReindexerImpl::readClusterConfigFile() {
 	auto path = fs::JoinPath(storagePath_, kClusterConfFilename);
 	std::string content;
 	auto res = fs::ReadFile(path, content);
 	if (res < 0) {
-		return;
+		return Error();
 	}
 	cluster::ClusterConfigData conf;
 	Error err = conf.FromYML(content);
@@ -684,14 +691,15 @@ void ReindexerImpl::readClusterConfigFile() {
 	} else {
 		logPrintf(LogError, "Error parsing cluster config YML: %s", err.what());
 	}
+	return err;
 }
 
-void ReindexerImpl::readShardingConfigFile() {
+Error ReindexerImpl::readShardingConfigFile() {
 	auto path = fs::JoinPath(storagePath_, kShardingConfFilename);
 	std::string content;
 	auto res = fs::ReadFile(path, content);
 	if (res < 0) {
-		return;
+		return Error();
 	}
 	cluster::ShardingConfig conf;
 	Error err = conf.FromYML(content);
@@ -703,6 +711,7 @@ void ReindexerImpl::readShardingConfigFile() {
 	} else {
 		logPrintf(LogError, "Error parsing sharding config YML: %s", err.what());
 	}
+	return err;
 }
 
 void ReindexerImpl::checkClusterRole(std::string_view nsName, lsn_t originLsn) const {
@@ -796,7 +805,7 @@ Error ReindexerImpl::Insert(std::string_view nsName, Item& item, const InternalR
 	APPLY_NS_FUNCTION1(true, Insert, item);
 }
 
-Error ReindexerImpl::Insert(std::string_view nsName, Item& item, QueryResults& qr, const InternalRdxContext& ctx) {
+Error ReindexerImpl::Insert(std::string_view nsName, Item& item, LocalQueryResults& qr, const InternalRdxContext& ctx) {
 	const auto makeCtxStr = [nsName](WrSerializer& ser) -> WrSerializer& { return ser << "INSERT INTO " << nsName; };
 	APPLY_NS_FUNCTION2(true, Insert, item, qr);
 }
@@ -830,7 +839,7 @@ Error ReindexerImpl::Update(std::string_view nsName, Item& item, const InternalR
 	APPLY_NS_FUNCTION1(true, Update, item);
 }
 
-Error ReindexerImpl::Update(std::string_view nsName, Item& item, QueryResults& qr, const InternalRdxContext& ctx) {
+Error ReindexerImpl::Update(std::string_view nsName, Item& item, LocalQueryResults& qr, const InternalRdxContext& ctx) {
 	const auto makeCtxStr = [nsName, &item](WrSerializer& ser) -> WrSerializer& {
 		ser << "UPDATE " << nsName << " WHERE ";
 		return printPkFields(item, ser);
@@ -838,7 +847,7 @@ Error ReindexerImpl::Update(std::string_view nsName, Item& item, QueryResults& q
 	APPLY_NS_FUNCTION2(true, Update, item, qr);
 }
 
-Error ReindexerImpl::Update(const Query& q, QueryResults& result, const InternalRdxContext& ctx) {
+Error ReindexerImpl::Update(const Query& q, LocalQueryResults& result, const InternalRdxContext& ctx) {
 	try {
 		WrSerializer ser;
 		auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? q.GetSQL(ser).Slice() : ""sv, activities_, result);
@@ -866,7 +875,7 @@ Error ReindexerImpl::Upsert(std::string_view nsName, Item& item, const InternalR
 	APPLY_NS_FUNCTION1(true, Upsert, item);
 }
 
-Error ReindexerImpl::Upsert(std::string_view nsName, Item& item, QueryResults& qr, const InternalRdxContext& ctx) {
+Error ReindexerImpl::Upsert(std::string_view nsName, Item& item, LocalQueryResults& qr, const InternalRdxContext& ctx) {
 	const auto makeCtxStr = [nsName, &item](WrSerializer& ser) -> WrSerializer& {
 		ser << "UPSERT INTO " << nsName << " WHERE ";
 		return printPkFields(item, ser);
@@ -896,7 +905,7 @@ Transaction ReindexerImpl::NewTransaction(std::string_view _namespace, const Int
 	}
 }
 
-Error ReindexerImpl::CommitTransaction(Transaction& tr, QueryResults& result, const InternalRdxContext& ctx) {
+Error ReindexerImpl::CommitTransaction(Transaction& tr, LocalQueryResults& result, const InternalRdxContext& ctx) {
 	Error err = errOK;
 	try {
 		WrSerializer ser;
@@ -942,7 +951,7 @@ Error ReindexerImpl::Delete(std::string_view nsName, Item& item, const InternalR
 	APPLY_NS_FUNCTION1(false, Delete, item);
 }
 
-Error ReindexerImpl::Delete(std::string_view nsName, Item& item, QueryResults& qr, const InternalRdxContext& ctx) {
+Error ReindexerImpl::Delete(std::string_view nsName, Item& item, LocalQueryResults& qr, const InternalRdxContext& ctx) {
 	const auto makeCtxStr = [nsName, &item](WrSerializer& ser) -> WrSerializer& {
 		ser << "DELETE FROM " << nsName << " WHERE ";
 		return printPkFields(item, ser);
@@ -950,13 +959,13 @@ Error ReindexerImpl::Delete(std::string_view nsName, Item& item, QueryResults& q
 	APPLY_NS_FUNCTION2(false, Delete, item, qr);
 }
 
-Error ReindexerImpl::Delete(const Query& q, QueryResults& result, const InternalRdxContext& ctx) {
+Error ReindexerImpl::Delete(const Query& q, LocalQueryResults& result, const InternalRdxContext& ctx) {
 	const auto makeCtxStr = [&q](WrSerializer& ser) -> WrSerializer& { return q.GetSQL(ser); };
 	const std::string_view nsName = q._namespace;
 	APPLY_NS_FUNCTION2(false, Delete, q, result);
 }
 
-Error ReindexerImpl::Select(std::string_view query, QueryResults& result, const InternalRdxContext& ctx) {
+Error ReindexerImpl::Select(std::string_view query, LocalQueryResults& result, const InternalRdxContext& ctx) {
 	Error err = errOK;
 	try {
 		Query q;
@@ -997,7 +1006,7 @@ struct ItemRefLess {
 	}
 };
 
-Error ReindexerImpl::Select(const Query& q, QueryResults& result, const InternalRdxContext& ctx) {
+Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const InternalRdxContext& ctx) {
 	try {
 		WrSerializer normalizedSQL, nonNormalizedSQL;
 		if (ctx.NeedTraceActivity()) q.GetSQL(nonNormalizedSQL, false);
@@ -1060,7 +1069,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 }
 
 struct ReindexerImpl::QueryResultsContext {
-	QueryResultsContext() {}
+	QueryResultsContext() = default;
 	QueryResultsContext(PayloadType type, TagsMatcher tagsMatcher, const FieldsSet& fieldsFilter, std::shared_ptr<const Schema> schema)
 		: type_(type), tagsMatcher_(tagsMatcher), fieldsFilter_(fieldsFilter), schema_(schema) {}
 
@@ -1095,7 +1104,7 @@ bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jIte
 	return result;
 }
 
-void ReindexerImpl::prepareJoinResults(const Query& q, QueryResults& result) {
+void ReindexerImpl::prepareJoinResults(const Query& q, LocalQueryResults& result) {
 	bool thereAreJoins = !q.joinQueries_.empty();
 	if (!thereAreJoins) {
 		for (const Query& mq : q.mergeQueries_) {
@@ -1110,8 +1119,9 @@ void ReindexerImpl::prepareJoinResults(const Query& q, QueryResults& result) {
 	}
 }
 template <typename T>
-JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func,
-													  vector<QueryResultsContext>& queryResultsContexts, const RdxContext& rdxCtx) {
+JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, LocalQueryResults& result, NsLocker<T>& locks,
+													  SelectFunctionsHolder& func, vector<QueryResultsContext>& queryResultsContexts,
+													  const RdxContext& rdxCtx) {
 	JoinedSelectors joinedSelectors;
 	if (q.joinQueries_.empty()) return joinedSelectors;
 	auto ns = locks.Get(q._namespace);
@@ -1157,7 +1167,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 		jjq.explain_ = q.explain_;
 		jjq.Strict(q.strictMode);
 		if (!jjq.entries.Empty() && !joinRes.haveData) {
-			QueryResults jr;
+			LocalQueryResults jr;
 			jjq.Limit(UINT_MAX);
 			SelectCtx ctx(jjq);
 			ctx.preResult = preResult;
@@ -1202,7 +1212,8 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 }
 
 template <typename T>
-void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func, const RdxContext& ctx) {
+void ReindexerImpl::doSelect(const Query& q, LocalQueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func,
+							 const RdxContext& ctx) {
 	auto ns = locks.Get(q._namespace);
 	assert(ns);
 	if (!ns) {
@@ -1271,11 +1282,11 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 			result.Erase(itemRefVec.begin() + q.count, itemRefVec.end());
 		}
 	}
-	// Adding context to QueryResults
+	// Adding context to LocalQueryResults
 	for (const auto& jctx : joinQueryResultsContexts) result.addNSContext(jctx.type_, jctx.tagsMatcher_, jctx.fieldsFilter_, jctx.schema_);
 }
 
-template void ReindexerImpl::doSelect(const Query&, QueryResults&, NsLocker<RdxContext>&, SelectFunctionsHolder&, const RdxContext&);
+template void ReindexerImpl::doSelect(const Query&, LocalQueryResults&, NsLocker<RdxContext>&, SelectFunctionsHolder&, const RdxContext&);
 
 Error ReindexerImpl::Commit(std::string_view /*_namespace*/) {
 	try {
@@ -1286,18 +1297,6 @@ Error ReindexerImpl::Commit(std::string_view /*_namespace*/) {
 	}
 
 	return errOK;
-}
-
-FieldsSet ReindexerImpl::getPK(std::string_view nsName, bool& exists, const InternalRdxContext& ctx) {
-	RdxContext rdxCtx = ctx.CreateRdxContext(""sv, activities_);
-	auto rlck = nsLock_.RLock(rdxCtx);
-	auto it = namespaces_.find(nsName);
-	if (it == namespaces_.end()) {
-		exists = false;
-		static const FieldsSet emptyPK;
-		return emptyPK;
-	}
-	return it->second->getPK(rdxCtx);
 }
 
 std::set<std::string> ReindexerImpl::GetFTIndexes(std::string_view nsName, const InternalRdxContext& ctx) {
@@ -1475,9 +1474,9 @@ void ReindexerImpl::backgroundRoutine() {
 				auto ns = getNamespace(name, dummyCtx);
 				ns->BackgroundRoutine(nullptr);
 			} catch (Error err) {
-				logPrintf(LogWarning, "flusherThread() failed: %s", err.what());
+				logPrintf(LogWarning, "flusherThread() failed with ns '%s': %s", name, err.what());
 			} catch (...) {
-				logPrintf(LogWarning, "flusherThread() failed with ns: %s", name);
+				logPrintf(LogWarning, "flusherThread() failed with ns '%s': unknow exceptions", name);
 			}
 		}
 		for (auto& watcher : configWatchers_) {
@@ -1517,7 +1516,7 @@ Error ReindexerImpl::tryLoadShardingConf() {
 Error ReindexerImpl::InitSystemNamespaces() {
 	createSystemNamespaces();
 
-	QueryResults results;
+	LocalQueryResults results;
 	auto err = Select(Query(kConfigNamespace), results);
 	if (!err.ok()) return err;
 
@@ -1533,17 +1532,23 @@ Error ReindexerImpl::InitSystemNamespaces() {
 				const std::string_view type = configJson["type"].As<std::string_view>();
 				if (type == kReplicationConfigType) {
 					hasBaseReplicationConfig = true;
-					if (tryLoadConfFromFile<kReplicationConfigType, ReplicationConfigData>(kReplicationConfFilename).ok()) {
+					err = tryLoadConfFromFile<kReplicationConfigType, ReplicationConfigData>(kReplicationConfFilename);
+					if (err.ok()) {
 						continue;
+					} else if (err.code() != errNotFound) {
+						return Error(err.code(), "Failed to load general replication config file: '%s'", err.what());
 					}
 				} else if (type == kAsyncReplicationConfigType) {
 					hasAsyncReplicationConfig = true;
-					if (tryLoadConfFromFile<kAsyncReplicationConfigType, cluster::AsyncReplConfigData>(kAsyncReplicationConfFilename)
-							.ok()) {
+					err = tryLoadConfFromFile<kAsyncReplicationConfigType, cluster::AsyncReplConfigData>(kAsyncReplicationConfFilename);
+					if (err.ok()) {
 						continue;
+					} else if (err.code() != errNotFound) {
+						return Error(err.code(), "Failed to load async replication config file: '%s'", err.what());
 					}
 				} else if (type == kShardingConfigType && shardingConfig_) {
 					hasShardingConfig = true;
+					// Ignore error check here (it always returns fake error for now)
 					if (tryLoadShardingConf().ok()) {
 						continue;
 					}
@@ -1869,7 +1874,7 @@ void ReindexerImpl::syncSystemNamespaces(std::string_view sysNsName, std::string
 }
 
 void ReindexerImpl::onProfiligConfigLoad() {
-	QueryResults qr1, qr2, qr3;
+	LocalQueryResults qr1, qr2, qr3;
 	Delete(Query(kMemStatsNamespace), qr2);
 	Delete(Query(kQueriesPerfStatsNamespace), qr3);
 	Delete(Query(kPerfStatsNamespace), qr1);
@@ -1933,13 +1938,13 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, vector<string>& namesp
 			objName = ns.nsName;
 		}
 		ns.objName = std::string(objName);
-		QueryResults qr;
+		LocalQueryResults qr;
 		status = Select(Query(ns.nsName).Limit(0), qr);
 		if (!status.ok()) return status;
 		ns.nsNumber = qr.getNsNumber(0) + 1;
 	}
 
-	ser << "// Possible item schema variants in QueryResults or in ModifyResults\n";
+	ser << "// Possible item schema variants in LocalQueryResults or in ModifyResults\n";
 	schemaBuilder.Object(0, "ItemsUnion", false, [&](ProtobufSchemaBuilder& obj) {
 		ser << "oneof item {\n";
 		for (auto& ns : nses) {
@@ -1948,7 +1953,7 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, vector<string>& namesp
 		ser << "}\n";
 	});
 
-	ser << "// The QueryResults message is schema of http API methods response:\n";
+	ser << "// The LocalQueryResults message is schema of http API methods response:\n";
 	ser << "// - GET api/v1/db/:db/namespaces/:ns/items\n";
 	ser << "// - GET/POST api/v1/db/:db/query\n";
 	ser << "// - GET/POST api/v1/db/:db/sqlquery\n";

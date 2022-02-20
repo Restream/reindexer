@@ -1,11 +1,8 @@
 #include "transaction.h"
 #include "client/synccororeindexerimpl.h"
 #include "client/synccorotransaction.h"
-#include "transactionimpl.h"
-
-#ifdef WITH_SHARDING
 #include "cluster/sharding/sharding.h"
-#endif	// WITH_SHARDIN
+#include "transactionimpl.h"
 
 namespace reindexer {
 
@@ -13,32 +10,32 @@ Transaction::Transaction(const string &nsName, const PayloadType &pt, const Tags
 						 std::shared_ptr<const Schema> schema, lsn_t lsn)
 	: impl_(new TransactionImpl(nsName, pt, tm, pf, schema, lsn)) {}
 
-Transaction::Transaction(Error err) : status_(std::move(err)), shardId_(IndexValueType::NotSet) {}
+Transaction::Transaction(Error err) : status_(std::move(err)), shardId_(ShardingKeyType::NotSetShard) {}
 
 Transaction::Transaction() = default;
 Transaction::~Transaction() = default;
 Transaction::Transaction(Transaction &&) noexcept = default;
 Transaction &Transaction::operator=(Transaction &&) noexcept = default;
 
-#ifdef WITH_SHARDING
-
 void Transaction::updateShardIdIfNecessary(int shardId) {
-	if (shardId == IndexValueType::NotSet) {
+	if (shardId == ShardingKeyType::NotSetShard) {
 		// no matches with shards means going to proxy
 		shardId = 0;
 	}
-	if ((shardId_ != IndexValueType::NotSet) && (shardId != shardId_)) {
+	if ((shardId_ != ShardingKeyType::NotSetShard) && (shardId != shardId_)) {
 		throw Error(errLogic, "Transaction query to a different shard: %d (%d is expected)", shardId, shardId_);
 	}
-	if ((shardId_ == IndexValueType::NotSet) && !clientTransaction_) {
+	if ((shardId_ == ShardingKeyType::NotSetShard) && !clientTransaction_) {
 		Error status;
-		if (auto connection = shardingRouter_->GetShardConnection(shardId, true, status, impl_->nsName_)) {
+		if (auto connection = shardingRouter_->GetShardConnection(impl_->nsName_, shardId, status)) {
 			if (status.ok()) {
 				clientTransaction_ = std::make_unique<client::SyncCoroTransaction>(connection->NewTransaction(impl_->nsName_));
+				proxiedViaSharding_ = true;
 			}
 		} else if (status.ok() && leaderRx_.has_value()) {
 			clientTransaction_ = std::make_unique<client::SyncCoroTransaction>(leaderRx_->NewTransaction(impl_->nsName_));
 			status_ = clientTransaction_->Status();	 // TODO: Rewrite status() logic in those txs
+			proxiedViaSharding_ = false;
 		}
 	}
 	shardId_ = shardId;
@@ -48,7 +45,7 @@ void Transaction::ensureShardIdIsCorrect(const Query &q) {
 	if (impl_ && shardingRouter_) {
 		auto ids = shardingRouter_->GetShardId(q);
 		bool exactMatch = (ids.size() == 1);
-		updateShardIdIfNecessary(exactMatch ? ids.front() : IndexValueType::NotSet);
+		updateShardIdIfNecessary(exactMatch ? ids.front() : ShardingKeyType::NotSetShard);
 	}
 }
 
@@ -58,10 +55,8 @@ void Transaction::ensureShardIdIsCorrect(const Item &item) {
 	}
 }
 
-#endif	// WITH_SHARDING
-
 const string &Transaction::GetNsName() {
-	static std::string empty;
+	static const std::string empty;
 	if (impl_) {
 		return impl_->nsName_;
 	}
@@ -74,26 +69,27 @@ Error Transaction::Upsert(Item &&item, lsn_t lsn) { return Modify(std::move(item
 Error Transaction::Delete(Item &&item, lsn_t lsn) { return Modify(std::move(item), ModeDelete, lsn); }
 
 Error Transaction::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
-#ifdef WITH_SHARDING
+	if (!status_.ok()) {
+		return status_;
+	}
+
 	try {
 		ensureShardIdIsCorrect(item);
 	} catch (Error &err) {
+		status_ = err;
 		return err;
 	}
-#endif	// WITH_SHARDING
 
 	if (clientTransaction_ && impl_) {
-		if (!status_.ok()) {
-			return status_;
-		}
 		auto clientItem = clientTransaction_->NewItem();
 		if (!clientItem.Status().ok()) {
-			return clientItem.Status();
+			status_ = clientItem.Status();
+			return status_;
 		}
 		std::string_view serverCJson = item.impl_->GetCJSON(true);
-		Error err = clientItem.Unsafe().FromCJSON(serverCJson);
-		if (!err.ok()) {
-			return err;
+		status_ = clientItem.Unsafe().FromCJSON(serverCJson);
+		if (!status_.ok()) {
+			return status_;
 		}
 		// Update tx tm to allow new items creation
 		{
@@ -112,18 +108,17 @@ Error Transaction::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
 }
 
 Error Transaction::Modify(Query &&query, lsn_t lsn) {
-#ifdef WITH_SHARDING
+	if (!status_.ok()) {
+		return status_;
+	}
+
 	try {
 		ensureShardIdIsCorrect(query);
 	} catch (Error &err) {
 		return err;
 	}
-#endif	// WITH_SHARDING
 
 	if (clientTransaction_ && impl_) {
-		if (!status_.ok()) {
-			return status_;
-		}
 		status_ = clientTransaction_->Modify(std::move(query), lsn);
 		if (!status_.ok()) {
 			return status_;
@@ -175,6 +170,9 @@ Error Transaction::SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) {
 }
 
 Item Transaction::NewItem() {
+	if (!status_.ok()) {
+		return Item(status_);
+	}
 	assert(impl_);
 	return impl_->NewItem();
 }

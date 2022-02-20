@@ -440,8 +440,8 @@ func (tx *Tx) commitInternal() (count int, err error) {
 
 	for i := 0; i < rawQueryParams.count; i++ {
 		count++
-		item := rdSer.readRawtItemParams()
-		tx.ns.cacheItems.Remove(item.id)
+		item := rdSer.readRawtItemParams(rawQueryParams.shardId)
+		tx.ns.cacheItems.Remove(cacheKey{item.id, item.shardid})
 	}
 
 	return

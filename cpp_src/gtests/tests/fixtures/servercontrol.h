@@ -74,6 +74,7 @@ struct ReplicationStateApi {
 	size_t dataCount = 0;
 	std::optional<int> tmVersion;
 	std::optional<int> tmStatetoken;
+	reindexer::ClusterizationStatus::Role role = reindexer::ClusterizationStatus::Role::None;
 };
 
 using BaseApi = ReindexerTestApi<reindexer::client::SyncCoroReindexer>;
@@ -81,15 +82,13 @@ using BaseApi = ReindexerTestApi<reindexer::client::SyncCoroReindexer>;
 void WriteConfigFile(const std::string& path, const std::string& configYaml);
 
 struct ServerControlConfig {
-	ServerControlConfig() = default;
-	ServerControlConfig(size_t _id, unsigned short _rpcPort, unsigned short _httpPort, const std::string& _storagePath,
-						const std::string& _dbName, bool _enableStats = true, size_t _maxUpdatesSize = 0,
-						bool _asServerProcess = kAsServerProcess)
+	ServerControlConfig(size_t _id, unsigned short _rpcPort, unsigned short _httpPort, std::string _storagePath, std::string _dbName,
+						bool _enableStats = true, size_t _maxUpdatesSize = 0, bool _asServerProcess = kAsServerProcess)
 		: id(_id),
-		  storagePath(_storagePath),
+		  storagePath(std::move(_storagePath)),
 		  httpPort(_httpPort),
 		  rpcPort(_rpcPort),
-		  dbName(_dbName),
+		  dbName(std::move(_dbName)),
 		  enableStats(_enableStats),
 		  maxUpdatesSize(_maxUpdatesSize),
 		  asServerProcess(_asServerProcess) {}
@@ -98,9 +97,10 @@ struct ServerControlConfig {
 	unsigned short httpPort;
 	unsigned short rpcPort;
 	std::string dbName;
-	bool enableStats;
+	bool enableStats = false;
 	size_t maxUpdatesSize = 0;
 	bool asServerProcess = kAsServerProcess;
+	bool disableNetworkTimeout = false;
 };
 
 class ServerControl {
@@ -182,7 +182,7 @@ public:
 #endif
 		BaseApi api;
 
-		const std::string kClusterManagementDsn;
+		const std::string kRPCDsn;
 
 	private:
 		template <typename ValueT>
@@ -214,6 +214,9 @@ public:
 	void Drop();
 	bool IsRunning();
 	bool DropAndWaitStop();
+	static void WaitSync(Interface::Ptr s1, Interface::Ptr s2, const std::string& nsName);
+
+	static constexpr std::chrono::seconds kMaxSyncTime = std::chrono::seconds(15);
 
 private:
 	typedef reindexer::shared_lock<reindexer::shared_timed_mutex> RLock;

@@ -274,12 +274,12 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 			err = rt.reindexer->Select(Query("#queriesperfstats"), qr);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_TRUE(qr.Count() > 0) << "#queriesperfstats table is empty!";
-			for (size_t i = 0; i < qr.Count(); ++i) {
-				std::cout << qr[i].GetItem(false).GetJSON() << std::endl;
+			for (auto &it : qr) {
+				std::cout << it.GetItem(false).GetJSON() << std::endl;
 			}
 		}
 		ASSERT_TRUE(qres.Count() == 1) << "Expected 1 row for this query, got " << qres.Count();
-		Item item = qres[0].GetItem(false);
+		Item item = qres.begin().GetItem(false);
 		Variant val;
 		val = item["latency_stddev"];
 		performanceRes.latencyStddev = static_cast<double>(val);
@@ -473,7 +473,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField2) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
-	Item item = qr[0].GetItem(false);
+	Item item = qr.begin().GetItem(false);
 	std::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("nested":{"bonus":[{"first":1,"second":2,"third":3}])");
 	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
@@ -489,7 +489,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField3) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
-	Item item = qr[0].GetItem(false);
+	Item item = qr.begin().GetItem(false);
 	VariantArray val = item["nested.bonus"];
 	ASSERT_TRUE(val.size() == 4);
 
@@ -512,7 +512,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField4) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
-	Item item = qr[0].GetItem(false);
+	Item item = qr.begin().GetItem(false);
 	std::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("nested":{"bonus":[0])");
 	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
@@ -547,7 +547,7 @@ TEST_F(NsApi, TestUpdateIndexedArrayField2) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
 
-	Item item = qr[0].GetItem(false);
+	Item item = qr.begin().GetItem(false);
 	std::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("indexed_array_field":[77])");
 	ASSERT_TRUE(pos != std::string::npos) << "'indexed_array_field' was not updated properly" << json;
@@ -1331,7 +1331,7 @@ TEST_F(NsApi, TestUpdateEmptyArrayField) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1);
 
-	Item item = qr[0].GetItem(false);
+	Item item = qr.begin().GetItem(false);
 	Variant idFieldVal = item[idIdxName];
 	ASSERT_TRUE(static_cast<int>(idFieldVal) == 1);
 
@@ -1704,8 +1704,8 @@ TEST_F(NsApi, MsgPackEncodingTest) {
 	}
 
 	reindexer::WrSerializer wrSer3;
-	for (size_t i = 0; i < qr.Count(); ++i) {
-		qr[i].GetMsgPack(wrSer3, false);
+	for (auto &it : qr) {
+		it.GetMsgPack(wrSer3, false);
 	}
 
 	i = 0;
@@ -1781,4 +1781,52 @@ TEST_F(NsApi, DeleteLastItems) {
 	auto err = rt.reindexer->Delete(Query(default_namespace), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), 2);
+}
+
+TEST_F(NsApi, TagsmatchersMerge) {
+	using reindexer::TagsMatcher;
+	using reindexer::PayloadType;
+	using reindexer::PayloadFieldType;
+
+	std::vector<TagsMatcher> tms;
+
+	tms.emplace_back();	 // -V760
+	tms.back().path2tag("id", true);
+	tms.back().path2tag("string", true);
+	tms.back().path2tag("data", true);
+	tms.back().path2tag("data.value", true);
+
+	tms.emplace_back();
+	tms.back().path2tag("id", true);
+	tms.back().path2tag("string", true);
+	tms.back().path2tag("data", true);
+	tms.back().path2tag("data.value", true);
+	tms.back().path2tag("additional_data", true);
+
+	tms.emplace_back();
+	tms.back().path2tag("id", true);
+	tms.back().path2tag("something_else", true);
+
+	tms.emplace_back();
+	tms.back().path2tag("id", true);
+	tms.back().path2tag("string", true);
+	tms.back().path2tag("data", true);
+	tms.back().path2tag("data.value", true);
+	tms.back().path2tag("yet_another_additional_data", true);
+
+	PayloadType pt("tmp", {PayloadFieldType(KeyValueString, "-tuple", {}, false)});
+	auto resultTm = TagsMatcher::CreateMergedTagsMatcher(pt, tms);
+
+	EXPECT_EQ(resultTm.name2tag("id"), 1);
+	EXPECT_EQ(resultTm.name2tag("string"), 2);
+	EXPECT_EQ(resultTm.name2tag("data"), 3);
+	EXPECT_EQ(resultTm.name2tag("value"), 4);
+	EXPECT_EQ(resultTm.name2tag("additional_data"), 5);
+	EXPECT_EQ(resultTm.name2tag("something_else"), 6);
+	EXPECT_EQ(resultTm.name2tag("yet_another_additional_data"), 7);
+
+	EXPECT_TRUE(tms[0].IsSubsetOf(resultTm));
+	EXPECT_TRUE(tms[1].IsSubsetOf(resultTm));
+	EXPECT_FALSE(tms[2].IsSubsetOf(resultTm));
+	EXPECT_FALSE(tms[3].IsSubsetOf(resultTm));
 }

@@ -183,7 +183,7 @@ public:
 		return std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
 	}
 
-	static VariantArray getJoinedField(int id, const QueryResults& qr, size_t nsIdx, int index, std::string_view column) noexcept {
+	static VariantArray getJoinedField(int id, const LocalQueryResults& qr, size_t nsIdx, int index, std::string_view column) noexcept {
 		const reindexer::joins::ItemIterator itemIt{&qr.joined_[0], id};
 		const auto joinedIt = itemIt.at(nsIdx);
 		assert(joinedIt.ItemsCount() == 1);
@@ -198,7 +198,7 @@ public:
 	}
 
 	static double CalculateSortExpression(reindexer::SortExpression::const_iterator begin, reindexer::SortExpression::const_iterator end,
-										  Item& item, const QueryResults& qr) {
+										  Item& item, const LocalQueryResults& qr) {
 		double result = 0.0;
 		assert(begin != end);
 		assert(begin->operation.op == OpPlus);
@@ -262,9 +262,15 @@ public:
 	}
 
 	void Verify(const QueryResults&) {}
+	void Verify(const LocalQueryResults&) {}
 
 	template <typename... T>
-	void Verify(const QueryResults& qr, const char* fieldName, const vector<Variant> expectedValues, T... args) {
+	void Verify(const QueryResults& qr, const char* fieldName, const vector<Variant>& expectedValues, T... args) {
+		Verify(qr.ToLocalQr(), fieldName, expectedValues, std::forward<T>(args)...);
+	}
+
+	template <typename... T>
+	void Verify(const LocalQueryResults& qr, const char* fieldName, const vector<Variant>& expectedValues, T... args) {
 		reindexer::WrSerializer ser;
 		if (qr.Count() != expectedValues.size()) {
 			ser << "Sizes different: expected size " << expectedValues.size() << ", obtained size " << qr.Count() << '\n';
@@ -299,7 +305,9 @@ public:
 		Verify(qr, args...);
 	}
 
-	void Verify(const QueryResults& qr, const Query& query) {
+	void Verify(const QueryResults& qr, const Query& query) { Verify(qr.ToLocalQr(), query); }
+
+	void Verify(const LocalQueryResults& qr, const Query& query) {
 		std::unordered_set<string> pks;
 		std::unordered_map<string, std::unordered_set<string>> distincts;
 		QueryWatcher watcher{query};
@@ -1967,15 +1975,19 @@ protected:
 		frameFacet(singlefieldFacet, facetOffset, facetLimit);
 		frameFacet(arrayFacet, facetOffset, facetLimit);
 
-		EXPECT_DOUBLE_EQ(testQr.aggregationResults[0].value, yearSum / checkQr.Count()) << "Aggregation Avg result is incorrect!";
-		EXPECT_DOUBLE_EQ(testQr.aggregationResults[1].value, yearSum) << "Aggregation Sum result is incorrect!";
-		EXPECT_DOUBLE_EQ(testQr.aggregationResults[2].value, packagesMin) << "Aggregation Min result is incorrect!";
-		checkFacet(testQr.aggregationResults[3].facets, singlefieldFacet, "Singlefield");
-		checkFacet(testQr.aggregationResults[4].facets, arrayFacet, "Array");
-		checkFacet(testQr.aggregationResults[5].facets, multifieldFacet, "Multifield");
+		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[0].value, yearSum / checkQr.Count()) << "Aggregation Avg result is incorrect!";
+		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[1].value, yearSum) << "Aggregation Sum result is incorrect!";
+		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[2].value, packagesMin) << "Aggregation Min result is incorrect!";
+		checkFacet(testQr.GetAggregationResults()[3].facets, singlefieldFacet, "Singlefield");
+		checkFacet(testQr.GetAggregationResults()[4].facets, arrayFacet, "Array");
+		checkFacet(testQr.GetAggregationResults()[5].facets, multifieldFacet, "Multifield");
 	}
 
 	void CompareQueryResults(const std::string& serializedQuery, const QueryResults& lhs, const QueryResults& rhs) {
+		CompareQueryResults(serializedQuery, lhs.ToLocalQr(), rhs.ToLocalQr());
+	}
+
+	void CompareQueryResults(const std::string& serializedQuery, const LocalQueryResults& lhs, const LocalQueryResults& rhs) {
 		EXPECT_EQ(lhs.Count(), rhs.Count());
 		if (lhs.Count() == rhs.Count()) {
 			for (size_t i = 0; i < lhs.Count(); ++i) {
@@ -2386,7 +2398,7 @@ protected:
 	static void boldOn() { TestCout() << "\e[1m"; }
 	static void boldOff() { TestCout() << "\e[0m"; }
 
-	void PrintFailedSortOrder(const Query& query, const QueryResults& qr, int itemIndex, int itemsToShow = 10) {
+	void PrintFailedSortOrder(const Query& query, const LocalQueryResults& qr, int itemIndex, int itemsToShow = 10) {
 		if (qr.Count() == 0) return;
 
 		TestCout() << "Sort order or last items:" << std::endl;

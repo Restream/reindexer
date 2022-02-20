@@ -6,15 +6,13 @@ namespace reindexer_tool {
 
 class Output;
 
-template <typename QueryResultsT>
 class TableViewScroller {
 public:
-	TableViewScroller(const QueryResultsT& r, reindexer::TableViewBuilder<QueryResultsT>& tableBuilder, int linesOnPage);
-	void Scroll(Output& o, const std::function<bool(void)>& isCanceled);
+	TableViewScroller(reindexer::TableViewBuilder& tableBuilder, int linesOnPage);
+	void Scroll(Output& o, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled);
 
 private:
-	const QueryResultsT& r_;
-	reindexer::TableViewBuilder<QueryResultsT>& tableBuilder_;
+	reindexer::TableViewBuilder& tableBuilder_;
 	int linesOnPage_;
 };
 

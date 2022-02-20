@@ -21,6 +21,10 @@ TEST_F(CascadeReplicationApi, MasterSlaveSyncByWalAddRow) {
 	ns1.AddRows(cluster.Get(0), 0, n1);
 
 	WaitSync(cluster.Get(0), cluster.Get(1), ns1.nsName_);
+
+	const auto replState = cluster.Get(1)->GetState(ns1.nsName_);
+	ASSERT_EQ(replState.role, ClusterizationStatus::Role::SimpleReplica);
+
 	cluster.ShutdownServer(1);
 
 	const int startId = 10000;
@@ -552,6 +556,33 @@ TEST_F(CascadeReplicationApi, NodeWithMasterAndSlaveNs3) {
 	ASSERT_TRUE(results_m.size() == n * 2);
 	ValidateNsList(master, {testns1.nsName_, testns2.nsName_});
 	ValidateNsList(slave, {testns3.nsName_, testns4.nsName_});
+}
+
+TEST_F(CascadeReplicationApi, RenameError) {
+	// Check if rename still returns error
+	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "ForceSync3Node"));
+	ServerControl masterSc;
+
+	masterSc.InitServer(ServerControlConfig(0, 7770, 7880, kBaseDbPath + "/master", "db"));
+	auto master = masterSc.Get();
+	TestNamespace1 testns(master);
+	testns.AddRows(master, 10, 10);
+	master->MakeLeader();
+
+	ServerControl slave1;
+	slave1.InitServer(ServerControlConfig(1, 7771, 7881, kBaseDbPath + "/slave1", "db"));
+	slave1.Get()->MakeFollower();
+	master->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", slave1.Get()->RpcPort()));
+
+	WaitSync(master, slave1.Get(), testns.nsName_);
+
+	// Check if ns renaming is not posible in this config
+	auto err = master->api.reindexer->RenameNamespace(testns.nsName_, "new_ns");
+	ASSERT_EQ(err.code(), errParams) << err.what();
+	std::vector<NamespaceDef> defs;
+	err = master->api.reindexer->EnumNamespaces(defs, EnumNamespacesOpts().OnlyNames().HideSystem());
+	ASSERT_EQ(defs.size(), 1);
+	ASSERT_EQ(defs[0].name, testns.nsName_);
 }
 
 // TODO: Enable this test, when new repliation will support namesapce rename

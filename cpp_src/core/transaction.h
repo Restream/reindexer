@@ -50,7 +50,7 @@ public:
 	bool IsFree() const noexcept { return impl_ == nullptr; }
 	Item NewItem();
 	Item GetItem(TransactionStep &&st);
-	Error Status() const noexcept { return status_; }
+	const Error &Status() const noexcept { return status_; }
 	lsn_t GetLSN() const noexcept;
 
 	const std::string &GetNsName();
@@ -65,20 +65,21 @@ public:
 	void SetClient(client::SyncCoroTransaction &&tx);
 	void SetLeader(client::SyncCoroReindexer &&);
 	void SetShardingRouter(std::shared_ptr<sharding::LocatorService>);
+	bool IsProxied() const noexcept { return clientTransaction_.get(); }
+	bool IsProxiedWithShardingProxy() const noexcept { return proxiedViaSharding_; }
 
 protected:
-#ifdef WITH_SHARDING
 	void updateShardIdIfNecessary(int shardId);
 	void ensureShardIdIsCorrect(const Item &item);
 	void ensureShardIdIsCorrect(const Query &q);
-#endif	// WITH_SHARDING
 
 	std::unique_ptr<TransactionImpl> impl_;
 	std::unique_ptr<client::SyncCoroTransaction> clientTransaction_;
 	Error status_;
 	std::shared_ptr<sharding::LocatorService> shardingRouter_;
 	std::optional<client::SyncCoroReindexer> leaderRx_;
-	int shardId_ = IndexValueType::NotSet;
+	int shardId_ = ShardingKeyType::NotSetShard;
+	bool proxiedViaSharding_ = false;
 };
 
 }  // namespace reindexer

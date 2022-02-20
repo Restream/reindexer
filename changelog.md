@@ -1,3 +1,23 @@
+# Version 4.2.0 *beta* (20.02.2022)
+## Core
+- [fea] Add sharding support. Check [sharding.md](sharding.md) for details
+- [fea] Add support for mixed replication setups (now it's possible to replicate some of the sync cluster namespaces asynchronously)
+- [fix] Now transactions will return error on commit, if there were any errors in previous operations with this transaction
+
+## Build
+- [fea] Add build for debian-11 (bullseye)
+
+## Reindexer tool
+- [fea] Add different modes for \dump to support sharding
+
+## Go connector
+- [fea] Add support for sharding in LRU cproto items cache
+- [fix] Fix LRU cproto items cache invalidation
+
+## Face
+- [fea] Add shrding support
+- [fix] Fix 'explain' visualization for queries with facet()
+
 # Version 4.1.0 *beta* (25.01.2022)
 ## Core
 - [fea] Optimize tags updates replication

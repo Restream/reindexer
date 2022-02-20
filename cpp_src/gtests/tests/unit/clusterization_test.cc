@@ -385,8 +385,7 @@ TEST_F(ClusterizationApi, InitialLeaderSyncWithConcurrentSnapshots) {
 		const std::vector<size_t> kSecondNodesGroup = {3, 4};  // Empty servers, which have to perfomr sync
 		Cluster cluster(loop, 0, kClusterSize, ports, std::vector<std::string>(), std::chrono::milliseconds(3000), -1, 1);
 
-		const std::vector<std::string> kNsNames = {"ns1", "ns2",  "ns3",  "ns4",  "ns5",  "ns6",  "ns7", "ns8",
-												   "ns9", "ns10", "ns11", "ns12", "ns13", "ns14", "ns15"};
+		const std::vector<std::string> kNsNames = {"ns1", "ns2", "ns3", "ns4", "ns5", "ns6", "ns7", "ns8", "ns9", "ns10"};
 		constexpr size_t kDataPortion = 20;
 
 		// Check force initial sync for nodes from the second group
@@ -420,9 +419,16 @@ TEST_F(ClusterizationApi, InitialLeaderSyncWithConcurrentSnapshots) {
 		std::cout << "Starting " << kTransitionServer << std::endl;
 		ASSERT_TRUE(cluster.StartServer(kTransitionServer));
 
+#ifdef RX_LONG_REPLICATION_TIMEOUT
+		// Github CI OSX renames namespaces on really slowly sometimes
+		const std::chrono::seconds syncTime = std::chrono::seconds(45);
+#else
+		const std::chrono::seconds syncTime = kMaxSyncTime;
+#endif
+
 		std::cout << "Wait sync 2" << std::endl;
 		for (auto& ns : kNsNames) {
-			cluster.WaitSync(ns);
+			cluster.WaitSync(ns, lsn_t(), lsn_t(), syncTime);
 		}
 
 		// Make sure, that our cluster didn't miss it's data in process
@@ -1089,6 +1095,147 @@ TEST_F(ClusterizationApi, ErrorOnAttemptToResetClusterNsRole) {
 		replState.GetJSON(jb);
 		ASSERT_EQ(replState.clusterStatus.role, ClusterizationStatus::Role::ClusterReplica) << ser.Slice();
 		std::cout << "Done" << std::endl;
+	});
+
+	loop.run();
+}
+
+TEST_F(ClusterizationApi, AsyncReplicationForClusterNamespaces) {
+	//       async1     async2
+	//         \         /
+	//          cl1 - cl2 <- updates
+	//           \    /
+	//            cl3
+	//             |
+	//           async3
+	struct AsyncNode {
+		ServerControl sc;
+		std::string dsn;
+	};
+
+	net::ev::dynamic_loop loop;
+	auto defaults = GetDefaultPorts();
+	loop.spawn([&loop, &defaults]() noexcept {
+		constexpr size_t kClusterSize = 3;
+		constexpr size_t kDataPortion = 50;
+		const std::string kNsSome = "some";
+		Cluster cluster(loop, 0, kClusterSize, defaults);
+		int leaderId = cluster.AwaitLeader(kMaxElectionsTime);
+		ASSERT_NE(leaderId, -1);
+		std::vector<AsyncNode> asyncNodes(kClusterSize);
+		for (size_t i = 0; i < kClusterSize; ++i) {
+			const int id = kClusterSize + 1 + i;
+			auto storagePath = fs::JoinPath(defaults.baseTestsetDbPath, "node/" + std::to_string(id));
+
+			ServerControlConfig scConfig(id, defaults.defaultRpcPort + id, defaults.defaultHttpPort + id,
+										 fs::JoinPath(defaults.baseTestsetDbPath, "node/" + std::to_string(id)),
+										 "node" + std::to_string(id), true);
+			asyncNodes[i].sc.InitServer(std::move(scConfig));
+			asyncNodes[i].dsn = fmt::format("cproto://127.0.0.1:{}/node{}", defaults.defaultRpcPort + id, id);
+		}
+		auto WaitSyncWithExternalNodes = [&asyncNodes](const std::string& nsName, size_t count, ServerControl::Interface::Ptr s) {
+			for (size_t i = 0; i < count; ++i) {
+				ServerControl::WaitSync(s, asyncNodes[i].sc.Get(), nsName);
+			}
+		};
+
+		for (size_t i = 0; i < kClusterSize - 1; ++i) {
+			asyncNodes[i].sc.Get()->MakeFollower();
+			cluster.AddAsyncNode(i, asyncNodes[i].dsn);
+		}
+		std::cout << "Init NS" << std::endl;
+		cluster.InitNs(leaderId, kNsSome);
+		cluster.WaitSync(kNsSome);
+		std::cout << "Wait replication to async nodes (2/3)" << std::endl;
+		WaitSyncWithExternalNodes(kNsSome, kClusterSize - 1, cluster.GetNode(leaderId));
+
+		const auto kLastNode = kClusterSize - 1;
+		asyncNodes[kLastNode].sc.Get()->MakeFollower();
+		cluster.AddAsyncNode(kLastNode, asyncNodes[kLastNode].dsn);
+		std::cout << "Wait replication to the last async node" << std::endl;
+		WaitSyncWithExternalNodes(kNsSome, kClusterSize, cluster.GetNode(leaderId));
+		std::cout << "Fill data" << std::endl;
+		cluster.FillData(leaderId, kNsSome, 0, kDataPortion);
+		cluster.FillDataTx(leaderId, kNsSome, kDataPortion, kDataPortion);
+		std::cout << "Wait cluster sync" << std::endl;
+		cluster.WaitSync(kNsSome);
+		std::cout << "Wait replication to async nodes" << std::endl;
+		WaitSyncWithExternalNodes(kNsSome, kClusterSize - 1, cluster.GetNode(leaderId));
+
+		// Check if ns renaming is not posible in this config
+		auto err = cluster.GetNode(leaderId)->api.reindexer->RenameNamespace(kNsSome, "new_ns");
+		ASSERT_EQ(err.code(), errParams) << err.what();
+		std::vector<NamespaceDef> defs;
+		err = cluster.GetNode(leaderId)->api.reindexer->EnumNamespaces(defs, EnumNamespacesOpts().OnlyNames().HideSystem());
+		ASSERT_EQ(defs.size(), 1);
+		ASSERT_EQ(defs[0].name, kNsSome);
+	});
+
+	loop.run();
+}
+
+TEST_F(ClusterizationApi, AsyncReplicationBetweenClusters) {
+	//          cluster1 (ns1, ns2)        cluster2 (ns1)
+	// updates -> cl10 - cl11               cl20 - cl21
+	//              \    /  async repl(ns2)  \    /
+	//              cl12 -------------------> cl22
+
+	net::ev::dynamic_loop loop;
+	auto defaults = GetDefaultPorts();
+	loop.spawn([&loop, &defaults]() noexcept {
+		constexpr size_t kClusterSize = 3;
+		constexpr size_t kDataPortion = 20;
+		const std::string kNs1 = "ns1";
+		const std::string kNs2 = "ns2";
+		constexpr size_t kReplicatedNodeId = 2;
+		Cluster cluster1(loop, 0, kClusterSize, defaults);
+		Cluster cluster2(loop, kClusterSize, kClusterSize, defaults, {kNs1});
+		const int leaderId1 = cluster1.AwaitLeader(kMaxElectionsTime);
+		ASSERT_NE(leaderId1, -1);
+		const int leaderId2 = cluster2.AwaitLeader(kMaxElectionsTime);
+		ASSERT_NE(leaderId2, -1);
+
+		cluster2.GetNode(kReplicatedNodeId)->MakeFollower();
+		cluster1.AddAsyncNode(kReplicatedNodeId, cluster2.GetNode(kReplicatedNodeId)->kRPCDsn, {{kNs2}});
+
+		std::cout << "Init NS" << std::endl;
+		cluster1.InitNs(leaderId1, kNs1);
+		cluster1.InitNs(leaderId1, kNs2);
+		cluster2.InitNs(leaderId2, kNs1);
+		cluster1.WaitSync(kNs1);
+		cluster1.WaitSync(kNs2);
+		cluster2.WaitSync(kNs1);
+		for (size_t i = 0; i < kClusterSize; ++i) {
+			cluster1.FillData(i, kNs2, 2 * i * kDataPortion, 2 * kDataPortion);
+			cluster2.FillData(i, kNs1, i * kDataPortion, kDataPortion);
+		}
+		std::cout << "Wait cluster1 sync" << std::endl;
+		cluster1.WaitSync(kNs2);
+		std::cout << "Wait cluster2 sync" << std::endl;
+		cluster2.WaitSync(kNs1);
+		std::cout << "Wait replication to async node" << std::endl;
+		ServerControl::WaitSync(cluster1.GetNode(kReplicatedNodeId), cluster2.GetNode(kReplicatedNodeId), kNs2);
+		std::cout << "Check second cluster state" << std::endl;
+		for (size_t i = 0; i < kClusterSize; ++i) {
+			auto rx = cluster2.GetNode(i)->api.reindexer;
+			client::SyncCoroQueryResults qr;
+			auto err = rx->Select(Query(kNs1), qr);
+			ASSERT_TRUE(err.ok()) << "i = " << i << "; " << err.what();
+			ASSERT_EQ(qr.Count(), kClusterSize * kDataPortion);
+			qr = client::SyncCoroQueryResults();
+			err = rx->Select(Query(kNs2), qr);
+			if (i != kReplicatedNodeId) {
+				ASSERT_EQ(err.code(), errNotFound) << "i = " << i << "; " << err.what();
+			} else {
+				ASSERT_TRUE(err.ok()) << "i = " << i << "; " << err.what();
+				ASSERT_EQ(qr.Count(), 2 * kClusterSize * kDataPortion);
+			}
+		}
+
+		client::Item it = cluster2.GetNode(kReplicatedNodeId)->api.reindexer->NewItem(kNs2);
+		it.FromJSON(R"json({"id":1})json");
+		auto err = cluster2.GetNode(kReplicatedNodeId)->api.reindexer->Upsert(kNs2, it);
+		ASSERT_EQ(err.code(), errWrongReplicationData);
 	});
 
 	loop.run();

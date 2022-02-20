@@ -46,7 +46,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 		Error err = rt.reindexer->Select(Query("#memstats").Where("name", CondEq, btreeNs), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(1, qr.Count());
-		optimization_completed = qr[0].GetItem(false)["optimization_completed"].Get<bool>();
+		optimization_completed = qr.begin().GetItem(false)["optimization_completed"].Get<bool>();
 	}
 	for (const char* searchField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
 		const bool searchByBtreeField = (searchField == kFieldTree1 || searchField == kFieldTree2);

@@ -253,9 +253,16 @@ TEST_F(ClusterizationProxyApi, TransactionStopLeader) {
 			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
 			int iIn = 0;
 			bool isLeaderChanged = false;
+			bool isTxInvalid = false;
 			// inserting items
 			for (iIn = 0; iIn < 10; iIn++) {
 				client::Item item = tx.NewItem();
+				if (isTxInvalid) {
+					ASSERT_FALSE(item.Status().ok()) << iIn;
+					break;
+				} else {
+					ASSERT_TRUE(item.Status().ok()) << iIn << ":" << err.what();
+				}
 				err = item.FromJSON(itemData(iIn, "valuedata", ""));
 				ASSERT_TRUE(err.ok()) << err.what();
 				err = tx.Insert(std::move(item));
@@ -263,6 +270,7 @@ TEST_F(ClusterizationProxyApi, TransactionStopLeader) {
 					ASSERT_TRUE(err.ok()) << iIn << ":" << err.what();
 				} else {
 					ASSERT_FALSE(err.ok()) << iIn;
+					isTxInvalid = true;
 				}
 				if (iIn == 5) {
 					// stop leader
@@ -455,6 +463,7 @@ static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, i
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = cluster.GetNode(followerId)->api.reindexer->Insert(kNsName, item);
 		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(item.GetLSN().isEmpty());
 		// check the correctness of the insert
 		SelectHelper(followerId, kNsName, cluster, itemJson);
 		SelectHelper(leaderId, kNsName, cluster, itemJson);
@@ -464,6 +473,7 @@ static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, i
 		err = item.FromJSON(itemJsonUp);
 		err = cluster.GetNode(followerId)->api.reindexer->Upsert(kNsName, item);
 		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(item.GetLSN().isEmpty());
 		// check the correctness of the upsert
 		SelectHelper(followerId, kNsName, cluster, itemJsonUp);
 		SelectHelper(leaderId, kNsName, cluster, itemJsonUp);
@@ -478,9 +488,11 @@ static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, i
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
+		ASSERT_FALSE(itsel.GetLSN().isEmpty());
 		std::string itemJson = itemData(pk, "string_update" + std::to_string(pk), "");
 		itsel.FromJSON(itemJson);
 		cluster.GetNode(followerId)->api.reindexer->Update(kNsName, itsel);
+		ASSERT_TRUE(itsel.GetLSN().isEmpty());
 		// check the correctness of the update
 		SelectHelper(followerId, kNsName, cluster, itemJson);
 		SelectHelper(leaderId, kNsName, cluster, itemJson);
@@ -495,10 +507,12 @@ static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, i
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
+		ASSERT_FALSE(itsel.GetLSN().isEmpty());
 		cluster.GetNode(followerId)->api.reindexer->Delete(kNsName, itsel);
 		// check the correctness of the delete
 		Select0Helper(followerId, kNsName, cluster);
 		Select0Helper(leaderId, kNsName, cluster);
+		ASSERT_TRUE(itsel.GetLSN().isEmpty());
 	}
 }
 
@@ -524,6 +538,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 			auto itemQR = qrInsert.begin().GetItem();
 			const auto id = itemQR.GetID();
 			ASSERT_GE(id, 0);
+			ASSERT_TRUE(itemQR.GetLSN().isEmpty());
 			// check the correctness of the insert
 			SelectHelper(followerId, kNsName, cluster, itemJson, id);
 			SelectHelper(leaderId, kNsName, cluster, itemJson, id);
@@ -540,6 +555,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 			auto itemQR = qrUpsert.begin().GetItem();
 			const auto id = itemQR.GetID();
 			ASSERT_GE(id, 0);
+			ASSERT_TRUE(itemQR.GetLSN().isEmpty());
 			// check the correctness of the upsert
 			SelectHelper(followerId, kNsName, cluster, itemJsonUp, id);
 			SelectHelper(leaderId, kNsName, cluster, itemJsonUp, id);
@@ -555,6 +571,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
+		ASSERT_FALSE(itsel.GetLSN().isEmpty());
 		std::string itemJson = itemData(pk, "string_update" + std::to_string(pk), "");
 		itsel.FromJSON(itemJson);
 		client::SyncCoroQueryResults qrUpdate;
@@ -564,6 +581,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 		auto itemQR = qrUpdate.begin().GetItem();
 		const auto id = itemQR.GetID();
 		ASSERT_GE(id, 0);
+		ASSERT_TRUE(itemQR.GetLSN().isEmpty());
 		// check the correctness of the update
 		SelectHelper(followerId, kNsName, cluster, itemJson, id);
 		SelectHelper(leaderId, kNsName, cluster, itemJson, id);
@@ -578,6 +596,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
+		ASSERT_FALSE(itsel.GetLSN().isEmpty());
 		client::SyncCoroQueryResults qrDelete;
 		err = cluster.GetNode(followerId)->api.reindexer->Delete(kNsName, itsel, qrDelete);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -585,6 +604,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 		auto itemQR = qrDelete.begin().GetItem();
 		const auto id = itemQR.GetID();
 		ASSERT_GE(id, 0);
+		ASSERT_TRUE(itemQR.GetLSN().isEmpty());
 		// check the correctness of the delete
 		Select0Helper(followerId, kNsName, cluster);
 		Select0Helper(leaderId, kNsName, cluster);
@@ -634,6 +654,7 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 			ASSERT_EQ(qrInsert.Count(), 1);
 			auto itemQR = qrInsert.begin().GetItem();
 			ASSERT_EQ(itemQR.GetJSON(), itemJsonCheck);
+			ASSERT_FALSE(itemQR.GetLSN().isEmpty());
 		}
 
 		// check the correctness of the insert
@@ -672,6 +693,7 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 			ASSERT_EQ(qrUpsert.Count(), 1);
 			auto itemQR = qrUpsert.begin().GetItem();
 			ASSERT_EQ(itemQR.GetJSON(), itemJsonUpCheck);
+			ASSERT_FALSE(itemQR.GetLSN().isEmpty());
 		}
 		// check the correctness of the upsert
 
@@ -688,6 +710,8 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
+		const auto initialLSN = itsel.GetLSN();
+		ASSERT_FALSE(initialLSN.isEmpty());
 		std::string itemJson;
 		{
 			WrSerializer ser;
@@ -717,6 +741,9 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 			ASSERT_EQ(qrUpdate.Count(), 1);
 			auto itemQR = qrUpdate.begin().GetItem();
 			ASSERT_EQ(itemQR.GetJSON(), itemJsonCheck);
+			const auto resultLSN = itemQR.GetLSN();
+			ASSERT_FALSE(resultLSN.isEmpty());
+			ASSERT_NE(initialLSN, resultLSN);
 		}
 
 		// check the correctness of the update
@@ -732,6 +759,8 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
+		const auto initialLSN = itsel.GetLSN();
+		ASSERT_FALSE(initialLSN.isEmpty());
 		itsel.SetPrecepts({"int=SERIAL()"});
 		client::SyncCoroQueryResults qrDelete;
 		err = cluster.GetNode(followerId)->api.reindexer->Delete(kNsName, itsel, qrDelete);
@@ -740,6 +769,9 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 			ASSERT_EQ(qrDelete.Count(), 1);
 			auto itemQR = qrDelete.begin().GetItem();
 			ASSERT_EQ(itemQR.GetJSON(), itsel.GetJSON());
+			const auto resultLSN = itemQR.GetLSN();
+			ASSERT_FALSE(resultLSN.isEmpty());
+			ASSERT_NE(initialLSN, resultLSN);
 		}
 
 		// check the correctness of the delete
@@ -799,6 +831,9 @@ static void CheckSQL(ClusterizationApi::Cluster& cluster, int followerId, int le
 	std::string q = "explain update " + kNsName + " set value='up_name' where id=" + std::to_string(pk);
 	err = cluster.GetNode(followerId)->api.reindexer->Select(q, qr);
 	ASSERT_TRUE(qr.Count() > 0);
+	for (auto it : qr) {
+		ASSERT_FALSE(it.GetLSN().isEmpty());
+	}
 	ASSERT_TRUE(!qr.GetExplainResults().empty());
 	ASSERT_TRUE(err.ok()) << err.what();
 	{
@@ -818,6 +853,9 @@ static void CheckSQL(ClusterizationApi::Cluster& cluster, int followerId, int le
 	BaseApi::QueryResultsType qresDel;
 	err = cluster.GetNode(followerId)->api.reindexer->Select("delete from " + kNsName, qresDel);
 	ASSERT_TRUE(err.ok()) << err.what();
+	for (auto it : qresDel) {
+		ASSERT_FALSE(it.GetLSN().isEmpty());
+	}
 	// check the correctness of the delete
 	Select0Helper(followerId, kNsName, cluster);
 	Select0Helper(leaderId, kNsName, cluster);
@@ -1079,9 +1117,15 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 				std::vector<std::string> items;
 				for (int j = 0; j < kItemsPerTx; ++j) {
 					auto item = tx.NewItem();
+					auto err = item.Status();
+					if (err.code() == errTxInvalidLeader || err.code() == errWrongReplicationData || err.code() == errAlreadyProxied) {
+						break;
+					} else {
+						ASSERT_TRUE(err.ok()) << err.what();
+					}
 					cluster.FillItem(api, item, counter++);
 					items.emplace_back(item.GetJSON());
-					auto err = tx.Upsert(std::move(item));
+					err = tx.Upsert(std::move(item));
 					if (err.code() == errTxInvalidLeader || err.code() == errWrongReplicationData || err.code() == errAlreadyProxied) {
 						items.pop_back();
 					} else {

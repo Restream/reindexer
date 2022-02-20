@@ -63,9 +63,9 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 			return 0, err
 		}
 
-		resultp := rdSer.readRawtItemParams()
+		resultp := rdSer.readRawtItemParams(rawQueryParams.shardId)
 
-		ns.cacheItems.Remove(resultp.id)
+		ns.cacheItems.Remove(cacheKey{resultp.id, resultp.shardid})
 
 		if len(precepts) > 0 && (resultp.cptr != 0 || resultp.data != nil) && reflect.TypeOf(item).Kind() == reflect.Ptr {
 			nsArrEntry := nsArrayEntry{ns, ns.cjsonState.Copy()}
@@ -140,8 +140,8 @@ func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool,
 	needCopy := ns.deepCopyIface && !allowUnsafe
 	var err error
 
-	if useCache && ns.cacheItems != nil {
-		if citem, ok := ns.cacheItems.Get(params.id); ok && citem.version == params.version {
+	if useCache && ns.cacheItems != nil && !params.version.IsEmpty() {
+		if citem, ok := ns.cacheItems.Get(cacheKey{params.id, params.shardid}); ok && citem.version == params.version {
 			item = citem.item
 		} else {
 			item = reflect.New(ns.rtype).Interface()
@@ -157,14 +157,14 @@ func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool,
 				return item, err
 			}
 
-			if citem, ok := ns.cacheItems.Get(params.id); ok {
+			if citem, ok := ns.cacheItems.Get(cacheKey{params.id, params.shardid}); ok {
 				if citem.version == params.version {
 					item = citem.item
-				} else if citem.version < params.version {
-					ns.cacheItems.Add(params.id, &cacheItem{item: item, version: params.version})
+				} else if !params.version.IsCompatibleWith(citem.version) || params.version.IsNewerThen(citem.version) {
+					ns.cacheItems.Add(cacheKey{params.id, params.shardid}, &cacheItem{item: item, version: params.version})
 				}
 			} else {
-				ns.cacheItems.Add(params.id, &cacheItem{item: item, version: params.version})
+				ns.cacheItems.Add(cacheKey{params.id, params.shardid}, &cacheItem{item: item, version: params.version})
 			}
 		}
 	} else {
@@ -230,7 +230,7 @@ func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, tota
 	jsonBuf.WriteString("\":[")
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		item := ser.readRawtItemParams()
+		item := ser.readRawtItemParams(rawQueryParams.shardId)
 		if i != 0 {
 			jsonBuf.WriteString(",")
 		}
@@ -377,12 +377,12 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 	rawQueryParams := ser.readRawQueryParams()
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		params := ser.readRawtItemParams()
+		params := ser.readRawtItemParams(rawQueryParams.shardId)
 		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
 			panic("Internal error: joined items in delete query result")
 		}
 		// Update cache
-		ns.cacheItems.Remove(params.id)
+		ns.cacheItems.Remove(cacheKey{params.id, params.shardid})
 	}
 	if !ser.Eof() {
 		panic("Internal error: data after end of delete query result")
@@ -411,12 +411,12 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 	})
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		params := ser.readRawtItemParams()
+		params := ser.readRawtItemParams(rawQueryParams.shardId)
 		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
 			panic("Internal error: joined items in update query result")
 		}
 		// Update cache
-		ns.cacheItems.Remove(params.id)
+		ns.cacheItems.Remove(cacheKey{params.id, params.shardid})
 	}
 
 	if !ser.Eof() {

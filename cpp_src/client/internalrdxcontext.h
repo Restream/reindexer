@@ -13,7 +13,8 @@ class InternalRdxContext {
 public:
 	typedef std::function<void(const Error& err)> Completion;
 	explicit InternalRdxContext(const IRdxCancelContext* cancelCtx, Completion cmpl = nullptr, milliseconds execTimeout = milliseconds(0),
-								lsn_t lsn = lsn_t(), int emmiterServerId = -1, int shardId = -1, bool parallel = false) noexcept
+								lsn_t lsn = lsn_t(), int emmiterServerId = -1, int shardId = ShardingKeyType::NotSetShard,
+								bool parallel = false) noexcept
 		: cmpl_(cmpl),
 		  execTimeout_((execTimeout.count() < 0) ? milliseconds(0) : execTimeout),
 		  cancelCtx_(cancelCtx),
@@ -22,7 +23,7 @@ public:
 		  shardId_(shardId),
 		  shardingParallelExecution_(parallel) {}
 	explicit InternalRdxContext(Completion cmpl = nullptr, milliseconds execTimeout = milliseconds(0), lsn_t lsn = lsn_t(),
-								int emmiterServerId = -1, int shardId = -1, bool parallel = false) noexcept
+								int emmiterServerId = -1, int shardId = ShardingKeyType::NotSetShard, bool parallel = false) noexcept
 		: cmpl_(cmpl),
 		  execTimeout_((execTimeout.count() < 0) ? milliseconds(0) : execTimeout),
 		  cancelCtx_(nullptr),
@@ -52,10 +53,10 @@ public:
 	InternalRdxContext WithShardId(int shardId, bool parallel) const noexcept {
 		return InternalRdxContext(cmpl_, execTimeout_, lsn_, emmiterServerId_, shardId, parallel);
 	}
-	InternalRdxContext WithShardingParallelExecution(bool parallel) {
+	InternalRdxContext WithShardingParallelExecution(bool parallel) const noexcept {
 		return InternalRdxContext(cmpl_, execTimeout_, lsn_, emmiterServerId_, shardId_, parallel);
 	}
-	Completion cmpl() const noexcept { return cmpl_; }
+	const Completion& cmpl() const noexcept { return cmpl_; }
 	milliseconds execTimeout() const noexcept { return execTimeout_; }
 	const IRdxCancelContext* getCancelCtx() const noexcept { return cancelCtx_; }
 	lsn_t lsn() const noexcept { return lsn_; }

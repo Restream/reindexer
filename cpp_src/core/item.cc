@@ -7,8 +7,8 @@
 
 namespace reindexer {
 
-Item::FieldRef::FieldRef(int field, ItemImpl *itemImpl) : itemImpl_(itemImpl), field_(field) {}
-Item::FieldRef::FieldRef(std::string_view jsonPath, ItemImpl *itemImpl) : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
+Item::FieldRef::FieldRef(int field, ItemImpl *itemImpl) noexcept : itemImpl_(itemImpl), field_(field) {}
+Item::FieldRef::FieldRef(std::string_view jsonPath, ItemImpl *itemImpl) noexcept : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
 
 Item &Item::operator=(Item &&other) noexcept {
 	if (&other != this) {
@@ -110,12 +110,12 @@ Error Item::GetMsgPack(WrSerializer &wrser) { return impl_->GetMsgPack(wrser); }
 Error Item::GetProtobuf(WrSerializer &wrser) { return impl_->GetProtobuf(wrser); }
 
 int Item::NumFields() const { return impl_->Type().NumFields(); }
-Item::FieldRef Item::operator[](int field) const {
+Item::FieldRef Item::operator[](int field) const noexcept {
 	assert(field >= 0 && field < impl_->Type().NumFields());
 	return FieldRef(field, impl_);
 }
 
-Item::FieldRef Item::operator[](std::string_view name) const {
+Item::FieldRef Item::operator[](std::string_view name) const noexcept {
 	int field = 0;
 	if (impl_->Type().FieldByName(name, field)) {
 		return FieldRef(field, impl_);

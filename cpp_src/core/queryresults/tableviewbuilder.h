@@ -6,6 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include "estl/span.h"
 #include "tools/errors.h"
 #include "tools/terminalutils.h"
 
@@ -20,12 +21,11 @@ struct ColumnData {
 	int maxWidthCh = 0;
 	int emptyValues = 0;
 	double widthTerminalPercentage = 0;
-	bool IsNumber() const;
-	bool IsBoolean() const;
-	bool PossibleToBreakTheLine() const;
+	bool IsNumber() const noexcept;
+	bool IsBoolean() const noexcept;
+	bool PossibleToBreakTheLine() const noexcept;
 };
 
-template <typename QueryResultsT>
 class TableCalculator {
 public:
 	using Header = std::list<std::string>;
@@ -33,17 +33,16 @@ public:
 	using Rows = std::vector<Row>;
 	using ColumnsData = std::unordered_map<std::string, ColumnData>;
 
-	TableCalculator(const QueryResultsT& r, int outputWidth, size_t limit = std::numeric_limits<size_t>::max());
+	TableCalculator(std::vector<std::string>&& jsonData, int outputWidth);
 
-	Header& GetHeader();
-	Rows& GetRows();
-	ColumnsData& GetColumnsSettings();
-	int GetOutputWidth() const;
+	Header& GetHeader() noexcept { return header_; }
+	Rows& GetRows() noexcept { return rows_; }
+	ColumnsData& GetColumnsSettings() noexcept { return columnsData_; }
+	int GetOutputWidth() const noexcept { return outputWidth_; }
 
 private:
-	void calculate(size_t limit);
+	void calculate(std::vector<std::string>&& jsonData);
 
-	const QueryResultsT& r_;
 	Header header_;
 	Rows rows_;
 	TerminalSize terminalSize_;
@@ -51,29 +50,25 @@ private:
 	const int outputWidth_;
 };
 
-template <typename QueryResultsT>
 class TableViewBuilder {
 public:
-	explicit TableViewBuilder(const QueryResultsT& r);
+	TableViewBuilder() = default;
 	TableViewBuilder(const TableViewBuilder&) = delete;
 	TableViewBuilder(TableViewBuilder&&) = delete;
 	TableViewBuilder operator=(const TableViewBuilder&) = delete;
 	TableViewBuilder operator=(TableViewBuilder&&) = delete;
 
-	void Build(std::ostream& o, const std::function<bool(void)>& isCanceled);
+	void Build(std::ostream& o, std::vector<std::string>&& jsonData, const std::function<bool(void)>& isCanceled);
 
-	void BuildHeader(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator, const std::function<bool(void)>& isCanceled);
-	void BuildTable(std::ostream& o, TableCalculator<QueryResultsT>& tableCalculator, const std::function<bool(void)>& isCanceled);
-	void BuildRow(std::ostream& o, int idx, TableCalculator<QueryResultsT>& tableCalculator);
+	void BuildHeader(std::ostream& o, TableCalculator& tableCalculator, const std::function<bool(void)>& isCanceled);
+	void BuildTable(std::ostream& o, TableCalculator& tableCalculator, const std::function<bool(void)>& isCanceled);
+	void BuildRow(std::ostream& o, int idx, TableCalculator& tableCalculator);
 
 private:
 	static int computeFieldWidth(std::string_view str, int maxWidth);
 	static void ensureFieldWidthIsOk(std::string& str, int maxWidth);
 	static bool isValueMultiline(std::string_view, bool breakingTheLine, const ColumnData&, int symbolsTillTheEOFLine);
 	static void startLine(std::ostream& o, const int& currLineWidth);
-
-private:
-	const QueryResultsT& r_;
 };
 
 }  // namespace reindexer

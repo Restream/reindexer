@@ -1,12 +1,15 @@
 #pragma once
 
 #include <chrono>
+#include <optional>
 #include "client/item.h"
 #include "client/resultserializer.h"
+#include "tools/lsn.h"
 
 namespace reindexer {
 
 class TagsMatcher;
+class Query;
 
 namespace net {
 namespace cproto {
@@ -25,11 +28,18 @@ class CoroQueryResults {
 public:
 	using NsArray = h_vector<Namespace*, 1>;
 
-	CoroQueryResults(int fetchFlags = 0) noexcept;
+	CoroQueryResults(int fetchFlags = 0) noexcept : i_(fetchFlags) {}
 	CoroQueryResults(const CoroQueryResults&) = delete;
-	CoroQueryResults(CoroQueryResults&&) = default;
+	CoroQueryResults(CoroQueryResults&& o) noexcept : i_(std::move(o.i_)) { o.setClosed(); }
 	CoroQueryResults& operator=(const CoroQueryResults&) = delete;
-	CoroQueryResults& operator=(CoroQueryResults&& obj) = default;
+	CoroQueryResults& operator=(CoroQueryResults&& o) {
+		if (this != &o) {
+			i_ = std::move(o.i_);
+			o.setClosed();
+		}
+		return *this;
+	}
+	~CoroQueryResults();
 
 	class Iterator {
 	public:
@@ -38,12 +48,16 @@ public:
 		Error GetCJSON(WrSerializer& wrser, bool withHdrLen = true);
 		Error GetMsgPack(WrSerializer& wrser, bool withHdrLen = true);
 		Item GetItem();
-		int64_t GetLSN();
+		lsn_t GetLSN();
+		int GetNSID();
+		int GetID();
+		int GetShardID();
+		int16_t GetRank();
 		bool IsRaw();
 		std::string_view GetRaw();
-		const JoinedData& GetJoined() const { return joinedData_; }
+		const JoinedData& GetJoined();
 		Iterator& operator++();
-		Error Status() const noexcept { return qr_->status_; }
+		Error Status() const noexcept { return qr_->i_.status_; }
 		bool operator!=(const Iterator& other) const noexcept { return idx_ != other.idx_; }
 		bool operator==(const Iterator& other) const noexcept { return idx_ == other.idx_; }
 		Iterator& operator*() { return *this; }
@@ -55,51 +69,83 @@ public:
 		ResultSerializer::ItemParams itemParams_;
 		JoinedData joinedData_;
 	};
+	struct QueryData {
+		uint16_t joinedSize = 0;
+		h_vector<uint16_t, 8> mergedJoinedSizes;
+	};
 
 	Iterator begin() const noexcept { return Iterator{this, 0, 0, 0, {}, {}}; }
-	Iterator end() const noexcept { return Iterator{this, queryParams_.qcount, 0, 0, {}, {}}; }
+	Iterator end() const noexcept { return Iterator{this, i_.queryParams_.qcount, 0, 0, {}, {}}; }
 
-	size_t Count() const noexcept { return queryParams_.qcount; }
-	int TotalCount() const noexcept { return queryParams_.totalcount; }
-	bool HaveRank() const noexcept { return queryParams_.flags & kResultsWithRank; }
-	bool NeedOutputRank() const noexcept { return queryParams_.flags & kResultsNeedOutputRank; }
-	const string& GetExplainResults() const noexcept { return queryParams_.explainResults; }
-	const vector<AggregationResult>& GetAggregationResults() const noexcept { return queryParams_.aggResults; }
-	Error Status() const noexcept { return status_; }
+	size_t Count() const noexcept { return i_.queryParams_.qcount; }
+	int TotalCount() const noexcept { return i_.queryParams_.totalcount; }
+	bool HaveRank() const noexcept { return i_.queryParams_.flags & kResultsWithRank; }
+	bool NeedOutputRank() const noexcept { return i_.queryParams_.flags & kResultsNeedOutputRank; }
+	const string& GetExplainResults() const noexcept { return i_.queryParams_.explainResults; }
+	const vector<AggregationResult>& GetAggregationResults() const noexcept { return i_.queryParams_.aggResults; }
+	Error Status() const noexcept { return i_.status_; }
 	h_vector<std::string_view, 1> GetNamespaces() const;
-	size_t GetNamespacesCount() const noexcept { return nsArray_.size(); }
-	bool IsCacheEnabled() const noexcept { return queryParams_.flags & kResultsWithItemID; }
+	size_t GetNamespacesCount() const noexcept { return i_.nsArray_.size(); }
+	bool IsCacheEnabled() const noexcept { return i_.queryParams_.flags & kResultsWithItemID; }
+	int GetMergedNSCount() const noexcept { return i_.nsArray_.size(); }
 
 	TagsMatcher GetTagsMatcher(int nsid) const noexcept;
 	TagsMatcher GetTagsMatcher(std::string_view ns) const noexcept;
 	PayloadType GetPayloadType(int nsid) const noexcept;
 	PayloadType GetPayloadType(std::string_view ns) const noexcept;
+	const std::string& GetNsName(int nsid) const noexcept;
+
+	bool IsJSON() const noexcept { return (i_.queryParams_.flags & kResultsFormatMask) == kResultsJson; }
+	bool IsCJSON() const noexcept { return (i_.queryParams_.flags & kResultsFormatMask) == kResultsCJson; }
+	bool HaveJoined() const noexcept { return i_.queryParams_.flags & kResultsWithJoined; }
+	const std::optional<QueryData> GetQueryData() const noexcept { return i_.qData_; }
 
 private:
 	friend class SyncCoroQueryResults;
 	friend class SyncCoroReindexerImpl;
 	friend class CoroRPCClient;
 	friend class RPCClientMock;
-	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount, milliseconds timeout);
-	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, std::string_view rawResult, int queryID, int fetchFlags,
-					 int fetchAmount, milliseconds timeout);
+	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount,
+					 milliseconds timeout) noexcept
+		: i_(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout) {}
+	CoroQueryResults(const Query* q, net::cproto::CoroClientConnection* conn, NsArray&& nsArray, std::string_view rawResult, int queryID,
+					 int fetchFlags, int fetchAmount, milliseconds timeout)
+		: i_(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout) {
+		Bind(rawResult, queryID, q);
+	}
 	CoroQueryResults(NsArray&& nsArray, Item& item);
 
-	void Bind(std::string_view rawResult, int queryID);
+	void Bind(std::string_view rawResult, int queryID, const Query* q);
 	void fetchNextResults();
+	bool holdsRemoteData() const noexcept {
+		return i_.conn_ && i_.queryID_ >= 0 && i_.fetchOffset_ + i_.queryParams_.count < i_.queryParams_.qcount;
+	}
+	void setClosed() noexcept {
+		i_.conn_ = nullptr;
+		i_.queryID_ = -1;
+	}
 
-	net::cproto::CoroClientConnection* conn_;
+	struct Impl {
+		Impl(int fetchFlags) noexcept : fetchFlags_(fetchFlags) {}
+		Impl(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount, milliseconds timeout);
+		Impl(NsArray&& nsArray) noexcept : nsArray_(std::move(nsArray)) {}
 
-	NsArray nsArray_;
-	h_vector<char, 0x100> rawResult_;
-	int queryID_;
-	int fetchOffset_;
-	int fetchFlags_;
-	int fetchAmount_;
-	milliseconds requestTimeout_;
+		net::cproto::CoroClientConnection* conn_ = nullptr;
+		NsArray nsArray_;
+		h_vector<char, 0x100> rawResult_;
+		int queryID_ = -1;
+		int fetchOffset_ = 0;
+		int fetchFlags_ = 0;
+		int fetchAmount_ = 0;
+		milliseconds requestTimeout_;
+		ResultSerializer::QueryParams queryParams_;
+		Error status_;
+		int64_t shardingConfigVersion_ = -1;
+		std::chrono::steady_clock::time_point sessionTs_;
+		std::optional<QueryData> qData_;
+	};
 
-	ResultSerializer::QueryParams queryParams_;
-	Error status_;
+	Impl i_;
 };
 }  // namespace client
 }  // namespace reindexer

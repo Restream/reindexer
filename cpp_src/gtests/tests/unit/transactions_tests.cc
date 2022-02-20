@@ -137,6 +137,6 @@ TEST_F(TransactionApi, IndexesOptimizeTest) {
 	ASSERT_EQ(1, qr.Count());
 
 	// Ensure, that ns indexes is in optimized state immediately after tx done
-	bool optimization_completed = qr[0].GetItem(false)["optimization_completed"].Get<bool>();
+	bool optimization_completed = qr.begin().GetItem(false)["optimization_completed"].Get<bool>();
 	ASSERT_EQ(true, optimization_completed);
 }
