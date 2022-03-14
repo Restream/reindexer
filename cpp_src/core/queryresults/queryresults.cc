@@ -540,29 +540,35 @@ joins::ItemIterator QueryResults::Iterator::GetJoined() {
 		}
 
 		if (!checkIfStorageHasSameIdx(nsJoinRes_)) {
-			resetStorageData(nsJoinRes_);
+			try {
+				resetStorageData(nsJoinRes_);
 
-			const auto& qData = qr_->qData_;
-			if (rit.itemParams_.nsid >= int(qData->joinedSize)) {
-				return reindexer::joins::ItemIterator::CreateEmpty();
-			}
-			nsJoinRes_->data.jr.SetJoinedSelectorsCount(qData->joinedSize);
-
-			auto jField = qr_->GetJoinedField(rit.itemParams_.nsid);
-			for (size_t i = 0; i < joinedData.size(); ++i, ++jField) {
-				LocalQueryResults qrJoined;
-				const auto& joinedItems = joinedData[i];
-				for (const auto& itemData : joinedItems) {
-					ItemImpl itemimpl(qr_->remote_[0].qr.GetPayloadType(jField), qr_->remote_[0].qr.GetTagsMatcher(jField));
-					Error err = itemimpl.FromCJSON(itemData.data);
-					if (!err.ok()) {
-						throw err;
-					}
-
-					qrJoined.Add(ItemRef(itemData.id, itemimpl.Value(), itemData.proc, itemData.nsid, true));
-					nsJoinRes_->data.joinedRawData.emplace_back(std::move(itemimpl));
+				const auto& qData = qr_->qData_;
+				if (rit.itemParams_.nsid >= int(qData->joinedSize)) {
+					return reindexer::joins::ItemIterator::CreateEmpty();
 				}
-				nsJoinRes_->data.jr.Insert(rit.itemParams_.id, i, std::move(qrJoined));
+				nsJoinRes_->data.jr.SetJoinedSelectorsCount(qData->joinedSize);
+
+				auto jField = qr_->GetJoinedField(rit.itemParams_.nsid);
+				for (size_t i = 0; i < joinedData.size(); ++i, ++jField) {
+					LocalQueryResults qrJoined;
+					const auto& joinedItems = joinedData[i];
+					for (const auto& itemData : joinedItems) {
+						ItemImpl itemimpl(qr_->remote_[0].qr.GetPayloadType(jField), qr_->remote_[0].qr.GetTagsMatcher(jField));
+						Error err = itemimpl.FromCJSON(itemData.data);
+						if (!err.ok()) {
+							throw err;
+						}
+
+						qrJoined.Add(ItemRef(itemData.id, itemimpl.Value(), itemData.proc, itemData.nsid, true));
+						nsJoinRes_->data.joinedRawData.emplace_back(std::move(itemimpl));
+					}
+					nsJoinRes_->data.jr.Insert(rit.itemParams_.id, i, std::move(qrJoined));
+				}
+			} catch (...) {
+				if (nsJoinRes_) {
+					nsJoinRes_->idx = -1;
+				}
 			}
 		}
 

@@ -1,3 +1,8 @@
+# Version 4.2.1 *beta* (14.03.2022)
+## Core
+- [fix] Fix compatibility with builtin java connector
+- [fix] Fix error handling in queryresults iterator
+
 # Version 4.2.0 *beta* (20.02.2022)
 ## Core
 - [fea] Add sharding support. Check [sharding.md](sharding.md) for details

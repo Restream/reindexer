@@ -14,6 +14,13 @@ This document describes Go connector and its API. To get information
 about reindexer server and HTTP API refer to
 [reindexer documentation](cpp_src/readme.md)
 
+# Versions overview:
+
+There are two LTS-versions of reindexer available: v3.x.x and v4.x.x.
+
+Version 3.x.x is currently our mainstream version and version 4.x.x (release/4 branch) is beta-version with experimental RAFT-cluster and sharding support.
+Storages are compatible between those versions, hovewer, replication configs are totally different. Versions 3 and 4 are geting all the same bugfixes and features (except replication-related ones).
+
 # Table of contents:
 
 - [Features](#features)

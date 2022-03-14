@@ -173,7 +173,7 @@ bool WrResultSerializer::PutResults(const QueryResults* result, const SemVersion
 
 	// client with version 'compareVersionShardId' not support shardId
 	if (result->HaveShardIDs()) {
-		static const SemVersion kMinVersionWithShardId("4.0.99");
+		static const SemVersion kMinVersionWithShardId("4.1.99");
 		if (kMinVersionWithShardId < rxVersion) {
 			opts_.flags |= kResultsWithShardId;
 		} else {

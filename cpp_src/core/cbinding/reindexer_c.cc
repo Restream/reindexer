@@ -619,6 +619,26 @@ reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	return error2c(err);
 }
 
+// This method is required for builtin modes of java-connector
+reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int ns_id) {
+	QueryResults* qr = reinterpret_cast<QueryResults*>(results_ptr);
+	cptr -= sizeof(PayloadValue::dataHeader);
+
+	PayloadValue* pv = reinterpret_cast<PayloadValue*>(&cptr);
+	const auto tagsMatcher = qr->GetTagsMatcher(ns_id);
+	const auto payloadType = qr->GetPayloadType(ns_id);
+
+	WrSerializer ser;
+	ConstPayload pl(payloadType, *pv);
+	CJsonBuilder builder(ser, ObjType::TypePlain);
+	CJsonEncoder cjsonEncoder(&tagsMatcher);
+
+	cjsonEncoder.Encode(&pl, builder);
+	const int n = ser.Len();
+	uint8_t* p = ser.DetachBuf().release();
+	return reindexer_buffer{p, n};
+}
+
 void reindexer_free_cjson(reindexer_buffer b) { delete[] b.data; }
 
 reindexer_error reindexer_put_meta(uintptr_t rx, reindexer_string ns, reindexer_string key, reindexer_string data,
