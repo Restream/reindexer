@@ -1,4 +1,4 @@
-# Version 3.3.2 (25.03.2022)
+# Version 3.3.3 (24.03.2022)
 ## Core
 - [fix] Fix segfault on max indexes count constraint check
 - [fix] Fix segfault on composite indexes replication (in some corner cases)
