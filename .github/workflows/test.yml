@@ -2,8 +2,25 @@ name: build
 
 on: push
 jobs:
-  build-windows:
+  build-windows-latest:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        compiler: ["Visual Studio 17 2022"]
+      fail-fast: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Build Reindexer
+        run: |
+          mkdir build && cd build
+          cmake -G "${{matrix.compiler}}" ..
+          cmake --build . --config Release
+          cmake --build . --config Release --target face
+          cmake --build . --config Release --target swagger
+
+  build-windows-2019:
+    runs-on: windows-2019
     strategy:
       matrix:
         compiler: ["Visual Studio 16 2019", "MinGW Makefiles"]

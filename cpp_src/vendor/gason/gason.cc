@@ -329,8 +329,9 @@ int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &al
 			tails[pos]->key = keys[pos];
 			keys[pos] = JsonString();
 		} else {
-			if ((node = (JsonNode *)allocator.allocate(sizeof(JsonNode) - sizeof(JsonString))) == nullptr) return JSON_ALLOCATION_FAILURE;
+			if ((node = (JsonNode *)allocator.allocate(sizeof(JsonNode))) == nullptr) return JSON_ALLOCATION_FAILURE;
 			tails[pos] = insertAfter(tails[pos], node);
+			tails[pos]->key = JsonString();
 		}
 		tails[pos]->value = o;
 	}

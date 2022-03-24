@@ -143,7 +143,7 @@ protected:
 
 private:
 	template <typename Fn, Fn fn, typename... Args>
-	typename std::result_of<Fn(NamespaceImpl, Args...)>::type nsFuncWrapper(Args &&...args) const {
+	typename std::invoke_result<Fn, NamespaceImpl, Args...>::type nsFuncWrapper(Args &&...args) const {
 		while (true) {
 			try {
 				auto ns = atomicLoadMainNs();

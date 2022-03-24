@@ -1,11 +1,11 @@
 #pragma once
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <iostream>
 #include <limits>
-#include <stddef.h>
 #include <stdexcept>
-#include <stdint.h>
 #include <string_view>
 #include <type_traits>
 #include "estl/span.h"
@@ -34,15 +34,15 @@ struct JsonString {
 	}
 	JsonString(const char *end = nullptr) : ptr(end) {}
 
-	size_t length() const {
+	size_t length() const noexcept {
 		assert(ptr);
 		const uint8_t *p = reinterpret_cast<const uint8_t *>(ptr);
 		return p[0] | (p[1] << 8) | (p[2] << 16);
 	}
-	size_t size() const { return length(); }
-	const char *data() const { return ptr - length(); }
-	explicit operator std::string() const { return std::string(data(), length()); }
-	operator std::string_view() const { return std::string_view(data(), length()); }
+	size_t size() const noexcept { return length(); }
+	const char *data() const noexcept { return ptr - length(); }
+	explicit operator std::string() const { return ptr ? std::string(data(), length()) : std::string(); }
+	operator std::string_view() const noexcept { return ptr ? std::string_view(data(), length()) : std::string_view(); }
 
 	const char *ptr;
 };

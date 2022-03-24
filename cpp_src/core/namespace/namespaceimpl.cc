@@ -586,6 +586,10 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 		return;
 	}
 
+	if (idxNo >= maxIndexes) {
+		throw Error(errConflict, "Cannot add index '%s.%s'. Too many non-composite indexes. %d non-composite indexes are allowed only",
+					name_, indexName, maxIndexes - 1);
+	}
 	std::unique_ptr<Index> newIndex = Index::New(indexDef, PayloadType(), FieldsSet());
 	FieldsSet fields;
 	if (opts.IsSparse()) {

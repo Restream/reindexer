@@ -1,3 +1,13 @@
+# Version 3.3.2 (25.03.2022)
+## Core
+- [fix] Fix segfault on max indexes count constraint check
+- [fix] Fix segfault on composite indexes replication (in some corner cases)
+- [fix] Fix assertion on joins by non-index fields
+- [fix] Fix incorrect time counting for left joins in explain
+
+## Build
+- [fix] Fix build with clang 13.0
+
 # Version 3.3.2 (25.01.2022)
 ## Core
 - [fix] Fix index cache invalidation after items modification

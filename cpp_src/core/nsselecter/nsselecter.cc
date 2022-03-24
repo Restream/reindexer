@@ -17,6 +17,8 @@ constexpr int kCancelCheckFrequency = 1000;
 namespace reindexer {
 
 void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxContext &rdxCtx) {
+	// const std::string sql = ctx.query.GetSQL();
+	// std::cout << sql << std::endl;
 	const size_t resultInitSize = result.Count();
 	ctx.sortingContext.enableSortOrders = ns_->SortOrdersBuilt();
 	if (ns_->config_.logLevel > ctx.query.debugLevel) {
@@ -305,6 +307,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		result.aggregationResults.push_back(ret);
 	}
 
+	explain.AddPostprocessTime();
 	explain.StopTiming();
 	explain.SetSortOptimization(ctx.sortingContext.isOptimizationEnabled());
 	explain.PutSortIndex(ctx.sortingContext.sortIndex() ? ctx.sortingContext.sortIndex()->Name() : "-"sv);

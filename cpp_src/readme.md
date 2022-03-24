@@ -51,7 +51,7 @@ yum update
 yum install reindexer-server
 ```
 
-Available distros: `centos-7`,`centos-8`,`fedora-30`,`fedora-31`,
+Available distros: `centos-7`, `fedora-30`, `fedora-31`, `fedora-34`
 
 ## Ubuntu/Debian
 
@@ -62,7 +62,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-buster`, `ubuntu-bionic`, `ubuntu-focal`
+Available distros: `debian-buster`, `debian-bullseye`, `ubuntu-bionic`, `ubuntu-focal`
 
 ## Windows
 

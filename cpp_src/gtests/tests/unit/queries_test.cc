@@ -378,3 +378,42 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 		}
 	}
 }
+
+TEST_F(QueriesApi, JoinByNotIndexField) {
+	static constexpr int kItemsCount = 10;
+	const std::string leftNs = "join_by_not_index_field_left_ns";
+	const std::string rightNs = "join_by_not_index_field_right_ns";
+
+	reindexer::WrSerializer ser;
+	for (const auto& nsName : {leftNs, rightNs}) {
+		Error err = rt.reindexer->OpenNamespace(nsName);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
+		ASSERT_TRUE(err.ok()) << err.what();
+		for (int i = 0; i < kItemsCount; ++i) {
+			ser.Reset();
+			reindexer::JsonBuilder json{ser};
+			json.Put("id", i);
+			if (i % 2 == 1) json.Put("f", i);
+			json.End();
+			Item item = rt.reindexer->NewItem(nsName);
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			err = item.FromJSON(ser.Slice());
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			Upsert(nsName, item);
+		}
+	}
+	reindexer::QueryResults qr;
+	Error err = rt.reindexer->Select(
+		Query(leftNs).Strict(StrictModeNames).Join(InnerJoin, Query(rightNs).Where("id", CondGe, 5)).On("f", CondEq, "f"), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	const int expectedIds[] = {5, 7, 9};
+	ASSERT_EQ(qr.Count(), sizeof(expectedIds) / sizeof(int));
+	for (size_t i = 0; i < qr.Count(); ++i) {
+		Item item = qr[i].GetItem(false);
+		VariantArray values = item["id"];
+		ASSERT_EQ(values.size(), 1);
+		EXPECT_EQ(values[0].As<int>(), expectedIds[i]);
+	}
+}

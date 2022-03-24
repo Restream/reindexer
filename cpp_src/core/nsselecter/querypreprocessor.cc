@@ -58,8 +58,8 @@ void QueryPreprocessor::checkStrictMode(const std::string &index, int idxNo) con
 
 size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, size_t srcBegin, size_t srcEnd) {
 	assert(dst <= srcBegin);
-	int iidx[maxIndexes];
-	std::fill(iidx, iidx + maxIndexes, -1);
+	h_vector<int, maxIndexes> iidx(maxIndexes);
+	std::fill(iidx.begin(), iidx.begin() + maxIndexes, -1);
 	size_t merged = 0;
 	for (size_t src = srcBegin, nextSrc; src < srcEnd; src = nextSrc) {
 		nextSrc = Next(src);
@@ -82,6 +82,11 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, size_t srcBegin, size_t
 				if (isIndexField) {
 					// try merge entries with AND opetator
 					if ((GetOperation(src) == OpAnd) && (nextSrc >= srcEnd || GetOperation(nextSrc) != OpOr)) {
+						if (static_cast<size_t>(entry.idxNo) >= iidx.size()) {
+							const auto oldSize = iidx.size();
+							iidx.resize(entry.idxNo + 1);
+							std::fill(iidx.begin() + oldSize, iidx.begin() + iidx.size(), -1);
+						}
 						if (iidx[entry.idxNo] >= 0 && !ns_.indexes_[entry.idxNo]->Opts().IsArray()) {
 							if (mergeQueryEntries(iidx[entry.idxNo], src)) {
 								++merged;

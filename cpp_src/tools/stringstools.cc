@@ -212,7 +212,6 @@ std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
 void split(std::string_view utf8Str, wstring &utf16str, vector<std::wstring> &words, const string &extraWordSymbols) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
-	size_t outSz = 0;
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
 		while (it != utf16str.end() && !IsAlpha(*it) && !IsDigit(*it)) it++;
 
@@ -225,13 +224,7 @@ void split(std::string_view utf8Str, wstring &utf16str, vector<std::wstring> &wo
 		if (sz) {
 			words.push_back({&*begIt, &*(begIt + sz)});
 		}
-		outSz += sz + 1;
 	}
-}
-
-string lower(string s) {
-	transform(s.begin(), s.end(), s.begin(), [](char c) { return 'A' <= c && c <= 'Z' ? c ^ 32 : c; });
-	return s;
 }
 
 bool iequals(std::string_view lhs, std::string_view rhs) {

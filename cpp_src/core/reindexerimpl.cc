@@ -919,14 +919,20 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			jItemQ.entries.ExecuteAppropriateForEach(
 				Skip<JoinQueryEntry, Bracket, AlwaysFalse>{},
 				[&jns](QueryEntry& qe) {
-					assert(qe.idxNo >= 0 && static_cast<size_t>(qe.idxNo) < jns->indexes_.size());
-					if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
+					if (qe.idxNo != IndexValueType::SetByJsonPath) {
+						assert(qe.idxNo >= 0 && static_cast<size_t>(qe.idxNo) < jns->indexes_.size());
+						if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
+					}
 				},
 				[&jns](BetweenFieldsQueryEntry& qe) {
-					assert(qe.firstIdxNo >= 0 && static_cast<size_t>(qe.firstIdxNo) < jns->indexes_.size());
-					if (jns->indexes_[qe.firstIdxNo]->Opts().IsSparse()) qe.firstIdxNo = IndexValueType::SetByJsonPath;
-					assert(qe.secondIdxNo >= 0 && static_cast<size_t>(qe.secondIdxNo) < jns->indexes_.size());
-					if (jns->indexes_[qe.secondIdxNo]->Opts().IsSparse()) qe.secondIdxNo = IndexValueType::SetByJsonPath;
+					if (qe.firstIdxNo != IndexValueType::SetByJsonPath) {
+						assert(qe.firstIdxNo >= 0 && static_cast<size_t>(qe.firstIdxNo) < jns->indexes_.size());
+						if (jns->indexes_[qe.firstIdxNo]->Opts().IsSparse()) qe.firstIdxNo = IndexValueType::SetByJsonPath;
+					}
+					if (qe.secondIdxNo != IndexValueType::SetByJsonPath) {
+						assert(qe.secondIdxNo >= 0 && static_cast<size_t>(qe.secondIdxNo) < jns->indexes_.size());
+						if (jns->indexes_[qe.secondIdxNo]->Opts().IsSparse()) qe.secondIdxNo = IndexValueType::SetByJsonPath;
+					}
 				});
 			if (!preResult->values.Locked()) preResult->values.Lock();	// If not from cache
 			locks.Delete(jns);

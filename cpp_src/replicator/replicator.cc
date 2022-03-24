@@ -453,8 +453,8 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 				  ns.name, slave_->storagePath_);
 		return Error(errLogic, "Replication not allowed for namespace.");
 	}
-	err = syncIndexesForced(tmpNs, ns);
-	if (err.ok()) err = syncMetaForced(tmpNs, ns.name);
+
+	err = syncMetaForced(tmpNs, ns.name);
 	if (err.ok()) err = syncSchemaForced(tmpNs, ns.name);
 
 	//  Make query to complete master's namespace data
@@ -462,7 +462,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 	if (err.ok()) err = master_->Select(Query(ns.name).Where("#lsn", CondAny, {}), qr);
 	if (err.ok()) err = tmpNs->ReplaceTagsMatcher(qr.getTagsMatcher(0), dummyCtx_);
 	if (err.ok()) {
-		err = applyWAL(tmpNs, qr);
+		err = applyWAL(tmpNs, qr, &ns);
 		if (err.code() == errDataHashMismatch) {
 			logPrintf(LogError, "[repl:%s] Internal error. dataHash mismatch while fullSync!", ns.name, err.what());
 			err = errOK;
@@ -480,7 +480,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 	return err;
 }
 
-Error Replicator::applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr) {
+Error Replicator::applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr, const NamespaceDef *nsDef) {
 	Error err;
 	SyncStat stat;
 	WrSerializer ser;
@@ -494,7 +494,7 @@ Error Replicator::applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr) {
 		if (qr.Status().ok()) {
 			try {
 				if (it.IsRaw()) {
-					err = applyWALRecord(LSNPair(), nsName, slaveNs, WALRecord(it.GetRaw()), stat);
+					err = applyWALRecord(LSNPair(), nsName, slaveNs, WALRecord(it.GetRaw()), stat, nsDef);
 				} else {
 					// Simple item updated
 					ser.Reset();
@@ -516,6 +516,7 @@ Error Replicator::applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr) {
 			logPrintf(LogInfo, "[repl:%s]:%d Error executing WAL query: %s", nsName, config_.serverId, stat.lastError.what());
 			break;
 		}
+		nsDef = nullptr;
 	}
 
 	ReplicationState slaveState = slaveNs->GetReplState(dummyCtx_);
@@ -597,7 +598,8 @@ void Replicator::checkNoOpenedTransaction(std::string_view nsName, Namespace::Pt
 	}
 }
 
-Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr slaveNs, const WALRecord &rec, SyncStat &stat) {
+Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr slaveNs, const WALRecord &rec, SyncStat &stat,
+								 const NamespaceDef *firstRec) {
 	Error err;
 	IndexDef iDef;
 
@@ -616,6 +618,12 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 		syncQuery_.Push(nsDef.name, std::move(nsDef), forced);
 		walSyncAsync_.send();
 	};
+
+	if (firstRec && rec.type != WalIndexAdd) {	// compatibility with old version
+		err = syncIndexesForced(slaveNs, *firstRec);
+		logPrintf(LogInfo, "[repl:%s]:%d Sync indexes error '%s'", nsName, config_.serverId, err.what());
+		return err;
+	}
 
 	switch (rec.type) {
 		// Modify item

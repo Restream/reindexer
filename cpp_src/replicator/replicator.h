@@ -49,7 +49,7 @@ protected:
 	// Read and apply WAL from master
 	Error syncNamespaceByWAL(const NamespaceDef &ns);
 	// Apply WAL from master to namespace
-	Error applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr);
+	Error applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr, const NamespaceDef *nsDef = nullptr);
 	// Sync indexes of namespace
 	Error syncIndexesForced(Namespace::Ptr slaveNs, const NamespaceDef &masterNsDef);
 	// Sync namespace schema
@@ -59,7 +59,8 @@ protected:
 	// Sync meta data
 	Error syncMetaForced(reindexer::Namespace::Ptr slaveNs, std::string_view nsName);
 	// Apply single WAL record
-	Error applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr ns, const WALRecord &wrec, SyncStat &stat);
+	Error applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr ns, const WALRecord &wrec, SyncStat &stat,
+						 const NamespaceDef * = nullptr);
 	// Apply single transaction WAL record
 	Error applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr ns, const WALRecord &wrec);
 	void checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr slaveNs);
