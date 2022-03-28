@@ -1,3 +1,15 @@
+# Version 3.4.0 (28.03.2022)
+## Core
+- [fea] Now time in TTL indexes may be changed without index deletion/recreation
+- [fea] Improve `equal postion` (add support for OR operator in combinations with `equal position`)
+
+## Reindexer server
+- [ref] Change `equal position` format in HTTP Query DSL (*incompatible with old `equal position's` format`*)
+
+## Face
+- [fea] Improved the aggregation result UI
+- [fix] Fixed scrolling on the Indexes and Meta pages in Firefox
+
 # Version 3.3.3 (24.03.2022)
 ## Core
 - [fix] Fix segfault on max indexes count constraint check

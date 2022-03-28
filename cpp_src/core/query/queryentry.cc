@@ -49,51 +49,11 @@ std::string BetweenFieldsQueryEntry::Dump() const {
 	return std::string{ser.Slice()};
 }
 
-template <typename T>
-EqualPosition QueryEntries::DetermineEqualPositionIndexes(unsigned start, const T &fields) const {
-	if (fields.size() < 2) throw Error(errLogic, "Amount of fields with equal index position should be 2 or more!");
-	int fieldIdx = 1;
-	h_vector<typename T::value_type, 2> uniqueFields;
-	for (const auto &field : fields) {
-		for (size_t i = 0; i < uniqueFields.size(); ++i) {
-			if (field == uniqueFields[i]) throw Error(errParams, "equal_position() argument [%d] is duplicate", fieldIdx);
-		}
-		uniqueFields.push_back(field);
-		++fieldIdx;
-	}
-	EqualPosition result;
-	for (size_t i = start; i < Size(); ++i) {
-		if (!HoldsOrReferTo<QueryEntry>(i)) continue;
-		const QueryEntry &qe = Get<QueryEntry>(i);
-		for (const auto &field : fields) {
-			if (qe.index == field) {
-				result.push_back(i);
-				break;
-			}
-		}
-	}
-	return result;
-}
-
-template <typename T>
-std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes(const T &fields) const {
-	const unsigned start = activeBrackets_.empty() ? 0u : activeBrackets_.back() + 1u;
-	return {start, DetermineEqualPositionIndexes(start, fields)};
-}
-
-// Explicit instantiations
-template EqualPosition QueryEntries::DetermineEqualPositionIndexes<vector<string>>(unsigned, const vector<string> &) const;
-template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<vector<string>>(const vector<string> &) const;
-template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<h_vector<string, 4>>(
-	const h_vector<string, 4> &) const;
-template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<std::initializer_list<string>>(
-	const std::initializer_list<string> &) const;
-
 void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer &ser) {
 	for (; it != to; ++it) {
 		const OpType op = it->operation;
 		it->InvokeAppropriate<void>(
-			[&ser, op, &it](const Bracket &) {
+			[&ser, op, &it](const QueryEntriesBracket &) {
 				ser.PutVarUint(QueryOpenBracket);
 				ser.PutVarUint(op);
 				serialize(it.cbegin(), it.cend(), ser);
@@ -184,7 +144,9 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 			break;
 		}
 		const bool lastResult = it->InvokeAppropriate<bool>(
-			[&it, &pl, &tagsMatcher](const Bracket &) { return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl, tagsMatcher); },
+			[&it, &pl, &tagsMatcher](const QueryEntriesBracket &) {
+				return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl, tagsMatcher);
+			},
 			[&pl, &tagsMatcher](const QueryEntry &qe) { return checkIfSatisfyCondition(qe, pl, tagsMatcher); },
 			[&pl, &tagsMatcher](const BetweenFieldsQueryEntry &qe) { return checkIfSatisfyCondition(qe, pl, tagsMatcher); },
 			[](const JoinQueryEntry &) -> bool { abort(); }, [](const AlwaysFalse &) { return false; });

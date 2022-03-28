@@ -50,8 +50,9 @@ Storages are compatible between those versions, hovewer, replication configs are
       - [Transactions commit strategies](#transactions-commit-strategies)
       - [Implementation notes](#implementation-notes)
   - [Complex Primary Keys and Composite Indices](#complex-primary-keys-and-composite-indices)
-  - [Atomic on update functions](#atomic-on-update-functions)
   - [Aggregations](#aggregations)
+  - [Search in array fields with matching array indexes](#search-in-array-fields-with-matching-array-indexes)
+  - [Atomic on update functions](#atomic-on-update-functions)
   - [Expire Data from Namespace by Setting TTL](#expire-data-from-namespace-by-setting-ttl)
   - [Direct JSON operations](#direct-json-operations)
     - [Upsert data in JSON format](#upsert-data-in-json-format)
@@ -883,7 +884,7 @@ Example code for aggregate `items` by `price` and `name`
 	}
 ```
 
-### Searching in array fields with matching array indexes
+### Search in array fields with matching array indexes
 
 Reindexer allows to search data in array fields when matching values have same indexes positions.
 For instance, we've got an array of structures:
@@ -902,16 +903,16 @@ type A struct {
 Common attempt to search values in this array
 
 ```go
-Where ("f1",EQ,1).Where ("f2",EQ,2)
+db.Query("Namespace").Where("f1",EQ,1).Where("f2",EQ,2)
 ```
 
 finds all items of array `Elem[]` where `f1` is equal to 1 and `f2` is equal to 2.
 
-`EqualPosition` function allows to search in array fields with equal indices.
-Search like this:
+`EqualPosition` function allows to search in array fields with equal indexes.
+Queries like this:
 
 ```go
-Where("f1", reindexer.GE, 5).Where("f2", reindexer.EQ, 100).EqualPosition("f1", "f2")
+db.Query("Namespace").Where("f1", reindexer.GE, 5).Where("f2", reindexer.EQ, 100).EqualPosition("f1", "f2")
 ```
 
 or
@@ -920,15 +921,17 @@ or
 SELECT * FROM Namespace WHERE f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2);
 ```
 
-finds all items of array `Elem[]` where `f1` is greater or equal to 5 and `f2` is equal to 100 `and` their indices are always equal (for instance, query returned 5 items where only 3rd element of array has appropriate values).
+will find all the items of array `Elem[]` with `equal` array indexes where `f1` is greater or equal to 5 and `f2` is equal to 100 (for instance, query returned 5 items where only 3rd elements of both arrays have appropriate values).
 
-With complex expressions (expressions with brackets) equal_position() works only within a bracket:
+With complex expressions (expressions with brackets) equal_position() could be within a bracket:
 
 ```sql
-SELECT * FROM Namespace WHERE (f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2)) OR (f3 = 3 AND f4 < 4 EQUAL_POSITION(f3,f4));
+SELECT * FROM Namespace WHERE (f1 >= 5 AND f2 = 100 EQUAL_POSITION(f1,f2)) OR (f3 = 3 AND f4 < 4 AND f5 = 7 EQUAL_POSITION(f3,f4,f5));
+SELECT * FROM Namespace WHERE (f1 >= 5 AND f2 = 100 AND f3 = 3 AND f4 < 4 EQUAL_POSITION(f1,f3) EQUAL_POSITION(f2,f4)) OR (f5 = 3 AND f6 < 4 AND f7 = 7 EQUAL_POSITION(f5,f7));
+SELECT * FROM Namespace WHERE f1 >= 5 AND (f2 = 100 AND f3 = 3 AND f4 < 4 EQUAL_POSITION(f2,f3)) AND f5 = 3 AND f6 < 4 EQUAL_POSITION(f1,f5,f6);
 ```
 
-equal_position doesn't work with the following conditions: IS NULL, IS EMPTY and IN(with empty parameter list).
+`equal_position` doesn't work with the following conditions: IS NULL, IS EMPTY and IN(with empty parameter list).
 
 ### Atomic on update functions
 
@@ -1206,12 +1209,12 @@ Due to internal Golang's specific it's not recommended to try to get CPU and hea
 
 A list of connectors for work with Reindexer via other program languages (TBC later):
 
-### Pyreindexer for Python 
+### Pyreindexer for Python
 
 Pyreindexer is official connector, and maintained by Reindexer's team. It supports both builtin and standalone modes.
 Before installation reindexer-dev (version >= 2.10) should be installed. See [installation instructions](cpp_src/readme.md#Installation) for details.
 
-- *Support modes*: standalone, builtin 
+- *Support modes*: standalone, builtin
 - *API Used:* binary ABI, cproto
 - *Dependency on reindexer library (reindexer-dev package):* yes
 
@@ -1247,8 +1250,8 @@ Note: Java version >= 1.8 is required.
 
 ### 3rd party open source connectors
 #### PHP
-https://github.com/Smolevich/reindexer-client 
-- *Support modes:* standalone only 
+https://github.com/Smolevich/reindexer-client
+- *Support modes:* standalone only
 - *API Used:* HTTP REST API
 - *Dependency on reindexer library (reindexer-dev package):* no
 #### Rust
@@ -1274,4 +1277,3 @@ You can get help in several ways:
 
 1. Join Reindexer [Telegram group](https://t.me/reindexer)
 2. Write [an issue](https://github.com/restream/reindexer/issues/new)
-

@@ -1,9 +1,11 @@
 package reindexer
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/restream/reindexer"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -40,4 +42,42 @@ func TestBasicCheckItemsTtlExpired(t *testing.T) {
 
 	assert.Equal(t, len(results), 0, "Namespace should be empty!")
 
+}
+
+type ItemExpireTTL struct {
+	ID        string `json:"id" reindex:"id,,pk"`
+	CreatedAt int64  `json:"created_at" reindex:"created_at,ttl,,expire_after=100"`
+}
+
+type ItemExpireTTL2 struct {
+	ID        string `json:"id" reindex:"id,,pk"`
+	CreatedAt int64  `json:"created_at" reindex:"created_at,ttl,,expire_after=1"`
+}
+
+func TestExpireTTL(t *testing.T) {
+
+	const testNamespace = "test_expire_ttl"
+
+	err := DB.OpenNamespace(testNamespace, reindexer.DefaultNamespaceOptions(), ItemExpireTTL{})
+	assert.NoError(t, err, "Can't open namespace \"%s\"", testNamespace)
+	for index := 0; index < 10; index++ {
+		err = DB.Upsert(testNamespace, ItemExpireTTL{strconv.Itoa(index), time.Now().Unix()})
+		assert.NoError(t, err, "Can't Upsert data to namespace")
+	}
+	DB.CloseNamespace(testNamespace)
+	err = DB.OpenNamespace(testNamespace, reindexer.DefaultNamespaceOptions(), ItemExpireTTL2{})
+	assert.NoError(t, err)
+
+	countItems := 0
+	for i := 1; i < 10; i++ {
+		time.Sleep(1 * time.Second)
+		q := DB.Query(testNamespace)
+		it := q.Exec(t)
+		defer it.Close()
+		countItems = it.Count()
+		if countItems == 0 {
+			break
+		}
+	}
+	assert.Equal(t, 0, countItems)
 }

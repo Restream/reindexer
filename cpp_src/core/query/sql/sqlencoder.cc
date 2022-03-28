@@ -137,16 +137,13 @@ void SQLEncoder::dumpOrderBy(WrSerializer &ser, bool stripArgs) const {
 	}
 }
 
-void SQLEncoder::dumpEqualPositions(WrSerializer &ser, int parenthesisIndex) const {
-	if (query_.equalPositions_.empty()) return;
-	auto range = query_.equalPositions_.equal_range(parenthesisIndex);
-	if (range.first == query_.equalPositions_.end()) return;
-	for (auto it = range.first; it != range.second; ++it) {
-		assert(it->second.size() > 0);
+void SQLEncoder::dumpEqualPositions(WrSerializer &ser, const EqualPositions_t &equalPositions) const {
+	for (const auto &ep : equalPositions) {
+		assert(ep.size() > 1);
 		ser << " equal_position(";
-		for (size_t i = 0; i < it->second.size(); ++i) {
-			if (i != 0) ser << ",";
-			ser << query_.entries.Get<QueryEntry>(it->second[i]).index;
+		for (size_t i = 0; i < ep.size(); ++i) {
+			if (i != 0) ser << ", ";
+			ser << ep[i];
 		}
 		ser << ")";
 	}
@@ -277,12 +274,13 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 		}
 		it->InvokeAppropriate<void>(
 			Skip<AlwaysFalse>{},
-			[&](const Bracket &) {
+			[&](const QueryEntriesBracket &bracket) {
 				if (encodedEntries) {
 					ser << opNames[op] << ' ';
 				}
 				ser << '(';
 				dumpWhereEntries(it.cbegin(), it.cend(), ser, stripArgs);
+				dumpEqualPositions(ser, bracket.equalPositions);
 				ser << ')';
 			},
 			[&](const QueryEntry &entry) {
@@ -340,14 +338,13 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 			});
 		++encodedEntries;
 	}
-	int parenthesisIndex = (from.PlainIterator() - query_.entries.begin().PlainIterator());
-	dumpEqualPositions(ser, parenthesisIndex);
 }
 
 void SQLEncoder::dumpSQLWhere(WrSerializer &ser, bool stripArgs) const {
 	if (query_.entries.Empty()) return;
 	ser << " WHERE ";
 	dumpWhereEntries(query_.entries.cbegin(), query_.entries.cend(), ser, stripArgs);
+	dumpEqualPositions(ser, query_.entries.equalPositions);
 }
 
 }  // namespace reindexer

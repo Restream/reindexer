@@ -811,7 +811,7 @@ struct ReindexerImpl::QueryResultsContext {
 bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns) {
 	bool result = true;
 	jItemQ.entries.ExecuteAppropriateForEach(
-		Skip<JoinQueryEntry, Bracket, AlwaysFalse>{},
+		Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse>{},
 		[&jns, &result](const QueryEntry& qe) {
 			if (qe.idxNo >= 0) {
 				assert(jns->indexes_.size() > static_cast<size_t>(qe.idxNo));
@@ -917,7 +917,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 		result.AddNamespace(jns, {rdxCtx, true});
 		if (preResult->dataMode == JoinPreResult::ModeValues) {
 			jItemQ.entries.ExecuteAppropriateForEach(
-				Skip<JoinQueryEntry, Bracket, AlwaysFalse>{},
+				Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse>{},
 				[&jns](QueryEntry& qe) {
 					if (qe.idxNo != IndexValueType::SetByJsonPath) {
 						assert(qe.idxNo >= 0 && static_cast<size_t>(qe.idxNo) < jns->indexes_.size());

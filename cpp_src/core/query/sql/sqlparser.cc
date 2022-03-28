@@ -581,14 +581,16 @@ int SQLParser::parseWhere(tokenizer &parser) {
 		nextOp = OpNot;
 		parser.next_token();
 	}
-
-	int openBracketCount = 0;
+	std::vector<std::pair<size_t, EqualPosition_t>> equalPositions;
+	size_t lastBracketPosition = 0;
+	int openBracketsCount = 0;
 	while (!parser.end()) {
 		tok = peekSqlToken(parser, WhereFieldSqlToken, false);
 		parser.next_token(false);
 		if (tok.text() == "("sv) {
 			query_.entries.OpenBracket(nextOp);
-			++openBracketCount;
+			++openBracketsCount;
+			lastBracketPosition = query_.entries.Size();
 			tok = peekSqlToken(parser, WhereFieldSqlToken, false);
 			if (iequals(tok.text(), "not"sv)) {
 				nextOp = OpNot;
@@ -675,13 +677,13 @@ int SQLParser::parseWhere(tokenizer &parser) {
 
 		tok = parser.peek_token();
 		while (tok.text() == "equal_position"sv) {
-			parseEqualPositions(parser);
+			parseEqualPositions(parser, equalPositions, lastBracketPosition);
 			tok = parser.peek_token();
 		}
 
-		while (openBracketCount > 0 && tok.text() == ")"sv) {
+		while (openBracketsCount > 0 && tok.text() == ")"sv) {
 			query_.entries.CloseBracket();
-			--openBracketCount;
+			--openBracketsCount;
 			parser.next_token();
 			tok = parser.peek_token();
 		}
@@ -705,16 +707,24 @@ int SQLParser::parseWhere(tokenizer &parser) {
 			break;
 		}
 	}
+	for (const auto &eqPos : equalPositions) {
+		if (eqPos.first == 0) {
+			query_.entries.equalPositions.emplace_back(std::move(eqPos.second));
+		} else {
+			query_.entries.Get<QueryEntriesBracket>(eqPos.first - 1).equalPositions.emplace_back(std::move(eqPos.second));
+		}
+	}
 	return 0;
 }
 
-void SQLParser::parseEqualPositions(tokenizer &parser) {
+void SQLParser::parseEqualPositions(tokenizer &parser, std::vector<std::pair<size_t, EqualPosition_t>> &equalPositions,
+									size_t lastBracketPosition) {
 	parser.next_token();
 	auto tok = parser.next_token();
 	if (tok.text() != "("sv) {
 		throw Error(errParseSQL, "Expected '(', but found %s, %s", tok.text(), parser.where());
 	}
-	vector<string> fields;
+	EqualPosition_t fields;
 	for (;;) {
 		auto nameWithCase = peekSqlToken(parser, FieldNameSqlToken);
 		tok = parser.next_token(false);
@@ -744,7 +754,7 @@ void SQLParser::parseEqualPositions(tokenizer &parser) {
 		throw Error(errLogic, "equal_position() is supposed to have at least 2 arguments. Arguments: [%s]",
 					fields.size() ? fields[0] : "");  // -V547
 	}
-	query_.equalPositions_.emplace(query_.entries.DetermineEqualPositionIndexes(fields));
+	equalPositions.emplace_back(lastBracketPosition, std::move(fields));
 }
 
 Point SQLParser::parseGeomFromText(tokenizer &parser) const {

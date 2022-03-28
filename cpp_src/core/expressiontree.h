@@ -264,7 +264,7 @@ class ExpressionTree {
 			}
 			template <typename T>
 			Storage operator()(T&& v) const {
-				return std::move(v);
+				return std::forward<T>(v);
 			}
 		};
 		struct IsRefVisitor {
@@ -406,7 +406,20 @@ public:
 		for (size_t i = 0; i < pos; ++i) {
 			if (container_[i].IsSubTree() && Next(i) > pos) container_[i].Append();
 		}
-		container_.emplace(container_.begin() + pos, op, std::move(v));
+		container_.emplace(container_.begin() + pos, op, std::forward<T>(v));
+	}
+	/// Insert value after the position
+	template <typename T>
+	void InsertAfter(size_t pos, OperationType op, T&& v) {
+		assert(pos < container_.size());
+		for (unsigned& b : activeBrackets_) {
+			assert(b < container_.size());
+			if (b > pos) ++b;
+		}
+		for (size_t i = 0; i < pos; ++i) {
+			if (container_[i].IsSubTree() && Next(i) > pos) container_[i].Append();
+		}
+		container_.emplace(container_.begin() + pos + 1, op, std::forward<T>(v));
 	}
 	/// Appends value to the last openned subtree
 	template <typename T>
@@ -415,7 +428,7 @@ public:
 			assert(i < container_.size());
 			container_[i].Append();
 		}
-		container_.emplace_back(op, std::move(v));
+		container_.emplace_back(op, std::forward<T>(v));
 	}
 	/// Appends value to the last openned subtree
 	template <typename T>
@@ -442,7 +455,7 @@ public:
 	template <typename T>
 	void AppendFront(OperationType op, T&& v) {
 		for (unsigned& i : activeBrackets_) ++i;
-		container_.emplace(container_.begin(), op, std::move(v));
+		container_.emplace(container_.begin(), op, std::forward<T>(v));
 	}
 	/// Enclose area in brackets
 	template <typename... Args>
@@ -506,6 +519,10 @@ public:
 	bool HoldsOrReferTo(size_t i) const noexcept {
 		assert(i < Size());
 		return container_[i].template HoldsOrReferTo<T>();
+	}
+	bool IsSubTree(size_t i) const noexcept {
+		assert(i < Size());
+		return container_[i].IsSubTree();
 	}
 	OperationType GetOperation(size_t i) const noexcept {
 		assert(i < Size());
@@ -649,6 +666,15 @@ public:
 	const_iterator begin_of_current_bracket() const {
 		if (activeBrackets_.empty()) return container_.cbegin();
 		return container_.cbegin() + activeBrackets_.back() + 1;
+	}
+
+	const SubTree* LastOpenBracket() const {
+		if (activeBrackets_.empty()) return nullptr;
+		return &container_[activeBrackets_.back()].template Value<SubTree>();
+	}
+	SubTree* LastOpenBracket() {
+		if (activeBrackets_.empty()) return nullptr;
+		return &container_[activeBrackets_.back()].template Value<SubTree>();
 	}
 
 protected:

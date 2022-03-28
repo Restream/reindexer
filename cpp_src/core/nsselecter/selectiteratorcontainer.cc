@@ -1,4 +1,5 @@
 #include "selectiteratorcontainer.h"
+#include <sstream>
 #include "core/index/index.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/nsselecter.h"
@@ -339,12 +340,10 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 	}
 }
 
-void SelectIteratorContainer::processEqualPositions(const std::multimap<unsigned, EqualPosition> &equalPositions, size_t begin, size_t end,
-													const NamespaceImpl &ns, const QueryEntries &queries) {
-	const auto eqPoses = equalPositions.equal_range(begin);
-	for (auto it = eqPoses.first; it != eqPoses.second; ++it) {
-		assert(!it->second.empty());
-		const QueryEntry &firstQe{queries.Get<QueryEntry>(it->second[0])};
+void SelectIteratorContainer::processEqualPositions(const std::vector<EqualPositions> &equalPositions, const NamespaceImpl &ns,
+													const QueryEntries &queries) {
+	for (const auto &eqPos : equalPositions) {
+		const QueryEntry &firstQe{queries.Get<QueryEntry>(eqPos.queryEntriesPositions[0])};
 		if (firstQe.condition == CondEmpty || (firstQe.condition == CondSet && firstQe.values.empty())) {
 			throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 		}
@@ -352,11 +351,8 @@ void SelectIteratorContainer::processEqualPositions(const std::multimap<unsigned
 		KeyValueType type = firstQe.values.size() ? firstQe.values[0].Type() : KeyValueNull;
 		Comparator cmp(firstQe.condition, type, firstQe.values, true, firstQe.distinct, ns.payloadType_, FieldsSet({firstQe.idxNo}));
 
-		for (auto qeIdxIt = it->second.begin(); qeIdxIt != it->second.end(); ++qeIdxIt) {
-			if (queries.GetOperation(*qeIdxIt) != OpAnd ||
-				(queries.Next(*qeIdxIt) < end && queries.GetOperation(queries.Next(*qeIdxIt)) == OpOr))
-				throw Error(errLogic, "Only AND operation allowed for equal position!");
-			const QueryEntry &qe = queries.Get<QueryEntry>(*qeIdxIt);
+		for (size_t i = 0; i < eqPos.queryEntriesPositions.size(); ++i) {
+			const QueryEntry &qe = queries.Get<QueryEntry>(eqPos.queryEntriesPositions[i]);
 			if (qe.condition == CondEmpty || (qe.condition == CondSet && qe.values.empty())) {
 				throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 			}
@@ -373,23 +369,85 @@ void SelectIteratorContainer::processEqualPositions(const std::multimap<unsigned
 		SelectIterator selectIt;
 		selectIt.comparators_.emplace_back(std::move(cmp));
 		selectIt.distinct = false;
-		Append(OpAnd, std::move(selectIt));
+		InsertAfter(eqPos.positionToInsertIterator, OpAnd, std::move(selectIt));
 	}
 }
 
-void SelectIteratorContainer::prepareIteratorsForSelectLoop(const QueryEntries &queries, size_t begin, size_t end,
-															const std::multimap<unsigned, EqualPosition> &equalPositions, unsigned sortId,
+std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::prepareEqualPositions(const QueryEntries &queries,
+																									size_t begin, size_t end) {
+	static const auto getFieldsStr = [](auto begin, auto end) {
+		std::stringstream str;
+		for (auto it = begin; it != end; ++it) {
+			if (it != begin) str << ", ";
+			str << *it;
+		}
+		return str.str();
+	};
+	const auto &eqPos = (begin == 0 ? queries.equalPositions : queries.Get<QueryEntriesBracket>(begin - 1).equalPositions);
+	std::vector<EqualPositions> result{eqPos.size()};
+	for (size_t i = 0; i < eqPos.size(); ++i) {
+		if (eqPos[i].size() < 2) {
+			throw Error(errLogic, "equal positions should contain 2 or more fields");
+		}
+		std::unordered_set<std::string_view> epFields{eqPos[i].begin(), eqPos[i].end()};
+		const auto getEpFieldsStr = [&eqPos, i]() { return getFieldsStr(eqPos[i].cbegin(), eqPos[i].cend()); };
+		if (eqPos[i].size() != epFields.size()) {
+			throw Error(errParams, "equal positions fields should be unique: [%s]", getEpFieldsStr());
+		}
+		std::unordered_set<std::string_view> foundFields;
+		result[i].queryEntriesPositions.reserve(eqPos[i].size());
+		for (size_t j = begin, next; j < end; j = next) {
+			next = queries.Next(j);
+			queries.InvokeAppropriate<void>(
+				j, Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse>{},
+				[&](const QueryEntry &eq) {
+					if (foundFields.find(eq.index) != foundFields.end()) {
+						throw Error(errParams, "Equal position field '%s' found twice in enclosing bracket; equal position fields: [%s]",
+									eq.index, getEpFieldsStr());
+					}
+					const auto it = epFields.find(eq.index);
+					if (it == epFields.end()) return;
+					if (queries.GetOperation(j) != OpAnd || (next < end && queries.GetOperation(next) == OpOr)) {
+						throw Error(errParams,
+									"Only AND operation allowed for equal position; equal position field with not AND operation: '%s'; "
+									"equal position fields: [%s]",
+									eq.index, getEpFieldsStr());
+					}
+					result[i].queryEntriesPositions.push_back(j);
+					foundFields.insert(epFields.extract(it));
+				},
+				[&](const BetweenFieldsQueryEntry& eq) {  // TODO equal positions for BetweenFieldsQueryEntry #1092
+					if (epFields.find(eq.firstIndex) != epFields.end()) {
+						throw Error(errParams, "Equal positions for conditions between fields are not supported; field: '%s'; equal position fields: [%s]",
+									eq.firstIndex, getEpFieldsStr());
+					}
+					if (epFields.find(eq.secondIndex) != epFields.end()) {
+						throw Error(errParams, "Equal positions for conditions between fields are not supported; field: '%s'; equal position fields: [%s]",
+									eq.secondIndex, getEpFieldsStr());
+					}
+				});
+		}
+		if (!epFields.empty()) {
+			throw Error(errParams, "Equal position fields [%s] are not found in enclosing bracket; equal position fields: [%s]",
+						getFieldsStr(epFields.cbegin(), epFields.cend()), getEpFieldsStr());
+		}
+	}
+	return result;
+}
+
+void SelectIteratorContainer::prepareIteratorsForSelectLoop(const QueryEntries &queries, size_t begin, size_t end, unsigned sortId,
 															bool isQueryFt, const NamespaceImpl &ns, SelectFunction::Ptr selectFnc,
 															FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
+	auto equalPositions = prepareEqualPositions(queries, begin, end);
 	bool sortIndexCreated = false;
 	for (size_t i = begin, next = begin; i != end; i = next) {
 		next = queries.Next(i);
 		const OpType op = queries.GetOperation(i);
 		queries.InvokeAppropriate<void>(
 			i,
-			[&](const Bracket &) {
+			[&](const QueryEntriesBracket &) {
 				OpenBracket(op);
-				prepareIteratorsForSelectLoop(queries, i + 1, next, equalPositions, sortId, isQueryFt, ns, selectFnc, ftCtx, rdxCtx);
+				prepareIteratorsForSelectLoop(queries, i + 1, next, sortId, isQueryFt, ns, selectFnc, ftCtx, rdxCtx);
 				CloseBracket();
 			},
 			[&](const QueryEntry &qe) {
@@ -417,6 +475,18 @@ void SelectIteratorContainer::prepareIteratorsForSelectLoop(const QueryEntries &
 					if (enableSortIndexOptimize) sortIndexCreated = true;
 				}
 				processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nonIndexField);
+				if (op != OpOr) {
+					for (auto &ep : equalPositions) {
+						const auto lastPosition = ep.queryEntriesPositions.back();
+						if (i == lastPosition || (i > lastPosition && !ep.foundOr)) {
+							ep.positionToInsertIterator = Size() - 1;
+						}
+					}
+				} else {
+					for (auto &ep : equalPositions) {
+						if (i > ep.queryEntriesPositions.back()) ep.foundOr = true;
+					}
+				}
 			},
 			[this, op](const JoinQueryEntry &jqe) { processJoinEntry(jqe, op); },
 			[&](const BetweenFieldsQueryEntry &qe) {
@@ -427,7 +497,7 @@ void SelectIteratorContainer::prepareIteratorsForSelectLoop(const QueryEntries &
 			},
 			[this, op](const AlwaysFalse &) { Append(op, AlwaysFalse{}); });
 	}
-	processEqualPositions(equalPositions, begin, end, ns, queries);
+	processEqualPositions(equalPositions, ns, queries);
 }
 
 template <bool reverse, bool hasComparators>

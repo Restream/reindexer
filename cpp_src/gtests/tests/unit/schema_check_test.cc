@@ -6,7 +6,7 @@
 
 using namespace reindexer;
 TEST(ShemaTest, BaseTest) {
-	static reindexer::JsonSchemaChecker check(kQueryJson,"query");
+	static reindexer::JsonSchemaChecker check(kQueryJson, "query");
 	gason::JsonParser parser;
 
 	std::string dsl = R"#({
@@ -24,10 +24,12 @@ TEST(ShemaTest, BaseTest) {
 						"field": "id",
 						"cond": "SET",
 						"value": [81204872, 101326571, 101326882]
+					},
+					{
+						"equal_positions":[{"positions": ["f4","f5"] }]
 					}],
 		"merge_queries":[],
-		"aggregations":[],
-		"equal_positions":[{"positions": ["f4","f5"] }]
+		"aggregations":[]
 	})#";
 	{
 		auto root = parser.Parse(giftStr(dsl));
@@ -143,7 +145,7 @@ TEST(ShemaTest, AdditionalProperties) {
 	)#";
 
 	static reindexer::JsonSchemaChecker check;
-	Error e = check.Init(scemaStr,"query");
+	Error e = check.Init(scemaStr, "query");
 	ASSERT_TRUE(e.ok()) << e.what();
 	gason::JsonParser parser;
 
@@ -192,7 +194,7 @@ TEST(ShemaTest, AdditionalProperties) {
 }
 
 TEST(ShemaTest, LevelAny3) {
-	static reindexer::JsonSchemaChecker check(kQueryJson,"query");
+	static reindexer::JsonSchemaChecker check(kQueryJson, "query");
 	gason::JsonParser parser;
 	std::string dsl2level = R"#({
 		"namespace":"test_namespace",

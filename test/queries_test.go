@@ -194,6 +194,7 @@ type TestItemEqualPosition struct {
 	SecondName string                        `reindex:"second_name"`
 	TestFlag   bool                          `reindex:"test_flag"`
 	ItemsArray []*TestArrayItemEqualPosition `reindex:"items_array,-"`
+	ValueArray []int                         `reindex:"value_array,-"`
 	_          struct{}                      `reindex:"name+second_name=searching,text,composite"`
 }
 
@@ -375,11 +376,13 @@ func newTestItemObjectArray(id int, arrSize int) *TestItemObjectArray {
 
 func newTestItemEqualPosition(id int, arrSize int) *TestItemEqualPosition {
 	av := make([]*TestArrayItemEqualPosition, id%arrSize)
+	av2 := make([]int, id%arrSize)
 	for j := range av {
 		av[j] = &TestArrayItemEqualPosition{
 			SpaceId: "space_" + strconv.Itoa(j),
 			Value:   id % 2,
 		}
+		av2[j] = (id + j) % 2
 	}
 	return &TestItemEqualPosition{
 		ID:         strconv.Itoa(id),
@@ -387,6 +390,7 @@ func newTestItemEqualPosition(id int, arrSize int) *TestItemEqualPosition {
 		SecondName: "Second_name_" + strconv.Itoa(id),
 		TestFlag:   id%4 > 2,
 		ItemsArray: av,
+		ValueArray: av2,
 	}
 }
 
@@ -1496,42 +1500,81 @@ func TestEqualPosition(t *testing.T) {
 	}
 	tx.MustCommit()
 
-	expectedIds := map[string]bool{
-		"2":  true,
-		"4":  true,
-		"8":  true,
-		"10": true,
-		"14": true,
-		"16": true,
-	}
-	it := newTestQuery(DB, nsName).
-		Match("searching", "name Name*").
-		Where("items_array.space_id", reindexer.EQ, "space_0").
-		Where("items_array.value", reindexer.EQ, 0).
-		EqualPosition("items_array.space_id", "items_array.value").
-		MustExec(t)
-	assert.Equal(t, len(expectedIds), it.Count())
-	for it.Next() {
-		assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
-	}
-	it.Close()
+	t.Run("simple equal position", func(t *testing.T) {
+		expectedIds := map[string]bool{
+			"2":  true,
+			"4":  true,
+			"8":  true,
+			"10": true,
+			"14": true,
+			"16": true,
+		}
+		it := newTestQuery(DB, nsName).
+			Match("searching", "name Name*").
+			Where("items_array.space_id", reindexer.EQ, "space_0").
+			Where("items_array.value", reindexer.EQ, 0).
+			EqualPosition("items_array.space_id", "items_array.value").
+			MustExec(t)
+		defer it.Close()
+		assert.NoError(t, it.Error())
+		assert.Equal(t, len(expectedIds), it.Count())
+		for it.Next() {
+			assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
+		}
+	})
 
-	expectedIds = map[string]bool{
-		"5":  true,
-		"17": true,
-	}
-	it = newTestQuery(DB, nsName).
-		Match("searching", "name Name*").
-		Where("items_array.space_id", reindexer.EQ, "space_1").
-		Where("items_array.value", reindexer.EQ, 1).
-		WhereBool("test_flag", reindexer.EQ, false).
-		EqualPosition("items_array.space_id", "items_array.value").
-		MustExec(t)
-	it.Close()
-	assert.Equal(t, len(expectedIds), it.Count())
-	for it.Next() {
-		assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
-	}
+	t.Run("equal position with additional conditions", func(t *testing.T) {
+		expectedIds := map[string]bool{
+			"5":  true,
+			"17": true,
+		}
+		it := newTestQuery(DB, nsName).
+			Match("searching", "name Name*").
+			Where("items_array.space_id", reindexer.EQ, "space_1").
+			Where("items_array.value", reindexer.EQ, 1).
+			WhereBool("test_flag", reindexer.EQ, false).
+			EqualPosition("items_array.space_id", "items_array.value").
+			MustExec(t)
+		defer it.Close()
+		assert.NoError(t, it.Error())
+		assert.Equal(t, len(expectedIds), it.Count())
+		for it.Next() {
+			assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
+		}
+	})
+
+	t.Run("equal position in brackets", func(t *testing.T) {
+		expectedIds := map[string]bool{
+			"2":  true,
+			"3":  true,
+			"4":  true,
+			"7":  true,
+			"8":  true,
+			"10": true,
+			"11": true,
+			"14": true,
+			"15": true,
+			"16": true,
+			"19": true,
+		}
+		it := newTestQuery(DB, nsName).
+			OpenBracket().
+			Where("items_array.space_id", reindexer.EQ, "space_0").
+			Where("items_array.value", reindexer.EQ, 0).
+			Where("value_array", reindexer.EQ, 0).
+			EqualPosition("items_array.space_id", "items_array.value", "value_array").
+			CloseBracket().
+			Or().
+			WhereBool("test_flag", reindexer.EQ, true).
+			MustExec(t)
+		defer it.Close()
+		assert.NoError(t, it.Error())
+		assert.Equal(t, len(expectedIds), it.Count())
+		for it.Next() {
+			fmt.Println(it.Object().(*TestItemEqualPosition).ID, expectedIds[it.Object().(*TestItemEqualPosition).ID])
+			assert.True(t, expectedIds[it.Object().(*TestItemEqualPosition).ID])
+		}
+	})
 }
 
 type FakeTestItem TestItem

@@ -155,8 +155,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		}
 		explain.AddPrepareTime();
 
-		qres.PrepareIteratorsForSelectLoop(qPreproc.GetQueryEntries(), ctx.query.equalPositions_, ctx.sortingContext.sortId(), isFt, *ns_,
-										   fnc_, ft_ctx_, rdxCtx);
+		qres.PrepareIteratorsForSelectLoop(qPreproc.GetQueryEntries(), ctx.sortingContext.sortId(), isFt, *ns_, fnc_, ft_ctx_, rdxCtx);
 
 		explain.AddSelectTime();
 
@@ -1022,35 +1021,36 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 
 	size_t costNormal = ns_->items_.size() - ns_->free_.size();
 
-	qentries.ExecuteAppropriateForEach(
-		Skip<Bracket, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{}, [this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe) {
-			if (qe.idxNo < 0 || qe.idxNo == ctx.sortingContext.uncommitedIndex) return;
-			if (costNormal == 0) return;
+	qentries.ExecuteAppropriateForEach(Skip<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{},
+									   [this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe) {
+										   if (qe.idxNo < 0 || qe.idxNo == ctx.sortingContext.uncommitedIndex) return;
+										   if (costNormal == 0) return;
 
-			auto &index = ns_->indexes_[qe.idxNo];
-			if (IsFullText(index->Type())) return;
+										   auto &index = ns_->indexes_[qe.idxNo];
+										   if (IsFullText(index->Type())) return;
 
-			Index::SelectOpts opts;
-			opts.disableIdSetCache = 1;
-			opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
-			opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
+										   Index::SelectOpts opts;
+										   opts.disableIdSetCache = 1;
+										   opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
+										   opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
 
-			try {
-				SelectKeyResults reslts = index->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
-				for (const SelectKeyResult &res : reslts) {
-					if (res.comparators_.empty()) {
-						costNormal = std::min(costNormal, res.GetMaxIterations(costNormal));
-					}
-				}
-			} catch (const Error &) {
-			}
-		});
+										   try {
+											   SelectKeyResults reslts =
+												   index->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
+											   for (const SelectKeyResult &res : reslts) {
+												   if (res.comparators_.empty()) {
+													   costNormal = std::min(costNormal, res.GetMaxIterations(costNormal));
+												   }
+											   }
+										   } catch (const Error &) {
+										   }
+									   });
 
 	size_t costOptimized = ns_->items_.size() - ns_->free_.size();
 	costNormal *= 2;
 	if (costNormal < costOptimized) {
 		costOptimized = costNormal + 1;
-		qentries.ExecuteAppropriateForEach(Skip<Bracket, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{},
+		qentries.ExecuteAppropriateForEach(Skip<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{},
 										   [this, &ctx, &rdxCtx, &costOptimized](const QueryEntry &qe) {
 											   if (qe.idxNo < 0 || qe.idxNo != ctx.sortingContext.uncommitedIndex) return;
 

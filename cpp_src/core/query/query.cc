@@ -68,7 +68,9 @@ string Query::GetSQL(bool stripArgs) const {
 }
 
 void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
-	while (!ser.Eof()) {
+	bool end = false;
+	std::vector<std::pair<size_t, EqualPosition_t>> equalPositions;
+	while (!end && !ser.Eof()) {
 		int qtype = ser.GetVarUint();
 		switch (qtype) {
 			case QueryCondition: {
@@ -197,10 +199,10 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				selectFilter_.push_back(string(ser.GetVString()));
 				break;
 			case QueryEqualPosition: {
-				const unsigned strt = ser.GetVarUint();
-				vector<string> ep(ser.GetVarUint());
-				for (size_t i = 0; i < ep.size(); ++i) ep[i] = string(ser.GetVString());
-				equalPositions_.emplace(strt, entries.DetermineEqualPositionIndexes(strt, ep));
+				const unsigned bracketPosition = ser.GetVarUint();
+				const unsigned fieldsCount = ser.GetVarUint();
+				equalPositions.emplace_back(bracketPosition, fieldsCount);
+				for (auto &field : equalPositions.back().second) field = ser.GetVString();
 				break;
 			}
 			case QueryExplain:
@@ -266,9 +268,17 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				entries.CloseBracket();
 				break;
 			case QueryEnd:
-				return;
+				end = true;
+				break;
 			default:
 				throw Error(errParseBin, "Unknown type %d while parsing binary buffer", qtype);
+		}
+	}
+	for (const auto &eqPos : equalPositions) {
+		if (eqPos.first == 0) {
+			entries.equalPositions.emplace_back(std::move(eqPos.second));
+		} else {
+			entries.Get<QueryEntriesBracket>(eqPos.first - 1).equalPositions.emplace_back(std::move(eqPos.second));
 		}
 	}
 	return;
@@ -319,11 +329,22 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		}
 	}
 
-	for (const auto &equalPoses : equalPositions_) {
+	for (const auto &equalPoses : entries.equalPositions) {
 		ser.PutVarUint(QueryEqualPosition);
-		ser.PutVarUint(equalPoses.first);
-		ser.PutVarUint(equalPoses.second.size());
-		for (unsigned ep : equalPoses.second) ser.PutVString(entries.Get<QueryEntry>(ep).index);
+		ser.PutVarUint(0);
+		ser.PutVarUint(equalPoses.size());
+		for (const auto &ep : equalPoses) ser.PutVString(ep);
+	}
+	for (size_t i = 0; i < entries.Size(); ++i) {
+		if (entries.IsSubTree(i)) {
+			const auto &bracket = entries.Get<QueryEntriesBracket>(i);
+			for (const auto &equalPoses : bracket.equalPositions) {
+				ser.PutVarUint(QueryEqualPosition);
+				ser.PutVarUint(i + 1);
+				ser.PutVarUint(equalPoses.size());
+				for (const auto &ep : equalPoses) ser.PutVString(ep);
+			}
+		}
 	}
 
 	ser.PutVarUint(QueryDebugLevel);

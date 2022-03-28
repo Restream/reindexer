@@ -278,8 +278,12 @@ TEST_F(EqualPositionApi, SamePosition) {
 	const Variant key(static_cast<int>(1050));
 	// Build query that contains conditions for field 'a1'
 	Query q{Query(default_namespace).Debug(LogTrace).Where(kFieldA1, CondGt, key).Where(kFieldA1, CondGt, key)};
-	// Make sure attempt to equal_position(a1,a1) throws an Exception of type reindexer::Error
-	EXPECT_THROW(q.AddEqualPosition({kFieldA1, kFieldA1}), reindexer::Error);
+	// query contains equal_position() for field 'a1' twice
+	q.AddEqualPosition({kFieldA1, kFieldA1});
+	// Make sure processing this query leads to error
+	const Error err = rt.reindexer->Select(q, qr);
+	EXPECT_FALSE(err.ok());
+	EXPECT_EQ(err.what(), "equal positions fields should be unique: [a1, a1]");
 }
 
 // Make sure equal_position() works only with unique fields
@@ -289,6 +293,27 @@ TEST_F(EqualPositionApi, SamePositionFromSql) {
 	// SQL query contains equal_position() for field 'a1' twice
 	const std::string_view sql = "select * from test_namespace where a1 > 0 and a1 < 10 equal_position(a1, a1)";
 	Query q;
-	// Make sure processing this query leads to throwing an Exception of type reindexer::Error
-	EXPECT_THROW(q.FromSQL(sql), reindexer::Error);
+	q.FromSQL(sql);
+	// Make sure processing this query leads to error
+	const Error err = rt.reindexer->Select(q, qr);
+	EXPECT_FALSE(err.ok());
+	EXPECT_EQ(err.what(), "equal positions fields should be unique: [a1, a1]");
+}
+
+TEST_F(EqualPositionApi, SelectBrackets) {
+	QueryResults qr;
+	const Variant key1(static_cast<int>(900));
+	const Variant key2(static_cast<int>(1800));
+	const Variant key3(static_cast<int>(2700));
+	Query q = Query(default_namespace)
+				  .Debug(LogTrace)
+				  .OpenBracket()
+				  .Where(kFieldA1, CondEq, key1)
+				  .Where(kFieldA2, CondEq, key2)
+				  .Where(kFieldA3, CondEq, key3)
+				  .AddEqualPosition({kFieldA1, kFieldA2, kFieldA3})
+				  .CloseBracket();
+	Error err = rt.reindexer->Select(q, qr);
+	EXPECT_TRUE(err.ok()) << err.what();
+	VerifyQueryResult(qr, {kFieldA1, kFieldA2, kFieldA3}, {key1, key2, key3}, {CondEq, CondEq, CondEq});
 }

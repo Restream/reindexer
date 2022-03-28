@@ -482,7 +482,7 @@ protected:
 
 	static bool containsJoins(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator end) noexcept {
 		for (; it != end; ++it) {
-			if (it->InvokeAppropriate<bool>([&it](const reindexer::Bracket&) { return containsJoins(it.cbegin(), it.cend()); },
+			if (it->InvokeAppropriate<bool>([&it](const reindexer::QueryEntriesBracket&) { return containsJoins(it.cbegin(), it.cend()); },
 											[](const reindexer::JoinQueryEntry&) { return true; }, [](const QueryEntry&) { return false; },
 											[](const reindexer::BetweenFieldsQueryEntry&) { return false; },
 											[](const reindexer::AlwaysFalse&) { return false; })) {
@@ -500,7 +500,7 @@ protected:
 			if (op != OpOr && !result) return false;
 			bool skip = false;
 			bool const iterationResult = it->InvokeAppropriate<bool>(
-				[&](const reindexer::Bracket&) {
+				[&](const reindexer::QueryEntriesBracket&) {
 					if (op == OpOr && result && !containsJoins(it.cbegin(), it.cend())) {
 						skip = true;
 						return false;
@@ -2374,11 +2374,12 @@ protected:
 		TestCout() << "(";
 		for (; it != to; ++it) {
 			TestCout() << (it->operation == OpAnd ? "AND" : (it->operation == OpOr ? "OR" : "NOT"));
-			it->InvokeAppropriate<void>([&it, &js](const reindexer::Bracket&) { PrintQueryEntries(it.cbegin(), it.cend(), js); },
-										[](const reindexer::QueryEntry& qe) { TestCout() << qe.Dump(); },
-										[&js](const reindexer::JoinQueryEntry& jqe) { TestCout() << jqe.Dump(js); },
-										[](const reindexer::BetweenFieldsQueryEntry& qe) { TestCout() << qe.Dump(); },
-										[](const reindexer::AlwaysFalse&) { TestCout() << "Always False"; });
+			it->InvokeAppropriate<void>(
+				[&it, &js](const reindexer::QueryEntriesBracket&) { PrintQueryEntries(it.cbegin(), it.cend(), js); },
+				[](const reindexer::QueryEntry& qe) { TestCout() << qe.Dump(); },
+				[&js](const reindexer::JoinQueryEntry& jqe) { TestCout() << jqe.Dump(js); },
+				[](const reindexer::BetweenFieldsQueryEntry& qe) { TestCout() << qe.Dump(); },
+				[](const reindexer::AlwaysFalse&) { TestCout() << "Always False"; });
 		}
 		TestCout() << ")";
 	}

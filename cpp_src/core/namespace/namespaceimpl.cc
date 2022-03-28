@@ -7,6 +7,7 @@
 #include <thread>
 #include "core/cjson/jsonbuilder.h"
 #include "core/index/index.h"
+#include "core/index/ttlindex.h"
 #include "core/itemimpl.h"
 #include "core/itemmodifier.h"
 #include "core/nsselecter/nsselecter.h"
@@ -571,6 +572,14 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 		if (newIndexDef == oldIndexDef) {
 			return;
 		} else {
+			if (oldIndexDef.Type() == IndexTtl) {
+				oldIndexDef.expireAfter_ = newIndexDef.expireAfter_;
+				if (oldIndexDef == newIndexDef) {
+					auto indx = indexes_[idxNameIt->second].get();
+					UpdateExpireAfter(indx, newIndexDef.expireAfter_);
+					return;
+				}
+			}
 			throw Error(errConflict, "Index '%s.%s' already exists with different settings", name_, indexName);
 		}
 	}

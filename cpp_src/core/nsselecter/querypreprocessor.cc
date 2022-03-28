@@ -64,10 +64,10 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, size_t srcBegin, size_t
 	for (size_t src = srcBegin, nextSrc; src < srcEnd; src = nextSrc) {
 		nextSrc = Next(src);
 		container_[src].InvokeAppropriate<void>(
-			[&](const Bracket &) {
+			[&](const QueryEntriesBracket &) {
 				if (dst != src) container_[dst] = std::move(container_[src]);
 				const size_t mergedInBracket = lookupQueryIndexes(dst + 1, src + 1, nextSrc);
-				container_[dst].Value<Bracket>().Erase(mergedInBracket);
+				container_[dst].Value<QueryEntriesBracket>().Erase(mergedInBracket);
 				merged += mergedInBracket;
 			},
 			[&](QueryEntry &entry) {
@@ -232,7 +232,7 @@ void QueryPreprocessor::convertWhereValues(QueryEntries::iterator begin, QueryEn
 	for (auto it = begin; it != end; ++it) {
 		it->InvokeAppropriate<void>(
 			Skip<JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{},
-			[this, &it](const Bracket &) { convertWhereValues(it.begin(), it.end()); },
+			[this, &it](const QueryEntriesBracket &) { convertWhereValues(it.begin(), it.end()); },
 			[this](QueryEntry &qe) { convertWhereValues(&qe); });
 	}
 }
@@ -251,7 +251,7 @@ const Index *QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin,
 	const Index *maxIdx = nullptr;
 	for (auto it = begin; it != end; ++it) {
 		const Index *foundIdx = it->InvokeAppropriate<const Index *>(
-			[this, &it](const Bracket &) { return findMaxIndex(it.cbegin(), it.cend()); },
+			[this, &it](const QueryEntriesBracket &) { return findMaxIndex(it.cbegin(), it.cend()); },
 			[this](const QueryEntry &entry) -> const Index * {
 				if (((entry.idxNo != IndexValueType::SetByJsonPath) &&
 					 (entry.condition == CondGe || entry.condition == CondGt || entry.condition == CondLe || entry.condition == CondLt ||
@@ -350,7 +350,7 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 	for (size_t cur = from; cur < to; cur = Next(cur)) {
 		container_[cur].InvokeAppropriate<void>(
 			Skip<QueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{},
-			[&js, cur, this, &rdxCtx](const Bracket &) { injectConditionsFromJoins(cur + 1, Next(cur), js, rdxCtx); },
+			[&js, cur, this, &rdxCtx](const QueryEntriesBracket &) { injectConditionsFromJoins(cur + 1, Next(cur), js, rdxCtx); },
 			[&](const JoinQueryEntry &jqe) {
 				assert(js.size() > jqe.joinIndex);
 				JoinedSelector &joinedSelector = js[jqe.joinIndex];

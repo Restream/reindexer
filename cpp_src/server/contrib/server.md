@@ -123,7 +123,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.3.3
+*Version* : 3.4.0
 
 
 ### License information
@@ -2084,6 +2084,7 @@ If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not co
 |Name|Description|Schema|
 |---|---|---|
 |**cond**  <br>*optional*|Condition operator|enum (EQ, GT, GE, LE, LT, RANGE, SET, EMPTY)|
+|**equal_positions**  <br>*optional*|Array of array fields to be searched with equal array indexes|< [EqualPositionDef](#equalpositiondef) > array|
 |**field**  <br>*optional*|Field json path or index name for filter|string|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
 |**first_field**  <br>*optional*|First field json path or index name for filter by two fields|string|
@@ -2467,7 +2468,6 @@ List of meta info of the specified namespace
 |---|---|---|
 |**aggregations**  <br>*optional*|Ask query calculate aggregation|< [AggregationsDef](#aggregationsdef) > array|
 |**drop_fields**  <br>*optional*|List of fields to be dropped|< string > array|
-|**equal_positions**  <br>*optional*|Array of array fields to be searched with equal array indexes|< [EqualPositionDef](#equalpositiondef) > array|
 |**explain**  <br>*optional*|Add query execution explain information  <br>**Default** : `false`|boolean|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
 |**limit**  <br>*optional*|Maximum count of returned items|integer|

@@ -1413,36 +1413,31 @@ TEST_F(ReindexerApi, UpdateWithBoolParserTest) {
 
 TEST_F(ReindexerApi, EqualPositionsSqlParserTest) {
 	const string sql =
-		"SELECT * FROM ns WHERE (f1 = 1 AND f2 = 2 OR f3 = 3 equal_position(f1,f2) equal_position(f1,f3)) OR (f4 = 4 AND f5 > 5 "
-		"equal_position(f4,f5))";
+		"SELECT * FROM ns WHERE (f1 = 1 AND f2 = 2 OR f3 = 3 equal_position(f1, f2) equal_position(f1, f3)) OR (f4 = 4 AND f5 > 5 "
+		"equal_position(f4, f5))";
 
 	Query query;
 	query.FromSQL(sql);
-	EXPECT_TRUE(query.equalPositions_.size() == 3);
+	EXPECT_EQ(query.GetSQL(), sql);
+	EXPECT_TRUE(query.entries.equalPositions.empty());
+	ASSERT_EQ(query.entries.Size(), 7);
 
-	auto rangeBracket1 = query.equalPositions_.equal_range(0);
-	EXPECT_TRUE(rangeBracket1.first != query.equalPositions_.end());
-	EXPECT_TRUE(std::next(rangeBracket1.first) != query.equalPositions_.end());
+	ASSERT_TRUE(query.entries.IsSubTree(0));
+	const auto& ep1 = query.entries.Get<reindexer::QueryEntriesBracket>(0).equalPositions;
+	ASSERT_EQ(ep1.size(), 2);
+	ASSERT_EQ(ep1[0].size(), 2);
+	EXPECT_EQ(ep1[0][0], "f1");
+	EXPECT_EQ(ep1[0][1], "f2");
+	ASSERT_EQ(ep1[1].size(), 2);
+	EXPECT_EQ(ep1[1][0], "f1");
+	EXPECT_EQ(ep1[1][1], "f3");
 
-	const reindexer::EqualPosition& ep1 = rangeBracket1.first->second;
-	EXPECT_TRUE(ep1.size() == 2) << ep1.size();
-	EXPECT_TRUE(ep1[0] == 1) << ep1[0];
-	EXPECT_TRUE(ep1[1] == 2) << ep1[1];
-
-	const reindexer::EqualPosition& ep2 = std::next(rangeBracket1.first)->second;
-	EXPECT_TRUE(ep2.size() == 2) << ep2.size();
-	EXPECT_TRUE(ep2[0] == 1) << ep2[0];
-	EXPECT_TRUE(ep2[1] == 3) << ep2[1];
-
-	auto rangeBracket2 = query.equalPositions_.equal_range(4);
-	EXPECT_TRUE(rangeBracket2.first != query.equalPositions_.end());
-	EXPECT_TRUE(std::next(rangeBracket2.first) == query.equalPositions_.end());
-	const reindexer::EqualPosition& ep3 = rangeBracket2.first->second;
-	EXPECT_TRUE(ep3.size() == 2) << ep3.size();
-	EXPECT_TRUE(ep3[0] == 5) << ep3[0];
-	EXPECT_TRUE(ep3[1] == 6) << ep3[1];
-
-	EXPECT_TRUE(query.GetSQL() == sql);
+	ASSERT_TRUE(query.entries.IsSubTree(4));
+	const auto& ep2 = query.entries.Get<reindexer::QueryEntriesBracket>(4).equalPositions;
+	ASSERT_EQ(ep2.size(), 1);
+	ASSERT_EQ(ep2[0].size(), 2);
+	EXPECT_EQ(ep2[0][0], "f4");
+	EXPECT_EQ(ep2[0][1], "f5");
 }
 
 TEST_F(ReindexerApi, SchemaSuggestions) {
