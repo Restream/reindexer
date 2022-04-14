@@ -85,7 +85,7 @@ static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpT
 		case JoinType::InnerJoin:
 		case JoinType::OrInnerJoin:
 		case JoinType::LeftJoin:
-			assert(js.PreResult());
+			assertrx(js.PreResult());
 			switch (js.PreResult()->dataMode) {
 				case JoinPreResult::ModeValues:
 					jsonSel.Put("method", "preselected_values");
@@ -180,7 +180,7 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				name << opName(it->operation, it == begin) << siter.name;
 			},
 			[&](const JoinSelectIterator &jiter) {
-				assert(jiter.joinIndex < jselectors->size());
+				assertrx(jiter.joinIndex < jselectors->size());
 				const std::string jName{addToJSON(builder, (*jselectors)[jiter.joinIndex], it->operation)};
 				name << opName(it->operation, it == begin) << jName;
 			},

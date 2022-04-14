@@ -47,7 +47,7 @@ public:
 		atomic_unique_ptr<Node> next;
 	};
 
-	ContextsPoolImpl(size_t baseSize) : contexts_(baseSize) { assert(baseSize > 0); }
+	ContextsPoolImpl(size_t baseSize) : contexts_(baseSize) { assertrx(baseSize > 0); }
 	~ContextsPoolImpl() {}
 
 	ContextT* getContext(uint64_t id) noexcept {

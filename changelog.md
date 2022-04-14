@@ -1,3 +1,17 @@
+# Version 3.5.0 (14.04.2022)
+## Core
+- [fea] Optimize composite fulltext indexes rebuilding. Composite ft index will not be rebuild after update, if non of the index's parts were actually changed
+- [fea] Add current query to backtrace for builtin/builtinserver modes
+- [fix] Fix string copying for array indexes
+- [fix] Fix ALLSET keyword parsing for SQL
+
+## Face
+- [fea] Improve `explain` representation for queries with joins
+- [fea] Add 'copy' button for fro json preview in Query Builder
+- [fix] Fix floating point numbers' behavior in numeric inputs in 'config' tab
+- [fix] Fix 'x' button in 'meta' tab
+- [fix] Fix type in 'partitial_match_decrease' field in index config
+
 # Version 3.4.0 (28.03.2022)
 ## Core
 - [fea] Now time in TTL indexes may be changed without index deletion/recreation

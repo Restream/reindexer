@@ -11,7 +11,7 @@ public:
 	FlagGuard(bool& flag) : flag_(flag) { flag_ = GuardValue; }
 
 	~FlagGuard() {
-		assert(flag_ == GuardValue);
+		assertrx(flag_ == GuardValue);
 		flag_ = !GuardValue;
 	}
 
@@ -32,7 +32,7 @@ public:
 	~CounterGuard() {
 		if (owns_) {
 			counter_.fetch_sub(1, MemoryOrdering);
-			assert(counter_ >= 0);
+			assertrx(counter_ >= 0);
 		}
 	}
 

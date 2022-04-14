@@ -47,7 +47,7 @@ ClientConnection::ClientConnection(ev::dynamic_loop &loop, ConnectData *connectD
 	loopThreadID_ = std::this_thread::get_id();
 }
 
-ClientConnection::~ClientConnection() { assert(!PendingCompletions()); }
+ClientConnection::~ClientConnection() { assertrx(!PendingCompletions()); }
 
 void ClientConnection::connectInternal() noexcept {
 	mtx_.lock();
@@ -56,8 +56,8 @@ void ClientConnection::connectInternal() noexcept {
 		return;
 	}
 	actualDsnIdx_ = connectData_->validEntryIdx;
-	assert(!sock_.valid());
-	assert(wrBuf_.size() == 0);
+	assertrx(!sock_.valid());
+	assertrx(wrBuf_.size() == 0);
 	rdBuf_.clear();
 	enableSnappy_ = false;
 	state_ = ConnConnecting;
@@ -65,7 +65,7 @@ void ClientConnection::connectInternal() noexcept {
 
 	mtx_.unlock();
 
-	assert(connectData_->validEntryIdx < int(connectData_->entries.size()));
+	assertrx(connectData_->validEntryIdx < int(connectData_->entries.size()));
 	ConnectData::Entry &connectEntry = connectData_->entries[actualDsnIdx_];
 	string port = connectEntry.uri.port().length() ? connectEntry.uri.port() : string("6534");
 	string dbName = connectEntry.uri.path();
@@ -122,7 +122,7 @@ int ClientConnection::PendingCompletions() {
 }
 
 Error ClientConnection::CheckConnection() {
-	assert(loopThreadID_ != std::this_thread::get_id());
+	assertrx(loopThreadID_ != std::this_thread::get_id());
 	std::unique_lock<std::mutex> lck(mtx_);
 	switch (state_) {
 		case ConnConnected:
@@ -186,7 +186,7 @@ void ClientConnection::deadline_check_cb(ev::timer &, int) {
 void ClientConnection::Reconnect() { reconnect_.send(); }
 
 void ClientConnection::disconnect() {
-	assert(loopThreadID_ == std::this_thread::get_id());
+	assertrx(loopThreadID_ == std::this_thread::get_id());
 	std::unique_lock<std::mutex> lck(mtx_);
 	State prevState = state_;
 	actualDsnIdx_ = connectData_->validEntryIdx.load(std::memory_order_acquire);
@@ -289,7 +289,7 @@ void ClientConnection::onRead() {
 			rdBuf_.unroll();
 			it = rdBuf_.tail();
 		}
-		assert(it.size() >= size_t(hdr.len));
+		assertrx(it.size() >= size_t(hdr.len));
 
 		RPCAnswer ans;
 
@@ -397,7 +397,7 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, con
 		ser.Reset(sizeof(hdr));
 		ser.Write(compressed);
 	}
-	assert(ser.Len() < size_t(std::numeric_limits<int32_t>::max()));
+	assertrx(ser.Len() < size_t(std::numeric_limits<int32_t>::max()));
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 
 	return ser.DetachChunk();

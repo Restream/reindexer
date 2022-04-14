@@ -66,7 +66,7 @@ static WrSerializer &stringToSql(const std::string &str, WrSerializer &ser) {
 SQLEncoder::SQLEncoder(const Query &q) : query_(q) {}
 
 void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripArgs) const {
-	assert(idx < query_.joinQueries_.size());
+	assertrx(idx < query_.joinQueries_.size());
 	const auto &jq = query_.joinQueries_[idx];
 	ser << ' ' << JoinTypeName(jq.joinType);
 	if (jq.entries.Empty() && jq.count == UINT_MAX && jq.sortingEntries_.empty()) {
@@ -139,7 +139,7 @@ void SQLEncoder::dumpOrderBy(WrSerializer &ser, bool stripArgs) const {
 
 void SQLEncoder::dumpEqualPositions(WrSerializer &ser, const EqualPositions_t &equalPositions) const {
 	for (const auto &ep : equalPositions) {
-		assert(ep.size() > 1);
+		assertrx(ep.size() > 1);
 		ser << " equal_position(";
 		for (size_t i = 0; i < ep.size(); ++i) {
 			if (i != 0) ser << ", ";
@@ -180,7 +180,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 			if (query_.aggregations_.empty() || (query_.aggregations_.size() == 1 && query_.aggregations_[0].type_ == AggDistinct)) {
 				string distinctIndex;
 				if (!query_.aggregations_.empty()) {
-					assert(query_.aggregations_[0].fields_.size() == 1);
+					assertrx(query_.aggregations_[0].fields_.size() == 1);
 					distinctIndex = query_.aggregations_[0].fields_[0];
 				}
 				if (query_.selectFilter_.empty()) {
@@ -293,7 +293,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 					if (stripArgs) {
 						ser << ", ?, ?)";
 					} else {
-						assert(entry.values.size() == 2);
+						assertrx(entry.values.size() == 2);
 						Point point;
 						double distance;
 						if (entry.values[0].Type() == KeyValueTuple) {

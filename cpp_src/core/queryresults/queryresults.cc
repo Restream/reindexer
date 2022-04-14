@@ -11,13 +11,13 @@
 namespace reindexer {
 
 void QueryResults::AddNamespace(std::shared_ptr<NamespaceImpl> ns, const NsContext &ctx) {
-	assert(ctx.noLock);
+	assertrx(ctx.noLock);
 	const NamespaceImpl *nsPtr = ns.get();
 	auto strHolder = ns->StrHolder(ctx);
 	const auto it =
 		std::find_if(nsData_.cbegin(), nsData_.cend(), [nsPtr](const NsDataHolder &nsData) { return nsData.ns.get() == nsPtr; });
 	if (it != nsData_.cend()) {
-		assert(it->strHolder.get() == strHolder.get());
+		assertrx(it->strHolder.get() == strHolder.get());
 		return;
 	}
 	nsData_.emplace_back(std::move(ns), std::move(strHolder));
@@ -25,7 +25,7 @@ void QueryResults::AddNamespace(std::shared_ptr<NamespaceImpl> ns, const NsConte
 
 void QueryResults::RemoveNamespace(const NamespaceImpl *ns) {
 	const auto it = std::find_if(nsData_.begin(), nsData_.end(), [ns](const NsDataHolder &nsData) { return nsData.ns.get() == ns; });
-	assert(it != nsData_.end());
+	assertrx(it != nsData_.end());
 	nsData_.erase(it);
 }
 
@@ -64,7 +64,7 @@ QueryResults::QueryResults(const ItemRefVector::const_iterator &begin, const Ite
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
 		items_ = std::move(obj.items_);
-		assert(!obj.items_.size());
+		assertrx(!obj.items_.size());
 		joined_ = std::move(obj.joined_);
 		aggregationResults = std::move(obj.aggregationResults);
 		totalCount = obj.totalCount;
@@ -184,7 +184,7 @@ private:
 
 void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	auto &itemRef = items_[idx];
-	assert(ctxs.size() > itemRef.Nsid());
+	assertrx(ctxs.size() > itemRef.Nsid());
 	auto &ctx = ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
@@ -221,7 +221,7 @@ joins::ItemIterator QueryResults::Iterator::GetJoined() { return reindexer::join
 
 Error QueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
 	auto &itemRef = qr_->items_[idx_];
-	assert(qr_->ctxs.size() > itemRef.Nsid());
+	assertrx(qr_->ctxs.size() > itemRef.Nsid());
 	auto &ctx = qr_->ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
@@ -244,7 +244,7 @@ Error QueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
 
 Error QueryResults::Iterator::GetProtobuf(WrSerializer &wrser, bool withHdrLen) {
 	auto &itemRef = qr_->items_[idx_];
-	assert(qr_->ctxs.size() > itemRef.Nsid());
+	assertrx(qr_->ctxs.size() > itemRef.Nsid());
 	auto &ctx = qr_->ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
@@ -282,7 +282,7 @@ Error QueryResults::Iterator::GetJSON(WrSerializer &ser, bool withHdrLen) {
 Error QueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
 	try {
 		auto &itemRef = qr_->items_[idx_];
-		assert(qr_->ctxs.size() > itemRef.Nsid());
+		assertrx(qr_->ctxs.size() > itemRef.Nsid());
 		auto &ctx = qr_->ctxs[itemRef.Nsid()];
 
 		if (itemRef.Value().IsFree()) {
@@ -312,14 +312,14 @@ bool QueryResults::Iterator::IsRaw() const {
 }
 std::string_view QueryResults::Iterator::GetRaw() const {
 	auto &itemRef = qr_->items_[idx_];
-	assert(itemRef.Raw());
+	assertrx(itemRef.Raw());
 	return std::string_view(reinterpret_cast<char *>(itemRef.Value().Ptr()), itemRef.Value().GetCapacity());
 }
 
 Item QueryResults::Iterator::GetItem(bool enableHold) {
 	auto &itemRef = qr_->items_[idx_];
 
-	assert(qr_->ctxs.size() > itemRef.Nsid());
+	assertrx(qr_->ctxs.size() > itemRef.Nsid());
 	auto &ctx = qr_->ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
@@ -360,7 +360,7 @@ void QueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 			if (auto ns{ritem->GetNamespace()}; ns) {
 				Payload{ns->ns_->payloadType_, items_.back().Value()}.CopyStrings(stringsHolder_);
 			} else {
-				assert(ctxs.size() == 1);
+				assertrx(ctxs.size() == 1);
 				Payload{ctxs.back().type_, items_.back().Value()}.CopyStrings(stringsHolder_);
 			}
 		}
@@ -368,38 +368,38 @@ void QueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 }
 
 const TagsMatcher &QueryResults::getTagsMatcher(int nsid) const {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].tagsMatcher_;
 }
 
 const PayloadType &QueryResults::getPayloadType(int nsid) const {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].type_;
 }
 
 const FieldsSet &QueryResults::getFieldsFilter(int nsid) const {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].fieldsFilter_;
 }
 
 TagsMatcher &QueryResults::getTagsMatcher(int nsid) {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].tagsMatcher_;
 }
 
 PayloadType &QueryResults::getPayloadType(int nsid) {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].type_;
 }
 
 std::shared_ptr<const Schema> QueryResults::getSchema(int nsid) const {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].schema_;
 }
 
 int QueryResults::getNsNumber(int nsid) const {
-	assert(nsid < int(ctxs.size()));
-	assert(ctxs[nsid].schema_);
+	assertrx(nsid < int(ctxs.size()));
+	assertrx(ctxs[nsid].schema_);
 	return ctxs[nsid].schema_->GetProtobufNsNumber();
 }
 

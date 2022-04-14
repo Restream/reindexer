@@ -266,7 +266,7 @@ bool QueryResults::Iterator::IsRaw() {
 
 std::string_view QueryResults::Iterator::GetRaw() {
 	readNext();
-	assert(itemParams_.raw);
+	assertrx(itemParams_.raw);
 	return itemParams_.data;
 }
 

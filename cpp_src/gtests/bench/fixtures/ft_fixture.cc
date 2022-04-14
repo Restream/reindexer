@@ -4,6 +4,7 @@
 #include <iterator>
 #include <thread>
 
+#include "core/cjson/jsonbuilder.h"
 #include "tools/stringstools.h"
 
 using benchmark::State;
@@ -109,6 +110,11 @@ void FullText::RegisterAllCases() {
 		->Iterations(1)
 		->Unit(benchmark::kMicrosecond);
 	Register("AlternatingUpdatesAndSelects", &FullText::AlternatingUpdatesAndSelects, this)->Unit(benchmark::kMicrosecond);
+	Register("AlternatingUpdatesAndSelectsByComposite", &FullText::AlternatingUpdatesAndSelectsByComposite, this)
+		->Unit(benchmark::kMicrosecond);
+	Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields", &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields,
+			 this)
+		->Unit(benchmark::kMicrosecond);
 }
 
 std::string FullText::RandString() {
@@ -583,19 +589,31 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 	for (auto _ : state) {
 		NamespaceDef nsDef{alternatingNs_};
 		nsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
-			.AddIndex("search", "text", "string", IndexOpts())
-			.AddIndex("rand", "hash", "int", IndexOpts());
+			.AddIndex("search1", "text", "string", IndexOpts())
+			.AddIndex("search2", "text", "string", IndexOpts())
+			.AddIndex("rand", "hash", "int", IndexOpts())
+			.AddIndex("search_comp", {"search1", "search2"}, "text", "composite", IndexOpts())
+			.AddIndex("search_comp_not_index_fields", {"field1", "field2"}, "text", "composite", IndexOpts());
 		auto err = db_->AddNamespace(nsDef);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 		values_.clear();
 		values_.reserve(kNsSize);
+		reindexer::WrSerializer ser;
 		for (int i = 0; i < kNsSize; ++i) {
-			values_.push_back(RandString());
+			values_.emplace_back(RandString(), RandString(), RandString(), RandString());
+			ser.Reset();
+			reindexer::JsonBuilder bld(ser);
+			bld.Put("id", i);
+			bld.Put("search1", values_.back().search1);
+			bld.Put("search2", values_.back().search2);
+			bld.Put("field1", values_.back().field1);
+			bld.Put("field2", values_.back().field2);
+			bld.Put("rand", rand());
+			bld.End();
 			auto item = db_->NewItem(alternatingNs_);
-			item["id"] = i;
-			item["search"] = values_.back();
-			item["rand"] = rand();
 			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+			err = item.FromJSON(ser.Slice());
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
 			err = db_->Insert(alternatingNs_, item);
 			if (!err.ok()) state.SkipWithError(err.what().c_str());
 		}
@@ -605,32 +623,91 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 
 	// Init index build
-	Query q(alternatingNs_);
-	q.Where("search", CondEq, values_[random<size_t>(0, values_.size() - 1)]);
+	Query q = Query(alternatingNs_).Where("search1", CondEq, values_[random<size_t>(0, values_.size() - 1)].search1);
 	QueryResults qres;
+	err = db_->Select(q, qres);
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
+
+	size_t index = random<size_t>(0, values_.size() - 1);
+	q = Query(alternatingNs_).Where("search_comp", CondEq, values_[index].search1 + ' ' + values_[index].search2);
+	qres.Clear();
+	err = db_->Select(q, qres);
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
+
+	index = random<size_t>(0, values_.size() - 1);
+	q = Query(alternatingNs_).Where("search_comp_not_index_fields", CondEq, values_[index].field1 + ' ' + values_[index].field2);
+	qres.Clear();
 	err = db_->Select(q, qres);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 }
 
+void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::State& state) {
+	using namespace std::string_literals;
+	const int i = random<int>(0, values_.size() - 1);
+	ser.Reset();
+	reindexer::JsonBuilder bld(ser);
+	bld.Put("id", i);
+	bld.Put("search1", values_[i].search1);
+	bld.Put("search2", values_[i].search2);
+	bld.Put("field1", values_[i].field1);
+	bld.Put("field2", values_[i].field2);
+	bld.Put("rand", rand());
+	bld.End();
+	auto item = db_->NewItem(alternatingNs_);
+	item.Unsafe(false);
+	if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+	auto err = item.FromJSON(ser.Slice());
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
+	err = db_->Update(alternatingNs_, item);
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
+
+	const std::string sql = "UPDATE "s + alternatingNs_ + " SET rand = " + std::to_string(rand()) +
+							" WHERE id = " + std::to_string(random<int>(0, values_.size() - 1));
+	QueryResults qres;
+	err = db_->Select(sql, qres);
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
+}
+
 void FullText::AlternatingUpdatesAndSelects(benchmark::State& state) {
+	reindexer::WrSerializer ser;
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {
 		state.PauseTiming();
-		const int i = random<int>(0, values_.size() - 1);
-		auto item = db_->NewItem(alternatingNs_);
-		item.Unsafe(false);
-		item["id"] = i;
-		item["search"] = values_[i];
-		item["rand"] = rand();
-		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
-		auto err = db_->Update(alternatingNs_, item);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
-
-		Query q(alternatingNs_);
-		q.Where("search", CondEq, values_[random<size_t>(0, values_.size() - 1)]);
+		updateAlternatingNs(ser, state);
+		Query q = Query(alternatingNs_).Where("search1", CondEq, values_[random<size_t>(0, values_.size() - 1)].search1);
 		QueryResults qres;
 		state.ResumeTiming();
-		err = db_->Select(q, qres);
+		const auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void FullText::AlternatingUpdatesAndSelectsByComposite(benchmark::State& state) {
+	reindexer::WrSerializer ser;
+	AllocsTracker allocsTracker(state, printFlags);
+	for (auto _ : state) {
+		state.PauseTiming();
+		updateAlternatingNs(ser, state);
+		const size_t index = random<size_t>(0, values_.size() - 1);
+		Query q = Query(alternatingNs_).Where("search_comp", CondEq, values_[index].search1 + ' ' + values_[index].search2);
+		QueryResults qres;
+		state.ResumeTiming();
+		const auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields(benchmark::State& state) {
+	reindexer::WrSerializer ser;
+	AllocsTracker allocsTracker(state, printFlags);
+	for (auto _ : state) {
+		state.PauseTiming();
+		updateAlternatingNs(ser, state);
+		const size_t index = random<size_t>(0, values_.size() - 1);
+		Query q = Query(alternatingNs_).Where("search_comp_not_index_fields", CondEq, values_[index].field1 + ' ' + values_[index].field2);
+		QueryResults qres;
+		state.ResumeTiming();
+		const auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 	}
 }

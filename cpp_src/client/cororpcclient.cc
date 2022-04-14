@@ -511,7 +511,7 @@ void CoroRPCClient::onUpdates(const cproto::CoroRPCAnswer& ans) {
 					ns->tagsMatcher_ = TagsMatcher();
 					ns->tagsMatcher_.deserialize(rdser, wrec.itemModify.tmVersion, ns->tagsMatcher_.stateToken());
 				} catch (Error&) {
-					assert(false);
+					assertrx(false);
 					return;
 				}
 			}

@@ -48,11 +48,11 @@ public:
 	bool Process(PayloadValue &, bool *finish, IdType *rowId, IdType, bool match);
 
 	bool IsSelectIterator(size_t i) const noexcept {
-		assert(i < Size());
+		assertrx(i < Size());
 		return container_[i].HoldsOrReferTo<SelectIterator>();
 	}
 	bool IsJoinIterator(size_t i) const noexcept {
-		assert(i < container_.size());
+		assertrx(i < container_.size());
 		return container_[i].HoldsOrReferTo<JoinSelectIterator>();
 	}
 	void ExplainJSON(int iters, JsonBuilder &builder, const vector<JoinedSelector> *js) const {

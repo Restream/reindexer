@@ -104,7 +104,7 @@ public:
 		if (distS_) distS_->clear();
 	}
 	void ClearAllSetValues() {
-		assert(allSetValuesS_);
+		assertrx(allSetValuesS_);
 		allSetValuesS_->clear();
 	}
 
@@ -195,7 +195,7 @@ public:
 		if (distS_) distS_->clear();
 	}
 	void ClearAllSetValues() {
-		assert(allSetValuesS_);
+		assertrx(allSetValuesS_);
 		allSetValuesS_->clear();
 	}
 
@@ -247,8 +247,8 @@ public:
 	}
 
 	bool Compare(CondType cond, const PayloadValue &leftValue, const ComparatorVars &vars) {
-		assert(!values_.empty() || !valuesSet_->empty());
-		assert(vars.fields_.size() > 0);
+		assertrx(!values_.empty() || !valuesSet_->empty());
+		assertrx(vars.fields_.size() > 0);
 		PayloadValue *rightValue(&values_[0]);
 		ConstPayload lhs(vars.payloadType_, leftValue);
 		switch (cond) {
@@ -283,7 +283,7 @@ public:
 		}
 	}
 	void ClearAllSetValues() {
-		assert(allSetValuesSet_);
+		assertrx(allSetValuesSet_);
 		allSetValuesSet_->clear();
 	}
 

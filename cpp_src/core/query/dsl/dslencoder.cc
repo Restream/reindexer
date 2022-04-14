@@ -35,7 +35,7 @@ template <typename T>
 string get(unordered_map<T, string, EnumClassHash> const& m, const T& key) {
 	auto it = m.find(key);
 	if (it != m.end()) return it->second;
-	assert(it != m.end());
+	assertrx(it != m.end());
 	return string();
 }
 
@@ -281,7 +281,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				dsl::encodeFilter(qe, node);
 			},
 			[&node, &parentQuery](const JoinQueryEntry& jqe) {
-				assert(jqe.joinIndex < parentQuery.joinQueries_.size());
+				assertrx(jqe.joinIndex < parentQuery.joinQueries_.size());
 				dsl::encodeSingleJoinQuery(parentQuery.joinQueries_[jqe.joinIndex], node);
 			},
 			[&node](const BetweenFieldsQueryEntry& qe) {

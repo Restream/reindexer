@@ -109,7 +109,7 @@ public:
 		grow(((set_ ? set_->size() : size()) + 1) * (sortedIdxCount + 1));
 
 		if (editMode == Unordered) {
-			assert(!set_);
+			assertrx(!set_);
 			push_back(id);
 			return true;
 		}
@@ -136,7 +136,7 @@ public:
 	template <typename InputIt>
 	void Append(InputIt first, InputIt last, EditMode editMode = Auto) {
 		if (editMode == Unordered) {
-			assert(!set_);
+			assertrx(!set_);
 			insert(base_idset::end(), first, last);
 		} else if (editMode == Auto) {
 			if (!set_) {
@@ -144,11 +144,11 @@ public:
 				set_->insert(begin(), end());
 				resize(0);
 			}
-			assert(!size());
+			assertrx(!size());
 			set_->insert(first, last);
 			usingBtree_ = true;
 		} else {
-			assert(0);
+			assertrx(0);
 		}
 	}
 

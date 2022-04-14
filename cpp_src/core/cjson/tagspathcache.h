@@ -12,7 +12,7 @@ namespace reindexer {
 class TagsPathCache {
 public:
 	void set(const int16_t *tagsPath, size_t len, int field) {
-		assert(len);
+		assertrx(len);
 		auto cache = this;
 		for (;;) {
 			int tag = *tagsPath++;
@@ -32,7 +32,7 @@ public:
 		}
 	}
 	int lookup(const int16_t *tagsPath, size_t len) const {
-		assert(len);
+		assertrx(len);
 		auto cache = this;
 		for (;;) {
 			int tag = *tagsPath++;

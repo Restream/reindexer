@@ -43,7 +43,7 @@ public:
 	FtKeyEntryData* get() { return impl_.get(); }
 	const FtKeyEntryData* get() const { return impl_.get(); }
 	void Dump(std::ostream& os, std::string_view step, std::string_view offset) const {
-		assert(impl_);
+		assertrx(impl_);
 		impl_->Dump(os, step, offset);
 	}
 

@@ -27,7 +27,7 @@ Error JsonDecoder::Decode(Payload *pl, WrSerializer &wrser, const gason::JsonVal
 void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, const gason::JsonValue &v, bool match) {
 	for (auto elem : v) {
 		int tagName = tagsMatcher_.name2tag(elem->key, true);
-		assert(tagName);
+		assertrx(tagName);
 		tagsPath_.push_back(tagName);
 		int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());
 		if (filter_) {

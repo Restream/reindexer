@@ -15,7 +15,7 @@ manual_connection::~manual_connection() {
 }
 
 void manual_connection::attach(ev::dynamic_loop &loop) noexcept {
-	assert(!attached_);
+	assertrx(!attached_);
 	io_.set<manual_connection, &manual_connection::io_callback>(this);
 	io_.set(loop);
 	if (stats_) stats_->attach(loop);
@@ -24,7 +24,7 @@ void manual_connection::attach(ev::dynamic_loop &loop) noexcept {
 }
 
 void manual_connection::detach() noexcept {
-	assert(attached_);
+	assertrx(attached_);
 	io_.stop();
 	io_.reset();
 	if (stats_) stats_->detach();
@@ -54,7 +54,7 @@ void manual_connection::close_conn(int err) {
 }
 
 void manual_connection::restart(int fd) {
-	assert(!sock_.valid());
+	assertrx(!sock_.valid());
 	sock_ = fd;
 	if (stats_) stats_->restart();
 }
@@ -63,7 +63,7 @@ int manual_connection::async_connect(std::string_view addr) noexcept {
 	if (state_ == conn_state::connected || state_ == conn_state::connecting) {
 		close_conn(k_sock_closed_err);
 	}
-	assert(w_data_.empty());
+	assertrx(w_data_.empty());
 	int ret = sock_.connect(addr);
 	if (ret == 0) {
 		state_ = conn_state::connected;
@@ -101,7 +101,7 @@ ssize_t manual_connection::write(span<char> wr_buf, transfer_data &transfer, int
 
 	transfer.append_transfered(written);
 
-	assert(wr_buf.size() >= transfer.transfered_size());
+	assertrx(wr_buf.size() >= transfer.transfered_size());
 	auto remaining = wr_buf.size() - transfer.transfered_size();
 	if (stats_) stats_->update_write_stats(written, remaining);
 

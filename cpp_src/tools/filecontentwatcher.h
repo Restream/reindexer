@@ -9,7 +9,7 @@ namespace reindexer {
 class FileContetWatcher {
 public:
 	void SetFilepath(std::string filepath, bool enable = false) noexcept {
-		assert(!hasFilepath_.load(std::memory_order_acquire));
+		assertrx(!hasFilepath_.load(std::memory_order_acquire));
 		filepath_ = std::move(filepath);
 		auto stat = fs::StatTime(filepath_);
 		lastReplConfMTime_.store(stat.mtime, std::memory_order_relaxed);

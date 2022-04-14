@@ -87,24 +87,24 @@ public:
 	uint16_t Proc() const { return proc_; }
 	bool Raw() const { return raw_; }
 	const PayloadValue& Value() const {
-		assert(valueInitialized_);
+		assertrx(valueInitialized_);
 		return value_;
 	}
 	PayloadValue& Value() {
-		assert(valueInitialized_);
+		assertrx(valueInitialized_);
 		return value_;
 	}
 	unsigned SortExprResultsIdx() const {
-		assert(!valueInitialized_);
+		assertrx(!valueInitialized_);
 		return sortExprResultsIdx_;
 	}
 	void SetValue(PayloadValue&& value) {
-		assert(!valueInitialized_);
+		assertrx(!valueInitialized_);
 		new (&value_) PayloadValue(std::move(value));
 		valueInitialized_ = true;
 	}
 	void SetValue(const PayloadValue& value) {
-		assert(!valueInitialized_);
+		assertrx(!valueInitialized_);
 		new (&value_) PayloadValue(value);
 		valueInitialized_ = true;
 	}

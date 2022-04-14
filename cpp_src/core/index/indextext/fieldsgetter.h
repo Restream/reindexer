@@ -29,7 +29,7 @@ public:
 			krefs.resize(0);
 			bool fieldFromCjson = (field == IndexValueType::SetByJsonPath);
 			if (fieldFromCjson) {
-				assert(tagsPathIdx < fields_.getTagsPathsLength());
+				assertrx(tagsPathIdx < fields_.getTagsPathsLength());
 				pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), krefs, type_);
 			} else {
 				pl.Get(field, krefs);

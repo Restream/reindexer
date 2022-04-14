@@ -182,7 +182,7 @@ template <typename DBInterface>
 template <typename... Args>
 Error CommandsExecutor<DBInterface>::runImpl(const string& dsn, Args&&... args) {
 	using reindexer::net::ev::sig;
-	assert(!executorThr_.joinable());
+	assertrx(!executorThr_.joinable());
 
 	auto fn = [this](const string& dsn, Args&&... args) {
 		sig sint;
@@ -514,14 +514,14 @@ Error CommandsExecutor<DBInterface>::commandSelect(const string& command) {
 			for (auto& agg : aggResults) {
 				switch (agg.type) {
 					case AggFacet: {
-						assert(!agg.fields.empty());
+						assertrx(!agg.fields.empty());
 						reindexer::h_vector<int, 1> maxW;
 						maxW.reserve(agg.fields.size());
 						for (const auto& field : agg.fields) {
 							maxW.push_back(field.length());
 						}
 						for (auto& row : agg.facets) {
-							assert(row.values.size() == agg.fields.size());
+							assertrx(row.values.size() == agg.fields.size());
 							for (size_t i = 0; i < row.values.size(); ++i) {
 								maxW.at(i) = std::max(maxW.at(i), int(row.values[i].length()));
 							}
@@ -546,7 +546,7 @@ Error CommandsExecutor<DBInterface>::commandSelect(const string& command) {
 						}
 					} break;
 					case AggDistinct:
-						assert(agg.fields.size() == 1);
+						assertrx(agg.fields.size() == 1);
 						output_() << "Distinct (" << agg.fields.front() << ")" << std::endl;
 						for (auto& v : agg.distincts) {
 							output_() << v.template As<string>(agg.payloadType, agg.distinctsFields) << std::endl;
@@ -554,7 +554,7 @@ Error CommandsExecutor<DBInterface>::commandSelect(const string& command) {
 						output_() << "Returned " << agg.distincts.size() << " values" << std::endl;
 						break;
 					default:
-						assert(agg.fields.size() == 1);
+						assertrx(agg.fields.size() == 1);
 						output_() << agg.aggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.value << std::endl;
 				}
 			}
@@ -954,7 +954,7 @@ Error CommandsExecutor<reindexer::client::CoroReindexer>::commandProcessDatabase
 	LineParser parser(command);
 	parser.NextToken();
 	std::string_view subCommand = parser.NextToken();
-	assert(uri_.scheme() == "cproto");
+	assertrx(uri_.scheme() == "cproto");
 	if (subCommand == "list") {
 		vector<string> dbList;
 		Error err = getAvailableDatabases(dbList);

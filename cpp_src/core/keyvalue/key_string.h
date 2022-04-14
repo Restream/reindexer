@@ -16,13 +16,13 @@ class base_key_string : public string {
 public:
 	base_key_string(std::string_view str) : string(str.data(), str.length()) { bind(); }
 	template <typename... Args>
-	base_key_string(Args &&... args) : string(args...) {
+	base_key_string(Args &&...args) : string(std::forward<Args>(args)...) {
 		bind();
 	}
 
 	template <typename... Args>
-	void assign(Args &&... args) {
-		const_string::assign(args...);
+	void assign(Args &&...args) {
+		const_string::assign(std::forward<Args>(args)...);
 		bind();
 	}
 	static ptrdiff_t export_hdr_offset() {
@@ -42,20 +42,20 @@ public:
 	iterator end() = delete;
 	char &operator[](int) = delete;
 	template <typename... Args>
-	void insert(Args &&... args) = delete;
+	void insert(Args &&...args) = delete;
 	template <typename... Args>
-	void append(Args &&... args) = delete;
+	void append(Args &&...args) = delete;
 	template <typename... Args>
-	void copy(Args &&... args) = delete;
+	void copy(Args &&...args) = delete;
 	template <typename... Args>
-	void replace(Args &&... args) = delete;
+	void replace(Args &&...args) = delete;
 	void push_back(char c) = delete;
 	template <typename... Args>
-	void erase(Args &&... args) = delete;
+	void erase(Args &&...args) = delete;
 	template <typename... Args>
-	void reserve(Args &&... args) = delete;
+	void reserve(Args &&...args) = delete;
 	template <typename... Args>
-	void resize(Args &&... args) = delete;
+	void resize(Args &&...args) = delete;
 	void at(int) = delete;
 	void shrink_to_fit() = delete;
 	void clear() = delete;
@@ -78,8 +78,8 @@ public:
 };
 
 template <typename... Args>
-key_string make_key_string(Args &&... args) {
-	return key_string(new intrusive_atomic_rc_wrapper<base_key_string>(args...));
+key_string make_key_string(Args &&...args) {
+	return key_string(new intrusive_atomic_rc_wrapper<base_key_string>(std::forward<Args>(args)...));
 }
 
 inline static bool operator==(const key_string &rhs, const key_string &lhs) { return *rhs == *lhs; }

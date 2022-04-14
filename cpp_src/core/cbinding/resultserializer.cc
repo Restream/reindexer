@@ -19,7 +19,7 @@ void WrResultSerializer::putQueryParams(const QueryResults* results) {
 	PutVarUint(opts_.fetchLimit);
 
 	if (opts_.flags & kResultsWithPayloadTypes) {
-		assert(opts_.ptVersions.data());
+		assertrx(opts_.ptVersions.data());
 		if (int(opts_.ptVersions.size()) != results->getMergedNSCount()) {
 			logPrintf(LogWarning, "ptVersionsCount != results->getMergedNSCount: %d != %d. Client's meta data can become incosistent.",
 					  opts_.ptVersions.size(), results->getMergedNSCount());

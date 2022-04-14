@@ -1,7 +1,7 @@
 #include "random.h"
 
 double randBinDouble(long long min, long long max) noexcept {
-	assert(min < max);
+	assertrx(min < max);
 	const long long divider = (1ull << (rand() % 10));
 	min *= divider;
 	max *= divider;

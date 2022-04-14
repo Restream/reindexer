@@ -49,8 +49,8 @@ routine_t ordinator::create(std::function<void()> function, size_t stack_size) {
 }
 
 void ordinator::routine::reuse(std::function<void()> function, size_t new_stack_size) noexcept {
-	assert(is_finalized());
-	assert(is_empty());
+	assertrx(is_finalized());
+	assertrx(is_empty());
 	func = std::move(function);
 	finalized_ = false;
 	stack_size_ = new_stack_size;
@@ -61,8 +61,8 @@ int ordinator::resume(routine_t id) {
 		return 0;
 	}
 
-	assert(id <= routines_.size());
-	assert(id);	 // For now the main routine should not be resumed explicitly
+	assertrx(id <= routines_.size());
+	assertrx(id);	 // For now the main routine should not be resumed explicitly
 
 	if (id > routines_.size()) return -1;
 
@@ -86,7 +86,7 @@ int ordinator::resume(routine_t id) {
 }
 
 void ordinator::suspend() {
-	assert(current_);  // Suspend should not be called from main routine. Probably will be changed later
+	assertrx(current_);  // Suspend should not be called from main routine. Probably will be changed later
 	current_ = pop_from_call_stack();
 	koishi_yield(nullptr);
 
@@ -132,7 +132,7 @@ int64_t ordinator::add_completion_callback(ordinator::cmpl_cb_t cb) {
 		if (found == completion_callbacks_.end()) {
 			break;
 		} else if (++cnt == 3) {
-			assert(false);
+			assertrx(false);
 			break;
 		} else {
 			std::this_thread::yield();
@@ -205,7 +205,7 @@ ordinator::routine::routine(ordinator::routine &&o) noexcept
 }
 
 void ordinator::routine::finalize() noexcept {
-	assert(!is_finalized());
+	assertrx(!is_finalized());
 	finalized_ = true;
 }
 
@@ -215,11 +215,11 @@ void ordinator::routine::clear() noexcept {
 }
 
 void ordinator::clear_finalized() {
-	assert(!finalized_indexes_.empty());
+	assertrx(!finalized_indexes_.empty());
 	auto index = finalized_indexes_.back();
 
 	auto &routine = routines_[index];
-	assert(routine.is_finalized());
+	assertrx(routine.is_finalized());
 	routine.clear();
 	if (loop_completion_callback_) {
 		loop_completion_callback_(index + 1);

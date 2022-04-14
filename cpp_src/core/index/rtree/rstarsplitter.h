@@ -124,7 +124,7 @@ public:
 		if (!splitOfChildAvailable) {
 			while (i < data.size() && data[i]->IsFull()) ++i;
 		}
-		assert(i < data.size());
+		assertrx(i < data.size());
 		auto minOverlapIncrease = overlap(boundRect(data[i]->BoundRect(), insertingRect), i, data) - overlap(data[i]->BoundRect(), i, data);
 		size_t result = i;
 		for (++i; i < data.size(); ++i) {
@@ -160,7 +160,7 @@ public:
 		if (except == 0) {
 			result = 1;
 		}
-		assert(result < data.size());
+		assertrx(result < data.size());
 		const Rectangle& dstBoundRect = dst.BoundRect();
 		auto minOverlapIncrease =
 			overlap(boundRect(data[result]->BoundRect(), dstBoundRect), result, except, data) - overlap(dstBoundRect, result, except, data);
@@ -191,7 +191,7 @@ private:
 		return Base::getBoundRect(idx < MaxEntries ? this->srcNode_.data_[idx] : this->appendingEntry_);
 	}
 	static double overlap(const Rectangle& rect, size_t index, const decltype(std::declval<Node>().data_)& data) noexcept {
-		assert(index < data.size());
+		assertrx(index < data.size());
 		double result = 0.0;
 		size_t i = 0;
 		for (; i < index; ++i) {
@@ -204,7 +204,7 @@ private:
 	}
 	static double overlap(const Rectangle& rect, size_t index1, size_t index2, const decltype(std::declval<Node>().data_)& data) noexcept {
 		if (index1 > index2) std::swap(index1, index2);
-		assert(index2 < data.size());
+		assertrx(index2 < data.size());
 		double result = 0.0;
 		size_t i = 0;
 		for (; i < index1; ++i) {

@@ -23,7 +23,7 @@ void Synonyms::GetVariants(const wstring& data, std::vector<std::pair<std::wstri
 void Synonyms::addDslEntries(std::vector<SynonymsDsl>& synonymsDsl, const MultipleAlternativesCont& multiAlternatives,
 							 const FtDslOpts& opts, const std::vector<size_t>& termsIdx, const FtDSLQuery& dsl) {
 	for (const auto& alternatives : multiAlternatives) {
-		assert(!alternatives.empty());
+		assertrx(!alternatives.empty());
 		synonymsDsl.emplace_back(dsl.CopyCtx(), termsIdx);
 
 		for (const auto& alt : alternatives) {
@@ -45,16 +45,16 @@ static FtDslOpts makeOptsForAlternatives(const FtDslOpts& termOpts) {
 static void addOptsForAlternatives(FtDslOpts& opts, const FtDslOpts& termOpts) {
 	opts.boost += termOpts.boost * kSynonymProc / 100.0;
 	opts.termLenBoost += termOpts.termLenBoost;
-	assert(opts.fieldsOpts.size() == termOpts.fieldsOpts.size());
+	assertrx(opts.fieldsOpts.size() == termOpts.fieldsOpts.size());
 	for (size_t i = 0, end = opts.fieldsOpts.size(); i != end; ++i) {
-		assert(opts.fieldsOpts[i].needSumRank == termOpts.fieldsOpts[i].needSumRank);
+		assertrx(opts.fieldsOpts[i].needSumRank == termOpts.fieldsOpts[i].needSumRank);
 		opts.fieldsOpts[i].boost += termOpts.fieldsOpts[i].boost;
 	}
 	opts.qpos += termOpts.qpos;
 }
 
 static void divOptsForAlternatives(FtDslOpts& opts, size_t size) {
-	assert(size != 0);
+	assertrx(size != 0);
 	opts.boost /= size;
 	opts.termLenBoost /= size;
 	for (auto& fOpts : opts.fieldsOpts) fOpts.boost /= size;
@@ -69,7 +69,7 @@ void Synonyms::PostProcess(const FtDSLEntry& term, const FtDSLQuery& dsl, size_t
 
 	const auto opts = makeOptsForAlternatives(term.opts);
 
-	assert(it->second);
+	assertrx(it->second);
 	addDslEntries(synonymsDsl, *it->second, opts, {termIdx}, dsl);
 }
 
@@ -103,7 +103,7 @@ void Synonyms::PreProcess(const FtDSLQuery& dsl, std::vector<SynonymsDsl>& synon
 		}
 		if (match) {
 			divOptsForAlternatives(opts, multiSynonyms.first.size());
-			assert(multiSynonyms.second);
+			assertrx(multiSynonyms.second);
 			addDslEntries(synonymsDsl, *multiSynonyms.second, opts, termsIdx, dsl);
 		}
 	}
@@ -124,7 +124,7 @@ void Synonyms::SetConfig(BaseFTConfig* cfg) {
 				singleAlternatives->emplace_back(std::move(resultOfSplit[0]));
 			} else if (resultOfSplit.size() > 1) {
 				multipleAlternatives->emplace_back(resultOfSplit.size());
-				assert(multipleAlternatives->back().size() == resultOfSplit.size());
+				assertrx(multipleAlternatives->back().size() == resultOfSplit.size());
 				for (size_t i = 0; i < resultOfSplit.size(); ++i) {
 					multipleAlternatives->back()[i] = std::move(resultOfSplit[i]);
 				}

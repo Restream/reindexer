@@ -130,7 +130,7 @@ func (tx *Tx) DeleteJSON(json []byte, precepts ...string) error {
 	return tx.modifyInternal(nil, json, modeDelete, precepts...)
 }
 
-// UpdateAsync Insert item to namespace. Calls completion on result
+// InsertAsync Insert item to namespace. Calls completion on result
 func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
 	err := tx.startTx()
 	if err != nil {

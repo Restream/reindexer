@@ -80,7 +80,7 @@ protected:
 			size_t lastItemIndex = filter_->getTagsPathsLength() - 1;
 			if (filter_->isTagsPathIndexed(lastItemIndex)) {
 				const IndexedTagsPath &path = filter_->getIndexedTagsPath(lastItemIndex);
-				assert(path.size() > 0);
+				assertrx(path.size() > 0);
 				if (path.back().IsArrayNode()) return path.back();
 			}
 		}

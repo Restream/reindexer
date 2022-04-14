@@ -184,7 +184,7 @@ CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uin
 		ser.Reset(sizeof(hdr));
 		ser.Write(compressed);
 	}
-	assert(ser.Len() < size_t(std::numeric_limits<int32_t>::max()));
+	assertrx(ser.Len() < size_t(std::numeric_limits<int32_t>::max()));
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 
 	return {seq, ser.DetachChunk()};
@@ -198,7 +198,7 @@ void CoroClientConnection::appendChunck(std::vector<char> &buf, chunk &&ch) {
 }
 
 Error CoroClientConnection::login(std::vector<char> &buf) {
-	assert(conn_.state() != manual_connection::conn_state::connecting);
+	assertrx(conn_.state() != manual_connection::conn_state::connecting);
 	if (conn_.state() == manual_connection::conn_state::init) {
 		readWg_.wait();
 		lastError_ = errOK;
@@ -223,7 +223,7 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 					 Arg{p_string(REINDEX_VERSION)},
 					 Arg{p_string(&connectData_.opts.appName)}};
 		constexpr uint32_t seq = 0;	 // login's seq num is always 0
-		assert(buf.size() == 0);
+		assertrx(buf.size() == 0);
 		appendChunck(buf, packRPC(kCmdLogin, seq, args, Args{Arg{int64_t(0)}}).data);
 		int err = 0;
 		auto written = conn_.async_write(buf, err);
@@ -234,7 +234,7 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 			return err > 0 ? Error(errNetwork, "Connection error: %s", strerror(err))
 						   : (lastError_.ok() ? Error(errNetwork, "Unable to write login cmd: connection closed") : lastError_);
 		}
-		assert(written == toWrite);
+		assertrx(written == toWrite);
 		(void)written;
 		(void)toWrite;
 
@@ -319,7 +319,7 @@ void CoroClientConnection::writerRoutine() {
 			}
 			continue;
 		}
-		assert(written == buf.size());
+		assertrx(written == buf.size());
 		(void)written;
 		buf.clear();
 	}
@@ -341,7 +341,7 @@ void CoroClientConnection::readerRoutine() {
 			}
 			break;
 		}
-		assert(read == sizeof(hdr));
+		assertrx(read == sizeof(hdr));
 		(void)read;
 		memcpy(&hdr, buf.data(), sizeof(hdr));
 
@@ -366,7 +366,7 @@ void CoroClientConnection::readerRoutine() {
 			}
 			break;
 		}
-		assert(read == hdr.len);
+		assertrx(read == hdr.len);
 		(void)read;
 
 		CoroRPCAnswer ans;
@@ -412,7 +412,7 @@ void CoroClientConnection::readerRoutine() {
 				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()), cmdSv.data());
 				continue;
 			}
-			assert(rpcData.rspCh.opened());
+			assertrx(rpcData.rspCh.opened());
 			if (!rpcData.rspCh.readers()) {
 				// In this case read buffer will be invalidated, before coroutine switch
 				ans.EnsureHold(getChunk());

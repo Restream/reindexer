@@ -43,7 +43,7 @@ CJsonBuilder CJsonBuilder::Object(int tagName) {
 }
 
 CJsonBuilder CJsonBuilder::Array(int tagName, ObjType type) {
-	assert((type_ != ObjType::TypeArray) && (type_ != ObjType::TypeObjectArray));
+	assertrx((type_ != ObjType::TypeArray) && (type_ != ObjType::TypeObjectArray));
 	++count_;
 	return CJsonBuilder(*ser_, type, tm_, tagName);
 }

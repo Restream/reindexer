@@ -122,7 +122,7 @@ class LinearSplitter : public GuttmanSplitter<Entry, Node, Traits, Iterator, Max
 		while (next_ <= MaxEntries && this->moved_[next_]) {
 			++next_;
 		}
-		assert(next_ <= MaxEntries);
+		assertrx(next_ <= MaxEntries);
 		const auto rect = Base::getBoundRect((next_ == MaxEntries) ? this->appendingEntry_ : this->srcNode_.data_[next_]);
 		const auto firstAreaIncrease = Base::AreaIncrease(firstNode->BoundRect(), rect);
 		const auto secondAreaIncrease = Base::AreaIncrease(secondNode->BoundRect(), rect);

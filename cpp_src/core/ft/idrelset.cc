@@ -21,14 +21,14 @@ size_t IdRelType::pack(uint8_t* buf) const {
 
 size_t IdRelType::unpack(const uint8_t* buf, unsigned len) {
 	auto p = buf;
-	assert(len != 0);
+	assertrx(len != 0);
 	auto l = scan_varint(len, p);
-	assert(l != 0);
+	assertrx(l != 0);
 	id_ = parse_uint32(l, p);
 	p += l, len -= l;
 
 	l = scan_varint(len, p);
-	assert(l != 0);
+	assertrx(l != 0);
 	int sz = parse_uint32(l, p);
 	p += l, len -= l;
 
@@ -37,7 +37,7 @@ size_t IdRelType::unpack(const uint8_t* buf, unsigned len) {
 	uint32_t last = 0;
 	for (int i = 0; i < sz; i++) {
 		l = scan_varint(len, p);
-		assert(l != 0);
+		assertrx(l != 0);
 		pos_[i].fpos = parse_uint32(l, p) + last;
 		last = pos_[i].fpos;
 		addField(pos_[i].field());
@@ -65,7 +65,7 @@ int IdRelType::WordsInField(int field) const noexcept {
 }
 int IdRelType::MinPositionInField(int field) const noexcept {
 	auto lower = std::lower_bound(pos_.cbegin(), pos_.cend(), field, [](PosType p, int f){return p.field() < f;});
-	assert(lower != pos_.cend() && lower->field() == field);
+	assertrx(lower != pos_.cend() && lower->field() == field);
 	int res = lower->pos();
 	while (++lower != pos_.cend() && lower->field() == field) {
 		if (lower->pos() < res) res = lower->pos();

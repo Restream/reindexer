@@ -50,9 +50,9 @@ public:
 	void commitUpdated(T &idx_map) {
 		for (auto valIt : updated_) {
 			auto keyIt = idx_map.find(valIt);
-			assert(keyIt != idx_map.end());
+			assertrx(keyIt != idx_map.end());
 			keyIt->second.Unsorted().Commit();
-			assert(keyIt->second.Unsorted().size());
+			assertrx(keyIt->second.Unsorted().size());
 		}
 	}
 

@@ -34,7 +34,7 @@ struct JoinQueryEntry {
 			if (&jqe != &q.joinEntries_.front()) {
 				ser << ' ' << jqe.op_ << ' ';
 			} else {
-				assert(jqe.op_ == OpAnd);
+				assertrx(jqe.op_ == OpAnd);
 			}
 			ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << InvertJoinCondition(jqe.condition_) << ' ' << jqe.index_;
 		}

@@ -64,7 +64,7 @@ public:
 
 	template <typename InputIterator>
 	void insert(iterator pos, InputIterator from, InputIterator to) {
-		assert(pos == end());
+		assertrx(pos == end());
 		(void)pos;
 		data_.reserve((to - from) / 2);
 		int i = 0;
@@ -76,7 +76,7 @@ public:
 				data_.resize(p + sz);
 			}
 			p += it->pack(data_.begin() + p);
-			assert(p <= data_.size());
+			assertrx(p <= data_.size());
 		}
 		data_.resize(p);
 		size_ += (to - from);

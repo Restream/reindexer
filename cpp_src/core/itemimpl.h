@@ -103,6 +103,7 @@ public:
 	}
 	const vector<string> &GetPrecepts() { return precepts_; }
 	void Unsafe(bool enable) { unsafe_ = enable; }
+	bool IsUnsafe() const noexcept { return unsafe_; }
 	void Clear() {
 		tagsMatcher_ = TagsMatcher();
 		precepts_.clear();

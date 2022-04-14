@@ -31,7 +31,7 @@ void ThrowOnCancel(const Context& ctx, std::string_view errMsg = std::string_vie
 		case CancelType::None:
 			return;
 		default:
-			assert(false);
+			assertrx(false);
 			throw Error(errCanceled, errMsg);
 	}
 }

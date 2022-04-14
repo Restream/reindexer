@@ -1,13 +1,13 @@
 
 #pragma once
 
-#include <assert.h>
 #include <stdint.h>
 #include <cstring>
 #include <initializer_list>
 #include <iostream>
 #include <type_traits>
 #include <vector>
+#include "tools/assertrx.h"
 #include "trivial_reverse_iterator.h"
 
 namespace reindexer {
@@ -40,6 +40,7 @@ public:
 	typedef std::ptrdiff_t difference_type;
 	h_vector() noexcept : e_{0, 0}, size_(0), is_hdata_(1) {}
 	h_vector(size_type size) : h_vector() { resize(size); }
+	h_vector(size_type size, const T& v) : h_vector(size) { insert(begin(), size, v); }
 	h_vector(std::initializer_list<T> l) : e_{0, 0}, size_(0), is_hdata_(1) { insert(begin(), l.begin(), l.end()); }
 	template <typename InputIt>
 	h_vector(InputIt first, InputIt last) : e_{0, 0}, size_(0), is_hdata_(1) {
@@ -173,7 +174,7 @@ public:
 	}
 	void reserve(size_type sz) {
 		if (sz > capacity()) {
-			assert(sz > holdSize);
+			assertrx(sz > holdSize);
 			pointer new_data = static_cast<pointer>(operator new(sz * sizeof(T)));	// ?? dynamic
 			pointer oold_data = ptr();
 			pointer old_data = ptr();
@@ -208,12 +209,12 @@ public:
 		size_++;
 	}
 	void pop_back() {
-		assert(size_);
+		assertrx(size_);
 		resize(size_ - 1);
 	}
 	iterator insert(const_iterator pos, const T& v) {
 		size_type i = pos - begin();
-		assert(i <= size());
+		assertrx(i <= size());
 		grow(size_ + 1);
 		resize(size_ + 1);
 		std::move_backward(begin() + i, end() - 1, end());
@@ -222,7 +223,7 @@ public:
 	}
 	iterator insert(const_iterator pos, T&& v) {
 		size_type i = pos - begin();
-		assert(i <= size());
+		assertrx(i <= size());
 		grow(size_ + 1);
 		resize(size_ + 1);
 		std::move_backward(begin() + i, end() - 1, end());
@@ -231,7 +232,7 @@ public:
 	}
 	iterator insert(const_iterator pos, size_type count, const T& v) {
 		size_type i = pos - begin();
-		assert(i <= size());
+		assertrx(i <= size());
 		grow(size_ + count);
 		resize(size_ + count);
 		std::move_backward(begin() + i, end() - count, end());
@@ -241,7 +242,7 @@ public:
 	template <typename... Args>
 	iterator emplace(const_iterator pos, Args&&... args) {
 		size_type i = pos - begin();
-		assert(i <= size());
+		assertrx(i <= size());
 		grow(size_ + 1);
 		resize(size_ + 1);
 		std::move_backward(begin() + i, end() - 1, end());
@@ -252,7 +253,7 @@ public:
 	template <class InputIt>
 	iterator insert(const_iterator pos, InputIt first, InputIt last) {
 		size_type i = pos - begin();
-		assert(i <= size());
+		assertrx(i <= size());
 		auto cnt = last - first;
 		grow(size_ + cnt);
 		resize(size_ + cnt);
@@ -268,7 +269,7 @@ public:
 	iterator erase(const_iterator first, const_iterator last) {
 		size_type i = first - ptr();
 		const auto cnt = last - first;
-		assert(i <= size());
+		assertrx(i <= size());
 
 		std::move(begin() + i + cnt, end(), begin() + i);
 		const auto newSize = size_ - cnt;

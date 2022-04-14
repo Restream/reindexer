@@ -51,7 +51,7 @@ void CoroQueryResults::Bind(std::string_view rawResult, int queryID) {
 			PayloadType("tmp").clone()->deserialize(ser);
 		});
 	} catch (const Error &err) {
-		assert(false);
+		assertrx(false);
 		status_ = err;
 	}
 
@@ -226,7 +226,7 @@ bool CoroQueryResults::Iterator::IsRaw() {
 
 std::string_view CoroQueryResults::Iterator::GetRaw() {
 	readNext();
-	assert(itemParams_.raw);
+	assertrx(itemParams_.raw);
 	return itemParams_.data;
 }
 

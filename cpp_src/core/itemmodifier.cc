@@ -53,7 +53,7 @@ ItemModifier::ItemModifier(const h_vector<UpdateEntry, 0> &updateEntries, Namesp
 }
 
 void ItemModifier::Modify(IdType itemId, const NsContext &ctx) {
-	assert(ctx.noLock);
+	assertrx(ctx.noLock);
 	PayloadValue &pv = ns_.items_[itemId];
 	Payload pl(ns_.payloadType_, pv);
 	pv.Clone(pl.RealSize());
@@ -64,7 +64,7 @@ void ItemModifier::Modify(IdType itemId, const NsContext &ctx) {
 	for (FieldData &field : fieldsToModify_) {
 		VariantArray values;
 		if (field.details().isExpression) {
-			assert(field.details().values.size() > 0);
+			assertrx(field.details().values.size() > 0);
 			values = ev.Evaluate(static_cast<std::string_view>(field.details().values.front()), pv, field.name());
 		} else {
 			values = field.details().values;
@@ -112,23 +112,41 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, IdType id, FieldData &field, Va
 
 	auto strHolder = ns_.StrHolder(ctx);
 	auto indexesCacheCleaner{ns_.GetIndexesCacheCleaner()};
+	h_vector<bool, 32> needUpdateCompIndexes(ns_.indexes_.compositeIndexesSize(), false);
 	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
+		const auto &fields = ns_.indexes_[i]->Fields();
+		for (const auto f : fields) {
+			if (f == IndexValueType::SetByJsonPath) continue;
+			if (f == field.index()) {
+				needUpdateCompIndexes[i - ns_.indexes_.firstCompositePos()] = true;
+				break;
+			}
+		}
+		if (!needUpdateCompIndexes[i - ns_.indexes_.firstCompositePos()]) {
+			for (size_t tp = 0, end = fields.getTagsPathsLength(); tp < end; ++tp) {
+				if (field.tagspath().Compare(fields.getTagsPath(tp))) {
+					needUpdateCompIndexes[i - ns_.indexes_.firstCompositePos()] = true;
+					break;
+				}
+			}
+			if (!needUpdateCompIndexes[i - ns_.indexes_.firstCompositePos()]) continue;
+		}
 		bool needClearCache{false};
 		ns_.indexes_[i]->Delete(Variant(plData), id, *strHolder, needClearCache);
 		if (needClearCache && ns_.indexes_[i]->IsOrdered()) indexesCacheCleaner.Add(ns_.indexes_[i]->SortId());
 	}
 
-	assert(ns_.indexes_.firstCompositePos() != 0);
+	assertrx(ns_.indexes_.firstCompositePos() != 0);
 	const int borderIdx = ns_.indexes_.totalSize() > 1 ? 1 : 0;
 	int fieldIdx = borderIdx;
 	do {
 		fieldIdx %= ns_.indexes_.firstCompositePos();
 		Index &index = *(ns_.indexes_[fieldIdx]);
 		bool isIndexSparse = index.Opts().IsSparse();
-		assert(!isIndexSparse || (isIndexSparse && index.Fields().getTagsPathsLength() > 0));
+		assertrx(!isIndexSparse || (isIndexSparse && index.Fields().getTagsPathsLength() > 0));
 
 		if (isIndexSparse) {
-			assert(index.Fields().getTagsPathsLength() > 0);
+			assertrx(index.Fields().getTagsPathsLength() > 0);
 			try {
 				plNew.GetByJsonPath(index.Fields().getTagsPath(0), ns_.skrefs, index.KeyType());
 			} catch (const Error &) {
@@ -173,6 +191,7 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, IdType id, FieldData &field, Va
 	} while (++fieldIdx != borderIdx);
 
 	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
+		if (!needUpdateCompIndexes[i - ns_.indexes_.firstCompositePos()]) continue;
 		bool needClearCache{false};
 		ns_.indexes_[i]->Upsert(Variant(pv), id, needClearCache);
 		if (needClearCache && ns_.indexes_[i]->IsOrdered()) indexesCacheCleaner.Add(ns_.indexes_[i]->SortId());
@@ -187,7 +206,7 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 		throw Error(errLogic, "It's only possible to drop sparse or non-index fields via UPDATE statement!");
 	}
 
-	assert(!index.Opts().IsSparse() || (index.Opts().IsSparse() && index.Fields().getTagsPathsLength() > 0));
+	assertrx(!index.Opts().IsSparse() || (index.Opts().IsSparse() && index.Fields().getTagsPathsLength() > 0));
 	if (field.isIndex() && !index.Opts().IsArray() && values.IsArrayValue()) {
 		throw Error(errParams, "It's not possible to Update single index fields with arrays!");
 	}
@@ -204,7 +223,25 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 
 	auto strHolder = ns_.StrHolder(ctx);
 	auto indexesCacheCleaner{ns_.GetIndexesCacheCleaner()};
+	h_vector<bool, 32> needUpdateCompIndexes(ns_.indexes_.compositeIndexesSize(), false);
 	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
+		const auto &fields = ns_.indexes_[i]->Fields();
+		for (const auto f : fields) {
+			if (f == IndexValueType::SetByJsonPath) continue;
+			if (f == field.index()) {
+				needUpdateCompIndexes[i - ns_.indexes_.firstCompositePos()] = true;
+				break;
+			}
+		}
+		if (!needUpdateCompIndexes[i - ns_.indexes_.firstCompositePos()]) {
+			for (size_t tp = 0, end = fields.getTagsPathsLength(); tp < end; ++tp) {
+				if (field.tagspath().Compare(fields.getTagsPath(tp))) {
+					needUpdateCompIndexes[i - ns_.indexes_.firstCompositePos()] = true;
+					break;
+				}
+			}
+			if (!needUpdateCompIndexes[i - ns_.indexes_.firstCompositePos()]) continue;
+		}
 		bool needClearCache{false};
 		ns_.indexes_[i]->Delete(Variant(ns_.items_[itemId]), itemId, *strHolder, needClearCache);
 		if (needClearCache && ns_.indexes_[i]->IsOrdered()) indexesCacheCleaner.Add(ns_.indexes_[i]->SortId());
@@ -215,6 +252,7 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 	}
 
 	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
+		if (!needUpdateCompIndexes[i - ns_.indexes_.firstCompositePos()]) continue;
 		bool needClearCache{false};
 		ns_.indexes_[i]->Upsert(Variant(ns_.items_[itemId]), itemId, needClearCache);
 		if (needClearCache && ns_.indexes_[i]->IsOrdered()) indexesCacheCleaner.Add(ns_.indexes_[i]->SortId());

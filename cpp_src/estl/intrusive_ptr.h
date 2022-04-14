@@ -1,8 +1,8 @@
 #pragma once
 
-#include <assert.h>
 #include <algorithm>
 #include <atomic>
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
@@ -70,12 +70,12 @@ public:
 	T *get() const { return px; }
 
 	T &operator*() const {
-		assert(px != 0);
+		assertrx(px != 0);
 		return *px;
 	}
 
 	T *operator->() const {
-		assert(px != 0);
+		assertrx(px != 0);
 		return px;
 	}
 
@@ -180,7 +180,7 @@ template <typename T>
 class intrusive_atomic_rc_wrapper : public T {
 public:
 	template <typename... Args>
-	intrusive_atomic_rc_wrapper(Args &&... args) : T(std::forward<Args>(args)...), refcount(0) {}
+	intrusive_atomic_rc_wrapper(Args &&...args) : T(std::forward<Args>(args)...), refcount(0) {}
 	intrusive_atomic_rc_wrapper &operator=(const intrusive_atomic_rc_wrapper &) = delete;
 
 protected:
@@ -192,8 +192,8 @@ protected:
 };
 
 template <typename T, typename... Args>
-intrusive_ptr<T> make_intrusive(Args &&... args) {
-	return intrusive_ptr<T>(new T(args...));
+intrusive_ptr<T> make_intrusive(Args &&...args) {
+	return intrusive_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
 }  // namespace reindexer

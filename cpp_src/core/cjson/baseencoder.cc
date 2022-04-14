@@ -26,12 +26,12 @@ void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, IAdd
 
 	ctag begTag = rdser.GetVarUint();
 	(void)begTag;
-	assert(begTag.Type() == TAG_OBJECT);
+	assertrx(begTag.Type() == TAG_OBJECT);
 	Builder objNode = builder.Object(nullptr);
 	while (encode(nullptr, rdser, objNode, true))
 		;
 	if (ds) {
-		assert(!ds->GetJoinsDatasource());
+		assertrx(!ds->GetJoinsDatasource());
 		ds->PutAdditionalFields(objNode);
 	}
 }
@@ -49,7 +49,7 @@ void BaseEncoder<Builder>::Encode(ConstPayload* pl, Builder& builder, IAdditiona
 	builder.SetTagsPath(&curTagsPath_);
 	ctag begTag = rdser.GetVarUint();
 	(void)begTag;
-	assert(begTag.Type() == TAG_OBJECT);
+	assertrx(begTag.Type() == TAG_OBJECT);
 	Builder objNode = builder.Object(nullptr);
 	while (encode(pl, rdser, objNode, true))
 		;
@@ -71,7 +71,7 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload* pl, IEnco
 	if (!rdser.Eof()) {
 		ctag beginTag = rdser.GetVarUint();
 		(void)beginTag;
-		assert(beginTag.Type() == TAG_OBJECT);
+		assertrx(beginTag.Type() == TAG_OBJECT);
 
 		tagsLengths_.reserve(maxIndexes);
 		tagsLengths_.push_back(StartObject);
@@ -147,7 +147,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			throw Error(errParams, "Non-array field '%s' [%d] can only be encoded once.", fieldName, tagField);
 		}
 		objectScalarIndexes_ |= (1ULL << tagField);
-		assert(tagField < pl->NumFields());
+		assertrx(tagField < pl->NumFields());
 		int* cnt = &fieldsoutcnt_[tagField];
 		switch (tagType) {
 			case TAG_ARRAY: {
@@ -237,7 +237,7 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload* pl, Serializer& rdser)
 
 	// get field from indexed field
 	if (tagField >= 0) {
-		assert(tagField < pl->NumFields());
+		assertrx(tagField < pl->NumFields());
 		switch (tagType) {
 			case TAG_ARRAY: {
 				int count = rdser.GetVarUint();

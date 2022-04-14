@@ -43,27 +43,27 @@ void Transaction::Modify(Query &&query) {
 Item Transaction::NewItem() { return impl_->NewItem(); }
 
 vector<TransactionStep> &Transaction::GetSteps() {
-	assert(impl_);
+	assertrx(impl_);
 	return impl_->steps_;
 }
 
 const vector<TransactionStep> &Transaction::GetSteps() const {
-	assert(impl_);
+	assertrx(impl_);
 	return impl_->steps_;
 }
 
 Item Transaction::GetItem(TransactionStep &&st) {
-	assert(impl_);
+	assertrx(impl_);
 	return impl_->GetItem(std::move(st));
 }
 
 bool Transaction::IsTagsUpdated() const {
-	assert(impl_);
+	assertrx(impl_);
 	return impl_->tagsUpdated_;
 }
 
 Transaction::time_point Transaction::GetStartTime() const {
-	assert(impl_);
+	assertrx(impl_);
 	return impl_->startTime_;
 }
 

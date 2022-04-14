@@ -260,8 +260,8 @@ int HTTPServer::PostDatabase(http::Context &ctx) {
 	AuthContext *actx = &dummyCtx;
 	if (!dbMgr_.IsNoSecurity()) {
 		auto clientData = dynamic_cast<HTTPClientData *>(ctx.clientData.get());
-		assert(clientData);
-		actx = &clientData->auth;
+		assertrx(clientData);
+		actx = &clientData->auth;  // -V522
 	}
 
 	auto status = dbMgr_.OpenDatabase(newDbName, *actx, true);
@@ -279,8 +279,8 @@ int HTTPServer::DeleteDatabase(http::Context &ctx) {
 	AuthContext *actx = &dummyCtx;
 	if (!dbMgr_.IsNoSecurity()) {
 		auto clientData = dynamic_cast<HTTPClientData *>(ctx.clientData.get());
-		assert(clientData);
-		actx = &clientData->auth;
+		assertrx(clientData);
+		actx = &clientData->auth;  // -V522
 	}
 
 	auto status = dbMgr_.Login(dbName, *actx);
@@ -1528,8 +1528,8 @@ Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role, string *dbNameOut
 	AuthContext *actx = &dummyCtx;
 	if (!dbMgr_.IsNoSecurity()) {
 		auto clientData = dynamic_cast<HTTPClientData *>(ctx.clientData.get());
-		assert(clientData);
-		actx = &clientData->auth;
+		assertrx(clientData);
+		actx = &clientData->auth;  // -V522
 	}
 
 	auto status = dbMgr_.OpenDatabase(dbName, *actx, false);
@@ -1544,7 +1544,7 @@ Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role, string *dbNameOut
 	if (!status.ok()) {
 		throw http::HttpStatus(status);
 	}
-	assert(db);
+	assertrx(db);
 	return db->NeedTraceActivity() ? db->WithActivityTracer(ctx.request->clientAddr, ctx.request->headers.Get("User-Agent")) : *db;
 }
 

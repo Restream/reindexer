@@ -12,7 +12,7 @@ namespace reindexer {
 struct equal_composite {
 	equal_composite(PayloadType type, const FieldsSet &fields) : type_(std::move(type)), fields_(fields) {}
 	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
-		assert(type_);
+		assertrx(type_);
 		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
 	}
 	PayloadType type_;
@@ -21,7 +21,7 @@ struct equal_composite {
 struct hash_composite {
 	hash_composite(PayloadType type, const FieldsSet &fields) : type_(std::move(type)), fields_(fields) {}
 	size_t operator()(const PayloadValue &s) const {
-		assert(type_);
+		assertrx(type_);
 		return ConstPayload(type_, s).GetHash(fields_);
 	}
 	PayloadType type_;
@@ -31,9 +31,9 @@ struct hash_composite {
 struct less_composite {
 	less_composite(PayloadType type, const FieldsSet &fields) : type_(std::move(type)), fields_(fields) {}
 	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
-		assert(type_);
-		assert(!lhs.IsFree());
-		assert(!rhs.IsFree());
+		assertrx(type_);
+		assertrx(!lhs.IsFree());
+		assertrx(!rhs.IsFree());
 		return (ConstPayload(type_, lhs).Compare(rhs, fields_) < 0);
 	}
 	PayloadType type_;

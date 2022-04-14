@@ -46,7 +46,7 @@ using SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 
 ItemImpl SortExpression::getJoinedItem(IdType rowId, const joins::NamespaceResults& joinResults,
 									   const std::vector<JoinedSelector>& joinedSelectors, size_t nsIdx) {
-	assert(joinedSelectors.size() > nsIdx);
+	assertrx(joinedSelectors.size() > nsIdx);
 	const auto& js = joinedSelectors[nsIdx];
 	const joins::ItemIterator jIt{&joinResults, rowId};
 	const auto jfIt = jIt.at(nsIdx);
@@ -162,9 +162,9 @@ double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::N
 
 void SortExpression::openBracketBeforeLastAppended() {
 	const size_t pos = lastAppendedElement();
-	assert(activeBrackets_.empty() || activeBrackets_.back() < pos);
+	assertrx(activeBrackets_.empty() || activeBrackets_.back() < pos);
 	for (unsigned i : activeBrackets_) {
-		assert(i < container_.size());
+		assertrx(i < container_.size());
 		container_[i].Append();
 	}
 	const ArithmeticOpType op = container_[pos].operation.op;
@@ -460,8 +460,8 @@ template SortExpression SortExpression::Parse(std::string_view, const std::vecto
 double SortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv,
 								 const joins::NamespaceResults& joinedResults, const std::vector<JoinedSelector>& js, uint8_t proc,
 								 TagsMatcher& tagsMatcher) {
-	assert(it != end);
-	assert(it->operation.op == OpPlus);
+	assertrx(it != end);
+	assertrx(it->operation.op == OpPlus);
 	double result = 0.0;
 	for (; it != end; ++it) {
 		double value = it->InvokeAppropriate<double>(
@@ -506,7 +506,7 @@ std::string SortExpression::Dump() const {
 }
 
 void SortExpression::dump(const_iterator begin, const_iterator end, WrSerializer& ser) {
-	assert(begin->operation.op == OpPlus);
+	assertrx(begin->operation.op == OpPlus);
 	for (const_iterator it = begin; it != end; ++it) {
 		if (it != begin) {
 			ser << ' ';

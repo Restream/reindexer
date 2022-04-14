@@ -381,7 +381,7 @@ void parseFilter(JsonValue& filter, Query& q, std::vector<std::pair<size_t, Equa
 			q.entries.Append(op, BetweenFieldsQueryEntry{std::move(fields[0]), condition, std::move(fields[1])});
 			break;
 		case JOIN: {
-			assert(q.joinQueries_.size() > 0);
+			assertrx(q.joinQueries_.size() > 0);
 			const auto& qjoin = q.joinQueries_.back();
 			if (qjoin.joinType != JoinType::LeftJoin) {
 				q.entries.Append((qjoin.joinType == JoinType::InnerJoin) ? OpAnd : OpOr, JoinQueryEntry(q.joinQueries_.size() - 1));

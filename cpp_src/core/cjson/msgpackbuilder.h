@@ -59,7 +59,7 @@ public:
 		checkIfCorrectArray(tagName);
 		packKeyName(tagName);
 		if (size == KUnknownFieldSize) {
-			assert(tagsLengths_ && tagIndex_);
+			assertrx(tagsLengths_ && tagIndex_);
 			return MsgPackBuilder(packer_, tagsLengths_, tagIndex_, ObjType::TypeObjectArray, tm_);
 		} else {
 			return MsgPackBuilder(packer_, ObjType::TypeObjectArray, size);
@@ -72,7 +72,7 @@ public:
 		packKeyName(tagName);
 		if (isArray()) skipTag();
 		if (size == KUnknownFieldSize) {
-			assert(tagsLengths_ && tagIndex_);
+			assertrx(tagsLengths_ && tagIndex_);
 			return MsgPackBuilder(packer_, tagsLengths_, tagIndex_, ObjType::TypeObject, tm_);
 		} else {
 			return MsgPackBuilder(packer_, ObjType::TypeObject, size);

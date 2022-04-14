@@ -152,7 +152,7 @@ std::unique_ptr<Index> IndexRTree_New(const IndexDef &idef, PayloadType payloadT
 				return std::unique_ptr<Index>{new IndexRTree<Index::KeyEntry, RStarSplitter, 32, 4>(idef, std::move(payloadType), fields)};
 			}
 		default:
-			assert(0);
+			assertrx(0);
 			abort();
 	}
 }

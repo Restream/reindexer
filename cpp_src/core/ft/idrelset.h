@@ -50,7 +50,7 @@ private:
 	static constexpr int maxField = 63;
 
 	void addField(int field) noexcept {
-		assert(0 <= field && field <= maxField);
+		assertrx(0 <= field && field <= maxField);
 		usedFieldsMask_ |= (uint64_t(1) << field);
 	}
 

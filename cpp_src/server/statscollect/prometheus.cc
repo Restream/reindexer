@@ -59,7 +59,7 @@ void Prometheus::setMetricValue(PFamily<PGauge>* metricFamily, double value, int
 }
 
 void Prometheus::fillRxInfo() {
-	assert(rxInfo_);
+	assertrx(rxInfo_);
 	rxInfo_->Add({{"version", REINDEX_VERSION}}, prometheus::kNoEpoch).Set(1.0);
 }
 

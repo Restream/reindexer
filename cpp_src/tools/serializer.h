@@ -200,7 +200,7 @@ public:
 
 	template <typename T, typename std::enable_if<std::is_enum<T>::value>::type * = nullptr>
 	void PutVarUint(T v) {
-		assert(v >= 0 && v < 128);
+		assertrx(v >= 0 && v < 128);
 		if (len_ + 1 >= cap_) grow(1);
 		buf_[len_++] = v;
 	}

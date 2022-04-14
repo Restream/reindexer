@@ -401,7 +401,7 @@ Error ReindexerImpl::RenameNamespace(std::string_view srcNsName, const std::stri
 				return Error(errParams, "Namespace '%s' doesn't exist", srcNsName);
 			}
 			Namespace::Ptr srcNs = srcIt->second;
-			assert(srcNs != nullptr);
+			assertrx(srcNs != nullptr);
 
 			if (srcNs->IsTemporary(rdxCtx)) {
 				return Error(errParams, "Can't rename temporary namespace '%s'", srcNsName);
@@ -444,7 +444,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 			return Error(errParams, "Namespace '%s' doesn't exist", srcNsName);
 		}
 		srcNs = srcIt->second;
-		assert(srcNs != nullptr);
+		assertrx(srcNs != nullptr);
 
 		auto replState = srcNs->GetReplState(rdxCtx);
 
@@ -454,7 +454,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 			auto needWalUpdate = !srcNs->GetDefinition(rdxCtx).isTemporary;
 			if (dstIt != namespaces_.end()) {
 				dstNs = dstIt->second;
-				assert(dstNs != nullptr);
+				assertrx(dstNs != nullptr);
 				srcNs->Rename(dstNs, storagePath_, rdxCtx);
 			} else {
 				srcNs->Rename(dstNsName, storagePath_, rdxCtx);
@@ -551,7 +551,7 @@ static WrSerializer& printPkFields(const Item& item, WrSerializer& ser) {
 		if (it != fields.begin()) ser << " AND ";
 		int field = *it;
 		if (field == IndexValueType::SetByJsonPath) {
-			assert(jsonPathIdx < fields.getTagsPathsLength());
+			assertrx(jsonPathIdx < fields.getTagsPathsLength());
 			printPkValue(item[fields.getJsonPath(jsonPathIdx++)], ser);
 		} else {
 			printPkValue(item[field], ser);
@@ -814,19 +814,19 @@ bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jIte
 		Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse>{},
 		[&jns, &result](const QueryEntry& qe) {
 			if (qe.idxNo >= 0) {
-				assert(jns->indexes_.size() > static_cast<size_t>(qe.idxNo));
+				assertrx(jns->indexes_.size() > static_cast<size_t>(qe.idxNo));
 				const IndexType indexType = jns->indexes_[qe.idxNo]->Type();
 				if (IsComposite(indexType) || IsFullText(indexType)) result = false;
 			}
 		},
 		[&jns, &result](const BetweenFieldsQueryEntry& qe) {
 			if (qe.firstIdxNo >= 0) {
-				assert(jns->indexes_.size() > static_cast<size_t>(qe.firstIdxNo));
+				assertrx(jns->indexes_.size() > static_cast<size_t>(qe.firstIdxNo));
 				const IndexType indexType = jns->indexes_[qe.firstIdxNo]->Type();
 				if (IsComposite(indexType) || IsFullText(indexType)) result = false;
 			}
 			if (qe.secondIdxNo >= 0) {
-				assert(jns->indexes_.size() > static_cast<size_t>(qe.secondIdxNo));
+				assertrx(jns->indexes_.size() > static_cast<size_t>(qe.secondIdxNo));
 				if (IsComposite(jns->indexes_[qe.secondIdxNo]->Type())) result = false;
 			}
 		});
@@ -853,14 +853,14 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 	JoinedSelectors joinedSelectors;
 	if (q.joinQueries_.empty()) return joinedSelectors;
 	auto ns = locks.Get(q._namespace);
-	assert(ns);
+	assertrx(ns);
 
 	// For each joined queries
 	int joinedSelectorsCount = q.joinQueries_.size();
 	for (auto& jq : q.joinQueries_) {
 		// Get common results from joined namespaces_
 		auto jns = locks.Get(jq._namespace);
-		assert(jns);
+		assertrx(jns);
 
 		// Do join for each item in main result
 		Query jItemQ(jq._namespace);
@@ -903,7 +903,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			ctx.preResult->enableStoredValues = isPreResultValuesModeOptimizationAvailable(jItemQ, jns);
 			ctx.functions = &func;
 			jns->Select(jr, ctx, rdxCtx);
-			assert(ctx.preResult->executionMode == JoinPreResult::ModeExecute);
+			assertrx(ctx.preResult->executionMode == JoinPreResult::ModeExecute);
 		}
 		if (joinRes.haveData) {
 			preResult = joinRes.it.val.preResult;
@@ -920,17 +920,17 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 				Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse>{},
 				[&jns](QueryEntry& qe) {
 					if (qe.idxNo != IndexValueType::SetByJsonPath) {
-						assert(qe.idxNo >= 0 && static_cast<size_t>(qe.idxNo) < jns->indexes_.size());
+						assertrx(qe.idxNo >= 0 && static_cast<size_t>(qe.idxNo) < jns->indexes_.size());
 						if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
 					}
 				},
 				[&jns](BetweenFieldsQueryEntry& qe) {
 					if (qe.firstIdxNo != IndexValueType::SetByJsonPath) {
-						assert(qe.firstIdxNo >= 0 && static_cast<size_t>(qe.firstIdxNo) < jns->indexes_.size());
+						assertrx(qe.firstIdxNo >= 0 && static_cast<size_t>(qe.firstIdxNo) < jns->indexes_.size());
 						if (jns->indexes_[qe.firstIdxNo]->Opts().IsSparse()) qe.firstIdxNo = IndexValueType::SetByJsonPath;
 					}
 					if (qe.secondIdxNo != IndexValueType::SetByJsonPath) {
-						assert(qe.secondIdxNo >= 0 && static_cast<size_t>(qe.secondIdxNo) < jns->indexes_.size());
+						assertrx(qe.secondIdxNo >= 0 && static_cast<size_t>(qe.secondIdxNo) < jns->indexes_.size());
 						if (jns->indexes_[qe.secondIdxNo]->Opts().IsSparse()) qe.secondIdxNo = IndexValueType::SetByJsonPath;
 					}
 				});
@@ -948,7 +948,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 template <typename T>
 void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func, const RdxContext& ctx) {
 	auto ns = locks.Get(q._namespace);
-	assert(ns);
+	assertrx(ns);
 	if (!ns) {
 		throw Error(errParams, "Namespace '%s' is not exists", q._namespace);
 	}
@@ -975,7 +975,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 
 		for (auto& mq : q.mergeQueries_) {
 			auto mns = locks.Get(mq._namespace);
-			assert(mns);
+			assertrx(mns);
 			SelectCtx mctx(mq);
 			mctx.nsid = ++counter;
 			mctx.isForceAll = true;
@@ -1040,7 +1040,7 @@ Namespace::Ptr ReindexerImpl::getNamespace(std::string_view nsName, const RdxCon
 		throw Error(errParams, "Namespace '%s' does not exist", nsName);
 	}
 
-	assert(nsIt->second);
+	assertrx(nsIt->second);
 	return nsIt->second;
 }
 

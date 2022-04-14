@@ -109,7 +109,7 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 Error ItemImpl::FromCJSON(ItemImpl *other) {
 	auto cjson = other->GetCJSON();
 	auto err = FromCJSON(cjson);
-	assert(err.ok());
+	assertrx(err.ok());
 	return err;
 }
 

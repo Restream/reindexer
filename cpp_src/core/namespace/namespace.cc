@@ -120,7 +120,7 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 		int renameRes = fs::Rename(srcNs.dbpath_, dbpath);
 		if (renameRes < 0) {
 			if (dst) {
-				assert(dstMtx);
+				assertrx(dstMtx);
 				dstMtx->unlock();
 			}
 			throw Error(errParams, "Unable to rename '%s' to '%s'", srcNs.dbpath_, dbpath);
@@ -130,7 +130,7 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 	if (dst) {
 		logPrintf(LogInfo, "Rename namespace '%s' to '%s'", srcNs.name_, dstNs->name_);
 		srcNs.name_ = dstNs->name_;
-		assert(dstMtx);
+		assertrx(dstMtx);
 		dstMtx->unlock();
 	} else {
 		logPrintf(LogInfo, "Rename namespace '%s' to '%s'", srcNs.name_, newName);

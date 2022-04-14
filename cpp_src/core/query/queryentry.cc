@@ -135,7 +135,7 @@ bool SortingEntry::operator==(const SortingEntry &obj) const noexcept {
 }
 
 bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload &pl, TagsMatcher &tagsMatcher) {
-	assert(begin != end && begin->operation != OpOr);
+	assertrx(begin != end && begin->operation != OpOr);
 	bool result = true;
 	for (auto it = begin; it != end; ++it) {
 		if (it->operation == OpOr) {
@@ -264,7 +264,7 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 			}
 			return DWithin(static_cast<Point>(lValues), point, distance);
 		default:
-			assert(0);
+			assertrx(0);
 	}
 	return false;
 }

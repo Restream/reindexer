@@ -43,7 +43,7 @@ void IndexStore<T>::Delete(const VariantArray &keys, IdType id, StringsHolder &s
 
 template <>
 void IndexStore<Point>::Delete(const VariantArray & /*keys*/, IdType /*id*/, StringsHolder &, bool & /*clearCache*/) {
-	assert(0);
+	assertrx(0);
 }
 
 template <>
@@ -86,7 +86,7 @@ void IndexStore<T>::Upsert(VariantArray &result, const VariantArray &keys, IdTyp
 
 template <>
 void IndexStore<Point>::Upsert(VariantArray & /*result*/, const VariantArray & /*keys*/, IdType /*id*/, bool & /*clearCache*/) {
-	assert(0);
+	assertrx(0);
 }
 
 template <typename T>

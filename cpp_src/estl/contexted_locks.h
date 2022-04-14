@@ -23,20 +23,20 @@ public:
 	explicit contexted_unique_lock() : _M_mtx(nullptr), _M_owns(false), _M_context(nullptr), _M_chkTimeout(kDefaultCondChkTime) {}
 	explicit contexted_unique_lock(MutexType& __mtx, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
 		: _M_mtx(&__mtx), _M_owns(false), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assert(_M_context);
+		assertrx(_M_context);
 		lock();
 	}
 	explicit contexted_unique_lock(MutexType& __mtx, defer_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
 		: _M_mtx(&__mtx), _M_owns(false), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assert(_M_context);
+		assertrx(_M_context);
 	}
 	explicit contexted_unique_lock(MutexType& __mtx, adopt_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
 		: _M_mtx(&__mtx), _M_owns(true), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assert(_M_context);
+		assertrx(_M_context);
 	}
 	explicit contexted_unique_lock(MutexType& __mtx, try_to_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
 		: _M_mtx(&__mtx), _M_owns(__mtx.try_lock()), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assert(_M_context);
+		assertrx(_M_context);
 	}
 	contexted_unique_lock(contexted_unique_lock&& lck)
 		: _M_mtx(lck._M_mtx), _M_owns(lck._M_owns), _M_context(lck._M_context), _M_chkTimeout(lck._M_chkTimeout) {
@@ -67,7 +67,7 @@ public:
 	void lock() {
 		using namespace std::string_view_literals;
 		_M_lockable();
-		assert(_M_context);
+		assertrx(_M_context);
 		const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
 		if (_M_chkTimeout.count() > 0 && _M_context->isCancelable()) {
 			do {
@@ -85,7 +85,7 @@ public:
 	}
 
 	void unlock() {
-		if (!_M_owns) assert(0);
+		if (!_M_owns) assertrx(0);
 		_M_mtx->unlock();
 		_M_owns = false;
 	}
@@ -103,8 +103,8 @@ public:
 
 private:
 	void _M_lockable() const {
-		if (_M_mtx == nullptr) assert(0);
-		if (_M_owns) assert(0);
+		if (_M_mtx == nullptr) assertrx(0);
+		if (_M_owns) assertrx(0);
 	}
 
 	MutexType* _M_mtx;
@@ -121,16 +121,16 @@ public:
 	explicit contexted_shared_lock() : _M_mtx(nullptr), _M_owns(false), _M_context(nullptr), _M_chkTimeout(kDefaultCondChkTime) {}
 	explicit contexted_shared_lock(MutexType& __mtx, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
 		: _M_mtx(&__mtx), _M_owns(false), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assert(_M_context);
+		assertrx(_M_context);
 		lock();
 	}
 	explicit contexted_shared_lock(MutexType& __mtx, adopt_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
 		: _M_mtx(&__mtx), _M_owns(true), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assert(_M_context);
+		assertrx(_M_context);
 	}
 	explicit contexted_shared_lock(MutexType& __mtx, try_to_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
 		: _M_mtx(&__mtx), _M_owns(__mtx.try_lock()), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assert(_M_context);
+		assertrx(_M_context);
 	}
 	contexted_shared_lock(contexted_shared_lock&& lck)
 		: _M_mtx(lck._M_mtx), _M_owns(lck._M_owns), _M_context(lck._M_context), _M_chkTimeout(lck._M_chkTimeout) {
@@ -161,7 +161,7 @@ public:
 	void lock() {
 		using namespace std::string_view_literals;
 		_M_lockable();
-		assert(_M_context);
+		assertrx(_M_context);
 		const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
 		if (_M_chkTimeout.count() > 0 && _M_context->isCancelable()) {
 			do {
@@ -179,7 +179,7 @@ public:
 	}
 
 	void unlock() {
-		if (!_M_owns) assert(0);
+		if (!_M_owns) assertrx(0);
 		_M_mtx->unlock_shared();
 		_M_owns = false;
 	}
@@ -197,8 +197,8 @@ public:
 
 private:
 	void _M_lockable() const {
-		if (_M_mtx == nullptr) assert(0);
-		if (_M_owns) assert(0);
+		if (_M_mtx == nullptr) assertrx(0);
+		if (_M_owns) assertrx(0);
 	}
 
 	MutexType* _M_mtx;

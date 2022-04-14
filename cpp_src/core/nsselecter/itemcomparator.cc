@@ -14,7 +14,7 @@ bool ItemComparator::operator()(const ItemRef &lhs, const ItemRef &rhs) const {
 		}
 		++firstDifferentExprIdx;
 	}
-	assert(exprCmpRes == 0 || firstDifferentExprIdx < byExpr_.size());
+	assertrx(exprCmpRes == 0 || firstDifferentExprIdx < byExpr_.size());
 
 	size_t firstDifferentFieldIdx = 0;
 	int fieldsCmpRes = 0;
@@ -99,7 +99,7 @@ void ItemComparator::bindOne(size_t index, const SortingContext::Entry &sortingC
 		TagsPath tagsPath;
 		if (fieldIdx != IndexValueType::SetByJsonPath) {
 			const FieldsSet &fs = ns_.indexes_[fieldIdx]->Fields();
-			assert(fs.getTagsPathsLength() > 0);
+			assertrx(fs.getTagsPathsLength() > 0);
 			tagsPath = fs.getTagsPath(0);
 		} else {
 			tagsPath = ns_.tagsMatcher_.path2tag(sortingCtx.data->expression);
@@ -118,7 +118,7 @@ void ItemComparator::bindOne(size_t index, const SortingContext::Entry &sortingC
 				throw Error(errQueryExec, "Multicolumn sorting cannot be applied to composite fields: %s", sortingCtx.data->expression);
 			}
 			fields_ = ns_.indexes_[fieldIdx]->Fields();
-			assert(byIndex_.empty());
+			assertrx(byIndex_.empty());
 			byIndex_.resize(fields_.size(), {index, sortingCtx.data->desc});
 		} else {
 			if (fields_.contains(fieldIdx)) {
@@ -134,20 +134,20 @@ void ItemComparator::bindOne(size_t index, const SortingContext::Entry &sortingC
 void ItemComparator::BindForForcedSort() {
 	const auto &entries = ctx_.sortingContext.entries;
 	const auto &exprResults = ctx_.sortingContext.exprResults;
-	assert(entries.size() >= exprResults.size());
+	assertrx(entries.size() >= exprResults.size());
 	byExpr_.reserve(exprResults.size());
 	byIndex_.reserve(entries.size() - exprResults.size());
 	const bool multiSort = entries.size() > 1;
 	for (size_t i = 1; i < entries.size(); ++i) {
 		bindOne(i, entries[i], BackInserter{*this}, multiSort);
 	}
-	assert(byIndex_.size() == fields_.size());
+	assertrx(byIndex_.size() == fields_.size());
 }
 
 void ItemComparator::BindForGeneralSort() {
 	const auto &entries = ctx_.sortingContext.entries;
 	const auto &exprResults = ctx_.sortingContext.exprResults;
-	assert(entries.size() >= exprResults.size());
+	assertrx(entries.size() >= exprResults.size());
 	const bool multiSort = entries.size() > 1;
 	if (byExpr_.empty() && byIndex_.empty()) {
 		byExpr_.reserve(exprResults.size());
@@ -158,8 +158,8 @@ void ItemComparator::BindForGeneralSort() {
 	} else if (!entries.empty()) {
 		bindOne(0, entries[0], FrontInserter{*this}, multiSort);
 	}
-	assert(byExpr_.size() == exprResults.size());
-	assert(byIndex_.size() == fields_.size());
+	assertrx(byExpr_.size() == exprResults.size());
+	assertrx(byIndex_.size() == fields_.size());
 }
 
 }  // namespace reindexer

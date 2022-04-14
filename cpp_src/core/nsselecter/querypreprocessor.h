@@ -36,9 +36,9 @@ public:
 	bool NeedNextEvaluation(unsigned start, unsigned count, bool matchedAtLeastOnce) noexcept {
 		if (evaluationsCount_++ || !queryEntryAddedByForcedSortOptimization_) return false;
 		container_.back().operation = desc_ ? OpAnd : OpNot;
-		assert(start <= start_);
+		assertrx(start <= start_);
 		start_ = start;
-		assert(count <= count_);
+		assertrx(count <= count_);
 		count_ = count;
 		return count_ || (reqMatchedOnce_ && !matchedAtLeastOnce);
 	}

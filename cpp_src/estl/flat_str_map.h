@@ -100,7 +100,7 @@ public:
 
 		value_type operator->() {
 			if (Multi && it_->second & kMultiValueLinkFlag) {
-				assert(multi_idx_ != -1);
+				assertrx(multi_idx_ != -1);
 				return value_type(m_->holder_->get(it_->first), m_->multi_[multi_idx_].val);
 			} else
 				return value_type(m_->holder_->get(it_->first), it_->second);
@@ -108,7 +108,7 @@ public:
 
 		const value_type operator->() const {
 			if (Multi && it_->second & kMultiValueLinkFlag) {
-				assert(multi_idx_ != -1);
+				assertrx(multi_idx_ != -1);
 				return value_type(m_->holder_->get(it_->first), m_->multi_[multi_idx_].val);
 			} else
 				return value_type(m_->holder_->get(it_->first), it_->second);

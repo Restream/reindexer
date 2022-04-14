@@ -1,8 +1,8 @@
 #pragma once
 
-#include <assert.h>
 #include <stdint.h>
 #include <string_view>
+#include "tools/assertrx.h"
 #include "trivial_reverse_iterator.h"
 
 namespace reindexer {
@@ -64,11 +64,11 @@ public:
 
 	constexpr pointer data() const noexcept { return data_; }
 	span subspan(size_type offset, size_type count) const noexcept {
-		assert(offset + count <= size_);
+		assertrx(offset + count <= size_);
 		return span(data_ + offset, count);
 	}
 	span subspan(size_type offset) const noexcept {
-		assert(offset <= size_);
+		assertrx(offset <= size_);
 		return span(data_ + offset, size_ - offset);
 	}
 	bool operator==(const span& other) const noexcept {

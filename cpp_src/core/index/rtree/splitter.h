@@ -7,7 +7,7 @@ class Splitter {
 protected:
 	Splitter(Entry&& appendingEntry, Node& sourceNode, Iterator* it)
 		: appendingEntry_{std::move(appendingEntry)}, srcNode_{sourceNode}, insertedIt_{it} {
-		assert(MaxEntries == srcNode_.data_.size());
+		assertrx(MaxEntries == srcNode_.data_.size());
 	}
 	~Splitter() = default;
 
@@ -47,7 +47,7 @@ protected:
 		if (!splitOfChildAvailable) {
 			while (i < data.size() && data[i]->IsFull()) ++i;
 		}
-		assert(i < data.size());
+		assertrx(i < data.size());
 		auto minAreaIncrease = data[i]->AreaIncrease(insertingRect);
 		size_t result = i;
 		for (++i; i < data.size(); ++i) {
@@ -66,7 +66,7 @@ protected:
 		size_t result = 0;
 		if (except == 0) {
 			result = 1;
-			assert(data.size() > 1);
+			assertrx(data.size() > 1);
 		}
 		auto minAreaIncrease = dst.AreaIncrease(data[result]->BoundRect());
 		for (size_t i = result + 1; i < data.size(); ++i) {

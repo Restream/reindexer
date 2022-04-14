@@ -1,9 +1,9 @@
 #pragma once
 
-#include <assert.h>
 #include <stddef.h>
 #include <atomic>
 #include <iosfwd>
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
@@ -12,15 +12,15 @@ class PayloadValue {
 public:
 	typedef std::atomic<int32_t> refcounter;
 	struct dataHeader {
-		dataHeader() : refcount(1), cap(0), lsn(-1) {}
+		dataHeader() noexcept : refcount(1), cap(0), lsn(-1) {}
 
-		~dataHeader() { assert(refcount.load() == 0); }
+		~dataHeader() { assertrx(refcount.load() == 0); }
 		refcounter refcount;
 		unsigned cap;
 		int64_t lsn;
 	};
 
-	PayloadValue() : p_(nullptr) {}
+	PayloadValue() noexcept : p_(nullptr) {}
 	PayloadValue(const PayloadValue &);
 	// Alloc payload store with size, and copy data from another array
 	PayloadValue(size_t size, const uint8_t *ptr = nullptr, size_t cap = 0);

@@ -11,14 +11,14 @@ using namespace std::string_view_literals;
 void ActivityContainer::Register(const RdxActivityContext* context) {
 	std::unique_lock<std::mutex> lck(mtx_);
 	const auto res = cont_.insert(context);
-	assert(res.second);
+	assertrx(res.second);
 	(void)res;
 }
 
 void ActivityContainer::Unregister(const RdxActivityContext* context) {
 	std::unique_lock<std::mutex> lck(mtx_);
 	const auto count = cont_.erase(context);
-	assert(count == 1u);
+	assertrx(count == 1u);
 	(void)count;
 }
 
@@ -26,9 +26,9 @@ void ActivityContainer::Reregister(const RdxActivityContext* oldCtx, const RdxAc
 	if (oldCtx == newCtx) return;
 	std::unique_lock<std::mutex> lck(mtx_);
 	const auto eraseCount = cont_.erase(oldCtx);
-	assert(eraseCount == 1u);
+	assertrx(eraseCount == 1u);
 	const auto insertRes = cont_.insert(newCtx);
-	assert(insertRes.second);
+	assertrx(insertRes.second);
 	(void)eraseCount;
 	(void)insertRes;
 }

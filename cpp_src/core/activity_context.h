@@ -76,7 +76,7 @@ class RdxActivityContext {
 		~Ward() {
 			if (context_) {
 				context_->state_.store(prevState_, std::memory_order_relaxed);
-				assert(context_->refCount_.fetch_sub(1u, std::memory_order_relaxed) != 0u);
+				assertrx(context_->refCount_.fetch_sub(1u, std::memory_order_relaxed) != 0u);
 			}
 		}
 
@@ -95,7 +95,7 @@ public:
 	RdxActivityContext(RdxActivityContext&&);
 	~RdxActivityContext() {
 		if (parent_) parent_->Unregister(this);
-		assert(refCount_.load(std::memory_order_relaxed) == 0u);
+		assertrx(refCount_.load(std::memory_order_relaxed) == 0u);
 	}
 	operator Activity() const;
 

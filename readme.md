@@ -652,19 +652,20 @@ So it is enough, to check error returned by `tx.Commit` - to be sure, that all d
 
 #### Transactions commit strategies
 
-Depends on amount changes in transaction there are 2 possible Commit strategies:
+Depending on amount of changes in transaction there are 2 possible Commit strategies:
 
 - Locked atomic update. Reindexer locks namespace and applying all changes under common lock. This mode is used with small amounts of changes.
 - Copy & atomic replace. In this mode Reindexer makes namespace's snapshot, applying all changes to this snapshot, and atomically replaces namespace without lock
 
-Data amount for choosing Commit strategy can be choose in namespaces config. pls refer [DBNamespacesConfig](describer.go#L277)
+Data amount for choosing Commit strategy can be choose in namespaces config. Check fields `StartCopyPolicyTxSize`, `CopyPolicyMultiplier` and `TxSizeToAlwaysCopy` in `struct DBNamespacesConfig`([describer.go](describer.go))
 
 #### Implementation notes
 
-1. Transaction object is not thread safe and can't be used from different goroutines.
-2. Transaction object holds Reindexer's resources, therefore application should explicitly call Rollback or Commit, otherwise resources will leak
-3. It is safe to call Rollback after Commit
-4. It is possible ro call Query from transaction by call `tx.Query("ns").Exec() ...`. Only read-committed isolation is available. Changes made in active transaction is invisible to current and another transactions.
+1. Transaction object is not thread safe and can't be used from different goroutines;
+2. Transaction object holds Reindexer's resources, therefore application should explicitly call Rollback or Commit, otherwise resources will leak;
+3. It is safe to call Rollback after Commit;
+4. It is possible to call Query from transaction by call `tx.Query("ns").Exec() ...`;
+5. Only serializable isolation is available, i.e. each transaction takes exclusive lock over the target namespace until all of the steps of the transaction commited.
 
 ### Join
 

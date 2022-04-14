@@ -76,7 +76,7 @@ Error RocksDbStorage::Repair(const std::string& path) {
 Snapshot::Ptr RocksDbStorage::MakeSnapshot() {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 	const rocksdb::Snapshot* ldbSnapshot = db_->GetSnapshot();
-	assert(ldbSnapshot);
+	assertrx(ldbSnapshot);
 	return std::make_shared<RocksDbSnapshot>(ldbSnapshot);
 }
 

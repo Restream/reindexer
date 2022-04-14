@@ -93,7 +93,7 @@ protected:
 				default:
 					abort();
 			}
-			assert(type_);
+			assertrx(type_);
 			return 0;
 		}
 

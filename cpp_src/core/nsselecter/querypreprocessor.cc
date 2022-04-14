@@ -18,7 +18,7 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query,
 	  forcedSortOrder_(!query.forcedSortOrder_.empty()),
 	  reqMatchedOnce_(reqMatchedOnce) {
 	if (forcedSortOrder_ && (start_ > 0 || count_ < UINT_MAX)) {
-		assert(!query.sortingEntries_.empty());
+		assertrx(!query.sortingEntries_.empty());
 		static const std::vector<JoinedSelector> emptyJoinedSelectors;
 		const auto &sEntry = query.sortingEntries_[0];
 		if (SortExpression::Parse(sEntry.expression, emptyJoinedSelectors).ByIndexField()) {
@@ -57,7 +57,7 @@ void QueryPreprocessor::checkStrictMode(const std::string &index, int idxNo) con
 }
 
 size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, size_t srcBegin, size_t srcEnd) {
-	assert(dst <= srcBegin);
+	assertrx(dst <= srcBegin);
 	h_vector<int, maxIndexes> iidx(maxIndexes);
 	std::fill(iidx.begin(), iidx.begin() + maxIndexes, -1);
 	size_t merged = 0;
@@ -150,7 +150,7 @@ static void createCompositeKeyValues(const h_vector<std::pair<int, VariantArray>
 	Payload pl1(plType, d);
 	if (!pl) pl = &pl1;
 
-	assert(n >= 0 && n < static_cast<int>(values.size()));
+	assertrx(n >= 0 && n < static_cast<int>(values.size()));
 	const auto &v = values[n];
 	for (auto it = v.second.cbegin(), end = v.second.cend(); it != end; ++it) {
 		pl->Set(v.first, {*it});
@@ -337,7 +337,7 @@ void QueryPreprocessor::AddDistinctEntries(const h_vector<Aggregator, 4> &aggreg
 	for (auto &ag : aggregators) {
 		if (ag.Type() != AggDistinct) continue;
 		QueryEntry qe;
-		assert(ag.Names().size() == 1);
+		assertrx(ag.Names().size() == 1);
 		qe.index = ag.Names()[0];
 		qe.condition = CondAny;
 		qe.distinct = true;
@@ -352,12 +352,12 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 			Skip<QueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{},
 			[&js, cur, this, &rdxCtx](const QueryEntriesBracket &) { injectConditionsFromJoins(cur + 1, Next(cur), js, rdxCtx); },
 			[&](const JoinQueryEntry &jqe) {
-				assert(js.size() > jqe.joinIndex);
+				assertrx(js.size() > jqe.joinIndex);
 				JoinedSelector &joinedSelector = js[jqe.joinIndex];
 				if (joinedSelector.PreResult()->dataMode == JoinPreResult::ModeValues) return;
 				const auto &rNsCfg = joinedSelector.RightNs()->Config();
 				if (rNsCfg.maxPreselectSize == 0 && rNsCfg.maxPreselectPart == 0.0) return;
-				assert(joinedSelector.Type() == InnerJoin || joinedSelector.Type() == OrInnerJoin);
+				assertrx(joinedSelector.Type() == InnerJoin || joinedSelector.Type() == OrInnerJoin);
 				const auto &joinEntries = joinedSelector.JoinQuery().joinEntries_;
 				bool foundANDOrOR = false;
 				for (const auto &je : joinEntries) {
@@ -416,7 +416,7 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 					QueryResults qr;
 					joinedSelector.RightNs()->Select(qr, ctx, rdxCtx);
 					if (qr.Count() > limit) continue;
-					assert(qr.aggregationResults.size() == 1);
+					assertrx(qr.aggregationResults.size() == 1);
 					QueryEntry newEntry;
 					newEntry.index = joinEntry.index_;
 					if (!ns_.getIndexByName(newEntry.index, newEntry.idxNo)) {
@@ -425,22 +425,22 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 					switch (joinEntry.condition_) {
 						case CondEq:
 						case CondSet: {
-							assert(qr.aggregationResults[0].type == AggDistinct);
+							assertrx(qr.aggregationResults[0].type == AggDistinct);
 							newEntry.condition = CondSet;
 							newEntry.values.reserve(qr.aggregationResults[0].distincts.size());
-							assert(qr.aggregationResults[0].distinctsFields.size() == 1);
+							assertrx(qr.aggregationResults[0].distinctsFields.size() == 1);
 							const auto field = qr.aggregationResults[0].distinctsFields[0];
 							for (Variant &distValue : qr.aggregationResults[0].distincts) {
 								if (distValue.Type() == KeyValueComposite) {
 									ConstPayload pl(qr.aggregationResults[0].payloadType, distValue.operator const PayloadValue &());
 									VariantArray v;
 									if (field == IndexValueType::SetByJsonPath) {
-										assert(qr.aggregationResults[0].distinctsFields.getTagsPathsLength() == 1);
+										assertrx(qr.aggregationResults[0].distinctsFields.getTagsPathsLength() == 1);
 										pl.GetByJsonPath(qr.aggregationResults[0].distinctsFields.getTagsPath(0), v, KeyValueUndefined);
 									} else {
 										pl.Get(field, v);
 									}
-									assert(v.size() == 1);
+									assertrx(v.size() == 1);
 									newEntry.values.emplace_back(std::move(v[0]));
 								} else {
 									newEntry.values.emplace_back(std::move(distValue));

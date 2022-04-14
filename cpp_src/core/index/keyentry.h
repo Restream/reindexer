@@ -28,7 +28,7 @@ public:
 	}
 	void UpdateSortedIds(const UpdateSortedContext& ctx) {
 		ids_.reserve((ctx.getSortedIdxCount() + 1) * ids_.size());
-		assert(ctx.getCurSortId());
+		assertrx(ctx.getCurSortId());
 
 		auto idsAsc = Sorted(ctx.getCurSortId());
 

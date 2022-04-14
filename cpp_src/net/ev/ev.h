@@ -160,7 +160,7 @@ public:
 		auto tid = std::this_thread::get_id();
 		if (coroTid_ != std::thread::id() && coroTid_ != tid) {
 			// Every coroutine has to be spawned from the same thread
-			assert(false);
+			assertrx(false);
 		} else {
 			coroTid_ = tid;
 		}
@@ -291,7 +291,7 @@ public:
 
 protected:
 	void callback(int events) {
-		assert(func_ != nullptr);
+		assertrx(func_ != nullptr);
 		func_(*this, events);
 	}
 	std::function<void(io &watcher, int events)> func_ = nullptr;
@@ -330,7 +330,7 @@ protected:
 	timer(coro_t) noexcept : in_coro_storage_(true) {}
 
 	void callback(int tv) {
-		assert(func_ != nullptr);
+		assertrx(func_ != nullptr);
 		if (in_coro_storage_) {
 			auto func = std::move(func_);
 			func(*this, tv);  // Timer is deallocated after this call
@@ -404,7 +404,7 @@ public:
 
 protected:
 	void callback() {
-		assert(func_ != nullptr);
+		assertrx(func_ != nullptr);
 		func_(*this);
 	}
 
@@ -444,7 +444,7 @@ public:
 
 protected:
 	void callback() {
-		assert(func_ != nullptr);
+		assertrx(func_ != nullptr);
 		func_(*this);
 	}
 

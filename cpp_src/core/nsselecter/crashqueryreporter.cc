@@ -80,6 +80,8 @@ void PrintCrashedQuery(std::ostream &out) {
 	}
 	out << "]" << std::endl;
 	out << " Explain:  " << g_queryDebugCtx.explainCalc->GetJSON() << std::endl;
+
+	g_queryDebugCtx.selectCtx = nullptr;
 }
 
 }  // namespace reindexer

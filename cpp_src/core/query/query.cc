@@ -112,7 +112,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 			}
 			case QueryJoinCondition: {
 				uint64_t type = ser.GetVarUint();
-				assert(type != JoinType::LeftJoin);
+				assertrx(type != JoinType::LeftJoin);
 				JoinQueryEntry joinEntry(ser.GetVarUint());
 				hasJoinConditions = true;
 				entries.Append((type == JoinType::OrInnerJoin) ? OpOr : OpAnd, std::move(joinEntry));

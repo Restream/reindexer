@@ -20,7 +20,7 @@ PayloadIface<T>::PayloadIface(const PayloadTypeImpl &t, T &v) : t_(t), v_(&v) {}
 
 template <typename T>
 VariantArray &PayloadIface<T>::Get(int field, VariantArray &keys, bool enableHold) const {
-	assert(field < NumFields());
+	assertrx(field < NumFields());
 	keys.resize(0);
 	if (t_.Field(field).IsArray()) {
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
@@ -37,7 +37,7 @@ VariantArray &PayloadIface<T>::Get(int field, VariantArray &keys, bool enableHol
 
 template <typename T>
 Variant PayloadIface<T>::Get(int field, int idx, bool enableHold) const {
-	assert(field < NumFields());
+	assertrx(field < NumFields());
 
 	if (t_.Field(field).IsArray()) {
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
@@ -160,8 +160,8 @@ template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
 void PayloadIface<T>::Set(int field, int idx, const Variant &v) {
 	auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
 	auto elemSize = t_.Field(field).ElemSizeof();
-	assert(t_.Field(field).IsArray());
-	assert(idx >= 0 && idx < arr->len);
+	assertrx(t_.Field(field).IsArray());
+	assertrx(idx >= 0 && idx < arr->len);
 
 	PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + idx * elemSize);
 	pv.Set(v);
@@ -170,7 +170,7 @@ void PayloadIface<T>::Set(int field, int idx, const Variant &v) {
 template <typename T>
 // template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
 int PayloadIface<T>::ResizeArray(int field, int count, bool append) {
-	assert(t_.Field(field).IsArray());
+	assertrx(t_.Field(field).IsArray());
 
 	size_t realSize = RealSize();
 	auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
@@ -184,7 +184,7 @@ int PayloadIface<T>::ResizeArray(int field, int count, bool append) {
 		arr->len = 0;
 	}
 
-	assert(insert <= realSize);
+	assertrx(insert <= realSize);
 
 	const_cast<PayloadValue *>(v_)->Resize(realSize, realSize + grow - strip);
 	memmove(v_->Ptr() + insert + grow - strip, v_->Ptr() + insert, realSize - insert);
@@ -227,7 +227,7 @@ void PayloadIface<T>::SerializeFields(WrSerializer &ser, const FieldsSet &fields
 	VariantArray varr;
 	for (int field : fields) {
 		if (field == IndexValueType::SetByJsonPath) {
-			assert(tagPathIdx < fields.getTagsPathsLength());
+			assertrx(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx);
 			varr = GetByJsonPath(tagsPath, varr, KeyValueUndefined);
 			if (varr.empty()) {
@@ -309,7 +309,7 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 			} else
 				ret ^= Field(field).Hash();
 		} else {
-			assert(tagPathIdx < fields.getTagsPathsLength());
+			assertrx(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
 			ret ^= GetByJsonPath(tagsPath, keys1, KeyValueUndefined).Hash();
 		}
@@ -321,7 +321,6 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 template <typename T>
 uint64_t PayloadIface<T>::GetHash() const {
 	uint64_t ret = 0;
-	VariantArray keys1;
 
 	for (int field = 0; field < t_.NumFields(); field++) {
 		ret <<= 1;
@@ -385,7 +384,7 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &fi
 		if (field != IndexValueType::SetByJsonPath) {
 			cmpRes = Field(field).Get().Compare(o.Field(field).Get(), opts ? *opts : CollateOpts());
 		} else {
-			assert(tagPathIdx < fields.getTagsPathsLength());
+			assertrx(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
 			krefs1 = GetByJsonPath(tagsPath, krefs1, KeyValueUndefined);
 			krefs2 = o.GetByJsonPath(tagsPath, krefs2, KeyValueUndefined);
@@ -421,7 +420,7 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, const Coll
 template <typename T>
 void PayloadIface<T>::AddRefStrings(int field) {
 	auto &f = t_.Field(field);
-	assert(f.Type() == KeyValueString);
+	assertrx(f.Type() == KeyValueString);
 
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
@@ -444,7 +443,7 @@ void PayloadIface<T>::AddRefStrings() {
 template <typename T>
 void PayloadIface<T>::ReleaseStrings(int field) {
 	auto &f = t_.Field(field);
-	assert(f.Type() == KeyValueString);
+	assertrx(f.Type() == KeyValueString);
 
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
@@ -463,7 +462,7 @@ template <typename T>
 template <typename StrHolder>
 void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder &dest, bool copy) {
 	auto &f = t_.Field(field);
-	assert(f.Type() == KeyValueString);
+	assertrx(f.Type() == KeyValueString);
 
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {

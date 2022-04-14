@@ -159,6 +159,8 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		{"SELECT * FROM test_namespace WHERE 'index+field' = 5", Error{errParseSQL, "Unexpected '=' in query, line: 1 column: 51 52"}},
 		{"SELECT * FROM test_namespace WHERE \"index\" = 5", Query{"test_namespace"}.Where("index", CondEq, 5), PARSE},
 		{"SELECT * FROM test_namespace WHERE 'index' = 5", Error{errParseSQL, "Unexpected '=' in query, line: 1 column: 45 46"}},
+		{"SELECT * FROM test_namespace WHERE NOT index ALLSET 3489578", Query{"test_namespace"}.Not().Where("index", CondAllSet, 3489578)},
+		{"SELECT * FROM test_namespace WHERE NOT index ALLSET (0,1)", Query{"test_namespace"}.Not().Where("index", CondAllSet, {0, 1})},
 		{"SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY 'year' DESC LIMIT 10000000",
 		 Query{"test_namespace"}.Select({"ID", "Year", "Genre"}).Where("year", CondGt, "2016").Sort("year", true).Limit(10000000)},
 		{"SELECT ID FROM test_namespace WHERE name LIKE 'something' AND (genre IN ('1','2','3') AND year > '2016') OR age IN "

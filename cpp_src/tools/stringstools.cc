@@ -149,7 +149,7 @@ std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, cons
 	auto wordStartIt = str.begin();
 	auto wordEndIt = str.begin();
 	auto it = str.begin();
-	assert(endPos > wordPos);
+	assertrx(endPos > wordPos);
 	int numWords = endPos - (wordPos + 1);
 	for (; it != str.end();) {
 		auto ch = utf8::unchecked::next(it);

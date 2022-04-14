@@ -102,11 +102,11 @@ BaseFunctionCtx::Ptr SelectFunction::createFuncForProc(int indexNo) {
 		auto field = nm_.getIndexFields(indexNo)[0];
 		if (field == IndexValueType::SetByJsonPath) field = lastCjsonIdx;
 		auto it = functions_.find(field);
-		assert(it != functions_.end());
+		assertrx(it != functions_.end());
 		return createCtx(it->second, nullptr, nm_.getIndexType(indexNo));
 	} else {
 		auto it = functions_.find(indexNo);
-		assert(it != functions_.end());
+		assertrx(it != functions_.end());
 		return createCtx(it->second, nullptr, nm_.getIndexType(indexNo));
 	}
 }

@@ -22,15 +22,15 @@ class SingleSelectKeyResult {
 public:
 	SingleSelectKeyResult() {}
 	SingleSelectKeyResult(IndexIterator::Ptr indexForwardIter) : indexForwardIter_(indexForwardIter) {
-		assert(indexForwardIter_ != nullptr);
+		assertrx(indexForwardIter_ != nullptr);
 	}
 	template <typename KeyEntryT>
 	explicit SingleSelectKeyResult(const KeyEntryT &ids, SortType sortId) {
 		if (ids.Unsorted().IsCommited()) {
 			ids_ = ids.Sorted(sortId);
 		} else {
-			assert(ids.Unsorted().BTree());
-			assert(!sortId);
+			assertrx(ids.Unsorted().BTree());
+			assertrx(!sortId);
 			set_ = ids.Unsorted().BTree();
 			useBtree_ = true;
 		}

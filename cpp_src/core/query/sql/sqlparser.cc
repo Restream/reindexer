@@ -1032,6 +1032,8 @@ CondType SQLParser::getCondType(std::string_view cond) {
 		return CondRange;
 	} else if (iequals(cond, "like"sv)) {
 		return CondLike;
+	} else if (iequals(cond, "allset"sv)) {
+		return CondAllSet;
 	}
 	throw Error(errParseSQL, "Expected condition operator, but found '%s' in query", cond);
 }

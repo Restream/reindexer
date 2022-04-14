@@ -83,8 +83,28 @@ Item::FieldRef &Item::FieldRef::operator=(span<T> arr) {
 	auto pl(itemImpl_->GetPayload());
 	int pos = pl.ResizeArray(field_, arr.size(), false);
 
-	for (auto &elem : arr) {
-		pl.Set(field_, pos++, Variant(elem));
+	constexpr bool isStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
+						   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char *>;
+	if constexpr (isStr) {
+		if (itemImpl_->IsUnsafe()) {
+			for (auto &elem : arr) {
+				pl.Set(field_, pos++, Variant(elem));
+			}
+		} else {
+			if (!itemImpl_->holder_) itemImpl_->holder_.reset(new std::deque<std::string>);
+			for (auto &elem : arr) {
+				if constexpr (std::is_same_v<T, p_string>) {
+					itemImpl_->holder_->push_back(elem.toString());
+				} else {
+					itemImpl_->holder_->push_back(elem);
+				}
+				pl.Set(field_, pos++, Variant(p_string{&itemImpl_->holder_->back()}));
+			}
+		}
+	} else {
+		for (auto &elem : arr) {
+			pl.Set(field_, pos++, Variant(elem));
+		}
 	}
 	return *this;
 }
@@ -111,7 +131,7 @@ Error Item::GetProtobuf(WrSerializer &wrser) { return impl_->GetProtobuf(wrser);
 
 int Item::NumFields() { return impl_->Type().NumFields(); }
 Item::FieldRef Item::operator[](int field) const {
-	assert(field >= 0 && field < impl_->Type().NumFields());
+	assertrx(field >= 0 && field < impl_->Type().NumFields());
 	return FieldRef(field, impl_);
 }
 

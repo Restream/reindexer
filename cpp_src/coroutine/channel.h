@@ -29,7 +29,7 @@ public:
 	/// @param obj - Object to push
 	template <typename U>
 	void push(U &&obj) {
-		assert(current());	// For now channels should not be used from main routine dew to current resume/suspend logic
+		assertrx(current());	// For now channels should not be used from main routine dew to current resume/suspend logic
 		bool await = false;
 		while (full() || closed_) {
 			if (closed_) {
@@ -62,7 +62,7 @@ public:
 	/// writers.
 	/// @return Pair of value and flag. Flag shows if it's actual value from channel (true) or default constructed one (false)
 	std::pair<T, bool> pop() {
-		assert(current());	// For now channels should not be used from main routine dew to current resume/suspend logic
+		assertrx(current());	// For now channels should not be used from main routine dew to current resume/suspend logic
 		bool await = false;
 		while (empty() && !closed_) {
 			if (!await) {
@@ -95,9 +95,9 @@ public:
 	}
 	/// Reopens closed channel
 	void reopen() noexcept {
-		assert(!opened());
-		assert(writers_.empty());
-		assert(readers_.empty());
+		assertrx(!opened());
+		assertrx(writers_.empty());
+		assertrx(readers_.empty());
 		closed_ = false;
 		r_ptr_ = 0;
 		w_ptr_ = 0;
@@ -129,7 +129,7 @@ private:
 		buf_[w_ptr_] = std::forward<U>(obj);
 		w_ptr_ = (w_ptr_ + 1) % buf_.size();
 		++data_size_;
-		assert(data_size_ <= buf_.size());
+		assertrx(data_size_ <= buf_.size());
 	}
 	static void remove_waiter(waiters_container &waiters) { waiters.erase(std::find(waiters.begin(), waiters.end(), current())); }
 

@@ -41,7 +41,7 @@ std::unordered_map<int, std::set<string>> sqlTokenMatchings = {
 	{StartAfterExplain, {"select", "delete", "update"}},
 	{AggregationSqlToken, {"sum", "avg", "max", "min", "facet", "count", "distinct", "rank"}},
 	{SelectConditionsStart, {"where", "limit", "offset", "order", "join", "left", "inner", "equal_position", "merge", "or", ";"}},
-	{ConditionSqlToken, {">", ">=", "<", "<=", "<>", "in", "range", "is", "==", "="}},
+	{ConditionSqlToken, {">", ">=", "<", "<=", "<>", "in", "allset", "range", "is", "==", "="}},
 	{WhereFieldValueSqlToken, {"null", "empty", "not"}},
 	{WhereFieldNegateValueSqlToken, {"null", "empty"}},
 	{OpSqlToken, {"and", "or"}},

@@ -24,7 +24,7 @@ Error BaseStorage::Open(const std::string& path, const StorageOpts& opts) {
 		info_ = DirsMap::GetInstance().GetDirInfo(path, true);
 	}
 	std::lock_guard<std::mutex> pathLck(info_->mtx);
-	assert(path == info_->Path());
+	assertrx(path == info_->Path());
 	if (info_->IsDestroyed()) {
 		info_->CreatePaceholder();
 	}
@@ -49,7 +49,7 @@ void BaseStorage::Destroy(const std::string& path) {
 	}
 
 	std::unique_lock<std::mutex> pathLck(info_->mtx);
-	assert(path == info_->Path());
+	assertrx(path == info_->Path());
 	info_->RemovePlaceholder();
 	fs::RmDirAll(fs::JoinPath(path, std::string(kLostDirName)));
 	doDestroy(path);

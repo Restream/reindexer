@@ -25,7 +25,7 @@ void SelectIteratorContainer::SortByCost(int expectedIterations) {
 			for (; positionOfTmp < indexes.size(); ++positionOfTmp) {
 				if (indexes[positionOfTmp] == i) break;
 			}
-			assert(positionOfTmp < indexes.size());
+			assertrx(positionOfTmp < indexes.size());
 			Container::value_type tmp = std::move(container_[i]);
 			container_[i] = std::move(container_[indexes[i]]);
 			container_[indexes[i]] = std::move(tmp);
@@ -170,13 +170,13 @@ void SelectIteratorContainer::CheckFirstQuery() {
 			return;
 		}
 	}
-	assert(0);
+	assertrx(0);
 }
 
 // Let iterators choose most effective algorithm
 void SelectIteratorContainer::SetExpectMaxIterations(int expectedIterations) {
-	assert(!Empty());
-	assert(HoldsOrReferTo<SelectIterator>(0));
+	assertrx(!Empty());
+	assertrx(HoldsOrReferTo<SelectIterator>(0));
 	for (Container::iterator it = container_.begin() + 1; it != container_.end(); ++it) {
 		if (it->HoldsOrReferTo<SelectIterator>()) {
 			if (it->IsRef()) it->SetValue(it->Value<SelectIterator>());
@@ -517,7 +517,7 @@ bool SelectIteratorContainer::checkIfSatisfyCondition(SelectIterator &it, Payloa
 }
 
 bool SelectIteratorContainer::checkIfSatisfyCondition(JoinSelectIterator &it, PayloadValue &pv, IdType properRowId, bool match) {
-	assert(ctx_->joinedSelectors);
+	assertrx(ctx_->joinedSelectors);
 	ConstPayload pl(*pt_, pv);
 	auto &joinedSelector = (*ctx_->joinedSelectors)[it.joinIndex];
 	return joinedSelector.Process(properRowId, ctx_->nsid, pl, match);
@@ -660,7 +660,7 @@ void JoinSelectIterator::Dump(WrSerializer &ser, const std::vector<JoinedSelecto
 		if (&jqe != &q.joinEntries_.front()) {
 			ser << ' ' << jqe.op_ << ' ';
 		} else {
-			assert(jqe.op_ == OpAnd);
+			assertrx(jqe.op_ == OpAnd);
 		}
 		ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << jqe.condition_ << ' ' << jqe.index_;
 	}

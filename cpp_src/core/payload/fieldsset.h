@@ -55,7 +55,7 @@ public:
 
 	void push_back(int f) {
 		if (f == IndexValueType::SetByJsonPath) return;
-		assert(f < maxIndexes);
+		assertrx(f < maxIndexes);
 		if (!contains(f)) {
 			mask_ |= 1ULL << f;
 			base_fields_set::push_back(f);
@@ -66,7 +66,7 @@ public:
 		bool byJsonPath = (f == IndexValueType::SetByJsonPath);
 		if (byJsonPath || contains(f)) {
 			auto it = std::find(begin(), end(), f);
-			assert(it != end());
+			assertrx(it != end());
 			base_fields_set::erase(it);
 			if (!byJsonPath) mask_ &= ~(1ULL << f);
 		}
@@ -128,7 +128,7 @@ public:
 	size_t getTagsPathsLength() const { return tagsPaths_.size(); }
 	size_t getJsonPathsLength() const { return jsonPaths_.size(); }
 	bool isTagsPathIndexed(size_t idx) const {
-		assert(idx < tagsPaths_.size());
+		assertrx(idx < tagsPaths_.size());
 		return (tagsPaths_[idx].index() == 1);
 	}
 	const TagsPath &getTagsPath(size_t idx) const { return std::get<TagsPath>(tagsPaths_[idx]); }

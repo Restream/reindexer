@@ -76,7 +76,7 @@ void MsgPackDecoder::decode(Payload* pl, CJsonBuilder& builder, const msgpack_ob
 			const msgpack_object_kv* end = begin + obj.via.map.size;
 			auto object = builder.Object(tagName);
 			for (const msgpack_object_kv* p = begin; p != end; ++p) {
-				assert(p && p->key.type == MSGPACK_OBJECT_STR);
+				assertrx(p && p->key.type == MSGPACK_OBJECT_STR);
 				int tag = tm_->name2tag(std::string_view(p->key.via.str.ptr, p->key.via.str.size), true);
 				decode(pl, object, p->val, tag);
 			}

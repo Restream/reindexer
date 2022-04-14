@@ -1,5 +1,5 @@
 #include "errors.h"
-#include <stdio.h>
+#include <cstdio>
 
 namespace reindexer {
 
@@ -14,11 +14,11 @@ Error::Error(int code) {
 	}
 }
 
-const std::string& Error::what() const {
+const std::string& Error::what() const noexcept {
 	static std::string noerr = "";
 	return ptr_ ? ptr_->what_ : noerr;
 }
 
-int Error::code() const { return ptr_ ? ptr_->code_ : errOK; }
+int Error::code() const noexcept { return ptr_ ? ptr_->code_ : errOK; }
 
 }  // namespace reindexer

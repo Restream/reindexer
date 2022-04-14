@@ -97,7 +97,7 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 }
 
 Error ItemImpl::FromProtobuf(std::string_view buf) {
-	assert(ns_);
+	assertrx(ns_);
 	Payload pl = GetPayload();
 	ProtobufDecoder decoder(tagsMatcher_, schema_);
 
@@ -124,7 +124,7 @@ Error ItemImpl::GetMsgPack(WrSerializer &wrser) {
 }
 
 Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
-	assert(ns_);
+	assertrx(ns_);
 	ConstPayload pl = GetConstPayload();
 	ProtobufBuilder protobufBuilder(&wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
 	ProtobufEncoder protobufEncoder(&tagsMatcher_);

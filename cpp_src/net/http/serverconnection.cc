@@ -5,9 +5,11 @@
 #include "core/cjson/jsonbuilder.h"
 #include "itoa/itoa.h"
 #include "time/fast_time.h"
+#include "tools/assertrx.h"
 #include "tools/errors.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
+
 namespace reindexer {
 namespace net {
 namespace http {
@@ -156,7 +158,7 @@ void ServerConnection::onRead() {
 			minor_version = 0;
 			int res = phr_parse_request(chunk.data(), chunk.size(), &method, &method_len, &uri, &path_len, &minor_version, headers,
 										&num_headers, 0);
-			assert(res <= int(chunk.size()));
+			assertrx(res <= int(chunk.size()));
 
 			if (res == -2) {
 				if (rdBuf_.size() > chunk.size()) {
@@ -252,7 +254,7 @@ void ServerConnection::onRead() {
 					rdBuf_.unroll();
 					chunk = rdBuf_.tail();
 				}
-				assert(chunk.size() >= size_t(bodyLeft_));
+				assertrx(chunk.size() >= size_t(bodyLeft_));
 				parseParams(std::string_view(chunk.data(), bodyLeft_));
 			}
 

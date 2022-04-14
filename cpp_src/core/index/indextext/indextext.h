@@ -42,7 +42,7 @@ public:
 		Base::ClearCache();
 		cache_ft_.reset();
 	}
-	void MarkBuilt() noexcept override { assert(0); }
+	void MarkBuilt() noexcept override { assertrx(0); }
 	bool IsFulltext() const noexcept override { return true; }
 
 protected:

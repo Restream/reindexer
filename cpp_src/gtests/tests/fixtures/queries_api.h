@@ -1188,7 +1188,7 @@ protected:
 		}
 		item[kFieldNameGenre] = rand() % 50;
 		item[kFieldNameName] = RandString().c_str();
-		// item[kFieldNameCountries] = RandStrVector(1 + rand() % 5); // issue #957
+		item[kFieldNameCountries] = RandStrVector(1 + rand() % 5);
 		item[kFieldNameAge] = rand() % 50;
 		item[kFieldNameDescription] = RandString().c_str();
 

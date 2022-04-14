@@ -87,7 +87,7 @@ void CJsonModifier::updateObject(Context &ctx, int tagName) {
 			jsonDecoder.Decode(std::string_view(ctx.value[i]), objBuilder, ctx.jsonPath);
 		}
 	} else {
-		assert(ctx.value.size() == 1);
+		assertrx(ctx.value.size() == 1);
 		CJsonBuilder cjsonBuilder(ctx.wrser, ObjType::TypeObject, &tagsMatcher_, tagName);
 		jsonDecoder.Decode(std::string_view(ctx.value.front()), cjsonBuilder, ctx.jsonPath);
 	}
@@ -95,13 +95,13 @@ void CJsonModifier::updateObject(Context &ctx, int tagName) {
 }
 
 void CJsonModifier::updateField(Context &ctx, size_t idx) {
-	assert(idx < ctx.value.size());
+	assertrx(idx < ctx.value.size());
 	copyCJsonValue(kvType2Tag(ctx.value[idx].Type()), ctx.value[idx], ctx.wrser);
 }
 
 void CJsonModifier::insertField(Context &ctx) {
 	ctx.fieldUpdated = true;
-	assert(ctx.currObjPath.size() < fieldPath_.size());
+	assertrx(ctx.currObjPath.size() < fieldPath_.size());
 
 	int nestedObjects = 0;
 	for (size_t i = ctx.currObjPath.size(); i < fieldPath_.size(); ++i) {
@@ -331,10 +331,10 @@ void CJsonModifier::embedFieldValue(int type, int field, Context &ctx, size_t id
 	if (field < 0) {
 		copyCJsonValue(type, ctx.rdser, ctx.wrser);
 	} else {
-		assert(ctx.payload);
+		assertrx(ctx.payload);
 		VariantArray v;
 		ctx.payload->Get(field, v);
-		assert(idx < v.size());
+		assertrx(idx < v.size());
 		copyCJsonValue(type, v[idx], ctx.wrser);
 	}
 }

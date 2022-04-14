@@ -103,12 +103,12 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 		IndexIterator::Ptr btreeIt(make_intrusive<BtreeIndexIterator<T>>(this->idx_map, startIt, endIt));
 		res.push_back(SingleSelectKeyResult(btreeIt));
 	} else if (sortId && this->sortId_ == sortId && !opts.distinct) {
-		assert(startIt->second.Sorted(this->sortId_).size());
+		assertrx(startIt->second.Sorted(this->sortId_).size());
 		IdType idFirst = startIt->second.Sorted(this->sortId_).front();
 
 		auto backIt = endIt;
 		backIt--;
-		assert(backIt->second.Sorted(this->sortId_).size());
+		assertrx(backIt->second.Sorted(this->sortId_).size());
 		IdType idLast = backIt->second.Sorted(this->sortId_).back();
 		// sort by this index. Just give part of sorted ids;
 		res.push_back(SingleSelectKeyResult(idFirst, idLast + 1));
@@ -165,7 +165,7 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
 					LogError,
 					"Internal error: Index '%s' is broken. Item with key '%s' contains id=%d, which is not present in allIds,totalids=%d\n",
 					this->name_, Variant(keyIt.first).As<string>(), id, totalIds);
-				assert(0);
+				assertrx(0);
 			}
 			if (ids2Sorts[id] == SortIdUnfilled) {
 				ids2Sorts[id] = idx;

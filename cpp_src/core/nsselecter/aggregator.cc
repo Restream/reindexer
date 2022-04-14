@@ -125,9 +125,9 @@ Aggregator::MultifieldComparator::MultifieldComparator(const h_vector<SortingEnt
 bool Aggregator::MultifieldComparator::operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
 	for (const auto &opt : compOpts_) {
 		if (opt.fields.empty()) continue;
-		assert(type_);
-		assert(!lhs.IsFree());
-		assert(!rhs.IsFree());
+		assertrx(type_);
+		assertrx(!lhs.IsFree());
+		assertrx(!rhs.IsFree());
 		int less = ConstPayload(type_, lhs).Compare(rhs, opt.fields);
 		if (less == 0) continue;
 		return less * opt.direction < 0;
@@ -141,9 +141,9 @@ bool Aggregator::MultifieldComparator::operator()(const pair<PayloadValue, int> 
 			if (lhs.second == rhs.second) continue;
 			return opt.direction * (lhs.second - rhs.second) < 0;
 		}
-		assert(type_);
-		assert(!lhs.first.IsFree());
-		assert(!rhs.first.IsFree());
+		assertrx(type_);
+		assertrx(!lhs.first.IsFree());
+		assertrx(!rhs.first.IsFree());
 		int less = ConstPayload(type_, lhs.first).Compare(rhs.first, opt.fields);
 		if (less == 0) continue;
 		return less * opt.direction < 0;
@@ -268,12 +268,12 @@ AggregationResult Aggregator::GetResult() const {
 			if (multifieldFacets_) {
 				fillFacetResult(ret.facets, *multifieldFacets_, offset_, limit_, fields_, payloadType_);
 			} else {
-				assert(singlefieldFacets_);
+				assertrx(singlefieldFacets_);
 				fillFacetResult(ret.facets, *singlefieldFacets_, offset_, limit_);
 			}
 			break;
 		case AggDistinct:
-			assert(distincts_);
+			assertrx(distincts_);
 			ret.payloadType = payloadType_;
 			ret.distinctsFields = fields_;
 			ret.distincts.reserve(distincts_->size());
@@ -297,7 +297,7 @@ void Aggregator::Aggregate(const PayloadValue &data) {
 		return;
 	}
 
-	assert(fields_.size() == 1);
+	assertrx(fields_.size() == 1);
 	if (fields_[0] == IndexValueType::SetByJsonPath) {
 		ConstPayload pl(payloadType_, data);
 		VariantArray va;
@@ -338,11 +338,11 @@ void Aggregator::aggregate(const Variant &v) {
 			result_ = std::max(v.As<double>(), result_);
 			break;
 		case AggFacet:
-			assert(singlefieldFacets_);
+			assertrx(singlefieldFacets_);
 			++(*singlefieldFacets_)[v];
 			break;
 		case AggDistinct:
-			assert(distincts_);
+			assertrx(distincts_);
 			distincts_->insert(v);
 			break;
 		case AggUnknown:

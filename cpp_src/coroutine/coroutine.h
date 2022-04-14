@@ -1,12 +1,12 @@
 #pragma once
 
-#include "vendor/koishi/include/koishi.h"
 #include <algorithm>
-#include <cassert>
 #include <cstdint>
 #include <functional>
 #include <utility>
 #include <vector>
+#include "tools/assertrx.h"
+#include "vendor/koishi/include/koishi.h"
 
 namespace reindexer {
 namespace coroutine {
@@ -74,8 +74,8 @@ private:
 		routine(routine &&other) noexcept;
 		routine(std::function<void()> _func, koishi_coroutine_t *fiber, size_t stack_size) noexcept
 			: func(std::move(_func)), fiber_(fiber), stack_size_(stack_size), is_empty_(true) {
-			assert(stack_size_);
-			assert(fiber_);
+			assertrx(stack_size_);
+			assertrx(fiber_);
 		}
 		routine &operator=(const routine &) = delete;
 		routine &operator=(routine &&) = delete;

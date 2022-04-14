@@ -26,7 +26,7 @@ public:
 		} else {
 			auto& src = this->srcNode_.data_;
 			auto seeds = this->quadraticChooseSeeds();
-			assert(seeds.first < seeds.second);
+			assertrx(seeds.first < seeds.second);
 			size_t indexes[MaxEntries - 1];
 			size_t i = 0;
 			for (; i < seeds.first; ++i) indexes[i] = i;

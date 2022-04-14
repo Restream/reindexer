@@ -22,7 +22,7 @@ size_t PayloadFieldType::ElemSizeof() const {
 		case KeyValueString:
 			return sizeof(p_string);
 		default:
-			assert(0);
+			assertrx(0);
 	}
 	return 0;
 }
@@ -41,7 +41,7 @@ size_t PayloadFieldType::Alignof() const {
 		case KeyValueString:
 			return alignof(p_string);
 		default:
-			assert(0);
+			assertrx(0);
 	}
 	return 0;
 }

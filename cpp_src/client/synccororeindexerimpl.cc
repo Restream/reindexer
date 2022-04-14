@@ -320,7 +320,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 			case DbCmdSelectS: {
 				auto cd =
 					dynamic_cast<DatabaseCommand<Error, std::string_view, SyncCoroQueryResults &, const InternalRdxContext &> *>(v.first);
-				assert(cd);
+				assertrx(cd);
 				Error err = rx.Select(std::get<0>(cd->arguments), std::get<1>(cd->arguments).results_, std::get<2>(cd->arguments));
 				cd->ret.set_value(std::move(err));
 				break;
@@ -328,7 +328,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 			case DbCmdSelectQ: {
 				auto cd =
 					dynamic_cast<DatabaseCommand<Error, const Query &, SyncCoroQueryResults &, const InternalRdxContext &> *>(v.first);
-				assert(cd);
+				assertrx(cd);
 				Error err = rx.Select(std::get<0>(cd->arguments), std::get<1>(cd->arguments).results_, std::get<2>(cd->arguments));
 				cd->ret.set_value(std::move(err));
 				break;
@@ -369,7 +369,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 			}
 			case DbCmdNewTransaction: {
 				auto *cd = dynamic_cast<DatabaseCommand<CoroTransaction, std::string_view, const InternalRdxContext &> *>(v.first);
-				assert(cd);
+				assertrx(cd);
 				CoroTransaction coroTrans = rx.NewTransaction(std::get<0>(cd->arguments), std::get<1>(cd->arguments));
 				cd->ret.set_value(std::move(coroTrans));
 				break;
@@ -389,7 +389,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 
 			case DbCmdFetchResults: {
 				auto cd = dynamic_cast<DatabaseCommand<Error, int, SyncCoroQueryResults &> *>(v.first);
-				assert(cd);
+				assertrx(cd);
 				CoroQueryResults &coroResults = std::get<1>(cd->arguments).results_;
 				auto ret = coroResults.conn_->Call(
 					{reindexer::net::cproto::kCmdFetchResults, coroResults.requestTimeout_, milliseconds(0), nullptr}, coroResults.queryID_,
@@ -417,21 +417,21 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 			}
 			case DbCmdNewItemTx: {
 				auto cd = dynamic_cast<DatabaseCommand<Item, CoroTransaction &> *>(v.first);
-				assert(cd);
+				assertrx(cd);
 				Item item = execNewItemTx(std::get<0>(cd->arguments));
 				cd->ret.set_value(std::move(item));
 				break;
 			}
 			case DbCmdAddTxItem: {
 				auto cd = dynamic_cast<DatabaseCommand<Error, CoroTransaction &, Item, ItemModifyMode> *>(v.first);
-				assert(cd);
+				assertrx(cd);
 				Error err = std::get<0>(cd->arguments).addTxItem(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments));
 				cd->ret.set_value(err);
 				break;
 			}
 			case DbCmdModifyTx: {
 				auto cd = dynamic_cast<DatabaseCommand<Error, CoroTransaction &, Query> *>(v.first);
-				assert(cd);
+				assertrx(cd);
 				CoroTransaction tr = std::get<0>(cd->arguments);
 				Error err(errLogic, "Connection pointer in transaction is nullptr.");
 				if (tr.conn_) {

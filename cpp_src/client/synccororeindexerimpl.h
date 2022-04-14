@@ -136,7 +136,7 @@ private:
 			R r = std::apply(fun, cd->arguments);
 			cd->ret.set_value(std::move(r));
 		} else {
-			assert(false);
+			assertrx(false);
 		}
 	}
 

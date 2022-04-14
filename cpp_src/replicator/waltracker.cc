@@ -117,7 +117,7 @@ std::vector<std::pair<int64_t, std::string>> WALTracker::readFromStorage(int64_t
 		if (dataSlice.size() >= sizeof(int64_t)) {
 			// Read LSN
 			int64_t lsn = *reinterpret_cast<const int64_t *>(dataSlice.data());
-			assert(lsn >= 0);
+			assertrx(lsn >= 0);
 			maxLSN = std::max(maxLSN, lsn);
 			dataSlice = dataSlice.substr(sizeof(lsn));
 			data.push_back({lsn, string(dataSlice)});
