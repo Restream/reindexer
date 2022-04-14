@@ -147,6 +147,7 @@ jobs:
               mkdir -p /Users/runner/go/src/github.com/restream/
               ln -s `pwd` /Users/runner/go/src/github.com/restream/reindexer
             fi
+            go env -w GO111MODULE=auto
             go get gopkg.in/yaml.v2
             go get github.com/stretchr/testify/assert
             go get github.com/golang/snappy
@@ -158,7 +159,7 @@ jobs:
       - name: Tests
         run: |
           if [[ $TEST == 'GO' ]]; then
-            export GO111MODULE=auto
+            go env -w GO111MODULE=auto
             go test -timeout 60m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
           else
             cd build
