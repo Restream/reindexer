@@ -158,6 +158,7 @@ jobs:
       - name: Tests
         run: |
           if [[ $TEST == 'GO' ]]; then
+            export GO111MODULE=auto
             go test -timeout 60m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
           else
             cd build
