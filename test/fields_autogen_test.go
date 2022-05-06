@@ -31,7 +31,8 @@ func TestAutogen(t *testing.T) {
 		item := TestItemAutogen{}
 		err := DB.Upsert(ns, &item, precepts...)
 		require.NoError(t, err)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix())
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix()+1)
 	})
 
 	t.Run("field should contain different count of digits after 'nsec, usec, msec, sec' params usage", func(t *testing.T) {
@@ -73,17 +74,20 @@ func TestAutogen(t *testing.T) {
 		item := TestItemAutogen{ID: rand.Intn(100000000)}
 		_, err := DB.Insert(ns, &item, precepts...)
 		require.NoError(t, err)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 
 		item = TestItemAutogen{}
 		err = DB.Upsert(ns, &item, precepts...)
 		require.NoError(t, err)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 
 		item = TestItemAutogen{}
 		_, err = DB.Update(ns, &item, precepts...)
 		require.NoError(t, err)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 	})
 
 	t.Run("fill on upsert not exist item", func(t *testing.T) {
@@ -92,7 +96,8 @@ func TestAutogen(t *testing.T) {
 
 		err := DB.Upsert(ns, &item, precepts...)
 		require.NoError(t, err)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 	})
 
 	t.Run("not fill on update not exist item", func(t *testing.T) {
@@ -113,7 +118,8 @@ func TestAutogen(t *testing.T) {
 		count, err := DB.Insert(ns, &item, precepts...)
 		require.NoError(t, err)
 		assert.Equal(t, 1, count)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 
 		item = TestItemAutogen{ID: id}
 		count, err = DB.Insert(ns, &item, precepts...)

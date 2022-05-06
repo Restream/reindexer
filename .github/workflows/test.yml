@@ -83,7 +83,10 @@ jobs:
           make -j4
           STRIP=/bin/true cpack
       - name: 'Tar Artifacts'
-        run: tar -cvf artifacts.tar build/ bindings/builtin/builtin_posix.go bindings/builtinserver/builtinserver_posix.go dependencies.sh
+        run: |
+          find ./build/ -name CMakeFiles | xargs -n1 rm -rf
+          rm -rf ./build/_CPack_Packages ./build/cpp_src/server/reindexer_server_resources
+          tar -cvf artifacts.tar build/ bindings/builtin/builtin_posix.go bindings/builtinserver/builtinserver_posix.go dependencies.sh
       - name: Archive Artifacts
         uses: actions/upload-artifact@v2
         with:

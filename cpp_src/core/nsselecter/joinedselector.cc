@@ -23,7 +23,7 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &que
 		matchedAtLeastOnce = joinResLong.it.val.matchedAtLeastOnce;
 		rightNs_->FillResult(joinItemR, joinResLong.it.val.ids_);
 	} else {
-		SelectCtx ctx(query);
+		SelectCtx ctx(query, nullptr);
 		ctx.preResult = preResult_;
 		ctx.matchedAtLeastOnce = false;
 		ctx.reqMatchedOnceFlag = true;

@@ -897,11 +897,12 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 		if (!jjq.entries.Empty() && !joinRes.haveData) {
 			QueryResults jr;
 			jjq.Limit(UINT_MAX);
-			SelectCtx ctx(jjq);
+			SelectCtx ctx(jjq, &q);
 			ctx.preResult = preResult;
 			ctx.preResult->executionMode = JoinPreResult::ModeBuild;
 			ctx.preResult->enableStoredValues = isPreResultValuesModeOptimizationAvailable(jItemQ, jns);
 			ctx.functions = &func;
+			ctx.requiresCrashTracking = true;
 			jns->Select(jr, ctx, rdxCtx);
 			assertrx(ctx.preResult->executionMode == JoinPreResult::ModeExecute);
 		}
@@ -957,12 +958,13 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 	JoinedSelectors mainJoinedSelectors = prepareJoinedSelectors(q, result, locks, func, joinQueryResultsContexts, ctx);
 	prepareJoinResults(q, result);
 	{
-		SelectCtx selCtx(q);
+		SelectCtx selCtx(q, nullptr);
 		selCtx.joinedSelectors = mainJoinedSelectors.size() ? &mainJoinedSelectors : nullptr;
 		selCtx.contextCollectingMode = true;
 		selCtx.functions = &func;
 		selCtx.nsid = 0;
 		selCtx.isForceAll = !q.mergeQueries_.empty();
+		selCtx.requiresCrashTracking = true;
 		ns->Select(result, selCtx, ctx);
 		result.AddNamespace(ns, {ctx, true});
 	}
@@ -976,13 +978,14 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 		for (auto& mq : q.mergeQueries_) {
 			auto mns = locks.Get(mq._namespace);
 			assertrx(mns);
-			SelectCtx mctx(mq);
+			SelectCtx mctx(mq, &q);
 			mctx.nsid = ++counter;
 			mctx.isForceAll = true;
 			mctx.functions = &func;
 			mctx.contextCollectingMode = true;
 			mergeJoinedSelectors.emplace_back(prepareJoinedSelectors(mq, result, locks, func, joinQueryResultsContexts, ctx));
 			mctx.joinedSelectors = mergeJoinedSelectors.back().size() ? &mergeJoinedSelectors.back() : nullptr;
+			mctx.requiresCrashTracking = true;
 
 			mns->Select(result, mctx, ctx);
 			result.AddNamespace(mns, {ctx, true});

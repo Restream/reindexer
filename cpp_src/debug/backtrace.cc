@@ -50,7 +50,9 @@ extern "C" void __assert_fail(const char *expr, const char *file, int line, cons
 namespace reindexer {
 namespace debug {
 
-std::function<void(std::ostream &sout)> g_crash_query_reporter = [](std::ostream &) {};
+std::function<void(std::ostream &sout)> g_crash_query_reporter = [](std::ostream &sout) {
+	sout << "<Empty crash query reporter>" << std::endl;
+};
 std::function<void(std::string_view out)> g_writer = [](std::string_view sv) { std::cerr << sv; };
 
 #if REINDEX_WITH_UNWIND
@@ -156,7 +158,11 @@ void inline print_backtrace(std::ostream &sout, void *ctx, int sig) {
 }
 
 void print_crash_query(std::ostream &sout) {
-	if (g_crash_query_reporter) g_crash_query_reporter(sout);
+	if (g_crash_query_reporter) {
+		g_crash_query_reporter(sout);
+	} else {
+		sout << "<No crash query reporter set>" << std::endl;
+	}
 }
 
 static void sighandler(int sig, siginfo_t *, void *ctx) {

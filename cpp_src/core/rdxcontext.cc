@@ -20,10 +20,9 @@ RdxContext::RdxContext(RdxContext&& other)
 RdxContext::~RdxContext() {
 	if (holdStatus_ == kHold) {
 		activityCtx_.~RdxActivityContext();
-#ifndef NDEBUG
 	} else if (holdStatus_ == kPtr) {
-		assertrx(activityPtr_->refCount_.fetch_sub(1, std::memory_order_relaxed) != 0u);
-#endif
+		[[maybe_unused]] const auto refs = activityPtr_->refCount_.fetch_sub(1, std::memory_order_relaxed);
+		assertrx(refs != 0u);
 	}
 }
 

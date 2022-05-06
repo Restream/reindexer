@@ -87,9 +87,7 @@ public:
 		  cmpl_(cmpl) {}
 	RdxContext(RdxActivityContext* ptr, const IRdxCancelContext* cancelCtx = nullptr, Completion cmpl = nullptr)
 		: fromReplication_(false), holdStatus_(ptr ? kPtr : kEmpty), activityPtr_(ptr), cancelCtx_(cancelCtx), cmpl_(cmpl) {
-#ifndef NDEBUG
 		if (holdStatus_ == kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
-#endif
 	}
 
 	RdxContext(RdxContext&& other);

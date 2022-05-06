@@ -1,3 +1,13 @@
+# Version 3.5.2 (06.05.2022)
+## Core
+- [fix] Fix sigabort after querie's filters merging
+- [fix] Fix crash query report for joined queries
+- [fix] Fix SQL parsing for numeric field names (in update-queries and in filter conditions)
+
+## Face
+- [fea] Add the 'More' button for the long text fields on the List view
+- [fix] Exclude the es5-ext library
+
 # Version 3.5.0 (14.04.2022)
 ## Core
 - [fea] Optimize composite fulltext indexes rebuilding. Composite ft index will not be rebuild after update, if non of the index's parts were actually changed

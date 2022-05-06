@@ -74,7 +74,7 @@ install_cmake_linux () {
 install_osx() {
     for pkg in $osx_deps
     do
-        if brew list -1 | grep -q "^${pkg}\$"; then
+        if brew list -1 | grep -E -q "^${pkg}\$|^${pkg}@[0-9.]+\$"; then
             info_msg "Package $pkg already installed. Skip ....."
         else
             info_msg "Installing $pkg package ....."
