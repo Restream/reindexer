@@ -56,19 +56,20 @@ void QueryPreprocessor::checkStrictMode(const std::string &index, int idxNo) con
 	}
 }
 
-size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, size_t srcBegin, size_t srcEnd) {
+size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, const size_t srcBegin, const size_t srcEnd) {
 	assertrx(dst <= srcBegin);
 	h_vector<int, maxIndexes> iidx(maxIndexes);
 	std::fill(iidx.begin(), iidx.begin() + maxIndexes, -1);
 	size_t merged = 0;
 	for (size_t src = srcBegin, nextSrc; src < srcEnd; src = nextSrc) {
 		nextSrc = Next(src);
-		container_[src].InvokeAppropriate<void>(
+		const bool changeDst = container_[src].InvokeAppropriate<bool>(
 			[&](const QueryEntriesBracket &) {
 				if (dst != src) container_[dst] = std::move(container_[src]);
 				const size_t mergedInBracket = lookupQueryIndexes(dst + 1, src + 1, nextSrc);
 				container_[dst].Value<QueryEntriesBracket>().Erase(mergedInBracket);
 				merged += mergedInBracket;
+				return true;
 			},
 			[&](QueryEntry &entry) {
 				if (entry.idxNo == IndexValueType::NotSet) {
@@ -90,7 +91,7 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, size_t srcBegin, size_t
 						if (iidx[entry.idxNo] >= 0 && !ns_.indexes_[entry.idxNo]->Opts().IsArray()) {
 							if (mergeQueryEntries(iidx[entry.idxNo], src)) {
 								++merged;
-								return;
+								return false;
 							}
 						} else {
 							iidx[entry.idxNo] = dst;
@@ -98,9 +99,11 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, size_t srcBegin, size_t
 					}
 				}
 				if (dst != src) container_[dst] = std::move(container_[src]);
+				return true;
 			},
 			[dst, src, this](JoinQueryEntry &) {
 				if (dst != src) container_[dst] = std::move(container_[src]);
+				return true;
 			},
 			[dst, src, this](BetweenFieldsQueryEntry &entry) {
 				if (entry.firstIdxNo == IndexValueType::NotSet) {
@@ -116,11 +119,13 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, size_t srcBegin, size_t
 				}
 				checkStrictMode(entry.secondIndex, entry.secondIdxNo);
 				if (dst != src) container_[dst] = std::move(container_[src]);
+				return true;
 			},
 			[dst, src, this](AlwaysFalse &) {
 				if (dst != src) container_[dst] = std::move(container_[src]);
+				return true;
 			});
-		dst = Next(dst);
+		if (changeDst) dst = Next(dst);
 	}
 	return merged;
 }
@@ -164,7 +169,7 @@ static void createCompositeKeyValues(const h_vector<std::pair<int, VariantArray>
 	}
 }
 
-size_t QueryPreprocessor::substituteCompositeIndexes(size_t from, size_t to) {
+size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const size_t to) {
 	FieldsSet fields;
 	size_t deleted = 0;
 	for (size_t cur = from, first = from, end = to; cur < end; cur = Next(cur), end = to - deleted) {
@@ -412,7 +417,7 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 						default:
 							throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(joinEntry.condition_));
 					}
-					SelectCtx ctx{query};
+					SelectCtx ctx{query, nullptr};
 					QueryResults qr;
 					joinedSelector.RightNs()->Select(qr, ctx, rdxCtx);
 					if (qr.Count() > limit) continue;

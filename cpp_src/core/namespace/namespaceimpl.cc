@@ -766,10 +766,11 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);	 // throw exception if false
 
 	NsSelecter selecter(this);
-	SelectCtx selCtx(query);
+	SelectCtx selCtx(query, nullptr);
 	SelectFunctionsHolder func;
 	selCtx.functions = &func;
 	selCtx.contextCollectingMode = true;
+	selCtx.requiresCrashTracking = true;
 	selecter(result, selCtx, ctx.rdxContext);
 
 	auto tmStart = high_resolution_clock::now();
@@ -996,8 +997,9 @@ void NamespaceImpl::Delete(const Query &q, QueryResults &result, const NsContext
 	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);	 // throw exception if false
 
 	NsSelecter selecter(this);
-	SelectCtx selCtx(q);
+	SelectCtx selCtx(q, nullptr);
 	selCtx.contextCollectingMode = true;
+	selCtx.requiresCrashTracking = true;
 	SelectFunctionsHolder func;
 	selCtx.functions = &func;
 	selecter(result, selCtx, ctx.rdxContext);

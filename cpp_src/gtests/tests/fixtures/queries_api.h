@@ -1482,12 +1482,24 @@ protected:
 					ExecuteAndVerify(Query(default_namespace)
 										 .Distinct(distinct.c_str())
 										 .Sort(sortIdx, sortOrder)
-										 .Debug(LogTrace)
 										 .Where(kFieldNameGenre, CondEq, 5)
 										 .Where(kFieldNameAge, CondEq, 3)
 										 .Where(kFieldNameYear, CondGe, 2010)
 										 .Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
 										 .Debug(LogTrace));
+
+					ExecuteAndVerify(Query(default_namespace)
+										 .Distinct(distinct.c_str())
+										 .Sort(sortIdx, sortOrder)
+										 .Debug(LogTrace)
+										 .Where(kFieldNameGenre, CondEq, 5)
+										 .Where(kFieldNameAge, CondEq, 3)
+										 .Where(kFieldNameGenre, CondEq, 5)
+										 .Where(kFieldNameAge, CondEq, 3)
+										 .OpenBracket()
+											 .Where(kFieldNameYear, CondGe, 2010)
+										 .CloseBracket()
+										 .Or().Where(kFieldNameYear, CondGe, 2010));
 
 					ExecuteAndVerify(Query(default_namespace)
 										 .Distinct(distinct.c_str())

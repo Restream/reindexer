@@ -248,6 +248,24 @@ Composite indexes should be enclosed in double quotes.
 	SELECT * FROM items WHERE "field1+field2" = 'Vasya'
 ```
 
+If the field name does not start with alpha, '_' or '#' it must be enclosed in double quotes, examples:
+
+```sql
+	UPDATE items DROP "123"
+```
+
+```sql
+	SELECT * FROM ns WHERE "123" = 'some_value'
+```
+
+```sql
+	SELECT * FROM ns WHERE "123abc" = 123
+```
+
+```sql
+	DELETE FROM ns WHERE "123abc123" = 111
+```
+
 ## Installation
 
 Reindexer can run in 3 different modes:
