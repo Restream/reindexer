@@ -81,6 +81,7 @@ public:
 	int TotalCount() const noexcept { return i_.queryParams_.totalcount; }
 	bool HaveRank() const noexcept { return i_.queryParams_.flags & kResultsWithRank; }
 	bool NeedOutputRank() const noexcept { return i_.queryParams_.flags & kResultsNeedOutputRank; }
+	bool NeedOutputShardId() const noexcept { return i_.fetchFlags_ & kResultsNeedOutputShardId; }
 	const string& GetExplainResults() const noexcept { return i_.queryParams_.explainResults; }
 	const vector<AggregationResult>& GetAggregationResults() const noexcept { return i_.queryParams_.aggResults; }
 	Error Status() const noexcept { return i_.status_; }
@@ -124,6 +125,7 @@ private:
 		i_.conn_ = nullptr;
 		i_.queryID_ = -1;
 	}
+	const net::cproto::CoroClientConnection* getConn() const noexcept { return i_.conn_; }
 
 	struct Impl {
 		Impl(int fetchFlags) noexcept : fetchFlags_(fetchFlags) {}

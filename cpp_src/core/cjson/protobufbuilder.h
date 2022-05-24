@@ -86,12 +86,12 @@ public:
 	}
 
 	ProtobufBuilder ArrayNotPacked(int fieldIdx) {
-		assert(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
+		assertrx(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
 		return ProtobufBuilder(ser_, ObjType::TypeObjectArray, schema_, tm_, tagsPath_, fieldIdx);
 	}
 
 	ProtobufBuilder ArrayPacked(int fieldIdx) {
-		assert(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
+		assertrx(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
 		return ProtobufBuilder(ser_, ObjType::TypeArray, schema_, tm_, tagsPath_, fieldIdx);
 	}
 

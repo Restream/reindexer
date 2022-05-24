@@ -441,6 +441,8 @@ type DBAsyncReplicationNode struct {
 type DBAsyncReplicationConfig struct {
 	// Replication role. One of: none, leader, follower
 	Role string `json:"role"`
+	// Replication mode for mixed 'sync cluster + async replication' configs. One of: default, from_sync_leader
+	ReplicationMode string `json:"replication_mode"`
 	// force resync on logic error conditions
 	ForceSyncOnLogicError bool `json:"force_sync_on_logic_error"`
 	// force resync on wrong data hash conditions

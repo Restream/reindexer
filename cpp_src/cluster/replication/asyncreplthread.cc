@@ -4,8 +4,9 @@ namespace reindexer {
 namespace cluster {
 
 AsyncReplThread::AsyncReplThread(int serverId, ReindexerImpl& thisNode, std::shared_ptr<BaseT::UpdatesQueueT> q,
-								 const std::vector<AsyncReplNodeConfig>& nodesList, ReplicationStatsCollector statsCollector)
-	: base_(serverId, thisNode, std::move(q), AsyncThreadParam(&nodesList), statsCollector) {}
+								 const std::vector<AsyncReplNodeConfig>& nodesList, AsyncReplicationMode replMode,
+								 SharedSyncState<>& syncState, ReplicationStatsCollector statsCollector)
+	: base_(serverId, thisNode, std::move(q), AsyncThreadParam(&nodesList, replMode, syncState), statsCollector) {}
 
 AsyncReplThread::~AsyncReplThread() {
 	if (th.joinable()) {

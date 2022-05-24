@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "4.2.1"
+  version: "4.3.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -740,6 +740,14 @@ paths:
         enum:
           - on
           - off
+      - name: "with_shard_ids"
+        in: query
+        type: string
+        description: "if sharding is enabled, then add the #shard_id field to the item"
+        required: false
+        enum:
+          - on
+          - off          
       responses:
         200:
           description: "successful operation"
@@ -2172,6 +2180,12 @@ definitions:
                       - follower
                       - leader
                       - candidate
+                  replication_mode:
+                    description: "replication mode for mixed 'sync cluster + async replication' configs"
+                    type: string
+                    enum:
+                      - default
+                      - from_sync_leader
                   is_synchronized:
                     description: "shows synchroniztion state for raft-cluster node (false if node is outdated)"
                     type: boolean
@@ -2454,11 +2468,6 @@ definitions:
         type: array
         items:
           $ref: "#/definitions/AggregationsDef"
-      equal_positions:
-        type: array
-        description: "Array of array fields to be searched with equal array indexes"
-        items:
-          $ref: "#/definitions/EqualPositionDef"
       explain:
         description: "Add query execution explain information"
         type: boolean
@@ -2527,6 +2536,11 @@ definitions:
       second_field:
         description: "Second field json path or index name for filter by two fields"
         type: string
+      equal_positions:
+        type: array
+        description: "Array of array fields to be searched with equal array indexes"
+        items:
+          $ref: "#/definitions/EqualPositionDef"
 
   SortDef:
     description: "Specifies results sorting order"

@@ -168,7 +168,7 @@ func newConnection(
 
 	go c.deadlineTicker()
 
-	intCtx, cancel := applyTimeout(ctx, uint32(params.loginTimeout))
+	intCtx, cancel := applyTimeout(ctx, uint32(params.loginTimeout/time.Second))
 	if cancel != nil {
 		defer cancel()
 	}

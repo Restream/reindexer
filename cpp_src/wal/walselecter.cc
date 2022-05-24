@@ -74,8 +74,8 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 				case WalItemUpdate:
 					if (ns_->items_[rec.id].IsFree()) {
 						if (snapshot) {
-							assert(!start);
-							assert(count < 0);
+							assertrx(!start);
+							assertrx(count < 0);
 							putWalRecord(it, rec);
 						}
 						break;
@@ -122,8 +122,8 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 					break;
 				case WalEmpty:
 					if (snapshot) {
-						assert(!start);
-						assert(count < 0);
+						assertrx(!start);
+						assertrx(count < 0);
 						putWalRecord(it, rec);	// TODO: Check if it's possible to remove empty records fro, snapshot
 					}
 					break;

@@ -18,7 +18,7 @@ class ArrayAdapter {
 			return *this;
 		}
 		bool operator!=(const ConstIterator &other) const noexcept {
-			assert(&aa_ == &other.aa_);
+			assertrx(&aa_ == &other.aa_);
 			return index_ != other.index_;
 		}
 		reindexer::Variant operator*() const { return aa_[index_]; }
@@ -33,7 +33,7 @@ public:
 		: ptr_{ptr}, len_{l}, sizeof_{size_of}, type_{t} {}
 	size_t size() const noexcept { return len_; }
 	reindexer::Variant operator[](size_t i) const {
-		assert(i < len_);
+		assertrx(i < len_);
 		switch (type_) {
 			case KeyValueInt64:
 				return reindexer::Variant{*reinterpret_cast<const int64_t *>(ptr_ + sizeof_ * i)};

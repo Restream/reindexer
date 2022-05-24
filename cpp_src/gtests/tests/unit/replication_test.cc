@@ -330,6 +330,7 @@ TEST_F(ReplicationLoadApi, ConfigReadingOnStartup) {
 	StopServer(kTestServerID);
 	WriteConfigFile(kAsyncReplFilePath,
 					"role: none\n"
+					"mode: default\n"
 					"retry_sync_interval_msec: 3000\n"
 					"syncs_per_thread: 2\n"
 					"app_name: node_XXX\n"
@@ -341,7 +342,7 @@ TEST_F(ReplicationLoadApi, ConfigReadingOnStartup) {
 					"server_id: 4\n"
 					"cluster_id: 2\n");
 	StartServer(kTestServerID);
-	AsyncReplicationConfigTest config("none", {}, true, false, 4, "node_XXX");
+	AsyncReplicationConfigTest config("none", {}, true, false, 4, "node_XXX", {}, "default");
 	CheckReplicationConfigNamespace(kTestServerID, config);
 }
 
@@ -363,21 +364,22 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 									  "server_id: 3\n"
 									  "cluster_id: 2\n");
 	// Validate config file
-	AsyncReplicationConfigTest config("none", {}, true, false, 3, "node_1");
+	AsyncReplicationConfigTest config("none", {}, true, false, 3, "node_1", {}, "default");
 	CheckReplicationConfigNamespace(kTestServerID, config);
 	config = AsyncReplicationConfigTest("leader", {ReplNode{"cproto://127.0.0.1:53019/db"}, ReplNode{"cproto://127.0.0.1:53020/db"}}, false,
-										true, 3, "node_1", {"ns1", "ns2"});
+										true, 3, "node_1", {"ns1", "ns2"}, "default");
 	// Set replication config via namespace
 	SetServerConfig(kTestServerID, config);
 	// Validate #config namespace
 	CheckReplicationConfigFile(kTestServerID, config);
-	config = AsyncReplicationConfigTest("leader", {ReplNode{"cproto://127.0.0.1:45000/db"}}, false, true, 3, "node_xxx");
+	config = AsyncReplicationConfigTest("leader", {ReplNode{"cproto://127.0.0.1:45000/db"}}, false, true, 3, "node_xxx", {}, "default");
 	// Set replication config via namespace
 	SetServerConfig(kTestServerID, config);
 	// Validate replication.conf file
 	CheckReplicationConfigFile(kTestServerID, config);
 
-	config = AsyncReplicationConfigTest("leader", {ReplNode{"cproto://127.0.0.1:45000/db", {{"ns1", "ns2"}}}}, false, true, 3, "node_xxx");
+	config = AsyncReplicationConfigTest("leader", {ReplNode{"cproto://127.0.0.1:45000/db", {{"ns1", "ns2"}}}}, false, true, 3, "node_xxx",
+										{}, "default");
 	// Set replication config with custom ns list for existing node via namespace
 	SetServerConfig(kTestServerID, config);
 	// Validate replication.conf file
@@ -405,7 +407,7 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 			"    dsn: cproto://127.0.0.1:53002/db2\n");
 	config = AsyncReplicationConfigTest("leader",
 										{ReplNode{"cproto://127.0.0.1:53001/db1", {{"ns4"}}}, ReplNode{"cproto://127.0.0.1:53002/db2"}},
-										false, true, 3, "node_1", {"ns1", "ns3"});
+										false, true, 3, "node_1", {"ns1", "ns3"}, "default");
 	// Validate #config namespace
 	CheckReplicationConfigNamespace(kTestServerID, config, std::chrono::seconds(3));
 
@@ -447,7 +449,7 @@ TEST_F(ReplicationLoadApi, DynamicRoleSwitch) {
 		expectedLsnCounter += kPortionSize;
 		WaitSync("some", lsn_t(expectedLsnCounter, masterId_));
 		WaitSync("some1", lsn_t(expectedLsnCounter, masterId_));
-		SwitchMaster(i % kDefaultServerCount, {"some", "some1"});
+		SwitchMaster(i % kDefaultServerCount, {"some", "some1"}, (i % 2 == 0) ? "default" : "from_sync_leader");
 	}
 
 	stop = true;

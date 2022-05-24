@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <optional>
 #include "core/keyvalue/variant.h"
 #include "estl/fast_hash_set.h"
 #include "estl/span.h"
@@ -65,6 +66,7 @@ struct ClusterNodeConfig {
 };
 
 struct AsyncReplConfigData;
+enum class AsyncReplicationMode { Default, FromClusterLeader };
 
 class AsyncReplNodeConfig {
 public:
@@ -111,20 +113,32 @@ public:
 		}
 		return nss;
 	}
+	void SetReplicationMode(AsyncReplicationMode mode) noexcept { replicationMode_ = mode; }
+	const std::optional<AsyncReplicationMode> &GetReplicationMode() const noexcept { return replicationMode_; }
 
-	bool operator==(const AsyncReplNodeConfig &rdata) const noexcept { return (dsn == rdata.dsn) && nsListsAreEqual(rdata); }
+	bool operator==(const AsyncReplNodeConfig &rdata) const noexcept {
+		return (dsn == rdata.dsn) && nsListsAreEqual(rdata) && replicationModesAreEqual(rdata);
+	}
 
 	std::string dsn;
 
 private:
 	bool nsListsAreEqual(const AsyncReplNodeConfig &rdata) const noexcept {
-		return (hasOwnNsList_ == rdata.hasOwnNsList_) || (!rdata.namespaces_ && !namespaces_) ||
-			   (rdata.namespaces_ && namespaces_ && *rdata.namespaces_ == *namespaces_);
+		return (!hasOwnNsList_ && !rdata.hasOwnNsList_) || (!rdata.namespaces_ && !namespaces_) ||
+			   (hasOwnNsList_ && rdata.hasOwnNsList_ && rdata.namespaces_ && namespaces_ && *rdata.namespaces_ == *namespaces_);
+	}
+	bool replicationModesAreEqual(const AsyncReplNodeConfig &rdata) const noexcept {
+		return (!replicationMode_.has_value() && !rdata.replicationMode_.has_value()) || replicationMode_ == rdata.replicationMode_;
 	}
 
 	intrusive_ptr<NamespaceList> namespaces_;
 	bool hasOwnNsList_ = false;
+	std::optional<AsyncReplicationMode> replicationMode_;
 };
+
+constexpr size_t kDefaultClusterProxyConnCount = 8;
+constexpr size_t kDefaultClusterProxyCoroPerConn = 4;
+constexpr size_t kDefaultClusterProxyConnThreads = 2;
 
 struct ClusterConfigData {
 	Error FromYML(const std::string &yaml);
@@ -136,7 +150,8 @@ struct ClusterConfigData {
 			   (parallelSyncsPerThreadCount == rdata.parallelSyncsPerThreadCount) &&
 			   (batchingRoutinesCount == rdata.batchingRoutinesCount) && (leaderSyncThreads == rdata.leaderSyncThreads) &&
 			   (leaderSyncConcurrentSnapshotsPerNode == rdata.leaderSyncConcurrentSnapshotsPerNode) &&
-			   (syncTimeoutSec == rdata.syncTimeoutSec);
+			   (syncTimeoutSec == rdata.syncTimeoutSec) && (proxyConnCount == rdata.proxyConnCount) &&
+			   (proxyConnConcurrency == rdata.proxyConnConcurrency) && (proxyConnThreads == rdata.proxyConnThreads);
 	}
 	bool operator!=(const ClusterConfigData &rdata) const noexcept { return !operator==(rdata); }
 
@@ -160,10 +175,14 @@ struct ClusterConfigData {
 	int maxWALDepthOnForceSync = 1000;
 	int leaderSyncThreads = 8;
 	int leaderSyncConcurrentSnapshotsPerNode = 2;
+	int proxyConnCount = kDefaultClusterProxyConnCount;
+	int proxyConnConcurrency = kDefaultClusterProxyCoroPerConn;
+	int proxyConnThreads = kDefaultClusterProxyConnThreads;
 };
 
-constexpr size_t kDefaultShardingProxyConnCount = 6;
-constexpr size_t kDefaultShardingProxyCoroPerConn = 16;
+constexpr uint32_t kDefaultShardingProxyConnCount = 8;
+constexpr uint32_t kDefaultShardingProxyCoroPerConn = 8;
+constexpr uint32_t kDefaultShardingProxyConnThreads = 4;
 
 struct ShardingConfig {
 	struct Key {
@@ -205,6 +224,7 @@ struct ShardingConfig {
 	std::chrono::seconds shardsAwaitingTimeout = std::chrono::seconds(30);
 	int proxyConnCount = kDefaultShardingProxyConnCount;
 	int proxyConnConcurrency = kDefaultShardingProxyCoroPerConn;
+	int proxyConnThreads = kDefaultShardingProxyConnThreads;
 };
 bool operator==(const ShardingConfig &, const ShardingConfig &);
 bool operator==(const ShardingConfig::Key &, const ShardingConfig::Key &);
@@ -221,9 +241,12 @@ struct AsyncReplConfigData {
 	void GetYAML(WrSerializer &ser) const;
 	static Role Str2role(std::string_view role) noexcept;
 	static std::string Role2str(Role) noexcept;
+	static AsyncReplicationMode Str2mode(std::string_view mode);
+	static std::string Mode2str(AsyncReplicationMode) noexcept;
 
 	std::string appName = "rx_repl_leader";
 	Role role = Role::None;
+	AsyncReplicationMode mode = AsyncReplicationMode::Default;
 	int replThreadsCount = 4;
 	int parallelSyncsPerThreadCount = 2;
 	int onlineUpdatesTimeoutSec = 20;
@@ -238,7 +261,8 @@ struct AsyncReplConfigData {
 	std::vector<AsyncReplNodeConfig> nodes;
 
 	bool operator==(const AsyncReplConfigData &rdata) const noexcept {
-		return (replThreadsCount == rdata.replThreadsCount) && (parallelSyncsPerThreadCount == rdata.parallelSyncsPerThreadCount) &&
+		return (role == rdata.role) && (mode == rdata.mode) && (replThreadsCount == rdata.replThreadsCount) &&
+			   (parallelSyncsPerThreadCount == rdata.parallelSyncsPerThreadCount) &&
 			   (forceSyncOnLogicError == rdata.forceSyncOnLogicError) && (forceSyncOnWrongDataHash == rdata.forceSyncOnWrongDataHash) &&
 			   (retrySyncIntervalMSec == rdata.retrySyncIntervalMSec) && (onlineUpdatesTimeoutSec == rdata.onlineUpdatesTimeoutSec) &&
 			   (namespaces == rdata.namespaces || (namespaces && rdata.namespaces && *namespaces == *rdata.namespaces)) &&

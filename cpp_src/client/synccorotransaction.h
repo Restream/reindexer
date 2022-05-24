@@ -34,6 +34,8 @@ public:
 	PayloadType GetPayloadType() const;
 	TagsMatcher GetTagsMatcher() const;
 
+	int64_t GetTransactionId() const noexcept;
+
 private:
 	friend class SyncCoroReindexer;
 	friend class SyncCoroReindexerImpl;
@@ -41,6 +43,7 @@ private:
 	SyncCoroTransaction(std::shared_ptr<SyncCoroReindexerImpl> rx, CoroTransaction&& tr) noexcept : tr_(std::move(tr)), rx_(rx) {}
 	SyncCoroTransaction(Error status) noexcept : tr_(status) {}
 	void setStatus(Error&& status) noexcept { tr_.setStatus(std::move(status)); }
+	const net::cproto::CoroClientConnection* coroConnection() const noexcept { return tr_.getConn(); }
 
 	CoroTransaction tr_;
 	std::shared_ptr<SyncCoroReindexerImpl> rx_;

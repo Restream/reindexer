@@ -76,7 +76,7 @@ Error LevelDbStorage::Repair(const std::string& path) {
 Snapshot::Ptr LevelDbStorage::MakeSnapshot() {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 	const leveldb::Snapshot* ldbSnapshot = db_->GetSnapshot();
-	assert(ldbSnapshot);
+	assertrx(ldbSnapshot);
 	return std::make_shared<LevelDbSnapshot>(ldbSnapshot);
 }
 

@@ -127,7 +127,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 4.2.1
+*Version* : 4.3.0
 
 
 ### License information
@@ -616,6 +616,7 @@ This operation will select documents from namespace with specified filters, and 
 |**Query**|**sharding**  <br>*optional*|if off then get items from current node only|enum (true, false)|
 |**Query**|**sort_field**  <br>*optional*|Sort Field|string|
 |**Query**|**sort_order**  <br>*optional*|Sort Order|enum (asc, desc)|
+|**Query**|**with_shard_ids**  <br>*optional*|if sharding is enabled, then add the #shard_id field to the item|enum (true, false)|
 
 
 #### Responses
@@ -2130,6 +2131,7 @@ If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not co
 |Name|Description|Schema|
 |---|---|---|
 |**cond**  <br>*optional*|Condition operator|enum (EQ, GT, GE, LE, LT, RANGE, SET, EMPTY)|
+|**equal_positions**  <br>*optional*|Array of array fields to be searched with equal array indexes|< [EqualPositionDef](#equalpositiondef) > array|
 |**field**  <br>*optional*|Field json path or index name for filter|string|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
 |**first_field**  <br>*optional*|First field json path or index name for filter by two fields|string|
@@ -2242,6 +2244,7 @@ Fulltext synonym definition
 |**is_synchronized**  <br>*optional*|shows synchroniztion state for raft-cluster node (false if node is outdated)|boolean|
 |**namespaces**  <br>*required*|list of namespaces, which are configure for this node|< string > array|
 |**pending_updates_count**  <br>*required*|online updates, awaiting replication to this node|integer|
+|**replication_mode**  <br>*optional*|replication mode for mixed 'sync cluster + async replication' configs|enum (default, from_sync_leader)|
 |**role**  <br>*required*|replication role|enum (none, follower, leader, candidate)|
 |**server_id**  <br>*required*|node's server id|integer|
 |**status**  <br>*required*|network status|enum (none, offline, online)|
@@ -2558,7 +2561,6 @@ List of meta info of the specified namespace
 |---|---|---|
 |**aggregations**  <br>*optional*|Ask query calculate aggregation|< [AggregationsDef](#aggregationsdef) > array|
 |**drop_fields**  <br>*optional*|List of fields to be dropped|< string > array|
-|**equal_positions**  <br>*optional*|Array of array fields to be searched with equal array indexes|< [EqualPositionDef](#equalpositiondef) > array|
 |**explain**  <br>*optional*|Add query execution explain information  <br>**Default** : `false`|boolean|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
 |**limit**  <br>*optional*|Maximum count of returned items|integer|

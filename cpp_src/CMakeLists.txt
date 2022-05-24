@@ -29,7 +29,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "4.2.1")
+set (REINDEXER_VERSION_DEFAULT "4.3.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -222,15 +222,13 @@ if (CMAKE_GENERATOR MATCHES "Visual Studio")
 else()
   add_definitions(-DKOISHI_THREAD_LOCAL=_Thread_local)
 endif()
-add_definitions(-DKOISHI_HAVE_MMAP)
-add_definitions(-DKOISHI_MAP_ANONYMOUS=MAP_ANONYMOUS)
 add_definitions(-DKOISHI_HAVE_SYSCONF)
 add_definitions(-DKOISHI_SC_PAGE_SIZE=_SC_PAGE_SIZE)
 add_definitions(-DKOISHI_HAVE_GETPAGESIZE)
-add_definitions(-DKOISHI_HAVE_ALIGNED_ALLOC)
-add_definitions(-DKOISHI_HAVE_POSIX_MEMALIGN)
+if(NOT APPLE)
+  add_definitions(-DKOISHI_HAVE_POSIX_MEMALIGN)
+endif()
 add_definitions(-DBUILDING_KOISHI)
-add_definitions(-DFCONTEXT_CALL=)
 include_directories(${KOISHI_PATH}/include)
 
 list(APPEND SRCS ${KOISHI_PATH}/include/koishi.h
@@ -516,7 +514,7 @@ set(CPACK_GENERATOR "TGZ")
 
 if (WIN32) 
   set (CPACK_GENERATOR "NSIS")
-elseif (LINUX_ISSUE MATCHES "Fedora" OR LINUX_ISSUE MATCHES "CentOS" OR LINUX_ISSUE MATCHES "Mandriva")
+elseif (LINUX_ISSUE MATCHES "Fedora" OR LINUX_ISSUE MATCHES "CentOS" OR LINUX_ISSUE MATCHES "Mandriva" OR LINUX_ISSUE MATCHES "RED OS")
   set(CPACK_GENERATOR "RPM")
   set(CPACK_PACKAGE_RELOCATABLE OFF)
 elseif (LINUX_ISSUE MATCHES "Ubuntu" OR LINUX_ISSUE MATCHES "Debian" OR LINUX_ISSUE MATCHES "Mint")
@@ -669,7 +667,7 @@ if (NOT WIN32)
 
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
-    "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h"
+    "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h"
     "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
     "core/rdxcontext.h" "core/activity_context.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"

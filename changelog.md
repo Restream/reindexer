@@ -1,3 +1,28 @@
+# Version 4.3.0 *beta* (24.05.2022)
+## Core
+- [fea] Improve cluster/sharding proxy performance (+add multiple proxying threads support)
+- [fea] Add `local` keyword to SQL syntax. This allows to disable sharding proxying via SQL
+- [fea] Add `from_sync_leader` mode for async replication from cluster. In this mode async namespaces will always be replicated from current sync cluster leader
+- [fea] Improve tmp namespaces autoremove logic
+- [fix] Fix `set_leader` behavior
+- [fix] Fix `count` and `count_cached` aggregation for distributed sharding requests
+- [fix] Fix reconnect interval for replicator
+
+## Reindexer server
+- [fea] Add `with_shard_ids` option for `GET /db/{database}/namespaces/{name}/items`. Allows to get `#shard_id` for each item
+
+## Go connector
+- [fix] Fix context timeout/deadline handling for cproto connect
+
+## Face
+- [fix] Fix sharding indexes duplication in indexes tab
+- [fix] Remove old replication settings page
+- [fix] Fix `current shard` switch
+- [fix] Fix fulltext index config settings
+
+## Ported
+- [fea/fix] Port all features and fixes from v3.3.3, v3.4.0, v3.5.0 and v3.5.2
+
 # Version 4.2.1 *beta* (14.03.2022)
 ## Core
 - [fix] Fix compatibility with builtin java connector
@@ -20,7 +45,7 @@
 - [fix] Fix LRU cproto items cache invalidation
 
 ## Face
-- [fea] Add shrding support
+- [fea] Add sharding support
 - [fix] Fix 'explain' visualization for queries with facet()
 
 # Version 4.1.0 *beta* (25.01.2022)

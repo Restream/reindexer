@@ -48,7 +48,7 @@ public:
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) { rt.PrintQueryResults(ns, res); }
 	string PrintItem(Item &item) { return rt.PrintItem(item); }
 
-	std::string RandString() { return rt.RandString(); }
+	std::string RandString(uint8_t len = 0) { return rt.RandString(len); }
 	std::string RandLikePattern() { return rt.RandLikePattern(); }
 	std::string RuRandString() { return rt.RuRandString(); }
 	vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }

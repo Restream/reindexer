@@ -47,11 +47,12 @@ private:
 	void stop();
 
 	ReplicationStatsCollector statsCollector_;
-	enum ClusterCommandId { kNoComand = -1, kCmdSendDesiredLeader = 0 };
+	enum ClusterCommandId { kNoComand = -1, kCmdSetDesiredLeader = 0 };
 
 	struct ClusterCommand {
 		ClusterCommand() = default;
-		ClusterCommand(ClusterCommandId c, int server, std::promise<Error> p) : id(c), serverId(server), result(std::move(p)) {}
+		ClusterCommand(ClusterCommandId c, int server, bool _send, std::promise<Error> p)
+			: id(c), serverId(server), send(_send), result(std::move(p)) {}
 		ClusterCommand(ClusterCommand &&) = default;
 		ClusterCommand &operator=(ClusterCommand &&other) = default;
 		ClusterCommand(ClusterCommand &) = delete;
@@ -59,6 +60,7 @@ private:
 
 		ClusterCommandId id = kNoComand;
 		int serverId = -1;
+		bool send = false;
 		std::promise<Error> result;
 	};
 

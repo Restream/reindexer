@@ -205,27 +205,32 @@ void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSeri
 	auto tm = qr_->GetTagsMatcher(itemParams_.nsid);
 	JsonEncoder enc(&tm);
 	JsonBuilder builder(wrser, ObjType::TypePlain);
-
+	h_vector<IAdditionalDatasource<JsonBuilder> *, 2> dss;
+	int shardId = (const_cast<Iterator *>(this))->GetShardID();
+	AdditionalDatasourceShardId dsShardId(shardId);
+	if (qr_->NeedOutputShardId()) {
+		dss.push_back(&dsShardId);
+	}
 	if (qr_->HaveJoined() && joinedData_.size()) {
 		EncoderDatasourceWithJoins joinsDs(joinedData_, *qr_);
-		auto ds = qr_->NeedOutputRank() ? AdditionalDatasource(itemParams_.proc, &joinsDs) : AdditionalDatasource(&joinsDs);
+		AdditionalDatasource ds = qr_->NeedOutputRank() ? AdditionalDatasource(itemParams_.proc, &joinsDs) : AdditionalDatasource(&joinsDs);
+		dss.push_back(&ds);
 		if (withHdrLen) {
 			auto slicePosSaver = wrser.StartSlice();
-			enc.Encode(cjson, builder, &ds);
-		} else {
-			enc.Encode(cjson, builder, &ds);
 		}
+		enc.Encode(cjson, builder, dss);
 		return;
 	}
 
 	AdditionalDatasource ds(itemParams_.proc, nullptr);
 	AdditionalDatasource *dspPtr = qr_->NeedOutputRank() ? &ds : nullptr;
+	if (dspPtr) {
+		dss.push_back(dspPtr);
+	}
 	if (withHdrLen) {
 		auto slicePosSaver = wrser.StartSlice();
-		enc.Encode(cjson, builder, dspPtr);
-	} else {
-		enc.Encode(cjson, builder, dspPtr);
 	}
+	enc.Encode(cjson, builder, dss);
 }
 
 Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
@@ -377,7 +382,7 @@ bool CoroQueryResults::Iterator::IsRaw() {
 
 std::string_view CoroQueryResults::Iterator::GetRaw() {
 	readNext();
-	assert(itemParams_.raw);
+	assertrx(itemParams_.raw);
 	return itemParams_.data;
 }
 

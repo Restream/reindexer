@@ -68,6 +68,7 @@ typedef enum QueryItemType {
 	QueryUpdateFieldV2 = 25,
 	QueryBetweenFieldsCondition = 26,
 	QueryAlwaysFalseCondition = 27,
+	QueryLocal = 28,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -184,6 +185,7 @@ enum {
 	kResultsWithRaw = 0x200,
 	kResultsNeedOutputRank = 0x400,
 	kResultsWithShardId = 0x800,
+	kResultsNeedOutputShardId = 0x1000,
 };
 
 typedef enum IndexOpt {

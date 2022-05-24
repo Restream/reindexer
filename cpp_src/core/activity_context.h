@@ -76,7 +76,8 @@ class RdxActivityContext {
 		~Ward() {
 			if (context_) {
 				context_->state_.store(prevState_, std::memory_order_relaxed);
-				assert(context_->refCount_.fetch_sub(1u, std::memory_order_relaxed) != 0u);
+				[[maybe_unused]] const auto refs = context_->refCount_.fetch_sub(1u, std::memory_order_relaxed);
+				assertrx(refs != 0u);
 			}
 		}
 
@@ -95,7 +96,7 @@ public:
 	RdxActivityContext(RdxActivityContext&&);
 	~RdxActivityContext() {
 		if (parent_) parent_->Unregister(this);
-		assert(refCount_.load(std::memory_order_relaxed) == 0u);
+		assertrx(refCount_.load(std::memory_order_relaxed) == 0u);
 	}
 	operator Activity() const;
 
@@ -119,11 +120,9 @@ private:
 	static unsigned nextId() noexcept;
 
 	const Activity data_;
-	std::atomic<unsigned> state_{serializeState(Activity::InProgress)};	 // kStateShift lower bits for state, other for details
-	ActivityContainer* parent_;
-#ifndef NDEBUG
-	std::atomic<unsigned> refCount_;
-#endif
+	std::atomic<unsigned> state_ = {serializeState(Activity::InProgress)};	// kStateShift lower bits for state, other for details
+	ActivityContainer* parent_ = nullptr;
+	std::atomic<unsigned> refCount_ = {0};
 };
 
 }  // namespace reindexer

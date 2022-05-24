@@ -145,6 +145,7 @@ protected:
 
 private:
 	Error execSqlQueryByType(std::string_view sqlQuery, bool &isWALQuery, reindexer::QueryResults &res, http::Context &ctx);
+	bool isParameterSetOn(std::string_view val) const noexcept;
 };
 
 }  // namespace reindexer_server

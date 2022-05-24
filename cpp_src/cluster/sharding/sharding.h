@@ -21,30 +21,18 @@ namespace sharding {
 
 using ShardConnectionsContainer = h_vector<std::shared_ptr<client::SyncCoroReindexer>, kHvectorConnStack>;
 
-class IRoutingStrategy {
-public:
-	virtual ~IRoutingStrategy() = default;
-	virtual bool IsShardingKey(std::string_view ns, std::string_view index) const = 0;
-	virtual bool IsSharded(std::string_view ns) const noexcept = 0;
-	virtual ShardIDsContainer GetHostsIds(const Query &) const = 0;
-	virtual int GetHostId(std::string_view ns, const Item &) const = 0;
-	virtual ShardIDsContainer GetHostsIds(std::string_view ns) const = 0;
-	virtual ShardIDsContainer GetHostsIds() const = 0;
-	virtual int GetDefaultHost(std::string_view ns) const = 0;
-};
-
-class RoutingStrategy : public IRoutingStrategy {
+class RoutingStrategy {
 public:
 	explicit RoutingStrategy(const cluster::ShardingConfig &config);
-	~RoutingStrategy() override = default;
+	~RoutingStrategy() = default;
 
-	ShardIDsContainer GetHostsIds(const Query &) const override final;
-	int GetHostId(std::string_view ns, const Item &) const override final;
-	ShardIDsContainer GetHostsIds(std::string_view ns) const override final;
-	ShardIDsContainer GetHostsIds() const override final;
-	bool IsShardingKey(std::string_view ns, std::string_view index) const override final;
-	bool IsSharded(std::string_view ns) const noexcept override final;
-	int GetDefaultHost(std::string_view ns) const override final { return keys_.GetDefaultHost(ns); }
+	ShardIDsContainer GetHostsIds(const Query &) const;
+	int GetHostId(std::string_view ns, const Item &) const;
+	ShardIDsContainer GetHostsIds(std::string_view ns) const { return keys_.GetShardsIds(ns); }
+	ShardIDsContainer GetHostsIds() const { return keys_.GetShardsIds(); }
+	bool IsShardingKey(std::string_view ns, std::string_view index) const { return keys_.IsShardIndex(ns, index); }
+	bool IsSharded(std::string_view ns) const noexcept { return keys_.IsSharded(ns); }
+	int GetDefaultHost(std::string_view ns) const { return keys_.GetDefaultHost(ns); }
 
 private:
 	bool getHostIdForQuery(const Query &, int &currentId) const;
@@ -136,18 +124,18 @@ public:
 
 	Error Start();
 	Error AwaitShards(const InternalRdxContext &ctx) { return networkMonitor_.AwaitShards(ctx); }
-
-	bool IsSharded(std::string_view ns) const noexcept { return routingStrategy_->IsSharded(ns); }
-
-	int GetShardId(std::string_view ns, const Item &item) const;
-	ShardIDsContainer GetShardId(const Query &q) const;
+	bool IsSharded(std::string_view ns) const noexcept { return routingStrategy_.IsSharded(ns); }
+	int GetShardId(std::string_view ns, const Item &item) const { return routingStrategy_.GetHostId(ns, item); }
+	ShardIDsContainer GetShardId(const Query &q) const { return routingStrategy_.GetHostsIds(q); }
 	std::shared_ptr<client::SyncCoroReindexer> GetShardConnection(std::string_view ns, int shardId, Error &status);
 
 	ConnectionsPtr GetShardsConnections(std::string_view ns, int shardId, Error &status);
 	ConnectionsPtr GetShardsConnectionsWithId(const Query &q, Error &status);
-	ConnectionsPtr GetShardsConnections(Error &status);
-
-	ShardConnection GetShardConnectionWithId(std::string_view ns, const Item &item, Error &status);
+	ConnectionsPtr GetShardsConnections(Error &status) { return GetShardsConnections("", -1, status); }
+	ShardConnection GetShardConnectionWithId(std::string_view ns, const Item &item, Error &status) {
+		int shardId = routingStrategy_.GetHostId(ns, item);
+		return ShardConnection(GetShardConnection(ns, shardId, status), shardId);
+	}
 
 	int ActualShardId() const noexcept { return actualShardId; }
 	void Shutdown();
@@ -156,13 +144,15 @@ private:
 	ConnectionsPtr rebuildConnectionsVector(std::string_view ns, int shardId, Error &status);
 	ConnectionsPtr getConnectionsFromCache(std::string_view ns, int shardId, bool &requiresRebuild);
 	std::shared_ptr<client::SyncCoroReindexer> getShardConnection(int shardId, Error &status);
-	std::shared_ptr<client::SyncCoroReindexer> peekHostForShard(Connections &, int shardId, Error &status);
+	std::shared_ptr<client::SyncCoroReindexer> peekHostForShard(Connections &connections, int shardId, Error &status) {
+		return ConnectStrategy(config_, connections, ActualShardId()).Connect(shardId, status);
+	}
 	Error validateConfig();
 	Error convertShardingKeysValues(KeyValueType fieldType, std::vector<cluster::ShardingConfig::Key> &keys);
 
 	ReindexerImpl &rx_;
 	cluster::ShardingConfig config_;
-	std::unique_ptr<IRoutingStrategy> routingStrategy_;
+	RoutingStrategy routingStrategy_;
 	const int actualShardId = ShardingKeyType::ProxyOff;
 	ConnectionsMap hostsConnections_;
 

@@ -125,6 +125,7 @@ Then you are able to configure specific async replication via `async_replication
 	"type":"async_replication",
 	"async_replication":{
 		"role":"none",
+		"replication_mode":"default",
 		"sync_threads": 4,
 		"syncs_per_thread": 2,
 		"online_updates_timeout_sec": 20,
@@ -151,6 +152,9 @@ Then you are able to configure specific async replication via `async_replication
    - `none` - replication is disabled
    - `follower` - replication as follower
    - `leader` - replication as leader
+- `replication_mode` - Replication mode. Allows to configure async replication from sync raft-cluster. May be one of
+   - `default` - async replication from this node is always enabled, if there are any target nodes to replicate on;
+   - `from_sync_leader` - async replication will be enabled only when current node is synchronous RAFT-cluster leader (or if this node does not have any sync cluster config)
 - `sync_threads` - Number of replication thread
 - `syncs_per_thread` - Max number of concurrent force/wal-syncs per each replicatio thread
 - `online_updates_timeout_sec` - Network timeout for communication with followers (for online-replication mode), in seconds
@@ -440,6 +444,8 @@ Reindexer> \upsert #config { "type":"action","action":{ "command":"set_leader_no
 
 ## Async replication of RAFT-cluster namespaces
 
+### Async replication with "default" replication mode
+
 It's possible to combine async replication and RAFT-cluster in setups like this:
 
 ```
@@ -453,9 +459,62 @@ In setup above there are 2 independant RAFT-clusters: `cluster1`(over `ns1` and 
 
 Take a notice:
 - `ns2` can not taking part in second RAFT-cluster
-- asynchronous replication here still works on node-to-node basis, i.e. it replicates all of the data from `cl12` node to `cl22` node, but not to other nodes of the seconds cluster.
- 
+- asynchronous replication here (with `default` replication mode) still works on node-to-node basis, i.e. it replicates all of the data from `cl12` node to `cl22` node, but not to other nodes of the seconds cluster (i.e. if `cl12` is down, data will not be asynchronously replicated)
 
+### Async replication with "from_sync_leader" replication mode
+
+It's possible to combine async replication and RAFT-cluster in setups like this:
+
+```
+        cluster1 (ns1, ns2)               cluster2 (ns1)
+updates -> cl10 - cl11   async repl(ns2)   cl20 - cl21
+              \    /   ------------------->   \    /
+               cl12                            cl22
+```
+
+In setup above there are 2 independant RAFT-clusters: `cluster1`(over `ns1` and `ns2`) and `cluster2`(over `ns1`). Also *each* of the nodes of the first cluster has the same async replication config like this:
+```JSON
+{
+	"type":"async_replication",
+	"async_replication":{
+		"role":"leader",
+		"replication_mode":"from_sync_leader",
+		"sync_threads": 4,
+		"syncs_per_thread": 2,
+		"online_updates_timeout_sec": 20,
+		"sync_timeout_sec": 60,
+		"retry_sync_interval_msec": 30000,
+		"enable_compression": true,
+		"batching_routines_count": 100,
+		"force_sync_on_logic_error": false,
+		"force_sync_on_wrong_data_hash": false,
+		"max_wal_depth_on_force_sync": 1000,
+		"nodes":
+		[
+			{
+				"dsn": "cproto://192.168.1.5:6534/mydb",
+				"namespaces": ["ns2"],
+				"replication_mode":"from_sync_leader"
+			},
+			{
+				"dsn": "cproto://192.168.1.6:6534/mydb",
+				"namespaces": ["ns2"],
+				"replication_mode":"from_sync_leader"
+			},
+			{
+				"dsn": "cproto://192.168.1.7:6534/mydb",
+				"namespaces": ["ns2"],
+				"replication_mode":"from_sync_leader"
+			}
+		]
+	}
+}
+```
+ 
+With `replication_mode: "from_sync_leader"` option only the current leader of `cluster1` replicating its data (`ns2`) asynchronously to all the nodes of the second cluster (i.e. if one of the node from `cluster1` down, asynchronous replication will still work via new leader)
+
+Take a notice:
+- `ns2` can not taking part in second RAFT-cluster 
 
 ## Known issues and constraints
 

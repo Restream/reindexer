@@ -32,7 +32,7 @@ void ThrowOnCancel(const Context& ctx, std::string_view errMsg = std::string_vie
 		case CancelType::None:
 			return;
 		default:
-			assert(false);
+			assertrx(false);
 			throw Error(errCanceled, errMsg.empty() ? "Request was canceled by unknown reason"sv : errMsg);
 	}
 }
@@ -114,9 +114,7 @@ public:
 		  cmpl_(cmpl),
 		  originLsn_(originLsn),
 		  shardingParallelExecution_(parallel) {
-#ifndef NDEBUG
 		if (holdStatus_ == kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
-#endif
 	}
 
 	RdxContext(RdxContext&& other);

@@ -54,6 +54,7 @@ public:
 	void Clear();
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return !nonCacheableData; }
+	void SetOutputShardId(int shardId) noexcept { outputShardId = shardId; }
 
 	class Iterator {
 	public:
@@ -90,6 +91,7 @@ public:
 	bool haveRank = false;
 	bool nonCacheableData = false;
 	bool needOutputRank = false;
+	int outputShardId = ShardingKeyType::ProxyOff;
 
 	struct Context;
 	// precalc context size

@@ -5,6 +5,7 @@ Reindexer supports sharding by index values and currently this is the only mode.
 # Table of contents:
 - [Overall description](#overall-description)
 - [Requests proxiying](#requests-proxying)
+- [Local requests](#local-requests)
 - [Known issues and constraints](#known-issues-and-constraints)
 - [Usage](#usage)
   - [Configuration](#configuration)
@@ -53,6 +54,20 @@ Local namespace may also be used as left namespace in join-query. In this case r
 ```SQL
 SELECT * FROM not_sharded_ns JOIN (SELECT * FROM sharded WHERE location='name1') ON sharded_ns.id=not_sharded_ns.id;
 ```
+
+
+## Local requests
+
+
+For local execution of the query on the current shard use operator `LOCAL`
+
+```SQL
+LOCAL SELECT * FROM sharded_ns1 JOIN (SELECT * FROM sharded_ns2) ON sharded_ns1.id=sharded_ns2.id;
+LOCAL SELECT * FROM sharded_ns JOIN (SELECT * FROM not_sharded_ns) ON sharded_ns.id=not_sharded_ns.id;
+LOCAL SELECT * FROM not_sharded_ns JOIN (SELECT * FROM sharded_ns) ON sharded_ns.id=not_sharded_ns.id;
+```
+
+Operator `LOCAL` can be used only with `SELECT` queries.
 
 
 ## Known issues and constraints

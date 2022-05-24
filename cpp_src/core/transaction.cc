@@ -130,7 +130,7 @@ Error Transaction::Modify(Query &&query, lsn_t lsn) {
 }
 
 void Transaction::Nop(lsn_t lsn) {
-	assert(!clientTransaction_);
+	assertrx(!clientTransaction_);
 	if (impl_) impl_->Nop(lsn);
 }
 
@@ -173,37 +173,37 @@ Item Transaction::NewItem() {
 	if (!status_.ok()) {
 		return Item(status_);
 	}
-	assert(impl_);
+	assertrx(impl_);
 	return impl_->NewItem();
 }
 
 vector<TransactionStep> &Transaction::GetSteps() noexcept {
-	assert(impl_ && !clientTransaction_);
+	assertrx(impl_ && !clientTransaction_);
 	return impl_->steps_;
 }
 
 const vector<TransactionStep> &Transaction::GetSteps() const noexcept {
-	assert(impl_ && !clientTransaction_);
+	assertrx(impl_ && !clientTransaction_);
 	return impl_->steps_;
 }
 
 Item Transaction::GetItem(TransactionStep &&st) {
-	assert(impl_ && !clientTransaction_);
+	assertrx(impl_ && !clientTransaction_);
 	return impl_->GetItem(std::move(st));
 }
 
 lsn_t Transaction::GetLSN() const noexcept {
-	assert(impl_ && !clientTransaction_);
+	assertrx(impl_ && !clientTransaction_);
 	return impl_->GetLSN();
 }
 
 bool Transaction::IsTagsUpdated() const noexcept {
-	assert(impl_);
+	assertrx(impl_);
 	return impl_->tagsUpdated_;
 }
 
 Transaction::time_point Transaction::GetStartTime() const noexcept {
-	assert(impl_ && !clientTransaction_);
+	assertrx(impl_ && !clientTransaction_);
 	return impl_->startTime_;
 }
 

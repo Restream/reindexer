@@ -53,7 +53,7 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 
 	auto dbName = db.toString();
 	if (checkClusterID.hasValue() && checkClusterID.value()) {
-		assert(expectedClusterID.hasValue());
+		assertrx(expectedClusterID.hasValue());
 		clientData->auth.SetExpectedClusterID(expectedClusterID.value());
 	}
 	auto status = dbMgr_.Login(dbName, clientData->auth);
@@ -748,7 +748,7 @@ int64_t RPCServer::addTx(cproto::Context &ctx, std::string_view nsName) {
 	if (!tr.Status().ok()) {
 		throw tr.Status();
 	}
-	assert(data->txStats);
+	assertrx(data->txStats);
 	data->txStats->txCount += 1;
 	if (id >= 0) {
 		data->txs[id] = std::move(tr);
@@ -763,7 +763,7 @@ void RPCServer::clearTx(cproto::Context &ctx, uint64_t txId) {
 	if (txId >= data->txs.size()) {
 		throw Error(errLogic, "Invalid tx id %d", txId);
 	}
-	assert(data->txStats);
+	assertrx(data->txStats);
 	data->txStats->txCount -= 1;
 	data->txs[txId] = Transaction();
 }

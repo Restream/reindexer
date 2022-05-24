@@ -22,12 +22,12 @@ bool JoinedFieldIterator::operator==(const JoinedFieldIterator& other) const {
 bool JoinedFieldIterator::operator!=(const JoinedFieldIterator& other) const { return !operator==(other); }
 
 JoinedFieldIterator::const_reference JoinedFieldIterator::operator[](size_t idx) const {
-	assert(currOffset_ + idx < joinRes_->items_.size());
+	assertrx(currOffset_ + idx < joinRes_->items_.size());
 	return joinRes_->items_[currOffset_ + idx];
 }
 
 JoinedFieldIterator::reference JoinedFieldIterator::operator[](size_t idx) {
-	assert(currOffset_ + idx < joinRes_->items_.size());
+	assertrx(currOffset_ + idx < joinRes_->items_.size());
 	return const_cast<reference>(joinRes_->items_[currOffset_ + idx]);
 }
 
@@ -66,7 +66,7 @@ LocalQueryResults JoinedFieldIterator::ToQueryResults() const {
 }
 
 int JoinedFieldIterator::ItemsCount() const {
-	assert(order_ < joinRes_->GetJoinedSelectorsCount());
+	assertrx(order_ < joinRes_->GetJoinedSelectorsCount());
 
 	if ((currField_ != -1) && (currField_ < uint8_t(offsets_->size()))) {
 		return (*offsets_)[currField_].size;
@@ -90,7 +90,7 @@ JoinedFieldIterator ItemIterator::at(uint8_t joinedField) const {
 	auto it = joinRes_->offsets_.find(rowid_);
 	if (it == joinRes_->offsets_.end()) return noJoinedDataIt;
 	if (it->second.empty()) return noJoinedDataIt;
-	assert(joinedField < joinRes_->GetJoinedSelectorsCount());
+	assertrx(joinedField < joinRes_->GetJoinedSelectorsCount());
 	return JoinedFieldIterator(joinRes_, it->second, joinedField);
 }
 
@@ -139,7 +139,7 @@ bool ItemOffset::operator==(const ItemOffset& other) const {
 bool ItemOffset::operator!=(const ItemOffset& other) const { return !operator==(other); }
 
 void NamespaceResults::Insert(IdType rowid, size_t fieldIdx, LocalQueryResults&& qr) {
-	assert(int(fieldIdx) < joinedSelectorsCount_);
+	assertrx(int(fieldIdx) < joinedSelectorsCount_);
 	ItemOffsets& offsets = offsets_[rowid];
 	if (offsets.empty()) {
 		offsets.reserve(joinedSelectorsCount_);

@@ -162,7 +162,7 @@ size_t DataProcessor::buildWordsMap(words_map &words_um) {
 			for (size_t field = 0; field < vdocsTexts[j].size(); ++field) {
 				split(vdocsTexts[j][field].first, str, wrds, cfg->extraWordSymbols);
 				int rfield = vdocsTexts[j][field].second;
-				assert(rfield < fieldscount);
+				assertrx(rfield < fieldscount);
 
 				vdocs[vdocId].wordsCount[rfield] = wrds.size();
 
@@ -280,11 +280,11 @@ void DataProcessor::buildTyposMap(uint32_t startPos, const vector<WordIdType> &f
 	const auto maxTyposInWord = holder_.cfg_->MaxTyposInWord();
 	const auto halfMaxTypos = holder_.cfg_->maxTypos / 2;
 	if (maxTyposInWord == halfMaxTypos) {
-		assert(maxTyposInWord > 0);
+		assertrx(maxTyposInWord > 0);
 		const auto multiplicator = wordsSize * (10 << (maxTyposInWord - 1));
 		typosHalf.reserve(multiplicator / 2, multiplicator * 5);
 	} else {
-		assert(maxTyposInWord == halfMaxTypos + 1);
+		assertrx(maxTyposInWord == halfMaxTypos + 1);
 		auto multiplicator = wordsSize * (10 << (halfMaxTypos > 1 ? (halfMaxTypos - 1) : 0));
 		typosHalf.reserve(multiplicator / 2, multiplicator * 5);
 		multiplicator = wordsSize * (10 << (maxTyposInWord - 1)) - multiplicator;

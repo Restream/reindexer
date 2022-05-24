@@ -54,6 +54,9 @@ void QueryResults::AddQr(LocalQueryResults&& local, int shardID, bool buildMerge
 			"Unable to add new local query results to general query results, because it was already read by someone (last seen idx: %d)",
 			lastSeenIdx_);
 	}
+	if (NeedOutputShardId()) {
+		local.SetOutputShardId(shardID);
+	}
 	local_.emplace(std::move(local));
 	local_->shardID = shardID;
 	switch (type_) {
@@ -107,7 +110,7 @@ void QueryResults::RebuildMergedData() {
 	try {
 		mergedData_.reset();
 		if (type_ == Type::Mixed) {
-			assert(local_.has_value());
+			assertrx(local_.has_value());
 			const auto nss = local_->qr.GetNamespaces();
 			if (nss.size() > 1) {
 				throw Error(errLogic, "Local query result has %d namespaces, but distributed query results may have only 1", nss.size());
@@ -122,7 +125,7 @@ void QueryResults::RebuildMergedData() {
 			return;
 		}
 
-		assert(remote_.size());
+		assertrx(remote_.size());
 		for (auto& qrp : remote_) {
 			const auto nss = qrp.qr.GetNamespaces();
 			if (nss.size() > 1) {
@@ -146,7 +149,7 @@ void QueryResults::RebuildMergedData() {
 					throw Error(errLogic, "Rank options are incompatible between query results inside distributed query results");
 				}
 				if (agg.size()) {
-					assert(agg.size() == 1);
+					assertrx(agg.size() == 1);
 					assertf(agg[0].type == AggCount || agg[0].type == AggCountCached, "Actual type: %d", agg[0].type);
 					mergedData_->aggregationResults[0].value += agg[0].value;
 				}
@@ -156,7 +159,7 @@ void QueryResults::RebuildMergedData() {
 			}
 		}
 
-		assert(mergedData_);
+		assertrx(mergedData_);
 		std::vector<TagsMatcher> tmList;
 		tmList.reserve(remote_.size() + (local_.has_value() ? 1 : 0));
 		if (local_.has_value()) {
@@ -177,17 +180,6 @@ void QueryResults::RebuildMergedData() {
 		mergedData_.reset();
 		throw;
 	}
-}
-
-size_t QueryResults::Count() const {
-	size_t cnt = 0;
-	if (local_.has_value()) {
-		cnt += local_->qr.Count();
-	}
-	for (const auto& qrp : remote_) {
-		cnt += qrp.qr.Count();
-	}
-	return cnt;
 }
 
 void QueryResults::Clear() { *this = QueryResults(); }
@@ -381,7 +373,7 @@ uint32_t QueryResults::GetJoinedField(int parentNsId) const {
 			--mergedNsIdx;
 		}
 		for (int ns = 0; ns < mergedNsIdx; ++ns) {
-			assert(size_t(ns) < qData_->mergedJoinedSizes.size());
+			assertrx(size_t(ns) < qData_->mergedJoinedSizes.size());
 			joinedField += qData_->mergedJoinedSizes[ns];
 		}
 	} else if (type_ == Type::Local) {
@@ -391,26 +383,6 @@ uint32_t QueryResults::GetJoinedField(int parentNsId) const {
 		}
 	}
 	return joinedField;
-}
-
-QueryResults::Iterator QueryResults::begin() const noexcept {
-	switch (type_) {
-		case Type::Local:
-			return Iterator{this, 0, {local_->qr.begin()}};
-		default:
-			return Iterator{this, 0, std::nullopt};
-	}
-}
-
-QueryResults::Iterator QueryResults::end() const noexcept {
-	switch (type_) {
-		case Type::None:
-			return Iterator{this, 0, std::nullopt};
-		case Type::Local:
-			return Iterator(this, int64_t(Count()), {local_->qr.end()});
-		default:
-			return Iterator{this, int64_t(Count()), std::nullopt};
-	}
 }
 
 QueryResults::Iterator::ItemRefCache::ItemRefCache(IdType id, uint16_t proc, uint16_t nsid, ItemImpl&& i, bool raw)
@@ -515,7 +487,7 @@ Item QueryResults::Iterator::GetItem(bool enableHold) {
 		auto item = getItem(rit, std::move(itemImpl),
 							!qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm || !qr_->remote_[size_t(qr_->curQrId_)].qr.IsCJSON());
 		item.setID(rit.GetID());
-		assert(!rit.GetLSN().isEmpty());
+		assertrx(!rit.GetLSN().isEmpty());
 		item.setLSN(rit.GetLSN());
 		item.setShardID(rit.GetShardID());
 		return item;
@@ -569,6 +541,7 @@ joins::ItemIterator QueryResults::Iterator::GetJoined() {
 				if (nsJoinRes_) {
 					nsJoinRes_->idx = -1;
 				}
+				throw;
 			}
 		}
 
@@ -576,90 +549,6 @@ joins::ItemIterator QueryResults::Iterator::GetJoined() {
 	}
 	// Distributed queries can not have joins
 	return reindexer::joins::ItemIterator::CreateEmpty();
-}
-
-QueryResults::Iterator& QueryResults::Iterator::operator++() {
-	switch (qr_->type_) {
-		case Type::None:
-			*this = qr_->end();
-			return *this;
-		case Type::Local:
-			++(*localIt_);
-			return *this;
-		default:;
-	}
-
-	if (idx_ < qr_->lastSeenIdx_) {
-		++idx_;	 // This iterator is not valid yet, so simply increment index and do not touch qr's internals
-		return *this;
-	}
-
-	auto* qr = const_cast<QueryResults*>(qr_);
-	bool qrIdWasChanged = false;
-	if (qr->curQrId_ < 0) {
-		++qr->local_->it;
-		++qr->lastSeenIdx_;
-		++idx_;
-		if (qr->local_->it == qr->local_->qr.end()) {
-			qr->curQrId_ = 0;
-			qrIdWasChanged = true;
-			assert(qr_->remote_.size());
-		}
-	} else if (size_t(qr->curQrId_) < qr_->remote_.size()) {
-		auto& remoteQrp = qr->remote_[size_t(qr_->curQrId_)];
-		++remoteQrp.it;
-		++qr->lastSeenIdx_;
-		++idx_;
-		if (remoteQrp.it == remoteQrp.qr.end()) {
-			++qr->curQrId_;
-			qrIdWasChanged = true;
-		}
-	}
-	// Find next qr with items
-	while (qrIdWasChanged && size_t(qr_->curQrId_) < qr->remote_.size() &&
-		   qr->remote_[size_t(qr_->curQrId_)].it == qr->remote_[size_t(qr_->curQrId_)].qr.end()) {
-		++qr->curQrId_;
-	}
-	return *this;
-}
-
-QueryResults::Iterator& QueryResults::Iterator::operator+(uint32_t delta) {
-	switch (qr_->type_) {
-		case Type::None:
-			*this = qr_->end();
-			return *this;
-		case Type::Local:
-			localIt_ = *localIt_ + delta;
-			return *this;
-		default:;
-	}
-
-	if (idx_ < qr_->lastSeenIdx_) {
-		const auto readItemsDiff = qr_->lastSeenIdx_ - idx_;
-		if (readItemsDiff < delta) {
-			delta -= readItemsDiff;
-			idx_ = qr_->lastSeenIdx_;
-		} else {
-			idx_ += delta;
-			return *this;
-		}
-	}
-
-	for (uint32_t i = 0; i < delta; ++i) {
-		++(*this);
-	}
-	return *this;
-}
-
-bool QueryResults::Iterator::operator==(const QueryResults::Iterator& other) const noexcept {
-	switch (qr_->type_) {
-		case Type::None:
-			return qr_ == other.qr_;
-		case Type::Local:
-			return qr_ == other.qr_ && localIt_ == other.localIt_;
-		default:;
-	}
-	return qr_ == other.qr_ && idx_ == other.idx_;
 }
 
 ItemRef QueryResults::Iterator::GetItemRef(ProxiedRefsStorage* storage) {

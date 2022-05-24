@@ -83,7 +83,10 @@ jobs:
           make -j4
           STRIP=/bin/true cpack
       - name: 'Tar Artifacts'
-        run: tar -cvf artifacts.tar build/ bindings/builtin/builtin_posix.go bindings/builtinserver/builtinserver_posix.go dependencies.sh
+        run: |
+          find ./build/ -name CMakeFiles | xargs -n1 rm -rf
+          rm -rf ./build/_CPack_Packages ./build/cpp_src/server/reindexer_server_resources
+          tar -cvf artifacts.tar build/ bindings/builtin/builtin_posix.go bindings/builtinserver/builtinserver_posix.go dependencies.sh
       - name: Archive Artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -148,6 +151,7 @@ jobs:
               mkdir -p /Users/runner/go/src/github.com/restream/
               ln -s `pwd` /Users/runner/go/src/github.com/restream/reindexer
             fi
+            go env -w GO111MODULE=auto
             go get gopkg.in/yaml.v2
             go get github.com/stretchr/testify/assert
             go get github.com/golang/snappy
@@ -159,6 +163,7 @@ jobs:
       - name: Tests
         run: |
           if [[ $TEST == 'GO' ]]; then
+            go env -w GO111MODULE=auto
             if [[ $SANITIZER == 'ASAN' ]]; then
               export REINDEXER_GH_CI_ASAN=true
             fi
@@ -171,8 +176,7 @@ jobs:
   test-pyreindexer:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04]
-        #os: [ubuntu-18.04, ubuntu-20.04, macos-10.15]
+        os: [ubuntu-18.04, ubuntu-20.04, macos-10.15]
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build

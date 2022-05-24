@@ -98,7 +98,7 @@ void WALTracker::Reset() {
 }
 
 void WALTracker::SetStorage(shared_ptr<datastorage::IDataStorage> storage) {
-	assert(!storage_.lock());
+	assertrx(!storage_.lock());
 	storage_ = storage;
 }
 
@@ -129,7 +129,7 @@ void WALTracker::put(lsn_t lsn, const WALRecord &rec) {
 
 void WALTracker::put(lsn_t lsn, const PackedWALRecord &rec) {
 	int64_t pos = lsn.Counter() % walSize_;
-	assert(pos >= 0 && size_t(pos) <= records_.size());
+	assertrx(pos >= 0 && size_t(pos) <= records_.size());
 	if (pos == int64_t(records_.size())) {
 		records_.emplace_back(lsn.Server(), rec);  // TODO: count heap size for the vector itself
 		heapSize_ += records_[pos].heap_size();
@@ -188,7 +188,7 @@ std::vector<std::pair<lsn_t, std::string>> WALTracker::readFromStorage(int64_t &
 		if (dataSlice.size() >= sizeof(int64_t)) {
 			// Read LSN
 			lsn_t lsn(*reinterpret_cast<const int64_t *>(dataSlice.data()));
-			assert(lsn.Counter() >= 0);
+			assertrx(lsn.Counter() >= 0);
 			maxLSN = std::max(maxLSN, lsn.Counter());
 			dataSlice = dataSlice.substr(sizeof(int64_t));
 			data.push_back({lsn_t(lsn), string(dataSlice)});
@@ -228,7 +228,7 @@ lsn_t WALTracker::add(RecordT &&rec, lsn_t originLsn, bool toStorage, lsn_t oldL
 	} else {
 		auto newCounter = lsn.Counter();
 		if (lsnCounter_.Counter() == 0) {  // If there are no WAL records and we've got record with some large LSN
-			assert(records_.empty());
+			assertrx(records_.empty());
 			records_.resize(newCounter % walSize_);
 		}
 		lsnCounter_.SetCounter(newCounter + 1);

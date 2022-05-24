@@ -76,8 +76,8 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 
 		reindexer::Reindexer* db = nullptr;
 		status = ctx.GetDB(kRoleSystem, &db);
-		assert(status.ok());
-		assert(db);
+		assertrx(status.ok());
+		assertrx(db);
 		(void)status;
 
 		{

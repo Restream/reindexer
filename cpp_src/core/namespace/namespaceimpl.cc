@@ -7,6 +7,7 @@
 #include <thread>
 #include "core/cjson/jsonbuilder.h"
 #include "core/index/index.h"
+#include "core/index/ttlindex.h"
 #include "core/itemimpl.h"
 #include "core/itemmodifier.h"
 #include "core/nsselecter/nsselecter.h"
@@ -143,11 +144,11 @@ NamespaceImpl::~NamespaceImpl() {
 
 #ifndef NDEBUG
 	for (const auto &strHldr : strHoldersWaitingToBeDeleted_) {
-		assert(strHldr.unique());
+		assertrx(strHldr.unique());
 		(void)strHldr;
 	}
-	assert(strHolder_.unique());
-	assert(cancelCommitCnt_.load() == 0);
+	assertrx(strHolder_.unique());
+	assertrx(cancelCommitCnt_.load() == 0);
 #endif
 	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items", name_, items_.size());
 }
@@ -219,7 +220,7 @@ void NamespaceImpl::recreateCompositeIndexes(int startIdx, int endIdx) {
 void NamespaceImpl::updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields) {
 	logPrintf(LogTrace, "Namespace::updateItems(%s) delta=%d", name_, deltaFields);
 
-	assert(oldPlType->NumFields() + deltaFields == payloadType_->NumFields());
+	assertrx(oldPlType->NumFields() + deltaFields == payloadType_->NumFields());
 
 	int compositeStartIdx = 0;
 	if (deltaFields >= 0) {
@@ -554,7 +555,13 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef, bool disableTmVersionInc,
 	JsonPaths jsonPaths = indexDef.jsonPaths_;
 	auto currentPKIndex = indexesNames_.find(kPKIndexName);
 
-	if (!skipEqualityCheck && checkIfSameIndexExists(indexDef, true)) {
+	bool requireTtlUpdate = false;
+	if (!skipEqualityCheck && checkIfSameIndexExists(indexDef, true, &requireTtlUpdate)) {
+		if (requireTtlUpdate) {
+			auto idxNameIt = indexesNames_.find(indexDef.name_);
+			assertrx(idxNameIt != indexesNames_.end());
+			UpdateExpireAfter(indexes_[idxNameIt->second].get(), indexDef.expireAfter_);
+		}
 		return;
 	}
 
@@ -569,12 +576,16 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef, bool disableTmVersionInc,
 		return;
 	}
 
+	if (idxNo >= maxIndexes) {
+		throw Error(errConflict, "Cannot add index '%s.%s'. Too many non-composite indexes. %d non-composite indexes are allowed only",
+					name_, indexName, maxIndexes - 1);
+	}
 	std::unique_ptr<Index> newIndex = Index::New(indexDef, PayloadType(), FieldsSet());
 	FieldsSet fields;
 	if (opts.IsSparse()) {
 		for (const string &jsonPath : jsonPaths) {
 			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPath, true);
-			assert(tagsPath.size() > 0);
+			assertrx(tagsPath.size() > 0);
 			fields.push_back(jsonPath);
 			fields.push_back(tagsPath);
 		}
@@ -683,8 +694,8 @@ void NamespaceImpl::addCompositeIndex(const IndexDef &indexDef) {
 		}
 	}
 
-	assert(fields.getJsonPathsLength() == fields.getTagsPathsLength());
-	assert(indexesNames_.find(indexName) == indexesNames_.end());
+	assertrx(fields.getJsonPathsLength() == fields.getTagsPathsLength());
+	assertrx(indexesNames_.find(indexName) == indexesNames_.end());
 
 	int idxPos = indexes_.size();
 	insertIndex(Index::New(indexDef, payloadType_, fields), idxPos, indexName);
@@ -700,7 +711,7 @@ void NamespaceImpl::addCompositeIndex(const IndexDef &indexDef) {
 	updateSortedIdxCount();
 }
 
-bool NamespaceImpl::checkIfSameIndexExists(const IndexDef &indexDef, bool discardConfig) {
+bool NamespaceImpl::checkIfSameIndexExists(const IndexDef &indexDef, bool discardConfig, bool *requireTtlUpdate) {
 	auto idxNameIt = indexesNames_.find(indexDef.name_);
 	if (idxNameIt != indexesNames_.end()) {
 		IndexDef oldIndexDef = getIndexDefinition(indexDef.name_);
@@ -709,6 +720,12 @@ bool NamespaceImpl::checkIfSameIndexExists(const IndexDef &indexDef, bool discar
 			IndexDef newIndexDef = indexDef;
 			oldIndexDef.opts_.config = "";
 			newIndexDef.opts_.config = "";
+			if (requireTtlUpdate && oldIndexDef.Type() == IndexTtl) {
+				if (oldIndexDef.expireAfter_ != newIndexDef.expireAfter_) {
+					*requireTtlUpdate = true;
+				}
+				oldIndexDef.expireAfter_ = newIndexDef.expireAfter_;
+			}
 			indexIsSame = (newIndexDef == oldIndexDef);
 		} else {
 			indexIsSame = (indexDef == oldIndexDef);
@@ -775,7 +792,7 @@ void NamespaceImpl::Upsert(Item &item, const RdxContext &ctx) { ModifyItem(item,
 void NamespaceImpl::Delete(Item &item, const RdxContext &ctx) { ModifyItem(item, ModeDelete, ctx); }
 
 void NamespaceImpl::doDelete(IdType id) {
-	assert(items_.exists(id));
+	assertrx(items_.exists(id));
 
 	Payload pl(payloadType_, items_[id]);
 
@@ -817,7 +834,7 @@ void NamespaceImpl::doDelete(IdType id) {
 	// we start with 1st index (not index 0) because
 	// changing cjson of sparse index changes entire
 	// payload value (and not only 0 item).
-	assert(indexes_.firstCompositePos() != 0);
+	assertrx(indexes_.firstCompositePos() != 0);
 	const int borderIdx = indexes_.totalSize() > 1 ? 1 : 0;
 	field = borderIdx;
 	do {
@@ -825,7 +842,7 @@ void NamespaceImpl::doDelete(IdType id) {
 
 		Index &index = *indexes_[field];
 		if (index.Opts().IsSparse()) {
-			assert(index.Fields().getTagsPathsLength() > 0);
+			assertrx(index.Fields().getTagsPathsLength() > 0);
 			pl.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
 		} else {
 			pl.Get(field, skrefs, index.Opts().IsArray());
@@ -939,7 +956,7 @@ void NamespaceImpl::Refill(vector<Item> &items, const RdxContext &ctx) {
 	auto wlck = dataWLock(ctx);
 	cg.Reset();
 
-	assert(isSystem());	 // TODO: Refill currently will not be replicated, so it's available for system ns only
+	assertrx(isSystem());  // TODO: Refill currently will not be replicated, so it's available for system ns only
 
 	doTruncate(pendedRepl, ctx);
 	NsContext nsCtx(ctx);
@@ -1022,7 +1039,7 @@ void NamespaceImpl::CommitTransaction(Transaction &tx, LocalQueryResults &result
 				break;
 			}
 			case TransactionStep::Type::Nop:
-				assert(ctx.inSnapshot);
+				assertrx(ctx.inSnapshot);
 				wal_.Add(WALRecord(WalEmpty), step.lsn_);
 				break;
 			case TransactionStep::Type::PutMeta: {
@@ -1062,23 +1079,50 @@ void NamespaceImpl::CommitTransaction(Transaction &tx, LocalQueryResults &result
 
 void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 	// Upsert fields to indexes
-	assert(items_.exists(id));
+	assertrx(items_.exists(id));
 	auto &plData = items_[id];
 
 	// Inplace payload
 	Payload pl(payloadType_, plData);
 	Payload plNew = ritem->GetPayload();
 	auto indexesCacheCleaner{GetIndexesCacheCleaner()};
+	Variant oldData;
+	h_vector<bool, 32> needUpdateCompIndexes;
 	if (doUpdate) {
 		repl_.dataHash ^= pl.GetHash();
 		itemsDataSize_ -= plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
 		plData.Clone(pl.RealSize());
-
-		// Delete from composite indexes first
-		for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
-			bool needClearCache{false};
-			indexes_[field]->Delete(Variant(plData), id, *strHolder_, needClearCache);
-			if (needClearCache && indexes_[field]->IsOrdered()) indexesCacheCleaner.Add(indexes_[field]->SortId());
+		const size_t compIndexesCount = indexes_.compositeIndexesSize();
+		needUpdateCompIndexes = h_vector<bool, 32>(compIndexesCount, false);
+		bool needUpdateAnyCompIndex = false;
+		for (size_t field = 0; field < compIndexesCount; ++field) {
+			const auto &fields = indexes_[field + indexes_.firstCompositePos()]->Fields();
+			for (const auto f : fields) {
+				if (f == IndexValueType::SetByJsonPath) continue;
+				pl.Get(f, skrefs);
+				plNew.Get(f, krefs);
+				if (skrefs != krefs) {
+					needUpdateCompIndexes[field] = true;
+					needUpdateAnyCompIndex = true;
+					break;
+				}
+			}
+			if (needUpdateCompIndexes[field]) continue;
+			for (size_t i = 0, end = fields.getTagsPathsLength(); i < end; ++i) {
+				const auto &tp = fields.getTagsPath(i);
+				pl.GetByJsonPath(tp, skrefs, KeyValueUndefined);
+				plNew.GetByJsonPath(tp, krefs, KeyValueUndefined);
+				if (skrefs != krefs) {
+					needUpdateCompIndexes[field] = true;
+					needUpdateAnyCompIndex = true;
+					break;
+				}
+			}
+		}
+		if (needUpdateAnyCompIndex) {
+			PayloadValue oldValue = plData;
+			oldValue.Clone(pl.RealSize());
+			oldData = Variant{oldValue};
 		}
 	}
 
@@ -1088,17 +1132,15 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 	// we start with 1st index (not index 0) because
 	// changing cjson of sparse index changes entire
 	// payload value (and not only 0 item).
-	assert(indexes_.firstCompositePos() != 0);
+	assertrx(indexes_.firstCompositePos() != 0);
 	const int borderIdx = indexes_.totalSize() > 1 ? 1 : 0;
 	int field = borderIdx;
 	do {
 		field %= indexes_.firstCompositePos();
 		Index &index = *indexes_[field];
 		bool isIndexSparse = index.Opts().IsSparse();
-		assert(!isIndexSparse || (isIndexSparse && index.Fields().getTagsPathsLength() > 0));
-
 		if (isIndexSparse) {
-			assert(index.Fields().getTagsPathsLength() > 0);
+			assertrx(index.Fields().getTagsPathsLength() > 0);
 			try {
 				plNew.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
 			} catch (const Error &) {
@@ -1142,7 +1184,12 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 	// Upsert to composite indexes
 	for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
 		bool needClearCache{false};
-		indexes_[field]->Upsert(Variant(plData), id, needClearCache);
+		if (doUpdate) {
+			if (!needUpdateCompIndexes[field - indexes_.firstCompositePos()]) continue;
+			// Delete from composite indexes first
+			indexes_[field]->Delete(oldData, id, *strHolder_, needClearCache);
+		}
+		indexes_[field]->Upsert(Variant{plData}, id, needClearCache);
 		if (needClearCache && indexes_[field]->IsOrdered()) indexesCacheCleaner.Add(indexes_[field]->SortId());
 	}
 	repl_.dataHash ^= pl.GetHash();
@@ -1220,7 +1267,7 @@ void NamespaceImpl::deleteItem(Item &item, UpdatesContainer &pendedRepl, const N
 
 void NamespaceImpl::doModifyItem(Item &item, int mode, UpdatesContainer &pendedRepl, const NsContext &ctx, IdType suggestedId) {
 	// Item to doUpsert
-	assert(mode != ModeDelete);
+	assertrx(mode != ModeDelete);
 	const auto oldTmV = tagsMatcher_.version();
 	ItemImpl *itemImpl = item.impl_;
 	setFieldsBasedOnPrecepts(itemImpl, pendedRepl, ctx);
@@ -1248,7 +1295,7 @@ void NamespaceImpl::doModifyItem(Item &item, int mode, UpdatesContainer &pendedR
 	} else {
 		lsn = wal_.Add(WALRecord(WalItemUpdate, id, ctx.inTransaction), ctx.GetOriginLSN(), exists ? lsn_t(items_[id].GetLSN()) : lsn_t());
 	}
-	assert(!lsn.isEmpty());
+	assertrx(!lsn.isEmpty());
 
 	item.setLSN(lsn);
 	item.setID(id);
@@ -1355,7 +1402,7 @@ void NamespaceImpl::optimizeIndexes(const NsContext &ctx) {
 	const bool forceBuildAllIndexes = optState == NotOptimized;
 
 	logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) enter", name_);
-	assert(indexes_.firstCompositePos() != 0);
+	assertrx(indexes_.firstCompositePos() != 0);
 	int field = indexes_.firstCompositePos();
 	do {
 		field %= indexes_.totalSize();
@@ -1436,7 +1483,7 @@ Item NamespaceImpl::newItem() {
 
 void NamespaceImpl::doUpdate(const Query &query, LocalQueryResults &result, UpdatesContainer &pendedRepl, const NsContext &ctx) {
 	NsSelecter selecter(this);
-	SelectCtx selCtx(query);
+	SelectCtx selCtx(query, nullptr);
 	SelectFunctionsHolder func;
 	selCtx.functions = &func;
 	selCtx.contextCollectingMode = true;
@@ -1468,7 +1515,7 @@ void NamespaceImpl::doUpdate(const Query &query, LocalQueryResults &result, Upda
 	ItemModifier itemModifier(query.UpdateFields(), *this, pendedRepl, ctx);
 	pendedRepl.reserve(pendedRepl.size() + result.Items().size());	// Required for item-based replication only
 	for (ItemRef &item : result.Items()) {
-		assert(items_.exists(item.Id()));
+		assertrx(items_.exists(item.Id()));
 		const auto oldTmV = tagsMatcher_.version();
 		PayloadValue &pv(items_[item.Id()]);
 		Payload pl(payloadType_, pv);
@@ -1480,7 +1527,7 @@ void NamespaceImpl::doUpdate(const Query &query, LocalQueryResults &result, Upda
 		item.Value() = items_[item.Id()];
 	}
 	result.getTagsMatcher(0) = tagsMatcher_;
-	assert(result.IsNamespaceAdded(this));
+	assertrx(result.IsNamespaceAdded(this));
 
 	// Disabled due to statement base replication logic conflicts
 	// lsn_t lsn;
@@ -1503,7 +1550,7 @@ void NamespaceImpl::doUpdate(const Query &query, LocalQueryResults &result, Upda
 				  duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count());
 	}
 	//	if (statementReplication) {
-	//		assert(!lsn.isEmpty());
+	//		assertrx(!lsn.isEmpty());
 	//		pendedRepl.emplace_back(UpdateRecord::Type::UpdateQuery, name_, lsn, query);
 	//	}
 }
@@ -1521,7 +1568,7 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext &ctx, bool stat
 		} else {
 			lsn = wal_.Add(WALRecord(WalItemUpdate, itemId, ctx.inTransaction), lsn_t(), lsn_t(items_[itemId].GetLSN()));
 		}
-		assert(!lsn.isEmpty());
+		assertrx(!lsn.isEmpty());
 
 		pv.SetLSN(lsn);
 		ItemImpl item(payloadType_, pv, tagsMatcher_);
@@ -1552,12 +1599,12 @@ void NamespaceImpl::replicateItem(IdType itemId, const NsContext &ctx, bool stat
 
 void NamespaceImpl::doDelete(const Query &q, LocalQueryResults &result, UpdatesContainer &pendedRepl, const NsContext &ctx) {
 	NsSelecter selecter(this);
-	SelectCtx selCtx(q);
+	SelectCtx selCtx(q, nullptr);
 	selCtx.contextCollectingMode = true;
 	SelectFunctionsHolder func;
 	selCtx.functions = &func;
 	selecter(result, selCtx, ctx.rdxContext);
-	assert(result.IsNamespaceAdded(this));
+	assertrx(result.IsNamespaceAdded(this));
 
 	const auto tmStart = high_resolution_clock::now();
 	const auto oldTmV = tagsMatcher_.version();
@@ -1628,7 +1675,7 @@ void NamespaceImpl::checkClusterStatus(lsn_t originLsn) const {
 
 void NamespaceImpl::replicateTmUpdateIfRequired(UpdatesContainer &pendedRepl, int oldTmVersion, const NsContext &ctx) noexcept {
 	if (oldTmVersion != tagsMatcher_.version()) {
-		assert(ctx.GetOriginLSN().isEmpty());
+		assertrx(ctx.GetOriginLSN().isEmpty());
 		const auto lsn = wal_.Add(WALRecord(WalEmpty, 0, ctx.inTransaction), lsn_t());
 		pendedRepl.emplace_back(ctx.inTransaction ? UpdateRecord::Type::SetTagsMatcherTx : UpdateRecord::Type::SetTagsMatcher, name_, lsn,
 								repl_.nsVersion, ctx.rdxContext.emmiterServerId_, tagsMatcher_);
@@ -1646,7 +1693,7 @@ void NamespaceImpl::Select(LocalQueryResults &result, SelectCtx &params, const R
 }
 
 IndexDef NamespaceImpl::getIndexDefinition(size_t i) const {
-	assert(i < indexes_.size());
+	assertrx(i < indexes_.size());
 	IndexDef indexDef;
 	const Index &index = *indexes_[i];
 	indexDef.name_ = index.Name();
@@ -1807,8 +1854,8 @@ Error NamespaceImpl::loadLatestSysRecord(std::string_view baseSysTag, uint64_t &
 
 bool NamespaceImpl::loadIndexesFromStorage() {
 	// Check if indexes structures are ready.
-	assert(indexes_.size() == 1);
-	assert(items_.size() == 0);
+	assertrx(indexes_.size() == 1);
+	assertrx(items_.size() == 0);
 
 	string def;
 	Error status = loadLatestSysRecord(kStorageTagsPrefix, sysRecordsVersions_.tagsVersion, def);
@@ -2108,7 +2155,7 @@ void NamespaceImpl::LoadFromStorage(const RdxContext &ctx) {
 
 			// Read LSN
 			int64_t lsn = *reinterpret_cast<const int64_t *>(dataSlice.data());
-			assert(lsn >= 0);
+			assertrx(lsn >= 0);
 			lsn_t l(lsn);
 			if (isSystem()) {
 				l.SetServer(0);
@@ -2234,7 +2281,7 @@ void NamespaceImpl::setTagsMatcher(TagsMatcher &&tm, UpdatesContainer &pendedRep
 }
 
 StringsHolderPtr NamespaceImpl::StrHolder(bool noLock, const RdxContext &ctx) {
-	assert(noLock);
+	assertrx(noLock);
 	Locker::RLockT rlck;
 	if (!noLock) {
 		rlck = rLock(ctx);
@@ -2446,8 +2493,8 @@ IdType NamespaceImpl::createItem(size_t realSize, IdType suggestedId) {
 		if (free_.size()) {
 			id = free_.back();
 			free_.pop_back();
-			assert(id < IdType(items_.size()));
-			assert(items_[id].IsFree());
+			assertrx(id < IdType(items_.size()));
+			assertrx(items_[id].IsFree());
 			items_[id] = PayloadValue(realSize);
 		} else {
 			id = items_.size();
@@ -2472,8 +2519,8 @@ IdType NamespaceImpl::createItem(size_t realSize, IdType suggestedId) {
 			}
 		} else {
 			free_.erase(found);
-			assert(id < IdType(items_.size()));
-			assert(items_[id].IsFree());
+			assertrx(id < IdType(items_.size()));
+			assertrx(items_[id].IsFree());
 			items_[id] = PayloadValue(realSize);
 		}
 	}
@@ -2603,7 +2650,7 @@ void NamespaceImpl::processWalRecord(WALRecord &&wrec, const NsContext &ctx, lsn
 	}
 
 	if (item) {
-		assert(!lsn.isEmpty());
+		assertrx(!lsn.isEmpty());
 		item->setLSN(lsn);
 	}
 }
@@ -2631,7 +2678,7 @@ void NamespaceImpl::replicate(UpdateRecord &&rec, Locker::WLockT &&wlck, const R
 		auto err = clusterizator_->Replicate(
 			std::move(rec),
 			[&wlck]() {
-				assert(wlck.isClusterLck());
+				assertrx(wlck.isClusterLck());
 				wlck.unlock();
 			},
 			ctx);
@@ -2643,11 +2690,11 @@ void NamespaceImpl::replicate(UpdateRecord &&rec, Locker::WLockT &&wlck, const R
 
 void NamespaceImpl::replicate(UpdatesContainer &&recs, NamespaceImpl::Locker::WLockT &&wlck, const NsContext &ctx) {
 	if (!repl_.temporary) {
-		assert(!ctx.isCopiedNsRequest);
+		assertrx(!ctx.isCopiedNsRequest);
 		auto err = clusterizator_->Replicate(
 			std::move(recs),
 			[&wlck]() {
-				assert(wlck.isClusterLck());
+				assertrx(wlck.isClusterLck());
 				wlck.unlock();
 			},
 			ctx.rdxContext);

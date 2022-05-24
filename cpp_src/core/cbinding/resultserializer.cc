@@ -19,7 +19,7 @@ void WrResultSerializer::putQueryParams(const QueryResults* results) {
 	PutVarUint(opts_.fetchLimit);
 
 	if (opts_.flags & kResultsWithPayloadTypes) {
-		assert(opts_.ptVersions.data());
+		assertrx(opts_.ptVersions.data());
 		if (int(opts_.ptVersions.size()) != results->GetMergedNSCount()) {
 			logPrintf(LogWarning, "ptVersionsCount != results->GetMergedNSCount: %d != %d. Client's meta data can become incosistent.",
 					  opts_.ptVersions.size(), results->GetMergedNSCount());
@@ -81,11 +81,8 @@ static ItemRef GetItemRefWithStore(const LocalQueryResults::Iterator& it, QueryR
 
 static ItemRef GetItemRefWithStore(QueryResults::Iterator& it, QueryResults::ProxiedRefsStorage* storage) { return it.GetItemRef(storage); }
 
-template <typename QrT>
-void WrResultSerializer::putItemParams(const QrT* result, int idx, bool useOffset, int shardId, QueryResults::ProxiedRefsStorage* storage) {
-	int ridx = idx + (useOffset ? opts_.fetchOffset : 0);
-
-	auto it = result->begin() + ridx;
+template <typename ItT>
+void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::ProxiedRefsStorage* storage) {
 	const auto itemRef = GetItemRefWithStore(it, storage);
 
 	if (opts_.flags & kResultsWithItemID) {
@@ -129,7 +126,7 @@ void WrResultSerializer::putItemParams(const QrT* result, int idx, bool useOffse
 			err = it.GetMsgPack(*this);
 			break;
 		default:
-			throw Error(errParams, "Can't serialize query results: unknown formar %d", int((opts_.flags & kResultsFormatMask)));
+			throw Error(errParams, "Can't serialize query results: unknown format %d", int((opts_.flags & kResultsFormatMask)));
 	}
 	if (!err.ok()) throw Error(errParseBin, "Internal error serializing query results: %s", err.what());
 }
@@ -189,10 +186,10 @@ bool WrResultSerializer::PutResults(const QueryResults* result, const SemVersion
 		storage->reserve(5000);
 	}
 
-	for (unsigned i = 0; i < opts_.fetchLimit; ++i) {
+	auto rowIt = result->begin() + opts_.fetchOffset;
+	for (unsigned i = 0; i < opts_.fetchLimit; ++i, ++rowIt) {
 		// Put Item ID and version
-		auto rowIt = result->begin() + (i + opts_.fetchOffset);
-		putItemParams(result, i, true, rowIt.GetShardId(), storage);
+		putItemParams(rowIt, rowIt.GetShardId(), storage);
 		if (opts_.flags & kResultsWithJoined) {
 			auto jIt = rowIt.GetJoined();
 			PutVarUint(jIt.getJoinedItemsCount() > 0 ? jIt.getJoinedFieldsCount() : 0);
@@ -204,7 +201,7 @@ bool WrResultSerializer::PutResults(const QueryResults* result, const SemVersion
 					LocalQueryResults qr = it.ToQueryResults();
 					qr.addNSContext(result->GetPayloadType(joinedField), result->GetTagsMatcher(joinedField),
 									result->GetFieldsFilter(joinedField), result->GetSchema(joinedField));
-					for (size_t idx = 0; idx < qr.Count(); idx++) putItemParams(&qr, idx, false, rowIt.GetShardId(), storage);
+					for (auto& jit : qr) putItemParams(jit, rowIt.GetShardId(), storage);
 				}
 			}
 		}

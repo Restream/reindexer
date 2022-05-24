@@ -20,7 +20,7 @@ Connection<Mutex>::~Connection() {
 
 template <typename Mutex>
 void Connection<Mutex>::restart(int fd) {
-	assert(!sock_.valid());
+	assertrx(!sock_.valid());
 	sock_ = fd;
 	wrBuf_.clear();
 	rdBuf_.clear();
@@ -31,7 +31,7 @@ void Connection<Mutex>::restart(int fd) {
 
 template <typename Mutex>
 void Connection<Mutex>::attach(ev::dynamic_loop &loop) {
-	assert(!attached_);
+	assertrx(!attached_);
 	io_.set<Connection, &Connection::callback>(this);
 	io_.set(loop);
 	if (sock_.valid()) {
@@ -48,7 +48,7 @@ void Connection<Mutex>::attach(ev::dynamic_loop &loop) {
 
 template <typename Mutex>
 void Connection<Mutex>::detach() {
-	assert(attached_);
+	assertrx(attached_);
 	io_.stop();
 	io_.reset();
 	timeout_.stop();

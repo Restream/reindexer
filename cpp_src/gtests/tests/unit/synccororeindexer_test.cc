@@ -82,6 +82,8 @@ TEST(SyncCoroRx, StopServerOnQuery) {
 	// Check stop server on fetch results
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/StopServerOnQuery");
 	const int kFetchAmount = 100;
+	constexpr uint32_t kConnsCount = 2;
+	constexpr uint32_t kThreadsCount = 2;
 	reindexer::fs::RmDirAll(kTestDbPath);
 	// server creation and configuration
 	ServerControl server;
@@ -90,7 +92,7 @@ TEST(SyncCoroRx, StopServerOnQuery) {
 	// client creation
 	reindexer::client::CoroReindexerConfig clientConf;
 	clientConf.FetchAmount = kFetchAmount;
-	reindexer::client::SyncCoroReindexer client(clientConf);
+	reindexer::client::SyncCoroReindexer client(clientConf, kConnsCount, kThreadsCount);
 	Error err = client.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db");
 	ASSERT_TRUE(err.ok()) << err.what();
 	// create namespace and indexes
@@ -264,9 +266,10 @@ TEST(SyncCoroRx, RxClientNThread) {
 		ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, "/tmp/RxClientNThread", kDbName));
 	constexpr size_t kConns = 3;
 	constexpr size_t kThreads = 10;
+	const size_t kSyncCoroRxThreads = 2;
 	client::CoroReindexerConfig cfg;
 	cfg.AppName = "MultiConnRxClient";
-	client::SyncCoroReindexer client(cfg, kConns);
+	client::SyncCoroReindexer client(cfg, kConns, kSyncCoroRxThreads);
 	auto err = client.Connect(fmt::sprintf("cproto://127.0.0.1:%d/%s", kSyncCoroRxTestDefaultRpcPort, kDbName));
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = client.OpenNamespace(kNsName);
@@ -335,9 +338,11 @@ TEST(SyncCoroRx, StopWhileWriting) {
 	reindexer::fs::RmDirAll(kTestDbPath);
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
-	reindexer::client::SyncCoroReindexer client;
 	const std::string kNsName = "ns_test";
 	constexpr size_t kWritingThreadsCount = 5;
+	constexpr uint32_t kConnsCount = 4;
+	constexpr uint32_t kThreadsCount = 2;
+	reindexer::client::SyncCoroReindexer client(client::CoroReindexerConfig(), kConnsCount, kThreadsCount);
 	constexpr auto kWritingThreadSleep = std::chrono::milliseconds(1);
 	constexpr auto kSleepBetweenPhases = std::chrono::milliseconds(200);
 
@@ -508,8 +513,9 @@ TEST(SyncCoroRx, TxInvalidation) {
 	reindexer::fs::RmDirAll(kTestDbPath);
 	const std::string kNsNames = "ns_test";
 	const std::string kItemContent = R"json({"id": 1})json";
-	const std::string kExpectedErrorText =
+	const std::string kExpectedErrorText1 =
 		"Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated";
+	const std::string kExpectedErrorText2 = "Request for invalid connection (probably this connection was broken and invalidated)";
 
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
@@ -548,25 +554,33 @@ TEST(SyncCoroRx, TxInvalidation) {
 	item.FromJSON(kItemContent);
 	err = movedTx.Insert(std::move(item));
 	EXPECT_EQ(err.code(), errNetwork);
-	EXPECT_EQ(err.what(), kExpectedErrorText);
+	if (err.what() != kExpectedErrorText1 && err.what() != kExpectedErrorText2) {
+		ASSERT_TRUE(false) << err.what();
+	}
 	{
 		Query q = Query().Set("id", {10});
 		q.type_ = QueryType::QueryUpdate;
 		err = movedTx.Modify(std::move(q));
 		EXPECT_EQ(err.code(), errNetwork);
-		EXPECT_EQ(err.what(), kExpectedErrorText);
+		if (err.what() != kExpectedErrorText1 && err.what() != kExpectedErrorText2) {
+			ASSERT_TRUE(false) << err.what();
+		}
 	}
 	{
 		Query q;
 		q.type_ = QueryType::QueryUpdate;
 		err = movedTx.Modify(std::move(q));
 		EXPECT_EQ(err.code(), errNetwork);
-		EXPECT_EQ(err.what(), kExpectedErrorText);
+		if (err.what() != kExpectedErrorText1 && err.what() != kExpectedErrorText2) {
+			ASSERT_TRUE(false) << err.what();
+		}
 	}
 	client::SyncCoroQueryResults qr;
 	err = client->CommitTransaction(movedTx, qr);
 	EXPECT_EQ(err.code(), errNetwork);
-	EXPECT_EQ(err.what(), kExpectedErrorText);
+	if (err.what() != kExpectedErrorText1 && err.what() != kExpectedErrorText2) {
+		ASSERT_TRUE(false) << err.what();
+	}
 }
 
 TEST(SyncCoroRx, QrInvalidation) {
@@ -574,8 +588,9 @@ TEST(SyncCoroRx, QrInvalidation) {
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/QrInvalidation");
 	reindexer::fs::RmDirAll(kTestDbPath);
 	const std::string kNsNames = "ns_test";
-	const std::string kExpectedErrorText =
+	const std::string kExpectedErrorText1 =
 		"Connection was broken and all corresponding snapshots, queryresults and transaction were invalidated";
+	const std::string kExpectedErrorText2 = "Request for invalid connection (probably this connection was broken and invalidated)";
 	const unsigned kDataCount = 500;
 	const unsigned kFetchCnt = 100;
 	client::CoroReindexerConfig cfg(kFetchCnt);
@@ -625,5 +640,7 @@ TEST(SyncCoroRx, QrInvalidation) {
 	}
 	err = mit.Status();
 	EXPECT_EQ(err.code(), errNetwork);
-	EXPECT_EQ(err.what(), kExpectedErrorText);
+	if (err.what() != kExpectedErrorText1 && err.what() != kExpectedErrorText2) {
+		ASSERT_TRUE(false) << err.what();
+	}
 }

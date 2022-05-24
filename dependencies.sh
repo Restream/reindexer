@@ -34,10 +34,11 @@ error_msg() {
 osx_deps="gperftools leveldb snappy cmake git"
 centos8_debs="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 fedora_debs=" gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
-centos7_debs="centos-release-scl devtoolset-9-gcc devtoolset-9-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
+centos7_debs="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 debian_debs="build-essential g++ libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
 alpine_apks="g++ snappy-dev leveldb-dev libexecinfo-dev make curl cmake unzip git"
 arch_pkgs="gcc snappy leveldb make curl cmake unzip git"
+redos_debs="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git cmake"
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "
@@ -74,7 +75,7 @@ install_cmake_linux () {
 install_osx() {
     for pkg in $osx_deps
     do
-        if brew list -1 | grep -q "^${pkg}\$"; then
+        if brew list -1 | grep -E -q "^${pkg}\$|^${pkg}@[0-9.]+\$"; then
             info_msg "Package $pkg already installed. Skip ....."
         else
             info_msg "Installing $pkg package ....."
@@ -130,7 +131,7 @@ install_centos7() {
             fi
         fi
     done
-    source scl_source enable devtoolset-9
+    source scl_source enable devtoolset-10
     cmake_installed || install_cmake_linux
     return $?
 }
@@ -221,6 +222,24 @@ install_alpine() {
     return $?
 }
 
+install_redos() {
+    for pkg in ${redos_debs}
+    do
+        if dnf list --installed | grep -w ${pkg} ; then
+            info_msg "Package '$pkg' already installed. Skip ....."
+        else
+            info_msg "Installing '$pkg' package ....."
+            dnf install -y ${pkg} > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                success_msg "Package '$pkg' was installed successfully."
+            else
+                error_msg "Could not install '$pkg' package. Try 'dnf update && dnf install $pkg'" && return 1
+            fi
+        fi
+    done
+    return $?
+}
+
 detect_installer() {
     if [ -f /etc/os-release ]; then
         . /etc/os-release
@@ -242,7 +261,9 @@ detect_installer() {
             OS_TYPE="alpine" && return
         elif [ "$OS" = "arch" ]; then
             OS_TYPE="arch" && return
-        else 
+        elif [ "$OS" = "redos" ]; then
+            OS_TYPE="redos" && return
+        else
             return 1
         fi
     elif [ -f /etc/centos-release ]; then

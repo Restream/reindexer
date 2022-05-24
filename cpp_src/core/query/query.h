@@ -110,6 +110,12 @@ public:
 	}
 	Query &&Explain(bool on = true) && { return std::move(Explain(on)); }
 
+	Query &Local(bool on = true) & {  // -V1071
+		local_ = on;
+		return *this;
+	}
+	Query &&Local(bool on = true) && { return std::move(Local(on)); }
+
 	/// Adds a condition with a single value. Analog to sql Where clause.
 	/// @param idx - index used in condition clause.
 	/// @param cond - type of condition.
@@ -364,13 +370,27 @@ public:
 
 	/// Adds equal position fields to arrays queries.
 	/// @param equalPosition - list of fields with equal array index position.
-	void AddEqualPosition(const h_vector<string> &equalPosition) {
-		equalPositions_.emplace(entries.DetermineEqualPositionIndexes(equalPosition));
+	Query &AddEqualPosition(const h_vector<string> &equalPosition) & {
+		auto *const bracket = entries.LastOpenBracket();
+		auto &eqPos = (bracket ? bracket->equalPositions : entries.equalPositions);
+		eqPos.emplace_back(std::make_move_iterator(equalPosition.begin()), std::make_move_iterator(equalPosition.end()));
+		return *this;
 	}
-	void AddEqualPosition(const vector<string> &equalPosition) {
-		equalPositions_.emplace(entries.DetermineEqualPositionIndexes(equalPosition));
+	Query &AddEqualPosition(const vector<string> &equalPosition) & {
+		auto *const bracket = entries.LastOpenBracket();
+		auto &eqPos = (bracket ? bracket->equalPositions : entries.equalPositions);
+		eqPos.emplace_back(std::make_move_iterator(equalPosition.begin()), std::make_move_iterator(equalPosition.end()));
+		return *this;
 	}
-	void AddEqualPosition(std::initializer_list<string> l) { equalPositions_.emplace(entries.DetermineEqualPositionIndexes(l)); }
+	Query &AddEqualPosition(std::initializer_list<string> l) & {
+		auto *const bracket = entries.LastOpenBracket();
+		auto &eqPos = (bracket ? bracket->equalPositions : entries.equalPositions);
+		eqPos.emplace_back(std::move(l));
+		return *this;
+	}
+	Query &&AddEqualPosition(const h_vector<string> &equalPosition) && { return std::move(AddEqualPosition(equalPosition)); }
+	Query &&AddEqualPosition(const vector<string> &equalPosition) && { return std::move(AddEqualPosition(equalPosition)); }
+	Query &&AddEqualPosition(std::initializer_list<string> l) && { return std::move(AddEqualPosition(std::move(l))); }
 
 	/// Joins namespace with another namespace. Analog to sql JOIN.
 	/// @param joinType - type of Join (Inner, Left or OrInner).
@@ -681,6 +701,7 @@ public:
 	int debugLevel = 0;						   /// Debug level.
 	StrictMode strictMode = StrictModeNotSet;  /// Strict mode.
 	bool explain_ = false;					   /// Explain query if true
+	bool local_ = false;					   /// Local query if true
 	CalcTotalMode calcTotal = ModeNoTotal;	   /// Calculation mode.
 	QueryType type_ = QuerySelect;			   /// Query type
 	OpType nextOp_ = OpAnd;					   /// Next operation constant.
@@ -691,7 +712,6 @@ public:
 	h_vector<string, 1> selectFilter_;		   /// List of columns in a final result set.
 	h_vector<string, 0> selectFunctions_;	   /// List of sql functions
 
-	std::multimap<unsigned, EqualPosition> equalPositions_;	 /// List of same position fields for queries with arrays
 	QueryEntries entries;
 
 	vector<AggregateEntry> aggregations_;

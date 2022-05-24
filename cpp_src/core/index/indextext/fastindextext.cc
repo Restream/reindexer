@@ -57,7 +57,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 	int delcnt = 0;
 	if (key.Type() == KeyValueNull) {
 		delcnt = this->empty_ids_.Unsorted().Erase(id);
-		assert(delcnt);
+		assertrx(delcnt);
 		this->isBuilt_ = false;
 		return;
 	}
@@ -76,7 +76,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
 		if (keyIt->second.VDocID() != FtKeyEntryData::ndoc) {
-			assert(keyIt->second.VDocID() < int(this->holder_.vdocs_.size()));
+			assertrx(keyIt->second.VDocID() < int(this->holder_.vdocs_.size()));
 			this->holder_.vdocs_[keyIt->second.VDocID()].keyEntry = nullptr;
 		}
 		if constexpr (is_str_map_v<T>) {
@@ -122,7 +122,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 	const double scalingFactor = mergeInfo.maxRank > 255 ? 255.0 / mergeInfo.maxRank : 1.0;
 	int minRelevancy = GetConfig()->minRelevancy * 100 * scalingFactor;
 	for (auto &vid : mergeInfo) {
-		assert(vid.id < int(vdocs.size()));
+		assertrx(vid.id < int(vdocs.size()));
 		if (!vdocs[vid.id].keyEntry) {
 			continue;
 		}
@@ -135,12 +135,12 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 	fctx->Reserve(cnt);
 	for (auto &vid : mergeInfo) {
 		auto id = vid.id;
-		assert(id < IdType(vdocs.size()));
+		assertrx(id < IdType(vdocs.size()));
 
 		if (!vdocs[id].keyEntry) {
 			continue;
 		}
-		assert(!vdocs[id].keyEntry->Unsorted().empty());
+		assertrx(!vdocs[id].keyEntry->Unsorted().empty());
 		if (vid.proc <= minRelevancy) break;
 		fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc, std::move(vid.holder));
 		mergedIds->Append(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), IdSet::Unordered);
@@ -164,7 +164,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 		}
 		logPrintf(LogInfo, "Relevancy(%d): %s", fctx->GetSize(), str);
 	}
-	assert(mergedIds->size() == fctx->GetSize());
+	assertrx(mergedIds->size() == fctx->GetSize());
 
 	return mergedIds;
 }
@@ -225,7 +225,7 @@ void FastIndexText<T>::BuildVdocs(Container &data) {
 	for (auto it = data.begin(); it != data.end(); ++it) {
 		if constexpr (std::is_same<Container, typename UpdateTracker<T>::hash_map>()) {
 			doc = this->idx_map.find(*it);
-			assert(it != data.end());
+			assertrx(it != data.end());
 		} else {
 			doc = it;
 		}

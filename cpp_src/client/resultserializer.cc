@@ -20,7 +20,7 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, std
 			int nsid = GetVarUint();
 			GetVString();
 
-			assert(updatePayloadFunc != nullptr);
+			assertrx(updatePayloadFunc != nullptr);
 			updatePayloadFunc(nsid);
 		}
 	}

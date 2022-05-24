@@ -10,7 +10,7 @@ ArraysStorage::ArraysStorage(TagsMatcher& tm) : tm_(tm) {}
 void ArraysStorage::UpdateArraySize(int tagName, int field) { GetArray(tagName, field); }
 
 CJsonBuilder& ArraysStorage::GetArray(int tagName, int field) {
-	assert(indexes_.size() > 0);
+	assertrx(indexes_.size() > 0);
 	auto it = data_.find(tagName);
 	if (it == data_.end()) {
 		indexes_.back().push_back(tagName);
@@ -27,10 +27,10 @@ CJsonBuilder& ArraysStorage::GetArray(int tagName, int field) {
 void ArraysStorage::onAddObject() { indexes_.emplace_back(h_vector<int, 1>()); }
 
 void ArraysStorage::onObjectBuilt(CJsonBuilder& parent) {
-	assert(indexes_.size() > 0);
+	assertrx(indexes_.size() > 0);
 	for (int tagName : indexes_.back()) {
 		auto it = data_.find(tagName);
-		assert(it != data_.end());
+		assertrx(it != data_.end());
 		ArrayData& arrayData = it->second;
 		if (arrayData.field == IndexValueType::NotSet) {
 			arrayData.builder.End();

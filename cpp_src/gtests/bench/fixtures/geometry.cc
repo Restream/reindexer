@@ -54,27 +54,47 @@ void Geometry::Reset(State& state) {
 }
 
 void Geometry::RegisterAllCases() {
+#ifdef REINDEX_WITH_TSAN
+	Register("NonIndexPointInsert/10^4", &Geometry::Insert<10000>, this)->Iterations(1);
+#else
 	Register("NonIndexPointInsert/10^5", &Geometry::Insert<100000>, this)->Iterations(1);
+#endif
 	Register("NonIndexPointDWithin/1%", &Geometry::GetDWithin<10>, this);
 	Register("NonIndexPointDWithin/0.01%", &Geometry::GetDWithin<100>, this);
 
 	Register("ResetToLinear", &Geometry::Reset<IndexOpts::Linear>, this)->Iterations(1);
+#ifdef REINDEX_WITH_TSAN
+	Register("LinearRTreePointInsert/10^4", &Geometry::Insert<10000>, this)->Iterations(1);
+#else
 	Register("LinearRTreePointInsert/10^5", &Geometry::Insert<100000>, this)->Iterations(1);
+#endif
 	Register("LinearRTreePointDWithin/1%", &Geometry::GetDWithin<10>, this);
 	Register("LinearRTreePointDWithin/0.01%", &Geometry::GetDWithin<100>, this);
 
 	Register("ResetToQuadratic", &Geometry::Reset<IndexOpts::Quadratic>, this)->Iterations(1);
+#ifdef REINDEX_WITH_TSAN
+	Register("QuadraticRTreePointInsert/10^4", &Geometry::Insert<10000>, this)->Iterations(1);
+#else
 	Register("QuadraticRTreePointInsert/10^5", &Geometry::Insert<100000>, this)->Iterations(1);
+#endif
 	Register("QuadraticRTreePointDWithin/1%", &Geometry::GetDWithin<10>, this);
 	Register("QuadraticRTreePointDWithin/0.01%", &Geometry::GetDWithin<100>, this);
 
 	Register("ResetToGreene", &Geometry::Reset<IndexOpts::Greene>, this)->Iterations(1);
+#ifdef REINDEX_WITH_TSAN
+	Register("GreeneRTreePointInsert/10^4", &Geometry::Insert<10000>, this)->Iterations(1);
+#else
 	Register("GreeneRTreePointInsert/10^5", &Geometry::Insert<100000>, this)->Iterations(1);
+#endif
 	Register("GreeneRTreePointDWithin/1%", &Geometry::GetDWithin<10>, this);
 	Register("GreeneRTreePointDWithin/0.01%", &Geometry::GetDWithin<100>, this);
 
 	Register("ResetToRStar", &Geometry::Reset<IndexOpts::RStar>, this)->Iterations(1);
+#ifdef REINDEX_WITH_TSAN
+	Register("RStarRTreePointInsert/10^4", &Geometry::Insert<10000>, this)->Iterations(1);
+#else
 	Register("RStarRTreePointInsert/10^5", &Geometry::Insert<100000>, this)->Iterations(1);
+#endif
 	Register("RStarRTreePointDWithin/1%", &Geometry::GetDWithin<10>, this);
 	Register("RStarRTreePointDWithin/0.01%", &Geometry::GetDWithin<100>, this);
 }

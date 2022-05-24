@@ -182,7 +182,7 @@ SnapshotChunk Snapshot::Iterator::Chunk() const {
 			pwrec.resize(itemRef.Value().GetCapacity());
 			memcpy(pwrec.data(), itemRef.Value().Ptr(), pwrec.size());
 		} else if (shallow) {
-			assert(itemRef.Id() >= 0);
+			assertrx(itemRef.Id() >= 0);
 			pwrec.Pack(WALRecord(WalShallowItem, itemRef.Id()));
 		} else {
 			ser_.Reset();

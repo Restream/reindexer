@@ -73,7 +73,7 @@ public:
 			data_size_ += ch.size();
 			ring_[head_] = std::move(ch);
 			head_ = (head_ + 1) % ring_.size();
-			assert(head_ != tail_);
+			assertrx(head_ != tail_);
 		}
 	}
 	void write(std::string_view sv) {
@@ -88,10 +88,10 @@ public:
 	}
 	void erase(size_t nread) {
 		std::unique_lock<Mutex> lck(mtx_);
-		assert(data_size_ >= nread);
+		assertrx(data_size_ >= nread);
 		data_size_ -= nread;
 		while (nread) {
-			assert(head_ != tail_);
+			assertrx(head_ != tail_);
 			chunk &cur = ring_[tail_];
 			if (cur.size() > nread) {
 				cur.offset_ += nread;

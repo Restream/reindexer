@@ -11,11 +11,11 @@ public:
 	FileContetWatcher(std::string filename, std::function<Error(const std::string&)> loadFromYaml,
 					  std::function<Error(const std::string&)> loadFromFile) noexcept
 		: filename_(std::move(filename)), loadFromYaml_(std::move(loadFromYaml)), loadFromFile_(std::move(loadFromFile)) {
-		assert(loadFromYaml_);
-		assert(loadFromYaml_);
+		assertrx(loadFromYaml_);
+		assertrx(loadFromYaml_);
 	}
 	void SetDirectory(const std::string& directory) noexcept {
-		assert(!hasFilepath_.load(std::memory_order_acquire));
+		assertrx(!hasFilepath_.load(std::memory_order_acquire));
 		filepath_ = fs::JoinPath(directory, filename_);
 		auto stat = fs::StatTime(filepath_);
 		lastReplConfMTime_.store(stat.mtime, std::memory_order_relaxed);

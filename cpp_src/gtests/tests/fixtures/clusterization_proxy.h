@@ -1,57 +1,219 @@
 ﻿#pragma once
 
+#include <chrono>
+#include <fstream>
 #include "clusterization_api.h"
+#include "spdlog/details/os.h"
 
 class ClusterizationProxyApi : public ClusterizationApi {
 public:
 	class ItemTracker {
 	public:
 		~ItemTracker() { assert(validated_); }
-		void AddCommited(std::string&& json, std::string threadName) {
+		struct ItemInfo {
+			ItemInfo(int _itemCounter, int _serverId, std::string _threadName)
+				: itemCounter(_itemCounter), serverId(_serverId), threadName(std::move(_threadName)) {
+				ItemAdd = std::chrono::system_clock::now();
+			}
+			ItemInfo(int _itemCounter, int _txCounter, int _txId, int _serverId,
+					 const std::chrono::time_point<std::chrono::system_clock>& _txStart, std::string _threadName)
+				: itemCounter(_itemCounter),
+				  txCounter(_txCounter),
+				  txId(_txId),
+				  serverId(_serverId),
+				  txStart(_txStart),
+				  threadName(std::move(_threadName)) {
+				ItemAdd = std::chrono::system_clock::now();
+			}
+			ItemInfo(int _txCounter, int _txId, int _serverId, const std::chrono::time_point<std::chrono::system_clock>& _txStart,
+					 const std::chrono::time_point<std::chrono::system_clock>& _txBeforeCommit, std::string _threadName)
+				: txCounter(_txCounter),
+				  txId(_txId),
+				  serverId(_serverId),
+				  txStart(_txStart),
+				  txBeforeCommit(_txBeforeCommit),
+				  threadName(std::move(_threadName)),
+				  isChecked(true) {
+				ItemAdd = std::chrono::system_clock::now();
+			}
+			ItemInfo(int _txCounter, int _txId, int _serverId, const std::chrono::time_point<std::chrono::system_clock>& _txStart,
+					 const std::chrono::time_point<std::chrono::system_clock>& _txBeforeCommit,
+					 const std::chrono::time_point<std::chrono::system_clock>& _txAfterCommit, std::string _threadName)
+				: txCounter(_txCounter),
+				  txId(_txId),
+				  serverId(_serverId),
+				  txStart(_txStart),
+				  txBeforeCommit(_txBeforeCommit),
+				  txAfterCommit(_txAfterCommit),
+				  threadName(std::move(_threadName)),
+				  isChecked(true) {
+				ItemAdd = std::chrono::system_clock::now();
+			}
+
+			int itemCounter = -1;
+			int txCounter = -1;
+			int txId = -1;
+			int serverId = -1;
+			int serialCounter = -1;
+			std::chrono::time_point<std::chrono::system_clock> txStart;
+			std::chrono::time_point<std::chrono::system_clock> txBeforeCommit;
+			std::chrono::time_point<std::chrono::system_clock> txAfterCommit;
+			std::chrono::time_point<std::chrono::system_clock> ItemAdd;
+			std::string threadName;
+			bool isChecked = false;
+		};
+
+		void AddCommited(std::string&& json, ItemInfo&& info) {
 			std::lock_guard lck(mtx_);
 			ASSERT_EQ(commitedItems_.count(json), 0) << json;
-			commitedItems_.emplace(std::make_pair(std::move(json), std::move(threadName)));
+			info.serialCounter = counter;
+			counter++;
+			commitedItems_.emplace(std::make_pair(std::move(json), std::move(info)));
 		}
-		void AddError(std::string&& json, std::string threadName) {
+		void AddTxData(std::unordered_map<std::string, ItemInfo>& into, std::vector<std::pair<std::string, ItemTracker::ItemInfo>>& items,
+					   int txNum, ItemInfo&& txInfo) {
+			std::lock_guard lck(mtx_);
+			txInfo.serialCounter = counter;
+			counter++;
+			into.emplace(std::make_pair("TxBefore_" + std::to_string(txNum), std::move(txInfo)));
+			for (auto&& it : items) {
+				ASSERT_EQ(commitedItems_.count(it.first), 0) << it.first;
+				it.second.serialCounter = counter;
+				counter++;
+				into.emplace(it);
+			}
+		}
+		void AddCommitedTx(std::vector<std::pair<std::string, ItemTracker::ItemInfo>>& items, int txNum, ItemInfo&& txInfo) {
+			AddTxData(commitedItems_, items, txNum, std::move(txInfo));
+		}
+		void AddErrorTx(std::vector<std::pair<std::string, ItemTracker::ItemInfo>>& items, int txNum, ItemInfo&& txInfo) {
+			AddTxData(errorItems_, items, txNum, std::move(txInfo));
+		}
+		void AddUnknownTx(std::vector<std::pair<std::string, ItemTracker::ItemInfo>>& items, int txNum, ItemInfo&& txInfo) {
+			AddTxData(unknownItems_, items, txNum, std::move(txInfo));
+		}
+
+		void AddError(std::string&& json, ItemInfo&& info) {
 			std::lock_guard lck(mtx_);
 			ASSERT_EQ(errorItems_.count(json), 0) << json;
-			errorItems_.emplace(std::make_pair(std::move(json), std::move(threadName)));
+			errorItems_.emplace(std::make_pair(std::move(json), std::move(info)));
+			info.serialCounter = counter;
+			counter++;
 		}
-		void AddUnknown(std::string&& json, std::string threadName) {
+		void AddUnknown(std::string&& json, ItemInfo&& info) {
 			std::lock_guard lck(mtx_);
 			ASSERT_EQ(unknownItems_.count(json), 0) << json;
-			unknownItems_.emplace(std::make_pair(std::move(json), std::move(threadName)));
+			unknownItems_.emplace(std::make_pair(std::move(json), std::move(info)));
+			info.serialCounter = counter;
+			counter++;
 		}
 		void Validate(reindexer::client::SyncCoroQueryResults& qr) {
+			bool validateOk = true;
 			WrSerializer ser;
 			for (auto& it : qr) {
 				ser.Reset();
 				it.GetJSON(ser, false);
 				std::string json(ser.Slice());
-				if (commitedItems_.count(json)) {
-					commitedItems_.erase(json);
-				} else if (unknownItems_.count(json)) {
-					unknownItems_.erase(json);
+				auto itf = commitedItems_.find(json);
+				if (itf != commitedItems_.end()) {
+					itf->second.isChecked = true;
 				} else {
-					EXPECT_TRUE(false) << "Unexpected item: " << json << std::endl;
+					auto itfu = unknownItems_.find(json);
+					if (itfu != unknownItems_.end()) {
+						itfu->second.isChecked = true;
+					} else {
+						EXPECT_TRUE(false) << "Unexpected item: " << json << std::endl;
+						validateOk = false;
+					}
 				}
 			}
-			for (auto& it : commitedItems_) {
-				EXPECT_TRUE(false) << "Missing item: " << it.first << "; Added by thread: " << it.second << std::endl;
+			for (const auto& it : commitedItems_) {
+				if (!it.second.isChecked) {
+					EXPECT_TRUE(false) << "Missing item: " << it.first << "; Added by thread: " << it.second.threadName << std::endl;
+					validateOk = false;
+				}
 			}
-			EXPECT_EQ(commitedItems_.size(), 0);
+
+			if (!validateOk) {
+				std::string log = ServerControl::getTestLogPath();
+				log += "itemtrackervalidate.log";
+				std::ofstream itemsLog(log);
+
+				auto outArray = [&itemsLog](const std::unordered_map<std::string, ItemInfo>& itemMap) {
+					typedef std::pair<std::string, ItemTracker::ItemInfo> TrackerRow;
+					std::vector<TrackerRow> infoVector(itemMap.begin(), itemMap.end());
+					sort(infoVector.begin(), infoVector.end(),
+						 [](const TrackerRow& a, const TrackerRow& b) { return a.second.serialCounter < b.second.serialCounter; });
+
+					auto timeToString = [](const std::chrono::time_point<std::chrono::system_clock>& tp) {
+						auto tm = std::chrono::system_clock::to_time_t(tp);
+						std::tm tmTime = spdlog::details::os::localtime(tm);
+						auto timeInUs = std::chrono::duration_cast<std::chrono::microseconds>(tp.time_since_epoch()).count();
+						int us = timeInUs % 1000;
+						int ms = (timeInUs / 1000) % 1000;
+						return fmt::format("{:02}:{:02}:{:02}.{:03}'{:03}", tmTime.tm_hour, tmTime.tm_min, tmTime.tm_sec, ms, us);
+					};
+
+					auto it = infoVector.begin();
+					while (it != infoVector.end()) {
+						if (it->second.txCounter == -1)	 // single entry
+						{
+							itemsLog << it->first;
+							itemsLog << " serverId = " << it->second.serverId;
+							itemsLog << " ItemAddTime = " << timeToString(it->second.ItemAdd);
+
+							itemsLog << " threadName = " << it->second.threadName;
+							itemsLog << " isChecked = " << it->second.isChecked;
+							itemsLog << std::endl;
+							++it;
+						} else {  // transaction
+							itemsLog << "txCounter = " << it->second.txCounter;
+							itemsLog << " txId = " << it->second.txId;
+							itemsLog << " serverId = " << it->second.serverId;
+							itemsLog << " threadName = " << it->second.threadName;
+							itemsLog << " txStart = " << timeToString(it->second.txStart);
+							itemsLog << " txBeforeCommit = " << timeToString(it->second.txBeforeCommit);
+							itemsLog << " txAfterCommit = " << timeToString(it->second.txAfterCommit);
+							itemsLog << std::endl;
+							int curTx = it->second.txCounter;
+							++it;
+							while (it != infoVector.end() && it->second.txCounter == curTx) {
+								itemsLog << "    " << it->first;
+								itemsLog << " ItemAddTime = " << timeToString(it->second.ItemAdd) << " ";
+								itemsLog << " isChecked = " << it->second.isChecked;
+								itemsLog << std::endl;
+								++it;
+							}
+						}
+					}
+				};
+
+				itemsLog << "=============================================commitedItems_============================================="
+						 << std::endl;
+				outArray(commitedItems_);
+				itemsLog << "=============================================unknownItems_============================================="
+						 << std::endl;
+				outArray(unknownItems_);
+				itemsLog << "=============================================errorItems_============================================="
+						 << std::endl;
+				outArray(errorItems_);
+			}
 			validated_ = true;
 		}
 
 	private:
 		std::mutex mtx_;
-		std::unordered_map<std::string, std::string> commitedItems_;
-		std::unordered_map<std::string, std::string> errorItems_;
-		std::unordered_map<std::string, std::string> unknownItems_;
+		std::unordered_map<std::string, ItemInfo> commitedItems_;
+		std::unordered_map<std::string, ItemInfo> errorItems_;
+		std::unordered_map<std::string, ItemInfo> unknownItems_;
 		bool validated_ = false;
+		int counter = 0;
 	};
 
-	virtual Defaults GetDefaultPorts() override { return {14100, 16100, fs::JoinPath(fs::GetTempDir(), "rx_test/ClusterizationProxyApi")}; }
+	const Defaults& GetDefaults() const override {
+		static Defaults defs{14100, 16100, fs::JoinPath(fs::GetTempDir(), "rx_test/ClusterizationProxyApi")};
+		return defs;
+	}
 	int GetRandFollower(int clusterSize, int leaderId) {
 		if (leaderId >= clusterSize) {
 			assert(false);

@@ -34,7 +34,7 @@ void clusterProxyLog(int level, const char *fmt, const Args &...args) {
 }
 
 reindexer::client::Item ClusterProxy::toClientItem(std::string_view ns, client::SyncCoroReindexer *connection, reindexer::Item &item) {
-	assert(connection);
+	assertrx(connection);
 	Error err;
 	reindexer::client::Item clientItem = connection->NewItem(ns);
 	if (clientItem.Status().ok()) {
@@ -51,8 +51,8 @@ reindexer::client::Item ClusterProxy::toClientItem(std::string_view ns, client::
 // This method may be used for cluster proxied qr only
 // TODO: Remove it totally
 void ClusterProxy::clientToCoreQueryResults(client::SyncCoroQueryResults &clientResults, LocalQueryResults &result) {
-	assert(!clientResults.HaveJoined());
-	assert(clientResults.GetMergedNSCount() <= 1);
+	assertrx(!clientResults.HaveJoined());
+	assertrx(clientResults.GetMergedNSCount() <= 1);
 	if (result.getMergedNSCount() == 0) {
 		for (int i = 0; i < clientResults.GetMergedNSCount(); ++i) {
 			result.addNSContext(clientResults.GetPayloadType(i), clientResults.GetTagsMatcher(i), FieldsSet(), nullptr);
@@ -182,8 +182,8 @@ Error ClusterProxy::resultFollowerAction(const InternalRdxContext &ctx, std::sha
 		if (!err.ok()) {
 			return err;
 		}
-		assert(query.joinQueries_.empty());
-		assert(query.mergeQueries_.empty());
+		assertrx(query.joinQueries_.empty());
+		assertrx(query.mergeQueries_.empty());
 		clientToCoreQueryResults(clientResults, result);
 		return err;
 	} catch (const Error &err) {
@@ -224,7 +224,7 @@ Error ClusterProxy::transactionRollBackAction(const InternalRdxContext &ctx, std
 		Error err;
 		if (tx.clientTransaction_) {
 			if (!tx.clientTransaction_->Status().ok()) return tx.clientTransaction_->Status();
-			assert(tx.clientTransaction_->rx_);
+			assertrx(tx.clientTransaction_->rx_);
 			client::SyncCoroReindexerImpl *client = tx.clientTransaction_->rx_.get();
 			err = client->RollBackTransaction(*tx.clientTransaction_.get(),
 											  client::InternalRdxContext().WithLSN(ctx.LSN()).WithEmmiterServerId(sId_));
@@ -382,6 +382,9 @@ std::shared_ptr<client::SyncCoroReindexer> ClusterProxy::getLeader(const cluster
 		}
 	}
 	std::unique_lock lck(mtx_);
+	if (info.leaderId == leaderId_) {
+		return leader_;
+	}
 	leader_.reset();
 	leaderId_ = -1;
 	std::string leaderDsn;
@@ -415,6 +418,10 @@ Error ClusterProxy::Connect(const string &dsn, ConnectOpts opts) {
 	Error err = impl_.Connect(dsn, opts);
 	if (!err.ok()) {
 		return err;
+	}
+	if (impl_.clusterConfig_) {
+		clusterConns_.SetParams(impl_.clusterConfig_->proxyConnThreads, impl_.clusterConfig_->proxyConnCount,
+								impl_.clusterConfig_->proxyConnConcurrency);
 	}
 	if (!shardingInitialized_ && impl_.shardingConfig_) {
 		shardingRouter_ = std::make_shared<sharding::LocatorService>(impl_, *(impl_.shardingConfig_));
@@ -508,7 +515,7 @@ Error ClusterProxy::modifyItemOnShard(const InternalRdxContext &ctx, std::string
 			delete item.impl_;
 			item.impl_ = new ItemImpl(clientItem.impl_->Type(), clientItem.impl_->tagsMatcher());
 			Error err = item.impl_->FromJSON(clientItem.GetJSON());
-			assert(err.ok());
+			assertrx(err.ok());
 			item.setID(clientItem.GetID());
 			item.setShardID(connection.ShardId());
 			item.setLSN(clientItem.GetLSN());
@@ -604,7 +611,7 @@ Error ClusterProxy::executeQueryOnShard(
 		auto connectionsPtr = shardingRouter_->GetShardsConnectionsWithId(query, status);
 		if (!status.ok()) return status;
 
-		assert(connectionsPtr);
+		assertrx(connectionsPtr);
 		sharding::ConnectionsVector &connections = *connectionsPtr;
 
 		if (query.Type() == QueryUpdate && connections.size() != 1) {
@@ -615,12 +622,19 @@ Error ClusterProxy::executeQueryOnShard(
 			return Error(errLogic, "Delete request can be executed on one node only.");
 		}
 
+		const bool isDistributedQuery = connections.size() > 1;
 		unsigned limit = query.count;
 		unsigned offset = query.start;
-		Query q = query;
+		const Query *q = &query;
+		std::unique_ptr<Query> distributedQuery;
 
-		if (q.start != 0) {
-			q.ReqTotal();
+		if (isDistributedQuery) {
+			// Create pointer for distributed query to avoid copy for all of the rest cases
+			distributedQuery = std::make_unique<Query>(query);
+			q = distributedQuery.get();
+			if (q->start != 0) {
+				distributedQuery->ReqTotal();
+			}
 		}
 
 		InternalRdxContext shardingCtx(ctx);
@@ -638,12 +652,14 @@ Error ClusterProxy::executeQueryOnShard(
 									  .WithContext(shardingCtx.DeadlineCtx())
 									  .WithTimeout(timeout);
 				client::SyncCoroQueryResults qrClient(result.Flags());
-				switch (q.Type()) {
+				switch (q->Type()) {
 					case QuerySelect: {
-						q.Limit(limit);
-						q.Offset(offset);
+						if (distributedQuery) {
+							distributedQuery->Limit(limit);
+							distributedQuery->Offset(offset);
+						}
 
-						status = connection.Select(q, qrClient);
+						status = connection.Select(*q, qrClient);
 						if (status.ok()) {
 							if (limit != UINT_MAX) {
 								if (qrClient.Count() >= limit) {
@@ -661,11 +677,11 @@ Error ClusterProxy::executeQueryOnShard(
 					} break;
 
 					case QueryUpdate: {
-						status = connection.Update(q, qrClient);
+						status = connection.Update(*q, qrClient);
 						break;
 					}
 					case QueryDelete: {
-						status = connection.Delete(q, qrClient);
+						status = connection.Delete(*q, qrClient);
 						break;
 					}
 					default:
@@ -675,10 +691,10 @@ Error ClusterProxy::executeQueryOnShard(
 					result.AddQr(std::move(qrClient), connections[i].ShardId(), (i + 1) == connections.size());
 				}
 			} else {
-				assert(i == 0);
+				assertrx(i == 0);
 				shardingCtx.WithShardId(shardingRouter_->ActualShardId(), connections.size() > 1);
 				LocalQueryResults lqr;
-				status = localAction(q, lqr, shardingCtx);
+				status = localAction(*q, lqr, shardingCtx);
 				if (status.ok()) {
 					result.AddQr(std::move(lqr), shardingRouter_->ActualShardId(), (i + 1) == connections.size());
 					if (limit != UINT_MAX) {
@@ -700,7 +716,7 @@ Error ClusterProxy::executeQueryOnShard(
 					return status;
 				}
 			}
-			if (query.calcTotal != ModeAccurateTotal && limit == 0 && (i + 1) != connections.size()) {
+			if (q->calcTotal == ModeNoTotal && limit == 0 && (i + 1) != connections.size()) {
 				result.RebuildMergedData();
 				break;
 			}
@@ -994,11 +1010,10 @@ Error ClusterProxy::Update(const Query &query, QueryResults &result, const Inter
 	};
 
 	result.SetQuery(&query);
-	if (isWithSharding(query, ctx)) {
-		return executeQueryOnShard(query, result, ctx, updateFn);
-	}
-
 	try {
+		if (isWithSharding(query, ctx)) {
+			return executeQueryOnShard(query, result, ctx, updateFn);
+		}
 		return updateFn(query, result.ToLocalQr(true), ctx);
 	} catch (Error &e) {
 		return e;
@@ -1111,11 +1126,10 @@ Error ClusterProxy::Delete(const Query &query, QueryResults &result, const Inter
 	};
 
 	result.SetQuery(&query);
-	if (isWithSharding(query, ctx)) {
-		return executeQueryOnShard(query, result, ctx, deleteFn);
-	}
-
 	try {
+		if (isWithSharding(query, ctx)) {
+			return executeQueryOnShard(query, result, ctx, deleteFn);
+		}
 		return deleteFn(query, result.ToLocalQr(true), ctx);
 	} catch (Error &e) {
 		return e;
@@ -1152,15 +1166,24 @@ Error ClusterProxy::Select(const Query &query, QueryResults &result, const Inter
 		return Error(errLogic, "'Select' call request type is not equal to 'QuerySelect'.");
 	}
 	result.SetQuery(&query);
-	if (isWithSharding(query, ctx)) {
-		std::function<Error(const Query &, LocalQueryResults &, const InternalRdxContext &ctx)> selectFn =
-			[this](const Query &q, LocalQueryResults &qr, const InternalRdxContext &ctx) -> Error { return impl_.Select(q, qr, ctx); };
-		return executeQueryOnShard(query, result, ctx, selectFn);
-	}
 	try {
+		if (isWithSharding(query, ctx)) {
+			std::function<Error(const Query &, LocalQueryResults &, const InternalRdxContext &ctx)> selectFn =
+				[this](const Query &q, LocalQueryResults &qr, const InternalRdxContext &ctx) -> Error { return impl_.Select(q, qr, ctx); };
+			return executeQueryOnShard(query, result, ctx, selectFn);
+		}
 		if (!shouldProxyQuery(query)) {
 			clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Select query local", sId_.load(std::memory_order_relaxed));
-			result.AddQr(LocalQueryResults());
+			LocalQueryResults lqr;
+			int actualShardId = ShardingKeyType::ProxyOff;
+			if (shardingRouter_ &&
+				shardingRouter_->IsSharded(query.Namespace())) {  // incorrect if query have join (true for 'select * from ns')
+				actualShardId = shardingRouter_->ActualShardId();
+				if (result.NeedOutputShardId()) {
+					lqr.SetOutputShardId(actualShardId);
+				}
+			}
+			result.AddQr(std::move(lqr), actualShardId);
 			return impl_.Select(query, result.ToLocalQr(false), ctx);
 		}
 	} catch (const Error &ex) {
@@ -1218,7 +1241,7 @@ Error ClusterProxy::CommitTransaction(Transaction &tr, QueryResults &result, con
 	result.SetQuery(nullptr);
 	if (isWithSharding(tr.GetNsName(), ctx)) {
 		if (tr.shardId_ == ShardingKeyType::NotSetShard) {
-			assert(false);
+			assertrx(false);
 			return Error(errLogic, "Error commiting transaction with sharding: shard ID is not set");
 		}
 		if (!tr.IsProxied()) {
@@ -1235,7 +1258,7 @@ Error ClusterProxy::CommitTransaction(Transaction &tr, QueryResults &result, con
 
 	if (tr.IsProxied()) {
 		if (!tr.clientTransaction_->Status().ok()) return tr.clientTransaction_->Status();
-		assert(tr.clientTransaction_->rx_);
+		assertrx(tr.clientTransaction_->rx_);
 		client::SyncCoroReindexerImpl *client = tr.clientTransaction_->rx_.get();
 		client::InternalRdxContext c;
 		if (!tr.IsProxiedWithShardingProxy()) {
@@ -1271,7 +1294,7 @@ Error ClusterProxy::CommitTransaction(Transaction &tr, QueryResults &result, con
 Error ClusterProxy::RollBackTransaction(Transaction &tr, const InternalRdxContext &ctx) {
 	if (tr.clientTransaction_) {
 		if (!tr.clientTransaction_->Status().ok()) return tr.clientTransaction_->Status();
-		assert(tr.clientTransaction_->rx_);
+		assertrx(tr.clientTransaction_->rx_);
 		client::SyncCoroReindexerImpl *client = tr.clientTransaction_->rx_.get();
 		client::SyncCoroQueryResults clientResults;
 		return client->RollBackTransaction(*tr.clientTransaction_.get(),
@@ -1347,7 +1370,13 @@ Error ClusterProxy::EnumMeta(std::string_view nsName, vector<string> &keys, cons
 	return impl_.EnumMeta(nsName, keys, ctx);
 }
 
-bool ClusterProxy::isWithSharding(const Query &q, const InternalRdxContext &ctx) const noexcept {
+bool ClusterProxy::isWithSharding(const Query &q, const InternalRdxContext &ctx) const {
+	if (q.local_) {
+		if (q.Type() != QuerySelect) {
+			throw Error{errParams, "Only SELECT query could be LOCAL"};
+		}
+		return false;
+	}
 	if (q.count == 0 && q.calcTotal == ModeNoTotal && !q.joinQueries_.size() && !q.mergeQueries_.size()) {
 		return false;  // Special case for tagsmatchers selects
 	}
@@ -1393,7 +1422,7 @@ bool ClusterProxy::isWithSharding(const InternalRdxContext &ctx) const noexcept 
 }
 
 bool ClusterProxy::shouldProxyQuery(const Query &q) {
-	assert(q.Type() == QuerySelect);
+	assertrx(q.Type() == QuerySelect);
 	if (kReplicationStatsNamespace != q._namespace) {
 		return false;
 	}

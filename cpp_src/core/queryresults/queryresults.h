@@ -29,7 +29,16 @@ public:
 	void AddQr(LocalQueryResults &&local, int shardID = ShardingKeyType::ProxyOff, bool rebuildMergedData = false);
 	void AddQr(client::SyncCoroQueryResults &&remote, int shardID = ShardingKeyType::ProxyOff, bool rebuildMergedData = false);
 	void RebuildMergedData();
-	size_t Count() const;
+	size_t Count() const {
+		size_t cnt = 0;
+		if (local_.has_value()) {
+			cnt += local_->qr.Count();
+		}
+		for (const auto &qrp : remote_) {
+			cnt += qrp.qr.Count();
+		}
+		return cnt;
+	}
 	size_t TotalCount() const {
 		size_t cnt = 0;
 		if (local_.has_value()) {
@@ -113,6 +122,7 @@ public:
 	}
 	bool HaveRank() const;
 	bool NeedOutputRank() const;
+	bool NeedOutputShardId() const noexcept { return flags_ & kResultsNeedOutputShardId; }
 	bool HaveJoined() const;
 	void SetQuery(const Query *q);
 	bool IsWalQuery() const noexcept { return qData_.has_value() && qData_->isWalQuery; }
@@ -123,8 +133,10 @@ public:
 		struct ItemRefCache {
 			ItemRefCache() = default;
 			ItemRefCache(IdType id, uint16_t proc, uint16_t nsid, ItemImpl &&i, bool raw);
+			void Clear() noexcept {}
 
 			ItemImplRawData itemImpl;
+			WrSerializer wser;
 			ItemRef ref;
 		};
 
@@ -182,8 +194,77 @@ public:
 			}
 			return std::get<client::SyncCoroQueryResults::Iterator>(vit).GetRaw();
 		}
-		Iterator &operator++();
-		Iterator &operator+(uint32_t delta);
+		Iterator &operator++() {
+			switch (qr_->type_) {
+				case Type::None:
+					*this = qr_->end();
+					return *this;
+				case Type::Local:
+					++(*localIt_);
+					return *this;
+				default:;
+			}
+
+			if (idx_ < qr_->lastSeenIdx_) {
+				++idx_;	 // This iterator is not valid yet, so simply increment index and do not touch qr's internals
+				return *this;
+			}
+
+			auto *qr = const_cast<QueryResults *>(qr_);
+			bool qrIdWasChanged = false;
+			if (qr->curQrId_ < 0) {
+				++qr->local_->it;
+				++qr->lastSeenIdx_;
+				++idx_;
+				if (qr->local_->it == qr->local_->qr.end()) {
+					qr->curQrId_ = 0;
+					qrIdWasChanged = true;
+					assertrx(qr_->remote_.size());
+				}
+			} else if (size_t(qr->curQrId_) < qr_->remote_.size()) {
+				auto &remoteQrp = qr->remote_[size_t(qr_->curQrId_)];
+				++remoteQrp.it;
+				++qr->lastSeenIdx_;
+				++idx_;
+				if (remoteQrp.it == remoteQrp.qr.end()) {
+					++qr->curQrId_;
+					qrIdWasChanged = true;
+				}
+			}
+			// Find next qr with items
+			while (qrIdWasChanged && size_t(qr_->curQrId_) < qr->remote_.size() &&
+				   qr->remote_[size_t(qr_->curQrId_)].it == qr->remote_[size_t(qr_->curQrId_)].qr.end()) {
+				++qr->curQrId_;
+			}
+			return *this;
+		}
+		Iterator &operator+(uint32_t delta) {
+			switch (qr_->type_) {
+				case Type::None:
+					*this = qr_->end();
+					return *this;
+				case Type::Local:
+					localIt_ = *localIt_ + delta;
+					return *this;
+				default:;
+			}
+
+			if (idx_ < qr_->lastSeenIdx_) {
+				const auto readItemsDiff = qr_->lastSeenIdx_ - idx_;
+				if (readItemsDiff < delta) {
+					delta -= readItemsDiff;
+					idx_ = qr_->lastSeenIdx_;
+				} else {
+					idx_ += delta;
+					return *this;
+				}
+			}
+
+			for (uint32_t i = 0; i < delta; ++i) {
+				++(*this);
+			}
+			return *this;
+		}
 		Error Status() const {
 			switch (qr_->type_) {
 				case Type::None:
@@ -197,7 +278,16 @@ public:
 			return qr_->remote_[qr_->curQrId_].it.Status();
 		}
 		bool operator!=(const Iterator &other) const noexcept { return !(*this == other); }
-		bool operator==(const Iterator &other) const noexcept;
+		bool operator==(const Iterator &other) const noexcept {
+			switch (qr_->type_) {
+				case Type::None:
+					return qr_ == other.qr_;
+				case Type::Local:
+					return qr_ == other.qr_ && localIt_ == other.localIt_;
+				default:;
+			}
+			return qr_ == other.qr_ && idx_ == other.idx_;
+		}
 		Iterator &operator*() noexcept { return *this; }
 
 		const QueryResults *qr_;
@@ -267,8 +357,24 @@ public:
 	};
 	using ProxiedRefsStorage = std::vector<Iterator::ItemRefCache>;
 
-	Iterator begin() const noexcept;
-	Iterator end() const noexcept;
+	Iterator begin() const {
+		switch (type_) {
+			case Type::Local:
+				return Iterator{this, 0, {local_->qr.begin()}};
+			default:
+				return Iterator{this, 0, std::nullopt};
+		}
+	}
+	Iterator end() const {
+		switch (type_) {
+			case Type::None:
+				return Iterator{this, 0, std::nullopt};
+			case Type::Local:
+				return Iterator(this, int64_t(Count()), {local_->qr.end()});
+			default:
+				return Iterator{this, int64_t(Count()), std::nullopt};
+		}
+	}
 
 private:
 	struct MergedData;

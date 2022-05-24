@@ -16,7 +16,7 @@ int socket::bind(std::string_view addr) {
 	struct addrinfo *results = nullptr;
 	int ret = create(addr, &results);
 	if (!ret) {
-		assert(results != nullptr);
+		assertrx(results != nullptr);
 		if (::bind(fd_, results->ai_addr, results->ai_addrlen) != 0) {	// -V595
 			perror("bind error");
 			close();
@@ -32,7 +32,7 @@ int socket::connect(std::string_view addr) noexcept {
 	struct addrinfo *results = nullptr;
 	int ret = create(addr, &results);
 	if (!ret) {
-		assert(results != nullptr);
+		assertrx(results != nullptr);
 		if (::connect(fd_, results->ai_addr, results->ai_addrlen) != 0) {  // -V595
 			if (!would_block(last_error())) {
 				perror("connect error");
@@ -108,7 +108,7 @@ int socket::close() {
 }
 
 int socket::create(std::string_view addr, struct addrinfo **presults) {
-	assert(!valid());
+	assertrx(!valid());
 
 	struct addrinfo hints, *results = nullptr;
 	memset(&hints, 0, sizeof(hints));
@@ -136,7 +136,7 @@ int socket::create(std::string_view addr, struct addrinfo **presults) {
 		fprintf(stderr, "getaddrinfo failed: %s\n", gai_strerror(ret));
 		return -1;
 	}
-	assert(results != nullptr);
+	assertrx(results != nullptr);
 	*presults = results;
 
 	if ((fd_ = ::socket(results->ai_family, results->ai_socktype, results->ai_protocol)) < 0) {

@@ -46,7 +46,7 @@ void PayloadValue::Clone(size_t size) {
 	if (p_ && header()->refcount.load() == 1) {
 		return;
 	}
-	assert(size || p_);
+	assertrx(size || p_);
 
 	auto pn = alloc(p_ ? header()->cap : size);
 	if (p_) {
@@ -62,8 +62,8 @@ void PayloadValue::Clone(size_t size) {
 }
 
 void PayloadValue::Resize(size_t oldSize, size_t newSize) {
-	assert(p_);
-	assert(header()->refcount.load() == 1);
+	assertrx(p_);
+	assertrx(header()->refcount.load() == 1);
 
 	if (newSize <= header()->cap) return;
 

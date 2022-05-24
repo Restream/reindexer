@@ -35,7 +35,7 @@ public:
 	}
 	IndexedTagsPath path2indexedtag(std::string_view jsonPath, IndexExpressionEvaluator ev) const {
 		IndexedTagsPath tagsPath = impl_->path2indexedtag(jsonPath, ev);
-		assert(!updated_);
+		assertrx(!updated_);
 		return tagsPath;
 	}
 	IndexedTagsPath path2indexedtag(std::string_view jsonPath, IndexExpressionEvaluator ev, bool canAdd) {

@@ -15,7 +15,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 			throw Error(errOutdatedWAL);
 		}
 		Query q = Query(ns_.name_).Where("#lsn", CondGt, int64_t(from.LSN()));
-		SelectCtx selCtx(q);
+		SelectCtx selCtx(q, nullptr);
 		SelectFunctionsHolder func;
 		selCtx.functions = &func;
 		selCtx.contextCollectingMode = true;
@@ -32,7 +32,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		}
 		{
 			Query q = Query(ns_.name_).Where("#lsn", CondGe, int64_t(minLsn));
-			SelectCtx selCtx(q);
+			SelectCtx selCtx(q, nullptr);
 			SelectFunctionsHolder func;
 			selCtx.functions = &func;
 			selCtx.contextCollectingMode = true;
@@ -43,7 +43,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		LocalQueryResults fullQr;
 		{
 			Query q = Query(ns_.name_).Where("#lsn", CondAny, {});
-			SelectCtx selCtx(q);
+			SelectCtx selCtx(q, nullptr);
 			SelectFunctionsHolder func;
 			selCtx.functions = &func;
 			selCtx.contextCollectingMode = true;
@@ -243,9 +243,9 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 }
 
 void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& rdxCtx) {
-	assert(ch.IsTx());
-	assert(!ch.IsShallow());
-	assert(ch.IsWAL());
+	assertrx(ch.IsTx());
+	assertrx(!ch.IsShallow());
+	assertrx(ch.IsWAL());
 	auto& records = ch.Records();
 	if (records.empty()) {
 		throw Error(errParams, "Unexpected tx chunk size: empty", ch.Records().size());

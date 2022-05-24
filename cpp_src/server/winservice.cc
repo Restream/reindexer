@@ -1,11 +1,11 @@
 
 #ifdef _WIN32
 
-#include <assert.h>
 #include <malloc.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include "tools/assertrx.h"
 
 #include "winservice.h"
 namespace reindexer_server {
@@ -17,7 +17,7 @@ WinService *g_Service;
 static std::string GetLastErrorAsString() {
 	// Get the error message, if any.
 	DWORD errorMessageID = ::GetLastError();
-	if (errorMessageID == 0) return std::string();  // No error message has been recorded
+	if (errorMessageID == 0) return std::string();	// No error message has been recorded
 
 	LPSTR messageBuffer = nullptr;
 	size_t size = FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
@@ -49,12 +49,12 @@ void WinService::Message(bool bError, const char *fmt, ...) {
 }
 
 static VOID WINAPI ServiceCtrl(DWORD dwCtrlCode) {
-	assert(g_Service);
+	assertrx(g_Service);
 	g_Service->ServiceCtrl(dwCtrlCode);
 }
 
 static void WINAPI ServiceMain(DWORD dwArgc, LPTSTR lpszArgv[]) {
-	assert(g_Service);
+	assertrx(g_Service);
 	g_Service->MainInternal(dwArgc, lpszArgv);
 }
 

@@ -82,7 +82,7 @@ public:
 				continue;
 			}
 			auto mIt = items_.find(**it);
-			assert(mIt != items_.end());
+			assertrx(mIt != items_.end());
 			const size_t oldSize = sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size();
 			if (oldSize > totalCacheSize_) {
 				clearAll();

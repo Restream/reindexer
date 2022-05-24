@@ -76,7 +76,7 @@ public:
 	/// Current rowId index since the beginning
 	/// of current SingleKeyValue object.
 	int Pos() const {
-		assert(!lastIt_->useBtree_ && (type_ != UnbuiltSortOrdersIndex));
+		assertrx(!lastIt_->useBtree_ && (type_ != UnbuiltSortOrdersIndex));
 		return lastIt_->it_ - lastIt_->begin_ - 1;
 	}
 

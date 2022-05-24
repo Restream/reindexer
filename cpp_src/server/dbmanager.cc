@@ -107,7 +107,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 	}
 
 	it = dbs_.find(dbName);
-	assert(it != dbs_.end());
+	assertrx(it != dbs_.end());
 	auth.db_ = it->second.get();
 	return errOK;
 }

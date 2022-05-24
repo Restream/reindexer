@@ -78,7 +78,7 @@ Point Variant::As<Point>() const {
 }
 
 void Variant::free() {
-	assert(hold_);
+	assertrx(hold_);
 	switch (type_) {
 		case KeyValueString:
 		case KeyValueTuple:
@@ -94,7 +94,7 @@ void Variant::free() {
 }
 
 void Variant::copy(const Variant &other) {
-	assert(hold_);
+	assertrx(hold_);
 	switch (type_) {
 		case KeyValueString:
 		case KeyValueTuple:
@@ -168,7 +168,7 @@ string Variant::As<string>(const PayloadType &pt, const FieldsSet &fields) const
 				bool fieldFromCjson = (field == IndexValueType::SetByJsonPath);
 				VariantArray va1;
 				if (fieldFromCjson) {
-					assert(tagsPathIdx < fields.getTagsPathsLength());
+					assertrx(tagsPathIdx < fields.getTagsPathsLength());
 					pl.GetByJsonPath(fields.getTagsPath(tagsPathIdx++), va1, type_);
 				} else {
 					pl.Get(field, va1);
@@ -294,7 +294,7 @@ double Variant::As<double>() const {
 }
 
 int Variant::Compare(const Variant &other, const CollateOpts &collateOpts) const {
-	assert(other.Type() == type_);
+	assertrx(other.Type() == type_);
 	switch (Type()) {
 		case KeyValueInt:
 			return (value_int == other.value_int) ? 0 : (value_int > other.value_int) ? 1 : -1;
@@ -420,7 +420,7 @@ Variant &Variant::convert(KeyValueType type, const PayloadType *payloadType, con
 			break;
 		case KeyValueComposite:
 			if (type_ == KeyValueTuple) {
-				assert(payloadType && fields);
+				assertrx(payloadType && fields);
 				convertToComposite(payloadType, fields);
 				break;
 			}
@@ -434,7 +434,7 @@ Variant &Variant::convert(KeyValueType type, const PayloadType *payloadType, con
 }
 
 void Variant::convertToComposite(const PayloadType *payloadType, const FieldsSet *fields) {
-	assert(type_ == KeyValueTuple && hold_);
+	assertrx(type_ == KeyValueTuple && hold_);
 	key_string val = *cast<key_string>();
 
 	if (hold_) free();
@@ -472,7 +472,7 @@ void Variant::convertToComposite(const PayloadType *payloadType, const FieldsSet
 VariantArray Variant::getCompositeValues() const {
 	VariantArray res;
 
-	assert(type_ == KeyValueTuple);
+	assertrx(type_ == KeyValueTuple);
 
 	Serializer ser(**cast<key_string>());
 	size_t count = ser.GetVarUint();
@@ -529,7 +529,7 @@ Variant::operator std::string_view() const {
 }
 Variant::operator const PayloadValue &() const {
 	assertKeyType(type_, KeyValueComposite);
-	assert(hold_);
+	assertrx(hold_);
 	return *cast<PayloadValue>();
 }
 

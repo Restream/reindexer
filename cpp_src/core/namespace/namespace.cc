@@ -159,7 +159,7 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 		int renameRes = fs::Rename(srcNs.dbpath_, dbpath);
 		if (renameRes < 0) {
 			if (dst) {
-				assert(dstLck.owns_lock());
+				assertrx(dstLck.owns_lock());
 				dstLck.unlock();
 			}
 			throw Error(errParams, "Unable to rename '%s' to '%s'", srcNs.dbpath_, dbpath);
@@ -169,7 +169,7 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 	if (dst) {
 		logPrintf(LogInfo, "Rename namespace '%s' to '%s'", srcNs.name_, dstNs->name_);
 		srcNs.name_ = dstNs->name_;
-		assert(dstLck.owns_lock());
+		assertrx(dstLck.owns_lock());
 		dstLck.unlock();
 	} else {
 		logPrintf(LogInfo, "Rename namespace '%s' to '%s'", srcNs.name_, newName);
@@ -194,7 +194,7 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 
 	if (replicateCb) {
 		replicateCb([&lck] {
-			assert(lck.isClusterLck());
+			assertrx(lck.isClusterLck());
 			lck.unlock();
 		});
 	}

@@ -142,7 +142,7 @@ void IndexDef::FromType(IndexType type) {
 
 const vector<string> &IndexDef::Conditions() const {
 	const auto it{availableIndexes().find(Type())};
-	assert(it != availableIndexes().cend());
+	assertrx(it != availableIndexes().cend());
 	return it->second.conditions;
 }
 
@@ -236,7 +236,7 @@ void IndexDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 				builder.Put("rtree_type", kRTreeRStar);
 				break;
 			default:
-				assert(0);
+				assertrx(0);
 				abort();
 		}
 	}

@@ -21,7 +21,7 @@ public:
 		leftFieldSet = true;
 	}
 	void SetRightField(const TagsPath& tpath) {
-		assert(leftFieldSet);
+		assertrx(leftFieldSet);
 		setField(tpath, ctx_[0].rCtx_);
 	}
 	void SetLeftField(FieldsSet fset, KeyValueType type, bool isArray) {
@@ -35,7 +35,7 @@ public:
 		leftFieldSet = true;
 	}
 	void SetRightField(FieldsSet fset, KeyValueType type, bool isArray) {
-		assert(leftFieldSet);
+		assertrx(leftFieldSet);
 		if ((ctx_.size() > 1) != (type == KeyValueComposite)) {
 			throw Error{errQueryExec, "A composite index cannot be compared with a non-composite one: %s", name_};
 		}
@@ -89,7 +89,7 @@ private:
 					validateTypes(ctx_[i].lCtx_.type_, ctx_[i].rCtx_.type_);
 				}
 			} else {
-				assert(tagsPathIdx < fields.getTagsPathsLength());
+				assertrx(tagsPathIdx < fields.getTagsPathsLength());
 				setField(fields.getTagsPath(tagsPathIdx++), left ? ctx_[i].lCtx_ : ctx_[i].rCtx_);
 			}
 		}

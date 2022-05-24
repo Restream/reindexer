@@ -85,6 +85,7 @@ private:
 	friend class SyncCoroReindexerImpl;
 	void fetchNextResults();
 	Error setClient(SyncCoroReindexerImpl*);
+	const net::cproto::CoroClientConnection* coroConnection() const noexcept { return results_.getConn(); }
 
 	CoroQueryResults results_;
 	SyncCoroReindexerImpl* rx_ = nullptr;

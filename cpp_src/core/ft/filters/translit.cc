@@ -17,7 +17,7 @@ void Translit::GetVariants(const std::wstring &data, std::vector<std::pair<std::
 		wchar_t symbol = data[i];
 		if (symbol >= ruLettersStartUTF16 && symbol <= ruLettersStartUTF16 + ruAlfavitSize - 1) {  // russian symbol
 			for (int j = 0; j < maxTraslitVariants; ++j) {
-				assert(symbol >= ruLettersStartUTF16 && symbol - ruLettersStartUTF16 < ruAlfavitSize);
+				assertrx(symbol >= ruLettersStartUTF16 && symbol - ruLettersStartUTF16 < ruAlfavitSize);
 				strings[j] += ru_buf_[symbol - ruLettersStartUTF16][j];
 			}
 
@@ -59,7 +59,7 @@ void Translit::GetVariants(const std::wstring &data, std::vector<std::pair<std::
 }
 
 std::pair<uint8_t, wchar_t> Translit::GetEnglish(wchar_t symbol, size_t variant, Context &ctx) {
-	assert(symbol != 0 && symbol >= enLettersStartUTF16 && symbol - enLettersStartUTF16 < enAlfavitSize);
+	assertrx(symbol != 0 && symbol >= enLettersStartUTF16 && symbol - enLettersStartUTF16 < enAlfavitSize);
 
 	if (variant == 1 && ctx.GetCount() > 0) {
 		auto sym = en_d_buf_[ctx.GetLast()][symbol - enLettersStartUTF16];
@@ -168,7 +168,7 @@ void Translit::PrepareEnglish() {
 				wchar_t sym = ru_buf_[i][j][0];
 
 				if (CheckIsEn(sym)) {
-					assert(sym != 0 && sym >= enLettersStartUTF16 && sym - enLettersStartUTF16 < enAlfavitSize);
+					assertrx(sym != 0 && sym >= enLettersStartUTF16 && sym - enLettersStartUTF16 < enAlfavitSize);
 					en_buf_[ru_buf_[i][j][0] - enLettersStartUTF16] = wchar_t(i + ruLettersStartUTF16);
 				}
 
@@ -177,8 +177,8 @@ void Translit::PrepareEnglish() {
 				wchar_t symSecond = ru_buf_[i][j][1];
 
 				if (CheckIsEn(symFirst) && CheckIsEn(symSecond)) {
-					assert(symFirst != 0 && symFirst >= enLettersStartUTF16 && symFirst - enLettersStartUTF16 < enAlfavitSize);
-					assert(symSecond != 0 && symSecond >= enLettersStartUTF16 && symSecond - enLettersStartUTF16 < enAlfavitSize);
+					assertrx(symFirst != 0 && symFirst >= enLettersStartUTF16 && symFirst - enLettersStartUTF16 < enAlfavitSize);
+					assertrx(symSecond != 0 && symSecond >= enLettersStartUTF16 && symSecond - enLettersStartUTF16 < enAlfavitSize);
 
 					en_d_buf_[ru_buf_[i][j][0] - enLettersStartUTF16][ru_buf_[i][j][1] - enLettersStartUTF16] =
 						wchar_t(i + ruLettersStartUTF16);
@@ -190,9 +190,9 @@ void Translit::PrepareEnglish() {
 				wchar_t symThird = ru_buf_[i][j][1];
 
 				if (CheckIsEn(symFirst) && CheckIsEn(symSecond) && CheckIsEn(symThird)) {
-					assert(symFirst != 0 && symFirst >= enLettersStartUTF16 && symFirst - enLettersStartUTF16 < enAlfavitSize);
-					assert(symSecond != 0 && symSecond >= enLettersStartUTF16 && symSecond - enLettersStartUTF16 < enAlfavitSize);
-					assert(symThird != 0 && symThird >= enLettersStartUTF16 && symThird - enLettersStartUTF16 < enAlfavitSize);
+					assertrx(symFirst != 0 && symFirst >= enLettersStartUTF16 && symFirst - enLettersStartUTF16 < enAlfavitSize);
+					assertrx(symSecond != 0 && symSecond >= enLettersStartUTF16 && symSecond - enLettersStartUTF16 < enAlfavitSize);
+					assertrx(symThird != 0 && symThird >= enLettersStartUTF16 && symThird - enLettersStartUTF16 < enAlfavitSize);
 					en_t_buf_[ru_buf_[i][j][0] - enLettersStartUTF16][ru_buf_[i][j][1] - enLettersStartUTF16]
 							 [ru_buf_[i][j][2] - enLettersStartUTF16] = wchar_t(i + ruLettersStartUTF16);
 				}

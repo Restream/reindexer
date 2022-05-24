@@ -151,7 +151,7 @@ protected:
 	NamespaceImpl::Ptr awaitMainNs(const RdxContext &ctx) const {
 		if (hasCopy_.load(std::memory_order_acquire)) {
 			contexted_unique_lock<Mutex, const RdxContext> lck(clonerMtx_, &ctx);
-			assert(!hasCopy_.load(std::memory_order_acquire));
+			assertrx(!hasCopy_.load(std::memory_order_acquire));
 			return ns_;
 		}
 		return atomicLoadMainNs();
@@ -163,7 +163,7 @@ protected:
 
 private:
 	template <typename Fn, Fn fn, typename... Args>
-	typename std::result_of<Fn(NamespaceImpl, Args...)>::type nsFuncWrapper(Args &&...args) const {
+	typename std::invoke_result<Fn, NamespaceImpl, Args...>::type nsFuncWrapper(Args &&...args) const {
 		while (true) {
 			try {
 				auto ns = atomicLoadMainNs();

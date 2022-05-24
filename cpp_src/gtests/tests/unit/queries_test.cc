@@ -159,6 +159,8 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		{"SELECT * FROM test_namespace WHERE 'index+field' = 5", Error{errParseSQL, "Unexpected '=' in query, line: 1 column: 51 52"}},
 		{"SELECT * FROM test_namespace WHERE \"index\" = 5", Query{"test_namespace"}.Where("index", CondEq, 5), PARSE},
 		{"SELECT * FROM test_namespace WHERE 'index' = 5", Error{errParseSQL, "Unexpected '=' in query, line: 1 column: 45 46"}},
+		{"SELECT * FROM test_namespace WHERE NOT index ALLSET 3489578", Query{"test_namespace"}.Not().Where("index", CondAllSet, 3489578)},
+		{"SELECT * FROM test_namespace WHERE NOT index ALLSET (0,1)", Query{"test_namespace"}.Not().Where("index", CondAllSet, {0, 1})},
 		{"SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY 'year' DESC LIMIT 10000000",
 		 Query{"test_namespace"}.Select({"ID", "Year", "Genre"}).Where("year", CondGt, "2016").Sort("year", true).Limit(10000000)},
 		{"SELECT ID FROM test_namespace WHERE name LIKE 'something' AND (genre IN ('1','2','3') AND year > '2016') OR age IN "
@@ -376,5 +378,45 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 		} catch (const Error& e) {
 			ASSERT_TRUE(e.ok()) << e.what();
 		}
+	}
+}
+
+TEST_F(QueriesApi, JoinByNotIndexField) {
+	static constexpr int kItemsCount = 10;
+	const std::string leftNs = "join_by_not_index_field_left_ns";
+	const std::string rightNs = "join_by_not_index_field_right_ns";
+
+	reindexer::WrSerializer ser;
+	for (const auto& nsName : {leftNs, rightNs}) {
+		Error err = rt.reindexer->OpenNamespace(nsName);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
+		ASSERT_TRUE(err.ok()) << err.what();
+		for (int i = 0; i < kItemsCount; ++i) {
+			ser.Reset();
+			reindexer::JsonBuilder json{ser};
+			json.Put("id", i);
+			if (i % 2 == 1) json.Put("f", i);
+			json.End();
+			Item item = rt.reindexer->NewItem(nsName);
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			err = item.FromJSON(ser.Slice());
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			Upsert(nsName, item);
+		}
+	}
+	reindexer::QueryResults qr;
+	Error err = rt.reindexer->Select(
+		Query(leftNs).Strict(StrictModeNames).Join(InnerJoin, Query(rightNs).Where("id", CondGe, 5)).On("f", CondEq, "f"), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	const int expectedIds[] = {5, 7, 9};
+	ASSERT_EQ(qr.Count(), sizeof(expectedIds) / sizeof(int));
+	unsigned i = 0;
+	for (auto& it : qr) {
+		Item item = it.GetItem(false);
+		VariantArray values = item["id"];
+		ASSERT_EQ(values.size(), 1);
+		EXPECT_EQ(values[0].As<int>(), expectedIds[i++]);
 	}
 }

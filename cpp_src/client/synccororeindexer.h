@@ -23,7 +23,7 @@ public:
 	using Completion = std::function<void(const Error &err)>;
 
 	/// Create Reindexer database object
-	SyncCoroReindexer(const CoroReindexerConfig & = CoroReindexerConfig(), size_t connCount = 0);
+	SyncCoroReindexer(const CoroReindexerConfig & = CoroReindexerConfig(), uint32_t connCount = 0, uint32_t threads = 0);
 	SyncCoroReindexer(SyncCoroReindexer &&rdx) noexcept = default;
 	/// Destrory Reindexer database object
 	~SyncCoroReindexer();

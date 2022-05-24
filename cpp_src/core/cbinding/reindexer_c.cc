@@ -709,7 +709,7 @@ reindexer_error reindexer_cancel_context(reindexer_ctx_info ctx_info, ctx_cancel
 			howCPP = CancelType::Timeout;
 			break;
 		default:
-			assert(false);
+			assertrx(false);
 	}
 	if (ctx_pool.cancelContext(ctx_info, howCPP)) {
 		return error2c(Error(errOK));

@@ -52,6 +52,48 @@ TEST_F(NsApi, IndexDrop) {
 	EXPECT_TRUE(err.ok()) << err.what();
 }
 
+TEST_F(NsApi, AddTooManyIndexes) {
+	static constexpr size_t kHalfOfStartNotCompositeIndexesCount = 10;
+	static const std::string ns = "too_many_indexes";
+	Error err = rt.reindexer->OpenNamespace(ns);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	size_t notCompositeIndexesCount = 0;
+	while (notCompositeIndexesCount < reindexer::maxIndexes - 1) {
+		reindexer::IndexDef idxDef;
+		if (notCompositeIndexesCount < 2 * kHalfOfStartNotCompositeIndexesCount || rand() % 2 == 0) {
+			const std::string indexName = "index_" + std::to_string(notCompositeIndexesCount);
+			idxDef = reindexer::IndexDef{indexName, {indexName}, "tree", "int", IndexOpts{}};
+			++notCompositeIndexesCount;
+		} else {
+			const std::string indexName =
+				"index_" + std::to_string(rand() % kHalfOfStartNotCompositeIndexesCount) + "+index_" +
+				std::to_string(rand() % kHalfOfStartNotCompositeIndexesCount + kHalfOfStartNotCompositeIndexesCount);
+			idxDef = reindexer::IndexDef{indexName, {indexName}, "tree", "composite", IndexOpts{}};
+		}
+		err = rt.reindexer->AddIndex(ns, idxDef);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	// Add composite index
+	std::string indexName = "index_" + std::to_string(rand() % kHalfOfStartNotCompositeIndexesCount) + "+index_" +
+							std::to_string(rand() % kHalfOfStartNotCompositeIndexesCount + kHalfOfStartNotCompositeIndexesCount);
+	err = rt.reindexer->AddIndex(ns, reindexer::IndexDef{indexName, {indexName}, "tree", "composite", IndexOpts{}});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	// Add non-composite index
+	indexName = "index_" + std::to_string(notCompositeIndexesCount);
+	err = rt.reindexer->AddIndex(ns, reindexer::IndexDef{indexName, {indexName}, "tree", "int", IndexOpts{}});
+	ASSERT_FALSE(err.ok());
+	ASSERT_EQ(err.what(),
+			  "Cannot add index 'too_many_indexes.index_63'. Too many non-composite indexes. 63 non-composite indexes are allowed only");
+
+	// Add composite index
+	indexName = "index_" + std::to_string(rand() % kHalfOfStartNotCompositeIndexesCount) + "+index_" +
+				std::to_string(rand() % kHalfOfStartNotCompositeIndexesCount + kHalfOfStartNotCompositeIndexesCount);
+	err = rt.reindexer->AddIndex(ns, reindexer::IndexDef{indexName, {indexName}, "tree", "composite", IndexOpts{}});
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
 TEST_F(NsApi, TruncateNamespace) {
 	TruncateNamespace([&](const std::string &nsName) { return rt.reindexer->TruncateNamespace(nsName); });
 	TruncateNamespace([&](const std::string &nsName) {

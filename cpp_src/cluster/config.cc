@@ -141,18 +141,30 @@ void AsyncReplNodeConfig::FromYML(Yaml::Node &root) {
 		}
 		SetOwnNamespaceList(std::move(nss));
 	}
+	replicationMode_.reset();
+	auto modeStr = root["replication_mode"].As<std::string>();
+	if (!modeStr.empty()) {
+		replicationMode_ = AsyncReplConfigData::Str2mode(modeStr);
+	}
 }
 
 void AsyncReplNodeConfig::FromJSON(const gason::JsonNode &root) {
 	dsn = root["dsn"].As<std::string>(dsn);
 	ValidateDSN(dsn);
-	auto &node = root["namespaces"];
-	if (!node.empty()) {
-		fast_hash_set<string, nocase_hash_str, nocase_equal_str> nss;
-		for (auto &objNode : node) {
-			nss.emplace(objNode.As<string>());
+	{
+		auto &node = root["namespaces"];
+		if (!node.empty()) {
+			fast_hash_set<string, nocase_hash_str, nocase_equal_str> nss;
+			for (auto &objNode : node) {
+				nss.emplace(objNode.As<string>());
+			}
+			SetOwnNamespaceList(std::move(nss));
 		}
-		SetOwnNamespaceList(std::move(nss));
+	}
+	replicationMode_.reset();
+	auto modeStr = root["replication_mode"].As<std::string_view>();
+	if (!modeStr.empty()) {
+		replicationMode_ = AsyncReplConfigData::Str2mode(modeStr);
 	}
 }
 
@@ -161,6 +173,9 @@ void AsyncReplNodeConfig::GetJSON(JsonBuilder &jb) const {
 	if (hasOwnNsList_) {
 		auto arrNode = jb.Array("namespaces");
 		for (const auto &ns : namespaces_->data) arrNode.Put(nullptr, ns);
+	}
+	if (replicationMode_.has_value()) {
+		jb.Put("replication_mode", AsyncReplConfigData::Mode2str(replicationMode_.value()));
 	}
 }
 
@@ -177,6 +192,9 @@ void AsyncReplNodeConfig::GetYAML(Yaml::Node &yaml) const {
 				nsArrayYaml[i++] = ns;
 			}
 		}
+	}
+	if (replicationMode_.has_value()) {
+		yaml["replication_mode"] = AsyncReplConfigData::Mode2str(replicationMode_.value());
 	}
 }
 
@@ -202,6 +220,9 @@ Error ClusterConfigData::FromYML(const std::string &yaml) {
 		enableCompression = root["enable_compression"].As<bool>(enableCompression);
 		batchingRoutinesCount = root["batching_routines_count"].As<int>(batchingRoutinesCount);
 		maxWALDepthOnForceSync = root["max_wal_depth_on_force_sync"].As<int>(maxWALDepthOnForceSync);
+		proxyConnCount = root["proxy_conn_count"].As<int>(proxyConnCount);
+		proxyConnConcurrency = root["proxy_conn_concurrency"].As<int>(proxyConnConcurrency);
+		proxyConnThreads = root["proxy_conn_threads"].As<int>(proxyConnThreads);
 		{
 			auto &node = root["namespaces"];
 			namespaces.clear();
@@ -231,6 +252,7 @@ Error AsyncReplConfigData::FromYML(const std::string &yaml) {
 	try {
 		Yaml::Parse(root, yaml);
 		role = Str2role(root["role"].As<std::string>("none"));
+		mode = Str2mode(root["replication_mode"].As<std::string>("default"));
 		appName = root["app_name"].As<std::string>(appName);
 		replThreadsCount = root["sync_threads"].As<int>(replThreadsCount);
 		parallelSyncsPerThreadCount = root["syncs_per_thread"].As<int>(parallelSyncsPerThreadCount);
@@ -283,6 +305,7 @@ Error AsyncReplConfigData::FromJSON(std::string_view json) {
 Error AsyncReplConfigData::FromJSON(const gason::JsonNode &root) {
 	try {
 		role = Str2role(root["role"].As<string>("none"));
+		mode = Str2mode(root["replication_mode"].As<string>("default"));
 		appName = root["app_name"].As<std::string>(appName);
 		replThreadsCount = root["sync_threads"].As<int>(replThreadsCount);
 		parallelSyncsPerThreadCount = root["syncs_per_thread"].As<int>(parallelSyncsPerThreadCount);
@@ -320,6 +343,7 @@ Error AsyncReplConfigData::FromJSON(const gason::JsonNode &root) {
 
 void AsyncReplConfigData::GetJSON(JsonBuilder &jb) const {
 	jb.Put("role", Role2str(role));
+	jb.Put("replication_mode", Mode2str(mode));
 	jb.Put("app_name", appName);
 	jb.Put("sync_threads", replThreadsCount);
 	jb.Put("syncs_per_thread", parallelSyncsPerThreadCount);
@@ -372,10 +396,16 @@ void AsyncReplConfigData::GetYAML(WrSerializer &ser) const {
 	}
 	// clang-format off
 	ser <<	"# Replication role. May be one of\n"
-			"# none - replication is disabled\n"
-			"# follower - replication as follower\n"
-			"# leader - replication as leader\n"
+			"# none - replication is disabled;\n"
+			"# follower - replication as follower;\n"
+			"# leader - replication as leader.\n"
 			"role: " + Role2str(role) + "\n"
+			"\n"
+			"# Replication mode. Allows to configure async replication from sync raft-cluster. This option may be set for each target node individually or globally for all the nodes from config.\n"
+			"# Possible values:\n"
+			"# default - async replication from this node is always enabled, if there are any target nodes to replicate on;\n"
+			"# from_sync_leader - async replication will be enabled only when current node is synchronous RAFT-cluster leader (or if this node does not have any sync cluster config)\n"
+			"mode: " + Mode2str(mode) + "\n"
 			"\n"
 			"# Application name used by replicator as login tag\n"
 			"app_name: " + appName + "\n"
@@ -439,6 +469,24 @@ std::string AsyncReplConfigData::Role2str(AsyncReplConfigData::Role role) noexce
 	}
 }
 
+AsyncReplicationMode AsyncReplConfigData::Str2mode(std::string_view mode) {
+	using namespace std::string_view_literals;
+	if (mode == "from_sync_leader"sv) return AsyncReplicationMode::FromClusterLeader;
+	if (mode == "default"sv || mode.empty()) return AsyncReplicationMode::Default;
+	throw Error(errParams, "Unexpected replication mode value: '%s'", mode);
+}
+
+std::string AsyncReplConfigData::Mode2str(AsyncReplicationMode mode) noexcept {
+	switch (mode) {
+		case AsyncReplicationMode::Default:
+			return "default";
+		case AsyncReplicationMode::FromClusterLeader:
+			return "from_sync_leader";
+		default:
+			std::abort();
+	}
+}
+
 Error ShardingConfig::Namespace::FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards) {
 	if (!yaml["namespace"].IsScalar()) {
 		return Error(errParams, "'namespace' node must be scalar.");
@@ -456,7 +504,7 @@ Error ShardingConfig::Namespace::FromYML(Yaml::Node &yaml, const std::map<int, s
 	if (!validateIndexName(index, IndexCompositeHash)) {
 		return Error(errParams, "Index name incorrect '%s'.", index);
 	}
-	const auto& defaultShardNode = yaml["default_shard"];
+	const auto &defaultShardNode = yaml["default_shard"];
 	if (defaultShardNode.IsNone()) {
 		return Error(errParams, "Default shard id is not specified for namespace '%s'", ns);
 	}
@@ -710,6 +758,7 @@ Error ShardingConfig::FromYML(const std::string &yaml) {
 		shardsAwaitingTimeout = std::chrono::seconds(root["shards_awaiting_timeout_sec"].As<int>(shardsAwaitingTimeout.count()));
 		proxyConnCount = root["proxy_conn_count"].As<int>(proxyConnCount);
 		proxyConnConcurrency = root["proxy_conn_concurrency"].As<int>(proxyConnConcurrency);
+		proxyConnThreads = root["proxy_conn_threads"].As<int>(proxyConnThreads);
 		return Validate();
 	} catch (const Yaml::Exception &ex) {
 		return Error(errParams, "yaml parsing error: '%s'", ex.Message());
@@ -764,6 +813,7 @@ Error ShardingConfig::FromJson(const gason::JsonNode &root) {
 		shardsAwaitingTimeout = std::chrono::seconds(root["shards_awaiting_timeout_sec"].As<int>(shardsAwaitingTimeout.count()));
 		proxyConnCount = root["proxy_conn_count"].As<int>(proxyConnCount);
 		proxyConnConcurrency = root["proxy_conn_concurrency"].As<int>(proxyConnConcurrency);
+		proxyConnThreads = root["proxy_conn_threads"].As<int>(proxyConnThreads);
 	} catch (const Error &err) {
 		return err;
 	} catch (const gason::Exception &ex) {
@@ -773,10 +823,10 @@ Error ShardingConfig::FromJson(const gason::JsonNode &root) {
 }
 
 bool operator==(const ShardingConfig &lhs, const ShardingConfig &rhs) {
-	return lhs.namespaces == rhs.namespaces && lhs.thisShardId == rhs.thisShardId &&
-		   lhs.shards == rhs.shards && lhs.reconnectTimeout == rhs.reconnectTimeout &&
-		   lhs.shardsAwaitingTimeout == rhs.shardsAwaitingTimeout && lhs.proxyConnCount == rhs.proxyConnCount &&
-		   lhs.proxyConnConcurrency == rhs.proxyConnConcurrency;
+	return lhs.namespaces == rhs.namespaces && lhs.thisShardId == rhs.thisShardId && lhs.shards == rhs.shards &&
+		   lhs.reconnectTimeout == rhs.reconnectTimeout && lhs.shardsAwaitingTimeout == rhs.shardsAwaitingTimeout &&
+		   lhs.proxyConnCount == rhs.proxyConnCount && lhs.proxyConnConcurrency == rhs.proxyConnConcurrency &&
+		   rhs.proxyConnThreads == lhs.proxyConnThreads;
 }
 bool operator==(const ShardingConfig::Key &lhs, const ShardingConfig::Key &rhs) {
 	return lhs.shardId == rhs.shardId && lhs.algorithmType == rhs.algorithmType && lhs.values.RelaxCompare(rhs.values) == 0;
@@ -802,7 +852,8 @@ std::string ShardingConfig::GetYml() const {
 	yaml << "\nreconnect_timeout_msec: " << reconnectTimeout.count();
 	yaml << "\nshards_awaiting_timeout_sec: " << shardsAwaitingTimeout.count();
 	yaml << "\nproxy_conn_count: " << proxyConnCount;
-	yaml << "\nproxy_conn_concurrency: " << proxyConnConcurrency << '\n';
+	yaml << "\nproxy_conn_concurrency: " << proxyConnConcurrency;
+	yaml << "\nproxy_conn_threads: " << proxyConnThreads << '\n';
 	return yaml.str();
 }
 
@@ -842,15 +893,16 @@ void ShardingConfig::GetJson(JsonBuilder &jb) const {
 	jb.Put("shards_awaiting_timeout_sec", shardsAwaitingTimeout.count());
 	jb.Put("proxy_conn_count", proxyConnCount);
 	jb.Put("proxy_conn_concurrency", proxyConnConcurrency);
+	jb.Put("proxy_conn_threads", proxyConnThreads);
 }
 
 Error ShardingConfig::Validate() const {
 	std::set<std::string> dsns;
-	for (const auto& s: shards) {
+	for (const auto &s : shards) {
 		if (s.first < 0) {
 			return Error(errParams, "Shard id should not be less than zero");
 		}
-		for (const auto& dsn: s.second) {
+		for (const auto &dsn : s.second) {
 			if (!dsns.insert(dsn).second) {
 				return Error(errParams, "DSNs in shard's config should be unique. Dublicated dsn: %s", dsn);
 			}
@@ -863,13 +915,15 @@ Error ShardingConfig::Validate() const {
 			}
 		}
 	}
-	for (const auto& ns: namespaces) {
+	for (const auto &ns : namespaces) {
 		if (shards.find(ns.defaultShard) == shards.end()) {
-			return Error(errParams, "Default shard id should be defined in shards list. Undefined default shard id: %d, for namespace: %s", ns.defaultShard, ns.ns);
+			return Error(errParams, "Default shard id should be defined in shards list. Undefined default shard id: %d, for namespace: %s",
+						 ns.defaultShard, ns.ns);
 		}
-		for (const auto& k: ns.keys) {
+		for (const auto &k : ns.keys) {
 			if (shards.find(k.shardId) == shards.end()) {
-				return Error(errParams, "Shard id should be defined in shards list. Undefined shard id: %d, for namespace: %s", k.shardId, ns.ns);
+				return Error(errParams, "Shard id should be defined in shards list. Undefined shard id: %d, for namespace: %s", k.shardId,
+							 ns.ns);
 			}
 		}
 	}

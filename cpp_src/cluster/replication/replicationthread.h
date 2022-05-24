@@ -153,19 +153,20 @@ private:
 	void nodeReplicationRoutine(Node &node);
 	Error nodeReplicationImpl(Node &node);
 	void updatesNotifier() noexcept;
-	UpdateApplyStatus handleNetworkCheckRecord(Node &node, UpdatesQueueT::UpdatePtr &updPtr, uint16_t offset, bool forceCheck,
-											   const UpdateRecord &rec) noexcept;
+	std::tuple<bool, UpdateApplyStatus> handleNetworkCheckRecord(Node &node, UpdatesQueueT::UpdatePtr &updPtr, uint16_t offset,
+																 bool forceCheck, const UpdateRecord &rec) noexcept;
 
 	Error syncNamespace(Node &node, const std::string &nsName, const ReplicationStateV2 &followerState);
 	UpdateApplyStatus nodeUpdatesHandlingLoop(Node &node) noexcept;
 	bool handleUpdatesWithError(Node &node, const Error &err);
-	Error checkIfReplicationAllowed(Node &node);
+	Error checkIfReplicationAllowed(Node &node, LogLevel &logLevel);
 
 	UpdateApplyStatus applyUpdate(const UpdateRecord &rec, Node &node, NamespaceData &nsData) noexcept;
 	static bool isNetworkError(const Error &err) noexcept { return err.code() == errNetwork; }
 	static bool isTimeoutError(const Error &err) noexcept { return err.code() == errTimeout || err.code() == errCanceled; }
 	static bool isLeaderChangedError(const Error &err) noexcept { return err.code() == errWrongReplicationData; }
 	static bool isTxCopyError(const Error &err) noexcept { return err.code() == errTxDoesNotExist; }
+	constexpr static std::string_view typeString() noexcept;
 
 	const int serverId_ = -1;
 	uint32_t consensusCnt_ = 0;

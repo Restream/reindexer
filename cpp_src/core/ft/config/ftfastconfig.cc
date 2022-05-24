@@ -64,7 +64,7 @@ void FtFastConfig::parse(std::string_view json, const fast_hash_map<std::string,
 				if (fldIt == fields.end()) {
 					throw Error(errParseDSL, "Field '%s' is not included to full text index", fieldName);
 				}
-				assert(fldIt->second < static_cast<int>(fieldsCfg.size()));
+				assertrx(fldIt->second < static_cast<int>(fieldsCfg.size()));
 				if (modifiedFields.count(fldIt->second) != 0) {
 					throw Error(errParseDSL, "Field '%s' is dublicated in fulltext configuration", fieldName);
 				}

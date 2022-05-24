@@ -43,5 +43,7 @@ enum SqlTokenType {
 	ST_DWithinSqlToken,
 	ST_GeomFromTextSqlToken,
 	GeomFieldSqlToken,
+	StartAfterLocal,
+	StartAfterLocalExplain,
 };
 }

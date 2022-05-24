@@ -36,7 +36,7 @@ void IndexText<T>::initSearchers() {
 		for (unsigned i = 0; i < this->fields_.size(); i++) {
 			auto fieldIdx = this->fields_[i];
 			if (fieldIdx == IndexValueType::SetByJsonPath) {
-				assert(jsonPathIdx < this->fields_.getJsonPathsLength());
+				assertrx(jsonPathIdx < this->fields_.getJsonPathsLength());
 				ftFields_.insert({this->fields_.getJsonPath(jsonPathIdx++), i});
 			} else {
 				ftFields_.insert({this->payloadType_->Field(fieldIdx).Name(), i});
@@ -97,7 +97,7 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 			}
 			res.push_back(SingleSelectKeyResult(cache_ft.val.ids));
 			SelectKeyResults r(std::move(res));
-			assert(cache_ft.val.ctx);
+			assertrx(cache_ft.val.ctx);
 			ftctx->SetData(cache_ft.val.ctx);
 			return r;
 		}

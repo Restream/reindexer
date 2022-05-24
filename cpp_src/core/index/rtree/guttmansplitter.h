@@ -35,8 +35,8 @@ public:
 						this->moveEntryTo(*firstNode, i);
 					}
 				}
-				assert(first.size() == MinEntries);
-				assert(second.size() > MinEntries);
+				assertrx(first.size() == MinEntries);
+				assertrx(second.size() > MinEntries);
 				break;
 			} else if (second.size() + leftEntries == MinEntries) {
 				for (size_t i = 0; i <= MaxEntries; ++i) {
@@ -44,12 +44,12 @@ public:
 						this->moveEntryTo(*secondNode, i);
 					}
 				}
-				assert(second.size() == MinEntries);
-				assert(first.size() > MinEntries);
+				assertrx(second.size() == MinEntries);
+				assertrx(first.size() > MinEntries);
 				break;
 			}
 		}
-		assert(first.size() + second.size() == MaxEntries + 1);
+		assertrx(first.size() + second.size() == MaxEntries + 1);
 		return {std::move(firstNode), std::move(secondNode)};
 	}
 

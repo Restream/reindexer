@@ -17,10 +17,10 @@ TEST_F(ClusterizationProxyApi, Transaction) {
 	// transaction metod test
 	const size_t kClusterSize = 4;
 	net::ev::dynamic_loop loop;
-	auto ports = GetDefaultPorts();
+	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
-		// waiting cluster synchonization, get leder and foollower id
+		// waiting cluster synchonization, get leader and foollower id
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
 		const int followerId = (leaderId + 1) % kClusterSize;
@@ -116,10 +116,10 @@ TEST_F(ClusterizationProxyApi, RollbackFollowerTransaction) {
 	// transaction metod test
 	const size_t kClusterSize = 4;
 	net::ev::dynamic_loop loop;
-	auto ports = GetDefaultPorts();
+	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
-		// waiting cluster synchonization, get leder and foollower id
+		// waiting cluster synchonization, get leader and foollower id
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
 		const int followerId = (leaderId + 1) % kClusterSize;
@@ -169,10 +169,10 @@ TEST_F(ClusterizationProxyApi, ParallelTransaction) {
 	// checking parallel transactions work correct
 	const size_t kClusterSize = 4;
 	net::ev::dynamic_loop loop;
-	auto ports = GetDefaultPorts();
+	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
-		// waiting cluster synchonization, get leder and create foollowers id array
+		// waiting cluster synchonization, get leader and create foollowers id array
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
 		int followerId[kClusterSize - 1];
@@ -230,10 +230,10 @@ TEST_F(ClusterizationProxyApi, ParallelTransaction) {
 TEST_F(ClusterizationProxyApi, TransactionStopLeader) {
 	const size_t kClusterSize = 5;
 	net::ev::dynamic_loop loop;
-	auto ports = GetDefaultPorts();
+	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
-		// waiting cluster synchonization, get leder and foollower id
+		// waiting cluster synchonization, get leader and foollower id
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
 		const int followerId = (leaderId + 1) % kClusterSize;
@@ -865,11 +865,11 @@ TEST_F(ClusterizationProxyApi, ApiTest) {
 	// Test All Api functions
 	const size_t kClusterSize = 5;
 	net::ev::dynamic_loop loop;
-	auto ports = GetDefaultPorts();
+	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &ports] {
 				   const std::string kNsName = "ns";
 				   Cluster cluster(loop, 0, kClusterSize, ports);
-				   // waiting cluster synchonization, get leder and foollower id
+				   // waiting cluster synchonization, get leader and foollower id
 				   auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 				   ASSERT_NE(leaderId, -1);
 				   const int followerId = (leaderId + 1) % kClusterSize;
@@ -905,7 +905,7 @@ TEST_F(ClusterizationProxyApi, DeleteSelect) {
 	const size_t kClusterSize = 5;
 	net::ev::dynamic_loop loop;
 	const std::string kNsName = "ns1";
-	auto ports = GetDefaultPorts();
+	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &kNsName, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -966,7 +966,7 @@ TEST_F(ClusterizationProxyApi, ClusterStatsErrorHandling) {
 	// Check incorrect queries to #replicationstats
 	const size_t kClusterSize = 3;
 	net::ev::dynamic_loop loop;
-	auto ports = GetDefaultPorts();
+	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		std::vector<Query> queries = {Query("#replicationstats"),
@@ -999,12 +999,54 @@ TEST_F(ClusterizationProxyApi, ClusterStatsErrorHandling) {
 	loop.run();
 }
 
+TEST_F(ClusterizationProxyApi, ChangeLeaderOfflineNodeAndNotExistNode) {
+	const size_t kClusterSize = 4;
+	const int kNotExistServerNode = 100;
+	net::ev::dynamic_loop loop;
+	const std::string kNsName = "ns1";
+	auto ports = GetDefaults();
+	loop.spawn(ExceptionWrapper([&loop, &kNsName, &kNotExistServerNode, &ports, this] {
+		Cluster cluster(loop, 0, kClusterSize, ports);
+		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
+		ASSERT_NE(leaderId, -1);
+		cluster.InitNs(leaderId, kNsName);
+		cluster.WaitSync(kNsName);
+		for (int v = 0; v < 10; v++) {
+			{
+				auto item = cluster.GetNode(leaderId)->CreateClusterChangeLeaderItem(kNotExistServerNode);
+				Error err = cluster.GetNode(leaderId)->api.reindexer->Update("#config", item);
+				Error errPattern(errLogic, "Cluster config. Cannot find node index for ServerId(%d)", kNotExistServerNode);
+				ASSERT_EQ(err.code(), errPattern.code());
+				ASSERT_EQ(err.what(), errPattern.what());
+				int leaderNew = cluster.AwaitLeader(kMaxElectionsTime);
+				ASSERT_EQ(leaderId, leaderNew);
+			}
+			{
+				const int stopFollowerId = GetRandFollower(kClusterSize, leaderId);
+				const std::string stopDsn = cluster.GetNode(stopFollowerId)->kRPCDsn;
+				cluster.StopServer(stopFollowerId);
+				auto item = cluster.GetNode(leaderId)->CreateClusterChangeLeaderItem(stopFollowerId);
+				Error err = cluster.GetNode(leaderId)->api.reindexer->Update("#config", item);
+				ASSERT_FALSE(err.ok());
+				ASSERT_EQ(err.what(), "Target node " + stopDsn + " is not available.");
+				int leaderNew = cluster.AwaitLeader(kMaxElectionsTime);
+				ASSERT_EQ(leaderId, leaderNew);
+				cluster.StartServer(stopFollowerId);
+				leaderNew = cluster.AwaitLeader(kMaxElectionsTime);
+				ASSERT_EQ(leaderId, leaderNew);
+			}
+		}
+	}));
+
+	loop.run();
+}
+
 TEST_F(ClusterizationProxyApi, ChangeLeader) {
 	const size_t kClusterSize = 5;
 	net::ev::dynamic_loop loop;
 	const std::string kNsName = "ns1";
-	auto ports = GetDefaultPorts();
-	loop.spawn(ExceptionWrapper([&loop, &kNsName, &ports, this] {
+	auto ports = GetDefaults();
+	loop.spawn(ExceptionWrapper([&loop, &kNsName, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
@@ -1018,11 +1060,14 @@ TEST_F(ClusterizationProxyApi, ChangeLeader) {
 
 		cluster.WaitSync(kNsName);
 
-		for (int i = 0; i < 5; i++) {
-			const int newLeaderId = GetRandFollower(kClusterSize, leaderId);
-			cluster.GetNode(leaderId)->SetClusterLeader(newLeaderId);
-			leaderId = cluster.AwaitLeader(kMaxElectionsTime);
-			ASSERT_EQ(leaderId, newLeaderId) << "iteration: " << i;
+		for (int i = 0; i < 3; i++) {
+			for (unsigned int k = 0; k < kClusterSize; k++) {  // -V756
+				for (int j = 0; j < 2; j++) {
+					cluster.GetNode(0)->SetClusterLeader(k);
+					leaderId = cluster.AwaitLeader(kMaxElectionsTime);
+					ASSERT_EQ(leaderId, k) << "iteration: " << i;
+				}
+			}
 		}
 	}));
 
@@ -1033,7 +1078,7 @@ TEST_F(ClusterizationProxyApi, Shutdown) {
 	const size_t kClusterSize = 5;
 	net::ev::dynamic_loop loop;
 	const std::string kNsName = "ns1";
-	auto ports = GetDefaultPorts();
+	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &kNsName, &ports] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -1058,7 +1103,7 @@ TEST_F(ClusterizationProxyApi, Shutdown) {
 		}
 		for (size_t i = 0; i < kClusterSize; ++i) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(200));
-			std::cout << "Stopping " << i << std::endl;
+			TestCout() << "Stopping " << i << std::endl;
 			cluster.StopServer(i);
 		}
 		done = true;
@@ -1080,12 +1125,13 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 	net::ev::dynamic_loop loop;
 
 	loop.spawn(ExceptionWrapper([&loop, &kNsName, this] {
-		const auto ports = GetDefaultPorts();
+		const auto ports = GetDefaults();
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		std::atomic<bool> done = {false};
 		constexpr auto kSleepTime = std::chrono::milliseconds(1);
 		ItemTracker itemTracker;
 		std::atomic<int> counter{0};
+		std::atomic<int> txCounter{0};
 		std::vector<std::thread> threads;
 
 		auto addItemFun = [&counter, &cluster, &done, kSleepTime, &itemTracker](int nodeId, std::string_view nsName, int tid) noexcept {
@@ -1093,28 +1139,31 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 			while (!done) {
 				int id = counter++;
 				std::string json;
+				ItemTracker::ItemInfo info(id, nodeId, threadName);
 				auto err = cluster.AddRowWithErr(nodeId, nsName, id, &json);
 				if (err.code() == errUpdateReplication) {
-					itemTracker.AddUnknown(std::move(json), threadName);
+					itemTracker.AddUnknown(std::move(json), std::move(info));
 				} else if (err.code() == errAlreadyProxied) {
-					itemTracker.AddError(std::move(json), threadName);
+					itemTracker.AddError(std::move(json), std::move(info));
 				} else {
 					ASSERT_TRUE(err.ok()) << err.what();
-					itemTracker.AddCommited(std::move(json), threadName);
+					itemTracker.AddCommited(std::move(json), std::move(info));
 				}
 				std::this_thread::sleep_for(kSleepTime);
 			}
 		};
 
-		auto addItemItemInTxFun = [&counter, &cluster, &done, &itemTracker, kSleepTime](int nodeId, std::string_view nsName,
-																						int tid) noexcept {
+		auto addItemItemInTxFun = [&counter, &txCounter, &cluster, &done, &itemTracker, kSleepTime](int nodeId, std::string_view nsName,
+																									int tid) noexcept {
 			auto client = cluster.GetNode(nodeId)->api.reindexer;
 			auto& api = cluster.GetNode(nodeId)->api;
 			const std::string threadName = "Tx_" + std::to_string(tid);
 			while (!done) {
+				auto txNum = txCounter++;
+				auto txStart = std::chrono::system_clock::now();
 				auto tx = client->NewTransaction(nsName);
 				ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
-				std::vector<std::string> items;
+				std::vector<std::pair<std::string, ItemTracker::ItemInfo>> items;
 				for (int j = 0; j < kItemsPerTx; ++j) {
 					auto item = tx.NewItem();
 					auto err = item.Status();
@@ -1124,7 +1173,8 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 						ASSERT_TRUE(err.ok()) << err.what();
 					}
 					cluster.FillItem(api, item, counter++);
-					items.emplace_back(item.GetJSON());
+					ItemTracker::ItemInfo info(counter, txNum, tx.GetTransactionId(), nodeId, txStart, threadName);
+					items.emplace_back(item.GetJSON(), info);
 					err = tx.Upsert(std::move(item));
 					if (err.code() == errTxInvalidLeader || err.code() == errWrongReplicationData || err.code() == errAlreadyProxied) {
 						items.pop_back();
@@ -1133,21 +1183,21 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 					}
 				}
 				BaseApi::QueryResultsType qrTx;
+
+				auto timeBeforeCommit = std::chrono::system_clock::now();
+				int64_t txId = tx.GetTransactionId();
 				auto err = client->CommitTransaction(tx, qrTx);
+				ItemTracker::ItemInfo txInfoAfterCommit(txNum, txId, nodeId, txStart, timeBeforeCommit, std::chrono::system_clock::now(),
+														threadName);
+				txInfoAfterCommit.txBeforeCommit = timeBeforeCommit;
 				if (err.code() == errTxInvalidLeader || err.code() == errWrongReplicationData || err.code() == errAlreadyProxied) {
-					for (auto&& it : items) {
-						itemTracker.AddError(std::move(it), threadName);
-					}
+					itemTracker.AddErrorTx(items, txNum, std::move(txInfoAfterCommit));
 				} else if (err.code() == errUpdateReplication) {
 					// This data may still be replicated
-					for (auto&& it : items) {
-						itemTracker.AddUnknown(std::move(it), threadName);
-					}
+					itemTracker.AddUnknownTx(items, txNum, std::move(txInfoAfterCommit));
 				} else {
 					ASSERT_TRUE(err.ok()) << err.what();
-					for (auto&& it : items) {
-						itemTracker.AddCommited(std::move(it), threadName);
-					}
+					itemTracker.AddCommitedTx(items, txNum, std::move(txInfoAfterCommit));
 				}
 				std::this_thread::sleep_for(kSleepTime);
 			}
@@ -1170,7 +1220,7 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 
 		for (int i = 0; i < 10; ++i) {
 			const int newLeaderId = GetRandFollower(kClusterSize, leaderId);
-			std::cout << leaderId << " -> " << newLeaderId << std::endl;
+			TestCout() << leaderId << " -> " << newLeaderId << std::endl;
 			cluster.ChangeLeader(leaderId, newLeaderId);
 			loop.sleep(std::chrono::milliseconds(100));
 		}
@@ -1200,7 +1250,7 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWriteSimple) {
 	net::ev::dynamic_loop loop;
 
 	loop.spawn(ExceptionWrapper([&loop, &kNsName, this] {
-		const auto ports = GetDefaultPorts();
+		const auto ports = GetDefaults();
 		std::vector<std::thread> threads;
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		std::atomic<int> counter{0};
@@ -1232,10 +1282,14 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWriteSimple) {
 		}
 
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
-		int newLeaderId = GetRandFollower(kClusterSize, leaderId);
-		cluster.ChangeLeader(leaderId, newLeaderId);
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		cluster.ChangeLeader(newLeaderId, leaderId);
+		for (size_t i = 0; i < kClusterSize; i++) {	 // -V756
+			for (int k = 0; k < 2; k++) {
+				cluster.GetNode(0)->SetClusterLeader(i);
+				leaderId = cluster.AwaitLeader(kMaxElectionsTime);
+				ASSERT_EQ(leaderId, i);
+				std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			}
+		}
 
 		stopInsert = true;
 
@@ -1253,7 +1307,7 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderTimeout) {
 
 	net::ev::dynamic_loop loop;
 	const std::string kNsName = "ns1";
-	auto ports = GetDefaultPorts();
+	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &kNsName, &ports, this] {
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -1283,7 +1337,7 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderTimeout) {
 TEST_F(ClusterizationProxyApi, SelectFromStatsTimeout) {
 	// Check error on attempt to reset cluster namespace role
 	net::ev::dynamic_loop loop;
-	auto ports = GetDefaultPorts();
+	auto ports = GetDefaults();
 	loop.spawn(ExceptionWrapper([&loop, &ports] {
 		constexpr size_t kClusterSize = 3;
 		const std::string kNsSome = "some";

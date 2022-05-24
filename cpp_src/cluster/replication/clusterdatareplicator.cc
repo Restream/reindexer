@@ -176,19 +176,14 @@ Error ClusterDataReplicator::SetDesiredLeaderId(int nextServerId, bool sendToOth
 	if (!isRunning()) {
 		return Error(errNotValid, "Cluster replicator is not running");
 	}
-	logPrintf(LogTrace, "[cluster] %d Setting desired leader ID: %d. Sending to other nodes: %d", serverID(), nextServerId,
-			  sendToOtherNodes ? 1 : 0);
-	if (sendToOtherNodes) {
-		std::promise<Error> promise;
-		std::future<Error> future = promise.get_future();
-		ClusterCommand c = ClusterCommand(kCmdSendDesiredLeader, nextServerId, std::move(promise));
-		commands_.AddCommand(std::move(c));
-		lck.unlock();
-		return future.get();
-	}
-	raftManager_.SetDesiredLeaderId(nextServerId);
-	restartElections_ = (serverID() == nextServerId) || restartElections_;
-	return Error();
+	logPrintf(LogInfo, "[cluster] %d Setting desired leader ID: %d. Sending to other nodes: %s", serverID(), nextServerId,
+			  sendToOtherNodes ? "true" : "false");
+	std::promise<Error> promise;
+	std::future<Error> future = promise.get_future();
+	ClusterCommand c = ClusterCommand(kCmdSetDesiredLeader, nextServerId, sendToOtherNodes, std::move(promise));
+	commands_.AddCommand(std::move(c));
+	lck.unlock();
+	return future.get();
 }
 
 Error ClusterDataReplicator::LeadersPing(const NodeData& leader) {
@@ -288,12 +283,19 @@ void ClusterDataReplicator::clusterControlRoutine(int serverId) {
 				checkInterval -= kGranularSleepInterval;
 				ClusterCommand c;
 				while (commands_.GetCommand(c)) {
-					if (c.id == kCmdSendDesiredLeader) {
-						auto err = raftManager_.SendDesiredLeaderId(c.serverId);
-						raftManager_.SetDesiredLeaderId(c.serverId);
-						restartElections_ = true;
-						onRoleChanged(RaftInfo::Role::Candidate,
-									  raftInfo.role == RaftInfo::Role::Leader ? serverId : raftManager_.GetLeaderId());
+					if (c.id == kCmdSetDesiredLeader) {
+						Error err;
+						if (c.send) {
+							err = raftManager_.SendDesiredLeaderId(c.serverId);
+						}
+						if (err.ok()) {
+							raftManager_.SetDesiredLeaderId(c.serverId);
+							restartElections_ = true;
+							onRoleChanged(RaftInfo::Role::Candidate,
+										  raftInfo.role == RaftInfo::Role::Leader ? serverId : raftManager_.GetLeaderId());
+						} else {
+							logPrintf(LogInfo, "[cluster]:%d Error send desired leader (%s)", serverId, err.what());
+						}
 						c.result.set_value(std::move(err));
 					}
 				}

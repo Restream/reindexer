@@ -1,10 +1,10 @@
 #pragma once
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <functional>
 #include <limits>
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
@@ -75,7 +75,7 @@ inline Rectangle boundRect(const Rectangle& r, Point p) noexcept {
 class Circle {
 public:
 	Circle() noexcept = default;
-	Circle(Point c, double r) : center_(c), radius_(r) { assert(radius_ >= 0.0); }
+	Circle(Point c, double r) : center_(c), radius_(r) { assertrx(radius_ >= 0.0); }
 	Point Center() const noexcept { return center_; }
 	double Radius() const noexcept { return radius_; }
 

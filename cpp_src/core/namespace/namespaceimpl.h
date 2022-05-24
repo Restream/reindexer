@@ -375,7 +375,7 @@ protected:
 	void addIndex(const IndexDef &indexDef, bool disableTmVersionInc, bool skipEqualityCheck = false);
 	void doAddIndex(const IndexDef &indexDef, bool skipEqualityCheck, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void addCompositeIndex(const IndexDef &indexDef);
-	bool checkIfSameIndexExists(const IndexDef &indexDef, bool discardConfig);
+	bool checkIfSameIndexExists(const IndexDef &indexDef, bool discardConfig, bool *requireTtlUpdate = nullptr);
 	void verifyUpdateIndex(const IndexDef &indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
 	void updateIndex(const IndexDef &indexDef, bool disableTmVersionInc);

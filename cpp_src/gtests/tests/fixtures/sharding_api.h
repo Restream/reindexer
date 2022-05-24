@@ -6,30 +6,36 @@
 #include "tools/fsops.h"
 
 struct InitShardingConfig {
+	struct Namespace {
+		std::string name;
+		bool withData = false;
+	};
+
 	int shards = 3;
 	int nodesInCluster = 3;
 	int rowsInTableOnShard = 40;
 	bool disableNetworkTimeout = false;
 	bool createAdditionalIndexes = true;
-	std::vector<std::string> additionalNss;
+	std::vector<Namespace> additionalNss;
 	std::chrono::seconds awaitTimeout = std::chrono::seconds(30);
 	fast_hash_map<int, std::string>* insertedItemsById = nullptr;
+	int nodeIdInThread = -1;  // Allows to run one of the nodes in thread, instead fo process
+	uint8_t strlen = 0;		  // Strings len in items, which will be created during Fill()
 };
 
 class ShardingApi : public ReindexerApi {
 public:
 	void Init(InitShardingConfig c = InitShardingConfig()) {
-		std::vector<std::string> namespaces = std::move(c.additionalNss);
-		namespaces.emplace_back(default_namespace);
+		std::vector<InitShardingConfig::Namespace> namespaces = std::move(c.additionalNss);
+		namespaces.emplace_back(InitShardingConfig::Namespace{default_namespace, true});
 		kShards = c.shards;
 		kNodesInCluster = c.nodesInCluster;
 		svc_.resize(kShards);
 		for (auto& cluster : svc_) {
 			cluster.resize(kNodesInCluster);
 		}
-		keys_.resize(kShards);
 		auto getHostDsn = [&](size_t id) {
-			return "cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + id) + "/shard" + std::to_string(id);
+			return "cproto://127.0.0.1:" + std::to_string(GetDefaults().defaultRpcPort + id) + "/shard" + std::to_string(id);
 		};
 		config_.shardsAwaitingTimeout = c.awaitTimeout;
 		size_t id = 0;
@@ -37,12 +43,12 @@ public:
 		config_.namespaces.clear();
 		config_.namespaces.resize(namespaces.size());
 		for (size_t i = 0; i < namespaces.size(); ++i) {
-			config_.namespaces[i].ns = namespaces[i];
+			config_.namespaces[i].ns = namespaces[i].name;
 			config_.namespaces[i].index = kFieldLocation;
 			config_.namespaces[i].defaultShard = 0;
 
 			nsList += "  - ";
-			nsList += namespaces[i];
+			nsList += namespaces[i].name;
 			nsList += '\n';
 		}
 		config_.shards.clear();
@@ -55,14 +61,15 @@ public:
 			key.values.emplace_back(string("key") + std::to_string(shard));
 			key.values.emplace_back(string("key") + std::to_string(shard) + "_" + std::to_string(shard));
 			key.shardId = shard;
-			config_.namespaces[0].keys.emplace_back(std::move(key));
-			keys_.emplace_back(string("key") + std::to_string(shard));
+			for (size_t nsId = 0; nsId < namespaces.size(); ++nsId) {
+				config_.namespaces[nsId].keys.emplace_back(key);
+			}
 		}
 
 		int syncThreadsCount = 2;
 		int maxSyncCount = rand() % 3;
 		std::chrono::milliseconds resyncTimeout = std::chrono::milliseconds(3000);
-		std::cout << "Cluster's max_sync_count was chosen randomly: " << maxSyncCount << std::endl;
+		TestCout() << "Cluster's max_sync_count was chosen randomly: " << maxSyncCount << std::endl;
 
 		// clang-format off
 			const std::string baseClusterConf =
@@ -83,21 +90,27 @@ public:
 				// clang-format off
 				clusterConf.append(
 				"  -\n"
-					"    dsn: " + fmt::format("cproto://127.0.0.1:{}/shard{}", kDefaultRpcPort + i,i) + "\n"
+					"    dsn: " + fmt::format("cproto://127.0.0.1:{}/shard{}", GetDefaults().defaultRpcPort + i,i) + "\n"
 					"    server_id: " + std::to_string(i) + "\n");
 				// clang-format on
 			}
 
 			config_.thisShardId = shard;
+			config_.proxyConnCount = 4;
+			config_.proxyConnThreads = 3;
+			config_.proxyConnConcurrency = 8;
 			for (size_t idx = startId, node = 0; idx < startId + kNodesInCluster; ++idx, ++node) {
 				const std::string replConf = "cluster_id: " + std::to_string(shard) +
 											 "\n"
 											 "server_id: " +
 											 std::to_string(idx);
 
-				std::string pathToDb = fs::JoinPath(kStoragePath, "shard" + std::to_string(shard) + "/" + std::to_string(idx));
+				std::string pathToDb =
+					fs::JoinPath(GetDefaults().baseTestsetDbPath, "shard" + std::to_string(shard) + "/" + std::to_string(idx));
 				std::string dbName = "shard" + std::to_string(idx);
-				ServerControlConfig cfg(idx, kDefaultRpcPort + idx, kDefaultHttpPort + idx, std::move(pathToDb), std::move(dbName));
+				const bool asProcess = kTestServersInSeparateProcesses && (c.nodeIdInThread < 0 || (size_t(c.nodeIdInThread) != idx));
+				ServerControlConfig cfg(idx, GetDefaults().defaultRpcPort + idx, GetDefaults().defaultHttpPort + idx, std::move(pathToDb),
+										std::move(dbName), true, 0, asProcess);
 				cfg.disableNetworkTimeout = c.disableNetworkTimeout;
 				svc_[shard][node].InitServerWithConfig(std::move(cfg), replConf, (kNodesInCluster > 1 ? clusterConf : std::string()),
 													   config_.GetYml(), "");
@@ -106,39 +119,51 @@ public:
 
 		std::shared_ptr<client::SyncCoroReindexer> rx = getNode(0)->api.reindexer;
 
-		NamespaceDef nsDef(default_namespace);
-		if (c.createAdditionalIndexes) {
-			nsDef.AddIndex(kFieldId, "hash", "int", IndexOpts());
-			nsDef.AddIndex(kFieldLocation, "hash", "string", IndexOpts());
-			nsDef.AddIndex(kFieldData, "hash", "string", IndexOpts());
-			nsDef.AddIndex(kFieldFTData, "text", "string", IndexOpts());
-			nsDef.AddIndex(kFieldId + "+" + kFieldLocation, {kFieldId, kFieldLocation}, "hash", "composite", IndexOpts().PK());
-		} else {
-			nsDef.AddIndex(kFieldId, "hash", "int", IndexOpts().PK());
+		for (auto& ns : namespaces) {
+			if (ns.withData) {
+				NamespaceDef nsDef(ns.name);
+				if (c.createAdditionalIndexes) {
+					nsDef.AddIndex(kFieldId, "hash", "int", IndexOpts());
+					nsDef.AddIndex(kFieldLocation, "hash", "string", IndexOpts());
+					nsDef.AddIndex(kFieldData, "hash", "string", IndexOpts());
+					nsDef.AddIndex(kFieldFTData, "text", "string", IndexOpts());
+					nsDef.AddIndex(kFieldId + "+" + kFieldLocation, {kFieldId, kFieldLocation}, "hash", "composite", IndexOpts().PK());
+				} else {
+					nsDef.AddIndex(kFieldId, "hash", "int", IndexOpts().PK());
+				}
+				Error err = rx->AddNamespace(nsDef);
+				ASSERT_TRUE(err.ok()) << err.what() << "; ns: " << ns.name;
+			}
 		}
-		Error err = rx->AddNamespace(nsDef);
-		ASSERT_TRUE(err.ok()) << err.what();
 
-		size_t pos = 0;
-		for (size_t i = 0; i < kShards; ++i) {
-			Fill(i, pos, c.rowsInTableOnShard, c.insertedItemsById);
-			pos += c.rowsInTableOnShard;
+		for (auto& ns : namespaces) {
+			if (ns.withData) {
+				size_t pos = 0;
+				for (size_t i = 0; i < kShards; ++i) {
+					Fill(ns.name, i, pos, c.rowsInTableOnShard, c.insertedItemsById);
+					pos += c.rowsInTableOnShard;
+				}
+			}
 		}
 
 		if (kNodesInCluster > 1) {
-			waitSync(default_namespace);
+			for (auto& ns : namespaces) {
+				if (ns.withData) {
+					waitSync(ns.name);
+				}
+			}
 		}
 	}
 
 	void SetUp() override {
-		reindexer::fs::RmDirAll(kStoragePath);
+		reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 		ReindexerApi::SetUp();
 	}
 	void TearDown() override {
 		ReindexerApi::TearDown();
 		Stop();
 		svc_.clear();
-		reindexer::fs::RmDirAll(kStoragePath);
+		reindexer::fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 	}
 
 	bool StopByIndex(size_t idx) {
@@ -210,9 +235,10 @@ public:
 		auto [i, j] = getSCIdxs(idx);
 		assert(i < svc_.size());
 		assert(j < svc_[i].size());
-		svc_[i][j].InitServer(ServerControlConfig(idx, kDefaultRpcPort + idx, kDefaultHttpPort + idx,
-												  fs::JoinPath(kStoragePath, "shard" + std::to_string(i) + "/" + std::to_string(idx)),
-												  "shard" + std::to_string(idx)));
+		svc_[i][j].InitServer(
+			ServerControlConfig(idx, GetDefaults().defaultRpcPort + idx, GetDefaults().defaultHttpPort + idx,
+								fs::JoinPath(GetDefaults().baseTestsetDbPath, "shard" + std::to_string(i) + "/" + std::to_string(idx)),
+								"shard" + std::to_string(idx)));
 	}
 
 	bool StopSC(ServerControl& sc) {
@@ -236,25 +262,26 @@ public:
 		return StopSC(svc_[i][j]);
 	}
 
-	client::Item CreateItem(std::shared_ptr<client::SyncCoroReindexer> rx, std::string_view key, int index, WrSerializer& wrser) {
-		client::Item item = rx->NewItem(default_namespace);
+	client::Item CreateItem(std::string_view nsName, std::shared_ptr<client::SyncCoroReindexer> rx, std::string_view key, int index,
+							WrSerializer& wrser, uint8_t strlen = 0) {
+		client::Item item = rx->NewItem(nsName);
 		if (!item.Status().ok()) return item;
 		wrser.Reset();
 		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 		jsonBuilder.Put(kFieldId, int(index));
 		jsonBuilder.Put(kFieldLocation, key);
-		jsonBuilder.Put(kFieldData, RandString());
-		jsonBuilder.Put(kFieldFTData, RandString());
+		jsonBuilder.Put(kFieldData, RandString(strlen));
+		jsonBuilder.Put(kFieldFTData, RandString(strlen));
 		jsonBuilder.End();
 		Error err = item.FromJSON(wrser.Slice());
 		assertf(err.ok(), "%s", err.what());
 		return item;
 	}
 
-	Error CreateAndUpsertItem(std::shared_ptr<client::SyncCoroReindexer> rx, std::string_view key, int index,
-							  fast_hash_map<int, std::string>* insertedItemsById = nullptr) {
+	Error CreateAndUpsertItem(std::string_view nsName, std::shared_ptr<client::SyncCoroReindexer> rx, std::string_view key, int index,
+							  fast_hash_map<int, std::string>* insertedItemsById = nullptr, uint8_t strlen = 0) {
 		WrSerializer wrser;
-		client::Item item = CreateItem(rx, key, index, wrser);
+		client::Item item = CreateItem(nsName, rx, key, index, wrser, strlen);
 		if (!item.Status().ok()) return item.Status();
 
 		if (insertedItemsById) {
@@ -268,34 +295,36 @@ public:
 		if (!err.ok()) {
 			return err;
 		}
-		return rx->Upsert(default_namespace, item);
+		return rx->Upsert(nsName, item);
 	}
 
-	void Fill(size_t shard, const size_t from, const size_t count, fast_hash_map<int, std::string>* insertedItemsById = nullptr) {
+	void Fill(std::string_view nsName, size_t shard, const size_t from, const size_t count,
+			  fast_hash_map<int, std::string>* insertedItemsById = nullptr, uint8_t strlen = 0) {
 		assert(shard < svc_.size());
 		std::shared_ptr<client::SyncCoroReindexer> rx = svc_[shard][0].Get()->api.reindexer;
-		Error err = rx->OpenNamespace(default_namespace);
+		Error err = rx->OpenNamespace(nsName);
 		ASSERT_TRUE(err.ok()) << err.what();
 		for (size_t index = from; index < from + count; ++index) {
-			err = CreateAndUpsertItem(rx, string("key" + std::to_string((index % kShards) + 1)), index, insertedItemsById);
+			err = CreateAndUpsertItem(nsName, rx, string("key" + std::to_string((index % kShards) + 1)), index, insertedItemsById, strlen);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 	}
 
-	void Fill(std::shared_ptr<client::SyncCoroReindexer> rx, std::string_view key, const size_t from, const size_t count) {
+	void Fill(std::string_view nsName, std::shared_ptr<client::SyncCoroReindexer> rx, std::string_view key, const size_t from,
+			  const size_t count) {
 		for (size_t index = from; index < from + count; ++index) {
-			Error err = CreateAndUpsertItem(rx, key, index);
+			Error err = CreateAndUpsertItem(nsName, rx, key, index);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 	}
 
-	Error AddRow(size_t shard, size_t nodeId, size_t index) {
+	Error AddRow(std::string_view nsName, size_t shard, size_t nodeId, size_t index) {
 		auto srv = svc_[shard][nodeId].Get(false);
 		if (!srv) {
 			return Error(errNotValid, "Server is not running");
 		}
 		auto rx = srv->api.reindexer;
-		return CreateAndUpsertItem(rx, string("key" + std::to_string((index % kShards) + 1)), index);
+		return CreateAndUpsertItem(nsName, rx, string("key" + std::to_string((index % kShards) + 1)), index);
 	}
 
 	void AwaitOnlineReplicationStatus(size_t idx) {
@@ -307,11 +336,16 @@ public:
 		cluster::ReplicationStats stats;
 		do {
 			auto node = getNode(idx);
-			stats = node->GetReplicationStats("cluster");
-			for (auto& nodeStat : stats.nodeStats) {
-				if (nodeStat.dsn == node->kRPCDsn && nodeStat.syncState == cluster::NodeStats::SyncState::OnlineReplication) {
-					isReady = true;
-					break;
+			Query qr = Query("#replicationstats").Where("type", CondEq, Variant("cluster"));
+			BaseApi::QueryResultsType res;
+			auto err = node->api.reindexer->Select(qr, res);
+			if (err.ok()) {
+				stats = node->GetReplicationStats("cluster");
+				for (auto& nodeStat : stats.nodeStats) {
+					if (nodeStat.dsn == node->kRPCDsn && nodeStat.syncState == cluster::NodeStats::SyncState::OnlineReplication) {
+						isReady = true;
+						break;
+					}
 				}
 			}
 			std::this_thread::sleep_for(kPause);
@@ -326,6 +360,16 @@ public:
 	size_t NodesCount() const { return kShards * kNodesInCluster; }
 
 protected:
+	struct Defaults {
+		size_t defaultRpcPort;
+		size_t defaultHttpPort;
+		std::string baseTestsetDbPath;
+	};
+	virtual const Defaults& GetDefaults() const {
+		static Defaults def{19000, 20000, fs::JoinPath(fs::GetTempDir(), "rx_test/ShardingBaseApi")};
+		return def;
+	}
+
 	void waitSync(std::string_view ns) {
 		for (auto& cluster : svc_) {
 			ClusterizationApi::Cluster::doWaitSync(ns, cluster);
@@ -335,7 +379,7 @@ protected:
 		assert(shardId < svc_.size());
 		ClusterizationApi::Cluster::doWaitSync(ns, svc_[shardId]);
 	}
-	std::pair<size_t, size_t> getSCIdxs(size_t id) { return std::make_pair(id / kShards, id % kShards); }
+	std::pair<size_t, size_t> getSCIdxs(size_t id) { return std::make_pair(id / kNodesInCluster, id % kNodesInCluster); }
 	ServerControl::Interface::Ptr getNode(size_t idx) {
 		auto [i, j] = getSCIdxs(idx);
 		assert(i < svc_.size());
@@ -343,12 +387,19 @@ protected:
 		return svc_[i][j].Get();
 	}
 
+	void runSelectTest(std::string_view nsName);
+	void runUpdateTest(std::string_view nsName);
+	void runDeleteTest(std::string_view nsName);
+	void runMetaTest(std::string_view nsName);
+	void runSerialTest(std::string_view nsName);
+	void runUpdateItemsTest(std::string_view nsName);
+	void runDeleteItemsTest(std::string_view nsName);
+	void runUpdateIndexTest(std::string_view nsName);
+	void runDropNamespaceTest(std::string_view nsName);
+	void runTransactionsTest(std::string_view nsName);
+
 	size_t kShards = 3;
 	size_t kNodesInCluster = 3;
-
-	const size_t kDefaultRpcPort = 19000;
-	const size_t kDefaultHttpPort = 19700;
-	const std::string kStoragePath = fs::JoinPath(fs::GetTempDir(), "rx_test/sharding_api");
 
 	const std::string kFieldId = "id";
 	const std::string kFieldLocation = "location";
@@ -357,5 +408,4 @@ protected:
 
 	reindexer::cluster::ShardingConfig config_;
 	std::vector<std::vector<ServerControl>> svc_;  //[shard][nodeId]
-	vector<string> keys_;
 };

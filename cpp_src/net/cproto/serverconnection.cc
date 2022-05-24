@@ -105,7 +105,7 @@ void ServerConnection::onRead() {
 			rdBuf_.unroll();
 			it = rdBuf_.tail();
 		}
-		assert(it.size() >= size_t(hdr.len));
+		assertrx(it.size() >= size_t(hdr.len));
 
 		ctx.call = &call_;
 		try {

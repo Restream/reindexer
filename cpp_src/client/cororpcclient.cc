@@ -20,8 +20,8 @@ namespace client {
 
 using reindexer::net::cproto::CoroRPCAnswer;
 
-CoroRPCClient::CoroRPCClient(const CoroReindexerConfig& config, Namespaces::PtrT sharedNamespaces)
-	: namespaces_(sharedNamespaces ? std::move(sharedNamespaces) : make_intrusive<Namespaces::IntrusiveT>()), config_(config) {
+CoroRPCClient::CoroRPCClient(const CoroReindexerConfig& config, INamespaces::PtrT sharedNamespaces)
+	: namespaces_(sharedNamespaces ? std::move(sharedNamespaces) : INamespaces::PtrT(new NamespacesImpl<dummy_mutex>())), config_(config) {
 	conn_.SetConnectionStateHandler([this](Error err) { onConnectionState(std::move(err)); });
 }
 
@@ -30,7 +30,7 @@ CoroRPCClient::~CoroRPCClient() { Stop(); }
 Error CoroRPCClient::Connect(const string& dsn, ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
 	std::lock_guard lck(mtx_);
 	if (conn_.IsRunning()) {
-		return Error(errLogic, "Client is already started");
+		return Error(errLogic, "Client is already started (%s)", dsn);
 	}
 
 	cproto::CoroClientConnection::ConnectData connectData;

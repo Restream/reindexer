@@ -15,7 +15,7 @@ Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &val
 	  cmpDouble(distinct),
 	  cmpString(distinct),
 	  cmpGeom(distinct) {
-	if (type == KeyValueComposite) assert(fields_.size() > 0);
+	if (type == KeyValueComposite) assertrx(fields_.size() > 0);
 	if (cond_ == CondEq && values.size() != 1) cond_ = CondSet;
 	if (cond_ == CondAllSet && values.size() == 1) cond_ = CondEq;
 	if (cond_ == CondDWithin) {
@@ -56,7 +56,7 @@ void Comparator::setValues(const VariantArray &values) {
 				cmpComposite.SetValues(cond_, values, *this);
 				break;
 			default:
-				assert(0);
+				assertrx(0);
 		}
 	}
 	bool isRegularIndex = fields_.size() > 0 && fields_.getTagsPathsLength() == 0 && fields_[0] < payloadType_.NumFields();
@@ -153,7 +153,7 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 }
 
 void Comparator::ExcludeDistinct(const PayloadValue &data, int rowId) {
-	assert(!cmpEqualPosition.IsBinded());
+	assertrx(!cmpEqualPosition.IsBinded());
 	if (fields_.getTagsPathsLength() > 0) {
 		// Exclude field by CJSON path (slow path)
 		VariantArray rhs;
@@ -166,7 +166,7 @@ void Comparator::ExcludeDistinct(const PayloadValue &data, int rowId) {
 	} else {
 		// Exclude field from payload by offset (fast path)
 
-		assert(type_ != KeyValueComposite);
+		assertrx(type_ != KeyValueComposite);
 
 		// Check if we have column (rawData_), then go to fastest path with column
 		if (rawData_) return excludeDistinct(rawData_ + rowId * sizeof_);

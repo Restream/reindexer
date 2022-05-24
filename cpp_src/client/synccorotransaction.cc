@@ -59,10 +59,13 @@ SyncCoroTransaction::~SyncCoroTransaction() {
 	if (!IsFree()) {
 		rx_->RollBackTransaction(*this, InternalRdxContext());
 	}
+	tr_.clear();
 }
 
 PayloadType SyncCoroTransaction::GetPayloadType() const { return tr_.GetPayloadType(); }
 TagsMatcher SyncCoroTransaction::GetTagsMatcher() const { return tr_.GetTagsMatcher(); }
+
+int64_t SyncCoroTransaction::GetTransactionId() const noexcept { return tr_.i_.txId_; }
 
 }  // namespace client
 }  // namespace reindexer

@@ -26,7 +26,7 @@ struct JoinPreResult {
 		}
 		bool Locked() const { return locked_; }
 		void Lock() {
-			assert(!locked_);
+			assertrx(!locked_);
 			for (size_t i = 0; i < size(); ++i) Payload{payloadType, (*this)[i].Value()}.AddRefStrings();
 			locked_ = true;
 		}

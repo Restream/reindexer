@@ -127,19 +127,19 @@ void QueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSerializ
 	JsonBuilder builder(wrser, ObjType::TypePlain);
 	if (qr_->NeedOutputRank()) {
 		AdditionalRank additionalRank(itemParams_.proc);
+		h_vector<IAdditionalDatasource<JsonBuilder> *, 2> dss;
+		dss.push_back(&additionalRank);
+
 		if (withHdrLen) {
 			auto slicePosSaver = wrser.StartSlice();
-			enc.Encode(cjson, builder, &additionalRank);
-		} else {
-			enc.Encode(cjson, builder, &additionalRank);
 		}
+		enc.Encode(cjson, builder, dss);
+
 	} else {
 		if (withHdrLen) {
 			auto slicePosSaver = wrser.StartSlice();
-			enc.Encode(cjson, builder, nullptr);
-		} else {
-			enc.Encode(cjson, builder, nullptr);
 		}
+		enc.Encode(cjson, builder);
 	}
 }
 
@@ -248,7 +248,7 @@ bool QueryResults::Iterator::IsRaw() {
 
 std::string_view QueryResults::Iterator::GetRaw() {
 	readNext();
-	assert(itemParams_.raw);
+	assertrx(itemParams_.raw);
 	return itemParams_.data;
 }
 

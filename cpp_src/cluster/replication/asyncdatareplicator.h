@@ -15,7 +15,7 @@ public:
 	using NsNamesHashSetT = fast_hash_set<string, nocase_hash_str, nocase_equal_str>;
 	using UpdatesQueueT = UpdatesQueuePair<UpdateRecord>;
 
-	AsyncDataReplicator(UpdatesQueueT &, ReindexerImpl &, Clusterizator &);
+	AsyncDataReplicator(UpdatesQueueT &, SharedSyncState<> &, ReindexerImpl &, Clusterizator &);
 
 	void Configure(AsyncReplConfigData config);
 	void Configure(ReplicationConfigData config);
@@ -39,6 +39,7 @@ private:
 	ReplicationStatsCollector statsCollector_;
 	mutable std::mutex mtx_;
 	UpdatesQueueT &updatesQueue_;
+	SharedSyncState<> &syncState_;
 	ReindexerImpl &thisNode_;
 	Clusterizator &clusterizator_;
 	std::deque<AsyncReplThread> replThreads_;

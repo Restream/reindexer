@@ -8,7 +8,7 @@
 namespace reindexer {
 namespace sharding {
 
-constexpr size_t kMaxShardingProxyConnCount = 24;
+constexpr size_t kMaxShardingProxyConnCount = 64;
 constexpr size_t kMaxShardingProxyConnConcurrency = 1024;
 
 RoutingStrategy::RoutingStrategy(const cluster::ShardingConfig &config) : config_(config), keys_(config_) {}
@@ -137,11 +137,6 @@ int RoutingStrategy::GetHostId(std::string_view ns, const Item &item) const {
 	}
 	throw Error(errLogic, "Item does not contain proper sharding key for '%s' (key with name '%s' is expected)", ns, nsIndex.name);
 }
-
-ShardIDsContainer RoutingStrategy::GetHostsIds(std::string_view ns) const { return keys_.GetShardsIds(ns); }
-ShardIDsContainer RoutingStrategy::GetHostsIds() const { return keys_.GetShardsIds(); }
-bool RoutingStrategy::IsShardingKey(std::string_view ns, std::string_view index) const { return keys_.IsShardIndex(ns, index); }
-bool RoutingStrategy::IsSharded(std::string_view ns) const noexcept { return keys_.IsSharded(ns); }
 
 ConnectStrategy::ConnectStrategy(const cluster::ShardingConfig &config, Connections &connections, int thisShard) noexcept
 	: config_(config), connections_(connections), thisShard_(thisShard) {}
@@ -306,7 +301,7 @@ std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::tryConnectToLeader(c
 }
 
 LocatorService::LocatorService(ReindexerImpl &rx, const cluster::ShardingConfig &config)
-	: rx_(rx), config_(config), routingStrategy_(std::make_unique<RoutingStrategy>(config)), actualShardId(config.thisShardId) {}
+	: rx_(rx), config_(config), routingStrategy_(config), actualShardId(config.thisShardId) {}
 
 Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vector<cluster::ShardingConfig::Key> &keys) {
 	switch (fieldType) {
@@ -372,8 +367,9 @@ Error LocatorService::Start() {
 			cfg.SyncRxCoroCount = kMaxShardingProxyConnConcurrency;
 		}
 	}
+	cfg.EnableCompression = true;
 
-	size_t proxyConnCount = cluster::kDefaultShardingProxyConnCount;
+	uint32_t proxyConnCount = cluster::kDefaultShardingProxyConnCount;
 	if (config_.proxyConnCount > 0) {
 		if (size_t(config_.proxyConnCount) < kMaxShardingProxyConnCount) {
 			proxyConnCount = config_.proxyConnCount;
@@ -381,6 +377,7 @@ Error LocatorService::Start() {
 			proxyConnCount = kMaxShardingProxyConnCount;
 		}
 	}
+	const uint32_t proxyConnThreads = config_.proxyConnThreads > 0 ? config_.proxyConnThreads : cluster::kDefaultShardingProxyConnThreads;
 
 	for (const auto &[shardId, hosts] : config_.shards) {
 		Connections connections;
@@ -392,10 +389,10 @@ Error LocatorService::Start() {
 		connections.reserve(hosts.size());
 		for (const string &dsn : hosts) {
 			auto &connection = connections.emplace_back(std::make_shared<client::SyncCoroReindexer>(
-				client::SyncCoroReindexer(cfg, proxyConnCount).WithShardId(int(shardId), true)));
+				client::SyncCoroReindexer(cfg, proxyConnCount, proxyConnThreads).WithShardId(int(shardId), true)));
 
-			logPrintf(LogTrace, "[sharding proxy] Shard %d connects to shard %d via %s. Conns count: %d", ActualShardId(), shardId, dsn,
-					  proxyConnCount);
+			logPrintf(LogInfo, "[sharding proxy] Shard %d connects to shard %d via %s. Conns count: %d, threads count: %d", ActualShardId(),
+					  shardId, dsn, proxyConnCount, proxyConnThreads);
 			status = connection->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
 			if (!status.ok()) {
 				return Error(errLogic, "Error connecting to shard [%s]: %s", dsn, status.what());
@@ -407,9 +404,6 @@ Error LocatorService::Start() {
 	networkMonitor_.Configure(hostsConnections_, config_.shardsAwaitingTimeout, config_.reconnectTimeout);
 	return status;
 }
-
-ShardIDsContainer LocatorService::GetShardId(const Query &q) const { return routingStrategy_->GetHostsIds(q); }
-int LocatorService::GetShardId(std::string_view ns, const Item &item) const { return routingStrategy_->GetHostId(ns, item); }
 
 ConnectionsPtr LocatorService::GetShardsConnections(std::string_view ns, int shardId, Error &status) {
 	bool rebuildCache = false;
@@ -436,20 +430,13 @@ ConnectionsPtr LocatorService::GetShardsConnections(std::string_view ns, int sha
 }
 
 ConnectionsPtr LocatorService::GetShardsConnectionsWithId(const Query &q, Error &status) {
-	ShardIDsContainer ids = routingStrategy_->GetHostsIds(q);
+	ShardIDsContainer ids = routingStrategy_.GetHostsIds(q);
 	assert(ids.size() > 0);
 	if (ids.size() > 1) {
 		return GetShardsConnections(q.Namespace(), -1, status);
 	} else {
 		return GetShardsConnections(q.Namespace(), ids[0], status);
 	}
-}
-
-ConnectionsPtr LocatorService::GetShardsConnections(Error &status) { return GetShardsConnections("", -1, status); }
-
-ShardConnection LocatorService::GetShardConnectionWithId(std::string_view ns, const Item &item, Error &status) {
-	int shardId = routingStrategy_->GetHostId(ns, item);
-	return ShardConnection(GetShardConnection(ns, shardId, status), shardId);
 }
 
 void LocatorService::Shutdown() {
@@ -465,9 +452,9 @@ ConnectionsPtr LocatorService::rebuildConnectionsVector(std::string_view ns, int
 	const bool emptyNsName = ns == "";
 	if (shardId == -1) {
 		if (emptyNsName) {
-			ids = routingStrategy_->GetHostsIds();
+			ids = routingStrategy_.GetHostsIds();
 		} else {
-			ids = routingStrategy_->GetHostsIds(ns);
+			ids = routingStrategy_.GetHostsIds(ns);
 		}
 	} else {
 		ids.push_back(shardId);
@@ -513,7 +500,7 @@ ConnectionsPtr LocatorService::getConnectionsFromCache(std::string_view ns, int 
 
 std::shared_ptr<client::SyncCoroReindexer> LocatorService::GetShardConnection(std::string_view ns, int shardId, Error &status) {
 	if (shardId == ShardingKeyType::NotSetShard) {
-		const auto defaultShard = routingStrategy_->GetDefaultHost(ns);
+		const auto defaultShard = routingStrategy_.GetDefaultHost(ns);
 		if (actualShardId == defaultShard) {
 			return {};
 		}
@@ -533,10 +520,6 @@ std::shared_ptr<client::SyncCoroReindexer> LocatorService::getShardConnection(in
 		return {};
 	}
 	return peekHostForShard(hostsConnections_[shardId], shardId, status);
-}
-
-std::shared_ptr<client::SyncCoroReindexer> LocatorService::peekHostForShard(Connections &connections, int shardId, Error &status) {
-	return ConnectStrategy(config_, connections, ActualShardId()).Connect(shardId, status);
 }
 
 }  // namespace sharding

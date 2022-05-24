@@ -12,7 +12,7 @@ public:
 	typename std::list<T>::iterator end() noexcept { return list_.end(); }
 	typename std::list<T>::const_iterator end() const noexcept { return list_.end(); }
 	template <typename... Args>
-	typename std::list<T>::reference emplace_back(Args&&... args) {
+	typename std::list<T>::reference emplace_back(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
 		if (recycleSize_) {
 			auto it = recycle_.begin();
 			auto& val = *it;
@@ -27,7 +27,7 @@ public:
 			return val;
 		}
 	}
-	typename std::list<T>::iterator erase(typename std::list<T>::iterator it) {
+	typename std::list<T>::iterator erase(typename std::list<T>::iterator it) noexcept(std::is_nothrow_constructible_v<T>) {
 		typename std::list<T>::iterator res;
 		if (recycleSize_ < kRecycleSize) {
 			auto tmp = it++;
@@ -40,6 +40,16 @@ public:
 		}
 		--size_;
 		return res;
+	}
+	void pop_front() noexcept(std::is_nothrow_constructible_v<T>) {
+		if (recycleSize_ < kRecycleSize) {
+			recycle_.splice(recycle_.end(), list_, list_.begin());
+			*(--recycle_.end()) = T();
+			++recycleSize_;
+		} else {
+			list_.pop_front();
+		}
+		--size_;
 	}
 	size_t size() const noexcept { return size_; }
 	bool empty() const noexcept { return !size_; }

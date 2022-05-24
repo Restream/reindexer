@@ -10,11 +10,11 @@ void KbLayout::GetVariants(const std::wstring& data, std::vector<std::pair<std::
 	for (size_t i = 0; i < data.length(); ++i) {
 		auto sym = data[i];
 		if (sym >= ruLettersStartUTF16 && sym <= ruLettersStartUTF16 + ruAlfavitSize - 1) {	 // russian layout
-			assert(sym >= ruLettersStartUTF16 && sym - ruLettersStartUTF16 < ruAlfavitSize);
+			assertrx(sym >= ruLettersStartUTF16 && sym - ruLettersStartUTF16 < ruAlfavitSize);
 			result_string.push_back(ru_layout_[sym - ruLettersStartUTF16]);
 
 		} else if (sym >= allSymbolStartUTF16 && sym < allSymbolStartUTF16 + engAndAllSymbols) {  // en symbol
-			assert(sym >= allSymbolStartUTF16 && sym - allSymbolStartUTF16 < engAndAllSymbols);
+			assertrx(sym >= allSymbolStartUTF16 && sym - allSymbolStartUTF16 < engAndAllSymbols);
 			result_string.push_back(all_symbol_[sym - allSymbolStartUTF16]);
 
 		} else {
@@ -25,7 +25,7 @@ void KbLayout::GetVariants(const std::wstring& data, std::vector<std::pair<std::
 }
 
 void KbLayout::setEnLayout(wchar_t sym, wchar_t data) {
-	assert(((sym >= allSymbolStartUTF16) && (sym - allSymbolStartUTF16 < engAndAllSymbols)));
+	assertrx(((sym >= allSymbolStartUTF16) && (sym - allSymbolStartUTF16 < engAndAllSymbols)));
 	all_symbol_[sym - allSymbolStartUTF16] = data;	// '
 }
 

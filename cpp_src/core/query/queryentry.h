@@ -34,7 +34,7 @@ struct JoinQueryEntry {
 			if (&jqe != &q.joinEntries_.front()) {
 				ser << ' ' << jqe.op_ << ' ';
 			} else {
-				assert(jqe.op_ == OpAnd);
+				assertrx(jqe.op_ == OpAnd);
 			}
 			ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << InvertJoinCondition(jqe.condition_) << ' ' << jqe.index_;
 		}
@@ -83,12 +83,22 @@ private:
 struct AlwaysFalse {};
 constexpr bool operator==(AlwaysFalse, AlwaysFalse) noexcept { return true; }
 
-struct EqualPosition : public h_vector<unsigned, 2> {};
-
 class JsonBuilder;
 
-class QueryEntries : public ExpressionTree<OpType, Bracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse> {
-	using Base = ExpressionTree<OpType, Bracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>;
+using EqualPosition_t = h_vector<std::string, 2>;
+using EqualPositions_t = std::vector<EqualPosition_t>;
+
+struct QueryEntriesBracket : public Bracket {
+	using Bracket::Bracket;
+	bool operator==(const QueryEntriesBracket &other) const noexcept {
+		return Bracket::operator==(other) && equalPositions == other.equalPositions;
+	}
+	EqualPositions_t equalPositions;
+};
+
+class QueryEntries
+	: public ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse> {
+	using Base = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>;
 	QueryEntries(Base &&b) : Base{std::move(b)} {}
 
 public:
@@ -98,10 +108,6 @@ public:
 	QueryEntries &operator=(QueryEntries &&) = default;
 	QueryEntries MakeLazyCopy() & { return {makeLazyCopy()}; }
 
-	template <typename T>
-	std::pair<unsigned, EqualPosition> DetermineEqualPositionIndexes(const T &fields) const;
-	template <typename T>
-	EqualPosition DetermineEqualPositionIndexes(unsigned start, const T &fields) const;
 	void ToDsl(const Query &parentQuery, JsonBuilder &builder) const { return toDsl(cbegin(), cend(), parentQuery, builder); }
 	void WriteSQLWhere(const Query &parentQuery, WrSerializer &, bool stripArgs) const;
 	void Serialize(WrSerializer &ser) const { serialize(cbegin(), cend(), ser); }
@@ -114,6 +120,8 @@ public:
 		dump(0, cbegin(), cend(), joinedSelectors, ser);
 		return std::string{ser.Slice()};
 	}
+
+	EqualPositions_t equalPositions;
 
 private:
 	static void toDsl(const_iterator it, const_iterator to, const Query &parentQuery, JsonBuilder &);
@@ -133,7 +141,7 @@ private:
 				ser << it->operation << ' ';
 			}
 			it->InvokeAppropriate<void>(
-				[&](const Bracket &) {
+				[&](const QueryEntriesBracket &) {
 					ser << "(\n";
 					dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, ser);
 					for (size_t i = 0; i < level; ++i) {
@@ -148,15 +156,6 @@ private:
 		}
 	}
 };
-
-extern template EqualPosition QueryEntries::DetermineEqualPositionIndexes<std::vector<std::string>>(
-	unsigned start, const std::vector<std::string> &fields) const;
-extern template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<std::vector<std::string>>(
-	const std::vector<std::string> &fields) const;
-extern template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<h_vector<std::string, 4>>(
-	const h_vector<std::string, 4> &fields) const;
-extern template std::pair<unsigned, EqualPosition> QueryEntries::DetermineEqualPositionIndexes<std::initializer_list<std::string>>(
-	const std::initializer_list<std::string> &fields) const;
 
 struct UpdateEntry {
 	UpdateEntry() {}

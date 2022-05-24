@@ -11,13 +11,13 @@
 namespace reindexer {
 
 void LocalQueryResults::AddNamespace(std::shared_ptr<NamespaceImpl> ns, bool noLock, const RdxContext &ctx) {
-	assert(noLock);
+	assertrx(noLock);
 	const NamespaceImpl *nsPtr = ns.get();
 	auto strHolder = ns->StrHolder(noLock, ctx);
 	const auto it =
 		std::find_if(nsData_.cbegin(), nsData_.cend(), [nsPtr](const NsDataHolder &nsData) { return nsData.ns.get() == nsPtr; });
 	if (it != nsData_.cend()) {
-		assert(it->strHolder.get() == strHolder.get());
+		assertrx(it->strHolder.get() == strHolder.get());
 		return;
 	}
 	nsData_.emplace_back(std::move(ns), std::move(strHolder));
@@ -25,7 +25,7 @@ void LocalQueryResults::AddNamespace(std::shared_ptr<NamespaceImpl> ns, bool noL
 
 void LocalQueryResults::RemoveNamespace(const NamespaceImpl *ns) {
 	const auto it = std::find_if(nsData_.begin(), nsData_.end(), [ns](const NsDataHolder &nsData) { return nsData.ns.get() == ns; });
-	assert(it != nsData_.end());
+	assertrx(it != nsData_.end());
 	nsData_.erase(it);
 }
 
@@ -53,7 +53,7 @@ LocalQueryResults::LocalQueryResults(const ItemRefVector::const_iterator &begin,
 LocalQueryResults &LocalQueryResults::operator=(LocalQueryResults &&obj) noexcept {
 	if (this != &obj) {
 		items_ = std::move(obj.items_);
-		assert(!obj.items_.size());
+		assertrx(!obj.items_.size());
 		joined_ = std::move(obj.joined_);
 		aggregationResults = std::move(obj.aggregationResults);
 		totalCount = obj.totalCount;
@@ -164,7 +164,7 @@ private:
 
 void LocalQueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	auto &itemRef = items_[idx];
-	assert(ctxs.size() > itemRef.Nsid());
+	assertrx(ctxs.size() > itemRef.Nsid());
 	auto &ctx = ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
@@ -174,34 +174,42 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 	ConstPayload pl(ctx.type_, itemRef.Value());
 	JsonEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
 	JsonBuilder builder(ser, ObjType::TypePlain);
-
 	if (!joined_.empty()) {
 		joins::ItemIterator itemIt = (begin() + idx).GetJoined();
 		if (itemIt.getJoinedItemsCount() > 0) {
 			EncoderDatasourceWithJoins joinsDs(itemIt, ctxs, GetJoinedNsCtxIndex(itemRef.Nsid()));
-			if (needOutputRank) {
-				AdditionalDatasource ds(itemRef.Proc(), &joinsDs);
-				encoder.Encode(&pl, builder, &ds);
-			} else {
-				AdditionalDatasource ds(&joinsDs);
-				encoder.Encode(&pl, builder, &ds);
+			h_vector<IAdditionalDatasource<JsonBuilder> *, 2> dss;
+			AdditionalDatasource ds = needOutputRank ? AdditionalDatasource(itemRef.Proc(), &joinsDs) : AdditionalDatasource(&joinsDs);
+			dss.push_back(&ds);
+			AdditionalDatasourceShardId dsShardId(outputShardId);
+			if (outputShardId != ShardingKeyType::ProxyOff) {
+				dss.push_back(&dsShardId);
 			}
+			encoder.Encode(&pl, builder, dss);
+
 			return;
 		}
 	}
+
+	h_vector<IAdditionalDatasource<JsonBuilder> *, 2> dss;
+
+	AdditionalDatasource ds(itemRef.Proc(), nullptr);
 	if (needOutputRank) {
-		AdditionalDatasource ds(itemRef.Proc(), nullptr);
-		encoder.Encode(&pl, builder, &ds);
-	} else {
-		encoder.Encode(&pl, builder);
+		dss.push_back(&ds);
 	}
+	AdditionalDatasourceShardId dsShardId(outputShardId);
+	if (outputShardId != ShardingKeyType::ProxyOff) {
+		dss.push_back(&dsShardId);
+	}
+
+	encoder.Encode(&pl, builder, dss);
 }
 
 joins::ItemIterator LocalQueryResults::Iterator::GetJoined() { return reindexer::joins::ItemIterator::CreateFrom(*this); }
 
 Error LocalQueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
 	auto &itemRef = qr_->items_[idx_];
-	assert(qr_->ctxs.size() > itemRef.Nsid());
+	assertrx(qr_->ctxs.size() > itemRef.Nsid());
 	auto &ctx = qr_->ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
@@ -224,7 +232,7 @@ Error LocalQueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrL
 
 Error LocalQueryResults::Iterator::GetProtobuf(WrSerializer &wrser, bool withHdrLen) {
 	auto &itemRef = qr_->items_[idx_];
-	assert(qr_->ctxs.size() > itemRef.Nsid());
+	assertrx(qr_->ctxs.size() > itemRef.Nsid());
 	auto &ctx = qr_->ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
@@ -262,7 +270,7 @@ Error LocalQueryResults::Iterator::GetJSON(WrSerializer &ser, bool withHdrLen) {
 Error LocalQueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
 	try {
 		auto &itemRef = qr_->items_[idx_];
-		assert(qr_->ctxs.size() > itemRef.Nsid());
+		assertrx(qr_->ctxs.size() > itemRef.Nsid());
 		auto &ctx = qr_->ctxs[itemRef.Nsid()];
 
 		if (itemRef.Value().IsFree()) {
@@ -292,14 +300,14 @@ bool LocalQueryResults::Iterator::IsRaw() const {
 }
 std::string_view LocalQueryResults::Iterator::GetRaw() const {
 	auto &itemRef = qr_->items_[idx_];
-	assert(itemRef.Raw());
+	assertrx(itemRef.Raw());
 	return std::string_view(reinterpret_cast<char *>(itemRef.Value().Ptr()), itemRef.Value().GetCapacity());
 }
 
 Item LocalQueryResults::Iterator::GetItem(bool enableHold) {
 	auto &itemRef = qr_->items_[idx_];
 
-	assert(qr_->ctxs.size() > itemRef.Nsid());
+	assertrx(qr_->ctxs.size() > itemRef.Nsid());
 	auto &ctx = qr_->ctxs[itemRef.Nsid()];
 
 	if (itemRef.Value().IsFree()) {
@@ -340,7 +348,7 @@ void LocalQueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 			if (auto ns{ritem->GetNamespace()}; ns) {
 				Payload{ns->ns_->payloadType_, items_.back().Value()}.CopyStrings(stringsHolder_);
 			} else {
-				assert(ctxs.size() == 1);
+				assertrx(ctxs.size() == 1);
 				Payload{ctxs.back().type_, items_.back().Value()}.CopyStrings(stringsHolder_);
 			}
 		}
@@ -348,38 +356,38 @@ void LocalQueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 }
 
 const TagsMatcher &LocalQueryResults::getTagsMatcher(int nsid) const {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].tagsMatcher_;
 }
 
 const PayloadType &LocalQueryResults::getPayloadType(int nsid) const {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].type_;
 }
 
 const FieldsSet &LocalQueryResults::getFieldsFilter(int nsid) const {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].fieldsFilter_;
 }
 
 TagsMatcher &LocalQueryResults::getTagsMatcher(int nsid) {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].tagsMatcher_;
 }
 
 PayloadType &LocalQueryResults::getPayloadType(int nsid) {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].type_;
 }
 
 std::shared_ptr<const Schema> LocalQueryResults::getSchema(int nsid) const {
-	assert(nsid < int(ctxs.size()));
+	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].schema_;
 }
 
 int LocalQueryResults::getNsNumber(int nsid) const {
-	assert(nsid < int(ctxs.size()));
-	assert(ctxs[nsid].schema_);
+	assertrx(nsid < int(ctxs.size()));
+	assertrx(ctxs[nsid].schema_);
 	return ctxs[nsid].schema_->GetProtobufNsNumber();
 }
 

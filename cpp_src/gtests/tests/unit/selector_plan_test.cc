@@ -57,7 +57,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 				Error err = rt.reindexer->Select(query, qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				const std::string& explain = qr.GetExplainResults();
-				// std::cout << query.GetSQL() << '\n' << explain << std::endl;
+				// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
 				ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false}));
 				if (searchByBtreeField) {
@@ -87,7 +87,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 					Error err = rt.reindexer->Select(query, qr);
 					ASSERT_TRUE(err.ok()) << err.what();
 					const std::string& explain = qr.GetExplainResults();
-					// std::cout << query.GetSQL() << '\n' << explain << std::endl;
+					// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
@@ -116,7 +116,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 						Error err = rt.reindexer->Select(query, qr);
 						ASSERT_TRUE(err.ok()) << err.what();
 						const std::string& explain = qr.GetExplainResults();
-						// std::cout << query.GetSQL() << '\n' << explain << std::endl;
+						// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
 						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false}));
 						if (sortByBtreeField) {
@@ -166,7 +166,7 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 							Error err = rt.reindexer->Select(query, qr);
 							ASSERT_TRUE(err.ok()) << err.what();
 							const std::string& explain = qr.GetExplainResults();
-							// std::cout << query.GetSQL() << '\n' << explain << std::endl;
+							// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false}));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
@@ -207,7 +207,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 				Error err = rt.reindexer->Select(query, qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				const std::string& explain = qr.GetExplainResults();
-				// std::cout << query.GetSQL() << '\n' << explain << std::endl;
+				// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
 				ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {searchByBtreeField}));
 				if (searchByBtreeField) {
@@ -241,7 +241,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 					Error err = rt.reindexer->Select(query, qr);
 					ASSERT_TRUE(err.ok()) << err.what();
 					const std::string& explain = qr.GetExplainResults();
-					// std::cout << query.GetSQL() << '\n' << explain << std::endl;
+					// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
 					const auto cost = GetJsonFieldValues<int>(explain, "cost");
 					ASSERT_EQ(2, cost.size());
@@ -280,7 +280,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 						Error err = rt.reindexer->Select(query, qr);
 						ASSERT_TRUE(err.ok()) << err.what();
 						const std::string& explain = qr.GetExplainResults();
-						// std::cout << query.GetSQL() << '\n' << explain << std::endl;
+						// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
 						const auto matched = GetJsonFieldValues<int>(explain, "matched");
 						if (sortByBtreeField) {
@@ -351,7 +351,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 							Error err = rt.reindexer->Select(query, qr);
 							ASSERT_TRUE(err.ok()) << err.what();
 							const std::string& explain = qr.GetExplainResults();
-							// std::cout << query.GetSQL() << '\n' << explain << std::endl;
+							// TestCout() << query.GetSQL() << '\n' << explain << std::endl;
 
 							const auto cost = GetJsonFieldValues<int>(explain, "cost");
 							ASSERT_EQ(2, cost.size());

@@ -78,7 +78,7 @@ bool LRUCache<K, V, hash, equal>::eraseLRU() {
 			return false;
 		}
 		auto mIt = items_.find(**it);
-		assert(mIt != items_.end());
+		assertrx(mIt != items_.end());
 
 		size_t oldSize = sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size();
 

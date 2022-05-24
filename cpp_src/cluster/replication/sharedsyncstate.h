@@ -55,7 +55,7 @@ public:
 		shared_lock<MtxT> lck(mtx_);
 		while (!isInitialSyncDone(name, hash)) {
 			if (terminated_) {
-				throw Error(errTerminated, "Cluster was terimated");
+				throw Error(errTerminated, "Cluster was terminated");
 			}
 			if (next_.role == RaftInfo::Role::Follower) {
 				throw Error(errWrongReplicationData, "Node role was changed to follower");
@@ -68,7 +68,7 @@ public:
 		shared_lock<MtxT> lck(mtx_);
 		while (!isInitialSyncDone()) {
 			if (terminated_) {
-				throw Error(errTerminated, "Cluster was terimated");
+				throw Error(errTerminated, "Cluster was terminated");
 			}
 			if (next_.role == RaftInfo::Role::Follower) {
 				throw Error(errWrongReplicationData, "Node role was changed to follower");

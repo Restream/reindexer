@@ -41,17 +41,28 @@ Error RaftManager::SendDesiredLeaderId(int nextServerId) {
 			break;
 		}
 	}
-	if (nextServerNodeIndex == nodes_.size()) {
-		return Error(errLogic, "Cluster config. Cannot find node index for ServerId(%d)", nextServerId);
+
+	std::shared_ptr<void> CloseConnection(nullptr, [this](void*) {
+		if (GetLeaderId() != serverId_) {  // leader node clients, used for pinging
+			coroutine::wait_group wgStop;
+			for (auto& node : nodes_) {
+				loop_.spawn(wgStop, [&node]() { node.client.Stop(); });
+			}
+			wgStop.wait();
+		}
+	});
+
+	if (nextServerNodeIndex != nodes_.size()) {
+		Error err = clientStatus(nextServerNodeIndex);
+		if (!err.ok()) {
+			return Error(err.code(), "Target node %s is not available.", nodes_[nextServerNodeIndex].dsn);
+		}
 	}
 
-	Error err = sendDesiredServerIdToNode(nextServerNodeIndex, nextServerId);
-	if (!err.ok()) {
-		return err;
-	}
-	uint32_t okCount = 2;
+	uint32_t okCount = 1;
 	coroutine::wait_group wg;
 	std::string errString;
+
 	for (size_t nodeId = 0; nodeId < nodes_.size(); ++nodeId) {
 		if (nodeId == nextServerNodeIndex) {
 			continue;
@@ -70,9 +81,18 @@ Error RaftManager::SendDesiredLeaderId(int nextServerId) {
 		});
 	}
 	wg.wait();
-	if (okCount > GetConsensusForN(nodes_.size() + 1)) {
+	if (nextServerNodeIndex != nodes_.size()) {
+		Error err = sendDesiredServerIdToNode(nextServerNodeIndex, nextServerId);
+		if (!err.ok()) {
+			return err;
+		}
+		okCount++;
+	}
+
+	if (okCount >= GetConsensusForN(nodes_.size() + 1)) {
 		return errOK;
 	}
+
 	return Error(errNetwork, "Can't send nextLeaderId to servers okCount %d err: %s", okCount, errString);
 }
 
@@ -80,11 +100,13 @@ RaftInfo::Role RaftManager::Elections() {
 	std::vector<coroutine::routine_t> succeedRoutines;
 	succeedRoutines.reserve(nodes_.size());
 	while (!terminate_.load()) {
-		int32_t term = beginElectionsTerm();
-		logPrintf(LogInfo, "[cluster:elections] Starting new elections term for %d. Term number: %d", serverId_, term);
 		const int nextServerId = nextServerId_.GetNextServerId();
+		int32_t term = beginElectionsTerm(nextServerId);
+		logPrintf(LogInfo, "[cluster:elections] Starting new elections term for %d. Term number: %d", serverId_, term);
 		if (nextServerId != -1 && nextServerId != serverId_) {
 			endElections(term, RaftInfo::Role::Follower);
+			logPrintf(LogInfo, "[cluster:elections] Skipping elections (desired leader id is %d)", serverId_, nextServerId);
+			return RaftInfo::Role::Follower;
 		}
 		const bool isDesiredLeader = (nextServerId == serverId_);
 		coroutine::wait_group wg;
@@ -149,7 +171,9 @@ RaftInfo::Role RaftManager::Elections() {
 				}
 			});
 		}
+
 		RaftInfo::Role result = nodes_.size() ? RaftInfo::Role::Follower : RaftInfo::Role::Leader;
+
 		while (wg.wait_count()) {
 			wg.wait_next();
 			if (isConsensus(electionsStat.succeedPhase2)) {
@@ -157,6 +181,7 @@ RaftInfo::Role RaftManager::Elections() {
 				if (endElections(term, result)) {
 					logPrintf(LogInfo, "[cluster:elections] %d: end elections with role: leader", serverId_);
 					wg.wait();
+
 					return result;
 				}
 			}
@@ -214,6 +239,7 @@ Error RaftManager::SuggestLeader(const NodeData& suggestion, NodeData& response)
 				if (nextServerId != -1) {
 					sId = nextServerId;
 				}
+
 				newVoteData = setLeaderId(setTerm(oldVoteData, suggestion.electionsTerm), sId);
 				if (voteData_.compare_exchange_strong(oldVoteData, newVoteData)) {
 					response.serverId = sId;
@@ -318,7 +344,7 @@ void RaftManager::randomizedSleep(net::ev::dynamic_loop& loop, std::chrono::mill
 	loop.sleep(interval);
 }
 
-int32_t RaftManager::beginElectionsTerm() {
+int32_t RaftManager::beginElectionsTerm(int presetLeader) {
 	int64_t oldVoteData, newVoteData;
 	int32_t term;
 	oldVoteData = voteData_.load();
@@ -326,7 +352,8 @@ int32_t RaftManager::beginElectionsTerm() {
 	do {
 		oldRole = getRole(oldVoteData);
 		term = getTerm(oldVoteData) + 1;
-		newVoteData = setLeaderId(setRole(setTerm(oldVoteData, term), RaftInfo::Role::Candidate), serverId_);
+		newVoteData =
+			setLeaderId(setRole(setTerm(oldVoteData, term), RaftInfo::Role::Candidate), presetLeader >= 0 ? presetLeader : serverId_);
 	} while (!voteData_.compare_exchange_strong(oldVoteData, newVoteData));
 	logPrintf(LogTrace, "[cluster:elections] %d: Role has been switched to candidate from %s", serverId_, RaftInfo::RoleToStr(oldRole));
 	if (oldRole == RaftInfo::Role::Leader) {
@@ -367,15 +394,23 @@ bool RaftManager::endElections(int32_t term, RaftInfo::Role result) {
 
 bool RaftManager::isConsensus(size_t num) const noexcept { return num >= GetConsensusForN(nodes_.size() + 1); }
 
-Error RaftManager::sendDesiredServerIdToNode(size_t index, int nextServerId) {
+Error RaftManager::clientStatus(size_t index) {
 	Error err;
-	if (!nodes_[index].client.Status().ok()) {
+	if (!nodes_[index].client.Status(true).ok()) {
 		err = nodes_[index].client.Connect(nodes_[index].dsn, loop_, client::ConnectOpts().WithExpectedClusterID(clusterID_));
+		if (err.ok()) {
+			err = nodes_[index].client.Status(true);
+		}
 	}
+	return err;
+}
+
+Error RaftManager::sendDesiredServerIdToNode(size_t index, int nextServerId) {
+	Error err = clientStatus(index);
 	if (err.ok()) {
 		logPrintf(LogTrace, "[raftmanager] %d Sending desired server ID (%d) to node with server ID %d", serverId_, nextServerId,
 				  nodes_[index].serverId);
-		err = nodes_[index].client.SetDesiredLeaderId(nextServerId);
+		err = nodes_[index].client.WithTimeout(kDesiredLeaderTimeout).SetDesiredLeaderId(nextServerId);
 	}
 	return err;
 }

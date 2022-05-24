@@ -1,20 +1,23 @@
 #pragma once
 
 #include "client/cororpcclient.h"
+#include "estl/shared_mutex.h"
 
 namespace reindexer {
 namespace client {
 
 struct ConnectionsPoolData {
-	ConnectionsPoolData(size_t connCount, const CoroReindexerConfig &cfg) {
+	ConnectionsPoolData(size_t connCount, const CoroReindexerConfig &cfg, INamespaces::PtrT sharedNss) {
 		assert(connCount);
+		assert(sharedNss);
+		sharedNamespaces = std::move(sharedNss);
 		for (size_t i = 0; i < connCount; ++i) {
 			clients.emplace_back(cfg, sharedNamespaces);
 		}
 	}
 
 	std::deque<CoroRPCClient> clients;
-	Namespaces::PtrT sharedNamespaces = make_intrusive<Namespaces::IntrusiveT>();
+	INamespaces::PtrT sharedNamespaces;
 };
 
 template <typename CmdT>

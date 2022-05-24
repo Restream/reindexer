@@ -7,8 +7,8 @@
 namespace reindexer {
 namespace client {
 
-SyncCoroReindexer::SyncCoroReindexer(const CoroReindexerConfig& config, size_t connCount)
-	: impl_(new SyncCoroReindexerImpl(config, connCount)), ctx_() {}
+SyncCoroReindexer::SyncCoroReindexer(const CoroReindexerConfig& config, uint32_t connCount, uint32_t threads)
+	: impl_(new SyncCoroReindexerImpl(config, connCount, threads)), ctx_() {}
 SyncCoroReindexer::~SyncCoroReindexer() = default;
 
 Error SyncCoroReindexer::Connect(const string& dsn, const client::ConnectOpts& opts) { return impl_->Connect(dsn, opts); }

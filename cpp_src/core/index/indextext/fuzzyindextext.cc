@@ -29,7 +29,7 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) {
 	for (auto it = result.data_->begin(); it != result.data_->end(); ++it) {
 		it->proc_ *= coof;
 		if (it->proc_ < GetConfig()->minOkProc) continue;
-		assert(it->id_ < this->vdocs_.size());
+		assertrx(it->id_ < this->vdocs_.size());
 		const auto& id_set = this->vdocs_[it->id_].keyEntry->Sorted(0);
 		fctx->Add(id_set.begin(), id_set.end(), it->proc_);
 		mergedIds->Append(id_set.begin(), id_set.end(), IdSet::Unordered);

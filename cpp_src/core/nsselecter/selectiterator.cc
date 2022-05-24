@@ -33,7 +33,7 @@ void SelectIterator::Start(bool reverse) {
 			}
 		} else {
 			if (it->useBtree_) {
-				assert(it->set_);
+				assertrx(it->set_);
 				if (reverse) {
 					it->setrbegin_ = it->set_->rbegin();
 					it->setrend_ = it->set_->rend();
@@ -240,7 +240,7 @@ void SelectIterator::ExcludeLastSet(const PayloadValue &value, IdType rowId, IdT
 			begin()->indexForwardIter_->ExcludeLastSet();
 		}
 	} else if (!End() && lastIt_ != end() && lastVal_ == rowId) {
-		assert(!lastIt_->isRange_);
+		assertrx(!lastIt_->isRange_);
 		if (lastIt_->useBtree_) {
 			lastIt_->itset_ = lastIt_->setend_;
 			lastIt_->ritset_ = lastIt_->setrend_;

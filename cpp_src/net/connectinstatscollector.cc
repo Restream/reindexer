@@ -46,7 +46,7 @@ void connection_stats_collector::update_send_buf_size(size_t size) noexcept {
 }
 
 void connection_stats_collector::stats_check_cb(ev::periodic&, int) noexcept {
-	assert(stat_);
+	assertrx(stat_);
 	const uint64_t kAvgPeriod = 10;
 
 	auto curRecvBytes = stat_->recv_bytes.load(std::memory_order_relaxed);

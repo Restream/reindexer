@@ -107,9 +107,9 @@ public:
 		}
 		return outBuf;
 	}
-	std::string RandString() {
+	std::string RandString(uint8_t len = 0) {
 		std::string res;
-		uint8_t len = rand() % 4 + 4;
+		if (len == 0) len = rand() % 4 + 4;
 		res.resize(len);
 		for (int i = 0; i < len; ++i) {
 			int f = rand() % letters.size();

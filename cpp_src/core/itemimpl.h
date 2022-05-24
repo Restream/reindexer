@@ -94,6 +94,7 @@ public:
 	}
 	const vector<string> &GetPrecepts() noexcept { return precepts_; }
 	void Unsafe(bool enable) noexcept { unsafe_ = enable; }
+	bool IsUnsafe() const noexcept { return unsafe_; }
 	void Clear() {
 		tagsMatcher_ = TagsMatcher();
 		precepts_.clear();

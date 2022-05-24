@@ -109,7 +109,7 @@ void ReplicationApi::ForceSync() {
 	awaitForceSync.join();
 }
 
-void ReplicationApi::SwitchMaster(size_t id, AsyncReplicationConfigTest::NsSet namespaces) {
+void ReplicationApi::SwitchMaster(size_t id, AsyncReplicationConfigTest::NsSet namespaces, std::string replMode) {
 	if (id == masterId_) return;
 	masterId_ = id;
 
@@ -127,7 +127,7 @@ void ReplicationApi::SwitchMaster(size_t id, AsyncReplicationConfigTest::NsSet n
 		}
 	}
 	AsyncReplicationConfigTest config("leader", std::move(followers), false, true, id, "node" + std::to_string(masterId_),
-									  std::move(namespaces));
+									  std::move(namespaces), std::move(replMode));
 	GetSrv(masterId_)->SetReplicationConfig(config);
 }
 

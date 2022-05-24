@@ -32,6 +32,7 @@ SyncCoroQueryResults::~SyncCoroQueryResults() {
 	if (rx_ && results_.holdsRemoteData()) {
 		rx_->closeResults(*this);
 	}
+	results_.setClosed();
 }
 
 TagsMatcher SyncCoroQueryResults::GetTagsMatcher(int nsid) const { return results_.GetTagsMatcher(nsid); }

@@ -34,15 +34,15 @@ public:
 	// Get array as span of typed elements
 	template <typename Elem>
 	span<Elem> GetArray(int field) {
-		assert(field < Type().NumFields());
-		assert(Type().Field(field).IsArray());
+		assertrx(field < Type().NumFields());
+		assertrx(Type().Field(field).IsArray());
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
 		return span<Elem>(reinterpret_cast<Elem *>(v_->Ptr() + arr->offset), arr->len);
 	}
 	// Get array len
 	int GetArrayLen(int field) const {
-		assert(field < Type().NumFields());
-		assert(Type().Field(field).IsArray());
+		assertrx(field < Type().NumFields());
+		assertrx(Type().Field(field).IsArray());
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
 		return arr->len;
 	}

@@ -9,7 +9,7 @@ namespace cluster {
 Clusterizator::Clusterizator(ReindexerImpl& thisNode, size_t maxUpdatesSize)
 	: updatesQueue_(maxUpdatesSize),
 	  clusterReplicator_(updatesQueue_, sharedSyncState_, thisNode),
-	  asyncReplicator_(updatesQueue_, thisNode, *this) {}
+	  asyncReplicator_(updatesQueue_, sharedSyncState_, thisNode, *this) {}
 
 void Clusterizator::Configure(ReplicationConfigData replConfig) {
 	std::unique_lock<std::mutex> lck(mtx_);

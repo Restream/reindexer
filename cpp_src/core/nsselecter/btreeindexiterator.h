@@ -27,7 +27,7 @@ public:
 	}
 
 	bool Next() final override {
-		assert(impl_);
+		assertrx(impl_);
 		if (impl_->isOver()) {
 			return impl_->finishIteration();
 		}
@@ -42,12 +42,12 @@ public:
 	}
 
 	void ExcludeLastSet() override {
-		assert(impl_);
+		assertrx(impl_);
 		impl_->shiftToNextIdset();
 	}
 
 	IdType Value() const override final {
-		assert(impl_);
+		assertrx(impl_);
 		return impl_->getValue();
 	}
 	size_t GetMaxIterations(size_t limitIters) final {

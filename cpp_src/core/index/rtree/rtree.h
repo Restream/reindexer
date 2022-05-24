@@ -66,17 +66,17 @@ private:
 		value_type& operator*() const noexcept { return *it_; }
 		value_type* operator->() const noexcept { return it_; }
 		bool operator==(const Iterator<node_base_type>& other) const noexcept {
-			assert(it_ != other.it_ || leaf_ == other.leaf_);
+			assertrx(it_ != other.it_ || leaf_ == other.leaf_);
 			return it_ == other.it_;
 		}
 		bool operator==(const Iterator<const node_base_type>& other) const noexcept {
-			assert(it_ != other.it_ || leaf_ == other.leaf_);
+			assertrx(it_ != other.it_ || leaf_ == other.leaf_);
 			return it_ == other.it_;
 		}
 		bool operator!=(const Iterator<node_base_type>& other) const noexcept { return !operator==(other); }
 		bool operator!=(const Iterator<const node_base_type>& other) const noexcept { return !operator==(other); }
 		Iterator& operator++() noexcept {
-			assert(it_ != leaf_->data_.end());
+			assertrx(it_ != leaf_->data_.end());
 			++it_;
 			if (it_ == leaf_->data_.end()) {
 				NodeBaseT* n = leaf_;
@@ -87,9 +87,9 @@ private:
 					auto& childrenOfParent = n->Parent()->data_;
 					auto i = std::find_if(childrenOfParent.begin(), childrenOfParent.end(),
 										  [n](const std::unique_ptr<node_base_type>& v) { return n == v.get(); });
-					assert(i != childrenOfParent.end());
+					assertrx(i != childrenOfParent.end());
 					++i;
-					assert(i != childrenOfParent.end());
+					assertrx(i != childrenOfParent.end());
 					*this = (*i)->begin();
 				}
 			}
@@ -189,7 +189,7 @@ private:
 				insertedIt = iterator{this, data_.begin() + (data_.size() - 1)};
 				return {};
 			} else {
-				assert(splitAvailable);
+				assertrx(splitAvailable);
 				(void)splitAvailable;
 				SplitterT splitter{std::move(v), *this, &insertedIt};
 				return splitter.Split();
@@ -323,21 +323,21 @@ private:
 		std::unique_ptr<NodeBase> Clone() const override { return std::unique_ptr<NodeBase>{new Node{*this}}; }
 
 		const_iterator cbegin() const noexcept override {
-			assert(!data_.empty());
+			assertrx(!data_.empty());
 			return data_[0]->cbegin();
 		}
 		const_iterator begin() const noexcept override { return cbegin(); }
 		iterator begin() noexcept override {
-			assert(!data_.empty());
+			assertrx(!data_.empty());
 			return data_[0]->begin();
 		}
 		const_iterator cend() const noexcept override {
-			assert(!data_.empty());
+			assertrx(!data_.empty());
 			return data_.back()->cend();
 		}
 		const_iterator end() const noexcept override { return cend(); }
 		iterator end() noexcept override {
-			assert(!data_.empty());
+			assertrx(!data_.empty());
 			return data_.back()->end();
 		}
 
@@ -414,7 +414,7 @@ private:
 		}
 
 		double AreaIncrease(const reindexer::Rectangle& r) const noexcept override {
-			assert(!data_.empty());
+			assertrx(!data_.empty());
 			return SplitterT::AreaIncrease(this->BoundRect(), r);
 		}
 
@@ -451,7 +451,7 @@ private:
 			while (i < data_.size() && data_[i].get() != node) {
 				++i;
 			}
-			assert(i < data_.size());
+			assertrx(i < data_.size());
 			condenseTree(i);
 			if (data_.size() < MinEntries && this->Parent()) {
 				this->Parent()->condenseTree(this);
@@ -463,9 +463,9 @@ private:
 		}
 
 		void condenseTree(size_t deletingNode) {
-			assert(deletingNode < data_.size());
+			assertrx(deletingNode < data_.size());
 			if (!this->Parent() && data_.size() == 1) {
-				assert(data_[0]->IsLeaf());
+				assertrx(data_[0]->IsLeaf());
 				static_cast<Leaf*>(data_[0].get())->adjustBoundRect();
 				this->SetBoundRect(data_[0]->BoundRect());
 				return;
@@ -477,7 +477,7 @@ private:
 				iterator tmpIt{begin()};
 				for (auto& v : delLeaf->data_) {
 					const auto splittedNodes{insert(std::move(v), tmpIt, false)};
-					assert(!splittedNodes.first);
+					assertrx(!splittedNodes.first);
 				}
 			} else {
 				Node* n{static_cast<Node*>(data_[deletingNode].get())};
@@ -505,7 +505,7 @@ private:
 		}
 
 		void adjustBoundRect() {
-			assert(!data_.empty());
+			assertrx(!data_.empty());
 			auto newBoundRect{data_[0]->BoundRect()};
 			for (size_t i = 1; i < data_.size(); ++i) {
 				newBoundRect = boundRect(newBoundRect, data_[i]->BoundRect());

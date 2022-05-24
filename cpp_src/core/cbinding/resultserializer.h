@@ -26,8 +26,8 @@ public:
 
 private:
 	void putQueryParams(const QueryResults* query);
-	template <typename QrT>
-	void putItemParams(const QrT* result, int idx, bool useOffset, int shardId, QueryResults::ProxiedRefsStorage* storage);
+	template <typename ItT>
+	void putItemParams(ItT& it, int shardId, QueryResults::ProxiedRefsStorage* storage);
 	void putExtraParams(const QueryResults* query);
 	void putPayloadType(const QueryResults* results, int nsId);
 	ResultFetchOpts opts_;

@@ -159,7 +159,7 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &str
 	int delcnt = 0;
 	if (key.Type() == KeyValueNull) {
 		delcnt = this->empty_ids_.Unsorted().Erase(id);
-		assert(delcnt);
+		assertrx(delcnt);
 		this->isBuilt_ = false;
 		if (cache_) cache_.reset();
 		clearCache = true;
@@ -336,7 +336,7 @@ void IndexUnordered<T>::Commit() {
 	if (tracker_.isCompleteUpdated()) {
 		for (auto &keyIt : this->idx_map) {
 			keyIt.second.Unsorted().Commit();
-			assert(keyIt.second.Unsorted().size());
+			assertrx(keyIt.second.Unsorted().size());
 		}
 	} else {
 		tracker_.commitUpdated(idx_map);

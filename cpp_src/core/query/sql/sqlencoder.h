@@ -46,7 +46,7 @@ protected:
 	/// Builds a print version of all equal_position() functions in query.
 	/// @param ser - serializer to store SQL string
 	/// @param parenthesisIndex - index of current parenthesis
-	void dumpEqualPositions(WrSerializer &ser, int parenthesisIndex) const;
+	void dumpEqualPositions(WrSerializer &ser, const EqualPositions_t &) const;
 
 	/// Builds a print version of all where condition entries.
 	/// @param from - iterator to first entry

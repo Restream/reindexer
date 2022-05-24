@@ -37,11 +37,13 @@ vector<string> SQLSuggester::GetSuggestions(std::string_view q, size_t pos, Enum
 }
 
 std::unordered_map<int, std::set<string>> sqlTokenMatchings = {
-	{Start, {"explain", "select", "delete", "update", "truncate"}},
-	{StartAfterExplain, {"select", "delete", "update"}},
+	{Start, {"explain", "select", "delete", "update", "truncate", "local"}},
+	{StartAfterLocal, {"explain", "select"}},
+	{StartAfterExplain, {"select", "delete", "update", "local"}},
+	{StartAfterLocalExplain, {"select"}},
 	{AggregationSqlToken, {"sum", "avg", "max", "min", "facet", "count", "distinct", "rank"}},
 	{SelectConditionsStart, {"where", "limit", "offset", "order", "join", "left", "inner", "equal_position", "merge", "or", ";"}},
-	{ConditionSqlToken, {">", ">=", "<", "<=", "<>", "in", "range", "is", "==", "="}},
+	{ConditionSqlToken, {">", ">=", "<", "<=", "<>", "in", "allset", "range", "is", "==", "="}},
 	{WhereFieldValueSqlToken, {"null", "empty", "not"}},
 	{WhereFieldNegateValueSqlToken, {"null", "empty"}},
 	{OpSqlToken, {"and", "or"}},
@@ -115,6 +117,8 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx) {
 	switch (ctx.tokenType) {
 		case Start:
 		case StartAfterExplain:
+		case StartAfterLocal:
+		case StartAfterLocalExplain:
 		case FromSqlToken:
 		case SelectConditionsStart:
 		case DeleteConditionsStart:
@@ -202,6 +206,8 @@ void SQLSuggester::checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data)
 	switch (data.tokenType) {
 		case Start:
 		case StartAfterExplain:
+		case StartAfterLocal:
+		case StartAfterLocalExplain:
 			if (isBlank(data.token) || !findInPossibleTokens(data.tokenType, data.token)) {
 				getSuggestionsForToken(data);
 			}

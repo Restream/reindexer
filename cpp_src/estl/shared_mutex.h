@@ -15,7 +15,7 @@
 #define PTHREAD_TIMED_LOCK_AVAILABLE 0
 #else  // __APPLE__
 #define PTHREAD_TIMED_LOCK_AVAILABLE 1
-#endif  // __APPLE__
+#endif	// __APPLE__
 
 #include <chrono>
 
@@ -24,9 +24,9 @@
 using std::shared_timed_mutex;
 using std::shared_lock;
 #else
-#include <assert.h>
 #include <errno.h>
 #include <pthread.h>
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
@@ -43,12 +43,12 @@ public:
 public:
 	__shared_mutex_pthread() {
 		int __ret = pthread_rwlock_init(&_M_rwlock, NULL);
-		assert(__ret == 0);
+		assertrx(__ret == 0);
 	}
 
 	~__shared_mutex_pthread() {
 		int __ret __attribute((__unused__)) = pthread_rwlock_destroy(&_M_rwlock);
-		assert(__ret == 0);
+		assertrx(__ret == 0);
 	}
 #endif
 
@@ -57,35 +57,34 @@ public:
 
 	void lock() {
 		int __ret = pthread_rwlock_wrlock(&_M_rwlock);
-		assert(__ret == 0);
+		assertrx(__ret == 0);
 		(void)__ret;
 	}
 
 	bool try_lock() {
 		int __ret = pthread_rwlock_trywrlock(&_M_rwlock);
 		if (__ret == EBUSY) return false;
-		assert(__ret == 0);
+		assertrx(__ret == 0);
 		return true;
 	}
 
 	void unlock() {
 		int __ret = pthread_rwlock_unlock(&_M_rwlock);
-		assert(__ret == 0);
+		assertrx(__ret == 0);
 		(void)__ret;
 	}
 
 	void lock_shared() {
 		int __ret;
-		do
-			__ret = pthread_rwlock_rdlock(&_M_rwlock);
+		do __ret = pthread_rwlock_rdlock(&_M_rwlock);
 		while (__ret == EAGAIN || __ret == EBUSY);
-		assert(__ret == 0);
+		assertrx(__ret == 0);
 	}
 
 	bool try_lock_shared() {
 		int __ret = pthread_rwlock_tryrdlock(&_M_rwlock);
 		if (__ret == EBUSY || __ret == EAGAIN) return false;
-		assert(__ret == 0);
+		assertrx(__ret == 0);
 		return true;
 	}
 
@@ -129,7 +128,7 @@ public:
 	}
 
 	void unlock() {
-		if (!_M_owns) assert(0);
+		if (!_M_owns) assertrx(0);
 		_M_pm->unlock_shared();
 		_M_owns = false;
 	}
@@ -152,8 +151,8 @@ public:
 
 private:
 	void _M_lockable() const {
-		if (_M_pm == nullptr) assert(0);
-		if (_M_owns) assert(0);
+		if (_M_pm == nullptr) assertrx(0);
+		if (_M_owns) assertrx(0);
 	}
 
 	mutex_type* _M_pm;
@@ -187,11 +186,11 @@ public:
 		if (ETIMEDOUT == __ret || EDEADLK == __ret) {
 			return false;
 		}
-#else   // PTHREAD_TIMED_LOCK_AVAILABLE
+#else	// PTHREAD_TIMED_LOCK_AVAILABLE
 		(void)absTime;
 		__ret = pthread_rwlock_wrlock(static_cast<pthread_rwlock_t*>(native_handle()));
-#endif  // PTHREAD_TIMED_LOCK_AVAILABLE
-		assert(__ret == 0);
+#endif	// PTHREAD_TIMED_LOCK_AVAILABLE
+		assertrx(__ret == 0);
 		return true;
 	}
 
@@ -214,11 +213,11 @@ public:
 		if (ETIMEDOUT == __ret || EDEADLK == __ret) {
 			return false;
 		}
-#else   // PTHREAD_TIMED_LOCK_AVAILABLE
+#else	// PTHREAD_TIMED_LOCK_AVAILABLE
 		(void)absTime;
 		__ret = pthread_rwlock_rdlock(static_cast<pthread_rwlock_t*>(native_handle()));
-#endif  // PTHREAD_TIMED_LOCK_AVAILABLE
-		assert(__ret == 0);
+#endif	// PTHREAD_TIMED_LOCK_AVAILABLE
+		assertrx(__ret == 0);
 		return true;
 	}
 

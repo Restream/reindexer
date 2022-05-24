@@ -1,4 +1,4 @@
-﻿#include "clusterization_api.h"
+#include "clusterization_api.h"
 #include <fstream>
 #include <thread>
 #include "core/cjson/jsonbuilder.h"
@@ -16,13 +16,13 @@ const std::string ClusterizationApi::kStringField = "string";
 const std::string ClusterizationApi::kIntField = "int";
 
 void ClusterizationApi::SetUp() {
-	const auto def = GetDefaultPorts();
+	const auto def = GetDefaults();
 	reindexer::fs::RmDirAll(def.baseTestsetDbPath);
 }
 
 void ClusterizationApi::TearDown()	// -V524
 {
-	const auto def = GetDefaultPorts();
+	const auto def = GetDefaults();
 	reindexer::fs::RmDirAll(def.baseTestsetDbPath);
 }
 
@@ -43,7 +43,7 @@ ClusterizationApi::Cluster::Cluster(net::ev::dynamic_loop& loop, size_t initialS
 	}
 	if (maxSyncCount < 0) {
 		maxSyncCount = rand() % 3;
-		std::cout << "Cluster's max_sync_count was chosen randomly: " << maxSyncCount << std::endl;
+		TestCout() << "Cluster's max_sync_count was chosen randomly: " << maxSyncCount << std::endl;
 	}
 	// clang-format off
 	const std::string kBaseClusterConf =
@@ -228,7 +228,7 @@ void ClusterizationApi::Cluster::StopServers(size_t from, size_t to) {
 	}
 	for (size_t id = from; id < to; ++id) {
 		if (GetNode(id)) {
-			std::cout << "Stopping " << id << std::endl;
+			TestCout() << "Stopping " << id << std::endl;
 			ASSERT_TRUE(StopServer(id));
 		}
 	}
@@ -239,7 +239,7 @@ void ClusterizationApi::Cluster::StopServers(const std::vector<size_t>& ids) {
 		GetNode(id)->Stop();
 	}
 	for (auto id : ids) {
-		std::cout << "Stopping " << id << std::endl;
+		TestCout() << "Stopping " << id << std::endl;
 		ASSERT_TRUE(StopServer(id));
 	}
 }
@@ -449,9 +449,25 @@ void ClusterizationApi::Cluster::ChangeLeader(int& curLeaderId, int newLeaderId)
 	ASSERT_EQ(curLeaderId, newLeaderId);
 }
 
-void ClusterizationApi::Cluster::AddAsyncNode(size_t nodeId, const std::string& dsn, std::optional<std::vector<std::string>>&& nsList) {
+void ClusterizationApi::Cluster::AddAsyncNode(size_t nodeId, const std::string& dsn, cluster::AsyncReplicationMode replMode,
+											  std::optional<std::vector<std::string>>&& nsList) {
 	assert(nodeId < svc_.size());
 	auto asyncLeader = svc_[nodeId].Get();
-	asyncLeader->MakeLeader();
-	asyncLeader->AddFollower(dsn, std::move(nsList));
+	asyncLeader->AddFollower(dsn, std::move(nsList), replMode);
+}
+
+void ClusterizationApi::Cluster::AwaitLeaderBecomeAvailable(size_t nodeId, std::chrono::milliseconds awaitTime) {
+	auto now = std::chrono::milliseconds(0);
+	const auto pause = std::chrono::milliseconds(100);
+	while (now < awaitTime) {
+		Query q = Query("#replicationstats").Where("type", CondEq, Variant("cluster"));
+		BaseApi::QueryResultsType qr;
+		auto err = GetNode(nodeId)->api.reindexer->WithTimeout(pause).Select(q, qr);
+		if (err.ok()) {
+			break;
+		}
+		awaitTime += pause;
+		std::this_thread::sleep_for(pause);
+	}
+	ASSERT_TRUE(now < awaitTime) << "Leader is not available from node " << nodeId;
 }

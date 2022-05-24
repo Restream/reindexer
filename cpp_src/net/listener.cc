@@ -190,7 +190,7 @@ void Listener::Stop() {
 	for (auto listener : shared_->listeners_) {
 		listener->async_.send();
 	}
-	assert(this == shared_->listeners_.front());
+	assertrx(this == shared_->listeners_.front());
 	while (shared_->count_.load() > 1) {
 		shared_->lck_.unlock();
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -214,7 +214,7 @@ void Listener::clone(std::shared_ptr<Shared> shared) {
 		}
 		lck.lock();
 		auto it = std::find(shared->listeners_.begin(), shared->listeners_.end(), &listener);
-		assert(it != shared->listeners_.end());
+		assertrx(it != shared->listeners_.end());
 		shared->listeners_.erase(it);
 	}
 	--shared->count_;

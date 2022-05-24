@@ -31,17 +31,17 @@ size_t DataHolder::GetMemStat() {
 }
 
 void DataHolder::SetWordsOffset(uint32_t word_offset) {
-	assert(!steps.empty());
+	assertrx(!steps.empty());
 	if (status_ == CreateNew) steps.back().wordOffset_ = word_offset;
 }
 uint32_t DataHolder::GetWordsOffset() {
-	assert(!steps.empty());
+	assertrx(!steps.empty());
 	return steps.back().wordOffset_;
 }
 WordIdType DataHolder::BuildWordId(uint32_t id) {
 	WordIdType wId;
-	assert(id < kWordIdMaxIdVal);
-	assert(steps.size() - 1 < kWordIdMaxStepVal);
+	assertrx(id < kWordIdMaxIdVal);
+	assertrx(steps.size() - 1 < kWordIdMaxStepVal);
 
 	wId.b.id = id;
 	wId.b.step_num = steps.size() - 1;
@@ -54,24 +54,24 @@ bool DataHolder::NeedClear(bool complte_updated) {
 }
 
 uint32_t DataHolder::GetSuffixWordId(WordIdType id, const CommitStep& step) {
-	assert(!id.isEmpty());
-	assert(id.b.step_num < steps.size());
+	assertrx(!id.isEmpty());
+	assertrx(id.b.step_num < steps.size());
 
-	assert(id.b.id >= step.wordOffset_);
-	assert(id.b.id - step.wordOffset_ < step.suffixes_.word_size());
+	assertrx(id.b.id >= step.wordOffset_);
+	assertrx(id.b.id - step.wordOffset_ < step.suffixes_.word_size());
 	return id.b.id - step.wordOffset_;
 }
 
 uint32_t DataHolder::GetSuffixWordId(WordIdType id) { return GetSuffixWordId(id, steps.back()); }
 
 DataHolder::CommitStep& DataHolder::GetStep(WordIdType id) {
-	assert(id.b.step_num < steps.size());
+	assertrx(id.b.step_num < steps.size());
 	return steps[id.b.step_num];
 }
 
 PackedWordEntry& DataHolder::getWordById(WordIdType id) {
-	assert(!id.isEmpty());
-	assert(id.b.id < words_.size());
+	assertrx(!id.isEmpty());
+	assertrx(id.b.id < words_.size());
 	return words_[id.b.id];
 }
 

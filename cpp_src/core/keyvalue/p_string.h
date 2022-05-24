@@ -163,12 +163,12 @@ struct p_string {
 	bool operator>=(p_string other) const { return compare(other) >= 0; }
 	bool operator<=(p_string other) const { return compare(other) <= 0; }
 	const string *getCxxstr() const {
-		assert(type() == tagCxxstr || type() == tagKeyString);
+		assertrx(type() == tagCxxstr || type() == tagKeyString);
 		return reinterpret_cast<const string *>(ptr());
 	}
 
 	key_string getKeyString() const {
-		assert(type() == tagKeyString);
+		assertrx(type() == tagKeyString);
 		auto *str = reinterpret_cast<intrusive_atomic_rc_wrapper<base_key_string> *>(const_cast<void *>(ptr()));
 		return key_string(str);
 	}

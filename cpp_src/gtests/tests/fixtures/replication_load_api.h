@@ -100,8 +100,8 @@ public:
 	void RestartWithReplicationConfigFiles(size_t num, const string &asyncReplConfigYaml, const string &replConfigYaml) {
 		GetSrv(num)->WriteAsyncReplicationConfig(asyncReplConfigYaml);
 		GetSrv(num)->WriteReplicationConfig(replConfigYaml);
-		StopServer(num);
-		StartServer(num);
+		ASSERT_TRUE(StopServer(num));
+		ASSERT_TRUE(StartServer(num));
 	}
 	void SetServerConfig(size_t num, const AsyncReplicationConfigTest &config) {
 		auto srv = GetSrv(num);

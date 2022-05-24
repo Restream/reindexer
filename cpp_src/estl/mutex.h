@@ -1,9 +1,9 @@
 #pragma once
 
 #include <atomic>
-#include <cassert>
 #include <string_view>
 #include <thread>
+#include "tools/assertrx.h"
 
 namespace reindexer {
 
@@ -11,6 +11,8 @@ class dummy_mutex {
 public:
 	void lock() {}
 	void unlock() {}
+	void lock_shared() {}
+	void unlock_shared() {}
 };
 
 enum class MutexMark : unsigned { DbManager = 1u, IndexText, Namespace, Reindexer, ReindexerStorage };
@@ -93,14 +95,14 @@ public:
 		std::thread::id currThreadID = threadID_.load(std::memory_order_acquire);
 		if (currThreadID != std::this_thread::get_id()) {
 			read_write_spinlock::lock();
-			assert(recursiveDepth_ == 0);
+			assertrx(recursiveDepth_ == 0);
 			threadID_.store(currThreadID, std::memory_order_release);
 		}
 		recursiveDepth_++;
 	}
 
 	void unlock() noexcept {
-		assert(recursiveDepth_ > 0);
+		assertrx(recursiveDepth_ > 0);
 		if (--recursiveDepth_ == 0) {
 			threadID_ = std::thread::id{};
 			read_write_spinlock::unlock();

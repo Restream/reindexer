@@ -81,7 +81,7 @@ void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const Fiel
 		throw Error(errLogic, "Can't get protobuf schema - field [%s] is of unsupported type [%s] (%s)", name, props.type, props.xGoType);
 	}
 	if (props.isArray) {
-		assert(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
+		assertrx(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
 		if (ser_) ser_->Write("repeated ");
 		writeField(name, typeName, tagName);
 		if (type == KeyValueBool || type == KeyValueInt || type == KeyValueInt64 || type == KeyValueDouble) {

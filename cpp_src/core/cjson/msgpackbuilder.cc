@@ -18,14 +18,14 @@ MsgPackBuilder::MsgPackBuilder(msgpack_packer &packer, ObjType type, size_t size
 
 MsgPackBuilder::MsgPackBuilder(WrSerializer &wrser, const TagsLengths *tagsLengths, int *startTag, ObjType type, const TagsMatcher *tm)
 	: tm_(tm), tagsLengths_(tagsLengths), type_(type), tagIndex_(startTag) {
-	assert(startTag);
+	assertrx(startTag);
 	msgpack_packer_init(&packer_, reinterpret_cast<void *>(&wrser), msgpack_wrserializer_write);
 	init(KUnknownFieldSize);
 }
 
 MsgPackBuilder::MsgPackBuilder(msgpack_packer &packer, const TagsLengths *tagsLengths, int *startTag, ObjType type, const TagsMatcher *tm)
 	: tm_(tm), packer_(packer), tagsLengths_(tagsLengths), type_(type), tagIndex_(startTag) {
-	assert(startTag);
+	assertrx(startTag);
 	init(KUnknownFieldSize);
 }
 

@@ -12,7 +12,7 @@ public:
 	void add(size_t cnt) noexcept { wait_cnt_ += cnt; }
 	/// Should be called on coroutine's exit
 	void done() {
-		assert(wait_cnt_);
+		assertrx(wait_cnt_);
 		if (--wait_cnt_ == 0 && waiter_) {
 			resume(waiter_);
 		}
@@ -22,7 +22,7 @@ public:
 		assert(waiter_ == 0);
 		waiter_ = current();
 		while (wait_cnt_) {
-			assert(waiter_);
+			assertrx(waiter_);
 			suspend();
 		}
 		waiter_ = 0;

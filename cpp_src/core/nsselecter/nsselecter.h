@@ -7,7 +7,7 @@
 namespace reindexer {
 
 struct SelectCtx {
-	explicit SelectCtx(const Query &query_) : query(query_) {}
+	explicit SelectCtx(const Query &query_, const Query *parentQuery_) : query(query_), parentQuery(parentQuery_) {}
 	const Query &query;
 	JoinedSelectors *joinedSelectors = nullptr;
 	SelectFunctionsHolder *functions = nullptr;
@@ -20,6 +20,9 @@ struct SelectCtx {
 	bool matchedAtLeastOnce = false;
 	bool reqMatchedOnceFlag = false;
 	bool contextCollectingMode = false;
+
+	const Query *parentQuery = nullptr;
+	bool requiresCrashTracking = false;
 };
 
 class ItemComparator;

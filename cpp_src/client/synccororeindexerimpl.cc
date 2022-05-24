@@ -6,40 +6,60 @@ namespace reindexer {
 namespace client {
 
 using std::chrono::milliseconds;
+constexpr size_t kAsyncCoroStackSize = 32 * 1024;
 
-SyncCoroReindexerImpl::SyncCoroReindexerImpl(const CoroReindexerConfig &conf, size_t connCount)
-	: conf_(conf), connCount_(connCount > 0 ? connCount : 1) {}
-
-SyncCoroReindexerImpl::~SyncCoroReindexerImpl() {
-	std::unique_lock<std::mutex> lock(loopThreadMtx_);
-	if (loopThread_.joinable()) {
-		closeAsync_.send();
-		loopThread_.join();
+SyncCoroReindexerImpl::SyncCoroReindexerImpl(const CoroReindexerConfig &conf, uint32_t connCount, uint32_t threadsCount) : conf_(conf) {
+	const auto conns = connCount > 0 ? connCount : 1;
+	if (threadsCount > 1) {
+		const auto connsPerThread = conns / threadsCount;
+		auto mod = conns % threadsCount;
+		for (unsigned i = 0; i < threadsCount; ++i) {
+			if (mod) {
+				--mod;
+				workers_.emplace_back(connsPerThread + 1);
+			} else if (connsPerThread) {
+				workers_.emplace_back(connsPerThread);
+			}
+		}
+	} else {
+		workers_.emplace_back(conns);
 	}
+	sharedNamespaces_ = (workers_.size() > 1) ? INamespaces::PtrT(new NamespacesImpl<shared_timed_mutex>())
+											  : INamespaces::PtrT(new NamespacesImpl<dummy_mutex>());
+	commandsQueue_.Init(workers_);
 }
 
+SyncCoroReindexerImpl::~SyncCoroReindexerImpl() { stop(); }
+
 Error SyncCoroReindexerImpl::Connect(const string &dsn, const client::ConnectOpts &opts) {
-	std::unique_lock<std::mutex> lock(loopThreadMtx_);
-	if (loopThread_.joinable()) return Error(errLogic, "Client is already started");
+	std::lock_guard lock(workersMtx_);
+	if (workers_.size() && workers_[0].th.joinable()) {
+		return Error(errLogic, "Client is already started (%s)", dsn);
+	}
+	lastError_.Set(Error());
+	runningWorkers_ = 0;
+	commandsQueue_.ClearConnectionsMapping();
 
 	std::promise<Error> isRunningPromise;
 	auto isRunningFuture = isRunningPromise.get_future();
-	loopThread_ = std::thread([this, &isRunningPromise, dsn, opts]() { this->threadLoopFun(std::move(isRunningPromise), dsn, opts); });
-	isRunningFuture.wait();
-	auto isRunning = isRunningFuture.get();
-	if (isRunning.ok()) {
-		commandsQueue_.Init();
+	for (uint32_t i = 0; i < workers_.size(); ++i) {
+		workers_[i].th = std::thread([this, &isRunningPromise, dsn, opts, i] { this->threadLoopFun(i, isRunningPromise, dsn, opts); });
 	}
-	return isRunning;
+	auto ret = isRunningFuture.get();
+	if (ret.ok()) {
+		ret = lastError_.Get();
+	}
+	if (!ret.ok()) {
+		stop();
+	}
+	commandsQueue_.SetValid();
+	return ret;
 }
 
 Error SyncCoroReindexerImpl::Stop() {
-	std::unique_lock<std::mutex> lock(loopThreadMtx_);
-	if (loopThread_.joinable()) {
-		closeAsync_.send();
-		loopThread_.join();
-	}
-	return errOK;
+	std::lock_guard lock(workersMtx_);
+	stop();
+	return Error();
 }
 Error SyncCoroReindexerImpl::OpenNamespace(std::string_view nsName, const InternalRdxContext &ctx, const StorageOpts &opts,
 										   const NsReplicationOpts &replOpts) {
@@ -169,7 +189,8 @@ Error SyncCoroReindexerImpl::CommitTransaction(SyncCoroTransaction &tr, SyncCoro
 	if (tr.rx_.get() != this) {
 		return Error(errTxInvalidLeader, "Commit transaction to incorrect leader");
 	}
-	return sendCommand<Error, CoroTransaction &, CoroQueryResults &>(DbCmdCommitTransaction, ctx, tr.tr_, results.results_);
+	return sendCommand<true, Error, CoroTransaction &, CoroQueryResults &>(tr.coroConnection(), DbCmdCommitTransaction, ctx, tr.tr_,
+																		   results.results_);
 }
 
 Error SyncCoroReindexerImpl::RollBackTransaction(SyncCoroTransaction &tr, const InternalRdxContext &ctx) {
@@ -177,7 +198,7 @@ Error SyncCoroReindexerImpl::RollBackTransaction(SyncCoroTransaction &tr, const 
 	if (tr.rx_.get() != this) {
 		return Error(errLogic, "RollBack transaction to incorrect leader");
 	}
-	return sendCommand<Error, CoroTransaction &>(DbCmdRollBackTransaction, ctx, tr.tr_);
+	return sendCommand<true, Error, CoroTransaction &>(tr.coroConnection(), DbCmdRollBackTransaction, ctx, tr.tr_);
 }
 
 Error SyncCoroReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2 &state, const InternalRdxContext &ctx) {
@@ -185,114 +206,144 @@ Error SyncCoroReindexerImpl::GetReplState(std::string_view nsName, ReplicationSt
 }
 
 Error SyncCoroReindexerImpl::fetchResults(int flags, SyncCoroQueryResults &result) {
-	return sendCommand<Error>(DbCmdFetchResults, InternalRdxContext(), std::forward<int>(flags), result.results_);
+	return sendCommand<true, Error>(result.coroConnection(), DbCmdFetchResults, InternalRdxContext(), std::forward<int>(flags),
+									result.results_);
 }
 
 Error SyncCoroReindexerImpl::closeResults(SyncCoroQueryResults &result) {
-	return sendCommand<Error>(DbCmdCloseResults, InternalRdxContext(), result.results_);
+	return sendCommand<true, Error>(result.coroConnection(), DbCmdCloseResults, InternalRdxContext(), result.results_);
 }
 
 Error SyncCoroReindexerImpl::addTxItem(SyncCoroTransaction &tr, Item &&item, ItemModifyMode mode, lsn_t lsn) {
-	return sendCommand<Error>(DbCmdAddTxItem, InternalRdxContext(), tr.tr_, std::move(item), std::forward<ItemModifyMode>(mode),
-							  std::forward<lsn_t>(lsn));
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdAddTxItem, InternalRdxContext(), tr.tr_, std::move(item),
+									std::forward<ItemModifyMode>(mode), std::forward<lsn_t>(lsn));
 }
 
 Error SyncCoroReindexerImpl::putTxMeta(SyncCoroTransaction &tr, std::string_view key, std::string_view value, lsn_t lsn) {
-	return sendCommand<Error>(DbCmdPutTxMeta, InternalRdxContext(), tr.tr_, std::forward<std::string_view>(key),
-							  std::forward<std::string_view>(value), std::forward<lsn_t>(lsn));
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdPutTxMeta, InternalRdxContext(), tr.tr_, std::forward<std::string_view>(key),
+									std::forward<std::string_view>(value), std::forward<lsn_t>(lsn));
 }
 
 Error SyncCoroReindexerImpl::setTxTm(SyncCoroTransaction &tr, TagsMatcher &&tm, lsn_t lsn) {
-	return sendCommand<Error>(DbCmdSetTxTagsMatcher, InternalRdxContext(), tr.tr_, std::forward<TagsMatcher>(tm), std::forward<lsn_t>(lsn));
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdSetTxTagsMatcher, InternalRdxContext(), tr.tr_, std::forward<TagsMatcher>(tm),
+									std::forward<lsn_t>(lsn));
 }
 
 Error SyncCoroReindexerImpl::modifyTx(SyncCoroTransaction &tr, Query &&q, lsn_t lsn) {
-	return sendCommand<Error>(DbCmdModifyTx, InternalRdxContext(), tr.tr_, std::move(q), std::forward<lsn_t>(lsn));
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdModifyTx, InternalRdxContext(), tr.tr_, std::move(q),
+									std::forward<lsn_t>(lsn));
 }
 
-Item SyncCoroReindexerImpl::newItemTx(CoroTransaction &tr) { return sendCommand<Item>(DbCmdNewItemTx, InternalRdxContext(), tr); }
+Item SyncCoroReindexerImpl::newItemTx(CoroTransaction &tr) {
+	return sendCommand<true, Item>(tr.getConn(), DbCmdNewItemTx, InternalRdxContext(), tr);
+}
 
-void SyncCoroReindexerImpl::threadLoopFun(std::promise<Error> &&isRunning, const string &dsn, const client::ConnectOpts &opts) {
-	ConnectionsPool<DatabaseCommand> connPool(getConnData());
+void SyncCoroReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error> &isRunning, const string &dsn,
+										  const client::ConnectOpts &opts) {
+	auto &th = workers_[tid];
+	assert(sharedNamespaces_);
+	if (!th.connData) {
+		th.connData = std::make_unique<ConnectionsPoolData>(th.connCount, conf_, sharedNamespaces_);
+	}
+	ConnectionsPool<DatabaseCommand> connPool(*th.connData);
+	struct {
+		uint32_t tid;
+		ConnectionsPool<DatabaseCommand> &connPool;
+	} thData = {tid, connPool};
 
-	commandAsync_.set(loop_);
-	commandAsync_.set([this, &connPool](net::ev::async &) {
-		loop_.spawn([this, &connPool]() {
-			std::vector<DatabaseCommand> q;
-			static constexpr size_t kReserveSize = 32;
-			q.reserve(kReserveSize);
-			commandsQueue_.Get(q);
-			for (size_t i = 0; i < q.size(); ++i) {
-				auto &conn = connPool.GetConn();
-				assert(conn.IsChOpened());
-				conn.PushCmd(std::move(q[i]));
-			}
-		});
+	th.commandAsync.set(th.loop);
+	th.commandAsync.set([this, &thData](net::ev::async &) {
+		workers_[thData.tid].loop.spawn(
+			[this, &thData]() {
+				h_vector<DatabaseCommand, 16> q;
+				for (bool readMore = true; readMore;) {
+					commandsQueue_.Get(thData.tid, q);
+					readMore = q.size();
+					for (auto &&cmd : q) {
+						auto &conn = thData.connPool.GetConn();
+						assert(conn.IsChOpened());
+						conn.PushCmd(std::move(cmd));
+					}
+					q.clear();
+				}
+			},
+			kAsyncCoroStackSize);
 	});
 
-	size_t runningCount = 0;
+	uint32_t runningCount = 0;
 	for (auto &conn : connPool) {
-		loop_.spawn([this, dsn, opts, &isRunning, &conn, &connPool, &runningCount]() noexcept {
-			auto err = conn.rx.Connect(dsn, loop_, opts);
-			if (++runningCount == connCount_) {
+		th.loop.spawn([this, dsn, opts, &isRunning, &conn, &thData, &runningCount]() noexcept {
+			auto &th = workers_[thData.tid];
+			auto err = conn.rx.Connect(dsn, th.loop, opts);
+			if (err.ok()) {
+				commandsQueue_.RegisterConn(thData.tid, conn.rx.GetConnPtr());
+			} else {
+				lastError_.Set(err);
+			}
+			if (++runningCount == th.connCount && ++runningWorkers_ == workers_.size()) {
 				isRunning.set_value(err);
 			}
 			coroutine::wait_group wg;
 			for (unsigned n = 0; n < conf_.SyncRxCoroCount; ++n) {
-				loop_.spawn(wg, [this, &conn, &connPool]() noexcept { coroInterpreter(conn, connPool); });
+				th.loop.spawn(wg, [this, &conn, &thData]() noexcept { coroInterpreter(conn, thData.connPool, thData.tid); });
 			}
 			wg.wait();
 
-			commandAsync_.stop();
-			closeAsync_.stop();
+			th.commandAsync.stop();
+			th.closeAsync.stop();
 			assert(!conn.IsChOpened());
 			conn.rx.Stop();
 		});
 	}
-	commandAsync_.start();
+	th.commandAsync.start();
 
-	closeAsync_.set(loop_);
-	closeAsync_.set([this, &connPool](net::ev::async &) {
-		commandAsync_.stop();
-		loop_.spawn([this, &connPool]() {
+	th.closeAsync.set(th.loop);
+	th.closeAsync.set([this, &thData](net::ev::async &) {
+		workers_[thData.tid].commandAsync.stop();
+		workers_[thData.tid].loop.spawn([this, &thData]() {
 			coroutine::wait_group wg;
-			for (auto &conn : connPool) {
+			for (auto &conn : thData.connPool) {
 				if (conn.IsChOpened()) {
-					loop_.spawn(wg, [&conn] { conn.rx.Stop(); });
+					workers_[thData.tid].loop.spawn(wg, [&conn] { conn.rx.Stop(); });
 				}
 			}
 			wg.wait();
-			std::vector<DatabaseCommand> q;
-			commandsQueue_.Invalidate(q);
-			for (auto &conn : connPool) {
+			h_vector<DatabaseCommand, 16> q;
+			commandsQueue_.Invalidate(thData.tid, q);
+			for (auto &conn : thData.connPool) {
 				if (conn.IsChOpened()) {
-					for (size_t i = 0; i < q.size(); ++i) {
-						conn.PushCmd(std::move(q[i]));
+					for (auto &&cmd : q) {
+						conn.PushCmd(std::move(cmd));
 					}
 					q.clear();
 					break;
 				}
 			}
 			assert(q.empty());
-			for (auto &conn : connPool) {
+			for (auto &conn : thData.connPool) {
 				conn.CloseCh();
 			}
 		});
 	});
-	closeAsync_.start();
+	th.closeAsync.start();
 
-	loop_.run();
-	commandAsync_.stop();
+	th.loop.run();
+	th.commandAsync.stop();
 }
 
-ConnectionsPoolData &SyncCoroReindexerImpl::getConnData() {
-	if (!connData_) {
-		connData_ = std::make_unique<ConnectionsPoolData>(connCount_, conf_);
+void SyncCoroReindexerImpl::stop() {
+	for (auto &w : workers_) {
+		w.closeAsync.send();
 	}
-	return *connData_;
+	for (auto &w : workers_) {
+		if (w.th.joinable()) {
+			w.th.join();
+		}
+	}
 }
 
-void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, ConnectionsPool<DatabaseCommand> &pool) noexcept {
+void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, ConnectionsPool<DatabaseCommand> &pool,
+											uint32_t tid) noexcept {
 	using namespace std::placeholders;
 	for (std::pair<DatabaseCommand, bool> v = conn.PopCmd(); v.second == true; v = conn.PopCmd()) {
 		const auto cmd = v.first.Data();
@@ -469,14 +520,14 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 			}
 			case DbCmdSelectS: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, std::string_view, CoroQueryResults &> *>(cmd);
-				assert(cd);
+				assertrx(cd);
 				Error err = conn.rx.Select(std::get<0>(cd->arguments), std::get<1>(cd->arguments), cd->ctx);
 				cd->ret.set_value(std::move(err));
 				break;
 			}
 			case DbCmdSelectQ: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, const Query &, CoroQueryResults &> *>(cmd);
-				assert(cd);
+				assertrx(cd);
 				Error err = conn.rx.Select(std::get<0>(cd->arguments), std::get<1>(cd->arguments), cd->ctx);
 				cd->ret.set_value(std::move(err));
 				break;
@@ -536,7 +587,7 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 			}
 			case DbCmdNewTransaction: {
 				auto *cd = dynamic_cast<DatabaseCommandData<CoroTransaction, std::string_view> *>(cmd);
-				assert(cd);
+				assertrx(cd);
 				CoroTransaction coroTrans = conn.rx.NewTransaction(std::get<0>(cd->arguments), cd->ctx);
 				cd->ret.set_value(std::move(coroTrans));
 				break;
@@ -555,7 +606,7 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 			}
 			case DbCmdFetchResults: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, int, CoroQueryResults &> *>(cmd);
-				assert(cd);
+				assertrx(cd);
 				CoroQueryResults &coroResults = std::get<1>(cd->arguments);
 				if (!coroResults.holdsRemoteData()) {
 					cd->ret.set_value(Error(errLogic, "Client query results does not hold any remote data"));
@@ -586,7 +637,7 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 					err = e;
 				}
 
-				cd->ret.set_value(err);
+				cd->ret.set_value(std::move(err));
 
 				break;
 			}
@@ -610,37 +661,37 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 			}
 			case DbCmdNewItemTx: {
 				auto cd = dynamic_cast<DatabaseCommandData<Item, CoroTransaction &> *>(cmd);
-				assert(cd);
+				assertrx(cd);
 				Item item = std::get<0>(cd->arguments).NewItem(this);
 				cd->ret.set_value(std::move(item));
 				break;
 			}
 			case DbCmdAddTxItem: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction &, Item, ItemModifyMode, lsn_t> *>(cmd);
-				assert(cd);
+				assertrx(cd);
 				Error err = std::get<0>(cd->arguments)
 								.Modify(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), std::get<3>(cd->arguments));
-				cd->ret.set_value(err);
+				cd->ret.set_value(std::move(err));
 				break;
 			}
 			case DbCmdPutTxMeta: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction &, std::string_view, std::string_view, lsn_t> *>(cmd);
-				assert(cd);
+				assertrx(cd);
 				Error err = std::get<0>(cd->arguments)
 								.PutMeta(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), std::get<3>(cd->arguments));
-				cd->ret.set_value(err);
+				cd->ret.set_value(std::move(err));
 				break;
 			}
 			case DbCmdSetTxTagsMatcher: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction &, TagsMatcher, lsn_t> *>(cmd);
-				assert(cd);
+				assertrx(cd);
 				Error err = std::get<0>(cd->arguments).SetTagsMatcher(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments));
-				cd->ret.set_value(err);
+				cd->ret.set_value(std::move(err));
 				break;
 			}
 			case DbCmdModifyTx: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction &, Query, lsn_t> *>(cmd);
-				assert(cd);
+				assertrx(cd);
 				CoroTransaction &tr = std::get<0>(cd->arguments);
 				Error err(errLogic, "Connection pointer in transaction is nullptr.");
 				auto txConn = tr.getConn();
@@ -670,7 +721,7 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 							err = Error(errParams, "Incorrect query type in transaction modify %d", std::get<1>(cd->arguments).type_);
 					}
 				}
-				cd->ret.set_value(err);
+				cd->ret.set_value(std::move(err));
 				break;
 			}
 			case DbCmdGetReplState: {
@@ -684,38 +735,76 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 				break;
 		}
 		conn.OnRequestDone();
+		commandsQueue_.OnCmdDone(tid);
 	}
 }
 
-Error SyncCoroReindexerImpl::CommandsQueue::Push(net::ev::async &ev, DatabaseCommand &&cmd) {
-	bool notify = false;
-	std::unique_lock<std::mutex> lck(mtx_);
-	if (!isValid_) {
-		return Error(errNotValid, "SyncCoroReindexer command queue is invalidated");
-	}
-	notify = (queue_.empty());
-	queue_.emplace_back(std::move(cmd));
-	lck.unlock();
+SyncCoroReindexerImpl::WorkerThread::WorkerThread(uint32_t _connCount) : connCount(_connCount) {}
+SyncCoroReindexerImpl::WorkerThread::~WorkerThread() = default;
 
-	if (notify) {
-		ev.send();
+void SyncCoroReindexerImpl::CommandsQueue::Get(uint32_t tid, h_vector<DatabaseCommand, 16> &cmds) {
+	assertrx(tid < thData_.size());
+	auto &thD = thData_[tid];
+	std::lock_guard lck(mtx_);
+	if (thD.personalQueue.size()) {
+		std::swap(thD.personalQueue, cmds);
+		thD.reqCnt.fetch_add(cmds.size(), std::memory_order_relaxed);
+		return;
 	}
-	return Error();
+	if (sharedQueue_.size()) {
+		cmds.emplace_back(std::move(*sharedQueue_.begin()));
+		sharedQueue_.pop_front();
+		thD.reqCnt.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+	thD.isReading = false;
 }
-void SyncCoroReindexerImpl::CommandsQueue::Get(std::vector<DatabaseCommand> &cmds) {
+
+void SyncCoroReindexerImpl::CommandsQueue::OnCmdDone(uint32_t tid) {
+	assertrx(tid < thData_.size());
+	auto &thD = thData_[tid];
+	thD.reqCnt.fetch_sub(1, std::memory_order_release);
+}
+
+void SyncCoroReindexerImpl::CommandsQueue::Init(std::deque<WorkerThread> &threads) {
 	std::lock_guard<std::mutex> lock(mtx_);
-	cmds.swap(queue_);
+	assertrx(thData_.empty());
+	for (auto &th : threads) {
+		thData_.emplace_back(th.commandAsync);
+	}
 }
 
-void SyncCoroReindexerImpl::CommandsQueue::Invalidate(std::vector<DatabaseCommand> &cmds) {
+void SyncCoroReindexerImpl::CommandsQueue::Invalidate(uint32_t tid, h_vector<DatabaseCommand, 16> &cmds) {
+	assertrx(tid < thData_.size());
+	auto &thD = thData_[tid];
 	std::lock_guard<std::mutex> lock(mtx_);
-	cmds.swap(queue_);
+	std::swap(thD.personalQueue, cmds);
+	thD.reqCnt.store(0, std::memory_order_relaxed);
+	while (sharedQueue_.size()) {
+		cmds.emplace_back(std::move(*sharedQueue_.begin()));
+		sharedQueue_.pop_front();
+	}
+	thByConns_.clear();
 	isValid_ = false;
 }
 
-void SyncCoroReindexerImpl::CommandsQueue::Init() {
+void SyncCoroReindexerImpl::CommandsQueue::SetValid() {
 	std::lock_guard<std::mutex> lock(mtx_);
 	isValid_ = true;
+}
+
+void SyncCoroReindexerImpl::CommandsQueue::ClearConnectionsMapping() {
+	std::lock_guard<std::mutex> lock(mtx_);
+	thByConns_.clear();
+}
+
+void SyncCoroReindexerImpl::CommandsQueue::RegisterConn(uint32_t tid, const void *conn) {
+	assertrx(tid < thData_.size());
+	auto &thD = thData_[tid];
+	std::lock_guard<std::mutex> lock(mtx_);
+	const auto res = thByConns_.emplace(conn, &thD);
+	assertrx(res.second);
+	(void)res;
 }
 
 }  // namespace client

@@ -19,52 +19,54 @@ BaseEncoder<Builder>::BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSe
 }
 
 template <typename Builder>
-void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, IAdditionalDatasource<Builder>* ds) {
+void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, const h_vector<IAdditionalDatasource<Builder>*, 2>& dss) {
 	Serializer rdser(tuple);
 	builder.SetTagsMatcher(tagsMatcher_);
 	builder.SetTagsPath(&curTagsPath_);
 
 	ctag begTag = rdser.GetVarUint();
 	(void)begTag;
-	assert(begTag.Type() == TAG_OBJECT);
+	assertrx(begTag.Type() == TAG_OBJECT);
 	Builder objNode = builder.Object(nullptr);
 	while (encode(nullptr, rdser, objNode, true))
 		;
-	if (ds) {
-		if (const auto joinsDs = ds->GetJoinsDatasource()) {
-			for (size_t i = 0; i < joinsDs->GetJoinedRowsCount(); ++i) {
-				encodeJoinedItems(objNode, joinsDs, i);
+	for (auto ds : dss) {
+		if (ds) {
+			if (const auto joinsDs = ds->GetJoinsDatasource()) {
+				for (size_t i = 0; i < joinsDs->GetJoinedRowsCount(); ++i) {
+					encodeJoinedItems(objNode, joinsDs, i);
+				}
 			}
+			ds->PutAdditionalFields(objNode);
 		}
-		ds->PutAdditionalFields(objNode);
 	}
 }
 
 template <typename Builder>
-void BaseEncoder<Builder>::Encode(ConstPayload* pl, Builder& builder, IAdditionalDatasource<Builder>* ds) {
+void BaseEncoder<Builder>::Encode(ConstPayload* pl, Builder& builder, const h_vector<IAdditionalDatasource<Builder>*, 2>& dss) {
 	Serializer rdser(getPlTuple(pl));
 	if (rdser.Eof()) {
 		return;
 	}
-
 	objectScalarIndexes_ = 0;
 	for (int i = 0; i < pl->NumFields(); ++i) fieldsoutcnt_[i] = 0;
 	builder.SetTagsMatcher(tagsMatcher_);
 	builder.SetTagsPath(&curTagsPath_);
 	ctag begTag = rdser.GetVarUint();
 	(void)begTag;
-	assert(begTag.Type() == TAG_OBJECT);
+	assertrx(begTag.Type() == TAG_OBJECT);
 	Builder objNode = builder.Object(nullptr);
 	while (encode(pl, rdser, objNode, true))
 		;
-
-	if (ds) {
-		if (const auto joinsDs = ds->GetJoinsDatasource()) {
-			for (size_t i = 0; i < joinsDs->GetJoinedRowsCount(); ++i) {
-				encodeJoinedItems(objNode, joinsDs, i);
+	for (auto ds : dss) {
+		if (ds) {
+			if (const auto joinsDs = ds->GetJoinsDatasource()) {
+				for (size_t i = 0; i < joinsDs->GetJoinedRowsCount(); ++i) {
+					encodeJoinedItems(objNode, joinsDs, i);
+				}
 			}
+			ds->PutAdditionalFields(objNode);
 		}
-		ds->PutAdditionalFields(objNode);
 	}
 }
 
@@ -75,7 +77,7 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload* pl, IEnco
 	if (!rdser.Eof()) {
 		ctag beginTag = rdser.GetVarUint();
 		(void)beginTag;
-		assert(beginTag.Type() == TAG_OBJECT);
+		assertrx(beginTag.Type() == TAG_OBJECT);
 
 		tagsLengths_.reserve(maxIndexes);
 		tagsLengths_.push_back(StartObject);
@@ -150,7 +152,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			throw Error(errParams, "Non-array field '%s' [%d] can only be encoded once.", fieldName, tagField);
 		}
 		objectScalarIndexes_ |= (1ULL << tagField);
-		assert(tagField < pl->NumFields());
+		assertrx(tagField < pl->NumFields());
 		int* cnt = &fieldsoutcnt_[tagField];
 		switch (tagType) {
 			case TAG_ARRAY: {
@@ -240,7 +242,7 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload* pl, Serializer& rdser)
 
 	// get field from indexed field
 	if (tagField >= 0) {
-		assert(tagField < pl->NumFields());
+		assertrx(tagField < pl->NumFields());
 		switch (tagType) {
 			case TAG_ARRAY: {
 				int count = rdser.GetVarUint();

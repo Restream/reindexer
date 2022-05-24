@@ -37,7 +37,10 @@ public:
 		std::string baseTestsetDbPath;
 	};
 
-	virtual Defaults GetDefaultPorts() { return {14000, 16000, fs::JoinPath(fs::GetTempDir(), "rx_test/ClusterizationApi")}; }
+	virtual const Defaults& GetDefaults() const {
+		static Defaults defs{14000, 16000, fs::JoinPath(fs::GetTempDir(), "rx_test/ClusterizationApi")};
+		return defs;
+	}
 	struct NamespaceData {
 		std::string name;
 		lsn_t expectedLsn;
@@ -81,7 +84,9 @@ public:
 		size_t GetSynchronizedNodesCount(size_t nodeId);
 		void EnablePerfStats(size_t nodeId);
 		void ChangeLeader(int& curLeaderId, int newLeaderId);
-		void AddAsyncNode(size_t nodeId, const std::string& dsn, std::optional<std::vector<std::string> >&& nsList = {});
+		void AddAsyncNode(size_t nodeId, const std::string& dsn, cluster::AsyncReplicationMode replMode,
+						  std::optional<std::vector<std::string> >&& nsList = {});
+		void AwaitLeaderBecomeAvailable(size_t nodeId, std::chrono::milliseconds awaitTime = std::chrono::milliseconds(5000));
 
 	private:
 		std::vector<ServerControl> svc_;

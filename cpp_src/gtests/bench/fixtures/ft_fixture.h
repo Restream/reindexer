@@ -49,6 +49,8 @@ protected:
 
 	void InitForAlternatingUpdatesAndSelects(State&);
 	void AlternatingUpdatesAndSelects(benchmark::State&);
+	void AlternatingUpdatesAndSelectsByComposite(benchmark::State&);
+	void AlternatingUpdatesAndSelectsByCompositeByNotIndexFields(benchmark::State&);
 
 protected:
 	string CreatePhrase();
@@ -66,9 +68,18 @@ protected:
 protected:
 	vector<string> words_;
 	vector<string> countries_;
-	std::vector<std::string> values_;
+	struct Values {
+		Values(std::string s1, std::string s2, std::string f1, std::string f2) noexcept
+			: search1{std::move(s1)}, search2{std::move(s2)}, field1{std::move(f1)}, field2{std::move(f2)} {}
+		std::string search1;
+		std::string search2;
+		std::string field1;
+		std::string field2;
+	};
+	std::vector<Values> values_;
 
 private:
+	void updateAlternatingNs(reindexer::WrSerializer&, benchmark::State&);
 	const string letters = "abcdefghijklmnopqrstuvwxyz";
 	const char* alternatingNs_ = "FtAlternatingUpdatesAndSelects";
 

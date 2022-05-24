@@ -34,6 +34,7 @@ public:
 	void OnNodeBecameUnsynchonized(uint32_t nodeId) { syncList_.MarkUnsynchonized(nodeId); }
 	void OnAllUpdatesReplicated(uint32_t nodeId, int64_t lastUpdateID) { syncList_.MarkSynchronized(nodeId, lastUpdateID); }
 	void OnUpdateSucceed(uint32_t nodeId, int64_t lastUpdateID) { syncList_.MarkSynchronized(nodeId, lastUpdateID); }
+	Error CheckReplicationMode() const noexcept { return Error(); }
 
 private:
 	const NsNamesHashSetT *namespaces_;

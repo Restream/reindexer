@@ -32,7 +32,8 @@ func TestAutogen(t *testing.T) {
 		item := TestItemAutogen{}
 		err := DB.Upsert(ns, &item, precepts...)
 		require.NoError(t, err)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 
 		it, _ := DB.Query(ns).Where("id", reindexer.EQ, item.ID).MustExec(t).FetchAll()
 		assert.Equal(t, item.UpdatedTime, it[0].(*TestItemAutogen).UpdatedTime)
@@ -106,21 +107,24 @@ func TestAutogen(t *testing.T) {
 		item := TestItemAutogen{ID: rand.Intn(100000000)}
 		_, err := DB.Insert(ns, &item, precepts...)
 		require.NoError(t, err)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 		it, _ := DB.Query(ns).Where("id", reindexer.EQ, item.ID).MustExec(t).FetchAll()
 		assert.Equal(t, item.UpdatedTime, it[0].(*TestItemAutogen).UpdatedTime)
 
 		item = TestItemAutogen{}
 		err = DB.Upsert(ns, &item, precepts...)
 		require.NoError(t, err)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 		it, _ = DB.Query(ns).Where("id", reindexer.EQ, item.ID).MustExec(t).FetchAll()
 		assert.Equal(t, item.UpdatedTime, it[0].(*TestItemAutogen).UpdatedTime)
 
 		item = TestItemAutogen{}
 		_, err = DB.Update(ns, &item, precepts...)
 		require.NoError(t, err)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 		it, _ = DB.Query(ns).Where("id", reindexer.EQ, item.ID).MustExec(t).FetchAll()
 		assert.Equal(t, item.UpdatedTime, it[0].(*TestItemAutogen).UpdatedTime)
 	})
@@ -131,7 +135,8 @@ func TestAutogen(t *testing.T) {
 
 		err := DB.Upsert(ns, &item, precepts...)
 		require.NoError(t, err)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 		it, _ := DB.Query(ns).Where("id", reindexer.EQ, item.ID).MustExec(t).FetchAll()
 		assert.Equal(t, item.UpdatedTime, it[0].(*TestItemAutogen).UpdatedTime)
 	})
@@ -154,7 +159,8 @@ func TestAutogen(t *testing.T) {
 		count, err := DB.Insert(ns, &item, precepts...)
 		require.NoError(t, err)
 		assert.Equal(t, 1, count)
-		assert.Equal(t, time.Now().Unix(), item.UpdatedTime)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 		it, _ := DB.Query(ns).Where("id", reindexer.EQ, item.ID).MustExec(t).FetchAll()
 		assert.Equal(t, item.UpdatedTime, it[0].(*TestItemAutogen).UpdatedTime)
 

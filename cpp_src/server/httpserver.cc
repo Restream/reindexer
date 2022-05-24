@@ -54,18 +54,18 @@ Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, bool &isWALQuery
 	reindexer::Query q;
 	q.FromSQL(sqlQuery);
 	isWALQuery = q.IsWALQuery();
-	std::string_view sharding = ctx.request->params.Get("sharding");
+	std::string_view sharding = ctx.request->params.Get("sharding"sv, "on"sv);
 	switch (q.Type()) {
 		case QuerySelect: {
 			auto db =
-				sharding == "off"sv
+				!isParameterSetOn(sharding)
 					? getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout).WithShardId(ShardingKeyType::ProxyOff, false)
 					: getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 			return db.Select(q, res);
 		}
 		case QueryDelete: {
 			auto db =
-				sharding == "off"sv
+				!isParameterSetOn(sharding)
 					? getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout()).WithShardId(ShardingKeyType::ProxyOff, false)
 					: getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
 
@@ -73,14 +73,14 @@ Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, bool &isWALQuery
 		}
 		case QueryUpdate: {
 			auto db =
-				sharding == "off"sv
+				!isParameterSetOn(sharding)
 					? getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout()).WithShardId(ShardingKeyType::ProxyOff, false)
 					: getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
 			return db.Update(q, res);
 		}
 		case QueryTruncate: {
 			auto db =
-				sharding == "off"sv
+				!isParameterSetOn(sharding)
 					? getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout()).WithShardId(ShardingKeyType::ProxyOff, false)
 					: getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 
@@ -278,8 +278,8 @@ int HTTPServer::PostDatabase(http::Context &ctx) {
 	AuthContext *actx = &dummyCtx;
 	if (!dbMgr_.IsNoSecurity()) {
 		auto clientData = dynamic_cast<HTTPClientData *>(ctx.clientData.get());
-		assert(clientData);
-		actx = &clientData->auth;
+		assertrx(clientData);
+		actx = &clientData->auth;  // -V522
 	}
 
 	auto status = dbMgr_.OpenDatabase(newDbName, *actx, true);
@@ -297,8 +297,8 @@ int HTTPServer::DeleteDatabase(http::Context &ctx) {
 	AuthContext *actx = &dummyCtx;
 	if (!dbMgr_.IsNoSecurity()) {
 		auto clientData = dynamic_cast<HTTPClientData *>(ctx.clientData.get());
-		assert(clientData);
-		actx = &clientData->auth;
+		assertrx(clientData);
+		actx = &clientData->auth;  // -V522
 	}
 
 	auto status = dbMgr_.Login(dbName, *actx);
@@ -452,9 +452,10 @@ int HTTPServer::RenameNamespace(http::Context &ctx) {
 }
 
 int HTTPServer::GetItems(http::Context &ctx) {
-	std::string_view sharding = ctx.request->params.Get("sharding");
+	std::string_view sharding = ctx.request->params.Get("sharding"sv, "on"sv);
+	std::string_view shardIds = ctx.request->params.Get("with_shard_ids"sv);
 
-	auto db = sharding == "off"sv
+	auto db = !isParameterSetOn(sharding)
 				  ? getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout).WithShardId(ShardingKeyType::ProxyOff, false)
 				  : getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 
@@ -497,16 +498,19 @@ int HTTPServer::GetItems(http::Context &ctx) {
 	}
 
 	reindexer::Query q;
-
 	q.FromSQL(querySer.Slice());
 	q.ReqTotal();
 
-	reindexer::QueryResults res;
+	int flags = kResultsCJson | kResultsWithPayloadTypes;
+	if (isParameterSetOn(shardIds)) {
+		flags |= kResultsNeedOutputShardId | kResultsWithShardId;
+	}
+
+	reindexer::QueryResults res(flags);
 	auto ret = db.Select(q, res);
 	if (!ret.ok()) {
 		return status(ctx, http::HttpStatus(http::StatusInternalServerError, ret.what()));
 	}
-
 	return queryResults(ctx, res);
 }
 
@@ -1283,7 +1287,6 @@ int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &re
 		item.FromCJSON(cjson);
 		return string(item.GetJSON());
 	};
-
 	for (size_t i = 0; it != res.end() && i < limit; ++i, ++it) {
 		if (!isWALQuery) {
 			iarray.Raw(nullptr, "");
@@ -1514,7 +1517,7 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 
 	std::string_view format = ctx.request->params.Get("format");
 	std::string_view withColumnsParam = ctx.request->params.Get("with_columns");
-	bool withColumns = ((withColumnsParam == "1") && (width > 0)) ? true : false;
+	bool withColumns = (isParameterSetOn(withColumnsParam) && (width > 0)) ? true : false;
 
 	if (format == "msgpack"sv) {
 		return queryResultsMsgPack(ctx, res, isWALQuery, isQueryResults, limit, offset, withColumns, width);
@@ -1612,8 +1615,8 @@ Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role, string *dbNameOut
 	AuthContext *actx = &dummyCtx;
 	if (!dbMgr_.IsNoSecurity()) {
 		auto clientData = dynamic_cast<HTTPClientData *>(ctx.clientData.get());
-		assert(clientData);
-		actx = &clientData->auth;
+		assertrx(clientData);
+		actx = &clientData->auth;  // -V522
 	}
 
 	auto status = dbMgr_.OpenDatabase(dbName, *actx, false);
@@ -1628,7 +1631,7 @@ Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role, string *dbNameOut
 	if (!status.ok()) {
 		throw http::HttpStatus(status);
 	}
-	assert(db);
+	assertrx(db);
 	return db->NeedTraceActivity() ? db->WithActivityTracer(ctx.request->clientAddr, ctx.request->headers.Get("User-Agent")) : *db;
 }
 
@@ -1877,6 +1880,14 @@ void HTTPServer::OnResponse(http::Context &ctx) {
 		statsWatcher_->OnInputTraffic(dbName, statsSourceName(), ctx.stat.sizeStat.reqSizeBytes);
 		statsWatcher_->OnOutputTraffic(dbName, statsSourceName(), ctx.stat.sizeStat.respSizeBytes);
 	}
+}
+
+bool HTTPServer::isParameterSetOn(std::string_view val) const noexcept {
+	if (val.empty()) return false;
+	if (iequals(val, "on") || iequals(val, "true") || iequals(val, "1")) {
+		return true;
+	}
+	return false;
 }
 
 }  // namespace reindexer_server

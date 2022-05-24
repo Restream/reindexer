@@ -135,14 +135,14 @@ protected:
 				if (it->nsLck.owns_lock()) {
 					it->nsLck.unlock();
 				} else {
-					assert(!locked_);
+					assertrx(!locked_);
 				}
 			}
 			// Clean (ns may releases, if locker holds last ref)
 		}
 
 		void Add(NamespaceImpl::Ptr ns) {
-			assert(!locked_);
+			assertrx(!locked_);
 			for (auto it = begin(); it != end(); ++it) {
 				if (it->ns.get() == ns.get()) {
 					++(it->count);
@@ -160,7 +160,7 @@ protected:
 					return;
 				}
 			}
-			assert(0);
+			assertrx(0);
 		}
 		void Lock() {
 			std::sort(begin(), end(), [](const NsLockerItem &lhs, const NsLockerItem &rhs) { return lhs.ns.get() < rhs.ns.get(); });

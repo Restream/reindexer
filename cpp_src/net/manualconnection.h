@@ -94,7 +94,7 @@ private:
 	struct async_data {
 		bool empty() const noexcept { return cb == nullptr; }
 		void set_cb(span<char> _buf, async_cb_t _cb) noexcept {
-			assert(!cb);
+			assertrx(!cb);
 			cb = std::move(_cb);
 			buf = _buf;
 		}
@@ -121,8 +121,8 @@ private:
 
 	template <typename buf_t, typename switch_policy_t = empty_switch_policy>
 	size_t async_read_impl(buf_t &data, size_t cnt, async_cb_t cb) {
-		assert(r_data_.empty());
-		assert(data.size() >= cnt);
+		assertrx(r_data_.empty());
+		assertrx(data.size() >= cnt);
 		auto &transfer = r_data_.transfer;
 		transfer.set_expected(cnt);
 		int int_err = 0;
@@ -147,8 +147,8 @@ private:
 
 	template <typename buf_t, typename switch_policy_t = empty_switch_policy>
 	size_t async_read_some_impl(buf_t &data, async_cb_t cb) {
-		assert(r_data_.empty());
-		assert(data.size());
+		assertrx(r_data_.empty());
+		assertrx(data.size());
 		auto &transfer = r_data_.transfer;
 		transfer.set_expected(0);
 		if (state_ != conn_state::connecting) {
@@ -170,7 +170,7 @@ private:
 
 	template <typename buf_t, typename switch_policy_t = empty_switch_policy>
 	size_t async_write_impl(buf_t &data, async_cb_t cb, bool send_now) {
-		assert(w_data_.empty());
+		assertrx(w_data_.empty());
 		auto &transfer = w_data_.transfer;
 		transfer.set_expected(data.size());
 		int int_err = 0;

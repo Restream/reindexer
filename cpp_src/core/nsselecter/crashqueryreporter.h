@@ -16,7 +16,7 @@ public:
 	~ActiveQueryScope();
 
 public:
-	bool mainQuery_;
+	bool isTrackedQuery_;
 };
 
 void PrintCrashedQuery(std::ostream &sout);

@@ -25,7 +25,7 @@ class QuadraticSplitter : public GuttmanSplitter<Entry, Node, Traits, Iterator, 
 		while (next <= MaxEntries && this->moved_[next]) {
 			++next;
 		}
-		assert(next <= MaxEntries);
+		assertrx(next <= MaxEntries);
 		double firstAreaIncrease{0.0}, secondAreaIncrease{0.0};
 		for (size_t i = next; i <= MaxEntries; ++i) {
 			if (this->moved_[i]) continue;

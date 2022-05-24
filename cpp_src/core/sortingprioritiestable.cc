@@ -70,7 +70,7 @@ bool SortingPrioritiesTable::checkForRangeIntersection(std::map<uint16_t, uint16
 }
 
 int SortingPrioritiesTable::GetPriority(wchar_t c) const {
-	assert(sortOrder_.get() != nullptr);
+	assertrx(sortOrder_.get() != nullptr);
 	// assert(static_cast<uint32_t>(c) < tableSize);
 	uint16_t ch(static_cast<uint16_t>(c));
 	return sortOrder_->operator[](ch);

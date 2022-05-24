@@ -39,8 +39,10 @@ template <typename Builder>
 class BaseEncoder {
 public:
 	BaseEncoder(const TagsMatcher *tagsMatcher, const FieldsSet *filter = nullptr);
-	void Encode(ConstPayload *pl, Builder &builder, IAdditionalDatasource<Builder> * = nullptr);
-	void Encode(std::string_view tuple, Builder &wrSer, IAdditionalDatasource<Builder> *);
+	void Encode(ConstPayload *pl, Builder &builder,
+				const h_vector<IAdditionalDatasource<Builder> *, 2> &dss = h_vector<IAdditionalDatasource<Builder> *, 2>());
+	void Encode(std::string_view tuple, Builder &wrSer,
+				const h_vector<IAdditionalDatasource<Builder> *, 2> &dss = h_vector<IAdditionalDatasource<Builder> *, 2>());
 
 	const TagsLengths &GetTagsMeasures(ConstPayload *pl, IEncoderDatasourceWithJoins *ds = nullptr);
 

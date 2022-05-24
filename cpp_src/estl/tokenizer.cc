@@ -46,8 +46,8 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
 		const size_t startPos = ++pos_;
 		while (++cur_ != q_.end() && *cur_ != '"') {
 			if (pos_ == startPos) {
-				if (*cur_ != '#' && *cur_ != '_' && !isalpha(*cur_) && *cur_ != '@') {
-					throw Error{errParseSQL, "Identifier should starts with alpha, '_', '#' or '@', but found '%c'; %s", *cur_, where()};
+				if (*cur_ != '#' && *cur_ != '_' && !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {
+					throw Error{errParseSQL, "Identifier should starts with alpha, digit, '_', '#' or '@', but found '%c'; %s", *cur_, where()};
 				}
 			} else if (*cur_ != '+' && *cur_ != '.' && *cur_ != '_' && *cur_ != '#' && *cur_ != '[' && *cur_ != ']' && *cur_ != '*' &&
 					   !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {

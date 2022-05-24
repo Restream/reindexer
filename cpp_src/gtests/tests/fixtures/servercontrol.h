@@ -15,9 +15,9 @@
 #include "tools/stringstools.h"
 
 #ifdef REINDEXER_WITH_SC_AS_PROCESS
-const bool kAsServerProcess = true;
+const bool kTestServersInSeparateProcesses = true;
 #else
-const bool kAsServerProcess = false;
+const bool kTestServersInSeparateProcesses = false;
 #endif
 
 struct AsyncReplicationConfigTest {
@@ -32,16 +32,20 @@ struct AsyncReplicationConfigTest {
 		std::optional<NsSet> nsList;
 	};
 
-	AsyncReplicationConfigTest(std::string role, std::vector<Node> followers = std::vector<Node>(), std::string appName = std::string())
+	AsyncReplicationConfigTest(std::string role, std::vector<Node> followers = std::vector<Node>(), std::string appName = std::string(),
+							   std::string mode = std::string())
 		: role_(std::move(role)),
+		  mode_(std::move(mode)),
 		  nodes_(std::move(followers)),
 		  forceSyncOnLogicError_(false),
 		  forceSyncOnWrongDataHash_(true),
 		  appName_(std::move(appName)),
 		  serverId_(0) {}
 	AsyncReplicationConfigTest(std::string role, std::vector<Node> followers, bool forceSyncOnLogicError, bool forceSyncOnWrongDataHash,
-							   int serverId = 0, std::string appName = std::string(), NsSet namespaces = NsSet())
+							   int serverId = 0, std::string appName = std::string(), NsSet namespaces = NsSet(),
+							   std::string mode = std::string())
 		: role_(std::move(role)),
+		  mode_(std::move(mode)),
 		  nodes_(std::move(followers)),
 		  forceSyncOnLogicError_(forceSyncOnLogicError),
 		  forceSyncOnWrongDataHash_(forceSyncOnWrongDataHash),
@@ -50,13 +54,14 @@ struct AsyncReplicationConfigTest {
 		  serverId_(serverId) {}
 
 	bool operator==(const AsyncReplicationConfigTest& config) const {
-		return role_ == config.role_ && nodes_ == config.nodes_ && forceSyncOnLogicError_ == config.forceSyncOnLogicError_ &&
-			   forceSyncOnWrongDataHash_ == config.forceSyncOnWrongDataHash_ && appName_ == config.appName_ &&
-			   namespaces_ == config.namespaces_ && serverId_ == config.serverId_ && syncThreads_ == config.syncThreads_ &&
-			   concurrentSyncsPerThread_ == config.concurrentSyncsPerThread_;
+		return role_ == config.role_ && mode_ == config.mode_ && nodes_ == config.nodes_ &&
+			   forceSyncOnLogicError_ == config.forceSyncOnLogicError_ && forceSyncOnWrongDataHash_ == config.forceSyncOnWrongDataHash_ &&
+			   appName_ == config.appName_ && namespaces_ == config.namespaces_ && serverId_ == config.serverId_ &&
+			   syncThreads_ == config.syncThreads_ && concurrentSyncsPerThread_ == config.concurrentSyncsPerThread_;
 	}
 
 	std::string role_;
+	std::string mode_;
 	std::vector<Node> nodes_;
 	bool forceSyncOnLogicError_;
 	bool forceSyncOnWrongDataHash_;
@@ -83,7 +88,7 @@ void WriteConfigFile(const std::string& path, const std::string& configYaml);
 
 struct ServerControlConfig {
 	ServerControlConfig(size_t _id, unsigned short _rpcPort, unsigned short _httpPort, std::string _storagePath, std::string _dbName,
-						bool _enableStats = true, size_t _maxUpdatesSize = 0, bool _asServerProcess = kAsServerProcess)
+						bool _enableStats = true, size_t _maxUpdatesSize = 0, bool _asServerProcess = kTestServersInSeparateProcesses)
 		: id(_id),
 		  storagePath(std::move(_storagePath)),
 		  httpPort(_httpPort),
@@ -99,7 +104,7 @@ struct ServerControlConfig {
 	std::string dbName;
 	bool enableStats = false;
 	size_t maxUpdatesSize = 0;
-	bool asServerProcess = kAsServerProcess;
+	bool asServerProcess = kTestServersInSeparateProcesses;
 	bool disableNetworkTimeout = false;
 };
 
@@ -111,6 +116,14 @@ public:
 
 	const size_t kMaxServerStartTimeSec = 20;
 	enum class ConfigType { File, Namespace };
+
+	static std::string getTestLogPath() {
+		const char* testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
+		const char* testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+		string name;
+		name = name + "logs/" + testSetName + "/" + testName + "/";
+		return name;
+	}
 
 	ServerControl(ServerControl&& rhs);
 	ServerControl& operator=(ServerControl&&);
@@ -135,7 +148,8 @@ public:
 
 		void SetReplicationConfig(const AsyncReplicationConfigTest& config);
 		void AddFollower(const std::string& dsn,
-						 std::optional<std::vector<std::string>>&& nsList = std::optional<std::vector<std::string>>());
+						 std::optional<std::vector<std::string>>&& nsList = std::optional<std::vector<std::string>>(),
+						 reindexer::cluster::AsyncReplicationMode replMode = reindexer::cluster::AsyncReplicationMode::Default);
 		// check with master or slave that sync complete
 		ReplicationStateApi GetState(const std::string& ns);
 		// Force sync (restart leader's replicator)
@@ -144,7 +158,8 @@ public:
 		void ResetReplicationRole(const std::string& ns = std::string());
 		reindexer::Error TryResetReplicationRole(const std::string& ns);
 		// Set cluster leader
-		void SetClusterLeader(int lederId);
+		void SetClusterLeader(int leaderId);
+		BaseApi::ItemType CreateClusterChangeLeaderItem(int leaderId);
 		// get server config from file
 		AsyncReplicationConfigTest GetServerConfig(ConfigType type);
 		// write general replication config file

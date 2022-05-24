@@ -40,20 +40,19 @@ public:
 	void CheckFirstQuery();
 	// Let iterators choose most effecive algorith
 	void SetExpectMaxIterations(int expectedIterations);
-	void PrepareIteratorsForSelectLoop(const QueryEntries &queries, const std::multimap<unsigned, EqualPosition> &equalPositions,
-									   unsigned sortId, bool isFt, const NamespaceImpl &ns, SelectFunction::Ptr selectFnc,
-									   FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
-		prepareIteratorsForSelectLoop(queries, 0, queries.Size(), equalPositions, sortId, isFt, ns, selectFnc, ftCtx, rdxCtx);
+	void PrepareIteratorsForSelectLoop(const QueryEntries &queries, unsigned sortId, bool isFt, const NamespaceImpl &ns,
+									   SelectFunction::Ptr selectFnc, FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
+		prepareIteratorsForSelectLoop(queries, 0, queries.Size(), sortId, isFt, ns, selectFnc, ftCtx, rdxCtx);
 	}
 	template <bool reverse, bool hasComparators>
 	bool Process(PayloadValue &, bool *finish, IdType *rowId, IdType, bool match);
 
 	bool IsSelectIterator(size_t i) const noexcept {
-		assert(i < Size());
+		assertrx(i < Size());
 		return container_[i].HoldsOrReferTo<SelectIterator>();
 	}
 	bool IsJoinIterator(size_t i) const noexcept {
-		assert(i < container_.size());
+		assertrx(i < container_.size());
 		return container_[i].HoldsOrReferTo<JoinSelectIterator>();
 	}
 	void ExplainJSON(int iters, JsonBuilder &builder, const vector<JoinedSelector> *js) const {
@@ -69,9 +68,8 @@ public:
 	std::string Dump() const;
 
 private:
-	void prepareIteratorsForSelectLoop(const QueryEntries &, size_t begin, size_t end,
-									   const std::multimap<unsigned, EqualPosition> &equalPositions, unsigned sortId, bool isFt,
-									   const NamespaceImpl &, SelectFunction::Ptr selectFnc, FtCtx::Ptr &ftCtx, const RdxContext &);
+	void prepareIteratorsForSelectLoop(const QueryEntries &, size_t begin, size_t end, unsigned sortId, bool isFt, const NamespaceImpl &,
+									   SelectFunction::Ptr selectFnc, FtCtx::Ptr &ftCtx, const RdxContext &);
 	void sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
 	double fullCost(span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const;
 	double cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const;
@@ -103,8 +101,13 @@ private:
 	void processJoinEntry(const JoinQueryEntry &, OpType);
 	void processQueryEntryResults(SelectKeyResults &selectResults, OpType, const NamespaceImpl &ns, const QueryEntry &qe, bool isIndexFt,
 								  bool isIndexSparse, bool nonIndexField);
-	void processEqualPositions(const std::multimap<unsigned, EqualPosition> &equalPositions, size_t begin, size_t end,
-							   const NamespaceImpl &ns, const QueryEntries &queries);
+	struct EqualPositions {
+		h_vector<size_t, 4> queryEntriesPositions;
+		size_t positionToInsertIterator = 0;
+		bool foundOr = false;
+	};
+	void processEqualPositions(const std::vector<EqualPositions> &equalPositions, const NamespaceImpl &ns, const QueryEntries &queries);
+	static std::vector<EqualPositions> prepareEqualPositions(const QueryEntries &queries, size_t begin, size_t end);
 
 	/// @return end() if empty or last opened bracket is empty
 	iterator lastAppendedOrClosed() {

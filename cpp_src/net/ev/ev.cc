@@ -112,7 +112,7 @@ void loop_select_backend::init(dynamic_loop *owner) {
 }
 
 void loop_select_backend::set(int fd, int events, int /*oldevents*/) {
-	assert(fd < capacity());
+	assertrx(fd < capacity());
 
 	if (fd > private_->maxfd_) private_->maxfd_ = fd;
 
@@ -185,7 +185,7 @@ void loop_poll_backend::set(int fd, int events, int /*oldevents*/) {
 		private_->fds_.push_back({fd, ev, 0});
 		idx = private_->fds_.size() - 1;
 	} else {
-		assert(private_->fds_.at(idx).fd == fd);
+		assertrx(private_->fds_.at(idx).fd == fd);
 		private_->fds_.at(idx).events = ev;
 		private_->fds_.at(idx).revents = 0;
 	}
@@ -193,7 +193,7 @@ void loop_poll_backend::set(int fd, int events, int /*oldevents*/) {
 
 void loop_poll_backend::stop(int fd) {
 	int &idx = owner_->fds_[fd].idx;
-	assert(idx >= 0 && !private_->fds_.empty());
+	assertrx(idx >= 0 && !private_->fds_.empty());
 
 	if (static_cast<size_t>(idx) < private_->fds_.size() - 1) {
 		int tmpfd = private_->fds_.back().fd;
@@ -278,7 +278,7 @@ void loop_epoll_backend::stop(int fd) {
 int loop_epoll_backend::runonce(int64_t t) {
 	int ret = epoll_wait(private_->ctlfd_, &private_->events_[0], private_->events_.size(), t != -1 ? t / 1000 : -1);
 
-	assert(ret <= static_cast<int>(private_->events_.size()));
+	assertrx(ret <= static_cast<int>(private_->events_.size()));
 
 	for (int i = 0; i < ret; i++) {
 		int events =
@@ -326,7 +326,7 @@ void loop_wsa_backend::init(dynamic_loop *owner) { owner_ = owner; }
 void loop_wsa_backend::set(int fd, int events, int oldevents) {
 	auto it = std::find_if(private_->wfds_.begin(), private_->wfds_.end(), [&](const win_fd &wfd) { return wfd.fd == fd; });
 	if (it == private_->wfds_.end()) {
-		assert(int(private_->wfds_.size()) < capacity());
+		assertrx(int(private_->wfds_.size()) < capacity());
 		win_fd new_wfd;
 		new_wfd.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 		new_wfd.fd = fd;
@@ -428,7 +428,7 @@ dynamic_loop::~dynamic_loop() {
 void dynamic_loop::run() {
 	if (coroTid_ != std::thread::id() && coroTid_ != std::this_thread::get_id()) {
 		// Loop has coroutines from another thread
-		assert(false);
+		assertrx(false);
 	}
 
 	break_ = false;
@@ -448,7 +448,7 @@ void dynamic_loop::run() {
 			std::swap(new_tasks_, new_tasks);
 			for (auto id : new_tasks) {
 				int res = coroutine::resume(id);
-				assert(res == 0);
+				assertrx(res == 0);
 				if (res != 0) {
 					running_tasks_.pop_back();
 				}
@@ -642,7 +642,7 @@ void dynamic_loop::async_callback() {
 void dynamic_loop::set_coro_cb() {
 	[[maybe_unused]] bool res = coroutine::set_loop_completion_callback([this](coroutine::routine_t id) {
 		auto found = std::find(running_tasks_.begin(), running_tasks_.end(), id);
-		assert(found != running_tasks_.end());
+		assertrx(found != running_tasks_.end());
 		running_tasks_.erase(found);
 		if (new_tasks_.empty() && running_tasks_.empty()) {
 			coroTid_ = std::thread::id();
@@ -650,13 +650,13 @@ void dynamic_loop::set_coro_cb() {
 		}
 	});
 	// if res is false, then callback was set before (probably by another loop)
-	assert(res);
+	assertrx(res);
 	coro_cb_is_set_ = true;
 }
 
 void dynamic_loop::remove_coro_cb() {
 	[[maybe_unused]] bool res = coroutine::remove_loop_completion_callback();
-	assert(res);
+	assertrx(res);
 	coro_cb_is_set_ = false;
 }
 

@@ -34,7 +34,7 @@ Error RPCClient::startWorkers() {
 }
 
 Error RPCClient::addConnectEntry(const string& dsn, const client::ConnectOpts& opts, size_t idx) {
-	assert(idx < connectData_.entries.size());
+	assertrx(idx < connectData_.entries.size());
 	cproto::ClientConnection::ConnectData::Entry& connectEntry = connectData_.entries[idx];
 	if (!connectEntry.uri.parse(dsn)) {
 		return Error(errParams, "%s is not valid uri", dsn);
@@ -601,9 +601,9 @@ Namespace* RPCClient::getNamespace(std::string_view nsName) {
 }
 
 net::cproto::ClientConnection* RPCClient::getConn() {
-	assert(connections_.size());
+	assertrx(connections_.size());
 	auto conn = connections_.at(curConnIdx_++ % connections_.size()).get();
-	assert(conn);
+	assertrx(conn);
 	return conn;
 }
 

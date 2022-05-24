@@ -14,6 +14,7 @@ public:
 	TtlIndex(const TtlIndex<T> &other);
 	int64_t GetTTLValue() const override;
 	std::unique_ptr<Index> Clone() override;
+	void UpdateExpireAfter(int64_t v);
 
 private:
 	/// Expiration value in seconds.
@@ -21,5 +22,6 @@ private:
 };
 
 std::unique_ptr<Index> TtlIndex_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields);
+void UpdateExpireAfter(Index *i, int64_t v);
 
 }  // namespace reindexer

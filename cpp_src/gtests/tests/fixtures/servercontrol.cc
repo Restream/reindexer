@@ -1,6 +1,5 @@
 #include "servercontrol.h"
 #include <fstream>
-#include "cluster/config.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/queryresults/queryresults.h"
 #include "systemhelpers.h"
@@ -134,7 +133,8 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 	}
 	return AsyncReplicationConfigTest(cluster::AsyncReplConfigData::Role2str(asyncReplConf.role), std::move(followers),
 									  asyncReplConf.forceSyncOnLogicError, asyncReplConf.forceSyncOnWrongDataHash, replConf.serverID,
-									  std::move(asyncReplConf.appName), std::move(namespaces));
+									  std::move(asyncReplConf.appName), std::move(namespaces),
+									  cluster::AsyncReplConfigData::Mode2str(asyncReplConf.mode));
 }
 
 void ServerControl::Interface::WriteReplicationConfig(const std::string& configYaml) {
@@ -178,10 +178,8 @@ cluster::ReplicationStats ServerControl::Interface::GetReplicationStats(std::str
 }
 
 std::string ServerControl::Interface::getLogName(const string& log, bool core) {
-	const char* testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
-	const char* testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
-	string name;
-	name = name + "logs/" + testSetName + "/" + testName + "/" + log + "_";
+	string name = getTestLogPath();
+	name += (log + "_");
 	if (!core) name += std::to_string(config_.id);
 	name += ".log";
 	return name;
@@ -242,12 +240,12 @@ void ServerControl::Interface::Init() {
 		"   enable_cluster: true\n" +
 		(config_.maxUpdatesSize ?
 		"   maxupdatessize:" + std::to_string(config_.maxUpdatesSize)+"\n" : "");
-
+	// clang-format on
 	if (config_.asServerProcess) {
 		try {
 			std::vector<std::string> paramArray = getCLIParamArray(config_.enableStats, config_.maxUpdatesSize);
 			std::string reindexerServerPath(REINDEXER_SERVER_PATH);
-			if(reindexerServerPath.empty())	{ // -V547
+			if (reindexerServerPath.empty()) {	// -V547
 				throw Error(errLogic, "REINDEXER_SERVER_PATH empty");
 			}
 			reindexerServerPID = reindexer::StartProcess(reindexerServerPath, paramArray);
@@ -315,6 +313,7 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	asyncReplConf.forceSyncOnLogicError = config.forceSyncOnLogicError_;
 	asyncReplConf.forceSyncOnWrongDataHash = config.forceSyncOnWrongDataHash_;
 	asyncReplConf.retrySyncIntervalMSec = 1000;
+	asyncReplConf.mode = cluster::AsyncReplConfigData::Str2mode(config.mode_);
 	for (auto& node : config.nodes_) {
 		asyncReplConf.nodes.emplace_back(cluster::AsyncReplNodeConfig{node.dsn});
 		if (node.nsList.has_value()) {
@@ -336,18 +335,30 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional<std::vector<std::string>>&& nsList) {
-	BaseApi::QueryResultsType qr;
-	auto err = api.reindexer->Select(Query(kConfigNs).Where("type", CondEq, "async_replication"), qr);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_EQ(qr.Count(), 1);
-	WrSerializer ser;
-	qr.begin().GetJSON(ser, false);
+void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional<std::vector<std::string>>&& nsList,
+										   cluster::AsyncReplicationMode replMode) {
+	auto getCurConf = [this](cluster::AsyncReplConfigData& curConf) {
+		BaseApi::QueryResultsType qr;
+		auto err = api.reindexer->Select(Query(kConfigNs).Where("type", CondEq, "async_replication"), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), 1);
+		WrSerializer ser;
+		qr.begin().GetJSON(ser, false);
+		curConf = cluster::AsyncReplConfigData();
+		err = curConf.FromJSON(gason::JsonParser().Parse(ser.Slice())["async_replication"]);
+		ASSERT_TRUE(err.ok()) << err.what();
+	};
 	cluster::AsyncReplConfigData curConf;
-	err = curConf.FromJSON(gason::JsonParser().Parse(ser.Slice())["async_replication"]);
-	ASSERT_TRUE(err.ok()) << err.what();
+	getCurConf(curConf);
+	if (curConf.role != cluster::AsyncReplConfigData::Role::Leader) {
+		MakeLeader();
+		getCurConf(curConf);
+	}
 	cluster::AsyncReplNodeConfig newNode;
 	newNode.dsn = dsn;
+	if (replMode != cluster::AsyncReplicationMode::Default) {
+		newNode.SetReplicationMode(replMode);
+	}
 	auto found = std::find_if(curConf.nodes.begin(), curConf.nodes.end(),
 							  [&dsn](const cluster::AsyncReplNodeConfig& node) { return node.GetRPCDsn() == dsn; });
 	ASSERT_TRUE(found == curConf.nodes.end());
@@ -363,10 +374,11 @@ void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional
 	curConf.onlineUpdatesTimeoutSec = 20;
 	curConf.replThreadsCount = 2;
 	curConf.retrySyncIntervalMSec = 1000;
+	curConf.mode = cluster::AsyncReplicationMode::Default;
 
 	upsertConfigItemFromObject("async_replication", curConf);
 
-	err = api.Commit(kConfigNs);
+	auto err = api.Commit(kConfigNs);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
@@ -421,13 +433,11 @@ void ServerControl::InitServer(ServerControlConfig config) {
 }
 
 void ServerControl::InitServerWithConfig(ServerControlConfig config, const std::string& ReplicationConfig, const std::string& ClusterConfig,
-							  const std::string& ShardingConfig, const std::string& AsyncReplicationConfig)
-{
+										 const std::string& ShardingConfig, const std::string& AsyncReplicationConfig) {
 	WLock lock(mtx_);
-	interface = std::make_shared<ServerControl::Interface>(*stopped_, std::move(config),ReplicationConfig,ClusterConfig,ShardingConfig,AsyncReplicationConfig);
+	interface = std::make_shared<ServerControl::Interface>(*stopped_, std::move(config), ReplicationConfig, ClusterConfig, ShardingConfig,
+														   AsyncReplicationConfig);
 }
-
-
 
 void ServerControl::Drop() {
 	WLock lock(mtx_);
@@ -448,8 +458,7 @@ bool ServerControl::DropAndWaitStop() {
 	return true;
 }
 
-void ServerControl::WaitSync(ServerControl::Interface::Ptr s1, ServerControl::Interface::Ptr s2, const std::string& nsName)
-{
+void ServerControl::WaitSync(ServerControl::Interface::Ptr s1, ServerControl::Interface::Ptr s2, const std::string& nsName) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(50);
 	ReplicationStateApi state1, state2;
@@ -501,14 +510,14 @@ ReplicationStateApi ServerControl::Interface::GetState(const std::string& ns) {
 			state.dataHash = root["replication"]["data_hash"].As<uint64_t>();
 			state.nsVersion.FromJSON(root["replication"]["ns_version"]);
 			try {
-			reindexer::ClusterizationStatus clStatus;
-			clStatus.FromJSON(root["replication"]["clusterization_status"]);
-			state.role = clStatus.role;
-			} catch(...) {
+				reindexer::ClusterizationStatus clStatus;
+				clStatus.FromJSON(root["replication"]["clusterization_status"]);
+				state.role = clStatus.role;
+			} catch (...) {
 				EXPECT_TRUE(false) << "Unable to parse cluster status: " << ser.Slice();
 			}
 
-			/*		std::cout << "\n"
+			/*		TestCout() << "\n"
 						  << std::hex << "lsn = " << int64_t(state.lsn) << std::dec << " dataCount = " << state.dataCount
 						  << " dataHash = " << state.dataHash << " [" << ser.c_str() << "]\n"
 						  << std::endl;
@@ -556,19 +565,26 @@ Error ServerControl::Interface::TryResetReplicationRole(const std::string& ns) {
 	return api.reindexer->Upsert("#config", item);
 }
 
-void ServerControl::Interface::SetClusterLeader(int lederId) {
+BaseApi::ItemType ServerControl::Interface::CreateClusterChangeLeaderItem(int leaderId) {
 	auto item = api.NewItem("#config");
+	if (item.Status().ok()) {
+		WrSerializer ser;
+		JsonBuilder jb(ser);
+		jb.Put("type", "action");
+		auto actionObject = jb.Object("action");
+		actionObject.Put("command", "set_leader_node");
+		actionObject.Put("server_id", leaderId);
+		actionObject.End();
+		jb.End();
+		Error err = item.FromJSON(ser.Slice());
+		EXPECT_TRUE(err.ok()) << err.what();
+	}
+	return item;
+}
+
+void ServerControl::Interface::SetClusterLeader(int leaderId) {
+	auto item = CreateClusterChangeLeaderItem(leaderId);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	WrSerializer ser;
-	JsonBuilder jb(ser);
-	jb.Put("type", "action");
-	auto actionObject = jb.Object("action");
-	actionObject.Put("command", "set_leader_node");
-	actionObject.Put("server_id", lederId);
-	actionObject.End();
-	jb.End();
-	Error err = item.FromJSON(ser.Slice());
-	ASSERT_TRUE(err.ok()) << err.what();
 	api.Upsert("#config", item);
 }
 

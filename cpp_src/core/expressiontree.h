@@ -18,7 +18,7 @@ public:
 	void Append() noexcept { ++size_; }
 	/// Decrease space occupied by children
 	void Erase(size_t length) noexcept {
-		assert(size_ > length);
+		assertrx(size_ > length);
 		size_ -= length;
 	}
 	void CopyPayloadFrom(const Bracket&) const noexcept {}
@@ -202,7 +202,7 @@ class ExpressionTree {
 			T& operator()(Ref<T>& r) const noexcept { return r; }
 			template <typename U>
 			T& operator()(U&) const noexcept {
-				assert(0);
+				assertrx(0);
 				abort();
 			}
 		};
@@ -212,7 +212,7 @@ class ExpressionTree {
 			const T& operator()(const Ref<T>& r) const noexcept { return r; }
 			template <typename U>
 			const T& operator()(const U&) const noexcept {
-				assert(0);
+				assertrx(0);
 				abort();
 			}
 		};
@@ -264,7 +264,7 @@ class ExpressionTree {
 			}
 			template <typename T>
 			Storage operator()(T&& v) const {
-				return std::move(v);
+				return std::forward<T>(v);
 			}
 		};
 		struct IsRefVisitor {
@@ -397,30 +397,43 @@ public:
 	/// Insert value at the position
 	template <typename T>
 	void Insert(size_t pos, OperationType op, T&& v) {
-		assert(pos < container_.size());
+		assertrx(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
-			assert(b < container_.size());
+			assertrx(b < container_.size());
 			if (b >= pos) ++b;
 		}
 		for (size_t i = 0; i < pos; ++i) {
 			if (container_[i].IsSubTree() && Next(i) > pos) container_[i].Append();
 		}
-		container_.emplace(container_.begin() + pos, op, std::move(v));
+		container_.emplace(container_.begin() + pos, op, std::forward<T>(v));
+	}
+	/// Insert value after the position
+	template <typename T>
+	void InsertAfter(size_t pos, OperationType op, T&& v) {
+		assertrx(pos < container_.size());
+		for (unsigned& b : activeBrackets_) {
+			assertrx(b < container_.size());
+			if (b > pos) ++b;
+		}
+		for (size_t i = 0; i < pos; ++i) {
+			if (container_[i].IsSubTree() && Next(i) > pos) container_[i].Append();
+		}
+		container_.emplace(container_.begin() + pos + 1, op, std::forward<T>(v));
 	}
 	/// Appends value to the last openned subtree
 	template <typename T>
 	void Append(OperationType op, T&& v) {
 		for (unsigned i : activeBrackets_) {
-			assert(i < container_.size());
+			assertrx(i < container_.size());
 			container_[i].Append();
 		}
-		container_.emplace_back(op, std::move(v));
+		container_.emplace_back(op, std::forward<T>(v));
 	}
 	/// Appends value to the last openned subtree
 	template <typename T>
 	void Append(OperationType op, const T& v) {
 		for (unsigned i : activeBrackets_) {
-			assert(i < container_.size());
+			assertrx(i < container_.size());
 			container_[i].Append();
 		}
 		container_.emplace_back(op, v);
@@ -441,15 +454,15 @@ public:
 	template <typename T>
 	void AppendFront(OperationType op, T&& v) {
 		for (unsigned& i : activeBrackets_) ++i;
-		container_.emplace(container_.begin(), op, std::move(v));
+		container_.emplace(container_.begin(), op, std::forward<T>(v));
 	}
 	/// Enclose area in brackets
 	template <typename... Args>
 	void EncloseInBracket(size_t from, size_t to, OperationType op, Args&&... args) {
-		assert(to > from);
-		assert(to <= container_.size());
+		assertrx(to > from);
+		assertrx(to <= container_.size());
 		for (unsigned b : activeBrackets_) {
-			assert(b < container_.size());
+			assertrx(b < container_.size());
 			if (b >= from) ++b;
 		}
 		for (size_t i = 0; i < from; ++i) {
@@ -458,14 +471,14 @@ public:
 				if (bracketEnd >= to) {
 					container_[i].Append();
 				} else {
-					assert(bracketEnd <= from);
+					assertrx(bracketEnd <= from);
 				}
 			}
 		}
 #ifndef NDEBUG
 		for (size_t i = from; i < to; ++i) {
 			if (container_[i].IsSubTree()) {
-				assert(Next(i) <= to);
+				assertrx(Next(i) <= to);
 			}
 		}
 #endif
@@ -475,7 +488,7 @@ public:
 	template <typename... Args>
 	void OpenBracket(OperationType op, Args&&... args) {
 		for (unsigned i : activeBrackets_) {
-			assert(i < container_.size());
+			assertrx(i < container_.size());
 			container_[i].Append();
 		}
 		activeBrackets_.push_back(container_.size());
@@ -493,51 +506,55 @@ public:
 	void Reserve(size_t s) { container_.reserve(s); }
 	/// @return size of leaf of subtree beginning from i
 	size_t Size(size_t i) const {
-		assert(i < Size());
+		assertrx(i < Size());
 		return container_[i].Size();
 	}
 	/// @return beginning of next children of the same parent
 	size_t Next(size_t i) const {
-		assert(i < Size());
+		assertrx(i < Size());
 		return i + Size(i);
 	}
 	template <typename T>
 	bool HoldsOrReferTo(size_t i) const noexcept {
-		assert(i < Size());
+		assertrx(i < Size());
 		return container_[i].template HoldsOrReferTo<T>();
 	}
+	bool IsSubTree(size_t i) const noexcept {
+		assertrx(i < Size());
+		return container_[i].IsSubTree();
+	}
 	OperationType GetOperation(size_t i) const noexcept {
-		assert(i < Size());
+		assertrx(i < Size());
 		return container_[i].operation;
 	}
 	void SetOperation(OperationType op, size_t i) noexcept {
-		assert(i < Size());
+		assertrx(i < Size());
 		container_[i].operation = op;
 	}
 	template <typename T>
 	T& Get(size_t i) {
-		assert(i < Size());
+		assertrx(i < Size());
 		return container_[i].template Value<T>();
 	}
 	template <typename T>
 	const T& Get(size_t i) const {
-		assert(i < Size());
+		assertrx(i < Size());
 		return container_[i].template Value<T>();
 	}
 	template <typename T>
 	void SetValue(size_t i, T&& v) {
-		assert(i < Size());
+		assertrx(i < Size());
 		return container_[i].template SetValue<T>(std::forward<T>(v));
 	}
 	void Erase(size_t from, size_t to) {
-		assert(to >= from);
+		assertrx(to >= from);
 		const size_t count = to - from;
 		for (size_t i = 0; i < from; ++i) {
 			if (container_[i].IsSubTree()) {
 				if (Next(i) >= to) {
 					container_[i].Erase(count);
 				} else {
-					assert(Next(i) <= from);
+					assertrx(Next(i) <= from);
 				}
 			}
 		}
@@ -552,12 +569,12 @@ public:
 	/// Execute appropriate functor depending on content type
 	template <typename R, typename... Fs>
 	R InvokeAppropriate(size_t i, Fs&&... funcs) {
-		assert(i < container_.size());
+		assertrx(i < container_.size());
 		return container_[i].template InvokeAppropriate<R, Fs...>(std::forward<Fs>(funcs)...);
 	}
 	template <typename R, typename... Fs>
 	R InvokeAppropriate(size_t i, Fs&&... funcs) const {
-		assert(i < container_.size());
+		assertrx(i < container_.size());
 		return container_[i].template InvokeAppropriate<R, Fs...>(std::forward<Fs>(funcs)...);
 	}
 	/// Execute appropriate functor depending on content type for each node, skip if no appropriate functor
@@ -587,12 +604,12 @@ public:
 			return *this;
 		}
 		const_iterator cbegin() const {
-			assert(it_->IsSubTree());
+			assertrx(it_->IsSubTree());
 			return it_ + 1;
 		}
 		const_iterator begin() const { return cbegin(); }
 		const_iterator cend() const {
-			assert(it_->IsSubTree());
+			assertrx(it_->IsSubTree());
 			return it_ + it_->Size();
 		}
 		const_iterator end() const { return cend(); }
@@ -617,12 +634,12 @@ public:
 		}
 		operator const_iterator() const { return const_iterator(it_); }
 		iterator begin() const {
-			assert(it_->IsSubTree());
+			assertrx(it_->IsSubTree());
 			return it_ + 1;
 		}
 		const_iterator cbegin() const { return begin(); }
 		iterator end() const {
-			assert(it_->IsSubTree());
+			assertrx(it_->IsSubTree());
 			return it_ + it_->Size();
 		}
 		const_iterator cend() const { return end(); }
@@ -650,6 +667,15 @@ public:
 		return container_.cbegin() + activeBrackets_.back() + 1;
 	}
 
+	const SubTree* LastOpenBracket() const {
+		if (activeBrackets_.empty()) return nullptr;
+		return &container_[activeBrackets_.back()].template Value<SubTree>();
+	}
+	SubTree* LastOpenBracket() {
+		if (activeBrackets_.empty()) return nullptr;
+		return &container_[activeBrackets_.back()].template Value<SubTree>();
+	}
+
 protected:
 	Container container_;
 	/// stack of openned brackets (beginnigs of subtrees)
@@ -661,7 +687,7 @@ protected:
 
 	/// @return the last appended leaf or last closed subtree or last openned subtree if it is empty
 	size_t lastAppendedElement() const {
-		assert(!container_.empty());
+		assertrx(!container_.empty());
 		size_t start = 0;  // start of last openned subtree;
 		if (!activeBrackets_.empty()) {
 			start = activeBrackets_.back() + 1;

@@ -127,7 +127,7 @@ Selecter::MergeData Selecter::Process(FtDSLQuery &dsl) {
 			processVariants(synCtx);
 		}
 		for (size_t idx : synDsl.termsIdx) {
-			assert(idx < ctx.rawResults.size());
+			assertrx(idx < ctx.rawResults.size());
 			ctx.rawResults[idx].synonyms.push_back(results.size());
 			ctx.rawResults[idx].synonymsGroups.push_back(synonymsBounds.size());
 		}
@@ -334,11 +334,11 @@ void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResInd
 					++f;
 					fieldsMask >>= 1;
 				}
-				assert(f < vdocs[vid].wordsCount.size());
-				assert(f < rawRes.term.opts.fieldsOpts.size());
+				assertrx(f < vdocs[vid].wordsCount.size());
+				assertrx(f < rawRes.term.opts.fieldsOpts.size());
 				const auto fboost = rawRes.term.opts.fieldsOpts[f].boost;
 				if (fboost) {
-					assert(f < holder_.cfg_->fieldsCfg.size());
+					assertrx(f < holder_.cfg_->fieldsCfg.size());
 					const auto &fldCfg = holder_.cfg_->fieldsCfg[f];
 					// raw bm25
 					const double bm25 = idf * bm25score(relid.WordsInField(f), vdocs[vid].mostFreqWordCount[f], vdocs[vid].wordsCount[f],
@@ -386,9 +386,9 @@ void Selecter::mergeItaration(const TextSearchResults &rawRes, index_t rawResInd
 
 			// match of 2-rd, and next terms
 			if (!simple && vidStatus) {
-				assert(relid.Size());
+				assertrx(relid.Size());
 				auto moffset = idoffsets[vid];
-				assert(merged_rd[moffset].cur.Size());
+				assertrx(merged_rd[moffset].cur.Size());
 
 				// Calculate words distance
 				int distance = 0;
@@ -467,7 +467,7 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 
 	if (!rawResults.size() || !vdocs.size()) return merged;
 
-	assert(kExcluded > rawResults.size());
+	assertrx(kExcluded > rawResults.size());
 	// 0: means not added,
 	// kExcluded: means should not be added
 	// others: 1 + index of rawResult which added
@@ -515,7 +515,7 @@ Selecter::MergeData Selecter::mergeResults(vector<TextSearchResults> &rawResults
 				if (exists[curExists][vid] || vidStatus == kExcluded || vidStatus <= lastGroupStart || info.proc == 0) continue;
 				bool matchSyn = false;
 				for (size_t synGrpIdx : res.synonymsGroups) {
-					assert(synGrpIdx < curExists);
+					assertrx(synGrpIdx < curExists);
 					if (exists[synGrpIdx][vid]) {
 						matchSyn = true;
 						break;

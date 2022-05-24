@@ -88,10 +88,11 @@ private:
 	static int32_t getTerm(int64_t voteData) { return int32_t(voteData >> 32); }
 	static int64_t setTerm(int64_t voteData, int32_t term) { return (int64_t(term) << 32) + (voteData & ~(0xFFFFFFFFll << 32)); }
 	static void randomizedSleep(net::ev::dynamic_loop &loop, std::chrono::milliseconds base, std::chrono::milliseconds maxDiff);
-	int32_t beginElectionsTerm();
+	int32_t beginElectionsTerm(int presetLeader);
 	bool endElections(int32_t term, RaftInfo::Role result);
 	bool isConsensus(size_t num) const noexcept;
 	Error sendDesiredServerIdToNode(size_t index, int nextServerId);
+	Error clientStatus(size_t index);
 
 	net::ev::dynamic_loop &loop_;
 	ReplicationStatsCollector statsCollector_;

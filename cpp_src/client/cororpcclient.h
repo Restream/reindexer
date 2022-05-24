@@ -4,6 +4,7 @@
 #include "client/coroqueryresults.h"
 #include "client/cororeindexerconfig.h"
 #include "client/corotransaction.h"
+#include "client/inamespaces.h"
 #include "client/internalrdxcontext.h"
 #include "client/namespace.h"
 #include "cluster/config.h"
@@ -13,7 +14,6 @@
 #include "core/shardedmeta.h"
 #include "coroutine/mutex.h"
 #include "coroutine/waitgroup.h"
-#include "estl/fast_hash_map.h"
 #include "net/cproto/coroclientconnection.h"
 #include "urlparser/urlparser.h"
 
@@ -29,24 +29,38 @@ namespace client {
 
 class Snapshot;
 
-class Namespaces {
+template <typename MtxT>
+class NamespacesImpl : public INamespaces::IntrusiveT {
 public:
-	using IntrusiveT = intrusive_rc_wrapper<Namespaces>;
-	using PtrT = intrusive_ptr<IntrusiveT>;
-	using MapT = fast_hash_map<string, std::unique_ptr<Namespace>, nocase_hash_str, nocase_equal_str>;
-	void Add(const std::string &name) { namespaces_.emplace(name, std::make_unique<Namespace>(name)); }
-	void Erase(std::string_view name) { namespaces_.erase(name); }
-	Namespace *Get(std::string_view name) {
+	using MapT = fast_hash_map<std::string, std::unique_ptr<Namespace>, nocase_hash_str, nocase_equal_str>;
+	void Add(const std::string &name) override final {
+		std::lock_guard ulck(mtx_);
+		namespaces_.emplace(name, std::make_unique<Namespace>(name));
+	}
+	void Erase(std::string_view name) override final {
+		std::lock_guard ulck(mtx_);
+		namespaces_.erase(name);
+	}
+	Namespace *Get(std::string_view name) override final {
+		shared_lock slck(mtx_);
 		auto nsIt = namespaces_.find(name);
 		if (nsIt == namespaces_.end()) {
-			string nsName(name);
+			slck.unlock();
+
+			std::string nsName(name);
 			auto nsPtr = std::make_unique<Namespace>(nsName);
-			nsIt = namespaces_.emplace(std::move(nsName), std::move(nsPtr)).first;
+			std::lock_guard ulck(mtx_);
+			nsIt = namespaces_.find(name);
+			if (nsIt == namespaces_.end()) {
+				nsIt = namespaces_.emplace(std::move(nsName), std::move(nsPtr)).first;
+			}
+			return nsIt->second.get();
 		}
 		return nsIt->second.get();
 	}
 
 private:
+	MtxT mtx_;
 	MapT namespaces_;
 };
 
@@ -57,7 +71,7 @@ public:
 	using NodeData = cluster::NodeData;
 	using RaftInfo = cluster::RaftInfo;
 	typedef std::function<void(const Error &err)> Completion;
-	CoroRPCClient(const CoroReindexerConfig &config, Namespaces::PtrT sharedNamespaces);
+	CoroRPCClient(const CoroReindexerConfig &config, INamespaces::PtrT sharedNamespaces);
 	CoroRPCClient(const CoroRPCClient &) = delete;
 	CoroRPCClient(CoroRPCClient &&) = delete;
 	CoroRPCClient &operator=(const CoroRPCClient &) = delete;
@@ -133,6 +147,8 @@ public:
 	int64_t AddConnectionStateObserver(ConnectionStateHandlerT callback);
 	Error RemoveConnectionStateObserver(int64_t id);
 
+	const cproto::CoroClientConnection *GetConnPtr() const noexcept { return &conn_; }
+
 	typedef CoroQueryResults QueryResultsT;
 
 protected:
@@ -153,7 +169,7 @@ protected:
 									const InternalRdxContext *ctx) const noexcept;
 	static cproto::CommandParams mkCommand(cproto::CmdCode cmd, milliseconds netTimeout, const InternalRdxContext *ctx) noexcept;
 
-	Namespaces::PtrT namespaces_;
+	INamespaces::PtrT namespaces_;
 	CoroReindexerConfig config_;
 	cproto::CoroClientConnection conn_;
 	bool terminate_ = false;

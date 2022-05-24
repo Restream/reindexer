@@ -43,7 +43,8 @@ public:
 	// force resync
 	void ForceSync();
 	// Switch master
-	void SwitchMaster(size_t id, AsyncReplicationConfigTest::NsSet namespaces);
+	void SwitchMaster(size_t id, AsyncReplicationConfigTest::NsSet namespaces,
+					  std::string replMode = cluster::AsyncReplConfigData::Mode2str(cluster::AsyncReplicationMode::Default));
 	// Set WAL size
 	void SetWALSize(size_t id, int64_t size, std::string_view nsName);
 	// Get servers count

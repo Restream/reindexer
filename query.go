@@ -1101,7 +1101,7 @@ func (q *Query) EqualPosition(fields ...string) *Query {
 	if len(q.opennedBrackets) == 0 {
 		q.ser.PutVarCUInt(0)
 	} else {
-		q.ser.PutVarCUInt(q.opennedBrackets[len(q.opennedBrackets)-1])
+		q.ser.PutVarCUInt(q.opennedBrackets[len(q.opennedBrackets)-1] + 1)
 	}
 	q.ser.PutVarCUInt(len(fields))
 	for _, field := range fields {

@@ -5,8 +5,13 @@
 namespace reindexer {
 namespace cluster {
 
-AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, ReindexerImpl& thisNode, Clusterizator& clusterizator)
-	: statsCollector_(std::string(kAsyncReplStatsType)), updatesQueue_(q), thisNode_(thisNode), clusterizator_(clusterizator) {}
+AsyncDataReplicator::AsyncDataReplicator(AsyncDataReplicator::UpdatesQueueT& q, SharedSyncState<>& syncState, ReindexerImpl& thisNode,
+										 Clusterizator& clusterizator)
+	: statsCollector_(std::string(kAsyncReplStatsType)),
+	  updatesQueue_(q),
+	  syncState_(syncState),
+	  thisNode_(thisNode),
+	  clusterizator_(clusterizator) {}
 
 void AsyncDataReplicator::Configure(AsyncReplConfigData config) {
 	std::lock_guard lck(mtx_);
@@ -51,7 +56,8 @@ void AsyncDataReplicator::Run() {
 				nodesShard.emplace_back(std::make_pair(j, config_->nodes[j]));
 			}
 			if (nodesShard.size()) {
-				replThreads_.emplace_back(baseConfig_->serverID, thisNode_, updatesQueue_.GetAsyncQueue(), config_->nodes, statsCollector_);
+				replThreads_.emplace_back(baseConfig_->serverID, thisNode_, updatesQueue_.GetAsyncQueue(), config_->nodes, config_->mode,
+										  syncState_, statsCollector_);
 				replThreads_.back().Run(threadsConfig, std::move(nodesShard), config_->nodes.size());
 			}
 		}

@@ -8,12 +8,12 @@
 
 namespace reindexer {
 
+constexpr uint32_t kMaxClusterProxyConnCount = 64;
+constexpr uint32_t kMaxClusterProxyConnConcurrency = 1024;
+
 namespace sharding {
 class LocatorService;
 }
-
-constexpr size_t kClusterProxyConnCount = 8;
-constexpr size_t kClusterProxyCoroPerConn = 2;
 
 class ClusterProxy {
 public:
@@ -108,6 +108,15 @@ public:
 private:
 	class ConnectionsMap {
 	public:
+		void SetParams(int clientThreads, int clientConns, int clientConnConcurrency) {
+			std::lock_guard lck(mtx_);
+			clientThreads_ = clientThreads > 0 ? clientThreads : cluster::kDefaultClusterProxyConnThreads;
+			clientConns_ =
+				clientConns > 0 ? (std::min(uint32_t(clientConns), kMaxClusterProxyConnCount)) : cluster::kDefaultClusterProxyConnCount;
+			clientConnConcurrency_ = clientConnConcurrency > 0
+										 ? (std::min(uint32_t(clientConnConcurrency), kMaxClusterProxyConnConcurrency))
+										 : cluster::kDefaultClusterProxyCoroPerConn;
+		}
 		std::shared_ptr<client::SyncCoroReindexer> Get(const std::string &dsn) {
 			std::shared_ptr<client::SyncCoroReindexer> res;
 			{
@@ -123,7 +132,8 @@ private:
 
 			client::CoroReindexerConfig cfg;
 			cfg.AppName = "cluster_proxy";
-			cfg.SyncRxCoroCount = kClusterProxyCoroPerConn;
+			cfg.SyncRxCoroCount = clientConnConcurrency_;
+			cfg.EnableCompression = true;
 
 			std::lock_guard lck(mtx_);
 			if (shutdown_) {
@@ -133,7 +143,7 @@ private:
 			if (found != conns_.end()) {
 				return res;
 			}
-			res = std::make_shared<client::SyncCoroReindexer>(cfg, kClusterProxyConnCount);
+			res = std::make_shared<client::SyncCoroReindexer>(cfg, clientConns_, clientThreads_);
 			auto err = res->Connect(dsn);
 			if (!err.ok()) {
 				throw err;
@@ -153,6 +163,9 @@ private:
 		shared_timed_mutex mtx_;
 		fast_hash_map<std::string, std::shared_ptr<client::SyncCoroReindexer>> conns_;
 		bool shutdown_ = false;
+		uint32_t clientThreads_ = cluster::kDefaultClusterProxyConnThreads;
+		uint32_t clientConns_ = cluster::kDefaultClusterProxyConnCount;
+		uint32_t clientConnConcurrency_ = cluster::kDefaultClusterProxyCoroPerConn;
 	};
 
 	ReindexerImpl impl_;
@@ -194,7 +207,7 @@ private:
 	reindexer::client::Item toClientItem(std::string_view ns, client::SyncCoroReindexer *connection, reindexer::Item &clientItem);
 	void clientToCoreQueryResults(client::SyncCoroQueryResults &, LocalQueryResults &);
 
-	bool isWithSharding(const Query &q, const InternalRdxContext &ctx) const noexcept;
+	bool isWithSharding(const Query &q, const InternalRdxContext &ctx) const;
 	bool isWithSharding(std::string_view nsName, const InternalRdxContext &ctx) const noexcept;
 	bool isWithSharding(const InternalRdxContext &ctx) const noexcept;
 	bool shouldProxyQuery(const Query &q);

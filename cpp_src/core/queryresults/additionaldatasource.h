@@ -14,9 +14,19 @@ public:
 	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return joinsDs_; }
 
 private:
-	IEncoderDatasourceWithJoins *joinsDs_;
-	bool withRank_;
-	double rank_;
+	IEncoderDatasourceWithJoins *joinsDs_ = nullptr;
+	bool withRank_ = false;
+	double rank_ = 0.0;
+};
+
+class AdditionalDatasourceShardId : public IAdditionalDatasource<JsonBuilder> {
+public:
+	AdditionalDatasourceShardId(int shardId) : shardId_(shardId) {}
+	void PutAdditionalFields(JsonBuilder &builder) const final { builder.Put("#shard_id", shardId_); }
+	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return nullptr; }
+
+private:
+	int shardId_;
 };
 
 }  // namespace reindexer

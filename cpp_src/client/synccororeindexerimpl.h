@@ -4,12 +4,15 @@
 #include <future>
 #include <thread>
 #include "client/cororeindexer.h"
+#include "client/inamespaces.h"
 #include "client/reindexerconfig.h"
 #include "client/synccoroqueryresults.h"
 #include "client/synccorotransaction.h"
 #include "core/shardedmeta.h"
 #include "coroutine/channel.h"
 #include "coroutine/waitgroup.h"
+#include "estl/fast_hash_map.h"
+#include "estl/recycle_list.h"
 #include "net/ev/ev.h"
 
 namespace reindexer {
@@ -26,7 +29,7 @@ public:
 	typedef SyncCoroQueryResults QueryResultsT;
 
 	/// Create Reindexer database object
-	SyncCoroReindexerImpl(const CoroReindexerConfig & = CoroReindexerConfig(), size_t connCount = 0);
+	SyncCoroReindexerImpl(const CoroReindexerConfig &, uint32_t connCount, uint32_t threadsCount);
 	/// Destrory Reindexer database object
 	~SyncCoroReindexerImpl();
 	SyncCoroReindexerImpl(const SyncCoroReindexerImpl &) = delete;
@@ -82,8 +85,8 @@ private:
 	Error setTxTm(SyncCoroTransaction &tr, TagsMatcher &&tm, lsn_t lsn);
 	Error modifyTx(SyncCoroTransaction &tr, Query &&q, lsn_t lsn);
 	Item newItemTx(CoroTransaction &tr);
-	void threadLoopFun(std::promise<Error> &&isRunning, const string &dsn, const client::ConnectOpts &opts);
-	ConnectionsPoolData &getConnData();
+	void threadLoopFun(uint32_t tid, std::promise<Error> &isRunning, const string &dsn, const client::ConnectOpts &opts);
+	void stop();
 
 	enum CmdName {
 		DbCmdNone = 0,
@@ -133,6 +136,50 @@ private:
 		DbCmdSetTxTagsMatcher,
 	};
 
+	template <typename T>
+	struct ResultType {
+		T data;
+		bool ready = false;
+		std::mutex mtx;
+		std::condition_variable cv;
+	};
+
+	template <typename T>
+	class Future {
+	public:
+		Future(ResultType<T> *res) noexcept : res_(res) {}
+
+		void wait() {
+			if (res_) {
+				std::unique_lock lck(res_->mtx);
+				res_->cv.wait(lck, [this]() noexcept { return res_->ready; });
+			}
+		}
+
+	private:
+		ResultType<T> *res_ = nullptr;
+	};
+
+	template <typename T>
+	class Promise {
+	public:
+		Promise() noexcept = default;
+		Promise(ResultType<T> &res) noexcept : res_(&res) {}
+
+		void set_value(T &&v) {
+			if (res_) {
+				std::lock_guard lck(res_->mtx);
+				res_->data = std::move(v);
+				res_->ready = true;
+				res_->cv.notify_one();
+			}
+		}
+		Future<T> get_future() noexcept { return Future(res_); }
+
+	private:
+		ResultType<T> *res_ = nullptr;
+	};
+
 	struct DatabaseCommandDataBase {
 		DatabaseCommandDataBase(CmdName _id, const InternalRdxContext &_ctx) noexcept : id(_id), ctx(_ctx) {}
 		CmdName id;
@@ -142,12 +189,12 @@ private:
 
 	template <typename R, typename... P>
 	struct DatabaseCommandData : public DatabaseCommandDataBase {
-		std::promise<R> ret;
+		Promise<R> ret;
 		std::tuple<P...> arguments;
 
 		DatabaseCommandData(CmdName _id, const InternalRdxContext &_ctx, P &&...p)
 			: DatabaseCommandDataBase(_id, _ctx), arguments(std::forward<P>(p)...) {}
-		DatabaseCommandData(CmdName _id, const InternalRdxContext &_ctx, std::promise<R> &&r, P &&...p)
+		DatabaseCommandData(CmdName _id, const InternalRdxContext &_ctx, Promise<R> &&r, P &&...p)
 			: DatabaseCommandDataBase(_id, _ctx), ret(std::move(r)), arguments(std::forward<P>(p)...) {}
 		DatabaseCommandData(const DatabaseCommandData &) = delete;
 		DatabaseCommandData(DatabaseCommandData &&) = default;
@@ -187,21 +234,47 @@ private:
 
 	template <typename R, typename... Args>
 	R sendCommand(CmdName c, const InternalRdxContext &ctx, Args &&...args) {
+		return sendCommand<false, R, Args...>(nullptr, c, ctx, std::forward<Args>(args)...);
+	}
+
+	template <bool withClient, typename R, typename... Args>
+	R sendCommand(const void *conn, CmdName c, const InternalRdxContext &ctx, Args &&...args) {
 		if (!ctx.cmpl()) {
-			std::promise<R> promise;
-			std::future<R> future = promise.get_future();
+			ResultType<R> res;
+			Promise<R> promise(res);
+			auto future = promise.get_future();
+
 			DatabaseCommandData<R, Args...> cmd(c, ctx, std::move(promise), std::forward<Args>(args)...);
-			auto err = commandsQueue_.Push(
-				commandAsync_,
-				DatabaseCommand(static_cast<DatabaseCommandDataBase *>(&cmd)));	 // pointer to stack data. 'wait' in this function!
-			if (!err.ok()) {
-				return R(Error(errTerminated, "Client is not connected"));
+			Error err;
+			if constexpr (withClient) {
+				err = commandsQueue_.Push(
+					conn,
+					DatabaseCommand(static_cast<DatabaseCommandDataBase *>(&cmd)));	 // pointer to stack data. 'wait' in this function!
+			} else {
+				(void)conn;
+				err = commandsQueue_.Push(
+					DatabaseCommand(static_cast<DatabaseCommandDataBase *>(&cmd)));	 // pointer to stack data. 'wait' in this function!
 			}
-			return future.get();
+			if (err.ok()) {
+				future.wait();
+				return std::move(res.data);
+			}
+			if constexpr (withClient) {
+				if (err.code() == errParams) {
+					return R(Error(errNetwork, "Request for invalid connection (probably this connection was broken and invalidated)"));
+				}
+			}
+			return R(Error(errTerminated, "Client is not connected"));
 		}
 		if constexpr (std::is_same_v<R, Error>) {
 			DatabaseCommandData<R, Args...> cmd(c, ctx, std::forward<Args>(args)...);
-			auto err = commandsQueue_.Push(commandAsync_, DatabaseCommand(std::move(cmd)));
+			Error err;
+			if constexpr (withClient) {
+				err = commandsQueue_.Push(conn, DatabaseCommand(std::move(cmd)));
+			} else {
+				(void)conn;
+				err = commandsQueue_.Push(DatabaseCommand(std::move(cmd)));
+			}
 			if (!err.ok()) {
 				return R(Error(errTerminated, "Client is not connected: %s", err.what()));
 			}
@@ -229,33 +302,117 @@ private:
 				cd->ret.set_value(std::move(r));
 			}
 		} else {
-			assert(false);
+			assertrx(false);
 		}
 	}
 
+	struct WorkerThread {
+		WorkerThread(uint32_t _connCount);
+		~WorkerThread();
+
+		std::thread th;
+		std::unique_ptr<ConnectionsPoolData> connData;
+		net::ev::async commandAsync;
+		net::ev::async closeAsync;
+		net::ev::dynamic_loop loop;
+		const uint32_t connCount;
+	};
 	class CommandsQueue {
 	public:
-		Error Push(net::ev::async &ev, DatabaseCommand &&cmd);
-		void Get(std::vector<DatabaseCommand> &c);
-		void Invalidate(std::vector<DatabaseCommand> &c);
-		void Init();
+		Error Push(DatabaseCommand &&cmd) {
+			uint32_t minReq = std::numeric_limits<uint32_t>::max();
+			ThreadData *targetTh = nullptr;
+			std::unique_lock<std::mutex> lck(mtx_);
+			if (!isValid_) {
+				return Error(errNotValid, "SyncCoroReindexer command queue is invalidated");
+			}
+			for (auto &th : thData_) {
+				const auto reqCnt = th.reqCnt.load(std::memory_order_acquire);
+				if (reqCnt < minReq) {
+					minReq = reqCnt;
+					targetTh = &th;
+					if (minReq == 0) {
+						break;
+					}
+				}
+			}
+			const bool notify = !targetTh->isReading;
+			targetTh->isReading = true;
+			sharedQueue_.emplace_back(std::move(cmd));
+			lck.unlock();
+
+			if (notify) {
+				targetTh->commandAsync.send();
+			}
+			return Error();
+		}
+		Error Push(const void *conn, DatabaseCommand &&cmd) {
+			std::unique_lock<std::mutex> lck(mtx_);
+			if (!isValid_) {
+				return Error(errNotValid, "SyncCoroReindexer command queue is invalidated");
+			}
+			auto found = thByConns_.find(conn);
+			if (found == thByConns_.end()) {
+				return Error(errParams, "Request for incorrect connection");
+			}
+			auto &th = *found->second;
+			const bool notify = !th.isReading && (th.personalQueue.empty());
+			th.isReading = true;
+			th.personalQueue.emplace_back(std::move(cmd));
+			lck.unlock();
+
+			if (notify) {
+				th.commandAsync.send();
+			}
+			return Error();
+		}
+		void Get(uint32_t tid, h_vector<DatabaseCommand, 16> &cmds);
+		void OnCmdDone(uint32_t tid);
+		void Invalidate(uint32_t tid, h_vector<DatabaseCommand, 16> &cmds);
+		void Init(std::deque<WorkerThread> &threads);
+		void SetValid();
+		void ClearConnectionsMapping();
+		void RegisterConn(uint32_t tid, const void *conn);
 
 	private:
+		struct ThreadData {
+			ThreadData(net::ev::async &async) noexcept : commandAsync(async) {}
+			std::atomic<uint32_t> reqCnt = 0;
+			h_vector<DatabaseCommand, 16> personalQueue;
+			net::ev::async &commandAsync;
+			bool isReading = false;
+		};
+
 		bool isValid_ = false;
-		std::vector<DatabaseCommand> queue_;
+		RecyclingList<DatabaseCommand, 64> sharedQueue_;
+		fast_hash_map<const void *, ThreadData *> thByConns_;
+		std::deque<ThreadData> thData_;
 		std::mutex mtx_;
 	};
-	CommandsQueue commandsQueue_;
-	net::ev::dynamic_loop loop_;
-	std::thread loopThread_;
-	std::mutex loopThreadMtx_;
-	net::ev::async commandAsync_;
-	net::ev::async closeAsync_;
-	const CoroReindexerConfig conf_;
-	const size_t connCount_ = 1;
-	std::unique_ptr<ConnectionsPoolData> connData_;
+	struct ThreadSafeError {
+		void Set(Error e) {
+			std::lock_guard lck(mtx);
+			err = std::move(e);
+		}
+		Error Get() {
+			std::lock_guard lck(mtx);
+			return err;
+		}
 
-	void coroInterpreter(Connection<DatabaseCommand> &, ConnectionsPool<DatabaseCommand> &) noexcept;
+		std::mutex mtx;
+		Error err;
+	};
+
+	CommandsQueue commandsQueue_;
+	std::mutex workersMtx_;
+	const CoroReindexerConfig conf_;
+	std::deque<WorkerThread> workers_;
+	std::atomic<uint32_t> runningWorkers_ = {0};
+	std::mutex errorMtx_;
+	ThreadSafeError lastError_;
+	INamespaces::PtrT sharedNamespaces_;
+
+	void coroInterpreter(Connection<DatabaseCommand> &, ConnectionsPool<DatabaseCommand> &, uint32_t tid) noexcept;
 };
 }  // namespace client
 }  // namespace reindexer
