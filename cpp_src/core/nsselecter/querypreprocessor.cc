@@ -9,10 +9,10 @@
 
 namespace reindexer {
 
-QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query, NamespaceImpl *ns, bool reqMatchedOnce)
+QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query, NamespaceImpl *ns, bool reqMatchedOnce, bool inTransaction)
 	: QueryEntries(std::move(queries)),
 	  ns_(*ns),
-	  strictMode_(query.strictMode == StrictModeNotSet ? ns_.config_.strictMode : query.strictMode),
+	  strictMode_(inTransaction ? StrictModeNone : ((query.strictMode == StrictModeNotSet) ? ns_.config_.strictMode : query.strictMode)),
 	  start_(query.start),
 	  count_(query.count),
 	  forcedSortOrder_(!query.forcedSortOrder_.empty()),
@@ -196,7 +196,7 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 					if (values.back().second.size() > 1) condition = CondSet;
 				} else {
 					SetOperation(GetOperation(i), first);
-					container_[first] = container_[i];
+					container_[first] = std::move(container_[i]);
 					first = Next(first);
 				}
 			}

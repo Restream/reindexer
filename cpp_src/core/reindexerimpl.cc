@@ -188,12 +188,22 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 				[&](size_t begin) {
 					for (size_t j = begin; j < foundNs.size(); j += maxLoadWorkers) {
 						auto& de = foundNs[j];
-						if (de.isDir && validateObjectName(de.name)) {
+						if (de.isDir && validateObjectName(de.name, true)) {
+							if (de.name[0] == '@') {
+								const std::string tmpPath = fs::JoinPath(storagePath_, de.name);
+								logPrintf(LogWarning, "Dropping tmp namespace '%s'", de.name);
+								if (fs::RmDirAll(tmpPath) < 0) {
+									logPrintf(LogWarning, "Failed to remove '%s' temporary namespace from filesystem, path: %s", de.name,
+											  tmpPath);
+									hasNsErrors.test_and_set(std::memory_order_relaxed);
+								}
+								continue;
+							}
 							auto status = OpenNamespace(de.name, StorageOpts().Enabled());
 							if (status.ok()) {
 								const RdxContext dummyCtx;
 								if (getNamespace(de.name, dummyCtx)->IsTemporary(dummyCtx)) {
-									logPrintf(LogWarning, "Droping tmp namespace '%s'", de.name);
+									logPrintf(LogWarning, "Dropping tmp namespace '%s'", de.name);
 									status = closeNamespace(de.name, dummyCtx, true, true);
 								}
 							}
@@ -246,7 +256,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 				return Error(errParams, "Namespace '%s' already exists", nsDef.name);
 			}
 		}
-		if (!validateObjectName(nsDef.name)) {
+		if (!validateObjectName(nsDef.name, nsDef.isTemporary)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
 		bool readyToLoadStorage = (nsDef.storage.IsEnabled() && !storagePath_.empty());
@@ -289,7 +299,7 @@ Error ReindexerImpl::OpenNamespace(std::string_view name, const StorageOpts& sto
 				return 0;
 			}
 		}
-		if (!validateObjectName(name)) {
+		if (!validateObjectName(name, false)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
 		string nameStr(name);
@@ -426,7 +436,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 		if (dstNsName.empty()) {
 			return Error(errParams, "Can't rename namespace to empty name");
 		}
-		if (!validateObjectName(dstNsName)) {
+		if (!validateObjectName(dstNsName, false)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed (%s)", dstNsName);
 		}
 
@@ -1282,31 +1292,34 @@ Error ReindexerImpl::tryLoadReplicatorConfFromYAML(const std::string& yamlReplCo
 
 void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item, const RdxContext& ctx) {
 	if (item.GetID() != -1 && nsName == kConfigNamespace) {
-		gason::JsonParser parser;
-		gason::JsonNode configJson = parser.Parse(item.GetJSON());
+		try {
+			gason::JsonParser parser;
+			gason::JsonNode configJson = parser.Parse(item.GetJSON());
 
-		updateConfigProvider(configJson);
+			updateConfigProvider(configJson);
 
-		bool needStartReplicator = false;
-		if (!configJson["replication"].empty()) {
-			updateReplicationConfFile();
-			needStartReplicator = replicator_->Configure(configProvider_.GetReplicationConfig());
-		}
-		for (auto& ns : getNamespaces(ctx)) {
-			ns.second->OnConfigUpdated(configProvider_, ctx);
-		}
-		auto& actionNode = configJson["action"];
-		if (!actionNode.empty()) {
-			std::string_view command = actionNode["command"].As<std::string_view>();
-			if (command == "restart_replication"sv) {
-				replicator_->Stop();
-				needStartReplicator = true;
+			bool needStartReplicator = false;
+			if (!configJson["replication"].empty()) {
+				updateReplicationConfFile();
+				needStartReplicator = replicator_->Configure(configProvider_.GetReplicationConfig());
 			}
+			for (auto& ns : getNamespaces(ctx)) {
+				ns.second->OnConfigUpdated(configProvider_, ctx);
+			}
+			auto& actionNode = configJson["action"];
+			if (!actionNode.empty()) {
+				std::string_view command = actionNode["command"].As<std::string_view>();
+				if (command == "restart_replication"sv) {
+					replicator_->Stop();
+					needStartReplicator = true;
+				}
+			}
+			if (replicationEnabled_ && needStartReplicator && !stopBackgroundThread_) {
+				if (Error err = replicator_->Start()) throw err;
+			}
+		} catch (gason::Exception& e) {
+			throw Error(errParseJson, "JSON parsing error: %s", e.what());
 		}
-		if (replicationEnabled_ && needStartReplicator && !stopBackgroundThread_) {
-			if (Error err = replicator_->Start()) throw err;
-		}
-
 	} else if (nsName == kQueriesPerfStatsNamespace) {
 		queriesStatTracker_.Reset();
 	} else if (nsName == kPerfStatsNamespace) {

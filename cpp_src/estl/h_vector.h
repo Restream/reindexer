@@ -40,7 +40,9 @@ public:
 	typedef std::ptrdiff_t difference_type;
 	h_vector() noexcept : e_{0, 0}, size_(0), is_hdata_(1) {}
 	h_vector(size_type size) : h_vector() { resize(size); }
-	h_vector(size_type size, const T& v) : h_vector(size) { insert(begin(), size, v); }
+	h_vector(size_type size, const T& v) : h_vector(size) {
+		for (size_type i = 0; i < size; ++i) ptr()[i] = v;
+	}
 	h_vector(std::initializer_list<T> l) : e_{0, 0}, size_(0), is_hdata_(1) { insert(begin(), l.begin(), l.end()); }
 	template <typename InputIt>
 	h_vector(InputIt first, InputIt last) : e_{0, 0}, size_(0), is_hdata_(1) {
@@ -151,14 +153,24 @@ public:
 	size_type size() const noexcept { return size_; }
 	size_type capacity() const noexcept { return is_hdata_ ? holdSize : e_.cap_; }
 	bool empty() const noexcept { return size_ == 0; }
-	const_reference operator[](size_type pos) const { return ptr()[pos]; }
-	reference operator[](size_type pos) { return ptr()[pos]; }
-	const_reference at(size_type pos) const { return ptr()[pos]; }
-	reference at(size_type pos) { return ptr()[pos]; }
-	reference back() { return ptr()[size() - 1]; }
-	reference front() { return ptr()[0]; }
-	const_reference back() const { return ptr()[size() - 1]; }
-	const_reference front() const { return ptr()[0]; }
+	const_reference operator[](size_type pos) const noexcept { return ptr()[pos]; }
+	reference operator[](size_type pos) noexcept { return ptr()[pos]; }
+	const_reference at(size_type pos) const {
+		if (pos >= size()) {
+			throw std::logic_error("h_vector: Out of range (pos: " + std::to_string(pos) + ", size: " + std::to_string(size()));
+		}
+		return ptr()[pos];
+	}
+	reference at(size_type pos) {
+		if (pos >= size()) {
+			throw std::logic_error("h_vector: Out of range (pos: " + std::to_string(pos) + ", size: " + std::to_string(size()));
+		}
+		return ptr()[pos];
+	}
+	reference back() noexcept { return ptr()[size() - 1]; }
+	reference front() noexcept { return ptr()[0]; }
+	const_reference back() const noexcept { return ptr()[size() - 1]; }
+	const_reference front() const noexcept { return ptr()[0]; }
 	const_pointer data() const noexcept { return ptr(); }
 	pointer data() noexcept { return ptr(); }
 
@@ -267,10 +279,11 @@ public:
 		insert(begin(), first, last);
 	}
 	iterator erase(const_iterator first, const_iterator last) {
-		size_type i = first - ptr();
+		const size_type i = first - ptr();
 		const auto cnt = last - first;
 		assertrx(i <= size());
 
+		if (cnt == 0) return begin() + i;
 		std::move(begin() + i + cnt, end(), begin() + i);
 		const auto newSize = size_ - cnt;
 		if constexpr (!std::is_trivially_destructible<T>::value) {

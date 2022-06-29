@@ -36,7 +36,7 @@ enum class Root {
 };
 
 enum class Sort { Desc, Field, Values };
-enum class JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset };
+enum class JoinRoot { Type, On, Namespace, Filters, Sort, Limit, Offset, SelectFilter };
 enum class JoinEntry { LeftField, RightField, Cond, Op };
 enum class Filter { Cond, Op, Field, Value, Filters, JoinQuery, FirstField, SecondField, EqualPositions };
 enum class Aggregation { Fields, Type, Sort, Limit, Offset };
@@ -74,10 +74,10 @@ static const fast_str_map<Sort> sort_map = {{"desc", Sort::Desc}, {"field", Sort
 
 // additional for parse field 'joined'
 
-static const fast_str_map<JoinRoot> joins_map = {
-	{"type", JoinRoot::Type}, {"namespace", JoinRoot::Namespace}, {"filters", JoinRoot::Filters},
-	{"sort", JoinRoot::Sort}, {"limit", JoinRoot::Limit},		  {"offset", JoinRoot::Offset},
-	{"on", JoinRoot::On}};
+static const fast_str_map<JoinRoot> joins_map = {{"type", JoinRoot::Type},		 {"namespace", JoinRoot::Namespace},
+												 {"filters", JoinRoot::Filters}, {"sort", JoinRoot::Sort},
+												 {"limit", JoinRoot::Limit},	 {"offset", JoinRoot::Offset},
+												 {"on", JoinRoot::On},			 {"select_filter", JoinRoot::SelectFilter}};
 
 static const fast_str_map<JoinEntry> joined_entry_map = {
 	{"left_field", JoinEntry::LeftField}, {"right_field", JoinEntry::RightField}, {"cond", JoinEntry::Cond}, {"op", JoinEntry::Op}};
@@ -459,6 +459,14 @@ void parseSingleJoinQuery(JsonValue& join, Query& query) {
 			case JoinRoot::On:
 				parseJoinedEntries(value, qjoin);
 				break;
+			case JoinRoot::SelectFilter: {
+				checkJsonValueType(value, name, JSON_ARRAY);
+				if (!qjoin.CanAddSelectFilter()) {
+					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
+				}
+				parseStringArray(value, qjoin.selectFilter_);
+				break;
+			}
 		}
 	}
 	for (const auto& eqPos : equalPositions) {
@@ -709,6 +717,10 @@ Error Parse(const string& str, Query& q) {
 		return Error(errParseJson, "Query: %s", ex.what());
 	} catch (const Error& err) {
 		return err;
+	} catch (const std::exception& ex) {
+		return Error(errParseJson, "Exception: %s", ex.what());
+	} catch (...) {
+		return Error(errParseJson, "Unknown Exception");
 	}
 	return errOK;
 }

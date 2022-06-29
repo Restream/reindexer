@@ -156,6 +156,10 @@ func (repo *ElasticRepo) Query1Cond(N int, onlyQuery bool, limit int) (ret []*It
 	return ret
 }
 
+func (repo *ElasticRepo) QueryJoin(N int, limit int, filtersSet [10]interface{}) (ret []*Item) {
+	return
+}
+
 func (repo *ElasticRepo) Update(N int) {
 	ctx := context.Background()
 

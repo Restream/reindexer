@@ -41,6 +41,7 @@ void ServerConfig::Reset() {
 	Autorepair = false;
 	EnableConnectionsStats = true;
 	TxIdleTimeout = std::chrono::seconds(600);
+	RPCQrIdleTimeout = std::chrono::seconds(600);
 	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
 	MaxHttpReqSize = 2 * 1024 * 1024;
@@ -120,8 +121,12 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::ValueFlag<size_t> maxUpdatesSizeF(netGroup, "", "Maximum cached updates size", {"updatessize"}, MaxUpdatesSize,
 											args::Options::Single);
 	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});
-	args::ValueFlag<int> txIdleTimeoutF(dbGroup, "", "http transactions idle timeout (s)", {"tx-idle-timeout"}, TxIdleTimeout.count(),
+	args::ValueFlag<int> txIdleTimeoutF(netGroup, "", "http transactions idle timeout (s)", {"tx-idle-timeout"}, TxIdleTimeout.count(),
 										args::Options::Single);
+	args::ValueFlag<int> rpcQrIdleTimeoutF(netGroup, "",
+										   "RPC query results idle timeout (s). Expiration check timer has dynamic period, so this timeout "
+										   "may float in range of ~20 seconds. 0 means 'disabled'. Default values is 600 seconds",
+										   {"rpc-qr-idle-timeout"}, RPCQrIdleTimeout.count(), args::Options::Single);
 
 	args::Group metricsGroup(parser, "Metrics options");
 	args::Flag prometheusF(metricsGroup, "", "Enable prometheus handler", {"prometheus"});
@@ -200,6 +205,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (clientsConnectionsStatF) EnableConnectionsStats = args::get(clientsConnectionsStatF);
 	if (logAllocsF) DebugAllocs = args::get(logAllocsF);
 	if (txIdleTimeoutF) TxIdleTimeout = std::chrono::seconds(args::get(txIdleTimeoutF));
+	if (rpcQrIdleTimeoutF) RPCQrIdleTimeout = std::chrono::seconds(args::get(rpcQrIdleTimeoutF));
 	if (maxUpdatesSizeF) MaxUpdatesSize = args::get(maxUpdatesSizeF);
 
 	return 0;
@@ -226,6 +232,7 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		EnableGRPC = root["net"]["grpc"].As<bool>(EnableGRPC);
 		GRPCAddr = root["net"]["grpcaddr"].As<std::string>(GRPCAddr);
 		TxIdleTimeout = std::chrono::seconds(root["net"]["tx_idle_timeout"].As<int>(TxIdleTimeout.count()));
+		RPCQrIdleTimeout = std::chrono::seconds(root["net"]["rpc_qr_idle_timeout"].As<int>(RPCQrIdleTimeout.count()));
 		MaxHttpReqSize = root["net"]["max_http_body_size"].As<std::size_t>(MaxHttpReqSize);
 		EnablePrometheus = root["metrics"]["prometheus"].As<bool>(EnablePrometheus);
 		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].As<int>(PrometheusCollectPeriod.count()));

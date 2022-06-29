@@ -432,15 +432,23 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 	} else {
 		tmpNsDef.storage = StorageOpts().SlaveMode();
 	}
-	Namespace::Ptr tmpNs;
-	tmpNsDef.name = ns.name + "_tmp_" + randStringAlph(kTmpNsPostfixLen);
+
+	tmpNsDef.name = "@" + ns.name + "_tmp_" + randStringAlph(kTmpNsPostfixLen);
+	auto dropTmpNs = [this, &tmpNsDef] {
+		auto tmpNs = slave_->getNamespaceNoThrow(tmpNsDef.name, dummyCtx_);
+		if (tmpNs) {
+			auto dropErr = slave_->closeNamespace(tmpNsDef.name, dummyCtx_, true, true);
+			if (!dropErr.ok()) logPrintf(LogWarning, "Unable to drop temporary namespace %s: %s", tmpNsDef.name, dropErr.what());
+		}
+	};
+
 	auto err = slave_->AddNamespace(tmpNsDef);
 	if (!err.ok()) {
 		logPrintf(LogWarning, "Unable to create temporary namespace %s for the force sync: %s", tmpNsDef.name, err.what());
+		dropTmpNs();
 		return err;
 	}
-
-	tmpNs = slave_->getNamespaceNoThrow(tmpNsDef.name, dummyCtx_);
+	Namespace::Ptr tmpNs = slave_->getNamespaceNoThrow(tmpNsDef.name, dummyCtx_);
 	if (!tmpNs) {
 		logPrintf(LogWarning, "Unable to get temporary namespace %s for the force sync:", tmpNsDef.name);
 		return Error(errNotFound, "Namespace %s not found", tmpNsDef.name);
@@ -451,6 +459,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 	else {
 		logPrintf(LogError, "[repl:%s:%s] Sync namespace logical error. Set status Syncing tmpNs. Replication not allowed for namespace.",
 				  ns.name, slave_->storagePath_);
+		dropTmpNs();
 		return Error(errLogic, "Replication not allowed for namespace.");
 	}
 
@@ -468,13 +477,12 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 			err = errOK;
 		}
 	}
-	if (err.ok()) {
-		err = slave_->renameNamespace(tmpNsDef.name, ns.name, true);
-		if (err.ok()) err = slave_->syncDownstream(ns.name, true);
-	} else {
+	if (err.ok()) err = slave_->renameNamespace(tmpNsDef.name, ns.name, true);
+	if (err.ok()) err = slave_->syncDownstream(ns.name, true);
+
+	if (!err.ok()) {
 		logPrintf(LogError, "[repl:%s] FORCED sync error: %s", ns.name, err.what());
-		auto dropErr = slave_->closeNamespace(tmpNsDef.name, dummyCtx_, true, true);
-		if (!dropErr.ok()) logPrintf(LogWarning, "Unable to drop temporary namespace %s: %s", tmpNsDef.name, dropErr.what());
+		dropTmpNs();
 	}
 
 	return err;

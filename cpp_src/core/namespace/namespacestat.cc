@@ -57,6 +57,8 @@ void LRUCacheMemStat::GetJSON(JsonBuilder &builder) {
 
 void IndexMemStat::GetJSON(JsonBuilder &builder) {
 	if (uniqKeysCount) builder.Put("uniq_keys_count", uniqKeysCount);
+	if (trackedUpdatesCount) builder.Put("tracked_updates_count", trackedUpdatesCount);
+	if (trackedUpdatesBuckets) builder.Put("tracked_updates_buckets", trackedUpdatesBuckets);
 	if (dataSize) builder.Put("data_size", dataSize);
 	if (idsetBTreeSize) builder.Put("idset_btree_size", idsetBTreeSize);
 	if (idsetPlainSize) builder.Put("idset_plain_size", idsetPlainSize);

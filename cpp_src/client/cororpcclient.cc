@@ -140,8 +140,9 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, int mode, s
 							  ser.Slice(), item.GetStateToken(), 0);
 		if (ret.Status().ok()) {
 			try {
-				auto args = ret.GetArgs(2);
-				return CoroQueryResults(&conn_, {getNamespace(nsName)}, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
+				const auto args = ret.GetArgs(2);
+				return CoroQueryResults(&conn_, {getNamespace(nsName)}, p_string(args[0]),
+										RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, 0, config_.FetchAmount,
 										config_.RequestTimeout)
 					.Status();
 			} catch (const Error& err) {
@@ -245,8 +246,8 @@ Error CoroRPCClient::Delete(const Query& query, CoroQueryResults& result, const 
 	auto ret = conn_.Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), kResultsWithItemID);
 	try {
 		if (ret.Status().ok()) {
-			auto args = ret.GetArgs(2);
-			result.Bind(p_string(args[0]), int(args[1]));
+			const auto args = ret.GetArgs(2);
+			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), -1});
 		}
 	} catch (const Error& err) {
 		return err;
@@ -267,8 +268,8 @@ Error CoroRPCClient::Update(const Query& query, CoroQueryResults& result, const 
 		conn_.Call(mkCommand(cproto::kCmdUpdateQuery, &ctx), ser.Slice(), kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 	try {
 		if (ret.Status().ok()) {
-			auto args = ret.GetArgs(2);
-			result.Bind(p_string(args[0]), int(args[1]));
+			const auto args = ret.GetArgs(2);
+			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), -1});
 		}
 	} catch (const Error& err) {
 		return err;
@@ -296,8 +297,8 @@ Error CoroRPCClient::selectImpl(std::string_view query, CoroQueryResults& result
 	auto ret = conn_.Call(mkCommand(cproto::kCmdSelectSQL, netTimeout, &ctx), query, flags, config_.FetchAmount, pser.Slice());
 	try {
 		if (ret.Status().ok()) {
-			auto args = ret.GetArgs(2);
-			result.Bind(p_string(args[0]), int(args[1]));
+			const auto args = ret.GetArgs(2);
+			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1});
 		}
 	} catch (const Error& err) {
 		return err;
@@ -308,6 +309,7 @@ Error CoroRPCClient::selectImpl(std::string_view query, CoroQueryResults& result
 Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, seconds netTimeout, const InternalRdxContext& ctx) {
 	WrSerializer qser, pser;
 	int flags = result.fetchFlags_ ? result.fetchFlags_ : (kResultsWithPayloadTypes | kResultsCJson);
+	flags |= kResultsSupportIdleTimeout;
 	bool hasJoins = !query.joinQueries_.empty();
 	if (!hasJoins) {
 		for (auto& mq : query.mergeQueries_) {
@@ -335,8 +337,8 @@ Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, se
 	auto ret = conn_.Call(mkCommand(cproto::kCmdSelect, netTimeout, &ctx), qser.Slice(), flags, config_.FetchAmount, pser.Slice());
 	try {
 		if (ret.Status().ok()) {
-			auto args = ret.GetArgs(2);
-			result.Bind(p_string(args[0]), int(args[1]));
+			const auto args = ret.GetArgs(2);
+			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1});
 		}
 	} catch (const Error& err) {
 		return err;

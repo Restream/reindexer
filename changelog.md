@@ -1,3 +1,37 @@
+# Version 3.6.0 (29.06.2022)
+## Core
+- [fea] Add numeric fields names support in sort expressions
+- [fea] Add optional counting mode for index updates tracker
+- [fix] Fix temporary namespaces bloat by replicator in case of namespace creation error
+- [fix] Fix timeout and strict mode logic in transaction queries
+- [fix] Fix ALLSET for non-index fields
+- [fix] Fix forced sort parsing/encoding
+
+## Reindexer server
+- [fea] Add idle timeout for inactive query results
+- [fea] Add fields filter support for joined queries in queries DSL
+
+## Go connector
+- [fix] Fix cproto `Status()` update, when remote server becomes available
+
+## Reindexer tool
+- [fea] Add line numbers output in case of errors in dump handling (while performing restoration)
+
+## Face
+- [fea] Add new values to the condition list on the Query Builder page
+- [fea] Add the Return back button to the second level of the Statistic table
+- [fea] Add the Loader icon for heavy requests
+- [fea] Change the full-text config
+- [fea] Add the logging of the error messages
+- [fea] Add the action disabling for the Add button in the JSON editor when an syntax error is detected
+- [fix] Fix filters on the Query builder page
+- [fix] Fix the pagination issue on the SQL page
+- [fix] Fix the Namespace settings button position during the browser window resizing
+- [fix] Fix the NavigationDuplicated issue
+- [fix] Fix the auto scrolling page up during the infinity scrolling of the data table
+- [fix] Fix the cursor position during the index creating
+- [fix] Fix the incorrect redirect to the Explain tab from the List/Grid view on the SQL page
+
 # Version 3.5.2 (06.05.2022)
 ## Core
 - [fix] Fix sigabort after querie's filters merging

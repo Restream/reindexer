@@ -135,7 +135,12 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 }
 
 NamespaceImpl::~NamespaceImpl() {
-	flushStorage(RdxContext());
+	try {
+		flushStorage(RdxContext());
+	} catch (Error &e) {
+		logPrintf(LogWarning, "Namespace::~Namespace (%s), flushStorage() error: %s", name_, e.what());
+	}
+
 #ifndef NDEBUG
 	for (const auto &strHldr : strHoldersWaitingToBeDeleted_) {
 		assertrx(strHldr.unique());
@@ -144,6 +149,7 @@ NamespaceImpl::~NamespaceImpl() {
 	assertrx(strHolder_.unique());
 	assertrx(cancelCommitCnt_.load() == 0);
 #endif
+
 	logPrintf(LogTrace, "Namespace::~Namespace (%s), %d items", name_, items_.size());
 }
 
@@ -166,6 +172,10 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider &configProvider, const RdxC
 	config_ = configData;
 	storageOpts_.LazyLoad(configData.lazyLoad);
 	storageOpts_.noQueryIdleThresholdSec = configData.noQueryIdleThreshold;
+
+	for (auto &idx : indexes_) {
+		idx->EnableUpdatesCountingMode(configData.idxUpdatesCountingMode);
+	}
 
 	if (needReoptimizeIndexes) {
 		updateSortedIdxCount();
@@ -771,6 +781,7 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 	selCtx.functions = &func;
 	selCtx.contextCollectingMode = true;
 	selCtx.requiresCrashTracking = true;
+	selCtx.inTransaction = ctx.inTransaction;
 	selecter(result, selCtx, ctx.rdxContext);
 
 	auto tmStart = high_resolution_clock::now();
@@ -786,7 +797,9 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 	if (ctx.rdxContext.fromReplication_ && withExpressions)
 		throw Error(errLogic, "Can't apply update query with expression to slave ns '%s'", name_);
 
-	ThrowOnCancel(ctx.rdxContext);
+	if (!ctx.inTransaction) {
+		ThrowOnCancel(ctx.rdxContext);
+	}
 
 	// If update statement is expression and contains function calls then we use
 	// row-based replication (to preserve data inconsistency), otherwise we update
@@ -1000,6 +1013,7 @@ void NamespaceImpl::Delete(const Query &q, QueryResults &result, const NsContext
 	SelectCtx selCtx(q, nullptr);
 	selCtx.contextCollectingMode = true;
 	selCtx.requiresCrashTracking = true;
+	selCtx.inTransaction = ctx.inTransaction;
 	SelectFunctionsHolder func;
 	selCtx.functions = &func;
 	selecter(result, selCtx, ctx.rdxContext);
@@ -1902,33 +1916,49 @@ void NamespaceImpl::EnableStorage(const string &path, StorageOpts opts, StorageT
 	}
 
 	bool success = false;
-	while (!success) {
-		if (!opts.IsCreateIfMissing() && fs::Stat(dbpath) != fs::StatDir) {
-			throw Error(errNotFound,
-						"Storage directory doesn't exist for namespace '%s' on path '%s' and CreateIfMissing option is not set", name_,
-						path);
-		}
-		storage_.reset(datastorage::StorageFactory::create(storageType));
-		Error status = storage_->Open(dbpath, opts);
-		if (!status.ok()) {
-			if (!opts.IsDropOnFileFormatError()) {
-				storage_.reset();
-				throw Error(errLogic, "Cannot enable storage for namespace '%s' on path '%s' - %s", name_, path, status.what());
+	const bool storageDirExists = (fs::Stat(dbpath) == fs::StatDir);
+	try {
+		while (!success) {
+			if (!opts.IsCreateIfMissing() && !storageDirExists) {
+				throw Error(errNotFound,
+							"Storage directory doesn't exist for namespace '%s' on path '%s' and CreateIfMissing option is not set", name_,
+							path);
 			}
-		} else {
-			success = loadIndexesFromStorage();
-			if (!success && !opts.IsDropOnFileFormatError()) {
-				storage_.reset();
-				throw Error(errLogic, "Cannot enable storage for namespace '%s' on path '%s': format error", name_, dbpath);
+			storage_.reset(datastorage::StorageFactory::create(storageType));
+			Error status = storage_->Open(dbpath, opts);
+			if (!status.ok()) {
+				if (!opts.IsDropOnFileFormatError()) {
+					storage_.reset();
+					throw Error(errLogic, "Cannot enable storage for namespace '%s' on path '%s' - %s", name_, path, status.what());
+				}
+			} else {
+				success = loadIndexesFromStorage();
+				if (!success && !opts.IsDropOnFileFormatError()) {
+					storage_.reset();
+					throw Error(errLogic, "Cannot enable storage for namespace '%s' on path '%s': format error", name_, dbpath);
+				}
+				loadReplStateFromStorage();
 			}
-			loadReplStateFromStorage();
+			if (!success && opts.IsDropOnFileFormatError()) {
+				logPrintf(LogWarning, "Dropping storage for namespace '%s' on path '%s' due to format error", name_, dbpath);
+				opts.DropOnFileFormatError(false);
+				storage_->Destroy(dbpath);
+				storage_.reset();
+			}
 		}
-		if (!success && opts.IsDropOnFileFormatError()) {
-			logPrintf(LogWarning, "Dropping storage for namespace '%s' on path '%s' due to format error", name_, dbpath);
-			opts.DropOnFileFormatError(false);
-			storage_->Destroy(dbpath);
-			storage_.reset();
+	} catch (...) {
+		// if storage was created by this call
+		if (!storageDirExists && (fs::Stat(dbpath) == fs::StatDir)) {
+			logPrintf(LogWarning, "Dropping storage (via %s), which was created with errors ('%s':'%s')",
+					  storage_ ? "storage interface" : "filesystem", name_, dbpath);
+			if (storage_) {
+				storage_->Destroy(dbpath);
+				storage_.reset();
+			} else {
+				fs::RmDirAll(dbpath);
+			}
 		}
+		throw;
 	}
 
 	storageOpts_ = opts;
@@ -2048,10 +2078,15 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext *ctx) {
 	if (repl_.slaveMode) {
 		return;
 	}
+	const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch());
+	if (now == lastExpirationCheckTs_) {
+		return;
+	}
+	lastExpirationCheckTs_ = now;
 	const NsContext nsCtx{rdxCtx, true};
 	for (const std::unique_ptr<Index> &index : indexes_) {
 		if ((index->Type() != IndexTtl) || (index->Size() == 0)) continue;
-		int64_t expirationthreshold =
+		const int64_t expirationthreshold =
 			std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() -
 			index->GetTTLValue();
 		QueryResults qr;

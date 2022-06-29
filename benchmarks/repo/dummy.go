@@ -49,6 +49,10 @@ func (repo *DummyRepo) Query1Cond(N int, onlyQuery bool, limit int) (ret []*Item
 	return ret
 }
 
+func (repo *DummyRepo) QueryJoin(N int, limit int, filtersSet [10]interface{}) (ret []*Item) {
+	return
+}
+
 func (repo *DummyRepo) Update(N int) {
 	for i := 0; i < N; i++ {
 		id := rand.Int() % itemsInDataSet

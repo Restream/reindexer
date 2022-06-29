@@ -49,7 +49,7 @@ Storages are compatible between those versions, hovewer, replication configs are
       - [Async batch mode](#async-batch-mode)
       - [Transactions commit strategies](#transactions-commit-strategies)
       - [Implementation notes](#implementation-notes)
-  - [Complex Primary Keys and Composite Indices](#complex-primary-keys-and-composite-indices)
+  - [Complex Primary Keys and Composite Indexes](#complex-primary-keys-and-composite-indexes)
   - [Aggregations](#aggregations)
   - [Search in array fields with matching array indexes](#search-in-array-fields-with-matching-array-indexes)
   - [Atomic on update functions](#atomic-on-update-functions)
@@ -409,8 +409,9 @@ query := db.Query("actors").Sort("id", true)           // Sort by field
 query = db.Query("actors").Sort("person.age", true)   // Sort by nested field
 ....
 // Sort by joined field
+// Works for inner join only, when each item from left namespace has exactly one joined item from right namespace
 query = db.Query("actors").
-	Join(db.Query("cities")).On("birth_place_id", reindexer.EQ, "id").
+	InnerJoin(db.Query("cities")).On("birth_place_id", reindexer.EQ, "id").
 	Sort("cities.population", true)
 ....
 // Sort by expression:
@@ -613,7 +614,7 @@ update ns set integer_array = [1,2,3,4,5] || integer_array
 
 The first one adds elements to the end of `integer_array`, the second one adds 5 items to the front of it. To make this code work in Golang `SetExpression()` should be used instead of `Set()`.
 
-To remove and item you should do the following:
+To remove item by index you should do the following:
 
 ```sql
 update ns drop array[5]

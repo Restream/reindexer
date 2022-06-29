@@ -18,6 +18,12 @@ if [ -n "$RX_PROMETHEUS" ]; then
     RX_ARGS="$RX_ARGS --prometheus"
 fi
 
+if [ -n "$RX_RPC_QR_IDLE_TIMEOUT" ]; then
+    RX_ARGS="$RX_ARGS --rpc-qr-idle-timeout $RX_RPC_QR_IDLE_TIMEOUT"
+else
+    RX_ARGS="$RX_ARGS --rpc-qr-idle-timeout 0"
+fi
+
 if [ -z "$@" ]; then
    reindexer_server $RX_ARGS
 else 

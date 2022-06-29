@@ -10,7 +10,7 @@ using namespace reindexer::net;
 
 SyncCoroQueryResults::SyncCoroQueryResults(SyncCoroReindexer *rx, int fetchFlags) : results_(fetchFlags), rx_(rx) {}
 
-void SyncCoroQueryResults::Bind(std::string_view rawResult, int queryID) { results_.Bind(rawResult, queryID); }
+void SyncCoroQueryResults::Bind(std::string_view rawResult, RPCQrId id) { results_.Bind(rawResult, id); }
 
 void SyncCoroQueryResults::fetchNextResults() {
 	int flags = results_.fetchFlags_ ? (results_.fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;

@@ -425,6 +425,7 @@ private:
 	std::atomic<int> optimizationState_{OptimizationState::NotOptimized};
 	StringsHolderPtr strHolder_;
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
+	std::chrono::seconds lastExpirationCheckTs_;
 };
 
 }  // namespace reindexer

@@ -120,9 +120,7 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 	}
 
 	binding.dsn.url = u
-	if err = binding.connectDSN(context.Background(), connPoolSize); err != nil {
-		return err
-	}
+	binding.connectDSN(context.Background(), connPoolSize)
 	binding.termCh = make(chan struct{})
 	go binding.pinger()
 	return
@@ -326,6 +324,7 @@ func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool,
 	} else {
 		flags |= bindings.ResultsCJson | bindings.ResultsWithPayloadTypes | bindings.ResultsWithItemID
 	}
+	flags |= bindings.ResultsSupportIdleTimeout
 
 	if fetchCount <= 0 {
 		fetchCount = math.MaxInt32
@@ -334,6 +333,9 @@ func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool,
 	buf, err := binding.rpcCall(ctx, opRd, cmdSelectSQL, query, flags, int32(fetchCount), ptVersions)
 	if buf != nil {
 		buf.reqID = buf.args[1].(int)
+		if len(buf.args) > 2 {
+			buf.uid = buf.args[2].(int64)
+		}
 	}
 	return buf, err
 }
@@ -345,6 +347,7 @@ func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson b
 	} else {
 		flags |= bindings.ResultsCJson | bindings.ResultsWithPayloadTypes | bindings.ResultsWithItemID
 	}
+	flags |= bindings.ResultsSupportIdleTimeout
 
 	if fetchCount <= 0 {
 		fetchCount = math.MaxInt32
@@ -353,6 +356,9 @@ func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson b
 	buf, err := binding.rpcCall(ctx, opRd, cmdSelect, data, flags, int32(fetchCount), ptVersions)
 	if buf != nil {
 		buf.reqID = buf.args[1].(int)
+		if len(buf.args) > 2 {
+			buf.uid = buf.args[2].(int64)
+		}
 	}
 	return buf, err
 }
@@ -464,6 +470,12 @@ func (binding *NetCProto) getConn(ctx context.Context) (conn *connection, err er
 
 		if conn.hasError() {
 			binding.lock.Lock()
+			select {
+			case <-ctx.Done():
+				binding.lock.Unlock()
+				return nil, ctx.Err()
+			default:
+			}
 			if currVersion == binding.dsn.connVersion {
 				binding.logMsg(3, "rq: reconnecting after err: %s \n", conn.curError().Error())
 				conn, err = binding.reconnect(ctx)

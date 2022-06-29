@@ -16,6 +16,7 @@ type NetBuffer struct {
 	buf   []byte
 	conn  *connection
 	reqID int
+	uid   int64
 	args  []interface{}
 }
 
@@ -26,9 +27,11 @@ func (buf *NetBuffer) Fetch(ctx context.Context, offset, limit int, asJson bool)
 	} else {
 		flags |= bindings.ResultsCJson | bindings.ResultsWithItemID
 	}
+	flags |= bindings.ResultsSupportIdleTimeout
 	// fmt.Printf("cmdFetchResults(reqId=%d, offset=%d, limit=%d, json=%v, flags=%v)\n", buf.reqID, offset, limit, asJson, flags)
 	netTimeout := uint32(buf.conn.owner.timeouts.RequestTimeout / time.Second)
-	fetchBuf, err := buf.conn.rpcCall(ctx, cmdFetchResults, netTimeout, buf.reqID, flags, offset, limit)
+
+	fetchBuf, err := buf.conn.rpcCall(ctx, cmdFetchResults, netTimeout, buf.reqID, flags, offset, limit, buf.uid)
 	defer fetchBuf.Free()
 	if err != nil {
 		buf.close()
@@ -42,6 +45,7 @@ func (buf *NetBuffer) Fetch(ctx context.Context, offset, limit int, asJson bool)
 	}
 	if buf.args[1].(int) == -1 {
 		buf.reqID = -1
+		buf.uid = -1
 	}
 	return
 }
@@ -88,8 +92,9 @@ func (buf *NetBuffer) parseArgs() (err error) {
 func (buf *NetBuffer) close() {
 	if buf.needClose() {
 		netTimeout := uint32(buf.conn.owner.timeouts.RequestTimeout / time.Second)
-		closeBuf, err := buf.conn.rpcCall(context.TODO(), cmdCloseResults, netTimeout, buf.reqID)
+		closeBuf, err := buf.conn.rpcCall(context.TODO(), cmdCloseResults, netTimeout, buf.reqID, buf.uid)
 		buf.reqID = -1
+		buf.uid = -1
 		if err != nil {
 			fmt.Printf("rx: query close error: %v", err)
 		}
@@ -112,6 +117,7 @@ func newNetBuffer(size int, conn *connection) (buf *NetBuffer) {
 	}
 	buf.conn = conn
 	buf.reqID = -1
+	buf.uid = -1
 	if len(buf.args) > 0 {
 		buf.args = buf.args[:0]
 	}

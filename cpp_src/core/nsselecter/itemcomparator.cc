@@ -56,7 +56,7 @@ class ItemComparator::BackInserter {
 public:
 	explicit BackInserter(ItemComparator &comparator) : comparator_(comparator) {}
 	void expr(size_t i, bool desc) { comparator_.byExpr_.emplace_back(i, desc); }
-	void fields(const TagsPath &tp) { comparator_.fields_.push_back(std::move(tp)); }
+	void fields(const TagsPath &tp) { comparator_.fields_.push_back(tp); }
 	void fields(int fieldIdx) { comparator_.fields_.push_back(fieldIdx); }
 	void index(size_t i, bool desc) { comparator_.byIndex_.emplace_back(i, desc); }
 	void collateOpts(const CollateOpts *opts) { comparator_.collateOpts_.emplace_back(opts); }

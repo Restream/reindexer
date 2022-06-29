@@ -33,7 +33,7 @@ Error RepairTool::RepairStorage(const std::string& dsn) noexcept {
 			return Error(errParams, "Can't read dir to repair: %s", path);
 		}
 		for (auto& ns : foundNs) {
-			if (ns.isDir && reindexer::validateObjectName(ns.name)) {
+			if (ns.isDir && reindexer::validateObjectName(ns.name, true)) {
 				auto err = repairNamespace(storage.get(), path, ns.name, storageType);
 				if (!err.ok()) {
 					hasErrors = true;
@@ -58,7 +58,7 @@ Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& stor
 	}
 
 	try {
-		if (!reindexer::validateObjectName(name)) {
+		if (!reindexer::validateObjectName(name, true)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
 		reindexer::UpdatesObservers emptyObserversList;

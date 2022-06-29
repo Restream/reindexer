@@ -2,6 +2,7 @@
 #include <functional>
 
 #include "core/payload/payloadiface.h"
+#include "estl/tuple_utils.h"
 #include "geometry.h"
 #include "key_string.h"
 #include "p_string.h"
@@ -42,6 +43,26 @@ Variant::Variant(const VariantArray &values) {
 }
 
 Variant::Variant(Point p) : Variant{VariantArray{p}} {}
+
+void serialize(WrSerializer &, const std::tuple<> &) noexcept {}
+
+template <typename... Ts>
+void serialize(WrSerializer &ser, const std::tuple<Ts...> &v) {
+	ser.PutVariant(Variant{std::get<0>(v)});
+	serialize(ser, tail(v));
+}
+
+template <typename... Ts>
+Variant::Variant(const std::tuple<Ts...> &values) {
+	WrSerializer ser;
+	ser.PutVarUint(sizeof...(Ts));
+	serialize(ser, values);
+	new (cast<void>()) key_string(make_key_string(ser.Slice()));
+	type_ = KeyValueTuple;
+	hold_ = true;
+}
+template Variant::Variant(const std::tuple<int, std::string> &);
+template Variant::Variant(const std::tuple<std::string, int> &);
 
 inline static void assertKeyType(KeyValueType got, KeyValueType exp) {
 	(void)got, (void)exp;
@@ -340,7 +361,13 @@ int Variant::relaxCompareWithString(std::string_view str) const {
 }
 
 int Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) const {
-	if (Type() == other.Type()) return Compare(other, collateOpts);
+	if (Type() == other.Type()) {
+		if (Type() == KeyValueTuple) {
+			return getCompositeValues().RelaxCompare(other.getCompositeValues(), collateOpts);
+		} else {
+			return Compare(other, collateOpts);
+		}
+	}
 	if (other.Type() == KeyValueString) {
 		return relaxCompareWithString(static_cast<p_string>(other));
 	} else if (Type() == KeyValueString) {
@@ -424,7 +451,7 @@ Variant &Variant::convert(KeyValueType type, const PayloadType *payloadType, con
 			}
 			// fall through
 		default:
-			throw Error(errParams, "Can't convert Variant from type '%s' to to type '%s'", TypeName(type_), TypeName(type));
+			throw Error(errParams, "Can't convert Variant from type '%s' to type '%s'", TypeName(type_), TypeName(type));
 	}
 
 	type_ = type;

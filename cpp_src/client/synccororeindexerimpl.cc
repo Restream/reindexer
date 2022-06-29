@@ -392,8 +392,9 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				assertrx(cd);
 				CoroQueryResults &coroResults = std::get<1>(cd->arguments).results_;
 				auto ret = coroResults.conn_->Call(
-					{reindexer::net::cproto::kCmdFetchResults, coroResults.requestTimeout_, milliseconds(0), nullptr}, coroResults.queryID_,
-					std::get<0>(cd->arguments), coroResults.queryParams_.count + coroResults.fetchOffset_, coroResults.fetchAmount_);
+					{reindexer::net::cproto::kCmdFetchResults, coroResults.requestTimeout_, milliseconds(0), nullptr},
+					coroResults.queryID_.main, std::get<0>(cd->arguments), coroResults.queryParams_.count + coroResults.fetchOffset_,
+					coroResults.fetchAmount_, coroResults.queryID_.uid);
 				if (!ret.Status().ok()) {
 					cd->ret.set_value(Error(errLogic));
 					break;

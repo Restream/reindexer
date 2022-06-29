@@ -31,8 +31,8 @@ func TestAutogen(t *testing.T) {
 		item := TestItemAutogen{}
 		err := DB.Upsert(ns, &item, precepts...)
 		require.NoError(t, err)
-		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix())
-		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix()+1)
+		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
+		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
 	})
 
 	t.Run("field should contain different count of digits after 'nsec, usec, msec, sec' params usage", func(t *testing.T) {

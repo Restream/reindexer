@@ -127,7 +127,8 @@ void SQLEncoder::dumpOrderBy(WrSerializer &ser, bool stripArgs) const {
 				ser << '?';
 			} else {
 				for (auto &v : query_.forcedSortOrder_) {
-					ser << ", '" << v.As<string>() << "'";
+					ser << ", ";
+					v.Dump(ser);
 				}
 			}
 			ser << ")";

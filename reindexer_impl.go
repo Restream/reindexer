@@ -143,7 +143,9 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 // getStatus will return current db status
 func (db *reindexerImpl) getStatus(ctx context.Context) bindings.Status {
 	status := db.binding.Status(ctx)
-	status.Err = db.status
+	if db.status != nil {
+		status.Err = db.status  // If reindexerImpl has an error, return it.
+	}
 
 	db.lock.RLock()
 	nsArray := make([]*reindexerNamespace, 0, len(db.ns))

@@ -72,7 +72,7 @@ public:
 private:
 	friend class SyncCoroReindexer;
 	friend class SyncCoroReindexerImpl;
-	void Bind(std::string_view rawResult, int queryID);
+	void Bind(std::string_view rawResult, RPCQrId id);
 	void fetchNextResults();
 
 	CoroQueryResults results_;

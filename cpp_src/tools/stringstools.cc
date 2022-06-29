@@ -403,12 +403,12 @@ int fast_strftime(char *buf, const tm *tm) {
 	return d - buf;
 }
 
-bool validateObjectName(std::string_view name) {
+bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept {
 	if (!name.length()) {
 		return false;
 	}
 	for (auto c : name) {
-		if (!(std::isalpha(c) || std::isdigit(c) || c == '_' || c == '-' || c == '#')) {
+		if (!(std::isalpha(c) || std::isdigit(c) || c == '_' || c == '-' || c == '#' || (c == '@' && allowSpecialChars))) {
 			return false;
 		}
 	}

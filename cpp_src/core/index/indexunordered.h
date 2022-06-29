@@ -37,6 +37,7 @@ public:
 	}
 
 	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override;
+	void EnableUpdatesCountingMode(bool val) override { tracker_.enableCountingMode(val); }
 
 protected:
 	bool tryIdsetCache(const VariantArray &keys, CondType condition, SortType sortId, std::function<bool(SelectKeyResult &)> selector,

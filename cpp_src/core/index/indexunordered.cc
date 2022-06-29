@@ -374,6 +374,8 @@ IndexMemStat IndexUnordered<T>::GetMemStat() {
 	IndexMemStat ret = Base::GetMemStat();
 	ret.uniqKeysCount = idx_map.size();
 	if (cache_) ret.idsetCache = cache_->GetMemStat();
+	ret.trackedUpdatesCount = tracker_.updatesSize();
+	ret.trackedUpdatesBuckets = tracker_.updatesBuckets();
 	return ret;
 }
 

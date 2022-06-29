@@ -7,9 +7,9 @@
 #include "core/keyvalue/variant.h"
 #include "core/reindexer.h"
 #include "dbmanager.h"
-#include "loggerwrapper.h"
 #include "net/cproto/dispatcher.h"
 #include "net/listener.h"
+#include "rpcqrwatcher.h"
 #include "rpcupdatespusher.h"
 #include "statscollect/istatswatcher.h"
 #include "tools/semversion.h"
@@ -27,7 +27,7 @@ using namespace reindexer;
 
 struct RPCClientData : public cproto::ClientData {
 	~RPCClientData();
-	h_vector<pair<QueryResults, bool>, 1> results;
+	h_vector<RPCQrId, 1> results;
 	vector<Transaction> txs;
 	std::shared_ptr<TxStats> txStats;
 
@@ -45,7 +45,15 @@ public:
 	~RPCServer();
 
 	bool Start(const string &addr, ev::dynamic_loop &loop);
-	void Stop() { listener_->Stop(); }
+	void Stop() {
+		terminate_ = true;
+		if (qrWatcherThread_.joinable()) {
+			qrWatcherTerminateAsync_.send();
+			qrWatcherThread_.join();
+		}
+		listener_->Stop();
+		terminate_ = false;
+	}
 
 	Error Ping(cproto::Context &ctx);
 	Error Login(cproto::Context &ctx, p_string login, p_string password, p_string db, cproto::optional<bool> createDBIfMissing,
@@ -89,8 +97,8 @@ public:
 
 	Error Select(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
 	Error SelectSQL(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
-	Error FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit);
-	Error CloseResults(cproto::Context &ctx, int reqId);
+	Error FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit, cproto::optional<int64_t> qrUID);
+	Error CloseResults(cproto::Context &ctx, int reqId, cproto::optional<int64_t> qrUID);
 	Error GetSQLSuggestions(cproto::Context &ctx, p_string query, int pos);
 
 	Error GetMeta(cproto::Context &ctx, p_string ns, p_string key);
@@ -104,12 +112,11 @@ public:
 	void OnResponse(cproto::Context &ctx);
 
 protected:
-	Error sendResults(cproto::Context &ctx, QueryResults &qr, int reqId, const ResultFetchOpts &opts);
+	Error sendResults(cproto::Context &ctx, QueryResults &qr, RPCQrId id, const ResultFetchOpts &opts);
 	Error processTxItem(DataFormat format, std::string_view itemData, Item &item, ItemModifyMode mode, int stateToken) const noexcept;
 
-	Error fetchResults(cproto::Context &ctx, int reqId, const ResultFetchOpts &opts);
-	void freeQueryResults(cproto::Context &ctx, int id);
-	QueryResults &getQueryResults(cproto::Context &ctx, int &id);
+	RPCQrWatcher::Ref createQueryResults(cproto::Context &ctx, RPCQrId &id);
+	void freeQueryResults(cproto::Context &ctx, RPCQrId id);
 	Transaction &getTx(cproto::Context &ctx, int64_t id);
 	int64_t addTx(cproto::Context &ctx, std::string_view nsName);
 	void clearTx(cproto::Context &ctx, uint64_t txId);
@@ -128,6 +135,10 @@ protected:
 	IClientsStats *clientsStats_;
 
 	std::chrono::system_clock::time_point startTs_;
+	std::thread qrWatcherThread_;
+	RPCQrWatcher qrWatcher_;
+	std::atomic<bool> terminate_ = {false};
+	ev::async qrWatcherTerminateAsync_;
 };
 
 }  // namespace reindexer_server

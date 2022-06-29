@@ -27,7 +27,10 @@ bool Query::operator==(const Query &obj) const {
 	if (count != obj.count) return false;
 	if (debugLevel != obj.debugLevel) return false;
 	if (strictMode != obj.strictMode) return false;
-	if (forcedSortOrder_ != obj.forcedSortOrder_) return false;
+	if (forcedSortOrder_.size() != obj.forcedSortOrder_.size()) return false;
+	for (size_t i = 0, s = forcedSortOrder_.size(); i < s; ++i) {
+		if (forcedSortOrder_[i].RelaxCompare(obj.forcedSortOrder_[i]) != 0) return false;
+	}
 
 	if (selectFilter_ != obj.selectFilter_) return false;
 	if (selectFunctions_ != obj.selectFunctions_) return false;

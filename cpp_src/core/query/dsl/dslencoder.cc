@@ -138,6 +138,12 @@ void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder) {
 		auto obj1 = arr1.Object();
 		encodeJoinEntry(joinEntry, obj1);
 	}
+	arr1.End();	 // Close array
+
+	auto selectFilters = node.Array("select_filter");
+	for (const auto& str : joinQuery.selectFilter_) {
+		selectFilters.Put(nullptr, str);
+	}
 }
 
 void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <estl/fast_hash_set.h>
 #include <atomic>
 #include <list>
 #include <mutex>

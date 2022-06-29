@@ -156,9 +156,11 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		 Query{"test_namespace"}.Not().WhereBetweenFields("index2.field2", CondEq, "index+field"), PARSE},
 		{"SELECT * FROM test_namespace WHERE NOT index2.field2 = \"index+field\"",
 		 Query{"test_namespace"}.Not().WhereBetweenFields("index2.field2", CondEq, "index+field")},
-		{"SELECT * FROM test_namespace WHERE 'index+field' = 5", Error{errParseSQL, "Unexpected '=' in query, line: 1 column: 51 52"}},
+		{"SELECT * FROM test_namespace WHERE 'index+field' = 5",
+		 Error{errParseSQL, "String is invalid at this location. (text = 'index+field'  location = line: 1 column: 49 52)"}},
 		{"SELECT * FROM test_namespace WHERE \"index\" = 5", Query{"test_namespace"}.Where("index", CondEq, 5), PARSE},
-		{"SELECT * FROM test_namespace WHERE 'index' = 5", Error{errParseSQL, "Unexpected '=' in query, line: 1 column: 45 46"}},
+		{"SELECT * FROM test_namespace WHERE 'index' = 5",
+		 Error{errParseSQL, "String is invalid at this location. (text = 'index'  location = line: 1 column: 43 46)"}},
 		{"SELECT * FROM test_namespace WHERE NOT index ALLSET 3489578", Query{"test_namespace"}.Not().Where("index", CondAllSet, 3489578)},
 		{"SELECT * FROM test_namespace WHERE NOT index ALLSET (0,1)", Query{"test_namespace"}.Not().Where("index", CondAllSet, {0, 1})},
 		{"SELECT ID, Year, Genre FROM test_namespace WHERE year > '2016' ORDER BY 'year' DESC LIMIT 10000000",
@@ -179,7 +181,13 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		 "rand())'",
 		 Query{"test_namespace"}.InnerJoin("id", "id", CondEq, Query{"join_ns"}).Sort("year + join_ns.year * (5 - rand())", false)},
 		{"SELECT * FROM "s + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex + ", ST_GeomFromText('POINT(1.25 -7.25)'), 0.5)",
-		 Query{geomNs}.DWithin(kFieldNamePointNonIndex, {1.25, -7.25}, 0.5)}};
+		 Query{geomNs}.DWithin(kFieldNamePointNonIndex, {1.25, -7.25}, 0.5)},
+		{"SELECT * FROM test_namespace ORDER BY FIELD(index, 10, 20, 30)", Query{"test_namespace"}.Sort("index", false, {10, 20, 30})},
+		{"SELECT * FROM test_namespace ORDER BY FIELD(index, 'str1', 'str2', 'str3') DESC",
+		 Query{"test_namespace"}.Sort("index", true, {"str1", "str2", "str3"})},
+		{"SELECT * FROM test_namespace ORDER BY FIELD(index, {10, 'str1'}, {20, 'str2'}, {30, 'str3'})",
+		 Query{"test_namespace"}.Sort("index", false, std::vector<std::tuple<int, std::string>>{{10, "str1"}, {20, "str2"}, {30, "str3"}})},
+	};
 
 	for (const auto& [sql, expected, direction] : cases) {
 		if (std::holds_alternative<Query>(expected)) {
@@ -418,4 +426,29 @@ TEST_F(QueriesApi, JoinByNotIndexField) {
 		ASSERT_EQ(values.size(), 1);
 		EXPECT_EQ(values[0].As<int>(), expectedIds[i]);
 	}
+}
+
+TEST_F(QueriesApi, AllSet) {
+	const std::string nsName = "allset_ns";
+	Error err = rt.reindexer->OpenNamespace(nsName);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	reindexer::WrSerializer ser;
+	reindexer::JsonBuilder json{ser};
+	json.Put("id", 0);
+	json.Array("array", {0, 1, 2});
+	json.End();
+	Item item = rt.reindexer->NewItem(nsName);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	err = item.FromJSON(ser.Slice());
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	Upsert(nsName, item);
+	Query q{nsName};
+	q.Where("array", CondAllSet, {0, 1, 2});
+	reindexer::QueryResults qr;
+	err = rt.reindexer->Select(q, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	EXPECT_EQ(qr.Count(), 1);
 }

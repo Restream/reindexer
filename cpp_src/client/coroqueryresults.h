@@ -72,16 +72,16 @@ private:
 	friend class CoroRPCClient;
 	friend class RPCClientMock;
 	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount, seconds timeout);
-	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, std::string_view rawResult, int queryID, int fetchFlags,
+	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, std::string_view rawResult, RPCQrId id, int fetchFlags,
 					 int fetchAmount, seconds timeout);
-	void Bind(std::string_view rawResult, int queryID);
+	void Bind(std::string_view rawResult, RPCQrId id);
 	void fetchNextResults();
 
 	net::cproto::CoroClientConnection* conn_;
 
 	NsArray nsArray_;
 	h_vector<char, 0x100> rawResult_;
-	int queryID_;
+	RPCQrId queryID_;
 	int fetchOffset_;
 	int fetchFlags_;
 	int fetchAmount_;

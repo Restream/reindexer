@@ -43,7 +43,7 @@ Error DBManager::Init(const std::string &storageEngine, bool allowDBErrors, bool
 	}
 
 	for (auto &de : foundDb) {
-		if (de.isDir && validateObjectName(de.name)) {
+		if (de.isDir && validateObjectName(de.name, false)) {
 			auto status = loadOrCreateDatabase(de.name, allowDBErrors, withAutorepair);
 			if (!status.ok()) {
 				logPrintf(LogError, "Failed to open database '%s' - %s", de.name, status.what());
@@ -87,7 +87,7 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 	if (auth.role_ < kRoleOwner) {
 		return Error(errForbidden, "Forbidden to create database %s", dbName);
 	}
-	if (!validateObjectName(dbName)) {
+	if (!validateObjectName(dbName, false)) {
 		return Error(errParams, "Database name contains invalid character. Only alphas, digits,'_','-', are allowed");
 	}
 

@@ -23,9 +23,10 @@ RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *cli
 	  logger_(logger),
 	  statsWatcher_(statsCollector),
 	  clientsStats_(clientsStats),
-	  startTs_(std::chrono::system_clock::now()) {}
+	  startTs_(std::chrono::system_clock::now()),
+	  qrWatcher_(serverConfig_.RPCQrIdleTimeout) {}
 
-RPCServer::~RPCServer() {}
+RPCServer::~RPCServer() { listener_.reset(); }
 
 Error RPCServer::Ping(cproto::Context &) {
 	//
@@ -152,15 +153,19 @@ void RPCServer::OnClose(cproto::Context &ctx, const Error &err) {
 	(void)ctx;
 	(void)err;
 
-	if (statsWatcher_) {
-		auto clientData = getClientDataUnsafe(ctx);
-		if (clientData) {
+	auto clientData = getClientDataUnsafe(ctx);
+	if (clientData) {
+		if (statsWatcher_) {
 			statsWatcher_->OnClientDisconnected(clientData->auth.DBName(), statsSourceName());
 		}
-	}
-	if (clientsStats_) {
-		auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-		if (clientData) clientsStats_->DeleteConnection(clientData->connID);
+		if (clientsStats_) {
+			clientsStats_->DeleteConnection(clientData->connID);
+		}
+		for (auto &qrId : clientData->results) {
+			if (qrId.main >= 0) {
+				qrWatcher_.FreeQueryResults(qrId);
+			}
+		}
 	}
 	logger_.info("RPC: Client disconnected");
 }
@@ -396,7 +401,7 @@ Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId, cproto::optional<i
 		} else {
 			opts = ResultFetchOpts{flags, {}, 0, INT_MAX};
 		}
-		err = sendResults(ctx, qres, -1, opts);
+		err = sendResults(ctx, qres, RPCQrId(), opts);
 	}
 	clearTx(ctx, txId);
 	return err;
@@ -519,7 +524,7 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 		}
 	}
 
-	return sendResults(ctx, qres, -1, opts);
+	return sendResults(ctx, qres, RPCQrId(), opts);
 }
 
 Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, cproto::optional<int> flagsOpts) {
@@ -538,7 +543,7 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, cproto::op
 		flags = flagsOpts.value();
 	}
 	ResultFetchOpts opts{flags, {}, 0, INT_MAX};
-	return sendResults(ctx, qres, -1, opts);
+	return sendResults(ctx, qres, RPCQrId(), opts);
 }
 
 Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, cproto::optional<int> flagsOpts) {
@@ -557,7 +562,7 @@ Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, cproto::op
 	int flags = kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson;
 	if (flagsOpts.hasValue()) flags = flagsOpts.value();
 	ResultFetchOpts opts{flags, {&ptVersion, 1}, 0, INT_MAX};
-	return sendResults(ctx, qres, -1, opts);
+	return sendResults(ctx, qres, RPCQrId(), opts);
 }
 
 Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
@@ -580,15 +585,17 @@ Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
 	throw Error(errParams, "Database is not opened, you should open it first");
 }
 
-Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, int reqId, const ResultFetchOpts &opts) {
+Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, RPCQrId id, const ResultFetchOpts &opts) {
 	WrResultSerializer rser(opts);
 	bool doClose = rser.PutResults(&qres);
-	if (doClose && reqId >= 0) {
-		freeQueryResults(ctx, reqId);
-		reqId = -1;
+	if (doClose && id.main >= 0) {
+		freeQueryResults(ctx, id);
+		id.main = -1;
+		id.uid = RPCQrWatcher::kUninitialized;
 	}
 	std::string_view resSlice = rser.Slice();
-	ctx.Return({cproto::Arg(p_string(&resSlice)), cproto::Arg(int(reqId))});
+	ctx.Return({cproto::Arg(p_string(&resSlice)), cproto::Arg(int(id.main)), cproto::Arg(int64_t(id.uid))});
+
 	return errOK;
 }
 
@@ -613,26 +620,39 @@ Error RPCServer::processTxItem(DataFormat format, std::string_view itemData, Ite
 	}
 }
 
-QueryResults &RPCServer::getQueryResults(cproto::Context &ctx, int &id) {
+RPCQrWatcher::Ref RPCServer::createQueryResults(cproto::Context &ctx, RPCQrId &id) {
 	auto data = getClientDataSafe(ctx);
 
-	if (id < 0) {
-		for (id = 0; id < int(data->results.size()); id++) {
-			if (!data->results[id].second) {
-				data->results[id] = {QueryResults(), true};
-				return data->results[id].first;
-			}
+	assertrx(id.main < 0);
+
+	RPCQrWatcher::Ref qres;
+	qres = qrWatcher_.GetQueryResults(id);
+
+	for (auto &qrId : data->results) {
+		if (qrId.main < 0) {
+			qrId = id;
+			return qres;
 		}
-
-		if (data->results.size() > cproto::kMaxConcurentQueries) throw Error(errLogic, "Too many parallel queries");
-		id = data->results.size();
-		data->results.push_back({QueryResults(), true});
 	}
 
-	if (id >= int(data->results.size())) {
-		throw Error(errLogic, "Invalid query id");
+	if (data->results.size() > cproto::kMaxConcurentQueries) throw Error(errLogic, "Too many parallel queries");
+	data->results.emplace_back(id);
+
+	return qres;
+}
+
+void RPCServer::freeQueryResults(cproto::Context &ctx, RPCQrId id) {
+	auto data = getClientDataSafe(ctx);
+	for (auto &qrId : data->results) {
+		if (qrId.main == id.main) {
+			if (qrId.uid != id.uid) {
+				throw Error(errLogic, "Invalid query uid: %d vs %d", qrId.uid, id.uid);
+			}
+			qrId.main = -1;
+			qrWatcher_.FreeQueryResults(id);
+			return;
+		}
 	}
-	return data->results[id].first;
 }
 
 Transaction &RPCServer::getTx(cproto::Context &ctx, int64_t id) {
@@ -681,14 +701,6 @@ void RPCServer::clearTx(cproto::Context &ctx, uint64_t txId) {
 	data->txs[txId] = Transaction();
 }
 
-void RPCServer::freeQueryResults(cproto::Context &ctx, int id) {
-	auto data = getClientDataSafe(ctx);
-	if (id >= int(data->results.size()) || id < 0) {
-		throw Error(errLogic, "Invalid query id");
-	}
-	data->results[id] = {QueryResults(), false};
-}
-
 static h_vector<int32_t, 4> pack2vec(p_string pack) {
 	// Get array of payload Type Versions
 	Serializer ser(pack.data(), pack.size());
@@ -708,10 +720,18 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 		query.Where(string("#slave_version"sv), CondEq, data->rxVersion.StrippedString());
 	}
 
-	int id = -1;
-	QueryResults &qres = getQueryResults(ctx, id);
+	RPCQrWatcher::Ref qres;
+	RPCQrId id{-1, (flags & kResultsSupportIdleTimeout) ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
+	try {
+		qres = createQueryResults(ctx, id);
+	} catch (Error &e) {
+		if (e.code() == errParams) {
+			return e;
+		}
+		throw e;
+	}
 
-	auto ret = getDB(ctx, kRoleDataRead).Select(query, qres);
+	auto ret = getDB(ctx, kRoleDataRead).Select(query, *qres);
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
 		return ret;
@@ -719,13 +739,21 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 	auto ptVersions = pack2vec(ptVersionsPck);
 	ResultFetchOpts opts{flags, ptVersions, 0, unsigned(limit)};
 
-	return fetchResults(ctx, id, opts);
+	return sendResults(ctx, *qres, id, opts);
 }
 
 Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, int limit, p_string ptVersionsPck) {
-	int id = -1;
-	QueryResults &qres = getQueryResults(ctx, id);
-	auto ret = getDB(ctx, kRoleDataRead).Select(querySql, qres);
+	RPCQrId id{-1, (flags & kResultsSupportIdleTimeout) ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
+	RPCQrWatcher::Ref qres;
+	try {
+		qres = createQueryResults(ctx, id);
+	} catch (Error &e) {
+		if (e.code() == errParams) {
+			return e;
+		}
+		throw e;
+	}
+	auto ret = getDB(ctx, kRoleDataRead).Select(querySql, *qres);
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
 		return ret;
@@ -733,25 +761,30 @@ Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, i
 	auto ptVersions = pack2vec(ptVersionsPck);
 	ResultFetchOpts opts{flags, ptVersions, 0, unsigned(limit)};
 
-	return fetchResults(ctx, id, opts);
+	return sendResults(ctx, *qres, id, opts);
 }
 
-Error RPCServer::FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit) {
+Error RPCServer::FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit, cproto::optional<int64_t> qrUID) {
 	flags &= ~kResultsWithPayloadTypes;
+	RPCQrId id{reqId, qrUID.hasValue() ? qrUID.value() : RPCQrWatcher::kDisabled};
+	RPCQrWatcher::Ref qres;
+	try {
+		qres = qrWatcher_.GetQueryResults(id);
+	} catch (Error &e) {
+		if (e.code() == errParams) {
+			return e;
+		}
+		throw e;
+	}
 
 	ResultFetchOpts opts = {flags, {}, unsigned(offset), unsigned(limit)};
-	return fetchResults(ctx, reqId, opts);
+	return sendResults(ctx, *qres, id, opts);
 }
 
-Error RPCServer::CloseResults(cproto::Context &ctx, int reqId) {
-	freeQueryResults(ctx, reqId);
+Error RPCServer::CloseResults(cproto::Context &ctx, int reqId, cproto::optional<int64_t> qrUID) {
+	const RPCQrId id{reqId, qrUID.hasValue() ? qrUID.value() : RPCQrWatcher::kDisabled};
+	freeQueryResults(ctx, id);
 	return errOK;
-}
-
-Error RPCServer::fetchResults(cproto::Context &ctx, int reqId, const ResultFetchOpts &opts) {
-	QueryResults &qres = getQueryResults(ctx, reqId);
-
-	return sendResults(ctx, qres, reqId, opts);
 }
 
 Error RPCServer::GetSQLSuggestions(cproto::Context &ctx, p_string query, int pos) {
@@ -856,8 +889,8 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 
 	dispatcher_.Register(cproto::kCmdSelect, this, &RPCServer::Select);
 	dispatcher_.Register(cproto::kCmdSelectSQL, this, &RPCServer::SelectSQL);
-	dispatcher_.Register(cproto::kCmdFetchResults, this, &RPCServer::FetchResults);
-	dispatcher_.Register(cproto::kCmdCloseResults, this, &RPCServer::CloseResults);
+	dispatcher_.Register(cproto::kCmdFetchResults, this, &RPCServer::FetchResults, true);
+	dispatcher_.Register(cproto::kCmdCloseResults, this, &RPCServer::CloseResults, true);
 
 	dispatcher_.Register(cproto::kCmdGetSQLSuggestions, this, &RPCServer::GetSQLSuggestions);
 
@@ -879,6 +912,21 @@ bool RPCServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	} else {
 		listener_.reset(new Listener(loop, factory));
 	}
+
+	assert(!qrWatcherThread_.joinable());
+	auto thLoop = std::make_unique<ev::dynamic_loop>();
+	qrWatcherTerminateAsync_.set([](ev::async &a) { a.loop.break_loop(); });
+	qrWatcherTerminateAsync_.set(*thLoop);
+	qrWatcherTerminateAsync_.start();
+	qrWatcherThread_ = std::thread([this, thLoop = std::move(thLoop)]() {
+		qrWatcher_.Register(*thLoop, logger_);	// -V522
+		do {
+			thLoop->run();
+		} while (!terminate_);
+		qrWatcherTerminateAsync_.stop();
+		qrWatcherTerminateAsync_.reset();
+		qrWatcher_.Stop();
+	});
 
 	return listener_->Bind(addr);
 }

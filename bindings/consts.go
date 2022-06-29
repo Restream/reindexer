@@ -2,7 +2,7 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v3.5.2"
+const ReindexerVersion = "v3.6.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
@@ -119,11 +119,12 @@ const (
 	ResultsCJson      = 0x2
 	ResultsJson       = 0x3
 
-	ResultsWithPayloadTypes = 0x10
-	ResultsWithItemID       = 0x20
-	ResultsWithPercents     = 0x40
-	ResultsWithNsID         = 0x80
-	ResultsWithJoined       = 0x100
+	ResultsWithPayloadTypes   = 0x10
+	ResultsWithItemID         = 0x20
+	ResultsWithPercents       = 0x40
+	ResultsWithNsID           = 0x80
+	ResultsWithJoined         = 0x100
+	ResultsSupportIdleTimeout = 0x2000
 
 	IndexOptPK         = 1 << 7
 	IndexOptArray      = 1 << 6

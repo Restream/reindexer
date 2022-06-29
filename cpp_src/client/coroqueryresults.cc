@@ -3,6 +3,7 @@
 #include "core/cjson/baseencoder.h"
 #include "core/keyvalue/p_string.h"
 #include "net/cproto/coroclientconnection.h"
+#include "server/rpcqrwatcher.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -11,26 +12,25 @@ namespace client {
 using namespace reindexer::net;
 
 CoroQueryResults::CoroQueryResults(int fetchFlags)
-	: conn_(nullptr), queryID_(0), fetchOffset_(0), fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0) {}
+	: conn_(nullptr), fetchOffset_(0), fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0) {}
 
 CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsArray &&nsArray, int fetchFlags, int fetchAmount,
 								   seconds timeout)
 	: conn_(conn),
 	  nsArray_(std::move(nsArray)),
-	  queryID_(0),
 	  fetchOffset_(0),
 	  fetchFlags_(fetchFlags),
 	  fetchAmount_(fetchAmount),
 	  requestTimeout_(timeout) {}
 
-CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsArray &&nsArray, std::string_view rawResult, int queryID,
+CoroQueryResults::CoroQueryResults(net::cproto::CoroClientConnection *conn, NsArray &&nsArray, std::string_view rawResult, RPCQrId id,
 								   int fetchFlags, int fetchAmount, seconds timeout)
 	: CoroQueryResults(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout) {
-	Bind(rawResult, queryID);
+	Bind(rawResult, id);
 }
 
-void CoroQueryResults::Bind(std::string_view rawResult, int queryID) {
-	queryID_ = queryID;
+void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id) {
+	queryID_ = id;
 	ResultSerializer ser(rawResult);
 
 	try {
@@ -61,8 +61,9 @@ void CoroQueryResults::Bind(std::string_view rawResult, int queryID) {
 void CoroQueryResults::fetchNextResults() {
 	using std::chrono::seconds;
 	int flags = fetchFlags_ ? (fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
-	auto ret = conn_->Call({cproto::kCmdFetchResults, requestTimeout_, milliseconds(0), nullptr}, queryID_, flags,
-						   queryParams_.count + fetchOffset_, fetchAmount_);
+	flags |= kResultsSupportIdleTimeout;
+	auto ret = conn_->Call({cproto::kCmdFetchResults, requestTimeout_, milliseconds(0), nullptr}, queryID_.main, flags,
+						   queryParams_.count + fetchOffset_, fetchAmount_, queryID_.uid);
 	if (!ret.Status().ok()) {
 		throw ret.Status();
 	}

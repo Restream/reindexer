@@ -168,6 +168,9 @@ enum {
 	kResultsWithJoined = 0x100,
 	kResultsWithRaw = 0x200,
 	kResultsNeedOutputRank = 0x400,
+	// kResultsWithShardId = 0x800, // v4.x.x
+	// kResultsNeedOutputShardId = 0x1000, // v4.x.x
+	kResultsSupportIdleTimeout = 0x2000	 // FIXME: Change this to version check after test
 };
 
 typedef enum IndexOpt {
@@ -349,3 +352,11 @@ typedef struct SubscriptionOpts {
 #endif
 	uint16_t options;
 } SubscriptionOpts;
+
+typedef struct RPCQrId {
+#ifdef __cplusplus
+	explicit RPCQrId(int m = -1, int64_t u = -1) : main(m), uid(u) {}
+#endif
+	int main;
+	int64_t uid;
+} RpcQrId;

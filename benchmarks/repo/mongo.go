@@ -112,6 +112,10 @@ func (repo *MongoDBRepo) Query1Cond(N int, onlyQuery bool, limit int) (ret []*It
 	return ret
 }
 
+func (repo *MongoDBRepo) QueryJoin(N int, limit int, filtersSet [10]interface{}) (ret []*Item) {
+	return
+}
+
 func (repo *MongoDBRepo) Update(N int) {
 	c := repo.db.C("items")
 

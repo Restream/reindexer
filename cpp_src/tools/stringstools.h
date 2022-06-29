@@ -84,7 +84,7 @@ string urldecode2(std::string_view str);
 int stoi(std::string_view sl);
 int64_t stoll(std::string_view sl);
 
-bool validateObjectName(std::string_view name);
+bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
 LogLevel logLevelFromString(const string& strLogLevel);
 StrictMode strictModeFromString(const std::string& strStrictMode);
 std::string_view strictModeToString(StrictMode mode);

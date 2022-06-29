@@ -41,6 +41,8 @@ public:
 	~Variant() {
 		if (hold_) free();
 	}
+	template <typename... Ts>
+	Variant(const std::tuple<Ts...> &);
 
 	Variant &operator=(const Variant &other) {
 		if (this != &other) {

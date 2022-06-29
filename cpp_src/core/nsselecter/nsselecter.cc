@@ -51,7 +51,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	QueryPreprocessor qPreproc((ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeExecute)
 								   ? const_cast<QueryEntries *>(&ctx.query.entries)->MakeLazyCopy()
 								   : QueryEntries{ctx.query.entries},
-							   ctx.query, ns_, ctx.reqMatchedOnceFlag);
+							   ctx.query, ns_, ctx.reqMatchedOnceFlag, ctx.inTransaction);
 	if (ctx.joinedSelectors) {
 		qPreproc.InjectConditionsFromJoins(*ctx.joinedSelectors, rdxCtx);
 	}
@@ -276,7 +276,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		}
 		explain.AddLoopTime();
 		explain.AddIterations(maxIterations);
-		ThrowOnCancel(rdxCtx);
+		if (!ctx.inTransaction) {
+			ThrowOnCancel(rdxCtx);
+		}
 	} while (qPreproc.NeedNextEvaluation(lctx.start, lctx.count, ctx.matchedAtLeastOnce));
 
 	processLeftJoins(result, ctx, resultInitSize, rdxCtx);
@@ -529,7 +531,7 @@ void NsSelecter::processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t star
 		for (auto &joinedSelector : *sctx.joinedSelectors) {
 			if (joinedSelector.Type() == JoinType::LeftJoin) joinedSelector.Process(rowid, sctx.nsid, pl, true);
 		}
-		if (i % kCancelCheckFrequency == 0) ThrowOnCancel(rdxCtx);
+		if (!sctx.inTransaction && (i % kCancelCheckFrequency == 0)) ThrowOnCancel(rdxCtx);
 	}
 }
 
@@ -624,7 +626,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 	SelectIterator &firstIterator = qres.begin()->Value<SelectIterator>();
 	IdType rowId = firstIterator.Val();
 	while (firstIterator.Next(rowId) && !finish) {
-		if (rowId % kCancelCheckFrequency == 0) ThrowOnCancel(rdxCtx);
+		if (!sctx.inTransaction && (rowId % kCancelCheckFrequency == 0)) ThrowOnCancel(rdxCtx);
 		rowId = firstIterator.Val();
 		IdType properRowId = rowId;
 
@@ -912,9 +914,14 @@ bool NsSelecter::validateField(StrictMode strictMode, std::string_view name, con
 	return true;
 }
 
+static void removeQuotesFromExpression(std::string &expression) {
+	expression.erase(std::remove(expression.begin(), expression.end(), '"'), expression.end());
+}
+
 void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, bool isFt, bool availableSelectBySortIndex) {
 	using namespace SortExprFuncs;
-	const auto strictMode = ctx.query.strictMode == StrictModeNotSet ? ns_->config_.strictMode : ctx.query.strictMode;
+	const auto strictMode =
+		ctx.inTransaction ? StrictModeNone : ((ctx.query.strictMode == StrictModeNotSet) ? ns_->config_.strictMode : ctx.query.strictMode);
 	static const JoinedSelectors emptyJoinedSelectors;
 	const auto &joinedSelectors = ctx.joinedSelectors ? *ctx.joinedSelectors : emptyJoinedSelectors;
 	ctx.sortingContext.entries.clear();
@@ -926,6 +933,7 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 		assertrx(!sortingEntry.expression.empty());
 		SortExpression expr{SortExpression::Parse(sortingEntry.expression, joinedSelectors)};
 		if (expr.ByIndexField()) {
+			removeQuotesFromExpression(sortingEntry.expression);
 			sortingEntry.index = IndexValueType::SetByJsonPath;
 			ns_->getIndexByName(sortingEntry.expression, sortingEntry.index);
 			if (sortingEntry.index >= 0) {

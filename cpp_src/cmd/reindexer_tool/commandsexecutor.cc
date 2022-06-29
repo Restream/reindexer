@@ -98,20 +98,26 @@ Error CommandsExecutor<DBInterface>::fromFileImpl(std::istream& in) {
 	using reindexer::coroutine::wait_group;
 	using reindexer::coroutine::wait_group_guard;
 
+	struct LineData {
+		std::string str;
+		int64_t lineNum = 1;
+	};
+
 	Error lastErr;
-	reindexer::coroutine::channel<std::string> cmdCh(500);
-	auto handleResultFn = [this, &lastErr](Error err) {
+	reindexer::coroutine::channel<LineData> cmdCh(500);
+
+	auto handleResultFn = [this, &lastErr](Error err, int64_t lineNum) {
 		try {
 			if (!err.ok()) {
 				if (err.code() == errCanceled || !db().Status().ok()) {
 					if (lastErr.ok()) {
 						lastErr = err;
-						std::cerr << "ERROR: " << err.what() << std::endl;
+						std::cerr << "LINE: " << lineNum << " ERROR: " << err.what() << std::endl;
 					}
 					return false;
 				}
 				lastErr = err;
-				std::cerr << "ERROR: " << err.what() << std::endl;
+				std::cerr << "LINE: " << lineNum << " ERROR: " << err.what() << std::endl;
 			}
 		} catch (...) {
 			std::cout << "exc";
@@ -119,13 +125,13 @@ Error CommandsExecutor<DBInterface>::fromFileImpl(std::istream& in) {
 
 		return true;
 	};
-	auto workerFn = [this, &cmdCh](std::function<bool(Error)> handleResult, wait_group& wg) {
+	auto workerFn = [this, &cmdCh](std::function<bool(Error, int64_t)> handleResult, wait_group& wg) {
 		wait_group_guard wgg(wg);
 		for (;;) {
 			auto cmdp = cmdCh.pop();
 			if (cmdp.second) {
-				auto err = processImpl(cmdp.first);
-				if (!handleResult(err)) {
+				auto err = processImpl(cmdp.first.str);
+				if (!handleResult(err, cmdp.first.lineNum)) {
 					if (cmdCh.opened()) {
 						cmdCh.close();
 					}
@@ -143,20 +149,21 @@ Error CommandsExecutor<DBInterface>::fromFileImpl(std::istream& in) {
 		loop_.spawn(std::bind(workerFn, handleResultFn, std::ref(wg)));
 	}
 
-	std::string line;
-	while (GetStatus().running && std::getline(in, line)) {
-		if (reindexer::checkIfStartsWith("\\upsert ", line) || reindexer::checkIfStartsWith("\\delete ", line)) {
+	LineData line;
+	while (GetStatus().running && std::getline(in, line.str)) {
+		if (reindexer::checkIfStartsWith("\\upsert ", line.str) || reindexer::checkIfStartsWith("\\delete ", line.str)) {
 			try {
 				cmdCh.push(line);
 			} catch (std::exception&) {
 				break;
 			}
 		} else {
-			auto err = processImpl(line);
-			if (!handleResultFn(err)) {
+			auto err = processImpl(line.str);
+			if (!handleResultFn(err, line.lineNum)) {
 				break;
 			}
 		}
+		line.lineNum++;
 	}
 	cmdCh.close();
 	wg.wait();

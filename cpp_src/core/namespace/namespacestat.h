@@ -34,6 +34,8 @@ struct IndexMemStat {
 	size_t sortOrdersSize = 0;
 	size_t fulltextSize = 0;
 	size_t columnSize = 0;
+	size_t trackedUpdatesCount = 0;
+	size_t trackedUpdatesBuckets = 0;
 	LRUCacheMemStat idsetCache;
 	size_t GetIndexStructSize() const noexcept { return idsetPlainSize + idsetBTreeSize + sortOrdersSize + fulltextSize + columnSize; }
 };

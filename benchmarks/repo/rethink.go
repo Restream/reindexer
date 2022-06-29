@@ -130,6 +130,10 @@ func (repo *RethinkDBRepo) Query1Cond(N int, onlyQuery bool, limit int) (ret []*
 	return ret
 }
 
+func (repo *RethinkDBRepo) QueryJoin(N int, limit int, filtersSet [10]interface{}) (ret []*Item) {
+	return
+}
+
 func (repo *RethinkDBRepo) Update(N int) {
 
 	for i := 0; i < N; i++ {

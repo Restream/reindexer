@@ -67,10 +67,10 @@ int main(int argc, char* argv[]) {
 
 	args::Flag repair(progOptions, "", "Repair database", {'r', "repair"});
 
-	args::GlobalOptions globals(parser, progOptions);
-
 	args::ValueFlag<string> appName(progOptions, "Application name", "Application name which will be used in login info", {'a', "appname"},
 									"reindexer_tool", Options::Single | Options::Global);
+
+	args::GlobalOptions globals(parser, progOptions);
 
 	try {
 		parser.ParseCLI(argc, argv);
