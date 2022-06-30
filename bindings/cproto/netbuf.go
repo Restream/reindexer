@@ -96,7 +96,7 @@ func (buf *NetBuffer) close() {
 		buf.reqID = -1
 		buf.uid = -1
 		if err != nil {
-			fmt.Printf("rx: query close error: %v", err)
+			fmt.Printf("rx: query close error: %v\n", err)
 		}
 		closeBuf.Free()
 	}

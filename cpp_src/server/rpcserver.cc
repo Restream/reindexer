@@ -163,7 +163,10 @@ void RPCServer::OnClose(cproto::Context &ctx, const Error &err) {
 		}
 		for (auto &qrId : clientData->results) {
 			if (qrId.main >= 0) {
-				qrWatcher_.FreeQueryResults(qrId);
+				try {
+					qrWatcher_.FreeQueryResults(qrId);
+				} catch (...) {
+				}
 			}
 		}
 	}
@@ -635,7 +638,26 @@ RPCQrWatcher::Ref RPCServer::createQueryResults(cproto::Context &ctx, RPCQrId &i
 		}
 	}
 
-	if (data->results.size() > cproto::kMaxConcurentQueries) throw Error(errLogic, "Too many parallel queries");
+	if (data->results.size() >= cproto::kMaxConcurentQueries) {
+		unsigned idx = 0;
+		try {
+			for (idx = 0; idx < data->results.size(); ++idx) {
+				RPCQrId tmpQrId{data->results[idx].main, data->results[idx].uid};
+				assert(tmpQrId.main >= 0);
+				[[maybe_unused]] RPCQrWatcher::Ref tmpQr = qrWatcher_.GetQueryResults(tmpQrId);
+			}
+		} catch (Error &e) {
+			if (e.code() == errParams) {
+				// Timed out query results were found
+				data->results[idx] = id;
+				return qres;
+			} else {
+				qrWatcher_.FreeQueryResults(id);
+			}
+		}
+
+		throw Error(errLogic, "Too many parallel queries");
+	}
 	data->results.emplace_back(id);
 
 	return qres;
