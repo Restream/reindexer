@@ -1,3 +1,8 @@
+# Version 3.6.2 (same as 3.6.1) (30.06.2022)
+## Reindexer server
+- [fix] Fix timed out query results reuse
+- [fix] Fix exception handling on connection drop
+
 # Version 3.6.0 (29.06.2022)
 ## Core
 - [fea] Add numeric fields names support in sort expressions
