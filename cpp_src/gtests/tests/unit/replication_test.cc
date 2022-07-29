@@ -458,3 +458,23 @@ TEST_F(ReplicationLoadApi, DynamicRoleSwitch) {
 	}
 }
 #endif
+
+TEST_F(ReplicationLoadApi, NodeOfflineLastError) {
+	InitNs();
+
+	ServerControl::Interface::Ptr leader = GetSrv(0);
+
+	StopServer(1);
+	for (std::size_t i = 0; i < 10; i++) {
+		reindexer::cluster::ReplicationStats stats = leader->GetReplicationStats("async");
+		if (!stats.nodeStats.empty() && stats.nodeStats[0].lastError.code() == errNetwork) {
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::seconds(1));
+	}
+
+	reindexer::cluster::ReplicationStats stats = leader->GetReplicationStats("async");
+	ASSERT_EQ(stats.nodeStats.size(), std::size_t(3));
+	ASSERT_EQ(stats.nodeStats[0].lastError.code(), errNetwork);
+	ASSERT_FALSE(stats.nodeStats[0].lastError.what().empty());
+}

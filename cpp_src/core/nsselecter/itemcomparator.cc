@@ -56,7 +56,7 @@ class ItemComparator::BackInserter {
 public:
 	explicit BackInserter(ItemComparator &comparator) : comparator_(comparator) {}
 	void expr(size_t i, bool desc) { comparator_.byExpr_.emplace_back(i, desc); }
-	void fields(const TagsPath &tp) { comparator_.fields_.push_back(std::move(tp)); }
+	void fields(const TagsPath &tp) { comparator_.fields_.push_back(tp); }
 	void fields(int fieldIdx) { comparator_.fields_.push_back(fieldIdx); }
 	void index(size_t i, bool desc) { comparator_.byIndex_.emplace_back(i, desc); }
 	void collateOpts(const CollateOpts *opts) { comparator_.collateOpts_.emplace_back(opts); }
@@ -69,18 +69,8 @@ class ItemComparator::FrontInserter {
 public:
 	FrontInserter(ItemComparator &comparator) : comparator_(comparator) {}
 	void expr(size_t i, bool desc) { comparator_.byExpr_.emplace(comparator_.byExpr_.begin(), i, desc); }
-	void fields(const TagsPath &tp) {
-		FieldsSet tmp;
-		tmp.push_back(tp);
-		for (const auto &f : comparator_.fields_) tmp.push_back(f);
-		std::swap(tmp, comparator_.fields_);
-	}
-	void fields(int fieldIdx) {
-		FieldsSet tmp;
-		tmp.push_back(fieldIdx);
-		for (const auto &f : comparator_.fields_) tmp.push_back(f);
-		std::swap(tmp, comparator_.fields_);
-	}
+	void fields(const TagsPath &tp) { comparator_.fields_.push_front(tp); }
+	void fields(int fieldIdx) { comparator_.fields_.push_front(fieldIdx); }
 	void index(size_t i, bool desc) { comparator_.byIndex_.emplace(comparator_.byIndex_.begin(), i, desc); }
 	void collateOpts(const CollateOpts *opts) { comparator_.collateOpts_.emplace(comparator_.collateOpts_.begin(), opts); }
 
@@ -89,7 +79,7 @@ private:
 };
 
 template <typename Inserter>
-void ItemComparator::bindOne(size_t index, const SortingContext::Entry &sortingCtx, Inserter insert, bool multiSort) {
+void ItemComparator::bindOne(size_t index, const SortingContext::Entry &sortingCtx, Inserter insert) {
 	if (sortingCtx.expression != SortingContext::Entry::NoExpression) {
 		insert.expr(index, sortingCtx.data->desc);
 		return;
@@ -109,26 +99,29 @@ void ItemComparator::bindOne(size_t index, const SortingContext::Entry &sortingC
 		}
 		insert.fields(tagsPath);
 		insert.index(index, sortingCtx.data->desc);
+		insert.collateOpts(sortingCtx.opts);
 	} else {
 		if (ns_.indexes_[fieldIdx]->Opts().IsArray()) {
 			throw Error(errQueryExec, "Sorting cannot be applied to array field.");
 		}
 		if (fieldIdx >= ns_.indexes_.firstCompositePos()) {
-			if (multiSort) {
-				throw Error(errQueryExec, "Multicolumn sorting cannot be applied to composite fields: %s", sortingCtx.data->expression);
+			for (const auto &f : ns_.indexes_[fieldIdx]->Fields()) {
+				if (fields_.contains(f)) {
+					throw Error(errQueryExec, "You cannot sort by 2 same indexes: %s", sortingCtx.data->expression);
+				}
+				insert.fields(f);
+				insert.index(index, sortingCtx.data->desc);
+				insert.collateOpts(sortingCtx.opts);
 			}
-			fields_ = ns_.indexes_[fieldIdx]->Fields();
-			assertrx(byIndex_.empty());
-			byIndex_.resize(fields_.size(), {index, sortingCtx.data->desc});
 		} else {
 			if (fields_.contains(fieldIdx)) {
 				throw Error(errQueryExec, "You cannot sort by 2 same indexes: %s", sortingCtx.data->expression);
 			}
 			insert.fields(fieldIdx);
 			insert.index(index, sortingCtx.data->desc);
+			insert.collateOpts(sortingCtx.opts);
 		}
 	}
-	insert.collateOpts(sortingCtx.opts);
 }
 
 void ItemComparator::BindForForcedSort() {
@@ -137,9 +130,8 @@ void ItemComparator::BindForForcedSort() {
 	assertrx(entries.size() >= exprResults.size());
 	byExpr_.reserve(exprResults.size());
 	byIndex_.reserve(entries.size() - exprResults.size());
-	const bool multiSort = entries.size() > 1;
 	for (size_t i = 1; i < entries.size(); ++i) {
-		bindOne(i, entries[i], BackInserter{*this}, multiSort);
+		bindOne(i, entries[i], BackInserter{*this});
 	}
 	assertrx(byIndex_.size() == fields_.size());
 }
@@ -148,15 +140,14 @@ void ItemComparator::BindForGeneralSort() {
 	const auto &entries = ctx_.sortingContext.entries;
 	const auto &exprResults = ctx_.sortingContext.exprResults;
 	assertrx(entries.size() >= exprResults.size());
-	const bool multiSort = entries.size() > 1;
 	if (byExpr_.empty() && byIndex_.empty()) {
 		byExpr_.reserve(exprResults.size());
 		byIndex_.reserve(entries.size() - exprResults.size());
 		for (size_t i = 0; i < entries.size(); ++i) {
-			bindOne(i, entries[i], BackInserter{*this}, multiSort);
+			bindOne(i, entries[i], BackInserter{*this});
 		}
 	} else if (!entries.empty()) {
-		bindOne(0, entries[0], FrontInserter{*this}, multiSort);
+		bindOne(0, entries[0], FrontInserter{*this});
 	}
 	assertrx(byExpr_.size() == exprResults.size());
 	assertrx(byIndex_.size() == fields_.size());

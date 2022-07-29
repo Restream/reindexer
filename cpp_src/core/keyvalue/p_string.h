@@ -184,6 +184,7 @@ struct p_string {
 
 	int type() const { return (v & tagMask) >> tagShift; }
 	string toString() const { return string(data(), length()); }
+	void Dump(std::ostream &os) const;
 
 protected:
 	const void *ptr() const { return v ? reinterpret_cast<const void *>(v & ~tagMask) : ""; }

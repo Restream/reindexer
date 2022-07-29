@@ -33,6 +33,28 @@ INSTANTIATE_TEST_SUITE_P(Select, SQLParserTests,
 										   "SELECT * FROM ns WHERE \"123\" = 123 AND \"abc123\" = 'some_value' AND \"123abc123\" = 123",
 										   "SELECT * FROM ns WHERE \"123\" = 123 AND \"abc123\" = \"123abc123\" AND \"123abc123\" = 123"));
 
+// --gtest_filter=SelectAndOrderBy/SQLParserTests.NumberInDoubleQuotesParsedCorrectly/*
+INSTANTIATE_TEST_SUITE_P(SelectAndOrderBy, SQLParserTests,
+						 ::testing::Values(R"(SELECT * FROM ns ORDER BY "123")", R"(SELECT * FROM ns ORDER BY "123abc")",
+										   R"(SELECT * FROM ns ORDER BY "123abc123")",
+										   R"(SELECT * FROM ns ORDER BY "123", "123abc", "123abc123")",
+										   R"(SELECT * FROM ns ORDER BY "123" ASC)", R"(SELECT * FROM ns ORDER BY "123abc" ASC)",
+										   R"(SELECT * FROM ns ORDER BY '5 * "123"')", R"(SELECT * FROM ns ORDER BY '5 * "123abc"')",
+										   R"(SELECT * FROM ns ORDER BY "123abc123" ASC)",
+										   R"(SELECT * FROM ns ORDER BY "123" ASC, "123abc" ASC, "123abc123" ASC)",
+
+										   R"(SELECT * FROM ns ORDER BY '"123" + 123')",
+
+										   R"(SELECT * FROM ns ORDER BY '123 + "123"')",
+
+										   R"(SELECT * FROM ns ORDER BY '"ns.123" + 123')",
+
+										   R"(SELECT * FROM ns ORDER BY '123 + "ns.123"')",
+
+										   R"(SELECT * FROM ns ORDER BY "123" DESC, "123abc" DESC, "123abc123" DESC)")
+
+);
+
 // --gtest_filter=Delete/SQLParserTests.NumberInDoubleQuotesParsedCorrectly/*
 INSTANTIATE_TEST_SUITE_P(Delete, SQLParserTests,
 						 ::testing::Values("DELETE FROM ns WHERE \"123\" = 'some_value'", "DELETE FROM ns WHERE \"123\" = 123",
@@ -40,3 +62,35 @@ INSTANTIATE_TEST_SUITE_P(Delete, SQLParserTests,
 										   "DELETE FROM ns WHERE \"123abc123\" = 123 AND \"123\" = 'some_value'",
 										   "DELETE FROM ns WHERE \"123\" = 123 AND \"abc123\" = 'some_value' AND \"123abc123\" = 123",
 										   "DELETE FROM ns WHERE \"123\" = 123 AND \"abc123\" = \"123abc123\" AND \"123abc123\" = 123"));
+
+struct SQLParserWhere : public ::testing::TestWithParam<std::pair<std::string, std::string>> {
+	reindexer::Query query;
+};
+
+TEST_P(SQLParserWhere, CheckWhereError) {
+	auto [sql, errString] = GetParam();
+	try {
+		reindexer::SQLParser(query).Parse(sql);
+		FAIL() << "[" << sql << "] is parsed";
+	} catch (reindexer::Error& err) {
+		EXPECT_EQ(err.what(), errString);
+	} catch (...) {
+		FAIL() << "Unknown error";
+	}
+}
+
+// --gtest_filter=TestsSqlWhere/SQLParserWhere.CheckWhereError/*
+INSTANTIATE_TEST_SUITE_P(
+	TestsSqlWhere, SQLParserWhere,
+	::testing::Values(
+		std::pair{"select * from ns where", "Expected condition after 'WHERE'"},
+		std::pair{"select * from ns where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 26 26)"},
+		std::pair{"select * from ns where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 28 28)"},
+		std::pair{"delete from ns where", "Expected condition after 'WHERE'"},
+		std::pair{"delete from ns where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 24 24)"},
+		std::pair{"delete from ns where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 26 26)"},
+		std::pair{"update ns set a=1 where", "Expected condition after 'WHERE'"},
+		std::pair{"update ns set a=1 where 123", "Number is invalid at this location. (text = '123'  location = line: 1 column: 27 27)"},
+		std::pair{"update ns set a=1 where 'abc'", "String is invalid at this location. (text = 'abc'  location = line: 1 column: 29 29)"})
+
+);

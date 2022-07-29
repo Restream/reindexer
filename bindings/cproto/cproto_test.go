@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/restream/reindexer"
 	"github.com/restream/reindexer/bindings"
 	"github.com/restream/reindexer/test/helpers"
 )
@@ -155,4 +156,73 @@ func (s *testServer) acceptLoop() {
 
 func (s *testServer) Close() {
 	s.l.Close()
+}
+
+func TestStatusError(t *testing.T) {
+	expectedError := "failed to connect with provided dsn; dial tcp 127.0.0.1:6661: connect: connection refused"
+
+	srv1 := helpers.TestServer{T: t, RpcPort: "6661", HttpPort: "9961", DbName: "reindex_test_status_db", SrvType: helpers.ServerTypeBuiltin}
+	defer srv1.Clean()
+
+	dsn := fmt.Sprintf("cproto://127.0.0.1:%s/%s_%s", srv1.RpcPort, srv1.DbName, srv1.RpcPort)
+	db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
+	assert.NotNil(t, db)
+	defer db.Close()
+
+	// Check for connection error - server not started
+	status := db.Status()
+	assert.Equal(t, expectedError, status.Err.Error())
+
+	// Start server
+	err := srv1.Run()
+	assert.NoError(t, err)
+
+	// Check no error after server run
+	status = db.Status()
+	assert.NoError(t, status.Err)
+
+	// Stop server
+	err = srv1.Stop()
+	assert.NoError(t, err)
+
+	// Check for connection error - server stopped
+	status = db.Status()
+	assert.Equal(t, expectedError, status.Err.Error())
+}
+
+func TestInvalidDSNFromGetStatus(t *testing.T) {
+	var tests = []struct {
+		dsn  string
+		want string
+	}{
+		{
+			"cproto://127.0.0.1::6661/some",
+			"failed to connect with provided dsn; dial tcp: address 127.0.0.1::6661: too many colons in address",
+		},
+		{
+			"cproto:///127.0.0.1:6661/some",
+			"failed to connect with provided dsn; dial tcp: missing address",
+		},
+		{
+			"cproto://127.0..0.1:6661/some",
+			"failed to connect with provided dsn; dial tcp: lookup 127.0..0.1: no such host",
+		},
+		{
+			"cproto:://127.0.0.1:6661/some",
+			"failed to connect with provided dsn; dial tcp: missing address",
+		},
+	}
+	for _, tt := range tests {
+		testname := fmt.Sprintf("Test for dsn: %s", tt.dsn)
+		t.Run(testname, func(t *testing.T) {
+			dsn := fmt.Sprintf(tt.dsn)
+			db := reindexer.NewReindex(dsn, reindexer.WithCreateDBIfMissing())
+			assert.NotNil(t, db)
+
+			status := db.Status()
+			assert.Equal(t, status.Err.Error(), tt.want)
+
+			db.Close()
+		})
+	}
 }

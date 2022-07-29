@@ -20,6 +20,7 @@ struct SelectCtx {
 	bool matchedAtLeastOnce = false;
 	bool reqMatchedOnceFlag = false;
 	bool contextCollectingMode = false;
+	bool inTransaction = false;
 
 	const Query *parentQuery = nullptr;
 	bool requiresCrashTracking = false;

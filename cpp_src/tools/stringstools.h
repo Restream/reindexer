@@ -7,10 +7,10 @@
 #include <string_view>
 #include <vector>
 #include "core/indexopts.h"
+#include "core/keyvalue/variant.h"
 #include "core/type_consts.h"
 #include "tools/customhash.h"
 #include "tools/errors.h"
-#include "core/keyvalue/variant.h"
 
 using std::string;
 using std::vector;
@@ -87,7 +87,7 @@ string urldecode2(std::string_view str);
 int stoi(std::string_view sl);
 int64_t stoll(std::string_view sl);
 
-bool validateObjectName(std::string_view name, bool allowSpecialChars);
+bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
 LogLevel logLevelFromString(const string& strLogLevel);
 StrictMode strictModeFromString(const std::string& strStrictMode);
 std::string_view strictModeToString(StrictMode mode);

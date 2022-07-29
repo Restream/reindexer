@@ -167,76 +167,108 @@ TEST_F(ClusterizationApi, ForceAndWalSync) {
 	loop.run();
 }
 
-static void ValidateStatsOnTestBeginning(size_t kClusterSize, const ClusterizationApi::Defaults& ports, const std::set<int> onlineNodes,
-										 ServerControl::Interface::Ptr node) {
-	constexpr auto kMaxRetries = 100;
-	for (int i = 0; i < kMaxRetries; ++i) {
-		const auto stats = node->GetReplicationStats(cluster::kClusterReplStatsType);
-		WrSerializer wser;
-		stats.GetJSON(wser);
+// clang-format off
+#define O_EXPECT_EQ(enable_assertion, val1, val2)    \
+	if (enable_assertion) { EXPECT_EQ(val1, val2); } \
+	if ((val1) != (val2)) { return false; }
 
-		ASSERT_EQ(stats.initialSync.walSyncs.count, 0) << "json: " << wser.Slice();
-		ASSERT_GT(stats.initialSync.totalTimeUs, 0) << "json: " << wser.Slice();
-		ASSERT_EQ(stats.initialSync.walSyncs.maxTimeUs, 0) << "json: " << wser.Slice();
-		ASSERT_EQ(stats.initialSync.walSyncs.avgTimeUs, 0) << "json: " << wser.Slice();
-		ASSERT_EQ(stats.initialSync.forceSyncs.count, 0) << "json: " << wser.Slice();
-		ASSERT_EQ(stats.initialSync.forceSyncs.maxTimeUs, 0) << "json: " << wser.Slice();
-		ASSERT_EQ(stats.initialSync.forceSyncs.avgTimeUs, 0) << "json: " << wser.Slice();
-		ASSERT_EQ(stats.forceSyncs.count, 0) << "json: " << wser.Slice();
-		ASSERT_EQ(stats.walSyncs.count, 0) << "json: " << wser.Slice();
-		ASSERT_EQ(stats.nodeStats.size(), kClusterSize) << "json: " << wser.Slice();
+#define O_EXPECT_GT(enable_assertion, val1, val2)    \
+	if (enable_assertion) { EXPECT_GT(val1, val2); } \
+	if ((val1) <= (val2)) { return false; }
 
-		bool hasUpdates = false;
-		for (auto& nodeStat : stats.nodeStats) {
-			const std::string kExpectedDsn =
-				fmt::format("cproto://127.0.0.1:{}/node{}", ports.defaultRpcPort + nodeStat.serverId, nodeStat.serverId);
-			ASSERT_EQ(nodeStat.dsn, kExpectedDsn) << "json: " << wser.Slice();
-			if (nodeStat.updatesCount > 0) {
-				hasUpdates = true;
-				break;
-			}
-			ASSERT_EQ(nodeStat.updatesCount, 0) << "json: " << wser.Slice();
-			ASSERT_TRUE(nodeStat.namespaces.empty()) << "json: " << wser.Slice();
-			if (onlineNodes.count(nodeStat.serverId)) {
-				ASSERT_EQ(nodeStat.status, cluster::NodeStats::Status::Online) << "json: " << wser.Slice();
-				ASSERT_EQ(nodeStat.syncState, cluster::NodeStats::SyncState::OnlineReplication) << "json: " << wser.Slice();
-			} else {
-				ASSERT_EQ(nodeStat.status, cluster::NodeStats::Status::Offline) << "json: " << wser.Slice();
-				ASSERT_EQ(nodeStat.syncState, cluster::NodeStats::SyncState::AwaitingResync) << "json: " << wser.Slice();
-			}
-		}
-		if (!hasUpdates) {
-			return;
-		}
-		std::this_thread::sleep_for(std::chrono::milliseconds(100));
-		if (i == kMaxRetries - 1) {
-			ASSERT_TRUE(false) << wser.Slice();
-		}
-	}
-	assert(false);
-}
+#define O_EXPECT_GE(enable_assertion, val1, val2)    \
+	if (enable_assertion) { EXPECT_GE(val1, val2); } \
+	if ((val1) < (val2)) { return false; }
 
-static void ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const std::vector<size_t>& kFirstNodesGroup,
-									  const std::vector<size_t>& kSecondNodesGroup, size_t kClusterSize,
-									  const ClusterizationApi::Defaults& ports, const cluster::ReplicationStats& stats) {
+#define O_EXPECT_LE(enable_assertion, val1, val2)    \
+	if (enable_assertion) { EXPECT_LE(val1, val2); } \
+	if ((val1) > (val2)) { return false; }
+
+#define O_EXPECT_TRUE(enable_assertion, val)    \
+	if (enable_assertion) { EXPECT_TRUE(val); } \
+	if (!(val)) { return false; }
+// clang-format on
+
+static bool ValidateStatsOnTestBeginning(size_t kClusterSize, const ClusterizationApi::Defaults& ports, const std::set<int>& onlineNodes,
+										 const cluster::ReplicationStats& stats, bool withAssertion) {
 	WrSerializer wser;
 	stats.GetJSON(wser);
-	ASSERT_EQ(stats.initialSync.walSyncs.count, 1) << "json: " << wser.Slice();
-	ASSERT_GT(stats.initialSync.totalTimeUs, 0) << "json: " << wser.Slice();
-	ASSERT_GT(stats.initialSync.walSyncs.maxTimeUs, 0) << "json: " << wser.Slice();
-	ASSERT_EQ(stats.initialSync.walSyncs.maxTimeUs, stats.initialSync.walSyncs.avgTimeUs) << "json: " << wser.Slice();
-	ASSERT_EQ(stats.initialSync.forceSyncs.count, 0) << "json: " << wser.Slice();
-	ASSERT_EQ(stats.initialSync.forceSyncs.maxTimeUs, 0) << "json: " << wser.Slice();
-	ASSERT_EQ(stats.initialSync.forceSyncs.avgTimeUs, 0) << "json: " << wser.Slice();
-	ASSERT_EQ(stats.forceSyncs.count, 0) << "json: " << wser.Slice();
-	if (leaderId == kTransitionServer) {
-		ASSERT_EQ(stats.walSyncs.count, kFirstNodesGroup.size()) << "json: " << wser.Slice();
-	} else {
-		ASSERT_GE(stats.walSyncs.count, kFirstNodesGroup.size() - 1) << "json: " << wser.Slice();
-		ASSERT_LE(stats.walSyncs.count, kFirstNodesGroup.size()) << "json: " << wser.Slice();
+
+	O_EXPECT_EQ(withAssertion, stats.initialSync.walSyncs.count, 0)
+	O_EXPECT_GT(withAssertion, stats.initialSync.totalTimeUs, 0)
+	O_EXPECT_EQ(withAssertion, stats.initialSync.walSyncs.maxTimeUs, 0)
+	O_EXPECT_EQ(withAssertion, stats.initialSync.walSyncs.avgTimeUs, 0)
+	O_EXPECT_EQ(withAssertion, stats.initialSync.forceSyncs.count, 0)
+	O_EXPECT_EQ(withAssertion, stats.initialSync.forceSyncs.maxTimeUs, 0)
+	O_EXPECT_EQ(withAssertion, stats.initialSync.forceSyncs.avgTimeUs, 0)
+	O_EXPECT_EQ(withAssertion, stats.forceSyncs.count, 0)
+	O_EXPECT_EQ(withAssertion, stats.walSyncs.count, 0)
+	O_EXPECT_EQ(withAssertion, stats.nodeStats.size(), kClusterSize)
+
+	bool hasUpdates = false;
+	for (auto& nodeStat : stats.nodeStats) {
+		const std::string kExpectedDsn =
+			fmt::format("cproto://127.0.0.1:{}/node{}", ports.defaultRpcPort + nodeStat.serverId, nodeStat.serverId);
+		O_EXPECT_EQ(withAssertion, nodeStat.dsn, kExpectedDsn)
+		if (nodeStat.updatesCount > 0) {
+			hasUpdates = true;
+			break;
+		}
+		O_EXPECT_EQ(withAssertion, nodeStat.updatesCount, 0)
+		O_EXPECT_TRUE(withAssertion, nodeStat.namespaces.empty())
+		if (onlineNodes.count(nodeStat.serverId)) {
+			O_EXPECT_EQ(withAssertion, nodeStat.status, cluster::NodeStats::Status::Online)
+			O_EXPECT_EQ(withAssertion, nodeStat.syncState, cluster::NodeStats::SyncState::OnlineReplication)
+		} else {
+			O_EXPECT_EQ(withAssertion, nodeStat.status, cluster::NodeStats::Status::Offline)
+			O_EXPECT_EQ(withAssertion, nodeStat.syncState, cluster::NodeStats::SyncState::AwaitingResync)
+		}
 	}
-	ASSERT_EQ(stats.nodeStats.size(), kClusterSize) << "json: " << wser.Slice();
-	{
+	return !hasUpdates;
+}
+
+static bool ValidateStatsOnTestBeginning(size_t kClusterSize, const ClusterizationApi::Defaults& ports, const std::set<int>& onlineNodes,
+										 ServerControl::Interface::Ptr node) {
+	constexpr auto kMaxRetries = 40;
+	cluster::ReplicationStats stats;
+	for (int i = 0; i < kMaxRetries; ++i) {
+		stats = node->GetReplicationStats(cluster::kClusterReplStatsType);
+		if (ValidateStatsOnTestBeginning(kClusterSize, ports, onlineNodes, stats, false)) {
+			break;
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(250));
+	}
+
+	if (ValidateStatsOnTestBeginning(kClusterSize, ports, onlineNodes, stats, true)) {
+		return true;
+	}
+	WrSerializer wser;
+	stats.GetJSON(wser);
+	TestCout() << "Stats json: " << wser.Slice() << std::endl;
+	return false;
+}
+
+static bool ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const std::vector<size_t>& kFirstNodesGroup,
+									  const std::vector<size_t>& kSecondNodesGroup, size_t kClusterSize,
+									  const ClusterizationApi::Defaults& ports, const cluster::ReplicationStats& stats,
+									  bool withAssertion) {
+	WrSerializer wser;
+	stats.GetJSON(wser);
+	O_EXPECT_EQ(withAssertion, stats.initialSync.walSyncs.count, 1)
+	O_EXPECT_GT(withAssertion, stats.initialSync.totalTimeUs, 0)
+	O_EXPECT_GT(withAssertion, stats.initialSync.walSyncs.maxTimeUs, 0)
+	O_EXPECT_EQ(withAssertion, stats.initialSync.walSyncs.maxTimeUs, stats.initialSync.walSyncs.avgTimeUs)
+	O_EXPECT_EQ(withAssertion, stats.initialSync.forceSyncs.count, 0)
+	O_EXPECT_EQ(withAssertion, stats.initialSync.forceSyncs.maxTimeUs, 0)
+	O_EXPECT_EQ(withAssertion, stats.initialSync.forceSyncs.avgTimeUs, 0)
+	O_EXPECT_EQ(withAssertion, stats.forceSyncs.count, 0)
+	if (leaderId == kTransitionServer) {
+		O_EXPECT_EQ(withAssertion, stats.walSyncs.count, kFirstNodesGroup.size())
+	} else {
+		O_EXPECT_GE(withAssertion, stats.walSyncs.count, kFirstNodesGroup.size() - 1)
+		O_EXPECT_LE(withAssertion, stats.walSyncs.count, kFirstNodesGroup.size())
+	}
+	O_EXPECT_EQ(withAssertion, stats.nodeStats.size(), kClusterSize) {
 		std::set<size_t> onlineNodes, offlineNodes;
 		for (auto node : kSecondNodesGroup) offlineNodes.emplace(node);
 		for (auto node : kFirstNodesGroup) onlineNodes.emplace(node);
@@ -244,32 +276,34 @@ static void ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const
 		for (auto& nodeStat : stats.nodeStats) {
 			const std::string kExpectedDsn =
 				fmt::format("cproto://127.0.0.1:{}/node{}", ports.defaultRpcPort + nodeStat.serverId, nodeStat.serverId);
-			ASSERT_EQ(nodeStat.dsn, kExpectedDsn) << "json: " << wser.Slice();
-			ASSERT_TRUE(nodeStat.updatesCount == 0 || nodeStat.updatesCount == 1)
-				<< "json: " << wser.Slice();  // (may contain "initial leader resync" update record
+			O_EXPECT_EQ(withAssertion, nodeStat.dsn, kExpectedDsn)
+			O_EXPECT_TRUE(withAssertion,
+						  nodeStat.updatesCount == 0 || nodeStat.updatesCount == 1)	 // (may contain "initial leader resync" update record
 			if (onlineNodes.count(nodeStat.serverId)) {
-				ASSERT_EQ(onlineNodes.count(nodeStat.serverId), 1) << "json: " << wser.Slice();
-				ASSERT_EQ(nodeStat.status, cluster::NodeStats::Status::Online) << "json: " << wser.Slice();
-				ASSERT_EQ(nodeStat.syncState, cluster::NodeStats::SyncState::OnlineReplication) << "json: " << wser.Slice();
+				O_EXPECT_EQ(withAssertion, onlineNodes.count(nodeStat.serverId), 1)
+				O_EXPECT_EQ(withAssertion, nodeStat.status, cluster::NodeStats::Status::Online)
+				O_EXPECT_EQ(withAssertion, nodeStat.syncState, cluster::NodeStats::SyncState::OnlineReplication)
 				onlineNodes.erase(nodeStat.serverId);
 				if (nodeStat.serverId == leaderId) {
-					ASSERT_EQ(nodeStat.role, cluster::RaftInfo::Role::Leader) << "json: " << wser.Slice();
+					O_EXPECT_EQ(withAssertion, nodeStat.role, cluster::RaftInfo::Role::Leader)
 				} else {
-					ASSERT_EQ(nodeStat.role, cluster::RaftInfo::Role::Follower) << "json: " << wser.Slice();
+					O_EXPECT_EQ(withAssertion, nodeStat.role, cluster::RaftInfo::Role::Follower)
 				}
 			} else if (offlineNodes.count(nodeStat.serverId)) {
-				ASSERT_EQ(offlineNodes.count(nodeStat.serverId), 1);
-				ASSERT_EQ(nodeStat.status, cluster::NodeStats::Status::Offline) << "json: " << wser.Slice();
-				ASSERT_EQ(nodeStat.syncState, cluster::NodeStats::SyncState::AwaitingResync) << "json: " << wser.Slice();
+				O_EXPECT_EQ(withAssertion, offlineNodes.count(nodeStat.serverId), 1)
+				O_EXPECT_EQ(withAssertion, nodeStat.status, cluster::NodeStats::Status::Offline)
+				O_EXPECT_EQ(withAssertion, nodeStat.syncState, cluster::NodeStats::SyncState::AwaitingResync)
 				offlineNodes.erase(nodeStat.serverId);
-				ASSERT_EQ(nodeStat.role, cluster::RaftInfo::Role::None) << "json: " << wser.Slice();
+				O_EXPECT_EQ(withAssertion, nodeStat.role, cluster::RaftInfo::Role::None)
 			} else {
-				ASSERT_TRUE(false) << "Unexpected server id: " << nodeStat.serverId << "; json: " << wser.Slice();
+				EXPECT_TRUE(false) << "Unexpected server id: " << nodeStat.serverId << "; json: " << wser.Slice();
+				return false;
 			}
 		}
-		ASSERT_EQ(onlineNodes.size(), 0) << "json: " << wser.Slice();
-		ASSERT_EQ(offlineNodes.size(), 0) << "json: " << wser.Slice();
+		O_EXPECT_EQ(withAssertion, onlineNodes.size(), 0)
+		O_EXPECT_EQ(withAssertion, offlineNodes.size(), 0)
 	}
+	return true;
 }
 
 TEST_F(ClusterizationApi, InitialLeaderSync) {
@@ -296,8 +330,7 @@ TEST_F(ClusterizationApi, InitialLeaderSync) {
 		for (auto id : kFirstNodesGroup) {
 			onlineNodes.emplace(id);
 		}
-		loop.sleep(std::chrono::seconds(2));  // await stats update
-		ValidateStatsOnTestBeginning(kClusterSize, ports, onlineNodes, cluster.GetNode(leaderId));
+		ASSERT_TRUE(ValidateStatsOnTestBeginning(kClusterSize, ports, onlineNodes, cluster.GetNode(leaderId)));
 
 		// Fill data for nodes from the first group
 		TestCout() << "Fill data 1" << std::endl;
@@ -355,15 +388,26 @@ TEST_F(ClusterizationApi, InitialLeaderSync) {
 		state = cluster.GetNode(0)->GetState(std::string(kNsSome));
 		ASSERT_EQ(state.lsn.Counter(), 3 * kDataPortion + 2 + 2);  // Data + indexes + tx records
 
-		// Add some time for stats stabilization
-		std::this_thread::sleep_for(std::chrono::seconds(2));
-
 		// Validate stats
 		leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 		ASSERT_NE(leaderId, -1);
 		TestCout() << "Leader id is " << leaderId << std::endl;
-		auto stats = cluster.GetNode(leaderId)->GetReplicationStats(cluster::kClusterReplStatsType);
-		ValidateStatsOnTestEnding(leaderId, kTransitionServer, kFirstNodesGroup, kSecondNodesGroup, kClusterSize, ports, stats);
+		cluster::ReplicationStats stats;
+		for (unsigned i = 0; i < 40; ++i) {
+			stats = cluster.GetNode(leaderId)->GetReplicationStats(cluster::kClusterReplStatsType);
+			if (ValidateStatsOnTestEnding(leaderId, kTransitionServer, kFirstNodesGroup, kSecondNodesGroup, kClusterSize, ports, stats,
+										  false)) {
+				break;
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(250));
+		}
+		{
+			WrSerializer wser;
+			stats.GetJSON(wser);
+			ASSERT_TRUE(ValidateStatsOnTestEnding(leaderId, kTransitionServer, kFirstNodesGroup, kSecondNodesGroup, kClusterSize, ports,
+												  stats, true))
+				<< "json: " << wser.Slice();
+		}
 		// Validate stats, recieved via followers (this request has to be proxied)
 		for (auto nodeId : kFirstNodesGroup) {
 			auto followerStats = cluster.GetNode(nodeId)->GetReplicationStats(cluster::kClusterReplStatsType);

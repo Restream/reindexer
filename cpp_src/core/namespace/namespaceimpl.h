@@ -19,7 +19,7 @@
 #include "core/schema.h"
 #include "core/storage/idatastorage.h"
 #include "core/storage/storagetype.h"
-#include "core/transactionimpl.h"
+#include "core/transaction/localtransaction.h"
 #include "estl/contexted_locks.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
@@ -123,6 +123,8 @@ protected:
 	friend class ReindexerImpl;
 	friend LocalQueryResults;
 	friend class SnapshotHandler;
+	friend class FieldComparator;
+	friend class QueryResults;
 
 	class NSUpdateSortedContext : public UpdateSortedContext {
 	public:
@@ -306,8 +308,8 @@ public:
 	void BackgroundRoutine(RdxActivityContext *);
 	void CloseStorage(const RdxContext &);
 
-	Transaction NewTransaction(const RdxContext &ctx);
-	void CommitTransaction(Transaction &tx, LocalQueryResults &result, const NsContext &ctx);
+	LocalTransaction NewTransaction(const RdxContext &ctx);
+	void CommitTransaction(LocalTransaction &tx, LocalQueryResults &result, const NsContext &ctx);
 
 	Item NewItem(const RdxContext &ctx);
 	void ToPool(ItemImpl *item);
@@ -514,6 +516,7 @@ private:
 	std::atomic<int> optimizationState_{OptimizationState::NotOptimized};
 	StringsHolderPtr strHolder_;
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
+	std::chrono::seconds lastExpirationCheckTs_;
 
 	cluster::INsDataReplicator *clusterizator_;
 };

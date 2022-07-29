@@ -25,7 +25,8 @@ const string kVariableOutput = "output";
 const string kOutputModeJson = "json";
 const string kOutputModeTable = "table";
 const string kOutputModePretty = "pretty";
-const string kOutputModePrettyCollapsed = "collapsed";
+const string kVariableWithShardId = "with_shard_id";
+
 const string kBenchNamespace = "rxtool_bench";
 const string kBenchIndex = "id";
 const string kDumpModePrefix = "-- __dump_mode:";
@@ -153,20 +154,26 @@ Error CommandsExecutor<DBInterface>::fromFileImpl(std::istream& in) {
 	using reindexer::coroutine::wait_group;
 	using reindexer::coroutine::wait_group_guard;
 
+	struct LineData {
+		std::string str;
+		int64_t lineNum = 1;
+	};
+
 	Error lastErr;
-	reindexer::coroutine::channel<std::string> cmdCh(500);
-	auto handleResultFn = [this, &lastErr](Error err) {
+	reindexer::coroutine::channel<LineData> cmdCh(500);
+
+	auto handleResultFn = [this, &lastErr](Error err, int64_t lineNum) {
 		try {
 			if (!err.ok()) {
 				if (err.code() == errCanceled || !db().Status().ok()) {
 					if (lastErr.ok()) {
 						lastErr = err;
-						std::cerr << "ERROR: " << err.what() << std::endl;
+						std::cerr << "LINE: " << lineNum << " ERROR: " << err.what() << std::endl;
 					}
 					return false;
 				}
 				lastErr = err;
-				std::cerr << "ERROR: " << err.what() << std::endl;
+				std::cerr << "LINE: " << lineNum << " ERROR: " << err.what() << std::endl;
 			}
 		} catch (...) {
 			std::cout << "exc";
@@ -174,13 +181,13 @@ Error CommandsExecutor<DBInterface>::fromFileImpl(std::istream& in) {
 
 		return true;
 	};
-	auto workerFn = [this, &cmdCh](std::function<bool(Error)> handleResult, wait_group& wg) {
+	auto workerFn = [this, &cmdCh](std::function<bool(Error, int64_t)> handleResult, wait_group& wg) {
 		wait_group_guard wgg(wg);
 		for (;;) {
 			auto cmdp = cmdCh.pop();
 			if (cmdp.second) {
-				auto err = processImpl(cmdp.first);
-				if (!handleResult(err)) {
+				auto err = processImpl(cmdp.first.str);
+				if (!handleResult(err, cmdp.first.lineNum)) {
 					if (cmdCh.opened()) {
 						cmdCh.close();
 					}
@@ -203,20 +210,21 @@ Error CommandsExecutor<DBInterface>::fromFileImpl(std::istream& in) {
 		loop_.spawn(std::bind(workerFn, handleResultFn, std::ref(wg)));
 	}
 
-	std::string line;
-	while (GetStatus().running && std::getline(in, line)) {
-		if (reindexer::checkIfStartsWith("\\upsert ", line) || reindexer::checkIfStartsWith("\\delete ", line)) {
+	LineData line;
+	while (GetStatus().running && std::getline(in, line.str)) {
+		if (reindexer::checkIfStartsWith("\\upsert ", line.str) || reindexer::checkIfStartsWith("\\delete ", line.str)) {
 			try {
 				cmdCh.push(line);
 			} catch (std::exception&) {
 				break;
 			}
 		} else {
-			auto err = processImpl(line);
-			if (!handleResultFn(err)) {
+			auto err = processImpl(line.str);
+			if (!handleResultFn(err, line.lineNum)) {
 				break;
 			}
 		}
+		line.lineNum++;
 	}
 	cmdCh.close();
 	wg.wait();
@@ -270,17 +278,17 @@ Error CommandsExecutor<DBInterface>::runImpl(const string& dsn, Args&&... args) 
 		cmdAsync_.start();
 
 		auto fn = [this](const string& dsn, Args&&... args) {
-			string outputMode;
-			if (reindexer::fs::ReadFile(reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile), outputMode) > 0) {
+			string config;
+			if (reindexer::fs::ReadFile(reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile), config) > 0) {
 				gason::JsonParser jsonParser;
-				gason::JsonNode value = jsonParser.Parse(reindexer::giftStr(outputMode));
+				gason::JsonNode value = jsonParser.Parse(reindexer::giftStr(config));
 				for (auto node : value) {
 					WrSerializer ser;
 					reindexer::jsonValueToString(node.value, ser, 0, 0, false);
-					variables_[kVariableOutput] = string(ser.Slice());
+					variables_[string(node.key)] = string(ser.Slice());
 				}
 			}
-			if (variables_.empty()) {
+			if (variables_.empty() || variables_.find(kVariableOutput) == variables_.end()) {
 				variables_[kVariableOutput] = kOutputModeJson;
 			}
 			Error err;
@@ -553,8 +561,12 @@ Error CommandsExecutor<DBInterface>::commandSelect(const string& command) {
 		return err;
 	}
 
-	const int flags = q.IsWALQuery() ? (kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw)
-									 : (kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
+	int flags = kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID;
+	flags = q.IsWALQuery() ? (flags | kResultsWithRaw) : flags;
+	if (variables_.find(kVariableWithShardId) != variables_.end() && variables_[kVariableWithShardId] == "on") {
+		flags |= kResultsNeedOutputShardId | kResultsWithShardId;
+	}
+
 	typename DBInterface::QueryResultsT results(flags);
 
 	auto err = db().Select(q, results);

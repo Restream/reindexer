@@ -130,8 +130,8 @@ public:
 	std::string_view GetJSON() const noexcept;
 	Error BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt);
 	Error GetProtobufSchema(WrSerializer& schema) const;
-	int GetProtobufNsNumber() const { return protobufNsNumber_; }
-	const PrefixTree::PrefixTreeNode* GetRoot() const { return &paths_.root_; }
+	int GetProtobufNsNumber() const noexcept { return protobufNsNumber_; }
+	const PrefixTree::PrefixTreeNode* GetRoot() const noexcept { return &paths_.root_; }
 	static std::string AppendProtobufNumber(std::string_view json, int protobufNsNumber);
 
 private:

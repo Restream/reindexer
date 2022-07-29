@@ -182,11 +182,17 @@ protected:
 		)help"},
 		{"\\set",		"Set configuration variables values",&CommandsExecutor::commandSet,R"help(
 	Syntax:
-		\set output <format>
-		Format can be one of the following:
-		- 'json' Unformatted JSON
-		- 'pretty' Pretty printed JSON
-		- 'table' Table view
+		\set <variable> <value>
+		Variable can be one of the following:
+			-'output'
+				possible values:
+					- 'json' Unformatted JSON
+					- 'pretty' Pretty printed JSON
+					- 'table' Table view
+			-'with_shard_id'
+				possible values:
+					- 'on'  Add '#shard_id' field to items from sharded namespaces
+					- 'off'
 		)help"},
 		{"\\bench",		"Run benchmark",&CommandsExecutor::commandBench,R"help(
 	Syntax:

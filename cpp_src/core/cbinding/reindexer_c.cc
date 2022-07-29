@@ -9,7 +9,6 @@
 #include "cgocancelcontextpool.h"
 #include "core/cjson/baseencoder.h"
 #include "core/selectfunc/selectfuncparser.h"
-#include "core/transactionimpl.h"
 #include "debug/allocdebug.h"
 #include "estl/syncpool.h"
 #include "reindexer_version.h"
@@ -72,7 +71,7 @@ struct put_results_to_pool {
 	void operator()(QueryResultsWrapper* res) const {
 		std::unique_ptr<QueryResultsWrapper> results{res};
 		results->Clear();
-		results->proxiedRefsStorage = std::vector<QueryResults::Iterator::ItemRefCache>();
+		results->proxiedRefsStorage = std::vector<QueryResults::ItemRefCache>();
 		if (results->ser.Cap() > kMaxPooledResultsCap) {
 			results->ser = WrResultSerializer();
 		} else {

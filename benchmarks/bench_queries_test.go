@@ -59,3 +59,13 @@ func BenchmarkArango2Cond(b *testing.B)          { repo.Get("arango").Query2Cond
 func BenchmarkArango2CondNoObj(b *testing.B)     { repo.Get("arango").Query2Cond(b.N, true, 10) }
 func BenchmarkRethink2Cond(b *testing.B)         { repo.Get("rethink").Query2Cond(b.N, false, 10) }
 func BenchmarkRethink2CondNoObj(b *testing.B)    { repo.Get("rethink").Query2Cond(b.N, true, 10) }
+
+func BenchmarkMysqlJoinNoObj(b *testing.B) {
+	repo.Get("mysql").QueryJoin(b.N, 10, [...]interface{}{0, 5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000})
+}
+func BenchmarkReindexJoinNoObj(b *testing.B) {
+	repo.Get("reindex").QueryJoin(b.N, 10, [...]interface{}{0, 5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000})
+}
+func BenchmarkSqliteJoinNoObj(b *testing.B) {
+	repo.Get("sqlite").QueryJoin(b.N, 10, [...]interface{}{0, 5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000})
+}

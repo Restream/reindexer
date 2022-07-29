@@ -3,7 +3,7 @@
 #include <optional>
 #include "cluster/config.h"
 #include "core/perfstatcounter.h"
-#include "core/transaction.h"
+#include "core/transaction/transaction.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
 #include "tools/stringstools.h"
@@ -46,7 +46,7 @@ struct NodeStats {
 	void GetJSON(JsonBuilder& builder) const;
 	bool operator==(const NodeStats& r) const noexcept {
 		return dsn == r.dsn && updatesCount == r.updatesCount && serverId == r.serverId && status == r.status && role == r.role &&
-			   isSynchronized == r.isSynchronized && syncState == r.syncState && namespaces == r.namespaces;
+			   isSynchronized == r.isSynchronized && syncState == r.syncState && namespaces == r.namespaces && lastError == r.lastError;
 	}
 	bool operator!=(const NodeStats& r) const noexcept { return !(*this == r); }
 
@@ -58,6 +58,7 @@ struct NodeStats {
 	RaftInfo::Role role;
 	bool isSynchronized;
 	std::vector<std::string> namespaces;
+	Error lastError;
 };
 
 struct ReplicationStats {
@@ -112,10 +113,19 @@ struct NodeStatsCounter {
 	void OnStatusChanged(NodeStats::Status st) noexcept { status.store(st, std::memory_order_relaxed); }
 	void OnSyncStateChanged(NodeStats::SyncState st) noexcept { syncState.store(st, std::memory_order_relaxed); }
 	void OnServerIdChanged(int sId) noexcept { serverId.store(sId, std::memory_order_relaxed); }
+	void SaveLastError(const Error& err) {
+		std::lock_guard lck(mtx_);
+		lastError = err;
+	}
+	Error GetLastError() const {
+		std::lock_guard lck(mtx_);
+		return lastError;
+	}
 	void Reset() noexcept {
 		status.store(NodeStats::Status::None, std::memory_order_relaxed);
 		syncState.store(NodeStats::SyncState::None, std::memory_order_relaxed);
 		lastAppliedUpdateId_.store(-1, std::memory_order_relaxed);
+		SaveLastError(Error());
 	}
 	NodeStats Get() const;
 
@@ -125,6 +135,8 @@ struct NodeStatsCounter {
 	std::atomic<int> serverId = {-1};
 	std::atomic<NodeStats::Status> status = {NodeStats::Status::None};
 	std::atomic<NodeStats::SyncState> syncState = {NodeStats::SyncState::None};
+	Error lastError;  // Change under lock
+	mutable spinlock mtx_;
 };
 
 class ReplicationStatCounter {
@@ -206,6 +218,13 @@ public:
 		auto found = nodeCounters_.find(nodeId);
 		if (found != nodeCounters_.end()) {
 			found->second->OnServerIdChanged(serverId);
+		}
+	}
+	void SaveNodeError(size_t nodeId, const Error& lastError) {
+		shared_lock rlck(mtx_);
+		auto found = nodeCounters_.find(nodeId);
+		if (found != nodeCounters_.end()) {
+			found->second->SaveLastError(lastError);
 		}
 	}
 	void Reset() noexcept {

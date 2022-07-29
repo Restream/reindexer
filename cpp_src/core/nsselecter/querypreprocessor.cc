@@ -3,16 +3,16 @@
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/joinedselector.h"
 #include "core/nsselecter/selectiteratorcontainer.h"
-#include "core/nsselecter/sortexpression.h"
 #include "core/payload/fieldsset.h"
+#include "core/sorting/sortexpression.h"
 #include "nsselecter.h"
 
 namespace reindexer {
 
-QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query, NamespaceImpl *ns, bool reqMatchedOnce)
+QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query, NamespaceImpl *ns, bool reqMatchedOnce, bool inTransaction)
 	: QueryEntries(std::move(queries)),
 	  ns_(*ns),
-	  strictMode_(query.strictMode == StrictModeNotSet ? ns_.config_.strictMode : query.strictMode),
+	  strictMode_(inTransaction ? StrictModeNone : ((query.strictMode == StrictModeNotSet) ? ns_.config_.strictMode : query.strictMode)),
 	  start_(query.start),
 	  count_(query.count),
 	  forcedSortOrder_(!query.forcedSortOrder_.empty()),
@@ -21,7 +21,7 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query,
 		assertrx(!query.sortingEntries_.empty());
 		static const std::vector<JoinedSelector> emptyJoinedSelectors;
 		const auto &sEntry = query.sortingEntries_[0];
-		if (SortExpression::Parse(sEntry.expression, emptyJoinedSelectors).ByIndexField()) {
+		if (SortExpression::Parse(sEntry.expression, emptyJoinedSelectors).ByField()) {
 			QueryEntry qe;
 			qe.values.reserve(query.forcedSortOrder_.size());
 			for (const auto &v : query.forcedSortOrder_) qe.values.push_back(v);
@@ -196,7 +196,7 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 					if (values.back().second.size() > 1) condition = CondSet;
 				} else {
 					SetOperation(GetOperation(i), first);
-					container_[first] = container_[i];
+					container_[first] = std::move(container_[i]);
 					first = Next(first);
 				}
 			}

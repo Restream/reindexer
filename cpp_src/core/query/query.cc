@@ -27,7 +27,10 @@ bool Query::operator==(const Query &obj) const {
 	if (count != obj.count) return false;
 	if (debugLevel != obj.debugLevel) return false;
 	if (strictMode != obj.strictMode) return false;
-	if (forcedSortOrder_ != obj.forcedSortOrder_) return false;
+	if (forcedSortOrder_.size() != obj.forcedSortOrder_.size()) return false;
+	for (size_t i = 0, s = forcedSortOrder_.size(); i < s; ++i) {
+		if (forcedSortOrder_[i].RelaxCompare(obj.forcedSortOrder_[i]) != 0) return false;
+	}
 
 	if (selectFilter_ != obj.selectFilter_) return false;
 	if (selectFunctions_ != obj.selectFunctions_) return false;
@@ -167,6 +170,9 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 					sortingEntries_.push_back(std::move(sortingEntry));
 				}
 				int cnt = ser.GetVarUint();
+				if (cnt != 0 && sortingEntries_.size() != 1) {
+					throw Error(errParams, "Allowed only first forced sort order");
+				}
 				forcedSortOrder_.reserve(cnt);
 				while (cnt--) forcedSortOrder_.push_back(ser.GetVariant().EnsureHold());
 				break;
@@ -313,13 +319,18 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		}
 	}
 
-	for (const auto &sortginEntry : sortingEntries_) {
+	for (size_t i = 0, size = sortingEntries_.size(); i < size; ++i) {
+		const auto &sortginEntry = sortingEntries_[i];
 		ser.PutVarUint(QuerySortIndex);
 		ser.PutVString(sortginEntry.expression);
 		ser.PutVarUint(sortginEntry.desc);
-		int cnt = forcedSortOrder_.size();
-		ser.PutVarUint(cnt);
-		for (auto &kv : forcedSortOrder_) ser.PutVariant(kv);
+		if (i == 0) {
+			int cnt = forcedSortOrder_.size();
+			ser.PutVarUint(cnt);
+			for (auto &kv : forcedSortOrder_) ser.PutVariant(kv);
+		} else {
+			ser.PutVarUint(0);
+		}
 	}
 
 	if (mode & WithJoinEntries) {

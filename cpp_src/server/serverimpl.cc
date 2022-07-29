@@ -281,8 +281,9 @@ int ServerImpl::run() {
 		}
 
 		LoggerWrapper rpcLogger("rpc");
-		RPCServer rpcServer(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
-		if (!rpcServer.Start(config_.RPCAddr, loop_)) {
+		std::unique_ptr<RPCServer> rpcServer =
+			std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
+		if (!rpcServer->Start(config_.RPCAddr, loop_)) {
 			logger_.error("Can't listen RPC on '{0}'", config_.RPCAddr);
 			return EXIT_FAILURE;
 		}
@@ -355,7 +356,7 @@ int ServerImpl::run() {
 		logger_.info("Clusterization shutdown completed.");
 		httpServer.Stop();
 		logger_.info("HTTP Server shutdown completed.");
-		rpcServer.Stop();
+		rpcServer->Stop();
 		logger_.info("RPC Server shutdown completed.");
 #ifdef WITH_GRPC
 #if REINDEX_WITH_LIBDL

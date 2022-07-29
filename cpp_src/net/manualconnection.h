@@ -74,6 +74,7 @@ public:
 	}
 	int async_connect(std::string_view addr) noexcept;
 	conn_state state() const noexcept { return state_; }
+	int socket_last_error() { return sock_.last_error(); }
 
 private:
 	class transfer_data {

@@ -41,8 +41,8 @@ public:
 class tokenizer {
 public:
 	tokenizer(std::string_view query);
-	token next_token(bool to_lower = true, bool treatSignAsToken = false);
-	token peek_token(bool to_lower = true, bool treatSignAsToken = false);
+	token next_token(bool to_lower = true, bool treatSignAsToken = false, bool inOrderBy = false);
+	token peek_token(bool to_lower = true, bool treatSignAsToken = false, bool inOrderBy = false);
 	void skip_space();
 	bool end() const;
 	size_t getPos() const;

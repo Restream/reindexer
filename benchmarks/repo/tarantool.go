@@ -24,7 +24,14 @@ func (repo *TarantoolRepo) Seed(itemsInDataSet int) bool {
 	for i := 0; i < itemsInDataSet; i++ {
 		it := newItem(i)
 		repo.db.Delete("items", "primary", []interface{}{uint(it.ID)})
-		if _, err := repo.db.Insert("items", []interface{}{int(it.ID), it.Name, it.Year, it.Description}); err != nil {
+		if _, err := repo.db.Insert("items", []interface{}{int(it.ID), it.Name, it.Description, it.Year}); err != nil {
+			panic(err)
+		}
+	}
+	for i := 0; i < itemsInDataSet; i++ {
+		it := newJoinedItem(i)
+		repo.db.Delete("joined_items", "primary", []interface{}{uint(it.ID)})
+		if _, err := repo.db.Insert("joined_items", []interface{}{int(it.ID), it.Description}); err != nil {
 			panic(err)
 		}
 	}
@@ -40,8 +47,8 @@ func decodeTuple(tuple []interface{}) (it *Item) {
 
 	it.ID = int64(tuple[0].(uint64))
 	it.Name = tuple[1].(string)
-	it.Year = int(tuple[2].(uint64))
-	it.Description = tuple[3].(string)
+	it.Description = tuple[2].(string)
+	it.Year = int(tuple[3].(uint64))
 	return it
 }
 
@@ -96,6 +103,10 @@ func (repo *TarantoolRepo) Query1Cond(N int, onlyQuery bool, limit int) (ret []*
 		}
 	}
 	return ret
+}
+
+func (repo *TarantoolRepo) QueryJoin(N int, limit int, filtersSet [10]interface{}) (ret []*Item) {
+	return
 }
 
 func (repo *TarantoolRepo) Update(N int) {

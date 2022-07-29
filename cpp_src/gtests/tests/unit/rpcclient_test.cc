@@ -4,6 +4,7 @@
 #include "rpcserver_fake.h"
 #include "tools/fsops.h"
 
+#include "client/synccororeindexer.h"
 #include "core/cjson/jsonbuilder.h"
 #include "coroutine/waitgroup.h"
 #include "net/ev/ev.h"

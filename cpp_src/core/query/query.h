@@ -507,7 +507,7 @@ public:
 	/// @return Query object.
 	template <typename T>
 	Query &Sort(const string &sort, bool desc, std::initializer_list<T> forcedSortOrder) & {  // -V1071
-		if (!forcedSortOrder_.empty()) throw Error(errParams, "Allowed only one forced sort order");
+		if (!sortingEntries_.empty() && !std::empty(forcedSortOrder)) throw Error(errParams, "Allowed only first forced sort order");
 		sortingEntries_.push_back({sort, desc});
 		for (const T &v : forcedSortOrder) forcedSortOrder_.emplace_back(v);
 		return *this;
@@ -524,7 +524,7 @@ public:
 	/// @return Query object.
 	template <typename T>
 	Query &Sort(const string &sort, bool desc, const T &forcedSortOrder) & {  // -V1071
-		if (!forcedSortOrder_.empty()) throw Error(errParams, "Allowed only one forced sort order");
+		if (!sortingEntries_.empty() && !forcedSortOrder.empty()) throw Error(errParams, "Allowed only first forced sort order");
 		sortingEntries_.push_back({sort, desc});
 		for (const auto &v : forcedSortOrder) forcedSortOrder_.emplace_back(v);
 		return *this;
@@ -687,7 +687,7 @@ public:
 	bool HasLimit() const noexcept { return count != UINT_MAX; }
 	bool HasOffset() const noexcept { return start != 0; }
 	bool IsWALQuery() const noexcept;
-	const h_vector<UpdateEntry, 0> &UpdateFields() const noexcept { return updateFields_; }
+	const std::vector<UpdateEntry> &UpdateFields() const noexcept { return updateFields_; }
 	QueryType Type() const { return type_; }
 	const string &Namespace() const { return _namespace; }
 
@@ -706,18 +706,18 @@ public:
 	QueryType type_ = QuerySelect;			   /// Query type
 	OpType nextOp_ = OpAnd;					   /// Next operation constant.
 	SortingEntries sortingEntries_;			   /// Sorting data.
-	h_vector<Variant, 0> forcedSortOrder_;	   /// Keys that always go first - before any ordered values.
+	std::vector<Variant> forcedSortOrder_;	   /// Keys that always go first - before any ordered values.
 	vector<JoinedQuery> joinQueries_;		   /// List of queries for join.
 	vector<JoinedQuery> mergeQueries_;		   /// List of merge queries.
 	h_vector<string, 1> selectFilter_;		   /// List of columns in a final result set.
-	h_vector<string, 0> selectFunctions_;	   /// List of sql functions
+	std::vector<string> selectFunctions_;	   /// List of sql functions
 
 	QueryEntries entries;
 
 	vector<AggregateEntry> aggregations_;
 
 private:
-	h_vector<UpdateEntry, 0> updateFields_;	 /// List of fields (and values) for update.
+	std::vector<UpdateEntry> updateFields_;	 /// List of fields (and values) for update.
 	bool withRank_ = false;
 	friend class SQLParser;
 };

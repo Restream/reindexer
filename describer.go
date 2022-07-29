@@ -207,6 +207,10 @@ type NamespaceMemStat struct {
 		FulltextSize int64 `json:"fulltext_size"`
 		// Idset cache stats. Stores merged reverse index results of SELECT field IN(...) by IN(...) keys
 		IDSetCache CacheMemStat `json:"idset_cache"`
+		// Updates count, pending in index updates tracker
+		TrackedUpdatesCount int64 `json:"tracked_updates_count"`
+		// Buckets count in index updates tracker map
+		TrackedUpdatesBuckets int64 `json:"tracked_updates_buckets"`
 	} `json:"indexes"`
 	// Join cache stats. Stores results of selects to right table by ON condition
 	JoinCache CacheMemStat `json:"join_cache"`
@@ -427,6 +431,8 @@ type DBNamespacesConfig struct {
 	MaxPreselectSize int64 `json:"max_preselect_size"`
 	// Maximum preselect part of namespace's items for optimization of inner join by injection of filters
 	MaxPreselectPart float64 `json:"max_preselect_part"`
+	// Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
+	IndexUpdatesCountingMode bool `json:"index_updates_counting_mode"`
 }
 
 // DBAsyncReplicationNode

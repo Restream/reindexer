@@ -13,7 +13,7 @@ class SelectIteratorContainer;
 
 class QueryPreprocessor : private QueryEntries {
 public:
-	QueryPreprocessor(QueryEntries &&, const Query &, NamespaceImpl *, bool reqMatchedOnce);
+	QueryPreprocessor(QueryEntries &&, const Query &, NamespaceImpl *, bool reqMatchedOnce, bool inTransaction);
 	const QueryEntries &GetQueryEntries() const noexcept { return *this; }
 	void LookupQueryIndexes() {
 		const size_t merged = lookupQueryIndexes(0, 0, container_.size() - queryEntryAddedByForcedSortOptimization_);

@@ -2,9 +2,10 @@
 #include <set>
 #include "core/index/index.h"
 #include "core/namespace/namespaceimpl.h"
+#include "core/nsselecter/joinedselector.h"
+#include "core/nsselecter/joinedselectormock.h"
 #include "core/queryresults/joinresults.h"
-#include "joinedselector.h"
-#include "joinedselectormock.h"
+#include "estl/fast_hash_set.h"
 #include "tools/stringstools.h"
 #include "vendor/double-conversion/double-conversion.h"
 
@@ -20,9 +21,9 @@ static inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept
 }
 
 static reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, int index,
-											  std::string_view column) {
+											  std::string_view column, bool forceByJsonPath) {
 	reindexer::VariantArray values;
-	if (index == IndexValueType::SetByJsonPath) {
+	if (forceByJsonPath || index == IndexValueType::SetByJsonPath) {
 		pv.GetByJsonPath(column, tagsMatcher, values, KeyValueUndefined);
 	} else {
 		pv.Get(index, values);
@@ -76,34 +77,38 @@ VariantArray SortExpression::getJoinedFieldValues(IdType rowId, const joins::Nam
 	return values;
 }
 
-bool SortExpression::ByIndexField() const {
+bool SortExpression::ByField() const {
 	static constexpr SortExpressionOperation noOperation;
 	return Size() == 1 && container_[0].HoldsOrReferTo<SortExprFuncs::Index>() && GetOperation(0) == noOperation;
 }
 
-bool SortExpression::ByJoinedIndexField() const {
+bool SortExpression::ByJoinedField() const {
 	static constexpr SortExpressionOperation noOperation;
 	return Size() == 1 && container_[0].HoldsOrReferTo<JoinedIndex>() && GetOperation(0) == noOperation;
 }
 
-double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
-	const VariantArray values = getFieldValues(pv, tagsMatcher, index, column);
-	if (values.empty()) throw Error(errQueryExec, "Empty field in sort expression: %s", column);
+double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher, bool forceByJsonPath) const {
+	const VariantArray values = getFieldValues(pv, tagsMatcher, index, column, forceByJsonPath);
+	if (values.empty()) {
+		throw Error(errQueryExec, "Empty field in sort expression: %s", column);
+	}
 	if (values.size() > 1 || values[0].Type() == KeyValueComposite || values[0].Type() == KeyValueTuple) {
 		throw Error(errQueryExec, "Array, composite or tuple field in sort expression");
 	}
 	return values[0].As<double>();
 }
 
-double DistanceFromPoint::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
-	const VariantArray values = getFieldValues(pv, tagsMatcher, index, column);
+double DistanceFromPoint::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher, bool forceByJsonPath) const {
+	const VariantArray values = getFieldValues(pv, tagsMatcher, index, column, forceByJsonPath);
 	return distance(static_cast<Point>(values), point);
 }
 
 double JoinedIndex::GetValue(IdType rowId, const joins::NamespaceResults& joinResults,
 							 const std::vector<JoinedSelector>& joinedSelectors) const {
 	const VariantArray values = SortExpression::getJoinedFieldValues(rowId, joinResults, joinedSelectors, nsIdx, column, index);
-	if (values.empty()) throw Error(errQueryExec, "Empty field in sort expression: %s %s", static_cast<int>(nsIdx), column);
+	if (values.empty()) {
+		throw Error(errQueryExec, "Empty field in sort expression: %d %s", static_cast<int>(nsIdx), column);
+	}
 	if (values.size() > 1 || values[0].Type() == KeyValueComposite || values[0].Type() == KeyValueTuple) {
 		throw Error(errQueryExec, "Array, composite or tuple field in sort expression");
 	}
@@ -116,16 +121,16 @@ double DistanceJoinedIndexFromPoint::GetValue(IdType rowId, const joins::Namespa
 	return distance(static_cast<Point>(values), point);
 }
 
-double DistanceBetweenIndexes::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
-	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index1, column1);
-	const VariantArray values2 = getFieldValues(pv, tagsMatcher, index2, column2);
+double DistanceBetweenIndexes::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher, bool forceByJsonPath) const {
+	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index1, column1, forceByJsonPath);
+	const VariantArray values2 = getFieldValues(pv, tagsMatcher, index2, column2, forceByJsonPath);
 	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 }
 
 double DistanceBetweenIndexAndJoinedIndex::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher, IdType rowId,
 													const joins::NamespaceResults& joinResults,
 													const std::vector<JoinedSelector>& joinedSelectors) const {
-	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index, column);
+	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index, column, false);
 	const VariantArray values2 = SortExpression::getJoinedFieldValues(rowId, joinResults, joinedSelectors, jNsIdx, jColumn, jIndex);
 	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 }
@@ -182,17 +187,25 @@ struct ParseIndexNameResult {
 template <typename T>
 static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std::vector<T>& joinedSelectors,
 											  const std::string_view fullExpr) {
-	static const std::set<char> allowedSymbolsInIndexName{
+	static const fast_hash_set<char> allowedSymbolsInIndexName{
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
 		'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
-		'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+'};
+		'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+', '"'};
 
 	auto pos = expr.data();
 	const auto end = expr.data() + expr.size();
 	auto joinedSelectorIt = joinedSelectors.cend();
+	bool joinedFieldInQuotes = false;
 	while (pos != end && *pos != '.' && allowedSymbolsInIndexName.find(*pos) != allowedSymbolsInIndexName.end()) ++pos;
 	if (pos != end && *pos == '.') {
-		const std::string_view namespaceName = {expr.data(), static_cast<size_t>(pos - expr.data())};
+		std::string_view namespaceName = {expr.data(), static_cast<size_t>(pos - expr.data())};
+
+		// Check for quotes in join expression to skip them
+		joinedFieldInQuotes = namespaceName.at(0) == '"';
+		if (joinedFieldInQuotes) {
+			namespaceName.remove_prefix(1);
+		}
+
 		++pos;
 		joinedSelectorIt = std::find_if(joinedSelectors.cbegin(), joinedSelectors.cend(),
 										[namespaceName](const T& js) { return namespaceName == js.RightNsName(); });
@@ -203,13 +216,29 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 								"Sorting by namespace which has been joined more than once: '" + string(namespaceName) + "'.");
 			}
 			expr.remove_prefix(pos - expr.data());
+		} else {
+			joinedFieldInQuotes = false;
 		}
 	}
 	while (pos != end && allowedSymbolsInIndexName.find(*pos) != allowedSymbolsInIndexName.end()) ++pos;
-	const std::string_view name{expr.data(), static_cast<size_t>(pos - expr.data())};
+	std::string_view name{expr.data(), static_cast<size_t>(pos - expr.data())};
 	if (name.empty()) {
 		throwParseError(fullExpr, pos, "Expected index or function name.");
 	}
+
+	if (joinedFieldInQuotes) {	// Namespace in quotes - trim closing quote
+		if (name.back() != '"') {
+			throwParseError(fullExpr, pos, "Closing quote not found");
+		}
+		name.remove_suffix(1);
+	} else if (name[0] == '"') {  // In case without join
+		name.remove_prefix(1);
+		if (name.back() != '"') {
+			throwParseError(fullExpr, pos, "Closing quote not found");
+		}
+		name.remove_suffix(1);
+	}
+
 	expr.remove_prefix(pos - expr.data());
 	return {joinedSelectorIt, name};
 }
@@ -369,6 +398,16 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 				if (expr.empty() || expr[0] != ')') throwParseError(fullExpr, expr.data(), "Expected ')'.");
 				expr.remove_prefix(1);
 				CloseBracket();
+			} else if (expr[0] == '"') {
+				const auto parsedIndexName = parseIndexName(expr, joinedSelectors, fullExpr);
+				if (parsedIndexName.joinedSelectorIt == joinedSelectors.cend()) {
+					skipSpaces();
+					Append({op, negative}, SortExprFuncs::Index{parsedIndexName.name});
+				} else {
+					auto dist = static_cast<size_t>(parsedIndexName.joinedSelectorIt - joinedSelectors.cbegin());
+					Append({op, negative}, JoinedIndex{dist, parsedIndexName.name});
+				}
+				*containIndexOrFunction = true;
 			} else {
 				int countOfCharsParsedAsDouble = 0;
 				const double value = converter.StringToDouble(expr.data(), expr.size(), &countOfCharsParsedAsDouble);
@@ -449,7 +488,7 @@ SortExpression SortExpression::Parse(const std::string_view expression, const st
 	bool containIndexOrFunction = false;
 	const auto expr = result.parse(expression, &containIndexOrFunction, expression, joinedSelector);
 	if (!expr.empty()) throwParseError(expression, expr.data(), "");
-	if (!containIndexOrFunction) throwParseError(expression, expr.data(), "Expression is undependent on namespace data.");
+	if (!containIndexOrFunction) throwParseError(expression, expr.data(), "Sort expression does not depend from namespace data");
 	return result;
 }
 
@@ -466,7 +505,7 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 	double result = 0.0;
 	for (; it != end; ++it) {
 		double value = it->InvokeAppropriate<double>(
-			[&pv, &tagsMatcher, it, proc, rowId, &joinedResults, &js](const SortExpressionBracket& b) {
+			[&](const SortExpressionBracket& b) {
 				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, joinedResults, js, proc, tagsMatcher);
 				return (b.IsAbs() && res < 0) ? -res : res;
 			},
@@ -498,6 +537,63 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 		}
 	}
 	return result;
+}
+
+double SortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv, uint8_t proc,
+								 TagsMatcher& tagsMatcher, bool forceByJsonPath) {
+	assertrx(it != end);
+	assertrx(it->operation.op == OpPlus);
+	double result = 0.0;
+	for (; it != end; ++it) {
+		double value = it->InvokeAppropriate<double>(
+			[](const auto&) -> double { throw Error(errQueryExec, "Joins in distributed queries are unsupported"); },
+			[&](const SortExpressionBracket& b) {
+				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, proc, tagsMatcher, forceByJsonPath);
+				return (b.IsAbs() && res < 0) ? -res : res;
+			},
+			[](const Value& v) { return v.value; },
+			[&pv, &tagsMatcher, forceByJsonPath](const SortExprFuncs::Index& i) { return i.GetValue(pv, tagsMatcher, forceByJsonPath); },
+			[proc](const Rank&) -> double { return proc; },
+			[&pv, &tagsMatcher, forceByJsonPath](const DistanceFromPoint& i) { return i.GetValue(pv, tagsMatcher, forceByJsonPath); },
+			[&pv, &tagsMatcher, forceByJsonPath](const DistanceBetweenIndexes& i) { return i.GetValue(pv, tagsMatcher, forceByJsonPath); });
+		if (it->operation.negative) value = -value;
+		switch (it->operation.op) {
+			case OpPlus:
+				result += value;
+				break;
+			case OpMinus:
+				result -= value;
+				break;
+			case OpMult:
+				result *= value;
+				break;
+			case OpDiv:
+				if (value == 0.0) throw Error(errQueryExec, "Division by zero in sort expression");
+				result /= value;
+				break;
+		}
+	}
+	return result;
+}
+
+void SortExpression::PrepareIndexes(const NamespaceImpl& ns) {
+	ExecuteAppropriateForEach(
+		Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value, JoinedIndex, Rank, DistanceJoinedIndexFromPoint,
+			 DistanceBetweenIndexAndJoinedIndex, DistanceBetweenJoinedIndexes, DistanceBetweenJoinedIndexesSameNs>{},
+		[&ns](SortExprFuncs::Index& exprIndex) { PrepareSortIndex(exprIndex.column, exprIndex.index, ns); },
+		[&ns](DistanceFromPoint& exprIndex) { PrepareSortIndex(exprIndex.column, exprIndex.index, ns); },
+		[&ns](DistanceBetweenIndexes& exprIndex) {
+			PrepareSortIndex(exprIndex.column1, exprIndex.index1, ns);
+			PrepareSortIndex(exprIndex.column2, exprIndex.index2, ns);
+		});
+}
+
+void SortExpression::PrepareSortIndex(std::string_view column, int& index, const NamespaceImpl& ns) {
+	assertrx(!column.empty());
+	index = IndexValueType::SetByJsonPath;
+	if (ns.getIndexByName(string{column}, index) && ns.indexes_[index]->Opts().IsSparse()) {
+		index = IndexValueType::SetByJsonPath;
+	}
 }
 
 std::string SortExpression::Dump() const {

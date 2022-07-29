@@ -3,8 +3,8 @@
 #include <stddef.h>
 #include <atomic>
 #include <iosfwd>
-#include "tools/lsn.h"
 #include "tools/assertrx.h"
+#include "tools/lsn.h"
 
 namespace reindexer {
 
@@ -22,11 +22,11 @@ public:
 	};
 
 	PayloadValue() noexcept : p_(nullptr) {}
-	PayloadValue(const PayloadValue &);
+	PayloadValue(const PayloadValue &) noexcept;
 	// Alloc payload store with size, and copy data from another array
 	PayloadValue(size_t size, const uint8_t *ptr = nullptr, size_t cap = 0);
 	~PayloadValue();
-	PayloadValue &operator=(const PayloadValue &other) {
+	PayloadValue &operator=(const PayloadValue &other) noexcept {
 		if (&other != this) {
 			release();
 			p_ = other.p_;
@@ -50,24 +50,23 @@ public:
 	// Resize
 	void Resize(size_t oldSize, size_t newSize);
 	// Get data pointer
-	uint8_t *Ptr() const { return p_ + sizeof(dataHeader); }
-	void SetLSN(lsn_t lsn) { header()->lsn = lsn; }
-	lsn_t GetLSN() const { return p_ ? header()->lsn : lsn_t(); }
-	bool IsFree() const { return bool(p_ == nullptr); }
-	void Free() { release(); }
-	size_t GetCapacity() const { return header()->cap; }
-	const uint8_t *get() const { return p_; }
+	uint8_t *Ptr() const noexcept { return p_ + sizeof(dataHeader); }
+	void SetLSN(lsn_t lsn) noexcept { header()->lsn = lsn; }
+	lsn_t GetLSN() const noexcept { return p_ ? header()->lsn : lsn_t(); }
+	bool IsFree() const noexcept { return bool(p_ == nullptr); }
+	void Free() noexcept { release(); }
+	size_t GetCapacity() const noexcept { return header()->cap; }
+	const uint8_t *get() const noexcept { return p_; }
 
 protected:
 	uint8_t *alloc(size_t cap);
-	void release();
+	void release() noexcept;
 
-	dataHeader *header() { return reinterpret_cast<dataHeader *>(p_); }
-	const dataHeader *header() const { return reinterpret_cast<dataHeader *>(p_); }
+	dataHeader *header() noexcept { return reinterpret_cast<dataHeader *>(p_); }
+	const dataHeader *header() const noexcept { return reinterpret_cast<dataHeader *>(p_); }
+	friend std::ostream &operator<<(std::ostream &os, const PayloadValue &);
 	// Data of elements, shared
 	uint8_t *p_;
 };
-
-std::ostream &operator<<(std::ostream &os, const PayloadValue &);
 
 }  // namespace reindexer

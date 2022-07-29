@@ -63,63 +63,63 @@ Error SyncCoroReindexerImpl::Stop() {
 }
 Error SyncCoroReindexerImpl::OpenNamespace(std::string_view nsName, const InternalRdxContext &ctx, const StorageOpts &opts,
 										   const NsReplicationOpts &replOpts) {
-	return sendCommand<Error>(DbCmdOpenNamespace, ctx, std::forward<std::string_view>(nsName), opts, replOpts);
+	return sendCommand<Error>(DbCmdOpenNamespace, ctx, std::move(nsName), opts, replOpts);
 }
 Error SyncCoroReindexerImpl::AddNamespace(const NamespaceDef &nsDef, const InternalRdxContext &ctx, const NsReplicationOpts &replOpts) {
 	return sendCommand<Error>(DbCmdAddNamespace, ctx, nsDef, replOpts);
 }
 Error SyncCoroReindexerImpl::CloseNamespace(std::string_view nsName, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdCloseNamespace, ctx, std::forward<std::string_view>(nsName));
+	return sendCommand<Error>(DbCmdCloseNamespace, ctx, std::move(nsName));
 }
 Error SyncCoroReindexerImpl::DropNamespace(std::string_view nsName, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdDropNamespace, ctx, std::forward<std::string_view>(nsName));
+	return sendCommand<Error>(DbCmdDropNamespace, ctx, std::move(nsName));
 }
 Error SyncCoroReindexerImpl::TruncateNamespace(std::string_view nsName, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdTruncateNamespace, ctx, std::forward<std::string_view>(nsName));
+	return sendCommand<Error>(DbCmdTruncateNamespace, ctx, std::move(nsName));
 }
 Error SyncCoroReindexerImpl::RenameNamespace(std::string_view srcNsName, const std::string &dstNsName, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdRenameNamespace, ctx, std::forward<std::string_view>(srcNsName), dstNsName);
+	return sendCommand<Error>(DbCmdRenameNamespace, ctx, std::move(srcNsName), dstNsName);
 }
 Error SyncCoroReindexerImpl::AddIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdAddIndex, ctx, std::forward<std::string_view>(nsName), index);
+	return sendCommand<Error>(DbCmdAddIndex, ctx, std::move(nsName), index);
 }
 Error SyncCoroReindexerImpl::UpdateIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdUpdateIndex, ctx, std::forward<std::string_view>(nsName), index);
+	return sendCommand<Error>(DbCmdUpdateIndex, ctx, std::move(nsName), index);
 }
 Error SyncCoroReindexerImpl::DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdDropIndex, ctx, std::forward<std::string_view>(nsName), index);
+	return sendCommand<Error>(DbCmdDropIndex, ctx, std::move(nsName), index);
 }
 Error SyncCoroReindexerImpl::SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdSetSchema, ctx, std::forward<std::string_view>(nsName), std::forward<std::string_view>(schema));
+	return sendCommand<Error>(DbCmdSetSchema, ctx, std::move(nsName), std::move(schema));
 }
 Error SyncCoroReindexerImpl::GetSchema(std::string_view nsName, int format, std::string &schema, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdGetSchema, ctx, std::forward<std::string_view>(nsName), std::forward<int>(format), schema);
+	return sendCommand<Error>(DbCmdGetSchema, ctx, std::move(nsName), std::move(format), schema);
 }
 Error SyncCoroReindexerImpl::EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdEnumNamespaces, ctx, defs, std::forward<EnumNamespacesOpts>(opts));
+	return sendCommand<Error>(DbCmdEnumNamespaces, ctx, defs, std::move(opts));
 }
 Error SyncCoroReindexerImpl::EnumDatabases(vector<string> &dbList, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdEnumDatabases, ctx, dbList);
 }
 Error SyncCoroReindexerImpl::Insert(std::string_view nsName, Item &item, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdInsert, ctx, std::forward<std::string_view>(nsName), item);
+	return sendCommand<Error>(DbCmdInsert, ctx, std::move(nsName), item);
 }
 Error SyncCoroReindexerImpl::Insert(std::string_view nsName, Item &item, SyncCoroQueryResults &result, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdInsertQR, ctx, std::forward<std::string_view>(nsName), item, result.results_);
+	return sendCommand<Error>(DbCmdInsertQR, ctx, std::move(nsName), item, result.results_);
 }
 
 Error SyncCoroReindexerImpl::Update(std::string_view nsName, Item &item, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdUpdate, ctx, std::forward<std::string_view>(nsName), item);
+	return sendCommand<Error>(DbCmdUpdate, ctx, std::move(nsName), item);
 }
 Error SyncCoroReindexerImpl::Update(std::string_view nsName, Item &item, SyncCoroQueryResults &result, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdUpdateQR, ctx, std::forward<std::string_view>(nsName), item, result.results_);
+	return sendCommand<Error>(DbCmdUpdateQR, ctx, std::move(nsName), item, result.results_);
 }
 
 Error SyncCoroReindexerImpl::Upsert(std::string_view nsName, Item &item, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdUpsert, ctx, std::forward<std::string_view>(nsName), item);
+	return sendCommand<Error>(DbCmdUpsert, ctx, std::move(nsName), item);
 }
 Error SyncCoroReindexerImpl::Upsert(std::string_view nsName, Item &item, SyncCoroQueryResults &result, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdUpsertQR, ctx, std::forward<std::string_view>(nsName), item, result.results_);
+	return sendCommand<Error>(DbCmdUpsertQR, ctx, std::move(nsName), item, result.results_);
 }
 
 Error SyncCoroReindexerImpl::Update(const Query &query, SyncCoroQueryResults &result, const InternalRdxContext &ctx) {
@@ -128,10 +128,10 @@ Error SyncCoroReindexerImpl::Update(const Query &query, SyncCoroQueryResults &re
 	return sendCommand<Error>(DbCmdUpdateQ, ctx, query, result.results_);
 }
 Error SyncCoroReindexerImpl::Delete(std::string_view nsName, Item &item, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdDelete, ctx, std::forward<std::string_view>(nsName), item);
+	return sendCommand<Error>(DbCmdDelete, ctx, std::move(nsName), item);
 }
 Error SyncCoroReindexerImpl::Delete(std::string_view nsName, Item &item, SyncCoroQueryResults &result, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdDeleteQR, ctx, std::forward<std::string_view>(nsName), item, result.results_);
+	return sendCommand<Error>(DbCmdDeleteQR, ctx, std::move(nsName), item, result.results_);
 }
 
 Error SyncCoroReindexerImpl::Delete(const Query &query, SyncCoroQueryResults &result, const InternalRdxContext &ctx) {
@@ -142,7 +142,7 @@ Error SyncCoroReindexerImpl::Delete(const Query &query, SyncCoroQueryResults &re
 Error SyncCoroReindexerImpl::Select(std::string_view query, SyncCoroQueryResults &result, const InternalRdxContext &ctx) {
 	Error err = result.setClient(this);
 	if (!err.ok()) return err;
-	return sendCommand<Error>(DbCmdSelectS, ctx, std::forward<std::string_view>(query), result.results_);
+	return sendCommand<Error>(DbCmdSelectS, ctx, std::move(query), result.results_);
 }
 Error SyncCoroReindexerImpl::Select(const Query &query, SyncCoroQueryResults &result, const InternalRdxContext &ctx) {
 	Error err = result.setClient(this);
@@ -150,36 +150,35 @@ Error SyncCoroReindexerImpl::Select(const Query &query, SyncCoroQueryResults &re
 	return sendCommand<Error>(DbCmdSelectQ, ctx, query, result.results_);
 }
 Error SyncCoroReindexerImpl::Commit(std::string_view nsName, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdCommit, ctx, std::forward<std::string_view>(nsName));
+	return sendCommand<Error>(DbCmdCommit, ctx, std::move(nsName));
 }
 
 Item SyncCoroReindexerImpl::NewItem(std::string_view nsName, const InternalRdxContext &ctx) {
-	return sendCommand<Item>(DbCmdNewItem, ctx, std::forward<std::string_view>(nsName));
+	return sendCommand<Item>(DbCmdNewItem, ctx, std::move(nsName));
 }
 
 Error SyncCoroReindexerImpl::GetMeta(std::string_view nsName, const string &key, string &data, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdGetMeta, ctx, std::forward<std::string_view>(nsName), key, data);
+	return sendCommand<Error>(DbCmdGetMeta, ctx, std::move(nsName), key, data);
 }
 Error SyncCoroReindexerImpl::GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data,
 									 const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdGetShardedMeta, ctx, std::forward<std::string_view>(nsName), key, data);
+	return sendCommand<Error>(DbCmdGetShardedMeta, ctx, std::move(nsName), key, data);
 }
 Error SyncCoroReindexerImpl::PutMeta(std::string_view nsName, const string &key, std::string_view data, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdPutMeta, ctx, std::forward<std::string_view>(nsName), key, std::forward<std::string_view>(data));
+	return sendCommand<Error>(DbCmdPutMeta, ctx, std::move(nsName), key, std::move(data));
 }
 Error SyncCoroReindexerImpl::EnumMeta(std::string_view nsName, vector<string> &keys, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdEnumMeta, ctx, std::forward<std::string_view>(nsName), keys);
+	return sendCommand<Error>(DbCmdEnumMeta, ctx, std::move(nsName), keys);
 }
 Error SyncCoroReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, vector<string> &suggestions) {
-	return sendCommand<Error>(DbCmdGetSqlSuggestions, InternalRdxContext(), std::forward<std::string_view>(sqlQuery),
-							  std::forward<int>(pos), suggestions);
+	return sendCommand<Error>(DbCmdGetSqlSuggestions, InternalRdxContext(), std::move(sqlQuery), std::move(pos), suggestions);
 }
 Error SyncCoroReindexerImpl::Status(bool forceCheck, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdStatus, ctx, std::forward<bool>(forceCheck));
+	return sendCommand<Error>(DbCmdStatus, ctx, std::move(forceCheck));
 }
 
 CoroTransaction SyncCoroReindexerImpl::NewTransaction(std::string_view nsName, const InternalRdxContext &ctx) {
-	return sendCommand<CoroTransaction>(DbCmdNewTransaction, ctx, std::forward<std::string_view>(nsName));
+	return sendCommand<CoroTransaction>(DbCmdNewTransaction, ctx, std::move(nsName));
 }
 
 Error SyncCoroReindexerImpl::CommitTransaction(SyncCoroTransaction &tr, SyncCoroQueryResults &results, const InternalRdxContext &ctx) {
@@ -202,36 +201,37 @@ Error SyncCoroReindexerImpl::RollBackTransaction(SyncCoroTransaction &tr, const 
 }
 
 Error SyncCoroReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2 &state, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdGetReplState, ctx, std::forward<std::string_view>(nsName), state);
+	return sendCommand<Error>(DbCmdGetReplState, ctx, std::move(nsName), state);
 }
 
 Error SyncCoroReindexerImpl::fetchResults(int flags, SyncCoroQueryResults &result) {
-	return sendCommand<true, Error>(result.coroConnection(), DbCmdFetchResults, InternalRdxContext(), std::forward<int>(flags),
-									result.results_);
+	return sendCommand<true, Error>(result.coroConnection(), DbCmdFetchResults, InternalRdxContext(), std::move(flags), result.results_);
 }
 
 Error SyncCoroReindexerImpl::closeResults(SyncCoroQueryResults &result) {
 	return sendCommand<true, Error>(result.coroConnection(), DbCmdCloseResults, InternalRdxContext(), result.results_);
 }
 
-Error SyncCoroReindexerImpl::addTxItem(SyncCoroTransaction &tr, Item &&item, ItemModifyMode mode, lsn_t lsn) {
-	return sendCommand<true, Error>(tr.coroConnection(), DbCmdAddTxItem, InternalRdxContext(), tr.tr_, std::move(item),
-									std::forward<ItemModifyMode>(mode), std::forward<lsn_t>(lsn));
+Error SyncCoroReindexerImpl::addTxItem(SyncCoroTransaction &tr, Item &&item, ItemModifyMode mode, lsn_t lsn,
+									   SyncCoroTransaction::Completion cmpl) {
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdAddTxItem, InternalRdxContext(std::move(cmpl)), tr.tr_, std::move(item),
+									std::move(mode), std::move(lsn));
 }
 
-Error SyncCoroReindexerImpl::putTxMeta(SyncCoroTransaction &tr, std::string_view key, std::string_view value, lsn_t lsn) {
-	return sendCommand<true, Error>(tr.coroConnection(), DbCmdPutTxMeta, InternalRdxContext(), tr.tr_, std::forward<std::string_view>(key),
-									std::forward<std::string_view>(value), std::forward<lsn_t>(lsn));
+Error SyncCoroReindexerImpl::putTxMeta(SyncCoroTransaction &tr, std::string_view key, std::string_view value, lsn_t lsn,
+									   SyncCoroTransaction::Completion cmpl) {
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdPutTxMeta, InternalRdxContext(std::move(cmpl)), tr.tr_, std::move(key),
+									std::move(value), std::move(lsn));
 }
 
-Error SyncCoroReindexerImpl::setTxTm(SyncCoroTransaction &tr, TagsMatcher &&tm, lsn_t lsn) {
-	return sendCommand<true, Error>(tr.coroConnection(), DbCmdSetTxTagsMatcher, InternalRdxContext(), tr.tr_, std::forward<TagsMatcher>(tm),
-									std::forward<lsn_t>(lsn));
+Error SyncCoroReindexerImpl::setTxTm(SyncCoroTransaction &tr, TagsMatcher &&tm, lsn_t lsn, SyncCoroTransaction::Completion cmpl) {
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdSetTxTagsMatcher, InternalRdxContext(std::move(cmpl)), tr.tr_, std::move(tm),
+									std::move(lsn));
 }
 
-Error SyncCoroReindexerImpl::modifyTx(SyncCoroTransaction &tr, Query &&q, lsn_t lsn) {
-	return sendCommand<true, Error>(tr.coroConnection(), DbCmdModifyTx, InternalRdxContext(), tr.tr_, std::move(q),
-									std::forward<lsn_t>(lsn));
+Error SyncCoroReindexerImpl::modifyTx(SyncCoroTransaction &tr, Query &&q, lsn_t lsn, SyncCoroTransaction::Completion cmpl) {
+	return sendCommand<true, Error>(tr.coroConnection(), DbCmdModifyTx, InternalRdxContext(std::move(cmpl)), tr.tr_, std::move(q),
+									std::move(lsn));
 }
 
 Item SyncCoroReindexerImpl::newItemTx(CoroTransaction &tr) {
@@ -349,165 +349,127 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 		const auto cmd = v.first.Data();
 		switch (cmd->id) {
 			case DbCmdOpenNamespace: {
-				std::function<Error(std::string_view, const StorageOpts &, const NsReplicationOpts &)> f =
-					std::bind(&client::CoroRPCClient::OpenNamespace, &conn.rx, _1, std::ref(cmd->ctx), _2, _3);
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, const StorageOpts &sopts, const NsReplicationOpts &replOpts) {
+					return conn.rx.OpenNamespace(nsName, cmd->ctx, sopts, replOpts);
+				});
 				break;
 			}
 			case DbCmdAddNamespace: {
-				std::function<Error(const NamespaceDef &, const NsReplicationOpts &)> f =
-					std::bind(&client::CoroRPCClient::AddNamespace, &conn.rx, _1, std::ref(cmd->ctx), _2);
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](const NamespaceDef &nsDef, const NsReplicationOpts &replOpts) {
+					return conn.rx.AddNamespace(nsDef, cmd->ctx, replOpts);
+				});
 				break;
 			}
 			case DbCmdCloseNamespace: {
-				std::function<Error(std::string_view)> f =
-					std::bind(&client::CoroRPCClient::CloseNamespace, &conn.rx, _1, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName) { return conn.rx.CloseNamespace(nsName, cmd->ctx); });
 				break;
 			}
 			case DbCmdDropNamespace: {
-				std::function<Error(std::string_view)> f =
-					std::bind(&client::CoroRPCClient::DropNamespace, &conn.rx, _1, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName) { return conn.rx.DropNamespace(nsName, cmd->ctx); });
 				break;
 			}
 			case DbCmdTruncateNamespace: {
-				std::function<Error(std::string_view)> f =
-					std::bind(&client::CoroRPCClient::TruncateNamespace, &conn.rx, _1, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName) { return conn.rx.TruncateNamespace(nsName, cmd->ctx); });
 				break;
 			}
 			case DbCmdRenameNamespace: {
-				std::function<Error(std::string_view, const std::string &)> f =
-					std::bind(&client::CoroRPCClient::RenameNamespace, &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view srcNsName, const std::string &dstNsName) {
+					return conn.rx.RenameNamespace(srcNsName, dstNsName, cmd->ctx);
+				});
 				break;
 			}
 
 			case DbCmdAddIndex: {
-				std::function<Error(std::string_view, const IndexDef &)> f =
-					std::bind(&client::CoroRPCClient::AddIndex, &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(
+					cmd, [&conn, &cmd](std::string_view nsName, const IndexDef &iDef) { return conn.rx.AddIndex(nsName, iDef, cmd->ctx); });
 				break;
 			}
 			case DbCmdUpdateIndex: {
-				std::function<Error(std::string_view, const IndexDef &)> f =
-					std::bind(&client::CoroRPCClient::UpdateIndex, &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, const IndexDef &iDef) {
+					return conn.rx.UpdateIndex(nsName, iDef, cmd->ctx);
+				});
 				break;
 			}
 			case DbCmdDropIndex: {
-				std::function<Error(std::string_view, const IndexDef &)> f =
-					std::bind(&client::CoroRPCClient::DropIndex, &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(
+					cmd, [&conn, &cmd](std::string_view nsName, const IndexDef &idx) { return conn.rx.DropIndex(nsName, idx, cmd->ctx); });
 				break;
 			}
 			case DbCmdSetSchema: {
-				std::function<Error(std::string_view, std::string_view)> f =
-					std::bind(&client::CoroRPCClient::SetSchema, &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, std::string_view schema) {
+					return conn.rx.SetSchema(nsName, schema, cmd->ctx);
+				});
 				break;
 			}
 			case DbCmdGetSchema: {
-				std::function<Error(std::string_view, int, std::string &)> f =
-					std::bind(&client::CoroRPCClient::GetSchema, &conn.rx, _1, _2, _3, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, int format, std::string &schema) {
+					return conn.rx.GetSchema(nsName, format, schema, cmd->ctx);
+				});
 				break;
 			}
 			case DbCmdEnumNamespaces: {
-				std::function<Error(vector<NamespaceDef> &, EnumNamespacesOpts)> f =
-					std::bind(&client::CoroRPCClient::EnumNamespaces, &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](vector<NamespaceDef> &defs, EnumNamespacesOpts opts) {
+					return conn.rx.EnumNamespaces(defs, opts, cmd->ctx);
+				});
 				break;
 			}
 			case DbCmdEnumDatabases: {
-				std::function<Error(vector<string> &)> f =
-					std::bind(&client::CoroRPCClient::EnumDatabases, &conn.rx, _1, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::vector<std::string> &dbList) { return conn.rx.EnumDatabases(dbList, cmd->ctx); });
 				break;
 			}
 			case DbCmdInsert: {
-				std::function<Error(std::string_view, Item &)> f =
-					std::bind(static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, const InternalRdxContext &)>(
-								  &client::CoroRPCClient::Insert),
-							  &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, Item &item) { return conn.rx.Insert(nsName, item, cmd->ctx); });
 				break;
 			}
 			case DbCmdInsertQR: {
-				std::function<Error(std::string_view, Item &, CoroQueryResults &)> f = std::bind(
-					static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)>(
-						&client::CoroRPCClient::Insert),
-					&conn.rx, _1, _2, _3, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, client::Item &item, CoroQueryResults &result) {
+					return conn.rx.Insert(nsName, item, result, cmd->ctx);
+				});
 				break;
 			}
 
 			case DbCmdUpdate: {
-				std::function<Error(std::string_view, Item &)> f =
-					std::bind(static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, const InternalRdxContext &)>(
-								  &client::CoroRPCClient::Update),
-							  &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd,
+							[&conn, &cmd](std::string_view nsName, client::Item &item) { return conn.rx.Update(nsName, item, cmd->ctx); });
 				break;
 			}
 			case DbCmdUpdateQR: {
-				std::function<Error(std::string_view, Item &, CoroQueryResults &)> f = std::bind(
-					static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)>(
-						&client::CoroRPCClient::Update),
-					&conn.rx, _1, _2, _3, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, client::Item &item, CoroQueryResults &result) {
+					return conn.rx.Update(nsName, item, result, cmd->ctx);
+				});
 				break;
 			}
 
 			case DbCmdUpsert: {
-				std::function<Error(std::string_view, Item &)> f =
-					std::bind(static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, const InternalRdxContext &)>(
-								  &client::CoroRPCClient::Upsert),
-							  &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, Item &item) { return conn.rx.Upsert(nsName, item, cmd->ctx); });
 				break;
 			}
 			case DbCmdUpsertQR: {
-				std::function<Error(std::string_view, Item &, CoroQueryResults &)> f = std::bind(
-					static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)>(
-						&client::CoroRPCClient::Upsert),
-					&conn.rx, _1, _2, _3, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, client::Item &item, CoroQueryResults &result) {
+					return conn.rx.Upsert(nsName, item, result, cmd->ctx);
+				});
 				break;
 			}
 
 			case DbCmdUpdateQ: {
-				std::function<Error(const Query &, CoroQueryResults &)> f =
-					std::bind(static_cast<Error (client::CoroRPCClient::*)(const Query &, CoroQueryResults &, const InternalRdxContext &)>(
-								  &client::CoroRPCClient::Update),
-							  &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(
+					cmd, [&conn, &cmd](const Query &query, CoroQueryResults &result) { return conn.rx.Update(query, result, cmd->ctx); });
 				break;
 			}
 			case DbCmdDelete: {
-				std::function<Error(std::string_view, Item &)> f =
-					std::bind(static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, const InternalRdxContext &)>(
-								  &client::CoroRPCClient::Delete),
-							  &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd,
+							[&conn, &cmd](std::string_view nsName, client::Item &item) { return conn.rx.Delete(nsName, item, cmd->ctx); });
 				break;
 			}
 			case DbCmdDeleteQR: {
-				std::function<Error(std::string_view, Item &, CoroQueryResults &)> f = std::bind(
-					static_cast<Error (client::CoroRPCClient::*)(std::string_view, Item &, CoroQueryResults &, const InternalRdxContext &)>(
-						&client::CoroRPCClient::Delete),
-					&conn.rx, _1, _2, _3, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, client::Item &item, CoroQueryResults &result) {
+					return conn.rx.Delete(nsName, item, result, cmd->ctx);
+				});
 				break;
 			}
 			case DbCmdDeleteQ: {
-				std::function<Error(const Query &, CoroQueryResults &)> f =
-					std::bind(static_cast<Error (client::CoroRPCClient::*)(const Query &, CoroQueryResults &, const InternalRdxContext &)>(
-								  &client::CoroRPCClient::Delete),
-							  &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(
+					cmd, [&conn, &cmd](const Query &query, CoroQueryResults &result) { return conn.rx.Delete(query, result, cmd->ctx); });
 				break;
 			}
 
@@ -519,56 +481,45 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 				break;
 			}
 			case DbCmdSelectS: {
-				auto cd = dynamic_cast<DatabaseCommandData<Error, std::string_view, CoroQueryResults &> *>(cmd);
-				assertrx(cd);
-				Error err = conn.rx.Select(std::get<0>(cd->arguments), std::get<1>(cd->arguments), cd->ctx);
-				cd->ret.set_value(std::move(err));
+				execCommand(cmd, [&conn, &cmd](std::string_view ns, CoroQueryResults &qr) { return conn.rx.Select(ns, qr, cmd->ctx); });
 				break;
 			}
 			case DbCmdSelectQ: {
-				auto cd = dynamic_cast<DatabaseCommandData<Error, const Query &, CoroQueryResults &> *>(cmd);
-				assertrx(cd);
-				Error err = conn.rx.Select(std::get<0>(cd->arguments), std::get<1>(cd->arguments), cd->ctx);
-				cd->ret.set_value(std::move(err));
+				execCommand(
+					cmd, [&conn, &cmd](const Query &query, CoroQueryResults &result) { return conn.rx.Select(query, result, cmd->ctx); });
 				break;
 			}
 			case DbCmdCommit: {
-				std::function<Error(std::string_view)> f = std::bind(&client::CoroRPCClient::Commit, &conn.rx, _1, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName) { return conn.rx.Commit(nsName, cmd->ctx); });
 				break;
 			}
 			case DbCmdGetMeta: {
-				std::function<Error(std::string_view, const std::string &, std::string &)> f =
-					std::bind(static_cast<Error (client::CoroRPCClient::*)(std::string_view, const std::string &, std::string &,
-																		   const InternalRdxContext &)>(&client::CoroRPCClient::GetMeta),
-							  &conn.rx, _1, _2, _3, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, const string &key, string &data) {
+					return conn.rx.GetMeta(nsName, key, data, cmd->ctx);
+				});
 				break;
 			}
 			case DbCmdGetShardedMeta: {
-				std::function<Error(std::string_view, const std::string &, std::vector<ShardedMeta> &)> f = std::bind(
-					static_cast<Error (client::CoroRPCClient::*)(std::string_view, const std::string &, std::vector<ShardedMeta> &,
-																 const InternalRdxContext &)>(&client::CoroRPCClient::GetMeta),
-					&conn.rx, _1, _2, _3, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data) {
+					return conn.rx.GetMeta(nsName, key, data, cmd->ctx);
+				});
 				break;
 			}
 			case DbCmdPutMeta: {
-				std::function<Error(std::string_view, const string &, std::string_view)> f =
-					std::bind(&client::CoroRPCClient::PutMeta, &conn.rx, _1, _2, _3, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, const string &key, std::string_view data) {
+					return conn.rx.PutMeta(nsName, key, data, cmd->ctx);
+				});
 				break;
 			}
 			case DbCmdEnumMeta: {
-				std::function<Error(std::string_view, vector<string> &)> f =
-					std::bind(&client::CoroRPCClient::EnumMeta, &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(
+					cmd, [&conn, &cmd](std::string_view nsName, vector<string> &keys) { return conn.rx.EnumMeta(nsName, keys, cmd->ctx); });
 				break;
 			}
 			case DbCmdGetSqlSuggestions: {
-				std::function<Error(std::string_view, int, vector<string> &)> f =
-					std::bind(&client::CoroRPCClient::GetSqlSuggestions, &conn.rx, _1, _2, _3);
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn](std::string_view query, int pos, std::vector<std::string> &suggests) {
+					return conn.rx.GetSqlSuggestions(query, pos, suggests);
+				});
 				break;
 			}
 			case DbCmdStatus: {
@@ -581,8 +532,7 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 						break;
 					}
 				}
-				std::function<Error(bool)> f = std::bind(&client::CoroRPCClient::Status, &conn.rx, force, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](bool forceCheck) { return conn.rx.Status(forceCheck, cmd->ctx); });
 				break;
 			}
 			case DbCmdNewTransaction: {
@@ -593,15 +543,13 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 				break;
 			}
 			case DbCmdCommitTransaction: {
-				std::function<Error(CoroTransaction &, CoroQueryResults &)> f =
-					std::bind(&client::CoroRPCClient::CommitTransaction, &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](CoroTransaction &tr, CoroQueryResults &result) {
+					return conn.rx.CommitTransaction(tr, result, cmd->ctx);
+				});
 				break;
 			}
 			case DbCmdRollBackTransaction: {
-				std::function<Error(CoroTransaction &)> f =
-					std::bind(&client::CoroRPCClient::RollBackTransaction, &conn.rx, _1, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](CoroTransaction &tr) { return conn.rx.RollBackTransaction(tr, cmd->ctx); });
 				break;
 			}
 			case DbCmdFetchResults: {
@@ -612,11 +560,12 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 					cd->ret.set_value(Error(errLogic, "Client query results does not hold any remote data"));
 					break;
 				}
-				auto ret = coroResults.i_.conn_->Call(
-					{reindexer::net::cproto::kCmdFetchResults, coroResults.i_.requestTimeout_, milliseconds(0), lsn_t(), -1,
-					 ShardingKeyType::NotSetShard, nullptr, false, coroResults.i_.sessionTs_},
-					coroResults.i_.queryID_, std::get<0>(cd->arguments), coroResults.i_.queryParams_.count + coroResults.i_.fetchOffset_,
-					coroResults.i_.fetchAmount_);
+				auto ret =
+					coroResults.i_.conn_->Call({reindexer::net::cproto::kCmdFetchResults, coroResults.i_.requestTimeout_, milliseconds(0),
+												lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false, coroResults.i_.sessionTs_},
+											   coroResults.i_.queryID_.main, std::get<0>(cd->arguments),
+											   coroResults.i_.queryParams_.count + coroResults.i_.fetchOffset_, coroResults.i_.fetchAmount_,
+											   coroResults.i_.queryID_.uid);
 				if (!ret.Status().ok()) {
 					cd->ret.set_value(ret.Status());
 					break;
@@ -650,7 +599,7 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 					err = coroResults.i_.conn_
 							  ->Call({reindexer::net::cproto::kCmdCloseResults, coroResults.i_.requestTimeout_, milliseconds(0), lsn_t(),
 									  -1, ShardingKeyType::NotSetShard, nullptr, false, coroResults.i_.sessionTs_},
-									 coroResults.i_.queryID_)
+									 coroResults.i_.queryID_.main, coroResults.i_.queryID_.uid)
 							  .Status();
 					coroResults.setClosed();
 				} else {
@@ -671,7 +620,11 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 				assertrx(cd);
 				Error err = std::get<0>(cd->arguments)
 								.Modify(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), std::get<3>(cd->arguments));
-				cd->ret.set_value(std::move(err));
+				if (cd->ctx.cmpl()) {
+					cd->ctx.cmpl()(err);
+				} else {
+					cd->ret.set_value(std::move(err));
+				}
 				break;
 			}
 			case DbCmdPutTxMeta: {
@@ -679,14 +632,22 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 				assertrx(cd);
 				Error err = std::get<0>(cd->arguments)
 								.PutMeta(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments), std::get<3>(cd->arguments));
-				cd->ret.set_value(std::move(err));
+				if (cd->ctx.cmpl()) {
+					cd->ctx.cmpl()(err);
+				} else {
+					cd->ret.set_value(std::move(err));
+				}
 				break;
 			}
 			case DbCmdSetTxTagsMatcher: {
 				auto cd = dynamic_cast<DatabaseCommandData<Error, CoroTransaction &, TagsMatcher, lsn_t> *>(cmd);
 				assertrx(cd);
 				Error err = std::get<0>(cd->arguments).SetTagsMatcher(std::move(std::get<1>(cd->arguments)), std::get<2>(cd->arguments));
-				cd->ret.set_value(std::move(err));
+				if (cd->ctx.cmpl()) {
+					cd->ctx.cmpl()(err);
+				} else {
+					cd->ret.set_value(std::move(err));
+				}
 				break;
 			}
 			case DbCmdModifyTx: {
@@ -721,13 +682,17 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 							err = Error(errParams, "Incorrect query type in transaction modify %d", std::get<1>(cd->arguments).type_);
 					}
 				}
-				cd->ret.set_value(std::move(err));
+				if (cd->ctx.cmpl()) {
+					cd->ctx.cmpl()(err);
+				} else {
+					cd->ret.set_value(std::move(err));
+				}
 				break;
 			}
 			case DbCmdGetReplState: {
-				std::function<Error(std::string_view, ReplicationStateV2 &)> f =
-					std::bind(&client::CoroRPCClient::GetReplState, &conn.rx, _1, _2, std::ref(cmd->ctx));
-				execCommand(cmd, std::move(f));
+				execCommand(cmd, [&conn, &cmd](std::string_view nsName, ReplicationStateV2 &state) {
+					return conn.rx.GetReplState(nsName, state, cmd->ctx);
+				});
 				break;
 			}
 			default:

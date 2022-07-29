@@ -11,8 +11,8 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/geometry.h"
 #include "core/nsselecter/joinedselectormock.h"
-#include "core/nsselecter/sortexpression.h"
 #include "core/queryresults/joinresults.h"
+#include "core/sorting/sortexpression.h"
 #include "reindexer_api.h"
 #include "tools/random.h"
 #include "tools/string_regexp_functions.h"
@@ -373,9 +373,9 @@ public:
 				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression, joinedSelectors);
 
 				Variant sortedValue;
-				if (sortExpr.ByIndexField()) {
+				if (sortExpr.ByField()) {
 					sortedValue = itemr[sortingEntry.expression];
-				} else if (sortExpr.ByJoinedIndexField()) {
+				} else if (sortExpr.ByJoinedField()) {
 					auto jItemIt = (qr.begin() + i).GetJoined();
 					EXPECT_EQ(jItemIt.getJoinedFieldsCount(), 1);
 					EXPECT_EQ(jItemIt.getJoinedItemsCount(), 1);
@@ -1505,9 +1505,10 @@ protected:
 										 .Where(kFieldNameGenre, CondEq, 5)
 										 .Where(kFieldNameAge, CondEq, 3)
 										 .OpenBracket()
-											 .Where(kFieldNameYear, CondGe, 2010)
+										 .Where(kFieldNameYear, CondGe, 2010)
 										 .CloseBracket()
-										 .Or().Where(kFieldNameYear, CondGe, 2010));
+										 .Or()
+										 .Where(kFieldNameYear, CondGe, 2010));
 
 					ExecuteAndVerify(Query(default_namespace)
 										 .Distinct(distinct.c_str())

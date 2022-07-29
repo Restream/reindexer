@@ -34,6 +34,7 @@
   * [Set namespace schema](#set-namespace-schema)
   * [Get protobuf communication parameters schema](#get-protobuf-communication-parameters-schema)
   * [Query documents from namespace](#query-documents-from-namespace)
+  * [Update documents in namespace](#update-documents-in-namespace-1)
   * [Query documents from namespace](#query-documents-from-namespace-1)
   * [Delete documents from namespace](#delete-documents-from-namespace-1)
   * [Begin transaction to namespace](#begin-transaction-to-namespace)
@@ -127,7 +128,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 4.3.0
+*Version* : 4.4.0
 
 
 ### License information
@@ -1111,6 +1112,41 @@ then `limit` and `offset` from http request.
 
 
 
+### Update documents in namespace
+```
+PUT /db/{database}/query
+```
+
+
+#### Description
+This opertaion updates documents in namespace by DSL query.
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**database**  <br>*required*|Database name|string|
+|**Body**|**body**  <br>*required*|DSL query|[Query](#query)|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|Successful operation|[StatusResponse](#statusresponse)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* queries
+
+
+
 ### Query documents from namespace
 ```
 POST /db/{database}/query
@@ -1908,7 +1944,7 @@ This operation will update system configuration:
 |**query**  <br>*required*|Query text|string|
 |**query_id**  <br>*required*|Query identifier|integer|
 |**query_start**  <br>*required*|Query start time|string|
-|**state**  <br>*required*|Current operation state|enum (in_progress, wait_lock, sending, indexes_lookup, bool, select_loop)|
+|**state**  <br>*required*|Current operation state|enum (in_progress, wait_lock, sending, indexes_lookup, select_loop, proxied_via_cluster_proxy, proxied_via_sharding_proxy)|
 |**user**  <br>*optional*|User name|string|
 
 
@@ -2298,6 +2334,8 @@ Idset cache stats. Stores merged reverse index results of SELECT field IN(...) b
 |**idset_plain_size**  <br>*optional*|Total memory consumption of reverse index vectors. For `store` ndexes always 0|integer|
 |**name**  <br>*optional*|Name of index. There are special index with name `-tuple`. It's stores original document's json structure with non indexe fields|string|
 |**sort_orders_size**  <br>*optional*|Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicabe only to `tree` indexes|integer|
+|**tracked_updates_buckets**  <br>*optional*|Buckets count in index updates tracker map|integer|
+|**tracked_updates_count**  <br>*optional*|Updates count, pending in index updates tracker|integer|
 |**unique_keys_count**  <br>*optional*|Count of unique keys values stored in index|integer|
 
 
@@ -2352,6 +2390,7 @@ Join cache stats. Stores results of selects to right table by ON condition
 |**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**namespace**  <br>*required*|Namespace name|string|
 |**offset**  <br>*optional*|Offset of first returned item|integer|
+|**select_filter**  <br>*optional*|Filter fields of returned document. Can be dot separated, e.g 'subobject.field'|< string > array|
 |**sort**  <br>*optional*||< [SortDef](#sortdef) > array|
 |**on**  <br>*optional*|Join ON statement|< [OnDef](#ondef) > array|
 |**type**  <br>*required*|Join type|enum (LEFT, INNER, ORINNER)|
@@ -2507,6 +2546,7 @@ List of meta info of the specified namespace
 |Name|Description|Schema|
 |---|---|---|
 |**copy_policy_multiplier**  <br>*optional*|Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size|integer|
+|**index_updates_counting_mode**  <br>*optional*|Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time|boolean|
 |**join_cache_mode**  <br>*optional*|Join cache mode|enum (aggressive)|
 |**lazyload**  <br>*optional*|Enable namespace lazy load (namespace shoud be loaded from disk on first call, not at reindexer startup)|boolean|
 |**log_level**  <br>*optional*|Log level of queries core logger|enum (none, error, warning, info, trace)|

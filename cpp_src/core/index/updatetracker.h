@@ -33,18 +33,27 @@ public:
 								  fast_hash_set<key_type, hash_ptr<key_type>, equal_ptr<key_type>>, fast_hash_set<key_type>>::type;
 
 	UpdateTracker() = default;
-	UpdateTracker(const UpdateTracker<T> &other) : completeUpdate_(other.updated_.size() || other.completeUpdate_) {}
+	UpdateTracker(const UpdateTracker<T> &other)
+		: completeUpdate_(other.updated_.size() || other.completeUpdate_),
+		  simpleCounting_(other.simpleCounting_),
+		  updatesCounter_(other.updatesCounter_) {
+		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
+	}
 	UpdateTracker &operator=(const UpdateTracker<T> &other) = delete;
 
 	void markUpdated(T &idx_map, typename T::iterator &k, bool skipCommited = true) {
 		if (skipCommited && k->second.Unsorted().IsCommited()) return;
+		if (simpleCounting_) {
+			++updatesCounter_;
+			return;
+		}
 		if (completeUpdate_) return;
 		if (updated_.size() > static_cast<size_t>(idx_map.size() / 8)) {
 			completeUpdate_ = true;
-			updated_.clear();
+			clearUpdates();
 			return;
 		}
-		updated_.emplace(k->first);
+		emplaceUpdate(k);
 	}
 
 	void commitUpdated(T &idx_map) {
@@ -56,21 +65,63 @@ public:
 		}
 	}
 
-	void markDeleted(typename T::iterator &k) { updated_.erase(k->first); }
-	bool isUpdated() const { return !updated_.empty() || completeUpdate_; }
-	bool isCompleteUpdated() const { return completeUpdate_; }
+	void markDeleted(typename T::iterator &k) {
+		if (simpleCounting_) {
+			++updatesCounter_;
+		} else {
+			eraseUpdate(k);
+		}
+	}
+	bool isUpdated() const noexcept { return !updated_.empty() || completeUpdate_ || (simpleCounting_ && updatesCounter_); }
+	bool isCompleteUpdated() const noexcept { return completeUpdate_ || (simpleCounting_ && updatesCounter_); }
 	void clear() {
-		updated_.clear();
 		completeUpdate_ = false;
+		updatesCounter_ = 0;
+		clearUpdates();
 	}
 	hash_map &updated() { return updated_; }
 	const hash_map &updated() const { return updated_; }
+	uint32_t updatesSize() const noexcept { return updatesSize_.load(std::memory_order_relaxed); }
+	uint32_t updatesBuckets() const noexcept { return updatesBuckets_.load(std::memory_order_relaxed); }
+	void enableCountingMode(bool val) noexcept {
+		if (!simpleCounting_ && val) {
+			hash_map m;
+			std::swap(m, updated_);
+			updatesSize_.store(0, std::memory_order_relaxed);
+			updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
+		} else if (simpleCounting_ && !val) {
+			completeUpdate_ = true;
+		}
+		simpleCounting_ = val;
+	}
 
 protected:
+	void eraseUpdate(typename T::iterator &k) {
+		updated_.erase(k->first);
+		updatesSize_.store(updated_.size(), std::memory_order_relaxed);
+		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
+	}
+	void emplaceUpdate(typename T::iterator &k) {
+		updated_.emplace(k->first);
+		updatesSize_.store(updated_.size(), std::memory_order_relaxed);
+		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
+	}
+	void clearUpdates() {
+		updated_.clear();
+		updatesSize_.store(0, std::memory_order_relaxed);
+		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
+	}
+
 	// Set of updated keys. Depends on safe/unsafe indexes' map iterator implementation.
 	hash_map updated_;
+	std::atomic<uint32_t> updatesSize_ = {0};
+	std::atomic<uint32_t> updatesBuckets_ = {0};
 
-	bool completeUpdate_;
+	// Becomes true, when updates set is to large. In this case indexes must be fully scanned to optimize
+	bool completeUpdate_ = false;
+	// Simple counting mode. If true - does not track actual updates, simply counts them
+	bool simpleCounting_ = false;
+	uint64_t updatesCounter_ = 0;
 };
 
 }  // namespace reindexer

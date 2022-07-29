@@ -3,7 +3,8 @@
 #include <chrono>
 #include <fstream>
 #include "clusterization_api.h"
-#include "spdlog/details/os.h"
+#include "spdlog/fmt/fmt.h"
+#include "tools/timetools.h"
 
 class ClusterizationProxyApi : public ClusterizationApi {
 public:
@@ -147,7 +148,7 @@ public:
 
 					auto timeToString = [](const std::chrono::time_point<std::chrono::system_clock>& tp) {
 						auto tm = std::chrono::system_clock::to_time_t(tp);
-						std::tm tmTime = spdlog::details::os::localtime(tm);
+						std::tm tmTime = reindexer::localtime(tm);
 						auto timeInUs = std::chrono::duration_cast<std::chrono::microseconds>(tp.time_since_epoch()).count();
 						int us = timeInUs % 1000;
 						int ms = (timeInUs / 1000) % 1000;

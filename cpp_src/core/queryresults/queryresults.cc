@@ -1,5 +1,11 @@
 #include "queryresults.h"
+#include "core/index/index.h"
+#include "core/namespace/namespaceimpl.h"
+#include "core/nsselecter/joinedselector.h"
 #include "core/query/query.h"
+#include "core/sorting/sortexpression.h"
+#include "core/type_consts.h"
+#include "estl/overloaded.h"
 #include "joinresults.h"
 
 namespace reindexer {
@@ -16,7 +22,7 @@ struct QueryResults::MergedData {
 	bool needOutputRank = false;
 };
 
-struct QueryResults::Iterator::JoinResStorage {
+struct QueryResults::JoinResStorage {
 	void Clear() {
 		jr.Clear();
 		joinedRawData.clear();
@@ -27,7 +33,7 @@ struct QueryResults::Iterator::JoinResStorage {
 };
 
 template <typename DataT>
-struct QueryResults::Iterator::ItemDataStorage {
+struct QueryResults::ItemDataStorage {
 	ItemDataStorage(int64_t newIdx, DataT&& d = DataT()) : idx(newIdx), data(std::move(d)) {}
 	void Clear() {
 		data.Clear();
@@ -42,10 +48,34 @@ QueryResults::QueryResults(int flags) : flags_(flags) {}
 
 QueryResults::~QueryResults() = default;
 QueryResults::QueryResults(QueryResults&&) = default;
-QueryResults& QueryResults::operator=(QueryResults&& qr) = default;
+
+QueryResults& QueryResults::operator=(QueryResults&& qr) {
+	if (this != &qr) {
+		shardingConfigVersion_ = qr.shardingConfigVersion_;
+		mergedData_ = std::move(qr.mergedData_);
+		local_ = std::move(qr.local_);
+		remote_ = std::move(qr.remote_);
+		lastSeenIdx_ = qr.lastSeenIdx_;
+		curQrId_ = qr.curQrId_;
+		type_ = qr.type_;
+		flags_ = qr.flags_;
+		qData_ = std::move(qr.qData_);
+		orderedQrs_ = std::move(qr.orderedQrs_);
+		begin_.it = std::nullopt;
+		offset = qr.offset;
+		limit = qr.limit;
+
+		activityCtx_.reset();
+		if (qr.activityCtx_) {
+			activityCtx_.emplace(std::move(*qr.activityCtx_));
+			qr.activityCtx_.reset();
+		}
+	}
+	return *this;
+}
 
 void QueryResults::AddQr(LocalQueryResults&& local, int shardID, bool buildMergedData) {
-	if (local_.has_value()) {
+	if (local_) {
 		throw Error(errLogic, "Query results already have incapsulated local query results");
 	}
 	if (lastSeenIdx_ > 0) {
@@ -54,21 +84,24 @@ void QueryResults::AddQr(LocalQueryResults&& local, int shardID, bool buildMerge
 			"Unable to add new local query results to general query results, because it was already read by someone (last seen idx: %d)",
 			lastSeenIdx_);
 	}
-	if (NeedOutputShardId()) {
-		local.SetOutputShardId(shardID);
-	}
-	local_.emplace(std::move(local));
-	local_->shardID = shardID;
-	switch (type_) {
-		case Type::None:
-			type_ = Type::Local;
-			local_->hasCompatibleTm = true;
-			break;
-		case Type::SingleRemote:
-		case Type::MultipleRemote:
-			type_ = Type::Mixed;
-			break;
-		default:;
+	if (type_ == Type::None || local.Count() != 0 || local.TotalCount() != 0 || !local.GetAggregationResults().empty()) {
+		begin_.it = std::nullopt;
+		if (NeedOutputShardId()) {
+			local.SetOutputShardId(shardID);
+		}
+		local_ = std::make_unique<QrMetaData<LocalQueryResults>>(std::move(local));
+		local_->shardID = shardID;
+		switch (type_) {
+			case Type::None:
+				type_ = Type::Local;
+				local_->hasCompatibleTm = true;
+				break;
+			case Type::SingleRemote:
+			case Type::MultipleRemote:
+				type_ = Type::Mixed;
+				break;
+			default:;
+		}
 	}
 	if (buildMergedData) {
 		RebuildMergedData();
@@ -83,22 +116,25 @@ void QueryResults::AddQr(client::SyncCoroQueryResults&& remote, int shardID, boo
 			"Unable to add new remote query results to general query results, because it was already read by someone (last seen idx: %d)",
 			lastSeenIdx_);
 	}
-	remote_.emplace_back(std::move(remote));
-	remote_.back().shardID = shardID;
-	switch (type_) {
-		case Type::None:
-			type_ = Type::SingleRemote;
-			remote_[0].hasCompatibleTm = true;
-			break;
-		case Type::SingleRemote:
-			type_ = Type::MultipleRemote;
-			remote_[0].hasCompatibleTm = false;
-			break;
-		case Type::Local:
-			type_ = Type::Mixed;
-			local_->hasCompatibleTm = false;
-			break;
-		default:;
+	if (type_ == Type::None || remote.Count() != 0 || remote.TotalCount() != 0 || !remote.GetAggregationResults().empty()) {
+		begin_.it = std::nullopt;
+		remote_.emplace_back(std::move(remote));
+		remote_.back().shardID = shardID;
+		switch (type_) {
+			case Type::None:
+				type_ = Type::SingleRemote;
+				remote_[0].hasCompatibleTm = true;
+				break;
+			case Type::SingleRemote:
+				type_ = Type::MultipleRemote;
+				remote_[0].hasCompatibleTm = false;
+				break;
+			case Type::Local:
+				type_ = Type::Mixed;
+				local_->hasCompatibleTm = false;
+				break;
+			default:;
+		}
 	}
 	if (buildMergedData) {
 		RebuildMergedData();
@@ -110,15 +146,17 @@ void QueryResults::RebuildMergedData() {
 	try {
 		mergedData_.reset();
 		if (type_ == Type::Mixed) {
-			assertrx(local_.has_value());
+			assertrx(local_);
 			const auto nss = local_->qr.GetNamespaces();
 			if (nss.size() > 1) {
 				throw Error(errLogic, "Local query result has %d namespaces, but distributed query results may have only 1", nss.size());
 			}
 			mergedData_ = std::make_unique<MergedData>(std::string(nss[0]), local_->qr.haveRank, local_->qr.needOutputRank);
-			auto& agg = local_->qr.GetAggregationResults();
-			if (agg.size() > 1 || (agg.size() && agg[0].type != AggCount && agg[0].type != AggCountCached)) {
-				throw Error(errLogic, "Local query result (within distributed results) has unsopported aggregations");
+			const auto& agg = local_->qr.GetAggregationResults();
+			for (const auto& a : agg) {
+				if (a.type == AggAvg || a.type == AggFacet || a.type == AggDistinct || a.type == AggUnknown) {
+					throw Error(errLogic, "Local query result (within distributed results) has unsupported aggregations");
+				}
 			}
 			mergedData_->aggregationResults = agg;
 		} else if (type_ != Type::MultipleRemote) {
@@ -128,41 +166,60 @@ void QueryResults::RebuildMergedData() {
 		assertrx(remote_.size());
 		for (auto& qrp : remote_) {
 			const auto nss = qrp.qr.GetNamespaces();
-			if (nss.size() > 1) {
-				throw Error(errLogic, "Remote query result has %d namespaces, but distributed query results may have only 1", nss.size());
-			}
-			auto& agg = qrp.qr.GetAggregationResults();
-			if (agg.size() > 1 || (agg.size() && agg[0].type != AggCount && agg[0].type != AggCountCached)) {
-				throw Error(errLogic, "Remote query result (within distributed results) has unsopported aggregations");
-			}
+			const auto& agg = qrp.qr.GetAggregationResults();
 			if (mergedData_) {
 				if (mergedData_->pt.Name() != nss[0]) {
 					auto mrName = mergedData_->pt.Name();
 					throw Error(errLogic, "Query results in distributed query have different ns names: '%s' vs '%s'",
 								mergedData_->pt.Name(), nss[0]);
 				}
-				if (mergedData_->aggregationResults.size() != agg.size() ||
-					(agg.size() && mergedData_->aggregationResults[0].type != agg[0].type)) {
-					throw Error(errLogic, "Aggregations are incompatible between query results inside distributed query results");
-				}
 				if (mergedData_->haveRank != qrp.qr.HaveRank() || mergedData_->needOutputRank != qrp.qr.NeedOutputRank()) {
 					throw Error(errLogic, "Rank options are incompatible between query results inside distributed query results");
 				}
-				if (agg.size()) {
-					assertrx(agg.size() == 1);
-					assertf(agg[0].type == AggCount || agg[0].type == AggCountCached, "Actual type: %d", agg[0].type);
-					mergedData_->aggregationResults[0].value += agg[0].value;
+				if (mergedData_->aggregationResults.size() != agg.size()) {
+					throw Error(errLogic, "Aggregations are incompatible between query results inside distributed query results");
+				}
+				for (size_t i = 0, s = agg.size(); i < s; ++i) {
+					auto& mergedAgg = mergedData_->aggregationResults[i];
+					const auto& newAgg = agg[i];
+					if (newAgg.type != mergedAgg.type) {
+						throw Error(errLogic, "Aggregations are incompatible between query results inside distributed query results");
+					}
+					switch (newAgg.type) {
+						case AggMin:
+							if (mergedAgg.value > newAgg.value) {
+								mergedAgg.value = newAgg.value;
+							}
+							break;
+						case AggMax:
+							if (mergedAgg.value < newAgg.value) {
+								mergedAgg.value = newAgg.value;
+							}
+							break;
+						case AggSum:
+						case AggCount:
+						case AggCountCached:
+							mergedAgg.value += newAgg.value;
+							break;
+						default:
+							throw Error(errLogic, "Remote query result (within distributed results) has unsupported aggregations");
+					}
 				}
 			} else {
 				mergedData_ = std::make_unique<MergedData>(std::string(nss[0]), qrp.qr.HaveRank(), qrp.qr.NeedOutputRank());
+				for (const auto& a : agg) {
+					if (a.type == AggAvg || a.type == AggFacet || a.type == AggDistinct || a.type == AggUnknown) {
+						throw Error(errLogic, "Remote query result (within distributed results) has unsupported aggregations");
+					}
+				}
 				mergedData_->aggregationResults = agg;
 			}
 		}
 
 		assertrx(mergedData_);
 		std::vector<TagsMatcher> tmList;
-		tmList.reserve(remote_.size() + (local_.has_value() ? 1 : 0));
-		if (local_.has_value()) {
+		tmList.reserve(remote_.size() + (local_ ? 1 : 0));
+		if (local_) {
 			tmList.emplace_back(local_->qr.getTagsMatcher(0));
 		}
 		for (auto& qrp : remote_) {
@@ -170,7 +227,7 @@ void QueryResults::RebuildMergedData() {
 		}
 		mergedData_->tm = TagsMatcher::CreateMergedTagsMatcher(mergedData_->pt, tmList);
 
-		if (local_.has_value()) {
+		if (local_) {
 			local_->hasCompatibleTm = local_->qr.getTagsMatcher(0).IsSubsetOf(mergedData_->tm);
 		}
 		for (auto& qrp : remote_) {
@@ -238,7 +295,7 @@ bool QueryResults::IsCacheEnabled() const noexcept {
 			return local_->qr.IsCacheEnabled();
 		default: {
 			bool res = true;
-			if (local_.has_value()) {
+			if (local_) {
 				res = res && local_->qr.IsCacheEnabled();
 			}
 			for (auto& qrp : remote_) {
@@ -250,7 +307,7 @@ bool QueryResults::IsCacheEnabled() const noexcept {
 }
 
 bool QueryResults::HaveShardIDs() const noexcept {
-	if (local_.has_value() && local_->shardID != ShardingKeyType::ProxyOff) {
+	if (local_ && local_->shardID != ShardingKeyType::ProxyOff) {
 		return true;
 	}
 	for (auto& qrp : remote_) {
@@ -272,12 +329,16 @@ int QueryResults::GetCommonShardID() const {
 		default:;
 	}
 	std::optional<int> shardId;
-	if (local_.has_value()) {
+	if (local_) {
 		shardId = local_->shardID;
 	}
 	for (auto& qrp : remote_) {
-		if (shardId.has_value() && qrp.shardID != *shardId) {
-			throw Error(errLogic, "Distributed query results does not have common shard id (%d vs %d)", qrp.shardID, *shardId);
+		if (shardId.has_value()) {
+			if (qrp.shardID != *shardId) {
+				throw Error(errLogic, "Distributed query results does not have common shard id (%d vs %d)", qrp.shardID, *shardId);
+			}
+		} else {
+			shardId = qrp.shardID;
 		}
 	}
 	return shardId.has_value() ? *shardId : ShardingKeyType::ProxyOff;
@@ -385,16 +446,12 @@ uint32_t QueryResults::GetJoinedField(int parentNsId) const {
 	return joinedField;
 }
 
-QueryResults::Iterator::ItemRefCache::ItemRefCache(IdType id, uint16_t proc, uint16_t nsid, ItemImpl&& i, bool raw)
+QueryResults::ItemRefCache::ItemRefCache(IdType id, uint16_t proc, uint16_t nsid, ItemImpl&& i, bool raw)
 	: itemImpl(std::move(i)), ref(id, itemImpl.payloadValue_, proc, nsid, raw) {}
 
 Error QueryResults::Iterator::GetJSON(WrSerializer& wrser, bool withHdrLen) {
 	try {
-		auto vit = getVariantIt();
-		if (std::holds_alternative<LocalQueryResults::Iterator>(vit)) {
-			return std::get<LocalQueryResults::Iterator>(vit).GetJSON(wrser, withHdrLen);
-		}
-		return std::get<client::SyncCoroQueryResults::Iterator>(vit).GetJSON(wrser, withHdrLen);
+		return std::visit([&wrser, withHdrLen](auto&& it) { return it.GetJSON(wrser, withHdrLen); }, getVariantIt());
 	} catch (Error& e) {
 		return e;
 	}
@@ -410,20 +467,22 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
 			default:;
 		}
 
-		auto vit = getVariantIt();
-		if (std::holds_alternative<LocalQueryResults::Iterator>(vit)) {
-			if (qr_->local_->hasCompatibleTm) {
-				return std::get<LocalQueryResults::Iterator>(vit).GetCJSON(wrser, withHdrLen);
-			}
-			return getCJSONviaJSON(wrser, withHdrLen, std::get<LocalQueryResults::Iterator>(vit));
-		} else if (qr_->type_ == Type::SingleRemote) {
-			return std::get<client::SyncCoroQueryResults::Iterator>(vit).GetCJSON(wrser, withHdrLen);
-		}
-
-		if (qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm) {
-			return std::get<client::SyncCoroQueryResults::Iterator>(vit).GetCJSON(wrser, withHdrLen);
-		}
-		return getCJSONviaJSON(wrser, withHdrLen, std::get<client::SyncCoroQueryResults::Iterator>(vit));
+		Error err = std::visit(overloaded{[&](LocalQueryResults::Iterator&& it) {
+											  if (qr_->local_->hasCompatibleTm) {
+												  return it.GetCJSON(wrser, withHdrLen);
+											  }
+											  return getCJSONviaJSON(wrser, withHdrLen, it);
+										  },
+										  [&](client::SyncCoroQueryResults::Iterator&& it) {
+											  if (qr_->type_ == Type::SingleRemote) {
+												  return it.GetCJSON(wrser, withHdrLen);
+											  } else if (qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm) {
+												  return it.GetCJSON(wrser, withHdrLen);
+											  }
+											  return getCJSONviaJSON(wrser, withHdrLen, it);
+										  }},
+							   getVariantIt());
+		return err;
 	} catch (Error& e) {
 		return e;
 	}
@@ -431,11 +490,7 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
 
 Error QueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLen) {
 	try {
-		auto vit = getVariantIt();
-		if (std::holds_alternative<LocalQueryResults::Iterator>(vit)) {
-			return std::get<LocalQueryResults::Iterator>(vit).GetMsgPack(wrser, withHdrLen);
-		}
-		return std::get<client::SyncCoroQueryResults::Iterator>(vit).GetMsgPack(wrser, withHdrLen);
+		return std::visit([&wrser, withHdrLen](auto&& it) { return it.GetMsgPack(wrser, withHdrLen); }, getVariantIt());
 	} catch (Error& e) {
 		return e;
 	}
@@ -443,12 +498,12 @@ Error QueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLen) {
 
 Error QueryResults::Iterator::GetProtobuf(WrSerializer& wrser, bool withHdrLen) {
 	try {
-		auto vit = getVariantIt();
-		if (std::holds_alternative<LocalQueryResults::Iterator>(vit)) {
-			return std::get<LocalQueryResults::Iterator>(vit).GetProtobuf(wrser, withHdrLen);
-		}
-		return Error(errParams, "Protobuf is not supported for distributed and proxied queries");
-		// return std::get<client::SyncCoroQueryResults::Iterator>(vit).GetProtobuf(wrser, withHdrLen);
+		return std::visit(overloaded{[&wrser, withHdrLen](LocalQueryResults::Iterator&& it) { return it.GetProtobuf(wrser, withHdrLen); },
+									 [](client::SyncCoroQueryResults::Iterator&&) {
+										 return Error(errParams, "Protobuf is not supported for distributed and proxied queries");
+										 // return it.GetProtobuf(wrser, withHdrLen);
+									 }},
+						  getVariantIt());
 	} catch (Error& e) {
 		return e;
 	}
@@ -475,24 +530,37 @@ Item QueryResults::Iterator::GetItem(bool enableHold) {
 			itemImpl.reset(new ItemImpl(remoteQr.GetPayloadType(nsId), remoteQr.GetTagsMatcher(nsId)));
 		}
 
-		if (std::holds_alternative<LocalQueryResults::Iterator>(vit)) {
-			auto& lit = std::get<LocalQueryResults::Iterator>(vit);
-			auto item = getItem(lit, std::move(itemImpl), !qr_->local_->hasCompatibleTm);
-			item.setID(lit.GetItemRef().Id());
-			item.setLSN(lit.GetItemRef().Value().GetLSN());
-			item.setShardID(qr_->local_->shardID);
-			return item;
-		}
-		auto& rit = std::get<client::SyncCoroQueryResults::Iterator>(vit);
-		auto item = getItem(rit, std::move(itemImpl),
-							!qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm || !qr_->remote_[size_t(qr_->curQrId_)].qr.IsCJSON());
-		item.setID(rit.GetID());
-		assertrx(!rit.GetLSN().isEmpty());
-		item.setLSN(rit.GetLSN());
-		item.setShardID(rit.GetShardID());
+		Item item = std::visit(overloaded{[&](LocalQueryResults::Iterator& it) {
+											  auto item = getItem(it, std::move(itemImpl), !qr_->local_->hasCompatibleTm);
+											  item.setID(it.GetItemRef().Id());
+											  item.setLSN(it.GetItemRef().Value().GetLSN());
+											  item.setShardID(qr_->local_->shardID);
+											  return item;
+										  },
+										  [&](client::SyncCoroQueryResults::Iterator& it) {
+											  auto item = getItem(it, std::move(itemImpl),
+																  !qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm ||
+																	  !qr_->remote_[size_t(qr_->curQrId_)].qr.IsCJSON());
+											  item.setID(it.GetID());
+											  assertrx(!it.GetLSN().isEmpty());
+											  item.setLSN(it.GetLSN());
+											  item.setShardID(it.GetShardID());
+											  return item;
+										  }},
+							   vit);
 		return item;
 	} catch (Error& e) {
 		return Item(e);
+	}
+}
+
+template <typename QrT>
+void QueryResults::QrMetaData<QrT>::ResetJoinStorage(int64_t idx) const {
+	if (nsJoinRes_) {
+		nsJoinRes_->Clear();
+		nsJoinRes_->idx = idx;
+	} else {
+		nsJoinRes_ = std::make_unique<ItemDataStorage<JoinResStorage>>(idx);
 	}
 }
 
@@ -511,15 +579,15 @@ joins::ItemIterator QueryResults::Iterator::GetJoined() {
 			throw Error(errLogic, "Unable to init joined data without initial query");
 		}
 
-		if (!checkIfStorageHasSameIdx(nsJoinRes_)) {
+		if (!qr_->remote_[0].CheckIfNsJoinStorageHasSameIdx(idx_)) {
 			try {
-				resetStorageData(nsJoinRes_);
+				qr_->remote_[0].ResetJoinStorage(idx_);
 
 				const auto& qData = qr_->qData_;
 				if (rit.itemParams_.nsid >= int(qData->joinedSize)) {
 					return reindexer::joins::ItemIterator::CreateEmpty();
 				}
-				nsJoinRes_->data.jr.SetJoinedSelectorsCount(qData->joinedSize);
+				qr_->remote_[0].NsJoinRes()->data.jr.SetJoinedSelectorsCount(qData->joinedSize);
 
 				auto jField = qr_->GetJoinedField(rit.itemParams_.nsid);
 				for (size_t i = 0; i < joinedData.size(); ++i, ++jField) {
@@ -533,22 +601,440 @@ joins::ItemIterator QueryResults::Iterator::GetJoined() {
 						}
 
 						qrJoined.Add(ItemRef(itemData.id, itemimpl.Value(), itemData.proc, itemData.nsid, true));
-						nsJoinRes_->data.joinedRawData.emplace_back(std::move(itemimpl));
+						qr_->remote_[0].NsJoinRes()->data.joinedRawData.emplace_back(std::move(itemimpl));
 					}
-					nsJoinRes_->data.jr.Insert(rit.itemParams_.id, i, std::move(qrJoined));
+					qr_->remote_[0].NsJoinRes()->data.jr.Insert(rit.itemParams_.id, i, std::move(qrJoined));
 				}
 			} catch (...) {
-				if (nsJoinRes_) {
-					nsJoinRes_->idx = -1;
+				if (qr_->remote_[0].NsJoinRes()) {
+					qr_->remote_[0].NsJoinRes()->idx = -1;
 				}
 				throw;
 			}
 		}
 
-		return joins::ItemIterator(&(nsJoinRes_->data.jr), rit.itemParams_.id);
+		return joins::ItemIterator(&(qr_->remote_[0].NsJoinRes()->data.jr), rit.itemParams_.id);
 	}
 	// Distributed queries can not have joins
 	return reindexer::joins::ItemIterator::CreateEmpty();
+}
+
+template <>
+QueryResults::ItemDataStorage<QueryResults::ItemRefCache>& QueryResults::QrMetaData<client::SyncCoroQueryResults>::ItemRefData(
+	int64_t idx) {
+	ItemImpl itemimpl(qr.GetPayloadType(0), qr.GetTagsMatcher(0));
+	const bool converViaJSON = !hasCompatibleTm || !qr.IsCJSON();
+	Error err = fillItemImpl(it, itemimpl, converViaJSON);
+	if (!err.ok()) {
+		throw err;
+	}
+	ResetItemRefCache(idx, ItemRefCache(it.GetID(), it.GetRank(), it.GetNSID(), std::move(itemimpl), it.IsRaw()));
+	return *itemRefData_;
+}
+
+struct SortExpressionComparator : public SortExpression {
+	int Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
+				TagsMatcher& rtm, bool lLocal, bool rLocal) const {
+		const auto lhv = Calculate(litem.Id(), {lpt, litem.Value()}, litem.Proc(), ltm, !lLocal);
+		const auto rhv = Calculate(ritem.Id(), {rpt, ritem.Value()}, ritem.Proc(), rtm, !rLocal);
+		if (lhv == rhv) return 0;
+		return lhv < rhv ? 1 : -1;
+	}
+};
+
+class FieldComparator {
+	struct RelaxedCompare {
+		bool operator()(const Variant& lhs, const Variant& rhs) const { return lhs.RelaxCompare(rhs) == 0; }
+	};
+
+public:
+	FieldComparator(std::string fName, const NamespaceImpl& ns, const std::vector<Variant>& forcedValues) : fieldName_{std::move(fName)} {
+		if (ns.getIndexByName(fieldName_, fieldIdx_)) {
+			collateOpts_ = ns.indexes_[fieldIdx_]->Opts().collateOpts_;
+			if (ns.indexes_[fieldIdx_]->Opts().IsSparse()) {
+				fieldIdx_ = IndexValueType::SetByJsonPath;
+			}
+		}
+		for (size_t i = 0; i < forcedValues.size(); ++i) {
+			forcedValues_.emplace(forcedValues[i], i);
+		}
+	}
+	int Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
+				TagsMatcher& rtm, bool lLocal, bool rLocal) const {
+		ConstPayload lpv{lpt, litem.Value()};
+		ConstPayload rpv{rpt, ritem.Value()};
+		if (!forcedValues_.empty()) {
+			VariantArray lValues;
+			if (lLocal && fieldIdx_ != IndexValueType::SetByJsonPath) {
+				lpv.Get(fieldIdx_, lValues);
+			} else {
+				lpv.GetByJsonPath(fieldName_, ltm, lValues, KeyValueUndefined);
+			}
+			VariantArray rValues;
+			if (rLocal && fieldIdx_ != IndexValueType::SetByJsonPath) {
+				rpv.Get(fieldIdx_, rValues);
+			} else {
+				rpv.GetByJsonPath(fieldName_, rtm, rValues, KeyValueUndefined);
+			}
+			if (lValues.size() != 1 || rValues.size() != 1) {
+				throw Error(errLogic, "Cannot sort by array field");
+			}
+			const auto lIt = forcedValues_.find(lValues[0]);
+			const auto rIt = forcedValues_.find(rValues[0]);
+			const auto end = forcedValues_.end();
+			if (lIt != end) {
+				if (rIt != end) {
+					return lIt->second == rIt->second ? 0 : (lIt->second < rIt->second ? 1 : -1);
+				} else {
+					return 1;
+				}
+			} else if (rIt != end) {
+				return -1;
+			}
+		}
+		return -lpv.Compare(rpv, fieldName_, fieldIdx_, collateOpts_, ltm, rtm, !lLocal, !rLocal);
+	}
+
+private:
+	std::string fieldName_;
+	int fieldIdx_ = IndexValueType::SetByJsonPath;
+	CollateOpts collateOpts_;
+	fast_hash_map<Variant, size_t, std::hash<Variant>, RelaxedCompare> forcedValues_;
+};
+
+class QueryResults::CompositeFieldForceComparator {
+	struct RelaxedCompare {
+		bool operator()(const Variant& lhs, const Variant& rhs) const { return lhs.RelaxCompare(rhs) == 0; }
+	};
+
+public:
+	CompositeFieldForceComparator(int index, const std::vector<Variant>& forcedSortOrder, const NamespaceImpl& ns) {
+		fields_.reserve(ns.indexes_[index]->Fields().size());
+		for (auto f : ns.indexes_[index]->Fields()) {
+			assert(f != IndexValueType::SetByJsonPath && f < ns.indexes_.firstCompositePos());
+			if (ns.indexes_[f]->Opts().IsSparse()) {
+				fields_.push_back(ValuesByField{ns.tagsMatcher_.tag2name(f), IndexValueType::SetByJsonPath, {}});
+			} else {
+				fields_.push_back(ValuesByField{ns.tagsMatcher_.tag2name(f), f, {}});
+			}
+		}
+		assert(fields_.size() > 1);
+		for (size_t i = 0, size = forcedSortOrder.size(); i < size; ++i) {
+			auto va = forcedSortOrder[i].getCompositeValues();
+			assert(va.size() == fields_.size());
+			for (size_t j = 0, s = va.size(); j < s; ++j) {
+				fields_[j].values[va[j]].push_back(i);
+			}
+		}
+	}
+	int Compare(const ItemRef& litem, const ItemRef& ritem, const PayloadType& lpt, const PayloadType& rpt, TagsMatcher& ltm,
+				TagsMatcher& rtm, bool lLocal, bool rLocal) const {
+		ConstPayload lpv{lpt, litem.Value()};
+		ConstPayload rpv{rpt, ritem.Value()};
+		h_vector<size_t, 4> positions1, positions2;
+		size_t i = 0;
+		const size_t size = fields_.size();
+		for (; i < size; ++i) {
+			VariantArray lValues;
+			if (lLocal && fields_[i].fieldIdx != IndexValueType::SetByJsonPath) {
+				lpv.Get(fields_[i].fieldIdx, lValues);
+			} else {
+				lpv.GetByJsonPath(fields_[i].fieldName, ltm, lValues, KeyValueUndefined);
+			}
+			if (lValues.size() != 1) {
+				throw Error(errLogic, "Cannot sort by array field");
+			}
+			const auto it = fields_[i].values.find(lValues[0]);
+			if (it == fields_[i].values.end()) {
+				if (i % 2 == 0) {
+					positions1.clear();
+				} else {
+					positions2.clear();
+				}
+				break;
+			}
+			if (i == 0) {
+				positions1 = it->second;
+				positions2.resize(positions1.size());
+			} else if (i % 2 == 0) {
+				positions1.resize(
+					std::set_intersection(positions2.begin(), positions2.end(), it->second.begin(), it->second.end(), positions1.begin()) -
+					positions1.begin());
+				if (positions1.empty()) break;
+			} else {
+				positions2.resize(
+					std::set_intersection(positions1.begin(), positions1.end(), it->second.begin(), it->second.end(), positions2.begin()) -
+					positions2.begin());
+				if (positions2.empty()) break;
+			}
+		}
+		const h_vector<size_t, 4>* positions = ((i == size) != (i % 2 == 0)) ? &positions1 : &positions2;
+		size_t lPos;
+		if (positions->size() > 1) {
+			throw Error(errLogic, "Several forced sort values are equal");
+		} else if (positions->empty()) {
+			lPos = -1;
+		} else {
+			lPos = (*positions)[0];
+		}
+		for (i = 0; i < size; ++i) {
+			VariantArray rValues;
+			if (rLocal && fields_[i].fieldIdx != IndexValueType::SetByJsonPath) {
+				rpv.Get(fields_[i].fieldIdx, rValues);
+			} else {
+				rpv.GetByJsonPath(fields_[i].fieldName, rtm, rValues, KeyValueUndefined);
+			}
+			if (rValues.size() != 1) {
+				throw Error(errLogic, "Cannot sort by array field");
+			}
+			const auto it = fields_[i].values.find(rValues[0]);
+			if (it == fields_[i].values.end()) {
+				if (i % 2 == 0) {
+					positions1.clear();
+				} else {
+					positions2.clear();
+				}
+				break;
+			}
+			if (i == 0) {
+				positions1 = it->second;
+				positions2.clear();
+				positions2.resize(positions1.size());
+			} else if (i % 2 == 0) {
+				positions1.resize(
+					std::set_intersection(positions2.begin(), positions2.end(), it->second.begin(), it->second.end(), positions1.begin()) -
+					positions1.begin());
+				if (positions1.empty()) break;
+			} else {
+				positions2.resize(
+					std::set_intersection(positions1.begin(), positions1.end(), it->second.begin(), it->second.end(), positions2.begin()) -
+					positions2.begin());
+				if (positions2.empty()) break;
+			}
+		}
+		positions = ((i == size) != (i % 2 == 0)) ? &positions1 : &positions2;
+		if (positions->size() > 1) {
+			throw Error(errLogic, "Several forced sort values are equal");
+		}
+		if (lPos == static_cast<size_t>(-1)) {
+			if (positions->empty()) {
+				return 0;
+			} else {
+				return -1;
+			}
+		} else {
+			if (positions->empty()) {
+				return 1;
+			} else if ((*positions)[0] == lPos) {
+				return 0;
+			} else {
+				return lPos < (*positions)[0] ? 1 : -1;
+			}
+		}
+	}
+
+private:
+	struct ValuesByField {
+		std::string fieldName;
+		int fieldIdx = IndexValueType::SetByJsonPath;
+		fast_hash_map<Variant, h_vector<size_t, 4>, std::hash<Variant>, RelaxedCompare> values;
+	};
+	h_vector<ValuesByField, 4> fields_;
+};
+
+class QueryResults::Comparator {
+public:
+	Comparator(QueryResults& qr, const Query& q, const NamespaceImpl& ns) : qr_{qr} {
+		assert(q.sortingEntries_.size() > 0);
+		comparators_.reserve(q.sortingEntries_.size());
+		for (size_t i = 0; i < q.sortingEntries_.size(); ++i) {
+			const auto& se = q.sortingEntries_[i];
+			auto expr = SortExpression::Parse<JoinedSelector>(se.expression, {});
+			if (expr.ByField()) {
+				int index = IndexValueType::SetByJsonPath;
+				ns.getIndexByName(se.expression, index);
+				if (index == IndexValueType::SetByJsonPath || index < ns.indexes_.firstCompositePos()) {
+					if (i == 0 && !q.forcedSortOrder_.empty()) {
+						comparators_.emplace_back(FieldComparator{se.expression, ns, q.forcedSortOrder_}, se.desc);
+					} else {
+						comparators_.emplace_back(FieldComparator{se.expression, ns, {}}, se.desc);
+					}
+				} else {
+					if (i == 0 && !q.forcedSortOrder_.empty()) {
+						comparators_.emplace_back(CompositeFieldForceComparator{index, q.forcedSortOrder_, ns}, se.desc);
+					}
+					for (auto f : ns.indexes_[index]->Fields()) {
+						assert(f != IndexValueType::SetByJsonPath && f < ns.indexes_.firstCompositePos());
+						comparators_.emplace_back(FieldComparator{ns.tagsMatcher_.tag2name(f), ns, {}}, se.desc);
+					}
+				}
+			} else {
+				expr.PrepareIndexes(ns);
+				comparators_.emplace_back(SortExpressionComparator{std::move(expr)}, se.desc);
+			}
+		}
+	}
+	bool operator()(int lhs, int rhs) const {
+		if (lhs == rhs) return false;
+		TagsMatcher ltm, rtm;
+		PayloadType lpt, rpt;
+		ItemRef liref, riref;
+		int lShardId, rShardId;
+		if (lhs < 0) {
+			const auto& lqr = *qr_.local_;
+			liref = lqr.it.GetItemRef();
+			ltm = lqr.qr.getTagsMatcher(0);
+			lpt = lqr.qr.getPayloadType(0);
+			lShardId = lqr.shardID;
+		} else {
+			assert(static_cast<size_t>(lhs) < qr_.remote_.size());
+			auto& rqr = qr_.remote_[lhs];
+			liref = rqr.ItemRefData(qr_.curQrId_).data.ref;
+			ltm = rqr.qr.GetTagsMatcher(0);
+			lpt = rqr.qr.GetPayloadType(0);
+			lShardId = rqr.shardID;
+		}
+		if (rhs < 0) {
+			const auto& lqr = *qr_.local_;
+			riref = lqr.it.GetItemRef();
+			rtm = lqr.qr.getTagsMatcher(0);
+			rpt = lqr.qr.getPayloadType(0);
+			rShardId = lqr.shardID;
+		} else {
+			assert(static_cast<size_t>(rhs) < qr_.remote_.size());
+			auto& rqr = qr_.remote_[rhs];
+			riref = rqr.ItemRefData(qr_.curQrId_).data.ref;
+			rtm = rqr.qr.GetTagsMatcher(0);
+			rpt = rqr.qr.GetPayloadType(0);
+			rShardId = rqr.shardID;
+		}
+		for (const auto& comp : comparators_) {
+			const auto res =
+				std::visit([&](const auto& c) { return c.Compare(liref, riref, lpt, rpt, ltm, rtm, lhs < 0, rhs < 0); }, comp.first);
+			if (res != 0) {
+				return comp.second ? res < 0 : res > 0;
+			}
+		}
+		return lShardId < rShardId;
+	}
+
+private:
+	QueryResults& qr_;
+	h_vector<std::pair<std::variant<SortExpressionComparator, FieldComparator, CompositeFieldForceComparator>, bool>, 1> comparators_;
+};
+
+void QueryResults::SetOrdering(const Query& q, const NamespaceImpl& ns, const RdxContext& ctx) {
+	assert(!orderedQrs_);
+	if (!q.sortingEntries_.empty()) {
+		auto lock = ns.rLock(ctx);
+		Comparator comparator{*this, q, ns};
+		lock.unlock();
+		orderedQrs_ = std::make_unique<std::set<int, Comparator>>(std::move(comparator));
+		limit = q.count;
+		offset = q.start;
+	}
+}
+
+void QueryResults::beginImpl() const {
+	if (type_ == Type::Local) {
+		begin_.it = Iterator{this, 0, {local_->qr.begin() + std::min<size_t>(offset, count())}};
+	} else {
+		begin_.it = Iterator{this, 0, std::nullopt};
+		if (orderedQrs_ && offset > 0 && type_ != Type::None) {
+			for (size_t i = 0, c = count(); i < offset && i < c; ++i) {
+				++(*begin_.it);
+			}
+		}
+	}
+}
+
+QueryResults::Iterator& QueryResults::Iterator::operator++() {
+	switch (qr_->type_) {
+		case Type::None:
+			*this = qr_->end();
+			return *this;
+		case Type::Local:
+			++(*localIt_);
+			return *this;
+		default:;
+	}
+
+	if (idx_ < qr_->lastSeenIdx_) {
+		++idx_;	 // This iterator is not valid yet, so simply increment index and do not touch qr's internals
+		return *this;
+	}
+
+	auto* qr = const_cast<QueryResults*>(qr_);
+	if (!qr_->orderedQrs_ || qr_->type_ == Type::SingleRemote) {
+		bool qrIdWasChanged = false;
+		if (qr->curQrId_ < 0) {
+			++qr->local_->it;
+			++qr->lastSeenIdx_;
+			++idx_;
+			if (qr->local_->it == qr->local_->qr.end()) {
+				qr->curQrId_ = 0;
+				qrIdWasChanged = true;
+				assertrx(qr_->remote_.size());
+			}
+		} else if (size_t(qr->curQrId_) < qr_->remote_.size()) {
+			auto& remoteQrp = qr->remote_[size_t(qr_->curQrId_)];
+			++remoteQrp.it;
+			++qr->lastSeenIdx_;
+			++idx_;
+			if (remoteQrp.it == remoteQrp.qr.end()) {
+				++qr->curQrId_;
+				qrIdWasChanged = true;
+			}
+		}
+		// Find next qr with items
+		while (qrIdWasChanged && size_t(qr_->curQrId_) < qr->remote_.size() &&
+			   qr->remote_[size_t(qr_->curQrId_)].it == qr->remote_[size_t(qr_->curQrId_)].qr.end()) {
+			++qr->curQrId_;
+		}
+	} else if (!qr->orderedQrs_->empty()) {
+		++qr->lastSeenIdx_;
+		++idx_;
+		const auto qrId = qr->curQrId_;
+		assert(*qr->orderedQrs_->begin() == qrId);
+		qr->orderedQrs_->erase(qr->orderedQrs_->begin());
+		if (qrId < 0) {
+			++qr->local_->it;
+			if (qr->local_->it != qr->local_->qr.end()) {
+				qr->orderedQrs_->emplace(-1);
+			}
+		} else {
+			assert(static_cast<size_t>(qrId) < qr_->remote_.size());
+			++qr->remote_[qrId].it;
+			if (qr->remote_[qrId].it != qr->remote_[qrId].qr.end()) {
+				qr->orderedQrs_->emplace(qrId);
+			}
+		}
+		if (qr->orderedQrs_->begin() != qr->orderedQrs_->end()) {
+			qr->curQrId_ = *qr->orderedQrs_->begin();
+		} else {
+			*this = qr->end();
+		}
+	}
+	return *this;
+}
+
+template <typename QrT>
+void QueryResults::QrMetaData<QrT>::ResetItemRefCache(int64_t idx, ItemRefCache&& newD) const {
+	if (itemRefData_) {
+		*itemRefData_ = ItemDataStorage<ItemRefCache>(idx, std::move(newD));
+	} else {
+		itemRefData_ = std::make_unique<ItemDataStorage<ItemRefCache>>(idx, std::move(newD));
+	}
+}
+
+template <typename QrT>
+bool QueryResults::QrMetaData<QrT>::CheckIfItemRefStorageHasSameIdx(int64_t idx) const noexcept {
+	return itemRefData_ && idx == itemRefData_->idx;
+}
+
+template <typename QrT>
+bool QueryResults::QrMetaData<QrT>::CheckIfNsJoinStorageHasSameIdx(int64_t idx) const noexcept {
+	return nsJoinRes_ && idx == nsJoinRes_->idx;
 }
 
 ItemRef QueryResults::Iterator::GetItemRef(ProxiedRefsStorage* storage) {
@@ -559,29 +1045,31 @@ ItemRef QueryResults::Iterator::GetItemRef(ProxiedRefsStorage* storage) {
 			return localIt_->GetItemRef();
 		default:;
 	}
-	auto vit = getVariantIt();
-	if (std::holds_alternative<LocalQueryResults::Iterator>(vit)) {
-		return std::get<LocalQueryResults::Iterator>(vit).GetItemRef();
-	}
-	if (!checkIfStorageHasSameIdx(itemRefData_) || storage) {
-		ItemImpl itemimpl(qr_->GetPayloadType(0), qr_->GetTagsMatcher(0));
-		const bool converViaJSON =
-			!qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm || !qr_->remote_[size_t(qr_->curQrId_)].qr.IsCJSON();
-		auto rit = std::get<client::SyncCoroQueryResults::Iterator>(vit);
-		Error err = fillItemImpl(std::get<client::SyncCoroQueryResults::Iterator>(vit), itemimpl, converViaJSON);
-		if (!err.ok()) {
-			throw err;
-		}
+	ItemRef iref = std::visit(
+		overloaded{[](QrMetaData<LocalQueryResults>* qr) noexcept { return qr->it.GetItemRef(); },
+				   [&](QrMetaData<client::SyncCoroQueryResults>* qr) {
+					   if (!qr->CheckIfItemRefStorageHasSameIdx(idx_) || storage) {
+						   ItemImpl itemimpl(qr_->GetPayloadType(0), qr_->GetTagsMatcher(0));
+						   const bool converViaJSON =
+							   !qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm || !qr_->remote_[size_t(qr_->curQrId_)].qr.IsCJSON();
+						   Error err = fillItemImpl(qr->it, itemimpl, converViaJSON);
+						   if (!err.ok()) {
+							   throw err;
+						   }
 
-		if (!storage) {
-			resetStorageData(itemRefData_, ItemRefCache(rit.GetID(), rit.GetRank(), rit.GetNSID(), std::move(itemimpl), IsRaw()));
-			return itemRefData_->data.ref;
-		} else {
-			storage->emplace_back(rit.GetID(), rit.GetRank(), rit.GetNSID(), std::move(itemimpl), IsRaw());
-			return storage->back().ref;
-		}
-	}
-	return itemRefData_->data.ref;
+						   if (!storage) {
+							   qr->ResetItemRefCache(
+								   idx_, ItemRefCache(qr->it.GetID(), qr->it.GetRank(), qr->it.GetNSID(), std::move(itemimpl), IsRaw()));
+							   return qr->ItemRefData()->data.ref;
+						   } else {
+							   storage->emplace_back(qr->it.GetID(), qr->it.GetRank(), qr->it.GetNSID(), std::move(itemimpl), IsRaw());
+							   return storage->back().ref;
+						   }
+					   }
+					   return qr->ItemRefData()->data.ref;
+				   }},
+		getVariantResult());
+	return iref;
 }
 
 const QueryResults::MergedData& QueryResults::getMergedData() const {
@@ -591,18 +1079,36 @@ const QueryResults::MergedData& QueryResults::getMergedData() const {
 	return *mergedData_;
 }
 
-int QueryResults::findFirstQrWithItems() const noexcept {
-	if (local_.has_value() && local_->qr.Count()) {
-		return -1;
-	}
-	int ret = 0;
-	for (auto& qrp : remote_) {
-		if (qrp.qr.Count()) {
-			return ret;
+bool QueryResults::ordering() const noexcept { return orderedQrs_ && (type_ == Type::Mixed || type_ == Type::MultipleRemote); }
+
+int QueryResults::findFirstQrWithItems() {
+	if (ordering()) {
+		if (local_ && local_->qr.Count()) {
+			assert(local_->it == local_->qr.begin());
+			orderedQrs_->emplace(-1);
 		}
-		++ret;
+		for (int i = 0, size = remote_.size(); i < size; ++i) {
+			if (remote_[i].qr.Count()) {
+				assert(remote_[i].it == remote_[i].qr.begin());
+				orderedQrs_->emplace(i);
+			}
+		}
+		if (orderedQrs_->empty()) {
+			return remote_.size();
+		} else {
+			return *orderedQrs_->begin();
+		}
+	} else {
+		if (local_ && local_->qr.Count()) {
+			return -1;
+		}
+		for (int i = 0, size = remote_.size(); i < size; ++i) {
+			if (remote_[i].qr.Count()) {
+				return i;
+			}
+		}
+		return remote_.size();
 	}
-	return ret;
 }
 
 template <typename QrItT>
@@ -613,7 +1119,7 @@ Item QueryResults::Iterator::getItem(QrItT& it, std::unique_ptr<ItemImpl>&& item
 }
 
 template <typename QrItT>
-Error QueryResults::Iterator::fillItemImpl(QrItT& it, ItemImpl& itemImpl, bool convertViaJSON) {
+Error QueryResults::fillItemImpl(QrItT& it, ItemImpl& itemImpl, bool convertViaJSON) {
 	WrSerializer wrser;
 	Error err;
 	if (!convertViaJSON) {

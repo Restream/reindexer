@@ -186,6 +186,7 @@ enum {
 	kResultsNeedOutputRank = 0x400,
 	kResultsWithShardId = 0x800,
 	kResultsNeedOutputShardId = 0x1000,
+	kResultsSupportIdleTimeout = 0x2000
 };
 
 typedef enum IndexOpt {
@@ -362,9 +363,17 @@ typedef struct SubscriptionOpts {
 	uint16_t options;
 } SubscriptionOpts;
 
+typedef struct RPCQrId {
+#ifdef __cplusplus
+	explicit RPCQrId(int m = -1, int64_t u = -1) : main(m), uid(u) {}
+#endif
+	int main;
+	int64_t uid;
+} RpcQrId;
+
 #ifdef __cplusplus
 namespace ShardingKeyType {
-enum ShardingKey { ProxyOff = -2, NotSetShard = -1 };
+enum ShardingKey { ProxyOff = -2, NotSetShard = -1, NotSharded = -3 };
 }
 #endif
 

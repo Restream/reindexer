@@ -118,7 +118,6 @@ protected:
 		cmpInt64.ClearAllSetValues();
 		cmpDouble.ClearAllSetValues();
 		cmpString.ClearAllSetValues();
-		cmpComposite.ClearAllSetValues();
 	}
 
 	void clearIndividualAllSetValues() {

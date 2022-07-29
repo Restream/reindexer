@@ -77,8 +77,6 @@ int JoinedFieldIterator::ItemsCount() const {
 
 const JoinedFieldIterator noJoinedDataIt(nullptr, 0, 0);
 
-ItemIterator::ItemIterator(const NamespaceResults* parent, IdType rowid) : joinRes_(parent), rowid_(rowid) {}
-
 JoinedFieldIterator ItemIterator::begin() const {
 	auto it = joinRes_->offsets_.find(rowid_);
 	if (it == joinRes_->offsets_.end()) return noJoinedDataIt;
@@ -128,16 +126,6 @@ ItemIterator ItemIterator::CreateEmpty() {
 	return ret;
 }
 
-ItemOffset::ItemOffset() : field(0), offset(0), size(0) {}
-ItemOffset::ItemOffset(size_t f, int o, int s) : field(uint8_t(f)), offset(o), size(s) {}
-bool ItemOffset::operator==(const ItemOffset& other) const {
-	if (field != other.field) return false;
-	if (offset != other.offset) return false;
-	if (size != other.size) return false;
-	return true;
-}
-bool ItemOffset::operator!=(const ItemOffset& other) const { return !operator==(other); }
-
 void NamespaceResults::Insert(IdType rowid, size_t fieldIdx, LocalQueryResults&& qr) {
 	assertrx(int(fieldIdx) < joinedSelectorsCount_);
 	ItemOffsets& offsets = offsets_[rowid];
@@ -147,11 +135,6 @@ void NamespaceResults::Insert(IdType rowid, size_t fieldIdx, LocalQueryResults&&
 	offsets.emplace_back(ItemOffset(fieldIdx, items_.size(), qr.Count()));
 	items_.insert(items_.end(), std::make_move_iterator(qr.Items().begin()), std::make_move_iterator(qr.Items().end()));
 }
-
-void NamespaceResults::SetJoinedSelectorsCount(int joinedSelectorsCount) { joinedSelectorsCount_ = joinedSelectorsCount; }
-int NamespaceResults::GetJoinedSelectorsCount() const { return joinedSelectorsCount_; }
-
-size_t NamespaceResults::TotalItems() const { return items_.size(); }
 
 }  // namespace joins
 }  // namespace reindexer

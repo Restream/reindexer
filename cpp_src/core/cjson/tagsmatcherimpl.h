@@ -200,9 +200,7 @@ public:
 
 		if (tags2names_.size() < sz) tags2names_.resize(sz);
 
-		auto it = tm.names2tags_.begin();
-		auto end = tm.names2tags_.end();
-		for (; it != end; ++it) {
+		for (auto it = tm.names2tags_.begin(), end = tm.names2tags_.end(); it != end; ++it) {
 			auto r = names2tags_.emplace(it->first, it->second);
 			if (!r.second && r.first->second != it->second) {
 				// name conflict
@@ -219,6 +217,19 @@ public:
 		version_ = std::max(version_, tm.version_) + 1;
 
 		return true;
+	}
+	bool add_names_from(const TagsMatcherImpl &tm) {
+		bool modified = false;
+		for (auto it = tm.names2tags_.begin(), end = tm.names2tags_.end(); it != end; ++it) {
+			auto res = names2tags_.emplace(it.key(), tags2names_.size());
+			if (res.second) {
+				tags2names_.emplace_back(it.key());
+				++version_;
+				modified = true;
+			}
+		}
+
+		return modified;
 	}
 
 	size_t size() const { return tags2names_.size(); }

@@ -48,6 +48,7 @@ public:
 	void OnStatusChanged(size_t nodeId, NodeStats::Status status) { counter_->OnStatusChanged(nodeId, status); }
 	void OnSyncStateChanged(size_t nodeId, NodeStats::SyncState state) { counter_->OnSyncStateChanged(nodeId, state); }
 	void OnServerIdChanged(size_t nodeId, int serverId) noexcept { counter_->OnServerIdChanged(nodeId, serverId); }
+	void SaveNodeError(size_t nodeId, const Error& err) { counter_->SaveNodeError(nodeId, err); }
 	void Reset() { counter_->Reset(); }
 	ReplicationStats Get() const {
 		if (counter_) {

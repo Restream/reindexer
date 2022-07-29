@@ -40,6 +40,11 @@ public:
 		JsonBuilder node = Array(n);
 		for (auto d : data) node.Put({}, d);
 	}
+	template <typename T>
+	void Array(std::string_view n, std::initializer_list<T> data, int /*offset*/ = 0) {
+		JsonBuilder node = Array(n);
+		for (auto d : data) node.Put({}, d);
+	}
 
 	void Array(int tagName, Serializer &ser, int tagType, int count) {
 		JsonBuilder node = Array(tagName);

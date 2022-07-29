@@ -77,7 +77,7 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 		rpcCfg.AppName = config_.AppName;
 		rpcCfg.NetTimeout = std::chrono::seconds(config_.UpdatesTimeoutSec);
 		rpcCfg.EnableCompression = config_.EnableCompression;
-		for (auto& nodeP : nodesList) {
+		for (const auto& nodeP : nodesList) {
 			nodes.emplace_back(nodeP.second.GetServerID(), nodeP.first, rpcCfg);
 			nodes.back().dsn = nodeP.second.GetRPCDsn();
 		}
@@ -163,7 +163,13 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 			logPrintf(LogInfo, "[cluster:replicator]%s %d:%d Reconnecting... Reason: %s", typeString(), serverId_, node.uid,
 					  err.ok() ? "Not connected yet" : ("Error: " + err.what()));
 			node.Reconnect(loop, config_);
-			if constexpr (!isClusterReplThread()) {
+		}
+		LogLevel logLevel = LogTrace;
+		err = checkIfReplicationAllowed(node, logLevel);
+		statsCollector_.SaveNodeError(node.uid, err);  // Reset last node error after checking node replication allowance
+		if (err.ok()) {
+			expectingReconnect = true;
+			if (!node.connObserverId.has_value()) {
 				node.connObserverId = node.client.AddConnectionStateObserver([this, &node](const Error& err) noexcept {
 					if (!err.ok() && updates_ && !terminate_) {
 						logPrintf(LogInfo, "[cluster:replicator]%s %d:%d Connection error: %s", typeString(), serverId_, node.uid,
@@ -175,12 +181,8 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 					}
 				});
 			}
-		}
-		LogLevel logLevel = LogTrace;
-		err = checkIfReplicationAllowed(node, logLevel);
-		if (err.ok()) {
-			expectingReconnect = true;
 			err = nodeReplicationImpl(node);
+			statsCollector_.SaveNodeError(node.uid, err);
 		} else {
 			expectingReconnect = false;
 			logPrintf(logLevel, "[cluster:replicator]%s %d:%d Replication is not allowed: %s", typeString(), serverId_, node.uid,
@@ -215,7 +217,10 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 	if (terminate_) {
 		logPrintf(LogTrace, "[cluster:replicator]%s %d:%d Node replication routine was terminated", typeString(), serverId_, node.uid);
 	}
-	node.client.RemoveConnectionStateObserver(node.connObserverId);
+	if (node.connObserverId.has_value()) {
+		node.client.RemoveConnectionStateObserver(*node.connObserverId);
+		node.connObserverId.reset();
+	}
 	node.client.Stop();
 }
 
@@ -224,7 +229,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 	std::vector<NamespaceDef> nsList;
 	node.requireResync = false;
 	logPrintf(LogTrace, "[cluster:replicator]%s %d:%d Trying to collect local namespaces...", typeString(), serverId_, node.uid);
-	auto integralError = thisNode.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary());
+	auto integralError = thisNode.EnumNamespaces(nsList, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary(), RdxContext());
 	if (!integralError.ok()) {
 		logPrintf(LogWarning, "[cluster:replicator]%s %d:%d Unable to enum local namespaces in node replication routine: %s", typeString(),
 				  serverId_, node.uid, integralError.what());
@@ -249,7 +254,7 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 
 	logPrintf(LogInfo, "[cluster:replicator]%s %d:%d Creating %d sync routines", typeString(), serverId_, node.uid, nsList.size());
 	coroutine::wait_group localWg;
-	for (auto& ns : nsList) {
+	for (const auto& ns : nsList) {
 		if (!bhvParam_.IsNamespaceInConfig(node.uid, ns.name)) {
 			continue;
 		}
@@ -404,24 +409,22 @@ void ReplThread<BehaviourParamT>::updatesNotifier() noexcept {
 
 template <typename BehaviourParamT>
 std::tuple<bool, UpdateApplyStatus> ReplThread<BehaviourParamT>::handleNetworkCheckRecord(Node& node, UpdatesQueueT::UpdatePtr& updPtr,
-																						  uint16_t offset, bool forceCheck,
+																						  uint16_t offset, bool currentlyOnline,
 																						  const UpdateRecord& rec) noexcept {
-	bool networkCheckSucceed = false;
+	bool hadActualNetworkCheck = false;
 	auto& data = std::get<std::unique_ptr<NodeNetworkCheckRecord>>(rec.data);
 	if (node.uid == data->nodeUid) {
 		Error err;
-		if (!data->online && !forceCheck) {
+		if (data->online != currentlyOnline) {
 			logPrintf(LogTrace, "[cluster:replicator]%s %d:%d: Checking network...", typeString(), serverId_, node.uid);
 			err = node.client.WithTimeout(kStatusCmdTimeout).Status(true);
-			if (err.ok()) {
-				networkCheckSucceed = true;
-			}
+			hadActualNetworkCheck = true;
 		}
 		updPtr->OnUpdateReplicated(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
-		return std::make_tuple(networkCheckSucceed, UpdateApplyStatus(std::move(err), UpdateRecord::Type::NodeNetworkCheck));
+		return std::make_tuple(hadActualNetworkCheck, UpdateApplyStatus(std::move(err), UpdateRecord::Type::NodeNetworkCheck));
 	}
 	updPtr->OnUpdateReplicated(node.uid, consensusCnt_, requiredReplicas_, offset, false, Error());
-	return std::make_tuple(networkCheckSucceed, UpdateApplyStatus(Error(), UpdateRecord::Type::NodeNetworkCheck));
+	return std::make_tuple(hadActualNetworkCheck, UpdateApplyStatus(Error(), UpdateRecord::Type::NodeNetworkCheck));
 }
 
 template <typename BehaviourParamT>
@@ -458,7 +461,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const std::string& 
 		auto client = node.client.WithTimeout(std::chrono::seconds(config_.syncTimeoutSec));
 		TmpNsGuard tmpNsGuard = {std::string(), client, serverId_};
 
-		auto err = thisNode.GetReplState(nsName, localState);
+		auto err = thisNode.GetReplState(nsName, localState, RdxContext());
 		if (!err.ok()) {
 			if (err.code() == errNotFound) {
 				if (requiredLsn.IsEmpty()) {
@@ -514,7 +517,7 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const std::string& 
 			}
 		}
 
-		err = thisNode.GetSnapshot(nsName, SnapshotOpts(requiredLsn, config_.MaxWALDepthOnForceSync), snapshot);
+		err = thisNode.GetSnapshot(nsName, SnapshotOpts(requiredLsn, config_.MaxWALDepthOnForceSync), snapshot, RdxContext());
 		if (!err.ok()) return err;
 		if (snapshot.HasRawData()) {
 			logPrintf(LogInfo, "[cluster:replicator]%s %d:%d:%s Snapshot has raw data, creating tmp namespace", typeString(), serverId_,
@@ -674,8 +677,8 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::nodeUpdatesHandlingLoop(Node& nod
 				auto& upd = updatePtr->GetUpdate(offset);
 				auto& it = upd.Data();
 				if (it.IsNetworkCheckRecord()) {
-					auto [_, res] = handleNetworkCheckRecord(node, updatePtr, offset, false, it);
-					(void)_;
+					[[maybe_unused]] bool v;
+					std::tie(v, res) = handleNetworkCheckRecord(node, updatePtr, offset, true, it);
 					if (!res.err.ok()) {
 						break;
 					}
@@ -828,9 +831,8 @@ bool ReplThread<BehaviourParamT>::handleUpdatesWithError(Node& node, const Error
 			auto& upd = updatePtr->GetUpdate(offset);
 			auto& it = upd.Data();
 			if (it.IsNetworkCheckRecord()) {
-				auto [networkCheckSucceed, _] = handleNetworkCheckRecord(node, updatePtr, offset, true, it);
-				(void)_;
-				if (networkCheckSucceed) {
+				const auto [hadActualNetworkCheck, res] = handleNetworkCheckRecord(node, updatePtr, offset, false, it);
+				if (hadActualNetworkCheck && res.err.ok()) {
 					return true;  // Retry sync after succeed network check
 				}
 				continue;

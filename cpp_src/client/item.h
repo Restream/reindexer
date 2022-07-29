@@ -10,7 +10,7 @@ namespace reindexer {
 
 class TagsMatcher;
 class ClusterProxy;
-class Transaction;
+class ProxiedTransaction;
 
 namespace client {
 
@@ -118,13 +118,13 @@ private:
 	friend class CoroReindexer;
 	friend class RPCClientMock;
 	friend class reindexer::client::Transaction;
-	friend class reindexer::Transaction;
 	friend class reindexer::ClusterProxy;
 	friend class CoroTransaction;
 	friend class CoroQueryResults;
 	friend class SyncCoroReindexerImpl;
 	friend class SyncCoroQueryResults;
 	friend class SyncCoroTransaction;
+	friend class reindexer::ProxiedTransaction;
 };
 }  // namespace client
 }  // namespace reindexer

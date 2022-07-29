@@ -647,45 +647,50 @@ TEST_F(ShardingExtrasApi, StrictMode) {
 	err = rx->Upsert(default_namespace, item);
 	ASSERT_TRUE(err.ok()) << err.what();
 	waitSync(default_namespace);
+	std::vector<size_t> limits = {UINT_MAX, 10};  // delete when executeQueryOnShard has one branch for distributed select
+	for (auto l : limits) {
+		// Valid requests
+		for (size_t node = 0; node < NodesCount(); ++node) {
+			{  // Select from shard with kFieldForSingleShard
+				client::SyncCoroQueryResults qr;
+				const Query q =
+					Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Where(kFieldForSingleShard, CondEq, kValue).Limit(l);
+				err = getNode(node)->api.reindexer->Select(q, qr);
+				EXPECT_TRUE(err.ok()) << err.what() << "; node = " << node;
+				ASSERT_EQ(qr.Count(), 1) << "node = " << node;
+				ASSERT_EQ(qr.begin().GetItem().GetJSON(), item.GetJSON()) << "node = " << node;
+			}
+			{  // Distributed select
+				client::SyncCoroQueryResults qr;
+				const Query q = Query(default_namespace).Where(kFieldForSingleShard, CondEq, "value").Limit(l);
+				err = getNode(node)->api.reindexer->Select(q, qr);
+				EXPECT_TRUE(err.ok()) << err.what() << "; node = " << node;
+				ASSERT_EQ(qr.Count(), 1) << "node = " << node;
+				ASSERT_EQ(qr.begin().GetItem().GetJSON(), item.GetJSON()) << "node = " << node;
+			}
+		}
 
-	// Valid requests
-	for (size_t node = 0; node < NodesCount(); ++node) {
-		{  // Select from shard with kFieldForSingleShard
-			client::SyncCoroQueryResults qr;
-			const Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Where(kFieldForSingleShard, CondEq, kValue);
-			err = getNode(node)->api.reindexer->Select(q, qr);
-			EXPECT_TRUE(err.ok()) << err.what() << "; node = " << node;
-			ASSERT_EQ(qr.Count(), 1) << "node = " << node;
-			ASSERT_EQ(qr.begin().GetItem().GetJSON(), item.GetJSON()) << "node = " << node;
-		}
-		{  // Distributed select
-			client::SyncCoroQueryResults qr;
-			const Query q = Query(default_namespace).Where(kFieldForSingleShard, CondEq, "value");
-			err = getNode(node)->api.reindexer->Select(q, qr);
-			EXPECT_TRUE(err.ok()) << err.what() << "; node = " << node;
-			ASSERT_EQ(qr.Count(), 1) << "node = " << node;
-			ASSERT_EQ(qr.begin().GetItem().GetJSON(), item.GetJSON()) << "node = " << node;
-		}
-	}
-
-	for (size_t node = 0; node < NodesCount(); ++node) {
-		{  // Select from shard without kFieldForSingleShard
-			client::SyncCoroQueryResults qr;
-			const Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key2").Where(kFieldForSingleShard, CondEq, kValue);
-			err = getNode(node)->api.reindexer->Select(q, qr);
-			EXPECT_EQ(err.code(), errStrictMode) << err.what() << "; node = " << node;
-		}
-		{  // Select from shard without kFieldForSingleShard
-			client::SyncCoroQueryResults qr;
-			const Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key3").Where(kFieldForSingleShard, CondEq, kValue);
-			err = getNode(node)->api.reindexer->Select(q, qr);
-			EXPECT_EQ(err.code(), errStrictMode) << err.what() << "; node = " << node;
-		}
-		{  // Distributed select with unknown field
-			client::SyncCoroQueryResults qr;
-			const Query q = Query(default_namespace).Where(kUnknownField, CondEq, 1);
-			err = getNode(node)->api.reindexer->Select(q, qr);
-			EXPECT_EQ(err.code(), errStrictMode) << err.what() << "; node = " << node;
+		for (size_t node = 0; node < NodesCount(); ++node) {
+			{  // Select from shard without kFieldForSingleShard
+				client::SyncCoroQueryResults qr;
+				const Query q =
+					Query(default_namespace).Where(kFieldLocation, CondEq, "key2").Where(kFieldForSingleShard, CondEq, kValue).Limit(l);
+				err = getNode(node)->api.reindexer->Select(q, qr);
+				EXPECT_EQ(err.code(), errStrictMode) << err.what() << "; node = " << node;
+			}
+			{  // Select from shard without kFieldForSingleShard
+				client::SyncCoroQueryResults qr;
+				const Query q =
+					Query(default_namespace).Where(kFieldLocation, CondEq, "key3").Where(kFieldForSingleShard, CondEq, kValue).Limit(l);
+				err = getNode(node)->api.reindexer->Select(q, qr);
+				EXPECT_EQ(err.code(), errStrictMode) << err.what() << "; node = " << node;
+			}
+			{  // Distributed select with unknown field
+				client::SyncCoroQueryResults qr;
+				const Query q = Query(default_namespace).Where(kUnknownField, CondEq, 1).Limit(l);
+				err = getNode(node)->api.reindexer->Select(q, qr);
+				EXPECT_EQ(err.code(), errStrictMode) << err.what() << "; node = " << node;
+			}
 		}
 	}
 }
@@ -737,3 +742,108 @@ TEST_F(ShardingExtrasApi, NoShardingIndex) {
 		}
 	}
 }
+
+#ifdef RX_LOGACTIVITY
+
+TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
+	InitShardingConfig cfg;
+	cfg.rowsInTableOnShard = 0;
+	Init(cfg);
+	const unsigned int kShardCount = cfg.shards;
+	std::shared_ptr<client::SyncCoroReindexer> rx = svc_[0][0].Get()->api.reindexer;
+	Error err = rx->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	const unsigned long kMaxCountOnShard = 10;
+	Fill(default_namespace, rx, "key0", 0, kMaxCountOnShard);
+	Fill(default_namespace, rx, "key1", kMaxCountOnShard, kMaxCountOnShard);
+	Fill(default_namespace, rx, "key2", kMaxCountOnShard * 2, kMaxCountOnShard);
+
+	waitSync(default_namespace);
+
+	int leaderId = -1;
+	int followerId = -1;
+	int curNode = 0;
+	{
+		client::SyncCoroQueryResults qr;
+		err = svc_[0][curNode].Get()->api.reindexer->Select("select replication.clusterization_status.leader_id from #memstats", qr);
+		ASSERT_EQ(qr.Count(), 1);
+		ASSERT_TRUE(err.ok()) << err.what();
+		auto item = qr.begin().GetItem();
+		auto json = item.GetJSON();
+		gason::JsonParser parser;
+		auto root = parser.Parse(json);
+		leaderId = root["replication"]["clusterization_status"]["leader_id"].As<int>();
+		if (leaderId == -1) {
+			leaderId = curNode;
+		}
+		followerId = (leaderId + 1) % cfg.nodesInCluster;
+	}
+
+	auto setActivity = [](std::shared_ptr<reindexer::client::SyncCoroReindexer> rx, bool on) {
+		client::SyncCoroQueryResults qr;
+		Error err = rx->Select(fmt::format("update #config set profiling.activitystats={} where type='profiling'", on), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+	};
+	auto dumpActivity = [](std::shared_ptr<reindexer::client::SyncCoroReindexer> rx) {
+		client::SyncCoroQueryResults qr;
+		Error err = rx->Select("select * from #activitystats", qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+	};
+
+	auto checkActivity = [](int followerId, const std::string &descr, const std::string &stateNameCheck) {
+		std::string fileName = "activity_" + std::to_string(followerId) + ".json";
+		std::ifstream f(fileName);
+		std::stringstream buffer;
+		buffer << f.rdbuf();
+		gason::JsonParser parser;
+		std::string jsonLog = buffer.str();
+		auto root = parser.Parse(std::string_view(jsonLog));
+		auto blocks = root["blocks"];
+		bool isFind = false;
+		for (auto &b : blocks) {
+			if (b["description"].As<std::string>() == descr) {
+				ASSERT_TRUE(!b["sub_block"].empty());
+				auto arr1 = begin(b["sub_block"]);
+				ASSERT_TRUE(arr1 != end(b["sub_block"]));
+				auto v = *arr1;
+				ASSERT_TRUE(!v["sub_block"].empty());
+				auto arr2 = begin(v["sub_block"]);
+				ASSERT_TRUE(arr2 != end(v["sub_block"]));
+				std::string stateName = arr2->operator[]("State").As<std::string>();
+				ASSERT_EQ(stateName, stateNameCheck);
+				isFind = true;
+				break;
+			}
+		}
+		ASSERT_TRUE(isFind);
+	};
+
+	{
+		setActivity(svc_[0][followerId].Get()->api.reindexer, true);
+		Fill(default_namespace, svc_[0][followerId].Get()->api.reindexer, "key1", kMaxCountOnShard * kShardCount * 2, 1);
+		dumpActivity(svc_[0][followerId].Get()->api.reindexer);
+		checkActivity(followerId, "UPSERT INTO test_namespace WHERE id = 60 AND location = 'key1'", "proxied_via_sharding_proxy");
+	}
+	{
+		setActivity(svc_[0][followerId].Get()->api.reindexer, false);
+		setActivity(svc_[0][followerId].Get()->api.reindexer, true);
+
+		Fill(default_namespace, svc_[0][followerId].Get()->api.reindexer, "key0", kMaxCountOnShard * kShardCount * 3, 1);
+		dumpActivity(svc_[0][followerId].Get()->api.reindexer);
+
+		checkActivity(followerId, "UPSERT INTO test_namespace WHERE id = 90 AND location = 'key0'", "proxied_via_cluster_proxy");
+	}
+	{
+		setActivity(svc_[0][followerId].Get()->api.reindexer, false);
+		setActivity(svc_[0][followerId].Get()->api.reindexer, true);
+
+		client::SyncCoroQueryResults qr;
+		err = svc_[0][followerId].Get()->api.reindexer->Select("select * from " + default_namespace, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		dumpActivity(svc_[0][followerId].Get()->api.reindexer);
+		checkActivity(followerId, "SELECT * FROM test_namespace", "proxied_via_sharding_proxy");
+	}
+}
+#endif

@@ -36,10 +36,10 @@ public:
 		return InternalRdxContext(cancelCtx, cmpl_, execTimeout_, lsn_, emmiterServerId_, shardId_, shardingParallelExecution_);
 	}
 	InternalRdxContext WithCompletion(Completion cmpl, InternalRdxContext&) noexcept {
-		return InternalRdxContext(cmpl, execTimeout_, lsn_, emmiterServerId_, shardId_, shardingParallelExecution_);
+		return InternalRdxContext(std::move(cmpl), execTimeout_, lsn_, emmiterServerId_, shardId_, shardingParallelExecution_);
 	}
 	InternalRdxContext WithCompletion(Completion cmpl) const noexcept {
-		return InternalRdxContext(cmpl, execTimeout_, lsn_, emmiterServerId_, shardId_, shardingParallelExecution_);
+		return InternalRdxContext(std::move(cmpl), execTimeout_, lsn_, emmiterServerId_, shardId_, shardingParallelExecution_);
 	}
 	InternalRdxContext WithTimeout(milliseconds execTimeout) const noexcept {
 		return InternalRdxContext(cmpl_, execTimeout, lsn_, emmiterServerId_, shardId_, shardingParallelExecution_);

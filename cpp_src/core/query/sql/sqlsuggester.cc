@@ -175,7 +175,7 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx) {
 			break;
 		default:
 			break;
-	};
+	}
 }
 
 bool SQLSuggester::findInPossibleTokens(int type, const string &v) {

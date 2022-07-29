@@ -26,7 +26,7 @@ public:
 
 private:
 	template <typename Inserter>
-	void bindOne(size_t index, const SortingContext::Entry &sortingCtx, Inserter insert, bool multiSort);
+	void bindOne(size_t index, const SortingContext::Entry &sortingCtx, Inserter insert);
 
 	class BackInserter;
 	class FrontInserter;

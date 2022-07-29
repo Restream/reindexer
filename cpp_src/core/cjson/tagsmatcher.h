@@ -69,6 +69,13 @@ public:
 		updated_ = true;
 		return true;
 	}
+	void add_names_from(const TagsMatcher& tm) {
+		auto tmp = impl_;
+		if (tmp.clone()->add_names_from(*tm.impl_.get())) {
+			updated_ = true;
+			impl_ = tmp;
+		}
+	}
 
 	void UpdatePayloadType(PayloadType payloadType, bool incVersion) {
 		impl_.clone()->updatePayloadType(payloadType, updated_, incVersion);

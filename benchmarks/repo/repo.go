@@ -11,6 +11,7 @@ type Repo interface {
 	QueryByID(N int, onlyQuery bool) *Item
 	Query2Cond(N int, onlyQuery bool, limit int) []*Item
 	Query1Cond(N int, onlyQuery bool, limit int) []*Item
+	QueryJoin(N int, limit int, filtersSet [10]interface{}) []*Item
 	Update(N int)
 }
 

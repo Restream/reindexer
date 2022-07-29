@@ -79,6 +79,7 @@ struct ShardConnection : std::shared_ptr<client::SyncCoroReindexer> {
 private:
 	int shardID = ShardingKeyType::ProxyOff;
 };
+
 using ConnectionsVector = h_vector<ShardConnection, kHvectorConnStack>;
 using ConnectionsPtr = std::shared_ptr<ConnectionsVector>;
 

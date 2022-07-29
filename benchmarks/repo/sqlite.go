@@ -31,6 +31,10 @@ func (repo *SqliteRepo) Seed(itemsInDataSet int) bool {
 		panic(err)
 	}
 
+	if _, err := repo.db.Exec(`DROP TABLE IF EXISTS joined_items`); err != nil {
+		panic(err)
+	}
+
 	if _, err := repo.db.Exec(`DROP TABLE IF EXISTS items_fts`); err != nil {
 		panic(err)
 	}
@@ -48,6 +52,13 @@ func (repo *SqliteRepo) Seed(itemsInDataSet int) bool {
 		CREATE VIRTUAL TABLE items_fts USING fts5 (
 			id,name,year,description
 		);
+		CREATE TABLE joined_items (
+			id INTEGER NOT NULL PRIMARY KEY, 
+			item_id INTEGER,
+			description TEXT,
+			FOREIGN KEY (item_id) REFERENCES items(id)
+		);
+		CREATE INDEX index_item_id ON joined_items(item_id);
 		`
 	if _, err := repo.db.Exec(sqlStmt); err != nil {
 		panic(err)
@@ -59,6 +70,7 @@ func (repo *SqliteRepo) Seed(itemsInDataSet int) bool {
 	}
 	stmt, err := tx.Prepare("INSERT INTO items(id, name,year,description) VALUES (?,?,?,?)")
 	stmt2, err := tx.Prepare("INSERT INTO items_fts(id, name,year,description) VALUES (?,?,?,?)")
+	stmt3, err := tx.Prepare("INSERT INTO joined_items(id, item_id,description) VALUES (?,?,?)")
 
 	if err != nil {
 		panic(err)
@@ -71,6 +83,10 @@ func (repo *SqliteRepo) Seed(itemsInDataSet int) bool {
 			panic(err)
 		}
 		if _, err = stmt2.Exec(i, it.Name, it.Year, it.Description); err != nil {
+			panic(err)
+		}
+		jit := newJoinedItem(i)
+		if _, err = stmt3.Exec(jit.ID, jit.ID, jit.Description); err != nil {
 			panic(err)
 		}
 	}
@@ -128,6 +144,13 @@ func (repo *SqliteRepo) Query1Cond(N int, onlyQuery bool, limit int) (ret []*Ite
 		log.Fatal(err)
 	}
 	return sqlFetchAll(stmt, N, onlyQuery, limit, 2010, limit)
+}
+func (repo *SqliteRepo) QueryJoin(N int, limit int, filtersSet [10]interface{}) (ret []*Item) {
+	stmt, err := repo.db.Preparex("select * from items inner join joined_items on items.id=joined_items.item_id where items.id in (?,?,?,?,?,?,?,?,?,?)")
+	if err != nil {
+		log.Fatal(err)
+	}
+	return sqlFetchAll(stmt, N, true, limit, filtersSet[:]...)
 }
 
 func (repo *SqliteRepo) Update(N int) {

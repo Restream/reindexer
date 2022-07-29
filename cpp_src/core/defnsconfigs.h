@@ -42,7 +42,8 @@ const std::vector<std::string> kDefDBConfig = {
 				"wal_size":4000000,
 				"min_preselect_size":1000,
 				"max_preselect_size":1000,
-				"max_preselect_part":0.1
+				"max_preselect_part":0.1,
+				"index_updates_counting_mode":false
 			}
 		]
 	})json",

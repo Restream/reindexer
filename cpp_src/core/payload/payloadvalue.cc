@@ -1,5 +1,6 @@
 #include "payloadvalue.h"
 #include <chrono>
+#include "core/keyvalue/p_string.h"
 #include "string.h"
 #include "tools/errors.h"
 namespace reindexer {
@@ -13,7 +14,7 @@ PayloadValue::PayloadValue(size_t size, const uint8_t *ptr, size_t cap) : p_(nul
 		memset(Ptr(), 0, size);
 }
 
-PayloadValue::PayloadValue(const PayloadValue &other) : p_(other.p_) {
+PayloadValue::PayloadValue(const PayloadValue &other) noexcept : p_(other.p_) {
 	if (p_) {
 		header()->refcount.fetch_add(1, std::memory_order_relaxed);
 	}
@@ -33,7 +34,7 @@ uint8_t *PayloadValue::alloc(size_t cap) {
 	return pn;
 }
 
-void PayloadValue::release() {
+void PayloadValue::release() noexcept {
 	if (p_ && header()->refcount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
 		header()->~dataHeader();
 		operator delete(p_);
@@ -76,6 +77,24 @@ void PayloadValue::Resize(size_t oldSize, size_t newSize) {
 	p_ = pn;
 }
 
-std::ostream &operator<<(std::ostream &os, const PayloadValue &) { return os << "{TODO}"; }
+std::ostream &operator<<(std::ostream &os, const PayloadValue &pv) {
+	os << "{p_: " << std::hex << static_cast<const void *>(pv.p_) << std::dec;
+	if (pv.p_) {
+		const auto *header = pv.header();
+		os << ", refcount: " << header->refcount.load(std::memory_order_relaxed) << ", cap: " << header->cap << ", lsn: " << header->lsn
+		   << ", [" << std::hex;
+		const uint8_t *ptr = pv.Ptr();
+		const size_t cap = header->cap;
+		for (size_t i = 0; i < cap; ++i) {
+			if (i != 0) os << ' ';
+			os << static_cast<unsigned>(ptr[i]);
+		}
+		os << std::dec << "], tuple: ";
+		assert(cap >= sizeof(p_string));
+		const p_string &str = *reinterpret_cast<const p_string *>(ptr);
+		str.Dump(os);
+	}
+	return os << '}';
+}
 
 }  // namespace reindexer

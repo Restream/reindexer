@@ -1,8 +1,8 @@
 #pragma once
 
-#include "core/transaction.h"
-#include "namespace/namespacestat.h"
-#include "perfstatcounter.h"
+#include "core/namespace/namespacestat.h"
+#include "core/perfstatcounter.h"
+#include "localtransaction.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -11,12 +11,12 @@ class TxStatCounter {
 	using QuantityCounter = QuantityCounterST<size_t>;
 
 public:
-	void Count(const Transaction& tx) {
+	void Count(const LocalTransaction& tx) {
 		using std::chrono::duration_cast;
 		using std::chrono::microseconds;
 		using std::chrono::high_resolution_clock;
 		std::unique_lock<std::mutex> lck(mtx_);
-		prepCounter_.Count(duration_cast<microseconds>(high_resolution_clock::now() - tx.GetStartTime()).count());
+		prepCounter_.Count(duration_cast<microseconds>(Transaction::ClockT::now() - tx.GetStartTime()).count());
 		stepsCounter_.Count(tx.GetSteps().size());
 	}
 

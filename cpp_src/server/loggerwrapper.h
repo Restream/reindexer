@@ -9,48 +9,48 @@ using std::shared_ptr;
 
 class LoggerWrapper {
 public:
-	LoggerWrapper() {}
+	LoggerWrapper() = default;
 	LoggerWrapper(const char *name) : logger_(spdlog::get(name)) {}
 
-	operator bool() { return logger_ != nullptr; }
+	operator bool() const noexcept { return logger_ != nullptr; }
 
 	template <typename... Args>
-	void error(Args &&... args) {
+	void error(Args &&...args) const {
 		if (logger_) {
 			logger_->error(std::forward<Args>(args)...);
 		}
 	}
 
 	template <typename... Args>
-	void warn(Args &&... args) {
+	void warn(Args &&...args) const {
 		if (logger_) {
 			logger_->warn(std::forward<Args>(args)...);
 		}
 	}
 
 	template <typename... Args>
-	void info(Args &&... args) {
+	void info(Args &&...args) const {
 		if (logger_) {
 			logger_->info(std::forward<Args>(args)...);
 		}
 	}
 
 	template <typename... Args>
-	void trace(Args &&... args) {
+	void trace(Args &&...args) const {
 		if (logger_) {
 			logger_->trace(std::forward<Args>(args)...);
 		}
 	}
 
 	template <typename... Args>
-	void critical(Args &&... args) {
+	void critical(Args &&...args) const {
 		if (logger_) {
 			logger_->critical(std::forward<Args>(args)...);
 		}
 	}
 
 	template <typename... Args>
-	void debug(Args &&... args) {
+	void debug(Args &&...args) const {
 		if (logger_) {
 			logger_->debug(std::forward<Args>(args)...);
 		}

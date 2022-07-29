@@ -1,7 +1,7 @@
 #include "core/query/sql/sqlencoder.h"
 #include "core/keyvalue/geometry.h"
-#include "core/nsselecter/sortexpression.h"
 #include "core/queryresults/aggregationresult.h"
+#include "core/sorting/sortexpression.h"
 #include "core/type_consts_helpers.h"
 #include "tools/serializer.h"
 
@@ -119,7 +119,7 @@ void SQLEncoder::dumpOrderBy(WrSerializer &ser, bool stripArgs) const {
 	ser << " ORDER BY ";
 	for (size_t i = 0; i < query_.sortingEntries_.size(); ++i) {
 		const SortingEntry &sortingEntry(query_.sortingEntries_[i]);
-		if (query_.forcedSortOrder_.empty()) {
+		if (query_.forcedSortOrder_.empty() || i != 0) {
 			ser << '\'' << escapeQuotes(sortingEntry.expression) << '\'';
 		} else {
 			ser << "FIELD(" << sortingEntry.expression;
@@ -127,7 +127,8 @@ void SQLEncoder::dumpOrderBy(WrSerializer &ser, bool stripArgs) const {
 				ser << '?';
 			} else {
 				for (auto &v : query_.forcedSortOrder_) {
-					ser << ", '" << v.As<string>() << "'";
+					ser << ", ";
+					v.Dump(ser);
 				}
 			}
 			ser << ")";

@@ -112,7 +112,9 @@ bool PayloadTypeImpl::Contains(std::string_view field) const { return fieldsByNa
 
 int PayloadTypeImpl::FieldByName(std::string_view field) const {
 	auto it = fieldsByName_.find(field);
-	if (it == fieldsByName_.end()) throw Error(errLogic, "Field '%s' not found in namespace '%s'", field, Name());
+	if (it == fieldsByName_.end()) {
+		throw Error(errLogic, "Field '%s' not found in namespace '%s'", field, Name());
+	}
 	return it->second;
 }
 

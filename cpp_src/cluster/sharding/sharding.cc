@@ -3,6 +3,7 @@
 #include "core/defnsconfigs.h"
 #include "core/item.h"
 #include "core/reindexerimpl.h"
+#include "core/type_consts.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -107,13 +108,8 @@ ShardIDsContainer RoutingStrategy::GetHostsIds(const Query &q) const {
 			throw Error(errLogic, "Query to all shard can't contain JOIN or MERGE");
 		}
 		for (const auto &agg : q.aggregations_) {
-			if (agg.type_ != AggCount && agg.type_ != AggCountCached) {
-				throw Error(errLogic, "Query to all shard can't contain aggregations other than COUNT or COUNT CACHED");
-			}
-		}
-		for (const auto &s : q.sortingEntries_) {
-			if (!SortExpression::Parse(s.expression, q.joinQueries_).ByIndexField()) {
-				throw Error(errLogic, "Query to all shard can't contain ordering by expression");
+			if (agg.type_ == AggAvg || agg.type_ == AggFacet || agg.type_ == AggDistinct || agg.type_ == AggUnknown) {
+				throw Error(errLogic, "Query to all shard can't contain aggregations AVG, Facet or Distinct");
 			}
 		}
 		return keys_.GetShardsIds(q.Namespace());
@@ -329,14 +325,13 @@ Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vec
 }
 
 Error LocatorService::validateConfig() {
-	InternalRdxContext ctx;
 	for (auto &ns : config_.namespaces) {
-		const auto ftIndexes = rx_.GetFTIndexes(ns.ns, ctx);
+		const auto ftIndexes = rx_.getFTIndexes(ns.ns);
 		if (ftIndexes.find(ns.index) != ftIndexes.cend()) {
 			return Error(errLogic, "Sharding by full text index is not supported: %s", ns.index);
 		}
 		int field = ShardingKeyType::NotSetShard;
-		PayloadType pt = rx_.getPayloadType(ns.ns, ctx);
+		PayloadType pt = rx_.getPayloadType(ns.ns);
 		if (!pt) continue;
 		if (pt.FieldByName(ns.index, field)) {
 			const KeyValueType fieldType{pt.Field(field).Type()};

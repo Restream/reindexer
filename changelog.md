@@ -1,3 +1,28 @@
+# Version 4.4.0 *beta* (29.06.2022)
+## Core
+- [fea] Add 'last error' field into replication statistics
+- [fix] Fix replicas network status logic
+
+## Sharding
+- [fea] Add sorting support for distributed (sharded) select queries
+- [fea] Add aggregation support (min, max, sum) for distributed (sharded) select queries
+- [fea] Make transactions' proxying asynchronous
+- [fea] Add multithreading support for sharding proxy
+- [fea] Add activity statistics support for sharding and cluster proxy
+- [fea] Add parallel execution for distributed (sharded) select queries
+
+## Reindexer tool
+- [fea] Add #shard_id field for sharded select results
+
+## Face
+- [fea] Add `with_shard_ids` param to Items query
+- [fix] Fix the default shard displaying
+- [fix] Fix the limit in the request of the items on the SQL page
+- [fix] Fix the NavigationDuplicated error
+
+## Ported
+- [fea/fix] Port all features and fixes from v3.6.0, v3.6.1(v3.6.2)
+
 # Version 4.3.0 *beta* (24.05.2022)
 ## Core
 - [fea] Improve cluster/sharding proxy performance (+add multiple proxying threads support)

@@ -9,6 +9,7 @@ namespace reindexer {
 class Index;
 class ItemImpl;
 class JoinedSelector;
+class NamespaceImpl;
 
 namespace joins {
 class NamespaceResults;
@@ -25,10 +26,10 @@ struct Value {
 
 struct Index {
 	Index(std::string_view c) : column{c}, index{IndexValueType::NotSet} {}
-	double GetValue(ConstPayload, TagsMatcher&) const;
+	double GetValue(ConstPayload, TagsMatcher&, bool forceByJsonPath = false) const;
 	bool operator==(const Index& other) const noexcept { return column == other.column && index == other.index; }
 
-	std::string_view column;
+	std::string column;
 	int index = IndexValueType::NotSet;
 };
 
@@ -40,7 +41,7 @@ struct JoinedIndex {
 	}
 
 	size_t nsIdx;
-	std::string_view column;
+	std::string column;
 	int index = IndexValueType::NotSet;
 };
 
@@ -51,12 +52,12 @@ struct Rank {
 
 struct DistanceFromPoint {
 	DistanceFromPoint(std::string_view c, Point p) : column{c}, index{IndexValueType::NotSet}, point{p} {}
-	double GetValue(ConstPayload, TagsMatcher&) const;
+	double GetValue(ConstPayload, TagsMatcher&, bool forceByJsonPath = false) const;
 	bool operator==(const DistanceFromPoint& other) const noexcept {
 		return column == other.column && index == other.index && point == other.point;
 	}
 
-	std::string_view column;
+	std::string column;
 	int index = IndexValueType::NotSet;
 	Point point;
 };
@@ -70,7 +71,7 @@ struct DistanceJoinedIndexFromPoint {
 	}
 
 	size_t nsIdx;
-	std::string_view column;
+	std::string column;
 	int index = IndexValueType::NotSet;
 	Point point;
 };
@@ -78,14 +79,14 @@ struct DistanceJoinedIndexFromPoint {
 struct DistanceBetweenIndexes {
 	DistanceBetweenIndexes(std::string_view c1, std::string_view c2)
 		: column1{c1}, index1{IndexValueType::NotSet}, column2{c2}, index2{IndexValueType::NotSet} {}
-	double GetValue(ConstPayload, TagsMatcher&) const;
+	double GetValue(ConstPayload, TagsMatcher&, bool forceByJsonPath = false) const;
 	bool operator==(const DistanceBetweenIndexes& other) const noexcept {
 		return column1 == other.column1 && index1 == other.index1 && column2 == other.column2 && index2 == other.index2;
 	}
 
-	std::string_view column1;
+	std::string column1;
 	int index1 = IndexValueType::NotSet;
-	std::string_view column2;
+	std::string column2;
 	int index2 = IndexValueType::NotSet;
 };
 
@@ -98,10 +99,10 @@ struct DistanceBetweenIndexAndJoinedIndex {
 			   jIndex == other.jIndex;
 	}
 
-	std::string_view column;
+	std::string column;
 	int index = IndexValueType::NotSet;
 	size_t jNsIdx;
-	std::string_view jColumn;
+	std::string jColumn;
 	int jIndex = IndexValueType::NotSet;
 };
 
@@ -115,10 +116,10 @@ struct DistanceBetweenJoinedIndexes {
 	}
 
 	size_t nsIdx1;
-	std::string_view column1;
+	std::string column1;
 	int index1 = IndexValueType::NotSet;
 	size_t nsIdx2;
-	std::string_view column2;
+	std::string column2;
 	int index2 = IndexValueType::NotSet;
 };
 
@@ -132,9 +133,9 @@ struct DistanceBetweenJoinedIndexesSameNs {
 	}
 
 	size_t nsIdx;
-	std::string_view column1;
+	std::string column1;
 	int index1 = IndexValueType::NotSet;
-	std::string_view column2;
+	std::string column2;
 	int index2 = IndexValueType::NotSet;
 };
 
@@ -174,8 +175,13 @@ public:
 					 uint8_t proc, TagsMatcher& tagsMatcher) const {
 		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher);
 	}
-	bool ByIndexField() const;
-	bool ByJoinedIndexField() const;
+	double Calculate(IdType rowId, ConstPayload pv, uint8_t proc, TagsMatcher& tagsMatcher, bool forceByJsonPath) const {
+		return calculate(cbegin(), cend(), rowId, pv, proc, tagsMatcher, forceByJsonPath);
+	}
+	bool ByField() const;
+	bool ByJoinedField() const;
+	void PrepareIndexes(const NamespaceImpl&);
+	static void PrepareSortIndex(std::string_view column, int& index, const NamespaceImpl&);
 
 	std::string Dump() const;
 
@@ -186,11 +192,15 @@ private:
 	friend SortExprFuncs::DistanceBetweenJoinedIndexes;
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	template <typename T>
-	std::string_view parse(std::string_view expr, bool* containIndexOrFunction, std::string_view fullExpr, const std::vector<T>& joinedSelectors);
+	std::string_view parse(std::string_view expr, bool* containIndexOrFunction, std::string_view fullExpr,
+						   const std::vector<T>& joinedSelectors);
 	template <typename T, typename SkipSW>
-	void parseDistance(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view fullExpr, ArithmeticOpType, bool negative, const SkipSW& skipSpaces);
+	void parseDistance(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view fullExpr, ArithmeticOpType,
+					   bool negative, const SkipSW& skipSpaces);
 	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, const joins::NamespaceResults&,
 							const std::vector<JoinedSelector>&, uint8_t proc, TagsMatcher&);
+	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, uint8_t proc, TagsMatcher&,
+							bool forceByJsonPath);
 
 	void openBracketBeforeLastAppended();
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);

@@ -81,6 +81,10 @@ func (repo *SphinxRepo) Query1Cond(N int, onlyQuery bool, limit int) []*Item {
 	return nil
 }
 
+func (repo *SphinxRepo) QueryJoin(N int, limit int, filtersSet [10]interface{}) (ret []*Item) {
+	return
+}
+
 func (repo *SphinxRepo) Update(N int) {
 }
 

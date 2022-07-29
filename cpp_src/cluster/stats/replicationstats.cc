@@ -93,6 +93,12 @@ static NodeStats::SyncState NodeSyncStateFromStr(std::string_view state) {
 	}
 }
 
+static Error NodeErrorFromJson(const gason::JsonNode& lastErrorRoot) {
+	int code = lastErrorRoot["code"sv].As<int>(0);
+	std::string_view what = lastErrorRoot["message"sv].As<std::string_view>(""sv);
+	return Error(code, what);
+}
+
 void NodeStats::FromJSON(const gason::JsonNode& root) {
 	dsn = root["dsn"sv].As<std::string>(dsn);
 	serverId = root["server_id"sv].As<int>(-1);
@@ -101,6 +107,7 @@ void NodeStats::FromJSON(const gason::JsonNode& root) {
 	role = RaftInfo::RoleFromStr(root["role"sv].As<std::string_view>("follower"sv));
 	isSynchronized = root["is_synchronized"sv].As<bool>(false);
 	syncState = NodeSyncStateFromStr(root["sync_state"sv].As<std::string_view>("none"sv));
+	lastError = NodeErrorFromJson(root["last_error"sv]);
 	for (auto& ns : root["namespaces"sv]) {
 		namespaces.emplace_back(ns.As<std::string>());
 	}
@@ -114,6 +121,11 @@ void NodeStats::GetJSON(JsonBuilder& builder) const {
 	builder.Put("role"sv, RaftInfo::RoleToStr(role));
 	builder.Put("sync_state"sv, NodeSyncStateToStr(syncState));
 	builder.Put("is_synchronized"sv, isSynchronized);
+	{
+		auto lastErrorJsonBuilder = builder.Object("last_error"sv);
+		lastErrorJsonBuilder.Put("code"sv, lastError.code());
+		lastErrorJsonBuilder.Put("message"sv, lastError.what());
+	}
 	{
 		auto nsArray = builder.Array("namespaces"sv);
 		for (auto& ns : namespaces) {
@@ -209,6 +221,7 @@ NodeStats NodeStatsCounter::Get() const {
 	stats.serverId = serverId.load(std::memory_order_relaxed);
 	stats.status = status.load(std::memory_order_relaxed);
 	stats.syncState = syncState.load(std::memory_order_relaxed);
+	stats.lastError = GetLastError();
 	return stats;
 }
 

@@ -35,4 +35,14 @@ int64_t getTimeNow(std::string_view mode) {
 	throw Error(errParams, "Unknown parameter '%s' in getTimeNow function.", mode);
 }
 
+std::tm localtime(const std::time_t& time_tt) {
+	std::tm tm;
+#ifdef _WIN32
+	localtime_s(&tm, &time_tt);
+#else
+	localtime_r(&time_tt, &tm);
+#endif
+	return tm;
+}
+
 }  // namespace reindexer

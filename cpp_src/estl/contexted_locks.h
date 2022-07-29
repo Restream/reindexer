@@ -71,7 +71,7 @@ public:
 		const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
 		if (_M_chkTimeout.count() > 0 && _M_context->IsCancelable()) {
 			do {
-				ThrowOnCancel(*_M_context, "Context was canceled or timed out (mutex)"sv);
+				ThrowOnCancel(*_M_context, "Write lock (contexted_unique_lock) was canceled or timed out (mutex)"sv);
 			} while (!_M_mtx->try_lock_for(_M_chkTimeout));
 		} else {
 			_M_mtx->lock();
@@ -165,7 +165,7 @@ public:
 		const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
 		if (_M_chkTimeout.count() > 0 && _M_context->IsCancelable()) {
 			do {
-				ThrowOnCancel(*_M_context, "Context was canceled or timed out (mutex)"sv);
+				ThrowOnCancel(*_M_context, "Read lock (contexted_shared_lock) was canceled or timed out (mutex)"sv);
 			} while (!_M_mtx->try_lock_shared_for(_M_chkTimeout));
 		} else {
 			_M_mtx->lock_shared();

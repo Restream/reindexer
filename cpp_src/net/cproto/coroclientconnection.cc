@@ -194,7 +194,7 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 		int ret = conn_.async_connect(connectData_.uri.hostname() + ":" + port);
 		if (ret < 0) {
 			// unable to connect
-			return Error(errNetwork, "Connect error");
+			return Error(errNetwork, "Connect error: %s", strerror(conn_.socket_last_error()));
 		}
 
 		string dbName = connectData_.uri.path();

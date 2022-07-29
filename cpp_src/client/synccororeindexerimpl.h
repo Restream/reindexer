@@ -80,10 +80,10 @@ private:
 	friend class SyncCoroTransaction;
 	Error fetchResults(int flags, SyncCoroQueryResults &result);
 	Error closeResults(SyncCoroQueryResults &result);
-	Error addTxItem(SyncCoroTransaction &tr, Item &&item, ItemModifyMode mode, lsn_t lsn);
-	Error putTxMeta(SyncCoroTransaction &tr, std::string_view key, std::string_view value, lsn_t lsn);
-	Error setTxTm(SyncCoroTransaction &tr, TagsMatcher &&tm, lsn_t lsn);
-	Error modifyTx(SyncCoroTransaction &tr, Query &&q, lsn_t lsn);
+	Error addTxItem(SyncCoroTransaction &tr, Item &&item, ItemModifyMode mode, lsn_t lsn, SyncCoroTransaction::Completion cmpl);
+	Error putTxMeta(SyncCoroTransaction &tr, std::string_view key, std::string_view value, lsn_t lsn, SyncCoroTransaction::Completion cmpl);
+	Error setTxTm(SyncCoroTransaction &tr, TagsMatcher &&tm, lsn_t lsn, SyncCoroTransaction::Completion cmpl);
+	Error modifyTx(SyncCoroTransaction &tr, Query &&q, lsn_t lsn, SyncCoroTransaction::Completion cmpl);
 	Item newItemTx(CoroTransaction &tr);
 	void threadLoopFun(uint32_t tid, std::promise<Error> &isRunning, const string &dsn, const client::ConnectOpts &opts);
 	void stop();
@@ -287,12 +287,20 @@ private:
 	bool isNetworkError(const CoroTransaction &tx) { return isNetworkError(tx.Status()); }
 	bool isNetworkError(const Item &item) { return isNetworkError(item.Status()); }
 
-	template <typename R, typename... Args>
-	void execCommand(DatabaseCommandDataBase *cmd, std::function<R(Args...)> &&fun) {
-		auto cd = dynamic_cast<DatabaseCommandData<R, Args...> *>(cmd);
+	template <typename>
+	struct CalculateCommandType;
+	template <typename R, typename C, typename... Args>
+	struct CalculateCommandType<R (C::*)(Args...) const> {
+		using type = DatabaseCommandData<R, Args...>;
+	};
+
+	// cmd may be owned by another thread and will be invalidated after this function
+	template <typename F>
+	void execCommand(DatabaseCommandDataBase *cmd, F &&fun) {
+		auto cd = dynamic_cast<typename CalculateCommandType<decltype(&F::operator())>::type *>(cmd);
 		if (cd) {
-			R r = std::apply(std::move(fun), cd->arguments);
-			if constexpr (std::is_same_v<R, Error>) {
+			auto r = std::apply(std::move(fun), cd->arguments);
+			if constexpr (std::is_same_v<decltype(r), Error>) {
 				if (cd->ctx.cmpl()) {
 					cd->ctx.cmpl()(r);
 				} else {

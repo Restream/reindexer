@@ -39,6 +39,9 @@ public:
 			value_uint64 = other.value_uint64;
 	}
 	Variant(Variant &&other) noexcept : type_(other.type_), hold_(other.hold_), value_uint64(other.value_uint64) { other.hold_ = false; }
+	template <typename... Ts>
+	Variant(const std::tuple<Ts...> &);
+
 	~Variant() {
 		if (hold_) free();
 	}
@@ -140,10 +143,10 @@ protected:
 class VariantArray : public h_vector<Variant, 2> {
 public:
 	VariantArray() noexcept = default;
-	VariantArray(const VariantArray&) = default;
-	VariantArray(VariantArray&&) = default;
-	VariantArray& operator=(const VariantArray&) = default;
-	VariantArray& operator=(VariantArray&&) = default;
+	VariantArray(const VariantArray &) = default;
+	VariantArray(VariantArray &&) = default;
+	VariantArray &operator=(const VariantArray &) = default;
+	VariantArray &operator=(VariantArray &&) = default;
 
 	template <typename T>
 	VariantArray(std::initializer_list<T> l) {

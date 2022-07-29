@@ -26,7 +26,7 @@ void tokenizer::skip_space() {
 	}
 }
 
-token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
+token tokenizer::next_token(bool to_lower, bool treatSignAsToken, bool inOrderBy) {
 	skip_space();
 
 	if (cur_ == q_.end()) return token(TokenEnd);
@@ -44,6 +44,9 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
 	} else if (*cur_ == '"') {
 		res.type = TokenName;
 		const size_t startPos = ++pos_;
+		if (inOrderBy) {
+			res.text_.push_back('"');
+		}
 		while (++cur_ != q_.end() && *cur_ != '"') {
 			if (pos_ == startPos) {
 				if (*cur_ != '#' && *cur_ != '_' && !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {
@@ -55,6 +58,9 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken) {
 			}
 			res.text_.push_back(to_lower ? tolower(*cur_) : *cur_);
 			++pos_;
+		}
+		if (inOrderBy) {
+			res.text_.push_back('"');
 		}
 		if (cur_ == q_.end()) {
 			throw Error{errParseSQL, "Not found close '\"'; %s", where()};
@@ -140,10 +146,10 @@ string tokenizer::where() const {
 	return "line: " + std::to_string(line) + " column: " + std::to_string(col) + " " + std::to_string(q_.size());
 }
 
-token tokenizer::peek_token(bool to_lower, bool treatSignAsToken) {
+token tokenizer::peek_token(bool to_lower, bool treatSignAsToken, bool inOrderBy) {
 	auto save_cur = cur_;
 	auto save_pos = pos_;
-	auto res = next_token(to_lower, treatSignAsToken);
+	auto res = next_token(to_lower, treatSignAsToken, inOrderBy);
 	cur_ = save_cur;
 	pos_ = save_pos;
 	return res;

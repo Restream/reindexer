@@ -275,6 +275,7 @@ TEST_F(CascadeReplicationApi, MasterSlaveSlaveReload) {
 	//---------------------------
 
 	for (size_t i = 1; i < cluster.Size(); ++i) {
+		TestCout() << "Awaiting sync with " << i << std::endl;
 		WaitSync(leader, cluster.Get(i), ns1.nsName_);
 	}
 

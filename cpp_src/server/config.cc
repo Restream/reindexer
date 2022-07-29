@@ -43,6 +43,7 @@ void ServerConfig::Reset() {
 	Autorepair = false;
 	EnableConnectionsStats = true;
 	TxIdleTimeout = std::chrono::seconds(600);
+	RPCQrIdleTimeout = std::chrono::seconds(600);
 	HttpReadTimeout = std::chrono::seconds(0);
 	httpWriteTimeout_ = std::chrono::seconds(0);
 	hasCustomHttpWriteTimeout_ = false;
@@ -136,6 +137,10 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});
 	args::ValueFlag<int> txIdleTimeoutF(netGroup, "", "http transactions idle timeout (s)", {"tx-idle-timeout"}, TxIdleTimeout.count(),
 										args::Options::Single);
+	args::ValueFlag<int> rpcQrIdleTimeoutF(netGroup, "",
+										   "RPC query results idle timeout (s). Expiration check timer has dynamic period, so this timeout "
+										   "may float in range of ~20 seconds. 0 means 'disabled'. Default values is 600 seconds",
+										   {"rpc-qr-idle-timeout"}, RPCQrIdleTimeout.count(), args::Options::Single);
 
 	args::Group metricsGroup(parser, "Metrics options");
 	args::Flag prometheusF(metricsGroup, "", "Enable prometheus handler", {"prometheus"});
@@ -217,6 +222,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (httpWriteTimeoutF) SetHttpWriteTimeout(std::chrono::seconds(args::get(httpWriteTimeoutF)));
 	if (logAllocsF) DebugAllocs = args::get(logAllocsF);
 	if (txIdleTimeoutF) TxIdleTimeout = std::chrono::seconds(args::get(txIdleTimeoutF));
+	if (rpcQrIdleTimeoutF) RPCQrIdleTimeout = std::chrono::seconds(args::get(rpcQrIdleTimeoutF));
 	if (maxUpdatesSizeF) MaxUpdatesSize = args::get(maxUpdatesSizeF);
 
 	return Error();
@@ -258,6 +264,7 @@ reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
 		GRPCAddr = root["net"]["grpcaddr"].As<std::string>(GRPCAddr);
 		TxIdleTimeout = std::chrono::seconds(root["net"]["tx_idle_timeout"].As<int>(TxIdleTimeout.count()));
 		HttpReadTimeout = std::chrono::seconds(root["net"]["http_read_timeout"].As<int>(HttpReadTimeout.count()));
+		RPCQrIdleTimeout = std::chrono::seconds(root["net"]["rpc_qr_idle_timeout"].As<int>(RPCQrIdleTimeout.count()));
 		const auto httpWriteTimeout = root["net"]["http_write_timeout"].As<int>(-1);
 		if (httpWriteTimeout >= 0) {
 			SetHttpWriteTimeout(std::chrono::seconds(httpWriteTimeout));

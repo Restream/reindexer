@@ -20,10 +20,10 @@ class NamespaceResults;
 
 /// Offset in 'items_' for left Ns item
 struct ItemOffset {
-	ItemOffset();
-	ItemOffset(size_t field, int offset, int size);
-	bool operator==(const ItemOffset& other) const;
-	bool operator!=(const ItemOffset& other) const;
+	ItemOffset() noexcept : field(0), offset(0), size(0) {}
+	ItemOffset(size_t field_, int offset_, int size_) noexcept : field(uint8_t(field_)), offset(offset_), size(size_) {}
+	bool operator==(const ItemOffset& other) const noexcept { return field == other.field && offset == other.offset && size == other.size; }
+	bool operator!=(const ItemOffset& other) const noexcept { return !operator==(other); }
 	/// index of joined field
 	/// (equals to position in joinedSelectors_)
 	unsigned field : 8;
@@ -46,12 +46,12 @@ public:
 
 	/// Gets/sets amount of joined selectors
 	/// @param joinedSelectorsCount - joinedSelectors.size()
-	void SetJoinedSelectorsCount(int joinedSelectorsCount);
-	int GetJoinedSelectorsCount() const;
+	void SetJoinedSelectorsCount(int joinedSelectorsCount) noexcept { joinedSelectorsCount_ = joinedSelectorsCount; }
+	int GetJoinedSelectorsCount() const noexcept { return joinedSelectorsCount_; }
 
 	/// @returns total amount of joined items for
 	/// all the joined fields
-	size_t TotalItems() const;
+	size_t TotalItems() const noexcept { return items_.size(); }
 
 	/// Clear all internal data
 	void Clear() {
@@ -108,7 +108,7 @@ private:
 /// Iterates over joined fields (if there are some) of item.
 class ItemIterator {
 public:
-	ItemIterator(const NamespaceResults* parent, IdType rowid);
+	ItemIterator(const NamespaceResults* parent, IdType rowid) noexcept : joinRes_(parent), rowid_(rowid) {}
 
 	JoinedFieldIterator at(uint8_t joinedField) const;
 	JoinedFieldIterator begin() const;

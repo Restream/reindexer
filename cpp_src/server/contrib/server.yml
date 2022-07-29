@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "4.3.0"
+  version: "4.4.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1128,6 +1128,36 @@ paths:
           $ref: "#/responses/NotFound"
         500:
           $ref: "#/responses/UnexpectedError"
+    put:
+      tags:
+      - "queries"
+      summary: "Update documents in namespace"
+      operationId: "updateQuery"
+      description: |
+        This opertaion updates documents in namespace by DSL query.
+      parameters:
+      - name: "database"
+        in: path
+        type: string
+        description: "Database name"
+        required: true
+      - in: body
+        name: "body"
+        description: "DSL query"
+        required: true
+        schema:
+          $ref: "#/definitions/Query"
+      responses:
+        200:
+          $ref: "#/responses/OK"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
     delete:
       tags:
       - "queries"
@@ -1996,8 +2026,9 @@ definitions:
               - "wait_lock"
               - "sending"
               - "indexes_lookup"
-              - "bool"
               - "select_loop"
+              - "proxied_via_cluster_proxy"
+              - "proxied_via_sharding_proxy"
             lock_description:
               type: string
 
@@ -2597,6 +2628,11 @@ definitions:
         description: "Join ON statement"
         items: 
           $ref: "#/definitions/OnDef"
+      select_filter:
+        description: "Filter fields of returned document. Can be dot separated, e.g 'subobject.field'"
+        type: array
+        items:
+          type: string
 
   OnDef:
     type: object
@@ -3300,6 +3336,12 @@ definitions:
       data_size:
         type: integer
         description: "Total memory consumption of documents's data, holded by index"
+      tracked_updates_count:
+        type: integer
+        description: "Updates count, pending in index updates tracker"
+      tracked_updates_buckets:
+        type: integer
+        description: "Buckets count in index updates tracker map"
 
   JoinCacheMemStats:
     description: "Join cache stats. Stores results of selects to right table by ON condition"
@@ -3660,6 +3702,9 @@ definitions:
         default: 1000
         minimum: 0
         description: "Minimum preselect size for optimization of inner join by injection of filters. Min_preselect_size will be used as preselect limit if (max_preselect_part * ns.size) is less than this value"
+      index_updates_counting_mode:
+        type: boolean
+        description: "Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time"
 
   ReplicationConfig:
     type: object

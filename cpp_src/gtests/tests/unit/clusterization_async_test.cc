@@ -74,6 +74,51 @@ TEST_F(ClusterizationAsyncApi, AsyncReplicationForClusterNamespaces) {
 	loop.run();
 }
 
+TEST_F(ClusterizationAsyncApi, GetLastErrorFromInterceptingNamespaces) {
+	net::ev::dynamic_loop loop;
+	auto defaults = GetDefaults();
+	loop.spawn([&loop, &defaults]() noexcept {
+		constexpr size_t kClusterSize = 3;
+		constexpr size_t kReplicatedNodeId = 2;
+		static const std::string namespaceName = "somenamespace";
+		static const std::string expectedError = "Replication namespace '" + namespaceName +
+												 "' is present on target node in sync cluster config. Target namespace can not be a "
+												 "part of sync cluster";
+
+		// Prepare clusters
+		Cluster cluster1(loop, 0, kClusterSize, defaults);
+		Cluster cluster2(loop, kClusterSize, kClusterSize, defaults, {namespaceName});
+
+		const int leaderId1 = cluster1.AwaitLeader(kMaxElectionsTime);
+		ASSERT_NE(leaderId1, -1);
+
+		const int leaderId2 = cluster2.AwaitLeader(kMaxElectionsTime);
+		ASSERT_NE(leaderId2, -1);
+
+		// Add intercepting namespace
+		cluster1.AddAsyncNode(kReplicatedNodeId, cluster2.GetNode(kReplicatedNodeId)->kRPCDsn, cluster::AsyncReplicationMode::Default,
+							  {{namespaceName}});
+
+		// Get stats
+		ServerControl::Interface::Ptr node = cluster1.GetNode(kReplicatedNodeId);
+		for (std::size_t i = 0; i < 10; i++) {
+			reindexer::cluster::ReplicationStats stats = node->GetReplicationStats("async");
+			if (!stats.nodeStats.empty() && stats.nodeStats[0].lastError.code() == errParams) {
+				break;
+			}
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+		}
+
+		reindexer::cluster::ReplicationStats stats = node->GetReplicationStats("async");
+
+		ASSERT_EQ(stats.nodeStats.size(), std::size_t(1));
+		ASSERT_EQ(stats.nodeStats[0].lastError.code(), errParams);
+		ASSERT_EQ(stats.nodeStats[0].lastError.what(), expectedError);
+	});
+
+	loop.run();
+}
+
 TEST_F(ClusterizationAsyncApi, AsyncReplicationBetweenClustersDefaultMode) {
 	//          cluster1 (ns1, ns2)        cluster2 (ns1)
 	// updates -> cl10 - cl11               cl20 - cl21

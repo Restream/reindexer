@@ -370,6 +370,35 @@ bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
 }
 
 template <typename T>
+int PayloadIface<T>::Compare(const PayloadIface<const T> &other, std::string_view field, int fieldIdx, const CollateOpts &collateOpts,
+							 TagsMatcher &ltm, TagsMatcher &rtm, bool lForceByJsonPath, bool rForceByJsonPath) const {
+	VariantArray krefs1, krefs2;
+	int cmpRes = 0;
+	if (lForceByJsonPath || fieldIdx == IndexValueType::SetByJsonPath) {
+		GetByJsonPath(field, ltm, krefs1, KeyValueUndefined);
+	} else {
+		Get(fieldIdx, krefs1);
+	}
+	if (rForceByJsonPath || fieldIdx == IndexValueType::SetByJsonPath) {
+		other.GetByJsonPath(field, rtm, krefs2, KeyValueUndefined);
+	} else {
+		other.Get(fieldIdx, krefs2);
+	}
+	const size_t length = std::min(krefs1.size(), krefs2.size());
+	for (size_t i = 0; i < length; ++i) {
+		cmpRes = krefs1[i].RelaxCompare(krefs2[i], collateOpts);
+		if (cmpRes) return cmpRes;
+	}
+	if (krefs1.size() == krefs2.size()) {
+		return 0;
+	} else if (krefs1.size() < krefs2.size()) {
+		return -1;
+	} else {
+		return 1;
+	}
+}
+
+template <typename T>
 int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &firstDifferentFieldIdx,
 							 const h_vector<const CollateOpts *, 1> &collateOpts) const {
 	size_t tagPathIdx = 0;

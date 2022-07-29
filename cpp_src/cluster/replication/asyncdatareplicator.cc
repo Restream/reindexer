@@ -65,7 +65,8 @@ void AsyncDataReplicator::Run() {
 	if (config_->role == AsyncReplConfigData::Role::Leader) {
 		for (auto& ns : localNamespaces) {
 			if (!clusterizator_.NamespaceIsInClusterConfig(ns)) {
-				thisNode_.SetClusterizationStatus(ns, ClusterizationStatus{baseConfig_->serverID, ClusterizationStatus::Role::None});
+				thisNode_.SetClusterizationStatus(ns, ClusterizationStatus{baseConfig_->serverID, ClusterizationStatus::Role::None},
+												  RdxContext());
 			}
 		}
 	}
@@ -120,7 +121,7 @@ void AsyncDataReplicator::stop() {
 AsyncDataReplicator::NsNamesHashSetT AsyncDataReplicator::getLocalNamespaces() {
 	std::vector<NamespaceDef> nsDefs;
 	NsNamesHashSetT namespaces;
-	auto err = thisNode_.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary().WithClosed());
+	auto err = thisNode_.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideSystem().HideTemporary().WithClosed(), RdxContext());
 	if (!err.ok()) {
 		throw Error(errNotValid, "Unable to enum local namespaces on async repl configuration: %s", err.what());
 	}

@@ -10,8 +10,8 @@ namespace client {
 using std::chrono::milliseconds;
 
 struct CoroReindexerConfig {
-	CoroReindexerConfig(int _FetchAmount = 10000, int _ReconnectAttempts = 0, milliseconds _NetTimeout = milliseconds(0),
-						bool _EnableCompression = false, std::string _appName = "CPP-client", unsigned int _syncRxCoroCount = 10)
+	explicit CoroReindexerConfig(int _FetchAmount = 10000, int _ReconnectAttempts = 0, milliseconds _NetTimeout = milliseconds(0),
+								 bool _EnableCompression = false, std::string _appName = "CPP-client", unsigned int _syncRxCoroCount = 10)
 		: FetchAmount(_FetchAmount),
 		  ReconnectAttempts(_ReconnectAttempts),
 		  NetTimeout(_NetTimeout),

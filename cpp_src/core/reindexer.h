@@ -6,7 +6,7 @@
 #include "core/rdxcontext.h"
 #include "core/reindexerconfig.h"
 #include "core/shardedmeta.h"
-#include "core/transaction.h"
+#include "core/transaction/transaction.h"
 
 #include <chrono>
 

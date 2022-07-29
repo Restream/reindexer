@@ -89,7 +89,7 @@ void RoleSwitcher::handleRoleSwitch() {
 		if (cfg_.namespaces.empty()) {
 			std::vector<std::string> namespaces;
 			std::vector<NamespaceDef> nsDefs;
-			auto err = thisNode_.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideTemporary().HideSystem());
+			auto err = thisNode_.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideTemporary().HideSystem(), RdxContext());
 			if (!err.ok()) {
 				logPrintf(LogInfo, "[cluster:roleswitcher] %d: onRoleSwitchAsync error: %s", cfg_.serverId, err.what());
 			}
@@ -272,7 +272,7 @@ Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderS
 	nsEntry.nsName = nsName;
 	{
 		ReplicationStateV2 state;
-		auto err = thisNode_.GetReplState(nsName, state);
+		auto err = thisNode_.GetReplState(nsName, state, RdxContext());
 		if (err.ok()) {
 			nsEntry.localLsn = nsEntry.latestLsn = ExtendedLsn(state.nsVersion, state.lastLsn);
 			nsEntry.localDatahash = state.dataHash;
@@ -367,7 +367,12 @@ RoleSwitcher::NsNamesHashSetT RoleSwitcher::collectNsNames() {
 template <typename RxT>
 Error RoleSwitcher::appendNsNamesFrom(RxT& rx, RoleSwitcher::NsNamesHashSetT& set) {
 	std::vector<NamespaceDef> nsDefs;
-	auto err = rx.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideTemporary().HideSystem());
+	Error err;
+	if constexpr (std::is_same_v<RxT, ReindexerImpl>) {
+		err = rx.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideTemporary().HideSystem(), RdxContext());
+	} else {
+		err = rx.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideTemporary().HideSystem());
+	}
 	if (err.ok()) {
 		for (auto&& def : nsDefs) {
 			set.emplace(std::move(def.name));

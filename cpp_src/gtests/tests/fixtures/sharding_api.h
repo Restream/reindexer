@@ -125,9 +125,11 @@ public:
 				if (c.createAdditionalIndexes) {
 					nsDef.AddIndex(kFieldId, "hash", "int", IndexOpts());
 					nsDef.AddIndex(kFieldLocation, "hash", "string", IndexOpts());
+					nsDef.AddIndex(kFieldShard, "hash", "string", IndexOpts());
 					nsDef.AddIndex(kFieldData, "hash", "string", IndexOpts());
 					nsDef.AddIndex(kFieldFTData, "text", "string", IndexOpts());
-					nsDef.AddIndex(kFieldId + "+" + kFieldLocation, {kFieldId, kFieldLocation}, "hash", "composite", IndexOpts().PK());
+					nsDef.AddIndex(kFieldIdLocation, {kFieldId, kFieldLocation}, "hash", "composite", IndexOpts().PK());
+					nsDef.AddIndex(kFieldLocationId, {kFieldLocation, kFieldId}, "hash", "composite", IndexOpts());
 				} else {
 					nsDef.AddIndex(kFieldId, "hash", "int", IndexOpts().PK());
 				}
@@ -270,8 +272,13 @@ public:
 		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
 		jsonBuilder.Put(kFieldId, int(index));
 		jsonBuilder.Put(kFieldLocation, key);
+		jsonBuilder.Put(kFieldShard, key);
 		jsonBuilder.Put(kFieldData, RandString(strlen));
 		jsonBuilder.Put(kFieldFTData, RandString(strlen));
+		{
+			auto nested = jsonBuilder.Object(kFieldStruct);
+			nested.Put(kFieldRand, rand() % 10);
+		}
 		jsonBuilder.End();
 		Error err = item.FromJSON(wrser.Slice());
 		assertf(err.ok(), "%s", err.what());
@@ -360,6 +367,7 @@ public:
 	size_t NodesCount() const { return kShards * kNodesInCluster; }
 
 protected:
+	class CompareShardId;
 	struct Defaults {
 		size_t defaultRpcPort;
 		size_t defaultHttpPort;
@@ -405,6 +413,12 @@ protected:
 	const std::string kFieldLocation = "location";
 	const std::string kFieldData = "data";
 	const std::string kFieldFTData = "ft_data";
+	const std::string kFieldStruct = "struct";
+	const std::string kFieldRand = "rand";
+	const std::string kFieldShard = "shard";
+	const std::string kFieldNestedRand = kFieldStruct + '.' + kFieldRand;
+	const std::string kFieldIdLocation = kFieldId + '+' + kFieldLocation;
+	const std::string kFieldLocationId = kFieldLocation + '+' + kFieldId;
 
 	reindexer::cluster::ShardingConfig config_;
 	std::vector<std::vector<ServerControl>> svc_;  //[shard][nodeId]

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <limits>
 #include <bitset>
+#include <limits>
 #include <vector>
 #include "core/idset.h"
 #include "core/index/keyentry.h"
@@ -100,6 +100,7 @@ public:
 	virtual void ClearCache(const std::bitset<64>&) {}
 	virtual bool IsBuilt() const noexcept { return isBuilt_; }
 	virtual void MarkBuilt() noexcept { isBuilt_ = true; }
+	virtual void EnableUpdatesCountingMode(bool /*val*/) {}
 
 	virtual void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const { dump(os, step, offset); }
 

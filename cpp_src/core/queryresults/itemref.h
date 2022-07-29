@@ -82,19 +82,19 @@ public:
 		if (valueInitialized_) value_.~PayloadValue();
 	}
 
-	IdType Id() const { return id_; }
-	uint16_t Nsid() const { return nsid_; }
-	uint16_t Proc() const { return proc_; }
-	bool Raw() const { return raw_; }
-	const PayloadValue& Value() const {
+	IdType Id() const noexcept { return id_; }
+	uint16_t Nsid() const noexcept { return nsid_; }
+	uint16_t Proc() const noexcept { return proc_; }
+	bool Raw() const noexcept { return raw_; }
+	const PayloadValue& Value() const noexcept {
 		assertrx(valueInitialized_);
 		return value_;
 	}
-	PayloadValue& Value() {
+	PayloadValue& Value() noexcept {
 		assertrx(valueInitialized_);
 		return value_;
 	}
-	unsigned SortExprResultsIdx() const {
+	unsigned SortExprResultsIdx() const noexcept {
 		assertrx(!valueInitialized_);
 		return sortExprResultsIdx_;
 	}
@@ -108,7 +108,7 @@ public:
 		new (&value_) PayloadValue(value);
 		valueInitialized_ = true;
 	}
-	bool ValueInitialized() const { return valueInitialized_; }
+	bool ValueInitialized() const noexcept { return valueInitialized_; }
 
 private:
 	IdType id_ = 0;

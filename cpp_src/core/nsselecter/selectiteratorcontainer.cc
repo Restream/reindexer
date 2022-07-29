@@ -241,8 +241,9 @@ void SelectIteratorContainer::processField(FieldsComparator &fc, std::string_vie
 }
 
 SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns,
-															unsigned sortId, bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt,
-															bool &isIndexSparse, FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
+															unsigned sortId, bool isQueryFt, SelectFunction::Ptr &selectFnc,
+															bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &ftCtx,
+															const RdxContext &rdxCtx) {
 	auto &index = ns.indexes_[qe.idxNo];
 	isIndexFt = IsFullText(index->Type());
 	isIndexSparse = index->Opts().IsSparse();
@@ -416,14 +417,18 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 					result[i].queryEntriesPositions.push_back(j);
 					foundFields.insert(epFields.extract(it));
 				},
-				[&](const BetweenFieldsQueryEntry& eq) {  // TODO equal positions for BetweenFieldsQueryEntry #1092
+				[&](const BetweenFieldsQueryEntry &eq) {  // TODO equal positions for BetweenFieldsQueryEntry #1092
 					if (epFields.find(eq.firstIndex) != epFields.end()) {
-						throw Error(errParams, "Equal positions for conditions between fields are not supported; field: '%s'; equal position fields: [%s]",
-									eq.firstIndex, getEpFieldsStr());
+						throw Error(
+							errParams,
+							"Equal positions for conditions between fields are not supported; field: '%s'; equal position fields: [%s]",
+							eq.firstIndex, getEpFieldsStr());
 					}
 					if (epFields.find(eq.secondIndex) != epFields.end()) {
-						throw Error(errParams, "Equal positions for conditions between fields are not supported; field: '%s'; equal position fields: [%s]",
-									eq.secondIndex, getEpFieldsStr());
+						throw Error(
+							errParams,
+							"Equal positions for conditions between fields are not supported; field: '%s'; equal position fields: [%s]",
+							eq.secondIndex, getEpFieldsStr());
 					}
 				});
 		}
@@ -436,7 +441,7 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 }
 
 void SelectIteratorContainer::prepareIteratorsForSelectLoop(const QueryEntries &queries, size_t begin, size_t end, unsigned sortId,
-															bool isQueryFt, const NamespaceImpl &ns, SelectFunction::Ptr selectFnc,
+															bool isQueryFt, const NamespaceImpl &ns, SelectFunction::Ptr &selectFnc,
 															FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
 	auto equalPositions = prepareEqualPositions(queries, begin, end);
 	bool sortIndexCreated = false;
@@ -462,8 +467,12 @@ void SelectIteratorContainer::prepareIteratorsForSelectLoop(const QueryEntries &
 
 				if (nonIndexField) {
 					auto strictMode = ns.config_.strictMode;
-					if (ctx_ && ctx_->query.strictMode != StrictModeNotSet) {
-						strictMode = ctx_->query.strictMode;
+					if (ctx_) {
+						if (ctx_->inTransaction) {
+							strictMode = StrictModeNone;
+						} else if (ctx_->query.strictMode != StrictModeNotSet) {
+							strictMode = ctx_->query.strictMode;
+						}
 					}
 					selectResults = processQueryEntry(qe, ns, strictMode);
 				} else {

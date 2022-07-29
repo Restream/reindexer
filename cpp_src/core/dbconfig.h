@@ -45,6 +45,7 @@ struct NamespaceConfigData {
 	int64_t minPreselectSize = 1000;
 	int64_t maxPreselectSize = 1000;
 	double maxPreselectPart = 0.1;
+	bool idxUpdatesCountingMode = false;
 };
 
 struct ReplicationConfigData {

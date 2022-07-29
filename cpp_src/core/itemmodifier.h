@@ -14,7 +14,7 @@ class ExpressionEvaluator;
 
 class ItemModifier {
 public:
-	ItemModifier(const h_vector<UpdateEntry, 0> &, NamespaceImpl &ns, h_vector<cluster::UpdateRecord, 2> &replUpdates,
+	ItemModifier(const std::vector<UpdateEntry> &, NamespaceImpl &ns, h_vector<cluster::UpdateRecord, 2> &replUpdates,
 				 const NsContext &ctx);
 	ItemModifier(const ItemModifier &) = delete;
 	ItemModifier &operator=(const ItemModifier &) = delete;
@@ -68,7 +68,7 @@ private:
 	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl, const RdxContext &);
 
 	NamespaceImpl &ns_;
-	const h_vector<UpdateEntry, 0> &updateEntries_;
+	const std::vector<UpdateEntry> &updateEntries_;
 	vector<FieldData> fieldsToModify_;
 	CJsonCache cjsonCache_;
 };

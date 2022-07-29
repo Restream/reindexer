@@ -26,6 +26,9 @@ func (repo *MySQLRepo) Init() bool {
 func (repo *MySQLRepo) Seed(itemsInDataSet int) bool {
 	log.Printf("Seeding data to Mysql")
 
+	if _, err := repo.db.Exec(`DROP TABLE IF EXISTS joined_items`); err != nil {
+		panic(err)
+	}
 	if _, err := repo.db.Exec(`DROP TABLE IF EXISTS items`); err != nil {
 		panic(err)
 	}
@@ -39,8 +42,17 @@ func (repo *MySQLRepo) Seed(itemsInDataSet int) bool {
 				FULLTEXT (description),
 				INDEX (year),
 				INDEX (name)
-			)
-				`
+			)`
+	if _, err := repo.db.Exec(sqlStmt); err != nil {
+		panic(err)
+	}
+	sqlStmt = `
+		CREATE TABLE joined_items (
+				id INTEGER NOT NULL PRIMARY KEY, 
+				item_id INTEGER,
+				description TEXT,
+				FOREIGN KEY (item_id) REFERENCES items (id)
+			)`
 	if _, err := repo.db.Exec(sqlStmt); err != nil {
 		panic(err)
 	}
@@ -49,20 +61,32 @@ func (repo *MySQLRepo) Seed(itemsInDataSet int) bool {
 	if err != nil {
 		panic(err)
 	}
-	stmt, err := tx.Prepare("INSERT INTO items(id, name,year,description) VALUES (?,?,?,?)")
+	stmt1, err := tx.Prepare("INSERT INTO items(id, name,year,description) VALUES (?,?,?,?)")
 
 	if err != nil {
 		panic(err)
 	}
-	defer stmt.Close()
+	defer stmt1.Close()
+
+	stmt2, err := tx.Prepare("INSERT INTO joined_items(id, item_id, description) VALUES (?,?,?)")
+
+	if err != nil {
+		panic(err)
+	}
+	defer stmt2.Close()
 
 	for i := 0; i < itemsInDataSet; i++ {
 		it := newItem(i)
-		if _, err = stmt.Exec(i, it.Name, it.Year, it.Description); err != nil {
+		if _, err = stmt1.Exec(i, it.Name, it.Year, it.Description); err != nil {
+			panic(err)
+		}
+		jit := newJoinedItem(i)
+		if _, err = stmt2.Exec(i, i, jit.Description); err != nil {
 			panic(err)
 		}
 	}
 	tx.Commit()
+
 	return true
 }
 
@@ -115,6 +139,15 @@ func (repo *MySQLRepo) Query1Cond(N int, onlyQuery bool, limit int) (ret []*Item
 	}
 	return sqlFetchAll(stmt, N, onlyQuery, limit, 2010, limit)
 }
+
+func (repo *MySQLRepo) QueryJoin(N int, limit int, filtersSet [10]interface{}) (ret []*Item) {
+	stmt, err := repo.db.Preparex("select * from items inner join joined_items on items.id=joined_items.item_id where items.id in (?,?,?,?,?,?,?,?,?,?)")
+	if err != nil {
+		log.Fatal(err)
+	}
+	return sqlFetchAll(stmt, N, true, limit, filtersSet[:]...)
+}
+
 func (repo *MySQLRepo) Update(N int) {
 	stmt, err := repo.db.Preparex("UPDATE items SET name=?,year=?,description=? WHERE id=?")
 	if err != nil {

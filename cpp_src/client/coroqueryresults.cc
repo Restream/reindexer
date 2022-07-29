@@ -4,6 +4,8 @@
 #include "core/keyvalue/p_string.h"
 #include "core/queryresults/additionaldatasource.h"
 #include "net/cproto/coroclientconnection.h"
+#include "server/rpcqrwatcher.h"
+#include "tools/logger.h"
 
 namespace reindexer {
 namespace client {
@@ -14,7 +16,7 @@ CoroQueryResults::~CoroQueryResults() {
 	if (holdsRemoteData()) {
 		i_.conn_->Call({cproto::kCmdCloseResults, i_.requestTimeout_, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr,
 						false, i_.sessionTs_},
-					   i_.queryID_);
+					   i_.queryID_.main, i_.queryID_.uid);
 	}
 }
 
@@ -30,8 +32,8 @@ CoroQueryResults::CoroQueryResults(NsArray &&nsArray, Item &item) : i_(std::move
 	memcpy(&i_.rawResult_[0] + sizeof(uint32_t), itemData.data(), itemData.size());
 }
 
-void CoroQueryResults::Bind(std::string_view rawResult, int queryID, const Query *q) {
-	i_.queryID_ = queryID;
+void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query *q) {
+	i_.queryID_ = id;
 	ResultSerializer ser(rawResult);
 
 	if (q) {
@@ -67,9 +69,10 @@ void CoroQueryResults::Bind(std::string_view rawResult, int queryID, const Query
 void CoroQueryResults::fetchNextResults() {
 	using std::chrono::seconds;
 	int flags = i_.fetchFlags_ ? (i_.fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
+	flags |= kResultsSupportIdleTimeout;
 	auto ret = i_.conn_->Call({cproto::kCmdFetchResults, i_.requestTimeout_, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard,
 							   nullptr, false, i_.sessionTs_},
-							  i_.queryID_, flags, i_.queryParams_.count + i_.fetchOffset_, i_.fetchAmount_);
+							  i_.queryID_.main, flags, i_.queryParams_.count + i_.fetchOffset_, i_.fetchAmount_, i_.queryID_.uid);
 	if (!ret.Status().ok()) {
 		throw ret.Status();
 	}
@@ -207,8 +210,9 @@ void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSeri
 	JsonBuilder builder(wrser, ObjType::TypePlain);
 	h_vector<IAdditionalDatasource<JsonBuilder> *, 2> dss;
 	int shardId = (const_cast<Iterator *>(this))->GetShardID();
+	//	std::cout << "getJSONFromCJSON shardId=" << shardId << std::endl;
 	AdditionalDatasourceShardId dsShardId(shardId);
-	if (qr_->NeedOutputShardId()) {
+	if (qr_->NeedOutputShardId() && shardId >= 0) {
 		dss.push_back(&dsShardId);
 	}
 	if (qr_->HaveJoined() && joinedData_.size()) {

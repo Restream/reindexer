@@ -50,29 +50,7 @@ LocalQueryResults::LocalQueryResults(LocalQueryResults &&obj) = default;
 LocalQueryResults::LocalQueryResults(const ItemRefVector::const_iterator &begin, const ItemRefVector::const_iterator &end)
 	: items_(begin, end) {}
 
-LocalQueryResults &LocalQueryResults::operator=(LocalQueryResults &&obj) noexcept {
-	if (this != &obj) {
-		items_ = std::move(obj.items_);
-		assertrx(!obj.items_.size());
-		joined_ = std::move(obj.joined_);
-		aggregationResults = std::move(obj.aggregationResults);
-		totalCount = obj.totalCount;
-		haveRank = obj.haveRank;
-		needOutputRank = obj.needOutputRank;
-		ctxs = std::move(obj.ctxs);
-		nonCacheableData = std::move(obj.nonCacheableData);
-		explainResults = std::move(obj.explainResults);
-		rawDataHolder_ = std::move(obj.rawDataHolder_);
-		nsData_ = std::move(obj.nsData_);
-		stringsHolder_ = std::move(obj.stringsHolder_);
-		activityCtx_.reset();
-		if (obj.activityCtx_) {
-			activityCtx_.emplace(std::move(*obj.activityCtx_));
-			obj.activityCtx_.reset();
-		}
-	}
-	return *this;
-}
+LocalQueryResults &LocalQueryResults::operator=(LocalQueryResults &&obj) = default;
 
 LocalQueryResults::~LocalQueryResults() = default;
 
@@ -117,7 +95,7 @@ h_vector<std::string_view, 1> LocalQueryResults::GetNamespaces() const {
 	return ret;
 }
 
-int LocalQueryResults::GetJoinedNsCtxIndex(int nsid) const {
+int LocalQueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
 	int ctxIndex = joined_.size();
 	for (int ns = 0; ns < nsid; ++ns) {
 		ctxIndex += joined_[ns].GetJoinedSelectorsCount();
@@ -182,7 +160,7 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 			AdditionalDatasource ds = needOutputRank ? AdditionalDatasource(itemRef.Proc(), &joinsDs) : AdditionalDatasource(&joinsDs);
 			dss.push_back(&ds);
 			AdditionalDatasourceShardId dsShardId(outputShardId);
-			if (outputShardId != ShardingKeyType::ProxyOff) {
+			if (outputShardId >= 0) {
 				dss.push_back(&dsShardId);
 			}
 			encoder.Encode(&pl, builder, dss);
@@ -198,7 +176,7 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 		dss.push_back(&ds);
 	}
 	AdditionalDatasourceShardId dsShardId(outputShardId);
-	if (outputShardId != ShardingKeyType::ProxyOff) {
+	if (outputShardId >= 0) {
 		dss.push_back(&dsShardId);
 	}
 
@@ -294,11 +272,11 @@ Error LocalQueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) 
 	return errOK;
 }
 
-bool LocalQueryResults::Iterator::IsRaw() const {
+bool LocalQueryResults::Iterator::IsRaw() const noexcept {
 	auto &itemRef = qr_->items_[idx_];
 	return itemRef.Raw();
 }
-std::string_view LocalQueryResults::Iterator::GetRaw() const {
+std::string_view LocalQueryResults::Iterator::GetRaw() const noexcept {
 	auto &itemRef = qr_->items_[idx_];
 	assertrx(itemRef.Raw());
 	return std::string_view(reinterpret_cast<char *>(itemRef.Value().Ptr()), itemRef.Value().GetCapacity());
@@ -325,17 +303,17 @@ Item LocalQueryResults::Iterator::GetItem(bool enableHold) {
 	return item;
 }
 
-LocalQueryResults::Iterator &LocalQueryResults::Iterator::operator++() {
+LocalQueryResults::Iterator &LocalQueryResults::Iterator::operator++() noexcept {
 	idx_++;
 	return *this;
 }
-LocalQueryResults::Iterator &LocalQueryResults::Iterator::operator+(int val) {
+LocalQueryResults::Iterator &LocalQueryResults::Iterator::operator+(int val) noexcept {
 	idx_ += val;
 	return *this;
 }
 
-bool LocalQueryResults::Iterator::operator!=(const Iterator &other) const { return idx_ != other.idx_; }
-bool LocalQueryResults::Iterator::operator==(const Iterator &other) const { return idx_ == other.idx_; }
+bool LocalQueryResults::Iterator::operator!=(const Iterator &other) const noexcept { return idx_ != other.idx_; }
+bool LocalQueryResults::Iterator::operator==(const Iterator &other) const noexcept { return idx_ == other.idx_; }
 
 void LocalQueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 	auto ritem = item.impl_;
@@ -355,43 +333,43 @@ void LocalQueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 	}
 }
 
-const TagsMatcher &LocalQueryResults::getTagsMatcher(int nsid) const {
+const TagsMatcher &LocalQueryResults::getTagsMatcher(int nsid) const noexcept {
 	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].tagsMatcher_;
 }
 
-const PayloadType &LocalQueryResults::getPayloadType(int nsid) const {
+const PayloadType &LocalQueryResults::getPayloadType(int nsid) const noexcept {
 	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].type_;
 }
 
-const FieldsSet &LocalQueryResults::getFieldsFilter(int nsid) const {
+const FieldsSet &LocalQueryResults::getFieldsFilter(int nsid) const noexcept {
 	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].fieldsFilter_;
 }
 
-TagsMatcher &LocalQueryResults::getTagsMatcher(int nsid) {
+TagsMatcher &LocalQueryResults::getTagsMatcher(int nsid) noexcept {
 	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].tagsMatcher_;
 }
 
-PayloadType &LocalQueryResults::getPayloadType(int nsid) {
+PayloadType &LocalQueryResults::getPayloadType(int nsid) noexcept {
 	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].type_;
 }
 
-std::shared_ptr<const Schema> LocalQueryResults::getSchema(int nsid) const {
+std::shared_ptr<const Schema> LocalQueryResults::getSchema(int nsid) const noexcept {
 	assertrx(nsid < int(ctxs.size()));
 	return ctxs[nsid].schema_;
 }
 
-int LocalQueryResults::getNsNumber(int nsid) const {
+int LocalQueryResults::getNsNumber(int nsid) const noexcept {
 	assertrx(nsid < int(ctxs.size()));
 	assertrx(ctxs[nsid].schema_);
 	return ctxs[nsid].schema_->GetProtobufNsNumber();
 }
 
-int LocalQueryResults::getMergedNSCount() const { return ctxs.size(); }
+int LocalQueryResults::getMergedNSCount() const noexcept { return ctxs.size(); }
 
 void LocalQueryResults::addNSContext(const PayloadType &type, const TagsMatcher &tagsMatcher, const FieldsSet &filter,
 									 std::shared_ptr<const Schema> schema) {

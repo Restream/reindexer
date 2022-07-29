@@ -46,7 +46,7 @@ void ItemModifier::FieldData::updateTagsPath(TagsMatcher &tm, const IndexExpress
 	}
 }
 
-ItemModifier::ItemModifier(const h_vector<UpdateEntry, 0> &updateEntries, NamespaceImpl &ns,
+ItemModifier::ItemModifier(const std::vector<UpdateEntry> &updateEntries, NamespaceImpl &ns,
 						   h_vector<cluster::UpdateRecord, 2> &replUpdates, const NsContext &ctx)
 	: ns_(ns), updateEntries_(updateEntries) {
 	const auto oldTmV = ns_.tagsMatcher_.version();

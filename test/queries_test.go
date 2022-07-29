@@ -9,11 +9,14 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/restream/reindexer"
 	"github.com/restream/reindexer/dsl"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type sortDistinctOptions struct {
@@ -205,6 +208,7 @@ type TestArrayItemEqualPosition struct {
 
 func init() {
 	tnamespaces["test_items"] = TestItem{}
+	tnamespaces["test_items_qr_idle"] = TestItem{}
 	tnamespaces["test_items_cancel"] = TestItem{}
 	tnamespaces["test_items_id_only"] = TestItemIDOnly{}
 	tnamespaces["test_items_with_sparse"] = TestItemWithSparse{}
@@ -998,11 +1002,11 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		WhereBetweenFields("name", reindexer.EQ, "actor.name").
 		Or().
 		OpenBracket().
-			WhereBetweenFields("exchange_rate", reindexer.GT, "pollution_rate").
-			WhereBetweenFields("year", reindexer.LE, "price_id").
-			WhereBetweenFields("packages", reindexer.GE, "exchange_rate").
-			Or().
-			WhereBetweenFields("packages", reindexer.GE, "price_id").
+		WhereBetweenFields("exchange_rate", reindexer.GT, "pollution_rate").
+		WhereBetweenFields("year", reindexer.LE, "price_id").
+		WhereBetweenFields("packages", reindexer.GE, "exchange_rate").
+		Or().
+		WhereBetweenFields("packages", reindexer.GE, "price_id").
 		CloseBracket().
 		Distinct(distinct).
 		Sort(sort, desc).
@@ -1778,4 +1782,98 @@ func TestStrictMode(t *testing.T) {
 		}
 	})
 
+}
+
+func TestQrIdleTimeout(t *testing.T) {
+	if len(DB.slaveList) > 0 {
+		t.Skip()
+	}
+	if !strings.HasPrefix(*dsn, "cproto") {
+		t.Skip()
+	}
+	t.Parallel()
+
+	namespace := "test_items_qr_idle"
+	FillTestItemsWithFunc(namespace, 0, 4000, 0, newTestItem)
+
+	t.Run("concurrent query results timeouts", func(t *testing.T) {
+		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(16))
+		defer db.Close()
+		err := db.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItem{})
+		require.NoError(t, err)
+		const goroutines = 10
+		const qrInEachGoroutine = 220
+		const qrCount = goroutines * qrInEachGoroutine
+		const fetchCount = 500
+		qrs := make([]*reindexer.Iterator, 0, qrCount+1)
+		var mtx sync.Mutex
+		var wg sync.WaitGroup
+		wg.Add(goroutines)
+		for i := 0; i < goroutines; i++ {
+			go func() {
+				defer wg.Done()
+				for j := 0; j < qrInEachGoroutine; j++ {
+					it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()
+					assert.NoError(t, it.Error())
+					mtx.Lock()
+					qrs = append(qrs, it)
+					mtx.Unlock()
+				}
+			}()
+		}
+		wg.Wait()
+
+		it := db.Query(namespace).FetchCount(fetchCount).Exec()
+		assert.NoError(t, it.Error())
+		qrs = append(qrs, it)
+
+		for i := 0; i < 40; i++ {
+			for j := 0; j < fetchCount+1; j++ {
+				qrs[qrCount].Next()
+				assert.NoError(t, qrs[0].Error())
+			}
+			time.Sleep(time.Second * 1)
+		}
+		_, err = qrs[qrCount].FetchAll()
+		assert.NoError(t, err)
+
+		for i := 1; i < qrCount; i++ {
+			_, err = qrs[i].FetchAll()
+			assert.Error(t, err, "i = %d", i)
+		}
+	})
+
+	t.Run("check if timed out query results will be reused after clients qr buffer overflow", func(t *testing.T) {
+		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1))
+		defer db.Close()
+		err := db.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItem{})
+		require.NoError(t, err)
+		const qrCount = 256
+		const fetchCount = 400
+		qrs := make([]*reindexer.Iterator, 0, 2*qrCount)
+
+		for i := 0; i < qrCount; i++ {
+			it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()
+			assert.NoError(t, it.Error())
+			qrs = append(qrs, it)
+		}
+
+		time.Sleep(time.Second * 40)
+
+		for i := 0; i < qrCount; i++ {
+			it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()
+			assert.NoError(t, it.Error())
+			qrs = append(qrs, it)
+		}
+
+		// Actual overflow. Connect must be dropped
+		it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()
+		assert.Error(t, it.Error())
+
+		// Old Query results must be invalidated
+		for i := 0; i < 2*qrCount; i++ {
+			_, err = qrs[i].FetchAll()
+			assert.Error(t, err, "i = %d", i)
+		}
+	})
 }

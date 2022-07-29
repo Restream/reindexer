@@ -106,6 +106,10 @@ std::string_view CmdName(uint16_t cmd) {
 			return "GetSchema"sv;
 		case kCmdClusterControlRequest:
 			return "ClusterControlRequest"sv;
+		case kCmdSetTagsMatcherTx:
+			return "kCmdSetTagsMatcherTx"sv;
+		case kCmdSetTagsMatcher:
+			return "kCmdSetTagsMatcher"sv;
 		default:
 			return "Unknown"sv;
 	}

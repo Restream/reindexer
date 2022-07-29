@@ -1,8 +1,14 @@
 #pragma once
 
+#include <climits>
+#include <set>
 #include "client/synccoroqueryresults.h"
 #include "core/itemimplrawdata.h"
 #include "localqueryresults.h"
+
+namespace reindexer_server {
+class RPCQrWatcher;
+}
 
 namespace reindexer {
 
@@ -16,9 +22,75 @@ class Query;
 /// QueryResults cannot be externaly changed or deleted even in case of changing origin data in DB.<br>
 
 class QueryResults {
+	template <typename DataT>
+	struct ItemDataStorage;
+	template <typename QrItT>
+	static Error fillItemImpl(QrItT &, ItemImpl &itemImpl, bool convertViaJSON);
+
 public:
 	enum class Type { None, Local, SingleRemote, MultipleRemote, Mixed };
+	struct ItemRefCache {
+		ItemRefCache() = default;
+		ItemRefCache(IdType id, uint16_t proc, uint16_t nsid, ItemImpl &&i, bool raw);
+		void Clear() noexcept {}
 
+		ItemImplRawData itemImpl;
+		WrSerializer wser;
+		ItemRef ref;
+	};
+
+	struct JoinResStorage;
+
+private:
+	template <typename QrT>
+	class QrMetaData {
+	public:
+		QrMetaData(QrT &&_qr = QrT()) : qr(std::move(_qr)), it(qr.begin()) {}
+		QrMetaData(const QrMetaData &) = delete;
+		QrMetaData(QrMetaData &&o) : qr(std::move(o.qr)), it(std::move(o.it)), hasCompatibleTm(o.hasCompatibleTm), shardID(o.shardID) {
+			it.qr_ = &qr;
+		}
+		QrMetaData &operator=(const QrMetaData &) = delete;
+		QrMetaData &operator=(QrMetaData &&o) {
+			if (this != &o) {
+				qr = std::move(o.qr);
+				it = std::move(o.it);
+				it.qr_ = &qr;
+				hasCompatibleTm = o.hasCompatibleTm;
+				shardID = o.shardID;
+			}
+			return *this;
+		}
+
+		QrT qr;
+		typename QrT::Iterator it;
+		bool hasCompatibleTm = false;
+		int shardID = ShardingKeyType::ProxyOff;
+		void ResetItemRefCache(int64_t idx, ItemRefCache &&newD) const;
+		ItemDataStorage<ItemRefCache> &ItemRefData(int64_t idx);
+		const std::unique_ptr<ItemDataStorage<ItemRefCache>> &ItemRefData() const noexcept { return itemRefData_; };
+		bool CheckIfItemRefStorageHasSameIdx(int64_t idx) const noexcept;
+		void ResetJoinStorage(int64_t idx) const;
+		const std::unique_ptr<ItemDataStorage<JoinResStorage>> &NsJoinRes() const noexcept { return nsJoinRes_; };
+		bool CheckIfNsJoinStorageHasSameIdx(int64_t idx) const noexcept;
+
+	private:
+		mutable std::unique_ptr<ItemDataStorage<ItemRefCache>> itemRefData_;
+		mutable std::unique_ptr<ItemDataStorage<JoinResStorage>> nsJoinRes_;
+	};
+
+	size_t count() const {
+		size_t cnt = 0;
+		if (local_) {
+			cnt += local_->qr.Count();
+		}
+		for (const auto &qrp : remote_) {
+			cnt += qrp.qr.Count();
+		}
+		return cnt;
+	}
+
+public:
 	QueryResults(int flags = 0);
 	~QueryResults();
 	QueryResults(QueryResults &&);
@@ -30,18 +102,12 @@ public:
 	void AddQr(client::SyncCoroQueryResults &&remote, int shardID = ShardingKeyType::ProxyOff, bool rebuildMergedData = false);
 	void RebuildMergedData();
 	size_t Count() const {
-		size_t cnt = 0;
-		if (local_.has_value()) {
-			cnt += local_->qr.Count();
-		}
-		for (const auto &qrp : remote_) {
-			cnt += qrp.qr.Count();
-		}
-		return cnt;
+		const auto cnt = count();
+		return std::min<size_t>(limit, offset < cnt ? cnt - offset : 0);
 	}
 	size_t TotalCount() const {
 		size_t cnt = 0;
-		if (local_.has_value()) {
+		if (local_) {
 			cnt += local_->qr.TotalCount();
 		}
 		for (const auto &qrp : remote_) {
@@ -130,19 +196,9 @@ public:
 
 	class Iterator {
 	public:
-		struct ItemRefCache {
-			ItemRefCache() = default;
-			ItemRefCache(IdType id, uint16_t proc, uint16_t nsid, ItemImpl &&i, bool raw);
-			void Clear() noexcept {}
-
-			ItemImplRawData itemImpl;
-			WrSerializer wser;
-			ItemRef ref;
-		};
-
 		Iterator() = default;
 		Iterator(const QueryResults *qr, int64_t idx, std::optional<LocalQueryResults::Iterator> localIt)
-			: qr_(qr), idx_(idx), localIt_(localIt) {}
+			: qr_(qr), idx_(idx), localIt_(std::move(localIt)) {}
 
 		Error GetJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
@@ -153,18 +209,18 @@ public:
 		joins::ItemIterator GetJoined();
 		ItemRef GetItemRef(std::vector<ItemRefCache> *storage = nullptr);
 		int GetNsID() const {
-			auto vit = getVariantIt();
-			if (std::holds_alternative<LocalQueryResults::Iterator>(vit)) {
-				return std::get<LocalQueryResults::Iterator>(vit).GetItemRef().Nsid();
-			}
-			return std::get<client::SyncCoroQueryResults::Iterator>(vit).GetNSID();
+			struct {
+				int operator()(LocalQueryResults::Iterator &&it) const noexcept { return it.GetItemRef().Nsid(); }
+				int operator()(client::SyncCoroQueryResults::Iterator &&it) const { return it.GetNSID(); }
+			} constexpr static nsIdGetter;
+			return std::visit(nsIdGetter, getVariantIt());
 		}
 		lsn_t GetLSN() const {
-			auto vit = getVariantIt();
-			if (std::holds_alternative<LocalQueryResults::Iterator>(vit)) {
-				return std::get<LocalQueryResults::Iterator>(vit).GetLSN();
-			}
-			return std::get<client::SyncCoroQueryResults::Iterator>(vit).GetLSN();
+			struct {
+				lsn_t operator()(LocalQueryResults::Iterator &&it) const noexcept { return it.GetLSN(); }
+				lsn_t operator()(client::SyncCoroQueryResults::Iterator &&it) const { return it.GetLSN(); }
+			} constexpr static lsnGetter;
+			return std::visit(lsnGetter, getVariantIt());
 		}
 		int GetShardId() const {
 			switch (qr_->type_) {
@@ -181,63 +237,20 @@ public:
 			return qr_->remote_[size_t(qr_->curQrId_)].shardID;
 		}
 		bool IsRaw() const {
-			auto vit = getVariantIt();
-			if (std::holds_alternative<LocalQueryResults::Iterator>(vit)) {
-				return std::get<LocalQueryResults::Iterator>(vit).IsRaw();
-			}
-			return std::get<client::SyncCoroQueryResults::Iterator>(vit).IsRaw();
+			struct {
+				bool operator()(LocalQueryResults::Iterator &&it) const noexcept { return it.IsRaw(); }
+				bool operator()(client::SyncCoroQueryResults::Iterator &&it) const { return it.IsRaw(); }
+			} constexpr static rawTester;
+			return std::visit(rawTester, getVariantIt());
 		}
 		std::string_view GetRaw() const {
-			auto vit = getVariantIt();
-			if (std::holds_alternative<LocalQueryResults::Iterator>(vit)) {
-				return std::get<LocalQueryResults::Iterator>(vit).GetRaw();
-			}
-			return std::get<client::SyncCoroQueryResults::Iterator>(vit).GetRaw();
+			struct {
+				std::string_view operator()(LocalQueryResults::Iterator &&it) const noexcept { return it.GetRaw(); }
+				std::string_view operator()(client::SyncCoroQueryResults::Iterator &&it) const { return it.GetRaw(); }
+			} constexpr static rawGetter;
+			return std::visit(rawGetter, getVariantIt());
 		}
-		Iterator &operator++() {
-			switch (qr_->type_) {
-				case Type::None:
-					*this = qr_->end();
-					return *this;
-				case Type::Local:
-					++(*localIt_);
-					return *this;
-				default:;
-			}
-
-			if (idx_ < qr_->lastSeenIdx_) {
-				++idx_;	 // This iterator is not valid yet, so simply increment index and do not touch qr's internals
-				return *this;
-			}
-
-			auto *qr = const_cast<QueryResults *>(qr_);
-			bool qrIdWasChanged = false;
-			if (qr->curQrId_ < 0) {
-				++qr->local_->it;
-				++qr->lastSeenIdx_;
-				++idx_;
-				if (qr->local_->it == qr->local_->qr.end()) {
-					qr->curQrId_ = 0;
-					qrIdWasChanged = true;
-					assertrx(qr_->remote_.size());
-				}
-			} else if (size_t(qr->curQrId_) < qr_->remote_.size()) {
-				auto &remoteQrp = qr->remote_[size_t(qr_->curQrId_)];
-				++remoteQrp.it;
-				++qr->lastSeenIdx_;
-				++idx_;
-				if (remoteQrp.it == remoteQrp.qr.end()) {
-					++qr->curQrId_;
-					qrIdWasChanged = true;
-				}
-			}
-			// Find next qr with items
-			while (qrIdWasChanged && size_t(qr_->curQrId_) < qr->remote_.size() &&
-				   qr->remote_[size_t(qr_->curQrId_)].it == qr->remote_[size_t(qr_->curQrId_)].qr.end()) {
-				++qr->curQrId_;
-			}
-			return *this;
-		}
+		Iterator &operator++();
 		Iterator &operator+(uint32_t delta) {
 			switch (qr_->type_) {
 				case Type::None:
@@ -294,9 +307,25 @@ public:
 		int64_t idx_;
 
 	private:
-		struct JoinResStorage;
-		template <typename DataT>
-		struct ItemDataStorage;
+		std::variant<QrMetaData<LocalQueryResults> *, QrMetaData<client::SyncCoroQueryResults> *> getVariantResult() const {
+			switch (qr_->type_) {
+				case Type::None:
+					throw Error(errLogic, "QueryResults are empty");
+				case Type::Local:
+					throw Error(errLogic, "QueryResults are local");
+				default:;
+			}
+			validateProxiedIterator();
+
+			auto *qr = const_cast<QueryResults *>(qr_);
+			if (qr_->curQrId_ < 0) {
+				return &(*qr->local_);
+			}
+			if (size_t(qr_->curQrId_) < qr->remote_.size()) {
+				return &qr->remote_[size_t(qr_->curQrId_)];
+			}
+			throw Error(errNotValid, "Iterator is not valid");
+		}
 
 		std::variant<LocalQueryResults::Iterator, client::SyncCoroQueryResults::Iterator> getVariantIt() const {
 			switch (qr_->type_) {
@@ -320,90 +349,47 @@ public:
 		template <typename QrItT>
 		Item getItem(QrItT &, std::unique_ptr<ItemImpl> &&itemImpl, bool convertViaJSON);
 		template <typename QrItT>
-		Error fillItemImpl(QrItT &, ItemImpl &itemImpl, bool convertViaJSON);
-		template <typename QrItT>
 		Error getCJSONviaJSON(WrSerializer &wrser, bool withHdrLen, QrItT &);
 		void validateProxiedIterator() const {
 			if (qr_->lastSeenIdx_ != idx_) {
 				throw Error(errLogic, "Distributed and remote query results are 'one pass'. Qr index missmatch");
 			}
 		}
-		template <typename DataT>
-		bool checkIfStorageHasSameIdx(const std::shared_ptr<ItemDataStorage<DataT>> &storagePtr) const noexcept {
-			return storagePtr.get() && idx_ == storagePtr->idx;
-		}
-		template <typename DataT>
-		void resetStorageData(std::shared_ptr<ItemDataStorage<DataT>> &storagePtr, DataT &&newD) {
-			if (storagePtr) {
-				*storagePtr = ItemDataStorage<DataT>(idx_, std::move(newD));
-			} else {
-				storagePtr = std::make_shared<ItemDataStorage<DataT>>(idx_, std::move(newD));
-			}
-		}
-		template <typename DataT>
-		void resetStorageData(std::shared_ptr<ItemDataStorage<DataT>> &storagePtr) {
-			if (storagePtr) {
-				storagePtr->Clear();
-				storagePtr->idx = idx_;
-			} else {
-				storagePtr = std::make_shared<ItemDataStorage<DataT>>(idx_);
-			}
-		}
 
 		// Iterator for Qr with Type::Local. It may be used to iterate in any direction independantly from main query results
 		std::optional<LocalQueryResults::Iterator> localIt_;
-		std::shared_ptr<ItemDataStorage<ItemRefCache>> itemRefData_;
-		std::shared_ptr<ItemDataStorage<JoinResStorage>> nsJoinRes_;
 	};
-	using ProxiedRefsStorage = std::vector<Iterator::ItemRefCache>;
+	using ProxiedRefsStorage = std::vector<ItemRefCache>;
 
 	Iterator begin() const {
-		switch (type_) {
-			case Type::Local:
-				return Iterator{this, 0, {local_->qr.begin()}};
-			default:
-				return Iterator{this, 0, std::nullopt};
+		if (!begin_.it) {
+			beginImpl();
 		}
+		return *begin_.it;	// -V1007
 	}
 	Iterator end() const {
-		switch (type_) {
-			case Type::None:
-				return Iterator{this, 0, std::nullopt};
-			case Type::Local:
-				return Iterator(this, int64_t(Count()), {local_->qr.end()});
-			default:
-				return Iterator{this, int64_t(Count()), std::nullopt};
+		if (type_ == Type::None) {
+			return Iterator{this, 0, std::nullopt};
+		} else {
+			const int64_t n = std::min<size_t>(count(), limit < UINT_MAX ? limit + offset : UINT_MAX);
+			if (type_ == Type::Local) {
+				return Iterator{this, n, {local_->qr.begin() + n}};
+			} else {
+				return Iterator{this, n, std::nullopt};
+			}
 		}
 	}
+	void SetOrdering(const Query &, const NamespaceImpl &, const RdxContext &);
 
 private:
 	struct MergedData;
-	template <typename QrT>
-	struct QrMetaData {
-		QrMetaData(QrT &&_qr = QrT()) : qr(std::move(_qr)), it(qr.begin()) {}
-		QrMetaData(const QrMetaData &) = delete;
-		QrMetaData(QrMetaData &&o) : qr(std::move(o.qr)), it(std::move(o.it)), hasCompatibleTm(o.hasCompatibleTm), shardID(o.shardID) {
-			it.qr_ = &qr;
-		}
-		QrMetaData &operator=(const QrMetaData &) = delete;
-		QrMetaData &operator=(QrMetaData &&o) {
-			if (this != &o) {
-				qr = std::move(o.qr);
-				it = std::move(o.it);
-				it.qr_ = &qr;
-				hasCompatibleTm = o.hasCompatibleTm;
-				shardID = o.shardID;
-			}
-			return *this;
-		}
-
-		QrT qr;
-		typename QrT::Iterator it;
-		bool hasCompatibleTm = false;
-		int shardID = ShardingKeyType::ProxyOff;
-	};
+	class Comparator;
+	class CompositeFieldForceComparator;
 	const MergedData &getMergedData() const;
-	int findFirstQrWithItems() const noexcept;
+	int findFirstQrWithItems();
+	bool ordering() const noexcept;
+	void beginImpl() const;
+	void setFlags(int flags) noexcept { flags_ = flags; }
 
 	struct QueryData {
 		bool isWalQuery = false;
@@ -413,13 +399,29 @@ private:
 
 	int64_t shardingConfigVersion_ = -1;
 	std::unique_ptr<MergedData> mergedData_;  // Merged data of distributed query results
-	std::optional<QrMetaData<LocalQueryResults>> local_;
+	std::unique_ptr<QrMetaData<LocalQueryResults>> local_;
 	std::deque<QrMetaData<client::SyncCoroQueryResults>> remote_;
 	int64_t lastSeenIdx_ = 0;
 	int curQrId_ = -1;
 	Type type_ = Type::None;
 	int flags_ = 0;
 	std::optional<QueryData> qData_;
+	std::unique_ptr<std::set<int, Comparator>> orderedQrs_;
+	struct BeginContainer {
+		BeginContainer() = default;
+		BeginContainer(BeginContainer &&) noexcept {}
+		BeginContainer &operator=(BeginContainer &&) noexcept {
+			it = std::nullopt;
+			return *this;
+		}
+		std::optional<Iterator> it;
+	};
+	mutable BeginContainer begin_;
+	unsigned offset{0};
+	unsigned limit{UINT_MAX};
+	friend InternalRdxContext;
+	friend class reindexer_server::RPCQrWatcher;
+	std::optional<RdxActivityContext> activityCtx_;
 };
 
 }  // namespace reindexer

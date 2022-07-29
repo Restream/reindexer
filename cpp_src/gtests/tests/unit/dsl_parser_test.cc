@@ -84,6 +84,24 @@ TEST_F(JoinSelectsApi, SelectFilterDSLTest) {
 	ASSERT_TRUE(query == testLoadDslQuery);
 }
 
+TEST_F(JoinSelectsApi, SelectFilterInJoinDSLTest) {
+	Query queryBooks(books_namespace, 0, 10);
+	queryBooks.selectFilter_.push_back(price);
+	queryBooks.selectFilter_.push_back(title);
+	{
+		Query queryAuthors(authors_namespace);
+		queryAuthors.selectFilter_.push_back(authorid);
+		queryAuthors.selectFilter_.push_back(age);
+
+		queryBooks.LeftJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors));
+	}
+	string dsl = queryBooks.GetJSON();
+	Query testLoadDslQuery;
+	Error err = testLoadDslQuery.FromJSON(dsl);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(queryBooks, testLoadDslQuery);
+}
+
 TEST_F(JoinSelectsApi, ReqTotalDSLTest) {
 	Query query{Query(books_namespace, 10, 100, ModeNoTotal).Where(pages, CondGe, 150)};
 
@@ -105,7 +123,7 @@ TEST_F(JoinSelectsApi, ReqTotalDSLTest) {
 	Query testLoadDslQuery3;
 	err = testLoadDslQuery3.FromJSON(dsl3);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(query == testLoadDslQuery3);
+	ASSERT_EQ(query, testLoadDslQuery3);
 }
 
 TEST_F(JoinSelectsApi, SelectFunctionsDSLTest) {

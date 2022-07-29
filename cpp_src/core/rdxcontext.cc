@@ -71,6 +71,39 @@ RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const {
 	}
 }
 
+RdxActivityContext::Ward RdxContext::BeforeClusterProxy() const {
+	switch (holdStatus_) {
+		case kHold:
+			return activityCtx_.BeforeClusterProxy();
+		case kPtr:
+			return activityPtr_->BeforeClusterProxy();
+		default:
+			return RdxActivityContext::Ward{nullptr, Activity::ProxiedViaClusterProxy};
+	}
+}
+RdxActivityContext::Ward RdxContext::BeforeShardingProxy() const {
+	switch (holdStatus_) {
+		case kHold:
+			return activityCtx_.BeforeShardingProxy();
+		case kPtr:
+			return activityPtr_->BeforeShardingProxy();
+		default:
+			return RdxActivityContext::Ward{nullptr, Activity::ProxiedViaShardingProxy};
+	}
+}
+
+RdxActivityContext::Ward RdxContext::BeforeSimpleState(Activity::State st) const {
+	assert(st != Activity::WaitLock);
+	switch (holdStatus_) {
+		case kHold:
+			return activityCtx_.BeforeState(st);
+		case kPtr:
+			return activityPtr_->BeforeState(st);
+		default:
+			return RdxActivityContext::Ward{nullptr, Activity::IndexesLookup};
+	}
+}
+
 RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer) const {
 	if (activityTracer_.empty() || query.empty()) {
 		return {LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardingParallelExecution_};
@@ -89,7 +122,7 @@ RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, Activity
 }
 
 RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, ActivityContainer& activityContainer,
-												LocalQueryResults& qresults) const {
+												QueryResults& qresults) const {
 	if (activityTracer_.empty() || query.empty())
 		return {LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardingParallelExecution_};
 	assertrx(!qresults.activityCtx_);

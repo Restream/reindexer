@@ -2,7 +2,8 @@
 
 #include <thread>
 #include <type_traits>
-#include "core/txstats.h"
+#include "core/queryresults/queryresults.h"
+#include "core/transaction/txstats.h"
 #include "estl/shared_mutex.h"
 #include "namespaceimpl.h"
 #include "tools/flagguard.h"
@@ -18,7 +19,7 @@ public:
 	Namespace(NamespaceImpl::Ptr ns) : ns_(std::move(ns)) {}
 	typedef shared_ptr<Namespace> Ptr;
 
-	void CommitTransaction(Transaction &tx, LocalQueryResults &result, const NsContext &ctx);
+	void CommitTransaction(LocalTransaction &tx, LocalQueryResults &result, const NsContext &ctx);
 	string GetName(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::GetName)(ctx); }
 	bool IsSystem(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::IsSystem)(ctx); }
 	bool IsTemporary(const RdxContext &ctx) const { return handleInvalidation(NamespaceImpl::IsTemporary)(ctx); }
@@ -82,7 +83,7 @@ public:
 		handleInvalidation(NamespaceImpl::BackgroundRoutine)(ctx);
 	}
 	void CloseStorage(const RdxContext &ctx) { handleInvalidation(NamespaceImpl::CloseStorage)(ctx); }
-	Transaction NewTransaction(const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::NewTransaction)(ctx); }
+	LocalTransaction NewTransaction(const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::NewTransaction)(ctx); }
 
 	Item NewItem(const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::NewItem)(ctx); }
 	void ToPool(ItemImpl *item) { handleInvalidation(NamespaceImpl::ToPool)(item); }
@@ -146,6 +147,7 @@ public:
 protected:
 	friend class ReindexerImpl;
 	friend class LocalQueryResults;
+	friend class ClusterProxy;
 	void updateSelectTime() const { handleInvalidation(NamespaceImpl::updateSelectTime)(); }
 	NamespaceImpl::Ptr getMainNs() const { return atomicLoadMainNs(); }
 	NamespaceImpl::Ptr awaitMainNs(const RdxContext &ctx) const {
@@ -226,7 +228,7 @@ private:
 		}
 	}
 
-	bool needNamespaceCopy(const NamespaceImpl::Ptr &ns, const Transaction &tx) const noexcept;
+	bool needNamespaceCopy(const NamespaceImpl::Ptr &ns, const LocalTransaction &tx) const noexcept;
 	void doRename(Namespace::Ptr dst, const std::string &newName, const std::string &storagePath,
 				  std::function<void(std::function<void()>)> replicateCb, const RdxContext &ctx);
 	NamespaceImpl::Ptr atomicLoadMainNs() const {

@@ -1,6 +1,7 @@
 #pragma once
+
+#include "core/item.h"
 #include "core/itemimpl.h"
-#include "payload/fieldsset.h"
 #include "transaction.h"
 
 namespace reindexer {
@@ -52,41 +53,19 @@ public:
 	const lsn_t lsn_;
 };
 
-class TransactionImpl {
+class TransactionSteps {
 public:
-	TransactionImpl(const std::string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
-					std::shared_ptr<const Schema> schema, lsn_t lsn);
-
-	void Insert(Item &&item, lsn_t lsn);
-	void Update(Item &&item, lsn_t lsn);
-	void Upsert(Item &&item, lsn_t lsn);
-	void Delete(Item &&item, lsn_t lsn);
-	void Modify(Item &&item, ItemModifyMode mode, lsn_t lsn);
-	void Modify(Query &&item, lsn_t lsn);
-	void Nop(lsn_t lsn);
-	void PutMeta(std::string_view key, std::string_view value, lsn_t lsn);
-	void SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn);
-
-	void UpdateTagsMatcherFromItem(ItemImpl *ritem);
-	Item NewItem();
-	Item GetItem(TransactionStep &&st);
-	lsn_t GetLSN() const noexcept { return lsn_; }
-
-	// const std::string &GetName() { return nsName_; }
-
-	void updateTagsMatcherIfNecessary(Item &item);
-
-	PayloadType payloadType_;
-	TagsMatcher tagsMatcher_;
-	FieldsSet pkFields_;
-	std::shared_ptr<const Schema> schema_;
+	void Insert(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{move(item), ModeInsert, lsn}); }
+	void Update(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{move(item), ModeUpdate, lsn}); }
+	void Upsert(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{move(item), ModeUpsert, lsn}); }
+	void Delete(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{move(item), ModeDelete, lsn}); }
+	void Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) { steps_.emplace_back(TransactionStep{move(item), mode, lsn}); }
+	void Modify(Query &&query, lsn_t lsn) { steps_.emplace_back(TransactionStep(std::move(query), lsn)); }
+	void Nop(lsn_t lsn) { steps_.emplace_back(TransactionStep{lsn}); }
+	void PutMeta(std::string_view key, std::string_view value, lsn_t lsn) { steps_.emplace_back(TransactionStep{key, value, lsn}); }
+	void SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) { steps_.emplace_back(TransactionStep{tm, lsn}); }
 
 	std::vector<TransactionStep> steps_;
-	std::string nsName_;
-	bool tagsUpdated_;
-	std::mutex mtx_;
-	Transaction::time_point startTime_;
-	const lsn_t lsn_;
 };
 
 }  // namespace reindexer

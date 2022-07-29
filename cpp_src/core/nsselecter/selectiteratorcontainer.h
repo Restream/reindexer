@@ -41,7 +41,7 @@ public:
 	// Let iterators choose most effecive algorith
 	void SetExpectMaxIterations(int expectedIterations);
 	void PrepareIteratorsForSelectLoop(const QueryEntries &queries, unsigned sortId, bool isFt, const NamespaceImpl &ns,
-									   SelectFunction::Ptr selectFnc, FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
+									   SelectFunction::Ptr &selectFnc, FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
 		prepareIteratorsForSelectLoop(queries, 0, queries.Size(), sortId, isFt, ns, selectFnc, ftCtx, rdxCtx);
 	}
 	template <bool reverse, bool hasComparators>
@@ -69,7 +69,7 @@ public:
 
 private:
 	void prepareIteratorsForSelectLoop(const QueryEntries &, size_t begin, size_t end, unsigned sortId, bool isFt, const NamespaceImpl &,
-									   SelectFunction::Ptr selectFnc, FtCtx::Ptr &ftCtx, const RdxContext &);
+									   SelectFunction::Ptr &selectFnc, FtCtx::Ptr &ftCtx, const RdxContext &);
 	void sortByCost(span<unsigned> indexes, span<double> costs, unsigned from, unsigned to, int expectedIterations);
 	double fullCost(span<unsigned> indexes, unsigned i, unsigned from, unsigned to, int expectedIterations) const;
 	double cost(span<unsigned> indexes, unsigned cur, int expectedIterations) const;
@@ -94,7 +94,7 @@ private:
 
 	SelectKeyResults processQueryEntry(const QueryEntry &qe, const NamespaceImpl &ns, StrictMode strictMode);
 	SelectKeyResults processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns, unsigned sortId,
-									   bool isQueryFt, SelectFunction::Ptr selectFnc, bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &,
+									   bool isQueryFt, SelectFunction::Ptr &selectFnc, bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &,
 									   const RdxContext &);
 	template <bool left>
 	void processField(FieldsComparator &, std::string_view field, int idxNo, const NamespaceImpl &ns) const;

@@ -461,7 +461,7 @@ int fast_strftime(char *buf, const tm *tm) {
 	return d - buf;
 }
 
-bool validateObjectName(std::string_view name, bool allowSpecialChars) {
+bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept {
 	if (!name.length()) {
 		return false;
 	}

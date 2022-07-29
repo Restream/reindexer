@@ -84,8 +84,7 @@ class RdxContext {
 public:
 	using Completion = std::function<void(const Error&)>;
 
-	RdxContext(bool parallel = false)
-		: holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr), shardingParallelExecution_(parallel) {}
+	RdxContext() : holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr) {}
 	RdxContext(lsn_t originLsn) : holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr), originLsn_(originLsn) {}
 	RdxContext(lsn_t originLsn, const IRdxCancelContext* cancelCtx, Completion cmpl, int emmiterServerId, bool parallel)
 		: emmiterServerId_(emmiterServerId),
@@ -134,19 +133,23 @@ public:
 	RdxActivityContext::Ward BeforeLock(MutexMark mutexMark) const;
 	RdxActivityContext::Ward BeforeIndexWork() const;
 	RdxActivityContext::Ward BeforeSelectLoop() const;
+	RdxActivityContext::Ward BeforeClusterProxy() const;
+	RdxActivityContext::Ward BeforeShardingProxy() const;
+	RdxActivityContext::Ward BeforeSimpleState(Activity::State st) const;
+
 	/// lifetime of the returning value should not exceed of the context's
 	RdxContext OnlyActivity() const { return {Activity(), originLsn_, nullptr, nullptr, -1, shardingParallelExecution_}; }
 	RdxActivityContext* Activity() const noexcept;
 	Completion Compl() const noexcept { return cmpl_; }
 	bool NoWaitSync() const noexcept { return noWaitSync_; }
-	void WithNoWaitSync(bool val = true) noexcept { noWaitSync_ = val; }
+	void WithNoWaitSync(bool val = true) const noexcept { noWaitSync_ = val; }
 	bool HasEmmiterServer() const noexcept { return emmiterServerId_ >= 0; }
 	lsn_t GetOriginLSN() const noexcept { return originLsn_; }
 	bool IsShardingParallelExecution() const noexcept { return shardingParallelExecution_; }
-
-	int emmiterServerId_ = -1;
+	int EmmiterServerId() const noexcept { return emmiterServerId_; }
 
 private:
+	int emmiterServerId_ = -1;
 	enum { kHold, kPtr, kEmpty } const holdStatus_;
 	union {
 		mutable RdxActivityContext activityCtx_;
@@ -154,12 +157,12 @@ private:
 	};
 	const IRdxCancelContext* cancelCtx_;
 	Completion cmpl_;
-	bool noWaitSync_ = false;
+	mutable bool noWaitSync_ = false;  // FIXME: Create SyncContext and move this parameter into it
 	const lsn_t originLsn_;
 	bool shardingParallelExecution_ = false;
 };
 
-class LocalQueryResults;
+class QueryResults;
 
 class InternalRdxContext {
 public:
@@ -216,7 +219,7 @@ public:
 	}
 
 	RdxContext CreateRdxContext(std::string_view query, ActivityContainer&) const;
-	RdxContext CreateRdxContext(std::string_view query, ActivityContainer&, LocalQueryResults&) const;
+	RdxContext CreateRdxContext(std::string_view query, ActivityContainer&, QueryResults&) const;
 	RdxContext::Completion Compl() const noexcept { return cmpl_; }
 	bool NeedTraceActivity() const noexcept { return !activityTracer_.empty(); }
 	lsn_t LSN() const noexcept { return lsn_; }
@@ -248,7 +251,7 @@ private:
 	int connectionId_ = kNoConnectionId;
 	lsn_t lsn_;
 	int emmiterServerId_ = -1;
-	int shardId_ = -1;
+	int shardId_ = ShardingKeyType::NotSetShard;
 	bool shardingParallelExecution_ = false;
 };
 

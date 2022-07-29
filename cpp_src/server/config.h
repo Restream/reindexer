@@ -60,6 +60,7 @@ struct ServerConfig {
 	bool EnableGRPC;
 	string GRPCAddr;
 	size_t MaxHttpReqSize;
+	std::chrono::seconds RPCQrIdleTimeout;
 
 	static const string kDedicatedThreading;
 	static const string kSharedThreading;

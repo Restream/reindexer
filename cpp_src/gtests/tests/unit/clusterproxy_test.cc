@@ -41,12 +41,14 @@ TEST_F(ClusterizationProxyApi, Transaction) {
 			int iIn = 0;
 			for (iIn = 0; iIn < 10; iIn++) {
 				client::Item item = tx.NewItem();
+				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 				err = item.FromJSON(itemData(iIn, "valuedata", ""));
 				ASSERT_TRUE(err.ok()) << err.what();
 				tx.Insert(std::move(item));
 			}
 			for (iIn = 10; iIn < 20; iIn++) {
 				client::Item item = tx.NewItem();
+				ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 				err = item.FromJSON(itemData(iIn, "valuedata", ""));
 				ASSERT_TRUE(err.ok()) << err.what();
 				tx.Upsert(std::move(item));
@@ -258,8 +260,9 @@ TEST_F(ClusterizationProxyApi, TransactionStopLeader) {
 			for (iIn = 0; iIn < 10; iIn++) {
 				client::Item item = tx.NewItem();
 				if (isTxInvalid) {
-					ASSERT_FALSE(item.Status().ok()) << iIn;
-					break;
+					if (!item.Status().ok()) {
+						break;
+					}
 				} else {
 					ASSERT_TRUE(item.Status().ok()) << iIn << ":" << err.what();
 				}
@@ -269,7 +272,6 @@ TEST_F(ClusterizationProxyApi, TransactionStopLeader) {
 				if (!isLeaderChanged) {
 					ASSERT_TRUE(err.ok()) << iIn << ":" << err.what();
 				} else {
-					ASSERT_FALSE(err.ok()) << iIn;
 					isTxInvalid = true;
 				}
 				if (iIn == 5) {

@@ -77,12 +77,11 @@ Operator `LOCAL` can be used only with `SELECT` queries.
 - Update/Delete requests can only be executed on the single shard with explicit sharding key in request.
 - Distributed requests for fulltext index are not supported.
 - The only allowed condition for sharding index in queries is '='. So each query must be executed either on the single node or on every node (when sharding key is not specified).
-- Distributed joins and aggregations are not supported.
+- Distributed joins and aggregations AVG, Facet and Distinct are not supported.
 - Fulltext, array or composite indexes may not be used as sharding key.
 - `Explain` is unavailable for distributed queries.
 - `Explain` does not show any information about proxy timings yet.
 - Protobuf/MsgPack via GRPC are not supported for cluster/sharding reindexer setups yet.
-- `Sort` in distributed queries do ordering within each shard results independantly. I.e. requests like `select * from sharded_ns order by id` will return concatenated sorted results from each shard: |shard1_res|shard2_res|...|shardN_res|. This behaviour will be fixed in one of the nearest releases.
 
 ## Usage
 

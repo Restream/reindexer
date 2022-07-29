@@ -1,7 +1,6 @@
 
 #include "walrecord.h"
 #include "core/cjson/baseencoder.h"
-#include "core/transactionimpl.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
 

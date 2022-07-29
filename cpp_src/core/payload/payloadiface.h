@@ -102,6 +102,8 @@ public:
 	int Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts = CollateOpts()) const;
 	int Compare(const T &other, const FieldsSet &fields, size_t &firstDifferentFieldIdx,
 				const h_vector<const CollateOpts *, 1> &collateOpts) const;
+	int Compare(const PayloadIface<const T> &other, std::string_view field, int fieldIdx, const CollateOpts &collateOpts, TagsMatcher &ltm,
+				TagsMatcher &rtm, bool lForceByJsonPath, bool rForceByJsonPath) const;
 
 	// Get PayloadFieldValue by field index
 	PayloadFieldValue Field(int field) const;

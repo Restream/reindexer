@@ -19,7 +19,7 @@
 #include "tools/errors.h"
 #include "tools/filecontentwatcher.h"
 #include "tools/nsversioncounter.h"
-#include "transaction.h"
+#include "transaction/transaction.h"
 
 namespace reindexer {
 
@@ -46,11 +46,10 @@ class ReindexerImpl {
 		NamespaceImpl::Locker::RLockT nsLck;
 		unsigned count = 1;
 	};
-	template <bool needUpdateSystemNs, typename MakeCtxStrFn, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg,
-			  typename... Args>
-	Error applyNsFunction(std::string_view nsName, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr, Arg arg, Args &&...args);
-	template <auto MemFn, typename MakeCtxStrFn, typename Arg, typename... Args>
-	Error applyNsFunction(std::string_view nsName, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr, Arg &&, Args &&...);
+	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
+	Error applyNsFunction(std::string_view nsName, const RdxContext &ctx, Arg arg, Args &&...args);
+	template <auto MemFn, typename Arg, typename... Args>
+	Error applyNsFunction(std::string_view nsName, const RdxContext &ctx, Arg &&, Args &&...);
 
 public:
 	using Completion = std::function<void(const Error &err)>;
@@ -60,68 +59,63 @@ public:
 	~ReindexerImpl();
 
 	Error Connect(const string &dsn, ConnectOpts opts = ConnectOpts());
-	Error EnableStorage(const string &storagePath, bool skipPlaceholderCheck = false, const InternalRdxContext &ctx = InternalRdxContext());
+	Error EnableStorage(const string &storagePath, bool skipPlaceholderCheck = false, const RdxContext &ctx = RdxContext());
 	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing(),
-						const NsReplicationOpts &replOpts = NsReplicationOpts(), const InternalRdxContext &ctx = InternalRdxContext());
+						const NsReplicationOpts &replOpts = NsReplicationOpts(), const RdxContext &ctx = RdxContext());
 	Error AddNamespace(const NamespaceDef &nsDef, std::optional<NsReplicationOpts> replOpts = NsReplicationOpts{},
-					   const InternalRdxContext &ctx = InternalRdxContext());
-	Error CloseNamespace(std::string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
-	Error DropNamespace(std::string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
+					   const RdxContext &ctx = RdxContext());
+	Error CloseNamespace(std::string_view nsName, const RdxContext &ctx);
+	Error DropNamespace(std::string_view nsName, const RdxContext &ctx);
 	Error CreateTemporaryNamespace(std::string_view baseName, std::string &resultName, const StorageOpts &opts, lsn_t nsVersion,
-								   const InternalRdxContext &ctx = InternalRdxContext());
-	Error TruncateNamespace(std::string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
-	Error RenameNamespace(std::string_view srcNsName, const std::string &dstNsName, const InternalRdxContext &ctx = InternalRdxContext());
-	Error AddIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
-	Error SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext &ctx = InternalRdxContext());
-	Error GetSchema(std::string_view nsName, int format, std::string &schema, const InternalRdxContext &ctx = InternalRdxContext());
-	Error UpdateIndex(std::string_view nsName, const IndexDef &indexDef, const InternalRdxContext &ctx = InternalRdxContext());
-	Error DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
-	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Insert(std::string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Insert(std::string_view nsName, Item &item, LocalQueryResults &, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Update(std::string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Update(std::string_view nsName, Item &item, LocalQueryResults &, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Update(const Query &query, LocalQueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Upsert(std::string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Upsert(std::string_view nsName, Item &item, LocalQueryResults &, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Delete(std::string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Delete(std::string_view nsName, Item &item, LocalQueryResults &, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Delete(const Query &query, LocalQueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Select(std::string_view query, LocalQueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
-	Error Select(const Query &query, LocalQueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
+								   const RdxContext &ctx);
+	Error TruncateNamespace(std::string_view nsName, const RdxContext &ctx);
+	Error RenameNamespace(std::string_view srcNsName, const std::string &dstNsName, const RdxContext &ctx);
+	Error AddIndex(std::string_view nsName, const IndexDef &index, const RdxContext &ctx);
+	Error SetSchema(std::string_view nsName, std::string_view schema, const RdxContext &ctx);
+	Error GetSchema(std::string_view nsName, int format, std::string &schema, const RdxContext &ctx);
+	Error UpdateIndex(std::string_view nsName, const IndexDef &indexDef, const RdxContext &ctx);
+	Error DropIndex(std::string_view nsName, const IndexDef &index, const RdxContext &ctx);
+	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const RdxContext &ctx);
+	Error Insert(std::string_view nsName, Item &item, const RdxContext &ctx);
+	Error Insert(std::string_view nsName, Item &item, LocalQueryResults &, const RdxContext &ctx);
+	Error Update(std::string_view nsName, Item &item, const RdxContext &ctx);
+	Error Update(std::string_view nsName, Item &item, LocalQueryResults &, const RdxContext &ctx);
+	Error Update(const Query &query, LocalQueryResults &result, const RdxContext &ctx);
+	Error Upsert(std::string_view nsName, Item &item, const RdxContext &ctx);
+	Error Upsert(std::string_view nsName, Item &item, LocalQueryResults &, const RdxContext &ctx);
+	Error Delete(std::string_view nsName, Item &item, const RdxContext &ctx);
+	Error Delete(std::string_view nsName, Item &item, LocalQueryResults &, const RdxContext &ctx);
+	Error Delete(const Query &query, LocalQueryResults &result, const RdxContext &ctx);
+	Error Select(std::string_view query, LocalQueryResults &result, const RdxContext &ctx);
+	Error Select(const Query &query, LocalQueryResults &result, const RdxContext &ctx);
 	Error Commit(std::string_view nsName);
-	Item NewItem(std::string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
+	Item NewItem(std::string_view nsName, const RdxContext &ctx);
 
-	Transaction NewTransaction(std::string_view nsName, const InternalRdxContext &ctx = InternalRdxContext());
-	Error CommitTransaction(Transaction &tr, LocalQueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
-	Error RollBackTransaction(Transaction &tr, const InternalRdxContext &ctx = InternalRdxContext());
+	LocalTransaction NewTransaction(std::string_view nsName, const RdxContext &ctx);
+	Error CommitTransaction(LocalTransaction &tr, LocalQueryResults &result, const RdxContext &ctx);
 
-	Error GetMeta(std::string_view nsName, const string &key, string &data, const InternalRdxContext &ctx = InternalRdxContext());
-	Error PutMeta(std::string_view nsName, const string &key, std::string_view data, const InternalRdxContext &ctx = InternalRdxContext());
-	Error EnumMeta(std::string_view nsName, vector<string> &keys, const InternalRdxContext &ctx = InternalRdxContext());
+	Error GetMeta(std::string_view nsName, const string &key, string &data, const RdxContext &ctx);
+	Error PutMeta(std::string_view nsName, const string &key, std::string_view data, const RdxContext &ctx);
+	Error EnumMeta(std::string_view nsName, vector<string> &keys, const RdxContext &ctx);
 	Error InitSystemNamespaces();
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, vector<string> &suggestions,
-							const InternalRdxContext &ctx = InternalRdxContext());
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, vector<string> &suggestions, const RdxContext &ctx);
 	Error GetProtobufSchema(WrSerializer &ser, vector<string> &namespaces);
-	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const InternalRdxContext &ctx = InternalRdxContext());
-	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus &status,
-								  const InternalRdxContext &ctx = InternalRdxContext());
-	Error GetSnapshot(std::string_view nsName, const SnapshotOpts &opts, Snapshot &snapshot,
-					  const InternalRdxContext &ctx = InternalRdxContext());
-	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch, const InternalRdxContext &ctx = InternalRdxContext());
+	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const RdxContext &ctx);
+	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus &status, const RdxContext &ctx);
+	Error GetSnapshot(std::string_view nsName, const SnapshotOpts &opts, Snapshot &snapshot, const RdxContext &ctx);
+	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch, const RdxContext &ctx);
 	Error Status();
 	Error SuggestLeader(const cluster::NodeData &suggestion, cluster::NodeData &response);
 	Error LeadersPing(const cluster::NodeData &);
-	Error GetRaftInfo(bool allowTransitState, cluster::RaftInfo &, const InternalRdxContext &ctx);
+	Error GetRaftInfo(bool allowTransitState, cluster::RaftInfo &, const RdxContext &ctx);
 	Error GetLeaderDsn(std::string &dsn, unsigned short serverId, const cluster::RaftInfo &info);
 	Error ClusterControlRequest(const ClusterControlRequestData &request);
-	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm, const InternalRdxContext &ctx = InternalRdxContext());
+	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm, const RdxContext &ctx);
 	void ShutdownCluster();
 
 	bool NeedTraceActivity() { return configProvider_.GetProfilingConfig().activityStats; }
 
-	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index,
-					const InternalRdxContext &ctx = InternalRdxContext());
+	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index, const RdxContext &ctx);
 
 protected:
 	template <typename Context>
@@ -250,23 +244,25 @@ protected:
 	void backgroundRoutine();
 	Error closeNamespace(std::string_view nsName, const RdxContext &ctx, bool dropStorage);
 
-	PayloadType getPayloadType(std::string_view nsName, const InternalRdxContext &ctx);
-	std::set<std::string> GetFTIndexes(std::string_view nsName, const InternalRdxContext &);
+	PayloadType getPayloadType(std::string_view nsName);
+	std::set<std::string> getFTIndexes(std::string_view nsName);
 
 	Namespace::Ptr getNamespace(std::string_view nsName, const RdxContext &ctx);
 	Namespace::Ptr getNamespaceNoThrow(std::string_view nsName, const RdxContext &ctx);
 	lsn_t setNsVersion(Namespace::Ptr &ns, const std::optional<NsReplicationOpts> &replOpts, const RdxContext &ctx);
 
 	Error openNamespace(std::string_view nsName, bool skipNameCheck, const StorageOpts &opts, std::optional<NsReplicationOpts> replOpts,
-						const InternalRdxContext &ctx);
+						const RdxContext &ctx);
 	std::vector<std::pair<string, Namespace::Ptr>> getNamespaces(const RdxContext &ctx);
 	std::vector<string> getNamespacesNames(const RdxContext &ctx);
 	Error renameNamespace(std::string_view srcNsName, const std::string &dstNsName, bool fromReplication = false, bool skipResync = false,
-						  const InternalRdxContext &ctx = InternalRdxContext());
+						  const RdxContext &ctx = RdxContext());
 	Error readClusterConfigFile();
 	Error readShardingConfigFile();
 	void checkClusterRole(std::string_view nsName, lsn_t originLsn) const;
 	void setClusterizationStatus(ClusterizationStatus &&status, const RdxContext &ctx);
+
+	std::string generateTemporaryNamespaceName(std::string_view baseName);
 
 	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
 
@@ -299,7 +295,6 @@ protected:
 	friend class Replicator;
 	friend class cluster::DataReplicator;
 	friend class cluster::ReplThread<cluster::ClusterThreadParam>;
-	friend class TransactionImpl;
 	friend class ClusterProxy;
 	friend class sharding::LocatorService;
 	friend class cluster::LeaderSyncThread;

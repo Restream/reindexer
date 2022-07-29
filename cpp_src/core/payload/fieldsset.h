@@ -46,6 +46,13 @@ public:
 		}
 	}
 
+	void push_front(const TagsPath &tagsPath) {
+		if (!contains(tagsPath)) {
+			base_fields_set::insert(begin(), IndexValueType::SetByJsonPath);
+			tagsPaths_.emplace(tagsPaths_.begin(), tagsPath);
+		}
+	}
+
 	void push_back(const IndexedTagsPath &tagsPath) {
 		if (!contains(tagsPath)) {
 			base_fields_set::push_back(IndexValueType::SetByJsonPath);
@@ -59,6 +66,14 @@ public:
 		if (!contains(f)) {
 			mask_ |= 1ULL << f;
 			base_fields_set::push_back(f);
+		}
+	}
+	void push_front(int f) {
+		if (f == IndexValueType::SetByJsonPath) return;
+		assertrx(f < maxIndexes);
+		if (!contains(f)) {
+			mask_ |= 1ULL << f;
+			base_fields_set::insert(begin(), f);
 		}
 	}
 

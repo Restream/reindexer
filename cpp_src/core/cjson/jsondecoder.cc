@@ -139,10 +139,14 @@ void JsonDecoder::decodeJsonObject(const gason::JsonValue &root, CJsonBuilder &b
 }
 
 void JsonDecoder::Decode(std::string_view json, CJsonBuilder &builder, const TagsPath &fieldPath) {
-	tagsPath_ = fieldPath;
-	gason::JsonParser jsonParser;
-	gason::JsonNode root = jsonParser.Parse(json);
-	decodeJsonObject(root.value, builder);
+	try {
+		tagsPath_ = fieldPath;
+		gason::JsonParser jsonParser;
+		gason::JsonNode root = jsonParser.Parse(json);
+		decodeJsonObject(root.value, builder);
+	} catch (gason::Exception &e) {
+		throw Error(errParseJson, "JSONDecoder: %s", e.what());
+	}
 }
 
 }  // namespace reindexer

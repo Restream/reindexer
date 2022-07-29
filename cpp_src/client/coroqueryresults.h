@@ -109,21 +109,21 @@ private:
 	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount,
 					 milliseconds timeout) noexcept
 		: i_(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout) {}
-	CoroQueryResults(const Query* q, net::cproto::CoroClientConnection* conn, NsArray&& nsArray, std::string_view rawResult, int queryID,
+	CoroQueryResults(const Query* q, net::cproto::CoroClientConnection* conn, NsArray&& nsArray, std::string_view rawResult, RPCQrId id,
 					 int fetchFlags, int fetchAmount, milliseconds timeout)
 		: i_(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout) {
-		Bind(rawResult, queryID, q);
+		Bind(rawResult, id, q);
 	}
 	CoroQueryResults(NsArray&& nsArray, Item& item);
 
-	void Bind(std::string_view rawResult, int queryID, const Query* q);
+	void Bind(std::string_view rawResult, RPCQrId id, const Query* q);
 	void fetchNextResults();
 	bool holdsRemoteData() const noexcept {
-		return i_.conn_ && i_.queryID_ >= 0 && i_.fetchOffset_ + i_.queryParams_.count < i_.queryParams_.qcount;
+		return i_.conn_ && i_.queryID_.main >= 0 && i_.fetchOffset_ + i_.queryParams_.count < i_.queryParams_.qcount;
 	}
 	void setClosed() noexcept {
 		i_.conn_ = nullptr;
-		i_.queryID_ = -1;
+		i_.queryID_ = RPCQrId{};
 	}
 	const net::cproto::CoroClientConnection* getConn() const noexcept { return i_.conn_; }
 
@@ -135,7 +135,7 @@ private:
 		net::cproto::CoroClientConnection* conn_ = nullptr;
 		NsArray nsArray_;
 		h_vector<char, 0x100> rawResult_;
-		int queryID_ = -1;
+		RPCQrId queryID_;
 		int fetchOffset_ = 0;
 		int fetchFlags_ = 0;
 		int fetchAmount_ = 0;

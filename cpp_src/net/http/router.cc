@@ -47,6 +47,7 @@ HttpStatusCode HttpStatus::errCodeToHttpStatus(int errCode) {
 			return StatusNotFound;
 		case errStrictMode:
 		case errParams:
+		case errParseSQL:
 			return StatusBadRequest;
 		case errForbidden:
 			return StatusForbidden;

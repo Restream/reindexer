@@ -223,10 +223,12 @@ private:
 	int id_ = -1;
 	int shardId_ = ShardingKeyType::ProxyOff;
 	friend class NamespaceImpl;
-	friend class TransactionImpl;
 	friend class ItemModifier;
 
 	friend class Transaction;
+	friend class LocalTransaction;
+	friend class TransactionImpl;
+	friend class ProxiedTransaction;
 
 	friend class QueryResults;
 	friend class LocalQueryResults;

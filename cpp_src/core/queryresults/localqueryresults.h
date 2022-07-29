@@ -39,7 +39,7 @@ public:
 	LocalQueryResults(LocalQueryResults &&);
 	~LocalQueryResults();
 	LocalQueryResults &operator=(const LocalQueryResults &) = delete;
-	LocalQueryResults &operator=(LocalQueryResults &&obj) noexcept;
+	LocalQueryResults &operator=(LocalQueryResults &&obj);
 	void Add(const ItemRef &);
 	// use enableHold = false only if you are sure that the LocalQueryResults will be destroyed before the item
 	// or if data from the item are contained in namespace added to the LocalQueryResults
@@ -65,16 +65,16 @@ public:
 		// use enableHold = false only if you are sure that the item will be destroyed before the LocalQueryResults
 		Item GetItem(bool enableHold = true);
 		joins::ItemIterator GetJoined();
-		const ItemRef &GetItemRef() const { return qr_->items_[idx_]; }
-		lsn_t GetLSN() const { return qr_->items_[idx_].Value().GetLSN(); }
-		bool IsRaw() const;
-		std::string_view GetRaw() const;
-		Iterator &operator++();
-		Iterator &operator+(int delta);
-		const Error &Status() const { return err_; }
-		bool operator!=(const Iterator &) const;
-		bool operator==(const Iterator &) const;
-		Iterator &operator*() { return *this; }
+		const ItemRef &GetItemRef() const noexcept { return qr_->items_[idx_]; }
+		lsn_t GetLSN() const noexcept { return qr_->items_[idx_].Value().GetLSN(); }
+		bool IsRaw() const noexcept;
+		std::string_view GetRaw() const noexcept;
+		Iterator &operator++() noexcept;
+		Iterator &operator+(int delta) noexcept;
+		const Error &Status() const noexcept { return err_; }
+		bool operator!=(const Iterator &) const noexcept;
+		bool operator==(const Iterator &) const noexcept;
+		Iterator &operator*() noexcept { return *this; }
 
 		const LocalQueryResults *qr_;
 		int idx_;
@@ -91,7 +91,7 @@ public:
 	bool haveRank = false;
 	bool nonCacheableData = false;
 	bool needOutputRank = false;
-	int outputShardId = ShardingKeyType::ProxyOff;
+	int outputShardId = ShardingKeyType::ProxyOff;	// flag+value
 
 	struct Context;
 	// precalc context size
@@ -106,17 +106,17 @@ public:
 
 	void addNSContext(const PayloadType &type, const TagsMatcher &tagsMatcher, const FieldsSet &fieldsFilter,
 					  std::shared_ptr<const Schema> schema);
-	const TagsMatcher &getTagsMatcher(int nsid) const;
-	const PayloadType &getPayloadType(int nsid) const;
-	const FieldsSet &getFieldsFilter(int nsid) const;
-	TagsMatcher &getTagsMatcher(int nsid);
-	PayloadType &getPayloadType(int nsid);
-	std::shared_ptr<const Schema> getSchema(int nsid) const;
-	int getNsNumber(int nsid) const;
-	int getMergedNSCount() const;
-	ItemRefVector &Items() { return items_; }
-	const ItemRefVector &Items() const { return items_; }
-	int GetJoinedNsCtxIndex(int nsid) const;
+	const TagsMatcher &getTagsMatcher(int nsid) const noexcept;
+	const PayloadType &getPayloadType(int nsid) const noexcept;
+	const FieldsSet &getFieldsFilter(int nsid) const noexcept;
+	TagsMatcher &getTagsMatcher(int nsid) noexcept;
+	PayloadType &getPayloadType(int nsid) noexcept;
+	std::shared_ptr<const Schema> getSchema(int nsid) const noexcept;
+	int getNsNumber(int nsid) const noexcept;
+	int getMergedNSCount() const noexcept;
+	ItemRefVector &Items() noexcept { return items_; }
+	const ItemRefVector &Items() const noexcept { return items_; }
+	int GetJoinedNsCtxIndex(int nsid) const noexcept;
 
 	void SaveRawData(ItemImplRawData &&);
 
@@ -136,8 +136,6 @@ protected:
 private:
 	void encodeJSON(int idx, WrSerializer &ser) const;
 	ItemRefVector items_;
-	std::optional<RdxActivityContext> activityCtx_;
-	friend InternalRdxContext;
 	std::vector<ItemImplRawData> rawDataHolder_;
 	friend SelectFunctionsHolder;
 	struct NsDataHolder {

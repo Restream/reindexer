@@ -66,7 +66,7 @@ void LeaderSyncThread::sync() {
 					const bool fullResync = retry > 0;
 					syncNamespaceImpl(fullResync, entry, tmpNsName);
 					ReplicationStateV2 state;
-					err = thisNode_.GetReplState(entry.nsName, state);
+					err = thisNode_.GetReplState(entry.nsName, state, RdxContext());
 					if (!err.ok()) {
 						throw err;
 					}
@@ -95,7 +95,7 @@ void LeaderSyncThread::sync() {
 						  err.what());
 				if (!tmpNsName.empty()) {
 					logPrintf(LogError, "[cluster:leadersyncer] %d: Dropping '%s'...", cfg_.serverId, tmpNsName);
-					thisNode_.DropNamespace(tmpNsName);
+					thisNode_.DropNamespace(tmpNsName, RdxContext());
 					logPrintf(LogError, "[cluster:leadersyncer] %d: '%s' was dropped", cfg_.serverId, tmpNsName);
 				}
 				lastError_ = std::move(err);
@@ -105,7 +105,7 @@ void LeaderSyncThread::sync() {
 						  err.what());
 				if (!tmpNsName.empty()) {
 					logPrintf(LogError, "[cluster:leadersyncer] %d: Dropping '%s'...", cfg_.serverId, tmpNsName);
-					thisNode_.DropNamespace(tmpNsName);
+					thisNode_.DropNamespace(tmpNsName, RdxContext());
 					logPrintf(LogError, "[cluster:leadersyncer] %d: '%s' was dropped", cfg_.serverId, tmpNsName);
 				}
 				lastError_ = std::move(err);
@@ -134,7 +134,8 @@ void LeaderSyncThread::syncNamespaceImpl(bool forced, const LeaderSyncQueue::Ent
 	if (!ns || snapshot.HasRawData()) {
 		timeCounter.SetType(SyncTimeCounter::Type::InitialForceSync);
 		// TODO: Allow tmp ns without storage via config
-		err = thisNode_.CreateTemporaryNamespace(syncEntry.nsName, tmpNsName, StorageOpts().Enabled(), syncEntry.latestLsn.NsVersion());
+		err = thisNode_.CreateTemporaryNamespace(syncEntry.nsName, tmpNsName, StorageOpts().Enabled(), syncEntry.latestLsn.NsVersion(),
+												 RdxContext());
 		if (!err.ok()) {
 			throw err;
 		}

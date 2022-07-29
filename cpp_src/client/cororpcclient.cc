@@ -159,7 +159,8 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, CoroQueryRe
 		if (ret.Status().ok()) {
 			try {
 				auto args = ret.GetArgs(2);
-				CoroQueryResults qr(nullptr, &conn_, {getNamespace(nsName)}, p_string(args[0]), int(args[1]), 0, config_.FetchAmount,
+				CoroQueryResults qr(nullptr, &conn_, {getNamespace(nsName)}, p_string(args[0]),
+									RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, 0, config_.FetchAmount,
 									config_.NetTimeout);
 				if (qr.Status().ok()) {
 					for (std::string_view ns : qr.GetNamespaces()) {
@@ -205,6 +206,10 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, CoroQueryRe
 			if (!newItem.Status().ok()) return newItem.Status();
 			err = newItem.FromJSON(item.impl_->GetJSON());
 			if (!err.ok()) return err;
+			if (item.impl_->tagsMatcher().isUpdated()) {
+				// Add new names missing in JSON from tm
+				newItem.impl_->addTagNamesFrom(item.impl_->tagsMatcher());
+			}
 
 			item = std::move(newItem);
 		}
@@ -287,7 +292,7 @@ Error CoroRPCClient::Delete(const Query& query, CoroQueryResults& result, const 
 	try {
 		if (ret.Status().ok()) {
 			auto args = ret.GetArgs(2);
-			result.Bind(p_string(args[0]), int(args[1]), &query);
+			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), -1}, &query);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -307,8 +312,8 @@ Error CoroRPCClient::Update(const Query& query, CoroQueryResults& result, const 
 		conn_.Call(mkCommand(cproto::kCmdUpdateQuery, &ctx), ser.Slice(), kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 	try {
 		if (ret.Status().ok()) {
-			auto args = ret.GetArgs(2);
-			result.Bind(p_string(args[0]), int(args[1]), &query);
+			const auto args = ret.GetArgs(2);
+			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), -1}, &query);
 			for (size_t i = 0; i < nsArray.size(); ++i) {
 				getNamespace(nsArray[i]->name)->TryReplaceTagsMatcher(result.GetTagsMatcher(i));
 			}
@@ -366,8 +371,8 @@ Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, mi
 	auto ret = conn_.Call(mkCommand(cproto::kCmdSelect, netTimeout, &ctx), qser.Slice(), flags, config_.FetchAmount, pser.Slice());
 	try {
 		if (ret.Status().ok()) {
-			auto args = ret.GetArgs(2);
-			result.Bind(p_string(args[0]), int(args[1]), &query);
+			const auto args = ret.GetArgs(2);
+			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, &query);
 		}
 	} catch (const Error& err) {
 		return err;
@@ -526,7 +531,7 @@ Error CoroRPCClient::CommitTransaction(CoroTransaction& tr, CoroQueryResults& re
 		try {
 			if (ret.Status().ok()) {
 				auto args = ret.GetArgs(2);
-				result.Bind(p_string(args[0]), int(args[1]), nullptr);
+				result.Bind(p_string(args[0]), RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, nullptr);
 				tr.i_.ns_->TryReplaceTagsMatcher(result.GetTagsMatcher(0));
 			}
 		} catch (const Error& err) {

@@ -10,7 +10,7 @@ namespace reindexer {
 
 #define handleInvalidation(Fn) nsFuncWrapper<decltype(&Fn), &Fn>
 
-void Namespace::CommitTransaction(Transaction& tx, LocalQueryResults& result, const NsContext& ctx) {
+void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& result, const NsContext& ctx) {
 	auto ns = atomicLoadMainNs();
 	bool enablePerfCounters = ns->enablePerfCounters_.load(std::memory_order_relaxed);
 	if (enablePerfCounters) {
@@ -47,7 +47,7 @@ void Namespace::CommitTransaction(Transaction& tx, LocalQueryResults& result, co
 					// If commit happens in ns copy, than the copier have to handle replication
 					auto err = ns_->clusterizator_->Replicate(
 						cluster::UpdateRecord{cluster::UpdateRecord::Type::CommitTx, ns_->name_, ns_->wal_.LastLSN(), ns_->repl_.nsVersion,
-											  ctx.rdxContext.emmiterServerId_},
+											  ctx.rdxContext.EmmiterServerId()},
 						[&clonerLck, &storageLock, &nsRlck]() {
 							storageLock.unlock();
 							nsRlck.unlock();
@@ -104,7 +104,7 @@ void Namespace::ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLeader
 	}
 }
 
-bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const Transaction& tx) const noexcept {
+bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const LocalTransaction& tx) const noexcept {
 	auto stepsCount = tx.GetSteps().size();
 	auto startCopyPolicyTxSize = static_cast<uint32_t>(startCopyPolicyTxSize_.load(std::memory_order_relaxed));
 	auto copyPolicyMultiplier = static_cast<uint32_t>(copyPolicyMultiplier_.load(std::memory_order_relaxed));

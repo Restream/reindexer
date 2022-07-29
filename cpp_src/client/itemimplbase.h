@@ -54,6 +54,7 @@ public:
 	ConstPayload GetConstPayload() const { return ConstPayload(payloadType_, payloadValue_); }
 
 	TagsMatcher &tagsMatcher() noexcept { return tagsMatcher_; }
+	void addTagNamesFrom(const TagsMatcher &tm) { tagsMatcher_.add_names_from(tm); }
 	void setTagsMatcher(TagsMatcher tm) noexcept { tagsMatcher_ = std::move(tm); }
 
 	void SetPrecepts(vector<string> &&precepts) { precepts_ = std::move(precepts); }

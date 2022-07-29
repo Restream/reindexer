@@ -1,9 +1,10 @@
 #include <future>
+#include <sstream>
 #include "cluster/stats/replicationstats.h"
 #include "core/itemimpl.h"
-#include "sharding_api.h"
-
+#include "estl/tuple_utils.h"
 #include "server/pprof/gperf_profiler.h"
+#include "sharding_api.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 
 static void CheckServerIDs(std::vector<std::vector<ServerControl>> &svc) {
@@ -69,6 +70,7 @@ void ShardingApi::runSelectTest(std::string_view nsName) {
 }
 
 void ShardingApi::runUpdateTest(std::string_view nsName) {
+	using namespace std::string_literals;
 	TestCout() << "Running UpdateTest" << std::endl;
 	for (size_t i = 0; i < NodesCount(); ++i) {
 		std::shared_ptr<client::SyncCoroReindexer> rx = getNode(i)->api.reindexer;
@@ -83,13 +85,14 @@ void ShardingApi::runUpdateTest(std::string_view nsName) {
 				q.type_ = QueryUpdate;
 				Error err = rx->Update(q, qr);
 				ASSERT_TRUE(err.ok()) << err.what() << "; location = " << key << std::endl;
-				std::string toFind;
-				toFind = "\"location\":\"" + key + "\",\"data\":\"" + updated + "\"";
-				ASSERT_TRUE(qr.Count() == 40) << qr.Count();
+				const std::string expectedLocation = "\"location\":\""s + key + '"';
+				const std::string expectedData = "\"data\":\""s + updated + '"';
+				EXPECT_EQ(qr.Count(), 40);
 				for (auto it : qr) {
 					auto item = it.GetItem();
 					std::string_view json = item.GetJSON();
-					ASSERT_TRUE(json.find(toFind) != std::string_view::npos) << json << "; expected {" << toFind << "}";
+					EXPECT_NE(json.find(expectedLocation), std::string_view::npos) << json << "; expected: {" << expectedLocation << "}";
+					EXPECT_NE(json.find(expectedData), std::string_view::npos) << json << "; expected: {" << expectedData << "}";
 				}
 			}
 
@@ -106,7 +109,7 @@ void ShardingApi::runUpdateTest(std::string_view nsName) {
 				for (auto it : qrSelect) {
 					auto item = it.GetItem();
 					std::string_view json = item.GetJSON();
-					ASSERT_TRUE(json.find(updatedErr) == std::string_view::npos);
+					EXPECT_EQ(json.find(updatedErr), std::string_view::npos);
 				}
 			}
 		}
@@ -609,6 +612,25 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 	}
 }
 
+TEST_F(ShardingApi, Aggregations) {
+	InitShardingConfig cfg;
+	cfg.nodesInCluster = 1;
+	Init(std::move(cfg));
+	std::shared_ptr<client::SyncCoroReindexer> rx = getNode(0)->api.reindexer;
+	client::SyncCoroQueryResults qr;
+	Query q = Query(default_namespace).Aggregate(AggSum, {kFieldId}).Aggregate(AggMin, {kFieldId}).Aggregate(AggMax, {kFieldId});
+	Error err = rx->Select(q, qr);
+	ASSERT_TRUE(err.ok());
+	ASSERT_EQ(qr.GetAggregationResults().size(), 3);
+	const auto itemsCount = cfg.rowsInTableOnShard * kShards;
+	EXPECT_EQ(qr.GetAggregationResults()[0].type, AggSum);
+	EXPECT_EQ(qr.GetAggregationResults()[0].value, (itemsCount - 1) * itemsCount / 2);
+	EXPECT_EQ(qr.GetAggregationResults()[1].type, AggMin);
+	EXPECT_EQ(qr.GetAggregationResults()[1].value, 0);
+	EXPECT_EQ(qr.GetAggregationResults()[2].type, AggMax);
+	EXPECT_EQ(qr.GetAggregationResults()[2].value, itemsCount - 1);
+}
+
 TEST_F(ShardingApi, CheckQueryWithSharding) {
 	InitShardingConfig cfg;
 	cfg.nodesInCluster = 1;
@@ -618,62 +640,62 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1");
 		Error err = rx->Select(q, qr);
-		ASSERT_TRUE(err.ok());
+		EXPECT_TRUE(err.ok());
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Where(kFieldId, CondEq, 0);
 		Error err = rx->Select(q, qr);
-		ASSERT_TRUE(err.ok());
+		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Where(kFieldLocation, CondEq, "key2");
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Duplication of shard key condition in the query");
+		EXPECT_EQ(err.what(), "Duplication of shard key condition in the query");
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Or().Where(kFieldId, CondEq, 0);
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Shard key condition cannot be connected with other conditions by operator OR");
+		EXPECT_EQ(err.what(), "Shard key condition cannot be connected with other conditions by operator OR");
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldId, CondEq, 0).Or().Where(kFieldLocation, CondEq, "key1");
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Shard key condition cannot be connected with other conditions by operator OR");
+		EXPECT_EQ(err.what(), "Shard key condition cannot be connected with other conditions by operator OR");
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Not().Where(kFieldLocation, CondEq, "key1");
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Shard key condition cannot be negative");
+		EXPECT_EQ(err.what(), "Shard key condition cannot be negative");
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).WhereBetweenFields(kFieldLocation, CondEq, kFieldData);
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Shard key cannot be compared with another field");
+		EXPECT_EQ(err.what(), "Shard key cannot be compared with another field");
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).OpenBracket().Where(kFieldLocation, CondEq, "key1").CloseBracket();
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Shard key condition cannot be included in bracket");
+		EXPECT_EQ(err.what(), "Shard key condition cannot be included in bracket");
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).OpenBracket().OpenBracket().Where(kFieldLocation, CondEq, "key1").CloseBracket().CloseBracket();
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Shard key condition cannot be included in bracket");
+		EXPECT_EQ(err.what(), "Shard key condition cannot be included in bracket");
 	}
 	// JOIN
 	{
@@ -682,7 +704,7 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 					  .Where(kFieldLocation, CondEq, "key1")
 					  .InnerJoin(kFieldId, kFieldId, CondEq, Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"));
 		Error err = rx->Select(q, qr);
-		ASSERT_TRUE(err.ok());
+		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::SyncCoroQueryResults qr;
@@ -690,7 +712,7 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 			Query(default_namespace).Where(kFieldLocation, CondEq, "key1").InnerJoin(kFieldId, kFieldId, CondEq, Query{default_namespace});
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Join query must contain shard key.");
+		EXPECT_EQ(err.what(), "Join query must contain shard key.");
 	}
 	{
 		client::SyncCoroQueryResults qr;
@@ -698,7 +720,7 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 			Query(default_namespace).InnerJoin(kFieldId, kFieldId, CondEq, Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"));
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Query to all shard can't contain JOIN or MERGE");
+		EXPECT_EQ(err.what(), "Query to all shard can't contain JOIN or MERGE");
 	}
 	{
 		client::SyncCoroQueryResults qr;
@@ -707,7 +729,7 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 					  .InnerJoin(kFieldId, kFieldId, CondEq, Query{default_namespace}.Where(kFieldLocation, CondEq, "key2"));
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Shard key from other node");
+		EXPECT_EQ(err.what(), "Shard key from other node");
 	}
 	{
 		client::SyncCoroQueryResults qr;
@@ -716,7 +738,7 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 					  .InnerJoin(kFieldId, kFieldId, CondEq, Query{default_namespace}.Not().Where(kFieldLocation, CondEq, "key1"));
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Shard key condition cannot be negative");
+		EXPECT_EQ(err.what(), "Shard key condition cannot be negative");
 	}
 	// MERGE
 	{
@@ -725,21 +747,21 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 					  .Where(kFieldLocation, CondEq, "key1")
 					  .Merge(Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"));
 		Error err = rx->Select(q, qr);
-		ASSERT_TRUE(err.ok());
+		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Merge(Query{default_namespace});
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Merge query must contain shard key.");
+		EXPECT_EQ(err.what(), "Merge query must contain shard key.");
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Merge(Query{default_namespace}.Where(kFieldLocation, CondEq, "key1"));
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Query to all shard can't contain JOIN or MERGE");
+		EXPECT_EQ(err.what(), "Query to all shard can't contain JOIN or MERGE");
 	}
 	{
 		client::SyncCoroQueryResults qr;
@@ -748,7 +770,7 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 					  .Merge(Query{default_namespace}.Where(kFieldLocation, CondEq, "key2"));
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Shard key from other node");
+		EXPECT_EQ(err.what(), "Shard key from other node");
 	}
 	{
 		client::SyncCoroQueryResults qr;
@@ -757,70 +779,63 @@ TEST_F(ShardingApi, CheckQueryWithSharding) {
 					  .Merge(Query{default_namespace}.OpenBracket().Where(kFieldLocation, CondEq, "key1").CloseBracket());
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Shard key condition cannot be included in bracket");
+		EXPECT_EQ(err.what(), "Shard key condition cannot be included in bracket");
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Distinct(kFieldId);
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Query to all shard can't contain aggregations other than COUNT or COUNT CACHED");
+		EXPECT_EQ(err.what(), "Query to all shard can't contain aggregations AVG, Facet or Distinct");
 	}
-	for (const auto agg : {AggSum, AggAvg, AggMin, AggMax, AggFacet, AggDistinct}) {
+	for (const auto agg : {AggAvg, AggFacet, AggDistinct}) {
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Aggregate(agg, {kFieldId});
 		Error err = rx->Select(q, qr);
 		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Query to all shard can't contain aggregations other than COUNT or COUNT CACHED");
+		EXPECT_EQ(err.what(), "Query to all shard can't contain aggregations AVG, Facet or Distinct");
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).ReqTotal();
 		Error err = rx->Select(q, qr);
-		ASSERT_TRUE(err.ok());
+		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).CachedTotal();
 		Error err = rx->Select(q, qr);
-		ASSERT_TRUE(err.ok());
+		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	for (const auto agg : {AggSum, AggAvg, AggMin, AggMax, AggFacet, AggDistinct}) {
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Aggregate(agg, {kFieldId});
 		Error err = rx->Select(q, qr);
-		ASSERT_TRUE(err.ok());
+		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Distinct(kFieldId).Where(kFieldLocation, CondEq, "key1");
 		Error err = rx->Select(q, qr);
-		ASSERT_TRUE(err.ok());
+		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).ReqTotal().Where(kFieldLocation, CondEq, "key1");
 		Error err = rx->Select(q, qr);
-		ASSERT_TRUE(err.ok());
+		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).CachedTotal().Where(kFieldLocation, CondEq, "key1");
 		Error err = rx->Select(q, qr);
-		ASSERT_TRUE(err.ok());
-	}
-	{
-		client::SyncCoroQueryResults qr;
-		Query q = Query(default_namespace).Sort(kFieldId + " * 10", false);
-		Error err = rx->Select(q, qr);
-		ASSERT_FALSE(err.ok());
-		ASSERT_EQ(err.what(), "Query to all shard can't contain ordering by expression");
+		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		client::SyncCoroQueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Sort(kFieldId + " * 10", false);
 		Error err = rx->Select(q, qr);
-		ASSERT_TRUE(err.ok());
+		EXPECT_TRUE(err.ok()) << err.what();
 	}
 }
 
@@ -1433,7 +1448,6 @@ TEST_F(ShardingApi, RestrictionOnRequest) {
 		ASSERT_EQ(err.code(), errLogic);
 	}
 }
-
 static void CheckTotalCount(bool cached, std::shared_ptr<client::SyncCoroReindexer> &rx, const std::string &ns, size_t expected) {
 	client::SyncCoroQueryResults qr;
 	Error err;
@@ -1448,6 +1462,8 @@ static void CheckTotalCount(bool cached, std::shared_ptr<client::SyncCoroReindex
 
 static void CheckCachedCountAggregations(std::shared_ptr<client::SyncCoroReindexer> &rx, const std::string &ns, size_t dataPerShard,
 										 size_t shardsCount, const std::string fieldLocation) {
+	(void)fieldLocation;
+	(void)shardsCount;
 	{
 		// Check distributed query without offset
 		client::SyncCoroQueryResults qr;
@@ -1494,6 +1510,22 @@ static void CheckCachedCountAggregations(std::shared_ptr<client::SyncCoroReindex
 	}
 }
 
+template <typename T>
+T getField(std::string_view field, reindexer::client::SyncCoroQueryResults::Iterator &it) {
+	auto item = it.GetItem();
+	std::string_view json = item.GetJSON();
+	gason::JsonParser parser;
+	auto root = parser.Parse(json);
+	auto node = root;
+	auto pos = field.find('.');
+	while (pos != std::string_view::npos) {
+		node = node[field.substr(0, pos)];
+		field = field.substr(pos + 1);
+		pos = field.find('.');
+	}
+	return node[field].As<T>();
+}
+
 TEST_F(ShardingApi, SelectOffsetLimit) {
 	InitShardingConfig cfg;
 	cfg.rowsInTableOnShard = 0;
@@ -1537,11 +1569,7 @@ TEST_F(ShardingApi, SelectOffsetLimit) {
 		}
 		int n = 0;
 		for (auto i = qr.begin(); i != qr.end(); ++i, ++n) {
-			auto item = i.GetItem();
-			std::string_view json = item.GetJSON();
-			gason::JsonParser parser;
-			auto root = parser.Parse(json);
-			ASSERT_EQ(root["id"].As<int>(), v.offset + n) << q.GetSQL();
+			ASSERT_EQ(getField<int>(kFieldId, i), v.offset + n) << q.GetSQL();
 		}
 	};
 
@@ -1561,4 +1589,374 @@ TEST_F(ShardingApi, SelectOffsetLimit) {
 	// 3. Check total count and count cached
 	CheckTotalCount(true, rx, default_namespace, kMaxCountOnShard * kShards + 1);
 	CheckTotalCount(false, rx, default_namespace, kMaxCountOnShard * kShards + 1);
+}
+
+template <typename...>
+class CompareFields;
+
+template <>
+class CompareFields<>;
+
+template <typename T>
+class CompareFields<T> {
+public:
+	CompareFields(std::string_view f, std::vector<T> v = {}) : field_{f}, forcedValues_{std::move(v)} {}
+	int operator()(reindexer::client::SyncCoroQueryResults::Iterator &it) {
+		T v = getField<T>(field_, it);
+		int result = 0;
+		if (prevValue_) {
+			const auto end = forcedValues_.cend();
+			const auto prevIt = std::find(forcedValues_.cbegin(), end, *prevValue_);
+			const auto currIt = std::find(forcedValues_.cbegin(), end, v);
+			if (prevIt != end || currIt != end) {
+				if (currIt != prevIt) {
+					result = prevIt < currIt ? 1 : -1;
+				} else {
+					result = 0;
+				}
+			} else if (prevValue_ != v) {
+				result = prevValue_ < v ? 1 : -1;
+			}
+		}
+		prevValue_ = std::move(v);
+		return result;
+	}
+	std::tuple<T> GetValues(reindexer::client::SyncCoroQueryResults::Iterator &it) const {
+		return std::make_tuple(getField<T>(field_, it));
+	}
+	std::tuple<T> GetPrevValues() const { return std::make_tuple(*prevValue_); }
+	bool HavePrevValue() const noexcept { return prevValue_.has_value(); }
+	void SetPrevValues(std::tuple<T> pv) { prevValue_ = std::move(std::get<0>(pv)); }
+
+private:
+	std::string_view field_;
+	std::optional<T> prevValue_;
+	std::vector<T> forcedValues_;
+};
+
+template <typename T, typename... Ts>
+class CompareFields<T, Ts...> : private CompareFields<Ts...> {
+	using Base = CompareFields<Ts...>;
+	template <typename>
+	using string_view = std::string_view;
+
+public:
+	CompareFields(std::string_view f, string_view<Ts>... args, std::vector<std::tuple<T, Ts...>> v = {})
+		: Base{args...}, impl_{f}, forcedValues_{std::move(v)} {}
+	int operator()(reindexer::client::SyncCoroQueryResults::Iterator &it) {
+		if (!forcedValues_.empty() && impl_.HavePrevValue()) {
+			const auto prevValues = GetPrevValues();
+			const auto values = GetValues(it);
+			const auto end = forcedValues_.cend();
+			const auto prevIt = std::find(forcedValues_.cbegin(), end, prevValues);
+			const auto currIt = std::find(forcedValues_.cbegin(), end, values);
+			if (prevIt != end || currIt != end) {
+				SetPrevValues(values);
+				if (currIt == prevIt) {
+					return 0;
+				}
+				return prevIt < currIt ? 1 : -1;
+			}
+		}
+		auto res = impl_(it);
+		if (res == 0) {
+			res = Base::operator()(it);
+		} else {
+			Base::operator()(it);
+		}
+		return res;
+	}
+	std::tuple<T, Ts...> GetValues(reindexer::client::SyncCoroQueryResults::Iterator &it) const {
+		return std::tuple_cat(impl_.GetValues(it), Base::GetValues(it));
+	}
+	std::tuple<T, Ts...> GetPrevValues() const { return std::tuple_cat(impl_.GetPrevValues(), Base::GetPrevValues()); }
+	void SetPrevValues(std::tuple<T, Ts...> pv) {
+		impl_.SetPrevValues(std::make_tuple(std::move(std::get<0>(pv))));
+		Base::SetPrevValues(tail(std::move(pv)));
+	}
+
+private:
+	CompareFields<T> impl_;
+	std::vector<std::tuple<T, Ts...>> forcedValues_;
+};
+
+template <typename R, typename... Ts>
+class CompareExpr {
+public:
+	CompareExpr(std::vector<std::string> &&fields, std::function<R(Ts...)> &&f) : fields_{std::move(fields)}, func_{std::move(f)} {}
+	int operator()(reindexer::client::SyncCoroQueryResults::Iterator &it) { return impl(it, std::index_sequence_for<Ts...>{}); }
+
+private:
+	template <size_t... I>
+	int impl(reindexer::client::SyncCoroQueryResults::Iterator &it, std::index_sequence<I...>) {
+		const auto r = func_(getField<Ts>(fields_[I], it)...);
+		int result = 0;
+		if (prevResult_ && *prevResult_ != r) {
+			result = *prevResult_ < r ? 1 : -1;
+		}
+		prevResult_ = r;
+		return result;
+	}
+	std::optional<R> prevResult_;
+	std::vector<std::string> fields_;
+	std::function<R(Ts...)> func_;
+};
+
+class ShardingApi::CompareShardId {
+public:
+	CompareShardId(const ShardingApi &api) noexcept : api_{api} {}
+	int operator()(reindexer::client::SyncCoroQueryResults::Iterator &it) {
+		std::string keyValue = getField<std::string>(api_.kFieldLocation, it);
+		keyValue = keyValue.substr(3);
+		size_t curShardId = std::stoi(keyValue);
+		if (curShardId >= api_.kShards) {
+			curShardId = 0;
+		}
+		int result = 0;
+		if (prevShardId_ && *prevShardId_ != curShardId) {
+			result = *prevShardId_ < curShardId ? 1 : -1;
+		}
+		prevShardId_ = curShardId;
+		return result;
+	}
+
+private:
+	std::optional<size_t> prevShardId_;
+	const ShardingApi &api_;
+};
+
+TEST_F(ShardingApi, OrderBy) {
+	std::random_device rd;
+	std::mt19937 g(rd());
+	InitShardingConfig cfg;
+	cfg.rowsInTableOnShard = 0;
+	cfg.nodesInCluster = 1;
+	Init(std::move(cfg));
+	const size_t tableSize = rand() % 200;
+	Fill(default_namespace, 0, 0, tableSize);
+	struct SortCase {
+		std::string expression;
+		std::variant<std::vector<int>, std::vector<std::string>, std::vector<std::tuple<int, std::string>>,
+					 std::vector<std::tuple<std::string, int>>>
+			forcedValues;
+		std::function<int(reindexer::client::SyncCoroQueryResults::Iterator &)> test;
+		bool testId{false};
+	};
+	std::set<std::string> compositeIndexes{kFieldIdLocation, kFieldLocationId};
+
+	std::vector<std::tuple<int, std::string>> compositeForceValues1;
+	std::vector<std::tuple<std::string, int>> compositeForceValues2;
+	std::vector<int> ids(static_cast<size_t>(tableSize * 1.1));
+	std::iota(ids.begin(), ids.end(), 0);
+	std::shuffle(ids.begin(), ids.end(), g);
+	ids.resize(rand() % ids.size());
+	for (int i : ids) {
+		Query q{default_namespace};
+		q.Where(kFieldId, CondEq, i);
+		client::SyncCoroQueryResults qr;
+		std::shared_ptr<client::SyncCoroReindexer> rx = svc_[0][0].Get()->api.reindexer;
+		Error err = rx->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		if (qr.Count() == 1) {
+			auto it = qr.begin();
+			std::string loc = getField<std::string>(kFieldLocation, it);
+			compositeForceValues1.emplace_back(i, loc);
+			compositeForceValues2.emplace_back(loc, i);
+		} else {
+			compositeForceValues1.emplace_back(i, RandString());
+			compositeForceValues2.emplace_back(RandString(), i);
+		}
+	}
+
+	std::vector<SortCase> sortCases{
+		{kFieldNestedRand, {}, CompareFields<int>{kFieldNestedRand}},
+		{kFieldId, {}, CompareFields<int>{kFieldId}, true},
+		{kFieldData, {}, CompareFields<std::string>{kFieldData}},
+		{kFieldId + " + 4", {}, CompareFields<int>{kFieldId}, true},
+		{"3 * " + kFieldNestedRand, {}, CompareFields<int>{kFieldNestedRand}},
+		{kFieldId + " * 11 + " + kFieldNestedRand,
+		 {},
+		 CompareExpr<int, int, int>{{kFieldId, kFieldNestedRand}, [](int id, int rand) { return id * 11 + rand; }},
+		 true},
+		{kFieldIdLocation, {}, CompareFields<int, std::string>{kFieldId, kFieldLocation}, true},
+		{kFieldLocationId, {}, CompareFields<std::string, int>{kFieldLocation, kFieldId}},
+		{kFieldId, std::vector{10, 20, 30, 40}, CompareFields<int>{kFieldId, {10, 20, 30, 40}}},
+		{kFieldIdLocation, compositeForceValues1, CompareFields<int, std::string>{kFieldId, kFieldLocation, compositeForceValues1}},
+		{kFieldLocationId, compositeForceValues2, CompareFields<std::string, int>{kFieldLocation, kFieldId, compositeForceValues2}},
+	};
+	struct TestCase {
+		TestCase(const SortCase &sc, bool d = ((rand() % 2) == 0)) : sort{sc}, desc{d} {}
+		SortCase sort;
+		bool desc;
+	};
+	for (size_t j = 0; j < 100; ++j) {
+		std::shuffle(sortCases.begin(), sortCases.end(), g);
+		const size_t sortsCount = std::min<size_t>(rand() % 3 + 1, sortCases.size());
+		std::vector<TestCase> testCases;
+		testCases.reserve(sortsCount);
+		std::set<std::string> usedFields;
+		for (size_t i = 0; testCases.size() < sortsCount && i < sortCases.size(); ++i) {
+			if (i != 0 && !std::visit([](const auto &c) { return c.empty(); }, sortCases[i].forcedValues)) continue;
+			if (compositeIndexes.find(sortCases[i].expression) == compositeIndexes.end()) {
+				if (usedFields.find(sortCases[i].expression) != usedFields.end()) continue;
+				usedFields.insert(sortCases[i].expression);
+			} else {
+				bool found = false;
+				std::string::size_type end = -1;
+				do {
+					std::string::size_type start = end + 1;
+					end = sortCases[i].expression.find('+', start);
+					if (usedFields.find(sortCases[i].expression.substr(start, end == std::string::npos ? end : end - start)) !=
+						usedFields.end()) {
+						found = true;
+						break;
+					}
+				} while (end != std::string::npos);
+				if (found) continue;
+				end = -1;
+				do {
+					std::string::size_type start = end + 1;
+					end = sortCases[i].expression.find('+', start);
+					usedFields.insert(sortCases[i].expression.substr(start, end == std::string::npos ? end : end - start));
+				} while (end != std::string::npos);
+			}
+			testCases.emplace_back(sortCases[i]);
+		}
+
+		std::optional<size_t> offset;
+		if (rand() % 3 > 0) {
+			offset = rand() % (tableSize + 5);
+		}
+		std::optional<size_t> limit;
+		if (rand() % 3 > 0) {
+			if (offset) {
+				if (*offset < tableSize) {
+					limit = rand() % (tableSize - *offset + 5);
+				} else {
+					limit = rand() % 5;
+				}
+			} else {
+				limit = rand() % (tableSize + 5);
+			}
+		}
+		if (limit && limit == 0) {	// test this limit 0 not working. "isWithSharding" return false on condition (q.count == 0 &&
+									// q.calcTotal == ModeNoTotal && !q.joinQueries_.size() && !q.mergeQueries_.size())
+			limit = 1;
+		}
+		Query q = Query{default_namespace};
+		for (const auto &tc : testCases) {
+			std::visit(
+				[&](const auto &c) {
+					if (c.empty()) {
+						q.Sort(tc.sort.expression, tc.desc);
+					} else {
+						q.Sort(tc.sort.expression, tc.desc, c);
+					}
+				},
+				tc.sort.forcedValues);
+		}
+		testCases.emplace_back(SortCase{"ShardId", {}, CompareShardId{*this}}, false);
+		size_t expectedResultSize = tableSize;
+		if (offset) {
+			q.Offset(*offset);
+			expectedResultSize = (*offset < tableSize) ? tableSize - *offset : 0;
+		}
+		if (limit) {
+			q.Limit(*limit);
+			expectedResultSize = std::min(expectedResultSize, *limit);
+		}
+		std::function<int()> expectedId;
+		if (testCases.front().sort.testId) {
+			if (const int r = rand() % 3; r != 0) {
+				const size_t s = rand() % kShards;
+				expectedResultSize = 0;
+				bool first = true;
+				size_t start = 0;
+				if (testCases.front().desc) {
+					for (size_t i = tableSize, o = offset.value_or(0); i > 0 && expectedResultSize < limit.value_or(UINT_MAX); --i) {
+						if ((r == 1) != ((i - 1) % kShards == s)) {
+							if (o > 0) {
+								--o;
+							} else {
+								if (first) {
+									first = false;
+									start = i - 1;
+								}
+								++expectedResultSize;
+							}
+						}
+					}
+					if (r == 1) {
+						expectedId = [id = start, s, this]() mutable {
+							const auto res = id--;
+							if (id % kShards == s) --id;
+							return res;
+						};
+					} else {
+						expectedId = [id = start, this]() mutable { return (id -= kShards) + kShards; };
+					}
+				} else {
+					for (size_t i = 0, o = offset.value_or(0); i < tableSize && expectedResultSize < limit.value_or(UINT_MAX); ++i) {
+						if ((r == 1) != (i % kShards == s)) {
+							if (o > 0) {
+								--o;
+							} else {
+								if (first) {
+									first = false;
+									start = i;
+								}
+								++expectedResultSize;
+							}
+						}
+					}
+					if (r == 1) {
+						expectedId = [id = start, s, this]() mutable {
+							const auto res = id++;
+							if (id % kShards == s) ++id;
+							return res;
+						};
+					} else {
+						expectedId = [id = start, this]() mutable { return (id += kShards) - kShards; };
+					}
+				}
+				if (r == 1) {
+					q.Not();
+				}
+				q.Where(kFieldShard, CondEq, "key" + std::to_string(s + 1));
+			} else {
+				if (testCases.front().desc) {
+					expectedId = [id = tableSize - 1 - offset.value_or(0)]() mutable { return id--; };
+				} else {
+					expectedId = [id = offset.value_or(0)]() mutable { return id++; };
+				}
+			}
+		}
+		const std::string sql = q.GetSQL();
+		client::SyncCoroQueryResults qr;
+		std::shared_ptr<client::SyncCoroReindexer> rx = svc_[0][0].Get()->api.reindexer;
+		Error err = rx->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what() << " NS SIZE: " << tableSize << "; " << sql;
+		EXPECT_EQ(qr.Count(), expectedResultSize) << "NS SIZE: " << tableSize << "; " << sql;
+		size_t count = 0;
+		for (auto it = qr.begin(), end = qr.end(); it != end; ++it) {
+			int prevResult = 0;
+			for (auto i = testCases.begin(), e = testCases.end(); i != e; ++i) {
+				const int result = i->sort.test(it);
+				if (prevResult == 0) {
+					if (i->desc) {
+						EXPECT_LE(result, 0) << "NS SIZE: " << tableSize << "; " << sql;
+					} else {
+						EXPECT_GE(result, 0) << "NS SIZE: " << tableSize << "; " << sql;
+					}
+					prevResult = result;
+				}
+			}
+			if (testCases.front().sort.testId) {
+				const auto id = getField<int>(kFieldId, it);
+				EXPECT_EQ(id, expectedId()) << "NS SIZE: " << tableSize << "; " << sql;
+			}
+			++count;
+		}
+		EXPECT_EQ(count, expectedResultSize) << "NS SIZE: " << tableSize << "; " << sql;
+	}
 }

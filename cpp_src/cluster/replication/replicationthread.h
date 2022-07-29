@@ -95,7 +95,10 @@ public:
 		Node(int _serverId, uint32_t _uid, const client::CoroReindexerConfig &config) noexcept
 			: serverId(_serverId), uid(_uid), client(config) {}
 		void Reconnect(net::ev::dynamic_loop &loop, const ReplThreadConfig &config) {
-			client.RemoveConnectionStateObserver(connObserverId);
+			if (connObserverId.has_value()) {
+				client.RemoveConnectionStateObserver(*connObserverId);
+				connObserverId.reset();
+			}
 			client.Stop();
 			client::ConnectOpts opts;
 			opts.CreateDBIfMissing().WithExpectedClusterID(config.ClusterID);
@@ -111,7 +114,7 @@ public:
 			namespaceData;	// This map should not invalidate references
 		uint64_t nextUpdateId = 0;
 		bool requireResync = false;
-		int64_t connObserverId = -1;
+		std::optional<int64_t> connObserverId;
 	};
 
 	ReplThread(int serverId_, ReindexerImpl &thisNode, std::shared_ptr<UpdatesQueueT>, BehaviourParamT &&bhvParam,
@@ -128,7 +131,10 @@ public:
 			loop.spawn(
 				swg,
 				[&node]() noexcept {
-					node.client.RemoveConnectionStateObserver(node.connObserverId);
+					if (node.connObserverId.has_value()) {
+						node.client.RemoveConnectionStateObserver(*node.connObserverId);
+						node.connObserverId.reset();
+					}
 					node.client.Stop();
 				},
 				k16kCoroStack);
@@ -154,7 +160,7 @@ private:
 	Error nodeReplicationImpl(Node &node);
 	void updatesNotifier() noexcept;
 	std::tuple<bool, UpdateApplyStatus> handleNetworkCheckRecord(Node &node, UpdatesQueueT::UpdatePtr &updPtr, uint16_t offset,
-																 bool forceCheck, const UpdateRecord &rec) noexcept;
+																 bool currentlyOnline, const UpdateRecord &rec) noexcept;
 
 	Error syncNamespace(Node &node, const std::string &nsName, const ReplicationStateV2 &followerState);
 	UpdateApplyStatus nodeUpdatesHandlingLoop(Node &node) noexcept;

@@ -172,10 +172,10 @@ void ReplicationApi::SetUp() {
 void ReplicationApi::TearDown() {
 	std::lock_guard<std::mutex> lock(m_);
 	for (auto& server : svc_) {
-		if (server.Get()) server.Get()->Stop();
+		if (server.Get(false)) server.Get(false)->Stop();
 	}
 	for (auto& server : svc_) {
-		if (!server.Get()) continue;
+		if (!server.Get(false)) continue;
 		server.Drop();
 		auto now = std::chrono::milliseconds(0);
 		const auto pause = std::chrono::milliseconds(10);

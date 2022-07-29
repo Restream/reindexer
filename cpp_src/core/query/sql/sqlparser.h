@@ -91,7 +91,7 @@ protected:
 	int parseWhere(tokenizer &parser);
 
 	/// Parse order by
-	int parseOrderBy(tokenizer &parser, SortingEntries &, h_vector<Variant, 0> &forcedSortOrder);
+	int parseOrderBy(tokenizer &parser, SortingEntries &, std::vector<Variant> &forcedSortOrder);
 
 	/// Parse join entries
 	void parseJoin(JoinType type, tokenizer &tok);

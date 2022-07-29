@@ -190,7 +190,7 @@ will return JSON object with status of namespace `media_items `replication
 
 ```JSON
 {
-	"last_lsn":{
+	"last_lsn_v2":{
 		"server_id":20,
 		"counter":5
 	},
@@ -213,7 +213,7 @@ will return JSON object with status of namespace `media_items `replication
 }
 ```
 
-- `last_lsn` - current lsn of this node (leader and follower will have the same LSN values for each record)
+- `last_lsn_v2` - current lsn of this node (leader and follower will have the same LSN values for each record)
 - `ns_version` - current namespace version. This value is set during namespace creation
 - `temporary` - namespace is temporary
 - `incarnation_counter` - number of switches between master slave 

@@ -30,6 +30,8 @@ public:
 
 	explicit operator bool() const noexcept { return !ok(); }
 
+	bool operator==(const Error &other) const noexcept;
+
 protected:
 	struct payload {
 		payload(int code, const std::string &what) : code_(code), what_(what) {}

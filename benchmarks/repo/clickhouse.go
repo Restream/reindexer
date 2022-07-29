@@ -91,6 +91,10 @@ func (repo *ClickHouseRepo) Query1Cond(N int, onlyQuery bool, limit int) (ret []
 	return sqlFetchAll(stmt, N, onlyQuery, limit, 2010)
 }
 
+func (repo *ClickHouseRepo) QueryJoin(N int, limit int, filtersSet [10]interface{}) (ret []*Item) {
+	return
+}
+
 func (repo *ClickHouseRepo) Update(N int) {
 	stmt, err := repo.db.Preparex("UPDATE items SET name=?,year=?,description=? WHERE id=?")
 	if err != nil {

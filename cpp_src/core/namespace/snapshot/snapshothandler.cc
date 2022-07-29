@@ -261,7 +261,7 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 	if (commitRecord.type != WalCommitTransaction) {
 		throw Error(errParams, "Unexpected tx chunk commit record type: %d. LSN: %d", commitRecord.type, records.back().LSN());
 	}
-	auto tx = ns_.NewTransaction(RdxContext(ch.Records().front().LSN()));
+	auto tx = Transaction(ns_.NewTransaction(RdxContext(ch.Records().front().LSN())));
 	for (size_t i = 1; i < records.size() - 1; ++i) {
 		auto lsn = records[i].LSN();
 		WALRecord wrec(records[i].Record());
@@ -291,7 +291,8 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 				break;
 			}
 			case WalEmpty: {
-				tx.Nop(lsn);
+				auto err = tx.Nop(lsn);
+				if (!err.ok()) throw err;
 				break;
 			}
 			default:
@@ -302,7 +303,8 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 	LocalQueryResults qr;
 	NsContext nsCtx = NsContext(rdxCtx);
 	nsCtx.InSnapshot(ch.Records().back().LSN(), ch.IsWAL(), ch.IsLastChunk(), isInitialLeaderSync);
-	ns_.CommitTransaction(tx, qr, nsCtx);
+	auto ltx = Transaction::Transform(std::move(tx));
+	ns_.CommitTransaction(ltx, qr, nsCtx);
 }
 
 }  // namespace reindexer

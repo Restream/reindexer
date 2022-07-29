@@ -24,13 +24,16 @@ func (TestLogger) Printf(level int, format string, msg ...interface{}) {
 func (repo *ReindexRepo) Init() bool {
 
 	repo.db = reindexer.NewReindex("builtin:///tmp/reindex/")
-	// repo.db = reindexer.NewReindex("cproto://127.0.0.1:6534/tst")
+	//repo.db = reindexer.NewReindex("cproto://127.0.0.1:6534/tst", reindexer.WithCreateDBIfMissing())
+	if repo.db.Status().Err != nil {
+		panic(repo.db.Status().Err)
+	}
 
 	if err := repo.db.OpenNamespace("items", reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), Item{}); err != nil {
 		panic(err)
 	}
 
-	//	ftcfg := reindexer.DefaultFT1Config()
+	// ftcfg := reindexer.DefaultFT1Config()
 	// ftcfg.Stemmers = nil
 	// ftcfg.EnableTranslit = false
 	// ftcfg.EnableKbLayout = false
@@ -38,8 +41,26 @@ func (repo *ReindexRepo) Init() bool {
 
 	//	repo.db.ConfigureIndex("items", "description", ftcfg)
 
+	if err := repo.db.OpenNamespace("joined_items", reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), JoinedItem{}); err != nil {
+		panic(err)
+	}
+
+	item, err := repo.db.Query(reindexer.ConfigNamespaceName).WhereString("type", reindexer.EQ, "namespaces").Exec().FetchOne()
+	if err != nil {
+		panic(err)
+	}
+	dbCfg := item.(*reindexer.DBConfigItem)
+	(*dbCfg.Namespaces)[0].MinPreselectSize = 0
+	(*dbCfg.Namespaces)[0].MaxPreselectSize = 0
+	(*dbCfg.Namespaces)[0].MaxPreselectPart = 0
+	err = repo.db.Upsert(reindexer.ConfigNamespaceName, dbCfg)
+	if err != nil {
+		panic(err)
+	}
+
 	repo.db.Query("items").Sort("year", false).Exec().FetchAll()
-	repo.db.Query("items").Match("description", "").Limit(1).Exec()
+	repo.db.Query("items").Match("description", "").Limit(1).Exec().Close()
+
 	repo.db.SetLogger(TestLogger{})
 	return true
 }
@@ -53,6 +74,11 @@ func (repo *ReindexRepo) Seed(itemsInDataSet int) bool {
 	}
 	repo.db.Query("items").Sort("year", false).Exec().FetchAll()
 	repo.db.Query("items").Match("description", "").Limit(1).Exec()
+	for i := 0; i < itemsInDataSet; i++ {
+		if err := repo.db.Upsert("joined_items", newJoinedItem(i)); err != nil {
+			panic(err)
+		}
+	}
 	repo.db.SetLogger(nil)
 	return true
 }
@@ -137,6 +163,20 @@ func (repo *ReindexRepo) Query1Cond(N int, onlyQuery bool, limit int) (ret []*It
 	}
 	return ret
 }
+
+func (repo *ReindexRepo) QueryJoin(N int, limit int, filtersSet [10]interface{}) (ret []*Item) {
+	for i := 0; i < N; i++ {
+		iter := repo.db.Query("items").Where("id", reindexer.SET, filtersSet[:]).InnerJoin(repo.db.Query("joined_items"), "joined").On("id", reindexer.EQ, "id").Exec()
+		iter.AllowUnsafe(true)
+
+		if iter.Error() != nil {
+			panic(iter.Error())
+		}
+		iter.Close()
+	}
+	return
+}
+
 func (repo *ReindexRepo) Update(N int) {
 	for i := 0; i < N; i++ {
 		id := rand.Int() % itemsInDataSet

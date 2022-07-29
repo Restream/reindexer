@@ -1,8 +1,8 @@
 #pragma once
 
 #include "core/indexopts.h"
+#include "core/sorting/sortexpression.h"
 #include "estl/h_vector.h"
-#include "sortexpression.h"
 
 namespace reindexer {
 
