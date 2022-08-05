@@ -23,7 +23,9 @@ public:
 	void EnableStorage(const string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx) {
 		handleInvalidation(NamespaceImpl::EnableStorage)(path, opts, storageType, ctx);
 	}
-	void LoadFromStorage(const RdxContext &ctx) { handleInvalidation(NamespaceImpl::LoadFromStorage)(ctx); }
+	void LoadFromStorage(unsigned threadsCount, const RdxContext &ctx) {
+		handleInvalidation(NamespaceImpl::LoadFromStorage)(threadsCount, ctx);
+	}
 	void DeleteStorage(const RdxContext &ctx) { handleInvalidation(NamespaceImpl::DeleteStorage)(ctx); }
 	uint32_t GetItemsCount() { return handleInvalidation(NamespaceImpl::GetItemsCount)(); }
 	void AddIndex(const IndexDef &indexDef, const RdxContext &ctx) { handleInvalidation(NamespaceImpl::AddIndex)(indexDef, ctx); }
@@ -69,6 +71,12 @@ public:
 			return;
 		}
 		handleInvalidation(NamespaceImpl::BackgroundRoutine)(ctx);
+	}
+	void StorageFlushingRoutine() {
+		if (hasCopy_.load(std::memory_order_acquire)) {
+			return;
+		}
+		handleInvalidation(NamespaceImpl::StorageFlushingRoutine)();
 	}
 	void CloseStorage(const RdxContext &ctx) { handleInvalidation(NamespaceImpl::CloseStorage)(ctx); }
 	Transaction NewTransaction(const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::NewTransaction)(ctx); }

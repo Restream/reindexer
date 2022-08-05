@@ -29,10 +29,14 @@ public:
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, Index::SelectOpts opts,
 							   BaseFunctionCtx::Ptr ctx, const RdxContext&) override final;
 	void UpdateSortedIds(const UpdateSortedContext&) override {}
-	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) = 0;
+	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTransaction, const RdxContext&) = 0;
 	void SetOpts(const IndexOpts& opts) override;
-	void Commit() override final;
+	void Commit() override final {
+		// Do nothing
+		// Rebuild will be done on first select
+	}
 	void CommitFulltext() override final {
+		cache_ft_.reset(new FtIdSetCache);
 		commitFulltextImpl();
 		this->isBuilt_ = true;
 	}
@@ -56,7 +60,6 @@ protected:
 	shared_ptr<FtIdSetCache> cache_ft_;
 	fast_hash_map<string, int> ftFields_;
 	std::unique_ptr<BaseFTConfig> cfg_;
-	DataHolder holder_;
 	Mutex mtx_;
 };
 

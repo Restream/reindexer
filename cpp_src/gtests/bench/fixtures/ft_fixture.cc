@@ -1,10 +1,12 @@
 #include "ft_fixture.h"
+#include <benchmark/benchmark.h>
 
 #include <fstream>
 #include <iterator>
 #include <thread>
 
 #include "core/cjson/jsonbuilder.h"
+#include "core/ft/config/ftfastconfig.h"
 #include "tools/stringstools.h"
 
 using benchmark::State;
@@ -16,18 +18,44 @@ using std::back_inserter;
 
 using reindexer::Query;
 using reindexer::QueryResults;
-using reindexer::utf8_to_utf16;
 using reindexer::utf16_to_utf8;
 
 uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
 
 FullText::FullText(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems, 1, false) {
+	static reindexer::FtFastConfig ftCfg(1);
+	static IndexOpts ftIndexOpts;
+	ftCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
+	ftIndexOpts.config = ftCfg.GetJson({});
+	ftIndexOpts.Dense();
 	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 		.AddIndex("description", "-", "string", IndexOpts())
 		.AddIndex("year", "tree", "int", IndexOpts())
 		.AddIndex("countries", "tree", "string", IndexOpts().Array())
-		.AddIndex("searchfast", {"countries", "description"}, "text", "composite", IndexOpts().Dense())
+		.AddIndex("searchfast", {"countries", "description"}, "text", "composite", ftIndexOpts)
 		.AddIndex("searchfuzzy", {"countries", "description"}, "fuzzytext", "composite", IndexOpts());
+}
+
+template <reindexer::FtFastConfig::Optimization opt>
+void FullText::UpdateIndex(State& state) {
+	static reindexer::FtFastConfig ftCfg(1);
+	ftCfg.optimization = opt;
+	const auto it = std::find_if(nsdef_.indexes.begin(), nsdef_.indexes.end(), [](const auto& idx) { return idx.name_ == "searchfast"; });
+	assert(it != nsdef_.indexes.end());
+	it->opts_.config = ftCfg.GetJson({});
+	AllocsTracker allocsTracker(state, printFlags);
+	for (auto _ : state) {
+		const auto err = db_->UpdateIndex(nsdef_.name, *it);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+	auto err = db_->Commit(nsdef_.name);
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
+	// Worm up index
+	Query q(nsdef_.name);
+	q.Where("searchfast", CondEq, "lskfj");
+	QueryResults qres;
+	err = db_->Select(q, qres);
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
 }
 
 reindexer::Error FullText::Initialize() {
@@ -74,20 +102,31 @@ reindexer::Error FullText::Initialize() {
 }
 
 void FullText::RegisterAllCases() {
+	constexpr static auto Mem = reindexer::FtFastConfig::Optimization::Memory;
+	constexpr static auto CPU = reindexer::FtFastConfig::Optimization::CPU;
 	Register("Insert", &FullText::Insert, this)->Iterations(id_seq_->Count())->Unit(benchmark::kMicrosecond);
 
 	// Register("BuildCommonIndexes", &FullText::BuildCommonIndexes, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 	Register("BuildFastTextIndex", &FullText::BuildFastTextIndex, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 	// Register("BuildFuzzyTextIndex", &FullText::BuildFuzzyTextIndex, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 
-	Register("Fast1WordMatch", &FullText::Fast1WordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2WordsMatch", &FullText::Fast2WordsMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1PrefixMatch", &FullText::Fast1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2PrefixMatch", &FullText::Fast2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1SuffixMatch", &FullText::Fast1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2SuffixMatch", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1TypoWordMatch", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2TypoWordMatch", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1WordMatch.OptByMem", &FullText::Fast1WordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2WordsMatch.OptByMem", &FullText::Fast2WordsMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1PrefixMatch.OptByMem", &FullText::Fast1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2PrefixMatch.OptByMem", &FullText::Fast2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1SuffixMatch.OptByMem", &FullText::Fast1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2SuffixMatch.OptByMem", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1TypoWordMatch.OptByMem", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2TypoWordMatch.OptByMem", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("SetOptimizationByCPU", &FullText::UpdateIndex<CPU>, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
+	Register("Fast1WordMatch.OptByCPU", &FullText::Fast1WordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2WordsMatch.OptByCPU", &FullText::Fast2WordsMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1PrefixMatch.OptByCPU", &FullText::Fast1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2PrefixMatch.OptByCPU", &FullText::Fast2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1SuffixMatch.OptByCPU", &FullText::Fast1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2SuffixMatch.OptByCPU", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1TypoWordMatch.OptByCPU", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2TypoWordMatch.OptByCPU", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
 
 	// Register("Fuzzy1WordMatch", &FullText::Fuzzy1WordMatch, this)->Unit(benchmark::kMicrosecond);
 	// Register("Fuzzy2WordsMatch", &FullText::Fuzzy2WordsMatch, this)->Unit(benchmark::kMicrosecond);
@@ -97,35 +136,44 @@ void FullText::RegisterAllCases() {
 	// Register("Fuzzy2SuffixMatch", &FullText::Fuzzy2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
 	// Register("Fuzzy1TypoWordMatch", &FullText::Fuzzy1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
 	// Register("Fuzzy2TypoWordMatch", &FullText::Fuzzy2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("SetOptimizationByMemory", &FullText::UpdateIndex<Mem>, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 	Register("BuildInsertSteps", &FullText::BuildInsertSteps, this)->Iterations(id_seq_->Count())->Unit(benchmark::kMicrosecond);
-	Register("Fast1WordMatchSteps", &FullText::Fast1WordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2WordsMatchSteps", &FullText::Fast2WordsMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1PrefixMatchSteps", &FullText::Fast1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2PrefixMatchSteps", &FullText::Fast2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1SuffixMatchSteps", &FullText::Fast1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2SuffixMatchSteps", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1TypoWordMatchSteps", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2TypoWordMatchSteps", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("InitForAlternatingUpdatesAndSelects", &FullText::InitForAlternatingUpdatesAndSelects, this)
+	Register("Fast1WordMatchSteps.OptByMem", &FullText::Fast1WordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2WordsMatchSteps.OptByMem", &FullText::Fast2WordsMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1PrefixMatchSteps.OptByMem", &FullText::Fast1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2PrefixMatchSteps.OptByMem", &FullText::Fast2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1SuffixMatchSteps.OptByMem", &FullText::Fast1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2SuffixMatchSteps.OptByMem", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1TypoWordMatchSteps.OptByMem", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2TypoWordMatchSteps.OptByMem", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("SetOptimizationByCPU", &FullText::UpdateIndex<CPU>, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
+	Register("Fast1WordMatch.OptByCPU", &FullText::Fast1WordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2WordsMatch.OptByCPU", &FullText::Fast2WordsMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1PrefixMatch.OptByCPU", &FullText::Fast1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2PrefixMatch.OptByCPU", &FullText::Fast2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1SuffixMatch.OptByCPU", &FullText::Fast1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2SuffixMatch.OptByCPU", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast1TypoWordMatch.OptByCPU", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	Register("Fast2TypoWordMatch.OptByCPU", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+
+	Register("InitForAlternatingUpdatesAndSelects.OptByMem", &FullText::InitForAlternatingUpdatesAndSelects<Mem>, this)
 		->Iterations(1)
 		->Unit(benchmark::kMicrosecond);
-	Register("AlternatingUpdatesAndSelects", &FullText::AlternatingUpdatesAndSelects, this)->Unit(benchmark::kMicrosecond);
-	Register("AlternatingUpdatesAndSelectsByComposite", &FullText::AlternatingUpdatesAndSelectsByComposite, this)
+	Register("AlternatingUpdatesAndSelects.OptByMem", &FullText::AlternatingUpdatesAndSelects, this)->Unit(benchmark::kMicrosecond);
+	Register("AlternatingUpdatesAndSelectsByComposite.OptByMem", &FullText::AlternatingUpdatesAndSelectsByComposite, this)
 		->Unit(benchmark::kMicrosecond);
-	Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields", &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields,
-			 this)
+	Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields.OptByMem",
+			 &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields, this)
 		->Unit(benchmark::kMicrosecond);
-}
-
-std::string FullText::RandString() {
-	string res;
-	uint8_t len = rand() % 20 + 4;
-	res.resize(len);
-	for (int i = 0; i < len; ++i) {
-		int f = rand() % letters.size();
-		res[i] = letters[f];
-	}
-	return res;
+	Register("InitForAlternatingUpdatesAndSelects.OptByCPU", &FullText::InitForAlternatingUpdatesAndSelects<CPU>, this)
+		->Iterations(1)
+		->Unit(benchmark::kMicrosecond);
+	Register("AlternatingUpdatesAndSelects.OptByCPU", &FullText::AlternatingUpdatesAndSelects, this)->Unit(benchmark::kMicrosecond);
+	Register("AlternatingUpdatesAndSelectsByComposite.OptByCPU", &FullText::AlternatingUpdatesAndSelectsByComposite, this)
+		->Unit(benchmark::kMicrosecond);
+	Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields.OptByCPU",
+			 &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields, this)
+		->Unit(benchmark::kMicrosecond);
 }
 
 reindexer::Item FullText::MakeSpecialItem() {
@@ -583,17 +631,23 @@ vector<std::string> FullText::GetRandomCountries(size_t cnt) {
 	return result;
 }
 
+template <reindexer::FtFastConfig::Optimization opt>
 void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 	constexpr int kNsSize = 100'000;
+	static reindexer::FtFastConfig ftCfg(1);
+	static IndexOpts ftIndexOpts;
+	ftCfg.optimization = opt;
+	ftIndexOpts.config = ftCfg.GetJson({});
 	AllocsTracker allocsTracker(state, printFlags);
+	db_->DropNamespace(alternatingNs_);
 	for (auto _ : state) {
 		NamespaceDef nsDef{alternatingNs_};
 		nsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
-			.AddIndex("search1", "text", "string", IndexOpts())
-			.AddIndex("search2", "text", "string", IndexOpts())
+			.AddIndex("search1", "text", "string", ftIndexOpts)
+			.AddIndex("search2", "text", "string", ftIndexOpts)
 			.AddIndex("rand", "hash", "int", IndexOpts())
-			.AddIndex("search_comp", {"search1", "search2"}, "text", "composite", IndexOpts())
-			.AddIndex("search_comp_not_index_fields", {"field1", "field2"}, "text", "composite", IndexOpts());
+			.AddIndex("search_comp", {"search1", "search2"}, "text", "composite", ftIndexOpts)
+			.AddIndex("search_comp_not_index_fields", {"field1", "field2"}, "text", "composite", ftIndexOpts);
 		auto err = db_->AddNamespace(nsDef);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 		values_.clear();

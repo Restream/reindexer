@@ -56,6 +56,10 @@ public:
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
 	void Set(int field, const VariantArray &keys, bool append = false);
 
+	// Set non-array element by field index
+	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
+	void SetSingleElement(int field, const Variant &key);
+
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
 	void Set(std::string_view field, const VariantArray &keys, bool append = false);
@@ -79,14 +83,14 @@ public:
 	VariantArray GetIndexedArrayData(const IndexedTagsPath &jsonPath, int &offset, int &size) const;
 
 	// Get fields count
-	int NumFields() const { return t_.NumFields(); }
+	int NumFields() const noexcept { return t_.NumFields(); }
 
 	// Real size of payload with arrays
 	size_t RealSize() const;
 
-	inline const uint8_t *Ptr() const { return v_->Ptr(); }
-	const PayloadTypeImpl &Type() const { return t_; }
-	const T *Value() const { return v_; }
+	inline const uint8_t *Ptr() const noexcept { return v_->Ptr(); }
+	const PayloadTypeImpl &Type() const noexcept { return t_; }
+	const T *Value() const noexcept { return v_; }
 
 	// Serialize field values
 	void SerializeFields(WrSerializer &ser, const FieldsSet &fields) const;

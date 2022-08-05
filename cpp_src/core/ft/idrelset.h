@@ -10,12 +10,11 @@ typedef uint32_t VDocIdType;
 
 class IdRelType {
 public:
-	// Disable copy - enable only move
-	explicit IdRelType(VDocIdType id = 0) : id_(id) {}
+	explicit IdRelType(VDocIdType id = 0) noexcept : id_(id) {}
 	IdRelType(IdRelType&&) noexcept = default;
-	IdRelType(const IdRelType&) = delete;
+	IdRelType(const IdRelType&) = default;
 	IdRelType& operator=(IdRelType&&) noexcept = default;
-	IdRelType& operator=(const IdRelType&) = delete;
+	IdRelType& operator=(const IdRelType&) = default;
 
 	VDocIdType Id() const noexcept { return id_; }
 
@@ -45,6 +44,7 @@ public:
 	void SimpleCommit();
 	const h_vector<PosType, 3>& Pos() const { return pos_; }
 	uint64_t UsedFieldsMask() const noexcept { return usedFieldsMask_; }
+	size_t HeapSize() const noexcept { return pos_.heap_size(); }
 
 private:
 	static constexpr int maxField = 63;
@@ -59,7 +59,7 @@ private:
 	VDocIdType id_ = 0;
 };
 
-class IdRelSet : public h_vector<IdRelType, 0> {
+class IdRelSet : public std::vector<IdRelType> {
 public:
 	int Add(VDocIdType id, int pos, int field);
 	void SimpleCommit() {
@@ -70,6 +70,17 @@ public:
 	VDocIdType min_id_ = INT_MAX;
 };
 
-using PackedIdRelSet = packed_vector<IdRelType>;
+using PackedIdRelVec = packed_vector<IdRelType>;
+
+class IdRelVec : public std::vector<IdRelType> {
+public:
+	size_t heap_size() const noexcept {
+		size_t res = capacity() * sizeof(IdRelType);
+		for (const auto& id : *this) res += id.HeapSize();
+		return res;
+	}
+	void erase_back(size_t pos) noexcept { erase(begin() + pos, end()); }
+	size_t pos(const_iterator it) const noexcept { return it - cbegin(); }
+};
 
 }  // namespace reindexer

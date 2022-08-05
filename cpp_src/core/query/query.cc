@@ -170,6 +170,9 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 					sortingEntries_.push_back(std::move(sortingEntry));
 				}
 				int cnt = ser.GetVarUint();
+				if (cnt != 0 && sortingEntries_.size() != 1) {
+					throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
+				}
 				forcedSortOrder_.reserve(cnt);
 				while (cnt--) forcedSortOrder_.push_back(ser.GetVariant().EnsureHold());
 				break;

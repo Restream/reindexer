@@ -35,7 +35,6 @@ public:
 	void ClearCache(const std::bitset<64> &s) override {
 		if (cache_) cache_->ClearSorted(s);
 	}
-
 	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override;
 	void EnableUpdatesCountingMode(bool val) override { tracker_.enableCountingMode(val); }
 

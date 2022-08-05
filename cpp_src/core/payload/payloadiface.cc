@@ -154,6 +154,16 @@ void PayloadIface<T>::Set(int field, const VariantArray &keys, bool append) {
 		pos++;
 	}
 }
+
+template <typename T>
+template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
+void PayloadIface<T>::SetSingleElement(int field, const Variant &key) {
+	if (t_.Field(field).IsArray()) {
+		throw Error(errLogic, "Unable to set array field via single field setter");
+	}
+	Field(field).Set(key);
+}
+
 // Set element or array by field index and element index
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
@@ -568,6 +578,7 @@ template class PayloadIface<const PayloadValue>;
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(std::string_view, VariantArray const &, bool);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, VariantArray const &, bool);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, int, const Variant &);
+template void PayloadIface<PayloadValue>::SetSingleElement<PayloadValue, static_cast<void *>(0)>(int, const Variant &);
 
 template PayloadValue PayloadIface<PayloadValue>::CopyTo<PayloadValue, static_cast<void *>(0)>(PayloadType t, bool newFields);
 template PayloadValue PayloadIface<PayloadValue>::CopyWithNewOrUpdatedFields<PayloadValue, static_cast<void *>(0)>(PayloadType t);

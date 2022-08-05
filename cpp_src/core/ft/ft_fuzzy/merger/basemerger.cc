@@ -2,15 +2,13 @@
 #include <iostream>
 #include <memory>
 #include <vector>
+#include "core/rdxcontext.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
 #include "math.h"
 #include "sort/pdqsort.hpp"
 
 namespace search_engine {
-using std::vector;
-using std::pair;
-using std::make_pair;
 
 double bound(double k, double weight, double boost) { return (1.0 - weight) + k * boost * weight; }
 
@@ -78,7 +76,7 @@ void MergedData::Add(const IDCtx& ctx) {
 
 BaseMerger::BaseMerger(int max_id, int min_id) : max_id_(max_id), min_id_(min_id) {}
 
-SearchResult BaseMerger::Merge(MergeCtx& ctx) {
+SearchResult BaseMerger::Merge(MergeCtx& ctx, bool inTransaction, const reindexer::RdxContext& rdxCtx) {
 	SearchResult res;
 	res.data_ = std::make_shared<std::vector<MergedData>>();
 	res.max_proc_ = 0;
@@ -88,7 +86,8 @@ SearchResult BaseMerger::Merge(MergeCtx& ctx) {
 	DataSet<MergedData> data_set(min_id_, max_id_);
 	int pos = 0;
 	double max_proc = 0;
-	for (auto& res : *ctx.rusults) {
+	for (auto& res : *ctx.results) {
+		if (!inTransaction) ThrowOnCancel(rdxCtx);
 		for (auto it = res.data->begin(); it != res.data->end(); ++it) {
 			IDCtx id_ctx{&it->Pos(), res.pos, &max_proc, ctx.total_size, res.opts, *ctx.cfg, res.proc, ctx.sizes};
 

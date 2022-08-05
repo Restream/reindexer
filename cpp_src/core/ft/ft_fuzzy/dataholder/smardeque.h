@@ -6,18 +6,15 @@
 
 namespace search_engine {
 
-using std::pair;
-using std::vector;
-using std::shared_ptr;
 typedef uint8_t ProcType;
 typedef uint32_t HashType;
 typedef uint16_t PosType;
 
-typedef pair<int, ProcType> ResData;
+typedef std::pair<int, ProcType> ResData;
 
-typedef vector<ResData> SearchType;
+typedef std::vector<ResData> SearchType;
 
-typedef shared_ptr<SearchType> SearchTypePtr;
+typedef std::shared_ptr<SearchType> SearchTypePtr;
 
 template <class T, size_t block_size>
 class SmartDeque {

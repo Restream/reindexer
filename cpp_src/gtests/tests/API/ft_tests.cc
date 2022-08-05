@@ -1,16 +1,21 @@
+#include <gtest/gtest-param-test.h>
+#include <condition_variable>
 #include <iostream>
 #include <limits>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
+#include "core/ft/config/ftfastconfig.h"
 #include "core/ft/ftdsl.h"
 #include "debug/allocdebug.h"
 #include "ft_api.h"
+#include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
 
 using namespace std::string_view_literals;
 
-TEST_F(FTApi, CompositeSelect) {
+TEST_P(FTApi, CompositeSelect) {
 	Init(GetDefaultConfig(), NS1 | NS2);
 	Add("An entity is something|"sv, "| that in exists entity as itself"sv, NS1 | NS2);
 	Add("In law, a legal entity is|"sv, "|an entity that is capable of something bearing legal rights"sv, NS1 | NS2);
@@ -31,9 +36,9 @@ TEST_F(FTApi, CompositeSelect) {
 												  "s, <b>entity</b> id"sv,
 												  "| term for entity territorial divisions of some countries"sv};
 
-		PrintQueryResults("nm1", res);
+		rt.PrintQueryResults("nm1", res);
 		for (auto it : res) {
-			Item ritem(it.GetItem(false));
+			auto ritem(it.GetItem(false));
 			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 				auto field = ritem[idx].Name();
 				if (field == "id") continue;
@@ -46,7 +51,7 @@ TEST_F(FTApi, CompositeSelect) {
 	}
 }
 
-TEST_F(FTApi, CompositeSelectWithFields) {
+TEST_P(FTApi, CompositeSelectWithFields) {
 	Init(GetDefaultConfig(), NS1 | NS2);
 	AddInBothFields("An entity is something|"sv, "| that in exists entity as itself"sv, NS1 | NS2);
 	AddInBothFields("In law, a legal entity is|"sv, "|an entity that is capable of something bearing legal rights"sv, NS1 | NS2);
@@ -68,9 +73,9 @@ TEST_F(FTApi, CompositeSelectWithFields) {
 													  "s, <b>entity</b> id"sv,
 													  "or <b>entity</b> td"sv};
 
-			PrintQueryResults("nm1", res);
+			rt.PrintQueryResults("nm1", res);
 			for (auto it : res) {
-				Item ritem(it.GetItem(false));
+				auto ritem(it.GetItem(false));
 				for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 					auto curField = ritem[idx].Name();
 					if (curField != field) continue;
@@ -84,7 +89,7 @@ TEST_F(FTApi, CompositeSelectWithFields) {
 	}
 }
 
-TEST_F(FTApi, CompositeRankWithSynonyms) {
+TEST_P(FTApi, CompositeRankWithSynonyms) {
 	auto cfg = GetDefaultConfig();
 	cfg.synonyms = {{{"word"}, {"слово"}}};
 	Init(cfg);
@@ -95,7 +100,7 @@ TEST_F(FTApi, CompositeRankWithSynonyms) {
 	CheckAllPermutations("@", {"ft1^0.5", "ft2^2"}, " word~", {{"word", "!слово!"}, {"!world!", "!world!"}}, true, ", ");
 }
 
-TEST_F(FTApi, SelectWithEscaping) {
+TEST_P(FTApi, SelectWithEscaping) {
 	reindexer::FtFastConfig ftCfg = GetDefaultConfig();
 	ftCfg.extraWordSymbols = "+-\\";
 	Init(ftCfg);
@@ -105,13 +110,13 @@ TEST_F(FTApi, SelectWithEscaping) {
 	EXPECT_TRUE(res.Count() == 1);
 
 	for (auto it : res) {
-		Item ritem(it.GetItem(false));
+		auto ritem(it.GetItem(false));
 		string val = ritem["ft1"].As<string>();
 		EXPECT_TRUE(val == "Go to !-hell+hell+hell!!!");
 	}
 }
 
-TEST_F(FTApi, SelectWithPlus) {
+TEST_P(FTApi, SelectWithPlus) {
 	Init(GetDefaultConfig());
 
 	Add("added three words"sv);
@@ -120,7 +125,7 @@ TEST_F(FTApi, SelectWithPlus) {
 	CheckAllPermutations("", {"+added"}, "", {{"!added! something else", ""}, {"!added! three words", ""}});
 }
 
-TEST_F(FTApi, SelectWithPlusWithSingleAlternative) {
+TEST_P(FTApi, SelectWithPlusWithSingleAlternative) {
 	auto cfg = GetDefaultConfig();
 	cfg.enableKbLayout = false;
 	cfg.enableTranslit = false;
@@ -132,7 +137,7 @@ TEST_F(FTApi, SelectWithPlusWithSingleAlternative) {
 	CheckAllPermutations("", {"+монитор*"}, "", {{"!мониторы!", ""}});
 }
 
-TEST_F(FTApi, SelectWithMinus) {
+TEST_P(FTApi, SelectWithMinus) {
 	Init(GetDefaultConfig());
 
 	Add("including me, excluding you"sv);
@@ -142,7 +147,7 @@ TEST_F(FTApi, SelectWithMinus) {
 	CheckAllPermutations("", {"including", "-excluding"}, "", {{"!including! all of them", ""}});
 }
 
-TEST_F(FTApi, SelectWithFieldsList) {
+TEST_P(FTApi, SelectWithFieldsList) {
 	Init(GetDefaultConfig());
 
 	Add("nm1"sv, "Never watch their games"sv, "Because nothing can be worse than Spartak Moscow"sv);
@@ -151,7 +156,7 @@ TEST_F(FTApi, SelectWithFieldsList) {
 	CheckAllPermutations("@ft1 ", {"Spartak", "Moscow"}, "", {{"!Spartak Moscow! is the worst team right now", "Yes, for sure"}});
 }
 
-TEST_F(FTApi, SelectWithRelevanceBoost) {
+TEST_P(FTApi, SelectWithRelevanceBoost) {
 	Init(GetDefaultConfig());
 
 	Add("She was a very bad girl"sv);
@@ -165,7 +170,7 @@ TEST_F(FTApi, SelectWithRelevanceBoost) {
 						 true);
 }
 
-TEST_F(FTApi, SelectWithDistance) {
+TEST_P(FTApi, SelectWithDistance) {
 	Init(GetDefaultConfig());
 
 	Add("Her nose was very very long"sv);
@@ -175,7 +180,47 @@ TEST_F(FTApi, SelectWithDistance) {
 	CheckAllPermutations("", {"'nose long'~3"}, "", {{"Her !nose! was !long!", ""}, {"Her !nose! was exceptionally !long!", ""}}, true);
 }
 
-TEST_F(FTApi, SelectWithTypos) {
+TEST_P(FTApi, ConcurrencyCheck) {
+	const std::string kStorage = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_FTApi/ConcurrencyCheck");
+	Init(GetDefaultConfig(), NS1, kStorage);
+
+	Add("Her nose was very very long"sv);
+	Add("Her nose was exceptionally long"sv);
+	Add("Her nose was long"sv);
+
+	rt.reindexer.reset();
+	Init(GetDefaultConfig(), NS1, kStorage);  // Restart rx to drop all the caches
+
+	std::condition_variable cv;
+	std::mutex mtx;
+	bool ready = false;
+	std::vector<std::thread> threads;
+	std::atomic<unsigned> runningThreads = {0};
+	constexpr unsigned kTotalThreads = 10;
+	for (unsigned i = 0; i < kTotalThreads; ++i) {
+		threads.emplace_back(std::thread([&] {
+			std::unique_lock lck(mtx);
+			++runningThreads;
+			cv.wait(lck, [&] { return ready; });
+			lck.unlock();
+			CheckAllPermutations("", {"'nose long'~3"}, "", {{"Her !nose! was !long!", ""}, {"Her !nose! was exceptionally !long!", ""}},
+								 true);
+		}));
+	}
+	while (runningThreads.load() < kTotalThreads) {
+		std::this_thread::sleep_for(std::chrono::microseconds(100));
+	}
+	{
+		std::lock_guard lck(mtx);
+		ready = true;
+		cv.notify_all();
+	}
+	for (auto& th : threads) {
+		th.join();
+	}
+}
+
+TEST_P(FTApi, SelectWithTypos) {
 	auto cfg = GetDefaultConfig();
 	cfg.stopWords.clear();
 	cfg.stemmers.clear();
@@ -320,7 +365,7 @@ bool AreFloatingValuesEqual(T a, T b) {
 	return std::abs(a - b) < std::numeric_limits<T>::epsilon();
 }
 
-TEST_F(FTApi, FTDslParserMatchSymbolTest) {
+TEST_P(FTApi, FTDslParserMatchSymbolTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
 	ftdsl.parse("*search*this*");
@@ -333,7 +378,7 @@ TEST_F(FTApi, FTDslParserMatchSymbolTest) {
 	EXPECT_TRUE(ftdsl[1].pattern == L"this");
 }
 
-TEST_F(FTApi, FTDslParserMisspellingTest) {
+TEST_P(FTApi, FTDslParserMisspellingTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
 	ftdsl.parse("black~ -white");
@@ -345,7 +390,7 @@ TEST_F(FTApi, FTDslParserMisspellingTest) {
 	EXPECT_TRUE(ftdsl[1].pattern == L"white");
 }
 
-TEST_F(FTApi, FTDslParserFieldsPartOfRequest) {
+TEST_P(FTApi, FTDslParserFieldsPartOfRequest) {
 	FTDSLQueryParams params;
 	params.fields = {{"name", 0}, {"title", 1}};
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
@@ -359,7 +404,7 @@ TEST_F(FTApi, FTDslParserFieldsPartOfRequest) {
 	EXPECT_TRUE(ftdsl[0].opts.fieldsOpts[1].needSumRank);
 }
 
-TEST_F(FTApi, FTDslParserTermRelevancyBoostTest) {
+TEST_P(FTApi, FTDslParserTermRelevancyBoostTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
 	ftdsl.parse("+mongodb^0.5 +arangodb^0.25 +reindexer^2.5");
@@ -372,13 +417,13 @@ TEST_F(FTApi, FTDslParserTermRelevancyBoostTest) {
 	EXPECT_TRUE(AreFloatingValuesEqual(ftdsl[2].opts.boost, 2.5f));
 }
 
-TEST_F(FTApi, FTDslParserWrongRelevancyTest) {
+TEST_P(FTApi, FTDslParserWrongRelevancyTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	EXPECT_THROW(ftdsl.parse("+wrong +boost^X"), Error);
+	EXPECT_THROW(ftdsl.parse("+wrong +boost^X"), reindexer::Error);
 }
 
-TEST_F(FTApi, FTDslParserDistanceTest) {
+TEST_P(FTApi, FTDslParserDistanceTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
 	ftdsl.parse("'long nose'~3");
@@ -389,26 +434,26 @@ TEST_F(FTApi, FTDslParserDistanceTest) {
 	EXPECT_TRUE(ftdsl[1].opts.distance == 3);
 }
 
-TEST_F(FTApi, FTDslParserWrongDistanceTest) {
+TEST_P(FTApi, FTDslParserWrongDistanceTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	EXPECT_THROW(ftdsl.parse("'this is a wrong distance'~X"), Error);
+	EXPECT_THROW(ftdsl.parse("'this is a wrong distance'~X"), reindexer::Error);
 }
 
-TEST_F(FTApi, FTDslParserNoClosingQuoteTest) {
+TEST_P(FTApi, FTDslParserNoClosingQuoteTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	EXPECT_THROW(ftdsl.parse("\"forgot to close this quote"), Error);
+	EXPECT_THROW(ftdsl.parse("\"forgot to close this quote"), reindexer::Error);
 }
 
-TEST_F(FTApi, FTDslParserWrongFieldNameTest) {
+TEST_P(FTApi, FTDslParserWrongFieldNameTest) {
 	FTDSLQueryParams params;
 	params.fields = {{"id", 0}, {"fk_id", 1}, {"location", 2}};
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	EXPECT_THROW(ftdsl.parse("@name,text,desc Thrones"), Error);
+	EXPECT_THROW(ftdsl.parse("@name,text,desc Thrones"), reindexer::Error);
 }
 
-TEST_F(FTApi, FTDslParserBinaryOperatorsTest) {
+TEST_P(FTApi, FTDslParserBinaryOperatorsTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
 	ftdsl.parse("+Jack -John +Joe");
@@ -421,7 +466,7 @@ TEST_F(FTApi, FTDslParserBinaryOperatorsTest) {
 	EXPECT_TRUE(ftdsl[2].pattern == L"joe");
 }
 
-TEST_F(FTApi, FTDslParserEscapingCharacterTest) {
+TEST_P(FTApi, FTDslParserEscapingCharacterTest) {
 	FTDSLQueryParams params;
 	params.extraWordSymbols = "+-\\";
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
@@ -435,7 +480,7 @@ TEST_F(FTApi, FTDslParserEscapingCharacterTest) {
 	EXPECT_TRUE(ftdsl[2].pattern == L"+bell");
 }
 
-TEST_F(FTApi, FTDslParserExactMatchTest) {
+TEST_P(FTApi, FTDslParserExactMatchTest) {
 	FTDSLQueryParams params;
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
 	ftdsl.parse("=moskva77");
@@ -444,7 +489,7 @@ TEST_F(FTApi, FTDslParserExactMatchTest) {
 	EXPECT_TRUE(ftdsl[0].pattern == L"moskva77");
 }
 
-TEST_F(FTApi, NumberToWordsSelect) {
+TEST_P(FTApi, NumberToWordsSelect) {
 	Init(GetDefaultConfig());
 	Add("оценка 5 майкл джордан 23"sv, ""sv);
 
@@ -452,13 +497,13 @@ TEST_F(FTApi, NumberToWordsSelect) {
 }
 
 // Make sure FT seeks by a huge number set by string in DSL
-TEST_F(FTApi, HugeNumberToWordsSelect) {
+TEST_P(FTApi, HugeNumberToWordsSelect) {
 	// Initialize namespace
 	Init(GetDefaultConfig());
 	// Add a record with a big number
 	Add("много 7343121521906522180408440 денег"sv, ""sv);
 	// Execute FT query, where search words are set as strings
-	QueryResults qr = SimpleSelect(
+	auto qr = SimpleSelect(
 		"+семь +септиллионов +триста +сорок +три +секстиллиона +сто +двадцать +один +квинтиллион +пятьсот +двадцать +один +квадриллион "
 		"+девятьсот +шесть +триллионов +пятьсот +двадцать +два +миллиарда +сто +восемьдесят +миллионов +четыреста +восемь +тысяч "
 		"+четыреста +сорок");
@@ -467,34 +512,34 @@ TEST_F(FTApi, HugeNumberToWordsSelect) {
 }
 
 // Make sure way too huge numbers are ignored in FT
-TEST_F(FTApi, HugeNumberToWordsSelect2) {
+TEST_P(FTApi, HugeNumberToWordsSelect2) {
 	// Initialize namespace
 	Init(GetDefaultConfig());
 	// Add a record with a huge number
 	Add("1127343121521906522180408440"sv, ""sv);
 	// Execute FT query, where search words are set as strings
-	QueryResults qr;
+	reindexer::QueryResults qr;
 	const std::string searchWord =
 		"+один +октиллион +сто +двадцать +семь +септиллионов +триста +сорок +три +секстиллиона +сто +двадцать +один +квинтиллион +пятьсот "
 		"+двадцать +один +квадриллион +девятьсот +шесть +триллионов +пятьсот +двадцать +два +миллиарда +сто +восемьдесят +миллионов "
 		"+четыреста +восемь +тысяч +четыреста +сорок";
-	Query q{Query("nm1").Where("ft3", CondEq, searchWord)};
-	Error err = rt.reindexer->Select(q, qr);
+	auto q{reindexer::Query("nm1").Where("ft3", CondEq, searchWord)};
+	auto err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	// Make sure it has found absolutely nothing
 	ASSERT_TRUE(qr.Count() == 0);
 }
 
-TEST_F(FTApi, DeleteTest) {
+TEST_P(FTApi, DeleteTest) {
 	Init(GetDefaultConfig());
 
 	std::unordered_map<string, int> data;
 	for (int i = 0; i < 10000; ++i) {
-		data.insert(Add(RuRandString()));
+		data.insert(Add(rt.RuRandString()));
 	}
 	auto res = SimpleSelect("entity");
 	for (int i = 0; i < 10000; ++i) {
-		data.insert(Add(RuRandString()));
+		data.insert(Add(rt.RuRandString()));
 	}
 	res = SimpleSelect("entity");
 
@@ -519,14 +564,14 @@ TEST_F(FTApi, DeleteTest) {
 	// TODO: add validation
 }
 
-TEST_F(FTApi, Stress) {
+TEST_P(FTApi, Stress) {
 	Init(GetDefaultConfig());
 
 	vector<string> data;
 	vector<string> phrase;
 
 	for (size_t i = 0; i < 100000; ++i) {
-		data.push_back(RandString());
+		data.push_back(rt.RandString());
 	}
 
 	for (size_t i = 0; i < 7000; ++i) {
@@ -544,7 +589,7 @@ TEST_F(FTApi, Stress) {
 				}
 
 				for (auto it : res) {
-					Item ritem(it.GetItem(false));
+					auto ritem(it.GetItem(false));
 					if (ritem["ft1"].As<string>() == phrase[j]) {
 						found = true;
 					}
@@ -556,7 +601,7 @@ TEST_F(FTApi, Stress) {
 		}
 	}
 }
-TEST_F(FTApi, Unique) {
+TEST_P(FTApi, Unique) {
 	Init(GetDefaultConfig());
 
 	std::vector<string> data;
@@ -578,7 +623,7 @@ TEST_F(FTApi, Unique) {
 		inserted = false;
 
 		while (!inserted) {
-			s = RandString();
+			s = rt.RandString();
 			auto res = checks.insert(s);
 			inserted = res.second;
 		}
@@ -597,7 +642,7 @@ TEST_F(FTApi, Unique) {
 				auto res = StressSelect(data[j]);
 				if (res.Count() != 1) {
 					for (auto it : res) {
-						Item ritem(it.GetItem(false));
+						auto ritem(it.GetItem(false));
 					}
 					abort();
 				}
@@ -606,7 +651,7 @@ TEST_F(FTApi, Unique) {
 	}
 }
 
-TEST_F(FTApi, SummationOfRanksInSeveralFields) {
+TEST_P(FTApi, SummationOfRanksInSeveralFields) {
 	auto ftCfg = GetDefaultConfig(3);
 	ftCfg.summationRanksByFieldsRatio = 0.0f;
 	Init(ftCfg, NS3);
@@ -656,7 +701,7 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 	}
 
 	ftCfg.summationRanksByFieldsRatio = 1.0f;
-	Error err = SetFTConfig(ftCfg, "nm3", "ft", {"ft1", "ft2", "ft3"});
+	auto err = SetFTConfig(ftCfg, "nm3", "ft", {"ft1", "ft2", "ft3"});
 	ASSERT_TRUE(err.ok()) << err.what();
 	Add("nm3"sv, "test"sv, "test"sv, "test"sv);
 	// Do not sum ranks by fields, inspite of sum ratio in config is not zero, as it is not asked in request
@@ -772,7 +817,7 @@ TEST_F(FTApi, SummationOfRanksInSeveralFields) {
 	}
 }
 
-TEST_F(FTApi, SelectSynonyms) {
+TEST_P(FTApi, SelectSynonyms) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.synonyms = {{{"лыв", "лав"}, {"love"}}, {{"лар", "hate"}, {"rex", "looove"}}};
 	Init(ftCfg);
@@ -785,7 +830,7 @@ TEST_F(FTApi, SelectSynonyms) {
 	CheckAllPermutations("", {"hate"}, "", {{"test", "love !rex!"}, {"test", "no !looove!"}});
 }
 
-TEST_F(FTApi, SelectTranslitWithComma) {
+TEST_P(FTApi, SelectTranslitWithComma) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.logLevel = 5;
 	Init(ftCfg);
@@ -810,7 +855,7 @@ TEST_F(FTApi, SelectTranslitWithComma) {
 	EXPECT_EQ(item["ft1"].As<string>(), "!матэ!");
 }
 
-TEST_F(FTApi, SelectMultiwordSynonyms) {
+TEST_P(FTApi, SelectMultiwordSynonyms) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.synonyms = {{{"whole world", "UN", "United Nations"},
 					   {"UN", "ООН", "целый мир", "планета", "генеральная ассамблея организации объединенных наций"}},
@@ -895,7 +940,7 @@ TEST_F(FTApi, SelectMultiwordSynonyms) {
 }
 
 // issue #715
-TEST_F(FTApi, SelectMultiwordSynonyms2) {
+TEST_P(FTApi, SelectMultiwordSynonyms2) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.synonyms = {{{"черный"}, {"серый космос"}}};
 	Init(ftCfg);
@@ -939,7 +984,7 @@ TEST_F(FTApi, SelectMultiwordSynonyms2) {
 	CheckAllPermutations("@ft1 ", {"+samsung", "+galaxy", "+черный", "+черный", "+черный", "+something"}, "", {});
 }
 
-TEST_F(FTApi, SelectWithMinusWithSynonyms) {
+TEST_P(FTApi, SelectWithMinusWithSynonyms) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.synonyms = {{{"word", "several lexems"}, {"слово", "сколькото лексем"}}};
 	Init(ftCfg);
@@ -962,7 +1007,7 @@ TEST_F(FTApi, SelectWithMinusWithSynonyms) {
 }
 
 // issue #627
-TEST_F(FTApi, SelectMultiwordSynonymsWithExtraWords) {
+TEST_P(FTApi, SelectMultiwordSynonymsWithExtraWords) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.synonyms = {
 		{{"бронестекло", "защитное стекло", "бронированное стекло"}, {"бронестекло", "защитное стекло", "бронированное стекло"}}};
@@ -1006,7 +1051,7 @@ TEST_F(FTApi, SelectMultiwordSynonymsWithExtraWords) {
 	CheckAllPermutations("", {"+бронестекло", "+iphone", "+samsung"}, "", {});
 }
 
-TEST_F(FTApi, ChangeSynonymsCfg) {
+TEST_P(FTApi, ChangeSynonymsCfg) {
 	auto ftCfg = GetDefaultConfig();
 	Init(ftCfg);
 
@@ -1055,7 +1100,7 @@ TEST_F(FTApi, ChangeSynonymsCfg) {
 	CheckAllPermutations("", {"several", "lexems"}, "", {{"!several lexems!", "test"}});
 }
 
-TEST_F(FTApi, SelectWithRelevanceBoostWithSynonyms) {
+TEST_P(FTApi, SelectWithRelevanceBoostWithSynonyms) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.synonyms = {{{"word"}, {"одно слово"}}, {{"United Nations"}, {"ООН"}}};
 	Init(ftCfg);
@@ -1067,7 +1112,7 @@ TEST_F(FTApi, SelectWithRelevanceBoostWithSynonyms) {
 	CheckAllPermutations("", {"word^0.5", "United^2", "Nations^0.5"}, "", {{"", "!ООН!"}, {"!одно слово!", ""}}, true);
 }
 
-TEST_F(FTApi, SelectWithFieldsBoostWithSynonyms) {
+TEST_P(FTApi, SelectWithFieldsBoostWithSynonyms) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.synonyms = {{{"word"}, {"одно слово"}}};
 	Init(ftCfg);
@@ -1082,7 +1127,7 @@ TEST_F(FTApi, SelectWithFieldsBoostWithSynonyms) {
 						 ", ");
 }
 
-TEST_F(FTApi, SelectWithFieldsListWithSynonyms) {
+TEST_P(FTApi, SelectWithFieldsListWithSynonyms) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.synonyms = {{{"word"}, {"одно слово"}}};
 	Init(ftCfg);
@@ -1096,7 +1141,7 @@ TEST_F(FTApi, SelectWithFieldsListWithSynonyms) {
 	CheckAllPermutations("@ft2 ", {"word"}, "", {{"", "!одно слово!"}});
 }
 
-TEST_F(FTApi, RankWithPosition) {
+TEST_P(FTApi, RankWithPosition) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.fieldsCfg[0].positionWeight = 1.0;
 	Init(ftCfg);
@@ -1120,7 +1165,7 @@ TEST_F(FTApi, RankWithPosition) {
 						 true);
 }
 
-TEST_F(FTApi, DifferentFieldRankPosition) {
+TEST_P(FTApi, DifferentFieldRankPosition) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.fieldsCfg[0].positionWeight = 1.0;
 	ftCfg.fieldsCfg[0].positionBoost = 10.0;
@@ -1161,7 +1206,7 @@ TEST_F(FTApi, DifferentFieldRankPosition) {
 						 true);
 }
 
-TEST_F(FTApi, PartialMatchRank) {
+TEST_P(FTApi, PartialMatchRank) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.partialMatchDecrease = 0;
 	Init(ftCfg);
@@ -1177,7 +1222,7 @@ TEST_F(FTApi, PartialMatchRank) {
 	CheckAllPermutations("@", {"ft1^1.1", "ft2^1"}, " ТНТ*", {{"", "!ТНТ!"}, {"!ТНТ4!", ""}}, true, ", ");
 }
 
-TEST_F(FTApi, SelectFullMatch) {
+TEST_P(FTApi, SelectFullMatch) {
 	auto ftCfg = GetDefaultConfig();
 	ftCfg.fullMatchBoost = 0.9;
 	Init(ftCfg);
@@ -1192,7 +1237,7 @@ TEST_F(FTApi, SelectFullMatch) {
 	CheckAllPermutations("", {"love"}, "", {{"test", "!love!"}, {"test", "!love! second"}}, true);
 }
 
-TEST_F(FTApi, SetFtFieldsCfgErrors) {
+TEST_P(FTApi, SetFtFieldsCfgErrors) {
 	auto cfg = GetDefaultConfig(2);
 	Init(cfg);
 	cfg.fieldsCfg[0].positionWeight = 0.1;
@@ -1203,15 +1248,9 @@ TEST_F(FTApi, SetFtFieldsCfgErrors) {
 	EXPECT_FALSE(err.ok());
 	EXPECT_EQ(err.what(), "Field 'ft' is not included to full text index");
 
-	// Задаем уникальный конфиг дважды для одного поля ft1
-	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft1"});
-	// Получаем ошибку
-	EXPECT_FALSE(err.ok());
-	EXPECT_EQ(err.what(), "Field 'ft1' is dublicated in fulltext configuration");
-
 	err = rt.reindexer->OpenNamespace("nm3");
 	ASSERT_TRUE(err.ok()) << err.what();
-	DefineNamespaceDataset(
+	rt.DefineNamespaceDataset(
 		"nm3", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft", "text", "string", IndexOpts(), 0}});
 	// Задаем уникальный конфиг для единственного поля ft в индексе ft
 	err = SetFTConfig(cfg, "nm3", "ft", {"ft"});
@@ -1233,3 +1272,16 @@ TEST_F(FTApi, SetFtFieldsCfgErrors) {
 	EXPECT_FALSE(err.ok());
 	EXPECT_EQ(err.what(), "FtFastConfig: Value of 'max_typos' - 5 is out of bounds: [0,4]");
 }
+
+INSTANTIATE_TEST_SUITE_P(, FTApi,
+						 ::testing::Values(reindexer::FtFastConfig::Optimization::Memory, reindexer::FtFastConfig::Optimization::CPU),
+						 [](const auto& info) {
+							 switch (info.param) {
+								 case reindexer::FtFastConfig::Optimization::Memory:
+									 return "OptimizationByMemory";
+								 case reindexer::FtFastConfig::Optimization::CPU:
+									 return "OptimizationByCPU";
+								 default:
+									 assert(0);
+							 }
+						 });

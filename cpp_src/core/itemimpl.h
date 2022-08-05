@@ -35,6 +35,8 @@ class Schema;
 
 class ItemImpl : public ItemImplRawData {
 public:
+	ItemImpl() = default;
+
 	// Construct empty item
 	ItemImpl(PayloadType type, const TagsMatcher &tagsMatcher, const FieldsSet &pkFields = {}, std::shared_ptr<const Schema> schema = {})
 		: ItemImplRawData(PayloadValue(type.TotalSize(), 0, type.TotalSize() + 0x100)),

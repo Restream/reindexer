@@ -25,9 +25,9 @@ public:
 		return fields_[field];
 	}
 
-	const string &Name() const { return name_; }
+	const string &Name() const noexcept { return name_; }
 	void SetName(const string &name) { name_ = name; }
-	int NumFields() const { return fields_.size(); }
+	int NumFields() const noexcept { return fields_.size(); }
 	void Add(PayloadFieldType f);
 	bool Drop(std::string_view field);
 	int FieldByName(std::string_view field) const;

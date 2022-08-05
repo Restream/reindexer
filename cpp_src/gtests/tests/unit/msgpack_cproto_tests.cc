@@ -5,7 +5,7 @@ TEST_F(MsgPackCprotoApi, SelectTest) {
 	reindexer::client::QueryResults qr;
 	Error err = client_->Select(Query(default_namespace), qr, ctx_, nullptr, FormatMsgPack);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 1000);
+	EXPECT_EQ(qr.Count(), 1000);
 	for (auto it : qr) {
 		checkItem(it);
 	}
@@ -16,13 +16,13 @@ TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
 	Error err =
 		client_->Select("select distinct(id), facet(a1, a2), sum(id) from test_namespace limit 100000", qr, ctx_, nullptr, FormatMsgPack);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.GetAggregationResults().size() == 3);
+	ASSERT_EQ(qr.GetAggregationResults().size(), 3);
 
 	const reindexer::AggregationResult& distinct = qr.GetAggregationResults()[0];
-	ASSERT_TRUE(distinct.type == AggDistinct);
-	ASSERT_TRUE(distinct.distincts.size() == 1000);
-	ASSERT_TRUE(distinct.fields.size() == 1);
-	ASSERT_TRUE(distinct.fields[0] == kFieldId);
+	EXPECT_EQ(distinct.type, AggDistinct);
+	EXPECT_EQ(distinct.distincts.size(), 1000);
+	ASSERT_EQ(distinct.fields.size(), 1);
+	EXPECT_EQ(distinct.fields[0], kFieldId);
 	std::unordered_set<int> found;
 	for (size_t i = 0; i < distinct.distincts.size(); ++i) {
 		found.insert(reindexer::stoi(distinct.distincts[i].As<string>(distinct.payloadType, distinct.distinctsFields)));
@@ -30,31 +30,29 @@ TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
 	ASSERT_EQ(distinct.distincts.size(), found.size());
 
 	for (size_t i = 0; i < distinct.distincts.size(); ++i) {
-		ASSERT_TRUE(found.find(i) != found.end());
+		EXPECT_NE(found.find(i), found.end());
 	}
 
 	const reindexer::AggregationResult& facet = qr.GetAggregationResults()[1];
-	ASSERT_TRUE(facet.type == AggFacet);
-	ASSERT_TRUE(facet.facets.size() == 1000);
-	ASSERT_TRUE(facet.fields.size() == 2);
-	ASSERT_TRUE(facet.fields[0] == kFieldA1);
-	ASSERT_TRUE(facet.fields[1] == kFieldA2);
+	EXPECT_EQ(facet.type, AggFacet);
+	EXPECT_EQ(facet.facets.size(), 1000);
+	ASSERT_EQ(facet.fields.size(), 2);
+	EXPECT_EQ(facet.fields[0], kFieldA1);
+	EXPECT_EQ(facet.fields[1], kFieldA2);
 
-	int i = 0;
 	for (const reindexer::FacetResult& res : facet.facets) {
-		for (int j = 0; j < int(res.values.size()); ++j) {
-			int64_t val = reindexer::stoll(res.values[j]);
-			ASSERT_TRUE(val == i * (2 + j));
-		}
-		++i;
+		EXPECT_EQ(res.count, 1);
+		const auto v1 = reindexer::stoll(res.values[0]);
+		const auto v2 = reindexer::stoll(res.values[1]);
+		EXPECT_EQ(v1 * 3, v2 * 2);
 	}
 
 	const reindexer::AggregationResult& sum = qr.GetAggregationResults()[2];
-	ASSERT_TRUE(sum.type == AggSum);
-	ASSERT_TRUE(sum.fields.size() == 1);
-	ASSERT_TRUE(sum.fields[0] == kFieldId);
-	double val = (double(0 + 999.0f) / 2) * 1000;
-	ASSERT_TRUE(sum.value == int64_t(val)) << sum.value << "; " << val;
+	EXPECT_EQ(sum.type, AggSum);
+	ASSERT_EQ(sum.fields.size(), 1);
+	EXPECT_EQ(sum.fields[0], kFieldId);
+	double val = (999.0 / 2.0) * 1000.0;
+	EXPECT_EQ(sum.value, int64_t(val)) << sum.value << "; " << val;
 }
 
 TEST_F(MsgPackCprotoApi, ModifyItemsTest) {

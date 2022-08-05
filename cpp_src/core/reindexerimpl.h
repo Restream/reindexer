@@ -178,6 +178,7 @@ protected:
 	Error tryLoadReplicatorConfFromYAML(const std::string &yamlReplConf);
 
 	void backgroundRoutine();
+	void storageFlushingRoutine();
 	Error closeNamespace(std::string_view nsName, const RdxContext &ctx, bool dropStorage, bool enableDropSlave = false);
 
 	Error syncDownstream(std::string_view nsName, bool force, const InternalRdxContext &ctx = InternalRdxContext());
@@ -196,7 +197,8 @@ protected:
 	string storagePath_;
 
 	std::thread backgroundThread_;
-	std::atomic<bool> stopBackgroundThread_;
+	std::thread storageFlushingThread_;
+	std::atomic<bool> stopBackgroundThreads_;
 
 	QueriesStatTracer queriesStatTracker_;
 	UpdatesObservers observers_;

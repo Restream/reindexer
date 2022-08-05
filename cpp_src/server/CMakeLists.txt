@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.0)
 project(reindexer_server_library)
 
 set (SWAGGER_VERSION "2.x")
-set (GH_FACE_VERSION "3.6.0")
+set (GH_FACE_VERSION "3.7.0")
 set (GH_FACE_TAG "v${GH_FACE_VERSION}")
 set (TARGET reindexer_server_library)
 set (SERVER_LIB_DIR ${PROJECT_BINARY_DIR} PARENT_SCOPE)

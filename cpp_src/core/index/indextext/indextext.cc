@@ -1,18 +1,12 @@
 
 #include "indextext.h"
 #include <memory>
-#include "core/ft/filters/kblayout.h"
-#include "core/ft/filters/synonyms.h"
-#include "core/ft/filters/translit.h"
 #include "core/rdxcontext.h"
 #include "estl/smart_lock.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
 
 namespace reindexer {
-
-// Available stemmers for languages
-const char *stemLangs[] = {"en", "ru", "nl", "fin", "de", "da", "fr", "it", "hu", "no", "pt", "ro", "es", "sv", "tr", nullptr};
 
 template <typename T>
 IndexText<T>::IndexText(const IndexText<T> &other) : IndexUnordered<T>(other), cache_ft_(new FtIdSetCache) {
@@ -22,14 +16,6 @@ IndexText<T>::IndexText(const IndexText<T> &other) : IndexUnordered<T>(other), c
 
 template <typename T>
 void IndexText<T>::initSearchers() {
-	holder_.stemmers_.clear();
-	holder_.translit_.reset(new Translit);
-	holder_.kbLayout_.reset(new KbLayout);
-	holder_.synonyms_.reset(new Synonyms);
-	for (const char **lang = stemLangs; *lang; ++lang) {
-		holder_.stemmers_.emplace(*lang, *lang);
-	}
-
 	size_t jsonPathIdx = 0;
 
 	if (this->payloadType_) {
@@ -46,12 +32,6 @@ void IndexText<T>::initSearchers() {
 }
 
 template <typename T>
-void IndexText<T>::Commit() {
-	// Do nothing
-	// Rebuild will be done on first select
-}
-
-template <typename T>
 void IndexText<T>::SetOpts(const IndexOpts &opts) {
 	string oldCfg = this->opts_.config;
 
@@ -61,7 +41,7 @@ void IndexText<T>::SetOpts(const IndexOpts &opts) {
 		try {
 			cfg_->parse(this->opts_.config, ftFields_);
 		} catch (...) {
-			this->opts_.config = oldCfg;
+			this->opts_.config = std::move(oldCfg);
 			cfg_->parse(this->opts_.config, ftFields_);
 			throw;
 		}
@@ -70,7 +50,7 @@ void IndexText<T>::SetOpts(const IndexOpts &opts) {
 
 // Generic implemetation for string index
 template <typename T>
-SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*stype*/, Index::SelectOpts /*opts*/,
+SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*stype*/, Index::SelectOpts opts,
 										 BaseFunctionCtx::Ptr ctx, const RdxContext &rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
@@ -83,10 +63,20 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 	}
 	ftctx->PrepareAreas(ftFields_, this->name_);
 
+	smart_lock<Mutex> lck(mtx_, rdxCtx);
+	if (!this->isBuilt_) {
+		// non atomic upgrade mutex to unique
+		lck.unlock();
+		lck = smart_lock<Mutex>(mtx_, rdxCtx, true);
+		if (!this->isBuilt_) {
+			CommitFulltext();
+		}
+	}
+
 	bool need_put = false;
 	IdSetCacheKey ckey{keys, condition, 0};
-	auto cache_ft = cache_ft_->Get(ckey);
 	SelectKeyResult res;
+	auto cache_ft = cache_ft_->Get(ckey);
 	if (cache_ft.valid) {
 		if (!cache_ft.val.ids->size() || (ftctx->NeedArea() && !cache_ft.val.ctx->need_area_)) {
 			need_put = true;
@@ -112,20 +102,18 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 	FtDSLQuery dsl(this->ftFields_, this->cfg_->stopWords, this->cfg_->extraWordSymbols);
 	dsl.parse(keys[0].As<string>());
 
-	smart_lock<Mutex> lck(mtx_, rdxCtx);
-	if (!this->isBuilt_) {
-		// non atomic upgrade mutex to unique
-		lck.unlock();
-		lck = smart_lock<Mutex>(mtx_, rdxCtx, true);
-		if (!this->isBuilt_) {
-			CommitFulltext();
-			need_put = false;
-		}
-	}
-
-	auto mergedIds = Select(ftctx, dsl);
+	auto mergedIds = Select(ftctx, dsl, opts.inTransaction, rdxCtx);
 	if (mergedIds) {
-		if (need_put && mergedIds->size()) cache_ft_->Put(ckey, FtIdSetCacheVal{mergedIds, ftctx->GetData()});
+		if (need_put && mergedIds->size()) {
+			// This areas will be shared via cache, so lazy commit may race
+			auto d = ftctx->GetData();
+			for (auto &area : d->holders_) {
+				if (!area.second->IsCommited()) {
+					area.second->Commit();
+				}
+			}
+			cache_ft_->Put(ckey, FtIdSetCacheVal{mergedIds, std::move(d)});
+		}
 
 		res.push_back(SingleSelectKeyResult(mergedIds));
 	}

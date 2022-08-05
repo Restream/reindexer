@@ -1441,6 +1441,20 @@ protected:
 										 .Where(kFieldNameGenre, CondSet, RandIntVector(10, 0, 50))
 										 .Distinct(distinct.c_str())
 										 .Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(Query(default_namespace)
+										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 20))
+										 .Where(kFieldNameGenre, CondSet, RandIntVector(10, 0, 50))
+										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 30, 50))
+										 .Distinct(distinct.c_str())
+										 .Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(Query(default_namespace)
+										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 0, 20))
+										 .Where(kFieldNameGenre, CondEq, randomGenre)
+										 .Where(kFieldNameAge, CondSet, RandIntVector(10, 30, 50))
+										 .Distinct(distinct.c_str())
+										 .Sort(sortIdx, sortOrder));
 					// end of check substituteCompositIndexes
 
 					ExecuteAndVerify(Query(default_namespace)
@@ -1497,9 +1511,10 @@ protected:
 										 .Where(kFieldNameGenre, CondEq, 5)
 										 .Where(kFieldNameAge, CondEq, 3)
 										 .OpenBracket()
-											 .Where(kFieldNameYear, CondGe, 2010)
+										 .Where(kFieldNameYear, CondGe, 2010)
 										 .CloseBracket()
-										 .Or().Where(kFieldNameYear, CondGe, 2010));
+										 .Or()
+										 .Where(kFieldNameYear, CondGe, 2010));
 
 					ExecuteAndVerify(Query(default_namespace)
 										 .Distinct(distinct.c_str())
@@ -1861,6 +1876,27 @@ protected:
 		}
 	}
 
+	static void getFacetValue(const reindexer::h_vector<std::string, 1>& f, std::string& v, const std::string& name) {
+		ASSERT_EQ(f.size(), 1) << (name + " aggregation Facet result is incorrect!");
+		v = f[0];
+	}
+
+	static void getFacetValue(const reindexer::h_vector<std::string, 1>& f, int& v, const std::string& name) {
+		ASSERT_EQ(f.size(), 1) << (name + " aggregation Facet result is incorrect!");
+		v = std::stoi(f[0]);
+	}
+
+	template <typename T>
+	static void checkFacetUnordered(const std::vector<reindexer::FacetResult>& result, std::unordered_map<T, int>& expected,
+									const std::string& name) {
+		ASSERT_EQ(result.size(), expected.size()) << (name + " aggregation Facet result is incorrect!");
+		T facetValue;
+		for (auto it = result.begin(), endIt = result.end(); it != endIt; ++it) {
+			getFacetValue(it->values, facetValue, name);
+			EXPECT_EQ(expected[facetValue], it->count) << (name + " aggregation Facet result is incorrect!");
+		}
+	}
+
 	void InitNSObj() {
 		Error err = rt.reindexer->OpenNamespace(nsWithObject);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -1932,8 +1968,12 @@ protected:
 							.Aggregate(AggAvg, {kFieldNameYear})
 							.Aggregate(AggSum, {kFieldNameYear})
 							.Aggregate(AggMin, {kFieldNamePackages})
-							.Aggregate(AggFacet, {kFieldNameName}, {{"Count", false}}, facetLimit, facetOffset)
-							.Aggregate(AggFacet, {kFieldNamePackages}, {}, facetLimit, facetOffset)
+							.Aggregate(AggFacet, {kFieldNameName})
+							.Aggregate(AggFacet, {kFieldNameName}, {{kFieldNameName, false}}, facetLimit, facetOffset)
+							.Aggregate(AggFacet, {kFieldNameName}, {{"count", true}}, facetLimit, facetOffset)
+							.Aggregate(AggFacet, {kFieldNamePackages})
+							.Aggregate(AggFacet, {kFieldNamePackages}, {{"count", false}}, facetLimit, facetOffset)
+							.Aggregate(AggFacet, {kFieldNamePackages}, {{kFieldNamePackages, true}}, facetLimit, facetOffset)
 							.Aggregate(AggFacet, {kFieldNameName, kFieldNameYear}, {{kFieldNameYear, true}, {kFieldNameName, false}},
 									   facetLimit, facetOffset)};
 		Query checkQuery = Query(default_namespace);
@@ -1957,34 +1997,49 @@ protected:
 			}
 		};
 		std::map<MultifieldFacetItem, int> multifieldFacet;
-		std::unordered_map<std::string, int> singlefieldFacetMap;
-		std::map<int, int> arrayFacet;
+		std::map<std::string, int> singlefieldFacetByName;
+		std::unordered_map<std::string, int> singlefieldFacetUnordered;
+		std::map<int, int, std::greater<int>> arrayFacetByName;
+		std::unordered_map<int, int> arrayFacetUnordered;
 		for (auto it : checkQr) {
 			Item item(it.GetItem(false));
 			yearSum += item[kFieldNameYear].Get<int>();
 			++multifieldFacet[MultifieldFacetItem{string(item[kFieldNameName].Get<std::string_view>()), item[kFieldNameYear].Get<int>()}];
-			++singlefieldFacetMap[string(item[kFieldNameName].Get<std::string_view>())];
+			++singlefieldFacetByName[string(item[kFieldNameName].Get<std::string_view>())];
+			++singlefieldFacetUnordered[string(item[kFieldNameName].Get<std::string_view>())];
 			for (const Variant& pack : static_cast<reindexer::VariantArray>(item[kFieldNamePackages])) {
 				const int value = pack.As<int>();
 				packagesMin = std::min(value, packagesMin);
-				++arrayFacet[value];
+				++arrayFacetByName[value];
+				++arrayFacetUnordered[value];
 			}
 		}
-		std::vector<std::pair<std::string, int>> singlefieldFacet(singlefieldFacetMap.begin(), singlefieldFacetMap.end());
-		std::sort(singlefieldFacet.begin(), singlefieldFacet.end(),
+		std::vector<std::pair<std::string, int>> singlefieldFacetByCount(singlefieldFacetByName.begin(), singlefieldFacetByName.end());
+		std::sort(singlefieldFacetByCount.begin(), singlefieldFacetByCount.end(),
 				  [](const std::pair<std::string, int>& lhs, const std::pair<std::string, int>& rhs) {
-					  return lhs.second == rhs.second ? lhs.first < rhs.first : lhs.second < rhs.second;
+					  return lhs.second == rhs.second ? lhs.first < rhs.first : lhs.second > rhs.second;
 				  });
+		std::vector<std::pair<int, int>> arrayFacetByCount(arrayFacetByName.begin(), arrayFacetByName.end());
+		std::sort(arrayFacetByCount.begin(), arrayFacetByCount.end(), [](const std::pair<int, int>& lhs, const std::pair<int, int>& rhs) {
+			return lhs.second == rhs.second ? lhs.first < rhs.first : lhs.second < rhs.second;
+		});
 		frameFacet(multifieldFacet, facetOffset, facetLimit);
-		frameFacet(singlefieldFacet, facetOffset, facetLimit);
-		frameFacet(arrayFacet, facetOffset, facetLimit);
+		frameFacet(singlefieldFacetByName, facetOffset, facetLimit);
+		frameFacet(singlefieldFacetByCount, facetOffset, facetLimit);
+		frameFacet(arrayFacetByName, facetOffset, facetLimit);
+		frameFacet(arrayFacetByCount, facetOffset, facetLimit);
 
+		ASSERT_EQ(testQr.aggregationResults.size(), 10);
 		EXPECT_DOUBLE_EQ(testQr.aggregationResults[0].value, yearSum / checkQr.Count()) << "Aggregation Avg result is incorrect!";
 		EXPECT_DOUBLE_EQ(testQr.aggregationResults[1].value, yearSum) << "Aggregation Sum result is incorrect!";
 		EXPECT_DOUBLE_EQ(testQr.aggregationResults[2].value, packagesMin) << "Aggregation Min result is incorrect!";
-		checkFacet(testQr.aggregationResults[3].facets, singlefieldFacet, "Singlefield");
-		checkFacet(testQr.aggregationResults[4].facets, arrayFacet, "Array");
-		checkFacet(testQr.aggregationResults[5].facets, multifieldFacet, "Multifield");
+		checkFacetUnordered(testQr.aggregationResults[3].facets, singlefieldFacetUnordered, "SinglefieldUnordered");
+		checkFacet(testQr.aggregationResults[4].facets, singlefieldFacetByName, "SinglefieldName");
+		checkFacet(testQr.aggregationResults[5].facets, singlefieldFacetByCount, "SinglefieldCount");
+		checkFacetUnordered(testQr.aggregationResults[6].facets, arrayFacetUnordered, "ArrayUnordered");
+		checkFacet(testQr.aggregationResults[7].facets, arrayFacetByCount, "ArrayByCount");
+		checkFacet(testQr.aggregationResults[8].facets, arrayFacetByName, "ArrayByName");
+		checkFacet(testQr.aggregationResults[9].facets, multifieldFacet, "Multifield");
 	}
 
 	void CompareQueryResults(const std::string& serializedQuery, const QueryResults& lhs, const QueryResults& rhs) {

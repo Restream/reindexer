@@ -22,26 +22,38 @@ private:
 template <typename CounterT, std::memory_order MemoryOrdering>
 class CounterGuard {
 public:
-	CounterGuard(std::atomic<CounterT>& counter) noexcept : counter_(counter), owns_(true) { counter_.fetch_add(1, MemoryOrdering); }
+	CounterGuard() = default;
+	CounterGuard(const CounterGuard&) = delete;
+	CounterGuard(CounterGuard&& o) noexcept : counter_(o.counter_) { o.counter_ = nullptr; }
+	CounterGuard(std::atomic<CounterT>& counter) noexcept : counter_(&counter) { counter_->fetch_add(1, MemoryOrdering); }
+	CounterGuard& operator=(const CounterGuard&) = delete;
+	CounterGuard& operator=(CounterGuard&& o) noexcept {
+		if (this != &o) {
+			Reset();
+			counter_ = o.counter_;
+			o.counter_ = nullptr;
+		}
+		return *this;
+	}
 	void Reset() noexcept {
-		if (owns_) {
-			owns_ = false;
-			counter_.fetch_sub(1, MemoryOrdering);
+		if (counter_) {
+			counter_->fetch_sub(1, MemoryOrdering);
+			counter_ = nullptr;
 		}
 	}
 	~CounterGuard() {
-		if (owns_) {
-			counter_.fetch_sub(1, MemoryOrdering);
-			assertrx(counter_ >= 0);
+		if (counter_) {
+			counter_->fetch_sub(1, MemoryOrdering);
+			assertrx(*counter_ >= 0);
 		}
 	}
 
 private:
-	std::atomic<CounterT>& counter_;
-	bool owns_ = false;
+	std::atomic<CounterT>* counter_ = nullptr;
 };
 
 using CounterGuardAIR32 = CounterGuard<int32_t, std::memory_order_relaxed>;
+using CounterGuardAIRL32 = CounterGuard<int32_t, std::memory_order_release>;
 using FlagGuardT = FlagGuard<true>;
 using FlagGuardF = FlagGuard<false>;
 

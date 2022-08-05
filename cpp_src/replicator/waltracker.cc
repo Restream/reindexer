@@ -62,7 +62,13 @@ bool WALTracker::Resize(int64_t sz) {
 	return true;
 }
 
-void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, shared_ptr<datastorage::IDataStorage> storage) {
+void WALTracker::SetStorage(std::weak_ptr<datastorage::IDataStorage> storage, bool expectingReset) {
+	assertrx(expectingReset || !storage_.lock());
+	(void)expectingReset;
+	storage_ = std::move(storage);
+}
+
+void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, std::weak_ptr<datastorage::IDataStorage> storage) {
 	logPrintf(LogTrace, "WALTracker::Init minLSN=%ld, maxLSN=%ld, size=%ld", minLSN, maxLSN, sz);
 	storage_ = storage;
 

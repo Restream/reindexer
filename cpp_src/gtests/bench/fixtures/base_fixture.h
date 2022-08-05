@@ -65,7 +65,10 @@ protected:
 		return benchmark::RegisterBenchmark(((useBenchamrkPrefixName_ ? nsdef_.name + "/" : "") + name).c_str(), std::bind(fn, cl, _1));
 	}
 
+	string RandString();
+
 protected:
+	const string letters = "abcdefghijklmnopqrstuvwxyz";
 	Reindexer* db_;
 	NamespaceDef nsdef_;
 	shared_ptr<Sequence> id_seq_;

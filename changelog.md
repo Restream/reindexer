@@ -1,3 +1,16 @@
+# Version 3.7.0 (05.08.2022)
+## Core
+- [fea] Optimize fulltext index
+- [fea] Add optimization mode for fulltext index (Memory or CPU. Check ft index configs)
+- [fea] Optimize unordered facets (ordering was disabled by default)
+- [fea] Optimize storage reading on startup (multithread storage reading)
+- [fea] Optimize storage flush (write locks will not affect storage flush anymore)
+- [fix] Fix conflict in idset and composite index merge optimizations
+
+## Face
+- [fix] Fix the NavigationDuplicated issue
+- [fix] Fix the limit in the request of the items on the SQL page
+
 # Version 3.6.2 (same as 3.6.1) (30.06.2022)
 ## Reindexer server
 - [fix] Fix timed out query results reuse

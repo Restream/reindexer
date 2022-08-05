@@ -49,6 +49,7 @@ public:
 	int GetSize() { return total_size_; }
 	bool AddWord(int start_pos, int size, int filed);
 	AreaVec *GetAreas(int field);
+	bool IsCommited() const noexcept { return commited_; }
 
 private:
 	bool insertArea(const Area &area, int filed);

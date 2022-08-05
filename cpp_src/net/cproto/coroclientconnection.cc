@@ -386,7 +386,7 @@ void CoroClientConnection::readerRoutine() {
 			if (errCode != errOK) {
 				ans.status_ = Error(errCode, errMsg);
 			}
-			ans.data_ = {ser.Buf() + ser.Pos(), ser.Len() - ser.Pos()};
+			ans.data_ = span<uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
 		} catch (const Error &err) {
 			// disconnect
 			closeConn(std::move(err));

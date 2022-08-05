@@ -301,7 +301,7 @@ public:
 		clear();
 		*this = std::move(tmp);
 	}
-	size_t heap_size() const {
+	size_t heap_size() const noexcept {
 		if (is_hdata())
 			return 0;
 		else

@@ -118,8 +118,6 @@ type NamespaceMemStat struct {
 	ItemsCount int64 `json:"items_count,omitempty"`
 	// Count of emopy(unused) slots in namespace
 	EmptyItemsCount int64 `json:"empty_items_count"`
-	// Raw size of documents, stored in the namespace, except string fields
-	DataSize int64 `json:"data_size"`
 	// Size of strings deleted from namespace, but still used in queryResults
 	StringsWaitingToBeDeletedSize int64 `json:"strings_waiting_to_be_deleted_size"`
 	// Summary of total namespace memory consumption
@@ -377,6 +375,9 @@ type DBNamespacesConfig struct {
 	MaxPreselectPart float64 `json:"max_preselect_part"`
 	// Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
 	IndexUpdatesCountingMode bool `json:"index_updates_counting_mode"`
+	// Enables synchronous storage flush inside write-calls, if async updates count is more than SyncStorageFlushLimit
+	// 0 - disables synchronous storage flush (default). In this case storage will be flushed in background thread only
+	SyncStorageFlushLimit int `json:"sync_storage_flush_limit"`
 }
 
 // DBReplicationConfig is part of reindexer configuration contains replication options

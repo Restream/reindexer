@@ -13,6 +13,8 @@ struct JsonNode;
 
 namespace reindexer {
 
+class JsonBuilder;
+
 class BaseFTConfig {
 public:
 	struct Synonym {
@@ -25,6 +27,7 @@ public:
 	virtual ~BaseFTConfig() = default;
 
 	virtual void parse(std::string_view sv, const fast_hash_map<std::string, int>& fields) = 0;
+	virtual std::string GetJson(const fast_hash_map<std::string, int>& fields) const = 0;
 
 	int mergeLimit = 20000;
 	std::vector<std::string> stemmers = {"en", "ru"};
@@ -39,6 +42,7 @@ public:
 
 protected:
 	void parseBase(const gason::JsonNode& root);
+	void getJson(JsonBuilder&) const;
 };
 
 }  // namespace reindexer

@@ -2,6 +2,7 @@
 
 #include "benchmark/benchmark.h"
 
+#include "aggregation.h"
 #include "api_tv_composite.h"
 #include "api_tv_simple.h"
 #include "geometry.h"
@@ -38,6 +39,7 @@ int main(int argc, char** argv) {
 	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple", kItemsInBenchDataset);
 	ApiTvComposite apiTvComposite(DB.get(), "ApiTvComposite", kItemsInBenchDataset);
 	Geometry geometry(DB.get(), "Geometry", kItemsInBenchDataset);
+	Aggregation aggregation(DB.get(), "Aggregation", kItemsInBenchDataset);
 
 	auto err = apiTvSimple.Initialize();
 	if (!err.ok()) return err.code();
@@ -51,6 +53,9 @@ int main(int argc, char** argv) {
 	err = geometry.Initialize();
 	if (!err.ok()) return err.code();
 
+	err = aggregation.Initialize();
+	if (!err.ok()) return err.code();
+
 	::benchmark::Initialize(&argc, argv);
 	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
 
@@ -58,6 +63,7 @@ int main(int argc, char** argv) {
 	apiTvSimple.RegisterAllCases();
 	apiTvComposite.RegisterAllCases();
 	geometry.RegisterAllCases();
+	aggregation.RegisterAllCases();
 
 	::benchmark::RunSpecifiedBenchmarks();
 }

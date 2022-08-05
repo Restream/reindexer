@@ -36,6 +36,25 @@ namespace reindexer {
 
 constexpr char kStoragePlaceholderFilename[] = ".reindexer.storage";
 constexpr char kReplicationConfFilename[] = "replication.conf";
+constexpr unsigned kStorageLoadingThreads = 6;
+
+static unsigned ConcurrentNamespaceLoaders() noexcept {
+	const auto hwConc = std::thread::hardware_concurrency();
+	if (hwConc <= 4) {
+		return 1;
+	} else if (hwConc < 8) {  // '<' is not a typo
+		return 2;
+	} else if (hwConc <= 16) {
+		return 3;
+	} else if (hwConc <= 24) {
+		return 4;
+	} else if (hwConc < 32) {  // '<' is not a typo
+		return 5;
+	} else if (hwConc <= 42) {
+		return 6;
+	}
+	return 10;
+}
 
 ReindexerImpl::ReindexerImpl(IClientsStats* clientsStats)
 	: replicator_(new Replicator(this)),
@@ -43,9 +62,10 @@ ReindexerImpl::ReindexerImpl(IClientsStats* clientsStats)
 	  storageType_(StorageType::LevelDB),
 	  connected_(false),
 	  clientsStats_(clientsStats) {
-	stopBackgroundThread_ = false;
+	stopBackgroundThreads_ = false;
 	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfiligConfigLoad, this));
 	backgroundThread_ = std::thread([this]() { this->backgroundRoutine(); });
+	storageFlushingThread_ = std::thread([this]() { this->storageFlushingRoutine(); });
 	std::call_once(initTerminateHandlerFlag, []() {
 		debug::terminate_handler_init();
 		debug::backtrace_set_crash_query_reporter(&reindexer::PrintCrashedQuery);
@@ -53,8 +73,9 @@ ReindexerImpl::ReindexerImpl(IClientsStats* clientsStats)
 }
 
 ReindexerImpl::~ReindexerImpl() {
-	stopBackgroundThread_ = true;
+	stopBackgroundThreads_ = true;
 	backgroundThread_.join();
+	storageFlushingThread_.join();
 	replicator_->Stop();
 }
 
@@ -180,7 +201,7 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 	if (!err.ok()) return err;
 
 	if (enableStorage && opts.IsOpenNamespaces()) {
-		size_t maxLoadWorkers = std::min(std::thread::hardware_concurrency(), 8u);
+		const size_t maxLoadWorkers = ConcurrentNamespaceLoaders();
 		std::unique_ptr<std::thread[]> thrs(new std::thread[maxLoadWorkers]);
 		std::atomic_flag hasNsErrors{false};
 		for (size_t i = 0; i < maxLoadWorkers; i++) {
@@ -269,7 +290,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 		}
 		ns->OnConfigUpdated(configProvider_, rdxCtx);
 		if (readyToLoadStorage) {
-			ns->LoadFromStorage(rdxCtx);
+			ns->LoadFromStorage(kStorageLoadingThreads, rdxCtx);
 		}
 		{
 			ULock lock(mtx_, &rdxCtx);
@@ -309,7 +330,7 @@ Error ReindexerImpl::OpenNamespace(std::string_view name, const StorageOpts& sto
 			auto opts = storageOpts;
 			ns->EnableStorage(storagePath_, opts.Autorepair(autorepairEnabled_), storageType_, rdxCtx);
 			ns->OnConfigUpdated(configProvider_, rdxCtx);
-			ns->LoadFromStorage(rdxCtx);
+			ns->LoadFromStorage(kStorageLoadingThreads, rdxCtx);
 		} else {
 			ns->OnConfigUpdated(configProvider_, rdxCtx);
 		}
@@ -360,7 +381,9 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 			ns->CloseStorage(ctx);
 		}
 		if (dropStorage) {
-			if (!nsIt->second->GetDefinition(ctx).isTemporary) observers_.OnWALUpdate(LSNPair(), nsName, WALRecord(WalNamespaceDrop));
+			if (!nsIt->second->GetDefinition(ctx).isTemporary) {
+				observers_.OnWALUpdate(LSNPair(), nsName, WALRecord(WalNamespaceDrop));
+			}
 		}
 
 	} catch (const Error& err) {
@@ -950,7 +973,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			jns.reset();
 		}
 		joinedSelectors.emplace_back(jq.joinType, ns, std::move(jns), std::move(joinRes), std::move(jItemQ), result, jq, preResult,
-									 joinedFieldIdx, func, joinedSelectorsCount, rdxCtx);
+									 joinedFieldIdx, func, joinedSelectorsCount, false, rdxCtx);
 		ThrowOnCancel(rdxCtx);
 	}
 	return joinedSelectors;
@@ -1162,16 +1185,16 @@ Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOp
 
 void ReindexerImpl::backgroundRoutine() {
 	static const RdxContext dummyCtx;
-	auto nsFlush = [&]() {
+	auto nsBackground = [&]() {
 		auto nsarray = getNamespacesNames(dummyCtx);
 		for (auto name : nsarray) {
 			try {
 				auto ns = getNamespace(name, dummyCtx);
 				ns->BackgroundRoutine(nullptr);
 			} catch (Error err) {
-				logPrintf(LogWarning, "flusherThread() failed: %s", err.what());
+				logPrintf(LogWarning, "backgroundRoutine() failed: %s", err.what());
 			} catch (...) {
-				logPrintf(LogWarning, "flusherThread() failed with ns: %s", name);
+				logPrintf(LogWarning, "backgroundRoutine() failed with ns: %s", name);
 			}
 		}
 		std::string yamlReplConf;
@@ -1186,7 +1209,31 @@ void ReindexerImpl::backgroundRoutine() {
 		}
 	};
 
-	while (!stopBackgroundThread_) {
+	while (!stopBackgroundThreads_) {
+		nsBackground();
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+
+	nsBackground();
+}
+
+void ReindexerImpl::storageFlushingRoutine() {
+	static const RdxContext dummyCtx;
+	auto nsFlush = [&]() {
+		auto nsarray = getNamespacesNames(dummyCtx);
+		for (auto name : nsarray) {
+			try {
+				auto ns = getNamespace(name, dummyCtx);
+				ns->StorageFlushingRoutine();
+			} catch (Error err) {
+				logPrintf(LogWarning, "storageFlushingRoutine() failed: %s", err.what());
+			} catch (...) {
+				logPrintf(LogWarning, "storageFlushingRoutine() failed with ns: %s", name);
+			}
+		}
+	};
+
+	while (!stopBackgroundThreads_) {
 		nsFlush();
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
@@ -1314,7 +1361,7 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 					needStartReplicator = true;
 				}
 			}
-			if (replicationEnabled_ && needStartReplicator && !stopBackgroundThread_) {
+			if (replicationEnabled_ && needStartReplicator && !stopBackgroundThreads_) {
 				if (Error err = replicator_->Start()) throw err;
 			}
 		} catch (gason::Exception& e) {

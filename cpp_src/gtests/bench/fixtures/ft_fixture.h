@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "base_fixture.h"
+#include "core/ft/config/ftfastconfig.h"
 #include "helpers.h"
 
 class FullText : protected BaseFixture {
@@ -18,6 +19,8 @@ protected:
 	virtual Item MakeItem();
 
 protected:
+	template <reindexer::FtFastConfig::Optimization>
+	void UpdateIndex(State&);
 	void Insert(State& state);
 	void BuildInsertSteps(State& state);
 
@@ -47,6 +50,7 @@ protected:
 
 	void BuildStepFastIndex(State& state);
 
+	template <reindexer::FtFastConfig::Optimization>
 	void InitForAlternatingUpdatesAndSelects(State&);
 	void AlternatingUpdatesAndSelects(benchmark::State&);
 	void AlternatingUpdatesAndSelectsByComposite(benchmark::State&);
@@ -62,7 +66,6 @@ protected:
 	wstring GetRandomUTF16WordByLength(size_t minLen = 4);
 
 	vector<string> GetRandomCountries(size_t cnt = 5);
-	string RandString();
 	Item MakeSpecialItem();
 
 protected:
@@ -80,7 +83,6 @@ protected:
 
 private:
 	void updateAlternatingNs(reindexer::WrSerializer&, benchmark::State&);
-	const string letters = "abcdefghijklmnopqrstuvwxyz";
 	const char* alternatingNs_ = "FtAlternatingUpdatesAndSelects";
 
 	size_t raw_data_sz_ = 0;

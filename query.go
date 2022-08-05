@@ -545,6 +545,7 @@ func (r *AggregateFacetRequest) Sort(field string, desc bool) *AggregateFacetReq
 // Sort - Apply sort order to returned from query items
 // If values argument specified, then items equal to values, if found will be placed in the top positions
 // For composite indexes values must be []interface{}, with value of each subindex
+// Forced sort is support for the first sorting field only
 func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query {
 
 	q.ser.PutVarCUInt(querySortIndex)

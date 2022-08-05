@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.6.2"
+  version: "3.7.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2727,6 +2727,13 @@ definitions:
         minimum: 0.0
         maximum: 1.0
         description: "Ratio to summation of ranks of match one term in several fields. For example, if value of this ratio is K, request is '@+f1,+f2,+f3 word', ranks of match in fields are R1, R2, R3 and R2 < R1 < R3, final rank will be R = R2 + K*R1 + K*K*R3"
+      optimization:
+        type: string
+        description: "Optimize the index by memory or by cpu"
+        enum:
+        - "Memory"
+        - "CPU"
+        default: "Memory"
       fields:
         type: array
         description: "Configuration for certian field if it differ from whole index configuration"
@@ -3118,9 +3125,6 @@ definitions:
       items_count:
         type: integer
         description: "Total count of documents in namespace"
-      data_size:
-        type: integer
-        description: "Raw size of documents, stored in the namespace, except string fields"
       strings_waiting_to_be_deleted_size:
         type: integer
         description: "Size of strings deleted from namespace, but still used in queryResults"
@@ -3554,6 +3558,11 @@ definitions:
       index_updates_counting_mode:
         type: boolean
         description: "Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time"
+      sync_storage_flush_limit:
+        type: integer
+        default: 0
+        minimun: 0
+        description: "Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only"
 
   ReplicationConfig:
     type: object

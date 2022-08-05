@@ -6,6 +6,7 @@
 #include <set>
 #include <thread>
 #include <vector>
+#include "asyncstorage.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/dbconfig.h"
 #include "core/index/keyentry.h"
@@ -27,6 +28,11 @@
 #include "replicator/updatesobserver.h"
 #include "replicator/waltracker.h"
 #include "stringsholder.h"
+
+#ifdef kRxStorageItemPrefix
+static_assert(false, "Redefinition of kRxStorageItemPrefix");
+#endif	// kRxStorageItemPrefix
+#define kRxStorageItemPrefix "I"
 
 namespace reindexer {
 
@@ -100,6 +106,8 @@ protected:
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	friend class ReindexerImpl;
 	friend QueryResults;
+	friend class ItemsLoader;
+	friend class IndexInserters;
 
 	class NSUpdateSortedContext : public UpdateSortedContext {
 	public:
@@ -173,7 +181,7 @@ public:
 	bool IsTemporary(const RdxContext &ctx) const { return GetReplState(ctx).temporary; }
 
 	void EnableStorage(const string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx);
-	void LoadFromStorage(const RdxContext &ctx);
+	void LoadFromStorage(unsigned threadsCount, const RdxContext &ctx);
 	void DeleteStorage(const RdxContext &);
 
 	uint32_t GetItemsCount() const { return itemsCount_.load(std::memory_order_relaxed); }
@@ -202,6 +210,7 @@ public:
 	vector<string> EnumMeta(const RdxContext &ctx);
 
 	void BackgroundRoutine(RdxActivityContext *);
+	void StorageFlushingRoutine();
 	void CloseStorage(const RdxContext &);
 
 	Transaction NewTransaction(const RdxContext &ctx);
@@ -259,14 +268,6 @@ protected:
 			}
 			return lck;
 		}
-		std::unique_lock<std::mutex> StorageLock() const {
-			using namespace std::string_view_literals;
-			std::unique_lock<std::mutex> lck(storage_mtx_);
-			if (readonly_.load(std::memory_order_acquire)) {
-				throw Error(errNamespaceInvalidated, "NS invalidated"sv);
-			}
-			return lck;
-		}
 		void MarkReadOnly() { readonly_.store(true, std::memory_order_release); }
 		std::atomic_bool &IsReadOnly() { return readonly_; }
 
@@ -283,7 +284,8 @@ protected:
 	void saveSchemaToStorage();
 	Error loadLatestSysRecord(std::string_view baseSysTag, uint64_t &version, string &content);
 	bool loadIndexesFromStorage();
-	void saveReplStateToStorage();
+	void saveReplStateToStorage(bool direct = true);
+	void saveTagsMatcherToStorage(bool clearUpdate);
 	void loadReplStateFromStorage();
 
 	void initWAL(int64_t minLSN, int64_t maxLSN);
@@ -314,10 +316,9 @@ protected:
 	IndexDef getIndexDefinition(size_t) const;
 
 	string getMeta(const string &key) const;
-	void flushStorage(const RdxContext &);
 	void putMeta(const string &key, std::string_view data, const RdxContext &ctx);
 
-	pair<IdType, bool> findByPK(ItemImpl *ritem, const RdxContext &);
+	pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &);
 	int getSortedIdxCount() const;
 	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
@@ -328,8 +329,6 @@ protected:
 	void getIndsideFromJoinCache(JoinCacheRes &ctx) const;
 
 	const FieldsSet &pkFields();
-	void writeToStorage(std::string_view key, std::string_view data);
-	void doFlushStorage();
 
 	vector<string> enumMeta() const;
 
@@ -355,13 +354,10 @@ protected:
 	// Tags matcher
 	TagsMatcher tagsMatcher_;
 
-	shared_ptr<datastorage::IDataStorage> storage_;
-	datastorage::UpdatesCollection::Ptr updates_;
-	std::atomic<int> unflushedCount_;
+	AsyncStorage storage_;
+	std::atomic<unsigned> replStateUpdates_ = {0};
 
 	std::unordered_map<string, string> meta_;
-
-	string dbpath_;
 
 	shared_ptr<QueryCache> queryCache_;
 
@@ -380,11 +376,10 @@ protected:
 	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) const;
 
 private:
-	NamespaceImpl(const NamespaceImpl &src);
+	NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &storageLock);
 
 	bool isSystem() const { return !name_.empty() && name_[0] == '#'; }
 	IdType createItem(size_t realSize);
-	void deleteStorage();
 	void checkApplySlaveUpdate(bool v);
 
 	void processWalRecord(const WALRecord &wrec, const RdxContext &ctx, lsn_t itemLsn = lsn_t(), Item *item = nullptr);
@@ -395,6 +390,12 @@ private:
 
 	void removeIndex(std::unique_ptr<Index> &);
 	void dumpIndex(std::ostream &os, std::string_view index) const;
+	void tryForceFlush(Locker::WLockT &&wlck) {
+		if (wlck.owns_lock()) {
+			wlck.unlock();
+			storage_.TryForceFlush();
+		}
+	}
 
 	JoinCache::Ptr joinCache_;
 

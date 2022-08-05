@@ -97,6 +97,8 @@ type FtFastConfig struct {
 	SumRanksByFieldsRatio float64 `json:"sum_ranks_by_fields_ratio"`
 	// Configuration for certain field
 	FieldsCfg []FtFastFieldConfig `json:"fields,omitempty"`
+	// Optimize the index by memory or by cpu
+	Optimization string `json:"optimization,omitempty"`
 }
 
 func DefaultFtFastConfig() FtFastConfig {
@@ -123,6 +125,7 @@ func DefaultFtFastConfig() FtFastConfig {
 		LogLevel:              0,
 		ExtraWordSymbols:      "/-+",
 		SumRanksByFieldsRatio: 0.0,
+		Optimization:          "Memory",
 	}
 }
 

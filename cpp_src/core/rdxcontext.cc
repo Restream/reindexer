@@ -89,7 +89,7 @@ RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, Activity
 	if (activityTracer_.empty() || query.empty()) return {(deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
 	assertrx(!qresults.activityCtx_);
 	qresults.activityCtx_.emplace(activityTracer_, user_, query, activityContainer, connectionId_, true);
-	return {&*(qresults.activityCtx_), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
+	return RdxContext{&*(qresults.activityCtx_), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_};
 }
 
 }  // namespace reindexer

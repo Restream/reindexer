@@ -481,17 +481,21 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
 		Query q;
-		q.Deserialize(ser);
-		while (!ser.Eof()) {
-			JoinedQuery q1;
-			q1.joinType = JoinType(ser.GetVarUint());
-			q1.Deserialize(ser);
-			q1.debugLevel = q.debugLevel;
-			if (q1.joinType == JoinType::Merge) {
-				q.mergeQueries_.emplace_back(std::move(q1));
-			} else {
-				q.joinQueries_.emplace_back(std::move(q1));
+		try {
+			q.Deserialize(ser);
+			while (!ser.Eof()) {
+				JoinedQuery q1;
+				q1.joinType = JoinType(ser.GetVarUint());
+				q1.Deserialize(ser);
+				q1.debugLevel = q.debugLevel;
+				if (q1.joinType == JoinType::Merge) {
+					q.mergeQueries_.emplace_back(std::move(q1));
+				} else {
+					q.joinQueries_.emplace_back(std::move(q1));
+				}
 			}
+		} catch (Error& err) {
+			return ret2c(err, out);
 		}
 
 		auto result{new_results()};
@@ -522,7 +526,11 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexe
 
 		Query q;
 		q.type_ = QueryDelete;
-		q.Deserialize(ser);
+		try {
+			q.Deserialize(ser);
+		} catch (Error& err) {
+			return ret2c(err, out);
+		}
 		auto result{new_results()};
 		if (!result) {
 			return ret2c(err_too_many_queries, out);
@@ -546,7 +554,11 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexe
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
 		Query q;
-		q.Deserialize(ser);
+		try {
+			q.Deserialize(ser);
+		} catch (Error& err) {
+			return ret2c(err, out);
+		}
 		q.type_ = QueryUpdate;
 		auto result{new_results()};
 		if (!result) {
@@ -574,10 +586,14 @@ reindexer_error reindexer_delete_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	}
 	Serializer ser(in.data, in.len);
 	Query q;
-	q.Deserialize(ser);
-	q.type_ = QueryDelete;
+	try {
+		q.Deserialize(ser);
+		q.type_ = QueryDelete;
 
-	trw->tr_.Modify(std::move(q));
+		trw->tr_.Modify(std::move(q));
+	} catch (Error& err) {
+		return error2c(err);
+	}
 
 	return error2c(errOK);
 }
@@ -593,10 +609,14 @@ reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	}
 	Serializer ser(in.data, in.len);
 	Query q;
-	q.Deserialize(ser);
-	q.type_ = QueryUpdate;
+	try {
+		q.Deserialize(ser);
+		q.type_ = QueryUpdate;
 
-	trw->tr_.Modify(std::move(q));
+		trw->tr_.Modify(std::move(q));
+	} catch (Error& err) {
+		return error2c(err);
+	}
 
 	return error2c(errOK);
 }

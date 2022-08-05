@@ -124,7 +124,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.6.2
+*Version* : 3.7.0
 
 
 ### License information
@@ -2155,6 +2155,7 @@ Fulltext Index configuration
 |**max_typos**  <br>*optional*|Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 2 possible typo -It will seriously increase RAM usage, and decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `4`|integer|
 |**merge_limit**  <br>*optional*|Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `65535`|integer|
 |**min_relevancy**  <br>*optional*|Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned  <br>**Default** : `0.05`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**optimization**  <br>*optional*|Optimize the index by memory or by cpu  <br>**Default** : `"Memory"`|enum (Memory, CPU)|
 |**partial_match_decrease**  <br>*optional*|Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|
 |**position_boost**  <br>*optional*|Boost of search query term position  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**position_weight**  <br>*optional*|Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
@@ -2386,7 +2387,6 @@ List of meta info of the specified namespace
 
 |Name|Description|Schema|
 |---|---|---|
-|**data_size**  <br>*optional*|Raw size of documents, stored in the namespace, except string fields|integer|
 |**indexes**  <br>*optional*|Memory consumption of each namespace index|< [IndexMemStat](#indexmemstat) > array|
 |**items_count**  <br>*optional*|Total count of documents in namespace|integer|
 |**join_cache**  <br>*optional*||[JoinCacheMemStats](#joincachememstats)|
@@ -2464,6 +2464,7 @@ List of meta info of the specified namespace
 |**optimization_sort_workers**  <br>*optional*|Maximum number of background threads of sort indexes optimization. 0 - disable sort optimizations|integer|
 |**optimization_timeout_ms**  <br>*optional*|Timeout before background indexes optimization start after last update. 0 - disable optimizations|integer|
 |**start_copy_policy_tx_size**  <br>*optional*|Enable namespace copying for transaction with steps count greater than this value (if copy_politics_multiplier also allows this)|integer|
+|**sync_storage_flush_limit**  <br>*optional*|Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only|integer|
 |**tx_size_to_always_copy**  <br>*optional*|Force namespace copying for transaction with steps count greater than this value|integer|
 |**unload_idle_threshold**  <br>*optional*|Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded|integer|
 |**wal_size**  <br>*optional*|Maximum WAL size for this namespace (maximum count of WAL records)|integer|

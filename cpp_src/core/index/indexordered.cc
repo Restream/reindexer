@@ -53,7 +53,9 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 		condition == CondLike)
 		return IndexUnordered<T>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 
-	if (keys.size() < 1) throw Error(errParams, "For condition required at least 1 argument, but provided 0");
+	if (keys.size() < 1) {
+		throw Error(errParams, "For condition required at least 1 argument, but provided 0");
+	}
 
 	auto startIt = this->idx_map.begin();
 	auto endIt = this->idx_map.end();

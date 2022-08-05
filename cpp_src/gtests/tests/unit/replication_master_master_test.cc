@@ -58,6 +58,7 @@ public:
 	void RestartServer(size_t id, vector<ServerControl>& nodes, int port, const std::string& dbPathMaster) {
 		assert(id < nodes.size());
 		if (nodes[id].Get()) {
+			nodes[id].Stop();
 			nodes[id].Drop();
 			size_t counter = 0;
 			while (nodes[id].IsRunning()) {

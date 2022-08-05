@@ -18,7 +18,7 @@ public:
 	/// @param minLSN - Min available LSN number
 	/// @param maxLSN - Current LSN counter value
 	/// @param storage - Storage object for store WAL records
-	void Init(int64_t sz, int64_t minLSN, int64_t maxLSN, shared_ptr<datastorage::IDataStorage> storage);
+	void Init(int64_t sz, int64_t minLSN, int64_t maxLSN, std::weak_ptr<datastorage::IDataStorage> storage);
 	/// Add new record to WAL tracker
 	/// @param rec - Record to be added
 	/// @param oldLsn - Optional, previous LSN value of changed object
@@ -39,6 +39,8 @@ public:
 	/// Get current WAL capacity
 	/// @return Max WAL size
 	int64_t Capacity() const { return walSize_; }
+	/// Reset storage without WAL reload
+	void SetStorage(std::weak_ptr<datastorage::IDataStorage> storage, bool expectingReset);
 
 	/// Iterator for WAL records
 	class iterator {

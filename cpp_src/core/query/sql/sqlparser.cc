@@ -351,6 +351,10 @@ int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, h
 					throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text(), parser.where());
 				}
 				tok = parser.next_token();
+				if (!sortingEntries.empty()) {
+					throw Error(errParseSQL, "Forced sort order is allowed for the first sorting entry only, '%s', %s", tok.text(),
+								parser.where());
+				}
 				forcedSortOrder_.push_back(token2kv(tok, parser, true));
 			}
 			tok = parser.peek_token();

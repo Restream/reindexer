@@ -117,6 +117,7 @@ public:
 	using base_hash_map::find;
 	using base_hash_map::begin;
 	using base_hash_map::end;
+	using base_hash_map::operator[];
 	using payload_str_fields_helper<hold>::have_str_fields;
 
 	static_assert(std::is_nothrow_move_constructible<std::pair<PayloadValue, T1>>::value, "Nothrow movebale key and value required");

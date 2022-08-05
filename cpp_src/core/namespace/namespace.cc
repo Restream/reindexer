@@ -28,9 +28,9 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 			CounterGuardAIR32 cg(ns->cancelCommitCnt_);
 			try {
 				auto rlck = ns->rLock(ctx);
-				auto storageLock = ns->locker_.StorageLock();
+				auto storageLock = ns->storage_.FullLock();
 				cg.Reset();
-				nsCopy_.reset(new NamespaceImpl(*ns));
+				nsCopy_.reset(new NamespaceImpl(*ns, storageLock));
 				nsCopyCalc.HitManualy();
 				nsCopy_->CommitTransaction(tx, result, NsContext(ctx).NoLock());
 				if (nsCopy_->lastUpdateTime_) {
@@ -38,8 +38,17 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 					nsCopy_->optimizeIndexes(NsContext(ctx).NoLock());
 					nsCopy_->warmupFtIndexes();
 				}
+				try {
+					nsCopy_->storage_.InheritUpdatesFrom(ns->storage_,
+														 storageLock);	// Updates can not be flushed until tx is commited into ns copy
+				} catch (Error& e) {
+					// This exception should never be seen - there are no good ways to recover from it
+					assertf(false, "Error during storage moving in namespace (%s) copying: %s", ns->name_, e.what());
+				}
+
 				calc.SetCounter(nsCopy_->updatePerfCounter_);
 				ns->markReadOnly();
+				ns->wal_.SetStorage(std::weak_ptr<datastorage::IDataStorage>(), true);
 				atomicStoreMainNs(nsCopy_.release());
 				hasCopy_.store(false, std::memory_order_release);
 			} catch (...) {
@@ -48,6 +57,9 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			}
+			ns = ns_;
+			lck.unlock();
+			ns->storage_.TryForceFlush();
 			return;
 		}
 	}
@@ -81,7 +93,7 @@ bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const Transactio
 
 void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const std::string& storagePath, const RdxContext& ctx) {
 	std::string dbpath;
-	handleInvalidation(NamespaceImpl::flushStorage)(ctx);
+	awaitMainNs(ctx)->storage_.Flush();
 	auto lck = handleInvalidation(NamespaceImpl::wLock)(ctx);
 	auto& srcNs = *atomicLoadMainNs();	// -V758
 	NamespaceImpl::Mutex* dstMtx = nullptr;
@@ -100,7 +112,7 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 				}
 			}
 		}
-		dbpath = dstNs->dbpath_;
+		dbpath = dstNs->storage_.Path();
 	} else if (newName == srcNs.name_) {
 		return;
 	}
@@ -108,22 +120,23 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 	if (dbpath.empty()) {
 		dbpath = fs::JoinPath(storagePath, newName);
 	} else {
-		dstNs->deleteStorage();
+		dstNs->storage_.Destroy();
 	}
 
-	bool hadStorage = (srcNs.storage_ != nullptr);
+	const bool hadStorage = (srcNs.storage_.IsValid());
 	auto storageType = StorageType::LevelDB;
+	const auto srcDbpath = srcNs.storage_.Path();
 	if (hadStorage) {
-		storageType = srcNs.storage_->Type();
-		srcNs.storage_.reset();
+		storageType = srcNs.storage_.Type();
+		srcNs.storage_.Close();
 		fs::RmDirAll(dbpath);
-		int renameRes = fs::Rename(srcNs.dbpath_, dbpath);
+		int renameRes = fs::Rename(srcDbpath, dbpath);
 		if (renameRes < 0) {
 			if (dst) {
 				assertrx(dstMtx);
 				dstMtx->unlock();
 			}
-			throw Error(errParams, "Unable to rename '%s' to '%s'", srcNs.dbpath_, dbpath);
+			throw Error(errParams, "Unable to rename '%s' to '%s'", srcDbpath, dbpath);
 		}
 	}
 
@@ -139,13 +152,13 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 	srcNs.payloadType_.SetName(srcNs.name_);
 
 	if (hadStorage) {
-		logPrintf(LogTrace, "Storage was moved from %s to %s", srcNs.dbpath_, dbpath);
-		srcNs.dbpath_ = std::move(dbpath);
-		srcNs.storage_.reset(datastorage::StorageFactory::create(storageType));
-		auto status = srcNs.storage_->Open(srcNs.dbpath_, srcNs.storageOpts_);
+		logPrintf(LogTrace, "Storage was moved from %s to %s", srcDbpath, dbpath);
+		auto status = srcNs.storage_.Open(storageType, srcNs.name_, dbpath, srcNs.storageOpts_);
 		if (!status.ok()) {
+			srcNs.storage_.Close();
 			throw status;
 		}
+		srcNs.wal_.SetStorage(srcNs.storage_.GetStoragePtr(), false);
 	}
 	if (srcNs.repl_.temporary) {
 		srcNs.repl_.temporary = false;

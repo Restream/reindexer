@@ -40,7 +40,8 @@ const std::vector<std::string> kDefDBConfig = {
 				"min_preselect_size":1000,
 				"max_preselect_size":1000,
 				"max_preselect_part":0.1,
-				"index_updates_counting_mode":false
+				"index_updates_counting_mode":false,
+				"sync_storage_flush_limit":0
 			}
 		]
 	})json",
@@ -102,7 +103,6 @@ const std::vector<NamespaceDef> kSystemNsDefs = {
 	NamespaceDef(kMemStatsNamespace, StorageOpts())
 		.AddIndex("name", "hash", "string", IndexOpts().PK())
 		.AddIndex("items_count", "-", "int64", IndexOpts().Dense())
-		.AddIndex("data_size", "-", "int64", IndexOpts().Dense())
 		.AddIndex("total.data_size", "-", "int64", IndexOpts().Dense())
 		.AddIndex("total.indexes_size", "-", "int64", IndexOpts().Dense())
 		.AddIndex("total.cache_size", "-", "int64", IndexOpts().Dense())

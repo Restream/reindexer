@@ -266,6 +266,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 	}
 	opts.maxIterations = GetMaxIterations();
 	opts.indexesNotOptimized = !ctx_->sortingContext.enableSortOrders;
+	opts.inTransaction = ctx_->inTransaction;
 
 	auto ctx = selectFnc ? selectFnc->CreateCtx(qe.idxNo) : BaseFunctionCtx::Ptr{};
 	if (ctx && ctx->type == BaseFunctionCtx::kFtCtx) ftCtx = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);

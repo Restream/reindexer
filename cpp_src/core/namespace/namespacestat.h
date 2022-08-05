@@ -106,7 +106,6 @@ struct NamespaceMemStat {
 	bool optimizationCompleted = false;
 	size_t itemsCount = 0;
 	size_t emptyItemsCount = 0;
-	size_t dataSize = 0;
 	size_t stringsWaitingToBeDeletedSize = 0;
 	struct {
 		size_t dataSize = 0;

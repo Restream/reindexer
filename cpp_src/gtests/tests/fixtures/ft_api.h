@@ -2,34 +2,40 @@
 #include <limits>
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/config/ftfastconfig.h"
-#include "reindexer_api.h"
+#include "core/queryresults/queryresults.h"
+#include "core/reindexer.h"
+#include "reindexertestapi.h"
 
-class FTApi : public ReindexerApi {
+class FTApi : public ::testing::TestWithParam<reindexer::FtFastConfig::Optimization> {
 public:
 	enum { NS1 = 1, NS2 = 2, NS3 = 4 };
-	void Init(const reindexer::FtFastConfig& ftCfg, unsigned nses = NS1) {
-		rt.reindexer.reset(new Reindexer);
-		if (nses & NS1) {
-			const Error err = rt.reindexer->OpenNamespace("nm1");
+	void Init(const reindexer::FtFastConfig& ftCfg, unsigned nses = NS1, const std::string& storage = std::string()) {
+		rt.reindexer.reset(new reindexer::Reindexer);
+		if (!storage.empty()) {
+			auto err = rt.reindexer->Connect("builtin://" + storage);
 			ASSERT_TRUE(err.ok()) << err.what();
-			DefineNamespaceDataset("nm1", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
-										   IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
-										   IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
-										   IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
+		}
+		if (nses & NS1) {
+			const reindexer::Error err = rt.reindexer->OpenNamespace("nm1");
+			ASSERT_TRUE(err.ok()) << err.what();
+			rt.DefineNamespaceDataset("nm1", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
+											  IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
+											  IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
+											  IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
 			SetFTConfig(ftCfg);
 		}
 		if (nses & NS2) {
-			const Error err = rt.reindexer->OpenNamespace("nm2");
+			const reindexer::Error err = rt.reindexer->OpenNamespace("nm2");
 			ASSERT_TRUE(err.ok()) << err.what();
-			DefineNamespaceDataset("nm2", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
-										   IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
-										   IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
-										   IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
+			rt.DefineNamespaceDataset("nm2", {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
+											  IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
+											  IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0},
+											  IndexDeclaration{"ft1+ft2=ft3", "text", "composite", IndexOpts(), 0}});
 		}
 		if (nses & NS3) {
-			Error err = rt.reindexer->OpenNamespace("nm3");
+			reindexer::Error err = rt.reindexer->OpenNamespace("nm3");
 			ASSERT_TRUE(err.ok()) << err.what();
-			DefineNamespaceDataset(
+			rt.DefineNamespaceDataset(
 				"nm3",
 				{IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"ft1", "text", "string", IndexOpts(), 0},
 				 IndexDeclaration{"ft2", "text", "string", IndexOpts(), 0}, IndexDeclaration{"ft3", "text", "string", IndexOpts(), 0},
@@ -46,95 +52,44 @@ public:
 		cfg.logLevel = 5;
 		cfg.mergeLimit = 20000;
 		cfg.maxStepSize = 100;
+		cfg.optimization = GetParam();
 		return cfg;
 	}
 
 	void SetFTConfig(const reindexer::FtFastConfig& ftCfg) {
-		const Error err = SetFTConfig(ftCfg, "nm1", "ft3", {"ft1", "ft2"});
+		const reindexer::Error err = SetFTConfig(ftCfg, "nm1", "ft3", {"ft1", "ft2"});
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	Error SetFTConfig(const reindexer::FtFastConfig& ftCfg, const string& ns, const string& index, const std::vector<std::string>& fields) {
+	reindexer::Error SetFTConfig(const reindexer::FtFastConfig& ftCfg, const string& ns, const string& index,
+								 const std::vector<std::string>& fields) {
 		assert(!ftCfg.fieldsCfg.empty());
 		assert(ftCfg.fieldsCfg.size() >= fields.size());
-		reindexer::WrSerializer wrser;
-		reindexer::JsonBuilder cfgBuilder(wrser);
-		cfgBuilder.Put("enable_translit", ftCfg.enableTranslit);
-		cfgBuilder.Put("enable_numbers_search", ftCfg.enableNumbersSearch);
-		cfgBuilder.Put("enable_kb_layout", ftCfg.enableKbLayout);
-		cfgBuilder.Put("enable_warmup_on_ns_copy", ftCfg.enableWarmupOnNsCopy);
-		cfgBuilder.Put("merge_limit", ftCfg.mergeLimit);
-		cfgBuilder.Put("log_level", ftCfg.logLevel);
-		cfgBuilder.Put("max_step_size", ftCfg.maxStepSize);
-		cfgBuilder.Put("full_match_boost", ftCfg.fullMatchBoost);
-		cfgBuilder.Put("extra_word_symbols", ftCfg.extraWordSymbols);
-		cfgBuilder.Put("partial_match_decrease", ftCfg.partialMatchDecrease);
-		cfgBuilder.Put("sum_ranks_by_fields_ratio", ftCfg.summationRanksByFieldsRatio);
-		cfgBuilder.Put("max_typos", ftCfg.maxTypos);
-		cfgBuilder.Array<std::string>("stemmers", ftCfg.stemmers);
-		const std::vector<std::string> stopWords{ftCfg.stopWords.cbegin(), ftCfg.stopWords.cend()};
-		cfgBuilder.Array<std::string>("stop_words", stopWords);
-		bool defaultPositionBoost{true};
-		bool defaultPositionWeight{true};
-		for (size_t i = 1; i < ftCfg.fieldsCfg.size(); ++i) {
-			if (ftCfg.fieldsCfg[0].positionBoost != ftCfg.fieldsCfg[i].positionBoost) defaultPositionBoost = false;
-			if (ftCfg.fieldsCfg[0].positionWeight != ftCfg.fieldsCfg[i].positionWeight) defaultPositionWeight = false;
+		reindexer::fast_hash_map<std::string, int> fieldsMap;
+		for (size_t i = 0, size = fields.size(); i < size; ++i) {
+			fieldsMap.emplace(fields[i], i);
 		}
-		if (defaultPositionBoost) {
-			cfgBuilder.Put("position_boost", ftCfg.fieldsCfg[0].positionBoost);
-		}
-		if (defaultPositionWeight) {
-			cfgBuilder.Put("position_weight", ftCfg.fieldsCfg[0].positionWeight);
-		}
-		{
-			auto synonymsNode = cfgBuilder.Array("synonyms");
-			for (auto& synonym : ftCfg.synonyms) {
-				auto synonymObj = synonymsNode.Object();
-				{
-					auto tokensNode = synonymObj.Array("tokens");
-					for (auto& token : synonym.tokens) tokensNode.Put(nullptr, token);
-				}
-				{
-					auto alternativesNode = synonymObj.Array("alternatives");
-					for (auto& token : synonym.alternatives) alternativesNode.Put(nullptr, token);
-				}
-			}
-		}
-		if (!defaultPositionWeight || !defaultPositionBoost) {
-			auto fieldsNode = cfgBuilder.Array("fields");
-			for (size_t i = 0; i < fields.size(); ++i) {
-				auto fldNode = fieldsNode.Object();
-				fldNode.Put("field_name", fields[i]);
-				if (!defaultPositionBoost) {
-					fldNode.Put("position_boost", ftCfg.fieldsCfg[i].positionBoost);
-				}
-				if (!defaultPositionWeight) {
-					fldNode.Put("position_weight", ftCfg.fieldsCfg[i].positionWeight);
-				}
-			}
-		}
-		cfgBuilder.End();
 		vector<reindexer::NamespaceDef> nses;
 		rt.reindexer->EnumNamespaces(nses, reindexer::EnumNamespacesOpts().WithFilter(ns));
-		auto it = std::find_if(nses[0].indexes.begin(), nses[0].indexes.end(),
-							   [&index](const reindexer::IndexDef& idef) { return idef.name_ == index; });
-		it->opts_.SetConfig(wrser.c_str());
+		const auto it = std::find_if(nses[0].indexes.begin(), nses[0].indexes.end(),
+									 [&index](const reindexer::IndexDef& idef) { return idef.name_ == index; });
+		it->opts_.SetConfig(ftCfg.GetJson(fieldsMap));
 
 		return rt.reindexer->UpdateIndex(ns, *it);
 	}
 
 	void FillData(int64_t count) {
 		for (int i = 0; i < count; ++i) {
-			Item item = NewItem(default_namespace);
+			reindexer::Item item = rt.NewItem(default_namespace);
 			item["id"] = counter_;
-			auto ft1 = RandString();
+			auto ft1 = rt.RandString();
 
 			counter_++;
 
 			item["ft1"] = ft1;
 
-			Upsert(default_namespace, item);
-			Commit(default_namespace);
+			rt.Upsert(default_namespace, item);
+			rt.Commit(default_namespace);
 		}
 	}
 	void Add(std::string_view ft1, std::string_view ft2, unsigned nses = NS1) {
@@ -148,35 +103,35 @@ public:
 	}
 
 	std::pair<std::string_view, int> Add(std::string_view ft1) {
-		Item item = NewItem("nm1");
+		reindexer::Item item = rt.NewItem("nm1");
 		item["id"] = counter_;
 		counter_++;
 		item["ft1"] = std::string{ft1};
 
-		Upsert("nm1", item);
-		Commit("nm1");
+		rt.Upsert("nm1", item);
+		rt.Commit("nm1");
 		return make_pair(ft1, counter_ - 1);
 	}
 	void Add(std::string_view ns, std::string_view ft1, std::string_view ft2) {
-		Item item = NewItem(ns);
+		reindexer::Item item = rt.NewItem(ns);
 		item["id"] = counter_;
 		++counter_;
 		item["ft1"] = std::string{ft1};
 		item["ft2"] = std::string{ft2};
 
-		Upsert(ns, item);
-		Commit(ns);
+		rt.Upsert(ns, item);
+		rt.Commit(ns);
 	}
 	void Add(std::string_view ns, std::string_view ft1, std::string_view ft2, std::string_view ft3) {
-		Item item = NewItem(ns);
+		reindexer::Item item = rt.NewItem(ns);
 		item["id"] = counter_;
 		++counter_;
 		item["ft1"] = std::string{ft1};
 		item["ft2"] = std::string{ft2};
 		item["ft3"] = std::string{ft3};
 
-		Upsert(ns, item);
-		Commit(ns);
+		rt.Upsert(ns, item);
+		rt.Commit(ns);
 	}
 
 	void AddInBothFields(std::string_view w1, std::string_view w2, unsigned nses = NS1) {
@@ -190,26 +145,26 @@ public:
 	}
 
 	void AddInBothFields(std::string_view ns, std::string_view w1, std::string_view w2) {
-		Item item = NewItem(ns);
+		reindexer::Item item = rt.NewItem(ns);
 		item["id"] = counter_;
 		++counter_;
 		item["ft1"] = std::string{w1};
 		item["ft2"] = std::string{w1};
-		Upsert(ns, item);
+		rt.Upsert(ns, item);
 
-		item = NewItem(ns);
+		item = rt.NewItem(ns);
 		item["id"] = counter_;
 		++counter_;
 		item["ft1"] = std::string{w2};
 		item["ft2"] = std::string{w2};
-		Upsert(ns, item);
+		rt.Upsert(ns, item);
 
-		Commit(ns);
+		rt.Commit(ns);
 	}
 
-	QueryResults SimpleSelect(string word) {
-		Query qr{Query("nm1").Where("ft3", CondEq, word)};
-		QueryResults res;
+	reindexer::QueryResults SimpleSelect(string word) {
+		auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
+		reindexer::QueryResults res;
 		qr.AddFunction("ft3 = highlight(!,!)");
 		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -217,9 +172,9 @@ public:
 		return res;
 	}
 
-	QueryResults SimpleSelect3(string word) {
-		Query qr{Query("nm3").Where("ft", CondEq, word)};
-		QueryResults res;
+	reindexer::QueryResults SimpleSelect3(string word) {
+		auto qr{reindexer::Query("nm3").Where("ft", CondEq, word)};
+		reindexer::QueryResults res;
 		qr.AddFunction("ft = highlight(!,!)");
 		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -227,15 +182,15 @@ public:
 	}
 
 	void Delete(int id) {
-		Item item = NewItem("nm1");
+		reindexer::Item item = rt.NewItem("nm1");
 		item["id"] = id;
 
 		this->rt.reindexer->Delete("nm1", item);
 	}
-	QueryResults SimpleCompositeSelect(string word) {
-		Query qr{Query("nm1").Where("ft3", CondEq, word)};
-		QueryResults res;
-		Query mqr{Query("nm2").Where("ft3", CondEq, word)};
+	reindexer::QueryResults SimpleCompositeSelect(string word) {
+		auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
+		reindexer::QueryResults res;
+		auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, word)};
 		mqr.AddFunction("ft1 = snippet(<b>,\"\"</b>,3,2,,d)");
 
 		qr.mergeQueries_.emplace_back(Merge, std::move(mqr));
@@ -245,11 +200,11 @@ public:
 
 		return res;
 	}
-	QueryResults CompositeSelectField(const string& field, string word) {
+	reindexer::QueryResults CompositeSelectField(const string& field, string word) {
 		word = '@' + field + ' ' + word;
-		Query qr{Query("nm1").Where("ft3", CondEq, word)};
-		QueryResults res;
-		Query mqr{Query("nm2").Where("ft3", CondEq, word)};
+		auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
+		reindexer::QueryResults res;
+		auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, word)};
 		mqr.AddFunction(field + " = snippet(<b>,\"\"</b>,3,2,,d)");
 
 		qr.mergeQueries_.emplace_back(Merge, std::move(mqr));
@@ -259,9 +214,9 @@ public:
 
 		return res;
 	}
-	QueryResults StressSelect(string word) {
-		Query qr{Query("nm1").Where("ft3", CondEq, word)};
-		QueryResults res;
+	reindexer::QueryResults StressSelect(string word) {
+		const auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
+		reindexer::QueryResults res;
 		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
 
@@ -301,13 +256,13 @@ public:
 		CheckResults(query, qr, expectedResults, withOrder);
 	}
 
-	void CheckResults(const std::string& query, const QueryResults& qr,
+	void CheckResults(const std::string& query, const reindexer::QueryResults& qr,
 					  std::vector<std::tuple<std::string, std::string, std::string>> expectedResults, bool withOrder) {
 		CheckResults<std::tuple<std::string, std::string, std::string>>(query, qr, expectedResults, withOrder);
 	}
 
 	template <typename ResType>
-	void CheckResults(const std::string& query, const QueryResults& qr, std::vector<ResType>& expectedResults, bool withOrder) {
+	void CheckResults(const std::string& query, const reindexer::QueryResults& qr, std::vector<ResType>& expectedResults, bool withOrder) {
 		constexpr bool kTreeFields = std::tuple_size<ResType>{} == 3;
 		EXPECT_EQ(qr.Count(), expectedResults.size()) << "Query: " << query;
 		for (auto itRes : qr) {
@@ -366,4 +321,6 @@ protected:
 		string extraWordSymbols = "-/+";
 	};
 	int counter_ = 0;
+	const string default_namespace = "test_namespace";
+	ReindexerTestApi<reindexer::Reindexer> rt;
 };

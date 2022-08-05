@@ -2,11 +2,29 @@
 #include <string.h>
 #include <limits>
 #include <set>
+#include "core/cjson/jsonbuilder.h"
 #include "core/ft/stopwords/stop.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
 
+namespace {
+
+template <typename C>
+static bool isAllEqual(const C& c) {
+	for (size_t i = 1, size = c.size(); i < size; ++i) {
+		if (!(c[0] == c[i])) return false;
+	}
+	return true;
+}
+
+}  // namespace
+
 namespace reindexer {
+
+bool FtFastFieldConfig::operator==(const FtFastFieldConfig& other) const noexcept {
+	return bm25Boost == other.bm25Boost && bm25Weight == other.bm25Weight && termLenBoost == other.termLenBoost &&
+		   termLenWeight == other.termLenWeight && positionBoost == other.positionBoost && positionWeight == other.positionWeight;
+}
 
 void FtFastConfig::parse(std::string_view json, const fast_hash_map<std::string, int>& fields) {
 	fieldsCfg.clear();
@@ -79,10 +97,67 @@ void FtFastConfig::parse(std::string_view json, const fast_hash_map<std::string,
 			}
 		}
 
+		const std::string opt = toLower(root["optimization"].As<std::string>("memory"));
+		if (opt == "memory") {
+			optimization = Optimization::Memory;
+		} else if (opt == "cpu") {
+			optimization = Optimization::CPU;
+		} else {
+			throw Error(errParseJson, "FtFastConfig: unknown optimization value: %s", opt);
+		}
+
 		parseBase(root);
 	} catch (const gason::Exception& ex) {
 		throw Error(errParseJson, "FtFastConfig: %s", ex.what());
 	}
+}
+
+std::string FtFastConfig::GetJson(const fast_hash_map<std::string, int>& fields) const {
+	WrSerializer wrser;
+	JsonBuilder jsonBuilder(wrser);
+	BaseFTConfig::getJson(jsonBuilder);
+	jsonBuilder.Put("distance_boost", distanceBoost);
+	jsonBuilder.Put("distance_weight", distanceWeight);
+	jsonBuilder.Put("full_match_boost", fullMatchBoost);
+	jsonBuilder.Put("partial_match_decrease", partialMatchDecrease);
+	jsonBuilder.Put("min_relevancy", minRelevancy);
+	jsonBuilder.Put("max_typos", maxTypos);
+	jsonBuilder.Put("max_typo_len", maxTypoLen);
+	jsonBuilder.Put("max_rebuild_steps", maxRebuildSteps);
+	jsonBuilder.Put("max_step_size", maxStepSize);
+	jsonBuilder.Put("sum_ranks_by_fields_ratio", summationRanksByFieldsRatio);
+	switch (optimization) {
+		case Optimization::Memory:
+			jsonBuilder.Put("optimization", "Memory");
+			break;
+		case Optimization::CPU:
+			jsonBuilder.Put("optimization", "CPU");
+			break;
+	}
+	if (fields.empty() || isAllEqual(fieldsCfg)) {
+		assertrx(!fieldsCfg.empty());
+		jsonBuilder.Put("bm25_boost", fieldsCfg[0].bm25Boost);
+		jsonBuilder.Put("bm25_weight", fieldsCfg[0].bm25Weight);
+		jsonBuilder.Put("term_len_boost", fieldsCfg[0].termLenBoost);
+		jsonBuilder.Put("term_len_weight", fieldsCfg[0].termLenWeight);
+		jsonBuilder.Put("position_boost", fieldsCfg[0].positionBoost);
+		jsonBuilder.Put("position_weight", fieldsCfg[0].positionWeight);
+	} else {
+		auto fieldsNode = jsonBuilder.Array("fields");
+		for (const auto& f : fields) {
+			auto fldNode = fieldsNode.Object();
+			assert(0 <= f.second && f.second < static_cast<int>(fieldsCfg.size()));
+			fldNode.Put("field_name", f.first);
+			fldNode.Put("bm25_boost", fieldsCfg[f.second].bm25Boost);
+			fldNode.Put("bm25_weight", fieldsCfg[f.second].bm25Weight);
+			fldNode.Put("term_len_boost", fieldsCfg[f.second].termLenBoost);
+			fldNode.Put("term_len_weight", fieldsCfg[f.second].termLenWeight);
+			fldNode.Put("position_boost", fieldsCfg[f.second].positionBoost);
+			fldNode.Put("position_weight", fieldsCfg[f.second].positionWeight);
+		}
+	}
+	jsonBuilder.End();
+	return wrser.c_str();
 }
 
 }  // namespace reindexer

@@ -207,6 +207,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		Index::SelectOpts opts;
 		opts.maxIterations = iterators.GetMaxIterations();
 		opts.indexesNotOptimized = !leftNs_->SortOrdersBuilt();
+		opts.inTransaction = inTransaction_;
 
 		for (SelectKeyResult &res : leftIndex->SelectKey(values, CondSet, sortId, opts, ctx, rdxCtx)) {
 			if (!res.comparators_.empty()) continue;

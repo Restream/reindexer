@@ -1,5 +1,6 @@
 #include "ftfuzzyconfig.h"
 #include <string.h>
+#include "core/cjson/jsonbuilder.h"
 #include "core/ft/stopwords/stop.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
@@ -29,6 +30,25 @@ void FtFuzzyConfig::parse(std::string_view json, const fast_hash_map<std::string
 	} catch (const gason::Exception &ex) {
 		throw Error(errParseJson, ex.what());
 	}
+}
+
+std::string FtFuzzyConfig::GetJson(const fast_hash_map<std::string, int> &) const {
+	WrSerializer wrser;
+	JsonBuilder jsonBuilder(wrser);
+	BaseFTConfig::getJson(jsonBuilder);
+	jsonBuilder.Put("max_src_proc", maxSrcProc);
+	jsonBuilder.Put("max_dst_proc", maxDstProc);
+	jsonBuilder.Put("pos_source_boost", posSourceBoost);
+	jsonBuilder.Put("pos_source_dist_min", posSourceDistMin);
+	jsonBuilder.Put("pos_source_dist_boost", posSourceDistBoost);
+	jsonBuilder.Put("pos_dst_boost", posDstBoost);
+	jsonBuilder.Put("start_decreese_boost", startDecreeseBoost);
+	jsonBuilder.Put("start_default_decreese", startDefaultDecreese);
+	jsonBuilder.Put("min_ok_proc", minOkProc);
+	jsonBuilder.Put("buffer_size", bufferSize);
+	jsonBuilder.Put("space_size", spaceSize);
+	jsonBuilder.End();
+	return wrser.c_str();
 }
 
 }  // namespace reindexer

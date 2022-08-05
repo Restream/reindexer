@@ -1,6 +1,7 @@
 
 #include "baseftconfig.h"
 #include <string.h>
+#include "core/cjson/jsonbuilder.h"
 #include "core/ft/stopwords/stop.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
@@ -38,6 +39,37 @@ void BaseFTConfig::parseBase(const gason::JsonNode &root) {
 		for (auto &ae : se["alternatives"]) synonym.alternatives.push_back(ae.As<string>());
 		for (auto &te : se["tokens"]) synonym.tokens.push_back(te.As<string>());
 		synonyms.push_back(std::move(synonym));
+	}
+}
+
+void BaseFTConfig::getJson(JsonBuilder &jsonBuilder) const {
+	jsonBuilder.Put("enable_translit", enableTranslit);
+	jsonBuilder.Put("enable_numbers_search", enableNumbersSearch);
+	jsonBuilder.Put("enable_kb_layout", enableKbLayout);
+	jsonBuilder.Put("enable_warmup_on_ns_copy", enableWarmupOnNsCopy);
+	jsonBuilder.Put("merge_limit", mergeLimit);
+	jsonBuilder.Put("log_level", logLevel);
+	jsonBuilder.Put("extra_word_symbols", extraWordSymbols);
+	jsonBuilder.Array<std::string>("stemmers", stemmers);
+	{
+		auto synonymsNode = jsonBuilder.Array("synonyms");
+		for (const auto &synonym : synonyms) {
+			auto synonymObj = synonymsNode.Object();
+			{
+				auto tokensNode = synonymObj.Array("tokens");
+				for (const auto &token : synonym.tokens) tokensNode.Put(nullptr, token);
+			}
+			{
+				auto alternativesNode = synonymObj.Array("alternatives");
+				for (const auto &token : synonym.alternatives) alternativesNode.Put(nullptr, token);
+			}
+		}
+	}
+	{
+		auto stopWordsNode = jsonBuilder.Array("stop_words");
+		for (const auto &sw : stopWords) {
+			stopWordsNode.Put(nullptr, sw);
+		}
 	}
 }
 

@@ -27,7 +27,7 @@ void FullTextDumper::LogFinalData(const reindexer::QueryResults& result) {
 	}
 	tmp_buffer.push_back("_______________________________________");
 
-	lock_guard<mutex> lk(cv_m);
+	std::lock_guard<std::mutex> lk(cv_m);
 	buffer_.insert(buffer_.end(), tmp_buffer.begin(), tmp_buffer.end());
 	new_info_ = true;
 }
@@ -35,7 +35,7 @@ void FullTextDumper::Log(const std::string& data) {
 	if (!std::getenv(env.c_str())) return;
 
 	startThread();
-	lock_guard<mutex> lk(cv_m);
+	std::lock_guard<std::mutex> lk(cv_m);
 	buffer_.push_back(data);
 	new_info_ = true;
 }
@@ -50,7 +50,7 @@ void FullTextDumper::AddResultData(const string& reqest) {
 
 	tmp_buffer.push_back("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
 
-	lock_guard<mutex> lk(cv_m);
+	std::lock_guard<std::mutex> lk(cv_m);
 	buffer_.insert(buffer_.end(), tmp_buffer.begin(), tmp_buffer.end());
 	new_info_ = true;
 }
@@ -62,7 +62,7 @@ void FullTextDumper::startThread() {
 		cv.notify_all();
 		writer_->join();
 		writer_.reset();
-		lock_guard<mutex> lk(cv_m);
+		std::lock_guard<std::mutex> lk(cv_m);
 		buffer_.clear();
 	}
 
@@ -71,7 +71,7 @@ void FullTextDumper::startThread() {
 	}
 
 	stoped_ = false;
-	writer_ = make_shared<thread>(&FullTextDumper::writeToFile, this);
+	writer_ = make_shared<std::thread>(&FullTextDumper::writeToFile, this);
 }
 
 void FullTextDumper::writeToFile() {
@@ -85,7 +85,7 @@ void FullTextDumper::writeToFile() {
 
 			while (size != 0 && file.is_open()) {
 				{
-					lock_guard<mutex> lk(cv_m);
+					std::lock_guard<std::mutex> lk(cv_m);
 					data = buffer_.front();
 					buffer_.pop_front();
 					size = buffer_.size();

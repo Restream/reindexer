@@ -6,12 +6,11 @@
 
 namespace reindexer {
 
-using std::vector;
-
+template <typename IdCont>
 class DataProcessor {
 public:
 	using words_map = fast_hash_map<string, WordEntry>;
-	DataProcessor(DataHolder& holder, size_t fieldSize) : holder_(holder), multithread_(false), fieldSize_(fieldSize) {}
+	DataProcessor(DataHolder<IdCont>& holder, size_t fieldSize) : holder_(holder), multithread_(false), fieldSize_(fieldSize) {}
 
 	void Process(bool multithread);
 
@@ -23,11 +22,14 @@ private:
 
 	void buildTyposMap(uint32_t startPos, const vector<WordIdType>& found);
 
-	vector<WordIdType> BuildSuffix(words_map& words_um, DataHolder& holder);
+	vector<WordIdType> BuildSuffix(words_map& words_um, DataHolder<IdCont>& holder);
 
-	DataHolder& holder_;
+	DataHolder<IdCont>& holder_;
 	bool multithread_;
 	size_t fieldSize_;
 };
+
+extern template class DataProcessor<PackedIdRelVec>;
+extern template class DataProcessor<IdRelVec>;
 
 }  // namespace reindexer

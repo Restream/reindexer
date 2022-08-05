@@ -1,5 +1,4 @@
 #pragma once
-#include "core/ft/config/ftfastconfig.h"
 #include "core/ft/ftdsl.h"
 #include "core/ft/idrelset.h"
 #include "core/selectfunc/ctx/ftctx.h"
@@ -7,31 +6,20 @@
 
 namespace reindexer {
 
+template <typename IdCont>
 class Selecter {
 	using index_t = uint32_t;
 	enum : index_t { kExcluded = std::numeric_limits<index_t>::max() };
+	typedef fast_hash_map<WordIdType, pair<size_t, size_t>, WordIdTypeHash, WordIdTypequal> FondWordsType;
 
 public:
-	Selecter(DataHolder& holder, size_t fieldSize, bool needArea) : holder_(holder), fieldSize_(fieldSize), needArea_(needArea) {}
+	Selecter(DataHolder<IdCont>& holder, size_t fieldSize, bool needArea) : holder_(holder), fieldSize_(fieldSize), needArea_(needArea) {}
 
 	struct TextSearchResult {
-		const PackedIdRelSet* vids_;
+		const IdCont* vids_;
 		std::string_view pattern;
 		int proc_;
 		int16_t wordLen_;
-	};
-
-	// Final information about found document
-	struct MergeInfo {
-		IdType id;		 // Virual of merged document (index in vdocs)
-		int32_t proc;	 // Rank of document
-		int8_t matched;	 // Count of matched terms in document
-		int8_t field;	 // Field index, where was match
-		AreaHolder::UniquePtr holder;
-	};
-
-	struct MergeData : public vector<MergeInfo> {
-		int maxRank = 0;
 	};
 
 	// Intermediate information about found document in current merge step. Used only for queries with 2 or more terms
@@ -54,29 +42,35 @@ public:
 		std::vector<size_t> synonymsGroups;
 	};
 
-	MergeData Process(FtDSLQuery& dsl);
+	IDataHolder::MergeData Process(FtDSLQuery& dsl, bool inTransaction, const RdxContext&);
 	struct FtSelectContext {
 		vector<FtVariantEntry> variants;
 
-		typename DataHolder::FondWordsType foundWords;
+		FondWordsType foundWords;
 		vector<TextSearchResults> rawResults;
 	};
-	MergeData mergeResults(vector<TextSearchResults>& rawResults, const std::vector<size_t>& synonymsBounds);
-	void mergeItaration(const TextSearchResults& rawRes, index_t rawResIndex, fast_hash_map<VDocIdType, index_t>& added,
-						vector<MergeInfo>& merged, vector<MergedIdRel>& merged_rd, h_vector<int16_t>& idoffsets, vector<bool>& curExists,
-						bool hasBeenAnd);
+	IDataHolder::MergeData mergeResults(vector<TextSearchResults>& rawResults, const std::vector<size_t>& synonymsBounds,
+										bool inTransaction, const RdxContext&);
+	struct MergeStatus;
+	void mergeItaration(const TextSearchResults& rawRes, index_t rawResIndex, std::vector<MergeStatus>& statuses,
+						vector<IDataHolder::MergeInfo>& merged, vector<MergedIdRel>& merged_rd, vector<bool>& curExists, bool hasBeenAnd,
+						bool simple, bool inTransaction, const RdxContext&);
 
 	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);
 	void processVariants(FtSelectContext&);
 	void prepareVariants(std::vector<FtVariantEntry>&, size_t termIdx, const std::vector<string>& langs, const FtDSLQuery&,
 						 std::vector<SynonymsDsl>*);
-	void processStepVariants(FtSelectContext& ctx, DataHolder::CommitStep& step, const FtVariantEntry& variant, TextSearchResults& res);
+	void processStepVariants(FtSelectContext& ctx, typename DataHolder<IdCont>::CommitStep& step, const FtVariantEntry& variant,
+							 TextSearchResults& res);
 
 	void processTypos(FtSelectContext&, const FtDSLEntry&);
 
-	DataHolder& holder_;
+	DataHolder<IdCont>& holder_;
 	size_t fieldSize_;
 	bool needArea_;
 };
+
+extern template class Selecter<PackedIdRelVec>;
+extern template class Selecter<IdRelVec>;
 
 }  // namespace reindexer

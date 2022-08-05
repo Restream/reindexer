@@ -1,24 +1,25 @@
 #pragma once
+
+#include <string>
+#include <vector>
+
 #include "core/ft/config/ftfastconfig.h"
 #include "core/ft/filters/itokenfilter.h"
 #include "core/ft/ft_fuzzy/dataholder/basebuildedholder.h"
 #include "core/ft/ft_fuzzy/merger/basemerger.h"
 #include "core/ft/ftdsl.h"
 
-#include <string>
-#include <vector>
+namespace reindexer {
+class RdxContext;
+}  // namespace reindexer
 
 namespace search_engine {
-using std::vector;
-using std::wstring;
-using std::pair;
-using reindexer::ITokenFilter;
 
 class BaseSearcher {
 public:
 	void AddSeacher(ITokenFilter::Ptr &&seacher);
 	void AddIndex(BaseHolder::Ptr holder, std::string_view src_data, const IdType id, int field, const string &extraWordSymbols);
-	SearchResult Compare(BaseHolder::Ptr holder, const reindexer::FtDSLQuery &dsl);
+	SearchResult Compare(BaseHolder::Ptr holder, const reindexer::FtDSLQuery &dsl, bool inTransaction, const reindexer::RdxContext &);
 
 	void Commit(BaseHolder::Ptr holder);
 

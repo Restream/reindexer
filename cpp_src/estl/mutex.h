@@ -9,8 +9,10 @@ namespace reindexer {
 
 class dummy_mutex {
 public:
-	void lock() {}
-	void unlock() {}
+	void lock() const noexcept {}
+	void lock_shared() const noexcept {}
+	void unlock() const noexcept {}
+	void unlock_shared() const noexcept {}
 };
 
 enum class MutexMark : unsigned { DbManager = 1u, IndexText, Namespace, Reindexer, ReindexerStorage };

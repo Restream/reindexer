@@ -240,8 +240,9 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 		// Get set of keys or single key
 		case CondEq:
 		case CondSet:
-			if (condition == CondEq && keys.size() < 1)
+			if (condition == CondEq && keys.size() < 1) {
 				throw Error(errParams, "For condition required at least 1 argument, but provided 0");
+			}
 			{
 				struct {
 					T *i_map;

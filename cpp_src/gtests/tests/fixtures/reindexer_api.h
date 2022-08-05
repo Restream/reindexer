@@ -39,6 +39,9 @@ public:
 	void DefineNamespaceDataset(const string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(ns, fields);
 	}
+	void DefineNamespaceDataset(Reindexer &rx, const string &ns, std::initializer_list<const IndexDeclaration> fields) {
+		rt.DefineNamespaceDataset(rx, ns, fields);
+	}
 	Item NewItem(std::string_view ns) { return rt.NewItem(ns); }
 
 	Error Commit(std::string_view ns) { return rt.Commit(ns); }

@@ -365,7 +365,11 @@ Error RPCServer::DeleteQueryTx(cproto::Context &ctx, p_string queryBin, int64_t 
 	Transaction &tr = getTx(ctx, txID);
 	Query query;
 	Serializer ser(queryBin.data(), queryBin.size());
-	query.Deserialize(ser);
+	try {
+		query.Deserialize(ser);
+	} catch (Error &err) {
+		return err;
+	}
 	query.type_ = QueryDelete;
 	tr.Modify(std::move(query));
 	return errOK;
@@ -377,7 +381,11 @@ Error RPCServer::UpdateQueryTx(cproto::Context &ctx, p_string queryBin, int64_t 
 	Transaction &tr = getTx(ctx, txID);
 	Query query;
 	Serializer ser(queryBin.data(), queryBin.size());
-	query.Deserialize(ser);
+	try {
+		query.Deserialize(ser);
+	} catch (Error &err) {
+		return err;
+	}
 	query.type_ = QueryUpdate;
 	tr.Modify(std::move(query));
 	return errOK;
@@ -533,7 +541,11 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, cproto::optional<int> flagsOpts) {
 	Query query;
 	Serializer ser(queryBin.data(), queryBin.size());
-	query.Deserialize(ser);
+	try {
+		query.Deserialize(ser);
+	} catch (Error &err) {
+		return err;
+	}
 	query.type_ = QueryDelete;
 
 	QueryResults qres;
@@ -552,7 +564,11 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, cproto::op
 Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, cproto::optional<int> flagsOpts) {
 	Query query;
 	Serializer ser(queryBin.data(), queryBin.size());
-	query.Deserialize(ser);
+	try {
+		query.Deserialize(ser);
+	} catch (Error &err) {
+		return err;
+	}
 	query.type_ = QueryUpdate;
 
 	QueryResults qres;
@@ -735,7 +751,11 @@ static h_vector<int32_t, 4> pack2vec(p_string pack) {
 Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int limit, p_string ptVersionsPck) {
 	Query query;
 	Serializer ser(queryBin);
-	query.Deserialize(ser);
+	try {
+		query.Deserialize(ser);
+	} catch (Error &err) {
+		return err;
+	}
 
 	if (query.IsWALQuery()) {
 		auto data = getClientDataSafe(ctx);

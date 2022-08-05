@@ -85,7 +85,7 @@ public:
 		  activityCtx_(activityTracer, user, query, container, connectionId),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(cmpl) {}
-	RdxContext(RdxActivityContext* ptr, const IRdxCancelContext* cancelCtx = nullptr, Completion cmpl = nullptr)
+	explicit RdxContext(RdxActivityContext* ptr, const IRdxCancelContext* cancelCtx = nullptr, Completion cmpl = nullptr)
 		: fromReplication_(false), holdStatus_(ptr ? kPtr : kEmpty), activityPtr_(ptr), cancelCtx_(cancelCtx), cmpl_(cmpl) {
 		if (holdStatus_ == kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 	}
@@ -108,7 +108,7 @@ public:
 	RdxActivityContext::Ward BeforeIndexWork() const;
 	RdxActivityContext::Ward BeforeSelectLoop() const;
 	/// lifetime of the returning value should not exceed of the context's
-	RdxContext OnlyActivity() const { return {Activity()}; }
+	RdxContext OnlyActivity() const { return RdxContext{Activity()}; }
 	RdxActivityContext* Activity() const;
 	Completion Compl() const { return cmpl_; }
 

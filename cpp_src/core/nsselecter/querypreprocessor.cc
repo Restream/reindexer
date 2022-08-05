@@ -189,11 +189,9 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 		if ((found >= 0) && !IsFullText(ns_.indexes_[found]->Type())) {
 			// composite idx found: replace conditions
 			h_vector<std::pair<int, VariantArray>, 4> values;
-			CondType condition = CondEq;
 			for (size_t i = first; i <= cur; i = Next(i)) {
 				if (ns_.indexes_[found]->Fields().contains(Get<QueryEntry>(i).idxNo)) {
 					values.emplace_back(Get<QueryEntry>(i).idxNo, std::move(Get<QueryEntry>(i).values));
-					if (values.back().second.size() > 1) condition = CondSet;
 				} else {
 					SetOperation(GetOperation(i), first);
 					container_[first] = std::move(container_[i]);
@@ -201,8 +199,11 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 				}
 			}
 			{
-				QueryEntry ce(condition, ns_.indexes_[found]->Name(), found);
+				QueryEntry ce(CondSet, ns_.indexes_[found]->Name(), found);
 				createCompositeKeyValues(values, ns_.payloadType_, nullptr, ce.values, 0);
+				if (ce.values.size() == 1) {
+					ce.condition = CondEq;
+				}
 				SetOperation(OpAnd, first);
 				container_[first].SetValue(std::move(ce));
 			}
@@ -293,13 +294,17 @@ bool QueryPreprocessor::mergeQueryEntries(size_t lhs, size_t rhs) {
 		VariantArray setValues;
 		setValues.reserve(std::min(lqe->values.size(), rqe.values.size()));
 		std::set_intersection(lqe->values.begin(), lqe->values.end(), rqe.values.begin(), rqe.values.end(), std::back_inserter(setValues));
-		if (container_[lhs].IsRef()) {
-			container_[lhs].SetValue(const_cast<const QueryEntry &>(*lqe));
-			lqe = &Get<QueryEntry>(lhs);
+		if (setValues.empty()) {
+			container_[lhs].SetValue(AlwaysFalse{});
+		} else {
+			if (container_[lhs].IsRef()) {
+				container_[lhs].SetValue(const_cast<const QueryEntry &>(*lqe));
+				lqe = &Get<QueryEntry>(lhs);
+			}
+			lqe->condition = (setValues.size() == 1) ? CondEq : CondSet;
+			lqe->values = std::move(setValues);
+			lqe->distinct |= rqe.distinct;
 		}
-		lqe->condition = (setValues.size() == 1) ? CondEq : CondSet;
-		lqe->values = std::move(setValues);
-		lqe->distinct |= rqe.distinct;
 		return true;
 	} else if (rqe.condition == CondAny) {
 		if (!lqe->distinct && rqe.distinct) {

@@ -1041,6 +1041,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 										   opts.disableIdSetCache = 1;
 										   opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
 										   opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
+										   opts.inTransaction = ctx.inTransaction;
 
 										   try {
 											   SelectKeyResults reslts =
@@ -1067,6 +1068,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 											   opts.disableIdSetCache = 1;
 											   opts.unbuiltSortOrders = 1;
 											   opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
+											   opts.inTransaction = ctx.inTransaction;
 
 											   try {
 												   SelectKeyResults reslts = ns_->indexes_[qe.idxNo]->SelectKey(qe.values, qe.condition, 0,
