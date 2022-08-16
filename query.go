@@ -686,7 +686,7 @@ func (q *Query) ExecCtx(ctx context.Context) *Iterator {
 
 // ExecToJson will execute query, and return iterator
 func (q *Query) ExecToJson(jsonRoots ...string) *JSONIterator {
-	return q.ExecToJsonCtx(context.Background())
+	return q.ExecToJsonCtx(context.Background(), jsonRoots...)
 }
 
 // ExecToJsonCtx will execute query, and return iterator
