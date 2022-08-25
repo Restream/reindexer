@@ -9,9 +9,40 @@
 
 namespace reindexer {
 
+class PayloadValueWithHash : public PayloadValue {
+public:
+	PayloadValueWithHash() noexcept : PayloadValue() {}
+	PayloadValueWithHash(PayloadValue pv, const PayloadType &pt, const FieldsSet &fields)
+		: PayloadValue(std::move(pv)), hash_(ConstPayload(pt, *static_cast<PayloadValue *>(this)).GetHash(fields)) {}
+	PayloadValueWithHash(const PayloadValueWithHash &o) noexcept : PayloadValue(o), hash_(o.hash_) {}
+	PayloadValueWithHash(PayloadValueWithHash &&o) noexcept : PayloadValue(std::move(o)), hash_(o.hash_) {}
+	PayloadValueWithHash &operator=(PayloadValueWithHash &&o) noexcept {
+		hash_ = o.hash_;
+		return static_cast<PayloadValueWithHash &>(PayloadValue::operator=(std::move(o)));
+	}
+	uint32_t GetHash() const noexcept { return hash_; }
+
+private:
+	uint32_t hash_ = 0;
+};
+
 struct equal_composite {
+	using is_transparent = void;
+
 	equal_composite(PayloadType type, const FieldsSet &fields) : type_(std::move(type)), fields_(fields) {}
 	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
+		assertrx(type_);
+		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
+	}
+	bool operator()(const PayloadValueWithHash &lhs, const PayloadValueWithHash &rhs) const {
+		assertrx(type_);
+		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
+	}
+	bool operator()(const PayloadValueWithHash &lhs, const PayloadValue &rhs) const {
+		assertrx(type_);
+		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
+	}
+	bool operator()(const PayloadValue &lhs, const PayloadValueWithHash &rhs) const {
 		assertrx(type_);
 		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
 	}
@@ -20,6 +51,7 @@ struct equal_composite {
 };
 struct hash_composite {
 	hash_composite(PayloadType type, const FieldsSet &fields) : type_(std::move(type)), fields_(fields) {}
+	size_t operator()(const PayloadValueWithHash &s) const { return s.GetHash(); }
 	size_t operator()(const PayloadValue &s) const {
 		assertrx(type_);
 		return ConstPayload(type_, s).GetHash(fields_);
@@ -97,37 +129,40 @@ struct no_deep_clean {
 
 template <typename T1, bool hold>
 class unordered_payload_map
-	: private tsl::sparse_map<PayloadValue, T1, hash_composite, equal_composite, std::allocator<std::pair<PayloadValue, T1>>,
-							  tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>,
+	: private tsl::sparse_map<PayloadValueWithHash, T1, hash_composite, equal_composite,
+							  std::allocator<std::pair<PayloadValueWithHash, T1>>, tsl::sh::power_of_two_growth_policy<2>,
+							  tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>,
 	  private payload_str_fields_helper<hold> {
-	using base_hash_map = tsl::sparse_map<PayloadValue, T1, hash_composite, equal_composite, std::allocator<std::pair<PayloadValue, T1>>,
-										  tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
-
-	using base_hash_map::insert;
-	using base_hash_map::erase;
+	using base_hash_map =
+		tsl::sparse_map<PayloadValueWithHash, T1, hash_composite, equal_composite, std::allocator<std::pair<PayloadValueWithHash, T1>>,
+						tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
 
 public:
 	using typename base_hash_map::value_type;
 	using typename base_hash_map::key_type;
 	using typename base_hash_map::mapped_type;
 	using typename base_hash_map::iterator;
+	using typename base_hash_map::const_iterator;
 
 	using base_hash_map::size;
 	using base_hash_map::empty;
 	using base_hash_map::find;
 	using base_hash_map::begin;
 	using base_hash_map::end;
-	using base_hash_map::operator[];
 	using payload_str_fields_helper<hold>::have_str_fields;
 
-	static_assert(std::is_nothrow_move_constructible<std::pair<PayloadValue, T1>>::value, "Nothrow movebale key and value required");
-	unordered_payload_map(size_t size, PayloadType payloadType, const FieldsSet &fields)
-		: base_hash_map(size, hash_composite(payloadType, fields), equal_composite(payloadType, fields)),
-		  payload_str_fields_helper<hold>(std::move(payloadType), fields) {}
+	static_assert(std::is_nothrow_move_constructible<std::pair<PayloadValueWithHash, T1>>::value,
+				  "Nothrow movebale key and value required");
+	unordered_payload_map(size_t size, PayloadType pt, const FieldsSet &f)
+		: base_hash_map(size, hash_composite(pt, f), equal_composite(pt, f)),
+		  payload_str_fields_helper<hold>(pt, f),
+		  payloadType_(std::move(pt)),
+		  fields_(f) {}
 
-	unordered_payload_map(PayloadType payloadType, const FieldsSet &fields) : unordered_payload_map(1000, std::move(payloadType), fields) {}
+	unordered_payload_map(PayloadType pt, const FieldsSet &f) : unordered_payload_map(1000, std::move(pt), f) {}
 
-	unordered_payload_map(const unordered_payload_map &other) : base_hash_map(other), payload_str_fields_helper<hold>(other) {
+	unordered_payload_map(const unordered_payload_map &other)
+		: base_hash_map(other), payload_str_fields_helper<hold>(other), payloadType_(other.payloadType_), fields_(other.fields_) {
 		for (auto &item : *this) this->add_ref(item.first);
 	}
 	unordered_payload_map(unordered_payload_map &&other) = default;
@@ -136,13 +171,15 @@ public:
 		for (auto &item : *this) this->release(item.first);
 	}
 
-	std::pair<iterator, bool> insert(const value_type &v) {
-		const auto res = base_hash_map::insert(v);
+	std::pair<iterator, bool> insert(const std::pair<PayloadValue, T1> &v) {
+		PayloadValueWithHash key(v.first, payloadType_, fields_);
+		const auto res = base_hash_map::insert(std::make_pair(std::move(key), v.second));
 		if (res.second) add_ref(res.first->first);
 		return res;
 	}
-	std::pair<iterator, bool> insert(value_type &&v) {
-		const auto res = base_hash_map::insert(std::move(v));
+	std::pair<iterator, bool> insert(std::pair<PayloadValue, T1> &&v) {
+		PayloadValueWithHash key(std::move(v.first), payloadType_, fields_);
+		const auto res = base_hash_map::insert(std::make_pair(std::move(key), std::move(v.second)));
 		if (res.second) this->add_ref(res.first->first);
 		return res;
 	}
@@ -154,6 +191,19 @@ public:
 		deep_clean(*pos);
 		return base_hash_map::erase(pos);
 	}
+
+	T1 &operator[](const PayloadValue &k) {
+		PayloadValueWithHash key(k, payloadType_, fields_);
+		return base_hash_map::operator[](std::move(key));
+	}
+	T1 &operator[](PayloadValue &&k) {
+		PayloadValueWithHash key(std::move(k), payloadType_, fields_);
+		return base_hash_map::operator[](std::move(key));
+	}
+
+private:
+	PayloadType payloadType_;
+	FieldsSet fields_;
 };
 
 template <typename T1, bool hold>
@@ -209,7 +259,7 @@ public:
 	}
 };
 
-using unordered_payload_set = fast_hash_set<PayloadValue, hash_composite, equal_composite>;
+using unordered_payload_set = tsl::hopscotch_set<PayloadValue, hash_composite, equal_composite, std::allocator<PayloadValue>, 30, true>;
 
 template <typename>
 constexpr bool is_payload_map_v = false;

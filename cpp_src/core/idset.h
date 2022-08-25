@@ -8,6 +8,7 @@
 #include "estl/h_vector.h"
 #include "estl/intrusive_ptr.h"
 #include "estl/span.h"
+#include "sort/pdqsort.hpp"
 
 namespace reindexer {
 using std::string;
@@ -43,6 +44,7 @@ public:
 		Unordered  // Just add id, commit and erase is impossible
 	};
 
+	IdSetPlain() = default;
 	bool Add(IdType id, EditMode editMode, int sortedIdxCount) {
 		grow((size() + 1) * (sortedIdxCount + 1));
 		if (editMode == Unordered) {
@@ -72,6 +74,9 @@ public:
 	const base_idsetset *BTree() const noexcept { return nullptr; }
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
 	string Dump() const;
+
+protected:
+	IdSetPlain(base_idset &&idset) : base_idset(std::move(idset)) {}
 };
 
 std::ostream &operator<<(std::ostream &, const IdSetPlain &);
@@ -103,6 +108,11 @@ public:
 			usingBtree_ = other.usingBtree_.load();
 		}
 		return *this;
+	}
+	static Ptr BuildFromUnsorted(base_idset &&ids) {
+		boost::sort::pdqsort(ids.begin(), ids.end());
+		ids.erase(std::unique(ids.begin(), ids.end()), ids.end());	// TODO: It would be better to integrate unique into sort
+		return make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>(std::move(ids));
 	}
 	bool Add(IdType id, EditMode editMode, int sortedIdxCount) {
 		// Reserve extra space for sort orders data
@@ -177,6 +187,8 @@ protected:
 	friend class BtreeIndexForwardIteratorImpl;
 	template <typename>
 	friend class BtreeIndexReverseIteratorImpl;
+
+	IdSet(base_idset &&idset) : IdSetPlain(std::move(idset)), usingBtree_(false) {}
 
 	std::unique_ptr<base_idsetset> set_;
 	std::atomic<bool> usingBtree_;

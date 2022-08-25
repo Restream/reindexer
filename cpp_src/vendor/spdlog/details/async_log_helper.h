@@ -243,7 +243,7 @@ inline void spdlog::details::async_log_helper::log(const details::log_msg& msg)
 
 inline void spdlog::details::async_log_helper::push_msg(details::async_log_helper::async_msg&& new_msg)
 {
-    if (!_q.enqueue(std::move(new_msg)) && _overflow_policy != async_overflow_policy::discard_log_msg)
+    if (!_q.enqueue(std::move(new_msg)) && (_overflow_policy != async_overflow_policy::discard_log_msg || new_msg.msg_type != async_msg_type::log))
     {
         auto last_op_time = details::os::now();
         auto now = last_op_time;

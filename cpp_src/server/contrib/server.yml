@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.7.0"
+  version: "3.8.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2359,7 +2359,7 @@ definitions:
         type: boolean
         default: false
       strict_mode:
-        description: "Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existance in sorting and filtering conditions"
+        description: "Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions"
         type: string
         enum:
           - "none"
@@ -2387,14 +2387,17 @@ definitions:
         type: string
         description: "Condition operator"
         enum:
-        - "EQ"
-        - "GT"
-        - "GE"
-        - "LE"
-        - "LT"
-        - "RANGE"
-        - "SET"
-        - "EMPTY"
+        - "EQ" # Equality (between field and value or between 2 fields)
+        - "GT" # Grower than (>)
+        - "GE" # Grower or equal (>=)
+        - "LE" # Less or equal (<=)
+        - "LT" # Less than (>)
+        - "SET" # field in (value1, value2, ...). Checks if value belongs to the set (or if 2 arrays has common values)
+        - "ALLSET" # Checks all the values from the first array (field) belong to the second array (value)
+        - "EMPTY" # Check if field is null
+        - "RANGE" # Check if field is >= value1 and <= value2
+        - "LIKE" # Filter strings by give patter
+        - "DWITHIN" # Checks if point (from field) lies within given circle. Value must look like this: [[1, -3.5],5.0], where [1, -3.5] is the central point of the circle and 5.0 is the radius
       op:
         type: string
         description: "Logic operator"
@@ -2403,7 +2406,7 @@ definitions:
         - "OR"
         - "NOT"
       value:
-        description: "Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, or variable len array for SET condition"
+        description: "Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5],5.0]' for DWITHIN"
         type: object
       filters:
         type: array
@@ -2502,14 +2505,12 @@ definitions:
         type: string
         description: "Condition operator"
         enum:
-        - "EQ"
-        - "GT"
-        - "GE"
-        - "LE"
-        - "LT"
-        - "RANGE"
-        - "SET"
-        - "EMPTY"
+        - "EQ" # Equality
+        - "GT" # Grower than (>)
+        - "GE" # Grower or equal (>=)
+        - "LE" # Less or equal (<=)
+        - "LT" # Less than (>)
+        - "SET" # X in (v1, v2, ...)
       op:
         type: string
         description: "Logic operator"
@@ -2734,6 +2735,16 @@ definitions:
         - "Memory"
         - "CPU"
         default: "Memory"
+      max_areas_in_doc:
+        type: number
+        description: "Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited"
+        default: 5
+        maximum: 1000000000
+      max_total_areas_to_cache:
+        type: number
+        description: "Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited"
+        default: -1
+        maximum: 1000000000
       fields:
         type: array
         description: "Configuration for certian field if it differ from whole index configuration"
@@ -3153,6 +3164,9 @@ definitions:
           cache_size:
             type: integer
             description: "Total memory consumption of namespace's caches. e.g. idset and join caches"
+          index_optimizer_memory:
+            type: integer
+            description: "Total memory size, occupated by index optimizer (in bytes)"
       join_cache:
         $ref: "#/definitions/JoinCacheMemStats"
       query_cache:
@@ -3197,6 +3211,9 @@ definitions:
       tracked_updates_buckets:
         type: integer
         description: "Buckets count in index updates tracker map"
+      tracked_updates_size:
+        type: integer
+        description: "Updates tracker map size in bytes"
 
   JoinCacheMemStats:
     description: "Join cache stats. Stores results of selects to right table by ON condition"

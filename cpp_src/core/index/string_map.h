@@ -19,6 +19,23 @@ struct less_key_string {
 	CollateOpts collateOpts_;
 };
 
+class key_string_with_hash : public key_string {
+public:
+	key_string_with_hash() noexcept : key_string() {}
+	key_string_with_hash(key_string s, CollateMode cm)
+		: key_string(std::move(s)), hash_(collateHash(**static_cast<key_string*>(this), cm)) {}
+	key_string_with_hash(const key_string_with_hash& o) noexcept : key_string(o), hash_(o.hash_) {}
+	key_string_with_hash(key_string_with_hash&& o) noexcept : key_string(std::move(o)), hash_(o.hash_) {}
+	key_string_with_hash& operator=(key_string_with_hash&& o) noexcept {
+		hash_ = o.hash_;
+		return static_cast<key_string_with_hash&>(key_string::operator=(std::move(o)));
+	}
+	uint32_t GetHash() const noexcept { return hash_; }
+
+private:
+	uint32_t hash_ = 0;
+};
+
 struct equal_key_string {
 	using is_transparent = void;
 
@@ -26,30 +43,38 @@ struct equal_key_string {
 	bool operator()(const key_string& lhs, const key_string& rhs) const { return collateCompare(*lhs, *rhs, collateOpts_) == 0; }
 	bool operator()(std::string_view lhs, const key_string& rhs) const { return collateCompare(lhs, *rhs, collateOpts_) == 0; }
 	bool operator()(const key_string& lhs, std::string_view rhs) const { return collateCompare(*lhs, rhs, collateOpts_) == 0; }
+
+private:
 	CollateOpts collateOpts_;
 };
+
 struct hash_key_string {
 	using is_transparent = void;
 
 	hash_key_string(CollateMode collateMode = CollateNone) : collateMode_(collateMode) {}
 	size_t operator()(const key_string& s) const { return collateHash(*s, collateMode_); }
 	size_t operator()(std::string_view s) const { return collateHash(s, collateMode_); }
+	size_t operator()(const key_string_with_hash& s) const { return s.GetHash(); }
+
+private:
 	CollateMode collateMode_;
 };
 
 template <typename T1>
 class unordered_str_map
-	: public tsl::sparse_map<key_string, T1, hash_key_string, equal_key_string, std::allocator<std::pair<key_string, T1>>,
-							 tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
-	using base_hash_map = tsl::sparse_map<key_string, T1, hash_key_string, equal_key_string, std::allocator<std::pair<key_string, T1>>,
-										  tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
-	using base_hash_map::erase;
+	: public tsl::sparse_map<key_string_with_hash, T1, hash_key_string, equal_key_string,
+							 std::allocator<std::pair<key_string_with_hash, T1>>, tsl::sh::power_of_two_growth_policy<2>,
+							 tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
+	using base_hash_map =
+		tsl::sparse_map<key_string_with_hash, T1, hash_key_string, equal_key_string, std::allocator<std::pair<key_string_with_hash, T1>>,
+						tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
 
 public:
 	static_assert(std::is_nothrow_move_constructible<std::pair<key_string, T1>>::value, "Nothrow movebale key and value required");
 	using typename base_hash_map::iterator;
 	unordered_str_map() : base_hash_map() {}
-	unordered_str_map(const CollateOpts& opts) : base_hash_map(1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts)) {}
+	unordered_str_map(const CollateOpts& opts)
+		: base_hash_map(1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts)), collateMode_(opts.mode) {}
 
 	template <typename deep_cleaner>
 	iterator erase(iterator pos) {
@@ -63,6 +88,22 @@ public:
 		deep_clean(*pos);
 		return base_hash_map::erase(pos);
 	}
+
+	std::pair<iterator, bool> insert(const std::pair<key_string, T1>& v) {
+		key_string_with_hash key(v.first, collateMode_);
+		return base_hash_map::insert(std::make_pair(std::move(key), v.second));
+	}
+	std::pair<iterator, bool> insert(std::pair<key_string, T1>&& v) {
+		key_string_with_hash key(std::move(v.first), collateMode_);
+		return base_hash_map::insert(std::make_pair(std::move(key), std::move(v.second)));
+	}
+	std::pair<iterator, bool> emplace(key_string k, T1&& v) {
+		key_string_with_hash key(std::move(k), collateMode_);
+		return base_hash_map::emplace(std::make_pair(std::move(key), std::move(v)));
+	}
+
+private:
+	const CollateMode collateMode_ = CollateNone;
 };
 
 template <typename T1>
@@ -87,7 +128,7 @@ public:
 	}
 };
 
-// sparsemap meeds special hash for intergers, due to
+// sparsemap needs special hash for intergers, due to
 // performance issue https://github.com/greg7mdp/sparsepp#integer-keys-and-other-hash-function-considerations
 template <typename T>
 struct hash_int {};
@@ -145,27 +186,34 @@ struct StringMapEntryCleaner {
 		: strHolder_{strHolder}, needSaveExpiredStrings_{needSaveExpiredStrings} {}
 
 	template <typename T>
+	constexpr static bool RequiresStringHolder() noexcept {
+		return std::is_same_v<std::remove_cv_t<T>, key_string_with_hash> || std::is_same_v<std::remove_cv_t<T>, key_string>;
+	}
+
+	template <typename T>
 	void operator()(T& v) const {
 		free_node(v.first);
 		free_node(v.second);
 	}
 
-	template <typename T>
+	template <typename T, std::enable_if_t<!RequiresStringHolder<T>(), bool> = true>
 	void free_node(T& v) const {
 		if constexpr (deepClean && !std::is_const_v<T>) {
 			v = T{};
 		}
 	}
 
-	void free_node(const key_string& str) const {
+	template <typename T, std::enable_if_t<RequiresStringHolder<T>(), bool> = true>
+	void free_node(const T& str) const {
 		if (needSaveExpiredStrings_) strHolder_.Add(str);
 	}
 
-	void free_node(key_string& str) const {
+	template <typename T, std::enable_if_t<RequiresStringHolder<T>(), bool> = true>
+	void free_node(T& str) const {
 		if (needSaveExpiredStrings_) {
 			strHolder_.Add(std::move(str));
 		} else if constexpr (deepClean) {
-			str = key_string{};
+			str = T{};
 		}
 	}
 

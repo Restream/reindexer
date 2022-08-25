@@ -3,9 +3,6 @@
 
 namespace reindexer {
 
-Comparator::Comparator() {}
-Comparator::~Comparator() {}
-
 Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &values, bool isArray, bool distinct, PayloadType payloadType,
 					   const FieldsSet &fields, void *rawData, const CollateOpts &collateOpts)
 	: ComparatorVars(cond, type, isArray, payloadType, fields, rawData, collateOpts),

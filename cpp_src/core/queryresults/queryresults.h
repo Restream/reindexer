@@ -10,6 +10,9 @@
 
 namespace reindexer {
 
+const std::string_view kWALParamLsn = "lsn";
+const std::string_view kWALParamItem = "item";
+
 class Schema;
 class TagsMatcher;
 class PayloadType;
@@ -120,6 +123,8 @@ public:
 		return std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder &nsData) { return nsData.ns.get() == ns; }) !=
 			   nsData_.cend();
 	}
+	void MarkAsWALQuery() noexcept { isWalQuery_ = true; }
+	bool IsWALQuery() const noexcept { return isWalQuery_; }
 
 	string explainResults;
 
@@ -144,6 +149,8 @@ private:
 		std::shared_ptr<NamespaceImpl> ns;
 		StringsHolderPtr strHolder;
 	};
+
+	bool isWalQuery_ = false;
 	h_vector<NsDataHolder, 1> nsData_;
 	std::vector<key_string> stringsHolder_;
 };

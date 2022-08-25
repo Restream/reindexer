@@ -63,6 +63,8 @@ reindexer_error reindexer_cancel_context(reindexer_ctx_info ctx_info, ctx_cancel
 void reindexer_enable_logger(void (*logWriter)(int level, char *msg));
 void reindexer_disable_logger();
 
+void reindexer_init_locale();
+
 #ifdef __cplusplus
 }
 #endif

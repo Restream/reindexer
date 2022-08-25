@@ -20,8 +20,6 @@ const std::string_view kParamSuccess = "success";
 const std::string_view kParamResponseCode = "response_code";
 const std::string_view kParamDescription = "description";
 const std::string_view kParamUpdated = "updated";
-const std::string_view kParamLsn = "lsn";
-const std::string_view kParamItem = "item";
 const std::string_view kParamQueryTotalItems = "query_total_items";
 const std::string_view kTxId = "tx_id";
 

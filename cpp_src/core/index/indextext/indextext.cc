@@ -104,6 +104,19 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 
 	auto mergedIds = Select(ftctx, dsl, opts.inTransaction, rdxCtx);
 	if (mergedIds) {
+		if (ftctx->NeedArea() && need_put && mergedIds->size()) {
+			auto config = dynamic_cast<FtFastConfig *>(cfg_.get());
+			if (config && config->maxTotalAreasToCache >= 0) {
+				auto d = ftctx->GetData();
+				size_t totalAreas = 0;
+				for (auto &area : d->holders_) {
+					totalAreas += area.second->GetAreasCount();
+				}
+				if (totalAreas > unsigned(config->maxTotalAreasToCache)) {
+					need_put = false;
+				}
+			}
+		}
 		if (need_put && mergedIds->size()) {
 			// This areas will be shared via cache, so lazy commit may race
 			auto d = ftctx->GetData();

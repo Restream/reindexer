@@ -97,11 +97,11 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 		if (ctx.preResult) {
 			if (ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
-				// all futher queries for this join SHOULD have the same enableSortOrders flag
+				// all futher queries for this join MUST have the same enableSortOrders flag
 				ctx.preResult->enableSortOrders = ctx.sortingContext.enableSortOrders;
 			} else {
 				// If in current join query sort orders are disabled
-				// then preResult query also SHOULD have disabled flag
+				// then preResult query also MUST have disabled flag
 				// If assert fails, then possible query has unlock ns
 				// or ns->sortOrdersFlag_ has been reseted under read lock!
 				if (!ctx.sortingContext.enableSortOrders) assertrx(!ctx.preResult->enableSortOrders);
@@ -137,9 +137,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 			switch (ctx.preResult->dataMode) {
 				case JoinPreResult::ModeIdSet: {
 					SelectKeyResult res;
-					res.push_back(SingleSelectKeyResult(ctx.preResult->ids));
-					static string pr = "-preresult";
-					qres.Append(OpAnd, SelectIterator(res, false, pr));
+					res.emplace_back(ctx.preResult->ids);
+					static const string pr = "-preresult";
+					qres.Append(OpAnd, SelectIterator(std::move(res), false, pr));
 				} break;
 				case JoinPreResult::ModeIterators:
 					qres.LazyAppend(ctx.preResult->iterators.begin(), ctx.preResult->iterators.end());
@@ -245,7 +245,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 		// Rewing all results iterators
 		qres.ExecuteAppropriateForEach(Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysFalse>{},
-									   [reverse](SelectIterator &it) { it.Start(reverse); });
+									   [reverse, maxIterations](SelectIterator &it) { it.Start(reverse, maxIterations); });
 
 		// Let iterators choose most effecive algorith
 		assertrx(qres.Size());

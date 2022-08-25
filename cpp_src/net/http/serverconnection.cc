@@ -150,123 +150,128 @@ void ServerConnection::onRead() {
 	int minor_version = 0;
 	struct phr_header headers[kHttpMaxHeaders];
 
-	while (rdBuf_.size()) {
-		if (!bodyLeft_) {
-			auto chunk = rdBuf_.tail();
+	try {
+		while (rdBuf_.size()) {
+			if (!bodyLeft_) {
+				auto chunk = rdBuf_.tail();
 
-			num_headers = kHttpMaxHeaders;
-			minor_version = 0;
-			int res = phr_parse_request(chunk.data(), chunk.size(), &method, &method_len, &uri, &path_len, &minor_version, headers,
-										&num_headers, 0);
-			assertrx(res <= int(chunk.size()));
+				num_headers = kHttpMaxHeaders;
+				minor_version = 0;
+				int res = phr_parse_request(chunk.data(), chunk.size(), &method, &method_len, &uri, &path_len, &minor_version, headers,
+											&num_headers, 0);
+				assertrx(res <= int(chunk.size()));
 
-			if (res == -2) {
-				if (rdBuf_.size() > chunk.size()) {
-					rdBuf_.unroll();
-					continue;
-				}
-				if (rdBuf_.size() == rdBuf_.capacity()) {
-					if (!maxRequestSize_ || rdBuf_.capacity() < maxRequestSize_) {
-						auto newCapacity = rdBuf_.capacity() * 2;
-						if (maxRequestSize_ && newCapacity > maxRequestSize_) {
-							newCapacity = maxRequestSize_;
+				if (res == -2) {
+					if (rdBuf_.size() > chunk.size()) {
+						rdBuf_.unroll();
+						continue;
+					}
+					if (rdBuf_.size() == rdBuf_.capacity()) {
+						if (!maxRequestSize_ || rdBuf_.capacity() < maxRequestSize_) {
+							auto newCapacity = rdBuf_.capacity() * 2;
+							if (maxRequestSize_ && newCapacity > maxRequestSize_) {
+								newCapacity = maxRequestSize_;
+							}
+							rdBuf_.reserve(newCapacity);
+						} else {
+							badRequest(StatusRequestEntityTooLarge, "");
+							return;
 						}
-						rdBuf_.reserve(newCapacity);
+					}
+					return;
+				} else if (res < 0) {
+					badRequest(StatusBadRequest, "");
+					return;
+				}
+
+				enableHttp11_ = (minor_version >= 1);
+				request_.clientAddr = clientAddr_;
+				request_.method = std::string_view(method, method_len);
+				request_.uri = std::string_view(uri, path_len);
+				request_.headers.clear();
+				request_.params.clear();
+				request_.size = size_t(res);
+
+				auto p = request_.uri.find('?');
+				if (p != std::string_view::npos) {
+					parseParams(request_.uri.substr(p + 1));
+				}
+				request_.path = request_.uri.substr(0, p);
+
+				formData_ = false;
+				for (int i = 0; i < int(num_headers); i++) {
+					Header hdr{std::string_view(headers[i].name, headers[i].name_len),
+							   std::string_view(headers[i].value, headers[i].value_len)};
+
+					if (iequals(hdr.name, "content-length"sv)) {
+						bodyLeft_ = stoi(hdr.val);
+					} else if (iequals(hdr.name, "transfer-encoding"sv) && iequals(hdr.val, "chunked"sv)) {
+						bodyLeft_ = -1;
+						memset(&chunked_decoder_, 0, sizeof(chunked_decoder_));
+						badRequest(http::StatusInternalServerError, "Sorry, chunked encoded body not implemented");
+						return;
+					} else if (iequals(hdr.name, "content-type"sv) && iequals(hdr.val, "application/x-www-form-urlencoded"sv)) {
+						formData_ = true;
+					} else if (iequals(hdr.name, "connection"sv) && iequals(hdr.val, "close"sv)) {
+						enableHttp11_ = false;
+					} else if (iequals(hdr.name, "expect"sv) && iequals(hdr.val, "100-continue"sv)) {
+						expectContinue_ = true;
+					}
+					request_.headers.push_back(hdr);
+				}
+				const bool requireRdRealloc = bodyLeft_ > 0 && unsigned(bodyLeft_ + res) > rdBuf_.capacity();
+				if (requireRdRealloc) {
+					if (!maxRequestSize_ || size_t(bodyLeft_) < maxRequestSize_) {
+						// slow path: body is to big - need realloc
+						// save current buffer.
+						rdBuf_.reserve(bodyLeft_ + res + 0x1000);
+						bodyLeft_ = 0;
+						continue;
+					} else {
+						badRequest(StatusRequestEntityTooLarge, "");
+						return;
+					}
+				} else {
+					rdBuf_.erase(res);
+				}
+				if (expectContinue_) {
+					if (bodyLeft_ < int(rdBuf_.capacity() - res)) {
+						writeHttpResponse(StatusContinue);
+						wrBuf_.write(kStrEOL);
 					} else {
 						badRequest(StatusRequestEntityTooLarge, "");
 						return;
 					}
 				}
-				return;
-			} else if (res < 0) {
-				badRequest(StatusBadRequest, "");
-				return;
-			}
-
-			enableHttp11_ = (minor_version >= 1);
-			request_.clientAddr = clientAddr_;
-			request_.method = std::string_view(method, method_len);
-			request_.uri = std::string_view(uri, path_len);
-			request_.headers.clear();
-			request_.params.clear();
-			request_.size = size_t(res);
-
-			auto p = request_.uri.find('?');
-			if (p != std::string_view::npos) {
-				parseParams(request_.uri.substr(p + 1));
-			}
-			request_.path = request_.uri.substr(0, p);
-
-			formData_ = false;
-			for (int i = 0; i < int(num_headers); i++) {
-				Header hdr{std::string_view(headers[i].name, headers[i].name_len),
-						   std::string_view(headers[i].value, headers[i].value_len)};
-
-				if (iequals(hdr.name, "content-length"sv)) {
-					bodyLeft_ = stoi(hdr.val);
-				} else if (iequals(hdr.name, "transfer-encoding"sv) && iequals(hdr.val, "chunked"sv)) {
-					bodyLeft_ = -1;
-					memset(&chunked_decoder_, 0, sizeof(chunked_decoder_));
-					badRequest(http::StatusInternalServerError, "Sorry, chunked encoded body not implemented");
-					return;
-				} else if (iequals(hdr.name, "content-type"sv) && iequals(hdr.val, "application/x-www-form-urlencoded"sv)) {
-					formData_ = true;
-				} else if (iequals(hdr.name, "connection"sv) && iequals(hdr.val, "close"sv)) {
-					enableHttp11_ = false;
-				} else if (iequals(hdr.name, "expect"sv) && iequals(hdr.val, "100-continue"sv)) {
-					expectContinue_ = true;
+				if (!bodyLeft_) {
+					handleRequest(request_);
 				}
-				request_.headers.push_back(hdr);
-			}
-			const bool requireRdRealloc = bodyLeft_ > 0 && unsigned(bodyLeft_ + res) > rdBuf_.capacity();
-			if (requireRdRealloc) {
-				if (!maxRequestSize_ || size_t(bodyLeft_) < maxRequestSize_) {
-					// slow path: body is to big - need realloc
-					// save current buffer.
-					rdBuf_.reserve(bodyLeft_ + res + 0x1000);
-					bodyLeft_ = 0;
-					continue;
-				} else {
-					badRequest(StatusRequestEntityTooLarge, "");
-					return;
+			} else if (int(rdBuf_.size()) >= bodyLeft_) {
+				// TODO: support chunked request body
+
+				if (formData_) {
+					auto chunk = rdBuf_.tail();
+					if (chunk.size() < size_t(bodyLeft_)) {
+						rdBuf_.unroll();
+						chunk = rdBuf_.tail();
+					}
+					assertrx(chunk.size() >= size_t(bodyLeft_));
+					parseParams(std::string_view(chunk.data(), bodyLeft_));
 				}
-			} else {
-				rdBuf_.erase(res);
-			}
-			if (expectContinue_) {
-				if (bodyLeft_ < int(rdBuf_.capacity() - res)) {
-					writeHttpResponse(StatusContinue);
-					wrBuf_.write(kStrEOL);
-				} else {
-					badRequest(StatusRequestEntityTooLarge, "");
-					return;
-				}
-			}
-			if (!bodyLeft_) {
+
+				request_.size += size_t(bodyLeft_);
 				handleRequest(request_);
+				rdBuf_.erase(bodyLeft_);
+				bodyLeft_ = 0;
+			} else {
+				break;
 			}
-		} else if (int(rdBuf_.size()) >= bodyLeft_) {
-			// TODO: support chunked request body
-
-			if (formData_) {
-				auto chunk = rdBuf_.tail();
-				if (chunk.size() < size_t(bodyLeft_)) {
-					rdBuf_.unroll();
-					chunk = rdBuf_.tail();
-				}
-				assertrx(chunk.size() >= size_t(bodyLeft_));
-				parseParams(std::string_view(chunk.data(), bodyLeft_));
-			}
-
-			request_.size += size_t(bodyLeft_);
-			handleRequest(request_);
-			rdBuf_.erase(bodyLeft_);
-			bodyLeft_ = 0;
-		} else {
-			break;
 		}
+		if (!rdBuf_.size() && !bodyLeft_) rdBuf_.clear();
+	} catch (const Error &e) {
+		fprintf(stderr, "Dropping HTTP-connection. Reason: %s\n", e.what().c_str());
+		closeConn_ = true;
 	}
-	if (!rdBuf_.size() && !bodyLeft_) rdBuf_.clear();
 }
 
 bool ServerConnection::ResponseWriter::SetHeader(const Header &hdr) {

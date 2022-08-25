@@ -3,6 +3,7 @@
 #include <string.h>
 #include <locale>
 #include <string>
+#include "core/cbinding/reindexer_c.h"
 #include "server/dbmanager.h"
 #include "server/server.h"
 
@@ -28,11 +29,8 @@ static reindexer_error error2c(const Error& err_) {
 static string str2c(reindexer_string gs) { return string(reinterpret_cast<const char*>(gs.p), gs.n); }
 
 uintptr_t init_reindexer_server() {
+	reindexer_init_locale();
 	Server* svc = new Server;
-	setvbuf(stdout, nullptr, _IONBF, 0);
-	setvbuf(stderr, nullptr, _IONBF, 0);
-	setlocale(LC_CTYPE, "");
-	setlocale(LC_NUMERIC, "C");
 	return uintptr_t(svc);
 }
 

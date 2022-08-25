@@ -114,9 +114,12 @@ protected:
 		NSUpdateSortedContext(const NamespaceImpl &ns, SortType curSortId)
 			: ns_(ns), sorted_indexes_(ns_.getSortedIdxCount()), curSortId_(curSortId) {
 			ids2Sorts_.reserve(ns.items_.size());
+			ids2SortsMemSize_ = ids2Sorts_.capacity() * sizeof(SortType);
+			ns.nsUpdateSortedContextMemory_.fetch_add(ids2SortsMemSize_);
 			for (IdType i = 0; i < IdType(ns_.items_.size()); i++)
 				ids2Sorts_.push_back(ns_.items_[i].IsFree() ? SortIdUnexists : SortIdUnfilled);
 		}
+		~NSUpdateSortedContext() override { ns_.nsUpdateSortedContextMemory_.fetch_sub(ids2SortsMemSize_); }
 		int getSortedIdxCount() const noexcept override { return sorted_indexes_; }
 		SortType getCurSortId() const noexcept override { return curSortId_; }
 		const vector<SortType> &ids2Sorts() const noexcept override { return ids2Sorts_; }
@@ -127,6 +130,7 @@ protected:
 		const int sorted_indexes_;
 		const IdType curSortId_;
 		vector<SortType> ids2Sorts_;
+		int64_t ids2SortsMemSize_ = 0;
 	};
 
 	class IndexesStorage : public std::vector<std::unique_ptr<Index>> {
@@ -324,7 +328,7 @@ protected:
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
 
 	void putToJoinCache(JoinCacheRes &res, std::shared_ptr<JoinPreResult> preResult) const;
-	void putToJoinCache(JoinCacheRes &res, JoinCacheVal &val) const;
+	void putToJoinCache(JoinCacheRes &res, JoinCacheVal &&val) const;
 	void getFromJoinCache(JoinCacheRes &ctx) const;
 	void getIndsideFromJoinCache(JoinCacheRes &ctx) const;
 
@@ -427,6 +431,7 @@ private:
 	StringsHolderPtr strHolder_;
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
 	std::chrono::seconds lastExpirationCheckTs_;
+	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_ = {0};
 };
 
 }  // namespace reindexer

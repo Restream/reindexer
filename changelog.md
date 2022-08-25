@@ -1,3 +1,28 @@
+# Version 3.8.0 (25.08.2022)
+## Core
+- [fea] Optimize selects with large id sets
+- [fea] Optimize max index structures resize time on documents insertion/deletion/modification
+- [fea] Add max highlighted areas setting for fulltext indexes (`max_areas_in_doc` and `max_total_areas_to_cache`)
+- [fix] Add some of the missing memory into #memstats
+
+## Reindexer server
+- [fea] Reduce allocations count for query result responses
+- [fix] Fix assertion in RPC query results container
+- [fix] Fix assertion on response buffer overflow
+- [fix] Fix SEGFAULT in Go/JSON queries to WAL
+- [fix] Server will clear unknown flags in cproto responses
+
+## Face
+- [fea] Increase cache lifetime for a number of resources
+- [fea] Add `strict_mode` to config 
+- [fea] Add `sync_storage_flush_limit` to config
+- [fea] Add new ft-index fields (`max_areas_in_doc`, `max_total_areas_to_cache`, `optimization`)
+- [fea] Add new fields in memory statistics (`index_optimizer_memory`,  `tracked_updates_size`)
+- [fea] Add server unavailability indicator 
+- [fea] Add parsing error messages from responses with 500 status code (for error log)
+- [fix] Fix uptime indicator behavior
+- [fix] Fix labels and table filters views in the Statistics tab
+
 # Version 3.7.0 (05.08.2022)
 ## Core
 - [fea] Optimize fulltext index

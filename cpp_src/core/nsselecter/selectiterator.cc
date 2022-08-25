@@ -9,7 +9,6 @@ namespace reindexer {
 using std::min;
 using std::max;
 
-SelectIterator::SelectIterator() {}
 SelectIterator::SelectIterator(const SelectKeyResult &res, bool dist, string n, bool forcedFirst)
 	: SelectKeyResult(res), distinct(dist), name(std::move(n)), forcedFirst_(forcedFirst), type_(Forward) {}
 
@@ -17,7 +16,9 @@ void SelectIterator::Bind(PayloadType type, int field) {
 	for (Comparator &cmp : comparators_) cmp.Bind(type, field);
 }
 
-void SelectIterator::Start(bool reverse) {
+void SelectIterator::Start(bool reverse, int maxIterations) {
+	const bool explicitSort = applyDeferedSort(maxIterations);
+
 	isReverse_ = reverse;
 	lastIt_ = begin();
 
@@ -64,11 +65,12 @@ void SelectIterator::Start(bool reverse) {
 		begin()->indexForwardIter_->Start(reverse);
 	} else if (isUnsorted) {
 		type_ = Unsorted;
-
-	} else if (size() == 1 && !isReverse_) {
-		type_ = begin()->isRange_ ? SingleRange : SingleIdset;
 	} else if (size() == 1) {
-		type_ = begin()->isRange_ ? RevSingleRange : RevSingleIdset;
+		if (!isReverse_) {
+			type_ = begin()->isRange_ ? SingleRange : (explicitSort ? SingleIdSetWithDeferedSort : SingleIdset);
+		} else {
+			type_ = begin()->isRange_ ? RevSingleRange : (explicitSort ? RevSingleIdSetWithDeferedSort : RevSingleIdset);
+		}
 	}
 	if (size() == 0) {
 		type_ = OnlyComparator;
@@ -270,7 +272,7 @@ void SelectIterator::AppendAndBind(SelectKeyResult &other, PayloadType type, int
 	}
 }
 
-double SelectIterator::Cost(int expectedIterations) const {
+double SelectIterator::Cost(int expectedIterations) const noexcept {
 	if (type_ == UnbuiltSortOrdersIndex) return -1;
 	if (forcedFirst_) return -GetMaxIterations();
 	double result{0.0};
@@ -282,7 +284,7 @@ double SelectIterator::Cost(int expectedIterations) const {
 	return result + static_cast<double>(distinct ? 1 : GetMaxIterations()) * size();
 }
 
-int SelectIterator::Val() const {
+IdType SelectIterator::Val() const noexcept {
 	if (type_ == UnbuiltSortOrdersIndex) {
 		return begin()->indexForwardIter_->Value();
 	} else {
@@ -290,7 +292,7 @@ int SelectIterator::Val() const {
 	}
 }
 
-void SelectIterator::SetExpectMaxIterations(int expectedIterations) {
+void SelectIterator::SetExpectMaxIterations(int expectedIterations) noexcept {
 	for (SingleSelectKeyResult &r : *this) {
 		if (!r.isRange_ && r.ids_.size() > 1) {
 			int itersloop = r.ids_.size();
@@ -300,28 +302,33 @@ void SelectIterator::SetExpectMaxIterations(int expectedIterations) {
 	}
 }
 
-const char *SelectIterator::TypeName() const {
+std::string_view SelectIterator::TypeName() const noexcept {
+	using namespace std::string_view_literals;
 	switch (type_) {
 		case Forward:
-			return "Forward";
+			return "Forward"sv;
 		case Reverse:
-			return "Reverse";
+			return "Reverse"sv;
 		case SingleRange:
-			return "SingleRange";
+			return "SingleRange"sv;
 		case SingleIdset:
-			return "SingleIdset";
+			return "SingleIdset"sv;
+		case SingleIdSetWithDeferedSort:
+			return "SingleIdSetWithDeferedSort"sv;
 		case RevSingleRange:
-			return "RevSingleRange";
+			return "RevSingleRange"sv;
 		case RevSingleIdset:
-			return "RevSingleIdset";
+			return "RevSingleIdset"sv;
+		case RevSingleIdSetWithDeferedSort:
+			return "RevSingleIdSetWithDeferedSort"sv;
 		case OnlyComparator:
-			return "OnlyComparator";
+			return "OnlyComparator"sv;
 		case Unsorted:
-			return "Unsorted";
+			return "Unsorted"sv;
 		case UnbuiltSortOrdersIndex:
-			return "UnbuiltSortOrdersIndex";
+			return "UnbuiltSortOrdersIndex"sv;
 		default:
-			return "<unknown>";
+			return "<unknown>"sv;
 	}
 }
 

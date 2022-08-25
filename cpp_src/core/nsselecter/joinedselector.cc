@@ -44,7 +44,7 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &que
 		for (auto &r : joinItemR.Items()) {
 			val.ids_->Add(r.Id(), IdSet::Unordered, 0);
 		}
-		rightNs_->putToJoinCache(joinResLong, val);
+		rightNs_->putToJoinCache(joinResLong, std::move(val));
 	}
 }
 

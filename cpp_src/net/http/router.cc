@@ -125,7 +125,7 @@ static std::string_view lookupContentType(std::string_view path) {
 	return "application/octet-stream"sv;
 }
 
-int Context::File(int code, std::string_view path, std::string_view data, bool isGzip) {
+int Context::File(int code, std::string_view path, std::string_view data, bool isGzip, bool withCache) {
 	std::string content;
 
 	if (data.length() == 0) {
@@ -139,6 +139,9 @@ int Context::File(int code, std::string_view path, std::string_view data, bool i
 	writer->SetContentLength(content.size());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, lookupContentType(path)});
+	if (withCache) {
+		writer->SetHeader(http::Header{"Cache-Control"sv, "public, max-age=31536000"sv});
+	}
 	if (isGzip) {
 		writer->SetHeader(http::Header{"Content-Encoding"sv, "gzip"sv});
 	}
@@ -178,8 +181,7 @@ int Router::handle(Context &ctx) {
 						return res;
 					}
 				}
-				res = r.h_.func_(r.h_.object_, ctx);
-				return res;
+				return r.h_.func_(r.h_.object_, ctx);
 			}
 
 			if (url.substr(0, patternPos) != route.substr(0, patternPos)) break;

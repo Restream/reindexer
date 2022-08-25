@@ -95,6 +95,10 @@ type FtFastConfig struct {
 	ExtraWordSymbols string `json:"extra_word_symbols"`
 	// Ratio of summation of ranks of match one term in several fields
 	SumRanksByFieldsRatio float64 `json:"sum_ranks_by_fields_ratio"`
+	// Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited
+	MaxAreasInDoc int `json:"max_areas_in_doc"`
+	// Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited
+	MaxTotalAreasToCache int `json:"max_total_areas_to_cache"`
 	// Configuration for certain field
 	FieldsCfg []FtFastFieldConfig `json:"fields,omitempty"`
 	// Optimize the index by memory or by cpu
@@ -125,6 +129,8 @@ func DefaultFtFastConfig() FtFastConfig {
 		LogLevel:              0,
 		ExtraWordSymbols:      "/-+",
 		SumRanksByFieldsRatio: 0.0,
+		MaxAreasInDoc:         5,
+		MaxTotalAreasToCache:  -1,
 		Optimization:          "Memory",
 	}
 }

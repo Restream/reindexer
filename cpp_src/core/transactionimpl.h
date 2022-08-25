@@ -7,7 +7,7 @@ namespace reindexer {
 
 class TransactionStep {
 public:
-	TransactionStep(Item &&item, ItemModifyMode modifyMode) : itemData_(move(*item.impl_)), modifyMode_(modifyMode), query_(nullptr) {
+	TransactionStep(Item &&item, ItemModifyMode modifyMode) : itemData_(std::move(*item.impl_)), modifyMode_(modifyMode), query_(nullptr) {
 		delete item.impl_;
 		item.impl_ = nullptr;
 	}

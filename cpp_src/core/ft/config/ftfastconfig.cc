@@ -58,6 +58,8 @@ void FtFastConfig::parse(std::string_view json, const fast_hash_map<std::string,
 		maxTypoLen = root["max_typo_len"].As<>(maxTypoLen, 0, 100);
 		maxRebuildSteps = root["max_rebuild_steps"].As<>(maxRebuildSteps, 1, 500);
 		maxStepSize = root["max_step_size"].As<>(maxStepSize, 5);
+		maxAreasInDoc = root["max_areas_in_doc"].As<int>(maxAreasInDoc);
+		maxTotalAreasToCache = root["max_total_areas_to_cache"].As<int>(maxTotalAreasToCache);
 		summationRanksByFieldsRatio = root["sum_ranks_by_fields_ratio"].As<>(summationRanksByFieldsRatio, 0.0, 1.0);
 
 		FtFastFieldConfig defaultFieldCfg;
@@ -126,6 +128,8 @@ std::string FtFastConfig::GetJson(const fast_hash_map<std::string, int>& fields)
 	jsonBuilder.Put("max_rebuild_steps", maxRebuildSteps);
 	jsonBuilder.Put("max_step_size", maxStepSize);
 	jsonBuilder.Put("sum_ranks_by_fields_ratio", summationRanksByFieldsRatio);
+	jsonBuilder.Put("max_areas_in_doc", maxAreasInDoc);
+	jsonBuilder.Put("max_total_areas_to_cache", maxTotalAreasToCache);
 	switch (optimization) {
 		case Optimization::Memory:
 			jsonBuilder.Put("optimization", "Memory");

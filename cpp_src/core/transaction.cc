@@ -21,23 +21,23 @@ const string &Transaction::GetName() {
 }
 
 void Transaction::Insert(Item &&item) {
-	if (impl_) impl_->Insert(move(item));
+	if (impl_) impl_->Insert(std::move(item));
 }
 void Transaction::Update(Item &&item) {
-	if (impl_) impl_->Update(move(item));
+	if (impl_) impl_->Update(std::move(item));
 }
 void Transaction::Upsert(Item &&item) {
-	if (impl_) impl_->Upsert(move(item));
+	if (impl_) impl_->Upsert(std::move(item));
 }
 void Transaction::Delete(Item &&item) {
-	if (impl_) impl_->Delete(move(item));
+	if (impl_) impl_->Delete(std::move(item));
 }
 void Transaction::Modify(Item &&item, ItemModifyMode mode) {
-	if (impl_) impl_->Modify(move(item), mode);
+	if (impl_) impl_->Modify(std::move(item), mode);
 }
 
 void Transaction::Modify(Query &&query) {
-	if (impl_) impl_->Modify(move(query));
+	if (impl_) impl_->Modify(std::move(query));
 }
 
 Item Transaction::NewItem() { return impl_->NewItem(); }

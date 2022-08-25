@@ -1,7 +1,7 @@
 /**
  * MIT License
  *
- * Copyright (c) 2017 Tessil
+ * Copyright (c) 2017 Thibaut Goetghebuer-Planchon <tessil@gmx.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -10,8 +10,8 @@
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
  *
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -38,6 +38,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
 #include "sparse_growth_policy.h"
 
 #ifdef __INTEL_COMPILER
@@ -66,14 +67,16 @@ enum class sparsity { high, medium, low };
 
 namespace detail_popcount {
 /**
- * Define the popcount(ll) methods and pick-up the best depending on the compiler.
+ * Define the popcount(ll) methods and pick-up the best depending on the
+ * compiler.
  */
 
 // From Wikipedia: https://en.wikipedia.org/wiki/Hamming_weight
 inline int fallback_popcountll(unsigned long long int x) {
 	static_assert(sizeof(unsigned long long int) == sizeof(std::uint64_t),
 				  "sizeof(unsigned long long int) must be equal to sizeof(std::uint64_t). "
-				  "Open a feature request if you need support for a platform where it isn't the case.");
+				  "Open a feature request if you need support for a platform where it "
+				  "isn't the case.");
 
 	const std::uint64_t m1 = 0x5555555555555555ull;
 	const std::uint64_t m2 = 0x3333333333333333ull;
@@ -88,8 +91,10 @@ inline int fallback_popcountll(unsigned long long int x) {
 
 inline int fallback_popcount(unsigned int x) {
 	static_assert(sizeof(unsigned int) == sizeof(std::uint32_t) || sizeof(unsigned int) == sizeof(std::uint64_t),
-				  "sizeof(unsigned int) must be equal to sizeof(std::uint32_t) or sizeof(std::uint64_t). "
-				  "Open a feature request if you need support for a platform where it isn't the case.");
+				  "sizeof(unsigned int) must be equal to sizeof(std::uint32_t) "
+				  "or sizeof(std::uint64_t). "
+				  "Open a feature request if you need support for a platform "
+				  "where it isn't the case.");
 
 	if (sizeof(unsigned int) == sizeof(std::uint32_t)) {
 		const std::uint32_t m1 = 0x55555555;
@@ -196,7 +201,7 @@ inline std::size_t round_up_to_power_of_two(std::size_t value) {
 }
 
 template <typename T, typename U>
-static T numeric_cast(U value, const char* error_message = "numeric_cast() failed.") {
+static T numeric_cast(U value, const char *error_message = "numeric_cast() failed.") {
 	T ret = static_cast<T>(value);
 	if (static_cast<U>(ret) != value) {
 		throw std::runtime_error(error_message);
@@ -212,15 +217,17 @@ static T numeric_cast(U value, const char* error_message = "numeric_cast() faile
 }
 
 /**
- * Fixed size type used to represent size_type values on serialization. Need to be big enough
- * to represent a std::size_t on 32 and 64 bits platforms, and must be the same size on both platforms.
+ * Fixed size type used to represent size_type values on serialization. Need to
+ * be big enough to represent a std::size_t on 32 and 64 bits platforms, and
+ * must be the same size on both platforms.
  */
 using slz_size_type = std::uint64_t;
 static_assert(std::numeric_limits<slz_size_type>::max() >= std::numeric_limits<std::size_t>::max(), "slz_size_type must be >= std::size_t");
 
 template <class T, class Deserializer>
-static T deserialize_value(Deserializer& deserializer) {
-	// MSVC < 2017 is not conformant, circumvent the problem by removing the template keyword
+static T deserialize_value(Deserializer &deserializer) {
+	// MSVC < 2017 is not conformant, circumvent the problem by removing the
+	// template keyword
 #if defined(_MSC_VER) && _MSC_VER < 1910
 	return deserializer.Deserializer::operator()<T>();
 #else
@@ -229,26 +236,31 @@ static T deserialize_value(Deserializer& deserializer) {
 }
 
 /**
- * WARNING: the sparse_array class doesn't free the ressources allocated through the allocator passed in parameter
- * in each method. You have to manually call `clear(Allocator&)` when you don't need a sparse_array object anymore.
+ * WARNING: the sparse_array class doesn't free the ressources allocated through
+ * the allocator passed in parameter in each method. You have to manually call
+ * `clear(Allocator&)` when you don't need a sparse_array object anymore.
  *
- * The reason is that the sparse_array doesn't store the allocator to avoid wasting space in each sparse_array when
- * the allocator has a size > 0. It only allocates/deallocates objects with the allocator that is passed in parameter.
- *
- *
- *
- * Index denotes a value between [0, BITMAP_NB_BITS), it is an index similar to std::vector.
- * Offset denotes the real position in `m_values` corresponding to an index.
- *
- * We are using raw pointers instead of std::vector to avoid loosing 2*sizeof(size_t) bytes to store the capacity
- * and size of the vector in each sparse_array. We know we can only store up to BITMAP_NB_BITS elements in the array,
- * we don't need such big types.
+ * The reason is that the sparse_array doesn't store the allocator to avoid
+ * wasting space in each sparse_array when the allocator has a size > 0. It only
+ * allocates/deallocates objects with the allocator that is passed in parameter.
  *
  *
- * T must be nothrow move contructible and/or copy constructible.
+ *
+ * Index denotes a value between [0, BITMAP_NB_BITS), it is an index similar to
+ * std::vector. Offset denotes the real position in `m_values` corresponding to
+ * an index.
+ *
+ * We are using raw pointers instead of std::vector to avoid loosing
+ * 2*sizeof(size_t) bytes to store the capacity and size of the vector in each
+ * sparse_array. We know we can only store up to BITMAP_NB_BITS elements in the
+ * array, we don't need such big types.
+ *
+ *
+ * T must be nothrow move constructible and/or copy constructible.
  * Behaviour is undefined if the destructor of T throws an exception.
  *
- * See https://smerity.com/articles/2015/google_sparsehash.html for details on the idea behinds the implementation.
+ * See https://smerity.com/articles/2015/google_sparsehash.html for details on
+ * the idea behinds the implementation.
  *
  * TODO Check to use std::realloc and std::memmove when possible
  */
@@ -258,8 +270,8 @@ public:
 	using value_type = T;
 	using size_type = std::uint_least8_t;
 	using allocator_type = Allocator;
-	using iterator = value_type*;
-	using const_iterator = const value_type*;
+	using iterator = value_type *;
+	using const_iterator = const value_type *;
 
 private:
 	static const size_type CAPACITY_GROWTH_STEP = (Sparsity == tsl::sh::sparsity::high)		? 2
@@ -268,8 +280,9 @@ private:
 
 	/**
 	 * Bitmap size configuration.
-	 * Use 32 bits for the bitmap on 32-bits or less environnements as popcount on 64 bits numbers is slow on
-	 * these environnements. Use 64 bits bitmap otherwise.
+	 * Use 32 bits for the bitmap on 32-bits or less environnement as popcount on
+	 * 64 bits numbers is slow on these environnement. Use 64 bits bitmap
+	 * otherwise.
 	 */
 #if SIZE_MAX <= UINT32_MAX
 	using bitmap_type = std::uint_least32_t;
@@ -293,22 +306,33 @@ private:
 public:
 	/**
 	 * Map an ibucket [0, bucket_count) in the hash table to a sparse_ibucket
-	 * (a sparse_array holds multiple buckets, so there is less sparse_array than bucket_count).
+	 * (a sparse_array holds multiple buckets, so there is less sparse_array than
+	 * bucket_count).
 	 *
-	 * The bucket ibucket is in m_sparse_buckets[sparse_ibucket(ibucket)][index_in_sparse_bucket(ibucket)]
+	 * The bucket ibucket is in
+	 * m_sparse_buckets[sparse_ibucket(ibucket)][index_in_sparse_bucket(ibucket)]
 	 * instead of something like m_buckets[ibucket] in a classical hash table.
 	 */
 	static std::size_t sparse_ibucket(std::size_t ibucket) { return ibucket >> BUCKET_SHIFT; }
 
 	/**
-	 * Map an ibucket [0, bucket_count) in the hash table to an index in the sparse_array
-	 * which corresponds to the bucket.
+	 * Map an ibucket [0, bucket_count) in the hash table to an index in the
+	 * sparse_array which corresponds to the bucket.
 	 *
-	 * The bucket ibucket is in m_sparse_buckets[sparse_ibucket(ibucket)][index_in_sparse_bucket(ibucket)]
+	 * The bucket ibucket is in
+	 * m_sparse_buckets[sparse_ibucket(ibucket)][index_in_sparse_bucket(ibucket)]
 	 * instead of something like m_buckets[ibucket] in a classical hash table.
 	 */
 	static typename sparse_array::size_type index_in_sparse_bucket(std::size_t ibucket) {
 		return static_cast<typename sparse_array::size_type>(ibucket & sparse_array::BUCKET_MASK);
+	}
+
+	static std::size_t nb_sparse_buckets(std::size_t bucket_count) noexcept {
+		if (bucket_count == 0) {
+			return 0;
+		}
+
+		return std::max<std::size_t>(1, sparse_ibucket(tsl::detail_sparse_hash::round_up_to_power_of_two(bucket_count)));
 	}
 
 public:
@@ -318,7 +342,7 @@ public:
 	explicit sparse_array(bool last_bucket) noexcept
 		: m_values(nullptr), m_bitmap_vals(0), m_bitmap_deleted_vals(0), m_nb_elements(0), m_capacity(0), m_last_array(last_bucket) {}
 
-	sparse_array(size_type capacity, Allocator& alloc)
+	sparse_array(size_type capacity, Allocator &alloc)
 		: m_values(nullptr), m_bitmap_vals(0), m_bitmap_deleted_vals(0), m_nb_elements(0), m_capacity(capacity), m_last_array(false) {
 		if (m_capacity > 0) {
 			m_values = alloc.allocate(m_capacity);
@@ -326,7 +350,7 @@ public:
 		}
 	}
 
-	sparse_array(const sparse_array& other, Allocator& alloc)
+	sparse_array(const sparse_array &other, Allocator &alloc)
 		: m_values(nullptr),
 		  m_bitmap_vals(other.m_bitmap_vals),
 		  m_bitmap_deleted_vals(other.m_bitmap_deleted_vals),
@@ -351,7 +375,7 @@ public:
 		}
 	}
 
-	sparse_array(sparse_array&& other) noexcept
+	sparse_array(sparse_array &&other) noexcept
 		: m_values(other.m_values),
 		  m_bitmap_vals(other.m_bitmap_vals),
 		  m_bitmap_deleted_vals(other.m_bitmap_deleted_vals),
@@ -365,7 +389,7 @@ public:
 		other.m_capacity = 0;
 	}
 
-	sparse_array(sparse_array&& other, Allocator& alloc)
+	sparse_array(sparse_array &&other, Allocator &alloc)
 		: m_values(nullptr),
 		  m_bitmap_vals(other.m_bitmap_vals),
 		  m_bitmap_deleted_vals(other.m_bitmap_deleted_vals),
@@ -390,12 +414,12 @@ public:
 		}
 	}
 
-	sparse_array& operator=(const sparse_array&) = delete;
-	sparse_array& operator=(sparse_array&&) = delete;
+	sparse_array &operator=(const sparse_array &) = delete;
+	sparse_array &operator=(sparse_array &&) = delete;
 
 	~sparse_array() noexcept {
-		// The code that manages the sparse_array must have called clear before destruction.
-		// See documentation of sparse_array for more details.
+		// The code that manages the sparse_array must have called clear before
+		// destruction. See documentation of sparse_array for more details.
 		tsl_sh_assert(m_capacity == 0 && m_nb_elements == 0 && m_values == nullptr);
 	}
 
@@ -410,7 +434,7 @@ public:
 
 	size_type size() const noexcept { return m_nb_elements; }
 
-	void clear(allocator_type& alloc) noexcept {
+	void clear(allocator_type &alloc) noexcept {
 		destroy_and_deallocate_values(alloc, m_values, m_nb_elements, m_capacity);
 
 		m_values = nullptr;
@@ -448,7 +472,7 @@ public:
 	 * Return iterator to set value.
 	 */
 	template <typename... Args>
-	iterator set(allocator_type& alloc, size_type index, Args&&... value_args) {
+	iterator set(allocator_type &alloc, size_type index, Args &&...value_args) {
 		tsl_sh_assert(!has_value(index));
 
 		const size_type offset = index_to_offset(index);
@@ -465,13 +489,13 @@ public:
 		return m_values + offset;
 	}
 
-	iterator erase(allocator_type& alloc, iterator position) {
+	iterator erase(allocator_type &alloc, iterator position) {
 		const size_type offset = static_cast<size_type>(std::distance(begin(), position));
 		return erase(alloc, position, offset_to_index(offset));
 	}
 
 	// Return the next value or end if no next value
-	iterator erase(allocator_type& alloc, iterator position, size_type index) {
+	iterator erase(allocator_type &alloc, iterator position, size_type index) {
 		tsl_sh_assert(has_value(index));
 		tsl_sh_assert(!has_deleted_value(index));
 
@@ -489,7 +513,7 @@ public:
 		return m_values + offset;
 	}
 
-	void swap(sparse_array& other) {
+	void swap(sparse_array &other) {
 		using std::swap;
 
 		swap(m_values, other.m_values);
@@ -503,7 +527,7 @@ public:
 	static iterator mutable_iterator(const_iterator pos) { return const_cast<iterator>(pos); }
 
 	template <class Serializer>
-	void serialize(Serializer& serializer) const {
+	void serialize(Serializer &serializer) const {
 		const slz_size_type sparse_bucket_size = m_nb_elements;
 		serializer(sparse_bucket_size);
 
@@ -513,19 +537,21 @@ public:
 		const slz_size_type bitmap_deleted_vals = m_bitmap_deleted_vals;
 		serializer(bitmap_deleted_vals);
 
-		for (const value_type& value : *this) {
+		for (const value_type &value : *this) {
 			serializer(value);
 		}
 	}
 
 	template <class Deserializer>
-	static sparse_array deserialize_hash_compatible(Deserializer& deserializer, Allocator& alloc) {
+	static sparse_array deserialize_hash_compatible(Deserializer &deserializer, Allocator &alloc) {
 		const slz_size_type sparse_bucket_size = deserialize_value<slz_size_type>(deserializer);
 		const slz_size_type bitmap_vals = deserialize_value<slz_size_type>(deserializer);
 		const slz_size_type bitmap_deleted_vals = deserialize_value<slz_size_type>(deserializer);
 
 		if (sparse_bucket_size > BITMAP_NB_BITS) {
-			throw std::runtime_error("Deserialized sparse_bucket_size is too big for the platform. Maximum should be BITMAP_NB_BITS.");
+			throw std::runtime_error(
+				"Deserialized sparse_bucket_size is too big for the platform. "
+				"Maximum should be BITMAP_NB_BITS.");
 		}
 
 		sparse_array sarray;
@@ -553,10 +579,11 @@ public:
 	}
 
 	/**
-	 * Deserialize the values of the bucket and insert them all in sparse_hash through sparse_hash.insert(...).
+	 * Deserialize the values of the bucket and insert them all in sparse_hash
+	 * through sparse_hash.insert(...).
 	 */
 	template <class Deserializer, class SparseHash>
-	static void deserialize_values_into_sparse_hash(Deserializer& deserializer, SparseHash& sparse_hash) {
+	static void deserialize_values_into_sparse_hash(Deserializer &deserializer, SparseHash &sparse_hash) {
 		const slz_size_type sparse_bucket_size = deserialize_value<slz_size_type>(deserializer);
 
 		const slz_size_type bitmap_vals = deserialize_value<slz_size_type>(deserializer);
@@ -572,15 +599,15 @@ public:
 
 private:
 	template <typename... Args>
-	static void construct_value(allocator_type& alloc, value_type* value, Args&&... value_args) {
+	static void construct_value(allocator_type &alloc, value_type *value, Args &&...value_args) {
 		std::allocator_traits<allocator_type>::construct(alloc, value, std::forward<Args>(value_args)...);
 	}
 
-	static void destroy_value(allocator_type& alloc, value_type* value) noexcept {
+	static void destroy_value(allocator_type &alloc, value_type *value) noexcept {
 		std::allocator_traits<allocator_type>::destroy(alloc, value);
 	}
 
-	static void destroy_and_deallocate_values(allocator_type& alloc, value_type* values, size_type nb_values,
+	static void destroy_and_deallocate_values(allocator_type &alloc, value_type *values, size_type nb_values,
 											  size_type capacity_values) noexcept {
 		for (size_type i = 0; i < nb_values; i++) {
 			destroy_value(alloc, values + i);
@@ -632,18 +659,22 @@ private:
 	 * Insertion
 	 *
 	 * Two situations:
-	 * - Either we are in a situation where std::is_nothrow_move_constructible<value_type>::value is true.
-	 *   In this case, on insertion we just reallocate m_values when we reach
-	 *   its capacity (i.e. m_nb_elements == m_capacity), otherwise we just put the new value at its
-	 *   appropriate place. We can easly keep the strong exception guarantee as moving the values around is safe.
-	 * - Otherwise we are in a situation where std::is_nothrow_move_constructible<value_type>::value is false.
-	 *   In this case on EACH insertion we allocate a new area of m_nb_elements + 1 where we copy the values
-	 *   of m_values into it and put the new value there. On success, we set m_values to this new area.
-	 *   Even if slower, it's the only way to preserve to strong exception guarantee.
+	 * - Either we are in a situation where
+	 * std::is_nothrow_move_constructible<value_type>::value is true. In this
+	 * case, on insertion we just reallocate m_values when we reach its capacity
+	 * (i.e. m_nb_elements == m_capacity), otherwise we just put the new value at
+	 * its appropriate place. We can easily keep the strong exception guarantee as
+	 * moving the values around is safe.
+	 * - Otherwise we are in a situation where
+	 * std::is_nothrow_move_constructible<value_type>::value is false. In this
+	 * case on EACH insertion we allocate a new area of m_nb_elements + 1 where we
+	 * copy the values of m_values into it and put the new value there. On
+	 * success, we set m_values to this new area. Even if slower, it's the only
+	 * way to preserve to strong exception guarantee.
 	 */
 	template <typename... Args, typename U = value_type,
-			  typename std::enable_if<std::is_nothrow_move_constructible<U>::value>::type* = nullptr>
-	void insert_at_offset(allocator_type& alloc, size_type offset, Args&&... value_args) {
+			  typename std::enable_if<std::is_nothrow_move_constructible<U>::value>::type * = nullptr>
+	void insert_at_offset(allocator_type &alloc, size_type offset, Args &&...value_args) {
 		if (m_nb_elements < m_capacity) {
 			insert_at_offset_no_realloc(alloc, offset, std::forward<Args>(value_args)...);
 		} else {
@@ -652,14 +683,14 @@ private:
 	}
 
 	template <typename... Args, typename U = value_type,
-			  typename std::enable_if<!std::is_nothrow_move_constructible<U>::value>::type* = nullptr>
-	void insert_at_offset(allocator_type& alloc, size_type offset, Args&&... value_args) {
+			  typename std::enable_if<!std::is_nothrow_move_constructible<U>::value>::type * = nullptr>
+	void insert_at_offset(allocator_type &alloc, size_type offset, Args &&...value_args) {
 		insert_at_offset_realloc(alloc, offset, m_nb_elements + 1, std::forward<Args>(value_args)...);
 	}
 
 	template <typename... Args, typename U = value_type,
-			  typename std::enable_if<std::is_nothrow_move_constructible<U>::value>::type* = nullptr>
-	void insert_at_offset_no_realloc(allocator_type& alloc, size_type offset, Args&&... value_args) {
+			  typename std::enable_if<std::is_nothrow_move_constructible<U>::value>::type * = nullptr>
+	void insert_at_offset_no_realloc(allocator_type &alloc, size_type offset, Args &&...value_args) {
 		tsl_sh_assert(offset <= m_nb_elements);
 		tsl_sh_assert(m_nb_elements < m_capacity);
 
@@ -680,12 +711,13 @@ private:
 	}
 
 	template <typename... Args, typename U = value_type,
-			  typename std::enable_if<std::is_nothrow_move_constructible<U>::value>::type* = nullptr>
-	void insert_at_offset_realloc(allocator_type& alloc, size_type offset, size_type new_capacity, Args&&... value_args) {
+			  typename std::enable_if<std::is_nothrow_move_constructible<U>::value>::type * = nullptr>
+	void insert_at_offset_realloc(allocator_type &alloc, size_type offset, size_type new_capacity, Args &&...value_args) {
 		tsl_sh_assert(new_capacity > m_nb_elements);
 
-		value_type* new_values = alloc.allocate(new_capacity);
-		tsl_sh_assert(new_values != nullptr);  // allocate should throw if there is a failure
+		value_type *new_values = alloc.allocate(new_capacity);
+		// Allocate should throw if there is a failure
+		tsl_sh_assert(new_values != nullptr);
 
 		try {
 			construct_value(alloc, new_values + offset, std::forward<Args>(value_args)...);
@@ -710,12 +742,13 @@ private:
 	}
 
 	template <typename... Args, typename U = value_type,
-			  typename std::enable_if<!std::is_nothrow_move_constructible<U>::value>::type* = nullptr>
-	void insert_at_offset_realloc(allocator_type& alloc, size_type offset, size_type new_capacity, Args&&... value_args) {
+			  typename std::enable_if<!std::is_nothrow_move_constructible<U>::value>::type * = nullptr>
+	void insert_at_offset_realloc(allocator_type &alloc, size_type offset, size_type new_capacity, Args &&...value_args) {
 		tsl_sh_assert(new_capacity > m_nb_elements);
 
-		value_type* new_values = alloc.allocate(new_capacity);
-		tsl_sh_assert(new_values != nullptr);  // allocate should throw if there is a failure
+		value_type *new_values = alloc.allocate(new_capacity);
+		// Allocate should throw if there is a failure
+		tsl_sh_assert(new_values != nullptr);
 
 		size_type nb_new_values = 0;
 		try {
@@ -748,15 +781,18 @@ private:
 	 * Erasure
 	 *
 	 * Two situations:
-	 * - Either we are in a situation where std::is_nothrow_move_constructible<value_type>::value is true.
-	 *   Simply destroy the value and left-shift move the value on the right of offset.
-	 * - Otherwise we are in a situation where std::is_nothrow_move_constructible<value_type>::value is false.
-	 *   Copy all the values except the one at offset into a new heap area. On success, we set m_values
-	 *   to this new area. Even if slower, it's the only way to preserve to strong exception guarantee.
+	 * - Either we are in a situation where
+	 * std::is_nothrow_move_constructible<value_type>::value is true. Simply
+	 * destroy the value and left-shift move the value on the right of offset.
+	 * - Otherwise we are in a situation where
+	 * std::is_nothrow_move_constructible<value_type>::value is false. Copy all
+	 * the values except the one at offset into a new heap area. On success, we
+	 * set m_values to this new area. Even if slower, it's the only way to
+	 * preserve to strong exception guarantee.
 	 */
 	template <typename... Args, typename U = value_type,
-			  typename std::enable_if<std::is_nothrow_move_constructible<U>::value>::type* = nullptr>
-	void erase_at_offset(allocator_type& alloc, size_type offset) noexcept {
+			  typename std::enable_if<std::is_nothrow_move_constructible<U>::value>::type * = nullptr>
+	void erase_at_offset(allocator_type &alloc, size_type offset) noexcept {
 		tsl_sh_assert(offset < m_nb_elements);
 
 		destroy_value(alloc, m_values + offset);
@@ -768,8 +804,8 @@ private:
 	}
 
 	template <typename... Args, typename U = value_type,
-			  typename std::enable_if<!std::is_nothrow_move_constructible<U>::value>::type* = nullptr>
-	void erase_at_offset(allocator_type& alloc, size_type offset) {
+			  typename std::enable_if<!std::is_nothrow_move_constructible<U>::value>::type * = nullptr>
+	void erase_at_offset(allocator_type &alloc, size_type offset) {
 		tsl_sh_assert(offset < m_nb_elements);
 
 		// Erasing the last element, don't need to reallocate. We keep the capacity.
@@ -781,8 +817,9 @@ private:
 		tsl_sh_assert(m_nb_elements > 1);
 		const size_type new_capacity = m_nb_elements - 1;
 
-		value_type* new_values = alloc.allocate(new_capacity);
-		tsl_sh_assert(new_values != nullptr);  // allocate should throw if there is a failure
+		value_type *new_values = alloc.allocate(new_capacity);
+		// Allocate should throw if there is a failure
+		tsl_sh_assert(new_values != nullptr);
 
 		size_type nb_new_values = 0;
 		try {
@@ -806,7 +843,7 @@ private:
 	}
 
 private:
-	value_type* m_values;
+	value_type *m_values;
 
 	bitmap_type m_bitmap_vals;
 	bitmap_type m_bitmap_deleted_vals;
@@ -819,28 +856,35 @@ private:
 /**
  * Internal common class used by `sparse_map` and `sparse_set`.
  *
- * `ValueType` is what will be stored by `sparse_hash` (usually `std::pair<Key, T>` for map and `Key` for set).
+ * `ValueType` is what will be stored by `sparse_hash` (usually `std::pair<Key,
+ * T>` for map and `Key` for set).
  *
- * `KeySelect` should be a `FunctionObject` which takes a `ValueType` in parameter and returns a
- *  reference to the key.
+ * `KeySelect` should be a `FunctionObject` which takes a `ValueType` in
+ * parameter and returns a reference to the key.
  *
- * `ValueSelect` should be a `FunctionObject` which takes a `ValueType` in parameter and returns a
- *  reference to the value. `ValueSelect` should be void if there is no value (in a set for example).
+ * `ValueSelect` should be a `FunctionObject` which takes a `ValueType` in
+ * parameter and returns a reference to the value. `ValueSelect` should be void
+ * if there is no value (in a set for example).
  *
- * The strong exception guarantee only holds if `ExceptionSafety` is set to `tsl::sh::exception_safety::strong`.
+ * The strong exception guarantee only holds if `ExceptionSafety` is set to
+ * `tsl::sh::exception_safety::strong`.
  *
- * `ValueType` must be nothrow move contructible and/or copy constructible.
+ * `ValueType` must be nothrow move constructible and/or copy constructible.
  * Behaviour is undefined if the destructor of `ValueType` throws.
  *
  *
- * The class holds its buckets in a 2-dimensional fashion. Instead of having a linear `std::vector<bucket>`
- * for [0, bucket_count) where each bucket stores one value, we have a `std::vector<sparse_array>` (m_sparse_buckets_data)
- * where each `sparse_array` stores multiple values (up to `sparse_array::BITMAP_NB_BITS`). To convert a one dimensional
- * `ibucket` position to a position in `std::vector<sparse_array>` and a position in `sparse_array`, use respectively
- * the methods `sparse_array::sparse_ibucket(ibucket)` and `sparse_array::index_in_sparse_bucket(ibucket)`.
+ * The class holds its buckets in a 2-dimensional fashion. Instead of having a
+ * linear `std::vector<bucket>` for [0, bucket_count) where each bucket stores
+ * one value, we have a `std::vector<sparse_array>` (m_sparse_buckets_data)
+ * where each `sparse_array` stores multiple values (up to
+ * `sparse_array::BITMAP_NB_BITS`). To convert a one dimensional `ibucket`
+ * position to a position in `std::vector<sparse_array>` and a position in
+ * `sparse_array`, use respectively the methods
+ * `sparse_array::sparse_ibucket(ibucket)` and
+ * `sparse_array::index_in_sparse_bucket(ibucket)`.
  */
 template <class ValueType, class KeySelect, class ValueSelect, class Hash, class KeyEqual, class Allocator, class GrowthPolicy,
-		  tsl::sh::exception_safety ExceptionSafety, tsl::sh::sparsity Sparsity, tsl::sh::probing Probing>
+          tsl::sh::exception_safety ExceptionSafety, tsl::sh::sparsity Sparsity, tsl::sh::probing Probing>
 class sparse_hash : private Allocator, private Hash, private KeyEqual, private GrowthPolicy {
 private:
 	template <typename U>
@@ -861,10 +905,10 @@ public:
 	using hasher = Hash;
 	using key_equal = KeyEqual;
 	using allocator_type = Allocator;
-	using reference = value_type&;
-	using const_reference = const value_type&;
-	using pointer = value_type*;
-	using const_pointer = const value_type*;
+	using reference = value_type &;
+	using const_reference = const value_type &;
+	using pointer = value_type *;
+	using const_pointer = const value_type *;
 	using iterator = sparse_iterator<false>;
 	using const_iterator = sparse_iterator<true>;
 
@@ -876,11 +920,12 @@ private:
 
 public:
 	/**
-	 * The `operator*()` and `operator->()` methods return a const reference and const pointer respectively to the
-	 * stored value type (`Key` for a set, `std::pair<Key, T>` for a map).
+	 * The `operator*()` and `operator->()` methods return a const reference and
+	 * const pointer respectively to the stored value type (`Key` for a set,
+	 * `std::pair<Key, T>` for a map).
 	 *
-	 * In case of a map, to get a mutable reference to the value `T` associated to a key (the `.second` in the
-	 * stored pair), you have to call `value()`.
+	 * In case of a map, to get a mutable reference to the value `T` associated to
+	 * a key (the `.second` in the stored pair), you have to call `value()`.
 	 */
 	template <bool IsConst>
 	class sparse_iterator {
@@ -894,7 +939,8 @@ public:
 			typename std::conditional<IsConst, typename sparse_array::const_iterator, typename sparse_array::iterator>::type;
 
 		/**
-		 * sparse_array_it should be nullptr if sparse_bucket_it == m_sparse_buckets_data.end(). (TODO better way?)
+		 * sparse_array_it should be nullptr if sparse_bucket_it ==
+		 * m_sparse_buckets_data.end(). (TODO better way?)
 		 */
 		sparse_iterator(sparse_bucket_iterator sparse_bucket_it, sparse_array_iterator sparse_array_it)
 			: m_sparse_buckets_it(sparse_bucket_it), m_sparse_array_it(sparse_array_it) {}
@@ -903,30 +949,30 @@ public:
 		using iterator_category = std::forward_iterator_tag;
 		using value_type = typename sparse_hash::value_type;
 		using difference_type = std::ptrdiff_t;
-		using reference = value_type&;
-		using pointer = value_type*;
+		using reference = value_type &;
+		using pointer = value_type *;
 
 		sparse_iterator() noexcept {}
 
 		// Copy constructor from iterator to const_iterator.
-		template <bool TIsConst = IsConst, typename std::enable_if<TIsConst>::type* = nullptr>
-		sparse_iterator(const sparse_iterator<!TIsConst>& other) noexcept
+		template <bool TIsConst = IsConst, typename std::enable_if<TIsConst>::type * = nullptr>
+		sparse_iterator(const sparse_iterator<!TIsConst> &other) noexcept
 			: m_sparse_buckets_it(other.m_sparse_buckets_it), m_sparse_array_it(other.m_sparse_array_it) {}
 
-		sparse_iterator(const sparse_iterator& other) = default;
-		sparse_iterator(sparse_iterator&& other) = default;
-		sparse_iterator& operator=(const sparse_iterator& other) = default;
-		sparse_iterator& operator=(sparse_iterator&& other) = default;
+		sparse_iterator(const sparse_iterator &other) = default;
+		sparse_iterator(sparse_iterator &&other) = default;
+		sparse_iterator &operator=(const sparse_iterator &other) = default;
+		sparse_iterator &operator=(sparse_iterator &&other) = default;
 
-		const typename sparse_hash::key_type& key() const { return KeySelect()(*m_sparse_array_it); }
+		const typename sparse_hash::key_type &key() const { return KeySelect()(*m_sparse_array_it); }
 
-		template <class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value && IsConst>::type* = nullptr>
-		const typename U::value_type& value() const {
+		template <class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value && IsConst>::type * = nullptr>
+		const typename U::value_type &value() const {
 			return U()(*m_sparse_array_it);
 		}
 
-		template <class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value && !IsConst>::type* = nullptr>
-		typename U::value_type& value() {
+		template <class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value && !IsConst>::type * = nullptr>
+		typename U::value_type &value() {
 			return U()(*m_sparse_array_it);
 		}
 
@@ -934,7 +980,7 @@ public:
 
 		std::conditional_t<IsConst, const_pointer, pointer> operator->() const { return std::addressof(*m_sparse_array_it); }
 
-		sparse_iterator& operator++() {
+		sparse_iterator &operator++() {
 			tsl_sh_assert(m_sparse_array_it != nullptr);
 			++m_sparse_array_it;
 
@@ -962,11 +1008,11 @@ public:
 			return tmp;
 		}
 
-		friend bool operator==(const sparse_iterator& lhs, const sparse_iterator& rhs) {
+		friend bool operator==(const sparse_iterator &lhs, const sparse_iterator &rhs) {
 			return lhs.m_sparse_buckets_it == rhs.m_sparse_buckets_it && lhs.m_sparse_array_it == rhs.m_sparse_array_it;
 		}
 
-		friend bool operator!=(const sparse_iterator& lhs, const sparse_iterator& rhs) { return !(lhs == rhs); }
+		friend bool operator!=(const sparse_iterator &lhs, const sparse_iterator &rhs) { return !(lhs == rhs); }
 
 	private:
 		sparse_bucket_iterator m_sparse_buckets_it;
@@ -974,7 +1020,7 @@ public:
 	};
 
 public:
-	sparse_hash(size_type bucket_count, const Hash& hash, const KeyEqual& equal, const Allocator& alloc, float max_load_factor)
+	sparse_hash(size_type bucket_count, const Hash &hash, const KeyEqual &equal, const Allocator &alloc, float max_load_factor)
 		: Allocator(alloc),
 		  Hash(hash),
 		  KeyEqual(equal),
@@ -985,22 +1031,20 @@ public:
 		  m_nb_elements(0),
 		  m_nb_deleted_buckets(0) {
 		if (m_bucket_count > max_bucket_count()) {
-			throw std::length_error("The map exceeds its maxmimum size.");
+			throw std::length_error("The map exceeds its maximum size.");
 		}
 
 		if (m_bucket_count > 0) {
 			/*
-			 * We can't use the `vector(size_type count, const Allocator& alloc)` constructor
-			 * as it's only available in C++14 and we need to support C++11. We thus must resize after using
-			 * the `vector(const Allocator& alloc)` constructor.
+			 * We can't use the `vector(size_type count, const Allocator& alloc)`
+			 * constructor as it's only available in C++14 and we need to support
+			 * C++11. We thus must resize after using the `vector(const Allocator&
+			 * alloc)` constructor.
 			 *
-			 * We can't use `vector(size_type count, const T& value, const Allocator& alloc)` as it requires the
-			 * value T to be copyable.
+			 * We can't use `vector(size_type count, const T& value, const Allocator&
+			 * alloc)` as it requires the value T to be copyable.
 			 */
-			const size_type nb_sparse_buckets =
-				std::max(size_type(1), sparse_array::sparse_ibucket(tsl::detail_sparse_hash::round_up_to_power_of_two(bucket_count)));
-
-			m_sparse_buckets_data.resize(nb_sparse_buckets);
+			m_sparse_buckets_data.resize(sparse_array::nb_sparse_buckets(bucket_count));
 			m_sparse_buckets = m_sparse_buckets_data.data();
 
 			tsl_sh_assert(!m_sparse_buckets_data.empty());
@@ -1009,15 +1053,16 @@ public:
 
 		this->max_load_factor(max_load_factor);
 
-		// Check in the constructor instead of outside of a function to avoi compilation issues
-		// when value_type is not complete.
+		// Check in the constructor instead of outside of a function to avoid
+		// compilation issues when value_type is not complete.
 		static_assert(std::is_nothrow_move_constructible<value_type>::value || std::is_copy_constructible<value_type>::value,
-					  "Key, and T if present, must be nothrow move constructible and/or copy constructible.");
+					  "Key, and T if present, must be nothrow move constructible "
+					  "and/or copy constructible.");
 	}
 
 	~sparse_hash() { clear(); }
 
-	sparse_hash(const sparse_hash& other)
+	sparse_hash(const sparse_hash &other)
 		: Allocator(std::allocator_traits<Allocator>::select_on_container_copy_construction(other)),
 		  Hash(other),
 		  KeyEqual(other),
@@ -1029,14 +1074,14 @@ public:
 		  m_load_threshold_rehash(other.m_load_threshold_rehash),
 		  m_load_threshold_clear_deleted(other.m_load_threshold_clear_deleted),
 		  m_max_load_factor(other.m_max_load_factor) {
-		copy_buckets_from(other);
-		m_sparse_buckets = m_sparse_buckets_data.empty() ? static_empty_sparse_bucket_ptr() : m_sparse_buckets_data.data();
+		copy_buckets_from(other),
+			m_sparse_buckets = m_sparse_buckets_data.empty() ? static_empty_sparse_bucket_ptr() : m_sparse_buckets_data.data();
 	}
 
-	sparse_hash(sparse_hash&& other) noexcept(
-		std::is_nothrow_move_constructible<Allocator>::value&& std::is_nothrow_move_constructible<Hash>::value&&
-			std::is_nothrow_move_constructible<KeyEqual>::value&& std::is_nothrow_move_constructible<GrowthPolicy>::value&&
-				std::is_nothrow_move_constructible<sparse_buckets_container>::value)
+	sparse_hash(sparse_hash &&other) noexcept(
+		std::is_nothrow_move_constructible<Allocator>::value &&std::is_nothrow_move_constructible<Hash>::value
+			&&std::is_nothrow_move_constructible<KeyEqual>::value &&std::is_nothrow_move_constructible<GrowthPolicy>::value
+				&&std::is_nothrow_move_constructible<sparse_buckets_container>::value)
 		: Allocator(std::move(other)),
 		  Hash(std::move(other)),
 		  KeyEqual(std::move(other)),
@@ -1059,7 +1104,7 @@ public:
 		other.m_load_threshold_clear_deleted = 0;
 	}
 
-	sparse_hash& operator=(const sparse_hash& other) {
+	sparse_hash &operator=(const sparse_hash &other) {
 		if (this != &other) {
 			clear();
 
@@ -1072,10 +1117,10 @@ public:
 			GrowthPolicy::operator=(other);
 
 			if (std::allocator_traits<Allocator>::propagate_on_container_copy_assignment::value) {
-				m_sparse_buckets_data = sparse_buckets_container(static_cast<const Allocator&>(other));
+				m_sparse_buckets_data = sparse_buckets_container(static_cast<const Allocator &>(other));
 			} else {
 				if (m_sparse_buckets_data.size() != other.m_sparse_buckets_data.size()) {
-					m_sparse_buckets_data = sparse_buckets_container(static_cast<const Allocator&>(*this));
+					m_sparse_buckets_data = sparse_buckets_container(static_cast<const Allocator &>(*this));
 				} else {
 					m_sparse_buckets_data.clear();
 				}
@@ -1095,24 +1140,24 @@ public:
 		return *this;
 	}
 
-	sparse_hash& operator=(sparse_hash&& other) {
+	sparse_hash &operator=(sparse_hash &&other) {
 		clear();
 
 		if (std::allocator_traits<Allocator>::propagate_on_container_move_assignment::value) {
-			static_cast<Allocator&>(*this) = std::move(static_cast<Allocator&>(other));
+			static_cast<Allocator &>(*this) = std::move(static_cast<Allocator &>(other));
 			m_sparse_buckets_data = std::move(other.m_sparse_buckets_data);
-		} else if (static_cast<Allocator&>(*this) != static_cast<Allocator&>(other)) {
+		} else if (static_cast<Allocator &>(*this) != static_cast<Allocator &>(other)) {
 			move_buckets_from(std::move(other));
 		} else {
-			static_cast<Allocator&>(*this) = std::move(static_cast<Allocator&>(other));
+			static_cast<Allocator &>(*this) = std::move(static_cast<Allocator &>(other));
 			m_sparse_buckets_data = std::move(other.m_sparse_buckets_data);
 		}
 
 		m_sparse_buckets = m_sparse_buckets_data.empty() ? static_empty_sparse_bucket_ptr() : m_sparse_buckets_data.data();
 
-		static_cast<Hash&>(*this) = std::move(static_cast<Hash&>(other));
-		static_cast<KeyEqual&>(*this) = std::move(static_cast<KeyEqual&>(other));
-		static_cast<GrowthPolicy&>(*this) = std::move(static_cast<GrowthPolicy&>(other));
+		static_cast<Hash &>(*this) = std::move(static_cast<Hash &>(other));
+		static_cast<KeyEqual &>(*this) = std::move(static_cast<KeyEqual &>(other));
+		static_cast<GrowthPolicy &>(*this) = std::move(static_cast<GrowthPolicy &>(other));
 		m_bucket_count = other.m_bucket_count;
 		m_nb_elements = other.m_nb_elements;
 		m_nb_deleted_buckets = other.m_nb_deleted_buckets;
@@ -1132,7 +1177,7 @@ public:
 		return *this;
 	}
 
-	allocator_type get_allocator() const { return static_cast<const Allocator&>(*this); }
+	allocator_type get_allocator() const { return static_cast<const Allocator &>(*this); }
 
 	/*
 	 * Iterators
@@ -1176,7 +1221,7 @@ public:
 	 * Modifiers
 	 */
 	void clear() noexcept {
-		for (auto& bucket : m_sparse_buckets_data) {
+		for (auto &bucket : m_sparse_buckets_data) {
 			bucket.clear(*this);
 		}
 
@@ -1185,12 +1230,12 @@ public:
 	}
 
 	template <typename P>
-	std::pair<iterator, bool> insert(P&& value) {
+	std::pair<iterator, bool> insert(P &&value) {
 		return insert_impl(KeySelect()(value), std::forward<P>(value));
 	}
 
 	template <typename P>
-	iterator insert_hint(const_iterator hint, P&& value) {
+	iterator insert_hint(const_iterator hint, P &&value) {
 		if (hint != cend() && compare_keys(KeySelect()(*hint), KeySelect()(value))) {
 			return mutable_iterator(hint);
 		}
@@ -1216,7 +1261,7 @@ public:
 	}
 
 	template <class K, class M>
-	std::pair<iterator, bool> insert_or_assign(K&& key, M&& obj) {
+	std::pair<iterator, bool> insert_or_assign(K &&key, M &&obj) {
 		auto it = try_emplace(std::forward<K>(key), std::forward<M>(obj));
 		if (!it.second) {
 			it.first.value() = std::forward<M>(obj);
@@ -1226,7 +1271,7 @@ public:
 	}
 
 	template <class K, class M>
-	iterator insert_or_assign(const_iterator hint, K&& key, M&& obj) {
+	iterator insert_or_assign(const_iterator hint, K &&key, M &&obj) {
 		if (hint != cend() && compare_keys(KeySelect()(*hint), key)) {
 			auto it = mutable_iterator(hint);
 			it.value() = std::forward<M>(obj);
@@ -1238,23 +1283,23 @@ public:
 	}
 
 	template <class... Args>
-	std::pair<iterator, bool> emplace(Args&&... args) {
+	std::pair<iterator, bool> emplace(Args &&...args) {
 		return insert(value_type(std::forward<Args>(args)...));
 	}
 
 	template <class... Args>
-	iterator emplace_hint(const_iterator hint, Args&&... args) {
+	iterator emplace_hint(const_iterator hint, Args &&...args) {
 		return insert_hint(hint, value_type(std::forward<Args>(args)...));
 	}
 
 	template <class K, class... Args>
-	std::pair<iterator, bool> try_emplace(K&& key, Args&&... args) {
+	std::pair<iterator, bool> try_emplace(K &&key, Args &&...args) {
 		return insert_impl(key, std::piecewise_construct, std::forward_as_tuple(std::forward<K>(key)),
 						   std::forward_as_tuple(std::forward<Args>(args)...));
 	}
 
 	template <class K, class... Args>
-	iterator try_emplace_hint(const_iterator hint, K&& key, Args&&... args) {
+	iterator try_emplace_hint(const_iterator hint, K &&key, Args &&...args) {
 		if (hint != cend() && compare_keys(KeySelect()(*hint), key)) {
 			return mutable_iterator(hint);
 		}
@@ -1263,8 +1308,8 @@ public:
 	}
 
 	/**
-	 * Here to avoid `template<class K> size_type erase(const K& key)` being used when
-	 * we use an iterator instead of a const_iterator.
+	 * Here to avoid `template<class K> size_type erase(const K& key)` being used
+	 * when we use an iterator instead of a const_iterator.
 	 */
 	iterator erase(iterator pos) {
 		tsl_sh_assert(pos != end() && m_nb_elements > 0);
@@ -1306,27 +1351,27 @@ public:
 	}
 
 	template <class K>
-	size_type erase(const K& key) {
+	size_type erase(const K &key) {
 		return erase(key, hash_key(key));
 	}
 
 	template <class K>
-	size_type erase(const K& key, std::size_t hash) {
+	size_type erase(const K &key, std::size_t hash) {
 		return erase_impl(key, hash);
 	}
 
-	void swap(sparse_hash& other) {
+	void swap(sparse_hash &other) {
 		using std::swap;
 
 		if (std::allocator_traits<Allocator>::propagate_on_container_swap::value) {
-			swap(static_cast<Allocator&>(*this), static_cast<Allocator&>(other));
+			swap(static_cast<Allocator &>(*this), static_cast<Allocator &>(other));
 		} else {
-			tsl_sh_assert(static_cast<Allocator&>(*this) == static_cast<Allocator&>(other));
+			tsl_sh_assert(static_cast<Allocator &>(*this) == static_cast<Allocator &>(other));
 		}
 
-		swap(static_cast<Hash&>(*this), static_cast<Hash&>(other));
-		swap(static_cast<KeyEqual&>(*this), static_cast<KeyEqual&>(other));
-		swap(static_cast<GrowthPolicy&>(*this), static_cast<GrowthPolicy&>(other));
+		swap(static_cast<Hash &>(*this), static_cast<Hash &>(other));
+		swap(static_cast<KeyEqual &>(*this), static_cast<KeyEqual &>(other));
+		swap(static_cast<GrowthPolicy &>(*this), static_cast<GrowthPolicy &>(other));
 		swap(m_sparse_buckets_data, other.m_sparse_buckets_data);
 		swap(m_sparse_buckets, other.m_sparse_buckets);
 		swap(m_bucket_count, other.m_bucket_count);
@@ -1340,23 +1385,23 @@ public:
 	/*
 	 * Lookup
 	 */
-	template <class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
-	typename U::value_type& at(const K& key) {
+	template <class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type * = nullptr>
+	typename U::value_type &at(const K &key) {
 		return at(key, hash_key(key));
 	}
 
-	template <class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
-	typename U::value_type& at(const K& key, std::size_t hash) {
-		return const_cast<typename U::value_type&>(static_cast<const sparse_hash*>(this)->at(key, hash));
+	template <class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type * = nullptr>
+	typename U::value_type &at(const K &key, std::size_t hash) {
+		return const_cast<typename U::value_type &>(static_cast<const sparse_hash *>(this)->at(key, hash));
 	}
 
-	template <class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
-	const typename U::value_type& at(const K& key) const {
+	template <class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type * = nullptr>
+	const typename U::value_type &at(const K &key) const {
 		return at(key, hash_key(key));
 	}
 
-	template <class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
-	const typename U::value_type& at(const K& key, std::size_t hash) const {
+	template <class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type * = nullptr>
+	const typename U::value_type &at(const K &key, std::size_t hash) const {
 		auto it = find(key, hash);
 		if (it != cend()) {
 			return it.value();
@@ -1365,18 +1410,28 @@ public:
 		}
 	}
 
-	template <class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type* = nullptr>
-	typename U::value_type& operator[](K&& key) {
+	template <class K, class U = ValueSelect, typename std::enable_if<has_mapped_type<U>::value>::type * = nullptr>
+	typename U::value_type &operator[](K &&key) {
 		return try_emplace(std::forward<K>(key)).first.value();
 	}
 
 	template <class K>
-	size_type count(const K& key) const {
+	bool contains(const K &key) const {
+		return contains(key, hash_key(key));
+	}
+
+	template <class K>
+	bool contains(const K &key, std::size_t hash) const {
+		return count(key, hash) != 0;
+	}
+
+	template <class K>
+	size_type count(const K &key) const {
 		return count(key, hash_key(key));
 	}
 
 	template <class K>
-	size_type count(const K& key, std::size_t hash) const {
+	size_type count(const K &key, std::size_t hash) const {
 		if (find(key, hash) != cend()) {
 			return 1;
 		} else {
@@ -1385,43 +1440,43 @@ public:
 	}
 
 	template <class K>
-	iterator find(const K& key) {
+	iterator find(const K &key) {
 		return find_impl(key, hash_key(key));
 	}
 
 	template <class K>
-	iterator find(const K& key, std::size_t hash) {
+	iterator find(const K &key, std::size_t hash) {
 		return find_impl(key, hash);
 	}
 
 	template <class K>
-	const_iterator find(const K& key) const {
+	const_iterator find(const K &key) const {
 		return find_impl(key, hash_key(key));
 	}
 
 	template <class K>
-	const_iterator find(const K& key, std::size_t hash) const {
+	const_iterator find(const K &key, std::size_t hash) const {
 		return find_impl(key, hash);
 	}
 
 	template <class K>
-	std::pair<iterator, iterator> equal_range(const K& key) {
+	std::pair<iterator, iterator> equal_range(const K &key) {
 		return equal_range(key, hash_key(key));
 	}
 
 	template <class K>
-	std::pair<iterator, iterator> equal_range(const K& key, std::size_t hash) {
+	std::pair<iterator, iterator> equal_range(const K &key, std::size_t hash) {
 		iterator it = find(key, hash);
 		return std::make_pair(it, (it == end()) ? it : std::next(it));
 	}
 
 	template <class K>
-	std::pair<const_iterator, const_iterator> equal_range(const K& key) const {
+	std::pair<const_iterator, const_iterator> equal_range(const K &key) const {
 		return equal_range(key, hash_key(key));
 	}
 
 	template <class K>
-	std::pair<const_iterator, const_iterator> equal_range(const K& key, std::size_t hash) const {
+	std::pair<const_iterator, const_iterator> equal_range(const K &key, std::size_t hash) const {
 		const_iterator it = find(key, hash);
 		return std::make_pair(it, (it == cend()) ? it : std::next(it));
 	}
@@ -1465,9 +1520,9 @@ public:
 	/*
 	 * Observers
 	 */
-	hasher hash_function() const { return static_cast<const Hash&>(*this); }
+	hasher hash_function() const { return static_cast<const Hash &>(*this); }
 
-	key_equal key_eq() const { return static_cast<const KeyEqual&>(*this); }
+	key_equal key_eq() const { return static_cast<const KeyEqual &>(*this); }
 
 	/*
 	 * Other
@@ -1479,23 +1534,23 @@ public:
 	}
 
 	template <class Serializer>
-	void serialize(Serializer& serializer) const {
+	void serialize(Serializer &serializer) const {
 		serialize_impl(serializer);
 	}
 
 	template <class Deserializer>
-	void deserialize(Deserializer& deserializer, bool hash_compatible) {
+	void deserialize(Deserializer &deserializer, bool hash_compatible) {
 		deserialize_impl(deserializer, hash_compatible);
 	}
 
 private:
 	template <class K>
-	std::size_t hash_key(const K& key) const {
+	std::size_t hash_key(const K &key) const {
 		return Hash::operator()(key);
 	}
 
 	template <class K1, class K2>
-	bool compare_keys(const K1& key1, const K2& key2) const {
+	bool compare_keys(const K1 &key1, const K2 &key2) const {
 		return KeyEqual::operator()(key1, key2);
 	}
 
@@ -1507,7 +1562,7 @@ private:
 		return bucket;
 	}
 
-	template <class U = GrowthPolicy, typename std::enable_if<is_power_of_two_policy<U>::value>::type* = nullptr>
+	template <class U = GrowthPolicy, typename std::enable_if<is_power_of_two_policy<U>::value>::type * = nullptr>
 	size_type next_bucket(size_type ibucket, size_type iprobe) const {
 		(void)iprobe;
 		if (Probing == tsl::sh::probing::linear) {
@@ -1518,7 +1573,7 @@ private:
 		}
 	}
 
-	template <class U = GrowthPolicy, typename std::enable_if<!is_power_of_two_policy<U>::value>::type* = nullptr>
+	template <class U = GrowthPolicy, typename std::enable_if<!is_power_of_two_policy<U>::value>::type * = nullptr>
 	size_type next_bucket(size_type ibucket, size_type iprobe) const {
 		(void)iprobe;
 		if (Probing == tsl::sh::probing::linear) {
@@ -1532,12 +1587,12 @@ private:
 	}
 
 	// TODO encapsulate m_sparse_buckets_data to avoid the managing the allocator
-	void copy_buckets_from(const sparse_hash& other) {
+	void copy_buckets_from(const sparse_hash &other) {
 		m_sparse_buckets_data.reserve(other.m_sparse_buckets_data.size());
 
 		try {
-			for (const auto& bucket : other.m_sparse_buckets_data) {
-				m_sparse_buckets_data.emplace_back(bucket, static_cast<Allocator&>(*this));
+			for (const auto &bucket : other.m_sparse_buckets_data) {
+				m_sparse_buckets_data.emplace_back(bucket, static_cast<Allocator &>(*this));
 			}
 		} catch (...) {
 			clear();
@@ -1547,12 +1602,12 @@ private:
 		tsl_sh_assert(m_sparse_buckets_data.empty() || m_sparse_buckets_data.back().last());
 	}
 
-	void move_buckets_from(sparse_hash&& other) {
+	void move_buckets_from(sparse_hash &&other) {
 		m_sparse_buckets_data.reserve(other.m_sparse_buckets_data.size());
 
 		try {
-			for (auto&& bucket : other.m_sparse_buckets_data) {
-				m_sparse_buckets_data.emplace_back(std::move(bucket), static_cast<Allocator&>(*this));
+			for (auto &&bucket : other.m_sparse_buckets_data) {
+				m_sparse_buckets_data.emplace_back(std::move(bucket), static_cast<Allocator &>(*this));
 			}
 		} catch (...) {
 			clear();
@@ -1563,7 +1618,7 @@ private:
 	}
 
 	template <class K, class... Args>
-	std::pair<iterator, bool> insert_impl(const K& key, Args&&... value_type_args) {
+	std::pair<iterator, bool> insert_impl(const K &key, Args &&...value_type_args) {
 		if (size() >= m_load_threshold_rehash) {
 			rehash_impl(GrowthPolicy::next_bucket_count());
 		} else if (size() + m_nb_deleted_buckets >= m_load_threshold_clear_deleted) {
@@ -1572,11 +1627,12 @@ private:
 		tsl_sh_assert(!m_sparse_buckets_data.empty());
 
 		/**
-		 * We must insert the value in the first empty or deleted bucket we find. If we first find a
-		 * deleted bucket, we still have to continue the search until we find an empty bucket or until we have
-		 * searched all the buckets to be sure that the value is not in the hash table.
-		 * We thus remember the position, if any, of the first deleted bucket we have encountered
-		 * so we can insert it there if needed.
+		 * We must insert the value in the first empty or deleted bucket we find. If
+		 * we first find a deleted bucket, we still have to continue the search
+		 * until we find an empty bucket or until we have searched all the buckets
+		 * to be sure that the value is not in the hash table. We thus remember the
+		 * position, if any, of the first deleted bucket we have encountered so we
+		 * can insert it there if needed.
 		 */
 		bool found_first_deleted_bucket = false;
 		std::size_t sparse_ibucket_first_deleted = 0;
@@ -1618,7 +1674,7 @@ private:
 
 	template <class... Args>
 	std::pair<iterator, bool> insert_in_bucket(std::size_t sparse_ibucket, typename sparse_array::size_type index_in_sparse_bucket,
-											   Args&&... value_type_args) {
+											   Args &&...value_type_args) {
 		auto value_it = m_sparse_buckets[sparse_ibucket].set(*this, index_in_sparse_bucket, std::forward<Args>(value_type_args)...);
 		m_nb_elements++;
 
@@ -1626,7 +1682,7 @@ private:
 	}
 
 	template <class K>
-	size_type erase_impl(const K& key, std::size_t hash) {
+	size_type erase_impl(const K &key, std::size_t hash) {
 		std::size_t ibucket = bucket_for_hash(hash);
 
 		std::size_t probe = 0;
@@ -1653,12 +1709,12 @@ private:
 	}
 
 	template <class K>
-	iterator find_impl(const K& key, std::size_t hash) {
-		return mutable_iterator(static_cast<const sparse_hash*>(this)->find(key, hash));
+	iterator find_impl(const K &key, std::size_t hash) {
+		return mutable_iterator(static_cast<const sparse_hash *>(this)->find(key, hash));
 	}
 
 	template <class K>
-	const_iterator find_impl(const K& key, std::size_t hash) const {
+	const_iterator find_impl(const K &key, std::size_t hash) const {
 		std::size_t ibucket = bucket_for_hash(hash);
 
 		std::size_t probe = 0;
@@ -1681,19 +1737,20 @@ private:
 	}
 
 	void clear_deleted_buckets() {
-		// TODO could be optimized, we could do it in-place instead of allocating a new bucket array.
+		// TODO could be optimized, we could do it in-place instead of allocating a
+		// new bucket array.
 		rehash_impl(m_bucket_count);
 		tsl_sh_assert(m_nb_deleted_buckets == 0);
 	}
 
 	template <tsl::sh::exception_safety U = ExceptionSafety,
-			  typename std::enable_if<U == tsl::sh::exception_safety::basic>::type* = nullptr>
+			  typename std::enable_if<U == tsl::sh::exception_safety::basic>::type * = nullptr>
 	void rehash_impl(size_type count) {
-		sparse_hash new_table(count, static_cast<Hash&>(*this), static_cast<KeyEqual&>(*this), static_cast<Allocator&>(*this),
+		sparse_hash new_table(count, static_cast<Hash &>(*this), static_cast<KeyEqual &>(*this), static_cast<Allocator &>(*this),
 							  m_max_load_factor);
 
-		for (auto& bucket : m_sparse_buckets_data) {
-			for (auto& val : bucket) {
+		for (auto &bucket : m_sparse_buckets_data) {
+			for (auto &val : bucket) {
 				new_table.insert_on_rehash(std::move(val));
 			}
 
@@ -1710,13 +1767,13 @@ private:
 	 * any exception if we reserve enough space in the sparse arrays beforehand.
 	 */
 	template <tsl::sh::exception_safety U = ExceptionSafety,
-			  typename std::enable_if<U == tsl::sh::exception_safety::strong>::type* = nullptr>
+			  typename std::enable_if<U == tsl::sh::exception_safety::strong>::type * = nullptr>
 	void rehash_impl(size_type count) {
-		sparse_hash new_table(count, static_cast<Hash&>(*this), static_cast<KeyEqual&>(*this), static_cast<Allocator&>(*this),
+		sparse_hash new_table(count, static_cast<Hash &>(*this), static_cast<KeyEqual &>(*this), static_cast<Allocator &>(*this),
 							  m_max_load_factor);
 
-		for (const auto& bucket : m_sparse_buckets_data) {
-			for (const auto& val : bucket) {
+		for (const auto &bucket : m_sparse_buckets_data) {
+			for (const auto &val : bucket) {
 				new_table.insert_on_rehash(val);
 			}
 		}
@@ -1725,8 +1782,8 @@ private:
 	}
 
 	template <typename K>
-	void insert_on_rehash(K&& key_value) {
-		const key_type& key = KeySelect()(key_value);
+	void insert_on_rehash(K &&key_value) {
+		const key_type &key = KeySelect()(key_value);
 
 		const std::size_t hash = hash_key(key);
 		std::size_t ibucket = bucket_for_hash(hash);
@@ -1751,7 +1808,7 @@ private:
 	}
 
 	template <class Serializer>
-	void serialize_impl(Serializer& serializer) const {
+	void serialize_impl(Serializer &serializer) const {
 		const slz_size_type version = SERIALIZATION_PROTOCOL_VERSION;
 		serializer(version);
 
@@ -1770,20 +1827,22 @@ private:
 		const float max_load_factor = m_max_load_factor;
 		serializer(max_load_factor);
 
-		for (const auto& bucket : m_sparse_buckets_data) {
+		for (const auto &bucket : m_sparse_buckets_data) {
 			bucket.serialize(serializer);
 		}
 	}
 
 	template <class Deserializer>
-	void deserialize_impl(Deserializer& deserializer, bool hash_compatible) {
+	void deserialize_impl(Deserializer &deserializer, bool hash_compatible) {
 		tsl_sh_assert(m_bucket_count == 0 && m_sparse_buckets_data.empty());  // Current hash table must be empty
 
 		const slz_size_type version = deserialize_value<slz_size_type>(deserializer);
 		// For now we only have one version of the serialization protocol.
 		// If it doesn't match there is a problem with the file.
 		if (version != SERIALIZATION_PROTOCOL_VERSION) {
-			throw std::runtime_error("Can't deserialize the sparse_map/set. The protocol version header is invalid.");
+			throw std::runtime_error(
+				"Can't deserialize the sparse_map/set. The "
+				"protocol version header is invalid.");
 		}
 
 		const slz_size_type bucket_count_ds = deserialize_value<slz_size_type>(deserializer);
@@ -1792,14 +1851,8 @@ private:
 		const slz_size_type nb_deleted_buckets = deserialize_value<slz_size_type>(deserializer);
 		const float max_load_factor = deserialize_value<float>(deserializer);
 
-		this->max_load_factor(max_load_factor);
-
-		if (bucket_count_ds == 0) {
-			tsl_sh_assert(nb_elements == 0 && nb_sparse_buckets == 0);
-			return;
-		}
-
 		if (!hash_compatible) {
+			this->max_load_factor(max_load_factor);
 			reserve(numeric_cast<size_type>(nb_elements, "Deserialized nb_elements is too big."));
 			for (slz_size_type ibucket = 0; ibucket < nb_sparse_buckets; ibucket++) {
 				sparse_array::deserialize_values_into_sparse_hash(deserializer, *this);
@@ -1808,31 +1861,37 @@ private:
 			m_bucket_count = numeric_cast<size_type>(bucket_count_ds, "Deserialized bucket_count is too big.");
 
 			GrowthPolicy::operator=(GrowthPolicy(m_bucket_count));
-			// GrowthPolicy should not modify the bucket count we got from deserialization
+			// GrowthPolicy should not modify the bucket count we got from
+			// deserialization
 			if (m_bucket_count != bucket_count_ds) {
-				throw std::runtime_error("The GrowthPolicy is not the same even though hash_compatible is true.");
+				throw std::runtime_error(
+					"The GrowthPolicy is not the same even though "
+					"hash_compatible is true.");
 			}
 
-			if (nb_sparse_buckets != sparse_array::sparse_ibucket(tsl::detail_sparse_hash::round_up_to_power_of_two(m_bucket_count))) {
+			if (nb_sparse_buckets != sparse_array::nb_sparse_buckets(m_bucket_count)) {
 				throw std::runtime_error("Deserialized nb_sparse_buckets is invalid.");
 			}
 
 			m_nb_elements = numeric_cast<size_type>(nb_elements, "Deserialized nb_elements is too big.");
 			m_nb_deleted_buckets = numeric_cast<size_type>(nb_deleted_buckets, "Deserialized nb_deleted_buckets is too big.");
 
-			tsl_sh_assert(nb_sparse_buckets > 0);
 			m_sparse_buckets_data.reserve(numeric_cast<size_type>(nb_sparse_buckets, "Deserialized nb_sparse_buckets is too big."));
-
 			for (slz_size_type ibucket = 0; ibucket < nb_sparse_buckets; ibucket++) {
-				m_sparse_buckets_data.emplace_back(sparse_array::deserialize_hash_compatible(deserializer, static_cast<Allocator&>(*this)));
+				m_sparse_buckets_data.emplace_back(
+					sparse_array::deserialize_hash_compatible(deserializer, static_cast<Allocator &>(*this)));
 			}
 
-			m_sparse_buckets_data.back().set_as_last();
-			m_sparse_buckets = m_sparse_buckets_data.data();
+			if (!m_sparse_buckets_data.empty()) {
+				m_sparse_buckets_data.back().set_as_last();
+				m_sparse_buckets = m_sparse_buckets_data.data();
+			}
 
+			this->max_load_factor(max_load_factor);
 			if (load_factor() > this->max_load_factor()) {
 				throw std::runtime_error(
-					"Invalid max_load_factor. Check that the serializer and deserializer supports "
+					"Invalid max_load_factor. Check that the serializer and "
+					"deserializer support "
 					"floats correctly as they can be converted implicitely to ints.");
 			}
 		}
@@ -1848,9 +1907,10 @@ public:
 	static const slz_size_type SERIALIZATION_PROTOCOL_VERSION = 1;
 
 	/**
-	 * Return an always valid pointer to an static empty bucket_entry with last_bucket() == true.
+	 * Return an always valid pointer to an static empty bucket_entry with
+	 * last_bucket() == true.
 	 */
-	sparse_array* static_empty_sparse_bucket_ptr() {
+	sparse_array *static_empty_sparse_bucket_ptr() {
 		static sparse_array empty_sparse_bucket(true);
 		return &empty_sparse_bucket;
 	}
@@ -1859,25 +1919,29 @@ private:
 	sparse_buckets_container m_sparse_buckets_data;
 
 	/**
-	 * Points to m_sparse_buckets_data.data() if !m_sparse_buckets_data.empty() otherwise points to
-	 * static_empty_sparse_bucket_ptr. This variable is useful to avoid the cost of checking
-	 * if m_sparse_buckets_data is empty when trying to find an element.
+	 * Points to m_sparse_buckets_data.data() if !m_sparse_buckets_data.empty()
+	 * otherwise points to static_empty_sparse_bucket_ptr. This variable is useful
+	 * to avoid the cost of checking if m_sparse_buckets_data is empty when trying
+	 * to find an element.
 	 *
-	 * TODO Remove m_sparse_buckets_data and only use a pointer instead of a pointer+vector to save some space in the sparse_hash object.
+	 * TODO Remove m_sparse_buckets_data and only use a pointer instead of a
+	 * pointer+vector to save some space in the sparse_hash object.
 	 */
-	sparse_array* m_sparse_buckets;
+	sparse_array *m_sparse_buckets;
 
 	size_type m_bucket_count;
 	size_type m_nb_elements;
 	size_type m_nb_deleted_buckets;
 
 	/**
-	 * Maximum that m_nb_elements can reach before a rehash occurs automatically to grow the hash table.
+	 * Maximum that m_nb_elements can reach before a rehash occurs automatically
+	 * to grow the hash table.
 	 */
 	size_type m_load_threshold_rehash;
 
 	/**
-	 * Maximum that m_nb_elements + m_nb_deleted_buckets can reach before cleaning up the buckets marked as deleted.
+	 * Maximum that m_nb_elements + m_nb_deleted_buckets can reach before cleaning
+	 * up the buckets marked as deleted.
 	 */
 	size_type m_load_threshold_clear_deleted;
 	float m_max_load_factor;

@@ -98,7 +98,7 @@ void ServerConnection::onRead() {
 			try {
 				responceRPC(ctx, Error(errParams, "Invalid cproto magic %08x", int(hdr.magic)), Args());
 			} catch (const Error &err) {
-				fprintf(stderr, "responceRPC unexpected error: %s", err.what().c_str());
+				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
 			}
 			closeConn_ = true;
 			return;
@@ -111,7 +111,7 @@ void ServerConnection::onRead() {
 					Error(errParams, "Unsupported cproto version %04x. This server expects reindexer client v1.9.8+", int(hdr.version)),
 					Args());
 			} catch (const Error &err) {
-				fprintf(stderr, "responceRPC unexpected error: %s", err.what().c_str());
+				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
 			}
 			closeConn_ = true;
 			return;
@@ -165,11 +165,11 @@ void ServerConnection::onRead() {
 			handleRPC(ctx);
 		} catch (const Error &err) {
 			// Exception occurs on unrecoverable error. Send responce, and drop connection
-			fprintf(stderr, "drop connect, reason: %s\n", err.what().c_str());
+			fprintf(stderr, "Dropping RPC-connection. Reason: %s\n", err.what().c_str());
 			try {
 				responceRPC(ctx, err, Args());
 			} catch (const Error &err) {
-				fprintf(stderr, "responceRPC unexpected error: %s", err.what().c_str());
+				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
 			}
 			closeConn_ = true;
 		}
@@ -320,6 +320,13 @@ void ServerConnection::sendUpdates() {
 		packRPC(ser, ctx, Error(), args, enableSnappy_);
 	}
 
+	len = ser.Len();
+	try {
+		wrBuf_.write(ser.DetachChunk());
+	} catch (...) {
+		return;
+	}
+
 	if (cnt != updates.size()) {
 		std::unique_lock<std::mutex> lck(updates_mtx_);
 		if (!updateLostFlag_) {
@@ -335,8 +342,6 @@ void ServerConnection::sendUpdates() {
 		}
 	}
 
-	len = ser.Len();
-	wrBuf_.write(ser.DetachChunk());
 	if (ConnectionST::stats_) ConnectionST::stats_->update_send_buf_size(wrBuf_.data_size());
 
 	if (dispatcher_.onResponse_) {

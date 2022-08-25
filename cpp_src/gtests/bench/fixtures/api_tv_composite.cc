@@ -25,16 +25,23 @@ reindexer::Error ApiTvComposite::Initialize() {
 
 	locations_ = {"mos", "ct", "dv", "sth", "vlg", "sib", "ural"};
 
+	compositeIdSet_.resize(20000);
+	int counter = compositeIdSet_.size() * 3;
+	for (auto& v : compositeIdSet_) {
+		counter = (counter % 2) ? counter - 1 : counter - 3;
+		v = VariantArray{Variant{counter}, Variant{counter}};
+	}
+
 	return 0;
 }
 
 reindexer::Item ApiTvComposite::MakeItem() {
 	auto item = db_->NewItem(nsdef_.name);
-	item.Unsafe(true);
 
 	auto startTime = random<int64_t>(0, 50000);
 
-	item["id"] = id_seq_->Next();
+	const auto id = id_seq_->Next();
+	item["id"] = id;
 	item["name"] = names_.at(random<size_t>(0, names_.size() - 1));
 	item["year"] = random<int>(2000, 2049);
 	item["rate"] = random<double>(0, 10);
@@ -42,8 +49,8 @@ reindexer::Item ApiTvComposite::MakeItem() {
 	item["location"] = locations_.at(random<size_t>(0, locations_.size() - 1));
 	item["start_time"] = startTime;
 	item["end_time"] = startTime + random<int64_t>(1, 5) * 1000;
-
-	item.Unsafe(false);
+	item["field1"] = id;
+	item["field2"] = id;
 	item["genre"] = std::to_string(random<int>(0, 49));
 	item["sub_id"] = id_seq_->As<string>();
 
@@ -95,6 +102,8 @@ void ApiTvComposite::RegisterAllCases() {
 	Register("SortByTreeCompositeIntStrCollateUTF8", &ApiTvComposite::SortByTreeCompositeIntStrCollateUTF8, this);
 	Register("ForcedSortByHashInt", &ApiTvComposite::ForcedSortByHashInt, this);
 	Register("ForcedSortWithSecondCondition", &ApiTvComposite::ForcedSortWithSecondCondition, this);
+
+	Register("Query2CondIdSetComposite", &ApiTvComposite::Query2CondIdSetComposite, this);
 }
 
 void ApiTvComposite::Insert(State& state) { BaseFixture::Insert(state); }
@@ -444,6 +453,20 @@ void ApiTvComposite::ForcedSortWithSecondCondition(benchmark::State& state) {
 		Query q(nsdef_.name);
 
 		q.Sort("id", false, {10, 20, 30, 40, 50}).Sort("location", false).Limit(20);
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvComposite::Query2CondIdSetComposite(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {
+		Query q(nsdef_.name);
+		// Expecting, that force sort will not be applied to idset
+		const auto idx = random<unsigned>(0, compositeIdSet_.size() - 1);
+		q.Where("id", CondEq, compositeIdSet_[idx][0].As<int>()).WhereComposite("field1+field2", CondSet, compositeIdSet_);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);

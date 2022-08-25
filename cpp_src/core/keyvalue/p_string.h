@@ -169,7 +169,7 @@ struct p_string {
 
 	key_string getKeyString() const {
 		assertrx(type() == tagKeyString);
-		auto *str = reinterpret_cast<intrusive_atomic_rc_wrapper<base_key_string> *>(const_cast<void *>(ptr()));
+		auto str = reinterpret_cast<base_key_string *>(const_cast<void *>(ptr()));
 		return key_string(str);
 	}
 

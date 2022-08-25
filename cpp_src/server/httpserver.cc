@@ -843,7 +843,8 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 
 	auto stat = web.stat(path);
 	if (stat.fstatus == fs::StatFile) {
-		return web.file(ctx, http::StatusOK, path, stat.isGzip);
+		const bool enableCache = checkIfStartsWith("face/"sv, path);
+		return web.file(ctx, http::StatusOK, path, stat.isGzip, enableCache);
 	}
 
 	if (stat.fstatus == fs::StatDir && !endsWithSlash) {
@@ -854,7 +855,7 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 		string file = fs::JoinPath(path, "index.html");
 		const auto pathStatus = web.stat(file);
 		if (pathStatus.fstatus == fs::StatFile) {
-			return web.file(ctx, http::StatusOK, file, pathStatus.isGzip);
+			return web.file(ctx, http::StatusOK, file, pathStatus.isGzip, false);
 		}
 
 		auto pos = path.find_last_of('/');
@@ -1239,23 +1240,29 @@ int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &re
 	JsonBuilder builder(wrSer);
 
 	auto iarray = builder.Array(kParamItems);
-	// TODO: normal check for query type
-	bool isWALQuery = res.Count() && res[0].IsRaw();
-	for (size_t i = offset; i < res.Count() && i < offset + limit; i++) {
+	const bool isWALQuery = res.IsWALQuery();
+	for (size_t i = offset; i < res.Count() && i < offset + limit; ++i) {
 		if (!isWALQuery) {
 			iarray.Raw(nullptr, "");
 			res[i].GetJSON(wrSer, false);
 		} else {
 			auto obj = iarray.Object(nullptr);
-			obj.Put(kParamLsn, res[i].GetLSN());
+			{
+				const lsn_t lsn(res[i].GetLSN());
+				auto lsnObj = obj.Object(kWALParamLsn);
+				lsn.GetJSON(lsnObj);
+			}
 			if (!res[i].IsRaw()) {
-				iarray.Raw(kParamItem, "");
+				iarray.Raw(kWALParamItem, "");
 				res[i].GetJSON(wrSer, false);
 			} else {
 				reindexer::WALRecord rec(res[i].GetRaw());
 				rec.GetJSON(obj, [this, &res, &ctx](std::string_view cjson) {
 					auto item = getDB(ctx, kRoleDataRead).NewItem(res.GetNamespaces()[0]);
-					item.FromCJSON(cjson);
+					auto err = item.FromCJSON(cjson);
+					if (!err.ok()) {
+						throw Error(err.code(), "Unable to parse CJSON for WAL item: %s", err.what());
+					}
 					return string(item.GetJSON());
 				});
 			}
@@ -1342,8 +1349,7 @@ int HTTPServer::queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults
 		protobufBuilder.Put(nsField, ns);
 	}
 
-	bool isWALQuery = res.Count() && res[0].IsRaw();
-	protobufBuilder.Put(kProtoQueryResultsFields.at(kParamCacheEnabled), res.IsCacheEnabled() && !isWALQuery);
+	protobufBuilder.Put(kProtoQueryResultsFields.at(kParamCacheEnabled), res.IsCacheEnabled() && !res.IsWALQuery());
 
 	if (!res.GetExplainResults().empty()) {
 		protobufBuilder.Put(kProtoQueryResultsFields.at(kParamExplain), res.GetExplainResults());
@@ -1390,8 +1396,7 @@ void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &re
 	}
 	namespacesArray.End();
 
-	bool isWALQuery = res.Count() && res[0].IsRaw();
-	builder.Put(kParamCacheEnabled, res.IsCacheEnabled() && !isWALQuery);
+	builder.Put(kParamCacheEnabled, res.IsCacheEnabled() && !res.IsWALQuery());
 
 	if (!res.GetExplainResults().empty()) {
 		builder.Json(kParamExplain, res.GetExplainResults());

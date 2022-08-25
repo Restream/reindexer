@@ -28,7 +28,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.7.0")
+set (REINDEXER_VERSION_DEFAULT "3.8.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -361,7 +361,7 @@ if (NOT WITH_TSAN)
   find_path(LevelDB_INCLUDE_DIR NAMES leveldb/db.h HINTS $ENV{LEVELDB_ROOT}/include /opt/local/include /usr/local/include /usr/include)
 endif()
 
-if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR OR WITH_TSAN OR REINDEXER_FORCE_LEVELDB_DOWNLOAD)
+if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR OR WITH_TSAN)
   if (WITH_TSAN)
     message (STATUS "LevelDB will be downloaded from Github to avoid false-positive warnings from TSAN")
   else ()
@@ -672,7 +672,7 @@ if (NOT WIN32)
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
     "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h"
     "core/expressiontree.h" "core/lsn.h" "core/cjson/tagspath.h" "estl/cow.h"
-    "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
+    "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h" "estl/chunk.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h" "client/transaction.h"
     "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h"

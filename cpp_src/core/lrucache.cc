@@ -39,7 +39,7 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 }
 
 template <typename K, typename V, typename hash, typename equal>
-void LRUCache<K, V, hash, equal>::Put(const K &key, const V &v) {
+void LRUCache<K, V, hash, equal>::Put(const K &key, V &&v) {
 	if (cacheSizeLimit_ == 0) return;
 
 	std::lock_guard<std::mutex> lk(lock_);
@@ -47,7 +47,7 @@ void LRUCache<K, V, hash, equal>::Put(const K &key, const V &v) {
 	if (it == items_.end()) return;
 
 	totalCacheSize_ += v.Size() - it->second.val.Size();
-	it->second.val = v;
+	it->second.val = std::move(v);
 
 	// logPrintf(LogInfo, "IdSetCache::Put () add %d,left %d,fwdCnt=%d,sz=%d", endIt - begIt, left, it->second.fwdCount,
 	// 		  it->second.ids->size());

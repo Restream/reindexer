@@ -506,7 +506,14 @@ void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Ar
 	completion->cancelCtx = opts.cancelCtx;
 	completion->used = true;
 
-	wrBuf_.write(std::move(data));
+	try {
+		wrBuf_.write(std::move(data));
+	} catch (Error &e) {
+		completion->used = false;
+		cmpl(RPCAnswer(e), this);
+		return;
+	}
+
 	lck.unlock();
 
 	if (inLoopThread) {

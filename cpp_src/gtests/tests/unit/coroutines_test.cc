@@ -3,6 +3,7 @@
 #include <thread>
 
 #include <coroutine/channel.h>
+#include "gtests/tests/gtest_cout.h"
 #include "net/ev/ev.h"
 
 using reindexer::net::ev::dynamic_loop;
@@ -181,6 +182,8 @@ TEST(Coroutines, SchedulingOrder) {
 	using reindexer::coroutine::resume;
 	using reindexer::coroutine::suspend;
 	using reindexer::coroutine::routine_t;
+
+	TestCout() << "Expecting unhandled exception (and non-critical ASAN warning) for coroutine \"10\" here..." << std::endl;
 
 	auto storage_size = reindexer::coroutine::shrink_storage();
 	ASSERT_EQ(storage_size, 0);
