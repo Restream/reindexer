@@ -36,7 +36,7 @@ public:
 	// Get cached val. Create new entry in cache if unexists
 	Iterator Get(const K &k);
 	// Put cached val
-	void Put(const K &k, const V &v);
+	void Put(const K &k, V &&v);
 
 	LRUCacheMemStat GetMemStat();
 

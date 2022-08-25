@@ -477,13 +477,12 @@ void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder &dest, bool copy) {
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
 		auto str = *reinterpret_cast<p_string *>((v_->Ptr() + f.Offset()));
-		dest.emplace_back(reinterpret_cast<intrusive_atomic_rc_wrapper<base_key_string> *>(const_cast<string *>(str.getCxxstr())), copy);
+		dest.emplace_back(reinterpret_cast<base_key_string *>(const_cast<string *>(str.getCxxstr())), copy);
 	} else {
 		auto arr = reinterpret_cast<PayloadFieldValue::Array *>(v_->Ptr() + f.Offset());
 		for (int i = 0; i < arr->len; i++) {
 			auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-			dest.emplace_back(reinterpret_cast<intrusive_atomic_rc_wrapper<base_key_string> *>(const_cast<string *>(str.getCxxstr())),
-							  copy);
+			dest.emplace_back(reinterpret_cast<base_key_string *>(const_cast<string *>(str.getCxxstr())), copy);
 		}
 	}
 }

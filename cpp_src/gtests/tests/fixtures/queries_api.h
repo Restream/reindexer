@@ -1159,7 +1159,7 @@ protected:
 
 			string pkString = getPkString(item, default_namespace);
 
-			tr.Insert(move(item));
+			tr.Insert(std::move(item));
 		}
 		QueryResults res;
 		rt.reindexer->CommitTransaction(tr, res);

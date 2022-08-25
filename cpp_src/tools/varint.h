@@ -20,7 +20,7 @@
  * \return
  *      ZigZag encoded integer.
  */
-static inline uint32_t zigzag32(int32_t v) {
+static inline uint32_t zigzag32(int32_t v) noexcept {
 	if (v < 0)
 		return (-(uint32_t)v) * 2 - 1;
 	else
@@ -36,7 +36,7 @@ static inline uint32_t zigzag32(int32_t v) {
  * \return
  *      ZigZag encoded integer.
  */
-static inline uint64_t zigzag64(int64_t v) {
+static inline uint64_t zigzag64(int64_t v) noexcept {
 	if (v < 0)
 		return (-(uint64_t)v) * 2 - 1;
 	else
@@ -54,7 +54,7 @@ static inline uint64_t zigzag64(int64_t v) {
  * \return
  *      Number of bytes written to `out`.
  */
-static inline size_t uint32_pack(uint32_t value, uint8_t *out) {
+static inline size_t uint32_pack(uint32_t value, uint8_t *out) noexcept {
 	unsigned rv = 0;
 
 	if (value >= 0x80) {
@@ -89,7 +89,7 @@ static inline size_t uint32_pack(uint32_t value, uint8_t *out) {
  * \return
  *      Number of bytes written to `out`.
  */
-static inline size_t int32_pack(int32_t value, uint8_t *out) {
+static inline size_t int32_pack(int32_t value, uint8_t *out) noexcept {
 	if (value < 0) {
 		out[0] = value | 0x80;
 		out[1] = (value >> 7) | 0x80;
@@ -115,7 +115,7 @@ static inline size_t int32_pack(int32_t value, uint8_t *out) {
  * \return
  *      Number of bytes written to `out`.
  */
-static inline size_t sint32_pack(int32_t value, uint8_t *out) { return uint32_pack(zigzag32(value), out); }
+static inline size_t sint32_pack(int32_t value, uint8_t *out) noexcept { return uint32_pack(zigzag32(value), out); }
 
 /**
  * Pack a 64-bit unsigned integer using base-128 varint encoding and return the
@@ -128,7 +128,7 @@ static inline size_t sint32_pack(int32_t value, uint8_t *out) { return uint32_pa
  * \return
  *      Number of bytes written to `out`.
  */
-static size_t uint64_pack(uint64_t value, uint8_t *out) {
+static size_t uint64_pack(uint64_t value, uint8_t *out) noexcept {
 	uint32_t hi = (uint32_t)(value >> 32);
 	uint32_t lo = (uint32_t)value;
 	unsigned rv;
@@ -165,14 +165,14 @@ static size_t uint64_pack(uint64_t value, uint8_t *out) {
  * \return
  *      Number of bytes written to `out`.
  */
-static inline size_t sint64_pack(int64_t value, uint8_t *out) { return uint64_pack(zigzag64(value), out); }
+static inline size_t sint64_pack(int64_t value, uint8_t *out) noexcept { return uint64_pack(zigzag64(value), out); }
 
-static inline size_t boolean_pack(bool value, uint8_t *out) {
+static inline size_t boolean_pack(bool value, uint8_t *out) noexcept {
 	*out = value ? 1 : 0;
 	return 1;
 }
 
-static inline size_t string_pack(const char *str, uint8_t *out) {
+static inline size_t string_pack(const char *str, uint8_t *out) noexcept {
 	if (str == NULL) {
 		out[0] = 0;
 		return 1;
@@ -184,7 +184,7 @@ static inline size_t string_pack(const char *str, uint8_t *out) {
 	}
 }
 
-static inline size_t string_pack(const char *str, const size_t len, uint8_t *out) {
+static inline size_t string_pack(const char *str, const size_t len, uint8_t *out) noexcept {
 	if (str == NULL) {
 		out[0] = 0;
 		return 1;
@@ -195,7 +195,7 @@ static inline size_t string_pack(const char *str, const size_t len, uint8_t *out
 	}
 }
 
-static inline uint32_t parse_uint32(unsigned len, const uint8_t *data) {
+static inline uint32_t parse_uint32(unsigned len, const uint8_t *data) noexcept {
 	uint32_t rv = data[0] & 0x7f;
 	if (len > 1) {
 		rv |= ((uint32_t)(data[1] & 0x7f) << 7);
@@ -210,22 +210,22 @@ static inline uint32_t parse_uint32(unsigned len, const uint8_t *data) {
 	return rv;
 }
 
-static inline uint32_t parse_int32(unsigned len, const uint8_t *data) { return parse_uint32(len, data); }
+static inline uint32_t parse_int32(unsigned len, const uint8_t *data) noexcept { return parse_uint32(len, data); }
 
-static inline int32_t unzigzag32(uint32_t v) {
+static inline int32_t unzigzag32(uint32_t v) noexcept {
 	if (v & 1)
 		return -(v >> 1) - 1;
 	else
 		return v >> 1;
 }
 
-static inline uint32_t parse_fixed_uint32(const uint8_t *data) {
+static inline uint32_t parse_fixed_uint32(const uint8_t *data) noexcept {
 	uint32_t t;
 	memcpy(&t, data, 4);
 	return t;
 }
 
-static inline uint64_t parse_uint64(unsigned len, const uint8_t *data) {
+static inline uint64_t parse_uint64(unsigned len, const uint8_t *data) noexcept {
 	unsigned shift, i;
 	uint64_t rv;
 
@@ -240,20 +240,20 @@ static inline uint64_t parse_uint64(unsigned len, const uint8_t *data) {
 	return rv;
 }
 
-static inline int64_t unzigzag64(uint64_t v) {
+static inline int64_t unzigzag64(uint64_t v) noexcept {
 	if (v & 1)
 		return -(v >> 1) - 1;
 	else
 		return v >> 1;
 }
 
-static inline uint64_t parse_fixed_uint64(const uint8_t *data) {
+static inline uint64_t parse_fixed_uint64(const uint8_t *data) noexcept {
 	uint64_t t;
 	memcpy(&t, data, 8);
 	return t;
 }
 
-static inline unsigned scan_varint(unsigned len, const uint8_t *data) {
+static inline unsigned scan_varint(unsigned len, const uint8_t *data) noexcept {
 	unsigned i;
 	if (len > 10) len = 10;
 	for (i = 0; i < len; i++)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "base_fixture.h"
@@ -43,6 +44,11 @@ protected:
 	void Query1Cond(State& state);
 	void Query1CondTotal(State& state);
 	void Query1CondCachedTotal(State& state);
+	void Query2CondIdSet10(State& state);
+	void Query2CondIdSet100(State& state);
+	void Query2CondIdSet500(State& state);
+	void Query2CondIdSet2000(State& state);
+	void Query2CondIdSet20000(State& state);
 
 	void Query2Cond(State& state);
 	void Query2CondTotal(State& state);
@@ -52,7 +58,7 @@ protected:
 	void Query2CondLeftJoinCachedTotal(State& state);
 	void Query0CondInnerJoinUnlimit(State& state);
 	void Query0CondInnerJoinUnlimitLowSelectivity(State& state);
-	void Query0CondInnerJoinPreResultStoreValues(benchmark::State& state);
+	void Query0CondInnerJoinPreResultStoreValues(State& state);
 	void Query2CondInnerJoin(State& state);
 	void Query2CondInnerJoinTotal(State& state);
 	void Query2CondInnerJoinCachedTotal(State& state);
@@ -71,12 +77,22 @@ protected:
 	void Query4CondRangeCachedTotal(State& state);
 
 private:
+	void query2CondIdSet(State& state, const std::vector<std::vector<int>>& idsets);
+
+	constexpr static unsigned kTotalItemsMainJoinNs = 1000000;
+
 	vector<string> countries_;
 	vector<string> countryLikePatterns_;
 	vector<string> locations_;
 	vector<int> start_times_;
 	vector<vector<int>> packages_;
 	vector<vector<int>> priceIDs_;
+#if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+	constexpr static unsigned idsetsSz_[] = {10, 100, 500, 2000, 20000};
+#else	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+	constexpr static unsigned idsetsSz_[] = {100, 500};
+#endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+	std::unordered_map<unsigned, std::vector<std::vector<int>>> idsets_;
 	reindexer::WrSerializer wrSer_;
 	std::string stringSelectNs_{"string_select_ns"};
 	std::string innerJoinLowSelectivityMainNs_{"inner_join_low_selectivity_main_ns"};

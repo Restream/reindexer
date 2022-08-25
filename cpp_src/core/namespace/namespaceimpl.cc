@@ -89,7 +89,8 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &
 	  serverId_{src.serverId_},
 	  itemsDataSize_{src.itemsDataSize_},
 	  optimizationState_{NotOptimized},
-	  strHolder_{makeStringsHolder()} {
+	  strHolder_{makeStringsHolder()},
+	  nsUpdateSortedContextMemory_{0} {
 	for (auto &idxIt : src.indexes_) indexes_.push_back(idxIt->Clone());
 
 	markUpdated(true);
@@ -1567,6 +1568,7 @@ void NamespaceImpl::Select(QueryResults &result, SelectCtx &params, const RdxCon
 	if (params.query.IsWALQuery()) {
 		WALSelecter selecter(this);
 		selecter(result, params);
+		result.MarkAsWALQuery();
 	} else {
 		NsSelecter selecter(this);
 		selecter(result, params, ctx);
@@ -1634,7 +1636,7 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 
 	ret.Total.dataSize = itemsDataSize_ + items_.capacity() * sizeof(PayloadValue);
 	ret.Total.cacheSize = ret.joinCache.totalSize + ret.queryCache.totalSize;
-
+	ret.Total.indexOptimizerMemory = nsUpdateSortedContextMemory_.load(std::memory_order_relaxed);
 	ret.indexes.reserve(indexes_.size());
 	for (auto &idx : indexes_) {
 		ret.indexes.emplace_back(idx->GetMemStat());
@@ -2358,12 +2360,12 @@ void NamespaceImpl::putToJoinCache(JoinCacheRes &res, JoinPreResult::Ptr preResu
 	JoinCacheVal joinCacheVal;
 	res.needPut = false;
 	joinCacheVal.inited = true;
-	joinCacheVal.preResult = preResult;
-	joinCache_->Put(res.key, joinCacheVal);
+	joinCacheVal.preResult = std::move(preResult);
+	joinCache_->Put(res.key, std::move(joinCacheVal));
 }
-void NamespaceImpl::putToJoinCache(JoinCacheRes &res, JoinCacheVal &val) const {
+void NamespaceImpl::putToJoinCache(JoinCacheRes &res, JoinCacheVal &&val) const {
 	val.inited = true;
-	joinCache_->Put(res.key, val);
+	joinCache_->Put(res.key, std::move(val));
 }
 
 const FieldsSet &NamespaceImpl::pkFields() {

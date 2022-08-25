@@ -13,7 +13,8 @@ class Selecter {
 	typedef fast_hash_map<WordIdType, pair<size_t, size_t>, WordIdTypeHash, WordIdTypequal> FondWordsType;
 
 public:
-	Selecter(DataHolder<IdCont>& holder, size_t fieldSize, bool needArea) : holder_(holder), fieldSize_(fieldSize), needArea_(needArea) {}
+	Selecter(DataHolder<IdCont>& holder, size_t fieldSize, bool needArea, int maxAreasInDoc)
+		: holder_(holder), fieldSize_(fieldSize), needArea_(needArea), maxAreasInDoc_(maxAreasInDoc) {}
 
 	struct TextSearchResult {
 		const IdCont* vids_;
@@ -68,6 +69,7 @@ public:
 	DataHolder<IdCont>& holder_;
 	size_t fieldSize_;
 	bool needArea_;
+	int maxAreasInDoc_;
 };
 
 extern template class Selecter<PackedIdRelVec>;

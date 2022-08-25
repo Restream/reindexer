@@ -26,7 +26,8 @@ typedef struct reindexer_error {
 
 typedef struct reindexer_string {
 	void *p;
-	int n;
+	int32_t n;
+	int8_t reserved[4];
 } reindexer_string;
 
 typedef struct reindexer_ret {

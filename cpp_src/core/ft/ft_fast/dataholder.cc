@@ -170,9 +170,9 @@ void DataHolder<IdCont>::StartCommit(bool complte_updated) {
 }
 
 template <typename IdCont>
-IDataHolder::MergeData DataHolder<IdCont>::Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, bool inTransaction,
+IDataHolder::MergeData DataHolder<IdCont>::Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
 												  const RdxContext& rdxCtx) {
-	return Selecter<IdCont>{*this, fieldSize, needArea}.Process(dsl, inTransaction, rdxCtx);
+	return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.Process(dsl, inTransaction, rdxCtx);
 }
 
 template <typename IdCont>

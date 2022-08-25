@@ -43,7 +43,7 @@ DocumentStatus web::stat(const std::string& target) {
 	return fsRes;
 }
 
-int web::file(Context& ctx, HttpStatusCode code, const std::string& target, bool isGzip) {
+int web::file(Context& ctx, HttpStatusCode code, const std::string& target, bool isGzip, bool withCache) {
 #ifdef LINK_RESOURCES
 	auto fsRes = fsStatus(target);
 	if (fsRes.fstatus == reindexer::fs::StatError) {
@@ -58,10 +58,10 @@ int web::file(Context& ctx, HttpStatusCode code, const std::string& target, bool
 
 		auto file_entry = cmrc::open(isGzip ? target + kGzSuffix : target);
 		std::string_view slice(file_entry.begin(), std::distance(file_entry.begin(), file_entry.end()));
-		return ctx.File(code, target, slice, isGzip);
+		return ctx.File(code, target, slice, isGzip, withCache);
 	}
 #endif
-	return ctx.File(code, webRoot_ + target, std::string_view(), isGzip);
+	return ctx.File(code, webRoot_ + target, std::string_view(), isGzip, withCache);
 }
 
 }  // namespace reindexer_server

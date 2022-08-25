@@ -605,15 +605,28 @@ Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
 }
 
 Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, RPCQrId id, const ResultFetchOpts &opts) {
-	WrResultSerializer rser(opts);
-	bool doClose = rser.PutResults(&qres);
-	if (doClose && id.main >= 0) {
-		freeQueryResults(ctx, id);
-		id.main = -1;
-		id.uid = RPCQrWatcher::kUninitialized;
+	uint8_t serBuf[0x2000];
+	WrResultSerializer rser(serBuf, opts);
+	try {
+		bool doClose = rser.PutResults(&qres);
+		if (doClose && id.main >= 0) {
+			freeQueryResults(ctx, id);
+			id.main = -1;
+			id.uid = RPCQrWatcher::kUninitialized;
+		}
+		std::string_view resSlice = rser.Slice();
+		ctx.Return({cproto::Arg(p_string(&resSlice)), cproto::Arg(int(id.main)), cproto::Arg(int64_t(id.uid))});
+	} catch (Error &err) {
+		if (id.main >= 0) {
+			try {
+				freeQueryResults(ctx, id);
+				id.main = -1;
+				id.uid = RPCQrWatcher::kUninitialized;
+			} catch (...) {
+			}
+		}
+		return err;
 	}
-	std::string_view resSlice = rser.Slice();
-	ctx.Return({cproto::Arg(p_string(&resSlice)), cproto::Arg(int(id.main)), cproto::Arg(int64_t(id.uid))});
 
 	return errOK;
 }

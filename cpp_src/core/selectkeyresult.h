@@ -144,6 +144,13 @@ protected:
 class SelectKeyResult : public h_vector<SingleSelectKeyResult, 1> {
 public:
 	std::vector<Comparator> comparators_;
+	bool deferedExplicitSort = false;
+
+	static size_t GetMergeSortCost(size_t idsCount, size_t idsetsCount) noexcept { return idsCount * idsetsCount; }
+	static size_t GetGenericSortCost(size_t idsCount) noexcept { return idsCount * log2(idsCount) + 2 * idsCount; }
+	static bool IsGenericSortRecommended(size_t idsetsCount, size_t idsCount, size_t maxIterations) noexcept {
+		return idsetsCount >= 30 && idsCount && GetGenericSortCost(idsCount) < GetMergeSortCost(maxIterations, idsetsCount);
+	}
 
 	void ClearDistinct() {
 		for (Comparator &comp : comparators_) comp.ClearDistinct();
@@ -152,7 +159,7 @@ public:
 	/// the SingleSelectKeyResult objects, i.e.
 	/// maximum amonut of possible iterations.
 	/// @return amount of loops.
-	size_t GetMaxIterations(size_t limitIters = std::numeric_limits<size_t>::max()) const {
+	size_t GetMaxIterations(size_t limitIters = std::numeric_limits<size_t>::max()) const noexcept {
 		size_t cnt = 0;
 		for (const SingleSelectKeyResult &r : *this) {
 			if (r.indexForwardIter_) {
@@ -174,43 +181,69 @@ public:
 	/// SingleSelectKeyResult objects. Such
 	/// representation makes further work with
 	/// the object much easier.
+	/// @param useGenericSort - use generic sort instead of merge sort
 	/// @return Pointer to a sorted IdSet object made
 	/// from all the SingleSelectKeyResult inner objects.
-	IdSet::Ptr mergeIdsets() {
-		auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
-
-		size_t expectSize = 0;
-		for (auto it = begin(); it != end(); it++) {
-			if (it->useBtree_) {
-				it->itset_ = it->set_->begin();
-				expectSize += it->set_->size();
-			} else {
-				it->it_ = it->ids_.begin();
-				expectSize += it->ids_.size();
-			}
-		}
-		mergedIds->reserve(expectSize);
-
-		for (;;) {
-			const int min = mergedIds->size() ? mergedIds->back() : INT_MIN;
-			int curMin = INT_MAX;
-			for (auto it = begin(); it != end(); it++) {
+	IdSet::Ptr MergeIdsets(bool useGenericSort, size_t idsCount) {
+		IdSet::Ptr mergedIds;
+		if (useGenericSort) {
+			base_idset ids;
+			size_t actualSize = 0;
+			ids.resize(idsCount);
+			auto rit = ids.begin();
+			for (auto it = begin(); it != end(); ++it) {
+				if (it->isRange_) {
+					throw Error(errLogic, "Unable to merge 'range' idset ('generic sort mode')");
+				}
 				if (it->useBtree_) {
-					for (; it->itset_ != it->set_->end() && *it->itset_ <= min; it->itset_++) {
-					};
-					if (it->itset_ != it->set_->end() && *it->itset_ < curMin) curMin = *it->itset_;
+					actualSize += it->set_->size();
+					std::copy(it->set_->begin(), it->set_->end(), rit);
+					rit += it->set_->size();
 				} else {
-					for (; it->it_ != it->ids_.end() && *it->it_ <= min; it->it_++) {
-					};
-					if (it->it_ != it->ids_.end() && *it->it_ < curMin) curMin = *it->it_;
+					actualSize += it->ids_.size();
+					std::copy(it->ids_.begin(), it->ids_.end(), rit);
+					rit += it->ids_.size();
 				}
 			}
-			if (curMin == INT_MAX) break;
-			mergedIds->Add(curMin, IdSet::Unordered, 0);
-		};
-		mergedIds->shrink_to_fit();
+			assertrx(idsCount == actualSize);
+			mergedIds = IdSet::BuildFromUnsorted(std::move(ids));
+		} else {
+			mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
+			mergedIds->reserve(idsCount);
+			for (auto it = begin(); it != end(); ++it) {
+				if (it->isRange_) {
+					throw Error(errLogic, "Unable to merge 'range' idset ('merge sort mode')");
+				}
+				if (it->useBtree_) {
+					it->itset_ = it->set_->begin();
+				} else {
+					it->it_ = it->ids_.begin();
+				}
+			}
+			for (;;) {
+				const int min = mergedIds->size() ? mergedIds->back() : INT_MIN;
+				int curMin = INT_MAX;
+				for (auto it = begin(); it != end(); it++) {
+					if (it->useBtree_) {
+						const auto end = it->set_->end();
+						for (; it->itset_ != end && *it->itset_ <= min; ++it->itset_) {
+						}
+						if (it->itset_ != end && *it->itset_ < curMin) curMin = *it->itset_;
+					} else {
+						const auto end = it->ids_.end();
+						for (; it->it_ != end && *it->it_ <= min; ++it->it_) {
+						}
+						if (it->it_ != end && *it->it_ < curMin) curMin = *it->it_;
+					}
+				}
+				if (curMin == INT_MAX) break;
+				mergedIds->Add(curMin, IdSet::Unordered, 0);
+			}
+			mergedIds->shrink_to_fit();
+		}
 		clear();
-		push_back(SingleSelectKeyResult(mergedIds));
+		emplace_back(SingleSelectKeyResult(mergedIds));
+		deferedExplicitSort = false;
 		return mergedIds;
 	}
 };
@@ -221,7 +254,7 @@ class SelectKeyResults : public h_vector<SelectKeyResult, 1> {
 public:
 	SelectKeyResults(std::initializer_list<SelectKeyResult> l) { insert(end(), l.begin(), l.end()); }
 	SelectKeyResults(SelectKeyResult &&res) { push_back(std::move(res)); }
-	SelectKeyResults() {}
+	SelectKeyResults() = default;
 };
 
 }  // namespace reindexer

@@ -56,8 +56,11 @@ QueryResults::QueryResults(QueryResults &&obj)
 	  explainResults(std::move(obj.explainResults)),
 	  items_(std::move(obj.items_)),
 	  activityCtx_(std::move(obj.activityCtx_)),
+	  isWalQuery_(obj.isWalQuery_),
 	  nsData_(std::move(obj.nsData_)),
-	  stringsHolder_(std::move(obj.stringsHolder_)) {}
+	  stringsHolder_(std::move(obj.stringsHolder_)) {
+	obj.isWalQuery_ = false;
+}
 
 QueryResults::QueryResults(const ItemRefVector::const_iterator &begin, const ItemRefVector::const_iterator &end) : items_(begin, end) {}
 
@@ -80,6 +83,8 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 			activityCtx_.emplace(std::move(*obj.activityCtx_));
 			obj.activityCtx_.reset();
 		}
+		isWalQuery_ = obj.isWalQuery_;
+		obj.isWalQuery_ = false;
 	}
 	return *this;
 }
@@ -191,6 +196,7 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 		ser << "{}";
 		return;
 	}
+
 	ConstPayload pl(ctx.type_, itemRef.Value());
 	JsonEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
 	JsonBuilder builder(ser, ObjType::TypePlain);

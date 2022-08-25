@@ -50,7 +50,7 @@ public:
 		assertrx(impl_);
 		return impl_->getValue();
 	}
-	size_t GetMaxIterations(size_t limitIters) final {
+	size_t GetMaxIterations(size_t limitIters) noexcept final {
 		if (cachedIters_ != std::numeric_limits<size_t>::max()) return cachedIters_;
 		return BtreeIndexForwardIteratorImpl<T>(idxMap_, first_, last_).getMaxIterations(limitIters);
 	}

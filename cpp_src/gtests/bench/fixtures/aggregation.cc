@@ -40,7 +40,8 @@ reindexer::Item Aggregation::MakeItem() {
 
 	wrSer_.Reset();
 	reindexer::JsonBuilder bld(wrSer_);
-	bld.Put("id", id_++);
+	const auto id = id_++;
+	bld.Put("id", id);
 	bld.Put("int_data", rand() % 100);
 	bld.Put("str_data", RandString());
 	auto arr = bld.Array("int_array_data");

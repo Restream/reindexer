@@ -56,6 +56,15 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query4CondRange", &ApiTvSimple::Query4CondRange, this);
 	Register("Query4CondRangeTotal", &ApiTvSimple::Query4CondRangeTotal, this);
 	Register("Query4CondRangeCachedTotal", &ApiTvSimple::Query4CondRangeCachedTotal, this);
+#if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+	Register("Query2CondIdSet10", &ApiTvSimple::Query2CondIdSet10, this);
+#endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+	Register("Query2CondIdSet100", &ApiTvSimple::Query2CondIdSet100, this);
+	Register("Query2CondIdSet500", &ApiTvSimple::Query2CondIdSet500, this);
+#if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+	Register("Query2CondIdSet2000", &ApiTvSimple::Query2CondIdSet2000, this);
+	Register("Query2CondIdSet20000", &ApiTvSimple::Query2CondIdSet20000, this);
+#endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 }
 
 Error ApiTvSimple::Initialize() {
@@ -87,6 +96,15 @@ Error ApiTvSimple::Initialize() {
 	for (int i = 0; i < 10; i++) packages_.emplace_back(randomNumArray<int>(20, 10000, 10));
 
 	for (int i = 0; i < 20; i++) priceIDs_.emplace_back(randomNumArray<int>(10, 7000, 50));
+
+	for (auto sz : idsetsSz_) {
+		constexpr unsigned kTotalIdSets = 1000;
+		auto& idsets = idsets_[sz];
+		idsets.reserve(kTotalIdSets);
+		for (unsigned i = 0; i < kTotalIdSets; ++i) {
+			idsets.emplace_back(randomNumArray<int>(sz, 0, kTotalItemsMainJoinNs));
+		}
+	}
 
 	start_times_.resize(20);
 	for (int i = 0; i < 20; i++) start_times_[i] = random<int>(0, 50000);
@@ -123,17 +141,15 @@ Error ApiTvSimple::Initialize() {
 	if (!err.ok()) return err;
 
 	NamespaceDef mainNsDef{innerJoinLowSelectivityMainNs_};
-	mainNsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
-		.AddIndex("field", "hash", "int", IndexOpts());
+	mainNsDef.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex("field", "hash", "int", IndexOpts());
 	err = db_->AddNamespace(mainNsDef);
 	if (!err.ok()) return err;
 	NamespaceDef rightNsDef{innerJoinLowSelectivityRightNs_};
-	rightNsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
-		.AddIndex("field", "hash", "int", IndexOpts());
+	rightNsDef.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex("field", "hash", "int", IndexOpts());
 	err = db_->AddNamespace(rightNsDef);
 	if (!err.ok()) return err;
 
-	for (size_t i = 0; i < 1000000; ++i) {
+	for (size_t i = 0; i < kTotalItemsMainJoinNs; ++i) {
 		Item mItem = db_->NewItem(mainNsDef.name);
 		if (!mItem.Status().ok()) return mItem.Status();
 		mItem.Unsafe();
@@ -388,6 +404,12 @@ void ApiTvSimple::Query1CondCachedTotal(benchmark::State& state) {
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 	}
 }
+
+void ApiTvSimple::Query2CondIdSet10(benchmark::State& state) { query2CondIdSet(state, idsets_.at(10)); }
+void ApiTvSimple::Query2CondIdSet100(benchmark::State& state) { query2CondIdSet(state, idsets_.at(100)); }
+void ApiTvSimple::Query2CondIdSet500(benchmark::State& state) { query2CondIdSet(state, idsets_.at(500)); }
+void ApiTvSimple::Query2CondIdSet2000(benchmark::State& state) { query2CondIdSet(state, idsets_.at(2000)); }
+void ApiTvSimple::Query2CondIdSet20000(benchmark::State& state) { query2CondIdSet(state, idsets_.at(20000)); }
 
 void ApiTvSimple::Query2Cond(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
@@ -828,6 +850,19 @@ void ApiTvSimple::Query4CondRangeCachedTotal(benchmark::State& state) {
 			.Where("start_time", CondGt, startTime)
 			.Where("end_time", CondLt, endTime)
 			.CachedTotal();
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::query2CondIdSet(benchmark::State& state, const std::vector<std::vector<int>>& idsets) {
+	AllocsTracker allocsTracker(state);
+	unsigned counter = 0;
+	for (auto _ : state) {
+		Query q(innerJoinLowSelectivityRightNs_);
+		q.Where("id", CondSet, idsets[counter++ % idsets.size()]).Where("field", CondGt, int(kTotalItemsMainJoinNs / 2)).Limit(20);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);

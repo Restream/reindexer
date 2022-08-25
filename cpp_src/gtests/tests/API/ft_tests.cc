@@ -182,6 +182,7 @@ TEST_P(FTApi, SelectWithDistance) {
 
 TEST_P(FTApi, ConcurrencyCheck) {
 	const std::string kStorage = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_FTApi/ConcurrencyCheck");
+	reindexer::fs::RmDirAll(kStorage);
 	Init(GetDefaultConfig(), NS1, kStorage);
 
 	Add("Her nose was very very long"sv);

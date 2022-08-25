@@ -1,12 +1,25 @@
 #include "resultserializer.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/queryresults/joinresults.h"
 #include "core/queryresults/queryresults.h"
+#include "replicator/walrecord.h"
 #include "tools/logger.h"
 
 namespace reindexer {
 
-WrResultSerializer::WrResultSerializer(const ResultFetchOpts& opts) : WrSerializer(), opts_(opts) {}
+constexpr uint64_t GetKnownFlagsBitMask(int maxFlagValue) {
+	unsigned n = 1;
+	while (maxFlagValue >>= 1) {
+		++n;
+	}
+	return ~(~uint64_t(0) << n);
+}
+
+static_assert(GetKnownFlagsBitMask(kResultsFlagMaxValue) < uint64_t(std::numeric_limits<int>::max()), "Too large value for int mask");
+constexpr int kKnownResultsFlagsMask = int(GetKnownFlagsBitMask(kResultsFlagMaxValue));
+
+void WrResultSerializer::resetUnknownFlags() noexcept { opts_.flags &= kKnownResultsFlagsMask; }
 
 void WrResultSerializer::putQueryParams(const QueryResults* results) {
 	// Flags of present objects
@@ -88,6 +101,35 @@ void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool
 			return;
 		}
 	}
+	if (result->IsWALQuery() && (opts_.flags & kResultsFormatMask) == kResultsJson) {
+		auto slicePosSaver = StartSlice();
+		JsonBuilder builder(*this, ObjType::TypePlain);
+		auto obj = builder.Object(nullptr);
+		{
+			const lsn_t lsn(itemRef.Value().GetLSN());
+			auto lsnObj = obj.Object(kWALParamLsn);
+			lsn.GetJSON(lsnObj);
+		}
+		if (!itemRef.Raw()) {
+			obj.Raw(kWALParamItem, "");
+			auto err = it.GetJSON(*this, false);
+			if (!err.ok()) {
+				throw Error(err.code(), "Unable to get JSON for WAL item: %s", err.what());
+			}
+		} else {
+			reindexer::WALRecord rec(it.GetRaw());
+			rec.GetJSON(obj, [&itemRef, &result](std::string_view cjson) {
+				ItemImpl item(result->getPayloadType(itemRef.Nsid()), result->getTagsMatcher(itemRef.Nsid()));
+				auto err = item.FromCJSON(cjson);
+				if (!err.ok()) {
+					throw Error(err.code(), "Unable to parse CJSON for WAL item: %s", err.what());
+				}
+				return string(item.GetJSON());
+			});
+		}
+		return;
+	}
+
 	Error err;
 
 	switch ((opts_.flags & kResultsFormatMask)) {
@@ -106,7 +148,7 @@ void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool
 			err = it.GetMsgPack(*this);
 			break;
 		default:
-			throw Error(errParams, "Can't serialize query results: unknown formar %d", int((opts_.flags & kResultsFormatMask)));
+			throw Error(errParams, "Can't serialize query results: unknown format %d", int((opts_.flags & kResultsFormatMask)));
 	}
 	if (!err.ok()) throw Error(errParseBin, "Internal error serializing query results: %s", err.what());
 }
@@ -125,6 +167,11 @@ void WrResultSerializer::putPayloadType(const QueryResults* results, int nsid) {
 }
 
 bool WrResultSerializer::PutResults(const QueryResults* result) {
+	if (result->IsWALQuery() && !(opts_.flags & kResultsWithRaw) && (opts_.flags & kResultsFormatMask) != kResultsJson) {
+		throw Error(errParams,
+					"Query results contain WAL items. Query results from WAL must either be requested in JSON format or with client, "
+					"supporting RAW items");
+	}
 	if (opts_.fetchOffset > result->Count()) {
 		opts_.fetchOffset = result->Count();
 	}

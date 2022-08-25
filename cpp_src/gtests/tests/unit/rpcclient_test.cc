@@ -774,3 +774,27 @@ TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 	loop.run();
 	ASSERT_TRUE(finished);
 }
+
+TEST_F(RPCClientTestApi, UnknowResultsFlag) {
+	// Check if server will not resturn unknown result flag
+	StartDefaultRealServer();
+	ev::dynamic_loop loop;
+	bool finished = false;
+	loop.spawn([&loop, &finished] {
+		reindexer::client::CoroReindexer rx;
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+		const int kResultsUnknownFlag = 0x40000000;	 // Max available int flag
+		client::CoroQueryResults qr(kResultsCJson | kResultsWithItemID | kResultsUnknownFlag);
+		err = rx.Select(Query("#config").Where("type", CondEq, {"namespaces"}), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		// Check, that kResultsUnknownFlag was not sent back
+		ASSERT_EQ(qr.Flags(), kResultsCJson | kResultsWithItemID | kResultsSupportIdleTimeout);
+		ASSERT_EQ(qr.Count(), 1);
+		finished = true;
+	});
+	loop.run();
+	ASSERT_TRUE(finished);
+}

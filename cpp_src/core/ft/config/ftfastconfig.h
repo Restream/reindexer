@@ -36,7 +36,8 @@ struct FtFastConfig : public BaseFTConfig {
 	int maxStepSize = 4000;
 
 	double summationRanksByFieldsRatio = 0.0;
-
+	int maxAreasInDoc = 5;
+	int maxTotalAreasToCache = -1;
 	h_vector<FtFastFieldConfig, 8> fieldsCfg;
 	enum class Optimization { CPU, Memory } optimization = Optimization::Memory;
 	int MaxTyposInWord() const noexcept { return (maxTypos / 2) + (maxTypos % 2); }

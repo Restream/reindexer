@@ -58,7 +58,7 @@ struct WALRecord {
 	explicit WALRecord(WALRecType _type, std::string_view cjson, int tmVersion, int modifyMode, bool inTx = false)
 		: type(_type), itemModify{cjson, tmVersion, modifyMode}, inTransaction(inTx) {}
 	WrSerializer &Dump(WrSerializer &ser, std::function<std::string(std::string_view)> cjsonViewer) const;
-	void GetJSON(JsonBuilder &jb, std::function<string(std::string_view)> cjsonViewer) const;
+	void GetJSON(JsonBuilder &jb, std::function<std::string(std::string_view)> cjsonViewer) const;
 	void Pack(WrSerializer &ser) const;
 	SharedWALRecord GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const;
 

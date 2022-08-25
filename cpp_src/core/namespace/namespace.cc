@@ -9,28 +9,28 @@ namespace reindexer {
 #define handleInvalidation(Fn) nsFuncWrapper<decltype(&Fn), &Fn>
 
 void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const RdxContext& ctx) {
-	auto ns = atomicLoadMainNs();
-	bool enablePerfCounters = ns->enablePerfCounters_.load(std::memory_order_relaxed);
+	auto nsl = atomicLoadMainNs();
+	bool enablePerfCounters = nsl->enablePerfCounters_.load(std::memory_order_relaxed);
 	if (enablePerfCounters) {
 		txStatsCounter_.Count(tx);
 	}
 	PerfStatCalculatorMT txCommitCalc(commitStatsCounter_, enablePerfCounters);
-	if (needNamespaceCopy(ns, tx)) {
-		PerfStatCalculatorMT calc(ns->updatePerfCounter_, enablePerfCounters);
+	if (needNamespaceCopy(nsl, tx)) {
+		PerfStatCalculatorMT calc(nsl->updatePerfCounter_, enablePerfCounters);
 		contexted_unique_lock<Mutex, const RdxContext> lck(clonerMtx_, &ctx);
-		ns = ns_;
-		if (needNamespaceCopy(ns, tx)) {
+		nsl = ns_;
+		if (needNamespaceCopy(nsl, tx)) {
 			PerfStatCalculatorMT nsCopyCalc(copyStatsCounter_, enablePerfCounters);
-			calc.SetCounter(ns->updatePerfCounter_);
+			calc.SetCounter(nsl->updatePerfCounter_);
 			calc.LockHit();
-			logPrintf(LogTrace, "Namespace::CommitTransaction creating copy for (%s)", ns->name_);
+			logPrintf(LogTrace, "Namespace::CommitTransaction creating copy for (%s)", nsl->name_);
 			hasCopy_.store(true, std::memory_order_release);
-			CounterGuardAIR32 cg(ns->cancelCommitCnt_);
+			CounterGuardAIR32 cg(nsl->cancelCommitCnt_);
 			try {
-				auto rlck = ns->rLock(ctx);
-				auto storageLock = ns->storage_.FullLock();
+				auto rlck = nsl->rLock(ctx);
+				auto storageLock = nsl->storage_.FullLock();
 				cg.Reset();
-				nsCopy_.reset(new NamespaceImpl(*ns, storageLock));
+				nsCopy_.reset(new NamespaceImpl(*nsl, storageLock));
 				nsCopyCalc.HitManualy();
 				nsCopy_->CommitTransaction(tx, result, NsContext(ctx).NoLock());
 				if (nsCopy_->lastUpdateTime_) {
@@ -39,16 +39,16 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 					nsCopy_->warmupFtIndexes();
 				}
 				try {
-					nsCopy_->storage_.InheritUpdatesFrom(ns->storage_,
+					nsCopy_->storage_.InheritUpdatesFrom(nsl->storage_,
 														 storageLock);	// Updates can not be flushed until tx is commited into ns copy
 				} catch (Error& e) {
 					// This exception should never be seen - there are no good ways to recover from it
-					assertf(false, "Error during storage moving in namespace (%s) copying: %s", ns->name_, e.what());
+					assertf(false, "Error during storage moving in namespace (%s) copying: %s", nsl->name_, e.what());
 				}
 
 				calc.SetCounter(nsCopy_->updatePerfCounter_);
-				ns->markReadOnly();
-				ns->wal_.SetStorage(std::weak_ptr<datastorage::IDataStorage>(), true);
+				nsl->markReadOnly();
+				nsl->wal_.SetStorage(std::weak_ptr<datastorage::IDataStorage>(), true);
 				atomicStoreMainNs(nsCopy_.release());
 				hasCopy_.store(false, std::memory_order_release);
 			} catch (...) {
@@ -57,9 +57,9 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			}
-			ns = ns_;
+			nsl = ns_;
 			lck.unlock();
-			ns->storage_.TryForceFlush();
+			nsl->storage_.TryForceFlush();
 			return;
 		}
 	}

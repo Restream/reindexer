@@ -58,27 +58,27 @@ void TransactionImpl::UpdateTagsMatcherFromItem(ItemImpl *ritem) {
 void TransactionImpl::Insert(Item &&item) {
 	std::unique_lock<std::mutex> lock(mtx_);
 	checkTagsMatcher(item);
-	steps_.emplace_back(TransactionStep{move(item), ModeInsert});
+	steps_.emplace_back(TransactionStep{std::move(item), ModeInsert});
 }
 void TransactionImpl::Update(Item &&item) {
 	std::unique_lock<std::mutex> lock(mtx_);
 	checkTagsMatcher(item);
-	steps_.emplace_back(TransactionStep{move(item), ModeUpdate});
+	steps_.emplace_back(TransactionStep{std::move(item), ModeUpdate});
 }
 void TransactionImpl::Upsert(Item &&item) {
 	std::unique_lock<std::mutex> lock(mtx_);
 	checkTagsMatcher(item);
-	steps_.emplace_back(TransactionStep{move(item), ModeUpsert});
+	steps_.emplace_back(TransactionStep{std::move(item), ModeUpsert});
 }
 void TransactionImpl::Delete(Item &&item) {
 	std::unique_lock<std::mutex> lock(mtx_);
 	checkTagsMatcher(item);
-	steps_.emplace_back(TransactionStep{move(item), ModeDelete});
+	steps_.emplace_back(TransactionStep{std::move(item), ModeDelete});
 }
 void TransactionImpl::Modify(Item &&item, ItemModifyMode mode) {
 	std::unique_lock<std::mutex> lock(mtx_);
 	checkTagsMatcher(item);
-	steps_.emplace_back(TransactionStep{move(item), mode});
+	steps_.emplace_back(TransactionStep{std::move(item), mode});
 }
 
 void TransactionImpl::Modify(Query &&query) {

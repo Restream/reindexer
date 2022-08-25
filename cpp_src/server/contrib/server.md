@@ -124,7 +124,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.7.0
+*Version* : 3.8.0
 
 
 ### License information
@@ -2119,7 +2119,7 @@ If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not co
 
 |Name|Description|Schema|
 |---|---|---|
-|**cond**  <br>*optional*|Condition operator|enum (EQ, GT, GE, LE, LT, RANGE, SET, EMPTY)|
+|**cond**  <br>*optional*|Condition operator|enum (EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN)|
 |**equal_positions**  <br>*optional*|Array of array fields to be searched with equal array indexes|< [EqualPositionDef](#equalpositiondef) > array|
 |**field**  <br>*optional*|Field json path or index name for filter|string|
 |**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
@@ -2127,7 +2127,7 @@ If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not co
 |**join_query**  <br>*optional*||[JoinedDef](#joineddef)|
 |**op**  <br>*optional*|Logic operator|enum (AND, OR, NOT)|
 |**second_field**  <br>*optional*|Second field json path or index name for filter by two fields|string|
-|**value**  <br>*optional*|Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, or variable len array for SET condition|object|
+|**value**  <br>*optional*|Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5],5.0]' for DWITHIN|object|
 
 
 
@@ -2149,8 +2149,10 @@ Fulltext Index configuration
 |**fields**  <br>*optional*|Configuration for certian field if it differ from whole index configuration|< [FulltextFieldConfig](#fulltextfieldconfig) > array|
 |**full_match_boost**  <br>*optional*|Boost of full match of search phrase with doc  <br>**Default** : `1.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**log_level**  <br>*optional*|Log level of full text search engine  <br>**Minimum value** : `0`  <br>**Maximum value** : `4`|integer|
+|**max_areas_in_doc**  <br>*optional*|Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited  <br>**Maximum value** : `1000000000`|number|
 |**max_rebuild_steps**  <br>*optional*|Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15.  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 |**max_step_size**  <br>*optional*|Maximum unique words to step  <br>**Minimum value** : `5`  <br>**Maximum value** : `1000000000`|integer|
+|**max_total_areas_to_cache**  <br>*optional*|Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited  <br>**Maximum value** : `1000000000`|number|
 |**max_typo_len**  <br>*optional*|Maximum word length for building and matching variants with typos.  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|
 |**max_typos**  <br>*optional*|Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 2 possible typo -It will seriously increase RAM usage, and decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `4`|integer|
 |**merge_limit**  <br>*optional*|Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `65535`|integer|
@@ -2244,6 +2246,7 @@ Idset cache stats. Stores merged reverse index results of SELECT field IN(...) b
 |**sort_orders_size**  <br>*optional*|Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicabe only to `tree` indexes|integer|
 |**tracked_updates_buckets**  <br>*optional*|Buckets count in index updates tracker map|integer|
 |**tracked_updates_count**  <br>*optional*|Updates count, pending in index updates tracker|integer|
+|**tracked_updates_size**  <br>*optional*|Updates tracker map size in bytes|integer|
 |**unique_keys_count**  <br>*optional*|Count of unique keys values stored in index|integer|
 
 
@@ -2407,6 +2410,7 @@ List of meta info of the specified namespace
 |---|---|---|
 |**cache_size**  <br>*optional*|Total memory consumption of namespace's caches. e.g. idset and join caches|integer|
 |**data_size**  <br>*optional*|Total memory size of stored documents, including system structures|integer|
+|**index_optimizer_memory**  <br>*optional*|Total memory size, occupated by index optimizer (in bytes)|integer|
 |**indexes_size**  <br>*optional*|Total memory consumption of namespace's indexes|integer|
 
 
@@ -2475,7 +2479,7 @@ List of meta info of the specified namespace
 
 |Name|Description|Schema|
 |---|---|---|
-|**cond**  <br>*required*|Condition operator|enum (EQ, GT, GE, LE, LT, RANGE, SET, EMPTY)|
+|**cond**  <br>*required*|Condition operator|enum (EQ, GT, GE, LE, LT, SET)|
 |**left_field**  <br>*required*|Field from left namespace (main query namespace)|string|
 |**op**  <br>*optional*|Logic operator|enum (AND, OR, NOT)|
 |**right_field**  <br>*required*|Field from right namespace (joined query namespace)|string|
@@ -2520,7 +2524,7 @@ List of meta info of the specified namespace
 |**select_functions**  <br>*optional*|Add extra select functions to query|< string > array|
 |**select_with_rank**  <br>*optional*|Output fulltext rank in QueryResult. Allowed only with fulltext query  <br>**Default** : `false`|boolean|
 |**sort**  <br>*optional*|Specifies results sorting order|< [SortDef](#sortdef) > array|
-|**strict_mode**  <br>*optional*|Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existance in sorting and filtering conditions  <br>**Default** : `"names"`|enum (none, names, indexes)|
+|**strict_mode**  <br>*optional*|Strict mode for query. Adds additional check for fields('names')/indexes('indexes') existence in sorting and filtering conditions  <br>**Default** : `"names"`|enum (none, names, indexes)|
 |**type**  <br>*optional*|Type of query|enum (select, update, delete, truncate)|
 |**update_fields**  <br>*optional*|Fields to be updated|< [UpdateField](#updatefield) > array|
 

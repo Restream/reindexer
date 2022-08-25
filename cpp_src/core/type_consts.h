@@ -170,7 +170,9 @@ enum {
 	kResultsNeedOutputRank = 0x400,
 	// kResultsWithShardId = 0x800, // v4.x.x
 	// kResultsNeedOutputShardId = 0x1000, // v4.x.x
-	kResultsSupportIdleTimeout = 0x2000	 // FIXME: Change this to version check after test
+	kResultsSupportIdleTimeout = 0x2000,
+
+	kResultsFlagMaxValue
 };
 
 typedef enum IndexOpt {

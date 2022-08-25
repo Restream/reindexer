@@ -29,7 +29,10 @@ public:
 			.AddIndex("id+year", {"id", "year"}, "tree", "composite", IndexOpts())
 			.AddIndex("id+name", {"id", "name"}, "tree", "composite", IndexOpts())
 			.AddIndex("id+start_time", {"id", "start_time"}, "hash", "composite", IndexOpts())
-			.AddIndex("id+genre", {"id", "genre"}, "hash", "composite", IndexOpts());
+			.AddIndex("id+genre", {"id", "genre"}, "hash", "composite", IndexOpts())
+			.AddIndex("field1", "hash", "int", IndexOpts())
+			.AddIndex("field2", "hash", "int", IndexOpts())
+			.AddIndex("field1+field2", {"field1", "field2"}, "hash", "composite", IndexOpts());
 
 		//		AddIndex("sub_id+name", "", "tree", "composite", IndexOpts());
 		//		AddIndex("genre+rate", "", "tree", "composite", IndexOpts());  // collate numeric and double
@@ -79,8 +82,10 @@ protected:
 	void SortByTreeCompositeIntStrCollateUTF8(State& state);
 	void ForcedSortByHashInt(State& state);
 	void ForcedSortWithSecondCondition(State& state);
+	void Query2CondIdSetComposite(State& state);
 
 private:
+	std::vector<VariantArray> compositeIdSet_;
 	vector<string> locations_;
 	vector<string> names_;
 };

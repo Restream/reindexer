@@ -68,7 +68,7 @@ public:
 		size_ = other.size_;
 		other.size_ = 0;
 	}
-	~h_vector() { clear(); }
+	~h_vector() { destruct(); }
 	h_vector& operator=(const h_vector& other) {
 		if (&other != this) {
 			reserve(other.capacity());
@@ -116,11 +116,8 @@ public:
 	bool operator!=(const h_vector& other) const noexcept { return !operator==(other); }
 
 	void clear() {
-		if constexpr (!std::is_trivially_destructible<T>::value) {
-			for (size_type i = 0; i < size_; i++) ptr()[i].~T();
-		}
+		destruct();
 		size_ = 0;
-		if (!is_hdata()) operator delete(e_.data_);
 		is_hdata_ = 1;
 	}
 
@@ -313,6 +310,18 @@ public:
 protected:
 	pointer ptr() noexcept { return is_hdata() ? reinterpret_cast<pointer>(hdata_) : e_.data_; }
 	const_pointer ptr() const noexcept { return is_hdata() ? reinterpret_cast<const_pointer>(hdata_) : e_.data_; }
+	void destruct() noexcept {
+		if (is_hdata()) {
+			if constexpr (!std::is_trivially_destructible_v<T>) {
+				for (size_type i = 0; i < size_; ++i) reinterpret_cast<pointer>(hdata_)[i].~T();
+			}
+		} else {
+			if constexpr (!std::is_trivially_destructible_v<T>) {
+				for (size_type i = 0; i < size_; ++i) e_.data_[i].~T();
+			}
+			operator delete(e_.data_);
+		}
+	}
 
 #pragma pack(push, 1)
 	struct edata {

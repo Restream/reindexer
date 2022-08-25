@@ -10,12 +10,21 @@
 namespace reindexer {
 
 template <typename T>
-class IndexUnordered : public IndexStore<typename T::key_type> {
-	using Base = IndexStore<typename T::key_type>;
+using StoreIndexKeyType = typename std::conditional<
+	std::is_same_v<typename T::key_type, PayloadValueWithHash>, PayloadValue,
+	typename std::conditional<std::is_same_v<typename T::key_type, key_string_with_hash>, key_string, typename T::key_type>::type>::type;
+
+template <typename T>
+class IndexUnordered : public IndexStore<StoreIndexKeyType<T>> {
+	using Base = IndexStore<StoreIndexKeyType<T>>;
 
 public:
-	using ref_type =
-		typename std::conditional<std::is_same<typename T::key_type, key_string>::value, std::string_view, typename T::key_type>::type;
+	using ref_type = typename std::conditional<
+		std::is_same<typename T::key_type, PayloadValueWithHash>::value, PayloadValue,
+		typename std::conditional<std::is_same_v<typename T::key_type, key_string>, std::string_view,
+								  typename std::conditional<std::is_same_v<typename T::key_type, key_string_with_hash>, std::string_view,
+															typename T::key_type>::type>::type>::type;
+	using key_type = StoreIndexKeyType<T>;
 
 	IndexUnordered(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields);
 	IndexUnordered(const IndexUnordered &other);
@@ -39,8 +48,8 @@ public:
 	void EnableUpdatesCountingMode(bool val) override { tracker_.enableCountingMode(val); }
 
 protected:
-	bool tryIdsetCache(const VariantArray &keys, CondType condition, SortType sortId, std::function<bool(SelectKeyResult &)> selector,
-					   SelectKeyResult &res);
+	bool tryIdsetCache(const VariantArray &keys, CondType condition, SortType sortId,
+					   std::function<bool(SelectKeyResult &, size_t &)> selector, SelectKeyResult &res);
 	void addMemStat(typename T::iterator it);
 	void delMemStat(typename T::iterator it);
 
@@ -58,7 +67,7 @@ private:
 	void dump(S &os, std::string_view step, std::string_view offset) const;
 };
 
-constexpr inline unsigned maxSelectivityPercentForIdset() noexcept { return 25u; }
+constexpr inline unsigned maxSelectivityPercentForIdset() noexcept { return 30u; }
 
 std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields);
 

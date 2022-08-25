@@ -275,7 +275,7 @@ void Selecter<IdCont>::processTypos(FtSelectContext &ctx, const FtDSLEntry &term
 	}
 }
 
-double bound(double k, double weight, double boost) { return (1.0 - weight) + k * boost * weight; }
+static double bound(double k, double weight, double boost) noexcept { return (1.0 - weight) + k * boost * weight; }
 
 template <typename IdCont>
 void Selecter<IdCont>::debugMergeStep(const char *msg, int vid, float normBm25, float normDist, int finalRank, int prevRank) {
@@ -442,7 +442,7 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 					curMerged.proc += finalRank;
 					if (needArea_) {
 						for (auto pos : relid.Pos()) {
-							if (!curMerged.holder->AddWord(pos.pos(), r.wordLen_, pos.field())) {
+							if (!curMerged.holder->AddWord(pos.pos(), r.wordLen_, pos.field(), maxAreasInDoc_)) {
 								break;
 							}
 						}
@@ -468,7 +468,7 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 					info.holder.reset(new AreaHolder);
 					info.holder->ReserveField(fieldSize_);
 					for (auto pos : relid.Pos()) {
-						info.holder->AddWord(pos.pos(), r.wordLen_, pos.field());
+						info.holder->AddWord(pos.pos(), r.wordLen_, pos.field(), maxAreasInDoc_);
 					}
 				}
 				if (vidStatus.status) {

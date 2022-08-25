@@ -390,7 +390,7 @@ void Aggregator::aggregate(const Variant &v) {
 		case AggCount:
 		case AggCountCached:
 			break;
-	};
+	}
 }
 
 }  // namespace reindexer

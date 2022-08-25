@@ -128,6 +128,8 @@ type NamespaceMemStat struct {
 		IndexesSize int64 `json:"indexes_size"`
 		// Total memory consumption of namespace's caches. e.g. idset and join caches
 		CacheSize int64 `json:"cache_size"`
+		// Total memory size, occupated by index optimizer (in bytes)
+		IndexOptimizerMemory int64 `json:"index_optimizer_memory"`
 	} `json:"total"`
 	// Replication status of namespace
 	Replication struct {
@@ -189,6 +191,8 @@ type NamespaceMemStat struct {
 		TrackedUpdatesCount int64 `json:"tracked_updates_count"`
 		// Buckets count in index updates tracker map
 		TrackedUpdatesBuckets int64 `json:"tracked_updates_buckets"`
+		// Updates tracker map size in bytes
+		TrackedUpdatesSize int64 `json:"tracked_updates_size"`
 	} `json:"indexes"`
 	// Join cache stats. Stores results of selects to right table by ON condition
 	JoinCache CacheMemStat `json:"join_cache"`

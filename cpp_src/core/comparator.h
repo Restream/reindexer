@@ -7,10 +7,10 @@ namespace reindexer {
 
 class Comparator : public ComparatorVars {
 public:
-	Comparator();
+	Comparator() = default;
 	Comparator(CondType cond, KeyValueType type, const VariantArray &values, bool isArray, bool distinct, PayloadType payloadType,
 			   const FieldsSet &fields, void *rawData = nullptr, const CollateOpts &collateOpts = CollateOpts());
-	~Comparator();
+	~Comparator() = default;
 
 	bool Compare(const PayloadValue &lhs, int rowId);
 	void ExcludeDistinct(const PayloadValue &, int rowId);

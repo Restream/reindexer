@@ -79,7 +79,8 @@ public:
 	};
 
 	virtual ~IDataHolder() = default;
-	virtual MergeData Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, bool inTransaction, const RdxContext&) = 0;
+	virtual MergeData Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
+							 const RdxContext&) = 0;
 	virtual void Process(size_t fieldSize, bool multithread) = 0;
 	virtual size_t GetMemStat() = 0;
 	virtual void Clear() = 0;
@@ -122,11 +123,12 @@ public:
 template <typename IdCont>
 class DataHolder : public IDataHolder {
 public:
-	MergeData Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, bool inTransaction, const RdxContext&) override;
-	void Process(size_t fieldSize, bool multithread) override;
-	size_t GetMemStat() override;
-	void StartCommit(bool complte_updated) override;
-	void Clear() override;
+	MergeData Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
+					 const RdxContext&) override final;
+	void Process(size_t fieldSize, bool multithread) override final;
+	size_t GetMemStat() override final;
+	void StartCommit(bool complte_updated) override final;
+	void Clear() override final;
 	vector<PackedWordEntry<IdCont>>& GetWords() noexcept { return words_; }
 	PackedWordEntry<IdCont>& getWordById(WordIdType id);
 

@@ -57,9 +57,9 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache
 		return Variant();
 	}
 
-	auto keyIt = this->idx_map.find(static_cast<typename IndexUnordered<T>::ref_type>(key));
+	auto keyIt = this->idx_map.find(static_cast<ref_type>(key));
 	if (keyIt == this->idx_map.end()) {
-		keyIt = this->idx_map.insert({static_cast<typename T::key_type>(key), typename T::mapped_type()}).first;
+		keyIt = this->idx_map.insert({static_cast<key_type>(key), typename T::mapped_type()}).first;
 		this->tracker_.markUpdated(this->idx_map, keyIt, false);
 	} else {
 		this->delMemStat(keyIt);
@@ -72,7 +72,7 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache
 	this->addMemStat(keyIt);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
-		return IndexStore<typename T::key_type>::Upsert(key, id, clearCache);
+		return IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache);
 	}
 
 	return Variant(keyIt->first);
@@ -88,7 +88,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 		return;
 	}
 
-	auto keyIt = this->idx_map.find(static_cast<typename IndexUnordered<T>::ref_type>(key));
+	auto keyIt = this->idx_map.find(static_cast<ref_type>(key));
 	if (keyIt == this->idx_map.end()) return;
 	this->isBuilt_ = false;
 
@@ -116,7 +116,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 		this->addMemStat(keyIt);
 	}
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
-		IndexStore<typename T::key_type>::Delete(key, id, strHolder, clearCache);
+		IndexStore<StoreIndexKeyType<T>>::Delete(key, id, strHolder, clearCache);
 	}
 	if (this->cache_ft_) this->cache_ft_->Clear();
 	clearCache = true;
@@ -135,7 +135,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl, bool inTra
 	fctx->GetData()->extraWordSymbols_ = this->GetConfig()->extraWordSymbols;
 	fctx->GetData()->isWordPositions_ = true;
 
-	auto mergeInfo = this->holder_->Select(dsl, this->fields_.size(), fctx->NeedArea(), inTransaction, rdxCtx);
+	auto mergeInfo = this->holder_->Select(dsl, this->fields_.size(), fctx->NeedArea(), GetConfig()->maxAreasInDoc, inTransaction, rdxCtx);
 	// convert vids(uniq documents id) to ids (real ids)
 	IdSet::Ptr mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 	auto &holder = *this->holder_;

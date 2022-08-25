@@ -295,7 +295,15 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(ostream& o, const typena
 	bool prettyPrint = variables_[kVariableOutput] == kOutputModePretty;
 	for (auto it : r) {
 		if (cancelCtx_.IsCancelled()) break;
-		if (isWALQuery) ser << '#' << it.GetLSN() << ' ';
+		if (isWALQuery) {
+			ser << '#';
+			{
+				JsonBuilder lsnObj(ser);
+				const reindexer::lsn_t lsn(it.GetLSN());
+				lsn.GetJSON(lsnObj);
+			}
+			ser << ' ';
+		}
 		if (it.IsRaw()) {
 			reindexer::WALRecord rec(it.GetRaw());
 			rec.Dump(ser, [this, &r](std::string_view cjson) {

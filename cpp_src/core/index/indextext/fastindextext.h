@@ -12,6 +12,9 @@ namespace reindexer {
 template <typename T>
 class FastIndexText : public IndexText<T> {
 public:
+	using key_type = typename IndexUnordered<T>::key_type;
+	using ref_type = typename IndexUnordered<T>::ref_type;
+
 	FastIndexText(const FastIndexText& other) : IndexText<T>(other) {
 		initConfig(other.GetConfig());
 		for (auto& idx : this->idx_map) idx.second.VDocID() = FtKeyEntryData::ndoc;
