@@ -19,8 +19,8 @@ environment:
     - BUILD_TYPE: Release
       COMPILER: MinGW-w64
       PLATFORM: x64
-      TOOLCHAIN: x86_64-7.3.0-posix-seh-rt_v5-rev0
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2015
+      TOOLCHAIN: x86_64-8.1.0-posix-seh-rt_v6-rev0
+      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
 
     - BUILD_TYPE: Release
       COMPILER: MinGW
