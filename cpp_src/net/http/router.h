@@ -153,7 +153,7 @@ struct Context {
 	int Protobuf(int code, chunk &&chunk);
 	int String(int code, std::string_view slice);
 	int String(int code, chunk &&chunk);
-	int File(int code, std::string_view path, std::string_view data, bool isGzip);
+	int File(int code, std::string_view path, std::string_view data, bool isGzip, bool withCache);
 	int Redirect(std::string_view url);
 
 	Request *request;

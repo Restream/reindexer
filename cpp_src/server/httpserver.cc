@@ -50,10 +50,9 @@ HTTPServer::HTTPServer(DBManager &dbMgr, LoggerWrapper &logger, const ServerConf
 	  logger_(logger),
 	  startTs_(std::chrono::system_clock::now()) {}
 
-Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, bool &isWALQuery, reindexer::QueryResults &res, http::Context &ctx) {
+Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, http::Context &ctx) {
 	reindexer::Query q;
 	q.FromSQL(sqlQuery);
-	isWALQuery = q.IsWALQuery();
 	std::string_view sharding = ctx.request->params.Get("sharding"sv, "on"sv);
 	switch (q.Type()) {
 		case QuerySelect: {
@@ -105,12 +104,11 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	}
 	reindexer::QueryResults res;
 
-	bool isWALQuery = false;
-	auto ret = execSqlQueryByType(sqlQuery, isWALQuery, res, ctx);
+	auto ret = execSqlQueryByType(sqlQuery, res, ctx);
 	if (!ret.ok()) {
 		return status(ctx, http::HttpStatus(ret));
 	}
-	return queryResults(ctx, res, isWALQuery, true, limit, offset);
+	return queryResults(ctx, res, true, limit, offset);
 }
 
 int HTTPServer::GetSQLSuggest(http::Context &ctx) {
@@ -158,12 +156,11 @@ int HTTPServer::PostSQLQuery(http::Context &ctx) {
 	if (!sqlQuery.length()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Query is empty"));
 	}
-	bool isWALQuery = false;
-	auto ret = execSqlQueryByType(sqlQuery, isWALQuery, res, ctx);
+	auto ret = execSqlQueryByType(sqlQuery, res, ctx);
 	if (!ret.ok()) {
 		return status(ctx, http::HttpStatus(http::StatusInternalServerError, ret.what()));
 	}
-	return queryResults(ctx, res, isWALQuery, true);
+	return queryResults(ctx, res, true);
 }
 
 int HTTPServer::PostQuery(http::Context &ctx) {
@@ -181,7 +178,7 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
-	return queryResults(ctx, res, q.IsWALQuery(), true);
+	return queryResults(ctx, res, true);
 }
 
 int HTTPServer::DeleteQuery(http::Context &ctx) {
@@ -868,7 +865,8 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 
 	auto stat = web.stat(path);
 	if (stat.fstatus == fs::StatFile) {
-		return web.file(ctx, http::StatusOK, path, stat.isGzip);
+		const bool enableCache = checkIfStartsWith("face/"sv, path);
+		return web.file(ctx, http::StatusOK, path, stat.isGzip, enableCache);
 	}
 
 	if (stat.fstatus == fs::StatDir && !endsWithSlash) {
@@ -879,7 +877,7 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 		string file = fs::JoinPath(path, "index.html");
 		const auto pathStatus = web.stat(file);
 		if (pathStatus.fstatus == fs::StatFile) {
-			return web.file(ctx, http::StatusOK, file, pathStatus.isGzip);
+			return web.file(ctx, http::StatusOK, file, pathStatus.isGzip, false);
 		}
 
 		auto pos = path.find_last_of('/');
@@ -1266,8 +1264,8 @@ int HTTPServer::modifyItemsTx(http::Context &ctx, ItemModifyMode mode) {
 								 : modifyItemsTxJSON(ctx, *tx, std::move(precepts), mode);
 }
 
-int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
-								 unsigned offset, bool withColumns, int width) {
+int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
+								 bool withColumns, int width) {
 	WrSerializer wrSer(ctx.writer->GetChunk());
 	JsonBuilder builder(wrSer);
 
@@ -1287,6 +1285,7 @@ int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &re
 		item.FromCJSON(cjson);
 		return string(item.GetJSON());
 	};
+	const bool isWALQuery = res.IsWALQuery();
 	for (size_t i = 0; it != res.end() && i < limit; ++i, ++it) {
 		if (!isWALQuery) {
 			iarray.Raw(nullptr, "");
@@ -1300,9 +1299,12 @@ int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &re
 			}
 		} else {
 			auto obj = iarray.Object(nullptr);
-			obj.Put(kParamLsn, int64_t(it.GetLSN()));
+			{
+				auto lsnObj = obj.Object(kWALParamLsn);
+				it.GetLSN().GetJSON(lsnObj);
+			}
 			if (!it.IsRaw()) {
-				iarray.Raw(kParamItem, "");
+				iarray.Raw(kWALParamItem, "");
 				if (withColumns) {
 					itemSer.Reset();
 					it.GetJSON(itemSer, false);
@@ -1330,14 +1332,14 @@ int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &re
 		}
 	}
 
-	queryResultParams(builder, res, std::move(jsonData), isWALQuery, isQueryResults, limit, withColumns, width);
+	queryResultParams(builder, res, std::move(jsonData), isQueryResults, limit, withColumns, width);
 	builder.End();
 
 	return ctx.JSON(http::StatusOK, wrSer.DetachChunk());
 }
 
-int HTTPServer::queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
-									unsigned offset, bool withColumns, int width) {
+int HTTPServer::queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
+									bool withColumns, int width) {
 	int paramsToSend = 3;
 	bool withTotalItems = (!isQueryResults || limit != kDefaultLimit);
 	if (!res.GetAggregationResults().empty()) ++paramsToSend;
@@ -1381,14 +1383,14 @@ int HTTPServer::queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults 
 		}
 	}
 
-	queryResultParams(msgpackBuilder, res, std::move(jsonData), isWALQuery, isQueryResults, limit, withColumns, width);
+	queryResultParams(msgpackBuilder, res, std::move(jsonData), isQueryResults, limit, withColumns, width);
 	msgpackBuilder.End();
 
 	return ctx.MSGPACK(http::StatusOK, wrSer.DetachChunk());
 }
 
-int HTTPServer::queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
-									 unsigned offset, bool withColumns, int width) {
+int HTTPServer::queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
+									 bool withColumns, int width) {
 	WrSerializer wrSer(ctx.writer->GetChunk());
 	ProtobufBuilder protobufBuilder(&wrSer);
 
@@ -1430,7 +1432,7 @@ int HTTPServer::queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults
 		protobufBuilder.Put(nsField, ns);
 	}
 
-	protobufBuilder.Put(kProtoQueryResultsFields.at(kParamCacheEnabled), res.IsCacheEnabled() && !isWALQuery);
+	protobufBuilder.Put(kProtoQueryResultsFields.at(kParamCacheEnabled), res.IsCacheEnabled() && !res.IsWALQuery());
 
 	if (!res.GetExplainResults().empty()) {
 		protobufBuilder.Put(kProtoQueryResultsFields.at(kParamExplain), res.GetExplainResults());
@@ -1468,8 +1470,8 @@ int HTTPServer::queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults
 }
 
 template <typename Builder>
-void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &res, std::vector<std::string> &&jsonData, bool isWALQuery,
-								   bool isQueryResults, unsigned limit, bool withColumns, int width) {
+void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &res, std::vector<std::string> &&jsonData, bool isQueryResults,
+								   unsigned limit, bool withColumns, int width) {
 	h_vector<std::string_view, 1> namespaces(res.GetNamespaces());
 	auto namespacesArray = builder.Array(kParamNamespaces, namespaces.size());
 	for (auto ns : namespaces) {
@@ -1477,7 +1479,7 @@ void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &re
 	}
 	namespacesArray.End();
 
-	builder.Put(kParamCacheEnabled, res.IsCacheEnabled() && !isWALQuery);
+	builder.Put(kParamCacheEnabled, res.IsCacheEnabled() && !res.IsWALQuery());
 
 	if (!res.GetExplainResults().empty()) {
 		builder.Json(kParamExplain, res.GetExplainResults());
@@ -1510,8 +1512,7 @@ void HTTPServer::queryResultParams(Builder &builder, reindexer::QueryResults &re
 	}
 }
 
-int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isWALQuery, bool isQueryResults, unsigned limit,
-							 unsigned offset) {
+int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset) {
 	std::string_view widthParam = ctx.request->params.Get("width"sv);
 	int width = stoi(widthParam);
 
@@ -1520,11 +1521,11 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 	bool withColumns = (isParameterSetOn(withColumnsParam) && (width > 0)) ? true : false;
 
 	if (format == "msgpack"sv) {
-		return queryResultsMsgPack(ctx, res, isWALQuery, isQueryResults, limit, offset, withColumns, width);
+		return queryResultsMsgPack(ctx, res, isQueryResults, limit, offset, withColumns, width);
 	} else if (format == "protobuf"sv) {
-		return queryResultsProtobuf(ctx, res, isWALQuery, isQueryResults, limit, offset, withColumns, width);
+		return queryResultsProtobuf(ctx, res, isQueryResults, limit, offset, withColumns, width);
 	} else {
-		return queryResultsJSON(ctx, res, isWALQuery, isQueryResults, limit, offset, withColumns, width);
+		return queryResultsJSON(ctx, res, isQueryResults, limit, offset, withColumns, width);
 	}
 }
 

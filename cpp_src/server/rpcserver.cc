@@ -40,7 +40,8 @@ static std::atomic<int> connCounter = {0};
 
 Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, p_string db, cproto::optional<bool> createDBIfMissing,
 					   cproto::optional<bool> checkClusterID, cproto::optional<int> expectedClusterID,
-					   cproto::optional<p_string> clientRxVersion, cproto::optional<p_string> appName) {
+					   cproto::optional<p_string> clientRxVersion, cproto::optional<p_string> appName,
+					   cproto::optional<int64_t> bindingCaps) {
 	if (ctx.GetClientData()) {
 		return Error(errParams, "Already logged in");
 	}
@@ -50,6 +51,7 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 	clientData->connID = connCounter.fetch_add(1, std::memory_order_relaxed);
 	clientData->auth = AuthContext(login.toString(), password.toString());
 	clientData->txStats = std::make_shared<reindexer::TxStats>();
+	clientData->caps = bindingCaps.hasValue() ? bindingCaps.value() : BindingCapabilities();
 
 	auto dbName = db.toString();
 	if (checkClusterID.hasValue() && checkClusterID.value()) {
@@ -61,11 +63,7 @@ Error RPCServer::Login(cproto::Context &ctx, p_string login, p_string password, 
 		return status;
 	}
 
-	if (clientRxVersion.hasValue()) {
-		clientData->rxVersion = SemVersion(std::string_view(clientRxVersion.value()));
-	} else {
-		clientData->rxVersion = SemVersion();
-	}
+	clientData->rxVersion = clientRxVersion.hasValue() ? SemVersion(std::string_view(clientRxVersion.value())) : SemVersion();
 
 	if (clientsStats_) {
 		reindexer::ClientConnectionStat conn;
@@ -395,7 +393,11 @@ Error RPCServer::DeleteQueryTx(cproto::Context &ctx, p_string queryBin, int64_t 
 	Transaction &tr = getTx(ctx, txID);
 	Query query;
 	Serializer ser(queryBin.data(), queryBin.size());
-	query.Deserialize(ser);
+	try {
+		query.Deserialize(ser);
+	} catch (Error &err) {
+		return err;
+	}
 	query.type_ = QueryDelete;
 	tr.Modify(std::move(query), ctx.call->lsn);
 	return Error();
@@ -407,7 +409,11 @@ Error RPCServer::UpdateQueryTx(cproto::Context &ctx, p_string queryBin, int64_t 
 	Transaction &tr = getTx(ctx, txID);
 	Query query;
 	Serializer ser(queryBin.data(), queryBin.size());
-	query.Deserialize(ser);
+	try {
+		query.Deserialize(ser);
+	} catch (Error &err) {
+		return err;
+	}
 	query.type_ = QueryUpdate;
 	return tr.Modify(std::move(query), ctx.call->lsn);
 }
@@ -441,12 +447,13 @@ Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId, cproto::optional<i
 		ResultFetchOpts opts;
 		int flags;
 		if (flagsOpts.hasValue()) {
-			flags = flagsOpts.value();
+			// Transactions can not send items content
+			flags = flagsOpts.value() & ~kResultsFormatMask;
 		} else {
 			flags = kResultsWithItemID;
 			if (tr.IsTagsUpdated()) flags |= kResultsWithPayloadTypes;
 		}
-		if (tr.IsTagsUpdated()) {
+		if (flags & kResultsWithPayloadTypes) {
 			opts = ResultFetchOpts{flags, span<int32_t>(&ptVers, 1), 0, INT_MAX};
 		} else {
 			opts = ResultFetchOpts{flags, {}, 0, INT_MAX};
@@ -598,18 +605,21 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, cproto::optional<int> flagsOpts) {
 	Query query;
 	Serializer ser(queryBin.data(), queryBin.size());
-	query.Deserialize(ser);
+	try {
+		query.Deserialize(ser);
+	} catch (Error &err) {
+		return err;
+	}
 	query.type_ = QueryDelete;
 
-	QueryResults qres;
+	const int flags = flagsOpts.hasValue() ? flagsOpts.value() : kResultsWithItemID;
+	QueryResults qres(flags);
 	auto err = getDB(ctx, kRoleDataWrite).Delete(query, qres);
 	if (!err.ok()) {
 		return err;
 	}
 
 	int32_t ptVersion = -1;
-	int flags = kResultsWithItemID;
-	if (flagsOpts.hasValue()) flags = flagsOpts.value();
 	ResultFetchOpts opts{flags, {&ptVersion, 1}, 0, INT_MAX};
 	return sendResults(ctx, qres, RPCQrId(), opts);
 }
@@ -617,20 +627,21 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, cproto::op
 Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, cproto::optional<int> flagsOpts) {
 	Query query;
 	Serializer ser(queryBin.data(), queryBin.size());
-	query.Deserialize(ser);
+	try {
+		query.Deserialize(ser);
+	} catch (Error &err) {
+		return err;
+	}
 	query.type_ = QueryUpdate;
 
-	QueryResults qres;
+	const int flags = flagsOpts.hasValue() ? flagsOpts.value() : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
+	QueryResults qres(flags);
 	auto err = getDB(ctx, kRoleDataWrite).Update(query, qres);
 	if (!err.ok()) {
 		return err;
 	}
 
 	int32_t ptVersion = -1;
-	int flags = kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson;
-	if (flagsOpts.hasValue()) {
-		flags = flagsOpts.value();
-	}
 	ResultFetchOpts opts{flags, {&ptVersion, 1}, 0, INT_MAX};
 	return sendResults(ctx, qres, RPCQrId(), opts);
 }
@@ -675,15 +686,34 @@ void RPCServer::cleanupTmpNamespaces(RPCClientData &clientData, std::string_view
 
 Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, RPCQrId id, const ResultFetchOpts &opts) {
 	auto data = getClientDataSafe(ctx);
-	WrResultSerializer rser(opts);
-	bool doClose = rser.PutResults(&qres, data->rxVersion);
-	if (doClose && id.main >= 0) {
-		freeQueryResults(ctx, id);
-		id.main = -1;
-		id.uid = RPCQrWatcher::kUninitialized;
+	uint8_t serBuf[0x2000];
+	WrResultSerializer rser(serBuf, opts);
+	try {
+		bool doClose = false;
+		if (qres.IsRawProxiedBufferAvailable(opts.flags) && rser.IsRawResultsSupported(data->caps, qres)) {
+			doClose = rser.PutResultsRaw(&qres);
+		} else {
+			doClose = rser.PutResults(&qres, data->caps);
+		}
+		if (doClose && id.main >= 0) {
+			freeQueryResults(ctx, id);
+			id.main = -1;
+			id.uid = RPCQrWatcher::kUninitialized;
+		}
+		std::string_view resSlice = rser.Slice();
+		ctx.Return({cproto::Arg(p_string(&resSlice)), cproto::Arg(int(id.main)), cproto::Arg(int64_t(id.uid))});
+	} catch (Error &err) {
+		if (id.main >= 0) {
+			try {
+				freeQueryResults(ctx, id);
+				id.main = -1;
+				id.uid = RPCQrWatcher::kUninitialized;
+			} catch (...) {
+			}
+		}
+		return err;
 	}
-	std::string_view resSlice = rser.Slice();
-	ctx.Return({cproto::Arg(p_string(&resSlice)), cproto::Arg(int(id.main)), cproto::Arg(int64_t(id.uid))});
+
 	return Error();
 }
 
@@ -887,15 +917,19 @@ static h_vector<int32_t, 4> pack2vec(p_string pack) {
 Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int limit, p_string ptVersionsPck) {
 	Query query;
 	Serializer ser(queryBin);
-	query.Deserialize(ser);
+	try {
+		query.Deserialize(ser);
+	} catch (Error &err) {
+		return err;
+	}
 
+	const auto data = getClientDataSafe(ctx);
 	if (query.IsWALQuery()) {
-		auto data = getClientDataSafe(ctx);
 		query.Where(string("#slave_version"sv), CondEq, data->rxVersion.StrippedString());
 	}
 
 	RPCQrWatcher::Ref qres;
-	RPCQrId id{-1, (flags & kResultsSupportIdleTimeout) ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
+	RPCQrId id{-1, data->caps.HasResultsWithShardIDs() ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
 	try {
 		qres = createQueryResults(ctx, id, flags);
 	} catch (Error &e) {
@@ -905,7 +939,7 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 		throw e;
 	}
 
-	auto ret = getDB(ctx, kRoleDataRead).Select(query, *qres);
+	auto ret = getDB(ctx, kRoleDataRead).Select(query, *qres, unsigned(limit));
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
 		return ret;
@@ -917,7 +951,8 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 }
 
 Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, int limit, p_string ptVersionsPck) {
-	RPCQrId id{-1, (flags & kResultsSupportIdleTimeout) ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
+	const auto data = getClientDataSafe(ctx);
+	RPCQrId id{-1, data->caps.HasResultsWithShardIDs() ? RPCQrWatcher::kUninitialized : RPCQrWatcher::kDisabled};
 	RPCQrWatcher::Ref qres;
 	try {
 		qres = createQueryResults(ctx, id, flags);
@@ -927,7 +962,7 @@ Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, i
 		}
 		throw e;
 	}
-	auto ret = getDB(ctx, kRoleDataRead).Select(querySql, *qres);
+	auto ret = getDB(ctx, kRoleDataRead).Select(querySql, *qres, unsigned(limit));
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
 		return ret;

@@ -1,9 +1,8 @@
 #pragma once
 
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 #include "core/keyvalue/variant.h"
+#include "estl/fast_hash_map.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -14,12 +13,12 @@ struct ShardingConfig;
 
 namespace sharding {
 
-constexpr size_t kHvectorConnStack = 5;
+constexpr size_t kHvectorConnStack = 9;
 using ShardIDsContainer = h_vector<int, kHvectorConnStack>;
 
 class ShardingKeys {
 public:
-	using ValuesData = std::unordered_map<Variant, int>;
+	using ValuesData = fast_hash_map<Variant, int>;
 	struct ShardIndexWithValues {
 		std::string_view name;
 		const ValuesData* values;
@@ -40,9 +39,10 @@ private:
 		std::string_view indexName;
 		ValuesData keysToShard;
 		int defaultShard;
+		uint8_t padding[4];
 	};
 
-	std::unordered_map<NsName, NsData, nocase_hash_str, nocase_equal_str> keys_;
+	fast_hash_map<NsName, NsData, nocase_hash_str, nocase_equal_str> keys_;
 	// ns
 	//   value_i1 - shardNodeId1
 	//   value_i2 - shardNodeId2

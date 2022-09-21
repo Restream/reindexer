@@ -61,6 +61,7 @@ T random(T from, T to) {
 template <typename T>
 vector<T> randomNumArray(int count, int start, int region) {
 	vector<T> result;
+	result.reserve(count);
 	for (int i = 0; i < count; i++) result.emplace_back(random<T>(start, start + region));
 	return result;
 }

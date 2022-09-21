@@ -183,7 +183,7 @@ TEST_F(ReindexerApi, DistinctDiffType) {
 	size_t vString = hashStr(stringVal);
 	std::hash<size_t> hashInt;
 	auto vInt = hashInt(vString);
-	ASSERT_TRUE(vString == vInt) << "hash not equals";
+	ASSERT_EQ(vString, vInt) << "hash not equals";
 
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -228,7 +228,7 @@ TEST_F(ReindexerApi, DistinctDiffType) {
 	ASSERT_EQ(result.Count(), 2);
 	std::set<std::string> BaseVals = {"{\"column1\":" + std::to_string(int64_t(vInt)) + "}", "{\"column1\":\"abc\"}"};
 	std::set<std::string> Vals;
-	for (auto r : result) {
+	for (auto& r : result) {
 		reindexer::WrSerializer ser;
 		auto err = r.GetJSON(ser, false);
 		ASSERT_TRUE(err.ok()) << err.what();

@@ -8,6 +8,7 @@
 namespace reindexer_tool {
 
 const char kStoragePlaceholderFilename[] = ".reindexer.storage";
+constexpr unsigned kStorageLoadingThreads = 6;
 
 Error RepairTool::RepairStorage(const std::string& dsn) noexcept {
 	if (dsn.compare(0, 10, "builtin://") != 0) {
@@ -65,7 +66,7 @@ Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& stor
 		reindexer::RdxContext dummyCtx;
 		std::cout << "Loading " << name << std::endl;
 		ns.EnableStorage(storagePath, storageOpts.Enabled(true), storageType, dummyCtx);
-		ns.LoadFromStorage(dummyCtx);
+		ns.LoadFromStorage(kStorageLoadingThreads, dummyCtx);
 	} catch (const Error& err) {
 		std::cout << "Namespace was not repaired: " << err.what() << ". Should it be deleted? y/N" << std::endl;
 		for (;;) {

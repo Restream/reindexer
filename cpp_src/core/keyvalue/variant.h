@@ -87,8 +87,8 @@ public:
 	template <typename T>
 	T As(const PayloadType &, const FieldsSet &) const;
 
-	bool operator==(const Variant &other) const { return Compare(other) == 0; }
-	bool operator!=(const Variant &other) const { return Compare(other) != 0; }
+	bool operator==(const Variant &other) const { return Type() == other.Type() && Compare(other) == 0; }
+	bool operator!=(const Variant &other) const { return !operator==(other); }
 	bool operator<(const Variant &other) const { return Compare(other) < 0; }
 	bool operator>(const Variant &other) const { return Compare(other) > 0; }
 	bool operator>=(const Variant &other) const { return Compare(other) >= 0; }
@@ -99,7 +99,7 @@ public:
 	void EnsureUTF8() const;
 	Variant &EnsureHold();
 
-	KeyValueType Type() const { return type_; }
+	KeyValueType Type() const noexcept { return type_; }
 	static const char *TypeName(KeyValueType t);
 
 	Variant &convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr);

@@ -28,8 +28,7 @@ const size_t kMaxPooledResultsCap = 0x10000;
 static Error err_not_init(-1, "Reindexer db has not initialized");
 static Error err_too_many_queries(errLogic, "Too many parallel queries");
 
-static std::shared_mutex clientVersionMutex;
-static SemVersion clientVersion;
+static std::atomic<BindingCapabilities> bindingCaps;
 
 static reindexer_error error2c(const Error& err_) {
 	reindexer_error err;
@@ -88,22 +87,41 @@ struct query_results_ptr : public std::unique_ptr<QueryResultsWrapper, put_resul
 	operator std::unique_ptr<QueryResultsWrapper>() && noexcept { return std::unique_ptr<QueryResultsWrapper>{release()}; }
 };
 
-static query_results_ptr new_results() { return res_pool.get(serializedResultsCount.load(std::memory_order_relaxed)); }
+static query_results_ptr new_results(bool as_json) {
+	auto res = res_pool.get(serializedResultsCount.load(std::memory_order_relaxed));
+	if (res) {
+		res->SetFlags(as_json ? kResultsJson : (kResultsCJson | kResultsWithItemID | kResultsWithPayloadTypes));
+	}
+	return query_results_ptr(std::move(res));
+}
 
 static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reindexer_resbuffer* out, int as_json = 0,
 					  int32_t* pt_versions = nullptr, int pt_versions_count = 0) {
-	int flags = as_json ? kResultsJson : (kResultsPtrs | kResultsWithItemID);
-
-	flags |= (pt_versions && as_json == 0) ? kResultsWithPayloadTypes : 0;
-
-	result->ser.SetOpts({flags, span<int32_t>(pt_versions, pt_versions_count), 0, INT_MAX});
-
-	{
-		std::shared_lock lock(clientVersionMutex);
-		result->ser.PutResults(result.get(), clientVersion, &result->proxiedRefsStorage);
+	int flags = 0;
+	if (as_json) {
+		flags = kResultsJson;
+	} else {
+		flags = pt_versions ? (kResultsCJson | kResultsWithItemID | kResultsWithPayloadTypes) : (kResultsCJson | kResultsWithItemID);
 	}
-	out->len = result->ser.Len();
-	out->data = uintptr_t(result->ser.Buf());
+	const bool rawResProxying =
+		result->IsRawProxiedBufferAvailable(flags) && WrResultSerializer::IsRawResultsSupported(bindingCaps.load(), *result);
+	std::string_view rawBufOut;
+	if (rawResProxying) {
+		result->ser.SetOpts({flags, span<int32_t>(pt_versions, pt_versions_count), 0, INT_MAX});
+		result->ser.PutResultsRaw(result.get(), &rawBufOut);
+		out->len = rawBufOut.size() ? rawBufOut.size() : result->ser.Len();
+		out->data = rawBufOut.size() ? uintptr_t(rawBufOut.data()) : uintptr_t(result->ser.Buf());
+	} else {
+		flags = as_json ? kResultsJson : (kResultsPtrs | kResultsWithItemID);
+		if (pt_versions && as_json == 0) {
+			flags |= kResultsWithPayloadTypes;
+		}
+		result->ser.SetOpts({flags, span<int32_t>(pt_versions, pt_versions_count), 0, INT_MAX});
+		result->ser.PutResults(result.get(), bindingCaps.load(std::memory_order_relaxed), &result->proxiedRefsStorage);
+		out->len = result->ser.Len();
+		out->data = uintptr_t(result->ser.Buf());
+	}
+
 	out->results_ptr = uintptr_t(result.release());
 	if (const auto count{serializedResultsCount.fetch_add(1, std::memory_order_relaxed)}; count > kMaxConcurentQueries) {
 		logPrintf(LogWarning, "Too many serialized results: count=%d, alloced=%d", count, res_pool.Alloced());
@@ -111,11 +129,8 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 }
 
 uintptr_t init_reindexer() {
+	reindexer_init_locale();
 	Reindexer* db = new Reindexer();
-	setvbuf(stdout, 0, _IONBF, 0);
-	setvbuf(stderr, 0, _IONBF, 0);
-	setlocale(LC_CTYPE, "");
-	setlocale(LC_NUMERIC, "C");
 	return reinterpret_cast<uintptr_t>(db);
 }
 
@@ -192,86 +207,85 @@ reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, rein
 }
 
 reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, reindexer_buffer data, reindexer_ctx_info ctx_info) {
-	Serializer ser(args.data, args.len);
-	std::string_view ns = ser.GetVString();
-	int format = ser.GetVarUint();
-	int mode = ser.GetVarUint();
-	int state_token = ser.GetVarUint();
-
 	reindexer_resbuffer out = {0, 0, 0};
-	Error err = err_not_init;
-	if (rx) {
-		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+	try {
+		Serializer ser(args.data, args.len);
+		std::string_view ns = ser.GetVString();
+		int format = ser.GetVarUint();
+		int mode = ser.GetVarUint();
+		int state_token = ser.GetVarUint();
 
-		Item item = rdxKeeper.db().NewItem(ns);
+		Error err = err_not_init;
+		if (rx) {
+			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
-		procces_packed_item(item, mode, state_token, data, format, err);
+			Item item = rdxKeeper.db().NewItem(ns);
 
-		query_results_ptr res;
-		if (err.ok()) {
-			unsigned preceptsCount = ser.GetVarUint();
-			const bool needSaveItemValueInQR = preceptsCount;
-			vector<string> precepts;
-			precepts.reserve(preceptsCount);
-			while (preceptsCount--) {
-				precepts.emplace_back(ser.GetVString());
-			}
-			item.SetPrecepts(std::move(precepts));
+			procces_packed_item(item, mode, state_token, data, format, err);
 
-			res = new_results();
-			if (!res) {
-				return ret2c(err_too_many_queries, out);
-			}
-			if (needSaveItemValueInQR) {
-				switch (mode) {
-					case ModeUpsert:
-						err = rdxKeeper.db().Upsert(ns, item, *res);
-						break;
-					case ModeInsert:
-						err = rdxKeeper.db().Insert(ns, item, *res);
-						break;
-					case ModeUpdate:
-						err = rdxKeeper.db().Update(ns, item, *res);
-						break;
-					case ModeDelete:
-						err = rdxKeeper.db().Delete(ns, item, *res);
-						break;
+			query_results_ptr res;
+			if (err.ok()) {
+				unsigned preceptsCount = ser.GetVarUint();
+				const bool needSaveItemValueInQR = preceptsCount;
+				vector<string> precepts;
+				precepts.reserve(preceptsCount);
+				while (preceptsCount--) {
+					precepts.emplace_back(ser.GetVString());
 				}
-			} else {
-				switch (mode) {
-					case ModeUpsert:
-						err = rdxKeeper.db().Upsert(ns, item);
-						break;
-					case ModeInsert:
-						err = rdxKeeper.db().Insert(ns, item);
-						break;
-					case ModeUpdate:
-						err = rdxKeeper.db().Update(ns, item);
-						break;
-					case ModeDelete:
-						err = rdxKeeper.db().Delete(ns, item);
-						break;
+				item.SetPrecepts(std::move(precepts));
+
+				res = new_results(false);
+				if (!res) {
+					return ret2c(err_too_many_queries, out);
 				}
-				if (err.ok()) {
-					try {
+				if (needSaveItemValueInQR) {
+					switch (mode) {
+						case ModeUpsert:
+							err = rdxKeeper.db().Upsert(ns, item, *res);
+							break;
+						case ModeInsert:
+							err = rdxKeeper.db().Insert(ns, item, *res);
+							break;
+						case ModeUpdate:
+							err = rdxKeeper.db().Update(ns, item, *res);
+							break;
+						case ModeDelete:
+							err = rdxKeeper.db().Delete(ns, item, *res);
+							break;
+					}
+				} else {
+					switch (mode) {
+						case ModeUpsert:
+							err = rdxKeeper.db().Upsert(ns, item);
+							break;
+						case ModeInsert:
+							err = rdxKeeper.db().Insert(ns, item);
+							break;
+						case ModeUpdate:
+							err = rdxKeeper.db().Update(ns, item);
+							break;
+						case ModeDelete:
+							err = rdxKeeper.db().Delete(ns, item);
+							break;
+					}
+					if (err.ok()) {
 						LocalQueryResults lqr;
 						lqr.AddItem(item);
 						res->AddQr(std::move(lqr));
-					} catch (Error& e) {
-						err = e;
 					}
 				}
 			}
-		}
 
-		if (err.ok()) {
-			int32_t ptVers = -1;
-			bool tmUpdated = item.IsTagsUpdated();
-			results2c(std::move(res), &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
+			if (err.ok()) {
+				int32_t ptVers = -1;
+				bool tmUpdated = item.IsTagsUpdated();
+				results2c(std::move(res), &out, 0, tmUpdated ? &ptVers : nullptr, tmUpdated ? 1 : 0);
+			}
 		}
+		return ret2c(err, out);
+	} catch (Error& e) {
+		return ret2c(e, out);
 	}
-
-	return ret2c(err, out);
 }
 
 reindexer_tx_ret reindexer_start_transaction(uintptr_t rx, reindexer_string nsName) {
@@ -306,30 +320,33 @@ reindexer_error reindexer_rollback_transaction(uintptr_t rx, uintptr_t tr) {
 
 reindexer_ret reindexer_commit_transaction(uintptr_t rx, uintptr_t tr, reindexer_ctx_info ctx_info) {
 	reindexer_resbuffer out = {0, 0, 0};
+	try {
+		if (!rx) {
+			return ret2c(err_not_init, out);
+		}
+		std::unique_ptr<TransactionWrapper> trw(reinterpret_cast<TransactionWrapper*>(tr));
+		if (!trw) {
+			return ret2c(errOK, out);
+		}
 
-	if (!rx) {
-		return ret2c(err_not_init, out);
+		auto res(new_results(false));
+		if (!res) {
+			return ret2c(err_too_many_queries, out);
+		}
+
+		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+
+		auto err = rdxKeeper.db().CommitTransaction(trw->tr_, *res);
+
+		if (err.ok()) {
+			int32_t ptVers = -1;
+			results2c(std::move(res), &out, 0, trw->tr_.IsTagsUpdated() ? &ptVers : nullptr, trw->tr_.IsTagsUpdated() ? 1 : 0);
+		}
+
+		return ret2c(err, out);
+	} catch (Error& e) {
+		return ret2c(e, out);
 	}
-	std::unique_ptr<TransactionWrapper> trw(reinterpret_cast<TransactionWrapper*>(tr));
-	if (!trw) {
-		return ret2c(errOK, out);
-	}
-
-	auto res(new_results());
-	if (!res) {
-		return ret2c(err_too_many_queries, out);
-	}
-
-	CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-
-	auto err = rdxKeeper.db().CommitTransaction(trw->tr_, *res);
-
-	if (err.ok()) {
-		int32_t ptVers = -1;
-		results2c(std::move(res), &out, 0, trw->tr_.IsTagsUpdated() ? &ptVers : nullptr, trw->tr_.IsTagsUpdated() ? 1 : 0);
-	}
-
-	return ret2c(err, out);
 }
 
 reindexer_error reindexer_open_namespace(uintptr_t rx, reindexer_string nsName, StorageOpts opts, reindexer_ctx_info ctx_info) {
@@ -439,7 +456,9 @@ reindexer_error reindexer_enable_storage(uintptr_t rx, reindexer_string path, re
 	return error2c(res);
 }
 
-reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers) {
+// TODO: Rename this method, when all the connectors will support new version of connect
+reindexer_error reindexer_connect_v4(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers,
+									 BindingCapabilities caps) {
 	SemVersion cliVersion(str2cv(client_vers));
 	if (opts.options & kConnectOptWarnVersion) {
 		SemVersion libVersion(REINDEX_VERSION);
@@ -453,9 +472,13 @@ reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpt
 	if (!db) return error2c(err_not_init);
 	Error err = db->Connect(str2c(dsn), opts);
 	if (err.ok() && db->NeedTraceActivity()) db->SetActivityTracer("builtin", "");
-	std::unique_lock lock(clientVersionMutex);
-	clientVersion = std::move(cliVersion);
+	bindingCaps.store(caps, std::memory_order_relaxed);
 	return error2c(err);
+}
+
+// TODO: Remove this wrapper, when all the connectors will support new version of connect
+reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers) {
+	return reindexer_connect_v4(rx, dsn, opts, client_vers, BindingCapabilities{0});
 }
 
 reindexer_error reindexer_init_system_namespaces(uintptr_t rx) {
@@ -469,115 +492,130 @@ reindexer_error reindexer_init_system_namespaces(uintptr_t rx) {
 reindexer_ret reindexer_select(uintptr_t rx, reindexer_string query, int as_json, int32_t* pt_versions, int pt_versions_count,
 							   reindexer_ctx_info ctx_info) {
 	reindexer_resbuffer out = {0, 0, 0};
-	Error err = err_not_init;
-	if (rx) {
-		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-		auto result{new_results()};
-		if (!result) {
-			return ret2c(err_too_many_queries, out);
-		}
-		err = rdxKeeper.db().Select(str2cv(query), *result);
-		if (err.ok()) {
-			const auto count = result->Count(), len = result->ser.Len(), cap = result->ser.Cap();
-			results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
-			if (cap >= kWarnLargeResultsLimit) {
-				logPrintf(LogWarning, "Query too large results: count=%d size=%d,cap=%d, q=%s", count, len, cap, str2cv(query));
+	try {
+		Error err = err_not_init;
+		if (rx) {
+			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+			auto result{new_results(as_json)};
+			if (!result) {
+				return ret2c(err_too_many_queries, out);
+			}
+			err = rdxKeeper.db().Select(str2cv(query), *result);
+			if (err.ok()) {
+				const auto count = result->Count(), len = result->ser.Len(), cap = result->ser.Cap();
+				results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
+				if (cap >= kWarnLargeResultsLimit) {
+					logPrintf(LogWarning, "Query too large results: count=%d size=%d,cap=%d, q=%s", count, len, cap, str2cv(query));
+				}
 			}
 		}
+		return ret2c(err, out);
+	} catch (Error& e) {
+		return ret2c(e, out);
 	}
-	return ret2c(err, out);
 }
 
 reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, int as_json, int32_t* pt_versions, int pt_versions_count,
 									 reindexer_ctx_info ctx_info) {
-	Error err = err_not_init;
 	reindexer_resbuffer out = {0, 0, 0};
-	if (rx) {
-		err = Error(errOK);
-		Serializer ser(in.data, in.len);
-		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+	try {
+		Error err = err_not_init;
+		if (rx) {
+			err = Error(errOK);
+			Serializer ser(in.data, in.len);
+			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
-		Query q;
-		q.Deserialize(ser);
-		while (!ser.Eof()) {
-			JoinedQuery q1;
-			q1.joinType = JoinType(ser.GetVarUint());
-			q1.Deserialize(ser);
-			q1.debugLevel = q.debugLevel;
-			if (q1.joinType == JoinType::Merge) {
-				q.mergeQueries_.emplace_back(std::move(q1));
+			Query q;
+			q.Deserialize(ser);
+			while (!ser.Eof()) {
+				JoinedQuery q1;
+				q1.joinType = JoinType(ser.GetVarUint());
+				q1.Deserialize(ser);
+				q1.debugLevel = q.debugLevel;
+				if (q1.joinType == JoinType::Merge) {
+					q.mergeQueries_.emplace_back(std::move(q1));
+				} else {
+					q.joinQueries_.emplace_back(std::move(q1));
+				}
+			}
+
+			auto result{new_results(as_json)};
+			if (!result) {
+				return ret2c(err_too_many_queries, out);
+			}
+			err = rdxKeeper.db().Select(q, *result);
+			if (q.debugLevel >= LogError && err.code() != errOK) logPrintf(LogError, "Query error %s", err.what());
+			if (err.ok()) {
+				results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
 			} else {
-				q.joinQueries_.emplace_back(std::move(q1));
+				if (result->ser.Cap() >= kWarnLargeResultsLimit) {
+					logPrintf(LogWarning, "Query too large results: count=%d size=%d,cap=%d, q=%s", result->Count(), result->ser.Len(),
+							  result->ser.Cap(), q.GetSQL());
+				}
 			}
 		}
-
-		auto result{new_results()};
-		if (!result) {
-			return ret2c(err_too_many_queries, out);
-		}
-		err = rdxKeeper.db().Select(q, *result);
-		if (q.debugLevel >= LogError && err.code() != errOK) logPrintf(LogError, "Query error %s", err.what());
-		if (err.ok()) {
-			results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
-		} else {
-			if (result->ser.Cap() >= kWarnLargeResultsLimit) {
-				logPrintf(LogWarning, "Query too large results: count=%d size=%d,cap=%d, q=%s", result->Count(), result->ser.Len(),
-						  result->ser.Cap(), q.GetSQL());
-			}
-		}
+		return ret2c(err, out);
+	} catch (Error& e) {
+		return ret2c(e, out);
 	}
-	return ret2c(err, out);
 }
 
 reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexer_ctx_info ctx_info) {
 	reindexer_resbuffer out{0, 0, 0};
-	Error res = err_not_init;
-	if (rx) {
-		res = Error(errOK);
-		Serializer ser(in.data, in.len);
-		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+	try {
+		Error res = err_not_init;
+		if (rx) {
+			res = Error(errOK);
+			Serializer ser(in.data, in.len);
+			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
-		Query q;
-		q.type_ = QueryDelete;
-		q.Deserialize(ser);
-		auto result{new_results()};
-		if (!result) {
-			return ret2c(err_too_many_queries, out);
+			Query q;
+			q.type_ = QueryDelete;
+			q.Deserialize(ser);
+
+			auto result{new_results(false)};
+			if (!result) {
+				return ret2c(err_too_many_queries, out);
+			}
+			res = rdxKeeper.db().Delete(q, *result);
+			if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
+			if (res.ok()) {
+				results2c(std::move(result), &out);
+			}
 		}
-		res = rdxKeeper.db().Delete(q, *result);
-		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
-		if (res.ok()) {
-			results2c(std::move(result), &out);
-		}
-		ctx_pool.removeContext(ctx_info);
+		return ret2c(res, out);
+	} catch (Error& e) {
+		return ret2c(e, out);
 	}
-	return ret2c(res, out);
 }
 
 reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexer_ctx_info ctx_info) {
 	reindexer_resbuffer out{0, 0, 0};
-	Error res = err_not_init;
-	if (rx) {
-		res = Error(errOK);
-		Serializer ser(in.data, in.len);
-		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
+	try {
+		Error res = err_not_init;
+		if (rx) {
+			res = Error(errOK);
+			Serializer ser(in.data, in.len);
+			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
-		Query q;
-		q.Deserialize(ser);
-		q.type_ = QueryUpdate;
-		auto result{new_results()};
-		if (!result) {
-			ctx_pool.removeContext(ctx_info);
-			return ret2c(err_too_many_queries, out);
+			Query q;
+			q.Deserialize(ser);
+			q.type_ = QueryUpdate;
+			auto result{new_results(false)};
+			if (!result) {
+				return ret2c(err_too_many_queries, out);
+			}
+			res = rdxKeeper.db().Update(q, *result);
+			if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
+			if (res.ok()) {
+				int32_t ptVers = -1;
+				results2c(std::move(result), &out, 0, &ptVers, 1);
+			}
 		}
-		res = rdxKeeper.db().Update(q, *result);
-		if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
-		if (res.ok()) {
-			int32_t ptVers = -1;
-			results2c(std::move(result), &out, 0, &ptVers, 1);
-		}
+		return ret2c(res, out);
+	} catch (Error& e) {
+		return ret2c(e, out);
 	}
-	return ret2c(res, out);
 }
 
 reindexer_error reindexer_delete_query_tx(uintptr_t rx, uintptr_t tr, reindexer_buffer in) {
@@ -591,12 +629,15 @@ reindexer_error reindexer_delete_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	}
 	Serializer ser(in.data, in.len);
 	Query q;
-	q.Deserialize(ser);
-	q.type_ = QueryDelete;
+	try {
+		q.Deserialize(ser);
+		q.type_ = QueryDelete;
 
-	Error err = trw->tr_.Modify(std::move(q));
-
-	return error2c(err);
+		Error err = trw->tr_.Modify(std::move(q));
+		return error2c(err);
+	} catch (Error& err) {
+		return error2c(err);
+	}
 }
 
 reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_buffer in) {
@@ -610,12 +651,15 @@ reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 	}
 	Serializer ser(in.data, in.len);
 	Query q;
-	q.Deserialize(ser);
-	q.type_ = QueryUpdate;
+	try {
+		q.Deserialize(ser);
+		q.type_ = QueryUpdate;
 
-	Error err = trw->tr_.Modify(std::move(q));
-
-	return error2c(err);
+		Error err = trw->tr_.Modify(std::move(q));
+		return error2c(err);
+	} catch (Error& err) {
+		return error2c(err);
+	}
 }
 
 // This method is required for builtin modes of java-connector
@@ -655,7 +699,7 @@ reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_st
 	Error res = err_not_init;
 	if (rx) {
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-		auto results{new_results()};
+		auto results{new_results(false)};
 		if (!results) {
 			return ret2c(err_too_many_queries, out);
 		}
@@ -714,4 +758,14 @@ reindexer_error reindexer_cancel_context(reindexer_ctx_info ctx_info, ctx_cancel
 		return error2c(Error(errOK));
 	}
 	return error2c(Error(errParams));
+}
+
+void reindexer_init_locale() {
+	static std::once_flag flag;
+	std::call_once(flag, [] {
+		setvbuf(stdout, nullptr, _IONBF, 0);
+		setvbuf(stderr, nullptr, _IONBF, 0);
+		setlocale(LC_CTYPE, "");
+		setlocale(LC_NUMERIC, "C");
+	});
 }

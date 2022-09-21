@@ -430,7 +430,7 @@ static void CheckSetGetEnumMeta(ClusterizationApi::Cluster& cluster, int nodeSet
 static void SelectHelper(int node, const std::string& nsName, ClusterizationApi::Cluster& cluster, const std::string& itemJson,
 						 int id = -1) {
 	reindexer::Query q(nsName);
-	BaseApi::QueryResultsType qr;
+	BaseApi::QueryResultsType qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 	Error err = cluster.GetNode(node)->api.reindexer->Select(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(qr.Count() == 1);
@@ -485,7 +485,7 @@ static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, i
 		// update item
 		reindexer::Query q;
 		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
-		BaseApi::QueryResultsType qres;
+		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
@@ -504,7 +504,7 @@ static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, i
 		// delete item
 		reindexer::Query q;
 		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
-		BaseApi::QueryResultsType qres;
+		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
@@ -568,7 +568,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 		// update item
 		reindexer::Query q;
 		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
-		BaseApi::QueryResultsType qres;
+		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
@@ -593,7 +593,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 		// delete item
 		reindexer::Query q;
 		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
-		BaseApi::QueryResultsType qres;
+		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
@@ -707,7 +707,7 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 		// update item
 		reindexer::Query q;
 		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
-		BaseApi::QueryResultsType qres;
+		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
@@ -756,7 +756,7 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 		// delete item
 		reindexer::Query q;
 		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
-		BaseApi::QueryResultsType qres;
+		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
 		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);

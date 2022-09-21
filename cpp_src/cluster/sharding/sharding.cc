@@ -79,7 +79,8 @@ bool RoutingStrategy::getHostIdForQuery(const Query &q, int &hostId) const {
 
 ShardIDsContainer RoutingStrategy::GetHostsIds(const Query &q) const {
 	int hostId = ShardingKeyType::ProxyOff;
-	const bool mainNsIsSharded = keys_.IsSharded(q.Namespace());
+	const std::string_view mainNs = q.Namespace();
+	const bool mainNsIsSharded = keys_.IsSharded(mainNs);
 	bool hasShardingKeys = mainNsIsSharded && getHostIdForQuery(q, hostId);
 	const bool mainQueryToAllShards = mainNsIsSharded && !hasShardingKeys;
 
@@ -112,7 +113,7 @@ ShardIDsContainer RoutingStrategy::GetHostsIds(const Query &q) const {
 				throw Error(errLogic, "Query to all shard can't contain aggregations AVG, Facet or Distinct");
 			}
 		}
-		return keys_.GetShardsIds(q.Namespace());
+		return keys_.GetShardsIds(mainNs);
 	}
 	return {hostId};
 }

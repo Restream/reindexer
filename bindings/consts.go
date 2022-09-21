@@ -2,7 +2,7 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v4.4.0"
+const ReindexerVersion = "v4.5.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
@@ -143,6 +143,9 @@ const (
 	ConnectOptAllowNamespaceErrors = 1 << 1
 	ConnectOptAutorepair           = 1 << 2
 	ConnectOptWarnVersion          = 1 << 4
+
+	BindingCapabilityQrIdleTimeouts      = 1
+	BindingCapabilityResultsWithShardIDs = 1 << 1
 
 	ErrOK                   = 0
 	ErrParseSQL             = 1

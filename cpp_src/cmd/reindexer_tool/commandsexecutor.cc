@@ -357,7 +357,14 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(ostream& o, const typena
 	bool prettyPrint = variables_[kVariableOutput] == kOutputModePretty;
 	for (auto it : r) {
 		if (cancelCtx_.IsCancelled()) break;
-		if (isWALQuery) ser << '#' << int64_t(it.GetLSN()) << ' ';
+		if (isWALQuery) {
+			ser << '#';
+			{
+				JsonBuilder lsnObj(ser);
+				it.GetLSN().GetJSON(lsnObj);
+			}
+			ser << ' ';
+		}
 		if (isWALQuery && it.IsRaw()) {
 			reindexer::WALRecord rec(it.GetRaw());
 			rec.Dump(ser, [this, &r](std::string_view cjson) {

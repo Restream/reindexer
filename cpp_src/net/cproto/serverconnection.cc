@@ -68,7 +68,7 @@ void ServerConnection::onRead() {
 			try {
 				responceRPC(ctx, Error(errParams, "Invalid cproto magic %08x", int(hdr.magic)), Args());
 			} catch (const Error &err) {
-				fprintf(stderr, "responceRPC unexpected error: %s", err.what().c_str());
+				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
 			}
 			closeConn_ = true;
 			return;
@@ -81,7 +81,7 @@ void ServerConnection::onRead() {
 					Error(errParams, "Unsupported cproto version %04x. This server expects reindexer client v1.9.8+", int(hdr.version)),
 					Args());
 			} catch (const Error &err) {
-				fprintf(stderr, "responceRPC unexpected error: %s", err.what().c_str());
+				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
 			}
 			closeConn_ = true;
 			return;
@@ -120,39 +120,58 @@ void ServerConnection::onRead() {
 
 				ser = Serializer(uncompressed);
 			}
-			ctx.call->execTimeout = milliseconds(0);
-			ctx.call->lsn = lsn_t();
 
 			ctx.call->args.Unpack(ser);
-			ctx.call->emmiterServerId = -1;
-			ctx.call->shardId = -1;
-
 			if (!ser.Eof()) {
 				Args ctxArgs;
 				ctxArgs.Unpack(ser);
 				if (ctxArgs.size() > 0) {
 					ctx.call->execTimeout = milliseconds(int64_t(ctxArgs[0]));
+				} else {
+					ctx.call->execTimeout = milliseconds(0);
 				}
 				if (ctxArgs.size() > 1) {
 					ctx.call->lsn = lsn_t(int64_t(ctxArgs[1]));
+				} else {
+					ctx.call->lsn = lsn_t();
 				}
 				if (ctxArgs.size() > 2) {
 					ctx.call->emmiterServerId = int64_t(ctxArgs[2]);
+				} else {
+					ctx.call->emmiterServerId = -1;
 				}
 				if (ctxArgs.size() > 3) {
-					ctx.call->shardId = int(int64_t(ctxArgs[3]) & ~kShardingFlagsMask);
-					ctx.call->shardingParallelExecution = (int64_t{ctxArgs[3]} & kShardingParallelExecutionBit) != 0;
+					const int64_t shardIdValue = int64_t(ctxArgs[3]);
+					if (shardIdValue < 0) {
+						if (shardIdValue < std::numeric_limits<int>::min()) {
+							throw Error(errLogic, "Unexpected shard ID values: %d", shardIdValue);
+						}
+						ctx.call->shardId = shardIdValue;
+						ctx.call->shardingParallelExecution = false;
+					} else {
+						ctx.call->shardId = int(shardIdValue & ~kShardingFlagsMask);
+						ctx.call->shardingParallelExecution = (shardIdValue & kShardingParallelExecutionBit);
+					}
+				} else {
+					ctx.call->shardId = -1;
+					ctx.call->shardingParallelExecution = false;
 				}
+			} else {
+				ctx.call->execTimeout = milliseconds(0);
+				ctx.call->lsn = lsn_t();
+				ctx.call->emmiterServerId = -1;
+				ctx.call->shardId = -1;
+				ctx.call->shardingParallelExecution = false;
 			}
 
 			handleRPC(ctx);
 		} catch (const Error &err) {
 			// Exception occurs on unrecoverable error. Send responce, and drop connection
-			fprintf(stderr, "drop connect, reason: %s\n", err.what().c_str());
+			fprintf(stderr, "Dropping RPC-connection. Reason: %s\n", err.what().c_str());
 			try {
 				responceRPC(ctx, err, Args());
 			} catch (const Error &err) {
-				fprintf(stderr, "responceRPC unexpected error: %s", err.what().c_str());
+				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
 			}
 			closeConn_ = true;
 		}

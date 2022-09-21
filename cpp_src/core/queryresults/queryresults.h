@@ -14,6 +14,9 @@ namespace reindexer {
 
 class Query;
 
+const std::string_view kWALParamLsn = "lsn";
+const std::string_view kWALParamItem = "item";
+
 /// QueryResults is an interface for iterating over documents, returned by Query from Reindexer.<br>
 /// QueryResults may contain LocalQueryResults (from local rx node), RemoteQueryResults (from remote node) or distributed results from
 /// multiple nodes.
@@ -136,7 +139,7 @@ public:
 		return local_->qr;
 	}
 	int Flags() const noexcept { return flags_; }
-	const std::string &GetExplainResults() const {
+	const std::string &GetExplainResults() {
 		switch (type_) {
 			case Type::Local:
 				return local_->qr.GetExplainResults();
@@ -161,7 +164,7 @@ public:
 		}
 	}
 	int GetMergedNSCount() const noexcept;
-	const std::vector<AggregationResult> &GetAggregationResults() const;
+	const std::vector<AggregationResult> &GetAggregationResults();
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const noexcept;
 	int64_t GetShardingConfigVersion() const noexcept { return shardingConfigVersion_; }
@@ -170,29 +173,52 @@ public:
 	bool IsDistributed() const noexcept { return type_ == Type::Mixed || type_ == Type::MultipleRemote; }
 	bool HaveShardIDs() const noexcept;
 	int GetCommonShardID() const;
-	PayloadType GetPayloadType(int nsid) const;
-	TagsMatcher GetTagsMatcher(int nsid) const;
+	PayloadType GetPayloadType(int nsid) const noexcept;
+	TagsMatcher GetTagsMatcher(int nsid) const noexcept;
 	// For local qr only
-	const FieldsSet &GetFieldsFilter(int nsid) const {
+	const FieldsSet &GetFieldsFilter(int nsid) const noexcept {
 		if (type_ == Type::Local) {
 			return local_->qr.getFieldsFilter(nsid);
 		}
 		static const FieldsSet kEmpty;
 		return kEmpty;
 	}
-	std::shared_ptr<const Schema> GetSchema(int nsid) const {
+	std::shared_ptr<const Schema> GetSchema(int nsid) const noexcept {
 		if (type_ == Type::Local) {
 			return local_->qr.getSchema(nsid);
 		}
 		return std::shared_ptr<const Schema>();
 	}
-	bool HaveRank() const;
-	bool NeedOutputRank() const;
+	bool HaveRank() const noexcept;
+	bool NeedOutputRank() const noexcept;
 	bool NeedOutputShardId() const noexcept { return flags_ & kResultsNeedOutputShardId; }
-	bool HaveJoined() const;
+	bool HaveJoined() const noexcept;
 	void SetQuery(const Query *q);
-	bool IsWalQuery() const noexcept { return qData_.has_value() && qData_->isWalQuery; }
-	uint32_t GetJoinedField(int parentNsId) const;
+	bool IsWALQuery() const noexcept { return qData_.has_value() && qData_->isWalQuery; }
+	uint32_t GetJoinedField(int parentNsId) const noexcept;
+	bool IsRawProxiedBufferAvailable(int flags) const noexcept {
+		if (type_ != Type::SingleRemote || !remote_[0].qr.IsInLazyMode()) {
+			return false;
+		}
+
+		const auto qrFlags =
+			remote_[0].qr.GetFlags() ? (remote_[0].qr.GetFlags() & ~kResultsWithPayloadTypes & ~kResultsWithShardId) : kResultsCJson;
+		const auto qrFormat = qrFlags & kResultsFormatMask;
+		const auto reqFlags = flags ? (flags & ~kResultsWithPayloadTypes & ~kResultsWithShardId) : kResultsCJson;
+		const auto reqFormat = reqFlags & kResultsFormatMask;
+		return qrFormat == reqFormat && (qrFlags & reqFlags) == reqFlags;
+	}
+	bool GetRawProxiedBuffer(client::ParsedQrRawBuffer &out) { return remote_[0].qr.GetRawBuffer(out); }
+	void FetchRawBuffer(int flgs, int off, int lim) {
+		if (!IsRawProxiedBufferAvailable(flgs)) throw Error(errLogic, "Raw buffer is not available");
+		remote_[0].qr.FetchNextResults(flgs, off, lim);
+	}
+	void SetFlags(int flags) {
+		if (GetType() != Type::None) {
+			throw Error(errLogic, "Unable to set flags for non-empty query results");
+		}
+		flags_ = flags;
+	}
 
 	class Iterator {
 	public:
@@ -206,7 +232,7 @@ public:
 		Error GetProtobuf(WrSerializer &wrser, bool withHdrLen = true);
 		// use enableHold = false only if you are sure that the item will be destroyed before the LocalQueryResults
 		Item GetItem(bool enableHold = true);
-		joins::ItemIterator GetJoined();
+		joins::ItemIterator GetJoined(std::vector<ItemRefCache> *storage = nullptr);
 		ItemRef GetItemRef(std::vector<ItemRefCache> *storage = nullptr);
 		int GetNsID() const {
 			struct {

@@ -1313,6 +1313,8 @@ For install reindexer to Java or Kotlin project add the following lines to maven
 ````
 https://github.com/Restream/reindexer-java   
 Note: Java version >= 1.8 is required.
+#### Spring wrapper
+Spring wrapper for Java-connector: https://github.com/evgeniycheban/spring-data-reindexer
 
 ### 3rd party open source connectors
 #### PHP

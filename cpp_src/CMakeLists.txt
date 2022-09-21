@@ -367,7 +367,7 @@ endif()
 if (NOT LevelDB_LIBRARY OR NOT LevelDB_INCLUDE_DIR OR WITH_TSAN)
   if (WITH_TSAN)
     message (STATUS "LevelDB will be downloaded from Github to avoid false-positive warnings from TSAN")
-  else()
+  else ()
     # Leveldb not found. Download it
     message (STATUS "LevelDB not found. Will download it")
   endif()
@@ -675,7 +675,7 @@ if (NOT WIN32)
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
     "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h" "core/itemimplrawdata.h"
     "core/expressiontree.h" "tools/lsn.h" "core/cjson/tagspath.h" "estl/cow.h" "core/shardedmeta.h" "core/queryresults/localqueryresults.h"
-    "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h"
+    "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h" "estl/chunk.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h" "client/transaction.h" "client/synccororeindexer.h" "client/cororeindexerconfig.h"
     "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h" "client/connectopts.h"

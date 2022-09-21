@@ -20,8 +20,10 @@ const (
 // types from C. Danger expectation about go struct packing is like C struct packing
 type Cdouble float64
 type Cint int32
+type Cuint uint32
 type Cunsigned uint32
 type Cbool int8
+type Cchar int8
 
 type ArrayHeader struct {
 	offset Cunsigned
@@ -31,6 +33,11 @@ type ArrayHeader struct {
 type PStringHeader struct {
 	cstr unsafe.Pointer
 	len  Cint
+}
+
+type LStringHeader struct {
+	len  Cuint
+	data [1]Cchar
 }
 
 type payloadFieldType struct {
@@ -122,14 +129,27 @@ func (pl *payloadIface) getBool(field, idx int) bool {
 	return bool(*(*Cbool)(p) != 0)
 }
 
+const tagShift = 59
+const tagMask = uint64(7) << tagShift
+const lStringType = 1
+const keySringType = 5
+
 func (pl *payloadIface) getBytes(field, idx int) []byte {
 	p := pl.ptr(field, idx, valueString)
 	// p is pointer to p_string. see core/keyvalue/p_string.h
 
-	ppstring := uintptr(*(*uint64)(p) & ^uint64((7 << 59)))
-	strHdr := (*PStringHeader)(unsafe.Pointer(ppstring + pl.t.PStringHdrOffset))
-
-	return (*[1 << 30]byte)(strHdr.cstr)[:strHdr.len:strHdr.len]
+	psType := (*(*uint64)(p) & tagMask) >> tagShift
+	ppstring := uintptr(*(*uint64)(p) & ^tagMask)
+	switch psType {
+	case lStringType:
+		strHdr := (*LStringHeader)(unsafe.Pointer(ppstring))
+		return (*[1 << 30]byte)(unsafe.Pointer(&strHdr.data))[:strHdr.len:strHdr.len]
+	case keySringType:
+		strHdr := (*PStringHeader)(unsafe.Pointer(ppstring + pl.t.PStringHdrOffset))
+		return (*[1 << 30]byte)(strHdr.cstr)[:strHdr.len:strHdr.len]
+	default:
+		panic(fmt.Sprintf("Unknow string type in payload value: %d", psType))
+	}
 }
 
 func (pl *payloadIface) getString(field, idx int) string {

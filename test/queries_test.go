@@ -208,6 +208,7 @@ type TestArrayItemEqualPosition struct {
 
 func init() {
 	tnamespaces["test_items"] = TestItem{}
+	tnamespaces["test_items_wal"] = TestItem{}
 	tnamespaces["test_items_qr_idle"] = TestItem{}
 	tnamespaces["test_items_cancel"] = TestItem{}
 	tnamespaces["test_items_id_only"] = TestItemIDOnly{}
@@ -531,6 +532,50 @@ func TestQueries(t *testing.T) {
 		CheckTestItemsQueries(t, testCaseWithSparseIndexes)
 	})
 
+}
+
+func TestWALQueries(t *testing.T) {
+	t.Parallel()
+
+	ns := "test_items_wal"
+	FillTestItemsWithFunc(ns, 0, 2500, 20, newTestItem)
+	validateJson := func(t *testing.T, jsonIt *reindexer.JSONIterator) {
+		defer jsonIt.Close()
+		assert.NoError(t, jsonIt.Error())
+		assert.Greater(t, jsonIt.Count(), 0)
+		for jsonIt.Next() {
+			dict := map[string]interface{}{}
+			err := json.Unmarshal(jsonIt.JSON(), &dict)
+			assert.NoError(t, err)
+			_, hasLSN := dict["lsn"]
+			assert.True(t, hasLSN, "JSON: %s", string(jsonIt.JSON()))
+			_, hasItem := dict["item"]
+			_, hasType := dict["type"]
+			assert.True(t, hasItem || hasType, "JSON: %s", string(jsonIt.JSON()))
+		}
+	}
+
+	t.Run("JSON WAL query with GT", func(t *testing.T) {
+		lsn := reindexer.LsnT{Counter: 1, ServerId: DB.leaderServerID}
+		jsonIt := DBD.Query(ns).Where("#lsn", reindexer.GT, reindexer.CreateInt64FromLSN(lsn)).ExecToJson()
+		validateJson(t, jsonIt)
+	})
+
+	t.Run("JSON WAL query with ANY", func(t *testing.T) {
+		jsonIt := DBD.Query(ns).Where("#lsn", reindexer.ANY, 0).ExecToJson()
+		validateJson(t, jsonIt)
+	})
+
+	t.Run("CJSON WAL query with GT (expecting error)", func(t *testing.T) {
+		lsn := reindexer.LsnT{Counter: 1, ServerId: DB.leaderServerID}
+		it := DBD.Query(ns).Where("#lsn", reindexer.GT, reindexer.CreateInt64FromLSN(lsn)).Exec()
+		assert.Error(t, it.Error())
+	})
+
+	t.Run("CJSON WAL query with ANY (expecting error)", func(t *testing.T) {
+		it := DBD.Query(ns).Where("#lsn", reindexer.ANY, 0).Exec()
+		assert.Error(t, it.Error())
+	})
 }
 
 type CompositeFacetResultItem struct {

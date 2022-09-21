@@ -20,6 +20,20 @@ CoroQueryResults::~CoroQueryResults() {
 	}
 }
 
+const std::string &CoroQueryResults::GetExplainResults() {
+	if (!i_.queryParams_.explainResults.has_value()) {
+		parseExtraData();
+	}
+	return i_.queryParams_.explainResults.value();
+}
+
+const vector<AggregationResult> &CoroQueryResults::GetAggregationResults() {
+	if (!i_.queryParams_.aggResults.has_value()) {
+		parseExtraData();
+	}
+	return i_.queryParams_.aggResults.value();
+}
+
 CoroQueryResults::CoroQueryResults(NsArray &&nsArray, Item &item) : i_(std::move(nsArray)) {
 	i_.queryParams_.totalcount = 0;
 	i_.queryParams_.qcount = 1;
@@ -49,27 +63,33 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query 
 	}
 
 	try {
-		ser.GetRawQueryParams(i_.queryParams_, [&ser, this](int nsIdx) {
-			const uint32_t stateToken = ser.GetVarUint();
-			const int version = ser.GetVarUint();
-			TagsMatcher newTm;
-			newTm.deserialize(ser, version, stateToken);
-			i_.nsArray_[nsIdx]->TryReplaceTagsMatcher(std::move(newTm));
-			// nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
-			// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
-			PayloadType("tmp").clone()->deserialize(ser);
-		});
+		ser.GetRawQueryParams(
+			i_.queryParams_,
+			[&ser, this](int nsIdx) {
+				const uint32_t stateToken = ser.GetVarUint();
+				const int version = ser.GetVarUint();
+				TagsMatcher newTm;
+				newTm.deserialize(ser, version, stateToken);
+				i_.nsArray_[nsIdx]->TryReplaceTagsMatcher(std::move(newTm));
+				// nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
+				// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
+				PayloadType("tmp").clone()->deserialize(ser);
+			},
+			i_.lazyMode_, i_.parsingData_);
 	} catch (const Error &err) {
 		i_.status_ = err;
 	}
 
-	i_.rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
+	if (i_.lazyMode_) {
+		i_.rawResult_.assign(rawResult.begin(), rawResult.end());
+	} else {
+		i_.rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
+	}
 }
 
 void CoroQueryResults::fetchNextResults() {
 	using std::chrono::seconds;
-	int flags = i_.fetchFlags_ ? (i_.fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
-	flags |= kResultsSupportIdleTimeout;
+	const int flags = i_.fetchFlags_ ? (i_.fetchFlags_ & ~kResultsWithPayloadTypes) : kResultsCJson;
 	auto ret = i_.conn_->Call({cproto::kCmdFetchResults, i_.requestTimeout_, milliseconds(0), lsn_t(), -1, ShardingKeyType::NotSetShard,
 							   nullptr, false, i_.sessionTs_},
 							  i_.queryID_.main, flags, i_.queryParams_.count + i_.fetchOffset_, i_.fetchAmount_, i_.queryID_.uid);
@@ -77,16 +97,38 @@ void CoroQueryResults::fetchNextResults() {
 		throw ret.Status();
 	}
 
-	auto args = ret.GetArgs(2);
+	handleFetchedBuf(ret);
+}
+
+void CoroQueryResults::handleFetchedBuf(net::cproto::CoroRPCAnswer &ans) {
+	auto args = ans.GetArgs(2);
 
 	i_.fetchOffset_ += i_.queryParams_.count;
 
 	std::string_view rawResult = p_string(args[0]);
 	ResultSerializer ser(rawResult);
 
-	ser.GetRawQueryParams(i_.queryParams_, nullptr);
+	ser.GetRawQueryParams(i_.queryParams_, nullptr, i_.lazyMode_, i_.parsingData_);
 
-	i_.rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
+	if (i_.lazyMode_) {
+		i_.rawResult_.assign(rawResult.begin(), rawResult.end());
+	} else {
+		i_.rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
+	}
+	i_.status_ = Error();
+}
+
+void CoroQueryResults::parseExtraData() {
+	if (i_.lazyMode_) {
+		std::string_view rawResult(i_.rawResult_.data() + i_.parsingData_.extraData.begin,
+								   i_.parsingData_.extraData.end - i_.parsingData_.extraData.begin);
+		ResultSerializer ser(rawResult);
+		i_.queryParams_.aggResults.emplace();
+		i_.queryParams_.explainResults.emplace();
+		ser.GetExtraParams(i_.queryParams_, false);
+	} else {
+		throw Error(errLogic, "Unable to parse clients explain or aggregation results (lazy parsing mode was expected)");
+	}
 }
 
 h_vector<std::string_view, 1> CoroQueryResults::GetNamespaces() const {
@@ -315,7 +357,7 @@ Item CoroQueryResults::Iterator::GetItem() {
 	try {
 		Item item = qr_->i_.nsArray_[itemParams_.nsid]->NewItem();
 		item.setID(itemParams_.id);
-		item.setLSN(lsn_t(itemParams_.lsn));
+		item.setLSN(itemParams_.lsn);
 		item.setShardID(itemParams_.shardId);
 
 		switch (qr_->i_.queryParams_.flags & kResultsFormatMask) {
@@ -349,7 +391,7 @@ Item CoroQueryResults::Iterator::GetItem() {
 
 lsn_t CoroQueryResults::Iterator::GetLSN() {
 	readNext();
-	return lsn_t(itemParams_.lsn);
+	return itemParams_.lsn;
 }
 
 int CoroQueryResults::Iterator::GetNSID() {
@@ -398,7 +440,13 @@ const CoroQueryResults::Iterator::JoinedData &CoroQueryResults::Iterator::GetJoi
 void CoroQueryResults::Iterator::readNext() {
 	if (nextPos_ != 0 || !Status().ok()) return;
 
-	std::string_view rawResult(qr_->i_.rawResult_.data(), qr_->i_.rawResult_.size());
+	std::string_view rawResult;
+	if (qr_->i_.lazyMode_) {
+		rawResult = std::string_view(qr_->i_.rawResult_.data() + qr_->i_.parsingData_.itemsPos,
+									 qr_->i_.rawResult_.size() - qr_->i_.parsingData_.itemsPos);
+	} else {
+		rawResult = std::string_view(qr_->i_.rawResult_.data(), qr_->i_.rawResult_.size());
+	}
 	ResultSerializer ser(rawResult.substr(pos_));
 
 	try {
@@ -444,13 +492,19 @@ CoroQueryResults::Iterator &CoroQueryResults::Iterator::operator++() {
 }
 
 CoroQueryResults::Impl::Impl(cproto::CoroClientConnection *conn, CoroQueryResults::NsArray &&nsArray, int fetchFlags, int fetchAmount,
-							 std::chrono::milliseconds timeout)
-	: conn_(conn), nsArray_(std::move(nsArray)), fetchFlags_(fetchFlags), fetchAmount_(fetchAmount), requestTimeout_(timeout) {
+							 std::chrono::milliseconds timeout, bool lazyMode)
+	: conn_(conn),
+	  nsArray_(std::move(nsArray)),
+	  fetchFlags_(fetchFlags),
+	  fetchAmount_(fetchAmount),
+	  requestTimeout_(timeout),
+	  lazyMode_(lazyMode) {
 	assert(conn_);
 	const auto sessionTs = conn_->LoginTs();
 	if (sessionTs.has_value()) {
 		sessionTs_ = sessionTs.value();
 	}
+	InitLazyData();
 }
 
 }  // namespace client

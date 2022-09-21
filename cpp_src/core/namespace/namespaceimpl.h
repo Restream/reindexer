@@ -6,6 +6,7 @@
 #include <set>
 #include <thread>
 #include <vector>
+#include "asyncstorage.h"
 #include "cluster/insdatareplicator.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/dbconfig.h"
@@ -27,6 +28,11 @@
 #include "estl/syncpool.h"
 #include "stringsholder.h"
 #include "wal/waltracker.h"
+
+#ifdef kRxStorageItemPrefix
+static_assert(false, "Redefinition of kRxStorageItemPrefix");
+#endif	// kRxStorageItemPrefix
+#define kRxStorageItemPrefix "I"
 
 namespace reindexer {
 
@@ -125,15 +131,20 @@ protected:
 	friend class SnapshotHandler;
 	friend class FieldComparator;
 	friend class QueryResults;
+	friend class ItemsLoader;
+	friend class IndexInserters;
 
 	class NSUpdateSortedContext : public UpdateSortedContext {
 	public:
 		NSUpdateSortedContext(const NamespaceImpl &ns, SortType curSortId)
 			: ns_(ns), sorted_indexes_(ns_.getSortedIdxCount()), curSortId_(curSortId) {
 			ids2Sorts_.reserve(ns.items_.size());
+			ids2SortsMemSize_ = ids2Sorts_.capacity() * sizeof(SortType);
+			ns.nsUpdateSortedContextMemory_.fetch_add(ids2SortsMemSize_);
 			for (IdType i = 0; i < IdType(ns_.items_.size()); i++)
 				ids2Sorts_.push_back(ns_.items_[i].IsFree() ? SortIdUnexists : SortIdUnfilled);
 		}
+		~NSUpdateSortedContext() override { ns_.nsUpdateSortedContextMemory_.fetch_sub(ids2SortsMemSize_); }
 		int getSortedIdxCount() const noexcept override { return sorted_indexes_; }
 		SortType getCurSortId() const noexcept override { return curSortId_; }
 		const vector<SortType> &ids2Sorts() const noexcept override { return ids2Sorts_; }
@@ -144,6 +155,7 @@ protected:
 		const int sorted_indexes_;
 		const IdType curSortId_;
 		vector<SortType> ids2Sorts_;
+		int64_t ids2SortsMemSize_ = 0;
 	};
 
 	class IndexesStorage : public std::vector<std::unique_ptr<Index>> {
@@ -277,7 +289,7 @@ public:
 	void SetNsVersion(lsn_t version, const RdxContext &ctx);
 
 	void EnableStorage(const string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx);
-	void LoadFromStorage(const RdxContext &ctx);
+	void LoadFromStorage(unsigned threadsCount, const RdxContext &ctx);
 	void DeleteStorage(const RdxContext &);
 
 	uint32_t GetItemsCount() const { return itemsCount_.load(std::memory_order_relaxed); }
@@ -306,6 +318,7 @@ public:
 	vector<string> EnumMeta(const RdxContext &ctx);
 
 	void BackgroundRoutine(RdxActivityContext *);
+	void StorageFlushingRoutine();
 	void CloseStorage(const RdxContext &);
 
 	LocalTransaction NewTransaction(const RdxContext &ctx);
@@ -352,10 +365,10 @@ protected:
 	void writeSysRecToStorage(std::string_view data, std::string_view sysTag, uint64_t &version, bool direct);
 	void saveIndexesToStorage();
 	void saveSchemaToStorage();
-	void saveTagsMatcherToStorage();
 	Error loadLatestSysRecord(std::string_view baseSysTag, uint64_t &version, string &content);
 	bool loadIndexesFromStorage();
-	void saveReplStateToStorage();
+	void saveReplStateToStorage(bool direct = true);
+	void saveTagsMatcherToStorage(bool clearUpdate);
 	void loadReplStateFromStorage();
 
 	void initWAL(int64_t minLSN, int64_t maxLSN);
@@ -399,22 +412,18 @@ protected:
 	IndexDef getIndexDefinition(size_t) const;
 
 	string getMeta(const string &key) const;
-	void flushStorage(const RdxContext &);
 	void putMeta(const string &key, std::string_view data, UpdatesContainer &pendedRepl, const NsContext &ctx);
-
-	pair<IdType, bool> findByPK(ItemImpl *ritem, const RdxContext &);
+	pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &);
 	int getSortedIdxCount() const;
 	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem, UpdatesContainer &replUpdates, const NsContext ctx);
 
 	void putToJoinCache(JoinCacheRes &res, std::shared_ptr<JoinPreResult> preResult) const;
-	void putToJoinCache(JoinCacheRes &res, JoinCacheVal &val) const;
+	void putToJoinCache(JoinCacheRes &res, JoinCacheVal &&val) const;
 	void getFromJoinCache(JoinCacheRes &ctx) const;
 	void getIndsideFromJoinCache(JoinCacheRes &ctx) const;
 
 	const FieldsSet &pkFields();
-	void writeToStorage(std::string_view key, std::string_view data);
-	void doFlushStorage();
 
 	vector<string> enumMeta() const;
 
@@ -447,13 +456,10 @@ protected:
 	// Tags matcher
 	TagsMatcher tagsMatcher_;
 
-	shared_ptr<datastorage::IDataStorage> storage_;
-	datastorage::UpdatesCollection::Ptr updates_;
-	std::atomic<int> unflushedCount_;
+	AsyncStorage storage_;
+	std::atomic<unsigned> replStateUpdates_ = {0};
 
 	std::unordered_map<string, string> meta_;
-
-	string dbpath_;
 
 	shared_ptr<QueryCache> queryCache_;
 
@@ -473,22 +479,27 @@ protected:
 	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) const;
 
 private:
-	NamespaceImpl(const NamespaceImpl &src);
+	NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &storageLock);
 
 	bool isSystem() const noexcept { return !name_.empty() && name_[0] == '#'; }
 	IdType createItem(size_t realSize, IdType suggestedId);
-	void deleteStorage();
 
 	void processWalRecord(WALRecord &&wrec, const NsContext &ctx, lsn_t itemLsn = lsn_t(), Item *item = nullptr);
 	void replicateAsync(cluster::UpdateRecord &&rec, const RdxContext &ctx);
 	void replicateAsync(UpdatesContainer &&recs, const RdxContext &ctx);
-	void replicate(cluster::UpdateRecord &&rec, Locker::WLockT &&wlck, const RdxContext &ctx);
-	void replicate(UpdatesContainer &&recs, Locker::WLockT &&wlck, const NsContext &ctx);
+	void replicate(cluster::UpdateRecord &&rec, Locker::WLockT &&wlck, bool tryForceFlush, const RdxContext &ctx);
+	void replicate(UpdatesContainer &&recs, Locker::WLockT &&wlck, bool tryForceFlush, const NsContext &ctx);
 
 	void setTemporary() noexcept { repl_.temporary = true; }
 
 	void removeIndex(std::unique_ptr<Index> &);
 	void dumpIndex(std::ostream &os, std::string_view index) const;
+	void tryForceFlush(Locker::WLockT &&wlck) {
+		if (wlck.owns_lock()) {
+			wlck.unlock();
+			storage_.TryForceFlush();
+		}
+	}
 
 	JoinCache::Ptr joinCache_;
 
@@ -517,6 +528,7 @@ private:
 	StringsHolderPtr strHolder_;
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
 	std::chrono::seconds lastExpirationCheckTs_;
+	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_ = {0};
 
 	cluster::INsDataReplicator *clusterizator_;
 };

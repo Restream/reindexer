@@ -39,7 +39,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-10.15]
+        os: [ubuntu-20.04, macos-12]
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
@@ -97,7 +97,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-10.15]
+        os: [ubuntu-20.04, macos-12]
         test: ['C++', 'GO']
         include:
           - os: ubuntu-latest
@@ -170,13 +170,14 @@ jobs:
             go test -timeout 60m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
           else
             cd build
+            chmod +x cpp_src/gtests/tests/tests
             ctest --verbose
           fi
 
   test-pyreindexer:
     strategy:
       matrix:
-        os: [ubuntu-18.04, ubuntu-20.04, macos-10.15]
+        os: [ubuntu-20.04, macos-12]
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build

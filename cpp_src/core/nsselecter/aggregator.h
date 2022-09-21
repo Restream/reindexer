@@ -1,9 +1,7 @@
 #pragma once
 
-#include <climits>
 #include <unordered_set>
-#include "core/payload/payloadiface.h"
-#include "core/type_consts.h"
+#include "core/index/payload_map.h"
 #include "vendor/cpp-btree/btree_map.h"
 
 namespace reindexer {
@@ -38,8 +36,11 @@ protected:
 	enum Direction { Desc = -1, Asc = 1 };
 	class MultifieldComparator;
 	class SinglefieldComparator;
-	using MultifieldMap = btree::btree_map<PayloadValue, int, MultifieldComparator>;
-	using SinglefieldMap = btree::btree_map<Variant, int, SinglefieldComparator>;
+	struct MultifieldOrderedMap;
+	using MultifieldUnorderedMap = unordered_payload_map<int, false>;
+	using SinglefieldOrderedMap = btree::btree_map<Variant, int, SinglefieldComparator>;
+	using SinglefieldUnorderedMap = fast_hash_map<Variant, int>;
+	using Facets = std::variant<MultifieldOrderedMap, MultifieldUnorderedMap, SinglefieldOrderedMap, SinglefieldUnorderedMap>;
 
 	void aggregate(const Variant &variant);
 
@@ -52,8 +53,7 @@ protected:
 	size_t limit_ = UINT_MAX;
 	size_t offset_ = 0;
 
-	std::unique_ptr<MultifieldMap> multifieldFacets_;
-	std::unique_ptr<SinglefieldMap> singlefieldFacets_;
+	std::unique_ptr<Facets> facets_;
 
 	class RelaxVariantCompare {
 	public:

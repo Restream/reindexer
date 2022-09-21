@@ -89,6 +89,11 @@ size_t heap_size<key_string>(const key_string &kt) {
 	return kt->heap_size() + sizeof(*kt.get());
 }
 
+template <>
+size_t heap_size<key_string_with_hash>(const key_string_with_hash &kt) {
+	return kt->heap_size() + sizeof(*kt.get());
+}
+
 struct DeepClean {
 	template <typename T>
 	void operator()(T &v) const {
@@ -133,7 +138,7 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id, bool &clearCach
 
 	typename T::iterator keyIt = this->idx_map.find(static_cast<ref_type>(key));
 	if (keyIt == this->idx_map.end()) {
-		keyIt = this->idx_map.insert({static_cast<typename T::key_type>(key), typename T::mapped_type()}).first;
+		keyIt = this->idx_map.insert({static_cast<key_type>(key), typename T::mapped_type()}).first;
 	} else {
 		delMemStat(keyIt);
 	}
@@ -201,24 +206,27 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &str
 
 template <typename T>
 bool IndexUnordered<T>::tryIdsetCache(const VariantArray &keys, CondType condition, SortType sortId,
-									  std::function<bool(SelectKeyResult &)> selector, SelectKeyResult &res) {
+									  std::function<bool(SelectKeyResult &, size_t &)> selector, SelectKeyResult &res) {
+	size_t idsCount;
 	if (!cache_ || IsComposite(this->Type())) {
-		selector(res);
+		selector(res, idsCount);
 		return false;
 	}
-	bool scanWin = false;
 
+	bool scanWin = false;
 	IdSetCacheKey ckey{keys, condition, sortId};
 	auto cached = cache_->Get(ckey);
 	if (cached.valid) {
 		if (!cached.val.ids) {
-			scanWin = selector(res);
-			if (!scanWin) cache_->Put(ckey, res.mergeIdsets());
+			scanWin = selector(res, idsCount);
+			if (!scanWin) {
+				cache_->Put(ckey, res.MergeIdsets(res.deferedExplicitSort, idsCount));
+			}
 		} else {
 			res.push_back(SingleSelectKeyResult(cached.val.ids));
 		}
 	} else {
-		scanWin = selector(res);
+		scanWin = selector(res, idsCount);
 	}
 	return scanWin;
 }
@@ -233,15 +241,17 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 
 	switch (condition) {
 		case CondEmpty:
-			if (!this->opts_.IsArray() && !this->opts_.IsSparse())
+			if (!this->opts_.IsArray() && !this->opts_.IsSparse()) {
 				throw Error(errParams, "The 'is NULL' condition is suported only by 'sparse' or 'array' indexes");
-			res.push_back(SingleSelectKeyResult(this->empty_ids_, sortId));
+			}
+			res.emplace_back(this->empty_ids_, sortId);
 			break;
 		// Get set of keys or single key
 		case CondEq:
 		case CondSet:
-			if (condition == CondEq && keys.size() < 1)
+			if (condition == CondEq && keys.size() < 1) {
 				throw Error(errParams, "For condition required at least 1 argument, but provided 0");
+			}
 			{
 				struct {
 					T *i_map;
@@ -249,9 +259,16 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 					SortType sortId;
 					Index::SelectOpts opts;
 				} ctx = {&this->idx_map, keys, sortId, opts};
+				bool selectorWasSkipped = false;
 				// should return true, if fallback to comparator required
-				auto selector = [&ctx](SelectKeyResult &res) -> bool {
-					size_t idsCount = 0;
+				auto selector = [&ctx, &selectorWasSkipped](SelectKeyResult &res, size_t &idsCount) -> bool {
+					idsCount = 0;
+					// Skip this index if there are some other indexes with potentially higher selectivity
+					if (!ctx.opts.distinct && ctx.keys.size() > 1 && 8 * ctx.keys.size() > size_t(ctx.opts.maxIterations) &&
+						ctx.opts.itemsCountInNamespace) {
+						selectorWasSkipped = true;
+						return true;
+					}
 					res.reserve(ctx.keys.size());
 					for (auto key : ctx.keys) {
 						auto keyIt = ctx.i_map->find(static_cast<ref_type>(key));
@@ -260,24 +277,27 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 							idsCount += keyIt->second.Unsorted().Size();
 						}
 					}
-					if (!ctx.opts.itemsCountInNamespace) return false;
-					// if (ctx.opts.indexesNotOptimized) idsCount *= 2;
-					// Check selectivity:
-					// if ids count too much (more than 20% of namespace),
-					// and index not optimized, or we have >4 other conditions
 
-					return res.size() > 1u && ((int(idsCount * 2) > ctx.opts.maxIterations) ||
+					res.deferedExplicitSort = SelectKeyResult::IsGenericSortRecommended(res.size(), idsCount, idsCount);
+
+					if (!ctx.opts.itemsCountInNamespace) return false;
+					// Check selectivity:
+					// if ids count too much (more than maxSelectivityPercentForIdset() of namespace),
+					// and index not optimized, or we have >4 other conditions
+					return res.size() > 1u && ((2 * idsCount > size_t(ctx.opts.maxIterations)) ||
 											   (100u * idsCount / ctx.opts.itemsCountInNamespace > maxSelectivityPercentForIdset()));
 				};
 
 				bool scanWin = false;
 				// Get from cache
 				if (!opts.distinct && !opts.disableIdSetCache && keys.size() > 1) {
-					scanWin = tryIdsetCache(keys, condition, sortId, selector, res);
-				} else
-					scanWin = selector(res);
+					scanWin = tryIdsetCache(keys, condition, sortId, std::move(selector), res);
+				} else {
+					size_t idsCount;
+					scanWin = selector(res, idsCount);
+				}
 
-				if (scanWin && !opts.distinct) {
+				if ((scanWin || selectorWasSkipped) && !opts.distinct) {
 					// fallback to comparator, due to expensive idset
 					return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
 				}
@@ -286,17 +306,17 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 		case CondAllSet: {
 			// Get set of key, where all request keys are present
 			SelectKeyResults rslts;
-			for (auto key : keys) {
+			for (auto &key : keys) {
 				SelectKeyResult res1;
 				key.convert(this->KeyType());
 				auto keyIt = this->idx_map.find(static_cast<ref_type>(key));
 				if (keyIt == this->idx_map.end()) {
 					rslts.clear();
-					rslts.push_back(res1);
+					rslts.emplace_back(std::move(res1));
 					return rslts;
 				}
-				res1.push_back(SingleSelectKeyResult(keyIt->second, sortId));
-				rslts.push_back(res1);
+				res1.emplace_back(keyIt->second, sortId);
+				rslts.emplace_back(std::move(res1));
 			}
 			return rslts;
 		}
@@ -305,7 +325,9 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 			if (opts.distinct && this->idx_map.size() < kMaxIdsForDistinct) {  // TODO change to more clever condition
 				// Get set of any keys
 				res.reserve(this->idx_map.size());
-				for (auto &keyIt : this->idx_map) res.emplace_back(keyIt.second, sortId);
+				for (auto &keyIt : this->idx_map) {
+					res.emplace_back(keyIt.second, sortId);
+				}
 				break;
 			}  // else fallthrough
 		case CondGe:
@@ -376,6 +398,7 @@ IndexMemStat IndexUnordered<T>::GetMemStat() {
 	if (cache_) ret.idsetCache = cache_->GetMemStat();
 	ret.trackedUpdatesCount = tracker_.updatesSize();
 	ret.trackedUpdatesBuckets = tracker_.updatesBuckets();
+	ret.trackedUpdatesSize = tracker_.GetMemStat();
 	return ret;
 }
 

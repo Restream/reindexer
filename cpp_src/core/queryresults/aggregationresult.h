@@ -54,8 +54,10 @@ struct AggregationResult {
 	void GetJSON(WrSerializer &ser) const;
 	void GetMsgPack(WrSerializer &wrser) const;
 	void GetProtobuf(WrSerializer &wrser) const;
-	Error FromJSON(span<char> json);
-	Error FromMsgPack(span<char> msgpack);
+	template <typename T>
+	Error FromJSON(T json);
+	Error FromMsgPack(std::string_view msgpack);
+	Error FromMsgPack(span<char> msgpack) { return FromMsgPack(std::string_view(msgpack.data(), msgpack.size())); }
 	AggType type = AggSum;
 	h_vector<std::string, 1> fields;
 	double value = 0;
@@ -80,7 +82,7 @@ struct AggregationResult {
 		for (const auto &facetNode : root[Parameters::Facets()]) {
 			FacetResult facet;
 			facet.count = facetNode[Parameters::Count()].template As<int>();
-			for (const auto &subElem : root[Parameters::Values()]) {
+			for (const auto &subElem : facetNode[Parameters::Values()]) {
 				facet.values.emplace_back(subElem.template As<std::string>());
 			}
 			facets.emplace_back(std::move(facet));

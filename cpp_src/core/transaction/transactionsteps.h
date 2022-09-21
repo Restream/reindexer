@@ -37,7 +37,7 @@ public:
 		item.impl_ = nullptr;
 	}
 	TransactionStep(lsn_t lsn) : data_(TransactionNopStep{}), type_(Type::Nop), lsn_(lsn) {}
-	TransactionStep(TagsMatcher tm, lsn_t lsn) : data_(TransactionTmStep{std::move(tm)}), type_(Type::SetTM), lsn_(lsn) {}
+	TransactionStep(TagsMatcher &&tm, lsn_t lsn) : data_(TransactionTmStep{std::move(tm)}), type_(Type::SetTM), lsn_(lsn) {}
 	TransactionStep(Query &&query, lsn_t lsn)
 		: data_(TransactionQueryStep{std::make_unique<Query>(std::move(query))}), type_(Type::Query), lsn_(lsn) {}
 	TransactionStep(std::string_view key, std::string_view value, lsn_t lsn)
@@ -55,15 +55,15 @@ public:
 
 class TransactionSteps {
 public:
-	void Insert(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{move(item), ModeInsert, lsn}); }
-	void Update(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{move(item), ModeUpdate, lsn}); }
-	void Upsert(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{move(item), ModeUpsert, lsn}); }
-	void Delete(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{move(item), ModeDelete, lsn}); }
-	void Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) { steps_.emplace_back(TransactionStep{move(item), mode, lsn}); }
+	void Insert(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(item), ModeInsert, lsn}); }
+	void Update(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(item), ModeUpdate, lsn}); }
+	void Upsert(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(item), ModeUpsert, lsn}); }
+	void Delete(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(item), ModeDelete, lsn}); }
+	void Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(item), mode, lsn}); }
 	void Modify(Query &&query, lsn_t lsn) { steps_.emplace_back(TransactionStep(std::move(query), lsn)); }
 	void Nop(lsn_t lsn) { steps_.emplace_back(TransactionStep{lsn}); }
 	void PutMeta(std::string_view key, std::string_view value, lsn_t lsn) { steps_.emplace_back(TransactionStep{key, value, lsn}); }
-	void SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) { steps_.emplace_back(TransactionStep{tm, lsn}); }
+	void SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(tm), lsn}); }
 
 	std::vector<TransactionStep> steps_;
 };

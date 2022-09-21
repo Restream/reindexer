@@ -156,8 +156,8 @@ Item &Item::Unsafe(bool enable) noexcept {
 	return *this;
 }
 
-lsn_t Item::GetLSN() { return impl_->Value().GetLSN(); }
-void Item::setLSN(lsn_t lsn) { impl_->Value().SetLSN(lsn); }
+lsn_t Item::GetLSN() { return impl_->RealValue().IsFree() ? impl_->Value().GetLSN() : impl_->RealValue().GetLSN(); }
+void Item::setLSN(lsn_t lsn) { impl_->RealValue().IsFree() ? impl_->Value().SetLSN(lsn) : impl_->RealValue().SetLSN(lsn); }
 
 template Item::FieldRef &Item::FieldRef::operator=(span<int> arr);
 template Item::FieldRef &Item::FieldRef::operator=(span<int64_t> arr);
@@ -165,4 +165,3 @@ template Item::FieldRef &Item::FieldRef::operator=(span<std::string> arr);
 template Item::FieldRef &Item::FieldRef::operator=(span<double>);
 
 }  // namespace reindexer
-   // namespace reindexer

@@ -58,6 +58,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				data.maxPreselectSize = nsNode["max_preselect_size"].As<int64_t>(data.maxPreselectSize, 0);
 				data.maxPreselectPart = nsNode["max_preselect_part"].As<double>(data.maxPreselectPart, 0.0, 1.0);
 				data.idxUpdatesCountingMode = nsNode["index_updates_counting_mode"].As<bool>(data.idxUpdatesCountingMode);
+				data.syncStorageFlushLimit = nsNode["sync_storage_flush_limit"].As<int>(data.syncStorageFlushLimit, 0);
 				namespacesData_.emplace(nsNode["namespace"].As<string>(), std::move(data));
 			}
 			auto it = handlers_.find(NamespaceDataConf);

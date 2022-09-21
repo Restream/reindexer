@@ -88,7 +88,7 @@ void NetworkMonitor::sendStatusRequests() {
 							   if (e.ok()) {
 								   succeed_.emplace(idx);
 							   }
-							   if (isStatusesReady()) {
+							   if (areStatusesReady()) {
 								   lck.unlock();
 								   cv_.notify_all();
 							   }
@@ -101,11 +101,11 @@ void NetworkMonitor::sendStatusRequests() {
 	}
 }
 
-Error NetworkMonitor::awaitStatuses(std::unique_lock<std::mutex>& lck, const InternalRdxContext& ctx) {
+Error NetworkMonitor::awaitStatuses(std::unique_lock<std::recursive_mutex>& lck, const InternalRdxContext& ctx) {
 	if (inProgress_) {
 		assert(ctx.DeadlineCtx());
 		cv_.wait(
-			lck, [this] { return isStatusesReady(); }, *ctx.DeadlineCtx());
+			lck, [this] { return areStatusesReady(); }, *ctx.DeadlineCtx());
 		inProgress_ = false;
 	}
 	if (hostsConnections_->size() == succeed_.size()) {
@@ -115,7 +115,7 @@ Error NetworkMonitor::awaitStatuses(std::unique_lock<std::mutex>& lck, const Int
 	return Error(errTimeout, "Shards are not connected yet");
 }
 
-bool NetworkMonitor::isStatusesReady() const noexcept {
+bool NetworkMonitor::areStatusesReady() const noexcept {
 	return hostsConnections_->size() == succeed_.size() || connectionsTotal_ == executed_;
 }
 

@@ -13,7 +13,7 @@ namespace reindexer {
 using std::string;
 
 struct l_string_hdr {
-	int length;
+	uint32_t length;
 	char data[1];
 };
 
@@ -169,7 +169,7 @@ struct p_string {
 
 	key_string getKeyString() const {
 		assertrx(type() == tagKeyString);
-		auto *str = reinterpret_cast<intrusive_atomic_rc_wrapper<base_key_string> *>(const_cast<void *>(ptr()));
+		auto str = reinterpret_cast<base_key_string *>(const_cast<void *>(ptr()));
 		return key_string(str);
 	}
 

@@ -32,7 +32,7 @@ public:
 	void Reserve(size_t size);
 	size_t Size();
 	bool NeedArea();
-	bool PrepareAreas(fast_hash_map<string, int> &fields, const string &name);
+	bool PrepareAreas(const fast_hash_map<std::string, int> &fields, const string &name);
 
 	void SetData(Data::Ptr data);
 	Data::Ptr GetData();
@@ -40,5 +40,5 @@ public:
 private:
 	Data::Ptr data_;
 
-};  // namespace reindexer
+};	// namespace reindexer
 }  // namespace reindexer

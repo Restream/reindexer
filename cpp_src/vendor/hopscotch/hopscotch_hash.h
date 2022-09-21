@@ -1126,6 +1126,11 @@ public:
 		return m_overflow_elements.key_comp();
 	}
 
+	size_type allocated_mem_size() {
+		return m_buckets.capacity() * sizeof(hopscotch_bucket) +
+			   m_overflow_elements.size() * sizeof(typename overflow_container_type::value_type);
+	}
+
 private:
 	template <class K>
 	std::size_t hash_key(const K& key) const {

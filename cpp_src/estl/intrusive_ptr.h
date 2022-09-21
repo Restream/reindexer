@@ -155,21 +155,21 @@ template <typename T>
 class intrusive_atomic_rc_wrapper;
 
 template <typename T>
-inline void intrusive_ptr_add_ref(intrusive_atomic_rc_wrapper<T> *x) noexcept {
+inline static void intrusive_ptr_add_ref(intrusive_atomic_rc_wrapper<T> *x) noexcept {
 	if (x) {
 		x->refcount.fetch_add(1, std::memory_order_relaxed);
 	}
 }
 
 template <typename T>
-inline void intrusive_ptr_release(intrusive_atomic_rc_wrapper<T> *x) noexcept {
+inline static void intrusive_ptr_release(intrusive_atomic_rc_wrapper<T> *x) noexcept {
 	if (x && x->refcount.fetch_sub(1, std::memory_order_acq_rel) == 1) {
 		delete x;
 	}
 }
 
 template <typename T>
-inline bool intrusive_ptr_is_unique(intrusive_atomic_rc_wrapper<T> *x) noexcept {
+inline static bool intrusive_ptr_is_unique(intrusive_atomic_rc_wrapper<T> *x) noexcept {
 	// std::memory_order_acquire - is essential for COW constructions based on intrusive_ptr
 	return !x || (x->refcount.load(std::memory_order_acquire) == 1);
 }

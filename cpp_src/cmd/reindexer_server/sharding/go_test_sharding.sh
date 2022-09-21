@@ -79,7 +79,7 @@ do
 	shard=$((shard+1))
 done	
 
-gotestsum --junitfile sharding_tests.xml ./test/sharding  -v -run TestSharding -dsn cproto://127.0.0.1:6000/sharding_db -tags sharding_test -count=1
+gotestsum --junitfile sharding_tests.xml ./test/sharding/... -run "TestShardingIDs|TestShardingBuiltin" -dsn cproto://127.0.0.1:6000/sharding_db -tags sharding_test -count=1
 
 # Kill servers
 node=0

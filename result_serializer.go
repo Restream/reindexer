@@ -107,7 +107,7 @@ func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayload
 func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
 
 	v.shardingConfigVersion = -1
-	v.shardId = -2
+	v.shardId = bindings.ShardingProxyOff
 	for {
 		tag := s.GetVarUInt()
 		if tag == bindings.QueryResultEnd {

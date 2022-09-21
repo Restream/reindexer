@@ -14,6 +14,7 @@ const std::chrono::seconds ClusterizationApi::kMaxElectionsTime = std::chrono::s
 const std::string ClusterizationApi::kIdField = "id";
 const std::string ClusterizationApi::kStringField = "string";
 const std::string ClusterizationApi::kIntField = "int";
+const std::string ClusterizationApi::kFTField = "ft_str";
 
 void ClusterizationApi::SetUp() {
 	const auto def = GetDefaults();
@@ -105,6 +106,7 @@ void ClusterizationApi::Cluster::InitNs(size_t id, std::string_view nsName) {
 												   IndexDeclaration{kIdField.c_str(), "hash", "int", IndexOpts().PK(), 0},
 												   IndexDeclaration{kIntField.c_str(), "tree", "int", IndexOpts(), 0},
 												   IndexDeclaration{kStringField.c_str(), "hash", "string", IndexOpts(), 0},
+												   IndexDeclaration{kFTField.c_str(), "text", "string", IndexOpts(), 0},
 											   });
 }
 
@@ -373,6 +375,7 @@ void ClusterizationApi::Cluster::FillItem(BaseApi& api, BaseApi::ItemType& item,
 					   "\"id\":" + std::to_string(id)+",\n"
 					   "\"int\":" + std::to_string(rand())+",\n"
 					   "\"string\":\"" + api.RandString()+"\"\n"
+					   "\"ft_str\":\"" + api.RandString()+"\"\n"
 					   "}";
 	// clang-format on
 	Error err = item.FromJSON(json);

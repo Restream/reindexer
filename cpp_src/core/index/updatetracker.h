@@ -27,7 +27,9 @@ public:
 		}
 	};
 
-	using key_type = typename T::key_type;
+	using key_type = typename std::conditional<
+		std::is_same_v<typename T::key_type, PayloadValueWithHash>, PayloadValue,
+		typename std::conditional<std::is_same_v<typename T::key_type, key_string_with_hash>, key_string, typename T::key_type>::type>::type;
 	using hash_map =
 		typename std::conditional<std::is_same<key_type, PayloadValue>::value || std::is_same<key_type, key_string>::value,
 								  fast_hash_set<key_type, hash_ptr<key_type>, equal_ptr<key_type>>, fast_hash_set<key_type>>::type;
@@ -57,7 +59,7 @@ public:
 	}
 
 	void commitUpdated(T &idx_map) {
-		for (auto valIt : updated_) {
+		for (const auto &valIt : updated_) {
 			auto keyIt = idx_map.find(valIt);
 			assertrx(keyIt != idx_map.end());
 			keyIt->second.Unsorted().Commit();
@@ -83,12 +85,14 @@ public:
 	const hash_map &updated() const { return updated_; }
 	uint32_t updatesSize() const noexcept { return updatesSize_.load(std::memory_order_relaxed); }
 	uint32_t updatesBuckets() const noexcept { return updatesBuckets_.load(std::memory_order_relaxed); }
+	uint32_t GetMemStat() const noexcept { return allocatedMem_.load(std::memory_order_relaxed); }
 	void enableCountingMode(bool val) noexcept {
 		if (!simpleCounting_ && val) {
 			hash_map m;
 			std::swap(m, updated_);
 			updatesSize_.store(0, std::memory_order_relaxed);
 			updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
+			allocatedMem_.store(updated_.allocated_mem_size(), std::memory_order_relaxed);
 		} else if (simpleCounting_ && !val) {
 			completeUpdate_ = true;
 		}
@@ -100,22 +104,26 @@ protected:
 		updated_.erase(k->first);
 		updatesSize_.store(updated_.size(), std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
+		allocatedMem_.store(updated_.allocated_mem_size(), std::memory_order_relaxed);
 	}
 	void emplaceUpdate(typename T::iterator &k) {
 		updated_.emplace(k->first);
 		updatesSize_.store(updated_.size(), std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
+		allocatedMem_.store(updated_.allocated_mem_size(), std::memory_order_relaxed);
 	}
 	void clearUpdates() {
 		updated_.clear();
 		updatesSize_.store(0, std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
+		allocatedMem_.store(updated_.allocated_mem_size(), std::memory_order_relaxed);
 	}
 
 	// Set of updated keys. Depends on safe/unsafe indexes' map iterator implementation.
 	hash_map updated_;
 	std::atomic<uint32_t> updatesSize_ = {0};
 	std::atomic<uint32_t> updatesBuckets_ = {0};
+	std::atomic<uint64_t> allocatedMem_ = {0};
 
 	// Becomes true, when updates set is to large. In this case indexes must be fully scanned to optimize
 	bool completeUpdate_ = false;

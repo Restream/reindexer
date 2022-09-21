@@ -37,6 +37,7 @@ struct RPCClientData : public cproto::ClientData {
 	AuthContext auth;
 	int connID;
 	SemVersion rxVersion;
+	BindingCapabilities caps;
 };
 
 class RPCServer {
@@ -59,7 +60,7 @@ public:
 	Error Ping(cproto::Context &ctx);
 	Error Login(cproto::Context &ctx, p_string login, p_string password, p_string db, cproto::optional<bool> createDBIfMissing,
 				cproto::optional<bool> checkClusterID, cproto::optional<int> expectedClusterID, cproto::optional<p_string> clientRxVersion,
-				cproto::optional<p_string> appName);
+				cproto::optional<p_string> appName, cproto::optional<int64_t> bindingCaps);
 	Error OpenDatabase(cproto::Context &ctx, p_string db, cproto::optional<bool> createDBIfMissing);
 	Error CloseDatabase(cproto::Context &ctx);
 	Error DropDatabase(cproto::Context &ctx);

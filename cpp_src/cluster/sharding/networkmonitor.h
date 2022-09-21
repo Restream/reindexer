@@ -25,12 +25,12 @@ public:
 
 private:
 	void sendStatusRequests();
-	Error awaitStatuses(std::unique_lock<std::mutex>& lck, const InternalRdxContext& ctx);
-	bool isStatusesReady() const noexcept;
+	Error awaitStatuses(std::unique_lock<std::recursive_mutex>& lck, const InternalRdxContext& ctx);
+	bool areStatusesReady() const noexcept;
 
 	bool inProgress_ = false;
 	bool terminated_ = false;
-	std::mutex mtx_;
+	std::recursive_mutex mtx_;
 	contexted_cond_var cv_;
 	fast_hash_set<int> succeed_;
 	size_t executed_ = 0;

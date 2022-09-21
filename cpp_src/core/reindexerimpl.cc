@@ -45,13 +45,33 @@ constexpr char kReplicationConfigType[] = "replication";
 constexpr char kAsyncReplicationConfigType[] = "async_replication";
 constexpr char kShardingConfigType[] = "sharding";
 
+constexpr unsigned kStorageLoadingThreads = 6;
+
+static unsigned ConcurrentNamespaceLoaders() noexcept {
+	const auto hwConc = std::thread::hardware_concurrency();
+	if (hwConc <= 4) {
+		return 1;
+	} else if (hwConc < 8) {  // '<' is not a typo
+		return 2;
+	} else if (hwConc <= 16) {
+		return 3;
+	} else if (hwConc <= 24) {
+		return 4;
+	} else if (hwConc < 32) {  // '<' is not a typo
+		return 5;
+	} else if (hwConc <= 42) {
+		return 6;
+	}
+	return 10;
+}
+
 ReindexerImpl::ReindexerImpl(ReindexerConfig cfg)
 	: clusterizator_(new cluster::Clusterizator(*this, cfg.maxReplUpdatesSize)),
 	  nsLock_(*clusterizator_, *this),
 	  storageType_(StorageType::LevelDB),
 	  connected_(false),
 	  config_(std::move(cfg)) {
-	stopBackgroundThread_ = false;
+	stopBackgroundThreads_ = false;
 	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfiligConfigLoad, this));
 
 	configWatchers_.emplace_back(
@@ -66,6 +86,7 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg)
 		});
 
 	backgroundThread_ = std::thread([this]() { this->backgroundRoutine(); });
+	storageFlushingThread_ = std::thread([this]() { this->storageFlushingRoutine(); });
 	std::call_once(initTerminateHandlerFlag, []() {
 		debug::terminate_handler_init();
 		debug::backtrace_set_crash_query_reporter(&reindexer::PrintCrashedQuery);
@@ -73,9 +94,10 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg)
 }
 
 ReindexerImpl::~ReindexerImpl() {
-	stopBackgroundThread_ = true;
+	stopBackgroundThreads_ = true;
 	clusterizator_->Stop();
 	backgroundThread_.join();
+	storageFlushingThread_.join();
 }
 
 Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlaceholderCheck, const RdxContext& ctx) {
@@ -203,7 +225,7 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 	if (!err.ok()) return err;
 
 	if (enableStorage && opts.IsOpenNamespaces()) {
-		size_t maxLoadWorkers = std::min(std::thread::hardware_concurrency(), 8u);
+		const size_t maxLoadWorkers = ConcurrentNamespaceLoaders();
 		std::unique_ptr<std::thread[]> thrs(new std::thread[maxLoadWorkers]);
 		std::atomic_flag hasNsErrors{false};
 		std::atomic<int64_t> maxNsVersion = -1;
@@ -316,7 +338,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 		}
 		ns->OnConfigUpdated(configProvider_, rdxCtx);
 		if (readyToLoadStorage) {
-			ns->LoadFromStorage(rdxCtx);
+			ns->LoadFromStorage(kStorageLoadingThreads, rdxCtx);
 		}
 		if (!rdxCtx.GetOriginLSN().isEmpty()) {
 			// TODO: It may be a simple replica
@@ -484,7 +506,7 @@ Error ReindexerImpl::openNamespace(std::string_view name, bool skipNameCheck, co
 			auto opts = storageOpts;
 			ns->EnableStorage(storagePath_, opts.Autorepair(autorepairEnabled_), storageType_, rdxCtx);
 			ns->OnConfigUpdated(configProvider_, rdxCtx);
-			ns->LoadFromStorage(rdxCtx);
+			ns->LoadFromStorage(kStorageLoadingThreads, rdxCtx);
 		} else {
 			ns->OnConfigUpdated(configProvider_, rdxCtx);
 		}
@@ -1125,7 +1147,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, LocalQuery
 			jns.reset();
 		}
 		joinedSelectors.emplace_back(jq.joinType, ns, std::move(jns), std::move(joinRes), std::move(jItemQ), result, jq, preResult,
-									 joinedFieldIdx, func, joinedSelectorsCount, rdxCtx);
+									 joinedFieldIdx, func, joinedSelectorsCount, false, rdxCtx);
 		ThrowOnCancel(rdxCtx);
 	}
 	return joinedSelectors;
@@ -1376,16 +1398,16 @@ Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOp
 
 void ReindexerImpl::backgroundRoutine() {
 	static const RdxContext dummyCtx;
-	auto nsFlush = [&]() {
+	auto nsBackground = [&]() {
 		auto nsarray = getNamespacesNames(dummyCtx);
 		for (auto name : nsarray) {
 			try {
 				auto ns = getNamespace(name, dummyCtx);
 				ns->BackgroundRoutine(nullptr);
 			} catch (Error err) {
-				logPrintf(LogWarning, "flusherThread() failed with ns '%s': %s", name, err.what());
+				logPrintf(LogWarning, "backgroundRoutine() failed with ns '%s': %s", name, err.what());
 			} catch (...) {
-				logPrintf(LogWarning, "flusherThread() failed with ns '%s': unknow exceptions", name);
+				logPrintf(LogWarning, "backgroundRoutine() failed with ns '%s': unknown exception", name);
 			}
 		}
 		for (auto& watcher : configWatchers_) {
@@ -1393,7 +1415,31 @@ void ReindexerImpl::backgroundRoutine() {
 		}
 	};
 
-	while (!stopBackgroundThread_) {
+	while (!stopBackgroundThreads_) {
+		nsBackground();
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+	}
+
+	nsBackground();
+}
+
+void ReindexerImpl::storageFlushingRoutine() {
+	static const RdxContext dummyCtx;
+	auto nsFlush = [&]() {
+		auto nsarray = getNamespacesNames(dummyCtx);
+		for (auto name : nsarray) {
+			try {
+				auto ns = getNamespace(name, dummyCtx);
+				ns->StorageFlushingRoutine();
+			} catch (Error err) {
+				logPrintf(LogWarning, "storageFlushingRoutine() failed with ns '%s': %s", name, err.what());
+			} catch (...) {
+				logPrintf(LogWarning, "storageFlushingRoutine() failed with ns '%s': unknown exception", name);
+			}
+		}
+	};
+
+	while (!stopBackgroundThreads_) {
 		nsFlush();
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
@@ -1620,10 +1666,10 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 					}
 				}
 			}
-			if (replicationEnabled_ && !stopBackgroundThread_ && clusterizator_->IsExpectingAsyncReplStartup()) {
+			if (replicationEnabled_ && !stopBackgroundThreads_ && clusterizator_->IsExpectingAsyncReplStartup()) {
 				if (Error err = clusterizator_->StartAsyncRepl()) throw err;
 			}
-			if (replicationEnabled_ && !stopBackgroundThread_ && clusterizator_->IsExpectingClusterStartup()) {
+			if (replicationEnabled_ && !stopBackgroundThreads_ && clusterizator_->IsExpectingClusterStartup()) {
 				if (Error err = clusterizator_->StartClusterRepl()) throw err;
 			}
 		} catch (gason::Exception& e) {

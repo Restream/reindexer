@@ -56,14 +56,18 @@ func TestMain(m *testing.M) {
 		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression(), reindexer.WithAppName("RxTestInstance")}
 	}
 
-	DB = NewReindexWrapper(*dsn, cluster, opts...)
+	DB = NewReindexWrapper(*dsn, cluster, 0, opts...)
 	DBD = &DB.Reindexer
 	if cluster != nil {
-		dsnFollower, err := GetNodeForRole(DBD, "follower")
+		dsnFollower, _, err := GetNodeForRole(DBD, "follower")
 		if err != nil {
 			panic(err)
 		}
-		DB = NewReindexWrapper(dsnFollower, cluster, opts...)
+		_, leaderServeID, err := GetNodeForRole(DBD, "leader")
+		if err != nil {
+			panic(err)
+		}
+		DB = NewReindexWrapper(dsnFollower, cluster, leaderServeID, opts...)
 		DBD = &DB.Reindexer
 	}
 	if err = DB.Status().Err; err != nil {

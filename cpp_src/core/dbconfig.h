@@ -46,6 +46,7 @@ struct NamespaceConfigData {
 	int64_t maxPreselectSize = 1000;
 	double maxPreselectPart = 0.1;
 	bool idxUpdatesCountingMode = false;
+	int syncStorageFlushLimit = 25000;
 };
 
 struct ReplicationConfigData {

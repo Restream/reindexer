@@ -134,6 +134,7 @@ func TestForceSortOrder(t *testing.T) {
 	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("phone", false, "444444", "111111", "333333", "222222"))
 	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 11, 3, 16, 2, 15, 1))
 	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 18, 17, 16, 15))
+	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id", false, 18, 17, 16, 15).Sort("year", false))
 	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Where("phone", reindexer.SET, []string{"111111", "222222"}).Sort("id", true, 1, 6, 2, 5).Offset(1).Limit(3))
 
 	execAndVerifyForceSortOrderQuery(t, newTestQuery(DB, testNs).Sort("id+phone", false,
@@ -142,4 +143,8 @@ func TestForceSortOrder(t *testing.T) {
 		[]interface{}{5, "222222"},
 	))
 
+	it := newTestQuery(DB, testNs).Sort("id", false, 7, 8, 6, 5).Sort("year", false, 2007, 2003, 2005, 2002).Exec(t)
+	assert.Error(t, it.Error())
+	it = newTestQuery(DB, testNs).Sort("id", false).Sort("year", false, 2007, 2003, 2005, 2002).Exec(t)
+	assert.Error(t, it.Error())
 }

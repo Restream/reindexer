@@ -228,7 +228,7 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 
 			case Sort::Values:
 				if (!q.sortingEntries_.empty()) {
-					throw Error(errParseJson, "Allowed only first forced sort order");
+					throw Error(errParseJson, "Forced sort order is allowed for the first sorting entry only");
 				}
 				parseValues(v, q.forcedSortOrder_);
 				break;

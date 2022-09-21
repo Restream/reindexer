@@ -36,7 +36,7 @@ public:
 		Error GetCJSON(WrSerializer& wrser, bool withHdrLen = true);
 		Error GetMsgPack(WrSerializer& wrser, bool withHdrLen = true);
 		Item GetItem();
-		int64_t GetLSN();
+		lsn_t GetLSN();
 		bool IsRaw();
 		std::string_view GetRaw();
 		Iterator& operator++();
@@ -59,8 +59,8 @@ public:
 	int TotalCount() const { return queryParams_.totalcount; }
 	bool HaveRank() const { return queryParams_.flags & kResultsWithRank; }
 	bool NeedOutputRank() const { return queryParams_.flags & kResultsNeedOutputRank; }
-	const string& GetExplainResults() const { return queryParams_.explainResults; }
-	const vector<AggregationResult>& GetAggregationResults() const { return queryParams_.aggResults; }
+	const string& GetExplainResults() const { return *queryParams_.explainResults; }
+	const vector<AggregationResult>& GetAggregationResults() const { return *queryParams_.aggResults; }
 	Error Status() { return status_; }
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return queryParams_.flags & kResultsWithItemID; }

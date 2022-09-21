@@ -201,7 +201,7 @@ private:
 		}
 	}
 	void onRefDestroyed(uint32_t id) {
-		[[maybe_unused]] const auto allocated = allocated_.load(std::memory_order_relaxed);
+		[[maybe_unused]] const auto allocated = allocated_.load(std::memory_order_acquire);
 		assertf(id < allocated, "id: %d, allocated: %d", id, allocated);
 		auto& qrs = qrs_[id];
 		UID curUID = qrs.uid.load(std::memory_order_acquire);
@@ -238,15 +238,13 @@ private:
 			if (!freeIDP.second) {
 				freeIDP.first = uint32_t(qrs_.size());
 				qrs_.emplace_back();
+				allocated_.store(qrs_.size(), std::memory_order_release);
 			}
 		}
 
 		auto& qrs = qrs_[freeIDP.first];
 		qrs.lastAccessTime.store(now(), std::memory_order_relaxed);
 		qrs.uid.store(UID(uid, true), std::memory_order_release);
-		if (!freeIDP.second) {
-			allocated_.fetch_add(1, std::memory_order_release);
-		}
 		qrs.qr.setFlags(flags);
 		return Ref(freeIDP.first, qrs.qr, *this);
 	}

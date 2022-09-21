@@ -107,6 +107,35 @@ func (so *ConnectOptions) StorageType(value uint16) *ConnectOptions {
 	return so
 }
 
+// Capabilties of chosen binding. This value will affect some of the serverside functions and serialization logic
+type BindingCapabilities struct {
+	Value int64
+}
+
+func DefaultBindingCapabilities() *BindingCapabilities {
+	return &BindingCapabilities{Value: 0}
+}
+
+// Enable Query results idle timeouts support
+func (bc *BindingCapabilities) WithQrIdleTimeouts(value bool) *BindingCapabilities {
+	if value {
+		bc.Value |= int64(BindingCapabilityQrIdleTimeouts)
+	} else {
+		bc.Value &= ^int64(BindingCapabilityQrIdleTimeouts)
+	}
+	return bc
+}
+
+// Enable shard IDs support
+func (bc *BindingCapabilities) WithResultsWithShardIDs(value bool) *BindingCapabilities {
+	if value {
+		bc.Value |= int64(BindingCapabilityResultsWithShardIDs)
+	} else {
+		bc.Value &= ^int64(BindingCapabilityResultsWithShardIDs)
+	}
+	return bc
+}
+
 // go interface to reindexer_c.h interface
 type RawBuffer interface {
 	GetBuf() []byte

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <limits>
 #include "core/queryresults/queryresults.h"
+#include "estl/overloaded.h"
 
 namespace reindexer {
 
@@ -158,6 +159,12 @@ void Aggregator::MultifieldComparator::insertField(size_t toIdx, const FieldsSet
 	}
 }
 
+struct Aggregator::MultifieldOrderedMap : public btree::btree_map<PayloadValue, int, Aggregator::MultifieldComparator> {
+	using Base = btree::btree_map<PayloadValue, int, MultifieldComparator>;
+	using Base::Base;
+	MultifieldOrderedMap() = delete;
+};
+
 Aggregator::SinglefieldComparator::SinglefieldComparator(const h_vector<SortingEntry, 1> &sortingEntries)
 	: valueCompareDirection_(Asc), haveCompareByCount(false) {
 	bool haveCompareByValue = false;
@@ -207,9 +214,17 @@ Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, 
 	switch (aggType_) {
 		case AggFacet:
 			if (fields_.size() == 1) {
-				singlefieldFacets_.reset(new SinglefieldMap{SinglefieldComparator{sort}});
+				if (sort.empty()) {
+					facets_ = std::make_unique<Facets>(SinglefieldUnorderedMap{});
+				} else {
+					facets_ = std::make_unique<Facets>(SinglefieldOrderedMap{SinglefieldComparator{sort}});
+				}
 			} else {
-				multifieldFacets_.reset(new MultifieldMap{MultifieldComparator{sort, fields_, payloadType_}});
+				if (sort.empty()) {
+					facets_ = std::make_unique<Facets>(MultifieldUnorderedMap{payloadType_, fields_});
+				} else {
+					facets_ = std::make_unique<Facets>(MultifieldOrderedMap{MultifieldComparator{sort, fields_, payloadType_}});
+				}
 			}
 			break;
 		case AggDistinct:
@@ -230,7 +245,8 @@ Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, 
 }
 
 template <typename FacetMap, typename... Args>
-static void fillFacetResult(std::vector<FacetResult> &result, const FacetMap &facets, size_t offset, size_t limit, const Args &...args) {
+static void fillOrderedFacetResult(std::vector<FacetResult> &result, const FacetMap &facets, size_t offset, size_t limit,
+								   const Args &...args) {
 	if (offset >= static_cast<size_t>(facets.size())) return;
 	result.reserve(std::min(limit, facets.size() - offset));
 	const auto &comparator = facets.key_comp();
@@ -250,6 +266,17 @@ static void fillFacetResult(std::vector<FacetResult> &result, const FacetMap &fa
 	}
 }
 
+template <typename FacetMap, typename... Args>
+static void fillUnorderedFacetResult(std::vector<FacetResult> &result, const FacetMap &facets, size_t offset, size_t limit,
+									 const Args &...args) {
+	if (offset >= static_cast<size_t>(facets.size())) return;
+	result.reserve(std::min(limit, facets.size() - offset));
+	auto begin = facets.begin();
+	auto end = facets.end();
+	moveFrames(begin, end, facets.size(), offset, limit);
+	copy(begin, end, result, args...);
+}
+
 AggregationResult Aggregator::GetResult() const {
 	AggregationResult ret;
 	ret.fields = names_;
@@ -265,12 +292,15 @@ AggregationResult Aggregator::GetResult() const {
 			ret.value = result_;
 			break;
 		case AggFacet:
-			if (multifieldFacets_) {
-				fillFacetResult(ret.facets, *multifieldFacets_, offset_, limit_, fields_, payloadType_);
-			} else {
-				assertrx(singlefieldFacets_);
-				fillFacetResult(ret.facets, *singlefieldFacets_, offset_, limit_);
-			}
+			std::visit(overloaded{[&](const SinglefieldOrderedMap &fm) { fillOrderedFacetResult(ret.facets, fm, offset_, limit_); },
+								  [&](const SinglefieldUnorderedMap &fm) { fillUnorderedFacetResult(ret.facets, fm, offset_, limit_); },
+								  [&](const MultifieldOrderedMap &fm) {
+									  fillOrderedFacetResult(ret.facets, fm, offset_, limit_, fields_, payloadType_);
+								  },
+								  [&](const MultifieldUnorderedMap &fm) {
+									  fillUnorderedFacetResult(ret.facets, fm, offset_, limit_, fields_, payloadType_);
+								  }},
+					   *facets_);
 			break;
 		case AggDistinct:
 			assertrx(distincts_);
@@ -288,9 +318,19 @@ AggregationResult Aggregator::GetResult() const {
 }
 
 void Aggregator::Aggregate(const PayloadValue &data) {
-	if (aggType_ == AggFacet && multifieldFacets_) {
-		++(*multifieldFacets_)[data];
-		return;
+	if (aggType_ == AggFacet) {
+		const bool done =
+			std::visit(overloaded{[&data](MultifieldUnorderedMap &fm) {
+									  ++fm[data];
+									  return true;
+								  },
+								  [&data](MultifieldOrderedMap &fm) {
+									  ++fm[data];
+									  return true;
+								  },
+								  [](SinglefieldOrderedMap &) { return false; }, [](SinglefieldUnorderedMap &) { return false; }},
+					   *facets_);
+		if (done) return;
 	}
 	if (aggType_ == AggDistinct && compositeIndexFields_) {
 		aggregate(Variant(data));
@@ -338,8 +378,9 @@ void Aggregator::aggregate(const Variant &v) {
 			result_ = std::max(v.As<double>(), result_);
 			break;
 		case AggFacet:
-			assertrx(singlefieldFacets_);
-			++(*singlefieldFacets_)[v];
+			std::visit(overloaded{[&v](SinglefieldUnorderedMap &fm) { ++fm[v]; }, [&v](SinglefieldOrderedMap &fm) { ++fm[v]; },
+								  [](MultifieldUnorderedMap &) { assertrx(0); }, [](MultifieldOrderedMap &) { assertrx(0); }},
+					   *facets_);
 			break;
 		case AggDistinct:
 			assertrx(distincts_);
@@ -349,7 +390,7 @@ void Aggregator::aggregate(const Variant &v) {
 		case AggCount:
 		case AggCountCached:
 			break;
-	};
+	}
 }
 
 }  // namespace reindexer

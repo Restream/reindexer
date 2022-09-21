@@ -153,16 +153,16 @@ void PayloadTypeImpl::deserialize(Serializer &ser) {
 
 	ser.GetVarUint();
 
-	int count = ser.GetVarUint();
+	unsigned count = ser.GetVarUint();
 
-	for (int i = 0; i < count; i++) {
+	for (unsigned i = 0; i < count; ++i) {
 		KeyValueType t = KeyValueType(ser.GetVarUint());
 		string name(ser.GetVString());
 		h_vector<string, 0> jsonPaths;
 		int offset = ser.GetVarUint();
 		int elemSizeof = ser.GetVarUint();
 		bool isArray = ser.GetVarUint();
-		int jsonPathsCount = ser.GetVarUint();
+		unsigned jsonPathsCount = ser.GetVarUint();
 
 		while (jsonPathsCount--) jsonPaths.push_back(string(ser.GetVString()));
 

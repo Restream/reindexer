@@ -25,7 +25,8 @@ class SyncCoroReindexer;
 
 class SyncCoroQueryResults {
 public:
-	SyncCoroQueryResults(int fetchFlags = 0) noexcept : results_(fetchFlags) {}
+	SyncCoroQueryResults(int fetchFlags = 0, int fetchAmount = 0, bool lazyMode = false) noexcept
+		: results_(fetchFlags, fetchAmount, lazyMode) {}
 	SyncCoroQueryResults(const SyncCoroQueryResults&) = delete;
 	SyncCoroQueryResults(SyncCoroQueryResults&&) = default;
 	SyncCoroQueryResults& operator=(const SyncCoroQueryResults&) = delete;
@@ -63,8 +64,8 @@ public:
 	int TotalCount() const noexcept { return results_.TotalCount(); }
 	bool HaveRank() const noexcept { return results_.HaveRank(); }
 	bool NeedOutputRank() const noexcept { return results_.NeedOutputRank(); }
-	const string& GetExplainResults() const noexcept { return results_.GetExplainResults(); }
-	const vector<AggregationResult>& GetAggregationResults() const noexcept { return results_.GetAggregationResults(); }
+	const string& GetExplainResults() { return results_.GetExplainResults(); }
+	const vector<AggregationResult>& GetAggregationResults() { return results_.GetAggregationResults(); }
 	Error Status() const noexcept { return results_.Status(); }
 	h_vector<std::string_view, 1> GetNamespaces() const { return results_.GetNamespaces(); }
 	size_t GetNamespacesCount() const noexcept { return results_.GetNamespacesCount(); }
@@ -76,9 +77,14 @@ public:
 	PayloadType GetPayloadType(int nsid) const { return results_.GetPayloadType(nsid); }
 	PayloadType GetPayloadType(std::string_view ns) const { return results_.GetPayloadType(ns); }
 
+	int GetFormat() const noexcept { return results_.GetFormat(); }
+	int GetFlags() const noexcept { return results_.GetFlags(); }
+	bool IsInLazyMode() const noexcept { return results_.IsInLazyMode(); }
 	bool IsJSON() const noexcept { return results_.IsJSON(); }
 	bool IsCJSON() const noexcept { return results_.IsCJSON(); }
 	bool HaveJoined() const noexcept { return results_.HaveJoined(); }
+	bool GetRawBuffer(ParsedQrRawBuffer& out) { return results_.GetRawBuffer(out); }
+	void FetchNextResults(int flags, int offset, int limit);
 
 private:
 	friend class SyncCoroReindexer;

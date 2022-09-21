@@ -42,8 +42,8 @@ public:
 	Error Delete(std::string_view nsName, Item &item, const InternalRdxContext &ctx);
 	Error Delete(std::string_view nsName, Item &item, QueryResults &result, const InternalRdxContext &ctx);
 	Error Delete(const Query &query, QueryResults &result, const InternalRdxContext &ctx);
-	Error Select(std::string_view sql, QueryResults &result, const InternalRdxContext &ctx);
-	Error Select(const Query &query, QueryResults &result, const InternalRdxContext &ctx);
+	Error Select(std::string_view sql, QueryResults &result, unsigned proxyFetchLimit, const InternalRdxContext &ctx);
+	Error Select(const Query &query, QueryResults &result, unsigned proxyFetchLimit, const InternalRdxContext &ctx);
 	Error Commit(std::string_view nsName, const InternalRdxContext &ctx);
 	Item NewItem(std::string_view nsName, const InternalRdxContext &ctx);
 
@@ -258,11 +258,13 @@ private:
 	Error modifyItemOnShard(const InternalRdxContext &ctx, const RdxContext &rdxCtx, std::string_view nsName, Item &item,
 							QueryResults &result, const std::function<Error(std::string_view, Item &, LocalQueryResults &)> &&localFn);
 
-	Error executeQueryOnShard(const Query &query, QueryResults &result, const InternalRdxContext &, const RdxContext &,
+	Error executeQueryOnShard(const Query &query, QueryResults &result, unsigned proxyFetchLimit, const InternalRdxContext &,
+							  const RdxContext &,
 							  const std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> && = {}) noexcept;
 	Error executeQueryOnClient(client::SyncCoroReindexer &connection, const Query &q, client::SyncCoroQueryResults &qrClient,
 							   const std::function<void(size_t count, size_t totalCount)> &limitOffsetCalc);
 
 	void calculateNewLimitOfsset(size_t count, size_t totalCount, unsigned &limit, unsigned &offset);
+	void addEmptyLocalQrWithShardID(const Query &query, QueryResults &result);
 };
 }  // namespace reindexer

@@ -19,17 +19,27 @@ struct ResultFetchOpts {
 
 class WrResultSerializer : public WrSerializer {
 public:
-	WrResultSerializer(const ResultFetchOpts& opts = {0, {}, 0, 0});
+	WrResultSerializer(const ResultFetchOpts& opts = {0, {}, 0, 0}) : opts_(opts) { resetUnknownFlags(); }
+	template <unsigned N>
+	WrResultSerializer(uint8_t (&buf)[N], const ResultFetchOpts& opts = {0, {}, 0, 0}) : WrSerializer(buf), opts_(opts) {
+		resetUnknownFlags();
+	}
 
-	bool PutResults(const QueryResults* results, const SemVersion& rxVersion, QueryResults::ProxiedRefsStorage* storage = nullptr);
-	void SetOpts(const ResultFetchOpts& opts) { opts_ = opts; }
+	bool PutResults(QueryResults* results, const BindingCapabilities& caps, QueryResults::ProxiedRefsStorage* storage = nullptr);
+	bool PutResultsRaw(QueryResults* results, std::string_view* rawBufOut = nullptr);
+	void SetOpts(const ResultFetchOpts& opts) noexcept { opts_ = opts; }
+	static bool IsRawResultsSupported(const BindingCapabilities& caps, const QueryResults& results) noexcept {
+		return !results.HaveShardIDs() || caps.HasResultsWithShardIDs();
+	}
 
 private:
-	void putQueryParams(const QueryResults* query);
+	void resetUnknownFlags() noexcept;
+	void putQueryParams(QueryResults* query);
 	template <typename ItT>
-	void putItemParams(ItT& it, int shardId, QueryResults::ProxiedRefsStorage* storage);
-	void putExtraParams(const QueryResults* query);
-	void putPayloadType(const QueryResults* results, int nsId);
+	void putItemParams(ItT& it, int shardId, QueryResults::ProxiedRefsStorage* storage, const QueryResults* result);
+	void putExtraParams(QueryResults* query);
+	static void putPayloadTypes(WrSerializer& ser, const QueryResults* results, const ResultFetchOpts& opts, int cnt, int totalCnt);
+	std::pair<int, int> getPtUpdatesCount(const QueryResults* results);
 	ResultFetchOpts opts_;
 };
 

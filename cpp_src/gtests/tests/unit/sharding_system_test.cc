@@ -233,6 +233,7 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 	InitShardingConfig cfg;
 	cfg.rowsInTableOnShard = 0;
 	cfg.additionalNss = {{kNewNs, false}};
+	cfg.nodesInCluster = 1;
 	Init(std::move(cfg));
 
 	std::mutex mtx;
@@ -262,7 +263,7 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 	ready = true;
 	lck.unlock();
 	cv.notify_all();
-	std::this_thread::yield();
+	std::this_thread::sleep_for(std::chrono::milliseconds(200));
 	for (size_t shard = 1; shard < kShards; ++shard) {
 		Start(shard);
 	}

@@ -8,6 +8,7 @@ template <typename T>
 class IndexOrdered : public IndexUnordered<T> {
 public:
 	using ref_type = typename IndexUnordered<T>::ref_type;
+	using key_type = typename IndexUnordered<T>::key_type;
 
 	IndexOrdered(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields)
 		: IndexUnordered<T>(idef, std::move(payloadType), fields) {}

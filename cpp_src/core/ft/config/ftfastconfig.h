@@ -12,11 +12,13 @@ struct FtFastFieldConfig {
 	double termLenWeight = 0.3;
 	double positionBoost = 1.0;
 	double positionWeight = 0.1;
+	bool operator==(const FtFastFieldConfig&) const noexcept;
 };
 
 struct FtFastConfig : public BaseFTConfig {
 	FtFastConfig(size_t fieldsCount) : fieldsCfg(fieldsCount ? fieldsCount : 1) {}
-	void parse(std::string_view json, const fast_hash_map<std::string, int> &fields) final;
+	void parse(std::string_view json, const fast_hash_map<std::string, int>& fields) final;
+	std::string GetJson(const fast_hash_map<std::string, int>& fields) const final;
 
 	double distanceBoost = 1.0;
 	double distanceWeight = 0.5;
@@ -34,8 +36,10 @@ struct FtFastConfig : public BaseFTConfig {
 	int maxStepSize = 4000;
 
 	double summationRanksByFieldsRatio = 0.0;
-
+	int maxAreasInDoc = 5;
+	int maxTotalAreasToCache = -1;
 	h_vector<FtFastFieldConfig, 8> fieldsCfg;
+	enum class Optimization { CPU, Memory } optimization = Optimization::Memory;
 	int MaxTyposInWord() const noexcept { return (maxTypos / 2) + (maxTypos % 2); }
 };
 

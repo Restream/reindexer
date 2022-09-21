@@ -58,6 +58,7 @@ Error SyncCoroReindexerImpl::Connect(const string &dsn, const client::ConnectOpt
 
 Error SyncCoroReindexerImpl::Stop() {
 	std::lock_guard lock(workersMtx_);
+	requiresStatusCheck_.store(true, std::memory_order_relaxed);
 	stop();
 	return Error();
 }
@@ -173,8 +174,14 @@ Error SyncCoroReindexerImpl::EnumMeta(std::string_view nsName, vector<string> &k
 Error SyncCoroReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, vector<string> &suggestions) {
 	return sendCommand<Error>(DbCmdGetSqlSuggestions, InternalRdxContext(), std::move(sqlQuery), std::move(pos), suggestions);
 }
+
 Error SyncCoroReindexerImpl::Status(bool forceCheck, const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdStatus, ctx, std::move(forceCheck));
+	// Skip actual status check if latest connection state was 'online'
+	if (requiresStatusCheck_.load(std::memory_order_relaxed)) {
+		return sendCommand<Error>(DbCmdStatus, ctx, std::move(forceCheck));
+	}
+	if (ctx.cmpl()) ctx.cmpl()(Error());
+	return Error();
 }
 
 CoroTransaction SyncCoroReindexerImpl::NewTransaction(std::string_view nsName, const InternalRdxContext &ctx) {
@@ -202,6 +209,11 @@ Error SyncCoroReindexerImpl::RollBackTransaction(SyncCoroTransaction &tr, const 
 
 Error SyncCoroReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2 &state, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdGetReplState, ctx, std::move(nsName), state);
+}
+
+Error SyncCoroReindexerImpl::fetchResults(int flags, int offset, int limit, SyncCoroQueryResults &result) {
+	return sendCommand<true, Error>(result.coroConnection(), DbCmdFetchResultsParametrized, InternalRdxContext(), std::move(flags),
+									std::move(offset), std::move(limit), result.results_);
 }
 
 Error SyncCoroReindexerImpl::fetchResults(int flags, SyncCoroQueryResults &result) {
@@ -287,7 +299,10 @@ void SyncCoroReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error> &isR
 			for (unsigned n = 0; n < conf_.SyncRxCoroCount; ++n) {
 				th.loop.spawn(wg, [this, &conn, &thData]() noexcept { coroInterpreter(conn, thData.connPool, thData.tid); });
 			}
+			const auto obsID = conn.rx.AddConnectionStateObserver(
+				[this](const Error &e) noexcept { requiresStatusCheck_.store(!e.ok(), std::memory_order_relaxed); });
 			wg.wait();
+			conn.rx.RemoveConnectionStateObserver(obsID);
 
 			th.commandAsync.stop();
 			th.closeAsync.stop();
@@ -329,6 +344,7 @@ void SyncCoroReindexerImpl::threadLoopFun(uint32_t tid, std::promise<Error> &isR
 
 	th.loop.run();
 	th.commandAsync.stop();
+	requiresStatusCheck_.store(true, std::memory_order_relaxed);
 }
 
 void SyncCoroReindexerImpl::stop() {
@@ -525,14 +541,23 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 			case DbCmdStatus: {
 				auto *cd = dynamic_cast<DatabaseCommandData<Error, bool> *>(cmd);
 				assert(cd);
-				bool force = std::get<0>(cd->arguments);
-				for (auto &c : pool) {
-					if (force || c.rx.RequiresStatusCheck()) {
-						force = true;
-						break;
+				const bool force = std::get<0>(cd->arguments);
+				if (force) {
+					execCommand(cmd, [&conn, &cmd](bool forceCheck) { return conn.rx.Status(forceCheck, cmd->ctx); });
+				} else {
+					bool rspSent = false;
+					for (auto &c : pool) {
+						if (c.rx.RequiresStatusCheck()) {
+							rspSent = true;
+							// Execute status check on one of the broken connections
+							execCommand(cmd, [&c, &cmd](bool forceCheck) { return c.rx.Status(forceCheck, cmd->ctx); });
+							break;
+						}
+					}
+					if (!rspSent) {
+						cd->ret.set_value(Error());
 					}
 				}
-				execCommand(cmd, [&conn, &cmd](bool forceCheck) { return conn.rx.Status(forceCheck, cmd->ctx); });
 				break;
 			}
 			case DbCmdNewTransaction: {
@@ -556,38 +581,18 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 				auto cd = dynamic_cast<DatabaseCommandData<Error, int, CoroQueryResults &> *>(cmd);
 				assertrx(cd);
 				CoroQueryResults &coroResults = std::get<1>(cd->arguments);
-				if (!coroResults.holdsRemoteData()) {
-					cd->ret.set_value(Error(errLogic, "Client query results does not hold any remote data"));
-					break;
-				}
-				auto ret =
-					coroResults.i_.conn_->Call({reindexer::net::cproto::kCmdFetchResults, coroResults.i_.requestTimeout_, milliseconds(0),
-												lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false, coroResults.i_.sessionTs_},
-											   coroResults.i_.queryID_.main, std::get<0>(cd->arguments),
-											   coroResults.i_.queryParams_.count + coroResults.i_.fetchOffset_, coroResults.i_.fetchAmount_,
-											   coroResults.i_.queryID_.uid);
-				if (!ret.Status().ok()) {
-					cd->ret.set_value(ret.Status());
-					break;
-				}
-				Error err;
-				try {
-					auto args = ret.GetArgs(2);
-
-					coroResults.i_.fetchOffset_ += coroResults.i_.queryParams_.count;
-
-					std::string_view rawResult = p_string(args[0]);
-					ResultSerializer ser(rawResult);
-
-					ser.GetRawQueryParams(coroResults.i_.queryParams_, nullptr);
-
-					coroResults.i_.rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
-				} catch (Error &e) {
-					err = e;
-				}
+				auto err = fetchResultsImpl(std::get<0>(cd->arguments), coroResults.i_.queryParams_.count + coroResults.i_.fetchOffset_,
+											coroResults.i_.fetchAmount_, coroResults);
 
 				cd->ret.set_value(std::move(err));
-
+				break;
+			}
+			case DbCmdFetchResultsParametrized: {
+				auto cd = dynamic_cast<DatabaseCommandData<Error, int, int, int, CoroQueryResults &> *>(cmd);
+				assertrx(cd);
+				auto err = fetchResultsImpl(std::get<0>(cd->arguments), std::get<1>(cd->arguments), std::get<2>(cd->arguments),
+											std::get<3>(cd->arguments));
+				cd->ret.set_value(std::move(err));
 				break;
 			}
 			case DbCmdCloseResults: {
@@ -702,6 +707,26 @@ void SyncCoroReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, C
 		conn.OnRequestDone();
 		commandsQueue_.OnCmdDone(tid);
 	}
+}
+
+Error SyncCoroReindexerImpl::fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults &coroResults) {
+	if (!coroResults.holdsRemoteData()) {
+		return Error(errLogic, "Client query results does not hold any remote data");
+	}
+	auto ret = coroResults.i_.conn_->Call({reindexer::net::cproto::kCmdFetchResults, coroResults.i_.requestTimeout_, milliseconds(0),
+										   lsn_t(), -1, ShardingKeyType::NotSetShard, nullptr, false, coroResults.i_.sessionTs_},
+										  coroResults.i_.queryID_.main, flags, offset, limit, coroResults.i_.queryID_.uid);
+	if (!ret.Status().ok()) {
+		return ret.Status();
+	}
+	Error err;
+	try {
+		coroResults.handleFetchedBuf(ret);
+	} catch (Error &e) {
+		err = e;
+	}
+
+	return err;
 }
 
 SyncCoroReindexerImpl::WorkerThread::WorkerThread(uint32_t _connCount) : connCount(_connCount) {}

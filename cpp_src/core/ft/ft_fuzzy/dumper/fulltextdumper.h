@@ -9,14 +9,6 @@
 #include "core/queryresults/queryresults.h"
 
 namespace search_engine {
-using std::thread;
-using std::atomic_bool;
-using std::condition_variable;
-using std::mutex;
-using std::vector;
-using std::string;
-using std::lock_guard;
-using std::deque;
 
 class FullTextDumper {
 public:
@@ -38,17 +30,17 @@ private:
 
 	~FullTextDumper();
 
-	deque<string> buffer_;
+	std::deque<std::string> buffer_;
 
-	atomic_bool new_info_;
-	atomic_bool stoped_;
-	std::shared_ptr<thread> writer_;
-	condition_variable cv;
-	mutex cv_m;
+	std::atomic_bool new_info_;
+	std::atomic_bool stoped_;
+	std::shared_ptr<std::thread> writer_;
+	std::condition_variable cv;
+	std::mutex cv_m;
 
 	const size_t write_timeout_seconds = 5;
-	const string file_path = "/tmp/reindexer_full_text.log";
-	const string env = "LOG_REINDEXER_FULLTEXT";
+	const std::string file_path = "/tmp/reindexer_full_text.log";
+	const std::string env = "LOG_REINDEXER_FULLTEXT";
 };
 
 }  // namespace search_engine

@@ -154,6 +154,16 @@ void PayloadIface<T>::Set(int field, const VariantArray &keys, bool append) {
 		pos++;
 	}
 }
+
+template <typename T>
+template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
+void PayloadIface<T>::SetSingleElement(int field, const Variant &key) {
+	if (t_.Field(field).IsArray()) {
+		throw Error(errLogic, "Unable to set array field via single field setter");
+	}
+	Field(field).Set(key);
+}
+
 // Set element or array by field index and element index
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
@@ -497,13 +507,12 @@ void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder &dest, bool copy) {
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
 		auto str = *reinterpret_cast<p_string *>((v_->Ptr() + f.Offset()));
-		dest.emplace_back(reinterpret_cast<intrusive_atomic_rc_wrapper<base_key_string> *>(const_cast<string *>(str.getCxxstr())), copy);
+		dest.emplace_back(reinterpret_cast<base_key_string *>(const_cast<string *>(str.getCxxstr())), copy);
 	} else {
 		auto arr = reinterpret_cast<PayloadFieldValue::Array *>(v_->Ptr() + f.Offset());
 		for (int i = 0; i < arr->len; i++) {
 			auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-			dest.emplace_back(reinterpret_cast<intrusive_atomic_rc_wrapper<base_key_string> *>(const_cast<string *>(str.getCxxstr())),
-							  copy);
+			dest.emplace_back(reinterpret_cast<base_key_string *>(const_cast<string *>(str.getCxxstr())), copy);
 		}
 	}
 }
@@ -598,6 +607,7 @@ template class PayloadIface<const PayloadValue>;
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(std::string_view, VariantArray const &, bool);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, VariantArray const &, bool);
 template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, int, const Variant &);
+template void PayloadIface<PayloadValue>::SetSingleElement<PayloadValue, static_cast<void *>(0)>(int, const Variant &);
 
 template PayloadValue PayloadIface<PayloadValue>::CopyTo<PayloadValue, static_cast<void *>(0)>(PayloadType t, bool newFields);
 template PayloadValue PayloadIface<PayloadValue>::CopyWithNewOrUpdatedFields<PayloadValue, static_cast<void *>(0)>(PayloadType t);

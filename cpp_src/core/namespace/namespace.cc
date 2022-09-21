@@ -11,39 +11,48 @@ namespace reindexer {
 #define handleInvalidation(Fn) nsFuncWrapper<decltype(&Fn), &Fn>
 
 void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& result, const NsContext& ctx) {
-	auto ns = atomicLoadMainNs();
-	bool enablePerfCounters = ns->enablePerfCounters_.load(std::memory_order_relaxed);
+	auto nsl = atomicLoadMainNs();
+	bool enablePerfCounters = nsl->enablePerfCounters_.load(std::memory_order_relaxed);
 	if (enablePerfCounters) {
 		txStatsCounter_.Count(tx);
 	}
 	PerfStatCalculatorMT txCommitCalc(commitStatsCounter_, enablePerfCounters);
-	if (needNamespaceCopy(ns, tx)) {
-		PerfStatCalculatorMT calc(ns->updatePerfCounter_, enablePerfCounters);
+	if (needNamespaceCopy(nsl, tx)) {
+		PerfStatCalculatorMT calc(nsl->updatePerfCounter_, enablePerfCounters);
 		contexted_unique_lock<Mutex, const RdxContext> clonerLck(clonerMtx_, &ctx.rdxContext);
-		ns = ns_;
-		if (needNamespaceCopy(ns, tx)) {
+		nsl = ns_;
+		if (needNamespaceCopy(nsl, tx)) {
 			PerfStatCalculatorMT nsCopyCalc(copyStatsCounter_, enablePerfCounters);
-			calc.SetCounter(ns->updatePerfCounter_);
+			calc.SetCounter(nsl->updatePerfCounter_);
 			calc.LockHit();
-			logPrintf(LogTrace, "Namespace::CommitTransaction creating copy for (%s)", ns->name_);
+			logPrintf(LogTrace, "Namespace::CommitTransaction creating copy for (%s)", nsl->name_);
 			hasCopy_.store(true, std::memory_order_release);
-			CounterGuardAIR32 cg(ns->cancelCommitCnt_);
+			CounterGuardAIR32 cg(nsl->cancelCommitCnt_);
 			try {
-				auto nsRlck = ns->rLock(ctx.rdxContext);
-				auto storageLock = ns->locker_.StorageLock();
+				auto nsRlck = nsl->rLock(ctx.rdxContext);
+				auto storageLock = nsl->storage_.FullLock();
 				cg.Reset();
-				nsCopy_.reset(new NamespaceImpl(*ns));
+				nsCopy_.reset(new NamespaceImpl(*nsl, storageLock));
 				nsCopyCalc.HitManualy();
 				NsContext nsCtx(ctx);
 				nsCtx.CopiedNsRequest();
 				nsCopy_->CommitTransaction(tx, result, nsCtx);
 				nsCopy_->optimizeIndexes(nsCtx);
 				nsCopy_->warmupFtIndexes();
+				try {
+					nsCopy_->storage_.InheritUpdatesFrom(nsl->storage_,
+														 storageLock);	// Updates can not be flushed until tx is commited into ns copy
+				} catch (Error& e) {
+					// This exception should never be seen - there are no good ways to recover from it
+					assertf(false, "Error during storage moving in namespace (%s) copying: %s", nsl->name_, e.what());
+				}
+
 				calc.SetCounter(nsCopy_->updatePerfCounter_);
-				ns->markReadOnly();
+				nsl->markReadOnly();
+				nsl->wal_.SetStorage(std::weak_ptr<datastorage::IDataStorage>(), true);
 				atomicStoreMainNs(nsCopy_.release());
 				hasCopy_.store(false, std::memory_order_release);
-				if (!ns->repl_.temporary && !nsCtx.inSnapshot) {
+				if (!nsl->repl_.temporary && !nsCtx.inSnapshot) {
 					// If commit happens in ns copy, than the copier have to handle replication
 					auto err = ns_->clusterizator_->Replicate(
 						cluster::UpdateRecord{cluster::UpdateRecord::Type::CommitTx, ns_->name_, ns_->wal_.LastLSN(), ns_->repl_.nsVersion,
@@ -59,20 +68,27 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 					}
 				}
 			} catch (Error& e) {
-				logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) was terminated by exception:'%s'", ns->name_,
+				logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) was terminated by exception:'%s'", nsl->name_,
 						  e.what());
 				calc.enable_ = false;
 				nsCopy_.reset();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			} catch (...) {
-				logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) was terminated by unknown exception", ns->name_);
+				logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) was terminated by unknown exception", nsl->name_);
 				calc.enable_ = false;
 				nsCopy_.reset();
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			}
-			logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) has succeed", ns->name_);
+			logPrintf(LogTrace, "Namespace::CommitTransaction copying tx for (%s) has succeed", nsl->name_);
+			if (clonerLck.owns_lock()) {
+				nsl = ns_;
+				clonerLck.unlock();
+				nsl->storage_.TryForceFlush();
+			} else {
+				getMainNs()->storage_.TryForceFlush();
+			}
 			return;
 		}
 	}
@@ -116,10 +132,9 @@ bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const LocalTrans
 void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const std::string& storagePath,
 						 std::function<void(std::function<void()>)> replicateCb, const RdxContext& ctx) {
 	std::string dbpath;
-	handleInvalidation(NamespaceImpl::flushStorage)(ctx);
+	awaitMainNs(ctx)->storage_.Flush();
 	auto lck = handleInvalidation(NamespaceImpl::dataWLock)(ctx, true);
-	auto srcNsPtr = atomicLoadMainNs();
-	auto& srcNs = *srcNsPtr;
+	auto& srcNs = *atomicLoadMainNs();	// -V758
 	NamespaceImpl::Locker::WLockT dstLck;
 	NamespaceImpl::Ptr dstNs;
 	if (dst) {
@@ -136,9 +151,8 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 				}
 			}
 		}
-
 		dstNs->checkClusterRole(ctx);
-		dbpath = dstNs->dbpath_;
+		dbpath = dstNs->storage_.Path();
 	} else if (newName == srcNs.name_) {
 		return;
 	}
@@ -147,22 +161,23 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 	if (dbpath.empty()) {
 		dbpath = fs::JoinPath(storagePath, newName);
 	} else {
-		dstNs->deleteStorage();
+		dstNs->storage_.Destroy();
 	}
 
-	bool hadStorage = (srcNs.storage_ != nullptr);
+	const bool hadStorage = (srcNs.storage_.IsValid());
 	auto storageType = StorageType::LevelDB;
+	const auto srcDbpath = srcNs.storage_.Path();
 	if (hadStorage) {
-		storageType = srcNs.storage_->Type();
-		srcNs.storage_.reset();
+		storageType = srcNs.storage_.Type();
+		srcNs.storage_.Close();
 		fs::RmDirAll(dbpath);
-		int renameRes = fs::Rename(srcNs.dbpath_, dbpath);
+		int renameRes = fs::Rename(srcDbpath, dbpath);
 		if (renameRes < 0) {
 			if (dst) {
 				assertrx(dstLck.owns_lock());
 				dstLck.unlock();
 			}
-			throw Error(errParams, "Unable to rename '%s' to '%s'", srcNs.dbpath_, dbpath);
+			throw Error(errParams, "Unable to rename '%s' to '%s'", srcDbpath, dbpath);
 		}
 	}
 
@@ -178,14 +193,13 @@ void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const s
 	srcNs.payloadType_.SetName(srcNs.name_);
 
 	if (hadStorage) {
-		logPrintf(LogTrace, "Storage was moved from %s to %s", srcNs.dbpath_, dbpath);
-		srcNs.dbpath_ = std::move(dbpath);
-		srcNs.storage_.reset(datastorage::StorageFactory::create(storageType));
-		auto status = srcNs.storage_->Open(srcNs.dbpath_, srcNs.storageOpts_);
+		logPrintf(LogTrace, "Storage was moved from %s to %s", srcDbpath, dbpath);
+		auto status = srcNs.storage_.Open(storageType, srcNs.name_, dbpath, srcNs.storageOpts_);
 		if (!status.ok()) {
+			srcNs.storage_.Close();
 			throw status;
 		}
-		srcNs.wal_.SetStorage(srcNs.storage_);
+		srcNs.wal_.SetStorage(srcNs.storage_.GetStoragePtr(), false);
 	}
 	if (srcNs.repl_.temporary) {
 		srcNs.repl_.temporary = false;

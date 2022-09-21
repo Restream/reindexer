@@ -27,7 +27,7 @@ func TestReconnectWithStrategy(t *testing.T) {
 	t.Run("raft cluster", func(t *testing.T) {
 		t.Run("reconnect use OptionReconnectionStrategy", func(t *testing.T) {
 			if os.Getenv(ghEnv) != "" {
-				t.SkipNow() // Skip this test on github CI due to asan and coroutines conflict
+				t.Skip() // Skip this test on github CI due to asan and coroutines conflict
 			}
 			t.Parallel()
 			servers := []*helpers.TestServer{
@@ -75,7 +75,7 @@ func TestReconnectWithStrategy(t *testing.T) {
 	t.Run("async replication", func(t *testing.T) {
 		t.Run("reconnect with reconnectStrategyPrefferRead", func(t *testing.T) {
 			if os.Getenv(ghEnv) != "" {
-				t.SkipNow() // Skip this test on github CI due to asan and coroutines conflict
+				t.Skip() // Skip this test on github CI due to asan and coroutines conflict
 			}
 			t.Parallel()
 			servers := []*helpers.TestServer{
@@ -148,7 +148,7 @@ func TestReconnectWithStrategy(t *testing.T) {
 
 func TestMultipleDSN(t *testing.T) {
 	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
-		return
+		t.Skip()
 	}
 
 	t.Run("connect to next dsn if current not available", func(t *testing.T) {
@@ -335,7 +335,7 @@ func TestMultipleDSN(t *testing.T) {
 
 func TestRaceConditionsMultiDSN(t *testing.T) {
 	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
-		return
+		t.Skip()
 	}
 
 	t.Run("on reconnect to next dsn", func(t *testing.T) {

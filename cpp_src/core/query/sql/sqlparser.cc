@@ -368,7 +368,8 @@ int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, s
 				}
 				tok = parser.next_token();
 				if (!sortingEntries.empty()) {
-					throw Error(errParseSQL, "Allowed only first forced sort order, '%s', %s", tok.text(), parser.where());
+					throw Error(errParseSQL, "Forced sort order is allowed for the first sorting entry only, '%s', %s", tok.text(),
+								parser.where());
 				}
 				forcedSortOrder_.push_back(token2kv(tok, parser, true));
 			}

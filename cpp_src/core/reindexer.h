@@ -186,12 +186,14 @@ public:
 	/// May be used with completion
 	/// @param query - SQL query. Only "SELECT" semantic is supported
 	/// @param result - QueryResults with found items
-	Error Select(std::string_view query, QueryResults &result);
+	/// @param proxyFetchLimit - Fetch limit for proxied query
+	Error Select(std::string_view query, QueryResults &result, unsigned proxyFetchLimit = 10000);
 	/// Execute Query and return results
 	/// May be used with completion
 	/// @param query - Query object with query attributes
 	/// @param result - QueryResults with found items
-	Error Select(const Query &query, QueryResults &result);
+	/// @param proxyFetchLimit - Fetch limit for proxied query
+	Error Select(const Query &query, QueryResults &result, unsigned proxyFetchLimit = 10000);
 	/// Flush changes to storage
 	/// Cancelation context doesn't affect this call
 	/// @param nsName - Name of namespace

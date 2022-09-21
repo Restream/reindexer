@@ -67,7 +67,8 @@ class JoinedSelector {
 public:
 	JoinedSelector(JoinType joinType, std::shared_ptr<NamespaceImpl> leftNs, std::shared_ptr<NamespaceImpl> rightNs, JoinCacheRes &&joinRes,
 				   Query &&itemQuery, LocalQueryResults &result, const JoinedQuery &joinQuery, JoinPreResult::Ptr preResult,
-				   size_t joinedFieldIdx, SelectFunctionsHolder &selectFunctions, int joinedSelectorsCount, const RdxContext &rdxCtx)
+				   size_t joinedFieldIdx, SelectFunctionsHolder &selectFunctions, int joinedSelectorsCount, bool inTransaction,
+				   const RdxContext &rdxCtx)
 		: joinType_(joinType),
 		  called_(0),
 		  matched_(0),
@@ -82,7 +83,8 @@ public:
 		  selectFunctions_(selectFunctions),
 		  joinedSelectorsCount_(joinedSelectorsCount),
 		  rdxCtx_(rdxCtx),
-		  optimized_(false) {}
+		  optimized_(false),
+		  inTransaction_{inTransaction} {}
 
 	JoinedSelector(JoinedSelector &&) = default;
 	JoinedSelector &operator=(JoinedSelector &&) = delete;
@@ -124,6 +126,7 @@ private:
 	int joinedSelectorsCount_;
 	const RdxContext &rdxCtx_;
 	bool optimized_{false};
+	bool inTransaction_{false};
 };
 using JoinedSelectors = vector<JoinedSelector>;
 

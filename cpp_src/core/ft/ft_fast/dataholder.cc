@@ -1,115 +1,57 @@
 ﻿#include "dataholder.h"
 #include <sstream>
+#include "dataprocessor.h"
+#include "selecter.h"
 
 namespace reindexer {
 
-WordIdType DataHolder::findWord(std::string_view word) {
-	WordIdType id;
-	id.setEmpty();
-	if (steps.size() <= 1) return id;
-
-	for (auto step = steps.begin(); step != steps.end() - 1; ++step) {
-		auto it = step->suffixes_.lower_bound(word);
-		if (it != step->suffixes_.end() && size_t(step->suffixes_.word_len_at(GetSuffixWordId(it->second, *step))) == word.size()) {
-			return it->second;
-		}
-	}
-
-	return id;
+void IDataHolder::SetConfig(FtFastConfig* cfg) {
+	cfg_ = cfg;
+	steps.reserve(cfg_->maxRebuildSteps + 1);
 }
 
-size_t DataHolder::GetMemStat() {
+IDataHolder::CommitStep& IDataHolder::GetStep(WordIdType id) {
+	assertrx(id.b.step_num < steps.size());
+	return steps[id.b.step_num];
+}
+
+bool IDataHolder::NeedRebuild(bool complte_updated) {
+	return steps.empty() || complte_updated || steps.size() >= size_t(cfg_->maxRebuildSteps) ||
+		   (steps.size() == 1 && steps.front().suffixes_.word_size() < size_t(cfg_->maxStepSize));
+}
+
+bool IDataHolder::NeedRecomitLast() { return steps.back().suffixes_.word_size() < size_t(cfg_->maxStepSize); }
+
+size_t IDataHolder::GetMemStat() {
 	size_t res = 0;
 	for (auto& step : steps) {
 		res += step.typosHalf_.heap_size() + step.typosMax_.heap_size() + step.suffixes_.heap_size();
-	}
-	for (auto& w : words_) {
-		res += sizeof(w) + w.vids_.heap_size();
 	}
 	res += vdocs_.capacity() * sizeof(VDocEntry);
 	return res;
 }
 
-void DataHolder::SetWordsOffset(uint32_t word_offset) {
+void IDataHolder::SetWordsOffset(uint32_t word_offset) {
 	assertrx(!steps.empty());
 	if (status_ == CreateNew) steps.back().wordOffset_ = word_offset;
 }
-uint32_t DataHolder::GetWordsOffset() {
-	assertrx(!steps.empty());
-	return steps.back().wordOffset_;
-}
-WordIdType DataHolder::BuildWordId(uint32_t id) {
-	WordIdType wId;
-	assertrx(id < kWordIdMaxIdVal);
-	assertrx(steps.size() - 1 < kWordIdMaxStepVal);
 
-	wId.b.id = id;
-	wId.b.step_num = steps.size() - 1;
-
-	return wId;
-}
-bool DataHolder::NeedClear(bool complte_updated) {
-	if (NeedRebuild(complte_updated) || !NeedRecomitLast()) return true;
-	return false;
-}
-
-uint32_t DataHolder::GetSuffixWordId(WordIdType id, const CommitStep& step) {
-	assertrx(!id.isEmpty());
-	assertrx(id.b.step_num < steps.size());
-
-	assertrx(id.b.id >= step.wordOffset_);
-	assertrx(id.b.id - step.wordOffset_ < step.suffixes_.word_size());
-	return id.b.id - step.wordOffset_;
-}
-
-uint32_t DataHolder::GetSuffixWordId(WordIdType id) { return GetSuffixWordId(id, steps.back()); }
-
-DataHolder::CommitStep& DataHolder::GetStep(WordIdType id) {
-	assertrx(id.b.step_num < steps.size());
-	return steps[id.b.step_num];
-}
-
-PackedWordEntry& DataHolder::getWordById(WordIdType id) {
-	assertrx(!id.isEmpty());
-	assertrx(id.b.id < words_.size());
-	return words_[id.b.id];
-}
-
-void DataHolder::Clear() {
+void IDataHolder::Clear() {
 	steps.resize(1);
 	steps.front().clear();
 	avgWordsCount_.clear();
-	words_.clear();
 	vdocs_.clear();
 	vdocsTexts.clear();
 	vodcsOffset_ = 0;
 	szCnt = 0;
 }
-void DataHolder::StartCommit(bool complte_updated) {
-	if (NeedRebuild(complte_updated)) {
-		status_ = FullRebuild;
 
-		Clear();
-	} else if (NeedRecomitLast()) {
-		status_ = RecommitLast;
-		words_.erase(words_.begin() + steps.back().wordOffset_, words_.end());
-
-		for (auto& word : words_) {
-			word.vids_.erase_back(word.cur_step_pos_);
-		}
-
-		steps.back().clear();
-	} else {
-		for (auto& word : words_) {
-			word.cur_step_pos_ = word.vids_.end().pos();
-		}
-		status_ = CreateNew;
-		steps.emplace_back(CommitStep{});
-	}
-	return;
+bool IDataHolder::NeedClear(bool complte_updated) {
+	if (NeedRebuild(complte_updated) || !NeedRecomitLast()) return true;
+	return false;
 }
 
-string DataHolder::Dump() {
+string IDataHolder::Dump() {
 	std::stringstream ss;
 	ss << "Holder dump: step count: " << steps.size() << std::endl;
 	ss << "Status: ";
@@ -138,15 +80,107 @@ string DataHolder::Dump() {
 	return ss.str();
 }
 
-bool DataHolder::NeedRebuild(bool complte_updated) {
-	return ((steps.size() == 1 && steps.front().suffixes_.word_size() < size_t(cfg_->maxStepSize)) || steps.empty() ||
-			steps.size() >= size_t(cfg_->maxRebuildSteps) || complte_updated);
+uint32_t IDataHolder::GetSuffixWordId(WordIdType id, const CommitStep& step) {
+	assertrx(!id.isEmpty());
+	assertrx(id.b.step_num < steps.size());
+
+	assertrx(id.b.id >= step.wordOffset_);
+	assertrx(id.b.id - step.wordOffset_ < step.suffixes_.word_size());
+	return id.b.id - step.wordOffset_;
 }
 
-bool DataHolder::NeedRecomitLast() { return steps.back().suffixes_.word_size() < size_t(cfg_->maxStepSize); }
-void DataHolder::SetConfig(FtFastConfig* cfg) {
-	cfg_ = cfg;
-	steps.reserve(cfg_->maxRebuildSteps + 1);
+uint32_t IDataHolder::GetSuffixWordId(WordIdType id) { return GetSuffixWordId(id, steps.back()); }
+
+WordIdType IDataHolder::findWord(std::string_view word) {
+	WordIdType id;
+	id.setEmpty();
+	if (steps.size() <= 1) return id;
+
+	for (auto step = steps.begin(); step != steps.end() - 1; ++step) {
+		auto it = step->suffixes_.lower_bound(word);
+		if (it != step->suffixes_.end() && size_t(step->suffixes_.word_len_at(GetSuffixWordId(it->second, *step))) == word.size()) {
+			return it->second;
+		}
+	}
+
+	return id;
 }
+
+uint32_t IDataHolder::GetWordsOffset() {
+	assertrx(!steps.empty());
+	return steps.back().wordOffset_;
+}
+
+WordIdType IDataHolder::BuildWordId(uint32_t id) {
+	WordIdType wId;
+	assertrx(id < kWordIdMaxIdVal);
+	assertrx(steps.size() - 1 < kWordIdMaxStepVal);
+
+	wId.b.id = id;
+	wId.b.step_num = steps.size() - 1;
+
+	return wId;
+}
+
+template <typename IdCont>
+size_t DataHolder<IdCont>::GetMemStat() {
+	size_t res = IDataHolder::GetMemStat();
+	for (auto& w : words_) {
+		res += sizeof(w) + w.vids_.heap_size();
+	}
+	return res;
+}
+
+template <typename IdCont>
+PackedWordEntry<IdCont>& DataHolder<IdCont>::getWordById(WordIdType id) {
+	assertrx(!id.isEmpty());
+	assertrx(id.b.id < words_.size());
+	return words_[id.b.id];
+}
+
+template <typename IdCont>
+void DataHolder<IdCont>::Clear() {
+	IDataHolder::Clear();
+	words_.clear();
+}
+
+template <typename IdCont>
+void DataHolder<IdCont>::StartCommit(bool complte_updated) {
+	if (NeedRebuild(complte_updated)) {
+		status_ = FullRebuild;
+
+		Clear();
+	} else if (NeedRecomitLast()) {
+		status_ = RecommitLast;
+		words_.erase(words_.begin() + steps.back().wordOffset_, words_.end());
+
+		for (auto& word : words_) {
+			word.vids_.erase_back(word.cur_step_pos_);
+		}
+
+		steps.back().clear();
+	} else {
+		for (auto& word : words_) {
+			word.cur_step_pos_ = word.vids_.pos(word.vids_.end());
+		}
+		status_ = CreateNew;
+		steps.emplace_back(CommitStep{});
+	}
+	return;
+}
+
+template <typename IdCont>
+IDataHolder::MergeData DataHolder<IdCont>::Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
+												  const RdxContext& rdxCtx) {
+	return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.Process(dsl, inTransaction, rdxCtx);
+}
+
+template <typename IdCont>
+void DataHolder<IdCont>::Process(size_t fieldSize, bool multithread) {
+	DataProcessor<IdCont>{*this, fieldSize}.Process(multithread);
+}
+
+template class DataHolder<PackedIdRelVec>;
+template class DataHolder<IdRelVec>;
 
 }  // namespace reindexer

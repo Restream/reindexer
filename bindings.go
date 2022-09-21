@@ -200,7 +200,10 @@ func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool,
 func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, totalName string, initJson []byte, initOffsets []int) (json []byte, offsets []int, explain []byte, err error) {
 
 	ser := newSerializer(rawResult)
-	rawQueryParams := ser.readRawQueryParams()
+	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
+		var state cjson.State
+		state.ReadPayloadType(&ser.Serializer)
+	})
 	explain = rawQueryParams.explainResults
 
 	jsonReserveLen := len(rawResult) + len(totalName) + len(jsonName) + 20
@@ -374,7 +377,9 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 
 	ser := newSerializer(result.GetBuf())
 	// skip total count
-	rawQueryParams := ser.readRawQueryParams()
+	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
+		ns.cjsonState.ReadPayloadType(&ser.Serializer)
+	})
 
 	for i := 0; i < rawQueryParams.count; i++ {
 		params := ser.readRawtItemParams(rawQueryParams.shardId)

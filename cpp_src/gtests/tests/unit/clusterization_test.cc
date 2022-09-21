@@ -357,7 +357,7 @@ TEST_F(ClusterizationApi, InitialLeaderSync) {
 
 		// Make sure, that our cluster didn't miss it's data in process
 		auto state = cluster.GetNode(kClusterSize - 1)->GetState(std::string(kNsSome));
-		ASSERT_EQ(state.lsn.Counter(), kDataPortion + 2);
+		ASSERT_EQ(state.lsn.Counter(), kDataPortion + 3);
 
 		// Check WAL initial sync for nodes from the first group
 		leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -386,7 +386,7 @@ TEST_F(ClusterizationApi, InitialLeaderSync) {
 		cluster.WaitSync(kNsSome);
 
 		state = cluster.GetNode(0)->GetState(std::string(kNsSome));
-		ASSERT_EQ(state.lsn.Counter(), 3 * kDataPortion + 2 + 2);  // Data + indexes + tx records
+		ASSERT_EQ(state.lsn.Counter(), 3 * kDataPortion + 3 + 2);  // Data + indexes + tx records
 
 		// Validate stats
 		leaderId = cluster.AwaitLeader(kMaxElectionsTime);
@@ -464,7 +464,7 @@ TEST_F(ClusterizationApi, InitialLeaderSyncWithConcurrentSnapshots) {
 		ASSERT_TRUE(cluster.StartServer(kTransitionServer));
 
 #ifdef RX_LONG_REPLICATION_TIMEOUT
-		// Github CI OSX renames namespaces on really slowly sometimes
+		// On Github CI OSX runners ns renames are really slow sometimes
 		const std::chrono::seconds syncTime = std::chrono::seconds(45);
 #else
 		const std::chrono::seconds syncTime = kMaxSyncTime;
@@ -478,7 +478,7 @@ TEST_F(ClusterizationApi, InitialLeaderSyncWithConcurrentSnapshots) {
 		// Make sure, that our cluster didn't miss it's data in process
 		for (auto& ns : kNsNames) {
 			auto state = cluster.GetNode(kClusterSize - 1)->GetState(ns);
-			ASSERT_EQ(state.lsn.Counter(), kDataPortion + 2);
+			ASSERT_EQ(state.lsn.Counter(), kDataPortion + 3);
 		}
 	});
 
@@ -553,15 +553,26 @@ TEST_F(ClusterizationApi, MultithreadSyncTest) {
 				ASSERT_TRUE(false) << e.what();
 			}
 		});
-		auto selectF = ([&cluster, &terminate](const std::string& ns) {
+		auto selectF = ([&cluster, &terminate, leaderId](const std::string& ns) {
+			unsigned counter = 0;
 			while (!terminate) {
-				auto id = rand() % kClusterSize;
-				auto node = cluster.GetNode(id);
-				if (node) {
+				if (counter++ % 2 == 0) {
+					// FT request, which must be valid
+					auto node = cluster.GetNode(leaderId);
 					BaseApi::QueryResultsType qr;
-					node->api.reindexer->Select(Query(ns), qr);
+					Query q = Query(ns).Where(kFTField, CondEq, "text");
+					auto err = node->api.reindexer->Select(q, qr);
+					ASSERT_TRUE(err.ok()) << err.what();
+				} else {
+					// Select from random node (node may be offline)
+					auto id = rand() % kClusterSize;
+					auto node = cluster.GetNode(id);
+					if (node) {
+						BaseApi::QueryResultsType qr;
+						node->api.reindexer->Select(Query(ns), qr);
+					}
 				}
-				std::this_thread::sleep_for(std::chrono::milliseconds(50));
+				std::this_thread::sleep_for(std::chrono::milliseconds(30));
 			}
 		});
 		auto updateF = ([&cluster, &terminate, leaderId](const std::string& ns) {
@@ -687,7 +698,7 @@ TEST_F(ClusterizationApi, NamespaceOperationsOnlineReplication) {
 				const auto state = cluster.GetNode(leaderId)->GetState(kNsName);
 				ASSERT_EQ(state.nsVersion.Server(), leaderId);
 				std::lock_guard<std::mutex> lck(mtx);
-				existingNamespaces.emplace_back(NamespaceData{kNsName, lsn_t(dataCount + 2, leaderId), state.nsVersion});
+				existingNamespaces.emplace_back(NamespaceData{kNsName, lsn_t(dataCount + 3, leaderId), state.nsVersion});
 			}
 			++id;
 			{
@@ -713,7 +724,7 @@ TEST_F(ClusterizationApi, NamespaceOperationsOnlineReplication) {
 				const auto state = cluster.GetNode(leaderId)->GetState(kNsName);
 				ASSERT_EQ(state.nsVersion.Server(), leaderId);
 				std::lock_guard<std::mutex> lck(mtx);
-				existingNamespaces.emplace_back(NamespaceData{kNsName, lsn_t(dataCount + 2, leaderId), state.nsVersion});
+				existingNamespaces.emplace_back(NamespaceData{kNsName, lsn_t(dataCount + 3, leaderId), state.nsVersion});
 			}
 		});
 

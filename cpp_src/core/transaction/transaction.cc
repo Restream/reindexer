@@ -26,14 +26,14 @@ const string &Transaction::GetNsName() const noexcept {
 
 Error Transaction::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
 	if (impl_) {
-		return impl_->Modify(move(item), mode, lsn);
+		return impl_->Modify(std::move(item), mode, lsn);
 	}
 	return status_;
 }
 
 Error Transaction::Modify(Query &&query, lsn_t lsn) {
 	if (impl_) {
-		return impl_->Modify(move(query), lsn);
+		return impl_->Modify(std::move(query), lsn);
 	}
 	return status_;
 }

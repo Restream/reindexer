@@ -7,19 +7,16 @@
 
 class Geometry : protected BaseFixture {
 public:
-	virtual ~Geometry() {}
+	~Geometry() override = default;
 	Geometry(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 	}
 
-	virtual void RegisterAllCases();
-	virtual Error Initialize();
+	void RegisterAllCases() override;
+	Error Initialize() override;
 
 protected:
-	virtual Item MakeItem();
-
-protected:
-	void WarmUpIndexes(State& state);
+	Item MakeItem() override;
 
 	template <size_t N>
 	void Insert(State& state);

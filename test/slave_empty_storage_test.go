@@ -19,7 +19,7 @@ type TestItemStorage struct {
 
 func TestSlaveEmptyStorage(t *testing.T) {
 	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
-		return
+		t.Skip()
 	}
 
 	const masterServerId = 1

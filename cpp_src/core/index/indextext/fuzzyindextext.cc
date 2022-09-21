@@ -1,6 +1,6 @@
-#include <stdio.h>
-
 #include "fuzzyindextext.h"
+#include <stdio.h>
+#include "core/rdxcontext.h"
 #include "tools/customlocal.h"
 #include "tools/errors.h"
 using std::make_shared;
@@ -15,8 +15,8 @@ std::unique_ptr<Index> FuzzyIndexText<T>::Clone() {
 }
 
 template <typename T>
-IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) {
-	auto result = engine_.Search(dsl);
+IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTransaction, const RdxContext& rdxCtx) {
+	auto result = engine_.Search(dsl, inTransaction, rdxCtx);
 
 	auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 
@@ -26,13 +26,15 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) {
 	if (result.max_proc_ > 100) {
 		coof = 100 / result.max_proc_;
 	}
-	for (auto it = result.data_->begin(); it != result.data_->end(); ++it) {
+	size_t counter = 0;
+	for (auto it = result.data_->begin(); it != result.data_->end(); ++it, ++counter) {
 		it->proc_ *= coof;
 		if (it->proc_ < GetConfig()->minOkProc) continue;
 		assertrx(it->id_ < this->vdocs_.size());
 		const auto& id_set = this->vdocs_[it->id_].keyEntry->Sorted(0);
 		fctx->Add(id_set.begin(), id_set.end(), it->proc_);
 		mergedIds->Append(id_set.begin(), id_set.end(), IdSet::Unordered);
+		if ((counter & 0xFF) == 0 && !inTransaction) ThrowOnCancel(rdxCtx);
 	}
 
 	return mergedIds;
@@ -40,7 +42,6 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) {
 
 template <typename T>
 void FuzzyIndexText<T>::commitFulltextImpl() {
-	this->cache_ft_->Clear();
 	vector<std::unique_ptr<string>> bufStrs;
 	auto gt = this->Getter();
 	for (auto& doc : this->idx_map) {

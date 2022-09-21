@@ -38,6 +38,6 @@ echo "Leader was changed"
 # Run java tests on follower
 DSN_FOLLOWER=cproto://127.0.0.1:$BASE_RPC/$CLUSTER_DB_NAME
 cd /builds/itv-backend/reindexer/reindexer-java
-mvn test -Dtests=cproto -DCprotoDsns=$DSN_FOLLOWER || true
+mvn test -Dtests=cproto -DCprotoDsns=$DSN_FOLLOWER
 
 KillServers

@@ -22,7 +22,7 @@ struct ComparatorVars {
 		  collateOpts_(collateOpts),
 		  payloadType_(payloadType),
 		  fields_(fields) {}
-	ComparatorVars() {}
+	ComparatorVars() = default;
 
 	CondType cond_ = CondEq;
 	KeyValueType type_ = KeyValueUndefined;
@@ -123,9 +123,9 @@ private:
 
 	void addValue(CondType cond, T value) {
 		if (cond == CondSet || cond == CondAllSet) {
-			valuesS_->insert(value);
+			valuesS_->emplace(value);
 		} else {
-			values_.push_back(value);
+			values_.emplace_back(value);
 		}
 	}
 };
@@ -229,15 +229,15 @@ private:
 template <>
 class ComparatorImpl<PayloadValue> {
 public:
-	ComparatorImpl() {}
+	ComparatorImpl() = default;
 
 	void SetValues(CondType cond, const VariantArray &values, const ComparatorVars &vars) {
 		if (cond == CondSet) {
-			valuesSet_.reset(new intrusive_atomic_rc_wrapper<unordered_payload_set>(0, hash_composite(vars.payloadType_, vars.fields_),
-																					equal_composite(vars.payloadType_, vars.fields_)));
+			valuesSet_.reset(new intrusive_atomic_rc_wrapper<unordered_payload_set>(
+				values.size(), hash_composite(vars.payloadType_, vars.fields_), equal_composite(vars.payloadType_, vars.fields_)));
 		} else if (cond == CondAllSet) {
-			valuesSet_.reset(new intrusive_atomic_rc_wrapper<unordered_payload_set>(0, hash_composite(vars.payloadType_, vars.fields_),
-																					equal_composite(vars.payloadType_, vars.fields_)));
+			valuesSet_.reset(new intrusive_atomic_rc_wrapper<unordered_payload_set>(
+				values.size(), hash_composite(vars.payloadType_, vars.fields_), equal_composite(vars.payloadType_, vars.fields_)));
 			allSetValuesSet_.reset(new intrusive_atomic_rc_wrapper<std::unordered_set<const PayloadValue *>>{});
 		}
 
@@ -296,7 +296,7 @@ private:
 		if (cond == CondSet || cond == CondAllSet) {
 			valuesSet_->emplace(pv);
 		} else {
-			values_.push_back(pv);
+			values_.emplace_back(pv);
 		}
 	}
 };

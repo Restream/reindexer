@@ -98,7 +98,7 @@ void AggregationResult::GetProtobuf(WrSerializer &wrser) const {
 	get(builder, ParametersFields<ParametersFieldsNumbers, int>(kParametersFieldNumbers));
 }
 
-Error AggregationResult::FromMsgPack(span<char> msgpack) {
+Error AggregationResult::FromMsgPack(std::string_view msgpack) {
 	try {
 		size_t offset = 0;
 		MsgPackParser parser;
@@ -110,10 +110,11 @@ Error AggregationResult::FromMsgPack(span<char> msgpack) {
 	} catch (const Error &err) {
 		return err;
 	}
-	return errOK;
+	return Error();
 }
 
-Error AggregationResult::FromJSON(span<char> json) {
+template <typename T>
+Error AggregationResult::FromJSON(T json) {
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
@@ -121,8 +122,11 @@ Error AggregationResult::FromJSON(span<char> json) {
 	} catch (const gason::Exception &ex) {
 		return Error(errParseJson, "AggregationResult: %s", ex.what());
 	}
-	return errOK;
+	return Error();
 }
+
+template Error AggregationResult::FromJSON<std::string_view>(std::string_view json);
+template Error AggregationResult::FromJSON<span<char>>(span<char> json);
 
 void AggregationResult::GetProtobufSchema(ProtobufSchemaBuilder &builder) {
 	ParametersFields<ParametersFieldsNumbers, int> fields(kParametersFieldNumbers);

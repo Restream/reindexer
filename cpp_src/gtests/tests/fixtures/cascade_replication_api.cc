@@ -113,6 +113,7 @@ void CascadeReplicationApi::Cluster::RestartServer(size_t id, int port, const st
 void CascadeReplicationApi::Cluster::ShutdownServer(size_t id) {
 	assert(id < nodes_.size());
 	if (nodes_[id].Get()) {
+		nodes_[id].Stop();
 		nodes_[id].Drop();
 		size_t counter = 0;
 		while (nodes_[id].IsRunning()) {

@@ -22,7 +22,7 @@ struct web {
 
 	web(const std::string& webRoot) : webRoot_(webRoot) {}
 	DocumentStatus stat(const string& targer);
-	int file(Context& ctx, HttpStatusCode code, const std::string& target, bool isGzip);
+	int file(Context& ctx, HttpStatusCode code, const std::string& target, bool isGzip, bool withCache);
 
 private:
 	const std::string& webRoot_;

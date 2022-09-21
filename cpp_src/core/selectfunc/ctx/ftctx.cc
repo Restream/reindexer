@@ -16,7 +16,7 @@ size_t FtCtx::Size() { return data_->proc_.size(); }
 
 bool FtCtx::NeedArea() { return data_->need_area_; }
 
-bool FtCtx::PrepareAreas(fast_hash_map<string, int> &fields, const string &name) {
+bool FtCtx::PrepareAreas(const fast_hash_map<string, int> &fields, const string &name) {
 	if (!fields.empty()) data_->is_composite_ = true;
 
 	if (data_->is_composite_) {
@@ -37,7 +37,7 @@ AreaHolder::Ptr FtCtx::Area(IdType id) {
 	auto it = data_->holders_.find(id);
 	if (it == data_->holders_.end() || !it->second) {
 		return {};
-	};
+	}
 	return it->second;
 }
 size_t FtCtx::GetSize() { return data_->proc_.size(); }

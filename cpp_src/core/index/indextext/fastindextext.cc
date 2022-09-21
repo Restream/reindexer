@@ -1,20 +1,46 @@
 ﻿#include "fastindextext.h"
 #include <chrono>
 #include <memory>
-#include <thread>
 #include "core/ft/bm25.h"
+#include "core/ft/filters/kblayout.h"
+#include "core/ft/filters/synonyms.h"
+#include "core/ft/filters/translit.h"
 #include "core/ft/ft_fast/selecter.h"
 #include "core/ft/numtotext.h"
 #include "tools/logger.h"
 
-namespace reindexer {
-using std::pair;
+namespace {
+// Available stemmers for languages
+const char *stemLangs[] = {"en", "ru", "nl", "fin", "de", "da", "fr", "it", "hu", "no", "pt", "ro", "es", "sv", "tr", nullptr};
+}  // namespace
 
-using std::thread;
+namespace reindexer {
+
 using std::chrono::duration_cast;
 using std::chrono::milliseconds;
 using std::chrono::high_resolution_clock;
-using std::make_shared;
+
+template <typename T>
+void FastIndexText<T>::initHolder(FtFastConfig &cfg) {
+	switch (cfg.optimization) {
+		case FtFastConfig::Optimization::Memory:
+			holder_.reset(new DataHolder<PackedIdRelVec>);
+			break;
+		case FtFastConfig::Optimization::CPU:
+			holder_.reset(new DataHolder<IdRelVec>);
+			break;
+		default:
+			assert(0);
+	}
+	holder_->stemmers_.clear();
+	holder_->translit_.reset(new Translit);
+	holder_->kbLayout_.reset(new KbLayout);
+	holder_->synonyms_.reset(new Synonyms);
+	for (const char **lang = stemLangs; *lang; ++lang) {
+		holder_->stemmers_.emplace(*lang, *lang);
+	}
+	holder_->SetConfig(&cfg);
+}
 
 template <typename T>
 std::unique_ptr<Index> FastIndexText<T>::Clone() {
@@ -31,22 +57,22 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache
 		return Variant();
 	}
 
-	auto keyIt = this->idx_map.find(static_cast<typename IndexUnordered<T>::ref_type>(key));
+	auto keyIt = this->idx_map.find(static_cast<ref_type>(key));
 	if (keyIt == this->idx_map.end()) {
-		keyIt = this->idx_map.insert({static_cast<typename T::key_type>(key), typename T::mapped_type()}).first;
+		keyIt = this->idx_map.insert({static_cast<key_type>(key), typename T::mapped_type()}).first;
 		this->tracker_.markUpdated(this->idx_map, keyIt, false);
 	} else {
 		this->delMemStat(keyIt);
 	}
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, 0)) {
 		this->isBuilt_ = false;
-		this->cache_ft_->Clear();
+		if (this->cache_ft_) this->cache_ft_->Clear();
 		clearCache = true;
 	}
 	this->addMemStat(keyIt);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
-		return IndexStore<typename T::key_type>::Upsert(key, id, clearCache);
+		return IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache);
 	}
 
 	return Variant(keyIt->first);
@@ -62,7 +88,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 		return;
 	}
 
-	auto keyIt = this->idx_map.find(static_cast<typename IndexUnordered<T>::ref_type>(key));
+	auto keyIt = this->idx_map.find(static_cast<ref_type>(key));
 	if (keyIt == this->idx_map.end()) return;
 	this->isBuilt_ = false;
 
@@ -76,8 +102,8 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
 		if (keyIt->second.VDocID() != FtKeyEntryData::ndoc) {
-			assertrx(keyIt->second.VDocID() < int(this->holder_.vdocs_.size()));
-			this->holder_.vdocs_[keyIt->second.VDocID()].keyEntry = nullptr;
+			assertrx(keyIt->second.VDocID() < int(this->holder_->vdocs_.size()));
+			this->holder_->vdocs_[keyIt->second.VDocID()].keyEntry = nullptr;
 		}
 		if constexpr (is_str_map_v<T>) {
 			this->idx_map.template erase<StringMapEntryCleaner<false>>(
@@ -90,29 +116,29 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 		this->addMemStat(keyIt);
 	}
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
-		IndexStore<typename T::key_type>::Delete(key, id, strHolder, clearCache);
+		IndexStore<StoreIndexKeyType<T>>::Delete(key, id, strHolder, clearCache);
 	}
-	this->cache_ft_->Clear();
+	if (this->cache_ft_) this->cache_ft_->Clear();
 	clearCache = true;
 }
 
 template <typename T>
 IndexMemStat FastIndexText<T>::GetMemStat() {
 	auto ret = IndexUnordered<T>::GetMemStat();
-	ret.fulltextSize = this->holder_.GetMemStat();
+	ret.fulltextSize = this->holder_->GetMemStat();
 	if (this->cache_ft_) ret.idsetCache = this->cache_ft_->GetMemStat();
 	return ret;
 }
 
 template <typename T>
-IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
+IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl, bool inTransaction, const RdxContext &rdxCtx) {
 	fctx->GetData()->extraWordSymbols_ = this->GetConfig()->extraWordSymbols;
 	fctx->GetData()->isWordPositions_ = true;
 
-	auto mergeInfo = Selecter(this->holder_, this->fields_.size(), fctx->NeedArea()).Process(dsl);
+	auto mergeInfo = this->holder_->Select(dsl, this->fields_.size(), fctx->NeedArea(), GetConfig()->maxAreasInDoc, inTransaction, rdxCtx);
 	// convert vids(uniq documents id) to ids (real ids)
 	IdSet::Ptr mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
-	auto &holder = this->holder_;
+	auto &holder = *this->holder_;
 	auto &vdocs = holder.vdocs_;
 
 	if (mergeInfo.empty()) {
@@ -170,20 +196,19 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl) {
 }
 template <typename T>
 void FastIndexText<T>::commitFulltextImpl() {
-	this->holder_.StartCommit(this->tracker_.isCompleteUpdated());
+	this->holder_->StartCommit(this->tracker_.isCompleteUpdated());
 
 	auto tm0 = high_resolution_clock::now();
 
-	if (this->holder_.status_ == FullRebuild) {
+	if (this->holder_->status_ == FullRebuild) {
 		BuildVdocs(this->idx_map);
 	} else {
 		BuildVdocs(this->tracker_.updated());
 	}
 	auto tm1 = high_resolution_clock::now();
 
-	DataProcessor dp(this->holder_, this->fields_.size());
-	dp.Process(!this->opts_.IsDense());
-	if (this->holder_.NeedClear(this->tracker_.isCompleteUpdated())) {
+	this->holder_->Process(this->fields_.size(), !this->opts_.IsDense());
+	if (this->holder_->NeedClear(this->tracker_.isCompleteUpdated())) {
 		this->tracker_.clear();
 	}
 	auto tm2 = high_resolution_clock::now();
@@ -199,27 +224,27 @@ template <typename T>
 template <class Container>
 void FastIndexText<T>::BuildVdocs(Container &data) {
 	// buffer strings, for printing non text fields
-	auto &bufStrs = this->holder_.bufStrs_;
+	auto &bufStrs = this->holder_->bufStrs_;
 	// array with pointers to docs fields text
 	// Prepare vdocs -> addresable array all docs in the index
 
-	this->holder_.szCnt = 0;
-	auto &vdocs = this->holder_.vdocs_;
-	auto &vdocsTexts = this->holder_.vdocsTexts;
+	this->holder_->szCnt = 0;
+	auto &vdocs = this->holder_->vdocs_;
+	auto &vdocsTexts = this->holder_->vdocsTexts;
 
 	vdocs.reserve(vdocs.size() + data.size());
 	vdocsTexts.reserve(data.size());
 
 	auto gt = this->Getter();
 
-	auto status = this->holder_.status_;
+	auto status = this->holder_->status_;
 
 	if (status == CreateNew) {
-		this->holder_.cur_vdoc_pos_ = vdocs.size();
+		this->holder_->cur_vdoc_pos_ = vdocs.size();
 	} else if (status == RecommitLast) {
-		vdocs.erase(vdocs.begin() + this->holder_.cur_vdoc_pos_, vdocs.end());
+		vdocs.erase(vdocs.begin() + this->holder_->cur_vdoc_pos_, vdocs.end());
 	}
-	this->holder_.vodcsOffset_ = vdocs.size();
+	this->holder_->vodcsOffset_ = vdocs.size();
 
 	typename T::iterator doc;
 	for (auto it = data.begin(); it != data.end(); ++it) {
@@ -240,11 +265,11 @@ void FastIndexText<T>::BuildVdocs(Container &data) {
 #endif
 
 		if (GetConfig()->logLevel <= LogInfo) {
-			for (auto &f : vdocsTexts.back()) this->holder_.szCnt += f.first.length();
+			for (auto &f : vdocsTexts.back()) this->holder_->szCnt += f.first.length();
 		}
 	}
 	if (status == FullRebuild) {
-		this->holder_.cur_vdoc_pos_ = vdocs.size();
+		this->holder_->cur_vdoc_pos_ = vdocs.size();
 	}
 }
 
@@ -253,17 +278,15 @@ FtFastConfig *FastIndexText<T>::GetConfig() const {
 	return dynamic_cast<FtFastConfig *>(this->cfg_.get());
 }
 template <typename T>
-void FastIndexText<T>::CreateConfig(const FtFastConfig *cfg) {
+void FastIndexText<T>::initConfig(const FtFastConfig *cfg) {
 	if (cfg) {
 		this->cfg_.reset(new FtFastConfig(*cfg));
-		this->holder_.SetConfig(static_cast<FtFastConfig *>(this->cfg_.get()));
-		this->holder_.synonyms_->SetConfig(this->cfg_.get());
-		return;
+	} else {
+		this->cfg_.reset(new FtFastConfig(this->ftFields_.size()));
+		this->cfg_->parse(this->opts_.config, this->ftFields_);
 	}
-	this->cfg_.reset(new FtFastConfig(this->ftFields_.size()));
-	this->cfg_->parse(this->opts_.config, this->ftFields_);
-	this->holder_.SetConfig(static_cast<FtFastConfig *>(this->cfg_.get()));
-	this->holder_.synonyms_->SetConfig(this->cfg_.get());
+	initHolder(*GetConfig());  // -V522
+	this->holder_->synonyms_->SetConfig(this->cfg_.get());
 }
 
 template <typename Container>
@@ -275,22 +298,26 @@ template <typename T>
 void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 	auto oldCfg = *GetConfig();
 	IndexText<T>::SetOpts(opts);
-	auto newCfg = *GetConfig();
+	auto &newCfg = *GetConfig();
 
 	if (!eq_c(oldCfg.stopWords, newCfg.stopWords) || oldCfg.stemmers != newCfg.stemmers || oldCfg.maxTypoLen != newCfg.maxTypoLen ||
 		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols ||
-		oldCfg.synonyms != newCfg.synonyms || oldCfg.maxTypos != newCfg.maxTypos) {
+		oldCfg.synonyms != newCfg.synonyms || oldCfg.maxTypos != newCfg.maxTypos || oldCfg.optimization != newCfg.optimization) {
 		logPrintf(LogInfo, "FulltextIndex config changed, it will be rebuilt on next search");
 		this->isBuilt_ = false;
-		this->holder_.status_ = FullRebuild;
-		this->holder_.Clear();
-		this->cache_ft_->Clear();
+		if (oldCfg.optimization != newCfg.optimization) {
+			initHolder(newCfg);
+		} else {
+			this->holder_->Clear();
+		}
+		this->holder_->status_ = FullRebuild;
+		if (this->cache_ft_) this->cache_ft_->Clear();
 		for (auto &idx : this->idx_map) idx.second.VDocID() = FtKeyEntryData::ndoc;
 	} else {
 		logPrintf(LogInfo, "FulltextIndex config changed, cache cleared");
-		this->cache_ft_->Clear();
+		if (this->cache_ft_) this->cache_ft_->Clear();
 	}
-	this->holder_.synonyms_->SetConfig(&newCfg);
+	this->holder_->synonyms_->SetConfig(&newCfg);
 }
 
 std::unique_ptr<Index> FastIndexText_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {

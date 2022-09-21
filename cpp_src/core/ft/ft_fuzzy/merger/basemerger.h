@@ -7,9 +7,12 @@
 #include "core/ft/ftdsl.h"
 #include "core/ft/idrelset.h"
 #include "dataset.h"
-namespace search_engine {
 
-using namespace reindexer;
+namespace reindexer {
+class RdxContext;
+}  // namespace reindexer
+
+namespace search_engine {
 
 struct IDCtx {
 	const h_vector<IdRelType::PosType, 3> *data;
@@ -63,7 +66,7 @@ struct FirstResult {
 };
 
 struct MergeCtx {
-	std::vector<FirstResult> *rusults;
+	std::vector<FirstResult> *results;
 	const FtFuzzyConfig *cfg;
 	size_t total_size;
 	word_size_map *sizes;
@@ -73,7 +76,7 @@ class BaseMerger {
 public:
 	BaseMerger(int max_id, int min_id);
 
-	SearchResult Merge(MergeCtx &ctx);
+	SearchResult Merge(MergeCtx &ctx, bool inTransaction, const RdxContext &);
 
 private:
 	int max_id_;

@@ -10,6 +10,8 @@ extern "C" {
 uintptr_t init_reindexer();
 void destroy_reindexer(uintptr_t rx);
 
+reindexer_error reindexer_connect_v4(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers,
+									 BindingCapabilities caps);
 reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers);
 reindexer_error reindexer_ping(uintptr_t rx);
 
@@ -62,6 +64,8 @@ reindexer_error reindexer_cancel_context(reindexer_ctx_info ctx_info, ctx_cancel
 
 void reindexer_enable_logger(void (*logWriter)(int level, char *msg));
 void reindexer_disable_logger();
+
+void reindexer_init_locale();
 
 #ifdef __cplusplus
 }

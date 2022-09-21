@@ -412,6 +412,8 @@ public:
 
 	friend void swap(hopscotch_set& lhs, hopscotch_set& rhs) { lhs.swap(rhs); }
 
+	size_type allocated_mem_size() { return m_ht.allocated_mem_size(); }
+
 private:
 	ht m_ht;
 };

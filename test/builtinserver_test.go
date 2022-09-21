@@ -17,7 +17,7 @@ type ScvTestItem struct {
 
 func TestBuiltinServer(t *testing.T) {
 	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
-		return
+		t.Skip()
 	}
 
 	cfg1 := config.DefaultServerConfig()

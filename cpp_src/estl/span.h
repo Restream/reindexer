@@ -38,7 +38,8 @@ public:
 	template <typename Container>
 	constexpr span(const Container& other) noexcept : data_(const_cast<T*>(other.data())), size_(other.size()) {}
 
-	constexpr span(const T* str, size_type len) : data_(const_cast<T*>(str)), size_(len) {}	 // static??
+	explicit constexpr span(const T* str, size_type len) : data_(const_cast<T*>(str)), size_(len) {}
+	constexpr span(T* str, size_type len) : data_(str), size_(len) {}
 	constexpr iterator begin() const noexcept { return data_; }
 	constexpr iterator end() const noexcept { return data_ + size_; }
 	/*constexpr*/ reverse_iterator rbegin() const noexcept {

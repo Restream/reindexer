@@ -74,6 +74,7 @@ type NetCProto struct {
 	timeouts           bindings.OptionTimeouts
 	connectOpts        bindings.OptionConnect
 	compression        bindings.OptionCompression
+	caps               bindings.BindingCapabilities
 	appName            string
 	termCh             chan struct{}
 	lock               sync.RWMutex
@@ -277,6 +278,7 @@ func (binding *NetCProto) GetDSNs() []url.URL {
 func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) {
 	connPoolSize := defConnPoolSize
 	binding.appName = defAppName
+	binding.caps = *bindings.DefaultBindingCapabilities().WithQrIdleTimeouts(true).WithResultsWithShardIDs(true)
 
 	for _, option := range options {
 		switch v := option.(type) {
@@ -336,6 +338,7 @@ func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int) error {
 					requestTimeout:    binding.timeouts.RequestTimeout,
 					createDBIfMissing: binding.connectOpts.CreateDBIfMissing,
 					appName:           binding.appName,
+					caps:              binding.caps,
 					enableCompression: binding.compression.EnableCompression,
 				},
 			)

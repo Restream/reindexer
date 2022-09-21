@@ -204,6 +204,7 @@ private:
 	coroutine::channel<bool> errSyncCh_;
 	manual_connection conn_;
 	TimePointT loginTs_;
+	std::string compressedBuffer_;
 };
 
 struct CommandParams {

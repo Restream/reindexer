@@ -175,7 +175,7 @@ public:
 	IdType getBtreeIdsetCurrentValue() const override { return *itset_; }
 	size_t getPlainIdsetSize() const override { return this->idxMapIt_->second.Unsorted().size(); }
 	size_t getBtreeIdsetSize() const override { return static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted()).set_->size(); }
-	size_t getMaxIterations(size_t limitIters) {
+	size_t getMaxIterations(size_t limitIters) noexcept {
 		size_t cnt = 0;
 		for (auto it = idxMapItBegin_; cnt < limitIters && it != idxMapItEnd_; ++it) {
 			this->detectCurrentIdsetType(it->second.Unsorted());

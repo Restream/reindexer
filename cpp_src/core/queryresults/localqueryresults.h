@@ -47,8 +47,8 @@ public:
 	void AddItem(Item &item, bool withData = false, bool enableHold = true);
 	std::string Dump() const;
 	void Erase(ItemRefVector::iterator begin, ItemRefVector::iterator end);
-	size_t Count() const { return items_.size(); }
-	size_t TotalCount() const { return totalCount; }
+	size_t Count() const noexcept { return items_.size(); }
+	size_t TotalCount() const noexcept { return totalCount; }
 	const std::string &GetExplainResults() const { return explainResults; }
 	const std::vector<AggregationResult> &GetAggregationResults() const { return aggregationResults; }
 	void Clear();

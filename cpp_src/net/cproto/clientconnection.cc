@@ -305,7 +305,7 @@ void ClientConnection::onRead() {
 			if (errCode != errOK) {
 				ans.status_ = Error(errCode, errMsg);
 			}
-			ans.data_ = {ser.Buf() + ser.Pos(), ser.Len() - ser.Pos()};
+			ans.data_ = span<uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
 		} catch (const Error &err) {
 			failInternal(err);
 			return;
@@ -498,7 +498,14 @@ void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Ar
 	completion->cancelCtx = opts.cancelCtx;
 	completion->used = true;
 
-	wrBuf_.write(std::move(data));
+	try {
+		wrBuf_.write(std::move(data));
+	} catch (Error &e) {
+		completion->used = false;
+		cmpl(RPCAnswer(e), this);
+		return;
+	}
+
 	lck.unlock();
 
 	if (inLoopThread) {

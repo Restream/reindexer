@@ -449,177 +449,217 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 
 	waitSync(default_namespace);
 
-	std::vector<fast_hash_set<int64_t>> lsnsByShard;
+	const std::map<std::string, int> flagSets = {{"No item IDs", kResultsCJson | kResultsWithPayloadTypes},
+												 {"With item IDs", kResultsWithItemID | kResultsCJson | kResultsWithPayloadTypes}};
+	auto hasIDFn = [](int flags) { return flags & kResultsWithItemID; };
 
-	// Check selects
-	for (unsigned int k = 0; k < kShardCount; k++) {
-		std::shared_ptr<client::SyncCoroReindexer> rxSel = svc_[k][0].Get()->api.reindexer;
-		{
+	for (auto &[setName, flags] : flagSets) {
+		TestCout() << "Flags set: " << setName << std::endl;
+		std::vector<fast_hash_set<int64_t>> lsnsByShard;
+		const bool isExpectingID = hasIDFn(flags);
+
+		TestCout() << "Checking select queries" << std::endl;
+		for (unsigned int k = 0; k < kShardCount; k++) {
+			std::shared_ptr<client::SyncCoroReindexer> rxSel = svc_[k][0].Get()->api.reindexer;
+			{
+				lsnsByShard.clear();
+				lsnsByShard.resize(kShards);
+				Query q;
+				q.FromSQL("select * from " + default_namespace);
+				client::SyncCoroQueryResults qr(flags);
+
+				err = rxSel->Select(q, qr);
+				ASSERT_TRUE(err.ok()) << err.what();
+				for (auto i = qr.begin(); i != qr.end(); ++i) {
+					auto item = i.GetItem();
+					std::string_view json = item.GetJSON();
+					gason::JsonParser parser;
+					auto root = parser.Parse(json);
+					unsigned int id = root["id"].As<int>();
+					int shardId = item.GetShardID();
+					lsn_t lsn = item.GetLSN();
+					if (isExpectingID) {
+						if (id < kMaxCountOnShard) {
+							ASSERT_EQ(shardId, 0);
+						} else if (id < 2 * kMaxCountOnShard) {
+							ASSERT_EQ(shardId, 1);
+						} else if (id < 3 * kMaxCountOnShard) {
+							ASSERT_EQ(shardId, 2);
+						}
+						ASSERT_FALSE(lsn.isEmpty());
+						auto res = lsnsByShard[shardId].emplace(int64_t(lsn));	// Check if lsn is unique and insert it into map
+						ASSERT_TRUE(res.second) << lsn;
+					} else {
+						ASSERT_EQ(shardId, ShardingKeyType::ProxyOff);
+						ASSERT_TRUE(lsn.isEmpty()) << lsn;
+						ASSERT_EQ(item.GetID(), -1);
+					}
+				}
+			}
 			lsnsByShard.clear();
 			lsnsByShard.resize(kShards);
-			Query q;
-			q.FromSQL("select * from " + default_namespace);
-			client::SyncCoroQueryResults qr(kResultsWithItemID | kResultsCJson | kResultsWithPayloadTypes);
-
-			err = rxSel->Select(q, qr);
-			ASSERT_TRUE(err.ok()) << err.what();
-			for (auto i = qr.begin(); i != qr.end(); ++i) {
-				auto item = i.GetItem();
-				std::string_view json = item.GetJSON();
-				gason::JsonParser parser;
-				auto root = parser.Parse(json);
-				unsigned int id = root["id"].As<int>();
-				int shardId = item.GetShardID();
-				if (id < kMaxCountOnShard) {
-					ASSERT_EQ(shardId, 0);
-				} else if (id < 2 * kMaxCountOnShard) {
-					ASSERT_EQ(shardId, 1);
-				} else if (id < 3 * kMaxCountOnShard) {
-					ASSERT_EQ(shardId, 2);
+			for (unsigned int l = 0; l < kShardCount; l++) {
+				Query q;
+				q.FromSQL("select * from " + default_namespace + " where " + kFieldLocation + " = 'key" + std::to_string(l) + "'");
+				client::SyncCoroQueryResults qr(flags);
+				err = rxSel->Select(q, qr);
+				ASSERT_TRUE(err.ok()) << err.what() << "; " << l;
+				for (auto i = qr.begin(); i != qr.end(); ++i) {
+					auto item = i.GetItem();
+					int shardId = item.GetShardID();
+					lsn_t lsn = item.GetLSN();
+					if (isExpectingID) {
+						ASSERT_EQ(shardId, l) << "; " << k;
+						ASSERT_FALSE(lsn.isEmpty());
+						auto res = lsnsByShard[shardId].emplace(int64_t(lsn));
+						ASSERT_TRUE(res.second) << lsn;
+					} else {
+						ASSERT_EQ(shardId, ShardingKeyType::ProxyOff);
+						ASSERT_TRUE(lsn.isEmpty()) << lsn;
+						ASSERT_EQ(item.GetID(), -1);
+					}
 				}
-				lsn_t lsn = item.GetLSN();
-				ASSERT_FALSE(lsn.isEmpty());
-				auto res = lsnsByShard[shardId].emplace(int64_t(lsn));	// Check if lsn is unique and insert it into map
-				ASSERT_TRUE(res.second) << lsn;
 			}
 		}
+
+		TestCout() << "Checking update queries" << std::endl;
+		for (unsigned int k = 0; k < kShardCount; k++) {
+			std::shared_ptr<client::SyncCoroReindexer> rxUpdate = svc_[k][0].Get()->api.reindexer;
+			for (int l = 0; l < 3; l++) {
+				Query q;
+				q.FromSQL("update " + default_namespace + " set " + kFieldData + "='datanew' where " + kFieldLocation + " = 'key" +
+						  std::to_string(l) + "'");
+				client::SyncCoroQueryResults qr(flags);
+				err = rxUpdate->Update(q, qr);
+				ASSERT_TRUE(err.ok()) << err.what();
+				for (auto i = qr.begin(); i != qr.end(); ++i) {
+					auto item = i.GetItem();
+					int shardId = item.GetShardID();
+					lsn_t lsn = item.GetLSN();
+					if (isExpectingID) {
+						ASSERT_EQ(shardId, l) << "; " << k;
+						ASSERT_FALSE(lsn.isEmpty());
+						auto res = lsnsByShard[shardId].emplace(int64_t(lsn));
+						ASSERT_TRUE(res.second) << lsn;
+					} else {
+						ASSERT_EQ(shardId, ShardingKeyType::ProxyOff);
+						ASSERT_TRUE(lsn.isEmpty()) << lsn;
+						ASSERT_EQ(item.GetID(), -1);
+					}
+				}
+			}
+		}
+
+		TestCout() << "Checking delete queries" << std::endl;
 		lsnsByShard.clear();
 		lsnsByShard.resize(kShards);
-		for (unsigned int l = 0; l < kShardCount; l++) {
-			Query q;
-			q.FromSQL("select * from " + default_namespace + " where " + kFieldLocation + " = 'key" + std::to_string(l) + "'");
-			client::SyncCoroQueryResults qr(kResultsWithItemID | kResultsCJson | kResultsWithPayloadTypes);
-			err = rxSel->Select(q, qr);
-			ASSERT_TRUE(err.ok()) << err.what() << "; " << l;
-			for (auto i = qr.begin(); i != qr.end(); ++i) {
-				auto item = i.GetItem();
-				int shardId = item.GetShardID();
-				ASSERT_EQ(shardId, l);
-				lsn_t lsn = item.GetLSN();
-				ASSERT_FALSE(lsn.isEmpty());
-				auto res = lsnsByShard[shardId].emplace(int64_t(lsn));
-				ASSERT_TRUE(res.second) << lsn;
-			}
-		}
-	}
-
-	// Check updates
-	for (unsigned int k = 0; k < kShardCount; k++) {
-		std::shared_ptr<client::SyncCoroReindexer> rxUpdate = svc_[k][0].Get()->api.reindexer;
-		for (int l = 0; l < 3; l++) {
-			Query q;
-			q.FromSQL("update " + default_namespace + " set " + kFieldData + "='datanew' where " + kFieldLocation + " = 'key" +
-					  std::to_string(l) + "'");
-			client::SyncCoroQueryResults qr(kResultsWithItemID | kResultsCJson | kResultsWithPayloadTypes);
-			err = rxUpdate->Update(q, qr);
-			ASSERT_TRUE(err.ok()) << err.what();
-			for (auto i = qr.begin(); i != qr.end(); ++i) {
-				auto item = i.GetItem();
-				int shardId = item.GetShardID();
-				ASSERT_EQ(shardId, l);
-				lsn_t lsn = item.GetLSN();
-				ASSERT_FALSE(lsn.isEmpty());
-				auto res = lsnsByShard[shardId].emplace(int64_t(lsn));
-				ASSERT_TRUE(res.second) << lsn;
-			}
-		}
-	}
-
-	// Check deletes
-	lsnsByShard.clear();
-	lsnsByShard.resize(kShards);
-	for (unsigned int k = 0; k < kShardCount; k++) {
-		std::shared_ptr<client::SyncCoroReindexer> rxDelete = svc_[k][0].Get()->api.reindexer;
-		for (unsigned int l = 0; l < kShardCount; l++) {
-			Query q;
-			q.FromSQL("Delete from " + default_namespace + " where " + kFieldLocation + " = 'key" + std::to_string(l) + "'");
-			client::SyncCoroQueryResults qr(kResultsWithItemID | kResultsCJson | kResultsWithPayloadTypes);
-			err = rxDelete->Delete(q, qr);
-			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(qr.Count(), kMaxCountOnShard);
-			for (auto i = qr.begin(); i != qr.end(); ++i) {
-				auto item = i.GetItem();
-				int shardId = item.GetShardID();
-				ASSERT_EQ(shardId, l);
-				lsn_t lsn = item.GetLSN();
-				ASSERT_FALSE(lsn.isEmpty());
-				auto res = lsnsByShard[shardId].emplace(int64_t(lsn));
-				ASSERT_TRUE(res.second) << lsn;
-			}
-		}
-		Fill(default_namespace, rx, "key0", 0, kMaxCountOnShard);
-		Fill(default_namespace, rx, "key1", kMaxCountOnShard, kMaxCountOnShard);
-		Fill(default_namespace, rx, "key2", kMaxCountOnShard * 2, kMaxCountOnShard);
-		waitSync(default_namespace);
-	}
-
-	// Check transactions
-	for (unsigned int k = 0; k < kShardCount; k++) {
-		std::shared_ptr<client::SyncCoroReindexer> rxTx = svc_[k][0].Get()->api.reindexer;
-		err = rxTx->TruncateNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-		int startId = 0;
-		for (unsigned int l = 0; l < kShardCount; l++) {
-			auto tx = rxTx->NewTransaction(default_namespace);
-			auto FillTx = [&](std::string_view key, const size_t from, const size_t count) {
-				for (size_t index = from; index < from + count; ++index) {
-					client::Item item = tx.NewItem();
-					ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-					WrSerializer wrser;
-					reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
-					jsonBuilder.Put(kFieldId, int(index));
-					jsonBuilder.Put(kFieldLocation, key);
-					jsonBuilder.Put(kFieldData, RandString());
-					jsonBuilder.Put(kFieldFTData, RandString());
-					jsonBuilder.End();
-
-					Error err = item.FromJSON(wrser.Slice());
-					ASSERT_TRUE(err.ok()) << err.what();
-					err = tx.Insert(std::move(item));
-					ASSERT_TRUE(err.ok()) << err.what();
+		for (unsigned int k = 0; k < kShardCount; k++) {
+			std::shared_ptr<client::SyncCoroReindexer> rxDelete = svc_[k][0].Get()->api.reindexer;
+			for (unsigned int l = 0; l < kShardCount; l++) {
+				Query q;
+				q.FromSQL("Delete from " + default_namespace + " where " + kFieldLocation + " = 'key" + std::to_string(l) + "'");
+				client::SyncCoroQueryResults qr(flags);
+				err = rxDelete->Delete(q, qr);
+				ASSERT_TRUE(err.ok()) << err.what();
+				ASSERT_EQ(qr.Count(), kMaxCountOnShard);
+				for (auto i = qr.begin(); i != qr.end(); ++i) {
+					auto item = i.GetItem();
+					int shardId = item.GetShardID();
+					lsn_t lsn = item.GetLSN();
+					if (isExpectingID) {
+						ASSERT_EQ(shardId, l);
+						ASSERT_FALSE(lsn.isEmpty()) << lsn;
+						auto res = lsnsByShard[shardId].emplace(int64_t(lsn));
+						ASSERT_TRUE(res.second) << lsn;
+					} else {
+						ASSERT_EQ(shardId, ShardingKeyType::ProxyOff);
+						ASSERT_TRUE(lsn.isEmpty());
+						ASSERT_EQ(item.GetID(), -1);
+					}
 				}
-			};
+			}
+			Fill(default_namespace, rx, "key0", 0, kMaxCountOnShard);
+			Fill(default_namespace, rx, "key1", kMaxCountOnShard, kMaxCountOnShard);
+			Fill(default_namespace, rx, "key2", kMaxCountOnShard * 2, kMaxCountOnShard);
+			waitSync(default_namespace);
+		}
 
-			FillTx("key" + std::to_string(l), startId, kMaxCountOnShard);
-			startId += kMaxCountOnShard;
-			client::SyncCoroQueryResults qr;
-			err = rxTx->CommitTransaction(tx, qr);
+		TestCout() << "Checking transactions" << std::endl;
+		for (unsigned int k = 0; k < kShardCount; k++) {
+			std::shared_ptr<client::SyncCoroReindexer> rxTx = svc_[k][0].Get()->api.reindexer;
+			err = rxTx->TruncateNamespace(default_namespace);
 			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(qr.Count(), kMaxCountOnShard);
-			for (auto i = qr.begin(); i != qr.end(); ++i) {
-				auto item = i.GetItem();
-				int shardId = item.GetShardID();
-				ASSERT_EQ(shardId, l);
-				lsn_t lsn = item.GetLSN();
-				ASSERT_TRUE(lsn.isEmpty());	 // Transactions does not send lsn back
+			int startId = 0;
+			for (unsigned int l = 0; l < kShardCount; l++) {
+				auto tx = rxTx->NewTransaction(default_namespace);
+				auto FillTx = [&](std::string_view key, const size_t from, const size_t count) {
+					for (size_t index = from; index < from + count; ++index) {
+						client::Item item = tx.NewItem();
+						ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+						WrSerializer wrser;
+						reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+						jsonBuilder.Put(kFieldId, int(index));
+						jsonBuilder.Put(kFieldLocation, key);
+						jsonBuilder.Put(kFieldData, RandString());
+						jsonBuilder.Put(kFieldFTData, RandString());
+						jsonBuilder.End();
+
+						Error err = item.FromJSON(wrser.Slice());
+						ASSERT_TRUE(err.ok()) << err.what();
+						err = tx.Insert(std::move(item));
+						ASSERT_TRUE(err.ok()) << err.what();
+					}
+				};
+
+				FillTx("key" + std::to_string(l), startId, kMaxCountOnShard);
+				startId += kMaxCountOnShard;
+				client::SyncCoroQueryResults qr(flags);
+				err = rxTx->CommitTransaction(tx, qr);
+				ASSERT_TRUE(err.ok()) << err.what();
+				ASSERT_EQ(qr.Count(), kMaxCountOnShard);
+				for (auto i = qr.begin(); i != qr.end(); ++i) {
+					auto item = i.GetItem();
+					int shardId = item.GetShardID();
+					lsn_t lsn = item.GetLSN();
+					if (isExpectingID) {
+						ASSERT_EQ(shardId, l);
+						ASSERT_TRUE(lsn.isEmpty());	 // Transactions does not send lsn back
+					} else {
+						ASSERT_EQ(shardId, ShardingKeyType::ProxyOff);
+						ASSERT_TRUE(lsn.isEmpty()) << lsn;
+						ASSERT_EQ(item.GetID(), -1);
+					}
+				}
 			}
 		}
-	}
 
-	// Check single insertions
-	for (unsigned int k = 0; k < kShardCount; k++) {
-		std::shared_ptr<client::SyncCoroReindexer> rxTx = svc_[k][0].Get()->api.reindexer;
-		err = rxTx->TruncateNamespace(default_namespace);
-		ASSERT_TRUE(err.ok()) << err.what();
-		for (unsigned int l = 0; l < kShardCount; l++) {
-			WrSerializer wrser;
-			client::Item item = CreateItem(default_namespace, rx, "key" + std::to_string(l), 1000 + k, wrser);
-			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			err = rx->Upsert(default_namespace, item);
-			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(item.GetShardID(), l) << k;
-			ASSERT_TRUE(item.GetLSN().isEmpty()) << k;	// Item without precepts does not have lsn
+		if (isExpectingID) {  // Single insertions do not have QR options. Only format is available
+			TestCout() << "Checking insertions" << std::endl;
+			for (unsigned int k = 0; k < kShardCount; k++) {
+				std::shared_ptr<client::SyncCoroReindexer> rxTx = svc_[k][0].Get()->api.reindexer;
+				err = rxTx->TruncateNamespace(default_namespace);
+				ASSERT_TRUE(err.ok()) << err.what();
+				for (unsigned int l = 0; l < kShardCount; l++) {
+					WrSerializer wrser;
+					client::Item item = CreateItem(default_namespace, rx, "key" + std::to_string(l), 1000 + k, wrser);
+					ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+					err = rx->Upsert(default_namespace, item);
+					ASSERT_TRUE(err.ok()) << err.what();
+					ASSERT_EQ(item.GetShardID(), l) << k;
+					ASSERT_TRUE(item.GetLSN().isEmpty()) << k;	// Item without precepts does not have lsn
 
-			item = CreateItem(default_namespace, rx, "key" + std::to_string(l), 1000 + k, wrser);
-			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			item.SetPrecepts({"id=SERIAL()"});
-			err = rx->Upsert(default_namespace, item);
-			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_EQ(item.GetShardID(), l) << k;
-			lsn_t lsn = item.GetLSN();
-			ASSERT_FALSE(lsn.isEmpty()) << k;  // Item with precepts has lsn
-			auto res = lsnsByShard[l].emplace(int64_t(lsn));
-			ASSERT_TRUE(res.second) << lsn;
+					item = CreateItem(default_namespace, rx, "key" + std::to_string(l), 1000 + k, wrser);
+					ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+					item.SetPrecepts({"id=SERIAL()"});
+					err = rx->Upsert(default_namespace, item);
+					ASSERT_TRUE(err.ok()) << err.what();
+					ASSERT_EQ(item.GetShardID(), l) << k;
+					lsn_t lsn = item.GetLSN();
+					ASSERT_FALSE(lsn.isEmpty()) << k;  // Item with precepts has lsn
+					auto res = lsnsByShard[l].emplace(int64_t(lsn));
+					ASSERT_TRUE(res.second) << lsn;
+				}
+			}
 		}
 	}
 }

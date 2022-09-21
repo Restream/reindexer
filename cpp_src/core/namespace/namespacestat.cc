@@ -17,7 +17,6 @@ void NamespaceMemStat::GetJSON(WrSerializer &ser) {
 
 	if (emptyItemsCount) builder.Put("empty_items_count", emptyItemsCount);
 
-	builder.Put("data_size", dataSize);
 	builder.Put("strings_waiting_to_be_deleted_size", stringsWaitingToBeDeletedSize);
 	builder.Put("storage_ok", storageOK);
 	builder.Put("storage_path", storagePath);
@@ -25,7 +24,11 @@ void NamespaceMemStat::GetJSON(WrSerializer &ser) {
 	builder.Put("storage_loaded", storageLoaded);
 	builder.Put("optimization_completed", optimizationCompleted);
 
-	builder.Object("total").Put("data_size", Total.dataSize).Put("indexes_size", Total.indexesSize).Put("cache_size", Total.cacheSize);
+	builder.Object("total")
+		.Put("data_size", Total.dataSize)
+		.Put("indexes_size", Total.indexesSize)
+		.Put("cache_size", Total.cacheSize)
+		.Put("index_optimizer_memory", Total.indexOptimizerMemory);
 
 	{
 		auto obj = builder.Object("replication");
@@ -59,6 +62,7 @@ void IndexMemStat::GetJSON(JsonBuilder &builder) {
 	if (uniqKeysCount) builder.Put("uniq_keys_count", uniqKeysCount);
 	if (trackedUpdatesCount) builder.Put("tracked_updates_count", trackedUpdatesCount);
 	if (trackedUpdatesBuckets) builder.Put("tracked_updates_buckets", trackedUpdatesBuckets);
+	if (trackedUpdatesSize) builder.Put("tracked_updates_size", trackedUpdatesSize);
 	if (dataSize) builder.Put("data_size", dataSize);
 	if (idsetBTreeSize) builder.Put("idset_btree_size", idsetBTreeSize);
 	if (idsetPlainSize) builder.Put("idset_plain_size", idsetPlainSize);

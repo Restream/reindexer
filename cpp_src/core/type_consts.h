@@ -186,7 +186,9 @@ enum {
 	kResultsNeedOutputRank = 0x400,
 	kResultsWithShardId = 0x800,
 	kResultsNeedOutputShardId = 0x1000,
-	kResultsSupportIdleTimeout = 0x2000
+	kResultsSupportIdleTimeout = 0x2000,  // Deprecated. Use BindingCapabilities instead
+
+	kResultsFlagMaxValue
 };
 
 typedef enum IndexOpt {
@@ -221,28 +223,28 @@ enum ItemModifyMode { ModeUpdate = 0, ModeInsert = 1, ModeUpsert = 2, ModeDelete
 
 typedef struct StorageOpts {
 #ifdef __cplusplus
-	StorageOpts() : options(0), noQueryIdleThresholdSec(0) {}
+	constexpr StorageOpts() noexcept : options(0), noQueryIdleThresholdSec(0) {}
 
-	bool IsEnabled() const { return options & kStorageOptEnabled; }
-	bool IsDropOnFileFormatError() const { return options & kStorageOptDropOnFileFormatError; }
-	bool IsCreateIfMissing() const { return options & kStorageOptCreateIfMissing; }
-	bool IsVerifyChecksums() const { return options & kStorageOptVerifyChecksums; }
-	bool IsFillCache() const { return options & kStorageOptFillCache; }
-	bool IsSync() const { return options & kStorageOptSync; }
-	bool IsLazyLoad() const { return options & kStorageOptLazyLoad; }
-	bool IsAutorepair() const { return options & kStorageOptAutorepair; }
+	bool IsEnabled() const noexcept { return options & kStorageOptEnabled; }
+	bool IsDropOnFileFormatError() const noexcept { return options & kStorageOptDropOnFileFormatError; }
+	bool IsCreateIfMissing() const noexcept { return options & kStorageOptCreateIfMissing; }
+	bool IsVerifyChecksums() const noexcept { return options & kStorageOptVerifyChecksums; }
+	bool IsFillCache() const noexcept { return options & kStorageOptFillCache; }
+	bool IsSync() const noexcept { return options & kStorageOptSync; }
+	bool IsLazyLoad() const noexcept { return options & kStorageOptLazyLoad; }
+	bool IsAutorepair() const noexcept { return options & kStorageOptAutorepair; }
 
-	StorageOpts& Enabled(bool value = true) {
+	StorageOpts& Enabled(bool value = true) noexcept {
 		options = value ? options | kStorageOptEnabled : options & ~(kStorageOptEnabled);
 		return *this;
 	}
 
-	StorageOpts& DropOnFileFormatError(bool value = true) {
+	StorageOpts& DropOnFileFormatError(bool value = true) noexcept {
 		options = value ? options | kStorageOptDropOnFileFormatError : options & ~(kStorageOptDropOnFileFormatError);
 		return *this;
 	}
 
-	StorageOpts& CreateIfMissing(bool value = true) {
+	StorageOpts& CreateIfMissing(bool value = true) noexcept {
 		options = value ? options | kStorageOptCreateIfMissing : options & ~(kStorageOptCreateIfMissing);
 		return *this;
 	}
@@ -252,22 +254,22 @@ typedef struct StorageOpts {
 		return *this;
 	}
 
-	StorageOpts& FillCache(bool value = true) {
+	StorageOpts& FillCache(bool value = true) noexcept {
 		options = value ? options | kStorageOptFillCache : options & ~(kStorageOptFillCache);
 		return *this;
 	}
 
-	StorageOpts& Sync(bool value = true) {
+	StorageOpts& Sync(bool value = true) noexcept {
 		options = value ? options | kStorageOptSync : options & ~(kStorageOptSync);
 		return *this;
 	}
 
-	StorageOpts& LazyLoad(bool value = true) {
+	StorageOpts& LazyLoad(bool value = true) noexcept {
 		options = value ? options | kStorageOptLazyLoad : options & ~(kStorageOptLazyLoad);
 		return *this;
 	}
 
-	StorageOpts& Autorepair(bool value = true) {
+	StorageOpts& Autorepair(bool value = true) noexcept {
 		options = value ? options | kStorageOptAutorepair : options & ~(kStorageOptAutorepair);
 		return *this;
 	}
@@ -277,7 +279,7 @@ typedef struct StorageOpts {
 } StorageOpts;
 
 typedef enum ConnectOpt {
-	kConnectOptOpenNamespaces = 1 << 0,
+	kConnectOptOpenNamespaces = 1,
 	kConnectOptAllowNamespaceErrors = 1 << 1,
 	kConnectOptAutorepair = 1 << 2,
 	kConnectOptCheckClusterID = 1 << 3,
@@ -292,48 +294,48 @@ typedef enum StorageTypeOpt {
 
 typedef struct ConnectOpts {
 #ifdef __cplusplus
-	ConnectOpts() : storage(kStorageTypeOptLevelDB), options(kConnectOptOpenNamespaces), expectedClusterID(-1) {}
+	constexpr ConnectOpts() noexcept : storage(kStorageTypeOptLevelDB), options(kConnectOptOpenNamespaces), expectedClusterID(-1) {}
 
-	bool IsOpenNamespaces() const { return options & kConnectOptOpenNamespaces; }
-	bool IsAllowNamespaceErrors() const { return options & kConnectOptAllowNamespaceErrors; }
-	bool IsAutorepair() const { return options & kConnectOptAutorepair; }
-	StorageTypeOpt StorageType() const {
+	bool IsOpenNamespaces() const noexcept { return options & kConnectOptOpenNamespaces; }
+	bool IsAllowNamespaceErrors() const noexcept { return options & kConnectOptAllowNamespaceErrors; }
+	bool IsAutorepair() const noexcept { return options & kConnectOptAutorepair; }
+	StorageTypeOpt StorageType() const noexcept {
 		if (storage == static_cast<uint16_t>(kStorageTypeOptRocksDB)) {
 			return kStorageTypeOptRocksDB;
 		}
 		return kStorageTypeOptLevelDB;
 	}
-	int ExpectedClusterID() const { return expectedClusterID; }
-	bool HasExpectedClusterID() const { return options & kConnectOptCheckClusterID; }
-	bool IsReplicationDisabled() const { return options & kConnectOptDisableReplication; }
+	int ExpectedClusterID() const noexcept { return expectedClusterID; }
+	bool HasExpectedClusterID() const noexcept { return options & kConnectOptCheckClusterID; }
+	bool IsReplicationDisabled() const noexcept { return options & kConnectOptDisableReplication; }
 
-	ConnectOpts& OpenNamespaces(bool value = true) {
+	ConnectOpts& OpenNamespaces(bool value = true) noexcept {
 		options = value ? options | kConnectOptOpenNamespaces : options & ~(kConnectOptOpenNamespaces);
 		return *this;
 	}
 
-	ConnectOpts& AllowNamespaceErrors(bool value = true) {
+	ConnectOpts& AllowNamespaceErrors(bool value = true) noexcept {
 		options = value ? options | kConnectOptAllowNamespaceErrors : options & ~(kConnectOptAllowNamespaceErrors);
 		return *this;
 	}
 
-	ConnectOpts& Autorepair(bool value = true) {
+	ConnectOpts& Autorepair(bool value = true) noexcept {
 		options = value ? options | kConnectOptAutorepair : options & ~(kConnectOptAutorepair);
 		return *this;
 	}
 
-	ConnectOpts& WithStorageType(StorageTypeOpt type) {
+	ConnectOpts& WithStorageType(StorageTypeOpt type) noexcept {
 		storage = static_cast<uint16_t>(type);
 		return *this;
 	}
 
-	ConnectOpts& WithExpectedClusterID(int clusterID) {
+	ConnectOpts& WithExpectedClusterID(int clusterID) noexcept {
 		expectedClusterID = clusterID;
 		options |= kConnectOptCheckClusterID;
 		return *this;
 	}
 
-	ConnectOpts& DisableReplication(bool value = true) {
+	ConnectOpts& DisableReplication(bool value = true) noexcept {
 		options = value ? options | kConnectOptDisableReplication : options & ~(kConnectOptDisableReplication);
 		return *this;
 	}
@@ -346,22 +348,28 @@ typedef struct ConnectOpts {
 enum IndexValueType { NotSet = -1, SetByJsonPath = -2 };
 enum ShardingAlgorithmType { ByValue, ByRange };
 
-enum SubscriptionOpt {
-	kSubscriptionOptIncrementSubscription = 1 << 0,
+enum BindingCapability {
+	kBindingCapabilityQrIdleTimeouts = 1,
+	kBindingCapabilityResultsWithShardIDs = 1 << 1,
 };
 
-typedef struct SubscriptionOpts {
+typedef struct BindingCapabilities {
 #ifdef __cplusplus
-	SubscriptionOpts() : options(0) {}
+	constexpr BindingCapabilities(int64_t c = 0) noexcept : caps(c) {}
 
-	bool IsIncrementSubscription() const { return options & kSubscriptionOptIncrementSubscription; }
-	SubscriptionOpts& IncrementSubscription(bool value = true) {
-		options = value ? options | kSubscriptionOptIncrementSubscription : options & ~(kSubscriptionOptIncrementSubscription);
+	bool HasQrIdleTimeouts() const noexcept { return caps & kBindingCapabilityQrIdleTimeouts; }
+	BindingCapabilities& WithQrIdleTimeouts(bool value = true) noexcept {
+		caps = value ? caps | kBindingCapabilityQrIdleTimeouts : caps & ~int64_t(kBindingCapabilityQrIdleTimeouts);
+		return *this;
+	}
+	bool HasResultsWithShardIDs() const noexcept { return caps & kBindingCapabilityResultsWithShardIDs; }
+	BindingCapabilities& WithResultsWithShardIDs(bool value = true) noexcept {
+		caps = value ? caps | kBindingCapabilityResultsWithShardIDs : caps & ~int64_t(kBindingCapabilityResultsWithShardIDs);
 		return *this;
 	}
 #endif
-	uint16_t options;
-} SubscriptionOpts;
+	int64_t caps;
+} BindingCapabilities;
 
 typedef struct RPCQrId {
 #ifdef __cplusplus

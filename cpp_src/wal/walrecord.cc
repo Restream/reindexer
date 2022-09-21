@@ -193,7 +193,7 @@ WrSerializer &WALRecord::Dump(WrSerializer &ser, std::function<string(std::strin
 	}
 }
 
-void WALRecord::GetJSON(JsonBuilder &jb, std::function<string(std::string_view)> cjsonViewer) const {
+void WALRecord::GetJSON(JsonBuilder &jb, std::function<std::string(std::string_view)> cjsonViewer) const {
 	jb.Put("type", wrecType2Str(type));
 	jb.Put("in_transaction", inTransaction);
 

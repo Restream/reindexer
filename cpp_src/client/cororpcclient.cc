@@ -161,7 +161,7 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, CoroQueryRe
 				auto args = ret.GetArgs(2);
 				CoroQueryResults qr(nullptr, &conn_, {getNamespace(nsName)}, p_string(args[0]),
 									RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, 0, config_.FetchAmount,
-									config_.NetTimeout);
+									config_.NetTimeout, false);
 				if (qr.Status().ok()) {
 					for (std::string_view ns : qr.GetNamespaces()) {
 						getNamespace(ns)->TryReplaceTagsMatcher(qr.GetTagsMatcher(ns));
@@ -285,10 +285,9 @@ Error CoroRPCClient::Delete(const Query& query, CoroQueryResults& result, const 
 	CoroQueryResults::NsArray nsArray;
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 
-	result = CoroQueryResults(&conn_, std::move(nsArray), 0, config_.FetchAmount, config_.NetTimeout);
-
-	auto ret =
-		conn_.Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
+	const int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
+	result = CoroQueryResults(&conn_, std::move(nsArray), flags, config_.FetchAmount, config_.NetTimeout, result.i_.lazyMode_);
+	auto ret = conn_.Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), flags);
 	try {
 		if (ret.Status().ok()) {
 			auto args = ret.GetArgs(2);
@@ -307,9 +306,9 @@ Error CoroRPCClient::Update(const Query& query, CoroQueryResults& result, const 
 	CoroQueryResults::NsArray nsArray;
 	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
 
-	result = CoroQueryResults(&conn_, std::move(nsArray), 0, config_.FetchAmount, config_.NetTimeout);
-	auto ret =
-		conn_.Call(mkCommand(cproto::kCmdUpdateQuery, &ctx), ser.Slice(), kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
+	const int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
+	result = CoroQueryResults(&conn_, std::move(nsArray), flags, config_.FetchAmount, config_.NetTimeout, result.i_.lazyMode_);
+	auto ret = conn_.Call(mkCommand(cproto::kCmdUpdateQuery, &ctx), ser.Slice(), flags);
 	try {
 		if (ret.Status().ok()) {
 			const auto args = ret.GetArgs(2);
@@ -354,7 +353,7 @@ Error CoroRPCClient::Select(std::string_view querySQL, CoroQueryResults& result,
 }
 
 Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, milliseconds netTimeout, const InternalRdxContext& ctx) {
-	int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithPayloadTypes | kResultsCJson);
+	const int flags = result.i_.fetchFlags_ ? (result.i_.fetchFlags_) : (kResultsWithPayloadTypes | kResultsCJson);
 	CoroQueryResults::NsArray nsArray;
 	WrSerializer qser;
 	query.Serialize(qser);
@@ -366,9 +365,11 @@ Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, mi
 	}
 	WrSerializer pser;
 	vec2pack(vers, pser);
-	result = CoroQueryResults(&conn_, std::move(nsArray), result.i_.fetchFlags_, config_.FetchAmount, config_.NetTimeout);
+	const int kInitialFetchAmount = result.FetchAmount() > 0 ? result.FetchAmount() : config_.FetchAmount;
+	result =
+		CoroQueryResults(&conn_, std::move(nsArray), result.i_.fetchFlags_, kInitialFetchAmount, config_.NetTimeout, result.i_.lazyMode_);
 
-	auto ret = conn_.Call(mkCommand(cproto::kCmdSelect, netTimeout, &ctx), qser.Slice(), flags, config_.FetchAmount, pser.Slice());
+	auto ret = conn_.Call(mkCommand(cproto::kCmdSelect, netTimeout, &ctx), qser.Slice(), flags, kInitialFetchAmount, pser.Slice());
 	try {
 		if (ret.Status().ok()) {
 			const auto args = ret.GetArgs(2);
@@ -525,8 +526,9 @@ Error CoroRPCClient::CommitTransaction(CoroTransaction& tr, CoroQueryResults& re
 	Error returnErr;
 	auto conn = tr.getConn();
 	if (conn) {
-		result = CoroQueryResults(conn, {tr.i_.ns_}, 0, config_.FetchAmount, config_.NetTimeout);
-		auto ret = conn->Call(mkCommand(cproto::kCmdCommitTx, tr.i_.sessionTs_, &ctx), tr.i_.txId_);
+		const int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes);
+		result = CoroQueryResults(conn, {tr.i_.ns_}, flags, config_.FetchAmount, config_.NetTimeout, false);
+		auto ret = conn->Call(mkCommand(cproto::kCmdCommitTx, tr.i_.sessionTs_, &ctx), tr.i_.txId_, flags);
 		returnErr = ret.Status();
 		try {
 			if (ret.Status().ok()) {

@@ -545,6 +545,7 @@ func (r *AggregateFacetRequest) Sort(field string, desc bool) *AggregateFacetReq
 // Sort - Apply sort order to returned from query items
 // If values argument specified, then items equal to values, if found will be placed in the top positions
 // For composite indexes values must be []interface{}, with value of each subindex
+// Forced sort is support for the first sorting field only
 func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query {
 
 	q.ser.PutVarCUInt(querySortIndex)
@@ -685,7 +686,7 @@ func (q *Query) ExecCtx(ctx context.Context) *Iterator {
 
 // ExecToJson will execute query, and return iterator
 func (q *Query) ExecToJson(jsonRoots ...string) *JSONIterator {
-	return q.ExecToJsonCtx(context.Background())
+	return q.ExecToJsonCtx(context.Background(), jsonRoots...)
 }
 
 // ExecToJsonCtx will execute query, and return iterator

@@ -359,7 +359,7 @@ func MakeLegacyNode(t *testing.T, cprotoDSN string, serverConfig *config.ServerC
 
 func TestStorageCompatibility(t *testing.T) {
 	if len(DB.slaveList) > 0 || len(*legacyServerBinary) == 0 || runtime.GOOS == "windows" {
-		t.SkipNow()
+		t.Skip()
 	}
 
 	const baseStoragePath = "/tmp/reindex_test_storage_compatibility/"

@@ -45,6 +45,8 @@ void ShardingApi::runSelectTest(std::string_view nsName) {
 			ASSERT_EQ(qr.Count(), 40);
 			for (auto it : qr) {
 				auto item = it.GetItem();
+				ASSERT_TRUE(item.Status().ok())
+					<< "; i = " << i << "; location = " << key << "; item status: " << item.Status().what() << std::endl;
 				std::string_view json = item.GetJSON();
 				ASSERT_TRUE(json.find("\"location\":\"" + key + "\"") != std::string_view::npos) << json;
 
@@ -1085,7 +1087,7 @@ proxy_conn_count: 15
 		},
 		{R"(version: 1
 namespaces:
-  namespace: 
+  namespace:
     - "a"
 )"s,
 		 Error{errParams, "'namespace' node must be scalar."}},
@@ -1093,17 +1095,17 @@ namespaces:
 namespaces:
   - namespace: ""
 )"s,
-		 Error{errParams, "Namespace name incorrect ''."}},
+         Error{errParams, "Namespace name incorrect ''."}},
 
-		{R"(version: 1
+        {R"(version: 1
 namespaces:
   - namespace: "best_namespace"
-    index: 
+    index:
       - "location"
 )"s,
-		 Error{errParams, "'index' node must be scalar."}},
+         Error{errParams, "'index' node must be scalar."}},
 
-		{R"(version: 1
+        {R"(version: 1
 namespaces:
   - namespace: "best_namespace"
     default_shard: 0

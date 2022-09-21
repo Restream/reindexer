@@ -130,6 +130,10 @@ func CreateLSNFromInt64(v int64) LsnT {
 	return LsnT{Counter: v - server*kLSNDigitCountMult, ServerId: int(server)}
 }
 
+func CreateInt64FromLSN(v LsnT) int64 {
+	return int64(v.ServerId)*kLSNDigitCountMult + v.Counter
+}
+
 // NamespaceMemStat information about reindexer's namespace memory statisctics
 // and located in '#memstats' system namespace
 type NamespaceMemStat struct {
@@ -147,8 +151,6 @@ type NamespaceMemStat struct {
 	ItemsCount int64 `json:"items_count,omitempty"`
 	// Count of emopy(unused) slots in namespace
 	EmptyItemsCount int64 `json:"empty_items_count"`
-	// Raw size of documents, stored in the namespace, except string fields
-	DataSize int64 `json:"data_size"`
 	// Size of strings deleted from namespace, but still used in queryResults
 	StringsWaitingToBeDeletedSize int64 `json:"strings_waiting_to_be_deleted_size"`
 	// Summary of total namespace memory consumption
@@ -159,6 +161,8 @@ type NamespaceMemStat struct {
 		IndexesSize int64 `json:"indexes_size"`
 		// Total memory consumption of namespace's caches. e.g. idset and join caches
 		CacheSize int64 `json:"cache_size"`
+		// Total memory size, occupated by index optimizer (in bytes)
+		IndexOptimizerMemory int64 `json:"index_optimizer_memory"`
 	} `json:"total"`
 	// Replication status of namespace
 	Replication struct {
@@ -211,6 +215,8 @@ type NamespaceMemStat struct {
 		TrackedUpdatesCount int64 `json:"tracked_updates_count"`
 		// Buckets count in index updates tracker map
 		TrackedUpdatesBuckets int64 `json:"tracked_updates_buckets"`
+		// Updates tracker map size in bytes
+		TrackedUpdatesSize int64 `json:"tracked_updates_size"`
 	} `json:"indexes"`
 	// Join cache stats. Stores results of selects to right table by ON condition
 	JoinCache CacheMemStat `json:"join_cache"`
@@ -433,6 +439,9 @@ type DBNamespacesConfig struct {
 	MaxPreselectPart float64 `json:"max_preselect_part"`
 	// Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
 	IndexUpdatesCountingMode bool `json:"index_updates_counting_mode"`
+	// Enables synchronous storage flush inside write-calls, if async updates count is more than SyncStorageFlushLimit
+	// 0 - disables synchronous storage flush (default). In this case storage will be flushed in background thread only
+	SyncStorageFlushLimit int `json:"sync_storage_flush_limit"`
 }
 
 // DBAsyncReplicationNode

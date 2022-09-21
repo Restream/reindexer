@@ -22,6 +22,17 @@ void BaseFixture::RegisterAllCases() {
 	Register("Update", &BaseFixture::Update, this)->Iterations(id_seq_->Count());
 }
 
+std::string BaseFixture::RandString() {
+	string res;
+	uint8_t len = rand() % 20 + 4;
+	res.resize(len);
+	for (int i = 0; i < len; ++i) {
+		int f = rand() % letters.size();
+		res[i] = letters[f];
+	}
+	return res;
+}
+
 // FIXTURES
 
 void BaseFixture::Insert(State& state) {

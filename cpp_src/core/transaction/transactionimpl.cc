@@ -31,7 +31,7 @@ Error TransactionImpl::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
 		status_ = (*proxiedTx)->Modify(std::move(item), mode, lsn);
 		return status_;
 	} else if (auto *localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
-		(*localTx)->Modify(move(item), mode, lsn);
+		(*localTx)->Modify(std::move(item), mode, lsn);
 		return Error();
 	}
 	return kTxImplIsNotValid;
@@ -54,7 +54,7 @@ Error TransactionImpl::Modify(Query &&query, lsn_t lsn) {
 		status_ = (*proxiedTx)->Modify(std::move(query), lsn);
 		return status_;
 	} else if (auto *localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
-		(*localTx)->Modify(move(query), lsn);
+		(*localTx)->Modify(std::move(query), lsn);
 		return Error();
 	}
 	return kTxImplIsNotValid;

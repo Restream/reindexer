@@ -7,14 +7,12 @@
 #include "core/ft/filters/translit.h"
 
 namespace search_engine {
-using namespace reindexer;
-using std::make_shared;
 
 SearchEngine::SearchEngine() {
 	seacher_.AddSeacher(ITokenFilter::Ptr(new Translit));
 	seacher_.AddSeacher(ITokenFilter::Ptr(new KbLayout));
 	last_max_id_ = 0;
-	holder_ = make_shared<BaseHolder>();
+	holder_ = std::make_shared<BaseHolder>();
 	commited_ = false;
 }
 void SearchEngine::SetConfig(const unique_ptr<FtFuzzyConfig>& cfg) { holder_->SetConfig(cfg); }
@@ -32,6 +30,8 @@ void SearchEngine::Commit() {
 	seacher_.Commit(holder_);
 }
 
-SearchResult SearchEngine::Search(const FtDSLQuery& dsl) { return seacher_.Compare(holder_, dsl); }
+SearchResult SearchEngine::Search(const FtDSLQuery& dsl, bool inTransaction, const RdxContext& rdxCtx) {
+	return seacher_.Compare(holder_, dsl, inTransaction, rdxCtx);
+}
 
 }  // namespace search_engine

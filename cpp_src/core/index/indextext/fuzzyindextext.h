@@ -19,7 +19,7 @@ public:
 	}
 
 	std::unique_ptr<Index> Clone() override;
-	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl) override final;
+	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTransaction, const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final {
 		this->isBuilt_ = false;
 		return IndexText<T>::Upsert(key, id, clearCache);

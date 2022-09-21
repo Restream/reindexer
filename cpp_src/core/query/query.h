@@ -507,7 +507,8 @@ public:
 	/// @return Query object.
 	template <typename T>
 	Query &Sort(const string &sort, bool desc, std::initializer_list<T> forcedSortOrder) & {  // -V1071
-		if (!sortingEntries_.empty() && !std::empty(forcedSortOrder)) throw Error(errParams, "Allowed only first forced sort order");
+		if (!sortingEntries_.empty() && !std::empty(forcedSortOrder))
+			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
 		sortingEntries_.push_back({sort, desc});
 		for (const T &v : forcedSortOrder) forcedSortOrder_.emplace_back(v);
 		return *this;
@@ -524,7 +525,8 @@ public:
 	/// @return Query object.
 	template <typename T>
 	Query &Sort(const string &sort, bool desc, const T &forcedSortOrder) & {  // -V1071
-		if (!sortingEntries_.empty() && !forcedSortOrder.empty()) throw Error(errParams, "Allowed only first forced sort order");
+		if (!sortingEntries_.empty() && !forcedSortOrder.empty())
+			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
 		sortingEntries_.push_back({sort, desc});
 		for (const auto &v : forcedSortOrder) forcedSortOrder_.emplace_back(v);
 		return *this;

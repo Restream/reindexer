@@ -85,7 +85,8 @@ public:
 	using Completion = std::function<void(const Error&)>;
 
 	RdxContext() : holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr) {}
-	RdxContext(lsn_t originLsn) : holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr), originLsn_(originLsn) {}
+	explicit RdxContext(lsn_t originLsn)
+		: holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr), originLsn_(originLsn) {}
 	RdxContext(lsn_t originLsn, const IRdxCancelContext* cancelCtx, Completion cmpl, int emmiterServerId, bool parallel)
 		: emmiterServerId_(emmiterServerId),
 		  holdStatus_(kEmpty),
@@ -104,8 +105,8 @@ public:
 		  cmpl_(cmpl),
 		  originLsn_(originLsn),
 		  shardingParallelExecution_(parallel) {}
-	RdxContext(RdxActivityContext* ptr, lsn_t originLsn = lsn_t(), const IRdxCancelContext* cancelCtx = nullptr, Completion cmpl = nullptr,
-			   int emmiterServerId = -1, bool parallel = false)
+	explicit RdxContext(RdxActivityContext* ptr, lsn_t originLsn = lsn_t(), const IRdxCancelContext* cancelCtx = nullptr,
+						Completion cmpl = nullptr, int emmiterServerId = -1, bool parallel = false)
 		: emmiterServerId_(emmiterServerId),
 		  holdStatus_(ptr ? kPtr : kEmpty),
 		  activityPtr_(ptr),
@@ -138,7 +139,7 @@ public:
 	RdxActivityContext::Ward BeforeSimpleState(Activity::State st) const;
 
 	/// lifetime of the returning value should not exceed of the context's
-	RdxContext OnlyActivity() const { return {Activity(), originLsn_, nullptr, nullptr, -1, shardingParallelExecution_}; }
+	RdxContext OnlyActivity() const { return RdxContext{Activity(), originLsn_, nullptr, nullptr, -1, shardingParallelExecution_}; }
 	RdxActivityContext* Activity() const noexcept;
 	Completion Compl() const noexcept { return cmpl_; }
 	bool NoWaitSync() const noexcept { return noWaitSync_; }

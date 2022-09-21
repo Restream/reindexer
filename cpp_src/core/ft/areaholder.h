@@ -7,6 +7,7 @@
 #include "estl/h_vector.h"
 
 namespace reindexer {
+
 struct Area {
 	Area() : start_(0), end_(0) {}
 	Area(int start, int end) : start_(start), end_(end) {}
@@ -40,22 +41,30 @@ public:
 
 	AreaHolder(int buffer_size, int total_size, int space_size)
 		: buffer_size_(buffer_size), total_size_(total_size), space_size_(space_size), commited_(false) {}
-	AreaHolder() : commited_(false) {}
-	~AreaHolder();
+	AreaHolder() = default;
+	~AreaHolder() = default;
 	void Reserve(int size);
 	void ReserveField(int size);
-	void AddTreeGramm(int pos, int filed);
+	void AddTreeGramm(int pos, int filed, int maxAreasInDoc);
 	void Commit();
 	int GetSize() { return total_size_; }
-	bool AddWord(int start_pos, int size, int filed);
+	bool AddWord(int start_pos, int size, int filed, int maxAreasInDoc);
 	AreaVec *GetAreas(int field);
+	bool IsCommited() const noexcept { return commited_; }
+	size_t GetAreasCount() const noexcept {
+		size_t size = 0;
+		for (const auto &aVec : areas) {
+			size += aVec.size();
+		}
+		return size;
+	}
 
 private:
-	bool insertArea(const Area &area, int filed);
-	int buffer_size_;
-	int total_size_;
-	int space_size_;
-	bool commited_;
+	bool insertArea(Area &&area, int filed, int maxAreasInDoc);
+	int buffer_size_ = 0;
+	int total_size_ = 0;
+	int space_size_ = 0;
+	bool commited_ = false;
 	h_vector<AreaVec, 3> areas;
 };
 }  // namespace reindexer

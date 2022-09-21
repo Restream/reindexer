@@ -6,6 +6,7 @@
 #include "core/ft/filters/translit.h"
 #include "core/ft/ft_fuzzy/advacedpackedvec.h"
 #include "core/ft/ftdsl.h"
+#include "core/rdxcontext.h"
 #include "tools/customhash.h"
 #include "tools/stringstools.h"
 namespace search_engine {
@@ -71,7 +72,7 @@ size_t BaseSearcher::ParseData(BaseHolder::Ptr holder, const wstring &src_data, 
 	return total_size;
 }
 
-SearchResult BaseSearcher::Compare(BaseHolder::Ptr holder, const FtDSLQuery &dsl) {
+SearchResult BaseSearcher::Compare(BaseHolder::Ptr holder, const FtDSLQuery &dsl, bool inTransaction, const reindexer::RdxContext &rdxCtx) {
 	size_t data_size = 0;
 
 	vector<pair<std::wstring, int>> data;
@@ -84,6 +85,7 @@ SearchResult BaseSearcher::Compare(BaseHolder::Ptr holder, const FtDSLQuery &dsl
 	int min_id = INT32_MAX;
 	FtDslOpts opts;
 
+	if (!inTransaction) ThrowOnCancel(rdxCtx);
 	for (auto &term : dsl) {
 		data_size += ParseData(holder, term.pattern, max_id, min_id, rusults, term.opts, 1);
 
@@ -103,7 +105,7 @@ SearchResult BaseSearcher::Compare(BaseHolder::Ptr holder, const FtDSLQuery &dsl
 
 	MergeCtx ctx{&rusults, &holder->cfg_, data_size, &holder->words_};
 
-	auto res = mrg.Merge(ctx);
+	auto res = mrg.Merge(ctx, inTransaction, rdxCtx);
 #ifdef FULL_LOG_FT
 	for (size_t i = 0; i < res.data_->size(); ++i) {
 		std::cout << res.data_->at(i).id_ << "   ";

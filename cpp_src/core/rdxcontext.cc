@@ -127,8 +127,8 @@ RdxContext InternalRdxContext::CreateRdxContext(std::string_view query, Activity
 		return {LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_, shardingParallelExecution_};
 	assertrx(!qresults.activityCtx_);
 	qresults.activityCtx_.emplace(activityTracer_, user_, query, activityContainer, connectionId_, true);
-	return {&*(qresults.activityCtx_), LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_,
-			shardingParallelExecution_};
+	return RdxContext{&*(qresults.activityCtx_), LSN(), (deadlineCtx_.IsCancelable() ? &deadlineCtx_ : nullptr), cmpl_, emmiterServerId_,
+					  shardingParallelExecution_};
 }
 
 }  // namespace reindexer

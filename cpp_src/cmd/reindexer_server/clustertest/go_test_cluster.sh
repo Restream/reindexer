@@ -28,9 +28,10 @@ BASE_DIR="/tmp/rx_go_cluster"
 BASE_RPC=6000
 BASE_HTTP=7000
 RX_BIN=build/cpp_src/cmd/reindexer_server/reindexer_server
+QR_TIMEOUT=10
 
 CreateDirForClusterNodes $BASE_DIR $NODES_NUMBER $CLUSTER_DB_NAME $BASE_RPC
-RunServers $NODES_NUMBER $BASE_RPC $BASE_HTTP $BASE_DIR $RX_BIN
+RunServers $NODES_NUMBER $BASE_RPC $BASE_HTTP $BASE_DIR $RX_BIN $QR_TIMEOUT
 
 # Run tests
 DSN=cproto://127.0.0.1:$BASE_RPC/$CLUSTER_DB_NAME
@@ -44,6 +45,6 @@ do
 	node=$((node+1))
 done
 
-gotestsum --junitfile server_replication_tests.xml ./test -bench . -benchmem -benchtime 100ms -dsn $DSN $CLUSTER -seedcount 50000 -seedcpu 8 || true
+gotestsum --junitfile server_replication_tests.xml ./test -bench . -benchmem -benchtime 100ms -dsn $DSN $CLUSTER -seedcount 50000 -seedcpu 8
 
 KillServers

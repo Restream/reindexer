@@ -30,7 +30,7 @@ func GetAllDataFromNamespace(t *testing.T, namespace string) (item []interface{}
 
 func TestRenameNamespace(t *testing.T) {
 	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 { // TODO: Enable this, when rename will be supported in replication
-		return
+		t.Skip()
 	}
 
 	const testRenameNamespace = "test_rename_namespace"

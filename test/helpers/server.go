@@ -52,6 +52,10 @@ func (srv *TestServer) GetDbName() string {
 	return fmt.Sprintf("%s_%s", srv.DbName, srv.RpcPort)
 }
 
+func (srv *TestServer) GetFullStoragePath() string {
+	return fmt.Sprintf("/tmp/reindex_%s/%s_%s", srv.RpcPort, srv.DbName, srv.RpcPort)
+}
+
 func (srv *TestServer) Run() error {
 	cfg := config.DefaultServerConfig()
 	cfg.Net.RPCAddr = "127.0.0.1:" + srv.RpcPort
@@ -94,8 +98,18 @@ func (srv *TestServer) Run() error {
 	case ServerTypeBuiltin:
 		db := reindexer.NewReindex(fmt.Sprintf("builtinserver://%s", srv.GetDbName()), reindexer.WithServerConfig(100*time.Second, cfg))
 		srv.db = db
+		err := srv.db.Status().Err
+		if srv.T != nil {
+			require.NoError(srv.T, err)
+		} else if err != nil {
+			panic(err)
+		}
 	default:
-		srv.T.Fatal("unknown server type")
+		if srv.T != nil {
+			srv.T.Fatal("unknown server type")
+		} else {
+			panic("unknown server type")
+		}
 	}
 
 	t := time.NewTicker(100 * time.Millisecond)
@@ -124,6 +138,10 @@ func (srv *TestServer) Run() error {
 
 func (srv *TestServer) Clean() error {
 	return os.RemoveAll("/tmp/reindex_" + srv.RpcPort)
+}
+
+func (srv *TestServer) DB() *reindexer.Reindexer {
+	return srv.db
 }
 
 func (srv *TestServer) Stop() error {

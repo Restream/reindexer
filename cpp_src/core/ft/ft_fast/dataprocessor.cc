@@ -11,17 +11,16 @@
 #include "tools/stringstools.h"
 
 using std::chrono::high_resolution_clock;
-using std::thread;
 using std::placeholders::_1;
 using std::chrono::duration_cast;
 using std::chrono::milliseconds;
-using std::bind;
 
 namespace reindexer {
 
 const int kDigitUtfSizeof = 1;
 
-void DataProcessor::Process(bool multithread) {
+template <typename IdCont>
+void DataProcessor<IdCont>::Process(bool multithread) {
 	multithread_ = multithread;
 
 	words_map words_um;
@@ -34,12 +33,12 @@ void DataProcessor::Process(bool multithread) {
 	size_t wrdOffset = words.size();
 
 	auto found = BuildSuffix(words_um, holder_);
-	auto getWordByIdFunc = bind(&DataHolder::getWordById, &holder_, _1);
+	auto getWordByIdFunc = std::bind(&DataHolder<IdCont>::getWordById, &holder_, _1);
 
 	// Step 4: Commit suffixes array. It runs in parallel with next step
 	auto &suffixes = holder_.GetSuffix();
 	auto tm3 = high_resolution_clock::now(), tm4 = high_resolution_clock::now();
-	thread sufBuildThread([&suffixes, &tm3]() {
+	std::thread sufBuildThread([&suffixes, &tm3]() {
 		suffixes.build();
 		tm3 = high_resolution_clock::now();
 	});
@@ -49,12 +48,12 @@ void DataProcessor::Process(bool multithread) {
 
 	auto wIt = words.begin() + wrdOffset;
 
-	thread idrelsetCommitThread([&wIt, &found, getWordByIdFunc, &tm4, &idsetcnt, &words_um]() {
+	std::thread idrelsetCommitThread([&wIt, &found, getWordByIdFunc, &tm4, &idsetcnt, &words_um]() {
 		uint32_t i = 0;
 		for (auto keyIt = words_um.begin(); keyIt != words_um.end(); keyIt++, i++) {
 			// Pack idrelset
 
-			PackedWordEntry *word;
+			PackedWordEntry<IdCont> *word;
 
 			if (found.size() && !found[i].isEmpty()) {
 				word = &getWordByIdFunc(found[i]);
@@ -97,7 +96,8 @@ void DataProcessor::Process(bool multithread) {
 			  duration_cast<milliseconds>(tm4 - tm2).count());
 }
 
-vector<WordIdType> DataProcessor::BuildSuffix(words_map &words_um, DataHolder &holder) {
+template <typename IdCont>
+vector<WordIdType> DataProcessor<IdCont>::BuildSuffix(words_map &words_um, DataHolder<IdCont> &holder) {
 	auto &words = holder.GetWords();
 
 	auto &suffix = holder.GetSuffix();
@@ -120,7 +120,7 @@ vector<WordIdType> DataProcessor::BuildSuffix(words_map &words_um, DataHolder &h
 			continue;
 		}
 
-		words.emplace_back(PackedWordEntry());
+		words.emplace_back(PackedWordEntry<IdCont>());
 		pos = holder_.BuildWordId(id);
 		if (holder_.cfg_->enableNumbersSearch && keyIt->second.virtualWord) {
 			suffix.insert(keyIt->first, pos, kDigitUtfSizeof);
@@ -131,7 +131,8 @@ vector<WordIdType> DataProcessor::BuildSuffix(words_map &words_um, DataHolder &h
 	return found;
 }
 
-size_t DataProcessor::buildWordsMap(words_map &words_um) {
+template <typename IdCont>
+size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 	uint32_t maxIndexWorkers = multithread_ ? std::thread::hardware_concurrency() : 0;
 	if (!maxIndexWorkers) maxIndexWorkers = 1;
 	if (maxIndexWorkers > 8) maxIndexWorkers = 8;
@@ -195,7 +196,7 @@ size_t DataProcessor::buildWordsMap(words_map &words_um) {
 		worker(0);
 		words_um.swap(ctxs[0].words_um);
 	} else {
-		for (uint32_t t = 0; t < maxIndexWorkers; t++) ctxs[t].thread = thread(worker, t);
+		for (uint32_t t = 0; t < maxIndexWorkers; t++) ctxs[t].thread = std::thread(worker, t);
 		// Merge results into single map
 		for (uint32_t i = 0; i < maxIndexWorkers; i++) {
 			try {
@@ -247,8 +248,9 @@ size_t DataProcessor::buildWordsMap(words_map &words_um) {
 	return szCnt;
 }
 
-void DataProcessor::buildVirtualWord(std::string_view word, words_map &words_um, VDocIdType docType, int rfield, size_t insertPos,
-									 std::vector<string> &output) {
+template <typename IdCont>
+void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map &words_um, VDocIdType docType, int rfield, size_t insertPos,
+											 std::vector<string> &output) {
 	auto &vdocs = holder_.vdocs_;
 
 	auto &vdoc(vdocs[docType]);
@@ -266,7 +268,8 @@ void DataProcessor::buildVirtualWord(std::string_view word, words_map &words_um,
 	}
 }
 
-void DataProcessor::buildTyposMap(uint32_t startPos, const vector<WordIdType> &found) {
+template <typename IdCont>
+void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const vector<WordIdType> &found) {
 	if (!holder_.cfg_->maxTypos) {
 		return;
 	}
@@ -314,5 +317,8 @@ void DataProcessor::buildTyposMap(uint32_t startPos, const vector<WordIdType> &f
 	typosHalf.shrink_to_fit();
 	typosMax.shrink_to_fit();
 }
+
+template class DataProcessor<PackedIdRelVec>;
+template class DataProcessor<IdRelVec>;
 
 }  // namespace reindexer

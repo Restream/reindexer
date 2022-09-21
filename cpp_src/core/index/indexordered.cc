@@ -22,7 +22,7 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id, bool &clearCache)
 	auto keyIt = this->idx_map.lower_bound(static_cast<ref_type>(key));
 
 	if (keyIt == this->idx_map.end() || this->idx_map.key_comp()(static_cast<ref_type>(key), keyIt->first))
-		keyIt = this->idx_map.insert(keyIt, {static_cast<typename T::key_type>(key), typename T::mapped_type()});
+		keyIt = this->idx_map.insert(keyIt, {static_cast<key_type>(key), typename T::mapped_type()});
 	else
 		this->delMemStat(keyIt);
 
@@ -35,7 +35,7 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id, bool &clearCache)
 	this->addMemStat(keyIt);
 
 	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
-		return IndexStore<typename T::key_type>::Upsert(key, id, clearCache);
+		return IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache);
 	}
 
 	return Variant(keyIt->first);
@@ -45,19 +45,21 @@ template <typename T>
 SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::SelectOpts opts,
 											BaseFunctionCtx::Ptr ctx, const RdxContext &rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (opts.forceComparator) return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
-	SelectKeyResult res;
+	if (opts.forceComparator) return IndexStore<StoreIndexKeyType<T>>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 
 	// Get set of keys or single key
 	if (condition == CondSet || condition == CondAllSet || condition == CondEq || condition == CondAny || condition == CondEmpty ||
-		condition == CondLike)
+		condition == CondLike) {
 		return IndexUnordered<T>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
+	}
 
-	if (keys.size() < 1) throw Error(errParams, "For condition required at least 1 argument, but provided 0");
+	if (keys.size() < 1) {
+		throw Error(errParams, "For condition required at least 1 argument, but provided 0");
+	}
 
+	SelectKeyResult res;
 	auto startIt = this->idx_map.begin();
 	auto endIt = this->idx_map.end();
-
 	auto key1 = *keys.begin();
 
 	switch (condition) {
@@ -101,24 +103,24 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 
 	if (opts.unbuiltSortOrders) {
 		IndexIterator::Ptr btreeIt(make_intrusive<BtreeIndexIterator<T>>(this->idx_map, startIt, endIt));
-		res.push_back(SingleSelectKeyResult(btreeIt));
+		res.emplace_back(std::move(btreeIt));
 	} else if (sortId && this->sortId_ == sortId && !opts.distinct) {
 		assertrx(startIt->second.Sorted(this->sortId_).size());
 		IdType idFirst = startIt->second.Sorted(this->sortId_).front();
 
 		auto backIt = endIt;
-		backIt--;
+		--backIt;
 		assertrx(backIt->second.Sorted(this->sortId_).size());
 		IdType idLast = backIt->second.Sorted(this->sortId_).back();
 		// sort by this index. Just give part of sorted ids;
-		res.push_back(SingleSelectKeyResult(idFirst, idLast + 1));
+		res.emplace_back(idFirst, idLast + 1);
 	} else {
 		int count = 0;
 		auto it = startIt;
 
 		while (count < 50 && it != endIt) {
-			it++;
-			count++;
+			++it;
+			++count;
 		}
 		// TODO: use count of items in ns to more clever select plan
 		if (count < 50) {
@@ -128,19 +130,24 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 				typename T::iterator startIt, endIt;
 			} ctx = {&this->idx_map, sortId, startIt, endIt};
 
-			auto selector = [&ctx](SelectKeyResult &res) -> bool {
+			auto selector = [&ctx](SelectKeyResult &res, size_t &idsCount) -> bool {
+				idsCount = 0;
 				for (auto it = ctx.startIt; it != ctx.endIt && it != ctx.i_map->end(); it++) {
-					res.push_back(SingleSelectKeyResult(it->second, ctx.sortId));
+					idsCount += it->second.Unsorted().Size();
+					res.emplace_back(it->second, ctx.sortId);
 				}
+				res.deferedExplicitSort = false;
 				return false;
 			};
 
-			if (count > 1 && !opts.distinct && !opts.disableIdSetCache)
-				this->tryIdsetCache(keys, condition, sortId, selector, res);
-			else
-				selector(res);
+			if (count > 1 && !opts.distinct && !opts.disableIdSetCache) {
+				this->tryIdsetCache(keys, condition, sortId, std::move(selector), res);
+			} else {
+				size_t idsCount;
+				selector(res, idsCount);
+			}
 		} else {
-			return IndexStore<typename T::key_type>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
+			return IndexStore<StoreIndexKeyType<T>>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 		}
 	}
 	return SelectKeyResults(std::move(res));

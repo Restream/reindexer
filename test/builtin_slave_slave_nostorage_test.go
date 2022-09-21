@@ -21,7 +21,7 @@ type Data struct {
 
 func TestMasterSlaveSlaveNoStorage(t *testing.T) {
 	if len(DB.slaveList) > 0 || len(DB.clusterList) > 0 {
-		return
+		t.Skip()
 	}
 
 	adminNamespaces := []string{"admin_ns"}

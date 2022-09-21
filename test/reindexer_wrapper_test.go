@@ -18,20 +18,21 @@ import (
 
 type ReindexerWrapper struct {
 	reindexer.Reindexer
-	isMaster     bool
-	slaveList    []*ReindexerWrapper
-	master       *ReindexerWrapper
-	dsn          string
-	syncedStatus int32
-	syncMutex    sync.RWMutex
-	clusterList  []*ReindexerWrapper
+	isMaster       bool
+	slaveList      []*ReindexerWrapper
+	master         *ReindexerWrapper
+	dsn            string
+	syncedStatus   int32
+	syncMutex      sync.RWMutex
+	clusterList    []*ReindexerWrapper
+	leaderServerID int
 }
 
-func NewReindexWrapper(dsn string, cluster arrayFlags, options ...interface{}) *ReindexerWrapper {
+func NewReindexWrapper(dsn string, cluster arrayFlags, leaderServerID int, options ...interface{}) *ReindexerWrapper {
 	if cluster != nil {
-		return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options...), isMaster: false, dsn: dsn, syncedStatus: 0}
+		return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options...), isMaster: false, dsn: dsn, syncedStatus: 0, leaderServerID: leaderServerID}
 	} else {
-		return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options...), isMaster: true, dsn: dsn, syncedStatus: 0}
+		return &ReindexerWrapper{Reindexer: *reindexer.NewReindex(dsn, options...), isMaster: true, dsn: dsn, syncedStatus: 0, leaderServerID: 0}
 	}
 }
 
@@ -57,7 +58,7 @@ func (dbw *ReindexerWrapper) addSlave(dsn string, options ...interface{}) *Reind
 	if dbw.dsn == dsn {
 		return nil
 	}
-	slaveDb := NewReindexWrapper(dsn, cluster, options...)
+	slaveDb := NewReindexWrapper(dsn, cluster, dbw.leaderServerID, options...)
 	slaveDb.isMaster = false
 	slaveDb.master = dbw
 	slaveDb.SetSyncRequired()
@@ -89,7 +90,7 @@ func (dbw *ReindexerWrapper) AddSlave(dsn string, count int, options ...interfac
 }
 
 func (dbw *ReindexerWrapper) addClusterNode(clusterNodeDsn string, options ...interface{}) *ReindexerWrapper {
-	nodeDb := NewReindexWrapper(clusterNodeDsn, cluster, options...)
+	nodeDb := NewReindexWrapper(clusterNodeDsn, cluster, dbw.leaderServerID, options...)
 	nodeDb.isMaster = false
 	nodeDb.SetSyncRequired()
 	dbw.clusterList = append(dbw.clusterList, nodeDb)
@@ -238,18 +239,20 @@ func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt 
 	return qt.q.MustExecCtx(ctx)
 }
 
-func GetNodeForRole(nodeDb *reindexer.Reindexer, role string) (string, error) {
+func GetNodeForRole(nodeDb *reindexer.Reindexer, role string) (dsn string, serverID int, err error) {
+	serverID = -1
 	nodeStat, err := nodeDb.Query("#replicationstats").Where("type", reindexer.EQ, "cluster").Exec().FetchAll()
 	if err != nil {
-		return "", err
+		return
 	}
 	replStat := nodeStat[0].(*reindexer.ReplicationStat)
 	for _, v := range replStat.ReplicationNodeStat {
 		if v.Role == role {
-			return v.DSN, nil
+			return v.DSN, v.ServerID, nil
 		}
 	}
-	return "", fmt.Errorf("Can not find node for role [%s]", role)
+	err = fmt.Errorf("Can not find node for role [%s]", role)
+	return
 }
 
 func (dbw *ReindexerWrapper) setSlaveConfig(slaveDb *ReindexerWrapper) {

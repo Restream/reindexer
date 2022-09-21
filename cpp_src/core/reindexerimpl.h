@@ -242,6 +242,7 @@ protected:
 	Error tryLoadShardingConf();
 
 	void backgroundRoutine();
+	void storageFlushingRoutine();
 	Error closeNamespace(std::string_view nsName, const RdxContext &ctx, bool dropStorage);
 
 	PayloadType getPayloadType(std::string_view nsName);
@@ -269,7 +270,8 @@ protected:
 	string storagePath_;
 
 	std::thread backgroundThread_;
-	std::atomic<bool> stopBackgroundThread_;
+	std::thread storageFlushingThread_;
+	std::atomic<bool> stopBackgroundThreads_;
 
 	QueriesStatTracer queriesStatTracker_;
 	std::unique_ptr<cluster::Clusterizator> clusterizator_;

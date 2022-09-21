@@ -63,8 +63,10 @@ function RunServers {
 	local BASE_HTTP_ADDRESS=$3
 	local BASE_DIR=$4
 	local RX_BIN_PATH=$5
+	local QR_TIMEOUT=$6
 	local LOG_BASE_DIR="build/logs"
 	local node=0
+	[ -n "$QR_TIMEOUT" ] || QR_TIMEOUT=600
 	while [[ $node -lt $NODES_COUNT ]]
 	do
 		HTTPADDR=$(($BASE_HTTP_ADDRESS+$node))
@@ -74,7 +76,7 @@ function RunServers {
 		local DB_LOG_RPC="$LOG_BASE_DIR/rpclog_$node.txt"
 		local DB_LOG_HTTP="$LOG_BASE_DIR/httplog_$node.txt"
 		local DB_LOG_SERVER="$LOG_BASE_DIR/serverlog_$node.txt"
-		$RX_BIN_PATH --db=$DB_PATH --loglevel=trace --serverlog="" --corelog=$DB_LOG_CORE --httplog=$DB_LOG_HTTP --rpclog=$DB_LOG_RPC -p $HTTPADDR -r $RPCADDR --enable-cluster &
+		$RX_BIN_PATH --db=$DB_PATH --loglevel=trace --serverlog="" --corelog=$DB_LOG_CORE --httplog=$DB_LOG_HTTP --rpclog=$DB_LOG_RPC -p $HTTPADDR -r $RPCADDR --enable-cluster --rpc-qr-idle-timeout $QR_TIMEOUT &
 		SERVER_PIDS[$node]=$!
 		sleep 1
 		node=$((node+1))

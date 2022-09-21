@@ -64,14 +64,18 @@ void QueryResults::Bind(std::string_view rawResult, int queryID) {
 	ResultSerializer ser(rawResult);
 
 	try {
-		ser.GetRawQueryParams(queryParams_, [&ser, this](int nsIdx) {
-			uint32_t stateToken = ser.GetVarUint();
-			int version = ser.GetVarUint();
-			TagsMatcher newTm;
-			newTm.deserialize(ser, version, stateToken);
-			nsArray_[nsIdx]->TryReplaceTagsMatcher(std::move(newTm));
-			PayloadType("tmp").clone()->deserialize(ser);
-		});
+		ResultSerializer::ParsingData pd;
+		ser.GetRawQueryParams(
+			queryParams_,
+			[&ser, this](int nsIdx) {
+				uint32_t stateToken = ser.GetVarUint();
+				int version = ser.GetVarUint();
+				TagsMatcher newTm;
+				newTm.deserialize(ser, version, stateToken);
+				nsArray_[nsIdx]->TryReplaceTagsMatcher(std::move(newTm));
+				PayloadType("tmp").clone()->deserialize(ser);
+			},
+			false, pd);
 	} catch (const Error &err) {
 		status_ = err;
 	}
@@ -95,7 +99,8 @@ void QueryResults::fetchNextResults() {
 	std::string_view rawResult = p_string(args[0]);
 	ResultSerializer ser(rawResult);
 
-	ser.GetRawQueryParams(queryParams_, nullptr);
+	ResultSerializer::ParsingData pd;
+	ser.GetRawQueryParams(queryParams_, nullptr, false, pd);
 
 	rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
 }
@@ -236,7 +241,7 @@ Item QueryResults::Iterator::GetItem() {
 	return Item();
 }
 
-int64_t QueryResults::Iterator::GetLSN() {
+lsn_t QueryResults::Iterator::GetLSN() {
 	readNext();
 	return itemParams_.lsn;
 }

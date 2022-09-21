@@ -20,6 +20,7 @@ constexpr size_t kReadBufReserveSize = 0x1000;
 constexpr size_t kWrChannelSize = 20;
 constexpr size_t kCntToSendNow = 30;
 constexpr size_t kDataToSendNow = 2048;
+constexpr BindingCapabilities kClientCaps = BindingCapabilities(kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs);
 
 CoroClientConnection::CoroClientConnection()
 	: rpcCalls_(kMaxParallelRPCCalls), wrCh_(kWrChannelSize), seqNums_(kMaxParallelRPCCalls), conn_(-1, kReadBufReserveSize, false) {
@@ -168,10 +169,9 @@ CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uin
 	ctxArgs.Pack(ser);
 	if (hdr.compressed) {
 		auto data = ser.Slice().substr(sizeof(hdr));
-		std::string compressed;
-		snappy::Compress(data.data(), data.length(), &compressed);
+		snappy::Compress(data.data(), data.length(), &compressedBuffer_);
 		ser.Reset(sizeof(hdr));
-		ser.Write(compressed);
+		ser.Write(compressedBuffer_);
 	}
 	assertrx(ser.Len() < size_t(std::numeric_limits<int32_t>::max()));
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
@@ -209,7 +209,8 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 					 Arg{connectData_.opts.hasExpectedClusterID},
 					 Arg{connectData_.opts.expectedClusterID},
 					 Arg{p_string(REINDEX_VERSION)},
-					 Arg{p_string(&connectData_.opts.appName)}};
+					 Arg{p_string(&connectData_.opts.appName)},
+					 Arg{kClientCaps.caps}};
 		constexpr uint32_t seq = 0;	 // login's seq num is always 0
 		assertrx(buf.size() == 0);
 		appendChunck(buf, packRPC(kCmdLogin, seq, args, Args{Arg{int64_t(0)}, Arg{int64_t(lsn_t())}, Arg{int64_t(-1)}}, std::nullopt).data);
@@ -391,7 +392,7 @@ void CoroClientConnection::readerRoutine() {
 			if (errCode != errOK) {
 				ans.status_ = Error(errCode, errMsg);
 			}
-			ans.data_ = {ser.Buf() + ser.Pos(), ser.Len() - ser.Pos()};
+			ans.data_ = span<uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
 		} catch (const Error &err) {
 			// disconnect
 			handleFatalErrorFromReader(err);

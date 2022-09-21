@@ -26,7 +26,7 @@ public:
 	template <typename ConfigT>
 	ReindexerTestApi(const ConfigT &cfg) : reindexer(std::shared_ptr<DB>(new DB(cfg))) {}
 
-	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
+	static void DefineNamespaceDataset(DB &rx, const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		auto err = reindexer::Error();
 		for (auto &field : fields) {
 			std::string indexName = std::get<0>(field);
@@ -35,7 +35,7 @@ public:
 			int64_t expireAfter = std::get<4>(field);
 
 			if (indexType != "composite") {
-				err = reindexer->AddIndex(ns, {indexName, {indexName}, fieldType, indexType, std::get<3>(field)});
+				err = rx.AddIndex(ns, {indexName, {indexName}, fieldType, indexType, std::get<3>(field)});
 			} else {
 				std::string realName = indexName;
 				std::string idxContents = indexName;
@@ -47,12 +47,15 @@ public:
 				reindexer::JsonPaths jsonPaths;
 				jsonPaths = reindexer::split(idxContents, "+", true, jsonPaths);
 
-				err = reindexer->AddIndex(ns, {realName, jsonPaths, fieldType, indexType, std::get<3>(field), expireAfter});
+				err = rx.AddIndex(ns, {realName, jsonPaths, fieldType, indexType, std::get<3>(field), expireAfter});
 			}
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
-		err = reindexer->Commit(ns);
+		err = rx.Commit(ns);
 		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
+		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
 
 	ItemType NewItem(std::string_view ns) { return reindexer->NewItem(ns); }

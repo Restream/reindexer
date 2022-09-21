@@ -19,7 +19,7 @@ void IndexStore<key_string>::Delete(const Variant &key, IdType id, StringsHolder
 	auto keyIt = str_map.find(std::string_view(key));
 	// assertf(keyIt != str_map.end(), "Delete unexists key from index '%s' id=%d", name_, id);
 	if (keyIt == str_map.end()) return;
-	if (keyIt->second) keyIt->second--;
+	if (keyIt->second) --(keyIt->second);
 	if (!keyIt->second) {
 		const auto strSize = sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
 		memStat_.dataSize -= sizeof(unordered_str_map<int>::value_type) + strSize;
@@ -53,9 +53,10 @@ Variant IndexStore<key_string>::Upsert(const Variant &key, IdType /*id*/, bool &
 	auto keyIt = str_map.find(std::string_view(key));
 	if (keyIt == str_map.end()) {
 		keyIt = str_map.emplace(static_cast<key_string>(key), 0).first;
+		// sizeof(key_string) + heap of string
 		memStat_.dataSize += sizeof(unordered_str_map<int>::value_type) + sizeof(*keyIt->first.get()) + keyIt->first->heap_size();
 	}
-	keyIt->second++;
+	++(keyIt->second);
 
 	return Variant(keyIt->first);
 }
@@ -121,7 +122,7 @@ IndexMemStat IndexStore<T>::GetMemStat() {
 	IndexMemStat ret = memStat_;
 	ret.name = name_;
 	ret.uniqKeysCount = str_map.size();
-	ret.columnSize = idx_data.size() * sizeof(T);
+	ret.columnSize = idx_data.capacity() * sizeof(T);
 	return ret;
 }
 

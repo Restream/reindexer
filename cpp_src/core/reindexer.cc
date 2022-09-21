@@ -58,8 +58,12 @@ Error Reindexer::PutMeta(std::string_view nsName, const string& key, std::string
 }
 Error Reindexer::EnumMeta(std::string_view nsName, vector<string>& keys) { return impl_->EnumMeta(nsName, keys, ctx_); }
 Error Reindexer::Delete(const Query& q, QueryResults& result) { return impl_->Delete(q, result, ctx_); }
-Error Reindexer::Select(std::string_view query, QueryResults& result) { return impl_->Select(query, result, ctx_); }
-Error Reindexer::Select(const Query& q, QueryResults& result) { return impl_->Select(q, result, ctx_); }
+Error Reindexer::Select(std::string_view query, QueryResults& result, unsigned proxyFetchLimit) {
+	return impl_->Select(query, result, proxyFetchLimit, ctx_);
+}
+Error Reindexer::Select(const Query& q, QueryResults& result, unsigned proxyFetchLimit) {
+	return impl_->Select(q, result, proxyFetchLimit, ctx_);
+}
 Error Reindexer::Update(const Query& query, QueryResults& result) { return impl_->Update(query, result, ctx_); }
 Error Reindexer::Commit(std::string_view nsName) { return impl_->Commit(nsName, ctx_); }
 Error Reindexer::AddIndex(std::string_view nsName, const IndexDef& idx) { return impl_->AddIndex(nsName, idx, ctx_); }

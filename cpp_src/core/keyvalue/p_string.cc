@@ -7,7 +7,7 @@ void p_string::Dump(std::ostream &os) const {
 	os << "{p: " << std::hex << v << std::dec;
 	if (v) {
 		const auto l = length();
-		os << ", length: " << l << ", [" << std::hex;
+		os << ", length: " << l << ", type: " << type() << ", [" << std::hex;
 		const char *d = data();
 		for (size_t i = 0; i < l; ++i) {
 			if (i != 0) os << ' ';

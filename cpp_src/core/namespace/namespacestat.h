@@ -36,8 +36,11 @@ struct IndexMemStat {
 	size_t columnSize = 0;
 	size_t trackedUpdatesCount = 0;
 	size_t trackedUpdatesBuckets = 0;
+	size_t trackedUpdatesSize = 0;
 	LRUCacheMemStat idsetCache;
-	size_t GetIndexStructSize() const noexcept { return idsetPlainSize + idsetBTreeSize + sortOrdersSize + fulltextSize + columnSize; }
+	size_t GetIndexStructSize() const noexcept {
+		return idsetPlainSize + idsetBTreeSize + sortOrdersSize + fulltextSize + columnSize + trackedUpdatesSize;
+	}
 };
 
 struct ClusterizationStatus {
@@ -107,12 +110,12 @@ struct NamespaceMemStat {
 	bool optimizationCompleted = false;
 	size_t itemsCount = 0;
 	size_t emptyItemsCount = 0;
-	size_t dataSize = 0;
 	size_t stringsWaitingToBeDeletedSize = 0;
 	struct {
 		size_t dataSize = 0;
 		size_t indexesSize = 0;
 		size_t cacheSize = 0;
+		size_t indexOptimizerMemory = 0;
 	} Total;
 	ReplicationStat replication;
 	LRUCacheMemStat joinCache;

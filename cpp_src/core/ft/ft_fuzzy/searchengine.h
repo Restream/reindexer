@@ -8,11 +8,11 @@
 #include "core/idset.h"
 #include "dataholder/basebuildedholder.h"
 
-namespace search_engine {
+namespace reindexer {
+class RdxContext;
+}  // namespace reindexer
 
-using std::shared_ptr;
-using std::unordered_map;
-using std::vector;
+namespace search_engine {
 
 class SearchEngine {
 public:
@@ -24,7 +24,7 @@ public:
 
 	SearchEngine &operator=(const SearchEngine &) = delete;
 
-	SearchResult Search(const FtDSLQuery &dsl);
+	SearchResult Search(const FtDSLQuery &dsl, bool inTransaction, const reindexer::RdxContext &);
 	void Rebuild();
 	void AddData(std::string_view src_data, const IdType id, int field, const string &extraWordSymbols);
 	void Commit();
@@ -35,4 +35,5 @@ private:
 	size_t last_max_id_;
 	bool commited_;
 };
+
 }  // namespace search_engine

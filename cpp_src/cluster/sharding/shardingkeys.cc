@@ -1,6 +1,6 @@
 #include "shardingkeys.h"
-#include <set>
 #include "cluster/config.h"
+#include "estl/fast_hash_set.h"
 #include "sharding.h"
 
 namespace reindexer::sharding {
@@ -67,7 +67,7 @@ ShardIDsContainer ShardingKeys::GetShardsIds(std::string_view ns) const {
 		throw Error(errLogic, "Namespace [%s] not found", ns);
 	}
 	ShardIDsContainer ids;
-	std::set<int> uniqueIds = {itNsData->second.defaultShard};	 // with Default host
+	fast_hash_set<int> uniqueIds = {itNsData->second.defaultShard};	 // with Default host
 	for (auto itValuesData = itNsData->second.keysToShard.begin(); itValuesData != itNsData->second.keysToShard.end(); ++itValuesData) {
 		uniqueIds.insert(itValuesData->second);
 	}
@@ -78,9 +78,9 @@ ShardIDsContainer ShardingKeys::GetShardsIds(std::string_view ns) const {
 
 ShardIDsContainer ShardingKeys::GetShardsIds() const {
 	ShardIDsContainer ids;
-	std::set<int> uniqueIds;
+	fast_hash_set<int> uniqueIds;
 	for (auto itNsData = keys_.begin(); itNsData != keys_.end(); ++itNsData) {
-		uniqueIds.insert(itNsData->second.defaultShard);	 // with Default host
+		uniqueIds.insert(itNsData->second.defaultShard);  // with Default host
 		for (auto itValuesData = itNsData->second.keysToShard.begin(); itValuesData != itNsData->second.keysToShard.end(); ++itValuesData) {
 			uniqueIds.insert(itValuesData->second);
 		}

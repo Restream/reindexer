@@ -1,3 +1,33 @@
+# Version 4.5.0 *beta* (21.09.2022)
+## Sharding
+- [fea] Optimize proxying (proxying via raw buffers)
+
+## Reindexer client
+- [fea] Optimize status request
+
+## Go connector
+- [fea] Add sharding support for `builtinserver`
+- [fix] Fix potential connection leak
+
+## Face
+- [fea] Increase cache life-time of a few resorses basing on Google recommendation
+- [fea] Add strict_mode to the NS config
+- [fix] Fix the uptime issue
+- [fea] Add `max_areas_in_doc`, `max_total_areas_to_cache`, `optimization` to Indexes
+- [fea] Add `index_optimizer_memory`, `tracked_updates_size` to Statistics -> Memory
+- [fea] Improve the Precepts UI
+- [fea] Add the pagination instead of the 'load more' feature
+- [fix] Fix the value array clearing
+- [fix] Change column headers on the Statistics -> Queries page
+- [fea] Add a fllag of the server unavailability 
+- [fea] Add the parsing of the 500 code response in the log
+- [fea] Add `sync_storage_flush_limit` to the config
+- [fix] Fix the column list for the grid view on the Statistics -> Memory page
+- [fea] Add the description of the 5хх codes to the message body
+
+## Ported
+- [fea/fix] Port all features and fixes from v3.7.0, v3.8.0
+
 # Version 4.4.0 *beta* (29.06.2022)
 ## Core
 - [fea] Add 'last error' field into replication statistics

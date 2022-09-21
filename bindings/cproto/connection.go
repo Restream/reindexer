@@ -140,6 +140,7 @@ type newConnParams struct {
 	requestTimeout    time.Duration
 	createDBIfMissing bool
 	appName           string
+	caps              bindings.BindingCapabilities
 	enableCompression bool
 }
 
@@ -178,7 +179,7 @@ func newConnection(
 		return c, 0, err
 	}
 
-	serverStartTS, err := c.login(intCtx, params.dsn, params.createDBIfMissing, params.appName)
+	serverStartTS, err := c.login(intCtx, params.dsn, params.createDBIfMissing, params.appName, params.caps)
 	if err != nil {
 		c.onError(err)
 		return c, 0, err
@@ -260,7 +261,7 @@ func (c *connectionImpl) connect(ctx context.Context, dsn *url.URL) (err error) 
 	return
 }
 
-func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMissing bool, appName string) (int64, error) {
+func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMissing bool, appName string, caps bindings.BindingCapabilities) (int64, error) {
 	password, username, path := "", "", dsn.Path
 	if dsn.User != nil {
 		username = dsn.User.Username()
@@ -270,9 +271,8 @@ func (c *connectionImpl) login(ctx context.Context, dsn *url.URL, createDBIfMiss
 		path = path[1:]
 	}
 
-	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, createDBIfMissing, false, -1, bindings.ReindexerVersion, appName)
+	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, createDBIfMissing, false, -1, bindings.ReindexerVersion, appName, caps.Value)
 	if err != nil {
-		c.err = err
 		return 0, err
 	}
 	defer buf.Free()

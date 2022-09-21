@@ -42,13 +42,13 @@ public:
 	/// @param opts - Storage options. Can be one of <br>
 	/// StorageOpts::Enabled() - Enable storage. If storage is disabled, then namespace will be completely in-memory<br>
 	/// StorageOpts::CreateIfMissing () - Storage will be created, if missing
-	/// @param version - Namespace version. Should be left empty for leader reindexer instances
+	/// @param replOpts - Namespace version. Should be left empty for leader reindexer instances
 	/// @return errOK - On success
 	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing(),
 						const NsReplicationOpts &replOpts = NsReplicationOpts());
 	/// Create new namespace. Will fail, if namespace already exists
 	/// @param nsDef - NamespaceDef with namespace initial parameters
-	/// @param version - Namespace version. Should be left empty for leader reindexer instances
+	/// @param replOpts - Namespace version. Should be left empty for leader reindexer instances
 	Error AddNamespace(const NamespaceDef &nsDef, const NsReplicationOpts &replOpts = NsReplicationOpts());
 	/// Close namespace. Will free all memory resorces, associated with namespace. Forces sync changes to disk
 	/// @param nsName - Name of namespace
@@ -182,6 +182,7 @@ public:
 	/// @param suggestions - all the suggestions for 'pos' position in query.
 	Error GetSqlSuggestions(const std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions);
 	/// Get curret connection status
+	/// WARNING: Status() request may call completion in current thread. Beware of possible deadlocks, using mutexes in this completion
 	/// @param forceCheck - forces to check status immediatlly (otherwise result of periodic check will be returned)
 	Error Status(bool forceCheck = false);
 	/// Allocate new transaction for namespace
@@ -205,6 +206,7 @@ public:
 		return SyncCoroReindexer(impl_, ctx_.WithCancelContext(cancelCtx));
 	}
 	/// Add async completion. It will be executed from internal connection thread
+	/// (completion for Status() call may be executed from current thread)
 	/// @param cmpl - completion callback
 	SyncCoroReindexer WithCompletion(Completion cmpl) { return SyncCoroReindexer(impl_, ctx_.WithCompletion(std::move(cmpl))); }
 

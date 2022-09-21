@@ -459,7 +459,7 @@ Error ReindexerService::packCJSONItem(WrSerializer& wrser, ItT& it, const Output
 	return it.GetCJSON(wrser);
 }
 
-Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryResults& qr, const OutputFlags& opts) {
+Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults& qr, const OutputFlags& opts) {
 	Error status;
 	switch (opts.encodingtype()) {
 		case EncodingType::JSON: {
@@ -538,8 +538,7 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 }
 
 template <typename Builder>
-Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, const reindexer::QueryResults& qr,
-										 const OutputFlags& opts) {
+Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, reindexer::QueryResults& qr, const OutputFlags& opts) {
 	switch (opts.encodingtype()) {
 		case EncodingType::JSON: {
 			auto array = builder.Array("aggregations");
@@ -562,7 +561,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 	return errOK;
 }
 
-::grpc::Status ReindexerService::buildQueryResults(const reindexer::QueryResults& qr, ::grpc::ServerWriter<QueryResultsResponse>* writer,
+::grpc::Status ReindexerService::buildQueryResults(reindexer::QueryResults& qr, ::grpc::ServerWriter<QueryResultsResponse>* writer,
 												   const OutputFlags& flags) {
 	WrSerializer wrser;
 	QueryResultsResponse response;
@@ -570,7 +569,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 	if (status.ok()) {
 		response.set_data(string(wrser.Slice().data(), wrser.Slice().length()));
 		QueryResultsResponse::QueryResultsOptions* opts = response.options().New();
-		opts->set_cacheenabled(qr.IsCacheEnabled() && !qr.IsWalQuery());
+		opts->set_cacheenabled(qr.IsCacheEnabled() && !qr.IsWALQuery() && !qr.HaveShardIDs());
 		if (!qr.GetExplainResults().empty()) {
 			opts->set_explain(qr.GetExplainResults());
 		}

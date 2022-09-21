@@ -216,7 +216,7 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			ns_.tagsMatcher_ = std::move(tm);
 			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, false);
 			ns_.tagsMatcher_.setUpdated();
-			ns_.saveTagsMatcherToStorage();
+			ns_.saveTagsMatcherToStorage(false);
 			break;
 		}
 		case WalInitTransaction:

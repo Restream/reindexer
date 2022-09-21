@@ -78,6 +78,7 @@ public:
 private:
 	friend class SyncCoroQueryResults;
 	friend class SyncCoroTransaction;
+	Error fetchResults(int flags, int offset, int limit, SyncCoroQueryResults &result);
 	Error fetchResults(int flags, SyncCoroQueryResults &result);
 	Error closeResults(SyncCoroQueryResults &result);
 	Error addTxItem(SyncCoroTransaction &tr, Item &&item, ItemModifyMode mode, lsn_t lsn, SyncCoroTransaction::Completion cmpl);
@@ -127,6 +128,7 @@ private:
 		DbCmdCommitTransaction,
 		DbCmdRollBackTransaction,
 		DbCmdFetchResults,
+		DbCmdFetchResultsParametrized,
 		DbCmdCloseResults,
 		DbCmdNewItemTx,
 		DbCmdAddTxItem,
@@ -419,8 +421,10 @@ private:
 	std::mutex errorMtx_;
 	ThreadSafeError lastError_;
 	INamespaces::PtrT sharedNamespaces_;
+	std::atomic<bool> requiresStatusCheck_ = {true};
 
 	void coroInterpreter(Connection<DatabaseCommand> &, ConnectionsPool<DatabaseCommand> &, uint32_t tid) noexcept;
+	Error fetchResultsImpl(int flags, int offset, int limit, CoroQueryResults &qr);
 };
 }  // namespace client
 }  // namespace reindexer

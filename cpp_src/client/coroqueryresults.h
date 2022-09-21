@@ -14,10 +14,18 @@ class Query;
 namespace net {
 namespace cproto {
 class CoroClientConnection;
-}
+class CoroRPCAnswer;
+}  // namespace cproto
 }  // namespace net
 
 namespace client {
+
+using QrRawBuffer = h_vector<char, 0x100>;
+
+struct ParsedQrRawBuffer {
+	QrRawBuffer* buf = nullptr;
+	ResultSerializer::ParsingData parsingData;
+};
 
 using std::chrono::seconds;
 using std::chrono::milliseconds;
@@ -28,7 +36,7 @@ class CoroQueryResults {
 public:
 	using NsArray = h_vector<Namespace*, 1>;
 
-	CoroQueryResults(int fetchFlags = 0) noexcept : i_(fetchFlags) {}
+	CoroQueryResults(int fetchFlags = 0, int fetchAmount = 0, bool lazyMode = false) noexcept : i_(fetchFlags, fetchAmount, lazyMode) {}
 	CoroQueryResults(const CoroQueryResults&) = delete;
 	CoroQueryResults(CoroQueryResults&& o) noexcept : i_(std::move(o.i_)) { o.setClosed(); }
 	CoroQueryResults& operator=(const CoroQueryResults&) = delete;
@@ -82,8 +90,8 @@ public:
 	bool HaveRank() const noexcept { return i_.queryParams_.flags & kResultsWithRank; }
 	bool NeedOutputRank() const noexcept { return i_.queryParams_.flags & kResultsNeedOutputRank; }
 	bool NeedOutputShardId() const noexcept { return i_.fetchFlags_ & kResultsNeedOutputShardId; }
-	const string& GetExplainResults() const noexcept { return i_.queryParams_.explainResults; }
-	const vector<AggregationResult>& GetAggregationResults() const noexcept { return i_.queryParams_.aggResults; }
+	const string& GetExplainResults();
+	const vector<AggregationResult>& GetAggregationResults();
 	Error Status() const noexcept { return i_.status_; }
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	size_t GetNamespacesCount() const noexcept { return i_.nsArray_.size(); }
@@ -96,28 +104,46 @@ public:
 	PayloadType GetPayloadType(std::string_view ns) const noexcept;
 	const std::string& GetNsName(int nsid) const noexcept;
 
-	bool IsJSON() const noexcept { return (i_.queryParams_.flags & kResultsFormatMask) == kResultsJson; }
-	bool IsCJSON() const noexcept { return (i_.queryParams_.flags & kResultsFormatMask) == kResultsCJson; }
+	int GetFormat() const noexcept { return i_.queryParams_.flags & kResultsFormatMask; }
+	int GetFlags() const noexcept { return i_.queryParams_.flags; }
+	bool IsJSON() const noexcept { return GetFormat() == kResultsJson; }
+	bool IsCJSON() const noexcept { return GetFormat() == kResultsCJson; }
 	bool HaveJoined() const noexcept { return i_.queryParams_.flags & kResultsWithJoined; }
-	const std::optional<QueryData> GetQueryData() const noexcept { return i_.qData_; }
+	const std::optional<QueryData>& GetQueryData() const noexcept { return i_.qData_; }
+	bool GetRawBuffer(ParsedQrRawBuffer& out) {
+		if (!Status().ok()) {
+			throw Status();
+		}
+		if (!IsInLazyMode()) {
+			throw Error(errLogic, "Unable to get raw buffer: client QueryResults is not in lazy parsing mode");
+		}
+		out.buf = &i_.rawResult_;
+		out.parsingData = i_.parsingData_;
+		i_.status_ = Error(errNotValid, "QueryResults buffer was moved");
+		return holdsRemoteData();
+	}
+	int FetchAmount() const noexcept { return i_.fetchAmount_; }
+	bool IsInLazyMode() const noexcept { return i_.lazyMode_; }
 
 private:
 	friend class SyncCoroQueryResults;
 	friend class SyncCoroReindexerImpl;
 	friend class CoroRPCClient;
 	friend class RPCClientMock;
-	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount,
-					 milliseconds timeout) noexcept
-		: i_(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout) {}
+	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount, milliseconds timeout,
+					 bool lazyMode) noexcept
+		: i_(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout, lazyMode) {}
 	CoroQueryResults(const Query* q, net::cproto::CoroClientConnection* conn, NsArray&& nsArray, std::string_view rawResult, RPCQrId id,
-					 int fetchFlags, int fetchAmount, milliseconds timeout)
-		: i_(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout) {
+					 int fetchFlags, int fetchAmount, milliseconds timeout, bool lazyMode)
+		: i_(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout, lazyMode) {
 		Bind(rawResult, id, q);
 	}
 	CoroQueryResults(NsArray&& nsArray, Item& item);
 
 	void Bind(std::string_view rawResult, RPCQrId id, const Query* q);
 	void fetchNextResults();
+	void handleFetchedBuf(net::cproto::CoroRPCAnswer& ans);
+	void parseExtraData();
 	bool holdsRemoteData() const noexcept {
 		return i_.conn_ && i_.queryID_.main >= 0 && i_.fetchOffset_ + i_.queryParams_.count < i_.queryParams_.qcount;
 	}
@@ -128,19 +154,31 @@ private:
 	const net::cproto::CoroClientConnection* getConn() const noexcept { return i_.conn_; }
 
 	struct Impl {
-		Impl(int fetchFlags) noexcept : fetchFlags_(fetchFlags) {}
-		Impl(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount, milliseconds timeout);
-		Impl(NsArray&& nsArray) noexcept : nsArray_(std::move(nsArray)) {}
+		Impl(int fetchFlags, int fetchAmount, bool lazyMode) noexcept
+			: fetchFlags_(fetchFlags), fetchAmount_(fetchAmount), lazyMode_(lazyMode) {
+			InitLazyData();
+		}
+		Impl(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount, milliseconds timeout,
+			 bool lazyMode);
+		Impl(NsArray&& nsArray) noexcept : nsArray_(std::move(nsArray)) { InitLazyData(); }
+		void InitLazyData() {
+			if (!lazyMode_) {
+				queryParams_.aggResults.emplace();
+				queryParams_.explainResults.emplace();
+			}
+		}
 
 		net::cproto::CoroClientConnection* conn_ = nullptr;
 		NsArray nsArray_;
-		h_vector<char, 0x100> rawResult_;
+		QrRawBuffer rawResult_;
 		RPCQrId queryID_;
 		int fetchOffset_ = 0;
 		int fetchFlags_ = 0;
 		int fetchAmount_ = 0;
 		milliseconds requestTimeout_;
+		ResultSerializer::ParsingData parsingData_;
 		ResultSerializer::QueryParams queryParams_;
+		bool lazyMode_ = false;
 		Error status_;
 		int64_t shardingConfigVersion_ = -1;
 		std::chrono::steady_clock::time_point sessionTs_;

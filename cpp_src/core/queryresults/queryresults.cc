@@ -221,6 +221,7 @@ void QueryResults::RebuildMergedData() {
 		tmList.reserve(remote_.size() + (local_ ? 1 : 0));
 		if (local_) {
 			tmList.emplace_back(local_->qr.getTagsMatcher(0));
+			mergedData_->pt = local_->qr.getPayloadType(0);
 		}
 		for (auto& qrp : remote_) {
 			tmList.emplace_back(qrp.qr.GetTagsMatcher(0));
@@ -257,7 +258,7 @@ int QueryResults::GetMergedNSCount() const noexcept {
 	}
 }
 
-const std::vector<AggregationResult>& QueryResults::GetAggregationResults() const {
+const std::vector<AggregationResult>& QueryResults::GetAggregationResults() {
 	switch (type_) {
 		case Type::None: {
 			static std::vector<AggregationResult> kEmpty;
@@ -307,11 +308,11 @@ bool QueryResults::IsCacheEnabled() const noexcept {
 }
 
 bool QueryResults::HaveShardIDs() const noexcept {
-	if (local_ && local_->shardID != ShardingKeyType::ProxyOff) {
+	if (local_ && local_->shardID != ShardingKeyType::ProxyOff && local_->shardID != ShardingKeyType::NotSharded) {
 		return true;
 	}
 	for (auto& qrp : remote_) {
-		if (qrp.shardID != ShardingKeyType::ProxyOff) {
+		if (qrp.shardID != ShardingKeyType::ProxyOff && qrp.shardID != ShardingKeyType::NotSharded) {
 			return true;
 		}
 	}
@@ -344,7 +345,7 @@ int QueryResults::GetCommonShardID() const {
 	return shardId.has_value() ? *shardId : ShardingKeyType::ProxyOff;
 }
 
-PayloadType QueryResults::GetPayloadType(int nsid) const {
+PayloadType QueryResults::GetPayloadType(int nsid) const noexcept {
 	switch (type_) {
 		case Type::None:
 			return PayloadType();
@@ -357,7 +358,7 @@ PayloadType QueryResults::GetPayloadType(int nsid) const {
 	}
 }
 
-TagsMatcher QueryResults::GetTagsMatcher(int nsid) const {
+TagsMatcher QueryResults::GetTagsMatcher(int nsid) const noexcept {
 	switch (type_) {
 		case Type::None:
 			return TagsMatcher();
@@ -370,7 +371,7 @@ TagsMatcher QueryResults::GetTagsMatcher(int nsid) const {
 	}
 }
 
-bool QueryResults::HaveRank() const {
+bool QueryResults::HaveRank() const noexcept {
 	switch (type_) {
 		case Type::None:
 			return false;
@@ -383,7 +384,7 @@ bool QueryResults::HaveRank() const {
 	return getMergedData().haveRank;
 }
 
-bool QueryResults::NeedOutputRank() const {
+bool QueryResults::NeedOutputRank() const noexcept {
 	switch (type_) {
 		case Type::None:
 			return false;
@@ -396,7 +397,7 @@ bool QueryResults::NeedOutputRank() const {
 	return getMergedData().needOutputRank;
 }
 
-bool QueryResults::HaveJoined() const {
+bool QueryResults::HaveJoined() const noexcept {
 	switch (type_) {
 		case Type::None:
 			return false;
@@ -424,7 +425,7 @@ void QueryResults::SetQuery(const Query* q) {
 	}
 }
 
-uint32_t QueryResults::GetJoinedField(int parentNsId) const {
+uint32_t QueryResults::GetJoinedField(int parentNsId) const noexcept {
 	uint32_t joinedField = 1;
 	if (qData_.has_value()) {
 		joinedField += qData_->mergedJoinedSizes.size();
@@ -564,7 +565,7 @@ void QueryResults::QrMetaData<QrT>::ResetJoinStorage(int64_t idx) const {
 	}
 }
 
-joins::ItemIterator QueryResults::Iterator::GetJoined() {
+joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>* storage) {
 	if (qr_->type_ == Type::Local) {
 		return localIt_->GetJoined();
 	} else if (qr_->type_ == Type::SingleRemote) {
@@ -579,15 +580,16 @@ joins::ItemIterator QueryResults::Iterator::GetJoined() {
 			throw Error(errLogic, "Unable to init joined data without initial query");
 		}
 
-		if (!qr_->remote_[0].CheckIfNsJoinStorageHasSameIdx(idx_)) {
+		auto& rqr = qr_->remote_[0];
+		if (storage || !rqr.CheckIfNsJoinStorageHasSameIdx(idx_)) {
 			try {
-				qr_->remote_[0].ResetJoinStorage(idx_);
+				rqr.ResetJoinStorage(idx_);
 
 				const auto& qData = qr_->qData_;
 				if (rit.itemParams_.nsid >= int(qData->joinedSize)) {
 					return reindexer::joins::ItemIterator::CreateEmpty();
 				}
-				qr_->remote_[0].NsJoinRes()->data.jr.SetJoinedSelectorsCount(qData->joinedSize);
+				rqr.NsJoinRes()->data.jr.SetJoinedSelectorsCount(qData->joinedSize);
 
 				auto jField = qr_->GetJoinedField(rit.itemParams_.nsid);
 				for (size_t i = 0; i < joinedData.size(); ++i, ++jField) {
@@ -601,13 +603,17 @@ joins::ItemIterator QueryResults::Iterator::GetJoined() {
 						}
 
 						qrJoined.Add(ItemRef(itemData.id, itemimpl.Value(), itemData.proc, itemData.nsid, true));
-						qr_->remote_[0].NsJoinRes()->data.joinedRawData.emplace_back(std::move(itemimpl));
+						if (!storage) {
+							rqr.NsJoinRes()->data.joinedRawData.emplace_back(std::move(itemimpl));
+						} else {
+							storage->emplace_back(itemData.id, 0, itemData.nsid, std::move(itemimpl), true);
+						}
 					}
-					qr_->remote_[0].NsJoinRes()->data.jr.Insert(rit.itemParams_.id, i, std::move(qrJoined));
+					rqr.NsJoinRes()->data.jr.Insert(rit.itemParams_.id, i, std::move(qrJoined));
 				}
 			} catch (...) {
-				if (qr_->remote_[0].NsJoinRes()) {
-					qr_->remote_[0].NsJoinRes()->idx = -1;
+				if (rqr.NsJoinRes()) {
+					rqr.NsJoinRes()->idx = -1;
 				}
 				throw;
 			}
@@ -996,17 +1002,19 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 		++idx_;
 		const auto qrId = qr->curQrId_;
 		assert(*qr->orderedQrs_->begin() == qrId);
-		qr->orderedQrs_->erase(qr->orderedQrs_->begin());
+		auto oNode = qr->orderedQrs_->extract(qr->orderedQrs_->begin());
 		if (qrId < 0) {
 			++qr->local_->it;
 			if (qr->local_->it != qr->local_->qr.end()) {
-				qr->orderedQrs_->emplace(-1);
+				oNode.value() = -1;
+				qr->orderedQrs_->insert(std::move(oNode));
 			}
 		} else {
 			assert(static_cast<size_t>(qrId) < qr_->remote_.size());
 			++qr->remote_[qrId].it;
 			if (qr->remote_[qrId].it != qr->remote_[qrId].qr.end()) {
-				qr->orderedQrs_->emplace(qrId);
+				oNode.value() = qrId;
+				qr->orderedQrs_->insert(std::move(oNode));
 			}
 		}
 		if (qr->orderedQrs_->begin() != qr->orderedQrs_->end()) {
@@ -1050,9 +1058,9 @@ ItemRef QueryResults::Iterator::GetItemRef(ProxiedRefsStorage* storage) {
 				   [&](QrMetaData<client::SyncCoroQueryResults>* qr) {
 					   if (!qr->CheckIfItemRefStorageHasSameIdx(idx_) || storage) {
 						   ItemImpl itemimpl(qr_->GetPayloadType(0), qr_->GetTagsMatcher(0));
-						   const bool converViaJSON =
+						   const bool convertViaJSON =
 							   !qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm || !qr_->remote_[size_t(qr_->curQrId_)].qr.IsCJSON();
-						   Error err = fillItemImpl(qr->it, itemimpl, converViaJSON);
+						   Error err = fillItemImpl(qr->it, itemimpl, convertViaJSON);
 						   if (!err.ok()) {
 							   throw err;
 						   }

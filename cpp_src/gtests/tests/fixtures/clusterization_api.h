@@ -27,6 +27,7 @@ public:
 	static const std::string kIdField;
 	static const std::string kStringField;
 	static const std::string kIntField;
+	static const std::string kFTField;
 
 	void SetUp();
 	void TearDown();
