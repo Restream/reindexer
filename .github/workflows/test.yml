@@ -170,7 +170,11 @@ jobs:
             go test -timeout 60m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
           else
             cd build
+            uname -a
             chmod +x cpp_src/gtests/tests/tests
+            file cpp_src/gtests/tests/tests
+            chmod +x cpp_src/gtests/bench/ft_benchmarking
+            chmod +x cpp_src/gtests/bench/benchmarking
             ctest --verbose
           fi
 
