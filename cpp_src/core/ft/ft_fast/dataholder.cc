@@ -28,6 +28,7 @@ size_t IDataHolder::GetMemStat() {
 		res += step.typosHalf_.heap_size() + step.typosMax_.heap_size() + step.suffixes_.heap_size();
 	}
 	res += vdocs_.capacity() * sizeof(VDocEntry);
+	res += rowId2Vdoc_.capacity() * sizeof(rowId2Vdoc_[0]);
 	return res;
 }
 
@@ -44,6 +45,7 @@ void IDataHolder::Clear() {
 	vdocsTexts.clear();
 	vodcsOffset_ = 0;
 	szCnt = 0;
+	rowId2Vdoc_.clear();
 }
 
 bool IDataHolder::NeedClear(bool complte_updated) {
@@ -171,8 +173,15 @@ void DataHolder<IdCont>::StartCommit(bool complte_updated) {
 
 template <typename IdCont>
 IDataHolder::MergeData DataHolder<IdCont>::Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
+												  FtMergeStatuses::Statuses mergeStatuses, bool mergeStatusesEmpty,
 												  const RdxContext& rdxCtx) {
-	return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.Process(dsl, inTransaction, rdxCtx);
+	if (mergeStatusesEmpty) {
+		return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.template Process<true>(dsl, inTransaction,
+																								  std::move(mergeStatuses), rdxCtx);
+	} else {
+		return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.template Process<false>(dsl, inTransaction,
+																								   std::move(mergeStatuses), rdxCtx);
+	}
 }
 
 template <typename IdCont>

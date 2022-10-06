@@ -535,7 +535,7 @@ void CoroRPCClient::startResubRoutine() {
 
 void CoroRPCClient::resubRoutine() {
 	while (!terminate_) {
-		loop_->granular_sleep(kSubscriptionCheckInterval, kCoroSleepGranularity, terminate_);
+		loop_->granular_sleep(kSubscriptionCheckInterval, kCoroSleepGranularity, [this] { return terminate_; });
 		if (subscribed_) {
 			if (observers_.Empty()) {
 				subscribeImpl(false);

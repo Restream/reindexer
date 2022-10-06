@@ -6,13 +6,12 @@
 #include "estl/h_vector.h"
 
 namespace reindexer {
-using std::shared_ptr;
 
 class FtCtx : public BaseFunctionCtx {
 public:
-	typedef shared_ptr<FtCtx> Ptr;
+	typedef std::shared_ptr<FtCtx> Ptr;
 	struct Data {
-		typedef shared_ptr<Data> Ptr;
+		typedef std::shared_ptr<Data> Ptr;
 		std::vector<int16_t> proc_;
 		fast_hash_map<IdType, AreaHolder::Ptr> holders_;
 		bool need_area_ = false;
@@ -29,9 +28,11 @@ public:
 
 	template <typename InputIterator>
 	void Add(InputIterator begin, InputIterator end, int16_t proc, AreaHolder::UniquePtr &&holder = nullptr);
+	template <typename InputIterator>
+	void Add(InputIterator begin, InputIterator end, int16_t proc, const std::vector<bool> &mask, AreaHolder::UniquePtr &&holder = nullptr);
 	void Reserve(size_t size);
-	size_t Size();
-	bool NeedArea();
+	size_t Size() const noexcept;
+	bool NeedArea() const noexcept;
 	bool PrepareAreas(const fast_hash_map<std::string, int> &fields, const string &name);
 
 	void SetData(Data::Ptr data);

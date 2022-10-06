@@ -1,7 +1,9 @@
 #pragma once
 
 #include "core/idsetcache.h"
+#include "core/querycache.h"
 #include "core/selectfunc/ctx/ftctx.h"
+
 namespace reindexer {
 
 struct FtIdSetCacheVal {
@@ -16,4 +18,6 @@ struct FtIdSetCacheVal {
 };
 
 class FtIdSetCache : public LRUCache<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key> {};
+class PreselectedFtIdSetCache : public LRUCache<QueryCacheKey, FtIdSetCacheVal, HashQueryCacheKey, EqQueryCacheKey> {};
+
 }  // namespace reindexer

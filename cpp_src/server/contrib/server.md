@@ -124,7 +124,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.8.0
+*Version* : 3.9.0
 
 
 ### License information
@@ -2143,6 +2143,7 @@ Fulltext Index configuration
 |**distance_weight**  <br>*optional*|Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range  <br>**Default** : `0.5`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**enable_kb_layout**  <br>*optional*|Enable wrong keyboard layout variants processing. e.g. term 'keynbr' will match word 'лунтик'  <br>**Default** : `true`|boolean|
 |**enable_numbers_search**  <br>*optional*|Enable number variants processing. e.g. term '100' will match words one hundred  <br>**Default** : `false`|boolean|
+|**enable_preselect_before_ft**  <br>*optional*|Enable to execute others queries before the ft query  <br>**Default** : `false`|boolean|
 |**enable_translit**  <br>*optional*|Enable russian translit variants processing. e.g. term 'luntik' will match word 'лунтик'  <br>**Default** : `true`|boolean|
 |**enable_warmup_on_ns_copy**  <br>*optional*|Enable auto index warmup after atomic namespace copy on transaction  <br>**Default** : `false`|boolean|
 |**extra_word_symbols**  <br>*optional*|List of symbols, which will be threated as word part, all other symbols will be thrated as wors separators  <br>**Default** : `"-/+"`|string|

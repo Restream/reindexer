@@ -1,5 +1,6 @@
 #include <chrono>
 #include <condition_variable>
+#include <thread>
 #include "rpcclient_api.h"
 #include "rpcserver_fake.h"
 #include "tools/fsops.h"
@@ -18,10 +19,11 @@ TEST_F(RPCClientTestApi, ConnectTimeout) {
 	config.RequestTimeout = seconds(5);
 	reindexer::client::Reindexer rx(config);
 	auto res = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db");
-	EXPECT_TRUE(res.ok());
+	EXPECT_TRUE(res.ok()) << res.what();
 	res = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
 	EXPECT_EQ(res.code(), errTimeout);
-	StopServer();
+	res = StopServer();
+	EXPECT_TRUE(res.ok()) << res.what();
 }
 
 TEST_F(RPCClientTestApi, RequestTimeout) {
@@ -32,13 +34,14 @@ TEST_F(RPCClientTestApi, RequestTimeout) {
 	config.RequestTimeout = seconds(3);
 	reindexer::client::Reindexer rx(config);
 	auto res = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db");
-	EXPECT_TRUE(res.ok());
+	EXPECT_TRUE(res.ok()) << res.what();
 	const string kNamespaceName = "MyNamespace";
 	res = rx.AddNamespace(reindexer::NamespaceDef(kNamespaceName));
 	EXPECT_EQ(res.code(), errTimeout);
 	res = rx.DropNamespace(kNamespaceName);
 	EXPECT_TRUE(res.ok()) << res.what();
-	StopServer();
+	res = StopServer();
+	EXPECT_TRUE(res.ok()) << res.what();
 }
 
 TEST_F(RPCClientTestApi, RequestCancels) {
@@ -46,7 +49,7 @@ TEST_F(RPCClientTestApi, RequestCancels) {
 	StartServer();
 	reindexer::client::Reindexer rx;
 	auto res = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db");
-	EXPECT_TRUE(res.ok());
+	EXPECT_TRUE(res.ok()) << res.what();
 
 	{
 		CancelRdxContext ctx;
@@ -67,7 +70,8 @@ TEST_F(RPCClientTestApi, RequestCancels) {
 		thr.join();
 	}
 
-	StopServer();
+	res = StopServer();
+	EXPECT_TRUE(res.ok()) << res.what();
 }
 
 TEST_F(RPCClientTestApi, SuccessfullRequestWithTimeout) {
@@ -78,10 +82,11 @@ TEST_F(RPCClientTestApi, SuccessfullRequestWithTimeout) {
 	config.RequestTimeout = seconds(6);
 	reindexer::client::Reindexer rx(config);
 	auto res = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db");
-	EXPECT_TRUE(res.ok());
+	EXPECT_TRUE(res.ok()) << res.what();
 	res = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
-	EXPECT_TRUE(res.ok());
-	StopServer();
+	EXPECT_TRUE(res.ok()) << res.what();
+	res = StopServer();
+	EXPECT_TRUE(res.ok()) << res.what();
 }
 
 TEST_F(RPCClientTestApi, ErrorLoginResponse) {
@@ -91,7 +96,8 @@ TEST_F(RPCClientTestApi, ErrorLoginResponse) {
 	rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db");
 	auto res = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
 	EXPECT_EQ(res.code(), errForbidden);
-	StopServer();
+	res = StopServer();
+	EXPECT_TRUE(res.ok()) << res.what();
 }
 
 TEST_F(RPCClientTestApi, SeveralDsnReconnect) {
@@ -157,12 +163,12 @@ TEST_F(RPCClientTestApi, SelectFromClosedNamespace) {
 		opts.CreateDBIfMissing();
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect(dsn, loop, opts);
-		ASSERT_TRUE(err.ok());
+		ASSERT_TRUE(err.ok()) << err.what();
 		const string kNsName = "MyNamesapce";
 		{
 			reindexer::client::CoroQueryResults qr;
 			err = rx.Select(reindexer::Query(kNsName), qr);
-			ASSERT_FALSE(err.ok());
+			ASSERT_FALSE(err.ok()) << err.what();
 		}
 		reindexer::NamespaceDef nsDef(kNsName);
 		nsDef.AddIndex("id", "hash", "int", IndexOpts().PK());
@@ -200,7 +206,8 @@ TEST_F(RPCClientTestApi, SelectFromClosedNamespace) {
 	});
 	loop.run();
 	ASSERT_TRUE(finished);
-	StopServer();
+	Error err = StopServer();
+	EXPECT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(RPCClientTestApi, RenameNamespace) {
@@ -278,7 +285,8 @@ TEST_F(RPCClientTestApi, RenameNamespace) {
 	});
 	loop.run();
 	ASSERT_TRUE(finished);
-	StopServer();
+	Error err = StopServer();
+	EXPECT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(RPCClientTestApi, CoroRequestTimeout) {
@@ -306,7 +314,48 @@ TEST_F(RPCClientTestApi, CoroRequestTimeout) {
 	});
 	loop.run();
 	ASSERT_TRUE(finished);
-	StopServer();
+	Error err = StopServer();
+	EXPECT_TRUE(err.ok()) << err.what();
+}
+
+TEST_F(RPCClientTestApi, CoroSelectTimeout) {
+	static const std::string kNamespaceName = "MyNamespace";
+	static constexpr size_t kCorCount = 16;
+	static constexpr size_t kQueriesCount = 3;
+	static constexpr std::chrono::seconds kSelectDelay{3};
+	RPCServerConfig conf;
+	conf.loginDelay = std::chrono::seconds(0);
+	conf.selectDelay = kSelectDelay;
+	conf.openNsDelay = std::chrono::seconds{0};
+	auto& server = AddFakeServer(kDefaultRPCServerAddr, conf);
+	StartServer();
+	ev::dynamic_loop loop;
+	std::vector<bool> finished(kCorCount, false);
+	for (size_t i = 0; i < kCorCount; ++i) {
+		loop.spawn([&, index = i] {
+			reindexer::client::ReindexerConfig config;
+			config.RequestTimeout = seconds(1);
+			reindexer::client::CoroReindexer rx(config);
+			auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
+			ASSERT_TRUE(err.ok()) << err.what();
+			for (size_t j = 0; j < kQueriesCount; ++j) {
+				reindexer::client::CoroQueryResults qr;
+				err = rx.Select(reindexer::Query(kNamespaceName), qr);
+				EXPECT_EQ(err.code(), errTimeout);
+			}
+			loop.granular_sleep(kSelectDelay * kQueriesCount * kCorCount, std::chrono::milliseconds{300},
+								[&server] { return server.CloseQRRequestsCount() >= kCorCount * kQueriesCount; });
+			err = rx.AddNamespace(reindexer::NamespaceDef(kNamespaceName + std::to_string(index)));
+			EXPECT_TRUE(err.ok()) << err.what();
+			finished[index] = true;
+		});
+	}
+	loop.run();
+	for (size_t i = 0; i < kCorCount; ++i) {
+		EXPECT_TRUE(finished[i]);
+	}
+	Error const err = StopServer();
+	EXPECT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(RPCClientTestApi, CoroRequestCancels) {
@@ -345,7 +394,8 @@ TEST_F(RPCClientTestApi, CoroRequestCancels) {
 	});
 	loop.run();
 	ASSERT_TRUE(finished);
-	StopServer();
+	Error err = StopServer();
+	EXPECT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(RPCClientTestApi, CoroSuccessfullRequestWithTimeout) {
@@ -367,7 +417,8 @@ TEST_F(RPCClientTestApi, CoroSuccessfullRequestWithTimeout) {
 	});
 	loop.run();
 	ASSERT_TRUE(finished);
-	StopServer();
+	Error err = StopServer();
+	EXPECT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(RPCClientTestApi, CoroErrorLoginResponse) {
@@ -386,7 +437,8 @@ TEST_F(RPCClientTestApi, CoroErrorLoginResponse) {
 	});
 	loop.run();
 	ASSERT_TRUE(finished);
-	StopServer();
+	Error err = StopServer();
+	EXPECT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(RPCClientTestApi, CoroStatus) {
@@ -406,7 +458,8 @@ TEST_F(RPCClientTestApi, CoroStatus) {
 			StartServer();
 			err = rx.Status();
 			ASSERT_TRUE(err.ok()) << err.what();
-			StopServer();
+			err = StopServer();
+			EXPECT_TRUE(err.ok()) << err.what();
 			loop.sleep(std::chrono::milliseconds(20));	// Allow reading coroutine to handle disconnect
 			err = rx.Status();
 			ASSERT_EQ(err.code(), errNetwork);
@@ -628,7 +681,8 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 
 	// Shutdown server
 	step = Step::ShutdownInProgress;
-	StopServer();
+	Error err = StopServer();
+	EXPECT_TRUE(err.ok()) << err.what();
 	step = Step::ShutdownDone;
 	std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
@@ -765,7 +819,7 @@ TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		err = rx.Status();
-		ASSERT_FALSE(err.ok());
+		ASSERT_FALSE(err.ok()) << err.what();
 		finished = true;
 	};
 

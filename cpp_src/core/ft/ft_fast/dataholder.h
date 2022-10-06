@@ -6,6 +6,7 @@
 #include "core/ft/filters/itokenfilter.h"
 #include "core/ft/idrelset.h"
 #include "core/ft/stemmer.h"
+#include "core/index/ft_preselect.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "estl/fast_hash_map.h"
 #include "estl/flat_str_map.h"
@@ -80,7 +81,7 @@ public:
 
 	virtual ~IDataHolder() = default;
 	virtual MergeData Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
-							 const RdxContext&) = 0;
+							 FtMergeStatuses::Statuses mergeStatuses, bool mergeStatusesEmpty, const RdxContext&) = 0;
 	virtual void Process(size_t fieldSize, bool multithread) = 0;
 	virtual size_t GetMemStat() = 0;
 	virtual void Clear() = 0;
@@ -118,21 +119,22 @@ public:
 	size_t vodcsOffset_{0};
 	size_t szCnt{0};
 	FtFastConfig* cfg_{nullptr};
+	std::vector<size_t> rowId2Vdoc_;
 };
 
 template <typename IdCont>
 class DataHolder : public IDataHolder {
 public:
 	MergeData Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
-					 const RdxContext&) override final;
-	void Process(size_t fieldSize, bool multithread) override final;
+					 FtMergeStatuses::Statuses mergeStatuses, bool mergeStatusesEmpty, const RdxContext&) final;
+	void Process(size_t fieldSize, bool multithread) final;
 	size_t GetMemStat() override final;
 	void StartCommit(bool complte_updated) override final;
 	void Clear() override final;
-	vector<PackedWordEntry<IdCont>>& GetWords() noexcept { return words_; }
+	std::vector<PackedWordEntry<IdCont>>& GetWords() noexcept { return words_; }
 	PackedWordEntry<IdCont>& getWordById(WordIdType id);
 
-	vector<PackedWordEntry<IdCont>> words_;
+	std::vector<PackedWordEntry<IdCont>> words_;
 };
 
 extern template class DataHolder<PackedIdRelVec>;

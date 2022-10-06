@@ -1397,18 +1397,18 @@ TEST_F(ReindexerApi, UpdateWithBoolParserTest) {
 	Query query;
 	const string sql = "UPDATE ns SET flag1 = true,flag2 = false WHERE id > 100";
 	query.FromSQL(sql);
-	ASSERT_TRUE(query.UpdateFields().size() == 2);
-	ASSERT_TRUE(query.UpdateFields().front().column == "flag1");
-	ASSERT_TRUE(query.UpdateFields().front().mode == FieldModeSet);
-	ASSERT_TRUE(query.UpdateFields().front().values.size() == 1);
-	ASSERT_TRUE(query.UpdateFields().front().values.front().Type() == KeyValueBool &&
-				query.UpdateFields().front().values.front().As<bool>() == true);
-	ASSERT_TRUE(query.UpdateFields().back().column == "flag2");
-	ASSERT_TRUE(query.UpdateFields().back().mode == FieldModeSet);
-	ASSERT_TRUE(query.UpdateFields().back().values.size() == 1);
-	ASSERT_TRUE(query.UpdateFields().back().values.front().Type() == KeyValueBool &&
-				query.UpdateFields().back().values.front().As<bool>() == false);
-	ASSERT_TRUE(query.GetSQL() == sql) << query.GetSQL();
+	ASSERT_EQ(query.UpdateFields().size(), 2);
+	EXPECT_EQ(query.UpdateFields().front().Column(), "flag1");
+	EXPECT_EQ(query.UpdateFields().front().Mode(), FieldModeSet);
+	ASSERT_EQ(query.UpdateFields().front().Values().size(), 1);
+	EXPECT_EQ(query.UpdateFields().front().Values().front().Type(), KeyValueBool);
+	EXPECT_TRUE(query.UpdateFields().front().Values().front().As<bool>());
+	EXPECT_EQ(query.UpdateFields().back().Column(), "flag2");
+	EXPECT_EQ(query.UpdateFields().back().Mode(), FieldModeSet);
+	ASSERT_EQ(query.UpdateFields().back().Values().size(), 1);
+	EXPECT_EQ(query.UpdateFields().back().Values().front().Type(), KeyValueBool);
+	EXPECT_FALSE(query.UpdateFields().back().Values().front().As<bool>());
+	EXPECT_EQ(query.GetSQL(), sql) << query.GetSQL();
 }
 
 TEST_F(ReindexerApi, EqualPositionsSqlParserTest) {

@@ -167,7 +167,9 @@ void ServerConnection::onRead() {
 			// Exception occurs on unrecoverable error. Send responce, and drop connection
 			fprintf(stderr, "Dropping RPC-connection. Reason: %s\n", err.what().c_str());
 			try {
-				responceRPC(ctx, err, Args());
+				if (!ctx.respSent) {
+					responceRPC(ctx, err, Args());
+				}
 			} catch (const Error &err) {
 				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
 			}

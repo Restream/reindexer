@@ -165,8 +165,8 @@ void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {
 void encodeDropFields(const Query& query, JsonBuilder& builder) {
 	auto dropFields = builder.Array("drop_fields");
 	for (const UpdateEntry& updateEntry : query.UpdateFields()) {
-		if (updateEntry.mode == FieldModeDrop) {
-			dropFields.Put(0, updateEntry.column);
+		if (updateEntry.Mode() == FieldModeDrop) {
+			dropFields.Put(0, updateEntry.Column());
 		}
 	}
 }
@@ -174,20 +174,20 @@ void encodeDropFields(const Query& query, JsonBuilder& builder) {
 void encodeUpdateFields(const Query& query, JsonBuilder& builder) {
 	auto updateFields = builder.Array("update_fields");
 	for (const UpdateEntry& updateEntry : query.UpdateFields()) {
-		if (updateEntry.mode == FieldModeSet || updateEntry.mode == FieldModeSetJson) {
-			bool isObject = (updateEntry.mode == FieldModeSetJson);
+		if (updateEntry.Mode() == FieldModeSet || updateEntry.Mode() == FieldModeSetJson) {
+			bool isObject = (updateEntry.Mode() == FieldModeSetJson);
 			auto field = updateFields.Object(0);
 			if (isObject) {
 				field.Put("type", "object");
-			} else if (updateEntry.isExpression) {
+			} else if (updateEntry.IsExpression()) {
 				field.Put("type", "expression");
 			} else {
 				field.Put("type", "value");
 			}
-			field.Put("name", updateEntry.column);
-			field.Put("is_array", updateEntry.values.IsArrayValue());
+			field.Put("name", updateEntry.Column());
+			field.Put("is_array", updateEntry.Values().IsArrayValue());
 			auto values = field.Array("values");
-			for (const Variant& v : updateEntry.values) {
+			for (const Variant& v : updateEntry.Values()) {
 				if (isObject) {
 					values.Json(nullptr, p_string(v));
 				} else {
@@ -228,10 +228,10 @@ void toDsl(const Query& query, JsonBuilder& builder) {
 			encodeFilters(query, builder);
 			bool withDropEntries = false, withUpdateEntries = false;
 			for (const UpdateEntry& updateEntry : query.UpdateFields()) {
-				if (updateEntry.mode == FieldModeDrop) {
+				if (updateEntry.Mode() == FieldModeDrop) {
 					if (!withDropEntries) withDropEntries = true;
 				}
-				if (updateEntry.mode == FieldModeSet || updateEntry.mode == FieldModeSetJson) {
+				if (updateEntry.Mode() == FieldModeSet || updateEntry.Mode() == FieldModeSetJson) {
 					if (!withUpdateEntries) withUpdateEntries = true;
 				}
 			}

@@ -197,16 +197,31 @@ TEST_P(FTApi, ConcurrencyCheck) {
 	bool ready = false;
 	std::vector<std::thread> threads;
 	std::atomic<unsigned> runningThreads = {0};
-	constexpr unsigned kTotalThreads = 10;
+	constexpr unsigned kTotalThreads = 11;
+	std::thread statsThread;
+	std::atomic<bool> terminate = false;
 	for (unsigned i = 0; i < kTotalThreads; ++i) {
-		threads.emplace_back(std::thread([&] {
-			std::unique_lock lck(mtx);
-			++runningThreads;
-			cv.wait(lck, [&] { return ready; });
-			lck.unlock();
-			CheckAllPermutations("", {"'nose long'~3"}, "", {{"Her !nose! was !long!", ""}, {"Her !nose! was exceptionally !long!", ""}},
-								 true);
-		}));
+		if (i == 0) {
+			statsThread = std::thread([&] {
+				std::unique_lock lck(mtx);
+				++runningThreads;
+				cv.wait(lck, [&] { return ready; });
+				lck.unlock();
+				while (!terminate) {
+					reindexer::QueryResults qr;
+					rt.reindexer->Select(reindexer::Query("#memstats"), qr);
+				}
+			});
+		} else {
+			threads.emplace_back(std::thread([&] {
+				std::unique_lock lck(mtx);
+				++runningThreads;
+				cv.wait(lck, [&] { return ready; });
+				lck.unlock();
+				CheckAllPermutations("", {"'nose long'~3"}, "",
+									 {{"Her !nose! was !long!", ""}, {"Her !nose! was exceptionally !long!", ""}}, true);
+			}));
+		}
 	}
 	while (runningThreads.load() < kTotalThreads) {
 		std::this_thread::sleep_for(std::chrono::microseconds(100));
@@ -219,6 +234,8 @@ TEST_P(FTApi, ConcurrencyCheck) {
 	for (auto& th : threads) {
 		th.join();
 	}
+	terminate = true;
+	statsThread.join();
 }
 
 TEST_P(FTApi, SelectWithTypos) {
@@ -571,13 +588,24 @@ TEST_P(FTApi, Stress) {
 	vector<string> data;
 	vector<string> phrase;
 
+	data.reserve(100000);
 	for (size_t i = 0; i < 100000; ++i) {
 		data.push_back(rt.RandString());
 	}
 
+	phrase.reserve(7000);
 	for (size_t i = 0; i < 7000; ++i) {
 		phrase.push_back(data[rand() % data.size()] + "  " + data[rand() % data.size()] + " " + data[rand() % data.size()]);
 	}
+
+	std::atomic<bool> terminate = false;
+	std::thread statsThread([&] {
+		while (!terminate) {
+			reindexer::QueryResults qr;
+			rt.reindexer->Select(reindexer::Query("#memstats"), qr);
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+	});
 
 	for (size_t i = 0; i < phrase.size(); i++) {
 		Add(phrase[i], phrase[rand() % phrase.size()]);
@@ -601,7 +629,10 @@ TEST_P(FTApi, Stress) {
 			}
 		}
 	}
+	terminate = true;
+	statsThread.join();
 }
+
 TEST_P(FTApi, Unique) {
 	Init(GetDefaultConfig());
 

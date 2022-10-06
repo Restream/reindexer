@@ -10,8 +10,8 @@
 
 #include "client/cororeindexer.h"
 
-const std::string kDefaultRPCPort = "25673";							   // -V1043
-const std::string kDefaultRPCServerAddr = "127.0.0.1:" + kDefaultRPCPort;  // -V1043
+inline const std::string kDefaultRPCPort = "25673";
+inline const std::string kDefaultRPCServerAddr = "127.0.0.1:" + kDefaultRPCPort;
 constexpr uint16_t kDefaultHttpPort = 33333;
 
 class RPCClientTestApi : public ::testing::Test {
@@ -39,6 +39,8 @@ protected:
 		void Stop();
 		const string& GetDsn() const { return dsn_; }
 		RPCServerStatus Status() const { return server_->Status(); }
+		Error const& ErrorStatus() const { return err_; }
+		size_t CloseQRRequestsCount() const { return server_->CloseQRRequestsCount(); }
 
 	private:
 		unique_ptr<RPCServerFake> server_;
@@ -49,6 +51,7 @@ protected:
 		atomic<bool> serverIsReady_;
 		string dsn_;
 		RPCServerConfig conf_;
+		Error err_{errOK};
 	};
 
 	class UpdatesReciever : public IUpdatesObserver {
@@ -77,12 +80,12 @@ protected:
 	void TearDown() {}
 
 	void StartDefaultRealServer();
-	void AddFakeServer(const string& addr = kDefaultRPCServerAddr, const RPCServerConfig& conf = RPCServerConfig());
+	TestServer& AddFakeServer(const string& addr = kDefaultRPCServerAddr, const RPCServerConfig& conf = RPCServerConfig());
 	void AddRealServer(const std::string& dbPath, const string& addr = kDefaultRPCServerAddr, uint16_t httpPort = kDefaultHttpPort);
 	void StartServer(const string& addr = kDefaultRPCServerAddr, Error errOnLogin = Error());
-	void StopServer(const string& addr = kDefaultRPCServerAddr);
+	Error StopServer(const string& addr = kDefaultRPCServerAddr);  // -V1071
 	bool CheckIfFakeServerConnected(const string& addr = kDefaultRPCServerAddr);
-	void StopAllServers();
+	Error StopAllServers();
 	client::Item CreateItem(reindexer::client::Reindexer& rx, std::string_view nsName, int id);
 	client::Item CreateItem(reindexer::client::CoroReindexer& rx, std::string_view nsName, int id);
 	void CreateNamespace(reindexer::client::Reindexer& rx, std::string_view nsName);

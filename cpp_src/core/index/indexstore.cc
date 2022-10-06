@@ -118,7 +118,7 @@ std::unique_ptr<Index> IndexStore<T>::Clone() {
 }
 
 template <typename T>
-IndexMemStat IndexStore<T>::GetMemStat() {
+IndexMemStat IndexStore<T>::GetMemStat(const RdxContext &) {
 	IndexMemStat ret = memStat_;
 	ret.name = name_;
 	ret.uniqKeysCount = str_map.size();

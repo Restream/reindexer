@@ -35,8 +35,8 @@ public:
 		return tagsPath;
 	}
 	IndexedTagsPath path2indexedtag(std::string_view jsonPath, IndexExpressionEvaluator ev, bool canAdd) {
-		auto res = impl_->path2indexedtag(jsonPath, ev);
 		if (jsonPath.empty()) return IndexedTagsPath();
+		auto res = impl_->path2indexedtag(jsonPath, ev);
 		return res.empty() && canAdd ? impl_.clone()->path2indexedtag(jsonPath, ev, canAdd, updated_) : res;
 	}
 	int version() const { return impl_->version(); }
@@ -70,7 +70,7 @@ public:
 		impl_.clone()->updatePayloadType(payloadType, updated_, incVersion);
 	}
 
-	string dump() const { return impl_->dumpTags() + "\n" + impl_->dumpPaths(); }
+	string dump() const { return impl_->dumpTags() + "\n" + impl_->dumpNames() + "\n" + impl_->dumpPaths(); }
 
 protected:
 	shared_cow_ptr<TagsMatcherImpl> impl_;

@@ -44,7 +44,7 @@ void JoinedFieldIterator::updateOffset() {
 
 	size_t i = 0;
 	for (; i < offsets_->size(); ++i) {
-		if (int(order_) == (*offsets_)[i].field) {
+		if (order_ == (*offsets_)[i].field) {
 			currOffset_ = (*offsets_)[i].offset;
 			break;
 		}
@@ -124,30 +124,15 @@ ItemIterator ItemIterator::CreateFrom(QueryResults::Iterator it) {
 	return ItemIterator(&(it.qr_->joined_[itemRef.Nsid()]), itemRef.Id());
 }
 
-ItemOffset::ItemOffset() : field(0), offset(0), size(0) {}
-ItemOffset::ItemOffset(size_t f, int o, int s) : field(uint8_t(f)), offset(o), size(s) {}
-bool ItemOffset::operator==(const ItemOffset& other) const {
-	if (field != other.field) return false;
-	if (offset != other.offset) return false;
-	if (size != other.size) return false;
-	return true;
-}
-bool ItemOffset::operator!=(const ItemOffset& other) const { return !operator==(other); }
-
-void NamespaceResults::Insert(IdType rowid, size_t fieldIdx, QueryResults&& qr) {
-	assertrx(int(fieldIdx) < joinedSelectorsCount_);
+void NamespaceResults::Insert(IdType rowid, uint32_t fieldIdx, QueryResults&& qr) {
+	assertrx(fieldIdx < joinedSelectorsCount_);
 	ItemOffsets& offsets = offsets_[rowid];
 	if (offsets.empty()) {
 		offsets.reserve(joinedSelectorsCount_);
 	}
-	offsets.emplace_back(ItemOffset(fieldIdx, items_.size(), qr.Count()));
+	offsets.emplace_back(fieldIdx, items_.size(), qr.Count());
 	items_.insert(items_.end(), std::make_move_iterator(qr.Items().begin()), std::make_move_iterator(qr.Items().end()));
 }
-
-void NamespaceResults::SetJoinedSelectorsCount(int joinedSelectorsCount) { joinedSelectorsCount_ = joinedSelectorsCount; }
-int NamespaceResults::GetJoinedSelectorsCount() const { return joinedSelectorsCount_; }
-
-size_t NamespaceResults::TotalItems() const { return items_.size(); }
 
 }  // namespace joins
 }  // namespace reindexer

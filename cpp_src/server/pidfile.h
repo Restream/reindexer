@@ -42,12 +42,10 @@ public:
 		}
 		// get PID value and convert it to string
 		if (pid == -1) pid = ::getpid();
-		char buf[22] = {0};
-		::sprintf(buf, "%d\n", pid);
-		size_t bufln = ::strlen(buf);
+		string buf = fmt::sprintf("%d\n", pid);
 		// write PID to file
-		size_t rc = static_cast<size_t>(::write(fd, buf, bufln));
-		if (rc != bufln) {
+		size_t rc = static_cast<size_t>(::write(fd, buf.c_str(), buf.size()));
+		if (rc != buf.size()) {
 			error_ = Error(errLogic, "Could not create PID file `%s`. Reason: %s", name.c_str(), strerror(errno));
 			::close(fd);
 			return false;
@@ -80,6 +78,6 @@ private:
 	int file_;
 	string fname_;
 	Error error_;
-};  // class <pidfile>
+};	// class <pidfile>
 
 }  // namespace reindexer_server

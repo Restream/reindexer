@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.8.0"
+  version: "3.9.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2735,6 +2735,10 @@ definitions:
         - "Memory"
         - "CPU"
         default: "Memory"
+      enable_preselect_before_ft:
+        type: boolean
+        description: "Enable to execute others queries before the ft query"
+        default: false
       max_areas_in_doc:
         type: number
         description: "Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited"

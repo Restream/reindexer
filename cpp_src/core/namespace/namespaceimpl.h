@@ -299,6 +299,7 @@ protected:
 	void modifyItem(Item &item, const NsContext &, int mode = ModeUpsert);
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
 	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
+	void fillSparseIndex(Index &, std::string_view jsonPath);
 	void doDelete(IdType id);
 	void optimizeIndexes(const NsContext &);
 	void insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const string &realName);
@@ -363,7 +364,7 @@ protected:
 
 	std::unordered_map<string, string> meta_;
 
-	shared_ptr<QueryCache> queryCache_;
+	shared_ptr<QueryTotalCountCache> queryTotalCountCache_;
 
 	int sparseIndexesCount_ = 0;
 	VariantArray krefs, skrefs;

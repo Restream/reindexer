@@ -48,10 +48,11 @@ private:
 		ExplainCalc &explain;
 		unsigned start = 0;
 		unsigned count = UINT_MAX;
+		bool preselectForFt = false;
 	};
 
-	template <bool reverse, bool haveComparators, bool aggregationsOnly>
-	void selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &);
+	template <bool reverse, bool haveComparators, bool aggregationsOnly, typename ResultsT>
+	void selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &);
 	template <bool desc, bool multiColumnSort, typename It>
 	It applyForcedSort(It begin, It end, const ItemComparator &, const SelectCtx &ctx);
 	template <typename It>
@@ -60,7 +61,7 @@ private:
 	void calculateSortExpressions(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &, const QueryResults &);
 	template <bool aggregationsOnly>
 	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
-						 QueryResults &result);
+						 QueryResults &result, bool preselectForFt);
 
 	h_vector<Aggregator, 4> getAggregators(const Query &) const;
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);

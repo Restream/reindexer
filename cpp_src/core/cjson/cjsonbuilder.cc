@@ -43,7 +43,9 @@ CJsonBuilder CJsonBuilder::Object(int tagName) {
 }
 
 CJsonBuilder CJsonBuilder::Array(int tagName, ObjType type) {
-	assertrx((type_ != ObjType::TypeArray) && (type_ != ObjType::TypeObjectArray));
+	if ((type_ == ObjType::TypeArray) || (type_ == ObjType::TypeObjectArray)) {
+		throw Error(errLogic, "Nested arrays are not supported. Use nested objects with array fields instead");
+	}
 	++count_;
 	return CJsonBuilder(*ser_, type, tm_, tagName);
 }

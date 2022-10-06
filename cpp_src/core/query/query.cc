@@ -391,20 +391,20 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 	}
 
 	for (const auto &field : updateFields_) {
-		if (field.mode == FieldModeSet) {
+		if (field.Mode() == FieldModeSet) {
 			ser.PutVarUint(QueryUpdateFieldV2);
-			ser.PutVString(field.column);
-			ser.PutVarUint(field.values.IsArrayValue());
-			ser.PutVarUint(field.values.size());
-			for (const Variant &val : field.values) {
-				ser.PutVarUint(field.isExpression);
+			ser.PutVString(field.Column());
+			ser.PutVarUint(field.Values().IsArrayValue());
+			ser.PutVarUint(field.Values().size());
+			for (const Variant &val : field.Values()) {
+				ser.PutVarUint(field.IsExpression());
 				ser.PutVariant(val);
 			}
-		} else if (field.mode == FieldModeDrop) {
+		} else if (field.Mode() == FieldModeDrop) {
 			ser.PutVarUint(QueryDropField);
-			ser.PutVString(field.column);
+			ser.PutVString(field.Column());
 		} else {
-			throw Error(errLogic, "Unsupported item modification mode = %d", field.mode);
+			throw Error(errLogic, "Unsupported item modification mode = %d", field.Mode());
 		}
 	}
 

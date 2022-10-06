@@ -1,3 +1,24 @@
+# Version 3.9.0 (XX.10.2022)
+## Core
+- [fea] Add `enable_preselect_before_ft` option for fulltext indexes. It allows to prioritize non-fultext indexes in query
+- [fix] Fix runtime index convertations (from `sparse` and to `sparse`)
+- [fix] Fix fulltext index memstats race
+- [fix] Fix query results overflow for large joined requests (in cases, when joined items count is more than 10 billions)
+
+## Go connector
+- [fix] Fix rare query results leak after request timeout
+- [fix] Fix RPC connections leak after reconnect
+
+## Face
+- [fea] Add the `enable_preselect_before_ft` option to the fulltext indexconfig
+- [fea] Improve snackbars view
+- [fea] Add the pagination instead of the 'load more' feature
+- [fea] Improve the Precepts UI
+- [fea] Add a message about ofline status on 500 server response
+- [fea] Add the description of the 5хх codes to the message body
+- [fix] Fix a misprint in the database config
+- [fix] Fix the value array clearing
+
 # Version 3.8.0 (25.08.2022)
 ## Core
 - [fea] Optimize selects with large id sets

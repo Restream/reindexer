@@ -120,12 +120,12 @@ def Generate():
 #                json_file.write(')#";')
             with open("../../core/query/dsl/query.json.h", "w") as json_h_file:
                 jsonstr = json.dumps(schema).encode()
-                json_h_file.write('static const std::string kQueryJson = {')
+                json_h_file.write('inline const std::string kQueryJson = {')
 
                 for c in jsonstr:
                     v = hex(c)
                     json_h_file.write(v+',')
-                json_h_file.write('}; // -V1043')
+                json_h_file.write('};')
         except yaml.YAMLError as exc:
             print(exc)
 

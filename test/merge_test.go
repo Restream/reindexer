@@ -131,8 +131,27 @@ func FillTestFullTextItems(count int) {
 
 }
 
+func UpdateFtIndex(t *testing.T, nsName string, idxName string, jsonPath string, enablePreselect bool) {
+	conf := reindexer.DefaultFtFastConfig()
+	conf.EnablePreselectBeforeFt = enablePreselect
+	err := DB.UpdateIndex(nsName, reindexer.IndexDef{Name:idxName, JSONPaths:[]string{jsonPath}, IndexType: "text", FieldType: "string", Config:conf})
+	assert.NoError(t, err)
+}
+
+func UpdateFtIndexes(t *testing.T, enablePreselect bool) {
+	UpdateFtIndex(t, "test_full_text_simple_item", "name", "Name", enablePreselect)
+	UpdateFtIndex(t, "test_full_text_merged_item", "description", "Description", enablePreselect)
+	UpdateFtIndex(t, "test_full_text_merged_item", "location", "Location", enablePreselect)
+	UpdateFtIndex(t, "test_full_text_item", "name", "Name", enablePreselect)
+	UpdateFtIndex(t, "merge_join_item1", "name", "Name", enablePreselect)
+	UpdateFtIndex(t, "merge_join_item2", "name", "Name", enablePreselect)
+}
+
 func TestMerge(t *testing.T) {
+	UpdateFtIndexes(t, false)
 	FillTestFullTextItems(5000)
+	CheckTestItemsMergeQueries(t)
+	UpdateFtIndexes(t, true)
 	CheckTestItemsMergeQueries(t)
 }
 

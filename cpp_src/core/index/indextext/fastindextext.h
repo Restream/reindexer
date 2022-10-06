@@ -4,33 +4,42 @@
 #include "core/ft/ft_fast/dataholder.h"
 #include "core/ft/ft_fast/dataprocessor.h"
 #include "core/ft/typos.h"
-#include "core/selectfunc/ctx/ftctx.h"
 #include "indextext.h"
 
 namespace reindexer {
 
 template <typename T>
 class FastIndexText : public IndexText<T> {
+	using Base = IndexText<T>;
+
 public:
 	using key_type = typename IndexUnordered<T>::key_type;
 	using ref_type = typename IndexUnordered<T>::ref_type;
 
-	FastIndexText(const FastIndexText& other) : IndexText<T>(other) {
+	FastIndexText(const FastIndexText& other) : Base(other) {
 		initConfig(other.GetConfig());
 		for (auto& idx : this->idx_map) idx.second.VDocID() = FtKeyEntryData::ndoc;
 		this->CommitFulltext();
 	}
 
-	FastIndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields)
-		: IndexText<T>(idef, std::move(payloadType), fields) {
+	FastIndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields) : Base(idef, std::move(payloadType), fields) {
 		initConfig();
 	}
 	std::unique_ptr<Index> Clone() override;
-	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTransaction, const RdxContext&) override final;
-	IndexMemStat GetMemStat() override;
+	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
+					  const RdxContext&) override final;
+	IndexMemStat GetMemStat(const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
 	void Delete(const Variant& key, IdType id, StringsHolder&, bool& clearCache) override final;
 	void SetOpts(const IndexOpts& opts) override final;
+	FtMergeStatuses GetFtMergeStatuses(const RdxContext& rdxCtx) override final {
+		this->build(rdxCtx);
+		return {FtMergeStatuses::Statuses(holder_->vdocs_.size(), 0), std::vector<bool>(holder_->rowId2Vdoc_.size(), false),
+				&holder_->rowId2Vdoc_, std::nullopt};
+	}
+	reindexer::FtPreselectT FtPreselect(const QueryEntries& qentries, int idxNo, const SelectFunction& fnCtx,
+										const RdxContext& rdxCtx) override final;
+	bool EnablePreselectBeforeFt() const override final { return GetConfig()->enablePreselectBeforeFt; }
 
 protected:
 	void commitFulltextImpl() override final;
@@ -39,7 +48,7 @@ protected:
 	void initHolder(FtFastConfig&);
 
 	template <class Data>
-	void BuildVdocs(Data& data);
+	void buildVdocs(Data& data);
 	std::unique_ptr<IDataHolder> holder_;
 };
 

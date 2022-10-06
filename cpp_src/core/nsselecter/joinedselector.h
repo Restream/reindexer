@@ -67,7 +67,7 @@ class JoinedSelector {
 public:
 	JoinedSelector(JoinType joinType, std::shared_ptr<NamespaceImpl> leftNs, std::shared_ptr<NamespaceImpl> rightNs, JoinCacheRes &&joinRes,
 				   Query &&itemQuery, QueryResults &result, const JoinedQuery &joinQuery, JoinPreResult::Ptr preResult,
-				   size_t joinedFieldIdx, SelectFunctionsHolder &selectFunctions, int joinedSelectorsCount, bool inTransaction,
+				   uint32_t joinedFieldIdx, SelectFunctionsHolder &selectFunctions, uint32_t joinedSelectorsCount, bool inTransaction,
 				   const RdxContext &rdxCtx)
 		: joinType_(joinType),
 		  called_(0),
@@ -121,9 +121,9 @@ private:
 	QueryResults &result_;
 	const JoinedQuery &joinQuery_;
 	JoinPreResult::Ptr preResult_;
-	size_t joinedFieldIdx_;
+	uint32_t joinedFieldIdx_;
 	SelectFunctionsHolder &selectFunctions_;
-	int joinedSelectorsCount_;
+	uint32_t joinedSelectorsCount_;
 	const RdxContext &rdxCtx_;
 	bool optimized_{false};
 	bool inTransaction_{false};

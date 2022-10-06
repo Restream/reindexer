@@ -41,9 +41,9 @@ func TestAutogen(t *testing.T) {
 		err := DB.Upsert(ns, &item, precepts...)
 		require.NoError(t, err)
 
-		assert.True(t, item.UpdatedTimeMilli > time.Now().Unix()*1000)
-		assert.True(t, item.UpdatedTimeMicro > time.Now().Unix()*1000000)
-		assert.True(t, item.UpdatedTimeNano > time.Now().Unix()*1000000000)
+		assert.Greater(t, item.UpdatedTimeMilli, time.Now().Unix()*1000)
+		assert.Greater(t, item.UpdatedTimeMicro, time.Now().Unix()*1000000)
+		assert.Greater(t, item.UpdatedTimeNano, time.Now().Unix()*1000000000)
 	})
 
 	t.Run("serial field shoud be increased by one", func(t *testing.T) {

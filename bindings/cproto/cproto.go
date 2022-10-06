@@ -128,6 +128,9 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 
 func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int) error {
 	var wg sync.WaitGroup
+	for _, conn := range binding.pool.conns {
+		conn.Close()
+	}
 	binding.pool = pool{
 		conns: make([]*connection, connPoolSize),
 	}

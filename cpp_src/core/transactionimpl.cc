@@ -4,8 +4,6 @@
 
 namespace reindexer {
 
-using std::string;
-
 void TransactionImpl::checkTagsMatcher(Item &item) {
 	if (item.IsTagsUpdated()) {
 		ItemImpl *ritem = item.impl_;
@@ -23,7 +21,7 @@ Item TransactionImpl::GetItem(TransactionStep &&st) {
 	return Item(new ItemImpl(payloadType_, tagsMatcher_, pkFields_, schema_, std::move(st.itemData_)));
 }
 
-TransactionImpl::TransactionImpl(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
+TransactionImpl::TransactionImpl(const std::string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
 								 std::shared_ptr<const Schema> schema)
 	: payloadType_(pt),
 	  tagsMatcher_(tm),
@@ -35,7 +33,7 @@ TransactionImpl::TransactionImpl(const string &nsName, const PayloadType &pt, co
 
 void TransactionImpl::UpdateTagsMatcherFromItem(ItemImpl *ritem) {
 	if (ritem->Type().get() != payloadType_.get() || (ritem->tagsMatcher().isUpdated() && !tagsMatcher_.try_merge(ritem->tagsMatcher()))) {
-		string jsonSliceBuf(ritem->GetJSON());
+		std::string jsonSliceBuf(ritem->GetJSON());
 
 		ItemImpl tmpItem(payloadType_, tagsMatcher_);
 		tmpItem.Value().SetLSN(ritem->Value().GetLSN());

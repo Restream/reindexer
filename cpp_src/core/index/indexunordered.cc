@@ -392,8 +392,8 @@ void IndexUnordered<T>::SetSortedIdxCount(int sortedIdxCount) {
 }
 
 template <typename T>
-IndexMemStat IndexUnordered<T>::GetMemStat() {
-	IndexMemStat ret = Base::GetMemStat();
+IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext &ctx) {
+	IndexMemStat ret = Base::GetMemStat(ctx);
 	ret.uniqKeysCount = idx_map.size();
 	if (cache_) ret.idsetCache = cache_->GetMemStat();
 	ret.trackedUpdatesCount = tracker_.updatesSize();

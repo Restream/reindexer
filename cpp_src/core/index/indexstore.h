@@ -22,7 +22,7 @@ public:
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext & /*ctx*/) override {}
 	std::unique_ptr<Index> Clone() override;
-	IndexMemStat GetMemStat() override;
+	IndexMemStat GetMemStat(const RdxContext &) override;
 	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string> || std::is_same_v<T, key_string_with_hash>; }
 	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override;
 

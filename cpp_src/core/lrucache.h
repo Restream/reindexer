@@ -15,6 +15,7 @@ constexpr size_t kElemSizeOverhead = 256;
 template <typename K, typename V, typename hash, typename equal>
 class LRUCache {
 public:
+	using Key = K;
 	LRUCache(size_t sizeLimit = kDefaultCacheSizeLimit, int hitCount = kDefaultHitCountToCache)
 		: totalCacheSize_(0), cacheSizeLimit_(sizeLimit), hitCountToCache_(hitCount) {}
 	struct Iterator {

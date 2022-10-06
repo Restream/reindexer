@@ -117,7 +117,7 @@ public:
 	void SetFatalErrorHandler(FatalErrorHandlerT handler) noexcept { fatalErrorHandler_ = std::move(handler); }
 
 	template <typename... Argss>
-	CoroRPCAnswer Call(const CommandParams &opts, const Argss &... argss) {
+	CoroRPCAnswer Call(const CommandParams &opts, const Argss &...argss) {
 		Args args;
 		args.reserve(sizeof...(argss));
 		return call(opts, args, argss...);
@@ -139,22 +139,23 @@ private:
 	};
 
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const std::string_view &val, const Argss &... argss) {
+	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const std::string_view &val, const Argss &...argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const string &val, const Argss &... argss) {
+	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const string &val, const Argss &...argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}
 	template <typename T, typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const T &val, const Argss &... argss) {
+	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const T &val, const Argss &...argss) {
 		args.push_back(Variant(val));
 		return call(opts, args, argss...);
 	}
 
 	CoroRPCAnswer call(const CommandParams &opts, const Args &args);
+	Error callNoReply(const CommandParams &opts, uint32_t seq, const Args &args);
 
 	MarkedChunk packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs);
 	void appendChunck(std::vector<char> &buf, chunk &&ch);
@@ -163,6 +164,7 @@ private:
 	void handleFatalError(Error err) noexcept;
 	chunk getChunk() noexcept;
 	void recycleChunk(chunk &&) noexcept;
+	void sendCloseResults(CProtoHeader const &, CoroRPCAnswer const &);
 
 	void writerRoutine();
 	void readerRoutine();

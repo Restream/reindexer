@@ -10,11 +10,11 @@ void IdSet::Commit() {
 		for (auto id : *set_) push_back(id);
 	}
 
-	usingBtree_ = false;
+	usingBtree_.store(false, std::memory_order_release);
 }
 
-string IdSetPlain::Dump() const {
-	string buf = "[";
+std::string IdSetPlain::Dump() const {
+	std::string buf = "[";
 
 	for (int i = 0; i < static_cast<int>(size()); i++) buf += std::to_string((*this)[i]) + " ";
 

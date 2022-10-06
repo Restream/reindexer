@@ -11,8 +11,6 @@
 #include "sort/pdqsort.hpp"
 
 namespace reindexer {
-using std::string;
-using std::shared_ptr;
 
 using base_idset = h_vector<IdType, 3>;
 using base_idsetset = btree::btree_set<int>;
@@ -73,7 +71,7 @@ public:
 	size_t BTreeSize() const noexcept { return 0; }
 	const base_idsetset *BTree() const noexcept { return nullptr; }
 	void ReserveForSorted(int sortedIdxCount) { reserve(size() * (sortedIdxCount + 1)); }
-	string Dump() const;
+	std::string Dump() const;
 
 protected:
 	IdSetPlain(base_idset &&idset) : base_idset(std::move(idset)) {}
@@ -138,7 +136,7 @@ public:
 			return false;
 		} else {
 			resize(0);
-			usingBtree_ = true;
+			usingBtree_.store(true, std::memory_order_release);
 			return set_->insert(id).second;
 		}
 	}
@@ -156,7 +154,30 @@ public:
 			}
 			assertrx(!size());
 			set_->insert(first, last);
-			usingBtree_ = true;
+			usingBtree_.store(true, std::memory_order_release);
+		} else {
+			assertrx(0);
+		}
+	}
+
+	template <typename InputIt>
+	void Append(InputIt first, InputIt last, const std::vector<bool> &mask, EditMode editMode = Auto) {
+		if (editMode == Unordered) {
+			assertrx(!set_);
+			for (; first != last; ++first) {
+				if (mask[*first]) push_back(*first);
+			}
+		} else if (editMode == Auto) {
+			if (!set_) {
+				set_.reset(new base_idsetset);
+				set_->insert(begin(), end());
+				resize(0);
+			}
+			assertrx(!size());
+			for (; first != last; ++first) {
+				if (mask[*first]) set_->insert(*first);
+			}
+			usingBtree_.store(true, std::memory_order_release);
 		} else {
 			assertrx(0);
 		}
@@ -169,15 +190,15 @@ public:
 			return d.second - d.first;
 		} else {
 			resize(0);
-			usingBtree_ = true;
+			usingBtree_.store(true, std::memory_order_release);
 			return set_->erase(id);
 		}
 		return 0;
 	}
 	void Commit();
-	bool IsCommited() const { return !usingBtree_; }
+	bool IsCommited() const { return !usingBtree_.load(std::memory_order_acquire); }
 	bool IsEmpty() const { return empty() && (!set_ || set_->empty()); }
-	size_t Size() const { return usingBtree_.load(std::memory_order_relaxed) ? set_->size() : size(); }
+	size_t Size() const { return usingBtree_.load(std::memory_order_acquire) ? set_->size() : size(); }
 	size_t BTreeSize() const { return set_ ? sizeof(*set_.get()) + set_->size() * sizeof(int) : 0; }
 	const base_idsetset *BTree() const { return set_.get(); }
 	void ReserveForSorted(int sortedIdxCount) { reserve(((set_ ? set_->size() : size())) * (sortedIdxCount + 1)); }

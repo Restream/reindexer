@@ -6,14 +6,11 @@
 #include "tools/serializer.h"
 #include "vendor/murmurhash/MurmurHash3.h"
 
-using std::vector;
-using std::string;
-
 namespace reindexer {
 
-struct QueryCacheVal {
-	QueryCacheVal() = default;
-	QueryCacheVal(const size_t& total) : total_count(total) {}
+struct QueryTotalCountCacheVal {
+	QueryTotalCountCacheVal() = default;
+	QueryTotalCountCacheVal(const size_t& total) : total_count(total) {}
 
 	size_t Size() const { return 0; }
 
@@ -55,8 +52,9 @@ struct HashQueryCacheKey {
 	}
 };
 
-struct QueryCache : LRUCache<QueryCacheKey, QueryCacheVal, HashQueryCacheKey, EqQueryCacheKey> {
-	QueryCache(size_t sizeLimit = kDefaultCacheSizeLimit, int hitCount = kDefaultHitCountToCache) : LRUCache(sizeLimit, hitCount) {}
+struct QueryTotalCountCache : LRUCache<QueryCacheKey, QueryTotalCountCacheVal, HashQueryCacheKey, EqQueryCacheKey> {
+	QueryTotalCountCache(size_t sizeLimit = kDefaultCacheSizeLimit, int hitCount = kDefaultHitCountToCache)
+		: LRUCache(sizeLimit, hitCount) {}
 };
 
 }  // namespace reindexer

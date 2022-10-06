@@ -106,11 +106,7 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 }
 
 bool UpdateEntry::operator==(const UpdateEntry &obj) const noexcept {
-	if (isExpression != obj.isExpression) return false;
-	if (column != obj.column) return false;
-	if (mode != obj.mode) return false;
-	if (values != obj.values) return false;
-	return true;
+	return isExpression_ == obj.isExpression_ && column_ == obj.column_ && mode_ == obj.mode_ && values_ == obj.values_;
 }
 
 bool QueryJoinEntry::operator==(const QueryJoinEntry &obj) const noexcept {

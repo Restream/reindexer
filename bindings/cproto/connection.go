@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -19,6 +20,7 @@ import (
 type bufPtr struct {
 	rseq uint32
 	buf  *NetBuffer
+	cmd  int
 }
 
 type sig chan bufPtr
@@ -221,7 +223,6 @@ func (c *connection) login(ctx context.Context, owner *NetCProto) (err error) {
 
 	buf, err := c.rpcCall(ctx, cmdLogin, 0, username, password, path, c.owner.connectOpts.CreateDBIfMissing, false, -1, bindings.ReindexerVersion, c.owner.appName)
 	if err != nil {
-		c.err = err
 		return
 	}
 	defer buf.Free()
@@ -260,7 +261,7 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	}
 
 	version := ser.GetUInt16()
-	_ = int(ser.GetUInt16())
+	cmd := int(ser.GetUInt16())
 	size := int(ser.GetUInt32())
 	rseq := uint32(ser.GetUInt32())
 
@@ -281,7 +282,19 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	}
 	reqID := rseq % queueSize
 	if atomic.LoadUint32(&c.requests[reqID].seqNum) != rseq {
-		io.CopyN(ioutil.Discard, c.rdBuf, int64(size))
+		if needCancelAnswer(cmd) {
+			answ := newNetBuffer(size, c)
+			defer answ.FreeNoReply(rseq)
+			if _, err = io.ReadFull(c.rdBuf, answ.buf); err != nil {
+				return
+			}
+			if compressed {
+				answ.decompress()
+			}
+			err = setReqId(answ)
+		} else {
+			io.CopyN(ioutil.Discard, c.rdBuf, int64(size))
+		}
 		return
 	}
 	repCh := c.requests[reqID].repl
@@ -311,10 +324,39 @@ func (c *connection) readReply(hdr []byte) (err error) {
 			answ.Free()
 		}
 	} else if repCh != nil {
-		repCh <- bufPtr{rseq, answ}
+		repCh <- bufPtr{rseq, answ, cmd}
 	} else {
-		defer answ.Free()
+		defer answ.FreeNoReply(rseq)
+		if needCancelAnswer(cmd) {
+			err = setReqId(answ)
+			if err != nil {
+				return
+			}
+		}
 		return fmt.Errorf("unexpected answer: %v", answ)
+	}
+	return
+}
+
+func needCancelAnswer(cmd int) bool {
+	switch cmd {
+	case cmdCommitTx, cmdModifyItem, cmdDeleteQuery, cmdUpdateQuery, cmdSelect, cmdSelectSQL, cmdFetchResults:
+		return true
+	default:
+		return false
+	}
+}
+
+func setReqId(answ *NetBuffer) (err error) {
+	err = answ.parseArgs()
+	if err != nil {
+		return
+	}
+	if len(answ.args) > 1 {
+		answ.reqID = answ.args[1].(int)
+		if len(answ.args) > 2 {
+			answ.uid = answ.args[2].(int64)
+		}
 	}
 	return
 }
@@ -483,7 +525,10 @@ for_loop:
 				buf = bufPtr.buf
 				break for_loop
 			} else {
-				bufPtr.buf.Free()
+				if needCancelAnswer(bufPtr.cmd) {
+					setReqId(bufPtr.buf)
+				}
+				bufPtr.buf.FreeNoReply(bufPtr.rseq)
 			}
 		case <-c.errCh:
 			c.lock.RLock()
@@ -516,6 +561,10 @@ for_loop:
 	return buf, nil
 }
 
+func (c *connection) rpcCallNoReply(ctx context.Context, cmd int, netTimeout uint32, seq uint32, args ...interface{}) {
+	c.packRPC(cmd, seq, int((time.Second * time.Duration(netTimeout)).Milliseconds()), args...)
+}
+
 func (c *connection) rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) error {
 	buf, err := c.rpcCall(ctx, cmd, netTimeout, args...)
 	buf.Free()
@@ -533,6 +582,11 @@ func (c *connection) onError(err error) {
 		case <-c.errCh:
 		default:
 			close(c.errCh)
+		}
+		select {
+		case <-c.termCh:
+		default:
+			close(c.termCh)
 		}
 
 		for i := range c.requests {
@@ -575,7 +629,11 @@ func (c *connection) lastReadTime() time.Time {
 	return time.Unix(stamp, 0)
 }
 
+func (c *connection) Close() {
+	c.onError(errors.New("Connection closed"))
+}
+
 func (c *connection) Finalize() error {
-	close(c.termCh)
+	c.Close()
 	return nil
 }

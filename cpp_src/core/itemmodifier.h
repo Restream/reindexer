@@ -9,7 +9,6 @@ namespace reindexer {
 
 struct NsContext;
 class NamespaceImpl;
-class ExpressionEvaluator;
 
 class ItemModifier {
 public:
@@ -30,7 +29,7 @@ private:
 		int arrayIndex() const noexcept { return arrayIndex_; }
 		int index() const noexcept { return fieldIndex_; }
 		bool isIndex() const noexcept { return isIndex_; }
-		const string &name() const noexcept { return entry_.column; }
+		const string &name() const noexcept { return entry_.Column(); }
 		const string &jsonpath() const noexcept { return jsonPath_; }
 
 	private:

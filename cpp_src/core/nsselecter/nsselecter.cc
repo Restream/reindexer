@@ -37,7 +37,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	if (ctx.query.calcTotal == ModeCachedTotal) {
 		ckey = QueryCacheKey{ctx.query};
 
-		auto cached = ns_->queryCache_->Get(ckey);
+		auto cached = ns_->queryTotalCountCache_->Get(ckey);
 		if (cached.valid && cached.val.total_count >= 0) {
 			result.totalCount = cached.val.total_count;
 			logPrintf(LogTrace, "[%s] using value from cache: %d", ns_->name_, result.totalCount);
@@ -60,7 +60,17 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	const bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
 	if (!ctx.skipIndexesLookup) qPreproc.LookupQueryIndexes();
 
-	const bool isFt = qPreproc.ContainsFullTextIndexes();
+	bool isFt = qPreproc.ContainsFullTextIndexes();
+	// Prepare data for select functions
+	if (ctx.functions) {
+		fnc_ = ctx.functions->AddNamespace(ctx.query, *ns_, isFt);
+	}
+	explain.AddPrepareTime();
+
+	if (isFt) {
+		qPreproc.CheckUniqueFtQuery();
+		qPreproc.ExcludeFtQuery(*fnc_, rdxCtx);
+	}
 	if (!ctx.skipIndexesLookup && !isFt) qPreproc.SubstituteCompositeIndexes();
 	qPreproc.ConvertWhereValues();
 
@@ -84,16 +94,11 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	}
 	const bool isForceAll = ctx.isForceAll;
 	do {
+		isFt = qPreproc.ContainsFullTextIndexes();
 		qres.Clear();
 		lctx.start = 0;
 		lctx.count = UINT_MAX;
 		ctx.isForceAll = isForceAll;
-
-		// DO NOT use deducted sort order in the following cases:
-		// - query contains explicity specified sort order
-		// - query contains FullText query.
-		const bool disableOptimizeSortOrder = isFt || !ctx.query.sortingEntries_.empty() || ctx.preResult;
-		SortingEntries sortBy = disableOptimizeSortOrder ? ctx.query.sortingEntries_ : qPreproc.DetectOptimalSortOrder();
 
 		if (ctx.preResult) {
 			if (ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
@@ -111,6 +116,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 		// Prepare sorting context
 		ctx.sortingContext.forcedMode = qPreproc.ContainsForcedSortOrder();
+		SortingEntries sortBy = qPreproc.GetSortingEntries(static_cast<bool>(ctx.preResult));
 		prepareSortingContext(sortBy, ctx, isFt, qPreproc.AvailableSelectBySortIndex());
 
 		if (ctx.sortingContext.isOptimizationEnabled()) {
@@ -137,7 +143,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 			switch (ctx.preResult->dataMode) {
 				case JoinPreResult::ModeIdSet: {
 					SelectKeyResult res;
-					res.emplace_back(ctx.preResult->ids);
+					res.emplace_back(std::move(ctx.preResult->ids));
 					static const string pr = "-preresult";
 					qres.Append(OpAnd, SelectIterator(std::move(res), false, pr));
 				} break;
@@ -149,13 +155,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 			}
 		}
 
-		// Prepare data for select functions
-		if (ctx.functions) {
-			fnc_ = ctx.functions->AddNamespace(ctx.query, *ns_, isFt);
-		}
-		explain.AddPrepareTime();
-
-		qres.PrepareIteratorsForSelectLoop(qPreproc.GetQueryEntries(), ctx.sortingContext.sortId(), isFt, *ns_, fnc_, ft_ctx_, rdxCtx);
+		qres.PrepareIteratorsForSelectLoop(qPreproc, ctx.sortingContext.sortId(), isFt, *ns_, fnc_, ft_ctx_, rdxCtx);
 
 		explain.AddSelectTime();
 
@@ -257,14 +257,21 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		lctx.calcTotal = needCalcTotal &&
 						 (hasComparators || qPreproc.MoreThanOneEvaluation() || qres.Size() > 1 || qres.Get<SelectIterator>(0).size() > 1);
 
-		if (reverse && hasComparators && aggregationsOnly) selectLoop<true, true, true>(lctx, result, rdxCtx);
-		if (!reverse && hasComparators && aggregationsOnly) selectLoop<false, true, true>(lctx, result, rdxCtx);
-		if (reverse && !hasComparators && aggregationsOnly) selectLoop<true, false, true>(lctx, result, rdxCtx);
-		if (!reverse && !hasComparators && aggregationsOnly) selectLoop<false, false, true>(lctx, result, rdxCtx);
-		if (reverse && hasComparators && !aggregationsOnly) selectLoop<true, true, false>(lctx, result, rdxCtx);
-		if (!reverse && hasComparators && !aggregationsOnly) selectLoop<false, true, false>(lctx, result, rdxCtx);
-		if (reverse && !hasComparators && !aggregationsOnly) selectLoop<true, false, false>(lctx, result, rdxCtx);
-		if (!reverse && !hasComparators && !aggregationsOnly) selectLoop<false, false, false>(lctx, result, rdxCtx);
+		if (qPreproc.IsFtExcluded()) {
+			if (reverse && hasComparators) selectLoop<true, true, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
+			if (!reverse && hasComparators) selectLoop<false, true, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
+			if (reverse && !hasComparators) selectLoop<true, false, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
+			if (!reverse && !hasComparators) selectLoop<false, false, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
+		} else {
+			if (reverse && hasComparators && aggregationsOnly) selectLoop<true, true, true>(lctx, result, rdxCtx);
+			if (!reverse && hasComparators && aggregationsOnly) selectLoop<false, true, true>(lctx, result, rdxCtx);
+			if (reverse && !hasComparators && aggregationsOnly) selectLoop<true, false, true>(lctx, result, rdxCtx);
+			if (!reverse && !hasComparators && aggregationsOnly) selectLoop<false, false, true>(lctx, result, rdxCtx);
+			if (reverse && hasComparators && !aggregationsOnly) selectLoop<true, true, false>(lctx, result, rdxCtx);
+			if (!reverse && hasComparators && !aggregationsOnly) selectLoop<false, true, false>(lctx, result, rdxCtx);
+			if (reverse && !hasComparators && !aggregationsOnly) selectLoop<true, false, false>(lctx, result, rdxCtx);
+			if (!reverse && !hasComparators && !aggregationsOnly) selectLoop<false, false, false>(lctx, result, rdxCtx);
+		}
 
 		// Get total count for simple query with 1 condition and 1 idset
 		if (needCalcTotal && !lctx.calcTotal) {
@@ -335,7 +342,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 	if (needPutCachedTotal) {
 		logPrintf(LogTrace, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
-		ns_->queryCache_->Put(ckey, {static_cast<size_t>(result.totalCount)});
+		ns_->queryTotalCountCache_->Put(ckey, {static_cast<size_t>(result.totalCount)});
 	}
 	if (ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
 		switch (ctx.preResult->dataMode) {
@@ -586,15 +593,28 @@ void NsSelecter::sortResults(LoopCtx &ctx, It begin, It end, const SortingOption
 	ctx.explain.StopSort();
 }
 
-template <bool reverse, bool hasComparators, bool aggregationsOnly>
-void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext &rdxCtx) {
+static size_t resultSize(const QueryResults &qr) noexcept { return qr.Count(); }
+static size_t resultSize(const FtMergeStatuses &) noexcept {
+	assertrx(0);
+	abort();
+}
+
+static void resultReserve(QueryResults &qr, size_t s) { qr.Items().reserve(s); }
+static void resultReserve(FtMergeStatuses &, size_t) {}
+
+template <bool reverse, bool hasComparators, bool aggregationsOnly, typename ResultsT>
+void NsSelecter::selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &rdxCtx) {
+	static constexpr bool kPreprocessingBeforFT = !std::is_same_v<ResultsT, QueryResults>;
 	static const JoinedSelectors emptyJoinedSelectors;
 	const auto selectLoopWard = rdxCtx.BeforeSelectLoop();
 	SelectCtx &sctx = ctx.sctx;
 	const auto &joinedSelectors = sctx.joinedSelectors ? *sctx.joinedSelectors : emptyJoinedSelectors;
 	SelectIteratorContainer &qres = ctx.qres;
+	// Is not using during ft preprocessing
 	const size_t initCount =
-		(sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) ? sctx.preResult->values.size() : result.Count();
+		kPreprocessingBeforFT ? 0
+							  : ((sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) ? sctx.preResult->values.size()
+																										   : resultSize(result));
 
 	if (!sctx.isForceAll) {
 		ctx.start = ctx.qPreproc.Start();
@@ -607,7 +627,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 		if (sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) {
 			sctx.preResult->values.reserve(initCount + reserve);
 		} else {
-			result.Items().reserve(initCount + reserve);
+			resultReserve(result, initCount + reserve);
 		}
 	}
 
@@ -643,7 +663,6 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 		assertrx(pv.Ptr());
 		if (qres.Process<reverse, hasComparators>(pv, &finish, &rowId, properRowId, !ctx.start && ctx.count)) {
 			sctx.matchedAtLeastOnce = true;
-			uint8_t proc = ft_ctx_ ? ft_ctx_->Proc(firstIterator.Pos()) : 0;
 			// Check distinct condition:
 			// Exclude last sets of id from each query result, so duplicated keys will
 			// be removed
@@ -652,81 +671,91 @@ void NsSelecter::selectLoop(LoopCtx &ctx, QueryResults &result, const RdxContext
 					it.Value<SelectIterator>().ExcludeLastSet(pv, rowId, properRowId);
 				}
 			}
-			if ((ctx.start || (ctx.count == 0)) && sortingOptions.multiColumnByBtreeIndex) {
-				VariantArray recentValues;
-				size_t lastResSize = result.Count();
-				getSortIndexValue(sctx.sortingContext, properRowId, recentValues, proc, result.joined_[sctx.nsid], joinedSelectors);
-				if (prevValues.empty() && result.Items().empty()) {
-					prevValues = recentValues;
-				} else {
-					if (recentValues != prevValues) {
+			if constexpr (!kPreprocessingBeforFT) {
+				uint8_t proc = ft_ctx_ ? ft_ctx_->Proc(firstIterator.Pos()) : 0;
+				if ((ctx.start || (ctx.count == 0)) && sortingOptions.multiColumnByBtreeIndex) {
+					VariantArray recentValues;
+					size_t lastResSize = result.Count();
+					getSortIndexValue(sctx.sortingContext, properRowId, recentValues, proc, result.joined_[sctx.nsid], joinedSelectors);
+					if (prevValues.empty() && result.Items().empty()) {
+						prevValues = recentValues;
+					} else {
+						if (recentValues != prevValues) {
+							if (ctx.start) {
+								result.Items().clear();
+								multisortLimitLeft = 0;
+								lastResSize = 0;
+								prevValues = recentValues;
+							} else if (!ctx.count) {
+								multiSortFinished = true;
+							}
+						}
+					}
+					if (!multiSortFinished) {
+						addSelectResult<aggregationsOnly>(proc, rowId, properRowId, sctx, ctx.aggregators, result, ctx.preselectForFt);
+					}
+					if (lastResSize < result.Count()) {
 						if (ctx.start) {
-							result.Items().clear();
-							multisortLimitLeft = 0;
-							lastResSize = 0;
-							prevValues = recentValues;
-						} else if (!ctx.count) {
-							multiSortFinished = true;
+							++multisortLimitLeft;
 						}
 					}
 				}
-				if (!multiSortFinished) {
-					addSelectResult<aggregationsOnly>(proc, rowId, properRowId, sctx, ctx.aggregators, result);
+				if (ctx.start) {
+					--ctx.start;
+				} else if (ctx.count) {
+					addSelectResult<aggregationsOnly>(proc, rowId, properRowId, sctx, ctx.aggregators, result, ctx.preselectForFt);
+					--ctx.count;
+					if (!ctx.count && sortingOptions.multiColumn && !multiSortFinished)
+						getSortIndexValue(sctx.sortingContext, properRowId, prevValues, proc, result.joined_[sctx.nsid], joinedSelectors);
 				}
-				if (lastResSize < result.Count()) {
-					if (ctx.start) {
-						++multisortLimitLeft;
-					}
-				}
+				if (!ctx.count && !ctx.calcTotal && multiSortFinished) break;
+				if (ctx.calcTotal) result.totalCount++;
+			} else {
+				assertf(static_cast<size_t>(properRowId) < result.rowId2Vdoc->size(),
+						"properRowId = %d; rowId = %d; result.rowId2Vdoc->size() = %d", properRowId, rowId, result.rowId2Vdoc->size());
+				result.statuses[(*result.rowId2Vdoc)[properRowId]] = 0;
+				result.rowIds[properRowId] = true;
 			}
-			if (ctx.start) {
-				--ctx.start;
-			} else if (ctx.count) {
-				addSelectResult<aggregationsOnly>(proc, rowId, properRowId, sctx, ctx.aggregators, result);
-				--ctx.count;
-				if (!ctx.count && sortingOptions.multiColumn && !multiSortFinished)
-					getSortIndexValue(sctx.sortingContext, properRowId, prevValues, proc, result.joined_[sctx.nsid], joinedSelectors);
-			}
-			if (!ctx.count && !ctx.calcTotal && multiSortFinished) break;
-			if (ctx.calcTotal) result.totalCount++;
 		}
 	}
 
-	if (sctx.isForceAll) {
-		assertrx(!ctx.qPreproc.Start() || !initCount);
+	if constexpr (!kPreprocessingBeforFT) {
+		if (sctx.isForceAll) {
+			assertrx(!ctx.qPreproc.Start() || !initCount);
+			if (sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) {
+				if (ctx.qPreproc.Start() <= sctx.preResult->values.size()) {
+					ctx.start = 0;
+				} else {
+					ctx.start = ctx.qPreproc.Start() - sctx.preResult->values.size();
+				}
+			} else {
+				if (ctx.qPreproc.Start() <= result.Items().size()) {
+					ctx.start = 0;
+				} else {
+					ctx.start = ctx.qPreproc.Start() - result.Items().size();
+				}
+			}
+		}
+
 		if (sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) {
-			if (ctx.qPreproc.Start() <= sctx.preResult->values.size()) {
-				ctx.start = 0;
-			} else {
-				ctx.start = ctx.qPreproc.Start() - sctx.preResult->values.size();
+			assertrx(sctx.preResult->executionMode == JoinPreResult::ModeBuild);
+			sortResults(ctx, sctx.preResult->values.begin() + initCount, sctx.preResult->values.end(), sortingOptions);
+		} else if (sortingOptions.postLoopSortingRequired()) {
+			const size_t offset = sctx.isForceAll ? ctx.qPreproc.Start() : multisortLimitLeft;
+			if (result.Items().size() > offset) {
+				sortResults(ctx, result.Items().begin() + initCount, result.Items().end(), sortingOptions);
 			}
-		} else {
-			if (ctx.qPreproc.Start() <= result.Items().size()) {
-				ctx.start = 0;
-			} else {
-				ctx.start = ctx.qPreproc.Start() - result.Items().size();
-			}
+			setLimitAndOffset(result.Items(), offset, ctx.qPreproc.Count() + initCount);
 		}
-	}
 
-	if (sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) {
-		assertrx(sctx.preResult->executionMode == JoinPreResult::ModeBuild);
-		sortResults(ctx, sctx.preResult->values.begin() + initCount, sctx.preResult->values.end(), sortingOptions);
-	} else if (sortingOptions.postLoopSortingRequired()) {
-		const size_t offset = sctx.isForceAll ? ctx.qPreproc.Start() : multisortLimitLeft;
-		if (result.Items().size() > offset) {
-			sortResults(ctx, result.Items().begin() + initCount, result.Items().end(), sortingOptions);
+		if (sctx.isForceAll) {
+			const size_t countChange =
+				((sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) ? sctx.preResult->values.size()
+																						   : result.Items().size()) -
+				initCount;
+			assertrx(countChange <= ctx.qPreproc.Count());
+			ctx.count = ctx.qPreproc.Count() - countChange;
 		}
-		setLimitAndOffset(result.Items(), offset, ctx.qPreproc.Count() + initCount);
-	}
-
-	if (sctx.isForceAll) {
-		const size_t countChange =
-			((sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) ? sctx.preResult->values.size()
-																					   : result.Items().size()) -
-			initCount;
-		assertrx(countChange <= ctx.qPreproc.Count());
-		ctx.count = ctx.qPreproc.Count() - countChange;
 	}
 }
 
@@ -759,7 +788,8 @@ void NsSelecter::calculateSortExpressions(uint8_t proc, IdType rowId, IdType pro
 
 template <bool aggregationsOnly>
 void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
-								 QueryResults &result) {
+								 QueryResults &result, bool preselectForFt) {
+	if (preselectForFt) return;
 	for (auto &aggregator : aggregators) aggregator.Aggregate(ns_->items_[properRowId]);
 	if constexpr (aggregationsOnly) return;
 	if (sctx.preResult && sctx.preResult->executionMode == JoinPreResult::ModeBuild) {

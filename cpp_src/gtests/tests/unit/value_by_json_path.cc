@@ -30,8 +30,8 @@ TEST_F(ReindexerApi, GetValueByJsonPath) {
 
 		Data data = {"pk" + std::to_string(i), i + 1, "str" + std::to_string(i + 2), {{i + 3, i + 4, i + 5}}, i + 6, i + 7, i + 8};
 		char json[1024];
-		sprintf(json, simpleJsonPattern, data.id.c_str(), data.intField, data.stringField.c_str(), data.intArray[0], data.intArray[1],
-				data.intArray[2], data.firstInner, data.secondInner, data.thirdInner);
+		snprintf(json, sizeof(json) - 1, simpleJsonPattern, data.id.c_str(), data.intField, data.stringField.c_str(), data.intArray[0],
+				 data.intArray[1], data.intArray[2], data.firstInner, data.secondInner, data.thirdInner);
 
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -90,7 +90,7 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 		char json[512];
 		auto pk = "pk" + std::to_string(i);
 		string dumpField = "str_" + pk;
-		sprintf(json, jsonPattern, pk.c_str(), dumpField.c_str(), i);
+		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), dumpField.c_str(), i);
 
 		if (i >= 5) properIntValues.push_back(i);
 
@@ -163,7 +163,7 @@ TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
 		string name = "name" + index;
 		string locale = i % 2 ? "en" : "ru";
 		long count = i;
-		sprintf(json, jsonPattern, pk.c_str(), locale.c_str(), name.c_str(), count);
+		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), locale.c_str(), name.c_str(), count);
 
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();

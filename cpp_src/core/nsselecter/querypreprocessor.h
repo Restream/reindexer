@@ -1,6 +1,8 @@
 #pragma once
 
 #include "aggregator.h"
+#include "core/ft/ftsetcashe.h"
+#include "core/index/ft_preselect.h"
 #include "core/query/queryentry.h"
 #include "estl/h_vector.h"
 #include "joinedselector.h"
@@ -29,19 +31,11 @@ public:
 		}
 		return forcedSortOrder_;
 	}
+	void CheckUniqueFtQuery() const;
 	void SubstituteCompositeIndexes() { substituteCompositeIndexes(0, container_.size() - queryEntryAddedByForcedSortOptimization_); }
 	void ConvertWhereValues() { convertWhereValues(begin(), end()); }
-	SortingEntries DetectOptimalSortOrder() const;
 	void AddDistinctEntries(const h_vector<Aggregator, 4> &);
-	bool NeedNextEvaluation(unsigned start, unsigned count, bool matchedAtLeastOnce) noexcept {
-		if (evaluationsCount_++ || !queryEntryAddedByForcedSortOptimization_) return false;
-		container_.back().operation = desc_ ? OpAnd : OpNot;
-		assertrx(start <= start_);
-		start_ = start;
-		assertrx(count <= count_);
-		count_ = count;
-		return count_ || (reqMatchedOnce_ && !matchedAtLeastOnce);
-	}
+	bool NeedNextEvaluation(unsigned start, unsigned count, bool &matchedAtLeastOnce) noexcept;
 	unsigned Start() const noexcept { return start_; }
 	unsigned Count() const noexcept { return count_; }
 	bool MoreThanOneEvaluation() const noexcept { return queryEntryAddedByForcedSortOptimization_; }
@@ -51,8 +45,21 @@ public:
 	}
 	using QueryEntries::Size;
 	using QueryEntries::Dump;
+	SortingEntries GetSortingEntries(bool havePreresult) const;
+	bool IsFtExcluded() const noexcept { return ftEntry_.has_value(); }
+	void ExcludeFtQuery(const SelectFunction &, const RdxContext &);
+	FtMergeStatuses &GetFtMergeStatuses() noexcept {
+		assertrx(ftPreselect_);
+		return std::get<FtMergeStatuses>(*ftPreselect_);
+	}
+	FtPreselectT &&MoveFtPreselect() noexcept {
+		assertrx(ftPreselect_);
+		return std::move(*ftPreselect_);
+	}
+	bool IsFtPreselected() const noexcept { return ftPreselect_ && !ftEntry_; }
 
 private:
+	SortingEntries detectOptimalSortOrder() const;
 	bool forcedStage() const noexcept { return evaluationsCount_ == (desc_ ? 1 : 0); }
 	size_t lookupQueryIndexes(size_t dst, size_t srcBegin, size_t srcEnd);
 	size_t substituteCompositeIndexes(size_t from, size_t to);
@@ -74,6 +81,9 @@ private:
 	bool desc_ = false;
 	bool forcedSortOrder_ = false;
 	bool reqMatchedOnce_ = false;
+	const Query &query_;
+	std::optional<QueryEntry> ftEntry_;
+	std::optional<FtPreselectT> ftPreselect_;
 };
 
 }  // namespace reindexer

@@ -11,8 +11,6 @@
 namespace reindexer {
 namespace debug {
 
-extern std::function<void(std::string_view out)> g_writer;
-
 void terminate_handler() {
 	std::ostringstream sout;
 	std::exception_ptr exptr = std::current_exception();
@@ -38,7 +36,8 @@ void terminate_handler() {
 
 	print_backtrace(sout, nullptr, -1);
 	print_crash_query(sout);
-	g_writer(sout.str());
+	auto writer = backtrace_get_writer();
+	writer(sout.str());
 	exit(-1);
 }
 

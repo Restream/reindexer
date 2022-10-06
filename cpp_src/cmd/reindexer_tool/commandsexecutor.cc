@@ -502,9 +502,11 @@ Error CommandsExecutor<DBInterface>::commandSelect(const string& command) {
 					tableResultsBuilder.Build(output_(), isCanceled);
 				}
 			} else {
-				output_() << "[" << std::endl;
-				err = queryResultsToJson(output_(), results, q.IsWALQuery(), !output_.IsCout());
-				output_() << "]" << std::endl;
+				if (!cancelCtx_.IsCancelled()) {
+					output_() << "[" << std::endl;
+					err = queryResultsToJson(output_(), results, q.IsWALQuery(), !output_.IsCout());
+					output_() << "]" << std::endl;
+				}
 			}
 		}
 
@@ -519,9 +521,11 @@ Error CommandsExecutor<DBInterface>::commandSelect(const string& command) {
 				output_() << explain << std::endl;
 			}
 		}
-		output_() << "Returned " << results.Count() << " rows";
-		if (results.TotalCount()) output_() << ", total count " << results.TotalCount();
-		output_() << std::endl;
+		if (!cancelCtx_.IsCancelled()) {
+			output_() << "Returned " << results.Count() << " rows";
+			if (results.TotalCount()) output_() << ", total count " << results.TotalCount();
+			output_() << std::endl;
+		}
 
 		auto& aggResults = results.GetAggregationResults();
 		if (aggResults.size() && !cancelCtx_.IsCancelled()) {

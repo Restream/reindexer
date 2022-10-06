@@ -22,18 +22,24 @@ type TestItem struct {
 
 func main() {
 	const NsName = "test_items"
+	// Create server config with custom storage path
 	cfg := config.DefaultServerConfig()
-	cfg.Storage.Path = "rx_storage"
+	cfg.Storage.Path = "path/to/rx_storage"
+	// Initialize reindexer binding in builtinserver mode
 	db := reindexer.NewReindex("builtinserver://rdx_test_db", reindexer.WithServerConfig(time.Second*100, cfg))
+	// Check if DB was initialized correctly
 	if db.Status().Err != nil {
 		panic(db.Status().Err)
 	}
+	defer db.Close()
 
+	// Create or open namespace with indexes and schema from struct TestItem
 	err := db.OpenNamespace(NsName, reindexer.DefaultNamespaceOptions(), TestItem{})
 	if err != nil {
 		panic(err)
 	}
 
+	// Add some data to namespace
 	err = db.Upsert(NsName, &TestItem{
 		ID:       int(rand.Int() % 100),
 		Genre:    int64(rand.Int() % 100),
@@ -44,13 +50,16 @@ func main() {
 		panic(err)
 	}
 
+	// Get data as JSON
 	it := db.Query(NsName).ExecToJson()
 	if it.Count() != 1 {
 		panic("Unexpected items count")
 	}
+	// Iterate over select results
 	for it.Next() {
 		fmt.Println(string(it.JSON()))
 	}
 
+	// Delete namespace (also removes it's storage from disk)
 	db.DropNamespace(NsName)
 }

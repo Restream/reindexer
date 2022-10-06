@@ -9,8 +9,8 @@ namespace reindexer {
 using std::min;
 using std::max;
 
-SelectIterator::SelectIterator(const SelectKeyResult &res, bool dist, string n, bool forcedFirst)
-	: SelectKeyResult(res), distinct(dist), name(std::move(n)), forcedFirst_(forcedFirst), type_(Forward) {}
+SelectIterator::SelectIterator(SelectKeyResult res, bool dist, string n, bool forcedFirst)
+	: SelectKeyResult(std::move(res)), distinct(dist), name(std::move(n)), forcedFirst_(forcedFirst), type_(Forward) {}
 
 void SelectIterator::Bind(PayloadType type, int field) {
 	for (Comparator &cmp : comparators_) cmp.Bind(type, field);

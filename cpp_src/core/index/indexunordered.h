@@ -36,7 +36,7 @@ public:
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext &) override;
 	std::unique_ptr<Index> Clone() override;
-	IndexMemStat GetMemStat() override;
+	IndexMemStat GetMemStat(const RdxContext &) override;
 	size_t Size() const override final { return idx_map.size(); }
 	void SetSortedIdxCount(int sortedIdxCount) override;
 	bool HoldsStrings() const noexcept override;

@@ -118,6 +118,7 @@ public:
 	std::string Dump(const std::vector<JS> &joinedSelectors) const {
 		WrSerializer ser;
 		dump(0, cbegin(), cend(), joinedSelectors, ser);
+		dumpEqualPositions(0, ser, equalPositions);
 		return std::string{ser.Slice()};
 	}
 
@@ -131,6 +132,19 @@ private:
 	static bool checkIfSatisfyCondition(const QueryEntry &, const ConstPayload &, TagsMatcher &);
 	static bool checkIfSatisfyCondition(const BetweenFieldsQueryEntry &, const ConstPayload &, TagsMatcher &);
 	static bool checkIfSatisfyCondition(const VariantArray &lValues, CondType, const VariantArray &rValues);
+	static void dumpEqualPositions(size_t level, WrSerializer &ser, const EqualPositions_t &equalPositions) {
+		for (const auto &eq : equalPositions) {
+			for (size_t i = 0; i < level; ++i) {
+				ser << "   ";
+			}
+			ser << "equal_poisition(";
+			for (size_t i = 0, s = eq.size(); i < s; ++i) {
+				if (i != 0) ser << ", ";
+				ser << eq[i];
+			}
+			ser << ")\n";
+		}
+	}
 	template <typename JS>
 	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS> &joinedSelectors, WrSerializer &ser) {
 		for (const_iterator it = begin; it != end; ++it) {
@@ -141,9 +155,10 @@ private:
 				ser << it->operation << ' ';
 			}
 			it->InvokeAppropriate<void>(
-				[&](const QueryEntriesBracket &) {
+				[&](const QueryEntriesBracket &b) {
 					ser << "(\n";
 					dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, ser);
+					dumpEqualPositions(level + 1, ser, b.equalPositions);
 					for (size_t i = 0; i < level; ++i) {
 						ser << "   ";
 					}
@@ -157,17 +172,29 @@ private:
 	}
 };
 
-struct UpdateEntry {
-	UpdateEntry() {}
+class UpdateEntry {
+public:
 	UpdateEntry(std::string c, VariantArray v, FieldModifyMode m = FieldModeSet, bool e = false)
-		: column(std::move(c)), values(std::move(v)), mode(m), isExpression(e) {}
+		: column_(std::move(c)), values_(std::move(v)), mode_(m), isExpression_(e) {
+		if (column_.empty()) {
+			throw Error{errParams, "Empty update column name"};
+		}
+	}
 	bool operator==(const UpdateEntry &) const noexcept;
 	bool operator!=(const UpdateEntry &obj) const noexcept { return !operator==(obj); }
-	std::string column;
-	VariantArray values;
-	FieldModifyMode mode = FieldModeSet;
-	bool isExpression = false;
-	bool isArray = false;
+	std::string const &Column() const noexcept { return column_; }
+	VariantArray const &Values() const noexcept { return values_; }
+	VariantArray &Values() noexcept { return values_; }
+	FieldModifyMode Mode() const noexcept { return mode_; }
+	void SetMode(FieldModifyMode m) noexcept { mode_ = m; }
+	bool IsExpression() const noexcept { return isExpression_; }
+	void SetIsExpression(bool e) noexcept { isExpression_ = e; }
+
+private:
+	std::string column_;
+	VariantArray values_;
+	FieldModifyMode mode_ = FieldModeSet;
+	bool isExpression_ = false;
 };
 
 struct QueryJoinEntry {

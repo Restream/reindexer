@@ -57,6 +57,13 @@ func (buf *NetBuffer) Free() {
 	}
 }
 
+func (buf *NetBuffer) FreeNoReply(seq uint32) {
+	if buf != nil {
+		buf.closeNoReply(seq)
+		bufPool.Put(buf)
+	}
+}
+
 func (buf *NetBuffer) GetBuf() []byte {
 	return buf.args[0].([]byte)
 }
@@ -99,6 +106,15 @@ func (buf *NetBuffer) close() {
 			fmt.Printf("rx: query close error: %v\n", err)
 		}
 		closeBuf.Free()
+	}
+}
+
+func (buf *NetBuffer) closeNoReply(seq uint32) {
+	if buf.needClose() {
+		netTimeout := uint32(buf.conn.owner.timeouts.RequestTimeout / time.Second)
+		buf.conn.rpcCallNoReply(context.TODO(), cmdCloseResults, netTimeout, seq, buf.reqID, buf.uid, true)
+		buf.reqID = -1
+		buf.uid = -1
 	}
 }
 

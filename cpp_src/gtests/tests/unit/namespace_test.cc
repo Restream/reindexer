@@ -1335,6 +1335,109 @@ TEST_F(NsApi, TestUpdateIndexArrayWithNull) {
 	}
 }
 
+TEST_F(NsApi, TestUpdateIndexToSparse) {
+	Error err = rt.reindexer->InitSystemNamespaces();
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+	const std::string compIndexName = idIdxName + "+" + stringField;
+
+	DefineNamespaceDataset(default_namespace, {IndexDeclaration{idIdxName.c_str(), "hash", "int", IndexOpts().PK(), 0},
+											   IndexDeclaration{intField.c_str(), "hash", "int", IndexOpts(), 0},
+											   IndexDeclaration{stringField.c_str(), "hash", "string", IndexOpts(), 0},
+											   IndexDeclaration{compIndexName.c_str(), "hash", "composite", IndexOpts(), 0}});
+	Item item = NewItem(default_namespace);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	const int i = rand() % 20;
+	item[idIdxName] = i * 2;
+	item[intField] = i;
+	item[stringField] = "str_" + std::to_string(i * 5);
+	Upsert(default_namespace, item);
+	err = Commit(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	QueryResults qr;
+	err = rt.reindexer->Select(Query(default_namespace).Where(intField, CondEq, i), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	qr.Clear();
+	err = rt.reindexer->Select(
+		Query(default_namespace)
+			.WhereComposite(compIndexName, CondEq, {reindexer::VariantArray{Variant{i * 2}, Variant{"str_" + std::to_string(i * 5)}}}),
+		qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	auto newIdx = reindexer::IndexDef(intField, "hash", "int", IndexOpts().Sparse());
+	err = rt.reindexer->UpdateIndex(default_namespace, newIdx);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	qr.Clear();
+	err = rt.reindexer->Select(Query(default_namespace).Where(intField, CondEq, i), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	qr.Clear();
+	err = rt.reindexer->Select(
+		Query(default_namespace)
+			.WhereComposite(compIndexName, CondEq, {reindexer::VariantArray{Variant{i * 2}, Variant{"str_" + std::to_string(i * 5)}}}),
+		qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	newIdx = reindexer::IndexDef(compIndexName, {idIdxName, stringField}, "hash", "composite", IndexOpts().Sparse());
+	err = rt.reindexer->UpdateIndex(default_namespace, newIdx);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	qr.Clear();
+	err = rt.reindexer->Select(Query(default_namespace).Where(intField, CondEq, i), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	qr.Clear();
+	err = rt.reindexer->Select(
+		Query(default_namespace)
+			.WhereComposite(compIndexName, CondEq, {reindexer::VariantArray{Variant{i * 2}, Variant{"str_" + std::to_string(i * 5)}}}),
+		qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	newIdx = reindexer::IndexDef(intField, "hash", "int", IndexOpts());
+	err = rt.reindexer->UpdateIndex(default_namespace, newIdx);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	qr.Clear();
+	err = rt.reindexer->Select(Query(default_namespace).Where(intField, CondEq, i), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	qr.Clear();
+	err = rt.reindexer->Select(
+		Query(default_namespace)
+			.WhereComposite(compIndexName, CondEq, {reindexer::VariantArray{Variant{i * 2}, Variant{"str_" + std::to_string(i * 5)}}}),
+		qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	newIdx = reindexer::IndexDef(compIndexName, {idIdxName, stringField}, "hash", "composite", IndexOpts());
+	err = rt.reindexer->UpdateIndex(default_namespace, newIdx);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	qr.Clear();
+	err = rt.reindexer->Select(Query(default_namespace).Where(intField, CondEq, i), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+
+	qr.Clear();
+	err = rt.reindexer->Select(
+		Query(default_namespace)
+			.WhereComposite(compIndexName, CondEq, {reindexer::VariantArray{Variant{i * 2}, Variant{"str_" + std::to_string(i * 5)}}}),
+		qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+}
+
 TEST_F(NsApi, TestUpdateNonIndexFieldWithNull) {
 	DefineDefaultNamespace();
 	AddUnindexedData();
@@ -1551,15 +1654,15 @@ void checkQueryDsl(const Query &src) {
 	if (src.UpdateFields().size() > 0) {
 		EXPECT_TRUE(src.UpdateFields().size() == dst.UpdateFields().size());
 		for (size_t i = 0; i < src.UpdateFields().size(); ++i) {
-			if (src.UpdateFields()[i].mode == FieldModeSetJson) {
-				ASSERT_TRUE(src.UpdateFields()[i].values.size() == 1);
-				ASSERT_TRUE(src.UpdateFields()[i].values.front().Type() == KeyValueString);
-				ASSERT_TRUE(dst.UpdateFields()[i].values.size() == 1);
-				ASSERT_TRUE(dst.UpdateFields()[i].values.front().Type() == KeyValueString);
+			if (src.UpdateFields()[i].Mode() == FieldModeSetJson) {
+				ASSERT_EQ(src.UpdateFields()[i].Values().size(), 1);
+				EXPECT_EQ(src.UpdateFields()[i].Values().front().Type(), KeyValueString);
+				ASSERT_EQ(dst.UpdateFields()[i].Values().size(), 1);
+				EXPECT_EQ(dst.UpdateFields()[i].Values().front().Type(), KeyValueString);
 				reindexer::WrSerializer wrser1;
-				reindexer::prettyPrintJSON(reindexer::giftStr(std::string_view(src.UpdateFields()[i].values.front())), wrser1);
+				reindexer::prettyPrintJSON(reindexer::giftStr(std::string_view(src.UpdateFields()[i].Values().front())), wrser1);
 				reindexer::WrSerializer wrser2;
-				reindexer::prettyPrintJSON(reindexer::giftStr(std::string_view(dst.UpdateFields()[i].values.front())), wrser2);
+				reindexer::prettyPrintJSON(reindexer::giftStr(std::string_view(dst.UpdateFields()[i].Values().front())), wrser2);
 				EXPECT_TRUE(wrser1.Slice() == wrser2.Slice());
 				objectValues = true;
 			}

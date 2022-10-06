@@ -169,8 +169,9 @@ public:
 	}
 	template <typename Rep, typename Period>
 	void sleep(std::chrono::duration<Rep, Period> dur);
-	template <typename Rep1, typename Period1, typename Rep2, typename Period2>
-	void granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity, bool &terminate);
+	template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename Terminater>
+	void granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity,
+						Terminater const &terminate);
 
 protected:
 	void set(int fd, io *watcher, int events);
@@ -367,11 +368,11 @@ void dynamic_loop::sleep(std::chrono::duration<Rep, Period> dur) {
 	}
 }
 
-template <typename Rep1, typename Period1, typename Rep2, typename Period2>
+template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename Terminater>
 void dynamic_loop::granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity,
-								  bool &terminate) {
+								  Terminater const &terminate) {
 	for (std::chrono::nanoseconds t = dur; t.count() > 0; t -= granularity) {
-		if (terminate) {
+		if (terminate()) {
 			return;
 		}
 		sleep(std::min(t, std::chrono::duration_cast<std::chrono::nanoseconds>(granularity)));

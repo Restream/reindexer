@@ -217,7 +217,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 		case QueryUpdate: {
 			if (query_.UpdateFields().empty()) break;
 			ser << "UPDATE " << query_._namespace;
-			FieldModifyMode mode = query_.UpdateFields().front().mode;
+			FieldModifyMode mode = query_.UpdateFields().front().Mode();
 			bool isUpdate = (mode == FieldModeSet || mode == FieldModeSetJson);
 			if (isUpdate) {
 				ser << " SET ";
@@ -226,14 +226,14 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 			}
 			for (const UpdateEntry &field : query_.UpdateFields()) {
 				if (&field != &*query_.UpdateFields().begin()) ser << ',';
-				ser << field.column;
+				ser << field.Column();
 				if (isUpdate) {
 					ser << " = ";
-					bool isArray = (field.values.IsArrayValue() || field.values.size() > 1);
+					bool isArray = (field.Values().IsArrayValue() || field.Values().size() > 1);
 					if (isArray) ser << '[';
-					for (const Variant &v : field.values) {
-						if (&v != &*field.values.begin()) ser << ',';
-						if ((v.Type() == KeyValueString) && !field.isExpression && (mode != FieldModeSetJson)) {
+					for (const Variant &v : field.Values()) {
+						if (&v != &*field.Values().begin()) ser << ',';
+						if ((v.Type() == KeyValueString) && !field.IsExpression() && (mode != FieldModeSetJson)) {
 							stringToSql(v.As<string>(), ser);
 						} else {
 							ser << v.As<string>();

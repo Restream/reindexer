@@ -25,7 +25,7 @@ protected:
 			auto serialNumber = std::to_string(i);
 			auto id = "key" + serialNumber;
 			string name = "name" + serialNumber;
-			sprintf(sourceJson, jsonPattern, id.c_str(), name.c_str(), i);
+			snprintf(sourceJson, sizeof(sourceJson) - 1, jsonPattern, id.c_str(), name.c_str(), i);
 
 			Error err = item.FromJSON(sourceJson);
 			EXPECT_TRUE(err.ok()) << err.what();

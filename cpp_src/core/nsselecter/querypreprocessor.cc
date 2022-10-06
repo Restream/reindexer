@@ -1,10 +1,12 @@
 #include "querypreprocessor.h"
 #include "core/index/index.h"
+#include "core/index/indextext/indextext.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/nsselecter/joinedselector.h"
 #include "core/nsselecter/selectiteratorcontainer.h"
 #include "core/nsselecter/sortexpression.h"
 #include "core/payload/fieldsset.h"
+#include "estl/overloaded.h"
 #include "nsselecter.h"
 
 namespace reindexer {
@@ -16,7 +18,8 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query,
 	  start_(query.start),
 	  count_(query.count),
 	  forcedSortOrder_(!query.forcedSortOrder_.empty()),
-	  reqMatchedOnce_(reqMatchedOnce) {
+	  reqMatchedOnce_(reqMatchedOnce),
+	  query_{query} {
 	if (forcedSortOrder_ && (start_ > 0 || count_ < UINT_MAX)) {
 		assertrx(!query.sortingEntries_.empty());
 		static const std::vector<JoinedSelector> emptyJoinedSelectors;
@@ -35,6 +38,62 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query,
 			queryEntryAddedByForcedSortOptimization_ = true;
 		}
 	}
+}
+
+void QueryPreprocessor::ExcludeFtQuery(const SelectFunction &fnCtx, const RdxContext &rdxCtx) {
+	if (queryEntryAddedByForcedSortOptimization_ || Size() <= 1) return;
+	for (auto it = cbegin(), next = it, end = cend(); it != end; it = next) {
+		++next;
+		if (it->HoldsOrReferTo<QueryEntry>() && it->Value<QueryEntry>().idxNo != IndexValueType::SetByJsonPath) {
+			const auto indexNo = it->Value<QueryEntry>().idxNo;
+			auto &index = ns_.indexes_[indexNo];
+			if (!IsFastFullText(index->Type())) continue;
+			if (it->operation != OpAnd || (next != end && next->operation == OpOr) || !index->EnablePreselectBeforeFt()) break;
+			ftPreselect_ = index->FtPreselect(*this, indexNo, fnCtx, rdxCtx);
+			std::visit(overloaded{[&](const FtMergeStatuses &) {
+									  start_ = 0;
+									  count_ = UINT_MAX;
+									  forcedSortOrder_ = false;
+									  ftEntry_ = std::move(it->Value<QueryEntry>());
+									  const size_t pos = it.PlainIterator() - cbegin().PlainIterator();
+									  Erase(pos, pos + 1);
+								  },
+								  [&](const PreselectedFtIdSetCache::Iterator &) {
+									  const size_t pos = it.PlainIterator() - cbegin().PlainIterator();
+									  if (pos != 0) {
+										  container_[0] = std::move(container_[pos]);
+									  }
+									  Erase(1, Size());
+								  }},
+					   *ftPreselect_);
+			break;
+		}
+	}
+}
+
+bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool &matchedAtLeastOnce) noexcept {
+	if (evaluationsCount_++) return false;
+	if (queryEntryAddedByForcedSortOptimization_) {
+		container_.back().operation = desc_ ? OpAnd : OpNot;
+		assertrx(start <= start_);
+		start_ = start;
+		assertrx(count <= count_);
+		count_ = count;
+		return count_ || (reqMatchedOnce_ && !matchedAtLeastOnce);
+	} else if (ftEntry_) {
+		if (!matchedAtLeastOnce) return false;
+		start_ = query_.start;
+		count_ = query_.count;
+		forcedSortOrder_ = !query_.forcedSortOrder_.empty();
+		Erase(1, container_.size());
+		container_[0].SetValue(std::move(*ftEntry_));
+		container_[0].operation = OpAnd;
+		ftEntry_ = std::nullopt;
+		matchedAtLeastOnce = false;
+		equalPositions.clear();
+		return true;
+	}
+	return false;
 }
 
 void QueryPreprocessor::checkStrictMode(const std::string &index, int idxNo) const {
@@ -130,6 +189,19 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, const size_t srcBegin, 
 	return merged;
 }
 
+void QueryPreprocessor::CheckUniqueFtQuery() const {
+	bool found = false;
+	ExecuteAppropriateForEach(Skip<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{}, [&](const QueryEntry &qe) {
+		if (qe.idxNo != IndexValueType::SetByJsonPath && IsFullText(ns_.indexes_[qe.idxNo]->Type())) {
+			if (found) {
+				throw Error{errParams, "Query cannot contain more than one full text condition"};
+			} else {
+				found = true;
+			}
+		}
+	});
+}
+
 bool QueryPreprocessor::ContainsFullTextIndexes() const {
 	for (auto it = cbegin().PlainIterator(), end = cend().PlainIterator(); it != end; ++it) {
 		if (it->HoldsOrReferTo<QueryEntry>() && it->Value<QueryEntry>().idxNo != IndexValueType::SetByJsonPath &&
@@ -138,6 +210,15 @@ bool QueryPreprocessor::ContainsFullTextIndexes() const {
 		}
 	}
 	return false;
+}
+
+SortingEntries QueryPreprocessor::GetSortingEntries(bool havePreresult) const {
+	if (ftEntry_) return {};
+	// DO NOT use deducted sort order in the following cases:
+	// - query contains explicity specified sort order
+	// - query contains FullText query.
+	const bool disableOptimizeSortOrder = ContainsFullTextIndexes() || !query_.sortingEntries_.empty() || havePreresult;
+	return disableOptimizeSortOrder ? query_.sortingEntries_ : detectOptimalSortOrder();
 }
 
 int QueryPreprocessor::getCompositeIndex(const FieldsSet &fields) const {
@@ -243,7 +324,7 @@ void QueryPreprocessor::convertWhereValues(QueryEntries::iterator begin, QueryEn
 	}
 }
 
-SortingEntries QueryPreprocessor::DetectOptimalSortOrder() const {
+SortingEntries QueryPreprocessor::detectOptimalSortOrder() const {
 	if (!AvailableSelectBySortIndex()) return {};
 	if (const Index *maxIdx = findMaxIndex(cbegin(), cend())) {
 		SortingEntries sortingEntries;

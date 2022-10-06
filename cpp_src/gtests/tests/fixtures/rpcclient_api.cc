@@ -19,7 +19,10 @@ void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLog
 		}
 		serverIsReady_ = false;
 		stop_.stop();
-		server_->Stop();
+		Error err = server_->Stop();
+		if (!err.ok() && err_.ok()) {
+			err_ = err;
+		}
 		server_.reset();
 	}));
 	while (!serverIsReady_) {
@@ -47,8 +50,9 @@ void RPCClientTestApi::StartDefaultRealServer() {
 	StartServer();
 }
 
-void RPCClientTestApi::AddFakeServer(const std::string& addr, const RPCServerConfig& conf) {
+RPCClientTestApi::TestServer& RPCClientTestApi::AddFakeServer(const std::string& addr, const RPCServerConfig& conf) {
 	fakeServers_.emplace(addr, std::unique_ptr<TestServer>(new TestServer(conf)));
+	return *fakeServers_[addr];
 }
 
 void RPCClientTestApi::AddRealServer(const std::string& dbPath, const std::string& addr, uint16_t httpPort) {
@@ -104,12 +108,12 @@ void RPCClientTestApi::StartServer(const std::string& addr, Error errOnLogin) {
 	assertf(false, "Server with dsn %s was not found", addr);
 }
 
-void RPCClientTestApi::StopServer(const std::string& addr) {
+Error RPCClientTestApi::StopServer(const std::string& addr) {
 	{
 		auto it = fakeServers_.find(addr);
 		if (it != fakeServers_.end()) {
 			it->second->Stop();
-			return;
+			return it->second->ErrorStatus();
 		}
 	}
 	{
@@ -120,10 +124,11 @@ void RPCClientTestApi::StopServer(const std::string& addr) {
 			assert(it->second.serverThread->joinable());
 			it->second.serverThread->join();
 			it->second.serverThread.reset();
-			return;
+			return errOK;
 		}
 	}
 	assertf(false, "Server with dsn %s was not found", addr);
+	abort();
 }
 
 bool RPCClientTestApi::CheckIfFakeServerConnected(const std::string& addr) {
@@ -134,9 +139,13 @@ bool RPCClientTestApi::CheckIfFakeServerConnected(const std::string& addr) {
 	return false;
 }
 
-void RPCClientTestApi::StopAllServers() {
+Error RPCClientTestApi::StopAllServers() {
+	Error res{errOK};
 	for (const auto& item : fakeServers_) {
 		item.second->Stop();
+		if (!item.second->ErrorStatus().ok() && res.ok()) {
+			res = item.second->ErrorStatus();
+		}
 	}
 	for (auto& item : realServers_) {
 		if (item.second.serverThread && item.second.serverThread->joinable()) {
@@ -145,6 +154,7 @@ void RPCClientTestApi::StopAllServers() {
 			item.second.serverThread.reset();
 		}
 	}
+	return res;
 }
 
 client::Item RPCClientTestApi::CreateItem(client::Reindexer& rx, std::string_view nsName, int id) {

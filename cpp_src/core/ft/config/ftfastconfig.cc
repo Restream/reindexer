@@ -107,6 +107,7 @@ void FtFastConfig::parse(std::string_view json, const fast_hash_map<std::string,
 		} else {
 			throw Error(errParseJson, "FtFastConfig: unknown optimization value: %s", opt);
 		}
+		enablePreselectBeforeFt = root["enable_preselect_before_ft"].As<>(enablePreselectBeforeFt);
 
 		parseBase(root);
 	} catch (const gason::Exception& ex) {
@@ -138,6 +139,7 @@ std::string FtFastConfig::GetJson(const fast_hash_map<std::string, int>& fields)
 			jsonBuilder.Put("optimization", "CPU");
 			break;
 	}
+	jsonBuilder.Put("enable_preselect_before_ft", enablePreselectBeforeFt);
 	if (fields.empty() || isAllEqual(fieldsCfg)) {
 		assertrx(!fieldsCfg.empty());
 		jsonBuilder.Put("bm25_boost", fieldsCfg[0].bm25Boost);

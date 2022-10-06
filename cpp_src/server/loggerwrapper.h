@@ -5,8 +5,6 @@
 
 namespace reindexer_server {
 
-using std::shared_ptr;
-
 class LoggerWrapper {
 public:
 	LoggerWrapper() = default;

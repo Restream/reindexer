@@ -5,11 +5,7 @@
 #include "net/listener.h"
 #include "reindexer_version.h"
 
-using std::shared_ptr;
-
 RPCServerFake::RPCServerFake(const RPCServerConfig &conf) : startTs_(std::chrono::system_clock::now()), conf_(conf), state_(Init) {}
-
-RPCServerFake::~RPCServerFake() {}
 
 Error RPCServerFake::Ping(cproto::Context &) {
 	//
@@ -56,14 +52,60 @@ Error RPCServerFake::OpenNamespace(cproto::Context &, p_string) {
 
 Error RPCServerFake::DropNamespace(cproto::Context &, p_string) { return Error(errOK); }
 
-void RPCServerFake::Stop() {
+Error RPCServerFake::Stop() {
 	listener_->Stop();
 	state_ = Stopped;
+	if (int const openedQR = OpenedQRCount(); openedQR == 0) {
+		return errOK;
+	} else {
+		return Error{errLogic, "There are %d opened QueryResults", openedQR};
+	}
 }
 
-Error RPCServerFake::Select(cproto::Context & /*ctx*/, p_string /*query*/, int /*flags*/, int /*limit*/, p_string /*ptVersions*/) {
+Error RPCServerFake::Select(cproto::Context &ctx, p_string /*query*/, int /*flags*/, int /*limit*/, p_string /*ptVersions*/) {
+	static constexpr size_t kQueryResultsPoolSize = 1024;
 	std::this_thread::sleep_for(conf_.selectDelay);
-	return 0;
+	int qrId;
+	{
+		std::lock_guard lock{qrMutex_};
+		if (usedQrIds_.size() >= kQueryResultsPoolSize) {
+			return Error{errLogic, "Too many parallel queries"};
+		}
+		if (unusedQrIds_.empty()) {
+			qrId = usedQrIds_.size();
+		} else {
+			qrId = *unusedQrIds_.begin();
+			unusedQrIds_.erase(qrId);
+		}
+		auto [it, inserted] = usedQrIds_.insert(qrId);
+		assert(inserted);
+		(void)inserted;
+		(void)it;
+	}
+	ctx.Return({cproto::Arg{p_string("")}, cproto::Arg{qrId}});
+	return errOK;
+}
+
+Error RPCServerFake::CloseResults(cproto::Context &ctx, int reqId, std::optional<int64_t> /*qrUID*/, std::optional<bool> doNotReply) {
+	if (doNotReply && *doNotReply) {
+		ctx.respSent = true;
+	}
+	{
+		std::lock_guard lock{qrMutex_};
+		const auto it = usedQrIds_.find(reqId);
+		if (it == usedQrIds_.end()) {
+			return Error(errLogic, "ReqId %d not found", reqId);
+		}
+		unusedQrIds_.insert(*it);
+		usedQrIds_.erase(it);
+	}
+	closeQRRequestsCounter_.fetch_add(1, std::memory_order_relaxed);
+	return errOK;
+}
+
+size_t RPCServerFake::OpenedQRCount() {
+	std::lock_guard lock{qrMutex_};
+	return usedQrIds_.size();
 }
 
 bool RPCServerFake::Start(const string &addr, ev::dynamic_loop &loop, Error loginError) {
@@ -78,6 +120,7 @@ bool RPCServerFake::Start(const string &addr, ev::dynamic_loop &loop, Error logi
 	dispatcher_.Register(cproto::kCmdOpenNamespace, this, &RPCServerFake::OpenNamespace);
 	dispatcher_.Register(cproto::kCmdDropNamespace, this, &RPCServerFake::DropNamespace);
 	dispatcher_.Register(cproto::kCmdSelect, this, &RPCServerFake::Select);
+	dispatcher_.Register(cproto::kCmdCloseResults, this, &RPCServerFake::CloseResults);
 
 	dispatcher_.Middleware(this, &RPCServerFake::CheckAuth);
 

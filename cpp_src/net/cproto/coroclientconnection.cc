@@ -4,6 +4,7 @@
 #include "core/rdxcontext.h"
 #include "coroclientconnection.h"
 #include "reindexer_version.h"
+#include "server/rpcqrwatcher.h"
 #include "tools/serializer.h"
 
 #include <functional>
@@ -132,7 +133,7 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 	auto deadline = opts.netTimeout.count() ? Now() + opts.netTimeout + kDeadlineCheckInterval : seconds(0);
 	auto seqp = seqNums_.pop();
 	if (!seqp.second) {
-		CoroRPCAnswer(Error(errLogic, "Unable to get seq num"));
+		return Error(errLogic, "Unable to get seq num");
 	}
 
 	// Don't allow to add new requests, while error handling is in progress
@@ -160,6 +161,32 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 	call.used = false;
 	seqNums_.push(seq + seqNums_.capacity());
 	return ans;
+}
+
+Error CoroClientConnection::callNoReply(const CommandParams &opts, uint32_t seq, const Args &args) {
+	if (opts.cancelCtx) {
+		switch (opts.cancelCtx->GetCancelType()) {
+			case CancelType::Explicit:
+				return Error(errCanceled, "Canceled by context");
+			case CancelType::Timeout:
+				return Error(errTimeout, "Canceled by timeout");
+			default:
+				break;
+		}
+	}
+	if (terminate_ || !isRunning_) {
+		return Error(errLogic, "Client is not running");
+	}
+
+	// Don't allow to add new requests, while error handling is in progress
+	errSyncCh_.pop();
+
+	try {
+		wrCh_.push(packRPC(opts.cmd, seq, args, Args{Arg{int64_t(opts.execTimeout.count())}}));
+	} catch (...) {
+		return Error(errNetwork, "Writing channel is closed");
+	}
+	return errOK;
 }
 
 CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs) {
@@ -410,6 +437,7 @@ void CoroClientConnection::readerRoutine() {
 			if (!rpcData.used || rpcData.seq != hdr.seq) {
 				auto cmdSv = CmdName(hdr.cmd);
 				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d(%.*s)\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()), cmdSv.data());
+				sendCloseResults(hdr, ans);
 				continue;
 			}
 			assertrx(rpcData.rspCh.opened());
@@ -422,11 +450,45 @@ void CoroClientConnection::readerRoutine() {
 	} while (loggedIn_ && !terminate_);
 }
 
+void CoroClientConnection::sendCloseResults(CProtoHeader const &hdr, CoroRPCAnswer const &ans) {
+	if (!ans.Status().ok()) {
+		return;
+	}
+	switch (hdr.cmd) {
+		case kCmdCommitTx:
+		case kCmdModifyItem:
+		case kCmdDeleteQuery:
+		case kCmdUpdateQuery:
+		case kCmdSelect:
+		case kCmdSelectSQL:
+		case kCmdFetchResults: {
+			Serializer ser{ans.data_.data(), ans.data_.size()};
+			Args args;
+			args.Unpack(ser);
+			if (args.size() > 1) {
+				if (args.size() > 2) {
+					callNoReply({kCmdCloseResults, connectData_.opts.keepAliveTimeout, milliseconds(0), nullptr}, hdr.seq,
+								{Arg{args[1].As<int>()}, Arg{args[2].As<int64_t>()}, Arg{true}});
+				} else {
+					callNoReply({kCmdCloseResults, connectData_.opts.keepAliveTimeout, milliseconds(0), nullptr}, hdr.seq,
+								{Arg{args[1].As<int>()}, Arg{reindexer_server::RPCQrWatcher::kDisabled}, Arg{true}});
+				}
+			} else {
+				auto cmdSv = CmdName(hdr.cmd);
+				fprintf(stderr, "Unexpected RPC answer seq=%d cmd=%d(%.*s); do not have reqId\n", int(hdr.seq), hdr.cmd, int(cmdSv.size()),
+						cmdSv.data());
+			}
+		} break;
+		default:
+			break;
+	}
+}
+
 void CoroClientConnection::deadlineRoutine() {
 	while (!terminate_) {
 		static_assert(std::chrono::duration_cast<std::chrono::seconds>(kDeadlineCheckInterval).count() >= 1,
 					  "kDeadlineCheckInterval shoul be 1 second or more");
-		loop_->granular_sleep(kDeadlineCheckInterval, kCoroSleepGranularity, terminate_);
+		loop_->granular_sleep(kDeadlineCheckInterval, kCoroSleepGranularity, [this] { return terminate_; });
 		now_ += std::chrono::duration_cast<std::chrono::seconds>(kDeadlineCheckInterval).count();
 
 		for (auto &c : rpcCalls_) {
@@ -444,7 +506,7 @@ void CoroClientConnection::deadlineRoutine() {
 
 void CoroClientConnection::pingerRoutine() {
 	while (!terminate_) {
-		loop_->granular_sleep(kKeepAliveInterval, kCoroSleepGranularity, terminate_);
+		loop_->granular_sleep(kKeepAliveInterval, kCoroSleepGranularity, [this] { return terminate_; });
 		if (conn_.state() != manual_connection::conn_state::init) {
 			call({kCmdPing, connectData_.opts.keepAliveTimeout, milliseconds(0), nullptr}, {});
 		}

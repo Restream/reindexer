@@ -23,7 +23,7 @@ public:
 	};
 
 	SelectIterator() = default;
-	SelectIterator(const SelectKeyResult &res, bool distinct, string name, bool forcedFirst = false);
+	SelectIterator(SelectKeyResult res, bool distinct, string name, bool forcedFirst = false);
 
 	/// Starts iteration process: prepares
 	/// object for further work.

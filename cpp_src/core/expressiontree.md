@@ -184,8 +184,8 @@ It contains operation (value of `OperationType`) and a value of one of the types
 - `size_t Node::Size() const` returns `1` if it is not head of subexpression or count of cells occupied by subexpression otherwise.
 - `bool Node::IsSubTree() const`, `bool Node::IsLeaf() const` test is the `Node` head of subexpression or vice versa.
 - `bool Node::Holds<T>() const` returns `true` if it holds value of type `T`.
-- `void Append()` increments size of subexpression if it is head of subexpression, fails otherwise.
-- `void Erase(size_t)` reduces size of subexpression if it is head of subexpression, fails otherwise.
+- `void Node::Append()` increments size of subexpression if it is head of subexpression, fails otherwise.
+- `void Node::Erase(size_t)` reduces size of subexpression if it is head of subexpression, fails otherwise.
 - ```c++
 template <typename... Args>
 void Node::ExecuteAppropriate(const std::function<void(Args&)>&... funcs);
@@ -249,7 +249,7 @@ For example, for expression `A + B - (C - D + (E - F) - G)`
 ## 7. Methods
 
 - Copy constructor and copy assignment operator make deep copy for all copying nodes.
--
+- Get iterators, which point to the first or next after the last cell of the expression:
 ```c++
 iterator ExpressionTree::begin();
 const_iterator ExpressionTree::begin() const;
@@ -258,41 +258,38 @@ iterator ExpressionTree::end();
 const_iterator ExpressionTree::end() const;
 const_iterator ExpressionTree::cend() const;
 ```
-return iterators those point to the first or next after the last cell of the expression.
-
-- `const_iterator ExpressionTree::begin_of_current_bracket() const` returns iterator that points to the first cell of current active subexpression (last subexpression for which `OpenBracket()` was called and `CloseBracket()` was not) and returns `begin()` if no active subexpression.
--
+- Get iterator that points to the first cell of current active subexpression (last subexpression for which `OpenBracket()` was called and `CloseBracket()` was not) and returns `begin()` if no active subexpression:
+```c++
+const_iterator ExpressionTree::begin_of_current_bracket() const
+```
+- Append an operand to the end or to the beginning of the expression. `T` must be one of `Ts...` types:
 ```c++
 void ExpressionTree::Append<T>(OperationType, const T&);
 void ExpressionTree::Append<T>(OperationType, T&&);
 void ExpressionTree::AppendFront<T>(OperationType, T&&);
 ```
-append an operand to the end or to the beginning of the expression. `T` must be one of `Ts...` types.
--
+- Append deep or lazy copy of a part of another expression. !Warning! lazy copy should not live over the original expression:
 ```c++
 void ExpressionTree::Append(const_iterator begin, const_iterator end);
 void ExpressionTree::LazyAppend(iterator begin, iterator end);
 ```
-append deep or lazy copy of a part of another expression. !Warning! lazy copy should not live over the original expression.
--
+- Start and finish subexpression. `args...` are forwarded to constructor of `SubTree`:
 ```c++
 void ExpressionTree::OpenBracket<Args...>(OperationType, Args... args);
 void ExpressionTree::CloseBracket();
 ```
-call these methods at the beginning and at the end of subexpression. `args...` are forwarded to constructor of `SutTree`.
--
+- Get or set operation of node in cell number `i`:
 ```c++
 OperationType ExpressionTree::GetOperation(size_t i) const ;
 void ExpressionTree::SetOperation(OperationType op, size_t i);
 ```
-get or set operation of node in cell number `i`.
-- `void ExpressionTree::SetLastOperation(OperationType)` sets operation to last appended leaf or last closed subtree or last open subtree if it is empty.
-- `bool ExpressionTree::Empty() const` tests is the expression empty.
-- `size_t ExpressionTree::Size() const` returns count of cells the expression occupies.
-- `size_t ExpressionTree::Size(size_t i) const` returns count of cells subexpression occupies if cell `i` is head of the subexpression or `1` otherwise.
-- `bool ExpressionTree::IsValue(size_t i) const` tests the cell `i` is not head of a subexpression.
-- `void ExpressionTree::Erase(size_t from, size_t to)` remove nodes with indexes from `from` to `to - 1`.
-- `size_t ExpressionTree::Next(size_t i) const` returns index of cell after the last cell of subexpression if cell `i` is head of the subexpression or `i + 1` otherwise. For example, for expression `A + B - (C - D + (E - F) - G)`
+- `void ExpressionTree::SetLastOperation(OperationType)` - set operation to last appended leaf or last closed subtree or last open subtree if it is empty.
+- `bool ExpressionTree::Empty() const` - test if the expression empty.
+- `size_t ExpressionTree::Size() const` - get count of cells the expression occupies.
+- `size_t ExpressionTree::Size(size_t i) const` - get count of cells subexpression occupies if cell `i` is head of the subexpression or `1` otherwise.
+- `bool ExpressionTree::IsValue(size_t i) const` - test if the cell `i` is not head of a subexpression.
+- `void ExpressionTree::Erase(size_t from, size_t to)` - remove nodes with indexes from `from` to `to - 1`.
+- `size_t ExpressionTree::Next(size_t i) const` - get index of cell after the last cell of subexpression if cell `i` is head of the subexpression or `i + 1` otherwise. For example, for expression `A + B - (C - D + (E - F) - G)`
 	|  0   |  1   |  2   |  3   |  4   |  5   |  6   |  7   |  8   |
 	|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|:----:|
 	| +, A | +, B | -, 7 | +, C | -, D | +, 3 | +, E | -, F | -, G |
@@ -301,11 +298,11 @@ get or set operation of node in cell number `i`.
 	-# `Next(2)` returns `9`.
 	-# `Next(3)` returns `4`.
 	-# `Next(5)` returns `8`.
--
+- Invoke appropriate functor depending on content type for each node, skip if no appropriate functor (invoke `ExecuteAppropriate(funcs)` for each node):
 ```c++
 template <typename... Args>
 void ExpressionTree::ExecuteAppropriateForEach(const std::function<void(const Args&)>&... funcs) const;
 template <typename... Args>
 void ExecuteAppropriateForEach(const std::function<void(Args&)>&... funcs);
 ```
-invoke appropriate functor depending on content type for each node, skip if no appropriate functor. (Invoke `ExecuteAppropriate(funcs)` for each node.)
+

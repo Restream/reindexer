@@ -9,22 +9,42 @@ namespace reindexer {
 
 ItemModifier::FieldData::FieldData(const UpdateEntry &entry, NamespaceImpl &ns)
 	: entry_(entry), tagsPath_(), fieldIndex_(0), arrayIndex_(IndexValueType::NotSet), isIndex_(false) {
-	if (ns.getIndexByName(entry_.column, fieldIndex_)) {
-		jsonPath_ = entry.column;
+	if (ns.getIndexByName(entry_.Column(), fieldIndex_)) {
+		jsonPath_ = entry.Column();
 		isIndex_ = true;
+		if (!entry.IsExpression()) {
+			tagsPath_ = ns.tagsMatcher_.path2indexedtag(entry_.Column(), nullptr, true);
+			if (tagsPath_.empty()) {
+				throw Error(errParams, "Cannot find field by json: '%s'", entry_.Column());
+			}
+			if (tagsPath_.back().IsWithIndex()) {
+				arrayIndex_ = tagsPath_.back().Index();
+				tagsPath_.back().SetIndex(IndexValueType::NotSet);
+			}
+		}
 	} else {
-		IndexedTagsPath tagsPath = ns.tagsMatcher_.path2indexedtag(entry_.column, nullptr, true);
+		IndexedTagsPath tagsPath = ns.tagsMatcher_.path2indexedtag(entry_.Column(), nullptr, true);
 		for (size_t i = 0; i < tagsPath.size(); ++i) {
 			if (i) jsonPath_ += ".";
 			jsonPath_ += ns.tagsMatcher_.tag2name(tagsPath[i].NameTag());
 		}
 		isIndex_ = ns.getIndexByName(jsonPath_, fieldIndex_);
+		if (!entry.IsExpression()) {
+			tagsPath_ = std::move(tagsPath);
+			if (tagsPath_.empty()) {
+				throw Error(errParams, "Cannot find field by json: '%s'", entry_.Column());
+			}
+			if (isIndex_ && tagsPath_.back().IsWithIndex()) {
+				arrayIndex_ = tagsPath_.back().Index();
+				tagsPath_.back().SetIndex(IndexValueType::NotSet);
+			}
+		}
 	}
 }
 
 void ItemModifier::FieldData::updateTagsPath(TagsMatcher &tm, const IndexExpressionEvaluator &ev) {
 	if (tagsPath_.empty()) {
-		tagsPath_ = tm.path2indexedtag(entry_.column, ev, true);
+		tagsPath_ = tm.path2indexedtag(entry_.Column(), ev, true);
 	}
 	for (size_t i = 0; i < tagsPath_.size(); ++i) {
 		bool isLast = (i == tagsPath_.size() - 1);
@@ -39,7 +59,7 @@ void ItemModifier::FieldData::updateTagsPath(TagsMatcher &tm, const IndexExpress
 			}
 			node.SetIndex(vals.front().As<int>());
 		}
-		if (isLast && isIndex_ && tagsPath_[i].IsWithIndex() && !tagsPath_[i].IsForAllItems()) {
+		if (isLast && isIndex_ && tagsPath_[i].IsWithIndex()) {
 			arrayIndex_ = tagsPath_[i].Index();
 			tagsPath_[i].SetIndex(IndexValueType::NotSet);
 		}
@@ -63,17 +83,16 @@ void ItemModifier::Modify(IdType itemId, const NsContext &ctx) {
 
 	for (FieldData &field : fieldsToModify_) {
 		VariantArray values;
-		if (field.details().isExpression) {
-			assertrx(field.details().values.size() > 0);
-			values = ev.Evaluate(static_cast<std::string_view>(field.details().values.front()), pv, field.name());
+		if (field.details().IsExpression()) {
+			assertrx(field.details().Values().size() > 0);
+			values = ev.Evaluate(static_cast<std::string_view>(field.details().Values().front()), pv, field.name());
+			field.updateTagsPath(ns_.tagsMatcher_,
+								 [&ev, &pv, &field](std::string_view expression) { return ev.Evaluate(expression, pv, field.name()); });
 		} else {
-			values = field.details().values;
+			values = field.details().Values();
 		}
 
-		field.updateTagsPath(ns_.tagsMatcher_,
-							 [&ev, &pv, &field](std::string_view expression) { return ev.Evaluate(expression, pv, field.name()); });
-
-		if (field.details().mode == FieldModeSetJson) {
+		if (field.details().Mode() == FieldModeSetJson) {
 			modifyCJSON(pv, itemId, field, values, ctx);
 		} else {
 			modifyField(itemId, field, pl, values, ctx);
@@ -97,7 +116,7 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, IdType id, FieldData &field, Va
 	}
 
 	ItemImpl itemimpl(ns_.payloadType_, pv, ns_.tagsMatcher_);
-	itemimpl.ModifyField(field.tagspath(), values, field.details().mode);
+	itemimpl.ModifyField(field.tagspath(), values, field.details().Mode());
 
 	Item item = ns_.NewItem(ctx);
 	Error err = item.FromCJSON(itemimpl.GetCJSON(true));
@@ -202,7 +221,8 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, IdType id, FieldData &field, Va
 
 void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values, const NsContext &ctx) {
 	Index &index = *(ns_.indexes_[field.index()]);
-	if (field.isIndex() && !index.Opts().IsSparse() && (field.details().mode == FieldModeDrop)) {
+	if (field.isIndex() && !index.Opts().IsSparse() && field.details().Mode() == FieldModeDrop /*&&
+		!(field.arrayIndex() != IndexValueType::NotSet || field.tagspath().back().IsArrayNode())*/) {	 // TODO #1218 allow to drop array fields
 		throw Error(errLogic, "It's only possible to drop sparse or non-index fields via UPDATE statement!");
 	}
 
@@ -264,7 +284,7 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 		oldTupleValue.EnsureHold();
 		bool needClearCache{false};
 		ns_.indexes_[0]->Delete(oldTupleValue, itemId, *strHolder, needClearCache);
-		item.ModifyField(field.tagspath(), values, field.details().mode);
+		item.ModifyField(field.tagspath(), values, field.details().Mode());
 		Variant tupleValue = ns_.indexes_[0]->Upsert(item.GetField(0), itemId, needClearCache);
 		if (needClearCache && ns_.indexes_[0]->IsOrdered()) indexesCacheCleaner.Add(ns_.indexes_[0]->SortId());
 		pl.Set(0, {tupleValue});
@@ -285,7 +305,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, Vari
 	auto indexesCacheCleaner{ns_.GetIndexesCacheCleaner()};
 	if (index.Opts().IsArray() && !values.IsArrayValue() && !values.IsNullValue()) {
 		if (values.empty()) {
-			throw Error(errParams, "Cannot update array item with an empty value");
+			throw Error(errParams, "Cannot update array item with an empty value");	 // TODO #1218 maybe delete this
 		}
 		int offset = 0, length = 0;
 		ns_.krefs.resize(0);

@@ -889,7 +889,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 	assertrx(ns);
 
 	// For each joined queries
-	int joinedSelectorsCount = q.joinQueries_.size();
+	uint32_t joinedSelectorsCount = uint32_t(q.joinQueries_.size());
 	for (auto& jq : q.joinQueries_) {
 		// Get common results from joined namespaces_
 		auto jns = locks.Get(jq._namespace);
@@ -921,7 +921,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 
 		Query jjq(jq);
 		JoinPreResult::Ptr preResult = std::make_shared<JoinPreResult>();
-		size_t joinedFieldIdx = joinedSelectors.size();
+		uint32_t joinedFieldIdx = uint32_t(joinedSelectors.size());
 		JoinCacheRes joinRes;
 		joinRes.key.SetData(jq);
 		jns->getFromJoinCache(joinRes);

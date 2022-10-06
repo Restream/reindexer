@@ -24,6 +24,7 @@ public:
 	/// @param indexNo - number of index.
 	/// @return pointer to a function context or null if some error happened.
 	BaseFunctionCtx::Ptr CreateCtx(int indexNo);
+	bool NeedArea(int indexNo) const;
 
 private:
 	BaseFunctionCtx::Ptr createCtx(SelectFuncStruct& data, BaseFunctionCtx::Ptr ctx, IndexType index_type);

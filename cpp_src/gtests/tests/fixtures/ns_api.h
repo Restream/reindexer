@@ -53,7 +53,7 @@ protected:
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 			string serial = std::to_string(i);
-			sprintf(sourceJson, jsonPattern, serial.c_str(), serial.c_str(), i, i * 2, i * 3);
+			snprintf(sourceJson, sizeof(sourceJson) - 1, jsonPattern, serial.c_str(), serial.c_str(), i, i * 2, i * 3);
 
 			Error err = item.FromJSON(sourceJson);
 			EXPECT_TRUE(err.ok()) << err.what();

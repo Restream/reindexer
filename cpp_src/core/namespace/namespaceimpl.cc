@@ -27,9 +27,6 @@ using std::chrono::duration_cast;
 using std::chrono::high_resolution_clock;
 using std::chrono::microseconds;
 using std::make_shared;
-using std::thread;
-using std::to_string;
-using std::defer_lock;
 
 #define kStorageIndexesPrefix "indexes"
 #define kStorageSchemaPrefix "schema"
@@ -68,7 +65,7 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &
 	  storage_{src.storage_, storageLock},
 	  replStateUpdates_{src.replStateUpdates_.load()},
 	  meta_{src.meta_},
-	  queryCache_{make_shared<QueryCache>()},
+	  queryTotalCountCache_{make_shared<QueryTotalCountCache>()},
 	  sparseIndexesCount_{src.sparseIndexesCount_},
 	  krefs{src.krefs},
 	  skrefs{src.skrefs},
@@ -103,7 +100,7 @@ NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
 	  name_(name),
 	  payloadType_(name),
 	  tagsMatcher_(payloadType_),
-	  queryCache_(make_shared<QueryCache>()),
+	  queryTotalCountCache_(make_shared<QueryTotalCountCache>()),
 	  joinCache_(make_shared<JoinCache>()),
 	  enablePerfCounters_(false),
 	  wal_(config_.walSize),
@@ -446,7 +443,8 @@ void NamespaceImpl::dropIndex(const IndexDef &index) {
 	}
 
 	int fieldIdx = itIdxName->second;
-	if (indexes_[fieldIdx]->Opts().IsSparse()) --sparseIndexesCount_;
+	std::unique_ptr<Index> &indexToRemove = indexes_[fieldIdx];
+	if (!IsComposite(indexToRemove->Type()) && indexToRemove->Opts().IsSparse()) --sparseIndexesCount_;
 
 	// Check, that index to remove is not a part of composite index
 	for (int i = indexes_.firstCompositePos(); i < indexes_.totalSize(); ++i) {
@@ -459,7 +457,6 @@ void NamespaceImpl::dropIndex(const IndexDef &index) {
 		}
 	}
 
-	std::unique_ptr<Index> &indexToRemove = indexes_[fieldIdx];
 	if (indexToRemove->Opts().IsPK()) {
 		indexesNames_.erase(kPKIndexName);
 	}
@@ -610,8 +607,8 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 					name_, indexName, maxIndexes - 1);
 	}
 	std::unique_ptr<Index> newIndex = Index::New(indexDef, PayloadType(), FieldsSet());
-	FieldsSet fields;
 	if (opts.IsSparse()) {
+		FieldsSet fields;
 		for (const string &jsonPath : jsonPaths) {
 			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPath, true);
 			assertrx(tagsPath.size() > 0);
@@ -622,6 +619,8 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 
 		++sparseIndexesCount_;
 		insertIndex(Index::New(indexDef, payloadType_, fields), idxNo, indexName);
+		assertrx(jsonPaths.size() == 1);
+		fillSparseIndex(*indexes_[idxNo], jsonPaths[0]);
 	} else {
 		PayloadType oldPlType = payloadType_;
 
@@ -635,6 +634,21 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 		updateItems(oldPlType, changedFields, 1);
 	}
 	updateSortedIdxCount();
+}
+
+void NamespaceImpl::fillSparseIndex(Index &index, std::string_view jsonPath) {
+	auto indexesCacheCleaner{GetIndexesCacheCleaner()};
+	for (size_t rowId = 0; rowId < items_.size(); rowId++) {
+		if (items_[rowId].IsFree()) {
+			continue;
+		}
+		Payload{payloadType_, items_[rowId]}.GetByJsonPath(jsonPath, tagsMatcher_, skrefs, index.KeyType());
+		krefs.resize(0);
+		bool needClearCache{false};
+		index.Upsert(krefs, skrefs, rowId, needClearCache);
+		if (needClearCache && index.IsOrdered()) indexesCacheCleaner.Add(index.SortId());
+	}
+	markUpdated(false);
 }
 
 void NamespaceImpl::updateIndex(const IndexDef &indexDef) {
@@ -789,8 +803,8 @@ void NamespaceImpl::Update(const Query &query, QueryResults &result, const NsCon
 	bool updateWithJson = false;
 	bool withExpressions = false;
 	for (const UpdateEntry &ue : query.UpdateFields()) {
-		if (!withExpressions && ue.isExpression) withExpressions = true;
-		if (!updateWithJson && ue.mode == FieldModeSetJson) updateWithJson = true;
+		if (ue.IsExpression()) withExpressions = true;
+		if (ue.Mode() == FieldModeSetJson) updateWithJson = true;
 		if (withExpressions && updateWithJson) break;
 	}
 
@@ -1506,7 +1520,7 @@ void NamespaceImpl::optimizeIndexes(const NsContext &ctx) {
 			const bool forceBuildAll = forceBuildAllIndexes || idxIt->IsBuilt() || idxIt->SortId() != currentSortId;
 			idxIt->MakeSortOrders(sortCtx);
 			// Build in multiple threads
-			std::unique_ptr<thread[]> thrs(new thread[maxIndexWorkers]);
+			std::unique_ptr<std::thread[]> thrs(new std::thread[maxIndexWorkers]);
 			for (size_t i = 0; i < maxIndexWorkers; i++) {
 				thrs[i] = std::thread([&, i]() {
 					for (size_t j = i; j < this->indexes_.size() && !cancelCommitCnt_.load(std::memory_order_relaxed);
@@ -1548,7 +1562,7 @@ void NamespaceImpl::markUpdated(bool forceOptimizeAllIndexes) {
 		int expected{OptimizationCompleted};
 		optimizationState_.compare_exchange_strong(expected, OptimizedPartially);
 	}
-	queryCache_->Clear();
+	queryTotalCountCache_->Clear();
 	joinCache_->Clear();
 	lastUpdateTime_.store(
 		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
@@ -1625,7 +1639,7 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 	auto rlck = rLock(ctx);
 	ret.name = name_;
 	ret.joinCache = joinCache_->GetMemStat();
-	ret.queryCache = queryCache_->GetMemStat();
+	ret.queryCache = queryTotalCountCache_->GetMemStat();
 
 	ret.itemsCount = ItemsCount();
 	*(static_cast<ReplicationState *>(&ret.replication)) = getReplState();
@@ -1638,8 +1652,8 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 	ret.Total.cacheSize = ret.joinCache.totalSize + ret.queryCache.totalSize;
 	ret.Total.indexOptimizerMemory = nsUpdateSortedContextMemory_.load(std::memory_order_relaxed);
 	ret.indexes.reserve(indexes_.size());
-	for (auto &idx : indexes_) {
-		ret.indexes.emplace_back(idx->GetMemStat());
+	for (const auto &idx : indexes_) {
+		ret.indexes.emplace_back(idx->GetMemStat(ctx));
 		auto &istat = ret.indexes.back();
 		istat.sortOrdersSize = idx->IsOrdered() ? (items_.size() * sizeof(IdType)) : 0;
 		ret.Total.indexesSize += istat.GetIndexStructSize();
@@ -1653,13 +1667,13 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 
 	ret.stringsWaitingToBeDeletedSize = strHolder_->MemStat();
 	for (const auto &idx : strHolder_->Indexes()) {
-		const auto &istat = idx->GetMemStat();
+		const auto &istat = idx->GetMemStat(ctx);
 		ret.stringsWaitingToBeDeletedSize += istat.GetIndexStructSize() + istat.dataSize;
 	}
 	for (const auto &strHldr : strHoldersWaitingToBeDeleted_) {
 		ret.stringsWaitingToBeDeletedSize += strHldr->MemStat();
 		for (const auto &idx : strHldr->Indexes()) {
-			const auto &istat = idx->GetMemStat();
+			const auto &istat = idx->GetMemStat(ctx);
 			ret.stringsWaitingToBeDeletedSize += istat.GetIndexStructSize() + istat.dataSize;
 		}
 	}
@@ -2314,7 +2328,7 @@ int64_t NamespaceImpl::GetSerial(const string &field) {
 		counter = reindexer::stoll(ser) + 1;
 	}
 
-	string s = to_string(counter);
+	string s = std::to_string(counter);
 	putMeta("_SERIAL_" + field, std::string_view(s), RdxContext());
 
 	return counter;

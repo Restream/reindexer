@@ -103,35 +103,38 @@ type FtFastConfig struct {
 	FieldsCfg []FtFastFieldConfig `json:"fields,omitempty"`
 	// Optimize the index by memory or by cpu
 	Optimization string `json:"optimization,omitempty"`
+	// Enable to execute others queries before the ft query
+	EnablePreselectBeforeFt bool `json:"enable_preselect_before_ft"`
 }
 
 func DefaultFtFastConfig() FtFastConfig {
 	return FtFastConfig{
-		Bm25Boost:             1.0,
-		Bm25Weight:            0.1,
-		DistanceBoost:         1.0,
-		DistanceWeight:        0.5,
-		TermLenBoost:          1.0,
-		TermLenWeight:         0.3,
-		PositionBoost:         1.0,
-		PositionWeight:        0.1,
-		FullMatchBoost:        1.1,
-		PartialMatchDecrease:  15,
-		MinRelevancy:          0.05,
-		MaxTypos:              2,
-		MaxTypoLen:            15,
-		MaxRebuildSteps:       50,
-		MaxStepSize:           4000,
-		MergeLimit:            20000,
-		Stemmers:              []string{"en", "ru"},
-		EnableTranslit:        true,
-		EnableKbLayout:        true,
-		LogLevel:              0,
-		ExtraWordSymbols:      "/-+",
-		SumRanksByFieldsRatio: 0.0,
-		MaxAreasInDoc:         5,
-		MaxTotalAreasToCache:  -1,
-		Optimization:          "Memory",
+		Bm25Boost:               1.0,
+		Bm25Weight:              0.1,
+		DistanceBoost:           1.0,
+		DistanceWeight:          0.5,
+		TermLenBoost:            1.0,
+		TermLenWeight:           0.3,
+		PositionBoost:           1.0,
+		PositionWeight:          0.1,
+		FullMatchBoost:          1.1,
+		PartialMatchDecrease:    15,
+		MinRelevancy:            0.05,
+		MaxTypos:                2,
+		MaxTypoLen:              15,
+		MaxRebuildSteps:         50,
+		MaxStepSize:             4000,
+		MergeLimit:              20000,
+		Stemmers:                []string{"en", "ru"},
+		EnableTranslit:          true,
+		EnableKbLayout:          true,
+		LogLevel:                0,
+		ExtraWordSymbols:        "/-+",
+		SumRanksByFieldsRatio:   0.0,
+		MaxAreasInDoc:           5,
+		MaxTotalAreasToCache:    -1,
+		Optimization:            "Memory",
+		EnablePreselectBeforeFt: false,
 	}
 }
 

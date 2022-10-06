@@ -11,7 +11,7 @@ namespace reindexer {
 class Query;
 class JoinedQuery;
 struct SortingEntries;
-struct UpdateEntry;
+class UpdateEntry;
 using EqualPosition_t = h_vector<std::string, 2>;
 class SQLParser {
 public:

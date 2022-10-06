@@ -3,11 +3,8 @@
 #include "core/rdxcontext.h"
 #include "tools/customlocal.h"
 #include "tools/errors.h"
-using std::make_shared;
 
 namespace reindexer {
-using std::wstring;
-using search_engine::MergedData;
 
 template <typename T>
 std::unique_ptr<Index> FuzzyIndexText<T>::Clone() {
@@ -15,7 +12,10 @@ std::unique_ptr<Index> FuzzyIndexText<T>::Clone() {
 }
 
 template <typename T>
-IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTransaction, const RdxContext& rdxCtx) {
+IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
+									 const RdxContext& rdxCtx) {
+	assertrx(mergeStatusesEmpty);
+	(void)mergeStatusesEmpty;
 	auto result = engine_.Search(dsl, inTransaction, rdxCtx);
 
 	auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
@@ -42,7 +42,7 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTr
 
 template <typename T>
 void FuzzyIndexText<T>::commitFulltextImpl() {
-	vector<std::unique_ptr<string>> bufStrs;
+	std::vector<std::unique_ptr<std::string>> bufStrs;
 	auto gt = this->Getter();
 	for (auto& doc : this->idx_map) {
 		auto res = gt.getDocFields(doc.first, bufStrs);

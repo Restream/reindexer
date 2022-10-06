@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdlib>
+#include <sstream>
 #include <string>
 
 #include "core/keyvalue/key_string.h"
@@ -75,7 +76,7 @@ public:
 						node.MarkAllItems(true);
 					} else {
 						int index = stoi(content);
-						if (index == 0 && content != "0" && ev) {
+						if (index == 0 && content != "0"sv && ev) {
 							VariantArray values = ev(content);
 							if (values.size() != 1) {
 								throw Error(errParams, "Index expression_ has wrong syntax: '%s'", content);
@@ -229,6 +230,18 @@ public:
 			res += std::to_string(i) + ":" + tags2names_[i] + " ";
 		}
 		return res + "]";
+	}
+	std::string dumpNames() const {
+		std::stringstream res;
+		res << "names: [";
+		for (auto b = names2tags_.begin(), it = b, e = names2tags_.end(); it != e; ++it) {
+			if (it != b) {
+				res << "; ";
+			}
+			res << it->first << ':' << it->second;
+		}
+		res << ']';
+		return res.str();
 	}
 	string dumpPaths() const {
 		string res = "paths: [";

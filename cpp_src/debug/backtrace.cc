@@ -1,6 +1,7 @@
 #include "backtrace.h"
 #include <cstring>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #ifndef WIN32
 #include <signal.h>
@@ -50,10 +51,9 @@ extern "C" void __assert_fail(const char *expr, const char *file, int line, cons
 namespace reindexer {
 namespace debug {
 
-std::function<void(std::ostream &sout)> g_crash_query_reporter = [](std::ostream &sout) {
-	sout << "<Empty crash query reporter>" << std::endl;
-};
-std::function<void(std::string_view out)> g_writer = [](std::string_view sv) { std::cerr << sv; };
+static std::recursive_mutex g_mutex;
+static crash_query_reporter_t g_crash_query_reporter = [](std::ostream &sout) { sout << "<Empty crash query reporter>" << std::endl; };
+static backtrace_writer_t g_writer = [](std::string_view sv) { std::cerr << sv; };
 
 #if REINDEX_WITH_UNWIND
 class Unwinder {
@@ -158,8 +158,9 @@ void inline print_backtrace(std::ostream &sout, void *ctx, int sig) {
 }
 
 void print_crash_query(std::ostream &sout) {
-	if (g_crash_query_reporter) {
-		g_crash_query_reporter(sout);
+	auto crash_query_reporter = backtrace_get_crash_query_reporter();
+	if (crash_query_reporter) {
+		crash_query_reporter(sout);
 	} else {
 		sout << "<No crash query reporter set>" << std::endl;
 	}
@@ -169,7 +170,8 @@ static void sighandler(int sig, siginfo_t *, void *ctx) {
 	std::ostringstream sout;
 	print_backtrace(sout, ctx, sig);
 	print_crash_query(sout);
-	g_writer(sout.str());
+	auto writer = backtrace_get_writer();
+	writer(sout.str());
 
 	exit(-1);
 }
@@ -184,8 +186,22 @@ void backtrace_init() {
 	sigaction(SIGBUS, &sa, nullptr);
 }
 
-void backtrace_set_writer(std::function<void(std::string_view out)> writer) { g_writer = writer; }
-void backtrace_set_crash_query_reporter(std::function<void(std::ostream &sout)> reporter) { g_crash_query_reporter = reporter; }
+void backtrace_set_writer(backtrace_writer_t writer) {
+	std::lock_guard lck(g_mutex);
+	g_writer = std::move(writer);
+}
+void backtrace_set_crash_query_reporter(crash_query_reporter_t reporter) {
+	std::lock_guard lck(g_mutex);
+	g_crash_query_reporter = std::move(reporter);
+}
+backtrace_writer_t backtrace_get_writer() {
+	std::lock_guard lck(g_mutex);
+	return g_writer;
+}
+crash_query_reporter_t backtrace_get_crash_query_reporter() {
+	std::lock_guard lck(g_mutex);
+	return g_crash_query_reporter;
+}
 
 }  // namespace debug
 }  // namespace reindexer
@@ -193,16 +209,29 @@ void backtrace_set_crash_query_reporter(std::function<void(std::ostream &sout)> 
 #else
 namespace reindexer {
 namespace debug {
-std::function<void(std::ostream &sout)> g_crash_query_reporter = [](std::ostream &) {};
-std::function<void(std::string_view out)> g_writer = [](std::string_view sv) { std::cerr << sv; };
+static std::recursive_mutex g_mutex;
+static crash_query_reporter_t g_crash_query_reporter = [](std::ostream &) {};
+static backtrace_writer_t g_writer = [](std::string_view sv) { std::cerr << sv; };
 
 void backtrace_init() {}
-void backtrace_set_writer(std::function<void(std::string_view out)>) {}
+void backtrace_set_writer(backtrace_writer_t) {}
 int backtrace_internal(void **, size_t, void *, std::string_view &) { return 0; }
-void backtrace_set_crash_query_reporter(std::function<void(std::ostream &sout)> reporter) { g_crash_query_reporter = reporter; }
+void backtrace_set_crash_query_reporter(crash_query_reporter_t reporter) {
+	std::lock_guard lck(g_mutex);
+	g_crash_query_reporter = std::move(reporter);
+}
+backtrace_writer_t backtrace_get_writer() {
+	std::lock_guard lck(g_mutex);
+	return g_writer;
+}
+crash_query_reporter_t backtrace_get_crash_query_reporter() {
+	std::lock_guard lck(g_mutex);
+	return g_crash_query_reporter;
+}
 void print_backtrace(std::ostream &, void *, int) {}
 void print_crash_query(std::ostream &sout) {
-	if (g_crash_query_reporter) g_crash_query_reporter(sout);
+	auto reporter = backtrace_get_crash_query_reporter();
+	if (reporter) reporter(sout);
 }
 
 }  // namespace debug

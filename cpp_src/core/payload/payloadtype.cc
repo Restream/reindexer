@@ -32,7 +32,10 @@ void PayloadTypeImpl::Dump(std::ostream &os, std::string_view step, std::string_
 		os << '\n'
 		   << newOffset << KeyValueTypeToStr(f.Type()) << (f.IsArray() ? "[]" : "") << " '" << f.Name() << "'"
 		   << " json:\"";
-		for (auto &jp : f.JsonPaths()) os << jp << ";";
+		for (size_t i = 0, s = f.JsonPaths().size(); i < s; ++i) {
+			if (i != 0) os << ';';
+			os << f.JsonPaths()[i];
+		}
 		os << '"';
 	}
 	if (!fields_.empty()) {

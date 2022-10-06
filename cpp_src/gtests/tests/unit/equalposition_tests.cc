@@ -146,8 +146,8 @@ TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 
 		char json[1024];
 		string pk("pk" + std::to_string(i));
-		sprintf(json, jsonPattern, pk.c_str(), rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
-				rand() % 10, rand() % 10);
+		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
+				 rand() % 10, rand() % 10, rand() % 10, rand() % 10);
 
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -191,8 +191,8 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 
 		char json[1024];
 		string pk("pk" + std::to_string(i));
-		sprintf(json, jsonPattern, pk.c_str(), rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
-				rand() % 10, rand() % 10);
+		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
+				 rand() % 10, rand() % 10, rand() % 10, rand() % 10);
 
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -228,7 +228,7 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 		char json[1024];
 		string pk("pk" + std::to_string(i));
 
-		sprintf(json, jsonPattern, i);
+		snprintf(json, sizeof(json) - 1, jsonPattern, i);
 
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();

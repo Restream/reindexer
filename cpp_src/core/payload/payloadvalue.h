@@ -63,10 +63,9 @@ protected:
 
 	dataHeader *header() { return reinterpret_cast<dataHeader *>(p_); }
 	const dataHeader *header() const { return reinterpret_cast<dataHeader *>(p_); }
+	friend std::ostream &operator<<(std::ostream &os, const PayloadValue &);
 	// Data of elements, shared
 	uint8_t *p_;
 };
-
-std::ostream &operator<<(std::ostream &os, const PayloadValue &);
 
 }  // namespace reindexer

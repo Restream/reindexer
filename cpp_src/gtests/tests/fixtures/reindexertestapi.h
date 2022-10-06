@@ -22,7 +22,7 @@ public:
 	ReindexerTestApi() : reindexer(std::shared_ptr<DB>(new DB)) {}
 	static void DefineNamespaceDataset(DB &rx, const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		auto err = reindexer::Error();
-		for (auto field : fields) {
+		for (const auto &field : fields) {
 			std::string indexName = std::get<0>(field);
 			std::string fieldType = std::get<1>(field);
 			std::string indexType = std::get<2>(field);

@@ -1,5 +1,6 @@
 #include "payloadvalue.h"
 #include <chrono>
+#include "core/keyvalue/p_string.h"
 #include "string.h"
 #include "tools/errors.h"
 namespace reindexer {
@@ -76,6 +77,24 @@ void PayloadValue::Resize(size_t oldSize, size_t newSize) {
 	p_ = pn;
 }
 
-std::ostream &operator<<(std::ostream &os, const PayloadValue &) { return os << "{TODO}"; }
+std::ostream &operator<<(std::ostream &os, const PayloadValue &pv) {
+	os << "{p_: " << std::hex << static_cast<const void *>(pv.p_) << std::dec;
+	if (pv.p_) {
+		const auto *header = pv.header();
+		os << ", refcount: " << header->refcount.load(std::memory_order_relaxed) << ", cap: " << header->cap << ", lsn: " << header->lsn
+		   << ", [" << std::hex;
+		const uint8_t *ptr = pv.Ptr();
+		const size_t cap = header->cap;
+		for (size_t i = 0; i < cap; ++i) {
+			if (i != 0) os << ' ';
+			os << static_cast<unsigned>(ptr[i]);
+		}
+		os << std::dec << "], tuple: ";
+		assert(cap >= sizeof(p_string));
+		const p_string &str = *reinterpret_cast<const p_string *>(ptr);
+		str.Dump(os);
+	}
+	return os << '}';
+}
 
 }  // namespace reindexer

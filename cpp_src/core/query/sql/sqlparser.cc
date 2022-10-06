@@ -413,12 +413,12 @@ int SQLParser::deleteParse(tokenizer &parser) {
 }
 
 static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry &updateField) {
-	updateField.mode = FieldModeSet;
+	updateField.SetMode(FieldModeSet);
 	if (currTok.type == TokenString) {
-		updateField.values.push_back(token2kv(currTok, parser, false));
+		updateField.Values().push_back(token2kv(currTok, parser, false));
 	} else {
 		if (currTok.text() == "null"sv) {
-			updateField.values.push_back(Variant());
+			updateField.Values().push_back(Variant());
 		} else if (currTok.text() == "{"sv) {
 			try {
 				size_t jsonPos = parser.getPos() - 1;
@@ -426,8 +426,8 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 				size_t jsonLength = 0;
 				gason::JsonParser jsonParser;
 				jsonParser.Parse(giftStr(json), &jsonLength);
-				updateField.values.emplace_back(Variant(string(parser.begin() + jsonPos, jsonLength)));
-				updateField.mode = FieldModeSetJson;
+				updateField.Values().emplace_back(Variant(string(parser.begin() + jsonPos, jsonLength)));
+				updateField.SetMode(FieldModeSetJson);
 				parser.setPos(jsonPos + jsonLength);
 			} catch (const gason::Exception &e) {
 				throw Error(errParseSQL, "%s, in query %s", e.what(), parser.where());
@@ -450,15 +450,15 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 				++count;
 			}
 			if (count > 0) {
-				updateField.values.push_back(Variant(expression));
-				updateField.isExpression = true;
+				updateField.Values().push_back(Variant(expression));
+				updateField.SetIsExpression(true);
 			} else {
 				try {
 					Variant val = token2kv(currTok, parser, false);
-					updateField.values.push_back(val);
+					updateField.Values().push_back(val);
 				} catch (const Error &) {
-					updateField.values.push_back(Variant(expression));
-					updateField.isExpression = true;
+					updateField.Values().push_back(Variant(expression));
+					updateField.SetIsExpression(true);
 				}
 			}
 		}
@@ -470,8 +470,7 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 	if (tok.type != TokenName) {
 		throw Error(errParseSQL, "Expected field name but found '%s' in query %s", tok.text(), parser.where());
 	}
-	UpdateEntry updateField;
-	updateField.column.append(tok.text().data(), tok.text().length());
+	UpdateEntry updateField{{tok.text().data(), tok.text().length()}, {}};
 
 	parser.next_token();
 	tok = parser.next_token();
@@ -482,11 +481,11 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 
 	tok = parser.next_token(false);
 	if (tok.text() == "["sv) {
-		updateField.values.MarkArray();
+		updateField.Values().MarkArray();
 		for (;;) {
 			tok = parser.next_token(false);
 			if (tok.text() == "]") {
-				if (updateField.values.empty()) break;
+				if (updateField.Values().empty()) break;
 				throw Error(errParseSQL, "Expected field value, but found ']' in query, %s", parser.where());
 			}
 			addUpdateValue(tok, parser, updateField);
@@ -513,8 +512,8 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 	}
 
 	if (withArrayExpressions) {
-		updateField.isExpression = true;
-		updateField.values = {Variant(string(parser.begin() + startPos, parser.getPos() - startPos))};
+		updateField.SetIsExpression(true);
+		updateField.Values() = {Variant(string(parser.begin() + startPos, parser.getPos() - startPos))};
 	}
 
 	return updateField;

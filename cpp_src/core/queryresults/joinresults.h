@@ -20,17 +20,17 @@ class NamespaceResults;
 
 /// Offset in 'items_' for left Ns item
 struct ItemOffset {
-	ItemOffset();
-	ItemOffset(size_t field, int offset, int size);
-	bool operator==(const ItemOffset& other) const;
-	bool operator!=(const ItemOffset& other) const;
+	ItemOffset() noexcept : field(0), offset(0), size(0) {}
+	ItemOffset(uint32_t f, uint32_t o, uint32_t s) noexcept : field(f), offset(o), size(s) {}
+	bool operator==(const ItemOffset& other) const noexcept { return field == other.field && offset == other.offset && size == other.size; }
+	bool operator!=(const ItemOffset& other) const noexcept { return !operator==(other); }
 	/// index of joined field
 	/// (equals to position in joinedSelectors_)
-	unsigned field : 8;
+	uint32_t field;
 	/// Offset of items in 'items_' container
-	unsigned int offset : 24;
+	uint32_t offset;
 	/// Amount of joined items for this field
-	uint32_t size = 0;
+	uint32_t size;
 };
 using ItemOffsets = h_vector<ItemOffset, 1>;
 
@@ -42,16 +42,16 @@ public:
 	/// @param rowid - rowid of item
 	/// @param fieldIdx - index of joined field
 	/// @param qr - QueryResults reference
-	void Insert(IdType rowid, size_t fieldIdx, QueryResults&& qr);
+	void Insert(IdType rowid, uint32_t fieldIdx, QueryResults&& qr);
 
 	/// Gets/sets amount of joined selectors
 	/// @param joinedSelectorsCount - joinedSelectors.size()
-	void SetJoinedSelectorsCount(int joinedSelectorsCount);
-	int GetJoinedSelectorsCount() const;
+	void SetJoinedSelectorsCount(uint32_t joinedSelectorsCount) noexcept { joinedSelectorsCount_ = joinedSelectorsCount; }
+	uint32_t GetJoinedSelectorsCount() const noexcept { return joinedSelectorsCount_; }
 
 	/// @returns total amount of joined items for
 	/// all the joined fields
-	size_t TotalItems() const;
+	size_t TotalItems() const noexcept { return items_.size(); }
 
 private:
 	friend class ItemIterator;
@@ -61,7 +61,7 @@ private:
 	/// Items for all the joined fields
 	ItemRefVector items_;
 	/// Amount of joined selectors for this NS
-	uint8_t joinedSelectorsCount_ = 0;
+	uint32_t joinedSelectorsCount_ = 0;
 };
 
 /// Results of joining all the namespaces (in case of merge queries)

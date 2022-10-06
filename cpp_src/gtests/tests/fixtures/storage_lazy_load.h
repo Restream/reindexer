@@ -27,7 +27,7 @@ public:
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		char json[1024];
-		sprintf(json, jsonConfigTemplate, ns.c_str(), lazyLoad ? "true" : "false", noQueryIdleThresholdSec);
+		snprintf(json, sizeof(json) - 1, jsonConfigTemplate, ns.c_str(), lazyLoad ? "true" : "false", noQueryIdleThresholdSec);
 
 		Error err = item.FromJSON(json);
 		ASSERT_TRUE(err.ok()) << err.what();

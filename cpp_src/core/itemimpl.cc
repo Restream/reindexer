@@ -12,8 +12,6 @@
 #include "core/namespace/namespace.h"
 #include "tools/logger.h"
 
-using std::move;
-
 namespace reindexer {
 
 void ItemImpl::SetField(int field, const VariantArray &krs) {

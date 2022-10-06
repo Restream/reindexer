@@ -1,5 +1,5 @@
 // +build windows
-//go:generate cmd /c cd ..\.. && mkdir build && cd build && cmake -G "MinGW Makefiles" -DLINK_RESOURCES=On -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --target reindexer reindexer_server_library -- -j4
+//go:generate cmd /c cd ..\.. && mkdir build && cd build && cmake -G "MinGW Makefiles" -DLINK_RESOURCES=On -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --target reindexer reindexer_server_library -- -j4 ${CMAKE_BUILD_ARGS}
 
 package builtinserver
 
