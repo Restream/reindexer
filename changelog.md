@@ -1,4 +1,4 @@
-# Version 3.9.0 (XX.10.2022)
+# Version 3.9.0 (06.10.2022)
 ## Core
 - [fea] Add `enable_preselect_before_ft` option for fulltext indexes. It allows to prioritize non-fultext indexes in query
 - [fix] Fix runtime index convertations (from `sparse` and to `sparse`)
