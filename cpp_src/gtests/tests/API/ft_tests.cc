@@ -582,6 +582,39 @@ TEST_P(FTApi, DeleteTest) {
 	// TODO: add validation
 }
 
+TEST_P(FTApi, RebuildAfterDeletion) {
+	Init(GetDefaultConfig());
+
+	auto cfg = GetDefaultConfig();
+	cfg.maxStepSize = 5;
+	auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	auto selectF = [this](const std::string word) {
+		const auto q{reindexer::Query("nm1").Where("ft1", CondEq, word)};
+		reindexer::QueryResults res;
+		auto err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		return res;
+	};
+
+	std::unordered_map<string, int> data;
+	data.insert(Add("An entity is something that exists as itself"sv));
+	data.insert(Add("In law, a legal entity is an entity that is capable of bearing legal rights"sv));
+	data.insert(Add("In politics, entity is used as term for territorial divisions of some countries"sv));
+	data.insert(Add("Юридическое лицо — организация, которая имеет обособленное имущество"sv));
+	data.insert(Add("Aftermath - the consequences or aftereffects of a significant unpleasant event"sv));
+	data.insert(Add("Food prices soared in the aftermath of the drought"sv));
+	data.insert(Add("In the aftermath of the war ..."sv));
+
+	auto res = selectF("entity");
+	ASSERT_EQ(res.Count(), 3);
+
+	Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
+	res = selectF("entity");
+	ASSERT_EQ(res.Count(), 2);
+}
+
 TEST_P(FTApi, Stress) {
 	Init(GetDefaultConfig());
 

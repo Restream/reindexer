@@ -1,3 +1,7 @@
+# Version 3.9.1 (12.10.2022)
+## Core
+- [fix] Fix SEGFAULT in fulltext index after documents deletion
+
 # Version 3.9.0 (06.10.2022)
 ## Core
 - [fea] Add `enable_preselect_before_ft` option for fulltext indexes. It allows to prioritize non-fultext indexes in query

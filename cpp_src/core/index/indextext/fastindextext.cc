@@ -231,11 +231,13 @@ void FastIndexText<T>::commitFulltextImpl() {
 	this->holder_->rowId2Vdoc_.reserve(this->holder_->vdocs_.size());
 	for (size_t i = 0, s = this->holder_->vdocs_.size(); i < s; ++i) {
 		const auto &vdoc = this->holder_->vdocs_[i];
-		for (const auto id : vdoc.keyEntry->Unsorted()) {
-			if (static_cast<size_t>(id) >= this->holder_->rowId2Vdoc_.size()) {
-				this->holder_->rowId2Vdoc_.resize(id + 1, FtMergeStatuses::kEmpty);
+		if (vdoc.keyEntry) {
+			for (const auto id : vdoc.keyEntry->Unsorted()) {
+				if (static_cast<size_t>(id) >= this->holder_->rowId2Vdoc_.size()) {
+					this->holder_->rowId2Vdoc_.resize(id + 1, FtMergeStatuses::kEmpty);
+				}
+				this->holder_->rowId2Vdoc_[id] = i;
 			}
-			this->holder_->rowId2Vdoc_[id] = i;
 		}
 	}
 	auto tm2 = high_resolution_clock::now();
