@@ -8,21 +8,18 @@
 
 #include "helpers.h"
 
-using std::bind;
-using std::placeholders::_1;
-
-using benchmark::RegisterBenchmark;
 using benchmark::AllocsTracker;
-
 using reindexer::Query;
 using reindexer::QueryResults;
 
 void ApiTvSimple::RegisterAllCases() {
+	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	BaseFixture::RegisterAllCases();
 	Register("WarmUpIndexes", &ApiTvSimple::WarmUpIndexes, this)->Iterations(1);  // Just 1 time!!!
 
 	Register("StringsSelect", &ApiTvSimple::StringsSelect, this);
 	Register("GetByID", &ApiTvSimple::GetByID, this);
+	Register("GetByIDInBrackets", &ApiTvSimple::GetByIDInBrackets, this);
 	Register("GetEqInt", &ApiTvSimple::GetEqInt, this);
 	Register("GetEqArrayInt", &ApiTvSimple::GetEqArrayInt, this);
 	Register("GetEqString", &ApiTvSimple::GetEqString, this);
@@ -65,9 +62,10 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2CondIdSet2000", &ApiTvSimple::Query2CondIdSet2000, this);
 	Register("Query2CondIdSet20000", &ApiTvSimple::Query2CondIdSet20000, this);
 #endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+		// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
-Error ApiTvSimple::Initialize() {
+reindexer::Error ApiTvSimple::Initialize() {
 	assert(db_);
 	auto err = db_->AddNamespace(nsdef_);
 
@@ -150,7 +148,7 @@ Error ApiTvSimple::Initialize() {
 	if (!err.ok()) return err;
 
 	for (size_t i = 0; i < kTotalItemsMainJoinNs; ++i) {
-		Item mItem = db_->NewItem(mainNsDef.name);
+		reindexer::Item mItem = db_->NewItem(mainNsDef.name);
 		if (!mItem.Status().ok()) return mItem.Status();
 		mItem.Unsafe();
 		wrSer_.Reset();
@@ -162,7 +160,7 @@ Error ApiTvSimple::Initialize() {
 		err = db_->Insert(mainNsDef.name, mItem);
 		if (!err.ok()) return err;
 
-		Item rItem = db_->NewItem(rightNsDef.name);
+		reindexer::Item rItem = db_->NewItem(rightNsDef.name);
 		if (!rItem.Status().ok()) return rItem.Status();
 		rItem.Unsafe();
 		wrSer_.Reset();
@@ -179,7 +177,7 @@ Error ApiTvSimple::Initialize() {
 
 reindexer::Item ApiTvSimple::MakeStrItem() {
 	static int id = 0;
-	Item item = db_->NewItem(stringSelectNs_);
+	reindexer::Item item = db_->NewItem(stringSelectNs_);
 	if (item.Status().ok()) {
 		item.Unsafe();
 		wrSer_.Reset();
@@ -211,7 +209,7 @@ reindexer::Item ApiTvSimple::MakeStrItem() {
 }
 
 reindexer::Item ApiTvSimple::MakeItem() {
-	Item item = db_->NewItem(nsdef_.name);
+	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
 	item.Unsafe();
 
@@ -235,8 +233,8 @@ reindexer::Item ApiTvSimple::MakeItem() {
 
 void ApiTvSimple::WarmUpIndexes(State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
-		Error err;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		reindexer::Error err;
 
 		// Ensure indexes complete build
 		WaitForOptimization();
@@ -268,7 +266,7 @@ void ApiTvSimple::WarmUpIndexes(State& state) {
 
 void ApiTvSimple::StringsSelect(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(stringSelectNs_);
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -279,7 +277,7 @@ void ApiTvSimple::StringsSelect(benchmark::State& state) {
 
 void ApiTvSimple::GetByID(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("id", CondEq, random<int>(id_seq_->Start(), id_seq_->End()));
 
@@ -291,9 +289,23 @@ void ApiTvSimple::GetByID(benchmark::State& state) {
 	}
 }
 
+void ApiTvSimple::GetByIDInBrackets(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.OpenBracket().Where("id", CondEq, random<int>(id_seq_->Start(), id_seq_->End())).CloseBracket();
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+	}
+}
+
 void ApiTvSimple::GetEqInt(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("start_time", CondEq, start_times_.at(random<size_t>(0, start_times_.size() - 1)));
 		QueryResults qres;
@@ -305,7 +317,7 @@ void ApiTvSimple::GetEqInt(benchmark::State& state) {
 
 void ApiTvSimple::GetEqArrayInt(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("price_id", CondEq, priceIDs_[random<size_t>(0, priceIDs_.size() - 1)]);
 		QueryResults qres;
@@ -317,7 +329,7 @@ void ApiTvSimple::GetEqArrayInt(benchmark::State& state) {
 
 void ApiTvSimple::GetEqString(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("countries", CondEq, countries_[random<size_t>(0, countries_.size() - 1)]);
 		QueryResults qres;
@@ -329,7 +341,7 @@ void ApiTvSimple::GetEqString(benchmark::State& state) {
 
 void ApiTvSimple::GetLikeString(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("countries", CondLike, countryLikePatterns_[random<size_t>(0, countryLikePatterns_.size() - 1)]);
 		QueryResults qres;
@@ -341,7 +353,7 @@ void ApiTvSimple::GetLikeString(benchmark::State& state) {
 
 void ApiTvSimple::GetByRangeIDAndSortByHash(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
 		Query q(nsdef_.name);
 		q.Where("id", CondRange, {idRange.first, idRange.second}).Sort("age", false).Limit(20);
@@ -356,7 +368,7 @@ void ApiTvSimple::GetByRangeIDAndSortByHash(benchmark::State& state) {
 
 void ApiTvSimple::GetByRangeIDAndSortByTree(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
 		Query q(nsdef_.name);
 		q.Where("id", CondRange, {idRange.first, idRange.second}).Sort("genre", false).Limit(20);
@@ -371,7 +383,7 @@ void ApiTvSimple::GetByRangeIDAndSortByTree(benchmark::State& state) {
 
 void ApiTvSimple::Query1Cond(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("year", CondGe, 2020).Limit(20);
 
@@ -383,7 +395,7 @@ void ApiTvSimple::Query1Cond(benchmark::State& state) {
 
 void ApiTvSimple::Query1CondTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("year", CondGe, 2020).Limit(20).ReqTotal();
 
@@ -395,7 +407,7 @@ void ApiTvSimple::Query1CondTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query1CondCachedTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("year", CondGe, 2020).Limit(20).CachedTotal();
 
@@ -413,7 +425,7 @@ void ApiTvSimple::Query2CondIdSet20000(benchmark::State& state) { query2CondIdSe
 
 void ApiTvSimple::Query2Cond(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("genre", CondEq, 5).Where("year", CondRange, {2010, 2016}).Limit(20);
 
@@ -425,7 +437,7 @@ void ApiTvSimple::Query2Cond(benchmark::State& state) {
 
 void ApiTvSimple::Query2CondTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("genre", CondEq, 5).Where("year", CondRange, {2010, 2016}).Limit(20).ReqTotal();
 
@@ -437,7 +449,7 @@ void ApiTvSimple::Query2CondTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query2CondCachedTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("genre", CondEq, 5).Where("year", CondRange, {2010, 2016}).Limit(20).CachedTotal();
 
@@ -449,7 +461,7 @@ void ApiTvSimple::Query2CondCachedTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query2CondLeftJoin(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
@@ -469,7 +481,7 @@ void ApiTvSimple::Query2CondLeftJoin(benchmark::State& state) {
 
 void ApiTvSimple::Query2CondLeftJoinTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
@@ -490,7 +502,7 @@ void ApiTvSimple::Query2CondLeftJoinTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query2CondLeftJoinCachedTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
@@ -511,7 +523,7 @@ void ApiTvSimple::Query2CondLeftJoinCachedTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query0CondInnerJoinUnlimit(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 		q.ReqTotal().Limit(1);
@@ -528,7 +540,7 @@ void ApiTvSimple::Query0CondInnerJoinUnlimit(benchmark::State& state) {
 
 void ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join(innerJoinLowSelectivityRightNs_);
 		q4join.Where("id", CondLe, 250);
 		Query q(innerJoinLowSelectivityMainNs_);
@@ -542,7 +554,7 @@ void ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity(benchmark::State& sta
 
 void ApiTvSimple::Query2CondInnerJoin(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
@@ -571,7 +583,7 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 	static constexpr int maxLeftNsRowCount = 10000;
 
 	const auto createNs = [this, &state](const string& ns) {
-		Error err = db_->OpenNamespace(ns);
+		reindexer::Error err = db_->OpenNamespace(ns);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 		err = db_->AddIndex(ns, {id, "hash", "int", IndexOpts().PK()});
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
@@ -579,9 +591,9 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 	};
 	const auto fill = [this, &state](const string& ns, int startId, int endId) {
-		Error err;
+		reindexer::Error err;
 		for (int i = startId; i < endId; ++i) {
-			Item item = db_->NewItem(ns);
+			reindexer::Item item = db_->NewItem(ns);
 			item[id] = i;
 			item[data] = i % maxDataValue;
 			err = db_->Upsert(ns, item);
@@ -598,7 +610,7 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 		fill(leftNs[i], 0, maxLeftNsRowCount);
 	}
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		vector<std::thread> threads;
 		threads.reserve(leftNs.size());
 		for (size_t i = 0; i < leftNs.size(); ++i) {
@@ -606,7 +618,7 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 				Query q{leftNs[i]};
 				q.InnerJoin(data, data, CondEq, Query(rightNs).Where(data, CondEq, rand() % maxDataValue));
 				QueryResults qres;
-				Error err = db_->Select(q, qres);
+				reindexer::Error err = db_->Select(q, qres);
 				if (!err.ok()) state.SkipWithError(err.what().c_str());
 			});
 		}
@@ -616,7 +628,7 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 
 void ApiTvSimple::Query2CondInnerJoinTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
@@ -637,7 +649,7 @@ void ApiTvSimple::Query2CondInnerJoinTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query2CondInnerJoinCachedTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
@@ -658,7 +670,7 @@ void ApiTvSimple::Query2CondInnerJoinCachedTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query3Cond(benchmark::State& state) {
 	AllocsTracker allocksTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		size_t randomIndex = random<size_t>(0, packages_.size() - 1);
 		Query q(nsdef_.name);
 		q.Sort("year", false)
@@ -675,7 +687,7 @@ void ApiTvSimple::Query3Cond(benchmark::State& state) {
 
 void ApiTvSimple::Query3CondTotal(benchmark::State& state) {
 	AllocsTracker allocksTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		size_t randomIndex = random<size_t>(0, packages_.size() - 1);
 		Query q(nsdef_.name);
 		q.Sort("year", false)
@@ -693,7 +705,7 @@ void ApiTvSimple::Query3CondTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query3CondCachedTotal(benchmark::State& state) {
 	AllocsTracker allocksTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		size_t randomIndex = random<size_t>(0, packages_.size() - 1);
 		Query q(nsdef_.name);
 		q.Sort("year", false)
@@ -711,7 +723,7 @@ void ApiTvSimple::Query3CondCachedTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query3CondKillIdsCache(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Limit(20)
 			.Sort("year", false)
@@ -727,7 +739,7 @@ void ApiTvSimple::Query3CondKillIdsCache(benchmark::State& state) {
 
 void ApiTvSimple::Query3CondRestoreIdsCache(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		size_t randomIndex = random<size_t>(0, packages_.size() - 1);
 		Query q(nsdef_.name);
 		q.Limit(20)
@@ -744,7 +756,7 @@ void ApiTvSimple::Query3CondRestoreIdsCache(benchmark::State& state) {
 
 void ApiTvSimple::Query4Cond(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		size_t randomIndex = random<size_t>(0, packages_.size() - 1);
 		Query q(nsdef_.name);
 		q.Limit(20)
@@ -762,7 +774,7 @@ void ApiTvSimple::Query4Cond(benchmark::State& state) {
 
 void ApiTvSimple::Query4CondTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		size_t randomIndex = random<size_t>(0, packages_.size() - 1);
 		Query q(nsdef_.name);
 		q.Limit(20)
@@ -781,7 +793,7 @@ void ApiTvSimple::Query4CondTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query4CondCachedTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		size_t randomIndex = random<size_t>(0, packages_.size() - 1);
 		Query q(nsdef_.name);
 		q.Limit(20)
@@ -800,7 +812,7 @@ void ApiTvSimple::Query4CondCachedTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query4CondRange(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		int startTime = random<int>(0, 50000);
 		int endTime = startTime + 10000;
 		Query q(nsdef_.name);
@@ -819,7 +831,7 @@ void ApiTvSimple::Query4CondRange(benchmark::State& state) {
 
 void ApiTvSimple::Query4CondRangeTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		int startTime = random<int>(0, 50000);
 		int endTime = startTime + 10000;
 		Query q(nsdef_.name);
@@ -839,7 +851,7 @@ void ApiTvSimple::Query4CondRangeTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query4CondRangeCachedTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		int startTime = random<int>(0, 50000);
 		int endTime = startTime + 10000;
 		Query q(nsdef_.name);
@@ -860,7 +872,7 @@ void ApiTvSimple::Query4CondRangeCachedTotal(benchmark::State& state) {
 void ApiTvSimple::query2CondIdSet(benchmark::State& state, const std::vector<std::vector<int>>& idsets) {
 	AllocsTracker allocsTracker(state);
 	unsigned counter = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(innerJoinLowSelectivityRightNs_);
 		q.Where("id", CondSet, idsets[counter++ % idsets.size()]).Where("field", CondGt, int(kTotalItemsMainJoinNs / 2)).Limit(20);
 

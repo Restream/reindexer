@@ -49,23 +49,23 @@ protected:
 	// Read and apply WAL from master
 	Error syncNamespaceByWAL(const NamespaceDef &ns);
 	// Apply WAL from master to namespace
-	Error applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr, const NamespaceDef *nsDef = nullptr);
+	Error applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, const NamespaceDef *nsDef = nullptr);
 	// Sync indexes of namespace
-	Error syncIndexesForced(Namespace::Ptr slaveNs, const NamespaceDef &masterNsDef);
+	Error syncIndexesForced(Namespace::Ptr &slaveNs, const NamespaceDef &masterNsDef);
 	// Sync namespace schema
-	Error syncSchemaForced(Namespace::Ptr slaveNs, const NamespaceDef &masterNsDef);
+	Error syncSchemaForced(Namespace::Ptr &slaveNs, const NamespaceDef &masterNsDef);
 	// Forced sync of namespace
 	Error syncNamespaceForced(const NamespaceDef &ns, std::string_view reason);
 	// Sync meta data
-	Error syncMetaForced(reindexer::Namespace::Ptr slaveNs, std::string_view nsName);
+	Error syncMetaForced(Namespace::Ptr &slaveNs, std::string_view nsName);
 	// Apply single WAL record
-	Error applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr ns, const WALRecord &wrec, SyncStat &stat,
+	Error applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &ns, const WALRecord &wrec, SyncStat &stat,
 						 const NamespaceDef * = nullptr);
 	// Apply single transaction WAL record
-	Error applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr ns, const WALRecord &wrec);
-	void checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr slaveNs);
+	Error applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &ns, const WALRecord &wrec);
+	void checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr &slaveNs);
 	// Apply single cjson item
-	Error modifyItem(LSNPair LSNs, Namespace::Ptr ns, std::string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
+	Error modifyItem(LSNPair LSNs, Namespace::Ptr &ns, std::string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
 	static Error unpackItem(Item &, lsn_t, std::string_view cjson, const TagsMatcher &tm);
 
 	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &walRec) override final;
@@ -101,8 +101,8 @@ protected:
 		bool UpdatesLost = false;
 	};
 
-	fast_hash_map<string, UpdatesData, nocase_hash_str, nocase_equal_str> pendedUpdates_;
-	tsl::hopscotch_set<string, nocase_hash_str, nocase_equal_str> syncedNamespaces_;
+	fast_hash_map<std::string, UpdatesData, nocase_hash_str, nocase_equal_str> pendedUpdates_;
+	tsl::hopscotch_set<std::string, nocase_hash_str, nocase_equal_str> syncedNamespaces_;
 	std::string currentSyncNs_;
 
 	std::mutex syncMtx_;
@@ -111,7 +111,7 @@ protected:
 
 	const RdxContext dummyCtx_;
 	std::unordered_map<const Namespace *, Transaction> transactions_;
-	fast_hash_map<string, NsErrorMsg, nocase_hash_str, nocase_equal_str> lastNsErrMsg_;
+	fast_hash_map<std::string, NsErrorMsg, nocase_hash_str, nocase_equal_str> lastNsErrMsg_;
 
 	class SyncQuery {
 	public:

@@ -45,7 +45,7 @@ void Prometheus::setMetricValue(PFamily<Prometheus::PGauge>* metricFamily, doubl
 	}
 }
 
-void Prometheus::setMetricValue(PFamily<PGauge>* metricFamily, double value, int64_t epoch, const string& db, std::string_view type) {
+void Prometheus::setMetricValue(PFamily<PGauge>* metricFamily, double value, int64_t epoch, const std::string& db, std::string_view type) {
 	if (metricFamily) {
 		std::map<std::string, std::string> labels;
 		if (!db.empty()) {

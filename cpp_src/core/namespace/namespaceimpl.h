@@ -72,7 +72,7 @@ struct NsContext {
 	bool inTransaction = false;
 };
 
-class NamespaceImpl {
+class NamespaceImpl {  // NOLINT(*performance.Padding) Padding does not matter for this class
 	class IndexesCacheCleaner {
 	public:
 		explicit IndexesCacheCleaner(NamespaceImpl &ns) : ns_{ns} {}
@@ -122,14 +122,14 @@ protected:
 		~NSUpdateSortedContext() override { ns_.nsUpdateSortedContextMemory_.fetch_sub(ids2SortsMemSize_); }
 		int getSortedIdxCount() const noexcept override { return sorted_indexes_; }
 		SortType getCurSortId() const noexcept override { return curSortId_; }
-		const vector<SortType> &ids2Sorts() const noexcept override { return ids2Sorts_; }
-		vector<SortType> &ids2Sorts() noexcept override { return ids2Sorts_; }
+		const std::vector<SortType> &ids2Sorts() const noexcept override { return ids2Sorts_; }
+		std::vector<SortType> &ids2Sorts() noexcept override { return ids2Sorts_; }
 
 	protected:
 		const NamespaceImpl &ns_;
 		const int sorted_indexes_;
 		const IdType curSortId_;
-		vector<SortType> ids2Sorts_;
+		std::vector<SortType> ids2Sorts_;
 		int64_t ids2SortsMemSize_ = 0;
 	};
 
@@ -159,7 +159,7 @@ protected:
 		const NamespaceImpl &ns_;
 	};
 
-	class Items : public vector<PayloadValue> {
+	class Items : public std::vector<PayloadValue> {
 	public:
 		bool exists(IdType id) const { return id < IdType(size()) && !at(id).IsFree(); }
 	};
@@ -170,11 +170,11 @@ public:
 	typedef shared_ptr<NamespaceImpl> Ptr;
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Namespace>;
 
-	NamespaceImpl(const string &_name, UpdatesObservers &observers);
+	NamespaceImpl(const std::string &_name, UpdatesObservers &observers);
 	NamespaceImpl &operator=(const NamespaceImpl &) = delete;
 	~NamespaceImpl();
 
-	string GetName(const RdxContext &ctx) const {
+	std::string GetName(const RdxContext &ctx) const {
 		auto rlck = rLock(ctx);
 		return name_;
 	}
@@ -184,7 +184,7 @@ public:
 	}
 	bool IsTemporary(const RdxContext &ctx) const { return GetReplState(ctx).temporary; }
 
-	void EnableStorage(const string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx);
+	void EnableStorage(const std::string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx);
 	void LoadFromStorage(unsigned threadsCount, const RdxContext &ctx);
 	void DeleteStorage(const RdxContext &);
 
@@ -204,14 +204,14 @@ public:
 	void Delete(Item &item, const NsContext &);
 	void Delete(const Query &query, QueryResults &result, const NsContext &);
 	void Truncate(const NsContext &);
-	void Refill(vector<Item> &, const NsContext &);
+	void Refill(std::vector<Item> &, const NsContext &);
 
 	void Select(QueryResults &result, SelectCtx &params, const RdxContext &);
 	NamespaceDef GetDefinition(const RdxContext &ctx);
 	NamespaceMemStat GetMemStat(const RdxContext &);
 	NamespacePerfStat GetPerfStat(const RdxContext &);
 	void ResetPerfStat(const RdxContext &);
-	vector<string> EnumMeta(const RdxContext &ctx);
+	std::vector<std::string> EnumMeta(const RdxContext &ctx);
 
 	void BackgroundRoutine(RdxActivityContext *);
 	void StorageFlushingRoutine();
@@ -223,15 +223,15 @@ public:
 	Item NewItem(const NsContext &ctx);
 	void ToPool(ItemImpl *item);
 	// Get meta data from storage by key
-	string GetMeta(const string &key, const RdxContext &ctx);
+	std::string GetMeta(const std::string &key, const RdxContext &ctx);
 	// Put meta data to storage by key
-	void PutMeta(const string &key, std::string_view data, const NsContext &);
-	int64_t GetSerial(const string &field);
+	void PutMeta(const std::string &key, std::string_view data, const NsContext &);
+	int64_t GetSerial(const std::string &field);
 
-	int getIndexByName(const string &index) const;
-	bool getIndexByName(const string &name, int &index) const;
+	int getIndexByName(const std::string &index) const;
+	bool getIndexByName(const std::string &name, int &index) const;
 
-	void FillResult(QueryResults &result, IdSet::Ptr ids) const;
+	void FillResult(QueryResults &result, const IdSet &ids) const;
 
 	void EnablePerfCounters(bool enable = true) { enablePerfCounters_ = enable; }
 
@@ -286,7 +286,7 @@ protected:
 	void writeSysRecToStorage(std::string_view data, std::string_view sysTag, uint64_t &version, bool direct);
 	void saveIndexesToStorage();
 	void saveSchemaToStorage();
-	Error loadLatestSysRecord(std::string_view baseSysTag, uint64_t &version, string &content);
+	Error loadLatestSysRecord(std::string_view baseSysTag, uint64_t &version, std::string &content);
 	bool loadIndexesFromStorage();
 	void saveReplStateToStorage(bool direct = true);
 	void saveTagsMatcherToStorage(bool clearUpdate);
@@ -298,11 +298,11 @@ protected:
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
 	void modifyItem(Item &item, const NsContext &, int mode = ModeUpsert);
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
-	void updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields);
+	void updateItems(const PayloadType &oldPlType, const FieldsSet &changedFields, int deltaFields);
 	void fillSparseIndex(Index &, std::string_view jsonPath);
 	void doDelete(IdType id);
 	void optimizeIndexes(const NsContext &);
-	void insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const string &realName);
+	void insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string &realName);
 	void addIndex(const IndexDef &indexDef);
 	void addCompositeIndex(const IndexDef &indexDef);
 	void verifyUpdateIndex(const IndexDef &indexDef) const;
@@ -317,13 +317,13 @@ protected:
 
 	void recreateCompositeIndexes(int startIdx, int endIdx);
 	NamespaceDef getDefinition() const;
-	IndexDef getIndexDefinition(const string &indexName) const;
+	IndexDef getIndexDefinition(const std::string &indexName) const;
 	IndexDef getIndexDefinition(size_t) const;
 
-	string getMeta(const string &key) const;
-	void putMeta(const string &key, std::string_view data, const RdxContext &ctx);
+	std::string getMeta(const std::string &key) const;
+	void putMeta(const std::string &key, std::string_view data, const RdxContext &ctx);
 
-	pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &);
+	std::pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &);
 	int getSortedIdxCount() const;
 	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
@@ -335,7 +335,7 @@ protected:
 
 	const FieldsSet &pkFields();
 
-	vector<string> enumMeta() const;
+	std::vector<std::string> enumMeta() const;
 
 	void warmupFtIndexes();
 	void updateSelectTime();
@@ -347,12 +347,12 @@ protected:
 	bool SortOrdersBuilt() const noexcept { return optimizationState_.load(std::memory_order_acquire) == OptimizationCompleted; }
 
 	IndexesStorage indexes_;
-	fast_hash_map<string, int, nocase_hash_str, nocase_equal_str> indexesNames_;
+	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str> indexesNames_;
 	// All items with data
 	Items items_;
-	vector<IdType> free_;
+	std::vector<IdType> free_;
 	// NamespaceImpl name
-	string name_;
+	std::string name_;
 	// Payload types
 	PayloadType payloadType_;
 
@@ -362,7 +362,7 @@ protected:
 	AsyncStorage storage_;
 	std::atomic<unsigned> replStateUpdates_ = {0};
 
-	std::unordered_map<string, string> meta_;
+	std::unordered_map<std::string, std::string> meta_;
 
 	shared_ptr<QueryTotalCountCache> queryTotalCountCache_;
 

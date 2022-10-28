@@ -5,8 +5,6 @@
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
 
-using std::move;
-
 namespace reindexer {
 namespace client {
 
@@ -29,7 +27,7 @@ Error ItemImpl::FromCJSON(std::string_view slice) {
 	GetPayload().Reset();
 	std::string_view data = slice;
 	if (!unsafe_) {
-		holder_.push_back(string(slice));
+		holder_.push_back(std::string(slice));
 		data = holder_.back();
 	}
 
@@ -67,22 +65,25 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
 	}
 
 	payloadValue_.Clone();
-	char *endptr = nullptr;
-	gason::JsonValue value;
-	gason::JsonAllocator alloc;
-	int status = jsonParse(giftStr(data), &endptr, &value, alloc);
-	if (status != gason::JSON_OK) {
-		return Error(errLogic, "Error parsing json: %s, pos %d", gason::jsonStrError(status), unsigned(endptr - data.data()));
-	}
-	if (endp) {
-		*endp = endptr;
+
+	size_t len;
+	gason::JsonNode node;
+	gason::JsonParser parser(&largeJSONStrings_);
+	try {
+		node = parser.Parse(giftStr(data), &len);
+		if (node.value.getTag() != gason::JSON_OBJECT) return Error(errParseJson, "Expected json object");
+		if (unsafe_ && endp) {
+			*endp = const_cast<char *>(data.data()) + len;
+		}
+	} catch (gason::Exception &e) {
+		return Error(errParseJson, "Error parsing json: '%s', pos: %d", e.what(), len);
 	}
 
 	// Split parsed json into indexes and tuple
 	JsonDecoder decoder(tagsMatcher_);
 	Payload pl = GetPayload();
 	ser_.Reset();
-	auto err = decoder.Decode(&pl, ser_, value);
+	auto err = decoder.Decode(&pl, ser_, node.value);
 
 	if (err.ok()) {
 		// Put tuple to field[0]

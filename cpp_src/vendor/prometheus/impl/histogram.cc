@@ -30,7 +30,7 @@ ClientMetric Histogram::Collect() const {
 		auto bucket = ClientMetric::Bucket{};
 		bucket.cumulative_count = cumulative_count;
 		bucket.upper_bound = (i == bucket_boundaries_.size() ? std::numeric_limits<double>::infinity() : bucket_boundaries_[i]);
-		metric.histogram.bucket.push_back(std::move(bucket));
+		metric.histogram.bucket.emplace_back(bucket);
 	}
 	metric.histogram.sample_count = cumulative_count;
 	metric.histogram.sample_sum = sum_.Value();

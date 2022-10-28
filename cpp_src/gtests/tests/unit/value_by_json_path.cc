@@ -48,7 +48,7 @@ TEST_F(ReindexerApi, GetValueByJsonPath) {
 
 		VariantArray stringField = item["inner.stringField"];
 		EXPECT_TRUE(stringField.size() == 1);
-		EXPECT_TRUE(stringField[0].As<string>().compare(data.stringField) == 0);
+		EXPECT_TRUE(stringField[0].As<std::string>().compare(data.stringField) == 0);
 
 		VariantArray intArray = item["inner.inner2.intArray"];
 		EXPECT_TRUE(intArray.size() == 3);
@@ -89,7 +89,7 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 
 		char json[512];
 		auto pk = "pk" + std::to_string(i);
-		string dumpField = "str_" + pk;
+		std::string dumpField = "str_" + pk;
 		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), dumpField.c_str(), i);
 
 		if (i >= 5) properIntValues.push_back(i);
@@ -113,7 +113,7 @@ TEST_F(ReindexerApi, SelectByJsonPath) {
 	Item theOnlyItem = qr1[0].GetItem(false);
 	VariantArray krefs = theOnlyItem["nested.string"];
 	EXPECT_TRUE(krefs.size() == 1);
-	EXPECT_TRUE(krefs[0].As<string>() == strValueToFind.As<string>());
+	EXPECT_TRUE(krefs[0].As<std::string>() == strValueToFind.As<std::string>());
 
 	QueryResults qr2;
 	Variant intValueToFind(static_cast<int64_t>(5));
@@ -160,8 +160,8 @@ TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
 		char json[1024];
 		auto index = std::to_string(i);
 		auto pk = "key" + index;
-		string name = "name" + index;
-		string locale = i % 2 ? "en" : "ru";
+		std::string name = "name" + index;
+		std::string locale = i % 2 ? "en" : "ru";
 		long count = i;
 		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), locale.c_str(), name.c_str(), count);
 
@@ -222,7 +222,7 @@ TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
 	Item item2 = rt.reindexer->NewItem(default_namespace);
 	ASSERT_TRUE(item2.Status().ok()) << item2.Status().what();
 	item2Builder.Put("id", int(2));
-	item2Builder.Put("mac_address", Variant(string("2147483648")));
+	item2Builder.Put("mac_address", Variant(std::string("2147483648")));
 	item2Builder.End();
 	err = item2.FromJSON(wrser.Slice());
 	ASSERT_TRUE(err.ok()) << err.what();

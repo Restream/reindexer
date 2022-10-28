@@ -32,7 +32,7 @@ std::string_view kvTypeToJsonSchemaType(KeyValueType type) {
 
 void SchemaFieldsTypes::AddObject(std::string_view objectType) {
 	types_[tagsPath_] = {KeyValueComposite, false};
-	auto it = objectTypes_.find(string(objectType));
+	auto it = objectTypes_.find(std::string(objectType));
 	if (it == objectTypes_.end()) {
 		objectTypes_.emplace(std::string(objectType), tagsPath_.size());
 	} else {
@@ -45,7 +45,7 @@ void SchemaFieldsTypes::AddObject(std::string_view objectType) {
 
 void SchemaFieldsTypes::AddField(KeyValueType type, bool isArray) { types_[tagsPath_] = {type, isArray}; }
 
-bool SchemaFieldsTypes::NeedToEmbedType(string objectType) const {
+bool SchemaFieldsTypes::NeedToEmbedType(const std::string& objectType) const noexcept {
 	auto it = objectTypes_.find(objectType);
 	if (it == objectTypes_.end()) return false;
 	return it->second < int(tagsPath_.size());
@@ -58,7 +58,7 @@ KeyValueType SchemaFieldsTypes::GetField(const TagsPath& fieldPath, bool& isArra
 	return it->second.type_;
 }
 
-string SchemaFieldsTypes::GenerateObjectName() { return "GeneratedType" + std::to_string(++generatedObjectsNames); }
+std::string SchemaFieldsTypes::GenerateObjectName() { return "GeneratedType" + std::to_string(++generatedObjectsNames); }
 
 PrefixTree::PrefixTree() { root_.props_.type = "object"; }
 
@@ -95,7 +95,7 @@ Error PrefixTree::AddPath(FieldProps props, const PathT& splittedPath) noexcept 
 					std::tie(nextNodeIt, res) = node->children_.emplace(*fieldIt, std::move(newNode));
 					return errOK;
 				}
-				std::unique_ptr<PrefixTreeNode> newNode(new PrefixTreeNode{FieldProps(string("object"sv)), {}});
+				std::unique_ptr<PrefixTreeNode> newNode(new PrefixTreeNode{FieldProps(std::string("object"sv)), {}});
 				std::tie(nextNodeIt, res) = node->children_.emplace(*fieldIt, std::move(newNode));
 			} catch (...) {
 				return Error(errLogic, "PrefixTree.AddPath: Unexpected exception for path: '%s'", pathToStr(splittedPath));	 // For PVS
@@ -132,17 +132,17 @@ std::vector<std::string> PrefixTree::GetSuggestions(std::string_view path) const
 	for (auto& it : node->children_) {
 		if (field.empty() || checkIfStartsWith(field, it.first)) {
 			if (isNested) {
-				suggestions.emplace_back("." + string(it.first));
+				suggestions.emplace_back("." + std::string(it.first));
 			} else {
-				suggestions.emplace_back(string(it.first));
+				suggestions.emplace_back(std::string(it.first));
 			}
 		}
 	}
 	return suggestions;
 }
 
-vector<string> PrefixTree::GetPaths() const {
-	vector<string> paths;
+std::vector<std::string> PrefixTree::GetPaths() const {
+	std::vector<std::string> paths;
 	root_.GetPaths(std::string(), paths);
 	return paths;
 }
@@ -197,7 +197,7 @@ PrefixTree::PrefixTreeNode* PrefixTree::findNode(std::string_view path, bool* ma
 	return nullptr;
 }
 
-void PrefixTree::PrefixTreeNode::GetPaths(std::string&& basePath, vector<string>& pathsList) const {
+void PrefixTree::PrefixTreeNode::GetPaths(std::string&& basePath, std::vector<std::string>& pathsList) const {
 	if (children_.empty()) {
 		if (!basePath.empty()) {
 			pathsList.emplace_back(std::move(basePath));
@@ -206,7 +206,7 @@ void PrefixTree::PrefixTreeNode::GetPaths(std::string&& basePath, vector<string>
 	}
 	std::string path = std::move(basePath);
 	for (auto& child : children_) {
-		child.second->GetPaths(path + (path.empty() ? "" : ".") + string(child.first), pathsList);
+		child.second->GetPaths(path + (path.empty() ? "" : ".") + std::string(child.first), pathsList);
 	}
 }
 
@@ -216,7 +216,7 @@ Error PrefixTree::BuildProtobufSchema(WrSerializer& schema, TagsMatcher& tm, Pay
 	}
 
 	fieldsTypes_ = SchemaFieldsTypes();
-	const string& objName = root_.props_.xGoType.empty() ? pt.Name() : root_.props_.xGoType;
+	const std::string& objName = root_.props_.xGoType.empty() ? pt.Name() : root_.props_.xGoType;
 	ProtobufSchemaBuilder builder(&schema, &fieldsTypes_, ObjType::TypeObject, objName, &pt, &tm);
 	return buildProtobufSchema(builder, root_, "", tm);
 }
@@ -228,7 +228,7 @@ Error PrefixTree::buildProtobufSchema(ProtobufSchemaBuilder& builder, const Pref
 			const std::string& name = child.first;
 			const std::unique_ptr<PrefixTreeNode>& node = child.second;
 
-			string path = basePath;
+			std::string path = basePath;
 			if (path.size() > 0) path += ".";
 			path += name;
 
@@ -273,7 +273,7 @@ Error Schema::FromJSON(std::string_view json) {
 			protobufNsNumber_ = counter++;
 
 			// TODO: fix it
-			auto pos = originalJson_.find_last_of("}");
+			auto pos = originalJson_.find_last_of('}');
 			if (pos != std::string::npos) {
 				originalJson_ = originalJson_.erase(pos);
 				originalJson_ += ",\"x-protobuf-ns-number\":" + std::to_string(protobufNsNumber_) + "}";
@@ -303,7 +303,7 @@ KeyValueType Schema::GetFieldType(const TagsPath& fieldPath, bool& isArray) cons
 Error Schema::BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt) {
 	WrSerializer ser;
 	protobufSchemaStatus_ = paths_.BuildProtobufSchema(ser, tm, pt);
-	protobufSchema_ = string(ser.Slice());
+	protobufSchema_ = std::string(ser.Slice());
 	return protobufSchemaStatus_;
 }
 
@@ -344,7 +344,7 @@ void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& split
 	auto& properties = isArray ? node["items"]["properties"] : node["properties"];
 	if (!properties.empty()) {
 		for (auto& subnode : properties) {
-			splittedPath.emplace_back(string(subnode.key));
+			splittedPath.emplace_back(std::string(subnode.key));
 			bool isSubnodeRequred = (required.find(std::string_view(subnode.key)) != required.end());
 			parseJsonNode(subnode, splittedPath, isSubnodeRequred);
 			splittedPath.pop_back();

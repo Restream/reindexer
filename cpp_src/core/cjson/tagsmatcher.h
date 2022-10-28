@@ -13,7 +13,7 @@ class TagsMatcher {
 public:
 	TagsMatcher() : impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>()), updated_(false) {}
 	TagsMatcher(PayloadType payloadType)
-		: impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>(payloadType)), updated_(false) {}
+		: impl_(make_intrusive<intrusive_atomic_rc_wrapper<TagsMatcherImpl>>(std::move(payloadType))), updated_(false) {}
 
 	int name2tag(std::string_view name) const { return impl_->name2tag(name); }
 	int name2tag(std::string_view name, bool canAdd) {
@@ -22,19 +22,19 @@ public:
 		return res ? res : impl_.clone()->name2tag(name, canAdd, updated_);
 	}
 	int tags2field(const int16_t* path, size_t pathLen) const { return impl_->tags2field(path, pathLen); }
-	const string& tag2name(int tag) const { return impl_->tag2name(tag); }
+	const std::string& tag2name(int tag) const { return impl_->tag2name(tag); }
 	TagsPath path2tag(std::string_view jsonPath) const { return impl_->path2tag(jsonPath); }
 	TagsPath path2tag(std::string_view jsonPath, bool canAdd) {
 		auto res = path2tag(jsonPath);
 		if (jsonPath.empty()) return TagsPath();
 		return res.empty() && canAdd ? impl_.clone()->path2tag(jsonPath, canAdd, updated_) : res;
 	}
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, IndexExpressionEvaluator ev) const {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator& ev) const {
 		IndexedTagsPath tagsPath = impl_->path2indexedtag(jsonPath, ev);
 		assertrx(!updated_);
 		return tagsPath;
 	}
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, IndexExpressionEvaluator ev, bool canAdd) {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator& ev, bool canAdd) {
 		if (jsonPath.empty()) return IndexedTagsPath();
 		auto res = impl_->path2indexedtag(jsonPath, ev);
 		return res.empty() && canAdd ? impl_.clone()->path2indexedtag(jsonPath, ev, canAdd, updated_) : res;
@@ -67,10 +67,10 @@ public:
 	}
 
 	void UpdatePayloadType(PayloadType payloadType, bool incVersion = true) {
-		impl_.clone()->updatePayloadType(payloadType, updated_, incVersion);
+		impl_.clone()->updatePayloadType(std::move(payloadType), updated_, incVersion);
 	}
 
-	string dump() const { return impl_->dumpTags() + "\n" + impl_->dumpNames() + "\n" + impl_->dumpPaths(); }
+	std::string dump() const { return impl_->dumpTags() + "\n" + impl_->dumpNames() + "\n" + impl_->dumpPaths(); }
 
 protected:
 	shared_cow_ptr<TagsMatcherImpl> impl_;

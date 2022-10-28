@@ -124,7 +124,7 @@ void WrResultSerializer::putItemParams(const QueryResults* result, int idx, bool
 				if (!err.ok()) {
 					throw Error(err.code(), "Unable to parse CJSON for WAL item: %s", err.what());
 				}
-				return string(item.GetJSON());
+				return std::string(item.GetJSON());
 			});
 		}
 		return;

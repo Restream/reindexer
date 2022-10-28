@@ -27,7 +27,7 @@ ClientConnection::ClientConnection(ev::dynamic_loop &loop, ConnectData *connectD
 	  bufWait_(0),
 	  now_(0),
 	  terminate_(false),
-	  onConnectionFailed_(connectionFailCallback),
+	  onConnectionFailed_(std::move(connectionFailCallback)),
 	  connectData_(connectData),
 	  currDsnIdx_(connectData->validEntryIdx.load(std::memory_order_acquire)),
 	  actualDsnIdx_(currDsnIdx_) {
@@ -67,10 +67,10 @@ void ClientConnection::connectInternal() noexcept {
 
 	assertrx(connectData_->validEntryIdx < int(connectData_->entries.size()));
 	ConnectData::Entry &connectEntry = connectData_->entries[actualDsnIdx_];
-	string port = connectEntry.uri.port().length() ? connectEntry.uri.port() : string("6534");
-	string dbName = connectEntry.uri.path();
-	string userName = connectEntry.uri.username();
-	string password = connectEntry.uri.password();
+	std::string port = connectEntry.uri.port().length() ? connectEntry.uri.port() : std::string("6534");
+	std::string dbName = connectEntry.uri.path();
+	std::string userName = connectEntry.uri.username();
+	std::string password = connectEntry.uri.password();
 	if (dbName[0] == '/') dbName = dbName.substr(1);
 	enableCompression_ = connectEntry.opts.enableCompression;
 
@@ -209,7 +209,7 @@ void ClientConnection::onClose() {
 	{
 		// we need to make sure tmpCompletions is destructed
 		// before we switch to ConnFailed state
-		vector<RPCCompletion> tmpCompletions(kMaxCompletions);
+		std::vector<RPCCompletion> tmpCompletions(kMaxCompletions);
 
 		mtx_.lock();
 		wrBuf_.clear();
@@ -256,23 +256,23 @@ void ClientConnection::onClose() {
 	}
 }
 
-void ClientConnection::onRead() {
+ClientConnection::ReadResT ClientConnection::onRead() {
 	CProtoHeader hdr;
 	std::string uncompressed;
 
 	while (!closeConn_) {
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
-		if (len < sizeof(hdr)) return;
+		if (len < sizeof(hdr)) return ReadResT::Default;
 
 		if (hdr.magic != kCprotoMagic) {
 			failInternal(Error(errNetwork, "Invalid cproto magic=%08x", hdr.magic));
-			return;
+			return ReadResT::Default;
 		}
 
 		if (hdr.version < kCprotoMinCompatVersion) {
 			failInternal(
 				Error(errParams, "Unsupported cproto version %04x. This client expects reindexer server v1.9.8+", int(hdr.version)));
-			return;
+			return ReadResT::Default;
 		}
 		enableSnappy_ = (hdr.version >= kCprotoMinSnappyVersion) && enableCompression_;
 
@@ -280,7 +280,7 @@ void ClientConnection::onRead() {
 			rdBuf_.reserve(size_t(hdr.len) + sizeof(hdr) + 0x1000);
 		}
 
-		if ((rdBuf_.size() - sizeof(hdr)) < size_t(hdr.len)) return;
+		if ((rdBuf_.size() - sizeof(hdr)) < size_t(hdr.len)) return ReadResT::Default;
 
 		rdBuf_.erase(sizeof(hdr));
 
@@ -311,7 +311,7 @@ void ClientConnection::onRead() {
 			ans.data_ = span<uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
 		} catch (const Error &err) {
 			failInternal(err);
-			return;
+			return ReadResT::Default;
 		}
 		rdBuf_.erase(hdr.len);
 		if (hdr.cmd == kCmdUpdates) {
@@ -338,7 +338,7 @@ void ClientConnection::onRead() {
 				completion->cmpl(std::move(ans), this);
 				if (completions_.data() != complPtr) {
 					rdBuf_.clear();
-					return;
+					return ReadResT::Default;
 				}
 				if (bufWait_) {
 					std::unique_lock<std::mutex> lck(mtx_);
@@ -361,6 +361,7 @@ void ClientConnection::onRead() {
 			}
 		}
 	}
+	return ReadResT::Default;
 }
 
 Args RPCAnswer::GetArgs(int minArgs) const {
@@ -382,6 +383,7 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, con
 	hdr.magic = kCprotoMagic;
 	hdr.version = kCprotoVersion;
 	hdr.compressed = enableSnappy_;
+	hdr.dedicatedThread = 0;
 	hdr.cmd = cmd;
 	hdr.seq = seq;
 
@@ -403,7 +405,7 @@ chunk ClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, con
 	return ser.DetachChunk();
 }
 
-void ClientConnection::call(Completion cmpl, const CommandParams &opts, const Args &args) {
+void ClientConnection::call(const Completion &cmpl, const CommandParams &opts, const Args &args) {
 	if (opts.cancelCtx) {
 		switch (opts.cancelCtx->GetCancelType()) {
 			case CancelType::Explicit:

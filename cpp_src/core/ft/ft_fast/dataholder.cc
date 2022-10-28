@@ -53,7 +53,7 @@ bool IDataHolder::NeedClear(bool complte_updated) {
 	return false;
 }
 
-string IDataHolder::Dump() {
+std::string IDataHolder::Dump() {
 	std::stringstream ss;
 	ss << "Holder dump: step count: " << steps.size() << std::endl;
 	ss << "Status: ";

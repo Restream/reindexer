@@ -43,7 +43,7 @@ Error Replicator::Start() {
 
 	master_.reset(new client::Reindexer(
 		client::ReindexerConfig(config_.connPoolSize, config_.workerThreads, 10000, 0, std::chrono::seconds(config_.timeoutSec),
-								std::chrono::seconds(config_.timeoutSec), config_.enableCompression, config_.appName)));
+								std::chrono::seconds(config_.timeoutSec), config_.enableCompression, false, config_.appName)));
 
 	auto err = master_->Connect(config_.masterDSN, client::ConnectOpts().WithExpectedClusterID(config_.clusterID));
 	if (err.ok()) err = master_->Status();
@@ -151,7 +151,7 @@ void Replicator::run() {
 	logPrintf(LogInfo, "[repl] Replicator with %s stopped", config_.masterDSN);
 }
 
-static bool errorIsFatal(Error err) {
+static bool errorIsFatal(const Error &err) {
 	switch (err.code()) {
 		case errOK:
 		case errNetwork:
@@ -287,7 +287,7 @@ Error Replicator::syncNamespace(const NamespaceDef &ns, std::string_view forceSy
 }
 
 Error Replicator::syncDatabase() {
-	vector<NamespaceDef> nses;
+	std::vector<NamespaceDef> nses;
 	logPrintf(LogInfo, "[repl:%s]:%d Starting sync from '%s' state=%d", slave_->storagePath_, config_.serverId, config_.masterDSN,
 			  state_.load());
 
@@ -488,7 +488,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 	return err;
 }
 
-Error Replicator::applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr, const NamespaceDef *nsDef) {
+Error Replicator::applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, const NamespaceDef *nsDef) {
 	Error err;
 	SyncStat stat;
 	WrSerializer ser;
@@ -553,7 +553,7 @@ Error Replicator::applyWAL(Namespace::Ptr slaveNs, client::QueryResults &qr, con
 	return stat.lastError;
 }
 
-Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr slaveNs, const WALRecord &rec) {
+Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &slaveNs, const WALRecord &rec) {
 	switch (rec.type) {
 		// Modify item
 		case WalItemModify: {
@@ -561,7 +561,7 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			Transaction &tx = transactions_[slaveNs.get()];
 			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
 			Item item = tx.NewItem();
-			const Error err = unpackItem(item, LSNs.upstreamLSN_, rec.itemModify.itemCJson, master_->NewItem(nsName).impl_->tagsMatcher());
+			Error err = unpackItem(item, LSNs.upstreamLSN_, rec.itemModify.itemCJson, master_->NewItem(nsName).impl_->tagsMatcher());
 			if (!err.ok()) return err;
 			tx.Modify(std::move(item), static_cast<ItemModifyMode>(rec.itemModify.modifyMode));
 		} break;
@@ -597,7 +597,7 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 	return {};
 }
 
-void Replicator::checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr slaveNs) {
+void Replicator::checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr &slaveNs) {
 	std::lock_guard<std::mutex> lck(syncMtx_);
 	Transaction &tx = transactions_[slaveNs.get()];
 	if (!tx.IsFree()) {
@@ -606,7 +606,7 @@ void Replicator::checkNoOpenedTransaction(std::string_view nsName, Namespace::Pt
 	}
 }
 
-Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr slaveNs, const WALRecord &rec, SyncStat &stat,
+Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &slaveNs, const WALRecord &rec, SyncStat &stat,
 								 const NamespaceDef *firstRec) {
 	Error err;
 	IndexDef iDef;
@@ -660,7 +660,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			break;
 		// Metadata updated
 		case WalPutMeta:
-			slaveNs->PutMeta(string(rec.putMeta.key), rec.putMeta.value, NsContext(dummyCtx_));
+			slaveNs->PutMeta(std::string(rec.putMeta.key), rec.putMeta.value, NsContext(dummyCtx_));
 			stat.updatedMeta++;
 			break;
 		// Update query
@@ -697,7 +697,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			break;
 		// Rename namespace
 		case WalNamespaceRename:
-			err = slave_->renameNamespace(nsName, string(rec.data), true);
+			err = slave_->renameNamespace(nsName, std::string(rec.data), true);
 			break;
 		// force sync namespace
 		case WalForceSync:
@@ -740,7 +740,7 @@ Error Replicator::unpackItem(Item &item, lsn_t lsn, std::string_view cjson, cons
 	return item.FromCJSON(cjson);
 }
 
-Error Replicator::modifyItem(LSNPair LSNs, Namespace::Ptr slaveNs, std::string_view cjson, int modifyMode, const TagsMatcher &tm,
+Error Replicator::modifyItem(LSNPair LSNs, Namespace::Ptr &slaveNs, std::string_view cjson, int modifyMode, const TagsMatcher &tm,
 							 SyncStat &stat) {
 	Item item = slaveNs->NewItem(dummyCtx_);
 	Error err = unpackItem(item, LSNs.upstreamLSN_, cjson, tm);
@@ -785,8 +785,8 @@ WrSerializer &Replicator::SyncStat::Dump(WrSerializer &ser) {
 	return ser;
 }
 
-Error Replicator::syncIndexesForced(Namespace::Ptr slaveNs, const NamespaceDef &masterNsDef) {
-	const string &nsName = masterNsDef.name;
+Error Replicator::syncIndexesForced(Namespace::Ptr &slaveNs, const NamespaceDef &masterNsDef) {
+	const std::string &nsName = masterNsDef.name;
 
 	Error err = errOK;
 	for (auto &idx : masterNsDef.indexes) {
@@ -802,8 +802,8 @@ Error Replicator::syncIndexesForced(Namespace::Ptr slaveNs, const NamespaceDef &
 	return err;
 }
 
-Error Replicator::syncSchemaForced(Namespace::Ptr slaveNs, const NamespaceDef &masterNsDef) {
-	const string &nsName = masterNsDef.name;
+Error Replicator::syncSchemaForced(Namespace::Ptr &slaveNs, const NamespaceDef &masterNsDef) {
+	const std::string &nsName = masterNsDef.name;
 
 	Error err = errOK;
 	logPrintf(LogTrace, "[repl:%s] Setting schema", nsName);
@@ -817,12 +817,12 @@ Error Replicator::syncSchemaForced(Namespace::Ptr slaveNs, const NamespaceDef &m
 	return err;
 }
 
-Error Replicator::syncMetaForced(Namespace::Ptr slaveNs, std::string_view nsName) {
-	vector<string> keys;
+Error Replicator::syncMetaForced(Namespace::Ptr &slaveNs, std::string_view nsName) {
+	std::vector<std::string> keys;
 	auto err = master_->EnumMeta(nsName, keys);
 
 	for (auto &key : keys) {
-		string data;
+		std::string data;
 		err = master_->GetMeta(nsName, key, data);
 		if (!err.ok()) {
 			logPrintf(LogError, "[repl:%s]:%d Error get meta '%s': %s", nsName, config_.serverId, key, err.what());
@@ -890,7 +890,7 @@ void Replicator::OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRec
 		}
 		auto lastErrIt = lastNsErrMsg_.find(nsName);
 		if (lastErrIt == lastNsErrMsg_.end()) {
-			lastErrIt = lastNsErrMsg_.emplace(string(nsName), NsErrorMsg{}).first;
+			lastErrIt = lastNsErrMsg_.emplace(std::string(nsName), NsErrorMsg{}).first;
 		}
 		auto &lastErr = lastErrIt->second;
 		bool isDifferentError = lastErr.err.what() != err.what();
@@ -921,7 +921,7 @@ void Replicator::OnUpdatesLost(std::string_view nsName) {
 	if (updatesIt == pendedUpdates_.end()) {
 		UpdatesData updates;
 		updates.UpdatesLost = true;
-		pendedUpdates_.emplace(string(nsName), std::move(updates));
+		pendedUpdates_.emplace(std::string(nsName), std::move(updates));
 		logPrintf(LogTrace, "[repl:%s:%s]:%d Lost updates add.", nsName, slave_->storagePath_, config_.serverId);
 	} else {
 		logPrintf(LogTrace, "[repl:%s:%s]:%d Lost updates set TRUE.", nsName, slave_->storagePath_, config_.serverId);
@@ -1013,7 +1013,7 @@ bool Replicator::canApplyUpdate(LSNPair LSNs, std::string_view nsName, const WAL
 	if (updatesIt == pendedUpdates_.end()) {
 		UpdatesData updates;
 		updates.container.emplace_back(std::make_pair(LSNs, std::move(pwrec)));
-		pendedUpdates_.emplace(string(nsName), std::move(updates));
+		pendedUpdates_.emplace(std::string(nsName), std::move(updates));
 	} else {
 		auto &updates = updatesIt.value().container;
 		updates.emplace_back(std::make_pair(LSNs, std::move(pwrec)));

@@ -2277,6 +2277,7 @@ static int elf_add(struct backtrace_state *state, const char *filename, int desc
 		struct backtrace_view shdr_view;
 		const b_elf_shdr *shdr;
 
+		// NOLINTNEXTLINE(bugprone-sizeof-expression)
 		if (!backtrace_get_view(state, descriptor, shoff, sizeof shdr, error_callback, data, &shdr_view)) goto fail;
 
 		shdr = (const b_elf_shdr *)shdr_view.data;
@@ -2370,6 +2371,7 @@ static int elf_add(struct backtrace_state *state, const char *filename, int desc
 
 			buildid_view_valid = 1;
 			note = (const b_elf_note *)buildid_view.data;
+			// NOLINTNEXTLINE(bugprone-not-null-terminated-result)
 			if (note->type == NT_GNU_BUILD_ID && note->namesz == 4 && strncmp(note->name, "GNU", 4) == 0 &&
 				shdr->sh_size < 12 + ((note->namesz + 3) & ~3) + note->descsz) {
 				buildid_data = &note->name[0] + ((note->namesz + 3) & ~3);

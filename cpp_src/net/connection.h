@@ -40,13 +40,16 @@ public:
 	virtual ~Connection();
 
 protected:
-	virtual void onRead() = 0;
+	enum class ReadResT { Default, Rebalanced };
+
+	// @return false if connection was moved into another thread
+	virtual ReadResT onRead() = 0;
 	virtual void onClose() = 0;
 
 	// Generic callback
 	void callback(ev::io &watcher, int revents);
 	void write_cb();
-	void read_cb();
+	ReadResT read_cb();
 	void async_cb(ev::async &watcher);
 	void timeout_cb(ev::periodic &watcher, int);
 

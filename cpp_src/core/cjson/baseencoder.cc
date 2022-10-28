@@ -96,7 +96,7 @@ void BaseEncoder<Builder>::collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoi
 	const size_t itemsCount = ds->GetJoinedRowItemsCount(rowid);
 	if (!itemsCount) return;
 
-	string nsTagName("joined_" + ds->GetJoinedItemNamespace(rowid));
+	std::string nsTagName("joined_" + ds->GetJoinedItemNamespace(rowid));
 	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(rowid), &ds->GetJoinedItemFieldsFilter(rowid));
 	for (size_t i = 0; i < itemsCount; ++i) {
 		ConstPayload pl(ds->GetJoinedItemPayload(rowid, i));
@@ -109,7 +109,7 @@ void BaseEncoder<Builder>::encodeJoinedItems(Builder& builder, IEncoderDatasourc
 	const size_t itemsCount = ds->GetJoinedRowItemsCount(rowid);
 	if (!itemsCount) return;
 
-	string nsTagName("joined_" + ds->GetJoinedItemNamespace(rowid));
+	std::string nsTagName("joined_" + ds->GetJoinedItemNamespace(rowid));
 	auto arrNode = builder.Array(nsTagName);
 
 	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(rowid), &ds->GetJoinedItemFieldsFilter(rowid));
@@ -139,8 +139,9 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 
 	// get field from indexed field
 	if (tagField >= 0) {
+		if (!pl) throw Error(errParams, "Trying to encode index field %d without payload", tagField);
 		if ((objectScalarIndexes_ & (1ULL << tagField)) && (tagType != TAG_ARRAY)) {
-			string fieldName;
+			std::string fieldName;
 			if (tag.Name() && tagsMatcher_) {
 				fieldName = tagsMatcher_->tag2name(tag.Name());
 			}

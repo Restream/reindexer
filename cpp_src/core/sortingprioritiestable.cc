@@ -15,7 +15,7 @@ SortingPrioritiesTable::SortingPrioritiesTable(const std::string& sortOrderUTF8)
 	uint16_t maxPriority = 0;
 	std::map<uint16_t, uint16_t> ranges;
 
-	wstring orderUtf16 = reindexer::utf8_to_utf16(sortOrderUTF8);
+	std::wstring orderUtf16 = reindexer::utf8_to_utf16(sortOrderUTF8);
 	const int lastCharIdx = static_cast<int>(orderUtf16.size() - 1);
 
 	for (int i = 0; i <= lastCharIdx; ++i) {

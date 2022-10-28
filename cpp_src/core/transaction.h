@@ -15,7 +15,7 @@ class Transaction {
 public:
 	using time_point = std::chrono::time_point<std::chrono::high_resolution_clock>;
 
-	Transaction(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
+	Transaction(const std::string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
 				std::shared_ptr<const Schema> schema);
 	Transaction(const Error &err);
 	~Transaction();
@@ -38,8 +38,8 @@ public:
 
 	friend class ReindexerImpl;
 
-	vector<TransactionStep> &GetSteps();
-	const vector<TransactionStep> &GetSteps() const;
+	std::vector<TransactionStep> &GetSteps();
+	const std::vector<TransactionStep> &GetSteps() const;
 	bool IsTagsUpdated() const;
 	time_point GetStartTime() const;
 

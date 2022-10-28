@@ -7,11 +7,9 @@
 
 namespace reindexer {
 namespace fs {
-using std::string;
-using std::vector;
 
 struct DirEntry {
-	string name;
+	std::string name;
 	bool isDir;
 };
 
@@ -27,26 +25,26 @@ struct TimeStats {
 	int64_t mtime;
 };
 
-int MkDirAll(const string &path);
-int RmDirAll(const string &path);
-int ReadFile(const string &path, string &content);
-int64_t WriteFile(const string &path, std::string_view content);
-int ReadDir(const string &path, vector<DirEntry> &content);
-bool DirectoryExists(const string &directory);
-FileStatus Stat(const string &path);
-TimeStats StatTime(const string &path);
-string GetCwd();
-string GetDirPath(const string &path);
-string GetTempDir();
-string GetHomeDir();
-string GetRelativePath(const string &path, unsigned maxUp = 1024);
-inline static int Rename(const string &from, const string &to) { return rename(from.c_str(), to.c_str()); }
+int MkDirAll(const std::string &path);
+int RmDirAll(const std::string &path);
+int ReadFile(const std::string &path, std::string &content);
+int64_t WriteFile(const std::string &path, std::string_view content);
+int ReadDir(const std::string &path, std::vector<DirEntry> &content);
+bool DirectoryExists(const std::string &directory);
+FileStatus Stat(const std::string &path);
+TimeStats StatTime(const std::string &path);
+std::string GetCwd();
+std::string GetDirPath(const std::string &path);
+std::string GetTempDir();
+std::string GetHomeDir();
+std::string GetRelativePath(const std::string &path, unsigned maxUp = 1024);
+inline static int Rename(const std::string &from, const std::string &to) { return rename(from.c_str(), to.c_str()); }
 
-Error TryCreateDirectory(const string &dir);
+Error TryCreateDirectory(const std::string &dir);
 Error ChangeUser(const char *userName);
-Error ChownDir(const string &path, const string &user);
+Error ChownDir(const std::string &path, const std::string &user);
 
-inline static string JoinPath(const string &base, const string &name) {
+inline static std::string JoinPath(const std::string &base, const std::string &name) {
 	return base + ((!base.empty() && base.back() != '/') ? "/" : "") + name;
 }
 }  // namespace fs

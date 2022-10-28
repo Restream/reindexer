@@ -61,8 +61,8 @@ public:
 	int TotalCount() const { return results_.queryParams_.totalcount; }
 	bool HaveRank() const { return results_.queryParams_.flags & kResultsWithRank; }
 	bool NeedOutputRank() const { return results_.queryParams_.flags & kResultsNeedOutputRank; }
-	const string& GetExplainResults() const { return results_.queryParams_.explainResults; }
-	const vector<AggregationResult>& GetAggregationResults() const { return results_.queryParams_.aggResults; }
+	const std::string& GetExplainResults() const { return results_.queryParams_.explainResults; }
+	const std::vector<AggregationResult>& GetAggregationResults() const { return results_.queryParams_.aggResults; }
 	Error Status() { return results_.status_; }
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return results_.queryParams_.flags & kResultsWithItemID; }

@@ -14,11 +14,11 @@
 
 namespace reindexer {
 
-using std::hash;
-
 Variant::Variant(const PayloadValue &v) : type_(KeyValueComposite), hold_(true) { new (cast<void>()) PayloadValue(v); }
 
-Variant::Variant(const string &v) : type_(KeyValueString), hold_(true) { new (cast<void>()) key_string(make_key_string(v)); }
+Variant::Variant(PayloadValue &&v) : type_(KeyValueComposite), hold_(true) { new (cast<void>()) PayloadValue(std::move(v)); }
+
+Variant::Variant(const std::string &v) : type_(KeyValueString), hold_(true) { new (cast<void>()) key_string(make_key_string(v)); }
 
 Variant::Variant(const key_string &v) : type_(KeyValueString), hold_(true) { new (cast<void>()) key_string(v); }
 Variant::Variant(const char *v) : Variant(p_string(v)) {}
@@ -146,7 +146,7 @@ Variant &Variant::EnsureHold() {
 }
 
 template <>
-string Variant::As<string>() const {
+std::string Variant::As<std::string>() const {
 	switch (type_) {
 		case KeyValueInt:
 			return std::to_string(value_int);
@@ -164,12 +164,12 @@ string Variant::As<string>() const {
 		case KeyValueNull:
 			return "null";
 		case KeyValueComposite:
-			return string();
+			return std::string();
 		case KeyValueTuple: {
 			auto va = getCompositeValues();
 			WrSerializer wrser;
 			va.Dump(wrser);
-			return string(wrser.Slice());
+			return std::string(wrser.Slice());
 		}
 		default:
 			abort();
@@ -177,7 +177,7 @@ string Variant::As<string>() const {
 }
 
 template <>
-string Variant::As<string>(const PayloadType &pt, const FieldsSet &fields) const {
+std::string Variant::As<std::string>(const PayloadType &pt, const FieldsSet &fields) const {
 	switch (type_) {
 		case KeyValueComposite: {
 			ConstPayload pl(pt, operator const PayloadValue &());
@@ -196,11 +196,11 @@ string Variant::As<string>(const PayloadType &pt, const FieldsSet &fields) const
 			}
 			WrSerializer wrser;
 			va.Dump(wrser);
-			return string(wrser.Slice());
+			return std::string(wrser.Slice());
 		}
 
 		default:
-			return As<string>();
+			return As<std::string>();
 	}
 }
 
@@ -391,15 +391,15 @@ int Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) 
 size_t Variant::Hash() const {
 	switch (Type()) {
 		case KeyValueInt:
-			return hash<int>()(value_int);
+			return std::hash<int>()(value_int);
 		case KeyValueBool:
-			return hash<bool>()(value_bool);
+			return std::hash<bool>()(value_bool);
 		case KeyValueInt64:
-			return hash<int64_t>()(value_int64);
+			return std::hash<int64_t>()(value_int64);
 		case KeyValueDouble:
-			return hash<double>()(value_double);
+			return std::hash<double>()(value_double);
 		case KeyValueString:
-			return hash<p_string>()(operator p_string());
+			return std::hash<p_string>()(operator p_string());
 		default:
 #ifdef NDEBUG
 			abort();
@@ -441,7 +441,7 @@ Variant &Variant::convert(KeyValueType type, const PayloadType *payloadType, con
 			*this = Variant(As<double>());
 			break;
 		case KeyValueString:
-			*this = Variant(As<string>());
+			*this = Variant(As<std::string>());
 			break;
 		case KeyValueComposite:
 			if (type_ == KeyValueTuple) {

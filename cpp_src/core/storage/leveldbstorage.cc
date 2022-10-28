@@ -25,7 +25,7 @@ LevelDbStorage::LevelDbStorage() {}
 
 LevelDbStorage::~LevelDbStorage() {}
 
-Error LevelDbStorage::Read(const StorageOpts& opts, std::string_view key, string& value) {
+Error LevelDbStorage::Read(const StorageOpts& opts, std::string_view key, std::string& value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	leveldb::ReadOptions options;
@@ -108,7 +108,7 @@ Cursor* LevelDbStorage::GetCursor(StorageOpts& opts) {
 
 UpdatesCollection* LevelDbStorage::GetUpdatesCollection() { return new LevelDbBatchBuffer(); }
 
-Error LevelDbStorage::doOpen(const string& path, const StorageOpts& opts) {
+Error LevelDbStorage::doOpen(const std::string& path, const StorageOpts& opts) {
 	if (path.empty()) {
 		throw Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
 	}
@@ -129,7 +129,7 @@ Error LevelDbStorage::doOpen(const string& path, const StorageOpts& opts) {
 	return Error(errLogic, status.ToString());
 }
 
-void LevelDbStorage::doDestroy(const string& path) {
+void LevelDbStorage::doDestroy(const std::string& path) {
 	leveldb::Options options;
 	options.create_if_missing = true;
 	db_.reset();

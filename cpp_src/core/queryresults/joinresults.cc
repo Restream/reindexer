@@ -116,7 +116,7 @@ int ItemIterator::getJoinedItemsCount() const {
 	return joinedItemsCount_;
 }
 
-ItemIterator ItemIterator::CreateFrom(QueryResults::Iterator it) {
+ItemIterator ItemIterator::CreateFrom(const QueryResults::Iterator& it) {
 	static NamespaceResults empty;
 	static ItemIterator ret(&empty, 0);
 	auto& itemRef = it.qr_->Items()[it.idx_];

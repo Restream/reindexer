@@ -51,7 +51,7 @@ TEST_F(JoinSelectsApi, JoinsLockWithCache_364) {
 }
 
 TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest2) {
-	string sql =
+	std::string sql =
 		"SELECT * FROM books_namespace WHERE "
 		"(price >= 9540 AND price <= 9550) "
 		"OR (price >= 1000 AND price <= 2000 INNER JOIN (SELECT * FROM authors_namespace WHERE authorid >= 10 AND authorid <= 25)ON "
@@ -72,7 +72,7 @@ TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest2) {
 }
 
 TEST_F(JoinSelectsApi, SqlPasringTest) {
-	string sql =
+	std::string sql =
 		"select * from books_namespace where (pages > 0 and inner join (select * from authors_namespace limit 10) on "
 		"authors_namespace.authorid = "
 		"books_namespace.authorid_fk and price > 1000 or inner join (select * from genres_namespace limit 10) on "
@@ -303,7 +303,7 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 			for (int i = 0; i < joinedFieldIt.ItemsCount(); ++i) {
 				reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(i, joinQueryRes.getPayloadType(1), joinQueryRes.getTagsMatcher(1)));
 				Variant fkey = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(authorid_fk));
-				ASSERT_TRUE(key.Compare(fkey) == 0) << key.As<string>() << " " << fkey.As<string>();
+				ASSERT_TRUE(key.Compare(fkey) == 0) << key.As<std::string>() << " " << fkey.As<std::string>();
 				Variant recentJoinedValue = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(price));
 				ASSERT_TRUE(recentJoinedValue.As<int>() >= 200);
 				if (prevJoinedValue.Type() != KeyValueNull) {
@@ -368,7 +368,7 @@ TEST_F(JoinSelectsApi, JoinTestSelectNonIndexedField) {
 	Item theOnlyItem = qr[0].GetItem(false);
 	VariantArray krefs = theOnlyItem[title];
 	ASSERT_TRUE(krefs.size() == 1);
-	ASSERT_TRUE(krefs[0].As<string>() == "Crime and Punishment");
+	ASSERT_TRUE(krefs[0].As<std::string>() == "Crime and Punishment");
 }
 
 TEST_F(JoinSelectsApi, JoinByNonIndexedField) {
@@ -448,25 +448,25 @@ TEST_F(JoinSelectsApi, JoinsEasyStressTest) {
 
 TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 	using reindexer::JoinedSelector;
-	static const string rightNs = "rightNs";
+	static const std::string rightNs = "rightNs";
 	static constexpr char const* data = "data";
 	static constexpr int maxDataValue = 10;
 	static constexpr int maxRightNsRowCount = maxDataValue * JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization();
 	static constexpr int maxLeftNsRowCount = 10000;
 	static constexpr size_t leftNsCount = 50;
-	static vector<string> leftNs;
+	static std::vector<std::string> leftNs;
 	if (leftNs.empty()) {
 		leftNs.reserve(leftNsCount);
 		for (size_t i = 0; i < leftNsCount; ++i) leftNs.push_back("leftNs" + std::to_string(i));
 	}
 
-	const auto createNs = [this](const string& ns) {
+	const auto createNs = [this](const std::string& ns) {
 		Error err = rt.reindexer->OpenNamespace(ns);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(
 			ns, {IndexDeclaration{id, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{data, "hash", "int", IndexOpts(), 0}});
 	};
-	const auto fill = [this](const string& ns, int startId, int endId) {
+	const auto fill = [this](const std::string& ns, int startId, int endId) {
 		for (int i = startId; i < endId; ++i) {
 			Item item = NewItem(ns);
 			item[id] = i;
@@ -479,7 +479,7 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 	createNs(rightNs);
 	fill(rightNs, 0, maxRightNsRowCount);
 	std::atomic<bool> start{false};
-	vector<std::thread> threads;
+	std::vector<std::thread> threads;
 	threads.reserve(leftNs.size());
 	for (size_t i = 0; i < leftNs.size(); ++i) {
 		createNs(leftNs[i]);
@@ -497,10 +497,10 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 	for (auto& th : threads) th.join();
 }
 
-bool checkForAllowedJsonTags(const vector<string>& tags, gason::JsonValue jsonValue) {
+bool checkForAllowedJsonTags(const std::vector<std::string>& tags, gason::JsonValue jsonValue) {
 	size_t count = 0;
 	for (auto elem : jsonValue) {
-		if (std::find(tags.begin(), tags.end(), string(elem->key)) == tags.end()) {
+		if (std::find(tags.begin(), tags.end(), std::string(elem->key)) == tags.end()) {
 			return false;
 		}
 		++count;
@@ -598,7 +598,7 @@ TEST_F(JoinSelectsApi, TestMergeWithJoins) {
 }
 
 TEST_F(JoinOnConditionsApi, TestGeneralConditions) {
-	const string sqlTemplate =
+	const std::string sqlTemplate =
 		R"(select * from books_namespace inner join books_namespace on (books_namespace.authorid_fk = books_namespace.authorid_fk and books_namespace.pages %s books_namespace.pages);)";
 	std::vector<CondType> conditionsSet = {CondLt, CondLe, CondGt, CondGe, CondEq};
 	for (size_t i = 0; i < conditionsSet.size(); ++i) {

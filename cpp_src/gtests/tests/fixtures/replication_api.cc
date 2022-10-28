@@ -106,7 +106,7 @@ void ReplicationApi::ForceSync() {
 	awaitForceSync.join();
 }
 
-void ReplicationApi::SwitchMaster(size_t id, ReplicationConfigTest::NsSet namespaces) {
+void ReplicationApi::SwitchMaster(size_t id, const ReplicationConfigTest::NsSet& namespaces) {
 	if (id == masterId_) return;
 	masterId_ = id;
 	ReplicationConfigTest config("master", false, true, id);

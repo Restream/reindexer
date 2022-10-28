@@ -7,14 +7,14 @@
 
 TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	QueryResults qr;
-	string strValueToCheck = lastStrValue;
+	std::string strValueToCheck = lastStrValue;
 	Error err = rt.reindexer->Select(Query(default_namespace).Not().Where(kFieldOne, CondEq, strValueToCheck), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	for (size_t i = 0; i < qr.Count(); ++i) {
 		Item item = qr[i].GetItem(false);
 		Variant kr = item[kFieldOne];
 		EXPECT_TRUE(kr.Type() == KeyValueString);
-		EXPECT_TRUE(kr.As<string>() != strValueToCheck);
+		EXPECT_TRUE(kr.As<std::string>() != strValueToCheck);
 	}
 }
 
@@ -35,8 +35,8 @@ TEST_F(BtreeIdsetsApi, SelectByIntField) {
 TEST_F(BtreeIdsetsApi, SelectByBothFields) {
 	QueryResults qr;
 	const int boundaryValue = 50000;
-	const string strValueToCheck = lastStrValue;
-	const string strValueToCheck2 = "reindexer is fast";
+	const std::string strValueToCheck = lastStrValue;
+	const std::string strValueToCheck2 = "reindexer is fast";
 	Error err = rt.reindexer->Select(Query(default_namespace)
 										 .Where(kFieldOne, CondLe, strValueToCheck2)
 										 .Not()
@@ -48,8 +48,8 @@ TEST_F(BtreeIdsetsApi, SelectByBothFields) {
 		Item item = qr[i].GetItem(false);
 		Variant krOne = item[kFieldOne];
 		EXPECT_TRUE(krOne.Type() == KeyValueString);
-		EXPECT_TRUE(strValueToCheck2.compare(krOne.As<string>()) > 0);
-		EXPECT_TRUE(krOne.As<string>() != strValueToCheck);
+		EXPECT_TRUE(strValueToCheck2.compare(krOne.As<std::string>()) > 0);
+		EXPECT_TRUE(krOne.As<std::string>() != strValueToCheck);
 		Variant krTwo = item[kFieldTwo];
 		EXPECT_TRUE(krTwo.Type() == KeyValueInt);
 		EXPECT_TRUE(static_cast<int>(krTwo) >= boundaryValue);
@@ -124,7 +124,7 @@ TEST_F(ReindexerApi, BtreeUnbuiltIndexIteratorsTest) {
 	reindexer::number_map<int64_t, reindexer::Index::KeyEntry> m1;
 	reindexer::number_map<int64_t, reindexer::Index::KeyEntryPlain> m2;
 
-	vector<IdType> ids1, ids2;
+	std::vector<IdType> ids1, ids2;
 	for (size_t i = 0; i < 10000; ++i) {
 		auto it1 = m1.insert({i, reindexer::KeyEntry<reindexer::IdSet>()});
 		for (int i = 0; i < rand() % 100 + 50; ++i) {

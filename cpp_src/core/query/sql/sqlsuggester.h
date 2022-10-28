@@ -21,7 +21,8 @@ public:
 	/// @param pos - pos of cursor in query.
 	/// @param enumNamespaces - functor which enums namespaces to be checked for existing fields.
 	/// @param getSchemaSuggestions - functor which get pointer to namespace's schema
-	std::vector<string> GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchemaSuggestions);
+	std::vector<std::string> GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces,
+											GetSchemaF getSchemaSuggestions);
 
 protected:
 	/// Finds suggestions for token
@@ -32,14 +33,14 @@ protected:
 	void checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data);
 
 	/// Tries to find token value among accepted tokens.
-	bool findInPossibleTokens(int type, const string &v);
+	bool findInPossibleTokens(int type, const std::string &v);
 	/// Tries to find token value among indexes.
-	bool findInPossibleFields(const string &tok);
+	bool findInPossibleFields(const std::string &tok);
 	/// Tries to find among possible namespaces.
-	bool findInPossibleNamespaces(const string &tok);
+	bool findInPossibleNamespaces(const std::string &tok);
 	/// Gets names of indexes that start with 'token'.
-	void getMatchingFieldsNames(const string &token, std::vector<string> &variants);
-	void getMatchingNamespacesNames(const string &token, vector<string> &variants);
+	void getMatchingFieldsNames(const std::string &token, std::vector<std::string> &variants);
+	void getMatchingNamespacesNames(const std::string &token, std::vector<std::string> &variants);
 	EnumNamespacesF enumNamespaces_;
 	GetSchemaF getSchema_;
 };

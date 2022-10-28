@@ -136,7 +136,7 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 	}
 
 	auto qrToSet = [](const BaseApi::QueryResultsType& qr) {
-		std::unordered_set<string> items;
+		std::unordered_set<std::string> items;
 		WrSerializer ser;
 		for (auto& item : qr) {
 			if (item.IsRaw()) {

@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.9.1"
+  version: "3.10.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1686,6 +1686,34 @@ paths:
           $ref: "#/responses/NotFound"
         500:
           $ref: "#/responses/UnexpectedError"
+
+  /allocator/drop_cache:
+    post:
+      tags:
+        - "system"
+      summary: "Try to release free memory back to the operating system for reuse by other applications."
+      operationId: "postAllocatorDropCache"
+      description: "Try to release free memory back to the operating system for reuse. Only for tcmalloc allocator."
+
+  /allocator/info:
+    get:
+      tags:
+        - "system"
+      summary: "Get memory usage information"
+      description: "This operation will return memory usage informatiom from tcmalloc allocator."
+      operationId: "getAllocatorInfo"
+      responses:
+        200:
+          description: "successful operation"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
 
   /db/{database}/namespaces/%23activitystats/items:
     get:

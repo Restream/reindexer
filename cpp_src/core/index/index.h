@@ -56,12 +56,14 @@ public:
 	virtual void Delete(const VariantArray& keys, IdType id, StringsHolder&, bool& clearCache) = 0;
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
-									   BaseFunctionCtx::Ptr ctx, const RdxContext&) = 0;
-	virtual SelectKeyResults SelectKey(const VariantArray& /*keys*/, CondType, Index::SelectOpts, BaseFunctionCtx::Ptr, FtPreselectT&&,
-									   const RdxContext&) {
+									   const BaseFunctionCtx::Ptr&, const RdxContext&) = 0;
+	// NOLINTBEGIN(*-unnecessary-value-param)
+	virtual SelectKeyResults SelectKey(const VariantArray& /*keys*/, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&,
+									   FtPreselectT&&, const RdxContext&) {
 		assertrx(0);
 		abort();
 	}
+	// NOLINTEND(*-unnecessary-value-param)
 	virtual void Commit() = 0;
 	virtual void CommitFulltext() {}
 	virtual void MakeSortOrders(UpdateSortedContext&) {}
@@ -84,12 +86,12 @@ public:
 	KeyValueType KeyType() const { return keyType_; }
 	KeyValueType SelectKeyType() const { return selectKeyType_; }
 	const FieldsSet& Fields() const { return fields_; }
-	const string& Name() const { return name_; }
+	const std::string& Name() const { return name_; }
 	IndexType Type() const { return type_; }
-	const vector<IdType>& SortOrders() const { return sortOrders_; }
+	const std::vector<IdType>& SortOrders() const { return sortOrders_; }
 	const IndexOpts& Opts() const { return opts_; }
 	virtual void SetOpts(const IndexOpts& opts) { opts_ = opts; }
-	virtual void SetFields(const FieldsSet& fields) { fields_ = fields; }
+	virtual void SetFields(FieldsSet&& fields) { fields_ = std::move(fields); }
 	SortType SortId() const { return sortId_; }
 	virtual void SetSortedIdxCount(int sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
 	virtual FtMergeStatuses GetFtMergeStatuses(const RdxContext&) {
@@ -125,9 +127,9 @@ protected:
 	// Index type. Can be one of enum IndexType
 	IndexType type_;
 	// Name of index (usualy name of field).
-	string name_;
+	std::string name_;
 	// Vector or ids, sorted by this index. Available only for ordered indexes
-	vector<IdType> sortOrders_;
+	std::vector<IdType> sortOrders_;
 
 	SortType sortId_ = 0;
 	// Index options

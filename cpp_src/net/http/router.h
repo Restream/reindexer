@@ -282,7 +282,7 @@ protected:
 	};
 
 	struct Route {
-		Route(string path, Handler h) : path_(path), h_(h) {}
+		Route(string path, Handler h) : path_(std::move(path)), h_(std::move(h)) {}
 
 		string path_;
 		Handler h_;

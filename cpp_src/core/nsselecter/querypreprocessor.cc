@@ -6,6 +6,7 @@
 #include "core/nsselecter/selectiteratorcontainer.h"
 #include "core/nsselecter/sortexpression.h"
 #include "core/payload/fieldsset.h"
+#include "core/query/queryentry.h"
 #include "estl/overloaded.h"
 #include "nsselecter.h"
 
@@ -42,13 +43,13 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query,
 
 void QueryPreprocessor::ExcludeFtQuery(const SelectFunction &fnCtx, const RdxContext &rdxCtx) {
 	if (queryEntryAddedByForcedSortOptimization_ || Size() <= 1) return;
-	for (auto it = cbegin(), next = it, end = cend(); it != end; it = next) {
+	for (auto it = begin(), next = it, endIt = end(); it != endIt; it = next) {
 		++next;
 		if (it->HoldsOrReferTo<QueryEntry>() && it->Value<QueryEntry>().idxNo != IndexValueType::SetByJsonPath) {
 			const auto indexNo = it->Value<QueryEntry>().idxNo;
 			auto &index = ns_.indexes_[indexNo];
 			if (!IsFastFullText(index->Type())) continue;
-			if (it->operation != OpAnd || (next != end && next->operation == OpOr) || !index->EnablePreselectBeforeFt()) break;
+			if (it->operation != OpAnd || (next != endIt && next->operation == OpOr) || !index->EnablePreselectBeforeFt()) break;
 			ftPreselect_ = index->FtPreselect(*this, indexNo, fnCtx, rdxCtx);
 			std::visit(overloaded{[&](const FtMergeStatuses &) {
 									  start_ = 0;
@@ -115,6 +116,78 @@ void QueryPreprocessor::checkStrictMode(const std::string &index, int idxNo) con
 	}
 }
 
+void QueryPreprocessor::Reduce(bool isFt) {
+	bool changed;
+	do {
+		changed = LookupQueryIndexes();
+		if (!isFt) changed = SubstituteCompositeIndexes() || changed;
+		changed = removeBrackets() || changed;
+	} while (changed);
+}
+
+bool QueryPreprocessor::removeBrackets() {
+	const size_t startSize = Size();
+	removeBrackets(0, startSize);
+	return startSize != Size();
+}
+
+bool QueryPreprocessor::canRemoveBracket(size_t i) const {
+	if (Size(i) < 2) {
+		throw Error{errParams, "Bracket cannot be empty"};
+	}
+	const size_t next = Next(i);
+	const OpType op = GetOperation(i);
+	if (op != OpAnd && GetOperation(i + 1) != OpAnd) return false;
+	if (next == Next(i + 1)) return true;
+	return op == OpAnd && (next == Size() || GetOperation(next) != OpOr);
+}
+
+size_t QueryPreprocessor::removeBrackets(size_t begin, size_t end) {
+	if (begin != end && GetOperation(begin) == OpOr) {
+		throw Error{errParams, "First condition cannot be with operation OR"};
+	}
+	size_t deleted = 0;
+	for (size_t i = begin; i < end - deleted; i = Next(i)) {
+		if (!IsSubTree(i)) continue;
+		deleted += removeBrackets(i + 1, Next(i));
+		if (canRemoveBracket(i)) {
+			if (const OpType op = GetOperation(i); op != OpAnd) {
+				SetOperation(op, i + 1);
+			}
+			Erase(i, i + 1);
+			++deleted;
+		}
+	}
+	return deleted;
+}
+
+void QueryPreprocessor::InitIndexNumbers() {
+	ExecuteAppropriateForEach(
+		Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse>{},
+		[this](QueryEntry &entry) {
+			if (entry.idxNo == IndexValueType::NotSet) {
+				if (!ns_.getIndexByName(entry.index, entry.idxNo)) {
+					entry.idxNo = IndexValueType::SetByJsonPath;
+				}
+			}
+			checkStrictMode(entry.index, entry.idxNo);
+		},
+		[this](BetweenFieldsQueryEntry &entry) {
+			if (entry.firstIdxNo == IndexValueType::NotSet) {
+				if (!ns_.getIndexByName(entry.firstIndex, entry.firstIdxNo)) {
+					entry.firstIdxNo = IndexValueType::SetByJsonPath;
+				}
+			}
+			checkStrictMode(entry.firstIndex, entry.firstIdxNo);
+			if (entry.secondIdxNo == IndexValueType::NotSet) {
+				if (!ns_.getIndexByName(entry.secondIndex, entry.secondIdxNo)) {
+					entry.secondIdxNo = IndexValueType::SetByJsonPath;
+				}
+			}
+			checkStrictMode(entry.secondIndex, entry.secondIdxNo);
+		});
+}
+
 size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, const size_t srcBegin, const size_t srcEnd) {
 	assertrx(dst <= srcBegin);
 	h_vector<int, maxIndexes> iidx(maxIndexes);
@@ -131,13 +204,6 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, const size_t srcBegin, 
 				return true;
 			},
 			[&](QueryEntry &entry) {
-				if (entry.idxNo == IndexValueType::NotSet) {
-					if (!ns_.getIndexByName(entry.index, entry.idxNo)) {
-						entry.idxNo = IndexValueType::SetByJsonPath;
-					}
-				}
-				checkStrictMode(entry.index, entry.idxNo);
-
 				const bool isIndexField = (entry.idxNo != IndexValueType::SetByJsonPath);
 				if (isIndexField) {
 					// try merge entries with AND opetator
@@ -164,19 +230,7 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, const size_t srcBegin, 
 				if (dst != src) container_[dst] = std::move(container_[src]);
 				return true;
 			},
-			[dst, src, this](BetweenFieldsQueryEntry &entry) {
-				if (entry.firstIdxNo == IndexValueType::NotSet) {
-					if (!ns_.getIndexByName(entry.firstIndex, entry.firstIdxNo)) {
-						entry.firstIdxNo = IndexValueType::SetByJsonPath;
-					}
-				}
-				checkStrictMode(entry.firstIndex, entry.firstIdxNo);
-				if (entry.secondIdxNo == IndexValueType::NotSet) {
-					if (!ns_.getIndexByName(entry.secondIndex, entry.secondIdxNo)) {
-						entry.secondIdxNo = IndexValueType::SetByJsonPath;
-					}
-				}
-				checkStrictMode(entry.secondIndex, entry.secondIdxNo);
+			[dst, src, this](BetweenFieldsQueryEntry &) {
 				if (dst != src) container_[dst] = std::move(container_[src]);
 				return true;
 			},
@@ -437,6 +491,133 @@ void QueryPreprocessor::AddDistinctEntries(const h_vector<Aggregator, 4> &aggreg
 	}
 }
 
+void QueryPreprocessor::fillQueryEntryFromOnCondition(QueryEntry &queryEntry, NamespaceImpl &rightNs, Query joinQuery,
+													  std::string joinIndex, CondType condition, KeyValueType valuesType,
+													  const RdxContext &rdxCtx) {
+	size_t limit;
+	const auto &rNsCfg = rightNs.Config();
+	if (rNsCfg.maxPreselectSize == 0) {
+		limit = std::max<int64_t>(rNsCfg.minPreselectSize, rightNs.ItemsCount() * rNsCfg.maxPreselectPart);
+	} else if (rNsCfg.maxPreselectPart == 0.0) {
+		limit = rNsCfg.maxPreselectSize;
+	} else {
+		limit =
+			std::min(std::max<int64_t>(rNsCfg.minPreselectSize, rightNs.ItemsCount() * rNsCfg.maxPreselectPart), rNsCfg.maxPreselectSize);
+	}
+	joinQuery.count = limit + 2;
+	joinQuery.start = 0;
+	joinQuery.sortingEntries_.clear();
+	joinQuery.forcedSortOrder_.clear();
+	joinQuery.aggregations_.clear();
+	switch (condition) {
+		case CondEq:
+		case CondSet:
+			joinQuery.Distinct(std::move(joinIndex));
+			break;
+		case CondLt:
+		case CondLe:
+			joinQuery.Aggregate(AggMax, {std::move(joinIndex)});
+			break;
+		case CondGt:
+		case CondGe:
+			joinQuery.Aggregate(AggMin, {std::move(joinIndex)});
+			break;
+		default:
+			throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(condition));
+	}
+	SelectCtx ctx{joinQuery, nullptr};
+	QueryResults qr;
+	rightNs.Select(qr, ctx, rdxCtx);
+	if (qr.Count() > limit) return;
+	assertrx(qr.aggregationResults.size() == 1);
+	switch (condition) {
+		case CondEq:
+		case CondSet: {
+			assertrx(qr.aggregationResults[0].type == AggDistinct);
+			queryEntry.values.reserve(qr.aggregationResults[0].distincts.size());
+			assertrx(qr.aggregationResults[0].distinctsFields.size() == 1);
+			const auto field = qr.aggregationResults[0].distinctsFields[0];
+			for (Variant &distValue : qr.aggregationResults[0].distincts) {
+				if (distValue.Type() == KeyValueComposite) {
+					ConstPayload pl(qr.aggregationResults[0].payloadType, distValue.operator const PayloadValue &());
+					VariantArray v;
+					if (field == IndexValueType::SetByJsonPath) {
+						assertrx(qr.aggregationResults[0].distinctsFields.getTagsPathsLength() == 1);
+						pl.GetByJsonPath(qr.aggregationResults[0].distinctsFields.getTagsPath(0), v, valuesType);
+					} else {
+						pl.Get(field, v);
+					}
+					assertrx(v.size() == 1);
+					queryEntry.values.emplace_back(std::move(v[0]));
+				} else {
+					queryEntry.values.emplace_back(std::move(distValue));
+				}
+			}
+			queryEntry.condition = (queryEntry.values.size() == 1) ? CondEq : CondSet;
+			break;
+		}
+		case CondLt:
+		case CondLe:
+		case CondGt:
+		case CondGe:
+			queryEntry.condition = condition;
+			queryEntry.values.emplace_back(qr.aggregationResults[0].value);
+			break;
+		default:
+			throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(condition));
+	}
+}
+
+template <bool byJsonPath>
+void QueryPreprocessor::fillQueryEntryFromOnCondition(QueryEntry &queryEntry, std::string_view joinIndex, CondType condition,
+													  const JoinedSelector &joinedSelector, KeyValueType valuesType, const int rightIdxNo,
+													  const CollateOpts &collate) {
+	JoinPreResult::Values &values = joinedSelector.preResult_->values;
+	switch (condition) {
+		case CondEq:
+		case CondSet: {
+			joinedSelector.readValuesFromPreResult<byJsonPath>(queryEntry.values, valuesType, rightIdxNo, joinIndex);
+			queryEntry.condition = (queryEntry.values.size() == 1) ? CondEq : CondSet;
+			return;
+		}
+		case CondLt:
+		case CondLe:
+		case CondGt:
+		case CondGe: {
+			queryEntry.condition = condition;
+			VariantArray buffer;
+			for (const ItemRef &item : values) {
+				buffer.clear();
+				assertrx(!item.Value().IsFree());
+				const ConstPayload pl{values.payloadType, item.Value()};
+				if constexpr (byJsonPath) {
+					pl.GetByJsonPath(joinIndex, values.tagsMatcher, buffer, valuesType);
+				} else {
+					pl.Get(rightIdxNo, buffer);
+				}
+				for (Variant &v : buffer) {
+					if (queryEntry.values.empty()) {
+						queryEntry.values.emplace_back(std::move(v));
+					} else {
+						const auto cmp = queryEntry.values[0].Compare(v, collate);
+						if (condition == CondLt || condition == CondLe) {
+							if (cmp < 0) {
+								queryEntry.values[0] = std::move(v);
+							}
+						} else {
+							if (cmp > 0) {
+								queryEntry.values[0] = std::move(v);
+							}
+						}
+					}
+				}
+			}
+		} break;
+		default:
+			throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(condition));
+	}
+}
+
 void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &js, const RdxContext &rdxCtx) {
 	for (size_t cur = from; cur < to; cur = Next(cur)) {
 		container_[cur].InvokeAppropriate<void>(
@@ -445,11 +626,15 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 			[&](const JoinQueryEntry &jqe) {
 				assertrx(js.size() > jqe.joinIndex);
 				JoinedSelector &joinedSelector = js[jqe.joinIndex];
-				if (joinedSelector.PreResult()->dataMode == JoinPreResult::ModeValues) return;
-				const auto &rNsCfg = joinedSelector.RightNs()->Config();
-				if (rNsCfg.maxPreselectSize == 0 && rNsCfg.maxPreselectPart == 0.0) return;
+				const bool byValues = joinedSelector.PreResult()->dataMode == JoinPreResult::ModeValues;
+				if (!byValues) {
+					const auto &rNsCfg = joinedSelector.RightNs()->Config();
+					if (rNsCfg.maxPreselectSize == 0 && rNsCfg.maxPreselectPart == 0.0) return;
+				} else {
+					if (!joinedSelector.PreResult()->values.IsPreselectAllowed()) return;
+				}
 				assertrx(joinedSelector.Type() == InnerJoin || joinedSelector.Type() == OrInnerJoin);
-				const auto &joinEntries = joinedSelector.JoinQuery().joinEntries_;
+				const auto &joinEntries = joinedSelector.joinQuery_.joinEntries_;
 				bool foundANDOrOR = false;
 				for (const auto &je : joinEntries) {
 					if (je.op_ != OpNot) {
@@ -468,90 +653,83 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 				EncloseInBracket(cur, cur + 1, op);
 				++cur;
 				size_t count = 0;
-				for (const auto &joinEntry : joinEntries) {
-					if (joinEntry.op_ == OpNot) continue;
-					size_t limit;
-					if (rNsCfg.maxPreselectSize == 0) {
-						limit =
-							std::max<int64_t>(rNsCfg.minPreselectSize, joinedSelector.RightNs()->ItemsCount() * rNsCfg.maxPreselectPart);
-					} else if (rNsCfg.maxPreselectPart == 0.0) {
-						limit = rNsCfg.maxPreselectSize;
-					} else {
-						limit = std::min(
-							std::max<int64_t>(rNsCfg.minPreselectSize, joinedSelector.RightNs()->ItemsCount() * rNsCfg.maxPreselectPart),
-							rNsCfg.maxPreselectSize);
+				bool prevIsSkipped = false;
+				size_t orChainLength = 0;
+				for (size_t i = 0, s = joinEntries.size(); i < s; ++i) {
+					const QueryJoinEntry &joinEntry = joinEntries[i];
+					CondType condition = joinEntry.condition_;
+					OpType operation = joinEntry.op_;
+					switch (operation) {
+						case OpNot:
+							orChainLength = 0;
+							switch (condition) {
+								case CondLt:
+									condition = CondGe;
+									break;
+								case CondLe:
+									condition = CondGt;
+									break;
+								case CondGt:
+									condition = CondLe;
+									break;
+								case CondGe:
+									condition = CondLt;
+									break;
+								case CondEq:
+								case CondSet:
+									prevIsSkipped = true;
+									continue;
+								default:
+									throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(condition));
+							}
+							operation = OpAnd;
+							break;
+						case OpOr:
+							if (prevIsSkipped) continue;
+							++orChainLength;
+							break;
+						case OpAnd:
+							orChainLength = 0;
+							break;
 					}
-					Query query{joinedSelector.JoinQuery()};
-					query.count = limit + 2;
-					query.start = 0;
-					query.sortingEntries_.clear();
-					query.forcedSortOrder_.clear();
-					query.aggregations_.clear();
-					switch (joinEntry.condition_) {
-						case CondEq:
-						case CondSet:
-							query.Distinct(joinEntry.joinIndex_);
-							break;
-						case CondLt:
-						case CondLe:
-							query.Aggregate(AggMax, {joinEntry.joinIndex_});
-							break;
-						case CondGt:
-						case CondGe:
-							query.Aggregate(AggMin, {joinEntry.joinIndex_});
-							break;
-						default:
-							throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(joinEntry.condition_));
-					}
-					SelectCtx ctx{query, nullptr};
-					QueryResults qr;
-					joinedSelector.RightNs()->Select(qr, ctx, rdxCtx);
-					if (qr.Count() > limit) continue;
-					assertrx(qr.aggregationResults.size() == 1);
 					QueryEntry newEntry;
 					newEntry.index = joinEntry.index_;
-					if (!ns_.getIndexByName(newEntry.index, newEntry.idxNo)) {
-						newEntry.idxNo = IndexValueType::SetByJsonPath;
+					newEntry.idxNo = IndexValueType::SetByJsonPath;
+					KeyValueType valuesType = KeyValueUndefined;
+					CollateOpts collate;
+					if (ns_.getIndexByName(newEntry.index, newEntry.idxNo)) {
+						const Index &index = *ns_.indexes_[newEntry.idxNo];
+						valuesType = index.SelectKeyType();
+						collate = index.Opts().collateOpts_;
 					}
-					switch (joinEntry.condition_) {
-						case CondEq:
-						case CondSet: {
-							assertrx(qr.aggregationResults[0].type == AggDistinct);
-							newEntry.condition = CondSet;
-							newEntry.values.reserve(qr.aggregationResults[0].distincts.size());
-							assertrx(qr.aggregationResults[0].distinctsFields.size() == 1);
-							const auto field = qr.aggregationResults[0].distinctsFields[0];
-							for (Variant &distValue : qr.aggregationResults[0].distincts) {
-								if (distValue.Type() == KeyValueComposite) {
-									ConstPayload pl(qr.aggregationResults[0].payloadType, distValue.operator const PayloadValue &());
-									VariantArray v;
-									if (field == IndexValueType::SetByJsonPath) {
-										assertrx(qr.aggregationResults[0].distinctsFields.getTagsPathsLength() == 1);
-										pl.GetByJsonPath(qr.aggregationResults[0].distinctsFields.getTagsPath(0), v, KeyValueUndefined);
-									} else {
-										pl.Get(field, v);
-									}
-									assertrx(v.size() == 1);
-									newEntry.values.emplace_back(std::move(v[0]));
-								} else {
-									newEntry.values.emplace_back(std::move(distValue));
-								}
-							}
-							break;
+					if (byValues) {
+						assertrx(joinedSelector.itemQuery_.entries.HoldsOrReferTo<QueryEntry>(i));
+						const QueryEntry &qe = joinedSelector.itemQuery_.entries.Get<QueryEntry>(i);
+						assertrx(qe.index == joinEntry.joinIndex_);
+						const int rightIdxNo = qe.idxNo;
+						if (rightIdxNo == IndexValueType::SetByJsonPath) {
+							fillQueryEntryFromOnCondition<true>(newEntry, joinEntry.joinIndex_, condition, joinedSelector, valuesType,
+																rightIdxNo, collate);
+						} else {
+							fillQueryEntryFromOnCondition<false>(newEntry, joinEntry.joinIndex_, condition, joinedSelector, valuesType,
+																 rightIdxNo, collate);
 						}
-						case CondLt:
-						case CondLe:
-						case CondGt:
-						case CondGe:
-							newEntry.condition = joinEntry.condition_;
-							newEntry.values.emplace_back(qr.aggregationResults[0].value);
-							break;
-						default:
-							throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(joinEntry.condition_));
+					} else {
+						fillQueryEntryFromOnCondition(newEntry, *joinedSelector.RightNs(), joinedSelector.JoinQuery(), joinEntry.joinIndex_,
+													  condition, valuesType, rdxCtx);
 					}
-					Insert(cur, joinEntry.op_, std::move(newEntry));
-					++cur;
-					++count;
+					if (!newEntry.values.empty()) {
+						Insert(cur, operation, std::move(newEntry));
+						++cur;
+						++count;
+						prevIsSkipped = false;
+					} else {
+						if (operation == OpOr) {
+							Erase(cur - orChainLength, cur);
+							count -= orChainLength;
+						}
+						prevIsSkipped = true;
+					}
 				}
 				if (count > 0) {
 					EncloseInBracket(cur - count, cur, OpAnd);

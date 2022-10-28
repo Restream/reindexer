@@ -9,7 +9,7 @@ FunctionExecutor::FunctionExecutor(NamespaceImpl& ns) : ns_(ns) {}
 
 Variant FunctionExecutor::Execute(SelectFuncStruct& funcData) {
 	if (funcData.funcName == "now") {
-		string mode = "sec";
+		std::string mode = "sec";
 		if (!funcData.funcArgs.empty() && !funcData.funcArgs.front().empty()) {
 			mode = funcData.funcArgs.front();
 		}

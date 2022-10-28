@@ -33,7 +33,7 @@ public:
 	void Reserve(size_t size);
 	size_t Size() const noexcept;
 	bool NeedArea() const noexcept;
-	bool PrepareAreas(const fast_hash_map<std::string, int> &fields, const string &name);
+	bool PrepareAreas(const fast_hash_map<std::string, int> &fields, const std::string &name);
 
 	void SetData(Data::Ptr data);
 	Data::Ptr GetData();

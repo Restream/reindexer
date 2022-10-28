@@ -12,7 +12,7 @@ template <typename KeyEntryT, template <typename, typename, typename, typename, 
 		  size_t MinEntries>
 SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::SelectKey(const VariantArray &keys, CondType condition,
 																					SortType sortId, Index::SelectOpts opts,
-																					BaseFunctionCtx::Ptr funcCtx,
+																					const BaseFunctionCtx::Ptr &funcCtx,
 																					const RdxContext &rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (opts.forceComparator) {
@@ -108,8 +108,8 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
 	assertf(this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s (%s)", this->name_, id,
-			Variant(keys).template As<string>(this->payloadType_, this->fields_),
-			Variant(keyIt->first).As<string>(this->payloadType_, this->fields_));
+			Variant(keys).template As<std::string>(this->payloadType_, this->fields_),
+			Variant(keyIt->first).As<std::string>(this->payloadType_, this->fields_));
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);

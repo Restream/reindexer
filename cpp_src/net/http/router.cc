@@ -109,7 +109,7 @@ int Context::Redirect(std::string_view url) {
 }
 
 static std::string_view lookupContentType(std::string_view path) {
-	auto p = path.find_last_of(".");
+	auto p = path.find_last_of('.');
 	if (p == std::string_view::npos) {
 		return "application/octet-stream"sv;
 	}

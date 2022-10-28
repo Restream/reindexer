@@ -23,11 +23,10 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 		pl.GetByJsonPath(func.tagsPath, kr, KeyValueUndefined);
 	}
 
-	const string *data = p_string(kr[0]).getCxxstr();
+	const std::string *data = p_string(kr[0]).getCxxstr();
 	auto pva = area->GetAreas(func.fieldNo);
 	if (!pva || pva->empty()) return false;
-	int front = 0;
-	int back = data->size();
+	int front, back;
 	try {
 		back = stoi(func.funcArgs[2]);
 	} catch (std::exception &) {
@@ -73,7 +72,7 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 
 	int va_offset = 0;
 
-	string result_string;
+	std::string result_string;
 	result_string.reserve(data->size());
 	int cur_pos = 0;
 	for (auto &area : sva) {

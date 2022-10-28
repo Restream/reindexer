@@ -1089,6 +1089,10 @@ static const struct abbrev *lookup_abbrev(struct abbrevs *abbrevs, uint64_t code
 	/* Otherwise we have to search.  */
 	memset(&key, 0, sizeof key);
 	key.code = code;
+	if (abbrevs->abbrevs == NULL) {
+		error_callback(data, "invalid abbrevs pointer", 0);
+		return NULL;
+	}
 	p = bsearch(&key, abbrevs->abbrevs, abbrevs->num_abbrevs, sizeof(struct abbrev), abbrev_compare);
 	if (p == NULL) {
 		error_callback(data, "invalid abbreviation code", 0);
@@ -1464,7 +1468,7 @@ static int read_line_header(struct backtrace_state *state, struct unit *u, int i
 
 	i = 0;
 	while (*hdr_buf.buf != '\0') {
-		if (hdr_buf.reported_underflow) return 0;
+		if (hdr_buf.reported_underflow || !hdr->dirs_count) return 0;
 
 		hdr->dirs[i] = (const char *)hdr_buf.buf;
 		++i;

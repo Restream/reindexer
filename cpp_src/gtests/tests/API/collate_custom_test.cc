@@ -1,21 +1,19 @@
 #include "collate_custom_mode_api.h"
 #include "core/indexopts.h"
 
-using reindexer::Reindexer;
-
-const vector<string> sourceTable = {u8"Вася",	 u8"Johny",	u8"Mary",	u8"Иван",	 u8"Петр",	u8"Emmarose",
-									u8"Gabriela", u8"Антон",	u8"1й Петр", u8"2й Петр",  u8"3й Петр", u8"Maxwell",
-									u8"Anthony",  u8"1й Павел", u8"Jane",	u8"2й Павел", u8"3й Павел"};
+const std::vector<std::string> sourceTable = {u8"Вася",		u8"Johny",	  u8"Mary",	   u8"Иван",	 u8"Петр",	  u8"Emmarose",
+											  u8"Gabriela", u8"Антон",	  u8"1й Петр", u8"2й Петр",	 u8"3й Петр", u8"Maxwell",
+											  u8"Anthony",	u8"1й Павел", u8"Jane",	   u8"2й Павел", u8"3й Павел"};
 
 // clang-format off
-const vector<string> cyrillicNames = {
+const std::vector<std::string> cyrillicNames = {
     u8"Антон",
     u8"Вася",
     u8"Иван",
     u8"Петр",
 };
 
-const vector<string> numericNames = {
+const std::vector<std::string> numericNames = {
     u8"1й Павел",
     u8"1й Петр",
     u8"2й Павел",
@@ -24,7 +22,7 @@ const vector<string> numericNames = {
     u8"3й Петр",
 };
 
-const vector<string> ansiNames = {
+const std::vector<std::string> ansiNames = {
     u8"Anthony",
     u8"Emmarose",
     u8"Gabriela",
@@ -42,7 +40,7 @@ TEST_F(CollateCustomModeAPI, CollateCustomTest1) {
 	SortByName(qr);
 	PrintQueryResults(default_namespace, qr);
 
-	vector<string> sortedTable;
+	std::vector<std::string> sortedTable;
 	sortedTable.insert(sortedTable.end(), cyrillicNames.begin(), cyrillicNames.end());
 	sortedTable.insert(sortedTable.end(), numericNames.begin(), numericNames.end());
 	sortedTable.insert(sortedTable.end(), ansiNames.begin(), ansiNames.end());
@@ -57,7 +55,7 @@ TEST_F(CollateCustomModeAPI, CollateCustomTest2) {
 	SortByName(qr);
 	PrintQueryResults(default_namespace, qr);
 
-	vector<string> sortedTable;
+	std::vector<std::string> sortedTable;
 	sortedTable.insert(sortedTable.end(), ansiNames.begin(), ansiNames.end());
 	sortedTable.insert(sortedTable.end(), cyrillicNames.begin(), cyrillicNames.end());
 	sortedTable.insert(sortedTable.end(), numericNames.begin(), numericNames.end());
@@ -72,7 +70,7 @@ TEST_F(CollateCustomModeAPI, CollateCustomTest3) {
 	SortByName(qr);
 	PrintQueryResults(default_namespace, qr);
 
-	vector<string> sortedTable;
+	std::vector<std::string> sortedTable;
 	sortedTable.insert(sortedTable.end(), numericNames.begin(), numericNames.end());
 	sortedTable.insert(sortedTable.end(), ansiNames.begin(), ansiNames.end());
 	sortedTable.insert(sortedTable.end(), cyrillicNames.begin(), cyrillicNames.end());
@@ -81,65 +79,65 @@ TEST_F(CollateCustomModeAPI, CollateCustomTest3) {
 }
 
 TEST_F(CollateCustomModeAPI, CollateCustomTest4) {
-	const vector<string> sourceData = {u8"вампир",
-									   u8"Johny",
-									   u8"яблоко",
-									   u8"Carrick Michael",
-									   u8"Валенсия",
-									   u8"Петрозаводск",
-									   u8"jumper",
-									   u8"carry on, please",
-									   u8"петля",
-									   u8"1й Петр",
-									   u8"2й Петр",
-									   u8"электричка",
-									   u8"йод",
-									   u8"3й Петр",
-									   u8"Minnesota Timberwolves",
-									   u8"1й Павел",
-									   u8"mindblowing shit!",
-									   u8"Арсенал Лондон",
-									   u8"Houston Rockets",
-									   u8"ананас",
-									   u8"ёжик",
-									   u8"Ёрохин",
-									   u8"2й Павел",
-									   u8"чоткий парень",
-									   u8"3й Павел",
-									   u8"Элтон Джон",
-									   u8"humble person",
-									   u8"Чебоксары",
-									   u8"Я даже и не знаю, почему это все работает"};
-
-	const vector<string> correctlyOrderedData = {u8"Арсенал Лондон",
-												 u8"ананас",
-												 u8"Валенсия",
-												 u8"вампир",
-												 u8"Петрозаводск",
-												 u8"петля",
-												 u8"Чебоксары",
-												 u8"чоткий парень",
-												 u8"Элтон Джон",
-												 u8"Я даже и не знаю, почему это все работает",
-												 u8"Carrick Michael",
-												 u8"carry on, please",
-												 u8"Houston Rockets",
-												 u8"humble person",
+	const std::vector<std::string> sourceData = {u8"вампир",
 												 u8"Johny",
+												 u8"яблоко",
+												 u8"Carrick Michael",
+												 u8"Валенсия",
+												 u8"Петрозаводск",
 												 u8"jumper",
-												 u8"Minnesota Timberwolves",
-												 u8"mindblowing shit!",
-												 u8"1й Павел",
+												 u8"carry on, please",
+												 u8"петля",
 												 u8"1й Петр",
-												 u8"2й Павел",
 												 u8"2й Петр",
-												 u8"3й Павел",
-												 u8"3й Петр",
-												 u8"Ёрохин",
-												 u8"ёжик",
-												 u8"йод",
 												 u8"электричка",
-												 u8"яблоко"};
+												 u8"йод",
+												 u8"3й Петр",
+												 u8"Minnesota Timberwolves",
+												 u8"1й Павел",
+												 u8"mindblowing shit!",
+												 u8"Арсенал Лондон",
+												 u8"Houston Rockets",
+												 u8"ананас",
+												 u8"ёжик",
+												 u8"Ёрохин",
+												 u8"2й Павел",
+												 u8"чоткий парень",
+												 u8"3й Павел",
+												 u8"Элтон Джон",
+												 u8"humble person",
+												 u8"Чебоксары",
+												 u8"Я даже и не знаю, почему это все работает"};
+
+	const std::vector<std::string> correctlyOrderedData = {u8"Арсенал Лондон",
+														   u8"ананас",
+														   u8"Валенсия",
+														   u8"вампир",
+														   u8"Петрозаводск",
+														   u8"петля",
+														   u8"Чебоксары",
+														   u8"чоткий парень",
+														   u8"Элтон Джон",
+														   u8"Я даже и не знаю, почему это все работает",
+														   u8"Carrick Michael",
+														   u8"carry on, please",
+														   u8"Houston Rockets",
+														   u8"humble person",
+														   u8"Johny",
+														   u8"jumper",
+														   u8"Minnesota Timberwolves",
+														   u8"mindblowing shit!",
+														   u8"1й Павел",
+														   u8"1й Петр",
+														   u8"2й Павел",
+														   u8"2й Петр",
+														   u8"3й Павел",
+														   u8"3й Петр",
+														   u8"Ёрохин",
+														   u8"ёжик",
+														   u8"йод",
+														   u8"электричка",
+														   u8"яблоко"};
 
 	PrepareNs(rt.reindexer, default_namespace,
 			  u8"АаБбВвГгДдЕеЖжЗзИиКкЛлМмНнОоПпРрСсТтУуФфХхЦцЧчШшЩщЪъЫыЬьЭ-ЯAaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0-9ЁёЙйэ-я",

@@ -27,10 +27,10 @@ public:
 		int count = 0;
 		int flags = 0;
 		std::vector<AggregationResult> aggResults;
-		string explainResults;
+		std::string explainResults;
 	};
 
-	void GetRawQueryParams(QueryParams &ret, std::function<void(int nsId)> updatePayloadFunc);
+	void GetRawQueryParams(QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc);
 	ItemParams GetItemParams(int flags);
 };
 }  // namespace client

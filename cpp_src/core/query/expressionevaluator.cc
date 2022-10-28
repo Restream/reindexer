@@ -149,7 +149,7 @@ double ExpressionEvaluator::performSumAndSubtracting(tokenizer& parser, const Pa
 }
 
 VariantArray ExpressionEvaluator::Evaluate(tokenizer& parser, const PayloadValue& v, std::string_view forField) {
-	forField_ = string(forField);
+	forField_ = std::string(forField);
 	double expressionValue = performSumAndSubtracting(parser, v);
 	if (arrayValues_.empty()) {
 		return {Variant(expressionValue)};

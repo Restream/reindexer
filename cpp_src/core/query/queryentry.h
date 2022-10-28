@@ -225,8 +225,8 @@ struct SortingEntries : public h_vector<SortingEntry, 1> {};
 
 struct AggregateEntry {
 	AggregateEntry() = default;
-	AggregateEntry(AggType type, const h_vector<std::string, 1> &fields, unsigned limit = UINT_MAX, unsigned offset = 0)
-		: type_(type), fields_(fields), limit_(limit), offset_(offset) {}
+	AggregateEntry(AggType type, h_vector<std::string, 1> fields, unsigned limit = UINT_MAX, unsigned offset = 0)
+		: type_(type), fields_(std::move(fields)), limit_(limit), offset_(offset) {}
 	bool operator==(const AggregateEntry &) const noexcept;
 	bool operator!=(const AggregateEntry &ae) const noexcept { return !operator==(ae); }
 	AggType type_;

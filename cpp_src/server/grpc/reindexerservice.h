@@ -69,7 +69,7 @@ private:
 	struct TxData {
 		std::shared_ptr<Transaction> tx;
 		std::chrono::time_point<std::chrono::steady_clock> txDeadline;
-		string dbName, nsName;
+		std::string dbName, nsName;
 	};
 
 	static ::grpc::Status buildQueryResults(const reindexer::QueryResults& qr, ::grpc::ServerWriter<QueryResultsResponse>* writer,

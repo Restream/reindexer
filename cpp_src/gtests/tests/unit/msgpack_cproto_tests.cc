@@ -25,7 +25,7 @@ TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
 	EXPECT_EQ(distinct.fields[0], kFieldId);
 	std::unordered_set<int> found;
 	for (size_t i = 0; i < distinct.distincts.size(); ++i) {
-		found.insert(reindexer::stoi(distinct.distincts[i].As<string>(distinct.payloadType, distinct.distinctsFields)));
+		found.insert(reindexer::stoi(distinct.distincts[i].As<std::string>(distinct.payloadType, distinct.distinctsFields)));
 	}
 	ASSERT_EQ(distinct.distincts.size(), found.size());
 
@@ -67,7 +67,7 @@ TEST_F(MsgPackCprotoApi, ModifyItemsTest) {
 	jsonBuilder.Put(kFieldA3, 7777);
 	jsonBuilder.End();
 
-	string itemSrcJson(wrser.Slice());
+	std::string itemSrcJson(wrser.Slice());
 
 	char* endp = nullptr;
 	Error err = item.FromJSON(wrser.Slice(), &endp);
@@ -84,7 +84,7 @@ TEST_F(MsgPackCprotoApi, ModifyItemsTest) {
 	for (auto it : qr) {
 		checkItem(it);
 		reindexer::client::Item item = it.GetItem();
-		ASSERT_TRUE(itemSrcJson == string(item.GetJSON()));
+		ASSERT_TRUE(itemSrcJson == std::string(item.GetJSON()));
 	}
 }
 

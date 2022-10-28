@@ -108,7 +108,7 @@ struct AggregationResult {
 		if (!distincts.empty()) {
 			auto distinctsArray = builder.Array(parametersFields.Distincts(), distincts.size());
 			for (const Variant &v : distincts) {
-				distinctsArray.Put(0, v.As<string>(payloadType, distinctsFields));
+				distinctsArray.Put(0, v.As<std::string>(payloadType, distinctsFields));
 			}
 		}
 

@@ -15,10 +15,10 @@ struct SelectFuncStruct {
 
 	Type type = kSelectFuncNone;
 	bool isFunction;
-	string field;
-	string value;
-	string funcName;
-	vector<string> funcArgs;
+	std::string field;
+	std::string value;
+	std::string funcName;
+	std::vector<std::string> funcArgs;
 	std::shared_ptr<BaseFunctionCtx> ctx;
 	TagsPath tagsPath;
 	int indexNo = -1;

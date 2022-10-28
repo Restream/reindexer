@@ -72,9 +72,9 @@ static const std::unordered_map<IndexType, IndexInfo, std::hash<int>, std::equal
 	return data;
 }
 
-static const std::unordered_map<CollateMode, const string, std::hash<int>, std::equal_to<int>> &availableCollates() {
+static const std::unordered_map<CollateMode, const std::string, std::hash<int>, std::equal_to<int>> &availableCollates() {
 	using namespace std::string_literals;
-	static const std::unordered_map<CollateMode, const string, std::hash<int>, std::equal_to<int>> data{
+	static const std::unordered_map<CollateMode, const std::string, std::hash<int>, std::equal_to<int>> data{
 		{CollateASCII, "ascii"s}, {CollateUTF8, "utf8"s}, {CollateNumeric, "numeric"s}, {CollateCustom, "custom"s}, {CollateNone, "none"s},
 	};
 	return data;
@@ -89,23 +89,29 @@ constexpr char const *kRTreeRStar = "rstar";
 
 namespace reindexer {
 
-IndexDef::IndexDef() {}
-IndexDef::IndexDef(const string &name) : name_(name) {}
+IndexDef::IndexDef(std::string name) : name_(std::move(name)) {}
 
-IndexDef::IndexDef(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts)
-	: name_(name), jsonPaths_(jsonPaths), indexType_(indexType), fieldType_(fieldType), opts_(opts) {}
+IndexDef::IndexDef(std::string name, JsonPaths jsonPaths, std::string indexType, std::string fieldType, IndexOpts opts)
+	: name_(std::move(name)),
+	  jsonPaths_(std::move(jsonPaths)),
+	  indexType_(std::move(indexType)),
+	  fieldType_(std::move(fieldType)),
+	  opts_(std::move(opts)) {}
 
-IndexDef::IndexDef(const string &name, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType, const IndexOpts opts,
-				   int64_t expireAfter)
-	: IndexDef(name, jsonPaths, indexType, fieldType, opts) {
+IndexDef::IndexDef(std::string name, JsonPaths jsonPaths, std::string indexType, std::string fieldType, IndexOpts opts, int64_t expireAfter)
+	: IndexDef(std::move(name), std::move(jsonPaths), std::move(indexType), std::move(fieldType), std::move(opts)) {
 	expireAfter_ = expireAfter;
 }
 
-IndexDef::IndexDef(const string &name, const string &indexType, const string &fieldType, const IndexOpts opts)
-	: name_(name), jsonPaths_({name}), indexType_(indexType), fieldType_(fieldType), opts_(opts) {}
+IndexDef::IndexDef(std::string name, std::string indexType, std::string fieldType, IndexOpts opts)
+	: name_(std::move(name)),
+	  jsonPaths_({name_}),
+	  indexType_(std::move(indexType)),
+	  fieldType_(std::move(fieldType)),
+	  opts_(std::move(opts)) {}
 
-IndexDef::IndexDef(const string &name, const JsonPaths &jsonPaths, const IndexType type, const IndexOpts opts)
-	: name_(name), jsonPaths_(jsonPaths), opts_(opts) {
+IndexDef::IndexDef(std::string name, JsonPaths jsonPaths, IndexType type, IndexOpts opts)
+	: name_(std::move(name)), jsonPaths_(std::move(jsonPaths)), opts_(std::move(opts)) {
 	this->FromType(type);
 }
 
@@ -115,7 +121,7 @@ bool IndexDef::IsEqual(const IndexDef &other, bool skipConfig) const {
 }
 
 IndexType IndexDef::Type() const {
-	string iType = indexType_;
+	std::string iType = indexType_;
 	if (iType == "") {
 		if (fieldType_ == "double") {
 			iType = "tree";
@@ -140,7 +146,7 @@ void IndexDef::FromType(IndexType type) {
 	indexType_ = it.indexType;
 }
 
-const vector<string> &IndexDef::Conditions() const {
+const std::vector<std::string> &IndexDef::Conditions() const {
 	const auto it{availableIndexes().find(Type())};
 	assertrx(it != availableIndexes().cend());
 	return it->second.conditions;
@@ -152,7 +158,7 @@ bool isStore(IndexType type) noexcept {
 	return type == IndexIntStore || type == IndexInt64Store || type == IndexStrStore || type == IndexDoubleStore || type == IndexBool;
 }
 
-string IndexDef::getCollateMode() const { return availableCollates().at(opts_.GetCollateMode()); }
+std::string IndexDef::getCollateMode() const { return availableCollates().at(opts_.GetCollateMode()); }
 
 Error IndexDef::FromJSON(span<char> json) {
 	try {
@@ -166,13 +172,13 @@ Error IndexDef::FromJSON(span<char> json) {
 }
 
 void IndexDef::FromJSON(const gason::JsonNode &root) {
-	name_ = root["name"].As<string>();
+	name_ = root["name"].As<std::string>();
 	jsonPaths_.clear();
 	for (auto &subElem : root["json_paths"]) {
-		jsonPaths_.push_back(subElem.As<string>());
+		jsonPaths_.push_back(subElem.As<std::string>());
 	}
-	fieldType_ = root["field_type"].As<string>();
-	indexType_ = root["index_type"].As<string>();
+	fieldType_ = root["field_type"].As<std::string>();
+	indexType_ = root["index_type"].As<std::string>();
 	expireAfter_ = root["expire_after"].As<int64_t>();
 	opts_.PK(root["is_pk"].As<bool>());
 	opts_.Array(root["is_array"].As<bool>());
@@ -201,12 +207,12 @@ void IndexDef::FromJSON(const gason::JsonNode &root) {
 	auto collateStr = root["collate_mode"].As<std::string_view>();
 	if (!collateStr.empty()) {
 		auto collateIt = find_if(begin(availableCollates()), end(availableCollates()),
-								 [&collateStr](const pair<CollateMode, string> &p) { return collateStr == p.second; });
+								 [&collateStr](const std::pair<CollateMode, std::string> &p) { return collateStr == p.second; });
 		if (collateIt == end(availableCollates())) throw Error(errParams, "Unknown collate mode %s", collateStr);
 		CollateMode collateValue = collateIt->first;
 		opts_.SetCollateMode(collateValue);
 		if (collateValue == CollateCustom) {
-			opts_.collateOpts_ = CollateOpts(root["sort_order_letters"].As<string>());
+			opts_.collateOpts_ = CollateOpts(root["sort_order_letters"].As<std::string>());
 		}
 	}
 }

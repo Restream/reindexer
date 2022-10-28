@@ -24,7 +24,7 @@ protected:
 
 			auto serialNumber = std::to_string(i);
 			auto id = "key" + serialNumber;
-			string name = "name" + serialNumber;
+			std::string name = "name" + serialNumber;
 			snprintf(sourceJson, sizeof(sourceJson) - 1, jsonPattern, id.c_str(), name.c_str(), i);
 
 			Error err = item.FromJSON(sourceJson);
@@ -48,7 +48,7 @@ protected:
 			std::string expectedName = "name" + std::to_string(i);
 			Variant nameVal = ritem[kFieldName];
 			EXPECT_TRUE(nameVal.Type() == KeyValueString);
-			EXPECT_TRUE(nameVal.As<string>() == expectedName);
+			EXPECT_TRUE(nameVal.As<std::string>() == expectedName);
 
 			int64_t expectedSerialNumber = static_cast<int64_t>(i);
 			Variant serialNumberVal = ritem[kFieldSerialNumber];
@@ -65,10 +65,10 @@ protected:
 		Item ritem(qr[0].GetItem(false));
 		Variant nameVal = ritem[kFieldName];
 		EXPECT_TRUE(nameVal.Type() == KeyValueString);
-		EXPECT_TRUE(nameVal.As<string>() == "name5");
+		EXPECT_TRUE(nameVal.As<std::string>() == "name5");
 
 		QueryResults qr2;
-		const string toCompare("name2");
+		const std::string toCompare("name2");
 		err = rt.reindexer->Select(Query(default_namespace).Where(kFieldName, CondLt, Variant(toCompare)), qr2);
 		EXPECT_TRUE(err.ok()) << err.what();
 
@@ -76,7 +76,7 @@ protected:
 			Item ritem(it.GetItem(false));
 			Variant nameVal = ritem[kFieldName];
 			EXPECT_TRUE(nameVal.Type() == KeyValueString);
-			EXPECT_TRUE(nameVal.As<string>().compare(toCompare) < 0);
+			EXPECT_TRUE(nameVal.As<std::string>().compare(toCompare) < 0);
 		}
 	}
 

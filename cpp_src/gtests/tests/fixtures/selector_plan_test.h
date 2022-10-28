@@ -66,7 +66,10 @@ public:
 		ASSERT_EQ(pos, std::string::npos) << str << ": Field '" << fieldName << "' found";
 	}
 
-	int RandInt() const { return rand() % (kNsSize / 100); }
+	int RandInt() const {
+		static_assert(kNsSize > 100, "Division by zero");
+		return rand() % (kNsSize / 100);
+	}
 
 	const char* const btreeNs = "selector_plan_with_index_sort_optimization_ns";
 	const char* const unbuiltBtreeNs = "selector_plan_with_unbuilt_index_sort_optimization_ns";
@@ -74,7 +77,7 @@ public:
 	const char* const kFieldTree1 = "data_tree_1";
 	const char* const kFieldTree2 = "data_tree_2";
 	const char* const kFieldHash = "data_hash";
-	const int kNsSize = 1000;
+	constexpr static int kNsSize = 1000;
 
 private:
 	static std::string::size_type findField(const std::string& str, const char* fieldName, std::string::size_type pos) {

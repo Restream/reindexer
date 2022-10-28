@@ -150,7 +150,7 @@ protected:
 	void packValue(int64_t arg) { msgpack_pack_int64(&packer_, arg); }
 	void packValue(double arg) { msgpack_pack_double(&packer_, arg); }
 
-	void packValue(const string &arg) {
+	void packValue(const std::string &arg) {
 		msgpack_pack_str(&packer_, arg.size());
 		msgpack_pack_str_body(&packer_, arg.data(), arg.length());
 	}
@@ -182,7 +182,12 @@ protected:
 		if (tagName != 0 && !isArray()) packValue(tm_->tag2name(tagName));
 	}
 
-	int getTagSize() { return (*tagsLengths_)[(*tagIndex_)++]; }
+	int getTagSize() {
+		if (tagsLengths_) {
+			return (*tagsLengths_)[(*tagIndex_)++];
+		}
+		throw Error(errLogic, "Tags length is not initialized");
+	}
 
 	void skipTag() {
 		if (tagsLengths_) ++(*tagIndex_);

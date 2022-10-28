@@ -100,7 +100,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
 	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s", this->name_, id,
-			key.As<string>());
+			key.As<std::string>());
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
@@ -190,7 +190,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl, bool inTra
 	if (GetConfig()->logLevel >= LogInfo) {
 		logPrintf(LogInfo, "Total merge out: %d ids", mergedIds->size());
 
-		string str;
+		std::string str;
 		for (size_t i = 0; i < fctx->GetSize();) {
 			size_t j = i;
 			for (; j < fctx->GetSize() && fctx->Proc(i) == fctx->Proc(j); j++)
@@ -286,7 +286,7 @@ void FastIndexText<T>::buildVdocs(Container &data) {
 		vdocsTexts.emplace_back(gt.getDocFields(doc->first, bufStrs));
 
 #ifdef REINDEX_FT_EXTRA_DEBUG
-		string text(vdocsTexts.back()[0].first);
+		std::string text(vdocsTexts.back()[0].first);
 		vdocs.push_back({(text.length() > 48) ? text.substr(0, 48) + "..." : text, doc->second.get(), {}, {}});
 #else
 		vdocs.push_back({doc->second.get(), {}, {}});

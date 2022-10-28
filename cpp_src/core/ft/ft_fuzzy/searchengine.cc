@@ -15,10 +15,10 @@ SearchEngine::SearchEngine() {
 	holder_ = std::make_shared<BaseHolder>();
 	commited_ = false;
 }
-void SearchEngine::SetConfig(const unique_ptr<FtFuzzyConfig>& cfg) { holder_->SetConfig(cfg); }
+void SearchEngine::SetConfig(const std::unique_ptr<FtFuzzyConfig>& cfg) { holder_->SetConfig(cfg); }
 
 void SearchEngine::Rebuild() { holder_.reset(new BaseHolder); }
-void SearchEngine::AddData(std::string_view src_data, const IdType id, int field, const string& extraWordSymbols) {
+void SearchEngine::AddData(std::string_view src_data, const IdType id, int field, const std::string& extraWordSymbols) {
 	if (commited_) {
 		commited_ = false;
 		holder_->Clear();

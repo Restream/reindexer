@@ -2,10 +2,11 @@
 #include "core/cjson/jsonbuilder.h"
 #include "tools/fsops.h"
 #include "tools/stringstools.h"
+#include "yaml-cpp/yaml.h"
 
 void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLogin) {
 	dsn_ = addr;
-	serverThread_.reset(new std::thread([this, addr, errOnLogin]() {
+	serverThread_.reset(new std::thread([this, addr, errOnLogin = std::move(errOnLogin)]() {
 		server_.reset(new RPCServerFake(conf_));
 		stop_.set(loop_);
 		stop_.set([&](ev::async& sig) { sig.loop.break_loop(); });
@@ -44,7 +45,7 @@ void RPCClientTestApi::TestServer::Stop() {
 }
 
 void RPCClientTestApi::StartDefaultRealServer() {
-	const std::string dbPath = string(kDbPrefix) + "/" + kDefaultRPCPort;
+	const std::string dbPath = std::string(kDbPrefix) + "/" + kDefaultRPCPort;
 	reindexer::fs::RmDirAll(dbPath);
 	AddRealServer(dbPath);
 	StartServer();
@@ -58,21 +59,16 @@ RPCClientTestApi::TestServer& RPCClientTestApi::AddFakeServer(const std::string&
 void RPCClientTestApi::AddRealServer(const std::string& dbPath, const std::string& addr, uint16_t httpPort) {
 	auto res = realServers_.emplace(addr, ServerData());
 	ASSERT_TRUE(res.second);
-	// clang-format off
-	std::string yaml =
-			"storage:\n"
-			"    path:" + dbPath  +"\n"
-			"metrics:\n"
-			"   clientsstats: true\n"
-			"logger:\n"
-			"   loglevel: none\n"
-			"   rpclog: \n"
-			"   serverlog: \n"
-			"net:\n"
-			"   rpcaddr: " + addr + "\n"
-			"   httpaddr: 0.0.0.0:" + std::to_string(httpPort);
-	// clang-format on
-	Error err = res.first->second.server->InitFromYAML(yaml);
+	YAML::Node y;
+	y["storage"]["path"] = dbPath;
+	y["metrics"]["clientsstats"] = true;
+	y["logger"]["loglevel"] = "none";
+	y["logger"]["rpclog"] = "none";
+	y["logger"]["serverlog"] = "none";
+	y["net"]["httpaddr"] = "0.0.0.0:" + std::to_string(httpPort);
+	y["net"]["rpcaddr"] = addr;
+
+	Error err = res.first->second.server->InitFromYAML(YAML::Dump(y));
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
@@ -80,7 +76,7 @@ void RPCClientTestApi::StartServer(const std::string& addr, Error errOnLogin) {
 	{
 		auto it = fakeServers_.find(addr);
 		if (it != fakeServers_.end()) {
-			it->second->Start(addr, errOnLogin);
+			it->second->Start(addr, std::move(errOnLogin));
 			return;
 		}
 	}
@@ -218,7 +214,7 @@ void RPCClientTestApi::UpdatesReciever::OnWALUpdate(LSNPair, std::string_view ns
 	if (found != updatesCounters_.end()) {
 		++(found->second);
 	} else {
-		updatesCounters_.emplace(string(nsName), 1);
+		updatesCounters_.emplace(std::string(nsName), 1);
 	}
 }
 

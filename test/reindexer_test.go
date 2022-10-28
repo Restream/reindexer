@@ -63,6 +63,13 @@ func TestMain(m *testing.M) {
 		}
 	}
 
+	if err = DB.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
+		Type:      "profiling",
+		Profiling: &reindexer.DBProfilingConfig{QueriesThresholdUS: 10, MemStats: true, PerfStats: true, QueriesPerfStats: true, ActivityStats: true},
+	}); err != nil {
+		panic(err)
+	}
+
 	retCode := m.Run()
 
 	DB.Close()

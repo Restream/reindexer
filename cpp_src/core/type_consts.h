@@ -121,6 +121,16 @@ enum ErrorCode {
 	errParseMsgPack = 24,
 	errParseProtobuf = 25,
 	errUpdatesLost = 26,
+	errWrongReplicationData = 27,
+	errUpdateReplication = 28,
+	errClusterConsensus = 29,
+	errTerminated = 30,
+	errTxDoesNotExist = 31,
+	errAlreadyConnected = 32,
+	errTxInvalidLeader = 33,
+	errAlreadyProxied = 34,
+	errStrictMode = 35,
+	errQrUIDMissmatch = 36,
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };

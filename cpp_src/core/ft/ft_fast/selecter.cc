@@ -30,12 +30,12 @@ const int kTypoStepProc = 15;
 const int kStemProcDecrease = 15;
 
 template <typename IdCont>
-void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry> &variants, size_t termIdx, const std::vector<string> &langs,
+void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry> &variants, size_t termIdx, const std::vector<std::string> &langs,
 									   const FtDSLQuery &dsl, std::vector<SynonymsDsl> *synonymsDsl) {
 	const FtDSLEntry &term = dsl[termIdx];
 	variants.clear();
 
-	vector<pair<std::wstring, int>> variantsUtf16{{term.pattern, kFullMatchProc}};
+	std::vector<std::pair<std::wstring, int>> variantsUtf16{{term.pattern, kFullMatchProc}};
 
 	if (synonymsDsl && (!holder_.cfg_->enableNumbersSearch || !term.opts.number)) {
 		// Make translit and kblayout variants
@@ -53,7 +53,7 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry> &variants, si
 	}
 
 	// Apply stemmers
-	string tmpstr, stemstr;
+	std::string tmpstr, stemstr;
 	for (auto &v : variantsUtf16) {
 		utf16_to_utf8(v.first, tmpstr);
 		if (tmpstr.empty()) continue;
@@ -197,7 +197,7 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext &ctx, typename DataHo
 		}
 
 		uint32_t suffixWordId = holder_.GetSuffixWordId(glbwordId, step);
-		const string::value_type *word = suffixes.word_at(suffixWordId);
+		const std::string::value_type *word = suffixes.word_at(suffixWordId);
 
 		int16_t wordLength = suffixes.word_len_at(suffixWordId);
 
@@ -317,8 +317,8 @@ void Selecter<IdCont>::debugMergeStep(const char *msg, int vid, float normBm25, 
 
 template <typename IdCont>
 void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t rawResIndex, FtMergeStatuses::Statuses &mergeStatuses,
-									  vector<IDataHolder::MergeInfo> &merged, vector<MergedIdRel> &merged_rd,
-									  std::vector<int16_t> &idoffsets, vector<bool> &curExists, const bool hasBeenAnd,
+									  std::vector<IDataHolder::MergeInfo> &merged, std::vector<MergedIdRel> &merged_rd,
+									  std::vector<int16_t> &idoffsets, std::vector<bool> &curExists, const bool hasBeenAnd,
 									  const bool inTransaction, const RdxContext &rdxCtx) {
 	const auto &vdocs = holder_.vdocs_;
 
@@ -507,7 +507,7 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 }
 
 template <typename IdCont>
-typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(vector<TextSearchResults> &rawResults,
+typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults> &rawResults,
 															   const std::vector<size_t> &synonymsBounds, bool inTransaction,
 															   FtMergeStatuses::Statuses mergeStatuses, const RdxContext &rdxCtx) {
 	const auto &vdocs = holder_.vdocs_;

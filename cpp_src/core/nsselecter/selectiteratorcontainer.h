@@ -33,7 +33,7 @@ class SelectIteratorContainer
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr)
-		: pt_(pt), ctx_(ctx), maxIterations_(std::numeric_limits<int>::max()), wasZeroIterations_(false) {}
+		: pt_(std::move(pt)), ctx_(ctx), maxIterations_(std::numeric_limits<int>::max()), wasZeroIterations_(false) {}
 
 	void SortByCost(int expectedIterations);
 	bool HasIdsets() const;
@@ -54,7 +54,7 @@ public:
 		assertrx(i < container_.size());
 		return container_[i].HoldsOrReferTo<JoinSelectIterator>();
 	}
-	void ExplainJSON(int iters, JsonBuilder &builder, const vector<JoinedSelector> *js) const {
+	void ExplainJSON(int iters, JsonBuilder &builder, const std::vector<JoinedSelector> *js) const {
 		explainJSON(cbegin(), cend(), iters, builder, js);
 	}
 
@@ -82,7 +82,8 @@ private:
 	template <bool reverse, bool hasComparators>
 	bool checkIfSatisfyAllConditions(iterator begin, iterator end, PayloadValue &, bool *finish, IdType rowId, IdType properRowId,
 									 bool match);
-	static std::string explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder &builder, const vector<JoinedSelector> *);
+	static std::string explainJSON(const_iterator it, const_iterator to, int iters, JsonBuilder &builder,
+								   const std::vector<JoinedSelector> *);
 	template <bool reverse>
 	static IdType next(const_iterator, IdType from);
 	template <bool reverse>

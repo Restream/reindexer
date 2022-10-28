@@ -12,7 +12,6 @@
 #include "tools/serializer.h"
 
 using namespace reindexer_server;
-using std::shared_ptr;
 
 // for now in default serve 0  always master - other slave - inited in ReplicationApi::SetUp
 const size_t kDefaultServerCount = 4;
@@ -40,11 +39,11 @@ public:
 	// get server
 	ServerControl::Interface::Ptr GetSrv(size_t id);
 	// wait sync for ns
-	void WaitSync(const std::string &ns);
+	void WaitSync(const std::string& ns);
 	// force resync
 	void ForceSync();
 	// Switch master
-	void SwitchMaster(size_t id, ReplicationConfigTest::NsSet namespaces);
+	void SwitchMaster(size_t id, const ReplicationConfigTest::NsSet& namespaces);
 	// Set WAL size
 	void SetWALSize(size_t id, int64_t size, std::string_view nsName);
 	// Get servers count
@@ -56,6 +55,6 @@ public:
 	shared_timed_mutex restartMutex_;
 
 private:
-	vector<ServerControl> svc_;
+	std::vector<ServerControl> svc_;
 	mutable std::mutex m_;
 };

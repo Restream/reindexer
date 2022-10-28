@@ -56,7 +56,7 @@
 
 #define CHECK_SUCCESS(expr)              \
 	{                                    \
-		Error e = expr;                  \
+		const Error& e = expr;           \
 		ASSERT_TRUE(e.ok()) << e.what(); \
 	}
 

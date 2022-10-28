@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1020,7 +1021,7 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		Where("age_limit", reindexer.RANGE, []int64{40, 45}).
 		Or().Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).
 		Not().OpenBracket().
-		Or().OpenBracket().
+		OpenBracket().
 		OpenBracket().
 		Where("age", reindexer.SET, []int{1, 2, 3, 4}).
 		Or().Where("id", reindexer.EQ, mkID(rand.Int()%5000)).
@@ -1028,7 +1029,8 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		CloseBracket().
 		Or().OpenBracket().
 		Where("tmp", reindexer.EQ, ""). // composite pk with store index
-		Not().Where("isdeleted", reindexer.EQ, true).Or().Where("year", reindexer.GT, 2001).Debug(reindexer.TRACE).
+		Not().Where("isdeleted", reindexer.EQ, true).
+		Or().Where("year", reindexer.GT, 2001).
 		CloseBracket().
 		CloseBracket().
 		CloseBracket().
@@ -1839,6 +1841,43 @@ func TestQrIdleTimeout(t *testing.T) {
 	namespace := "test_items_qr_idle"
 	FillTestItemsWithFunc(namespace, 0, 4000, 0, newTestItem)
 
+	t.Run("check if qr wil be correctly reused after connections drop", func(t *testing.T) {
+		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1))
+		err := db.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItem{})
+		require.NoError(t, err)
+		const qrCount = 32
+		const fetchCount = 400
+		qrs := make([]*reindexer.Iterator, 0, 5*qrCount)
+
+		for i := 0; i < qrCount; i++ {
+			it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()
+			assert.NoError(t, it.Error())
+			qrs = append(qrs, it)
+		}
+
+		// Await qrs expiration
+		time.Sleep(time.Second * 25)
+
+		// Drop connection without QRs close
+		db.Close()
+		db = reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1))
+		err = db.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItem{})
+		require.NoError(t, err)
+
+		// Create 4x more QRs, than were previously created
+		for i := qrCount; i < 5*qrCount; i++ {
+			it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()
+			assert.NoError(t, it.Error())
+			qrs = append(qrs, it)
+		}
+
+		// Get data
+		for i := qrCount; i < 5*qrCount; i++ {
+			_, err = qrs[i].FetchAll()
+			assert.NoError(t, err, "i = %d", i)
+		}
+	})
+
 	t.Run("concurrent query results timeouts", func(t *testing.T) {
 		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(16))
 		defer db.Close()
@@ -1864,6 +1903,29 @@ func TestQrIdleTimeout(t *testing.T) {
 				}
 			}()
 		}
+
+		var wgExtras sync.WaitGroup
+		wgExtras.Add(4)
+		var stop int32 = 0
+		for i := 0; i < 4; i++ {
+			go func(mult int) {
+				defer wgExtras.Done()
+				counter := 0
+				for s := atomic.LoadInt32(&stop); s == 0; s = atomic.LoadInt32(&stop) {
+					counter++
+					it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * mult).Exec()
+					assert.NoError(t, it.Error())
+					for it.Next() {
+						assert.NoError(t, it.Error())
+						if counter%100 == 0 {
+							time.Sleep(2 * time.Millisecond)
+						}
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+			}(i)
+		}
+
 		wg.Wait()
 
 		it := db.Query(namespace).FetchCount(fetchCount).Exec()
@@ -1884,6 +1946,9 @@ func TestQrIdleTimeout(t *testing.T) {
 			_, err = qrs[i].FetchAll()
 			assert.Error(t, err, "i = %d", i)
 		}
+
+		atomic.AddInt32(&stop, 1)
+		wgExtras.Wait()
 	})
 
 	t.Run("check if timed out query results will be reused after clients qr buffer overflow", func(t *testing.T) {
@@ -1917,6 +1982,17 @@ func TestQrIdleTimeout(t *testing.T) {
 		for i := 0; i < 2*qrCount; i++ {
 			_, err = qrs[i].FetchAll()
 			assert.Error(t, err, "i = %d", i)
+		}
+
+		// Trying to create new QRs after connection drop
+		for i := 0; i < qrCount; i++ {
+			it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()
+			assert.NoError(t, it.Error())
+			qrs[i] = it
+		}
+		for i := 0; i < qrCount; i++ {
+			_, err = qrs[i].FetchAll()
+			assert.NoError(t, err, "i = %d", i)
 		}
 	})
 }

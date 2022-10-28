@@ -20,31 +20,37 @@ public:
 	using PCollectable = prometheus::Collectable;
 
 	void Attach(http::Router &router);
-	void RegisterQPS(const string &db, const string &ns, std::string_view queryType, size_t qps) {
+	void RegisterQPS(const std::string &db, const std::string &ns, std::string_view queryType, size_t qps) {
 		setMetricValue(qps_, qps, currentEpoch_, db, ns, queryType);
 	}
-	void RegisterLatency(const string &db, const string &ns, std::string_view queryType, size_t latencyUS) {
+	void RegisterLatency(const std::string &db, const std::string &ns, std::string_view queryType, size_t latencyUS) {
 		setMetricValue(latency_, static_cast<double>(latencyUS) / 1e6, currentEpoch_, db, ns, queryType);
 	}
-	void RegisterCachesSize(const string &db, const string &ns, size_t size) { setMetricValue(caches_, size, currentEpoch_, db, ns); }
-	void RegisterIndexesSize(const string &db, const string &ns, size_t size) { setMetricValue(indexes_, size, currentEpoch_, db, ns); }
-	void RegisterDataSize(const string &db, const string &ns, size_t size) { setMetricValue(data_, size, currentEpoch_, db, ns); }
-	void RegisterItemsCount(const string &db, const string &ns, size_t count) { setMetricValue(itemsCount_, count, currentEpoch_, db, ns); }
+	void RegisterCachesSize(const std::string &db, const std::string &ns, size_t size) {
+		setMetricValue(caches_, size, currentEpoch_, db, ns);
+	}
+	void RegisterIndexesSize(const std::string &db, const std::string &ns, size_t size) {
+		setMetricValue(indexes_, size, currentEpoch_, db, ns);
+	}
+	void RegisterDataSize(const std::string &db, const std::string &ns, size_t size) { setMetricValue(data_, size, currentEpoch_, db, ns); }
+	void RegisterItemsCount(const std::string &db, const std::string &ns, size_t count) {
+		setMetricValue(itemsCount_, count, currentEpoch_, db, ns);
+	}
 	void RegisterAllocatedMemory(size_t memoryConsumationBytes) { setMetricValue(memory_, memoryConsumationBytes, prometheus::kNoEpoch); }
-	void RegisterRPCClients(const string &db, size_t count) { setMetricValue(rpcClients_, count, currentEpoch_, db); }
-	void RegisterInputTraffic(const string &db, std::string_view type, size_t bytes) {
+	void RegisterRPCClients(const std::string &db, size_t count) { setMetricValue(rpcClients_, count, currentEpoch_, db); }
+	void RegisterInputTraffic(const std::string &db, std::string_view type, size_t bytes) {
 		setMetricValue(inputTraffic_, bytes, prometheus::kNoEpoch, db, type);
 	}
-	void RegisterOutputTraffic(const string &db, std::string_view type, size_t bytes) {
+	void RegisterOutputTraffic(const std::string &db, std::string_view type, size_t bytes) {
 		setMetricValue(outputTraffic_, bytes, prometheus::kNoEpoch, db, type);
 	}
 
 	void NextEpoch();
 
 private:
-	static void setMetricValue(PFamily<PGauge> *metricFamily, double value, int64_t epoch, const string &db = "", const string &ns = "",
-							   std::string_view queryType = "");
-	static void setMetricValue(PFamily<PGauge> *metricFamily, double value, int64_t epoch, const string &db, std::string_view type);
+	static void setMetricValue(PFamily<PGauge> *metricFamily, double value, int64_t epoch, const std::string &db = "",
+							   const std::string &ns = "", std::string_view queryType = "");
+	static void setMetricValue(PFamily<PGauge> *metricFamily, double value, int64_t epoch, const std::string &db, std::string_view type);
 	void fillRxInfo();
 	int collect(http::Context &ctx);
 

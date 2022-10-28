@@ -8,20 +8,20 @@
 #include "schema.pb.h"
 
 const int64_t KIdValue = 13;
-const string kNameValue = "John White Snow";
+const std::string kNameValue = "John White Snow";
 const int64_t kAgeValue = 21;
-const string kEmailValue = "john_white_as_hell@mail.ru";
+const std::string kEmailValue = "john_white_as_hell@mail.ru";
 const int64_t kWeightValue = 95;
-const string kNumberValue = "8-800-2000-600";
+const std::string kNumberValue = "8-800-2000-600";
 const int64_t kTypeValue = 1;
-const string kCityValue = "Mapletown";
-const string kStreetValue = "Miracle Street, ";
-const string kPostalCodeValue = "9745 123 ";
+const std::string kCityValue = "Mapletown";
+const std::string kStreetValue = "Miracle Street, ";
+const std::string kPostalCodeValue = "9745 123 ";
 const double kSalaryValue = 11238761238768.232342342;
 
 TEST_F(ReindexerApi, ProtobufConvesrionTest) {
 	// clang-froamt off
-	const string schema = R"z({
+	const std::string schema = R"z({
                             "type": "object",
                             "required": [
                               "id",
@@ -52,7 +52,7 @@ TEST_F(ReindexerApi, ProtobufConvesrionTest) {
 	err = rt.reindexer->GetSchema(nsName, ProtobufSchemaType, protobufSchema);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	vector<double> numbers;
+	std::vector<double> numbers;
 
 	reindexer::WrSerializer wrser;
 	reindexer::JsonBuilder jsonBuilder(wrser);
@@ -88,7 +88,7 @@ TEST_F(ReindexerApi, ProtobufConvesrionTest) {
 
 TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 	// clang-froamt off
-	const string schema = R"z(
+	const std::string schema = R"z(
                                {
                                    "type": "object",
                                    "required": [
@@ -135,8 +135,8 @@ TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
 	err = rt.reindexer->GetSchema(default_namespace, ProtobufSchemaType, protobufSchema);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	vector<int> numVals;
-	vector<string> stringVals;
+	std::vector<int> numVals;
+	std::vector<std::string> stringVals;
 
 	reindexer::WrSerializer wrser;
 	reindexer::JsonBuilder jsonBuilder(wrser);
@@ -431,7 +431,7 @@ TEST_F(ReindexerApi, ProtobufEncodingTest) {
 		home->set_street(kStreetValue + std::to_string(j));
 	}
 	for (size_t i = 0; i < 20; ++i) {
-		string* postalCodeItem = address->add_postalcodes();
+		std::string* postalCodeItem = address->add_postalcodes();
 		*postalCodeItem = kPostalCodeValue + std::to_string(i);
 	}
 	for (size_t i = 0; i < 5; ++i) {
@@ -552,7 +552,7 @@ TEST_F(ReindexerApi, ProtobufEncodingTest) {
 
 TEST_F(ReindexerApi, ProtobufDecodingTest) {
 	// clang-format off
-    const string jsonSchema = R"xxx(
+    const std::string jsonSchema = R"xxx(
                           {
                             "required": [
                               "name",
@@ -748,10 +748,10 @@ TEST_F(ReindexerApi, ProtobufDecodingTest) {
 	}
 	indexedPackedDouble.End();
 
-	vector<string> strings;
+	std::vector<std::string> strings;
 	auto indexedUnpackedDouble = builder.ArrayNotPacked(nsItem.GetFieldTag("indexedUnpackedDouble"));
 	for (int i = 0; i < 10; ++i) {
-		strings.emplace_back(string("BIG_DATA") + std::to_string(i + 1));
+		strings.emplace_back(std::string("BIG_DATA") + std::to_string(i + 1));
 		indexedUnpackedDouble.Put(0, strings.back());
 	}
 	indexedUnpackedDouble.End();

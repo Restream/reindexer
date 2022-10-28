@@ -16,7 +16,7 @@ using args::Options;
 
 static int llevel;
 
-static void InstallLogLevel(const vector<string>& args) {
+static void InstallLogLevel(const std::vector<std::string>& args) {
 	try {
 		llevel = stoi(args.back());
 		if ((llevel < 1) || (llevel > 5)) {
@@ -46,29 +46,30 @@ int main(int argc, char* argv[]) {
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});
 
 	args::Group progOptions("options");
-	args::ValueFlag<string> dbDsn(progOptions, "DSN", "DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>' or 'builtin://<path>'",
-								  {'d', "dsn"}, "", Options::Single | Options::Global);
-	args::ValueFlag<string> fileName(progOptions, "FILENAME", "execute commands from file, then exit", {'f', "filename"}, "",
-									 Options::Single | Options::Global);
-	args::ValueFlag<string> command(progOptions, "COMMAND", "run only single command (SQL or internal) and exit'", {'c', "command"}, "",
-									Options::Single | Options::Global);
-	args::ValueFlag<string> outFileName(progOptions, "FILENAME", "send query results to file", {'o', "output"}, "",
-										Options::Single | Options::Global);
+	args::ValueFlag<std::string> dbDsn(progOptions, "DSN",
+									   "DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>' or 'builtin://<path>'", {'d', "dsn"}, "",
+									   Options::Single | Options::Global);
+	args::ValueFlag<std::string> fileName(progOptions, "FILENAME", "execute commands from file, then exit", {'f', "filename"}, "",
+										  Options::Single | Options::Global);
+	args::ValueFlag<std::string> command(progOptions, "COMMAND", "run only single command (SQL or internal) and exit'", {'c', "command"},
+										 "", Options::Single | Options::Global);
+	args::ValueFlag<std::string> outFileName(progOptions, "FILENAME", "send query results to file", {'o', "output"}, "",
+											 Options::Single | Options::Global);
 
 	args::ValueFlag<int> connThreads(progOptions, "INT", "Number of threads(connections) used by db connector", {'t', "threads"}, 1,
 									 Options::Single | Options::Global);
 
 	args::Flag createDBF(progOptions, "", "Enable created database if missed", {"createdb"});
 
-	args::Positional<string> dbName(progOptions, "DB name", "Name of a database to get connected to", Options::Single);
+	args::Positional<std::string> dbName(progOptions, "DB name", "Name of a database to get connected to", Options::Single);
 
 	args::ActionFlag logLevel(progOptions, "INT=1..5", "reindexer logging level", {'l', "log"}, 1, &InstallLogLevel,
 							  Options::Single | Options::Global);
 
 	args::Flag repair(progOptions, "", "Repair database", {'r', "repair"});
 
-	args::ValueFlag<string> appName(progOptions, "Application name", "Application name which will be used in login info", {'a', "appname"},
-									"reindexer_tool", Options::Single | Options::Global);
+	args::ValueFlag<std::string> appName(progOptions, "Application name", "Application name which will be used in login info",
+										 {'a', "appname"}, "reindexer_tool", Options::Single | Options::Global);
 
 	args::GlobalOptions globals(parser, progOptions);
 
@@ -86,14 +87,14 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
-	string dsn = args::get(dbDsn);
+	std::string dsn = args::get(dbDsn);
 	bool ok = false;
 	Error err;
 #ifndef _WIN32
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
-	string db;
+	std::string db;
 	if (dsn.empty()) {
 		db = args::get(dbName);
 		if (db.empty()) {

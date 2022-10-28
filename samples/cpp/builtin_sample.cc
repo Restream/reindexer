@@ -16,7 +16,7 @@ int main() {
 
 	//// Insert some data in JSON format
 	Item item = db.NewItem("mytable");
-	string data = "{\"id\":100,\"name\":\"Some name\" \"genre\":\"some genre\"}";
+	std::string data = "{\"id\":100,\"name\":\"Some name\" \"genre\":\"some genre\"}";
 	item.FromJSON(data);
 	err = db.Upsert("mytable", item);
 	if (!err.ok()) return -4;
@@ -39,12 +39,12 @@ int main() {
 		// OR Iterate indexed fields
 		std::cout << "Fields: ";
 		for (int field = 1; field < item.NumFields(); field++) {
-			std::cout << item[field].Name() << "=" << item[field].As<string>() << "; ";
+			std::cout << item[field].Name() << "=" << item[field].As<std::string>() << "; ";
 		}
 		std::cout << std::endl;
 
 		// OR Get indexed field by name
-		std::cout << "Genre: " << item["genre"].As<string>() << std::endl;
+		std::cout << "Genre: " << item["genre"].As<std::string>() << std::endl;
 	}
 	return 0;
 }

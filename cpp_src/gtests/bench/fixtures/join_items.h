@@ -13,11 +13,11 @@ public:
 			.AddIndex("device", "hash", "string", IndexOpts());
 	}
 
-	virtual Error Initialize();
+	virtual reindexer::Error Initialize();
 	virtual void RegisterAllCases();
 
 protected:
-	virtual Item MakeItem();
+	virtual reindexer::Item MakeItem();
 
 	string randomString(const string& prefix);
 

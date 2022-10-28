@@ -32,7 +32,7 @@ public:
 protected:
 	void FillDefaultNs() {
 		int currIntValue = rand() % 100000;
-		string currStrValue = RandString();
+		std::string currStrValue = RandString();
 		for (int i = 0; i < 10000; ++i) {
 			Item item(rt.reindexer->NewItem(default_namespace));
 			EXPECT_TRUE(!!item);
@@ -80,7 +80,7 @@ protected:
 	const char* kFieldIdFk = "id_fk";
 	const char* kFieldThree = "f3";
 
-	string lastStrValue;
+	std::string lastStrValue;
 
-	const string joinedNsName = "joined_ns";
+	const std::string joinedNsName = "joined_ns";
 };

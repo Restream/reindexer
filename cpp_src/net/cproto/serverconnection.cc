@@ -14,12 +14,14 @@ const auto kCProtoTimeoutSec = 300.;
 const auto kUpdatesResendTimeout = 0.1;
 const auto kMaxUpdatesBufSize = 1024 * 1024 * 8;
 
-ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat, size_t maxUpdatesSize)
+ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Dispatcher &dispatcher, bool enableStat, size_t maxUpdatesSize,
+								   bool enableCustomBalancing)
 	: net::ConnectionST(fd, loop, enableStat),
 	  dispatcher_(dispatcher),
 	  updatesSize_(0),
 	  updateLostFlag_(false),
-	  maxUpdatesSize_(maxUpdatesSize) {
+	  maxUpdatesSize_(maxUpdatesSize),
+	  balancingType_(enableCustomBalancing ? BalancingType::NotSet : BalancingType::None) {
 	timeout_.start(kCProtoTimeoutSec);
 	updates_async_.set<ServerConnection, &ServerConnection::async_cb>(this);
 	updates_timeout_.set<ServerConnection, &ServerConnection::timeout_cb>(this);
@@ -84,7 +86,7 @@ void ServerConnection::handleRPC(Context &ctx) {
 	}
 }
 
-void ServerConnection::onRead() {
+ServerConnection::ReadResT ServerConnection::onRead() {
 	CProtoHeader hdr;
 
 	while (!closeConn_) {
@@ -92,7 +94,7 @@ void ServerConnection::onRead() {
 		std::string uncompressed;
 
 		auto len = rdBuf_.peek(reinterpret_cast<char *>(&hdr), sizeof(hdr));
-		if (len < sizeof(hdr)) return;
+		if (len < sizeof(hdr)) return ReadResT::Default;
 
 		if (hdr.magic != kCprotoMagic) {
 			try {
@@ -101,7 +103,7 @@ void ServerConnection::onRead() {
 				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
 			}
 			closeConn_ = true;
-			return;
+			return ReadResT::Default;
 		}
 
 		if (hdr.version < kCprotoMinCompatVersion) {
@@ -114,10 +116,27 @@ void ServerConnection::onRead() {
 				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
 			}
 			closeConn_ = true;
-			return;
+			return ReadResT::Default;
 		}
 		// Enable compression, only if clients sand compressed data to us
 		enableSnappy_ = (hdr.version >= kCprotoMinSnappyVersion) && hdr.compressed;
+
+		// Rebalance connection, when first message was recieved
+		if (balancingType_ == BalancingType::NotSet) {
+			if (hdr.dedicatedThread && hdr.version >= kCprotoMinDedicatedThreadsVersion) {
+				balancingType_ = BalancingType::Dedicated;
+			} else {
+				balancingType_ = BalancingType::Shared;
+			}
+			hasPendingData_ = true;
+			if (rebalance_) {
+				rebalance_(this, balancingType_);
+				// After rebalancing this connection will probably be handled in another thread. Any code here after rebalance_() may lead
+				// to data race
+				return ReadResT::Rebalanced;
+			}
+			return ReadResT::Default;
+		}
 
 		if (size_t(hdr.len) + sizeof(hdr) > rdBuf_.capacity()) {
 			rdBuf_.reserve(size_t(hdr.len) + sizeof(hdr) + 0x1000);
@@ -125,7 +144,7 @@ void ServerConnection::onRead() {
 
 		if (size_t(hdr.len) + sizeof(hdr) > rdBuf_.size()) {
 			if (!rdBuf_.size()) rdBuf_.clear();
-			return;
+			return ReadResT::Default;
 		}
 
 		rdBuf_.erase(sizeof(hdr));
@@ -164,21 +183,17 @@ void ServerConnection::onRead() {
 
 			handleRPC(ctx);
 		} catch (const Error &err) {
-			// Exception occurs on unrecoverable error. Send responce, and drop connection
-			fprintf(stderr, "Dropping RPC-connection. Reason: %s\n", err.what().c_str());
-			try {
-				if (!ctx.respSent) {
-					responceRPC(ctx, err, Args());
-				}
-			} catch (const Error &err) {
-				fprintf(stderr, "responceRPC unexpected error: %s\n", err.what().c_str());
-			}
-			closeConn_ = true;
+			handleException(ctx, err);
+		} catch (const std::exception &err) {
+			handleException(ctx, Error(errLogic, err.what()));
+		} catch (...) {
+			handleException(ctx, Error(errLogic, "Unknow exception"));
 		}
 
 		rdBuf_.erase(hdr.len);
 		timeout_.start(kCProtoTimeoutSec);
 	}
+	return ReadResT::Default;
 }
 static void packRPC(WrSerializer &ser, Context &ctx, const Error &status, const Args &args, bool enableSnappy) {
 	CProtoHeader hdr;
@@ -352,6 +367,23 @@ void ServerConnection::sendUpdates() {
 	}
 
 	callback(io_, ev::WRITE);
+}
+
+void ServerConnection::handleException(Context &ctx, const Error &err) {
+	// Exception occurs on unrecoverable error. Send responce, and drop connection
+	fprintf(stderr, "Dropping RPC-connection. Reason: %s\n", err.what().c_str());
+	try {
+		if (!ctx.respSent) {
+			responceRPC(ctx, err, Args());
+		}
+	} catch (const Error &e) {
+		fprintf(stderr, "responceRPC unexpected error: %s\n", e.what().c_str());
+	} catch (const std::exception &e) {
+		fprintf(stderr, "responceRPC unexpected error (std::exception): %s\n", e.what());
+	} catch (...) {
+		fprintf(stderr, "responceRPC unexpected error (unknow exception)\n");
+	}
+	closeConn_ = true;
 }
 
 }  // namespace cproto

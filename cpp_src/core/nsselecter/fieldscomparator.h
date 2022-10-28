@@ -24,7 +24,7 @@ public:
 		assertrx(leftFieldSet);
 		setField(tpath, ctx_[0].rCtx_);
 	}
-	void SetLeftField(FieldsSet fset, KeyValueType type, bool isArray) {
+	void SetLeftField(const FieldsSet& fset, KeyValueType type, bool isArray) {
 		if (type == KeyValueComposite) {
 			ctx_.clear();
 			ctx_.resize(fset.size());
@@ -34,7 +34,7 @@ public:
 		}
 		leftFieldSet = true;
 	}
-	void SetRightField(FieldsSet fset, KeyValueType type, bool isArray) {
+	void SetRightField(const FieldsSet& fset, KeyValueType type, bool isArray) {
 		assertrx(leftFieldSet);
 		if ((ctx_.size() > 1) != (type == KeyValueComposite)) {
 			throw Error{errQueryExec, "A composite index cannot be compared with a non-composite one: %s", name_};
@@ -76,7 +76,7 @@ private:
 		}
 	}
 	template <bool left>
-	void setCompositeField(FieldsSet fields) {
+	void setCompositeField(const FieldsSet& fields) {
 		size_t tagsPathIdx = 0;
 		for (size_t i = 0; i < fields.size(); ++i) {
 			const bool isRegularIndex = fields[i] != IndexValueType::SetByJsonPath && fields[i] < payloadType_.NumFields();
@@ -84,7 +84,7 @@ private:
 				FieldsSet f;
 				f.push_back(fields[i]);
 				const auto ft{payloadType_.Field(fields[i])};
-				setField(left ? ctx_[i].lCtx_ : ctx_[i].rCtx_, f, ft.Type(), ft.IsArray());
+				setField(left ? ctx_[i].lCtx_ : ctx_[i].rCtx_, std::move(f), ft.Type(), ft.IsArray());
 				if constexpr (!left) {
 					validateTypes(ctx_[i].lCtx_.type_, ctx_[i].rCtx_.type_);
 				}

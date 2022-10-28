@@ -29,13 +29,13 @@ public:
 		Ref() = default;
 		Ref(const Ref&) = delete;
 		Ref& operator=(const Ref&) = delete;
-		Ref(Ref&& o) noexcept : d_(std::move(o.d_)) {
+		Ref(Ref&& o) noexcept : d_(o.d_) {
 			o.d_.owner = nullptr;
 			o.d_.qr = nullptr;
 		}
 		Ref& operator=(Ref&& o) noexcept {
 			if (this != &o) {
-				d_ = std::move(o.d_);
+				d_ = o.d_;
 				o.d_.owner = nullptr;
 				o.d_.qr = nullptr;
 			}
@@ -79,21 +79,31 @@ public:
 		}
 		return getQueryResults(uint32_t(id.main), id.uid);
 	}
-	void FreeQueryResults(RPCQrId id) {
-		if (id.main < 0) {
-			throw Error(errLogic, "Query Results ID can not be negative: %d", id.main);
+	bool AreQueryResultsValid(RPCQrId id) const noexcept {
+		if (!isMainIDValid(id.main) || !isUIDValid(id.uid)) {
+			return false;
 		}
+		const auto& qrs = qrs_[uint32_t(id.main)];
+		const UID curUID = qrs.uid.load(std::memory_order_acquire);
+		return (id.uid >= 0 && curUID.state == UID::InitializedUIDEnabled && uint64_t(id.uid) == curUID.val) ||
+			   (id.uid == kDisabled && curUID.state == UID::InitializedUIDDisabled);
+	}
+	void FreeQueryResults(RPCQrId id, bool strictCheck) {
 		checkIDs(id.main, id.uid);
 		auto& qrs = qrs_[uint32_t(id.main)];
-		bool shouldClearQRs = false;
 		UID curUID = qrs.uid.load(std::memory_order_acquire);
 		if (curUID.freed) {
-			throw Error(errLogic, "Unexpected Query Results ID: %d (it was already freed)", id.main);
+			if (strictCheck) {
+				throw Error(errLogic, "Unexpected Query Results ID: %d (it was already freed)", id.main);
+			} else {
+				return;
+			}
 		}
+		bool shouldClearQRs;
 		UID newUID;
 		do {
-			shouldClearQRs = (curUID.refs == 0);
-			if ((id.uid >= 0 && curUID.state == UID::InitializedUIDEnabled) ||
+			shouldClearQRs = false;
+			if ((id.uid >= 0 && curUID.state == UID::InitializedUIDEnabled && uint64_t(id.uid) == curUID.val) ||
 				(id.uid == kDisabled && curUID.state == UID::InitializedUIDDisabled)) {
 				newUID = curUID;
 				newUID.freed = 1;
@@ -101,14 +111,24 @@ public:
 				if (shouldClearQRs) {
 					newUID.state = UID::ClearingInProgress;
 				}
+				if (curUID.refs == 0) {
+					shouldClearQRs = true;
+					newUID.state = UID::ClearingInProgress;
+				} else {
+					shouldClearQRs = false;
+				}
+			} else if (strictCheck) {
+				throw Error(errQrUIDMissmatch,
+							"Unexpected Query Results UID (most likely those query results were reset by idle timeout): %d vs %d(state:%d)",
+							id.uid, curUID.val, curUID.state);
+			} else {
+				return;
 			}
 		} while (!qrs.uid.compare_exchange_strong(curUID, newUID, std::memory_order_acq_rel));
 		if (shouldClearQRs) {
 			qrs.qr = QueryResults();
-			curUID = newUID;
-			do {
-				newUID.state = UID::Uninitialized;
-			} while (!qrs.uid.compare_exchange_strong(curUID, newUID, std::memory_order_acq_rel));
+			newUID.SetUnitialized();
+			qrs.uid.store(newUID, std::memory_order_release);
 
 			std::lock_guard lck(mtx_);
 			putFreeID(uint32_t(id.main));
@@ -133,6 +153,10 @@ private:
 		noexcept
 			: freed(0), state(uid >= 0 ? InitializedUIDEnabled : InitializedUIDDisabled), refs(addRef ? 1 : 0), val(uid >= 0 ? uid : 0) {
 			assertf(uid == kDisabled || val == (uid & kUIDValueBitmask), "UID: %d, val: %d", uid, val);
+		}
+		void SetUnitialized() noexcept {
+			state = UID::Uninitialized;
+			freed = 0;
 		}
 
 		uint64_t freed : 1;
@@ -173,6 +197,11 @@ private:
 			const uint32_t idx = n % kChunkSize;
 			return array_[vidx][idx];
 		}
+		const T& operator[](uint32_t n) const noexcept {
+			const uint32_t vidx = n / kChunkSize;
+			const uint32_t idx = n % kChunkSize;
+			return array_[vidx][idx];
+		}
 		template <typename... Args>
 		void emplace_back(Args&&... args) {
 			uint32_t chunkId = size_ / kChunkSize;
@@ -192,14 +221,16 @@ private:
 		uint32_t size_ = 0;
 	};
 
-	void checkIDs(int32_t id, int64_t uid) {
-		if (id >= int(allocated_.load(std::memory_order_acquire))) {
+	void checkIDs(int32_t id, int64_t uid) const {
+		if (!isMainIDValid(id)) {
 			throw Error(errLogic, "Unexpected Query Results ID: %d", id);
 		}
-		if (uid != kDisabled && uid != kUninitialized && uid != (uid & kUIDValueBitmask)) {
+		if (!isUIDValid(uid)) {
 			throw Error(errLogic, "Unexpected Query Results UID: %d", uid);
 		}
 	}
+	bool isMainIDValid(int32_t id) const noexcept { return id < int32_t(allocated_.load(std::memory_order_acquire)) && id >= 0; }
+	bool isUIDValid(int64_t uid) const noexcept { return uid == (uid & kUIDValueBitmask) || uid == kDisabled || uid == kUninitialized; }
 	void onRefDestroyed(uint32_t id) {
 		[[maybe_unused]] const auto allocated = allocated_.load(std::memory_order_relaxed);
 		assertf(id < allocated, "id: %d, allocated: %d", id, allocated);
@@ -207,7 +238,7 @@ private:
 		UID curUID = qrs.uid.load(std::memory_order_acquire);
 		// QR can not be removed, while 1 or more Refs exist
 		assertrx(curUID.state == UID::InitializedUIDEnabled || curUID.state == UID::InitializedUIDDisabled);
-		bool shouldClearQRs = false;
+		bool shouldClearQRs;
 		UID newUID;
 		do {
 			assertrx(curUID.refs > 0);
@@ -218,12 +249,12 @@ private:
 			if (shouldClearQRs) {
 				newUID.state = UID::ClearingInProgress;
 			} else {
-				qrs_[id].lastAccessTime.store(now(), std::memory_order_relaxed);
+				qrs.lastAccessTime.store(now(), std::memory_order_relaxed);
 			}
 		} while (!qrs.uid.compare_exchange_strong(curUID, newUID, std::memory_order_acq_rel));
 		if (shouldClearQRs) {
 			qrs.qr = QueryResults();
-			newUID.state = UID::Uninitialized;
+			newUID.SetUnitialized();
 			qrs.uid.store(newUID, std::memory_order_release);
 
 			std::lock_guard lck(mtx_);
@@ -261,7 +292,7 @@ private:
 				}
 				++newUID.refs;
 			} else {
-				throw Error(errParams,
+				throw Error(errQrUIDMissmatch,
 							"Unexpected Query Results UID (most likely those query results were reset by idle timeout): %d vs %d(state:%d)",
 							uid, curUID.val, curUID.state);
 			}
@@ -286,7 +317,7 @@ private:
 	PartitionedArray<QrStorage> qrs_;
 	std::mutex mtx_;
 	std::atomic<uint32_t> allocated_ = {0};
-	std::atomic<int64_t> uidCounter_ = 0;
+	std::atomic<int64_t> uidCounter_ = 1;
 
 	net::ev::timer timer_;
 	std::atomic<uint32_t> nowSeconds_ = {0};

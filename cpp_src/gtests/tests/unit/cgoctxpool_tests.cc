@@ -4,7 +4,6 @@
 
 namespace CGOCtxPoolTests {
 
-using std::unique_ptr;
 using reindexer::CancelType;
 
 static const size_t kCtxPoolSize = 4096;
@@ -16,7 +15,7 @@ TEST_F(CGOCtxPoolApi, SingleThread) {
 	static const size_t kThirdIterCount = kCtxPoolSize * 5 / 2 + 1;
 
 	auto pool = createCtxPool(kCtxPoolSize);
-	vector<IRdxCancelContext*> ctxPtrs(kCtxPoolSize);
+	std::vector<IRdxCancelContext*> ctxPtrs(kCtxPoolSize);
 
 	EXPECT_TRUE(getAndValidateCtx(0, *pool) == nullptr);
 
@@ -163,18 +162,17 @@ TEST_F(CGOCtxPoolApi, SingleThread) {
 }
 
 void CGOCtxPoolApi::multiThreadTest(size_t threadsCount, MultiThreadTestMode mode) {
-	using std::thread;
 	auto pool = createCtxPool(kCtxPoolSize);
 
-	vector<thread> threads;
+	std::vector<std::thread> threads;
 	threads.reserve(threadsCount);
 	std::condition_variable cond;
 	std::mutex mtx;
 	std::atomic<uint32_t> awaitCount{0};
 	for (size_t i = 0; i < threadsCount; ++i) {
-		threads.emplace_back(thread([this, &pool, &cond, &mtx, &awaitCount, mode]() {
+		threads.emplace_back(std::thread([this, &pool, &cond, &mtx, &awaitCount, mode]() {
 			static const size_t kCtxCount = kCtxPoolSize * 2;
-			vector<IRdxCancelContext*> ctxPtrs(kCtxCount);
+			std::vector<IRdxCancelContext*> ctxPtrs(kCtxCount);
 			std::unique_lock<std::mutex> lck(mtx);
 			awaitCount.fetch_add(1, std::memory_order_relaxed);
 			cond.wait(lck);
@@ -242,28 +240,26 @@ TEST_F(CGOCtxPoolApi, MultiThreadSynced) {
 }
 
 TEST_F(CGOCtxPoolApi, ConcurrentCancel) {
-	using std::thread;
-
 	static const size_t kGetThreadsCount = 8;
 	static const size_t kCancelThreadsCount = 8;
 
 	auto pool = createCtxPool(kCtxPoolSize);
 
 	for (size_t testNum = 0; testNum < kCtxPoolTestsRepeatCount; ++testNum) {
-		vector<thread> threads;
+		std::vector<std::thread> threads;
 		threads.reserve(kGetThreadsCount + kCancelThreadsCount);
 		std::condition_variable cond;
 		std::mutex mtx;
 		std::atomic<uint32_t> awaitCount{0};
 		for (size_t i = 0; i < kGetThreadsCount; ++i) {
-			threads.emplace_back(thread([i, &pool, &cond, &mtx, &awaitCount]() {
+			threads.emplace_back(std::thread([i, &pool, &cond, &mtx, &awaitCount]() {
 				size_t threadID = i;
 				std::unique_lock<std::mutex> lck(mtx);
 				awaitCount.fetch_add(1, std::memory_order_relaxed);
 				cond.wait(lck);
 				lck.unlock();
 				static const size_t kCtxCount = 2 * kCtxPoolSize / kGetThreadsCount;
-				vector<IRdxCancelContext*> ctxPtrs(kCtxCount);
+				std::vector<IRdxCancelContext*> ctxPtrs(kCtxCount);
 				for (uint64_t i = kCtxCount * threadID, j = 0; i < kCtxCount * (threadID + 1); ++i, ++j) {
 					ctxPtrs[j] = pool->getContext(i + 1);
 					ASSERT_TRUE(ctxPtrs[j] != nullptr);
@@ -279,7 +275,7 @@ TEST_F(CGOCtxPoolApi, ConcurrentCancel) {
 		}
 
 		for (size_t i = 0; i < kCancelThreadsCount; ++i) {
-			threads.emplace_back(thread([i, &pool, &cond, &mtx, &awaitCount]() {
+			threads.emplace_back(std::thread([i, &pool, &cond, &mtx, &awaitCount]() {
 				size_t threadID = i;
 				std::unique_lock<std::mutex> lck(mtx);
 				awaitCount.fetch_add(1, std::memory_order_acq_rel);
@@ -317,8 +313,6 @@ TEST_F(CGOCtxPoolApi, ConcurrentCancel) {
 
 // Just for tsan check
 TEST_F(CGOCtxPoolApi, GeneralConcurrencyCheck) {
-	using std::thread;
-
 	static const size_t kGetThreadsCount = 8;
 	static const size_t kRemoveThreadsCount = 8;
 	static const size_t kCancelThreadsCount = 8;
@@ -326,13 +320,13 @@ TEST_F(CGOCtxPoolApi, GeneralConcurrencyCheck) {
 	for (size_t testNum = 0; testNum < kCtxPoolTestsRepeatCount; ++testNum) {
 		auto pool = createCtxPool(kCtxPoolSize);
 
-		vector<thread> threads;
+		std::vector<std::thread> threads;
 		threads.reserve(kGetThreadsCount + kCancelThreadsCount + kRemoveThreadsCount);
 		std::condition_variable cond;
 		std::mutex mtx;
 		std::atomic<uint32_t> awaitCount{0};
 		for (size_t i = 0; i < kGetThreadsCount; ++i) {
-			threads.emplace_back(thread([&pool, &cond, &mtx, &awaitCount]() {
+			threads.emplace_back(std::thread([&pool, &cond, &mtx, &awaitCount]() {
 				std::unique_lock<std::mutex> lck(mtx);
 				awaitCount.fetch_add(1, std::memory_order_relaxed);
 				cond.wait(lck);
@@ -345,7 +339,7 @@ TEST_F(CGOCtxPoolApi, GeneralConcurrencyCheck) {
 		}
 
 		for (size_t i = 0; i < kCancelThreadsCount; ++i) {
-			threads.emplace_back(thread([&pool, &cond, &mtx, &awaitCount]() {
+			threads.emplace_back(std::thread([&pool, &cond, &mtx, &awaitCount]() {
 				std::unique_lock<std::mutex> lck(mtx);
 				awaitCount.fetch_add(1, std::memory_order_relaxed);
 				cond.wait(lck);
@@ -358,7 +352,7 @@ TEST_F(CGOCtxPoolApi, GeneralConcurrencyCheck) {
 		}
 
 		for (size_t i = 0; i < kRemoveThreadsCount; ++i) {
-			threads.emplace_back(thread([&pool, &cond, &mtx, &awaitCount]() {
+			threads.emplace_back(std::thread([&pool, &cond, &mtx, &awaitCount]() {
 				std::unique_lock<std::mutex> lck(mtx);
 				awaitCount.fetch_add(1, std::memory_order_relaxed);
 				cond.wait(lck);

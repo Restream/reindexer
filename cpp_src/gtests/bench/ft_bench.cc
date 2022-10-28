@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "benchmark/benchmark.h"
+#include <benchmark/benchmark.h>
 #include "core/reindexer.h"
 #include "tools/fsops.h"
 #include "tools/reporter.h"

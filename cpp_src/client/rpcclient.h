@@ -26,9 +26,6 @@ namespace reindexer {
 
 namespace client {
 
-using std::string;
-using std::atomic_bool;
-using std::shared_ptr;
 using std::chrono::seconds;
 
 using namespace net;
@@ -42,8 +39,8 @@ public:
 	RPCClient &operator=(RPCClient &&) = delete;
 	~RPCClient();
 
-	Error Connect(const string &dsn, const client::ConnectOpts &opts);
-	Error Connect(const vector<pair<string, client::ConnectOpts>> &connectData);
+	Error Connect(const std::string &dsn, const client::ConnectOpts &opts);
+	Error Connect(const std::vector<std::pair<std::string, client::ConnectOpts>> &connectData);
 	Error Stop();
 
 	Error OpenNamespace(std::string_view nsName, const InternalRdxContext &ctx,
@@ -57,8 +54,8 @@ public:
 	Error UpdateIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext &ctx);
-	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
-	Error EnumDatabases(vector<string> &dbList, const InternalRdxContext &ctx);
+	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
+	Error EnumDatabases(std::vector<std::string> &dbList, const InternalRdxContext &ctx);
 	Error Insert(std::string_view nsName, client::Item &item, const InternalRdxContext &ctx);
 	Error Update(std::string_view nsName, client::Item &item, const InternalRdxContext &ctx);
 	Error Upsert(std::string_view nsName, client::Item &item, const InternalRdxContext &ctx);
@@ -73,9 +70,9 @@ public:
 	}
 	Error Commit(std::string_view nsName);
 	Item NewItem(std::string_view nsName);
-	Error GetMeta(std::string_view nsName, const string &key, string &data, const InternalRdxContext &ctx);
-	Error PutMeta(std::string_view nsName, const string &key, std::string_view data, const InternalRdxContext &ctx);
-	Error EnumMeta(std::string_view nsName, vector<string> &keys, const InternalRdxContext &ctx);
+	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx);
+	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const InternalRdxContext &ctx);
+	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx);
 	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts = SubscriptionOpts());
 	Error UnsubscribeUpdates(IUpdatesObserver *observer);
 	Error GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string> &suggests);
@@ -91,7 +88,7 @@ protected:
 		ev::dynamic_loop loop_;
 		std::thread thread_;
 		ev::async stop_;
-		atomic_bool running;
+		std::atomic_bool running;
 	};
 	Error selectImpl(std::string_view query, QueryResults &result, cproto::ClientConnection *, seconds netTimeout,
 					 const InternalRdxContext &ctx);
@@ -103,7 +100,7 @@ protected:
 	Error subscribeImpl(bool subscribe);
 	Namespace *getNamespace(std::string_view nsName);
 	Error startWorkers();
-	Error addConnectEntry(const string &dsn, const client::ConnectOpts &opts, size_t idx);
+	Error addConnectEntry(const std::string &dsn, const client::ConnectOpts &opts, size_t idx);
 	void run(size_t thIdx);
 	void onUpdates(net::cproto::RPCAnswer &ans, cproto::ClientConnection *conn);
 	bool onConnectionFail(int failedDsnIndex);
@@ -116,7 +113,7 @@ protected:
 
 	std::vector<std::unique_ptr<net::cproto::ClientConnection>> connections_;
 
-	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
+	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
 
 	shared_timed_mutex nsMutex_;
 	std::vector<worker> workers_;
@@ -124,7 +121,7 @@ protected:
 	ReindexerConfig config_;
 	UpdatesObservers observers_;
 	std::atomic<net::cproto::ClientConnection *> updatesConn_;
-	vector<net::cproto::RPCAnswer> delayedUpdates_;
+	std::vector<net::cproto::RPCAnswer> delayedUpdates_;
 	cproto::ClientConnection::ConnectData connectData_;
 };
 

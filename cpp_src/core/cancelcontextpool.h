@@ -9,8 +9,6 @@
 
 namespace reindexer {
 
-using std::vector;
-
 constexpr uint64_t kBitMask = ~(uint64_t(0x7) << (sizeof(uint64_t) * 8 - 3));
 constexpr uint64_t kInitFlag = uint64_t(0x4) << (sizeof(uint64_t) * 8 - 3);
 constexpr uint64_t kCanceledFlag = uint64_t(0x2) << (sizeof(uint64_t) * 8 - 3);
@@ -145,7 +143,7 @@ public:
 	static bool isCanceling(uint64_t ctxID) noexcept { return ctxID & kCancelingFlag; }
 	static bool isCanceled(uint64_t ctxID) noexcept { return ctxID & kCanceledFlag; }
 
-	const vector<Node>& contexts() const noexcept { return contexts_; }
+	const std::vector<Node>& contexts() const noexcept { return contexts_; }
 
 private:
 	static bool areEqual(uint64_t ctxID1, uint64_t ctxID2) noexcept { return ((ctxID1 & kBitMask) == (ctxID2 & kBitMask)); }
@@ -175,7 +173,7 @@ private:
 		}
 	}
 
-	vector<Node> contexts_;
+	std::vector<Node> contexts_;
 };
 
 }  // namespace reindexer

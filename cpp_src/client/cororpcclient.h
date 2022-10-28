@@ -22,7 +22,6 @@ namespace reindexer {
 
 namespace client {
 
-using std::string;
 using std::chrono::seconds;
 
 using namespace net;
@@ -36,7 +35,7 @@ public:
 	CoroRPCClient &operator=(CoroRPCClient &&) = delete;
 	~CoroRPCClient();
 
-	Error Connect(const string &dsn, ev::dynamic_loop &loop, const client::ConnectOpts &opts);
+	Error Connect(const std::string &dsn, ev::dynamic_loop &loop, const client::ConnectOpts &opts);
 	Error Stop();
 
 	Error OpenNamespace(std::string_view nsName, const InternalRdxContext &ctx,
@@ -50,8 +49,8 @@ public:
 	Error UpdateIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext &ctx);
-	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
-	Error EnumDatabases(vector<string> &dbList, const InternalRdxContext &ctx);
+	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
+	Error EnumDatabases(std::vector<std::string> &dbList, const InternalRdxContext &ctx);
 	Error Insert(std::string_view nsName, client::Item &item, const InternalRdxContext &ctx);
 	Error Update(std::string_view nsName, client::Item &item, const InternalRdxContext &ctx);
 	Error Upsert(std::string_view nsName, client::Item &item, const InternalRdxContext &ctx);
@@ -66,9 +65,9 @@ public:
 	}
 	Error Commit(std::string_view nsName);
 	Item NewItem(std::string_view nsName);
-	Error GetMeta(std::string_view nsName, const string &key, string &data, const InternalRdxContext &ctx);
-	Error PutMeta(std::string_view nsName, const string &key, std::string_view data, const InternalRdxContext &ctx);
-	Error EnumMeta(std::string_view nsName, vector<string> &keys, const InternalRdxContext &ctx);
+	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx);
+	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const InternalRdxContext &ctx);
+	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx);
 	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts = SubscriptionOpts());
 	Error UnsubscribeUpdates(IUpdatesObserver *observer);
 	Error GetSqlSuggestions(std::string_view query, int pos, std::vector<std::string> &suggests);
@@ -84,17 +83,17 @@ protected:
 	Error modifyItem(std::string_view nsName, Item &item, int mode, seconds netTimeout, const InternalRdxContext &ctx);
 	Error subscribeImpl(bool subscribe);
 	Namespace *getNamespace(std::string_view nsName);
-	Error addConnectEntry(const string &dsn, const client::ConnectOpts &opts, size_t idx);
+	Error addConnectEntry(const std::string &dsn, const client::ConnectOpts &opts, size_t idx);
 	void onUpdates(const net::cproto::CoroRPCAnswer &ans);
 	void startResubRoutine();
 
 	void resubRoutine();
-	void onConnFatalError(Error) noexcept { subscribed_ = false; }
+	void onConnFatalError(const Error &) noexcept { subscribed_ = false; }
 
 	cproto::CommandParams mkCommand(cproto::CmdCode cmd, const InternalRdxContext *ctx = nullptr) const noexcept;
 	static cproto::CommandParams mkCommand(cproto::CmdCode cmd, seconds reqTimeout, const InternalRdxContext *ctx) noexcept;
 
-	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
+	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
 
 	ReindexerConfig config_;
 	UpdatesObservers observers_;

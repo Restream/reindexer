@@ -18,9 +18,6 @@ class IClientsStats;
 namespace reindexer_server {
 
 using namespace reindexer;
-using std::string;
-using std::unique_ptr;
-using std::unordered_map;
 
 /// Possible user roles
 enum UserRole {
@@ -37,10 +34,10 @@ std::string_view UserRoleName(UserRole role) noexcept;
 
 /// Record about user credentials
 struct UserRecord {
-	string login;							/// User's login
-	string hash;							/// User's password or hash
-	string salt;							/// Password salt
-	unordered_map<string, UserRole> roles;	/// map of user's roles on databases
+	std::string login;								  /// User's login
+	std::string hash;								  /// User's password or hash
+	std::string salt;								  /// Password salt
+	std::unordered_map<std::string, UserRole> roles;  /// map of user's roles on databases
 };
 
 class DBManager;
@@ -59,7 +56,7 @@ public:
 	/// Construct context with user credentials
 	/// @param login - User's login
 	/// @param password - User's password
-	AuthContext(const string &login, const string &password) : login_(login), password_(password) {}
+	AuthContext(const std::string &login, const std::string &password) : login_(login), password_(password) {}
 	/// Set expected master's replication clusted ID
 	/// @param clusterID - Expected cluster ID value
 	void SetExpectedClusterID(int clusterID) {
@@ -87,10 +84,10 @@ public:
 	bool HaveDB() { return db_ != nullptr; }
 	/// Get user login
 	/// @return user login
-	const string &Login() { return login_; }
+	const std::string &Login() { return login_; }
 	/// Get database name
 	/// @return db name
-	const string &DBName() { return dbName_; }
+	const std::string &DBName() { return dbName_; }
 	/// Get user rights
 	/// @return user rights
 	UserRole UserRights() const { return role_; }
@@ -98,10 +95,10 @@ public:
 protected:
 	AuthContext(UserRole role) : role_(role) {}
 
-	string login_;
-	string password_;
+	std::string login_;
+	std::string password_;
 	UserRole role_ = kUnauthorized;
-	string dbName_;
+	std::string dbName_;
 	int expectedClusterID_ = -1;
 	bool checkClusterID_ = false;
 	Reindexer *db_ = nullptr;
@@ -116,7 +113,7 @@ public:
 	/// @param dbpath - path to database on file system
 	/// @param noSecurity - if true, then disable all security validations and users authentication
 	/// @param clientsStats - object for receiving clients statistics
-	DBManager(const string &dbpath, bool noSecurity, IClientsStats *clientsStats = nullptr);
+	DBManager(const std::string &dbpath, bool noSecurity, IClientsStats *clientsStats = nullptr);
 	/// Initialize database:
 	/// Read all found databases to RAM
 	/// Read user's database
@@ -129,13 +126,13 @@ public:
 	/// @param dbName - database name. Can be empty.
 	/// @param auth - AuthContext with user credentials
 	/// @return Error - error object
-	Error Login(const string &dbName, AuthContext &auth);
+	Error Login(const std::string &dbName, AuthContext &auth);
 	/// Open database and authentificate user
 	/// @param dbName - database name, Can't be empty
 	/// @param auth - AuthContext filled with user credentials or already authorized AuthContext
 	/// @param canCreate - true: Create database, if not exists; false: return error, if database not exists
 	/// @return Error - error object
-	Error OpenDatabase(const string &dbName, AuthContext &auth, bool canCreate);
+	Error OpenDatabase(const std::string &dbName, AuthContext &auth, bool canCreate);
 	/// Drop database from disk storage and memory. Reindexer DB object will be destroyed
 	/// @param auth - Authorized AuthContext, with valid Reindexer DB object and reasonale role
 	/// @return Error - error object
@@ -145,7 +142,7 @@ public:
 	bool IsNoSecurity() { return noSecurity_; }
 	/// Enum list of available databases
 	/// @return names of available databases
-	vector<string> EnumDatabases();
+	std::vector<std::string> EnumDatabases();
 
 private:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::DbManager>;
@@ -154,11 +151,11 @@ private:
 	Error readUsersJSON() noexcept;
 	Error createDefaultUsersYAML() noexcept;
 	static UserRole userRoleFromString(std::string_view strRole);
-	Error loadOrCreateDatabase(const string &name, bool allowDBErrors, bool withAutorepair, const AuthContext &auth = AuthContext());
+	Error loadOrCreateDatabase(const std::string &name, bool allowDBErrors, bool withAutorepair, const AuthContext &auth = AuthContext());
 
-	unordered_map<string, unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
-	unordered_map<string, UserRecord> users_;
-	string dbpath_;
+	std::unordered_map<std::string, std::unique_ptr<Reindexer>, nocase_hash_str, nocase_equal_str> dbs_;
+	std::unordered_map<std::string, UserRecord> users_;
+	std::string dbpath_;
 	Mutex mtx_;
 	bool noSecurity_;
 	datastorage::StorageType storageType_;

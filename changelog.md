@@ -1,3 +1,27 @@
+# Version 3.10.0 (28.10.2022)
+## Core
+- [fea] Improve conditions injection from joined queries into main query. This optimization now covers much wider class of queries
+- [fea] Add parenthesis expansion for queries' conditions
+- [fea] Switch yaml parser to more functional one
+- [fix] Fix priority of `NOT` operations in queries (now it always has highest priority among all the others logical operations)
+- [fix] Fix race condition in indexes optimization logic
+
+## Reindexer server
+- [fea] Add support for separate connections threads by request
+- [fea] Add support for large JSON-strings (larger than 16 MB)
+- [fea] Add HTTP method to force drop of TCMalloc caches
+- [fix] Fix SIGABORT after incorrect RPC query results' reuse
+
+## Face
+- [fea] Make the "Gear" button visible for tables
+- [fea] Redesign the Statistics->Memory page
+- [fea] Redesign the Statistics->Performance page
+- [fea] Add the Namespace settings button to the Namespace list
+- [fea] Add the ability to pin Namespaces in the Namespace list
+- [fea] Redesign the feature of the column resizing
+- [fix] Fix UI availability with DB config issues
+- [fix] Fix the issue with Scrolly on the Statistics page
+
 # Version 3.9.1 (12.10.2022)
 ## Core
 - [fix] Fix SEGFAULT in fulltext index after documents deletion

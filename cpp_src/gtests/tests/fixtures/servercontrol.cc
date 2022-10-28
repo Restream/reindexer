@@ -3,6 +3,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
+#include "yaml-cpp/yaml.h"
 
 using namespace reindexer;
 
@@ -24,13 +25,13 @@ void ServerControl::Stop() { interface->Stop(); }
 
 ServerControl::ServerControl(ServerControl&& rhs) {
 	WLock lock(rhs.mtx_);
-	interface = move(rhs.interface);
+	interface = std::move(rhs.interface);
 	stopped_ = rhs.stopped_;
 	rhs.stopped_ = nullptr;
 }
 ServerControl& ServerControl::operator=(ServerControl&& rhs) {
 	WLock lock(rhs.mtx_);
-	interface = move(rhs.interface);
+	interface = std::move(rhs.interface);
 	stopped_ = rhs.stopped_;
 	rhs.stopped_ = nullptr;
 	return *this;
@@ -110,32 +111,27 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
 	  dbName_(dbName) {
 	// Init server in thread
 	stopped_ = false;
-	string testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
-	auto getLogName = [&testSetName, &id](const string& log, bool core = false) {
-		string name("logs/" + testSetName + "/" + log + "_");
+	std::string testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
+	auto getLogName = [&testSetName, &id](const std::string& log, bool core = false) {
+		std::string name("logs/" + testSetName + "/" + log + "_");
 		if (!core) name += std::to_string(id);
 		name += ".log";
 		return name;
 	};
-	// clang-format off
-    string yaml =
-        "storage:\n"
-		"    path: " + kStoragePath + "\n"
-		"metrics:\n"
-		"   clientsstats: " + (enableStats ? "true" : "false") + "\n"
-        "logger:\n"
-        "   loglevel: trace\n"
-        "   rpclog: " + getLogName("rpc") + "\n"
-        "   serverlog: " + getLogName("server") + "\n"
-        "   corelog: " + getLogName("core", true) + "\n"
-        "net:\n"
-        "   httpaddr: 0.0.0.0:" + std::to_string(kHttpPort) + "\n"
-		"   rpcaddr: 0.0.0.0:" + std::to_string(kRpcPort) + "\n" +
-		(maxUpdatesSize?
-		"   maxupdatessize:" + std::to_string(maxUpdatesSize)+"\n" : "");
-	// clang-format on
+	YAML::Node y;
+	y["storage"]["path"] = kStoragePath;
+	y["metrics"]["clientsstats"] = enableStats;
+	y["logger"]["loglevel"] = "trace";
+	y["logger"]["rpclog"] = getLogName("rpc");
+	y["logger"]["serverlog"] = getLogName("server");
+	y["logger"]["corelog"] = getLogName("core", true);
+	y["net"]["httpaddr"] = "0.0.0.0:" + std::to_string(kHttpPort);
+	y["net"]["rpcaddr"] = "0.0.0.0:" + std::to_string(kRpcPort);
+	if (maxUpdatesSize) {
+		y["net"]["maxupdatessize"] = maxUpdatesSize;
+	}
 
-	auto err = srv.InitFromYAML(yaml);
+	auto err = srv.InitFromYAML(YAML::Dump(y));
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	tr = std::unique_ptr<std::thread>(new std::thread([this]() {
@@ -149,7 +145,7 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
 		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 	// init client
-	string dsn = "cproto://127.0.0.1:" + std::to_string(kRpcPort) + "/" + dbName_;
+	std::string dsn = "cproto://127.0.0.1:" + std::to_string(kRpcPort) + "/" + dbName_;
 	err = api.reindexer->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
 	EXPECT_TRUE(err.ok()) << err.what();
 	while (!api.reindexer->Status().ok()) {

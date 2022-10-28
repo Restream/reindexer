@@ -8,9 +8,6 @@
 #include "tools/logger.h"
 #include "vendor/gason/gason.h"
 
-using std::string;
-using std::vector;
-
 namespace reindexer {
 namespace client {
 
@@ -34,7 +31,7 @@ Error RPCClient::startWorkers() {
 	return errOK;
 }
 
-Error RPCClient::addConnectEntry(const string& dsn, const client::ConnectOpts& opts, size_t idx) {
+Error RPCClient::addConnectEntry(const std::string& dsn, const client::ConnectOpts& opts, size_t idx) {
 	assertrx(idx < connectData_.entries.size());
 	cproto::ClientConnection::ConnectData::Entry& connectEntry = connectData_.entries[idx];
 	if (!connectEntry.uri.parse(dsn)) {
@@ -49,7 +46,7 @@ Error RPCClient::addConnectEntry(const string& dsn, const client::ConnectOpts& o
 	return errOK;
 }
 
-Error RPCClient::Connect(const string& dsn, const client::ConnectOpts& opts) {
+Error RPCClient::Connect(const std::string& dsn, const client::ConnectOpts& opts) {
 	if (connections_.size()) {
 		return Error(errLogic, "Client is already started");
 	}
@@ -60,7 +57,7 @@ Error RPCClient::Connect(const string& dsn, const client::ConnectOpts& opts) {
 	return err;
 }
 
-Error RPCClient::Connect(const vector<pair<string, client::ConnectOpts>>& connectData) {
+Error RPCClient::Connect(const std::vector<std::pair<std::string, client::ConnectOpts>>& connectData) {
 	if (connections_.size()) {
 		return Error(errLogic, "Client is already started");
 	}
@@ -147,7 +144,7 @@ Error RPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContex
 }
 
 Error RPCClient::OpenNamespace(std::string_view nsName, const InternalRdxContext& ctx, const StorageOpts& sopts) {
-	NamespaceDef nsDef(string(nsName), sopts);
+	NamespaceDef nsDef(std::string(nsName), sopts);
 	return AddNamespace(nsDef, ctx);
 }
 
@@ -229,7 +226,7 @@ Error RPCClient::modifyItem(std::string_view nsName, Item& item, int mode, secon
 			}
 			QueryResults qr;
 			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr);
-			auto ret = selectImpl(Query(string(nsName)).Limit(0), qr, nullptr, netTimeout, ctxCompl);
+			auto ret = selectImpl(Query(std::string(nsName)).Limit(0), qr, nullptr, netTimeout, ctxCompl);
 			if (ret.code() == errTimeout) {
 				return Error(errTimeout, "Request timeout");
 			}
@@ -267,7 +264,7 @@ Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, 
 	}
 	if (!conn) conn = getConn();
 
-	string ns(nsName);
+	std::string ns(nsName);
 	auto deadline = netTimeout.count() ? conn->Now() + netTimeout : seconds(0);
 	conn->Call(
 		[this, ns, mode, item, deadline, ctx](const net::cproto::RPCAnswer& ret, cproto::ClientConnection* conn) -> void {
@@ -293,8 +290,7 @@ Error RPCClient::modifyItemAsync(std::string_view nsName, Item* item, int mode, 
 					Error err = newItem.FromJSON(item->impl_->GetJSON());
 					newItem.SetPrecepts(item->impl_->GetPrecepts());
 					*item = std::move(newItem);
-					InternalRdxContext localCtx = ctx;
-					modifyItemAsync(ns, item, mode, conn, timeout, localCtx);
+					modifyItemAsync(ns, item, mode, conn, timeout, ctx);
 				});
 				selectImpl(Query(ns).Limit(0), *qr, conn, netTimeout, ctxCmpl);
 			} else
@@ -345,11 +341,11 @@ Item RPCClient::NewItem(std::string_view nsName) {
 	}
 }
 
-Error RPCClient::GetMeta(std::string_view nsName, const string& key, string& data, const InternalRdxContext& ctx) {
+Error RPCClient::GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx) {
 	try {
 		auto ret = getConn()->Call(mkCommand(cproto::kCmdGetMeta, &ctx), nsName, key);
 		if (ret.Status().ok()) {
-			data = ret.GetArgs(1)[0].As<string>();
+			data = ret.GetArgs(1)[0].As<std::string>();
 		}
 		return ret.Status();
 	} catch (const Error& err) {
@@ -357,11 +353,11 @@ Error RPCClient::GetMeta(std::string_view nsName, const string& key, string& dat
 	}
 }
 
-Error RPCClient::PutMeta(std::string_view nsName, const string& key, std::string_view data, const InternalRdxContext& ctx) {
+Error RPCClient::PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const InternalRdxContext& ctx) {
 	return getConn()->Call(mkCommand(cproto::kCmdPutMeta, &ctx), nsName, key, data).Status();
 }
 
-Error RPCClient::EnumMeta(std::string_view nsName, vector<string>& keys, const InternalRdxContext& ctx) {
+Error RPCClient::EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const InternalRdxContext& ctx) {
 	try {
 		auto ret = getConn()->Call(mkCommand(cproto::kCmdEnumMeta, &ctx), nsName);
 		if (ret.Status().ok()) {
@@ -369,7 +365,7 @@ Error RPCClient::EnumMeta(std::string_view nsName, vector<string>& keys, const I
 			keys.clear();
 			keys.reserve(args.size());
 			for (auto& k : args) {
-				keys.push_back(k.As<string>());
+				keys.push_back(k.As<std::string>());
 			}
 		}
 		return ret.Status();
@@ -543,12 +539,12 @@ Error RPCClient::SetSchema(std::string_view nsName, std::string_view schema, con
 	return getConn()->Call(mkCommand(cproto::kCmdSetSchema, &ctx), nsName, schema).Status();
 }
 
-Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx) {
+Error RPCClient::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx) {
 	try {
 		auto ret = getConn()->Call(mkCommand(cproto::kCmdEnumNamespaces, &ctx), int(opts.options_), p_string(&opts.filter_));
 		if (ret.Status().ok()) {
 			gason::JsonParser parser;
-			auto json = ret.GetArgs(1)[0].As<string>();
+			auto json = ret.GetArgs(1)[0].As<std::string>();
 			auto root = parser.Parse(giftStr(json));
 
 			for (auto& nselem : root["items"]) {
@@ -565,15 +561,15 @@ Error RPCClient::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts o
 	}
 }
 
-Error RPCClient::EnumDatabases(vector<string>& dbList, const InternalRdxContext& ctx) {
+Error RPCClient::EnumDatabases(std::vector<std::string>& dbList, const InternalRdxContext& ctx) {
 	try {
 		auto ret = getConn()->Call(mkCommand(cproto::kCmdEnumDatabases, &ctx), 0);
 		if (ret.Status().ok()) {
 			gason::JsonParser parser;
-			auto json = ret.GetArgs(1)[0].As<string>();
+			auto json = ret.GetArgs(1)[0].As<std::string>();
 			auto root = parser.Parse(giftStr(json));
 			for (auto& elem : root["databases"]) {
-				dbList.emplace_back(elem.As<string>());
+				dbList.emplace_back(elem.As<std::string>());
 			}
 		}
 		return ret.Status();
@@ -602,7 +598,7 @@ Error RPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vector<
 			suggests.clear();
 			suggests.reserve(rargs.size());
 
-			for (auto& rarg : rargs) suggests.push_back(rarg.As<string>());
+			for (auto& rarg : rargs) suggests.push_back(rarg.As<std::string>());
 		}
 		return ret.Status();
 	} catch (const Error& err) {
@@ -644,7 +640,7 @@ Namespace* RPCClient::getNamespace(std::string_view nsName) {
 	nsMutex_.lock();
 	nsIt = namespaces_.find(nsName);
 	if (nsIt == namespaces_.end()) {
-		string nsNames(nsName);
+		std::string nsNames(nsName);
 		nsIt = namespaces_.emplace(nsNames, Namespace::Ptr(new Namespace(nsNames))).first;
 	}
 	nsMutex_.unlock();
@@ -724,7 +720,7 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 			delayedUpdates_.emplace_back(std::move(ans));
 
 			QueryResults* qr = new QueryResults;
-			Select(Query(string(nsName)).Limit(0), *qr,
+			Select(Query(std::string(nsName)).Limit(0), *qr,
 				   InternalRdxContext(nullptr,
 									  [=](const Error& err) {
 										  delete qr;

@@ -1634,7 +1634,17 @@ func checkConditionBetweenFields(t *testing.T, ns *testNamespace, entry *queryBe
 
 func (qt *queryTestEntryTree) verifyConditions(t *testing.T, ns *testNamespace, item interface{}) bool {
 	found := true
-	for _, cond := range qt.data {
+	for i, cond := range qt.data {
+		if i == 0 {
+			require.NotEqual(t, cond.op, opOR)
+		}
+		if cond.op == opOR {
+			if found {
+				continue;
+			}
+		} else if !found {
+			return false;
+		}
 		var curFound bool
 		switch cond.dataType {
 		case oneFieldEntry:
@@ -1647,19 +1657,13 @@ func (qt *queryTestEntryTree) verifyConditions(t *testing.T, ns *testNamespace, 
 		}
 		switch cond.op {
 		case opNOT:
-			if curFound {
-				return false
-			}
+			found = !curFound
 		case opAND:
-			if !found {
-				return false
-			}
 			found = curFound
 		case opOR:
 			found = found || curFound
 		}
 	}
-	//fmt.Printf("Verification result: %t\n\n", found)
 	return found
 }
 

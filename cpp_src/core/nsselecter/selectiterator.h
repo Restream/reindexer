@@ -23,7 +23,7 @@ public:
 	};
 
 	SelectIterator() = default;
-	SelectIterator(SelectKeyResult res, bool distinct, string name, bool forcedFirst = false);
+	SelectIterator(SelectKeyResult res, bool distinct, std::string name, bool forcedFirst = false);
 
 	/// Starts iteration process: prepares
 	/// object for further work.
@@ -88,7 +88,7 @@ public:
 	/// Binding to comparators
 	/// @param type - PayloadType of selected ns.
 	/// @param field - field index.
-	void Bind(PayloadType type, int field);
+	void Bind(const PayloadType &type, int field);
 	/// Uses each comparator to compare with pl.
 	/// @param pl - PayloadValue to be compared.
 	/// @param rowId - rowId.
@@ -115,7 +115,7 @@ public:
 	/// @param other - results to add.
 	/// @param type - PayloadType of selected ns to bind.
 	/// @param field - field idx to bind.
-	void AppendAndBind(SelectKeyResult &other, PayloadType type, int field);
+	void AppendAndBind(SelectKeyResult &other, const PayloadType &type, int field);
 	/// Cost value used for sorting: object with a smaller
 	/// cost goes before others.
 	double Cost(int expectedIterations) const noexcept;
@@ -128,10 +128,10 @@ public:
 	int Type() const noexcept { return type_; }
 
 	std::string_view TypeName() const noexcept;
-	string Dump() const;
+	std::string Dump() const;
 
 	bool distinct = false;
-	string name;
+	std::string name;
 
 protected:
 	// Iterates to a next item of result

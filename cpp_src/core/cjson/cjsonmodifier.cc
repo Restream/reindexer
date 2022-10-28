@@ -30,7 +30,7 @@ struct CJsonModifier::Context {
 	bool fieldUpdated = false;
 };
 
-CJsonModifier::CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt) : pt_(pt), tagsMatcher_(tagsMatcher) {}
+CJsonModifier::CJsonModifier(TagsMatcher& tagsMatcher, PayloadType pt) : pt_(std::move(pt)), tagsMatcher_(tagsMatcher) {}
 
 Error CJsonModifier::SetFieldValue(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser) {
 	if (fieldPath.empty()) {

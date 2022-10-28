@@ -11,7 +11,7 @@ using reindexer::ItemImpl;
 
 class ItemMoveSemanticsApi : public ReindexerApi {
 protected:
-	const string pkField = "bookid";
+	const std::string pkField = "bookid";
 	const int32_t itemsCount = 100000;
 	const char *jsonPattern = "{\"bookid\":%d,\"title\":\"title\",\"pages\":200,\"price\":299,\"genreid_fk\":3,\"authorid_fk\":10}";
 	std::map<int, Item> items_;

@@ -3,7 +3,6 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
-#include <vector>
 #include "estl/fast_hash_set.h"
 #include "estl/mutex.h"
 #include "estl/shared_mutex.h"
@@ -51,7 +50,7 @@ struct NamespaceConfigData {
 enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave, ReplicationReadOnly };
 
 struct ReplicationConfigData {
-	Error FromYML(const string &yml);
+	Error FromYML(const std::string &yml);
 	Error FromJSON(const gason::JsonNode &v);
 	void GetJSON(JsonBuilder &jb) const;
 	void GetYAML(WrSerializer &ser) const;
@@ -67,7 +66,7 @@ struct ReplicationConfigData {
 	int onlineReplErrorsThreshold = 100;
 	bool forceSyncOnLogicError = false;
 	bool forceSyncOnWrongDataHash = false;
-	fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;
+	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> namespaces;
 	bool enableCompression = true;
 	int serverId = 0;
 
@@ -82,7 +81,7 @@ struct ReplicationConfigData {
 	bool operator!=(const ReplicationConfigData &rdata) const noexcept { return !operator==(rdata); }
 
 protected:
-	static ReplicationRole str2role(const string &);
+	static ReplicationRole str2role(const std::string &);
 	static std::string role2str(ReplicationRole) noexcept;
 };
 
@@ -98,12 +97,12 @@ public:
 
 	ProfilingConfigData GetProfilingConfig();
 	ReplicationConfigData GetReplicationConfig();
-	bool GetNamespaceConfig(const string &nsName, NamespaceConfigData &data);
+	bool GetNamespaceConfig(const std::string &nsName, NamespaceConfigData &data);
 
 private:
 	ProfilingConfigData profilingData_;
 	ReplicationConfigData replicationData_;
-	std::unordered_map<string, NamespaceConfigData> namespacesData_;
+	std::unordered_map<std::string, NamespaceConfigData> namespacesData_;
 	std::unordered_map<int, std::function<void()>> handlers_;
 	shared_timed_mutex mtx_;
 };

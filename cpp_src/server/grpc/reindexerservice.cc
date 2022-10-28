@@ -41,7 +41,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
 	if (status.ok()) {
-		string dsn;
+		std::string dsn;
 		if (request->login().size() && request->password().size()) {
 			dsn += request->login();
 			dsn += ":";
@@ -201,7 +201,7 @@ static IndexDef toIndexDef(const Index& src) {
 	indexDef.fieldType_ = src.fieldtype();
 	indexDef.indexType_ = src.indextype();
 	indexDef.expireAfter_ = src.expireafter();
-	for (const string& jsonPath : src.jsonpaths()) {
+	for (const std::string& jsonPath : src.jsonpaths()) {
 		indexDef.jsonPaths_.emplace_back(jsonPath);
 	}
 	return indexDef;
@@ -264,8 +264,8 @@ static IndexDef toIndexDef(const Index& src) {
 	ErrorResponse* responseCode = response->errorresponse().New();
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
 	if (status.ok()) {
-		std::vector<string> nses;
-		for (const string& ns : request->namespaces()) {
+		std::vector<std::string> nses;
+		for (const std::string& ns : request->namespaces()) {
 			nses.emplace_back(ns);
 		}
 		WrSerializer ser;
@@ -294,7 +294,7 @@ static IndexDef toIndexDef(const Index& src) {
 		opts.WithClosed(request->options().withclosed());
 		opts.WithFilter(request->options().filter());
 
-		vector<NamespaceDef> nsDefs;
+		std::vector<NamespaceDef> nsDefs;
 		assert(rx);
 		status = rx->EnumNamespaces(nsDefs, opts);
 		if (status.ok()) {
@@ -320,7 +320,7 @@ static IndexDef toIndexDef(const Index& src) {
 					indexDef->set_fieldtype(index.fieldType_);
 					indexDef->set_indextype(index.indexType_);
 					indexDef->set_expireafter(index.expireAfter_);
-					for (const string& jsonPath : index.jsonPaths_) {
+					for (const std::string& jsonPath : index.jsonPaths_) {
 						indexDef->add_jsonpaths(jsonPath);
 					}
 
@@ -344,8 +344,8 @@ static IndexDef toIndexDef(const Index& src) {
 }
 
 ::grpc::Status ReindexerService::EnumDatabases(::grpc::ServerContext*, const EnumDatabasesRequest*, EnumDatabasesResponse* response) {
-	vector<string> dbNames = dbMgr_.EnumDatabases();
-	for (const string& dbName : dbNames) {
+	std::vector<std::string> dbNames = dbMgr_.EnumDatabases();
+	for (const std::string& dbName : dbNames) {
 		*(response->add_names()) = dbName;
 	}
 	return ::grpc::Status::OK;
@@ -573,7 +573,7 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 	QueryResultsResponse response;
 	Error status = buildItems(wrser, qr, flags);
 	if (status.ok()) {
-		response.set_data(string(wrser.Slice().data(), wrser.Slice().length()));
+		response.set_data(std::string(wrser.Slice().data(), wrser.Slice().length()));
 		QueryResultsResponse::QueryResultsOptions* opts = response.options().New();
 		bool isWALQuery = (qr.Count() && qr.begin().IsRaw());
 		opts->set_cacheenabled(qr.IsCacheEnabled() && !isWALQuery);
@@ -704,7 +704,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
 	if (status.ok()) {
-		string data;
+		std::string data;
 		assert(rx);
 		status = rx->GetMeta(request->metadata().nsname(), request->metadata().key(), data);
 		if (status.ok()) {
@@ -734,11 +734,11 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
 	if (status.ok()) {
-		vector<string> keys;
+		std::vector<std::string> keys;
 		assert(rx);
 		status = rx->EnumMeta(request->nsname(), keys);
 		if (status.ok()) {
-			for (const string& key : keys) {
+			for (const std::string& key : keys) {
 				*(response->add_keys()) = key;
 			}
 		}
@@ -936,7 +936,7 @@ struct grpc_data {
 };
 
 extern "C" void* start_reindexer_grpc(reindexer_server::DBManager& dbMgr, std::chrono::seconds txIdleTimeout,
-									  reindexer::net::ev::dynamic_loop& loop, const string& address) {
+									  reindexer::net::ev::dynamic_loop& loop, const std::string& address) {
 	auto data = new grpc_data();
 
 	data->service_.reset(new reindexer::grpc::ReindexerService(dbMgr, txIdleTimeout, loop));

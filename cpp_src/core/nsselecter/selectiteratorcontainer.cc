@@ -293,7 +293,9 @@ void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry &jqe, OpType
 		js.SetType(InnerJoin);
 		op = OpOr;
 	}
-	if (op == OpOr && lastAppendedOrClosed() == this->end()) throw Error(errQueryExec, "OR operator in first condition or after left join");
+	if (op == OpOr && lastAppendedOrClosed() == this->end()) {
+		throw Error(errQueryExec, "OR operator in first condition or after left join");
+	}
 	Append(op, JoinSelectIterator{static_cast<size_t>(jqe.joinIndex)});
 }
 
@@ -303,8 +305,10 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 		switch (op) {
 			case OpOr: {
 				const iterator last = lastAppendedOrClosed();
-				if (last == this->end()) throw Error(errQueryExec, "OR operator in first condition or after left join ");
-				if (last->HoldsOrReferTo<SelectIterator>() && !last->Value<SelectIterator>().distinct) {
+				if (last == this->end()) {
+					throw Error(errQueryExec, "OR operator in first condition or after left join ");
+				}
+				if (last->HoldsOrReferTo<SelectIterator>() && !last->Value<SelectIterator>().distinct && last->operation != OpNot) {
 					if (last->IsRef()) {
 						last->SetValue(last->Value<SelectIterator>());
 					}
@@ -575,7 +579,7 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 				if (it->InvokeAppropriate<bool>([](const SelectIteratorsBracket &b) { return !b.haveJoins; },
 												[](const SelectIterator &) { return true; },
 												[](const JoinSelectIterator &) { return false; },
-												[](const FieldsComparator &) { return false; }, [](const AlwaysFalse &) { return false; }))
+												[](const FieldsComparator &) { return true; }, [](const AlwaysFalse &) { return true; }))
 					continue;
 			}
 		} else {

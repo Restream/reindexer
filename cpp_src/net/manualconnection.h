@@ -144,6 +144,7 @@ private:
 	}
 
 	template <typename buf_t, typename switch_policy_t = empty_switch_policy>
+	// NOLINTNEXTLINE(*-unnecessary-value-param)
 	size_t async_read_some_impl(buf_t &data, async_cb_t cb) {
 		assertrx(r_data_.empty());
 		assertrx(data.size());

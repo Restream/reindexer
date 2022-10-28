@@ -55,7 +55,7 @@ static bool isLikePattern(const std::string& str, const std::string& pattern) {
 TEST(StringFunctions, IsLikeSqlPattern) {
 	using namespace std::string_view_literals;
 	srand(std::time(0));
-	struct {
+	struct {  // NOLINT (*performance.Padding) Padding does not matter here
 		int caseNumber;
 		std::string_view str;
 		std::string_view pattern;
@@ -117,7 +117,7 @@ TEST_F(ReindexerApi, LikeWithFullTextIndex) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	// Insert 100 items to newly created Namespace
-	vector<string> content;
+	std::vector<std::string> content;
 	for (int i = 0; i < 100; ++i) {
 		Item item = NewItem(default_namespace);
 		content.emplace_back(RandString());

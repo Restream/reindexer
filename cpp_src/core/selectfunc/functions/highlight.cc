@@ -24,12 +24,12 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 		pl.GetByJsonPath(func.tagsPath, kr, KeyValueUndefined);
 	}
 
-	const string *data = p_string(kr[0]).getCxxstr();
+	const std::string *data = p_string(kr[0]).getCxxstr();
 	auto pva = area->GetAreas(func.fieldNo);
 	if (!pva || pva->empty()) return false;
 	auto &va = *pva;
 
-	string result_string;
+	std::string result_string;
 	result_string.reserve(data->size() + va.size() * (func.funcArgs[0].size() + func.funcArgs[1].size()));
 	result_string = *data;
 

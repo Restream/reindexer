@@ -62,7 +62,7 @@ int ordinator::resume(routine_t id) {
 	}
 
 	assertrx(id <= routines_.size());
-	assertrx(id);	 // For now the main routine should not be resumed explicitly
+	assertrx(id);  // For now the main routine should not be resumed explicitly
 
 	if (id > routines_.size()) return -1;
 
@@ -86,7 +86,7 @@ int ordinator::resume(routine_t id) {
 }
 
 void ordinator::suspend() {
-	assertrx(current_);  // Suspend should not be called from main routine. Probably will be changed later
+	assertrx(current_);	 // Suspend should not be called from main routine. Probably will be changed later
 	current_ = pop_from_call_stack();
 	koishi_yield(nullptr);
 
@@ -118,7 +118,7 @@ void ordinator::remove_from_call_stack(routine_t id) noexcept {
 
 bool ordinator::set_loop_completion_callback(ordinator::cmpl_cb_t cb) noexcept {
 	if (loop_completion_callback_) return false;
-	loop_completion_callback_ = cb;
+	loop_completion_callback_ = std::move(cb);
 	return true;
 }
 

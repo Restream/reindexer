@@ -14,7 +14,7 @@ public:
 
 	bool Compare(const PayloadValue &lhs, int rowId);
 	void ExcludeDistinct(const PayloadValue &, int rowId);
-	void Bind(PayloadType type, int field);
+	void Bind(const PayloadType& type, int field);
 	void BindEqualPosition(int field, const VariantArray &val, CondType cond);
 	void BindEqualPosition(const TagsPath &tagsPath, const VariantArray &val, CondType cond);
 	void ClearDistinct() {

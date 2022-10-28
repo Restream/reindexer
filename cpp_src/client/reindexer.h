@@ -15,8 +15,6 @@ class IUpdatesObserver;
 class UpdatesFilters;
 
 namespace client {
-using std::vector;
-using std::string;
 using std::chrono::milliseconds;
 
 class RPCClient;
@@ -45,10 +43,10 @@ public:
 	/// Connect - connect to reindexer server
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`
 	/// @param opts - Connect options. May contaion any of <br>
-	Error Connect(const string &dsn, const client::ConnectOpts &opts = client::ConnectOpts());
+	Error Connect(const std::string &dsn, const client::ConnectOpts &opts = client::ConnectOpts());
 	/// Connect - connect to reindexer server
 	/// @param connectData - list of server dsn + it's ConnectOpts
-	Error Connect(const vector<pair<string, client::ConnectOpts>> &connectData);
+	Error Connect(const std::vector<std::pair<std::string, client::ConnectOpts>> &connectData);
 	/// Stop - shutdown connector
 	Error Stop();
 	/// Open or create namespace
@@ -93,10 +91,10 @@ public:
 	/// Get list of all available namespaces
 	/// @param defs - std::vector of NamespaceDef of available namespaves
 	/// @param opts - Enumerartion options
-	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts);
+	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts);
 	/// Gets a list of available databases for a certain server.
 	/// @param dbList - list of DB names
-	Error EnumDatabases(vector<string> &dbList);
+	Error EnumDatabases(std::vector<std::string> &dbList);
 	/// Insert new Item to namespace. If item with same PK is already exists, when item.GetID will
 	/// return -1, on success item.GetID() will return internal Item ID
 	/// May be used with completion
@@ -148,16 +146,16 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
 	/// @param data - output string with meta data
-	Error GetMeta(std::string_view nsName, const string &key, string &data);
+	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data);
 	/// Put meta data to storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
 	/// @param data - string with meta data
-	Error PutMeta(std::string_view nsName, const string &key, std::string_view data);
+	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data);
 	/// Get list of all meta data keys
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys
-	Error EnumMeta(std::string_view nsName, vector<string> &keys);
+	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys);
 	/// Subscribe to updates of database
 	/// @param observer - Observer interface, which will receive updates
 	/// @param filters - Subscription filters set
@@ -171,7 +169,7 @@ public:
 	/// @param sqlQuery - sql query.
 	/// @param pos - position in sql query for suggestions.
 	/// @param suggestions - all the suggestions for 'pos' position in query.
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, vector<string> &suggestions);
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions);
 	/// Get curret connection status
 	Error Status();
 	/// Allocate new transaction for namespace
@@ -193,7 +191,7 @@ public:
 	Reindexer WithTimeout(milliseconds timeout) { return Reindexer(impl_, ctx_.WithTimeout(timeout)); }
 	/// Add completion
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Reindexer WithCompletion(Completion cmpl) { return Reindexer(impl_, ctx_.WithCompletion(cmpl)); }
+	Reindexer WithCompletion(Completion cmpl) { return Reindexer(impl_, ctx_.WithCompletion(std::move(cmpl))); }
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;

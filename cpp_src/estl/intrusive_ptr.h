@@ -45,6 +45,7 @@ public:
 		this_type(static_cast<intrusive_ptr &&>(rhs)).swap(*this);
 		return *this;
 	}
+	// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
 	intrusive_ptr &operator=(intrusive_ptr const &rhs) noexcept {
 		this_type(rhs).swap(*this);
 		return *this;

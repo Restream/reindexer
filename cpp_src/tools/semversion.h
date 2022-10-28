@@ -46,7 +46,7 @@ private:
 			result.push_back(res);
 		}
 		versionDigits_ = std::move(result);
-		versionStr_ = string(version);
+		versionStr_ = std::string(version);
 	}
 
 	h_vector<int16_t, kVersionDigitsCount> versionDigits_;

@@ -14,13 +14,13 @@ QueryResults::QueryResults(int fetchFlags)
 	: conn_(nullptr), queryID_(0), fetchOffset_(0), fetchFlags_(fetchFlags), fetchAmount_(0), requestTimeout_(0) {}
 
 QueryResults::QueryResults(QueryResults &&obj) noexcept
-	: conn_(std::move(obj.conn_)),
+	: conn_(obj.conn_),
 	  nsArray_(std::move(obj.nsArray_)),
 	  rawResult_(std::move(obj.rawResult_)),
-	  queryID_(std::move(obj.queryID_)),
-	  fetchOffset_(std::move(obj.fetchOffset_)),
-	  fetchFlags_(std::move(obj.fetchFlags_)),
-	  fetchAmount_(std::move(obj.fetchAmount_)),
+	  queryID_(obj.queryID_),
+	  fetchOffset_(obj.fetchOffset_),
+	  fetchFlags_(obj.fetchFlags_),
+	  fetchAmount_(obj.fetchAmount_),
 	  requestTimeout_(obj.requestTimeout_),
 	  queryParams_(std::move(obj.queryParams_)),
 	  status_(std::move(obj.status_)),
@@ -29,13 +29,13 @@ QueryResults::QueryResults(QueryResults &&obj) noexcept
 QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 	if (this != &obj) {
 		rawResult_ = std::move(obj.rawResult_);
-		conn_ = std::move(obj.conn_);
+		conn_ = obj.conn_;
 		nsArray_ = std::move(obj.nsArray_);
 		queryParams_ = std::move(obj.queryParams_);
-		fetchOffset_ = std::move(obj.fetchOffset_);
-		fetchFlags_ = std::move(obj.fetchFlags_);
-		fetchAmount_ = std::move(obj.fetchAmount_);
-		queryID_ = std::move(obj.queryID_);
+		fetchOffset_ = obj.fetchOffset_;
+		fetchFlags_ = obj.fetchFlags_;
+		fetchAmount_ = obj.fetchAmount_;
+		queryID_ = obj.queryID_;
 		status_ = std::move(obj.status_);
 		cmpl_ = std::move(obj.cmpl_);
 		requestTimeout_ = obj.requestTimeout_;
@@ -56,7 +56,7 @@ QueryResults::QueryResults(net::cproto::ClientConnection *conn, NsArray &&nsArra
 
 QueryResults::QueryResults(net::cproto::ClientConnection *conn, NsArray &&nsArray, Completion cmpl, std::string_view rawResult, int queryID,
 						   int fetchFlags, int fetchAmount, seconds timeout)
-	: QueryResults(conn, std::move(nsArray), cmpl, fetchFlags, fetchAmount, timeout) {
+	: QueryResults(conn, std::move(nsArray), std::move(cmpl), fetchFlags, fetchAmount, timeout) {
 	Bind(rawResult, queryID);
 }
 

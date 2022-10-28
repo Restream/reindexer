@@ -209,7 +209,7 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 			if (std::find_if(joinedSelectorIt + 1, joinedSelectors.cend(),
 							 [namespaceName](const T& js) { return namespaceName == js.RightNsName(); }) != joinedSelectors.cend()) {
 				throwParseError(fullExpr, pos,
-								"Sorting by namespace which has been joined more than once: '" + string(namespaceName) + "'.");
+								"Sorting by namespace which has been joined more than once: '" + std::string(namespaceName) + "'.");
 			}
 			expr.remove_prefix(pos - expr.data());
 		} else {
@@ -466,7 +466,8 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 					}
 					break;
 				default:
-					throwParseError(fullExpr, expr.data(), string("Expected ')', '+', '-', '*' of '/', but obtained '") + expr[0] + "'.");
+					throwParseError(fullExpr, expr.data(),
+									std::string("Expected ')', '+', '-', '*' of '/', but obtained '") + expr[0] + "'.");
 			}
 			expr.remove_prefix(1);
 			expectValue = true;

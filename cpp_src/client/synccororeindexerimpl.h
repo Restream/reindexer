@@ -64,7 +64,7 @@ private:
 	Item execNewItemTx(CoroTransaction &tr);
 	Item newItemTx(CoroTransaction &tr);
 	Error execAddTxItem(CoroTransaction &tr, Item &item, ItemModifyMode mode);
-	void threadLoopFun(std::promise<Error> &&isRunning, const string &dsn, const client::ConnectOpts &opts);
+	void threadLoopFun(std::promise<Error> &&isRunning, const std::string &dsn, const client::ConnectOpts &opts);
 
 	bool exit_ = false;
 	enum CmdName {
@@ -115,12 +115,12 @@ private:
 	struct DatabaseCommand : public DatabaseCommandBase {
 		std::promise<R> ret;
 		std::tuple<P...> arguments;
-		DatabaseCommand(CmdName id, std::promise<R> r, P &&... p)
+		DatabaseCommand(CmdName id, std::promise<R> r, P &&...p)
 			: DatabaseCommandBase(id), ret(std::move(r)), arguments(std::forward<P>(p)...) {}
 	};
 
 	template <typename R, typename... Args>
-	R sendCommand(CmdName c, Args &&... args) {
+	R sendCommand(CmdName c, Args &&...args) {
 		std::promise<R> promise;
 		std::future<R> future = promise.get_future();
 		DatabaseCommand<R, Args...> cmd(c, std::move(promise), std::forward<Args>(args)...);

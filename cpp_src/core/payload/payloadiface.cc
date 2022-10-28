@@ -9,8 +9,6 @@
 #include "payloadiface.h"
 #include "payloadvalue.h"
 
-using std::pair;
-
 namespace reindexer {
 
 template <typename T>
@@ -257,7 +255,7 @@ void PayloadIface<T>::SerializeFields(WrSerializer &ser, const FieldsSet &fields
 
 template <typename T>
 std::string PayloadIface<T>::Dump() const {
-	string printString;
+	std::string printString;
 	for (int i = 0; i < NumFields(); ++i) {
 		VariantArray fieldValues;
 		Get(i, fieldValues);
@@ -268,7 +266,7 @@ std::string PayloadIface<T>::Dump() const {
 		if (Type().Field(i).IsArray()) printString += "[";
 		for (size_t j = 0; j < fieldValues.size(); ++j) {
 			auto &fieldValue = fieldValues[j];
-			auto str = fieldValue.As<string>();
+			auto str = fieldValue.As<std::string>();
 			if (i != 0)
 				printString += str;
 			else {
@@ -296,7 +294,7 @@ template <>
 std::string PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher &tm) {
 	WrSerializer ser;
 	GetJSON(tm, ser);
-	return string(ser.Slice());
+	return std::string(ser.Slice());
 }
 
 // Get fields hash
@@ -435,12 +433,12 @@ void PayloadIface<T>::AddRefStrings(int field) {
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
 		auto str = *reinterpret_cast<const p_string *>((v_->Ptr() + f.Offset()));
-		key_string_add_ref(const_cast<string *>(str.getCxxstr()));
+		key_string_add_ref(const_cast<std::string *>(str.getCxxstr()));
 	} else {
 		auto arr = reinterpret_cast<PayloadFieldValue::Array *>(v_->Ptr() + f.Offset());
 		for (int i = 0; i < arr->len; i++) {
 			auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-			key_string_add_ref(const_cast<string *>(str.getCxxstr()));
+			key_string_add_ref(const_cast<std::string *>(str.getCxxstr()));
 		}
 	}
 }
@@ -458,12 +456,12 @@ void PayloadIface<T>::ReleaseStrings(int field) {
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
 		auto str = *reinterpret_cast<p_string *>((v_->Ptr() + f.Offset()));
-		key_string_release(const_cast<string *>(str.getCxxstr()));
+		key_string_release(const_cast<std::string *>(str.getCxxstr()));
 	} else {
 		auto arr = reinterpret_cast<PayloadFieldValue::Array *>(v_->Ptr() + f.Offset());
 		for (int i = 0; i < arr->len; i++) {
 			auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-			key_string_release(const_cast<string *>(str.getCxxstr()));
+			key_string_release(const_cast<std::string *>(str.getCxxstr()));
 		}
 	}
 }
@@ -477,12 +475,12 @@ void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder &dest, bool copy) {
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
 		auto str = *reinterpret_cast<p_string *>((v_->Ptr() + f.Offset()));
-		dest.emplace_back(reinterpret_cast<base_key_string *>(const_cast<string *>(str.getCxxstr())), copy);
+		dest.emplace_back(reinterpret_cast<base_key_string *>(const_cast<std::string *>(str.getCxxstr())), copy);
 	} else {
 		auto arr = reinterpret_cast<PayloadFieldValue::Array *>(v_->Ptr() + f.Offset());
 		for (int i = 0; i < arr->len; i++) {
 			auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-			dest.emplace_back(reinterpret_cast<base_key_string *>(const_cast<string *>(str.getCxxstr())), copy);
+			dest.emplace_back(reinterpret_cast<base_key_string *>(const_cast<std::string *>(str.getCxxstr())), copy);
 		}
 	}
 }
@@ -544,9 +542,9 @@ template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
 T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 	size_t totalReduce = 0;
-	std::vector<string> fieldsLeft;
+	std::vector<std::string> fieldsLeft;
 	for (int idx = 0; idx < t_.NumFields(); ++idx) {
-		const string &fieldname(t_.Field(idx).Name());
+		const std::string &fieldname(t_.Field(idx).Name());
 		if (modifiedType.Contains(fieldname)) {
 			fieldsLeft.emplace_back(fieldname);
 		} else {
@@ -559,7 +557,7 @@ T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 	T pv(RealSize() - totalReduce);
 	PayloadIface<T> copyValueInterface(modifiedType, pv);
 	for (size_t i = 0; i < fieldsLeft.size(); ++i) {
-		const string &fieldname(fieldsLeft[i]);
+		const std::string &fieldname(fieldsLeft[i]);
 		Get(fieldname, kr);
 		copyValueInterface.Set(fieldname, kr, false);
 	}

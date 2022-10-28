@@ -7,11 +7,11 @@
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
-#include "yaml/yaml.h"
+#include "yaml-cpp/yaml.h"
 
 namespace reindexer {
 
-static CacheMode str2cacheMode(const string &mode) {
+static CacheMode str2cacheMode(const std::string &mode) {
 	if (mode == "on") return CacheModeOn;
 	if (mode == "off" || mode == "") return CacheModeOff;
 	if (mode == "aggressive") return CacheModeAggressive;
@@ -42,9 +42,9 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				NamespaceConfigData data;
 				data.lazyLoad = nsNode["lazyload"].As<bool>();
 				data.noQueryIdleThreshold = nsNode["unload_idle_threshold"].As<int>();
-				data.logLevel = logLevelFromString(nsNode["log_level"].As<string>("none"));
-				data.strictMode = strictModeFromString(nsNode["strict_mode"].As<string>("names"));
-				data.cacheMode = str2cacheMode(nsNode["join_cache_mode"].As<string>("off"));
+				data.logLevel = logLevelFromString(nsNode["log_level"].As<std::string>("none"));
+				data.strictMode = strictModeFromString(nsNode["strict_mode"].As<std::string>("names"));
+				data.cacheMode = str2cacheMode(nsNode["join_cache_mode"].As<std::string>("off"));
 				data.startCopyPolicyTxSize = nsNode["start_copy_policy_tx_size"].As<int>(data.startCopyPolicyTxSize);
 				data.copyPolicyMultiplier = nsNode["copy_policy_multiplier"].As<int>(data.copyPolicyMultiplier);
 				data.txSizeToAlwaysCopy = nsNode["tx_size_to_always_copy"].As<int>(data.txSizeToAlwaysCopy);
@@ -59,7 +59,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				data.maxPreselectPart = nsNode["max_preselect_part"].As<double>(data.maxPreselectPart, 0.0, 1.0);
 				data.idxUpdatesCountingMode = nsNode["index_updates_counting_mode"].As<bool>(data.idxUpdatesCountingMode);
 				data.syncStorageFlushLimit = nsNode["sync_storage_flush_limit"].As<int>(data.syncStorageFlushLimit, 0);
-				namespacesData_.emplace(nsNode["namespace"].As<string>(), std::move(data));
+				namespacesData_.emplace(nsNode["namespace"].As<std::string>(), std::move(data));  // NOLINT(performance-move-const-arg)
 			}
 			auto it = handlers_.find(NamespaceDataConf);
 			if (it != handlers_.end()) (it->second)();
@@ -83,7 +83,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 
 void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> handler) {
 	smart_lock<shared_timed_mutex> lk(mtx_, true);
-	handlers_[cfgType] = handler;
+	handlers_[cfgType] = std::move(handler);
 }
 
 ProfilingConfigData DBConfigProvider::GetProfilingConfig() {
@@ -96,7 +96,7 @@ ReplicationConfigData DBConfigProvider::GetReplicationConfig() {
 	return replicationData_;
 }
 
-bool DBConfigProvider::GetNamespaceConfig(const string &nsName, NamespaceConfigData &data) {
+bool DBConfigProvider::GetNamespaceConfig(const std::string &nsName, NamespaceConfigData &data) {
 	smart_lock<shared_timed_mutex> lk(mtx_, false);
 	auto it = namespacesData_.find(nsName);
 	if (it == namespacesData_.end()) {
@@ -110,31 +110,30 @@ bool DBConfigProvider::GetNamespaceConfig(const string &nsName, NamespaceConfigD
 	return true;
 }
 
-Error ReplicationConfigData::FromYML(const string &yaml) {
-	Yaml::Node root;
+Error ReplicationConfigData::FromYML(const std::string &yaml) {
 	try {
-		Yaml::Parse(root, yaml);
-		masterDSN = root["master_dsn"].As<std::string>(masterDSN);
-		appName = root["app_name"].As<std::string>(appName);
-		connPoolSize = root["conn_pool_size"].As<int>(connPoolSize);
-		workerThreads = root["worker_threads"].As<int>(workerThreads);
-		timeoutSec = root["timeout_sec"].As<int>(timeoutSec);
-		clusterID = root["cluster_id"].As<int>(clusterID);
-		role = str2role(root["role"].As<std::string>(role2str(role)));
-		forceSyncOnLogicError = root["force_sync_on_logic_error"].As<bool>(forceSyncOnLogicError);
-		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].As<bool>(forceSyncOnWrongDataHash);
-		retrySyncIntervalSec = root["retry_sync_interval_sec"].As<int>(retrySyncIntervalSec);
-		onlineReplErrorsThreshold = root["online_repl_errors_threshold"].As<int>(onlineReplErrorsThreshold);
-		enableCompression = root["enable_compression"].As<bool>(enableCompression);
-		serverId = root["server_id"].As<int>(serverId);
-		auto &node = root["namespaces"];
+		YAML::Node root = YAML::Load(yaml);
+		masterDSN = root["master_dsn"].as<std::string>(masterDSN);
+		appName = root["app_name"].as<std::string>(appName);
+		connPoolSize = root["conn_pool_size"].as<int>(connPoolSize);
+		workerThreads = root["worker_threads"].as<int>(workerThreads);
+		timeoutSec = root["timeout_sec"].as<int>(timeoutSec);
+		clusterID = root["cluster_id"].as<int>(clusterID);
+		role = str2role(root["role"].as<std::string>(role2str(role)));
+		forceSyncOnLogicError = root["force_sync_on_logic_error"].as<bool>(forceSyncOnLogicError);
+		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].as<bool>(forceSyncOnWrongDataHash);
+		retrySyncIntervalSec = root["retry_sync_interval_sec"].as<int>(retrySyncIntervalSec);
+		onlineReplErrorsThreshold = root["online_repl_errors_threshold"].as<int>(onlineReplErrorsThreshold);
+		enableCompression = root["enable_compression"].as<bool>(enableCompression);
+		serverId = root["server_id"].as<int>(serverId);
+		auto node = root["namespaces"];
 		namespaces.clear();
-		for (unsigned i = 0; i < node.Size(); i++) {
-			namespaces.insert(node[i].As<std::string>());
+		for (const auto &it : node) {
+			namespaces.insert(it.as<std::string>());
 		}
 		return errOK;
-	} catch (const Yaml::Exception &ex) {
-		return Error(errParams, "yaml parsing error: '%s'", ex.Message());
+	} catch (const YAML::Exception &ex) {
+		return Error(errParams, "yaml parsing error: '%s'", ex.what());
 	} catch (const Error &err) {
 		return err;
 	}
@@ -142,13 +141,13 @@ Error ReplicationConfigData::FromYML(const string &yaml) {
 
 Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 	try {
-		masterDSN = root["master_dsn"].As<string>();
-		appName = root["app_name"].As<string>(std::move(appName));
+		masterDSN = root["master_dsn"].As<std::string>();
+		appName = root["app_name"].As<std::string>(std::move(appName));
 		connPoolSize = root["conn_pool_size"].As<int>(connPoolSize);
 		workerThreads = root["worker_threads"].As<int>(workerThreads);
 		timeoutSec = root["timeout_sec"].As<int>(timeoutSec);
 		clusterID = root["cluster_id"].As<int>(clusterID);
-		role = str2role(root["role"].As<string>("none"));
+		role = str2role(root["role"].As<std::string>("none"));
 		forceSyncOnLogicError = root["force_sync_on_logic_error"].As<bool>();
 		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].As<bool>();
 		retrySyncIntervalSec = root["retry_sync_interval_sec"].As<int>(retrySyncIntervalSec);
@@ -157,7 +156,7 @@ Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 		serverId = root["server_id"].As<int>(serverId);
 		namespaces.clear();
 		for (auto &objNode : root["namespaces"]) {
-			namespaces.insert(objNode.As<string>());
+			namespaces.insert(objNode.As<std::string>());
 		}
 	} catch (const Error &err) {
 		return err;
@@ -167,7 +166,7 @@ Error ReplicationConfigData::FromJSON(const gason::JsonNode &root) {
 	return errOK;
 }
 
-ReplicationRole ReplicationConfigData::str2role(const string &role) {
+ReplicationRole ReplicationConfigData::str2role(const std::string &role) {
 	if (role == "master") return ReplicationMaster;
 	if (role == "slave") return ReplicationSlave;
 	if (role == "none") return ReplicationNone;
@@ -207,18 +206,10 @@ void ReplicationConfigData::GetJSON(JsonBuilder &jb) const {
 }
 
 void ReplicationConfigData::GetYAML(WrSerializer &ser) const {
-	std::string namespacesStr;
-	if (namespaces.empty()) {
-		namespacesStr = "namespaces: []";
-	} else {
-		size_t i = 0;
-		Yaml::Node nsYaml;
-		auto &nsArrayYaml = nsYaml["namespaces"];
-		for (auto &ns : namespaces) {
-			nsArrayYaml.PushBack();
-			nsArrayYaml[i++] = std::move(ns);
-		}
-		Yaml::Serialize(nsYaml, namespacesStr);
+	YAML::Node nssYaml;
+	nssYaml["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
+	for (const auto &ns : namespaces) {
+		nssYaml["namespaces"].push_back(ns);
 	}
 	// clang-format off
 	ser <<	"# Replication role. May be one of\n"
@@ -257,8 +248,7 @@ void ReplicationConfigData::GetYAML(WrSerializer &ser) const {
 			"\n"
 			"# List of namespaces for replication. If emply, all namespaces\n"
 			"# All replicated namespaces will become read only for slave\n"
-			"# It should be written as YAML sequence, JSON-style arrays are not supported\n"
-			+ namespacesStr + '\n';
+			+ YAML::Dump(nssYaml) + '\n';
 	// clang-format on
 }
 

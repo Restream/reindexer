@@ -22,7 +22,7 @@ public:
 		openMemstatNs();
 	}
 
-	void ChangeConfigSettings(const string& ns, bool lazyLoad, int noQueryIdleThresholdSec) {
+	void ChangeConfigSettings(const std::string& ns, bool lazyLoad, int noQueryIdleThresholdSec) {
 		Item item = NewItem(kConfigNamespace);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 

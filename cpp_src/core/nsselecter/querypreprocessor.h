@@ -17,12 +17,13 @@ class QueryPreprocessor : private QueryEntries {
 public:
 	QueryPreprocessor(QueryEntries &&, const Query &, NamespaceImpl *, bool reqMatchedOnce, bool inTransaction);
 	const QueryEntries &GetQueryEntries() const noexcept { return *this; }
-	void LookupQueryIndexes() {
+	bool LookupQueryIndexes() {
 		const size_t merged = lookupQueryIndexes(0, 0, container_.size() - queryEntryAddedByForcedSortOptimization_);
 		if (queryEntryAddedByForcedSortOptimization_) {
 			container_[container_.size() - merged - 1] = std::move(container_.back());
 		}
 		container_.resize(container_.size() - merged);
+		return merged != 0;
 	}
 	bool ContainsFullTextIndexes() const;
 	bool ContainsForcedSortOrder() const noexcept {
@@ -32,7 +33,9 @@ public:
 		return forcedSortOrder_;
 	}
 	void CheckUniqueFtQuery() const;
-	void SubstituteCompositeIndexes() { substituteCompositeIndexes(0, container_.size() - queryEntryAddedByForcedSortOptimization_); }
+	bool SubstituteCompositeIndexes() {
+		return substituteCompositeIndexes(0, container_.size() - queryEntryAddedByForcedSortOptimization_) != 0;
+	}
 	void ConvertWhereValues() { convertWhereValues(begin(), end()); }
 	void AddDistinctEntries(const h_vector<Aggregator, 4> &);
 	bool NeedNextEvaluation(unsigned start, unsigned count, bool &matchedAtLeastOnce) noexcept;
@@ -43,6 +46,8 @@ public:
 	void InjectConditionsFromJoins(JoinedSelectors &js, const RdxContext &rdxCtx) {
 		injectConditionsFromJoins(0, container_.size(), js, rdxCtx);
 	}
+	void Reduce(bool isFt);
+	void InitIndexNumbers();
 	using QueryEntries::Size;
 	using QueryEntries::Dump;
 	SortingEntries GetSortingEntries(bool havePreresult) const;
@@ -70,7 +75,15 @@ private:
 	void convertWhereValues(QueryEntry *) const;
 	const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
 	void injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &, const RdxContext &);
+	void fillQueryEntryFromOnCondition(QueryEntry &, NamespaceImpl &rightNs, Query joinQuery, std::string joinIndex, CondType condition,
+									   KeyValueType, const RdxContext &);
+	template <bool byJsonPath>
+	void fillQueryEntryFromOnCondition(QueryEntry &, std::string_view joinIndex, CondType condition, const JoinedSelector &, KeyValueType,
+									   int rightIdxNo, const CollateOpts &);
 	void checkStrictMode(const std::string &index, int idxNo) const;
+	bool removeBrackets();
+	size_t removeBrackets(size_t begin, size_t end);
+	bool canRemoveBracket(size_t i) const;
 
 	NamespaceImpl &ns_;
 	StrictMode strictMode_;

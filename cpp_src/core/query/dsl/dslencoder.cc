@@ -7,8 +7,6 @@
 #include "core/queryresults/aggregationresult.h"
 #include "dslparser.h"
 
-using std::unordered_map;
-
 struct EnumClassHash {
 	template <typename T>
 	size_t operator()(T t) const {
@@ -19,24 +17,25 @@ struct EnumClassHash {
 namespace reindexer {
 namespace dsl {
 
-const unordered_map<JoinType, string, EnumClassHash> join_types = {{InnerJoin, "inner"}, {LeftJoin, "left"}, {OrInnerJoin, "orinner"}};
+const std::unordered_map<JoinType, std::string, EnumClassHash> join_types = {
+	{InnerJoin, "inner"}, {LeftJoin, "left"}, {OrInnerJoin, "orinner"}};
 
-const unordered_map<CondType, string, EnumClassHash> cond_map = {
+const std::unordered_map<CondType, std::string, EnumClassHash> cond_map = {
 	{CondAny, "any"},	  {CondEq, "eq"},	{CondLt, "lt"},			{CondLe, "le"},		  {CondGt, "gt"},	  {CondGe, "ge"},
 	{CondRange, "range"}, {CondSet, "set"}, {CondAllSet, "allset"}, {CondEmpty, "empty"}, {CondLike, "like"}, {CondDWithin, "dwithin"},
 };
 
-const unordered_map<OpType, string, EnumClassHash> op_map = {{OpOr, "or"}, {OpAnd, "and"}, {OpNot, "not"}};
+const std::unordered_map<OpType, std::string, EnumClassHash> op_map = {{OpOr, "or"}, {OpAnd, "and"}, {OpNot, "not"}};
 
-const unordered_map<CalcTotalMode, string, EnumClassHash> reqtotal_values = {
+const std::unordered_map<CalcTotalMode, std::string, EnumClassHash> reqtotal_values = {
 	{ModeNoTotal, "disabled"}, {ModeAccurateTotal, "enabled"}, {ModeCachedTotal, "cached"}};
 
 template <typename T>
-string get(unordered_map<T, string, EnumClassHash> const& m, const T& key) {
+std::string get(std::unordered_map<T, std::string, EnumClassHash> const& m, const T& key) {
 	auto it = m.find(key);
 	if (it != m.end()) return it->second;
 	assertrx(it != m.end());
-	return string();
+	return std::string();
 }
 
 void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& builder) {
@@ -266,7 +265,7 @@ std::string toDsl(const Query& query) {
 	toDsl(query, builder);
 
 	builder.End();
-	return string(ser.Slice());
+	return std::string(ser.Slice());
 }
 
 }  // namespace dsl

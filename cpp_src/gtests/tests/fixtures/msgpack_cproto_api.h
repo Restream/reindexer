@@ -10,6 +10,7 @@
 #include "server/dbmanager.h"
 #include "server/server.h"
 #include "tools/fsops.h"
+#include "yaml-cpp/yaml.h"
 
 class MsgPackCprotoApi : public ReindexerApi {
 public:
@@ -18,19 +19,15 @@ public:
 
 	void SetUp() {
 		reindexer::fs::RmDirAll(kDbPath);
-		// clang-format off
-        const string yaml =
-                "storage:\n"
-                "    path: /tmp/reindex/" + kDbPath +"\n"
-                "logger:\n"
-                "   loglevel: none\n"
-                "   rpclog: \n"
-                "   serverlog: \n"
-                "net:\n"
-                "   rpcaddr: 0.0.0.0:25677\n"
-                "   httpaddr: 0.0.0.0:44444\n";
-		// clang-format on
-		auto err = server_.InitFromYAML(yaml);
+		YAML::Node y;
+		y["storage"]["path"] = "/tmp/reindex/" + kDbPath;
+		y["logger"]["loglevel"] = "none";
+		y["logger"]["rpclog"] = "none";
+		y["logger"]["serverlog"] = "none";
+		y["net"]["httpaddr"] = "0.0.0.0:44444";
+		y["net"]["rpcaddr"] = "0.0.0.0:25677";
+
+		auto err = server_.InitFromYAML(YAML::Dump(y));
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		serverThread_ = std::unique_ptr<std::thread>(new std::thread([this]() {
@@ -43,7 +40,7 @@ public:
 		}
 
 		client_.reset(new reindexer::client::RPCClientMock());
-		err = client_->Connect(string("cproto://127.0.0.1:25677/" + kDbPath), reindexer::client::ConnectOpts().CreateDBIfMissing());
+		err = client_->Connect("cproto://127.0.0.1:25677/" + kDbPath, reindexer::client::ConnectOpts().CreateDBIfMissing());
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		err = client_->OpenNamespace(default_namespace, ctx_, StorageOpts().CreateIfMissing());
@@ -93,7 +90,7 @@ public:
 
 	void checkItem(reindexer::client::QueryResults::Iterator& it) {
 		reindexer::client::Item item = it.GetItem();
-		string json(item.GetJSON());
+		std::string json(item.GetJSON());
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		reindexer::WrSerializer buf;
@@ -104,15 +101,15 @@ public:
 		reindexer::client::Item simulatedItem = client_->NewItem(default_namespace);
 		err = simulatedItem.FromMsgPack(buf.Slice(), offset);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_TRUE(json.compare(string(simulatedItem.GetJSON())) == 0);
+		ASSERT_TRUE(json.compare(simulatedItem.GetJSON()) == 0);
 	}
 
 protected:
-	const string kDbPath = "cproto_msgpack_test";
-	const string kFieldId = "id";
-	const string kFieldA1 = "a1";
-	const string kFieldA2 = "a2";
-	const string kFieldA3 = "a3";
+	const std::string kDbPath = "cproto_msgpack_test";
+	const std::string kFieldId = "id";
+	const std::string kFieldA1 = "a1";
+	const std::string kFieldA2 = "a2";
+	const std::string kFieldA3 = "a3";
 
 	reindexer_server::Server server_;
 	std::unique_ptr<std::thread> serverThread_;

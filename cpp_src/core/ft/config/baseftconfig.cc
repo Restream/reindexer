@@ -25,19 +25,19 @@ void BaseFTConfig::parseBase(const gason::JsonNode &root) {
 	auto &stopWordsNode = root["stop_words"];
 	if (!stopWordsNode.empty()) {
 		stopWords.clear();
-		for (auto &sw : stopWordsNode) stopWords.insert(sw.As<string>());
+		for (auto &sw : stopWordsNode) stopWords.insert(sw.As<std::string>());
 	}
 
 	auto &stemmersNode = root["stemmers"];
 	if (!stemmersNode.empty()) {
 		stemmers.clear();
-		for (auto &st : stemmersNode) stemmers.push_back(st.As<string>());
+		for (auto &st : stemmersNode) stemmers.push_back(st.As<std::string>());
 	}
 	synonyms.clear();
 	for (auto &se : root["synonyms"]) {
 		Synonym synonym;
-		for (auto &ae : se["alternatives"]) synonym.alternatives.push_back(ae.As<string>());
-		for (auto &te : se["tokens"]) synonym.tokens.push_back(te.As<string>());
+		for (auto &ae : se["alternatives"]) synonym.alternatives.push_back(ae.As<std::string>());
+		for (auto &te : se["tokens"]) synonym.tokens.push_back(te.As<std::string>());
 		synonyms.push_back(std::move(synonym));
 	}
 }

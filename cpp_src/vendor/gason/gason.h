@@ -1,14 +1,14 @@
 #pragma once
 
-#include <assert.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
-#include <string_view>
 #include <type_traits>
 #include "estl/span.h"
+#include "tools/jsonstring.h"
 
 namespace gason {
 
@@ -20,27 +20,29 @@ struct JsonNode;
 
 using Exception = std::runtime_error;
 
+using LargeStringStorageT = std::vector<std::unique_ptr<char[]>>;
+
 struct JsonString {
-	JsonString(char *beg, char *end) {
+	JsonString(char *beg, char *end, LargeStringStorageT &largeStrings) {
 		ptr = end;
-		size_t l = end - beg;
-		if (l >= (1 << 24)) {
-			throw Exception("JSON string too long. Limit is 2^24 bytes");
+		const uint64_t l = end - beg;
+		if (l >= (uint64_t(1) << 31)) {
+			throw Exception("JSON string too long. Limit is 2^31 bytes");
 		}
-		uint8_t *p = reinterpret_cast<uint8_t *>(end);
-		p[0] = l & 0xFF;
-		p[1] = (l >> 8) & 0xFF;
-		p[2] = (l >> 16) & 0xFF;
+		reindexer::json_string::encode(reinterpret_cast<uint8_t *>(end), l, largeStrings);
 	}
 	JsonString(const char *end = nullptr) : ptr(end) {}
 
 	size_t length() const noexcept {
 		assert(ptr);
-		const uint8_t *p = reinterpret_cast<const uint8_t *>(ptr);
-		return p[0] | (p[1] << 8) | (p[2] << 16);
+		return reindexer::json_string::length(reinterpret_cast<const uint8_t *>(ptr));
 	}
-	size_t size() const noexcept { return length(); }
-	const char *data() const noexcept { return ptr - length(); }
+	size_t size() const noexcept { return ptr ? length() : 0; }
+	const char *data() const noexcept {
+		if (!ptr) return nullptr;
+
+		return reindexer::json_string::to_string_view(reinterpret_cast<const uint8_t *>(ptr)).data();
+	}
 	explicit operator std::string() const { return ptr ? std::string(data(), length()) : std::string(); }
 	operator std::string_view() const noexcept { return ptr ? std::string_view(data(), length()) : std::string_view(); }
 
@@ -208,12 +210,12 @@ public:
 	void deallocate();
 };
 
-int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &allocator);
 bool isHomogeneousArray(const JsonValue &v);
 
 // Parser wrapper
 class JsonParser {
 public:
+	JsonParser(LargeStringStorageT *strings = nullptr) : largeStrings_(strings ? strings : &internalLargeStrings_) {}
 	// Inplace parse. Buffer pointed by str will be changed
 	JsonNode Parse(span<char> str, size_t *length = nullptr);
 	// Copy str. Buffer pointed by str will be copied
@@ -222,6 +224,8 @@ public:
 private:
 	JsonAllocator alloc_;
 	std::string tmp_;
+	LargeStringStorageT internalLargeStrings_;
+	LargeStringStorageT *largeStrings_;
 };
 
 }  // namespace gason

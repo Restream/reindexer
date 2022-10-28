@@ -58,8 +58,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	auto aggregators = getAggregators(ctx.query);
 	qPreproc.AddDistinctEntries(aggregators);
 	const bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
-	if (!ctx.skipIndexesLookup) qPreproc.LookupQueryIndexes();
-
+	qPreproc.InitIndexNumbers();
 	bool isFt = qPreproc.ContainsFullTextIndexes();
 	// Prepare data for select functions
 	if (ctx.functions) {
@@ -71,7 +70,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		qPreproc.CheckUniqueFtQuery();
 		qPreproc.ExcludeFtQuery(*fnc_, rdxCtx);
 	}
-	if (!ctx.skipIndexesLookup && !isFt) qPreproc.SubstituteCompositeIndexes();
+	if (!ctx.skipIndexesLookup) {
+		qPreproc.Reduce(isFt);
+	}
 	qPreproc.ConvertWhereValues();
 
 	if (ctx.contextCollectingMode) {
@@ -144,7 +145,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 				case JoinPreResult::ModeIdSet: {
 					SelectKeyResult res;
 					res.emplace_back(std::move(ctx.preResult->ids));
-					static const string pr = "-preresult";
+					static const std::string pr = "-preresult";
 					qres.Append(OpAnd, SelectIterator(std::move(res), false, pr));
 				} break;
 				case JoinPreResult::ModeIterators:
@@ -366,15 +367,15 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 }
 
 template <typename It>
-const PayloadValue &getValue(const ItemRef &itemRef, const vector<PayloadValue> &items);
+const PayloadValue &getValue(const ItemRef &itemRef, const std::vector<PayloadValue> &items);
 
 template <>
-const PayloadValue &getValue<ItemRefVector::iterator>(const ItemRef &itemRef, const vector<PayloadValue> &items) {
+const PayloadValue &getValue<ItemRefVector::iterator>(const ItemRef &itemRef, const std::vector<PayloadValue> &items) {
 	return items[itemRef.Id()];
 }
 
 template <>
-const PayloadValue &getValue<JoinPreResult::Values::iterator>(const ItemRef &itemRef, const vector<PayloadValue> &) {
+const PayloadValue &getValue<JoinPreResult::Values::iterator>(const ItemRef &itemRef, const std::vector<PayloadValue> &) {
 	return itemRef.Value();
 }
 
@@ -388,7 +389,7 @@ It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator &compare, 
 	if (ctx.query.mergeQueries_.size() > 1) throw Error(errLogic, "Force sort could not be applied to 'merged' queries.");
 
 	auto payloadType = ns_->payloadType_;
-	const string &fieldName = ctx.query.sortingEntries_[0].expression;
+	const std::string &fieldName = ctx.query.sortingEntries_[0].expression;
 
 	int idx = ns_->getIndexByName(fieldName);
 
@@ -890,7 +891,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 	if (distinctIndexes.size() <= 1) return ret;
 	for (const Aggregator &agg : ret) {
 		if (agg.Type() == AggDistinct) continue;
-		for (const string &name : agg.Names()) {
+		for (const std::string &name : agg.Names()) {
 			if (std::find_if(distinctIndexes.cbegin(), distinctIndexes.cend(),
 							 [&ret, &name](size_t idx) { return ret[idx].Names()[0] == name; }) == distinctIndexes.cend()) {
 				throw Error(errQueryExec, "Cannot be combined several distincts and non distinct aggregator on index %s", name);
@@ -904,7 +905,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 void NsSelecter::prepareSortIndex(std::string_view column, int &index, bool &skipSortingEntry, StrictMode strictMode) {
 	assertrx(!column.empty());
 	index = IndexValueType::SetByJsonPath;
-	if (ns_->getIndexByName(string{column}, index) && ns_->indexes_[index]->Opts().IsSparse()) {
+	if (ns_->getIndexByName(std::string{column}, index) && ns_->indexes_[index]->Opts().IsSparse()) {
 		index = IndexValueType::SetByJsonPath;
 	}
 	if (index == IndexValueType::SetByJsonPath) {
@@ -918,7 +919,7 @@ void NsSelecter::prepareSortJoinedIndex(size_t nsIdx, std::string_view column, i
 	index = IndexValueType::SetByJsonPath;
 	const auto &js = joinedSelectors[nsIdx];
 	(js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.payloadType : js.rightNs_->payloadType_)
-		.FieldByName(string{column}, index);
+		.FieldByName(std::string{column}, index);
 	if (index == IndexValueType::SetByJsonPath) {
 		skipSortingEntry |= !validateField(
 			strictMode, column, js.joinQuery_._namespace,
@@ -1046,7 +1047,7 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 			sortingCtx.expression = ctx.sortingContext.expressions.size() - 1;
 			ctx.isForceAll = true;
 		}
-		ctx.sortingContext.entries.emplace_back(std::move(sortingCtx));
+		ctx.sortingContext.entries.emplace_back(std::move(sortingCtx));	 // NOLINT(performance-move-const-arg)
 	}
 	ctx.sortingContext.exprResults.clear();
 	ctx.sortingContext.exprResults.resize(ctx.sortingContext.expressions.size());

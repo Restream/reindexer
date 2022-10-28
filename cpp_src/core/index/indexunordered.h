@@ -31,8 +31,8 @@ public:
 
 	Variant Upsert(const Variant &key, IdType id, bool &chearCache) override;
 	void Delete(const Variant &key, IdType id, StringsHolder &, bool &chearCache) override;
-	SelectKeyResults SelectKey(const VariantArray &keys, CondType cond, SortType stype, Index::SelectOpts opts, BaseFunctionCtx::Ptr ctx,
-							   const RdxContext &) override;
+	SelectKeyResults SelectKey(const VariantArray &keys, CondType cond, SortType stype, Index::SelectOpts opts,
+							   const BaseFunctionCtx::Ptr &ctx, const RdxContext &) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext &) override;
 	std::unique_ptr<Index> Clone() override;
@@ -49,7 +49,7 @@ public:
 
 protected:
 	bool tryIdsetCache(const VariantArray &keys, CondType condition, SortType sortId,
-					   std::function<bool(SelectKeyResult &, size_t &)> selector, SelectKeyResult &res);
+					   const std::function<bool(SelectKeyResult &, size_t &)> &selector, SelectKeyResult &res);
 	void addMemStat(typename T::iterator it);
 	void delMemStat(typename T::iterator it);
 

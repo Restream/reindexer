@@ -12,7 +12,7 @@ SyncCoroReindexer::~SyncCoroReindexer() {
 		delete impl_;
 	}
 }
-SyncCoroReindexer::SyncCoroReindexer(SyncCoroReindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(rdx.ctx_) {
+SyncCoroReindexer::SyncCoroReindexer(SyncCoroReindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(std::move(rdx.ctx_)) {
 	rdx.owner_ = false;
 }
 SyncCoroReindexer& SyncCoroReindexer::operator=(SyncCoroReindexer&& rdx) noexcept {
@@ -25,7 +25,7 @@ SyncCoroReindexer& SyncCoroReindexer::operator=(SyncCoroReindexer&& rdx) noexcep
 	return *this;
 }
 
-Error SyncCoroReindexer::Connect(const string& dsn, const client::ConnectOpts& opts) { return impl_->Connect(dsn, opts); }
+Error SyncCoroReindexer::Connect(const std::string& dsn, const client::ConnectOpts& opts) { return impl_->Connect(dsn, opts); }
 Error SyncCoroReindexer::Stop() { return impl_->Stop(); }
 Error SyncCoroReindexer::AddNamespace(const NamespaceDef& nsDef) { return impl_->AddNamespace(nsDef, ctx_); }
 Error SyncCoroReindexer::OpenNamespace(std::string_view nsName, const StorageOpts& storage) {
@@ -43,13 +43,13 @@ Error SyncCoroReindexer::Update(const Query& q, SyncCoroQueryResults& result) { 
 Error SyncCoroReindexer::Upsert(std::string_view nsName, Item& item) { return impl_->Upsert(nsName, item, ctx_); }
 Error SyncCoroReindexer::Delete(std::string_view nsName, Item& item) { return impl_->Delete(nsName, item, ctx_); }
 Item SyncCoroReindexer::NewItem(std::string_view nsName) { return impl_->NewItem(nsName); }
-Error SyncCoroReindexer::GetMeta(std::string_view nsName, const string& key, string& data) {
+Error SyncCoroReindexer::GetMeta(std::string_view nsName, const std::string& key, std::string& data) {
 	return impl_->GetMeta(nsName, key, data, ctx_);
 }
-Error SyncCoroReindexer::PutMeta(std::string_view nsName, const string& key, std::string_view data) {
+Error SyncCoroReindexer::PutMeta(std::string_view nsName, const std::string& key, std::string_view data) {
 	return impl_->PutMeta(nsName, key, data, ctx_);
 }
-Error SyncCoroReindexer::EnumMeta(std::string_view nsName, vector<string>& keys) { return impl_->EnumMeta(nsName, keys, ctx_); }
+Error SyncCoroReindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& keys) { return impl_->EnumMeta(nsName, keys, ctx_); }
 Error SyncCoroReindexer::Delete(const Query& q, SyncCoroQueryResults& result) { return impl_->Delete(q, result, ctx_); }
 Error SyncCoroReindexer::Select(std::string_view query, SyncCoroQueryResults& result) { return impl_->Select(query, result, ctx_); }
 Error SyncCoroReindexer::Select(const Query& q, SyncCoroQueryResults& result) { return impl_->Select(q, result, ctx_); }
@@ -58,11 +58,11 @@ Error SyncCoroReindexer::AddIndex(std::string_view nsName, const IndexDef& idx) 
 Error SyncCoroReindexer::UpdateIndex(std::string_view nsName, const IndexDef& idx) { return impl_->UpdateIndex(nsName, idx, ctx_); }
 Error SyncCoroReindexer::DropIndex(std::string_view nsName, const IndexDef& index) { return impl_->DropIndex(nsName, index, ctx_); }
 Error SyncCoroReindexer::SetSchema(std::string_view nsName, std::string_view schema) { return impl_->SetSchema(nsName, schema, ctx_); }
-Error SyncCoroReindexer::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts) {
+Error SyncCoroReindexer::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts) {
 	return impl_->EnumNamespaces(defs, opts, ctx_);
 }
-Error SyncCoroReindexer::EnumDatabases(vector<string>& dbList) { return impl_->EnumDatabases(dbList, ctx_); }
-Error SyncCoroReindexer::GetSqlSuggestions(const std::string_view sqlQuery, int pos, vector<string>& suggests) {
+Error SyncCoroReindexer::EnumDatabases(std::vector<std::string>& dbList) { return impl_->EnumDatabases(dbList, ctx_); }
+Error SyncCoroReindexer::GetSqlSuggestions(const std::string_view sqlQuery, int pos, std::vector<std::string>& suggests) {
 	return impl_->GetSqlSuggestions(sqlQuery, pos, suggests);
 }
 Error SyncCoroReindexer::Status() { return impl_->Status(ctx_); }

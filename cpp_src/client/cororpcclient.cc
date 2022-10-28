@@ -8,9 +8,6 @@
 #include "tools/logger.h"
 #include "vendor/gason/gason.h"
 
-using std::string;
-using std::vector;
-
 namespace reindexer {
 namespace client {
 
@@ -23,12 +20,12 @@ CoroRPCClient::CoroRPCClient(const ReindexerConfig& config) : config_(config) {
 	if (config_.ConnectTimeout > config_.RequestTimeout) {
 		config_.RequestTimeout = config_.ConnectTimeout;
 	}
-	conn_.SetFatalErrorHandler([this](Error err) { onConnFatalError(std::move(err)); });
+	conn_.SetFatalErrorHandler([this](const Error& err) { onConnFatalError(err); });
 }
 
 CoroRPCClient::~CoroRPCClient() { Stop(); }
 
-Error CoroRPCClient::Connect(const string& dsn, ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
+Error CoroRPCClient::Connect(const std::string& dsn, ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
 	if (conn_.IsRunning()) {
 		return Error(errLogic, "Client is already started");
 	}
@@ -40,9 +37,9 @@ Error CoroRPCClient::Connect(const string& dsn, ev::dynamic_loop& loop, const cl
 	if (connectData.uri.scheme() != "cproto") {
 		return Error(errParams, "Scheme must be cproto");
 	}
-	connectData.opts = cproto::CoroClientConnection::Options(config_.ConnectTimeout, config_.RequestTimeout, opts.IsCreateDBIfMissing(),
-															 opts.HasExpectedClusterID(), opts.ExpectedClusterID(),
-															 config_.ReconnectAttempts, config_.EnableCompression, config_.AppName);
+	connectData.opts = cproto::CoroClientConnection::Options(
+		config_.ConnectTimeout, config_.RequestTimeout, opts.IsCreateDBIfMissing(), opts.HasExpectedClusterID(), opts.ExpectedClusterID(),
+		config_.ReconnectAttempts, config_.EnableCompression, config_.RequestDedicatedThread, config_.AppName);
 	conn_.Start(loop, std::move(connectData));
 	loop_ = &loop;
 	startResubRoutine();
@@ -70,7 +67,7 @@ Error CoroRPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 }
 
 Error CoroRPCClient::OpenNamespace(std::string_view nsName, const InternalRdxContext& ctx, const StorageOpts& sopts) {
-	NamespaceDef nsDef(string(nsName), sopts);
+	NamespaceDef nsDef(std::string(nsName), sopts);
 	return AddNamespace(nsDef, ctx);
 }
 
@@ -155,7 +152,7 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, int mode, s
 			}
 			CoroQueryResults qr;
 			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr);
-			auto ret = selectImpl(Query(string(nsName)).Limit(0), qr, netTimeout, ctxCompl);
+			auto ret = selectImpl(Query(std::string(nsName)).Limit(0), qr, netTimeout, ctxCompl);
 			if (ret.code() == errTimeout) {
 				return Error(errTimeout, "Request timeout");
 			}
@@ -201,11 +198,11 @@ Item CoroRPCClient::NewItem(std::string_view nsName) {
 	}
 }
 
-Error CoroRPCClient::GetMeta(std::string_view nsName, const string& key, string& data, const InternalRdxContext& ctx) {
+Error CoroRPCClient::GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx) {
 	try {
 		auto ret = conn_.Call(mkCommand(cproto::kCmdGetMeta, &ctx), nsName, key);
 		if (ret.Status().ok()) {
-			data = ret.GetArgs(1)[0].As<string>();
+			data = ret.GetArgs(1)[0].As<std::string>();
 		}
 		return ret.Status();
 	} catch (const Error& err) {
@@ -213,11 +210,11 @@ Error CoroRPCClient::GetMeta(std::string_view nsName, const string& key, string&
 	}
 }
 
-Error CoroRPCClient::PutMeta(std::string_view nsName, const string& key, std::string_view data, const InternalRdxContext& ctx) {
+Error CoroRPCClient::PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const InternalRdxContext& ctx) {
 	return conn_.Call(mkCommand(cproto::kCmdPutMeta, &ctx), nsName, key, data).Status();
 }
 
-Error CoroRPCClient::EnumMeta(std::string_view nsName, vector<string>& keys, const InternalRdxContext& ctx) {
+Error CoroRPCClient::EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const InternalRdxContext& ctx) {
 	try {
 		auto ret = conn_.Call(mkCommand(cproto::kCmdEnumMeta, &ctx), nsName);
 		if (ret.Status().ok()) {
@@ -225,7 +222,7 @@ Error CoroRPCClient::EnumMeta(std::string_view nsName, vector<string>& keys, con
 			keys.clear();
 			keys.reserve(args.size());
 			for (auto& k : args) {
-				keys.push_back(k.As<string>());
+				keys.push_back(k.As<std::string>());
 			}
 		}
 		return ret.Status();
@@ -368,12 +365,12 @@ Error CoroRPCClient::SetSchema(std::string_view nsName, std::string_view schema,
 	return conn_.Call(mkCommand(cproto::kCmdSetSchema, &ctx), nsName, schema).Status();
 }
 
-Error CoroRPCClient::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx) {
+Error CoroRPCClient::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx) {
 	try {
 		auto ret = conn_.Call(mkCommand(cproto::kCmdEnumNamespaces, &ctx), int(opts.options_), p_string(&opts.filter_));
 		if (ret.Status().ok()) {
 			gason::JsonParser parser;
-			auto json = ret.GetArgs(1)[0].As<string>();
+			auto json = ret.GetArgs(1)[0].As<std::string>();
 			auto root = parser.Parse(giftStr(json));
 
 			for (auto& nselem : root["items"]) {
@@ -390,15 +387,15 @@ Error CoroRPCClient::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOp
 	}
 }
 
-Error CoroRPCClient::EnumDatabases(vector<string>& dbList, const InternalRdxContext& ctx) {
+Error CoroRPCClient::EnumDatabases(std::vector<std::string>& dbList, const InternalRdxContext& ctx) {
 	try {
 		auto ret = conn_.Call(mkCommand(cproto::kCmdEnumDatabases, &ctx), 0);
 		if (ret.Status().ok()) {
 			gason::JsonParser parser;
-			auto json = ret.GetArgs(1)[0].As<string>();
+			auto json = ret.GetArgs(1)[0].As<std::string>();
 			auto root = parser.Parse(giftStr(json));
 			for (auto& elem : root["databases"]) {
-				dbList.emplace_back(elem.As<string>());
+				dbList.emplace_back(elem.As<std::string>());
 			}
 		}
 		return ret.Status();
@@ -427,7 +424,7 @@ Error CoroRPCClient::GetSqlSuggestions(std::string_view query, int pos, std::vec
 			suggests.clear();
 			suggests.reserve(rargs.size());
 
-			for (auto& rarg : rargs) suggests.push_back(rarg.As<string>());
+			for (auto& rarg : rargs) suggests.push_back(rarg.As<std::string>());
 		}
 		return ret.Status();
 	} catch (const Error& err) {
@@ -442,7 +439,7 @@ Error CoroRPCClient::Status(const InternalRdxContext& ctx) {
 Namespace* CoroRPCClient::getNamespace(std::string_view nsName) {
 	auto nsIt = namespaces_.find(nsName);
 	if (nsIt == namespaces_.end()) {
-		string nsNames(nsName);
+		std::string nsNames(nsName);
 		auto nsPtr = Namespace::Ptr(new Namespace(nsNames));
 		nsIt = namespaces_.emplace(std::move(nsNames), std::move(nsPtr)).first;
 	}
@@ -497,7 +494,7 @@ void CoroRPCClient::onUpdates(const cproto::CoroRPCAnswer& ans) {
 
 			InternalRdxContext ctx(nullptr);
 			CoroQueryResults qr;
-			auto err = Select(Query(string(nsName)).Limit(0), qr, ctx);
+			auto err = Select(Query(std::string(nsName)).Limit(0), qr, ctx);
 			if (!err.ok()) return;
 		} else {
 			// We have bundled tagsMatcher

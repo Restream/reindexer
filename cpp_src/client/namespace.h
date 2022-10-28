@@ -13,11 +13,11 @@ class Namespace {
 public:
 	typedef std::shared_ptr<Namespace> Ptr;
 
-	Namespace(const string &name);
+	Namespace(std::string name);
 	Item NewItem();
 
 	// protected:
-	string name_;
+	std::string name_;
 	PayloadType payloadType_;
 	TagsMatcher tagsMatcher_;
 

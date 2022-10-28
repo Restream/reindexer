@@ -66,7 +66,7 @@ void ItemModifier::FieldData::updateTagsPath(TagsMatcher &tm, const IndexExpress
 	}
 }
 
-ItemModifier::ItemModifier(const h_vector<UpdateEntry, 0> &updateEntries, NamespaceImpl &ns) : ns_(ns), updateEntries_(updateEntries) {
+ItemModifier::ItemModifier(const std::vector<UpdateEntry> &updateEntries, NamespaceImpl &ns) : ns_(ns), updateEntries_(updateEntries) {
 	for (const UpdateEntry &updateField : updateEntries_) {
 		fieldsToModify_.emplace_back(updateField, ns_);
 	}

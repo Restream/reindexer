@@ -49,6 +49,8 @@
   * [Suggest for autocompletion of SQL query](#suggest-for-autocompletion-of-sql-query)
   * [Query documents from namespace](#query-documents-from-namespace-2)
   * [Get system information](#get-system-information)
+  * [Try to release free memory back to the operating system for reuse by other applications.](#try-to-release-free-memory-back-to-the-operating-system-for-reuse-by-other-applications)
+  * [Get memory usage information](#get-memory-usage-information)
   * [Get activity stats information](#get-activity-stats-information)
   * [Get client connection information](#get-client-connection-information)
   * [Get memory stats information](#get-memory-stats-information)
@@ -124,7 +126,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.9.1
+*Version* : 3.10.0
 
 
 ### License information
@@ -1652,6 +1654,49 @@ This operation will return system informatiom about server version, uptime, and 
 |HTTP Code|Description|Schema|
 |---|---|---|
 |**200**|successful operation|[SysInfo](#sysinfo)|
+|**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
+|**403**|Forbidden|[StatusResponse](#statusresponse)|
+|**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
+
+
+#### Tags
+
+* system
+
+
+
+### Try to release free memory back to the operating system for reuse by other applications.
+```
+POST /allocator/drop_cache
+```
+
+
+#### Description
+Try to release free memory back to the operating system for reuse. Only for tcmalloc allocator.
+
+
+#### Tags
+
+* system
+
+
+
+### Get memory usage information
+```
+GET /allocator/info
+```
+
+
+#### Description
+This operation will return memory usage informatiom from tcmalloc allocator.
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|successful operation|No Content|
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|

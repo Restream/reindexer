@@ -8,27 +8,25 @@
 
 namespace reindexer {
 
-using std::string;
-
 // Format: see fulltext.md
-bool is_term(int ch, const string &extraWordSymbols) {
+bool is_term(int ch, const std::string &extraWordSymbols) {
 	return IsAlpha(ch) || IsDigit(ch) ||
-		   extraWordSymbols.find(ch) != string::npos
+		   extraWordSymbols.find(ch) != std::string::npos
 		   // wrong kb layout
 		   || ch == '[' || ch == ';' || ch == ',' || ch == '.';
 }
 
-bool is_dslbegin(int ch, const string &extraWordSymbols) {
+bool is_dslbegin(int ch, const std::string &extraWordSymbols) {
 	return is_term(ch, extraWordSymbols) || ch == '+' || ch == '-' || ch == '*' || ch == '\'' || ch == '\"' || ch == '@' || ch == '=' ||
 		   ch == '\\';
 }
 
-void FtDSLQuery::parse(const string &q) {
-	wstring utf16str;
+void FtDSLQuery::parse(const std::string &q) {
+	std::wstring utf16str;
 	utf8_to_utf16(q, utf16str);
 	parse(utf16str);
 }
-void FtDSLQuery::parse(wstring &utf16str) {
+void FtDSLQuery::parse(std::wstring &utf16str) {
 	int groupcnt = 0;
 	bool ingroup = false;
 	int maxPatternLen = 1;
@@ -131,7 +129,7 @@ void FtDSLQuery::parse(wstring &utf16str) {
 
 		if (endIt != begIt) {
 			fte.pattern.assign(begIt, endIt);
-			string utf8str = utf16_to_utf8(fte.pattern);
+			std::string utf8str = utf16_to_utf8(fte.pattern);
 			if (is_number(utf8str)) fte.opts.number = true;
 			if (stopWords_.find(utf8str) != stopWords_.end()) {
 				continue;
@@ -155,7 +153,7 @@ void FtDSLQuery::parse(wstring &utf16str) {
 	}
 }
 
-void FtDSLQuery::parseFields(wstring &utf16str, wstring::iterator &it, h_vector<FtDslFieldOpts, 8> &fieldsOpts) {
+void FtDSLQuery::parseFields(std::wstring &utf16str, std::wstring::iterator &it, h_vector<FtDslFieldOpts, 8> &fieldsOpts) {
 	FtDslFieldOpts defFieldOpts{0.0, false};
 	for (auto &fo : fieldsOpts) fo = defFieldOpts;
 
@@ -191,7 +189,7 @@ void FtDSLQuery::parseFields(wstring &utf16str, wstring::iterator &it, h_vector<
 		if (*begIt == '*') {
 			defFieldOpts = {boost, needSumRank};
 		} else {
-			string fname = utf16_to_utf8(wstring(&*begIt, endIt - begIt));
+			std::string fname = utf16_to_utf8(std::wstring(&*begIt, endIt - begIt));
 			auto f = fields_.find(fname);
 			if (f == fields_.end()) {
 				throw Error(errLogic, "Field '%s',is not included to full text index", fname);

@@ -35,21 +35,21 @@ protected:
 	class TestServer {
 	public:
 		TestServer(const RPCServerConfig& conf) : terminate_(false), serverIsReady_(false), conf_(conf) {}
-		void Start(const string& addr, Error errOnLogin = Error());
+		void Start(const std::string& addr, Error errOnLogin = Error());
 		void Stop();
-		const string& GetDsn() const { return dsn_; }
+		const std::string& GetDsn() const { return dsn_; }
 		RPCServerStatus Status() const { return server_->Status(); }
 		Error const& ErrorStatus() const { return err_; }
 		size_t CloseQRRequestsCount() const { return server_->CloseQRRequestsCount(); }
 
 	private:
-		unique_ptr<RPCServerFake> server_;
-		unique_ptr<std::thread> serverThread_;
+		std::unique_ptr<RPCServerFake> server_;
+		std::unique_ptr<std::thread> serverThread_;
 		net::ev::dynamic_loop loop_;
 		net::ev::async stop_;
-		atomic<bool> terminate_;
-		atomic<bool> serverIsReady_;
-		string dsn_;
+		std::atomic<bool> terminate_;
+		std::atomic<bool> serverIsReady_;
+		std::string dsn_;
 		RPCServerConfig conf_;
 		Error err_{errOK};
 	};
@@ -80,11 +80,11 @@ protected:
 	void TearDown() {}
 
 	void StartDefaultRealServer();
-	TestServer& AddFakeServer(const string& addr = kDefaultRPCServerAddr, const RPCServerConfig& conf = RPCServerConfig());
-	void AddRealServer(const std::string& dbPath, const string& addr = kDefaultRPCServerAddr, uint16_t httpPort = kDefaultHttpPort);
-	void StartServer(const string& addr = kDefaultRPCServerAddr, Error errOnLogin = Error());
-	Error StopServer(const string& addr = kDefaultRPCServerAddr);  // -V1071
-	bool CheckIfFakeServerConnected(const string& addr = kDefaultRPCServerAddr);
+	TestServer& AddFakeServer(const std::string& addr = kDefaultRPCServerAddr, const RPCServerConfig& conf = RPCServerConfig());
+	void AddRealServer(const std::string& dbPath, const std::string& addr = kDefaultRPCServerAddr, uint16_t httpPort = kDefaultHttpPort);
+	void StartServer(const std::string& addr = kDefaultRPCServerAddr, Error errOnLogin = Error());
+	Error StopServer(const std::string& addr = kDefaultRPCServerAddr);	// -V1071
+	bool CheckIfFakeServerConnected(const std::string& addr = kDefaultRPCServerAddr);
 	Error StopAllServers();
 	client::Item CreateItem(reindexer::client::Reindexer& rx, std::string_view nsName, int id);
 	client::Item CreateItem(reindexer::client::CoroReindexer& rx, std::string_view nsName, int id);
@@ -103,6 +103,6 @@ private:
 		std::unique_ptr<std::thread> serverThread;
 	};
 
-	unordered_map<string, unique_ptr<TestServer>> fakeServers_;
-	unordered_map<string, ServerData> realServers_;
+	std::unordered_map<std::string, std::unique_ptr<TestServer>> fakeServers_;
+	std::unordered_map<std::string, ServerData> realServers_;
 };

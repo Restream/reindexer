@@ -141,7 +141,7 @@ Error RPCClientMock::modifyItem(std::string_view nsName, Item& item, int mode, s
 			}
 			QueryResults qr;
 			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr);
-			auto ret = selectImpl(Query(string(nsName)).Limit(0), qr, nullptr, netTimeout, ctxCompl, format);
+			auto ret = selectImpl(Query(std::string(nsName)).Limit(0), qr, nullptr, netTimeout, ctxCompl, format);
 			if (ret.code() == errTimeout) {
 				return Error(errTimeout, "Request timeout");
 			}
@@ -194,7 +194,7 @@ Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mo
 			return Error(errParams, "ModifyItem: Unknow data format [%d]", format);
 	}
 
-	string ns(nsName);
+	std::string ns(nsName);
 	auto deadline = netTimeout.count() ? conn->Now() + netTimeout : seconds(0);
 	conn->Call(
 		[this, ns, mode, item, deadline, ctx, format](const net::cproto::RPCAnswer& ret, cproto::ClientConnection* conn) -> void {
@@ -220,8 +220,7 @@ Error RPCClientMock::modifyItemAsync(std::string_view nsName, Item* item, int mo
 					Error err = newItem.FromJSON(item->impl_->GetJSON());
 					newItem.SetPrecepts(item->impl_->GetPrecepts());
 					*item = std::move(newItem);
-					InternalRdxContext localCtx = ctx;
-					modifyItemAsync(ns, item, mode, conn, timeout, localCtx, format);
+					modifyItemAsync(ns, item, mode, conn, timeout, ctx, format);
 				});
 				selectImpl(Query(ns).Limit(0), *qr, conn, netTimeout, ctxCmpl, format);
 			} else

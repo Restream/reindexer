@@ -12,11 +12,11 @@ public:
 	virtual ~FullText() {}
 	FullText(Reindexer* db, const string& name, size_t maxItems);
 
-	virtual Error Initialize();
+	virtual reindexer::Error Initialize();
 	virtual void RegisterAllCases();
 
 protected:
-	virtual Item MakeItem();
+	virtual reindexer::Item MakeItem();
 
 protected:
 	template <reindexer::FtFastConfig::Optimization>
@@ -63,10 +63,10 @@ protected:
 	string MakeSuffixWord();
 	string MakeTypoWord();
 
-	wstring GetRandomUTF16WordByLength(size_t minLen = 4);
+	std::wstring GetRandomUTF16WordByLength(size_t minLen = 4);
 
 	vector<string> GetRandomCountries(size_t cnt = 5);
-	Item MakeSpecialItem();
+	reindexer::Item MakeSpecialItem();
 
 protected:
 	vector<string> words_;

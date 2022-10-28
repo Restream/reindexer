@@ -46,8 +46,9 @@ public:
 
 	~ReindexerImpl();
 
-	Error Connect(const string &dsn, ConnectOpts opts = ConnectOpts());
-	Error EnableStorage(const string &storagePath, bool skipPlaceholderCheck = false, const InternalRdxContext &ctx = InternalRdxContext());
+	Error Connect(const std::string &dsn, ConnectOpts opts = ConnectOpts());
+	Error EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck = false,
+						const InternalRdxContext &ctx = InternalRdxContext());
 	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing(),
 						const InternalRdxContext &ctx = InternalRdxContext());
 	Error AddNamespace(const NamespaceDef &nsDef, const InternalRdxContext &ctx = InternalRdxContext());
@@ -60,7 +61,7 @@ public:
 	Error GetSchema(std::string_view nsName, int format, std::string &schema, const InternalRdxContext &ctx = InternalRdxContext());
 	Error UpdateIndex(std::string_view nsName, const IndexDef &indexDef, const InternalRdxContext &ctx = InternalRdxContext());
 	Error DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx = InternalRdxContext());
-	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx = InternalRdxContext());
+	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Insert(std::string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Insert(std::string_view nsName, Item &item, QueryResults &, const InternalRdxContext &ctx = InternalRdxContext());
 	Error Update(std::string_view nsName, Item &item, const InternalRdxContext &ctx = InternalRdxContext());
@@ -80,15 +81,16 @@ public:
 	Error CommitTransaction(Transaction &tr, QueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
 	Error RollBackTransaction(Transaction &tr);
 
-	Error GetMeta(std::string_view nsName, const string &key, string &data, const InternalRdxContext &ctx = InternalRdxContext());
-	Error PutMeta(std::string_view nsName, const string &key, std::string_view data, const InternalRdxContext &ctx = InternalRdxContext());
-	Error EnumMeta(std::string_view nsName, vector<string> &keys, const InternalRdxContext &ctx = InternalRdxContext());
+	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx = InternalRdxContext());
+	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data,
+				  const InternalRdxContext &ctx = InternalRdxContext());
+	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx = InternalRdxContext());
 	Error InitSystemNamespaces();
 	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts);
 	Error UnsubscribeUpdates(IUpdatesObserver *observer);
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, vector<string> &suggestions,
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions,
 							const InternalRdxContext &ctx = InternalRdxContext());
-	Error GetProtobufSchema(WrSerializer &ser, vector<string> &namespaces);
+	Error GetProtobufSchema(WrSerializer &ser, std::vector<std::string> &namespaces);
 	Error Status();
 
 	bool NeedTraceActivity() { return configProvider_.GetProfilingConfig().activityStats; }
@@ -148,7 +150,7 @@ protected:
 			locked_ = true;
 		}
 
-		NamespaceImpl::Ptr Get(const string &name) {
+		NamespaceImpl::Ptr Get(const std::string &name) {
 			for (auto it = begin(); it != end(); it++) {
 				if (iequals(it->ns->name_, name)) return it->ns;
 			}
@@ -164,7 +166,7 @@ protected:
 	struct QueryResultsContext;
 	template <typename T>
 	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func,
-										   vector<QueryResultsContext> &, const RdxContext &ctx);
+										   std::vector<QueryResultsContext> &, const RdxContext &ctx);
 	void prepareJoinResults(const Query &q, QueryResults &result);
 	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns);
 
@@ -186,15 +188,15 @@ protected:
 	Namespace::Ptr getNamespace(std::string_view nsName, const RdxContext &ctx);
 	Namespace::Ptr getNamespaceNoThrow(std::string_view nsName, const RdxContext &ctx);
 
-	std::vector<std::pair<string, Namespace::Ptr>> getNamespaces(const RdxContext &ctx);
-	std::vector<string> getNamespacesNames(const RdxContext &ctx);
+	std::vector<std::pair<std::string, Namespace::Ptr>> getNamespaces(const RdxContext &ctx);
+	std::vector<std::string> getNamespacesNames(const RdxContext &ctx);
 	Error renameNamespace(std::string_view srcNsName, const std::string &dstNsName, bool fromReplication = false,
 						  const InternalRdxContext &ctx = InternalRdxContext());
 
-	fast_hash_map<string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
+	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
 
 	Mutex mtx_;
-	string storagePath_;
+	std::string storagePath_;
 
 	std::thread backgroundThread_;
 	std::thread storageFlushingThread_;

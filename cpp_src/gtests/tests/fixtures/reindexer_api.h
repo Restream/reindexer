@@ -36,10 +36,10 @@ protected:
 public:
 	ReindexerApi() {}
 
-	void DefineNamespaceDataset(const string &ns, std::initializer_list<const IndexDeclaration> fields) {
+	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(ns, fields);
 	}
-	void DefineNamespaceDataset(Reindexer &rx, const string &ns, std::initializer_list<const IndexDeclaration> fields) {
+	void DefineNamespaceDataset(Reindexer &rx, const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(rx, ns, fields);
 	}
 	Item NewItem(std::string_view ns) { return rt.NewItem(ns); }
@@ -48,12 +48,12 @@ public:
 	void Upsert(std::string_view ns, Item &item) { rt.Upsert(ns, item); }
 
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) { rt.PrintQueryResults(ns, res); }
-	string PrintItem(Item &item) { return rt.PrintItem(item); }
+	std::string PrintItem(Item &item) { return rt.PrintItem(item); }
 
 	std::string RandString() { return rt.RandString(); }
 	std::string RandLikePattern() { return rt.RandLikePattern(); }
 	std::string RuRandString() { return rt.RuRandString(); }
-	vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
+	std::vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
 
 	struct QueryWatcher {
 		~QueryWatcher() {
@@ -68,7 +68,7 @@ public:
 	};
 
 public:
-	const string default_namespace = "test_namespace";
+	const std::string default_namespace = "test_namespace";
 	ReindexerTestApi<reindexer::Reindexer> rt;
 
 protected:

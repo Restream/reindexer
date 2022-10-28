@@ -16,7 +16,7 @@ import (
 
 const maxCtxID = math.MaxUint64 & (math.MaxUint64 >> 3) //Discard 3 most significant bits for cgo flags
 const ctxWatcherPeriod = time.Millisecond * 20
-const watcherChSize = 500
+const watcherChSize = 1000
 
 var ctxIDCounter uint64 = 1
 
@@ -106,21 +106,20 @@ func (watcher *CtxWatcher) putAwaitCh(ch chan struct{}) {
 
 //StartWatchOnCtx creates context wrapper and puts it to the watch queue
 func (watcher *CtxWatcher) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, error) {
-	var execTimeout int64
-	if err := ctx.Err(); err != nil {
-		return CCtxWrapper{}, err
-	}
-
-	if deadline, ok := ctx.Deadline(); ok {
-		execTimeout = int64(deadline.Sub(time.Now()) / time.Millisecond)
-		if execTimeout <= 0 {
-			return CCtxWrapper{}, context.DeadlineExceeded
-		}
-	}
-
-	var ctxID uint64
 	if ctx.Done() != nil {
-		ctxID = atomic.AddUint64(&ctxIDCounter, 1)
+		var execTimeout int64
+		if err := ctx.Err(); err != nil {
+			return CCtxWrapper{}, err
+		}
+
+		if deadline, ok := ctx.Deadline(); ok {
+			execTimeout = int64(deadline.Sub(time.Now()) / time.Millisecond)
+			if execTimeout <= 0 {
+				return CCtxWrapper{}, context.DeadlineExceeded
+			}
+		}
+
+		ctxID := atomic.AddUint64(&ctxIDCounter, 1)
 		if ctxID > maxCtxID {
 			if atomic.CompareAndSwapUint64(&ctxIDCounter, ctxID, 2) {
 				ctxID = 1
@@ -128,28 +127,36 @@ func (watcher *CtxWatcher) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, er
 				ctxID = atomic.AddUint64(&ctxIDCounter, 1)
 			}
 		}
-	}
 
-	watcherID := rand.Intn(len(watcher.cmdChArr))
-	ctxInfo := CCtxWrapper{
-		cCtx: C.reindexer_ctx_info{
-			ctx_id:       C.uint64_t(ctxID),
-			exec_timeout: C.int64_t(execTimeout),
-		},
-		goCtx:        ctx,
-		isCancelable: bool(ctxID > 0),
-		watcherCh:    watcher.cmdChArr[watcherID],
-	}
+		watcherID := rand.Intn(len(watcher.cmdChArr))
+		ctxInfo := CCtxWrapper{
+			cCtx: C.reindexer_ctx_info{
+				ctx_id:       C.uint64_t(ctxID),
+				exec_timeout: C.int64_t(execTimeout),
+			},
+			goCtx:        ctx,
+			isCancelable: true,
+			watcherCh:    watcher.cmdChArr[watcherID],
+		}
 
-	if ctxInfo.isCancelable {
 		cmd := ctxWatcherCmd{
 			ctx:     ctxInfo,
 			cmdCode: cWCCAdd,
 		}
 		ctxInfo.watcherCh <- cmd
+
+		return ctxInfo, nil
 	}
 
-	return ctxInfo, nil
+	return CCtxWrapper{
+		cCtx: C.reindexer_ctx_info{
+			ctx_id:       0,
+			exec_timeout: 0,
+		},
+		goCtx:        nil,
+		isCancelable: false,
+		watcherCh:    nil,
+	}, nil
 }
 
 //StopWatchOnCtx removes context from watch queue

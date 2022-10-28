@@ -23,17 +23,18 @@ public:
 	}
 
 	virtual void RegisterAllCases();
-	virtual Error Initialize();
+	virtual reindexer::Error Initialize();
 
 protected:
-	virtual Item MakeItem();
-	Item MakeStrItem();
+	virtual reindexer::Item MakeItem();
+	reindexer::Item MakeStrItem();
 
 protected:
 	void WarmUpIndexes(State& state);
 
 	void StringsSelect(State& state);
 	void GetByID(State& state);
+	void GetByIDInBrackets(State& state);
 	void GetEqInt(State& state);
 	void GetEqArrayInt(State& state);
 	void GetEqString(State& state);

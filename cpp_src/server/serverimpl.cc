@@ -22,7 +22,7 @@
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
 #include "tools/stringstools.h"
-#include "yaml/yaml.h"
+#include "yaml-cpp/yaml.h"
 #ifdef _WIN32
 #include "winservice.h"
 #endif

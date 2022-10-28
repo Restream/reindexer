@@ -86,13 +86,13 @@ void Activity::GetJSON(WrSerializer& ser) const {
 	ss << buffer << '.' << std::setw(3) << std::setfill('0') << (duration_cast<milliseconds>(startTime.time_since_epoch()).count() % 1000);
 	builder.Put("query_start", ss.str());
 	builder.Put("state", DescribeState(state));
-	if (state == WaitLock) builder.Put("lock_description", "Wait lock for " + string(description));
+	if (state == WaitLock) builder.Put("lock_description", "Wait lock for " + std::string(description));
 	builder.End();
 }
 
 RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::string_view user, std::string_view query,
 									   ActivityContainer& parent, int ipConnectionId, bool clientState)
-	: data_{nextId(),		string(activityTracer),			  string(user),			string(query),
+	: data_{nextId(),		std::string(activityTracer),	  std::string(user),	std::string(query),
 			ipConnectionId, std::chrono::system_clock::now(), Activity::InProgress, ""sv},
 	  state_(serializeState(clientState ? Activity::Sending : Activity::InProgress)),
 	  parent_(&parent)

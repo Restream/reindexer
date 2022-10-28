@@ -6,8 +6,8 @@ namespace reindexer {
 struct ItemComparatorState {
 	FieldsSet fields_;
 	h_vector<const CollateOpts *, 1> collateOpts_;
-	vector<pair<size_t, bool>> byExpr_;
-	vector<pair<size_t, bool>> byIndex_;
+	std::vector<std::pair<size_t, bool>> byExpr_;
+	std::vector<std::pair<size_t, bool>> byIndex_;
 };
 
 class NamespaceImpl;
@@ -35,8 +35,8 @@ private:
 	const SelectCtx &ctx_;
 	FieldsSet &fields_;
 	h_vector<const CollateOpts *, 1> &collateOpts_;
-	vector<pair<size_t, bool>> &byExpr_;
-	vector<pair<size_t, bool>> &byIndex_;
+	std::vector<std::pair<size_t, bool>> &byExpr_;
+	std::vector<std::pair<size_t, bool>> &byIndex_;
 };
 
 }  // namespace reindexer

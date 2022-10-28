@@ -65,7 +65,7 @@ private:
 };
 
 /// Results of joining all the namespaces (in case of merge queries)
-class Results : public h_vector<NamespaceResults, 0> {};
+class Results : public std::vector<NamespaceResults> {};
 
 /// Joined field iterator for Item
 /// of left NamespaceImpl (main ns).
@@ -110,7 +110,7 @@ public:
 	int getJoinedFieldsCount() const;
 	int getJoinedItemsCount() const;
 
-	static ItemIterator CreateFrom(QueryResults::Iterator it);
+	static ItemIterator CreateFrom(const QueryResults::Iterator& it);
 
 private:
 	const NamespaceResults* joinRes_;

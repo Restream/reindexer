@@ -37,13 +37,13 @@ void UpdatesFilters::AddFilter(std::string_view ns, UpdatesFilters::Filter filte
 	auto foundNs = filters_.find(ns);
 	if (foundNs == filters_.end()) {
 		FiltersList lst;
-		lst.emplace_back(std::move(filter));
-		filters_.emplace(string(ns), std::move(lst));
+		lst.emplace_back(std::move(filter));  // NOLINT(performance-move-const-arg)
+		filters_.emplace(std::string(ns), std::move(lst));
 	} else {
 		auto &nsFilters = foundNs.value();
 		const auto foundFilter = std::find(nsFilters.cbegin(), nsFilters.cend(), filter);
 		if (foundFilter == nsFilters.cend()) {
-			nsFilters.emplace_back(std::move(filter));
+			nsFilters.emplace_back(std::move(filter));	// NOLINT(performance-move-const-arg)
 		}
 	}
 }
@@ -83,7 +83,7 @@ void UpdatesFilters::FromJSON(const gason::JsonNode &root) {
 		for (const auto &f : ns["filters"sv]) {
 			Filter filter;
 			filter.FromJSON(f);
-			AddFilter(name, std::move(filter));
+			AddFilter(name, std::move(filter));	 // NOLINT(performance-move-const-arg)
 		}
 	}
 }

@@ -34,7 +34,7 @@ static void copy(It begin, It end, std::vector<FacetResult> &facets, const Field
 			} else {
 				pl.Get(fields[i], va);
 			}
-			facets.back().values.push_back(va.empty() ? string() : va.front().As<string>());
+			facets.back().values.push_back(va.empty() ? std::string() : va.front().As<std::string>());
 		}
 	}
 }
@@ -42,7 +42,7 @@ static void copy(It begin, It end, std::vector<FacetResult> &facets, const Field
 template <typename It>
 static void copy(It begin, It end, std::vector<FacetResult> &facets) {
 	for (; begin != end; ++begin) {
-		facets.push_back({{begin->first.template As<string>()}, begin->second});
+		facets.push_back({{begin->first.template As<std::string>()}, begin->second});
 	}
 }
 
@@ -51,7 +51,7 @@ public:
 	MultifieldComparator(const h_vector<SortingEntry, 1> &, const FieldsSet &, const PayloadType &);
 	bool HaveCompareByCount() const { return haveCompareByCount; }
 	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const;
-	bool operator()(const pair<PayloadValue, int> &lhs, const pair<PayloadValue, int> &rhs) const;
+	bool operator()(const std::pair<PayloadValue, int> &lhs, const std::pair<PayloadValue, int> &rhs) const;
 
 private:
 	struct CompOpts {
@@ -74,7 +74,7 @@ public:
 	SinglefieldComparator(const h_vector<SortingEntry, 1> &);
 	bool HaveCompareByCount() const { return haveCompareByCount; }
 	bool operator()(const Variant &lhs, const Variant &rhs) const { return lhs.Compare(rhs) * valueCompareDirection_ < 0; }
-	bool operator()(const pair<Variant, int> &lhs, const pair<Variant, int> &rhs) const;
+	bool operator()(const std::pair<Variant, int> &lhs, const std::pair<Variant, int> &rhs) const;
 
 private:
 	struct CompOpts {
@@ -136,7 +136,7 @@ bool Aggregator::MultifieldComparator::operator()(const PayloadValue &lhs, const
 	return false;
 }
 
-bool Aggregator::MultifieldComparator::operator()(const pair<PayloadValue, int> &lhs, const pair<PayloadValue, int> &rhs) const {
+bool Aggregator::MultifieldComparator::operator()(const std::pair<PayloadValue, int> &lhs, const std::pair<PayloadValue, int> &rhs) const {
 	for (const auto &opt : compOpts_) {
 		if (opt.fields.empty()) {
 			if (lhs.second == rhs.second) continue;
@@ -185,7 +185,7 @@ Aggregator::SinglefieldComparator::SinglefieldComparator(const h_vector<SortingE
 	}
 }
 
-bool Aggregator::SinglefieldComparator::operator()(const pair<Variant, int> &lhs, const pair<Variant, int> &rhs) const {
+bool Aggregator::SinglefieldComparator::operator()(const std::pair<Variant, int> &lhs, const std::pair<Variant, int> &rhs) const {
 	for (const CompOpts &opt : compOpts_) {
 		int less;
 		if (opt.compareBy == ByValue) {
@@ -202,7 +202,7 @@ Aggregator::Aggregator() = default;
 Aggregator::Aggregator(Aggregator &&) = default;
 Aggregator::~Aggregator() = default;
 
-Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, AggType aggType, const h_vector<string, 1> &names,
+Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, AggType aggType, const h_vector<std::string, 1> &names,
 					   const h_vector<SortingEntry, 1> &sort, size_t limit, size_t offset, bool compositeIndexFields)
 	: payloadType_(payloadType),
 	  fields_(fields),
@@ -251,7 +251,7 @@ static void fillOrderedFacetResult(std::vector<FacetResult> &result, const Facet
 	result.reserve(std::min(limit, facets.size() - offset));
 	const auto &comparator = facets.key_comp();
 	if (comparator.HaveCompareByCount()) {
-		vector<pair<typename FacetMap::key_type, int>> tmpFacets(facets.begin(), facets.end());
+		std::vector<std::pair<typename FacetMap::key_type, int>> tmpFacets(facets.begin(), facets.end());
 		auto begin = tmpFacets.begin();
 		auto end = tmpFacets.end();
 		moveFrames(begin, end, tmpFacets.size(), offset, limit);

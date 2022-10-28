@@ -39,8 +39,8 @@ public:
 		//		AddIndex("year+rate", "", "tree", "composite", IndexOpts());   // tree int and double
 	}
 
-	Error Initialize();
-	Item MakeItem();
+	reindexer::Error Initialize();
+	reindexer::Item MakeItem();
 	void RegisterAllCases();
 
 protected:

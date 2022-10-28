@@ -13,10 +13,10 @@ public:
 	}
 
 	void RegisterAllCases() override;
-	Error Initialize() override;
+	reindexer::Error Initialize() override;
 
 protected:
-	Item MakeItem() override;
+	reindexer::Item MakeItem() override;
 
 	template <size_t N>
 	void Insert(State& state);

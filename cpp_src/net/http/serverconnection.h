@@ -17,10 +17,17 @@ public:
 	ServerConnection(int fd, ev::dynamic_loop &loop, Router &router, size_t maxRequestSize);
 
 	static ConnectionFactory NewFactory(Router &router, size_t maxRequestSize) {
-		return [&router, maxRequestSize](ev::dynamic_loop &loop, int fd) { return new ServerConnection(fd, loop, router, maxRequestSize); };
+		return [&router, maxRequestSize](ev::dynamic_loop &loop, int fd, bool allowCustomBalancing) {
+			(void)allowCustomBalancing;
+			return new ServerConnection(fd, loop, router, maxRequestSize);
+		};
 	}
 
-	bool IsFinished() override final { return !sock_.valid(); }
+	bool IsFinished() const noexcept override final { return !sock_.valid(); }
+	BalancingType GetBalancingType() const noexcept override final { return BalancingType::None; }
+	void SetRebalanceCallback(std::function<void(IServerConnection *, BalancingType)> cb) override final { (void)cb; }
+	bool HasPendingData() const noexcept override final { return false; }
+	void HandlePendingData() override final {}
 	bool Restart(int fd) override final;
 	void Detach() override final;
 	void Attach(ev::dynamic_loop &loop) override final;
@@ -64,8 +71,9 @@ protected:
 
 	void handleRequest(Request &req);
 	void badRequest(int code, const char *msg);
-	void onRead() override;
+	ReadResT onRead() override;
 	void onClose() override;
+	void handleException(Context &ctx, const Error &err);
 
 	void parseParams(std::string_view str);
 	void writeHttpResponse(int code);

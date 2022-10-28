@@ -42,7 +42,7 @@ TEST_P(FTApi, CompositeSelect) {
 			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 				auto field = ritem[idx].Name();
 				if (field == "id") continue;
-				auto it = data.find(ritem[field].As<string>());
+				auto it = data.find(ritem[field].As<std::string>());
 				ASSERT_TRUE(it != data.end());
 				data.erase(it);
 			}
@@ -79,7 +79,7 @@ TEST_P(FTApi, CompositeSelectWithFields) {
 				for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 					auto curField = ritem[idx].Name();
 					if (curField != field) continue;
-					auto it = data.find(ritem[curField].As<string>());
+					auto it = data.find(ritem[curField].As<std::string>());
 					ASSERT_TRUE(it != data.end());
 					data.erase(it);
 				}
@@ -111,7 +111,7 @@ TEST_P(FTApi, SelectWithEscaping) {
 
 	for (auto it : res) {
 		auto ritem(it.GetItem(false));
-		string val = ritem["ft1"].As<string>();
+		std::string val = ritem["ft1"].As<std::string>();
 		EXPECT_TRUE(val == "Go to !-hell+hell+hell!!!");
 	}
 }
@@ -551,7 +551,7 @@ TEST_P(FTApi, HugeNumberToWordsSelect2) {
 TEST_P(FTApi, DeleteTest) {
 	Init(GetDefaultConfig());
 
-	std::unordered_map<string, int> data;
+	std::unordered_map<std::string, int> data;
 	for (int i = 0; i < 10000; ++i) {
 		data.insert(Add(rt.RuRandString()));
 	}
@@ -590,7 +590,7 @@ TEST_P(FTApi, RebuildAfterDeletion) {
 	auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	auto selectF = [this](const std::string word) {
+	auto selectF = [this](const std::string& word) {
 		const auto q{reindexer::Query("nm1").Where("ft1", CondEq, word)};
 		reindexer::QueryResults res;
 		auto err = rt.reindexer->Select(q, res);
@@ -598,7 +598,7 @@ TEST_P(FTApi, RebuildAfterDeletion) {
 		return res;
 	};
 
-	std::unordered_map<string, int> data;
+	std::unordered_map<std::string, int> data;
 	data.insert(Add("An entity is something that exists as itself"sv));
 	data.insert(Add("In law, a legal entity is an entity that is capable of bearing legal rights"sv));
 	data.insert(Add("In politics, entity is used as term for territorial divisions of some countries"sv));
@@ -618,8 +618,8 @@ TEST_P(FTApi, RebuildAfterDeletion) {
 TEST_P(FTApi, Stress) {
 	Init(GetDefaultConfig());
 
-	vector<string> data;
-	vector<string> phrase;
+	std::vector<std::string> data;
+	std::vector<std::string> phrase;
 
 	data.reserve(100000);
 	for (size_t i = 0; i < 100000; ++i) {
@@ -652,7 +652,7 @@ TEST_P(FTApi, Stress) {
 
 				for (auto it : res) {
 					auto ritem(it.GetItem(false));
-					if (ritem["ft1"].As<string>() == phrase[j]) {
+					if (ritem["ft1"].As<std::string>() == phrase[j]) {
 						found = true;
 					}
 				}
@@ -669,15 +669,15 @@ TEST_P(FTApi, Stress) {
 TEST_P(FTApi, Unique) {
 	Init(GetDefaultConfig());
 
-	std::vector<string> data;
+	std::vector<std::string> data;
 	std::set<size_t> check;
-	std::set<string> checks;
+	std::set<std::string> checks;
 	reindexer::logInstallWriter([](int, char*) { /*std::cout << buf << std::endl;*/ });
 
 	for (int i = 0; i < 1000; ++i) {
 		bool inserted = false;
 		size_t n;
-		string s;
+		std::string s;
 
 		while (!inserted) {
 			n = rand();
@@ -701,8 +701,9 @@ TEST_P(FTApi, Unique) {
 		if (i % 5 == 0) {
 			for (size_t j = 0; j < i; j++) {
 				if (i == 40 && j == 26) {
-					int a = 3;
+					int a = 3;	// NOLINT(*unused-but-set-variable) This code is just to load CPU by non-rx stuff
 					a++;
+					(void)a;
 				}
 				auto res = StressSelect(data[j]);
 				if (res.Count() != 1) {
@@ -907,17 +908,17 @@ TEST_P(FTApi, SelectTranslitWithComma) {
 	auto qr = SimpleSelect("@ft1 [kt,jgtxrf");
 	EXPECT_EQ(qr.Count(), 1);
 	auto item = qr[0].GetItem(false);
-	EXPECT_EQ(item["ft1"].As<string>(), "!хлебопечка!");
+	EXPECT_EQ(item["ft1"].As<std::string>(), "!хлебопечка!");
 
 	qr = SimpleSelect("@ft1 \\'ktrnhjy");
 	EXPECT_EQ(qr.Count(), 1);
 	item = qr[0].GetItem(false);
-	EXPECT_EQ(item["ft1"].As<string>(), "!электрон!");
+	EXPECT_EQ(item["ft1"].As<std::string>(), "!электрон!");
 
 	qr = SimpleSelect("@ft1 vfn\\'");
 	EXPECT_EQ(qr.Count(), 1);
 	item = qr[0].GetItem(false);
-	EXPECT_EQ(item["ft1"].As<string>(), "!матэ!");
+	EXPECT_EQ(item["ft1"].As<std::string>(), "!матэ!");
 }
 
 TEST_P(FTApi, SelectMultiwordSynonyms) {

@@ -25,8 +25,8 @@ using namespace reindexer;
 
 struct RPCClientData : public cproto::ClientData {
 	~RPCClientData();
-	h_vector<RPCQrId, 1> results;
-	vector<Transaction> txs;
+	h_vector<RPCQrId, 8> results;
+	std::vector<Transaction> txs;
 	std::shared_ptr<TxStats> txStats;
 
 	AuthContext auth;

@@ -7,7 +7,7 @@ TEST_F(JoinSelectsApi, JoinsDSLTest) {
 	queryBooks.OrInnerJoin(genreId_fk, genreid, CondEq, std::move(queryGenres));
 	queryBooks.LeftJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors));
 
-	string dsl = queryBooks.GetJSON();
+	std::string dsl = queryBooks.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.FromJSON(dsl);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -23,7 +23,7 @@ TEST_F(JoinSelectsApi, EqualPositionDSLTest) {
 	query.AddEqualPosition({"f4", "f5"});
 	query.CloseBracket();
 
-	string dsl = query.GetJSON();
+	std::string dsl = query.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.FromJSON(dsl);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -38,7 +38,7 @@ TEST_F(JoinSelectsApi, MergedQueriesDSLTest) {
 	mainBooksQuery.mergeQueries_.emplace_back(Merge, std::move(firstMergedQuery));
 	mainBooksQuery.mergeQueries_.emplace_back(Merge, std::move(secondMergedQuery));
 
-	string dsl = mainBooksQuery.GetJSON();
+	std::string dsl = mainBooksQuery.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.FromJSON(dsl);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -64,7 +64,7 @@ TEST_F(JoinSelectsApi, AggregateFunctonsDSLTest) {
 	aggEntry.offset_ = 10;
 	query.aggregations_.push_back(aggEntry);
 
-	string dsl = query.GetJSON();
+	std::string dsl = query.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.FromJSON(dsl);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -77,7 +77,7 @@ TEST_F(JoinSelectsApi, SelectFilterDSLTest) {
 	query.selectFilter_.push_back(pages);
 	query.selectFilter_.push_back(title);
 
-	string dsl = query.GetJSON();
+	std::string dsl = query.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.FromJSON(dsl);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -95,7 +95,7 @@ TEST_F(JoinSelectsApi, SelectFilterInJoinDSLTest) {
 
 		queryBooks.LeftJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors));
 	}
-	string dsl = queryBooks.GetJSON();
+	std::string dsl = queryBooks.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.FromJSON(dsl);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -105,21 +105,21 @@ TEST_F(JoinSelectsApi, SelectFilterInJoinDSLTest) {
 TEST_F(JoinSelectsApi, ReqTotalDSLTest) {
 	Query query{Query(books_namespace, 10, 100, ModeNoTotal).Where(pages, CondGe, 150)};
 
-	string dsl1 = query.GetJSON();
+	std::string dsl1 = query.GetJSON();
 	Query testLoadDslQuery1;
 	Error err = testLoadDslQuery1.FromJSON(dsl1);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(query == testLoadDslQuery1);
 
 	query.CachedTotal();
-	string dsl2 = query.GetJSON();
+	std::string dsl2 = query.GetJSON();
 	Query testLoadDslQuery2;
 	err = testLoadDslQuery2.FromJSON(dsl2);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(query == testLoadDslQuery2);
 
 	query.ReqTotal();
-	string dsl3 = query.GetJSON();
+	std::string dsl3 = query.GetJSON();
 	Query testLoadDslQuery3;
 	err = testLoadDslQuery3.FromJSON(dsl3);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -132,7 +132,7 @@ TEST_F(JoinSelectsApi, SelectFunctionsDSLTest) {
 	query.AddFunction("f2()");
 	query.AddFunction("f3()");
 
-	string dsl = query.GetJSON();
+	std::string dsl = query.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.FromJSON(dsl);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -140,9 +140,9 @@ TEST_F(JoinSelectsApi, SelectFunctionsDSLTest) {
 }
 
 TEST_F(JoinSelectsApi, CompositeValuesDSLTest) {
-	string pagesBookidIndex = string(pages + string("+") + bookid);
+	std::string pagesBookidIndex = pages + std::string("+") + bookid;
 	Query query{Query(books_namespace).WhereComposite(pagesBookidIndex.c_str(), CondGe, {{Variant(500), Variant(10)}})};
-	string dsl = query.GetJSON();
+	std::string dsl = query.GetJSON();
 	Query testLoadDslQuery;
 	Error err = testLoadDslQuery.FromJSON(dsl);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -170,7 +170,7 @@ TEST_F(JoinSelectsApi, GeneralDSLTest) {
 	testDslQuery.aggregations_.push_back(aggEntry);
 
 	Query testLoadDslQuery;
-	const string dsl1 = testDslQuery.GetJSON();
+	const std::string dsl1 = testDslQuery.GetJSON();
 	Error err = testLoadDslQuery.FromJSON(dsl1);
 	EXPECT_TRUE(err.ok()) << err.what();
 	EXPECT_TRUE(testDslQuery == testLoadDslQuery);

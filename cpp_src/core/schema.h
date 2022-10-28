@@ -65,16 +65,16 @@ public:
 	void AddObject(std::string_view objectType);
 	void AddField(KeyValueType type, bool isArray);
 	KeyValueType GetField(const TagsPath& fieldPath, bool& isArray) const;
-	string GenerateObjectName();
+	std::string GenerateObjectName();
 
-	bool NeedToEmbedType(string objectType) const;
+	bool NeedToEmbedType(const std::string& objectType) const noexcept;
 
 private:
 	friend class ProtobufSchemaBuilder;
 
 	TagsPath tagsPath_;
 	std::unordered_map<TagsPath, SchemaFieldType> types_;
-	std::unordered_map<string, int> objectTypes_;
+	std::unordered_map<std::string, int> objectTypes_;
 	int generatedObjectsNames = {0};
 };
 
@@ -117,7 +117,7 @@ public:
 	Schema() = default;
 	explicit Schema(std::string_view json);
 
-	std::vector<string> GetSuggestions(std::string_view path) const { return paths_.GetSuggestions(path); }
+	std::vector<std::string> GetSuggestions(std::string_view path) const { return paths_.GetSuggestions(path); }
 	std::vector<std::string> GetPaths() const noexcept { return paths_.GetPaths(); }
 	KeyValueType GetFieldType(const TagsPath& fieldPath, bool& isArray) const;
 

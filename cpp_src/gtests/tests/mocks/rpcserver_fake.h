@@ -27,9 +27,8 @@ struct RPCClientData : public cproto::ClientData {
 class RPCServerFake {
 public:
 	RPCServerFake(const RPCServerConfig &conf);
-	~RPCServerFake() = default;
 
-	bool Start(const string &addr, ev::dynamic_loop &loop, Error loginError);
+	bool Start(const std::string &addr, ev::dynamic_loop &loop, Error loginError);
 	Error Stop();
 
 	Error Ping(cproto::Context &ctx);
@@ -46,11 +45,11 @@ public:
 
 protected:
 	cproto::Dispatcher dispatcher_;
-	std::unique_ptr<Listener> listener_;
+	std::unique_ptr<IListener> listener_;
 
 	std::chrono::system_clock::time_point startTs_;
 	RPCServerConfig conf_;
-	string dsn_;
+	std::string dsn_;
 	std::atomic<RPCServerStatus> state_;
 	Error loginError_;
 	std::mutex qrMutex_;

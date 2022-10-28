@@ -4,7 +4,6 @@
 #include <vector>
 #include "core/indexopts.h"
 #include "core/type_consts.h"
-#include "estl/h_vector.h"
 #include "estl/span.h"
 #include "tools/errors.h"
 
@@ -16,19 +15,17 @@ namespace reindexer {
 
 class WrSerializer;
 
-using JsonPaths = h_vector<std::string, 0>;
+using JsonPaths = std::vector<std::string>;
 
 static const int kIndexJSONWithDescribe = 0x1;
 
 struct IndexDef {
-	IndexDef();
-	IndexDef(const std::string &name);
-	IndexDef(const std::string &name, const JsonPaths &jsonPaths, const std::string &indexType, const std::string &fieldType,
-			 const IndexOpts opts);
-	IndexDef(const std::string &name, const JsonPaths &jsonPaths, const std::string &indexType, const std::string &fieldType,
-			 const IndexOpts opts, int64_t expireAfter);
-	IndexDef(const std::string &name, const std::string &indexType, const std::string &fieldType, const IndexOpts opts);
-	IndexDef(const std::string &name, const JsonPaths &jsonPaths, const IndexType type, const IndexOpts opts);
+	IndexDef() = default;
+	IndexDef(std::string name);
+	IndexDef(std::string name, JsonPaths jsonPaths, std::string indexType, std::string fieldType, IndexOpts opts);
+	IndexDef(std::string name, JsonPaths jsonPaths, std::string indexType, std::string fieldType, IndexOpts opts, int64_t expireAfter);
+	IndexDef(std::string name, std::string indexType, std::string fieldType, IndexOpts opts);
+	IndexDef(std::string name, JsonPaths jsonPaths, IndexType type, IndexOpts opts);
 	bool operator==(const IndexDef &other) const { return IsEqual(other, false); }
 	bool operator!=(const IndexDef &other) const { return !IsEqual(other, false); }
 	bool IsEqual(const IndexDef &other, bool skipConfig) const;

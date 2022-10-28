@@ -12,10 +12,6 @@
 using benchmark::State;
 using benchmark::AllocsTracker;
 
-using std::ifstream;
-using std::istream_iterator;
-using std::back_inserter;
-
 using reindexer::Query;
 using reindexer::QueryResults;
 using reindexer::utf16_to_utf8;
@@ -44,7 +40,7 @@ void FullText::UpdateIndex(State& state) {
 	assert(it != nsdef_.indexes.end());
 	it->opts_.config = ftCfg.GetJson({});
 	AllocsTracker allocsTracker(state, printFlags);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		const auto err = db_->UpdateIndex(nsdef_.name, *it);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 	}
@@ -62,19 +58,19 @@ reindexer::Error FullText::Initialize() {
 	auto err = BaseFixture::Initialize();
 	if (!err.ok()) return err;
 
-	ifstream file;
+	std::ifstream file;
 	file.open(RX_BENCH_DICT_PATH);
 
-	if (!file) return Error(errNotValid, "%s", strerror(errno));
+	if (!file) return reindexer::Error(errNotValid, "%s", strerror(errno));
 	words_.reserve(140000);
-	std::copy(istream_iterator<string>(file), istream_iterator<string>(), back_inserter(words_));
+	std::copy(std::istream_iterator<string>(file), std::istream_iterator<string>(), std::back_inserter(words_));
 
 	// clang-format off
 	countries_ = {
 		"Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Antigua & Deps",  "Argentina", "Armenia",
 		"Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh", "Barbados", "Belarus",
 		"Belgium", "Belize", "Benin", "Bhutan", "Bolivia", "Bosnia Herzegovina", "Botswana", "Brazil",
-		"Brunei", "Bulgaria", "Burkina", "Burundi", "Cambodia", "Cameroon", "Canada", "Cape Verde"
+		"Brunei", "Bulgaria", "Burkina", "Burundi", "Cambodia", "Cameroon", "Canada", "Cape Verde",
 		"Central African Rep", "Chad", "Chile", "China", "Colombia", "Comoros", "Congo", "Congo {Democratic Rep}",
 		"Costa Rica", "Croatia", "Cuba", "Cyprus", "Czech Republic", "Denmark", "Djibouti", "Dominica",
 		"Dominican Republic", "East Timor", "Ecuador", "Egypt", "El Salvador", "Equatorial Guinea", "Eritrea", "Estonia",
@@ -104,6 +100,7 @@ reindexer::Error FullText::Initialize() {
 void FullText::RegisterAllCases() {
 	constexpr static auto Mem = reindexer::FtFastConfig::Optimization::Memory;
 	constexpr static auto CPU = reindexer::FtFastConfig::Optimization::CPU;
+	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	Register("Insert", &FullText::Insert, this)->Iterations(id_seq_->Count())->Unit(benchmark::kMicrosecond);
 
 	// Register("BuildCommonIndexes", &FullText::BuildCommonIndexes, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
@@ -174,6 +171,7 @@ void FullText::RegisterAllCases() {
 	Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields.OptByCPU",
 			 &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields, this)
 		->Unit(benchmark::kMicrosecond);
+	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
 reindexer::Item FullText::MakeSpecialItem() {
@@ -212,7 +210,7 @@ void FullText::BuildInsertSteps(State& state) {
 	size_t i = 0;
 	size_t mem = 0;
 
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeSpecialItem();
 		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
 
@@ -240,7 +238,7 @@ void FullText::BuildInsertSteps(State& state) {
 
 void FullText::Insert(State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeItem();
 		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
 
@@ -254,7 +252,7 @@ void FullText::Insert(State& state) {
 
 void FullText::BuildCommonIndexes(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("year", CondRange, {2010, 2016}).Limit(20).Sort("year", false);
 		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
@@ -268,7 +266,7 @@ void FullText::BuildCommonIndexes(benchmark::State& state) {
 void FullText::BuildFastTextIndex(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t mem = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("searchfast", CondEq, words_.at(random<size_t>(0, words_.size() - 1))).Limit(20);
 
@@ -287,7 +285,7 @@ void FullText::BuildFastTextIndex(benchmark::State& state) {
 void FullText::BuildFuzzyTextIndex(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t mem = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("searchfuzzy", CondEq, words_.at(random<size_t>(0, words_.size() - 1))).Limit(20);
 
@@ -306,7 +304,7 @@ void FullText::BuildFuzzyTextIndex(benchmark::State& state) {
 void FullText::Fast1WordMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		q.Where("searchfast", CondEq, words_.at(random<size_t>(0, words_.size() - 1)));
@@ -322,7 +320,7 @@ void FullText::Fast1WordMatch(benchmark::State& state) {
 void FullText::Fast2WordsMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		string words = words_.at(random<size_t>(0, words_.size() - 1)) + " " + words_.at(random<size_t>(0, words_.size() - 1));
 
@@ -339,7 +337,7 @@ void FullText::Fast2WordsMatch(benchmark::State& state) {
 void FullText::Fuzzy1WordMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		q.Where("searchfuzzy", CondEq, words_.at(random<size_t>(0, words_.size() - 1)));
@@ -355,7 +353,7 @@ void FullText::Fuzzy1WordMatch(benchmark::State& state) {
 void FullText::Fuzzy2WordsMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		string words = words_.at(random<size_t>(0, words_.size() - 1)) + " " + words_.at(random<size_t>(0, words_.size() - 1));
 
@@ -372,7 +370,7 @@ void FullText::Fuzzy2WordsMatch(benchmark::State& state) {
 void FullText::Fast1PrefixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto word = MakePrefixWord();
@@ -389,7 +387,7 @@ void FullText::Fast1PrefixMatch(benchmark::State& state) {
 void FullText::Fast2PrefixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto words = MakePrefixWord() + " " + MakePrefixWord();
@@ -406,7 +404,7 @@ void FullText::Fast2PrefixMatch(benchmark::State& state) {
 void FullText::Fuzzy1PrefixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto word = MakePrefixWord();
@@ -423,7 +421,7 @@ void FullText::Fuzzy1PrefixMatch(benchmark::State& state) {
 void FullText::Fuzzy2PrefixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		string words = MakePrefixWord() + " " + MakePrefixWord();
@@ -440,7 +438,7 @@ void FullText::Fuzzy2PrefixMatch(benchmark::State& state) {
 void FullText::Fast1SuffixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		string word = MakeSuffixWord();
@@ -457,7 +455,7 @@ void FullText::Fast1SuffixMatch(benchmark::State& state) {
 void FullText::Fast2SuffixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		string words = MakeSuffixWord() + " " + MakeSuffixWord();
@@ -474,7 +472,7 @@ void FullText::Fast2SuffixMatch(benchmark::State& state) {
 void FullText::Fuzzy1SuffixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		string word = MakeSuffixWord();
@@ -491,7 +489,7 @@ void FullText::Fuzzy1SuffixMatch(benchmark::State& state) {
 void FullText::Fuzzy2SuffixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		string words = MakeSuffixWord() + " " + MakeSuffixWord();
@@ -508,7 +506,7 @@ void FullText::Fuzzy2SuffixMatch(benchmark::State& state) {
 void FullText::Fast1TypoWordMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		string word = MakeTypoWord();
@@ -525,7 +523,7 @@ void FullText::Fast1TypoWordMatch(benchmark::State& state) {
 void FullText::Fast2TypoWordMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		string words = MakeTypoWord() + " " + MakeTypoWord();
@@ -542,7 +540,7 @@ void FullText::Fast2TypoWordMatch(benchmark::State& state) {
 void FullText::Fuzzy1TypoWordMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		string word = MakeTypoWord();
@@ -559,7 +557,7 @@ void FullText::Fuzzy1TypoWordMatch(benchmark::State& state) {
 void FullText::Fuzzy2TypoWordMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t cnt = 0;
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		string words = MakeTypoWord() + " " + MakeTypoWord();
@@ -589,7 +587,7 @@ string FullText::CreatePhrase() {
 string FullText::MakePrefixWord() {
 	auto word = GetRandomUTF16WordByLength(4);
 
-	auto pos = random<wstring::size_type>(2, word.length() - 2);
+	auto pos = random<std::wstring::size_type>(2, word.length() - 2);
 	word.erase(pos, word.length() - pos);
 	word += L"*";
 
@@ -598,23 +596,23 @@ string FullText::MakePrefixWord() {
 
 string FullText::MakeSuffixWord() {
 	auto word = GetRandomUTF16WordByLength(4);
-	auto cnt = random<wstring::size_type>(0, word.length() / 2);
+	auto cnt = random<std::wstring::size_type>(0, word.length() / 2);
 	word.erase(0, cnt);
 	word = L"*" + word;
 	return utf16_to_utf8(word);
 }
 
 string FullText::MakeTypoWord() {
-	static const wstring wchars =
+	static const std::wstring wchars =
 		L"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
 	auto word = GetRandomUTF16WordByLength(2);
-	word[random<wstring::size_type>(0, word.length() - 1)] = wchars.at(random<wstring::size_type>(0, wchars.size() - 1));
+	word[random<std::wstring::size_type>(0, word.length() - 1)] = wchars.at(random<std::wstring::size_type>(0, wchars.size() - 1));
 	word += L"~";
 	return utf16_to_utf8(word);
 }
 
-wstring FullText::GetRandomUTF16WordByLength(size_t minLen) {
-	wstring word;
+std::wstring FullText::GetRandomUTF16WordByLength(size_t minLen) {
+	std::wstring word;
 	for (; word.length() < minLen;) {
 		auto& w = words_.at(random<size_t>(0, words_.size() - 1));
 		word = reindexer::utf8_to_utf16(w);
@@ -640,7 +638,7 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 	ftIndexOpts.config = ftCfg.GetJson({});
 	AllocsTracker allocsTracker(state, printFlags);
 	db_->DropNamespace(alternatingNs_);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		NamespaceDef nsDef{alternatingNs_};
 		nsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
 			.AddIndex("search1", "text", "string", ftIndexOpts)
@@ -725,7 +723,7 @@ void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::Stat
 void FullText::AlternatingUpdatesAndSelects(benchmark::State& state) {
 	reindexer::WrSerializer ser;
 	AllocsTracker allocsTracker(state, printFlags);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		state.PauseTiming();
 		updateAlternatingNs(ser, state);
 		Query q = Query(alternatingNs_).Where("search1", CondEq, values_[random<size_t>(0, values_.size() - 1)].search1);
@@ -739,7 +737,7 @@ void FullText::AlternatingUpdatesAndSelects(benchmark::State& state) {
 void FullText::AlternatingUpdatesAndSelectsByComposite(benchmark::State& state) {
 	reindexer::WrSerializer ser;
 	AllocsTracker allocsTracker(state, printFlags);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		state.PauseTiming();
 		updateAlternatingNs(ser, state);
 		const size_t index = random<size_t>(0, values_.size() - 1);
@@ -754,7 +752,7 @@ void FullText::AlternatingUpdatesAndSelectsByComposite(benchmark::State& state) 
 void FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields(benchmark::State& state) {
 	reindexer::WrSerializer ser;
 	AllocsTracker allocsTracker(state, printFlags);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		state.PauseTiming();
 		updateAlternatingNs(ser, state);
 		const size_t index = random<size_t>(0, values_.size() - 1);

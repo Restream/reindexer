@@ -75,7 +75,7 @@ public:
 		AreaHolder::UniquePtr holder;
 	};
 
-	struct MergeData : public vector<MergeInfo> {
+	struct MergeData : public std::vector<MergeInfo> {
 		int maxRank = 0;
 	};
 
@@ -101,9 +101,9 @@ public:
 	uint32_t GetWordsOffset();
 	// returns id and found or not found
 	WordIdType BuildWordId(uint32_t id);
-	string Dump();
+	std::string Dump();
 
-	std::unordered_map<string, stemmer> stemmers_;
+	std::unordered_map<std::string, stemmer> stemmers_;
 	ITokenFilter::Ptr translit_;
 	ITokenFilter::Ptr kbLayout_;
 	ITokenFilter::Ptr synonyms_;
@@ -111,11 +111,11 @@ public:
 	std::vector<VDocEntry> vdocs_;
 	size_t cur_vdoc_pos_ = 0;
 	ProcessStatus status_{CreateNew};
-	vector<double> avgWordsCount_;
+	std::vector<double> avgWordsCount_;
 	// Virtual documents, merged. Addresable by VDocIdType
 	// Temp data for build
-	vector<h_vector<pair<std::string_view, uint32_t>, 8>> vdocsTexts;
-	vector<std::unique_ptr<string>> bufStrs_;
+	std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>> vdocsTexts;
+	std::vector<std::unique_ptr<std::string>> bufStrs_;
 	size_t vodcsOffset_{0};
 	size_t szCnt{0};
 	FtFastConfig* cfg_{nullptr};

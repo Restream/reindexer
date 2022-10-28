@@ -89,7 +89,7 @@ public:
 	std::string PrintItem(ItemType &item) {
 		std::string outBuf = "";
 		for (auto idx = 1; idx < item.NumFields(); idx++) {
-			outBuf += string(item[idx].Name()) + "=";
+			outBuf += std::string(item[idx].Name()) + "=";
 			outBuf += item[idx].template As<std::string>() + " ";
 		}
 		return outBuf;

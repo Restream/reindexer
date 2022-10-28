@@ -152,9 +152,9 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 	// build words map parallel in maxIndexWorkers threads
 	auto worker = [this, &ctxs, &vdocsTexts, offset, maxIndexWorkers, fieldscount, &cfg, &vdocs](int i) {
 		auto ctx = &ctxs[i];
-		string word, str;
+		std::string word, str;
 		vector<const char *> wrds;
-		std::vector<string> virtualWords;
+		std::vector<std::string> virtualWords;
 		for (VDocIdType j = i; j < VDocIdType(vdocsTexts.size()); j += maxIndexWorkers) {
 			size_t vdocId = offset + j;
 			vdocs[vdocId].wordsCount.insert(vdocs[vdocId].wordsCount.begin(), fieldscount, 0.0);
@@ -242,20 +242,20 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 		}
 		logPrintf(LogInfo, "Potential stop words: %s", out.Slice());
 	}
-	vector<h_vector<pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts);
+	vector<h_vector<std::pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts);
 
-	vector<std::unique_ptr<string>>().swap(holder_.bufStrs_);
+	vector<std::unique_ptr<std::string>>().swap(holder_.bufStrs_);
 	return szCnt;
 }
 
 template <typename IdCont>
 void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map &words_um, VDocIdType docType, int rfield, size_t insertPos,
-											 std::vector<string> &output) {
+											 std::vector<std::string> &output) {
 	auto &vdocs = holder_.vdocs_;
 
 	auto &vdoc(vdocs[docType]);
 	NumToText::convert(word, output);
-	for (const string &numberWord : output) {
+	for (const std::string &numberWord : output) {
 		WordEntry wentry;
 		wentry.virtualWord = true;
 		auto idxIt = words_um.emplace(numberWord, std::move(wentry)).first;

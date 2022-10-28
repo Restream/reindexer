@@ -12,19 +12,19 @@ class BaseStorage : public IDataStorage {
 public:
 	virtual ~BaseStorage();
 
-	Error Open(const string& path, const StorageOpts& opts) override final;
-	void Destroy(const string& path) override final;
+	Error Open(const std::string& path, const StorageOpts& opts) override final;
+	void Destroy(const std::string& path) override final;
 
 protected:
 	/// Open implementation
 	/// @param path - path to storage.
 	/// @param opts - options.
 	/// @return Error object with an appropriate error code.
-	virtual Error doOpen(const string& path, const StorageOpts& opts) = 0;
+	virtual Error doOpen(const std::string& path, const StorageOpts& opts) = 0;
 
 	/// Destroy implementation
 	/// @param path - path to Storage.
-	virtual void doDestroy(const string& path) = 0;
+	virtual void doDestroy(const std::string& path) = 0;
 
 private:
 	class DirectoryInfo {

@@ -18,7 +18,7 @@ public:
 	void Delete(const Variant &key, IdType id, StringsHolder &, bool &clearCache) override;
 	void Delete(const VariantArray &keys, IdType id, StringsHolder &, bool &clearCache) override;
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType condition, SortType stype, Index::SelectOpts res_type,
-							   BaseFunctionCtx::Ptr ctx, const RdxContext &) override;
+							   const BaseFunctionCtx::Ptr &ctx, const RdxContext &) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext & /*ctx*/) override {}
 	std::unique_ptr<Index> Clone() override;

@@ -58,8 +58,8 @@ public:
 	bool HaveRank() const { return queryParams_.flags & kResultsWithRank; }
 	bool NeedOutputRank() const { return queryParams_.flags & kResultsNeedOutputRank; }
 	int Flags() const noexcept { return queryParams_.flags; }
-	const string& GetExplainResults() const { return queryParams_.explainResults; }
-	const vector<AggregationResult>& GetAggregationResults() const { return queryParams_.aggResults; }
+	const std::string& GetExplainResults() const { return queryParams_.explainResults; }
+	const std::vector<AggregationResult>& GetAggregationResults() const { return queryParams_.aggResults; }
 	Error Status() { return status_; }
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return queryParams_.flags & kResultsWithItemID; }

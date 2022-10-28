@@ -22,7 +22,7 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 		krsCopy.reserve(krs.size());
 		if (!holder_) holder_.reset(new std::deque<std::string>);
 		for (auto &kr : krs) {
-			holder_->push_back(kr.As<string>());
+			holder_->push_back(kr.As<std::string>());
 			krsCopy.emplace_back(p_string{&holder_->back()});
 		}
 
@@ -33,8 +33,7 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 	}
 }
 
-void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray &keys, std::function<VariantArray(std::string_view)> ev,
-						   FieldModifyMode mode) {
+void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray &keys, const IndexExpressionEvaluator &ev, FieldModifyMode mode) {
 	return ModifyField(tagsMatcher_.path2indexedtag(jsonPath, ev, mode != FieldModeDrop), keys, mode);
 }
 
@@ -71,10 +70,10 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
 }
 
-void ItemImpl::SetField(std::string_view jsonPath, const VariantArray &keys, IndexExpressionEvaluator ev) {
+void ItemImpl::SetField(std::string_view jsonPath, const VariantArray &keys, const IndexExpressionEvaluator &ev) {
 	ModifyField(jsonPath, keys, ev, FieldModeSet);
 }
-void ItemImpl::DropField(std::string_view jsonPath, IndexExpressionEvaluator ev) { ModifyField(jsonPath, {}, ev, FieldModeDrop); }
+void ItemImpl::DropField(std::string_view jsonPath, const IndexExpressionEvaluator &ev) { ModifyField(jsonPath, {}, ev, FieldModeDrop); }
 Variant ItemImpl::GetField(int field) { return GetPayload().Get(field, 0); }
 void ItemImpl::GetField(int field, VariantArray &values) { GetPayload().Get(field, values); }
 
@@ -181,7 +180,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 		if (endp) {
 			size_t len = 0;
 			try {
-				gason::JsonParser parser;
+				gason::JsonParser parser(nullptr);
 				parser.Parse(data, &len);
 				*endp = const_cast<char *>(data.data()) + len;
 				sourceData_.reset(new char[len]);
@@ -198,14 +197,17 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 	}
 
 	payloadValue_.Clone();
-	gason::JsonValue value;
-	gason::JsonAllocator allocator;
-	char *endptr = nullptr;
-	int status = jsonParse(data, &endptr, &value, allocator);
-	if (status != gason::JSON_OK) return Error(errParseJson, "Error parsing json: '%s'", gason::jsonStrError(status));
-	if (value.getTag() != gason::JSON_OBJECT) return Error(errParseJson, "Expected json object");
-	if (unsafe_ && endp) {
-		*endp = endptr;
+	size_t len;
+	gason::JsonNode node;
+	gason::JsonParser parser(&largeJSONStrings_);
+	try {
+		node = parser.Parse(giftStr(data), &len);
+		if (node.value.getTag() != gason::JSON_OBJECT) return Error(errParseJson, "Expected json object");
+		if (unsafe_ && endp) {
+			*endp = const_cast<char *>(data.data()) + len;
+		}
+	} catch (gason::Exception &e) {
+		return Error(errParseJson, "Error parsing json: '%s', pos: %d", e.what(), len);
 	}
 
 	// Split parsed json into indexes and tuple
@@ -214,7 +216,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	auto err = decoder.Decode(&pl, ser_, value);
+	auto err = decoder.Decode(&pl, ser_, node.value);
 
 	// Put tuple to field[0]
 	tupleData_ = ser_.DetachLStr();

@@ -9,29 +9,28 @@
 
 namespace reindexer {
 
-using std::string;
-using std::vector;
-
 class WrSerializer;
 
 struct NamespaceDef {
-	NamespaceDef() {}
+	NamespaceDef() = default;
 
-	NamespaceDef(const string &iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing()) : name(iname), storage(istorage) {}
+	NamespaceDef(const std::string &iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
+		: name(iname), storage(istorage) {}
 
-	NamespaceDef &AddIndex(const string &iname, const string &indexType, const string &fieldType, IndexOpts opts = IndexOpts()) {
-		indexes.push_back({iname, {iname}, indexType, fieldType, opts});
+	NamespaceDef &AddIndex(const std::string &iname, const std::string &indexType, const std::string &fieldType,
+						   IndexOpts opts = IndexOpts()) {
+		indexes.emplace_back(iname, JsonPaths{iname}, indexType, fieldType, std::move(opts));
 		return *this;
 	}
 
-	NamespaceDef &AddIndex(const string &iname, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType,
+	NamespaceDef &AddIndex(const std::string &iname, const JsonPaths &jsonPaths, const std::string &indexType, const std::string &fieldType,
 						   IndexOpts opts = IndexOpts()) {
-		indexes.push_back({iname, jsonPaths, indexType, fieldType, opts});
+		indexes.emplace_back(iname, jsonPaths, indexType, fieldType, std::move(opts));
 		return *this;
 	}
 
 	NamespaceDef &AddIndex(const IndexDef &idxDef) {
-		indexes.push_back(idxDef);
+		indexes.emplace_back(idxDef);
 		return *this;
 	}
 
@@ -40,11 +39,11 @@ struct NamespaceDef {
 	void GetJSON(WrSerializer &, int formatFlags = 0) const;
 
 public:
-	string name;
+	std::string name;
 	StorageOpts storage;
-	vector<IndexDef> indexes;
+	std::vector<IndexDef> indexes;
 	bool isTemporary = false;
-	string schemaJson = "{}";
+	std::string schemaJson = "{}";
 };
 
 enum EnumNamespacesOpt {

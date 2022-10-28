@@ -17,24 +17,18 @@
 #include "tools/customhash.h"
 namespace search_engine {
 
-using std::unique_ptr;
-using std::vector;
-using std::shared_ptr;
-using std::set;
-using std::map;
-using std::unordered_map;
 using namespace reindexer;
 
 #ifndef DEBUG_FT
 struct DataStructHash {
-	inline size_t operator()(const wstring &ent) const { return Hash(ent); }
+	inline size_t operator()(const std::wstring &ent) const { return Hash(ent); }
 };
 struct DataStructEQ {
-	inline bool operator()(const wstring &ent, const wstring &ent1) const { return ent == ent1; }
+	inline bool operator()(const std::wstring &ent, const std::wstring &ent1) const { return ent == ent1; }
 };
 template <typename T1>
-using data_map = fast_hash_map<wstring, T1, DataStructHash, DataStructEQ>;
-typedef fast_hash_set<wstring, DataStructHash, DataStructEQ> data_set;
+using data_map = fast_hash_map<std::wstring, T1, DataStructHash, DataStructEQ>;
+typedef fast_hash_set<std::wstring, DataStructHash, DataStructEQ> data_set;
 
 #else
 struct DataStructHash {
@@ -68,7 +62,7 @@ public:
 		ClearTemp();
 		data_.clear();
 	}
-	void SetConfig(const unique_ptr<FtFuzzyConfig> &cfg) { cfg_ = *cfg.get(); }
+	void SetConfig(const std::unique_ptr<FtFuzzyConfig> &cfg) { cfg_ = *cfg.get(); }
 	DIt GetData(const wchar_t *key);
 	void SetSize(uint32_t size, VDocIdType id, int filed);
 	void AddDada(const wchar_t *key, VDocIdType id, int pos, int field);

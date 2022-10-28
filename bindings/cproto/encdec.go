@@ -13,25 +13,29 @@ type rpcEncoder struct {
 	lastArgsChunckStart int
 	ser                 *cjson.Serializer
 	enableSnappy        bool
+	dedicatedThread     bool
 }
 
 type rpcDecoder struct {
 	ser cjson.Serializer
 }
 
-func newRPCEncoder(cmd int, seq uint32, enableSnappy bool) rpcEncoder {
-	enc := rpcEncoder{ser: cjson.NewPoolSerializer(), enableSnappy: enableSnappy}
+func newRPCEncoder(cmd int, seq uint32, enableSnappy bool, dedicatedThread bool) rpcEncoder {
+	enc := rpcEncoder{ser: cjson.NewPoolSerializer(), enableSnappy: enableSnappy, dedicatedThread: dedicatedThread}
 	enc.start(cmd, seq)
 	return enc
 }
 
 func (r *rpcEncoder) start(cmd int, seq uint32) {
 	r.ser.PutUInt32(cprotoMagic)
-	vers := cprotoVersion
+	var vers uint16 = cprotoVersion
 	if r.enableSnappy {
 		vers |= cprotoVersionCompressionFlag
 	}
-	r.ser.PutUInt16(cprotoVersion)
+	if r.dedicatedThread {
+		vers |= cprotoDedicatedThreadFlag
+	}
+	r.ser.PutUInt16(vers)
 	r.ser.PutUInt16(uint16(cmd))
 	r.ser.PutUInt32(0) // len
 	r.ser.PutUInt32(seq)

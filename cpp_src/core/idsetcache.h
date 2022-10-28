@@ -11,7 +11,13 @@ namespace reindexer {
 struct IdSetCacheKey {
 	IdSetCacheKey(const VariantArray &keys, CondType cond, SortType sort) : keys(&keys), cond(cond), sort(sort) {}
 	IdSetCacheKey(const IdSetCacheKey &other) : keys(&hkeys), cond(other.cond), sort(other.sort), hkeys(*other.keys) {}
-	IdSetCacheKey(IdSetCacheKey &&other) noexcept : keys(&hkeys), cond(other.cond), sort(other.sort), hkeys(std::move(*other.keys)) {}
+	IdSetCacheKey(IdSetCacheKey &&other) noexcept : keys(&hkeys), cond(other.cond), sort(other.sort) {
+		if (&other.hkeys == other.keys) {
+			hkeys = std::move(other.hkeys);
+		} else {
+			hkeys = *other.keys;
+		}
+	}
 	IdSetCacheKey &operator=(const IdSetCacheKey &other) {
 		if (&other != this) {
 			hkeys = *other.keys;
@@ -23,7 +29,11 @@ struct IdSetCacheKey {
 	}
 	IdSetCacheKey &operator=(IdSetCacheKey &&other) noexcept {
 		if (&other != this) {
-			hkeys = std::move(*other.keys);
+			if (&other.hkeys == other.keys) {
+				hkeys = std::move(other.hkeys);
+			} else {
+				hkeys = *other.keys;
+			}
 			keys = &hkeys;
 			cond = other.cond;
 			sort = other.sort;

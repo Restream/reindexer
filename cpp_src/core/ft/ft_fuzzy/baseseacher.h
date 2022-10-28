@@ -18,23 +18,24 @@ namespace search_engine {
 class BaseSearcher {
 public:
 	void AddSeacher(ITokenFilter::Ptr &&seacher);
-	void AddIndex(BaseHolder::Ptr holder, std::string_view src_data, const IdType id, int field, const string &extraWordSymbols);
-	SearchResult Compare(BaseHolder::Ptr holder, const reindexer::FtDSLQuery &dsl, bool inTransaction, const reindexer::RdxContext &);
+	void AddIndex(BaseHolder::Ptr &holder, std::string_view src_data, const IdType id, int field, const std::string &extraWordSymbols);
+	SearchResult Compare(const BaseHolder::Ptr &holder, const reindexer::FtDSLQuery &dsl, bool inTransaction,
+						 const reindexer::RdxContext &);
 
-	void Commit(BaseHolder::Ptr holder);
+	void Commit(BaseHolder::Ptr &holder);
 
 private:
 #ifdef FULL_LOG_FT
 	std::vector<std::pair<size_t, std::string>> words;
 #endif
 
-	pair<bool, size_t> GetData(BaseHolder::Ptr holder, unsigned int i, wchar_t *buf, const wchar_t *src_data, size_t data_size);
+	std::pair<bool, size_t> GetData(const BaseHolder::Ptr &holder, unsigned int i, wchar_t *buf, const wchar_t *src_data, size_t data_size);
 
-	size_t ParseData(BaseHolder::Ptr holder, const wstring &src_data, int &max_id, int &min_id, std::vector<FirstResult> &rusults,
-					 const FtDslOpts &opts, double proc);
+	size_t ParseData(const BaseHolder::Ptr &holder, const std::wstring &src_data, int &max_id, int &min_id,
+					 std::vector<FirstResult> &rusults, const FtDslOpts &opts, double proc);
 
-	void AddIdToInfo(Info *info, const IdType id, pair<PosType, ProcType> pos, uint32_t total_size);
-	uint32_t FindHash(const wstring &data);
-	vector<std::unique_ptr<ITokenFilter>> searchers_;
+	void AddIdToInfo(Info *info, const IdType id, std::pair<PosType, ProcType> pos, uint32_t total_size);
+	uint32_t FindHash(const std::wstring &data);
+	std::vector<std::unique_ptr<ITokenFilter>> searchers_;
 };
 }  // namespace search_engine

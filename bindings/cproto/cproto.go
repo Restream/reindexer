@@ -46,6 +46,7 @@ type NetCProto struct {
 	timeouts         bindings.OptionTimeouts
 	connectOpts      bindings.OptionConnect
 	compression      bindings.OptionCompression
+	dedicatedThreads bindings.OptionDedicatedThreads
 	appName          string
 	termCh           chan struct{}
 	lock             sync.RWMutex
@@ -103,6 +104,8 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 			binding.compression = v
 		case bindings.OptionAppName:
 			binding.appName = v.AppName
+		case bindings.OptionDedicatedThreads:
+			binding.dedicatedThreads = v
 		default:
 			fmt.Printf("Unknown cproto option: %#v\n", option)
 		}

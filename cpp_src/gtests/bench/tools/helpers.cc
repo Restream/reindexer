@@ -34,7 +34,7 @@ string FormatString(const char* msg, va_list args) {
 
 	std::size_t size = 256;
 	char local_buff[256];
-	auto ret = vsnprintf(local_buff, size, msg, args_cp);
+	auto ret = vsnprintf(local_buff, size, msg, args_cp); // NOLINT(*valist.Uninitialized) False positive
 
 	va_end(args_cp);
 
@@ -47,6 +47,7 @@ string FormatString(const char* msg, va_list args) {
 		size = static_cast<size_t>(ret) + 1;  // + 1 for the null byte
 		std::unique_ptr<char[]> buff(new char[size]);
 		ret = vsnprintf(buff.get(), size, msg, args);
+		(void)ret;
 		return buff.get();
 	}
 }

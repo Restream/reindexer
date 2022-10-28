@@ -18,7 +18,7 @@ TEST_F(RPCClientTestApi, ConnectTimeout) {
 	config.ConnectTimeout = seconds(1);
 	config.RequestTimeout = seconds(5);
 	reindexer::client::Reindexer rx(config);
-	auto res = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db");
+	auto res = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db");
 	EXPECT_TRUE(res.ok()) << res.what();
 	res = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
 	EXPECT_EQ(res.code(), errTimeout);
@@ -33,9 +33,9 @@ TEST_F(RPCClientTestApi, RequestTimeout) {
 	config.ConnectTimeout = seconds(3);
 	config.RequestTimeout = seconds(3);
 	reindexer::client::Reindexer rx(config);
-	auto res = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db");
+	auto res = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db");
 	EXPECT_TRUE(res.ok()) << res.what();
-	const string kNamespaceName = "MyNamespace";
+	const std::string kNamespaceName = "MyNamespace";
 	res = rx.AddNamespace(reindexer::NamespaceDef(kNamespaceName));
 	EXPECT_EQ(res.code(), errTimeout);
 	res = rx.DropNamespace(kNamespaceName);
@@ -48,7 +48,7 @@ TEST_F(RPCClientTestApi, RequestCancels) {
 	AddFakeServer();
 	StartServer();
 	reindexer::client::Reindexer rx;
-	auto res = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db");
+	auto res = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db");
 	EXPECT_TRUE(res.ok()) << res.what();
 
 	{
@@ -81,7 +81,7 @@ TEST_F(RPCClientTestApi, SuccessfullRequestWithTimeout) {
 	config.ConnectTimeout = seconds(3);
 	config.RequestTimeout = seconds(6);
 	reindexer::client::Reindexer rx(config);
-	auto res = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db");
+	auto res = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db");
 	EXPECT_TRUE(res.ok()) << res.what();
 	res = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
 	EXPECT_TRUE(res.ok()) << res.what();
@@ -93,23 +93,23 @@ TEST_F(RPCClientTestApi, ErrorLoginResponse) {
 	AddFakeServer();
 	StartServer(kDefaultRPCServerAddr, errForbidden);
 	reindexer::client::Reindexer rx;
-	rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db");
+	rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db");
 	auto res = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
-	EXPECT_EQ(res.code(), errForbidden);
+	EXPECT_EQ(res.code(), errForbidden) << res.what();
 	res = StopServer();
 	EXPECT_TRUE(res.ok()) << res.what();
 }
 
 TEST_F(RPCClientTestApi, SeveralDsnReconnect) {
-	const string cprotoIdentifier = "cproto://";
-	const string dbName = "/test_db";
-	const vector<string> uris = {"127.0.0.1:25673", "127.0.0.1:25674", "127.0.0.1:25675", "127.0.0.1:25676"};
+	const std::string cprotoIdentifier = "cproto://";
+	const std::string dbName = "/test_db";
+	const std::vector<std::string> uris = {"127.0.0.1:25673", "127.0.0.1:25674", "127.0.0.1:25675", "127.0.0.1:25676"};
 
 	RPCServerConfig serverConfig;
 	serverConfig.loginDelay = std::chrono::milliseconds(1);
 	serverConfig.openNsDelay = std::chrono::milliseconds(1);
 	serverConfig.selectDelay = std::chrono::milliseconds(1);
-	for (const string& uri : uris) {
+	for (const std::string& uri : uris) {
 		AddFakeServer(uri, serverConfig);
 		StartServer(uri);
 	}
@@ -119,9 +119,10 @@ TEST_F(RPCClientTestApi, SeveralDsnReconnect) {
 	clientConfig.RequestTimeout = seconds(10);
 	clientConfig.ReconnectAttempts = 0;
 	reindexer::client::Reindexer rx(clientConfig);
-	std::vector<pair<string, reindexer::client::ConnectOpts>> connectData;
-	for (const string& uri : uris) {
-		connectData.emplace_back(string(cprotoIdentifier + uri + dbName), reindexer::client::ConnectOpts());
+	std::vector<std::pair<std::string, reindexer::client::ConnectOpts>> connectData;
+	connectData.reserve(uris.size());
+	for (const std::string& uri : uris) {
+		connectData.emplace_back(std::string().append(cprotoIdentifier).append(uri).append(dbName), reindexer::client::ConnectOpts());
 	}
 	auto res = rx.Connect(connectData);
 	EXPECT_TRUE(res.ok()) << res.what();
@@ -156,7 +157,7 @@ TEST_F(RPCClientTestApi, SelectFromClosedNamespace) {
 	ev::dynamic_loop loop;
 	bool finished = false;
 	loop.spawn([&loop, &finished] {
-		const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ReindexerConfig config;
 		config.FetchAmount = 0;
 		reindexer::client::ConnectOpts opts;
@@ -164,7 +165,7 @@ TEST_F(RPCClientTestApi, SelectFromClosedNamespace) {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect(dsn, loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
-		const string kNsName = "MyNamesapce";
+		const std::string kNsName = "MyNamesapce";
 		{
 			reindexer::client::CoroQueryResults qr;
 			err = rx.Select(reindexer::Query(kNsName), qr);
@@ -216,7 +217,7 @@ TEST_F(RPCClientTestApi, RenameNamespace) {
 	ev::dynamic_loop loop;
 	bool finished = false;
 	loop.spawn([&loop, &finished] {
-		const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ReindexerConfig config;
 		config.FetchAmount = 0;
 		reindexer::client::ConnectOpts opts;
@@ -224,8 +225,8 @@ TEST_F(RPCClientTestApi, RenameNamespace) {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect(dsn, loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
-		const string kInitialNsName = "InitialNamespace";
-		const string kResultNsName = "ResultNamespace";
+		const std::string kInitialNsName = "InitialNamespace";
+		const std::string kResultNsName = "ResultNamespace";
 		reindexer::NamespaceDef nsDef(kInitialNsName);
 		nsDef.AddIndex("id", "hash", "int", IndexOpts().PK());
 		err = rx.AddNamespace(nsDef);
@@ -243,7 +244,7 @@ TEST_F(RPCClientTestApi, RenameNamespace) {
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		auto testInList = [&rx](const std::string& testNamespaceName, bool inList) {
-			vector<reindexer::NamespaceDef> namespacesList;
+			std::vector<reindexer::NamespaceDef> namespacesList;
 			auto err = rx.EnumNamespaces(namespacesList, reindexer::EnumNamespacesOpts());
 			ASSERT_TRUE(err.ok()) << err.what();
 			auto r = std::find_if(namespacesList.begin(), namespacesList.end(),
@@ -302,9 +303,9 @@ TEST_F(RPCClientTestApi, CoroRequestTimeout) {
 		reindexer::client::ReindexerConfig config;
 		config.RequestTimeout = seconds(1);
 		reindexer::client::CoroReindexer rx(config);
-		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
+		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		EXPECT_TRUE(err.ok()) << err.what();
-		const string kNamespaceName = "MyNamespace";
+		const std::string kNamespaceName = "MyNamespace";
 		err = rx.AddNamespace(reindexer::NamespaceDef(kNamespaceName));
 		EXPECT_EQ(err.code(), errTimeout);
 		loop.sleep(std::chrono::seconds(4));
@@ -336,7 +337,7 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 			reindexer::client::ReindexerConfig config;
 			config.RequestTimeout = seconds(1);
 			reindexer::client::CoroReindexer rx(config);
-			auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
+			auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 			ASSERT_TRUE(err.ok()) << err.what();
 			for (size_t j = 0; j < kQueriesCount; ++j) {
 				reindexer::client::CoroQueryResults qr;
@@ -366,7 +367,7 @@ TEST_F(RPCClientTestApi, CoroRequestCancels) {
 	bool finished = false;
 	loop.spawn([&loop, &finished] {
 		reindexer::client::CoroReindexer rx;
-		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
+		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		{
@@ -409,7 +410,7 @@ TEST_F(RPCClientTestApi, CoroSuccessfullRequestWithTimeout) {
 		config.ConnectTimeout = seconds(3);
 		config.RequestTimeout = seconds(6);
 		reindexer::client::CoroReindexer rx(config);
-		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
+		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		EXPECT_TRUE(err.ok()) << err.what();
 		err = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -429,7 +430,7 @@ TEST_F(RPCClientTestApi, CoroErrorLoginResponse) {
 	bool finished = false;
 	loop.spawn([&loop, &finished] {
 		reindexer::client::CoroReindexer rx;
-		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
+		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
 		EXPECT_EQ(err.code(), errForbidden);
@@ -443,7 +444,7 @@ TEST_F(RPCClientTestApi, CoroErrorLoginResponse) {
 
 TEST_F(RPCClientTestApi, CoroStatus) {
 	// Should return correct Status, based on server's state
-	std::string dbPath = string(kDbPrefix) + "/" + kDefaultRPCPort;
+	std::string dbPath = std::string(kDbPrefix) + "/" + kDefaultRPCPort;
 	reindexer::fs::RmDirAll(dbPath);
 	AddRealServer(dbPath);
 	ev::dynamic_loop loop;
@@ -452,7 +453,7 @@ TEST_F(RPCClientTestApi, CoroStatus) {
 		reindexer::client::CoroReindexer rx;
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
-		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
+		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
 		for (size_t i = 0; i < 5; ++i) {
 			StartServer();
@@ -462,7 +463,7 @@ TEST_F(RPCClientTestApi, CoroStatus) {
 			EXPECT_TRUE(err.ok()) << err.what();
 			loop.sleep(std::chrono::milliseconds(20));	// Allow reading coroutine to handle disconnect
 			err = rx.Status();
-			ASSERT_EQ(err.code(), errNetwork);
+			ASSERT_EQ(err.code(), errNetwork) << err.what();
 		}
 		finished = true;
 	});
@@ -483,7 +484,7 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 
 	loop.spawn([&loop, &finished] {
 		const std::string nsName = "ns1";
-		const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
 		CoroReindexer rx;
@@ -607,7 +608,7 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 
 		loop.spawn([&loop, &finished, &terminate, &ready, &step] {
 			const std::string nsName = "ns1";
-			const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+			const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 			reindexer::client::ConnectOpts opts;
 			opts.CreateDBIfMissing();
 			CoroReindexer rx;
@@ -704,7 +705,7 @@ TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 	auto mainRoutine = [this, &loop, &finished] {
 		using namespace std::string_view_literals;
 		reindexer::client::CoroReindexer rx;
-		const string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
 		auto err = rx.Connect(dsn, loop, reindexer::client::ConnectOpts().CreateDBIfMissing());
 		ASSERT_TRUE(err.ok()) << err.what();
 
@@ -778,7 +779,7 @@ TEST_F(RPCClientTestApi, CoroUpdatesFilteringByNs) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = rx.OpenNamespace(kNs2Name);
 		ASSERT_TRUE(err.ok()) << err.what();
-		err = rx.RenameNamespace(kNs1Name, string(kNs3Name));
+		err = rx.RenameNamespace(kNs1Name, std::string(kNs3Name));
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = rx.DropNamespace(kNs2Name);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -838,7 +839,7 @@ TEST_F(RPCClientTestApi, UnknowResultsFlag) {
 		reindexer::client::CoroReindexer rx;
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
-		auto err = rx.Connect(string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
+		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
 		const int kResultsUnknownFlag = 0x40000000;	 // Max available int flag
 		client::CoroQueryResults qr(kResultsCJson | kResultsWithItemID | kResultsUnknownFlag);

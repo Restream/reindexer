@@ -39,7 +39,7 @@ public:
 	};
 
 	template <typename... Args>
-	CommandsExecutor(const string& outFileName, int numThreads, Args... args)
+	CommandsExecutor(const std::string& outFileName, int numThreads, Args... args)
 		: db_(std::move(args)...), output_(outFileName), numThreads_(numThreads) {}
 	CommandsExecutor(const CommandsExecutor&) = delete;
 	CommandsExecutor(CommandsExecutor&&) = delete;
@@ -47,8 +47,8 @@ public:
 	CommandsExecutor& operator=(CommandsExecutor&&) = delete;
 	~CommandsExecutor() { stop(true); }
 	template <typename... Args>
-	Error Run(const string& dsn, const Args&... args);
-	void GetSuggestions(const std::string& input, std::vector<string>& suggestions);
+	Error Run(const std::string& dsn, const Args&... args);
+	void GetSuggestions(const std::string& input, std::vector<std::string>& suggestions);
 	Error Stop();
 	Error Process(const std::string& command);
 	Error FromFile(std::istream& in);
@@ -59,7 +59,7 @@ protected:
 	Error fromFileImpl(std::istream& in);
 	Error execCommand(IExecutorsCommand& cmd);
 	template <typename... Args>
-	Error runImpl(const string& dsn, Args&&... args);
+	Error runImpl(const std::string& dsn, Args&&... args);
 	template <typename T = DBInterface>
 	typename std::enable_if<std::is_default_constructible<T>::value, T>::type createDB() {
 		return T();
@@ -68,31 +68,32 @@ protected:
 	typename std::enable_if<!std::is_default_constructible<T>::value, T>::type createDB(typename T::ConfigT config) {
 		return T(loop_, config);
 	}
-	string getCurrentDsn(bool withPath = false) const;
+	std::string getCurrentDsn(bool withPath = false) const;
 	Error queryResultsToJson(ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery, bool fstream);
-	Error getAvailableDatabases(vector<string>&);
+	Error getAvailableDatabases(std::vector<std::string>&);
 
-	void addCommandsSuggestions(std::string const& input, std::vector<string>& suggestions);
-	void checkForNsNameMatch(std::string_view str, std::vector<string>& suggestions);
-	void checkForCommandNameMatch(std::string_view str, std::initializer_list<std::string_view> cmds, std::vector<string>& suggestions);
+	void addCommandsSuggestions(std::string const& input, std::vector<std::string>& suggestions);
+	void checkForNsNameMatch(std::string_view str, std::vector<std::string>& suggestions);
+	void checkForCommandNameMatch(std::string_view str, std::initializer_list<std::string_view> cmds,
+								  std::vector<std::string>& suggestions);
 
 	Error processImpl(const std::string& command);
 	Error stop(bool terminate);
-	void getSuggestions(const std::string& input, std::vector<string>& suggestions);
-	Error commandSelect(const string& command);
-	Error commandUpsert(const string& command);
-	Error commandUpdateSQL(const string& command);
-	Error commandDelete(const string& command);
-	Error commandDeleteSQL(const string& command);
-	Error commandDump(const string& command);
-	Error commandNamespaces(const string& command);
-	Error commandMeta(const string& command);
-	Error commandHelp(const string& command);
-	Error commandQuit(const string& command);
-	Error commandSet(const string& command);
-	Error commandBench(const string& command);
-	Error commandSubscribe(const string& command);
-	Error commandProcessDatabases(const string& command);
+	void getSuggestions(const std::string& input, std::vector<std::string>& suggestions);
+	Error commandSelect(const std::string& command);
+	Error commandUpsert(const std::string& command);
+	Error commandUpdateSQL(const std::string& command);
+	Error commandDelete(const std::string& command);
+	Error commandDeleteSQL(const std::string& command);
+	Error commandDump(const std::string& command);
+	Error commandNamespaces(const std::string& command);
+	Error commandMeta(const std::string& command);
+	Error commandHelp(const std::string& command);
+	Error commandQuit(const std::string& command);
+	Error commandSet(const std::string& command);
+	Error commandBench(const std::string& command);
+	Error commandSubscribe(const std::string& command);
+	Error commandProcessDatabases(const std::string& command);
 
 	Error seedBenchItems();
 	std::function<void(std::chrono::system_clock::time_point)> getBenchWorkerFn(std::atomic<int>& count, std::atomic<int>& errCount);
@@ -104,10 +105,10 @@ protected:
 	DBInterface db() { return db_.WithContext(&cancelCtx_); }
 
 	struct commandDefinition {
-		string command;
-		string description;
-		Error (CommandsExecutor::*handler)(const string& command);
-		string help;
+		std::string command;
+		std::string description;
+		Error (CommandsExecutor::*handler)(const std::string& command);
+		std::string help;
 	};
 	// clang-format off
 	std::vector <commandDefinition> cmds_ = {
@@ -209,14 +210,14 @@ protected:
          Creates new database.
          )help"}
     };
-    // clang-format on
+	// clang-format on
 
 	reindexer::net::ev::dynamic_loop loop_;
 	CancelContext cancelCtx_;
 	DBInterface db_;
 	Output output_;
 	int numThreads_;
-	std::unordered_map<string, string> variables_;
+	std::unordered_map<std::string, std::string> variables_;
 	httpparser::UrlParser uri_;
 	reindexer::net::ev::async cmdAsync_;
 	std::mutex mtx_;

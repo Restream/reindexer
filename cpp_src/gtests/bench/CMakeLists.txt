@@ -9,7 +9,6 @@ option(BENCH_REPORT "Enable CI benchmarks report" OFF)
 
 include_directories(fixtures)
 include_directories(tools)
-include_directories(${GBENCHMARK_INCLUDE_DIRS})
 
 file (GLOB_RECURSE FIXT_SRCS fixtures/*)
 file (GLOB_RECURSE FT_FIXT_SRCS fixtures/ft_* fixtures/base_fixture.*)

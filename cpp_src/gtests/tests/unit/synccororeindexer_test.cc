@@ -37,7 +37,7 @@ TEST(SyncCoroRx, BaseTest) {
 
 	// add rows
 	const int insRows = 200;
-	const string strValue = "aaaaaaaaaaaaaaa";
+	const std::string strValue = "aaaaaaaaaaaaaaa";
 	for (unsigned i = 0; i < insRows; i++) {
 		reindexer::client::Item item = client.NewItem(nsName);
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
@@ -51,7 +51,7 @@ TEST(SyncCoroRx, BaseTest) {
 	reindexer::client::SyncCoroQueryResults qResults(&client, 3);
 	err = client.Select(std::string("select * from ") + std::string(nsName) + " order by id", qResults);
 	// comparison of inserted data and received from select
-	unsigned int indx = 0;
+	int indx = 0;
 	for (auto it = qResults.begin(); it != qResults.end(); ++it, indx++) {
 		reindexer::WrSerializer wrser;
 		reindexer::Error err = it.GetJSON(wrser, false);
@@ -59,7 +59,7 @@ TEST(SyncCoroRx, BaseTest) {
 		try {
 			gason::JsonParser parser;
 			gason::JsonNode json = parser.Parse(wrser.Slice());
-			if (json["id"].As<unsigned int>(-1) != indx || json["val"].As<std::string_view>() != strValue) {
+			if (json["id"].As<int>(-1) != indx || json["val"].As<std::string_view>() != strValue) {
 				ASSERT_TRUE(false) << "item value not correct";
 			}
 
@@ -147,12 +147,13 @@ TEST(SyncCoroRx, TestSyncCoroRxNThread) {
 		}
 	};
 
-	std::vector<std::thread> pullThread;
+	std::vector<std::thread> poolThread;
+	poolThread.reserve(10);
 	for (int i = 0; i < 10; i++) {
-		pullThread.emplace_back(std::thread(insertThreadFun));
+		poolThread.emplace_back(std::thread(insertThreadFun));
 	}
-	for (int i = 0; i < 10; i++) {
-		pullThread[i].join();
+	for (auto& th : poolThread) {
+		th.join();
 	}
 }
 

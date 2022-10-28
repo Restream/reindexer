@@ -26,7 +26,6 @@
 using std::chrono::duration_cast;
 using std::chrono::high_resolution_clock;
 using std::chrono::microseconds;
-using std::make_shared;
 
 #define kStorageIndexesPrefix "indexes"
 #define kStorageSchemaPrefix "schema"
@@ -36,7 +35,7 @@ using std::make_shared;
 #define kStorageCachePrefix "cache"
 #define kTupleName "-tuple"
 
-static const string kPKIndexName = "#pk";
+static const std::string kPKIndexName = "#pk";
 constexpr int kWALStatementItemsThreshold = 5;
 
 #define kStorageMagic 0x1234FEDC
@@ -51,7 +50,7 @@ constexpr size_t kMaxMemorySizeOfStringsHolder = 1ull << 24;
 
 NamespaceImpl::IndexesStorage::IndexesStorage(const NamespaceImpl &ns) : ns_(ns) {}
 
-void NamespaceImpl::IndexesStorage::MoveBase(IndexesStorage &&src) { Base::operator=(move(src)); }
+void NamespaceImpl::IndexesStorage::MoveBase(IndexesStorage &&src) { Base::operator=(std::move(src)); }
 
 // private implementation and NOT THREADSAFE of copy CTOR
 NamespaceImpl::NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &storageLock)
@@ -65,12 +64,12 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &
 	  storage_{src.storage_, storageLock},
 	  replStateUpdates_{src.replStateUpdates_.load()},
 	  meta_{src.meta_},
-	  queryTotalCountCache_{make_shared<QueryTotalCountCache>()},
+	  queryTotalCountCache_{std::make_shared<QueryTotalCountCache>()},
 	  sparseIndexesCount_{src.sparseIndexesCount_},
 	  krefs{src.krefs},
 	  skrefs{src.skrefs},
 	  sysRecordsVersions_{src.sysRecordsVersions_},
-	  joinCache_{make_shared<JoinCache>()},
+	  joinCache_{std::make_shared<JoinCache>()},
 	  enablePerfCounters_{src.enablePerfCounters_.load()},
 	  config_{src.config_},
 	  wal_{src.wal_},
@@ -95,13 +94,13 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &
 			  config_.optimizationTimeout);
 }
 
-NamespaceImpl::NamespaceImpl(const string &name, UpdatesObservers &observers)
+NamespaceImpl::NamespaceImpl(const std::string &name, UpdatesObservers &observers)
 	: indexes_(*this),
 	  name_(name),
 	  payloadType_(name),
 	  tagsMatcher_(payloadType_),
-	  queryTotalCountCache_(make_shared<QueryTotalCountCache>()),
-	  joinCache_(make_shared<JoinCache>()),
+	  queryTotalCountCache_(std::make_shared<QueryTotalCountCache>()),
+	  joinCache_(std::make_shared<JoinCache>()),
 	  enablePerfCounters_(false),
 	  wal_(config_.walSize),
 	  observers_(&observers),
@@ -258,7 +257,7 @@ void NamespaceImpl::recreateCompositeIndexes(int startIdx, int endIdx) {
 	}
 }
 
-void NamespaceImpl::updateItems(PayloadType oldPlType, const FieldsSet &changedFields, int deltaFields) {
+void NamespaceImpl::updateItems(const PayloadType &oldPlType, const FieldsSet &changedFields, int deltaFields) {
 	logPrintf(LogTrace, "Namespace::updateItems(%s) delta=%d", name_, deltaFields);
 
 	assertrx(oldPlType->NumFields() + deltaFields == payloadType_->NumFields());
@@ -396,7 +395,7 @@ void NamespaceImpl::DropIndex(const IndexDef &indexDef, const RdxContext &ctx) {
 
 void NamespaceImpl::SetSchema(std::string_view schema, const RdxContext &ctx) {
 	auto wlck = wLock(ctx);
-	schema_ = make_shared<Schema>(schema);
+	schema_ = std::make_shared<Schema>(schema);
 	auto fields = schema_->GetPaths();
 	for (auto &field : fields) {
 		tagsMatcher_.path2tag(field, true);
@@ -562,7 +561,7 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef &indexDef) const {
 }
 
 void NamespaceImpl::addIndex(const IndexDef &indexDef) {
-	string indexName = indexDef.name_;
+	std::string indexName = indexDef.name_;
 
 	auto idxNameIt = indexesNames_.find(indexName);
 	int idxNo = payloadType_->NumFields();
@@ -609,7 +608,7 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 	std::unique_ptr<Index> newIndex = Index::New(indexDef, PayloadType(), FieldsSet());
 	if (opts.IsSparse()) {
 		FieldsSet fields;
-		for (const string &jsonPath : jsonPaths) {
+		for (const std::string &jsonPath : jsonPaths) {
 			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPath, true);
 			assertrx(tagsPath.size() > 0);
 
@@ -652,7 +651,7 @@ void NamespaceImpl::fillSparseIndex(Index &index, std::string_view jsonPath) {
 }
 
 void NamespaceImpl::updateIndex(const IndexDef &indexDef) {
-	const string &indexName = indexDef.name_;
+	const std::string &indexName = indexDef.name_;
 
 	IndexDef foundIndex = getIndexDefinition(indexName);
 
@@ -671,7 +670,7 @@ void NamespaceImpl::updateIndex(const IndexDef &indexDef) {
 	addIndex(indexDef);
 }
 
-IndexDef NamespaceImpl::getIndexDefinition(const string &indexName) const {
+IndexDef NamespaceImpl::getIndexDefinition(const std::string &indexName) const {
 	NamespaceDef nsDef = getDefinition();
 
 	auto indexes = nsDef.indexes;
@@ -697,7 +696,7 @@ void NamespaceImpl::verifyUpdateCompositeIndex(const IndexDef &indexDef) const {
 }
 
 void NamespaceImpl::addCompositeIndex(const IndexDef &indexDef) {
-	string indexName = indexDef.name_;
+	std::string indexName = indexDef.name_;
 	IndexType type = indexDef.Type();
 	IndexOpts opts = indexDef.opts_;
 
@@ -740,7 +739,7 @@ void NamespaceImpl::addCompositeIndex(const IndexDef &indexDef) {
 	updateSortedIdxCount();
 }
 
-void NamespaceImpl::insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const string &realName) {
+void NamespaceImpl::insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string &realName) {
 	const bool isPK = newIndex->Opts().IsPK();
 	indexes_.insert(indexes_.begin() + idxNo, std::move(newIndex));
 
@@ -757,7 +756,7 @@ void NamespaceImpl::insertIndex(std::unique_ptr<Index> newIndex, int idxNo, cons
 	}
 }
 
-int NamespaceImpl::getIndexByName(const string &index) const {
+int NamespaceImpl::getIndexByName(const std::string &index) const {
 	auto idxIt = indexesNames_.find(index);
 
 	if (idxIt == indexesNames_.end()) throw Error(errParams, "Index '%s' not found in '%s'", index, name_);
@@ -765,7 +764,7 @@ int NamespaceImpl::getIndexByName(const string &index) const {
 	return idxIt->second;
 }
 
-bool NamespaceImpl::getIndexByName(const string &name, int &index) const {
+bool NamespaceImpl::getIndexByName(const std::string &name, int &index) const {
 	auto it = indexesNames_.find(name);
 	if (it == indexesNames_.end()) return false;
 	index = it->second;
@@ -1105,7 +1104,7 @@ void NamespaceImpl::Truncate(const NsContext &ctx) {
 	tryForceFlush(std::move(wlck));
 }
 
-void NamespaceImpl::Refill(vector<Item> &items, const NsContext &ctx) {
+void NamespaceImpl::Refill(std::vector<Item> &items, const NsContext &ctx) {
 	auto wlck = wLock(ctx.rdxContext);
 	auto intCtx = ctx;
 	intCtx.NoLock();
@@ -1364,7 +1363,7 @@ void NamespaceImpl::updateTagsMatcherFromItem(ItemImpl *ritem) {
 	}
 
 	if (ritem->Type().get() != payloadType_.get() || (ritem->tagsMatcher().isUpdated() && !tagsMatcher_.try_merge(ritem->tagsMatcher()))) {
-		string jsonSliceBuf(ritem->GetJSON());
+		std::string jsonSliceBuf(ritem->GetJSON());
 		logPrintf(LogTrace, "Conflict TagsMatcher of namespace '%s' on modify: item:\n%s\ntm is\n%s\nnew tm is\n %s\n", name_, jsonSliceBuf,
 				  tagsMatcher_.dump(), ritem->tagsMatcher().dump());
 
@@ -1445,7 +1444,7 @@ void NamespaceImpl::modifyItem(Item &item, const NsContext &ctx, int mode) {
 }
 
 // find id by PK. NOT THREAD SAFE!
-pair<IdType, bool> NamespaceImpl::findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &ctx) {
+std::pair<IdType, bool> NamespaceImpl::findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &ctx) {
 	auto pkIndexIt = indexesNames_.find(kPKIndexName);
 
 	if (pkIndexIt == indexesNames_.end()) {
@@ -1624,7 +1623,7 @@ NamespaceDef NamespaceImpl::getDefinition() const {
 	if (schema_) {
 		WrSerializer ser;
 		schema_->GetJSON(ser);
-		nsDef.schemaJson = string(ser.Slice());
+		nsDef.schemaJson = std::string(ser.Slice());
 	}
 	return nsDef;
 }
@@ -1707,17 +1706,18 @@ void NamespaceImpl::ResetPerfStat(const RdxContext &ctx) {
 	for (auto &i : indexes_) i->ResetIndexPerfStat();
 }
 
-Error NamespaceImpl::loadLatestSysRecord(std::string_view baseSysTag, uint64_t &version, string &content) {
+Error NamespaceImpl::loadLatestSysRecord(std::string_view baseSysTag, uint64_t &version, std::string &content) {
 	std::string key(baseSysTag);
 	key.append(".");
 	std::string latestContent;
 	version = 0;
-	Error err = errOK;
+	Error err;
 	for (int i = 0; i < kSysRecordsBackupCount; ++i) {
 		Error status = storage_.Read(StorageOpts().FillCache(), std::string_view(key + std::to_string(i)), content);
 		if (!status.ok() && status.code() != errNotFound) {
 			logPrintf(LogTrace, "Error on namespace service info(tag: %s, id: %u) load '%s': %s", baseSysTag, i, name_, status.what());
 			err = Error(errNotValid, "Error load namespace from storage '%s': %s", name_, status.what());
+			continue;
 		}
 
 		if (content.size()) {
@@ -1726,7 +1726,7 @@ Error NamespaceImpl::loadLatestSysRecord(std::string_view baseSysTag, uint64_t &
 			if (curVersion >= version) {
 				version = curVersion;
 				latestContent = std::move(content);
-				err = errOK;
+				err = Error();
 			}
 		}
 	}
@@ -1757,7 +1757,7 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 	assertrx(indexes_.size() == 1);
 	assertrx(items_.size() == 0);
 
-	string def;
+	std::string def;
 	Error status = loadLatestSysRecord(kStorageTagsPrefix, sysRecordsVersions_.tagsVersion, def);
 	if (!status.ok() && status.code() != errNotFound) {
 		throw status;
@@ -1776,7 +1776,7 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 		throw status;
 	}
 	if (def.size()) {
-		schema_ = make_shared<Schema>();
+		schema_ = std::make_shared<Schema>();
 		Serializer ser(def.data(), def.size());
 		status = schema_->FromJSON(ser.GetSlice());
 		if (!status.ok()) {
@@ -1832,7 +1832,7 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 }
 
 void NamespaceImpl::loadReplStateFromStorage() {
-	string json;
+	std::string json;
 	Error status = loadLatestSysRecord(kStorageReplStatePrefix, sysRecordsVersions_.replVersion, json);
 	if (!status.ok() && status.code() != errNotFound) {
 		throw status;
@@ -1930,8 +1930,8 @@ void NamespaceImpl::saveTagsMatcherToStorage(bool clearUpdate) {
 	}
 }
 
-void NamespaceImpl::EnableStorage(const string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx) {
-	string dbpath = fs::JoinPath(path, name_);
+void NamespaceImpl::EnableStorage(const std::string &path, StorageOpts opts, StorageType storageType, const RdxContext &ctx) {
+	std::string dbpath = fs::JoinPath(path, name_);
 
 	auto wlck = wLock(ctx);
 	FlagGuardT nsLoadingGuard(nsIsLoading_);
@@ -2153,36 +2153,36 @@ void NamespaceImpl::ToPool(ItemImpl *item) {
 }
 
 // Get meta data from storage by key
-string NamespaceImpl::GetMeta(const string &key, const RdxContext &ctx) {
+std::string NamespaceImpl::GetMeta(const std::string &key, const RdxContext &ctx) {
 	auto rlck = rLock(ctx);
 	return getMeta(key);
 }
 
-string NamespaceImpl::getMeta(const string &key) const {
+std::string NamespaceImpl::getMeta(const std::string &key) const {
 	auto it = meta_.find(key);
 	if (it != meta_.end()) {
 		return it->second;
 	}
 
-	string data;
+	std::string data;
 	Error status = storage_.Read(StorageOpts().FillCache(), std::string_view(kStorageMetaPrefix + key), data);
 	if (status.ok()) {
 		return data;
 	}
 
-	return string();
+	return std::string();
 }
 
 // Put meta data to storage by key
-void NamespaceImpl::PutMeta(const string &key, std::string_view data, const NsContext &ctx) {
+void NamespaceImpl::PutMeta(const std::string &key, std::string_view data, const NsContext &ctx) {
 	auto wlck = wLock(ctx.rdxContext);
 	checkApplySlaveUpdate(ctx.rdxContext.fromReplication_);	 // throw exception if false
 	putMeta(key, data, ctx.rdxContext);
 }
 
 // Put meta data to storage by key
-void NamespaceImpl::putMeta(const string &key, std::string_view data, const RdxContext &ctx) {
-	meta_[key] = string(data);
+void NamespaceImpl::putMeta(const std::string &key, std::string_view data, const RdxContext &ctx) {
+	meta_[key] = std::string(data);
 
 	storage_.WriteSync(StorageOpts().FillCache(), kStorageMetaPrefix + key, data);
 
@@ -2190,13 +2190,13 @@ void NamespaceImpl::putMeta(const string &key, std::string_view data, const RdxC
 	processWalRecord(wrec, ctx);
 }
 
-vector<string> NamespaceImpl::EnumMeta(const RdxContext &ctx) {
+std::vector<std::string> NamespaceImpl::EnumMeta(const RdxContext &ctx) {
 	auto rlck = rLock(ctx);
 	return enumMeta();
 }
 
-vector<string> NamespaceImpl::enumMeta() const {
-	vector<string> ret;
+std::vector<std::string> NamespaceImpl::enumMeta() const {
+	std::vector<std::string> ret;
 	ret.reserve(meta_.size());
 	for (auto &m : meta_) {
 		ret.push_back(m.first);
@@ -2213,7 +2213,7 @@ vector<string> NamespaceImpl::enumMeta() const {
 		 dbIter->Next()) {
 		std::string_view keySlice = dbIter->Key();
 		if (keySlice.size() > prefixLen) {
-			string key(keySlice.substr(prefixLen));
+			std::string key(keySlice.substr(prefixLen));
 			if (meta_.find(key) == meta_.end()) {
 				ret.push_back(key);
 			}
@@ -2320,22 +2320,22 @@ void NamespaceImpl::setFieldsBasedOnPrecepts(ItemImpl *ritem) {
 	}
 }
 
-int64_t NamespaceImpl::GetSerial(const string &field) {
+int64_t NamespaceImpl::GetSerial(const std::string &field) {
 	int64_t counter = kStorageSerialInitial;
 
-	string ser = getMeta("_SERIAL_" + field);
+	std::string ser = getMeta("_SERIAL_" + field);
 	if (ser != "") {
 		counter = reindexer::stoll(ser) + 1;
 	}
 
-	string s = std::to_string(counter);
+	std::string s = std::to_string(counter);
 	putMeta("_SERIAL_" + field, std::string_view(s), RdxContext());
 
 	return counter;
 }
 
-void NamespaceImpl::FillResult(QueryResults &result, IdSet::Ptr ids) const {
-	for (auto &id : *ids) {
+void NamespaceImpl::FillResult(QueryResults &result, const IdSet &ids) const {
+	for (auto &id : ids) {
 		result.Add({id, items_[id], 0, 0});
 	}
 }

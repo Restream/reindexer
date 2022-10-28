@@ -5,7 +5,7 @@
 namespace reindexer {
 namespace client {
 
-void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, std::function<void(int nsId)> updatePayloadFunc) {
+void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc) {
 	ret.flags = GetVarUint();
 	ret.totalcount = GetVarUint();
 	ret.qcount = GetVarUint();
@@ -39,7 +39,7 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, std
 				}
 				break;
 			case QueryResultExplain:
-				ret.explainResults = string(data);
+				ret.explainResults = std::string(data);
 				break;
 		}
 	}

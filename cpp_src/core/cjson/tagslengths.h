@@ -1,6 +1,6 @@
 #pragma once
 
-#include "estl/h_vector.h"
+#include <vector>
 
 namespace reindexer {
 
@@ -14,7 +14,7 @@ enum TagValues : int {
 static const int KUnknownFieldSize = -1;
 static const int kStandardFieldSize = 1;
 
-using TagsLengths = h_vector<int, 0>;
-int computeObjectLength(TagsLengths& tagsLengths, size_t startTag, size_t& nextPos);
+using TagsLengths = std::vector<int>;
+int computeObjectLength(TagsLengths& tagsLengths, std::size_t startTag, std::size_t& nextPos);
 
 }  // namespace reindexer

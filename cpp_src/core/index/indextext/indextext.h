@@ -28,9 +28,9 @@ public:
 		initSearchers();
 	}
 
-	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, Index::SelectOpts, BaseFunctionCtx::Ptr,
+	SelectKeyResults SelectKey(const VariantArray& keys, CondType, SortType, Index::SelectOpts, const BaseFunctionCtx::Ptr&,
 							   const RdxContext&) override final;
-	SelectKeyResults SelectKey(const VariantArray& keys, CondType, Index::SelectOpts, BaseFunctionCtx::Ptr, FtPreselectT&&,
+	SelectKeyResults SelectKey(const VariantArray& keys, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&, FtPreselectT&&,
 							   const RdxContext&) override;
 	void UpdateSortedIds(const UpdateSortedContext&) override {}
 	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
@@ -64,12 +64,12 @@ protected:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;
 
 	virtual void commitFulltextImpl() = 0;
-	FtCtx::Ptr prepareFtCtx(BaseFunctionCtx::Ptr);
+	FtCtx::Ptr prepareFtCtx(const BaseFunctionCtx::Ptr&);
 	template <typename Cache>
 	SelectKeyResults doSelectKey(const VariantArray& keys, Cache&, std::optional<typename Cache::Key>, FtMergeStatuses&&,
 								 bool inTransaction, FtCtx::Ptr, const RdxContext&);
 	template <typename CacheIt>
-	SelectKeyResults resultFromCache(const VariantArray& keys, const CacheIt&, FtCtx::Ptr);
+	SelectKeyResults resultFromCache(const VariantArray& keys, const CacheIt&, const FtCtx::Ptr&);
 	void build(const RdxContext& rdxCtx);
 
 	void initSearchers();
@@ -77,7 +77,7 @@ protected:
 
 	std::shared_ptr<FtIdSetCache> cache_ft_;
 	std::shared_ptr<PreselectedFtIdSetCache> preselected_cache_ft_;
-	fast_hash_map<string, int> ftFields_;
+	fast_hash_map<std::string, int> ftFields_;
 	std::unique_ptr<BaseFTConfig> cfg_;
 	Mutex mtx_;
 };

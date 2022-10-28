@@ -18,7 +18,6 @@ struct IRdxCancelContext;
 namespace net {
 namespace cproto {
 
-using std::vector;
 using std::chrono::seconds;
 using std::chrono::milliseconds;
 
@@ -33,7 +32,7 @@ public:
 		if (hold_) delete[] data_.data();
 	}
 	RPCAnswer(const RPCAnswer &other) = delete;
-	RPCAnswer(RPCAnswer &&other) : status_(std::move(other.status_)), data_(std::move(other.data_)), hold_(std::move(other.hold_)) {
+	RPCAnswer(RPCAnswer &&other) : status_(std::move(other.status_)), data_(std::move(other.data_)), hold_(other.hold_) {
 		other.hold_ = false;
 	}
 	RPCAnswer &operator=(RPCAnswer &&other) {
@@ -41,7 +40,7 @@ public:
 			if (hold_) delete[] data_.data();
 			status_ = std::move(other.status_);
 			data_ = std::move(other.data_);
-			hold_ = std::move(other.hold_);
+			hold_ = other.hold_;
 			other.hold_ = false;
 		}
 		return *this;
@@ -184,7 +183,7 @@ protected:
 		return call(cmpl, opts, args, argss...);
 	}
 	template <typename... Argss>
-	inline void call(const Completion &cmpl, const CommandParams &opts, Args &args, const string &val, Argss... argss) {
+	inline void call(const Completion &cmpl, const CommandParams &opts, Args &args, const std::string &val, Argss... argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(cmpl, opts, args, argss...);
 	}
@@ -194,10 +193,10 @@ protected:
 		return call(cmpl, opts, args, argss...);
 	}
 
-	void call(Completion cmpl, const CommandParams &opts, const Args &args);
+	void call(const Completion &cmpl, const CommandParams &opts, const Args &args);
 	chunk packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs);
 
-	void onRead() override;
+	ReadResT onRead() override;
 	void onClose() override;
 
 	struct RPCCompletion {
@@ -213,7 +212,7 @@ protected:
 
 	State state_;
 	// Lock free map seq -> completion
-	vector<RPCCompletion> completions_;
+	std::vector<RPCCompletion> completions_;
 	std::condition_variable connectCond_, bufCond_, closingCond_;
 	std::atomic<uint32_t> seq_;
 	std::atomic<int32_t> bufWait_;

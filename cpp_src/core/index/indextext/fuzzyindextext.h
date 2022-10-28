@@ -19,7 +19,7 @@ public:
 		CreateConfig();
 	}
 
-	SelectKeyResults SelectKey(const VariantArray& /*keys*/, CondType, Index::SelectOpts, BaseFunctionCtx::Ptr, FtPreselectT&&,
+	SelectKeyResults SelectKey(const VariantArray& /*keys*/, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&, FtPreselectT&&,
 							   const RdxContext&) override final {
 		assertrx(0);
 		abort();

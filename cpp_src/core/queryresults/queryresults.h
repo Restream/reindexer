@@ -126,13 +126,13 @@ public:
 	void MarkAsWALQuery() noexcept { isWalQuery_ = true; }
 	bool IsWALQuery() const noexcept { return isWalQuery_; }
 
-	string explainResults;
+	std::string explainResults;
 
 protected:
 	class EncoderDatasourceWithJoins;
 	class EncoderAdditionalDatasource;
 
-private:
+public:
 	void encodeJSON(int idx, WrSerializer &ser) const;
 	ItemRefVector items_;
 	std::optional<RdxActivityContext> activityCtx_;

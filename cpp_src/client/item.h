@@ -9,8 +9,6 @@ namespace reindexer {
 class Replicator;
 namespace client {
 
-using std::vector;
-
 class ItemImpl;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
@@ -70,7 +68,7 @@ public:
 	int NumFields();
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
-	void SetPrecepts(const vector<std::string> &precepts);
+	void SetPrecepts(const std::vector<std::string> &precepts);
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
 	bool IsTagsUpdated();

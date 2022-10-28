@@ -77,16 +77,16 @@ public:
 		: fromReplication_(fromReplication), LSNs_(LSNs), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr) {}
 
 	RdxContext(const IRdxCancelContext* cancelCtx, Completion cmpl)
-		: fromReplication_(false), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(cancelCtx), cmpl_(cmpl) {}
+		: fromReplication_(false), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(cancelCtx), cmpl_(std::move(cmpl)) {}
 	RdxContext(std::string_view activityTracer, std::string_view user, std::string_view query, ActivityContainer& container,
 			   int connectionId, const IRdxCancelContext* cancelCtx, Completion cmpl)
 		: fromReplication_(false),
 		  holdStatus_(kHold),
 		  activityCtx_(activityTracer, user, query, container, connectionId),
 		  cancelCtx_(cancelCtx),
-		  cmpl_(cmpl) {}
+		  cmpl_(std::move(cmpl)) {}
 	explicit RdxContext(RdxActivityContext* ptr, const IRdxCancelContext* cancelCtx = nullptr, Completion cmpl = nullptr)
-		: fromReplication_(false), holdStatus_(ptr ? kPtr : kEmpty), activityPtr_(ptr), cancelCtx_(cancelCtx), cmpl_(cmpl) {
+		: fromReplication_(false), holdStatus_(ptr ? kPtr : kEmpty), activityPtr_(ptr), cancelCtx_(cancelCtx), cmpl_(std::move(cmpl)) {
 		if (holdStatus_ == kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 	}
 
@@ -130,12 +130,12 @@ class QueryResults;
 class InternalRdxContext {
 public:
 	InternalRdxContext() noexcept : cmpl_(nullptr) {}
-	InternalRdxContext(RdxContext::Completion cmpl, const RdxDeadlineContext ctx, std::string_view activityTracer, std::string_view user,
+	InternalRdxContext(RdxContext::Completion cmpl, RdxDeadlineContext ctx, std::string_view activityTracer, std::string_view user,
 					   int connectionId) noexcept
-		: cmpl_(cmpl), deadlineCtx_(std::move(ctx)), activityTracer_(activityTracer), user_(user), connectionId_(connectionId) {}
+		: cmpl_(std::move(cmpl)), deadlineCtx_(std::move(ctx)), activityTracer_(activityTracer), user_(user), connectionId_(connectionId) {}
 
 	InternalRdxContext WithCompletion(RdxContext::Completion cmpl) const noexcept {
-		return InternalRdxContext(cmpl, deadlineCtx_, activityTracer_, user_, connectionId_);
+		return InternalRdxContext(std::move(cmpl), deadlineCtx_, activityTracer_, user_, connectionId_);
 	}
 	InternalRdxContext WithTimeout(milliseconds timeout) const noexcept {
 		return InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()), activityTracer_, user_, connectionId_);

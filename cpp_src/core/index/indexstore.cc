@@ -97,7 +97,7 @@ void IndexStore<T>::Commit() {
 
 template <typename T>
 SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*sortId*/, Index::SelectOpts sopts,
-										  BaseFunctionCtx::Ptr /*ctx*/, const RdxContext &rdxCtx) {
+										  const BaseFunctionCtx::Ptr & /*ctx*/, const RdxContext &rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	SelectKeyResult res;
 	if (condition == CondEmpty && !this->opts_.IsArray() && !this->opts_.IsSparse())

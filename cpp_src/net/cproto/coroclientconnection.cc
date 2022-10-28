@@ -39,7 +39,7 @@ CoroClientConnection::CoroClientConnection()
 
 CoroClientConnection::~CoroClientConnection() { Stop(); }
 
-void CoroClientConnection::Start(ev::dynamic_loop &loop, ConnectData connectData) {
+void CoroClientConnection::Start(ev::dynamic_loop &loop, ConnectData &&connectData) {
 	if (!isRunning_) {
 		// Don't allow to call Start, while error handling is in progress
 		errSyncCh_.pop();
@@ -195,6 +195,7 @@ CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uin
 	hdr.magic = kCprotoMagic;
 	hdr.version = kCprotoVersion;
 	hdr.compressed = enableSnappy_;
+	hdr.dedicatedThread = requestDedicatedThread_;
 	hdr.cmd = cmd;
 	hdr.seq = seq;
 
@@ -229,18 +230,19 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 	if (conn_.state() == manual_connection::conn_state::init) {
 		readWg_.wait();
 		lastError_ = errOK;
-		string port = connectData_.uri.port().length() ? connectData_.uri.port() : string("6534");
+		std::string port = connectData_.uri.port().length() ? connectData_.uri.port() : std::string("6534");
 		int ret = conn_.async_connect(connectData_.uri.hostname() + ":" + port);
 		if (ret < 0) {
 			// unable to connect
 			return Error(errNetwork, "Connect error");
 		}
 
-		string dbName = connectData_.uri.path();
-		string userName = connectData_.uri.username();
-		string password = connectData_.uri.password();
+		std::string dbName = connectData_.uri.path();
+		std::string userName = connectData_.uri.username();
+		std::string password = connectData_.uri.password();
 		if (dbName[0] == '/') dbName = dbName.substr(1);
 		enableCompression_ = connectData_.opts.enableCompression;
+		requestDedicatedThread_ = connectData_.opts.requestDedicatedThread;
 		Args args = {Arg{p_string(&userName)},
 					 Arg{p_string(&password)},
 					 Arg{p_string(&dbName)},
@@ -274,14 +276,14 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 	return errOK;
 }
 
-void CoroClientConnection::closeConn(Error err) noexcept {
+void CoroClientConnection::closeConn(const Error &err) noexcept {
 	errSyncCh_.reopen();
 	lastError_ = err;
 	conn_.close_conn(k_sock_closed_err);
-	handleFatalError(std::move(err));
+	handleFatalError(err);
 }
 
-void CoroClientConnection::handleFatalError(Error err) noexcept {
+void CoroClientConnection::handleFatalError(const Error &err) noexcept {
 	if (!errSyncCh_.opened()) {
 		errSyncCh_.reopen();
 	}
@@ -416,7 +418,7 @@ void CoroClientConnection::readerRoutine() {
 			ans.data_ = span<uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
 		} catch (const Error &err) {
 			// disconnect
-			closeConn(std::move(err));
+			closeConn(err);
 			break;
 		}
 

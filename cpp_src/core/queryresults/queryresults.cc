@@ -32,7 +32,7 @@ void QueryResults::RemoveNamespace(const NamespaceImpl *ns) {
 struct QueryResults::Context {
 	Context() {}
 	Context(PayloadType type, TagsMatcher tagsMatcher, const FieldsSet &fieldsFilter, std::shared_ptr<const Schema> schema)
-		: type_(type), tagsMatcher_(tagsMatcher), fieldsFilter_(fieldsFilter), schema_(std::move(schema)) {}
+		: type_(std::move(type)), tagsMatcher_(std::move(tagsMatcher)), fieldsFilter_(fieldsFilter), schema_(std::move(schema)) {}
 
 	PayloadType type_;
 	TagsMatcher tagsMatcher_;
@@ -74,7 +74,7 @@ QueryResults &QueryResults::operator=(QueryResults &&obj) noexcept {
 		haveRank = obj.haveRank;
 		needOutputRank = obj.needOutputRank;
 		ctxs = std::move(obj.ctxs);
-		nonCacheableData = std::move(obj.nonCacheableData);
+		nonCacheableData = obj.nonCacheableData;
 		explainResults = std::move(obj.explainResults);
 		nsData_ = std::move(obj.nsData_);
 		stringsHolder_ = std::move(obj.stringsHolder_);
@@ -98,7 +98,7 @@ void QueryResults::Erase(ItemRefVector::iterator start, ItemRefVector::iterator 
 void QueryResults::Add(const ItemRef &i) { items_.push_back(i); }
 
 std::string QueryResults::Dump() const {
-	string buf;
+	std::string buf;
 	for (size_t i = 0; i < items_.size(); ++i) {
 		if (&items_[i] != &*items_.begin()) buf += ",";
 		buf += std::to_string(items_[i].Id());
@@ -161,7 +161,7 @@ public:
 		return ctx.fieldsFilter_;
 	}
 
-	const string &GetJoinedItemNamespace(size_t rowid) final {
+	const std::string &GetJoinedItemNamespace(size_t rowid) final {
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.type_->Name();
 	}

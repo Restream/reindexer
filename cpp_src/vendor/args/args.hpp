@@ -1,16 +1,16 @@
 /* Copyright (c) 2016-2017 Taylor C. Richberger <taywee@gmx.com> and Pavel
  * Belikov
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
  * deal in the Software without restriction, including without limitation the
  * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
  * sell copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -418,7 +418,7 @@ namespace args
             Matcher(std::initializer_list<EitherFlag> in) :
                 Matcher(EitherFlag::GetShort(in), EitherFlag::GetLong(in)) {}
 
-            Matcher(Matcher &&other) : shortFlags(std::move(other.shortFlags)), longFlags(std::move(other.longFlags))
+            Matcher(Matcher &&other) : shortFlags(other.shortFlags), longFlags(other.longFlags)
             {}
 
             ~Matcher() {}
@@ -552,7 +552,7 @@ namespace args
 
     /** A simple structure of parameters for easy user-modifyable help menus
      */
-    struct HelpParams
+    struct HelpParams // NOLINT (*performance.Padding) Padding does not matter here
     {
         /** The width of the help menu
          */
@@ -1723,7 +1723,7 @@ namespace args
             { return false; }
 
             virtual bool Matched() const noexcept override
-            { return Base::Matched(); }
+            { return Base::Matched(); } // NOLINT(bugprone-parent-virtual-call)
 
             operator bool() const noexcept
             { return Matched(); }
@@ -2662,7 +2662,7 @@ namespace args
                 const std::vector<std::string> args(argv + 1, argv + argc);
                 return ParseArgs(args) == std::end(args);
             }
-            
+
             template <typename T>
             bool ParseCLI(const T &args)
             {
@@ -2837,14 +2837,14 @@ namespace args
                 FlagBase(name_, help_, std::move(matcher_), options_), nargs(1)
             {
                 group_.Add(*this);
-                action = [action_](const std::vector<std::string> &a) { return action_(a.at(0)); };
+                action = [action_ = std::move(action_)](const std::vector<std::string> &a) { return action_(a.at(0)); };
             }
 
             ActionFlag(Group &group_, const std::string &name_, const std::string &help_, Matcher &&matcher_, std::function<void()> action_, Options options_ = {}):
                 FlagBase(name_, help_, std::move(matcher_), options_), nargs(0)
             {
                 group_.Add(*this);
-                action = [action_](const std::vector<std::string> &) { return action_(); };
+                action = [action_ = std::move(action_)](const std::vector<std::string> &) { return action_(); };
             }
 
             virtual Nargs NumberOfArguments() const noexcept override
@@ -2893,7 +2893,7 @@ namespace args
     };
 
     /** An argument-accepting flag class
-     * 
+     *
      * \tparam T the type to extract the argument as
      * \tparam Reader The functor type used to read the argument, taking the name, value, and destination reference with operator(), and returning a bool (if ARGS_NOEXCEPT is defined)
      */
@@ -3106,7 +3106,7 @@ namespace args
                 return values.end();
             }
 
-            const_iterator end() const noexcept 
+            const_iterator end() const noexcept
             {
                 return values.end();
             }
@@ -3118,7 +3118,7 @@ namespace args
     };
 
     /** An argument-accepting flag class that pushes the found values into a list
-     * 
+     *
      * \tparam T the type to extract the argument as
      * \tparam List the list type that houses the values
      * \tparam Reader The functor type used to read the argument, taking the name, value, and destination reference with operator(), and returning a bool (if ARGS_NOEXCEPT is defined)
@@ -3210,7 +3210,7 @@ namespace args
                 return values.end();
             }
 
-            const_iterator end() const noexcept 
+            const_iterator end() const noexcept
             {
                 return values.end();
             }
@@ -3222,7 +3222,7 @@ namespace args
     };
 
     /** A mapping value flag class
-     * 
+     *
      * \tparam K the type to extract the argument as
      * \tparam T the type to store the result as
      * \tparam Reader The functor type used to read the argument, taking the name, value, and destination reference with operator(), and returning a bool (if ARGS_NOEXCEPT is defined)
@@ -3301,7 +3301,7 @@ namespace args
     };
 
     /** A mapping value flag list class
-     * 
+     *
      * \tparam K the type to extract the argument as
      * \tparam T the type to store the result as
      * \tparam List the list type that houses the values
@@ -3416,7 +3416,7 @@ namespace args
                 return values.end();
             }
 
-            const_iterator end() const noexcept 
+            const_iterator end() const noexcept
             {
                 return values.end();
             }
@@ -3475,7 +3475,7 @@ namespace args
     };
 
     /** A positional argument class that pushes the found values into a list
-     * 
+     *
      * \tparam T the type to extract the argument as
      * \tparam List the list type that houses the values
      * \tparam Reader The functor type used to read the argument, taking the name, value, and destination reference with operator(), and returning a bool (if ARGS_NOEXCEPT is defined)
@@ -3569,7 +3569,7 @@ namespace args
                 return values.end();
             }
 
-            const_iterator end() const noexcept 
+            const_iterator end() const noexcept
             {
                 return values.end();
             }
@@ -3581,7 +3581,7 @@ namespace args
     };
 
     /** A positional argument mapping class
-     * 
+     *
      * \tparam K the type to extract the argument as
      * \tparam T the type to store the result as
      * \tparam Reader The functor type used to read the argument, taking the name, value, and destination reference with operator(), and returning a bool (if ARGS_NOEXCEPT is defined)
@@ -3652,7 +3652,7 @@ namespace args
     };
 
     /** A positional argument mapping list class
-     * 
+     *
      * \tparam K the type to extract the argument as
      * \tparam T the type to store the result as
      * \tparam List the list type that houses the values
@@ -3767,7 +3767,7 @@ namespace args
                 return values.end();
             }
 
-            const_iterator end() const noexcept 
+            const_iterator end() const noexcept
             {
                 return values.end();
             }

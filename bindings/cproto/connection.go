@@ -30,11 +30,12 @@ const queueSize = 512
 const maxSeqNum = queueSize * 1000000
 
 const cprotoMagic = 0xEEDD1132
-const cprotoVersion = 0x103
+const cprotoVersion = 0x104
 const cprotoMinCompatVersion = 0x101
 const cprotoMinSnappyVersion = 0x103
 
 const cprotoVersionCompressionFlag = 1 << 10
+const cprotoDedicatedThreadFlag = 1 << 11
 const cprotoVersionMask = 0x3FF
 
 const cprotoHdrLen = 16
@@ -408,7 +409,7 @@ func nextSeqNum(seqNum uint32) uint32 {
 
 func (c *connection) packRPC(cmd int, seq uint32, execTimeout int, args ...interface{}) {
 
-	in := newRPCEncoder(cmd, seq, atomic.LoadInt32(&c.enableSnappy) != 0)
+	in := newRPCEncoder(cmd, seq, atomic.LoadInt32(&c.enableSnappy) != 0, c.owner.dedicatedThreads.DedicatedThreads)
 	for _, a := range args {
 		switch t := a.(type) {
 		case bool:

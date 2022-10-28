@@ -13,7 +13,7 @@ using namespace std::string_view_literals;
 const std::string_view kLsnIndexName = "#lsn"sv;
 const std::string_view kSlaveVersionIndexName = "#slave_version"sv;
 
-Query::Query(const string &__namespace, unsigned _start, unsigned _count, CalcTotalMode _calcTotal)
+Query::Query(const std::string &__namespace, unsigned _start, unsigned _count, CalcTotalMode _calcTotal)
 	: _namespace(__namespace), start(_start), count(_count), calcTotal(_calcTotal) {}
 
 bool Query::operator==(const Query &obj) const {
@@ -48,9 +48,9 @@ bool JoinedQuery::operator==(const JoinedQuery &obj) const {
 }
 void Query::FromSQL(std::string_view q) { SQLParser(*this).Parse(q); }
 
-Error Query::FromJSON(const string &dsl) { return dsl::Parse(dsl, *this); }
+Error Query::FromJSON(const std::string &dsl) { return dsl::Parse(dsl, *this); }
 
-string Query::GetJSON() const { return dsl::toDsl(*this); }
+std::string Query::GetJSON() const { return dsl::toDsl(*this); }
 
 Query &Query::SetObject(std::string field, VariantArray value, bool hasExpressions) & {
 	for (auto &it : value) {
@@ -65,9 +65,9 @@ Query &Query::SetObject(std::string field, VariantArray value, bool hasExpressio
 
 WrSerializer &Query::GetSQL(WrSerializer &ser, bool stripArgs) const { return SQLEncoder(*this).GetSQL(ser, stripArgs); }
 
-string Query::GetSQL(bool stripArgs) const {
+std::string Query::GetSQL(bool stripArgs) const {
 	WrSerializer ser;
-	return string(GetSQL(ser, stripArgs).Slice());
+	return std::string(GetSQL(ser, stripArgs).Slice());
 }
 
 void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
@@ -78,7 +78,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 		switch (qtype) {
 			case QueryCondition: {
 				QueryEntry qe;
-				qe.index = string(ser.GetVString());
+				qe.index = std::string(ser.GetVString());
 				OpType op = OpType(ser.GetVarUint());
 				qe.condition = CondType(ser.GetVarUint());
 				int cnt = ser.GetVarUint();
@@ -118,6 +118,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				assertrx(type != JoinType::LeftJoin);
 				JoinQueryEntry joinEntry(ser.GetVarUint());
 				hasJoinConditions = true;
+				// NOLINTNEXTLINE(performance-move-const-arg)
 				entries.Append((type == JoinType::OrInnerJoin) ? OpOr : OpAnd, std::move(joinEntry));
 				break;
 			}
@@ -126,7 +127,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				ae.type_ = static_cast<AggType>(ser.GetVarUint());
 				size_t fieldsCount = ser.GetVarUint();
 				ae.fields_.reserve(fieldsCount);
-				while (fieldsCount--) ae.fields_.push_back(string(ser.GetVString()));
+				while (fieldsCount--) ae.fields_.push_back(std::string(ser.GetVString()));
 				auto pos = ser.Pos();
 				bool aggEnd = false;
 				while (!ser.Eof() && !aggEnd) {
@@ -134,7 +135,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 					switch (atype) {
 						case QueryAggregationSort: {
 							auto fieldName = ser.GetVString();
-							ae.sortingEntries_.push_back({string(fieldName), ser.GetVarUint() != 0});
+							ae.sortingEntries_.push_back({std::string(fieldName), ser.GetVarUint() != 0});
 							break;
 						}
 						case QueryAggregationLimit:
@@ -154,7 +155,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 			}
 			case QueryDistinct: {
 				QueryEntry qe;
-				qe.index = string(ser.GetVString());
+				qe.index = std::string(ser.GetVString());
 				if (!qe.index.empty()) {
 					qe.distinct = true;
 					qe.condition = CondAny;
@@ -164,7 +165,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 			}
 			case QuerySortIndex: {
 				SortingEntry sortingEntry;
-				sortingEntry.expression = string(ser.GetVString());
+				sortingEntry.expression = std::string(ser.GetVString());
 				sortingEntry.desc = bool(ser.GetVarUint());
 				if (sortingEntry.expression.length()) {
 					sortingEntries_.push_back(std::move(sortingEntry));
@@ -181,8 +182,8 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				QueryJoinEntry qje;
 				qje.op_ = OpType(ser.GetVarUint());
 				qje.condition_ = CondType(ser.GetVarUint());
-				qje.index_ = string(ser.GetVString());
-				qje.joinIndex_ = string(ser.GetVString());
+				qje.index_ = std::string(ser.GetVString());
+				qje.joinIndex_ = std::string(ser.GetVString());
 				reinterpret_cast<JoinedQuery *>(this)->joinEntries_.push_back(std::move(qje));
 				break;
 			}
@@ -202,7 +203,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				calcTotal = CalcTotalMode(ser.GetVarUint());
 				break;
 			case QuerySelectFilter:
-				selectFilter_.push_back(string(ser.GetVString()));
+				selectFilter_.push_back(std::string(ser.GetVString()));
 				break;
 			case QueryEqualPosition: {
 				const unsigned bracketPosition = ser.GetVarUint();
@@ -218,15 +219,15 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				withRank_ = true;
 				break;
 			case QuerySelectFunction:
-				selectFunctions_.push_back(string(ser.GetVString()));
+				selectFunctions_.push_back(std::string(ser.GetVString()));
 				break;
 			case QueryDropField: {
-				Drop(string(ser.GetVString()));
+				Drop(std::string(ser.GetVString()));
 				break;
 			}
 			case QueryUpdateFieldV2: {
 				VariantArray val;
-				string field(ser.GetVString());
+				std::string field(ser.GetVString());
 				bool isArray = ser.GetVarUint();
 				int numValues = ser.GetVarUint();
 				bool hasExpressions = false;
@@ -240,7 +241,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 			}
 			case QueryUpdateField: {
 				VariantArray val;
-				string field(ser.GetVString());
+				std::string field(ser.GetVString());
 				int numValues = ser.GetVarUint();
 				bool isArray = numValues > 1;
 				bool hasExpressions = false;
@@ -254,7 +255,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 			}
 			case QueryUpdateObject: {
 				VariantArray val;
-				string field(ser.GetVString());
+				std::string field(ser.GetVString());
 				bool hasExpressions = false;
 				int numValues = ser.GetVarUint();
 				if (ser.GetVarUint() == 1) val.MarkArray();
@@ -280,7 +281,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				throw Error(errParseBin, "Unknown type %d while parsing binary buffer", qtype);
 		}
 	}
-	for (const auto &eqPos : equalPositions) {
+	for (auto &&eqPos : equalPositions) {
 		if (eqPos.first == 0) {
 			entries.equalPositions.emplace_back(std::move(eqPos.second));
 		} else {
@@ -426,14 +427,14 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 }
 
 void Query::Deserialize(Serializer &ser) {
-	_namespace = string(ser.GetVString());
+	_namespace = std::string(ser.GetVString());
 	bool hasJoinConditions = false;
 	deserialize(ser, hasJoinConditions);
 
 	bool nested = false;
 	while (!ser.Eof()) {
 		auto joinType = JoinType(ser.GetVarUint());
-		JoinedQuery q1(string(ser.GetVString()));
+		JoinedQuery q1(std::string(ser.GetVString()));
 		q1.joinType = joinType;
 		q1.deserialize(ser, hasJoinConditions);
 		q1.debugLevel = debugLevel;
@@ -452,7 +453,7 @@ void Query::Deserialize(Serializer &ser) {
 	}
 }
 
-Query &Query::Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, Query &&qr) & {
+Query &Query::Join(JoinType joinType, const std::string &index, const std::string &joinIndex, CondType cond, OpType op, Query &&qr) & {
 	QueryJoinEntry joinEntry;
 	joinEntry.op_ = op;
 	joinEntry.condition_ = cond;
@@ -466,7 +467,7 @@ Query &Query::Join(JoinType joinType, const string &index, const string &joinInd
 	return *this;
 }
 
-Query &Query::Join(JoinType joinType, const string &index, const string &joinIndex, CondType cond, OpType op, const Query &qr) & {
+Query &Query::Join(JoinType joinType, const std::string &index, const std::string &joinIndex, CondType cond, OpType op, const Query &qr) & {
 	QueryJoinEntry joinEntry;
 	joinEntry.op_ = op;
 	joinEntry.condition_ = cond;
@@ -512,7 +513,7 @@ Query::OnHelperR Query::Join(JoinType joinType, const Query &q) && {
 	return {std::move(*this), joinQueries_.back()};
 }
 
-void Query::WalkNested(bool withSelf, bool withMerged, std::function<void(const Query &q)> visitor) const {
+void Query::WalkNested(bool withSelf, bool withMerged, const std::function<void(const Query &q)> &visitor) const {
 	if (withSelf) visitor(*this);
 	if (withMerged)
 		for (auto &mq : mergeQueries_) visitor(mq);

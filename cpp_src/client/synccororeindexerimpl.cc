@@ -15,7 +15,7 @@ SyncCoroReindexerImpl::~SyncCoroReindexerImpl() {
 	}
 }
 
-Error SyncCoroReindexerImpl::Connect(const string &dsn, const client::ConnectOpts &opts) {
+Error SyncCoroReindexerImpl::Connect(const std::string &dsn, const client::ConnectOpts &opts) {
 	std::unique_lock<std::mutex> lock(loopThreadMtx_);
 	if (loopThread_) return Error(errLogic, "Client is already started");
 
@@ -66,10 +66,10 @@ Error SyncCoroReindexerImpl::DropIndex(std::string_view nsName, const IndexDef &
 Error SyncCoroReindexerImpl::SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdSetSchema, std::forward<std::string_view>(nsName), schema, ctx);
 }
-Error SyncCoroReindexerImpl::EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx) {
+Error SyncCoroReindexerImpl::EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdEnumNamespaces, defs, std::forward<EnumNamespacesOpts>(opts), ctx);
 }
-Error SyncCoroReindexerImpl::EnumDatabases(vector<string> &dbList, const InternalRdxContext &ctx) {
+Error SyncCoroReindexerImpl::EnumDatabases(std::vector<std::string> &dbList, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdEnumDatabases, dbList, ctx);
 }
 Error SyncCoroReindexerImpl::Insert(std::string_view nsName, Item &item, const InternalRdxContext &ctx) {
@@ -103,16 +103,17 @@ Item SyncCoroReindexerImpl::NewItem(std::string_view nsName) {
 	return sendCommand<Item>(DbCmdNewItem, std::forward<std::string_view>(nsName));
 }
 
-Error SyncCoroReindexerImpl::GetMeta(std::string_view nsName, const string &key, string &data, const InternalRdxContext &ctx) {
+Error SyncCoroReindexerImpl::GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdGetMeta, std::forward<std::string_view>(nsName), key, data, ctx);
 }
-Error SyncCoroReindexerImpl::PutMeta(std::string_view nsName, const string &key, std::string_view data, const InternalRdxContext &ctx) {
+Error SyncCoroReindexerImpl::PutMeta(std::string_view nsName, const std::string &key, std::string_view data,
+									 const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdPutMeta, std::forward<std::string_view>(nsName), key, data, ctx);
 }
-Error SyncCoroReindexerImpl::EnumMeta(std::string_view nsName, vector<string> &keys, const InternalRdxContext &ctx) {
+Error SyncCoroReindexerImpl::EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdEnumMeta, std::forward<std::string_view>(nsName), keys, ctx);
 }
-Error SyncCoroReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, vector<string> &suggestions) {
+Error SyncCoroReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions) {
 	return sendCommand<Error>(DbCmdGetSqlSuggestions, std::forward<std::string_view>(sqlQuery), std::forward<int>(pos), suggestions);
 }
 Error SyncCoroReindexerImpl::Status(const InternalRdxContext &ctx) { return sendCommand<Error>(DbCmdStatus, ctx); }
@@ -150,7 +151,7 @@ Error SyncCoroReindexerImpl::modifyTx(SyncCoroTransaction &tr, Query &&q) {
 
 Item SyncCoroReindexerImpl::newItemTx(CoroTransaction &tr) { return sendCommand<Item>(DbCmdNewItemTx, tr); }
 
-void SyncCoroReindexerImpl::threadLoopFun(std::promise<Error> &&isRunning, const string &dsn, const client::ConnectOpts &opts) {
+void SyncCoroReindexerImpl::threadLoopFun(std::promise<Error> &&isRunning, const std::string &dsn, const client::ConnectOpts &opts) {
 	coroutine::channel<DatabaseCommandBase *> chCommand;
 
 	commandAsync_.set(loop_);
@@ -256,13 +257,13 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				break;
 			}
 			case DbCmdEnumNamespaces: {
-				std::function<Error(vector<NamespaceDef> &, EnumNamespacesOpts, const InternalRdxContext &)> f =
+				std::function<Error(std::vector<NamespaceDef> &, EnumNamespacesOpts, const InternalRdxContext &)> f =
 					std::bind(&client::CoroRPCClient::EnumNamespaces, &rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdEnumDatabases: {
-				std::function<Error(vector<string> &, const InternalRdxContext &)> f =
+				std::function<Error(std::vector<std::string> &, const InternalRdxContext &)> f =
 					std::bind(&client::CoroRPCClient::EnumDatabases, &rx, _1, _2);
 				execCommand(v.first, f);
 				break;
@@ -339,25 +340,25 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				break;
 			}
 			case DbCmdGetMeta: {
-				std::function<Error(std::string_view, const string &, string &, const InternalRdxContext &)> f =
+				std::function<Error(std::string_view, const std::string &, std::string &, const InternalRdxContext &)> f =
 					std::bind(&client::CoroRPCClient::GetMeta, &rx, _1, _2, _3, _4);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdPutMeta: {
-				std::function<Error(std::string_view, const string &, std::string_view, const InternalRdxContext &)> f =
+				std::function<Error(std::string_view, const std::string &, std::string_view, const InternalRdxContext &)> f =
 					std::bind(&client::CoroRPCClient::PutMeta, &rx, _1, _2, _3, _4);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdEnumMeta: {
-				std::function<Error(std::string_view, vector<string> &, const InternalRdxContext &)> f =
+				std::function<Error(std::string_view, std::vector<std::string> &, const InternalRdxContext &)> f =
 					std::bind(&client::CoroRPCClient::EnumMeta, &rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}
 			case DbCmdGetSqlSuggestions: {
-				std::function<Error(std::string_view, int, vector<string> &)> f =
+				std::function<Error(std::string_view, int, std::vector<std::string> &)> f =
 					std::bind(&client::CoroRPCClient::GetSqlSuggestions, &rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
@@ -458,7 +459,7 @@ Item SyncCoroReindexerImpl::execNewItemTx(CoroTransaction &tr) {
 void SyncCoroReindexerImpl::CommandsQueue::Push(net::ev::async &ev, DatabaseCommandBase *cmd) {
 	{
 		std::unique_lock<std::mutex> lock(mtx_);
-		queue_.push_back(std::move(cmd));
+		queue_.emplace_back(cmd);
 	}
 	ev.send();
 }

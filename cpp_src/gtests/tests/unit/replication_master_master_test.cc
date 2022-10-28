@@ -39,7 +39,7 @@ public:
 		}
 	}
 
-	void CreateConfiguration(vector<ServerControl>& nodes, const std::vector<int>& slaveConfiguration, int basePort, int baseServerId,
+	void CreateConfiguration(std::vector<ServerControl>& nodes, const std::vector<int>& slaveConfiguration, int basePort, int baseServerId,
 							 const std::string& dbPathMaster) {
 		for (size_t i = 0; i < slaveConfiguration.size(); i++) {
 			nodes.push_back(ServerControl());
@@ -55,7 +55,7 @@ public:
 		}
 	}
 
-	void RestartServer(size_t id, vector<ServerControl>& nodes, int port, const std::string& dbPathMaster) {
+	void RestartServer(size_t id, std::vector<ServerControl>& nodes, int port, const std::string& dbPathMaster) {
 		assert(id < nodes.size());
 		if (nodes[id].Get()) {
 			nodes[id].Stop();
@@ -82,7 +82,7 @@ private:
 
 class TestNamespace1 {
 public:
-	TestNamespace1(ServerControl& masterControl, const std::string nsName = std::string("ns1")) : nsName_(nsName) {
+	TestNamespace1(ServerControl& masterControl, const std::string& nsName = std::string("ns1")) : nsName_(nsName) {
 		auto master = masterControl.Get();
 		auto opt = StorageOpts().Enabled(true);
 		Error err = master->api.reindexer->OpenNamespace(nsName_, opt);
@@ -102,7 +102,7 @@ public:
 	}
 
 	std::function<void(ServerControl&, int, unsigned int, std::string)> AddRow1msSleep = [](ServerControl& masterControl, int from,
-																							unsigned int count, std::string nsName) {
+																							unsigned int count, std::string_view nsName) {
 		auto master = masterControl.Get();
 		for (unsigned int i = 0; i < count; i++) {
 			reindexer::client::Item item = master->api.NewItem("ns1");
@@ -138,7 +138,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSyncByWalAddRow) {
 	const int port = 9999;
 
 	std::vector<int> slaveConfiguration = {-1, port};
-	vector<ServerControl> nodes;
+	std::vector<ServerControl> nodes;
 	CreateConfiguration(nodes, slaveConfiguration, port, 10, kDbPathMaster);
 
 	TestNamespace1 ns1(nodes[0]);
@@ -195,7 +195,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveStart) {
 	const int port = 9999;
 
 	std::vector<int> slaveConfiguration = {-1, port};
-	vector<ServerControl> nodes;
+	std::vector<ServerControl> nodes;
 	CreateConfiguration(nodes, slaveConfiguration, port, 10, kDbPathMaster);
 
 	// Insert 100 rows
@@ -245,7 +245,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSlave2) {
 		const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "MasterSlaveSlave2"));
 		const std::string kDbPathMaster(kBaseDbPath + "/test_");
 		int serverId = 5;
-		vector<ServerControl> nodes;
+		std::vector<ServerControl> nodes;
 
 		CreateConfiguration(nodes, slaveConfiguration, port, serverId, kDbPathMaster);
 
@@ -263,7 +263,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSlave2) {
 
 		Query qr = Query("ns1").Sort("id", true);
 		for (size_t i = 0; i < nodes.size(); i++) {
-			results.push_back(vector<int>());
+			results.push_back(std::vector<int>());
 			ns1.GetData(nodes[i], results.back());
 		}
 
@@ -310,7 +310,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSlaveReload) {
 	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "MasterSlaveSlaveReload"));
 	const std::string kDbPathMaster(kBaseDbPath + "/test_");
 	const int serverId = 5;
-	vector<ServerControl> nodes;
+	std::vector<ServerControl> nodes;
 	std::atomic_bool stopRestartServerThread(false);
 
 	/*
@@ -356,7 +356,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSlaveReload) {
 	Query qr = Query("ns1").Sort("id", true);
 
 	for (size_t i = 0; i < nodes.size(); i++) {
-		results.push_back(vector<int>());
+		results.push_back(std::vector<int>());
 		ns1.GetData(nodes[i], results.back());
 	}
 
@@ -388,12 +388,12 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionTest) {
 
 	std::vector<int> slaveConfiguration = {-1, port, port + 1, port + 2, port + 3};
 
-	vector<ServerControl> nodes;
+	std::vector<ServerControl> nodes;
 
 	CreateConfiguration(nodes, slaveConfiguration, port, serverId, kDbPathMaster);
 
 	size_t kRows = 100;
-	string nsName("ns1");
+	std::string nsName("ns1");
 
 	ServerControl& master = nodes[0];
 	TestNamespace1 ns1(master, nsName);
@@ -419,7 +419,7 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionTest) {
 
 	std::vector<std::vector<int>> results;
 	for (size_t i = 0; i < nodes.size(); i++) {
-		results.push_back(vector<int>());
+		results.push_back(std::vector<int>());
 		ns1.GetData(nodes[i], results.back());
 	}
 
@@ -830,7 +830,7 @@ TEST_F(ReplicationSlaveSlaveApi, ConcurrentForceSync) {
 	const size_t kNsSyncCount = 3;
 	const int kBaseServerId = 5;
 
-	vector<ServerControl> nodes;
+	std::vector<ServerControl> nodes;
 	auto createSlave = [&kBaseDbPath, &kDbName, &nodes, &kNsList](const std::string& masterDsn) {
 		size_t id = nodes.size();
 		nodes.push_back(ServerControl());
@@ -883,7 +883,7 @@ TEST_F(ReplicationSlaveSlaveApi, ConcurrentForceSync) {
 	for (size_t i = 0; i < kNsSyncCount; ++i) {
 		std::vector<std::vector<int>> results;
 		for (size_t j = 0; j < nodes.size(); j++) {
-			results.push_back(vector<int>());
+			results.push_back(std::vector<int>());
 			WaitSync(nodes[0], nodes[j], kNsList[i]);
 			testNsList[i].GetData(nodes[j], results.back());
 		}
@@ -914,7 +914,7 @@ TEST_F(ReplicationSlaveSlaveApi, WriteIntoSlaveNsAfterReconfiguration) {
 	const std::string kNs1 = "ns1";
 	const std::string kNs2 = "ns2";
 	int manualItemId = 5;
-	vector<ServerControl> nodes;
+	std::vector<ServerControl> nodes;
 	CreateConfiguration(nodes, {-1, kBasePort}, kBasePort, kServerId, kBaseDbPath);
 	TestNamespace1 testns1(nodes[0], kNs1);
 	testns1.AddRows(nodes[0], 0, n);

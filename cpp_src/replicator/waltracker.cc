@@ -70,7 +70,7 @@ void WALTracker::SetStorage(std::weak_ptr<datastorage::IDataStorage> storage, bo
 
 void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, std::weak_ptr<datastorage::IDataStorage> storage) {
 	logPrintf(LogTrace, "WALTracker::Init minLSN=%ld, maxLSN=%ld, size=%ld", minLSN, maxLSN, sz);
-	storage_ = storage;
+	storage_ = std::move(storage);
 
 	// input maxLSN of namespace Item or -1 if namespace is empty
 	auto data = readFromStorage(maxLSN);  // return maxLSN of wal record or input value
@@ -126,7 +126,7 @@ std::vector<std::pair<int64_t, std::string>> WALTracker::readFromStorage(int64_t
 			assertrx(lsn >= 0);
 			maxLSN = std::max(maxLSN, lsn);
 			dataSlice = dataSlice.substr(sizeof(lsn));
-			data.push_back({lsn, string(dataSlice)});
+			data.push_back({lsn, std::string(dataSlice)});
 		}
 	}
 

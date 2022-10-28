@@ -67,10 +67,9 @@ TerminalSize getTerminalSize() {
 }
 
 int getStringTerminalWidth(std::string_view str) {
-	int sz = 0;
 	int width = 0;
 	try {
-		for (auto it = str.begin(); it != str.end() && (sz = utf8::internal::sequence_length(it)) > 0;) {
+		for (auto it = str.begin(); it != str.end() && utf8::internal::sequence_length(it) > 0;) {
 			width += mk_wcwidth(utf8::next(it, str.end()));
 		}
 	} catch (const std::exception&) {

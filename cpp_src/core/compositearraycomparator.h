@@ -2,7 +2,6 @@
 
 #include "comparatorimpl.h"
 #include "core/payload/fieldsset.h"
-#include "estl/h_vector.h"
 
 namespace reindexer {
 
@@ -27,7 +26,7 @@ private:
 		ComparatorImpl<key_string> cmpString;
 	};
 
-	h_vector<Context, 0> ctx_;
+	std::vector<Context> ctx_;
 	FieldsSet fields_;
 };
 }  // namespace reindexer

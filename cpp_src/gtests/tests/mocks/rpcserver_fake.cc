@@ -108,13 +108,13 @@ size_t RPCServerFake::OpenedQRCount() {
 	return usedQrIds_.size();
 }
 
-bool RPCServerFake::Start(const string &addr, ev::dynamic_loop &loop, Error loginError) {
+bool RPCServerFake::Start(const std::string &addr, ev::dynamic_loop &loop, Error loginError) {
 #ifndef _WIN32
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
 	dsn_ = addr;
-	loginError_ = loginError;
+	loginError_ = std::move(loginError);
 	dispatcher_.Register(cproto::kCmdPing, this, &RPCServerFake::Ping);
 	dispatcher_.Register(cproto::kCmdLogin, this, &RPCServerFake::Login);
 	dispatcher_.Register(cproto::kCmdOpenNamespace, this, &RPCServerFake::OpenNamespace);
@@ -124,7 +124,7 @@ bool RPCServerFake::Start(const string &addr, ev::dynamic_loop &loop, Error logi
 
 	dispatcher_.Middleware(this, &RPCServerFake::CheckAuth);
 
-	listener_.reset(new Listener(loop, cproto::ServerConnection::NewFactory(dispatcher_, false, 1024 * 1024 * 1024)));
+	listener_.reset(new Listener<ListenerType::Mixed>(loop, cproto::ServerConnection::NewFactory(dispatcher_, false, 1024 * 1024 * 1024)));
 	return listener_->Bind(addr);
 }
 

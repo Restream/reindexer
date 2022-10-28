@@ -11,7 +11,7 @@ using std::chrono::seconds;
 struct ReindexerConfig {
 	ReindexerConfig(int _ConnPoolSize = 4, int _WorkerThreads = 1, int _FetchAmount = 10000, int _ReconnectAttempts = 0,
 					seconds _ConnectTimeout = seconds(0), seconds _RequestTimeout = seconds(0), bool _EnableCompression = false,
-					std::string _appName = "CPP-client", unsigned int _syncRxCoroCount = 10)
+					bool _RequestDedicatedThread = false, std::string _appName = "CPP-client", unsigned _syncRxCoroCount = 10)
 		: ConnPoolSize(_ConnPoolSize),
 		  WorkerThreads(_WorkerThreads),
 		  FetchAmount(_FetchAmount),
@@ -19,6 +19,7 @@ struct ReindexerConfig {
 		  ConnectTimeout(_ConnectTimeout),
 		  RequestTimeout(_RequestTimeout),
 		  EnableCompression(_EnableCompression),
+		  RequestDedicatedThread(_RequestDedicatedThread),
 		  AppName(std::move(_appName)),
 		  rxClientCoroCount(_syncRxCoroCount) {}
 
@@ -29,8 +30,9 @@ struct ReindexerConfig {
 	seconds ConnectTimeout;
 	seconds RequestTimeout;
 	bool EnableCompression;
+	bool RequestDedicatedThread;
 	std::string AppName;
-	unsigned int rxClientCoroCount;
+	unsigned rxClientCoroCount;
 };
 
 enum ConnectOpt {

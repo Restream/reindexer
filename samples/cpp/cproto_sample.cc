@@ -19,7 +19,7 @@ int main() {
 
 	// Insert some data in JSON format
 	Item item = db.NewItem("mytable");
-	string data = "{\"id\":100,\"name\":\"Some name\" \"genre\":\"some genre\"}";
+	std::string data = "{\"id\":100,\"name\":\"Some name\" \"genre\":\"some genre\"}";
 	item.FromJSON(data);
 	err = db.Upsert("mytable", item);
 	if (!err.ok()) return -4;

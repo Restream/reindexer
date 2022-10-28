@@ -2,9 +2,9 @@
 #include "transactionimpl.h"
 namespace reindexer {
 
-Transaction::Transaction(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
+Transaction::Transaction(const std::string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
 						 std::shared_ptr<const Schema> schema)
-	: impl_(new TransactionImpl(nsName, pt, tm, pf, schema)) {}
+	: impl_(new TransactionImpl(nsName, pt, tm, pf, std::move(schema))) {}
 
 Transaction::Transaction(const Error &err) : status_(err) {}
 
@@ -12,7 +12,7 @@ Transaction::~Transaction() = default;
 Transaction::Transaction(Transaction &&) noexcept = default;
 Transaction &Transaction::operator=(Transaction &&) noexcept = default;
 
-const string &Transaction::GetName() {
+const std::string &Transaction::GetName() {
 	static std::string empty;
 	if (impl_)
 		return impl_->nsName_;
@@ -42,12 +42,12 @@ void Transaction::Modify(Query &&query) {
 
 Item Transaction::NewItem() { return impl_->NewItem(); }
 
-vector<TransactionStep> &Transaction::GetSteps() {
+std::vector<TransactionStep> &Transaction::GetSteps() {
 	assertrx(impl_);
 	return impl_->steps_;
 }
 
-const vector<TransactionStep> &Transaction::GetSteps() const {
+const std::vector<TransactionStep> &Transaction::GetSteps() const {
 	assertrx(impl_);
 	return impl_->steps_;
 }

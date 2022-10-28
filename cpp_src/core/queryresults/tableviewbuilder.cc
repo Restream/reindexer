@@ -14,7 +14,7 @@
 
 namespace reindexer {
 
-const string kSeparator = " | ";
+const std::string kSeparator = " | ";
 const int kSuppositiveScreenWidth = 100;
 
 bool ColumnData::IsNumber() const { return (type == gason::JSON_NUMBER) || (type == gason::JSON_DOUBLE); }
@@ -48,8 +48,8 @@ void TableCalculator<QueryResultsT>::calculate(size_t limit) {
 		for (auto& elem : root) {
 			WrSerializer wrser;
 			jsonValueToString(elem.value, wrser, 0, 0, false);
-			string fieldValue = string(wrser.Slice());
-			string fieldName = string(elem.key);
+			std::string fieldValue = std::string(wrser.Slice());
+			std::string fieldName = std::string(elem.key);
 			ColumnData& columnData = columnsData_[fieldName];
 
 			columnData.type = elem.value.getTag();
@@ -72,7 +72,7 @@ void TableCalculator<QueryResultsT>::calculate(size_t limit) {
 
 	int currentLength = 0;
 	for (auto it = header_.begin(); it != header_.end();) {
-		string columnName = *it;
+		std::string columnName = *it;
 		ColumnData& columnData = columnsData_[columnName];
 		if ((columnData.entries <= int(rows_.size() / 3)) || (columnData.emptyValues == int(rows_.size()))) {
 			it = header_.erase(it);
@@ -157,7 +157,7 @@ void TableViewBuilder<QueryResultsT>::BuildHeader(std::ostream& o, TableCalculat
 	auto& columnsData = tableCalculator.GetColumnsSettings();
 
 	size_t rowIdx = 0;
-	const string headerLine(tableCalculator.GetOutputWidth(), '-');
+	const std::string headerLine(tableCalculator.GetOutputWidth(), '-');
 
 	o << std::endl;
 	o << headerLine << std::left;
@@ -195,9 +195,9 @@ void TableViewBuilder<QueryResultsT>::BuildRow(std::ostream& o, int idx, TableCa
 	int currLineWidth = 0;
 	auto& row = tableCalculator.GetRows()[idx];
 	for (auto it = header.begin(); it != header.end(); ++it, ++columnIdx) {
-		const string& columnName = *it;
+		const std::string& columnName = *it;
 		auto& columnData = columnsData[columnName];
-		string& value = row[columnName];
+		std::string& value = row[columnName];
 
 		ensureFieldWidthIsOk(value, columnData.widthCh);
 
@@ -287,7 +287,7 @@ void TableViewBuilder<QueryResultsT>::ensureFieldWidthIsOk(std::string& str, int
 		int n = 0;
 		int sz = 0;
 		int newWidth = 0;
-		static const string dots = " ...";
+		static const std::string dots = " ...";
 		bool withDots = (maxWidth > 10);
 		if (withDots) maxWidth -= dots.length();
 		try {

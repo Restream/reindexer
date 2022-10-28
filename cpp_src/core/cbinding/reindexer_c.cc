@@ -18,7 +18,6 @@
 #include "tools/stringstools.h"
 
 using namespace reindexer;
-using std::move;
 const int kQueryResultsPoolSize = 1024;
 const int kMaxConcurentQueries = 65534;
 const size_t kCtxArrSize = 1024;
@@ -47,7 +46,7 @@ static reindexer_ret ret2c(const Error& err_, const reindexer_resbuffer& out) {
 	return ret;
 }
 
-static string str2c(reindexer_string gs) { return string(reinterpret_cast<const char*>(gs.p), gs.n); }
+static std::string str2c(reindexer_string gs) { return std::string(reinterpret_cast<const char*>(gs.p), gs.n); }
 static std::string_view str2cv(reindexer_string gs) { return std::string_view(reinterpret_cast<const char*>(gs.p), gs.n); }
 
 struct QueryResultsWrapper : QueryResults {
@@ -120,8 +119,8 @@ reindexer_error reindexer_ping(uintptr_t rx) {
 	return error2c(db ? Error(errOK) : err_not_init);
 }
 
-static void procces_packed_item(Item& item, int mode, int state_token, reindexer_buffer data, const vector<string>& precepts, int format,
-								Error& err) {
+static void procces_packed_item(Item& item, int mode, int state_token, reindexer_buffer data, const std::vector<std::string>& precepts,
+								int format, Error& err) {
 	if (item.Status().ok()) {
 		switch (format) {
 			case FormatJson:
@@ -161,9 +160,9 @@ reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, rein
 	int mode = ser.GetVarUint();
 	int state_token = ser.GetVarUint();
 	unsigned preceptsCount = ser.GetVarUint();
-	vector<string> precepts;
+	std::vector<std::string> precepts;
 	while (preceptsCount--) {
-		precepts.push_back(string(ser.GetVString()));
+		precepts.push_back(std::string(ser.GetVString()));
 	}
 	Error err = err_not_init;
 	auto item = trw->tr_.NewItem();
@@ -193,7 +192,7 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 		int mode = ser.GetVarUint();
 		int state_token = ser.GetVarUint();
 		unsigned preceptsCount = ser.GetVarUint();
-		vector<string> precepts;
+		std::vector<std::string> precepts;
 		precepts.reserve(preceptsCount);
 		while (preceptsCount--) {
 			precepts.emplace_back(ser.GetVString());
@@ -270,7 +269,7 @@ reindexer_tx_ret reindexer_start_transaction(uintptr_t rx, reindexer_string nsNa
 	}
 	Transaction tr = db->NewTransaction(str2cv(nsName));
 	if (tr.Status().ok()) {
-		auto trw = new TransactionWrapper(move(tr));
+		auto trw = new TransactionWrapper(std::move(tr));
 		ret.tx_id = reinterpret_cast<uintptr_t>(trw);
 	} else {
 		ret.err = error2c(tr.Status());
@@ -372,7 +371,7 @@ reindexer_error reindexer_add_index(uintptr_t rx, reindexer_string nsName, reind
 	Error res = err_not_init;
 	if (rx) {
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-		string json(str2cv(indexDefJson));
+		std::string json(str2cv(indexDefJson));
 		IndexDef indexDef;
 
 		auto err = indexDef.FromJSON(giftStr(json));
@@ -389,7 +388,7 @@ reindexer_error reindexer_update_index(uintptr_t rx, reindexer_string nsName, re
 	Error res = err_not_init;
 	if (rx) {
 		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-		string json(str2cv(indexDefJson));
+		std::string json(str2cv(indexDefJson));
 		IndexDef indexDef;
 
 		auto err = indexDef.FromJSON(giftStr(json));
@@ -670,7 +669,7 @@ reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_st
 			return ret2c(err_too_many_queries, out);
 		}
 
-		string data;
+		std::string data;
 		res = rdxKeeper.db().GetMeta(str2c(ns), str2c(key), data);
 		results->ser.Write(data);
 		out.len = results->ser.Len();
@@ -702,7 +701,7 @@ reindexer_error reindexer_free_buffer(reindexer_resbuffer in) {
 }
 
 reindexer_error reindexer_free_buffers(reindexer_resbuffer* in, int count) {
-	for (int i = 0; i < count; i++) {
+	for (int i = 0; i < count; i++) {  // NOLINT(*.Malloc) Memory will be deallocated by Go
 		reindexer_free_buffer(in[i]);
 	}
 	return error2c(Error(errOK));

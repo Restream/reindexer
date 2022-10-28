@@ -32,7 +32,7 @@ SelectFunction::Ptr SelectFunctionsHolder::AddNamespace(const Query &q, const Na
 	}
 
 	if (!querys_) {
-		querys_.reset(new fast_hash_map<string, SelectFunction::Ptr>);
+		querys_.reset(new fast_hash_map<std::string, SelectFunction::Ptr>);
 	}
 
 	NsSelectFuncInterface nm_interface(nm);
@@ -63,7 +63,7 @@ void SelectFunction::createFunc(SelectFuncStruct &data) {
 
 	// if index is composite then create function for inner use only
 	if (IsComposite(nm_.getIndexType(indexNo))) {
-		std::vector<string> subIndexes;
+		std::vector<std::string> subIndexes;
 
 		int fieldNo = 0;
 		const FieldsSet &fields = nm_.getIndexFields(indexNo);
@@ -215,9 +215,9 @@ BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct &data, BaseFunct
 				if (!ctx) {
 					data.ctx = std::make_shared<FtCtx>();
 				} else {
-					data.ctx = ctx;
+					data.ctx = std::move(ctx);
 				}
-				const string &indexName = (data.indexNo >= nm_.getIndexesCount()) ? data.field : nm_.getIndexName(data.indexNo);
+				const std::string &indexName = (data.indexNo >= nm_.getIndexesCount()) ? data.field : nm_.getIndexName(data.indexNo);
 				data.ctx->AddFunction(indexName, data.type);
 			}
 	}

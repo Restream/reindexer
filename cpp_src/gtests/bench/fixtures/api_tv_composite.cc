@@ -58,6 +58,7 @@ reindexer::Item ApiTvComposite::MakeItem() {
 }
 
 void ApiTvComposite::RegisterAllCases() {
+	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	// Skip BaseFixture::Update
 
 	Register("Insert" + std::to_string(id_seq_->Count()), &ApiTvComposite::Insert, this)->Iterations(1);
@@ -104,13 +105,14 @@ void ApiTvComposite::RegisterAllCases() {
 	Register("ForcedSortWithSecondCondition", &ApiTvComposite::ForcedSortWithSecondCondition, this);
 
 	Register("Query2CondIdSetComposite", &ApiTvComposite::Query2CondIdSetComposite, this);
+	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
 void ApiTvComposite::Insert(State& state) { BaseFixture::Insert(state); }
 
 void ApiTvComposite::WarmUpIndexes(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		// Ensure indexes complete build
 		WaitForOptimization();
 	}
@@ -118,7 +120,7 @@ void ApiTvComposite::WarmUpIndexes(benchmark::State& state) {
 
 void ApiTvComposite::GetByCompositePK(State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto randId = random<int>(id_seq_->Start(), id_seq_->End());
 		auto randSubId = std::to_string(randId);
 		Query q(nsdef_.name);
@@ -134,7 +136,7 @@ void ApiTvComposite::GetByCompositePK(State& state) {
 
 void ApiTvComposite::RangeTreeInt(State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto leftYear = random<int>(2000, 2024);
 		auto rightYear = random<int>(2025, 2049);
 
@@ -149,22 +151,20 @@ void ApiTvComposite::RangeTreeInt(State& state) {
 
 void ApiTvComposite::RangeTreeStrCollateNumeric(State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
-		{
-			Query q(nsdef_.name);
-			auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
-			q.Where("sub_id", CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)}).Limit(1);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
+		q.Where("sub_id", CondRange, {std::to_string(idRange.first), std::to_string(idRange.second)}).Limit(1);
 
-			QueryResults qres;
-			auto err = db_->Select(q, qres);
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
-		}
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
 	}
 }
 
 void ApiTvComposite::RangeTreeDouble(State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		auto firstRate = random<double>(1, 5);
 		auto secondRate = random<double>(5, 10);
@@ -181,7 +181,7 @@ void ApiTvComposite::RangeTreeDouble(State& state) {
 
 void ApiTvComposite::RangeTreeCompositeIntInt(State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
@@ -199,7 +199,7 @@ void ApiTvComposite::RangeTreeCompositeIntInt(State& state) {
 
 void ApiTvComposite::RangeTreeCompositeIntStr(State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
@@ -218,7 +218,7 @@ void ApiTvComposite::RangeTreeCompositeIntStr(State& state) {
 
 void ApiTvComposite::RangeHashInt(State& state) {
 	AllocsTracker AllocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
@@ -232,7 +232,7 @@ void ApiTvComposite::RangeHashInt(State& state) {
 
 void ApiTvComposite::RangeHashStringCollateASCII(State& state) {
 	AllocsTracker AllocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		auto leftLoc = locations_.at(random<size_t>(0, locations_.size() - 1));
 		auto rightLoc = locations_.at(random<size_t>(0, locations_.size() - 1));
@@ -247,7 +247,7 @@ void ApiTvComposite::RangeHashStringCollateASCII(State& state) {
 
 void ApiTvComposite::RangeHashStringCollateUTF8(State& state) {
 	AllocsTracker AllocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto leftName = names_.at(random<size_t>(0, names_.size() - 1));
@@ -263,7 +263,7 @@ void ApiTvComposite::RangeHashStringCollateUTF8(State& state) {
 
 void ApiTvComposite::RangeHashCompositeIntInt(State& state) {
 	AllocsTracker AllocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
@@ -282,7 +282,7 @@ void ApiTvComposite::RangeHashCompositeIntInt(State& state) {
 
 void ApiTvComposite::RangeHashCompositeIntStr(benchmark::State& state) {
 	AllocsTracker AllocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
@@ -301,7 +301,7 @@ void ApiTvComposite::RangeHashCompositeIntStr(benchmark::State& state) {
 
 void ApiTvComposite::RangeTreeIntSortByHashInt(State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
@@ -316,7 +316,7 @@ void ApiTvComposite::RangeTreeIntSortByHashInt(State& state) {
 
 void ApiTvComposite::RangeTreeIntSortByTreeInt(State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
@@ -331,7 +331,7 @@ void ApiTvComposite::RangeTreeIntSortByTreeInt(State& state) {
 
 void ApiTvComposite::RangeTreeStrSortByHashInt(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
@@ -346,7 +346,7 @@ void ApiTvComposite::RangeTreeStrSortByHashInt(benchmark::State& state) {
 
 void ApiTvComposite::RangeTreeStrSortByTreeInt(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
@@ -361,7 +361,7 @@ void ApiTvComposite::RangeTreeStrSortByTreeInt(benchmark::State& state) {
 
 void ApiTvComposite::RangeTreeDoubleSortByTreeInt(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto leftRate = random<double>(0.0, 4.99);
@@ -377,7 +377,7 @@ void ApiTvComposite::RangeTreeDoubleSortByTreeInt(benchmark::State& state) {
 
 void ApiTvComposite::RangeTreeDoubleSortByHashInt(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto leftRate = random<double>(0.0, 4.99);
@@ -393,7 +393,7 @@ void ApiTvComposite::RangeTreeDoubleSortByHashInt(benchmark::State& state) {
 
 void ApiTvComposite::RangeTreeStrSortByHashStrCollateASCII(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
@@ -408,7 +408,7 @@ void ApiTvComposite::RangeTreeStrSortByHashStrCollateASCII(benchmark::State& sta
 
 void ApiTvComposite::RangeTreeStrSortByHashStrCollateUTF8(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		auto idRange = id_seq_->GetRandomIdRange(id_seq_->Count() * 0.02);
@@ -423,7 +423,7 @@ void ApiTvComposite::RangeTreeStrSortByHashStrCollateUTF8(benchmark::State& stat
 
 void ApiTvComposite::SortByHashInt(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		q.Sort("id", false).Limit(20);
@@ -436,7 +436,7 @@ void ApiTvComposite::SortByHashInt(benchmark::State& state) {
 
 void ApiTvComposite::ForcedSortByHashInt(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		q.Sort("id", false, {10, 20, 30, 40, 50}).Limit(20);
@@ -449,7 +449,7 @@ void ApiTvComposite::ForcedSortByHashInt(benchmark::State& state) {
 
 void ApiTvComposite::ForcedSortWithSecondCondition(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		q.Sort("id", false, {10, 20, 30, 40, 50}).Sort("location", false).Limit(20);
@@ -462,7 +462,7 @@ void ApiTvComposite::ForcedSortWithSecondCondition(benchmark::State& state) {
 
 void ApiTvComposite::Query2CondIdSetComposite(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		// Expecting, that force sort will not be applied to idset
 		const auto idx = random<unsigned>(0, compositeIdSet_.size() - 1);
@@ -476,7 +476,7 @@ void ApiTvComposite::Query2CondIdSetComposite(benchmark::State& state) {
 
 void ApiTvComposite::SortByHashStrCollateASCII(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		q.Sort("location", false).Limit(20);
@@ -489,7 +489,7 @@ void ApiTvComposite::SortByHashStrCollateASCII(benchmark::State& state) {
 
 void ApiTvComposite::SortByHashStrCollateUTF8(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		q.Sort("name", false).Limit(20);
@@ -502,7 +502,7 @@ void ApiTvComposite::SortByHashStrCollateUTF8(benchmark::State& state) {
 
 void ApiTvComposite::SortByHashCompositeIntInt(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		q.Sort("id+start_time", false).Limit(20);
@@ -515,7 +515,7 @@ void ApiTvComposite::SortByHashCompositeIntInt(benchmark::State& state) {
 
 void ApiTvComposite::SortByHashCompositeIntStr(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		q.Sort("id+genre", false).Limit(20);
@@ -528,7 +528,7 @@ void ApiTvComposite::SortByHashCompositeIntStr(benchmark::State& state) {
 
 void ApiTvComposite::SortByTreeCompositeIntInt(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		q.Sort("id+year", false).Limit(20);
@@ -541,7 +541,7 @@ void ApiTvComposite::SortByTreeCompositeIntInt(benchmark::State& state) {
 
 void ApiTvComposite::SortByTreeCompositeIntStrCollateUTF8(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
 		q.Sort("id+name", false).Limit(20);

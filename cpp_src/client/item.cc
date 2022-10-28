@@ -31,7 +31,7 @@ Error Item::FromMsgPack(std::string_view slice, size_t &offset) { return impl_->
 std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
 std::string_view Item::GetMsgPack() { return impl_->GetMsgPack(); }
-void Item::SetPrecepts(const vector<string> &precepts) { impl_->SetPrecepts(precepts); }
+void Item::SetPrecepts(const std::vector<std::string> &precepts) { impl_->SetPrecepts(precepts); }
 bool Item::IsTagsUpdated() { return impl_->tagsMatcher().isUpdated(); }
 int Item::GetStateToken() { return impl_->tagsMatcher().stateToken(); }
 

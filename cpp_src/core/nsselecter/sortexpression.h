@@ -6,7 +6,6 @@
 
 namespace reindexer {
 
-class Index;
 class ItemImpl;
 class JoinedSelector;
 

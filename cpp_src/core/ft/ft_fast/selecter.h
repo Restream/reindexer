@@ -8,7 +8,7 @@ namespace reindexer {
 
 template <typename IdCont>
 class Selecter {
-	typedef fast_hash_map<WordIdType, pair<size_t, size_t>, WordIdTypeHash, WordIdTypequal> FondWordsType;
+	typedef fast_hash_map<WordIdType, std::pair<size_t, size_t>, WordIdTypeHash, WordIdTypequal> FondWordsType;
 
 public:
 	Selecter(DataHolder<IdCont>& holder, size_t fieldSize, bool needArea, int maxAreasInDoc)
@@ -29,7 +29,7 @@ public:
 		int qpos;		 // Position in query
 	};
 	struct FtVariantEntry {
-		string pattern;
+		std::string pattern;
 		FtDslOpts opts;
 		int proc;
 	};
@@ -44,21 +44,21 @@ public:
 	template <bool mergeStatusesEmpty>
 	IDataHolder::MergeData Process(FtDSLQuery& dsl, bool inTransaction, FtMergeStatuses::Statuses mergeStatuses, const RdxContext&);
 	struct FtSelectContext {
-		vector<FtVariantEntry> variants;
+		std::vector<FtVariantEntry> variants;
 
 		FondWordsType foundWords;
-		vector<TextSearchResults> rawResults;
+		std::vector<TextSearchResults> rawResults;
 	};
-	IDataHolder::MergeData mergeResults(vector<TextSearchResults>& rawResults, const std::vector<size_t>& synonymsBounds,
+	IDataHolder::MergeData mergeResults(std::vector<TextSearchResults>& rawResults, const std::vector<size_t>& synonymsBounds,
 										bool inTransaction, FtMergeStatuses::Statuses mergeStatuses, const RdxContext&);
 	void mergeItaration(const TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
-						vector<IDataHolder::MergeInfo>& merged, vector<MergedIdRel>& merged_rd, std::vector<int16_t>& idoffsets,
-						vector<bool>& curExists, bool hasBeenAnd, bool inTransaction, const RdxContext&);
+						std::vector<IDataHolder::MergeInfo>& merged, std::vector<MergedIdRel>& merged_rd, std::vector<int16_t>& idoffsets,
+						std::vector<bool>& curExists, bool hasBeenAnd, bool inTransaction, const RdxContext&);
 
 	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);
 	template <bool withStatuses>
 	void processVariants(FtSelectContext&, const FtMergeStatuses::Statuses& mergeStatuses);
-	void prepareVariants(std::vector<FtVariantEntry>&, size_t termIdx, const std::vector<string>& langs, const FtDSLQuery&,
+	void prepareVariants(std::vector<FtVariantEntry>&, size_t termIdx, const std::vector<std::string>& langs, const FtDSLQuery&,
 						 std::vector<SynonymsDsl>*);
 	template <bool withStatuses>
 	void processStepVariants(FtSelectContext& ctx, typename DataHolder<IdCont>::CommitStep& step, const FtVariantEntry& variant,

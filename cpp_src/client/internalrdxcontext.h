@@ -14,15 +14,15 @@ public:
 	typedef std::function<void(const Error& err)> Completion;
 	explicit InternalRdxContext(const IRdxCancelContext* cancelCtx, Completion cmpl = nullptr,
 								milliseconds execTimeout = milliseconds(0)) noexcept
-		: cmpl_(cmpl), execTimeout_((execTimeout.count() < 0) ? milliseconds(0) : execTimeout), cancelCtx_(cancelCtx) {}
+		: cmpl_(std::move(cmpl)), execTimeout_((execTimeout.count() < 0) ? milliseconds(0) : execTimeout), cancelCtx_(cancelCtx) {}
 	explicit InternalRdxContext(Completion cmpl = nullptr, milliseconds execTimeout = milliseconds(0)) noexcept
-		: cmpl_(cmpl), execTimeout_((execTimeout.count() < 0) ? milliseconds(0) : execTimeout), cancelCtx_(nullptr) {}
+		: cmpl_(std::move(cmpl)), execTimeout_((execTimeout.count() < 0) ? milliseconds(0) : execTimeout), cancelCtx_(nullptr) {}
 
 	InternalRdxContext WithCancelContext(const IRdxCancelContext* cancelCtx) noexcept {
 		return InternalRdxContext(cancelCtx, cmpl_, execTimeout_);
 	}
-	InternalRdxContext WithCompletion(Completion cmpl, InternalRdxContext&) noexcept { return InternalRdxContext(cmpl, execTimeout_); }
-	InternalRdxContext WithCompletion(Completion cmpl) const noexcept { return InternalRdxContext(cmpl, execTimeout_); }
+	InternalRdxContext WithCompletion(Completion cmpl, InternalRdxContext&) noexcept { return InternalRdxContext(std::move(cmpl), execTimeout_); }
+	InternalRdxContext WithCompletion(Completion cmpl) const noexcept { return InternalRdxContext(std::move(cmpl), execTimeout_); }
 	InternalRdxContext WithTimeout(milliseconds execTimeout) const noexcept { return InternalRdxContext(cmpl_, execTimeout); }
 
 	Completion cmpl() const noexcept { return cmpl_; }

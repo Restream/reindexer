@@ -11,7 +11,7 @@ constexpr double kRange = 100.0;
 template <size_t N>
 void Geometry::Insert(State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (size_t i = 0; i < N; ++i) {
 			auto item = MakeItem();
 			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
@@ -28,7 +28,7 @@ void Geometry::Insert(State& state) {
 template <size_t N>
 void Geometry::GetDWithin(benchmark::State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
 		q.DWithin("point", randPoint(kRange), kRange / N);
 		reindexer::QueryResults qres;
@@ -40,7 +40,7 @@ void Geometry::GetDWithin(benchmark::State& state) {
 template <IndexOpts::RTreeIndexType rtreeType>
 void Geometry::Reset(State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		id_ = 0;
 		nsdef_ = reindexer::NamespaceDef(nsdef_.name);
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex("point", "rtree", "point", IndexOpts().RTreeType(rtreeType));
@@ -54,6 +54,7 @@ void Geometry::Reset(State& state) {
 }
 
 void Geometry::RegisterAllCases() {
+	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	Register("NonIndexPointInsert/10^5", &Geometry::Insert<100000>, this)->Iterations(1);
 	Register("NonIndexPointDWithin/1%", &Geometry::GetDWithin<10>, this);
 	Register("NonIndexPointDWithin/0.01%", &Geometry::GetDWithin<100>, this);
@@ -77,9 +78,10 @@ void Geometry::RegisterAllCases() {
 	Register("RStarRTreePointInsert/10^5", &Geometry::Insert<100000>, this)->Iterations(1);
 	Register("RStarRTreePointDWithin/1%", &Geometry::GetDWithin<10>, this);
 	Register("RStarRTreePointDWithin/0.01%", &Geometry::GetDWithin<100>, this);
+	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
-Error Geometry::Initialize() {
+reindexer::Error Geometry::Initialize() {
 	assert(db_);
 	auto err = db_->AddNamespace(nsdef_);
 	if (!err.ok()) return err;
@@ -88,7 +90,7 @@ Error Geometry::Initialize() {
 }
 
 reindexer::Item Geometry::MakeItem() {
-	Item item = db_->NewItem(nsdef_.name);
+	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
 	item.Unsafe();
 
