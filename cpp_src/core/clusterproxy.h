@@ -147,6 +147,7 @@ private:
 			cfg.AppName = "cluster_proxy";
 			cfg.SyncRxCoroCount = clientConnConcurrency_;
 			cfg.EnableCompression = true;
+			cfg.RequestDedicatedThread = true;
 
 			std::lock_guard lck(mtx_);
 			if (shutdown_) {

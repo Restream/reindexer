@@ -54,7 +54,7 @@ Error RaftManager::SendDesiredLeaderId(int nextServerId) {
 	});
 
 	if (nextServerNodeIndex != nodes_.size()) {
-		Error err = clientStatus(nextServerNodeIndex);
+		Error err = clientStatus(nextServerNodeIndex, kDesiredLeaderTimeout);
 		if (!err.ok()) {
 			return Error(err.code(), "Target node %s is not available.", nodes_[nextServerNodeIndex].dsn);
 		}
@@ -395,19 +395,19 @@ bool RaftManager::endElections(int32_t term, RaftInfo::Role result) {
 
 bool RaftManager::isConsensus(size_t num) const noexcept { return num >= GetConsensusForN(nodes_.size() + 1); }
 
-Error RaftManager::clientStatus(size_t index) {
+Error RaftManager::clientStatus(size_t index, std::chrono::seconds timeout) {
 	Error err;
-	if (!nodes_[index].client.Status(true).ok()) {
+	if (!nodes_[index].client.WithTimeout(timeout).Status(true).ok()) {
 		err = nodes_[index].client.Connect(nodes_[index].dsn, loop_, client::ConnectOpts().WithExpectedClusterID(clusterID_));
 		if (err.ok()) {
-			err = nodes_[index].client.Status(true);
+			err = nodes_[index].client.WithTimeout(timeout).Status(true);
 		}
 	}
 	return err;
 }
 
 Error RaftManager::sendDesiredServerIdToNode(size_t index, int nextServerId) {
-	Error err = clientStatus(index);
+	Error err = clientStatus(index, kDesiredLeaderTimeout);
 	if (err.ok()) {
 		logPrintf(LogTrace, "[raftmanager] %d Sending desired server ID (%d) to node with server ID %d", serverId_, nextServerId,
 				  nodes_[index].serverId);

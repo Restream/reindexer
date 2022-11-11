@@ -92,7 +92,7 @@ private:
 	bool endElections(int32_t term, RaftInfo::Role result);
 	bool isConsensus(size_t num) const noexcept;
 	Error sendDesiredServerIdToNode(size_t index, int nextServerId);
-	Error clientStatus(size_t index);
+	Error clientStatus(size_t index, std::chrono::seconds timeout);
 
 	net::ev::dynamic_loop &loop_;
 	ReplicationStatsCollector statsCollector_;
