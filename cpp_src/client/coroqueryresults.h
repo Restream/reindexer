@@ -8,7 +8,6 @@
 
 namespace reindexer {
 
-class TagsMatcher;
 class Query;
 
 namespace net {
@@ -31,6 +30,7 @@ using std::chrono::seconds;
 using std::chrono::milliseconds;
 
 class Namespace;
+class QueryResults;
 
 class CoroQueryResults {
 public:
@@ -90,8 +90,8 @@ public:
 	bool HaveRank() const noexcept { return i_.queryParams_.flags & kResultsWithRank; }
 	bool NeedOutputRank() const noexcept { return i_.queryParams_.flags & kResultsNeedOutputRank; }
 	bool NeedOutputShardId() const noexcept { return i_.fetchFlags_ & kResultsNeedOutputShardId; }
-	const string& GetExplainResults();
-	const vector<AggregationResult>& GetAggregationResults();
+	const std::string& GetExplainResults();
+	const std::vector<AggregationResult>& GetAggregationResults();
 	Error Status() const noexcept { return i_.status_; }
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	size_t GetNamespacesCount() const noexcept { return i_.nsArray_.size(); }
@@ -126,10 +126,9 @@ public:
 	bool IsInLazyMode() const noexcept { return i_.lazyMode_; }
 
 private:
-	friend class SyncCoroQueryResults;
-	friend class SyncCoroReindexerImpl;
-	friend class CoroRPCClient;
-	friend class RPCClientMock;
+	friend class client::QueryResults;
+	friend class client::ReindexerImpl;
+	friend class client::RPCClient;
 	CoroQueryResults(net::cproto::CoroClientConnection* conn, NsArray&& nsArray, int fetchFlags, int fetchAmount, milliseconds timeout,
 					 bool lazyMode) noexcept
 		: i_(conn, std::move(nsArray), fetchFlags, fetchAmount, timeout, lazyMode) {}

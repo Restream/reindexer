@@ -16,7 +16,6 @@ namespace reindexer_server {
 class Prometheus;
 struct IStatsWatcher;
 
-using std::string;
 using namespace reindexer::net;
 
 struct HTTPClientData : public http::ClientData {
@@ -28,7 +27,7 @@ public:
 	HTTPServer(DBManager &dbMgr, LoggerWrapper &logger, const ServerConfig &serverConfig, Prometheus *prometheusI = nullptr,
 			   IStatsWatcher *statsWatcherI = nullptr);
 
-	bool Start(const string &addr, ev::dynamic_loop &loop);
+	bool Start(const std::string &addr, ev::dynamic_loop &loop);
 	void Stop() { listener_->Stop(); }
 
 	int NotFoundHandler(http::Context &ctx);
@@ -74,19 +73,21 @@ public:
 	int DeleteItemsTx(http::Context &ctx);
 	int GetSQLQueryTx(http::Context &ctx);
 	int DeleteQueryTx(http::Context &ctx);
+	int PostMemReset(http::Context &ctx);
+	int GetMemInfo(http::Context &ctx);
 	void Logger(http::Context &ctx);
 	void OnResponse(http::Context &ctx);
 
 protected:
-	Error modifyItem(Reindexer &db, string &nsName, Item &item, ItemModifyMode mode);
-	Error modifyItem(Reindexer &db, string &nsName, Item &item, QueryResults &, ItemModifyMode mode);
+	Error modifyItem(Reindexer &db, std::string &nsName, Item &item, ItemModifyMode mode);
+	Error modifyItem(Reindexer &db, std::string &nsName, Item &item, QueryResults &, ItemModifyMode mode);
 	int modifyItems(http::Context &ctx, ItemModifyMode mode);
 	int modifyItemsTx(http::Context &ctx, ItemModifyMode mode);
-	int modifyItemsProtobuf(http::Context &ctx, string &nsName, vector<string> &&precepts, ItemModifyMode mode);
-	int modifyItemsMsgPack(http::Context &ctx, string &nsName, vector<string> &&precepts, ItemModifyMode mode);
-	int modifyItemsJSON(http::Context &ctx, string &nsName, vector<std::string> &&precepts, ItemModifyMode mode);
-	int modifyItemsTxMsgPack(http::Context &ctx, Transaction &tx, vector<std::string> &&precepts, ItemModifyMode mode);
-	int modifyItemsTxJSON(http::Context &ctx, Transaction &tx, vector<std::string> &&precepts, ItemModifyMode mode);
+	int modifyItemsProtobuf(http::Context &ctx, std::string &nsName, std::vector<std::string> &&precepts, ItemModifyMode mode);
+	int modifyItemsMsgPack(http::Context &ctx, std::string &nsName, std::vector<std::string> &&precepts, ItemModifyMode mode);
+	int modifyItemsJSON(http::Context &ctx, std::string &nsName, std::vector<std::string> &&precepts, ItemModifyMode mode);
+	int modifyItemsTxMsgPack(http::Context &ctx, Transaction &tx, std::vector<std::string> &&precepts, ItemModifyMode mode);
+	int modifyItemsTxJSON(http::Context &ctx, Transaction &tx, std::vector<std::string> &&precepts, ItemModifyMode mode);
 	int queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults = false, unsigned limit = kDefaultLimit,
 					 unsigned offset = kDefaultOffset);
 	int queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
@@ -107,12 +108,12 @@ protected:
 	int modifyQueryTxImpl(http::Context &ctx, const std::string &dbName, std::string_view txId, Query &q);
 
 	Reindexer getDB(http::Context &ctx, UserRole role, std::string *dbNameOut = nullptr);
-	string getNameFromJson(std::string_view json);
+	std::string getNameFromJson(std::string_view json);
 	constexpr static std::string_view statsSourceName() { return std::string_view{"http"}; }
 
-	std::shared_ptr<Transaction> getTx(const string &dbName, std::string_view txId);
-	string addTx(string dbName, Transaction &&tx);
-	void removeTx(const string &dbName, std::string_view txId);
+	std::shared_ptr<Transaction> getTx(const std::string &dbName, std::string_view txId);
+	std::string addTx(std::string dbName, Transaction &&tx);
+	void removeTx(const std::string &dbName, std::string_view txId);
 	void removeExpiredTx();
 	void deadlineTimerCb(ev::periodic &, int) { removeExpiredTx(); }
 
@@ -134,9 +135,9 @@ protected:
 	struct TxInfo {
 		std::shared_ptr<Transaction> tx;
 		std::chrono::time_point<TxDeadlineClock> txDeadline;
-		string dbName;
+		std::string dbName;
 	};
-	fast_hash_map<string, TxInfo, nocase_hash_str, nocase_equal_str> txMap_;
+	fast_hash_map<std::string, TxInfo, nocase_hash_str, nocase_equal_str> txMap_;
 	std::mutex txMtx_;
 	ev::timer deadlineChecker_;
 

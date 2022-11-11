@@ -8,7 +8,7 @@ namespace cluster {
 
 class ClusterThreadParam {
 public:
-	using NsNamesHashSetT = fast_hash_set<string, nocase_hash_str, nocase_equal_str>;
+	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str>;
 
 	ClusterThreadParam(const NsNamesHashSetT *namespaces, coroutine::channel<bool> &ch, SharedSyncState<> &st,
 					   SynchronizationList &syncList, std::function<void()> cb)
@@ -46,7 +46,7 @@ private:
 
 class ClusterReplThread {
 public:
-	using NsNamesHashSetT = fast_hash_set<string, nocase_hash_str, nocase_equal_str>;
+	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str>;
 
 	ClusterReplThread(int serverId, ReindexerImpl &thisNode, const NsNamesHashSetT *namespaces,
 					  std::shared_ptr<UpdatesQueue<UpdateRecord>> q, SharedSyncState<> &, SynchronizationList &,

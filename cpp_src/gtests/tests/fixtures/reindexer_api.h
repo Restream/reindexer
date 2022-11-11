@@ -19,13 +19,10 @@
 #include "vendor/utf8cpp/utf8.h"
 
 using reindexer::Error;
-using reindexer::Item;
 using reindexer::Variant;
 using reindexer::VariantArray;
 using reindexer::Query;
 using reindexer::QueryEntry;
-using reindexer::QueryResults;
-using reindexer::Reindexer;
 using reindexer::LocalQueryResults;
 
 class ReindexerApi : public ::testing::Test {
@@ -35,12 +32,16 @@ protected:
 	void TearDown() {}
 
 public:
+	using Reindexer = reindexer::Reindexer;
+	using QueryResults = reindexer::QueryResults;
+	using Item = reindexer::Item;
+
 	ReindexerApi() {}
 
-	void DefineNamespaceDataset(const string &ns, std::initializer_list<const IndexDeclaration> fields) {
+	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(ns, fields);
 	}
-	void DefineNamespaceDataset(Reindexer &rx, const string &ns, std::initializer_list<const IndexDeclaration> fields) {
+	void DefineNamespaceDataset(Reindexer &rx, const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(rx, ns, fields);
 	}
 	Item NewItem(std::string_view ns) { return rt.NewItem(ns); }
@@ -49,12 +50,13 @@ public:
 	void Upsert(std::string_view ns, Item &item) { rt.Upsert(ns, item); }
 
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) { rt.PrintQueryResults(ns, res); }
-	string PrintItem(Item &item) { return rt.PrintItem(item); }
+	std::string PrintItem(Item &item) { return rt.PrintItem(item); }
 
-	std::string RandString(uint8_t len = 0) { return rt.RandString(len); }
+	std::string RandString() { return rt.RandString(); }
+	std::string RandString(unsigned len) { return rt.RandString(len); }
 	std::string RandLikePattern() { return rt.RandLikePattern(); }
 	std::string RuRandString() { return rt.RuRandString(); }
-	vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
+	std::vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
 
 	struct QueryWatcher {
 		~QueryWatcher() {

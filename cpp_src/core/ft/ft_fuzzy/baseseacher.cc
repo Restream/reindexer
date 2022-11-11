@@ -11,14 +11,12 @@
 #include "tools/stringstools.h"
 namespace search_engine {
 
-using std::make_shared;
-using std::pair;
-using std::make_pair;
 using namespace reindexer;
 
 void BaseSearcher::AddSeacher(ITokenFilter::Ptr &&seacher) { searchers_.push_back(std::move(seacher)); }
 
-pair<bool, size_t> BaseSearcher::GetData(BaseHolder::Ptr holder, unsigned int i, wchar_t *buf, const wchar_t *src_data, size_t data_size) {
+std::pair<bool, size_t> BaseSearcher::GetData(const BaseHolder::Ptr &holder, unsigned int i, wchar_t *buf, const wchar_t *src_data,
+											  size_t data_size) {
 	size_t counter = 0;
 	size_t final_counter = 0;
 
@@ -27,7 +25,7 @@ pair<bool, size_t> BaseSearcher::GetData(BaseHolder::Ptr holder, unsigned int i,
 		counter = abs(offset);
 		offset = 0;
 	} else if (size_t(offset) >= data_size) {
-		return make_pair(false, 0);
+		return std::make_pair(false, 0);
 	}
 	size_t data_counter = holder->cfg_.bufferSize - counter;
 
@@ -45,16 +43,16 @@ pair<bool, size_t> BaseSearcher::GetData(BaseHolder::Ptr holder, unsigned int i,
 	} else {
 		cont = offset + holder->cfg_.bufferSize < data_size + holder->cfg_.spaceSize;
 	}
-	return make_pair(cont, counter + final_counter);
+	return std::make_pair(cont, counter + final_counter);
 }
 
-size_t BaseSearcher::ParseData(BaseHolder::Ptr holder, const wstring &src_data, int &max_id, int &min_id, std::vector<FirstResult> &rusults,
-							   const FtDslOpts &opts, double proc) {
+size_t BaseSearcher::ParseData(const BaseHolder::Ptr &holder, const std::wstring &src_data, int &max_id, int &min_id,
+							   std::vector<FirstResult> &rusults, const FtDslOpts &opts, double proc) {
 	wchar_t res_buf[maxFuzzyFTBufferSize];
 	size_t total_size = 0;
 	size_t size = src_data.size();
 	unsigned int i = 0;
-	pair<bool, size_t> cont;
+	std::pair<bool, size_t> cont;
 	do {
 		cont = GetData(holder, i, res_buf, src_data.c_str(), size);
 		total_size++;
@@ -72,11 +70,12 @@ size_t BaseSearcher::ParseData(BaseHolder::Ptr holder, const wstring &src_data, 
 	return total_size;
 }
 
-SearchResult BaseSearcher::Compare(BaseHolder::Ptr holder, const FtDSLQuery &dsl, bool inTransaction, const reindexer::RdxContext &rdxCtx) {
+SearchResult BaseSearcher::Compare(const BaseHolder::Ptr &holder, const FtDSLQuery &dsl, bool inTransaction,
+								   const reindexer::RdxContext &rdxCtx) {
 	size_t data_size = 0;
 
-	vector<pair<std::wstring, int>> data;
-	pair<PosType, ProcType> pos;
+	std::vector<std::pair<std::wstring, int>> data;
+	std::pair<PosType, ProcType> pos;
 	pos.first = 0;
 
 	SmartDeque<IdContext, 100> result;
@@ -123,23 +122,24 @@ SearchResult BaseSearcher::Compare(BaseHolder::Ptr holder, const FtDSLQuery &dsl
 	return res;
 }
 
-void BaseSearcher::AddIndex(BaseHolder::Ptr holder, std::string_view src_data, const IdType id, int field, const string &extraWordSymbols) {
+void BaseSearcher::AddIndex(BaseHolder::Ptr &holder, std::string_view src_data, const IdType id, int field,
+							const std::string &extraWordSymbols) {
 #ifdef FULL_LOG_FT
 	words.push_back(std::make_pair(id, *src_data));
 #endif
 	if (!src_data.length()) return;
-	pair<PosType, ProcType> pos;
+	std::pair<PosType, ProcType> pos;
 	pos.first = 0;
-	vector<pair<HashType, ProcType>> res;
-	string word, str;
+	std::vector<std::pair<HashType, ProcType>> res;
+	std::string word, str;
 	std::wstring utf16str;
-	vector<std::wstring> wrds;
+	std::vector<std::wstring> wrds;
 	split(src_data, utf16str, wrds, extraWordSymbols);
 	wchar_t res_buf[maxFuzzyFTBufferSize];
 	size_t total_size = 0;
 	for (auto &term : wrds) {
 		unsigned int i = 0;
-		pair<bool, size_t> cont;
+		std::pair<bool, size_t> cont;
 		do {
 			cont = GetData(holder, i, res_buf, term.c_str(), term.size());
 			holder->AddDada(res_buf, id, i, field);
@@ -151,5 +151,5 @@ void BaseSearcher::AddIndex(BaseHolder::Ptr holder, std::string_view src_data, c
 	holder->SetSize(total_size, id, field);
 }
 
-void BaseSearcher::Commit(BaseHolder::Ptr holder) { holder->Commit(); }
+void BaseSearcher::Commit(BaseHolder::Ptr &holder) { holder->Commit(); }
 }  // namespace search_engine

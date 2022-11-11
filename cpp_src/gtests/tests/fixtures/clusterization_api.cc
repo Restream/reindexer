@@ -5,6 +5,7 @@
 #include "core/dbconfig.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
+#include "yaml-cpp/yaml.h"
 
 const std::string ClusterizationApi::kConfigNs = "#config";
 const std::chrono::seconds ClusterizationApi::kMaxServerStartTime = std::chrono::seconds(15);
@@ -28,54 +29,38 @@ void ClusterizationApi::TearDown()	// -V524
 }
 
 ClusterizationApi::Cluster::Cluster(net::ev::dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports,
-									std::vector<std::string> nsList, std::chrono::milliseconds resyncTimeout, int maxSyncCount,
+									const std::vector<std::string>& nsList, std::chrono::milliseconds resyncTimeout, int maxSyncCount,
 									int syncThreadsCount, size_t maxUpdatesSize)
-	: loop_(loop), defaults_(ports), maxUpdatesSize_(maxUpdatesSize) {
-	std::string nsListStr;
-	if (nsList.empty()) {
-		nsListStr = "[]\n";
-	} else {
-		nsListStr += '\n';
-		for (auto& ns : nsList) {
-			nsListStr += "  - ";
-			nsListStr += ns;
-			nsListStr += '\n';
-		}
-	}
+	: loop_(loop), defaults_(std::move(ports)), maxUpdatesSize_(maxUpdatesSize) {
 	if (maxSyncCount < 0) {
 		maxSyncCount = rand() % 3;
 		TestCout() << "Cluster's max_sync_count was chosen randomly: " << maxSyncCount << std::endl;
 	}
-	// clang-format off
-	const std::string kBaseClusterConf =
-		"app_name: rx_node\n"
-		"namespaces: " + nsListStr +
-		"sync_threads: " + std::to_string(syncThreadsCount) + "\n"
-		"enable_compression: true\n"
-		"online_updates_timeout_sec: 20\n"
-		"sync_timeout_sec: 60\n"
-		"syncs_per_thread: " + std::to_string(maxSyncCount) + "\n"
-		"retry_sync_interval_msec: " + std::to_string(resyncTimeout.count()) + "\n"
-		"nodes:\n";
-	// clang-format on
-	std::string fullClusterConf = kBaseClusterConf;
+
+	YAML::Node clusterConf;
+	clusterConf["app_name"] = "rx_node";
+	clusterConf["namespaces"] = nsList;
+	clusterConf["sync_threads"] = syncThreadsCount;
+	clusterConf["enable_compression"] = true;
+	clusterConf["online_updates_timeout_sec"] = 20;
+	clusterConf["sync_timeout_sec"] = 60;
+	clusterConf["syncs_per_thread"] = maxSyncCount;
+	clusterConf["retry_sync_interval_msec"] = resyncTimeout.count();
+	clusterConf["nodes"] = YAML::Node(YAML::NodeType::Sequence);
 	for (size_t i = initialServerId; i < initialServerId + count; ++i) {
-		// clang-format off
-		fullClusterConf.append(
-			"  - dsn: " + fmt::format("cproto://127.0.0.1:{}/node{}", defaults_.defaultRpcPort + i,i) + "\n"
-			"    server_id: " + std::to_string(i) + "\n"
-		);
-		// clang-format on
+		YAML::Node node;
+		node["dsn"] = fmt::format("cproto://127.0.0.1:{}/node{}", defaults_.defaultRpcPort + i, i);
+		node["server_id"] = i;
+		clusterConf["nodes"].push_back(node);
 	}
 
 	size_t id = initialServerId;
 	for (size_t i = 0; i < count; ++i) {
-		const std::string kReplConf =
-			"cluster_id: 2\n"
-			"server_id: " +
-			std::to_string(id);
+		YAML::Node replConf;
+		replConf["cluster_id"] = 2;
+		replConf["server_id"] = id;
 		svc_.emplace_back();
-		InitServer(i, fullClusterConf, kReplConf, initialServerId);
+		InitServer(i, clusterConf, replConf, initialServerId);
 		clients_.emplace_back();
 		clients_.back().Connect(svc_.back().Get(false)->kRPCDsn, loop_);
 		++id;
@@ -102,12 +87,12 @@ void ClusterizationApi::Cluster::InitNs(size_t id, std::string_view nsName) {
 	Error err = api.reindexer->OpenNamespace(nsName, opt);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	api.DefineNamespaceDataset(string(nsName), {
-												   IndexDeclaration{kIdField.c_str(), "hash", "int", IndexOpts().PK(), 0},
-												   IndexDeclaration{kIntField.c_str(), "tree", "int", IndexOpts(), 0},
-												   IndexDeclaration{kStringField.c_str(), "hash", "string", IndexOpts(), 0},
-												   IndexDeclaration{kFTField.c_str(), "text", "string", IndexOpts(), 0},
-											   });
+	api.DefineNamespaceDataset(std::string(nsName), {
+														IndexDeclaration{kIdField.c_str(), "hash", "int", IndexOpts().PK(), 0},
+														IndexDeclaration{kIntField.c_str(), "tree", "int", IndexOpts(), 0},
+														IndexDeclaration{kStringField.c_str(), "hash", "string", IndexOpts(), 0},
+														IndexDeclaration{kFTField.c_str(), "text", "string", IndexOpts(), 0},
+													});
 }
 
 void ClusterizationApi::Cluster::DropNs(size_t id, std::string_view nsName) {
@@ -178,7 +163,7 @@ Error ClusterizationApi::Cluster::AddRowWithErr(size_t id, std::string_view nsNa
 	return api.reindexer->Upsert(nsName, item);
 }
 
-size_t ClusterizationApi::Cluster::InitServer(size_t id, const std::string& clusterYml, const std::string& replYml, size_t offset) {
+size_t ClusterizationApi::Cluster::InitServer(size_t id, const YAML::Node& clusterYml, const YAML::Node& replYml, size_t offset) {
 	assert(id < svc_.size());
 	auto& server = svc_[id];
 	id += offset;
@@ -187,7 +172,7 @@ size_t ClusterizationApi::Cluster::InitServer(size_t id, const std::string& clus
 	ServerControlConfig scConfig(id, defaults_.defaultRpcPort + id, defaults_.defaultHttpPort + id,
 								 fs::JoinPath(defaults_.baseTestsetDbPath, "node/" + std::to_string(id)), "node" + std::to_string(id), true,
 								 maxUpdatesSize_);
-	server.InitServerWithConfig(std::move(scConfig), replYml, clusterYml, std::string(), std::string());
+	server.InitServerWithConfig(std::move(scConfig), replYml, clusterYml, YAML::Node(), YAML::Node());
 	return id;
 }
 
@@ -288,7 +273,7 @@ void ClusterizationApi::Cluster::doWaitSync(std::string_view ns, std::vector<Ser
 		syncedCnt = 0;
 		for (auto& node : svc) {
 			if (node.IsRunning()) {
-				auto xstate = node.Get(false)->GetState(string(ns));
+				auto xstate = node.Get(false)->GetState(std::string(ns));
 				if (empty) {
 					state = xstate;
 					empty = false;
@@ -323,7 +308,7 @@ void ClusterizationApi::Cluster::PrintClusterInfo(std::string_view ns, std::vect
 	for (size_t id = 0; id < svc.size(); ++id) {
 		std::cerr << "Node " << id << ": ";
 		if (svc[id].IsRunning()) {
-			auto xstate = svc[id].Get()->GetState(string(ns));
+			auto xstate = svc[id].Get()->GetState(std::string(ns));
 			const std::string tmStateToken = xstate.tmStatetoken.has_value() ? std::to_string(xstate.tmStatetoken.value()) : "<none>";
 			const std::string tmVersion = xstate.tmVersion.has_value() ? std::to_string(xstate.tmVersion.value()) : "<none>";
 			std::cerr << "{ ns_version: " << xstate.nsVersion << ", lsn: " << xstate.lsn << ", data_hash: " << xstate.dataHash

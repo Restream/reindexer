@@ -8,28 +8,23 @@
 #include <vector>
 
 #include "atoi/atoi.h"
+#include "core/keyvalue/key_string.h"
 #include "itoa/itoa.h"
 #include "tools/customlocal.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
-#include "core/keyvalue/key_string.h"
-
-using std::min;
-using std::transform;
-using std::distance;
-using std::make_pair;
 
 namespace reindexer {
 
-string toLower(std::string_view src) {
-	string ret;
+std::string toLower(std::string_view src) {
+	std::string ret;
 	ret.reserve(src.size());
 	for (char ch : src) ret.push_back(tolower(ch));
 	return ret;
 }
 
-string escapeString(std::string_view str) {
-	string dst = "";
+std::string escapeString(std::string_view str) {
+	std::string dst = "";
 	dst.reserve(str.length());
 	for (auto it = str.begin(); it != str.end(); it++) {
 		if (*it < 0x20 || unsigned(*it) >= 0x80 || *it == '\\') {
@@ -42,8 +37,8 @@ string escapeString(std::string_view str) {
 	return dst;
 }
 
-string unescapeString(std::string_view str) {
-	string dst = "";
+std::string unescapeString(std::string_view str) {
+	std::string dst = "";
 	dst.reserve(str.length());
 	for (auto it = str.begin(); it != str.end(); it++) {
 		if (*it == '\\' && ++it != str.end() && it + 1 != str.end()) {
@@ -122,7 +117,7 @@ wstring &utf8_to_utf16(std::string_view src, wstring &dst) {
 	return dst;
 }
 
-string &utf16_to_utf8(const wstring &src, string &dst) {
+std::string &utf16_to_utf8(const wstring &src, std::string &dst) {
 	dst.resize(src.length() * 4);
 	auto end = utf8::unchecked::utf32to8(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
@@ -133,8 +128,8 @@ wstring utf8_to_utf16(std::string_view src) {
 	wstring dst;
 	return utf8_to_utf16(src, dst);
 }
-string utf16_to_utf8(const wstring &src) {
-	string dst;
+std::string utf16_to_utf8(const wstring &src) {
+	std::string dst;
 	return utf16_to_utf8(src, dst);
 }
 
@@ -170,7 +165,7 @@ bool is_number(std::string_view str) {
 	return (i && i == str.length());
 }
 
-void split(std::string_view str, string &buf, vector<const char *> &words, const string &extraWordSymbols) {
+void split(std::string_view str, std::string &buf, std::vector<const char *> &words, const std::string &extraWordSymbols) {
 	buf.resize(str.length());
 	words.resize(0);
 	auto bufIt = buf.begin();
@@ -178,18 +173,18 @@ void split(std::string_view str, string &buf, vector<const char *> &words, const
 	for (auto it = str.begin(); it != str.end();) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != str.end() && extraWordSymbols.find(ch) == string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (it != str.end() && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
 			ch = utf8::unchecked::next(it);
 		}
 
 		auto begIt = bufIt;
-		while (it != str.end() && (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != string::npos)) {
+		while (it != str.end() && (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos)) {
 			ch = ToLower(ch);
 			check_for_replacement(ch);
 			bufIt = utf8::unchecked::append(ch, bufIt);
 			ch = utf8::unchecked::next(it);
 		}
-		if ((IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != string::npos)) {
+		if ((IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos)) {
 			ch = ToLower(ch);
 			check_for_replacement(ch);
 
@@ -203,7 +198,7 @@ void split(std::string_view str, string &buf, vector<const char *> &words, const
 	}
 }
 
-std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, const string &extraWordSymbols) {
+std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, const std::string &extraWordSymbols) {
 	auto wordStartIt = str.begin();
 	auto wordEndIt = str.begin();
 	auto it = str.begin();
@@ -212,12 +207,12 @@ std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, cons
 	for (; it != str.end();) {
 		auto ch = utf8::unchecked::next(it);
 
-		while (it != str.end() && extraWordSymbols.find(ch) == string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
+		while (it != str.end() && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
 			wordStartIt = it;
 			ch = utf8::unchecked::next(it);
 		}
 
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != string::npos) {
+		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
 			wordEndIt = it;
 			if (it == str.end()) break;
 			ch = utf8::unchecked::next(it);
@@ -240,7 +235,7 @@ std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, cons
 			ch = utf8::unchecked::next(it);
 		}
 
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != string::npos) {
+		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
 			wordEndIt = it;
 			if (it == str.end()) break;
 			ch = utf8::unchecked::next(it);
@@ -250,7 +245,7 @@ std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, cons
 	return {int(std::distance(str.begin(), wordStartIt)), int(std::distance(str.begin(), wordEndIt))};
 }
 
-Word2PosHelper::Word2PosHelper(std::string_view data, const string &extraWordSymbols)
+Word2PosHelper::Word2PosHelper(std::string_view data, const std::string &extraWordSymbols)
 	: data_(data), lastWordPos_(0), lastOffset_(0), extraWordSymbols_(extraWordSymbols) {}
 
 std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
@@ -267,14 +262,14 @@ std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
 	return ret;
 }
 
-void split(std::string_view utf8Str, wstring &utf16str, vector<std::wstring> &words, const string &extraWordSymbols) {
+void split(std::string_view utf8Str, wstring &utf16str, std::vector<std::wstring> &words, const std::string &extraWordSymbols) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
 		while (it != utf16str.end() && !IsAlpha(*it) && !IsDigit(*it)) it++;
 
 		auto begIt = it;
-		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || extraWordSymbols.find(*it) != string::npos)) {
+		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || extraWordSymbols.find(*it) != std::string::npos)) {
 			*it = ToLower(*it);
 			it++;
 		}
@@ -354,7 +349,7 @@ int collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts
 		int numr = strtol(rhs.data(), &posr, 10);
 
 		if (numl == numr) {
-			auto minlen = min(lhs.size() - (posl - lhs.data()), rhs.size() - (posr - rhs.data()));
+			auto minlen = std::min(lhs.size() - (posl - lhs.data()), rhs.size() - (posr - rhs.data()));
 			auto res = strncmp(posl, posr, minlen);
 
 			if (res != 0) return res;
@@ -423,8 +418,8 @@ static std::string_view urldecode2(char *buf, std::string_view str) {
 	return std::string_view(buf, dst - buf);
 }
 
-string urldecode2(const std::string_view str) {
-	string ret(str.length(), ' ');
+std::string urldecode2(std::string_view str) {
+	std::string ret(str.length(), ' ');
 	std::string_view sret = urldecode2(&ret[0], str);
 	ret.resize(sret.size());
 	return ret;
@@ -473,8 +468,8 @@ bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept 
 	return true;
 }
 
-LogLevel logLevelFromString(const string &strLogLevel) {
-	static std::unordered_map<string, LogLevel> levels = {
+LogLevel logLevelFromString(const std::string &strLogLevel) {
+	static std::unordered_map<std::string, LogLevel> levels = {
 		{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}};
 
 	auto configLevelIt = levels.find(strLogLevel);
@@ -484,10 +479,10 @@ LogLevel logLevelFromString(const string &strLogLevel) {
 	return LogNone;
 }
 
-static std::unordered_map<string, StrictMode> strictModes = {
+static std::unordered_map<std::string, StrictMode> strictModes = {
 	{"", StrictModeNotSet}, {"none", StrictModeNone}, {"names", StrictModeNames}, {"indexes", StrictModeIndexes}};
 
-StrictMode strictModeFromString(const string &strStrictMode) {
+StrictMode strictModeFromString(const std::string &strStrictMode) {
 	auto configModeIt = strictModes.find(strStrictMode);
 	if (configModeIt != strictModes.end()) {
 		return configModeIt->second;

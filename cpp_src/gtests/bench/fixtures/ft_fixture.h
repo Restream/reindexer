@@ -10,13 +10,13 @@
 class FullText : protected BaseFixture {
 public:
 	virtual ~FullText() {}
-	FullText(Reindexer* db, const string& name, size_t maxItems);
+	FullText(Reindexer* db, const std::string& name, size_t maxItems);
 
-	virtual Error Initialize();
+	virtual reindexer::Error Initialize();
 	virtual void RegisterAllCases();
 
 protected:
-	virtual Item MakeItem();
+	virtual reindexer::Item MakeItem();
 
 protected:
 	template <reindexer::FtFastConfig::Optimization>
@@ -63,14 +63,14 @@ protected:
 	string MakeSuffixWord();
 	string MakeTypoWord();
 
-	wstring GetRandomUTF16WordByLength(size_t minLen = 4);
+	std::wstring GetRandomUTF16WordByLength(size_t minLen = 4);
 
-	vector<string> GetRandomCountries(size_t cnt = 5);
-	Item MakeSpecialItem();
+	vector<std::string> GetRandomCountries(size_t cnt = 5);
+	reindexer::Item MakeSpecialItem();
 
 protected:
-	vector<string> words_;
-	vector<string> countries_;
+	vector<std::string> words_;
+	vector<std::string> countries_;
 	struct Values {
 		Values(std::string s1, std::string s2, std::string f1, std::string f2) noexcept
 			: search1{std::move(s1)}, search2{std::move(s2)}, field1{std::move(f1)}, field2{std::move(f2)} {}

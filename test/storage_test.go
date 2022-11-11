@@ -80,15 +80,6 @@ func init() {
 }
 
 func TestStorageChangeFormat(t *testing.T) {
-	err := DB.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
-		Type:      "profiling",
-		Profiling: &reindexer.DBProfilingConfig{MemStats: true},
-	})
-
-	if err != nil {
-		panic(err)
-	}
-
 	tx := newTestTx(DB, "test_items_storage")
 
 	tx.Upsert(&TestItemV1{

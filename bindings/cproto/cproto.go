@@ -74,6 +74,7 @@ type NetCProto struct {
 	timeouts           bindings.OptionTimeouts
 	connectOpts        bindings.OptionConnect
 	compression        bindings.OptionCompression
+	dedicatedThreads   bindings.OptionDedicatedThreads
 	caps               bindings.BindingCapabilities
 	appName            string
 	termCh             chan struct{}
@@ -294,6 +295,8 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 			binding.compression = v
 		case bindings.OptionAppName:
 			binding.appName = v.AppName
+		case bindings.OptionDedicatedThreads:
+			binding.dedicatedThreads = v
 		case bindings.OptionReconnectionStrategy:
 			binding.dsn.reconnectionStrategy = v.Strategy
 			binding.dsn.allowUnknownNodes = v.AllowUnknownNodes
@@ -323,6 +326,9 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 
 func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int) error {
 	var wg sync.WaitGroup
+	for _, conn := range binding.pool.conns {
+		conn.finalize()
+	}
 	binding.pool = pool{
 		conns: make([]connection, connPoolSize),
 	}
@@ -333,13 +339,14 @@ func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int) error {
 			conn, serverStartTS, _ := binding.dsn.connFactory.newConnection(
 				ctx,
 				newConnParams{
-					dsn:               binding.getActiveDSN(),
-					loginTimeout:      binding.timeouts.LoginTimeout,
-					requestTimeout:    binding.timeouts.RequestTimeout,
-					createDBIfMissing: binding.connectOpts.CreateDBIfMissing,
-					appName:           binding.appName,
-					caps:              binding.caps,
-					enableCompression: binding.compression.EnableCompression,
+					dsn:                    binding.getActiveDSN(),
+					loginTimeout:           binding.timeouts.LoginTimeout,
+					requestTimeout:         binding.timeouts.RequestTimeout,
+					createDBIfMissing:      binding.connectOpts.CreateDBIfMissing,
+					appName:                binding.appName,
+					enableCompression:      binding.compression.EnableCompression,
+					requestDedicatedThread: binding.dedicatedThreads.DedicatedThreads,
+					caps:                   binding.caps,
 				},
 			)
 

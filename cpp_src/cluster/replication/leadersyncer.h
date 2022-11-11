@@ -120,7 +120,7 @@ public:
 		  sharedSyncState_(sharedSyncState),
 		  thisNode_(thisNode),
 		  statsCollector_(statsCollector),
-		  client_(client::CoroReindexerConfig(10000, 0, cfg_.netTimeout, cfg_.enableCompression, "cluster_leader_syncer")) {
+		  client_(client::ReindexerConfig{10000, 0, cfg_.netTimeout, cfg_.enableCompression, true, "cluster_leader_syncer"}) {
 		terminateAsync_.set(loop_);
 		terminateAsync_.set([this](net::ev::async&) { client_.Stop(); });
 		thread_ = std::thread([this]() noexcept { sync(); });

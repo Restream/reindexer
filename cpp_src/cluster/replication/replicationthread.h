@@ -92,7 +92,7 @@ public:
 	};
 
 	struct Node {
-		Node(int _serverId, uint32_t _uid, const client::CoroReindexerConfig &config) noexcept
+		Node(int _serverId, uint32_t _uid, const client::ReindexerConfig &config) noexcept
 			: serverId(_serverId), uid(_uid), client(config) {}
 		void Reconnect(net::ev::dynamic_loop &loop, const ReplThreadConfig &config) {
 			if (connObserverId.has_value()) {

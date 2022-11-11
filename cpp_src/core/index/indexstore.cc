@@ -97,7 +97,7 @@ void IndexStore<T>::Commit() {
 
 template <typename T>
 SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType condition, SortType /*sortId*/, Index::SelectOpts sopts,
-										  BaseFunctionCtx::Ptr /*ctx*/, const RdxContext &rdxCtx) {
+										  const BaseFunctionCtx::Ptr & /*ctx*/, const RdxContext &rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	SelectKeyResult res;
 	if (condition == CondEmpty && !this->opts_.IsArray() && !this->opts_.IsSparse())
@@ -118,7 +118,7 @@ std::unique_ptr<Index> IndexStore<T>::Clone() {
 }
 
 template <typename T>
-IndexMemStat IndexStore<T>::GetMemStat() {
+IndexMemStat IndexStore<T>::GetMemStat(const RdxContext &) {
 	IndexMemStat ret = memStat_;
 	ret.name = name_;
 	ret.uniqKeysCount = str_map.size();

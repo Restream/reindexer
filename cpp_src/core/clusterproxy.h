@@ -1,6 +1,6 @@
 #pragma once
 #include <condition_variable>
-#include "client/synccororeindexer.h"
+#include "client/reindexer.h"
 #include "core/item.h"
 #include "core/reindexerimpl.h"
 #include "core/shardedmeta.h"
@@ -31,7 +31,7 @@ public:
 	Error DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
 	Error SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext &ctx);
 	Error GetSchema(std::string_view nsName, int format, std::string &schema, const InternalRdxContext &ctx);
-	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
+	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
 	Error Insert(std::string_view nsName, Item &item, const InternalRdxContext &ctx);
 	Error Insert(std::string_view nsName, Item &item, QueryResults &result, const InternalRdxContext &ctx);
 	Error Update(std::string_view nsName, Item &item, const InternalRdxContext &ctx);
@@ -51,18 +51,18 @@ public:
 	Error CommitTransaction(Transaction &tr, QueryResults &result, const InternalRdxContext &ctx);
 	Error RollBackTransaction(Transaction &tr, const InternalRdxContext &ctx);
 
-	Error GetMeta(std::string_view nsName, const string &key, string &data, const InternalRdxContext &ctx);
-	Error GetMeta(std::string_view nsName, const string &key, vector<ShardedMeta> &data, const InternalRdxContext &ctx);
-	Error PutMeta(std::string_view nsName, const string &key, std::string_view data, const InternalRdxContext &ctx);
-	Error EnumMeta(std::string_view nsName, vector<string> &keys, const InternalRdxContext &ctx);
+	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx);
+	Error GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data, const InternalRdxContext &ctx);
+	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const InternalRdxContext &ctx);
+	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx);
 
-	Error GetSqlSuggestions(const std::string_view sqlQuery, int pos, vector<string> &suggestions, const InternalRdxContext &ctx) {
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions, const InternalRdxContext &ctx) {
 		using namespace std::string_view_literals;
 		const auto rdxCtx = ctx.CreateRdxContext("SQL SUGGESTIONS"sv, impl_.activities_);
 		return impl_.GetSqlSuggestions(sqlQuery, pos, suggestions, rdxCtx);
 	}
 	Error Status() { return impl_.Status(); }
-	Error GetProtobufSchema(WrSerializer &ser, vector<string> &namespaces) { return impl_.GetProtobufSchema(ser, namespaces); }
+	Error GetProtobufSchema(WrSerializer &ser, std::vector<std::string> &namespaces) { return impl_.GetProtobufSchema(ser, namespaces); }
 	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const InternalRdxContext &ctx) {
 		using namespace std::string_view_literals;
 		WrSerializer ser;
@@ -79,7 +79,7 @@ public:
 		return impl_.SetClusterizationStatus(nsName, status, rdxCtx);
 	}
 	bool NeedTraceActivity() { return impl_.NeedTraceActivity(); }
-	Error EnableStorage(const string &storagePath, bool skipPlaceholderCheck, const InternalRdxContext &ctx);
+	Error EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck, const InternalRdxContext &ctx);
 	Error InitSystemNamespaces() { return impl_.InitSystemNamespaces(); }
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch, const InternalRdxContext &ctx);
 
@@ -130,8 +130,8 @@ private:
 										 ? (std::min(uint32_t(clientConnConcurrency), kMaxClusterProxyConnConcurrency))
 										 : cluster::kDefaultClusterProxyCoroPerConn;
 		}
-		std::shared_ptr<client::SyncCoroReindexer> Get(const std::string &dsn) {
-			std::shared_ptr<client::SyncCoroReindexer> res;
+		std::shared_ptr<client::Reindexer> Get(const std::string &dsn) {
+			std::shared_ptr<client::Reindexer> res;
 			{
 				shared_lock lck(mtx_);
 				if (shutdown_) {
@@ -143,7 +143,7 @@ private:
 				}
 			}
 
-			client::CoroReindexerConfig cfg;
+			client::ReindexerConfig cfg;
 			cfg.AppName = "cluster_proxy";
 			cfg.SyncRxCoroCount = clientConnConcurrency_;
 			cfg.EnableCompression = true;
@@ -156,7 +156,7 @@ private:
 			if (found != conns_.end()) {
 				return res;
 			}
-			res = std::make_shared<client::SyncCoroReindexer>(cfg, clientConns_, clientThreads_);
+			res = std::make_shared<client::Reindexer>(cfg, clientConns_, clientThreads_);
 			auto err = res->Connect(dsn);
 			if (!err.ok()) {
 				throw err;
@@ -174,7 +174,7 @@ private:
 
 	private:
 		shared_timed_mutex mtx_;
-		fast_hash_map<std::string, std::shared_ptr<client::SyncCoroReindexer>> conns_;
+		fast_hash_map<std::string, std::shared_ptr<client::Reindexer>> conns_;
 		bool shutdown_ = false;
 		uint32_t clientThreads_ = cluster::kDefaultClusterProxyConnThreads;
 		uint32_t clientConns_ = cluster::kDefaultClusterProxyConnCount;
@@ -184,7 +184,7 @@ private:
 	ReindexerImpl impl_;
 	shared_timed_mutex mtx_;
 	int32_t leaderId_ = -1;
-	std::shared_ptr<client::SyncCoroReindexer> leader_;
+	std::shared_ptr<client::Reindexer> leader_;
 	ConnectionsMap clusterConns_;
 	std::atomic<unsigned short> sId_;
 	int configHandlerId_;
@@ -195,7 +195,7 @@ private:
 	std::mutex processPingEventMutex_;
 	int lastPingLeaderId_ = -1;
 
-	std::shared_ptr<client::SyncCoroReindexer> getLeader(const cluster::RaftInfo &info);
+	std::shared_ptr<client::Reindexer> getLeader(const cluster::RaftInfo &info);
 	void resetLeader();
 
 	template <typename R>
@@ -211,24 +211,24 @@ private:
 	R proxyCall(const RdxContext &ctx, std::string_view nsName, FnA &action, Args &&...args);
 
 	template <typename FnL, FnL fnl, typename... Args>
-	Error baseFollowerAction(const RdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader, Args &&...args);
+	Error baseFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader, Args &&...args);
 
 	template <typename FnL, FnL fnl>
-	Error itemFollowerAction(const RdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader, std::string_view nsName,
+	Error itemFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader, std::string_view nsName,
 							 Item &item);
 	template <typename FnL, FnL fnl>
-	Error resultFollowerAction(const RdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader, const Query &query,
+	Error resultFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader, const Query &query,
 							   LocalQueryResults &result);
 
 	template <typename FnL, FnL fnl>
-	Error resultItemFollowerAction(const RdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader,
-								   std::string_view nsName, Item &item, LocalQueryResults &result);
+	Error resultItemFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader, std::string_view nsName,
+								   Item &item, LocalQueryResults &result);
 
-	Transaction newTxFollowerAction(bool isWithSharding, const RdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader,
+	Transaction newTxFollowerAction(bool isWithSharding, const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader,
 									std::string_view nsName);
 
-	reindexer::client::Item toClientItem(std::string_view ns, client::SyncCoroReindexer *connection, reindexer::Item &clientItem);
-	void clientToCoreQueryResults(client::SyncCoroQueryResults &, LocalQueryResults &);
+	reindexer::client::Item toClientItem(std::string_view ns, client::Reindexer *connection, reindexer::Item &clientItem);
+	void clientToCoreQueryResults(client::QueryResults &, LocalQueryResults &);
 
 	bool isWithSharding(const Query &q, const InternalRdxContext &ctx) const;
 	bool isWithSharding(std::string_view nsName, const InternalRdxContext &ctx) const noexcept;
@@ -242,7 +242,7 @@ private:
 	template <typename Func, typename FLocal, typename... Args>
 	Error delegateToShardsByNs(const RdxContext &rdxCtx, Func f, const FLocal &&local, std::string_view nsName, Args &&...args);
 
-	typedef Error (client::SyncCoroReindexer::*ItemModifyFun)(std::string_view, client::Item &);
+	typedef Error (client::Reindexer::*ItemModifyFun)(std::string_view, client::Item &);
 
 	template <ItemModifyFun fn>
 	Error modifyItemOnShard(const InternalRdxContext &ctx, const RdxContext &rdxCtx, std::string_view nsName, Item &item,
@@ -252,7 +252,7 @@ private:
 	Error collectFromShardsByNs(const RdxContext &rdxCtx, Func f, const FLocal &&local, std::vector<T> &result, P predicate,
 								std::string_view nsName, [[maybe_unused]] Args &&...args);
 
-	typedef Error (client::SyncCoroReindexer::*ItemModifyFunQr)(std::string_view, client::Item &, client::SyncCoroQueryResults &);
+	typedef Error (client::Reindexer::*ItemModifyFunQr)(std::string_view, client::Item &, client::QueryResults &);
 
 	template <ItemModifyFunQr fn>
 	Error modifyItemOnShard(const InternalRdxContext &ctx, const RdxContext &rdxCtx, std::string_view nsName, Item &item,
@@ -260,8 +260,8 @@ private:
 
 	Error executeQueryOnShard(const Query &query, QueryResults &result, unsigned proxyFetchLimit, const InternalRdxContext &,
 							  const RdxContext &,
-							  const std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> && = {}) noexcept;
-	Error executeQueryOnClient(client::SyncCoroReindexer &connection, const Query &q, client::SyncCoroQueryResults &qrClient,
+							  std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> && = {}) noexcept;
+	Error executeQueryOnClient(client::Reindexer &connection, const Query &q, client::QueryResults &qrClient,
 							   const std::function<void(size_t count, size_t totalCount)> &limitOffsetCalc);
 
 	void calculateNewLimitOfsset(size_t count, size_t totalCount, unsigned &limit, unsigned &offset);

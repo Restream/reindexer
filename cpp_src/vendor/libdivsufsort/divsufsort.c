@@ -219,9 +219,10 @@ construct_SA(const sauchar_t *T, saidx_t *SA,
             if(0 <= c2) { BUCKET_B(c2, c1) = k - SA; }
             k = SA + BUCKET_B(c2 = c0, c1);
           }
-          assert(k < j);
-          *k-- = s;
+          assert(k && k < j);
+          *k-- = s; // NOLINT (*core.NullDereference)
         } else {
+          assert(j);
           assert(((s == 0) && (T[s] == c1)) || (s < 0));
           *j = ~s;
         }
@@ -283,9 +284,10 @@ construct_BWT(const sauchar_t *T, saidx_t *SA,
             if(0 <= c2) { BUCKET_B(c2, c1) = k - SA; }
             k = SA + BUCKET_B(c2 = c0, c1);
           }
-          assert(k < j);
-          *k-- = s;
+          assert(k && k < j);
+          *k-- = s; // NOLINT (*core.NullDereference)
         } else if(s != 0) {
+          assert(j);
           *j = ~s;
 #ifndef NDEBUG
         } else {

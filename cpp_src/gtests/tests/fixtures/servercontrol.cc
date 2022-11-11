@@ -5,6 +5,7 @@
 #include "systemhelpers.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
+#include "yaml-cpp/yaml.h"
 
 #ifndef REINDEXER_SERVER_PATH
 #define REINDEXER_SERVER_PATH ""
@@ -53,13 +54,13 @@ void ServerControl::Stop() { interface->Stop(); }
 
 ServerControl::ServerControl(ServerControl&& rhs) {
 	WLock lock(rhs.mtx_);
-	interface = move(rhs.interface);
+	interface = std::move(rhs.interface);
 	stopped_ = rhs.stopped_;
 	rhs.stopped_ = nullptr;
 }
 ServerControl& ServerControl::operator=(ServerControl&& rhs) {
 	WLock lock(rhs.mtx_);
-	interface = move(rhs.interface);
+	interface = std::move(rhs.interface);
 	stopped_ = rhs.stopped_;
 	rhs.stopped_ = nullptr;
 	return *this;
@@ -73,12 +74,12 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 			std::string replConfYaml;
 			int read = fs::ReadFile(config_.storagePath + "/" + config_.dbName + "/" + kAsyncReplicationConfigFilename, replConfYaml);
 			EXPECT_TRUE(read > 0) << "Repl config read error";
-			auto err = asyncReplConf.FromYML(replConfYaml);
+			auto err = asyncReplConf.FromYAML(replConfYaml);
 			EXPECT_TRUE(err.ok()) << err.what();
 			replConfYaml.clear();
 			read = fs::ReadFile(config_.storagePath + "/" + config_.dbName + "/" + kReplicationConfigFilename, replConfYaml);
 			EXPECT_TRUE(read > 0) << "Repl config read error";
-			err = replConf.FromYML(replConfYaml);
+			err = replConf.FromYAML(replConfYaml);
 			EXPECT_TRUE(err.ok()) << err.what();
 			break;
 		}
@@ -177,43 +178,43 @@ cluster::ReplicationStats ServerControl::Interface::GetReplicationStats(std::str
 	return stats;
 }
 
-std::string ServerControl::Interface::getLogName(const string& log, bool core) {
-	string name = getTestLogPath();
+std::string ServerControl::Interface::getLogName(const std::string& log, bool core) {
+	std::string name = getTestLogPath();
 	name += (log + "_");
 	if (!core) name += std::to_string(config_.id);
 	name += ".log";
 	return name;
 }
 
-ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConfig config, const std::string& ReplicationConfig,
-									const std::string& ClusterConfig, const std::string& ShardingConfig,
-									const std::string& AsyncReplicationConfig)
-	: api(client::CoroReindexerConfig(10000, 0,
-									  config.disableNetworkTimeout ? std::chrono::milliseconds(100000000) : std::chrono::milliseconds(0))),
+ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConfig config, const YAML::Node& ReplicationConfig,
+									const YAML::Node& ClusterConfig, const YAML::Node& ShardingConfig,
+									const YAML::Node& AsyncReplicationConfig)
+	: api(client::ReindexerConfig(10000, 0,
+								  config.disableNetworkTimeout ? std::chrono::milliseconds(100000000) : std::chrono::milliseconds(0))),
 	  kRPCDsn("cproto://127.0.0.1:" + std::to_string(config.rpcPort) + "/" + config.dbName),
 	  stopped_(stopped),
 	  config_(std::move(config)) {
 	std::string path = reindexer::fs::JoinPath(config_.storagePath, config_.dbName);
 	reindexer::fs::MkDirAll(path);
 	WriteConfigFile(reindexer::fs::JoinPath(path, kStorageTypeFilename), "leveldb");
-	if (!ReplicationConfig.empty()) {
-		WriteReplicationConfig(ReplicationConfig);
+	if (!ReplicationConfig.IsNull()) {
+		WriteReplicationConfig(YAML::Dump(ReplicationConfig));
 	}
-	if (!AsyncReplicationConfig.empty()) {
-		WriteAsyncReplicationConfig(AsyncReplicationConfig);
+	if (!AsyncReplicationConfig.IsNull()) {
+		WriteAsyncReplicationConfig(YAML::Dump(AsyncReplicationConfig));
 	}
-	if (!ClusterConfig.empty()) {
-		WriteClusterConfig(ClusterConfig);
+	if (!ClusterConfig.IsNull()) {
+		WriteClusterConfig(YAML::Dump(ClusterConfig));
 	}
-	if (!ShardingConfig.empty()) {
-		WriteShardingConfig(ShardingConfig);
+	if (!ShardingConfig.IsNull()) {
+		WriteShardingConfig(YAML::Dump(ShardingConfig));
 	}
 	Init();
 }
 
 ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConfig config)
-	: api(client::CoroReindexerConfig(10000, 0,
-									  config.disableNetworkTimeout ? std::chrono::milliseconds(100000000) : std::chrono::milliseconds(0))),
+	: api(client::ReindexerConfig(10000, 0,
+								  config.disableNetworkTimeout ? std::chrono::milliseconds(100000000) : std::chrono::milliseconds(0))),
 	  kRPCDsn("cproto://127.0.0.1:" + std::to_string(config.rpcPort) + "/" + config.dbName),
 	  stopped_(stopped),
 	  config_(std::move(config)) {
@@ -222,25 +223,19 @@ ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConf
 
 void ServerControl::Interface::Init() {
 	stopped_ = false;
-	// clang-format off
-    string yaml =
-        "storage:\n"
-		"    path: " + config_.storagePath + "\n"
-		"metrics:\n"
-		"   clientsstats: " + (config_.enableStats ? "true" : "false") + "\n"
-		"   replicationstats: true\n"
-        "logger:\n"
-        "   loglevel: trace\n"
-		"   rpclog: " + getLogName("rpc") + "\n"
-		"   serverlog: " + getLogName( "server") + "\n"
-		"   corelog: " + getLogName("core", true) + "\n"
-        "net:\n"
-		"   httpaddr: 0.0.0.0:" + std::to_string(config_.httpPort) + "\n"
-		"   rpcaddr: 0.0.0.0:" + std::to_string(config_.rpcPort) + "\n" +
-		"   enable_cluster: true\n" +
-		(config_.maxUpdatesSize ?
-		"   maxupdatessize:" + std::to_string(config_.maxUpdatesSize)+"\n" : "");
-	// clang-format on
+	YAML::Node y;
+	y["storage"]["path"] = config_.storagePath;
+	y["metrics"]["clientsstats"] = config_.enableStats;
+	y["logger"]["loglevel"] = "trace";
+	y["logger"]["rpclog"] = getLogName("rpc");
+	y["logger"]["serverlog"] = getLogName("server");
+	y["logger"]["corelog"] = getLogName("core", true);
+	y["net"]["httpaddr"] = "0.0.0.0:" + std::to_string(config_.httpPort);
+	y["net"]["rpcaddr"] = "0.0.0.0:" + std::to_string(config_.rpcPort);
+	y["net"]["enable_cluster"] = true;
+	if (config_.maxUpdatesSize) {
+		y["net"]["maxupdatessize"] = config_.maxUpdatesSize;
+	}
 	if (config_.asServerProcess) {
 		try {
 			std::vector<std::string> paramArray = getCLIParamArray(config_.enableStats, config_.maxUpdatesSize);
@@ -253,7 +248,7 @@ void ServerControl::Interface::Init() {
 			EXPECT_TRUE(false) << e.what();
 		}
 	} else {
-		auto err = srv.InitFromYAML(yaml);
+		auto err = srv.InitFromYAML(YAML::Dump(y));
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		tr = std::unique_ptr<std::thread>(new std::thread([this]() {
@@ -269,7 +264,7 @@ void ServerControl::Interface::Init() {
 	}
 
 	// init client
-	string dsn = "cproto://127.0.0.1:" + std::to_string(config_.rpcPort) + "/" + config_.dbName;
+	std::string dsn = "cproto://127.0.0.1:" + std::to_string(config_.rpcPort) + "/" + config_.dbName;
 	Error err;
 	err = api.reindexer->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -303,7 +298,7 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	cluster::AsyncReplConfigData asyncReplConf;
 	asyncReplConf.appName = config.appName_;
 	asyncReplConf.role = cluster::AsyncReplConfigData::Str2role(config.role_);
-	fast_hash_set<string, nocase_hash_str, nocase_equal_str> nss;
+	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
 	for (auto& ns : config.namespaces_) {
 		nss.emplace(ns);
 	}
@@ -317,7 +312,7 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	for (auto& node : config.nodes_) {
 		asyncReplConf.nodes.emplace_back(cluster::AsyncReplNodeConfig{node.dsn});
 		if (node.nsList.has_value()) {
-			fast_hash_set<string, nocase_hash_str, nocase_equal_str> nss;
+			fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
 			for (auto& ns : node.nsList.value()) {
 				nss.emplace(ns);
 			}
@@ -364,7 +359,7 @@ void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional
 	ASSERT_TRUE(found == curConf.nodes.end());
 	curConf.nodes.emplace_back(std::move(newNode));
 	if (nsList.has_value()) {
-		fast_hash_set<string, nocase_hash_str, nocase_equal_str> nss;
+		fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
 		for (auto&& ns : nsList.value()) {
 			nss.emplace(std::move(ns));
 		}
@@ -432,8 +427,8 @@ void ServerControl::InitServer(ServerControlConfig config) {
 	interface = std::make_shared<ServerControl::Interface>(*stopped_, std::move(config));
 }
 
-void ServerControl::InitServerWithConfig(ServerControlConfig config, const std::string& ReplicationConfig, const std::string& ClusterConfig,
-										 const std::string& ShardingConfig, const std::string& AsyncReplicationConfig) {
+void ServerControl::InitServerWithConfig(ServerControlConfig config, const YAML::Node& ReplicationConfig, const YAML::Node& ClusterConfig,
+										 const YAML::Node& ShardingConfig, const YAML::Node& AsyncReplicationConfig) {
 	WLock lock(mtx_);
 	interface = std::make_shared<ServerControl::Interface>(*stopped_, std::move(config), ReplicationConfig, ClusterConfig, ShardingConfig,
 														   AsyncReplicationConfig);
@@ -458,7 +453,7 @@ bool ServerControl::DropAndWaitStop() {
 	return true;
 }
 
-void ServerControl::WaitSync(ServerControl::Interface::Ptr s1, ServerControl::Interface::Ptr s2, const std::string& nsName) {
+void ServerControl::WaitSync(const ServerControl::Interface::Ptr& s1, const ServerControl::Interface::Ptr& s2, const std::string& nsName) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(50);
 	ReplicationStateApi state1, state2;

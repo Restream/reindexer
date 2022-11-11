@@ -5,35 +5,29 @@
 
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
-#include "client/reindexer.h"
 #include "core/cjson/cjsonbuilder.h"
 #include "core/cjson/cjsondecoder.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/payload/payloadiface.h"
 #include "reindexer_api.h"
 #include "tools/fsops.h"
+#include "yaml-cpp/yaml.h"
 
 class GrpcClientApi : public ReindexerApi {
 public:
 	void SetUp() {
-		// clang-format off
-        string yaml =
-            "storage:\n"
-            "storage:\n"
-            "   path: " + kStoragePath + "\n" +
-            "logger:\n"
-            "   loglevel: none\n"
-            "   rpclog: \n"
-            "   serverlog: \n"
-            "   corelog: \n"
-            "net:\n"
-            "   httpaddr: 0.0.0.0:5554\n"
-            "   rpcaddr: 0.0.0.0:4443\n"
-            "   grpc: true";
-		// clang-format on
+		YAML::Node y;
+		y["storage"]["path"] = kStoragePath;
+		y["logger"]["loglevel"] = "none";
+		y["logger"]["rpclog"] = "none";
+		y["logger"]["serverlog"] = "none";
+		y["logger"]["corelog"] = "none";
+		y["net"]["httpaddr"] = "0.0.0.0:5554";
+		y["net"]["rpcaddr"] = "0.0.0.0:4443";
+		y["net"]["grpc"] = true;
 
 		reindexer::fs::RmDirAll(kStoragePath);
-		auto err = srv_.InitFromYAML(yaml);
+		auto err = srv_.InitFromYAML(YAML::Dump(y));
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		serverThread_ = std::thread([this]() {
@@ -192,7 +186,7 @@ public:
 			modifyRequest.set_nsname(default_namespace);
 			modifyRequest.set_mode(reindexer::grpc::ModifyMode::INSERT);
 			modifyRequest.set_encodingtype(reindexer::grpc::EncodingType::CJSON);
-			modifyRequest.set_data(string(wrser.Slice()));
+			modifyRequest.set_data(std::string(wrser.Slice()));
 			ASSERT_TRUE(stream->Write(modifyRequest));
 
 			reindexer::grpc::ErrorResponse errResponse;
@@ -206,7 +200,7 @@ public:
 			cjsonBuilder2.End();
 
 			modifyRequest.set_nsname(default_namespace + "2");
-			modifyRequest.set_data(string(wrser.Slice()));
+			modifyRequest.set_data(std::string(wrser.Slice()));
 			ASSERT_TRUE(stream->Write(modifyRequest));
 
 			reindexer::grpc::ErrorResponse errResponse2;
@@ -215,14 +209,14 @@ public:
 		}
 	}
 
-	using NsType = pair<reindexer::TagsMatcher, reindexer::PayloadTypeImpl>;
+	using NsType = std::pair<reindexer::TagsMatcher, reindexer::PayloadTypeImpl>;
 
-	void checkPayloadTypes(reindexer::Serializer& rser, vector<NsType>& types, bool print = false) {
+	void checkPayloadTypes(reindexer::Serializer& rser, std::vector<NsType>& types, bool print = false) {
 		int ptCount = rser.GetVarUint();
 		for (int i = 0; i < ptCount; i++) {
 			uint64_t nsid = rser.GetVarUint();
 			ASSERT_TRUE(nsid == 0 || nsid == 1) << nsid;
-			string nsName = string(rser.GetVString());
+			std::string nsName = std::string(rser.GetVString());
 			if (print) {
 				std::cout << "ns: " << nsName << " [" << nsid << "]" << std::endl;
 			}
@@ -275,7 +269,7 @@ public:
 		ASSERT_TRUE(rdser.Eof());
 	}
 
-	void checkItem(reindexer::Serializer& rser, reindexer::grpc::OutputFlags* flags, const vector<NsType>& nsTypes, bool joined = false,
+	void checkItem(reindexer::Serializer& rser, reindexer::grpc::OutputFlags* flags, const std::vector<NsType>& nsTypes, bool joined = false,
 				   bool print = false) {
 		uint64_t nsId = 0;
 		if (flags->withnsid()) {
@@ -317,7 +311,7 @@ public:
 		lastLsn_ = 0;
 		lastRowId_ = INT_MAX;
 
-		vector<NsType> nsTypes;
+		std::vector<NsType> nsTypes;
 		checkPayloadTypes(rser, nsTypes, print);
 		while (rser.Pos() < rser.Len()) {
 			checkItem(rser, flags, nsTypes, false, print);
@@ -347,10 +341,10 @@ private:
 	std::thread serverThread_;
 
 protected:
-	const string kDbName = "grpcdb";
-	const string kIdField = "id";
-	const string kAgeField = "age";
-	const string kPriceField = "price";
+	const std::string kDbName = "grpcdb";
+	const std::string kIdField = "id";
+	const std::string kAgeField = "age";
+	const std::string kPriceField = "price";
 	std::unique_ptr<reindexer::grpc::Reindexer::Stub> rx_;
 	uint64_t lastLsn_ = 0, lastRowId_ = INT_MAX;
 

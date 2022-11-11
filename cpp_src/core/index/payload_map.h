@@ -173,13 +173,13 @@ public:
 
 	std::pair<iterator, bool> insert(const std::pair<PayloadValue, T1> &v) {
 		PayloadValueWithHash key(v.first, payloadType_, fields_);
-		const auto res = base_hash_map::insert(std::make_pair(std::move(key), v.second));
+		auto res = base_hash_map::insert(std::make_pair(std::move(key), v.second));
 		if (res.second) add_ref(res.first->first);
 		return res;
 	}
 	std::pair<iterator, bool> insert(std::pair<PayloadValue, T1> &&v) {
 		PayloadValueWithHash key(std::move(v.first), payloadType_, fields_);
-		const auto res = base_hash_map::insert(std::make_pair(std::move(key), std::move(v.second)));
+		auto res = base_hash_map::insert(std::make_pair(std::move(key), std::move(v.second)));
 		if (res.second) this->add_ref(res.first->first);
 		return res;
 	}
@@ -244,7 +244,7 @@ public:
 	}
 
 	std::pair<iterator, bool> insert(const value_type &v) {
-		const auto res = base_tree_map::insert(v);
+		auto res = base_tree_map::insert(v);
 		if (res.second) this->add_ref(const_cast<PayloadValue &>(res.first->first));
 		return res;
 	}

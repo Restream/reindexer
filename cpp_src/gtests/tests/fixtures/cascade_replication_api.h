@@ -13,10 +13,10 @@ public:
 
 	class TestNamespace1 {
 	public:
-		TestNamespace1(ServerPtr srv, const std::string nsName = std::string("ns1"));
+		TestNamespace1(const ServerPtr& srv, std::string nsName = std::string("ns1"));
 
-		void AddRows(ServerPtr srv, int from, unsigned int count, size_t dataLen = 0);
-		void GetData(ServerPtr node, std::vector<int>& ids);
+		void AddRows(const ServerPtr& srv, int from, unsigned int count, size_t dataLen = 0);
+		void GetData(const ServerPtr& node, std::vector<int>& ids);
 
 		const std::string nsName_;
 	};
@@ -39,8 +39,8 @@ public:
 		std::vector<ServerControl> nodes_;
 	};
 
-	void WaitSync(ServerPtr s1, ServerPtr s2, const std::string& nsName) { ServerControl::WaitSync(std::move(s1), std::move(s2), nsName); }
-	void ValidateNsList(ServerPtr s, const std::vector<std::string>& expected);
+	void WaitSync(const ServerPtr& s1, const ServerPtr& s2, const std::string& nsName) { ServerControl::WaitSync(s1, s2, nsName); }
+	void ValidateNsList(const ServerPtr& s, const std::vector<std::string>& expected);
 
 	class FollowerConfig {
 	public:

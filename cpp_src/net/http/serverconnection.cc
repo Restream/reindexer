@@ -45,7 +45,15 @@ void ServerConnection::Detach() {
 
 void ServerConnection::onClose() {}
 
-void ServerConnection::setJsonStatus(Context &ctx, bool success, int responseCode, const string &status) {
+void ServerConnection::handleException(Context &ctx, const Error &status) {
+	auto writer = dynamic_cast<ResponseWriter *>(ctx.writer);
+	if (writer && !writer->IsRespSent()) {
+		HttpStatus httpStatus(status);
+		setJsonStatus(ctx, false, httpStatus.code, httpStatus.what);
+	}
+}
+
+void ServerConnection::setJsonStatus(Context &ctx, bool success, int responseCode, const std::string &status) {
 	WrSerializer ser;
 	JsonBuilder builder(ser);
 	builder.Put("success", success);
@@ -71,10 +79,11 @@ void ServerConnection::handleRequest(Request &req) {
 			setJsonStatus(ctx, false, status.code, status.what);
 		}
 	} catch (const Error &status) {
-		if (!writer.IsRespSent()) {
-			HttpStatus httpStatus(status);
-			setJsonStatus(ctx, false, httpStatus.code, httpStatus.what);
-		}
+		handleException(ctx, status);
+	} catch (const std::exception &e) {
+		handleException(ctx, Error(errLogic, e.what()));
+	} catch (...) {
+		handleException(ctx, Error(errLogic, "Unknown exception"));
 	}
 	router_.log(ctx);
 
@@ -144,7 +153,7 @@ void ServerConnection::writeHttpResponse(int code) {
 	wrBuf_.write(ser.DetachChunk());
 }
 
-void ServerConnection::onRead() {
+ServerConnection::ReadResT ServerConnection::onRead() {
 	size_t method_len = 0, path_len = 0, num_headers = kHttpMaxHeaders;
 	const char *method, *uri;
 	int minor_version = 0;
@@ -175,13 +184,13 @@ void ServerConnection::onRead() {
 							rdBuf_.reserve(newCapacity);
 						} else {
 							badRequest(StatusRequestEntityTooLarge, "");
-							return;
+							return ReadResT::Default;
 						}
 					}
-					return;
+					return ReadResT::Default;
 				} else if (res < 0) {
 					badRequest(StatusBadRequest, "");
-					return;
+					return ReadResT::Default;
 				}
 
 				enableHttp11_ = (minor_version >= 1);
@@ -209,7 +218,7 @@ void ServerConnection::onRead() {
 						bodyLeft_ = -1;
 						memset(&chunked_decoder_, 0, sizeof(chunked_decoder_));
 						badRequest(http::StatusInternalServerError, "Sorry, chunked encoded body not implemented");
-						return;
+						return ReadResT::Default;
 					} else if (iequals(hdr.name, "content-type"sv) && iequals(hdr.val, "application/x-www-form-urlencoded"sv)) {
 						formData_ = true;
 					} else if (iequals(hdr.name, "connection"sv) && iequals(hdr.val, "close"sv)) {
@@ -229,7 +238,7 @@ void ServerConnection::onRead() {
 						continue;
 					} else {
 						badRequest(StatusRequestEntityTooLarge, "");
-						return;
+						return ReadResT::Default;
 					}
 				} else {
 					rdBuf_.erase(res);
@@ -240,7 +249,7 @@ void ServerConnection::onRead() {
 						wrBuf_.write(kStrEOL);
 					} else {
 						badRequest(StatusRequestEntityTooLarge, "");
-						return;
+						return ReadResT::Default;
 					}
 				}
 				if (!bodyLeft_) {
@@ -272,6 +281,7 @@ void ServerConnection::onRead() {
 		fprintf(stderr, "Dropping HTTP-connection. Reason: %s\n", e.what().c_str());
 		closeConn_ = true;
 	}
+	return ReadResT::Default;
 }
 
 bool ServerConnection::ResponseWriter::SetHeader(const Header &hdr) {

@@ -8,17 +8,19 @@
 
 namespace reindexer {
 
-class TagsMatcher;
 class ClusterProxy;
 class ProxiedTransaction;
 
 namespace client {
 
-using std::vector;
-
 class ItemImplBase;
+class RPCClient;
 class CoroReindexer;
+class Namespace;
 class Transaction;
+class CoroTransaction;
+class CoroQueryResults;
+class ReindexerImpl;
 
 /// Item is the interface for data manipulating. It holds and control one database document (record)<br>
 /// *Lifetime*: Item is uses Copy-On-Write semantics, and have independent lifetime and state - e.g., aquired from Reindexer Item will not
@@ -83,7 +85,7 @@ public:
 	int NumFields();
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
-	void SetPrecepts(vector<std::string> precepts);
+	void SetPrecepts(std::vector<std::string> precepts);
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
 	bool IsTagsUpdated() const noexcept;
@@ -101,7 +103,7 @@ public:
 
 private:
 	explicit Item(ItemImplBase *impl);
-	explicit Item(const Error &err);
+	explicit Item(Error err);
 	void setID(int id) noexcept { id_ = id; }
 	void setLSN(lsn_t lsn) noexcept { lsn_ = lsn; }
 	void setShardID(int shardId) noexcept { shardId_ = shardId; }
@@ -111,20 +113,15 @@ private:
 	int id_ = -1;
 	lsn_t lsn_;
 	int shardId_ = ShardingKeyType::ProxyOff;
-	friend class Namespace;
-	friend class QueryResults;
-	friend class RPCClient;
-	friend class CoroRPCClient;
-	friend class CoroReindexer;
-	friend class RPCClientMock;
-	friend class reindexer::client::Transaction;
+	friend class client::RPCClient;
+	friend class client::CoroReindexer;
+	friend class client::Namespace;
+	friend class client::Transaction;
 	friend class reindexer::ClusterProxy;
-	friend class CoroTransaction;
-	friend class CoroQueryResults;
-	friend class SyncCoroReindexerImpl;
-	friend class SyncCoroQueryResults;
-	friend class SyncCoroTransaction;
+	friend class client::CoroTransaction;
+	friend class client::CoroQueryResults;
 	friend class reindexer::ProxiedTransaction;
+	friend class client::ReindexerImpl;
 };
 }  // namespace client
 }  // namespace reindexer

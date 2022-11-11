@@ -21,7 +21,7 @@ void JoinedSelector::selectFromRightNs(LocalQueryResults &joinItemR, const Query
 	if (joinResLong.haveData) {
 		found = joinResLong.it.val.ids_->size();
 		matchedAtLeastOnce = joinResLong.it.val.matchedAtLeastOnce;
-		rightNs_->FillResult(joinItemR, joinResLong.it.val.ids_);
+		rightNs_->FillResult(joinItemR, *joinResLong.it.val.ids_);
 	} else {
 		SelectCtx ctx(query, nullptr);
 		ctx.preResult = preResult_;
@@ -123,41 +123,59 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, bool 
 }
 
 template <bool byJsonPath>
-void JoinedSelector::readValuesFromRightNs(VariantArray &values, const Index &leftIndex, [[maybe_unused]] int rightIdxNo,
-										   const std::string &rightIndex) const {
-	const KeyValueType leftIndexType = leftIndex.SelectKeyType();
+void JoinedSelector::readValuesFromRightNs(VariantArray &values, const KeyValueType leftIndexType, [[maybe_unused]] int rightIdxNo,
+										   [[maybe_unused]] std::string_view rightIndex) const {
+	std::unordered_set<Variant> set;
+	VariantArray buffer;
 	for (IdType rowId : preResult_->ids) {
 		if (rightNs_->items_[rowId].IsFree()) continue;
+		buffer.clear<false>();
 		const ConstPayload pl{rightNs_->payloadType_, rightNs_->items_[rowId]};
-		VariantArray buffer;
 		if constexpr (byJsonPath) {
 			pl.GetByJsonPath(rightIndex, rightNs_->tagsMatcher_, buffer, leftIndexType);
 		} else {
 			pl.Get(rightIdxNo, buffer);
 		}
-		for (Variant &v : buffer) values.push_back(v.convert(leftIndexType));
+		if (leftIndexType != KeyValueUndefined && leftIndexType != KeyValueComposite) {
+			for (Variant &v : buffer) set.insert(std::move(v.convert(leftIndexType)));
+		} else {
+			for (Variant &v : buffer) set.insert(std::move(v));
+		}
 	}
+	values.reserve(set.size());
+	std::move(set.begin(), set.end(), std::back_inserter(values));
 }
 
 template <bool byJsonPath>
-void JoinedSelector::readValuesFromPreResult(VariantArray &values, const Index &leftIndex, [[maybe_unused]] int rightIdxNo,
-											 const std::string &rightIndex) const {
-	const KeyValueType leftIndexType = leftIndex.SelectKeyType();
+void JoinedSelector::readValuesFromPreResult(VariantArray &values, const KeyValueType leftIndexType, int rightIdxNo, std::string_view rightIndex) const {
+	std::unordered_set<Variant> set;
+	VariantArray buffer;
 	for (const ItemRef &item : preResult_->values) {
+		buffer.clear<false>();
 		assertrx(!item.Value().IsFree());
 		const ConstPayload pl{preResult_->values.payloadType, item.Value()};
-		VariantArray buffer;
 		if constexpr (byJsonPath) {
 			pl.GetByJsonPath(rightIndex, preResult_->values.tagsMatcher, buffer, leftIndexType);
+			(void) rightIdxNo;
 		} else {
 			pl.Get(rightIdxNo, buffer);
+			(void) rightIndex;
 		}
-		for (Variant &v : buffer) values.push_back(v.convert(leftIndexType));
+		if (leftIndexType != KeyValueUndefined && leftIndexType != KeyValueComposite) {
+			for (Variant &v : buffer) set.insert(std::move(v.convert(leftIndexType)));
+		} else {
+			for (Variant &v : buffer) set.insert(std::move(v));
+		}
 	}
+	values.reserve(set.size());
+	std::move(set.begin(), set.end(), std::back_inserter(values));
 }
 
+template void JoinedSelector::readValuesFromPreResult<true>(VariantArray &, KeyValueType, int, std::string_view) const;
+template void JoinedSelector::readValuesFromPreResult<false>(VariantArray &, KeyValueType, int, std::string_view) const;
+
 void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &iterators, int *maxIterations, unsigned sortId,
-														 SelectFunction::Ptr selectFnc, const RdxContext &rdxCtx) {
+														 const SelectFunction::Ptr &selectFnc, const RdxContext &rdxCtx) {
 	if (joinType_ != JoinType::InnerJoin || preResult_->executionMode != JoinPreResult::ModeExecute ||
 		preResult_->dataMode == JoinPreResult::ModeIterators ||
 		(preResult_->dataMode == JoinPreResult::ModeIdSet ? preResult_->ids.size() : preResult_->values.size()) >
@@ -179,23 +197,21 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 
 		VariantArray values;
 		if (preResult_->dataMode == JoinPreResult::ModeIdSet) {
-			values.reserve(preResult_->ids.size());
 			int rightIdxNo = IndexValueType::NotSet;
 			if (rightNs_->getIndexByName(joinEntry.joinIndex_, rightIdxNo) && !rightNs_->indexes_[rightIdxNo]->Opts().IsSparse()) {
-				readValuesFromRightNs<false>(values, *leftIndex, rightIdxNo, joinEntry.joinIndex_);
+				readValuesFromRightNs<false>(values, leftIndex->SelectKeyType(), rightIdxNo, joinEntry.joinIndex_);
 			} else {
-				readValuesFromRightNs<true>(values, *leftIndex, rightIdxNo, joinEntry.joinIndex_);
+				readValuesFromRightNs<true>(values, leftIndex->SelectKeyType(), rightIdxNo, joinEntry.joinIndex_);
 			}
 		} else {
-			values.reserve(preResult_->values.size());
 			assertrx(itemQuery_.entries.HoldsOrReferTo<QueryEntry>(i));
 			const QueryEntry &qe = itemQuery_.entries.Get<QueryEntry>(i);
 			assertrx(qe.index == joinEntry.joinIndex_);
 			const int rightIdxNo = qe.idxNo;
 			if (rightIdxNo == IndexValueType::SetByJsonPath) {
-				readValuesFromPreResult<true>(values, *leftIndex, rightIdxNo, joinEntry.joinIndex_);
+				readValuesFromPreResult<true>(values, leftIndex->SelectKeyType(), rightIdxNo, joinEntry.joinIndex_);
 			} else {
-				readValuesFromPreResult<false>(values, *leftIndex, rightIdxNo, joinEntry.joinIndex_);
+				readValuesFromPreResult<false>(values, leftIndex->SelectKeyType(), rightIdxNo, joinEntry.joinIndex_);
 			}
 		}
 		auto ctx = selectFnc ? selectFnc->CreateCtx(joinEntry.idxNo) : BaseFunctionCtx::Ptr{};
@@ -204,12 +220,12 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		if (leftIndex->Opts().GetCollateMode() == CollateUTF8) {
 			for (auto &key : values) key.EnsureUTF8();
 		}
-		bool was = false;
 		Index::SelectOpts opts;
 		opts.maxIterations = iterators.GetMaxIterations();
 		opts.indexesNotOptimized = !leftNs_->SortOrdersBuilt();
 		opts.inTransaction = inTransaction_;
 
+		bool was = false;
 		for (SelectKeyResult &res : leftIndex->SelectKey(values, CondSet, sortId, opts, ctx, rdxCtx)) {
 			if (!res.comparators_.empty()) continue;
 			SelectIterator selIter{res, false, joinEntry.index_, false};
@@ -219,7 +235,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 			iterators.Append(OpAnd, std::move(selIter));
 			was = true;
 		}
-		if (was) optimized++;
+		if (was) ++optimized;
 	}
 	optimized_ = optimized == joinQuery_.joinEntries_.size();
 }

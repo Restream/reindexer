@@ -43,7 +43,7 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id, bool &clearCache)
 
 template <typename T>
 SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType condition, SortType sortId, Index::SelectOpts opts,
-											BaseFunctionCtx::Ptr ctx, const RdxContext &rdxCtx) {
+											const BaseFunctionCtx::Ptr &ctx, const RdxContext &rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
 	if (opts.forceComparator) return IndexStore<StoreIndexKeyType<T>>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 
@@ -79,7 +79,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			break;
 		case CondRange: {
 			if (keys.size() != 2) throw Error(errParams, "For ranged query reuqired 2 arguments, but provided %d", keys.size());
-			auto key2 = keys[1];
+			const auto &key2 = keys[1];
 
 			startIt = this->idx_map.find(static_cast<ref_type>(key1));
 			if (startIt == this->idx_map.end()) startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
@@ -130,9 +130,9 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 				typename T::iterator startIt, endIt;
 			} ctx = {&this->idx_map, sortId, startIt, endIt};
 
-			auto selector = [&ctx](SelectKeyResult &res, size_t &idsCount) -> bool {
+			auto selector = [&ctx](SelectKeyResult &res, size_t &idsCount) {
 				idsCount = 0;
-				for (auto it = ctx.startIt; it != ctx.endIt && it != ctx.i_map->end(); it++) {
+				for (auto it = ctx.startIt; it != ctx.endIt && it != ctx.i_map->end(); ++it) {
 					idsCount += it->second.Unsorted().Size();
 					res.emplace_back(it->second, ctx.sortId);
 				}
@@ -171,7 +171,7 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
 				logPrintf(
 					LogError,
 					"Internal error: Index '%s' is broken. Item with key '%s' contains id=%d, which is not present in allIds,totalids=%d\n",
-					this->name_, Variant(keyIt.first).As<string>(), id, totalIds);
+					this->name_, Variant(keyIt.first).As<std::string>(), id, totalIds);
 				assertrx(0);
 			}
 			if (ids2Sorts[id] == SortIdUnfilled) {
@@ -220,9 +220,11 @@ static std::unique_ptr<Index> IndexOrdered_New(const IndexDef &idef, PayloadType
 	}
 }
 
+// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 std::unique_ptr<Index> IndexOrdered_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
 	return (idef.opts_.IsPK() || idef.opts_.IsDense()) ? IndexOrdered_New<Index::KeyEntryPlain>(idef, std::move(payloadType), fields)
 													   : IndexOrdered_New<Index::KeyEntry>(idef, std::move(payloadType), fields);
 }
+// NOLINTEND(*cplusplus.NewDeleteLeaks)
 
 }  // namespace reindexer

@@ -2,7 +2,7 @@
 
 #include <climits>
 #include <set>
-#include "client/synccoroqueryresults.h"
+#include "client/queryresults.h"
 #include "core/itemimplrawdata.h"
 #include "localqueryresults.h"
 
@@ -102,7 +102,7 @@ public:
 	QueryResults &operator=(const QueryResults &qr) = delete;
 
 	void AddQr(LocalQueryResults &&local, int shardID = ShardingKeyType::ProxyOff, bool rebuildMergedData = false);
-	void AddQr(client::SyncCoroQueryResults &&remote, int shardID = ShardingKeyType::ProxyOff, bool rebuildMergedData = false);
+	void AddQr(client::QueryResults &&remote, int shardID = ShardingKeyType::ProxyOff, bool rebuildMergedData = false);
 	void RebuildMergedData();
 	size_t Count() const {
 		const auto cnt = count();
@@ -237,14 +237,14 @@ public:
 		int GetNsID() const {
 			struct {
 				int operator()(LocalQueryResults::Iterator &&it) const noexcept { return it.GetItemRef().Nsid(); }
-				int operator()(client::SyncCoroQueryResults::Iterator &&it) const { return it.GetNSID(); }
+				int operator()(client::QueryResults::Iterator &&it) const { return it.GetNSID(); }
 			} constexpr static nsIdGetter;
 			return std::visit(nsIdGetter, getVariantIt());
 		}
 		lsn_t GetLSN() const {
 			struct {
 				lsn_t operator()(LocalQueryResults::Iterator &&it) const noexcept { return it.GetLSN(); }
-				lsn_t operator()(client::SyncCoroQueryResults::Iterator &&it) const { return it.GetLSN(); }
+				lsn_t operator()(client::QueryResults::Iterator &&it) const { return it.GetLSN(); }
 			} constexpr static lsnGetter;
 			return std::visit(lsnGetter, getVariantIt());
 		}
@@ -265,14 +265,14 @@ public:
 		bool IsRaw() const {
 			struct {
 				bool operator()(LocalQueryResults::Iterator &&it) const noexcept { return it.IsRaw(); }
-				bool operator()(client::SyncCoroQueryResults::Iterator &&it) const { return it.IsRaw(); }
+				bool operator()(client::QueryResults::Iterator &&it) const { return it.IsRaw(); }
 			} constexpr static rawTester;
 			return std::visit(rawTester, getVariantIt());
 		}
 		std::string_view GetRaw() const {
 			struct {
 				std::string_view operator()(LocalQueryResults::Iterator &&it) const noexcept { return it.GetRaw(); }
-				std::string_view operator()(client::SyncCoroQueryResults::Iterator &&it) const { return it.GetRaw(); }
+				std::string_view operator()(client::QueryResults::Iterator &&it) const { return it.GetRaw(); }
 			} constexpr static rawGetter;
 			return std::visit(rawGetter, getVariantIt());
 		}
@@ -333,7 +333,7 @@ public:
 		int64_t idx_;
 
 	private:
-		std::variant<QrMetaData<LocalQueryResults> *, QrMetaData<client::SyncCoroQueryResults> *> getVariantResult() const {
+		std::variant<QrMetaData<LocalQueryResults> *, QrMetaData<client::QueryResults> *> getVariantResult() const {
 			switch (qr_->type_) {
 				case Type::None:
 					throw Error(errLogic, "QueryResults are empty");
@@ -353,7 +353,7 @@ public:
 			throw Error(errNotValid, "Iterator is not valid");
 		}
 
-		std::variant<LocalQueryResults::Iterator, client::SyncCoroQueryResults::Iterator> getVariantIt() const {
+		std::variant<LocalQueryResults::Iterator, client::QueryResults::Iterator> getVariantIt() const {
 			switch (qr_->type_) {
 				case Type::None:
 					throw Error(errLogic, "QueryResults are empty");
@@ -426,7 +426,7 @@ private:
 	int64_t shardingConfigVersion_ = -1;
 	std::unique_ptr<MergedData> mergedData_;  // Merged data of distributed query results
 	std::unique_ptr<QrMetaData<LocalQueryResults>> local_;
-	std::deque<QrMetaData<client::SyncCoroQueryResults>> remote_;
+	std::deque<QrMetaData<client::QueryResults>> remote_;
 	int64_t lastSeenIdx_ = 0;
 	int curQrId_ = -1;
 	Type type_ = Type::None;

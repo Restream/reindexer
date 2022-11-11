@@ -21,16 +21,14 @@ struct TxStats;
 
 namespace reindexer_server {
 
-using std::string;
-using std::pair;
 using namespace reindexer::net;
 using namespace reindexer;
 
 struct RPCClientData : public cproto::ClientData {
-	~RPCClientData() = default;
-	h_vector<RPCQrId, 1> results;
-	h_vector<pair<Snapshot, bool>, 1> snapshots;
-	vector<Transaction> txs;
+	~RPCClientData();
+	h_vector<RPCQrId, 8> results;
+	h_vector<std::pair<Snapshot, bool>, 1> snapshots;
+	std::vector<Transaction> txs;
 	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> tmpNss;
 	std::shared_ptr<TxStats> txStats;
 
@@ -46,7 +44,7 @@ public:
 			  IStatsWatcher *statsCollector = nullptr);
 	~RPCServer();
 
-	bool Start(const string &addr, ev::dynamic_loop &loop);
+	bool Start(const std::string &addr, ev::dynamic_loop &loop);
 	void Stop() {
 		terminate_ = true;
 		if (qrWatcherThread_.joinable()) {
@@ -58,21 +56,21 @@ public:
 	}
 
 	Error Ping(cproto::Context &ctx);
-	Error Login(cproto::Context &ctx, p_string login, p_string password, p_string db, cproto::optional<bool> createDBIfMissing,
-				cproto::optional<bool> checkClusterID, cproto::optional<int> expectedClusterID, cproto::optional<p_string> clientRxVersion,
-				cproto::optional<p_string> appName, cproto::optional<int64_t> bindingCaps);
-	Error OpenDatabase(cproto::Context &ctx, p_string db, cproto::optional<bool> createDBIfMissing);
+	Error Login(cproto::Context &ctx, p_string login, p_string password, p_string db, std::optional<bool> createDBIfMissing,
+				std::optional<bool> checkClusterID, std::optional<int> expectedClusterID, std::optional<p_string> clientRxVersion,
+				std::optional<p_string> appName, std::optional<int64_t> bindingCaps);
+	Error OpenDatabase(cproto::Context &ctx, p_string db, std::optional<bool> createDBIfMissing);
 	Error CloseDatabase(cproto::Context &ctx);
 	Error DropDatabase(cproto::Context &ctx);
 
-	Error OpenNamespace(cproto::Context &ctx, p_string ns, cproto::optional<p_string> version);
+	Error OpenNamespace(cproto::Context &ctx, p_string ns, std::optional<p_string> version);
 	Error DropNamespace(cproto::Context &ctx, p_string ns);
 	Error TruncateNamespace(cproto::Context &ctx, p_string ns);
 	Error RenameNamespace(cproto::Context &ctx, p_string srcNsName, p_string dstNsName);
 	Error CreateTemporaryNamespace(cproto::Context &ctx, p_string ns, int64_t v);
 
 	Error CloseNamespace(cproto::Context &ctx, p_string ns);
-	Error EnumNamespaces(cproto::Context &ctx, cproto::optional<int> opts, cproto::optional<p_string> filter);
+	Error EnumNamespaces(cproto::Context &ctx, std::optional<int> opts, std::optional<p_string> filter);
 	Error EnumDatabases(cproto::Context &ctx);
 
 	Error AddIndex(cproto::Context &ctx, p_string ns, p_string indexDef);
@@ -95,16 +93,16 @@ public:
 	Error PutMetaTx(cproto::Context &ctx, p_string key, p_string data, int64_t txID);
 	Error SetTagsMatcherTx(cproto::Context &ctx, int64_t statetoken, int64_t version, p_string data, int64_t txID);
 
-	Error CommitTx(cproto::Context &ctx, int64_t txId, cproto::optional<int> flags);
+	Error CommitTx(cproto::Context &ctx, int64_t txId, std::optional<int> flags);
 	Error RollbackTx(cproto::Context &ctx, int64_t txId);
 
-	Error DeleteQuery(cproto::Context &ctx, p_string query, cproto::optional<int> flags);
-	Error UpdateQuery(cproto::Context &ctx, p_string query, cproto::optional<int> flags);
+	Error DeleteQuery(cproto::Context &ctx, p_string query, std::optional<int> flags);
+	Error UpdateQuery(cproto::Context &ctx, p_string query, std::optional<int> flags);
 
 	Error Select(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
 	Error SelectSQL(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
-	Error FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit, cproto::optional<int64_t> qrUID);
-	Error CloseResults(cproto::Context &ctx, int reqId, cproto::optional<int64_t> qrUID);
+	Error FetchResults(cproto::Context &ctx, int reqId, int flags, int offset, int limit, std::optional<int64_t> qrUID);
+	Error CloseResults(cproto::Context &ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply);
 	Error GetSQLSuggestions(cproto::Context &ctx, p_string query, int pos);
 	Error GetReplState(cproto::Context &ctx, p_string ns);
 	Error SetClusterizationStatus(cproto::Context &ctx, p_string ns, p_string serStatus);
@@ -112,10 +110,10 @@ public:
 	Error FetchSnapshot(cproto::Context &ctx, int id, int64_t offset);
 	Error ApplySnapshotChunk(cproto::Context &ctx, p_string ns, p_string rec);
 
-	Error GetMeta(cproto::Context &ctx, p_string ns, p_string key, cproto::optional<int> options);
+	Error GetMeta(cproto::Context &ctx, p_string ns, p_string key, std::optional<int> options);
 	Error PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_string data);
 	Error EnumMeta(cproto::Context &ctx, p_string ns);
-	Error SubscribeUpdates(cproto::Context &ctx, int subscribe, cproto::optional<p_string> filterJson, cproto::optional<int> options);
+	Error SubscribeUpdates(cproto::Context &ctx, int subscribe, std::optional<p_string> filterJson, std::optional<int> options);
 
 	Error SuggestLeader(cproto::Context &ctx, p_string suggestion);
 	Error LeadersPing(cproto::Context &ctx, p_string leader);

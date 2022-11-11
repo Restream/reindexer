@@ -1,7 +1,7 @@
 #pragma once
 
 #include <memory>
-#include "client/synccororeindexer.h"
+#include "client/reindexer.h"
 #include "cluster/config.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
@@ -19,7 +19,7 @@ struct ReplicationStats;
 
 namespace sharding {
 
-using ShardConnectionsContainer = h_vector<std::shared_ptr<client::SyncCoroReindexer>, kHvectorConnStack>;
+using ShardConnectionsContainer = h_vector<std::shared_ptr<client::Reindexer>, kHvectorConnStack>;
 
 class RoutingStrategy {
 public:
@@ -40,9 +40,9 @@ private:
 	ShardingKeys keys_;
 };
 
-class Connections : public vector<std::shared_ptr<client::SyncCoroReindexer>> {
+class Connections : public std::vector<std::shared_ptr<client::Reindexer>> {
 public:
-	using base = vector<std::shared_ptr<client::SyncCoroReindexer>>;
+	using base = std::vector<std::shared_ptr<client::Reindexer>>;
 	Connections() : base() {}
 	Connections(Connections &&obj) noexcept
 		: base(static_cast<base &&>(obj)),
@@ -67,11 +67,11 @@ public:
 	bool shutdown = false;
 };
 
-struct ShardConnection : std::shared_ptr<client::SyncCoroReindexer> {
-	using base = std::shared_ptr<client::SyncCoroReindexer>;
+struct ShardConnection : std::shared_ptr<client::Reindexer> {
+	using base = std::shared_ptr<client::Reindexer>;
 	ShardConnection() = default;
 	ShardConnection(base &&c, int id) : base(static_cast<base &&>(c)), shardID(id) {}
-	client::SyncCoroReindexer *operator->() const noexcept { return get(); }
+	client::Reindexer *operator->() const noexcept { return get(); }
 	bool IsOnThisShard() const noexcept { return get() == nullptr; }
 	bool IsConnected() const noexcept { return get() != nullptr && static_cast<const base &>(*this)->Status().ok(); }
 	int ShardId() const noexcept { return shardID; }
@@ -86,14 +86,14 @@ using ConnectionsPtr = std::shared_ptr<ConnectionsVector>;
 class IConnectStrategy {
 public:
 	virtual ~IConnectStrategy() = default;
-	virtual std::shared_ptr<client::SyncCoroReindexer> Connect(int shardID, Error &status) = 0;
+	virtual std::shared_ptr<client::Reindexer> Connect(int shardID, Error &status) = 0;
 };
 
 class ConnectStrategy : public IConnectStrategy {
 public:
 	ConnectStrategy(const cluster::ShardingConfig &config_, Connections &connections, int thisShard) noexcept;
 	~ConnectStrategy() override = default;
-	std::shared_ptr<client::SyncCoroReindexer> Connect(int shardID, Error &reconnectStatus) override final;
+	std::shared_ptr<client::Reindexer> Connect(int shardID, Error &reconnectStatus) override final;
 
 private:
 	struct SharedStatusData {
@@ -106,9 +106,9 @@ private:
 		std::condition_variable cv;
 	};
 
-	std::shared_ptr<client::SyncCoroReindexer> doReconnect(int shardID, Error &reconnectStatus);
-	std::shared_ptr<client::SyncCoroReindexer> tryConnectToLeader(const std::vector<std::string> &dsns,
-																  const cluster::ReplicationStats &stats, Error &reconnectStatus);
+	std::shared_ptr<client::Reindexer> doReconnect(int shardID, Error &reconnectStatus);
+	std::shared_ptr<client::Reindexer> tryConnectToLeader(const std::vector<std::string> &dsns, const cluster::ReplicationStats &stats,
+														  Error &reconnectStatus);
 	const cluster::ShardingConfig &config_;
 	Connections &connections_;
 	int thisShard_;
@@ -128,7 +128,7 @@ public:
 	bool IsSharded(std::string_view ns) const noexcept { return routingStrategy_.IsSharded(ns); }
 	int GetShardId(std::string_view ns, const Item &item) const { return routingStrategy_.GetHostId(ns, item); }
 	ShardIDsContainer GetShardId(const Query &q) const { return routingStrategy_.GetHostsIds(q); }
-	std::shared_ptr<client::SyncCoroReindexer> GetShardConnection(std::string_view ns, int shardId, Error &status);
+	std::shared_ptr<client::Reindexer> GetShardConnection(std::string_view ns, int shardId, Error &status);
 
 	ConnectionsPtr GetShardsConnections(std::string_view ns, int shardId, Error &status);
 	ConnectionsPtr GetShardsConnectionsWithId(const Query &q, Error &status);
@@ -144,8 +144,8 @@ public:
 private:
 	ConnectionsPtr rebuildConnectionsVector(std::string_view ns, int shardId, Error &status);
 	ConnectionsPtr getConnectionsFromCache(std::string_view ns, int shardId, bool &requiresRebuild);
-	std::shared_ptr<client::SyncCoroReindexer> getShardConnection(int shardId, Error &status);
-	std::shared_ptr<client::SyncCoroReindexer> peekHostForShard(Connections &connections, int shardId, Error &status) {
+	std::shared_ptr<client::Reindexer> getShardConnection(int shardId, Error &status);
+	std::shared_ptr<client::Reindexer> peekHostForShard(Connections &connections, int shardId, Error &status) {
 		return ConnectStrategy(config_, connections, ActualShardId()).Connect(shardId, status);
 	}
 	Error validateConfig();

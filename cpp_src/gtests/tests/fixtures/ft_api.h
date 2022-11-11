@@ -61,7 +61,7 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	reindexer::Error SetFTConfig(const reindexer::FtFastConfig& ftCfg, const string& ns, const string& index,
+	reindexer::Error SetFTConfig(const reindexer::FtFastConfig& ftCfg, const std::string& ns, const std::string& index,
 								 const std::vector<std::string>& fields) {
 		assert(!ftCfg.fieldsCfg.empty());
 		assert(ftCfg.fieldsCfg.size() >= fields.size());
@@ -69,11 +69,11 @@ public:
 		for (size_t i = 0, size = fields.size(); i < size; ++i) {
 			fieldsMap.emplace(fields[i], i);
 		}
-		vector<reindexer::NamespaceDef> nses;
+		std::vector<reindexer::NamespaceDef> nses;
 		rt.reindexer->EnumNamespaces(nses, reindexer::EnumNamespacesOpts().WithFilter(ns));
 		const auto it = std::find_if(nses[0].indexes.begin(), nses[0].indexes.end(),
 									 [&index](const reindexer::IndexDef& idef) { return idef.name_ == index; });
-		it->opts_.SetConfig(ftCfg.GetJson(fieldsMap));
+		it->opts_.SetConfig(ftCfg.GetJSON(fieldsMap));
 
 		return rt.reindexer->UpdateIndex(ns, *it);
 	}
@@ -162,8 +162,8 @@ public:
 		rt.Commit(ns);
 	}
 
-	reindexer::QueryResults SimpleSelect(string word) {
-		auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
+	reindexer::QueryResults SimpleSelect(std::string word) {
+		auto qr{reindexer::Query("nm1").Where("ft3", CondEq, std::move(word))};
 		reindexer::QueryResults res;
 		qr.AddFunction("ft3 = highlight(!,!)");
 		auto err = rt.reindexer->Select(qr, res);
@@ -172,8 +172,8 @@ public:
 		return res;
 	}
 
-	reindexer::QueryResults SimpleSelect3(string word) {
-		auto qr{reindexer::Query("nm3").Where("ft", CondEq, word)};
+	reindexer::QueryResults SimpleSelect3(std::string word) {
+		auto qr{reindexer::Query("nm3").Where("ft", CondEq, std::move(word))};
 		reindexer::QueryResults res;
 		qr.AddFunction("ft = highlight(!,!)");
 		auto err = rt.reindexer->Select(qr, res);
@@ -187,10 +187,10 @@ public:
 
 		this->rt.reindexer->Delete("nm1", item);
 	}
-	reindexer::QueryResults SimpleCompositeSelect(string word) {
+	reindexer::QueryResults SimpleCompositeSelect(std::string word) {
 		auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
 		reindexer::QueryResults res;
-		auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, word)};
+		auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, std::move(word))};
 		mqr.AddFunction("ft1 = snippet(<b>,\"\"</b>,3,2,,d)");
 
 		qr.mergeQueries_.emplace_back(Merge, std::move(mqr));
@@ -200,11 +200,11 @@ public:
 
 		return res;
 	}
-	reindexer::QueryResults CompositeSelectField(const string& field, string word) {
+	reindexer::QueryResults CompositeSelectField(const std::string& field, std::string word) {
 		word = '@' + field + ' ' + word;
 		auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
 		reindexer::QueryResults res;
-		auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, word)};
+		auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, std::move(word))};
 		mqr.AddFunction(field + " = snippet(<b>,\"\"</b>,3,2,,d)");
 
 		qr.mergeQueries_.emplace_back(Merge, std::move(mqr));
@@ -214,8 +214,8 @@ public:
 
 		return res;
 	}
-	reindexer::QueryResults StressSelect(string word) {
-		const auto qr{reindexer::Query("nm1").Where("ft3", CondEq, word)};
+	reindexer::QueryResults StressSelect(std::string word) {
+		const auto qr{reindexer::Query("nm1").Where("ft3", CondEq, std::move(word))};
 		reindexer::QueryResults res;
 		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -243,7 +243,7 @@ public:
 			[](const std::pair<size_t, std::string>& a, const std::pair<size_t, std::string>& b) { return a.first < b.first; }));
 		return result;
 	}
-	void CheckAllPermutations(const std::string& queryStart, std::vector<std::string> words, const std::string& queryEnd,
+	void CheckAllPermutations(const std::string& queryStart, const std::vector<std::string>& words, const std::string& queryEnd,
 							  const std::vector<std::tuple<std::string, std::string>>& expectedResults, bool withOrder = false,
 							  const std::string& sep = " ") {
 		for (const auto& query : CreateAllPermutatedQueries(queryStart, words, queryEnd, sep)) {
@@ -269,28 +269,28 @@ public:
 			const auto item = itRes.GetItem(false);
 			const auto it = std::find_if(expectedResults.begin(), expectedResults.end(), [&item](const ResType& p) {
 				if constexpr (kTreeFields) {
-					return std::get<0>(p) == item["ft1"].As<string>() && std::get<1>(p) == item["ft2"].As<string>() &&
-						   std::get<2>(p) == item["ft3"].As<string>();
+					return std::get<0>(p) == item["ft1"].As<std::string>() && std::get<1>(p) == item["ft2"].As<std::string>() &&
+						   std::get<2>(p) == item["ft3"].As<std::string>();
 				}
-				return std::get<0>(p) == item["ft1"].As<string>() && std::get<1>(p) == item["ft2"].As<string>();
+				return std::get<0>(p) == item["ft1"].As<std::string>() && std::get<1>(p) == item["ft2"].As<std::string>();
 			});
 			if (it == expectedResults.end()) {
 				if constexpr (kTreeFields) {
-					ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<string>() << "\" \"" << item["ft2"].As<string>() << "\" \""
-								  << item["ft3"].As<string>() << "\"\nQuery: " << query;
+					ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
+								  << "\" \"" << item["ft3"].As<std::string>() << "\"\nQuery: " << query;
 				} else {
-					ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<string>() << "\" \"" << item["ft2"].As<string>()
+					ADD_FAILURE() << "Found not expected: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
 								  << "\"\nQuery: " << query;
 				}
 			} else {
 				if (withOrder) {
 					if constexpr (kTreeFields) {
 						EXPECT_EQ(it, expectedResults.begin())
-							<< "Found not in order: \"" << item["ft1"].As<string>() << "\" \"" << item["ft2"].As<string>() << "\" \""
-							<< item["ft3"].As<string>() << "\"\nQuery: " << query;
+							<< "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \"" << item["ft2"].As<std::string>()
+							<< "\" \"" << item["ft3"].As<std::string>() << "\"\nQuery: " << query;
 					} else {
-						EXPECT_EQ(it, expectedResults.begin()) << "Found not in order: \"" << item["ft1"].As<string>() << "\" \""
-															   << item["ft2"].As<string>() << "\"\nQuery: " << query;
+						EXPECT_EQ(it, expectedResults.begin()) << "Found not in order: \"" << item["ft1"].As<std::string>() << "\" \""
+															   << item["ft2"].As<std::string>() << "\"\nQuery: " << query;
 					}
 				}
 				expectedResults.erase(it);
@@ -308,19 +308,21 @@ public:
 			ADD_FAILURE() << "Query: " << query;
 		}
 	}
-	FTApi() {}
 
 protected:
+	static constexpr int kMaxMergeLimitValue = 65000;
+	static constexpr int kMinMergeLimitValue = 0;
+
 	struct Data {
 		std::string ft1;
 		std::string ft2;
 	};
 	struct FTDSLQueryParams {
-		reindexer::fast_hash_map<string, int> fields;
-		reindexer::fast_hash_set<string, reindexer::hash_str, reindexer::equal_str> stopWords;
-		string extraWordSymbols = "-/+";
+		reindexer::fast_hash_map<std::string, int> fields;
+		reindexer::fast_hash_set<std::string, reindexer::hash_str, reindexer::equal_str> stopWords;
+		std::string extraWordSymbols = "-/+";
 	};
 	int counter_ = 0;
-	const string default_namespace = "test_namespace";
+	const std::string default_namespace = "test_namespace";
 	ReindexerTestApi<reindexer::Reindexer> rt;
 };

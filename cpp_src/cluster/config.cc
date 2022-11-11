@@ -11,7 +11,7 @@
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "vendor/urlparser/urlparser.h"
-#include "yaml/yaml.h"
+#include "yaml-cpp/yaml.h"
 
 using namespace std::string_view_literals;
 
@@ -123,26 +123,26 @@ RaftInfo::Role RaftInfo::RoleFromStr(std::string_view role) {
 	}
 }
 
-void ClusterNodeConfig::FromYML(Yaml::Node &root) {
-	serverId = root["server_id"].As<int>(serverId);
-	dsn = root["dsn"].As<std::string>(dsn);
+void ClusterNodeConfig::FromYAML(const YAML::Node &root) {
+	serverId = root["server_id"].as<int>(serverId);
+	dsn = root["dsn"].as<std::string>(dsn);
 	ValidateDSN(dsn);
 }
 
-void AsyncReplNodeConfig::FromYML(Yaml::Node &root) {
-	dsn = root["dsn"].As<std::string>(dsn);
+void AsyncReplNodeConfig::FromYAML(const YAML::Node &root) {
+	dsn = root["dsn"].as<std::string>(dsn);
 	ValidateDSN(dsn);
-	auto &node = root["namespaces"];
+	auto node = root["namespaces"];
 	namespaces_.reset();
 	if (node.IsSequence()) {
-		fast_hash_set<string, nocase_hash_str, nocase_equal_str> nss;
-		for (unsigned i = 0; i < node.Size(); i++) {
-			nss.emplace(node[i].As<std::string>());
+		fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
+		for (const auto &ns : node) {
+			nss.emplace(ns.as<std::string>());
 		}
 		SetOwnNamespaceList(std::move(nss));
 	}
 	replicationMode_.reset();
-	auto modeStr = root["replication_mode"].As<std::string>();
+	auto modeStr = root["replication_mode"].as<std::string>();
 	if (!modeStr.empty()) {
 		replicationMode_ = AsyncReplConfigData::Str2mode(modeStr);
 	}
@@ -154,9 +154,9 @@ void AsyncReplNodeConfig::FromJSON(const gason::JsonNode &root) {
 	{
 		auto &node = root["namespaces"];
 		if (!node.empty()) {
-			fast_hash_set<string, nocase_hash_str, nocase_equal_str> nss;
+			fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
 			for (auto &objNode : node) {
-				nss.emplace(objNode.As<string>());
+				nss.emplace(objNode.As<std::string>());
 			}
 			SetOwnNamespaceList(std::move(nss));
 		}
@@ -179,17 +179,13 @@ void AsyncReplNodeConfig::GetJSON(JsonBuilder &jb) const {
 	}
 }
 
-void AsyncReplNodeConfig::GetYAML(Yaml::Node &yaml) const {
+void AsyncReplNodeConfig::GetYAML(YAML::Node &yaml) const {
 	yaml["dsn"] = dsn;
 	if (hasOwnNsList_) {
-		auto &nsArrayYaml = yaml["namespaces"];
-		if (!namespaces_ || namespaces_->Empty()) {
-			(void)nsArrayYaml[0];  // Create empty array
-		} else {
-			size_t i = 0;
+		yaml["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
+		if (namespaces_ && !namespaces_->Empty()) {
 			for (auto &ns : namespaces_->data) {
-				nsArrayYaml.PushBack();
-				nsArrayYaml[i++] = ns;
+				yaml["namespaces"].push_back(ns);
 			}
 		}
 	}
@@ -204,89 +200,87 @@ void AsyncReplNodeConfig::SetNamespaceListFromConfig(const AsyncReplConfigData &
 	hasOwnNsList_ = false;
 }
 
-Error ClusterConfigData::FromYML(const std::string &yaml) {
-	Yaml::Node root;
+Error ClusterConfigData::FromYAML(const std::string &yaml) {
 	try {
-		Yaml::Parse(root, yaml);
-		appName = root["app_name"].As<std::string>(appName);
-		replThreadsCount = root["sync_threads"].As<int>(replThreadsCount);
-		parallelSyncsPerThreadCount = root["syncs_per_thread"].As<int>(parallelSyncsPerThreadCount);
-		onlineUpdatesTimeoutSec = root["online_updates_timeout_sec"].As<int>(onlineUpdatesTimeoutSec);
-		syncTimeoutSec = root["sync_timeout_sec"].As<int>(syncTimeoutSec);
-		leaderSyncThreads = root["leader_sync_threads"].As<int>(leaderSyncThreads);
+		YAML::Node root = YAML::Load(yaml);
+		appName = root["app_name"].as<std::string>(appName);
+		replThreadsCount = root["sync_threads"].as<int>(replThreadsCount);
+		parallelSyncsPerThreadCount = root["syncs_per_thread"].as<int>(parallelSyncsPerThreadCount);
+		onlineUpdatesTimeoutSec = root["online_updates_timeout_sec"].as<int>(onlineUpdatesTimeoutSec);
+		syncTimeoutSec = root["sync_timeout_sec"].as<int>(syncTimeoutSec);
+		leaderSyncThreads = root["leader_sync_threads"].as<int>(leaderSyncThreads);
 		leaderSyncConcurrentSnapshotsPerNode =
-			root["leader_sync_concurrent_snapshots_per_node"].As<int>(leaderSyncConcurrentSnapshotsPerNode);
-		retrySyncIntervalMSec = root["retry_sync_interval_msec"].As<int>(retrySyncIntervalMSec);
-		enableCompression = root["enable_compression"].As<bool>(enableCompression);
-		batchingRoutinesCount = root["batching_routines_count"].As<int>(batchingRoutinesCount);
-		maxWALDepthOnForceSync = root["max_wal_depth_on_force_sync"].As<int>(maxWALDepthOnForceSync);
-		proxyConnCount = root["proxy_conn_count"].As<int>(proxyConnCount);
-		proxyConnConcurrency = root["proxy_conn_concurrency"].As<int>(proxyConnConcurrency);
-		proxyConnThreads = root["proxy_conn_threads"].As<int>(proxyConnThreads);
+			root["leader_sync_concurrent_snapshots_per_node"].as<int>(leaderSyncConcurrentSnapshotsPerNode);
+		retrySyncIntervalMSec = root["retry_sync_interval_msec"].as<int>(retrySyncIntervalMSec);
+		enableCompression = root["enable_compression"].as<bool>(enableCompression);
+		batchingRoutinesCount = root["batching_routines_count"].as<int>(batchingRoutinesCount);
+		maxWALDepthOnForceSync = root["max_wal_depth_on_force_sync"].as<int>(maxWALDepthOnForceSync);
+		proxyConnCount = root["proxy_conn_count"].as<int>(proxyConnCount);
+		proxyConnConcurrency = root["proxy_conn_concurrency"].as<int>(proxyConnConcurrency);
+		proxyConnThreads = root["proxy_conn_threads"].as<int>(proxyConnThreads);
 		{
-			auto &node = root["namespaces"];
+			auto node = root["namespaces"];
 			namespaces.clear();
-			for (unsigned i = 0; i < node.Size(); i++) {
-				namespaces.insert(node[i].As<std::string>());
+			for (const auto &ns : node) {
+				namespaces.insert(ns.as<std::string>());
 			}
 		}
 		{
-			auto &node = root["nodes"];
+			auto node = root["nodes"];
 			nodes.clear();
-			for (unsigned i = 0; i < node.Size(); i++) {
+			for (const auto &n : node) {
 				ClusterNodeConfig conf;
-				conf.FromYML(node[i]);
+				conf.FromYAML(n);
 				nodes.emplace_back(std::move(conf));
 			}
 		}
 		return Error();
-	} catch (const Yaml::Exception &ex) {
-		return Error(errParams, "ClusterConfigData: yaml parsing error: '%s'", ex.Message());
+	} catch (const YAML::Exception &ex) {
+		return Error(errParams, "ClusterConfigData: yaml parsing error: '%s'", ex.what());
 	} catch (const Error &err) {
 		return err;
 	}
 }
 
-Error AsyncReplConfigData::FromYML(const std::string &yaml) {
-	Yaml::Node root;
+Error AsyncReplConfigData::FromYAML(const std::string &yaml) {
 	try {
-		Yaml::Parse(root, yaml);
-		role = Str2role(root["role"].As<std::string>("none"));
-		mode = Str2mode(root["replication_mode"].As<std::string>("default"));
-		appName = root["app_name"].As<std::string>(appName);
-		replThreadsCount = root["sync_threads"].As<int>(replThreadsCount);
-		parallelSyncsPerThreadCount = root["syncs_per_thread"].As<int>(parallelSyncsPerThreadCount);
-		onlineUpdatesTimeoutSec = root["online_updates_timeout_sec"].As<int>(onlineUpdatesTimeoutSec);
-		syncTimeoutSec = root["sync_timeout_sec"].As<int>(syncTimeoutSec);
-		forceSyncOnLogicError = root["force_sync_on_logic_error"].As<bool>(forceSyncOnLogicError);
-		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].As<bool>(forceSyncOnWrongDataHash);
-		retrySyncIntervalMSec = root["retry_sync_interval_msec"].As<int>(retrySyncIntervalMSec);
-		enableCompression = root["enable_compression"].As<bool>(enableCompression);
-		batchingRoutinesCount = root["batching_routines_count"].As<int>(batchingRoutinesCount);
-		maxWALDepthOnForceSync = root["max_wal_depth_on_force_sync"].As<int>(maxWALDepthOnForceSync);
+		YAML::Node root = YAML::Load(yaml);
+		role = Str2role(root["role"].as<std::string>("none"));
+		mode = Str2mode(root["replication_mode"].as<std::string>("default"));
+		appName = root["app_name"].as<std::string>(appName);
+		replThreadsCount = root["sync_threads"].as<int>(replThreadsCount);
+		parallelSyncsPerThreadCount = root["syncs_per_thread"].as<int>(parallelSyncsPerThreadCount);
+		onlineUpdatesTimeoutSec = root["online_updates_timeout_sec"].as<int>(onlineUpdatesTimeoutSec);
+		syncTimeoutSec = root["sync_timeout_sec"].as<int>(syncTimeoutSec);
+		forceSyncOnLogicError = root["force_sync_on_logic_error"].as<bool>(forceSyncOnLogicError);
+		forceSyncOnWrongDataHash = root["force_sync_on_wrong_data_hash"].as<bool>(forceSyncOnWrongDataHash);
+		retrySyncIntervalMSec = root["retry_sync_interval_msec"].as<int>(retrySyncIntervalMSec);
+		enableCompression = root["enable_compression"].as<bool>(enableCompression);
+		batchingRoutinesCount = root["batching_routines_count"].as<int>(batchingRoutinesCount);
+		maxWALDepthOnForceSync = root["max_wal_depth_on_force_sync"].as<int>(maxWALDepthOnForceSync);
 		{
-			auto &node = root["namespaces"];
-			fast_hash_set<string, nocase_hash_str, nocase_equal_str> nss;
-			for (unsigned i = 0; i < node.Size(); i++) {
-				nss.emplace(node[i].As<std::string>());
+			auto node = root["namespaces"];
+			fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
+			for (const auto &n : node) {
+				nss.emplace(n.as<std::string>());
 			}
 			namespaces = make_intrusive<NamespaceList>(std::move(nss));
 		}
 		{
-			auto &node = root["nodes"];
+			auto node = root["nodes"];
 			nodes.clear();
-			for (unsigned i = 0; i < node.Size(); i++) {
+			for (const auto &n : node) {
 				AsyncReplNodeConfig conf;
-				conf.FromYML(node[i]);
+				conf.FromYAML(n);
 				if (!conf.HasOwnNsList()) {
 					conf.SetNamespaceListFromConfig(*this);
 				}
 				nodes.emplace_back(std::move(conf));
 			}
 		}
-		return errOK;
-	} catch (const Yaml::Exception &ex) {
-		return Error(errParams, "AsyncReplConfigData: yaml parsing error: '%s'", ex.Message());
+		return Error();
+	} catch (const YAML::Exception &ex) {
+		return Error(errParams, "AsyncReplConfigData: yaml parsing error: '%s'", ex.what());
 	} catch (const Error &err) {
 		return err;
 	}
@@ -304,8 +298,8 @@ Error AsyncReplConfigData::FromJSON(std::string_view json) {
 
 Error AsyncReplConfigData::FromJSON(const gason::JsonNode &root) {
 	try {
-		role = Str2role(root["role"].As<string>("none"));
-		mode = Str2mode(root["replication_mode"].As<string>("default"));
+		role = Str2role(root["role"].As<std::string>("none"));
+		mode = Str2mode(root["replication_mode"].As<std::string>("default"));
 		appName = root["app_name"].As<std::string>(appName);
 		replThreadsCount = root["sync_threads"].As<int>(replThreadsCount);
 		parallelSyncsPerThreadCount = root["syncs_per_thread"].As<int>(parallelSyncsPerThreadCount);
@@ -318,9 +312,9 @@ Error AsyncReplConfigData::FromJSON(const gason::JsonNode &root) {
 		batchingRoutinesCount = root["batching_routines_count"].As<int>(batchingRoutinesCount);
 		maxWALDepthOnForceSync = root["max_wal_depth_on_force_sync"].As<int>(maxWALDepthOnForceSync);
 
-		fast_hash_set<string, nocase_hash_str, nocase_equal_str> nss;
+		fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
 		for (auto &objNode : root["namespaces"]) {
-			nss.emplace(objNode.As<string>());
+			nss.emplace(objNode.As<std::string>());
 		}
 		namespaces = make_intrusive<NamespaceList>(std::move(nss));
 
@@ -370,29 +364,21 @@ void AsyncReplConfigData::GetJSON(JsonBuilder &jb) const {
 
 void AsyncReplConfigData::GetYAML(WrSerializer &ser) const {
 	std::string namespacesStr, nodesStr;
-	if (!namespaces || namespaces->Empty()) {
-		namespacesStr = "namespaces: []";
-	} else {
-		size_t i = 0;
-		Yaml::Node nsYaml;
-		auto &nsArrayYaml = nsYaml["namespaces"];
+	YAML::Node nss;
+	nss["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
+	if (namespaces && !namespaces->Empty()) {
 		for (auto &ns : namespaces->data) {
-			nsArrayYaml.PushBack();
-			nsArrayYaml[i++] = std::move(ns);
+			nss["namespaces"].push_back(ns);
 		}
-		Yaml::Serialize(nsYaml, namespacesStr);
 	}
-	if (nodes.empty()) {
-		nodesStr = "nodes: []";
-	} else {
-		size_t i = 0;
-		Yaml::Node nodesYaml;
-		auto &nodesArrayYaml = nodesYaml["nodes"];
+	YAML::Node nds;
+	nds["nodes"] = YAML::Node(YAML::NodeType::Sequence);
+	if (!nodes.empty()) {
 		for (auto &node : nodes) {
-			nodesArrayYaml.PushBack();
-			node.GetYAML(nodesArrayYaml[i++]);
+			YAML::Node r;
+			node.GetYAML(r);
+			nds["nodes"].push_back(r);
 		}
-		Yaml::Serialize(nodesYaml, nodesStr);
 	}
 	// clang-format off
 	ser <<	"# Replication role. May be one of\n"
@@ -442,10 +428,10 @@ void AsyncReplConfigData::GetYAML(WrSerializer &ser) const {
 			"# List of namespaces for replication. If emply, all namespaces\n"
 			"# All replicated namespaces will become read only for followers\n"
 			"# It should be written as YAML sequence, JSON-style arrays are not supported\n"
-			+ namespacesStr + "\n"
+			+ YAML::Dump(nss) + "\n"
 			"# List of nodes for replication.\n"
 			"# It should be written as YAML sequence, JSON-style arrays are not supported\n"
-			+ nodesStr + "\n\n";
+			+ YAML::Dump(nds) + "\n\n";
 	// clang-format on
 }
 
@@ -487,12 +473,12 @@ std::string AsyncReplConfigData::Mode2str(AsyncReplicationMode mode) noexcept {
 	}
 }
 
-Error ShardingConfig::Namespace::FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards) {
+Error ShardingConfig::Namespace::FromYAML(const YAML::Node &yaml, const std::map<int, std::vector<std::string>> &shards) {
 	if (!yaml["namespace"].IsScalar()) {
 		return Error(errParams, "'namespace' node must be scalar.");
 	}
 
-	ns = yaml["namespace"].As<string>();
+	ns = yaml["namespace"].as<std::string>();
 	if (!validateObjectName(ns, false)) {
 		return Error(errParams, "Namespace name incorrect '%s'.", ns);
 	}
@@ -500,28 +486,28 @@ Error ShardingConfig::Namespace::FromYML(Yaml::Node &yaml, const std::map<int, s
 		return Error(errParams, "'index' node must be scalar.");
 	}
 
-	index = yaml["index"].As<string>();
+	index = yaml["index"].as<std::string>();
 	if (!validateIndexName(index, IndexCompositeHash)) {
 		return Error(errParams, "Index name incorrect '%s'.", index);
 	}
-	const auto &defaultShardNode = yaml["default_shard"];
-	if (defaultShardNode.IsNone()) {
+	const auto defaultShardNode = yaml["default_shard"];
+	if (!defaultShardNode.IsDefined()) {
 		return Error(errParams, "Default shard id is not specified for namespace '%s'", ns);
 	}
-	defaultShard = defaultShardNode.As<int>();
-	auto &keysNode = yaml["keys"];
+	defaultShard = defaultShardNode.as<int>();
+	auto keysNode = yaml["keys"];
 	keys.clear();
-	keys.resize(keysNode.Size());
+	keys.resize(keysNode.size());
 	fast_hash_set<Variant> checkVal;
 	KeyValueType valuesType = KeyValueNull;
 	for (size_t i = 0; i < keys.size(); ++i) {
-		const Error err = keys[i].FromYML(keysNode[i], shards, valuesType, checkVal);
+		Error err = keys[i].FromYAML(keysNode[i], shards, valuesType, checkVal);
 		if (!err.ok()) return err;
 	}
-	return errOK;
+	return Error();
 }
 
-Error ShardingConfig::Namespace::FromJson(const gason::JsonNode &root) {
+Error ShardingConfig::Namespace::FromJSON(const gason::JsonNode &root) {
 	try {
 		ns = root["namespace"].As<std::string>();
 		if (!validateObjectName(ns, false)) {
@@ -538,7 +524,7 @@ Error ShardingConfig::Namespace::FromJson(const gason::JsonNode &root) {
 		KeyValueType valuesType = KeyValueNull;
 		for (const auto &kNode : keysNode) {
 			keys.emplace_back();
-			const Error err = keys.back().FromJson(kNode, valuesType, checkVal);
+			Error err = keys.back().FromJSON(kNode, valuesType, checkVal);
 			if (!err.ok()) return err;
 		}
 	} catch (const Error &err) {
@@ -549,7 +535,7 @@ Error ShardingConfig::Namespace::FromJson(const gason::JsonNode &root) {
 	return errOK;
 }
 
-Error ShardingConfig::Key::checkValue(Variant val, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal) {
+Error ShardingConfig::Key::checkValue(const Variant &val, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal) {
 	if (valuesType == KeyValueNull) {
 		valuesType = val.Type();
 	} else if (valuesType != val.Type()) {
@@ -560,32 +546,32 @@ Error ShardingConfig::Key::checkValue(Variant val, KeyValueType &valuesType, fas
 		return Error(errParams, "Incorrect value '%s'. Value already in use.", val.As<std::string>());
 	}
 	checkVal.emplace(val);
-	return errOK;
+	return Error();
 }
 
-Error ShardingConfig::Key::FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards, KeyValueType &valuesType,
-								   fast_hash_set<Variant> &checkVal) {
+Error ShardingConfig::Key::FromYAML(const YAML::Node &yaml, const std::map<int, std::vector<std::string>> &_shards,
+									KeyValueType &valuesType, fast_hash_set<Variant> &checkVal) {
 	values.clear();
 	const auto &shardIdNode = yaml["shard_id"];
-	if (shardIdNode.IsNone()) {
+	if (!shardIdNode.IsDefined()) {
 		return Error(errParams, "Shard id should be specified for every namespace's keys");
 	}
-	shardId = shardIdNode.As<int>();
-	if (shards.find(shardId) == shards.cend()) {
+	shardId = shardIdNode.as<int>();
+	if (_shards.find(shardId) == _shards.cend()) {
 		return Error(errParams, "Shard id %d is not specified in the config but it is used in namespace keys", shardId);
 	}
 
-	auto &valuesNode = yaml["values"];
+	auto valuesNode = yaml["values"];
 #if 0
-	auto &fromNode = yaml["from"];
-	auto &toNode = yaml["to"];
+	auto fromNode = yaml["from"];
+	auto toNode = yaml["to"];
 #endif
-	if (!valuesNode.IsNone()) {
+	if (valuesNode.IsDefined()) {
 		algorithmType = ByValue;
-		for (size_t i = 0; i < valuesNode.Size(); ++i) {
-			Variant val = stringToVariant(valuesNode[i].AsString());
+		for (const auto &value : valuesNode) {
+			Variant val = stringToVariant(value.as<std::string>());
 			if (val.Type() == KeyValueNull) {
-				return Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", valuesNode[i].AsString());
+				return Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", value.as<std::string>());
 			}
 			Error err = checkValue(val, valuesType, checkVal);
 			if (!err.ok()) {
@@ -613,7 +599,7 @@ Error ShardingConfig::Key::FromYML(Yaml::Node &yaml, const std::map<int, std::ve
 	return errOK;
 }
 
-Error ShardingConfig::Key::FromJson(const gason::JsonNode &root, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal) {
+Error ShardingConfig::Key::FromJSON(const gason::JsonNode &root, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal) {
 	try {
 		shardId = root["shard_id"].As<int>();
 		values.clear();
@@ -650,54 +636,55 @@ Error ShardingConfig::Key::FromJson(const gason::JsonNode &root, KeyValueType &v
 	} catch (const gason::Exception &ex) {
 		return Error(errParseJson, "ShardingConfig::Key: %s", ex.what());
 	}
-	return errOK;
+	return Error();
 }
 
-void ShardingConfig::Namespace::GetYml(std::stringstream &yaml) const {
-	yaml << "\n  - namespace: \"" << ns << "\"\n    default_shard: " << defaultShard << "\n    index: \"" << index << "\"\n    keys:";
+void ShardingConfig::Namespace::GetYAML(YAML::Node &yaml) const {
+	YAML::Node nsNode;
+	nsNode["namespace"] = ns;
+	nsNode["default_shard"] = defaultShard;
+	nsNode["index"] = index;
+	YAML::Node keysNode(YAML::NodeType::Sequence);
 	for (const auto &key : keys) {
-		key.GetYml(yaml);
+		key.GetYAML(keysNode);
 	}
+	nsNode["keys"] = keysNode;
+	yaml.push_back(nsNode);
 }
 
-void ShardingConfig::Namespace::GetJson(JsonBuilder &jb) const {
+void ShardingConfig::Namespace::GetJSON(JsonBuilder &jb) const {
 	jb.Put("namespace", ns);
 	jb.Put("default_shard", defaultShard);
 	jb.Put("index", index);
 	auto keysNode = jb.Array("keys");
 	for (const auto &key : keys) {
 		auto kNode = keysNode.Object(0);
-		key.GetJson(kNode);
+		key.GetJSON(kNode);
 	}
 }
 
-void ShardingConfig::Key::GetYml(std::stringstream &yaml) const {
-	yaml << "\n      - shard_id: " << shardId << "\n        ";
+void ShardingConfig::Key::GetYAML(YAML::Node &yaml) const {
+	YAML::Node key;
+	key["shard_id"] = shardId;
 	switch (algorithmType) {
-		case ByValue:
-			yaml << "values:";
+		case ByValue: {
+			YAML::Node valuesNode(YAML::NodeType::Sequence);
 			for (const auto &v : values) {
-				yaml << "\n          - ";
-				if (v.Type() == KeyValueString) yaml << '"';
-				yaml << v.As<std::string>();
-				if (v.Type() == KeyValueString) yaml << '"';
+				valuesNode.push_back(v.As<std::string>());
 			}
+			key["values"] = valuesNode;
 			break;
+		}
 		case ByRange:
-			assert(values.size() == 2);
-			yaml << "from: ";
-			if (values[0].Type() == KeyValueString) yaml << '"';
-			yaml << values[0].As<std::string>();
-			if (values[0].Type() == KeyValueString) yaml << '"';
-			yaml << "\n        to: ";
-			if (values[1].Type() == KeyValueString) yaml << '"';
-			yaml << values[1].As<std::string>();
-			if (values[1].Type() == KeyValueString) yaml << '"';
+			assertrx(values.size() == 2);
+			key["from"] = values[0].As<std::string>();
+			key["to"] = values[1].As<std::string>();
 			break;
 	}
+	yaml.push_back(key);
 }
 
-void ShardingConfig::Key::GetJson(JsonBuilder &jb) const {
+void ShardingConfig::Key::GetJSON(JsonBuilder &jb) const {
 	jb.Put("shard_id", shardId);
 	switch (algorithmType) {
 		case ByValue: {
@@ -712,39 +699,37 @@ void ShardingConfig::Key::GetJson(JsonBuilder &jb) const {
 	}
 }
 
-Error ShardingConfig::FromYML(const std::string &yaml) {
+Error ShardingConfig::FromYAML(const std::string &yaml) {
 	namespaces.clear();
 	shards.clear();
 
-	Yaml::Node root;
 	try {
-		Yaml::Parse(root, yaml);
-
-		const auto &versionNode = root["version"];
-		if (versionNode.IsNone()) {
+		YAML::Node root = YAML::Load(yaml);
+		const auto versionNode = root["version"];
+		if (!versionNode.IsDefined()) {
 			return Error(errParams, "Version of sharding config file is not specified");
 		}
-		if (const int v{versionNode.As<int>()}; v != 1) {
+		if (const int v{versionNode.as<int>()}; v != 1) {
 			return Error(errParams, "Unsupported version of sharding config file: %d", v);
 		}
 
-		auto &shardsNode = root["shards"];
-		for (size_t i = 0; i < shardsNode.Size(); ++i) {
-			size_t shardId = shardsNode[i]["shard_id"].As<int>();
+		auto shardsNode = root["shards"];
+		for (size_t i = 0; i < shardsNode.size(); ++i) {
+			size_t shardId = shardsNode[i]["shard_id"].as<int>();
 			if (shards.find(shardId) != shards.end()) {
 				return Error{errParams, "Dsns for shard id %u are specified twice", shardId};
 			}
-			auto &hostsNode = shardsNode[i]["dsns"];
-			shards[shardId].reserve(hostsNode.Size());
-			for (size_t i = 0; i < hostsNode.Size(); ++i) {
-				shards[shardId].emplace_back(hostsNode[i].AsString());
+			auto hostsNode = shardsNode[i]["dsns"];
+			shards[shardId].reserve(hostsNode.size());
+			for (size_t i = 0; i < hostsNode.size(); ++i) {
+				shards[shardId].emplace_back(hostsNode[i].as<std::string>());
 			}
 		}
 
-		auto &namespacesNodes = root["namespaces"];
-		namespaces.resize(namespacesNodes.Size());
+		auto namespacesNodes = root["namespaces"];
+		namespaces.resize(namespacesNodes.size());
 		for (size_t i = 0; i < namespaces.size(); ++i) {
-			const Error err = namespaces[i].FromYML(namespacesNodes[i], shards);
+			Error err = namespaces[i].FromYAML(namespacesNodes[i], shards);
 			if (!err.ok()) return err;
 			const std::string &newNsName = namespaces[i].ns;
 			if (i > 0 && std::find_if(namespaces.begin(), namespaces.begin() + i,
@@ -753,23 +738,23 @@ Error ShardingConfig::FromYML(const std::string &yaml) {
 			}
 		}
 
-		thisShardId = root["this_shard_id"].As<int>();
-		reconnectTimeout = std::chrono::milliseconds(root["reconnect_timeout_msec"].As<int>(reconnectTimeout.count()));
-		shardsAwaitingTimeout = std::chrono::seconds(root["shards_awaiting_timeout_sec"].As<int>(shardsAwaitingTimeout.count()));
-		proxyConnCount = root["proxy_conn_count"].As<int>(proxyConnCount);
-		proxyConnConcurrency = root["proxy_conn_concurrency"].As<int>(proxyConnConcurrency);
-		proxyConnThreads = root["proxy_conn_threads"].As<int>(proxyConnThreads);
+		thisShardId = root["this_shard_id"].as<int>();
+		reconnectTimeout = std::chrono::milliseconds(root["reconnect_timeout_msec"].as<int>(reconnectTimeout.count()));
+		shardsAwaitingTimeout = std::chrono::seconds(root["shards_awaiting_timeout_sec"].as<int>(shardsAwaitingTimeout.count()));
+		proxyConnCount = root["proxy_conn_count"].as<int>(proxyConnCount);
+		proxyConnConcurrency = root["proxy_conn_concurrency"].as<int>(proxyConnConcurrency);
+		proxyConnThreads = root["proxy_conn_threads"].as<int>(proxyConnThreads);
 		return Validate();
-	} catch (const Yaml::Exception &ex) {
-		return Error(errParams, "yaml parsing error: '%s'", ex.Message());
+	} catch (const YAML::Exception &ex) {
+		return Error(errParams, "yaml parsing error: '%s'", ex.what());
 	} catch (const Error &err) {
 		return err;
 	}
 }
 
-Error ShardingConfig::FromJson(span<char> json) {
+Error ShardingConfig::FromJSON(span<char> json) {
 	try {
-		return FromJson(gason::JsonParser().Parse(json));
+		return FromJSON(gason::JsonParser().Parse(json));
 	} catch (const gason::Exception &ex) {
 		return Error(errParseJson, "ShardingConfig: %s", ex.what());
 	} catch (const Error &err) {
@@ -777,7 +762,7 @@ Error ShardingConfig::FromJson(span<char> json) {
 	}
 }
 
-Error ShardingConfig::FromJson(const gason::JsonNode &root) {
+Error ShardingConfig::FromJSON(const gason::JsonNode &root) {
 	try {
 		const int v = root["version"].As<int>();
 		if (v != 1) {
@@ -787,7 +772,7 @@ Error ShardingConfig::FromJson(const gason::JsonNode &root) {
 		const auto &namespacesNode = root["namespaces"];
 		for (const auto &nsNode : namespacesNode) {
 			namespaces.emplace_back();
-			const Error err = namespaces.back().FromJson(nsNode);
+			Error err = namespaces.back().FromJSON(nsNode);
 			if (!err.ok()) return err;
 			const std::string &newNsName = namespaces.back().ns;
 			if (namespaces.size() > 1 && std::find_if(namespaces.begin(), namespaces.end() - 1, [&newNsName](const Namespace &v) {
@@ -835,46 +820,55 @@ bool operator==(const ShardingConfig::Namespace &lhs, const ShardingConfig::Name
 	return lhs.ns == rhs.ns && lhs.defaultShard == rhs.defaultShard && lhs.index == rhs.index && lhs.keys == rhs.keys;
 }
 
-std::string ShardingConfig::GetYml() const {
-	std::stringstream yaml;
-	yaml << "version: 1\nnamespaces:";
-	for (const auto &ns : namespaces) {
-		ns.GetYml(yaml);
-	}
-	yaml << "\nshards:";
-	for (const auto &[id, dsns] : shards) {
-		yaml << "\n  - shard_id: " << id << "\n    dsns:";
-		for (const auto &d : dsns) {
-			yaml << "\n      - \"" << d << '"';
+std::string ShardingConfig::GetYAML() const { return YAML::Dump(GetYAMLObj()) + '\n'; }
+
+YAML::Node ShardingConfig::GetYAMLObj() const {
+	YAML::Node yaml;
+	yaml["version"] = 1;
+	{
+		yaml["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
+		auto nssNode = yaml["namespaces"];
+		for (const auto &ns : namespaces) {
+			ns.GetYAML(nssNode);
 		}
 	}
-	yaml << "\nthis_shard_id: " << thisShardId;
-	yaml << "\nreconnect_timeout_msec: " << reconnectTimeout.count();
-	yaml << "\nshards_awaiting_timeout_sec: " << shardsAwaitingTimeout.count();
-	yaml << "\nproxy_conn_count: " << proxyConnCount;
-	yaml << "\nproxy_conn_concurrency: " << proxyConnConcurrency;
-	yaml << "\nproxy_conn_threads: " << proxyConnThreads << '\n';
-	return yaml.str();
+	{
+		yaml["shards"] = YAML::Node(YAML::NodeType::Sequence);
+		auto shardsNode = yaml["shards"];
+		for (const auto &[id, dsns] : shards) {
+			YAML::Node n;
+			n["shard_id"] = id;
+			n["dsns"] = dsns;
+			shardsNode.push_back(n);
+		}
+	}
+	yaml["this_shard_id"] = thisShardId;
+	yaml["reconnect_timeout_msec"] = reconnectTimeout.count();
+	yaml["shards_awaiting_timeout_sec"] = shardsAwaitingTimeout.count();
+	yaml["proxy_conn_count"] = proxyConnCount;
+	yaml["proxy_conn_concurrency"] = proxyConnConcurrency;
+	yaml["proxy_conn_threads"] = proxyConnThreads;
+	return yaml;
 }
 
-std::string ShardingConfig::GetJson() const {
+std::string ShardingConfig::GetJSON() const {
 	WrSerializer ser;
-	GetJson(ser);
+	GetJSON(ser);
 	return std::string{ser.Slice()};
 }
 
-void ShardingConfig::GetJson(WrSerializer &ser) const {
+void ShardingConfig::GetJSON(WrSerializer &ser) const {
 	JsonBuilder jb(ser);
-	GetJson(jb);
+	GetJSON(jb);
 }
 
-void ShardingConfig::GetJson(JsonBuilder &jb) const {
+void ShardingConfig::GetJSON(JsonBuilder &jb) const {
 	jb.Put("version", 1);
 	{
 		auto namespacesNode = jb.Array("namespaces");
 		for (const auto &ns : namespaces) {
 			auto nsNode = namespacesNode.Object(0);
-			ns.GetJson(nsNode);
+			ns.GetJSON(nsNode);
 		}
 	}
 	{

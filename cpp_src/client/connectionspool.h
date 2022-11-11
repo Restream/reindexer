@@ -1,13 +1,13 @@
 #pragma once
 
-#include "client/cororpcclient.h"
+#include "client/rpcclient.h"
 #include "estl/shared_mutex.h"
 
 namespace reindexer {
 namespace client {
 
 struct ConnectionsPoolData {
-	ConnectionsPoolData(size_t connCount, const CoroReindexerConfig &cfg, INamespaces::PtrT sharedNss) {
+	ConnectionsPoolData(size_t connCount, const ReindexerConfig &cfg, INamespaces::PtrT sharedNss) {
 		assert(connCount);
 		assert(sharedNss);
 		sharedNamespaces = std::move(sharedNss);
@@ -16,7 +16,7 @@ struct ConnectionsPoolData {
 		}
 	}
 
-	std::deque<CoroRPCClient> clients;
+	std::deque<RPCClient> clients;
 	INamespaces::PtrT sharedNamespaces;
 };
 
@@ -24,7 +24,7 @@ template <typename CmdT>
 class Connection {
 public:
 	static constexpr auto kConnectionChSize = 100;
-	Connection(CoroRPCClient &_rx) : rx(_rx), cmdCh_(kConnectionChSize) {}
+	Connection(RPCClient &_rx) : rx(_rx), cmdCh_(kConnectionChSize) {}
 
 	template <typename U>
 	void PushCmd(U &&obj) {
@@ -40,7 +40,7 @@ public:
 	}
 	size_t Requests() const noexcept { return requests_; }
 
-	CoroRPCClient &rx;
+	RPCClient &rx;
 
 private:
 	coroutine::channel<CmdT> cmdCh_;

@@ -132,7 +132,7 @@ void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::Proxi
 				if (!err.ok()) {
 					throw Error(err.code(), "Unable to parse CJSON for WAL item: %s", err.what());
 				}
-				return string(item.GetJSON());
+				return std::string(item.GetJSON());
 			});
 		}
 		return;

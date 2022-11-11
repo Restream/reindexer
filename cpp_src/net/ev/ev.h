@@ -168,17 +168,19 @@ public:
 		new_tasks_.emplace_back(id);
 	}
 	void spawn(coroutine::wait_group &wg, std::function<void()> func, size_t stack_size = coroutine::k_default_stack_limit) {
-		auto func_with_wg = [f = std::move(func), &wg]() {
-			coroutine::wait_group_guard wgg(wg);
-			f();
-		};
 		wg.add(1);
-		spawn(std::move(func_with_wg), stack_size);
+		spawn(
+			[f = std::move(func), &wg]() {	// NOLINT(*.NewDeleteLeaks) False positive
+				coroutine::wait_group_guard wgg(wg);
+				f();
+			},
+			stack_size);
 	}
 	template <typename Rep, typename Period>
 	void sleep(std::chrono::duration<Rep, Period> dur);
 	template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename TerminateT>
-	void granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity, TerminateT &terminate);
+	void granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity,
+						const TerminateT &terminate);
 	void yield() {
 		// Yield is allowed for loop-thread only
 		assert(coroTid_ == std::thread::id() || coroTid_ == std::this_thread::get_id());
@@ -392,9 +394,9 @@ void dynamic_loop::sleep(std::chrono::duration<Rep, Period> dur) {
 
 template <typename Rep1, typename Period1, typename Rep2, typename Period2, typename TerminateT>
 void dynamic_loop::granular_sleep(std::chrono::duration<Rep1, Period1> dur, std::chrono::duration<Rep2, Period2> granularity,
-								  TerminateT &terminate) {
+								  const TerminateT &terminate) {
 	for (std::chrono::nanoseconds t = dur; t.count() > 0; t -= granularity) {
-		if (terminate) {
+		if (terminate()) {
 			return;
 		}
 		sleep(std::min(t, std::chrono::duration_cast<std::chrono::nanoseconds>(granularity)));

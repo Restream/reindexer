@@ -13,7 +13,8 @@ bool checkIfTokenStartsWith(std::string_view src, std::string_view pattern) {
 	return checkIfStartsWith(src, pattern) && src.length() < pattern.length();
 }
 
-vector<string> SQLSuggester::GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces, GetSchemaF getSchema) {
+std::vector<std::string> SQLSuggester::GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces,
+													  GetSchemaF getSchema) {
 	ctx_.suggestionsPos = pos;
 	ctx_.autocompleteMode = true;
 	enumNamespaces_ = std::move(enumNamespaces);
@@ -33,10 +34,10 @@ vector<string> SQLSuggester::GetSuggestions(std::string_view q, size_t pos, Enum
 			return it.variants;
 		}
 	}
-	return std::vector<string>();
+	return std::vector<std::string>();
 }
 
-std::unordered_map<int, std::set<string>> sqlTokenMatchings = {
+std::unordered_map<int, std::set<std::string>> sqlTokenMatchings = {
 	{Start, {"explain", "select", "delete", "update", "truncate", "local"}},
 	{StartAfterLocal, {"explain", "select"}},
 	{StartAfterExplain, {"select", "delete", "update", "local"}},
@@ -68,8 +69,8 @@ std::unordered_map<int, std::set<string>> sqlTokenMatchings = {
 	{ST_GeomFromTextSqlToken, {"ST_GeomFromText"}},
 };
 
-static void getMatchingTokens(int tokenType, const string &token, vector<string> &variants) {
-	const std::set<string> &suggestions = sqlTokenMatchings[tokenType];
+static void getMatchingTokens(int tokenType, const std::string &token, std::vector<std::string> &variants) {
+	const std::set<std::string> &suggestions = sqlTokenMatchings[tokenType];
 	for (auto it = suggestions.begin(); it != suggestions.end(); ++it) {
 		if (isBlank(token) || checkIfStartsWith(token, *it)) {
 			variants.push_back(*it);
@@ -77,22 +78,22 @@ static void getMatchingTokens(int tokenType, const string &token, vector<string>
 	}
 }
 
-void SQLSuggester::getMatchingNamespacesNames(const string &token, vector<string> &variants) {
+void SQLSuggester::getMatchingNamespacesNames(const std::string &token, std::vector<std::string> &variants) {
 	auto namespaces = enumNamespaces_(EnumNamespacesOpts().OnlyNames());
 	for (auto &ns : namespaces) {
 		if (isBlank(token) || checkIfStartsWith(token, ns.name)) variants.push_back(ns.name);
 	}
 }
 
-void SQLSuggester::getMatchingFieldsNames(const string &token, vector<string> &variants) {
+void SQLSuggester::getMatchingFieldsNames(const std::string &token, std::vector<std::string> &variants) {
 	auto namespaces = enumNamespaces_(EnumNamespacesOpts().WithFilter(ctx_.suggestionLinkedNs));
 
 	if (namespaces.empty()) return;
 	auto dotPos = token.find('.');
 	for (auto &idx : namespaces[0].indexes) {
 		if (idx.name_ == "#pk" || idx.name_ == "-tuple") continue;
-		if (isBlank(token) || checkIfStartsWith(token, idx.name_, dotPos != string::npos)) {
-			if (dotPos == string::npos) {
+		if (isBlank(token) || checkIfStartsWith(token, idx.name_, dotPos != std::string::npos)) {
+			if (dotPos == std::string::npos) {
 				variants.push_back(idx.name_);
 			} else {
 				variants.push_back(idx.name_.substr(dotPos));
@@ -178,12 +179,12 @@ void SQLSuggester::getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx) {
 	}
 }
 
-bool SQLSuggester::findInPossibleTokens(int type, const string &v) {
-	const std::set<string> &values = sqlTokenMatchings[type];
+bool SQLSuggester::findInPossibleTokens(int type, const std::string &v) {
+	const std::set<std::string> &values = sqlTokenMatchings[type];
 	return (values.find(v) != values.end());
 }
 
-bool SQLSuggester::findInPossibleFields(const string &tok) {
+bool SQLSuggester::findInPossibleFields(const std::string &tok) {
 	auto namespaces = enumNamespaces_(EnumNamespacesOpts().WithFilter(ctx_.suggestionLinkedNs));
 
 	if (namespaces.empty()) return false;
@@ -198,7 +199,7 @@ bool SQLSuggester::findInPossibleFields(const string &tok) {
 	return false;
 }
 
-bool SQLSuggester::findInPossibleNamespaces(const string &tok) {
+bool SQLSuggester::findInPossibleNamespaces(const std::string &tok) {
 	return !enumNamespaces_(EnumNamespacesOpts().WithFilter(tok).OnlyNames()).empty();
 }
 

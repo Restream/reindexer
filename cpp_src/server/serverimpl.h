@@ -25,7 +25,7 @@ struct IDBManagerStatsCollector;
 struct IRPCServerStatsCollector;
 
 class ServerImpl {
-	using SinkMap = std::unordered_map<string, std::shared_ptr<spdlog::sinks::fast_file_sink>>;
+	using SinkMap = std::unordered_map<std::string, std::shared_ptr<spdlog::sinks::fast_file_sink>>;
 
 public:
 	ServerImpl();

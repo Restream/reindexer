@@ -110,7 +110,7 @@ int Context::Redirect(std::string_view url) {
 }
 
 static std::string_view lookupContentType(std::string_view path) {
-	auto p = path.find_last_of(".");
+	auto p = path.find_last_of('.');
 	if (p == std::string_view::npos) {
 		return "application/octet-stream"sv;
 	}
@@ -130,7 +130,7 @@ int Context::File(int code, std::string_view path, std::string_view data, bool i
 	std::string content;
 
 	if (data.length() == 0) {
-		if (fs::ReadFile(isGzip ? string(path) + kGzSuffix : string(path), content) < 0) {
+		if (fs::ReadFile(isGzip ? std::string(path) + kGzSuffix : std::string(path), content) < 0) {
 			return String(http::StatusNotFound, "File not found");
 		}
 	} else {

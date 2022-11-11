@@ -3,11 +3,9 @@
 #include "args/args.hpp"
 #include "core/storage/storagefactory.h"
 #include "tools/fsops.h"
-#include "yaml/yaml.h"
+#include "yaml-cpp/yaml.h"
 
 namespace reindexer_server {
-
-constexpr auto kDefaultClusterHttpWriteTimeout = std::chrono::seconds(20);
 
 void ServerConfig::Reset() {
 	args_.clear();
@@ -45,38 +43,33 @@ void ServerConfig::Reset() {
 	TxIdleTimeout = std::chrono::seconds(600);
 	RPCQrIdleTimeout = std::chrono::seconds(600);
 	HttpReadTimeout = std::chrono::seconds(0);
-	httpWriteTimeout_ = std::chrono::seconds(0);
-	hasCustomHttpWriteTimeout_ = false;
-	enableCluster_ = false;
+	httpWriteTimeout_ = kDefaultHttpWriteTimeout;
 	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
 	MaxHttpReqSize = 2 * 1024 * 1024;
 }
 
-const string ServerConfig::kDedicatedThreading = "dedicated";
-const string ServerConfig::kSharedThreading = "shared";
-const string ServerConfig::kPoolThreading = "pool";
+const std::string ServerConfig::kDedicatedThreading = "dedicated";
+const std::string ServerConfig::kSharedThreading = "shared";
 
 reindexer::Error ServerConfig::ParseYaml(const std::string &yaml) {
 	Error err;
-	Yaml::Node root;
 	try {
-		Yaml::Parse(root, yaml);
+		YAML::Node root = YAML::Load(yaml);
 		err = fromYaml(root);
-	} catch (const Yaml::Exception &ex) {
-		err = Error(errParams, "Error with config string. Reason: '%s'", ex.Message());
+	} catch (const YAML::Exception &ex) {
+		err = Error(errParams, "Error with config string. Reason: '%s'", ex.what());
 	}
 	return err;
 }
 
 Error ServerConfig::ParseFile(const std::string &filePath) {
 	Error err;
-	Yaml::Node root;
 	try {
-		Yaml::Parse(root, filePath.c_str());
+		YAML::Node root = YAML::LoadFile(filePath);
 		err = fromYaml(root);
-	} catch (const Yaml::Exception &ex) {
-		err = Error(errParams, "Error with config file '%s'. Reason: %s", filePath, ex.Message());
+	} catch (const YAML::Exception &ex) {
+		err = Error(errParams, "Error with config file '%s'. Reason: %s", filePath, ex.what());
 	}
 	return err;
 }
@@ -91,11 +84,11 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::ArgumentParser parser("reindexer server");
 	args::HelpFlag help(parser, "help", "Show this message", {'h', "help"});
 	args::Flag securityF(parser, "", "Enable per-user security", {"security"});
-	args::ValueFlag<string> configF(parser, "CONFIG", "Path to reindexer config file", {'c', "config"}, args::Options::Single);
+	args::ValueFlag<std::string> configF(parser, "CONFIG", "Path to reindexer config file", {'c', "config"}, args::Options::Single);
 	args::Flag startWithErrorsF(parser, "", "Allow to start reindexer with DB's load erros", {"startwitherrors"});
 
 	args::Group dbGroup(parser, "Database options");
-	args::ValueFlag<string> storageF(dbGroup, "PATH", "path to 'reindexer' storage", {'s', "db"}, StoragePath, args::Options::Single);
+	args::ValueFlag<std::string> storageF(dbGroup, "PATH", "path to 'reindexer' storage", {'s', "db"}, StoragePath, args::Options::Single);
 	auto availableStorageTypes = reindexer::datastorage::StorageFactory::getAvailableTypes();
 	std::string availabledStorages;
 	for (const auto &type : availableStorageTypes) {
@@ -104,36 +97,34 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 		}
 		availabledStorages.append("'" + reindexer::datastorage::StorageTypeToString(type) + "'");
 	}
-	args::ValueFlag<string> storageEngineF(dbGroup, "NAME", "'reindexer' storage engine (" + availabledStorages + ")", {'e', "engine"},
-										   StorageEngine, args::Options::Single);
+	args::ValueFlag<std::string> storageEngineF(dbGroup, "NAME", "'reindexer' storage engine (" + availabledStorages + ")", {'e', "engine"},
+												StorageEngine, args::Options::Single);
 	args::Flag autorepairF(dbGroup, "", "Enable autorepair for storages after unexpected shutdowns", {"autorepair"});
 
 	args::Group netGroup(parser, "Network options");
-	args::ValueFlag<string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
-	args::ValueFlag<string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
-	args::Flag enableClusterF(netGroup, "",
-							  "Enable RAFT-cluster support. This will also implicitly enable 'dedicated' threading mode for RPC-server",
-							  {"enable-cluster"});
-	args::ValueFlag<string> rpcThreadingModeF(netGroup, "RTHREADING", "RPC connections threading mode: shared or dedicated",
-											  {'X', "rpc-threading"}, RPCThreadingMode, args::Options::Single);
-	args::ValueFlag<string> httpThreadingModeF(netGroup, "HTHREADING", "HTTP connections threading mode: shared or dedicated",
-											   {"http-threading"}, HttpThreadingMode, args::Options::Single);
+	args::ValueFlag<std::string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
+	args::ValueFlag<std::string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
+	args::Flag enableClusterF(netGroup, "", "***deprecated***. Will be ignored by reindexer", {"enable-cluster"});
+	args::ValueFlag<std::string> rpcThreadingModeF(netGroup, "RTHREADING", "RPC connections threading mode: shared or dedicated",
+												   {'X', "rpc-threading"}, RPCThreadingMode, args::Options::Single);
+	args::ValueFlag<std::string> httpThreadingModeF(netGroup, "HTHREADING", "HTTP connections threading mode: shared or dedicated",
+													{"http-threading"}, HttpThreadingMode, args::Options::Single);
 	args::ValueFlag<size_t> MaxHttpReqSizeF(
 		netGroup, "", "Max HTTP request size in bytes. Default value is 2 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
 		{"max-http-req"}, MaxHttpReqSize, args::Options::Single);
 #ifdef WITH_GRPC
-	args::ValueFlag<string> grpcAddrF(netGroup, "GPORT", "GRPC listen host:port", {'g', "grpcaddr"}, RPCAddr, args::Options::Single);
+	args::ValueFlag<std::string> grpcAddrF(netGroup, "GPORT", "GRPC listen host:port", {'g', "grpcaddr"}, RPCAddr, args::Options::Single);
 	args::Flag grpcF(netGroup, "", "Enable gRpc service", {"grpc"});
 #endif
-	args::ValueFlag<string> webRootF(netGroup, "PATH", "web root. This path if set overrides linked-in resources", {'w', "webroot"},
-									 WebRoot, args::Options::Single);
+	args::ValueFlag<std::string> webRootF(netGroup, "PATH", "web root. This path if set overrides linked-in resources", {'w', "webroot"},
+										  WebRoot, args::Options::Single);
 	args::ValueFlag<int> httpReadTimeoutF(netGroup, "", "timeout (s) for HTTP read operations (i.e. selects, get meta and others)",
 										  {"http-read-timeout"}, args::Options::Single);
-	args::ValueFlag<int> httpWriteTimeoutF(netGroup, "", "timeout (s) for HTTP write operations (i.e. selects, get meta and others)",
+	args::ValueFlag<int> httpWriteTimeoutF(netGroup, "",
+										   "timeout (s) for HTTP write operations (i.e. selects, get meta and others). May not be set to 0",
 										   {"http-write-timeout"}, args::Options::Single);
-	args::ValueFlag<size_t> maxUpdatesSizeF(
-		netGroup, "", "Maximum cached updates size for async or cluster replication. Min value is 1000000 bytes. '0' means unlimited",
-		{"updatessize"}, MaxUpdatesSize, args::Options::Single);
+	args::ValueFlag<size_t> maxUpdatesSizeF(netGroup, "", "Maximum cached updates size", {"updatessize"}, MaxUpdatesSize,
+											args::Options::Single);
 	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});
 	args::ValueFlag<int> txIdleTimeoutF(netGroup, "", "http transactions idle timeout (s)", {"tx-idle-timeout"}, TxIdleTimeout.count(),
 										args::Options::Single);
@@ -149,20 +140,20 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::Flag clientsConnectionsStatF(metricsGroup, "", "Enable client connection statistic", {"clientsstats"});
 
 	args::Group logGroup(parser, "Logging options");
-	args::ValueFlag<string> logLevelF(logGroup, "", "log level (none, warning, error, info, trace)", {'l', "loglevel"}, LogLevel,
-									  args::Options::Single);
-	args::ValueFlag<string> serverLogF(logGroup, "", "Server log file", {"serverlog"}, ServerLog, args::Options::Single);
-	args::ValueFlag<string> coreLogF(logGroup, "", "Core log file", {"corelog"}, CoreLog, args::Options::Single);
-	args::ValueFlag<string> httpLogF(logGroup, "", "Http log file", {"httplog"}, HttpLog, args::Options::Single);
-	args::ValueFlag<string> rpcLogF(logGroup, "", "Rpc log file", {"rpclog"}, RpcLog, args::Options::Single);
+	args::ValueFlag<std::string> logLevelF(logGroup, "", "log level (none, warning, error, info, trace)", {'l', "loglevel"}, LogLevel,
+										   args::Options::Single);
+	args::ValueFlag<std::string> serverLogF(logGroup, "", "Server log file", {"serverlog"}, ServerLog, args::Options::Single);
+	args::ValueFlag<std::string> coreLogF(logGroup, "", "Core log file", {"corelog"}, CoreLog, args::Options::Single);
+	args::ValueFlag<std::string> httpLogF(logGroup, "", "Http log file", {"httplog"}, HttpLog, args::Options::Single);
+	args::ValueFlag<std::string> rpcLogF(logGroup, "", "Rpc log file", {"rpclog"}, RpcLog, args::Options::Single);
 	args::Flag logAllocsF(netGroup, "", "Log operations allocs statistics", {'a', "allocs"});
 
 #ifndef _WIN32
 	args::Group unixDaemonGroup(parser, "Unix daemon options");
-	args::ValueFlag<string> userF(unixDaemonGroup, "USER", "System user name", {'u', "user"}, UserName, args::Options::Single);
+	args::ValueFlag<std::string> userF(unixDaemonGroup, "USER", "System user name", {'u', "user"}, UserName, args::Options::Single);
 	args::Flag daemonizeF(unixDaemonGroup, "", "Run in daemon mode", {'d', "daemonize"});
-	args::ValueFlag<string> daemonPidFileF(unixDaemonGroup, "", "Custom daemon pid file", {"pidfile"}, DaemonPidFile,
-										   args::Options::Single);
+	args::ValueFlag<std::string> daemonPidFileF(unixDaemonGroup, "", "Custom daemon pid file", {"pidfile"}, DaemonPidFile,
+												args::Options::Single);
 #else
 	args::Group winSvcGroup(parser, "Windows service options");
 	args::Flag installF(winSvcGroup, "", "Install reindexer windows service", {"install"});
@@ -190,7 +181,6 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (logLevelF) LogLevel = args::get(logLevelF);
 	if (httpAddrF) HTTPAddr = args::get(httpAddrF);
 	if (rpcAddrF) RPCAddr = args::get(rpcAddrF);
-	if (enableClusterF) SetEnableCluster(args::get(enableClusterF));
 	if (rpcThreadingModeF) RPCThreadingMode = args::get(rpcThreadingModeF);
 	if (httpThreadingModeF) HttpThreadingMode = args::get(httpThreadingModeF);
 	if (webRootF) WebRoot = args::get(webRootF);
@@ -228,60 +218,54 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	return Error();
 }
 
-void ServerConfig::SetEnableCluster(bool val) noexcept {
-	enableCluster_ = val;
-	if (!hasCustomHttpWriteTimeout_ && enableCluster_) {
-		httpWriteTimeout_ = kDefaultClusterHttpWriteTimeout;
+void ServerConfig::SetHttpWriteTimeout(std::chrono::seconds val) noexcept {
+	if (val.count() > 0) {
+		httpWriteTimeout_ = val;
+		defaultHttpWriteTimeout_ = false;
+	} else {
+		httpWriteTimeout_ = kDefaultHttpWriteTimeout;
+		defaultHttpWriteTimeout_ = true;
 	}
 }
 
-void ServerConfig::SetHttpWriteTimeout(std::chrono::seconds val) noexcept {
-	hasCustomHttpWriteTimeout_ = true;
-	httpWriteTimeout_ = val;
-}
-
-reindexer::Error ServerConfig::fromYaml(Yaml::Node &root) {
+reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
 	try {
-		StoragePath = root["storage"]["path"].As<std::string>(StoragePath);
-		StorageEngine = root["storage"]["engine"].As<std::string>(StorageEngine);
-		StartWithErrors = root["storage"]["startwitherrors"].As<bool>(StartWithErrors);
-		Autorepair = root["storage"]["autorepair"].As<bool>(Autorepair);
-		LogLevel = root["logger"]["loglevel"].As<std::string>(LogLevel);
-		ServerLog = root["logger"]["serverlog"].As<std::string>(ServerLog);
-		CoreLog = root["logger"]["corelog"].As<std::string>(CoreLog);
-		HttpLog = root["logger"]["httplog"].As<std::string>(HttpLog);
-		RpcLog = root["logger"]["rpclog"].As<std::string>(RpcLog);
-		HTTPAddr = root["net"]["httpaddr"].As<std::string>(HTTPAddr);
-		RPCAddr = root["net"]["rpcaddr"].As<std::string>(RPCAddr);
-		const auto enableCluster = root["net"]["enable_cluster"].As<bool>(EnableCluster());
-		SetEnableCluster(enableCluster);
-		RPCThreadingMode = root["net"]["rpc_threading"].As<std::string>(RPCThreadingMode);
-		HttpThreadingMode = root["net"]["http_threading"].As<std::string>(HttpThreadingMode);
-		WebRoot = root["net"]["webroot"].As<std::string>(WebRoot);
-		MaxUpdatesSize = root["net"]["maxupdatessize"].As<size_t>(MaxUpdatesSize);
-		EnableSecurity = root["net"]["security"].As<bool>(EnableSecurity);
-		EnableGRPC = root["net"]["grpc"].As<bool>(EnableGRPC);
-		GRPCAddr = root["net"]["grpcaddr"].As<std::string>(GRPCAddr);
-		TxIdleTimeout = std::chrono::seconds(root["net"]["tx_idle_timeout"].As<int>(TxIdleTimeout.count()));
-		HttpReadTimeout = std::chrono::seconds(root["net"]["http_read_timeout"].As<int>(HttpReadTimeout.count()));
-		RPCQrIdleTimeout = std::chrono::seconds(root["net"]["rpc_qr_idle_timeout"].As<int>(RPCQrIdleTimeout.count()));
-		const auto httpWriteTimeout = root["net"]["http_write_timeout"].As<int>(-1);
-		if (httpWriteTimeout >= 0) {
-			SetHttpWriteTimeout(std::chrono::seconds(httpWriteTimeout));
-		}
-		MaxHttpReqSize = root["net"]["max_http_body_size"].As<std::size_t>(MaxHttpReqSize);
-		EnablePrometheus = root["metrics"]["prometheus"].As<bool>(EnablePrometheus);
-		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].As<int>(PrometheusCollectPeriod.count()));
-		EnableConnectionsStats = root["metrics"]["clientsstats"].As<bool>(EnableConnectionsStats);
+		StoragePath = root["storage"]["path"].as<std::string>(StoragePath);
+		StorageEngine = root["storage"]["engine"].as<std::string>(StorageEngine);
+		StartWithErrors = root["storage"]["startwitherrors"].as<bool>(StartWithErrors);
+		Autorepair = root["storage"]["autorepair"].as<bool>(Autorepair);
+		LogLevel = root["logger"]["loglevel"].as<std::string>(LogLevel);
+		ServerLog = root["logger"]["serverlog"].as<std::string>(ServerLog);
+		CoreLog = root["logger"]["corelog"].as<std::string>(CoreLog);
+		HttpLog = root["logger"]["httplog"].as<std::string>(HttpLog);
+		RpcLog = root["logger"]["rpclog"].as<std::string>(RpcLog);
+		HTTPAddr = root["net"]["httpaddr"].as<std::string>(HTTPAddr);
+		RPCAddr = root["net"]["rpcaddr"].as<std::string>(RPCAddr);
+		RPCThreadingMode = root["net"]["rpc_threading"].as<std::string>(RPCThreadingMode);
+		HttpThreadingMode = root["net"]["http_threading"].as<std::string>(HttpThreadingMode);
+		WebRoot = root["net"]["webroot"].as<std::string>(WebRoot);
+		MaxUpdatesSize = root["net"]["maxupdatessize"].as<size_t>(MaxUpdatesSize);
+		EnableSecurity = root["net"]["security"].as<bool>(EnableSecurity);
+		EnableGRPC = root["net"]["grpc"].as<bool>(EnableGRPC);
+		GRPCAddr = root["net"]["grpcaddr"].as<std::string>(GRPCAddr);
+		TxIdleTimeout = std::chrono::seconds(root["net"]["tx_idle_timeout"].as<int>(TxIdleTimeout.count()));
+		HttpReadTimeout = std::chrono::seconds(root["net"]["http_read_timeout"].as<int>(HttpReadTimeout.count()));
+		RPCQrIdleTimeout = std::chrono::seconds(root["net"]["rpc_qr_idle_timeout"].as<int>(RPCQrIdleTimeout.count()));
+		const auto httpWriteTimeout = root["net"]["http_write_timeout"].as<int>(-1);
+		SetHttpWriteTimeout(std::chrono::seconds(httpWriteTimeout));
+		MaxHttpReqSize = root["net"]["max_http_body_size"].as<std::size_t>(MaxHttpReqSize);
+		EnablePrometheus = root["metrics"]["prometheus"].as<bool>(EnablePrometheus);
+		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].as<int>(PrometheusCollectPeriod.count()));
+		EnableConnectionsStats = root["metrics"]["clientsstats"].as<bool>(EnableConnectionsStats);
 #ifndef _WIN32
-		UserName = root["system"]["user"].As<std::string>(UserName);
-		Daemonize = root["system"]["daemonize"].As<bool>(Daemonize);
-		DaemonPidFile = root["system"]["pidfile"].As<std::string>(DaemonPidFile);
+		UserName = root["system"]["user"].as<std::string>(UserName);
+		Daemonize = root["system"]["daemonize"].as<bool>(Daemonize);
+		DaemonPidFile = root["system"]["pidfile"].as<std::string>(DaemonPidFile);
 #endif
-		DebugAllocs = root["debug"]["allocs"].As<bool>(DebugAllocs);
-		DebugPprof = root["debug"]["pprof"].As<bool>(DebugPprof);
-	} catch (const Yaml::Exception &ex) {
-		return Error(errParams, "%s", ex.Message());
+		DebugAllocs = root["debug"]["allocs"].as<bool>(DebugAllocs);
+		DebugPprof = root["debug"]["pprof"].as<bool>(DebugPprof);
+	} catch (const YAML::Exception &ex) {
+		return Error(errParams, "Unable to parse YML server config: %s", ex.what());
 	}
 	return Error();
 }

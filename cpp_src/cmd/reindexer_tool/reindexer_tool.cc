@@ -16,7 +16,7 @@ using args::Options;
 
 static int llevel;
 
-static void InstallLogLevel(const vector<string>& args) {
+static void InstallLogLevel(const std::vector<std::string>& args) {
 	try {
 		llevel = stoi(args.back());
 		if ((llevel < 1) || (llevel > 5)) {
@@ -46,15 +46,15 @@ int main(int argc, char* argv[]) {
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});
 
 	args::Group progOptions("options");
-	args::ValueFlag<string> dbDsn(progOptions, "DSN", "DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>' or 'builtin://<path>'",
+	args::ValueFlag<std::string> dbDsn(progOptions, "DSN", "DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>' or 'builtin://<path>'",
 								  {'d', "dsn"}, "", Options::Single | Options::Global);
-	args::ValueFlag<string> fileName(progOptions, "FILENAME", "execute commands from file, then exit", {'f', "filename"}, "",
+	args::ValueFlag<std::string> fileName(progOptions, "FILENAME", "execute commands from file, then exit", {'f', "filename"}, "",
 									 Options::Single | Options::Global);
-	args::ValueFlag<string> command(progOptions, "COMMAND", "run only single command (SQL or internal) and exit'", {'c', "command"}, "",
+	args::ValueFlag<std::string> command(progOptions, "COMMAND", "run only single command (SQL or internal) and exit'", {'c', "command"}, "",
 									Options::Single | Options::Global);
-	args::ValueFlag<string> outFileName(progOptions, "FILENAME", "send query results to file", {'o', "output"}, "",
+	args::ValueFlag<std::string> outFileName(progOptions, "FILENAME", "send query results to file", {'o', "output"}, "",
 										Options::Single | Options::Global);
-	args::ValueFlag<string> dumpMode(progOptions, "DUMP_MODE",
+	args::ValueFlag<std::string> dumpMode(progOptions, "DUMP_MODE",
 									 "dump mode for sharded databases: 'full_node' (default), 'sharded_only', 'local_only'", {"dump-mode"},
 									 "", Options::Single | Options::Global);
 
@@ -63,15 +63,15 @@ int main(int argc, char* argv[]) {
 
 	args::Flag createDBF(progOptions, "", "Enable created database if missed", {"createdb"});
 
-	args::Positional<string> dbName(progOptions, "DB name", "Name of a database to get connected to", Options::Single);
+	args::Positional<std::string> dbName(progOptions, "DB name", "Name of a database to get connected to", Options::Single);
 
 	args::ActionFlag logLevel(progOptions, "INT=1..5", "reindexer logging level", {'l', "log"}, 1, &InstallLogLevel,
 							  Options::Single | Options::Global);
 
 	args::Flag repair(progOptions, "", "Repair database", {'r', "repair"});
 
-	args::ValueFlag<string> appName(progOptions, "Application name", "Application name which will be used in login info", {'a', "appname"},
-									"reindexer_tool", Options::Single | Options::Global);
+	args::ValueFlag<std::string> appName(progOptions, "Application name", "Application name which will be used in login info",
+										 {'a', "appname"}, "reindexer_tool", Options::Single | Options::Global);
 
 	args::GlobalOptions globals(parser, progOptions);
 
@@ -89,14 +89,14 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
-	string dsn = args::get(dbDsn);
+	std::string dsn = args::get(dbDsn);
 	bool ok = false;
 	Error err;
 #ifndef _WIN32
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
-	string db;
+	std::string db;
 	if (dsn.empty()) {
 		db = args::get(dbName);
 		if (db.empty()) {
@@ -124,7 +124,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (dsn.compare(0, 9, "cproto://") == 0) {
-		reindexer::client::CoroReindexerConfig config;
+		reindexer::client::ReindexerConfig config;
 		config.EnableCompression = true;
 		config.AppName = args::get(appName);
 		CommandsProcessor<reindexer::client::CoroReindexer> commandsProcessor(args::get(outFileName), args::get(fileName),

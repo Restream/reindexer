@@ -146,4 +146,6 @@ constexpr bool IsFullText(IndexType type) noexcept {
 	return type == IndexFastFT || type == IndexFuzzyFT || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT;
 }
 
+constexpr bool IsFastFullText(IndexType type) noexcept { return type == IndexFastFT || type == IndexCompositeFastFT; }
+
 }  // namespace reindexer

@@ -6,7 +6,6 @@
 
 namespace reindexer {
 
-class Index;
 class ItemImpl;
 class JoinedSelector;
 class NamespaceImpl;
@@ -25,16 +24,24 @@ struct Value {
 };
 
 struct Index {
-	Index(std::string_view c) : column{c}, index{IndexValueType::NotSet} {}
-	double GetValue(ConstPayload, TagsMatcher&, bool forceByJsonPath = false) const;
+	Index(std::string c) : column{std::move(c)}, index{IndexValueType::NotSet} {}
+	double GetValue(ConstPayload, TagsMatcher&) const;
 	bool operator==(const Index& other) const noexcept { return column == other.column && index == other.index; }
 
 	std::string column;
 	int index = IndexValueType::NotSet;
 };
 
+struct ProxiedField {
+	ProxiedField(std::string j) : json{std::move(j)} {}
+	double GetValue(ConstPayload, TagsMatcher&) const;
+	bool operator==(const ProxiedField& other) const noexcept { return json == other.json; }
+
+	std::string json;
+};
+
 struct JoinedIndex {
-	JoinedIndex(size_t nsInd, std::string_view c) : nsIdx{nsInd}, column{c}, index{IndexValueType::NotSet} {}
+	JoinedIndex(size_t nsInd, std::string c) : nsIdx{nsInd}, column{std::move(c)}, index{IndexValueType::NotSet} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
 	bool operator==(const JoinedIndex& other) const noexcept {
 		return nsIdx == other.nsIdx && column == other.column && index == other.index;
@@ -51,8 +58,8 @@ struct Rank {
 };
 
 struct DistanceFromPoint {
-	DistanceFromPoint(std::string_view c, Point p) : column{c}, index{IndexValueType::NotSet}, point{p} {}
-	double GetValue(ConstPayload, TagsMatcher&, bool forceByJsonPath = false) const;
+	DistanceFromPoint(std::string c, Point p) : column{std::move(c)}, index{IndexValueType::NotSet}, point{p} {}
+	double GetValue(ConstPayload, TagsMatcher&) const;
 	bool operator==(const DistanceFromPoint& other) const noexcept {
 		return column == other.column && index == other.index && point == other.point;
 	}
@@ -62,9 +69,18 @@ struct DistanceFromPoint {
 	Point point;
 };
 
+struct ProxiedDistanceFromPoint {
+	ProxiedDistanceFromPoint(std::string j, Point p) : json{std::move(j)}, point{p} {}
+	double GetValue(ConstPayload, TagsMatcher&) const;
+	bool operator==(const ProxiedDistanceFromPoint& other) const noexcept { return json == other.json && point == other.point; }
+
+	std::string json;
+	Point point;
+};
+
 struct DistanceJoinedIndexFromPoint {
-	DistanceJoinedIndexFromPoint(size_t nsInd, std::string_view c, Point p)
-		: nsIdx{nsInd}, column{c}, index{IndexValueType::NotSet}, point{p} {}
+	DistanceJoinedIndexFromPoint(size_t nsInd, std::string c, Point p)
+		: nsIdx{nsInd}, column{std::move(c)}, index{IndexValueType::NotSet}, point{p} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
 	bool operator==(const DistanceJoinedIndexFromPoint& other) const noexcept {
 		return nsIdx == other.nsIdx && column == other.column && index == other.index && point == other.point;
@@ -77,9 +93,9 @@ struct DistanceJoinedIndexFromPoint {
 };
 
 struct DistanceBetweenIndexes {
-	DistanceBetweenIndexes(std::string_view c1, std::string_view c2)
-		: column1{c1}, index1{IndexValueType::NotSet}, column2{c2}, index2{IndexValueType::NotSet} {}
-	double GetValue(ConstPayload, TagsMatcher&, bool forceByJsonPath = false) const;
+	DistanceBetweenIndexes(std::string c1, std::string c2)
+		: column1{std::move(c1)}, index1{IndexValueType::NotSet}, column2{std::move(c2)}, index2{IndexValueType::NotSet} {}
+	double GetValue(ConstPayload, TagsMatcher&) const;
 	bool operator==(const DistanceBetweenIndexes& other) const noexcept {
 		return column1 == other.column1 && index1 == other.index1 && column2 == other.column2 && index2 == other.index2;
 	}
@@ -90,9 +106,18 @@ struct DistanceBetweenIndexes {
 	int index2 = IndexValueType::NotSet;
 };
 
+struct ProxiedDistanceBetweenFields {
+	ProxiedDistanceBetweenFields(std::string j1, std::string j2) : json1{std::move(j1)}, json2{std::move(j2)} {}
+	double GetValue(ConstPayload, TagsMatcher&) const;
+	bool operator==(const ProxiedDistanceBetweenFields& other) const noexcept { return json1 == other.json1 && json2 == other.json2; }
+
+	std::string json1;
+	std::string json2;
+};
+
 struct DistanceBetweenIndexAndJoinedIndex {
-	DistanceBetweenIndexAndJoinedIndex(std::string_view c, size_t jNsInd, std::string_view jc)
-		: column{c}, index{IndexValueType::NotSet}, jNsIdx{jNsInd}, jColumn{jc}, jIndex{IndexValueType::NotSet} {}
+	DistanceBetweenIndexAndJoinedIndex(std::string c, size_t jNsInd, std::string jc)
+		: column{std::move(c)}, index{IndexValueType::NotSet}, jNsIdx{jNsInd}, jColumn{std::move(jc)}, jIndex{IndexValueType::NotSet} {}
 	double GetValue(ConstPayload, TagsMatcher&, IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
 	bool operator==(const DistanceBetweenIndexAndJoinedIndex& other) const noexcept {
 		return column == other.column && index == other.index && jNsIdx == other.jNsIdx && jColumn == other.jColumn &&
@@ -107,8 +132,13 @@ struct DistanceBetweenIndexAndJoinedIndex {
 };
 
 struct DistanceBetweenJoinedIndexes {
-	DistanceBetweenJoinedIndexes(size_t nsInd1, std::string_view c1, size_t nsInd2, std::string_view c2)
-		: nsIdx1{nsInd1}, column1{c1}, index1{IndexValueType::NotSet}, nsIdx2{nsInd2}, column2{c2}, index2{IndexValueType::NotSet} {}
+	DistanceBetweenJoinedIndexes(size_t nsInd1, std::string c1, size_t nsInd2, std::string c2)
+		: nsIdx1{nsInd1},
+		  column1{std::move(c1)},
+		  index1{IndexValueType::NotSet},
+		  nsIdx2{nsInd2},
+		  column2{std::move(c2)},
+		  index2{IndexValueType::NotSet} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
 	bool operator==(const DistanceBetweenJoinedIndexes& other) const noexcept {
 		return nsIdx1 == other.nsIdx1 && column1 == other.column1 && index1 == other.index1 && nsIdx2 == other.nsIdx2 &&
@@ -124,8 +154,8 @@ struct DistanceBetweenJoinedIndexes {
 };
 
 struct DistanceBetweenJoinedIndexesSameNs {
-	DistanceBetweenJoinedIndexesSameNs(size_t nsInd, std::string_view c1, std::string_view c2)
-		: nsIdx{nsInd}, column1{c1}, index1{IndexValueType::NotSet}, column2{c2}, index2{IndexValueType::NotSet} {}
+	DistanceBetweenJoinedIndexesSameNs(size_t nsInd, std::string c1, std::string c2)
+		: nsIdx{nsInd}, column1{std::move(c1)}, index1{IndexValueType::NotSet}, column2{std::move(c2)}, index2{IndexValueType::NotSet} {}
 	double GetValue(IdType rowId, const joins::NamespaceResults&, const std::vector<JoinedSelector>&) const;
 	bool operator==(const DistanceBetweenJoinedIndexesSameNs& other) const noexcept {
 		return nsIdx == other.nsIdx && column1 == other.column1 && index1 == other.index1 && column2 == other.column2 &&
@@ -175,13 +205,10 @@ public:
 					 uint8_t proc, TagsMatcher& tagsMatcher) const {
 		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher);
 	}
-	double Calculate(IdType rowId, ConstPayload pv, uint8_t proc, TagsMatcher& tagsMatcher, bool forceByJsonPath) const {
-		return calculate(cbegin(), cend(), rowId, pv, proc, tagsMatcher, forceByJsonPath);
-	}
 	bool ByField() const;
 	bool ByJoinedField() const;
 	void PrepareIndexes(const NamespaceImpl&);
-	static void PrepareSortIndex(std::string_view column, int& index, const NamespaceImpl&);
+	static void PrepareSortIndex(std::string& column, int& index, const NamespaceImpl&);
 
 	std::string Dump() const;
 
@@ -199,8 +226,6 @@ private:
 					   bool negative, const SkipSW& skipSpaces);
 	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, const joins::NamespaceResults&,
 							const std::vector<JoinedSelector>&, uint8_t proc, TagsMatcher&);
-	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, uint8_t proc, TagsMatcher&,
-							bool forceByJsonPath);
 
 	void openBracketBeforeLastAppended();
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);
@@ -210,5 +235,22 @@ private:
 											 size_t nsIdx, std::string_view column, int index);
 };
 std::ostream& operator<<(std::ostream&, const SortExpression&);
+
+class ProxiedSortExpression
+	: public ExpressionTree<SortExpressionOperation, SortExpressionBracket, 2, SortExprFuncs::Value, SortExprFuncs::ProxiedField,
+							SortExprFuncs::Rank, SortExprFuncs::ProxiedDistanceFromPoint, SortExprFuncs::ProxiedDistanceBetweenFields> {
+public:
+	ProxiedSortExpression(const SortExpression& se, const NamespaceImpl& ns) { fill(se.cbegin(), se.cend(), ns); }
+	double Calculate(IdType rowId, ConstPayload pv, uint8_t proc, TagsMatcher& tagsMatcher) const {
+		return calculate(cbegin(), cend(), rowId, pv, proc, tagsMatcher);
+	}
+	std::string Dump() const;
+
+private:
+	void fill(SortExpression::const_iterator begin, SortExpression::const_iterator end, const NamespaceImpl&);
+	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, uint8_t proc, TagsMatcher&);
+	static void dump(const_iterator begin, const_iterator end, WrSerializer&);
+};
+std::ostream& operator<<(std::ostream&, const ProxiedSortExpression&);
 
 }  // namespace reindexer

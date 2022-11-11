@@ -30,6 +30,7 @@ public:
 	explicit Variant(std::string_view v);
 	explicit Variant(const key_string &v);
 	explicit Variant(const PayloadValue &v);
+	explicit Variant(PayloadValue &&v);
 	explicit Variant(const VariantArray &values);
 	explicit Variant(Point);
 	Variant(const Variant &other) : type_(other.type_), hold_(other.hold_) {

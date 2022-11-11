@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-string HumanReadableNumber(size_t number, bool si, const string& unitLabel) {
+string HumanReadableNumber(size_t number, bool si, const std::string& unitLabel) {
 	const string siPrefix = "kMGTPE";
 	const string prefix = "KMGTPE";
 
@@ -24,7 +24,7 @@ string HumanReadableNumber(size_t number, bool si, const string& unitLabel) {
 	size_t size = snprintf(nullptr, 0, format.c_str(), result, pre.c_str()) + 1;
 	unique_ptr<char[]> buf(new char[size]);
 	snprintf(buf.get(), size, format.c_str(), result, pre.c_str());
-	return string(buf.get(), buf.get() + size - 1);
+	return std::string(buf.get(), buf.get() + size - 1);
 }
 
 string FormatString(const char* msg, va_list args) {
@@ -34,7 +34,7 @@ string FormatString(const char* msg, va_list args) {
 
 	std::size_t size = 256;
 	char local_buff[256];
-	auto ret = vsnprintf(local_buff, size, msg, args_cp);
+	auto ret = vsnprintf(local_buff, size, msg, args_cp); // NOLINT(*valist.Uninitialized) False positive
 
 	va_end(args_cp);
 
@@ -47,6 +47,7 @@ string FormatString(const char* msg, va_list args) {
 		size = static_cast<size_t>(ret) + 1;  // + 1 for the null byte
 		std::unique_ptr<char[]> buff(new char[size]);
 		ret = vsnprintf(buff.get(), size, msg, args);
+		(void)ret;
 		return buff.get();
 	}
 }

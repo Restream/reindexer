@@ -109,7 +109,7 @@ void ReplicationApi::ForceSync() {
 	awaitForceSync.join();
 }
 
-void ReplicationApi::SwitchMaster(size_t id, AsyncReplicationConfigTest::NsSet namespaces, std::string replMode) {
+void ReplicationApi::SwitchMaster(size_t id, const AsyncReplicationConfigTest::NsSet& namespaces, std::string replMode) {
 	if (id == masterId_) return;
 	masterId_ = id;
 
@@ -126,8 +126,8 @@ void ReplicationApi::SwitchMaster(size_t id, AsyncReplicationConfigTest::NsSet n
 			followers.emplace_back(ReplNode{fmt::format("cproto://127.0.0.1:{}/node{}", srv->RpcPort(), i)});
 		}
 	}
-	AsyncReplicationConfigTest config("leader", std::move(followers), false, true, id, "node" + std::to_string(masterId_),
-									  std::move(namespaces), std::move(replMode));
+	AsyncReplicationConfigTest config("leader", std::move(followers), false, true, id, "node" + std::to_string(masterId_), namespaces,
+									  std::move(replMode));
 	GetSrv(masterId_)->SetReplicationConfig(config);
 }
 

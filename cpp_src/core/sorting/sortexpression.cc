@@ -11,7 +11,7 @@
 
 namespace {
 
-static void throwParseError(const std::string_view sortExpr, char const* const pos, const std::string_view message) {
+static void throwParseError(std::string_view sortExpr, char const* const pos, std::string_view message) {
 	throw reindexer::Error(errParams, "'%s' is not valid sort expression. Parser failed at position %d.%s%s", sortExpr,
 						   pos - sortExpr.data(), message.empty() ? "" : " ", message);
 }
@@ -21,13 +21,19 @@ static inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept
 }
 
 static reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, int index,
-											  std::string_view column, bool forceByJsonPath) {
+											  std::string_view column) {
 	reindexer::VariantArray values;
-	if (forceByJsonPath || index == IndexValueType::SetByJsonPath) {
+	if (index == IndexValueType::SetByJsonPath) {
 		pv.GetByJsonPath(column, tagsMatcher, values, KeyValueUndefined);
 	} else {
 		pv.Get(index, values);
 	}
+	return values;
+}
+
+static reindexer::VariantArray getJsonFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, std::string_view json) {
+	reindexer::VariantArray values;
+	pv.GetByJsonPath(json, tagsMatcher, values, KeyValueUndefined);
 	return values;
 }
 
@@ -39,8 +45,10 @@ using SortExprFuncs::Value;
 using SortExprFuncs::JoinedIndex;
 using SortExprFuncs::Rank;
 using SortExprFuncs::DistanceFromPoint;
+using SortExprFuncs::ProxiedDistanceFromPoint;
 using SortExprFuncs::DistanceJoinedIndexFromPoint;
 using SortExprFuncs::DistanceBetweenIndexes;
+using SortExprFuncs::ProxiedDistanceBetweenFields;
 using SortExprFuncs::DistanceBetweenJoinedIndexes;
 using SortExprFuncs::DistanceBetweenIndexAndJoinedIndex;
 using SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
@@ -87,8 +95,8 @@ bool SortExpression::ByJoinedField() const {
 	return Size() == 1 && container_[0].HoldsOrReferTo<JoinedIndex>() && GetOperation(0) == noOperation;
 }
 
-double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher, bool forceByJsonPath) const {
-	const VariantArray values = getFieldValues(pv, tagsMatcher, index, column, forceByJsonPath);
+double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+	const VariantArray values = getFieldValues(pv, tagsMatcher, index, column);
 	if (values.empty()) {
 		throw Error(errQueryExec, "Empty field in sort expression: %s", column);
 	}
@@ -98,8 +106,24 @@ double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher,
 	return values[0].As<double>();
 }
 
-double DistanceFromPoint::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher, bool forceByJsonPath) const {
-	const VariantArray values = getFieldValues(pv, tagsMatcher, index, column, forceByJsonPath);
+double SortExprFuncs::ProxiedField::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+	const VariantArray values = getJsonFieldValues(pv, tagsMatcher, json);
+	if (values.empty()) {
+		throw Error(errQueryExec, "Empty field in sort expression: %s", json);
+	}
+	if (values.size() > 1 || values[0].Type() == KeyValueComposite || values[0].Type() == KeyValueTuple) {
+		throw Error(errQueryExec, "Array, composite or tuple field in sort expression are not supported");
+	}
+	return values[0].As<double>();
+}
+
+double DistanceFromPoint::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+	const VariantArray values = getFieldValues(pv, tagsMatcher, index, column);
+	return distance(static_cast<Point>(values), point);
+}
+
+double ProxiedDistanceFromPoint::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+	const VariantArray values = getJsonFieldValues(pv, tagsMatcher, json);
 	return distance(static_cast<Point>(values), point);
 }
 
@@ -121,16 +145,22 @@ double DistanceJoinedIndexFromPoint::GetValue(IdType rowId, const joins::Namespa
 	return distance(static_cast<Point>(values), point);
 }
 
-double DistanceBetweenIndexes::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher, bool forceByJsonPath) const {
-	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index1, column1, forceByJsonPath);
-	const VariantArray values2 = getFieldValues(pv, tagsMatcher, index2, column2, forceByJsonPath);
+double DistanceBetweenIndexes::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index1, column1);
+	const VariantArray values2 = getFieldValues(pv, tagsMatcher, index2, column2);
+	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
+}
+
+double ProxiedDistanceBetweenFields::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
+	const VariantArray values1 = getJsonFieldValues(pv, tagsMatcher, json1);
+	const VariantArray values2 = getJsonFieldValues(pv, tagsMatcher, json2);
 	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 }
 
 double DistanceBetweenIndexAndJoinedIndex::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher, IdType rowId,
 													const joins::NamespaceResults& joinResults,
 													const std::vector<JoinedSelector>& joinedSelectors) const {
-	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index, column, false);
+	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index, column);
 	const VariantArray values2 = SortExpression::getJoinedFieldValues(rowId, joinResults, joinedSelectors, jNsIdx, jColumn, jIndex);
 	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 }
@@ -181,12 +211,11 @@ void SortExpression::openBracketBeforeLastAppended() {
 template <typename T>
 struct ParseIndexNameResult {
 	typename std::vector<T>::const_iterator joinedSelectorIt;
-	std::string_view name;
+	std::string name;
 };
 
 template <typename T>
-static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std::vector<T>& joinedSelectors,
-											  const std::string_view fullExpr) {
+static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view fullExpr) {
 	static const fast_hash_set<char> allowedSymbolsInIndexName{
 		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
 		'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
@@ -213,7 +242,7 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 			if (std::find_if(joinedSelectorIt + 1, joinedSelectors.cend(),
 							 [namespaceName](const T& js) { return namespaceName == js.RightNsName(); }) != joinedSelectors.cend()) {
 				throwParseError(fullExpr, pos,
-								"Sorting by namespace which has been joined more than once: '" + string(namespaceName) + "'.");
+								"Sorting by namespace which has been joined more than once: '" + std::string(namespaceName) + "'.");
 			}
 			expr.remove_prefix(pos - expr.data());
 		} else {
@@ -240,11 +269,11 @@ static ParseIndexNameResult<T> parseIndexName(std::string_view& expr, const std:
 	}
 
 	expr.remove_prefix(pos - expr.data());
-	return {joinedSelectorIt, name};
+	return {joinedSelectorIt, std::string{name}};
 }
 
 template <typename SkipWS>
-static Point parsePoint(std::string_view& expr, std::string_view funcName, const std::string_view fullExpr, const SkipWS& skipSpaces) {
+static Point parsePoint(std::string_view& expr, std::string_view funcName, std::string_view fullExpr, const SkipWS& skipSpaces) {
 	using namespace double_conversion;
 	using namespace std::string_view_literals;
 	static const StringToDoubleConverter converter{StringToDoubleConverter::ALLOW_TRAILING_JUNK |
@@ -303,20 +332,22 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 			if (parsedIndexName1.joinedSelectorIt == parsedIndexName2.joinedSelectorIt) {
 				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name))
 					throwParseError(fullExpr, expr.data(), "Distance between two same indexes");
-				Append({op, negative}, DistanceBetweenJoinedIndexesSameNs{jNsIdx1, parsedIndexName1.name, parsedIndexName2.name});
+				Append({op, negative},
+					   DistanceBetweenJoinedIndexesSameNs{jNsIdx1, std::move(parsedIndexName1.name), std::move(parsedIndexName2.name)});
 			} else {
 				Append({op, negative},
-					   DistanceBetweenJoinedIndexes{jNsIdx1, parsedIndexName1.name,
+					   DistanceBetweenJoinedIndexes{jNsIdx1, std::move(parsedIndexName1.name),
 													static_cast<size_t>(parsedIndexName2.joinedSelectorIt - joinedSelectors.cbegin()),
-													parsedIndexName2.name});
+													std::move(parsedIndexName2.name)});
 			}
 		} else {
 			skipSpaces();
 			if (!expr.empty() && expr[0] == '(') {
 				const auto point = parsePoint(expr, toLower(parsedIndexName2.name), fullExpr, skipSpaces);
-				Append({op, negative}, DistanceJoinedIndexFromPoint{jNsIdx1, parsedIndexName1.name, point});
+				Append({op, negative}, DistanceJoinedIndexFromPoint{jNsIdx1, std::move(parsedIndexName1.name), point});
 			} else {
-				Append({op, negative}, DistanceBetweenIndexAndJoinedIndex{parsedIndexName2.name, jNsIdx1, parsedIndexName1.name});
+				Append({op, negative},
+					   DistanceBetweenIndexAndJoinedIndex{std::move(parsedIndexName2.name), jNsIdx1, std::move(parsedIndexName1.name)});
 			}
 		}
 	} else if (!expr.empty() && expr[0] == '(') {
@@ -331,9 +362,9 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
 			Append({op, negative},
 				   DistanceJoinedIndexFromPoint{static_cast<size_t>(parsedIndexName2.joinedSelectorIt - joinedSelectors.cbegin()),
-												parsedIndexName2.name, point});
+												std::move(parsedIndexName2.name), point});
 		} else {
-			Append({op, negative}, DistanceFromPoint{parsedIndexName2.name, point});
+			Append({op, negative}, DistanceFromPoint{std::move(parsedIndexName2.name), point});
 		}
 	} else {
 		if (expr.empty() || expr[0] != ',') throwParseError(fullExpr, expr.data(), "Expected ','.");
@@ -342,18 +373,18 @@ void SortExpression::parseDistance(std::string_view& expr, const std::vector<T>&
 		const auto parsedIndexName2 = parseIndexName(expr, joinedSelectors, fullExpr);
 		if (parsedIndexName2.joinedSelectorIt != joinedSelectors.cend()) {
 			Append({op, negative},
-				   DistanceBetweenIndexAndJoinedIndex{parsedIndexName1.name,
+				   DistanceBetweenIndexAndJoinedIndex{std::move(parsedIndexName1.name),
 													  static_cast<size_t>(parsedIndexName2.joinedSelectorIt - joinedSelectors.cbegin()),
-													  parsedIndexName2.name});
+													  std::move(parsedIndexName2.name)});
 		} else {
 			skipSpaces();
 			if (!expr.empty() && expr[0] == '(') {
 				const auto point = parsePoint(expr, toLower(parsedIndexName2.name), fullExpr, skipSpaces);
-				Append({op, negative}, DistanceFromPoint{parsedIndexName1.name, point});
+				Append({op, negative}, DistanceFromPoint{std::move(parsedIndexName1.name), point});
 			} else {
 				if (toLower(parsedIndexName1.name) == toLower(parsedIndexName2.name))
 					throwParseError(fullExpr, expr.data(), "Distance between two same indexes");
-				Append({op, negative}, DistanceBetweenIndexes{parsedIndexName1.name, parsedIndexName2.name});
+				Append({op, negative}, DistanceBetweenIndexes{std::move(parsedIndexName1.name), std::move(parsedIndexName2.name)});
 			}
 		}
 	}
@@ -402,10 +433,10 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 				const auto parsedIndexName = parseIndexName(expr, joinedSelectors, fullExpr);
 				if (parsedIndexName.joinedSelectorIt == joinedSelectors.cend()) {
 					skipSpaces();
-					Append({op, negative}, SortExprFuncs::Index{parsedIndexName.name});
+					Append({op, negative}, SortExprFuncs::Index{std::move(parsedIndexName.name)});
 				} else {
 					auto dist = static_cast<size_t>(parsedIndexName.joinedSelectorIt - joinedSelectors.cbegin());
-					Append({op, negative}, JoinedIndex{dist, parsedIndexName.name});
+					Append({op, negative}, JoinedIndex{dist, std::move(parsedIndexName.name)});
 				}
 				*containIndexOrFunction = true;
 			} else {
@@ -436,11 +467,11 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 							if (expr.empty() || expr[0] != ')') throwParseError(fullExpr, expr.data(), "Expected ')'.");
 							expr.remove_prefix(1);
 						} else {
-							Append({op, negative}, SortExprFuncs::Index{parsedIndexName.name});
+							Append({op, negative}, SortExprFuncs::Index{std::move(parsedIndexName.name)});
 						}
 					} else {
 						Append({op, negative}, JoinedIndex{static_cast<size_t>(parsedIndexName.joinedSelectorIt - joinedSelectors.cbegin()),
-														   parsedIndexName.name});
+														   std::move(parsedIndexName.name)});
 					}
 					*containIndexOrFunction = true;
 				}
@@ -470,7 +501,8 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 					}
 					break;
 				default:
-					throwParseError(fullExpr, expr.data(), string("Expected ')', '+', '-', '*' of '/', but obtained '") + expr[0] + "'.");
+					throwParseError(fullExpr, expr.data(),
+									std::string("Expected ')', '+', '-', '*' of '/', but obtained '") + expr[0] + "'.");
 			}
 			expr.remove_prefix(1);
 			expectValue = true;
@@ -483,7 +515,7 @@ std::string_view SortExpression::parse(std::string_view expr, bool* containIndex
 }
 
 template <typename T>
-SortExpression SortExpression::Parse(const std::string_view expression, const std::vector<T>& joinedSelector) {
+SortExpression SortExpression::Parse(std::string_view expression, const std::vector<T>& joinedSelector) {
 	SortExpression result;
 	bool containIndexOrFunction = false;
 	const auto expr = result.parse(expression, &containIndexOrFunction, expression, joinedSelector);
@@ -539,23 +571,22 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 	return result;
 }
 
-double SortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv, uint8_t proc,
-								 TagsMatcher& tagsMatcher, bool forceByJsonPath) {
+double ProxiedSortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv, uint8_t proc,
+										TagsMatcher& tagsMatcher) {
 	assertrx(it != end);
 	assertrx(it->operation.op == OpPlus);
 	double result = 0.0;
 	for (; it != end; ++it) {
 		double value = it->InvokeAppropriate<double>(
-			[](const auto&) -> double { throw Error(errQueryExec, "Joins in distributed queries are unsupported"); },
 			[&](const SortExpressionBracket& b) {
-				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, proc, tagsMatcher, forceByJsonPath);
+				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, proc, tagsMatcher);
 				return (b.IsAbs() && res < 0) ? -res : res;
 			},
 			[](const Value& v) { return v.value; },
-			[&pv, &tagsMatcher, forceByJsonPath](const SortExprFuncs::Index& i) { return i.GetValue(pv, tagsMatcher, forceByJsonPath); },
+			[&pv, &tagsMatcher](const SortExprFuncs::ProxiedField& f) { return f.GetValue(pv, tagsMatcher); },
 			[proc](const Rank&) -> double { return proc; },
-			[&pv, &tagsMatcher, forceByJsonPath](const DistanceFromPoint& i) { return i.GetValue(pv, tagsMatcher, forceByJsonPath); },
-			[&pv, &tagsMatcher, forceByJsonPath](const DistanceBetweenIndexes& i) { return i.GetValue(pv, tagsMatcher, forceByJsonPath); });
+			[&pv, &tagsMatcher](const ProxiedDistanceFromPoint& f) { return f.GetValue(pv, tagsMatcher); },
+			[&pv, &tagsMatcher](const ProxiedDistanceBetweenFields& f) { return f.GetValue(pv, tagsMatcher); });
 		if (it->operation.negative) value = -value;
 		switch (it->operation.op) {
 			case OpPlus:
@@ -576,6 +607,36 @@ double SortExpression::calculate(const_iterator it, const_iterator end, IdType r
 	return result;
 }
 
+void ProxiedSortExpression::fill(SortExpression::const_iterator it, SortExpression::const_iterator endIt, const NamespaceImpl& ns) {
+	for (; it != endIt; ++it) {
+		it->InvokeAppropriate<void>(
+			[](const auto&) {
+				throw Error{errQueryExec, "JOIN is unsupported in proxied query"};
+			},
+			[&](const SortExpressionBracket& b) {
+				OpenBracket(it->operation, b.IsAbs());
+				fill(it.cbegin(), it.cend(), ns);
+				CloseBracket();
+			},
+			[&](const Value& v) { Append(it->operation, v); },
+			[&](const SortExprFuncs::Index& i) {
+				Append(it->operation, SortExprFuncs::ProxiedField{
+										  i.index == IndexValueType::SetByJsonPath ? i.column : ns.tagsMatcher_.tag2name(i.index)});
+			},
+			[&](const Rank&) { Append(it->operation, Rank{}); },
+			[&](const DistanceFromPoint& i) {
+				Append(it->operation,
+					   ProxiedDistanceFromPoint{i.index == IndexValueType::SetByJsonPath ? i.column : ns.tagsMatcher_.tag2name(i.index),
+												i.point});
+			},
+			[&](const DistanceBetweenIndexes& i) {
+				Append(it->operation, ProxiedDistanceBetweenFields{
+										  i.index1 == IndexValueType::SetByJsonPath ? i.column1 : ns.tagsMatcher_.tag2name(i.index1),
+										  i.index2 == IndexValueType::SetByJsonPath ? i.column2 : ns.tagsMatcher_.tag2name(i.index2)});
+			});
+	}
+}
+
 void SortExpression::PrepareIndexes(const NamespaceImpl& ns) {
 	ExecuteAppropriateForEach(
 		Skip<SortExpressionOperation, SortExpressionBracket, SortExprFuncs::Value, JoinedIndex, Rank, DistanceJoinedIndexFromPoint,
@@ -588,10 +649,15 @@ void SortExpression::PrepareIndexes(const NamespaceImpl& ns) {
 		});
 }
 
-void SortExpression::PrepareSortIndex(std::string_view column, int& index, const NamespaceImpl& ns) {
+void SortExpression::PrepareSortIndex(std::string& column, int& index, const NamespaceImpl& ns) {
 	assertrx(!column.empty());
 	index = IndexValueType::SetByJsonPath;
-	if (ns.getIndexByName(string{column}, index) && ns.indexes_[index]->Opts().IsSparse()) {
+	if (ns.getIndexByName(column, index) && ns.indexes_[index]->Opts().IsSparse()) {
+		if (index < ns.indexes_.firstCompositePos()) {
+			const auto& fields = ns.indexes_[index]->Fields();
+			assert(fields.getJsonPathsLength() == 1);
+			column = fields.getJsonPath(0);
+		}
 		index = IndexValueType::SetByJsonPath;
 	}
 }
@@ -650,6 +716,51 @@ void SortExpression::dump(const_iterator begin, const_iterator end, WrSerializer
 	}
 }
 
+std::string ProxiedSortExpression::Dump() const {
+	WrSerializer ser;
+	dump(cbegin(), cend(), ser);
+	return std::string{ser.Slice()};
+}
+
+void ProxiedSortExpression::dump(const_iterator begin, const_iterator end, WrSerializer& ser) {
+	assertrx(begin->operation.op == OpPlus);
+	for (const_iterator it = begin; it != end; ++it) {
+		if (it != begin) {
+			ser << ' ';
+			switch (it->operation.op) {
+				case OpPlus:
+					ser << '+';
+					break;
+				case OpMinus:
+					ser << '-';
+					break;
+				case OpMult:
+					ser << '*';
+					break;
+				case OpDiv:
+					ser << '/';
+					break;
+			}
+			ser << ' ';
+		}
+		if (it->operation.negative) ser << "(-";
+		it->InvokeAppropriate<void>(
+			[&it, &ser](const SortExpressionBracket& b) {
+				ser << (b.IsAbs() ? "ABS(" : "(");
+				dump(it.cbegin(), it.cend(), ser);
+				ser << ')';
+			},
+			[&ser](const Value& v) { ser << v.value; }, [&ser](const SortExprFuncs::ProxiedField& i) { ser << i.json; },
+			[&ser](const Rank&) { ser << "rank()"; },
+			[&ser](const ProxiedDistanceFromPoint& i) {
+				ser << "ST_Distance(" << i.json << ", [" << i.point.x << ", " << i.point.y << "])";
+			},
+			[&ser](const ProxiedDistanceBetweenFields& i) { ser << "ST_Distance(" << i.json2 << ", " << i.json2 << ')'; });
+		if (it->operation.negative) ser << ')';
+	}
+}
+
 std::ostream& operator<<(std::ostream& os, const SortExpression& se) { return os << se.Dump(); }
+std::ostream& operator<<(std::ostream& os, const ProxiedSortExpression& se) { return os << se.Dump(); }
 
 }  // namespace reindexer

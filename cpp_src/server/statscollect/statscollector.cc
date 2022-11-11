@@ -81,10 +81,10 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		(void)status;
 
 		{
-			vector<NamespaceDef> nsDefs;
+			std::vector<NamespaceDef> nsDefs;
 			status = db->EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().WithClosed());
 			if (!status.ok()) {
-				collectedDBs.emplace(dbName, vector<NamespaceDef>());
+				collectedDBs.emplace(dbName, std::vector<NamespaceDef>());
 				continue;
 			}
 			collectedDBs.emplace(dbName, std::move(nsDefs));
@@ -93,7 +93,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		constexpr static auto kPerfstatsNs = "#perfstats"sv;
 		constexpr static auto kMemstatsNs = "#memstats"sv;
 		QueryResults qr;
-		status = db->Select(Query(string(kPerfstatsNs)), qr);
+		status = db->Select(Query(std::string(kPerfstatsNs)), qr);
 		if (status.ok() && qr.Count()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
 				auto item = it.GetItem(false);
@@ -107,7 +107,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 			}
 		}
 		qr.Clear();
-		status = db->Select(Query(string(kMemstatsNs)), qr);
+		status = db->Select(Query(std::string(kMemstatsNs)), qr);
 		if (status.ok() && qr.Count()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
 				auto item = it.GetItem(false);

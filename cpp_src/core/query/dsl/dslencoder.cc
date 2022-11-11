@@ -7,8 +7,6 @@
 #include "core/queryresults/aggregationresult.h"
 #include "dslparser.h"
 
-using std::unordered_map;
-
 struct EnumClassHash {
 	template <typename T>
 	size_t operator()(T t) const {
@@ -19,24 +17,25 @@ struct EnumClassHash {
 namespace reindexer {
 namespace dsl {
 
-const unordered_map<JoinType, string, EnumClassHash> join_types = {{InnerJoin, "inner"}, {LeftJoin, "left"}, {OrInnerJoin, "orinner"}};
+const std::unordered_map<JoinType, std::string, EnumClassHash> join_types = {
+	{InnerJoin, "inner"}, {LeftJoin, "left"}, {OrInnerJoin, "orinner"}};
 
-const unordered_map<CondType, string, EnumClassHash> cond_map = {
+const std::unordered_map<CondType, std::string, EnumClassHash> cond_map = {
 	{CondAny, "any"},	  {CondEq, "eq"},	{CondLt, "lt"},			{CondLe, "le"},		  {CondGt, "gt"},	  {CondGe, "ge"},
 	{CondRange, "range"}, {CondSet, "set"}, {CondAllSet, "allset"}, {CondEmpty, "empty"}, {CondLike, "like"}, {CondDWithin, "dwithin"},
 };
 
-const unordered_map<OpType, string, EnumClassHash> op_map = {{OpOr, "or"}, {OpAnd, "and"}, {OpNot, "not"}};
+const std::unordered_map<OpType, std::string, EnumClassHash> op_map = {{OpOr, "or"}, {OpAnd, "and"}, {OpNot, "not"}};
 
-const unordered_map<CalcTotalMode, string, EnumClassHash> reqtotal_values = {
+const std::unordered_map<CalcTotalMode, std::string, EnumClassHash> reqtotal_values = {
 	{ModeNoTotal, "disabled"}, {ModeAccurateTotal, "enabled"}, {ModeCachedTotal, "cached"}};
 
 template <typename T>
-string get(unordered_map<T, string, EnumClassHash> const& m, const T& key) {
+std::string get(std::unordered_map<T, std::string, EnumClassHash> const& m, const T& key) {
 	auto it = m.find(key);
 	if (it != m.end()) return it->second;
 	assertrx(it != m.end());
-	return string();
+	return std::string();
 }
 
 void encodeSorting(const SortingEntries& sortingEntries, JsonBuilder& builder) {
@@ -165,8 +164,8 @@ void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {
 void encodeDropFields(const Query& query, JsonBuilder& builder) {
 	auto dropFields = builder.Array("drop_fields");
 	for (const UpdateEntry& updateEntry : query.UpdateFields()) {
-		if (updateEntry.mode == FieldModeDrop) {
-			dropFields.Put(0, updateEntry.column);
+		if (updateEntry.Mode() == FieldModeDrop) {
+			dropFields.Put(0, updateEntry.Column());
 		}
 	}
 }
@@ -174,20 +173,20 @@ void encodeDropFields(const Query& query, JsonBuilder& builder) {
 void encodeUpdateFields(const Query& query, JsonBuilder& builder) {
 	auto updateFields = builder.Array("update_fields");
 	for (const UpdateEntry& updateEntry : query.UpdateFields()) {
-		if (updateEntry.mode == FieldModeSet || updateEntry.mode == FieldModeSetJson) {
-			bool isObject = (updateEntry.mode == FieldModeSetJson);
+		if (updateEntry.Mode() == FieldModeSet || updateEntry.Mode() == FieldModeSetJson) {
+			bool isObject = (updateEntry.Mode() == FieldModeSetJson);
 			auto field = updateFields.Object(0);
 			if (isObject) {
 				field.Put("type", "object");
-			} else if (updateEntry.isExpression) {
+			} else if (updateEntry.IsExpression()) {
 				field.Put("type", "expression");
 			} else {
 				field.Put("type", "value");
 			}
-			field.Put("name", updateEntry.column);
-			field.Put("is_array", updateEntry.values.IsArrayValue());
+			field.Put("name", updateEntry.Column());
+			field.Put("is_array", updateEntry.Values().IsArrayValue());
 			auto values = field.Array("values");
-			for (const Variant& v : updateEntry.values) {
+			for (const Variant& v : updateEntry.Values()) {
 				if (isObject) {
 					values.Json(nullptr, p_string(v));
 				} else {
@@ -231,10 +230,10 @@ void toDsl(const Query& query, JsonBuilder& builder) {
 			encodeFilters(query, builder);
 			bool withDropEntries = false, withUpdateEntries = false;
 			for (const UpdateEntry& updateEntry : query.UpdateFields()) {
-				if (updateEntry.mode == FieldModeDrop) {
+				if (updateEntry.Mode() == FieldModeDrop) {
 					if (!withDropEntries) withDropEntries = true;
 				}
-				if (updateEntry.mode == FieldModeSet || updateEntry.mode == FieldModeSetJson) {
+				if (updateEntry.Mode() == FieldModeSet || updateEntry.Mode() == FieldModeSetJson) {
 					if (!withUpdateEntries) withUpdateEntries = true;
 				}
 			}
@@ -269,7 +268,7 @@ std::string toDsl(const Query& query) {
 	toDsl(query, builder);
 
 	builder.End();
-	return string(ser.Slice());
+	return std::string(ser.Slice());
 }
 
 }  // namespace dsl

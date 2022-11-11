@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "4.5.0"
+  version: "4.6.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -1712,6 +1712,34 @@ paths:
         500:
           $ref: "#/responses/UnexpectedError"
 
+  /allocator/drop_cache:
+    post:
+      tags:
+        - "system"
+      summary: "Try to release free memory back to the operating system for reuse by other applications."
+      operationId: "postAllocatorDropCache"
+      description: "Try to release free memory back to the operating system for reuse. Only for tcmalloc allocator."
+
+  /allocator/info:
+    get:
+      tags:
+        - "system"
+      summary: "Get memory usage information"
+      description: "This operation will return memory usage informatiom from tcmalloc allocator."
+      operationId: "getAllocatorInfo"
+      responses:
+        200:
+          description: "successful operation"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        500:
+          $ref: "#/responses/UnexpectedError"
+
+
   /db/{database}/namespaces/%23activitystats/items:
     get:
       tags:
@@ -2884,6 +2912,10 @@ definitions:
         - "Memory"
         - "CPU"
         default: "Memory"
+      enable_preselect_before_ft:
+        type: boolean
+        description: "Enable to execute others queries before the ft query"
+        default: false
       max_areas_in_doc:
         type: number
         description: "Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited"

@@ -1,6 +1,6 @@
 #include "proxiedtransaction.h"
 #include "client/itemimpl.h"
-#include "client/synccororeindexerimpl.h"
+#include "client/reindexerimpl.h"
 #include "core/item.h"
 #include "core/itemimpl.h"
 #include "core/queryresults/queryresults.h"
@@ -17,7 +17,7 @@ Error ProxiedTransaction::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
 			std::unique_lock lck(mtx_);
 			if (itemCache_.isValid) {
 				itemFromCache = true;
-				clientItem = client::Item(new client::ItemImpl<client::SyncCoroReindexerImpl>(itemCache_.pt, itemCache_.tm, nullptr,
+				clientItem = client::Item(new client::ItemImpl<client::ReindexerImpl>(itemCache_.pt, itemCache_.tm, nullptr,
 																							  std::chrono::milliseconds()));
 			} else {
 				lck.unlock();
@@ -111,7 +111,7 @@ Error ProxiedTransaction::SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) {
 void ProxiedTransaction::Rollback(int serverId, const RdxContext &ctx) {
 	asyncData_.AwaitAsyncRequests();
 	if (tx_.rx_) {
-		client::SyncCoroQueryResults clientResults;
+		client::QueryResults clientResults;
 		const auto _ctx = client::InternalRdxContext().WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(serverId);
 		tx_.rx_->RollBackTransaction(tx_, _ctx);
 	}
@@ -133,7 +133,7 @@ Error ProxiedTransaction::Commit(int serverId, int shardId, QueryResults &result
 		clusterProxyLog(LogTrace, "[proxy] Proxying commit to shard %d. SID: %d", shardId, serverId);
 	}
 
-	client::SyncCoroQueryResults clientResults;
+	client::QueryResults clientResults;
 	err = tx_.rx_->CommitTransaction(tx_, clientResults, c);
 	if (err.ok()) {
 		try {

@@ -512,19 +512,14 @@ func TestExplainJoin(t *testing.T) {
 			Matched:     1,
 		},
 		{
-			Field:       "((id) and inner_join test_explain_joined)",
+			Field:     "(id and inner_join test_explain_joined)",
 			Selectors: []expectedExplain{
 				{
-					Field:       "(id)",
-					Selectors: []expectedExplain{
-						{
-							Field:       "id",
-							Method:      "scan",
-							Keys:        0,
-							Comparators: 1,
-							Matched:     3,
-						},
-					},
+					Field:       "id",
+					Method:      "scan",
+					Keys:        0,
+					Comparators: 1,
+					Matched:     3,
 				},
 				{
 					Field:       "inner_join test_explain_joined",
@@ -553,21 +548,33 @@ func TestExplainJoin(t *testing.T) {
 			},
 		},
 		{
-			Field:       "or inner_join test_explain_joined",
-			Method:      "preselected_values",
-			Keys:        3,
-			Comparators: 0,
-			Matched:     2,
-			Preselect: []expectedExplain{
+			Field:     "or (id and inner_join test_explain_joined)",
+			Selectors: []expectedExplain{
 				{
-					Field:       "data",
-					Method:      "index",
+					Field:       "id",
+					Method:      "scan",
+					Keys:        0,
+					Comparators: 1,
+					Matched:     2,
+				},
+				{
+					Field:       "inner_join test_explain_joined",
+					Method:      "preselected_values",
 					Keys:        3,
 					Comparators: 0,
-					Matched:     3,
+					Matched:     2,
+					Preselect: []expectedExplain{
+						{
+							Field:       "data",
+							Method:      "index",
+							Keys:        3,
+							Comparators: 0,
+							Matched:     3,
+						},
+					},
+					JoinSelect: nil,
 				},
 			},
-			JoinSelect: nil,
 		},
 		{
 			Field:       "or id",

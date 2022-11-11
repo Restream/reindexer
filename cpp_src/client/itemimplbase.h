@@ -10,12 +10,11 @@
 #include "core/query/query.h"
 #include "gason/gason.h"
 #include "tools/serializer.h"
-using std::vector;
 
 namespace reindexer {
 namespace client {
 
-class CoroRPCClient;
+class RPCClient;
 
 class ItemImplBase {
 public:
@@ -57,8 +56,8 @@ public:
 	void addTagNamesFrom(const TagsMatcher &tm) { tagsMatcher_.add_names_from(tm); }
 	void setTagsMatcher(TagsMatcher tm) noexcept { tagsMatcher_ = std::move(tm); }
 
-	void SetPrecepts(vector<string> &&precepts) { precepts_ = std::move(precepts); }
-	const vector<string> &GetPrecepts() const noexcept { return precepts_; }
+	void SetPrecepts(std::vector<std::string> &&precepts) { precepts_ = std::move(precepts); }
+	const std::vector<std::string> &GetPrecepts() const noexcept { return precepts_; }
 	void GetPrecepts(WrSerializer &ser);
 	void Unsafe(bool enable) noexcept { unsafe_ = enable; }
 
@@ -74,9 +73,10 @@ protected:
 	std::string_view tupleData_;
 	std::unique_ptr<uint8_t[]> tupleHolder_;
 
-	vector<string> precepts_;
+	std::vector<std::string> precepts_;
 	bool unsafe_ = false;
 	std::unique_ptr<char[]> holder_;
+	std::vector<std::unique_ptr<char[]>> largeJSONStrings_;
 };
 
 }  // namespace client

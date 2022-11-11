@@ -131,7 +131,8 @@ LRUCacheMemStat LRUCache<K, V, hash, equal>::GetMemStat() {
 }
 template class LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
 template class LRUCache<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
-template class LRUCache<QueryCacheKey, QueryCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
+template class LRUCache<QueryCacheKey, QueryTotalCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
 template class LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
+template class LRUCache<QueryCacheKey, FtIdSetCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
 
 }  // namespace reindexer

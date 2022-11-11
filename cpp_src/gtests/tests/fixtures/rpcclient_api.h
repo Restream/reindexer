@@ -2,17 +2,13 @@
 
 #include <gtest/gtest.h>
 #include <thread>
-#include "rpcserver_fake.h"
-
-#include "client/reindexer.h"
-#include "server/server.h"
-
 #include "client/cororeindexer.h"
+#include "rpcserver_fake.h"
+#include "server/server.h"
 
 class RPCClientTestApi : public ::testing::Test {
 public:
-	RPCClientTestApi() {}
-	virtual ~RPCClientTestApi() {}
+	virtual ~RPCClientTestApi() = default;
 
 protected:
 	class CancelRdxContext : public reindexer::IRdxCancelContext {
@@ -30,20 +26,23 @@ protected:
 	class TestServer {
 	public:
 		TestServer(const RPCServerConfig& conf) : terminate_(false), serverIsReady_(false), conf_(conf) {}
-		void Start(const string& addr, Error errOnLogin = Error());
+		void Start(const std::string& addr, Error errOnLogin = Error());
 		void Stop();
-		const string& GetDsn() const { return dsn_; }
+		const std::string& GetDsn() const { return dsn_; }
 		RPCServerStatus Status() const { return server_->Status(); }
+		Error const& ErrorStatus() const { return err_; }
+		size_t CloseQRRequestsCount() const { return server_->CloseQRRequestsCount(); }
 
 	private:
-		unique_ptr<RPCServerFake> server_;
-		unique_ptr<std::thread> serverThread_;
+		std::unique_ptr<RPCServerFake> server_;
+		std::unique_ptr<std::thread> serverThread_;
 		net::ev::dynamic_loop loop_;
 		net::ev::async stop_;
-		atomic<bool> terminate_;
-		atomic<bool> serverIsReady_;
-		string dsn_;
+		std::atomic<bool> terminate_;
+		std::atomic<bool> serverIsReady_;
+		std::string dsn_;
 		RPCServerConfig conf_;
+		Error err_{errOK};
 	};
 
 	void SetUp() {}
@@ -51,25 +50,21 @@ protected:
 
 public:
 	void StartDefaultRealServer();
-	void AddFakeServer(const string& addr = kDefaultRPCServerAddr, const RPCServerConfig& conf = RPCServerConfig());
-	void AddRealServer(const std::string& dbPath, const string& addr = kDefaultRPCServerAddr, uint16_t httpPort = kDefaultHttpPort,
-					   uint16_t clusterPort = kDefaultClusterPort);
-	void StartServer(const string& addr = kDefaultRPCServerAddr, Error errOnLogin = Error());
-	void StopServer(const string& addr = kDefaultRPCServerAddr);
-	bool CheckIfFakeServerConnected(const string& addr = kDefaultRPCServerAddr);
-	void StopAllServers();
+	TestServer& AddFakeServer(const std::string& addr = kDefaultRPCServerAddr, const RPCServerConfig& conf = RPCServerConfig());
+	void AddRealServer(const std::string& dbPath, const std::string& addr = kDefaultRPCServerAddr, uint16_t httpPort = kDefaultHttpPort);
+	void StartServer(const std::string& addr = kDefaultRPCServerAddr, Error errOnLogin = Error());
+	Error StopServer(const std::string& addr = kDefaultRPCServerAddr);	// -V1071
+	bool CheckIfFakeServerConnected(const std::string& addr = kDefaultRPCServerAddr);
+	Error StopAllServers();
 	client::Item CreateItem(reindexer::client::Reindexer& rx, std::string_view nsName, int id);
 	client::Item CreateItem(reindexer::client::CoroReindexer& rx, std::string_view nsName, int id);
-	void CreateNamespace(reindexer::client::Reindexer& rx, std::string_view nsName);
 	void CreateNamespace(reindexer::client::CoroReindexer& rx, std::string_view nsName);
-	void FillData(reindexer::client::Reindexer& rx, std::string_view nsName, int from, int count);
 	void FillData(reindexer::client::CoroReindexer& rx, std::string_view nsName, int from, int count);
 
 	static const std::string kDbPrefix;
 	static const uint16_t kDefaultRPCPort = 25673;
 	static const std::string kDefaultRPCServerAddr;
 	static const uint16_t kDefaultHttpPort = 33333;
-	static const uint16_t kDefaultClusterPort = 33833;
 
 private:
 	struct ServerData {
@@ -79,6 +74,6 @@ private:
 		std::unique_ptr<std::thread> serverThread;
 	};
 
-	unordered_map<string, unique_ptr<TestServer>> fakeServers_;
-	unordered_map<string, ServerData> realServers_;
+	std::unordered_map<std::string, std::unique_ptr<TestServer>> fakeServers_;
+	std::unordered_map<std::string, ServerData> realServers_;
 };

@@ -54,6 +54,7 @@ void ClusterDataReplicator::Run() {
 	}
 
 	std::unordered_set<int> ids;
+	// NOLINTBEGIN (bugprone-unchecked-optional-access) Optionals were checked in isExpectingStartup()
 	bool serverIsInCluster = config_->nodes.empty();
 	if (config_->nodes.size() && config_->nodes.size() < 3) {
 		throw Error(errParams, "Minimal cluster size is 3, but only %d nodes were in config", config_->nodes.size());
@@ -149,6 +150,7 @@ void ClusterDataReplicator::Run() {
 			roleSwitcher_.Run(std::move(dsns), std::move(cfg));
 		},
 		baseConfig_.value(), config_->namespaces, std::move(nodes));
+	// NOLINTEND (bugprone-unchecked-optional-access)
 }
 
 void ClusterDataReplicator::Stop(bool resetConfig) {

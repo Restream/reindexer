@@ -29,7 +29,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "4.5.0")
+set (REINDEXER_VERSION_DEFAULT "4.6.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -229,6 +229,7 @@ if(NOT APPLE)
   add_definitions(-DKOISHI_HAVE_POSIX_MEMALIGN)
 endif()
 add_definitions(-DBUILDING_KOISHI)
+add_definitions(-DYAML_CPP_STATIC_DEFINE)
 include_directories(${KOISHI_PATH}/include)
 
 list(APPEND SRCS ${KOISHI_PATH}/include/koishi.h
@@ -667,7 +668,7 @@ if (NOT WIN32)
 
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
-    "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h"
+    "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
     "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
     "core/rdxcontext.h" "core/activity_context.h" "core/activity.h" "core/activitylog.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"
@@ -676,10 +677,10 @@ if (NOT WIN32)
     "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h" "core/itemimplrawdata.h"
     "core/expressiontree.h" "tools/lsn.h" "core/cjson/tagspath.h" "estl/cow.h" "core/shardedmeta.h" "core/queryresults/localqueryresults.h"
     "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h" "estl/chunk.h"
-    "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
-    "client/internalrdxcontext.h" "client/transaction.h" "client/synccororeindexer.h" "client/cororeindexerconfig.h"
+    "client/item.h" "client/resultserializer.h"
+    "client/internalrdxcontext.h" "client/reindexer.h" "client/reindexerconfig.h"
     "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h" "client/connectopts.h"
-    "client/synccoroqueryresults.h" "client/synccorotransaction.h"
+    "client/queryresults.h" "client/transaction.h"
     "net/ev/ev.h" "vendor/koishi/include/koishi.h" "coroutine/coroutine.h" "coroutine/channel.h" "coroutine/waitgroup.h"
     "debug/backtrace.h" "debug/allocdebug.h" "debug/resolver.h" "vendor/gason/gason.h"
   )

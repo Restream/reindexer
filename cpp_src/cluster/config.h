@@ -12,7 +12,7 @@ namespace gason {
 struct JsonNode;
 }
 
-namespace Yaml {
+namespace YAML {
 class Node;
 }
 
@@ -57,7 +57,7 @@ struct ClusterNodeConfig {
 	int GetServerID() const noexcept { return serverId; }
 	const std::string &GetRPCDsn() const noexcept { return dsn; }
 	const std::string &GetManagementDsn() const noexcept { return dsn; }
-	void FromYML(Yaml::Node &yaml);
+	void FromYAML(const YAML::Node &yaml);
 
 	bool operator==(const ClusterNodeConfig &rdata) const noexcept { return (serverId == rdata.serverId) && (dsn == rdata.dsn); }
 
@@ -73,13 +73,13 @@ public:
 	class NamespaceListImpl {
 	public:
 		NamespaceListImpl() = default;
-		NamespaceListImpl(fast_hash_set<string, nocase_hash_str, nocase_equal_str> &&n) : data(std::move(n)) {}
+		NamespaceListImpl(fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> &&n) : data(std::move(n)) {}
 		bool IsInList(std::string_view ns, size_t hash) const noexcept { return data.empty() || (data.find(ns, hash) != data.end()); }
 		bool IsInList(std::string_view ns) const noexcept { return data.empty() || (data.find(ns) != data.end()); }
 		bool Empty() const noexcept { return data.empty(); }
 		bool operator==(const NamespaceListImpl &r) const noexcept { return data == r.data; }
 
-		const fast_hash_set<string, nocase_hash_str, nocase_equal_str> data;
+		const fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> data;
 	};
 	using NamespaceList = intrusive_atomic_rc_wrapper<NamespaceListImpl>;
 
@@ -88,13 +88,13 @@ public:
 
 	int GetServerID() const noexcept { return -1; }
 	const std::string &GetRPCDsn() const { return dsn; }
-	void FromYML(Yaml::Node &yaml);
+	void FromYAML(const YAML::Node &yaml);
 	void FromJSON(const gason::JsonNode &root);
 	void GetJSON(JsonBuilder &jb) const;
-	void GetYAML(Yaml::Node &yaml) const;
+	void GetYAML(YAML::Node &yaml) const;
 
 	bool HasOwnNsList() const noexcept { return hasOwnNsList_; }
-	void SetOwnNamespaceList(fast_hash_set<string, nocase_hash_str, nocase_equal_str> nss) {
+	void SetOwnNamespaceList(fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss) {
 		namespaces_ = make_intrusive<NamespaceList>(std::move(nss));
 		hasOwnNsList_ = true;
 	}
@@ -141,7 +141,7 @@ constexpr size_t kDefaultClusterProxyCoroPerConn = 4;
 constexpr size_t kDefaultClusterProxyConnThreads = 2;
 
 struct ClusterConfigData {
-	Error FromYML(const std::string &yaml);
+	Error FromYAML(const std::string &yaml);
 
 	bool operator==(const ClusterConfigData &rdata) const noexcept {
 		return (nodes == rdata.nodes) && (retrySyncIntervalMSec == rdata.retrySyncIntervalMSec) &&
@@ -163,7 +163,7 @@ struct ClusterConfigData {
 	}
 
 	std::vector<ClusterNodeConfig> nodes;
-	fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;
+	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> namespaces;
 	std::string appName = "rx_cluster_node";
 	int onlineUpdatesTimeoutSec = 20;
 	int syncTimeoutSec = 60;
@@ -186,36 +186,37 @@ constexpr uint32_t kDefaultShardingProxyConnThreads = 4;
 
 struct ShardingConfig {
 	struct Key {
-		Error FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards, KeyValueType &valuesType,
-					  fast_hash_set<Variant> &checkVal);
-		Error FromJson(const gason::JsonNode &, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal);
-		void GetYml(std::stringstream &) const;
-		void GetJson(JsonBuilder &) const;
+		Error FromYAML(const YAML::Node &yaml, const std::map<int, std::vector<std::string>> &shards, KeyValueType &valuesType,
+					   fast_hash_set<Variant> &checkVal);
+		Error FromJSON(const gason::JsonNode &, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal);
+		void GetYAML(YAML::Node &) const;
+		void GetJSON(JsonBuilder &) const;
 		int shardId = ShardingKeyType::ProxyOff;
 		ShardingAlgorithmType algorithmType = ByValue;
 		VariantArray values;
 
 	private:
-		Error checkValue(Variant val, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal);
+		Error checkValue(const Variant &val, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal);
 	};
 	struct Namespace {
-		Error FromYML(Yaml::Node &yaml, const std::map<int, std::vector<std::string>> &shards);
-		Error FromJson(const gason::JsonNode &);
-		void GetYml(std::stringstream &) const;
-		void GetJson(JsonBuilder &) const;
+		Error FromYAML(const YAML::Node &yaml, const std::map<int, std::vector<std::string>> &shards);
+		Error FromJSON(const gason::JsonNode &);
+		void GetYAML(YAML::Node &) const;
+		void GetJSON(JsonBuilder &) const;
 		std::string ns;
 		std::string index;
 		std::vector<Key> keys;
 		int defaultShard = ShardingKeyType::ProxyOff;
 	};
 
-	Error FromYML(const std::string &yaml);
-	Error FromJson(span<char> json);
-	Error FromJson(const gason::JsonNode &);
-	std::string GetYml() const;
-	std::string GetJson() const;
-	void GetJson(WrSerializer &) const;
-	void GetJson(JsonBuilder &) const;
+	Error FromYAML(const std::string &yaml);
+	Error FromJSON(span<char> json);
+	Error FromJSON(const gason::JsonNode &);
+	std::string GetYAML() const;
+	YAML::Node GetYAMLObj() const;
+	std::string GetJSON() const;
+	void GetJSON(WrSerializer &) const;
+	void GetJSON(JsonBuilder &) const;
 	Error Validate() const;
 	std::vector<Namespace> namespaces;
 	std::map<int, std::vector<std::string>> shards;
@@ -234,7 +235,7 @@ struct AsyncReplConfigData {
 	using NamespaceList = AsyncReplNodeConfig::NamespaceList;
 	enum class Role { None, Leader, Follower };
 
-	Error FromYML(const string &yml);
+	Error FromYAML(const std::string &yml);
 	Error FromJSON(std::string_view json);
 	Error FromJSON(const gason::JsonNode &v);
 	void GetJSON(JsonBuilder &jb) const;

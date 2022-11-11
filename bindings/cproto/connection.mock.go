@@ -120,6 +120,9 @@ func (mc *MockConnection) rpcCallAsync(ctx context.Context, cmd int, netTimeout 
 func (mc *MockConnection) onError(err error) {
 	return
 }
+func (mc *MockConnection) rpcCallNoReply(ctx context.Context, cmd int, netTimeout uint32, seq uint32, args ...interface{}) {
+	return
+}
 func (mc *MockConnection) curError() error {
 	c, ok := mc.expCalls["curError"]
 	if !ok {

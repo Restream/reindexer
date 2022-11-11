@@ -49,7 +49,7 @@ void WaitEnterToContinue(std::ostream& o, int terminalWidth, const std::function
 		}
 #endif
 	}
-	o << "\r" << string(terminalWidth, ' ') << "\r" << std::flush;
+	o << "\r" << std::string(terminalWidth, ' ') << "\r" << std::flush;
 	if (isCanceled()) {
 		o << "Canceled" << std::endl;
 	}

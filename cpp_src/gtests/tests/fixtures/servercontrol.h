@@ -4,7 +4,7 @@
 #include <memory>
 #include <thread>
 #include <unordered_set>
-#include "client/synccororeindexer.h"
+#include "client/reindexer.h"
 #include "cluster/stats/replicationstats.h"
 #include "core/dbconfig.h"
 #include "core/namespace/namespacestat.h"
@@ -82,7 +82,7 @@ struct ReplicationStateApi {
 	reindexer::ClusterizationStatus::Role role = reindexer::ClusterizationStatus::Role::None;
 };
 
-using BaseApi = ReindexerTestApi<reindexer::client::SyncCoroReindexer>;
+using BaseApi = ReindexerTestApi<reindexer::client::Reindexer>;
 
 void WriteConfigFile(const std::string& path, const std::string& configYaml);
 
@@ -120,7 +120,7 @@ public:
 	static std::string getTestLogPath() {
 		const char* testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
 		const char* testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
-		string name;
+		std::string name;
 		name = name + "logs/" + testSetName + "/" + testName + "/";
 		return name;
 	}
@@ -136,8 +136,8 @@ public:
 	struct Interface {
 		typedef std::shared_ptr<Interface> Ptr;
 		Interface(std::atomic_bool& stopped, ServerControlConfig config);
-		Interface(std::atomic_bool& stopped, ServerControlConfig config, const std::string& ReplicationConfig,
-				  const std::string& ClusterConfig, const std::string& ShardingConfig, const std::string& AsyncReplicationConfig);
+		Interface(std::atomic_bool& stopped, ServerControlConfig config, const YAML::Node& ReplicationConfig,
+				  const YAML::Node& ClusterConfig, const YAML::Node& ShardingConfig, const YAML::Node& AsyncReplicationConfig);
 		~Interface();
 		void Init();
 		// Stop server
@@ -206,7 +206,7 @@ public:
 		void upsertConfigItemFromObject(std::string_view type, const ValueT& object);
 
 		std::vector<std::string> getCLIParamArray(bool enableStats, size_t maxUpdatesSize);
-		std::string getLogName(const string& log, bool core = false);
+		std::string getLogName(const std::string& log, bool core = false);
 
 		std::unique_ptr<std::thread> tr;
 		std::atomic_bool& stopped_;
@@ -224,12 +224,12 @@ public:
 	// Get server - wait means wait until server starts if no server
 	Interface::Ptr Get(bool wait = true);
 	void InitServer(ServerControlConfig config);
-	void InitServerWithConfig(ServerControlConfig config, const std::string& ReplicationConfig, const std::string& ClusterConfig,
-							  const std::string& ShardingConfig, const std::string& AsyncReplicationConfig);
+	void InitServerWithConfig(ServerControlConfig config, const YAML::Node& ReplicationConfig, const YAML::Node& ClusterConfig,
+							  const YAML::Node& ShardingConfig, const YAML::Node& AsyncReplicationConfig);
 	void Drop();
 	bool IsRunning();
 	bool DropAndWaitStop();
-	static void WaitSync(Interface::Ptr s1, Interface::Ptr s2, const std::string& nsName);
+	static void WaitSync(const Interface::Ptr& s1, const Interface::Ptr& s2, const std::string& nsName);
 
 	static constexpr std::chrono::seconds kMaxSyncTime = std::chrono::seconds(15);
 

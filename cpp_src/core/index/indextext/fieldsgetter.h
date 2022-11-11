@@ -9,7 +9,7 @@ class FieldsGetter {
 public:
 	FieldsGetter(const FieldsSet &fields, const PayloadType &plt, KeyValueType type) : fields_(fields), plt_(plt), type_(type) {}
 
-	h_vector<pair<std::string_view, uint32_t>, 8> getDocFields(const key_string &doc, vector<std::unique_ptr<string>> &) {
+	h_vector<std::pair<std::string_view, uint32_t>, 8> getDocFields(const key_string &doc, std::vector<std::unique_ptr<std::string>> &) {
 		if (!utf8::is_valid(doc->cbegin(), doc->cend())) throw Error(errParams, "Invalid UTF8 string in FullText index");
 
 		return {{std::string_view(*doc.get()), 0}};
@@ -18,12 +18,13 @@ public:
 	VariantArray krefs;
 
 	// Specific implemetation for composite index
-	h_vector<pair<std::string_view, uint32_t>, 8> getDocFields(const PayloadValue &doc, vector<std::unique_ptr<string>> &strsBuf) {
+	h_vector<std::pair<std::string_view, uint32_t>, 8> getDocFields(const PayloadValue &doc,
+																	vector<std::unique_ptr<std::string>> &strsBuf) {
 		ConstPayload pl(plt_, doc);
 
 		uint32_t fieldPos = 0;
 		size_t tagsPathIdx = 0;
-		h_vector<pair<std::string_view, uint32_t>, 8> ret;
+		h_vector<std::pair<std::string_view, uint32_t>, 8> ret;
 
 		for (auto field : fields_) {
 			krefs.resize(0);
@@ -34,18 +35,18 @@ public:
 			} else {
 				pl.Get(field, krefs);
 			}
-			for (Variant kref : krefs) {
+			for (const Variant &kref : krefs) {
 				if (kref.Type() != KeyValueString) {
-					strsBuf.emplace_back(std::unique_ptr<string>(new string(kref.As<string>())));
-					ret.push_back({*strsBuf.back().get(), fieldPos});
+					strsBuf.emplace_back(std::unique_ptr<std::string>(new std::string(kref.As<std::string>())));
+					ret.emplace_back(*strsBuf.back().get(), fieldPos);
 				} else {
 					const std::string_view stringRef(kref);
 					if (!utf8::is_valid(stringRef.data(), stringRef.data() + stringRef.size()))
 						throw Error(errParams, "Invalid UTF8 string in FullTextindex");
-					ret.push_back({stringRef, fieldPos});
+					ret.emplace_back(stringRef, fieldPos);
 				}
 			}
-			fieldPos++;
+			++fieldPos;
 		}
 		return ret;
 	}

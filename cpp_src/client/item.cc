@@ -10,7 +10,7 @@ Item::Item() : status_(errNotValid) {}
 Item::Item(Item &&other) noexcept = default;
 
 Item::Item(ItemImplBase *impl) : impl_(impl) {}
-Item::Item(const Error &err) : impl_(nullptr), status_(err) {}
+Item::Item(Error err) : impl_(nullptr), status_(std::move(err)) {}
 
 Item &Item::operator=(Item &&other) noexcept = default;
 
@@ -22,7 +22,7 @@ Error Item::FromMsgPack(std::string_view slice, size_t &offset) { return impl_->
 std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
 std::string_view Item::GetMsgPack() { return impl_->GetMsgPack(); }
-void Item::SetPrecepts(vector<string> precepts) { impl_->SetPrecepts(std::move(precepts)); }
+void Item::SetPrecepts(std::vector<std::string> precepts) { impl_->SetPrecepts(std::move(precepts)); }
 bool Item::IsTagsUpdated() const noexcept { return impl_->tagsMatcher().isUpdated(); }
 int Item::GetStateToken() const noexcept { return impl_->tagsMatcher().stateToken(); }
 Item &Item::Unsafe(bool enable) noexcept {

@@ -6,10 +6,10 @@
 namespace reindexer {
 
 struct JoinPreResult {
-	class Values : public vector<ItemRef> {
+	class Values : public std::vector<ItemRef> {
 	public:
 		Values(Values &&other)
-			: vector<ItemRef>(std::move(other)),
+			: std::vector<ItemRef>(std::move(other)),
 			  payloadType(std::move(other.payloadType)),
 			  tagsMatcher(std::move(other.tagsMatcher)),
 			  locked_(other.locked_) {
@@ -30,16 +30,19 @@ struct JoinPreResult {
 			for (size_t i = 0; i < size(); ++i) Payload{payloadType, (*this)[i].Value()}.AddRefStrings();
 			locked_ = true;
 		}
+		bool IsPreselectAllowed() const noexcept { return preselectAllowed_; }
+		void PreselectAllowed(bool a) noexcept { preselectAllowed_ = a; }
 
 		PayloadType payloadType;
 		TagsMatcher tagsMatcher;
 
 	private:
 		bool locked_ = false;
+		bool preselectAllowed_ = true;
 	};
 
-	typedef shared_ptr<JoinPreResult> Ptr;
-	typedef shared_ptr<const JoinPreResult> CPtr;
+	typedef std::shared_ptr<JoinPreResult> Ptr;
+	typedef std::shared_ptr<const JoinPreResult> CPtr;
 	IdSet ids;
 	SelectIteratorContainer iterators;
 	Values values;
@@ -48,7 +51,7 @@ struct JoinPreResult {
 	bool enableSortOrders = false;
 	bool btreeIndexOptimizationEnabled = true;
 	bool enableStoredValues = false;
-	string explainPreSelect, explainOneSelect;
+	std::string explainPreSelect, explainOneSelect;
 	ExplainCalc::Duration selectTime = ExplainCalc::Duration::zero();
 };
 
@@ -63,11 +66,12 @@ class JoinedSelector {
 	friend SortExpression;
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	friend NsSelecter;
+	friend QueryPreprocessor;
 
 public:
 	JoinedSelector(JoinType joinType, std::shared_ptr<NamespaceImpl> leftNs, std::shared_ptr<NamespaceImpl> rightNs, JoinCacheRes &&joinRes,
 				   Query &&itemQuery, LocalQueryResults &result, const JoinedQuery &joinQuery, JoinPreResult::Ptr preResult,
-				   size_t joinedFieldIdx, SelectFunctionsHolder &selectFunctions, int joinedSelectorsCount, bool inTransaction,
+				   uint32_t joinedFieldIdx, SelectFunctionsHolder &selectFunctions, uint32_t joinedSelectorsCount, bool inTransaction,
 				   const RdxContext &rdxCtx)
 		: joinType_(joinType),
 		  called_(0),
@@ -78,7 +82,7 @@ public:
 		  itemQuery_(std::move(itemQuery)),
 		  result_(result),
 		  joinQuery_(joinQuery),
-		  preResult_(preResult),
+		  preResult_(std::move(preResult)),
 		  joinedFieldIdx_(joinedFieldIdx),
 		  selectFunctions_(selectFunctions),
 		  joinedSelectorsCount_(joinedSelectorsCount),
@@ -94,11 +98,11 @@ public:
 	bool Process(IdType, int nsId, ConstPayload, bool match);
 	JoinType Type() const noexcept { return joinType_; }
 	void SetType(JoinType type) noexcept { joinType_ = type; }
-	const string &RightNsName() const noexcept { return itemQuery_._namespace; }
+	const std::string &RightNsName() const noexcept { return itemQuery_._namespace; }
 	const JoinedQuery &JoinQuery() const noexcept { return joinQuery_; }
 	int Called() const noexcept { return called_; }
 	int Matched() const noexcept { return matched_; }
-	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &, int *maxIterations, unsigned sortId, SelectFunction::Ptr,
+	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &, int *maxIterations, unsigned sortId, const SelectFunction::Ptr &,
 											 const RdxContext &);
 	static constexpr int MaxIterationsForPreResultStoreValuesOptimization() noexcept { return 200; }
 	JoinPreResult::CPtr PreResult() const noexcept { return preResult_; }
@@ -106,9 +110,9 @@ public:
 
 private:
 	template <bool byJsonPath>
-	void readValuesFromRightNs(VariantArray &values, const Index &leftIndex, int rightIdxNo, const std::string &rightIndex) const;
+	void readValuesFromRightNs(VariantArray &values, KeyValueType leftIndexType, int rightIdxNo, std::string_view rightIndex) const;
 	template <bool byJsonPath>
-	void readValuesFromPreResult(VariantArray &values, const Index &leftIndex, int rightIdxNo, const std::string &rightIndex) const;
+	void readValuesFromPreResult(VariantArray &values, KeyValueType leftIndexType, int rightIdxNo, std::string_view rightIndex) const;
 	void selectFromRightNs(LocalQueryResults &joinItemR, const Query &, bool &found, bool &matchedAtLeastOnce);
 	void selectFromPreResultValues(LocalQueryResults &joinItemR, const Query &, bool &found, bool &matchedAtLeastOnce) const;
 
@@ -121,13 +125,16 @@ private:
 	LocalQueryResults &result_;
 	const JoinedQuery &joinQuery_;
 	JoinPreResult::Ptr preResult_;
-	size_t joinedFieldIdx_;
+	uint32_t joinedFieldIdx_;
 	SelectFunctionsHolder &selectFunctions_;
-	int joinedSelectorsCount_;
+	uint32_t joinedSelectorsCount_;
 	const RdxContext &rdxCtx_;
 	bool optimized_{false};
 	bool inTransaction_{false};
 };
-using JoinedSelectors = vector<JoinedSelector>;
+using JoinedSelectors = std::vector<JoinedSelector>;
+
+extern template void JoinedSelector::readValuesFromPreResult<true>(VariantArray &, KeyValueType, int, std::string_view) const;
+extern template void JoinedSelector::readValuesFromPreResult<false>(VariantArray &, KeyValueType, int, std::string_view) const;
 
 }  // namespace reindexer

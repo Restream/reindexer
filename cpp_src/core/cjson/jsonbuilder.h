@@ -33,17 +33,17 @@ public:
 	template <typename T>
 	void Array(int tagName, span<T> data, int /*offset*/ = 0) {
 		JsonBuilder node = Array(tagName);
-		for (auto d : data) node.Put({}, d);
+		for (const auto &d : data) node.Put({}, d);
 	}
 	template <typename T>
 	void Array(std::string_view n, span<T> data, int /*offset*/ = 0) {
 		JsonBuilder node = Array(n);
-		for (auto d : data) node.Put({}, d);
+		for (const auto &d : data) node.Put({}, d);
 	}
 	template <typename T>
 	void Array(std::string_view n, std::initializer_list<T> data, int /*offset*/ = 0) {
 		JsonBuilder node = Array(n);
-		for (auto d : data) node.Put({}, d);
+		for (const auto &d : data) node.Put({}, d);
 	}
 
 	void Array(int tagName, Serializer &ser, int tagType, int count) {
@@ -57,7 +57,7 @@ public:
 	JsonBuilder &Put(std::nullptr_t, std::string_view arg) { return Put(std::string_view{}, arg); }
 	JsonBuilder &Put(std::string_view name, const char *arg) { return Put(name, std::string_view(arg)); }
 	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value>::type * = nullptr>
-	JsonBuilder &Put(std::string_view name, T arg) {
+	JsonBuilder &Put(std::string_view name, const T &arg) {
 		putName(name);
 		(*ser_) << arg;
 		return *this;

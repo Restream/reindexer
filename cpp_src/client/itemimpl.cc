@@ -1,7 +1,7 @@
 #include "itemimpl.h"
-#include "cororpcclient.h"
-#include "synccoroqueryresults.h"
-#include "synccororeindexerimpl.h"
+#include "client/queryresults.h"
+#include "client/reindexerimpl.h"
+#include "client/rpcclient.h"
 
 namespace reindexer {
 namespace client {
@@ -12,7 +12,7 @@ Error ItemImpl<C>::tryToUpdateTagsMatcher() {
 		return Error(errLogic, "Client pointer is null");
 	}
 	typename C::QueryResultsT qr;
-	Query q = Query(string(payloadType_.Name())).Limit(0);
+	Query q = Query(payloadType_.Name()).Limit(0);
 	Error err = client_->Select(q, qr, InternalRdxContext().WithTimeout(requestTimeout_).WithShardId(ShardingKeyType::ProxyOff, false));
 	if (err.ok() && qr.GetNamespacesCount() > 0) {
 		TagsMatcher newTm = qr.GetTagsMatcher(0);
@@ -29,8 +29,8 @@ Error ItemImpl<C>::tryToUpdateTagsMatcher() {
 	return err.ok() ? Error(errLogic, "Unable to update tagsmatcher: QR namespaces array is empty") : err;
 }
 
-template class ItemImpl<CoroRPCClient>;
-template class ItemImpl<SyncCoroReindexerImpl>;
+template class ItemImpl<RPCClient>;
+template class ItemImpl<ReindexerImpl>;
 
 }  // namespace client
 }  // namespace reindexer

@@ -2,13 +2,14 @@
 #include "core/cjson/jsonbuilder.h"
 #include "tools/fsops.h"
 #include "tools/stringstools.h"
+#include "yaml-cpp/yaml.h"
 
 const std::string RPCClientTestApi::kDbPrefix = "/tmp/reindex/rpc_client_test";
 const std::string RPCClientTestApi::kDefaultRPCServerAddr = "127.0.0.1:" + std::to_string(RPCClientTestApi::kDefaultRPCPort);
 
 void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLogin) {
 	dsn_ = addr;
-	serverThread_.reset(new std::thread([this, addr, errOnLogin]() {
+	serverThread_.reset(new std::thread([this, addr, errOnLogin = std::move(errOnLogin)]() {
 		server_.reset(new RPCServerFake(conf_));
 		stop_.set(loop_);
 		stop_.set([&](ev::async& sig) { sig.loop.break_loop(); });
@@ -22,7 +23,10 @@ void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLog
 		}
 		serverIsReady_ = false;
 		stop_.stop();
-		server_->Stop();
+		Error err = server_->Stop();
+		if (!err.ok() && err_.ok()) {
+			err_ = err;
+		}
 		server_.reset();
 	}));
 	while (!serverIsReady_) {
@@ -44,35 +48,30 @@ void RPCClientTestApi::TestServer::Stop() {
 }
 
 void RPCClientTestApi::StartDefaultRealServer() {
-	const std::string dbPath = kDbPrefix + "/" + std::to_string(kDefaultRPCPort);
+	const std::string dbPath = std::string(kDbPrefix) + "/" + std::to_string(kDefaultRPCPort);
 	reindexer::fs::RmDirAll(dbPath);
 	AddRealServer(dbPath);
 	StartServer();
 }
 
-void RPCClientTestApi::AddFakeServer(const std::string& addr, const RPCServerConfig& conf) {
+RPCClientTestApi::TestServer& RPCClientTestApi::AddFakeServer(const std::string& addr, const RPCServerConfig& conf) {
 	fakeServers_.emplace(addr, std::unique_ptr<TestServer>(new TestServer(conf)));
+	return *fakeServers_[addr];
 }
 
-void RPCClientTestApi::AddRealServer(const std::string& dbPath, const std::string& addr, uint16_t httpPort, uint16_t clusterPort) {
+void RPCClientTestApi::AddRealServer(const std::string& dbPath, const std::string& addr, uint16_t httpPort) {
 	auto res = realServers_.emplace(addr, ServerData());
 	ASSERT_TRUE(res.second);
-	// clang-format off
-	std::string yaml =
-			"storage:\n"
-			"    path:" + dbPath  +"\n"
-			"metrics:\n"
-			"   clientsstats: true\n"
-			"logger:\n"
-			"   loglevel: none\n"
-			"   rpclog: \n"
-			"   serverlog: \n"
-			"net:\n"
-			"   rpcaddr: " + addr + "\n"
-			"   httpaddr: 0.0.0.0:" + std::to_string(httpPort) + "\n"
-			"   clusteraddr: 0.0.0.0:" + std::to_string(clusterPort);
-	// clang-format on
-	Error err = res.first->second.server->InitFromYAML(yaml);
+	YAML::Node y;
+	y["storage"]["path"] = dbPath;
+	y["metrics"]["clientsstats"] = true;
+	y["logger"]["loglevel"] = "none";
+	y["logger"]["rpclog"] = "none";
+	y["logger"]["serverlog"] = "none";
+	y["net"]["httpaddr"] = "0.0.0.0:" + std::to_string(httpPort);
+	y["net"]["rpcaddr"] = addr;
+
+	Error err = res.first->second.server->InitFromYAML(YAML::Dump(y));
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
@@ -80,7 +79,7 @@ void RPCClientTestApi::StartServer(const std::string& addr, Error errOnLogin) {
 	{
 		auto it = fakeServers_.find(addr);
 		if (it != fakeServers_.end()) {
-			it->second->Start(addr, errOnLogin);
+			it->second->Start(addr, std::move(errOnLogin));
 			return;
 		}
 	}
@@ -108,12 +107,12 @@ void RPCClientTestApi::StartServer(const std::string& addr, Error errOnLogin) {
 	assertf(false, "Server with dsn %s was not found", addr);
 }
 
-void RPCClientTestApi::StopServer(const std::string& addr) {
+Error RPCClientTestApi::StopServer(const std::string& addr) {
 	{
 		auto it = fakeServers_.find(addr);
 		if (it != fakeServers_.end()) {
 			it->second->Stop();
-			return;
+			return it->second->ErrorStatus();
 		}
 	}
 	{
@@ -124,10 +123,11 @@ void RPCClientTestApi::StopServer(const std::string& addr) {
 			assert(it->second.serverThread->joinable());
 			it->second.serverThread->join();
 			it->second.serverThread.reset();
-			return;
+			return errOK;
 		}
 	}
 	assertf(false, "Server with dsn %s was not found", addr);
+	abort();
 }
 
 bool RPCClientTestApi::CheckIfFakeServerConnected(const std::string& addr) {
@@ -138,9 +138,13 @@ bool RPCClientTestApi::CheckIfFakeServerConnected(const std::string& addr) {
 	return false;
 }
 
-void RPCClientTestApi::StopAllServers() {
+Error RPCClientTestApi::StopAllServers() {
+	Error res{errOK};
 	for (const auto& item : fakeServers_) {
 		item.second->Stop();
+		if (!item.second->ErrorStatus().ok() && res.ok()) {
+			res = item.second->ErrorStatus();
+		}
 	}
 	for (auto& item : realServers_) {
 		if (item.second.serverThread && item.second.serverThread->joinable()) {
@@ -149,18 +153,7 @@ void RPCClientTestApi::StopAllServers() {
 			item.second.serverThread.reset();
 		}
 	}
-}
-
-client::Item RPCClientTestApi::CreateItem(client::Reindexer& rx, std::string_view nsName, int id) {
-	reindexer::WrSerializer wrser;
-	reindexer::JsonBuilder jb(wrser);
-	jb.Put("id", id);
-	jb.End();
-	auto item = rx.NewItem(nsName);
-	EXPECT_TRUE(item.Status().ok()) << item.Status().what();
-	auto err = item.FromJSON(wrser.Slice());
-	EXPECT_TRUE(err.ok()) << err.what();
-	return item;
+	return res;
 }
 
 client::Item RPCClientTestApi::CreateItem(client::CoroReindexer& rx, std::string_view nsName, int id) {
@@ -175,27 +168,11 @@ client::Item RPCClientTestApi::CreateItem(client::CoroReindexer& rx, std::string
 	return item;
 }
 
-void RPCClientTestApi::CreateNamespace(reindexer::client::Reindexer& rx, std::string_view nsName) {
-	auto err = rx.OpenNamespace(nsName);
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rx.AddIndex(nsName, {"id", "hash", "int", IndexOpts().PK()});
-	EXPECT_TRUE(err.ok()) << err.what();
-}
-
 void RPCClientTestApi::CreateNamespace(client::CoroReindexer& rx, std::string_view nsName) {
 	auto err = rx.OpenNamespace(nsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = rx.AddIndex(nsName, {"id", "hash", "int", IndexOpts().PK()});
 	EXPECT_TRUE(err.ok()) << err.what();
-}
-
-void RPCClientTestApi::FillData(client::Reindexer& rx, std::string_view nsName, int from, int count) {
-	int to = from + count;
-	for (int id = from; id < to; ++id) {
-		auto item = CreateItem(rx, nsName, id);
-		auto err = rx.Upsert(nsName, item);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
 }
 
 void RPCClientTestApi::FillData(client::CoroReindexer& rx, std::string_view nsName, int from, int count) {

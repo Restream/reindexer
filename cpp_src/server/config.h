@@ -5,43 +5,44 @@
 #include <vector>
 #include "tools/errors.h"
 
-using std::string;
-using std::vector;
 using reindexer::Error;
 
-namespace Yaml {
+namespace YAML {
 class Node;
 }
 
 namespace reindexer_server {
 
 struct ServerConfig {
+	// This timeout is required to avoid locks, when raft leader does not exist
+	constexpr static auto kDefaultHttpWriteTimeout = std::chrono::seconds(60);
+
 	ServerConfig() { Reset(); }
 
-	const vector<string>& Args() const { return args_; }
+	const std::vector<std::string>& Args() const { return args_; }
 	void Reset();
 
-	Error ParseYaml(const string& yaml);
-	Error ParseFile(const string& configPath);
+	Error ParseYaml(const std::string& yaml);
+	Error ParseFile(const std::string& configPath);
 	Error ParseCmd(int argc, char* argv[]);
 
-	string WebRoot;
-	string StorageEngine;
-	string HTTPAddr;
-	string RPCAddr;
-	string RPCThreadingMode;
-	string HttpThreadingMode;
-	string LogLevel;
-	string ServerLog;
-	string CoreLog;
-	string HttpLog;
-	string RpcLog;
-	string StoragePath;
+	std::string WebRoot;
+	std::string StorageEngine;
+	std::string HTTPAddr;
+	std::string RPCAddr;
+	std::string RPCThreadingMode;
+	std::string HttpThreadingMode;
+	std::string LogLevel;
+	std::string ServerLog;
+	std::string CoreLog;
+	std::string HttpLog;
+	std::string RpcLog;
+	std::string StoragePath;
 	bool StartWithErrors;
 	bool Autorepair;
 #ifndef _WIN32
-	string UserName;
-	string DaemonPidFile;
+	std::string UserName;
+	std::string DaemonPidFile;
 	bool Daemonize;
 #else
 	bool InstallSvc;
@@ -58,27 +59,26 @@ struct ServerConfig {
 	std::chrono::seconds HttpReadTimeout;
 	size_t MaxUpdatesSize;
 	bool EnableGRPC;
-	string GRPCAddr;
+	std::string GRPCAddr;
 	size_t MaxHttpReqSize;
 	std::chrono::seconds RPCQrIdleTimeout;
 
-	static const string kDedicatedThreading;
-	static const string kSharedThreading;
-	static const string kPoolThreading;
+	static const std::string kDedicatedThreading;
+	static const std::string kSharedThreading;
 
-	void SetEnableCluster(bool val) noexcept;
-	bool EnableCluster() const noexcept { return enableCluster_; }
 	void SetHttpWriteTimeout(std::chrono::seconds val) noexcept;
-	std::chrono::seconds HttpWriteTimeout() const noexcept { return httpWriteTimeout_; }
+	std::chrono::seconds HttpWriteTimeout() const noexcept {
+		return defaultHttpWriteTimeout_ ? kDefaultHttpWriteTimeout : httpWriteTimeout_;
+	}
+	bool HasDefaultHttpWriteTimeout() const noexcept { return defaultHttpWriteTimeout_; }
 
 protected:
-	Error fromYaml(Yaml::Node& root);
+	Error fromYaml(YAML::Node& root);
 
 private:
-	bool enableCluster_;
-	bool hasCustomHttpWriteTimeout_;
+	bool defaultHttpWriteTimeout_ = true;
 	std::chrono::seconds httpWriteTimeout_;
-	vector<string> args_;
+	std::vector<std::string> args_;
 };
 
 }  // namespace reindexer_server

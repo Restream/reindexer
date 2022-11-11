@@ -8,18 +8,16 @@
 
 namespace reindexer {
 
-using std::string;
+typedef const std::string const_string;
 
-typedef const string const_string;
-
-class base_key_string : public string {
+class base_key_string : public std::string {
 public:
-	base_key_string(std::string_view str) : string(str.data(), str.length()) {
+	base_key_string(std::string_view str) : std::string(str.data(), str.length()) {
 		export_hdr_.refcounter.store(0, std::memory_order_release);
 		bind();
 	}
 	template <typename... Args>
-	base_key_string(Args &&...args) : string(std::forward<Args>(args)...) {
+	base_key_string(Args &&...args) : std::string(std::forward<Args>(args)...) {
 		export_hdr_.refcounter.store(0, std::memory_order_release);
 		bind();
 	}
@@ -36,7 +34,7 @@ public:
 	size_t heap_size() noexcept {
 		// Check for SSO (small string optimization)
 		uintptr_t pstart = uintptr_t(this);
-		uintptr_t pend = pstart + sizeof(string);
+		uintptr_t pend = pstart + sizeof(std::string);
 		uintptr_t pdata = uintptr_t(data());
 		return (pdata >= pstart && pdata < pend) ? 0 : (capacity() + 1);  // +1 for terminating \0
 	}
@@ -72,7 +70,7 @@ protected:
 	}
 	friend void intrusive_ptr_release(base_key_string *x) noexcept {
 		if (x && x->export_hdr_.refcounter.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-			delete x;
+			delete x;  // NOLINT(*.NewDelete) False positive
 		}
 	}
 	friend bool intrusive_ptr_is_unique(base_key_string *x) noexcept {
@@ -81,7 +79,7 @@ protected:
 	}
 
 	void bind() noexcept {
-		export_hdr_.cstr = string::c_str();
+		export_hdr_.cstr = std::string::c_str();
 		export_hdr_.len = length();
 	}
 
@@ -109,8 +107,8 @@ inline static bool operator==(const key_string &rhs, const key_string &lhs) noex
 
 // Unchecked cast to derived class!
 // It assumes, that all strings in payload are intrusive_ptr
-inline void key_string_add_ref(string *str) noexcept { intrusive_ptr_add_ref(reinterpret_cast<base_key_string *>(str)); }
-inline void key_string_release(string *str) noexcept { intrusive_ptr_release(reinterpret_cast<base_key_string *>(str)); }
+inline void key_string_add_ref(std::string *str) noexcept { intrusive_ptr_add_ref(reinterpret_cast<base_key_string *>(str)); }
+inline void key_string_release(std::string *str) noexcept { intrusive_ptr_release(reinterpret_cast<base_key_string *>(str)); }
 
 }  // namespace reindexer
 namespace std {

@@ -22,7 +22,7 @@
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
 #include "tools/stringstools.h"
-#include "yaml/yaml.h"
+#include "yaml-cpp/yaml.h"
 #ifdef _WIN32
 #include "winservice.h"
 #endif
@@ -76,7 +76,7 @@ Error ServerImpl::InitFromFile(const char *filePath) {
 	return init();
 }
 
-Error ServerImpl::InitFromYAML(const string &yaml) {
+Error ServerImpl::InitFromYAML(const std::string &yaml) {
 	Error err = config_.ParseYaml(yaml);
 	if (!err.ok()) {
 		if (err.code() == errParams) {
@@ -98,14 +98,14 @@ Error ServerImpl::init() {
 
 	init_resources();
 
-	vector<string> dirs = {
+	vector<std::string> dirs = {
 #ifndef _WIN32
 		GetDirPath(config_.DaemonPidFile),
 #endif
 		GetDirPath(config_.CoreLog),	   GetDirPath(config_.HttpLog), GetDirPath(config_.RpcLog),
 		GetDirPath(config_.ServerLog),	   config_.StoragePath};
 
-	for (const string &dir : dirs) {
+	for (const std::string &dir : dirs) {
 		err = TryCreateDirectory(dir);
 		if (!err.ok()) return err;
 #ifndef _WIN32
@@ -251,6 +251,10 @@ int ServerImpl::run() {
 
 	initCoreLogger();
 	logger_.info("Initializing databases...");
+	if (config_.HasDefaultHttpWriteTimeout()) {
+		logger_.info("HTTP write timeout was not set explicitly. The default value will be used: %d seconds",
+					 config_.HttpWriteTimeout().count());
+	}
 	std::unique_ptr<ClientsStats> clientsStats;
 	if (config_.EnableConnectionsStats) clientsStats.reset(new ClientsStats());
 	try {
@@ -425,7 +429,7 @@ Error ServerImpl::loggerConfigure() {
 		spdlog::set_pattern("[%L%d/%m %T.%e %t] %v");
 	});
 
-	vector<pair<string, string>> loggers = {
+	vector<std::pair<std::string, string>> loggers = {
 		{"server", config_.ServerLog}, {"core", config_.CoreLog}, {"http", config_.HttpLog}, {"rpc", config_.RpcLog}};
 
 	for (auto &logger : loggers) {

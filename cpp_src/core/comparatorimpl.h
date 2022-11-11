@@ -20,7 +20,7 @@ struct ComparatorVars {
 		  isArray_(isArray),
 		  rawData_(reinterpret_cast<uint8_t *>(rawData)),
 		  collateOpts_(collateOpts),
-		  payloadType_(payloadType),
+		  payloadType_(std::move(payloadType)),
 		  fields_(fields) {}
 	ComparatorVars() = default;
 

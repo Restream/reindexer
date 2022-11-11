@@ -31,7 +31,7 @@ const string septillion[] = {"септиллион", "септиллиона", "
 
 enum Numorders : int { Thousands, Millions, Billions, Trillions, Quadrillion, Quintillion, Sextillion, Septillion };
 
-const string& getNumorder(int numorder, int i) {
+const std::string& getNumorder(int numorder, int i) {
 	switch (numorder) {
 		case Thousands:
 			return thousands[i];
@@ -55,11 +55,11 @@ const string& getNumorder(int numorder, int i) {
 
 int ansiCharacterToDigit(char ch) { return static_cast<int>(ch - 48); }
 
-vector<string> getOrders(std::string_view str) {
+vector<std::string> getOrders(std::string_view str) {
 	string numStr(str);
 	std::reverse(numStr.begin(), numStr.end());
 	int numChars = numStr.length();
-	vector<string> orders;
+	vector<std::string> orders;
 	for (int i = 0; i < numChars; i += 3) {
 		string tempString;
 		if (i <= numChars - 3) {
@@ -83,8 +83,8 @@ vector<string> getOrders(std::string_view str) {
 	return orders;
 }
 
-vector<string> getDecimal(const string& str, int i) {
-	vector<string> words;
+vector<std::string> getDecimal(const std::string& str, int i) {
+	vector<std::string> words;
 	int v = std::stoi(str);
 	if (v < 10) {
 		words.emplace_back(units[v]);
@@ -116,15 +116,15 @@ string getNumOrders(int i, int num) {
 	return orders;
 }
 
-vector<string> formTextString(const string& str, int i) {
-	vector<string> words;
+vector<std::string> formTextString(const std::string& str, int i) {
+	vector<std::string> words;
 	int strlen = str.length();
 	if (strlen == 3) {
 		words.emplace_back(hundreads[ansiCharacterToDigit(str[0])]);
 		string decimal;
 		decimal += str[1];
 		decimal += str[2];
-		vector<string> decimalWords(getDecimal(decimal, i));
+		vector<std::string> decimalWords(getDecimal(decimal, i));
 		words.insert(words.end(), make_move_iterator(decimalWords.begin()), make_move_iterator(decimalWords.end()));
 	} else if (strlen == 2) {
 		words = getDecimal(str, i);
@@ -141,7 +141,7 @@ vector<string> formTextString(const string& str, int i) {
 	return words;
 }
 
-vector<string>& NumToText::convert(std::string_view str, std::vector<std::string>& output) {
+vector<std::string>& NumToText::convert(std::string_view str, std::vector<std::string>& output) {
 	output.clear();
 	if ((str.length() == 1) && (str[0] == '0')) {
 		output = {"ноль"};
@@ -151,10 +151,10 @@ vector<string>& NumToText::convert(std::string_view str, std::vector<std::string
 	if (str.length() > 27) {
 		return output;
 	}
-	vector<string> orders(getOrders(str));
+	vector<std::string> orders(getOrders(str));
 	for (size_t i = 0; i < orders.size(); ++i) {
 		size_t oppositeSideIndex = orders.size() - 1 - i;
-		vector<string> digits(formTextString(orders[oppositeSideIndex], oppositeSideIndex));
+		vector<std::string> digits(formTextString(orders[oppositeSideIndex], oppositeSideIndex));
 		output.insert(output.end(), make_move_iterator(digits.begin()), make_move_iterator(digits.end()));
 	}
 	return output;

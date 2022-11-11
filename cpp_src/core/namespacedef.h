@@ -11,32 +11,30 @@
 
 namespace reindexer {
 
-using std::string;
-using std::vector;
-
 class WrSerializer;
 class RdxContext;
 class Namespace;
 
 struct NamespaceDef {
-	NamespaceDef() {}
+	NamespaceDef() = default;
 
-	NamespaceDef(string iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
+	NamespaceDef(std::string iname, StorageOpts istorage = StorageOpts().Enabled().CreateIfMissing())
 		: name(std::move(iname)), storage(istorage) {}
 
-	NamespaceDef &AddIndex(const string &iname, const string &indexType, const string &fieldType, IndexOpts opts = IndexOpts()) {
-		indexes.push_back({iname, {iname}, indexType, fieldType, opts});
+	NamespaceDef &AddIndex(const std::string &iname, const std::string &indexType, const std::string &fieldType,
+						   IndexOpts opts = IndexOpts()) {
+		indexes.emplace_back(iname, JsonPaths{iname}, indexType, fieldType, std::move(opts));
 		return *this;
 	}
 
-	NamespaceDef &AddIndex(const string &iname, const JsonPaths &jsonPaths, const string &indexType, const string &fieldType,
+	NamespaceDef &AddIndex(const std::string &iname, const JsonPaths &jsonPaths, const std::string &indexType, const std::string &fieldType,
 						   IndexOpts opts = IndexOpts()) {
-		indexes.push_back({iname, jsonPaths, indexType, fieldType, opts});
+		indexes.emplace_back(iname, jsonPaths, indexType, fieldType, std::move(opts));
 		return *this;
 	}
 
 	NamespaceDef &AddIndex(const IndexDef &idxDef) {
-		indexes.push_back(idxDef);
+		indexes.emplace_back(idxDef);
 		return *this;
 	}
 
@@ -53,11 +51,11 @@ struct NamespaceDef {
 	}
 
 public:
-	string name;
+	std::string name;
 	StorageOpts storage;
-	vector<IndexDef> indexes;
+	std::vector<IndexDef> indexes;
 	bool isTemporary = false;
-	string schemaJson = "{}";
+	std::string schemaJson = "{}";
 };
 
 enum EnumNamespacesOpt {
@@ -74,7 +72,7 @@ struct EnumNamespacesOpts {
 	bool IsOnlyNames() const noexcept { return options_ & kEnumNamespacesOnlyNames; }
 	bool IsHideSystem() const noexcept { return options_ & kEnumNamespacesHideSystem; }
 	bool IsHideTemporary() const noexcept { return options_ & kEnumNamespacesHideTemporary; }
-	bool MatchFilter(std::string_view nsName, std::shared_ptr<Namespace> ns, const RdxContext &ctx) const;
+	bool MatchFilter(std::string_view nsName, const std::shared_ptr<Namespace> &ns, const RdxContext &ctx) const;
 	bool MatchNameFilter(std::string_view nsName) const noexcept {
 		return (filter_.empty() || iequals(filter_, nsName)) && (!IsHideSystem() || (!nsName.empty() && nsName[0] != '#')) &&
 			   (!IsHideTemporary() || (!nsName.empty() && nsName[0] != '@'));

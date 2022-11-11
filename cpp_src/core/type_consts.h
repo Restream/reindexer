@@ -131,6 +131,7 @@ enum ErrorCode {
 	errTxInvalidLeader = 33,
 	errAlreadyProxied = 34,
 	errStrictMode = 35,
+	errQrUIDMissmatch = 36,
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };

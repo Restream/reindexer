@@ -8,7 +8,7 @@
 class Aggregation : protected BaseFixture {
 public:
 	~Aggregation() override = default;
-	Aggregation(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	Aggregation(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 		nsdef_.AddIndex("int_data", "hash", "int", IndexOpts());
 		nsdef_.AddIndex("int_array_data", "hash", "int", IndexOpts().Array());
@@ -16,10 +16,10 @@ public:
 	}
 
 	void RegisterAllCases() override;
-	Error Initialize() override;
+	reindexer::Error Initialize() override;
 
 protected:
-	Item MakeItem() override;
+	reindexer::Item MakeItem() override;
 
 	template <size_t N>
 	void Insert(State& state);

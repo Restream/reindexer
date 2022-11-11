@@ -97,7 +97,7 @@ public:
 		return res;
 	}
 	cluster::ReplicationStats GetReplicationStats(size_t num, std::string_view type) { return GetSrv(num)->GetReplicationStats(type); }
-	void RestartWithReplicationConfigFiles(size_t num, const string &asyncReplConfigYaml, const string &replConfigYaml) {
+	void RestartWithReplicationConfigFiles(size_t num, const std::string &asyncReplConfigYaml, const std::string &replConfigYaml) {
 		GetSrv(num)->WriteAsyncReplicationConfig(asyncReplConfigYaml);
 		GetSrv(num)->WriteReplicationConfig(replConfigYaml);
 		ASSERT_TRUE(StopServer(num));

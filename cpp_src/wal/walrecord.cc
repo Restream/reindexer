@@ -161,7 +161,7 @@ static std::string_view wrecType2Str(WALRecType t) {
 	}
 }
 
-WrSerializer &WALRecord::Dump(WrSerializer &ser, std::function<string(std::string_view)> cjsonViewer) const {
+WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string(std::string_view)>& cjsonViewer) const {
 	ser << wrecType2Str(type);
 	if (inTransaction) ser << " InTransaction";
 	switch (type) {
@@ -193,7 +193,7 @@ WrSerializer &WALRecord::Dump(WrSerializer &ser, std::function<string(std::strin
 	}
 }
 
-void WALRecord::GetJSON(JsonBuilder &jb, std::function<std::string(std::string_view)> cjsonViewer) const {
+void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)>& cjsonViewer) const {
 	jb.Put("type", wrecType2Str(type));
 	jb.Put("in_transaction", inTransaction);
 

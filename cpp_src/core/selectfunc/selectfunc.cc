@@ -8,8 +8,7 @@
 #include "functions/snippet.h"
 
 namespace reindexer {
-using std::make_pair;
-using std::make_shared;
+
 static inline void ltrim(std::string &s) {
 	s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int ch) { return !std::isspace(ch); }));
 }
@@ -33,11 +32,11 @@ SelectFunction::Ptr SelectFunctionsHolder::AddNamespace(const Query &q, const Na
 	}
 
 	if (!querys_) {
-		querys_.reset(new fast_hash_map<string, SelectFunction::Ptr>);
+		querys_.reset(new fast_hash_map<std::string, SelectFunction::Ptr>);
 	}
 
 	NsSelectFuncInterface nm_interface(nm);
-	SelectFunction::Ptr func = make_shared<SelectFunction>(q, nm_interface);
+	SelectFunction::Ptr func = std::make_shared<SelectFunction>(q, nm_interface);
 	return querys_->emplace(nm_interface.GetName(), func).first->second;
 }
 
@@ -64,7 +63,7 @@ void SelectFunction::createFunc(SelectFuncStruct &data) {
 
 	// if index is composite then create function for inner use only
 	if (IsComposite(nm_.getIndexType(indexNo))) {
-		std::vector<string> subIndexes;
+		std::vector<std::string> subIndexes;
 
 		int fieldNo = 0;
 		const FieldsSet &fields = nm_.getIndexFields(indexNo);
@@ -109,6 +108,31 @@ BaseFunctionCtx::Ptr SelectFunction::createFuncForProc(int indexNo) {
 		assertrx(it != functions_.end());
 		return createCtx(it->second, nullptr, nm_.getIndexType(indexNo));
 	}
+}
+
+bool SelectFunction::NeedArea(int indexNo) const {
+	if (functions_.empty()) return false;
+	IndexType indexType = nm_.getIndexType(indexNo);
+	if (IsComposite(indexType)) {
+		int cjsonFieldIdx = nm_.getIndexesCount();
+		for (auto field : nm_.getIndexFields(indexNo)) {
+			if (field == IndexValueType::SetByJsonPath) field = cjsonFieldIdx++;
+			const auto it = functions_.find(field);
+			if (it != functions_.end()) {
+				if (it->second.type == SelectFuncStruct::kSelectFuncSnippet || it->second.type == SelectFuncStruct::kSelectFuncHighlight) {
+					return true;
+				}
+			}
+		}
+	} else {
+		const auto it = functions_.find(indexNo);
+		if (it != functions_.end()) {
+			if (it->second.type == SelectFuncStruct::kSelectFuncSnippet || it->second.type == SelectFuncStruct::kSelectFuncHighlight) {
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
@@ -189,11 +213,11 @@ BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct &data, BaseFunct
 		case SelectFuncStruct::kSelectFuncProc:
 			if (IsFullText(index_type)) {
 				if (!ctx) {
-					data.ctx = make_shared<FtCtx>();
+					data.ctx = std::make_shared<FtCtx>();
 				} else {
-					data.ctx = ctx;
+					data.ctx = std::move(ctx);
 				}
-				const string &indexName = (data.indexNo >= nm_.getIndexesCount()) ? data.field : nm_.getIndexName(data.indexNo);
+				const std::string &indexName = (data.indexNo >= nm_.getIndexesCount()) ? data.field : nm_.getIndexName(data.indexNo);
 				data.ctx->AddFunction(indexName, data.type);
 			}
 	}

@@ -13,7 +13,7 @@
 namespace reindexer {
 namespace fs {
 
-int MkDirAll(const string &path) {
+int MkDirAll(const std::string &path) {
 	std::string tmpStr = path;
 	char *p = nullptr, *tmp = tmpStr.data();
 	int err;
@@ -30,7 +30,7 @@ int MkDirAll(const string &path) {
 	return ((mkdir(tmp, S_IRWXU) < 0) && errno != EEXIST) ? -1 : 0;
 }
 
-int RmDirAll(const string &path) {
+int RmDirAll(const std::string &path) {
 #ifndef _WIN32
 	return nftw(
 		path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64, FTW_DEPTH | FTW_PHYS);
@@ -40,7 +40,7 @@ int RmDirAll(const string &path) {
 #endif
 }
 
-int ReadFile(const string &path, string &content) {
+int ReadFile(const std::string &path, std::string &content) {
 	FILE *f = fopen(path.c_str(), "rb");
 	if (!f) {
 		return -1;
@@ -65,7 +65,7 @@ int64_t WriteFile(const std::string &path, std::string_view content) {
 	return static_cast<int64_t>((written > 0) ? content.size() : written);
 }
 
-int ReadDir(const string &path, vector<DirEntry> &content) {
+int ReadDir(const std::string &path, std::vector<DirEntry> &content) {
 #ifndef _WIN32
 	struct dirent *entry;
 	auto dir = opendir(path.c_str());
@@ -108,12 +108,12 @@ int ReadDir(const string &path, vector<DirEntry> &content) {
 	return 0;
 }
 
-string GetCwd() {
+std::string GetCwd() {
 	char buff[FILENAME_MAX];
 	return std::string(getcwd(buff, FILENAME_MAX));
 }
 
-string GetTempDir() {
+std::string GetTempDir() {
 #ifdef _WIN32
 	char tmpBuf[512];
 	*tmpBuf = 0;
@@ -126,13 +126,13 @@ string GetTempDir() {
 #endif
 }
 
-string GetHomeDir() {
+std::string GetHomeDir() {
 	const char *homeDir = getenv("HOME");
 	if (homeDir && *homeDir) return homeDir;
 	return ".";
 }
 
-FileStatus Stat(const string &path) {
+FileStatus Stat(const std::string &path) {
 #ifdef _WIN32
 	struct _stat state;
 	if (_stat(path.c_str(), &state) < 0) return StatError;
@@ -178,7 +178,7 @@ TimeStats StatTime(const std::string &path) {
 	return {-1, -1, -1};
 }
 
-bool DirectoryExists(const string &directory) {
+bool DirectoryExists(const std::string &directory) {
 	if (!directory.empty()) {
 #ifdef _WIN32
 		if (_access(directory.c_str(), 0) == 0) {
@@ -197,7 +197,7 @@ bool DirectoryExists(const string &directory) {
 	return false;
 }
 
-Error TryCreateDirectory(const string &dir) {
+Error TryCreateDirectory(const std::string &dir) {
 	using reindexer::fs::MkDirAll;
 	using reindexer::fs::DirectoryExists;
 	using reindexer::fs::GetTempDir;
@@ -215,12 +215,12 @@ Error TryCreateDirectory(const string &dir) {
 	return 0;
 }
 
-string GetDirPath(const string &path) {
+std::string GetDirPath(const std::string &path) {
 	size_t lastSlashPos = path.find_last_of("/\\");
-	return lastSlashPos == std::string::npos ? string() : path.substr(0, lastSlashPos + 1);
+	return lastSlashPos == std::string::npos ? std::string() : path.substr(0, lastSlashPos + 1);
 }
 
-Error ChownDir(const string &path, const string &user) {
+Error ChownDir(const std::string &path, const std::string &user) {
 #ifndef _WIN32
 	if (!user.empty() && !path.empty()) {
 		struct passwd pwd, *usr;
@@ -272,8 +272,8 @@ Error ChangeUser(const char *userName) {
 	return 0;
 }
 
-string GetRelativePath(const string &path, unsigned maxUp) {
-	string cwd = GetCwd();
+std::string GetRelativePath(const std::string &path, unsigned maxUp) {
+	std::string cwd = GetCwd();
 
 	unsigned same = 0, slashes = 0;
 	for (; same < std::min(cwd.size(), path.size()) && cwd[same] == path[same]; ++same) {
@@ -285,7 +285,7 @@ string GetRelativePath(const string &path, unsigned maxUp) {
 
 	if (same < 2 || (slashes > maxUp)) return path;
 
-	string rpath;
+	std::string rpath;
 	rpath.reserve(slashes * 3 + path.size() - same + 1);
 	while (slashes--) rpath += "../";
 	rpath.append(path.begin() + same, path.end());

@@ -49,7 +49,7 @@ void ClusterReplThread::Run(ReplThreadConfig config, std::vector<std::pair<uint3
 							size_t totalNodesCount) {
 	assert(!th.joinable());
 	roleSwitchAsync_.start();
-	th = std::thread([this, config = std::move(config), nodesList = std::move(nodesList), totalNodesCount] {
+	th = std::thread([this, config = std::move(config), nodesList = std::move(nodesList), totalNodesCount]() mutable {
 		base_.Run(std::move(config), nodesList, GetConsensusForN(totalNodesCount), totalNodesCount - 1);
 
 		roleSwitchAsync_.stop();

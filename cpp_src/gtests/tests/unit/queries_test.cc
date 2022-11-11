@@ -1,8 +1,6 @@
 #include <thread>
 #include "queries_api.h"
 
-using std::thread;
-
 #if !defined(REINDEX_WITH_TSAN)
 TEST_F(QueriesApi, QueriesStandardTestSet) {
 	FillDefaultNamespace(0, 2500, 20);
@@ -106,8 +104,20 @@ TEST_F(QueriesApi, IndexCacheInvalidationTest) {
 	}
 }
 
+TEST_F(QueriesApi, SelectRaceWithIdxCommit) {
+	FillDefaultNamespace(0, 1000, 1);
+	Query q{Query(default_namespace)
+				.Where(kFieldNameYear, CondGt, {2025})
+				.Where(kFieldNameYear, CondLt, {2045})
+				.Where(kFieldNameGenre, CondGt, {25})
+				.Where(kFieldNameGenre, CondLt, {45})};
+	for (unsigned i = 0; i < 50; ++i) {
+		ExecuteAndVerify(q);
+	}
+}
+
 TEST_F(QueriesApi, TransactionStress) {
-	vector<thread> pool;
+	std::vector<std::thread> pool;
 	FillDefaultNamespace(0, 350, 20);
 	FillDefaultNamespace(3500, 350, 0);
 	std::atomic_uint current_size;
@@ -115,7 +125,7 @@ TEST_F(QueriesApi, TransactionStress) {
 	uint32_t stepSize = 1000;
 
 	for (size_t i = 0; i < 4; i++) {
-		pool.push_back(thread([this, i, &current_size, stepSize]() {
+		pool.push_back(std::thread([this, i, &current_size, stepSize]() {
 			size_t start_pos = i * stepSize;
 			if (i % 2 == 0) {
 				uint32_t steps = 10;
@@ -306,7 +316,7 @@ TEST_F(QueriesApi, ForcedSortOffsetTest) {
 TEST_F(QueriesApi, StrictModeTest) {
 	FillTestSimpleNamespace();
 
-	const string kNotExistingField = "some_random_name123";
+	const std::string kNotExistingField = "some_random_name123";
 	QueryResults qr;
 	{
 		Query query = Query(testSimpleNs).Where(kNotExistingField, CondEmpty, 0);

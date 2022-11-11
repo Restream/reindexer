@@ -7,7 +7,7 @@ Server::Server() : impl_(new ServerImpl) {}
 Server::~Server() = default;
 Error Server::InitFromCLI(int argc, char *argv[]) { return impl_->InitFromCLI(argc, argv); }
 Error Server::InitFromFile(const char *filePath) { return impl_->InitFromFile(filePath); }
-Error Server::InitFromYAML(const string &yaml) { return impl_->InitFromYAML(yaml); }
+Error Server::InitFromYAML(const std::string &yaml) { return impl_->InitFromYAML(yaml); }
 int Server::Start() { return impl_->Start(); }
 void Server::Stop() { return impl_->Stop(); }
 void Server::EnableHandleSignals(bool enable) { impl_->EnableHandleSignals(enable); }

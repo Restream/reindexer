@@ -79,7 +79,10 @@ void Connection<Mutex>::callback(ev::io & /*watcher*/, int revents) {
 	if (ev::ERROR & revents) return;
 
 	if (revents & ev::READ) {
-		read_cb();
+		const auto res = read_cb();
+		if (res == ReadResT::Rebalanced) {
+			return;
+		}
 		revents |= ev::WRITE;
 	}
 	if (revents & ev::WRITE) {
@@ -132,7 +135,7 @@ void Connection<Mutex>::write_cb() {
 
 // Receive message from client socket
 template <typename Mutex>
-void Connection<Mutex>::read_cb() {
+typename Connection<Mutex>::ReadResT Connection<Mutex>::read_cb() {
 	while (!closeConn_) {
 		auto it = rdBuf_.head();
 		ssize_t nread = sock_.recv(it);
@@ -142,14 +145,19 @@ void Connection<Mutex>::read_cb() {
 
 		if ((nread < 0 && !socket::would_block(err)) || nread == 0) {
 			closeConn();
-			return;
+			return ReadResT::Default;
 		} else if (nread > 0) {
 			if (stats_) stats_->update_read_stats(nread);
 			rdBuf_.advance_head(nread);
-			if (!closeConn_) onRead();
+			if (!closeConn_) {
+				if (onRead() == ReadResT::Rebalanced) {
+					return ReadResT::Rebalanced;
+				}
+			}
 		}
-		if (nread < ssize_t(it.size()) || !rdBuf_.available()) return;
+		if (nread < ssize_t(it.size()) || !rdBuf_.available()) return ReadResT::Default;
 	}
+	return ReadResT::Default;
 }
 template <typename Mutex>
 void Connection<Mutex>::timeout_cb(ev::periodic & /*watcher*/, int /*time*/) {

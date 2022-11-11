@@ -26,7 +26,7 @@ static reindexer_error error2c(const Error& err_) {
 	return err;
 }
 
-static string str2c(reindexer_string gs) { return string(reinterpret_cast<const char*>(gs.p), gs.n); }
+static string str2c(reindexer_string gs) { return std::string(reinterpret_cast<const char*>(gs.p), gs.n); }
 
 uintptr_t init_reindexer_server() {
 	reindexer_init_locale();

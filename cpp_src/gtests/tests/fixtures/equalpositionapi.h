@@ -37,9 +37,9 @@ protected:
 		Commit(default_namespace);
 	}
 
-	vector<int> randIntVec(int length, int initVal, int multipleCond) {
+	std::vector<int> randIntVec(int length, int initVal, int multipleCond) {
 		int val = initVal;
-		vector<int> vec;
+		std::vector<int> vec;
 		vec.reserve(length);
 		for (size_t i = 0; i < static_cast<size_t>(length); ++i) {
 			vec.emplace_back(val);

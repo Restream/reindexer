@@ -10,7 +10,7 @@
 
 namespace reindexer {
 
-JsonSchemaChecker::JsonSchemaChecker(const std::string& json, std::string rootTypeName) : rootTypeName_(rootTypeName) {
+JsonSchemaChecker::JsonSchemaChecker(const std::string& json, std::string rootTypeName) : rootTypeName_(std::move(rootTypeName)) {
 	Error err = createTypeTable(json);
 	if (!err.ok()) throw err;
 	isInit = true;

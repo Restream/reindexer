@@ -51,7 +51,7 @@ public:
 	class Cluster {
 	public:
 		Cluster(net::ev::dynamic_loop& loop, size_t initialServerId, size_t count, Defaults defaults,
-				std::vector<std::string> nsList = std::vector<std::string>(),
+				const std::vector<std::string>& nsList = std::vector<std::string>(),
 				std::chrono::milliseconds resyncTimeout = std::chrono::milliseconds(3000), int maxSyncCount = -1, int syncThreadsCount = 2,
 				size_t maxUpdatesSize = 0);
 		~Cluster();
@@ -60,7 +60,7 @@ public:
 		void DropNs(size_t id, std::string_view nsName);
 		void FillData(size_t id, std::string_view nsName, size_t from, size_t count);
 		void FillDataTx(size_t id, std::string_view nsName, size_t from, size_t count);
-		size_t InitServer(size_t id, const std::string& clusterYml, const std::string& replYml, size_t offset);
+		size_t InitServer(size_t id, const YAML::Node& clusterYml, const YAML::Node& replYml, size_t offset);
 		void AddRow(size_t id, std::string_view nsName, int pk);
 		Error AddRowWithErr(size_t id, std::string_view nsName, int pk, std::string* resultJson = nullptr);
 		bool StartServer(size_t id);
@@ -98,7 +98,7 @@ public:
 	};
 
 	std::function<void()> ExceptionWrapper(std::function<void()>&& func) {
-		return [f = std::move(func)] {
+		return [f = std::move(func)] {	// NOLINT(*.NewDeleteLeaks) False positive
 			try {
 				f();
 			} catch (Error& e) {

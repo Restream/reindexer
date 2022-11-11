@@ -106,7 +106,7 @@ public:
 	/// \return Return the newly created dimensional data or - if a same set of
 	/// lables already exists - the already existing dimensional data.
 	template <typename... Args>
-	T& Add(const std::map<std::string, std::string>& labels, int64_t epoch, Args&&... args);
+	T& Add(std::map<std::string, std::string>&& labels, int64_t epoch, Args&&... args);
 
 	/// \brief Remove the given dimensional data.
 	///
@@ -150,7 +150,7 @@ Family<T>::Family(const std::string& name, const std::string& help, const std::m
 
 template <typename T>
 template <typename... Args>
-T& Family<T>::Add(const std::map<std::string, std::string>& labels, int64_t epoch, Args&&... args) {
+T& Family<T>::Add(std::map<std::string, std::string>&& labels, int64_t epoch, Args&&... args) {
 	auto hash = detail::hash_labels(labels);
 	std::lock_guard<std::mutex> lock{mutex_};
 	auto metrics_iter = metrics_.find(hash);
@@ -174,8 +174,8 @@ T& Family<T>::Add(const std::map<std::string, std::string>& labels, int64_t epoc
 
 		auto metric = metrics_.insert(std::make_pair(hash, MarkedMetric{epoch, detail::make_unique<T>(args...)}));
 		assert(metric.second);
-		labels_.insert({hash, labels});
-		labels_reverse_lookup_.insert({metric.first->second.ptr.get(), hash});
+		labels_.emplace(hash, std::move(labels));
+		labels_reverse_lookup_.emplace(metric.first->second.ptr.get(), hash);
 		return *(metric.first->second.ptr);
 	}
 }

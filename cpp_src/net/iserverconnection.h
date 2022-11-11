@@ -9,10 +9,24 @@ namespace net {
 /// Server side network connection interface for Listener.
 class IServerConnection {
 public:
+	enum class BalancingType { NotSet, None, Shared, Dedicated };
+
 	virtual ~IServerConnection() = default;
 	/// Check if connection is finished.
 	/// @return true if finished, false is still alive.
-	virtual bool IsFinished() = 0;
+	virtual bool IsFinished() const noexcept = 0;
+
+	/// Returns requested balancing type (if already set)
+	/// @return balancing type, requested by this conn
+	virtual BalancingType GetBalancingType() const noexcept = 0;
+
+	/// Set callback, which move this connection into separate thread
+	virtual void SetRebalanceCallback(std::function<void(IServerConnection *, BalancingType)> cb) = 0;
+
+	/// @return true if this connection has pending data
+	virtual bool HasPendingData() const noexcept = 0;
+	/// Force pending data handling
+	virtual void HandlePendingData() = 0;
 
 	/// Restart connection
 	/// @param fd - file descriptor of accepted connection.
@@ -28,7 +42,8 @@ public:
 /// Functor factory type for creating new connection. Listener will call this factory after accept of client connection.
 /// @param loop - Current loop of Listener's thread.
 /// @param fd file  - Descriptor of accepted connection.
-typedef std::function<IServerConnection *(ev::dynamic_loop &loop, int fd)> ConnectionFactory;
+/// @param allowCustomBalancing - true, if caller supports custom balancing hints
+typedef std::function<IServerConnection *(ev::dynamic_loop &loop, int fd, bool allowCustomBalancing)> ConnectionFactory;
 
 }  // namespace net
 }  // namespace reindexer

@@ -15,7 +15,7 @@ class CoroClientConnection;
 namespace client {
 
 class Namespace;
-class CoroRPCClient;
+class RPCClient;
 
 class CoroTransaction {
 public:
@@ -50,11 +50,11 @@ public:
 	PayloadType GetPayloadType() const noexcept;
 
 private:
-	friend class CoroRPCClient;
-	friend class SyncCoroReindexerImpl;
-	friend class SyncCoroTransaction;
+	friend class RPCClient;
+	friend class ReindexerImpl;
+	friend class Transaction;
 	CoroTransaction(Error status) noexcept : i_(std::move(status)) {}
-	CoroTransaction(CoroRPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::chrono::milliseconds execTimeout,
+	CoroTransaction(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::chrono::milliseconds execTimeout,
 					Namespace* ns) noexcept
 		: i_(rpcClient, txId, requestTimeout, execTimeout, ns) {}
 
@@ -69,7 +69,7 @@ private:
 	void setStatus(Error&& status) noexcept { i_.status_ = std::move(status); }
 
 	struct Impl {
-		Impl(CoroRPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::chrono::milliseconds execTimeout,
+		Impl(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::chrono::milliseconds execTimeout,
 			 Namespace* ns) noexcept;
 		Impl(Error&& status) noexcept;
 		Impl(Impl&&);
@@ -77,7 +77,7 @@ private:
 		~Impl();
 
 		int64_t txId_ = -1;
-		CoroRPCClient* rpcClient_ = nullptr;
+		RPCClient* rpcClient_ = nullptr;
 		std::chrono::milliseconds requestTimeout_ = std::chrono::milliseconds{0};
 		std::chrono::milliseconds execTimeout_ = std::chrono::milliseconds{0};
 		Error status_;

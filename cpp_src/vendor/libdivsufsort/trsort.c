@@ -378,7 +378,7 @@ tr_introsort(saidx_t *ISA, const saidx_t *ISAd,
         }
       } else if(limit == -2) {
         /* tandem repeat copy */
-        a = stack[--ssize].b, b = stack[ssize].c;
+        a = stack[--ssize].b, b = stack[ssize].c; // NOLINT(*uninitialized.Assign)
         if(stack[ssize].d == 0) {
           tr_copy(ISA, SA, first, a, b, last, ISAd - ISA);
         } else {

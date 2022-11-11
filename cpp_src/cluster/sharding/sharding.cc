@@ -138,7 +138,7 @@ int RoutingStrategy::GetHostId(std::string_view ns, const Item &item) const {
 ConnectStrategy::ConnectStrategy(const cluster::ShardingConfig &config, Connections &connections, int thisShard) noexcept
 	: config_(config), connections_(connections), thisShard_(thisShard) {}
 
-std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::Connect(int shardId, Error &reconnectStatus) {
+std::shared_ptr<client::Reindexer> ConnectStrategy::Connect(int shardId, Error &reconnectStatus) {
 	shared_lock rlk(connections_.m);
 
 	if (connections_.shutdown) {
@@ -190,7 +190,7 @@ std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::Connect(int shardId,
 	return {};
 }
 
-std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::doReconnect(int shardID, Error &reconnectStatus) {
+std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Error &reconnectStatus) {
 	const auto &dsns = config_.shards.at(shardID);
 	const size_t size = connections_.size();
 
@@ -229,14 +229,14 @@ std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::doReconnect(int shar
 	}
 
 	auto &conn = *connections_[idx];
-	client::SyncCoroQueryResults qr;
+	client::QueryResults qr;
 	auto err = conn.WithTimeout(config_.reconnectTimeout).Select(q, qr);
 	if (err.code() == errNetwork) {
 		conn.Stop();
 
 		logPrintf(LogTrace, "[sharding proxy] Shard %d reconnects to shard %d via %s", thisShard_, shardID, dsns[idx]);
 		conn.Connect(dsns[idx]);
-		qr = client::SyncCoroQueryResults();
+		qr = client::QueryResults();
 		err = conn.WithTimeout(config_.reconnectTimeout).Select(q, qr);
 	}
 	reconnectStatus = std::move(err);
@@ -253,10 +253,10 @@ std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::doReconnect(int shar
 			if (!reconnectStatus.ok()) return {};
 
 			if (stats.nodeStats.size()) {
-				const auto res = tryConnectToLeader(dsns, stats, reconnectStatus);
+				auto res = tryConnectToLeader(dsns, stats, reconnectStatus);
 				if (reconnectStatus.ok()) {
 					logPrintf(LogTrace, "[sharding proxy] Shard %d will proxy data to shard %d (cluster) via %s", thisShard_, shardID,
-							  dsns[connections_.actualIndex.value()]);
+							  connections_.actualIndex.has_value() ? dsns[connections_.actualIndex.value()] : "'Unknow DSN'");
 					return res;
 				}
 				break;
@@ -277,9 +277,8 @@ std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::doReconnect(int shar
 	return {};
 }
 
-std::shared_ptr<client::SyncCoroReindexer> ConnectStrategy::tryConnectToLeader(const std::vector<std::string> &dsns,
-																			   const cluster::ReplicationStats &stats,
-																			   Error &reconnectStatus) {
+std::shared_ptr<client::Reindexer> ConnectStrategy::tryConnectToLeader(const std::vector<std::string> &dsns,
+																	   const cluster::ReplicationStats &stats, Error &reconnectStatus) {
 	for (auto &node : stats.nodeStats) {
 		if (node.role == cluster::RaftInfo::Role::Leader) {
 			for (size_t i = 0; i < dsns.size(); ++i) {
@@ -336,7 +335,7 @@ Error LocatorService::validateConfig() {
 		if (!pt) continue;
 		if (pt.FieldByName(ns.index, field)) {
 			const KeyValueType fieldType{pt.Field(field).Type()};
-			const Error err = convertShardingKeysValues(fieldType, ns.keys);
+			Error err = convertShardingKeysValues(fieldType, ns.keys);
 			if (!err.ok()) {
 				return err;
 			}
@@ -353,7 +352,7 @@ Error LocatorService::Start() {
 
 	hostsConnections_.clear();
 
-	client::CoroReindexerConfig cfg;
+	client::ReindexerConfig cfg;
 	cfg.AppName = "sharding_proxy_from_shard_" + std::to_string(ActualShardId());
 	cfg.SyncRxCoroCount = cluster::kDefaultShardingProxyCoroPerConn;
 	if (config_.proxyConnConcurrency > 0) {
@@ -383,9 +382,9 @@ Error LocatorService::Start() {
 		}
 
 		connections.reserve(hosts.size());
-		for (const string &dsn : hosts) {
-			auto &connection = connections.emplace_back(std::make_shared<client::SyncCoroReindexer>(
-				client::SyncCoroReindexer(cfg, proxyConnCount, proxyConnThreads).WithShardId(int(shardId), true)));
+		for (const std::string &dsn : hosts) {
+			auto &connection = connections.emplace_back(std::make_shared<client::Reindexer>(
+				client::Reindexer(cfg, proxyConnCount, proxyConnThreads).WithShardId(int(shardId), true)));
 
 			logPrintf(LogInfo, "[sharding proxy] Shard %d connects to shard %d via %s. Conns count: %d, threads count: %d", ActualShardId(),
 					  shardId, dsn, proxyConnCount, proxyConnThreads);
@@ -494,7 +493,7 @@ ConnectionsPtr LocatorService::getConnectionsFromCache(std::string_view ns, int 
 	return connections;
 }
 
-std::shared_ptr<client::SyncCoroReindexer> LocatorService::GetShardConnection(std::string_view ns, int shardId, Error &status) {
+std::shared_ptr<client::Reindexer> LocatorService::GetShardConnection(std::string_view ns, int shardId, Error &status) {
 	if (shardId == ShardingKeyType::NotSetShard) {
 		const auto defaultShard = routingStrategy_.GetDefaultHost(ns);
 		if (actualShardId == defaultShard) {
@@ -508,7 +507,7 @@ std::shared_ptr<client::SyncCoroReindexer> LocatorService::GetShardConnection(st
 	return peekHostForShard(hostsConnections_[shardId], shardId, status);
 }
 
-std::shared_ptr<client::SyncCoroReindexer> LocatorService::getShardConnection(int shardId, Error &status) {
+std::shared_ptr<client::Reindexer> LocatorService::getShardConnection(int shardId, Error &status) {
 	if (shardId == ShardingKeyType::NotSetShard) {
 		throw Error(errLogic, "Cannot get connection for undefined shard");
 	}

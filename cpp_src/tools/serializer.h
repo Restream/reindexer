@@ -147,7 +147,7 @@ public:
 		other.hasExternalBuf_ = false;
 	}
 	~WrSerializer() {
-		if (HasAllocatedBuffer()) delete[] buf_;
+		if (HasAllocatedBuffer()) delete[] buf_;  // NOLINT(*.NewDelete) False positive
 	}
 	WrSerializer &operator=(const WrSerializer &) = delete;
 	WrSerializer &operator=(WrSerializer &&other) noexcept {
@@ -421,7 +421,7 @@ public:
 			cap_ = cap;
 			uint8_t *b = new uint8_t[cap_];
 			memcpy(b, buf_, len_);
-			if (HasAllocatedBuffer()) delete[] buf_;
+			if (HasAllocatedBuffer()) delete[] buf_;  // NOLINT(*.NewDelete) False positive
 			buf_ = b;
 			hasExternalBuf_ = false;
 		}

@@ -1,12 +1,12 @@
 #include "corotransaction.h"
-#include "client/cororpcclient.h"
+#include "client/corotransaction.h"
 #include "client/itemimpl.h"
 #include "client/namespace.h"
+#include "client/reindexerimpl.h"
+#include "client/rpcclient.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/keyvalue/p_string.h"
-#include "corotransaction.h"
 #include "net/cproto/coroclientconnection.h"
-#include "synccororeindexerimpl.h"
 
 namespace reindexer {
 namespace client {
@@ -172,9 +172,9 @@ Item CoroTransaction::NewItem(ClientT* client) {
 	return item;
 }
 
-template Item CoroTransaction::NewItem<SyncCoroReindexerImpl>(SyncCoroReindexerImpl* client);
+template Item CoroTransaction::NewItem<ReindexerImpl>(ReindexerImpl* client);
 
-CoroTransaction::Impl::Impl(CoroRPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout,
+CoroTransaction::Impl::Impl(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout,
 							std::chrono::milliseconds execTimeout, Namespace* ns) noexcept
 	: txId_(txId),
 	  rpcClient_(rpcClient),

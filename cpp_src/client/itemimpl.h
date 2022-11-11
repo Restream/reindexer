@@ -6,10 +6,6 @@
 namespace reindexer {
 namespace client {
 
-class SyncCoroReindexerImpl;
-class CoroRPCClient;
-class CoroQueryResults;
-
 template <typename C>
 class ItemImpl : public ItemImplBase {
 public:

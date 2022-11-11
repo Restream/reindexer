@@ -15,7 +15,7 @@ public:
 	explicit InternalRdxContext(const IRdxCancelContext* cancelCtx, Completion cmpl = nullptr, milliseconds execTimeout = milliseconds(0),
 								lsn_t lsn = lsn_t(), int emmiterServerId = -1, int shardId = ShardingKeyType::NotSetShard,
 								bool parallel = false) noexcept
-		: cmpl_(cmpl),
+		: cmpl_(std::move(cmpl)),
 		  execTimeout_((execTimeout.count() < 0) ? milliseconds(0) : execTimeout),
 		  cancelCtx_(cancelCtx),
 		  lsn_(lsn),
@@ -24,7 +24,7 @@ public:
 		  shardingParallelExecution_(parallel) {}
 	explicit InternalRdxContext(Completion cmpl = nullptr, milliseconds execTimeout = milliseconds(0), lsn_t lsn = lsn_t(),
 								int emmiterServerId = -1, int shardId = ShardingKeyType::NotSetShard, bool parallel = false) noexcept
-		: cmpl_(cmpl),
+		: cmpl_(std::move(cmpl)),
 		  execTimeout_((execTimeout.count() < 0) ? milliseconds(0) : execTimeout),
 		  cancelCtx_(nullptr),
 		  lsn_(lsn),

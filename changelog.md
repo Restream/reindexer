@@ -1,3 +1,36 @@
+# Version 4.6.0 *beta* (11.11.2022)
+## Sharding
+- [fix] Fix sorting in distributed queries for cases, when json path is not equal to index's name
+
+## Core
+- [fea] Totally replace deprecated CPP-client with the new one
+
+## Reindexer server
+- [fea] Add new logic for shared thread pool, which allows to create thread on request. Dedicated mode does not required for cluster and sharding anymore
+- [fea] `enable-cluster` flags was deprecated. Cluster does not need any explicit options now
+
+## Reindexer tool
+- [fix] Fix 'binary buffer broken' error on large proxied selects
+
+## Face
+- [fea] Add the Namespace settings button to the Namespace list
+- [fea] Add the ability to pin Namespaces in the Namespace list
+- [fea] Add the enable_preselect_before_ft option to the indexconfig
+- [fea] Improve the Precepts UI 
+- [fea] Make the "Gear" button visible for tables
+- [fea] Redesign the Statistics->Memory page
+- [fea] Redesign the Statistics->Performance page
+- [fea] Improve snackbars view
+- [fea] Redesign the feature of the column resizing
+- [fix] Fix UI availability with DB config issues
+- [fix] Fix a misprint in the database config
+- [fix] Fix the issue with Scrolly on the Statistic spage
+- [fix] Fix the title of the index editor
+- [fix] Remove the search bar from the Indexes page
+
+## Ported
+- [fea/fix] Port all features and fixes from v3.9.0, v3.9.1, v3.10.0
+
 # Version 4.5.0 *beta* (21.09.2022)
 ## Sharding
 - [fea] Optimize proxying (proxying via raw buffers)

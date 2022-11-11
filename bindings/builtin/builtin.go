@@ -245,7 +245,6 @@ func (binding *Builtin) awaitLimiter(ctx context.Context) (withLimiter bool, err
 		case <-ctx.Done():
 			err = ctx.Err()
 		}
-		return
 	}
 	return
 }

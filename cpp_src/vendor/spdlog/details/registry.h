@@ -38,7 +38,7 @@ public:
         std::lock_guard<Mutex> lock(_mutex);
         auto logger_name = logger->name();
         throw_if_exists(logger_name);
-        _loggers[logger_name] = logger;
+        _loggers[logger_name] = std::move(logger);
     }
 
     std::shared_ptr<logger> get(const std::string& logger_name)
@@ -95,7 +95,7 @@ public:
         return new_logger;
     }
 
-    void apply_all(std::function<void(std::shared_ptr<logger>)> fun)
+    void apply_all(const std::function<void(std::shared_ptr<logger>)>& fun)
     {
         std::lock_guard<Mutex> lock(_mutex);
         for (auto &l : _loggers)
@@ -137,7 +137,7 @@ public:
     void formatter(formatter_ptr f)
     {
         std::lock_guard<Mutex> lock(_mutex);
-        _formatter = f;
+        _formatter = std::move(f);
         for (auto& l : _loggers)
             l.second->set_formatter(_formatter);
     }
@@ -169,8 +169,8 @@ public:
     void set_error_handler(log_err_handler handler)
     {
         for (auto& l : _loggers)
-            l.second->set_error_handler(handler);
-        _err_handler = handler;
+            l.second->set_error_handler(std::move(handler));
+        _err_handler = std::move(handler);
     }
 
     void set_async_mode(size_t q_size, const async_overflow_policy overflow_policy, const std::function<void()>& worker_warmup_cb, const std::chrono::milliseconds& flush_interval_ms, const std::function<void()>& worker_teardown_cb)

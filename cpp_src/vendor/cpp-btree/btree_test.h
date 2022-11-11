@@ -54,7 +54,7 @@ bool operator==(const std::pair<T, U> &x, const std::pair<V, W> &y) {
 // Partial specialization of remove_const that propagates the removal through
 // std::pair.
 template <typename T, typename U>
-struct remove_const<pair<T, U> > {
+struct remove_const<std::pair<T, U> > {
 	typedef pair<typename remove_const<T>::type, typename remove_const<U>::type> type;
 };
 

@@ -135,7 +135,7 @@ static inline JsonValue listToValue(JsonTag tag, JsonNode *tail) {
 	return JsonValue(tag, nullptr);
 }
 
-int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &allocator) noexcept {
+static int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &allocator, LargeStringStorageT &largeStrings) {
 	JsonNode *tails[JSON_STACK_SIZE];
 	JsonTag tags[JSON_STACK_SIZE];
 	JsonString keys[JSON_STACK_SIZE];
@@ -246,7 +246,7 @@ int jsonParse(span<char> str, char **endptr, JsonValue *value, JsonAllocator &al
 								return JSON_BAD_STRING;
 						}
 					} else if (c == '"') {
-						o = JsonValue(JsonString((*endptr) - 1, it));
+						o = JsonValue(JsonString((*endptr) - 1, it, largeStrings));
 						++s, --l;
 						break;
 					}
@@ -361,10 +361,11 @@ const JsonNode &JsonNode::operator[](std::string_view key) const {
 bool JsonNode::empty() const noexcept { return this->value.u.tag == JsonTag(JSON_EMPTY); }
 
 JsonNode JsonParser::Parse(span<char> str, size_t *length) {
+	largeStrings_->clear();
 	char *endp = nullptr;
 	JsonNode val{{}, nullptr, {}};
 	const char *begin = str.data();
-	int status = jsonParse(str, &endp, &val.value, alloc_);
+	int status = jsonParse(str, &endp, &val.value, alloc_, *largeStrings_);
 	if (status != JSON_OK) {
 		size_t pos = endp - str.data();
 		throw Exception(std::string("Error parsing json: ") + jsonStrError(status) + ", pos " + std::to_string(pos));

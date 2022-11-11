@@ -11,17 +11,18 @@ namespace cluster {
 constexpr auto kLeaderNsResyncInterval = std::chrono::milliseconds(1000);
 
 RoleSwitcher::RoleSwitcher(SharedSyncState<>& syncState, SynchronizationList& syncList, ReindexerImpl& thisNode,
-						   ReplicationStatsCollector statsCollector)
-	: sharedSyncState_(syncState), thisNode_(thisNode), statsCollector_(std::move(statsCollector)), syncList_(syncList) {
+						   const ReplicationStatsCollector& statsCollector)
+	: sharedSyncState_(syncState), thisNode_(thisNode), statsCollector_(statsCollector), syncList_(syncList) {
 	leaderResyncTimer_.set(loop_);
 	roleSwitchAsync_.set(loop_);
 }
 
 void RoleSwitcher::Run(std::vector<std::string>&& dsns, RoleSwitcher::Config&& cfg) {
 	cfg_ = std::move(cfg);
-	client::CoroReindexerConfig clientCfg;
+	client::ReindexerConfig clientCfg;
 	clientCfg.NetTimeout = cfg.netTimeout;
 	clientCfg.EnableCompression = cfg.enableCompression;
+	clientCfg.RequestDedicatedThread = true;
 
 	if (!awaitCh_.opened()) {
 		awaitCh_.reopen();

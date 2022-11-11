@@ -6,9 +6,7 @@
 #include "tools/stringstools.h"
 
 namespace search_engine {
-using std::this_thread::sleep_for;
 using std::chrono::seconds;
-using std::make_shared;
 
 FullTextDumper& FullTextDumper::Init() {
 	static FullTextDumper dumper;
@@ -19,7 +17,7 @@ void FullTextDumper::LogFinalData(const reindexer::LocalQueryResults& result) {
 	if (!std::getenv(env.c_str())) return;
 
 	startThread();
-	vector<string> tmp_buffer;
+	std::vector<std::string> tmp_buffer;
 	tmp_buffer.push_back("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
 	tmp_buffer.push_back("Returned ids: ");
 	for (const auto& res : result.Items()) {
@@ -40,11 +38,11 @@ void FullTextDumper::Log(const std::string& data) {
 	new_info_ = true;
 }
 
-void FullTextDumper::AddResultData(const string& reqest) {
+void FullTextDumper::AddResultData(const std::string& reqest) {
 	if (!std::getenv(env.c_str())) return;
 
 	startThread();
-	vector<string> tmp_buffer;
+	std::vector<std::string> tmp_buffer;
 	tmp_buffer.push_back("_______________________________________");
 	tmp_buffer.push_back("New full test reqest: " + reqest);
 
@@ -71,7 +69,7 @@ void FullTextDumper::startThread() {
 	}
 
 	stoped_ = false;
-	writer_ = make_shared<std::thread>(&FullTextDumper::writeToFile, this);
+	writer_ = std::make_shared<std::thread>(&FullTextDumper::writeToFile, this);
 }
 
 void FullTextDumper::writeToFile() {
@@ -119,7 +117,7 @@ FullTextDumper::~FullTextDumper() {
 
 	std::ofstream file(file_path, std::ios::app);
 	if (!file.is_open()) return;
-	for (auto data : buffer_) {
+	for (const auto& data : buffer_) {
 		file << data << "\n";
 	}
 }

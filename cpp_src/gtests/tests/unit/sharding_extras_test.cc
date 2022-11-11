@@ -16,8 +16,8 @@ TEST_F(ShardingExtrasApi, LargeProxiedSelects) {
 
 	// Distributed qr
 	{
-		std::shared_ptr<client::SyncCoroReindexer> rx = getNode(0)->api.reindexer;
-		client::SyncCoroQueryResults qr;
+		std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
+		client::QueryResults qr;
 		Query q = Query(default_namespace);
 
 		Error err = rx->Select(q, qr);
@@ -43,8 +43,8 @@ TEST_F(ShardingExtrasApi, LargeProxiedSelects) {
 
 	// Proxied qr
 	{
-		std::shared_ptr<client::SyncCoroReindexer> rx = getNode(0)->api.reindexer;
-		client::SyncCoroQueryResults qr;
+		std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
+		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key2");
 
 		Error err = rx->Select(q, qr);
@@ -73,15 +73,15 @@ TEST_F(ShardingExtrasApi, SelectFTSeveralShards) {
 	InitShardingConfig cfg;
 	cfg.nodesInCluster = 1;
 	Init(std::move(cfg));
-	std::shared_ptr<client::SyncCoroReindexer> rx = getNode(0)->api.reindexer;
+	std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
 
-	client::SyncCoroQueryResults qr1;
+	client::QueryResults qr1;
 	Query q = Query(default_namespace).Where(kFieldFTData, CondEq, RandString());
 	Error err = rx->Select(q, qr1);
 	ASSERT_FALSE(err.ok());
 	ASSERT_EQ(err.what(), "Full text query by several sharding hosts");
 
-	client::SyncCoroQueryResults qr2;
+	client::QueryResults qr2;
 	q.Where(kFieldLocation, CondEq, "key1");
 	err = rx->Select(q, qr2);
 	ASSERT_TRUE(err.ok());
@@ -94,13 +94,13 @@ TEST_F(ShardingExtrasApi, LocalQuery) {
 
 	for (const char *localPreffix : {"local", "local explain", "explain local"}) {
 		for (size_t i = 0; i < NodesCount(); ++i) {
-			client::SyncCoroQueryResults localQr;
+			client::QueryResults localQr;
 			Query localQuery;
 			localQuery.FromSQL(localPreffix + " select * from "s + default_namespace);
 			auto err = getNode(i)->api.reindexer->Select(localQuery, localQr);
 			EXPECT_TRUE(err.ok());
 
-			client::SyncCoroQueryResults shardQr;
+			client::QueryResults shardQr;
 			Query shardQuery = Query{default_namespace}.Where(kFieldLocation, CondEq, "key" + std::to_string((i % kNodesInCluster) + 1));
 			err = getNode(rand() % NodesCount())->api.reindexer->Select(shardQuery, shardQr);
 			EXPECT_TRUE(err.ok());
@@ -120,7 +120,7 @@ TEST_F(ShardingExtrasApi, LocalQuery) {
 		EXPECT_TRUE(failed);
 		localQuery = Query{default_namespace};
 		localQuery.local_ = true;
-		client::SyncCoroQueryResults localQr;
+		client::QueryResults localQr;
 		const auto err = getNode(0)->api.reindexer->Update(localQuery, localQr);
 		EXPECT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Only SELECT query could be LOCAL");
@@ -135,7 +135,8 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 
 	const std::string kLocalNamespace = "local_namespace";
 	const std::size_t kShardWithLocalNs = 1;
-	const std::vector<std::string> kLocalNsData = {R"json({"id":0,"data":"data1"})json", R"json({"id":3,"data":"data2"})json"};
+	const std::vector<std::string> kLocalNsData = {"{\"" + kFieldId + "\":0,\"" + kFieldData + "\":\"data1\"}",
+												   "{\"" + kFieldId + "\":3,\"" + kFieldData + "\":\"data2\"}"};
 	const std::unordered_map<int, std::string> kExpectedJoinResults1 = {{0, "\"joined_local_namespace\":[" + kLocalNsData[0] + "]"},
 																		{3, "\"joined_local_namespace\":[" + kLocalNsData[1] + "]"}};
 
@@ -157,7 +158,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 
 	std::unordered_map<int, std::string> kExpectedJoinResults2;
 	{
-		client::SyncCoroQueryResults qr;
+		client::QueryResults qr;
 		Query q = Query(default_namespace).Where(kFieldLocation, CondEq, "key" + std::to_string(kShardWithLocalNs)).Sort(kFieldId, false);
 		err = shard1->Select(q, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -178,9 +179,9 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	// Use local ns as right_ns on correct shard
 	for (const bool local : {true, false}) {
 		for (size_t i = 0; i < NodesCount(); ++i) {
-			std::shared_ptr<client::SyncCoroReindexer> rx = getNode(i)->api.reindexer;
+			std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
 			const std::string key = "key" + std::to_string(kShardWithLocalNs);
-			client::SyncCoroQueryResults qr;
+			client::QueryResults qr;
 			Query q = Query(default_namespace)
 						  .Local(local)
 						  .Where(kFieldLocation, CondEq, key)
@@ -195,7 +196,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 					ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i << "; location = " << key;
 					gason::JsonParser parser;
 					auto json = parser.Parse(ser.Slice());
-					auto id = json["id"].As<int>(-1);
+					auto id = json[kFieldId].As<int>(-1);
 					auto found = ser.Slice().find(kExpectedJoinResults1.at(id));
 					EXPECT_NE(found, std::string_view::npos) << ser.Slice() << "; expected substring: " << kExpectedJoinResults1.at(id)
 															 << "; i = " << i << "; location = " << key;
@@ -209,9 +210,9 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	// Use local ns as left_ns (sharded ns has proper shardin key)
 	for (const bool local : {true, false}) {
 		for (size_t i = 0; i < NodesCount(); ++i) {
-			std::shared_ptr<client::SyncCoroReindexer> rx = getNode(i)->api.reindexer;
+			std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
 			const std::string key = "key" + std::to_string(kShardWithLocalNs);
-			client::SyncCoroQueryResults qr;
+			client::QueryResults qr;
 			Query q = Query(kLocalNamespace)
 						  .Local(local)
 						  .InnerJoin(kFieldId, kFieldId, CondEq, Query(default_namespace).Where(kFieldLocation, CondEq, key));
@@ -225,7 +226,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 					ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i << "; location = " << key;
 					gason::JsonParser parser;
 					auto json = parser.Parse(ser.Slice());
-					auto id = json["id"].As<int>(-1);
+					auto id = json[kFieldId].As<int>(-1);
 					auto found = ser.Slice().find(kExpectedJoinResults2.at(id));
 					EXPECT_NE(found, std::string_view::npos) << ser.Slice() << "; expected substring: " << kExpectedJoinResults2.at(id)
 															 << "; i = " << i << "; location = " << key;
@@ -239,8 +240,8 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	// Use local ns as left_ns (sharded ns does not have sharding key)
 	for (const bool local : {true, false}) {
 		for (size_t i = 0; i < NodesCount(); ++i) {
-			std::shared_ptr<client::SyncCoroReindexer> rx = getNode(i)->api.reindexer;
-			client::SyncCoroQueryResults qr;
+			std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
+			client::QueryResults qr;
 			Query q = Query(kLocalNamespace).Local(local).InnerJoin(kFieldId, kFieldId, CondEq, Query(default_namespace));
 			err = rx->Select(q, qr);
 			if (!local) {
@@ -255,7 +256,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 					ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i;
 					gason::JsonParser parser;
 					auto json = parser.Parse(ser.Slice());
-					auto id = json["id"].As<int>(-1);
+					auto id = json[kFieldId].As<int>(-1);
 					auto found = ser.Slice().find(kExpectedJoinResults2.at(id));
 					EXPECT_NE(found, std::string_view::npos)
 						<< ser.Slice() << "; expected substring: " << kExpectedJoinResults2.at(id) << "; i = " << i;
@@ -269,10 +270,10 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	// Use local ns as right_ns or left ns on wrong shard (this shard does not have this local namespace)
 	for (const bool local : {true, false}) {
 		for (size_t i = 0; i < NodesCount(); ++i) {
-			std::shared_ptr<client::SyncCoroReindexer> rx = getNode(i)->api.reindexer;
+			std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
 			const std::string key = "key" + std::to_string((kShardWithLocalNs + 1) % kShards);
 			{
-				client::SyncCoroQueryResults qr;
+				client::QueryResults qr;
 				Query q = Query(default_namespace)
 							  .Local(local)
 							  .Where(kFieldLocation, CondEq, key)
@@ -289,7 +290,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 				}
 			}
 			{
-				client::SyncCoroQueryResults qr;
+				client::QueryResults qr;
 				Query q = Query(kLocalNamespace)
 							  .Local(local)
 							  .InnerJoin(kFieldId, kFieldId, CondEq, Query(default_namespace).Where(kFieldLocation, CondEq, key));
@@ -309,8 +310,8 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 	// Use sharded ns as left_ns without sharding key
 	for (const bool local : {true, false}) {
 		for (size_t i = 0; i < NodesCount(); ++i) {
-			std::shared_ptr<client::SyncCoroReindexer> rx = getNode(i)->api.reindexer;
-			client::SyncCoroQueryResults qr;
+			std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
+			client::QueryResults qr;
 			Query q = Query(default_namespace).Local(local).InnerJoin(kFieldId, kFieldId, CondEq, Query(kLocalNamespace));
 			err = rx->Select(q, qr);
 			if (!local) {
@@ -325,7 +326,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 					ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i;
 					gason::JsonParser parser;
 					auto json = parser.Parse(ser.Slice());
-					auto id = json["id"].As<int>(-1);
+					auto id = json[kFieldId].As<int>(-1);
 					auto found = ser.Slice().find(kExpectedJoinResults1.at(id));
 					EXPECT_NE(found, std::string_view::npos)
 						<< ser.Slice() << "; expected substring: " << kExpectedJoinResults1.at(id) << "; i = " << i;
@@ -340,7 +341,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 
 TEST_F(ShardingExtrasApi, TagsMatcherConfusion) {
 	const std::string kNewField = "new_field";
-	auto buildItem = [&](WrSerializer &wrser, int id, string &&location, const string &data, string &&newFieldValue) {
+	auto buildItem = [&](WrSerializer &wrser, int id, std::string &&location, const std::string &data, std::string &&newFieldValue) {
 		reindexer::JsonBuilder jsonBuilder(wrser);
 		jsonBuilder.Put(kFieldId, int(id));
 		jsonBuilder.Put(kFieldLocation, location);
@@ -383,7 +384,7 @@ TEST_F(ShardingExtrasApi, DiffTmInResultFromShards) {
 	cfg.nodesInCluster = 1;
 	Init(std::move(cfg));
 
-	std::shared_ptr<client::SyncCoroReindexer> rx = svc_[0][0].Get()->api.reindexer;
+	std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
 
 	const std::map<int, std::map<std::string, std::string>> sampleData = {
 		{1, {{kFieldLocation, "key2"}, {kFieldData, RandString()}, {"f1", RandString()}}},
@@ -409,7 +410,7 @@ TEST_F(ShardingExtrasApi, DiffTmInResultFromShards) {
 		insertItem(s.first, s.second);
 	}
 
-	client::SyncCoroQueryResults qr;
+	client::QueryResults qr;
 	Query q = Query(default_namespace);
 
 	auto err = rx->Select(q, qr);
@@ -438,7 +439,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 	cfg.nodesInCluster = 1;
 	Init(cfg);
 	const unsigned int kShardCount = cfg.shards;
-	std::shared_ptr<client::SyncCoroReindexer> rx = svc_[0][0].Get()->api.reindexer;
+	std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
 	Error err = rx->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -460,13 +461,13 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 
 		TestCout() << "Checking select queries" << std::endl;
 		for (unsigned int k = 0; k < kShardCount; k++) {
-			std::shared_ptr<client::SyncCoroReindexer> rxSel = svc_[k][0].Get()->api.reindexer;
+			std::shared_ptr<client::Reindexer> rxSel = svc_[k][0].Get()->api.reindexer;
 			{
 				lsnsByShard.clear();
 				lsnsByShard.resize(kShards);
 				Query q;
 				q.FromSQL("select * from " + default_namespace);
-				client::SyncCoroQueryResults qr(flags);
+				client::QueryResults qr(flags);
 
 				err = rxSel->Select(q, qr);
 				ASSERT_TRUE(err.ok()) << err.what();
@@ -475,7 +476,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 					std::string_view json = item.GetJSON();
 					gason::JsonParser parser;
 					auto root = parser.Parse(json);
-					unsigned int id = root["id"].As<int>();
+					unsigned int id = root[kFieldId].As<int>();
 					int shardId = item.GetShardID();
 					lsn_t lsn = item.GetLSN();
 					if (isExpectingID) {
@@ -501,7 +502,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 			for (unsigned int l = 0; l < kShardCount; l++) {
 				Query q;
 				q.FromSQL("select * from " + default_namespace + " where " + kFieldLocation + " = 'key" + std::to_string(l) + "'");
-				client::SyncCoroQueryResults qr(flags);
+				client::QueryResults qr(flags);
 				err = rxSel->Select(q, qr);
 				ASSERT_TRUE(err.ok()) << err.what() << "; " << l;
 				for (auto i = qr.begin(); i != qr.end(); ++i) {
@@ -524,12 +525,12 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 
 		TestCout() << "Checking update queries" << std::endl;
 		for (unsigned int k = 0; k < kShardCount; k++) {
-			std::shared_ptr<client::SyncCoroReindexer> rxUpdate = svc_[k][0].Get()->api.reindexer;
+			std::shared_ptr<client::Reindexer> rxUpdate = svc_[k][0].Get()->api.reindexer;
 			for (int l = 0; l < 3; l++) {
 				Query q;
 				q.FromSQL("update " + default_namespace + " set " + kFieldData + "='datanew' where " + kFieldLocation + " = 'key" +
 						  std::to_string(l) + "'");
-				client::SyncCoroQueryResults qr(flags);
+				client::QueryResults qr(flags);
 				err = rxUpdate->Update(q, qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				for (auto i = qr.begin(); i != qr.end(); ++i) {
@@ -554,11 +555,11 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 		lsnsByShard.clear();
 		lsnsByShard.resize(kShards);
 		for (unsigned int k = 0; k < kShardCount; k++) {
-			std::shared_ptr<client::SyncCoroReindexer> rxDelete = svc_[k][0].Get()->api.reindexer;
+			std::shared_ptr<client::Reindexer> rxDelete = svc_[k][0].Get()->api.reindexer;
 			for (unsigned int l = 0; l < kShardCount; l++) {
 				Query q;
 				q.FromSQL("Delete from " + default_namespace + " where " + kFieldLocation + " = 'key" + std::to_string(l) + "'");
-				client::SyncCoroQueryResults qr(flags);
+				client::QueryResults qr(flags);
 				err = rxDelete->Delete(q, qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(qr.Count(), kMaxCountOnShard);
@@ -586,7 +587,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 
 		TestCout() << "Checking transactions" << std::endl;
 		for (unsigned int k = 0; k < kShardCount; k++) {
-			std::shared_ptr<client::SyncCoroReindexer> rxTx = svc_[k][0].Get()->api.reindexer;
+			std::shared_ptr<client::Reindexer> rxTx = svc_[k][0].Get()->api.reindexer;
 			err = rxTx->TruncateNamespace(default_namespace);
 			ASSERT_TRUE(err.ok()) << err.what();
 			int startId = 0;
@@ -613,7 +614,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 
 				FillTx("key" + std::to_string(l), startId, kMaxCountOnShard);
 				startId += kMaxCountOnShard;
-				client::SyncCoroQueryResults qr(flags);
+				client::QueryResults qr(flags);
 				err = rxTx->CommitTransaction(tx, qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(qr.Count(), kMaxCountOnShard);
@@ -636,7 +637,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 		if (isExpectingID) {  // Single insertions do not have QR options. Only format is available
 			TestCout() << "Checking insertions" << std::endl;
 			for (unsigned int k = 0; k < kShardCount; k++) {
-				std::shared_ptr<client::SyncCoroReindexer> rxTx = svc_[k][0].Get()->api.reindexer;
+				std::shared_ptr<client::Reindexer> rxTx = svc_[k][0].Get()->api.reindexer;
 				err = rxTx->TruncateNamespace(default_namespace);
 				ASSERT_TRUE(err.ok()) << err.what();
 				for (unsigned int l = 0; l < kShardCount; l++) {
@@ -650,7 +651,7 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 
 					item = CreateItem(default_namespace, rx, "key" + std::to_string(l), 1000 + k, wrser);
 					ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-					item.SetPrecepts({"id=SERIAL()"});
+					item.SetPrecepts({kFieldId + "=SERIAL()"});
 					err = rx->Upsert(default_namespace, item);
 					ASSERT_TRUE(err.ok()) << err.what();
 					ASSERT_EQ(item.GetShardID(), l) << k;
@@ -669,7 +670,7 @@ TEST_F(ShardingExtrasApi, StrictMode) {
 	cfg.rowsInTableOnShard = 0;
 	Init(std::move(cfg));
 
-	std::shared_ptr<client::SyncCoroReindexer> rx = svc_[0][0].Get()->api.reindexer;
+	std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
 	const std::string kFieldForSingleShard = "my_new_field";
 	const std::string kUnknownField = "unknown_field";
 	const std::string kValue = "value";
@@ -692,7 +693,7 @@ TEST_F(ShardingExtrasApi, StrictMode) {
 		// Valid requests
 		for (size_t node = 0; node < NodesCount(); ++node) {
 			{  // Select from shard with kFieldForSingleShard
-				client::SyncCoroQueryResults qr;
+				client::QueryResults qr;
 				const Query q =
 					Query(default_namespace).Where(kFieldLocation, CondEq, "key1").Where(kFieldForSingleShard, CondEq, kValue).Limit(l);
 				err = getNode(node)->api.reindexer->Select(q, qr);
@@ -701,7 +702,7 @@ TEST_F(ShardingExtrasApi, StrictMode) {
 				ASSERT_EQ(qr.begin().GetItem().GetJSON(), item.GetJSON()) << "node = " << node;
 			}
 			{  // Distributed select
-				client::SyncCoroQueryResults qr;
+				client::QueryResults qr;
 				const Query q = Query(default_namespace).Where(kFieldForSingleShard, CondEq, "value").Limit(l);
 				err = getNode(node)->api.reindexer->Select(q, qr);
 				EXPECT_TRUE(err.ok()) << err.what() << "; node = " << node;
@@ -712,21 +713,21 @@ TEST_F(ShardingExtrasApi, StrictMode) {
 
 		for (size_t node = 0; node < NodesCount(); ++node) {
 			{  // Select from shard without kFieldForSingleShard
-				client::SyncCoroQueryResults qr;
+				client::QueryResults qr;
 				const Query q =
 					Query(default_namespace).Where(kFieldLocation, CondEq, "key2").Where(kFieldForSingleShard, CondEq, kValue).Limit(l);
 				err = getNode(node)->api.reindexer->Select(q, qr);
 				EXPECT_EQ(err.code(), errStrictMode) << err.what() << "; node = " << node;
 			}
 			{  // Select from shard without kFieldForSingleShard
-				client::SyncCoroQueryResults qr;
+				client::QueryResults qr;
 				const Query q =
 					Query(default_namespace).Where(kFieldLocation, CondEq, "key3").Where(kFieldForSingleShard, CondEq, kValue).Limit(l);
 				err = getNode(node)->api.reindexer->Select(q, qr);
 				EXPECT_EQ(err.code(), errStrictMode) << err.what() << "; node = " << node;
 			}
 			{  // Distributed select with unknown field
-				client::SyncCoroQueryResults qr;
+				client::QueryResults qr;
 				const Query q = Query(default_namespace).Where(kUnknownField, CondEq, 1).Limit(l);
 				err = getNode(node)->api.reindexer->Select(q, qr);
 				EXPECT_EQ(err.code(), errStrictMode) << err.what() << "; node = " << node;
@@ -754,7 +755,7 @@ TEST_F(ShardingExtrasApi, NoShardingIndex) {
 		rx = getNode(i)->api.reindexer;
 		for (size_t shard = 0; shard < kShards; ++shard) {
 			const std::string key = "key" + std::to_string(shard + 1);
-			client::SyncCoroQueryResults qr;
+			client::QueryResults qr;
 			err = rx->Select(Query(default_namespace).Where(kFieldLocation, CondEq, key), qr);
 			ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i << "; location = " << key << std::endl;
 			ASSERT_EQ(qr.Count(), 40);
@@ -771,7 +772,7 @@ TEST_F(ShardingExtrasApi, NoShardingIndex) {
 		rx = getNode(i)->api.reindexer;
 		const unsigned kShardId = i / kNodesInCluster;
 		const std::string key = "key" + std::to_string(kShardId ? kShardId : 3);
-		client::SyncCoroQueryResults qr;
+		client::QueryResults qr;
 		err = rx->WithShardId(ShardingKeyType::ProxyOff, false).Select(Query(default_namespace), qr);
 		ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i << "; location = " << key << std::endl;
 		ASSERT_EQ(qr.Count(), 40);
@@ -790,7 +791,7 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 	cfg.rowsInTableOnShard = 0;
 	Init(cfg);
 	const unsigned int kShardCount = cfg.shards;
-	std::shared_ptr<client::SyncCoroReindexer> rx = svc_[0][0].Get()->api.reindexer;
+	std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
 	Error err = rx->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
@@ -805,7 +806,7 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 	int followerId = -1;
 	int curNode = 0;
 	{
-		client::SyncCoroQueryResults qr;
+		client::QueryResults qr;
 		err = svc_[0][curNode].Get()->api.reindexer->Select("select replication.clusterization_status.leader_id from #memstats", qr);
 		ASSERT_EQ(qr.Count(), 1);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -820,13 +821,13 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 		followerId = (leaderId + 1) % cfg.nodesInCluster;
 	}
 
-	auto setActivity = [](std::shared_ptr<reindexer::client::SyncCoroReindexer> rx, bool on) {
-		client::SyncCoroQueryResults qr;
+	auto setActivity = [](std::shared_ptr<reindexer::client::Reindexer> rx, bool on) {
+		client::QueryResults qr;
 		Error err = rx->Select(fmt::format("update #config set profiling.activitystats={} where type='profiling'", on), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 	};
-	auto dumpActivity = [](std::shared_ptr<reindexer::client::SyncCoroReindexer> rx) {
-		client::SyncCoroQueryResults qr;
+	auto dumpActivity = [](std::shared_ptr<reindexer::client::Reindexer> rx) {
+		client::QueryResults qr;
 		Error err = rx->Select("select * from #activitystats", qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 	};
@@ -863,7 +864,8 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 		setActivity(svc_[0][followerId].Get()->api.reindexer, true);
 		Fill(default_namespace, svc_[0][followerId].Get()->api.reindexer, "key1", kMaxCountOnShard * kShardCount * 2, 1);
 		dumpActivity(svc_[0][followerId].Get()->api.reindexer);
-		checkActivity(followerId, "UPSERT INTO test_namespace WHERE id = 60 AND location = 'key1'", "proxied_via_sharding_proxy");
+		checkActivity(followerId, "UPSERT INTO test_namespace WHERE " + kFieldId + " = 60 AND " + kFieldLocation + " = 'key1'",
+					  "proxied_via_sharding_proxy");
 	}
 	{
 		setActivity(svc_[0][followerId].Get()->api.reindexer, false);
@@ -872,13 +874,14 @@ TEST_F(ShardingExtrasApi, DISABLED_ProxiedActivityState) {
 		Fill(default_namespace, svc_[0][followerId].Get()->api.reindexer, "key0", kMaxCountOnShard * kShardCount * 3, 1);
 		dumpActivity(svc_[0][followerId].Get()->api.reindexer);
 
-		checkActivity(followerId, "UPSERT INTO test_namespace WHERE id = 90 AND location = 'key0'", "proxied_via_cluster_proxy");
+		checkActivity(followerId, "UPSERT INTO test_namespace WHERE " + kFieldId + " = 90 AND " + kFieldLocation + " = 'key0'",
+					  "proxied_via_cluster_proxy");
 	}
 	{
 		setActivity(svc_[0][followerId].Get()->api.reindexer, false);
 		setActivity(svc_[0][followerId].Get()->api.reindexer, true);
 
-		client::SyncCoroQueryResults qr;
+		client::QueryResults qr;
 		err = svc_[0][followerId].Get()->api.reindexer->Select("select * from " + default_namespace, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 

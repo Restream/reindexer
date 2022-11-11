@@ -84,7 +84,6 @@ SearchResult BaseMerger::Merge(MergeCtx& ctx, bool inTransaction, const reindexe
 		return res;
 	}
 	DataSet<MergedData> data_set(min_id_, max_id_);
-	int pos = 0;
 	double max_proc = 0;
 	for (auto& res : *ctx.results) {
 		if (!inTransaction) ThrowOnCancel(rdxCtx);
@@ -92,7 +91,6 @@ SearchResult BaseMerger::Merge(MergeCtx& ctx, bool inTransaction, const reindexe
 			IDCtx id_ctx{&it->Pos(), res.pos, &max_proc, ctx.total_size, res.opts, *ctx.cfg, res.proc, ctx.sizes};
 
 			data_set.AddData(it->Id(), id_ctx);
-			pos++;
 		}
 	}
 	boost::sort::pdqsort(data_set.data_->begin(), data_set.data_->end(), [](const MergedData& lhs, const MergedData& rhs) {

@@ -23,7 +23,7 @@ public:
 	using base_fields_set::size;
 	using base_fields_set::empty;
 	using base_fields_set::operator[];
-	FieldsSet(const TagsMatcher &, const h_vector<string, 1> &fields);
+	FieldsSet(const TagsMatcher &, const h_vector<std::string, 1> &fields);
 	FieldsSet(std::initializer_list<int> l) : mask_(0) {
 		for (auto f : l) push_back(f);
 	}
@@ -35,7 +35,7 @@ public:
 	}
 	FieldsSet() = default;
 
-	void push_back(const string &jsonPath) {
+	void push_back(const std::string &jsonPath) {
 		if (!contains(jsonPath)) jsonPaths_.push_back(jsonPath);
 	}
 
@@ -89,7 +89,9 @@ public:
 
 	bool contains(int f) const { return mask_ & (1ULL << f); }
 	bool contains(const FieldsSet &f) const { return mask_ && ((mask_ & f.mask_) == mask_); }
-	bool contains(const string &jsonPath) const { return std::find(jsonPaths_.begin(), jsonPaths_.end(), jsonPath) != jsonPaths_.end(); }
+	bool contains(const std::string &jsonPath) const {
+		return std::find(jsonPaths_.begin(), jsonPaths_.end(), jsonPath) != jsonPaths_.end();
+	}
 	bool contains(const TagsPath &tagsPath) const {
 		for (const FieldsPath &path : tagsPaths_) {
 			if (path.index() == 0) {
@@ -148,7 +150,7 @@ public:
 	}
 	const TagsPath &getTagsPath(size_t idx) const { return std::get<TagsPath>(tagsPaths_[idx]); }
 	const IndexedTagsPath &getIndexedTagsPath(size_t idx) const { return std::get<IndexedTagsPath>(tagsPaths_[idx]); }
-	const string &getJsonPath(size_t idx) const { return jsonPaths_[idx]; }
+	const std::string &getJsonPath(size_t idx) const { return jsonPaths_[idx]; }
 
 	bool operator==(const FieldsSet &f) const { return (mask_ == f.mask_) && (tagsPaths_ == f.tagsPaths_); }
 	bool operator!=(const FieldsSet &f) const { return mask_ != f.mask_ || tagsPaths_ != f.tagsPaths_; }
@@ -190,7 +192,7 @@ protected:
 	/// Necessary only for composite full text
 	/// indexes. There is a connection with
 	/// tagsPaths_: order and amount of elements.
-	h_vector<string, 1> jsonPaths_;
+	h_vector<std::string, 1> jsonPaths_;
 
 	template <typename T>
 	class DumpFieldsPath {

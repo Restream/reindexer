@@ -12,12 +12,12 @@ using std::vector;
 
 namespace reindexer {
 
-SelectFuncStruct &SelectFuncParser::Parse(const string &query) {
+SelectFuncStruct &SelectFuncParser::Parse(const std::string &query) {
 	tokenizer parser(query);
 
 	token tok = parser.next_token(false);
 
-	selectFuncStruct_.field = string(tok.text());
+	selectFuncStruct_.field = std::string(tok.text());
 
 	auto dotPos = tok.text().find('.');
 	if (dotPos == std::string_view::npos) {
@@ -49,7 +49,7 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 	} else if (tok.text() == "highlight") {
 		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncHighlight;
 	}
-	selectFuncStruct_.funcName = string(tok.text());
+	selectFuncStruct_.funcName = std::string(tok.text());
 
 	tok = parser.next_token(false);
 	if (tok.text() == "(") {
@@ -71,7 +71,7 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 				selectFuncStruct_.funcArgs.push_back(agr);
 				agr.clear();
 			} else {
-				agr += string(tok.text());
+				agr += std::string(tok.text());
 			}
 		}
 	} else {

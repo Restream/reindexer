@@ -61,7 +61,7 @@ public:
 	flat_str_map(const flat_str_map &other) = delete;
 	flat_str_map &operator=(const flat_str_map &other) = delete;
 
-	flat_str_map(flat_str_map &&rhs) noexcept : holder_(move(rhs.holder_)), map_(move(rhs.map_)), multi_(move(rhs.multi_)) {}
+	flat_str_map(flat_str_map &&rhs) noexcept : holder_(std::move(rhs.holder_)), map_(std::move(rhs.map_)), multi_(std::move(rhs.multi_)) {}
 	flat_str_map &operator=(flat_str_map &&rhs) noexcept {
 		if (&rhs != this) {
 			holder_ = std::move(rhs.buf_);
@@ -91,6 +91,7 @@ public:
 			  multi_idx_((Multi && it_ != m_->map_->end() && it_->second & kMultiValueLinkFlag) ? it_->second & ~kMultiValueLinkFlag : -1) {
 		}
 		base_iterator(const base_iterator &other) : it_(other.it_), m_(other.m_), multi_idx_(other.multi_idx_) {}
+		// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
 		base_iterator &operator=(const base_iterator &other) {
 			it_ = other.it_;
 			m_ = other.m_;

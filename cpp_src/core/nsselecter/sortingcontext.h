@@ -30,8 +30,8 @@ struct SortingContext {
 	h_vector<Entry, 1> entries;
 	int uncommitedIndex = -1;
 	bool forcedMode = false;
-	vector<SortExpression> expressions;
-	vector<h_vector<double, 32>> exprResults;
+	std::vector<SortExpression> expressions;
+	std::vector<h_vector<double, 32>> exprResults;
 };
 
 struct SortingOptions {

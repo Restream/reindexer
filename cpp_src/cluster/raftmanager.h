@@ -70,7 +70,7 @@ private:
 	};
 
 	struct RaftNode {
-		RaftNode(const client::CoroReindexerConfig &config, std::string _dsn, uint32_t _uid, int _serverId)
+		RaftNode(const client::ReindexerConfig &config, std::string _dsn, uint32_t _uid, int _serverId)
 			: client(config), dsn(std::move(_dsn)), uid(_uid), serverId(_serverId) {}
 		client::RaftClient client;
 		std::string dsn;

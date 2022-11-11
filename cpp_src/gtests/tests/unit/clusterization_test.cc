@@ -1,7 +1,6 @@
 #include <numeric>
 #include <unordered_map>
 #include <unordered_set>
-#include "client/queryresults.h"
 #include "client/raftclient.h"
 #include "clusterization_api.h"
 #include "core/cjson/jsonbuilder.h"
@@ -228,7 +227,7 @@ static bool ValidateStatsOnTestBeginning(size_t kClusterSize, const Clusterizati
 }
 
 static bool ValidateStatsOnTestBeginning(size_t kClusterSize, const ClusterizationApi::Defaults& ports, const std::set<int>& onlineNodes,
-										 ServerControl::Interface::Ptr node) {
+										 const ServerControl::Interface::Ptr& node) {
 	constexpr auto kMaxRetries = 40;
 	cluster::ReplicationStats stats;
 	for (int i = 0; i < kMaxRetries; ++i) {

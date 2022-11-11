@@ -8,8 +8,6 @@
 
 namespace reindexer {
 
-using std::string;
-
 enum token_type { TokenEnd, TokenName, TokenNumber, TokenString, TokenOp, TokenSymbol, TokenSign };
 
 class token {
@@ -47,7 +45,7 @@ public:
 	bool end() const;
 	size_t getPos() const;
 	void setPos(size_t pos);
-	string where() const;
+	std::string where() const;
 	size_t length() const;
 	const char *begin() const;
 

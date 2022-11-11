@@ -19,7 +19,7 @@ void AreaHolder::AddTreeGramm(int pos, int filed, int maxAreasInDoc) {
 		thr_area.end_ = pos - space_size_ + (buffer_size_ - 1);
 	}
 
-	insertArea(std::move(thr_area), filed, maxAreasInDoc);
+	insertArea(std::move(thr_area), filed, maxAreasInDoc); // NOLINT(performance-move-const-arg)
 }
 
 void AreaHolder::Commit() {
@@ -39,7 +39,7 @@ void AreaHolder::Commit() {
 
 bool AreaHolder::AddWord(int start_pos, int /*size*/, int filed, int maxAreasInDoc) {
 	Area thr_area{start_pos, start_pos + 1};
-	return insertArea(std::move(thr_area), filed, maxAreasInDoc);
+	return insertArea(std::move(thr_area), filed, maxAreasInDoc); // NOLINT(performance-move-const-arg)
 }
 
 bool AreaHolder::insertArea(Area &&area, int field, int maxAreasInDoc) {
@@ -47,7 +47,7 @@ bool AreaHolder::insertArea(Area &&area, int field, int maxAreasInDoc) {
 	if (areas.size() <= size_t(field)) areas.resize(field + 1);
 	if (areas[field].empty() || !areas[field].back().Concat(area)) {
 		if (maxAreasInDoc >= 0 && areas[field].size() >= unsigned(maxAreasInDoc)) return false;
-		areas[field].emplace_back(std::move(area));
+		areas[field].emplace_back(std::move(area)); // NOLINT(performance-move-const-arg)
 	}
 	return true;
 }

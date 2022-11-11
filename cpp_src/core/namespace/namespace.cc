@@ -129,8 +129,8 @@ bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const LocalTrans
 		   (stepsCount >= txSizeToAlwaysCopy);
 }
 
-void Namespace::doRename(Namespace::Ptr dst, const std::string& newName, const std::string& storagePath,
-						 std::function<void(std::function<void()>)> replicateCb, const RdxContext& ctx) {
+void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, const std::string& storagePath,
+						 const std::function<void(std::function<void()>)>& replicateCb, const RdxContext& ctx) {
 	std::string dbpath;
 	awaitMainNs(ctx)->storage_.Flush();
 	auto lck = handleInvalidation(NamespaceImpl::dataWLock)(ctx, true);

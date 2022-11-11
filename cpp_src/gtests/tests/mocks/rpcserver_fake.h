@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <set>
 #include "core/reindexer.h"
 #include "net/cproto/dispatcher.h"
 #include "net/listener.h"
@@ -26,27 +27,33 @@ struct RPCClientData : public cproto::ClientData {
 class RPCServerFake {
 public:
 	RPCServerFake(const RPCServerConfig &conf);
-	~RPCServerFake();
 
-	bool Start(const string &addr, ev::dynamic_loop &loop, Error loginError);
-	void Stop();
+	bool Start(const std::string &addr, ev::dynamic_loop &loop, Error loginError);
+	Error Stop();
 
 	Error Ping(cproto::Context &ctx);
 	Error Login(cproto::Context &ctx, p_string login, p_string password, p_string db);
 	Error Select(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
 	Error OpenNamespace(cproto::Context &ctx, p_string ns);
 	Error DropNamespace(cproto::Context &ctx, p_string ns);
+	Error CloseResults(cproto::Context &ctx, int reqId, std::optional<int64_t> qrUID, std::optional<bool> doNotReply);
 	RPCServerStatus Status() const;
 
 	Error CheckAuth(cproto::Context &ctx);
+	size_t OpenedQRCount();
+	size_t CloseQRRequestsCount() const { return closeQRRequestsCounter_.load(std::memory_order_relaxed); }
 
 protected:
 	cproto::Dispatcher dispatcher_;
-	std::unique_ptr<Listener> listener_;
+	std::unique_ptr<IListener> listener_;
 
 	std::chrono::system_clock::time_point startTs_;
 	RPCServerConfig conf_;
-	string dsn_;
+	std::string dsn_;
 	std::atomic<RPCServerStatus> state_;
 	Error loginError_;
+	std::mutex qrMutex_;
+	std::set<int> usedQrIds_;
+	std::set<int> unusedQrIds_;
+	std::atomic_size_t closeQRRequestsCounter_{0};
 };

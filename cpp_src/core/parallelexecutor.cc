@@ -43,7 +43,7 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 
 	h_vector<std::pair<Error, int>, 8> clientErrors;
 	bool isLocalCall = false;
-	std::deque<ConnectionData<client::SyncCoroQueryResults>> clientResults;
+	std::deque<ConnectionData<client::QueryResults>> clientResults;
 
 	auto ward = rdxCtx.BeforeShardingProxy();
 
@@ -54,7 +54,7 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 		int shardId = connection.ShardId();
 		if (connection) {
 			clientResults.emplace_back(connection.ShardId());
-			clientResults.back().results = client::SyncCoroQueryResults{result.Flags()};
+			clientResults.back().results = client::QueryResults{result.Flags()};
 			clientResults.back().connection =
 				connection->WithShardingParallelExecution(connections.size() > 1)
 					.WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error &err) {

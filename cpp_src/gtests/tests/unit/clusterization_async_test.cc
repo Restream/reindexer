@@ -33,7 +33,7 @@ TEST_F(ClusterizationAsyncApi, AsyncReplicationForClusterNamespaces) {
 			asyncNodes[i].sc.InitServer(std::move(scConfig));
 			asyncNodes[i].dsn = fmt::format("cproto://127.0.0.1:{}/node{}", defaults.defaultRpcPort + id, id);
 		}
-		auto WaitSyncWithExternalNodes = [&asyncNodes](const std::string& nsName, size_t count, ServerControl::Interface::Ptr s) {
+		auto WaitSyncWithExternalNodes = [&asyncNodes](const std::string& nsName, size_t count, const ServerControl::Interface::Ptr& s) {
 			for (size_t i = 0; i < count; ++i) {
 				ServerControl::WaitSync(s, asyncNodes[i].sc.Get(), nsName);
 			}
@@ -164,11 +164,11 @@ TEST_F(ClusterizationAsyncApi, AsyncReplicationBetweenClustersDefaultMode) {
 		TestCout() << "Check second cluster state" << std::endl;
 		for (size_t i = 0; i < kClusterSize; ++i) {
 			auto rx = cluster2.GetNode(i)->api.reindexer;
-			client::SyncCoroQueryResults qr;
+			client::QueryResults qr;
 			auto err = rx->Select(Query(kNs1), qr);
 			ASSERT_TRUE(err.ok()) << "i = " << i << "; " << err.what();
 			ASSERT_EQ(qr.Count(), kClusterSize * kDataPortion);
-			qr = client::SyncCoroQueryResults();
+			qr = client::QueryResults();
 			err = rx->Select(Query(kNs2), qr);
 			if (i != kReplicatedNodeId) {
 				ASSERT_EQ(err.code(), errNotFound) << "i = " << i << "; " << err.what();

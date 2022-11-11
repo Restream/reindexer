@@ -10,7 +10,7 @@ jobs:
       fail-fast: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Build Reindexer
         run: |
           mkdir build && cd build
@@ -27,7 +27,7 @@ jobs:
       fail-fast: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Build Reindexer
         run: |
           mkdir build && cd build
@@ -39,7 +39,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-12]
+        os: [ubuntu-20.04, macos-latest]
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
@@ -57,7 +57,7 @@ jobs:
       CXX: ${{matrix.cxx}}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Prepare Environment
         run: |
           ./.github/workflows/install_gtest.sh
@@ -88,7 +88,7 @@ jobs:
           rm -rf ./build/_CPack_Packages ./build/cpp_src/server/reindexer_server_resources
           tar -cvf artifacts.tar build/ bindings/builtin/builtin_posix.go bindings/builtinserver/builtinserver_posix.go dependencies.sh
       - name: Archive Artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
           path: artifacts.tar
@@ -97,7 +97,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-12]
+        os: [ubuntu-20.04, macos-latest]
         test: ['C++', 'GO']
         include:
           - os: ubuntu-latest
@@ -127,9 +127,9 @@ jobs:
       SANITIZER: ${{matrix.sanitizer}}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Download ${{matrix.os}}${{matrix.sanitizer}} Artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
       - name: 'Untar Artifacts'
@@ -181,7 +181,7 @@ jobs:
   test-pyreindexer:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-12]
+        os: [ubuntu-20.04, macos-latest]
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build
@@ -190,7 +190,7 @@ jobs:
       OS: ${{matrix.os}}
     steps:
       - name: Download ${{matrix.os}} Artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: ${{matrix.os}}
       - name: 'Untar Artifacts'
@@ -224,13 +224,11 @@ jobs:
             cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
           fi
       - name: Clone PyReindexer
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: restream/reindexer-py
       - name: Install PyReindexer
-        run: |
-          python3 setup.py build
-          sudo python3 setup.py install
+        run: sudo python3 setup.py install
       - name: Test PyReindexer
         run: |
           cd pyreindexer

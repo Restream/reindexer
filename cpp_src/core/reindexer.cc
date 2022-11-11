@@ -4,7 +4,7 @@
 
 namespace reindexer {
 
-Reindexer::Reindexer(ReindexerConfig cfg) : impl_(new ClusterProxy(std::move(cfg))), owner_(true) {}
+Reindexer::Reindexer(ReindexerConfig cfg) : impl_(new ClusterProxy(cfg)), owner_(true) {}
 
 Reindexer::~Reindexer() {
 	if (owner_) {
@@ -17,9 +17,9 @@ Reindexer::Reindexer(Reindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.ow
 
 bool Reindexer::NeedTraceActivity() const { return impl_->NeedTraceActivity(); }
 
-Error Reindexer::Connect(const string& dsn, ConnectOpts opts) { return impl_->Connect(dsn, opts); }
+Error Reindexer::Connect(const std::string& dsn, ConnectOpts opts) { return impl_->Connect(dsn, opts); }
 
-Error Reindexer::EnableStorage(const string& storagePath, bool skipPlaceholderCheck) {
+Error Reindexer::EnableStorage(const std::string& storagePath, bool skipPlaceholderCheck) {
 	return impl_->EnableStorage(storagePath, skipPlaceholderCheck, ctx_);
 }
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts) {
@@ -49,14 +49,16 @@ Item Reindexer::NewItem(std::string_view nsName) { return impl_->NewItem(nsName,
 Transaction Reindexer::NewTransaction(std::string_view nsName) { return impl_->NewTransaction(nsName, ctx_); }
 Error Reindexer::CommitTransaction(Transaction& tr, QueryResults& result) { return impl_->CommitTransaction(tr, result, ctx_); }
 Error Reindexer::RollBackTransaction(Transaction& tr) { return impl_->RollBackTransaction(tr, ctx_); }
-Error Reindexer::GetMeta(std::string_view nsName, const string& key, string& data) { return impl_->GetMeta(nsName, key, data, ctx_); }
-Error Reindexer::GetMeta(std::string_view nsName, const std::string& key, vector<ShardedMeta>& data) {
+Error Reindexer::GetMeta(std::string_view nsName, const std::string& key, std::string& data) {
 	return impl_->GetMeta(nsName, key, data, ctx_);
 }
-Error Reindexer::PutMeta(std::string_view nsName, const string& key, std::string_view data) {
+Error Reindexer::GetMeta(std::string_view nsName, const std::string& key, std::vector<ShardedMeta>& data) {
+	return impl_->GetMeta(nsName, key, data, ctx_);
+}
+Error Reindexer::PutMeta(std::string_view nsName, const std::string& key, std::string_view data) {
 	return impl_->PutMeta(nsName, key, data, ctx_);
 }
-Error Reindexer::EnumMeta(std::string_view nsName, vector<string>& keys) { return impl_->EnumMeta(nsName, keys, ctx_); }
+Error Reindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& keys) { return impl_->EnumMeta(nsName, keys, ctx_); }
 Error Reindexer::Delete(const Query& q, QueryResults& result) { return impl_->Delete(q, result, ctx_); }
 Error Reindexer::Select(std::string_view query, QueryResults& result, unsigned proxyFetchLimit) {
 	return impl_->Select(query, result, proxyFetchLimit, ctx_);
@@ -73,9 +75,13 @@ Error Reindexer::GetSchema(std::string_view nsName, int format, std::string& sch
 }
 Error Reindexer::UpdateIndex(std::string_view nsName, const IndexDef& idx) { return impl_->UpdateIndex(nsName, idx, ctx_); }
 Error Reindexer::DropIndex(std::string_view nsName, const IndexDef& index) { return impl_->DropIndex(nsName, index, ctx_); }
-Error Reindexer::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts) { return impl_->EnumNamespaces(defs, opts, ctx_); }
+Error Reindexer::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts) {
+	return impl_->EnumNamespaces(defs, opts, ctx_);
+}
 Error Reindexer::InitSystemNamespaces() { return impl_->InitSystemNamespaces(); }
-Error Reindexer::GetProtobufSchema(WrSerializer& ser, vector<string>& namespaces) { return impl_->GetProtobufSchema(ser, namespaces); }
+Error Reindexer::GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces) {
+	return impl_->GetProtobufSchema(ser, namespaces);
+}
 Error Reindexer::GetReplState(std::string_view nsName, ReplicationStateV2& state) { return impl_->GetReplState(nsName, state, ctx_); }
 Error Reindexer::SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus& status) {
 	return impl_->SetClusterizationStatus(nsName, status, ctx_);
@@ -91,7 +97,7 @@ Error Reindexer::SuggestLeader(const cluster::NodeData& suggestion, cluster::Nod
 }
 Error Reindexer::LeadersPing(const cluster::NodeData& leader) { return impl_->LeadersPing(leader); }
 Error Reindexer::GetRaftInfo(cluster::RaftInfo& info) { return impl_->GetRaftInfo(info, ctx_); }
-Error Reindexer::GetSqlSuggestions(const std::string_view sqlQuery, int pos, vector<string>& suggestions) {
+Error Reindexer::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions) {
 	return impl_->GetSqlSuggestions(sqlQuery, pos, suggestions, ctx_);
 }
 Error Reindexer::ClusterControlRequest(const ClusterControlRequestData& request) { return impl_->ClusterControlRequest(request); }

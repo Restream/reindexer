@@ -43,7 +43,7 @@ void Activity::GetJSON(WrSerializer& ser) const {
 	ss << buffer << '.' << std::setw(3) << std::setfill('0') << (duration_cast<milliseconds>(startTime.time_since_epoch()).count() % 1000);
 	builder.Put("query_start", ss.str());
 	builder.Put("state", DescribeState(state));
-	if (state == WaitLock) builder.Put("lock_description", "Wait lock for " + string(description));
+	if (state == WaitLock) builder.Put("lock_description", "Wait lock for " + std::string(description));
 	builder.End();
 }
 

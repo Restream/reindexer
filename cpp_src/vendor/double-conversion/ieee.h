@@ -241,7 +241,7 @@ private:
         if (exponent == kDenormalExponent && (significand & kHiddenBit) == 0) {
             biased_exponent = 0;
         } else {
-            biased_exponent = static_cast<uint64_t>(exponent + kExponentBias);
+            biased_exponent = static_cast<unsigned>(exponent + kExponentBias);
         }
         return (significand & kSignificandMask) | (biased_exponent << kPhysicalSignificandSize);
     }

@@ -74,10 +74,10 @@ class ExpressionTree {
 		VisitorHelperImpl(F&& f) noexcept(noexcept(F{std::forward<F>(f)})) : functor_{std::forward<F>(f)} {}
 		R operator()(const Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
 		R operator()(Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::move(arg)))) { return functor_(std::move(arg)); }
+		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Arg>(arg)))) { return functor_(std::forward<Arg>(arg)); }
 		R operator()(const Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
 		R operator()(Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Ref<Arg>&& arg) const noexcept(noexcept(std::declval<F>()(std::move(arg)))) { return functor_(std::move(arg)); }
+		R operator()(Ref<Arg>&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Ref<Arg>>(arg)))) { return functor_(std::forward<Ref<Arg>>(arg)); }
 
 	private:
 		F functor_;
@@ -95,8 +95,8 @@ class ExpressionTree {
 			return functor_(arg);
 		}
 		template <typename Arg>
-		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::move(arg)))) {
-			return functor_(std::move(arg));
+		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Arg>(arg)))) {
+			return functor_(std::forward<Arg>(arg));
 		}
 		template <typename Arg>
 		R operator()(const Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) {
@@ -107,8 +107,8 @@ class ExpressionTree {
 			return functor_(arg);
 		}
 		template <typename Arg>
-		R operator()(Ref<Arg>&& arg) const noexcept(noexcept(std::declval<F>()(std::move(arg)))) {
-			return functor_(std::move(arg));
+		R operator()(Ref<Arg>&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Ref<Arg>>(arg)))) {
+			return functor_(std::forward<Ref<Arg>>(arg));
 		}
 
 	private:

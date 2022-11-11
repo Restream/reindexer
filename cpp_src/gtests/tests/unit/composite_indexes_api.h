@@ -27,7 +27,7 @@ public:
 		}
 	}
 
-	void addOneRow(int bookid, int bookid2, const string& title, int pages, int price, const string& name) {
+	void addOneRow(int bookid, int bookid2, const std::string& title, int pages, int price, const std::string& name) {
 		Item item = NewItem(default_namespace);
 		item[this->kFieldNameBookid] = bookid;
 		item[this->kFieldNameBookid2] = bookid2;
@@ -39,7 +39,7 @@ public:
 		Commit(default_namespace);
 	}
 
-	void addCompositeIndex(std::initializer_list<string> indexes, CompositeIndexType type, const IndexOpts& opts) {
+	void addCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const IndexOpts& opts) {
 		reindexer::IndexDef indexDeclr;
 		indexDeclr.name_ = getCompositeIndexName(indexes);
 		indexDeclr.indexType_ = indexTypeToName(type);
@@ -52,7 +52,7 @@ public:
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	void dropIndex(const string& name) {
+	void dropIndex(const std::string& name) {
 		reindexer::IndexDef idef(name);
 		Error err = rt.reindexer->DropIndex(default_namespace, idef);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -60,10 +60,10 @@ public:
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	string getCompositeIndexName(std::initializer_list<string> indexes) {
+	std::string getCompositeIndexName(std::initializer_list<std::string> indexes) {
 		size_t i = 0;
-		string indexName;
-		for (const string& subIdx : indexes) {
+		std::string indexName;
+		for (const std::string& subIdx : indexes) {
 			indexName += subIdx;
 			if (i++ != indexes.size() - 1) {
 				indexName += compositePlus;
@@ -72,7 +72,7 @@ public:
 		return indexName;
 	}
 
-	string indexTypeToName(CompositeIndexType indexType) const {
+	std::string indexTypeToName(CompositeIndexType indexType) const {
 		switch (indexType) {
 			case CompositeIndexHash:
 				return "hash";
@@ -110,5 +110,5 @@ public:
 	const char* kFieldNamePrice = "price";
 	const char* kFieldNameName = "name";
 
-	const string compositePlus = "+";
+	const std::string compositePlus = "+";
 };

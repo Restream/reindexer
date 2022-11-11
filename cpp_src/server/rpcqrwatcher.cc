@@ -67,7 +67,7 @@ uint32_t RPCQrWatcher::removeExpired(uint32_t now, uint32_t from, uint32_t to) {
 		if (qrs.IsExpired(now, idleTimeout_.count())) {
 			UID curUID = qrs.uid.load(std::memory_order_acquire);
 			UID newUID;
-			bool shouldClearQRs = false;
+			bool shouldClearQRs;
 			do {
 				shouldClearQRs = qrs.IsExpired(curUID, now, idleTimeout_.count());
 				if (shouldClearQRs) {
@@ -79,7 +79,7 @@ uint32_t RPCQrWatcher::removeExpired(uint32_t now, uint32_t from, uint32_t to) {
 			} while (!qrs.uid.compare_exchange_strong(curUID, newUID, std::memory_order_acq_rel));
 			if (shouldClearQRs) {
 				qrs.qr = QueryResults();
-				newUID.state = UID::Uninitialized;
+				newUID.SetUnitialized();
 				qrs.uid.store(newUID, std::memory_order_release);
 				++expiredCnt;
 

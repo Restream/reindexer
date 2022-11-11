@@ -96,7 +96,7 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 	bool finished = false;
 
 	loop.spawn([this, &loop, &finished] {
-		reindexer::client::CoroReindexerConfig config;
+		reindexer::client::ReindexerConfig config;
 		config.AppName = kAppName;
 		CoroReindexer reindexer(config);
 		reindexer::client::ConnectOpts opts;

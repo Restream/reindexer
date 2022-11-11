@@ -115,7 +115,7 @@ class TagsPathScope {
 public:
 	template <typename Node>
 	TagsPathScope(TagsPath &tagsPath, Node &&node) : tagsPath_(tagsPath), tagName_(static_cast<int>(node)) {
-		if (tagName_) tagsPath_.emplace_back(std::move(node));
+		if (tagName_) tagsPath_.emplace_back(std::forward<Node>(node));
 	}
 	~TagsPathScope() {
 		if (tagName_ && !tagsPath_.empty()) tagsPath_.pop_back();

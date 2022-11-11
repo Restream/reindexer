@@ -7,29 +7,27 @@
 namespace reindexer {
 namespace client {
 
-using std::chrono::seconds;
+using std::chrono::milliseconds;
 
 struct ReindexerConfig {
-	ReindexerConfig(int _ConnPoolSize = 4, int _WorkerThreads = 1, int _FetchAmount = 10000, int _ReconnectAttempts = 0,
-					seconds _ConnectTimeout = seconds(0), seconds _RequestTimeout = seconds(0), bool _EnableCompression = false,
-					std::string _appName = "CPP-client")
-		: ConnPoolSize(_ConnPoolSize),
-		  WorkerThreads(_WorkerThreads),
-		  FetchAmount(_FetchAmount),
+	explicit ReindexerConfig(int _FetchAmount = 10000, int _ReconnectAttempts = 0, milliseconds _NetTimeout = milliseconds(0),
+							 bool _EnableCompression = false, bool _RequestDedicatedThread = false, std::string _appName = "CPP-client",
+							 unsigned int _syncRxCoroCount = 10)
+		: FetchAmount(_FetchAmount),
 		  ReconnectAttempts(_ReconnectAttempts),
-		  ConnectTimeout(_ConnectTimeout),
-		  RequestTimeout(_RequestTimeout),
+		  NetTimeout(_NetTimeout),
 		  EnableCompression(_EnableCompression),
-		  AppName(std::move(_appName)) {}
+		  RequestDedicatedThread(_RequestDedicatedThread),
+		  AppName(std::move(_appName)),
+		  SyncRxCoroCount(_syncRxCoroCount) {}
 
-	int ConnPoolSize;
-	int WorkerThreads;
 	int FetchAmount;
 	int ReconnectAttempts;
-	seconds ConnectTimeout;
-	seconds RequestTimeout;
+	milliseconds NetTimeout;
 	bool EnableCompression;
+	bool RequestDedicatedThread;
 	std::string AppName;
+	unsigned int SyncRxCoroCount;
 };
 
 }  // namespace client

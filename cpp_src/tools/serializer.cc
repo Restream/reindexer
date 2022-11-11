@@ -63,7 +63,6 @@ static unsigned uint32ByteSize(uint32_t value) noexcept {
 				value >>= 7;
 				if (value >= 0x80) {
 					++bytes;
-					value >>= 7;
 				}
 			}
 		}

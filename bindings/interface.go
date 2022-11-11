@@ -294,15 +294,20 @@ type OptionBuiltinWithServer struct {
 
 // OptionConnect - DB connect options for server
 // CreateDBIfMissing - allow to create DB on connect if DB doesn't exist already
-// EnableCompression - request compress traffic by snappy library
 type OptionConnect struct {
 	CreateDBIfMissing bool
 }
 
-// OptionCompression - DB connect options for server
+// OptionCompression - DB compression options for server
 // EnableCompression - request compress traffic by snappy library
 type OptionCompression struct {
 	EnableCompression bool
+}
+
+// OptionDedicatedThreads - dedicated RPC threads options for server
+// DedicatedThreads - request dedicated thread on server side for each connection of this binding
+type OptionDedicatedThreads struct {
+	DedicatedThreads bool
 }
 
 // AppName - Application name, which will be used in server connect info

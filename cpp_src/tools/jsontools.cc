@@ -75,11 +75,11 @@ void prettyPrintJSON(span<char> json, WrSerializer &ser, int shift) {
 	jsonValueToString(gason::JsonParser().Parse(json).value, ser, shift, 0);
 }
 
-string stringifyJson(const gason::JsonNode &elem) {
+std::string stringifyJson(const gason::JsonNode &elem) {
 	WrSerializer ser;
 	jsonValueToString(elem.value, ser, 0, 0);
 
-	return string(ser.Slice());
+	return std::string(ser.Slice());
 }
 
 }  // namespace reindexer

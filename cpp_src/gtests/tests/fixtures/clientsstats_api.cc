@@ -1,5 +1,6 @@
 #include "clientsstats_api.h"
 #include "coroutine/waitgroup.h"
+#include "yaml-cpp/yaml.h"
 
 using reindexer::net::ev::dynamic_loop;
 using reindexer::client::CoroReindexer;
@@ -10,24 +11,17 @@ void ClientsStatsApi::SetUp() {}
 
 void ClientsStatsApi::RunServerInThread(bool statEnable) {
 	reindexer::fs::RmDirAll(kdbPath);
-	// clang-format off
-	std::string yaml =
-		"storage:\n"
-		"    path:" + kdbPath +"\n"
-		"metrics:\n"
-		"   clientsstats: " + (statEnable ? "true" : "false") + "\n"
-		"logger:\n"
-		"   loglevel: none\n"
-		"   rpclog: \n"
-		"   serverlog: \n"
-		"net:\n"
-		"   rpcaddr: " + kipaddress + ":" + kRPCPort + "\n"
-		"   httpaddr: " + kipaddress + ":" + kClusterPort + "\n"
-		"   clusteraddr: " + kipaddress + ":" + kHttpPort + "\n"
-		"   security: true\n";
-	// clang-format on
+	YAML::Node y;
+	y["storage"]["path"] = kdbPath;
+	y["metrics"]["clientsstats"] = statEnable ? true : false;
+	y["logger"]["loglevel"] = "none";
+	y["logger"]["rpclog"] = "none";
+	y["logger"]["serverlog"] = "none";
+	y["net"]["rpcaddr"] = kipaddress + ":" + kRPCPort;
+	y["net"]["httpaddr"] = kipaddress + ":" + kHttpPort;
+	y["net"]["security"] = true;
 
-	auto err = server_.InitFromYAML(yaml);
+	auto err = server_.InitFromYAML(YAML::Dump(y));
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	serverThread_ = std::unique_ptr<std::thread>(new std::thread([this]() {

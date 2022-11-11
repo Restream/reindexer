@@ -18,7 +18,7 @@ struct FtFastFieldConfig {
 struct FtFastConfig : public BaseFTConfig {
 	FtFastConfig(size_t fieldsCount) : fieldsCfg(fieldsCount ? fieldsCount : 1) {}
 	void parse(std::string_view json, const fast_hash_map<std::string, int>& fields) final;
-	std::string GetJson(const fast_hash_map<std::string, int>& fields) const final;
+	std::string GetJSON(const fast_hash_map<std::string, int>& fields) const final;
 
 	double distanceBoost = 1.0;
 	double distanceWeight = 0.5;
@@ -40,6 +40,7 @@ struct FtFastConfig : public BaseFTConfig {
 	int maxTotalAreasToCache = -1;
 	h_vector<FtFastFieldConfig, 8> fieldsCfg;
 	enum class Optimization { CPU, Memory } optimization = Optimization::Memory;
+	bool enablePreselectBeforeFt = false;
 	int MaxTyposInWord() const noexcept { return (maxTypos / 2) + (maxTypos % 2); }
 };
 

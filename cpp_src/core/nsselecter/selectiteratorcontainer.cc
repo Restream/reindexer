@@ -2,8 +2,9 @@
 #include <sstream>
 #include "core/index/index.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/nsselecter/nsselecter.h"
 #include "core/rdxcontext.h"
+#include "nsselecter.h"
+#include "querypreprocessor.h"
 
 namespace reindexer {
 
@@ -243,7 +244,7 @@ void SelectIteratorContainer::processField(FieldsComparator &fc, std::string_vie
 SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe, bool enableSortIndexOptimize, const NamespaceImpl &ns,
 															unsigned sortId, bool isQueryFt, SelectFunction::Ptr &selectFnc,
 															bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &ftCtx,
-															const RdxContext &rdxCtx) {
+															QueryPreprocessor &qPreproc, const RdxContext &rdxCtx) {
 	auto &index = ns.indexes_[qe.idxNo];
 	isIndexFt = IsFullText(index->Type());
 	isIndexSparse = index->Opts().IsSparse();
@@ -275,7 +276,11 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 		for (auto &key : qe.values) key.EnsureUTF8();
 	}
 	PerfStatCalculatorMT calc(index->GetSelectPerfCounter(), ns.enablePerfCounters_);
-	return index->SelectKey(qe.values, qe.condition, sortId, opts, ctx, rdxCtx);
+	if (qPreproc.IsFtPreselected()) {
+		return index->SelectKey(qe.values, qe.condition, opts, ctx, qPreproc.MoveFtPreselect(), rdxCtx);
+	} else {
+		return index->SelectKey(qe.values, qe.condition, sortId, opts, ctx, rdxCtx);
+	}
 }
 
 void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry &jqe, OpType op) {
@@ -288,7 +293,9 @@ void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry &jqe, OpType
 		js.SetType(InnerJoin);
 		op = OpOr;
 	}
-	if (op == OpOr && lastAppendedOrClosed() == this->end()) throw Error(errQueryExec, "OR operator in first condition or after left join");
+	if (op == OpOr && lastAppendedOrClosed() == this->end()) {
+		throw Error(errQueryExec, "OR operator in first condition or after left join");
+	}
 	Append(op, JoinSelectIterator{static_cast<size_t>(jqe.joinIndex)});
 }
 
@@ -298,8 +305,10 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 		switch (op) {
 			case OpOr: {
 				const iterator last = lastAppendedOrClosed();
-				if (last == this->end()) throw Error(errQueryExec, "OR operator in first condition or after left join ");
-				if (last->HoldsOrReferTo<SelectIterator>() && !last->Value<SelectIterator>().distinct) {
+				if (last == this->end()) {
+					throw Error(errQueryExec, "OR operator in first condition or after left join ");
+				}
+				if (last->HoldsOrReferTo<SelectIterator>() && !last->Value<SelectIterator>().distinct && last->operation != OpNot) {
 					if (last->IsRef()) {
 						last->SetValue(last->Value<SelectIterator>());
 					}
@@ -441,73 +450,96 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 	return result;
 }
 
-void SelectIteratorContainer::prepareIteratorsForSelectLoop(const QueryEntries &queries, size_t begin, size_t end, unsigned sortId,
+void SelectIteratorContainer::PrepareIteratorsForSelectLoop(QueryPreprocessor &qPreproc, unsigned sortId, bool isFt,
+															const NamespaceImpl &ns, SelectFunction::Ptr &selectFnc, FtCtx::Ptr &ftCtx,
+															const RdxContext &rdxCtx) {
+	prepareIteratorsForSelectLoop(qPreproc, 0, qPreproc.Size(), sortId, isFt, ns, selectFnc, ftCtx, rdxCtx);
+}
+
+bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &qPreproc, size_t begin, size_t end, unsigned sortId,
 															bool isQueryFt, const NamespaceImpl &ns, SelectFunction::Ptr &selectFnc,
 															FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
+	const auto &queries = qPreproc.GetQueryEntries();
 	auto equalPositions = prepareEqualPositions(queries, begin, end);
 	bool sortIndexCreated = false;
+	bool containFT = false;
 	for (size_t i = begin, next = begin; i != end; i = next) {
 		next = queries.Next(i);
 		const OpType op = queries.GetOperation(i);
-		queries.InvokeAppropriate<void>(
-			i,
-			[&](const QueryEntriesBracket &) {
-				OpenBracket(op);
-				prepareIteratorsForSelectLoop(queries, i + 1, next, sortId, isQueryFt, ns, selectFnc, ftCtx, rdxCtx);
-				CloseBracket();
-			},
-			[&](const QueryEntry &qe) {
-				if (qe.idxNo != IndexValueType::SetByJsonPath && IsFullText(ns.indexes_[qe.idxNo]->Type()) &&
-					(op == OpOr || (next < end && queries.GetOperation(next) == OpOr))) {
-					throw Error(errLogic, "OR operation is not allowed with fulltext index");
-				}
-				SelectKeyResults selectResults;
+		containFT = queries.InvokeAppropriate<bool>(
+						i,
+						[&](const QueryEntriesBracket &) {
+							OpenBracket(op);
+							const bool contFT =
+								prepareIteratorsForSelectLoop(qPreproc, i + 1, next, sortId, isQueryFt, ns, selectFnc, ftCtx, rdxCtx);
+							if (contFT && (op == OpOr || (next < end && queries.GetOperation(next) == OpOr))) {
+								throw Error(errLogic, "OR operation is not allowed with bracket containing fulltext index");
+							}
+							CloseBracket();
+							return contFT;
+						},
+						[&](const QueryEntry &qe) {
+							const bool isFT = qe.idxNo != IndexValueType::SetByJsonPath && IsFullText(ns.indexes_[qe.idxNo]->Type());
+							if (isFT && (op == OpOr || (next < end && queries.GetOperation(next) == OpOr))) {
+								throw Error(errLogic, "OR operation is not allowed with fulltext index");
+							}
+							SelectKeyResults selectResults;
 
-				bool isIndexFt = false, isIndexSparse = false;
-				const bool nonIndexField = (qe.idxNo == IndexValueType::SetByJsonPath);
+							bool isIndexFt = false, isIndexSparse = false;
+							const bool nonIndexField = (qe.idxNo == IndexValueType::SetByJsonPath);
 
-				if (nonIndexField) {
-					auto strictMode = ns.config_.strictMode;
-					if (ctx_) {
-						if (ctx_->inTransaction) {
-							strictMode = StrictModeNone;
-						} else if (ctx_->query.strictMode != StrictModeNotSet) {
-							strictMode = ctx_->query.strictMode;
-						}
-					}
-					selectResults = processQueryEntry(qe, ns, strictMode);
-				} else {
-					const bool enableSortIndexOptimize = !sortIndexCreated && (op == OpAnd) && !qe.distinct && (begin == 0) &&
-														 (ctx_->sortingContext.uncommitedIndex == qe.idxNo) &&
-														 (next == end || queries.GetOperation(next) != OpOr);
-					selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc, isIndexFt,
-													  isIndexSparse, ftCtx, rdxCtx);
-					if (enableSortIndexOptimize) sortIndexCreated = true;
-				}
-				processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nonIndexField);
-				if (op != OpOr) {
-					for (auto &ep : equalPositions) {
-						const auto lastPosition = ep.queryEntriesPositions.back();
-						if (i == lastPosition || (i > lastPosition && !ep.foundOr)) {
-							ep.positionToInsertIterator = Size() - 1;
-						}
-					}
-				} else {
-					for (auto &ep : equalPositions) {
-						if (i > ep.queryEntriesPositions.back()) ep.foundOr = true;
-					}
-				}
-			},
-			[this, op](const JoinQueryEntry &jqe) { processJoinEntry(jqe, op); },
-			[&](const BetweenFieldsQueryEntry &qe) {
-				FieldsComparator fc{qe.firstIndex, qe.Condition(), qe.secondIndex, ns.payloadType_};
-				processField<true>(fc, qe.firstIndex, qe.firstIdxNo, ns);
-				processField<false>(fc, qe.secondIndex, qe.secondIdxNo, ns);
-				Append(op, std::move(fc));
-			},
-			[this, op](const AlwaysFalse &) { Append(op, AlwaysFalse{}); });
+							if (nonIndexField) {
+								auto strictMode = ns.config_.strictMode;
+								if (ctx_) {
+									if (ctx_->inTransaction) {
+										strictMode = StrictModeNone;
+									} else if (ctx_->query.strictMode != StrictModeNotSet) {
+										strictMode = ctx_->query.strictMode;
+									}
+								}
+								selectResults = processQueryEntry(qe, ns, strictMode);
+							} else {
+								const bool enableSortIndexOptimize = !sortIndexCreated && (op == OpAnd) && !qe.distinct && (begin == 0) &&
+																	 (ctx_->sortingContext.uncommitedIndex == qe.idxNo) &&
+																	 (next == end || queries.GetOperation(next) != OpOr);
+								selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc, isIndexFt,
+																  isIndexSparse, ftCtx, qPreproc, rdxCtx);
+								if (enableSortIndexOptimize) sortIndexCreated = true;
+							}
+							processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nonIndexField);
+							if (op != OpOr) {
+								for (auto &ep : equalPositions) {
+									const auto lastPosition = ep.queryEntriesPositions.back();
+									if (i == lastPosition || (i > lastPosition && !ep.foundOr)) {
+										ep.positionToInsertIterator = Size() - 1;
+									}
+								}
+							} else {
+								for (auto &ep : equalPositions) {
+									if (i > ep.queryEntriesPositions.back()) ep.foundOr = true;
+								}
+							}
+							return isFT;
+						},
+						[this, op](const JoinQueryEntry &jqe) {
+							processJoinEntry(jqe, op);
+							return false;
+						},
+						[&](const BetweenFieldsQueryEntry &qe) {
+							FieldsComparator fc{qe.firstIndex, qe.Condition(), qe.secondIndex, ns.payloadType_};
+							processField<true>(fc, qe.firstIndex, qe.firstIdxNo, ns);
+							processField<false>(fc, qe.secondIndex, qe.secondIdxNo, ns);
+							Append(op, std::move(fc));
+							return false;
+						},
+						[this, op](const AlwaysFalse &) {
+							Append(op, AlwaysFalse{});
+							return false;
+						}) ||
+					containFT;
 	}
 	processEqualPositions(equalPositions, ns, queries);
+	return containFT;
 }
 
 template <bool reverse, bool hasComparators>
@@ -547,7 +579,7 @@ bool SelectIteratorContainer::checkIfSatisfyAllConditions(iterator begin, iterat
 				if (it->InvokeAppropriate<bool>([](const SelectIteratorsBracket &b) { return !b.haveJoins; },
 												[](const SelectIterator &) { return true; },
 												[](const JoinSelectIterator &) { return false; },
-												[](const FieldsComparator &) { return false; }, [](const AlwaysFalse &) { return false; }))
+												[](const FieldsComparator &) { return true; }, [](const AlwaysFalse &) { return true; }))
 					continue;
 			}
 		} else {

@@ -56,7 +56,7 @@ func TestReconnectWithStrategy(t *testing.T) {
 			require.NoError(t, servers[0].Stop())
 
 			// check change dsn to second or third address
-			time.Sleep(1 * time.Second)
+			time.Sleep(2 * time.Second)
 			err = db.OpenNamespace(multiDSNNS, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), MultiDSNItem{})
 			require.NoError(t, err)
 			_, err = db.Insert(multiDSNNS, itemExp)

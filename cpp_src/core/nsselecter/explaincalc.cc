@@ -76,7 +76,7 @@ static const char *opName(OpType op, bool first = true) {
 
 static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpType op = OpAnd) {
 	auto jsonSel = builder.Object();
-	const std::string name{joinTypeName(js.Type()) + js.RightNsName()};
+	std::string name{joinTypeName(js.Type()) + js.RightNsName()};
 	jsonSel.Put("field", opName(op) + name);
 	jsonSel.Put("matched", js.Matched());
 	jsonSel.Put("selects_count", js.Called());
@@ -115,7 +115,7 @@ static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpT
 	return name;
 }
 
-string ExplainCalc::GetJSON() {
+std::string ExplainCalc::GetJSON() {
 	WrSerializer ser;
 	{
 		JsonBuilder json(ser);
@@ -144,7 +144,7 @@ string ExplainCalc::GetJSON() {
 		}
 	}
 
-	return string(ser.Slice());
+	return std::string(ser.Slice());
 }
 
 std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_iterator end, int iters, JsonBuilder &builder,

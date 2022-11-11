@@ -23,13 +23,19 @@ CoroQueryResults::~CoroQueryResults() {
 const std::string &CoroQueryResults::GetExplainResults() {
 	if (!i_.queryParams_.explainResults.has_value()) {
 		parseExtraData();
+		if (!i_.queryParams_.explainResults.has_value()) {
+			throw Error(errLogic, "Lazy explain in QueryResults was not initialized");
+		}
 	}
 	return i_.queryParams_.explainResults.value();
 }
 
-const vector<AggregationResult> &CoroQueryResults::GetAggregationResults() {
+const std::vector<AggregationResult> &CoroQueryResults::GetAggregationResults() {
 	if (!i_.queryParams_.aggResults.has_value()) {
 		parseExtraData();
+		if (!i_.queryParams_.aggResults.has_value()) {
+			throw Error(errLogic, "Lazy aggregations in QueryResults was not initialized");
+		}
 	}
 	return i_.queryParams_.aggResults.value();
 }
@@ -182,11 +188,11 @@ public:
 		const auto &fieldIt = joinedData_.at(rowId);
 		return fieldIt.size();
 	}
-	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) final {
+	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) override final {
 		auto &fieldIt = joinedData_.at(rowid);
 		auto &dataIt = fieldIt.at(plIndex);
-		itemimpl_ = ItemImpl<CoroRPCClient>(qr_.GetPayloadType(getJoinedNsID(dataIt.nsid)), qr_.GetTagsMatcher(getJoinedNsID(dataIt.nsid)),
-											nullptr, std::chrono::milliseconds());
+		itemimpl_ = ItemImpl<RPCClient>(qr_.GetPayloadType(getJoinedNsID(dataIt.nsid)), qr_.GetTagsMatcher(getJoinedNsID(dataIt.nsid)),
+										nullptr, std::chrono::milliseconds());
 		itemimpl_.Unsafe(true);
 		auto err = itemimpl_.FromCJSON(dataIt.data);
 		if (!err.ok()) throw err;
@@ -205,7 +211,7 @@ public:
 		static const FieldsSet empty;
 		return empty;
 	}
-	const string &GetJoinedItemNamespace(size_t rowid) final {
+	const std::string &GetJoinedItemNamespace(size_t rowid) final {
 		auto &fieldIt = joinedData_.at(rowid);
 		if (fieldIt.empty()) {
 			static const std::string empty;
@@ -240,7 +246,7 @@ private:
 
 	const CoroQueryResults::Iterator::JoinedData &joinedData_;
 	const CoroQueryResults &qr_;
-	ItemImpl<CoroRPCClient> itemimpl_;
+	ItemImpl<RPCClient> itemimpl_;
 	int64_t cachedParentNsId_ = -1;
 	uint32_t cachedJoinedNsId_ = 0;
 	TagsMatcher tm_;

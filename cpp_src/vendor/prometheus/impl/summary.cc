@@ -22,7 +22,7 @@ ClientMetric Summary::Collect() {
 		auto metricQuantile = ClientMetric::Quantile{};
 		metricQuantile.quantile = quantile.quantile;
 		metricQuantile.value = quantile_values_.get(quantile.quantile);
-		metric.summary.quantile.push_back(std::move(metricQuantile));
+		metric.summary.quantile.push_back(metricQuantile);
 	}
 	metric.summary.sample_count = count_;
 	metric.summary.sample_sum = sum_;

@@ -11,7 +11,7 @@ class NamespaceImpl;
 /// (like avg(x) or sum(x)).
 class SelectFunction {
 public:
-	typedef shared_ptr<SelectFunction> Ptr;
+	typedef std::shared_ptr<SelectFunction> Ptr;
 	SelectFunction(const Query& q, NsSelectFuncInterface& nm);
 
 	/// Processes selected item to apply sql function.
@@ -24,6 +24,7 @@ public:
 	/// @param indexNo - number of index.
 	/// @return pointer to a function context or null if some error happened.
 	BaseFunctionCtx::Ptr CreateCtx(int indexNo);
+	bool NeedArea(int indexNo) const;
 
 private:
 	BaseFunctionCtx::Ptr createCtx(SelectFuncStruct& data, BaseFunctionCtx::Ptr ctx, IndexType index_type);
@@ -59,6 +60,6 @@ private:
 	/// Indicates if object is empty and was created wuth flag force = true.
 	bool force_only_ = true;
 	/// Container of sql functions for every namespace.
-	std::unique_ptr<fast_hash_map<string, SelectFunction::Ptr>> querys_;
+	std::unique_ptr<fast_hash_map<std::string, SelectFunction::Ptr>> querys_;
 };
 }  // namespace reindexer

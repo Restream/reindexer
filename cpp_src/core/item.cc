@@ -54,16 +54,16 @@ Item::FieldRef::operator VariantArray() const {
 
 Item::FieldRef &Item::FieldRef::operator=(Variant kr) {
 	if (field_ >= 0) {
-		itemImpl_->SetField(field_, VariantArray{kr});
+		itemImpl_->SetField(field_, VariantArray{std::move(kr)});
 	} else {
-		itemImpl_->SetField(jsonPath_, VariantArray{kr}, nullptr);
+		itemImpl_->SetField(jsonPath_, VariantArray{std::move(kr)}, nullptr);
 	}
 
 	return *this;
 }
 
 Item::FieldRef &Item::FieldRef::operator=(const char *str) { return operator=(p_string(str)); }
-Item::FieldRef &Item::FieldRef::operator=(const string &str) { return operator=(p_string(&str)); }
+Item::FieldRef &Item::FieldRef::operator=(const std::string &str) { return operator=(p_string(&str)); }
 
 Item::FieldRef &Item::FieldRef::operator=(const VariantArray &krs) {
 	if (field_ >= 0) {
@@ -147,7 +147,7 @@ Item::FieldRef Item::operator[](std::string_view name) const noexcept {
 int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
 int Item::GetFieldIndex(std::string_view name) const { return impl_->FieldIndex(name); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }
-void Item::SetPrecepts(vector<string> precepts) { impl_->SetPrecepts(std::move(precepts)); }
+void Item::SetPrecepts(std::vector<std::string> precepts) { impl_->SetPrecepts(std::move(precepts)); }
 bool Item::IsTagsUpdated() const noexcept { return impl_->tagsMatcher().isUpdated(); }
 int Item::GetStateToken() const noexcept { return impl_->tagsMatcher().stateToken(); }
 

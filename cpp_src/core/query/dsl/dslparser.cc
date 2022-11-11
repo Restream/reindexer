@@ -47,7 +47,7 @@ enum class UpdateFieldType { Object, Expression, Value };
 
 // additional for parse root DSL fields
 template <typename T>
-using fast_str_map = fast_hash_map<string, T, nocase_hash_str, nocase_equal_str>;
+using fast_str_map = fast_hash_map<std::string, T, nocase_hash_str, nocase_equal_str>;
 
 static const fast_str_map<Root> root_map = {
 	{"namespace", Root::Namespace},
@@ -170,12 +170,12 @@ T get(fast_str_map<T> const& m, std::string_view name, std::string_view mapName)
 	return it->second;
 }
 
-template <typename C>
-void parseStringArray(JsonValue& stringArray, C& array) {
+template <typename Arr>
+void parseStringArray(JsonValue& stringArray, Arr& array) {
 	for (auto element : stringArray) {
 		auto& value = element->value;
 		checkJsonValueType(value, "string array item", JSON_STRING);
-		array.push_back(string(value.toString()));
+		array.push_back(std::string(value.toString()));
 	}
 }
 
@@ -223,7 +223,7 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 
 			case Sort::Field:
 				checkJsonValueType(v, name, JSON_STRING);
-				sortingEntry.expression.assign(string(v.toString()));
+				sortingEntry.expression.assign(std::string(v.toString()));
 				break;
 
 			case Sort::Values:
@@ -253,7 +253,7 @@ void parseSortEntry(JsonValue& entry, AggregateEntry& agg) {
 
 			case Sort::Field:
 				checkJsonValueType(v, name, JSON_STRING);
-				sortingEntry.expression.assign(string(v.toString()));
+				sortingEntry.expression.assign(std::string(v.toString()));
 				break;
 
 			case Sort::Values:
@@ -312,18 +312,18 @@ void parseFilter(JsonValue& filter, Query& q, std::vector<std::pair<size_t, Equa
 
 			case Filter::Field:
 				checkJsonValueType(v, name, JSON_STRING);
-				fields[0] = string(v.toString());
+				fields[0] = std::string(v.toString());
 				break;
 
 			case Filter::FirstField:
 				checkJsonValueType(v, name, JSON_STRING);
-				fields[0] = string(v.toString());
+				fields[0] = std::string(v.toString());
 				entryType = TWO_FIELDS_ENTRY;
 				break;
 
 			case Filter::SecondField:
 				checkJsonValueType(v, name, JSON_STRING);
-				fields[1] = string(v.toString());
+				fields[1] = std::string(v.toString());
 				entryType = TWO_FIELDS_ENTRY;
 				break;
 
@@ -411,11 +411,11 @@ void parseJoinedEntries(JsonValue& joinEntries, JoinedQuery& qjoin) {
 			switch (get(joined_entry_map, name, "join_query.on"sv)) {
 				case JoinEntry::LeftField:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoinEntry.index_ = string(value.toString());
+					qjoinEntry.index_ = std::string(value.toString());
 					break;
 				case JoinEntry::RightField:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoinEntry.joinIndex_ = string(value.toString());
+					qjoinEntry.joinIndex_ = std::string(value.toString());
 					break;
 				case JoinEntry::Cond:
 					checkJsonValueType(value, name, JSON_STRING);
@@ -444,7 +444,7 @@ void parseSingleJoinQuery(JsonValue& join, Query& query) {
 				break;
 			case JoinRoot::Namespace:
 				checkJsonValueType(value, name, JSON_STRING);
-				qjoin._namespace = string(value.toString());
+				qjoin._namespace = std::string(value.toString());
 				break;
 			case JoinRoot::Filters:
 				checkJsonValueType(value, name, JSON_ARRAY);
@@ -474,7 +474,7 @@ void parseSingleJoinQuery(JsonValue& join, Query& query) {
 			}
 		}
 	}
-	for (const auto& eqPos : equalPositions) {
+	for (auto&& eqPos : equalPositions) {
 		if (eqPos.first == 0) {
 			qjoin.entries.equalPositions.emplace_back(std::move(eqPos.second));
 		} else {
@@ -506,7 +506,7 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 				checkJsonValueType(value, name, JSON_ARRAY);
 				for (auto subElem : value) {
 					if (subElem->value.getTag() != JSON_STRING) throw Error(errParseJson, "Expected string in array 'fields'");
-					aggEntry.fields_.push_back(string(subElem->value.toString()));
+					aggEntry.fields_.push_back(std::string(subElem->value.toString()));
 				}
 				break;
 			case Aggregation::Type:
@@ -560,7 +560,7 @@ void parseUpdateFields(JsonValue& updateFields, Query& query) {
 	for (auto item : updateFields) {
 		auto& field = item->value;
 		checkJsonValueType(field, item->key, JSON_OBJECT);
-		string fieldName;
+		std::string fieldName;
 		bool isObject = false, isExpression = false;
 		VariantArray values;
 		for (auto v : field) {
@@ -616,7 +616,7 @@ void parse(JsonValue& root, Query& q) {
 		switch (get(root_map, name, "root"sv)) {
 			case Root::Namespace:
 				checkJsonValueType(v, name, JSON_STRING);
-				q._namespace = string(v.toString());
+				q._namespace = std::string(v.toString());
 				break;
 
 			case Root::Limit:
@@ -675,7 +675,7 @@ void parse(JsonValue& root, Query& q) {
 				break;
 			case Root::StrictMode:
 				checkJsonValueType(v, name, JSON_STRING);
-				q.strictMode = strictModeFromString(string(v.toString()));
+				q.strictMode = strictModeFromString(std::string(v.toString()));
 				if (q.strictMode == StrictModeNotSet) {
 					throw Error(errParseDSL, "Unexpected strict mode value: %s", v.toString());
 				}
@@ -692,7 +692,7 @@ void parse(JsonValue& root, Query& q) {
 				for (auto element : v) {
 					auto& value = element->value;
 					checkJsonValueType(value, "string array item", JSON_STRING);
-					q.Drop(string(value.toString()));
+					q.Drop(std::string(value.toString()));
 				}
 				break;
 			case Root::UpdateFields:
@@ -703,7 +703,7 @@ void parse(JsonValue& root, Query& q) {
 				throw Error(errParseDSL, "incorrect tag '%'", name);
 		}
 	}
-	for (const auto& eqPos : equalPositions) {
+	for (auto&& eqPos : equalPositions) {
 		if (eqPos.first == 0) {
 			q.entries.equalPositions.emplace_back(std::move(eqPos.second));
 		} else {
@@ -714,7 +714,7 @@ void parse(JsonValue& root, Query& q) {
 
 #include "query.json.h"
 
-Error Parse(const string& str, Query& q) {
+Error Parse(const std::string& str, Query& q) {
 	static JsonSchemaChecker schemaChecker(kQueryJson, "query");
 	try {
 		gason::JsonParser parser;

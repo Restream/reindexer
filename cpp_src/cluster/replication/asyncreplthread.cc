@@ -18,7 +18,7 @@ AsyncReplThread::~AsyncReplThread() {
 void AsyncReplThread::Run(ReplThreadConfig config, std::vector<std::pair<uint32_t, AsyncReplNodeConfig>>&& nodesList,
 						  size_t totalNodesCount) {
 	assert(!th.joinable());
-	th = std::thread([this, config = std::move(config), nodesList = std::move(nodesList), totalNodesCount] {
+	th = std::thread([this, config = std::move(config), nodesList = std::move(nodesList), totalNodesCount]() mutable {
 		base_.Run(std::move(config), nodesList, 0, totalNodesCount);
 	});
 }

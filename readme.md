@@ -68,6 +68,7 @@ Storages are compatible between those versions, hovewer, replication configs are
 - [Logging, debug and profiling](#logging-debug-and-profiling)
   - [Turn on logger](#turn-on-logger)
   - [Debug queries](#debug-queries)
+  - [Custom allocators support](#custom-allocators-support)
   - [Profiling](#profiling)
 - [Integration with other program languages](#integration-with-other-program-languages)
   - [Reindexer-for-python](#reindexer-for-python)
@@ -238,6 +239,8 @@ func main() {
 	}
 }
 ```
+
+There are also some basic samples for C++ and Go [here](samples)
 
 ### SQL compatible interface
 
@@ -1171,8 +1174,8 @@ RTree index can be created for points. To do so, `rtree` and `linear`, `quadrati
 
 ```go
 type Item struct {
-	id              int        `reindexer:"id,,pk"`
-	pointIndexed    [2]float64 `reindexer:"point_indexed,rtree,linear"`
+	id              int        `reindex:"id,,pk"`
+	pointIndexed    [2]float64 `reindex:"point_indexed,rtree,linear"`
 	pointNonIndexed [2]float64 `json:"point_non_indexed"`
 }
 
@@ -1211,6 +1214,20 @@ Another useful feature is debug print of processed Queries. To debug print queri
 
 - `query.Explain ()` - calculate and store query execution details.
 - `iterator.GetExplainResults ()` - return query execution details
+
+### Custom allocators support
+
+Reindexer has support for [TCMalloc](https://github.com/google/tcmalloc) (which is also a part of [GPerfTools](https://github.com/gperftools/gperftools)) and [JEMalloc](https://github.com/jemalloc/jemalloc) allocators (check `ENABLE_TCMALLOC` and `ENABLE_JEMALLOC` in [CMakeLists.txt](cpp_src/CMakeLists.txt)).
+
+If you have built standalone server from sources available allocators will be detected and used automatically.
+
+In `go:generate` builds and prebuilt packages reindexer has TCMalloc support, however none of TCMalloc libraries will be linked automatically. To force allocator's libraries linkage `LD_PRELOAD` with required library has to be used:
+
+```
+LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libtcmalloc_and_profiler.so ./my_executable
+```
+
+Custom allocator may be handy to track memory consumation, profile heap/CPU or to improve general perforamnce.
 
 ### Profiling
 

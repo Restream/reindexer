@@ -127,7 +127,7 @@ public:
 			   nsData_.cend();
 	}
 
-	string explainResults;
+	std::string explainResults;
 
 protected:
 	class EncoderDatasourceWithJoins;

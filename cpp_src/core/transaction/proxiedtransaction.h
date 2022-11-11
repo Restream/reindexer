@@ -1,7 +1,7 @@
 #pragma once
 
 #include <condition_variable>
-#include "client/synccorotransaction.h"
+#include "client/transaction.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/payload/payloadtype.h"
 
@@ -15,7 +15,7 @@ class QueryResults;
 
 class ProxiedTransaction {
 public:
-	ProxiedTransaction(client::SyncCoroTransaction &&_tx, bool _proxiedViaSharding)
+	ProxiedTransaction(client::Transaction &&_tx, bool _proxiedViaSharding)
 		: tx_(std::move(_tx)), proxiedViaSharding_(_proxiedViaSharding), asyncData_(mtx_) {}
 
 	Error Modify(Item &&item, ItemModifyMode mode, lsn_t lsn);
@@ -46,7 +46,7 @@ private:
 		bool isValid = false;
 	};
 
-	client::SyncCoroTransaction tx_;
+	client::Transaction tx_;
 	const bool proxiedViaSharding_ = false;
 	std::mutex mtx_;
 	AsyncData asyncData_;

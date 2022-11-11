@@ -9,7 +9,7 @@ class ParallelExecutor {
 	struct ConnectionDataBase {
 		ConnectionDataBase() = default;
 		ConnectionDataBase(int _shardId) : shardId(_shardId) {}
-		client::SyncCoroReindexer connection;
+		client::Reindexer connection;
 		const int shardId = -1;
 	};
 

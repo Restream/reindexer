@@ -7,7 +7,7 @@ void CascadeReplicationApi::TearDown()	// -V524
 	reindexer::fs::RmDirAll(kBaseTestsetDbPath);
 }
 
-void CascadeReplicationApi::ValidateNsList(CascadeReplicationApi::ServerPtr s, const std::vector<std::string>& expected) {
+void CascadeReplicationApi::ValidateNsList(const CascadeReplicationApi::ServerPtr& s, const std::vector<std::string>& expected) {
 	std::vector<reindexer::NamespaceDef> nsDefs;
 	auto err = s->api.reindexer->EnumNamespaces(nsDefs, reindexer::EnumNamespacesOpts().OnlyNames().HideSystem().WithClosed());
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -72,13 +72,13 @@ CascadeReplicationApi::Cluster CascadeReplicationApi::CreateConfiguration(std::v
 	return CascadeReplicationApi::Cluster(std::move(nodes));
 }
 
-CascadeReplicationApi::TestNamespace1::TestNamespace1(ServerPtr srv, const std::string nsName) : nsName_(nsName) {
+CascadeReplicationApi::TestNamespace1::TestNamespace1(const ServerPtr& srv, std::string nsName) : nsName_(std::move(nsName)) {
 	auto opt = StorageOpts().Enabled(true);
 	auto err = srv->api.reindexer->OpenNamespace(nsName_, opt);
 	srv->api.DefineNamespaceDataset(nsName_, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}});
 }
 
-void CascadeReplicationApi::TestNamespace1::AddRows(ServerPtr srv, int from, unsigned int count, size_t dataLen) {
+void CascadeReplicationApi::TestNamespace1::AddRows(const ServerPtr& srv, int from, unsigned int count, size_t dataLen) {
 	for (unsigned int i = 0; i < count; i++) {
 		auto item = srv->api.NewItem(nsName_);
 		auto err = item.FromJSON("{\"id\":" + std::to_string(from + i) +
@@ -89,7 +89,7 @@ void CascadeReplicationApi::TestNamespace1::AddRows(ServerPtr srv, int from, uns
 	}
 }
 
-void CascadeReplicationApi::TestNamespace1::GetData(ServerPtr srv, std::vector<int>& ids) {
+void CascadeReplicationApi::TestNamespace1::GetData(const ServerPtr& srv, std::vector<int>& ids) {
 	auto qr = reindexer::Query(nsName_).Sort("id", false);
 	BaseApi::QueryResultsType res;
 	auto err = srv->api.reindexer->Select(qr, res);

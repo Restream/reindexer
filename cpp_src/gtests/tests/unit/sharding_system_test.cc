@@ -2,7 +2,7 @@
 
 TEST_F(ShardingSystemApi, Reconnect) {
 	Init();
-	std::shared_ptr<client::SyncCoroReindexer> rx = getNode(0)->api.reindexer;
+	std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
 	for (size_t shard = 1; shard < kShards; ++shard) {
 		for (size_t clusterNodeId = 0; clusterNodeId < kNodesInCluster; ++clusterNodeId) {
 			const auto server = shard * kNodesInCluster + clusterNodeId;
@@ -14,7 +14,7 @@ TEST_F(ShardingSystemApi, Reconnect) {
 			const std::string location = "key" + std::to_string(shard);
 			bool succeed = false;
 			for (size_t i = 0; i < 10; ++i) {  // FIXME: Max retries count should be 1
-				client::SyncCoroQueryResults qr;
+				client::QueryResults qr;
 				err = rx->Select(Query(default_namespace).Where(kFieldLocation, CondEq, location), qr);
 				if (err.ok()) {	 // First request may get an error, because disconnect event may not be handled yet
 					ASSERT_EQ(qr.Count(), 40) << "; shard = " << shard << "; node = " << clusterNodeId;
@@ -24,7 +24,7 @@ TEST_F(ShardingSystemApi, Reconnect) {
 			}
 			ASSERT_TRUE(succeed) << err.what() << "; shard = " << shard << "; node = " << clusterNodeId;
 
-			client::SyncCoroQueryResults qr;
+			client::QueryResults qr;
 			const std::string newValue = "most probably updated";
 			err = rx->Update(Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location), qr);
 			ASSERT_TRUE(err.ok()) << err.what() << "; shard = " << shard << "; node = " << clusterNodeId;
@@ -39,7 +39,7 @@ TEST_F(ShardingSystemApi, ReconnectTimeout) {
 	InitShardingConfig cfg;
 	cfg.disableNetworkTimeout = true;
 	Init(std::move(cfg));
-	std::shared_ptr<client::SyncCoroReindexer> rx = getNode(0)->api.reindexer;
+	std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
 	const std::string newValue = "most probably updated";
 	// Stop half of the clusters' nodes
 	for (size_t shard = 1; shard < kShards; ++shard) {
@@ -52,7 +52,7 @@ TEST_F(ShardingSystemApi, ReconnectTimeout) {
 		const auto server = shard * kNodesInCluster + kNodesInCluster / 2;
 		ASSERT_TRUE(StopByIndex(server));
 		const std::string location = "key" + std::to_string(shard);
-		client::SyncCoroQueryResults qr;
+		client::QueryResults qr;
 		auto err = rx->WithTimeout(kTimeout).Update(
 			Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location), qr);
 		if (err.code() != errTimeout && err.code() != errNetwork && err.code() != errUpdateReplication) {
@@ -63,7 +63,7 @@ TEST_F(ShardingSystemApi, ReconnectTimeout) {
 
 	for (size_t shard = 1; shard < kShards; ++shard) {
 		const std::string location = "key" + std::to_string(shard);
-		client::SyncCoroQueryResults qr;
+		client::QueryResults qr;
 		auto err = rx->WithTimeout(kTimeout).Update(
 			Query(default_namespace).Set(kFieldData, newValue).Where(kFieldLocation, CondEq, location), qr);
 		ASSERT_EQ(err.code(), errTimeout) << err.what() << "; shard = " << shard;
@@ -74,11 +74,11 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 	const size_t kValidThreadsCount = 5;
 	Init();
 	const std::string kDSN = getNode(0)->kRPCDsn;
-	auto upsertItemF = [&](int index, client::SyncCoroReindexer &rx) {
+	auto upsertItemF = [&](int index, client::Reindexer &rx) {
 		client::Item item = rx.NewItem(default_namespace);
 		EXPECT_TRUE(item.Status().ok());
 
-		const string key = string("key" + std::to_string(kShards));
+		const std::string key = std::string("key" + std::to_string(kShards));
 
 		WrSerializer wrser;
 		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
@@ -93,7 +93,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 	};
 
 	struct RxWithStatus {
-		std::shared_ptr<client::SyncCoroReindexer> client = std::make_shared<client::SyncCoroReindexer>();
+		std::shared_ptr<client::Reindexer> client = std::make_shared<client::Reindexer>();
 		std::atomic<int> errors = 0;
 	};
 
@@ -113,7 +113,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 		std::atomic<bool> stop = {false};
 		for (size_t i = 0; i < 3; ++i) {
 			anyResultThreads.emplace_back(std::thread([&, index = i]() {
-				client::SyncCoroReindexer rx;
+				client::Reindexer rx;
 				rx.Connect(kDSN);
 				while (!stop) {
 					upsertItemF(index, rx);
@@ -121,15 +121,15 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 				}
 			}));
 			anyResultThreads.emplace_back(std::thread([&]() {
-				client::SyncCoroReindexer rx;
+				client::Reindexer rx;
 				rx.Connect(kDSN);
 				while (!stop) {
-					client::SyncCoroQueryResults qr;
+					client::QueryResults qr;
 					Error err = rx.Select(Query(default_namespace).Where(kFieldLocation, CondEq, key), qr);
 					if (err.ok()) {
 						ASSERT_TRUE(qr.Count() == 40) << qr.Count();
 					}
-					qr = client::SyncCoroQueryResults();
+					qr = client::QueryResults();
 					err = rx.Select(Query(default_namespace), qr);
 					if (err.ok()) {
 						ASSERT_GE(qr.Count(), 40 * kShards);
@@ -169,7 +169,7 @@ TEST_F(ShardingSystemApi, MultithreadedReconnect) {
 					bool succeed = false;
 					Error err;
 					for (size_t j = 0; j < kMaxErrors; ++j) {
-						client::SyncCoroQueryResults qr;
+						client::QueryResults qr;
 						const auto query = Query(default_namespace).Where(kFieldLocation, CondEq, key);
 						err = rx.client->Select(query, qr);
 						if (err.ok()) {
@@ -245,7 +245,7 @@ TEST_F(ShardingSystemApi, AwaitShards) {
 		Stop(shard);
 	}
 
-	std::shared_ptr<client::SyncCoroReindexer> rx = getNode(0)->api.reindexer;
+	std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
 	std::vector<std::thread> tds;
 	for (size_t i = 0; i < kThreads; ++i) {
 		tds.emplace_back([&] {
@@ -295,7 +295,7 @@ TEST_F(ShardingSystemApi, AwaitShardsTimeout) {
 	}
 
 	std::atomic<bool> done = false;
-	std::shared_ptr<client::SyncCoroReindexer> rx = getNode(0)->api.reindexer;
+	std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
 	std::vector<std::thread> tds;
 	for (size_t i = 0; i < kThreads; ++i) {
 		tds.emplace_back([&] {

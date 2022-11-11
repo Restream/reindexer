@@ -254,9 +254,9 @@ inline void spdlog::set_sync_mode()
     details::registry::instance().set_sync_mode();
 }
 
-inline void spdlog::apply_all(std::function<void(std::shared_ptr<logger>)> fun)
+inline void spdlog::apply_all(const std::function<void(std::shared_ptr<logger>)>& fun)
 {
-    details::registry::instance().apply_all(std::move(fun));
+    details::registry::instance().apply_all(fun);
 }
 
 inline void spdlog::drop_all()

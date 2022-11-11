@@ -6,6 +6,7 @@
 #include "core/ft/filters/itokenfilter.h"
 #include "core/ft/idrelset.h"
 #include "core/ft/stemmer.h"
+#include "core/index/ft_preselect.h"
 #include "core/index/indextext/ftkeyentry.h"
 #include "estl/fast_hash_map.h"
 #include "estl/flat_str_map.h"
@@ -13,8 +14,6 @@
 #include "indextexttypes.h"
 
 namespace reindexer {
-
-// #define REINDEX_FT_EXTRA_DEBUG 1
 
 class RdxContext;
 
@@ -74,13 +73,13 @@ public:
 		AreaHolder::UniquePtr holder;
 	};
 
-	struct MergeData : public vector<MergeInfo> {
+	struct MergeData : public std::vector<MergeInfo> {
 		int maxRank = 0;
 	};
 
 	virtual ~IDataHolder() = default;
 	virtual MergeData Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
-							 const RdxContext&) = 0;
+							 FtMergeStatuses::Statuses mergeStatuses, bool mergeStatusesEmpty, const RdxContext&) = 0;
 	virtual void Process(size_t fieldSize, bool multithread) = 0;
 	virtual size_t GetMemStat() = 0;
 	virtual void Clear() = 0;
@@ -100,9 +99,9 @@ public:
 	uint32_t GetWordsOffset();
 	// returns id and found or not found
 	WordIdType BuildWordId(uint32_t id);
-	string Dump();
+	std::string Dump();
 
-	std::unordered_map<string, stemmer> stemmers_;
+	std::unordered_map<std::string, stemmer> stemmers_;
 	ITokenFilter::Ptr translit_;
 	ITokenFilter::Ptr kbLayout_;
 	ITokenFilter::Ptr synonyms_;
@@ -110,29 +109,30 @@ public:
 	std::vector<VDocEntry> vdocs_;
 	size_t cur_vdoc_pos_ = 0;
 	ProcessStatus status_{CreateNew};
-	vector<double> avgWordsCount_;
+	std::vector<double> avgWordsCount_;
 	// Virtual documents, merged. Addresable by VDocIdType
 	// Temp data for build
-	vector<h_vector<pair<std::string_view, uint32_t>, 8>> vdocsTexts;
-	vector<std::unique_ptr<string>> bufStrs_;
+	std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>> vdocsTexts;
+	std::vector<std::unique_ptr<std::string>> bufStrs_;
 	size_t vodcsOffset_{0};
 	size_t szCnt{0};
 	FtFastConfig* cfg_{nullptr};
+	std::vector<size_t> rowId2Vdoc_;
 };
 
 template <typename IdCont>
 class DataHolder : public IDataHolder {
 public:
 	MergeData Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
-					 const RdxContext&) override final;
-	void Process(size_t fieldSize, bool multithread) override final;
+					 FtMergeStatuses::Statuses mergeStatuses, bool mergeStatusesEmpty, const RdxContext&) final;
+	void Process(size_t fieldSize, bool multithread) final;
 	size_t GetMemStat() override final;
 	void StartCommit(bool complte_updated) override final;
 	void Clear() override final;
-	vector<PackedWordEntry<IdCont>>& GetWords() noexcept { return words_; }
+	std::vector<PackedWordEntry<IdCont>>& GetWords() noexcept { return words_; }
 	PackedWordEntry<IdCont>& getWordById(WordIdType id);
 
-	vector<PackedWordEntry<IdCont>> words_;
+	std::vector<PackedWordEntry<IdCont>> words_;
 };
 
 extern template class DataHolder<PackedIdRelVec>;

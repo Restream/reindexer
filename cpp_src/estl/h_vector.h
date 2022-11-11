@@ -25,6 +25,8 @@ using is_trivially_default_constructible = std::is_trivially_default_constructib
 
 template <typename T, int holdSize = 4, int objSize = sizeof(T)>
 class h_vector {
+	static_assert(holdSize > 0);
+
 public:
 	typedef T value_type;
 	typedef T* pointer;
@@ -39,8 +41,11 @@ public:
 	typedef std::ptrdiff_t difference_type;
 	h_vector() noexcept : e_{0, 0}, size_(0), is_hdata_(1) {}
 	h_vector(size_type size) : h_vector() { resize(size); }
-	h_vector(size_type size, const T& v) : h_vector(size) {
-		for (size_type i = 0; i < size; ++i) ptr()[i] = v;
+	h_vector(size_type size, const T& v) : h_vector() {
+		reserve(size);
+		const pointer p = ptr();
+		for (size_type i = 0; i < size; ++i) new (p + i) T(v);
+		size_ = size;
 	}
 	h_vector(std::initializer_list<T> l) : e_{0, 0}, size_(0), is_hdata_(1) { insert(begin(), l.begin(), l.end()); }
 	template <typename InputIt>
@@ -88,7 +93,7 @@ public:
 			if (other.is_hdata()) {
 				for (size_type i = 0; i < other.size(); i++) {
 					new (ptr() + i) T(std::move(other.ptr()[i]));
-					if (!std::is_trivially_destructible<T>::value) other.ptr()[i].~T();
+					if constexpr (!std::is_trivially_destructible<T>::value) other.ptr()[i].~T();
 				}
 			} else {
 				e_.data_ = other.e_.data_;
@@ -114,10 +119,16 @@ public:
 	}
 	bool operator!=(const h_vector& other) const noexcept { return !operator==(other); }
 
+	template <bool FreeHeapMemory = true>
 	void clear() {
-		destruct();
+		if constexpr (FreeHeapMemory) {
+			destruct();
+			is_hdata_ = 1;
+		} else if constexpr (!std::is_trivially_destructible_v<T>) {
+			auto p = ptr();
+			for (size_type i = 0; i < size_; ++i) p[i].~T();
+		}
 		size_ = 0;
-		is_hdata_ = 1;
 	}
 
 	iterator begin() noexcept { return ptr(); }
@@ -183,13 +194,14 @@ public:
 	void reserve(size_type sz) {
 		if (sz > capacity()) {
 			assertrx(sz > holdSize);
+			// NOLINTNEXTLINE(bugprone-sizeof-expression)
 			pointer new_data = static_cast<pointer>(operator new(sz * sizeof(T)));	// ?? dynamic
 			pointer oold_data = ptr();
-			pointer old_data = ptr();
+			pointer old_data = oold_data;
 			for (size_type i = 0; i < size_; i++) {
 				new (new_data + i) T(std::move(*old_data));
 				if (!std::is_trivially_destructible<T>::value) old_data->~T();
-				old_data++;
+				++old_data;
 			}
 			if (!is_hdata()) operator delete(oold_data);
 			e_.data_ = new_data;
@@ -221,52 +233,103 @@ public:
 		resize(size_ - 1);
 	}
 	iterator insert(const_iterator pos, const T& v) {
-		size_type i = pos - begin();
-		assertrx(i <= size());
-		grow(size_ + 1);
-		resize(size_ + 1);
-		std::move_backward(begin() + i, end() - 1, end());
-		ptr()[i] = v;
+		const size_type i = pos - begin();
+		if (i == size()) {
+			push_back(v);
+		} else {
+			assertrx(i < size());
+			grow(size_ + 1);
+			const pointer p = ptr();
+			new (p + size_) T(std::move(p[size_ - 1]));
+			for (size_type j = size_ - 1; j > i; --j) {
+				p[j] = std::move(p[j - 1]);
+			}
+			p[i] = v;
+			++size_;
+		}
 		return begin() + i;
 	}
 	iterator insert(const_iterator pos, T&& v) {
-		size_type i = pos - begin();
-		assertrx(i <= size());
-		grow(size_ + 1);
-		resize(size_ + 1);
-		std::move_backward(begin() + i, end() - 1, end());
-		ptr()[i] = std::move(v);
+		const size_type i = pos - begin();
+		if (i == size()) {
+			push_back(std::move(v));
+		} else {
+			assertrx(i < size());
+			grow(size_ + 1);
+			const pointer p = ptr();
+			new (p + size_) T(std::move(p[size_ - 1]));
+			for (size_type j = size_ - 1; j > i; --j) {
+				p[j] = std::move(p[j - 1]);
+			}
+			p[i] = std::move(v);
+			++size_;
+		}
 		return begin() + i;
 	}
-	iterator insert(const_iterator pos, size_type count, const T& v) {
-		size_type i = pos - begin();
+	iterator insert(const_iterator pos, difference_type count, const T& v) {
+		if (count == 0) return const_cast<iterator>(pos);
+		difference_type i = pos - begin();
 		assertrx(i <= size());
 		grow(size_ + count);
-		resize(size_ + count);
-		std::move_backward(begin() + i, end() - count, end());
-		for (size_type j = i; j < i + count; ++j) ptr()[j] = v;
+		const pointer p = ptr();
+		difference_type j = size_ + count - 1;
+		for (; j >= static_cast<difference_type>(size_) && j >= count + i; --j) {
+			new (p + j) T(std::move(p[j - count]));
+		}
+		for (; j >= count + i; --j) {
+			p[j] = std::move(p[j - count]);
+		}
+		for (; j >= size_; --j) {
+			new (p + j) T(v);
+		}
+		for (; j >= i; --j) {
+			p[j] = v;
+		}
+		size_ += count;
 		return begin() + i;
 	}
 	template <typename... Args>
 	iterator emplace(const_iterator pos, Args&&... args) {
-		size_type i = pos - begin();
-		assertrx(i <= size());
-		grow(size_ + 1);
-		resize(size_ + 1);
-		std::move_backward(begin() + i, end() - 1, end());
-		ptr()[i] = {std::forward<Args>(args)...};
+		const size_type i = pos - begin();
+		if (i == size()) {
+			emplace_back(std::forward<Args>(args)...);
+		} else {
+			assertrx(i < size());
+			grow(size_ + 1);
+			const pointer p = ptr();
+			new (p + size_) T(std::move(p[size_ - 1]));
+			for (size_type j = size_ - 1; j > i; --j) {
+				p[j] = std::move(p[j - 1]);
+			}
+			p[i] = {std::forward<Args>(args)...};
+			++size_;
+		}
 		return begin() + i;
 	}
 	iterator erase(const_iterator it) { return erase(it, it + 1); }
 	template <class InputIt>
 	iterator insert(const_iterator pos, InputIt first, InputIt last) {
-		size_type i = pos - begin();
+		assertrx(last >= first);
+		const difference_type cnt = last - first;
+		if (cnt == 0) return const_cast<iterator>(pos);
+		difference_type i = pos - begin();
 		assertrx(i <= size());
-		auto cnt = last - first;
 		grow(size_ + cnt);
-		resize(size_ + cnt);
-		std::move_backward(begin() + i, end() - cnt, end());
-		std::copy(first, last, begin() + i);
+		const pointer p = ptr();
+		difference_type j = size_ + cnt - 1;
+		for (; j >= static_cast<difference_type>(size_) && j >= cnt + i; --j) {
+			new (p + j) T(std::move(p[j - cnt]));
+		}
+		for (; j >= cnt + i; --j) {
+			p[j] = std::move(p[j - cnt]);
+		}
+		for (; j >= static_cast<difference_type>(size_); --j) {
+			new (p + j) T(*--last);
+		}
+		for (; j >= i; --j) {
+			p[j] = *--last;
+		}
+		size_ += cnt;
 		return begin() + i;
 	}
 	template <class InputIt>
@@ -293,8 +356,7 @@ public:
 
 		h_vector tmp;
 		tmp.reserve(size());
-		tmp.insert(tmp.begin(), begin(), end());
-		clear();
+		tmp.insert(tmp.begin(), std::make_move_iterator(begin()), std::make_move_iterator(end()));
 		*this = std::move(tmp);
 	}
 	size_t heap_size() const noexcept { return is_hdata_ ? 0 : e_.cap_ * sizeof(T); }

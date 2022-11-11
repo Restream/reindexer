@@ -61,7 +61,7 @@ class JoinCache : public MainLruCache {
 public:
 	JoinCache() : MainLruCache(kDefaultCacheSizeLimit * 2, 2) {}
 
-	typedef shared_ptr<JoinCache> Ptr;
+	typedef std::shared_ptr<JoinCache> Ptr;
 };
 
 struct JoinCacheRes {

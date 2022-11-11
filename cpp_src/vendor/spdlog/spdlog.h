@@ -145,7 +145,7 @@ void register_logger(std::shared_ptr<logger> logger);
 // Apply a user defined function on all registered loggers
 // Example:
 // spdlog::apply_all([&](std::shared_ptr<spdlog::logger> l) {l->flush();});
-void apply_all(std::function<void(std::shared_ptr<logger>)> fun);
+void apply_all(const std::function<void(std::shared_ptr<logger>)>& fun);
 
 // Drop the reference to the given logger
 void drop(const std::string &name);

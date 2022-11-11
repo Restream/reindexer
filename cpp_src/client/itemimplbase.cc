@@ -1,5 +1,5 @@
 #include "client/coroqueryresults.h"
-#include "client/cororpcclient.h"
+#include "client/rpcclient.h"
 #include "core/cjson/baseencoder.h"
 #include "core/cjson/cjsondecoder.h"
 #include "core/cjson/jsondecoder.h"
@@ -75,22 +75,25 @@ Error ItemImplBase::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*
 	}
 
 	payloadValue_.Clone();
-	char *endptr = nullptr;
-	gason::JsonValue value;
-	gason::JsonAllocator alloc;
-	int status = jsonParse(giftStr(data), &endptr, &value, alloc);
-	if (status != gason::JSON_OK) {
-		return Error(errLogic, "Error parsing json: %s, pos %d", gason::jsonStrError(status), unsigned(endptr - data.data()));
-	}
-	if (endp) {
-		*endp = endptr;
+
+	size_t len;
+	gason::JsonNode node;
+	gason::JsonParser parser(&largeJSONStrings_);
+	try {
+		node = parser.Parse(giftStr(data), &len);
+		if (node.value.getTag() != gason::JSON_OBJECT) return Error(errParseJson, "Expected json object");
+		if (unsafe_ && endp) {
+			*endp = const_cast<char *>(data.data()) + len;
+		}
+	} catch (gason::Exception &e) {
+		return Error(errParseJson, "Error parsing json: '%s', pos: %d", e.what(), len);
 	}
 
 	// Split parsed json into indexes and tuple
 	JsonDecoder decoder(tagsMatcher_);
 	Payload pl = GetPayload();
 	ser_.Reset();
-	auto err = decoder.Decode(&pl, ser_, value);
+	auto err = decoder.Decode(&pl, ser_, node.value);
 
 	if (err.ok()) {
 		// Put tuple to field[0]

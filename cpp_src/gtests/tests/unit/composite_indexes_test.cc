@@ -1,5 +1,9 @@
 #include "composite_indexes_api.h"
 
+using QueryResults = ReindexerApi::QueryResults;
+using Item = ReindexerApi::Item;
+using Reindexer = ReindexerApi::Reindexer;
+
 TEST_F(CompositeIndexesApi, CompositeIndexesAddTest) {
 	addCompositeIndex({kFieldNameBookid, kFieldNameBookid2}, CompositeIndexHash, IndexOpts().PK());
 	fillNamespace(0, 100);
@@ -42,7 +46,7 @@ TEST_F(CompositeIndexesApi, AddIndexWithExistingCompositeIndex) {
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-void selectAll(reindexer::Reindexer* reindexer, const string& ns) {
+void selectAll(reindexer::Reindexer* reindexer, const std::string& ns) {
 	QueryResults qr;
 	Error err = reindexer->Select(Query(ns, 0, 1000, ModeAccurateTotal), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -54,7 +58,7 @@ void selectAll(reindexer::Reindexer* reindexer, const string& ns) {
 }
 
 TEST_F(CompositeIndexesApi, DropTest2) {
-	const string test_ns = "weird_namespace";
+	const std::string test_ns = "weird_namespace";
 	auto err = rt.reindexer->OpenNamespace(test_ns, StorageOpts().Enabled(false));
 	EXPECT_TRUE(err.ok()) << err.what();
 
@@ -109,7 +113,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	addCompositeIndex({kFieldNameBookid, kFieldNameBookid2}, CompositeIndexHash, IndexOpts().PK());
 	fillNamespace(0, 100);
 
-	string compositeIndexName(getCompositeIndexName({kFieldNamePrice, kFieldNamePages}));
+	std::string compositeIndexName(getCompositeIndexName({kFieldNamePrice, kFieldNamePages}));
 	addCompositeIndex({kFieldNamePrice, kFieldNamePages}, CompositeIndexHash, IndexOpts());
 
 	addOneRow(300, 3000, titleValue, pagesValue, priceValue, nameValue);
@@ -128,8 +132,8 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	Item titleNameRow = qr.begin().GetItem(false);
 	Variant selectedTitle = titleNameRow[kFieldNameTitle];
 	Variant selectedName = titleNameRow[kFieldNameName];
-	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedTitle)->compare(string(titleValue)) == 0);
-	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedName)->compare(string(nameValue)) == 0);
+	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedTitle)->compare(std::string(titleValue)) == 0);
+	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedName)->compare(std::string(nameValue)) == 0);
 
 	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondLt, {{Variant(priceValue), Variant(pagesValue)}}));
 	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondLe, {{Variant(priceValue), Variant(pagesValue)}}));
@@ -142,7 +146,8 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 		Query(default_namespace)
 			.WhereComposite(compositeIndexName, CondRange, {{Variant(1), Variant(1)}, {Variant(priceValue), Variant(pagesValue)}}));
 
-	vector<VariantArray> intKeys;
+	std::vector<VariantArray> intKeys;
+	intKeys.reserve(10);
 	for (int i = 0; i < 10; ++i) {
 		intKeys.emplace_back(VariantArray{Variant(i), Variant(i * 5)});
 	}
@@ -151,27 +156,27 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	dropIndex(compositeIndexName);
 	fillNamespace(401, 500);
 
-	string compositeIndexName2(getCompositeIndexName({kFieldNameTitle, kFieldNameName}));
+	std::string compositeIndexName2(getCompositeIndexName({kFieldNameTitle, kFieldNameName}));
 	addCompositeIndex({kFieldNameTitle, kFieldNameName}, CompositeIndexBTree, IndexOpts());
 
 	fillNamespace(700, 200);
 
 	execAndCompareQuery(
 		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(string(titleValue)), Variant(string(nameValue))}}));
+			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
 	execAndCompareQuery(
 		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondGe, {{Variant(string(titleValue)), Variant(string(nameValue))}}));
+			.WhereComposite(compositeIndexName2.c_str(), CondGe, {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
 	execAndCompareQuery(
 		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondLt, {{Variant(string(titleValue)), Variant(string(nameValue))}}));
+			.WhereComposite(compositeIndexName2.c_str(), CondLt, {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
 	execAndCompareQuery(
 		Query(default_namespace)
-			.WhereComposite(compositeIndexName2.c_str(), CondLe, {{Variant(string(titleValue)), Variant(string(nameValue))}}));
+			.WhereComposite(compositeIndexName2.c_str(), CondLe, {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
 
 	fillNamespace(1200, 1000);
 
-	vector<VariantArray> stringKeys;
+	std::vector<VariantArray> stringKeys;
 	for (size_t i = 0; i < 1010; ++i) {
 		stringKeys.emplace_back(VariantArray{Variant(RandString()), Variant(RandString())});
 	}
@@ -179,7 +184,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	execAndCompareQuery(
 		Query(default_namespace)
 			.Where(kFieldNameName, CondEq, nameValue)
-			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(string(titleValue)), Variant(string(nameValue))}}));
+			.WhereComposite(compositeIndexName2.c_str(), CondEq, {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
 
 	dropIndex(compositeIndexName2);
 	fillNamespace(201, 300);

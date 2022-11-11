@@ -20,10 +20,11 @@ void RaftManager::Configure(const ReplicationConfigData& baseConfig, const Clust
 	nodes_.clear();
 	nodes_.reserve(config.nodes.size());
 
-	client::CoroReindexerConfig rpcCfg;
+	client::ReindexerConfig rpcCfg;
 	rpcCfg.AppName = config.appName;
 	rpcCfg.NetTimeout = kRaftTimeout;
 	rpcCfg.EnableCompression = false;
+	rpcCfg.RequestDedicatedThread = true;
 	size_t uid = 0;
 	for (uint32_t i = 0; i < config.nodes.size(); ++i) {
 		if (config.nodes[i].serverId != serverId_) {

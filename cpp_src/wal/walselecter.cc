@@ -41,7 +41,7 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 			},
 			[&q](const auto &) { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
 	}
-	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries.Get<QueryEntry>(versionIdx).values[0].As<string>());
+	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries.Get<QueryEntry>(versionIdx).values[0].As<std::string>());
 	auto &lsnEntry = q.entries.Get<QueryEntry>(lsnIdx);
 	if (lsnEntry.values.size() == 1 && (lsnEntry.condition == CondGt || lsnEntry.condition == CondGe)) {
 		lsn_t fromLSN = lsn_t(std::min(lsnEntry.values[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
@@ -148,7 +148,7 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 				WALRecord wrec(WalIndexAdd, ser.Slice());
 				addSpRecord(wrec);
 			}
-			std::vector<string> metaKeys = ns_->enumMeta();
+			std::vector<std::string> metaKeys = ns_->enumMeta();
 			for (const auto &key : metaKeys) {
 				auto metaVal = ns_->getMeta(key);
 				WALRecord wrec(WalPutMeta, key, metaVal, false);

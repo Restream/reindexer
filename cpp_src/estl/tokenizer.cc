@@ -133,7 +133,7 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken, bool inOrderBy
 	return res;
 }
 
-string tokenizer::where() const {
+std::string tokenizer::where() const {
 	int line = 1;
 	int col = 0;
 	for (auto pos = q_.begin(); pos != cur_; pos++) {

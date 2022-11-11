@@ -12,7 +12,6 @@
 #include "tools/serializer.h"
 
 using namespace reindexer_server;
-using std::shared_ptr;
 
 // for now in default serve 0  always master - other slave - inited in ReplicationApi::SetUp
 const size_t kDefaultServerCount = 4;
@@ -43,7 +42,7 @@ public:
 	// force resync
 	void ForceSync();
 	// Switch master
-	void SwitchMaster(size_t id, AsyncReplicationConfigTest::NsSet namespaces,
+	void SwitchMaster(size_t id, const AsyncReplicationConfigTest::NsSet& namespaces,
 					  std::string replMode = cluster::AsyncReplConfigData::Mode2str(cluster::AsyncReplicationMode::Default));
 	// Set WAL size
 	void SetWALSize(size_t id, int64_t size, std::string_view nsName);
@@ -56,6 +55,6 @@ public:
 	shared_timed_mutex restartMutex_;
 
 private:
-	vector<ServerControl> svc_;
+	std::vector<ServerControl> svc_;
 	mutable std::mutex m_;
 };

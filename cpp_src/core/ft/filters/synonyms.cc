@@ -8,15 +8,15 @@ namespace reindexer {
 constexpr int kSynonymProc = 95;
 
 Synonyms::Synonyms() {}
-void Synonyms::GetVariants(const wstring& data, std::vector<std::pair<std::wstring, int>>& result) {
+void Synonyms::GetVariants(const std::wstring& data, std::vector<std::pair<std::wstring, int>>& result) {
 	if (one2one_.empty()) return;
 
 	auto it = one2one_.find(data);
 	if (it == one2one_.end()) {
 		return;
 	}
-	for (auto ait : *it->second) {
-		result.push_back({ait, kSynonymProc});
+	for (const auto& ait : *it->second) {
+		result.emplace_back(ait, kSynonymProc);
 	}
 }
 
@@ -113,8 +113,8 @@ void Synonyms::SetConfig(BaseFTConfig* cfg) {
 	one2many_.clear();
 	many2any_.clear();
 
-	wstring buf;
-	vector<wstring> resultOfSplit;
+	std::wstring buf;
+	std::vector<std::wstring> resultOfSplit;
 	for (const auto& synonym : cfg->synonyms) {
 		auto singleAlternatives = std::make_shared<SingleAlternativeCont>();
 		auto multipleAlternatives = std::make_shared<MultipleAlternativesCont>();
@@ -154,7 +154,7 @@ void Synonyms::SetConfig(BaseFTConfig* cfg) {
 			} else if (resultOfSplit.size() > 1) {
 				if (!singleAlternatives->empty()) {
 					auto multAlt = std::make_shared<MultipleAlternativesCont>();
-					for (const wstring& singleAlt : *singleAlternatives) {
+					for (const std::wstring& singleAlt : *singleAlternatives) {
 						multAlt->push_back({singleAlt});
 					}
 					many2any_.push_back({{resultOfSplit.begin(), resultOfSplit.end()}, std::move(multAlt)});

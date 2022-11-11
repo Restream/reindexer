@@ -48,10 +48,11 @@ private:
 		ExplainCalc &explain;
 		unsigned start = 0;
 		unsigned count = UINT_MAX;
+		bool preselectForFt = false;
 	};
 
-	template <bool reverse, bool haveComparators, bool aggregationsOnly>
-	void selectLoop(LoopCtx &ctx, LocalQueryResults &result, const RdxContext &);
+	template <bool reverse, bool haveComparators, bool aggregationsOnly, typename ResultsT>
+	void selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &);
 	template <bool desc, bool multiColumnSort, typename It>
 	It applyForcedSort(It begin, It end, const ItemComparator &, const SelectCtx &ctx);
 	template <typename It>
@@ -60,12 +61,12 @@ private:
 	void calculateSortExpressions(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &, const LocalQueryResults &);
 	template <bool aggregationsOnly>
 	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
-						 LocalQueryResults &result);
+						 LocalQueryResults &result, bool preselectForFt);
 
 	h_vector<Aggregator, 4> getAggregators(const Query &) const;
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
 	void prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, bool isFt, bool availableSelectBySortIndex);
-	void prepareSortIndex(std::string_view column, int &index, bool &skipSortingEntry, StrictMode);
+	void prepareSortIndex(std::string &column, int &index, bool &skipSortingEntry, StrictMode);
 	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int &index, const std::vector<JoinedSelector> &,
 									   bool &skipSortingEntry, StrictMode);
 	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc, const joins::NamespaceResults &,

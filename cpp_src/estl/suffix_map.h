@@ -25,6 +25,7 @@ class suffix_map {
 	public:
 		iterator(size_type idx, const suffix_map *m) : idx_(idx), m_(m) {}
 		iterator(const iterator &other) : idx_(other.idx_), m_(other.m_) {}
+		// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
 		iterator &operator=(const iterator &other) {
 			idx_ = other.idx;
 			m_ = other.m_;
@@ -109,14 +110,14 @@ public:
 			}
 			if (plt) {
 				if (mid == lo + 1) {
-					if (strncmp(str.data(), &text_[sa_[mid]], std::min(str.length(), strlen(&text_[sa_[mid]])))) return end();
+					if (strncmp(str.data(), &text_[sa_[mid]], std::min(str.length(), strlen(&text_[sa_[mid]]))) != 0) return end();
 					return iterator(mid, this);
 				}
 				lcp_hi = i;
 				hi = mid;
 			} else {
 				if (mid == hi - 1) {
-					if (hi >= sa_.size() || strncmp(str.data(), &text_[sa_[hi]], std::min(str.length(), strlen(&text_[sa_[hi]]))))
+					if (hi >= sa_.size() || strncmp(str.data(), &text_[sa_[hi]], std::min(str.length(), strlen(&text_[sa_[hi]]))) != 0)
 						return end();
 					return iterator(hi, this);
 				}
@@ -172,7 +173,7 @@ public:
 	size_type size() const { return sa_.size(); }
 	size_type word_size() const { return words_.size(); }
 
-	const vector<CharT> &text() const { return text_; }
+	const std::vector<CharT> &text() const { return text_; }
 	size_t heap_size() {
 		return (sa_.capacity() + words_.capacity()) * sizeof(int) +			  //
 			   (lcp_.capacity() + words_len_.capacity()) * sizeof(int16_t) +  //

@@ -14,7 +14,7 @@ Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion) : tm_(std::move(tm)), nsVers
 
 Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDatahash, LocalQueryResults &&wal,
 				   LocalQueryResults &&raw)
-	: pt_(pt), tm_(std::move(tm)), expectedDatahash_(expectedDatahash), lastLsn_(lastLsn), nsVersion_(nsVersion) {
+	: pt_(std::move(pt)), tm_(std::move(tm)), expectedDatahash_(expectedDatahash), lastLsn_(lastLsn), nsVersion_(nsVersion) {
 	if (raw.Items().size()) {
 		rawData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));
 	} else {
@@ -97,7 +97,7 @@ void Snapshot::ItemsContainer::AddItem(ItemRef &&item) {
 	}
 }
 
-void Snapshot::ItemsContainer::LockItems(PayloadType pt, bool lock) {
+void Snapshot::ItemsContainer::LockItems(const PayloadType &pt, bool lock) {
 	for (auto &chunk : data_) {
 		for (auto &item : chunk.items) {
 			lockItem(pt, item, lock);
@@ -105,7 +105,7 @@ void Snapshot::ItemsContainer::LockItems(PayloadType pt, bool lock) {
 	}
 }
 
-void Snapshot::ItemsContainer::lockItem(PayloadType pt, ItemRef &itemref, bool lock) {
+void Snapshot::ItemsContainer::lockItem(const PayloadType &pt, ItemRef &itemref, bool lock) {
 	if (!itemref.Value().IsFree() && !itemref.Raw()) {
 		Payload pl(pt, itemref.Value());
 		if (lock) {

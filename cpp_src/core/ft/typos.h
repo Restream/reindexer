@@ -13,7 +13,7 @@ struct typos_context {
 };
 const int kMaxTyposInWord = 4;
 
-void mktypos(typos_context *ctx, const std::wstring &word, int level, int maxTyposLen, typos_context::CallBack callback);
-void mktypos(typos_context *ctx, std::string_view word, int level, int maxTyposLen, typos_context::CallBack callback);
+void mktypos(typos_context *ctx, const std::wstring &word, int level, int maxTyposLen, const typos_context::CallBack &callback);
+void mktypos(typos_context *ctx, std::string_view word, int level, int maxTyposLen, const typos_context::CallBack &callback);
 
 }  // namespace reindexer

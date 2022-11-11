@@ -494,6 +494,10 @@ func WithNetCompression() interface{} {
 	return bindings.OptionCompression{EnableCompression: true}
 }
 
+func WithDedicatedServerThreads() interface{} {
+	return bindings.OptionDedicatedThreads{DedicatedThreads: true}
+}
+
 func WithAppName(appName string) interface{} {
 	return bindings.OptionAppName{AppName: appName}
 }

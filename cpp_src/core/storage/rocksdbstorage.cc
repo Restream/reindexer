@@ -25,7 +25,7 @@ RocksDbStorage::RocksDbStorage() = default;
 
 RocksDbStorage::~RocksDbStorage() = default;
 
-Error RocksDbStorage::Read(const StorageOpts& opts, std::string_view key, string& value) {
+Error RocksDbStorage::Read(const StorageOpts& opts, std::string_view key, std::string& value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
 
 	rocksdb::ReadOptions options;
@@ -108,7 +108,7 @@ Cursor* RocksDbStorage::GetCursor(StorageOpts& opts) {
 
 UpdatesCollection* RocksDbStorage::GetUpdatesCollection() { return new RocksDbBatchBuffer(); }
 
-Error RocksDbStorage::doOpen(const string& path, const StorageOpts& opts) {
+Error RocksDbStorage::doOpen(const std::string& path, const StorageOpts& opts) {
 	if (path.empty()) {
 		return Error(errParams, "Cannot enable storage: the path is empty '%s'", path);
 	}
@@ -129,7 +129,7 @@ Error RocksDbStorage::doOpen(const string& path, const StorageOpts& opts) {
 	return Error(errLogic, status.ToString());
 }
 
-void RocksDbStorage::doDestroy(const string& path) {
+void RocksDbStorage::doDestroy(const std::string& path) {
 	rocksdb::Options options;
 	options.create_if_missing = true;
 	db_.reset();

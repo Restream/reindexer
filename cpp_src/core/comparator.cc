@@ -5,7 +5,7 @@ namespace reindexer {
 
 Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &values, bool isArray, bool distinct, PayloadType payloadType,
 					   const FieldsSet &fields, void *rawData, const CollateOpts &collateOpts)
-	: ComparatorVars(cond, type, isArray, payloadType, fields, rawData, collateOpts),
+	: ComparatorVars(cond, type, isArray, std::move(payloadType), fields, rawData, collateOpts),
 	  cmpBool(distinct),
 	  cmpInt(distinct),
 	  cmpInt64(distinct),
@@ -63,7 +63,7 @@ void Comparator::setValues(const VariantArray &values) {
 	}
 }
 
-void Comparator::Bind(PayloadType type, int field) {
+void Comparator::Bind(const PayloadType& type, int field) {
 	if (type_ != KeyValueComposite) {
 		offset_ = type->Field(field).Offset();
 		sizeof_ = type->Field(field).ElemSizeof();

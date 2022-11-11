@@ -5,8 +5,8 @@
 namespace reindexer {
 namespace client {
 
-void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, std::function<void(int nsId)> updatePayloadFunc, bool lazyMode,
-										 ParsingData& parsingData) {
+void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc,
+										 bool lazyMode, ParsingData& parsingData) {
 	ret.flags = GetVarUint();
 	ret.totalcount = GetVarUint();
 	ret.qcount = GetVarUint();
@@ -39,6 +39,9 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, std
 }
 
 void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, bool lazyMode) {
+	if (!lazyMode && !ret.aggResults.has_value()) {
+		throw Error(errLogic, "Empty lazy aggregations value");
+	}
 	for (;;) {
 		const int tag = GetVarUint();
 		if (tag == QueryResultEnd) break;

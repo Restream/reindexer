@@ -12,14 +12,14 @@ using std::string;
 using reindexer::Error;
 using reindexer::fast_hash_map;
 using reindexer::h_vector;
-using reindexer::Item;
 using reindexer::NamespaceDef;
 using reindexer::Query;
-using reindexer::QueryResults;
-using reindexer::Reindexer;
 
 class ExtractPK : public testing::Test {
 public:
+	using QueryResults = reindexer::QueryResults;
+	using Reindexer = reindexer::Reindexer;
+	using Item = reindexer::Item;
 	struct Data {
 		int id;
 		int fk_id;
@@ -29,14 +29,14 @@ public:
 		int height;
 	};
 
-	typedef fast_hash_map<string, NamespaceDef> DefsCacheType;
+	typedef fast_hash_map<std::string, NamespaceDef> DefsCacheType;
 
 	template <typename... Args>
-	static string StringFormat(const string& format, Args... args) {
+	static string StringFormat(const std::string& format, Args... args) {
 		size_t size = snprintf(nullptr, 0, format.c_str(), args...) + 1;  // extra symbol for '\n'
 		std::unique_ptr<char[]> buf(new char[size]);
 		snprintf(buf.get(), size, format.c_str(), args...);
-		return string(buf.get(), buf.get() + size - 1);
+		return std::string(buf.get(), buf.get() + size - 1);
 	}
 
 public:
@@ -52,14 +52,14 @@ public:
 		return err;
 	}
 
-	Error UpsertAndCommit(const string& ns, Item& item) {
+	Error UpsertAndCommit(const std::string& ns, Item& item) {
 		Error err = db_->Upsert(ns, item);
 		if (!err.ok()) return err;
 
 		return db_->Commit(ns);
 	}
 
-	std::tuple<Error, Item, Data> NewItem(const string& ns, const string& jsonPattern, Data* d = nullptr) {
+	std::tuple<Error, Item, Data> NewItem(const std::string& ns, const std::string& jsonPattern, Data* d = nullptr) {
 		typedef std::tuple<Error, Item, Data> ResultType;
 
 		Item item = db_->NewItem(ns);
@@ -71,7 +71,7 @@ public:
 		return ResultType(item.FromJSON(json), std::move(item), data);
 	}
 
-	Item ItemFromData(const string& ns, const Data& data) {
+	Item ItemFromData(const std::string& ns, const Data& data) {
 		Item item = db_->NewItem(ns);
 		item["id"] = data.id;
 		item["fk_id"] = data.fk_id;
@@ -110,13 +110,13 @@ protected:
 					rand() % 1000};
 	}
 
-	void printQueryResults(const string& ns, QueryResults& res) {
+	void printQueryResults(const std::string& ns, QueryResults& res) {
 		{
 			Item rdummy(db_->NewItem(ns));
 			std::string outBuf;
 			for (auto idx = 1; idx < rdummy.NumFields(); idx++) {
 				outBuf += "\t";
-				outBuf += string(rdummy[idx].Name());
+				outBuf += std::string(rdummy[idx].Name());
 			}
 			TestCout() << outBuf << std::endl;
 		}
@@ -127,7 +127,7 @@ protected:
 			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 				auto field = ritem[idx].Name();
 				outBuf += "\t";
-				outBuf += ritem[field].As<string>();
+				outBuf += ritem[field].As<std::string>();
 			}
 			TestCout() << outBuf << std::endl;
 		}

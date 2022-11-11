@@ -57,7 +57,7 @@ sb_stemmer_new(const char * algorithm, const char * charenc)
     if (stemmer->env == NULL)
     {
         sb_stemmer_delete(stemmer);
-        return NULL;
+        return NULL; // NOLINT(*unix.Malloc)
     }
 
     return stemmer;

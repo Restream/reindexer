@@ -32,7 +32,7 @@ void LocalQueryResults::RemoveNamespace(const NamespaceImpl *ns) {
 struct LocalQueryResults::Context {
 	Context() = default;
 	Context(PayloadType type, TagsMatcher tagsMatcher, const FieldsSet &fieldsFilter, std::shared_ptr<const Schema> schema)
-		: type_(type), tagsMatcher_(tagsMatcher), fieldsFilter_(fieldsFilter), schema_(std::move(schema)) {}
+		: type_(std::move(type)), tagsMatcher_(std::move(tagsMatcher)), fieldsFilter_(fieldsFilter), schema_(std::move(schema)) {}
 
 	PayloadType type_;
 	TagsMatcher tagsMatcher_;
@@ -66,7 +66,7 @@ void LocalQueryResults::Add(const ItemRef &i) { items_.push_back(i); }
 void LocalQueryResults::SaveRawData(ItemImplRawData &&rawData) { rawDataHolder_.emplace_back(std::move(rawData)); }
 
 std::string LocalQueryResults::Dump() const {
-	string buf;
+	std::string buf;
 	for (size_t i = 0; i < items_.size(); ++i) {
 		if (&items_[i] != &*items_.begin()) buf += ",";
 		buf += std::to_string(items_[i].Id());
@@ -129,7 +129,7 @@ public:
 		return ctx.fieldsFilter_;
 	}
 
-	const string &GetJoinedItemNamespace(size_t rowid) final {
+	const std::string &GetJoinedItemNamespace(size_t rowid) final {
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.type_->Name();
 	}

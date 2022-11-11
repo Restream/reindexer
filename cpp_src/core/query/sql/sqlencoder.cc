@@ -23,7 +23,7 @@ const char *SQLEncoder::JoinTypeName(JoinType type) {
 }
 
 static void indexToSql(const std::string &index, WrSerializer &ser) {
-	if (index.find('+') == string::npos) {
+	if (index.find('+') == std::string::npos) {
 		ser << index;
 	} else {
 		ser << '"' << index << '"';
@@ -182,7 +182,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 				ser << ')';
 			}
 			if (query_.aggregations_.empty() || (query_.aggregations_.size() == 1 && query_.aggregations_[0].type_ == AggDistinct)) {
-				string distinctIndex;
+				std::string distinctIndex;
 				if (!query_.aggregations_.empty()) {
 					assertrx(query_.aggregations_[0].fields_.size() == 1);
 					distinctIndex = query_.aggregations_[0].fields_[0];
@@ -220,7 +220,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 		case QueryUpdate: {
 			if (query_.UpdateFields().empty()) break;
 			ser << "UPDATE " << query_._namespace;
-			FieldModifyMode mode = query_.UpdateFields().front().mode;
+			FieldModifyMode mode = query_.UpdateFields().front().Mode();
 			bool isUpdate = (mode == FieldModeSet || mode == FieldModeSetJson);
 			if (isUpdate) {
 				ser << " SET ";
@@ -229,17 +229,17 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 			}
 			for (const UpdateEntry &field : query_.UpdateFields()) {
 				if (&field != &*query_.UpdateFields().begin()) ser << ',';
-				ser << field.column;
+				ser << field.Column();
 				if (isUpdate) {
 					ser << " = ";
-					bool isArray = (field.values.IsArrayValue() || field.values.size() > 1);
+					bool isArray = (field.Values().IsArrayValue() || field.Values().size() > 1);
 					if (isArray) ser << '[';
-					for (const Variant &v : field.values) {
-						if (&v != &*field.values.begin()) ser << ',';
-						if ((v.Type() == KeyValueString) && !field.isExpression && (mode != FieldModeSetJson)) {
-							stringToSql(v.As<string>(), ser);
+					for (const Variant &v : field.Values()) {
+						if (&v != &*field.Values().begin()) ser << ',';
+						if ((v.Type() == KeyValueString) && !field.IsExpression() && (mode != FieldModeSetJson)) {
+							stringToSql(v.As<std::string>(), ser);
 						} else {
-							ser << v.As<string>();
+							ser << v.As<std::string>();
 						}
 					}
 					if (isArray) ser << "]";
@@ -320,9 +320,9 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 						for (auto &v : entry.values) {
 							if (&v != &entry.values[0]) ser << ',';
 							if (v.Type() == KeyValueString) {
-								stringToSql(v.As<string>(), ser);
+								stringToSql(v.As<std::string>(), ser);
 							} else {
-								ser << v.As<string>();
+								ser << v.As<std::string>();
 							}
 						}
 						if (entry.values.size() != 1) ser << ")";

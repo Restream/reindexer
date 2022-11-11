@@ -7,6 +7,8 @@
 #include "core/ft/filters/translit.h"
 #include "core/ft/ft_fast/selecter.h"
 #include "core/ft/numtotext.h"
+#include "core/selectfunc/selectfunc.h"
+#include "estl/contexted_locks.h"
 #include "tools/logger.h"
 
 namespace {
@@ -67,6 +69,7 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, 0)) {
 		this->isBuilt_ = false;
 		if (this->cache_ft_) this->cache_ft_->Clear();
+		if (this->preselected_cache_ft_) this->preselected_cache_ft_->Clear();
 		clearCache = true;
 	}
 	this->addMemStat(keyIt);
@@ -97,7 +100,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
 	assertf(this->opts_.IsArray() || this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s", this->name_, id,
-			key.As<string>());
+			key.As<std::string>());
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
@@ -119,23 +122,29 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 		IndexStore<StoreIndexKeyType<T>>::Delete(key, id, strHolder, clearCache);
 	}
 	if (this->cache_ft_) this->cache_ft_->Clear();
+	if (this->preselected_cache_ft_) this->preselected_cache_ft_->Clear();
 	clearCache = true;
 }
 
 template <typename T>
-IndexMemStat FastIndexText<T>::GetMemStat() {
-	auto ret = IndexUnordered<T>::GetMemStat();
+IndexMemStat FastIndexText<T>::GetMemStat(const RdxContext &ctx) {
+	auto ret = IndexUnordered<T>::GetMemStat(ctx);
+
+	contexted_shared_lock lck(this->mtx_, &ctx);
 	ret.fulltextSize = this->holder_->GetMemStat();
 	if (this->cache_ft_) ret.idsetCache = this->cache_ft_->GetMemStat();
+	if (this->preselected_cache_ft_) ret.idsetCache += this->preselected_cache_ft_->GetMemStat();
 	return ret;
 }
 
 template <typename T>
-IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl, bool inTransaction, const RdxContext &rdxCtx) {
+IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl, bool inTransaction, FtMergeStatuses &&statuses,
+									bool mergeStatusesEmpty, const RdxContext &rdxCtx) {
 	fctx->GetData()->extraWordSymbols_ = this->GetConfig()->extraWordSymbols;
 	fctx->GetData()->isWordPositions_ = true;
 
-	auto mergeInfo = this->holder_->Select(dsl, this->fields_.size(), fctx->NeedArea(), GetConfig()->maxAreasInDoc, inTransaction, rdxCtx);
+	auto mergeInfo = this->holder_->Select(dsl, this->fields_.size(), fctx->NeedArea(), GetConfig()->maxAreasInDoc, inTransaction,
+										   std::move(statuses.statuses), mergeStatusesEmpty, rdxCtx);
 	// convert vids(uniq documents id) to ids (real ids)
 	IdSet::Ptr mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 	auto &holder = *this->holder_;
@@ -168,13 +177,20 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &dsl, bool inTra
 		}
 		assertrx(!vdocs[id].keyEntry->Unsorted().empty());
 		if (vid.proc <= minRelevancy) break;
-		fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc, std::move(vid.holder));
-		mergedIds->Append(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), IdSet::Unordered);
+		if (mergeStatusesEmpty) {
+			fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc, std::move(vid.holder));
+			mergedIds->Append(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), IdSet::Unordered);
+		} else {
+			fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc, statuses.rowIds,
+					  std::move(vid.holder));
+			mergedIds->Append(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), statuses.rowIds,
+							  IdSet::Unordered);
+		}
 	}
 	if (GetConfig()->logLevel >= LogInfo) {
 		logPrintf(LogInfo, "Total merge out: %d ids", mergedIds->size());
 
-		string str;
+		std::string str;
 		for (size_t i = 0; i < fctx->GetSize();) {
 			size_t j = i;
 			for (; j < fctx->GetSize() && fctx->Proc(i) == fctx->Proc(j); j++)
@@ -201,9 +217,9 @@ void FastIndexText<T>::commitFulltextImpl() {
 	auto tm0 = high_resolution_clock::now();
 
 	if (this->holder_->status_ == FullRebuild) {
-		BuildVdocs(this->idx_map);
+		buildVdocs(this->idx_map);
 	} else {
-		BuildVdocs(this->tracker_.updated());
+		buildVdocs(this->tracker_.updated());
 	}
 	auto tm1 = high_resolution_clock::now();
 
@@ -211,8 +227,20 @@ void FastIndexText<T>::commitFulltextImpl() {
 	if (this->holder_->NeedClear(this->tracker_.isCompleteUpdated())) {
 		this->tracker_.clear();
 	}
+	this->holder_->rowId2Vdoc_.clear();
+	this->holder_->rowId2Vdoc_.reserve(this->holder_->vdocs_.size());
+	for (size_t i = 0, s = this->holder_->vdocs_.size(); i < s; ++i) {
+		const auto &vdoc = this->holder_->vdocs_[i];
+		if (vdoc.keyEntry) {
+			for (const auto id : vdoc.keyEntry->Unsorted()) {
+				if (static_cast<size_t>(id) >= this->holder_->rowId2Vdoc_.size()) {
+					this->holder_->rowId2Vdoc_.resize(id + 1, FtMergeStatuses::kEmpty);
+				}
+				this->holder_->rowId2Vdoc_[id] = i;
+			}
+		}
+	}
 	auto tm2 = high_resolution_clock::now();
-
 	if (GetConfig()->logLevel >= LogInfo) {
 		logPrintf(LogInfo, "FastIndexText::Commit elapsed %d ms total [ build vdocs %d ms,  process data %d ms ]",
 				  duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
@@ -222,7 +250,7 @@ void FastIndexText<T>::commitFulltextImpl() {
 
 template <typename T>
 template <class Container>
-void FastIndexText<T>::BuildVdocs(Container &data) {
+void FastIndexText<T>::buildVdocs(Container &data) {
 	// buffer strings, for printing non text fields
 	auto &bufStrs = this->holder_->bufStrs_;
 	// array with pointers to docs fields text
@@ -258,7 +286,7 @@ void FastIndexText<T>::BuildVdocs(Container &data) {
 		vdocsTexts.emplace_back(gt.getDocFields(doc->first, bufStrs));
 
 #ifdef REINDEX_FT_EXTRA_DEBUG
-		string text(vdocsTexts.back()[0].first);
+		std::string text(vdocsTexts.back()[0].first);
 		vdocs.push_back({(text.length() > 48) ? text.substr(0, 48) + "..." : text, doc->second.get(), {}, {}});
 #else
 		vdocs.push_back({doc->second.get(), {}, {}});
@@ -312,12 +340,32 @@ void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 		}
 		this->holder_->status_ = FullRebuild;
 		if (this->cache_ft_) this->cache_ft_->Clear();
+		if (this->preselected_cache_ft_) this->preselected_cache_ft_->Clear();
 		for (auto &idx : this->idx_map) idx.second.VDocID() = FtKeyEntryData::ndoc;
 	} else {
 		logPrintf(LogInfo, "FulltextIndex config changed, cache cleared");
 		if (this->cache_ft_) this->cache_ft_->Clear();
+		if (this->preselected_cache_ft_) this->preselected_cache_ft_->Clear();
 	}
 	this->holder_->synonyms_->SetConfig(&newCfg);
+}
+
+template <typename T>
+reindexer::FtPreselectT FastIndexText<T>::FtPreselect(const QueryEntries &qentries, int idxNo, const SelectFunction &fnCtx,
+													  const RdxContext &rdxCtx) {
+	WrSerializer ser;
+	qentries.Serialize(ser);
+	QueryCacheKey ckey{ser};
+	this->build(rdxCtx);
+	auto cacheIt = this->preselected_cache_ft_->Get(ckey);
+	if (cacheIt.valid && cacheIt.val.ids->size()) {
+		if (cacheIt.val.ctx->need_area_ || !fnCtx.NeedArea(idxNo)) {
+			return {std::move(cacheIt)};
+		}
+	}
+	return FtMergeStatuses{FtMergeStatuses::Statuses(holder_->vdocs_.size(), FtMergeStatuses::kExcluded),
+						   std::vector<bool>(holder_->rowId2Vdoc_.size(), false), &holder_->rowId2Vdoc_,
+						   cacheIt.valid ? std::optional{std::move(ckey)} : std::nullopt};
 }
 
 std::unique_ptr<Index> FastIndexText_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {

@@ -22,7 +22,7 @@ Error NamespaceDef::FromJSON(span<char> json) {
 }
 
 void NamespaceDef::FromJSON(const gason::JsonNode &root) {
-	name = root["name"].As<string>();
+	name = root["name"].As<std::string>();
 	storage.Enabled(root["storage"]["enabled"].As<bool>(true));
 	storage.DropOnFileFormatError(root["storage"]["drop_on_file_format_error"].As<bool>());
 	storage.CreateIfMissing(root["storage"]["create_if_missing"].As<bool>(true));
@@ -33,7 +33,7 @@ void NamespaceDef::FromJSON(const gason::JsonNode &root) {
 		indexes.push_back(idx);
 	}
 	isTemporary = root["temporary"].As<bool>(false);
-	schemaJson = root["schema"].As<string>(schemaJson);
+	schemaJson = root["schema"].As<std::string>(schemaJson);
 }
 
 void NamespaceDef::GetJSON(WrSerializer &ser, int formatFlags) const {
@@ -53,7 +53,7 @@ void NamespaceDef::GetJSON(WrSerializer &ser, int formatFlags) const {
 	}
 }
 
-bool EnumNamespacesOpts::MatchFilter(std::string_view nsName, std::shared_ptr<Namespace> ns, const RdxContext &ctx) const {
+bool EnumNamespacesOpts::MatchFilter(std::string_view nsName, const std::shared_ptr<Namespace> &ns, const RdxContext &ctx) const {
 	return MatchNameFilter(nsName) && (!IsHideTemporary() || !ns->IsTemporary(ctx));
 }
 

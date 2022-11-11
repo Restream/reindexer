@@ -52,8 +52,8 @@ protected:
 			Item item = NewItem(default_namespace);
 			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
-			string serial = std::to_string(i);
-			sprintf(sourceJson, jsonPattern, serial.c_str(), serial.c_str(), i, i * 2, i * 3);
+			std::string serial = std::to_string(i);
+			snprintf(sourceJson, sizeof(sourceJson) - 1, jsonPattern, serial.c_str(), serial.c_str(), i, i * 2, i * 3);
 
 			Error err = item.FromJSON(sourceJson);
 			EXPECT_TRUE(err.ok()) << err.what();
@@ -131,21 +131,21 @@ protected:
 		}
 	}
 
-	const string truncate_namespace = "truncate_namespace";
-	const string idIdxName = "id";
-	const string updatedTimeSecFieldName = "updated_time_sec";
-	const string updatedTimeMSecFieldName = "updated_time_msec";
-	const string updatedTimeUSecFieldName = "updated_time_usec";
-	const string updatedTimeNSecFieldName = "updated_time_nsec";
-	const string serialFieldName = "serial_field_int";
-	const string manualFieldName = "manual_field_int";
-	const string intField = "int_field";
-	const string doubleField = "double_field";
-	const string boolField = "bool_field";
-	const string sparseField = "sparse_field";
-	const string stringField = "string_field";
-	const string indexedArrayField = "indexed_array_field";
-	const string emptyField = "empty_field";
+	const std::string truncate_namespace = "truncate_namespace";
+	const std::string idIdxName = "id";
+	const std::string updatedTimeSecFieldName = "updated_time_sec";
+	const std::string updatedTimeMSecFieldName = "updated_time_msec";
+	const std::string updatedTimeUSecFieldName = "updated_time_usec";
+	const std::string updatedTimeNSecFieldName = "updated_time_nsec";
+	const std::string serialFieldName = "serial_field_int";
+	const std::string manualFieldName = "manual_field_int";
+	const std::string intField = "int_field";
+	const std::string doubleField = "double_field";
+	const std::string boolField = "bool_field";
+	const std::string sparseField = "sparse_field";
+	const std::string stringField = "string_field";
+	const std::string indexedArrayField = "indexed_array_field";
+	const std::string emptyField = "empty_field";
 	const int idNum = 1;
 	const uint8_t upsertTimes = 3;
 };

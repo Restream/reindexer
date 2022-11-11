@@ -42,7 +42,7 @@ public:
 
 private:
 	std::mutex mtx_;
-	std::unordered_map<string, std::shared_ptr<T>, nocase_hash_str, nocase_equal_str> nsDirs_;
+	std::unordered_map<std::string, std::shared_ptr<T>, nocase_hash_str, nocase_equal_str> nsDirs_;
 };
 
 }  // namespace datastorage

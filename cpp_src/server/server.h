@@ -7,7 +7,6 @@
 namespace reindexer_server {
 
 using reindexer::Error;
-using std::string;
 
 class ServerImpl;
 class DBManager;
@@ -18,7 +17,7 @@ public:
 	~Server();
 
 	Error InitFromCLI(int argc, char* argv[]);
-	Error InitFromYAML(const string& yaml);
+	Error InitFromYAML(const std::string& yaml);
 	Error InitFromFile(const char* filepath);
 	int Start();
 	void Stop();

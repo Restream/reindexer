@@ -1,5 +1,9 @@
 #include "equalpositionapi.h"
 
+using QueryResults = ReindexerApi::QueryResults;
+using Item = ReindexerApi::Item;
+using Reindexer = ReindexerApi::Reindexer;
+
 bool Compare(const Variant& key1, const Variant& key2, CondType condType) {
 	int res = key1.Compare(key2);
 	switch (condType) {
@@ -19,7 +23,7 @@ bool Compare(const Variant& key1, const Variant& key2, CondType condType) {
 	return false;
 }
 
-void VerifyQueryResult(const QueryResults& qr, const std::vector<string>& fields, const std::vector<Variant>& keys,
+void VerifyQueryResult(const QueryResults& qr, const std::vector<std::string>& fields, const std::vector<Variant>& keys,
 					   const std::vector<CondType>& condTypes) {
 	EXPECT_TRUE(fields.size() == keys.size());
 	EXPECT_TRUE(keys.size() == condTypes.size());
@@ -145,9 +149,9 @@ TEST_F(EqualPositionApi, SelectNonIndexedArrays) {
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		char json[1024];
-		string pk("pk" + std::to_string(i));
-		sprintf(json, jsonPattern, pk.c_str(), rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
-				rand() % 10, rand() % 10);
+		std::string pk("pk" + std::to_string(i));
+		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
+				 rand() % 10, rand() % 10, rand() % 10, rand() % 10);
 
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -190,9 +194,9 @@ TEST_F(EqualPositionApi, SelectMixedArrays) {
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		char json[1024];
-		string pk("pk" + std::to_string(i));
-		sprintf(json, jsonPattern, pk.c_str(), rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
-				rand() % 10, rand() % 10);
+		std::string pk("pk" + std::to_string(i));
+		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), rand() % 10, rand() % 10, rand() % 10, rand() % 10, rand() % 10,
+				 rand() % 10, rand() % 10, rand() % 10, rand() % 10);
 
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -226,9 +230,9 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		char json[1024];
-		string pk("pk" + std::to_string(i));
+		std::string pk("pk" + std::to_string(i));
 
-		sprintf(json, jsonPattern, i);
+		snprintf(json, sizeof(json) - 1, jsonPattern, i);
 
 		err = item.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();

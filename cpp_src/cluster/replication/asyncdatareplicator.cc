@@ -25,7 +25,7 @@ void AsyncDataReplicator::Configure(ReplicationConfigData config) {
 	std::lock_guard lck(mtx_);
 	if ((baseConfig_.has_value() && baseConfig_.value() != config) || !baseConfig_.has_value()) {
 		stop();
-		baseConfig_ = std::move(config);
+		baseConfig_ = config;
 	}
 }
 
@@ -36,7 +36,7 @@ bool AsyncDataReplicator::IsExpectingStartup() const noexcept {
 
 void AsyncDataReplicator::Run() {
 	auto localNamespaces = getLocalNamespaces();
-	fast_hash_set<string, nocase_hash_str, nocase_equal_str> namespaces;
+	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> namespaces;
 	{
 		std::lock_guard lck(mtx_);
 		if (!isExpectingStartup()) {
@@ -44,6 +44,7 @@ void AsyncDataReplicator::Run() {
 			return;
 		}
 
+		// NOLINTBEGIN (bugprone-unchecked-optional-access) Optionals were checked in isExpectingStartup()
 		statsCollector_.Init(config_->nodes);
 		updatesQueue_.ReinitAsyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(getMergedNsConfig(config_.value())));
 		assert(replThreads_.empty());
@@ -70,6 +71,7 @@ void AsyncDataReplicator::Run() {
 			}
 		}
 	}
+	// NOLINTEND (bugprone-unchecked-optional-access) Optionals were checked in isExpectingStartup()
 }
 
 void AsyncDataReplicator::Stop(bool resetConfig) {

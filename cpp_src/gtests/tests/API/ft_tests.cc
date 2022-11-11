@@ -42,7 +42,7 @@ TEST_P(FTApi, CompositeSelect) {
 			for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 				auto field = ritem[idx].Name();
 				if (field == "id") continue;
-				auto it = data.find(ritem[field].As<string>());
+				auto it = data.find(ritem[field].As<std::string>());
 				ASSERT_TRUE(it != data.end());
 				data.erase(it);
 			}
@@ -79,7 +79,7 @@ TEST_P(FTApi, CompositeSelectWithFields) {
 				for (auto idx = 1; idx < ritem.NumFields(); idx++) {
 					auto curField = ritem[idx].Name();
 					if (curField != field) continue;
-					auto it = data.find(ritem[curField].As<string>());
+					auto it = data.find(ritem[curField].As<std::string>());
 					ASSERT_TRUE(it != data.end());
 					data.erase(it);
 				}
@@ -111,7 +111,7 @@ TEST_P(FTApi, SelectWithEscaping) {
 
 	for (auto it : res) {
 		auto ritem(it.GetItem(false));
-		string val = ritem["ft1"].As<string>();
+		std::string val = ritem["ft1"].As<std::string>();
 		EXPECT_TRUE(val == "Go to !-hell+hell+hell!!!");
 	}
 }
@@ -197,16 +197,31 @@ TEST_P(FTApi, ConcurrencyCheck) {
 	bool ready = false;
 	std::vector<std::thread> threads;
 	std::atomic<unsigned> runningThreads = {0};
-	constexpr unsigned kTotalThreads = 10;
+	constexpr unsigned kTotalThreads = 11;
+	std::thread statsThread;
+	std::atomic<bool> terminate = false;
 	for (unsigned i = 0; i < kTotalThreads; ++i) {
-		threads.emplace_back(std::thread([&] {
-			std::unique_lock lck(mtx);
-			++runningThreads;
-			cv.wait(lck, [&] { return ready; });
-			lck.unlock();
-			CheckAllPermutations("", {"'nose long'~3"}, "", {{"Her !nose! was !long!", ""}, {"Her !nose! was exceptionally !long!", ""}},
-								 true);
-		}));
+		if (i == 0) {
+			statsThread = std::thread([&] {
+				std::unique_lock lck(mtx);
+				++runningThreads;
+				cv.wait(lck, [&] { return ready; });
+				lck.unlock();
+				while (!terminate) {
+					reindexer::QueryResults qr;
+					rt.reindexer->Select(reindexer::Query("#memstats"), qr);
+				}
+			});
+		} else {
+			threads.emplace_back(std::thread([&] {
+				std::unique_lock lck(mtx);
+				++runningThreads;
+				cv.wait(lck, [&] { return ready; });
+				lck.unlock();
+				CheckAllPermutations("", {"'nose long'~3"}, "",
+									 {{"Her !nose! was !long!", ""}, {"Her !nose! was exceptionally !long!", ""}}, true);
+			}));
+		}
 	}
 	while (runningThreads.load() < kTotalThreads) {
 		std::this_thread::sleep_for(std::chrono::microseconds(100));
@@ -219,6 +234,8 @@ TEST_P(FTApi, ConcurrencyCheck) {
 	for (auto& th : threads) {
 		th.join();
 	}
+	terminate = true;
+	statsThread.join();
 }
 
 TEST_P(FTApi, SelectWithTypos) {
@@ -534,7 +551,7 @@ TEST_P(FTApi, HugeNumberToWordsSelect2) {
 TEST_P(FTApi, DeleteTest) {
 	Init(GetDefaultConfig());
 
-	std::unordered_map<string, int> data;
+	std::unordered_map<std::string, int> data;
 	for (int i = 0; i < 10000; ++i) {
 		data.insert(Add(rt.RuRandString()));
 	}
@@ -560,24 +577,68 @@ TEST_P(FTApi, DeleteTest) {
 
 	// for (auto it : res) {
 	// 	Item ritem(it.GetItem());
-	// 	std::cout << ritem["ft1"].As<string>() << std::endl;
+	// 	std::cout << ritem["ft1"].as<std::string>() << std::endl;
 	// }
 	// TODO: add validation
+}
+
+TEST_P(FTApi, RebuildAfterDeletion) {
+	Init(GetDefaultConfig());
+
+	auto cfg = GetDefaultConfig();
+	cfg.maxStepSize = 5;
+	auto err = SetFTConfig(cfg, "nm1", "ft1", {"ft1"});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	auto selectF = [this](const std::string& word) {
+		const auto q{reindexer::Query("nm1").Where("ft1", CondEq, word)};
+		reindexer::QueryResults res;
+		auto err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		return res;
+	};
+
+	std::unordered_map<std::string, int> data;
+	data.insert(Add("An entity is something that exists as itself"sv));
+	data.insert(Add("In law, a legal entity is an entity that is capable of bearing legal rights"sv));
+	data.insert(Add("In politics, entity is used as term for territorial divisions of some countries"sv));
+	data.insert(Add("Юридическое лицо — организация, которая имеет обособленное имущество"sv));
+	data.insert(Add("Aftermath - the consequences or aftereffects of a significant unpleasant event"sv));
+	data.insert(Add("Food prices soared in the aftermath of the drought"sv));
+	data.insert(Add("In the aftermath of the war ..."sv));
+
+	auto res = selectF("entity");
+	ASSERT_EQ(res.Count(), 3);
+
+	Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
+	res = selectF("entity");
+	ASSERT_EQ(res.Count(), 2);
 }
 
 TEST_P(FTApi, Stress) {
 	Init(GetDefaultConfig());
 
-	vector<string> data;
-	vector<string> phrase;
+	std::vector<std::string> data;
+	std::vector<std::string> phrase;
 
+	data.reserve(100000);
 	for (size_t i = 0; i < 100000; ++i) {
 		data.push_back(rt.RandString());
 	}
 
+	phrase.reserve(7000);
 	for (size_t i = 0; i < 7000; ++i) {
 		phrase.push_back(data[rand() % data.size()] + "  " + data[rand() % data.size()] + " " + data[rand() % data.size()]);
 	}
+
+	std::atomic<bool> terminate = false;
+	std::thread statsThread([&] {
+		while (!terminate) {
+			reindexer::QueryResults qr;
+			rt.reindexer->Select(reindexer::Query("#memstats"), qr);
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+	});
 
 	for (size_t i = 0; i < phrase.size(); i++) {
 		Add(phrase[i], phrase[rand() % phrase.size()]);
@@ -591,7 +652,7 @@ TEST_P(FTApi, Stress) {
 
 				for (auto it : res) {
 					auto ritem(it.GetItem(false));
-					if (ritem["ft1"].As<string>() == phrase[j]) {
+					if (ritem["ft1"].As<std::string>() == phrase[j]) {
 						found = true;
 					}
 				}
@@ -601,19 +662,22 @@ TEST_P(FTApi, Stress) {
 			}
 		}
 	}
+	terminate = true;
+	statsThread.join();
 }
+
 TEST_P(FTApi, Unique) {
 	Init(GetDefaultConfig());
 
-	std::vector<string> data;
+	std::vector<std::string> data;
 	std::set<size_t> check;
-	std::set<string> checks;
+	std::set<std::string> checks;
 	reindexer::logInstallWriter([](int, char*) { /*std::cout << buf << std::endl;*/ });
 
 	for (int i = 0; i < 1000; ++i) {
 		bool inserted = false;
 		size_t n;
-		string s;
+		std::string s;
 
 		while (!inserted) {
 			n = rand();
@@ -637,8 +701,9 @@ TEST_P(FTApi, Unique) {
 		if (i % 5 == 0) {
 			for (size_t j = 0; j < i; j++) {
 				if (i == 40 && j == 26) {
-					int a = 3;
+					int a = 3;	// NOLINT(*unused-but-set-variable) This code is just to load CPU by non-rx stuff
 					a++;
+					(void)a;
 				}
 				auto res = StressSelect(data[j]);
 				if (res.Count() != 1) {
@@ -854,17 +919,17 @@ TEST_P(FTApi, SelectTranslitWithComma) {
 	auto qr = SimpleSelect("@ft1 [kt,jgtxrf");
 	EXPECT_EQ(qr.Count(), 1);
 	auto item = qr.begin().GetItem(false);
-	EXPECT_EQ(item["ft1"].As<string>(), "!хлебопечка!");
+	EXPECT_EQ(item["ft1"].As<std::string>(), "!хлебопечка!");
 
 	qr = SimpleSelect("@ft1 \\'ktrnhjy");
 	EXPECT_EQ(qr.Count(), 1);
 	item = qr.begin().GetItem(false);
-	EXPECT_EQ(item["ft1"].As<string>(), "!электрон!");
+	EXPECT_EQ(item["ft1"].As<std::string>(), "!электрон!");
 
 	qr = SimpleSelect("@ft1 vfn\\'");
 	EXPECT_EQ(qr.Count(), 1);
 	item = qr.begin().GetItem(false);
-	EXPECT_EQ(item["ft1"].As<string>(), "!матэ!");
+	EXPECT_EQ(item["ft1"].As<std::string>(), "!матэ!");
 }
 
 TEST_P(FTApi, SelectMultiwordSynonyms) {
@@ -1283,6 +1348,61 @@ TEST_P(FTApi, SetFtFieldsCfgErrors) {
 	// Error
 	EXPECT_FALSE(err.ok());
 	EXPECT_EQ(err.what(), "FtFastConfig: Value of 'max_typos' - 5 is out of bounds: [0,4]");
+}
+
+TEST_P(FTApi, MergeLimitConstraints) {
+	auto cfg = GetDefaultConfig();
+	Init(cfg);
+	cfg.mergeLimit = kMinMergeLimitValue - 1;
+	auto err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_EQ(err.code(), errParseJson);
+	cfg.mergeLimit = kMaxMergeLimitValue + 1;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_EQ(err.code(), errParseJson);
+	cfg.mergeLimit = kMinMergeLimitValue;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	cfg.mergeLimit = kMaxMergeLimitValue;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+TEST_P(FTApi, LargeMergeLimit) {
+	// Check if results are bounded by merge limit
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.mergeLimit = kMaxMergeLimitValue;
+	Init(ftCfg);
+	const std::string kBase1 = "aaaa";
+	const std::string kBase2 = "bbbb";
+
+	reindexer::fast_hash_set<std::string> strings1;
+	constexpr unsigned kPartLen = (kMaxMergeLimitValue + 15000) / 2;
+	for (unsigned i = 0; i < kPartLen; ++i) {
+		while (true) {
+			std::string val = kBase2 + rt.RandString(10, 10);
+			if (strings1.emplace(val).second) {
+				Add("nm1"sv, val);
+				break;
+			}
+		}
+	}
+	reindexer::fast_hash_set<std::string> strings2;
+	auto fit = strings1.begin();
+	for (unsigned i = 0; i < kPartLen; ++i, ++fit) {
+		while (true) {
+			std::string val = kBase2 + rt.RandString(10, 10);
+			if (strings2.emplace(val).second) {
+				if (fit == strings2.end()) {
+					fit = strings2.begin();
+				}
+				Add("nm1"sv, val, fit.key());
+				break;
+			}
+		}
+	}
+
+	auto qr = SimpleSelect(fmt::sprintf("%s* %s*", kBase1, kBase2));
+	ASSERT_EQ(qr.Count(), ftCfg.mergeLimit);
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTApi,

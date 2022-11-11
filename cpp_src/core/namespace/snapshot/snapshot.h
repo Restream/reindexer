@@ -63,10 +63,10 @@ private:
 		size_t Size() const noexcept { return data_.size(); }
 		size_t ItemsCount() const noexcept { return itemsCount_; }
 		const std::vector<Chunk> &Data() const noexcept { return data_; }
-		void LockItems(PayloadType pt, bool lock);
+		void LockItems(const PayloadType &pt, bool lock);
 
 	private:
-		void lockItem(PayloadType pt, ItemRef &itemref, bool lock);
+		void lockItem(const PayloadType &pt, ItemRef &itemref, bool lock);
 
 		std::vector<Chunk> data_;
 		size_t itemsCount_ = 0;

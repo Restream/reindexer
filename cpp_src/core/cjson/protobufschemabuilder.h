@@ -24,7 +24,7 @@ public:
 
 	void Field(std::string_view name, int tagName, const FieldProps& props);
 	ProtobufSchemaBuilder Object(int tagName, std::string_view name, bool buildTypesOnly = false,
-								 std::function<void(ProtobufSchemaBuilder& self)> = nullptr);
+								 const std::function<void(ProtobufSchemaBuilder& self)>& = nullptr);
 
 	void End();
 

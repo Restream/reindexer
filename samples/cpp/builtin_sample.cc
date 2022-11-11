@@ -4,9 +4,9 @@
 using namespace reindexer;
 
 int main() {
-	//// Initialize database
+	// Initialize database
 	Reindexer db;
-	//// Create namespace and add index
+	// Create namespace and add index
 	Error err = db.OpenNamespace("mytable");
 	if (!err.ok()) return -1;
 	err = db.AddIndex("mytable", {"id", "hash", "int", IndexOpts().PK()});
@@ -16,12 +16,12 @@ int main() {
 
 	//// Insert some data in JSON format
 	Item item = db.NewItem("mytable");
-	string data = "{\"id\":100,\"name\":\"Some name\" \"genre\":\"some genre\"}";
+	std::string data = "{\"id\":100,\"name\":\"Some name\" \"genre\":\"some genre\"}";
 	item.FromJSON(data);
 	err = db.Upsert("mytable", item);
 	if (!err.ok()) return -4;
 
-	//// Build & execute query
+	// Build & execute query
 	auto query = Query("mytable").Where("id", CondEq, 100);
 	QueryResults results;
 	err = db.Select(query, results);
@@ -30,21 +30,21 @@ int main() {
 		return -5;
 	}
 
-	//  // Fetch and print results
+	// Fetch and print results
 	for (auto rowIt : results) {
 		Item item = rowIt.GetItem();
-		//  // Get complete JSON
+		// Get complete JSON
 		std::cout << "JSON: " << item.GetJSON() << std::endl;
 
-		//// OR Iterate indexed fields
+		// OR Iterate indexed fields
 		std::cout << "Fields: ";
 		for (int field = 1; field < item.NumFields(); field++) {
-			std::cout << item[field].Name() << "=" << item[field].As<string>() << "; ";
+			std::cout << item[field].Name() << "=" << item[field].As<std::string>() << "; ";
 		}
 		std::cout << std::endl;
 
-		//// OR Get indexed field by name
-		std::cout << "Genre: " << item["genre"].As<string>() << std::endl;
+		// OR Get indexed field by name
+		std::cout << "Genre: " << item["genre"].As<std::string>() << std::endl;
 	}
 	return 0;
 }

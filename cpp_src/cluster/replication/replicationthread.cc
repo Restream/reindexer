@@ -73,7 +73,8 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 		} else {
 			nsSyncTokens_.reset();
 		}
-		client::CoroReindexerConfig rpcCfg;
+		client::ReindexerConfig rpcCfg;
+		rpcCfg.RequestDedicatedThread = true;
 		rpcCfg.AppName = config_.AppName;
 		rpcCfg.NetTimeout = std::chrono::seconds(config_.UpdatesTimeoutSec);
 		rpcCfg.EnableCompression = config_.EnableCompression;

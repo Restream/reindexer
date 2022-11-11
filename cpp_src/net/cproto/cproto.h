@@ -82,16 +82,18 @@ const uint32_t kMaxConcurentQueries = 256;
 const uint32_t kMaxConcurentSnapshots = 8;
 
 const uint32_t kCprotoMagic = 0xEEDD1132;
-const uint32_t kCprotoVersion = 0x103;
+const uint32_t kCprotoVersion = 0x104;
 const uint32_t kCprotoMinCompatVersion = 0x101;
 const uint32_t kCprotoMinSnappyVersion = 0x103;
+const uint32_t kCprotoMinDedicatedThreadsVersion = 0x103;
 
 #pragma pack(push, 1)
 struct CProtoHeader {
 	uint32_t magic;
 	uint16_t version : 10;
 	uint16_t compressed : 1;
-	uint16_t _reserved : 5;
+	uint16_t dedicatedThread : 1;
+	uint16_t _reserved : 4;
 	uint16_t cmd;
 	uint32_t len;
 	uint32_t seq;

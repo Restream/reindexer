@@ -1,8 +1,8 @@
 #pragma once
 
-#include "client/cororeindexerconfig.h"
-#include "client/cororpcclient.h"
 #include "client/internalrdxcontext.h"
+#include "client/reindexerconfig.h"
+#include "client/rpcclient.h"
 #include "net/ev/ev.h"
 
 #include <chrono>
@@ -24,7 +24,7 @@ public:
 	typedef std::function<void(const Error &err)> Completion;
 
 	/// Create Reindexer database object
-	RaftClient(const CoroReindexerConfig & = CoroReindexerConfig());
+	RaftClient(const ReindexerConfig & = ReindexerConfig());
 	/// Destrory Reindexer database object
 	~RaftClient();
 	RaftClient(const RaftClient &) = delete;
@@ -36,7 +36,7 @@ public:
 	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`
 	/// @param loop - event loop for connections and coroutines handling
 	/// @param opts - Connect options. May contaion any of <br>
-	Error Connect(const string &dsn, net::ev::dynamic_loop &loop, const client::ConnectOpts &opts = client::ConnectOpts());
+	Error Connect(const std::string &dsn, net::ev::dynamic_loop &loop, const client::ConnectOpts &opts = client::ConnectOpts());
 	/// Stop - shutdown connector
 	Error Stop();
 	/// SuggestLeader - send cluster leader suggestion
@@ -63,8 +63,8 @@ public:
 	RaftClient WithTimeout(milliseconds timeout) { return RaftClient(impl_, ctx_.WithTimeout(timeout)); }
 
 private:
-	RaftClient(CoroRPCClient *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
-	CoroRPCClient *impl_;
+	RaftClient(RPCClient *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
+	RPCClient *impl_;
 	bool owner_;
 	InternalRdxContext ctx_;
 };

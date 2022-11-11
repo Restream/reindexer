@@ -11,7 +11,7 @@
 #include "tools/md5crypt.h"
 #include "tools/stringstools.h"
 #include "vendor/hash/md5.h"
-#include "vendor/yaml/yaml.h"
+#include "vendor/yaml-cpp/yaml.h"
 
 namespace reindexer_server {
 
@@ -31,7 +31,7 @@ Error DBManager::Init() {
 		}
 	}
 
-	vector<fs::DirEntry> foundDb;
+	std::vector<fs::DirEntry> foundDb;
 	if (!config_.StoragePath.empty() && fs::ReadDir(config_.StoragePath, foundDb) < 0) {
 		return Error(errParams, "Can't read reindexer dir %s", config_.StoragePath);
 	}
@@ -59,7 +59,7 @@ Error DBManager::Init() {
 	return 0;
 }
 
-Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canCreate) {
+Error DBManager::OpenDatabase(const std::string &dbName, AuthContext &auth, bool canCreate) {
 	RdxContext dummyCtx;
 	auto status = Login(dbName, auth);
 	if (!status.ok()) {
@@ -112,18 +112,16 @@ Error DBManager::OpenDatabase(const string &dbName, AuthContext &auth, bool canC
 	return errOK;
 }
 
-Error DBManager::loadOrCreateDatabase(const string &dbName, bool allowDBErrors, bool withAutorepair, const AuthContext &auth) {
+Error DBManager::loadOrCreateDatabase(const std::string &dbName, bool allowDBErrors, bool withAutorepair, const AuthContext &auth) {
 	if (clustersShutDown_) {
 		return Error(errTerminated, "DBManager is already preparing for shutdown");
 	}
 
-	string storagePath = !config_.StoragePath.empty() ? fs::JoinPath(config_.StoragePath, dbName) : "";
+	std::string storagePath = !config_.StoragePath.empty() ? fs::JoinPath(config_.StoragePath, dbName) : "";
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
-	auto db = unique_ptr<reindexer::Reindexer>(new reindexer::Reindexer(ReindexerConfig()
-																			.WithClientStats(clientsStats_)
-																			.EnableRaftCluster(config_.EnableCluster())
-																			.WithUpdatesSize(config_.MaxUpdatesSize)));
+	auto db = std::unique_ptr<reindexer::Reindexer>(
+		new reindexer::Reindexer(ReindexerConfig().WithClientStats(clientsStats_).WithUpdatesSize(config_.MaxUpdatesSize)));
 	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
 	switch (storageType_) {
 		case datastorage::StorageType::LevelDB:
@@ -153,7 +151,7 @@ Error DBManager::DropDatabase(AuthContext &auth) {
 			return status;
 		}
 	}
-	string dbName = auth.dbName_;
+	std::string dbName = auth.dbName_;
 
 	std::unique_lock<shared_timed_mutex> lck(mtx_);
 	auto it = dbs_.find(auth.dbName_);
@@ -167,9 +165,10 @@ Error DBManager::DropDatabase(AuthContext &auth) {
 	return 0;
 }
 
-vector<string> DBManager::EnumDatabases() {
+std::vector<std::string> DBManager::EnumDatabases() {
 	shared_lock<shared_timed_mutex> lck(mtx_);
-	vector<string> dbs;
+	std::vector<std::string> dbs;
+	dbs.reserve(dbs_.size());
 	for (auto &it : dbs_) dbs.push_back(it.first);
 	return dbs;
 }
@@ -184,7 +183,7 @@ void DBManager::ShutdownClusters() {
 	}
 }
 
-Error DBManager::Login(const string &dbName, AuthContext &auth) {
+Error DBManager::Login(const std::string &dbName, AuthContext &auth) {
 	if (kRoleSystem == auth.role_) {
 		auth.dbName_ = dbName;
 		return 0;
@@ -236,39 +235,40 @@ Error DBManager::Login(const string &dbName, AuthContext &auth) {
 
 Error DBManager::readUsers() noexcept {
 	users_.clear();
-	auto result = readUsersYAML();
-	if (!result.ok()) {
-		result = readUsersJSON();
-		if (result.code() == errNotFound) {
+	Error jResult;
+	auto yResult = readUsersYAML();
+	if (!yResult.ok()) {
+		jResult = readUsersJSON();
+		if (yResult.code() == errNotFound && jResult.code() == errNotFound) {
 			return createDefaultUsersYAML();
 		}
 	}
-	return result;
+	return (yResult.code() == errNotFound) ? jResult : yResult;
 }
 
 Error DBManager::readUsersYAML() noexcept {
-	string content;
+	std::string content;
 	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename), content);
 	if (res < 0) return Error(errNotFound, "Can't read '%s' file", kUsersYAMLFilename);
-	Yaml::Node root;
 	try {
-		Yaml::Parse(root, content);
-		for (auto userIt = root.Begin(); userIt != root.End(); userIt++) {
+		YAML::ScannerOpts opts;
+		opts.disableAnchors = true;
+		YAML::Node root = YAML::Load(content, opts);
+		for (const auto &user : root) {
 			UserRecord urec;
-			urec.login = (*userIt).first;
-			auto &userNode = (*userIt).second;
-			auto err = ParseMd5CryptString(userNode["hash"].As<string>(), urec.hash, urec.salt);
+			urec.login = user.first.as<std::string>();
+			auto userNode = user.second;
+			auto err = ParseMd5CryptString(userNode["hash"].as<std::string>(), urec.hash, urec.salt);
 			if (!err.ok()) {
 				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
 				continue;
 			}
 			auto userRoles = userNode["roles"];
-			if (userRoles.Type() == Yaml::Node::MapType) {
-				for (auto roleIt = userRoles.Begin(); roleIt != userRoles.End(); roleIt++) {
-					string db((*roleIt).first);
+			if (userRoles.IsMap()) {
+				for (const auto &role : userRoles) {
+					std::string db(role.first.as<std::string>());
 					try {
-						UserRole role = userRoleFromString((*roleIt).second.As<string>());
-						urec.roles.emplace(db, role);
+						urec.roles.emplace(db, userRoleFromString(role.second.as<std::string>()));
 					} catch (const Error &err) {
 						logPrintf(LogWarning, "Skipping user '%s' for db '%s': ", urec.login, db, err.what());
 					}
@@ -282,14 +282,14 @@ Error DBManager::readUsersYAML() noexcept {
 				logPrintf(LogWarning, "Skipping user '%s': no 'roles' node found", urec.login);
 			}
 		}
-	} catch (const Yaml::Exception &ex) {
+	} catch (const YAML::Exception &ex) {
 		return Error(errParseJson, "Users: %s", ex.what());
 	}
 	return errOK;
 }
 
 Error DBManager::readUsersJSON() noexcept {
-	string content;
+	std::string content;
 	int res = fs::ReadFile(fs::JoinPath(config_.StoragePath, kUsersJSONFilename), content);
 	if (res < 0) return Error(errNotFound, "Can't read '%s' file", kUsersJSONFilename);
 
@@ -298,14 +298,14 @@ Error DBManager::readUsersJSON() noexcept {
 		auto root = parser.Parse(giftStr(content));
 		for (auto &userNode : root) {
 			UserRecord urec;
-			urec.login = string(userNode.key);
-			auto err = ParseMd5CryptString(userNode["hash"].As<string>(), urec.hash, urec.salt);
+			urec.login = std::string(userNode.key);
+			auto err = ParseMd5CryptString(userNode["hash"].As<std::string>(), urec.hash, urec.salt);
 			if (!err.ok()) {
 				logPrintf(LogWarning, "Hash parsing error for user '%s': %s", urec.login, err.what());
 				continue;
 			}
 			for (auto &roleNode : userNode["roles"]) {
-				string db(roleNode.key);
+				std::string db(roleNode.key);
 				try {
 					UserRole role = userRoleFromString(roleNode.As<std::string_view>());
 					urec.roles.emplace(db, role);
@@ -329,6 +329,7 @@ Error DBManager::createDefaultUsersYAML() noexcept {
 	logPrintf(LogInfo, "Creating default %s file", kUsersYAMLFilename);
 	int64_t res = fs::WriteFile(fs::JoinPath(config_.StoragePath, kUsersYAMLFilename),
 								"# List of db's users, their's roles and privileges\n\n"
+								"# Anchors and aliases do not work here due to compatibility reasons\n\n"
 								"# Username\n"
 								"reindexer:\n"
 								"  # Hash type(right now '$1' is the only value), salt and hash in BSD MD5 Crypt format\n"

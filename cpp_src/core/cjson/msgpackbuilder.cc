@@ -91,7 +91,7 @@ void MsgPackBuilder::packCJsonValue(int tagType, Serializer &rdser) {
 			packValue(rdser.GetBool());
 			break;
 		case TAG_STRING:
-			packValue(string(rdser.GetVString()));
+			packValue(std::string(rdser.GetVString()));
 			break;
 		case TAG_NULL:
 			packNil();

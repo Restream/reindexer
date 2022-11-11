@@ -97,7 +97,7 @@ public:
 class Params : public h_vector<Param, 8> {
 public:
 	using h_vector::h_vector;
-	std::string_view Get(const std::string_view name, const std::string_view defVal = std::string_view()) {
+	std::string_view Get(std::string_view name, std::string_view defVal = std::string_view()) {
 		auto it = std::find_if(begin(), end(), [=](const Param &param) { return name == param.name; });
 		return it != end() ? it->val : defVal;
 	}
@@ -282,7 +282,7 @@ protected:
 	};
 
 	struct Route {
-		Route(string path, Handler h) : path_(path), h_(h) {}
+		Route(string path, Handler h) : path_(std::move(path)), h_(std::move(h)) {}
 
 		string path_;
 		Handler h_;

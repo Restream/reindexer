@@ -11,15 +11,16 @@
 #include "core/namespace/namespacestat.h"
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
-#include "core/selectfunc/ctx/basefunctionctx.h"
 #include "core/selectkeyresult.h"
 #include "core/type_consts_helpers.h"
+#include "ft_preselect.h"
 #include "indexiterator.h"
 
 namespace reindexer {
 
 class RdxContext;
 class StringsHolder;
+class SelectFunction;
 
 class Index {
 public:
@@ -55,7 +56,14 @@ public:
 	virtual void Delete(const VariantArray& keys, IdType id, StringsHolder&, bool& clearCache) = 0;
 
 	virtual SelectKeyResults SelectKey(const VariantArray& keys, CondType condition, SortType stype, SelectOpts opts,
-									   BaseFunctionCtx::Ptr ctx, const RdxContext&) = 0;
+									   const BaseFunctionCtx::Ptr&, const RdxContext&) = 0;
+	// NOLINTBEGIN(*-unnecessary-value-param)
+	virtual SelectKeyResults SelectKey(const VariantArray& /*keys*/, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&,
+									   FtPreselectT&&, const RdxContext&) {
+		assertrx(0);
+		abort();
+	}
+	// NOLINTEND(*-unnecessary-value-param)
 	virtual void Commit() = 0;
 	virtual void CommitFulltext() {}
 	virtual void MakeSortOrders(UpdateSortedContext&) {}
@@ -65,7 +73,7 @@ public:
 	virtual std::unique_ptr<Index> Clone() = 0;
 	virtual bool IsOrdered() const noexcept { return false; }
 	virtual bool IsFulltext() const noexcept { return false; }
-	virtual IndexMemStat GetMemStat() = 0;
+	virtual IndexMemStat GetMemStat(const RdxContext&) = 0;
 	virtual int64_t GetTTLValue() const { return 0; }
 	virtual IndexIterator::Ptr CreateIterator() const { return nullptr; }
 	virtual bool RequireWarmupOnNsCopy() const noexcept { return false; }
@@ -78,14 +86,23 @@ public:
 	KeyValueType KeyType() const { return keyType_; }
 	KeyValueType SelectKeyType() const { return selectKeyType_; }
 	const FieldsSet& Fields() const { return fields_; }
-	const string& Name() const { return name_; }
+	const std::string& Name() const { return name_; }
 	IndexType Type() const { return type_; }
-	const vector<IdType>& SortOrders() const { return sortOrders_; }
+	const std::vector<IdType>& SortOrders() const { return sortOrders_; }
 	const IndexOpts& Opts() const { return opts_; }
 	virtual void SetOpts(const IndexOpts& opts) { opts_ = opts; }
-	virtual void SetFields(const FieldsSet& fields) { fields_ = fields; }
+	virtual void SetFields(FieldsSet&& fields) { fields_ = std::move(fields); }
 	SortType SortId() const { return sortId_; }
 	virtual void SetSortedIdxCount(int sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
+	virtual FtMergeStatuses GetFtMergeStatuses(const RdxContext&) {
+		assertrx(0);
+		abort();
+	}
+	virtual reindexer::FtPreselectT FtPreselect(const QueryEntries&, int /*idxNo*/, const SelectFunction&, const RdxContext&) {
+		assertrx(0);
+		abort();
+	}
+	virtual bool EnablePreselectBeforeFt() const { return false; }
 
 	PerfStatCounterMT& GetSelectPerfCounter() { return selectPerfCounter_; }
 	PerfStatCounterMT& GetCommitPerfCounter() { return commitPerfCounter_; }
@@ -110,16 +127,16 @@ protected:
 	// Index type. Can be one of enum IndexType
 	IndexType type_;
 	// Name of index (usualy name of field).
-	string name_;
+	std::string name_;
 	// Vector or ids, sorted by this index. Available only for ordered indexes
-	vector<IdType> sortOrders_;
+	std::vector<IdType> sortOrders_;
 
 	SortType sortId_ = 0;
 	// Index options
 	IndexOpts opts_;
 	// Payload type of items
 	mutable PayloadType payloadType_;
-	// Fields in index. Valid only for composite indexes
+	// Fields in index.
 	FieldsSet fields_;
 	// Perfstat counter
 	PerfStatCounterMT commitPerfCounter_;

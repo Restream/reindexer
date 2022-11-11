@@ -11,8 +11,6 @@
 #include <chrono>
 
 namespace reindexer {
-using std::vector;
-using std::string;
 using std::chrono::milliseconds;
 
 class ClusterProxy;
@@ -58,12 +56,12 @@ public:
 	/// @param opts - Connect options. May contaion any of <br>
 	/// ConnectOpts::AllowNamespaceErrors() - true: Ignore errors during existing NS's load; false: Return error occured during NS's load
 	/// ConnectOpts::OpenNamespaces() - true: Need to open all the namespaces; false: Don't open namespaces
-	Error Connect(const string &dsn, ConnectOpts opts = ConnectOpts());
+	Error Connect(const std::string &dsn, ConnectOpts opts = ConnectOpts());
 
 	/// Enable storage. Must be called before InitSystemNamespaces
 	/// @param storagePath - file system path to database storage
 	/// @param skipPlaceholderCheck - If set, then reindexer will not check folder for placeholder
-	Error EnableStorage(const string &storagePath, bool skipPlaceholderCheck = false);
+	Error EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck = false);
 
 	/// Open or create namespace
 	/// @param nsName - Name of namespace
@@ -123,7 +121,7 @@ public:
 	/// Get list of all available namespaces
 	/// @param defs - std::vector of NamespaceDef of available namespaves
 	/// @param opts - Enumeration options
-	Error EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts);
+	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts);
 	/// Insert new Item to namespace. If item with same PK is already exists, when item.GetID will
 	/// return -1, on success item.GetID() will return internal Item ID
 	/// May be used with completion
@@ -218,27 +216,27 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
 	/// @param data - output string with meta data
-	Error GetMeta(std::string_view nsName, const string &key, string &data);
+	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data);
 	/// Get sharded meta data from storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
 	/// @param data - output vector with meta data from different shards
-	Error GetMeta(std::string_view nsName, const string &key, vector<ShardedMeta> &data);
+	Error GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data);
 	/// Put meta data to storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
 	/// @param data - string with meta data
-	Error PutMeta(std::string_view nsName, const string &key, std::string_view data);
+	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data);
 	/// Get list of all meta data keys
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys
-	Error EnumMeta(std::string_view nsName, vector<string> &keys);
+	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys);
 	/// Get possible suggestions for token (set by 'pos') in Sql query.
 	/// Cancelation context doesn't affect this call
 	/// @param sqlQuery - sql query.
 	/// @param pos - position in sql query for suggestions.
 	/// @param suggestions - all the suggestions for 'pos' position in query.
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, vector<string> &suggestions);
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions);
 	/// Get curret connection status
 	Error Status();
 
@@ -249,7 +247,7 @@ public:
 	/// Builds Protobuf schema in ser.
 	/// @param ser - schema output buffer
 	/// @param namespaces - list of namespaces to be embedded in .proto
-	Error GetProtobufSchema(WrSerializer &ser, vector<string> &namespaces);
+	Error GetProtobufSchema(WrSerializer &ser, std::vector<std::string> &namespaces);
 	/// Get namespace's replication state
 	/// @param nsName - Name of namespace
 	/// @param state - result state
@@ -306,7 +304,7 @@ public:
 	Reindexer WithShardId(unsigned int id, bool parallel) { return Reindexer(impl_, ctx_.WithShardId(id, parallel)); }
 	/// Add completion
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
-	Reindexer WithCompletion(Completion cmpl) const { return Reindexer(impl_, ctx_.WithCompletion(cmpl)); }
+	Reindexer WithCompletion(Completion cmpl) const { return Reindexer(impl_, ctx_.WithCompletion(std::move(cmpl))); }
 	/// Add activityTracer
 	/// @param activityTracer - name of activity tracer
 	/// @param user - user identifying information

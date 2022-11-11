@@ -9,16 +9,11 @@
 namespace reindexer {
 namespace client {
 
-class ItemCreator;
-
-// class CoroRPCClient;
-
 class Namespace {
 public:
 	typedef std::shared_ptr<Namespace> Ptr;
 
-	Namespace(const string& name);
-
+	Namespace(std::string name);
 	Item NewItem();
 
 	template <typename ClientT>
@@ -29,7 +24,7 @@ public:
 		return tagsMatcher_;
 	}
 
-	const string name;
+	const std::string name;
 	const PayloadType payloadType;
 
 private:

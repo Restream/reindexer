@@ -4,13 +4,11 @@
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
 #include "core/query/query.h"
-#include "estl/h_vector.h"
 
 namespace reindexer {
 
 class NsContext;
 class NamespaceImpl;
-class ExpressionEvaluator;
 
 class ItemModifier {
 public:
@@ -32,13 +30,13 @@ private:
 		int arrayIndex() const noexcept { return arrayIndex_; }
 		int index() const noexcept { return fieldIndex_; }
 		bool isIndex() const noexcept { return isIndex_; }
-		const string &name() const noexcept { return entry_.column; }
-		const string &jsonpath() const noexcept { return jsonPath_; }
+		const std::string &name() const noexcept { return entry_.Column(); }
+		const std::string &jsonpath() const noexcept { return jsonPath_; }
 
 	private:
 		const UpdateEntry &entry_;
 		IndexedTagsPath tagsPath_;
-		string jsonPath_;
+		std::string jsonPath_;
 		int fieldIndex_;
 		int arrayIndex_;
 		bool isIndex_;
@@ -69,7 +67,7 @@ private:
 
 	NamespaceImpl &ns_;
 	const std::vector<UpdateEntry> &updateEntries_;
-	vector<FieldData> fieldsToModify_;
+	std::vector<FieldData> fieldsToModify_;
 	CJsonCache cjsonCache_;
 };
 

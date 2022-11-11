@@ -28,7 +28,7 @@ Error RepairTool::RepairStorage(const std::string& dsn) noexcept {
 		} catch (std::exception& ex) {
 			return Error(errParams, "Skiping DB at '%s' - ", path, ex.what());
 		}
-		vector<reindexer::fs::DirEntry> foundNs;
+		std::vector<reindexer::fs::DirEntry> foundNs;
 		if (reindexer::fs::ReadDir(path, foundNs) < 0) {
 			return Error(errParams, "Can't read dir to repair: %s", path);
 		}

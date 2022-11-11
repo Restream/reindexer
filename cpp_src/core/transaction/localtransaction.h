@@ -8,7 +8,7 @@ namespace reindexer {
 
 class LocalTransaction {
 public:
-	LocalTransaction(const string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
+	LocalTransaction(const std::string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
 					 std::shared_ptr<const Schema> schema, lsn_t lsn)
 		: data_(std::make_unique<SharedTransactionData>(nsName, lsn, Transaction::ClockT::now(), pt, tm, pf, std::move(schema))),
 		  tx_(std::make_unique<TransactionSteps>()) {}

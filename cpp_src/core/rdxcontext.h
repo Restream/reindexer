@@ -84,37 +84,37 @@ class RdxContext {
 public:
 	using Completion = std::function<void(const Error&)>;
 
-	RdxContext() : holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr) {}
+	RdxContext() : activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr), holdStatus_(HoldT::kEmpty) {}
 	explicit RdxContext(lsn_t originLsn)
-		: holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr), originLsn_(originLsn) {}
+		: activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr), originLsn_(originLsn), holdStatus_(HoldT::kEmpty) {}
 	RdxContext(lsn_t originLsn, const IRdxCancelContext* cancelCtx, Completion cmpl, int emmiterServerId, bool parallel)
-		: emmiterServerId_(emmiterServerId),
-		  holdStatus_(kEmpty),
-		  activityPtr_(nullptr),
+		: activityPtr_(nullptr),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(cmpl),
 		  originLsn_(originLsn),
+		  emmiterServerId_(emmiterServerId),
+		  holdStatus_(HoldT::kEmpty),
 		  shardingParallelExecution_(parallel) {}
 	RdxContext(lsn_t originLsn, std::string_view activityTracer, std::string_view user, std::string_view query,
 			   ActivityContainer& container, int connectionId, const IRdxCancelContext* cancelCtx, Completion cmpl, int emmiterServerId,
 			   bool parallel)
-		: emmiterServerId_(emmiterServerId),
-		  holdStatus_(kHold),
-		  activityCtx_(activityTracer, user, query, container, connectionId),
+		: activityCtx_(activityTracer, user, query, container, connectionId),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(cmpl),
 		  originLsn_(originLsn),
+		  emmiterServerId_(emmiterServerId),
+		  holdStatus_(HoldT::kHold),
 		  shardingParallelExecution_(parallel) {}
 	explicit RdxContext(RdxActivityContext* ptr, lsn_t originLsn = lsn_t(), const IRdxCancelContext* cancelCtx = nullptr,
 						Completion cmpl = nullptr, int emmiterServerId = -1, bool parallel = false)
-		: emmiterServerId_(emmiterServerId),
-		  holdStatus_(ptr ? kPtr : kEmpty),
-		  activityPtr_(ptr),
+		: activityPtr_(ptr),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(cmpl),
 		  originLsn_(originLsn),
+		  emmiterServerId_(emmiterServerId),
+		  holdStatus_(ptr ? HoldT::kPtr : HoldT::kEmpty),
 		  shardingParallelExecution_(parallel) {
-		if (holdStatus_ == kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
+		if (holdStatus_ == HoldT::kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 	}
 
 	RdxContext(RdxContext&& other);
@@ -150,16 +150,16 @@ public:
 	int EmmiterServerId() const noexcept { return emmiterServerId_; }
 
 private:
-	int emmiterServerId_ = -1;
-	enum { kHold, kPtr, kEmpty } const holdStatus_;
 	union {
 		mutable RdxActivityContext activityCtx_;
 		RdxActivityContext* activityPtr_;
 	};
 	const IRdxCancelContext* cancelCtx_;
 	Completion cmpl_;
-	mutable bool noWaitSync_ = false;  // FIXME: Create SyncContext and move this parameter into it
 	const lsn_t originLsn_;
+	int emmiterServerId_ = -1;
+	enum class HoldT : uint8_t { kHold, kPtr, kEmpty } const holdStatus_;
+	mutable bool noWaitSync_ = false;  // FIXME: Create SyncContext and move this parameter into it
 	bool shardingParallelExecution_ = false;
 };
 
@@ -177,8 +177,8 @@ public:
 		  activityTracer_(activityTracer),
 		  user_(user),
 		  connectionId_(connectionId),
-		  lsn_(lsn),
 		  emmiterServerId_(emmiterServerId),
+		  lsn_(lsn),
 		  shardId_(shardId),
 		  shardingParallelExecution_(parallel) {}
 
@@ -250,8 +250,8 @@ private:
 	std::string activityTracer_;
 	std::string user_;
 	int connectionId_ = kNoConnectionId;
-	lsn_t lsn_;
 	int emmiterServerId_ = -1;
+	lsn_t lsn_;
 	int shardId_ = ShardingKeyType::NotSetShard;
 	bool shardingParallelExecution_ = false;
 };

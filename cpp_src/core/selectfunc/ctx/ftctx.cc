@@ -12,11 +12,11 @@ int16_t FtCtx::Proc(size_t pos) {
 }
 void FtCtx::Reserve(size_t size) { data_->proc_.reserve(size); }
 
-size_t FtCtx::Size() { return data_->proc_.size(); }
+size_t FtCtx::Size() const noexcept { return data_->proc_.size(); }
 
-bool FtCtx::NeedArea() { return data_->need_area_; }
+bool FtCtx::NeedArea() const noexcept { return data_->need_area_; }
 
-bool FtCtx::PrepareAreas(const fast_hash_map<string, int> &fields, const string &name) {
+bool FtCtx::PrepareAreas(const fast_hash_map<std::string, int> &fields, const std::string &name) {
 	if (!fields.empty()) data_->is_composite_ = true;
 
 	if (data_->is_composite_) {
@@ -30,7 +30,7 @@ bool FtCtx::PrepareAreas(const fast_hash_map<string, int> &fields, const string 
 		name, {SelectFuncStruct::SelectFuncStruct::kSelectFuncSnippet, SelectFuncStruct::SelectFuncStruct::kSelectFuncHighlight});
 	return data_->need_area_;
 }
-void FtCtx::SetData(Data::Ptr data) { data_ = data; }
+void FtCtx::SetData(Data::Ptr data) { data_ = std::move(data); }
 FtCtx::Data::Ptr FtCtx::GetData() { return data_; }
 
 AreaHolder::Ptr FtCtx::Area(IdType id) {
@@ -46,7 +46,7 @@ template <typename InputIterator>
 void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, AreaHolder::UniquePtr &&holder) {
 	AreaHolder::Ptr ptr;
 	if (data_->need_area_ && holder) {
-		ptr = move(holder);
+		ptr = std::move(holder);
 	}
 	for (; begin != end; ++begin) {
 		data_->proc_.push_back(proc);
@@ -56,6 +56,24 @@ void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, AreaHolder
 	}
 }
 
+template <typename InputIterator>
+void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, const std::vector<bool> &mask, AreaHolder::UniquePtr &&holder) {
+	AreaHolder::Ptr ptr;
+	if (data_->need_area_ && holder) {
+		ptr = std::move(holder);
+	}
+	for (; begin != end; ++begin) {
+		assertrx(static_cast<size_t>(*begin) < mask.size());
+		if (!mask[*begin]) continue;
+		data_->proc_.push_back(proc);
+		if (data_->need_area_) {
+			data_->holders_.emplace(*begin, ptr);
+		}
+	}
+}
+
 template void FtCtx::Add<span<IdType>::iterator>(span<IdType>::iterator begin, span<IdType>::iterator end, int16_t proc,
 												 AreaHolder::UniquePtr &&holder);
+template void FtCtx::Add<span<IdType>::iterator>(span<IdType>::iterator begin, span<IdType>::iterator end, int16_t proc,
+												 const std::vector<bool> &, AreaHolder::UniquePtr &&holder);
 }  // namespace reindexer

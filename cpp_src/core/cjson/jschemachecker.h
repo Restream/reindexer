@@ -38,7 +38,7 @@ private:
 			}
 		}
 		std::string name;
-		fast_hash_map<string, int, nocase_hash_str, nocase_equal_str> subElementsIndex;
+		fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str> subElementsIndex;
 		bool allowAdditionalProps = false;
 		std::vector<std::pair<std::string, SubElement>> subElementsTable;
 	};

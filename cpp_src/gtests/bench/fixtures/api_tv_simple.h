@@ -9,7 +9,7 @@
 class ApiTvSimple : protected BaseFixture {
 public:
 	virtual ~ApiTvSimple() {}
-	ApiTvSimple(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	ApiTvSimple(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 			.AddIndex("genre", "tree", "int64", IndexOpts())
 			.AddIndex("year", "tree", "int", IndexOpts())
@@ -23,17 +23,18 @@ public:
 	}
 
 	virtual void RegisterAllCases();
-	virtual Error Initialize();
+	virtual reindexer::Error Initialize();
 
 protected:
-	virtual Item MakeItem();
-	Item MakeStrItem();
+	virtual reindexer::Item MakeItem();
+	reindexer::Item MakeStrItem();
 
 protected:
 	void WarmUpIndexes(State& state);
 
 	void StringsSelect(State& state);
 	void GetByID(State& state);
+	void GetByIDInBrackets(State& state);
 	void GetEqInt(State& state);
 	void GetEqArrayInt(State& state);
 	void GetEqString(State& state);
@@ -81,9 +82,9 @@ private:
 
 	constexpr static unsigned kTotalItemsMainJoinNs = 1000000;
 
-	vector<string> countries_;
-	vector<string> countryLikePatterns_;
-	vector<string> locations_;
+	vector<std::string> countries_;
+	vector<std::string> countryLikePatterns_;
+	vector<std::string> locations_;
 	vector<int> start_times_;
 	vector<vector<int>> packages_;
 	vector<vector<int>> priceIDs_;

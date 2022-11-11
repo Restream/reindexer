@@ -12,7 +12,7 @@
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
-const string kProfileNamePrefix = "reindexer_server";
+const std::string kProfileNamePrefix = "reindexer_server";
 
 namespace reindexer_server {
 using namespace reindexer;
@@ -41,7 +41,7 @@ int Pprof::Profile(http::Context &ctx) {
 #if REINDEX_WITH_GPERFTOOLS
 	long long seconds = 30;
 	std::string_view secondsParam;
-	string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".profile");
+	std::string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".profile");
 
 	for (auto p : ctx.request->params) {
 		if (p.name == "seconds") secondsParam = p.val;
@@ -57,7 +57,7 @@ int Pprof::Profile(http::Context &ctx) {
 	if (alloc_ext::TCMallocIsAvailable()) {
 		pprof::ProfilerStop();
 	}
-	string content;
+	std::string content;
 	if (fs::ReadFile(filePath, content) < 0) {
 		return ctx.String(http::StatusNotFound, "Profile file not found");
 	}
@@ -76,15 +76,15 @@ int Pprof::ProfileHeap(http::Context &ctx) {
 			free(profile);
 			return res;
 		}
-		string profile;
+		std::string profile;
 		alloc_ext::instance()->GetHeapSample(&profile);
 		return ctx.String(http::StatusOK, profile);
 	} else {
 		return ctx.String(http::StatusInternalServerError, "Reindexer was compiled with gperftools, but was not able to link it properly");
 	}
 #elif REINDEX_WITH_JEMALLOC
-	string content;
-	string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".heapprofile");
+	std::string content;
+	std::string filePath = fs::JoinPath(fs::GetTempDir(), kProfileNamePrefix + ".heapprofile");
 	const char *pfp = &filePath[0];
 
 	alloc_ext::mallctl("prof.dump", NULL, NULL, &pfp, sizeof(pfp));
@@ -101,7 +101,7 @@ int Pprof::ProfileHeap(http::Context &ctx) {
 int Pprof::Growth(http::Context &ctx) {
 #if REINDEX_WITH_GPERFTOOLS
 	if (alloc_ext::TCMallocIsAvailable()) {
-		string output;
+		std::string output;
 		alloc_ext::instance()->GetHeapGrowthStacks(&output);
 		return ctx.String(http::StatusOK, output);
 	} else {
@@ -118,7 +118,7 @@ int Pprof::Symbol(http::Context &ctx) {
 	using namespace std::string_view_literals;
 	WrSerializer ser;
 
-	string req;
+	std::string req;
 	if (ctx.request->method == "POST") {
 		req = ctx.body->Read(ctx.body->Pending());
 		if (!req.length()) {
@@ -132,9 +132,9 @@ int Pprof::Symbol(http::Context &ctx) {
 	}
 
 	char *endp;
-	for (size_t pos = 0; pos != string::npos; pos = req.find_first_of(" +", pos)) {
+	for (size_t pos = 0; pos != std::string::npos; pos = req.find_first_of(" +", pos)) {
 		pos = req.find_first_not_of(" +", pos);
-		if (pos == string::npos) break;
+		if (pos == std::string::npos) break;
 		uintptr_t addr = strtoull(&req[pos], &endp, 16);
 		ser << std::string_view(&req[pos], endp - &req[pos]) << '\t';
 		resolveSymbol(addr, ser);

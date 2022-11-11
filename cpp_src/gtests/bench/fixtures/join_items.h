@@ -13,17 +13,17 @@ public:
 			.AddIndex("device", "hash", "string", IndexOpts());
 	}
 
-	virtual Error Initialize();
+	virtual reindexer::Error Initialize();
 	virtual void RegisterAllCases();
 
 protected:
-	virtual Item MakeItem();
+	virtual reindexer::Item MakeItem();
 
-	string randomString(const string& prefix);
+	string randomString(const std::string& prefix);
 
 private:
-	vector<string> adjectives_;
-	vector<string> devices_;
-	vector<string> locations_;
-	vector<string> names_;
+	vector<std::string> adjectives_;
+	vector<std::string> devices_;
+	vector<std::string> locations_;
+	vector<std::string> names_;
 };

@@ -42,7 +42,7 @@ public:
 	bool HasRawData() const noexcept { return i_.rawCount_; }
 
 private:
-	friend class CoroRPCClient;
+	friend class RPCClient;
 	Snapshot(net::cproto::CoroClientConnection *conn, int id, int64_t count, int64_t rawCount, lsn_t nsVersion, std::string_view data,
 			 std::chrono::milliseconds timeout);
 	void fetchNext(size_t idx);

@@ -172,7 +172,7 @@ struct CompileAssert {};
 //
 //  struct MyStringComparer
 //      : public util::btree::btree_key_compare_to_tag {
-//    int operator()(const string &a, const string &b) const {
+//    int operator()(const std::string &a, const std::string &b) const {
 //      return a.compare(b);
 //    }
 //  };

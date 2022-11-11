@@ -5,7 +5,7 @@
 template <size_t N>
 void Aggregation::Insert(State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (size_t i = 0; i < N; ++i) {
 			auto item = MakeItem();
 			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
@@ -20,21 +20,23 @@ void Aggregation::Insert(State& state) {
 }
 
 void Aggregation::RegisterAllCases() {
+	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	Register("Insert", &Aggregation::Insert<100000>, this)->Iterations(1);
 	Register("Facet", &Aggregation::Facet, this);
 	Register("MultiFacet", &Aggregation::MultiFacet, this);
 	Register("ArrayFacet", &Aggregation::ArrayFacet, this);
+	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
-Error Aggregation::Initialize() {
+reindexer::Error Aggregation::Initialize() {
 	assert(db_);
 	auto err = db_->AddNamespace(nsdef_);
 	if (!err.ok()) return err;
-	return Error{};
+	return {};
 }
 
 reindexer::Item Aggregation::MakeItem() {
-	Item item = db_->NewItem(nsdef_.name);
+	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
 	item.Unsafe();
 
@@ -56,7 +58,7 @@ reindexer::Item Aggregation::MakeItem() {
 
 void Aggregation::Facet(benchmark::State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
 		q.Aggregate(AggFacet, {"int_data"});
 		reindexer::QueryResults qres;
@@ -67,7 +69,7 @@ void Aggregation::Facet(benchmark::State& state) {
 
 void Aggregation::MultiFacet(benchmark::State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
 		q.Aggregate(AggFacet, {"int_data", "str_data"});
 		reindexer::QueryResults qres;
@@ -78,7 +80,7 @@ void Aggregation::MultiFacet(benchmark::State& state) {
 
 void Aggregation::ArrayFacet(benchmark::State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
-	for (auto _ : state) {
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
 		q.Aggregate(AggFacet, {"int_array_data"});
 		reindexer::QueryResults qres;

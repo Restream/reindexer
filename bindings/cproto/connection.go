@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -20,6 +21,7 @@ import (
 type bufPtr struct {
 	rseq uint32
 	buf  *NetBuffer
+	cmd  int
 }
 
 type sig chan bufPtr
@@ -29,11 +31,12 @@ const queueSize = 512
 const maxSeqNum = queueSize * 1000000
 
 const cprotoMagic = 0xEEDD1132
-const cprotoVersion = 0x103
+const cprotoVersion = 0x104
 const cprotoMinCompatVersion = 0x101
 const cprotoMinSnappyVersion = 0x103
 
 const cprotoVersionCompressionFlag = 1 << 10
+const cprotoDedicatedThreadFlag = 1 << 11
 const cprotoVersionMask = 0x3FF
 
 const cprotoHdrLen = 16
@@ -98,6 +101,7 @@ type connection interface {
 	rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error)
 	rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) error
 	rpcCallAsync(ctx context.Context, cmd int, netTimeout uint32, cmpl bindings.RawCompletion, args ...interface{})
+	rpcCallNoReply(ctx context.Context, cmd int, netTimeout uint32, seq uint32, args ...interface{})
 	onError(err error)
 	hasError() (has bool)
 	curError() error
@@ -127,21 +131,23 @@ type connectionImpl struct {
 	now    uint32
 	termCh chan struct{}
 
-	requests          [queueSize]requestInfo
-	enableSnappy      int32
-	requestTimeout    time.Duration
-	enableCompression bool
-	logger            Logger
+	requests               [queueSize]requestInfo
+	enableSnappy           int32
+	requestTimeout         time.Duration
+	enableCompression      bool
+	requestDedicatedThread bool
+	logger                 Logger
 }
 
 type newConnParams struct {
-	dsn               *url.URL
-	loginTimeout      time.Duration
-	requestTimeout    time.Duration
-	createDBIfMissing bool
-	appName           string
+	dsn                    *url.URL
+	loginTimeout           time.Duration
+	requestTimeout         time.Duration
+	createDBIfMissing      bool
+	appName                string
+	enableCompression      bool
+	requestDedicatedThread bool
 	caps              bindings.BindingCapabilities
-	enableCompression bool
 }
 
 func newConnection(
@@ -153,14 +159,15 @@ func newConnection(
 	error,
 ) {
 	c := &connectionImpl{
-		wrBuf:             bytes.NewBuffer(make([]byte, 0, bufsCap)),
-		wrBuf2:            bytes.NewBuffer(make([]byte, 0, bufsCap)),
-		wrKick:            make(chan struct{}, 1),
-		seqs:              make(chan uint32, queueSize),
-		errCh:             make(chan struct{}),
-		termCh:            make(chan struct{}),
-		requestTimeout:    params.requestTimeout,
-		enableCompression: params.enableCompression,
+		wrBuf:                  bytes.NewBuffer(make([]byte, 0, bufsCap)),
+		wrBuf2:                 bytes.NewBuffer(make([]byte, 0, bufsCap)),
+		wrKick:                 make(chan struct{}, 1),
+		seqs:                   make(chan uint32, queueSize),
+		errCh:                  make(chan struct{}),
+		termCh:                 make(chan struct{}),
+		requestTimeout:         params.requestTimeout,
+		enableCompression:      params.enableCompression,
+		requestDedicatedThread: params.requestDedicatedThread,
 	}
 	for i := 0; i < queueSize; i++ {
 		c.seqs <- uint32(i)
@@ -309,7 +316,7 @@ func (c *connectionImpl) readReply(hdr []byte) (err error) {
 	}
 
 	version := ser.GetUInt16()
-	_ = int(ser.GetUInt16())
+	cmd := int(ser.GetUInt16())
 	size := int(ser.GetUInt32())
 	rseq := uint32(ser.GetUInt32())
 
@@ -330,7 +337,19 @@ func (c *connectionImpl) readReply(hdr []byte) (err error) {
 	}
 	reqID := rseq % queueSize
 	if atomic.LoadUint32(&c.requests[reqID].seqNum) != rseq {
-		io.CopyN(ioutil.Discard, c.rdBuf, int64(size))
+		if needCancelAnswer(cmd) {
+			answ := newNetBuffer(size, c)
+			defer answ.FreeNoReply(rseq)
+			if _, err = io.ReadFull(c.rdBuf, answ.buf); err != nil {
+				return
+			}
+			if compressed {
+				answ.decompress()
+			}
+			err = setReqId(answ)
+		} else {
+			io.CopyN(ioutil.Discard, c.rdBuf, int64(size))
+		}
 		return
 	}
 	repCh := c.requests[reqID].repl
@@ -360,10 +379,39 @@ func (c *connectionImpl) readReply(hdr []byte) (err error) {
 			answ.Free()
 		}
 	} else if repCh != nil {
-		repCh <- bufPtr{rseq, answ}
+		repCh <- bufPtr{rseq, answ, cmd}
 	} else {
-		defer answ.Free()
+		defer answ.FreeNoReply(rseq)
+		if needCancelAnswer(cmd) {
+			err = setReqId(answ)
+			if err != nil {
+				return
+			}
+		}
 		return fmt.Errorf("unexpected answer: %v", answ)
+	}
+	return
+}
+
+func needCancelAnswer(cmd int) bool {
+	switch cmd {
+	case cmdCommitTx, cmdModifyItem, cmdDeleteQuery, cmdUpdateQuery, cmdSelect, cmdSelectSQL, cmdFetchResults:
+		return true
+	default:
+		return false
+	}
+}
+
+func setReqId(answ *NetBuffer) (err error) {
+	err = answ.parseArgs()
+	if err != nil {
+		return
+	}
+	if len(answ.args) > 1 {
+		answ.reqID = answ.args[1].(int)
+		if len(answ.args) > 2 {
+			answ.uid = answ.args[2].(int64)
+		}
 	}
 	return
 }
@@ -414,7 +462,7 @@ func nextSeqNum(seqNum uint32) uint32 {
 }
 
 func (c *connectionImpl) packRPC(cmd int, seq uint32, execTimeout int, args ...interface{}) {
-	in := newRPCEncoder(cmd, seq, atomic.LoadInt32(&c.enableSnappy) != 0)
+	in := newRPCEncoder(cmd, seq, atomic.LoadInt32(&c.enableSnappy) != 0, c.requestDedicatedThread)
 	for _, a := range args {
 		switch t := a.(type) {
 		case bool:
@@ -531,7 +579,10 @@ for_loop:
 				buf = bufPtr.buf
 				break for_loop
 			} else {
-				bufPtr.buf.Free()
+				if needCancelAnswer(bufPtr.cmd) {
+					setReqId(bufPtr.buf)
+				}
+				bufPtr.buf.FreeNoReply(bufPtr.rseq)
 			}
 		case <-c.errCh:
 			c.lock.RLock()
@@ -564,6 +615,10 @@ for_loop:
 	return buf, nil
 }
 
+func (c *connectionImpl) rpcCallNoReply(ctx context.Context, cmd int, netTimeout uint32, seq uint32, args ...interface{}) {
+	c.packRPC(cmd, seq, int((time.Second * time.Duration(netTimeout)).Milliseconds()), args...)
+}
+
 func (c *connectionImpl) rpcCallNoResults(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) error {
 	buf, err := c.rpcCall(ctx, cmd, netTimeout, args...)
 	buf.Free()
@@ -581,6 +636,11 @@ func (c *connectionImpl) onError(err error) {
 		case <-c.errCh:
 		default:
 			close(c.errCh)
+		}
+		select {
+		case <-c.termCh:
+		default:
+			close(c.termCh)
 		}
 
 		for i := range c.requests {
@@ -624,11 +684,7 @@ func (c *connectionImpl) lastReadTime() time.Time {
 }
 
 func (c *connectionImpl) finalize() error {
-	close(c.termCh)
-	if c.conn != nil {
-		c.conn.Close()
-	}
-
+	c.onError(errors.New("Connection closed"))
 	return nil
 }
 

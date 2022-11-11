@@ -29,8 +29,8 @@ protected:
 	}
 
 	void StartServer() {
-		const std::string dbPath = string(kBaseTestsetDbPath) + "/" + std::to_string(kDefaultRPCPort);
-		RPCClientTestApi::AddRealServer(dbPath, kDefaultRPCServerAddr, kDefaultHttpPort, kDefaultClusterPort);
+		const std::string dbPath = std::string(kBaseTestsetDbPath) + "/" + std::to_string(kDefaultRPCPort);
+		RPCClientTestApi::AddRealServer(dbPath, kDefaultRPCServerAddr, kDefaultHttpPort);
 		RPCClientTestApi::StartServer(kDefaultRPCServerAddr);
 	}
 
@@ -149,7 +149,7 @@ protected:
 	void Connect(net::ev::dynamic_loop& loop, reindexer::client::CoroReindexer& rxClient) {
 		reindexer::client::ConnectOpts opts;
 		opts.CreateDBIfMissing();
-		auto err = rxClient.Connect(string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
+		auto err = rxClient.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/db1", loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	void Connect(reindexer::Reindexer& localRx) {
@@ -232,9 +232,8 @@ protected:
 	const std::string kBaseTestsetDbPath = fs::JoinPath(fs::GetTempDir(), "rx_test/SnapshotApi");
 	static const uint16_t kDefaultRPCPort = 25685;
 	const uint16_t kDefaultHttpPort = 33433;
-	const uint16_t kDefaultClusterPort = 33933;
 	static const std::string kDefaultRPCServerAddr;
-	const std::string kLocalDbPath = string(kBaseTestsetDbPath) + "/local";
+	const std::string kLocalDbPath = std::string(kBaseTestsetDbPath) + "/local";
 	const std::string kNsName = "snapshot_test_ns";
 
 private:

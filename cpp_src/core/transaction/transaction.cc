@@ -6,17 +6,17 @@ namespace reindexer {
 
 Transaction::Transaction(LocalTransaction &&ltx) : impl_(std::make_unique<TransactionImpl>(std::move(ltx))) {}
 
-Transaction::Transaction(LocalTransaction &&ltx, client::SyncCoroTransaction &&tx)
+Transaction::Transaction(LocalTransaction &&ltx, client::Transaction &&tx)
 	: impl_(std::make_unique<TransactionImpl>(std::move(ltx), std::move(tx))) {}
 
-Transaction::Transaction(LocalTransaction &&ltx, client::SyncCoroReindexer &&clusterLeader)
+Transaction::Transaction(LocalTransaction &&ltx, client::Reindexer &&clusterLeader)
 	: impl_(std::make_unique<TransactionImpl>(std::move(ltx), std::move(clusterLeader))) {}
 
 Transaction::~Transaction() = default;
 Transaction::Transaction(Transaction &&) noexcept = default;
 Transaction &Transaction::operator=(Transaction &&) noexcept = default;
 
-const string &Transaction::GetNsName() const noexcept {
+const std::string &Transaction::GetNsName() const noexcept {
 	static const std::string empty;
 	if (impl_) {
 		return impl_->GetNsName();

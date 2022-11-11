@@ -130,8 +130,8 @@ TEST_F(CascadeReplicationApi, InterceptingSeparateSlaveNsLists) {
 	WaitSync(leader, cluster.Get(3), kNs1);
 	WaitSync(leader, cluster.Get(3), kNs2);
 	WaitSync(leader, cluster.Get(3), kNs3);
-	ValidateNsList(cluster.Get(1), clusterConfig[1].nsList.value());
-	ValidateNsList(cluster.Get(2), clusterConfig[2].nsList.value());
+	ValidateNsList(cluster.Get(1), clusterConfig[1].nsList.value());  // NOLINT(bugprone-unchecked-optional-access)
+	ValidateNsList(cluster.Get(2), clusterConfig[2].nsList.value());  // NOLINT(bugprone-unchecked-optional-access)
 	ValidateNsList(cluster.Get(3), {kNs1, kNs2, kNs3});
 
 	auto stats = leader->GetReplicationStats(cluster::kAsyncReplStatsType);
@@ -173,8 +173,8 @@ TEST_F(CascadeReplicationApi, NonInterceptingSeparateSlaveNsLists) {
 	WaitSync(leader, cluster.Get(1), kNs1);
 	WaitSync(leader, cluster.Get(2), kNs2);
 	WaitSync(leader, cluster.Get(3), kNs3);
-	ValidateNsList(cluster.Get(1), clusterConfig[1].nsList.value());
-	ValidateNsList(cluster.Get(2), clusterConfig[2].nsList.value());
+	ValidateNsList(cluster.Get(1), clusterConfig[1].nsList.value());  // NOLINT(bugprone-unchecked-optional-access)
+	ValidateNsList(cluster.Get(2), clusterConfig[2].nsList.value());  // NOLINT(bugprone-unchecked-optional-access)
 	ValidateNsList(cluster.Get(3), {kNs3});
 }
 
@@ -198,7 +198,7 @@ TEST_F(CascadeReplicationApi, MasterSlaveSlave2) {
 
 		std::vector<std::vector<int>> results;
 		for (size_t i = 0; i < clusterConfig.size(); i++) {
-			results.push_back(vector<int>());
+			results.push_back(std::vector<int>());
 			ns1.GetData(cluster.Get(i), results.back());
 		}
 
@@ -284,7 +284,7 @@ TEST_F(CascadeReplicationApi, MasterSlaveSlaveReload) {
 	Query qr = Query(ns1.nsName_).Sort("id", true);
 
 	for (size_t i = 0; i < cluster.Size(); ++i) {
-		results.push_back(vector<int>());
+		results.push_back(std::vector<int>());
 		ns1.GetData(cluster.Get(i), results.back());
 	}
 
@@ -339,7 +339,7 @@ TEST_F(CascadeReplicationApi, TransactionTest) {
 
 	std::vector<std::vector<int>> results;
 	for (size_t i = 0; i < cluster.Size(); i++) {
-		results.push_back(vector<int>());
+		results.push_back(std::vector<int>());
 		ns1.GetData(cluster.Get(i), results.back());
 	}
 
@@ -718,7 +718,7 @@ TEST_F(CascadeReplicationApi, Node3ApplyWal) {
 	WaitSync(masterSc.Get(), slave2Sc.Get(), kNsName);
 }
 
-static int64_t AwaitUpdatesReplication(ServerControl::Interface::Ptr node) {
+static int64_t AwaitUpdatesReplication(const ServerControl::Interface::Ptr& node) {
 	auto awaitTime = std::chrono::milliseconds(10000);
 	constexpr auto step = std::chrono::milliseconds(100);
 	cluster::ReplicationStats stats;
@@ -809,8 +809,8 @@ TEST_F(CascadeReplicationApi, ConcurrentForceSync) {
 	const std::vector<std::string> kNsList = {"ns1", "ns2", "ns3", "ns4"};
 	const size_t kNsSyncCount = 3;
 
-	vector<ServerControl> nodes;
-	auto createFollower = [&kBaseDbPath, &kDbName, &nodes, &kNsList](ServerPtr leader) {
+	std::vector<ServerControl> nodes;
+	auto createFollower = [&kBaseDbPath, &kDbName, &nodes, &kNsList](const ServerPtr& leader) {
 		size_t id = nodes.size();
 		nodes.push_back(ServerControl());
 		nodes.back().InitServer(
@@ -869,7 +869,7 @@ TEST_F(CascadeReplicationApi, ConcurrentForceSync) {
 	for (size_t i = 0; i < kNsSyncCount; ++i) {
 		std::vector<std::vector<int>> results;
 		for (size_t j = 0; j < nodes.size(); j++) {
-			results.push_back(vector<int>());
+			results.push_back(std::vector<int>());
 			WaitSync(nodes[0].Get(), nodes[j].Get(), kNsList[i]);
 			testNsList[i].GetData(nodes[j].Get(), results.back());
 		}
@@ -912,7 +912,7 @@ TEST_F(CascadeReplicationApi, WriteIntoSlaveNsAfterReconfiguration) {
 	WaitSync(cluster.Get(0), cluster.Get(1), kNs1);
 	WaitSync(cluster.Get(0), cluster.Get(1), kNs2);
 
-	auto createItem = [](ServerPtr node, const std::string& ns, int itemId) -> reindexer::client::Item {
+	auto createItem = [](const ServerPtr& node, const std::string& ns, int itemId) -> reindexer::client::Item {
 		reindexer::client::Item item = node->api.NewItem(ns);
 		auto err = item.FromJSON("{\"id\":" + std::to_string(itemId) + "}");
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -956,7 +956,7 @@ TEST_F(CascadeReplicationApi, WriteIntoSlaveNsAfterReconfiguration) {
 	err = cluster.Get(1)->api.reindexer->Upsert(kNs2, item);
 	ASSERT_EQ(err.code(), errWrongReplicationData) << err.what();
 
-	auto validateItemsCount = [](ServerPtr node, const std::string& nsName, size_t expectedCnt) {
+	auto validateItemsCount = [](const ServerPtr& node, const std::string& nsName, size_t expectedCnt) {
 		BaseApi::QueryResultsType qr;
 		auto err = node->api.reindexer->Select(Query(nsName), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -994,7 +994,7 @@ TEST_F(CascadeReplicationApi, WriteIntoSlaveNsAfterReconfiguration) {
 	validateItemsCount(cluster.Get(1), kNs2, 3 * n);
 }
 
-static void AwaitFollowersState(ServerControl::Interface::Ptr node, cluster::NodeStats::Status expectedStatus,
+static void AwaitFollowersState(const ServerControl::Interface::Ptr& node, cluster::NodeStats::Status expectedStatus,
 								cluster::NodeStats::SyncState expectedSyncState) {
 	constexpr std::chrono::milliseconds step{100};
 	std::chrono::milliseconds awaitTime{10000};

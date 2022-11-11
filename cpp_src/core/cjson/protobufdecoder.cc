@@ -44,7 +44,7 @@ void ArraysStorage::onObjectBuilt(CJsonBuilder& parent) {
 }
 
 ProtobufDecoder::ProtobufDecoder(TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema)
-	: tm_(tagsMatcher), schema_(schema), arraysStorage_(tm_) {}
+	: tm_(tagsMatcher), schema_(std::move(schema)), arraysStorage_(tm_) {}
 
 void ProtobufDecoder::setValue(Payload* pl, CJsonBuilder& builder, const ProtobufValue& item) {
 	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());

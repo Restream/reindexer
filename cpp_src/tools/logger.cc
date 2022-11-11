@@ -25,10 +25,10 @@ void logPrint(int level, char *buf) {
 void logInstallWriter(LogWriter writer, bool multithreaded) {
 	if (g_MtLogger || multithreaded) {
 		smart_lock<shared_timed_mutex> lk(g_LoggerLock, true);
-		g_logWriter = writer;
+		g_logWriter = std::move(writer);
 		g_MtLogger = multithreaded;
 	} else {
-		g_logWriter = writer;
+		g_logWriter = std::move(writer);
 		g_MtLogger = multithreaded;
 	}
 }

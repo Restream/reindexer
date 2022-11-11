@@ -16,7 +16,7 @@ namespace cluster {
 
 class RoleSwitcher {
 public:
-	using NsNamesHashSetT = fast_hash_set<string, nocase_hash_str, nocase_equal_str>;
+	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str>;
 	struct Config {
 		bool enableCompression = false;
 		int clusterId = 0;
@@ -29,7 +29,7 @@ public:
 		int maxConcurrentSnapshotsPerNode = -1;
 	};
 
-	RoleSwitcher(SharedSyncState<> &, SynchronizationList &, ReindexerImpl &, ReplicationStatsCollector);
+	RoleSwitcher(SharedSyncState<> &, SynchronizationList &, ReindexerImpl &, const ReplicationStatsCollector &);
 
 	void Run(std::vector<std::string> &&dsns, RoleSwitcher::Config &&cfg);
 	void OnRoleChanged() {

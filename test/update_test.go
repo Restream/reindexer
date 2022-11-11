@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -87,7 +88,7 @@ func randInnerObject() []testInnerObject {
 	fourth := make([]string, 0, arraySize)
 	for i := 0; i < arraySize; i++ {
 		third = append(third, i)
-		fourth = append(fourth, "ALMOST EMPTY")
+		fourth = append(fourth, "ALMOST EMPTY " + strconv.Itoa(i))
 	}
 	innerObjectsCnt := rand.Int()%20 + 1
 	innerObjects := make([]testInnerObject, 0, innerObjectsCnt)
@@ -103,17 +104,29 @@ func randInnerObject() []testInnerObject {
 }
 
 func randTestItemObject() testItemObject {
+	arraySize := 10
+	main := testInnerObject{First: rand.Int() % 1000, Second: randString()}
+	for i := 0; i < arraySize; i++ {
+		main.Third = append(main.Third, i)
+		main.Fourth = append(main.Fourth, "ALMOST EMPTY " + strconv.Itoa(i))
+	}
 	return testItemObject{
 		Name:   randString(),
 		Age:    rand.Int()%60 + 10,
 		Year:   rand.Int() % 2019,
 		Price:  rand.Int63() % 100000,
-		Main:   testInnerObject{First: rand.Int() % 1000, Second: randString()},
+		Main:   main,
 		Nested: randInnerObject(),
 	}
 }
 
 func newTestItemComplexObject(id int) *TestItemComplexObject {
+	arraySize := 10
+	main := testInnerObject{First: rand.Int() % 1000, Second: randString()}
+	for i := 0; i < arraySize; i++ {
+		main.Third = append(main.Third, i)
+		main.Fourth = append(main.Fourth, "ALMOST EMPTY " + strconv.Itoa(i))
+	}
 	nestedItemObjectCnt := rand.Int()%10 + 1
 	nestedItemObject := make([]testItemObject, 0, nestedItemObjectCnt)
 	for i := 0; i < nestedItemObjectCnt; i++ {
@@ -148,7 +161,7 @@ func newTestItemComplexObject(id int) *TestItemComplexObject {
 			Age:    rand.Int() % 90,
 			Year:   rand.Int() % 2019,
 			Price:  rand.Int63() % 100000,
-			Main:   testInnerObject{First: rand.Int() % 1000, Second: randString()},
+			Main:   main,
 			Nested: randInnerObject(),
 		},
 	}
@@ -310,14 +323,34 @@ func CheckFieldsDrop(t *testing.T) {
 
 	checkExtraFieldForEquality(t, results3, "")
 
-	results4 := DropField(t, "objects[0].nested[0].fourth[0]")
+	/*results4 := DropField(t, "main_obj.main.third[0]") // TODO #1218
 	for i := 0; i < len(results4); i++ {
-		require.False(t, len(results[i].(*TestItemComplexObject).Objects[0].Nested[0].Fourth) == 9)
+		require.Equal(t, len(results4[i].(*TestItemComplexObject).MainObj.Main.Third), 9)
 	}
 
-	results5 := DropField(t, "objects[0].nested[0].fourth[*]")
+	results5 := DropField(t, "main_obj.main.third[*]")
 	for i := 0; i < len(results5); i++ {
-		require.False(t, len(results[i].(*TestItemComplexObject).Objects[0].Nested[0].Fourth) == 0)
+		require.Equal(t, len(results4[i].(*TestItemComplexObject).MainObj.Main.Third), 0)
+	}*/
+
+	results6 := DropField(t, "main_obj.main.fourth[0]")
+	for i := 0; i < len(results6); i++ {
+		require.Equal(t, len(results6[i].(*TestItemComplexObject).MainObj.Main.Fourth), 9, errorMessage, "main_obj.main.fourth[0]")
+	}
+
+	results7 := DropField(t, "main_obj.main.fourth[*]")
+	for i := 0; i < len(results7); i++ {
+		require.Equal(t, len(results7[i].(*TestItemComplexObject).MainObj.Main.Fourth), 0, errorMessage, "main_obj.main.fourth[*]")
+	}
+
+	results8 := DropField(t, "objects[0].nested[0].fourth[0]")
+	for i := 0; i < len(results8); i++ {
+		require.Equal(t, len(results8[i].(*TestItemComplexObject).Objects[0].Nested[0].Fourth), 9, errorMessage, "objects[0].nested[0].fourth[0]")
+	}
+
+	results9 := DropField(t, "objects[0].nested[0].fourth[*]")
+	for i := 0; i < len(results9); i++ {
+		require.Equal(t, len(results9[i].(*TestItemComplexObject).Objects[0].Nested[0].Fourth), 0, errorMessage, "objects[0].nested[0].fourth[*]")
 	}
 }
 
@@ -658,7 +691,7 @@ func CheckNonIndexedArrayItemUpdate1(t *testing.T) {
 						if l == 1 {
 							equal = (value == "best item of array")
 						} else {
-							equal = (value == "ALMOST EMPTY")
+							equal = (value == "ALMOST EMPTY " + strconv.Itoa(l))
 						}
 						if !equal {
 							fmt.Printf("%+v; i = %d\n", value, l)

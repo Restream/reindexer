@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdlib>
+#include <sstream>
 #include <string>
 
 #include "core/keyvalue/key_string.h"
@@ -53,12 +54,12 @@ public:
 		return fieldTags;
 	}
 
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, IndexExpressionEvaluator ev) const {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator &ev) const {
 		bool updated = false;
 		return const_cast<TagsMatcherImpl *>(this)->path2indexedtag(jsonPath, ev, false, updated);
 	}
 
-	IndexedTagsPath path2indexedtag(std::string_view jsonPath, IndexExpressionEvaluator ev, bool canAdd, bool &updated) {
+	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator &ev, bool canAdd, bool &updated) {
 		using namespace std::string_view_literals;
 		IndexedTagsPath fieldTags;
 		for (size_t pos = 0, lastPos = 0; pos != jsonPath.length(); lastPos = pos + 1) {
@@ -83,7 +84,7 @@ public:
 						node.MarkAllItems(true);
 					} else {
 						int index = stoi(content);
-						if (index == 0 && content != "0" && ev) {
+						if (index == 0 && content != "0"sv && ev) {
 							VariantArray values = ev(content);
 							if (values.size() != 1) {
 								throw Error(errParams, "Index expression has wrong syntax: '%s'", content);
@@ -122,7 +123,7 @@ public:
 		int tag = name2tag(n);
 		if (tag || !canAdd) return tag;
 
-		string name(n);
+		std::string name(n);
 		auto res = names2tags_.emplace(name, tags2names_.size());
 		if (res.second) {
 			tags2names_.emplace_back(std::move(name));
@@ -132,9 +133,9 @@ public:
 		return res.first->second + 1;
 	}
 
-	const string &tag2name(int tag) const {
+	const std::string &tag2name(int tag) const {
 		tag &= (1 << ctag::nameBits) - 1;
-		static string emptystr;
+		static std::string emptystr;
 		if (tag == 0) return emptystr;
 
 		if (tag - 1 >= int(tags2names_.size())) {
@@ -151,8 +152,8 @@ public:
 	void buildTagsCache(bool &updated) {
 		if (!payloadType_) return;
 		pathCache_.clear();
-		vector<string> pathParts;
-		vector<int16_t> pathIdx;
+		std::vector<std::string> pathParts;
+		std::vector<int16_t> pathIdx;
 		for (int i = 1; i < payloadType_->NumFields(); i++) {
 			for (auto &jsonPath : payloadType_->Field(i).JsonPaths()) {
 				if (!jsonPath.length()) continue;
@@ -166,7 +167,7 @@ public:
 	}
 	void updatePayloadType(PayloadType payloadType, bool &updated, bool incVersion) {
 		updated = true;
-		payloadType_ = payloadType;
+		payloadType_ = std::move(payloadType);
 		if (incVersion) version_++;
 		buildTagsCache(updated);
 	}
@@ -181,7 +182,7 @@ public:
 		size_t cnt = ser.GetVarUint();
 		tags2names_.resize(cnt);
 		for (size_t tag = 0; tag < tags2names_.size(); ++tag) {
-			string name(ser.GetVString());
+			std::string name(ser.GetVString());
 			names2tags_.emplace(name, tag);
 			tags2names_[tag] = name;
 		}
@@ -242,15 +243,27 @@ public:
 		pathCache_.clear();
 		version_++;
 	}
-	string dumpTags() const {
-		string res = "tags: [";
+	std::string dumpTags() const {
+		std::string res = "tags: [";
 		for (unsigned i = 0; i < tags2names_.size(); i++) {
 			res += std::to_string(i) + ":" + tags2names_[i] + " ";
 		}
 		return res + "]";
 	}
-	string dumpPaths() const {
-		string res = "paths: [";
+	std::string dumpNames() const {
+		std::stringstream res;
+		res << "names: [";
+		for (auto b = names2tags_.begin(), it = b, e = names2tags_.end(); it != e; ++it) {
+			if (it != b) {
+				res << "; ";
+			}
+			res << it->first << ':' << it->second;
+		}
+		res << ']';
+		return res.str();
+	}
+	std::string dumpPaths() const {
+		std::string res = "paths: [";
 		int16_t path[256];
 		pathCache_.walk(path, 0, [&path, &res, this](int depth, int field) {
 			for (int i = 0; i < depth; i++) {
@@ -298,8 +311,8 @@ protected:
 		}
 	}
 
-	fast_hash_map<string, int, hash_str, equal_str> names2tags_;
-	vector<string> tags2names_;
+	fast_hash_map<std::string, int, hash_str, equal_str> names2tags_;
+	std::vector<std::string> tags2names_;
 	PayloadType payloadType_;
 	int32_t version_;
 	int32_t stateToken_;

@@ -28,7 +28,7 @@ public:
 
 	static void DefineNamespaceDataset(DB &rx, const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		auto err = reindexer::Error();
-		for (auto &field : fields) {
+		for (const auto &field : fields) {
 			std::string indexName = std::get<0>(field);
 			std::string fieldType = std::get<1>(field);
 			std::string indexType = std::get<2>(field);
@@ -105,16 +105,17 @@ public:
 	std::string PrintItem(ItemType &item) {
 		std::string outBuf = "";
 		for (auto idx = 1; idx < item.NumFields(); idx++) {
-			outBuf += string(item[idx].Name()) + "=";
+			outBuf += std::string(item[idx].Name()) + "=";
 			outBuf += item[idx].template As<std::string>() + " ";
 		}
 		return outBuf;
 	}
-	std::string RandString(uint8_t len = 0) {
+	std::string RandString() { return RandString(4, 4); }
+	std::string RandString(unsigned minLen, unsigned maxRandLen) { return RandString(rand() % maxRandLen + minLen); }
+	std::string RandString(unsigned len) {
 		std::string res;
-		if (len == 0) len = rand() % 4 + 4;
 		res.resize(len);
-		for (int i = 0; i < len; ++i) {
+		for (unsigned i = 0; i < len; ++i) {
 			int f = rand() % letters.size();
 			res[i] = letters[f];
 		}

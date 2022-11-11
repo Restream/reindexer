@@ -3,8 +3,10 @@
 #include <climits>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 #include "args.h"
 #include "core/keyvalue/p_string.h"
@@ -18,7 +20,6 @@ namespace reindexer {
 namespace net {
 namespace cproto {
 
-using std::string;
 using std::chrono::milliseconds;
 
 struct RPCCall {
@@ -64,7 +65,7 @@ public:
 };
 
 struct Context {
-	void Return(const Args &args, const Error &status = errOK) { writer->WriteRPCReturn(*this, args, status); }
+	void Return(const Args &args, const Error &status = Error()) { writer->WriteRPCReturn(*this, args, status); }
 	void SetClientData(std::unique_ptr<ClientData> data) { writer->SetClientData(std::move(data)); }
 	ClientData *GetClientData() { return writer->GetClientData(); }
 
@@ -77,29 +78,12 @@ struct Context {
 
 class ServerConnection;
 
-struct abstract_optional {};
-
-template <typename T>
-class optional : public abstract_optional {
-public:
-	using type = T;
-	optional() : abstract_optional(), hasValue_(false) {}
-	optional(const T &t) : abstract_optional(), hasValue_(true), t_(t) {}
-
-	bool hasValue() const { return hasValue_; }
-	const T &value() const { return t_; }
-
-private:
-	bool hasValue_;
-	T t_;
-};
-
 /// Reindexer cproto RPC dispatcher implementation.
 class Dispatcher {
 	friend class ServerConnection;
 
 public:
-	Dispatcher() : handlers_(kCmdCodeMax, {nullptr, nullptr}) {}
+	Dispatcher() : handlers_(kCmdCodeMax, nullptr) {}
 
 	/// Add handler for command.
 	/// @param cmd - Command code
@@ -107,20 +91,8 @@ public:
 	/// @param func - handler
 	/// @param hasOptionalArgs - has to be true if func has optional args
 	template <class K, typename... Args>
-	void Register(CmdCode cmd, K *object, Error (K::*func)(Context &, Args... args), bool hasOptionalArgs = false) {
-		if (!hasOptionalArgs) {
-			auto wrapper = [func](void *obj, Context &ctx) {
-				auto reqArgs = sizeof...(Args);
-				if (reqArgs > ctx.call->args.size())
-					return Error(errParams, "Invalid args of %s call expected %d, got %d", CmdName(ctx.call->cmd), int(sizeof...(Args)),
-								 int(ctx.call->args.size()));
-				return func_wrapper(obj, func, ctx);
-			};
-			handlers_[cmd] = {wrapper, object};
-		} else {
-			auto wrapper = [func](void *obj, Context &ctx) { return func_wrapper(obj, func, ctx); };
-			handlers_[cmd] = {wrapper, object};
-		}
+	void Register(CmdCode cmd, K *object, Error (K::*func)(Context &, Args... args)) {
+		handlers_[cmd] = FuncWrapper<K, Args...>{object, func};
 	}
 
 	/// Add middleware for commands
@@ -128,8 +100,7 @@ public:
 	/// @param func - handler
 	template <class K>
 	void Middleware(K *object, Error (K::*func)(Context &)) {
-		auto wrapper = [func](void *obj, Context &ctx) { return func_wrapper(obj, func, ctx); };
-		middlewares_.push_back({wrapper, object});
+		middlewares_.push_back(FuncWrapper<K>{object, func});
 	}
 
 	/// Set logger for commands
@@ -159,77 +130,40 @@ public:
 protected:
 	Error handle(Context &ctx);
 
-	template <typename T>
-	using is_optional = std::is_base_of<abstract_optional, T>;
+	template <typename>
+	struct is_optional : public std::false_type {};
 
-	template <typename T, typename std::enable_if<!is_optional<T>::value, int>::type = 0>
-	static T get_arg(const Args &args, size_t index) {
+	template <typename T>
+	struct is_optional<std::optional<T>> : public std::true_type {};
+
+	template <typename T, std::enable_if_t<!is_optional<T>::value, int> = 0>
+	static T get_arg(const Args &args, size_t index, const Context &ctx) {
+		if (index >= args.size()) {
+			throw Error(errParams, "Invalid args of %s call; argument %d is not submited", CmdName(ctx.call->cmd), static_cast<int>(index));
+		}
 		return T(args[index]);
 	}
-	template <typename T, typename std::enable_if<is_optional<T>::value, int>::type = 0>
-	static T get_arg(const Args &args, size_t index) {
-		return index < args.size() ? T(typename T::type(args[index])) : T();
+	template <typename T, std::enable_if_t<is_optional<T>::value, int> = 0>
+	static T get_arg(const Args &args, size_t index, const Context &) {
+		return index < args.size() ? T(typename T::value_type(args[index])) : T();
 	}
 
-	template <class K>
-	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx), Context &ctx) {
-		return (static_cast<K *>(obj)->*func)(ctx);
-	}
-	template <class K, typename T1>
-	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1), Context &ctx) {
-		return (static_cast<K *>(obj)->*func)(ctx, get_arg<T1>(ctx.call->args, 0));
-	}
-	template <class K, typename T1, typename T2>
-	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1, T2), Context &ctx) {
-		return (static_cast<K *>(obj)->*func)(ctx, get_arg<T1>(ctx.call->args, 0), get_arg<T2>(ctx.call->args, 1));
-	}
-	template <class K, typename T1, typename T2, typename T3>
-	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1, T2, T3), Context &ctx) {
-		return (static_cast<K *>(obj)->*func)(ctx, get_arg<T1>(ctx.call->args, 0), get_arg<T2>(ctx.call->args, 1),
-											  get_arg<T3>(ctx.call->args, 2));
-	}
-	template <class K, typename T1, typename T2, typename T3, typename T4>
-	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1, T2, T3, T4), Context &ctx) {
-		return (static_cast<K *>(obj)->*func)(ctx, get_arg<T1>(ctx.call->args, 0), get_arg<T2>(ctx.call->args, 1),
-											  get_arg<T3>(ctx.call->args, 2), get_arg<T4>(ctx.call->args, 3));
-	}
-	template <class K, typename T1, typename T2, typename T3, typename T4, typename T5>
-	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1, T2, T3, T4, T5), Context &ctx) {
-		return (static_cast<K *>(obj)->*func)(ctx, get_arg<T1>(ctx.call->args, 0), get_arg<T2>(ctx.call->args, 1),
-											  get_arg<T3>(ctx.call->args, 2), get_arg<T4>(ctx.call->args, 3),
-											  get_arg<T5>(ctx.call->args, 4));
-	}
-	template <class K, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6>
-	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1, T2, T3, T4, T5, T6), Context &ctx) {
-		return (static_cast<K *>(obj)->*func)(ctx, get_arg<T1>(ctx.call->args, 0), get_arg<T2>(ctx.call->args, 1),
-											  get_arg<T3>(ctx.call->args, 2), get_arg<T4>(ctx.call->args, 3),
-											  get_arg<T5>(ctx.call->args, 4), get_arg<T6>(ctx.call->args, 5));
-	}
-	template <class K, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7>
-	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1, T2, T3, T4, T5, T6, T7), Context &ctx) {
-		return (static_cast<K *>(obj)->*func)(
-			ctx, get_arg<T1>(ctx.call->args, 0), get_arg<T2>(ctx.call->args, 1), get_arg<T3>(ctx.call->args, 2),
-			get_arg<T4>(ctx.call->args, 3), get_arg<T5>(ctx.call->args, 4), get_arg<T6>(ctx.call->args, 5), get_arg<T7>(ctx.call->args, 6));
-	}
-	template <class K, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8>
-	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1, T2, T3, T4, T5, T6, T7, T8), Context &ctx) {
-		return (static_cast<K *>(obj)->*func)(ctx, get_arg<T1>(ctx.call->args, 0), get_arg<T2>(ctx.call->args, 1),
-											  get_arg<T3>(ctx.call->args, 2), get_arg<T4>(ctx.call->args, 3),
-											  get_arg<T5>(ctx.call->args, 4), get_arg<T6>(ctx.call->args, 5),
-											  get_arg<T7>(ctx.call->args, 6), get_arg<T8>(ctx.call->args, 7));
-	}
-	template <class K, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8, typename T9>
-	static Error func_wrapper(void *obj, Error (K::*func)(Context &ctx, T1, T2, T3, T4, T5, T6, T7, T8, T9), Context &ctx) {
-		return (static_cast<K *>(obj)->*func)(
-			ctx, get_arg<T1>(ctx.call->args, 0), get_arg<T2>(ctx.call->args, 1), get_arg<T3>(ctx.call->args, 2),
-			get_arg<T4>(ctx.call->args, 3), get_arg<T5>(ctx.call->args, 4), get_arg<T6>(ctx.call->args, 5), get_arg<T7>(ctx.call->args, 6),
-			get_arg<T8>(ctx.call->args, 7), get_arg<T9>(ctx.call->args, 8));
-	}
+	template <typename K, typename... Args>
+	class FuncWrapper {
+	public:
+		FuncWrapper(K *o, Error (K::*f)(Context &, Args...)) noexcept : obj_{o}, func_{f} {}
+		Error operator()(Context &ctx) const { return impl(ctx, std::index_sequence_for<Args...>{}); }
 
-	struct Handler {
-		std::function<Error(void *obj, Context &ctx)> func_;
-		void *object_;
+	private:
+		template <size_t... I>
+		Error impl(Context &ctx, std::index_sequence<I...>) const {
+			return (obj_->*func_)(ctx, get_arg<Args>(ctx.call->args, I, ctx)...);
+		}
+		K *obj_;
+		Error (K::*func_)(Context &, Args...);
 	};
+
+	using Handler = std::function<Error(Context &)>;
 
 	std::vector<Handler> handlers_;
 	h_vector<Handler, 1> middlewares_;

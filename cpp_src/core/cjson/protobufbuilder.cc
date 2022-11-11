@@ -48,7 +48,7 @@ void ProtobufBuilder::packItem(int fieldIdx, int tagType, Serializer& rdser, Pro
 			array.put(fieldIdx, rdser.GetBool());
 			break;
 		case TAG_STRING:
-			array.put(fieldIdx, string(rdser.GetVString()));
+			array.put(fieldIdx, std::string(rdser.GetVString()));
 			break;
 		case TAG_NULL:
 			array.Null(fieldIdx);

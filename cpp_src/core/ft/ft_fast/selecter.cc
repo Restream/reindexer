@@ -30,12 +30,12 @@ const int kTypoStepProc = 15;
 const int kStemProcDecrease = 15;
 
 template <typename IdCont>
-void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry> &variants, size_t termIdx, const std::vector<string> &langs,
+void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry> &variants, size_t termIdx, const std::vector<std::string> &langs,
 									   const FtDSLQuery &dsl, std::vector<SynonymsDsl> *synonymsDsl) {
 	const FtDSLEntry &term = dsl[termIdx];
 	variants.clear();
 
-	vector<pair<std::wstring, int>> variantsUtf16{{term.pattern, kFullMatchProc}};
+	std::vector<std::pair<std::wstring, int>> variantsUtf16{{term.pattern, kFullMatchProc}};
 
 	if (synonymsDsl && (!holder_.cfg_->enableNumbersSearch || !term.opts.number)) {
 		// Make translit and kblayout variants
@@ -53,7 +53,7 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry> &variants, si
 	}
 
 	// Apply stemmers
-	string tmpstr, stemstr;
+	std::string tmpstr, stemstr;
 	for (auto &v : variantsUtf16) {
 		utf16_to_utf8(v.first, tmpstr);
 		if (tmpstr.empty()) continue;
@@ -79,7 +79,9 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry> &variants, si
 }
 
 template <typename IdCont>
-typename IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery &dsl, bool inTransaction, const RdxContext &rdxCtx) {
+template <bool mergeStatusesEmpty>
+IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery &dsl, bool inTransaction, FtMergeStatuses::Statuses mergeStatuses,
+												 const RdxContext &rdxCtx) {
 	FtSelectContext ctx;
 	ctx.rawResults.reserve(dsl.size());
 	// STEP 2: Search dsl terms for each variant
@@ -111,7 +113,7 @@ typename IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery &dsl, bool 
 			logPrintf(LogInfo, "Variants: [%s]", wrSer.Slice());
 		}
 
-		processVariants(ctx);
+		processVariants<mergeStatusesEmpty>(ctx, mergeStatuses);
 		if (res.term.opts.typos) {
 			// Lookup typos from typos_ map and fill results
 			processTypos(ctx, res.term);
@@ -140,7 +142,7 @@ typename IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery &dsl, bool 
 				}
 				logPrintf(LogInfo, "Multiword synonyms variants: [%s]", wrSer.Slice());
 			}
-			processVariants(synCtx);
+			processVariants<mergeStatusesEmpty>(synCtx, mergeStatuses);
 		}
 		for (size_t idx : synDsl.termsIdx) {
 			assertrx(idx < ctx.rawResults.size());
@@ -154,12 +156,14 @@ typename IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery &dsl, bool 
 	}
 
 	for (auto &res : ctx.rawResults) results.emplace_back(std::move(res));
-	return mergeResults(results, synonymsBounds, inTransaction, rdxCtx);
+	return mergeResults(results, synonymsBounds, inTransaction, std::move(mergeStatuses), rdxCtx);
 }
 
 template <typename IdCont>
+template <bool mergeStatusesEmpty>
 void Selecter<IdCont>::processStepVariants(FtSelectContext &ctx, typename DataHolder<IdCont>::CommitStep &step,
-										   const FtVariantEntry &variant, TextSearchResults &res) {
+										   const FtVariantEntry &variant, TextSearchResults &res,
+										   const FtMergeStatuses::Statuses &mergeStatuses) {
 	if (variant.opts.op == OpAnd) {
 		ctx.foundWords.clear();
 	}
@@ -168,7 +172,7 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext &ctx, typename DataHo
 	//  Lookup current variant in suffixes array
 	auto keyIt = suffixes.lower_bound(tmpstr);
 
-	int matched = 0, skipped = 0, vids = 0;
+	int matched = 0, skipped = 0, vids = 0, excludedCnt = 0;
 	bool withPrefixes = variant.opts.pref;
 	bool withSuffixes = variant.opts.suff;
 
@@ -178,8 +182,22 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext &ctx, typename DataHo
 
 		WordIdType glbwordId = keyIt->second;
 
+		if constexpr (!mergeStatusesEmpty) {
+			bool excluded = true;
+			for (const auto &id : holder_.getWordById(glbwordId).vids_) {
+				if (mergeStatuses[id.Id()] != FtMergeStatuses::kExcluded) {
+					excluded = false;
+					break;
+				}
+			}
+			if (excluded) {
+				++excludedCnt;
+				continue;
+			}
+		}
+
 		uint32_t suffixWordId = holder_.GetSuffixWordId(glbwordId, step);
-		const string::value_type *word = suffixes.word_at(suffixWordId);
+		const std::string::value_type *word = suffixes.word_at(suffixWordId);
 
 		int16_t wordLength = suffixes.word_len_at(suffixWordId);
 
@@ -198,9 +216,10 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext &ctx, typename DataHo
 			res.push_back({&holder_.getWordById(glbwordId).vids_, keyIt->first, proc, suffixes.virtual_word_len(suffixWordId)});
 			res.idsCnt_ += holder_.getWordById(glbwordId).vids_.size();
 			ctx.foundWords[glbwordId] = std::make_pair(ctx.rawResults.size() - 1, res.size() - 1);
-			if (holder_.cfg_->logLevel >= LogTrace)
+			if (holder_.cfg_->logLevel >= LogTrace) {
 				logPrintf(LogInfo, " matched %s '%s' of word '%s', %d vids, %d%%", suffixLen ? "suffix" : "prefix", keyIt->first, word,
 						  holder_.getWordById(glbwordId).vids_.size(), proc);
+			}
 			matched++;
 			vids += holder_.getWordById(glbwordId).vids_.size();
 		} else {
@@ -209,13 +228,15 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext &ctx, typename DataHo
 			skipped++;
 		}
 	} while ((keyIt++).lcp() >= int(tmpstr.length()));
-	if (holder_.cfg_->logLevel >= LogInfo)
-		logPrintf(LogInfo, "Lookup variant '%s' (%d%%), matched %d suffixes, with %d vids, skiped %d", tmpstr, variant.proc, matched, vids,
-				  skipped);
+	if (holder_.cfg_->logLevel >= LogInfo) {
+		logPrintf(LogInfo, "Lookup variant '%s' (%d%%), matched %d suffixes, with %d vids, skiped %d, excluded %d", tmpstr, variant.proc,
+				  matched, vids, skipped, excludedCnt);
+	}
 }
 
 template <typename IdCont>
-void Selecter<IdCont>::processVariants(FtSelectContext &ctx) {
+template <bool mergeStatusesEmpty>
+void Selecter<IdCont>::processVariants(FtSelectContext &ctx, const FtMergeStatuses::Statuses &mergeStatuses) {
 	TextSearchResults &res = ctx.rawResults.back();
 
 	for (const FtVariantEntry &variant : ctx.variants) {
@@ -223,7 +244,7 @@ void Selecter<IdCont>::processVariants(FtSelectContext &ctx) {
 			ctx.foundWords.clear();
 		}
 		for (auto &step : holder_.steps) {
-			processStepVariants(ctx, step, variant, res);
+			processStepVariants<mergeStatusesEmpty>(ctx, step, variant, res, mergeStatuses);
 		}
 	}
 }
@@ -295,26 +316,22 @@ void Selecter<IdCont>::debugMergeStep(const char *msg, int vid, float normBm25, 
 }
 
 template <typename IdCont>
-struct Selecter<IdCont>::MergeStatus {
-	// 0: means not added,
-	// kExcluded: means should not be added
-	// others: 1 + index of rawResult which added
-	index_t status{0};
-	int16_t idoffset{0};
-};
-
-template <typename IdCont>
-void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t rawResIndex, std::vector<MergeStatus> &statuses,
-									  vector<IDataHolder::MergeInfo> &merged, vector<MergedIdRel> &merged_rd, vector<bool> &curExists,
-									  const bool hasBeenAnd, const bool simple, const bool inTransaction, const RdxContext &rdxCtx) {
+void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t rawResIndex, FtMergeStatuses::Statuses &mergeStatuses,
+									  std::vector<IDataHolder::MergeInfo> &merged, std::vector<MergedIdRel> &merged_rd,
+									  std::vector<uint16_t> &idoffsets, std::vector<bool> &curExists, const bool hasBeenAnd,
+									  const bool inTransaction, const RdxContext &rdxCtx) {
 	const auto &vdocs = holder_.vdocs_;
 
 	const size_t totalDocsCount = vdocs.size();
+	const bool simple = idoffsets.empty();
 	const auto op = rawRes.term.opts.op;
 
 	curExists.clear();
 	if (!simple || rawRes.size() > 1) {
 		curExists.resize(totalDocsCount, false);
+	}
+	if (simple && rawRes.size() > 1) {
+		idoffsets.resize(totalDocsCount);
 	}
 	for (auto &m_rd : merged_rd) {
 		if (m_rd.next.Size()) m_rd.cur = std::move(m_rd.next);
@@ -330,17 +347,17 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 						  "Expecting relid is movable for packed vector and not movable for simple vector");
 
 			const int vid = relid.Id();
-			MergeStatus &vidStatus = statuses[vid];
+			index_t &vidStatus = mergeStatuses[vid];
 
 			// Do not calc anithing if
-			if ((vidStatus.status == kExcluded) | (hasBeenAnd & (vidStatus.status == 0))) {
+			if ((vidStatus == FtMergeStatuses::kExcluded) | (hasBeenAnd & (vidStatus == 0))) {
 				continue;
 			}
 			if (op == OpNot) {
-				if (!simple & (vidStatus.status != 0)) {
-					merged[vidStatus.idoffset].proc = 0;
+				if (!simple & (vidStatus != 0)) {
+					merged[idoffsets[vid]].proc = 0;
 				}
-				vidStatus.status = kExcluded;
+				vidStatus = FtMergeStatuses::kExcluded;
 				continue;
 			}
 			if (!vdocs[vid].keyEntry) continue;
@@ -412,10 +429,10 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 			}
 
 			// match of 2-rd, and next terms
-			if (!simple && vidStatus.status) {
+			if (!simple && vidStatus) {
 				assertrx(relid.Size());
-				auto &curMerged = merged[vidStatus.idoffset];
-				auto &curMrd = merged_rd[vidStatus.idoffset];
+				auto &curMerged = merged[idoffsets[vid]];
+				auto &curMrd = merged_rd[idoffsets[vid]];
 				assertrx(curMrd.cur.Size());
 
 				// Calculate words distance
@@ -456,8 +473,8 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 			}
 			if (int(merged.size()) < holder_.cfg_->mergeLimit && !hasBeenAnd) {
 				const bool currentlyAddedLessRankedMerge =
-					!curExists.empty() && curExists[vid] && merged[vidStatus.idoffset].proc < static_cast<int32_t>(termRank);
-				if (!(simple && currentlyAddedLessRankedMerge) && vidStatus.status) continue;
+					!curExists.empty() && curExists[vid] && merged[idoffsets[vid]].proc < static_cast<int32_t>(termRank);
+				if (!(simple && currentlyAddedLessRankedMerge) && vidStatus) continue;
 				// match of 1-st term
 				IDataHolder::MergeInfo info;
 				info.id = vid;
@@ -471,14 +488,14 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 						info.holder->AddWord(pos.pos(), r.wordLen_, pos.field(), maxAreasInDoc_);
 					}
 				}
-				if (vidStatus.status) {
-					merged[vidStatus.idoffset] = std::move(info);
+				if (vidStatus) {
+					merged[idoffsets[vid]] = std::move(info);
 				} else {
 					merged.push_back(std::move(info));
-					vidStatus.status = rawResIndex + 1;
+					vidStatus = rawResIndex + 1;
 					if (!curExists.empty()) {
 						curExists[vid] = true;
-						vidStatus.idoffset = merged.size() - 1;
+						idoffsets[vid] = merged.size() - 1;
 					}
 				}
 				if (simple) continue;
@@ -490,17 +507,18 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 }
 
 template <typename IdCont>
-typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(vector<TextSearchResults> &rawResults,
+typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults> &rawResults,
 															   const std::vector<size_t> &synonymsBounds, bool inTransaction,
-															   const RdxContext &rdxCtx) {
+															   FtMergeStatuses::Statuses mergeStatuses, const RdxContext &rdxCtx) {
 	const auto &vdocs = holder_.vdocs_;
 	IDataHolder::MergeData merged;
 
 	if (!rawResults.size() || !vdocs.size()) return merged;
 
-	assertrx(kExcluded > rawResults.size());
-	std::vector<MergeStatus> statuses(vdocs.size());
+	assertrx(FtMergeStatuses::kExcluded > rawResults.size());
+	assertrx(mergeStatuses.size() == vdocs.size());
 	std::vector<MergedIdRel> merged_rd;
+	std::vector<uint16_t> idoffsets;
 
 	int idsMaxCnt = 0;
 	for (auto &rawRes : rawResults) {
@@ -512,6 +530,7 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(vector<TextSearch
 	merged.reserve(std::min(holder_.cfg_->mergeLimit, idsMaxCnt));
 
 	if (rawResults.size() > 1) {
+		idoffsets.resize(vdocs.size());
 		merged_rd.reserve(std::min(holder_.cfg_->mergeLimit, idsMaxCnt));
 	}
 	std::vector<std::vector<bool>> exists(synonymsBounds.size() + 1);
@@ -530,14 +549,14 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(vector<TextSearch
 			}
 		}
 		const auto &res = rawResults[i];
-		mergeItaration(res, i, statuses, merged, merged_rd, exists[curExists], hasBeenAnd, rawResults.size() == 1, inTransaction, rdxCtx);
+		mergeItaration(res, i, mergeStatuses, merged, merged_rd, idoffsets, exists[curExists], hasBeenAnd, inTransaction, rdxCtx);
 
 		if (res.term.opts.op == OpAnd && !exists[curExists].empty()) {
 			hasBeenAnd = true;
 			for (auto &info : merged) {
 				const auto vid = info.id;
-				auto &vidStatus = statuses[vid];
-				if (exists[curExists][vid] || vidStatus.status == kExcluded || vidStatus.status <= lastGroupStart || info.proc == 0) {
+				auto &vidStatus = mergeStatuses[vid];
+				if (exists[curExists][vid] || vidStatus == FtMergeStatuses::kExcluded || vidStatus <= lastGroupStart || info.proc == 0) {
 					continue;
 				}
 				bool matchSyn = false;
@@ -550,7 +569,7 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(vector<TextSearch
 				}
 				if (matchSyn) continue;
 				info.proc = 0;
-				vidStatus.status = 0;
+				vidStatus = 0;
 			}
 		}
 	}
@@ -574,6 +593,10 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(vector<TextSearch
 }
 
 template class Selecter<PackedIdRelVec>;
+template IDataHolder::MergeData Selecter<PackedIdRelVec>::Process<true>(FtDSLQuery &, bool, FtMergeStatuses::Statuses, const RdxContext &);
+template IDataHolder::MergeData Selecter<PackedIdRelVec>::Process<false>(FtDSLQuery &, bool, FtMergeStatuses::Statuses, const RdxContext &);
 template class Selecter<IdRelVec>;
+template IDataHolder::MergeData Selecter<IdRelVec>::Process<true>(FtDSLQuery &, bool, FtMergeStatuses::Statuses, const RdxContext &);
+template IDataHolder::MergeData Selecter<IdRelVec>::Process<false>(FtDSLQuery &, bool, FtMergeStatuses::Statuses, const RdxContext &);
 
 }  // namespace reindexer

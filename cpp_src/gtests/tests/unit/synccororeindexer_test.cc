@@ -1,6 +1,6 @@
-#include "client/synccororeindexer.h"
 #include <condition_variable>
 #include "client/cororeindexer.h"
+#include "client/reindexer.h"
 #include "coroutine/waitgroup.h"
 #include "gtest/gtest.h"
 #include "gtests/tests/fixtures/servercontrol.h"
@@ -14,7 +14,7 @@ static const size_t kSyncCoroRxTestDefaultRpcPort = 8999;
 static const size_t kSyncCoroRxTestDefaultHttpPort = 9888;
 
 struct SyncCoroRxHelpers {
-	static const string kStrValue;
+	static const std::string kStrValue;
 
 	template <typename RxT>
 	static void FillData(RxT& client, std::string_view ns, unsigned rows, unsigned from = 0) {
@@ -33,10 +33,10 @@ struct SyncCoroRxHelpers {
 	}
 };
 
-const string SyncCoroRxHelpers::kStrValue = "aaaaaaaaaaaaaaa";
+const std::string SyncCoroRxHelpers::kStrValue = "aaaaaaaaaaaaaaa";
 
 TEST(SyncCoroRx, BaseTest) {
-	// Base test for SyncCoroReindexer client
+	// Base test for Reindexer client
 	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/TestSyncCoroRx");
 	reindexer::fs::RmDirAll(kTestDbPath);
 	// server creation and configuration
@@ -44,7 +44,7 @@ TEST(SyncCoroRx, BaseTest) {
 	const std::string_view nsName = "ns";
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	// client creation
-	reindexer::client::SyncCoroReindexer client;
+	reindexer::client::Reindexer client;
 	Error err = client.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db");
 	ASSERT_TRUE(err.ok()) << err.what();
 	// create namespace and indexes
@@ -57,10 +57,10 @@ TEST(SyncCoroRx, BaseTest) {
 
 	const int insRows = 200;
 	SyncCoroRxHelpers::FillData(client, nsName, insRows);
-	reindexer::client::SyncCoroQueryResults qResults(3);
+	reindexer::client::QueryResults qResults(3);
 	err = client.Select(std::string("select * from ") + std::string(nsName) + " order by id", qResults);
 
-	unsigned int indx = 0;
+	int indx = 0;
 	for (auto it = qResults.begin(); it != qResults.end(); ++it, indx++) {
 		reindexer::WrSerializer wrser;
 		reindexer::Error err = it.GetJSON(wrser, false);
@@ -68,7 +68,7 @@ TEST(SyncCoroRx, BaseTest) {
 		try {
 			gason::JsonParser parser;
 			gason::JsonNode json = parser.Parse(wrser.Slice());
-			if (json["id"].As<unsigned int>(-1) != indx || json["val"].As<std::string_view>() != SyncCoroRxHelpers::kStrValue) {
+			if (json["id"].As<int>(-1) != indx || json["val"].As<std::string_view>() != SyncCoroRxHelpers::kStrValue) {
 				ASSERT_TRUE(false) << "item value not correct";
 			}
 
@@ -90,9 +90,9 @@ TEST(SyncCoroRx, StopServerOnQuery) {
 	const std::string_view nsName = "ns";
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 	// client creation
-	reindexer::client::CoroReindexerConfig clientConf;
+	reindexer::client::ReindexerConfig clientConf;
 	clientConf.FetchAmount = kFetchAmount;
-	reindexer::client::SyncCoroReindexer client(clientConf, kConnsCount, kThreadsCount);
+	reindexer::client::Reindexer client(clientConf, kConnsCount, kThreadsCount);
 	Error err = client.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db");
 	ASSERT_TRUE(err.ok()) << err.what();
 	// create namespace and indexes
@@ -110,7 +110,7 @@ TEST(SyncCoroRx, StopServerOnQuery) {
 	const int insRows = kFetchAmount * 3;
 	SyncCoroRxHelpers::FillData(client, nsName, insRows);
 
-	reindexer::client::SyncCoroQueryResults qResults(3);
+	reindexer::client::QueryResults qResults(3);
 	err = client.Select(std::string("select * from ") + std::string(nsName) + " order by id", qResults);
 
 	unsigned int indx = 0;
@@ -147,7 +147,7 @@ TEST(SyncCoroRx, TestSyncCoroRx) {
 	reindexer::fs::RmDirAll(kTestDbPath);
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
-	reindexer::client::SyncCoroReindexer client;
+	reindexer::client::Reindexer client;
 	Error err = client.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db");
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = client.OpenNamespace("ns_test");
@@ -162,7 +162,7 @@ TEST(SyncCoroRx, TestSyncCoroRx) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	SyncCoroRxHelpers::FillData(client, "ns_test", kSyncCoroRxTestMaxIndex);
-	reindexer::client::SyncCoroQueryResults qResults(3);
+	reindexer::client::QueryResults qResults(3);
 	client.Select("select * from ns_test", qResults);
 
 	for (auto i = qResults.begin(); i != qResults.end(); ++i) {
@@ -177,7 +177,7 @@ TEST(SyncCoroRx, DISABLED_TestSyncCoroRxNThread) {
 	reindexer::fs::RmDirAll(kTestDbPath);
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
-	reindexer::client::SyncCoroReindexer client;
+	reindexer::client::Reindexer client;
 	client.Connect("cproto://127.0.0.1:" + std::to_string(kSyncCoroRxTestDefaultRpcPort) + "/db");
 	client.OpenNamespace("ns_test");
 	reindexer::IndexDef indDef("id", "hash", "int", IndexOpts().PK());
@@ -203,12 +203,13 @@ TEST(SyncCoroRx, DISABLED_TestSyncCoroRxNThread) {
 	};
 
 	std::chrono::system_clock::time_point t1 = std::chrono::system_clock::now();
-	std::vector<std::thread> pullThread;
+	std::vector<std::thread> poolThread;
+	poolThread.reserve(10);
 	for (int i = 0; i < 10; i++) {
-		pullThread.emplace_back(std::thread(insertThreadFun));
+		poolThread.emplace_back(insertThreadFun);
 	}
-	for (int i = 0; i < 10; i++) {
-		pullThread[i].join();
+	for (auto& th : poolThread) {
+		th.join();
 	}
 	std::chrono::system_clock::time_point t2 = std::chrono::system_clock::now();
 	int dt_ms = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
@@ -267,9 +268,9 @@ TEST(SyncCoroRx, RxClientNThread) {
 	constexpr size_t kConns = 3;
 	constexpr size_t kThreads = 10;
 	const size_t kSyncCoroRxThreads = 2;
-	client::CoroReindexerConfig cfg;
+	client::ReindexerConfig cfg;
 	cfg.AppName = "MultiConnRxClient";
-	client::SyncCoroReindexer client(cfg, kConns, kSyncCoroRxThreads);
+	client::Reindexer client(cfg, kConns, kSyncCoroRxThreads);
 	auto err = client.Connect(fmt::sprintf("cproto://127.0.0.1:%d/%s", kSyncCoroRxTestDefaultRpcPort, kDbName));
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = client.OpenNamespace(kNsName);
@@ -309,7 +310,7 @@ TEST(SyncCoroRx, RxClientNThread) {
 		th.join();
 	}
 
-	client::SyncCoroQueryResults qr;
+	client::QueryResults qr;
 	err = client.Select(Query("#clientsstats"), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	reindexer::WrSerializer wrser;
@@ -342,7 +343,7 @@ TEST(SyncCoroRx, StopWhileWriting) {
 	constexpr size_t kWritingThreadsCount = 5;
 	constexpr uint32_t kConnsCount = 4;
 	constexpr uint32_t kThreadsCount = 2;
-	reindexer::client::SyncCoroReindexer client(client::CoroReindexerConfig(), kConnsCount, kThreadsCount);
+	reindexer::client::Reindexer client(client::ReindexerConfig(), kConnsCount, kThreadsCount);
 	constexpr auto kWritingThreadSleep = std::chrono::milliseconds(1);
 	constexpr auto kSleepBetweenPhases = std::chrono::milliseconds(200);
 
@@ -532,7 +533,7 @@ TEST(SyncCoroRx, TxInvalidation) {
 		item.FromJSON(kItemContent);
 		err = originalTx.Insert(std::move(item));
 		EXPECT_EQ(err.code(), errBadTransaction);
-		client::SyncCoroQueryResults qr;
+		client::QueryResults qr;
 		err = client->CommitTransaction(originalTx, qr);
 		EXPECT_EQ(err.code(), errBadTransaction);
 	}
@@ -575,7 +576,7 @@ TEST(SyncCoroRx, TxInvalidation) {
 			ASSERT_TRUE(false) << err.what();
 		}
 	}
-	client::SyncCoroQueryResults qr;
+	client::QueryResults qr;
 	err = client->CommitTransaction(movedTx, qr);
 	EXPECT_EQ(err.code(), errNetwork);
 	if (err.what() != kExpectedErrorText1 && err.what() != kExpectedErrorText2) {
@@ -593,13 +594,13 @@ TEST(SyncCoroRx, QrInvalidation) {
 	const std::string kExpectedErrorText2 = "Request for invalid connection (probably this connection was broken and invalidated)";
 	const unsigned kDataCount = 500;
 	const unsigned kFetchCnt = 100;
-	client::CoroReindexerConfig cfg(kFetchCnt);
+	client::ReindexerConfig cfg(kFetchCnt);
 
 	ServerControl server;
 	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
 
 	// Reconnect with correct options
-	auto client = std::make_unique<client::SyncCoroReindexer>(cfg);
+	auto client = std::make_unique<client::Reindexer>(cfg);
 	Error err = client->Connect(server.Get()->kRPCDsn);
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = client->Status(true);
@@ -612,7 +613,7 @@ TEST(SyncCoroRx, QrInvalidation) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	SyncCoroRxHelpers::FillData(*client, kNsNames, kDataCount);
 
-	client::SyncCoroQueryResults originalQr;
+	client::QueryResults originalQr;
 	err = client->Select(Query(kNsNames), originalQr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(originalQr.Count(), kDataCount);

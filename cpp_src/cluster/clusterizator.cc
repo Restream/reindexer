@@ -17,7 +17,7 @@ void Clusterizator::Configure(ReplicationConfigData replConfig) {
 		return;
 	}
 	clusterReplicator_.Configure(replConfig);
-	asyncReplicator_.Configure(std::move(replConfig));
+	asyncReplicator_.Configure(replConfig);
 }
 
 void Clusterizator::Configure(ClusterConfigData clusterConfig) {

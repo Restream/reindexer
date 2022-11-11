@@ -108,7 +108,7 @@ public:
 			info.serialCounter = counter;
 			counter++;
 		}
-		void Validate(reindexer::client::SyncCoroQueryResults& qr) {
+		void Validate(reindexer::client::QueryResults& qr) {
 			bool validateOk = true;
 			WrSerializer ser;
 			for (auto& it : qr) {

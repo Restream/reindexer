@@ -21,16 +21,16 @@ class NamespaceResults;
 /// Offset in 'items_' for left Ns item
 struct ItemOffset {
 	ItemOffset() noexcept : field(0), offset(0), size(0) {}
-	ItemOffset(size_t field_, int offset_, int size_) noexcept : field(uint8_t(field_)), offset(offset_), size(size_) {}
+	ItemOffset(uint32_t f, uint32_t o, uint32_t s) noexcept : field(f), offset(o), size(s) {}
 	bool operator==(const ItemOffset& other) const noexcept { return field == other.field && offset == other.offset && size == other.size; }
 	bool operator!=(const ItemOffset& other) const noexcept { return !operator==(other); }
 	/// index of joined field
 	/// (equals to position in joinedSelectors_)
-	unsigned field : 8;
+	uint32_t field;
 	/// Offset of items in 'items_' container
-	unsigned int offset : 24;
+	uint32_t offset;
 	/// Amount of joined items for this field
-	uint32_t size = 0;
+	uint32_t size;
 };
 using ItemOffsets = h_vector<ItemOffset, 1>;
 
@@ -42,12 +42,12 @@ public:
 	/// @param rowid - rowid of item
 	/// @param fieldIdx - index of joined field
 	/// @param qr - QueryResults reference
-	void Insert(IdType rowid, size_t fieldIdx, LocalQueryResults&& qr);
+	void Insert(IdType rowid, uint32_t fieldIdx, LocalQueryResults&& qr);
 
 	/// Gets/sets amount of joined selectors
 	/// @param joinedSelectorsCount - joinedSelectors.size()
-	void SetJoinedSelectorsCount(int joinedSelectorsCount) noexcept { joinedSelectorsCount_ = joinedSelectorsCount; }
-	int GetJoinedSelectorsCount() const noexcept { return joinedSelectorsCount_; }
+	void SetJoinedSelectorsCount(uint32_t joinedSelectorsCount) noexcept { joinedSelectorsCount_ = joinedSelectorsCount; }
+	uint32_t GetJoinedSelectorsCount() const noexcept { return joinedSelectorsCount_; }
 
 	/// @returns total amount of joined items for
 	/// all the joined fields
@@ -68,11 +68,11 @@ private:
 	/// Items for all the joined fields
 	ItemRefVector items_;
 	/// Amount of joined selectors for this NS
-	uint8_t joinedSelectorsCount_ = 0;
+	uint32_t joinedSelectorsCount_ = 0;
 };
 
 /// Results of joining all the namespaces (in case of merge queries)
-class Results : public h_vector<NamespaceResults, 0> {};
+class Results : public std::vector<NamespaceResults> {};
 
 /// Joined field iterator for Item
 /// of left NamespaceImpl (main ns).
@@ -117,7 +117,7 @@ public:
 	int getJoinedFieldsCount() const;
 	int getJoinedItemsCount() const;
 
-	static ItemIterator CreateFrom(LocalQueryResults::Iterator it);
+	static ItemIterator CreateFrom(const LocalQueryResults::Iterator& it);
 	static ItemIterator CreateEmpty();
 
 private:

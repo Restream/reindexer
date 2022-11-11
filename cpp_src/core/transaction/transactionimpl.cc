@@ -1,5 +1,5 @@
 #include "transactionimpl.h"
-#include "client/synccororeindexerimpl.h"
+#include "client/reindexerimpl.h"
 #include "cluster/sharding/sharding.h"
 #include "core/reindexerimpl.h"
 #include "tools/clusterproxyloghelper.h"

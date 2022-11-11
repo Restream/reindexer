@@ -1,28 +1,28 @@
 #include "client/raftclient.h"
-#include "client/cororpcclient.h"
+#include "client/rpcclient.h"
 #include "cluster/clustercontrolrequest.h"
 
 namespace reindexer {
 namespace client {
 
-RaftClient::RaftClient(const CoroReindexerConfig& config) : impl_(new CoroRPCClient(config, nullptr)), owner_(true), ctx_() {}
+RaftClient::RaftClient(const ReindexerConfig& config) : impl_(new RPCClient(config, nullptr)), owner_(true), ctx_() {}
 RaftClient::~RaftClient() {
 	if (owner_) {
 		delete impl_;
 	}
 }
-RaftClient::RaftClient(RaftClient&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(rdx.ctx_) { rdx.owner_ = false; }
+RaftClient::RaftClient(RaftClient&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(std::move(rdx.ctx_)) { rdx.owner_ = false; }
 RaftClient& RaftClient::operator=(RaftClient&& rdx) noexcept {
 	if (this != &rdx) {
 		impl_ = rdx.impl_;
 		owner_ = rdx.owner_;
-		ctx_ = rdx.ctx_;
+		ctx_ = std::move(rdx.ctx_);
 		rdx.owner_ = false;
 	}
 	return *this;
 }
 
-Error RaftClient::Connect(const string& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
+Error RaftClient::Connect(const std::string& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
 	return impl_->Connect(dsn, loop, opts);
 }
 Error RaftClient::Stop() { return impl_->Stop(); }

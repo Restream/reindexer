@@ -51,7 +51,7 @@ extern template void QueriesStatTracer::hit<&PerfStatCounterST::LockHit>(const Q
 class QueryStatCalculator {
 public:
 	QueryStatCalculator(std::function<void(bool, std::chrono::microseconds)> hitter, std::chrono::microseconds threshold, bool enable)
-		: hitter_(hitter), threshold_(threshold), enable_(enable) {
+		: hitter_(std::move(hitter)), threshold_(threshold), enable_(enable) {
 		if (enable_) tmStart = std::chrono::high_resolution_clock::now();
 	}
 	~QueryStatCalculator() {

@@ -21,7 +21,7 @@ struct web {
 	using HttpStatusCode = reindexer::net::http::HttpStatusCode;
 
 	web(const std::string& webRoot) : webRoot_(webRoot) {}
-	DocumentStatus stat(const string& targer);
+	DocumentStatus stat(const std::string& targer);
 	int file(Context& ctx, HttpStatusCode code, const std::string& target, bool isGzip, bool withCache);
 
 private:

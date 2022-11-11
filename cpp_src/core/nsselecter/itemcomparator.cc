@@ -105,13 +105,26 @@ void ItemComparator::bindOne(size_t index, const SortingContext::Entry &sortingC
 			throw Error(errQueryExec, "Sorting cannot be applied to array field.");
 		}
 		if (fieldIdx >= ns_.indexes_.firstCompositePos()) {
-			for (const auto &f : ns_.indexes_[fieldIdx]->Fields()) {
-				if (fields_.contains(f)) {
-					throw Error(errQueryExec, "You cannot sort by 2 same indexes: %s", sortingCtx.data->expression);
+			size_t jsonPathsIndex = 0;
+			const auto &fields = ns_.indexes_[fieldIdx]->Fields();
+			for (size_t i = 0, s = fields.size(); i < s; ++i) {
+				const auto f = fields[i];
+				if (f != IndexValueType::SetByJsonPath) {
+					if (fields_.contains(f)) {
+						throw Error(errQueryExec, "You cannot sort by 2 same indexes: %s", sortingCtx.data->expression);
+					}
+					insert.fields(f);
+					insert.index(index, sortingCtx.data->desc);
+					insert.collateOpts(sortingCtx.opts);
+				} else {
+					TagsPath tagsPath = fields.getTagsPath(jsonPathsIndex++);
+					if (fields_.contains(tagsPath)) {
+						throw Error(errQueryExec, "Can't sort by 2 equal indexes: %s", sortingCtx.data->expression);
+					}
+					insert.fields(tagsPath);
+					insert.index(index, sortingCtx.data->desc);
+					insert.collateOpts(sortingCtx.opts);
 				}
-				insert.fields(f);
-				insert.index(index, sortingCtx.data->desc);
-				insert.collateOpts(sortingCtx.opts);
 			}
 		} else {
 			if (fields_.contains(fieldIdx)) {

@@ -1,61 +1,61 @@
 #pragma once
+
 #include <chrono>
+#include "client/corotransaction.h"
 #include "client/item.h"
-#include "core/query/query.h"
 
 namespace reindexer {
 
-namespace net {
-namespace cproto {
-
-class ClientConnection;
-}  // namespace cproto
-}  // namespace net
+class ProxiedTransaction;
 
 namespace client {
 
-class RPCClient;
+class ReindexerImpl;
 
 class Transaction {
 public:
-	void Insert(Item&& item) { addTxItem(std::move(item), ModeInsert); }
-	void Update(Item&& item) { addTxItem(std::move(item), ModeUpdate); }
-	void Upsert(Item&& item) { addTxItem(std::move(item), ModeUpsert); }
-	void Delete(Item&& item) { addTxItem(std::move(item), ModeDelete); }
-	void Modify(Item&& item, ItemModifyMode mode) { addTxItem(std::move(item), mode); }
+	using Completion = std::function<void(const Error& err)>;
 
-	void Modify(Query&& query);
-	bool IsFree() const { return (conn_ == nullptr) || !status_.ok(); }
+	Error Insert(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeInsert, lsn); }
+	Error Update(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeUpdate, lsn); }
+	Error Upsert(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeUpsert, lsn); }
+	Error Delete(Item&& item, lsn_t lsn = lsn_t()) { return Modify(std::move(item), ModeDelete, lsn); }
+	Error Modify(Item&& item, ItemModifyMode mode, lsn_t lsn = lsn_t()) { return modify(std::move(item), mode, lsn, nullptr); }
+	Error PutMeta(std::string_view key, std::string_view value, lsn_t lsn = lsn_t()) { return putMeta(key, value, lsn, nullptr); }
+	Error SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn) { return setTagsMatcher(std::move(tm), lsn, nullptr); }
+	Error Modify(Query&& query, lsn_t lsn = lsn_t()) { return modify(std::move(query), lsn, nullptr); }
+	bool IsFree() const noexcept { return !rx_ || tr_.IsFree(); }
 	Item NewItem();
-	Error Status() const { return status_; }
+	const Error& Status() const noexcept { return tr_.Status(); }
+
+	Transaction(Transaction&) = delete;
+	Transaction& operator=(const Transaction&) = delete;
+	Transaction(Transaction&&) noexcept = default;
+	Transaction& operator=(Transaction&&) = default;
+	~Transaction();
+
+	PayloadType GetPayloadType() const;
+	TagsMatcher GetTagsMatcher() const;
+
+	int64_t GetTransactionId() const noexcept;
 
 private:
-	friend class RPCClient;
-	Transaction(Error status) : status_(std::move(status)) {}
-	Transaction(RPCClient* rpcClient, net::cproto::ClientConnection* conn, int64_t txId, std::chrono::seconds RequestTimeout,
-				std::chrono::milliseconds execTimeout, std::string nsName)
-		: txId_(txId),
-		  rpcClient_(rpcClient),
-		  conn_(conn),
-		  RequestTimeout_(RequestTimeout),
-		  execTimeout_(execTimeout),
-		  nsName_(std::move(nsName)) {}
+	Error modify(Item&& item, ItemModifyMode mode, lsn_t lsn, Completion asyncCmpl);
+	Error modify(Query&& query, lsn_t lsn, Completion asyncCmpl);
+	Error putMeta(std::string_view key, std::string_view value, lsn_t lsn, Completion asyncCmpl);
+	Error setTagsMatcher(TagsMatcher&& tm, lsn_t lsn, Completion asyncCmpl);
 
-	void addTxItem(Item&& item, ItemModifyMode mode);
-	void clear() {
-		txId_ = -1;
-		rpcClient_ = nullptr;
-		conn_ = nullptr;
-		status_ = errOK;
-	}
+	friend class Reindexer;
+	friend class ReindexerImpl;
+	friend class reindexer::ClusterProxy;
+	friend class reindexer::ProxiedTransaction;
+	Transaction(std::shared_ptr<ReindexerImpl> rx, CoroTransaction&& tr) noexcept : tr_(std::move(tr)), rx_(rx) {}
+	Transaction(Error status) noexcept : tr_(status) {}
+	void setStatus(Error&& status) noexcept { tr_.setStatus(std::move(status)); }
+	const net::cproto::CoroClientConnection* coroConnection() const noexcept { return tr_.getConn(); }
 
-	int64_t txId_ = -1;
-	RPCClient* rpcClient_ = nullptr;
-	reindexer::net::cproto::ClientConnection* conn_ = nullptr;
-	std::chrono::seconds RequestTimeout_;
-	std::chrono::milliseconds execTimeout_;
-	std::string nsName_;
-	Error status_;
+	CoroTransaction tr_;
+	std::shared_ptr<ReindexerImpl> rx_;
 };
 
 }  // namespace client

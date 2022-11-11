@@ -22,7 +22,6 @@ struct IRdxCancelContext;
 namespace net {
 namespace cproto {
 
-using std::vector;
 using std::chrono::seconds;
 using std::chrono::milliseconds;
 
@@ -80,9 +79,11 @@ public:
 			  hasExpectedClusterID(false),
 			  expectedClusterID(-1),
 			  reconnectAttempts(),
-			  enableCompression(false) {}
+			  enableCompression(false),
+			  requestDedicatedThread(false) {}
 		Options(milliseconds _loginTimeout, milliseconds _keepAliveTimeout, bool _createDB, bool _hasExpectedClusterID,
-				int _expectedClusterID, int _reconnectAttempts, bool _enableCompression, std::string _appName) noexcept
+				int _expectedClusterID, int _reconnectAttempts, bool _enableCompression, bool _requestDedicatedThread,
+				std::string _appName) noexcept
 			: loginTimeout(_loginTimeout),
 			  keepAliveTimeout(_keepAliveTimeout),
 			  createDB(_createDB),
@@ -90,6 +91,7 @@ public:
 			  expectedClusterID(_expectedClusterID),
 			  reconnectAttempts(_reconnectAttempts),
 			  enableCompression(_enableCompression),
+			  requestDedicatedThread(_requestDedicatedThread),
 			  appName(std::move(_appName)) {}
 
 		milliseconds loginTimeout;
@@ -99,6 +101,7 @@ public:
 		int expectedClusterID;
 		int reconnectAttempts;
 		bool enableCompression;
+		bool requestDedicatedThread;
 		std::string appName;
 	};
 	struct ConnectData {
@@ -109,7 +112,7 @@ public:
 	CoroClientConnection();
 	~CoroClientConnection();
 
-	void Start(ev::dynamic_loop &loop, ConnectData connectData);
+	void Start(ev::dynamic_loop &loop, ConnectData &&connectData);
 	void Stop();
 	bool IsRunning() const noexcept { return isRunning_; }
 	Error Status(bool forceCheck, milliseconds netTimeout, milliseconds execTimeout, const IRdxCancelContext *ctx);
@@ -150,7 +153,7 @@ private:
 		return call(opts, args, argss...);
 	}
 	template <typename... Argss>
-	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const string &val, const Argss &...argss) {
+	inline CoroRPCAnswer call(const CommandParams &opts, Args &args, const std::string &val, const Argss &...argss) {
 		args.push_back(Variant(p_string(&val)));
 		return call(opts, args, argss...);
 	}
@@ -161,16 +164,17 @@ private:
 	}
 
 	CoroRPCAnswer call(const CommandParams &opts, const Args &args);
+	Error callNoReply(const CommandParams &opts, uint32_t seq, const Args &args);
 
 	MarkedChunk packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs, std::optional<TimePointT> requiredLoginTs);
 	void appendChunck(std::vector<char> &buf, chunk &&ch);
 	Error login(std::vector<char> &buf);
-	// void closeConn(Error err) noexcept;
 	void handleFatalErrorFromReader(const Error &err) noexcept;
 	void handleFatalErrorImpl(const Error &err) noexcept;
 	void handleFatalErrorFromWriter(const Error &err) noexcept;
 	chunk getChunk() noexcept;
 	void recycleChunk(chunk &&) noexcept;
+	void sendCloseResults(CProtoHeader const &, CoroRPCAnswer const &);
 
 	void writerRoutine();
 	void readerRoutine();
@@ -189,9 +193,10 @@ private:
 	ev::dynamic_loop *loop_ = nullptr;
 
 	// seq -> rpc data
-	vector<RPCData> rpcCalls_;
+	std::vector<RPCData> rpcCalls_;
 
 	bool enableSnappy_ = false;
+	bool requestDedicatedThread_ = false;
 	bool enableCompression_ = false;
 	std::vector<chunk> recycledChuncks_;
 	coroutine::channel<MarkedChunk> wrCh_;

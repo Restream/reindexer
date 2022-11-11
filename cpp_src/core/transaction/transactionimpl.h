@@ -1,14 +1,14 @@
 #pragma once
 
 #include <optional>
-#include "client/synccororeindexer.h"
+#include "client/reindexer.h"
 #include "localtransaction.h"
 #include "proxiedtransaction.h"
 
 namespace reindexer {
 
 namespace client {
-class SyncCoroTransaction;
+class Transaction;
 }  // namespace client
 
 namespace sharding {
@@ -18,10 +18,10 @@ class LocatorService;
 class TransactionImpl {
 public:
 	TransactionImpl(LocalTransaction &&ltx) : data_(std::move(ltx.data_)), tx_{std::move(ltx.tx_)}, status_(std::move(ltx.err_)) {}
-	TransactionImpl(LocalTransaction &&ltx, client::SyncCoroTransaction &&tx) : data_(std::move(ltx.data_)), status_(std::move(ltx.err_)) {
+	TransactionImpl(LocalTransaction &&ltx, client::Transaction &&tx) : data_(std::move(ltx.data_)), status_(std::move(ltx.err_)) {
 		tx_ = std::make_unique<ProxiedTransaction>(std::move(tx), false);
 	}
-	TransactionImpl(LocalTransaction &&ltx, client::SyncCoroReindexer &&clusterLeader)
+	TransactionImpl(LocalTransaction &&ltx, client::Reindexer &&clusterLeader)
 		: data_(std::move(ltx.data_)), tx_{std::move(clusterLeader)}, status_(std::move(ltx.err_)) {}
 
 	Error Insert(Item &&item, lsn_t lsn) { return Modify(std::move(item), ModeInsert, lsn); }
@@ -51,7 +51,7 @@ private:
 	struct Empty {};
 	using ProxiedTxPtr = std::unique_ptr<ProxiedTransaction>;
 	using TxStepsPtr = std::unique_ptr<TransactionSteps>;
-	using RxClientT = client::SyncCoroReindexer;
+	using RxClientT = client::Reindexer;
 
 	void updateShardIdIfNecessary(int shardId);
 	void ensureShardIdIsCorrect(const Item &item);

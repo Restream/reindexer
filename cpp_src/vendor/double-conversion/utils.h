@@ -274,7 +274,7 @@ class StringBuilder {
   void AddSubstring(const char* s, int n) {
     ASSERT(!is_finalized() && position_ + n < buffer_.length());
     ASSERT(static_cast<size_t>(n) <= strlen(s));
-    memmove(&buffer_[position_], s, n * kCharSize);
+    memmove(&buffer_[position_], s, unsigned(n) * kCharSize);
     position_ += n;
   }
 

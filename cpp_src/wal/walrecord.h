@@ -50,8 +50,8 @@ struct WALRecord {
 		: type(_type), putMeta{key, value}, inTransaction(inTx) {}
 	explicit WALRecord(WALRecType _type, std::string_view cjson, int tmVersion, int modifyMode, bool inTx = false)
 		: type(_type), itemModify{cjson, tmVersion, modifyMode}, inTransaction(inTx) {}
-	WrSerializer &Dump(WrSerializer &ser, std::function<std::string(std::string_view)> cjsonViewer) const;
-	void GetJSON(JsonBuilder &jb, std::function<std::string(std::string_view)> cjsonViewer) const;
+	WrSerializer &Dump(WrSerializer &ser, const std::function<std::string(std::string_view)>& cjsonViewer) const;
+	void GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)>& cjsonViewer) const;
 	void Pack(WrSerializer &ser) const;
 
 	WALRecType type;

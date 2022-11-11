@@ -7,19 +7,19 @@ reindexer::Error JoinItems::Initialize() {
 	auto err = db_->AddNamespace(nsdef_);
 	if (!err.ok()) return err;
 
-	adjectives_ = {"able",	 "above",   "absolute", "balanced", "becoming", "beloved", "calm",	 "capable",  "capital",  "destined",
-				   "devoted",  "direct",  "enabled",  "enabling", "endless",  "factual", "fair",	 "faithful", "grand",	"grateful",
-				   "great",	"humane",  "humble",   "humorous", "ideal",	"immense", "immortal", "joint",	"just",	 "keen",
-				   "key",	  "kind",	"logical",  "loved",	"loving",   "mint",	"model",	"modern",   "nice",	 "noble",
-				   "normal",   "one",	 "open",	 "optimal",  "polite",   "popular", "positive", "quality",  "quick",	"quiet",
-				   "rapid",	"rare",	"rational", "sacred",   "safe",	 "saved",   "tight",	"together", "tolerant", "unbiased",
-				   "uncommon", "unified", "valid",	"valued",   "vast",	 "wealthy", "welcome"};
+	adjectives_ = {"able",	   "above",	  "absolute", "balanced", "becoming", "beloved", "calm",	 "capable",	 "capital",	 "destined",
+				   "devoted",  "direct",  "enabled",  "enabling", "endless",  "factual", "fair",	 "faithful", "grand",	 "grateful",
+				   "great",	   "humane",  "humble",	  "humorous", "ideal",	  "immense", "immortal", "joint",	 "just",	 "keen",
+				   "key",	   "kind",	  "logical",  "loved",	  "loving",	  "mint",	 "model",	 "modern",	 "nice",	 "noble",
+				   "normal",   "one",	  "open",	  "optimal",  "polite",	  "popular", "positive", "quality",	 "quick",	 "quiet",
+				   "rapid",	   "rare",	  "rational", "sacred",	  "safe",	  "saved",	 "tight",	 "together", "tolerant", "unbiased",
+				   "uncommon", "unified", "valid",	  "valued",	  "vast",	  "wealthy", "welcome"};
 
 	devices_ = {"iphone", "android", "smarttv", "stb", "ottstb"};
 
 	locations_ = {"mos", "ct", "dv", "sth", "vlg", "sib", "ural"};
 
-	names_ = {"ox",   "ant",  "ape",  "asp",  "bat",  "bee",  "boa",  "bug",  "cat",  "cod",  "cow",  "cub",  "doe",  "dog",
+	names_ = {"ox",	  "ant",  "ape",  "asp",  "bat",  "bee",  "boa",  "bug",  "cat",  "cod",  "cow",  "cub",  "doe",  "dog",
 			  "eel",  "eft",  "elf",  "elk",  "emu",  "ewe",  "fly",  "fox",  "gar",  "gnu",  "hen",  "hog",  "imp",  "jay",
 			  "kid",  "kit",  "koi",  "lab",  "man",  "owl",  "pig",  "pug",  "pup",  "ram",  "rat",  "ray",  "yak",  "bass",
 			  "bear", "bird", "boar", "buck", "bull", "calf", "chow", "clam", "colt", "crab", "crow", "dane", "deer", "dodo",
@@ -34,7 +34,7 @@ reindexer::Error JoinItems::Initialize() {
 void JoinItems::RegisterAllCases() { BaseFixture::RegisterAllCases(); }
 
 reindexer::Item JoinItems::MakeItem() {
-	Item item = db_->NewItem(nsdef_.name);
+	reindexer::Item item = db_->NewItem(nsdef_.name);
 	if (item.Status().ok()) {
 		item["id"] = id_seq_->Next();
 		item["name"] = randomString("price");

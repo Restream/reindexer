@@ -95,7 +95,7 @@ void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const Fiel
 }
 
 ProtobufSchemaBuilder ProtobufSchemaBuilder::Object(int tagName, std::string_view name, bool buildTypesOnly,
-													std::function<void(ProtobufSchemaBuilder& self)> filler) {
+													const std::function<void(ProtobufSchemaBuilder& self)>& filler) {
 	fieldsTypes_->tagsPath_.push_back(tagName);
 	fieldsTypes_->AddObject(name);
 	ProtobufSchemaBuilder obj(buildTypesOnly ? nullptr : ser_, fieldsTypes_, ObjType::TypeObject, name, pt_, tm_);

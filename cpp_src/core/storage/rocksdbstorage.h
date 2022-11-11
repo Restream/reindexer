@@ -6,8 +6,6 @@
 #include <rocksdb/write_batch.h>
 #include "basestorage.h"
 
-using std::unique_ptr;
-
 namespace reindexer {
 namespace datastorage {
 
@@ -16,11 +14,11 @@ public:
 	RocksDbStorage();
 	~RocksDbStorage() override;
 
-	Error Read(const StorageOpts& opts, std::string_view key, string& value) override final;
+	Error Read(const StorageOpts& opts, std::string_view key, std::string& value) override final;
 	Error Write(const StorageOpts& opts, std::string_view key, std::string_view value) override final;
 	Error Write(const StorageOpts& opts, UpdatesCollection& buffer) override final;
 	Error Delete(const StorageOpts& opts, std::string_view key) override final;
-	Error Repair(const string& path) override final;
+	Error Repair(const std::string& path) override final;
 
 	StorageType Type() const noexcept override final { return StorageType::RocksDB; }
 
@@ -32,13 +30,13 @@ public:
 	UpdatesCollection* GetUpdatesCollection() override final;
 
 protected:
-	Error doOpen(const string& path, const StorageOpts& opts) override final;
-	void doDestroy(const string& path) override final;
+	Error doOpen(const std::string& path, const StorageOpts& opts) override final;
+	void doDestroy(const std::string& path) override final;
 
 private:
-	string dbpath_;
+	std::string dbpath_;
 	StorageOpts opts_;
-	unique_ptr<rocksdb::DB> db_;
+	std::unique_ptr<rocksdb::DB> db_;
 };
 
 class RocksDbBatchBuffer : public UpdatesCollection {
@@ -81,7 +79,7 @@ public:
 	Comparator& GetComparator() override final;
 
 private:
-	const unique_ptr<rocksdb::Iterator> iterator_;
+	const std::unique_ptr<rocksdb::Iterator> iterator_;
 	RocksDbComparator comparator_;
 };
 

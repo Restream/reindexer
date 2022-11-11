@@ -6,13 +6,10 @@
 
 namespace reindexer {
 
-using std::min;
-using std::max;
+SelectIterator::SelectIterator(SelectKeyResult res, bool dist, std::string n, bool forcedFirst)
+	: SelectKeyResult(std::move(res)), distinct(dist), name(std::move(n)), forcedFirst_(forcedFirst), type_(Forward) {}
 
-SelectIterator::SelectIterator(const SelectKeyResult &res, bool dist, string n, bool forcedFirst)
-	: SelectKeyResult(res), distinct(dist), name(std::move(n)), forcedFirst_(forcedFirst), type_(Forward) {}
-
-void SelectIterator::Bind(PayloadType type, int field) {
+void SelectIterator::Bind(const PayloadType &type, int field) {
 	for (Comparator &cmp : comparators_) cmp.Bind(type, field);
 }
 
@@ -94,7 +91,7 @@ bool SelectIterator::nextFwd(IdType minHint) {
 			}
 		} else {
 			if (it->isRange_ && it->rIt_ != it->rEnd_) {
-				it->rIt_ = min(it->rEnd_, max(it->rIt_, lastVal_ + 1));
+				it->rIt_ = std::min(it->rEnd_, std::max(it->rIt_, lastVal_ + 1));
 
 				if (it->rIt_ != it->rEnd_ && it->rIt_ < minVal) {
 					minVal = it->rIt_;
@@ -128,7 +125,7 @@ bool SelectIterator::nextRev(IdType maxHint) {
 				lastIt_ = it;
 			}
 		} else if (it->isRange_ && it->rrIt_ != it->rrEnd_) {
-			it->rrIt_ = max(it->rrEnd_, min(it->rrIt_, lastVal_ - 1));
+			it->rrIt_ = std::max(it->rrEnd_, std::min(it->rrIt_, lastVal_ - 1));
 
 			if (it->rrIt_ != it->rrEnd_ && it->rrIt_ > maxVal) {
 				maxVal = it->rrIt_;
@@ -262,7 +259,7 @@ void SelectIterator::Append(SelectKeyResult &other) {
 	}
 }
 
-void SelectIterator::AppendAndBind(SelectKeyResult &other, PayloadType type, int field) {
+void SelectIterator::AppendAndBind(SelectKeyResult &other, const PayloadType &type, int field) {
 	reserve(size() + other.size());
 	for (auto &r : other) emplace_back(std::move(r));
 	comparators_.reserve(comparators_.size() + other.comparators_.size());
@@ -332,8 +329,8 @@ std::string_view SelectIterator::TypeName() const noexcept {
 	}
 }
 
-string SelectIterator::Dump() const {
-	string ret = name + ' ' + string(TypeName()) + "(";
+std::string SelectIterator::Dump() const {
+	std::string ret = name + ' ' + std::string(TypeName()) + "(";
 
 	for (auto &it : *this) {
 		if (it.useBtree_) ret += "btree;";

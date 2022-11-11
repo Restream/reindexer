@@ -11,7 +11,7 @@ namespace reindexer {
 class Query;
 class JoinedQuery;
 struct SortingEntries;
-struct UpdateEntry;
+class UpdateEntry;
 using EqualPosition_t = h_vector<std::string, 2>;
 class SQLParser {
 public:
@@ -26,12 +26,12 @@ protected:
 	/// Sql parser context
 	struct SqlParsingCtx {
 		struct SuggestionData {
-			SuggestionData(string tok, int tokType) : token(std::move(tok)), tokenType(tokType) {}
-			string token;
+			SuggestionData(std::string tok, int tokType) : token(std::move(tok)), tokenType(tokType) {}
+			std::string token;
 			int tokenType = 0;
-			std::vector<string> variants;
+			std::vector<std::string> variants;
 		};
-		void updateLinkedNs(const string &ns) {
+		void updateLinkedNs(const std::string &ns) {
 			if (autocompleteMode && (!foundPossibleSuggestions || possibleSuggestionDetectedInThisClause)) {
 				suggestionLinkedNs = ns;
 			}
@@ -43,7 +43,7 @@ protected:
 		size_t suggestionsPos = 0;
 		std::vector<int> tokens;
 		std::vector<SuggestionData> suggestions;
-		string suggestionLinkedNs;
+		std::string suggestionLinkedNs;
 	};
 
 	/// Parses query.
@@ -97,7 +97,7 @@ protected:
 	void parseJoin(JoinType type, tokenizer &tok);
 
 	/// Parse join entries
-	void parseJoinEntries(tokenizer &parser, const string &mainNs, JoinedQuery &jquery);
+	void parseJoinEntries(tokenizer &parser, const std::string &mainNs, JoinedQuery &jquery);
 
 	/// Parse equal_positions
 	void parseEqualPositions(tokenizer &parser, std::vector<std::pair<size_t, EqualPosition_t>> &equalPositions, size_t openBracketsCount);
@@ -109,7 +109,7 @@ protected:
 	UpdateEntry parseUpdateField(tokenizer &parser);
 
 	/// Parse joined Ns name: [Namespace.field]
-	string parseJoinedFieldName(tokenizer &parser, string &name);
+	std::string parseJoinedFieldName(tokenizer &parser, std::string &name);
 
 	/// Parse merge entries
 	void parseMerge(tokenizer &parser);

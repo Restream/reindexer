@@ -55,7 +55,7 @@ protected:
 			{IndexDeclaration{bookid, "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{title, "hash", "string", IndexOpts(), 0},
 			 IndexDeclaration{pages, "tree", "int", IndexOpts(), 0}, IndexDeclaration{price, "tree", "int", IndexOpts(), 0},
 			 IndexDeclaration{genreId_fk, "hash", "int", IndexOpts(), 0}, IndexDeclaration{authorid_fk, "hash", "int", IndexOpts(), 0},
-			 IndexDeclaration{string(pages + string("+") + bookid).c_str(), "hash", "composite", IndexOpts(), 0}});
+			 IndexDeclaration{(pages + std::string("+") + bookid).c_str(), "hash", "composite", IndexOpts(), 0}});
 
 		FillLocationsNamespace();
 		FillGenresNamespace();
@@ -270,7 +270,7 @@ protected:
 		return true;
 	}
 
-	void ChangeNsOptimizationTimeout(const string& nsName, int optimizationTimeout) {
+	void ChangeNsOptimizationTimeout(const std::string& nsName, int optimizationTimeout) {
 		reindexer::WrSerializer ser;
 		reindexer::JsonBuilder jb(ser);
 
@@ -300,7 +300,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	void TurnOnJoinCache(const string& nsName) {
+	void TurnOnJoinCache(const std::string& nsName) {
 		reindexer::WrSerializer ser;
 		reindexer::JsonBuilder jb(ser);
 
@@ -388,8 +388,8 @@ protected:
 		}
 	}
 
-	static string addQuotes(const string& str) {
-		string output;
+	static std::string addQuotes(const std::string& str) {
+		std::string output;
 		output += "\"";
 		output += str;
 		output += "\"";
@@ -427,7 +427,7 @@ protected:
 	std::vector<int> genresIds;
 
 	// clang-format off
-	const std::vector<string> locations = {
+	const std::vector<std::string> locations = {
 		"Москва",
 		"Тамбов",
 		"Казань",

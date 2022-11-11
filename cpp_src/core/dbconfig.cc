@@ -7,11 +7,11 @@
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
-#include "yaml/yaml.h"
+#include "yaml-cpp/yaml.h"
 
 namespace reindexer {
 
-static CacheMode str2cacheMode(const string &mode) {
+static CacheMode str2cacheMode(const std::string &mode) {
 	if (mode == "on") return CacheModeOn;
 	if (mode == "off" || mode == "") return CacheModeOff;
 	if (mode == "aggressive") return CacheModeAggressive;
@@ -42,9 +42,9 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				NamespaceConfigData data;
 				data.lazyLoad = nsNode["lazyload"].As<bool>();
 				data.noQueryIdleThreshold = nsNode["unload_idle_threshold"].As<int>();
-				data.logLevel = logLevelFromString(nsNode["log_level"].As<string>("none"));
-				data.strictMode = strictModeFromString(nsNode["strict_mode"].As<string>("names"));
-				data.cacheMode = str2cacheMode(nsNode["join_cache_mode"].As<string>("off"));
+				data.logLevel = logLevelFromString(nsNode["log_level"].As<std::string>("none"));
+				data.strictMode = strictModeFromString(nsNode["strict_mode"].As<std::string>("names"));
+				data.cacheMode = str2cacheMode(nsNode["join_cache_mode"].As<std::string>("off"));
 				data.startCopyPolicyTxSize = nsNode["start_copy_policy_tx_size"].As<int>(data.startCopyPolicyTxSize);
 				data.copyPolicyMultiplier = nsNode["copy_policy_multiplier"].As<int>(data.copyPolicyMultiplier);
 				data.txSizeToAlwaysCopy = nsNode["tx_size_to_always_copy"].As<int>(data.txSizeToAlwaysCopy);
@@ -59,7 +59,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				data.maxPreselectPart = nsNode["max_preselect_part"].As<double>(data.maxPreselectPart, 0.0, 1.0);
 				data.idxUpdatesCountingMode = nsNode["index_updates_counting_mode"].As<bool>(data.idxUpdatesCountingMode);
 				data.syncStorageFlushLimit = nsNode["sync_storage_flush_limit"].As<int>(data.syncStorageFlushLimit, 0);
-				namespacesData_.emplace(nsNode["namespace"].As<string>(), std::move(data));
+				namespacesData_.emplace(nsNode["namespace"].As<std::string>(), std::move(data));	 // NOLINT(performance-move-const-arg)
 			}
 			auto it = handlers_.find(NamespaceDataConf);
 			if (it != handlers_.end()) {
@@ -98,13 +98,13 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 
 void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> handler) {
 	smart_lock<shared_timed_mutex> lk(mtx_, true);
-	handlers_[cfgType] = handler;
+	handlers_[cfgType] = std::move(handler);
 }
 
 int DBConfigProvider::setHandler(std::function<void(ReplicationConfigData)> handler) {
 	smart_lock<shared_timed_mutex> lk(mtx_, true);
 	HandlersCounter_++;
-	replicationConfigDataHandlers_[HandlersCounter_] = handler;
+	replicationConfigDataHandlers_[HandlersCounter_] = std::move(handler);
 	return HandlersCounter_;
 }
 
@@ -128,7 +128,7 @@ cluster::AsyncReplConfigData DBConfigProvider::GetAsyncReplicationConfig() {
 	return asyncReplicationData_;
 }
 
-bool DBConfigProvider::GetNamespaceConfig(const string &nsName, NamespaceConfigData &data) {
+bool DBConfigProvider::GetNamespaceConfig(const std::string &nsName, NamespaceConfigData &data) {
 	smart_lock<shared_timed_mutex> lk(mtx_, false);
 	auto it = namespacesData_.find(nsName);
 	if (it == namespacesData_.end()) {
@@ -142,15 +142,14 @@ bool DBConfigProvider::GetNamespaceConfig(const string &nsName, NamespaceConfigD
 	return true;
 }
 
-Error ReplicationConfigData::FromYML(const std::string &yaml) {
-	Yaml::Node root;
+Error ReplicationConfigData::FromYAML(const std::string &yaml) {
 	try {
-		Yaml::Parse(root, yaml);
-		clusterID = root["cluster_id"].As<int>(clusterID);
-		serverID = root["server_id"].As<int>(serverID);
-		return errOK;
-	} catch (const Yaml::Exception &ex) {
-		return Error(errParams, "ReplicationConfigData: yaml parsing error: '%s'", ex.Message());
+		YAML::Node root = YAML::Load(yaml);
+		clusterID = root["cluster_id"].as<int>(clusterID);
+		serverID = root["server_id"].as<int>(serverID);
+		return Error();
+	} catch (const YAML::Exception &ex) {
+		return Error(errParams, "ReplicationConfigData: yaml parsing error: '%s'", ex.what());
 	} catch (const Error &err) {
 		return err;
 	}

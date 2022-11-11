@@ -31,8 +31,6 @@
 
 #include "outputparameters.h"
 
-using std::string;
-using std::stringstream;
 using namespace std::string_view_literals;
 
 namespace reindexer_server {
@@ -91,7 +89,7 @@ Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, reindexer::Query
 }
 
 int HTTPServer::GetSQLQuery(http::Context &ctx) {
-	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
+	std::string sqlQuery = urldecode2(ctx.request->params.Get("q"));
 
 	std::string_view limitParam = ctx.request->params.Get("limit");
 	std::string_view offsetParam = ctx.request->params.Get("offset");
@@ -112,7 +110,7 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 }
 
 int HTTPServer::GetSQLSuggest(http::Context &ctx) {
-	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
+	std::string sqlQuery = urldecode2(ctx.request->params.Get("q"));
 	if (sqlQuery.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Missed `q` parameter"));
 	}
@@ -136,7 +134,7 @@ int HTTPServer::GetSQLSuggest(http::Context &ctx) {
 
 	logPrintf(LogTrace, "GetSQLSuggest() incoming data: %s, %d", sqlQuery, bytePos);
 
-	vector<string> suggestions;
+	std::vector<std::string> suggestions;
 	auto db = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 	db.GetSqlSuggestions(sqlQuery, bytePos, suggestions);
 
@@ -152,7 +150,7 @@ int HTTPServer::GetSQLSuggest(http::Context &ctx) {
 
 int HTTPServer::PostSQLQuery(http::Context &ctx) {
 	reindexer::QueryResults res;
-	string sqlQuery = ctx.body->Read();
+	std::string sqlQuery = ctx.body->Read();
 	if (!sqlQuery.length()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Query is empty"));
 	}
@@ -166,7 +164,7 @@ int HTTPServer::PostSQLQuery(http::Context &ctx) {
 int HTTPServer::PostQuery(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 	reindexer::QueryResults res;
-	string dsl = ctx.body->Read();
+	std::string dsl = ctx.body->Read();
 
 	reindexer::Query q;
 	auto err = q.FromJSON(dsl);
@@ -183,7 +181,7 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 
 int HTTPServer::DeleteQuery(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
-	string dsl = ctx.body->Read();
+	std::string dsl = ctx.body->Read();
 
 	reindexer::Query q;
 	auto status = q.FromJSON(dsl);
@@ -206,7 +204,7 @@ int HTTPServer::DeleteQuery(http::Context &ctx) {
 
 int HTTPServer::UpdateQuery(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
-	string dsl = ctx.body->Read();
+	std::string dsl = ctx.body->Read();
 
 	reindexer::Query q;
 	auto status = q.FromJSON(dsl);
@@ -242,7 +240,7 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 	}
 
 	if (sortDirection) {
-		std::sort(dbs.begin(), dbs.end(), [sortDirection](const string &lhs, const string &rhs) {
+		std::sort(dbs.begin(), dbs.end(), [sortDirection](const std::string &lhs, const std::string &rhs) {
 			if (sortDirection > 0)
 				return collateCompare(lhs, rhs, CollateOpts(CollateASCII)) < 0;
 			else
@@ -262,7 +260,7 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 }
 
 int HTTPServer::PostDatabase(http::Context &ctx) {
-	string newDbName = getNameFromJson(ctx.body->Read());
+	std::string newDbName = getNameFromJson(ctx.body->Read());
 
 	auto dbs = dbMgr_.EnumDatabases();
 	for (auto &db : dbs) {
@@ -288,7 +286,7 @@ int HTTPServer::PostDatabase(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteDatabase(http::Context &ctx) {
-	string dbName(urldecode2(ctx.request->urlParams[0]));
+	std::string dbName(urldecode2(ctx.request->urlParams[0]));
 
 	AuthContext dummyCtx;
 	AuthContext *actx = &dummyCtx;
@@ -316,7 +314,7 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 
 	std::string_view sortOrder = ctx.request->params.Get("sort_order");
 
-	vector<reindexer::NamespaceDef> nsDefs;
+	std::vector<reindexer::NamespaceDef> nsDefs;
 	db.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames());
 
 	int sortDirection = 0;
@@ -353,13 +351,13 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 int HTTPServer::GetNamespace(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 
-	vector<reindexer::NamespaceDef> nsDefs;
+	std::vector<reindexer::NamespaceDef> nsDefs;
 	db.EnumNamespaces(nsDefs, EnumNamespacesOpts().WithFilter(nsName));
 
 	if (nsDefs.empty()) {
@@ -391,7 +389,7 @@ int HTTPServer::PostNamespace(http::Context &ctx) {
 
 int HTTPServer::DeleteNamespace(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	if (nsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
@@ -409,7 +407,7 @@ int HTTPServer::DeleteNamespace(http::Context &ctx) {
 
 int HTTPServer::TruncateNamespace(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	if (nsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
@@ -427,8 +425,8 @@ int HTTPServer::TruncateNamespace(http::Context &ctx) {
 
 int HTTPServer::RenameNamespace(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDBAdmin);	 // No timeout for this operation, because it doesn't supported by cluster
-	string srcNsName = urldecode2(ctx.request->urlParams[1]);
-	string dstNsName = urldecode2(ctx.request->urlParams[2]);
+	std::string srcNsName = urldecode2(ctx.request->urlParams[1]);
+	std::string dstNsName = urldecode2(ctx.request->urlParams[2]);
 
 	if (srcNsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
@@ -456,15 +454,15 @@ int HTTPServer::GetItems(http::Context &ctx) {
 				  ? getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout).WithShardId(ShardingKeyType::ProxyOff, false)
 				  : getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	std::string_view limitParam = ctx.request->params.Get("limit");
 	std::string_view offsetParam = ctx.request->params.Get("offset");
 	std::string_view sortField = ctx.request->params.Get("sort_field");
 	std::string_view sortOrder = ctx.request->params.Get("sort_order");
 
-	string filterParam = urldecode2(ctx.request->params.Get("filter"));
-	string fields = urldecode2(ctx.request->params.Get("fields"));
+	std::string filterParam = urldecode2(ctx.request->params.Get("filter"));
+	std::string fields = urldecode2(ctx.request->params.Get("fields"));
 
 	if (nsName.empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
@@ -518,7 +516,7 @@ int HTTPServer::PatchItems(http::Context &ctx) { return modifyItems(ctx, ModeUps
 
 int HTTPServer::GetMetaList(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
-	const string nsName = urldecode2(ctx.request->urlParams[1]);
+	const std::string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
@@ -593,8 +591,8 @@ int HTTPServer::GetMetaList(http::Context &ctx) {
 
 int HTTPServer::GetMetaByKey(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
-	const string nsName = urldecode2(ctx.request->urlParams[1]);
-	const string key = urldecode2(ctx.request->urlParams[2]);
+	const std::string nsName = urldecode2(ctx.request->urlParams[1]);
+	const std::string key = urldecode2(ctx.request->urlParams[2]);
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
@@ -613,7 +611,7 @@ int HTTPServer::GetMetaByKey(http::Context &ctx) {
 
 int HTTPServer::PutMetaByKey(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
-	const string nsName = urldecode2(ctx.request->urlParams[1]);
+	const std::string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
@@ -621,8 +619,8 @@ int HTTPServer::PutMetaByKey(http::Context &ctx) {
 		gason::JsonParser parser;
 		std::string body = ctx.body->Read();
 		auto root = parser.Parse(giftStr(body));
-		std::string key = root["key"].As<string>();
-		std::string value = root["value"].As<string>();
+		std::string key = root["key"].As<std::string>();
+		std::string value = root["value"].As<std::string>();
 		const Error err = db.PutMeta(nsName, key, unescapeString(value));
 		if (!err.ok()) {
 			return jsonStatus(ctx, http::HttpStatus(err));
@@ -636,13 +634,13 @@ int HTTPServer::PutMetaByKey(http::Context &ctx) {
 int HTTPServer::GetIndexes(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 
-	vector<reindexer::NamespaceDef> nsDefs;
+	std::vector<reindexer::NamespaceDef> nsDefs;
 	db.EnumNamespaces(nsDefs, EnumNamespacesOpts().WithFilter(nsName));
 
 	if (nsDefs.empty()) {
@@ -665,15 +663,15 @@ int HTTPServer::GetIndexes(http::Context &ctx) {
 int HTTPServer::PostIndex(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 
-	string json = ctx.body->Read();
-	string newIdxName = getNameFromJson(json);
+	std::string json = ctx.body->Read();
+	std::string newIdxName = getNameFromJson(json);
 
-	vector<reindexer::NamespaceDef> nsDefs;
+	std::vector<reindexer::NamespaceDef> nsDefs;
 	db.EnumNamespaces(nsDefs, EnumNamespacesOpts().WithFilter(nsName));
 
 	reindexer::IndexDef idxDef;
@@ -701,7 +699,7 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 int HTTPServer::PutIndex(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (!nsName.length()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
@@ -721,7 +719,7 @@ int HTTPServer::PutIndex(http::Context &ctx) {
 int HTTPServer::PutSchema(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (nsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
@@ -737,7 +735,7 @@ int HTTPServer::PutSchema(http::Context &ctx) {
 int HTTPServer::GetSchema(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (nsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
@@ -754,7 +752,7 @@ int HTTPServer::GetSchema(http::Context &ctx) {
 int HTTPServer::GetProtobufSchema(http::Context &ctx) {
 	Reindexer db = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout);
 
-	std::vector<string> nses;
+	std::vector<std::string> nses;
 	for (auto &p : ctx.request->params) {
 		if (p.name == "ns"sv || p.name == "ns[]"sv) {
 			nses.emplace_back(urldecode2(p.val));
@@ -771,7 +769,7 @@ int HTTPServer::GetProtobufSchema(http::Context &ctx) {
 int HTTPServer::DeleteIndex(http::Context &ctx) {
 	auto db = getDB(ctx, kRoleDBAdmin).WithTimeout(serverConfig_.HttpWriteTimeout());
 
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 	IndexDef idef(urldecode2(ctx.request->urlParams[2]));
 
 	if (nsName.empty()) {
@@ -850,7 +848,7 @@ int HTTPServer::Check(http::Context &ctx) {
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());
 }
 int HTTPServer::DocHandler(http::Context &ctx) {
-	string path(ctx.request->path.substr(1));
+	std::string path(ctx.request->path.substr(1));
 
 	bool endsWithSlash = (path.length() > 0 && path.back() == '/');
 	if (endsWithSlash) {
@@ -874,14 +872,14 @@ int HTTPServer::DocHandler(http::Context &ctx) {
 	}
 
 	for (; path.length() > 0;) {
-		string file = fs::JoinPath(path, "index.html");
+		std::string file = fs::JoinPath(path, "index.html");
 		const auto pathStatus = web.stat(file);
 		if (pathStatus.fstatus == fs::StatFile) {
 			return web.file(ctx, http::StatusOK, file, pathStatus.isGzip, false);
 		}
 
 		auto pos = path.find_last_of('/');
-		if (pos == string::npos) break;
+		if (pos == std::string::npos) break;
 
 		path = path.erase(pos);
 	}
@@ -895,7 +893,7 @@ int HTTPServer::NotFoundHandler(http::Context &ctx) {
 	return jsonStatus(ctx, httpStatus);
 }
 
-bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
+bool HTTPServer::Start(const std::string &addr, ev::dynamic_loop &loop) {
 	router_.NotFound<HTTPServer, &HTTPServer::NotFoundHandler>(this);
 
 	router_.GET<HTTPServer, &HTTPServer::DocHandler>("/", this);
@@ -955,6 +953,8 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteItemsTx>("/api/v1/db/:db/transactions/:tx/items", this);
 	router_.GET<HTTPServer, &HTTPServer::GetSQLQueryTx>("/api/v1/db/:db/transactions/:tx/query", this);
 	router_.DELETE<HTTPServer, &HTTPServer::DeleteQueryTx>("/api/v1/db/:db/transactions/:tx/query", this);
+	router_.POST<HTTPServer, &HTTPServer::PostMemReset>("/api/v1/allocator/drop_cache", this);
+	router_.GET<HTTPServer, &HTTPServer::GetMemInfo>("/api/v1/allocator/info", this);
 
 	router_.OnResponse(this, &HTTPServer::OnResponse);
 	router_.Middleware<HTTPServer, &HTTPServer::CheckAuth>(this);
@@ -973,7 +973,8 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	if (serverConfig_.HttpThreadingMode == ServerConfig::kDedicatedThreading) {
 		listener_.reset(new ForkedListener(loop, http::ServerConnection::NewFactory(router_, serverConfig_.MaxHttpReqSize)));
 	} else {
-		listener_.reset(new Listener(loop, http::ServerConnection::NewFactory(router_, serverConfig_.MaxHttpReqSize)));
+		listener_.reset(
+			new Listener<ListenerType::Shared>(loop, http::ServerConnection::NewFactory(router_, serverConfig_.MaxHttpReqSize)));
 	}
 	deadlineChecker_.set<HTTPServer, &HTTPServer::deadlineTimerCb>(this);
 	deadlineChecker_.set(loop);
@@ -983,7 +984,7 @@ bool HTTPServer::Start(const string &addr, ev::dynamic_loop &loop) {
 	return listener_->Bind(addr);
 }
 
-Error HTTPServer::modifyItem(Reindexer &db, string &nsName, Item &item, ItemModifyMode mode) {
+Error HTTPServer::modifyItem(Reindexer &db, std::string &nsName, Item &item, ItemModifyMode mode) {
 	Error status;
 	switch (mode) {
 		case ModeUpsert:
@@ -1002,7 +1003,7 @@ Error HTTPServer::modifyItem(Reindexer &db, string &nsName, Item &item, ItemModi
 	return status;
 }
 
-Error HTTPServer::modifyItem(Reindexer &db, string &nsName, Item &item, QueryResults &qr, ItemModifyMode mode) {
+Error HTTPServer::modifyItem(Reindexer &db, std::string &nsName, Item &item, QueryResults &qr, ItemModifyMode mode) {
 	Error status;
 	switch (mode) {
 		case ModeUpsert:
@@ -1021,11 +1022,11 @@ Error HTTPServer::modifyItem(Reindexer &db, string &nsName, Item &item, QueryRes
 	return status;
 }
 
-int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, vector<string> &&precepts, ItemModifyMode mode) {
+int HTTPServer::modifyItemsJSON(http::Context &ctx, std::string &nsName, std::vector<std::string> &&precepts, ItemModifyMode mode) {
 	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
-	string itemJson = ctx.body->Read();
+	std::string itemJson = ctx.body->Read();
 	int cnt = 0;
-	vector<string> updatedItems;
+	std::vector<std::string> updatedItems;
 
 	if (itemJson.size()) {
 		char *jsonPtr = &itemJson[0];
@@ -1057,7 +1058,7 @@ int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, vector<strin
 
 			if (item.GetID() != -1) {
 				++cnt;
-				if (!precepts.empty()) updatedItems.push_back(string(item.GetJSON()));
+				if (!precepts.empty()) updatedItems.push_back(std::string(item.GetJSON()));
 			}
 		}
 		db.Commit(nsName);
@@ -1069,7 +1070,7 @@ int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, vector<strin
 	builder.Put(kParamSuccess, true);
 	if (!precepts.empty()) {
 		auto itemsArray = builder.Array(kParamItems);
-		for (const string &item : updatedItems) itemsArray.Raw(nullptr, item);
+		for (const std::string &item : updatedItems) itemsArray.Raw(nullptr, item);
 		itemsArray.End();
 	}
 	builder.End();
@@ -1077,12 +1078,12 @@ int HTTPServer::modifyItemsJSON(http::Context &ctx, string &nsName, vector<strin
 	return ctx.JSON(http::StatusOK, ser.DetachChunk());
 }
 
-int HTTPServer::modifyItemsMsgPack(http::Context &ctx, string &nsName, vector<std::string> &&precepts, ItemModifyMode mode) {
+int HTTPServer::modifyItemsMsgPack(http::Context &ctx, std::string &nsName, std::vector<std::string> &&precepts, ItemModifyMode mode) {
 	QueryResults qr;
 	int totalItems = 0;
 
 	auto db = getDB(ctx, kRoleDataWrite).WithTimeout(serverConfig_.HttpWriteTimeout());
-	string sbuffer = ctx.body->Read();
+	std::string sbuffer = ctx.body->Read();
 
 	size_t length = sbuffer.size();
 	size_t offset = 0;
@@ -1122,7 +1123,7 @@ int HTTPServer::modifyItemsMsgPack(http::Context &ctx, string &nsName, vector<st
 	return ctx.MSGPACK(http::StatusOK, wrSer.DetachChunk());
 }
 
-int HTTPServer::modifyItemsProtobuf(http::Context &ctx, string &nsName, vector<std::string> &&precepts, ItemModifyMode mode) {
+int HTTPServer::modifyItemsProtobuf(http::Context &ctx, std::string &nsName, std::vector<std::string> &&precepts, ItemModifyMode mode) {
 	WrSerializer wrSer(ctx.writer->GetChunk());
 	ProtobufBuilder builder(&wrSer);
 
@@ -1141,7 +1142,7 @@ int HTTPServer::modifyItemsProtobuf(http::Context &ctx, string &nsName, vector<s
 	Item item = db.NewItem(nsName);
 	if (!item.Status().ok()) return sendResponse(0, item.Status());
 
-	string sbuffer = ctx.body->Read();
+	std::string sbuffer = ctx.body->Read();
 	Error status = item.FromProtobuf(std::string_view(sbuffer.data(), sbuffer.size()));
 	if (!status.ok()) return sendResponse(0, status);
 
@@ -1163,8 +1164,8 @@ int HTTPServer::modifyItemsProtobuf(http::Context &ctx, string &nsName, vector<s
 	return sendResponse(totalItems, item.Status());
 }
 
-int HTTPServer::modifyItemsTxJSON(http::Context &ctx, Transaction &tx, vector<string> &&precepts, ItemModifyMode mode) {
-	string itemJson = ctx.body->Read();
+int HTTPServer::modifyItemsTxJSON(http::Context &ctx, Transaction &tx, std::vector<std::string> &&precepts, ItemModifyMode mode) {
+	std::string itemJson = ctx.body->Read();
 
 	if (itemJson.size()) {
 		char *jsonPtr = &itemJson[0];
@@ -1198,8 +1199,8 @@ int HTTPServer::modifyItemsTxJSON(http::Context &ctx, Transaction &tx, vector<st
 	return jsonStatus(ctx);
 }
 
-int HTTPServer::modifyItemsTxMsgPack(http::Context &ctx, Transaction &tx, vector<string> &&precepts, ItemModifyMode mode) {
-	string sbuffer = ctx.body->Read();
+int HTTPServer::modifyItemsTxMsgPack(http::Context &ctx, Transaction &tx, std::vector<std::string> &&precepts, ItemModifyMode mode) {
+	std::string sbuffer = ctx.body->Read();
 	size_t length = sbuffer.size();
 	size_t offset = 0;
 
@@ -1221,12 +1222,12 @@ int HTTPServer::modifyItemsTxMsgPack(http::Context &ctx, Transaction &tx, vector
 }
 
 int HTTPServer::modifyItems(http::Context &ctx, ItemModifyMode mode) {
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (nsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
 
-	vector<string> precepts;
+	std::vector<std::string> precepts;
 	for (auto &p : ctx.request->params) {
 		if ((p.name == "precepts"sv) || (p.name == "precepts[]"sv)) {
 			precepts.emplace_back(urldecode2(p.val));
@@ -1283,7 +1284,7 @@ int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &re
 	auto cjsonViewer = [this, &res, &ctx](std::string_view cjson) {
 		auto item = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout).NewItem(res.GetNamespaces()[0]);
 		item.FromCJSON(cjson);
-		return string(item.GetJSON());
+		return std::string(item.GetJSON());
 	};
 	const bool isWALQuery = res.IsWALQuery();
 	for (size_t i = 0; it != res.end() && i < limit; ++i, ++it) {
@@ -1605,11 +1606,11 @@ int HTTPServer::modifyQueryTxImpl(http::Context &ctx, const std::string &dbName,
 	return status(ctx, http::HttpStatus(err));
 }
 
-Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role, string *dbNameOut) {
+Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role, std::string *dbNameOut) {
 	(void)ctx;
 	Reindexer *db = nullptr;
 
-	string dbName(urldecode2(ctx.request->urlParams[0]));
+	std::string dbName(urldecode2(ctx.request->urlParams[0]));
 
 	AuthContext dummyCtx;
 
@@ -1636,17 +1637,17 @@ Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role, string *dbNameOut
 	return db->NeedTraceActivity() ? db->WithActivityTracer(ctx.request->clientAddr, ctx.request->headers.Get("User-Agent")) : *db;
 }
 
-string HTTPServer::getNameFromJson(std::string_view json) {
+std::string HTTPServer::getNameFromJson(std::string_view json) {
 	try {
 		gason::JsonParser parser;
 		auto root = parser.Parse(json);
-		return root["name"].As<string>();
+		return root["name"].As<std::string>();
 	} catch (const gason::Exception &ex) {
 		throw Error(errParseJson, "getNameFromJson: %s", ex.what());
 	}
 }
 
-std::shared_ptr<Transaction> HTTPServer::getTx(const string &dbName, std::string_view txId) {
+std::shared_ptr<Transaction> HTTPServer::getTx(const std::string &dbName, std::string_view txId) {
 	std::lock_guard<std::mutex> lck(txMtx_);
 	auto found = txMap_.find(txId);
 	if (found == txMap_.end()) {
@@ -1674,7 +1675,7 @@ std::string HTTPServer::addTx(std::string dbName, Transaction &&tx) {
 	return txId;
 }
 
-void HTTPServer::removeTx(const string &dbName, std::string_view txId) {
+void HTTPServer::removeTx(const std::string &dbName, std::string_view txId) {
 	std::lock_guard<std::mutex> lck(txMtx_);
 	auto found = txMap_.find(txId);
 	if (found == txMap_.end() || !iequals(found.value().dbName, dbName)) {
@@ -1740,7 +1741,7 @@ int HTTPServer::CheckAuth(http::Context &ctx) {
 }
 
 int HTTPServer::BeginTx(http::Context &ctx) {
-	string nsName = urldecode2(ctx.request->urlParams[1]);
+	std::string nsName = urldecode2(ctx.request->urlParams[1]);
 	if (nsName.empty()) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
 	}
@@ -1768,12 +1769,12 @@ int HTTPServer::BeginTx(http::Context &ctx) {
 }
 
 int HTTPServer::CommitTx(http::Context &ctx) {
-	string txId = urldecode2(ctx.request->urlParams[1]);
+	std::string txId = urldecode2(ctx.request->urlParams[1]);
 	if (txId.empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Tx ID is not specified"));
 	}
 
-	string dbName;
+	std::string dbName;
 	auto db = getDB(ctx, kRoleDataWrite, &dbName);
 	auto tx = getTx(dbName, txId);
 	QueryResults qr;
@@ -1786,12 +1787,12 @@ int HTTPServer::CommitTx(http::Context &ctx) {
 }
 
 int HTTPServer::RollbackTx(http::Context &ctx) {
-	string txId = urldecode2(ctx.request->urlParams[1]);
+	std::string txId = urldecode2(ctx.request->urlParams[1]);
 	if (txId.empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Tx ID is not specified"));
 	}
 
-	string dbName;
+	std::string dbName;
 	auto db = getDB(ctx, kRoleDataWrite, &dbName);
 	auto tx = getTx(dbName, txId);
 	QueryResults qr;
@@ -1812,14 +1813,14 @@ int HTTPServer::PatchItemsTx(http::Context &ctx) { return modifyItemsTx(ctx, Mod
 int HTTPServer::DeleteItemsTx(http::Context &ctx) { return modifyItemsTx(ctx, ModeDelete); }
 
 int HTTPServer::GetSQLQueryTx(http::Context &ctx) {
-	string dbName;
+	std::string dbName;
 	auto db = getDB(ctx, kRoleDataRead, &dbName);
-	string txId = urldecode2(ctx.request->urlParams[1]);
+	std::string txId = urldecode2(ctx.request->urlParams[1]);
 	if (txId.empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Tx ID is not specified"));
 	}
 	reindexer::QueryResults res;
-	string sqlQuery = urldecode2(ctx.request->params.Get("q"));
+	std::string sqlQuery = urldecode2(ctx.request->params.Get("q"));
 	if (sqlQuery.empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Missed `q` parameter"));
 	}
@@ -1840,9 +1841,9 @@ int HTTPServer::GetSQLQueryTx(http::Context &ctx) {
 }
 
 int HTTPServer::DeleteQueryTx(http::Context &ctx) {
-	string dbName;
+	std::string dbName;
 	auto db = getDB(ctx, kRoleDataWrite, &dbName);
-	string dsl = ctx.body->Read();
+	std::string dsl = ctx.body->Read();
 
 	reindexer::Query q;
 	auto ret = q.FromJSON(dsl);
@@ -1850,13 +1851,41 @@ int HTTPServer::DeleteQueryTx(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(ret));
 	}
 	reindexer::QueryResults res;
-	string txId = urldecode2(ctx.request->urlParams[1]);
+	std::string txId = urldecode2(ctx.request->urlParams[1]);
 	if (txId.empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Tx ID is not specified"));
 	}
 
 	q.type_ = QueryDelete;
 	return modifyQueryTxImpl(ctx, dbName, txId, q);
+}
+
+int HTTPServer::PostMemReset(http::Context &ctx) {
+#if REINDEX_WITH_GPERFTOOLS
+	if (alloc_ext::TCMallocIsAvailable()) {
+		alloc_ext::instance()->ReleaseFreeMemory();
+		return jsonStatus(ctx);
+	}
+	return ctx.String(http::StatusForbidden,
+					  "Reindexer was compiled with tcmalloc, but tcmalloc shared library is not linked. Try LD_PRELOAD to link it");
+#else
+	return ctx.String(http::StatusForbidden, "Reindexer was compiled without tcmalloc");
+#endif
+}
+
+int HTTPServer::GetMemInfo(http::Context &ctx) {
+#if REINDEX_WITH_GPERFTOOLS
+	if (alloc_ext::TCMallocIsAvailable()) {
+		const int bufSize = 32000;
+		char buf[bufSize];
+		alloc_ext::instance()->GetStats(buf, bufSize);
+		return ctx.String(http::StatusOK, std::string_view(buf, strlen(buf)));
+	}
+	return ctx.String(http::StatusForbidden,
+					  "Reindexer was compiled with tcmalloc, but tcmalloc shared library is not linked. Try LD_PRELOAD to link it");
+#else
+	return ctx.String(http::StatusForbidden, "Reindexer was compiled without tcmalloc");
+#endif
 }
 
 void HTTPServer::Logger(http::Context &ctx) {

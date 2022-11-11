@@ -15,7 +15,7 @@ class ClusterDataReplicator {
 public:
 	using UpdatesQueueT = UpdatesQueuePair<UpdateRecord>;
 	using UpdatesQueueShardT = UpdatesQueueT::QueueT;
-	using NsNamesHashSetT = fast_hash_set<string, nocase_hash_str, nocase_equal_str>;
+	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str>;
 
 	ClusterDataReplicator(UpdatesQueueT &, SharedSyncState<> &, ReindexerImpl &);
 

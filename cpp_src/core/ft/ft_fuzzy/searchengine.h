@@ -16,17 +16,17 @@ namespace search_engine {
 
 class SearchEngine {
 public:
-	typedef shared_ptr<SearchEngine> Ptr;
+	typedef std::shared_ptr<SearchEngine> Ptr;
 
 	SearchEngine();
-	void SetConfig(const unique_ptr<FtFuzzyConfig> &cfg);
+	void SetConfig(const std::unique_ptr<FtFuzzyConfig> &cfg);
 	SearchEngine(const SearchEngine &rhs) = delete;
 
 	SearchEngine &operator=(const SearchEngine &) = delete;
 
 	SearchResult Search(const FtDSLQuery &dsl, bool inTransaction, const reindexer::RdxContext &);
 	void Rebuild();
-	void AddData(std::string_view src_data, const IdType id, int field, const string &extraWordSymbols);
+	void AddData(std::string_view src_data, const IdType id, int field, const std::string &extraWordSymbols);
 	void Commit();
 
 private:

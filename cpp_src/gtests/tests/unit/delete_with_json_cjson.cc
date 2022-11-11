@@ -56,7 +56,7 @@
 
 #define CHECK_SUCCESS(expr)              \
 	{                                    \
-		Error e = expr;                  \
+		const Error& e = expr;           \
 		ASSERT_TRUE(e.ok()) << e.what(); \
 	}
 
@@ -82,8 +82,8 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 	CHECK_SUCCESS(err);
 	CHECK_SUCCESS(item.Status());
 	ASSERT_EQ(item["id"].As<int>(), data.id);
-	ASSERT_EQ(item["name"].As<string>(), data.name);
-	ASSERT_EQ(item["color"].As<string>(), data.color);
+	ASSERT_EQ(item["name"].As<std::string>(), data.name);
+	ASSERT_EQ(item["color"].As<std::string>(), data.color);
 	ASSERT_EQ(item["weight"].As<int>(), data.weight);
 	ASSERT_EQ(item["height"].As<int>(), data.height);
 	ASSERT_EQ(item["fk_id"].As<int>(), data.fk_id);

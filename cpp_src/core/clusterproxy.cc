@@ -1,8 +1,7 @@
 #include "clusterproxy.h"
 #include <shared_mutex>
 #include "client/itemimpl.h"
-#include "client/synccororeindexerimpl.h"
-#include "client/transaction.h"
+#include "client/reindexerimpl.h"
 #include "cluster/clusterizator.h"
 #include "cluster/sharding/sharding.h"
 #include "core/defnsconfigs.h"
@@ -20,7 +19,7 @@ namespace reindexer {
 
 constexpr auto kReplicationStatsTimeout = std::chrono::seconds(10);
 
-reindexer::client::Item ClusterProxy::toClientItem(std::string_view ns, client::SyncCoroReindexer *connection, reindexer::Item &item) {
+reindexer::client::Item ClusterProxy::toClientItem(std::string_view ns, client::Reindexer *connection, reindexer::Item &item) {
 	assertrx(connection);
 	Error err;
 	reindexer::client::Item clientItem = connection->NewItem(ns);
@@ -41,7 +40,7 @@ reindexer::client::Item ClusterProxy::toClientItem(std::string_view ns, client::
 
 // This method may be used for cluster proxied qr only
 // TODO: Remove it totally
-void ClusterProxy::clientToCoreQueryResults(client::SyncCoroQueryResults &clientResults, LocalQueryResults &result) {
+void ClusterProxy::clientToCoreQueryResults(client::QueryResults &clientResults, LocalQueryResults &result) {
 	assertrx(!clientResults.HaveJoined());
 	assertrx(clientResults.GetMergedNSCount() <= 1);
 	if (result.getMergedNSCount() == 0) {
@@ -88,9 +87,9 @@ void ClusterProxy::clientToCoreQueryResults(client::SyncCoroQueryResults &client
 }
 
 template <typename FnL, FnL fnl, typename... Args>
-Error ClusterProxy::baseFollowerAction(const RdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader, Args &&...args) {
+Error ClusterProxy::baseFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader, Args &&...args) {
 	try {
-		client::SyncCoroReindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+		client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
 		const auto ward = ctx.BeforeClusterProxy();
 		Error err = (l.*fnl)(std::forward<Args>(args)...);
 		return err;
@@ -100,7 +99,7 @@ Error ClusterProxy::baseFollowerAction(const RdxContext &ctx, std::shared_ptr<cl
 }
 
 template <typename FnL, FnL fnl>
-Error ClusterProxy::itemFollowerAction(const RdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader,
+Error ClusterProxy::itemFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader,
 									   std::string_view nsName, Item &item) {
 	try {
 		Error err;
@@ -113,7 +112,7 @@ Error ClusterProxy::itemFollowerAction(const RdxContext &ctx, std::shared_ptr<cl
 				return err;
 			}
 			clientItem.SetPrecepts(item.impl_->GetPrecepts());
-			client::SyncCoroReindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+			client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
 			{
 				const auto ward = ctx.BeforeClusterProxy();
 				err = (l.*fnl)(nsName, clientItem);
@@ -136,7 +135,7 @@ Error ClusterProxy::itemFollowerAction(const RdxContext &ctx, std::shared_ptr<cl
 }
 
 template <typename FnL, FnL fnl>
-Error ClusterProxy::resultItemFollowerAction(const RdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader,
+Error ClusterProxy::resultItemFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader,
 											 std::string_view nsName, Item &item, LocalQueryResults &result) {
 	try {
 		Error err;
@@ -150,8 +149,8 @@ Error ClusterProxy::resultItemFollowerAction(const RdxContext &ctx, std::shared_
 			return err;
 		}
 		clientItem.SetPrecepts(item.impl_->GetPrecepts());
-		client::SyncCoroReindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
-		client::SyncCoroQueryResults clientResults;
+		client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+		client::QueryResults clientResults;
 		{
 			const auto ward = ctx.BeforeClusterProxy();
 			err = (l.*fnl)(nsName, clientItem, clientResults);
@@ -169,12 +168,12 @@ Error ClusterProxy::resultItemFollowerAction(const RdxContext &ctx, std::shared_
 }
 
 template <typename FnL, FnL fnl>
-Error ClusterProxy::resultFollowerAction(const RdxContext &ctx, std::shared_ptr<client::SyncCoroReindexer> clientToLeader,
+Error ClusterProxy::resultFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader,
 										 const Query &query, LocalQueryResults &result) {
 	try {
 		Error err;
-		client::SyncCoroReindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
-		client::SyncCoroQueryResults clientResults;
+		client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+		client::QueryResults clientResults;
 		{
 			const auto ward = ctx.BeforeClusterProxy();
 			err = (l.*fnl)(query, clientResults);
@@ -201,9 +200,9 @@ void ClusterProxy::ShutdownCluster() {
 }
 
 Transaction ClusterProxy::newTxFollowerAction(bool isWithSharding, const RdxContext &ctx,
-											  std::shared_ptr<client::SyncCoroReindexer> clientToLeader, std::string_view nsName) {
+											  const std::shared_ptr<client::Reindexer> &clientToLeader, std::string_view nsName) {
 	try {
-		client::SyncCoroReindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+		client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
 		return isWithSharding ? Transaction(impl_.NewTransaction(nsName, ctx), std::move(l))
 							  : Transaction(impl_.NewTransaction(nsName, ctx), l.NewTransaction(nsName));
 	} catch (const Error &err) {
@@ -357,7 +356,7 @@ R ClusterProxy::proxyCall(const RdxContext &_ctx, std::string_view nsName, FnA &
 	return r;
 }
 
-std::shared_ptr<client::SyncCoroReindexer> ClusterProxy::getLeader(const cluster::RaftInfo &info) {
+std::shared_ptr<client::Reindexer> ClusterProxy::getLeader(const cluster::RaftInfo &info) {
 	{
 		std::shared_lock lck(mtx_);
 		if (info.leaderId == leaderId_) {
@@ -397,7 +396,7 @@ ClusterProxy::ClusterProxy(ReindexerConfig cfg) : impl_(std::move(cfg)), leaderI
 }
 ClusterProxy::~ClusterProxy() { impl_.configProvider_.unsetHandler(configHandlerId_); }
 
-Error ClusterProxy::Connect(const string &dsn, ConnectOpts opts) {
+Error ClusterProxy::Connect(const std::string &dsn, ConnectOpts opts) {
 	Error err = impl_.Connect(dsn, opts);
 	if (!err.ok()) {
 		return err;
@@ -416,17 +415,16 @@ Error ClusterProxy::Connect(const string &dsn, ConnectOpts opts) {
 	return err;
 }
 
-#define CallProxyFunction(Fn)                                                                                                             \
-	proxyCall<decltype(&ReindexerImpl::Fn), &ReindexerImpl::Fn, decltype(&client::SyncCoroReindexer::Fn), &client::SyncCoroReindexer::Fn, \
-			  Error>
+#define CallProxyFunction(Fn) \
+	proxyCall<decltype(&ReindexerImpl::Fn), &ReindexerImpl::Fn, decltype(&client::Reindexer::Fn), &client::Reindexer::Fn, Error>
 
-#define DefFunctor1(P1, F, Action)                                                                    \
-	std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, P1)> action = \
-		std::bind(&ClusterProxy::Action<decltype(&client::SyncCoroReindexer::F), &client::SyncCoroReindexer::F, P1>, this, _1, _2, _3);
+#define DefFunctor1(P1, F, Action)                                                            \
+	std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, P1)> action = \
+		std::bind(&ClusterProxy::Action<decltype(&client::Reindexer::F), &client::Reindexer::F, P1>, this, _1, _2, _3);
 
-#define DefFunctor2(P1, P2, F, Action)                                                                               \
-	std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, P1, P2)> action = std::bind( \
-		&ClusterProxy::Action<decltype(&client::SyncCoroReindexer::F), &client::SyncCoroReindexer::F, P1, P2>, this, _1, _2, _3, _4);
+#define DefFunctor2(P1, P2, F, Action)                                                            \
+	std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, P1, P2)> action = \
+		std::bind(&ClusterProxy::Action<decltype(&client::Reindexer::F), &client::Reindexer::F, P1, P2>, this, _1, _2, _3, _4);
 
 template <typename Func, typename FLocal, typename... Args>
 Error ClusterProxy::delegateToShards(const RdxContext &rdxCtx, Func f, const FLocal &&local, [[maybe_unused]] Args &&...args) {
@@ -531,7 +529,7 @@ Error ClusterProxy::modifyItemOnShard(const InternalRdxContext &ctx, const RdxCo
 		}
 		if (connection) {
 			client::Item clientItem = toClientItem(nsName, connection.get(), item);
-			client::SyncCoroQueryResults qrClient(result.Flags(), 0, false);
+			client::QueryResults qrClient(result.Flags(), 0, false);
 			if (!clientItem.Status().ok()) return clientItem.Status();
 
 			const auto timeout = ctx.GetTimeout();
@@ -559,7 +557,7 @@ Error ClusterProxy::modifyItemOnShard(const InternalRdxContext &ctx, const RdxCo
 	return status;
 }
 
-Error ClusterProxy::executeQueryOnClient(client::SyncCoroReindexer &connection, const Query &q, client::SyncCoroQueryResults &qrClient,
+Error ClusterProxy::executeQueryOnClient(client::Reindexer &connection, const Query &q, client::QueryResults &qrClient,
 										 const std::function<void(size_t count, size_t totalCount)> &limitOffsetCalc) {
 	Error status;
 	switch (q.Type()) {
@@ -610,7 +608,7 @@ void ClusterProxy::addEmptyLocalQrWithShardID(const Query &query, QueryResults &
 
 Error ClusterProxy::executeQueryOnShard(
 	const Query &query, QueryResults &result, unsigned proxyFetchLimit, const InternalRdxContext &ctx, const RdxContext &rdxCtx,
-	const std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> &&localAction) noexcept {
+	std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> &&localAction) noexcept {
 	Error status;
 	try {
 		auto connectionsPtr = shardingRouter_->GetShardsConnectionsWithId(query, status);
@@ -643,7 +641,7 @@ Error ClusterProxy::executeQueryOnShard(
 
 				auto connection =
 					connections[0]->WithShardingParallelExecution(false).WithContext(shardingCtx.DeadlineCtx()).WithTimeout(timeout);
-				client::SyncCoroQueryResults qrClient(result.Flags(), proxyFetchLimit, true);
+				client::QueryResults qrClient(result.Flags(), proxyFetchLimit, true);
 				status = executeQueryOnClient(connection, query, qrClient, [](size_t, size_t) {});
 				if (status.ok()) {
 					result.AddQr(std::move(qrClient), connections[0].ShardId(), true);
@@ -695,7 +693,7 @@ Error ClusterProxy::executeQueryOnShard(
 										  ->WithShardingParallelExecution(connections.size() > 1)
 										  .WithContext(shardingCtx.DeadlineCtx())
 										  .WithTimeout(timeout);
-					client::SyncCoroQueryResults qrClient(result.Flags(), proxyFetchLimit, false);
+					client::QueryResults qrClient(result.Flags(), proxyFetchLimit, false);
 
 					if (distributedQuery.sortingEntries_.empty()) {
 						distributedQuery.Limit(limit);
@@ -765,12 +763,12 @@ Error ClusterProxy::OpenNamespace(std::string_view nsName, const StorageOpts &op
 		ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "OPEN NAMESPACE " << nsName).Slice() : ""sv, impl_.activities_);
 
 	auto localOpen = [this, &rdxCtx](std::string_view nsName, const StorageOpts &opts, const NsReplicationOpts &replOpts) {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, std::string_view, const StorageOpts &,
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, const StorageOpts &,
 							const NsReplicationOpts &)>
-			action = std::bind(&ClusterProxy::baseFollowerAction<decltype(&client::SyncCoroReindexer::OpenNamespace),
-																 &client::SyncCoroReindexer::OpenNamespace, std::string_view,
-																 const StorageOpts &, const NsReplicationOpts &>,
-							   this, _1, _2, _3, _4, _5);
+			action =
+				std::bind(&ClusterProxy::baseFollowerAction<decltype(&client::Reindexer::OpenNamespace), &client::Reindexer::OpenNamespace,
+															std::string_view, const StorageOpts &, const NsReplicationOpts &>,
+						  this, _1, _2, _3, _4, _5);
 		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::OpenNamespace", sId_.load(std::memory_order_relaxed));
 
 		return CallProxyFunction(OpenNamespace)(rdxCtx, nsName, action, nsName, opts, replOpts);
@@ -780,7 +778,7 @@ Error ClusterProxy::OpenNamespace(std::string_view nsName, const StorageOpts &op
 		Error err = shardingRouter_->AwaitShards(ctx);
 		if (!err.ok()) return err;
 
-		return delegateToShards(rdxCtx, &client::SyncCoroReindexer::OpenNamespace, std::move(localOpen), nsName, opts, replOpts);
+		return delegateToShards(rdxCtx, &client::Reindexer::OpenNamespace, std::move(localOpen), nsName, opts, replOpts);
 	}
 	return localOpen(nsName, opts, replOpts);
 }
@@ -828,7 +826,7 @@ Error ClusterProxy::CloseNamespace(std::string_view nsName, const InternalRdxCon
 	if (isWithSharding(nsName, ctx)) {
 		Error err = shardingRouter_->AwaitShards(ctx);
 		if (!err.ok()) return err;
-		return delegateToShardsByNs(rdxCtx, &client::SyncCoroReindexer::CloseNamespace, std::move(localClose), nsName);
+		return delegateToShardsByNs(rdxCtx, &client::Reindexer::CloseNamespace, std::move(localClose), nsName);
 	}
 	return localClose(nsName);
 }
@@ -848,7 +846,7 @@ Error ClusterProxy::DropNamespace(std::string_view nsName, const InternalRdxCont
 		Error err = shardingRouter_->AwaitShards(ctx);
 		if (!err.ok()) return err;
 
-		return delegateToShards(rdxCtx, &client::SyncCoroReindexer::DropNamespace, std::move(localDrop), nsName);
+		return delegateToShards(rdxCtx, &client::Reindexer::DropNamespace, std::move(localDrop), nsName);
 	}
 	return localDrop(nsName);
 }
@@ -866,7 +864,7 @@ Error ClusterProxy::TruncateNamespace(std::string_view nsName, const InternalRdx
 		Error err = shardingRouter_->AwaitShards(ctx);
 		if (!err.ok()) return err;
 
-		return delegateToShards(rdxCtx, &client::SyncCoroReindexer::TruncateNamespace, std::move(localTruncate), nsName);
+		return delegateToShards(rdxCtx, &client::Reindexer::TruncateNamespace, std::move(localTruncate), nsName);
 	}
 	return localTruncate(nsName);
 }
@@ -885,7 +883,7 @@ Error ClusterProxy::RenameNamespace(std::string_view srcNsName, const std::strin
 		Error err = shardingRouter_->AwaitShards(ctx);
 		if (!err.ok()) return err;
 
-		return delegateToShards(rdxCtx, &client::SyncCoroReindexer::RenameNamespace, std::move(localRename), srcNsName, dstNsName);
+		return delegateToShards(rdxCtx, &client::Reindexer::RenameNamespace, std::move(localRename), srcNsName, dstNsName);
 	}
 	return localRename(srcNsName, dstNsName);
 }
@@ -907,7 +905,7 @@ Error ClusterProxy::AddIndex(std::string_view nsName, const IndexDef &index, con
 		Error err = shardingRouter_->AwaitShards(ctx);
 		if (!err.ok()) return err;
 
-		return delegateToShards(rdxCtx, &client::SyncCoroReindexer::AddIndex, std::move(localAddIndex), nsName, index);
+		return delegateToShards(rdxCtx, &client::Reindexer::AddIndex, std::move(localAddIndex), nsName, index);
 	}
 	return localAddIndex(nsName, index);
 }
@@ -927,7 +925,7 @@ Error ClusterProxy::UpdateIndex(std::string_view nsName, const IndexDef &index, 
 		Error err = shardingRouter_->AwaitShards(ctx);
 		if (!err.ok()) return err;
 
-		return delegateToShards(rdxCtx, &client::SyncCoroReindexer::UpdateIndex, std::move(localUpdateIndex), nsName, index);
+		return delegateToShards(rdxCtx, &client::Reindexer::UpdateIndex, std::move(localUpdateIndex), nsName, index);
 	}
 	return localUpdateIndex(nsName, index);
 }
@@ -946,7 +944,7 @@ Error ClusterProxy::DropIndex(std::string_view nsName, const IndexDef &index, co
 		Error err = shardingRouter_->AwaitShards(ctx);
 		if (!err.ok()) return err;
 
-		return delegateToShards(rdxCtx, &client::SyncCoroReindexer::DropIndex, std::move(localDropIndex), nsName, index);
+		return delegateToShards(rdxCtx, &client::Reindexer::DropIndex, std::move(localDropIndex), nsName, index);
 	}
 	return localDropIndex(nsName, index);
 }
@@ -965,7 +963,7 @@ Error ClusterProxy::SetSchema(std::string_view nsName, std::string_view schema, 
 		Error err = shardingRouter_->AwaitShards(ctx);
 		if (!err.ok()) return err;
 
-		return delegateToShards(rdxCtx, &client::SyncCoroReindexer::SetSchema, std::move(localSetSchema), nsName, schema);
+		return delegateToShards(rdxCtx, &client::Reindexer::SetSchema, std::move(localSetSchema), nsName, schema);
 	}
 	return localSetSchema(nsName, schema);
 }
@@ -977,7 +975,7 @@ Error ClusterProxy::GetSchema(std::string_view nsName, int format, std::string &
 	return impl_.GetSchema(nsName, format, schema, rdxCtx);
 }
 
-Error ClusterProxy::EnumNamespaces(vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx) {
+Error ClusterProxy::EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx) {
 	const auto rdxCtx = ctx.CreateRdxContext("SELECT NAMESPACES", impl_.activities_);
 	return impl_.EnumNamespaces(defs, opts, rdxCtx);
 }
@@ -987,18 +985,17 @@ Error ClusterProxy::Insert(std::string_view nsName, Item &item, const InternalRd
 	const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "INSERT INTO " << nsName).Slice() : ""sv, impl_.activities_);
 
 	auto insertFn = [this, &rdxCtx](std::string_view nsName, Item &item) -> Error {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, std::string_view, Item &)> action =
-			std::bind(&ClusterProxy::itemFollowerAction<Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &),
-														&client::SyncCoroReindexer::Insert>,
-					  this, _1, _2, _3, _4);
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, Item &)> action = std::bind(
+			&ClusterProxy::itemFollowerAction<Error (client::Reindexer::*)(std::string_view, client::Item &), &client::Reindexer::Insert>,
+			this, _1, _2, _3, _4);
 
 		return proxyCall<Error (ReindexerImpl::*)(std::string_view, Item &, const RdxContext &), &ReindexerImpl::Insert,
-						 Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &), &client::SyncCoroReindexer::Insert, Error>(
+						 Error (client::Reindexer::*)(std::string_view, client::Item &), &client::Reindexer::Insert, Error>(
 			rdxCtx, nsName, action, nsName, item);
 	};
 
 	if (isWithSharding(nsName, ctx)) {
-		return modifyItemOnShard<&client::SyncCoroReindexer::Insert>(ctx, rdxCtx, nsName, item, std::move(insertFn));
+		return modifyItemOnShard<&client::Reindexer::Insert>(ctx, rdxCtx, nsName, item, std::move(insertFn));
 	}
 	return insertFn(nsName, item);
 }
@@ -1008,22 +1005,20 @@ Error ClusterProxy::Insert(std::string_view nsName, Item &item, QueryResults &re
 	const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "INSERT INTO " << nsName).Slice() : ""sv, impl_.activities_);
 
 	auto insertFn = [this, &rdxCtx](std::string_view nsName, Item &item, LocalQueryResults &result) -> Error {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, std::string_view, Item &, LocalQueryResults &)>
-			action =
-				std::bind(&ClusterProxy::resultItemFollowerAction<Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &,
-																									   client::SyncCoroQueryResults &),
-																  &client::SyncCoroReindexer::Insert>,
-						  this, _1, _2, _3, _4, _5);
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, Item &, LocalQueryResults &)> action =
+			std::bind(
+				&ClusterProxy::resultItemFollowerAction<
+					Error (client::Reindexer::*)(std::string_view, client::Item &, client::QueryResults &), &client::Reindexer::Insert>,
+				this, _1, _2, _3, _4, _5);
 
 		return proxyCall<Error (ReindexerImpl::*)(std::string_view, Item &, LocalQueryResults &, const RdxContext &),
-						 &ReindexerImpl::Insert,
-						 Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &, client::SyncCoroQueryResults &),
-						 &client::SyncCoroReindexer::Insert, Error>(rdxCtx, nsName, action, nsName, item, result);
+						 &ReindexerImpl::Insert, Error (client::Reindexer::*)(std::string_view, client::Item &, client::QueryResults &),
+						 &client::Reindexer::Insert, Error>(rdxCtx, nsName, action, nsName, item, result);
 	};
 
 	result.SetQuery(nullptr);
 	if (isWithSharding(nsName, ctx)) {
-		return modifyItemOnShard<&client::SyncCoroReindexer::Insert>(ctx, rdxCtx, nsName, item, result, std::move(insertFn));
+		return modifyItemOnShard<&client::Reindexer::Insert>(ctx, rdxCtx, nsName, item, result, std::move(insertFn));
 	}
 
 	try {
@@ -1041,17 +1036,16 @@ Error ClusterProxy::Update(std::string_view nsName, Item &item, const InternalRd
 	const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? ser.Slice() : ""sv, impl_.activities_);
 
 	auto updateFn = [this, &rdxCtx](std::string_view nsName, Item &item) -> Error {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, std::string_view, Item &)> action =
-			std::bind(&ClusterProxy::itemFollowerAction<Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &),
-														&client::SyncCoroReindexer::Update>,
-					  this, _1, _2, _3, _4);
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, Item &)> action = std::bind(
+			&ClusterProxy::itemFollowerAction<Error (client::Reindexer::*)(std::string_view, client::Item &), &client::Reindexer::Update>,
+			this, _1, _2, _3, _4);
 		return proxyCall<Error (ReindexerImpl::*)(std::string_view, Item &, const RdxContext &), &ReindexerImpl::Update,
-						 Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &), &client::SyncCoroReindexer::Update, Error>(
+						 Error (client::Reindexer::*)(std::string_view, client::Item &), &client::Reindexer::Update, Error>(
 			rdxCtx, nsName, action, nsName, item);
 	};
 
 	if (isWithSharding(nsName, ctx)) {
-		return modifyItemOnShard<&client::SyncCoroReindexer::Update>(ctx, rdxCtx, nsName, item, std::move(updateFn));
+		return modifyItemOnShard<&client::Reindexer::Update>(ctx, rdxCtx, nsName, item, std::move(updateFn));
 	}
 	return updateFn(nsName, item);
 }
@@ -1064,22 +1058,20 @@ Error ClusterProxy::Update(std::string_view nsName, Item &item, QueryResults &re
 	const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? ser.Slice() : ""sv, impl_.activities_);
 
 	auto updateFn = [this, &rdxCtx](std::string_view nsName, Item &item, LocalQueryResults &result) -> Error {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, std::string_view, Item &, LocalQueryResults &)>
-			action =
-				std::bind(&ClusterProxy::resultItemFollowerAction<Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &,
-																									   client::SyncCoroQueryResults &),
-																  &client::SyncCoroReindexer::Update>,
-						  this, _1, _2, _3, _4, _5);
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, Item &, LocalQueryResults &)> action =
+			std::bind(
+				&ClusterProxy::resultItemFollowerAction<
+					Error (client::Reindexer::*)(std::string_view, client::Item &, client::QueryResults &), &client::Reindexer::Update>,
+				this, _1, _2, _3, _4, _5);
 
 		return proxyCall<Error (ReindexerImpl::*)(std::string_view, Item &, LocalQueryResults &, const RdxContext &),
-						 &ReindexerImpl::Update,
-						 Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &, client::SyncCoroQueryResults &),
-						 &client::SyncCoroReindexer::Update, Error>(rdxCtx, nsName, action, nsName, item, result);
+						 &ReindexerImpl::Update, Error (client::Reindexer::*)(std::string_view, client::Item &, client::QueryResults &),
+						 &client::Reindexer::Update, Error>(rdxCtx, nsName, action, nsName, item, result);
 	};
 
 	result.SetQuery(nullptr);
 	if (isWithSharding(nsName, ctx)) {
-		return modifyItemOnShard<&client::SyncCoroReindexer::Update>(ctx, rdxCtx, nsName, item, result, std::move(updateFn));
+		return modifyItemOnShard<&client::Reindexer::Update>(ctx, rdxCtx, nsName, item, result, std::move(updateFn));
 	}
 
 	try {
@@ -1096,16 +1088,15 @@ Error ClusterProxy::Update(const Query &query, QueryResults &result, const Inter
 
 	std::function<Error(const Query &, LocalQueryResults &, const RdxContext &ctx)> updateFn = [this](const Query &q, LocalQueryResults &qr,
 																									  const RdxContext &rdxCtx) -> Error {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, const Query &, LocalQueryResults &)> action =
-			std::bind(
-				&ClusterProxy::resultFollowerAction<Error (client::SyncCoroReindexer::*)(const Query &, client::SyncCoroQueryResults &),
-													&client::SyncCoroReindexer::Update>,
-				this, _1, _2, _3, _4);
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, const Query &, LocalQueryResults &)> action =
+			std::bind(&ClusterProxy::resultFollowerAction<Error (client::Reindexer::*)(const Query &, client::QueryResults &),
+														  &client::Reindexer::Update>,
+					  this, _1, _2, _3, _4);
 		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Update query", sId_);
 
 		return proxyCall<Error (ReindexerImpl::*)(const Query &, LocalQueryResults &, const RdxContext &), &ReindexerImpl::Update,
-						 Error (client::SyncCoroReindexer::*)(const Query &, client::SyncCoroQueryResults &),
-						 &client::SyncCoroReindexer::Update, Error>(rdxCtx, q._namespace, action, q, qr);
+						 Error (client::Reindexer::*)(const Query &, client::QueryResults &), &client::Reindexer::Update, Error>(
+			rdxCtx, q._namespace, action, q, qr);
 	};
 
 	result.SetQuery(&query);
@@ -1127,22 +1118,20 @@ Error ClusterProxy::Upsert(std::string_view nsName, Item &item, QueryResults &re
 	const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? ser.Slice() : ""sv, impl_.activities_);
 
 	auto upsertFn = [this, &rdxCtx](std::string_view nsName, Item &item, LocalQueryResults &result) -> Error {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, std::string_view, Item &, LocalQueryResults &)>
-			action =
-				std::bind(&ClusterProxy::resultItemFollowerAction<Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &,
-																									   client::SyncCoroQueryResults &),
-																  &client::SyncCoroReindexer::Upsert>,
-						  this, _1, _2, _3, _4, _5);
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, Item &, LocalQueryResults &)> action =
+			std::bind(
+				&ClusterProxy::resultItemFollowerAction<
+					Error (client::Reindexer::*)(std::string_view, client::Item &, client::QueryResults &), &client::Reindexer::Upsert>,
+				this, _1, _2, _3, _4, _5);
 
 		return proxyCall<Error (ReindexerImpl::*)(std::string_view, Item &, LocalQueryResults &, const RdxContext &),
-						 &ReindexerImpl::Upsert,
-						 Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &, client::SyncCoroQueryResults &),
-						 &client::SyncCoroReindexer::Upsert, Error>(rdxCtx, nsName, action, nsName, item, result);
+						 &ReindexerImpl::Upsert, Error (client::Reindexer::*)(std::string_view, client::Item &, client::QueryResults &),
+						 &client::Reindexer::Upsert, Error>(rdxCtx, nsName, action, nsName, item, result);
 	};
 
 	result.SetQuery(nullptr);
 	if (isWithSharding(nsName, ctx)) {
-		return modifyItemOnShard<&client::SyncCoroReindexer::Upsert>(ctx, rdxCtx, nsName, item, result, std::move(upsertFn));
+		return modifyItemOnShard<&client::Reindexer::Upsert>(ctx, rdxCtx, nsName, item, result, std::move(upsertFn));
 	}
 
 	try {
@@ -1159,17 +1148,16 @@ Error ClusterProxy::Upsert(std::string_view nsName, Item &item, const InternalRd
 	const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? ser.Slice() : ""sv, impl_.activities_);
 
 	auto upsertFn = [this, &rdxCtx](std::string_view nsName, Item &item) -> Error {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, std::string_view, Item &)> action =
-			std::bind(&ClusterProxy::itemFollowerAction<Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &),
-														&client::SyncCoroReindexer::Upsert>,
-					  this, _1, _2, _3, _4);
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, Item &)> action = std::bind(
+			&ClusterProxy::itemFollowerAction<Error (client::Reindexer::*)(std::string_view, client::Item &), &client::Reindexer::Upsert>,
+			this, _1, _2, _3, _4);
 		return proxyCall<Error (ReindexerImpl::*)(std::string_view, Item &, const RdxContext &), &ReindexerImpl::Upsert,
-						 Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &), &client::SyncCoroReindexer::Upsert, Error>(
+						 Error (client::Reindexer::*)(std::string_view, client::Item &), &client::Reindexer::Upsert, Error>(
 			rdxCtx, nsName, action, nsName, item);
 	};
 
 	if (isWithSharding(nsName, ctx)) {
-		return modifyItemOnShard<&client::SyncCoroReindexer::Upsert>(ctx, rdxCtx, nsName, item, std::move(upsertFn));
+		return modifyItemOnShard<&client::Reindexer::Upsert>(ctx, rdxCtx, nsName, item, std::move(upsertFn));
 	}
 	return upsertFn(nsName, item);
 }
@@ -1182,18 +1170,17 @@ Error ClusterProxy::Delete(std::string_view nsName, Item &item, const InternalRd
 	const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? ser.Slice() : ""sv, impl_.activities_);
 
 	auto deleteFn = [this, &rdxCtx](std::string_view nsName, Item &item) -> Error {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, std::string_view, Item &)> action =
-			std::bind(&ClusterProxy::itemFollowerAction<Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &),
-														&client::SyncCoroReindexer::Delete>,
-					  this, _1, _2, _3, _4);
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, Item &)> action = std::bind(
+			&ClusterProxy::itemFollowerAction<Error (client::Reindexer::*)(std::string_view, client::Item &), &client::Reindexer::Delete>,
+			this, _1, _2, _3, _4);
 		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Delete ITEM", sId_.load(std::memory_order_relaxed));
 		return proxyCall<Error (ReindexerImpl::*)(std::string_view, Item &, const RdxContext &), &ReindexerImpl::Delete,
-						 Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &), &client::SyncCoroReindexer::Delete, Error>(
+						 Error (client::Reindexer::*)(std::string_view, client::Item &), &client::Reindexer::Delete, Error>(
 			rdxCtx, nsName, action, nsName, item);
 	};
 
 	if (isWithSharding(nsName, ctx)) {
-		return modifyItemOnShard<&client::SyncCoroReindexer::Delete>(ctx, rdxCtx, nsName, item, std::move(deleteFn));
+		return modifyItemOnShard<&client::Reindexer::Delete>(ctx, rdxCtx, nsName, item, std::move(deleteFn));
 	}
 	return deleteFn(nsName, item);
 }
@@ -1206,22 +1193,20 @@ Error ClusterProxy::Delete(std::string_view nsName, Item &item, QueryResults &re
 	const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? ser.Slice() : ""sv, impl_.activities_);
 
 	auto deleteFn = [this, &rdxCtx](std::string_view nsName, Item &item, LocalQueryResults &result) -> Error {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, std::string_view, Item &, LocalQueryResults &)>
-			action =
-				std::bind(&ClusterProxy::resultItemFollowerAction<Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &,
-																									   client::SyncCoroQueryResults &),
-																  &client::SyncCoroReindexer::Delete>,
-						  this, _1, _2, _3, _4, _5);
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, Item &, LocalQueryResults &)> action =
+			std::bind(
+				&ClusterProxy::resultItemFollowerAction<
+					Error (client::Reindexer::*)(std::string_view, client::Item &, client::QueryResults &), &client::Reindexer::Delete>,
+				this, _1, _2, _3, _4, _5);
 
 		return proxyCall<Error (ReindexerImpl::*)(std::string_view, Item &, LocalQueryResults &, const RdxContext &),
-						 &ReindexerImpl::Delete,
-						 Error (client::SyncCoroReindexer::*)(std::string_view, client::Item &, client::SyncCoroQueryResults &),
-						 &client::SyncCoroReindexer::Delete, Error>(rdxCtx, nsName, action, nsName, item, result);
+						 &ReindexerImpl::Delete, Error (client::Reindexer::*)(std::string_view, client::Item &, client::QueryResults &),
+						 &client::Reindexer::Delete, Error>(rdxCtx, nsName, action, nsName, item, result);
 	};
 
 	result.SetQuery(nullptr);
 	if (isWithSharding(nsName, ctx)) {
-		return modifyItemOnShard<&client::SyncCoroReindexer::Delete>(ctx, rdxCtx, nsName, item, result, std::move(deleteFn));
+		return modifyItemOnShard<&client::Reindexer::Delete>(ctx, rdxCtx, nsName, item, result, std::move(deleteFn));
 	}
 
 	try {
@@ -1237,15 +1222,14 @@ Error ClusterProxy::Delete(const Query &query, QueryResults &result, const Inter
 
 	std::function<Error(const Query &, LocalQueryResults &, const RdxContext &ctx)> deleteFn = [this](const Query &q, LocalQueryResults &qr,
 																									  const RdxContext &rdxCtx) -> Error {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, const Query &, LocalQueryResults &)> action =
-			std::bind(
-				&ClusterProxy::resultFollowerAction<Error (client::SyncCoroReindexer::*)(const Query &, client::SyncCoroQueryResults &),
-													&client::SyncCoroReindexer::Delete>,
-				this, _1, _2, _3, _4);
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, const Query &, LocalQueryResults &)> action =
+			std::bind(&ClusterProxy::resultFollowerAction<Error (client::Reindexer::*)(const Query &, client::QueryResults &),
+														  &client::Reindexer::Delete>,
+					  this, _1, _2, _3, _4);
 		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Delete QUERY", sId_);
 		return proxyCall<Error (ReindexerImpl::*)(const Query &, LocalQueryResults &, const RdxContext &), &ReindexerImpl::Delete,
-						 Error (client::SyncCoroReindexer::*)(const Query &, client::SyncCoroQueryResults &),
-						 &client::SyncCoroReindexer::Delete, Error>(rdxCtx, q._namespace, action, q, qr);
+						 Error (client::Reindexer::*)(const Query &, client::QueryResults &), &client::Reindexer::Delete, Error>(
+			rdxCtx, q._namespace, action, q, qr);
 	};
 
 	result.SetQuery(&query);
@@ -1313,16 +1297,15 @@ Error ClusterProxy::Select(const Query &query, QueryResults &result, unsigned pr
 	const InternalRdxContext deadlineCtx(ctx.HasDeadline() ? ctx : ctx.WithTimeout(kReplicationStatsTimeout));
 	const auto rdxCtxDeadLine = deadlineCtx.CreateRdxContext(deadlineCtx.NeedTraceActivity() ? ser.Slice() : "", impl_.activities_, result);
 
-	std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, const Query &, LocalQueryResults &)> action =
-		std::bind(&ClusterProxy::resultFollowerAction<Error (client::SyncCoroReindexer::*)(const Query &, client::SyncCoroQueryResults &),
-													  &client::SyncCoroReindexer::Select>,
+	std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, const Query &, LocalQueryResults &)> action =
+		std::bind(&ClusterProxy::resultFollowerAction<Error (client::Reindexer::*)(const Query &, client::QueryResults &),
+													  &client::Reindexer::Select>,
 				  this, _1, _2, _3, _4);
 	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Select query proxied", sId_.load(std::memory_order_relaxed));
 	try {
 		return proxyCall<Error (ReindexerImpl::*)(const Query &, LocalQueryResults &, const RdxContext &), &ReindexerImpl::Select,
-						 Error (client::SyncCoroReindexer::*)(const Query &, client::SyncCoroQueryResults &),
-						 &client::SyncCoroReindexer::Select, Error>(rdxCtxDeadLine, query._namespace, action, query,
-																	result.ToLocalQr(true));
+						 Error (client::Reindexer::*)(const Query &, client::QueryResults &), &client::Reindexer::Select, Error>(
+			rdxCtxDeadLine, query._namespace, action, query, result.ToLocalQr(true));
 	} catch (Error &e) {
 		return e;
 	}
@@ -1335,7 +1318,7 @@ Error ClusterProxy::Commit(std::string_view nsName, const InternalRdxContext &ct
 		if (!err.ok()) return err;
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "COMMIT " << nsName).Slice() : ""sv, impl_.activities_);
-		return delegateToShardsByNs(rdxCtx, &client::SyncCoroReindexer::Commit, std::move(localCommit), nsName);
+		return delegateToShardsByNs(rdxCtx, &client::Reindexer::Commit, std::move(localCommit), nsName);
 	}
 	return localCommit(nsName);
 }
@@ -1353,7 +1336,7 @@ Transaction ClusterProxy::NewTransaction(std::string_view nsName, const Internal
 
 	const bool withSharding = isWithSharding(nsName, ctx);
 
-	std::function<Transaction(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, std::string_view)> action =
+	std::function<Transaction(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view)> action =
 		std::bind(&ClusterProxy::newTxFollowerAction, this, withSharding, _1, _2, _3);
 
 	clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::NewTransaction", sId_.load(std::memory_order_relaxed));
@@ -1361,13 +1344,13 @@ Transaction ClusterProxy::NewTransaction(std::string_view nsName, const Internal
 	if (withSharding) {
 		return Transaction(
 			proxyCall<LocalTransaction (ReindexerImpl::*)(std::string_view, const RdxContext &), &ReindexerImpl::NewTransaction,
-					  client::SyncCoroTransaction (client::SyncCoroReindexer::*)(std::string_view),
-					  &client::SyncCoroReindexer::NewTransaction, Transaction>(rdxCtx, nsName, action, nsName),
+					  client::Transaction (client::Reindexer::*)(std::string_view), &client::Reindexer::NewTransaction, Transaction>(
+				rdxCtx, nsName, action, nsName),
 			shardingRouter_);
 	}
 	return proxyCall<LocalTransaction (ReindexerImpl::*)(std::string_view, const RdxContext &), &ReindexerImpl::NewTransaction,
-					 client::SyncCoroTransaction (client::SyncCoroReindexer::*)(std::string_view),
-					 &client::SyncCoroReindexer::NewTransaction, Transaction>(rdxCtx, nsName, action, nsName);
+					 client::Transaction (client::Reindexer::*)(std::string_view), &client::Reindexer::NewTransaction, Transaction>(
+		rdxCtx, nsName, action, nsName);
 }
 
 Error ClusterProxy::CommitTransaction(Transaction &tr, QueryResults &result, const InternalRdxContext &ctx) {
@@ -1391,7 +1374,7 @@ Error ClusterProxy::RollBackTransaction(Transaction &tr, const InternalRdxContex
 	return tr.rollback(sId_, rdxCtx);
 }
 
-Error ClusterProxy::GetMeta(std::string_view nsName, const string &key, string &data, const InternalRdxContext &ctx) {
+Error ClusterProxy::GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx) {
 	WrSerializer ser;
 	const RdxContext rdxCtx = ctx.CreateRdxContext(
 		ctx.NeedTraceActivity() ? (ser << "SELECT META FROM " << nsName << " WHERE KEY = '" << key << '\'').Slice() : ""sv,
@@ -1400,13 +1383,13 @@ Error ClusterProxy::GetMeta(std::string_view nsName, const string &key, string &
 	return impl_.GetMeta(nsName, key, data, rdxCtx);
 }
 
-Error ClusterProxy::GetMeta(std::string_view nsName, const string &key, vector<ShardedMeta> &data, const InternalRdxContext &ctx) {
+Error ClusterProxy::GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data, const InternalRdxContext &ctx) {
 	WrSerializer ser;
 	const RdxContext rdxCtx = ctx.CreateRdxContext(
 		ctx.NeedTraceActivity() ? (ser << "SELECT SHARDED_META FROM " << nsName << " WHERE KEY = '" << key << '\'').Slice() : ""sv,
 		impl_.activities_);
 
-	auto localGetMeta = [this, &rdxCtx](std::string_view nsName, const string &key, vector<ShardedMeta> &data, int shardId) {
+	auto localGetMeta = [this, &rdxCtx](std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data, int shardId) {
 		data.emplace_back();
 		data.back().shardId = shardId;
 		return impl_.GetMeta(nsName, key, data.back().data, rdxCtx);
@@ -1416,8 +1399,7 @@ Error ClusterProxy::GetMeta(std::string_view nsName, const string &key, vector<S
 		auto predicate = [](const ShardedMeta &) noexcept { return true; };
 		Error err = collectFromShardsByNs(
 			rdxCtx,
-			static_cast<Error (client::SyncCoroReindexer::*)(std::string_view, const string &, vector<ShardedMeta> &)>(
-				&client::SyncCoroReindexer::GetMeta),
+			static_cast<Error (client::Reindexer::*)(std::string_view, const std::string &, std::vector<ShardedMeta> &)>(&client::Reindexer::GetMeta),
 			std::move(localGetMeta), data, predicate, nsName, key);
 		return err;
 	}
@@ -1425,44 +1407,42 @@ Error ClusterProxy::GetMeta(std::string_view nsName, const string &key, vector<S
 	return localGetMeta(nsName, key, data, ctx.ShardId());
 }
 
-Error ClusterProxy::PutMeta(std::string_view nsName, const string &key, std::string_view data, const InternalRdxContext &ctx) {
+Error ClusterProxy::PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const InternalRdxContext &ctx) {
 	WrSerializer ser;
 	const RdxContext rdxCtx = ctx.CreateRdxContext(
 		ctx.NeedTraceActivity() ? (ser << "UPDATE " << nsName << " SET META = '" << data << "' WHERE KEY = '" << key << '\'').Slice()
 								: ""sv,
 		impl_.activities_);
 
-	auto localPutMeta = [this, &rdxCtx](std::string_view nsName, const string &key, std::string_view data) {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::SyncCoroReindexer>, std::string_view, const string &,
-							std::string_view)>
-			action = std::bind(
-				&ClusterProxy::baseFollowerAction<decltype(&client::SyncCoroReindexer::PutMeta), &client::SyncCoroReindexer::PutMeta,
-												  std::string_view, const string &, std::string_view>,
-				this, _1, _2, _3, _4, _5);
+	auto localPutMeta = [this, &rdxCtx](std::string_view nsName, const std::string &key, std::string_view data) {
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, const std::string &, std::string_view)>
+			action = std::bind(&ClusterProxy::baseFollowerAction<decltype(&client::Reindexer::PutMeta), &client::Reindexer::PutMeta,
+																 std::string_view, const std::string &, std::string_view>,
+							   this, _1, _2, _3, _4, _5);
 		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::PutMeta", sId_.load(std::memory_order_relaxed));
 		return CallProxyFunction(PutMeta)(rdxCtx, nsName, action, nsName, key, data);
 	};
 
 	if (isWithSharding(nsName, ctx)) {
-		Error err = delegateToShards(rdxCtx, &client::SyncCoroReindexer::PutMeta, std::move(localPutMeta), nsName, key, data);
+		Error err = delegateToShards(rdxCtx, &client::Reindexer::PutMeta, std::move(localPutMeta), nsName, key, data);
 		if (err.code() != errAlreadyConnected) return err;
 	}
 	return localPutMeta(nsName, key, data);
 }
 
-Error ClusterProxy::EnumMeta(std::string_view nsName, vector<string> &keys, const InternalRdxContext &ctx) {
+Error ClusterProxy::EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx) {
 	WrSerializer ser;
 	const RdxContext rdxCtx =
 		ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "SELECT META FROM " << nsName).Slice() : ""sv, impl_.activities_);
 
-	auto localEnumMeta = [this, &rdxCtx](std::string_view nsName, vector<string> &keys, [[maybe_unused]] int shardId) {
+	auto localEnumMeta = [this, &rdxCtx](std::string_view nsName, std::vector<std::string> &keys, [[maybe_unused]] int shardId) {
 		return impl_.EnumMeta(nsName, keys, rdxCtx);
 	};
 
 	if (isWithSharding(nsName, ctx)) {
 		fast_hash_set<std::string> allKeys;
 		Error err = collectFromShardsByNs(
-			rdxCtx, &client::SyncCoroReindexer::EnumMeta, std::move(localEnumMeta), keys,
+			rdxCtx, &client::Reindexer::EnumMeta, std::move(localEnumMeta), keys,
 			[&allKeys](const std::string &key) { return allKeys.emplace(key).second; }, nsName);
 
 		return err;
@@ -1470,7 +1450,7 @@ Error ClusterProxy::EnumMeta(std::string_view nsName, vector<string> &keys, cons
 	return localEnumMeta(nsName, keys, 0 /*not used*/);
 }
 
-Error ClusterProxy::EnableStorage(const string &storagePath, bool skipPlaceholderCheck, const InternalRdxContext &ctx) {
+Error ClusterProxy::EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck, const InternalRdxContext &ctx) {
 	WrSerializer ser;
 	const auto rdxCtx =
 		ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "ENABLE STORAGE " << storagePath).Slice() : ""sv, impl_.activities_);

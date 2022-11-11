@@ -53,7 +53,7 @@ struct ReplicationConfigData {
 	int serverID = 0;
 	int clusterID = 1;
 
-	Error FromYML(const string &yml);
+	Error FromYAML(const std::string &yml);
 	Error FromJSON(std::string_view json);
 	Error FromJSON(const gason::JsonNode &v);
 	void GetJSON(JsonBuilder &jb) const;
@@ -80,13 +80,13 @@ public:
 	ProfilingConfigData GetProfilingConfig();
 	cluster::AsyncReplConfigData GetAsyncReplicationConfig();
 	ReplicationConfigData GetReplicationConfig();
-	bool GetNamespaceConfig(const string &nsName, NamespaceConfigData &data);
+	bool GetNamespaceConfig(const std::string &nsName, NamespaceConfigData &data);
 
 private:
 	ProfilingConfigData profilingData_;
 	cluster::AsyncReplConfigData asyncReplicationData_;
 	ReplicationConfigData replicationData_;
-	std::unordered_map<string, NamespaceConfigData> namespacesData_;
+	std::unordered_map<std::string, NamespaceConfigData> namespacesData_;
 	std::unordered_map<int, std::function<void()>> handlers_;
 	std::unordered_map<int, std::function<void(ReplicationConfigData)>> replicationConfigDataHandlers_;
 	int HandlersCounter_ = 0;

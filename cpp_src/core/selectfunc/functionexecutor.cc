@@ -10,7 +10,7 @@ FunctionExecutor::FunctionExecutor(NamespaceImpl& ns, h_vector<cluster::UpdateRe
 
 Variant FunctionExecutor::Execute(SelectFuncStruct& funcData, const NsContext& ctx) {
 	if (funcData.funcName == "now") {
-		string mode = "sec";
+		std::string mode = "sec";
 		if (!funcData.funcArgs.empty() && !funcData.funcArgs.front().empty()) {
 			mode = funcData.funcArgs.front();
 		}

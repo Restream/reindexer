@@ -40,21 +40,21 @@ struct FtDSLEntry {
 
 class FtDSLQuery : public h_vector<FtDSLEntry> {
 public:
-	FtDSLQuery(const fast_hash_map<string, int> &fields, const fast_hash_set<string, hash_str, equal_str> &stopWords,
-			   const string &extraWordSymbols) noexcept
+	FtDSLQuery(const fast_hash_map<std::string, int> &fields, const fast_hash_set<std::string, hash_str, equal_str> &stopWords,
+			   const std::string &extraWordSymbols) noexcept
 		: fields_(fields), stopWords_(stopWords), extraWordSymbols_(extraWordSymbols) {}
-	void parse(wstring &utf16str);
-	void parse(const string &q);
+	void parse(std::wstring &utf16str);
+	void parse(const std::string &q);
 	FtDSLQuery CopyCtx() const noexcept { return {fields_, stopWords_, extraWordSymbols_}; }
 
 protected:
-	void parseFields(wstring &utf16str, wstring::iterator &it, h_vector<FtDslFieldOpts, 8> &fieldsOpts);
+	void parseFields(std::wstring &utf16str, std::wstring::iterator &it, h_vector<FtDslFieldOpts, 8> &fieldsOpts);
 
-	std::function<int(const string &)> resolver_;
+	std::function<int(const std::string &)> resolver_;
 
-	const fast_hash_map<string, int> &fields_;
-	const fast_hash_set<string, hash_str, equal_str> &stopWords_;
-	const string &extraWordSymbols_;
+	const fast_hash_map<std::string, int> &fields_;
+	const fast_hash_set<std::string, hash_str, equal_str> &stopWords_;
+	const std::string &extraWordSymbols_;
 };
 
 }  // namespace reindexer

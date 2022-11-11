@@ -403,8 +403,10 @@ type DBProfilingConfig struct {
 	MemStats bool `json:"memstats"`
 	// Enables tracking overal perofrmance statistics
 	PerfStats bool `json:"perfstats"`
-	// Enables record queries perofrmance statistics
+	// Enables recording of queries perofrmance statistics
 	QueriesPerfStats bool `json:"queriesperfstats"`
+	// Enables recording of activity statistics into #activitystats namespace
+	ActivityStats bool `json:"activitystats"`
 }
 
 // DBNamespacesConfig is part of reindexer configuration contains namespaces options

@@ -21,7 +21,7 @@ namespace internal {
 
 template <typename T>
 struct to_array_helper {
-	static VariantArray to_array(const vector<T>& vec) {
+	static VariantArray to_array(const std::vector<T>& vec) {
 		VariantArray krs;
 		krs.reserve(vec.size());
 		for (auto& value : vec) krs.push_back(Variant{value});
@@ -31,7 +31,7 @@ struct to_array_helper {
 
 template <>
 struct to_array_helper<string> {
-	static VariantArray to_array(const vector<string>& vec) {
+	static VariantArray to_array(const std::vector<std::string>& vec) {
 		VariantArray krs;
 		krs.reserve(vec.size());
 		for (auto& value : vec) krs.push_back(Variant{p_string(value.c_str())});
@@ -42,7 +42,7 @@ struct to_array_helper<string> {
 }  // namespace internal
 
 template <typename T>
-VariantArray toArray(const vector<T>& vec) {
+VariantArray toArray(const std::vector<T>& vec) {
 	return internal::to_array_helper<T>::to_array(vec);
 }
 
@@ -68,4 +68,4 @@ vector<T> randomNumArray(int count, int start, int region) {
 
 string FormatString(const char* msg, va_list args);
 string FormatString(const char* msg, ...);
-string HumanReadableNumber(size_t number, bool si, const string& unitLabel = "");
+string HumanReadableNumber(size_t number, bool si, const std::string& unitLabel = "");

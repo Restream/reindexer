@@ -74,7 +74,7 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 }
 
 UpdateRecord::UpdateRecord(UpdateRecord::Type _type, std::string _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId,
-						   TagsMatcher _tm)
+						   const TagsMatcher& _tm)
 	: type(_type), nsName(std::move(_nsName)), extLsn(_nsVersion, _lsn), emmiterServerId(_emmiterServerId) {
 	switch (type) {
 		case Type::SetTagsMatcher:

@@ -1,4 +1,4 @@
-#include "client/synccoroqueryresults.h"
+#include "client/queryresults.h"
 #include "cluster/raftmanager.h"
 #include "clusterization_proxy.h"
 #include "core/cjson/jsonbuilder.h"
@@ -36,7 +36,7 @@ TEST_F(ClusterizationProxyApi, Transaction) {
 
 		{
 			// create transaction with Insert and Upsert rows on follower node
-			client::SyncCoroTransaction tx = cluster.GetNode(followerId)->api.reindexer->NewTransaction(kNsName);
+			client::Transaction tx = cluster.GetNode(followerId)->api.reindexer->NewTransaction(kNsName);
 			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
 			int iIn = 0;
 			for (iIn = 0; iIn < 10; iIn++) {
@@ -73,7 +73,7 @@ TEST_F(ClusterizationProxyApi, Transaction) {
 
 		{
 			// create transaction with Update and Delete rows on follower node
-			client::SyncCoroTransaction tx = cluster.GetNode(followerId)->api.reindexer->NewTransaction(kNsName);
+			client::Transaction tx = cluster.GetNode(followerId)->api.reindexer->NewTransaction(kNsName);
 			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
 			int iIn = 0;
 			for (; iIn < 10; iIn++) {
@@ -137,7 +137,7 @@ TEST_F(ClusterizationProxyApi, RollbackFollowerTransaction) {
 
 		{
 			// create transaction with Insert and Upsert rows on follower node
-			client::SyncCoroTransaction tx = cluster.GetNode(followerId)->api.reindexer->NewTransaction(kNsName);
+			client::Transaction tx = cluster.GetNode(followerId)->api.reindexer->NewTransaction(kNsName);
 			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
 			int iIn = 0;
 			for (iIn = 0; iIn < 10; iIn++) {
@@ -192,9 +192,9 @@ TEST_F(ClusterizationProxyApi, ParallelTransaction) {
 
 		cluster.WaitSync(kNsName);
 		// creating transactions on different nodes
-		std::vector<client::SyncCoroTransaction> txs;
+		std::vector<client::Transaction> txs;
 		for (unsigned int n = 0; n < nodeCount; n++) {
-			client::SyncCoroTransaction tx = cluster.GetNode(followerId[n])->api.reindexer->NewTransaction(kNsName);
+			client::Transaction tx = cluster.GetNode(followerId[n])->api.reindexer->NewTransaction(kNsName);
 			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
 			int iIn = 0;
 			for (iIn = 0; iIn < 10; iIn++) {
@@ -251,7 +251,7 @@ TEST_F(ClusterizationProxyApi, TransactionStopLeader) {
 
 		{
 			// create transaction
-			client::SyncCoroTransaction tx = cluster.GetNode(followerId)->api.reindexer->NewTransaction(kNsName);
+			client::Transaction tx = cluster.GetNode(followerId)->api.reindexer->NewTransaction(kNsName);
 			ASSERT_TRUE(tx.Status().ok()) << tx.Status().what();
 			int iIn = 0;
 			bool isLeaderChanged = false;
@@ -331,7 +331,7 @@ static void CheckAddUpdateDropIndex(ClusterizationApi::Cluster& cluster, int nod
 	err = cluster.GetNode(node)->api.reindexer->UpdateIndex(kNsName, newDef);
 
 	auto getIndexDefBuName = [&cluster](const std::string& nsName, int node, std::string& indxName) -> IndexDef {
-		vector<NamespaceDef> defs;
+		std::vector<NamespaceDef> defs;
 		Error err = cluster.GetNode(node)->api.reindexer->EnumNamespaces(defs, EnumNamespacesOpts().HideSystem().HideTemporary());
 		EXPECT_TRUE(err.ok()) << err.what();
 		for (const auto& def : defs) {
@@ -532,7 +532,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 		std::string itemJson = itemData(pk, "string" + std::to_string(pk), "");
 		Error err = item.FromJSON(itemJson);
 		ASSERT_TRUE(err.ok()) << err.what();
-		client::SyncCoroQueryResults qrInsert;
+		client::QueryResults qrInsert;
 		err = cluster.GetNode(followerId)->api.reindexer->Insert(kNsName, item, qrInsert);
 		ASSERT_TRUE(err.ok()) << err.what();
 		{
@@ -549,7 +549,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 		// upsert item (change)
 		std::string itemJsonUp = itemData(pk, "string_up" + std::to_string(pk), "");
 		err = item.FromJSON(itemJsonUp);
-		client::SyncCoroQueryResults qrUpsert;
+		client::QueryResults qrUpsert;
 		err = cluster.GetNode(followerId)->api.reindexer->Upsert(kNsName, item, qrUpsert);
 		ASSERT_TRUE(err.ok()) << err.what();
 		{
@@ -576,7 +576,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 		ASSERT_FALSE(itsel.GetLSN().isEmpty());
 		std::string itemJson = itemData(pk, "string_update" + std::to_string(pk), "");
 		itsel.FromJSON(itemJson);
-		client::SyncCoroQueryResults qrUpdate;
+		client::QueryResults qrUpdate;
 		err = cluster.GetNode(followerId)->api.reindexer->Update(kNsName, itsel, qrUpdate);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qrUpdate.Count() == 1);
@@ -599,7 +599,7 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
 		ASSERT_FALSE(itsel.GetLSN().isEmpty());
-		client::SyncCoroQueryResults qrDelete;
+		client::QueryResults qrDelete;
 		err = cluster.GetNode(followerId)->api.reindexer->Delete(kNsName, itsel, qrDelete);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qrDelete.Count() == 1);
@@ -638,7 +638,7 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 
 		item.SetPrecepts({"int=SERIAL()"});
 
-		client::SyncCoroQueryResults qrInsert;
+		client::QueryResults qrInsert;
 		err = cluster.GetNode(followerId)->api.reindexer->Insert(kNsName, item, qrInsert);
 		ASSERT_TRUE(err.ok()) << err.what();
 
@@ -677,7 +677,7 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 
 		item.SetPrecepts({"int=SERIAL()"});
 
-		client::SyncCoroQueryResults qrUpsert;
+		client::QueryResults qrUpsert;
 		err = cluster.GetNode(followerId)->api.reindexer->Upsert(kNsName, item, qrUpsert);
 		ASSERT_TRUE(err.ok()) << err.what();
 
@@ -725,7 +725,7 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 		}
 		itsel.FromJSON(itemJson);
 		itsel.SetPrecepts({"int=SERIAL()"});
-		client::SyncCoroQueryResults qrUpdate;
+		client::QueryResults qrUpdate;
 		err = cluster.GetNode(followerId)->api.reindexer->Update(kNsName, itsel, qrUpdate);
 
 		std::string itemJsonCheck;
@@ -764,7 +764,7 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 		const auto initialLSN = itsel.GetLSN();
 		ASSERT_FALSE(initialLSN.isEmpty());
 		itsel.SetPrecepts({"int=SERIAL()"});
-		client::SyncCoroQueryResults qrDelete;
+		client::QueryResults qrDelete;
 		err = cluster.GetNode(followerId)->api.reindexer->Delete(kNsName, itsel, qrDelete);
 		ASSERT_TRUE(err.ok()) << err.what();
 		{
@@ -1236,7 +1236,7 @@ TEST_F(ClusterizationProxyApi, ChangeLeaderAndWrite) {
 		{
 			leaderId = cluster.AwaitLeader(kMaxElectionsTime);
 			auto leaderClient = cluster.GetNode(leaderId)->api.reindexer;
-			reindexer::client::SyncCoroQueryResults qr;
+			reindexer::client::QueryResults qr;
 			leaderClient->Select("select * from ns1 order by id", qr);
 			itemTracker.Validate(qr);
 		}
@@ -1345,7 +1345,7 @@ TEST_F(ClusterizationProxyApi, SelectFromStatsTimeout) {
 		const std::string kNsSome = "some";
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		cluster.StopServers({0, 1});
-		client::SyncCoroQueryResults qr;
+		client::QueryResults qr;
 		auto err = cluster.GetNode(2)->api.reindexer->Select("select * from #replicationstats where type='cluster'", qr);
 		ASSERT_EQ(err.code(), errTimeout);
 		ASSERT_EQ(err.what(), "Unable to get cluster's leader: Context was canceled or timed out (condition variable)");

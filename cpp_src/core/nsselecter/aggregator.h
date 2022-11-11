@@ -16,7 +16,7 @@ public:
 		enum { Count = -1 };
 	};
 
-	Aggregator(const PayloadType &, const FieldsSet &, AggType aggType, const h_vector<string, 1> &names,
+	Aggregator(const PayloadType &, const FieldsSet &, AggType aggType, const h_vector<std::string, 1> &names,
 			   const h_vector<SortingEntry, 1> &sort = {}, size_t limit = UINT_MAX, size_t offset = 0, bool compositeIndexFields = false);
 	Aggregator();
 	Aggregator(Aggregator &&);
@@ -30,7 +30,7 @@ public:
 	Aggregator &operator=(Aggregator &&) = delete;
 
 	AggType Type() const noexcept { return aggType_; }
-	const h_vector<string, 1> &Names() const noexcept { return names_; }
+	const h_vector<std::string, 1> &Names() const noexcept { return names_; }
 
 protected:
 	enum Direction { Desc = -1, Asc = 1 };
@@ -49,7 +49,7 @@ protected:
 	double result_ = 0;
 	int hitCount_ = 0;
 	AggType aggType_;
-	h_vector<string, 1> names_;
+	h_vector<std::string, 1> names_;
 	size_t limit_ = UINT_MAX;
 	size_t offset_ = 0;
 

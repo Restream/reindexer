@@ -4,7 +4,8 @@
 
 class CollateCustomModeAPI : public ReindexerApi {
 protected:
-	void PrepareNs(std::shared_ptr<Reindexer> reindexer, const string& nsName, const string& sortOrder, const vector<string>& sourceTable) {
+	void PrepareNs(const std::shared_ptr<Reindexer>& reindexer, const std::string& nsName, const std::string& sortOrder,
+				   const std::vector<std::string>& sourceTable) {
 		auto err = reindexer->OpenNamespace(nsName, StorageOpts().Enabled(false));
 		EXPECT_TRUE(err.ok()) << err.what();
 
@@ -40,12 +41,12 @@ protected:
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	void CompareResults(const QueryResults& qr, const vector<string>& sortedTable) {
+	void CompareResults(const QueryResults& qr, const std::vector<std::string>& sortedTable) {
 		ASSERT_TRUE(qr.Count() == sortedTable.size());
 		for (size_t i = 0; i < qr.Count(); ++i) {
 			Item item = (qr.begin() + i).GetItem(false);
 
-			string gotten = item["name"].As<string>();
+			std::string gotten = item["name"].As<std::string>();
 			size_t l1 = gotten.length();
 			size_t l2 = sortedTable[i].length();
 

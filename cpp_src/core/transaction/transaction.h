@@ -11,7 +11,7 @@ class RPCServer;
 namespace reindexer {
 
 namespace client {
-class SyncCoroReindexer;
+class Reindexer;
 }  // namespace client
 
 namespace sharding {
@@ -30,7 +30,7 @@ class Query;
 class RdxContext;
 
 namespace client {
-class SyncCoroTransaction;
+class Transaction;
 }
 
 class Transaction {
@@ -39,8 +39,8 @@ public:
 	using TimepointT = std::chrono::time_point<ClockT>;
 
 	explicit Transaction(LocalTransaction &&ltx);
-	Transaction(LocalTransaction &&ltx, client::SyncCoroTransaction &&tx);
-	Transaction(LocalTransaction &&ltx, client::SyncCoroReindexer &&clusterLeader);
+	Transaction(LocalTransaction &&ltx, client::Transaction &&tx);
+	Transaction(LocalTransaction &&ltx, client::Reindexer &&clusterLeader);
 
 	~Transaction();
 	Transaction(Transaction &&) noexcept;
