@@ -39,7 +39,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-12]
+        os: [ubuntu-20.04, macos-latest]
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
@@ -97,7 +97,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-12]
+        os: [ubuntu-20.04, macos-latest]
         test: ['C++', 'GO']
         include:
           - os: ubuntu-latest
@@ -150,19 +150,13 @@ jobs:
               mkdir -p /Users/runner/go/src/github.com/restream/
               ln -s `pwd` /Users/runner/go/src/github.com/restream/reindexer
             fi
-            go env -w GO111MODULE=auto
-            go get gopkg.in/yaml.v2
-            go get github.com/stretchr/testify/assert
-            go get github.com/golang/snappy
-            go get github.com/iancoleman/orderedmap
-            go get github.com/hashicorp/golang-lru
+            go mod download
           elif [[ $OS == ubuntu* ]]; then
             ./.github/workflows/install_gtest_parallel.sh
           fi
       - name: Tests
         run: |
           if [[ $TEST == 'GO' ]]; then
-            go env -w GO111MODULE=auto
             go test -timeout 60m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
           else
             cd build
@@ -177,7 +171,7 @@ jobs:
   test-pyreindexer:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-12]
+        os: [ubuntu-20.04, macos-latest]
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build
@@ -224,9 +218,7 @@ jobs:
         with:
           repository: restream/reindexer-py
       - name: Install PyReindexer
-        run: |
-          python3 setup.py build
-          sudo python3 setup.py install
+        run: sudo python3 setup.py install
       - name: Test PyReindexer
         run: |
           cd pyreindexer

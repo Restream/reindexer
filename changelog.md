@@ -1,3 +1,11 @@
+# Version 3.10.1 (17.11.2022)
+## Go connector
+- [fea] Add go.mod file with dependecies versions
+- [ref] Cproto binding now requires explicit import of the `_ "github.com/restream/reindexer/bindings/cproto"`-module
+
+## Repo
+- [ref] Move benchmarks into separate [repository](https://github.com/Restream/reindexer-benchmarks)
+
 # Version 3.10.0 (28.10.2022)
 ## Core
 - [fea] Improve conditions injection from joined queries into main query. This optimization now covers much wider class of queries

@@ -33,16 +33,9 @@ While using docker, you may pass reindexer server config options via envinronmen
 - `RX_PROMETHEUS` - if RX_PROMETHEUS is not empty, enables prometheus metrics. Disabled by default.
 - `RX_RPC_QR_IDLE_TIMEOUT` - RPC query results idle timeout (in seconds). Default value is 0 (timeout disabled).
 
-## OSX brew
-
-```bash
-brew tap restream/reindexer
-brew install reindexer
-```
-
 ## Linux
 
-## RHEL/Centos/Fedora
+### RHEL/Centos/Fedora
 
 ```bash
 yum install -y epel-release yum-utils
@@ -54,7 +47,7 @@ yum install reindexer-server
 
 Available distros: `centos-7`, `fedora-30`, `fedora-31`, `fedora-34`
 
-## Ubuntu/Debian
+### Ubuntu/Debian
 
 ```bash
 curl https://repo.reindexer.io/RX-KEY.GPG | apt-key add
@@ -65,11 +58,18 @@ apt install reindexer-server
 
 Available distros: `debian-buster`, `debian-bullseye`, `ubuntu-bionic`, `ubuntu-focal`, `ubuntu-jammy`
 
+## OSX brew
+
+```bash
+brew tap restream/reindexer
+brew install reindexer
+```
+
 ## Windows
 
 Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](https://repo.reindexer.io/win/32/)
 
-## Installing from sources
+## Installation from sources
 
 ### Dependencies
 
