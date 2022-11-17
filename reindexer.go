@@ -4,9 +4,7 @@ import (
 	"context"
 
 	"github.com/restream/reindexer/bindings"
-	_ "github.com/restream/reindexer/bindings/cproto"
 	"github.com/restream/reindexer/dsl"
-	// _ "github.com/restream/reindexer/bindings/builtinserver"
 )
 
 // Condition types

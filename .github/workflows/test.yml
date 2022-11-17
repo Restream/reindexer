@@ -151,19 +151,13 @@ jobs:
               mkdir -p /Users/runner/go/src/github.com/restream/
               ln -s `pwd` /Users/runner/go/src/github.com/restream/reindexer
             fi
-            go env -w GO111MODULE=auto
-            go get gopkg.in/yaml.v2
-            go get github.com/stretchr/testify/assert
-            go get github.com/golang/snappy
-            go get github.com/iancoleman/orderedmap
-            go get github.com/hashicorp/golang-lru
+            go mod download
           elif [[ $OS == ubuntu* ]]; then
             ./.github/workflows/install_gtest_parallel.sh
           fi
       - name: Tests
         run: |
           if [[ $TEST == 'GO' ]]; then
-            go env -w GO111MODULE=auto
             if [[ $SANITIZER == 'ASAN' ]]; then
               export REINDEXER_GH_CI_ASAN=true
             fi

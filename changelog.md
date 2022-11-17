@@ -1,3 +1,11 @@
+# Version 4.6.1 *beta* (17.11.2022)
+## Go connector
+- [fea] Add go.mod file with dependecies versions
+- [ref] Cproto binding now requires explicit import of the `_ "github.com/restream/reindexer/bindings/cproto"`-module
+
+## Repo
+- [ref] Move benchmarks into separate [repository](https://github.com/Restream/reindexer-benchmarks)
+
 # Version 4.6.0 *beta* (11.11.2022)
 ## Sharding
 - [fix] Fix sorting in distributed queries for cases, when json path is not equal to index's name

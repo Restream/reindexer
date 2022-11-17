@@ -103,7 +103,7 @@ Performance has been our top priority from the start, and we think we managed to
 - up to 50K queries/sec for queries `SELECT * FROM items WHERE year > 2010 AND name = 'string' AND id IN (....)`
 - up to 20K queries/sec for queries `SELECT * FROM items WHERE year > 2010 AND name = 'string' JOIN subitems ON ...`
 
-See benchmarking results and more details in [benchmarking section](benchmarks)
+See benchmarking results and more details in [benchmarking repo](https://github.com/Restream/reindexer-benchmarks)
 
 ### Memory Consumption
 
@@ -155,6 +155,9 @@ import (
 	"github.com/restream/reindexer"
 	// choose how the Reindexer binds to the app (in this case "builtin," which means link Reindexer as a static library)
 	_ "github.com/restream/reindexer/bindings/builtin"
+
+	// OR use Reindexer as standalone server and connect to it via TCP.
+	// _ "github.com/restream/reindexer/bindings/cproto"
 
 	// OR link Reindexer as static library with bundled server.
 	// _ "github.com/restream/reindexer/bindings/builtinserver"
@@ -291,6 +294,8 @@ Reindexer can run in 3 different modes:
 
 ### Installation for server mode
 
+In this mode reindexer's Go-binding does not depend on reindexer's static library.
+
 1.  [Install Reindexer Server](cpp_src/readme.md#installation)
 2.  go get -a github.com/restream/reindexer
 
@@ -312,16 +317,48 @@ Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so
 
 To build Reindexer, g++ 8+, clang 7+ or [mingw64](https://sourceforge.net/projects/mingw-w64/) is required.
 
-#### Get Reindexer
+In those modes reindexer's Go-binding depends on reindexer's static libraries (core, server and resource).
+
+#### Get Reindexer (module)
+
+Go modules do not allow to build C++ libraries in modules' directories. Go-binding will use [pkg-config[(https://pkg.go.dev/github.com/rjeczalik/pkgconfig/cmd/pkg-config) to detect libraries' directories.
+
+Reindexer's libraries must be either installed from [sources](cpp_src/readme.md#installation-from-sources) or from [prebuilt package via package manager](cpp_src/readme.md#linux).
+
+Then get the module:
 
 ```bash
 go get -a github.com/restream/reindexer
-bash $GOPATH/src/github.com/restream/reindexer/dependencies.sh
-go generate github.com/restream/reindexer/bindings/builtin
-# Optional (build builtin server binding)
-go generate github.com/restream/reindexer/bindings/builtinserver
-
 ```
+
+#### Get Reindexer (replace)
+
+If you need modified reindexer's sources, you can use `replace` like that:
+
+```bash
+# Get reindexer's sources
+go get -a github.com/restream/reindexer
+# Generate builtin binding
+go generate $GOPATH/src/reindexer/bindings/builtin
+# Optional (build builtin server binding)
+go generate $GOPATH/src/reindexer/bindings/builtinserver
+```
+
+Add reindexer's module into your application and the replace it with local package:
+```
+# Go to your app's directory
+cd /your/app/path
+go get -a github.com/restream/reindexer
+go mod edit -replace github.com/restream/reindexer=$GOPATH/src/github.com/restream/reindexer
+```
+
+In this case, Go-binding will generate explicit libraries' and paths' list and will not use pkg-config.
+
+#### Get Reindexer (vendoring)
+
+Go does not support proper vendoring for CGO code (https://github.com/golang/go/issues/26366), however, it's possible to use [vend](https://github.com/nomad-software/vend) to copy reindexer's sources into vendor-directory.
+
+With `vend` you'll be able to call `go generate -mod=vendor` for `builtin` and `builtinserver`, placed in your vendor-directory.
 
 ## Advanced Usage
 

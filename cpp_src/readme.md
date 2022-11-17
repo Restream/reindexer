@@ -36,16 +36,9 @@ While using docker, you may pass reindexer server config options via envinronmen
 - `RX_HTTP_READ_TIMEOUT` - if RX_HTTP_READ_TIMEOUT is not empty, sets execution timeout for HTTP read operations in seconds. 0 mean no timeout. Default value is 0.
 - `RX_HTTP_WRITE_TIMEOUT` - if RX_HTTP_WRITE_TIMEOUT is not empty, sets execution timeout for HTTP write operations in seconds. 0 mean no timeout. Default value is 0 if cluster is disabled and 20 if cluster is enabled.
 
-## OSX brew
-
-```bash
-brew tap restream/reindexer
-brew install reindexer
-```
-
 ## Linux
 
-## RHEL/Centos/Fedora
+### RHEL/Centos/Fedora
 
 ```bash
 yum install -y epel-release yum-utils
@@ -59,7 +52,7 @@ Available distros: `centos-7`, `fedora-30`, `fedora-31`, `fedora-34`.
 
 To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 
-## Ubuntu/Debian
+### Ubuntu/Debian
 
 ```bash
 curl https://repo.reindexer.io/RX-KEY.GPG | apt-key add
@@ -72,11 +65,18 @@ Available distros: `debian-buster`, `debian-bullseye`, `ubuntu-bionic`, `ubuntu-
 
 To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 
+## OSX brew
+
+```bash
+brew tap restream/reindexer
+brew install reindexer
+```
+
 ## Windows
 
 Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](https://repo.reindexer.io/win/32/)
 
-## Installing from sources
+## Installation from sources
 
 ### Dependencies
 

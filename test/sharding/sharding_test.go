@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/restream/reindexer"
+	_ "github.com/restream/reindexer/bindings/cproto"
 	"github.com/restream/reindexer/test/helpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
