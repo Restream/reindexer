@@ -310,7 +310,7 @@ In those modes reindexer's Go-binding depends on reindexer's static libraries (c
 
 #### Get Reindexer (module)
 
-Go modules do not allow to build C++ libraries in modules' directories. Go-binding will use [pkg-config[(https://pkg.go.dev/github.com/rjeczalik/pkgconfig/cmd/pkg-config) to detect libraries' directories.
+Go modules do not allow to build C++ libraries in modules' directories. Go-binding will use [pkg-config](https://pkg.go.dev/github.com/rjeczalik/pkgconfig/cmd/pkg-config) to detect libraries' directories.
 
 Reindexer's libraries must be either installed from [sources](cpp_src/readme.md#installation-from-sources) or from [prebuilt package via package manager](cpp_src/readme.md#linux).
 
