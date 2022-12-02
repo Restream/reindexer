@@ -78,7 +78,7 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, bool 
 		const bool nonIndexedField = (je.idxNo == IndexValueType::SetByJsonPath);
 		if (nonIndexedField) {
 			VariantArray &values = itemQueryPtr->entries.Get<QueryEntry>(i).values;
-			KeyValueType type = values.empty() ? KeyValueUndefined : values[0].Type();
+			const KeyValueType type{values.empty() ? KeyValueType::Undefined{} : values[0].Type()};
 			payload.GetByJsonPath(je.index_, leftNs_->tagsMatcher_, values, type);
 		} else {
 			const auto &index = *leftNs_->indexes_[je.idxNo];
@@ -135,7 +135,7 @@ void JoinedSelector::readValuesFromRightNs(VariantArray &values, const KeyValueT
 		} else {
 			pl.Get(rightIdxNo, buffer);
 		}
-		if (leftIndexType != KeyValueUndefined && leftIndexType != KeyValueComposite) {
+		if (!leftIndexType.Is<KeyValueType::Undefined>() && !leftIndexType.Is<KeyValueType::Composite>()) {
 			for (Variant &v : buffer) set.insert(std::move(v.convert(leftIndexType)));
 		} else {
 			for (Variant &v : buffer) set.insert(std::move(v));
@@ -146,7 +146,8 @@ void JoinedSelector::readValuesFromRightNs(VariantArray &values, const KeyValueT
 }
 
 template <bool byJsonPath>
-void JoinedSelector::readValuesFromPreResult(VariantArray &values, const KeyValueType leftIndexType, int rightIdxNo, std::string_view rightIndex) const {
+void JoinedSelector::readValuesFromPreResult(VariantArray &values, const KeyValueType leftIndexType, int rightIdxNo,
+											 std::string_view rightIndex) const {
 	std::unordered_set<Variant> set;
 	VariantArray buffer;
 	for (const ItemRef &item : preResult_->values) {
@@ -155,12 +156,12 @@ void JoinedSelector::readValuesFromPreResult(VariantArray &values, const KeyValu
 		const ConstPayload pl{preResult_->values.payloadType, item.Value()};
 		if constexpr (byJsonPath) {
 			pl.GetByJsonPath(rightIndex, preResult_->values.tagsMatcher, buffer, leftIndexType);
-			(void) rightIdxNo;
+			(void)rightIdxNo;
 		} else {
 			pl.Get(rightIdxNo, buffer);
-			(void) rightIndex;
+			(void)rightIndex;
 		}
-		if (leftIndexType != KeyValueUndefined && leftIndexType != KeyValueComposite) {
+		if (!leftIndexType.Is<KeyValueType::Undefined>() && !leftIndexType.Is<KeyValueType::Composite>()) {
 			for (Variant &v : buffer) set.insert(std::move(v.convert(leftIndexType)));
 		} else {
 			for (Variant &v : buffer) set.insert(std::move(v));

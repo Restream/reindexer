@@ -3,54 +3,33 @@
 namespace reindexer {
 
 int kvType2Tag(KeyValueType kvType) {
-	int tagType = 0;
-	switch (kvType) {
-		case KeyValueInt:
-		case KeyValueInt64:
-			tagType = TAG_VARINT;
-			break;
-		case KeyValueBool:
-			tagType = TAG_BOOL;
-			break;
-		case KeyValueDouble:
-			tagType = TAG_DOUBLE;
-			break;
-		case KeyValueString:
-			tagType = TAG_STRING;
-			break;
-		case KeyValueUndefined:
-		case KeyValueNull:
-			tagType = TAG_NULL;
-			break;
-		default:
-			std::abort();
-	}
-	return tagType;
+	return kvType.EvaluateOneOf([&](OneOf<KeyValueType::Int, KeyValueType::Int64>) noexcept { return TAG_VARINT; },
+								[&](KeyValueType::Bool) noexcept { return TAG_BOOL; },
+								[&](KeyValueType::Double) noexcept { return TAG_DOUBLE; },
+								[&](KeyValueType::String) noexcept { return TAG_STRING; },
+								[&](OneOf<KeyValueType::Undefined, KeyValueType::Null>) noexcept { return TAG_NULL; },
+								[&](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) noexcept -> decltype(TAG_NULL) { std::abort(); });
 }
 
 void copyCJsonValue(int tagType, const Variant &value, WrSerializer &wrser) {
-	if (value.Type() == KeyValueNull) return;
+	if (value.Type().Is<KeyValueType::Null>()) return;
 	switch (tagType) {
 		case TAG_DOUBLE:
-			wrser.PutDouble(static_cast<double>(value.convert(KeyValueDouble)));
+			wrser.PutDouble(static_cast<double>(value.convert(KeyValueType::Double{})));
 			break;
 		case TAG_VARINT:
-			switch (value.Type()) {
-				case KeyValueInt64:
-					wrser.PutVarint(static_cast<int64_t>(value.convert(KeyValueInt64)));
-					break;
-				case KeyValueInt:
-					wrser.PutVarint(static_cast<int>(value.convert(KeyValueInt)));
-					break;
-				default:
-					wrser.PutVarint(static_cast<int64_t>(value.convert(KeyValueInt64)));
-			}
+			value.Type().EvaluateOneOf(
+				[&](KeyValueType::Int) { wrser.PutVarint(static_cast<int>(value.convert(KeyValueType::Int{}))); },
+				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool, KeyValueType::String, KeyValueType::Composite,
+						  KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null>) {
+					wrser.PutVarint(static_cast<int64_t>(value.convert(KeyValueType::Int64{})));
+				});
 			break;
 		case TAG_BOOL:
-			wrser.PutBool(static_cast<bool>(value.convert(KeyValueBool)));
+			wrser.PutBool(static_cast<bool>(value.convert(KeyValueType::Bool{})));
 			break;
 		case TAG_STRING:
-			wrser.PutVString(static_cast<std::string_view>(value.convert(KeyValueString)));
+			wrser.PutVString(static_cast<std::string_view>(value.convert(KeyValueType::String{})));
 			break;
 		case TAG_NULL:
 			break;
@@ -122,15 +101,15 @@ void skipCjsonTag(ctag tag, Serializer &rdser) {
 			}
 			break;
 		default:
-			if (embeddedField) rdser.GetRawVariant(KeyValueType(tag.Type()));
+			if (embeddedField) rdser.GetRawVariant(KeyValueType::FromNumber(tag.Type()));
 	}
 }
 
 Variant cjsonValueToVariant(int tag, Serializer &rdser, KeyValueType dstType, Error &err) {
 	try {
-		KeyValueType srcType = KeyValueType(tag);
-		if (dstType == KeyValueInt && srcType == KeyValueInt64) srcType = KeyValueInt;
-		return rdser.GetRawVariant(KeyValueType(srcType)).convert(dstType);
+		KeyValueType srcType = KeyValueType::FromNumber(tag);
+		if (dstType.Is<KeyValueType::Int>() && srcType.Is<KeyValueType::Int64>()) srcType = KeyValueType::Int{};
+		return rdser.GetRawVariant(srcType).convert(dstType);
 	} catch (const Error &e) {
 		err = e;
 	}

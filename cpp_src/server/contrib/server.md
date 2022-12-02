@@ -126,7 +126,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.10.1
+*Version* : 3.11.0
 
 
 ### License information
@@ -2443,8 +2443,10 @@ List of meta info of the specified namespace
 |**optimization_completed**  <br>*optional*|Background indexes optimization has been completed|boolean|
 |**query_cache**  <br>*optional*||[QueryCacheMemStats](#querycachememstats)|
 |**replication**  <br>*optional*||[ReplicationStats](#replicationstats)|
-|**storage_ok**  <br>*optional*|Status of disk storage|boolean|
+|**storage_enabled**  <br>*optional*|Shows if storage is enabled (hovewer it may still be unavailable)|boolean|
+|**storage_ok**  <br>*optional*|Status of disk storage (true, if storage is enabled and writable)|boolean|
 |**storage_path**  <br>*optional*|Filesystem path to namespace storage|string|
+|**storage_status**  <br>*optional*|More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error descrition|string|
 |**strings_waiting_to_be_deleted_size**  <br>*optional*|Size of strings deleted from namespace, but still used in queryResults|integer|
 |**total**  <br>*optional*|Summary of total namespace memory consumption|[total](#namespacememstats-total)|
 |**updated_unix_nano**  <br>*optional*|[[deperecated]]. do not use|integer|

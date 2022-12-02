@@ -8,22 +8,13 @@
 namespace reindexer {
 
 Variant Serializer::GetRawVariant(KeyValueType type) {
-	switch (type) {
-		case KeyValueInt:
-			return Variant(int(GetVarint()));
-		case KeyValueBool:
-			return Variant(bool(GetVarUint()));
-		case KeyValueInt64:
-			return Variant(int64_t(GetVarint()));
-		case KeyValueDouble:
-			return Variant(GetDouble());
-		case KeyValueString:
-			return Variant(GetPVString());
-		case KeyValueNull:
-			return Variant();
-		default:
-			throw Error(errParseBin, "Unknown type %d while parsing binary buffer", type);
-	}
+	return type.EvaluateOneOf(
+		[&](KeyValueType::Int) { return Variant(int(GetVarint())); }, [&](KeyValueType::Bool) { return Variant(bool(GetVarUint())); },
+		[&](KeyValueType::Int64) { return Variant(int64_t(GetVarint())); }, [&](KeyValueType::Double) { return Variant(GetDouble()); },
+		[&](KeyValueType::String) { return Variant(GetPVString()); }, [&](KeyValueType::Null) noexcept { return Variant(); },
+		[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) -> Variant {
+			throw Error(errParseBin, "Unknown type %s while parsing binary buffer", type.Name());
+		});
 }
 
 p_string Serializer::GetPVString() {

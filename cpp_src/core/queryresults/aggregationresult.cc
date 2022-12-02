@@ -127,16 +127,16 @@ Error AggregationResult::FromJSON(span<char> json) {
 void AggregationResult::GetProtobufSchema(ProtobufSchemaBuilder &builder) {
 	ParametersFields<ParametersFieldsNumbers, int> fields(kParametersFieldNumbers);
 	ProtobufSchemaBuilder results = builder.Object(0, "AggregationResults");
-	results.Field(Parameters::Value(), fields.Value(), FieldProps{KeyValueDouble});
-	results.Field(Parameters::Type(), fields.Type(), FieldProps{KeyValueString});
+	results.Field(Parameters::Value(), fields.Value(), FieldProps{KeyValueType::Double{}});
+	results.Field(Parameters::Type(), fields.Type(), FieldProps{KeyValueType::String{}});
 	{
 		ProtobufSchemaBuilder facets = results.Object(fields.Facets(), "Facets");
-		facets.Field(Parameters::Count(), fields.Count(), FieldProps{KeyValueInt});
-		facets.Field(Parameters::Values(), fields.Values(), FieldProps{KeyValueString, true});
+		facets.Field(Parameters::Count(), fields.Count(), FieldProps{KeyValueType::Int{}});
+		facets.Field(Parameters::Values(), fields.Values(), FieldProps{KeyValueType::String{}, true});
 	}
-	results.Field(Parameters::Facets(), fields.Facets(), FieldProps{KeyValueTuple, true, false, false, "Facets"});
-	results.Field(Parameters::Distincts(), fields.Distincts(), FieldProps{KeyValueString, true});
-	results.Field(Parameters::Fields(), fields.Fields(), FieldProps{KeyValueString, true});
+	results.Field(Parameters::Facets(), fields.Facets(), FieldProps{KeyValueType::Tuple{}, true, false, false, "Facets"});
+	results.Field(Parameters::Distincts(), fields.Distincts(), FieldProps{KeyValueType::String{}, true});
+	results.Field(Parameters::Fields(), fields.Fields(), FieldProps{KeyValueType::String{}, true});
 	results.End();
 }
 

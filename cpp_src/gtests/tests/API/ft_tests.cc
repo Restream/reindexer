@@ -1339,6 +1339,61 @@ TEST_P(FTApi, SetFtFieldsCfgErrors) {
 	EXPECT_EQ(err.what(), "FtFastConfig: Value of 'max_typos' - 5 is out of bounds: [0,4]");
 }
 
+TEST_P(FTApi, MergeLimitConstraints) {
+	auto cfg = GetDefaultConfig();
+	Init(cfg);
+	cfg.mergeLimit = kMinMergeLimitValue - 1;
+	auto err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_EQ(err.code(), errParseJson);
+	cfg.mergeLimit = kMaxMergeLimitValue + 1;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_EQ(err.code(), errParseJson);
+	cfg.mergeLimit = kMinMergeLimitValue;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	cfg.mergeLimit = kMaxMergeLimitValue;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+TEST_P(FTApi, LargeMergeLimit) {
+	// Check if results are bounded by merge limit
+	auto ftCfg = GetDefaultConfig();
+	ftCfg.mergeLimit = kMaxMergeLimitValue;
+	Init(ftCfg);
+	const std::string kBase1 = "aaaa";
+	const std::string kBase2 = "bbbb";
+
+	reindexer::fast_hash_set<std::string> strings1;
+	constexpr unsigned kPartLen = (kMaxMergeLimitValue + 15000) / 2;
+	for (unsigned i = 0; i < kPartLen; ++i) {
+		while (true) {
+			std::string val = kBase2 + rt.RandString(10, 10);
+			if (strings1.emplace(val).second) {
+				Add("nm1"sv, val);
+				break;
+			}
+		}
+	}
+	reindexer::fast_hash_set<std::string> strings2;
+	auto fit = strings1.begin();
+	for (unsigned i = 0; i < kPartLen; ++i, ++fit) {
+		while (true) {
+			std::string val = kBase2 + rt.RandString(10, 10);
+			if (strings2.emplace(val).second) {
+				if (fit == strings2.end()) {
+					fit = strings2.begin();
+				}
+				Add("nm1"sv, val, fit.key());
+				break;
+			}
+		}
+	}
+
+	auto qr = SimpleSelect(fmt::sprintf("%s* %s*", kBase1, kBase2));
+	ASSERT_EQ(qr.Count(), ftCfg.mergeLimit);
+}
+
 INSTANTIATE_TEST_SUITE_P(, FTApi,
 						 ::testing::Values(reindexer::FtFastConfig::Optimization::Memory, reindexer::FtFastConfig::Optimization::CPU),
 						 [](const auto& info) {

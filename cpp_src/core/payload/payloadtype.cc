@@ -1,4 +1,5 @@
 #include "payloadtype.h"
+#include <sstream>
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/type_consts_helpers.h"
@@ -7,7 +8,7 @@
 
 namespace reindexer {
 
-size_t PayloadTypeImpl::TotalSize() const {
+size_t PayloadTypeImpl::TotalSize() const noexcept {
 	if (fields_.size()) {
 		return fields_.back().Offset() + fields_.back().Sizeof();
 	}
@@ -15,13 +16,13 @@ size_t PayloadTypeImpl::TotalSize() const {
 }
 
 std::string PayloadTypeImpl::ToString() const {
-	std::string ret;
+	std::stringstream ret;
 	for (auto &f : fields_) {
-		ret += std::string(Variant::TypeName(f.Type())) + (f.IsArray() ? "[]" : "") + " '" + f.Name() + "'" + " json:\"";
-		for (auto &jp : f.JsonPaths()) ret += jp + ";";
-		ret += "\"\n";
+		ret << f.Type().Name() << (f.IsArray() ? "[]" : "") << " '" << f.Name() << '\'' << " json:\"";
+		for (auto &jp : f.JsonPaths()) ret << jp << ";";
+		ret << "\"\n";
 	}
-	return ret;
+	return ret.str();
 }
 
 void PayloadTypeImpl::Dump(std::ostream &os, std::string_view step, std::string_view offset) const {
@@ -30,7 +31,7 @@ void PayloadTypeImpl::Dump(std::ostream &os, std::string_view step, std::string_
 	os << '{';
 	for (auto &f : fields_) {
 		os << '\n'
-		   << newOffset << KeyValueTypeToStr(f.Type()) << (f.IsArray() ? "[]" : "") << " '" << f.Name() << "'"
+		   << newOffset << f.Type().Name() << (f.IsArray() ? "[]" : "") << " '" << f.Name() << "'"
 		   << " json:\"";
 		for (size_t i = 0, s = f.JsonPaths().size(); i < s; ++i) {
 			if (i != 0) os << ';';
@@ -50,7 +51,7 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 		// Non unique name -> check type, and upgrade to array if types are the same
 		auto &oldf = fields_[it->second];
 		throw Error(errLogic, "Cannot add field with name '%s' and type '%s' to namespace '%s'. It already exists with type '%s'", f.Name(),
-					Variant::TypeName(f.Type()), Name(), Variant::TypeName(oldf.Type()));
+					f.Type().Name(), Name(), oldf.Type().Name());
 	} else {
 		// Unique name -> just add field
 		f.SetOffset(TotalSize());
@@ -63,7 +64,7 @@ void PayloadTypeImpl::Add(PayloadFieldType f) {
 			}
 		}
 		fieldsByName_.emplace(f.Name(), int(fields_.size()));
-		if (f.Type() == KeyValueString) {
+		if (f.Type().Is<KeyValueType::String>()) {
 			strFields_.push_back(int(fields_.size()));
 		}
 		fields_.push_back(std::move(f));
@@ -82,9 +83,9 @@ bool PayloadTypeImpl::Drop(std::string_view field) {
 		if (it.second > fieldIdx) --it.second;
 	}
 
-	KeyValueType fieldType = fields_[fieldIdx].Type();
+	const auto fieldType = fields_[fieldIdx].Type();
 	for (auto it = strFields_.begin(); it != strFields_.end();) {
-		if ((*it == fieldIdx) && (fieldType == KeyValueString)) {
+		if ((*it == fieldIdx) && (fieldType.Is<KeyValueType::String>())) {
 			it = strFields_.erase(it);
 			continue;
 		} else if (*it > fieldIdx)
@@ -111,22 +112,20 @@ bool PayloadTypeImpl::Drop(std::string_view field) {
 	return true;
 }
 
-bool PayloadTypeImpl::Contains(std::string_view field) const { return fieldsByName_.find(field) != fieldsByName_.end(); }
-
 int PayloadTypeImpl::FieldByName(std::string_view field) const {
 	auto it = fieldsByName_.find(field);
 	if (it == fieldsByName_.end()) throw Error(errLogic, "Field '%s' not found in namespace '%s'", field, Name());
 	return it->second;
 }
 
-bool PayloadTypeImpl::FieldByName(std::string_view name, int &field) const {
+bool PayloadTypeImpl::FieldByName(std::string_view name, int &field) const noexcept {
 	auto it = fieldsByName_.find(name);
 	if (it == fieldsByName_.end()) return false;
 	field = it->second;
 	return true;
 }
 
-int PayloadTypeImpl::FieldByJsonPath(std::string_view jsonPath) const {
+int PayloadTypeImpl::FieldByJsonPath(std::string_view jsonPath) const noexcept {
 	auto it = fieldsByJsonPath_.find(jsonPath);
 	if (it == fieldsByJsonPath_.end()) return -1;
 	return it->second;
@@ -136,7 +135,7 @@ void PayloadTypeImpl::serialize(WrSerializer &ser) const {
 	ser.PutVarUint(base_key_string::export_hdr_offset());
 	ser.PutVarUint(NumFields());
 	for (int i = 0; i < NumFields(); i++) {
-		ser.PutVarUint(Field(i).Type());
+		ser.PutVarUint(Field(i).Type().ToNumber());
 		ser.PutVString(Field(i).Name());
 		ser.PutVarUint(Field(i).Offset());
 		ser.PutVarUint(Field(i).ElemSizeof());
@@ -157,7 +156,7 @@ void PayloadTypeImpl::deserialize(Serializer &ser) {
 	int count = ser.GetVarUint();
 
 	for (int i = 0; i < count; i++) {
-		KeyValueType t = KeyValueType(ser.GetVarUint());
+		const auto t = KeyValueType::FromNumber(ser.GetVarUint());
 		std::string name(ser.GetVString());
 		std::vector<std::string> jsonPaths;
 		int offset = ser.GetVarUint();
@@ -174,7 +173,7 @@ void PayloadTypeImpl::deserialize(Serializer &ser) {
 		if (isArray) ft.SetArray();
 		ft.SetOffset(offset);
 		fieldsByName_.emplace(name, fields_.size());
-		if (t == KeyValueString) strFields_.push_back(fields_.size());
+		if (t.Is<KeyValueType::String>()) strFields_.push_back(fields_.size());
 		fields_.push_back(ft);
 	}
 }

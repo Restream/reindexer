@@ -102,35 +102,17 @@ public:
 		if (isArray()) skipTag();
 		skipTag();
 		packKeyName(tagName);
-		switch (kv.Type()) {
-			case KeyValueInt:
-				packValue(int(kv));
-				break;
-			case KeyValueInt64:
-				packValue(int64_t(kv));
-				break;
-			case KeyValueDouble:
-				packValue(double(kv));
-				break;
-			case KeyValueString:
-				packValue(p_string(kv).toString());
-				break;
-			case KeyValueNull:
-				packNil();
-				break;
-			case KeyValueBool:
-				packValue(bool(kv));
-				break;
-			case KeyValueTuple: {
-				auto arrNode = Array(tagName);
-				for (auto &val : kv.getCompositeValues()) {
-					arrNode.Put(0, val);
-				}
-				break;
-			}
-			default:
-				break;
-		}
+		kv.Type().EvaluateOneOf([&](KeyValueType::Int) { packValue(int(kv)); }, [&](KeyValueType::Int64) { packValue(int64_t(kv)); },
+								[&](KeyValueType::Double) { packValue(double(kv)); },
+								[&](KeyValueType::String) { packValue(p_string(kv).toString()); }, [&](KeyValueType::Null) { packNil(); },
+								[&](KeyValueType::Bool) { packValue(bool(kv)); },
+								[&](KeyValueType::Tuple) {
+									auto arrNode = Array(tagName);
+									for (auto &val : kv.getCompositeValues()) {
+										arrNode.Put(0, val);
+									}
+								},
+								[](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
 		if (isArray()) skipTag();
 		return *this;
 	}

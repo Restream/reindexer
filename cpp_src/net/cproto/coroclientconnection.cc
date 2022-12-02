@@ -21,9 +21,10 @@ constexpr auto kDeadlineCheckInterval = std::chrono::seconds(1);
 constexpr auto kKeepAliveInterval = std::chrono::seconds(30);
 constexpr size_t kUpdatesChannelSize = 128;
 constexpr size_t kReadBufReserveSize = 0x1000;
-constexpr size_t kWrChannelSize = 20;
+constexpr size_t kWrChannelSize = 30;
 constexpr size_t kCntToSendNow = 30;
-constexpr size_t kDataToSendNow = 2048;
+constexpr size_t kMaxSerializedSize = 20 * 1024 * 1024;
+constexpr size_t kDataToSendNow = 8192;
 
 CoroClientConnection::CoroClientConnection()
 	: now_(0),
@@ -336,7 +337,7 @@ void CoroClientConnection::writerRoutine() {
 			}
 			appendChunck(buf, std::move(mch.first.data));
 			++cnt;
-		} while (cnt < kCntToSendNow && wrCh_.size());
+		} while (wrCh_.size() && buf.size() < kMaxSerializedSize);
 		int err = 0;
 		bool sendNow = cnt == kCntToSendNow || buf.size() >= kDataToSendNow;
 		auto written = conn_.async_write(buf, err, sendNow);

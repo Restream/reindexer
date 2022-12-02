@@ -7,13 +7,6 @@
 #include <rocksdb/iterator.h>
 #include <rocksdb/slice.h>
 
-void toWriteOptions(const StorageOpts& opts, rocksdb::WriteOptions& wopts) { wopts.sync = opts.IsSync(); }
-
-void toReadOptions(const StorageOpts& opts, rocksdb::ReadOptions& ropts) {
-	ropts.fill_cache = opts.IsFillCache();
-	ropts.verify_checksums = opts.IsVerifyChecksums();
-}
-
 namespace reindexer {
 namespace datastorage {
 
@@ -21,9 +14,14 @@ using namespace std::string_view_literals;
 
 constexpr auto kStorageNotInitialized = "Storage is not initialized"sv;
 
-RocksDbStorage::RocksDbStorage() {}
+static void toWriteOptions(const StorageOpts& opts, rocksdb::WriteOptions& wopts) noexcept { wopts.sync = opts.IsSync(); }
 
-RocksDbStorage::~RocksDbStorage() {}
+static void toReadOptions(const StorageOpts& opts, rocksdb::ReadOptions& ropts) noexcept {
+	ropts.fill_cache = opts.IsFillCache();
+	ropts.verify_checksums = opts.IsVerifyChecksums();
+}
+
+RocksDbStorage::RocksDbStorage() = default;
 
 Error RocksDbStorage::Read(const StorageOpts& opts, std::string_view key, std::string& value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
@@ -88,14 +86,25 @@ void RocksDbStorage::ReleaseSnapshot(Snapshot::Ptr snapshot) {
 	snapshot.reset();
 }
 
-void RocksDbStorage::Flush() {
+Error RocksDbStorage::Flush() {
 	// RocksDB does not support Flush mechanism.
 	// It just doesn't know when an asynchronous
 	// write has completed. So the only way (the dump
 	// way) is to just close the Storage and then open
 	// it again. So that is what we do:
-	db_.reset();
-	Open(dbpath_, opts_);
+	if (db_) {
+		db_.reset();
+		return Open(dbpath_, opts_);
+	}
+	return Error();
+}
+
+Error RocksDbStorage::Reopen() {
+	if (!dbpath_.empty()) {
+		db_.reset();
+		return Open(dbpath_, opts_);
+	}
+	return Error();
 }
 
 Cursor* RocksDbStorage::GetCursor(StorageOpts& opts) {
@@ -139,34 +148,6 @@ void RocksDbStorage::doDestroy(const std::string& path) {
 	}
 }
 
-RocksDbBatchBuffer::RocksDbBatchBuffer() {}
-
-RocksDbBatchBuffer::~RocksDbBatchBuffer() {}
-
-void RocksDbBatchBuffer::Put(std::string_view key, std::string_view value) {
-	batchWrite_.Put(rocksdb::Slice(key.data(), key.size()), rocksdb::Slice(value.data(), value.size()));
-}
-
-void RocksDbBatchBuffer::Remove(std::string_view key) { batchWrite_.Delete(rocksdb::Slice(key.data(), key.size())); }
-
-void RocksDbBatchBuffer::Clear() { batchWrite_.Clear(); }
-
-RocksDbIterator::RocksDbIterator(rocksdb::Iterator* iterator) : iterator_(iterator) {}
-
-RocksDbIterator::~RocksDbIterator() {}
-
-bool RocksDbIterator::Valid() const { return iterator_->Valid(); }
-
-void RocksDbIterator::SeekToFirst() { return iterator_->SeekToFirst(); }
-
-void RocksDbIterator::SeekToLast() { return iterator_->SeekToLast(); }
-
-void RocksDbIterator::Seek(std::string_view target) { return iterator_->Seek(rocksdb::Slice(target.data(), target.size())); }
-
-void RocksDbIterator::Next() { return iterator_->Next(); }
-
-void RocksDbIterator::Prev() { return iterator_->Prev(); }
-
 std::string_view RocksDbIterator::Key() const {
 	rocksdb::Slice key = iterator_->key();
 	return std::string_view(key.data(), key.size());
@@ -177,16 +158,13 @@ std::string_view RocksDbIterator::Value() const {
 	return std::string_view(key.data(), key.size());
 }
 
-Comparator& RocksDbIterator::GetComparator() { return comparator_; }
-
 int RocksDbComparator::Compare(std::string_view a, std::string_view b) const {
 	rocksdb::Options options;
 	return options.comparator->Compare(rocksdb::Slice(a.data(), a.size()), rocksdb::Slice(b.data(), b.size()));
 }
 
-RocksDbSnapshot::RocksDbSnapshot(const rocksdb::Snapshot* snapshot) : snapshot_(snapshot) {}
+RocksDbSnapshot::RocksDbSnapshot(const rocksdb::Snapshot* snapshot) noexcept : snapshot_(snapshot) {}
 
-RocksDbSnapshot::~RocksDbSnapshot() { snapshot_ = nullptr; }
 }  // namespace datastorage
 }  // namespace reindexer
 #else

@@ -20,6 +20,10 @@ void Prometheus::Attach(http::Router& router) {
 	inputTraffic_ = &BuildGauge().Name("reindexer_input_traffic_total_bytes").Help("Total RPC input traffic in bytes").Register(registry_);
 	outputTraffic_ =
 		&BuildGauge().Name("reindexer_output_traffic_total_bytes").Help("Total RPC output traffic in bytes").Register(registry_);
+	storageStatus_ = &BuildGauge()
+						  .Name("reindexer_storage_ok")
+						  .Help("Shows if storage is enabled and writable (value 1 means, that everything is fine)")
+						  .Register(registry_);
 	rxInfo_ = &BuildGauge().Name("reindexer_info").Help("Generic reindexer info").Register(registry_);
 	fillRxInfo();
 

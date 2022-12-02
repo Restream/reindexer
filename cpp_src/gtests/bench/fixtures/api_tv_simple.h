@@ -76,9 +76,12 @@ protected:
 	void Query4CondRange(State& state);
 	void Query4CondRangeTotal(State& state);
 	void Query4CondRangeCachedTotal(State& state);
+	void FromCJSON(State&);
+	void GetCJSON(State&);
 
 private:
 	void query2CondIdSet(State& state, const std::vector<std::vector<int>>& idsets);
+	reindexer::Error prepareCJsonBench();
 
 	constexpr static unsigned kTotalItemsMainJoinNs = 1000000;
 
@@ -98,4 +101,7 @@ private:
 	std::string stringSelectNs_{"string_select_ns"};
 	std::string innerJoinLowSelectivityMainNs_{"inner_join_low_selectivity_main_ns"};
 	std::string innerJoinLowSelectivityRightNs_{"inner_join_low_selectivity_right_ns"};
+	std::string cjsonNsName_{"cjson_ns_name"};
+	std::unique_ptr<reindexer::Item> itemForCjsonBench_;
+	std::string cjsonOfItem_;
 };

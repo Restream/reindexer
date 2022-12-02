@@ -373,7 +373,7 @@ TEST_F(NsApi, TestUpdateIndexedField) {
 	for (auto it : qrAll) {
 		Item item = it.GetItem(false);
 		Variant val = item[stringField];
-		ASSERT_TRUE(val.Type() == KeyValueString);
+		ASSERT_TRUE(val.Type().Is<reindexer::KeyValueType::String>());
 		ASSERT_TRUE(val.As<std::string>() == "bingo!") << val.As<std::string>();
 		checkIfItemJSONValid(it);
 	}
@@ -397,7 +397,7 @@ TEST_F(NsApi, TestUpdateNonindexedField) {
 	for (auto it : qrAll) {
 		Item item = it.GetItem(false);
 		Variant val = item["nested.bonus"];
-		ASSERT_TRUE(val.Type() == KeyValueInt64);
+		ASSERT_TRUE(val.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(val.As<int64_t>() == 100500);
 		checkIfItemJSONValid(it);
 	}
@@ -421,7 +421,7 @@ TEST_F(NsApi, TestUpdateSparseField) {
 	for (auto it : qrAll) {
 		Item item = it.GetItem(false);
 		Variant val = item["sparse_field"];
-		ASSERT_TRUE(val.Type() == KeyValueInt64);
+		ASSERT_TRUE(val.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(val.As<int>() == 100500);
 		checkIfItemJSONValid(it);
 	}
@@ -455,7 +455,7 @@ TEST_F(NsApi, TestUpdateTwoFields) {
 
 		Item item = it.GetItem(false);
 		Variant strField = item[stringField];
-		EXPECT_TRUE(strField.Type() == KeyValueString);
+		EXPECT_TRUE(strField.Type().Is<reindexer::KeyValueType::String>());
 		EXPECT_TRUE(strField.As<std::string>() == "Bingo!");
 
 		Variant nestedId = item["very_nested.id"];
@@ -484,7 +484,7 @@ static void updateArrayField(const std::shared_ptr<reindexer::Reindexer> &reinde
 		VariantArray val = item[updateFieldPath.c_str()];
 		if (values.empty()) {
 			ASSERT_TRUE(val.size() == 1) << val.size();
-			ASSERT_TRUE(val.IsNullValue()) << val.ArrayType();
+			ASSERT_TRUE(val.IsNullValue()) << val.ArrayType().Name();
 		} else {
 			ASSERT_TRUE(val.size() == values.size()) << val.size() << ":" << values.size();
 			ASSERT_TRUE(val == values);
@@ -606,7 +606,7 @@ static void addAndSetNonindexedField(const std::shared_ptr<reindexer::Reindexer>
 	for (auto it : qrAll) {
 		Item item = it.GetItem(false);
 		Variant val = item[updateFieldPath.c_str()];
-		ASSERT_TRUE(val.Type() == KeyValueInt64);
+		ASSERT_TRUE(val.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(val.As<int64_t>() == 777);
 		checkIfItemJSONValid(it);
 	}
@@ -650,7 +650,7 @@ static void setAndCheckArrayItem(const std::shared_ptr<reindexer::Reindexer> &re
 	// is a type of Int64.
 	auto checkItem = [](const VariantArray &values, size_t index) {
 		ASSERT_TRUE(index < values.size());
-		ASSERT_TRUE(values[index].Type() == KeyValueInt64);
+		ASSERT_TRUE(values[index].Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(values[index].As<int64_t>() == 777);
 	};
 
@@ -723,7 +723,7 @@ TEST_F(NsApi, TestAddAndSetArrayField3) {
 		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
 		VariantArray values = item[indexedArrayField];
-		ASSERT_TRUE(values[0].Type() == KeyValueInt);
+		ASSERT_TRUE(values[0].Type().Is<reindexer::KeyValueType::Int>());
 		ASSERT_TRUE(values[0].As<int>() == 777);
 	}
 }
@@ -748,7 +748,7 @@ TEST_F(NsApi, TestAddAndSetArrayField4) {
 		VariantArray values = item[indexedArrayField];
 		ASSERT_TRUE(values.size() == 9);
 		for (size_t i = 0; i < values.size(); ++i) {
-			ASSERT_TRUE(values[i].Type() == KeyValueInt);
+			ASSERT_TRUE(values[i].Type().Is<reindexer::KeyValueType::Int>());
 			ASSERT_TRUE(values[i].As<int>() == 777);
 		}
 	}
@@ -1063,31 +1063,31 @@ TEST_F(NsApi, AccessForIndexedArrayItem) {
 		reindexer::Item item = it.GetItem(false);
 
 		Variant value1 = item["indexed_array_field[0]"];
-		ASSERT_TRUE(value1.Type() == KeyValueInt);
+		ASSERT_TRUE(value1.Type().Is<reindexer::KeyValueType::Int>());
 		ASSERT_TRUE(static_cast<int>(value1) == 777);
 
 		Variant value2 = item["objects[0].more[0].array[0]"];
-		ASSERT_TRUE(value2.Type() == KeyValueInt64);
+		ASSERT_TRUE(value2.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(static_cast<int64_t>(value2) == 9);
 
 		Variant value3 = item["objects[0].more[0].array[1]"];
-		ASSERT_TRUE(value3.Type() == KeyValueInt64);
+		ASSERT_TRUE(value3.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(static_cast<int64_t>(value3) == 8);
 
 		Variant value4 = item["objects[0].more[0].array[2]"];
-		ASSERT_TRUE(value4.Type() == KeyValueInt64);
+		ASSERT_TRUE(value4.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(static_cast<int64_t>(value4) == 7);
 
 		Variant value5 = item["objects[0].more[0].array[3]"];
-		ASSERT_TRUE(value5.Type() == KeyValueInt64);
+		ASSERT_TRUE(value5.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(static_cast<int64_t>(value5) == 6);
 
 		Variant value6 = item["objects[0].more[0].array[4]"];
-		ASSERT_TRUE(value6.Type() == KeyValueInt64);
+		ASSERT_TRUE(value6.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(static_cast<int64_t>(value6) == 5);
 
 		Variant value7 = item["nested.nested_array[1].prices[1]"];
-		ASSERT_TRUE(value7.Type() == KeyValueInt64);
+		ASSERT_TRUE(value7.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(static_cast<int64_t>(value7) == 5);
 	}
 }
@@ -1112,11 +1112,11 @@ TEST_F(NsApi, UpdateComplexArrayItem) {
 		reindexer::Item item = it.GetItem(false);
 
 		Variant value = item["objects[0].more[1].array[1]"];
-		ASSERT_TRUE(value.Type() == KeyValueInt64);
+		ASSERT_TRUE(value.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(static_cast<int64_t>(value) == 777);
 
 		Variant value2 = item["objects[0].more[1].array[2]"];
-		ASSERT_TRUE(value2.Type() == KeyValueInt64);
+		ASSERT_TRUE(value2.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(static_cast<int64_t>(value2) == 2);
 	}
 }
@@ -1140,22 +1140,22 @@ TEST_F(NsApi, CheckIndexedArrayItem) {
 		reindexer::Item item = it.GetItem(false);
 
 		Variant value = item["objects[0].more[1].array[1]"];
-		ASSERT_TRUE(value.Type() == KeyValueInt64);
+		ASSERT_TRUE(value.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(static_cast<int64_t>(value) == 3);
 
 		Variant value1 = item["objects[0].more[1].array[3]"];
-		ASSERT_TRUE(value1.Type() == KeyValueInt64);
+		ASSERT_TRUE(value1.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(static_cast<int64_t>(value1) == 1);
 
 		Variant value2 = item["objects[0].more[0].array[4]"];
-		ASSERT_TRUE(value2.Type() == KeyValueInt64);
+		ASSERT_TRUE(value2.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(static_cast<int64_t>(value2) == 5);
 	}
 }
 
 static void checkFieldConversion(const std::shared_ptr<reindexer::Reindexer> &reindexer, const std::string &ns,
 								 const std::string &updateFieldPath, const VariantArray &newValue, const VariantArray &updatedValue,
-								 KeyValueType sourceType, bool expectFail) {
+								 reindexer::KeyValueType sourceType, bool expectFail) {
 	const Query selectQuery{Query(ns).Where("id", CondGe, Variant("500"))};
 	QueryResults qrUpdate;
 	Query updateQuery = selectQuery;
@@ -1180,7 +1180,7 @@ static void checkFieldConversion(const std::shared_ptr<reindexer::Reindexer> &re
 			VariantArray val = item[updateFieldPath.c_str()];
 			ASSERT_TRUE(val.size() == updatedValue.size());
 			for (const Variant &v : val) {
-				ASSERT_TRUE(v.Type() == sourceType) << v.Type();
+				ASSERT_TRUE(v.Type().IsSame(sourceType)) << v.Type().Name();
 			}
 			ASSERT_TRUE(val == updatedValue);
 			checkIfItemJSONValid(it);
@@ -1193,21 +1193,22 @@ TEST_F(NsApi, TestIntIndexedFieldConversion) {
 	FillDefaultNamespace();
 
 	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(static_cast<double>(13.33f))},
-						 {Variant(static_cast<int>(13.33f))}, KeyValueInt, false);
+						 {Variant(static_cast<int>(13.33f))}, reindexer::KeyValueType::Int{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(static_cast<int64_t>(13))}, {Variant(static_cast<int>(13))},
-						 KeyValueInt, false);
+						 reindexer::KeyValueType::Int{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(static_cast<bool>(false))}, {Variant(static_cast<int>(0))},
-						 KeyValueInt, false);
+						 reindexer::KeyValueType::Int{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(static_cast<bool>(true))}, {Variant(static_cast<int>(1))},
-						 KeyValueInt, false);
+						 reindexer::KeyValueType::Int{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(std::string("100500"))}, {Variant(static_cast<int>(100500))},
-						 KeyValueInt, false);
+						 reindexer::KeyValueType::Int{}, false);
 
-	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(std::string("Jesus Christ"))}, {Variant()}, KeyValueInt, true);
+	checkFieldConversion(rt.reindexer, default_namespace, intField, {Variant(std::string("Jesus Christ"))}, {Variant()},
+						 reindexer::KeyValueType::Int{}, true);
 }
 
 TEST_F(NsApi, TestDoubleIndexedFieldConversion) {
@@ -1215,42 +1216,45 @@ TEST_F(NsApi, TestDoubleIndexedFieldConversion) {
 	FillDefaultNamespace();
 
 	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(static_cast<int>(13333))},
-						 {Variant(static_cast<double>(13333.0f))}, KeyValueDouble, false);
+						 {Variant(static_cast<double>(13333.0f))}, reindexer::KeyValueType::Double{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(static_cast<int64_t>(13333))},
-						 {Variant(static_cast<double>(13333.0f))}, KeyValueDouble, false);
+						 {Variant(static_cast<double>(13333.0f))}, reindexer::KeyValueType::Double{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(static_cast<bool>(false))},
-						 {Variant(static_cast<double>(0.0f))}, KeyValueDouble, false);
+						 {Variant(static_cast<double>(0.0f))}, reindexer::KeyValueType::Double{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(static_cast<bool>(true))},
-						 {Variant(static_cast<double>(1.0f))}, KeyValueDouble, false);
+						 {Variant(static_cast<double>(1.0f))}, reindexer::KeyValueType::Double{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(std::string("100500.1"))},
-						 {Variant(static_cast<double>(100500.100000))}, KeyValueDouble, false);
+						 {Variant(static_cast<double>(100500.100000))}, reindexer::KeyValueType::Double{}, false);
 
-	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(std::string("Jesus Christ"))}, {Variant()}, KeyValueDouble,
-						 true);
+	checkFieldConversion(rt.reindexer, default_namespace, doubleField, {Variant(std::string("Jesus Christ"))}, {Variant()},
+						 reindexer::KeyValueType::Double{}, true);
 }
 
 TEST_F(NsApi, TestBoolIndexedFieldConversion) {
 	DefineDefaultNamespace();
 	FillDefaultNamespace();
 
-	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(static_cast<int>(100500))}, {Variant(true)}, KeyValueBool,
-						 false);
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(static_cast<int>(100500))}, {Variant(true)},
+						 reindexer::KeyValueType::Bool{}, false);
 
-	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(static_cast<int64_t>(100500))}, {Variant(true)}, KeyValueBool,
-						 false);
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(static_cast<int64_t>(100500))}, {Variant(true)},
+						 reindexer::KeyValueType::Bool{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(static_cast<double>(100500.1))}, {Variant(true)},
-						 KeyValueBool, false);
+						 reindexer::KeyValueType::Bool{}, false);
 
-	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(std::string("1"))}, {Variant(false)}, KeyValueBool, false);
-	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(std::string("0"))}, {Variant(false)}, KeyValueBool, false);
-	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(std::string("true"))}, {Variant(true)}, KeyValueBool, false);
-	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(std::string("false"))}, {Variant(false)}, KeyValueBool,
-						 false);
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(std::string("1"))}, {Variant(false)},
+						 reindexer::KeyValueType::Bool{}, false);
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(std::string("0"))}, {Variant(false)},
+						 reindexer::KeyValueType::Bool{}, false);
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(std::string("true"))}, {Variant(true)},
+						 reindexer::KeyValueType::Bool{}, false);
+	checkFieldConversion(rt.reindexer, default_namespace, boolField, {Variant(std::string("false"))}, {Variant(false)},
+						 reindexer::KeyValueType::Bool{}, false);
 }
 
 TEST_F(NsApi, TestStringIndexedFieldConversion) {
@@ -1258,13 +1262,13 @@ TEST_F(NsApi, TestStringIndexedFieldConversion) {
 	FillDefaultNamespace();
 
 	checkFieldConversion(rt.reindexer, default_namespace, stringField, {Variant(static_cast<int>(100500))}, {Variant("100500")},
-						 KeyValueString, false);
+						 reindexer::KeyValueType::String{}, false);
 
-	checkFieldConversion(rt.reindexer, default_namespace, stringField, {Variant(true)}, {Variant(std::string("true"))}, KeyValueString,
-						 false);
+	checkFieldConversion(rt.reindexer, default_namespace, stringField, {Variant(true)}, {Variant(std::string("true"))},
+						 reindexer::KeyValueType::String{}, false);
 
-	checkFieldConversion(rt.reindexer, default_namespace, stringField, {Variant(false)}, {Variant(std::string("false"))}, KeyValueString,
-						 false);
+	checkFieldConversion(rt.reindexer, default_namespace, stringField, {Variant(false)}, {Variant(std::string("false"))},
+						 reindexer::KeyValueType::String{}, false);
 }
 
 TEST_F(NsApi, TestIntNonindexedFieldConversion) {
@@ -1272,22 +1276,22 @@ TEST_F(NsApi, TestIntNonindexedFieldConversion) {
 	AddUnindexedData();
 
 	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<double>(13.33f))},
-						 {Variant(static_cast<double>(13.33f))}, KeyValueDouble, false);
+						 {Variant(static_cast<double>(13.33f))}, reindexer::KeyValueType::Double{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<int>(13))},
-						 {Variant(static_cast<int64_t>(13))}, KeyValueInt64, false);
+						 {Variant(static_cast<int64_t>(13))}, reindexer::KeyValueType::Int64{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<bool>(false))},
-						 {Variant(static_cast<bool>(false))}, KeyValueBool, false);
+						 {Variant(static_cast<bool>(false))}, reindexer::KeyValueType::Bool{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(static_cast<bool>(true))},
-						 {Variant(static_cast<bool>(true))}, KeyValueBool, false);
+						 {Variant(static_cast<bool>(true))}, reindexer::KeyValueType::Bool{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(std::string("100500"))},
-						 {Variant(std::string("100500"))}, KeyValueString, false);
+						 {Variant(std::string("100500"))}, reindexer::KeyValueType::String{}, false);
 
 	checkFieldConversion(rt.reindexer, default_namespace, "nested.bonus", {Variant(std::string("Jesus Christ"))},
-						 {Variant(std::string("Jesus Christ"))}, KeyValueString, false);
+						 {Variant(std::string("Jesus Christ"))}, reindexer::KeyValueType::String{}, false);
 }
 
 TEST_F(NsApi, TestIndexedArrayFieldConversion) {
@@ -1299,7 +1303,7 @@ TEST_F(NsApi, TestIndexedArrayFieldConversion) {
 		{Variant(static_cast<double>(1.33f)), Variant(static_cast<double>(2.33f)), Variant(static_cast<double>(3.33f)),
 		 Variant(static_cast<double>(4.33f))},
 		{Variant(static_cast<int>(1)), Variant(static_cast<int>(2)), Variant(static_cast<int>(3)), Variant(static_cast<int>(4))},
-		KeyValueInt, false);
+		reindexer::KeyValueType::Int{}, false);
 }
 
 TEST_F(NsApi, TestNonIndexedArrayFieldConversion) {
@@ -1307,7 +1311,7 @@ TEST_F(NsApi, TestNonIndexedArrayFieldConversion) {
 	AddUnindexedData();
 
 	VariantArray newValue = {Variant(3.33f), Variant(4.33), Variant(5.33), Variant(6.33)};
-	checkFieldConversion(rt.reindexer, default_namespace, "array_field", newValue, newValue, KeyValueDouble, false);
+	checkFieldConversion(rt.reindexer, default_namespace, "array_field", newValue, newValue, reindexer::KeyValueType::Double{}, false);
 }
 
 TEST_F(NsApi, TestUpdatePkFieldNoConditions) {
@@ -1458,7 +1462,7 @@ TEST_F(NsApi, TestUpdateNonIndexFieldWithNull) {
 	for (auto &it : qr) {
 		Item item = it.GetItem(false);
 		Variant fieldVal = item["extra"];
-		ASSERT_TRUE(fieldVal.Type() == KeyValueNull);
+		ASSERT_TRUE(fieldVal.Type().Is<reindexer::KeyValueType::Null>());
 	}
 }
 
@@ -1510,10 +1514,10 @@ TEST_F(NsApi, TestUpdateObjectFieldWithScalar) {
 		reindexer::Item item = it.GetItem(false);
 
 		Variant intVal = item["int_field"];
-		ASSERT_TRUE(intVal.Type() == KeyValueInt);
+		ASSERT_TRUE(intVal.Type().Is<reindexer::KeyValueType::Int>());
 		ASSERT_TRUE(intVal.As<int>() == 7);
 		Variant extraVal = item["extra"];
-		ASSERT_TRUE(extraVal.Type() == KeyValueInt64);
+		ASSERT_TRUE(extraVal.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(extraVal.As<int>() == 8);
 
 		std::string_view json = item.GetJSON();
@@ -1521,10 +1525,10 @@ TEST_F(NsApi, TestUpdateObjectFieldWithScalar) {
 		ASSERT_TRUE(pos != std::string_view::npos);
 
 		Variant bonus2Val = item["nested2.bonus2"];
-		ASSERT_TRUE(bonus2Val.Type() == KeyValueInt64);
+		ASSERT_TRUE(bonus2Val.Type().Is<reindexer::KeyValueType::Int64>());
 		ASSERT_TRUE(bonus2Val.As<int>() == 13);
 		Variant extra2Val = item["nested2.extra2"];
-		ASSERT_TRUE(extra2Val.Type() == KeyValueString);
+		ASSERT_TRUE(extra2Val.Type().Is<reindexer::KeyValueType::String>());
 		ASSERT_TRUE(extra2Val.As<std::string>() == "new");
 	}
 }
@@ -1664,9 +1668,9 @@ void checkQueryDsl(const Query &src) {
 		for (size_t i = 0; i < src.UpdateFields().size(); ++i) {
 			if (src.UpdateFields()[i].Mode() == FieldModeSetJson) {
 				ASSERT_EQ(src.UpdateFields()[i].Values().size(), 1);
-				EXPECT_EQ(src.UpdateFields()[i].Values().front().Type(), KeyValueString);
+				EXPECT_TRUE(src.UpdateFields()[i].Values().front().Type().Is<reindexer::KeyValueType::String>());
 				ASSERT_EQ(dst.UpdateFields()[i].Values().size(), 1);
-				EXPECT_EQ(dst.UpdateFields()[i].Values().front().Type(), KeyValueString);
+				EXPECT_TRUE(dst.UpdateFields()[i].Values().front().Type().Is<reindexer::KeyValueType::String>());
 				reindexer::WrSerializer wrser1;
 				reindexer::prettyPrintJSON(reindexer::giftStr(std::string_view(src.UpdateFields()[i].Values().front())), wrser1);
 				reindexer::WrSerializer wrser2;

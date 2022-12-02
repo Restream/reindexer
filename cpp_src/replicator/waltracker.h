@@ -3,22 +3,25 @@
 #include <core/keyvalue/variant.h>
 #include <vector>
 #include "core/lsn.h"
-#include "core/storage/idatastorage.h"
 #include "tools/errors.h"
 #include "walrecord.h"
 
 namespace reindexer {
 
+class AsyncStorage;
+
 /// WAL trakcer
 class WALTracker {
 public:
-	WALTracker(int64_t sz);
+	explicit WALTracker(int64_t sz);
+	WALTracker(const WALTracker &) = delete;
+	WALTracker(const WALTracker &wal, AsyncStorage &storage);
 	/// Initialize WAL tracker.
 	/// @param sz - Max WAL size
 	/// @param minLSN - Min available LSN number
 	/// @param maxLSN - Current LSN counter value
 	/// @param storage - Storage object for store WAL records
-	void Init(int64_t sz, int64_t minLSN, int64_t maxLSN, std::weak_ptr<datastorage::IDataStorage> storage);
+	void Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage &storage);
 	/// Add new record to WAL tracker
 	/// @param rec - Record to be added
 	/// @param oldLsn - Optional, previous LSN value of changed object
@@ -39,8 +42,6 @@ public:
 	/// Get current WAL capacity
 	/// @return Max WAL size
 	int64_t Capacity() const { return walSize_; }
-	/// Reset storage without WAL reload
-	void SetStorage(std::weak_ptr<datastorage::IDataStorage> storage, bool expectingReset);
 
 	/// Iterator for WAL records
 	class iterator {
@@ -112,7 +113,7 @@ protected:
 	/// Cached heap size of WAL object
 	size_t heapSize_ = 0;
 
-	std::weak_ptr<datastorage::IDataStorage> storage_;
+	AsyncStorage *storage_ = nullptr;
 };
 
 }  // namespace reindexer

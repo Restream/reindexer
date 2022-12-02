@@ -21,7 +21,7 @@ public:
 	};
 
 	PayloadValue() noexcept : p_(nullptr) {}
-	PayloadValue(const PayloadValue &);
+	PayloadValue(const PayloadValue &) noexcept;
 	// Alloc payload store with size, and copy data from another array
 	PayloadValue(size_t size, const uint8_t *ptr = nullptr, size_t cap = 0);
 	~PayloadValue();
@@ -49,20 +49,20 @@ public:
 	// Resize
 	void Resize(size_t oldSize, size_t newSize);
 	// Get data pointer
-	uint8_t *Ptr() const { return p_ + sizeof(dataHeader); }
+	uint8_t *Ptr() const noexcept { return p_ + sizeof(dataHeader); }
 	void SetLSN(int64_t lsn) { header()->lsn = lsn; }
 	int64_t GetLSN() const { return p_ ? header()->lsn : 0; }
 	bool IsFree() const { return bool(p_ == nullptr); }
 	void Free() { release(); }
 	size_t GetCapacity() const { return header()->cap; }
-	const uint8_t *get() const { return p_; }
+	const uint8_t *get() const noexcept { return p_; }
 
 protected:
 	uint8_t *alloc(size_t cap);
-	void release();
+	void release() noexcept;
 
-	dataHeader *header() { return reinterpret_cast<dataHeader *>(p_); }
-	const dataHeader *header() const { return reinterpret_cast<dataHeader *>(p_); }
+	dataHeader *header() noexcept { return reinterpret_cast<dataHeader *>(p_); }
+	const dataHeader *header() const noexcept { return reinterpret_cast<dataHeader *>(p_); }
 	friend std::ostream &operator<<(std::ostream &os, const PayloadValue &);
 	// Data of elements, shared
 	uint8_t *p_;

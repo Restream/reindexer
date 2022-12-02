@@ -290,7 +290,7 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 		Variant prevField;
 		for (auto rowIt : joinQueryRes) {
 			Item item = rowIt.GetItem(false);
-			if (prevField.Type() != KeyValueNull) {
+			if (!prevField.Type().Is<reindexer::KeyValueType::Null>()) {
 				ASSERT_TRUE(prevField.Compare(item[age]) <= 0);
 			}
 
@@ -306,7 +306,7 @@ TEST_F(JoinSelectsApi, JoinTestSorting) {
 				ASSERT_TRUE(key.Compare(fkey) == 0) << key.As<std::string>() << " " << fkey.As<std::string>();
 				Variant recentJoinedValue = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(price));
 				ASSERT_TRUE(recentJoinedValue.As<int>() >= 200);
-				if (prevJoinedValue.Type() != KeyValueNull) {
+				if (!prevJoinedValue.Type().Is<reindexer::KeyValueType::Null>()) {
 					ASSERT_TRUE(prevJoinedValue.Compare(recentJoinedValue) >= 0);
 				}
 				Variant pagesValue = joinItem.GetField(joinQueryRes.getPayloadType(1).FieldByName(pages));
@@ -346,7 +346,7 @@ TEST_F(JoinSelectsApi, TestSortingByJoinedNs) {
 		const auto joinedFieldIt = itemIt.begin();
 		reindexer::ItemImpl joinItem(joinedFieldIt.GetItem(0, joinQueryRes2.getPayloadType(1), joinQueryRes2.getTagsMatcher(1)));
 		const Variant recentValue = joinItem.GetField(joinQueryRes2.getPayloadType(1).FieldByName(age));
-		if (prevValue.Type() != KeyValueNull) {
+		if (!prevValue.Type().Is<reindexer::KeyValueType::Null>()) {
 			reindexer::WrSerializer ser;
 			ASSERT_TRUE(prevValue.Compare(recentValue) <= 0) << (prevValue.Dump(ser), ser << ' ', recentValue.Dump(ser), ser.Slice());
 		}

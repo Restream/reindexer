@@ -11,30 +11,21 @@ namespace reindexer {
 using namespace std::string_view_literals;
 
 std::string_view kvTypeToJsonSchemaType(KeyValueType type) {
-	switch (type) {
-		case KeyValueInt:
-		case KeyValueInt64:
-			return "integer";
-		case KeyValueDouble:
-			return "number";
-		case KeyValueBool:
-			return "boolean";
-		case KeyValueString:
-			return "string";
-		case KeyValueNull:
-			return "null";
-		case KeyValueTuple:
-			return "object";
-		default:
-			throw Error(errParams, "Impossible to convert type [%d] to json schema type", type);
-	}
+	return type.EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64>) noexcept { return "integer"sv; },
+							  [](KeyValueType::Double) noexcept { return "number"sv; },
+							  [](KeyValueType::Bool) noexcept { return "boolean"sv; },
+							  [](KeyValueType::String) noexcept { return "string"sv; },
+							  [](KeyValueType::Null) noexcept { return "null"sv; }, [](KeyValueType::Tuple) noexcept { return "object"sv; },
+							  [&](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) -> std::string_view {
+								  throw Error(errParams, "Impossible to convert type [%s] to json schema type", type.Name());
+							  });
 }
 
-void SchemaFieldsTypes::AddObject(std::string_view objectType) {
-	types_[tagsPath_] = {KeyValueComposite, false};
-	auto it = objectTypes_.find(std::string(objectType));
+void SchemaFieldsTypes::AddObject(std::string objectType) {
+	types_[tagsPath_] = {KeyValueType::Composite{}, false};
+	const auto it = objectTypes_.find(objectType);
 	if (it == objectTypes_.end()) {
-		objectTypes_.emplace(std::string(objectType), tagsPath_.size());
+		objectTypes_.emplace(std::move(objectType), tagsPath_.size());
 	} else {
 		int depth = int(tagsPath_.size());
 		if (depth < it->second) {
@@ -53,7 +44,7 @@ bool SchemaFieldsTypes::NeedToEmbedType(const std::string& objectType) const noe
 
 KeyValueType SchemaFieldsTypes::GetField(const TagsPath& fieldPath, bool& isArray) const {
 	auto it = types_.find(fieldPath);
-	if (it == types_.end()) return KeyValueUndefined;
+	if (it == types_.end()) return KeyValueType::Undefined{};
 	isArray = it->second.isArray_;
 	return it->second.type_;
 }

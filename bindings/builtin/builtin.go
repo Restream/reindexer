@@ -172,6 +172,7 @@ func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 	ctxWatchersPoolSize := defWatchersPoolSize
 	cgoLimit := defCgoLimit
 	var rx uintptr
+	var builtinAllocatorConfig *bindings.OptionBuiltinAllocatorConfig
 	connectOptions := *bindings.DefaultConnectOptions()
 	connectOptions.Opts |= bindings.ConnectOptWarnVersion
 	for _, option := range options {
@@ -189,6 +190,8 @@ func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 			if v.WatchersPoolSize > 0 {
 				ctxWatchersPoolSize = v.WatchersPoolSize
 			}
+		case bindings.OptionBuiltinAllocatorConfig:
+			builtinAllocatorConfig = &v
 		case bindings.ConnectOptions:
 			connectOptions = v
 		default:
@@ -197,7 +200,16 @@ func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 	}
 
 	if rx == 0 {
-		binding.rx = C.init_reindexer()
+		if builtinAllocatorConfig != nil {
+			rxConfig := C.reindexer_config{
+				allocator_cache_limit:    C.int64_t(builtinAllocatorConfig.AllocatorCacheLimit),
+				allocator_max_cache_part: C.float(builtinAllocatorConfig.AllocatorMaxCachePart),
+			}
+			binding.rx = C.init_reindexer_with_config(rxConfig)
+		} else {
+			binding.rx = C.init_reindexer()
+		}
+
 	} else {
 		binding.rx = C.uintptr_t(rx)
 	}

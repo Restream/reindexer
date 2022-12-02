@@ -48,7 +48,7 @@ public:
 
 	void Array(int tagName, Serializer &ser, int tagType, int count) {
 		JsonBuilder node = Array(tagName);
-		while (count--) node.Put({}, ser.GetRawVariant(KeyValueType(tagType)));
+		while (count--) node.Put({}, ser.GetRawVariant(KeyValueType::FromNumber(tagType)));
 	}
 
 	JsonBuilder &Put(std::string_view name, const Variant &arg);

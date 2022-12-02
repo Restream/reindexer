@@ -29,7 +29,9 @@ type LoggerConf struct {
 }
 
 type SystemConf struct {
-	User string `yaml:"user"`
+	User                string  `yaml:"user"`
+	AllocatorCacheLimit int64   `yaml:"allocator_cache_limit"`
+	AllocatorCachePart  float32 `yaml:"allocator_cache_part"`
 }
 
 type DebugConf struct {
@@ -77,7 +79,10 @@ func DefaultServerConfig() *ServerConfig {
 			HTTPLog:   "stdout",
 			LogLevel:  "error",
 		},
-		System: SystemConf{},
+		System: SystemConf{
+			AllocatorCacheLimit: -1,
+			AllocatorCachePart:  -1,
+		},
 		Debug: DebugConf{
 			Pprof:  false,
 			Allocs: false,

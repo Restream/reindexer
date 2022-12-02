@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "core/cjson/jsonbuilder.h"
+#include "core/key_value_type.h"
 #include "core/keyvalue/geometry.h"
 #include "core/nsselecter/joinedselectormock.h"
 #include "core/nsselecter/sortexpression.h"
@@ -369,7 +370,7 @@ public:
 				} else {
 					sortedValue = Variant{CalculateSortExpression(sortExpr.cbegin(), sortExpr.cend(), itemr, qr)};
 				}
-				if (lastSortedColumnValues[j].Type() != KeyValueNull) {
+				if (!lastSortedColumnValues[j].Type().Is<reindexer::KeyValueType::Null>()) {
 					bool needToVerify = true;
 					for (int k = j - 1; k >= 0; --k) {
 						if (cmpRes[k] != 0) {
@@ -540,7 +541,8 @@ protected:
 
 	bool isIndexComposite(Item& item, const QueryEntry& qentry) {
 		if (qentry.idxNo >= item.NumFields()) return true;
-		return (qentry.values[0].Type() == KeyValueComposite || qentry.values[0].Type() == KeyValueTuple);
+		return (qentry.values[0].Type().Is<reindexer::KeyValueType::Composite>() ||
+				qentry.values[0].Type().Is<reindexer::KeyValueType::Tuple>());
 	}
 
 	bool isLikeSqlPattern(std::string_view str, std::string_view pattern) {
@@ -579,11 +581,11 @@ protected:
 				}
 				break;
 			case CondLike:
-				if (key.Type() != KeyValueString) {
+				if (!key.Type().Is<reindexer::KeyValueType::String>()) {
 					return false;
 				}
-				return isLikeSqlPattern(*static_cast<reindexer::key_string>(key.convert(KeyValueString)),
-										*static_cast<reindexer::key_string>(values[0].convert(KeyValueString)));
+				return isLikeSqlPattern(*static_cast<reindexer::key_string>(key.convert(reindexer::KeyValueType::String{})),
+										*static_cast<reindexer::key_string>(values[0].convert(reindexer::KeyValueType::String{})));
 			default:
 				std::abort();
 		}
@@ -790,11 +792,12 @@ protected:
 				return false;
 			case CondLike:
 				for (const Variant& lv : lValues) {
-					assert(lv.Type() == KeyValueString);
-					const auto lstr = *static_cast<reindexer::key_string>(lv.convert(KeyValueString));
+					assert(lv.Type().Is<reindexer::KeyValueType::String>());
+					const auto lstr = *static_cast<reindexer::key_string>(lv.convert(reindexer::KeyValueType::String{}));
 					for (const Variant& rv : rValues) {
-						assert(rv.Type() == KeyValueString);
-						if (isLikeSqlPattern(lstr, *static_cast<reindexer::key_string>(rv.convert(KeyValueString)))) return true;
+						assert(rv.Type().Is<reindexer::KeyValueType::String>());
+						if (isLikeSqlPattern(lstr, *static_cast<reindexer::key_string>(rv.convert(reindexer::KeyValueType::String{}))))
+							return true;
 					}
 				}
 				return false;
@@ -1713,7 +1716,7 @@ protected:
 					ExecuteAndVerify(Query(default_namespace)
 										 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq,
 													Query(joinNs)
-														.Where(kFieldNameId, CondEq, RandIntVector(20, 0, 100))
+														.Where(kFieldNameId, CondSet, RandIntVector(20, 0, 100))
 														.Sort(kFieldNameId + " + "s + kFieldNameYear, sortOrder))
 										 .Distinct(distinct));
 
@@ -1803,7 +1806,7 @@ protected:
 							.On(kFieldNameAge, randCond(), kFieldNameAge)
 							.CloseBracket()
 							.Or()
-							.Where(kFieldNameId, CondEq, RandIntVector(20, 0, 100))
+							.Where(kFieldNameId, CondSet, RandIntVector(20, 0, 100))
 							.Distinct(distinct));
 					ExecuteAndVerify(Query(default_namespace)
 										 .WhereBetweenFields(kFieldNameGenre, CondEq, kFieldNameAge)

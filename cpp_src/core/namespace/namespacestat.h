@@ -23,7 +23,7 @@ struct LRUCacheMemStat {
 	size_t emptyCount = 0;
 	size_t hitCountLimit = 0;
 
-	LRUCacheMemStat& operator+= (const LRUCacheMemStat& other) noexcept {
+	LRUCacheMemStat &operator+=(const LRUCacheMemStat &other) noexcept {
 		totalSize += other.totalSize;
 		itemsCount += other.itemsCount;
 		emptyCount += other.emptyCount;
@@ -113,6 +113,8 @@ struct NamespaceMemStat {
 	std::string name;
 	std::string storagePath;
 	bool storageOK = false;
+	bool storageEnabled = false;
+	std::string storageStatus;
 	bool storageLoaded = true;
 	bool optimizationCompleted = false;
 	size_t itemsCount = 0;

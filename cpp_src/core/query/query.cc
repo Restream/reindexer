@@ -54,9 +54,9 @@ std::string Query::GetJSON() const { return dsl::toDsl(*this); }
 
 Query &Query::SetObject(std::string field, VariantArray value, bool hasExpressions) & {
 	for (auto &it : value) {
-		if (it.Type() != KeyValueString) {
-			throw Error(errLogic, "Unexpected variant type in SetObject: %s. Expecting KeyValueString with JSON-content",
-						Variant::TypeName(it.Type()));
+		if (!it.Type().Is<KeyValueType::String>()) {
+			throw Error(errLogic, "Unexpected variant type in SetObject: %s. Expecting KeyValueType::String with JSON-content",
+						it.Type().Name());
 		}
 	}
 	updateFields_.emplace_back(std::move(field), std::move(value), FieldModeSetJson, hasExpressions);

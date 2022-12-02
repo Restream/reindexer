@@ -4,15 +4,7 @@
 
 #include <leveldb/comparator.h>
 #include <leveldb/db.h>
-#include <leveldb/iterator.h>
 #include <leveldb/slice.h>
-
-void toWriteOptions(const StorageOpts& opts, leveldb::WriteOptions& wopts) { wopts.sync = opts.IsSync(); }
-
-void toReadOptions(const StorageOpts& opts, leveldb::ReadOptions& ropts) {
-	ropts.fill_cache = opts.IsFillCache();
-	ropts.verify_checksums = opts.IsVerifyChecksums();
-}
 
 namespace reindexer {
 namespace datastorage {
@@ -21,9 +13,14 @@ using namespace std::string_view_literals;
 
 constexpr auto kStorageNotInitialized = "Storage is not initialized"sv;
 
-LevelDbStorage::LevelDbStorage() {}
+static void toWriteOptions(const StorageOpts& opts, leveldb::WriteOptions& wopts) noexcept { wopts.sync = opts.IsSync(); }
 
-LevelDbStorage::~LevelDbStorage() {}
+static void toReadOptions(const StorageOpts& opts, leveldb::ReadOptions& ropts) noexcept {
+	ropts.fill_cache = opts.IsFillCache();
+	ropts.verify_checksums = opts.IsVerifyChecksums();
+}
+
+LevelDbStorage::LevelDbStorage() = default;
 
 Error LevelDbStorage::Read(const StorageOpts& opts, std::string_view key, std::string& value) {
 	if (!db_) throw Error(errParams, kStorageNotInitialized);
@@ -88,14 +85,25 @@ void LevelDbStorage::ReleaseSnapshot(Snapshot::Ptr snapshot) {
 	snapshot.reset();
 }
 
-void LevelDbStorage::Flush() {
+Error LevelDbStorage::Flush() {
 	// LevelDB does not support Flush mechanism.
 	// It just doesn't know when an asynchronous
 	// write has completed. So the only way (the dump
 	// way) is to just close the Storage and then open
 	// it again. So that is what we do:
-	db_.reset();
-	Open(dbpath_, opts_);
+	if (db_) {
+		db_.reset();
+		return Open(dbpath_, opts_);
+	}
+	return Error();
+}
+
+Error LevelDbStorage::Reopen() {
+	if (!dbpath_.empty()) {
+		db_.reset();
+		return Open(dbpath_, opts_);
+	}
+	return Error();
 }
 
 Cursor* LevelDbStorage::GetCursor(StorageOpts& opts) {
@@ -139,34 +147,6 @@ void LevelDbStorage::doDestroy(const std::string& path) {
 	}
 }
 
-LevelDbBatchBuffer::LevelDbBatchBuffer() {}
-
-LevelDbBatchBuffer::~LevelDbBatchBuffer() {}
-
-void LevelDbBatchBuffer::Put(std::string_view key, std::string_view value) {
-	batchWrite_.Put(leveldb::Slice(key.data(), key.size()), leveldb::Slice(value.data(), value.size()));
-}
-
-void LevelDbBatchBuffer::Remove(std::string_view key) { batchWrite_.Delete(leveldb::Slice(key.data(), key.size())); }
-
-void LevelDbBatchBuffer::Clear() { batchWrite_.Clear(); }
-
-LevelDbIterator::LevelDbIterator(leveldb::Iterator* iterator) : iterator_(iterator) {}
-
-LevelDbIterator::~LevelDbIterator() {}
-
-bool LevelDbIterator::Valid() const { return iterator_->Valid(); }
-
-void LevelDbIterator::SeekToFirst() { return iterator_->SeekToFirst(); }
-
-void LevelDbIterator::SeekToLast() { return iterator_->SeekToLast(); }
-
-void LevelDbIterator::Seek(std::string_view target) { return iterator_->Seek(leveldb::Slice(target.data(), target.size())); }
-
-void LevelDbIterator::Next() { return iterator_->Next(); }
-
-void LevelDbIterator::Prev() { return iterator_->Prev(); }
-
 std::string_view LevelDbIterator::Key() const {
 	leveldb::Slice key = iterator_->key();
 	return std::string_view(key.data(), key.size());
@@ -177,16 +157,13 @@ std::string_view LevelDbIterator::Value() const {
 	return std::string_view(key.data(), key.size());
 }
 
-Comparator& LevelDbIterator::GetComparator() { return comparator_; }
-
 int LevelDbComparator::Compare(std::string_view a, std::string_view b) const {
 	leveldb::Options options;
 	return options.comparator->Compare(leveldb::Slice(a.data(), a.size()), leveldb::Slice(b.data(), b.size()));
 }
 
-LevelDbSnapshot::LevelDbSnapshot(const leveldb::Snapshot* snapshot) : snapshot_(snapshot) {}
+LevelDbSnapshot::LevelDbSnapshot(const leveldb::Snapshot* snapshot) noexcept : snapshot_(snapshot) {}
 
-LevelDbSnapshot::~LevelDbSnapshot() { snapshot_ = nullptr; }
 }  // namespace datastorage
 }  // namespace reindexer
 

@@ -54,30 +54,4 @@ std::string_view CondTypeToStr(CondType t) {
 	}
 }
 
-std::string KeyValueTypeToStr(KeyValueType t) {
-	using namespace std::string_literals;
-	switch (t) {
-		case KeyValueInt64:
-			return "int64"s;
-		case KeyValueDouble:
-			return "double"s;
-		case KeyValueString:
-			return "string"s;
-		case KeyValueBool:
-			return "bool"s;
-		case KeyValueNull:
-			return "null"s;
-		case KeyValueInt:
-			return "int"s;
-		case KeyValueUndefined:
-			return "undefined"s;
-		case KeyValueComposite:
-			return "composite"s;
-		case KeyValueTuple:
-			return "tuple"s;
-		default:
-			abort();
-	}
-}
-
 }  // namespace reindexer

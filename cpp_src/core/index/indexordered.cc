@@ -9,7 +9,7 @@ namespace reindexer {
 
 template <typename T>
 Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id, bool &clearCache) {
-	if (key.Type() == KeyValueNull) {
+	if (key.Type().Is<KeyValueType::Null>()) {
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
 			if (this->cache_) this->cache_.reset();
 			clearCache = true;
@@ -34,7 +34,7 @@ Variant IndexOrdered<T>::Upsert(const Variant &key, IdType id, bool &clearCache)
 	this->tracker_.markUpdated(this->idx_map, keyIt);
 	this->addMemStat(keyIt);
 
-	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
+	if (this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() != CollateNone) {
 		return IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache);
 	}
 

@@ -5,6 +5,7 @@
 #include "core/payload/payloadtype.h"
 #include "core/payload/payloadtypeimpl.h"
 #include "core/payload/payloadvalue.h"
+#include "estl/one_of.h"
 
 namespace reindexer {
 
@@ -25,7 +26,7 @@ public:
 		setField(tpath, ctx_[0].rCtx_);
 	}
 	void SetLeftField(const FieldsSet& fset, KeyValueType type, bool isArray) {
-		if (type == KeyValueComposite) {
+		if (type.Is<KeyValueType::Composite>()) {
 			ctx_.clear();
 			ctx_.resize(fset.size());
 			setCompositeField<true>(fset);
@@ -36,10 +37,10 @@ public:
 	}
 	void SetRightField(const FieldsSet& fset, KeyValueType type, bool isArray) {
 		assertrx(leftFieldSet);
-		if ((ctx_.size() > 1) != (type == KeyValueComposite)) {
+		if ((ctx_.size() > 1) != type.Is<KeyValueType::Composite>()) {
 			throw Error{errQueryExec, "A composite index cannot be compared with a non-composite one: %s", name_};
 		}
-		if (type == KeyValueComposite) {
+		if (type.Is<KeyValueType::Composite>()) {
 			if (ctx_.size() != fset.size()) {
 				throw Error{errQueryExec, "Comparing composite indexes should be the same size: %s", name_};
 			}
@@ -54,7 +55,7 @@ public:
 private:
 	struct FieldContext {
 		FieldsSet fields_;
-		KeyValueType type_ = KeyValueUndefined;
+		KeyValueType type_ = KeyValueType::Undefined{};
 		bool isArray_ = false;
 		unsigned offset_ = 0;
 		unsigned sizeof_ = 0;
@@ -99,15 +100,16 @@ private:
 	bool compare(const PayloadValue& item, const Context&);
 	void validateTypes(KeyValueType lType, KeyValueType rType) const;
 	inline static bool compareTypes(KeyValueType lType, KeyValueType rType) noexcept {
-		if (lType == rType) return true;
-		switch (lType) {
-			case KeyValueInt:
-			case KeyValueInt64:
-			case KeyValueDouble:
-				return rType == KeyValueInt || rType == KeyValueInt64 || rType == KeyValueDouble;
-			default:
-				return false;
-		}
+		if (lType.IsSame(rType)) return true;
+		return lType.EvaluateOneOf(
+			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept {
+				return rType.EvaluateOneOf(
+					[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept { return true; },
+					[](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
+							 KeyValueType::Tuple>) noexcept { return false; });
+			},
+			[](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
+					 KeyValueType::Tuple>) noexcept { return false; });
 	}
 
 	std::string name_;

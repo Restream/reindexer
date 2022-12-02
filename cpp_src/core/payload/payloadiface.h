@@ -22,10 +22,10 @@ class PayloadIface {
 	friend class PayloadIface;
 
 public:
-	PayloadIface(const PayloadType &t, T &v);
-	PayloadIface(const PayloadTypeImpl &t, T &v);
+	PayloadIface(const PayloadType &t, T &v) noexcept : t_(*t.get()), v_(&v) {}
+	PayloadIface(const PayloadTypeImpl &t, T &v) noexcept : t_(t), v_(&v) {}
 
-	void Reset() { memset(v_->Ptr(), 0, t_.TotalSize()); }
+	void Reset() noexcept { memset(v_->Ptr(), 0, t_.TotalSize()); }
 	// Get element(s) by field index
 	VariantArray &Get(int field, VariantArray &, bool enableHold = false) const;
 	// Get element by field and array index
@@ -100,7 +100,7 @@ public:
 	// Compare is EQ by field mask
 	bool IsEQ(const T &other, const FieldsSet &fields) const;
 	// Get hash of all document
-	uint64_t GetHash() const;
+	uint64_t GetHash() const noexcept;
 
 	// Compare 2 objects by field mask
 	int Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts = CollateOpts()) const;
@@ -108,14 +108,14 @@ public:
 				const h_vector<const CollateOpts *, 1> &collateOpts) const;
 
 	// Get PayloadFieldValue by field index
-	PayloadFieldValue Field(int field) const;
+	PayloadFieldValue Field(int field) const noexcept;
 
 	// Add refs to strings - make payload value complete self holding
-	void AddRefStrings();
-	void AddRefStrings(int field);
+	void AddRefStrings() noexcept;
+	void AddRefStrings(int field) noexcept;
 	// Release strings
-	void ReleaseStrings();
-	void ReleaseStrings(int field);
+	void ReleaseStrings() noexcept;
+	void ReleaseStrings(int field) noexcept;
 	void MoveStrings(int field, StringsHolder &dest);
 	void CopyStrings(std::vector<key_string> &dest);
 

@@ -453,7 +453,7 @@ func checkExplain(t *testing.T, res []reindexer.ExplainSelector, expected []expe
 		if len(expected[i].Selectors) != 0 {
 			assert.Equalf(t, expected[i].Field, res[i].Field, fieldName+expected[i].Field)
 			require.Equal(t, len(expected[i].Selectors), len(res[i].Selectors), fieldName+expected[i].Field)
-			checkExplain(t, res[i].Selectors, expected[i].Selectors, fieldName + expected[i].Field + "(")
+			checkExplain(t, res[i].Selectors, expected[i].Selectors, fieldName+expected[i].Field+"(")
 		} else {
 			assert.Equalf(t, len(res[i].Selectors), 0, fieldName+expected[i].Field)
 			assert.Equalf(t, expected[i].Field, res[i].Field, fieldName+expected[i].Field)
@@ -512,7 +512,7 @@ func TestExplainJoin(t *testing.T) {
 			Matched:     1,
 		},
 		{
-			Field:     "(id and inner_join test_explain_joined)",
+			Field: "(id and inner_join test_explain_joined)",
 			Selectors: []expectedExplain{
 				{
 					Field:       "id",
@@ -548,7 +548,7 @@ func TestExplainJoin(t *testing.T) {
 			},
 		},
 		{
-			Field:     "or (id and inner_join test_explain_joined)",
+			Field: "or (id and inner_join test_explain_joined)",
 			Selectors: []expectedExplain{
 				{
 					Field:       "id",

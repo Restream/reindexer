@@ -185,21 +185,23 @@ void parseValues(JsonValue& values, Array& kvs) {
 			if (elem->value.getTag() == JSON_OBJECT) {
 				kv = Variant(stringifyJson(*elem));
 			} else if (elem->value.getTag() != JSON_NULL) {
-				kv = jsonValue2Variant(elem->value, KeyValueUndefined);
+				kv = jsonValue2Variant(elem->value, KeyValueType::Undefined{});
 				kv.EnsureHold();
 			}
-			if (!kvs.empty() && kvs.back().Type() != kv.Type()) {
-				if (kvs.size() != 1 || !((kvs[0].Type() == KeyValueTuple &&
-										  (kv.Type() == KeyValueDouble || kv.Type() == KeyValueInt || kv.Type() == KeyValueInt64)) ||
-										 (kv.Type() == KeyValueTuple && (kvs[0].Type() == KeyValueDouble || kvs[0].Type() == KeyValueInt ||
-																		 kvs[0].Type() == KeyValueInt64)))) {
+			if (!kvs.empty() && !kvs.back().Type().IsSame(kv.Type())) {
+				if (kvs.size() != 1 || !((kvs[0].Type().template Is<KeyValueType::Tuple>() &&
+										  (kv.Type().Is<KeyValueType::Double>() || kv.Type().Is<KeyValueType::Int>() ||
+										   kv.Type().Is<KeyValueType::Int64>())) ||
+										 (kv.Type().Is<KeyValueType::Tuple>() && (kvs[0].Type().template Is<KeyValueType::Double>() ||
+																				  kvs[0].Type().template Is<KeyValueType::Int>() ||
+																				  kvs[0].Type().template Is<KeyValueType::Int64>())))) {
 					throw Error(errParseJson, "Array of filter values must be homogeneous.");
 				}
 			}
 			kvs.emplace_back(std::move(kv));
 		}
 	} else if (values.getTag() != JSON_NULL) {
-		Variant kv(jsonValue2Variant(values, KeyValueUndefined));
+		Variant kv(jsonValue2Variant(values, KeyValueType::Undefined{}));
 		kv.EnsureHold();
 		kvs.emplace_back(std::move(kv));
 	}

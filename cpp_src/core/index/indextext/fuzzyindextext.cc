@@ -47,7 +47,7 @@ void FuzzyIndexText<T>::commitFulltextImpl() {
 	for (auto& doc : this->idx_map) {
 		auto res = gt.getDocFields(doc.first, bufStrs);
 #ifdef REINDEX_FT_EXTRA_DEBUG
-		string text(res[0].first);
+		std::string text(res[0].first);
 		this->vdocs_.push_back({(text.length() > 48) ? text.substr(0, 48) + "..." : text, doc.second.get(), {}, {}});
 #else
 		this->vdocs_.push_back({doc.second.get(), {}, {}});

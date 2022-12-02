@@ -110,8 +110,12 @@ type NamespaceMemStat struct {
 	StorageError string `json:"storage_error"`
 	// Filesystem path to namespace storage
 	StoragePath string `json:"storage_path"`
-	// Status of disk storage
+	// Status of disk storage (true, if storage is enabled and writable)
 	StorageOK bool `json:"storage_ok"`
+	// Shows if storage is enabled (hovewer it may still be unavailable)
+	StorageEnabled bool `json:"storage_enabled"`
+	// More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error descrition"
+	StorageStatus string `json:storage_status"`
 	// Background indexes optimization has been completed
 	OptimizationCompleted bool `json:"optimization_completed"`
 	// Total count of documents in namespace

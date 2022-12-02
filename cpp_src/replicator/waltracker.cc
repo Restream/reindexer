@@ -1,5 +1,6 @@
 
 #include "waltracker.h"
+#include "core/namespace/asyncstorage.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
 
@@ -8,6 +9,14 @@
 namespace reindexer {
 
 WALTracker::WALTracker(int64_t sz) : walSize_(sz) { logPrintf(LogTrace, "[WALTracker] Create LSN=%ld", lsnCounter_); }
+
+WALTracker::WALTracker(const WALTracker &wal, AsyncStorage &storage)
+	: records_(wal.records_),
+	  lsnCounter_(wal.lsnCounter_),
+	  walSize_(wal.walSize_),
+	  walOffset_(wal.walOffset_),
+	  heapSize_(wal.heapSize_),
+	  storage_(&storage) {}
 
 int64_t WALTracker::Add(const WALRecord &rec, lsn_t oldLsn) {
 	int64_t lsn = lsnCounter_++;
@@ -62,15 +71,9 @@ bool WALTracker::Resize(int64_t sz) {
 	return true;
 }
 
-void WALTracker::SetStorage(std::weak_ptr<datastorage::IDataStorage> storage, bool expectingReset) {
-	assertrx(expectingReset || !storage_.lock());
-	(void)expectingReset;
-	storage_ = std::move(storage);
-}
-
-void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, std::weak_ptr<datastorage::IDataStorage> storage) {
+void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage &storage) {
 	logPrintf(LogTrace, "WALTracker::Init minLSN=%ld, maxLSN=%ld, size=%ld", minLSN, maxLSN, sz);
-	storage_ = std::move(storage);
+	storage_ = &storage;
 
 	// input maxLSN of namespace Item or -1 if namespace is empty
 	auto data = readFromStorage(maxLSN);  // return maxLSN of wal record or input value
@@ -101,8 +104,7 @@ void WALTracker::writeToStorage(int64_t lsn) {
 	key.PutUInt32(pos);
 	data.PutUInt64(lsn);
 	data.Write(std::string_view(reinterpret_cast<char *>(records_[pos].data()), records_[pos].size()));
-	auto storage = storage_.lock();
-	if (storage) storage->Write(StorageOpts(), key.Slice(), data.Slice());
+	if (storage_ && storage_->IsValid()) storage_->WriteSync(StorageOpts(), key.Slice(), data.Slice());
 }
 
 std::vector<std::pair<int64_t, std::string>> WALTracker::readFromStorage(int64_t &maxLSN) {
@@ -111,22 +113,20 @@ std::vector<std::pair<int64_t, std::string>> WALTracker::readFromStorage(int64_t
 	StorageOpts opts;
 	opts.FillCache(false);
 
-	auto storage = storage_.lock();
-	if (!storage) return data;
+	if (!storage_ || !storage_->IsValid()) return data;
 
-	std::unique_ptr<datastorage::Cursor> dbIter(storage->GetCursor(opts));
-
+	auto dbIter = storage_->GetCursor(opts);
 	for (dbIter->Seek(kStorageWALPrefix);
 		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageWALPrefix "\xFF")) < 0;
 		 dbIter->Next()) {
 		std::string_view dataSlice = dbIter->Value();
 		if (dataSlice.size() >= sizeof(int64_t)) {
 			// Read LSN
-			int64_t lsn = *reinterpret_cast<const int64_t *>(dataSlice.data());
+			const int64_t lsn = *reinterpret_cast<const int64_t *>(dataSlice.data());
 			assertrx(lsn >= 0);
 			maxLSN = std::max(maxLSN, lsn);
 			dataSlice = dataSlice.substr(sizeof(lsn));
-			data.push_back({lsn, std::string(dataSlice)});
+			data.emplace_back(lsn, std::string(dataSlice));
 		}
 	}
 

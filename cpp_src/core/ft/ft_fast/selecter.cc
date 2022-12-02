@@ -318,7 +318,7 @@ void Selecter<IdCont>::debugMergeStep(const char *msg, int vid, float normBm25, 
 template <typename IdCont>
 void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t rawResIndex, FtMergeStatuses::Statuses &mergeStatuses,
 									  std::vector<IDataHolder::MergeInfo> &merged, std::vector<MergedIdRel> &merged_rd,
-									  std::vector<int16_t> &idoffsets, std::vector<bool> &curExists, const bool hasBeenAnd,
+									  std::vector<uint16_t> &idoffsets, std::vector<bool> &curExists, const bool hasBeenAnd,
 									  const bool inTransaction, const RdxContext &rdxCtx) {
 	const auto &vdocs = holder_.vdocs_;
 
@@ -518,7 +518,7 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextS
 	assertrx(FtMergeStatuses::kExcluded > rawResults.size());
 	assertrx(mergeStatuses.size() == vdocs.size());
 	std::vector<MergedIdRel> merged_rd;
-	std::vector<int16_t> idoffsets;
+	std::vector<uint16_t> idoffsets;
 
 	int idsMaxCnt = 0;
 	for (auto &rawRes : rawResults) {

@@ -48,7 +48,6 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 
 				calc.SetCounter(nsCopy_->updatePerfCounter_);
 				nsl->markReadOnly();
-				nsl->wal_.SetStorage(std::weak_ptr<datastorage::IDataStorage>(), true);
 				atomicStoreMainNs(nsCopy_.release());
 				hasCopy_.store(false, std::memory_order_release);
 			} catch (...) {
@@ -93,9 +92,11 @@ bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const Transactio
 
 void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, const std::string& storagePath, const RdxContext& ctx) {
 	std::string dbpath;
-	awaitMainNs(ctx)->storage_.Flush();
+	const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
+	awaitMainNs(ctx)->storage_.Flush(flushOpts);
 	auto lck = handleInvalidation(NamespaceImpl::wLock)(ctx);
 	auto& srcNs = *atomicLoadMainNs();	// -V758
+	srcNs.storage_.Flush(flushOpts);	// Repeat flush, to raise any disk errors before attempt to close storage
 	NamespaceImpl::Mutex* dstMtx = nullptr;
 	NamespaceImpl::Ptr dstNs;
 	if (dst) {
@@ -136,6 +137,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 				assertrx(dstMtx);
 				dstMtx->unlock();
 			}
+			srcNs.storage_.Open(storageType, srcNs.name_, srcDbpath, srcNs.storageOpts_);
 			throw Error(errParams, "Unable to rename '%s' to '%s'", srcDbpath, dbpath);
 		}
 	}
@@ -158,7 +160,6 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 			srcNs.storage_.Close();
 			throw status;
 		}
-		srcNs.wal_.SetStorage(srcNs.storage_.GetStoragePtr(), false);
 	}
 	if (srcNs.repl_.temporary) {
 		srcNs.repl_.temporary = false;

@@ -36,8 +36,8 @@ func (dbw *ReindexerWrapper) setSynced() {
 
 func (dbw *ReindexerWrapper) SetSyncRequired() {
 	dbw.syncMutex.RLock()
+	defer dbw.syncMutex.RUnlock()
 	atomic.StoreInt32(&dbw.syncedStatus, 0)
-	dbw.syncMutex.RUnlock()
 }
 
 func (dbw *ReindexerWrapper) IsSynced() bool {
@@ -128,6 +128,23 @@ func (dbw *ReindexerWrapper) execQuery(t *testing.T, qt *queryTest) *reindexer.I
 	return dbw.execQueryCtx(t, context.Background(), qt)
 }
 
+func (dbw *ReindexerWrapper) waitSyncAll(t *testing.T) {
+	dbw.syncMutex.Lock()
+	defer dbw.syncMutex.Unlock()
+	for _, db := range dbw.slaveList {
+		db.WaitForSyncWithMaster(t)
+	}
+	dbw.setSynced()
+}
+
+func (dbw *ReindexerWrapper) waitSyncOne(t *testing.T, sdb *ReindexerWrapper) {
+	dbw.syncMutex.Lock()
+	defer dbw.syncMutex.Unlock()
+	sdb.WaitForSyncWithMaster(t)
+	dbw.setSynced()
+	sdb.ResetCaches()
+}
+
 func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt *queryTest) *reindexer.Iterator {
 	if len(dbw.slaveList) == 0 || !qt.readOnly {
 		if !qt.readOnly {
@@ -138,11 +155,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt 
 	if !qt.deepReplEqual {
 		sdb := dbw.slaveList[rand.Intn(len(dbw.slaveList))]
 		if !dbw.IsSynced() {
-			dbw.syncMutex.Lock()
-			sdb.WaitForSyncWithMaster(t)
-			dbw.setSynced()
-			sdb.ResetCaches()
-			dbw.syncMutex.Unlock()
+			dbw.waitSyncOne(t, sdb)
 		}
 		slaveQuery := qt.q.MakeCopy(&sdb.Reindexer)
 		return slaveQuery.ExecCtx(ctx)
@@ -160,12 +173,7 @@ func (dbw *ReindexerWrapper) execQueryCtx(t *testing.T, ctx context.Context, qt 
 	}
 
 	if !dbw.IsSynced() {
-		dbw.syncMutex.Lock()
-		for _, db := range dbw.slaveList {
-			db.WaitForSyncWithMaster(t)
-		}
-		dbw.setSynced()
-		dbw.syncMutex.Unlock()
+		dbw.waitSyncAll(t)
 	}
 	for _, db := range dbw.slaveList {
 		slaveQuery := qt.q.MakeCopy(&db.Reindexer)

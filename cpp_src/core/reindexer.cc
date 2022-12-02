@@ -3,7 +3,8 @@
 
 namespace reindexer {
 
-Reindexer::Reindexer(IClientsStats* clientsStats) : impl_(new ReindexerImpl(clientsStats)), owner_(true) {}
+Reindexer::Reindexer(ReindexerConfig cfg) : impl_(new ReindexerImpl(cfg)), owner_(true) {}
+
 Reindexer::~Reindexer() {
 	if (owner_) {
 		delete impl_;

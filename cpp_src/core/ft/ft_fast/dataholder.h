@@ -15,8 +15,6 @@
 
 namespace reindexer {
 
-// #define REINDEX_FT_EXTRA_DEBUG 1
-
 class RdxContext;
 
 struct VDocEntry {

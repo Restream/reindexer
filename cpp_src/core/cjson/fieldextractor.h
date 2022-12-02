@@ -57,7 +57,7 @@ public:
 	void Array(int, Serializer &ser, int tagType, int count) {
 		const IndexedPathNode &pathNode = getArrayPathNode();
 		for (int i = 0; i < count; ++i) {
-			Variant value = ser.GetRawVariant(KeyValueType(tagType));
+			Variant value = ser.GetRawVariant(KeyValueType::FromNumber(tagType));
 			if (pathNode.IsForAllItems() || i == pathNode.Index()) {
 				Put(0, value);
 			}
@@ -66,7 +66,10 @@ public:
 
 	FieldsExtractor &Put(int, Variant arg) {
 		if (expectedPathDepth_ > 0) return *this;
-		if (expectedType_ != KeyValueUndefined && expectedType_ != KeyValueComposite) arg.convert(expectedType_);
+		expectedType_.EvaluateOneOf(
+			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String,
+					  KeyValueType::Null, KeyValueType::Tuple>) { arg.convert(expectedType_); },
+			[](OneOf<KeyValueType::Undefined, KeyValueType::Composite>) noexcept {});
 		values_->push_back(arg);
 		if (expectedPathDepth_ < 0) values_->MarkObject();
 		return *this;

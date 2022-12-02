@@ -6,8 +6,6 @@
 
 namespace reindexer {
 
-using std::vector;
-
 template <typename CharT, typename V>
 class suffix_map {
 	typedef size_t size_type;
@@ -173,7 +171,7 @@ public:
 	size_type size() const { return sa_.size(); }
 	size_type word_size() const { return words_.size(); }
 
-	const vector<CharT> &text() const { return text_; }
+	const std::vector<CharT> &text() const { return text_; }
 	size_t heap_size() {
 		return (sa_.capacity() + words_.capacity()) * sizeof(int) +			  //
 			   (lcp_.capacity() + words_len_.capacity()) * sizeof(int16_t) +  //
@@ -182,7 +180,7 @@ public:
 
 protected:
 	void build_lcp() {
-		vector<int> rank_;
+		std::vector<int> rank_;
 		rank_.resize(sa_.size());
 		lcp_.resize(sa_.size());
 		int k = 0, n = size();
@@ -202,8 +200,8 @@ protected:
 	std::vector<int> sa_, words_;
 	std::vector<int16_t> lcp_;
 	std::vector<std::pair<uint8_t, uint8_t>> words_len_;
-	vector<V> mapped_;
-	vector<CharT> text_;
+	std::vector<V> mapped_;
+	std::vector<CharT> text_;
 	bool built_ = false;
 };	// namespace reindexer
 

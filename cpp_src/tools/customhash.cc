@@ -8,14 +8,14 @@ namespace reindexer {
 
 static const uint32_t seed = 3339675911UL;
 
-inline uint32_t unaligned_load(const char* p) {
+inline uint32_t unaligned_load(const char* p) noexcept {
 	uint32_t result;
 	memcpy(&result, p, sizeof(result));
 	return result;
 }
 
 // Implementation of Murmur hash for 32-bit size_t.
-uint32_t _Hash_bytes(const void* ptr, uint32_t len) {
+uint32_t _Hash_bytes(const void* ptr, uint32_t len) noexcept {
 	const uint32_t m = 0x5bd1e995;
 	uint32_t hash = seed ^ len;
 	const char* buf = static_cast<const char*>(ptr);
@@ -54,7 +54,7 @@ uint32_t _Hash_bytes(const void* ptr, uint32_t len) {
 	return hash;
 }
 
-uint32_t _Hash_bytes_collate_ascii(const void* ptr, uint32_t len) {
+uint32_t _Hash_bytes_collate_ascii(const void* ptr, uint32_t len) noexcept {
 	const uint32_t m = 0x5bd1e995;
 	uint32_t hash = seed ^ len;
 	const char* buf = static_cast<const char*>(ptr);
@@ -124,7 +124,7 @@ uint32_t _Hash_bytes_collate_utf8(const void* ptr, uint32_t len) {
 }
 
 uint32_t Hash(const wstring& s) noexcept { return _Hash_bytes(s.data(), s.length() * sizeof(wchar_t)); }
-uint32_t collateHash(std::string_view s, CollateMode collateMode) noexcept {
+uint32_t collateHash(std::string_view s, CollateMode collateMode) {
 	switch (collateMode) {
 		case CollateASCII:
 			return _Hash_bytes_collate_ascii(s.data(), s.length());

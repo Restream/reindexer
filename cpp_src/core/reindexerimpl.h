@@ -13,9 +13,11 @@
 #include "estl/h_vector.h"
 #include "estl/smart_lock.h"
 #include "querystat.h"
+#include "reindexerconfig.h"
 #include "replicator/updatesobserver.h"
 #include "tools/errors.h"
 #include "tools/filecontentwatcher.h"
+#include "tools/tcmallocheapwathcher.h"
 #include "transaction.h"
 
 namespace reindexer {
@@ -42,8 +44,7 @@ class ReindexerImpl {
 public:
 	using Completion = std::function<void(const Error &err)>;
 
-	ReindexerImpl(IClientsStats *clientsStats = nullptr);
-
+	ReindexerImpl(ReindexerConfig cfg = ReindexerConfig());
 	~ReindexerImpl();
 
 	Error Connect(const std::string &dsn, ConnectOpts opts = ConnectOpts());
@@ -208,6 +209,10 @@ protected:
 	DBConfigProvider configProvider_;
 	FileContetWatcher replConfigFileChecker_;
 	bool hasReplConfigLoadError_;
+
+#ifdef REINDEX_WITH_GPERFTOOLS
+	TCMallocHeapWathcher heapWatcher_;
+#endif
 
 	ActivityContainer activities_;
 

@@ -4,18 +4,6 @@
 
 enum { TAG_VARINT, TAG_DOUBLE, TAG_STRING, TAG_BOOL, TAG_NULL, TAG_ARRAY, TAG_OBJECT, TAG_END };
 
-typedef enum KeyValueType {
-	KeyValueInt64 = TAG_VARINT,
-	KeyValueDouble = TAG_DOUBLE,
-	KeyValueString = TAG_STRING,
-	KeyValueBool = TAG_BOOL,
-	KeyValueNull = TAG_NULL,
-	KeyValueInt = TAG_END + 1,
-	KeyValueUndefined,
-	KeyValueComposite,
-	KeyValueTuple,
-} KeyValueType;
-
 typedef enum IndexType {
 	IndexStrHash = 0,
 	IndexStrBTree = 1,

@@ -51,7 +51,7 @@ std::unique_ptr<Index> FastIndexText<T>::Clone() {
 
 template <typename T>
 Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache) {
-	if (key.Type() == KeyValueNull) {
+	if (key.Type().Is<KeyValueType::Null>()) {
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, 0)) {
 			this->isBuilt_ = false;
 		}
@@ -74,7 +74,7 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache
 	}
 	this->addMemStat(keyIt);
 
-	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
+	if (this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() != CollateNone) {
 		return IndexStore<StoreIndexKeyType<T>>::Upsert(key, id, clearCache);
 	}
 
@@ -84,7 +84,7 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache
 template <typename T>
 void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool &clearCache) {
 	int delcnt = 0;
-	if (key.Type() == KeyValueNull) {
+	if (key.Type().Is<KeyValueType::Null>()) {
 		delcnt = this->empty_ids_.Unsorted().Erase(id);
 		assertrx(delcnt);
 		this->isBuilt_ = false;
@@ -110,7 +110,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 		}
 		if constexpr (is_str_map_v<T>) {
 			this->idx_map.template erase<StringMapEntryCleaner<false>>(
-				keyIt, {strHolder, this->KeyType() == KeyValueString && this->opts_.GetCollateMode() == CollateNone});
+				keyIt, {strHolder, this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() == CollateNone});
 		} else {
 			static_assert(is_payload_map_v<T>);
 			this->idx_map.template erase<no_deep_clean>(keyIt, strHolder);
@@ -118,7 +118,7 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 	} else {
 		this->addMemStat(keyIt);
 	}
-	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
+	if (this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() != CollateNone) {
 		IndexStore<StoreIndexKeyType<T>>::Delete(key, id, strHolder, clearCache);
 	}
 	if (this->cache_ft_) this->cache_ft_->Clear();

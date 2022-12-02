@@ -73,29 +73,17 @@ JsonBuilder &JsonBuilder::Null(std::string_view name) {
 }
 
 JsonBuilder &JsonBuilder::Put(std::string_view name, const Variant &kv) {
-	switch (kv.Type()) {
-		case KeyValueInt:
-			return Put(name, int(kv));
-		case KeyValueInt64:
-			return Put(name, int64_t(kv));
-		case KeyValueDouble:
-			return Put(name, double(kv));
-		case KeyValueString:
-			return Put(name, std::string_view(kv));
-		case KeyValueNull:
-			return Null(name);
-		case KeyValueBool:
-			return Put(name, bool(kv));
-		case KeyValueTuple: {
-			auto arrNode = Array(name);
-			for (auto &val : kv.getCompositeValues()) {
-				arrNode.Put({nullptr, 0}, val);
-			}
-			return *this;
-		}
-		default:
-			break;
-	}
+	kv.Type().EvaluateOneOf([&](KeyValueType::Int) { Put(name, int(kv)); }, [&](KeyValueType::Int64) { Put(name, int64_t(kv)); },
+							[&](KeyValueType::Double) { Put(name, double(kv)); },
+							[&](KeyValueType::String) { Put(name, std::string_view(kv)); }, [&](KeyValueType::Null) { Null(name); },
+							[&](KeyValueType::Bool) { Put(name, bool(kv)); },
+							[&](KeyValueType::Tuple) {
+								auto arrNode = Array(name);
+								for (auto &val : kv.getCompositeValues()) {
+									arrNode.Put({nullptr, 0}, val);
+								}
+							},
+							[](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
 	return *this;
 }
 

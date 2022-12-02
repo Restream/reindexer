@@ -275,11 +275,15 @@ SortingEntries QueryPreprocessor::GetSortingEntries(bool havePreresult) const {
 	return disableOptimizeSortOrder ? query_.sortingEntries_ : detectOptimalSortOrder();
 }
 
-int QueryPreprocessor::getCompositeIndex(const FieldsSet &fields) const {
-	if (fields.getTagsPathsLength() == 0) {
-		for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); i++) {
-			if (ns_.indexes_[i]->Fields().contains(fields)) return i;
+template <typename T>
+int QueryPreprocessor::getCompositeIndex(const T &fields) const {
+	if constexpr (std::is_same_v<T, FieldsSet>) {
+		if (fields.getTagsPathsLength() != 0) {
+			return -1;
 		}
+	}
+	for (int i = ns_.indexes_.firstCompositePos(), idxsCount = ns_.indexes_.totalSize(); i < idxsCount; ++i) {
+		if (!IsFullText(ns_.indexes_[i]->Type()) && ns_.indexes_[i]->Fields().contains(fields)) return i;
 	}
 	return -1;
 }
@@ -305,62 +309,98 @@ static void createCompositeKeyValues(const h_vector<std::pair<int, VariantArray>
 }
 
 size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const size_t to) {
-	FieldsSet fields;
 	size_t deleted = 0;
+	struct {
+		void Clear() noexcept {
+			fields.clear();
+			targetCompositeIdx = -1;
+		}
+
+		FieldsSet fields;
+		int targetCompositeIdx = -1;
+	} tmp;
 	for (size_t cur = from, first = from, end = to; cur < end; cur = Next(cur), end = to - deleted) {
 		if (!HoldsOrReferTo<QueryEntry>(cur) || GetOperation(cur) != OpAnd || (Next(cur) < end && GetOperation(Next(cur)) == OpOr) ||
 			(Get<QueryEntry>(cur).condition != CondEq && Get<QueryEntry>(cur).condition != CondSet) ||
 			Get<QueryEntry>(cur).idxNo >= ns_.payloadType_.NumFields() || Get<QueryEntry>(cur).idxNo < 0) {
 			// If query already rewritten, then copy current unmatched part
 			first = Next(cur);
-			fields.clear();
+			tmp.Clear();
 			if (container_[cur].IsSubTree()) {
 				deleted += substituteCompositeIndexes(cur + 1, Next(cur));
 			}
 			continue;
 		}
-		fields.push_back(Get<QueryEntry>(cur).idxNo);
-		int found = getCompositeIndex(fields);
-		if ((found >= 0) && !IsFullText(ns_.indexes_[found]->Type())) {
-			// composite idx found: replace conditions
-			h_vector<std::pair<int, VariantArray>, 4> values;
-			for (size_t i = first; i <= cur; i = Next(i)) {
-				if (ns_.indexes_[found]->Fields().contains(Get<QueryEntry>(i).idxNo)) {
-					values.emplace_back(Get<QueryEntry>(i).idxNo, std::move(Get<QueryEntry>(i).values));
-				} else {
-					SetOperation(GetOperation(i), first);
-					container_[first] = std::move(container_[i]);
-					first = Next(first);
-				}
-			}
-			{
-				QueryEntry ce(CondSet, ns_.indexes_[found]->Name(), found);
-				createCompositeKeyValues(values, ns_.payloadType_, nullptr, ce.values, 0);
-				if (ce.values.size() == 1) {
-					ce.condition = CondEq;
-				}
-				SetOperation(OpAnd, first);
-				container_[first].SetValue(std::move(ce));
-			}
-			deleted += (Next(cur) - Next(first));
-			Erase(Next(first), Next(cur));
-			cur = first;
-			first = Next(first);
-			fields.clear();
+		auto &qe = Get<QueryEntry>(cur);
+		int found = getCompositeIndex(qe.idxNo);
+		if (found < 0) {
+			// If field does not belong to any composite index
+			tmp.Clear();
+			first = Next(cur);
+			continue;
 		}
+		tmp.fields.push_back(qe.idxNo);
+		if (tmp.targetCompositeIdx >= 0) {
+			if (found != tmp.targetCompositeIdx) {
+				const auto savedFound = found;
+				found = getCompositeIndex(tmp.fields);
+
+				if (found < 0) {
+					tmp.Clear();
+					first = cur;
+					tmp.fields.push_back(qe.idxNo);
+					found = savedFound;
+				}
+				tmp.targetCompositeIdx = found;
+			}
+		} else {
+			tmp.targetCompositeIdx = found;
+		}
+
+		// composite idx found: replace conditions
+		const auto &idxFields = ns_.indexes_[found]->Fields();
+		if (tmp.fields.size() != idxFields.size() || !tmp.fields.contains(idxFields)) {
+			// Not all of the composite fields were found in query
+			continue;
+		}
+		h_vector<std::pair<int, VariantArray>, 4> values;
+		for (size_t i = first; i <= cur; i = Next(i)) {
+			if (!idxFields.contains(Get<QueryEntry>(i).idxNo)) {
+				throw Error(errLogic, "Error during composite index's fields substitution (this should not happen)");
+			}
+			auto &qe = Get<QueryEntry>(i);
+			if (qe.condition == CondEq && qe.values.size() == 0) {
+				throw Error(errParams, "Condition EQ must have at least 1 argument, but provided 0");
+			}
+			values.emplace_back(qe.idxNo, std::move(qe.values));
+		}
+		{
+			QueryEntry ce(CondSet, ns_.indexes_[found]->Name(), found);
+			createCompositeKeyValues(values, ns_.payloadType_, nullptr, ce.values, 0);
+			if (ce.values.size() == 1) {
+				ce.condition = CondEq;
+			}
+			SetOperation(OpAnd, first);
+			container_[first].SetValue(std::move(ce));
+		}
+		deleted += (Next(cur) - Next(first));
+		Erase(Next(first), Next(cur));
+		cur = first;
+		first = Next(first);
+		tmp.Clear();
 	}
 	return deleted;
 }
 
 void QueryPreprocessor::convertWhereValues(QueryEntry *qe) const {
 	const FieldsSet *fields = nullptr;
-	KeyValueType keyType = KeyValueUndefined;
+	KeyValueType keyType{KeyValueType::Undefined{}};
 	const bool isIndexField = (qe->idxNo != IndexValueType::SetByJsonPath);
 	if (isIndexField) {
 		keyType = ns_.indexes_[qe->idxNo]->SelectKeyType();
 		fields = &ns_.indexes_[qe->idxNo]->Fields();
 	}
-	if (keyType != KeyValueUndefined) {
+	if (!keyType.Is<KeyValueType::Undefined>()) {
 		if (qe->condition != CondDWithin) {
 			for (auto &key : qe->values) {
 				key.convert(keyType, &ns_.payloadType_, fields);
@@ -463,20 +503,6 @@ bool QueryPreprocessor::mergeQueryEntries(size_t lhs, size_t rhs) {
 	return false;
 }
 
-KeyValueType QueryPreprocessor::detectQueryEntryFieldType(const QueryEntry &qentry) const {
-	KeyValueType keyType = KeyValueUndefined;
-	for (auto &item : ns_.items_) {
-		if (!item.IsFree()) {
-			Payload pl(ns_.payloadType_, item);
-			VariantArray values;
-			pl.GetByJsonPath(qentry.index, ns_.tagsMatcher_, values, KeyValueUndefined);
-			if (values.size() > 0) keyType = values[0].Type();
-			break;
-		}
-	}
-	return keyType;
-}
-
 void QueryPreprocessor::AddDistinctEntries(const h_vector<Aggregator, 4> &aggregators) {
 	bool wasAdded = false;
 	for (auto &ag : aggregators) {
@@ -538,7 +564,7 @@ void QueryPreprocessor::fillQueryEntryFromOnCondition(QueryEntry &queryEntry, Na
 			assertrx(qr.aggregationResults[0].distinctsFields.size() == 1);
 			const auto field = qr.aggregationResults[0].distinctsFields[0];
 			for (Variant &distValue : qr.aggregationResults[0].distincts) {
-				if (distValue.Type() == KeyValueComposite) {
+				if (distValue.Type().Is<KeyValueType::Composite>()) {
 					ConstPayload pl(qr.aggregationResults[0].payloadType, distValue.operator const PayloadValue &());
 					VariantArray v;
 					if (field == IndexValueType::SetByJsonPath) {
@@ -695,7 +721,7 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 					QueryEntry newEntry;
 					newEntry.index = joinEntry.index_;
 					newEntry.idxNo = IndexValueType::SetByJsonPath;
-					KeyValueType valuesType = KeyValueUndefined;
+					KeyValueType valuesType = KeyValueType::Undefined{};
 					CollateOpts collate;
 					if (ns_.getIndexByName(newEntry.index, newEntry.idxNo)) {
 						const Index &index = *ns_.indexes_[newEntry.idxNo];

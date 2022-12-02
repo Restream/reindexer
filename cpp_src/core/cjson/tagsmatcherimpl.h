@@ -81,10 +81,12 @@ public:
 							if (values.size() != 1) {
 								throw Error(errParams, "Index expression_ has wrong syntax: '%s'", content);
 							}
-							if (values.front().Type() != KeyValueDouble && values.front().Type() != KeyValueInt &&
-								values.front().Type() != KeyValueInt64) {
-								throw Error(errParams, "Wrong type of index: '%s'", content);
-							}
+							values.front().Type().EvaluateOneOf(
+								[](OneOf<KeyValueType::Double, KeyValueType::Int, KeyValueType::Int64>) noexcept {},
+								[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite,
+										  KeyValueType::Null, KeyValueType::Undefined>) {
+									throw Error(errParams, "Wrong type of index: '%s'", content);
+								});
 							node.SetExpression(content);
 							index = values.front().As<int>();
 						}

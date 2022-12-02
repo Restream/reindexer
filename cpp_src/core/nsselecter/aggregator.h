@@ -2,6 +2,7 @@
 
 #include <unordered_set>
 #include "core/index/payload_map.h"
+#include "estl/one_of.h"
 #include "vendor/cpp-btree/btree_map.h"
 
 namespace reindexer {
@@ -59,19 +60,15 @@ protected:
 	public:
 		RelaxVariantCompare(const PayloadType &type, const FieldsSet &fields) : type_(type), fields_(fields) {}
 		bool operator()(const Variant &v1, const Variant &v2) const {
-			if (v1.Type() != v2.Type()) return false;
-			switch (v1.Type()) {
-				case KeyValueInt64:
-				case KeyValueDouble:
-				case KeyValueString:
-				case KeyValueBool:
-				case KeyValueInt:
+			if (!v1.Type().IsSame(v2.Type())) return false;
+			return v1.Type().EvaluateOneOf(
+				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int>) {
 					return v1.Compare(v2) == 0;
-				case KeyValueComposite:
+				},
+				[&](KeyValueType::Composite) {
 					return ConstPayload(type_, static_cast<const PayloadValue &>(v1)).IsEQ(static_cast<const PayloadValue &>(v2), fields_);
-				default:
-					abort();
-			}
+				},
+				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept -> bool { abort(); });
 		}
 
 	private:
@@ -81,18 +78,11 @@ protected:
 	struct DistinctHasher {
 		DistinctHasher(const PayloadType &type, const FieldsSet &fields) : type_(type), fields_(fields) {}
 		size_t operator()(const Variant &v) const {
-			switch (v.Type()) {
-				case KeyValueInt64:
-				case KeyValueDouble:
-				case KeyValueString:
-				case KeyValueBool:
-				case KeyValueInt:
-					return v.Hash();
-				case KeyValueComposite:
-					return ConstPayload(type_, static_cast<const PayloadValue &>(v)).GetHash(fields_);
-				default:
-					abort();
-			}
+			return v.Type().EvaluateOneOf(
+				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool,
+						  KeyValueType::Int>) noexcept { return v.Hash(); },
+				[&](KeyValueType::Composite) { return ConstPayload(type_, static_cast<const PayloadValue &>(v)).GetHash(fields_); },
+				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept -> size_t { abort(); });
 			assertrx(type_);
 			return 0;
 		}

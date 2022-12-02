@@ -79,7 +79,7 @@ class IndexedTagsPath : public h_vector<IndexedPathNode, 6> {
 public:
 	using Base = h_vector<IndexedPathNode, 6>;
 	using Base::Base;
-	bool Compare(const IndexedTagsPath &obj) const {
+	bool Compare(const IndexedTagsPath &obj) const noexcept {
 		const size_t ourSize = size();
 		if (obj.size() != ourSize) return false;
 		if (back().IsArrayNode() != obj.back().IsArrayNode()) return false;
@@ -98,8 +98,8 @@ public:
 			}
 		}
 		return true;
-	};
-	bool Compare(const TagsPath &obj) const {
+	}
+	bool Compare(const TagsPath &obj) const noexcept {
 		if (obj.size() != size()) return false;
 		for (size_t i = 0; i < size(); ++i) {
 			if (operator[](i).NameTag() != obj[i]) return false;

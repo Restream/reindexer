@@ -230,7 +230,7 @@ bool iequals(std::string_view lhs, std::string_view rhs) {
 	return true;
 }
 
-bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive) {
+bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive) noexcept {
 	if (src.empty() || pattern.empty()) return false;
 	if (src.length() > pattern.length()) return false;
 	if (casesensitive) {
@@ -240,6 +240,22 @@ bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool case
 	} else {
 		for (size_t i = 0; i < src.length(); ++i) {
 			if (tolower(src[i]) != tolower(pattern[i])) return false;
+		}
+	}
+	return true;
+}
+
+bool checkIfEndsWith(std::string_view pattern, std::string_view src, bool casesensitive) noexcept {
+	if (pattern.length() > src.length()) return false;
+	if (pattern.length() == 0) return true;
+	const auto offset = src.length() - pattern.length();
+	if (casesensitive) {
+		for (size_t i = 0; i < pattern.length(); ++i) {
+			if (src[offset + i] != pattern[i]) return false;
+		}
+	} else {
+		for (size_t i = 0; i < pattern.length(); ++i) {
+			if (tolower(src[offset + i]) != tolower(pattern[i])) return false;
 		}
 	}
 	return true;

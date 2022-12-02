@@ -1200,7 +1200,7 @@ int HTTPServer::modifyItems(http::Context &ctx, ItemModifyMode mode) {
 
 	std::vector<std::string> precepts;
 	for (auto &p : ctx.request->params) {
-		if ((p.name == "precepts"sv) || (p.name == "precepts[]"sv)) {
+		if (p.name == "precepts"sv) {
 			precepts.push_back(urldecode2(p.val));
 		}
 	}
@@ -1225,7 +1225,7 @@ int HTTPServer::modifyItemsTx(http::Context &ctx, ItemModifyMode mode) {
 
 	std::vector<std::string> precepts;
 	for (auto &p : ctx.request->params) {
-		if ((p.name == "precepts"sv) || (p.name == "precepts[]"sv)) {
+		if (p.name == "precepts"sv) {
 			precepts.push_back(urldecode2(p.val));
 		}
 	}

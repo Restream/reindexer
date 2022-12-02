@@ -7,6 +7,11 @@ extern "C" {
 #include <stdint.h>
 #include "core/type_consts.h"
 
+typedef struct reindexer_config {
+	int64_t allocator_cache_limit;
+	float allocator_max_cache_part;
+} reindexer_config;
+
 typedef struct reindexer_buffer {
 	uint8_t *data;
 	int len;

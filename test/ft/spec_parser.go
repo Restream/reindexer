@@ -23,6 +23,12 @@ type RankingTestCase struct {
 	Queries           []string   `json:"queries"`
 }
 
+type RankingQuality struct {
+	Description        string  `json:"test_case_description"`
+	FastRankingQuality float64 `json:"fast_ranking_quality"`
+	FuzzRankingQuality float64 `json:"fuzz_ranking_quality"`
+}
+
 func ParseBasicTestCases() []BasicTestCase {
 	bytes, err := ioutil.ReadFile("specs/full_text_search_basic_test_data.json")
 	if err != nil {
@@ -45,4 +51,21 @@ func ParseRankingTestCases() []RankingTestCase {
 	var result []RankingTestCase
 	json.Unmarshal(bytes, &result)
 	return result
+}
+
+func ParseRankingQuality() []RankingQuality {
+	bytes, err := ioutil.ReadFile("specs/full_text_search_ranking_quality.json")
+	if err != nil {
+		fmt.Println(err.Error())
+		os.Exit(1)
+	}
+
+	var result []RankingQuality
+	json.Unmarshal(bytes, &result)
+	return result
+}
+
+func SaveRankingQuality(newQualities []RankingQuality) {
+	file, _ := json.MarshalIndent(newQualities, "", " ")
+	_ = ioutil.WriteFile("specs/new_ranking_quality.json", file, 0644)
 }

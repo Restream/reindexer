@@ -59,7 +59,6 @@ protected:
 	void restart(int fd);
 
 	ssize_t async_read();
-	ssize_t async_read_some();
 
 	ev::io io_;
 	ev::timer timeout_;

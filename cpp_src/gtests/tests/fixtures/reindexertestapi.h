@@ -20,7 +20,8 @@ public:
 	using QueryResultsType = typename DB::QueryResultsT;
 
 	ReindexerTestApi() : reindexer(std::shared_ptr<DB>(new DB)) {}
-	static void DefineNamespaceDataset(DB &rx, const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
+	template <typename FieldsT>
+	static void DefineNamespaceDataset(DB &rx, const std::string &ns, const FieldsT &fields) {
 		auto err = reindexer::Error();
 		for (const auto &field : fields) {
 			std::string indexName = std::get<0>(field);
@@ -49,6 +50,9 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
+		DefineNamespaceDataset(*reindexer, ns, fields);
+	}
+	void DefineNamespaceDataset(const std::string &ns, const std::vector<IndexDeclaration> &fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
 
@@ -94,9 +98,9 @@ public:
 		}
 		return outBuf;
 	}
-	std::string RandString() {
+	std::string RandString(unsigned minLen = 4, unsigned maxRandLen = 4) {
 		std::string res;
-		uint8_t len = rand() % 4 + 4;
+		uint8_t len = rand() % maxRandLen + minLen;
 		res.resize(len);
 		for (int i = 0; i < len; ++i) {
 			int f = rand() % letters.size();

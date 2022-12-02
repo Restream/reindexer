@@ -60,7 +60,7 @@ public:
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	std::string getCompositeIndexName(std::initializer_list<std::string> indexes) {
+	static std::string getCompositeIndexName(std::initializer_list<std::string> indexes) {
 		size_t i = 0;
 		std::string indexName;
 		for (const std::string& subIdx : indexes) {
@@ -103,12 +103,13 @@ public:
 		return qr;
 	}
 
-	const char* kFieldNameBookid = "bookid";
-	const char* kFieldNameBookid2 = "bookid2";
-	const char* kFieldNameTitle = "title";
-	const char* kFieldNamePages = "pages";
-	const char* kFieldNamePrice = "price";
-	const char* kFieldNameName = "name";
+	static constexpr char kFieldNameBookid[] = "bookid";
+	static constexpr char kFieldNameBookid2[] = "bookid2";
+	static constexpr char kFieldNameTitle[] = "title";
+	static constexpr char kFieldNamePages[] = "pages";
+	static constexpr char kFieldNamePrice[] = "price";
+	static constexpr char kFieldNameName[] = "name";
 
-	const std::string compositePlus = "+";
+	static constexpr char compositePlus = '+';
+	static constexpr std::string_view kSubindexesNamespace = "subindexes_namespace";
 };

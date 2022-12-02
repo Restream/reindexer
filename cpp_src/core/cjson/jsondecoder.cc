@@ -44,8 +44,7 @@ void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, const gas
 			auto &f = pl->Type().Field(field);
 			if (elem->value.getTag() == gason::JSON_ARRAY) {
 				if (!f.IsArray()) {
-					throw Error(errLogic, "Error parsing json field '%s' - got array, expected scalar %s", f.Name(),
-								Variant::TypeName(f.Type()));
+					throw Error(errLogic, "Error parsing json field '%s' - got array, expected scalar %s", f.Name(), f.Type().Name());
 				}
 				int count = 0;
 				for (auto subelem : elem->value) {

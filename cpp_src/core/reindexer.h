@@ -4,6 +4,7 @@
 #include "core/query/query.h"
 #include "core/queryresults/queryresults.h"
 #include "core/rdxcontext.h"
+#include "core/reindexerconfig.h"
 #include "core/transaction.h"
 
 #include <chrono>
@@ -30,8 +31,9 @@ public:
 	using Completion = std::function<void(const Error &err)>;
 
 	/// Create Reindexer database object
-	/// @param clientsStats - object for receiving clients statistics
-	Reindexer(IClientsStats *clientsStats = nullptr);
+	/// @param cfg - general database options
+	Reindexer(ReindexerConfig cfg = ReindexerConfig());
+
 	/// Destrory Reindexer database object
 	~Reindexer();
 	/// Create not holding copy

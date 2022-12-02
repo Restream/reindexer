@@ -24,7 +24,9 @@ public:
 	void WaitSync(ServerControl& s1, ServerControl& s2, const std::string& nsName) {
 		auto now = std::chrono::milliseconds(0);
 		const auto pause = std::chrono::milliseconds(100);
-		ReplicationStateApi state1, state2;
+		ReplicationStateApi state1{};
+		ReplicationStateApi state2{};
+	
 		while (true) {
 			now += pause;
 			ASSERT_TRUE(now < kMaxSyncTime) << "Wait sync is too long. s1 lsn: " << state1.lsn << "; s2 lsn: " << state2.lsn

@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.10.1"
+  version: "3.11.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -3176,7 +3176,13 @@ definitions:
         description: "[[deperecated]]. do not use"
       storage_ok:
         type: boolean
-        description: "Status of disk storage"
+        description: "Status of disk storage (true, if storage is enabled and writable)"
+      storage_enabled:
+        type: boolean
+        description: "Shows if storage is enabled (hovewer it may still be unavailable)"
+      storage_status:
+        type: string
+        description: "More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error descrition"
       storage_path:
         type: string
         description: "Filesystem path to namespace storage"

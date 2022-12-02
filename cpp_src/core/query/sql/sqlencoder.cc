@@ -233,7 +233,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					if (isArray) ser << '[';
 					for (const Variant &v : field.Values()) {
 						if (&v != &*field.Values().begin()) ser << ',';
-						if ((v.Type() == KeyValueString) && !field.IsExpression() && (mode != FieldModeSetJson)) {
+						if (v.Type().Is<KeyValueType::String>() && !field.IsExpression() && (mode != FieldModeSetJson)) {
 							stringToSql(v.As<std::string>(), ser);
 						} else {
 							ser << v.As<std::string>();
@@ -297,7 +297,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 						assertrx(entry.values.size() == 2);
 						Point point;
 						double distance;
-						if (entry.values[0].Type() == KeyValueTuple) {
+						if (entry.values[0].Type().Is<KeyValueType::Tuple>()) {
 							point = static_cast<Point>(entry.values[0]);
 							distance = entry.values[1].As<double>();
 						} else {
@@ -316,7 +316,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 						if (entry.values.size() != 1) ser << '(';
 						for (auto &v : entry.values) {
 							if (&v != &entry.values[0]) ser << ',';
-							if (v.Type() == KeyValueString) {
+							if (v.Type().Is<KeyValueType::String>()) {
 								stringToSql(v.As<std::string>(), ser);
 							} else {
 								ser << v.As<std::string>();

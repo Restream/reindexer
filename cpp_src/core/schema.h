@@ -62,7 +62,7 @@ struct SchemaFieldType {
 
 class SchemaFieldsTypes {
 public:
-	void AddObject(std::string_view objectType);
+	void AddObject(std::string objectType);
 	void AddField(KeyValueType type, bool isArray);
 	KeyValueType GetField(const TagsPath& fieldPath, bool& isArray) const;
 	std::string GenerateObjectName();

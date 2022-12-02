@@ -1,23 +1,17 @@
 #include "core/selectfunc/selectfuncparser.h"
 #include <ctime>
 #include <string>
-#include <vector>
 #include "tools/errors.h"
 #include "tools/logger.h"
 
-using std::move;
-using std::next;
-using std::string;
-using std::vector;
-
 namespace reindexer {
 
-SelectFuncStruct &SelectFuncParser::Parse(const string &query) {
+SelectFuncStruct &SelectFuncParser::Parse(const std::string &query) {
 	tokenizer parser(query);
 
 	token tok = parser.next_token(false);
 
-	selectFuncStruct_.field = string(tok.text());
+	selectFuncStruct_.field = std::string(tok.text());
 
 	auto dotPos = tok.text().find('.');
 	if (dotPos == std::string_view::npos) {
@@ -49,11 +43,11 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 	} else if (tok.text() == "highlight") {
 		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncHighlight;
 	}
-	selectFuncStruct_.funcName = string(tok.text());
+	selectFuncStruct_.funcName = std::string(tok.text());
 
 	tok = parser.next_token(false);
 	if (tok.text() == "(") {
-		string agr;
+		std::string agr;
 		while (!parser.end()) {
 			tok = parser.next_token(false);
 			if (tok.text() == ")") {
@@ -71,7 +65,7 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 				selectFuncStruct_.funcArgs.push_back(agr);
 				agr.clear();
 			} else {
-				agr += string(tok.text());
+				agr += std::string(tok.text());
 			}
 		}
 	} else {
@@ -117,7 +111,7 @@ bool SelectFuncParser::IsFunction(std::string_view val) {
 
 bool SelectFuncParser::IsFunction(const VariantArray &val) {
 	if (val.size() != 1) return false;
-	if (val.front().Type() != KeyValueString) return false;
+	if (!val.front().Type().Is<KeyValueType::String>()) return false;
 	return IsFunction(static_cast<std::string_view>(val.front()));
 }
 

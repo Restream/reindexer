@@ -2,13 +2,13 @@
 
 #ifdef REINDEX_WITH_LEVELDB
 
+#include <leveldb/iterator.h>
 #include <leveldb/write_batch.h>
 #include "basestorage.h"
 
 namespace leveldb {
 class DB;
 class Snapshot;
-class Iterator;
 }  // namespace leveldb
 
 namespace reindexer {
@@ -17,7 +17,6 @@ namespace datastorage {
 class LevelDbStorage : public BaseStorage {
 public:
 	LevelDbStorage();
-	~LevelDbStorage();
 
 	Error Read(const StorageOpts& opts, std::string_view key, std::string& value) override final;
 	Error Write(const StorageOpts& opts, std::string_view key, std::string_view value) override final;
@@ -30,7 +29,8 @@ public:
 	Snapshot::Ptr MakeSnapshot() override final;
 	void ReleaseSnapshot(Snapshot::Ptr) override final;
 
-	void Flush() final;
+	Error Flush() override final;
+	Error Reopen() override final;
 	Cursor* GetCursor(StorageOpts& opts) override final;
 	UpdatesCollection* GetUpdatesCollection() override final;
 
@@ -46,12 +46,11 @@ private:
 
 class LevelDbBatchBuffer : public UpdatesCollection {
 public:
-	LevelDbBatchBuffer();
-	~LevelDbBatchBuffer();
-
-	void Put(std::string_view key, std::string_view value) override final;
-	void Remove(std::string_view key) override final;
-	void Clear() override final;
+	void Put(std::string_view key, std::string_view value) override final {
+		batchWrite_.Put(leveldb::Slice(key.data(), key.size()), leveldb::Slice(value.data(), value.size()));
+	}
+	void Remove(std::string_view key) override final { batchWrite_.Delete(leveldb::Slice(key.data(), key.size())); }
+	void Clear() override final { batchWrite_.Clear(); }
 
 private:
 	leveldb::WriteBatch batchWrite_;
@@ -60,28 +59,24 @@ private:
 
 class LevelDbComparator : public Comparator {
 public:
-	LevelDbComparator() = default;
-	~LevelDbComparator() = default;
-
 	int Compare(std::string_view a, std::string_view b) const override final;
 };
 
 class LevelDbIterator : public Cursor {
 public:
-	LevelDbIterator(leveldb::Iterator* iterator);
-	~LevelDbIterator();
+	LevelDbIterator(leveldb::Iterator* iterator) noexcept : iterator_(iterator) {}
 
-	bool Valid() const override final;
-	void SeekToFirst() override final;
-	void SeekToLast() override final;
-	void Seek(std::string_view target) override final;
-	void Next() override final;
-	void Prev() override final;
+	bool Valid() const override final { return iterator_->Valid(); }
+	void SeekToFirst() override final { return iterator_->SeekToFirst(); }
+	void SeekToLast() override final { return iterator_->SeekToLast(); }
+	void Seek(std::string_view target) override final { return iterator_->Seek(leveldb::Slice(target.data(), target.size())); }
+	void Next() override final { return iterator_->Next(); }
+	void Prev() override final { return iterator_->Prev(); }
 
 	std::string_view Key() const override final;
 	std::string_view Value() const override final;
 
-	Comparator& GetComparator() final;
+	Comparator& GetComparator() final { return comparator_; }
 
 private:
 	const std::unique_ptr<leveldb::Iterator> iterator_;
@@ -90,8 +85,7 @@ private:
 
 class LevelDbSnapshot : public Snapshot {
 public:
-	LevelDbSnapshot(const leveldb::Snapshot* snapshot);
-	~LevelDbSnapshot();
+	LevelDbSnapshot(const leveldb::Snapshot* snapshot) noexcept;
 
 private:
 	const leveldb::Snapshot* snapshot_;

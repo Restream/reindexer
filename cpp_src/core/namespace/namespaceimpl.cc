@@ -72,7 +72,7 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &
 	  joinCache_{std::make_shared<JoinCache>()},
 	  enablePerfCounters_{src.enablePerfCounters_.load()},
 	  config_{src.config_},
-	  wal_{src.wal_},
+	  wal_{src.wal_, storage_},
 	  repl_{src.repl_},
 	  observers_{src.observers_},
 	  storageOpts_{src.storageOpts_},
@@ -129,10 +129,10 @@ NamespaceImpl::~NamespaceImpl() {
 	try {
 		if (!locker_.IsReadOnly()) {
 			saveReplStateToStorage(false);
-			storage_.Flush();
+			storage_.Flush(StorageFlushOpts().WithImmediateReopen());
 		}
 	} catch (Error &e) {
-		logPrintf(LogWarning, "Namespace::~Namespace (%s), flushStorage() error: %s", name_, e.what());
+		logPrintf(LogError, "Namespace::~Namespace (%s), flushStorage() error: %s", name_, e.what());
 	}
 
 #ifndef NDEBUG
@@ -491,32 +491,18 @@ void NamespaceImpl::dropIndex(const IndexDef &index) {
 }
 
 static void verifyConvertTypes(KeyValueType from, KeyValueType to, const PayloadType &payloadType, const FieldsSet &fields) {
-	if ((from == KeyValueString || to == KeyValueString) && (from != to)) {
-		throw Error(errParams, "Cannot convert key from type %s to %s", Variant::TypeName(from), Variant::TypeName(to));
+	if ((from.Is<KeyValueType::String>() || to.Is<KeyValueType::String>()) && !from.IsSame(to)) {
+		throw Error(errParams, "Cannot convert key from type %s to %s", from.Name(), to.Name());
 	}
 	static const std::string defaultStringValue;
 	Variant value;
-	switch (from) {
-		case KeyValueInt64:
-			value = Variant(int64_t(0));
-			break;
-		case KeyValueDouble:
-			value = Variant(0.0);
-			break;
-		case KeyValueString:
-			value = Variant(defaultStringValue);
-			break;
-		case KeyValueBool:
-			value = Variant(false);
-			break;
-		case KeyValueNull:
-			break;
-		case KeyValueInt:
-			value = Variant(0);
-			break;
-		default:
-			if (to != from) throw Error(errParams, "Cannot convert key value types");
-	}
+	from.EvaluateOneOf(
+		[&](KeyValueType::Int64) noexcept { value = Variant(int64_t(0)); }, [&](KeyValueType::Double) noexcept { value = Variant(0.0); },
+		[&](KeyValueType::String) { value = Variant(defaultStringValue); }, [&](KeyValueType::Bool) noexcept { value = Variant(false); },
+		[](KeyValueType::Null) noexcept {}, [&](KeyValueType::Int) noexcept { value = Variant(0); },
+		[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) {
+			if (!to.IsSame(from)) throw Error(errParams, "Cannot convert key value types");
+		});
 	value.convert(to, &payloadType, &fields);
 }
 
@@ -605,7 +591,6 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 		throw Error(errConflict, "Cannot add index '%s.%s'. Too many non-composite indexes. %d non-composite indexes are allowed only",
 					name_, indexName, maxIndexes - 1);
 	}
-	std::unique_ptr<Index> newIndex = Index::New(indexDef, PayloadType(), FieldsSet());
 	if (opts.IsSparse()) {
 		FieldsSet fields;
 		for (const std::string &jsonPath : jsonPaths) {
@@ -615,14 +600,14 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 			fields.push_back(jsonPath);
 			fields.push_back(tagsPath);
 		}
-
+		auto newIndex = Index::New(indexDef, payloadType_, fields);
+		insertIndex(std::move(newIndex), idxNo, indexName);
 		++sparseIndexesCount_;
-		insertIndex(Index::New(indexDef, payloadType_, fields), idxNo, indexName);
 		assertrx(jsonPaths.size() == 1);
 		fillSparseIndex(*indexes_[idxNo], jsonPaths[0]);
 	} else {
 		PayloadType oldPlType = payloadType_;
-
+		auto newIndex = Index::New(indexDef, PayloadType(), FieldsSet());
 		payloadType_.Add(PayloadFieldType(newIndex->KeyType(), indexName, jsonPaths, newIndex->Opts().IsArray()));
 		tagsMatcher_.UpdatePayloadType(payloadType_);
 		newIndex->SetFields(FieldsSet{idxNo});
@@ -1257,8 +1242,8 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 			if (needUpdateCompIndexes[field]) continue;
 			for (size_t i = 0, end = fields.getTagsPathsLength(); i < end; ++i) {
 				const auto &tp = fields.getTagsPath(i);
-				pl.GetByJsonPath(tp, skrefs, KeyValueUndefined);
-				plNew.GetByJsonPath(tp, krefs, KeyValueUndefined);
+				pl.GetByJsonPath(tp, skrefs, KeyValueType::Undefined{});
+				plNew.GetByJsonPath(tp, krefs, KeyValueType::Undefined{});
 				if (skrefs != krefs) {
 					needUpdateCompIndexes[field] = true;
 					needUpdateAnyCompIndex = true;
@@ -1634,6 +1619,8 @@ NamespaceDef NamespaceImpl::GetDefinition(const RdxContext &ctx) {
 }
 
 NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
+	using namespace std::string_view_literals;
+
 	NamespaceMemStat ret;
 	auto rlck = rLock(ctx);
 	ret.name = name_;
@@ -1660,7 +1647,20 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 		ret.Total.cacheSize += istat.idsetCache.totalSize;
 	}
 
-	ret.storageOK = storage_.IsValid();
+	const auto storageStatus = storage_.GetStatus();
+	ret.storageOK = storageStatus.isEnabled && storageStatus.err.ok();
+	ret.storageEnabled = storageStatus.isEnabled;
+	if (storageStatus.isEnabled) {
+		if (storageStatus.err.ok()) {
+			ret.storageStatus = "OK"sv;
+		} else if (checkIfEndsWith("No space left on device"sv, storageStatus.err.what(), true)) {
+			ret.storageStatus = "NO SPACE LEFT"sv;
+		} else {
+			ret.storageStatus = storageStatus.err.what();
+		}
+	} else {
+		ret.storageStatus = "DISABLED"sv;
+	}
 	ret.storagePath = storage_.Path();
 	ret.optimizationCompleted = (optimizationState_ == OptimizationCompleted);
 
@@ -2020,7 +2020,7 @@ void NamespaceImpl::LoadFromStorage(unsigned threadsCount, const RdxContext &ctx
 }
 
 void NamespaceImpl::initWAL(int64_t minLSN, int64_t maxLSN) {
-	wal_.Init(config_.walSize, minLSN, maxLSN, storage_.GetStoragePtr());
+	wal_.Init(config_.walSize, minLSN, maxLSN, storage_);
 	// Fill existing records
 	for (IdType rowId = 0; rowId < IdType(items_.size()); rowId++) {
 		if (!items_[rowId].IsFree()) {
@@ -2099,7 +2099,7 @@ void NamespaceImpl::BackgroundRoutine(RdxActivityContext *ctx) {
 	removeExpiredStrings(ctx);
 }
 
-void NamespaceImpl::StorageFlushingRoutine() { storage_.Flush(); }
+void NamespaceImpl::StorageFlushingRoutine() { storage_.Flush(StorageFlushOpts()); }
 
 void NamespaceImpl::DeleteStorage(const RdxContext &ctx) {
 	auto wlck = wLock(ctx);
@@ -2107,7 +2107,7 @@ void NamespaceImpl::DeleteStorage(const RdxContext &ctx) {
 }
 
 void NamespaceImpl::CloseStorage(const RdxContext &ctx) {
-	storage_.Flush();
+	storage_.Flush(StorageFlushOpts().WithImmediateReopen());
 	auto wlck = wLock(ctx);
 	if (replStateUpdates_.load(std::memory_order_relaxed)) {
 		saveReplStateToStorage(true);

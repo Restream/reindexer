@@ -52,7 +52,7 @@ public:
 	IDataHolder::MergeData mergeResults(std::vector<TextSearchResults>& rawResults, const std::vector<size_t>& synonymsBounds,
 										bool inTransaction, FtMergeStatuses::Statuses mergeStatuses, const RdxContext&);
 	void mergeItaration(const TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
-						std::vector<IDataHolder::MergeInfo>& merged, std::vector<MergedIdRel>& merged_rd, std::vector<int16_t>& idoffsets,
+						std::vector<IDataHolder::MergeInfo>& merged, std::vector<MergedIdRel>& merged_rd, std::vector<uint16_t>& idoffsets,
 						std::vector<bool>& curExists, bool hasBeenAnd, bool inTransaction, const RdxContext&);
 
 	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);

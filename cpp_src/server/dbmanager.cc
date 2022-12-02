@@ -2,6 +2,7 @@
 #include <mutex>
 
 #include <thread>
+#include "client/reindexerconfig.h"
 #include "dbmanager.h"
 #include "estl/smart_lock.h"
 #include "gason/gason.h"
@@ -115,7 +116,7 @@ Error DBManager::loadOrCreateDatabase(const std::string &dbName, bool allowDBErr
 	std::string storagePath = !dbpath_.empty() ? fs::JoinPath(dbpath_, dbName) : "";
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
-	auto db = std::unique_ptr<reindexer::Reindexer>(new reindexer::Reindexer(clientsStats_));
+	auto db = std::make_unique<reindexer::Reindexer>(reindexer::ReindexerConfig().WithClientStats(clientsStats_));
 	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
 	switch (storageType_) {
 		case datastorage::StorageType::LevelDB:

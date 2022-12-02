@@ -154,25 +154,18 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			case TAG_ARRAY: {
 				int count = rdser.GetVarUint();
 				if (visible) {
-					switch (pl->Type().Field(tagField).Type()) {
-						case KeyValueBool:
-							builder.Array(tagName, pl->GetArray<bool>(tagField).subspan((*cnt), count), *cnt);
-							break;
-						case KeyValueInt:
-							builder.Array(tagName, pl->GetArray<int>(tagField).subspan((*cnt), count), *cnt);
-							break;
-						case KeyValueInt64:
-							builder.Array(tagName, pl->GetArray<int64_t>(tagField).subspan((*cnt), count), *cnt);
-							break;
-						case KeyValueDouble:
-							builder.Array(tagName, pl->GetArray<double>(tagField).subspan((*cnt), count), *cnt);
-							break;
-						case KeyValueString:
+					pl->Type().Field(tagField).Type().EvaluateOneOf(
+						[&](KeyValueType::Bool) { builder.Array(tagName, pl->GetArray<bool>(tagField).subspan((*cnt), count), *cnt); },
+						[&](KeyValueType::Int) { builder.Array(tagName, pl->GetArray<int>(tagField).subspan((*cnt), count), *cnt); },
+						[&](KeyValueType::Int64) { builder.Array(tagName, pl->GetArray<int64_t>(tagField).subspan((*cnt), count), *cnt); },
+						[&](KeyValueType::Double) { builder.Array(tagName, pl->GetArray<double>(tagField).subspan((*cnt), count), *cnt); },
+						[&](KeyValueType::String) {
 							builder.Array(tagName, pl->GetArray<p_string>(tagField).subspan((*cnt), count), *cnt);
-							break;
-						default:
-							std::abort();
-					}
+						},
+						[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite>) noexcept {
+							assertrx(0);
+							abort();
+						});
 				}
 				(*cnt) += count;
 				break;
@@ -198,7 +191,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				} else if (visible) {
 					builder.Array(tagName, rdser, atag.Tag(), atag.Count());
 				} else {
-					for (int i = 0; i < atag.Count(); i++) rdser.GetRawVariant(KeyValueType(atag.Tag()));
+					for (int i = 0; i < atag.Count(); i++) rdser.GetRawVariant(KeyValueType::FromNumber(atag.Tag()));
 				}
 				break;
 			}
@@ -210,7 +203,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				break;
 			}
 			default: {
-				Variant value = rdser.GetRawVariant(KeyValueType(tagType));
+				Variant value = rdser.GetRawVariant(KeyValueType::FromNumber(tagType));
 				if (visible) builder.Put(tagName, value);
 			}
 		}
@@ -261,7 +254,7 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload* pl, Serializer& rdser)
 					}
 				} else {
 					for (int i = 0; i < atag.Count(); i++) {
-						rdser.GetRawVariant(KeyValueType(atag.Tag()));
+						rdser.GetRawVariant(KeyValueType::FromNumber(atag.Tag()));
 					}
 				}
 				break;
@@ -273,7 +266,7 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload* pl, Serializer& rdser)
 				break;
 			}
 			default: {
-				rdser.GetRawVariant(KeyValueType(tagType));
+				rdser.GetRawVariant(KeyValueType::FromNumber(tagType));
 			}
 		}
 	}

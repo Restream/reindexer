@@ -224,6 +224,11 @@ type OptionReindexerInstance struct {
 	Instance uintptr
 }
 
+type OptionBuiltinAllocatorConfig struct {
+	AllocatorCacheLimit   int64
+	AllocatorMaxCachePart float32
+}
+
 type OptionCgoLimit struct {
 	CgoLimit int
 }

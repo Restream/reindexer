@@ -46,7 +46,7 @@ if (ENABLE_GRPC)
 endif()
 
 set (GTEST_TIMEOUT 600)
-if (WITH_ASAN)
+if (WITH_ASAN OR WITH_TSAN)
   set (GTEST_TIMEOUT 1200)
 endif()
 

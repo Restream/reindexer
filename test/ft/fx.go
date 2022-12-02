@@ -13,6 +13,8 @@ var dsnSlave = flag.String("dsnslave", "", "reindex slave db dsn")
 var slaveCount = flag.Int("slavecount", 1, "reindex slave db count")
 var benchmarkSeedCount = flag.Int("seedcount", 500000, "count of items for benchmark seed")
 var benchmarkSeedCPU = flag.Int("seedcpu", 1, "number threads of for seeding")
+var saveTestArtifacts = flag.Bool("testartifacts", false, "save test artifact files")
+var qualityCheck = flag.Bool("qualitycheck", false, "count of items for benchmark seed")
 
 func TestMain(m *testing.M) {
 	flag.Parse()

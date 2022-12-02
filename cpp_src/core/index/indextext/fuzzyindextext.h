@@ -46,7 +46,7 @@ protected:
 	void CreateConfig(const FtFuzzyConfig* cfg = nullptr);
 
 	search_engine::SearchEngine engine_;
-	vector<VDocEntry> vdocs_;
+	std::vector<VDocEntry> vdocs_;
 };
 
 std::unique_ptr<Index> FuzzyIndexText_New(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields);

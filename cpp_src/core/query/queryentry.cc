@@ -70,7 +70,7 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 						throw Error(errLogic, "Condition DWithin must have exact 2 value, but %d values was provided", entry.values.size());
 					}
 					ser.PutVarUint(3);
-					if (entry.values[0].Type() == KeyValueTuple) {
+					if (entry.values[0].Type().Is<KeyValueType::Tuple>()) {
 						const Point point = static_cast<Point>(entry.values[0]);
 						ser.PutDouble(point.x);
 						ser.PutDouble(point.y);
@@ -154,7 +154,7 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 bool QueryEntries::checkIfSatisfyCondition(const QueryEntry &qEntry, const ConstPayload &pl, TagsMatcher &tagsMatcher) {
 	VariantArray values;
 	if (qEntry.idxNo == IndexValueType::SetByJsonPath) {
-		pl.GetByJsonPath(qEntry.index, tagsMatcher, values, KeyValueUndefined);
+		pl.GetByJsonPath(qEntry.index, tagsMatcher, values, KeyValueType::Undefined{});
 	} else {
 		pl.Get(qEntry.idxNo, values);
 	}
@@ -164,13 +164,13 @@ bool QueryEntries::checkIfSatisfyCondition(const QueryEntry &qEntry, const Const
 bool QueryEntries::checkIfSatisfyCondition(const BetweenFieldsQueryEntry &qEntry, const ConstPayload &pl, TagsMatcher &tagsMatcher) {
 	VariantArray lValues;
 	if (qEntry.firstIdxNo == IndexValueType::SetByJsonPath) {
-		pl.GetByJsonPath(qEntry.firstIndex, tagsMatcher, lValues, KeyValueUndefined);
+		pl.GetByJsonPath(qEntry.firstIndex, tagsMatcher, lValues, KeyValueType::Undefined{});
 	} else {
 		pl.Get(qEntry.firstIdxNo, lValues);
 	}
 	VariantArray rValues;
 	if (qEntry.secondIdxNo == IndexValueType::SetByJsonPath) {
-		pl.GetByJsonPath(qEntry.secondIndex, tagsMatcher, rValues, KeyValueUndefined);
+		pl.GetByJsonPath(qEntry.secondIndex, tagsMatcher, rValues, KeyValueType::Undefined{});
 	} else {
 		pl.Get(qEntry.secondIdxNo, rValues);
 	}
@@ -235,12 +235,12 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 			if (rValues.size() != 1) {
 				throw Error(errLogic, "Condition LIKE must have exact 1 value, but %d values was provided", rValues.size());
 			}
-			if (rValues[0].Type() != KeyValueString) {
-				throw Error(errLogic, "Condition LIKE must have value of string type, but %d value was provided", rValues[0].Type());
+			if (!rValues[0].Type().Is<KeyValueType::String>()) {
+				throw Error(errLogic, "Condition LIKE must have value of string type, but %s value was provided", rValues[0].Type().Name());
 			}
 			for (const auto &v : lValues) {
-				if (v.Type() != KeyValueString) {
-					throw Error(errLogic, "Condition LIKE must be applied to data of string type, but %d was provided", v.Type());
+				if (!v.Type().Is<KeyValueType::String>()) {
+					throw Error(errLogic, "Condition LIKE must be applied to data of string type, but %s was provided", v.Type().Name());
 				}
 				if (matchLikePattern(std::string_view(v), std::string_view(rValues[0]))) return true;
 			}
@@ -251,7 +251,7 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 			}
 			Point point;
 			double distance;
-			if (rValues[0].Type() == KeyValueTuple) {
+			if (rValues[0].Type().Is<KeyValueType::Tuple>()) {
 				point = rValues[0].As<Point>();
 				distance = rValues[1].As<double>();
 			} else {

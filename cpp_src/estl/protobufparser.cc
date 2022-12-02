@@ -13,12 +13,12 @@ ProtobufValue ProtobufParser::ReadValue() {
 	TagsPath currPath{object_.tagsPath};
 	currPath.push_back(tagName);
 	KeyValueType itemType = object_.schema.GetFieldType(currPath, isArray);
-	if (itemType == KeyValueUndefined) {
-		throw Error(errParseProtobuf, "Field [%d] type is unknown: [%d]", tagName, itemType);
+	if (itemType.Is<KeyValueType::Undefined>()) {
+		throw Error(errParseProtobuf, "Field [%d] type is unknown: [%s]", tagName, itemType.Name());
 	}
 	switch (tagType) {
 		case PBUF_TYPE_VARINT:
-			if (itemType == KeyValueBool) {
+			if (itemType.Is<KeyValueType::Bool>()) {
 				return {Variant(bool(object_.ser.GetVarUint())), tagName, itemType, isArray};
 			} else {
 				return {Variant(int64_t(object_.ser.GetVarUint())), tagName, itemType, isArray};
@@ -33,30 +33,19 @@ ProtobufValue ProtobufParser::ReadValue() {
 	}
 }
 
-Variant ProtobufParser::ReadArrayItem(int fieldType) {
-	Variant v;
-	switch (fieldType) {
-		case KeyValueInt64:
-			v = Variant(int64_t(object_.ser.GetVarUint()));
-			break;
-		case KeyValueInt:
-			v = Variant(int(object_.ser.GetVarUint()));
-			break;
-		case KeyValueDouble:
-			v = Variant(object_.ser.GetDouble());
-			break;
-		case KeyValueBool:
-			v = Variant(object_.ser.GetBool());
-			break;
-		default:
-			throw Error(errParseProtobuf, "Error parsing packed indexed array: unexpected type [%d]", fieldType);
-	}
-	return v;
+Variant ProtobufParser::ReadArrayItem(KeyValueType fieldType) {
+	return fieldType.EvaluateOneOf(
+		[&](KeyValueType::Int64) { return Variant(int64_t(object_.ser.GetVarUint())); },
+		[&](KeyValueType::Int) { return Variant(int(object_.ser.GetVarUint())); },
+		[&](KeyValueType::Double) { return Variant(object_.ser.GetDouble()); },
+		[&](KeyValueType::Bool) { return Variant(object_.ser.GetBool()); },
+		[&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::String>)
+			-> Variant { throw Error(errParseProtobuf, "Error parsing packed indexed array: unexpected type [%s]", fieldType.Name()); });
 }
 
 bool ProtobufParser::IsEof() const { return !(object_.ser.Pos() < object_.ser.Len()); }
 
-ProtobufValue::ProtobufValue() : value(), tagName(0), itemType(KeyValueUndefined), isArray(false) {}
+ProtobufValue::ProtobufValue() : value(), tagName(0), itemType(KeyValueType::Undefined{}), isArray(false) {}
 ProtobufValue::ProtobufValue(Variant&& _value, int _tagName, KeyValueType _itemType, bool _isArray)
 	: value(std::move(_value)), tagName(_tagName), itemType(_itemType), isArray(_isArray) {}
 

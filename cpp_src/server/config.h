@@ -14,7 +14,14 @@ class Node;
 namespace reindexer_server {
 
 struct ServerConfig {
-	ServerConfig() { Reset(); }
+	ServerConfig(bool tcMallocIsAvailable)
+#ifdef REINDEX_WITH_GPERFTOOLS
+		: tcMallocIsAvailable_(tcMallocIsAvailable)
+#endif
+	{
+		(void)tcMallocIsAvailable;
+		Reset();
+	}
 
 	const std::vector<std::string>& Args() const { return args_; }
 	void Reset();
@@ -58,6 +65,8 @@ struct ServerConfig {
 	std::string GRPCAddr;
 	size_t MaxHttpReqSize;
 	std::chrono::seconds RPCQrIdleTimeout;
+	int64_t AllocatorCacheLimit;
+	float AllocatorCachePart;
 
 	static const std::string kDedicatedThreading;
 	static const std::string kSharedThreading;
@@ -68,6 +77,9 @@ protected:
 
 private:
 	std::vector<std::string> args_;
+#if REINDEX_WITH_GPERFTOOLS
+	bool tcMallocIsAvailable_;
+#endif	// REINDEX_WITH_GPERFTOOLS
 };
 
 }  // namespace reindexer_server

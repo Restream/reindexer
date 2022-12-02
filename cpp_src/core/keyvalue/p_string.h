@@ -48,17 +48,17 @@ struct p_string {
 	constexpr static uint64_t tagShift = 59ULL;
 	constexpr static uint64_t tagMask = 0x7ULL << tagShift;
 
-	explicit p_string(const l_string_hdr *lstr) : v((uintptr_t(lstr) & ~tagMask) | (tagLstr << tagShift)) {}
-	explicit p_string(const v_string_hdr *vstr) : v((uintptr_t(vstr) & ~tagMask) | (tagVstr << tagShift)) {}
-	explicit p_string(const l_msgpack_hdr *mstr) : v((uintptr_t(mstr) & ~tagMask) | (tagMsgPackStr << tagShift)) {}
-	explicit p_string(const char *cstr) : v((uintptr_t(cstr) & ~tagMask) | (tagCstr << tagShift)) {}
-	explicit p_string(const json_string_ftr jstr) : v((uintptr_t(jstr.data) & ~tagMask) | (tagJsonStr << tagShift)) {}
-	explicit p_string(const std::string *str) : v((uintptr_t(str) & ~tagMask) | (tagCxxstr << tagShift)) {}
-	explicit p_string(const key_string &str) : v((uintptr_t(str.get()) & ~tagMask) | (tagKeyString << tagShift)) {}
-	explicit p_string(const std::string_view *ptr) : v((uintptr_t(ptr) & ~tagMask) | (tagSlice << tagShift)) {}
-	p_string() : v(0) {}
+	explicit p_string(const l_string_hdr *lstr) noexcept : v((uintptr_t(lstr) & ~tagMask) | (tagLstr << tagShift)) {}
+	explicit p_string(const v_string_hdr *vstr) noexcept : v((uintptr_t(vstr) & ~tagMask) | (tagVstr << tagShift)) {}
+	explicit p_string(const l_msgpack_hdr *mstr) noexcept : v((uintptr_t(mstr) & ~tagMask) | (tagMsgPackStr << tagShift)) {}
+	explicit p_string(const char *cstr) noexcept : v((uintptr_t(cstr) & ~tagMask) | (tagCstr << tagShift)) {}
+	explicit p_string(const json_string_ftr jstr) noexcept : v((uintptr_t(jstr.data) & ~tagMask) | (tagJsonStr << tagShift)) {}
+	explicit p_string(const std::string *str) noexcept : v((uintptr_t(str) & ~tagMask) | (tagCxxstr << tagShift)) {}
+	explicit p_string(const key_string &str) noexcept : v((uintptr_t(str.get()) & ~tagMask) | (tagKeyString << tagShift)) {}
+	explicit p_string(const std::string_view *ptr) noexcept : v((uintptr_t(ptr) & ~tagMask) | (tagSlice << tagShift)) {}
+	p_string() noexcept : v(0) {}
 
-	operator std::string_view() const {
+	operator std::string_view() const noexcept {
 		switch (type()) {
 			case tagCstr: {
 				const auto str = reinterpret_cast<const char *>(ptr());
@@ -89,7 +89,7 @@ struct p_string {
 				abort();
 		}
 	}
-	const char *data() const {
+	const char *data() const noexcept {
 		switch (type()) {
 			case tagCstr:
 				return reinterpret_cast<const char *>(ptr());
@@ -115,8 +115,8 @@ struct p_string {
 				abort();
 		}
 	}
-	size_t size() const { return length(); }
-	size_t length() const {
+	size_t size() const noexcept { return length(); }
+	size_t length() const noexcept {
 		if (v) {
 			switch (type()) {
 				case tagCstr:
@@ -144,23 +144,23 @@ struct p_string {
 		}
 		return 0;
 	}
-	int compare(p_string other) const {
+	int compare(p_string other) const noexcept {
 		int l1 = length();
 		int l2 = other.length();
 		int res = memcmp(data(), other.data(), std::min(l1, l2));
 		return res ? res : ((l1 < l2) ? -1 : (l1 > l2) ? 1 : 0);
 	}
-	bool operator>(p_string other) const { return compare(other) > 0; }
-	bool operator<(p_string other) const { return compare(other) < 0; }
-	bool operator==(p_string other) const { return compare(other) == 0; }
-	bool operator>=(p_string other) const { return compare(other) >= 0; }
-	bool operator<=(p_string other) const { return compare(other) <= 0; }
-	const std::string *getCxxstr() const {
+	bool operator>(p_string other) const noexcept { return compare(other) > 0; }
+	bool operator<(p_string other) const noexcept { return compare(other) < 0; }
+	bool operator==(p_string other) const noexcept { return compare(other) == 0; }
+	bool operator>=(p_string other) const noexcept { return compare(other) >= 0; }
+	bool operator<=(p_string other) const noexcept { return compare(other) <= 0; }
+	const std::string *getCxxstr() const noexcept {
 		assertrx(type() == tagCxxstr || type() == tagKeyString);
 		return reinterpret_cast<const std::string *>(ptr());
 	}
 
-	key_string getKeyString() const {
+	key_string getKeyString() const noexcept {
 		assertrx(type() == tagKeyString);
 		auto str = reinterpret_cast<base_key_string *>(const_cast<void *>(ptr()));
 		return key_string(str);
@@ -175,7 +175,7 @@ struct p_string {
 		}
 	}
 
-	int type() const { return (v & tagMask) >> tagShift; }
+	int type() const noexcept { return (v & tagMask) >> tagShift; }
 	std::string toString() const { return std::string(data(), length()); }
 	void Dump(std::ostream &os) const;
 
@@ -190,7 +190,7 @@ namespace std {
 template <>
 struct hash<reindexer::p_string> {
 public:
-	size_t operator()(const reindexer::p_string &str) const { return reindexer::_Hash_bytes(str.data(), str.length()); }
+	size_t operator()(const reindexer::p_string &str) const noexcept { return reindexer::_Hash_bytes(str.data(), str.length()); }
 };
 
 }  // namespace std

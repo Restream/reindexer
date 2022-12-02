@@ -126,7 +126,7 @@ void IndexUnordered<T>::delMemStat(typename T::iterator it) {
 template <typename T>
 Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id, bool &clearCache) {
 	// reset cache
-	if (key.Type() == KeyValueNull) {
+	if (key.Type().Is<KeyValueType::Null>()) {
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
 			if (cache_) cache_.reset();
 			clearCache = true;
@@ -152,7 +152,7 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id, bool &clearCach
 
 	addMemStat(keyIt);
 
-	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
+	if (this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() != CollateNone) {
 		return Base::Upsert(key, id, clearCache);
 	}
 
@@ -162,7 +162,7 @@ Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id, bool &clearCach
 template <typename T>
 void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool &clearCache) {
 	int delcnt = 0;
-	if (key.Type() == KeyValueNull) {
+	if (key.Type().Is<KeyValueType::Null>()) {
 		delcnt = this->empty_ids_.Unsorted().Erase(id);
 		assertrx(delcnt);
 		this->isBuilt_ = false;
@@ -189,7 +189,7 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &str
 		this->tracker_.markDeleted(keyIt);
 		if constexpr (is_str_map_v<T>) {
 			idx_map.template erase<StringMapEntryCleaner<true>>(
-				keyIt, {strHolder, this->KeyType() == KeyValueString && this->opts_.GetCollateMode() == CollateNone});
+				keyIt, {strHolder, this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() == CollateNone});
 		} else if constexpr (is_payload_map_v<T>) {
 			idx_map.template erase<DeepClean>(keyIt, strHolder);
 		} else {
@@ -200,7 +200,7 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &str
 		this->tracker_.markUpdated(this->idx_map, keyIt);
 	}
 
-	if (this->KeyType() == KeyValueString && this->opts_.GetCollateMode() != CollateNone) {
+	if (this->KeyType().template Is<KeyValueType::String>() && this->opts_.GetCollateMode() != CollateNone) {
 		Base::Delete(key, id, strHolder, clearCache);
 	}
 }
@@ -249,10 +249,11 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 			break;
 		// Get set of keys or single key
 		case CondEq:
-		case CondSet: {
-			if (condition == CondEq && keys.size() < 1) {
-				throw Error(errParams, "For condition required at least 1 argument, but provided 0");
+			if (keys.size() == 0) {
+				throw Error(errParams, "Condition EQ must have at least 1 argument, but provided 0");
 			}
+			[[fallthrough]];
+		case CondSet: {
 			struct {
 				T *i_map;
 				const VariantArray &keys;

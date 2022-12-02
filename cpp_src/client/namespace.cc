@@ -6,7 +6,10 @@ namespace reindexer {
 namespace client {
 
 Namespace::Namespace(std::string name)
-	: name_(std::move(name)), payloadType_(name_, {PayloadFieldType(KeyValueString, "-tuple", {}, false)}), tagsMatcher_(payloadType_) {}
+	: name_(std::move(name)),
+	  payloadType_(name_, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, false)}),
+	  tagsMatcher_(payloadType_) {}
+
 Item Namespace::NewItem() {
 	shared_lock<shared_timed_mutex> lk(lck_);
 	auto impl = new ItemImpl(payloadType_, tagsMatcher_);

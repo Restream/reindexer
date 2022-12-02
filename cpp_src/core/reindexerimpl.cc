@@ -17,6 +17,7 @@
 #include "queryresults/joinresults.h"
 #include "replicator/replicator.h"
 #include "server/outputparameters.h"
+#include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
@@ -26,9 +27,6 @@
 
 std::once_flag initTerminateHandlerFlag;
 
-using std::lock_guard;
-using std::string;
-using std::vector;
 using namespace std::placeholders;
 using namespace std::string_view_literals;
 
@@ -56,15 +54,22 @@ static unsigned ConcurrentNamespaceLoaders() noexcept {
 	return 10;
 }
 
-ReindexerImpl::ReindexerImpl(IClientsStats* clientsStats)
+ReindexerImpl::ReindexerImpl(ReindexerConfig cfg)
 	: replicator_(new Replicator(this)),
 	  hasReplConfigLoadError_(false),
 	  storageType_(StorageType::LevelDB),
 	  connected_(false),
-	  clientsStats_(clientsStats) {
+	  clientsStats_(cfg.clientsStats) {
 	stopBackgroundThreads_ = false;
 	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfiligConfigLoad, this));
 	backgroundThread_ = std::thread([this]() { this->backgroundRoutine(); });
+
+#ifdef REINDEX_WITH_GPERFTOOLS
+	if (alloc_ext::TCMallocIsAvailable()) {
+		heapWatcher_ = TCMallocHeapWathcher(alloc_ext::instance(), cfg.allocatorCacheLimit, cfg.allocatorCachePart);
+	}
+#endif
+
 	storageFlushingThread_ = std::thread([this]() { this->storageFlushingRoutine(); });
 	std::call_once(initTerminateHandlerFlag, []() {
 		debug::terminate_handler_init();
@@ -79,7 +84,7 @@ ReindexerImpl::~ReindexerImpl() {
 	replicator_->Stop();
 }
 
-Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlaceholderCheck, const InternalRdxContext& ctx) {
+Error ReindexerImpl::EnableStorage(const std::string& storagePath, bool skipPlaceholderCheck, const InternalRdxContext& ctx) {
 	if (!storagePath_.empty()) {
 		return Error(errParams, "Storage already enabled");
 	}
@@ -89,7 +94,7 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 		return Error(errParams, "Can't create directory '%s' for reindexer storage - reason %s", storagePath, strerror(errno));
 	}
 
-	vector<fs::DirEntry> dirEntries;
+	std::vector<fs::DirEntry> dirEntries;
 	bool isEmpty = true;
 	bool isHaveConfig = false;
 	if (fs::ReadDir(storagePath, dirEntries) < 0) {
@@ -152,7 +157,7 @@ Error ReindexerImpl::EnableStorage(const string& storagePath, bool skipPlacehold
 	return res;
 }
 
-Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
+Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 	auto checkReplConf = [this](const ConnectOpts& opts) {
 		if (opts.HasExpectedClusterID()) {
 			auto replConfig = configProvider_.GetReplicationConfig();
@@ -169,12 +174,12 @@ Error ReindexerImpl::Connect(const string& dsn, ConnectOpts opts) {
 	if (connected_.load(std::memory_order_relaxed)) {
 		return checkReplConf(opts);
 	}
-	string path = dsn;
+	std::string path = dsn;
 	if (dsn.compare(0, 10, "builtin://") == 0) {
 		path = dsn.substr(10);
 	}
 
-	vector<reindexer::fs::DirEntry> foundNs;
+	std::vector<reindexer::fs::DirEntry> foundNs;
 
 	switch (opts.StorageType()) {
 		case kStorageTypeOptLevelDB:
@@ -323,7 +328,7 @@ Error ReindexerImpl::OpenNamespace(std::string_view name, const StorageOpts& sto
 		if (!validateObjectName(name, false)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
-		string nameStr(name);
+		std::string nameStr(name);
 		auto ns = std::make_shared<Namespace>(nameStr, observers_);
 		if (storageOpts.IsSlaveMode()) ns->setSlaveMode(rdxCtx);
 		if (storageOpts.IsEnabled() && !storagePath_.empty()) {
@@ -335,7 +340,7 @@ Error ReindexerImpl::OpenNamespace(std::string_view name, const StorageOpts& sto
 			ns->OnConfigUpdated(configProvider_, rdxCtx);
 		}
 		{
-			lock_guard<shared_timed_mutex> lock(mtx_);
+			std::lock_guard<shared_timed_mutex> lock(mtx_);
 			namespaces_.insert({nameStr, ns});
 		}
 		observers_.OnWALUpdate(LSNPair(), name, WALRecord(WalNamespaceAdd));
@@ -686,21 +691,21 @@ Error ReindexerImpl::RollBackTransaction(Transaction& tr) {
 	return errOK;
 }
 
-Error ReindexerImpl::GetMeta(std::string_view nsName, const string& key, string& data, const InternalRdxContext& ctx) {
+Error ReindexerImpl::GetMeta(std::string_view nsName, const std::string& key, std::string& data, const InternalRdxContext& ctx) {
 	const auto makeCtxStr = [nsName, &key](WrSerializer& ser) -> WrSerializer& {
 		return ser << "SELECT META FROM " << nsName << " WHERE KEY = '" << key << '\'';
 	};
 	return applyNsFunction<&Namespace::GetMeta>(nsName, ctx, makeCtxStr, data, key);
 }
 
-Error ReindexerImpl::PutMeta(std::string_view nsName, const string& key, std::string_view data, const InternalRdxContext& ctx) {
+Error ReindexerImpl::PutMeta(std::string_view nsName, const std::string& key, std::string_view data, const InternalRdxContext& ctx) {
 	const auto makeCtxStr = [nsName, data, &key](WrSerializer& ser) -> WrSerializer& {
 		return ser << "UPDATE " << nsName << " SET META = '" << data << "' WHERE KEY = '" << key << '\'';
 	};
 	return applyNsFunction<&Namespace::PutMeta>(nsName, ctx, makeCtxStr, key, data);
 }
 
-Error ReindexerImpl::EnumMeta(std::string_view nsName, vector<string>& keys, const InternalRdxContext& ctx) {
+Error ReindexerImpl::EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const InternalRdxContext& ctx) {
 	const auto makeCtxStr = [nsName](WrSerializer& ser) -> WrSerializer& { return ser << "SELECT META FROM " << nsName; };
 	return applyNsFunction<&Namespace::EnumMeta>(nsName, ctx, makeCtxStr, keys);
 }
@@ -796,10 +801,10 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 			std::chrono::microseconds(profilingCfg.queriedThresholdUS), profilingCfg.queriesPerfStats);
 
 		if (q._namespace.size() && q._namespace[0] == '#') {
-			string filterNsName;
+			std::string filterNsName;
 			if (q.entries.Size() == 1 && q.entries.HoldsOrReferTo<QueryEntry>(0)) {
 				const QueryEntry entry = q.entries.Get<QueryEntry>(0);
-				if (entry.condition == CondEq && entry.values.size() == 1) filterNsName = entry.values[0].As<string>();
+				if (entry.condition == CondEq && entry.values.size() == 1) filterNsName = entry.values[0].As<std::string>();
 			}
 
 			syncSystemNamespaces(q._namespace, filterNsName, rdxCtx);
@@ -882,7 +887,7 @@ void ReindexerImpl::prepareJoinResults(const Query& q, QueryResults& result) {
 }
 template <typename T>
 JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func,
-													  vector<QueryResultsContext>& queryResultsContexts, const RdxContext& rdxCtx) {
+													  std::vector<QueryResultsContext>& queryResultsContexts, const RdxContext& rdxCtx) {
 	JoinedSelectors joinedSelectors;
 	if (q.joinQueries_.empty()) return joinedSelectors;
 	auto ns = locks.Get(q._namespace);
@@ -987,7 +992,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 	if (!ns) {
 		throw Error(errParams, "Namespace '%s' is not exists", q._namespace);
 	}
-	vector<QueryResultsContext> joinQueryResultsContexts;
+	std::vector<QueryResultsContext> joinQueryResultsContexts;
 	// should be destroyed after results.lockResults()
 	JoinedSelectors mainJoinedSelectors = prepareJoinedSelectors(q, result, locks, func, joinQueryResultsContexts, ctx);
 	prepareJoinResults(q, result);
@@ -1004,7 +1009,7 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 	}
 
 	// should be destroyed after results.lockResults()
-	vector<JoinedSelectors> mergeJoinedSelectors;
+	std::vector<JoinedSelectors> mergeJoinedSelectors;
 	if (!q.mergeQueries_.empty()) {
 		mergeJoinedSelectors.reserve(q.mergeQueries_.size());
 		uint8_t counter = 0;
@@ -1135,15 +1140,15 @@ std::vector<std::pair<std::string, Namespace::Ptr>> ReindexerImpl::getNamespaces
 	return ret;
 }
 
-std::vector<string> ReindexerImpl::getNamespacesNames(const RdxContext& ctx) {
+std::vector<std::string> ReindexerImpl::getNamespacesNames(const RdxContext& ctx) {
 	SLock lock(mtx_, &ctx);
-	std::vector<string> ret;
+	std::vector<std::string> ret;
 	ret.reserve(namespaces_.size());
 	for (auto& ns : namespaces_) ret.push_back(ns.first);
 	return ret;
 }
 
-Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx) {
+Error ReindexerImpl::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespacesOpts opts, const InternalRdxContext& ctx) {
 	logPrintf(LogTrace, "ReindexerImpl::EnumNamespaces (%d,%s)", opts.options_, opts.filter_);
 	try {
 		const auto rdxCtx = ctx.CreateRdxContext("SELECT NAMESPACES", activities_);
@@ -1160,7 +1165,7 @@ Error ReindexerImpl::EnumNamespaces(vector<NamespaceDef>& defs, EnumNamespacesOp
 		}
 
 		if (opts.IsWithClosed() && !storagePath_.empty()) {
-			vector<fs::DirEntry> dirs;
+			std::vector<fs::DirEntry> dirs;
 			if (fs::ReadDir(storagePath_, dirs) != 0) return Error(errLogic, "Could not read database dir");
 
 			for (auto& d : dirs) {
@@ -1220,22 +1225,55 @@ void ReindexerImpl::backgroundRoutine() {
 
 void ReindexerImpl::storageFlushingRoutine() {
 	static const RdxContext dummyCtx;
+	struct ErrorInfo {
+		Error lastError;
+		uint64_t skipedErrorMsgs = 0;
+	};
+	std::unordered_map<std::string, ErrorInfo> errors;
 	auto nsFlush = [&]() {
 		auto nsarray = getNamespacesNames(dummyCtx);
+		std::unordered_map<std::string, ErrorInfo> newErrors;
 		for (const auto& name : nsarray) {
 			try {
 				auto ns = getNamespace(name, dummyCtx);
 				ns->StorageFlushingRoutine();
-			} catch (Error err) {
-				logPrintf(LogWarning, "storageFlushingRoutine() failed: %s", err.what());
+			} catch (Error& err) {
+				bool printMsg = false;
+				auto found = errors.find(name);
+				ErrorInfo* errInfo = nullptr;
+				if (found != errors.end()) {
+					auto bucket = errors.extract(found);
+					errInfo = &bucket.mapped();
+					newErrors.insert(std::move(bucket));
+				} else {
+					errInfo = &newErrors[name];
+				}
+				if (errInfo->lastError != err) {
+					printMsg = true;
+					errInfo->lastError = std::move(err);
+				} else if (++errInfo->skipedErrorMsgs % 1000 == 0) {
+					printMsg = true;
+				}
+				if (printMsg) {
+					if (errInfo->skipedErrorMsgs) {
+						logPrintf(LogWarning, "storageFlushingRoutine() failed: '%s' (%d successive errors on ns '%s')",
+								  errInfo->lastError.what(), errInfo->skipedErrorMsgs + 1, name);
+					} else {
+						logPrintf(LogWarning, "storageFlushingRoutine() failed: '%s'", errInfo->lastError.what(), name);
+					}
+				}
 			} catch (...) {
-				logPrintf(LogWarning, "storageFlushingRoutine() failed with ns: %s", name);
+				logPrintf(LogWarning, "storageFlushingRoutine() failed with ns: '%s'", name);
 			}
 		}
+		errors = std::move(newErrors);
 	};
 
 	while (!stopBackgroundThreads_) {
 		nsFlush();
+#ifdef REINDEX_WITH_GPERFTOOLS
+		this->heapWatcher_.CheckHeapUsagePeriodic();
+#endif
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
 
@@ -1389,7 +1427,7 @@ void ReindexerImpl::updateReplicationConfFile() {
 	WrSerializer ser;
 	auto oldReplConf = configProvider_.GetReplicationConfig();
 	oldReplConf.GetYAML(ser);
-	auto err = replConfigFileChecker_.RewriteFile(std::string(ser.Slice()), [&oldReplConf](const string& content) {
+	auto err = replConfigFileChecker_.RewriteFile(std::string(ser.Slice()), [&oldReplConf](const std::string& content) {
 		ReplicationConfigData replConf;
 		Error err = replConf.FromYML(content);
 		if (err.ok()) {
@@ -1408,7 +1446,8 @@ void ReindexerImpl::syncSystemNamespaces(std::string_view sysNsName, std::string
 	WrSerializer ser;
 	const auto activityCtx = ctx.OnlyActivity();
 
-	auto forEachNS = [&](const Namespace::Ptr& sysNs, bool withSystem, const std::function<bool(std::pair<string, Namespace::Ptr> & nspair)>& filler) {
+	auto forEachNS = [&](const Namespace::Ptr& sysNs, bool withSystem,
+						 const std::function<bool(std::pair<std::string, Namespace::Ptr> & nspair)>& filler) {
 		std::vector<Item> items;
 		items.reserve(nsarray.size());
 		for (auto& nspair : nsarray) {
@@ -1429,7 +1468,7 @@ void ReindexerImpl::syncSystemNamespaces(std::string_view sysNsName, std::string
 	ProfilingConfigData profilingCfg = configProvider_.GetProfilingConfig();
 
 	if (profilingCfg.perfStats && sysNsName == kPerfStatsNamespace) {
-		forEachNS(getNamespace(kPerfStatsNamespace, ctx), false, [&](std::pair<string, Namespace::Ptr>& nspair) {
+		forEachNS(getNamespace(kPerfStatsNamespace, ctx), false, [&](std::pair<std::string, Namespace::Ptr>& nspair) {
 			auto stats = nspair.second->GetPerfStat(ctx);
 			bool notRenamed = (stats.name == nspair.first);
 			if (notRenamed) stats.GetJSON(ser);
@@ -1438,7 +1477,7 @@ void ReindexerImpl::syncSystemNamespaces(std::string_view sysNsName, std::string
 	}
 
 	if (profilingCfg.memStats && sysNsName == kMemStatsNamespace) {
-		forEachNS(getNamespace(kMemStatsNamespace, ctx), false, [&](std::pair<string, Namespace::Ptr>& nspair) {
+		forEachNS(getNamespace(kMemStatsNamespace, ctx), false, [&](std::pair<std::string, Namespace::Ptr>& nspair) {
 			auto stats = nspair.second->GetMemStat(ctx);
 			bool notRenamed = (stats.name == nspair.first);
 			if (notRenamed) stats.GetJSON(ser);
@@ -1447,7 +1486,7 @@ void ReindexerImpl::syncSystemNamespaces(std::string_view sysNsName, std::string
 	}
 
 	if (sysNsName == kNamespacesNamespace) {
-		forEachNS(getNamespace(kNamespacesNamespace, ctx), true, [&](std::pair<string, Namespace::Ptr>& nspair) {
+		forEachNS(getNamespace(kNamespacesNamespace, ctx), true, [&](std::pair<std::string, Namespace::Ptr>& nspair) {
 			auto stats = nspair.second->GetDefinition(ctx);
 			bool notRenamed = (stats.name == nspair.first);
 			if (notRenamed) stats.GetJSON(ser, kIndexJSONWithDescribe);
@@ -1528,7 +1567,7 @@ Error ReindexerImpl::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesF
 
 Error ReindexerImpl::UnsubscribeUpdates(IUpdatesObserver* observer) { return observers_.Delete(observer); }
 
-Error ReindexerImpl::GetSqlSuggestions(const std::string_view sqlQuery, int pos, vector<string>& suggestions,
+Error ReindexerImpl::GetSqlSuggestions(const std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions,
 									   const InternalRdxContext& ctx) {
 	Query query;
 	SQLSuggester suggester(query);
@@ -1551,7 +1590,7 @@ Error ReindexerImpl::GetSqlSuggestions(const std::string_view sqlQuery, int pos,
 	return errOK;
 }
 
-Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, vector<string>& namespaces) {
+Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::string>& namespaces) {
 	struct NsInfo {
 		std::string nsName, objName;
 		int nsNumber;
@@ -1559,7 +1598,7 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, vector<string>& namesp
 
 	std::vector<NsInfo> nses;
 	nses.reserve(namespaces.size());
-	for (const string& ns : namespaces) {
+	for (const std::string& ns : namespaces) {
 		nses.push_back({ns, std::string(), 0});
 	}
 
@@ -1597,7 +1636,7 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, vector<string>& namesp
 	schemaBuilder.Object(0, "ItemsUnion", false, [&](ProtobufSchemaBuilder& obj) {
 		ser << "oneof item {\n";
 		for (auto& ns : nses) {
-			obj.Field(ns.nsName, ns.nsNumber, FieldProps{KeyValueTuple, false, false, false, ns.objName});
+			obj.Field(ns.nsName, ns.nsNumber, FieldProps{KeyValueType::Tuple{}, false, false, false, ns.objName});
 		}
 		ser << "}\n";
 	});
@@ -1607,41 +1646,44 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, vector<string>& namesp
 	ser << "// - GET/POST api/v1/db/:db/query\n";
 	ser << "// - GET/POST api/v1/db/:db/sqlquery\n";
 	schemaBuilder.Object(0, "QueryResults", false, [](ProtobufSchemaBuilder& obj) {
-		obj.Field(kParamItems, kProtoQueryResultsFields.at(kParamItems), FieldProps{KeyValueTuple, true, false, false, "ItemsUnion"});
-		obj.Field(kParamNamespaces, kProtoQueryResultsFields.at(kParamNamespaces), FieldProps{KeyValueString, true});
-		obj.Field(kParamCacheEnabled, kProtoQueryResultsFields.at(kParamCacheEnabled), FieldProps{KeyValueBool});
-		obj.Field(kParamExplain, kProtoQueryResultsFields.at(kParamExplain), FieldProps{KeyValueString});
-		obj.Field(kParamTotalItems, kProtoQueryResultsFields.at(kParamTotalItems), FieldProps{KeyValueInt});
-		obj.Field(kParamQueryTotalItems, kProtoQueryResultsFields.at(kParamQueryTotalItems), FieldProps{KeyValueInt});
+		obj.Field(kParamItems, kProtoQueryResultsFields.at(kParamItems),
+				  FieldProps{KeyValueType::Tuple{}, true, false, false, "ItemsUnion"});
+		obj.Field(kParamNamespaces, kProtoQueryResultsFields.at(kParamNamespaces), FieldProps{KeyValueType::String{}, true});
+		obj.Field(kParamCacheEnabled, kProtoQueryResultsFields.at(kParamCacheEnabled), FieldProps{KeyValueType::Bool{}});
+		obj.Field(kParamExplain, kProtoQueryResultsFields.at(kParamExplain), FieldProps{KeyValueType::String{}});
+		obj.Field(kParamTotalItems, kProtoQueryResultsFields.at(kParamTotalItems), FieldProps{KeyValueType::Int{}});
+		obj.Field(kParamQueryTotalItems, kProtoQueryResultsFields.at(kParamQueryTotalItems), FieldProps{KeyValueType::Int{}});
 
 		obj.Object(kProtoQueryResultsFields.at(kParamColumns), "Columns", false, [](ProtobufSchemaBuilder& obj) {
-			obj.Field(kParamName, kProtoColumnsFields.at(kParamName), FieldProps{KeyValueString});
-			obj.Field(kParamWidthPercents, kProtoColumnsFields.at(kParamWidthPercents), FieldProps{KeyValueDouble});
-			obj.Field(kParamMaxChars, kProtoColumnsFields.at(kParamMaxChars), FieldProps{KeyValueInt});
-			obj.Field(kParamWidthChars, kProtoColumnsFields.at(kParamWidthChars), FieldProps{KeyValueInt});
+			obj.Field(kParamName, kProtoColumnsFields.at(kParamName), FieldProps{KeyValueType::String{}});
+			obj.Field(kParamWidthPercents, kProtoColumnsFields.at(kParamWidthPercents), FieldProps{KeyValueType::Double{}});
+			obj.Field(kParamMaxChars, kProtoColumnsFields.at(kParamMaxChars), FieldProps{KeyValueType::Int{}});
+			obj.Field(kParamWidthChars, kProtoColumnsFields.at(kParamWidthChars), FieldProps{KeyValueType::Int{}});
 		});
 
-		obj.Field(kParamColumns, kProtoQueryResultsFields.at(kParamColumns), FieldProps{KeyValueTuple, true, false, false, "Columns"});
+		obj.Field(kParamColumns, kProtoQueryResultsFields.at(kParamColumns),
+				  FieldProps{KeyValueType::Tuple{}, true, false, false, "Columns"});
 
 		AggregationResult::GetProtobufSchema(obj);
 		obj.Field(kParamAggregations, kProtoQueryResultsFields.at(kParamAggregations),
-				  FieldProps{KeyValueTuple, true, false, false, "AggregationResults"});
+				  FieldProps{KeyValueType::Tuple{}, true, false, false, "AggregationResults"});
 	});
 
 	ser << "// The ModifyResults message is schema of http API methods response:\n";
 	ser << "// - PUT/POST/DELETE api/v1/db/:db/namespaces/:ns/items\n";
 	schemaBuilder.Object(0, "ModifyResults", false, [](ProtobufSchemaBuilder& obj) {
-		obj.Field(kParamItems, kProtoModifyResultsFields.at(kParamItems), FieldProps{KeyValueTuple, true, false, false, "ItemsUnion"});
-		obj.Field(kParamUpdated, kProtoModifyResultsFields.at(kParamUpdated), FieldProps{KeyValueInt});
-		obj.Field(kParamSuccess, kProtoModifyResultsFields.at(kParamSuccess), FieldProps{KeyValueBool});
+		obj.Field(kParamItems, kProtoModifyResultsFields.at(kParamItems),
+				  FieldProps{KeyValueType::Tuple{}, true, false, false, "ItemsUnion"});
+		obj.Field(kParamUpdated, kProtoModifyResultsFields.at(kParamUpdated), FieldProps{KeyValueType::Int{}});
+		obj.Field(kParamSuccess, kProtoModifyResultsFields.at(kParamSuccess), FieldProps{KeyValueType::Bool{}});
 	});
 
 	ser << "// The ErrorResponse message is schema of http API methods response on error condition \n";
 	ser << "// With non 200 http status code\n";
 	schemaBuilder.Object(0, "ErrorResponse", false, [](ProtobufSchemaBuilder& obj) {
-		obj.Field(kParamSuccess, kProtoErrorResultsFields.at(kParamSuccess), FieldProps{KeyValueBool});
-		obj.Field(kParamResponseCode, kProtoErrorResultsFields.at(kParamResponseCode), FieldProps{KeyValueInt});
-		obj.Field(kParamDescription, kProtoErrorResultsFields.at(kParamDescription), FieldProps{KeyValueString});
+		obj.Field(kParamSuccess, kProtoErrorResultsFields.at(kParamSuccess), FieldProps{KeyValueType::Bool{}});
+		obj.Field(kParamResponseCode, kProtoErrorResultsFields.at(kParamResponseCode), FieldProps{KeyValueType::Int{}});
+		obj.Field(kParamDescription, kProtoErrorResultsFields.at(kParamDescription), FieldProps{KeyValueType::String{}});
 	});
 	schemaBuilder.End();
 	return errOK;

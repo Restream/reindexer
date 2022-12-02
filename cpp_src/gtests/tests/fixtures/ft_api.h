@@ -308,9 +308,11 @@ public:
 			ADD_FAILURE() << "Query: " << query;
 		}
 	}
-	FTApi() {}
 
 protected:
+	static constexpr int kMaxMergeLimitValue = 65000;
+	static constexpr int kMinMergeLimitValue = 0;
+
 	struct Data {
 		std::string ft1;
 		std::string ft2;

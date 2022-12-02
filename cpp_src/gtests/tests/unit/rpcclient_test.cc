@@ -323,7 +323,7 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 	static const std::string kNamespaceName = "MyNamespace";
 	static constexpr size_t kCorCount = 16;
 	static constexpr size_t kQueriesCount = 3;
-	static constexpr std::chrono::seconds kSelectDelay{3};
+	static constexpr std::chrono::seconds kSelectDelay{5};
 	RPCServerConfig conf;
 	conf.loginDelay = std::chrono::seconds(0);
 	conf.selectDelay = kSelectDelay;

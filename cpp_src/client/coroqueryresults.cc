@@ -51,7 +51,6 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id) {
 			PayloadType("tmp").clone()->deserialize(ser);
 		});
 	} catch (const Error &err) {
-		assertrx(false);
 		status_ = err;
 	}
 

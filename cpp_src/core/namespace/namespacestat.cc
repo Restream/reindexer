@@ -19,6 +19,8 @@ void NamespaceMemStat::GetJSON(WrSerializer &ser) {
 
 	builder.Put("strings_waiting_to_be_deleted_size", stringsWaitingToBeDeletedSize);
 	builder.Put("storage_ok", storageOK);
+	builder.Put("storage_status", storageStatus);
+	builder.Put("storage_enabled", storageEnabled);
 	builder.Put("storage_path", storagePath);
 
 	builder.Put("storage_loaded", storageLoaded);

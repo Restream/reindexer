@@ -16,9 +16,9 @@ namespace reindexer {
 std::string escapeString(std::string_view str);
 std::string unescapeString(std::string_view str);
 
-static inline bool isalpha(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
-static inline bool isdigit(char c) { return (c >= '0' && c <= '9'); }
-static inline char tolower(char c) { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
+inline bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
+inline bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
+inline char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
 std::string toLower(std::string_view src);
 inline std::string_view skipSpace(std::string_view str) {
 	size_t i = 0;
@@ -33,7 +33,7 @@ Container& split(const typename Container::value_type& str, const std::string& d
 
 	for (size_t pos, lastPos = 0;; lastPos = pos + 1) {
 		pos = str.find_first_of(delimiters, lastPos);
-		if (pos == std::string::npos) {
+		if (pos == Container::value_type::npos) {
 			pos = str.length();
 			if (pos != lastPos || !trimEmpty) tokens.push_back(str.substr(lastPos, pos - lastPos));
 			break;
@@ -85,7 +85,8 @@ StrictMode strictModeFromString(const std::string& strStrictMode);
 std::string_view strictModeToString(StrictMode mode);
 
 bool iequals(std::string_view lhs, std::string_view rhs);
-bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive = false);
+bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive = false) noexcept;
+bool checkIfEndsWith(std::string_view pattern, std::string_view src, bool casesensitive = false) noexcept;
 bool isPrintable(std::string_view str);
 bool isBlank(std::string_view token);
 

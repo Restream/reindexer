@@ -1,3 +1,30 @@
+# Version 3.11.0 (02.12.2022)
+## Core
+- [fea] Added background TCMalloc's cache sizes managment (this feature was also supported for Go-builtin, Go-builtinserver and standalone modes). Check `allocator-cache-*` section in server's config
+- [fix] Fixed handling of the `no space left` errors for asynchronous storage
+- [fix] Fixed and improved composite indexes substitution optimization in select-queries
+- [fix] Fixed SEGFAULT on large merge limit values in fulltest indexes
+
+## Reindexer server
+- [fea] Added more info about the storages' states into prometheus metrcis
+- [fix] Fixed precepts parsing in HTTP API
+
+## Face
+- [fea] Replaced the Scrolly component with the Vue-scroll one
+- [fea] Added strings_waiting_to_be_deleted_size to Statistics -> Memory for NC
+- [fea] Added tooltips to the action bar on the Namespace page
+- [fea] Added a default value for Rtree type
+- [fea] Added tooltips to the sidbar buttons
+- [fea] Made visible the default options of namespaces
+- [fea] Changed the Disabled view of the Resent button on the SQL page
+- [fix] Fixed sending NULL value for max_preselect_part 
+- [fix] Removed the search bar from the Indexes page
+- [fix] Fixed the title of the index editor
+- [fix] Removed oldated libraries usage
+- [fix] Fixed the Expand/Collapse actions for lists
+- [fix] Fixed the Collapse all button on the Namespace page
+- [fix] Fixed the Statistics menu pointer 
+
 # Version 3.10.1 (17.11.2022)
 ## Go connector
 - [fea] Add go.mod file with dependecies versions

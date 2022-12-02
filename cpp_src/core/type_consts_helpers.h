@@ -8,7 +8,6 @@ namespace reindexer {
 
 CondType InvertJoinCondition(CondType cond);
 std::string_view CondTypeToStr(CondType t);
-std::string KeyValueTypeToStr(KeyValueType);
 
 template <typename T>
 auto& operator<<(T& os, CondType cond) {

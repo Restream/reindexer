@@ -47,12 +47,12 @@ protected:
 			Item ritem(qr[i].GetItem(false));
 			std::string expectedName = "name" + std::to_string(i);
 			Variant nameVal = ritem[kFieldName];
-			EXPECT_TRUE(nameVal.Type() == KeyValueString);
+			EXPECT_TRUE(nameVal.Type().Is<reindexer::KeyValueType::String>());
 			EXPECT_TRUE(nameVal.As<std::string>() == expectedName);
 
 			int64_t expectedSerialNumber = static_cast<int64_t>(i);
 			Variant serialNumberVal = ritem[kFieldSerialNumber];
-			EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
+			EXPECT_TRUE(serialNumberVal.Type().Is<reindexer::KeyValueType::Int64>());
 			EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == expectedSerialNumber);
 		}
 	}
@@ -64,7 +64,7 @@ protected:
 		EXPECT_TRUE(qr.Count() == 1);
 		Item ritem(qr[0].GetItem(false));
 		Variant nameVal = ritem[kFieldName];
-		EXPECT_TRUE(nameVal.Type() == KeyValueString);
+		EXPECT_TRUE(nameVal.Type().Is<reindexer::KeyValueType::String>());
 		EXPECT_TRUE(nameVal.As<std::string>() == "name5");
 
 		QueryResults qr2;
@@ -75,7 +75,7 @@ protected:
 		for (auto it : qr2) {
 			Item ritem(it.GetItem(false));
 			Variant nameVal = ritem[kFieldName];
-			EXPECT_TRUE(nameVal.Type() == KeyValueString);
+			EXPECT_TRUE(nameVal.Type().Is<reindexer::KeyValueType::String>());
 			EXPECT_TRUE(nameVal.As<std::string>().compare(toCompare) < 0);
 		}
 	}
@@ -88,7 +88,7 @@ protected:
 		for (int64_t i = 0; i < static_cast<int64_t>(qr.Count()); ++i) {
 			Item ritem(qr[i].GetItem(false));
 			Variant serialNumberVal = ritem[kFieldSerialNumber];
-			EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
+			EXPECT_TRUE(serialNumberVal.Type().Is<reindexer::KeyValueType::Int64>());
 			EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == i);
 		}
 
@@ -100,7 +100,7 @@ protected:
 
 		Item ritem(qr2[0].GetItem(false));
 		Variant serialNumberVal = ritem[kFieldSerialNumber];
-		EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
+		EXPECT_TRUE(serialNumberVal.Type().Is<reindexer::KeyValueType::Int64>());
 		EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == expectedValue);
 	}
 
