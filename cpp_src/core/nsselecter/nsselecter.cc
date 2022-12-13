@@ -399,7 +399,7 @@ It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator &compare, 
 	if (ns_->indexes_[idx]->Opts().IsArray()) throw Error(errQueryExec, "This type of sorting cannot be applied to a field of array type.");
 
 	ItemRefVector::difference_type cost = 0;
-	KeyValueType fieldType = ns_->indexes_[idx]->KeyType();
+	const KeyValueType fieldType{ns_->indexes_[idx]->KeyType()};
 
 	if (idx < ns_->indexes_.firstCompositePos()) {
 		// implementation for regular indexes
@@ -772,7 +772,7 @@ void NsSelecter::getSortIndexValue(const SortingContext &sortCtx, IdType rowId, 
 		value = VariantArray{
 			Variant{sortCtx.expressions[firstEntry->expression].Calculate(rowId, pv, joinResults, js, proc, ns_->tagsMatcher_)}};
 	} else if ((firstEntry->data->index == IndexValueType::SetByJsonPath) || ns_->indexes_[firstEntry->data->index]->Opts().IsSparse()) {
-		pv.GetByJsonPath(firstEntry->data->expression, ns_->tagsMatcher_, value, KeyValueUndefined);
+		pv.GetByJsonPath(firstEntry->data->expression, ns_->tagsMatcher_, value, KeyValueType::Undefined{});
 	} else {
 		pv.Get(firstEntry->data->index, value);
 	}

@@ -3,6 +3,7 @@
 #include <string_view>
 #include "core/keyvalue/variant.h"
 #include "estl/chunk.h"
+#include "estl/one_of.h"
 #include "tools/varint.h"
 
 char *i32toa(int32_t value, char *buffer);
@@ -19,19 +20,17 @@ public:
 	Serializer(std::string_view buf) noexcept : buf_(reinterpret_cast<const uint8_t *>(buf.data())), len_(buf.length()), pos_(0) {}
 	bool Eof() const noexcept { return pos_ >= len_; }
 	Variant GetVariant() {
-		KeyValueType type = KeyValueType(GetVarUint());
-		switch (type) {
-			case KeyValueTuple: {
-				VariantArray compositeValues;
-				uint64_t count = GetVarUint();
-				compositeValues.reserve(count);
-				for (size_t i = 0; i < count; ++i) {
-					compositeValues.emplace_back(GetVariant());
-				}
-				return Variant(compositeValues);
+		const KeyValueType type = KeyValueType::FromNumber(GetVarUint());
+		if (type.Is<KeyValueType::Tuple>()) {
+			VariantArray compositeValues;
+			uint64_t count = GetVarUint();
+			compositeValues.reserve(count);
+			for (size_t i = 0; i < count; ++i) {
+				compositeValues.emplace_back(GetVariant());
 			}
-			default:
-				return GetRawVariant(type);
+			return Variant(compositeValues);
+		} else {
+			return GetRawVariant(type);
 		}
 	}
 	Variant GetRawVariant(KeyValueType type);
@@ -177,43 +176,26 @@ public:
 
 	// Put variant
 	void PutVariant(const Variant &kv) {
-		PutVarUint(kv.Type());
-		switch (kv.Type()) {
-			case KeyValueTuple: {
+		PutVarUint(kv.Type().ToNumber());
+		kv.Type().EvaluateOneOf(
+			[&](KeyValueType::Tuple) {
 				auto compositeValues = kv.getCompositeValues();
 				PutVarUint(compositeValues.size());
 				for (auto &v : compositeValues) {
 					PutVariant(v);
 				}
-				break;
-			}
-			default:
-				PutRawVariant(kv);
-		}
+			},
+			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::String,
+					  KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null>) { PutRawVariant(kv); });
 	}
 	void PutRawVariant(const Variant &kv) {
-		switch (kv.Type()) {
-			case KeyValueBool:
-				PutBool(bool(kv));
-				break;
-			case KeyValueInt64:
-				PutVarint(int64_t(kv));
-				break;
-			case KeyValueInt:
-				PutVarint(int(kv));
-				break;
-			case KeyValueDouble:
-				PutDouble(double(kv));
-				break;
-			case KeyValueString:
-				PutVString(std::string_view(kv));
-				break;
-			case KeyValueNull:
-				break;
-			default:
-				fprintf(stderr, "Unknown keyType %d\n", int(kv.Type()));
-				abort();
-		}
+		kv.Type().EvaluateOneOf([&](KeyValueType::Bool) { PutBool(bool(kv)); }, [&](KeyValueType::Int64) { PutVarint(int64_t(kv)); },
+								[&](KeyValueType::Int) { PutVarint(int(kv)); }, [&](KeyValueType::Double) { PutDouble(double(kv)); },
+								[&](KeyValueType::String) { PutVString(std::string_view(kv)); }, [&](KeyValueType::Null) noexcept {},
+								[&](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
+									fprintf(stderr, "Unknown keyType %s\n", kv.Type().Name().data());
+									abort();
+								});
 	}
 
 	// Put slice with 4 bytes len header

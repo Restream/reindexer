@@ -87,12 +87,12 @@ public:
 		}
 	}
 
-	bool contains(int f) const { return mask_ & (1ULL << f); }
-	bool contains(const FieldsSet &f) const { return mask_ && ((mask_ & f.mask_) == mask_); }
-	bool contains(const std::string &jsonPath) const {
+	bool contains(int f) const noexcept { return mask_ & (1ULL << f); }
+	bool contains(const FieldsSet &f) const noexcept { return mask_ && ((mask_ & f.mask_) == f.mask_); }
+	bool contains(const std::string &jsonPath) const noexcept {
 		return std::find(jsonPaths_.begin(), jsonPaths_.end(), jsonPath) != jsonPaths_.end();
 	}
-	bool contains(const TagsPath &tagsPath) const {
+	bool contains(const TagsPath &tagsPath) const noexcept {
 		for (const FieldsPath &path : tagsPaths_) {
 			if (path.index() == 0) {
 				if (std::get<TagsPath>(path) == tagsPath) return true;
@@ -102,7 +102,7 @@ public:
 		}
 		return false;
 	}
-	bool contains(const IndexedTagsPath &tagsPath) const {
+	bool contains(const IndexedTagsPath &tagsPath) const noexcept {
 		for (const FieldsPath &path : tagsPaths_) {
 			if (path.index() == 1) {
 				if (std::get<IndexedTagsPath>(path) == tagsPath) return true;
@@ -112,7 +112,7 @@ public:
 		}
 		return false;
 	}
-	bool match(const TagsPath &tagsPath) const {
+	bool match(const TagsPath &tagsPath) const noexcept {
 		if (tagsPaths_.empty()) return true;
 		for (auto &flt : tagsPaths_) {
 			if (flt.index() == 0) {
@@ -123,7 +123,7 @@ public:
 		}
 		return false;
 	}
-	bool match(const IndexedTagsPath &tagsPath) const {
+	bool match(const IndexedTagsPath &tagsPath) const noexcept {
 		if (tagsPaths_.empty()) return true;
 		for (auto &flt : tagsPaths_) {
 			if (flt.index() == 1) {
@@ -134,17 +134,15 @@ public:
 		}
 		return false;
 	}
-	void clear() {
+	void clear() noexcept {
 		base_fields_set::clear();
 		tagsPaths_.clear();
 		mask_ = 0;
 	}
 
-	bool containsAll(int f) const { return (((1 << f) - 1) & mask_) == (1ULL << f) - 1ULL; }
-
-	size_t getTagsPathsLength() const { return tagsPaths_.size(); }
-	size_t getJsonPathsLength() const { return jsonPaths_.size(); }
-	bool isTagsPathIndexed(size_t idx) const {
+	size_t getTagsPathsLength() const noexcept { return tagsPaths_.size(); }
+	size_t getJsonPathsLength() const noexcept { return jsonPaths_.size(); }
+	bool isTagsPathIndexed(size_t idx) const noexcept {
 		assertrx(idx < tagsPaths_.size());
 		return (tagsPaths_[idx].index() == 1);
 	}
@@ -152,8 +150,8 @@ public:
 	const IndexedTagsPath &getIndexedTagsPath(size_t idx) const { return std::get<IndexedTagsPath>(tagsPaths_[idx]); }
 	const std::string &getJsonPath(size_t idx) const { return jsonPaths_[idx]; }
 
-	bool operator==(const FieldsSet &f) const { return (mask_ == f.mask_) && (tagsPaths_ == f.tagsPaths_); }
-	bool operator!=(const FieldsSet &f) const { return mask_ != f.mask_ || tagsPaths_ != f.tagsPaths_; }
+	bool operator==(const FieldsSet &f) const noexcept { return (mask_ == f.mask_) && (tagsPaths_ == f.tagsPaths_); }
+	bool operator!=(const FieldsSet &f) const noexcept { return mask_ != f.mask_ || tagsPaths_ != f.tagsPaths_; }
 
 	template <typename T>
 	void Dump(T &os) const {

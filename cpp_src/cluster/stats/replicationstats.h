@@ -69,7 +69,8 @@ struct ReplicationStats {
 	bool operator==(const ReplicationStats& r) const noexcept {
 		return type == r.type && pendingUpdatesCount == r.pendingUpdatesCount && updateDrops == r.updateDrops &&
 			   allocatedUpdatesCount == r.allocatedUpdatesCount && allocatedUpdatesSizeBytes == r.allocatedUpdatesSizeBytes &&
-			   walSyncs == r.walSyncs && forceSyncs == r.forceSyncs && initialSync == r.initialSync && nodeStats == r.nodeStats;
+			   walSyncs == r.walSyncs && forceSyncs == r.forceSyncs && initialSync == r.initialSync && logLevel == r.logLevel &&
+			   nodeStats == r.nodeStats;
 	}
 	bool operator!=(const ReplicationStats& r) const noexcept { return !(*this == r); }
 
@@ -82,6 +83,7 @@ struct ReplicationStats {
 	SyncStats forceSyncs;
 	InitialSyncStats initialSync;
 	std::vector<NodeStats> nodeStats;
+	LogLevel logLevel;
 };
 
 struct SyncStatsCounter {

@@ -78,7 +78,10 @@ public:
 	virtual void ReleaseSnapshot(Snapshot::Ptr snapshot) = 0;
 
 	/// Flushes all updates to Storage.
-	virtual void Flush() = 0;
+	virtual Error Flush() = 0;
+
+	/// Reopens files on disk.
+	virtual Error Reopen() = 0;
 
 	/// Allocates and returns Cursor object to a Storage.
 	/// The client itself is responsible for it's deallocation.

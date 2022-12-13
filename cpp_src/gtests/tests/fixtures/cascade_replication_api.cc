@@ -47,7 +47,7 @@ CascadeReplicationApi::Cluster CascadeReplicationApi::CreateConfiguration(const 
 
 CascadeReplicationApi::Cluster CascadeReplicationApi::CreateConfiguration(std::vector<CascadeReplicationApi::FollowerConfig> clusterConfig,
 																		  int basePort, int baseServerId, const std::string& dbPathMaster,
-																		  AsyncReplicationConfigTest::NsSet&& nsList) {
+																		  const AsyncReplicationConfigTest::NsSet& nsList) {
 	if (clusterConfig.empty()) {
 		return CascadeReplicationApi::Cluster();
 	}
@@ -59,7 +59,7 @@ CascadeReplicationApi::Cluster CascadeReplicationApi::CreateConfiguration(std::v
 		nodes.back().InitServer(ServerControlConfig(serverId, basePort + i, basePort + 1000 + i, dbPathMaster + std::to_string(i), "db"));
 		const bool isFollower = clusterConfig[i].leaderId >= 0;
 		AsyncReplicationConfigTest config(isFollower ? "follower" : "leader", std::vector<ReplNode>(), false, true, serverId,
-										  "node_" + std::to_string(serverId), std::move(nsList));
+										  "node_" + std::to_string(serverId), nsList);
 		auto srv = nodes.back().Get();
 		srv->SetReplicationConfig(config);
 

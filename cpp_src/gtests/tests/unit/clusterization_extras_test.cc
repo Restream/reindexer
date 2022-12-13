@@ -326,3 +326,73 @@ TEST_F(ClusterizationExtrasApi, ErrorOnAttemptToResetClusterNsRole) {
 
 	loop.run();
 }
+
+TEST_F(ClusterizationExtrasApi, LogLevel) {
+	// Check sync replication log level setup
+	net::ev::dynamic_loop loop;
+	auto ports = GetDefaults();
+	loop.spawn([&loop, &ports]() noexcept {
+		constexpr size_t kClusterSize = 3;
+		const std::string kNsSome = "some";
+		Cluster cluster(loop, 0, kClusterSize, ports);
+		const int leaderId = cluster.AwaitLeader(kMaxElectionsTime);
+		ASSERT_NE(leaderId, -1);
+		TestCout() << "Init NS" << std::endl;
+		cluster.InitNs(leaderId, kNsSome);
+		cluster.WaitSync(kNsSome);
+		auto leader = cluster.GetNode(leaderId);
+
+		auto checkLogLevel = [&cluster](LogLevel expected) {
+			// Expecting same log level on each node (due to proxying logic)
+			for (unsigned i = 0; i < kClusterSize; ++i) {
+				auto stats = cluster.GetNode(i)->GetReplicationStats("cluster");
+				ASSERT_EQ(stats.logLevel, expected) << "Node id: " << i;
+			}
+		};
+
+		std::atomic<bool> stop = {false};
+		std::thread th([&] {
+			// Simple insertion thread for race check
+			for (unsigned i = 0; !stop; ++i) {
+				auto item = leader->api.NewItem(kNsSome);
+				auto err = item.Unsafe().FromJSON(fmt::sprintf(R"json({"id": %d, "string": "%s" })json", i, randStringAlph(8)));
+				ASSERT_TRUE(err.ok()) << err.what();
+				leader->api.Upsert(kNsSome, item);
+				ASSERT_TRUE(err.ok()) << err.what();
+				std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			}
+		});
+
+		// Changing log level
+		const LogLevel levels[] = {LogInfo, LogTrace, LogWarning, LogError, LogNone};
+		for (auto level : levels) {
+			leader->SetReplicationLogLevel(LogLevel(level), "cluster");
+			checkLogLevel(level);
+		}
+
+		stop = true;
+		th.join();
+		leader.reset();
+
+		// Check log level on the old leader after full cluster restart. It should be reset to 'Trace'
+		cluster.StopServers(0, kClusterSize);
+		for (unsigned i = 0; i < kClusterSize; ++i) {
+			cluster.StartServer(i);
+		}
+		TestCout() << "Awaiting new leader" << std::endl;
+		int newLeaderId = cluster.AwaitLeader(kMaxElectionsTime);
+		ASSERT_NE(newLeaderId, -1);
+		TestCout() << "Changing leader from " << newLeaderId << " to " << leaderId << std::endl;
+		cluster.GetNode(newLeaderId)->SetClusterLeader(leaderId);
+		newLeaderId = cluster.AwaitLeader(kMaxElectionsTime);
+		ASSERT_EQ(newLeaderId, leaderId);
+		checkLogLevel(LogTrace);
+
+		// Check if it's possible to set log level without the leader
+		cluster.StopServers({0, 1});
+		loop.sleep(std::chrono::seconds(3));
+		cluster.GetNode(2)->SetReplicationLogLevel(LogLevel(LogInfo), "cluster");
+	});
+
+	loop.run();
+}

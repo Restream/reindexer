@@ -19,7 +19,7 @@ public:
 
 	// Specific implemetation for composite index
 	h_vector<std::pair<std::string_view, uint32_t>, 8> getDocFields(const PayloadValue &doc,
-																	vector<std::unique_ptr<std::string>> &strsBuf) {
+																	std::vector<std::unique_ptr<std::string>> &strsBuf) {
 		ConstPayload pl(plt_, doc);
 
 		uint32_t fieldPos = 0;
@@ -36,7 +36,7 @@ public:
 				pl.Get(field, krefs);
 			}
 			for (const Variant &kref : krefs) {
-				if (kref.Type() != KeyValueString) {
+				if (!kref.Type().Is<KeyValueType::String>()) {
 					strsBuf.emplace_back(std::unique_ptr<std::string>(new std::string(kref.As<std::string>())));
 					ret.emplace_back(*strsBuf.back().get(), fieldPos);
 				} else {

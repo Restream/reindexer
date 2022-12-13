@@ -9,31 +9,93 @@
 
 namespace reindexer {
 
+class StorageFlushOpts {
+public:
+	StorageFlushOpts& WithImmediateReopen(bool v = true) noexcept {
+		opts_ = v ? opts_ | kOptTypeImmediateReopen : opts_ & ~(kOptTypeImmediateReopen);
+		return *this;
+	}
+	bool IsWithImmediateReopen() const noexcept { return opts_ & kOptTypeImmediateReopen; }
+	StorageFlushOpts& WithIgnoreFlushError(bool v = true) noexcept {
+		opts_ = v ? opts_ | kOptTypeIgnoreFlushError : opts_ & ~(kOptTypeIgnoreFlushError);
+		return *this;
+	}
+	bool IsWithIgnoreFlushError() const noexcept { return opts_ & kOptTypeIgnoreFlushError; }
+
+private:
+	enum OptType {
+		kOptTypeImmediateReopen = 0x1,
+		kOptTypeIgnoreFlushError = 0x2,
+	};
+
+	uint8_t opts_;
+};
+
 class AsyncStorage {
 public:
 	static constexpr uint32_t kLimitToAdviceBatching = 1000;
+	static constexpr auto kStorageReopenPeriod = std::chrono::seconds(15);
 
 	using AdviceGuardT = CounterGuardAIRL32;
-	class FullLockT {
+	using ClockT = std::chrono::system_clock;
+	using TimepointT = ClockT::time_point;
+
+	struct Status {
+		bool isEnabled = false;
+		Error err;
+	};
+
+	class ConstCursor {
 	public:
-		FullLockT(std::mutex& flushMtx, std::mutex& updatesMtx) : flushLck_(flushMtx), updatesLck_(updatesMtx) {}
-		~FullLockT() {
-			if (flushLck_.owns_lock()) {
-				assertrx(updatesLck_.owns_lock());
-				unlock();
-			}
+		ConstCursor(std::unique_lock<std::mutex>&& lck, std::unique_ptr<datastorage::Cursor>&& c) noexcept
+			: lck_(std::move(lck)), c_(std::move(c)) {
+			assertrx(lck_.owns_lock());
+			assertrx(c_);
 		}
-		bool OwnsThisFlushMutex(std::mutex& mtx) const noexcept { return flushLck_.owns_lock() && flushLck_.mutex() == &mtx; }
-		bool OwnsThisUpdatesMutex(std::mutex& mtx) const noexcept { return updatesLck_.owns_lock() && updatesLck_.mutex() == &mtx; }
-		void unlock() {
-			// Specify unlock order
-			updatesLck_.unlock();
-			flushLck_.unlock();
+		datastorage::Cursor* operator->() noexcept { return c_.get(); }
+
+	protected:
+		// NOTE: Cursor owns unique storage lock. I.e. nobody is able to read stroage or write into it, while cursor exists.
+		// Currently the only place, where it matter is EnumMeta method. However, we should to consider switching to shared_mutex, if
+		// the number of such concurrent Cursors will grow.
+		std::unique_lock<std::mutex> lck_;
+		std::unique_ptr<datastorage::Cursor> c_;
+	};
+
+	class Cursor : public ConstCursor {
+	public:
+		Cursor(std::unique_lock<std::mutex>&& lck, std::unique_ptr<datastorage::Cursor>&& c, AsyncStorage& storage) noexcept
+			: ConstCursor(std::move(lck), std::move(c)), storage_(&storage) {}
+
+		void RemoveThisKey(const StorageOpts& opts) {
+			assertrx(ConstCursor::lck_.owns_lock());
+			storage_->removeSync(opts, ConstCursor::c_->Key());
 		}
 
 	private:
+		AsyncStorage* storage_ = nullptr;
+	};
+
+	class FullLockT {
+	public:
+		FullLockT(std::mutex& flushMtx, std::mutex& updatesMtx) : flushLck_(flushMtx), storageLck_(updatesMtx) {}
+		~FullLockT() {
+			if (flushLck_.owns_lock()) {
+				assertrx(storageLck_.owns_lock());
+				unlock();
+			}
+		}
+		void unlock() {
+			// Specify unlock order
+			storageLck_.unlock();
+			flushLck_.unlock();
+		}
+		bool OwnsThisFlushMutex(std::mutex& mtx) const noexcept { return flushLck_.owns_lock() && flushLck_.mutex() == &mtx; }
+		bool OwnsThisStorageMutex(std::mutex& mtx) const noexcept { return storageLck_.owns_lock() && storageLck_.mutex() == &mtx; }
+
+	private:
 		std::unique_lock<std::mutex> flushLck_;
-		std::unique_lock<std::mutex> updatesLck_;
+		std::unique_lock<std::mutex> storageLck_;
 	};
 
 	AsyncStorage() = default;
@@ -41,47 +103,48 @@ public:
 
 	Error Open(datastorage::StorageType storageType, const std::string& nsName, const std::string& path, const StorageOpts& opts);
 	void Destroy();
-	std::unique_ptr<datastorage::Cursor> GetCursor(StorageOpts& opts) const;
+	Cursor GetCursor(StorageOpts& opts);
+	ConstCursor GetCursor(StorageOpts& opts) const;
+	// Tries to write synchronously, hovewer will perform an async write for copied namespace and in case of storage errors
 	void WriteSync(const StorageOpts& opts, std::string_view key, std::string_view value);
-	std::weak_ptr<datastorage::IDataStorage> GetStoragePtr() const;
+	// Tries to remove synchronously, hovewer will perform an async deletion for copied namespace and in case of storage errors
+	void RemoveSync(const StorageOpts& opts, std::string_view key);
 	void Remove(std::string_view key) {
-		std::lock_guard lck(updatesMtx_);
-		if (storage_) {
-			totalUpdatesCount_.fetch_add(1, std::memory_order_release);
-			curUpdatesChunck_->Remove(key);
-			if (++curUpdatesChunck_.updatesCount == kFlushChunckSize) {
-				beginNewUpdatesChunk();
-			}
-		}
+		std::lock_guard lck(storageMtx_);
+		remove(false, key);
 	}
 	void Write(std::string_view key, std::string_view data) {
-		std::lock_guard lck(updatesMtx_);
-		write(key, data);
+		std::lock_guard lck(storageMtx_);
+		write(false, key, data);
 	}
 	Error Read(const StorageOpts& opts, std::string_view key, std::string& value) const {
-		std::lock_guard lck(updatesMtx_);
+		std::lock_guard lck(storageMtx_);
 		if (storage_) {
 			return storage_->Read(opts, key, value);
 		}
 		return Error();
 	}
 	void Close();
-	void Flush();
+	void Flush(const StorageFlushOpts& opts);
 	void TryForceFlush() {
 		const auto forceFlushLimit = forceFlushLimit_.load(std::memory_order_relaxed);
 		if (forceFlushLimit && totalUpdatesCount_.load(std::memory_order_acquire) >= forceFlushLimit) {
 			// Flush must be performed in single thread
 			std::lock_guard flushLck(flushMtx_);
 			if (totalUpdatesCount_.load(std::memory_order_acquire) >= forceFlushLimit) {
-				flush();
+				flush(StorageFlushOpts().WithIgnoreFlushError());
 			}
 		}
 	}
 	bool IsValid() const {
-		std::lock_guard lck(updatesMtx_);
+		std::lock_guard lck(storageMtx_);
 		return storage_.get();
 	}
-	FullLockT FullLock() { return FullLockT{flushMtx_, updatesMtx_}; }
+	Status GetStatus() const {
+		std::lock_guard lck(storageMtx_);
+		return Status{storage_.get() != nullptr, lastFlushError_};
+	}
+	FullLockT FullLock() { return FullLockT{flushMtx_, storageMtx_}; }
 	std::string Path() const noexcept;
 	datastorage::StorageType Type() const noexcept;
 	void InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLockT& storageLock);
@@ -123,32 +186,91 @@ private:
 	};
 
 	void clearUpdates();
-	void flush();
+	void flush(const StorageFlushOpts& opts);
 	void beginNewUpdatesChunk();
-	void write(std::string_view key, std::string_view data) {
+	void write(bool fromSyncCall, std::string_view key, std::string_view value) {
+		asyncOp(
+			fromSyncCall, [this](std::string_view k, std::string_view v) { curUpdatesChunck_->Put(k, v); }, key, value);
+	}
+	void removeSync(const StorageOpts& opts, std::string_view key) {
+		syncOp(
+			[this, &opts](std::string_view k) {
+				throwOnStorageCopy();
+				return storage_->Delete(opts, k);
+			},
+			[this](std::string_view k) { remove(true, k); }, key);
+	}
+	void remove(bool fromSyncCall, std::string_view key) {
+		asyncOp(
+			fromSyncCall, [this](std::string_view k) { curUpdatesChunck_->Remove(k); }, key);
+	}
+	template <typename StorageCall, typename... Args>
+	void asyncOp(bool fromSyncCall, StorageCall&& call, const Args&... args) {
 		if (storage_) {
 			totalUpdatesCount_.fetch_add(1, std::memory_order_release);
-			curUpdatesChunck_->Put(key, data);
+			call(args...);
+			if (fromSyncCall) {
+				lastBatchWithSyncUpdates_ = finishedUpdateChuncks_.size();
+			}
 			if (++curUpdatesChunck_.updatesCount == kFlushChunckSize) {
 				beginNewUpdatesChunk();
 			}
 		}
 	}
+	template <typename AsyncCall, typename SyncCall, typename... Args>
+	void syncOp(SyncCall&& syncCall, AsyncCall&& asyncCall, const Args&... args) {
+		if (!isCopiedNsStorage_ && lastFlushError_.ok()) {
+			if (storage_) {
+				Error err;
+				try {
+					err = syncCall(args...);
+				} catch (Error& e) {
+					err = std::move(e);
+				}
+				if (!err.ok()) {
+					scheduleFilesReopen(std::move(err));
+					asyncCall(args...);
+				}
+			}
+			return;
+		}
+		asyncCall(args...);
+	}
+	void throwOnStorageCopy() const {
+		if (isCopiedNsStorage_) {
+			throw Error(errLogic, "Unable to perform this operation with copied storage");
+		}
+	}
 
 	UpdatesPtrT createUpdatesCollection() noexcept;
 	void recycleUpdatesCollection(UpdatesPtrT&& p) noexcept;
+	void scheduleFilesReopen(Error&& e) {
+		lastFlushError_ = std::move(e);
+		reopenTs_ = ClockT::now() + kStorageReopenPeriod;
+	}
+	void reset() noexcept {
+		storage_.reset();
+		path_.clear();
+		lastFlushError_ = Error();
+		reopenTs_ = TimepointT();
+		lastBatchWithSyncUpdates_ = -1;
+	}
+	void tryReopenStorage();
 
 	std::deque<UpdatesPtrT> finishedUpdateChuncks_;
 	UpdatesPtrT curUpdatesChunck_;
 	std::atomic<uint32_t> totalUpdatesCount_ = {0};
 	shared_ptr<datastorage::IDataStorage> storage_;
-	mutable std::mutex updatesMtx_;
+	mutable std::mutex storageMtx_;
 	mutable std::mutex flushMtx_;
 	std::string path_;
 	bool isCopiedNsStorage_ = false;
 	h_vector<UpdatesPtrT, kMaxRecycledChunks> recycled_;
 	std::atomic<int32_t> batchingAdvices_ = {0};
 	std::atomic<uint32_t> forceFlushLimit_ = {0};
+	int32_t lastBatchWithSyncUpdates_ = -1;	 // This is required to avoid reordering between sync and async records
+	Error lastFlushError_;
+	TimepointT reopenTs_;
 };
 
 }  // namespace reindexer

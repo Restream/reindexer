@@ -1,14 +1,8 @@
 #include "core/selectfunc/selectfuncparser.h"
 #include <ctime>
 #include <string>
-#include <vector>
 #include "tools/errors.h"
 #include "tools/logger.h"
-
-using std::move;
-using std::next;
-using std::string;
-using std::vector;
 
 namespace reindexer {
 
@@ -53,7 +47,7 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 
 	tok = parser.next_token(false);
 	if (tok.text() == "(") {
-		string agr;
+		std::string agr;
 		while (!parser.end()) {
 			tok = parser.next_token(false);
 			if (tok.text() == ")") {
@@ -117,7 +111,7 @@ bool SelectFuncParser::IsFunction(std::string_view val) {
 
 bool SelectFuncParser::IsFunction(const VariantArray &val) {
 	if (val.size() != 1) return false;
-	if (val.front().Type() != KeyValueString) return false;
+	if (!val.front().Type().Is<KeyValueType::String>()) return false;
 	return IsFunction(static_cast<std::string_view>(val.front()));
 }
 

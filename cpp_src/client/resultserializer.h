@@ -46,7 +46,12 @@ public:
 		Range extraData;
 	};
 
-	void GetRawQueryParams(QueryParams &ret, const std::function<void(int nsId)>& updatePayloadFunc, bool lazyMode, ParsingData &parsingData);
+	bool ContainsPayloads() const {
+		Serializer ser(Buf(), Len());
+		return ser.GetVarUint() & kResultsWithPayloadTypes;
+	}
+	void GetRawQueryParams(QueryParams &ret, const std::function<void(int nsId)> &updatePayloadFunc, bool lazyMode,
+						   ParsingData &parsingData);
 	void GetExtraParams(QueryParams &ret, bool lazyMode);
 	ItemParams GetItemData(int flags, int shardId);
 };

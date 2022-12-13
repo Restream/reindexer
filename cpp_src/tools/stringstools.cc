@@ -1,14 +1,12 @@
 #include <assert.h>
 #include <memory.h>
 #include <algorithm>
-#include <cctype>
 #include <locale>
-#include <string>
-#include <unordered_map>
-#include <vector>
 
 #include "atoi/atoi.h"
 #include "core/keyvalue/key_string.h"
+#include "estl/fast_hash_map.h"
+#include "estl/one_of.h"
 #include "itoa/itoa.h"
 #include "tools/customlocal.h"
 #include "tools/stringstools.h"
@@ -54,7 +52,7 @@ std::string unescapeString(std::string_view str) {
 }
 
 KeyValueType detectValueType(std::string_view value) {
-	if (value.empty()) return KeyValueUndefined;
+	if (value.empty()) return KeyValueType::Undefined{};
 	static std::string_view trueToken = "true", falseToken = "false";
 	size_t i = 0;
 	bool isDouble = false, isDigit = false, isBool = false;
@@ -67,16 +65,16 @@ KeyValueType detectValueType(std::string_view value) {
 			isBool = (value[i] == trueToken[i] || value[i] == falseToken[i]);
 		}
 	} else {
-		return KeyValueString;
+		return KeyValueType::String{};
 	}
 	for (++i; i < value.length() && (isDouble || isDigit || isBool); i++) {
 		if (isDigit || isDouble) {
 			if (!isdigit(value[i])) {
 				if (value[i] == '.') {
-					if (isDouble) return KeyValueString;
+					if (isDouble) return KeyValueType::String{};
 					isDouble = true;
 				} else {
-					return KeyValueString;
+					return KeyValueType::String{};
 				}
 			}
 		} else if (isBool) {
@@ -84,30 +82,28 @@ KeyValueType detectValueType(std::string_view value) {
 		}
 	}
 	if (isDigit) {
-		if (isDouble) return KeyValueDouble;
-		return KeyValueInt64;
+		if (isDouble) return KeyValueType::Double{};
+		return KeyValueType::Int64{};
 	} else if (isBool) {
-		return KeyValueBool;
+		return KeyValueType::Bool{};
 	} else {
-		return KeyValueString;
+		return KeyValueType::String{};
 	}
 }
 
 Variant stringToVariant(std::string_view value) {
-	switch (detectValueType(value)) {
-		case KeyValueInt64:
-			return Variant(int64_t(stoll(value)));
-		case KeyValueDouble: {
-			char *p = 0;
-			return Variant(double(strtod(value.data(), &p)));
-		}
-		case KeyValueString:
-			return Variant(make_key_string(value.data(), value.length()));
-		case KeyValueBool:
-			return (value.size() == 4) ? Variant(true) : Variant(false);
-		default:
-			return Variant();
-	}
+	const auto kvt = detectValueType(value);
+	return kvt.EvaluateOneOf([&value](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
+							 [&value](KeyValueType::Int) { return Variant(int(stoi(value))); },
+							 [&value](KeyValueType::Double) {
+								 char *p = nullptr;
+								 return Variant(double(strtod(value.data(), &p)));
+							 },
+							 [&value](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
+							 [&value](KeyValueType::Bool) noexcept { return (value.size() == 4) ? Variant(true) : Variant(false); },
+							 [](OneOf<KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple>) noexcept {
+								 return Variant();
+							 });
 }
 
 wstring &utf8_to_utf16(std::string_view src, wstring &dst) {
@@ -288,7 +284,7 @@ bool iequals(std::string_view lhs, std::string_view rhs) {
 	return true;
 }
 
-bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive) {
+bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive) noexcept {
 	if (src.empty() || pattern.empty()) return false;
 	if (src.length() > pattern.length()) return false;
 	if (casesensitive) {
@@ -298,6 +294,22 @@ bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool case
 	} else {
 		for (size_t i = 0; i < src.length(); ++i) {
 			if (tolower(src[i]) != tolower(pattern[i])) return false;
+		}
+	}
+	return true;
+}
+
+bool checkIfEndsWith(std::string_view pattern, std::string_view src, bool casesensitive) noexcept {
+	if (pattern.length() > src.length()) return false;
+	if (pattern.length() == 0) return true;
+	const auto offset = src.length() - pattern.length();
+	if (casesensitive) {
+		for (size_t i = 0; i < pattern.length(); ++i) {
+			if (src[offset + i] != pattern[i]) return false;
+		}
+	} else {
+		for (size_t i = 0; i < pattern.length(); ++i) {
+			if (tolower(src[offset + i]) != tolower(pattern[i])) return false;
 		}
 	}
 	return true;
@@ -468,35 +480,45 @@ bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept 
 	return true;
 }
 
-LogLevel logLevelFromString(const std::string &strLogLevel) {
-	static std::unordered_map<std::string, LogLevel> levels = {
-		{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}};
+const static fast_hash_map<std::string, LogLevel, nocase_hash_str, nocase_equal_str> kLogLevels = {
+	{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}};
 
-	auto configLevelIt = levels.find(strLogLevel);
-	if (configLevelIt != levels.end()) {
+LogLevel logLevelFromString(std::string_view strLogLevel) {
+	const auto configLevelIt = kLogLevels.find(strLogLevel);
+	if (configLevelIt != kLogLevels.end()) {
 		return configLevelIt->second;
 	}
 	return LogNone;
 }
 
-static std::unordered_map<std::string, StrictMode> strictModes = {
+const std::string &logLevelToString(LogLevel level) {
+	for (auto &it : kLogLevels) {
+		if (it.second == level) {
+			return it.first;
+		}
+	}
+	static std::string none("none");
+	return none;
+}
+
+const static fast_hash_map<std::string, StrictMode, nocase_hash_str, nocase_equal_str> kStrictModes = {
 	{"", StrictModeNotSet}, {"none", StrictModeNone}, {"names", StrictModeNames}, {"indexes", StrictModeIndexes}};
 
-StrictMode strictModeFromString(const std::string &strStrictMode) {
-	auto configModeIt = strictModes.find(strStrictMode);
-	if (configModeIt != strictModes.end()) {
+StrictMode strictModeFromString(std::string_view strStrictMode) {
+	const auto configModeIt = kStrictModes.find(strStrictMode);
+	if (configModeIt != kStrictModes.end()) {
 		return configModeIt->second;
 	}
 	return StrictModeNotSet;
 }
 
-std::string_view strictModeToString(StrictMode mode) {
-	for (auto &it : strictModes) {
+const std::string &strictModeToString(StrictMode mode) {
+	for (auto &it : kStrictModes) {
 		if (it.second == mode) {
 			return it.first;
 		}
 	}
-	static std::string_view empty{""};
+	static std::string empty;
 	return empty;
 }
 

@@ -1,3 +1,36 @@
+# Version 4.7.0 *beta* (13.12.2022)
+## Replication
+- [fea] Added `online_updates_delay_msec` param for async replication config. It significantly improves online updates batching and reduces CPU consumation for async online-replication.
+- [fea] Added config-action `set_log_level` and config-option `log_level` for sync/async replication to control replication logs independantly from main logs.
+- [fea] Improved overal online-replication performance
+- [fix] Fixed stucking on local namespaces requests, when cluster leader is not chosen
+- [fix] Fixed compression flag (it was also fixed for C++ Reindexer's client)
+
+## Build/Deploy
+- [fea] Added support for RedOS 7
+
+## Face
+- [fea] Added tooltips to the sidbar buttons
+- [fea] Renewed the Onboarding UI
+- [fea] Replaced the scrolly component with the vue-scroll one
+- [fea] Removed the "Pended updates" field from Statistics->Connections
+- [fea] Added strings_waiting_to_be_deleted_size to Statistics -> Memory for NC
+- [fea] Added the data-test attribute
+- [fea] Added tooltips to the action bar on the Namespace page
+- [fea] Added a default value for Rtree type
+- [fea] Made visible the default options of namespaces
+- [fix] Fixed console errors appeared on hover for the Client cell in the Current Statistics
+- [fix] Fixed disapiaring of the Item table part on the Namespace page
+- [fix] Fixed sending NULL value for max_preselect_part
+- [fix] Removed oldated libraries usage
+- [fix] Fixed the column width resizing on the page reloading
+- [fix] Fixed the Expand/Collapse actions for lists
+- [fix] Fixed the Collapse all button on the Namespace page
+- [fix] Fixed the Statistics menu pointer
+
+## Ported
+- [fea/fix] Ported all the features and fixes from v3.11.0
+
 # Version 4.6.1 *beta* (17.11.2022)
 ## Go connector
 - [fea] Add go.mod file with dependecies versions

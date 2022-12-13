@@ -109,15 +109,30 @@ public:
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	Error Insert(std::string_view nsName, Item &item);
+	/// Insert new Item to namespace.
+	/// NOTICE: This method expects, that cjson is compatible with internal client's tagsmatcher
+	/// @param nsName - Name of namespace
+	/// @param cjson - document's cjson
+	Error Insert(std::string_view nsName, std::string_view cjson);
 	/// Update Item in namespace. If item with same PK is not exists, when item.GetID will
 	/// return -1, on success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	Error Update(std::string_view nsName, Item &item);
+	/// Update Item in namespace.
+	/// NOTICE: This method expects, that cjson is compatible with internal client's tagsmatcher
+	/// @param nsName - Name of namespace
+	/// @param cjson - document's cjson
+	Error Update(std::string_view nsName, std::string_view cjson);
 	/// Update or Insert Item in namespace. On success item.GetID() will return internal Item ID
 	/// @param nsName - Name of namespace
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	Error Upsert(std::string_view nsName, Item &item);
+	/// Update or Insert Item in namespace.
+	/// NOTICE: This method expects, that cjson is compatible with internal client's tagsmatcher
+	/// @param nsName - Name of namespace
+	/// @param cjson - document's cjson
+	Error Upsert(std::string_view nsName, std::string_view cjson);
 	/// Updates all items in namespace, that satisfy provided query.
 	/// @param query - Query to define items set for update.
 	/// @param result - QueryResults with IDs of deleted items.
@@ -130,6 +145,11 @@ public:
 	/// @param query - Query with conditions
 	/// @param result - QueryResults with IDs of deleted items
 	Error Delete(const Query &query, CoroQueryResults &result);
+	/// Delete Item from namespace.
+	/// NOTICE: This method expects, that cjson is compatible with internal client's tagsmatcher
+	/// @param nsName - Name of namespace
+	/// @param cjson - document's cjson
+	Error Delete(std::string_view nsName, std::string_view cjson);
 	/// Execute SQL Query and return results
 	/// @param query - SQL query. Only "SELECT" semantic is supported
 	/// @param result - QueryResults with found items

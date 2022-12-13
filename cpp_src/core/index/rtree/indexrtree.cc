@@ -25,7 +25,7 @@ SelectKeyResults IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Select
 	if (keys.size() != 2) throw Error(errQueryExec, "CondDWithin expects two arguments");
 	Point point;
 	double distance;
-	if (keys[0].Type() == KeyValueTuple) {
+	if (keys[0].Type().Is<KeyValueType::Tuple>()) {
 		point = keys[0].As<Point>();
 		distance = keys[1].As<double>();
 	} else {

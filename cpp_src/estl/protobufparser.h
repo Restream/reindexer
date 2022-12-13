@@ -20,15 +20,12 @@ struct ProtobufValue {
 												  !std::is_same<T, bool>::value>::type* = nullptr>
 	T As(T minv = std::numeric_limits<T>::min(), T maxv = std::numeric_limits<T>::max()) const {
 		T v;
-		switch (value.Type()) {
-			case KeyValueInt:
-			case KeyValueInt64:
-			case KeyValueDouble:
-				v = T(value);
-				break;
-			default:
-				throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to number", Variant::TypeName(value.Type()));
-		}
+		value.Type().EvaluateOneOf([&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept { v = T(value); },
+								   [&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Composite, KeyValueType::Undefined,
+											 KeyValueType::Null, KeyValueType::Tuple>) {
+									   throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to number",
+															  value.Type().Name());
+								   });
 		if (v < minv || v > maxv) throw reindexer::Error(errParams, "Value is out of bounds: [%d,%d]", minv, maxv);
 		return v;
 	}
@@ -36,22 +33,25 @@ struct ProtobufValue {
 	template <typename T,
 			  typename std::enable_if<std::is_same<std::string, T>::value || std::is_same<std::string_view, T>::value>::type* = nullptr>
 	T As() const {
-		if (value.Type() != KeyValueString) {
-			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to string", Variant::TypeName(value.Type()));
+		if (!value.Type().Is<KeyValueType::String>()) {
+			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to string", value.Type().Name());
 		}
 		return T(value);
 	}
 
 	template <typename T, typename std::enable_if<std::is_same<T, bool>::value>::type* = nullptr>
 	T As() const {
-		if (value.Type() != KeyValueBool) {
-			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to bool", Variant::TypeName(value.Type()));
+		if (!value.Type().Is<KeyValueType::Bool>()) {
+			throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%s] to bool", value.Type().Name());
 		}
 		return T(value);
 	}
 
 	bool IsOfPrimitiveType() const {
-		return (itemType == KeyValueInt) || (itemType == KeyValueInt64) || (itemType == KeyValueDouble) || (itemType == KeyValueBool);
+		return itemType.EvaluateOneOf(
+			[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool>) noexcept { return true; },
+			[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::String,
+					 KeyValueType::Undefined>) noexcept { return false; });
 	}
 
 	Variant value;
@@ -85,7 +85,7 @@ public:
 	ProtobufParser& operator=(ProtobufParser&&) = delete;
 
 	ProtobufValue ReadValue();
-	Variant ReadArrayItem(int fieldType);
+	Variant ReadArrayItem(KeyValueType fieldType);
 
 	bool IsEof() const;
 

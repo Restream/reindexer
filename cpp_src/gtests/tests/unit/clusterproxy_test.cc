@@ -214,6 +214,8 @@ TEST_F(ClusterizationProxyApi, ParallelTransaction) {
 		}
 
 		// check data in ns on leader node
+		leaderId = cluster.AwaitLeader(kMaxElectionsTime);
+		ASSERT_NE(leaderId, -1);
 		auto leaderNode = cluster.GetNode(leaderId);
 		BaseApi::QueryResultsType qr;
 		err = leaderNode->api.reindexer->Select("select * from " + kNsName + " order by id", qr);

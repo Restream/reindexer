@@ -24,7 +24,7 @@ static reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reinde
 											  std::string_view column) {
 	reindexer::VariantArray values;
 	if (index == IndexValueType::SetByJsonPath) {
-		pv.GetByJsonPath(column, tagsMatcher, values, KeyValueUndefined);
+		pv.GetByJsonPath(column, tagsMatcher, values, reindexer::KeyValueType::Undefined{});
 	} else {
 		pv.Get(index, values);
 	}
@@ -33,7 +33,7 @@ static reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reinde
 
 static reindexer::VariantArray getJsonFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, std::string_view json) {
 	reindexer::VariantArray values;
-	pv.GetByJsonPath(json, tagsMatcher, values, KeyValueUndefined);
+	pv.GetByJsonPath(json, tagsMatcher, values, reindexer::KeyValueType::Undefined{});
 	return values;
 }
 
@@ -78,7 +78,7 @@ VariantArray SortExpression::getJoinedFieldValues(IdType rowId, const joins::Nam
 	TagsMatcher& tm = js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.tagsMatcher : js.rightNs_->tagsMatcher_;
 	VariantArray values;
 	if (index == IndexValueType::SetByJsonPath) {
-		pv.GetByJsonPath(column, tm, values, KeyValueUndefined);
+		pv.GetByJsonPath(column, tm, values, KeyValueType::Undefined{});
 	} else {
 		pv.Get(index, values);
 	}
@@ -100,7 +100,7 @@ double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher)
 	if (values.empty()) {
 		throw Error(errQueryExec, "Empty field in sort expression: %s", column);
 	}
-	if (values.size() > 1 || values[0].Type() == KeyValueComposite || values[0].Type() == KeyValueTuple) {
+	if (values.size() > 1 || values[0].Type().Is<KeyValueType::Composite>() || values[0].Type().Is<KeyValueType::Tuple>()) {
 		throw Error(errQueryExec, "Array, composite or tuple field in sort expression");
 	}
 	return values[0].As<double>();
@@ -111,7 +111,7 @@ double SortExprFuncs::ProxiedField::GetValue(ConstPayload pv, TagsMatcher& tagsM
 	if (values.empty()) {
 		throw Error(errQueryExec, "Empty field in sort expression: %s", json);
 	}
-	if (values.size() > 1 || values[0].Type() == KeyValueComposite || values[0].Type() == KeyValueTuple) {
+	if (values.size() > 1 || values[0].Type().Is<KeyValueType::Composite>() || values[0].Type().Is<KeyValueType::Tuple>()) {
 		throw Error(errQueryExec, "Array, composite or tuple field in sort expression are not supported");
 	}
 	return values[0].As<double>();
@@ -133,7 +133,7 @@ double JoinedIndex::GetValue(IdType rowId, const joins::NamespaceResults& joinRe
 	if (values.empty()) {
 		throw Error(errQueryExec, "Empty field in sort expression: %d %s", static_cast<int>(nsIdx), column);
 	}
-	if (values.size() > 1 || values[0].Type() == KeyValueComposite || values[0].Type() == KeyValueTuple) {
+	if (values.size() > 1 || values[0].Type().Is<KeyValueType::Composite>() || values[0].Type().Is<KeyValueType::Tuple>()) {
 		throw Error(errQueryExec, "Array, composite or tuple field in sort expression");
 	}
 	return values[0].As<double>();
@@ -182,13 +182,13 @@ double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::N
 	TagsMatcher& tm = js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.tagsMatcher : js.rightNs_->tagsMatcher_;
 	VariantArray values1;
 	if (index1 == IndexValueType::SetByJsonPath) {
-		pv.GetByJsonPath(column1, tm, values1, KeyValueUndefined);
+		pv.GetByJsonPath(column1, tm, values1, KeyValueType::Undefined{});
 	} else {
 		pv.Get(index1, values1);
 	}
 	VariantArray values2;
 	if (index2 == IndexValueType::SetByJsonPath) {
-		pv.GetByJsonPath(column2, tm, values2, KeyValueUndefined);
+		pv.GetByJsonPath(column2, tm, values2, KeyValueType::Undefined{});
 	} else {
 		pv.Get(index2, values2);
 	}

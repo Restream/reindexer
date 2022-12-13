@@ -130,6 +130,21 @@ Error CoroTransaction::addTxItem(Item&& item, ItemModifyMode mode, lsn_t lsn) {
 	return Error();
 }
 
+Error CoroTransaction::addTxItemRaw(std::string_view cjson, ItemModifyMode mode, lsn_t lsn) {
+	if (!i_.rpcClient_ || !i_.ns_) {
+		return Error(errLogic, "Connection pointer in transaction is nullptr");
+	}
+	if (ItemImplBase::HasBundledTm(cjson)) {
+		return Error(errParams, "Raw CJSON interface does not support CJSON with bundled tags matcher");
+	}
+
+	return i_.rpcClient_->conn_
+		.Call({net::cproto::kCmdAddTxItem, i_.requestTimeout_, i_.execTimeout_, lsn, -1, ShardingKeyType::NotSetShard, nullptr, false,
+			   i_.sessionTs_},
+			  FormatCJson, cjson, mode, std::string_view(), int(i_.localTm_->stateToken()), i_.txId_)
+		.Status();
+}
+
 Error CoroTransaction::mergeTmFromItem(Item& item, Item& rItem) {
 	bool itemTmMergeSucceed = true;
 	if (item.IsTagsUpdated()) {

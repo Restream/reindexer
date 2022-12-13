@@ -13,7 +13,7 @@ TEST_F(BtreeIdsetsApi, SelectByStringField) {
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
 		Variant kr = item[kFieldOne];
-		EXPECT_TRUE(kr.Type() == KeyValueString);
+		EXPECT_TRUE(kr.Type().Is<reindexer::KeyValueType::String>());
 		EXPECT_TRUE(kr.As<std::string>() != strValueToCheck);
 	}
 }
@@ -27,7 +27,7 @@ TEST_F(BtreeIdsetsApi, SelectByIntField) {
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
 		Variant kr = item[kFieldTwo];
-		EXPECT_TRUE(kr.Type() == KeyValueInt);
+		EXPECT_TRUE(kr.Type().Is<reindexer::KeyValueType::Int>());
 		EXPECT_TRUE(static_cast<int>(kr) >= boundaryValue);
 	}
 }
@@ -47,11 +47,11 @@ TEST_F(BtreeIdsetsApi, SelectByBothFields) {
 	for (auto& it : qr) {
 		Item item = it.GetItem(false);
 		Variant krOne = item[kFieldOne];
-		EXPECT_TRUE(krOne.Type() == KeyValueString);
+		EXPECT_TRUE(krOne.Type().Is<reindexer::KeyValueType::String>());
 		EXPECT_TRUE(strValueToCheck2.compare(krOne.As<std::string>()) > 0);
 		EXPECT_TRUE(krOne.As<std::string>() != strValueToCheck);
 		Variant krTwo = item[kFieldTwo];
-		EXPECT_TRUE(krTwo.Type() == KeyValueInt);
+		EXPECT_TRUE(krTwo.Type().Is<reindexer::KeyValueType::Int>());
 		EXPECT_TRUE(static_cast<int>(krTwo) >= boundaryValue);
 	}
 }

@@ -129,12 +129,14 @@ Then you are able to configure specific async replication via `async_replication
 		"sync_threads": 4,
 		"syncs_per_thread": 2,
 		"online_updates_timeout_sec": 20,
+		"online_updates_delay_msec": 100,
 		"sync_timeout_sec": 60,
 		"retry_sync_interval_msec": 30000,
 		"enable_compression": true,
 		"batching_routines_count": 100,
 		"force_sync_on_logic_error": false,
 		"force_sync_on_wrong_data_hash": false,
+		"log_level":"info",
 		"max_wal_depth_on_force_sync": 1000,
 		"namespaces":[],
 		"nodes":
@@ -164,7 +166,9 @@ Then you are able to configure specific async replication via `async_replication
 - `batching_routines_count` - Number of concurrent routines, used to asynchronously send online updates for each each follower. Larger values may reduce network triparound, but also raise RAM consumation
 - `force_sync_on_logic_error` - Force resync on logic error conditions
 - `force_sync_on_wrong_data_hash` - Force resync if dataHash mismatch
+- `log_level` - Replication log level on replicator's startup. Possible values: none, error, warning, info, trace
 - `max_wal_depth_on_force_sync` - Maximum number of WAL records, which will be copied after force-sync
+- `online_updates_delay_msec` - Delay between write operation and replication. Larger values here will leader to higher replication latency and bufferization, but also will provide more effective network batching and CPU untilization
 - `namespaces` - List of namespaces for replication. If empty, all namespaces. All replicated namespaces will become read only for follower. This parameter is used, when node doesn't have specific namespace list
 - `nodes` - List of follower nodes
 
@@ -246,6 +250,16 @@ Reindexer> \upsert #config { "type":"action","action":{ "command":"reset_replica
 Reindexer> \upsert #config { "type":"action","action":{ "command":"reset_replication_role", "namespace": "ns_name" } }
 ```
 
+- Control replication's log levels:
+
+```SQL
+Reindexer> \upsert #config { "type":"action","action":{ "command":"set_log_level", "type": "async_replication", "level":"trace" } }
+```
+
+Possible `types`: `async_replication` (controls log level for asynchronous replication), `cluster` (controls log level for synchronous replication and RAFT-manager).
+
+Possible `levels`: `none`, `error`, `warning`, `info`, `trace`.
+
 ## RAFT-cluster
 
 Reindexer support RAFT-like algorithm for leader elections and synchronious replication with consesus awaiting. In cluster setup each node may be standalone server or golang application with builtinserver binding.
@@ -300,12 +314,6 @@ For optimization purposes concurrent writes are available even if some of the wr
 
 ### Configuration
 
-To use RAFT-cluster, it has to be enabled explicitly on server's startup:
-
-```
-reindexer_server --enable-cluster --db /tmp/rx_db
-```
-
 #### Configuration via YML-file
 
 On startup reindexer_server reads replication and cluster config from files `replication.conf`([sample](cpp_src/cluster/replication.conf)) and `cluster.conf`([sample](cpp_src/cluster/cluster.conf)), which have to be placed in database directory.
@@ -313,6 +321,19 @@ On startup reindexer_server reads replication and cluster config from files `rep
 `replication.conf` sets general replication parameter and has to be unique for each node in cluster (those parameters also may be configured via `#config` namespace).
 
 `cluster.conf` sets specific cluster parameters (description may be found in sample). This file has to have the same content on each node of the cluster.
+
+#### Exapmples
+
+1. [Example script](cpp_src/cmd/reindexer_server/clustertest/cluster_example.sh), which creates local cluster.
+
+2. [Docker-compose config](cpp_src/cmd/reindexer_server/clustertest/docker-compose.yml), which create 3 docker-containers running RAFT-cluster. Usage:
+
+```
+# Run from docker-compose.yml directory
+docker-compose up
+```
+
+In both examples default RPC ports are: 6534, 6535, 6536; and default HTTP ports are: 9088, 9089, 9090.
 
 #### Configuration via system namespace
 // work in progress

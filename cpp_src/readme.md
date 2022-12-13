@@ -65,6 +65,19 @@ Available distros: `debian-buster`, `debian-bullseye`, `ubuntu-bionic`, `ubuntu-
 
 To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 
+### Redos
+
+```bash
+rpm --import https://repo.reindexer.io/RX-KEY.GPG
+dnf config-manager --add-repo https://repo.reindexer.io/<distro>/x86_64/
+dnf update
+dnf install reindexer-server
+```
+
+Available distros: `redos-7`.
+
+To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
+
 ## OSX brew
 
 ```bash

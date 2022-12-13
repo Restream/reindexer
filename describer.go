@@ -143,8 +143,12 @@ type NamespaceMemStat struct {
 	StorageError string `json:"storage_error"`
 	// Filesystem path to namespace storage
 	StoragePath string `json:"storage_path"`
-	// Status of disk storage
+	// Status of disk storage (true, if storage is enabled and writable)
 	StorageOK bool `json:"storage_ok"`
+	// Shows if storage is enabled (hovewer it may still be unavailable)
+	StorageEnabled bool `json:"storage_enabled"`
+	// More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error descrition"
+	StorageStatus string `json:storage_status"`
 	// Background indexes optimization has been completed
 	OptimizationCompleted bool `json:"optimization_completed"`
 	// Total count of documents in namespace
@@ -476,6 +480,11 @@ type DBAsyncReplicationConfig struct {
 	BatchingReoutines int `json:"batching_routines_count"`
 	// Enable compression for replication network operations
 	EnableCompression bool `json:"enable_compression"`
+	// Delay between write operation and replication. Larger values here will leader to higher replication latency and bufferization,"
+	// but also will provide more effective network batching and CPU untilization
+	OnlineUpdatesDelayMSec int `json:"online_updates_delay_msec,omitempty"`
+	// Replication log level on replicator's startup. Possible values: none, error, warning, info, trace ('info' is default)
+	LogLevel string `json:"log_level,omitempty"`
 	// List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave
 	Namespaces []string `json:"namespaces"`
 	// Reconnect interval after replication error (ms)

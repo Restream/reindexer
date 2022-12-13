@@ -929,7 +929,7 @@ TEST_F(CascadeReplicationApi, WriteIntoSlaveNsAfterReconfiguration) {
 	// Remove ns1 from replication config
 	{
 		auto config = cluster.Get(0)->GetServerConfig(ServerControl::ConfigType::Namespace);
-		config.namespaces_ = {kNs2};
+		config.namespaces = {kNs2};
 		cluster.Get(0)->SetReplicationConfig(config);
 		cluster.Get(1)->ResetReplicationRole(kNs1);
 		// Await for replicator startup
@@ -971,7 +971,7 @@ TEST_F(CascadeReplicationApi, WriteIntoSlaveNsAfterReconfiguration) {
 	{
 		AsyncReplicationConfigTest::NsSet nsSet = {kNs1, kNs2};
 		auto config = cluster.Get(0)->GetServerConfig(ServerControl::ConfigType::Namespace);
-		config.namespaces_ = {kNs1, kNs2};
+		config.namespaces = {kNs1, kNs2};
 		cluster.Get(0)->SetReplicationConfig(config);
 		WaitSync(cluster.Get(0), cluster.Get(1), kNs1);
 		WaitSync(cluster.Get(0), cluster.Get(1), kNs2);

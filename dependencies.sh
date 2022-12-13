@@ -35,7 +35,7 @@ osx_deps="gperftools leveldb snappy cmake git"
 centos8_debs="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 fedora_debs=" gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 centos7_debs="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
-debian_debs="build-essential g++ libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
+debian_debs="build-essential g++ libunwind-dev libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
 alpine_apks="g++ snappy-dev leveldb-dev libexecinfo-dev make curl cmake unzip git"
 arch_pkgs="gcc snappy leveldb make curl cmake unzip git"
 redos_debs="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git cmake"
@@ -225,7 +225,7 @@ install_alpine() {
 install_redos() {
     for pkg in ${redos_debs}
     do
-        if dnf list --installed | grep -w ${pkg} ; then
+        if dnf list --installed | grep -e ^${pkg}\\. > /dev/null ; then
             info_msg "Package '$pkg' already installed. Skip ....."
         else
             info_msg "Installing '$pkg' package ....."

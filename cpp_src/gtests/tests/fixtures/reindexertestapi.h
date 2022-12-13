@@ -26,7 +26,8 @@ public:
 	template <typename ConfigT>
 	ReindexerTestApi(const ConfigT &cfg) : reindexer(std::shared_ptr<DB>(new DB(cfg))) {}
 
-	static void DefineNamespaceDataset(DB &rx, const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
+	template <typename FieldsT>
+	static void DefineNamespaceDataset(DB &rx, const std::string &ns, const FieldsT &fields) {
 		auto err = reindexer::Error();
 		for (const auto &field : fields) {
 			std::string indexName = std::get<0>(field);
@@ -55,6 +56,9 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
+		DefineNamespaceDataset(*reindexer, ns, fields);
+	}
+	void DefineNamespaceDataset(const std::string &ns, const std::vector<IndexDeclaration> &fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
 

@@ -23,18 +23,17 @@ Error ItemImplBase::FromCJSON(std::string_view slice) {
 	}
 
 	Serializer rdser(data);
-	// check tags matcher update
-	int tag = rdser.GetVarUint();
 	uint32_t tmOffset = 0;
-	const bool hasBundledTm = (tag == TAG_END);
+	const bool hasBundledTm = ReadBundledTmTag(rdser);
 	if (hasBundledTm) {
 		tmOffset = rdser.GetUInt32();
 		// read tags matcher update
 		Serializer tser(slice.substr(tmOffset));
 		tagsMatcher_.deserialize(tser);
 		tagsMatcher_.setUpdated();
-	} else
+	} else {
 		rdser.SetPos(0);
+	}
 
 	Payload pl = GetPayload();
 	CJsonDecoder decoder(tagsMatcher_);

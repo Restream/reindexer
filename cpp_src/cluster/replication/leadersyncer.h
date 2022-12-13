@@ -15,6 +15,8 @@ class ReindexerImpl;
 
 namespace cluster {
 
+class Logger;
+
 class LeaderSyncQueue {
 public:
 	struct Entry {
@@ -114,13 +116,14 @@ public:
 	};
 
 	LeaderSyncThread(const Config& cfg, LeaderSyncQueue& syncQueue, SharedSyncState<>& sharedSyncState, ReindexerImpl& thisNode,
-					 ReplicationStatsCollector statsCollector)
+					 ReplicationStatsCollector statsCollector, const Logger& l)
 		: cfg_(cfg),
 		  syncQueue_(syncQueue),
 		  sharedSyncState_(sharedSyncState),
 		  thisNode_(thisNode),
 		  statsCollector_(statsCollector),
-		  client_(client::ReindexerConfig{10000, 0, cfg_.netTimeout, cfg_.enableCompression, true, "cluster_leader_syncer"}) {
+		  client_(client::ReindexerConfig{10000, 0, cfg_.netTimeout, cfg_.enableCompression, true, "cluster_leader_syncer"}),
+		  log_(l) {
 		terminateAsync_.set(loop_);
 		terminateAsync_.set([this](net::ev::async&) { client_.Stop(); });
 		thread_ = std::thread([this]() noexcept { sync(); });
@@ -138,6 +141,7 @@ public:
 private:
 	void sync();
 	void syncNamespaceImpl(bool forced, const LeaderSyncQueue::Entry& syncEntry, std::string& tmpNsName);
+	static constexpr std::string_view logModuleName() noexcept { return std::string_view("leadersyncer_t"); }
 
 	const Config& cfg_;
 	LeaderSyncQueue& syncQueue_;
@@ -150,6 +154,7 @@ private:
 	std::thread thread_;
 	net::ev::async terminateAsync_;
 	net::ev::dynamic_loop loop_;
+	const Logger& log_;
 };
 
 class LeaderSyncer {
@@ -165,7 +170,7 @@ public:
 		std::chrono::milliseconds netTimeout;
 	};
 
-	LeaderSyncer(const Config& cfg) noexcept : syncQueue_(cfg.maxSyncsPerNode), cfg_(cfg) {}
+	LeaderSyncer(const Config& cfg, const Logger& l) noexcept : syncQueue_(cfg.maxSyncsPerNode), cfg_(cfg), log_(l) {}
 
 	void Terminate() {
 		std::lock_guard lck(mtx_);
@@ -177,10 +182,13 @@ public:
 			   ReplicationStatsCollector statsCollector);
 
 private:
+	static constexpr std::string_view logModuleName() noexcept { return std::string_view("leadersyncer"); }
+
 	LeaderSyncQueue syncQueue_;
 	const Config cfg_;
 	std::mutex mtx_;
 	std::deque<LeaderSyncThread> threads_;
+	const Logger& log_;
 };
 
 }  // namespace cluster

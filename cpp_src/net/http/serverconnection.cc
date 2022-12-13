@@ -125,11 +125,14 @@ void ServerConnection::parseParams(std::string_view str) {
 				if (name) {
 					request_.params.push_back(Param{std::string_view(name, namelen), std::string_view(value, value ? p - value : 0)});
 					name = value = nullptr;
+					namelen = 0;
 				}
 				break;
 			case '=':
-				namelen = p - name;
-				value = p + 1;
+				if (namelen == 0) {
+					namelen = p - name;
+					value = p + 1;
+				}
 				break;
 			default:
 				break;

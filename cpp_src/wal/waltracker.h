@@ -9,16 +9,20 @@
 
 namespace reindexer {
 
+class AsyncStorage;
+
 /// WAL trakcer
 class WALTracker {
 public:
-	WALTracker(int64_t sz);
+	explicit WALTracker(int64_t sz);
+	WALTracker(const WALTracker &) = delete;
+	WALTracker(const WALTracker &wal, AsyncStorage &storage);
 	/// Initialize WAL tracker.
 	/// @param sz - Max WAL size
 	/// @param minLSN - Min available LSN number
 	/// @param maxLSN - Current LSN counter value
 	/// @param storage - Storage object for store WAL records
-	void Init(int64_t sz, int64_t minLSN, int64_t maxLSN, std::weak_ptr<datastorage::IDataStorage> storage);
+	void Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage &storage);
 	/// Add new record to WAL tracker
 	/// @param rec - Record to be added
 	/// @param originLsn - Origin LSN value (from server, where this record were initialy created)
@@ -63,8 +67,6 @@ public:
 	int16_t GetServer() { return lsnCounter_.Server(); }
 	/// Reset WAL state
 	void Reset();
-	/// Reset storage without WAL reload
-	void SetStorage(std::weak_ptr<datastorage::IDataStorage> storage, bool expectingReset);
 
 	/// Iterator for WAL records
 	class iterator {
@@ -153,7 +155,7 @@ protected:
 	/// Cached heap size of WAL object
 	size_t heapSize_ = 0;
 	/// Datastorage pointer
-	std::weak_ptr<datastorage::IDataStorage> storage_;
+	AsyncStorage *storage_ = nullptr;
 };
 
 }  // namespace reindexer

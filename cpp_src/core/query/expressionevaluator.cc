@@ -47,7 +47,7 @@ double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValu
 		VariantArray fieldValues;
 		ConstPayload pv(type_, v);
 		if (type_.FieldByName(tok.text(), field)) {
-			KeyValueType type = type_.Field(field).Type();
+			const auto type = type_.Field(field).Type();
 			if (type_.Field(field).IsArray()) {
 				pv.Get(field, fieldValues);
 				for (const Variant& v : fieldValues) {
@@ -57,35 +57,49 @@ double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValu
 				return 0.0;
 			} else if (state_ == StateArrayConcat) {
 				VariantArray vals;
-				pv.GetByJsonPath(tok.text(), tagsMatcher_, vals, KeyValueUndefined);
+				pv.GetByJsonPath(tok.text(), tagsMatcher_, vals, KeyValueType::Undefined{});
 				for (const Variant& v : vals) {
 					arrayValues_.emplace_back(v);
 				}
 				parser.next_token();
 				return 0.0;
-			} else if ((type == KeyValueInt) || (type == KeyValueInt64) || (type == KeyValueDouble)) {
-				pv.Get(field, fieldValues);
-				if (fieldValues.empty()) throw Error(errLogic, "Calculating value of an empty field is impossible: %s", tok.text());
-				parser.next_token();
-				return fieldValues.front().As<double>();
 			} else {
-				throw Error(errLogic, kWrongFieldTypeError, tok.text());
+				return type.EvaluateOneOf(
+					[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) {
+						pv.Get(field, fieldValues);
+						if (fieldValues.empty()) throw Error(errLogic, "Calculating value of an empty field is impossible: %s", tok.text());
+						parser.next_token();
+						return fieldValues.front().As<double>();
+					},
+					[&](OneOf<KeyValueType::Bool, KeyValueType::String>) -> double {
+						throw Error(errLogic, kWrongFieldTypeError, tok.text());
+					},
+					[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept
+					-> double {
+						assertrx(0);
+						abort();
+					});
 			}
 		} else {
-			pv.GetByJsonPath(tok.text(), tagsMatcher_, fieldValues, KeyValueUndefined);
+			pv.GetByJsonPath(tok.text(), tagsMatcher_, fieldValues, KeyValueType::Undefined{});
 			if (fieldValues.size() > 0) {
-				KeyValueType type = fieldValues.front().Type();
+				const auto type = fieldValues.front().Type();
 				if ((fieldValues.size() > 1) || (state_ == StateArrayConcat)) {
 					for (const Variant& v : fieldValues) {
 						arrayValues_.emplace_back(v);
 					}
 					parser.next_token();
 					return 0.0;
-				} else if ((type == KeyValueInt) || (type == KeyValueInt64) || (type == KeyValueDouble)) {
-					parser.next_token();
-					return fieldValues.front().As<double>();
 				} else {
-					throw Error(errLogic, kWrongFieldTypeError, tok.text());
+					return type.EvaluateOneOf(
+						[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) {
+							parser.next_token();
+							return fieldValues.front().As<double>();
+						},
+						[&](OneOf<KeyValueType::String, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Undefined,
+								  KeyValueType::Composite, KeyValueType::Tuple>) -> double {
+							throw Error(errLogic, kWrongFieldTypeError, tok.text());
+						});
 				}
 			} else {
 				SelectFuncStruct funcData = SelectFuncParser().ParseFunction(parser, true);

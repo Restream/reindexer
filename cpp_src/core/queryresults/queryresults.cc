@@ -12,7 +12,7 @@ namespace reindexer {
 
 struct QueryResults::MergedData {
 	MergedData(const std::string& ns, bool _haveRank, bool _needOutputRank)
-		: pt(ns, {PayloadFieldType(KeyValueString, "-tuple", {}, false)}), haveRank(_haveRank), needOutputRank(_needOutputRank) {}
+		: pt(ns, {PayloadFieldType(KeyValueType::String{}, "-tuple", {}, false)}), haveRank(_haveRank), needOutputRank(_needOutputRank) {}
 
 	std::string nsName;
 	PayloadType pt;
@@ -687,13 +687,13 @@ public:
 			if (lLocal && fieldIdx_ != IndexValueType::SetByJsonPath) {
 				lpv.Get(fieldIdx_, lValues);
 			} else {
-				lpv.GetByJsonPath(fieldName_, ltm, lValues, KeyValueUndefined);
+				lpv.GetByJsonPath(fieldName_, ltm, lValues, KeyValueType::Undefined{});
 			}
 			VariantArray rValues;
 			if (rLocal && fieldIdx_ != IndexValueType::SetByJsonPath) {
 				rpv.Get(fieldIdx_, rValues);
 			} else {
-				rpv.GetByJsonPath(fieldName_, rtm, rValues, KeyValueUndefined);
+				rpv.GetByJsonPath(fieldName_, rtm, rValues, KeyValueType::Undefined{});
 			}
 			if (lValues.size() != 1 || rValues.size() != 1) {
 				throw Error(errLogic, "Cannot sort by array field");
@@ -761,7 +761,7 @@ public:
 			if (lLocal && fields_[i].fieldIdx != IndexValueType::SetByJsonPath) {
 				lpv.Get(fields_[i].fieldIdx, lValues);
 			} else {
-				lpv.GetByJsonPath(fields_[i].fieldName, ltm, lValues, KeyValueUndefined);
+				lpv.GetByJsonPath(fields_[i].fieldName, ltm, lValues, KeyValueType::Undefined{});
 			}
 			if (lValues.size() != 1) {
 				throw Error(errLogic, "Cannot sort by array field");
@@ -804,7 +804,7 @@ public:
 			if (rLocal && fields_[i].fieldIdx != IndexValueType::SetByJsonPath) {
 				rpv.Get(fields_[i].fieldIdx, rValues);
 			} else {
-				rpv.GetByJsonPath(fields_[i].fieldName, rtm, rValues, KeyValueUndefined);
+				rpv.GetByJsonPath(fields_[i].fieldName, rtm, rValues, KeyValueType::Undefined{});
 			}
 			if (rValues.size() != 1) {
 				throw Error(errLogic, "Cannot sort by array field");

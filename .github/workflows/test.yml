@@ -39,7 +39,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-latest]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-latest]
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
@@ -82,6 +82,12 @@ jobs:
           fi
           make -j4
           STRIP=/bin/true cpack
+      - name: 'C++ tests'
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: |
+          echo "Running C++ directly in this job due to Action's problem with artifacts transition for macos-11 and macos-12 runners"
+          cd build
+          ctest --verbose -R gtests
       - name: 'Tar Artifacts'
         run: |
           find ./build/ -name CMakeFiles | xargs -n1 rm -rf
@@ -97,7 +103,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-latest]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-latest]
         test: ['C++', 'GO']
         include:
           - os: ubuntu-latest
@@ -127,14 +133,18 @@ jobs:
       SANITIZER: ${{matrix.sanitizer}}
     steps:
       - name: Checkout repository
+        if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
         uses: actions/checkout@v3
       - name: Download ${{matrix.os}}${{matrix.sanitizer}} Artifacts
+        if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
         uses: actions/download-artifact@v3
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
       - name: 'Untar Artifacts'
+        if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
         run: tar -xvf artifacts.tar
       - name: Prepare Environment
+        if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
         env:
           OS: ${{matrix.os}}
         run: |
@@ -156,26 +166,26 @@ jobs:
             ./.github/workflows/install_gtest_parallel.sh
           fi
       - name: Tests
+        if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
         run: |
           if [[ $TEST == 'GO' ]]; then
             if [[ $SANITIZER == 'ASAN' ]]; then
               export REINDEXER_GH_CI_ASAN=true
             fi
-            go test -timeout 60m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
+            if [[ -z "$SANITIZER" ]]; then
+              go test -timeout 15m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
+            else
+              go test -timeout 35m ./test/... -bench . -benchmem -benchtime 100ms -seedcount 50000
+            fi
           else
             cd build
-            uname -a
-            chmod +x cpp_src/gtests/tests/tests
-            file cpp_src/gtests/tests/tests
-            chmod +x cpp_src/gtests/bench/ft_benchmarking
-            chmod +x cpp_src/gtests/bench/benchmarking
             ctest --verbose
           fi
 
   test-pyreindexer:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-latest]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-latest]
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build

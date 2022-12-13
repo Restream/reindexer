@@ -49,9 +49,9 @@ private:
 class AsyncReplThread {
 public:
 	using BaseT = ReplThread<AsyncThreadParam>;
-	AsyncReplThread(int serverId, ReindexerImpl &thisNode, std::shared_ptr<BaseT::UpdatesQueueT> q,
-					const std::vector<AsyncReplNodeConfig> &nodesList, AsyncReplicationMode replMode, SharedSyncState<> &syncState,
-					ReplicationStatsCollector statsCollector);
+	AsyncReplThread(int serverId, ReindexerImpl &thisNode, std::shared_ptr<BaseT::UpdatesQueueT>,
+					const std::vector<AsyncReplNodeConfig> &nodesList, AsyncReplicationMode, SharedSyncState<> &, ReplicationStatsCollector,
+					const Logger &);
 	~AsyncReplThread();
 	void Run(ReplThreadConfig config, std::vector<std::pair<uint32_t, AsyncReplNodeConfig> > &&nodesList, size_t totalNodesCount);
 	void SendTerminate() noexcept;

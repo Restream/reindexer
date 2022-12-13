@@ -30,7 +30,7 @@ public:
 
 private:
 	void writeField(std::string_view name, std::string_view type, int number);
-	std::string_view jsonSchemaTypeToProtobufType(const FieldProps& props, KeyValueType& type);
+	std::pair<std::string_view, KeyValueType> jsonSchemaTypeToProtobufType(const FieldProps& props) const;
 
 	WrSerializer* ser_;
 	SchemaFieldsTypes* fieldsTypes_;

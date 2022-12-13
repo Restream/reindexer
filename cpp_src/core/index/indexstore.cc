@@ -9,13 +9,13 @@ namespace reindexer {
 template <>
 IndexStore<Point>::IndexStore(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields)
 	: Index(idef, std::move(payloadType), fields) {
-	keyType_ = selectKeyType_ = KeyValueDouble;
+	keyType_ = selectKeyType_ = KeyValueType::Double{};
 	opts_.Array(true);
 }
 
 template <>
 void IndexStore<key_string>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool & /*clearCache*/) {
-	if (key.Type() == KeyValueNull) return;
+	if (key.Type().Is<KeyValueType::Null>()) return;
 	auto keyIt = str_map.find(std::string_view(key));
 	// assertf(keyIt != str_map.end(), "Delete unexists key from index '%s' id=%d", name_, id);
 	if (keyIt == str_map.end()) return;
@@ -48,7 +48,7 @@ void IndexStore<Point>::Delete(const VariantArray & /*keys*/, IdType /*id*/, Str
 
 template <>
 Variant IndexStore<key_string>::Upsert(const Variant &key, IdType /*id*/, bool & /*clearCache*/) {
-	if (key.Type() == KeyValueNull) return Variant();
+	if (key.Type().Is<KeyValueType::Null>()) return Variant();
 
 	auto keyIt = str_map.find(std::string_view(key));
 	if (keyIt == str_map.end()) {
@@ -68,7 +68,7 @@ Variant IndexStore<PayloadValue>::Upsert(const Variant &key, IdType /*id*/, bool
 
 template <typename T>
 Variant IndexStore<T>::Upsert(const Variant &key, IdType id, bool & /*clearCache*/) {
-	if (!opts_.IsArray() && !opts_.IsDense() && !opts_.IsSparse() && key.Type() != KeyValueNull) {
+	if (!opts_.IsArray() && !opts_.IsDense() && !opts_.IsSparse() && key.Type().Is<KeyValueType::Null>()) {
 		idx_data.resize(std::max(id + 1, int(idx_data.size())));
 		idx_data[id] = static_cast<T>(key);
 	}

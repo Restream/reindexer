@@ -59,6 +59,8 @@ public:
 	}
 	ReplicationStats GetAsyncReplicationStats() const { return asyncReplicator_.GetReplicationStats(); }
 	ReplicationStats GetClusterReplicationStats() const { return clusterReplicator_.GetReplicationStats(); }
+	void SetAsyncReplicatonLogLevel(LogLevel level) noexcept { asyncReplicator_.SetLogLevel(level); }
+	void SetClusterReplicatonLogLevel(LogLevel level) noexcept { clusterReplicator_.SetLogLevel(level); }
 
 private:
 	static bool replicationIsNotRequired(const UpdatesContainer &recs) noexcept;

@@ -5,8 +5,8 @@ namespace cluster {
 
 AsyncReplThread::AsyncReplThread(int serverId, ReindexerImpl& thisNode, std::shared_ptr<BaseT::UpdatesQueueT> q,
 								 const std::vector<AsyncReplNodeConfig>& nodesList, AsyncReplicationMode replMode,
-								 SharedSyncState<>& syncState, ReplicationStatsCollector statsCollector)
-	: base_(serverId, thisNode, std::move(q), AsyncThreadParam(&nodesList, replMode, syncState), statsCollector) {}
+								 SharedSyncState<>& syncState, ReplicationStatsCollector statsCollector, const Logger& l)
+	: base_(serverId, thisNode, std::move(q), AsyncThreadParam(&nodesList, replMode, syncState), statsCollector, l) {}
 
 AsyncReplThread::~AsyncReplThread() {
 	if (th.joinable()) {

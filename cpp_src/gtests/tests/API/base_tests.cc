@@ -57,6 +57,11 @@ TEST(ReindexerTest, DeleteTemporaryNamespaceOnConnect) {
 TEST_F(ReindexerApi, AddNamespace) {
 	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
 	ASSERT_EQ(true, err.ok()) << err.what();
+
+	const auto item = getMemStat(*rt.reindexer, default_namespace);
+	ASSERT_EQ(item["storage_ok"].As<bool>(), false);
+	ASSERT_EQ(item["storage_enabled"].As<bool>(), false);
+	ASSERT_EQ(item["storage_status"].As<std::string>(), "DISABLED");
 }
 
 TEST_F(ReindexerApi, AddNamespace_CaseInsensitive) {
@@ -485,16 +490,23 @@ TEST_F(ReindexerApi, CloseNamespace) {
 }
 
 TEST_F(ReindexerApi, DropStorage) {
-	rt.reindexer->Connect("builtin://" + kBaseTestsStoragePath);
+	auto rx = std::make_unique<Reindexer>();
+	auto err = rx->Connect("builtin://" + kBaseTestsStoragePath);
+	ASSERT_TRUE(err.ok()) << err.what();
 	auto storagePath = reindexer::fs::JoinPath(kBaseTestsStoragePath, default_namespace);
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	err = rx->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(reindexer::fs::Stat(storagePath) == reindexer::fs::StatDir);
 
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	err = rx->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	err = rt.reindexer->DropNamespace(default_namespace);
+	const auto item = getMemStat(*rx, default_namespace);
+	ASSERT_EQ(item["storage_ok"].As<bool>(), true);
+	ASSERT_EQ(item["storage_enabled"].As<bool>(), true);
+	ASSERT_EQ(item["storage_status"].As<std::string>(), "OK");
+
+	err = rx->DropNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_TRUE(reindexer::fs::Stat(storagePath) == reindexer::fs::StatError);
 }
@@ -842,7 +854,7 @@ TEST_F(ReindexerApi, SortByMultipleColumns) {
 		for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 			const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
 			Variant sortedValue = item[sortingEntry.expression];
-			if (lastValues[j].Type() != KeyValueNull) {
+			if (!lastValues[j].Type().Is<reindexer::KeyValueType::Null>()) {
 				cmpRes[j] = lastValues[j].Compare(sortedValue);
 				bool needToVerify = true;
 				if (j != 0) {
@@ -1457,12 +1469,12 @@ TEST_F(ReindexerApi, UpdateWithBoolParserTest) {
 	EXPECT_EQ(query.UpdateFields().front().Column(), "flag1");
 	EXPECT_EQ(query.UpdateFields().front().Mode(), FieldModeSet);
 	ASSERT_EQ(query.UpdateFields().front().Values().size(), 1);
-	EXPECT_EQ(query.UpdateFields().front().Values().front().Type(), KeyValueBool);
+	EXPECT_TRUE(query.UpdateFields().front().Values().front().Type().Is<reindexer::KeyValueType::Bool>());
 	EXPECT_TRUE(query.UpdateFields().front().Values().front().As<bool>());
 	EXPECT_EQ(query.UpdateFields().back().Column(), "flag2");
 	EXPECT_EQ(query.UpdateFields().back().Mode(), FieldModeSet);
 	ASSERT_EQ(query.UpdateFields().back().Values().size(), 1);
-	EXPECT_EQ(query.UpdateFields().back().Values().front().Type(), KeyValueBool);
+	EXPECT_TRUE(query.UpdateFields().back().Values().front().Type().Is<reindexer::KeyValueType::Bool>());
 	EXPECT_FALSE(query.UpdateFields().back().Values().front().As<bool>());
 	EXPECT_EQ(query.GetSQL(), sql) << query.GetSQL();
 }
@@ -1671,7 +1683,7 @@ TEST_F(ReindexerApi, IntToStringIndexUpdate) {
 	for (auto it : qr) {
 		Item item = it.GetItem(false);
 		Variant v = item[kFieldNumeric];
-		EXPECT_TRUE(v.Type() == KeyValueInt) << v.Type();
+		EXPECT_TRUE(v.Type().Is<reindexer::KeyValueType::Int>()) << v.Type().Name();
 	}
 }
 

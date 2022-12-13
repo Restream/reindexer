@@ -42,18 +42,19 @@ void manual_connection::close_conn(int err) {
 		io_.stop();
 		sock_.close();
 	}
+	cur_events_ = 0;
 	const bool hadRData = !r_data_.empty();
 	const bool hadWData = !w_data_.empty();
 	if (hadRData) {
 		read_from_buf(r_data_.buf, r_data_.transfer, false);
 		buffered_data_.clear();
-		on_async_op_done(r_data_, err, ev::READ);
+		on_async_op_done(r_data_, err);
 	} else {
 		buffered_data_.clear();
 	}
 
 	if (hadWData) {
-		on_async_op_done(w_data_, err, ev::WRITE);
+		on_async_op_done(w_data_, err);
 	}
 	if (stats_) stats_->stop();
 }
@@ -83,12 +84,12 @@ int manual_connection::async_connect(std::string_view addr) noexcept {
 	if (connect_timeout_.count() > 0) {
 		connect_timer_.start(double(connect_timeout_.count()) / 1000);
 	}
-	add_io_events(ev::WRITE);
+	set_io_events(ev::WRITE);
 	return 0;
 }
 
-ssize_t manual_connection::write(span<char> wr_buf, transfer_data &transfer, int *err_ptr) {
-	if (err_ptr) *err_ptr = 0;
+ssize_t manual_connection::write(span<char> wr_buf, transfer_data &transfer, int &err_ref) {
+	err_ref = 0;
 	ssize_t written = -1;
 	auto cur_buf = wr_buf.subspan(transfer.transfered_size());
 	do {
@@ -99,7 +100,7 @@ ssize_t manual_connection::write(span<char> wr_buf, transfer_data &transfer, int
 			if (err == EINTR) {
 				continue;
 			} else {
-				if (err_ptr) *err_ptr = err;
+				err_ref = err;
 				if (socket::would_block(err)) {
 					return 0;
 				}
@@ -116,22 +117,22 @@ ssize_t manual_connection::write(span<char> wr_buf, transfer_data &transfer, int
 	if (stats_) stats_->update_write_stats(written, remaining);
 
 	if (remaining == 0) {
-		on_async_op_done(w_data_, 0, ev::WRITE);
+		on_async_op_done(w_data_, 0);
 	}
 	return written;
 }
 
-ssize_t manual_connection::read(span<char> rd_buf, transfer_data &transfer, int *err_ptr) {
+ssize_t manual_connection::read(span<char> rd_buf, transfer_data &transfer, int &err_ref) {
 	bool need_read = !transfer.expected_size();
 	ssize_t nread = 0;
 	ssize_t read_this_time = 0;
-	if (err_ptr) *err_ptr = 0;
+	err_ref = 0;
 	auto remain_to_transfer = transfer.expected_size() - transfer.transfered_size();
 	if (read_from_buf(rd_buf, transfer, true)) {
-		on_async_op_done(r_data_, 0, ev::READ);
+		on_async_op_done(r_data_, 0);
 		return remain_to_transfer;
 	}
-	buffered_data_.reserve(transfer.expected_size());
+	buffered_data_.reserve(transfer.expected_size() + 0x800);
 	while (transfer.transfered_size() < transfer.expected_size() || need_read) {
 		auto it = buffered_data_.head();
 		nread = sock_.recv(it);
@@ -141,7 +142,7 @@ ssize_t manual_connection::read(span<char> rd_buf, transfer_data &transfer, int 
 
 		if ((nread < 0 && !socket::would_block(err)) || nread == 0) {
 			if (nread == 0) err = k_sock_closed_err;
-			if (err_ptr) *err_ptr = err;
+			err_ref = err;
 			close_conn(err);
 			return -1;
 		} else if (nread > 0) {
@@ -150,20 +151,39 @@ ssize_t manual_connection::read(span<char> rd_buf, transfer_data &transfer, int 
 			buffered_data_.advance_head(nread);
 			if (stats_) stats_->update_read_stats(nread);
 			if (read_from_buf(rd_buf, transfer, true)) {
-				on_async_op_done(r_data_, 0, ev::READ);
+				on_async_op_done(r_data_, 0);
 				return remain_to_transfer;
 			}
 		} else {
-			if (err_ptr) *err_ptr = err;
+			err_ref = err;
 			return nread;
 		}
 	}
-	on_async_op_done(r_data_, 0, ev::READ);
+	on_async_op_done(r_data_, 0);
 	return read_this_time;
 }
 
+void manual_connection::read_to_buf(int &err_ref) {
+	auto it = buffered_data_.head();
+	ssize_t nread = sock_.recv(it);
+	int err = sock_.last_error();
+
+	if (nread < 0 && err == EINTR) return;
+
+	if ((nread < 0 && !socket::would_block(err)) || nread == 0) {
+		if (nread == 0) err = k_sock_closed_err;
+		err_ref = err;
+		close_conn(err);
+	} else if (nread > 0) {
+		buffered_data_.advance_head(nread);
+		if (stats_) stats_->update_read_stats(nread);
+	} else {
+		err_ref = err;
+	}
+}
+
 void manual_connection::add_io_events(int events) noexcept {
-	int curEvents = cur_events_;
+	const int curEvents = cur_events_;
 	cur_events_ |= events;
 	if (curEvents != cur_events_) {
 		if (curEvents == 0) {
@@ -174,15 +194,14 @@ void manual_connection::add_io_events(int events) noexcept {
 	}
 }
 
-void manual_connection::rm_io_events(int events) noexcept {
-	int curEvents = cur_events_;
-	cur_events_ &= ~events;
-	if (curEvents != cur_events_) {
+void manual_connection::set_io_events(int events) noexcept {
+	if (events != cur_events_) {
 		if (cur_events_ == 0) {
-			io_.stop();
+			io_.start(sock_.fd(), events);
 		} else {
-			io_.set(cur_events_);
+			io_.set(events);
 		}
+		cur_events_ = events;
 	}
 }
 
@@ -196,8 +215,17 @@ void manual_connection::io_callback(ev::io &, int revents) {
 			revents |= ev::WRITE;
 		}
 	}
+
+	const bool hadWData = w_data_.buf.size();
+
 	if (revents & ev::WRITE && conn_id == conn_id_) {
 		write_cb();
+	}
+
+	if (sock_.valid()) {
+		int nevents = (r_data_.buf.size() || buffered_data_.available()) ? ev::READ : 0;
+		if (hadWData || w_data_.buf.size()) nevents |= ev::WRITE;
+		set_io_events(nevents);
 	}
 }
 
@@ -209,16 +237,18 @@ void manual_connection::write_cb() {
 		state_ = conn_state::connected;
 	}
 	if (w_data_.buf.size()) {
-		write(w_data_.buf, w_data_.transfer, nullptr);
-	} else {
-		rm_io_events(ev::WRITE);
+		int err = 0;
+		write(w_data_.buf, w_data_.transfer, err);
+		(void)err;
 	}
 }
 
 int manual_connection::read_cb() {
 	int err = 0;
 	if (r_data_.buf.size()) {
-		read(r_data_.buf, r_data_.transfer, &err);
+		read(r_data_.buf, r_data_.transfer, err);
+	} else {
+		read_to_buf(err);
 	}
 	return err;
 }

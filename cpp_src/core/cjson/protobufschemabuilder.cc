@@ -31,36 +31,29 @@ ProtobufSchemaBuilder::ProtobufSchemaBuilder(ProtobufSchemaBuilder&& obj)
 }
 ProtobufSchemaBuilder::~ProtobufSchemaBuilder() { End(); }
 
-std::string_view ProtobufSchemaBuilder::jsonSchemaTypeToProtobufType(const FieldProps& props, KeyValueType& type) {
+std::pair<std::string_view, KeyValueType> ProtobufSchemaBuilder::jsonSchemaTypeToProtobufType(const FieldProps& props) const {
 	using namespace std::string_view_literals;
 	if (props.type == "string") {
-		type = KeyValueString;
-		return "string"sv;
+		return {"string"sv, KeyValueType::String{}};
 	} else if (props.type == "integer") {
-		type = KeyValueInt64;
 		if (tm_ && pt_) {
 			TagsPath& tagsPath = fieldsTypes_->tagsPath_;
 			int field = tm_->tags2field(tagsPath.data(), tagsPath.size());
-			if (field > 0 && pt_->Field(field).Type() == KeyValueInt) {
-				type = KeyValueInt;
+			if (field > 0 && pt_->Field(field).Type().Is<KeyValueType::Int>()) {
+				return {"int64"sv, KeyValueType::Int{}};
 			}
 		}
-		return "int64"sv;
+		return {"int64"sv, KeyValueType::Int64{}};
 	} else if (props.type == "number") {
-		type = KeyValueDouble;
-		return "double"sv;
+		return {"double"sv, KeyValueType::Double{}};
 	} else if (props.type == "boolean") {
-		type = KeyValueBool;
-		return "bool"sv;
+		return {"bool"sv, KeyValueType::Bool{}};
 	} else if (props.type == "object") {
-		type = KeyValueComposite;
-		return props.xGoType;
+		return {props.xGoType, KeyValueType::Composite{}};
 	} else if (props.type == "null") {
-		type = KeyValueNull;
-		return std::string_view();
+		return {{}, KeyValueType::Null{}};
 	}
-	type = KeyValueUndefined;
-	return std::string_view();
+	return {{}, KeyValueType::Undefined{}};
 }
 
 void ProtobufSchemaBuilder::End() {
@@ -75,18 +68,20 @@ void ProtobufSchemaBuilder::End() {
 
 void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const FieldProps& props) {
 	TagsPathScope<TagsPath> tagScope(fieldsTypes_->tagsPath_, tagName);
-	KeyValueType type;
-	std::string_view typeName = jsonSchemaTypeToProtobufType(props, type);
-	if (type == KeyValueUndefined || typeName.empty()) {
+	const auto [typeName, type] = jsonSchemaTypeToProtobufType(props);
+	if (type.Is<KeyValueType::Undefined>() || typeName.empty()) {
 		throw Error(errLogic, "Can't get protobuf schema - field [%s] is of unsupported type [%s] (%s)", name, props.type, props.xGoType);
 	}
 	if (props.isArray) {
 		assertrx(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
 		if (ser_) ser_->Write("repeated ");
 		writeField(name, typeName, tagName);
-		if (type == KeyValueBool || type == KeyValueInt || type == KeyValueInt64 || type == KeyValueDouble) {
-			if (ser_) ser_->Write(" [packed=true]");
-		}
+		type.EvaluateOneOf(
+			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) {
+				if (ser_) ser_->Write(" [packed=true]");
+			},
+			[](OneOf<KeyValueType::String, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
+					 KeyValueType::Null>) noexcept {});
 	} else {
 		writeField(name, typeName, tagName);
 	}
@@ -97,7 +92,7 @@ void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const Fiel
 ProtobufSchemaBuilder ProtobufSchemaBuilder::Object(int tagName, std::string_view name, bool buildTypesOnly,
 													const std::function<void(ProtobufSchemaBuilder& self)>& filler) {
 	fieldsTypes_->tagsPath_.push_back(tagName);
-	fieldsTypes_->AddObject(name);
+	fieldsTypes_->AddObject(std::string{name});
 	ProtobufSchemaBuilder obj(buildTypesOnly ? nullptr : ser_, fieldsTypes_, ObjType::TypeObject, name, pt_, tm_);
 	if (filler) {
 		filler(obj);

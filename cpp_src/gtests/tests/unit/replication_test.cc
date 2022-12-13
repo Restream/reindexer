@@ -33,7 +33,7 @@ TEST_F(ReplicationLoadApi, Base) {
 
 	std::thread statsReader([this]() {
 		while (!stop) {
-			GetReplicationStats(masterId_, cluster::kAsyncReplStatsType);
+			GetReplicationStats(masterId_);
 			std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		}
 	});
@@ -43,7 +43,7 @@ TEST_F(ReplicationLoadApi, Base) {
 		if (i % 3 == 0) DeleteFromMaster();
 		SetWALSize(masterId_, (int64_t(i) + 1) * 25000, kNsSome1);
 		FillData(1000);
-		GetReplicationStats(masterId_, cluster::kAsyncReplStatsType);
+		GetReplicationStats(masterId_);
 		SetWALSize(masterId_, (int64_t(i) + 1) * 50000, kNsSome);
 		SimpleSelect(0);
 	}
@@ -61,7 +61,8 @@ TEST_F(ReplicationLoadApi, Base) {
 	std::this_thread::sleep_for(std::chrono::seconds(1));  // Add some time for stats stabilization
 
 	// Check final stats
-	auto stats = GetReplicationStats(masterId_, cluster::kAsyncReplStatsType);
+	auto stats = GetReplicationStats(masterId_);
+	EXPECT_EQ(stats.logLevel, LogTrace);
 	// Validate force/wal syncs
 	if (leaderWasRestarted) {
 		EXPECT_GE(stats.forceSyncs.count + stats.walSyncs.count, 2 * (kDefaultServerCount - 1))
@@ -87,11 +88,11 @@ TEST_F(ReplicationLoadApi, Base) {
 	}
 	// Validate nodes/ns states
 	auto replConf = GetSrv(masterId_)->GetServerConfig(ServerControl::ConfigType::Namespace);
-	ASSERT_EQ(replConf.nodes_.size(), stats.nodeStats.size());
+	ASSERT_EQ(replConf.nodes.size(), stats.nodeStats.size());
 	for (auto& nodeStat : stats.nodeStats) {
-		auto dsnIt = std::find_if(replConf.nodes_.begin(), replConf.nodes_.end(),
+		auto dsnIt = std::find_if(replConf.nodes.begin(), replConf.nodes.end(),
 								  [&nodeStat](const AsyncReplicationConfigTest::Node& node) { return nodeStat.dsn == node.dsn; });
-		ASSERT_NE(dsnIt, replConf.nodes_.end()) << "Unexpected dsn value: " << nodeStat.dsn;
+		ASSERT_NE(dsnIt, replConf.nodes.end()) << "Unexpected dsn value: " << nodeStat.dsn;
 		ASSERT_EQ(nodeStat.status, cluster::NodeStats::Status::Online);
 		ASSERT_EQ(nodeStat.syncState, cluster::NodeStats::SyncState::OnlineReplication);
 		ASSERT_EQ(nodeStat.role, cluster::RaftInfo::Role::Follower);
@@ -336,13 +337,14 @@ TEST_F(ReplicationLoadApi, ConfigReadingOnStartup) {
 					"app_name: node_XXX\n"
 					"force_sync_on_logic_error: true\n"
 					"force_sync_on_wrong_data_hash: false\n"
+					"online_updates_delay_msec: 200\n"
 					"namespaces: []\n"
 					"nodes: []");
 	WriteConfigFile(kReplFilePath,
 					"server_id: 4\n"
 					"cluster_id: 2\n");
 	StartServer(kTestServerID);
-	AsyncReplicationConfigTest config("none", {}, true, false, 4, "node_XXX", {}, "default");
+	AsyncReplicationConfigTest config("none", {}, true, false, 4, "node_XXX", {}, "default", 200);
 	CheckReplicationConfigNamespace(kTestServerID, config);
 }
 
@@ -379,7 +381,7 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 	CheckReplicationConfigFile(kTestServerID, config);
 
 	config = AsyncReplicationConfigTest("leader", {ReplNode{"cproto://127.0.0.1:45000/db", {{"ns1", "ns2"}}}}, false, true, 3, "node_xxx",
-										{}, "default");
+										{}, "default", 150);
 	// Set replication config with custom ns list for existing node via namespace
 	SetServerConfig(kTestServerID, config);
 	// Validate replication.conf file
@@ -395,6 +397,7 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 			"app_name: node_1\n"
 			"force_sync_on_logic_error: false\n"
 			"force_sync_on_wrong_data_hash: true\n"
+			"online_updates_delay_msec: 50\n"
 			"namespaces:\n"
 			"  - ns1\n"
 			"  - ns3\n"
@@ -407,7 +410,7 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 			"    dsn: cproto://127.0.0.1:53002/db2\n");
 	config = AsyncReplicationConfigTest("leader",
 										{ReplNode{"cproto://127.0.0.1:53001/db1", {{"ns4"}}}, ReplNode{"cproto://127.0.0.1:53002/db2"}},
-										false, true, 3, "node_1", {"ns1", "ns3"}, "default");
+										false, true, 3, "node_1", {"ns1", "ns3"}, "default", 50);
 	// Validate #config namespace
 	CheckReplicationConfigNamespace(kTestServerID, config, std::chrono::seconds(3));
 
@@ -416,7 +419,7 @@ TEST_F(ReplicationLoadApi, ConfigSync) {
 		->WriteReplicationConfig(
 			"server_id: 2\n"
 			"cluster_id: 2\n");
-	config.serverId_ = 2;
+	config.serverId = 2;
 	// Validate #config namespace
 	CheckReplicationConfigNamespace(kTestServerID, config, std::chrono::seconds(3));
 }
@@ -463,18 +466,51 @@ TEST_F(ReplicationLoadApi, NodeOfflineLastError) {
 	InitNs();
 
 	ServerControl::Interface::Ptr leader = GetSrv(0);
-
 	StopServer(1);
 	for (std::size_t i = 0; i < 10; i++) {
-		reindexer::cluster::ReplicationStats stats = leader->GetReplicationStats("async");
+		reindexer::cluster::ReplicationStats stats = leader->GetReplicationStats(cluster::kAsyncReplStatsType);
 		if (!stats.nodeStats.empty() && stats.nodeStats[0].lastError.code() == errNetwork) {
 			break;
 		}
 		std::this_thread::sleep_for(std::chrono::seconds(1));
 	}
 
-	reindexer::cluster::ReplicationStats stats = leader->GetReplicationStats("async");
+	reindexer::cluster::ReplicationStats stats = leader->GetReplicationStats(cluster::kAsyncReplStatsType);
 	ASSERT_EQ(stats.nodeStats.size(), std::size_t(3));
 	ASSERT_EQ(stats.nodeStats[0].lastError.code(), errNetwork);
 	ASSERT_FALSE(stats.nodeStats[0].lastError.what().empty());
+}
+
+TEST_F(ReplicationLoadApi, LogLevel) {
+	// Check async replication log level setup
+	InitNs();
+
+	std::atomic<bool> stop = {false};
+	std::thread th([this, &stop] {
+		// Simple insertion thread for race detection
+		while (!stop) {
+			FillData(1);
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
+	});
+
+	// Replication in tests must be started with 'Trace' log level
+	auto stats = GetReplicationStats(masterId_);
+	EXPECT_EQ(stats.logLevel, LogTrace);
+
+	// Changing log level
+	const LogLevel levels[] = {LogInfo, LogTrace, LogWarning, LogError, LogNone};
+	for (auto level : levels) {
+		SetReplicationLogLevel(masterId_, LogLevel(level));
+		stats = GetReplicationStats(masterId_);
+		EXPECT_EQ(stats.logLevel, LogLevel(level));
+	}
+
+	// Checking log level after replication restart. It should be reset to 'Trace'
+	ForceSync();
+	stats = GetReplicationStats(masterId_);
+	EXPECT_EQ(stats.logLevel, LogTrace);
+
+	stop = true;
+	th.join();
 }

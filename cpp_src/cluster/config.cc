@@ -218,6 +218,7 @@ Error ClusterConfigData::FromYAML(const std::string &yaml) {
 		proxyConnCount = root["proxy_conn_count"].as<int>(proxyConnCount);
 		proxyConnConcurrency = root["proxy_conn_concurrency"].as<int>(proxyConnConcurrency);
 		proxyConnThreads = root["proxy_conn_threads"].as<int>(proxyConnThreads);
+		logLevel = logLevelFromString(root["log_level"].as<std::string>("info"));
 		{
 			auto node = root["namespaces"];
 			namespaces.clear();
@@ -258,6 +259,8 @@ Error AsyncReplConfigData::FromYAML(const std::string &yaml) {
 		enableCompression = root["enable_compression"].as<bool>(enableCompression);
 		batchingRoutinesCount = root["batching_routines_count"].as<int>(batchingRoutinesCount);
 		maxWALDepthOnForceSync = root["max_wal_depth_on_force_sync"].as<int>(maxWALDepthOnForceSync);
+		onlineUpdatesDelayMSec = root["online_updates_delay_msec"].as<int>(onlineUpdatesDelayMSec);
+		logLevel = logLevelFromString(root["log_level"].as<std::string>("info"));
 		{
 			auto node = root["namespaces"];
 			fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
@@ -311,6 +314,8 @@ Error AsyncReplConfigData::FromJSON(const gason::JsonNode &root) {
 		enableCompression = root["enable_compression"].As<bool>(enableCompression);
 		batchingRoutinesCount = root["batching_routines_count"].As<int>(batchingRoutinesCount);
 		maxWALDepthOnForceSync = root["max_wal_depth_on_force_sync"].As<int>(maxWALDepthOnForceSync);
+		onlineUpdatesDelayMSec = root["online_updates_delay_msec"].As<int>(onlineUpdatesDelayMSec);
+		logLevel = logLevelFromString(root["log_level"].As<std::string_view>("info"));
 
 		fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
 		for (auto &objNode : root["namespaces"]) {
@@ -349,6 +354,8 @@ void AsyncReplConfigData::GetJSON(JsonBuilder &jb) const {
 	jb.Put("retry_sync_interval_msec", retrySyncIntervalMSec);
 	jb.Put("batching_routines_count", batchingRoutinesCount);
 	jb.Put("max_wal_depth_on_force_sync", maxWALDepthOnForceSync);
+	jb.Put("online_updates_delay_msec", onlineUpdatesDelayMSec);
+	jb.Put("log_level", logLevelToString(logLevel));
 	{
 		auto arrNode = jb.Array("namespaces");
 		for (const auto &ns : namespaces->data) arrNode.Put(nullptr, ns);
@@ -418,13 +425,21 @@ void AsyncReplConfigData::GetYAML(WrSerializer &ser) const {
 			"syncs_per_thread: " +  std::to_string(parallelSyncsPerThreadCount) + "\n"
 			"\n"
 			"# Number of coroutines for updates batching (per namespace). Higher value here may help to reduce\n"
-			"# networks triparound await time, but will require more RAM"
+			"# networks triparound await time, but will require more RAM\n"
 			"batching_routines_count: " + std::to_string(batchingRoutinesCount) + "\n"
 			"\n"
 			"# Maximum number of WAL-records, which may be gained from force-sync.\n"
 			"# Increasing this value may help to avoid force-syncs after leader's switch, hovewer it also increases RAM consumetion during syncs\n"
 			"max_wal_depth_on_force_sync: " + std::to_string(maxWALDepthOnForceSync) + "\n"
 			"\n"
+			"# Delay between write operation and replication. Larger values here will leader to higher replication latency and bufferization, but also will provide\n"
+			"# more effective network batching and CPU untilization\n"
+			"# 0 - disables additional delay\n"
+			"online_updates_delay_msec: " + std::to_string(onlineUpdatesDelayMSec) + "\n"
+			"# Replication log level on replicator's startup. May be changed either via this config (with replication restart) or via config-action\n"
+			"# (upsert '{ \"type\":\"action\", \"action\": { \"command\": \"set_log_level\", \"type\": \"async_replication\", \"level\": \"info\" } }' into #config-namespace).\n"
+			"# Possible values: none, error, warning, info, trace.\n"
+			"log_level: " + logLevelToString(logLevel) + "\n"
 			"# List of namespaces for replication. If emply, all namespaces\n"
 			"# All replicated namespaces will become read only for followers\n"
 			"# It should be written as YAML sequence, JSON-style arrays are not supported\n"
@@ -499,7 +514,7 @@ Error ShardingConfig::Namespace::FromYAML(const YAML::Node &yaml, const std::map
 	keys.clear();
 	keys.resize(keysNode.size());
 	fast_hash_set<Variant> checkVal;
-	KeyValueType valuesType = KeyValueNull;
+	KeyValueType valuesType(KeyValueType::Null{});
 	for (size_t i = 0; i < keys.size(); ++i) {
 		Error err = keys[i].FromYAML(keysNode[i], shards, valuesType, checkVal);
 		if (!err.ok()) return err;
@@ -521,7 +536,7 @@ Error ShardingConfig::Namespace::FromJSON(const gason::JsonNode &root) {
 		const auto &keysNode = root["keys"];
 		keys.clear();
 		fast_hash_set<Variant> checkVal;
-		KeyValueType valuesType = KeyValueNull;
+		KeyValueType valuesType(KeyValueType::Null{});
 		for (const auto &kNode : keysNode) {
 			keys.emplace_back();
 			Error err = keys.back().FromJSON(kNode, valuesType, checkVal);
@@ -536,11 +551,11 @@ Error ShardingConfig::Namespace::FromJSON(const gason::JsonNode &root) {
 }
 
 Error ShardingConfig::Key::checkValue(const Variant &val, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal) {
-	if (valuesType == KeyValueNull) {
+	if (valuesType.Is<KeyValueType::Null>()) {
 		valuesType = val.Type();
-	} else if (valuesType != val.Type()) {
+	} else if (!valuesType.IsSame(val.Type())) {
 		return Error(errParams, "Incorrect value '%s'. Type of first value is '%s', current type is '%s'", val.As<std::string>(),
-					 KeyValueTypeToStr(valuesType), KeyValueTypeToStr(val.Type()));
+					 valuesType.Name(), val.Type().Name());
 	}
 	if (checkVal.find(val) != checkVal.end()) {
 		return Error(errParams, "Incorrect value '%s'. Value already in use.", val.As<std::string>());
@@ -570,7 +585,7 @@ Error ShardingConfig::Key::FromYAML(const YAML::Node &yaml, const std::map<int, 
 		algorithmType = ByValue;
 		for (const auto &value : valuesNode) {
 			Variant val = stringToVariant(value.as<std::string>());
-			if (val.Type() == KeyValueNull) {
+			if (val.Type().Is<KeyValueType::Null>()) {
 				return Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", value.as<std::string>());
 			}
 			Error err = checkValue(val, valuesType, checkVal);
@@ -611,7 +626,7 @@ Error ShardingConfig::Key::FromJSON(const gason::JsonNode &root, KeyValueType &v
 		if (!valuesNode.empty()) {
 			algorithmType = ByValue;
 			for (const auto &vNode : valuesNode) {
-				Variant val = jsonValue2Variant(vNode.value, KeyValueUndefined);
+				Variant val = jsonValue2Variant(vNode.value, KeyValueType::Undefined{});
 				Error err = checkValue(val, valuesType, checkVal);
 				if (!err.ok()) {
 					return err;

@@ -40,22 +40,11 @@ public:
 	template <typename buf_t>
 	size_t async_read(buf_t &data, size_t cnt, int &err) noexcept {
 		auto co_id = coroutine::current();
-		return async_read_impl<buf_t, suspend_switch_policy>(data, cnt, [&err, co_id](int _err, size_t /*cnt*/, span<char> /*buf*/) {
+		auto l = [&err, co_id](int _err, size_t /*cnt*/, span<char> /*buf*/) {
 			err = _err;
 			coroutine::resume(co_id);
-		});
-	}
-	template <typename buf_t>
-	void async_read_some(buf_t &data, async_cb_t cb) {
-		async_read_some_impl(data, std::move(cb));
-	}
-	template <typename buf_t>
-	size_t async_read_some(buf_t &data, int &err) noexcept {
-		auto co_id = coroutine::current();
-		return async_read_some_impl<buf_t, suspend_switch_policy>(data, [&err, co_id](int _err, size_t /*cnt*/, span<char> /*buf*/) {
-			err = _err;
-			coroutine::resume(co_id);
-		});
+		};
+		return async_read_impl<buf_t, decltype(l), suspend_switch_policy>(data, cnt, std::move(l));
 	}
 	template <typename buf_t>
 	void async_write(buf_t &data, async_cb_t cb, bool send_now = true) {
@@ -64,17 +53,15 @@ public:
 	template <typename buf_t>
 	size_t async_write(buf_t &data, int &err, bool send_now = true) noexcept {
 		auto co_id = coroutine::current();
-		return async_write_impl<buf_t, suspend_switch_policy>(
-			data,
-			[&err, co_id](int _err, size_t /*cnt*/, span<char> /*buf*/) {
-				err = _err;
-				coroutine::resume(co_id);
-			},
-			send_now);
+		auto l = [&err, co_id](int _err, size_t /*cnt*/, span<char> /*buf*/) {
+			err = _err;
+			coroutine::resume(co_id);
+		};
+		return async_write_impl<buf_t, decltype(l), suspend_switch_policy>(data, std::move(l), send_now);
 	}
 	int async_connect(std::string_view addr) noexcept;
 	conn_state state() const noexcept { return state_; }
-	int socket_last_error() { return sock_.last_error(); }
+	int socket_last_error() const noexcept { return sock_.last_error(); }
 
 private:
 	class transfer_data {
@@ -120,8 +107,8 @@ private:
 		}
 	};
 
-	template <typename buf_t, typename switch_policy_t = empty_switch_policy>
-	size_t async_read_impl(buf_t &data, size_t cnt, async_cb_t cb) {
+	template <typename buf_t, typename cb_t, typename switch_policy_t = empty_switch_policy>
+	size_t async_read_impl(buf_t &data, size_t cnt, cb_t cb) {
 		assertrx(r_data_.empty());
 		assertrx(data.size() >= cnt);
 		auto &transfer = r_data_.transfer;
@@ -129,7 +116,7 @@ private:
 		int int_err = 0;
 		auto data_span = span<char>(data.data(), cnt);
 		if (state_ != conn_state::connecting) {
-			auto nread = read(data_span, transfer, &int_err);
+			auto nread = read(data_span, transfer, int_err);
 			if (!nread) {
 				return 0;
 			}
@@ -146,32 +133,8 @@ private:
 		return transfer.transfered_size();
 	}
 
-	template <typename buf_t, typename switch_policy_t = empty_switch_policy>
-	// NOLINTNEXTLINE(*-unnecessary-value-param)
-	size_t async_read_some_impl(buf_t &data, async_cb_t cb) {
-		assertrx(r_data_.empty());
-		assertrx(data.size());
-		auto &transfer = r_data_.transfer;
-		transfer.set_expected(0);
-		if (state_ != conn_state::connecting) {
-			int int_err = 0;
-			auto data_span = span<char>(data.data(), data.size());
-			auto nread = read(data_span, transfer, &int_err);
-			if (nread >= 0 || !sock_.would_block(int_err)) {
-				cb(int_err, transfer.transfered_size(), data);
-				return transfer.transfered_size();
-			}
-		}
-
-		r_data_.set_cb(data, std::move(cb));
-		add_io_events(ev::READ);
-		switch_policy_t swtch;
-		swtch(r_data_);
-		return r_data_.transfer.transfered_size();
-	}
-
-	template <typename buf_t, typename switch_policy_t = empty_switch_policy>
-	size_t async_write_impl(buf_t &data, async_cb_t cb, bool send_now) {
+	template <typename buf_t, typename cb_t, typename switch_policy_t = empty_switch_policy>
+	size_t async_write_impl(buf_t &data, cb_t cb, bool send_now) {
 		assertrx(w_data_.empty());
 		auto &transfer = w_data_.transfer;
 		transfer.set_expected(data.size());
@@ -179,7 +142,7 @@ private:
 		if (data.size()) {
 			auto data_span = span<char>(data.data(), data.size());
 			if (send_now && state_ != conn_state::connecting) {
-				write(data_span, transfer, &int_err);
+				write(data_span, transfer, int_err);
 			}
 			if (!send_now || (!int_err && transfer.transfered_size() < transfer.expected_size()) || sock_.would_block(int_err)) {
 				w_data_.set_cb(data_span, std::move(cb));
@@ -195,9 +158,8 @@ private:
 		return transfer.transfered_size();
 	}
 
-	void on_async_op_done(async_data &data, int err, int op) {
+	void on_async_op_done(async_data &data, int err) {
 		if (!data.empty()) {
-			rm_io_events(op);
 			auto cb = std::move(data.cb);
 			auto buf = data.buf;
 			auto transfered = data.transfer.transfered_size();
@@ -205,10 +167,11 @@ private:
 			cb(err, transfered, buf);
 		}
 	}
-	ssize_t write(span<char>, transfer_data &transfer, int *err_ptr);
-	ssize_t read(span<char>, transfer_data &transfer, int *err_ptr);
+	ssize_t write(span<char>, transfer_data &transfer, int &err_ref);
+	ssize_t read(span<char>, transfer_data &transfer, int &err_ref);
+	void read_to_buf(int &err_ref);
 	void add_io_events(int events) noexcept;
-	void rm_io_events(int events) noexcept;
+	void set_io_events(int events) noexcept;
 	void io_callback(ev::io &watcher, int revents);
 	void connect_timer_cb(ev::timer &watcher, int);
 	void write_cb();

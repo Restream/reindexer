@@ -617,6 +617,7 @@ TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 TEST_F(ShardingApi, Aggregations) {
 	InitShardingConfig cfg;
 	cfg.nodesInCluster = 1;
+	const auto itemsCount = cfg.rowsInTableOnShard * cfg.shards;
 	Init(std::move(cfg));
 	std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
 	client::QueryResults qr;
@@ -624,7 +625,6 @@ TEST_F(ShardingApi, Aggregations) {
 	Error err = rx->Select(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.GetAggregationResults().size(), 3);
-	const auto itemsCount = cfg.rowsInTableOnShard * kShards;
 	EXPECT_EQ(qr.GetAggregationResults()[0].type, AggSum);
 	EXPECT_EQ(qr.GetAggregationResults()[0].value, (itemsCount - 1) * itemsCount / 2);
 	EXPECT_EQ(qr.GetAggregationResults()[1].type, AggMin);

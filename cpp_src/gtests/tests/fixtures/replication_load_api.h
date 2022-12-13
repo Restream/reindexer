@@ -42,40 +42,16 @@ public:
 
 		for (size_t i = 0; i < count; ++i) {
 			BaseApi::ItemType item = api.NewItem("some");
-			// clang-format off
-
-			Error err = item.FromJSON(
-                        "{\n"
-                        "\"id\":" + std::to_string(counter_)+",\n"
-                        "\"int\":" + std::to_string(rand())+",\n"
-                        "\"string\":\"" + api.RandString()+"\"\n"
-                        "}");
-			// clang-format on
-
-			counter_++;
-
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			Error err = item.FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s"})json", counter_++, rand(), api.RandString()));
+			ASSERT_TRUE(err.ok()) << err.what();
 			api.Upsert("some", item);
 
-			BaseApi::ItemType item1 = api.NewItem("some1");
-			// clang-format off
-
-						err = item1.FromJSON(
-							"{\n"
-							"\"id\":" +
-							std::to_string(counter_) +
-							",\n"
-							"\"int\":" +
-							std::to_string(rand()) +
-							",\n"
-							"\"string\":\"" +
-							api.RandString() +
-							"\"\n"
-							"}");
-			// clang-format on
-
-			counter_++;
-
-			api.Upsert("some1", item1);
+			item = api.NewItem("some1");
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			err = item.FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s"})json", counter_++, rand(), api.RandString()));
+			ASSERT_TRUE(err.ok()) << err.what();
+			api.Upsert("some1", item);
 		}
 	}
 	BaseApi::QueryResultsType SimpleSelect(size_t num) {
@@ -96,7 +72,9 @@ public:
 		EXPECT_TRUE(err.ok()) << err.what();
 		return res;
 	}
-	cluster::ReplicationStats GetReplicationStats(size_t num, std::string_view type) { return GetSrv(num)->GetReplicationStats(type); }
+	cluster::ReplicationStats GetReplicationStats(size_t num) { return GetSrv(num)->GetReplicationStats(cluster::kAsyncReplStatsType); }
+	void SetReplicationLogLevel(size_t num, LogLevel level) { GetSrv(num)->SetReplicationLogLevel(level, "async_replication"); }
+	void ForceSync() { GetSrv(masterId_)->ForceSync(); }
 	void RestartWithReplicationConfigFiles(size_t num, const std::string &asyncReplConfigYaml, const std::string &replConfigYaml) {
 		GetSrv(num)->WriteAsyncReplicationConfig(asyncReplConfigYaml);
 		GetSrv(num)->WriteReplicationConfig(replConfigYaml);

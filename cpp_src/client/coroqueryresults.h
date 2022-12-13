@@ -124,6 +124,7 @@ public:
 	}
 	int FetchAmount() const noexcept { return i_.fetchAmount_; }
 	bool IsInLazyMode() const noexcept { return i_.lazyMode_; }
+	bool IsBound() const noexcept { return i_.isBound_; }
 
 private:
 	friend class client::QueryResults;
@@ -178,6 +179,7 @@ private:
 		ResultSerializer::ParsingData parsingData_;
 		ResultSerializer::QueryParams queryParams_;
 		bool lazyMode_ = false;
+		bool isBound_ = false;
 		Error status_;
 		int64_t shardingConfigVersion_ = -1;
 		std::chrono::steady_clock::time_point sessionTs_;

@@ -45,7 +45,7 @@ bool CompositeArrayComparator::Compare(const PayloadValue &pv, const ComparatorV
 			pl.Get(fields_[j], vals.back());
 		} else {
 			assertrx(tagsPathIdx < fields_.getTagsPathsLength());
-			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), vals.back(), KeyValueUndefined);
+			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), vals.back(), KeyValueType::Undefined{});
 		}
 		if (vals.back().size() < len) len = vals.back().size();
 	}
@@ -54,7 +54,7 @@ bool CompositeArrayComparator::Compare(const PayloadValue &pv, const ComparatorV
 		bool cmpRes = true;
 		for (size_t j = 0; j < fields_.size(); ++j) {
 			assertrx(i < vals[j].size());
-			cmpRes &= vals[j][i].Type() != KeyValueNull && compareField(j, vals[j][i], vars);
+			cmpRes &= !vals[j][i].Type().Is<KeyValueType::Null>() && compareField(j, vals[j][i], vars);
 			if (!cmpRes) break;
 		}
 
@@ -64,33 +64,13 @@ bool CompositeArrayComparator::Compare(const PayloadValue &pv, const ComparatorV
 }
 
 bool CompositeArrayComparator::compareField(size_t field, const Variant &v, const ComparatorVars &vars) {
-	bool result = true;
-	switch (v.Type()) {
-		case KeyValueBool:
-			result = ctx_[field].cmpBool.Compare(ctx_[field].cond, static_cast<bool>(v));
-			break;
-		case KeyValueInt:
-			result = ctx_[field].cmpInt.Compare(ctx_[field].cond, static_cast<int>(v));
-			break;
-		case KeyValueInt64:
-			result = ctx_[field].cmpInt64.Compare(ctx_[field].cond, static_cast<int64_t>(v));
-			break;
-		case KeyValueDouble:
-			result = ctx_[field].cmpDouble.Compare(ctx_[field].cond, static_cast<double>(v));
-			break;
-		case KeyValueString: {
-			result = ctx_[field].cmpString.Compare(ctx_[field].cond, static_cast<p_string>(v), vars.collateOpts_);
-			break;
-		}
-		case KeyValueNull:
-		case KeyValueUndefined:
-		case KeyValueComposite:
-		case KeyValueTuple:
-			result = false;
-			break;
-	}
-
-	return result;
+	return v.Type().EvaluateOneOf(
+		[&](KeyValueType::Bool) { return ctx_[field].cmpBool.Compare(ctx_[field].cond, static_cast<bool>(v)); },
+		[&](KeyValueType::Int) { return ctx_[field].cmpInt.Compare(ctx_[field].cond, static_cast<int>(v)); },
+		[&](KeyValueType::Int64) { return ctx_[field].cmpInt64.Compare(ctx_[field].cond, static_cast<int64_t>(v)); },
+		[&](KeyValueType::Double) { return ctx_[field].cmpDouble.Compare(ctx_[field].cond, static_cast<double>(v)); },
+		[&](KeyValueType::String) { return ctx_[field].cmpString.Compare(ctx_[field].cond, static_cast<p_string>(v), vars.collateOpts_); },
+		[](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple>) noexcept { return false; });
 }
 
 }  // namespace reindexer

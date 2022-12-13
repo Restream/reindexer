@@ -22,6 +22,7 @@
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/fsops.h"
 #include "tools/stringstools.h"
+#include "tools/tcmallocheapwathcher.h"
 #include "yaml-cpp/yaml.h"
 #ifdef _WIN32
 #include "winservice.h"
@@ -46,7 +47,18 @@ using std::vector;
 using reindexer::fs::GetDirPath;
 using reindexer::logLevelFromString;
 
-ServerImpl::ServerImpl() : coreLogLevel_(LogNone), storageLoaded_(false), running_(false) { async_.set(loop_); }
+ServerImpl::ServerImpl()
+	:
+#ifdef REINDEX_WITH_GPERFTOOLS
+	  config_(alloc_ext::TCMallocIsAvailable()),
+#else
+	  config_(false),
+#endif
+	  coreLogLevel_(LogNone),
+	  storageLoaded_(false),
+	  running_(false) {
+	async_.set(loop_);
+}  // namespace reindexer_server
 
 Error ServerImpl::InitFromCLI(int argc, char *argv[]) {
 	Error err = config_.ParseCmd(argc, argv);
@@ -249,10 +261,31 @@ int ServerImpl::run() {
 #endif
 	}
 
+#if REINDEX_WITH_GPERFTOOLS
+	ev::periodic tcmallocHeapWatchDog;
+	TCMallocHeapWathcher heapWatcher;
+	if (alloc_ext::TCMallocIsAvailable()) {
+		heapWatcher =
+			TCMallocHeapWathcher(alloc_ext::instance(), config_.AllocatorCacheLimit, config_.AllocatorCachePart, spdlog::get("server"));
+		tcmallocHeapWatchDog.set(loop_);
+		tcmallocHeapWatchDog.set([&heapWatcher](ev::timer &, int) { heapWatcher.CheckHeapUsagePeriodic(); });
+
+		if (config_.AllocatorCacheLimit > 0 || config_.AllocatorCachePart > 0) {
+			using fpSeconds = std::chrono::duration<double, std::chrono::seconds::period>;
+			tcmallocHeapWatchDog.start(fpSeconds(10).count(), fpSeconds(std::chrono::milliseconds(100)).count());
+			logger_.info(
+				"TCMalloc heap wathcher started. (AllocatorCacheLimit: {0},\n AllocatorCachePart: {1},\n"
+				"HeapInspectionPeriod(sec): {2},\nHeapChunkReleaseInterval(sec): {3})",
+				config_.AllocatorCacheLimit, config_.AllocatorCachePart, fpSeconds(10).count(),
+				fpSeconds(std::chrono::milliseconds(100)).count());
+		}
+	}
+#endif
+
 	initCoreLogger();
 	logger_.info("Initializing databases...");
 	if (config_.HasDefaultHttpWriteTimeout()) {
-		logger_.info("HTTP write timeout was not set explicitly. The default value will be used: %d seconds",
+		logger_.info("HTTP write timeout was not set explicitly. The default value will be used: {0} seconds",
 					 config_.HttpWriteTimeout().count());
 	}
 	std::unique_ptr<ClientsStats> clientsStats;

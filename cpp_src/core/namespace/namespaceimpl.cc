@@ -74,7 +74,7 @@ NamespaceImpl::NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &
 	  joinCache_{std::make_shared<JoinCache>()},
 	  enablePerfCounters_{src.enablePerfCounters_.load()},
 	  config_{src.config_},
-	  wal_{src.wal_},
+	  wal_{src.wal_, storage_},
 	  repl_{src.repl_},
 	  storageOpts_{src.storageOpts_},
 	  lastSelectTime_{0},
@@ -131,10 +131,10 @@ NamespaceImpl::~NamespaceImpl() {
 	try {
 		if (!locker_.IsReadOnly()) {
 			saveReplStateToStorage(false);
-			storage_.Flush();
+			storage_.Flush(StorageFlushOpts().WithImmediateReopen());
 		}
 	} catch (Error &e) {
-		logPrintf(LogWarning, "Namespace::~Namespace (%s), flushStorage() error: %s", name_, e.what());
+		logPrintf(LogError, "Namespace::~Namespace (%s), flushStorage() error: %s", name_, e.what());
 	}
 
 #ifndef NDEBUG
@@ -480,32 +480,18 @@ void NamespaceImpl::doDropIndex(const IndexDef &index, UpdatesContainer &pendedR
 }
 
 static void verifyConvertTypes(KeyValueType from, KeyValueType to, const PayloadType &payloadType, const FieldsSet &fields) {
-	if ((from == KeyValueString || to == KeyValueString) && (from != to)) {
-		throw Error(errParams, "Cannot convert key from type %s to %s", Variant::TypeName(from), Variant::TypeName(to));
+	if ((from.Is<KeyValueType::String>() || to.Is<KeyValueType::String>()) && !from.IsSame(to)) {
+		throw Error(errParams, "Cannot convert key from type %s to %s", from.Name(), to.Name());
 	}
 	static const std::string defaultStringValue;
 	Variant value;
-	switch (from) {
-		case KeyValueInt64:
-			value = Variant(int64_t(0));
-			break;
-		case KeyValueDouble:
-			value = Variant(0.0);
-			break;
-		case KeyValueString:
-			value = Variant(defaultStringValue);
-			break;
-		case KeyValueBool:
-			value = Variant(false);
-			break;
-		case KeyValueNull:
-			break;
-		case KeyValueInt:
-			value = Variant(0);
-			break;
-		default:
-			if (to != from) throw Error(errParams, "Cannot convert key value types");
-	}
+	from.EvaluateOneOf(
+		[&](KeyValueType::Int64) noexcept { value = Variant(int64_t(0)); }, [&](KeyValueType::Double) noexcept { value = Variant(0.0); },
+		[&](KeyValueType::String) { value = Variant(defaultStringValue); }, [&](KeyValueType::Bool) noexcept { value = Variant(false); },
+		[](KeyValueType::Null) noexcept {}, [&](KeyValueType::Int) noexcept { value = Variant(0); },
+		[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) {
+			if (!to.IsSame(from)) throw Error(errParams, "Cannot convert key value types");
+		});
 	value.convert(to, &payloadType, &fields);
 }
 
@@ -1029,9 +1015,10 @@ void NamespaceImpl::CommitTransaction(LocalTransaction &tx, LocalQueryResults &r
 		UpdatesContainer pendedRepl;
 		switch (step.type_) {
 			case TransactionStep::Type::ModifyItem: {
+				const auto mode = std::get<TransactionItemStep>(step.data_).mode;
+				const auto lsn = step.lsn_;
 				Item item = tx.GetItem(std::move(step));
-				auto &data = std::get<TransactionItemStep>(step.data_);
-				modifyItem(item, data.mode, pendedRepl, NsContext(ctx).InTransaction(step.lsn_));
+				modifyItem(item, mode, pendedRepl, NsContext(ctx).InTransaction(lsn));
 				result.AddItem(item);
 				break;
 			}
@@ -1122,8 +1109,8 @@ void NamespaceImpl::doUpsert(ItemImpl *ritem, IdType id, bool doUpdate) {
 			if (needUpdateCompIndexes[field]) continue;
 			for (size_t i = 0, end = fields.getTagsPathsLength(); i < end; ++i) {
 				const auto &tp = fields.getTagsPath(i);
-				pl.GetByJsonPath(tp, skrefs, KeyValueUndefined);
-				plNew.GetByJsonPath(tp, krefs, KeyValueUndefined);
+				pl.GetByJsonPath(tp, skrefs, KeyValueType::Undefined{});
+				plNew.GetByJsonPath(tp, krefs, KeyValueType::Undefined{});
 				if (skrefs != krefs) {
 					needUpdateCompIndexes[field] = true;
 					needUpdateAnyCompIndex = true;
@@ -1637,9 +1624,8 @@ void NamespaceImpl::doDelete(const Query &q, LocalQueryResults &result, UpdatesC
 	} else {
 		replicateTmUpdateIfRequired(pendedRepl, oldTmV, ctx);
 		if (result.Count() > 0) {
-			WrSerializer cjson;
 			for (auto it : result) {
-				cjson.Reset();
+				WrSerializer cjson;
 				it.GetCJSON(cjson, false);
 				const int id = it.GetItemRef().Id();
 				processWalRecord(WALRecord(WalItemModify, cjson.Slice(), tagsMatcher_.version(), ModeDelete, ctx.inTransaction), ctx,
@@ -1754,6 +1740,8 @@ NamespaceDef NamespaceImpl::GetDefinition(const RdxContext &ctx) {
 }
 
 NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
+	using namespace std::string_view_literals;
+
 	NamespaceMemStat ret;
 	auto rlck = rLock(ctx);
 	ret.name = name_;
@@ -1780,7 +1768,20 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext &ctx) {
 		ret.Total.cacheSize += istat.idsetCache.totalSize;
 	}
 
-	ret.storageOK = storage_.IsValid();
+	const auto storageStatus = storage_.GetStatus();
+	ret.storageOK = storageStatus.isEnabled && storageStatus.err.ok();
+	ret.storageEnabled = storageStatus.isEnabled;
+	if (storageStatus.isEnabled) {
+		if (storageStatus.err.ok()) {
+			ret.storageStatus = "OK"sv;
+		} else if (checkIfEndsWith("No space left on device"sv, storageStatus.err.what(), true)) {
+			ret.storageStatus = "NO SPACE LEFT"sv;
+		} else {
+			ret.storageStatus = storageStatus.err.what();
+		}
+	} else {
+		ret.storageStatus = "DISABLED"sv;
+	}
 	ret.storagePath = storage_.Path();
 	ret.optimizationCompleted = (optimizationState_ == OptimizationCompleted);
 
@@ -2176,7 +2177,7 @@ void NamespaceImpl::LoadFromStorage(unsigned threadsCount, const RdxContext &ctx
 }
 
 void NamespaceImpl::initWAL(int64_t minLSN, int64_t maxLSN) {
-	wal_.Init(config_.walSize, minLSN, maxLSN, storage_.GetStoragePtr());
+	wal_.Init(config_.walSize, minLSN, maxLSN, storage_);
 	// Fill existing records
 	for (IdType rowId = 0; rowId < IdType(items_.size()); rowId++) {
 		if (!items_[rowId].IsFree()) {
@@ -2296,7 +2297,7 @@ void NamespaceImpl::BackgroundRoutine(RdxActivityContext *ctx) {
 	removeExpiredStrings(ctx);
 }
 
-void NamespaceImpl::StorageFlushingRoutine() { storage_.Flush(); }
+void NamespaceImpl::StorageFlushingRoutine() { storage_.Flush(StorageFlushOpts()); }
 
 void NamespaceImpl::DeleteStorage(const RdxContext &ctx) {
 	auto wlck = simpleWLock(ctx);
@@ -2304,7 +2305,7 @@ void NamespaceImpl::DeleteStorage(const RdxContext &ctx) {
 }
 
 void NamespaceImpl::CloseStorage(const RdxContext &ctx) {
-	storage_.Flush();
+	storage_.Flush(StorageFlushOpts().WithImmediateReopen());
 	auto wlck = simpleWLock(ctx);
 	if (replStateUpdates_.load(std::memory_order_relaxed)) {
 		saveReplStateToStorage(true);

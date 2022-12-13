@@ -135,7 +135,7 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 	return AsyncReplicationConfigTest(cluster::AsyncReplConfigData::Role2str(asyncReplConf.role), std::move(followers),
 									  asyncReplConf.forceSyncOnLogicError, asyncReplConf.forceSyncOnWrongDataHash, replConf.serverID,
 									  std::move(asyncReplConf.appName), std::move(namespaces),
-									  cluster::AsyncReplConfigData::Mode2str(asyncReplConf.mode));
+									  cluster::AsyncReplConfigData::Mode2str(asyncReplConf.mode), asyncReplConf.onlineUpdatesDelayMSec);
 }
 
 void ServerControl::Interface::WriteReplicationConfig(const std::string& configYaml) {
@@ -275,41 +275,43 @@ void ServerControl::Interface::Init() {
 }
 
 void ServerControl::Interface::MakeLeader(const AsyncReplicationConfigTest& config) {
-	assert(config.serverId_ >= 0);
-	if (config.nodes_.empty()) {
+	assert(config.serverId >= 0);
+	if (config.nodes.empty()) {
 		AsyncReplicationConfigTest cfg("leader");
-		cfg.serverId_ = config_.id;
+		cfg.serverId = config_.id;
 		SetReplicationConfig(cfg);
 	} else {
-		assert(size_t(config.serverId_) == config_.id);
-		assert(config.role_ == "leader");
+		assert(size_t(config.serverId) == config_.id);
+		assert(config.role == "leader");
 		SetReplicationConfig(config);
 	}
 }
 
 void ServerControl::Interface::MakeFollower() {
 	AsyncReplicationConfigTest config("follower", std::vector<AsyncReplicationConfigTest::Node>{});
-	config.serverId_ = config_.id;
-	assert(config.serverId_ >= 0);
+	config.serverId = config_.id;
+	assert(config.serverId >= 0);
 	SetReplicationConfig(config);
 }
 
 void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfigTest& config) {
 	cluster::AsyncReplConfigData asyncReplConf;
-	asyncReplConf.appName = config.appName_;
-	asyncReplConf.role = cluster::AsyncReplConfigData::Str2role(config.role_);
+	asyncReplConf.appName = config.appName;
+	asyncReplConf.role = cluster::AsyncReplConfigData::Str2role(config.role);
 	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
-	for (auto& ns : config.namespaces_) {
+	for (auto& ns : config.namespaces) {
 		nss.emplace(ns);
 	}
 	asyncReplConf.namespaces = make_intrusive<cluster::AsyncReplConfigData::NamespaceList>(std::move(nss));
 	asyncReplConf.onlineUpdatesTimeoutSec = 20;	 // -V1048
 	asyncReplConf.replThreadsCount = 2;
-	asyncReplConf.forceSyncOnLogicError = config.forceSyncOnLogicError_;
-	asyncReplConf.forceSyncOnWrongDataHash = config.forceSyncOnWrongDataHash_;
+	asyncReplConf.forceSyncOnLogicError = config.forceSyncOnLogicError;
+	asyncReplConf.forceSyncOnWrongDataHash = config.forceSyncOnWrongDataHash;
+	asyncReplConf.onlineUpdatesDelayMSec = config.onlineUpdatesDelayMSec;
 	asyncReplConf.retrySyncIntervalMSec = 1000;
-	asyncReplConf.mode = cluster::AsyncReplConfigData::Str2mode(config.mode_);
-	for (auto& node : config.nodes_) {
+	asyncReplConf.logLevel = LogTrace;
+	asyncReplConf.mode = cluster::AsyncReplConfigData::Str2mode(config.mode);
+	for (auto& node : config.nodes) {
 		asyncReplConf.nodes.emplace_back(cluster::AsyncReplNodeConfig{node.dsn});
 		if (node.nsList.has_value()) {
 			fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
@@ -321,7 +323,7 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	}
 
 	ReplicationConfigData replConf;
-	replConf.serverID = config.serverId_;
+	replConf.serverID = config.serverId;
 	replConf.clusterID = 2;
 
 	upsertConfigItemFromObject("replication", replConf);
@@ -369,6 +371,7 @@ void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional
 	curConf.onlineUpdatesTimeoutSec = 20;
 	curConf.replThreadsCount = 2;
 	curConf.retrySyncIntervalMSec = 1000;
+	curConf.logLevel = LogTrace;
 	curConf.mode = cluster::AsyncReplicationMode::Default;
 
 	upsertConfigItemFromObject("async_replication", curConf);
@@ -552,12 +555,31 @@ Error ServerControl::Interface::TryResetReplicationRole(const std::string& ns) {
 	auto item = api.NewItem("#config");
 	if (!item.Status().ok()) return item.Status();
 	if (ns.size()) {
-		err = item.FromJSON("{\"type\":\"action\",\"action\":{\"command\":\"reset_replication_role\", \"namespace\": \"" + ns + "\"}}");
+		err =
+			item.FromJSON(fmt::sprintf(R"json({"type":"action","action":{"command":"reset_replication_role","namespace":"%s"}})json", ns));
 	} else {
 		err = item.FromJSON(R"json({"type":"action","action":{"command":"reset_replication_role"}})json");
 	}
 	if (!err.ok()) return err;
 	return api.reindexer->Upsert("#config", item);
+}
+
+void ServerControl::Interface::SetClusterLeader(int leaderId) {
+	auto item = CreateClusterChangeLeaderItem(leaderId);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	api.Upsert("#config", item);
+}
+
+void ServerControl::Interface::SetReplicationLogLevel(LogLevel level, std::string_view type) {
+	BaseApi::QueryResultsType res;
+	auto item = api.NewItem("#config");
+	auto err = item.Status();
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = item.FromJSON(fmt::sprintf(R"json({"type":"action","action":{"command":"set_log_level","type":"%s","level":"%s"}})json", type,
+									 reindexer::logLevelToString(level)));
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = api.reindexer->Upsert("#config", item);
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 BaseApi::ItemType ServerControl::Interface::CreateClusterChangeLeaderItem(int leaderId) {
@@ -575,12 +597,6 @@ BaseApi::ItemType ServerControl::Interface::CreateClusterChangeLeaderItem(int le
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	return item;
-}
-
-void ServerControl::Interface::SetClusterLeader(int leaderId) {
-	auto item = CreateClusterChangeLeaderItem(leaderId);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	api.Upsert("#config", item);
 }
 
 std::vector<std::string> ServerControl::Interface::getCLIParamArray(bool enableStats, size_t maxUpdatesSize) {

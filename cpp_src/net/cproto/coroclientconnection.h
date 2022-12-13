@@ -143,6 +143,7 @@ private:
 
 	struct MarkedChunk {
 		uint32_t seq;
+		bool noReply;
 		std::optional<TimePointT> requiredLoginTs;
 		chunk data;
 	};
@@ -166,7 +167,8 @@ private:
 	CoroRPCAnswer call(const CommandParams &opts, const Args &args);
 	Error callNoReply(const CommandParams &opts, uint32_t seq, const Args &args);
 
-	MarkedChunk packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs, std::optional<TimePointT> requiredLoginTs);
+	MarkedChunk packRPC(CmdCode cmd, uint32_t seq, bool noReply, const Args &args, const Args &ctxArgs,
+						std::optional<TimePointT> requiredLoginTs);
 	void appendChunck(std::vector<char> &buf, chunk &&ch);
 	Error login(std::vector<char> &buf);
 	void handleFatalErrorFromReader(const Error &err) noexcept;
@@ -195,7 +197,6 @@ private:
 	// seq -> rpc data
 	std::vector<RPCData> rpcCalls_;
 
-	bool enableSnappy_ = false;
 	bool requestDedicatedThread_ = false;
 	bool enableCompression_ = false;
 	std::vector<chunk> recycledChuncks_;

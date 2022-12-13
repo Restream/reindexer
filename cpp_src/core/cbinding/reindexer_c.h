@@ -8,6 +8,8 @@ extern "C" {
 #include "reindexer_ctypes.h"
 
 uintptr_t init_reindexer();
+uintptr_t init_reindexer_with_config(reindexer_config config);
+
 void destroy_reindexer(uintptr_t rx);
 
 reindexer_error reindexer_connect_v4(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers,

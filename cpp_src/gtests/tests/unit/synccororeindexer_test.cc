@@ -531,6 +531,8 @@ TEST(SyncCoroRx, TxInvalidation) {
 	{
 		auto item = client->NewItem(kNsNames);
 		item.FromJSON(kItemContent);
+		// Special test case. Use after move is expected
+		// NOLINTNEXTLINE(bugprone-use-after-move)
 		err = originalTx.Insert(std::move(item));
 		EXPECT_EQ(err.code(), errBadTransaction);
 		client::QueryResults qr;
@@ -620,7 +622,9 @@ TEST(SyncCoroRx, QrInvalidation) {
 	auto movedQr = std::move(originalQr);
 	EXPECT_EQ(movedQr.Count(), kDataCount);
 
-	// Check if original qr does not affect actual qr
+	// Check if original qr does not affect moved qr
+	// Special test case. Use after move is expected
+	// NOLINTNEXTLINE(bugprone-use-after-move)
 	for (auto& it : originalQr) {
 		(void)it;
 	}

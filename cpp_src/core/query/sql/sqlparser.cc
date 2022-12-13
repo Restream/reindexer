@@ -286,10 +286,14 @@ static KeyValueType detectValueType(const token &currTok) {
 			}
 		}
 		if (digit && val.length() > 0) {
-			return flt ? KeyValueDouble : KeyValueInt64;
+			if (flt) {
+				return {KeyValueType::Double{}};
+			} else {
+				return {KeyValueType::Int64{}};
+			}
 		}
 	}
-	return KeyValueString;
+	return {KeyValueType::String{}};
 }
 
 Variant token2kv(const token &currTok, tokenizer &parser, bool allowComposite) {
@@ -322,18 +326,18 @@ Variant token2kv(const token &currTok, tokenizer &parser, bool allowComposite) {
 		throw Error(errParseSQL, "Expected parameter, but found '%s' in query, %s", currTok.text(), parser.where());
 	}
 
-	switch (detectValueType(currTok)) {
-		case KeyValueInt64:
-			return Variant(int64_t(stoll(value)));
-		case KeyValueDouble: {
+	return detectValueType(currTok).EvaluateOneOf(
+		[&](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
+		[&](KeyValueType::Double) {
 			char *p = 0;
 			return Variant(double(strtod(value.data(), &p)));
-		}
-		case KeyValueString:
-			return Variant(make_key_string(value.data(), value.length()));
-		default:
-			std::abort();
-	}
+		},
+		[&](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
+		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Composite,
+				 KeyValueType::Null>) noexcept -> Variant {
+			assertrx(0);
+			abort();
+		});
 }
 
 int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, std::vector<Variant> &forcedSortOrder_) {
@@ -886,9 +890,10 @@ void SQLParser::parseDWithin(tokenizer &parser, OpType nextOp) {
 
 	tok = parser.next_token();
 	const auto distance = token2kv(tok, parser, false);
-	if (distance.Type() != KeyValueInt64 && distance.Type() != KeyValueDouble) {
-		throw Error(errParseSQL, "Expected number, but found '%s', %s", tok.text(), parser.where());
-	}
+	distance.Type().EvaluateOneOf(
+		[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept {},
+		[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite,
+				  KeyValueType::Undefined>) { throw Error(errParseSQL, "Expected number, but found '%s', %s", tok.text(), parser.where()); });
 
 	tok = parser.next_token();
 	if (tok.text() != ")"sv) {

@@ -27,7 +27,7 @@ static void copy(It begin, It end, std::vector<FacetResult> &facets, const Field
 			VariantArray va;
 			if (fields[i] == IndexValueType::SetByJsonPath) {
 				const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-				pl.GetByJsonPath(tagsPath, va, KeyValueUndefined);
+				pl.GetByJsonPath(tagsPath, va, KeyValueType::Undefined{});
 				if (va.IsObjectValue()) {
 					throw Error(errQueryExec, "Cannot aggregate object field");
 				}
@@ -342,7 +342,7 @@ void Aggregator::Aggregate(const PayloadValue &data) {
 		ConstPayload pl(payloadType_, data);
 		VariantArray va;
 		const TagsPath &tagsPath = fields_.getTagsPath(0);
-		pl.GetByJsonPath(tagsPath, va, KeyValueUndefined);
+		pl.GetByJsonPath(tagsPath, va, KeyValueType::Undefined{});
 		if (va.IsObjectValue()) {
 			throw Error(errQueryExec, "Cannot aggregate object field");
 		}

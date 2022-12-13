@@ -48,9 +48,9 @@ class ClusterReplThread {
 public:
 	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str>;
 
-	ClusterReplThread(int serverId, ReindexerImpl &thisNode, const NsNamesHashSetT *namespaces,
-					  std::shared_ptr<UpdatesQueue<UpdateRecord>> q, SharedSyncState<> &, SynchronizationList &,
-					  std::function<void()> requestElectionsRestartCb, ReplicationStatsCollector);
+	ClusterReplThread(int serverId, ReindexerImpl &thisNode, const NsNamesHashSetT *, std::shared_ptr<UpdatesQueue<UpdateRecord>>,
+					  SharedSyncState<> &, SynchronizationList &, std::function<void()> requestElectionsRestartCb,
+					  ReplicationStatsCollector, const Logger &);
 	~ClusterReplThread();
 	void Run(ReplThreadConfig config, std::vector<std::pair<uint32_t, ClusterNodeConfig>> &&nodesList, size_t totalNodesCount);
 	void SendTerminate() noexcept;

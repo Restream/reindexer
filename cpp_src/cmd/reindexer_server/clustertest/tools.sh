@@ -64,9 +64,12 @@ function RunServers {
 	local BASE_DIR=$4
 	local RX_BIN_PATH=$5
 	local QR_TIMEOUT=$6
-	local LOG_BASE_DIR="build/logs"
+	local LOG_LEVEL=$7
+	local LOG_BASE_DIR=$8
 	local node=0
 	[ -n "$QR_TIMEOUT" ] || QR_TIMEOUT=600
+	[ -n "$LOG_LEVEL" ] || LOG_LEVEL=trace
+	[ -n "$LOG_BASE_DIR" ] || LOG_BASE_DIR="build/logs"
 	while [[ $node -lt $NODES_COUNT ]]
 	do
 		HTTPADDR=$(($BASE_HTTP_ADDRESS+$node))
@@ -76,12 +79,15 @@ function RunServers {
 		local DB_LOG_RPC="$LOG_BASE_DIR/rpclog_$node.txt"
 		local DB_LOG_HTTP="$LOG_BASE_DIR/httplog_$node.txt"
 		local DB_LOG_SERVER="$LOG_BASE_DIR/serverlog_$node.txt"
-		$RX_BIN_PATH --db=$DB_PATH --loglevel=trace --serverlog="" --corelog=$DB_LOG_CORE --httplog=$DB_LOG_HTTP --rpclog=$DB_LOG_RPC -p $HTTPADDR -r $RPCADDR --enable-cluster --rpc-qr-idle-timeout $QR_TIMEOUT &
+		CMD="$RX_BIN_PATH --db=$DB_PATH --loglevel=$LOG_LEVEL --serverlog=$DB_LOG_SERVER --corelog=$DB_LOG_CORE --httplog=$DB_LOG_HTTP --rpclog=$DB_LOG_RPC -p $HTTPADDR -r $RPCADDR --rpc-qr-idle-timeout $QR_TIMEOUT"
+		if [ -n "$RX_PRINT_CLUSTER_STARTUP" ]; then
+		  echo "Running reindexer server with cmd: '$CMD &'"
+		fi
+		$CMD &
 		SERVER_PIDS[$node]=$!
 		sleep 1
 		node=$((node+1))
-done
-
+    done
 }
 
 function WaitForPid {

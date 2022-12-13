@@ -30,7 +30,7 @@ struct CJsonModifier::Context {
 	bool fieldUpdated = false;
 };
 
-CJsonModifier::CJsonModifier(TagsMatcher& tagsMatcher, PayloadType pt) : pt_(std::move(pt)), tagsMatcher_(tagsMatcher) {}
+CJsonModifier::CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt) : pt_(std::move(pt)), tagsMatcher_(tagsMatcher) {}
 
 Error CJsonModifier::SetFieldValue(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser) {
 	if (fieldPath.empty()) {
@@ -148,7 +148,7 @@ bool CJsonModifier::needToInsertField(Context &ctx) {
 int CJsonModifier::determineUpdateTagType(const Context &ctx, int field) {
 	if (field != -1) {
 		const PayloadFieldType &fieldType = pt_.Field(field);
-		if (ctx.value.size() > 0 && fieldType.Type() != ctx.value.front().Type()) {
+		if (ctx.value.size() > 0 && !fieldType.Type().IsSame(ctx.value.front().Type())) {
 			throw Error(errParams, "Inserted field %s type [%s] doesn't match it's index type [%s]", fieldType.Name(),
 						ctag(kvType2Tag(ctx.value.front().Type())).TypeName(), ctag(kvType2Tag(fieldType.Type())).TypeName());
 		}
@@ -216,7 +216,7 @@ bool CJsonModifier::updateFieldInTuple(Context &ctx) {
 		} else if (tagType == TAG_ARRAY) {
 			if (tagMatched) {
 				skipCjsonTag(tag, ctx.rdser);
-				ctx.wrser.PutUInt32(int(carraytag(ctx.value.size(), ctx.value.ArrayType())));
+				ctx.wrser.PutUInt32(int(carraytag(ctx.value.size(), ctx.value.ArrayType().ToNumber())));
 				for (size_t i = 0; i < ctx.value.size(); ++i) {
 					updateField(ctx, i);
 				}
@@ -370,8 +370,8 @@ bool CJsonModifier::buildCJSON(Context &ctx) {
 		if (embeddedField) {
 			atag = ctx.rdser.GetUInt32();
 		} else {
-			uint64_t count = ctx.rdser.GetVarUint();
-			KeyValueType kvType = pt_.Field(tag.Field()).Type();
+			const uint64_t count = ctx.rdser.GetVarUint();
+			const KeyValueType kvType{pt_.Field(tag.Field()).Type()};
 			atag = carraytag(count, kvType2Tag(kvType));
 		}
 		ctx.wrser.PutUInt32(static_cast<int>(atag));

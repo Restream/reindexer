@@ -153,21 +153,18 @@ Error RPCClient::modifyItemCJSON(std::string_view nsName, Item& item, CoroQueryR
 	item.impl_->GetPrecepts(ser);
 
 	bool withNetTimeout = (netTimeout.count() > 0);
+	auto nsPtr = getNamespace(nsName);
 	for (int tryCount = 0;; tryCount++) {
 		auto netDeadline = conn_.Now() + netTimeout;
 		auto ret = conn_.Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(DataFormat::FormatCJson), item.GetCJSON(),
 							  mode, ser.Slice(), item.GetStateToken(), 0);
 		if (ret.Status().ok()) {
 			try {
-				auto args = ret.GetArgs(2);
-				CoroQueryResults qr(nullptr, &conn_, {getNamespace(nsName)}, p_string(args[0]),
+				const auto args = ret.GetArgs(2);
+				CoroQueryResults qr(nullptr, &conn_, {nsPtr}, p_string(args[0]),
 									RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, 0, config_.FetchAmount,
 									config_.NetTimeout, false);
-				if (qr.Status().ok()) {
-					for (std::string_view ns : qr.GetNamespaces()) {
-						getNamespace(ns)->TryReplaceTagsMatcher(qr.GetTagsMatcher(ns));
-					}
-				}
+				assertrx(qr.IsBound());	 // Bind must always happens inside QR's constructor. Just extra check
 				if (results) {
 					*results = std::move(qr);
 					return results->Status();
@@ -235,7 +232,7 @@ Error RPCClient::modifyItemFormat(std::string_view nsName, Item& item, RPCDataFo
 						  item.GetStateToken(), 0);
 	if (ret.Status().ok()) {
 		try {
-			auto args = ret.GetArgs(2);
+			const auto args = ret.GetArgs(2);
 			CoroQueryResults qr(nullptr, &conn_, {getNamespace(nsName)}, p_string(args[0]),
 								RPCQrId{int(args[1]), args.size() > 2 ? int64_t(args[2]) : -1}, 0, config_.FetchAmount, config_.NetTimeout,
 								false);
@@ -256,6 +253,45 @@ Error RPCClient::modifyItemFormat(std::string_view nsName, Item& item, RPCDataFo
 		}
 	}
 	return ret.Status();
+}
+
+Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, int mode, std::chrono::milliseconds netTimeout,
+							   const InternalRdxContext& ctx) {
+	if (ItemImplBase::HasBundledTm(cjson)) {
+		return Error(errParams, "Raw CJSON interface does not support CJSON with bundled tags matcher");
+	}
+
+	auto nsPtr = getNamespace(nsName);
+	const auto stateToken = nsPtr->GetStateToken();
+	const auto ret = conn_.Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(DataFormat::FormatCJson), cjson, mode,
+								std::string_view(), stateToken, 0);
+
+	if (!ret.Status().ok()) return ret.Status();
+
+	try {
+		const auto args = ret.GetArgs(2);
+		const auto rawResult = std::string_view(args[0]);
+		ResultSerializer ser(rawResult);
+		if (ser.ContainsPayloads()) {
+			ResultSerializer::QueryParams qdata;
+			ResultSerializer::ParsingData pdata;
+			ser.GetRawQueryParams(
+				qdata,
+				[&ser, nsPtr](int nsIdx) {
+					const uint32_t stateToken = ser.GetVarUint();
+					const int version = ser.GetVarUint();
+					TagsMatcher newTm;
+					newTm.deserialize(ser, version, stateToken);
+					if (nsIdx != 0) throw Error(errLogic, "Unexpected namespace index in item modification response: %d", nsIdx);
+					nsPtr->TryReplaceTagsMatcher(std::move(newTm));
+					PayloadType("tmp").clone()->deserialize(ser);
+				},
+				true, pdata);
+		}
+	} catch (const Error& err) {
+		return err;
+	}
+	return Error();
 }
 
 Item RPCClient::NewItem(std::string_view nsName) {
@@ -310,7 +346,7 @@ Error RPCClient::EnumMeta(std::string_view nsName, std::vector<std::string>& key
 			keys.clear();
 			keys.reserve(args.size());
 			for (auto& k : args) {
-				keys.push_back(k.As<std::string>());
+				keys.emplace_back(k.As<std::string>());
 			}
 		}
 		return ret.Status();
@@ -331,7 +367,7 @@ Error RPCClient::Delete(const Query& query, CoroQueryResults& result, const Inte
 	auto ret = conn_.Call(mkCommand(cproto::kCmdDeleteQuery, &ctx), ser.Slice(), flags);
 	try {
 		if (ret.Status().ok()) {
-			auto args = ret.GetArgs(2);
+			const auto args = ret.GetArgs(2);
 			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), -1}, &query);
 		}
 	} catch (const Error& err) {
@@ -354,9 +390,6 @@ Error RPCClient::Update(const Query& query, CoroQueryResults& result, const Inte
 		if (ret.Status().ok()) {
 			const auto args = ret.GetArgs(2);
 			result.Bind(p_string(args[0]), RPCQrId{int(args[1]), -1}, &query);
-			for (size_t i = 0; i < nsArray.size(); ++i) {
-				getNamespace(nsArray[i]->name)->TryReplaceTagsMatcher(result.GetTagsMatcher(i));
-			}
 		}
 	} catch (const Error& err) {
 		return err;
@@ -368,7 +401,6 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 	// Get array of payload Type Versions
 	ser.PutVarUint(vec.size());
 	for (auto v : vec) ser.PutVarUint(v);
-	return;
 }
 
 Error RPCClient::Select(std::string_view querySQL, CoroQueryResults& result, const InternalRdxContext& ctx) {

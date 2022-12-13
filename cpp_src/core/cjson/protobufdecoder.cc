@@ -1,5 +1,6 @@
 #include "protobufdecoder.h"
 #include "core/schema.h"
+#include "core/type_consts_helpers.h"
 #include "estl/protobufparser.h"
 #include "protobufbuilder.h"
 
@@ -89,7 +90,7 @@ Error ProtobufDecoder::decodeArray(Payload* pl, CJsonBuilder& builder, const Pro
 				array.Put(0, parser.ReadArrayItem(item.itemType));
 			}
 		} else {
-			if (item.itemType == KeyValueComposite) {
+			if (item.itemType.Is<KeyValueType::Composite>()) {
 				Error status{errOK};
 				CJsonProtobufObjectBuilder obj(array, 0, arraysStorage_);
 				while (status.ok() && !parser.IsEof()) {
@@ -105,39 +106,35 @@ Error ProtobufDecoder::decodeArray(Payload* pl, CJsonBuilder& builder, const Pro
 
 Error ProtobufDecoder::decode(Payload* pl, CJsonBuilder& builder, const ProtobufValue& item) {
 	TagsPathScope<TagsPath> tagScope(tagsPath_, item.tagName);
-	Error status;
-	switch (item.value.Type()) {
-		case KeyValueInt:
-		case KeyValueInt64:
-		case KeyValueDouble:
-		case KeyValueBool:
+	return item.value.Type().EvaluateOneOf(
+		[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool>) {
 			setValue(pl, builder, item);
-			break;
-		case KeyValueString: {
+			return Error{};
+		},
+		[&](KeyValueType::String) {
 			if (item.isArray) {
-				status = decodeArray(pl, builder, item);
+				return decodeArray(pl, builder, item);
 			} else {
-				switch (item.itemType) {
-					case KeyValueString:
+				return item.itemType.EvaluateOneOf(
+					[&](KeyValueType::String) {
 						setValue(pl, builder, item);
-						break;
-					case KeyValueComposite: {
+						return Error{};
+					},
+					[&](KeyValueType::Composite) {
 						CJsonProtobufObjectBuilder objBuilder(builder, item.tagName, arraysStorage_);
 						ProtobufObject object(item.As<std::string_view>(), *schema_, tagsPath_, tm_);
-						status = decodeObject(pl, objBuilder, object);
-						break;
-					}
-					default:
-						return Error(errParseProtobuf, "Error parsing length-encoded type: [%s] for field [%s]",
-									 Variant::TypeName(item.itemType), tm_.tag2name(item.tagName));
-				}
+						return decodeObject(pl, objBuilder, object);
+					},
+					[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::Null,
+							  KeyValueType::Tuple, KeyValueType::Undefined>) {
+						return Error(errParseProtobuf, "Error parsing length-encoded type: [%s] for field [%s]", item.itemType.Name(),
+									 tm_.tag2name(item.tagName));
+					});
 			}
-			break;
-		}
-		default:
-			return Error(errParseProtobuf, "Unknown field type [%s] while parsing Protobuf", Variant::TypeName(item.value.Type()));
-	}
-	return status;
+		},
+		[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null>) {
+			return Error(errParseProtobuf, "Unknown field type [%s] while parsing Protobuf", item.value.Type().Name());
+		});
 }
 
 Error ProtobufDecoder::decodeObject(Payload* pl, CJsonBuilder& builder, ProtobufObject& object) {

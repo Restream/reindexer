@@ -13,11 +13,11 @@ public:
 		int len;
 	};
 	// Construct object
-	PayloadFieldValue(const PayloadFieldType &t, uint8_t *v) : t_(t), p_(v) {}
+	PayloadFieldValue(const PayloadFieldType &t, uint8_t *v) noexcept : t_(t), p_(v) {}
 	// Single value operations
 	void Set(Variant kv);
 	Variant Get(bool enableHold = false) const;
-	size_t Hash() const;
+	size_t Hash() const noexcept;
 	bool IsEQ(const PayloadFieldValue &o) const;
 
 	// Type of value, not owning

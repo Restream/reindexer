@@ -115,7 +115,7 @@ public:
 	void End();
 
 private:
-	bool getExpectedFieldType(KeyValueType& expectedType);
+	std::pair<KeyValueType, bool> getExpectedFieldType() const;
 	void checkIfInconvertibleType(int field, KeyValueType type, KeyValueType first, KeyValueType second);
 	void put(int fieldIdx, bool val);
 	void put(int fieldIdx, int val);

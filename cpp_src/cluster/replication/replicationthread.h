@@ -29,8 +29,15 @@ struct ReplThreadConfig {
 		ParallelSyncsPerThreadCount = config.parallelSyncsPerThreadCount;
 		BatchingRoutinesCount = config.batchingRoutinesCount > 0 ? size_t(config.batchingRoutinesCount) : 100;
 		MaxWALDepthOnForceSync = config.maxWALDepthOnForceSync;
-		syncTimeoutSec = std::max(config.syncTimeoutSec, config.onlineUpdatesTimeoutSec);
+		SyncTimeoutSec = std::max(config.syncTimeoutSec, config.onlineUpdatesTimeoutSec);
 		ClusterID = baseConfig.clusterID;
+		if (config.onlineUpdatesDelayMSec > 0) {
+			OnlineUpdatesDelaySec = double(config.onlineUpdatesDelayMSec) / 1000.;
+		} else if (config.onlineUpdatesDelayMSec == 0) {
+			OnlineUpdatesDelaySec = 0;
+		} else {
+			OnlineUpdatesDelaySec = 0.1;
+		}
 	}
 	ReplThreadConfig(const ReplicationConfigData &baseConfig, const ClusterConfigData &config) {
 		AppName = config.appName;
@@ -40,19 +47,21 @@ struct ReplThreadConfig {
 		ParallelSyncsPerThreadCount = config.parallelSyncsPerThreadCount;
 		ClusterID = baseConfig.clusterID;
 		MaxWALDepthOnForceSync = config.maxWALDepthOnForceSync;
-		syncTimeoutSec = std::max(config.syncTimeoutSec, config.onlineUpdatesTimeoutSec);
+		SyncTimeoutSec = std::max(config.syncTimeoutSec, config.onlineUpdatesTimeoutSec);
 		BatchingRoutinesCount = config.batchingRoutinesCount > 0 ? size_t(config.batchingRoutinesCount) : 100;
+		OnlineUpdatesDelaySec = 0;
 	}
 
 	std::string AppName = "rx_node";
 	int UpdatesTimeoutSec = 20;
-	int syncTimeoutSec = 60;
+	int SyncTimeoutSec = 60;
 	int RetrySyncIntervalMSec = 3000;
 	int ParallelSyncsPerThreadCount = 2;
 	int ClusterID = 1;
 	size_t BatchingRoutinesCount = 100;
 	int64_t MaxWALDepthOnForceSync = 1000;
 	bool EnableCompression = true;
+	double OnlineUpdatesDelaySec = 0;
 };
 
 struct UpdateApplyStatus {
@@ -117,8 +126,8 @@ public:
 		std::optional<int64_t> connObserverId;
 	};
 
-	ReplThread(int serverId_, ReindexerImpl &thisNode, std::shared_ptr<UpdatesQueueT>, BehaviourParamT &&bhvParam,
-			   ReplicationStatsCollector statsCollector);
+	ReplThread(int serverId_, ReindexerImpl &thisNode, std::shared_ptr<UpdatesQueueT>, BehaviourParamT &&, ReplicationStatsCollector,
+			   const Logger &);
 
 	template <typename NodeConfigT>
 	void Run(ReplThreadConfig, const std::vector<std::pair<uint32_t, NodeConfigT>> &nodesList, size_t consensusCnt,
@@ -172,13 +181,21 @@ private:
 	static bool isTimeoutError(const Error &err) noexcept { return err.code() == errTimeout || err.code() == errCanceled; }
 	static bool isLeaderChangedError(const Error &err) noexcept { return err.code() == errWrongReplicationData; }
 	static bool isTxCopyError(const Error &err) noexcept { return err.code() == errTxDoesNotExist; }
-	constexpr static std::string_view typeString() noexcept;
+	constexpr static std::string_view logModuleName() noexcept {
+		using namespace std::string_view_literals;
+		if constexpr (isClusterReplThread()) {
+			return "replicator:sync_t"sv;
+		} else {
+			return "replicator:async_t"sv;
+		}
+	}
 
 	const int serverId_ = -1;
 	uint32_t consensusCnt_ = 0;
 	uint32_t requiredReplicas_ = 0;
 	std::unique_ptr<coroutine::tokens_pool<bool>> nsSyncTokens_;
 	net::ev::async updatesAsync_;
+	net::ev::timer updatesTimer_;
 	net::ev::async resyncAsync_;
 	bool notificationInProgress_ = false;
 	bool hasPendingNotificaions_ = false;
@@ -188,6 +205,7 @@ private:
 	std::shared_ptr<UpdatesQueueT> updates_;
 	coroutine::channel<bool> terminateCh_;
 	ReplicationStatsCollector statsCollector_;
+	const Logger &log_;
 };
 
 }  // namespace cluster

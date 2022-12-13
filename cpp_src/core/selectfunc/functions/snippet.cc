@@ -20,7 +20,7 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	if (func.tagsPath.empty()) {
 		pl.Get(func.field, kr);
 	} else {
-		pl.GetByJsonPath(func.tagsPath, kr, KeyValueUndefined);
+		pl.GetByJsonPath(func.tagsPath, kr, KeyValueType::Undefined{});
 	}
 
 	const std::string *data = p_string(kr[0]).getCxxstr();

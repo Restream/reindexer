@@ -21,6 +21,7 @@ TEST_F(ShardingSystemApi, Reconnect) {
 					succeed = true;
 					break;
 				}
+				std::this_thread::sleep_for(std::chrono::milliseconds(2));
 			}
 			ASSERT_TRUE(succeed) << err.what() << "; shard = " << shard << "; node = " << clusterNodeId;
 

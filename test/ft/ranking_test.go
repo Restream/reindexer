@@ -2,6 +2,7 @@ package ft
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"testing"
 
@@ -19,6 +20,12 @@ func doRankingTest(t *testing.T, indexType string) {
 	defer rx.Close()
 
 	testCases := ParseRankingTestCases()
+	expectedQualities := ParseRankingQuality()
+	newQualities := []RankingQuality{}
+	for i := 0; i < len(testCases); i++ {
+		newQualities = append(newQualities, RankingQuality{expectedQualities[i].Description, expectedQualities[i].FastRankingQuality, expectedQualities[i].FuzzRankingQuality})
+	}
+
 	for i, testC := range testCases {
 		// Need to make a local copy to use it in the closure below
 		testCase := testC
@@ -46,6 +53,21 @@ func doRankingTest(t *testing.T, indexType string) {
 					quality = quality * 100
 					totalSearchQuality += quality
 					fmt.Printf("\n%s\nQuality - %.2f %%\n", testCase.Description, quality)
+
+					if *qualityCheck {
+						qualityRound2f := math.Round(quality*100) / 100
+						if indexType == "fuzzytext" {
+							assert.GreaterOrEqualf(t, qualityRound2f, expectedQualities[i].FuzzRankingQuality, "Fuzz ranking quality has dropped")
+							if qualityRound2f > expectedQualities[i].FuzzRankingQuality {
+								newQualities[i].FuzzRankingQuality = qualityRound2f
+							}
+						} else {
+							assert.GreaterOrEqualf(t, qualityRound2f, expectedQualities[i].FastRankingQuality, "Fast ranking quality has dropped")
+							if qualityRound2f > expectedQualities[i].FastRankingQuality {
+								newQualities[i].FastRankingQuality = qualityRound2f
+							}
+						}
+					}
 				})
 			}
 		})
@@ -53,6 +75,9 @@ func doRankingTest(t *testing.T, indexType string) {
 
 	totalSearchQuality = totalSearchQuality / float64(len(testCases))
 	fmt.Printf("\nTotal Quality - %.2f %%\n", totalSearchQuality)
+	if *qualityCheck && *saveTestArtifacts {
+		SaveRankingQuality(newQualities)
+	}
 }
 
 func dbItemsToSliceOfDocuments(dbItems []interface{}) []string {

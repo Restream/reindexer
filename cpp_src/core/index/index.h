@@ -141,8 +141,8 @@ protected:
 	// Perfstat counter
 	PerfStatCounterMT commitPerfCounter_;
 	PerfStatCounterMT selectPerfCounter_;
-	KeyValueType keyType_ = KeyValueUndefined;
-	KeyValueType selectKeyType_ = KeyValueUndefined;
+	KeyValueType keyType_ = KeyValueType::Undefined{};
+	KeyValueType selectKeyType_ = KeyValueType::Undefined{};
 	// Count of sorted indexes in namespace to resereve additional space in idsets
 	int sortedIdxCount_ = 0;
 	bool isBuilt_{false};

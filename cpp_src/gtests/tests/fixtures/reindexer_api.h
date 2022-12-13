@@ -27,7 +27,10 @@ using reindexer::LocalQueryResults;
 
 class ReindexerApi : public ::testing::Test {
 protected:
-	void SetUp() {}
+	void SetUp() {
+		auto err = rt.reindexer->Connect("builtin://");
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
 
 	void TearDown() {}
 
@@ -39,6 +42,9 @@ public:
 	ReindexerApi() {}
 
 	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
+		rt.DefineNamespaceDataset(ns, fields);
+	}
+	void DefineNamespaceDataset(const std::string &ns, const std::vector<IndexDeclaration> &fields) {
 		rt.DefineNamespaceDataset(ns, fields);
 	}
 	void DefineNamespaceDataset(Reindexer &rx, const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
@@ -82,6 +88,14 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 		err = rt.reindexer->AddIndex(default_namespace, {"value", "text", "string", IndexOpts()});
 		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	static Item getMemStat(Reindexer &rx, const std::string &ns) {
+		QueryResults qr;
+		auto err = rx.Select(Query("#memstats").Where("name", CondEq, ns), qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 1);
+		return qr.begin().GetItem(false);
 	}
 };
 

@@ -90,6 +90,7 @@ public:
 			config_.proxyConnCount = 4;
 			config_.proxyConnThreads = 3;
 			config_.proxyConnConcurrency = 8;
+			config_.reconnectTimeout = std::chrono::milliseconds(6000);
 			for (size_t idx = startId, node = 0; idx < startId + kNodesInCluster; ++idx, ++node) {
 				YAML::Node replConf;
 				replConf["cluster_id"] = shard;

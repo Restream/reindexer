@@ -194,8 +194,8 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 	if (!tagsPath.empty()) {
 		SelectKeyResult comparisonResult;
 		fields.push_back(tagsPath);
-		comparisonResult.comparators_.emplace_back(qe.condition, KeyValueUndefined, qe.values, false, qe.distinct, ns.payloadType_, fields,
-												   nullptr, CollateOpts());
+		comparisonResult.comparators_.emplace_back(qe.condition, KeyValueType::Null{}, qe.values, false, qe.distinct, ns.payloadType_,
+												   fields, nullptr, CollateOpts());
 		selectResults.emplace_back(std::move(comparisonResult));
 	} else if (strictMode == StrictModeNone) {
 		SelectKeyResult res;
@@ -359,7 +359,7 @@ void SelectIteratorContainer::processEqualPositions(const std::vector<EqualPosit
 			throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 		}
 
-		KeyValueType type = firstQe.values.size() ? firstQe.values[0].Type() : KeyValueNull;
+		const KeyValueType type = firstQe.values.size() ? firstQe.values[0].Type() : KeyValueType::Null{};
 		Comparator cmp(firstQe.condition, type, firstQe.values, true, firstQe.distinct, ns.payloadType_, FieldsSet({firstQe.idxNo}));
 
 		for (size_t i = 0; i < eqPos.queryEntriesPositions.size(); ++i) {

@@ -10,7 +10,7 @@
 const std::string ClusterizationApi::kConfigNs = "#config";
 const std::chrono::seconds ClusterizationApi::kMaxServerStartTime = std::chrono::seconds(15);
 const std::chrono::seconds ClusterizationApi::kMaxSyncTime = std::chrono::seconds(15);
-const std::chrono::seconds ClusterizationApi::kMaxElectionsTime = std::chrono::seconds(8);
+const std::chrono::seconds ClusterizationApi::kMaxElectionsTime = std::chrono::seconds(12);
 
 const std::string ClusterizationApi::kIdField = "id";
 const std::string ClusterizationApi::kStringField = "string";
@@ -47,6 +47,7 @@ ClusterizationApi::Cluster::Cluster(net::ev::dynamic_loop& loop, size_t initialS
 	clusterConf["syncs_per_thread"] = maxSyncCount;
 	clusterConf["retry_sync_interval_msec"] = resyncTimeout.count();
 	clusterConf["nodes"] = YAML::Node(YAML::NodeType::Sequence);
+	clusterConf["log_level"] = logLevelToString(LogTrace);
 	for (size_t i = initialServerId; i < initialServerId + count; ++i) {
 		YAML::Node node;
 		node["dsn"] = fmt::format("cproto://127.0.0.1:{}/node{}", defaults_.defaultRpcPort + i, i);

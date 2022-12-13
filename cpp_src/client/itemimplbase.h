@@ -60,6 +60,11 @@ public:
 	const std::vector<std::string> &GetPrecepts() const noexcept { return precepts_; }
 	void GetPrecepts(WrSerializer &ser);
 	void Unsafe(bool enable) noexcept { unsafe_ = enable; }
+	static bool HasBundledTm(std::string_view cjson) {
+		Serializer rser(cjson);
+		return ReadBundledTmTag(rser);
+	}
+	static bool ReadBundledTmTag(Serializer &ser) { return ser.GetVarUint() == TAG_END; }
 
 protected:
 	virtual Error tryToUpdateTagsMatcher() = 0;

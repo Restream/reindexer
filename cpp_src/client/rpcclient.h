@@ -101,12 +101,24 @@ public:
 	Error EnumDatabases(std::vector<std::string> &dbList, const InternalRdxContext &ctx);
 	Error Insert(std::string_view nsName, client::Item &item, RPCDataFormat format, const InternalRdxContext &ctx);
 	Error Insert(std::string_view nsName, client::Item &item, CoroQueryResults &result, const InternalRdxContext &ctx);
+	Error Insert(std::string_view nsName, std::string_view cjson, const InternalRdxContext &ctx) {
+		return modifyItemRaw(nsName, cjson, ModeInsert, config_.NetTimeout, ctx);
+	}
 	Error Update(std::string_view nsName, client::Item &item, RPCDataFormat format, const InternalRdxContext &ctx);
 	Error Update(std::string_view nsName, client::Item &item, CoroQueryResults &result, const InternalRdxContext &ctx);
+	Error Update(std::string_view nsName, std::string_view cjson, const InternalRdxContext &ctx) {
+		return modifyItemRaw(nsName, cjson, ModeUpdate, config_.NetTimeout, ctx);
+	}
 	Error Upsert(std::string_view nsName, client::Item &item, RPCDataFormat format, const InternalRdxContext &ctx);
 	Error Upsert(std::string_view nsName, client::Item &item, CoroQueryResults &result, const InternalRdxContext &ctx);
+	Error Upsert(std::string_view nsName, std::string_view cjson, const InternalRdxContext &ctx) {
+		return modifyItemRaw(nsName, cjson, ModeUpsert, config_.NetTimeout, ctx);
+	}
 	Error Delete(std::string_view nsName, client::Item &item, RPCDataFormat format, const InternalRdxContext &ctx);
 	Error Delete(std::string_view nsName, client::Item &item, CoroQueryResults &result, const InternalRdxContext &ctx);
+	Error Delete(std::string_view nsName, std::string_view cjson, const InternalRdxContext &ctx) {
+		return modifyItemRaw(nsName, cjson, ModeDelete, config_.NetTimeout, ctx);
+	}
 	Error Delete(const Query &query, CoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Update(const Query &query, CoroQueryResults &result, const InternalRdxContext &ctx);
 	Error Select(std::string_view query, CoroQueryResults &result, const InternalRdxContext &ctx);
@@ -158,6 +170,7 @@ protected:
 						  const InternalRdxContext &ctx);
 	Error modifyItemFormat(std::string_view nsName, Item &item, RPCDataFormat format, int mode, milliseconds netTimeout,
 						   const InternalRdxContext &ctx);
+	Error modifyItemRaw(std::string_view nsName, std::string_view cjson, int mode, milliseconds netTimeout, const InternalRdxContext &ctx);
 	Namespace *getNamespace(std::string_view nsName);
 
 	void onConnectionState(Error err) noexcept {

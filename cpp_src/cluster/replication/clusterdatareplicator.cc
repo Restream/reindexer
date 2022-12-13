@@ -8,7 +8,7 @@ namespace cluster {
 
 ClusterDataReplicator::ClusterDataReplicator(ClusterDataReplicator::UpdatesQueueT& q, SharedSyncState<>& s, ReindexerImpl& thisNode)
 	: statsCollector_(std::string(kClusterReplStatsType)),
-	  raftManager_(loop_, statsCollector_,
+	  raftManager_(loop_, statsCollector_, log_,
 				   [this](uint32_t uid, bool online) {
 					   UpdatesContainer recs(1);
 					   recs[0] = UpdateRecord{UpdateRecord::Type::NodeNetworkCheck, uid, online};
@@ -17,7 +17,7 @@ ClusterDataReplicator::ClusterDataReplicator(ClusterDataReplicator::UpdatesQueue
 	  updatesQueue_(q),
 	  sharedSyncState_(s),
 	  thisNode_(thisNode),
-	  roleSwitcher_(sharedSyncState_, syncList_, thisNode, statsCollector_) {}
+	  roleSwitcher_(sharedSyncState_, syncList_, thisNode, statsCollector_, log_) {}
 
 void ClusterDataReplicator::Configure(ClusterConfigData config) {
 	std::lock_guard lck(mtx_);
@@ -49,7 +49,7 @@ bool ClusterDataReplicator::IsExpectingStartup() const noexcept {
 void ClusterDataReplicator::Run() {
 	std::lock_guard lck(mtx_);
 	if (!isExpectingStartup()) {
-		logPrintf(LogWarning, "ClusterDataReplicator: startup is not expected");
+		log_.Warn([] { rtstr("ClusterDataReplicator: startup is not expected"); });
 		return;
 	}
 
@@ -73,6 +73,7 @@ void ClusterDataReplicator::Run() {
 		throw Error(errParams, "Server id %d is not in cluster", baseConfig_->serverID);
 	}
 
+	log_.SetLevel(config_->logLevel);
 	auto nodes = config_->nodes;
 	ClusterNodeConfig thisNode;
 	for (auto it = nodes.begin(); it != nodes.end();) {
@@ -98,7 +99,7 @@ void ClusterDataReplicator::Run() {
 	}
 	syncList_.Init(std::vector<int64_t>(nodes.size(), SynchronizationList::kUnsynchronizedID));
 
-	updatesQueue_.ReinitSyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(config_->namespaces));
+	updatesQueue_.ReinitSyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(config_->namespaces), log_);
 	sharedSyncState_.Reset(config_->namespaces, 1, config_->nodes.size() - 1);
 
 	assert(replThreads_.empty());
@@ -112,7 +113,7 @@ void ClusterDataReplicator::Run() {
 		if (nodesShard.size()) {
 			replThreads_.emplace_back(
 				baseConfig_->serverID, thisNode_, &config_->namespaces, updatesQueue_.GetSyncQueue(), sharedSyncState_, syncList_,
-				[this] { restartElections_ = true; }, statsCollector_);
+				[this]() noexcept { restartElections_ = true; }, statsCollector_, log_);
 			replThreads_.back().Run(threadsConfig, std::move(nodesShard), config_->nodes.size());
 		}
 	}
@@ -178,8 +179,7 @@ Error ClusterDataReplicator::SetDesiredLeaderId(int nextServerId, bool sendToOth
 	if (!isRunning()) {
 		return Error(errNotValid, "Cluster replicator is not running");
 	}
-	logPrintf(LogInfo, "[cluster] %d Setting desired leader ID: %d. Sending to other nodes: %s", serverID(), nextServerId,
-			  sendToOtherNodes ? "true" : "false");
+	logInfo("%d Setting desired leader ID: %d. Sending to other nodes: %s", serverID(), nextServerId, sendToOtherNodes ? "true" : "false");
 	std::promise<Error> promise;
 	std::future<Error> future = promise.get_future();
 	ClusterCommand c = ClusterCommand(kCmdSetDesiredLeader, nextServerId, sendToOtherNodes, std::move(promise));
@@ -214,6 +214,7 @@ bool ClusterDataReplicator::NamespaceIsInClusterConfig(std::string_view nsName) 
 
 ReplicationStats ClusterDataReplicator::GetReplicationStats() const {
 	auto stats = statsCollector_.Get();
+	stats.logLevel = log_.GetLevel();
 	auto raftInfo = sharedSyncState_.CurrentRole();
 	const bool isInitialSyncDone = sharedSyncState_.IsInitialSyncDone();
 	auto syncList = syncList_.GetSynchronized(GetConsensusForN(stats.nodeStats.size()) - 1);
@@ -242,7 +243,7 @@ bool ClusterDataReplicator::isExpectingStartup() const noexcept {
 }
 
 void ClusterDataReplicator::clusterControlRoutine(int serverId) {
-	logPrintf(LogInfo, "[cluster:elections]:%d Beginning control routine", serverId);
+	logInfo("%d Beginning control routine", serverId);
 
 	RaftInfo raftInfo;
 	while (!terminate_) {
@@ -268,13 +269,14 @@ void ClusterDataReplicator::clusterControlRoutine(int serverId) {
 		raftInfo = newRaftInfo;
 		std::function<bool()> condPredicat;
 		if (raftInfo.role == RaftInfo::Role::Leader) {
-			logPrintf(LogInfo, "[cluster]:%d Became leader", serverId);
+			logInfo("%d Became leader", serverId);
 			condPredicat = [this] { return raftManager_.FollowersAreAvailable(); };
 		} else if (raftInfo.role == RaftInfo::Role::Follower) {
-			logPrintf(LogInfo, "[cluster]:%d Became follower (%d)", serverId, raftInfo.leaderId);
+			logInfo("%d Became follower (%d)", serverId, raftInfo.leaderId);
 			condPredicat = [this] { return raftManager_.LeaderIsAvailable(RaftManager::ClockT::now()); };
 		} else {
-			assert(false);
+			assertrx(false);
+			std::abort();
 		}
 		static_assert(kGranularSleepInterval < kMinStateCheckInerval, "Sleep interval has to be less or equal to check interval");
 		do {
@@ -296,20 +298,20 @@ void ClusterDataReplicator::clusterControlRoutine(int serverId) {
 							onRoleChanged(RaftInfo::Role::Candidate,
 										  raftInfo.role == RaftInfo::Role::Leader ? serverId : raftManager_.GetLeaderId());
 						} else {
-							logPrintf(LogInfo, "[cluster]:%d Error send desired leader (%s)", serverId, err.what());
+							logInfo("%d Error send desired leader (%s)", serverId, err.what());
 						}
 						c.result.set_value(std::move(err));
 					}
 				}
 
 				if (restartElections_) {
-					logPrintf(LogWarning, "[cluster]:%d Elections restart on request", serverId);
+					logWarn("%d Elections restart on request", serverId);
 					break;
 				}
 
 				int curLeaderId = raftManager_.GetLeaderId();
 				if (raftInfo.leaderId != curLeaderId && raftInfo.role == RaftInfo::Role::Follower) {
-					logPrintf(LogWarning, "[cluster]:%d Leader was changed: %d -> %d", serverId, raftInfo.leaderId, curLeaderId);
+					logWarn("%d Leader was changed: %d -> %d", serverId, raftInfo.leaderId, curLeaderId);
 					raftInfo.leaderId = curLeaderId;
 					onRoleChanged(RaftInfo::Role::Follower, raftInfo.leaderId);
 				}
@@ -364,7 +366,7 @@ void ClusterDataReplicator::stop() {
 		roleSwitchThread_.join();
 		replThreads_.clear();
 		updatesQueue_.GetSyncQueue()->SetWritable(false, Error(errUpdateReplication, "Cluster is not running"));
-		updatesQueue_.ReinitSyncQueue(statsCollector_, std::optional<NsNamesHashSetT>());
+		updatesQueue_.ReinitSyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(), log_);
 		sharedSyncState_.SetTerminated();
 		syncList_.Clear();
 		statsCollector_.Reset();

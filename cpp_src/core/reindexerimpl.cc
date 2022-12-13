@@ -18,6 +18,7 @@
 #include "estl/contexted_locks.h"
 #include "queryresults/joinresults.h"
 #include "server/outputparameters.h"
+#include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/errors.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
@@ -27,9 +28,6 @@
 
 std::once_flag initTerminateHandlerFlag;
 
-using std::lock_guard;
-using std::string;
-using std::vector;
 using namespace std::placeholders;
 using reindexer::cluster::UpdateRecord;
 using namespace std::string_view_literals;
@@ -44,6 +42,7 @@ constexpr char kShardingConfFilename[] = "sharding.conf";
 constexpr char kReplicationConfigType[] = "replication";
 constexpr char kAsyncReplicationConfigType[] = "async_replication";
 constexpr char kShardingConfigType[] = "sharding";
+constexpr char kActionConfigType[] = "action";
 
 constexpr unsigned kStorageLoadingThreads = 6;
 
@@ -86,6 +85,13 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg)
 		});
 
 	backgroundThread_ = std::thread([this]() { this->backgroundRoutine(); });
+
+#ifdef REINDEX_WITH_GPERFTOOLS
+	if (alloc_ext::TCMallocIsAvailable()) {
+		heapWatcher_ = TCMallocHeapWathcher(alloc_ext::instance(), config_.allocatorCacheLimit, config_.allocatorCachePart);
+	}
+#endif
+
 	storageFlushingThread_ = std::thread([this]() { this->storageFlushingRoutine(); });
 	std::call_once(initTerminateHandlerFlag, []() {
 		debug::terminate_handler_init();
@@ -110,7 +116,7 @@ Error ReindexerImpl::EnableStorage(const std::string& storagePath, bool skipPlac
 		return Error(errParams, "Can't create directory '%s' for reindexer storage - reason %s", storagePath, strerror(errno));
 	}
 
-	vector<fs::DirEntry> dirEntries;
+	std::vector<fs::DirEntry> dirEntries;
 	bool isEmpty = true;
 	bool isHaveConfig = false;
 	if (fs::ReadDir(storagePath, dirEntries) < 0) {
@@ -193,12 +199,12 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 	if (connected_.load(std::memory_order_relaxed)) {
 		return checkReplConf(opts);
 	}
-	string path = dsn;
+	std::string path = dsn;
 	if (dsn.compare(0, 10, "builtin://") == 0) {
 		path = dsn.substr(10);
 	}
 
-	vector<reindexer::fs::DirEntry> foundNs;
+	std::vector<reindexer::fs::DirEntry> foundNs;
 
 	switch (opts.StorageType()) {
 		case kStorageTypeOptLevelDB:
@@ -523,7 +529,7 @@ Error ReindexerImpl::openNamespace(std::string_view name, bool skipNameCheck, co
 
 			namespaces_.insert({nsDef.name, std::move(ns)});
 			auto err = clusterizator_->Replicate(
-				{UpdateRecord::Type::AddNamespace, nsDef.name, version, rdxCtx.EmmiterServerId(), std::move(nsDef), stateToken},
+				{UpdateRecord::Type::AddNamespace, std::string(name), version, rdxCtx.EmmiterServerId(), std::move(nsDef), stateToken},
 				[&wlck] {
 					assertrx(wlck.isClusterLck());
 					wlck.unlock();
@@ -867,7 +873,7 @@ Error ReindexerImpl::CommitTransaction(LocalTransaction& tr, LocalQueryResults& 
 	return err;
 }
 
-Error ReindexerImpl::GetMeta(std::string_view nsName, const std::string& key, string& data, const RdxContext& ctx) {
+Error ReindexerImpl::GetMeta(std::string_view nsName, const std::string& key, std::string& data, const RdxContext& ctx) {
 	return applyNsFunction<&Namespace::GetMeta>(nsName, ctx, data, key);
 }
 
@@ -960,7 +966,7 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 			std::chrono::microseconds(profilingCfg.queriedThresholdUS), profilingCfg.queriesPerfStats);
 
 		if (q._namespace.size() && q._namespace[0] == '#') {
-			string filterNsName;
+			std::string filterNsName;
 			if (q.entries.Size() == 1 && q.entries.HoldsOrReferTo<QueryEntry>(0)) {
 				const QueryEntry entry = q.entries.Get<QueryEntry>(0);
 				if (entry.condition == CondEq && entry.values.size() == 1) filterNsName = entry.values[0].As<std::string>();
@@ -1154,7 +1160,7 @@ void ReindexerImpl::doSelect(const Query& q, LocalQueryResults& result, NsLocker
 	if (!ns) {
 		throw Error(errParams, "Namespace '%s' is not exists", q._namespace);
 	}
-	vector<QueryResultsContext> joinQueryResultsContexts;
+	std::vector<QueryResultsContext> joinQueryResultsContexts;
 	// should be destroyed after results.lockResults()
 	JoinedSelectors mainJoinedSelectors = prepareJoinedSelectors(q, result, locks, func, joinQueryResultsContexts, ctx);
 	prepareJoinResults(q, result);
@@ -1171,7 +1177,7 @@ void ReindexerImpl::doSelect(const Query& q, LocalQueryResults& result, NsLocker
 	}
 
 	// should be destroyed after results.lockResults()
-	vector<JoinedSelectors> mergeJoinedSelectors;
+	std::vector<JoinedSelectors> mergeJoinedSelectors;
 	if (!q.mergeQueries_.empty()) {
 		mergeJoinedSelectors.reserve(q.mergeQueries_.size());
 		uint8_t counter = 0;
@@ -1361,7 +1367,7 @@ Error ReindexerImpl::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespa
 		}
 
 		if (opts.IsWithClosed() && !storagePath_.empty()) {
-			vector<fs::DirEntry> dirs;
+			std::vector<fs::DirEntry> dirs;
 			if (fs::ReadDir(storagePath_, dirs) != 0) return Error(errLogic, "Could not read database dir");
 
 			for (auto& d : dirs) {
@@ -1418,22 +1424,55 @@ void ReindexerImpl::backgroundRoutine() {
 
 void ReindexerImpl::storageFlushingRoutine() {
 	static const RdxContext dummyCtx;
+	struct ErrorInfo {
+		Error lastError;
+		uint64_t skipedErrorMsgs = 0;
+	};
+	std::unordered_map<std::string, ErrorInfo> errors;
 	auto nsFlush = [&]() {
 		auto nsarray = getNamespacesNames(dummyCtx);
+		std::unordered_map<std::string, ErrorInfo> newErrors;
 		for (const auto& name : nsarray) {
 			try {
 				auto ns = getNamespace(name, dummyCtx);
 				ns->StorageFlushingRoutine();
-			} catch (Error err) {
-				logPrintf(LogWarning, "storageFlushingRoutine() failed with ns '%s': %s", name, err.what());
+			} catch (Error& err) {
+				bool printMsg = false;
+				auto found = errors.find(name);
+				ErrorInfo* errInfo = nullptr;
+				if (found != errors.end()) {
+					auto bucket = errors.extract(found);
+					errInfo = &bucket.mapped();
+					newErrors.insert(std::move(bucket));
+				} else {
+					errInfo = &newErrors[name];
+				}
+				if (errInfo->lastError != err) {
+					printMsg = true;
+					errInfo->lastError = std::move(err);
+				} else if (++errInfo->skipedErrorMsgs % 1000 == 0) {
+					printMsg = true;
+				}
+				if (printMsg) {
+					if (errInfo->skipedErrorMsgs) {
+						logPrintf(LogWarning, "storageFlushingRoutine() failed: '%s' (%d successive errors on ns '%s')",
+								  errInfo->lastError.what(), errInfo->skipedErrorMsgs + 1, name);
+					} else {
+						logPrintf(LogWarning, "storageFlushingRoutine() failed: '%s'", errInfo->lastError.what(), name);
+					}
+				}
 			} catch (...) {
-				logPrintf(LogWarning, "storageFlushingRoutine() failed with ns '%s': unknown exception", name);
+				logPrintf(LogWarning, "storageFlushingRoutine() failed with ns: '%s'", name);
 			}
 		}
+		errors = std::move(newErrors);
 	};
 
 	while (!stopBackgroundThreads_) {
 		nsFlush();
+#ifdef REINDEX_WITH_GPERFTOOLS
+		this->heapWatcher_.CheckHeapUsagePeriodic();
+#endif
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
 
@@ -1614,51 +1653,13 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 				throw Error(errLogic, "Sharding configuration cannot be updated");
 			}
 
-			auto namespaces = getNamespaces(ctx);
+			const auto namespaces = getNamespaces(ctx);
 			for (auto& ns : namespaces) {
 				ns.second->OnConfigUpdated(configProvider_, ctx);
 			}
-			auto& actionNode = configJson["action"sv];
-			if (!actionNode.empty()) {
-				std::string_view command = actionNode["command"].As<std::string_view>();
-				if (command == "set_leader_node"sv) {
-					int newLeaderId = actionNode["server_id"].As<int>(-1);
-					if (newLeaderId == -1) {
-						throw Error(errLogic, "Expecting 'server_id' in 'set_leader_node' command");
-					}
-					cluster::RaftInfo info = clusterizator_->GetRaftInfo(false, ctx);  // current node leader or follower
-					if (info.leaderId == newLeaderId) {
-						return;
-					}
+			const auto& actionNode = configJson[kActionConfigType];
+			handleConfigAction(actionNode, namespaces, ctx);
 
-					clusterConfig_->GetNodeIndexForServerId(newLeaderId);  // check if nextServerId in config (on error throw)
-
-					auto err = clusterizator_->SetDesiredLeaderId(newLeaderId, true);
-					if (!err.ok()) {
-						throw err;
-					}
-
-				} else if (command == "restart_replication"sv) {
-					clusterizator_->StopAsyncRepl();
-				} else if (command == "reset_replication_role"sv) {
-					std::string_view name = actionNode["namespace"].As<std::string_view>();
-					if (name.empty()) {
-						for (auto& ns : namespaces) {
-							if (!clusterizator_->NamespaceIsInClusterConfig(ns.first)) {
-								ns.second->SetClusterizationStatus(ClusterizationStatus(), ctx);
-							}
-						}
-					} else {
-						if (clusterizator_->NamespaceIsInClusterConfig(name)) {
-							throw Error(errLogic, "Role of the cluster namespace may not be reseted");
-						}
-						auto ns = getNamespaceNoThrow(name, ctx);
-						if (ns) {
-							ns->SetClusterizationStatus(ClusterizationStatus(), ctx);
-						}
-					}
-				}
-			}
 			if (replicationEnabled_ && !stopBackgroundThreads_ && clusterizator_->IsExpectingAsyncReplStartup()) {
 				if (Error err = clusterizator_->StartAsyncRepl()) throw err;
 			}
@@ -1676,6 +1677,59 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 		//  TODO: reconfigure clusterization
 		// Separate namespace is required, because it has to be replicated into all cluster nodes
 		// and other system namespaces are not replicatable
+	}
+}
+
+void ReindexerImpl::handleConfigAction(const gason::JsonNode& action, const std::vector<std::pair<std::string, Namespace::Ptr>>& namespaces,
+									   const RdxContext& ctx) {
+	if (!action.empty()) {
+		std::string_view command = action["command"].As<std::string_view>();
+		if (command == "set_leader_node"sv) {
+			const int newLeaderId = action["server_id"].As<int>(-1);
+			if (newLeaderId == -1) {
+				throw Error(errLogic, "Expecting 'server_id' in 'set_leader_node' command");
+			}
+			cluster::RaftInfo info = clusterizator_->GetRaftInfo(false, ctx);  // current node leader or follower
+			if (info.leaderId == newLeaderId) {
+				return;
+			}
+
+			clusterConfig_->GetNodeIndexForServerId(newLeaderId);  // check if nextServerId in config (on error throw)
+
+			const auto err = clusterizator_->SetDesiredLeaderId(newLeaderId, true);
+			if (!err.ok()) {
+				throw err;
+			}
+		} else if (command == "restart_replication"sv) {
+			clusterizator_->StopAsyncRepl();
+		} else if (command == "reset_replication_role"sv) {
+			std::string_view name = action["namespace"].As<std::string_view>();
+			if (name.empty()) {
+				for (auto& ns : namespaces) {
+					if (!clusterizator_->NamespaceIsInClusterConfig(ns.first)) {
+						ns.second->SetClusterizationStatus(ClusterizationStatus(), ctx);
+					}
+				}
+			} else {
+				if (clusterizator_->NamespaceIsInClusterConfig(name)) {
+					throw Error(errLogic, "Role of the cluster namespace may not be reseted");
+				}
+				auto ns = getNamespaceNoThrow(name, ctx);
+				if (ns) {
+					ns->SetClusterizationStatus(ClusterizationStatus(), ctx);
+				}
+			}
+		} else if (command == "set_log_level"sv) {
+			std::string_view type = action["type"].As<std::string_view>();
+			const auto level = logLevelFromString(action["level"].As<std::string_view>("info"));
+			if (type == "async_replication"sv) {
+				clusterizator_->SetAsyncReplicatonLogLevel(level);
+			} else if (type == "cluster"sv) {
+				clusterizator_->SetClusterReplicatonLogLevel(level);
+			} else {
+				throw Error(errParams, "Unknow logs type in config-action: '%s'", type);
+			}
+		}
 	}
 }
 
@@ -1910,7 +1964,7 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 	schemaBuilder.Object(0, "ItemsUnion", false, [&](ProtobufSchemaBuilder& obj) {
 		ser << "oneof item {\n";
 		for (auto& ns : nses) {
-			obj.Field(ns.nsName, ns.nsNumber, FieldProps{KeyValueTuple, false, false, false, ns.objName});
+			obj.Field(ns.nsName, ns.nsNumber, FieldProps{KeyValueType::Tuple{}, false, false, false, ns.objName});
 		}
 		ser << "}\n";
 	});
@@ -1920,41 +1974,44 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 	ser << "// - GET/POST api/v1/db/:db/query\n";
 	ser << "// - GET/POST api/v1/db/:db/sqlquery\n";
 	schemaBuilder.Object(0, "QueryResults", false, [](ProtobufSchemaBuilder& obj) {
-		obj.Field(kParamItems, kProtoQueryResultsFields.at(kParamItems), FieldProps{KeyValueTuple, true, false, false, "ItemsUnion"});
-		obj.Field(kParamNamespaces, kProtoQueryResultsFields.at(kParamNamespaces), FieldProps{KeyValueString, true});
-		obj.Field(kParamCacheEnabled, kProtoQueryResultsFields.at(kParamCacheEnabled), FieldProps{KeyValueBool});
-		obj.Field(kParamExplain, kProtoQueryResultsFields.at(kParamExplain), FieldProps{KeyValueString});
-		obj.Field(kParamTotalItems, kProtoQueryResultsFields.at(kParamTotalItems), FieldProps{KeyValueInt});
-		obj.Field(kParamQueryTotalItems, kProtoQueryResultsFields.at(kParamQueryTotalItems), FieldProps{KeyValueInt});
+		obj.Field(kParamItems, kProtoQueryResultsFields.at(kParamItems),
+				  FieldProps{KeyValueType::Tuple{}, true, false, false, "ItemsUnion"});
+		obj.Field(kParamNamespaces, kProtoQueryResultsFields.at(kParamNamespaces), FieldProps{KeyValueType::String{}, true});
+		obj.Field(kParamCacheEnabled, kProtoQueryResultsFields.at(kParamCacheEnabled), FieldProps{KeyValueType::Bool{}});
+		obj.Field(kParamExplain, kProtoQueryResultsFields.at(kParamExplain), FieldProps{KeyValueType::String{}});
+		obj.Field(kParamTotalItems, kProtoQueryResultsFields.at(kParamTotalItems), FieldProps{KeyValueType::Int{}});
+		obj.Field(kParamQueryTotalItems, kProtoQueryResultsFields.at(kParamQueryTotalItems), FieldProps{KeyValueType::Int{}});
 
 		obj.Object(kProtoQueryResultsFields.at(kParamColumns), "Columns", false, [](ProtobufSchemaBuilder& obj) {
-			obj.Field(kParamName, kProtoColumnsFields.at(kParamName), FieldProps{KeyValueString});
-			obj.Field(kParamWidthPercents, kProtoColumnsFields.at(kParamWidthPercents), FieldProps{KeyValueDouble});
-			obj.Field(kParamMaxChars, kProtoColumnsFields.at(kParamMaxChars), FieldProps{KeyValueInt});
-			obj.Field(kParamWidthChars, kProtoColumnsFields.at(kParamWidthChars), FieldProps{KeyValueInt});
+			obj.Field(kParamName, kProtoColumnsFields.at(kParamName), FieldProps{KeyValueType::String{}});
+			obj.Field(kParamWidthPercents, kProtoColumnsFields.at(kParamWidthPercents), FieldProps{KeyValueType::Double{}});
+			obj.Field(kParamMaxChars, kProtoColumnsFields.at(kParamMaxChars), FieldProps{KeyValueType::Int{}});
+			obj.Field(kParamWidthChars, kProtoColumnsFields.at(kParamWidthChars), FieldProps{KeyValueType::Int{}});
 		});
 
-		obj.Field(kParamColumns, kProtoQueryResultsFields.at(kParamColumns), FieldProps{KeyValueTuple, true, false, false, "Columns"});
+		obj.Field(kParamColumns, kProtoQueryResultsFields.at(kParamColumns),
+				  FieldProps{KeyValueType::Tuple{}, true, false, false, "Columns"});
 
 		AggregationResult::GetProtobufSchema(obj);
 		obj.Field(kParamAggregations, kProtoQueryResultsFields.at(kParamAggregations),
-				  FieldProps{KeyValueTuple, true, false, false, "AggregationResults"});
+				  FieldProps{KeyValueType::Tuple{}, true, false, false, "AggregationResults"});
 	});
 
 	ser << "// The ModifyResults message is schema of http API methods response:\n";
 	ser << "// - PUT/POST/DELETE api/v1/db/:db/namespaces/:ns/items\n";
 	schemaBuilder.Object(0, "ModifyResults", false, [](ProtobufSchemaBuilder& obj) {
-		obj.Field(kParamItems, kProtoModifyResultsFields.at(kParamItems), FieldProps{KeyValueTuple, true, false, false, "ItemsUnion"});
-		obj.Field(kParamUpdated, kProtoModifyResultsFields.at(kParamUpdated), FieldProps{KeyValueInt});
-		obj.Field(kParamSuccess, kProtoModifyResultsFields.at(kParamSuccess), FieldProps{KeyValueBool});
+		obj.Field(kParamItems, kProtoModifyResultsFields.at(kParamItems),
+				  FieldProps{KeyValueType::Tuple{}, true, false, false, "ItemsUnion"});
+		obj.Field(kParamUpdated, kProtoModifyResultsFields.at(kParamUpdated), FieldProps{KeyValueType::Int{}});
+		obj.Field(kParamSuccess, kProtoModifyResultsFields.at(kParamSuccess), FieldProps{KeyValueType::Bool{}});
 	});
 
 	ser << "// The ErrorResponse message is schema of http API methods response on error condition \n";
 	ser << "// With non 200 http status code\n";
 	schemaBuilder.Object(0, "ErrorResponse", false, [](ProtobufSchemaBuilder& obj) {
-		obj.Field(kParamSuccess, kProtoErrorResultsFields.at(kParamSuccess), FieldProps{KeyValueBool});
-		obj.Field(kParamResponseCode, kProtoErrorResultsFields.at(kParamResponseCode), FieldProps{KeyValueInt});
-		obj.Field(kParamDescription, kProtoErrorResultsFields.at(kParamDescription), FieldProps{KeyValueString});
+		obj.Field(kParamSuccess, kProtoErrorResultsFields.at(kParamSuccess), FieldProps{KeyValueType::Bool{}});
+		obj.Field(kParamResponseCode, kProtoErrorResultsFields.at(kParamResponseCode), FieldProps{KeyValueType::Int{}});
+		obj.Field(kParamDescription, kProtoErrorResultsFields.at(kParamDescription), FieldProps{KeyValueType::String{}});
 	});
 	schemaBuilder.End();
 	return errOK;

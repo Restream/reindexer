@@ -7,14 +7,14 @@ namespace reindexer {
 
 class Comparator : public ComparatorVars {
 public:
-	Comparator() = default;
+	Comparator() = delete;
 	Comparator(CondType cond, KeyValueType type, const VariantArray &values, bool isArray, bool distinct, PayloadType payloadType,
 			   const FieldsSet &fields, void *rawData = nullptr, const CollateOpts &collateOpts = CollateOpts());
 	~Comparator() = default;
 
 	bool Compare(const PayloadValue &lhs, int rowId);
 	void ExcludeDistinct(const PayloadValue &, int rowId);
-	void Bind(const PayloadType& type, int field);
+	void Bind(const PayloadType &type, int field);
 	void BindEqualPosition(int field, const VariantArray &val, CondType cond);
 	void BindEqualPosition(const TagsPath &tagsPath, const VariantArray &val, CondType cond);
 	void ClearDistinct() {
@@ -28,85 +28,54 @@ public:
 
 protected:
 	bool compare(const Variant &kr) {
-		switch (kr.Type()) {
-			case KeyValueNull:
-				return cond_ == CondEmpty;
-			case KeyValueInt:
-				return cmpInt.Compare(cond_, static_cast<int>(kr));
-			case KeyValueBool:
-				return cmpBool.Compare(cond_, static_cast<bool>(kr));
-			case KeyValueInt64:
-				return cmpInt64.Compare(cond_, static_cast<int64_t>(kr));
-			case KeyValueDouble:
-				return cmpDouble.Compare(cond_, static_cast<double>(kr));
-			case KeyValueString:
-				return cmpString.Compare(cond_, static_cast<p_string>(kr), collateOpts_);
-			case KeyValueComposite:
-				return cmpComposite.Compare(cond_, static_cast<const PayloadValue &>(kr), *this);
-			default:
-				abort();
-		}
+		return kr.Type().EvaluateOneOf(
+			[&](KeyValueType::Null) noexcept { return cond_ == CondEmpty; },
+			[&](KeyValueType::Int) { return cmpInt.Compare(cond_, static_cast<int>(kr)); },
+			[&](KeyValueType::Bool) { return cmpBool.Compare(cond_, static_cast<bool>(kr)); },
+			[&](KeyValueType::Int64) { return cmpInt64.Compare(cond_, static_cast<int64_t>(kr)); },
+			[&](KeyValueType::Double) { return cmpDouble.Compare(cond_, static_cast<double>(kr)); },
+			[&](KeyValueType::String) { return cmpString.Compare(cond_, static_cast<p_string>(kr), collateOpts_); },
+			[&](KeyValueType::Composite) { return cmpComposite.Compare(cond_, static_cast<const PayloadValue &>(kr), *this); },
+			[](OneOf<KeyValueType::Undefined, KeyValueType::Tuple>) noexcept -> bool { abort(); });
 	}
 
 	bool compare(const void *ptr) {
-		switch (type_) {
-			case KeyValueNull:
-				return cond_ == CondEmpty;
-			case KeyValueBool:
-				return cmpBool.Compare(cond_, *static_cast<const bool *>(ptr));
-			case KeyValueInt:
-				return cmpInt.Compare(cond_, *static_cast<const int *>(ptr));
-			case KeyValueInt64:
-				return cmpInt64.Compare(cond_, *static_cast<const int64_t *>(ptr));
-			case KeyValueDouble:
-				return cmpDouble.Compare(cond_, *static_cast<const double *>(ptr));
-			case KeyValueString:
-				return cmpString.Compare(cond_, *static_cast<const p_string *>(ptr), collateOpts_);
-			case KeyValueComposite:
-				return cmpComposite.Compare(cond_, *static_cast<const PayloadValue *>(ptr), *this);
-			default:
+		return type_.EvaluateOneOf(
+			[&](KeyValueType::Null) noexcept { return cond_ == CondEmpty; },
+			[&](KeyValueType::Bool) { return cmpBool.Compare(cond_, *static_cast<const bool *>(ptr)); },
+			[&](KeyValueType::Int) { return cmpInt.Compare(cond_, *static_cast<const int *>(ptr)); },
+			[&](KeyValueType::Int64) { return cmpInt64.Compare(cond_, *static_cast<const int64_t *>(ptr)); },
+			[&](KeyValueType::Double) { return cmpDouble.Compare(cond_, *static_cast<const double *>(ptr)); },
+			[&](KeyValueType::String) { return cmpString.Compare(cond_, *static_cast<const p_string *>(ptr), collateOpts_); },
+			[&](KeyValueType::Composite) { return cmpComposite.Compare(cond_, *static_cast<const PayloadValue *>(ptr), *this); },
+			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined>) noexcept -> bool {
+				assertrx(0);
 				abort();
-		}
+			});
 	}
 
 	void excludeDistinct(const Variant &kr) {
-		switch (kr.Type()) {
-			case KeyValueInt:
-				return cmpInt.ExcludeDistinct(static_cast<int>(kr));
-			case KeyValueBool:
-				return cmpBool.ExcludeDistinct(static_cast<bool>(kr));
-			case KeyValueInt64:
-				return cmpInt64.ExcludeDistinct(static_cast<int64_t>(kr));
-			case KeyValueDouble:
-				return cmpDouble.ExcludeDistinct(static_cast<double>(kr));
-			case KeyValueString:
-				return cmpString.ExcludeDistinct(static_cast<p_string>(kr));
-			case KeyValueComposite:
-				throw Error(errQueryExec, "Distinct by composite index");
-			case KeyValueNull:
-			default:
-				break;
-		}
+		kr.Type().EvaluateOneOf([&](KeyValueType::Int) { cmpInt.ExcludeDistinct(static_cast<int>(kr)); },
+								[&](KeyValueType::Bool) { cmpBool.ExcludeDistinct(static_cast<bool>(kr)); },
+								[&](KeyValueType::Int64) { cmpInt64.ExcludeDistinct(static_cast<int64_t>(kr)); },
+								[&](KeyValueType::Double) { cmpDouble.ExcludeDistinct(static_cast<double>(kr)); },
+								[&](KeyValueType::String) { cmpString.ExcludeDistinct(static_cast<p_string>(kr)); },
+								[](KeyValueType::Composite) { throw Error(errQueryExec, "Distinct by composite index"); },
+								[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {});
 	}
 
 	void excludeDistinct(const void *ptr) {
-		switch (type_) {
-			case KeyValueBool:
-				return cmpBool.ExcludeDistinct(*static_cast<const bool *>(ptr));
-			case KeyValueInt:
-				return cmpInt.ExcludeDistinct(*static_cast<const int *>(ptr));
-			case KeyValueInt64:
-				return cmpInt64.ExcludeDistinct(*static_cast<const int64_t *>(ptr));
-			case KeyValueDouble:
-				return cmpDouble.ExcludeDistinct(*static_cast<const double *>(ptr));
-			case KeyValueString:
-				return cmpString.ExcludeDistinct(*static_cast<const p_string *>(ptr));
-			case KeyValueComposite:
-				throw Error(errQueryExec, "Distinct by composite index");
-			case KeyValueNull:
-			default:
-				break;
-		}
+		type_.EvaluateOneOf([&](KeyValueType::Bool) { cmpBool.ExcludeDistinct(*static_cast<const bool *>(ptr)); },
+							[&](KeyValueType::Int) { cmpInt.ExcludeDistinct(*static_cast<const int *>(ptr)); },
+							[&](KeyValueType::Int64) { cmpInt64.ExcludeDistinct(*static_cast<const int64_t *>(ptr)); },
+							[&](KeyValueType::Double) { cmpDouble.ExcludeDistinct(*static_cast<const double *>(ptr)); },
+							[&](KeyValueType::String) { cmpString.ExcludeDistinct(*static_cast<const p_string *>(ptr)); },
+							[](KeyValueType::Composite) { throw Error(errQueryExec, "Distinct by composite index"); },
+							[](KeyValueType::Null) noexcept {},
+							[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
+								assertrx(0);
+								abort();
+							});
 	}
 
 	void setValues(const VariantArray &values);
@@ -121,28 +90,16 @@ protected:
 	}
 
 	void clearIndividualAllSetValues() {
-		switch (type_) {
-			case KeyValueBool:
-				cmpBool.ClearAllSetValues();
-				break;
-			case KeyValueInt:
-				cmpInt.ClearAllSetValues();
-				break;
-			case KeyValueInt64:
-				cmpInt64.ClearAllSetValues();
-				break;
-			case KeyValueDouble:
-				cmpDouble.ClearAllSetValues();
-				break;
-			case KeyValueString:
-				cmpString.ClearAllSetValues();
-				break;
-			case KeyValueComposite:
-				cmpComposite.ClearAllSetValues();
-				break;
-			default:
-				break;
-		}
+		type_.EvaluateOneOf([&](KeyValueType::Bool) noexcept { cmpBool.ClearAllSetValues(); },
+							[&](KeyValueType::Int) noexcept { cmpInt.ClearAllSetValues(); },
+							[&](KeyValueType::Int64) noexcept { cmpInt64.ClearAllSetValues(); },
+							[&](KeyValueType::Double) noexcept { cmpDouble.ClearAllSetValues(); },
+							[&](KeyValueType::String) noexcept { cmpString.ClearAllSetValues(); },
+							[&](KeyValueType::Composite) noexcept { cmpComposite.ClearAllSetValues(); }, [](KeyValueType::Null) noexcept {},
+							[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
+								assertrx(0);
+								abort();
+							});
 	}
 	ComparatorImpl<bool> cmpBool;
 	ComparatorImpl<int> cmpInt;
@@ -152,7 +109,7 @@ protected:
 	ComparatorImpl<PayloadValue> cmpComposite;
 	ComparatorImpl<Point> cmpGeom;
 	CompositeArrayComparator cmpEqualPosition;
-	KeyValueType valuesType_ = KeyValueUndefined;
+	KeyValueType valuesType_{KeyValueType::Undefined{}};
 };
 
 }  // namespace reindexer

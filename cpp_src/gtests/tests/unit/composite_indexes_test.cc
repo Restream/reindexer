@@ -159,7 +159,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	std::string compositeIndexName2(getCompositeIndexName({kFieldNameTitle, kFieldNameName}));
 	addCompositeIndex({kFieldNameTitle, kFieldNameName}, CompositeIndexBTree, IndexOpts());
 
-	fillNamespace(700, 200);
+	fillNamespace(701, 900);
 
 	execAndCompareQuery(
 		Query(default_namespace)
@@ -174,7 +174,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 		Query(default_namespace)
 			.WhereComposite(compositeIndexName2.c_str(), CondLe, {{Variant(std::string(titleValue)), Variant(std::string(nameValue))}}));
 
-	fillNamespace(1200, 1000);
+	fillNamespace(1201, 2000);
 
 	std::vector<VariantArray> stringKeys;
 	for (size_t i = 0; i < 1010; ++i) {
@@ -190,4 +190,49 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	fillNamespace(201, 300);
 
 	execAndCompareQuery(Query(default_namespace));
+}
+
+TEST_F(CompositeIndexesApi, SelectsBySubIndexes) {
+	// Check if selects work for composite index parts
+	struct Case {
+		std::string name;
+		const std::vector<IndexDeclaration> idxs;
+	};
+
+	const std::vector<Case> caseSet = {
+		Case{"no_indexes", {IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0}}},
+		Case{"first_index",
+			 {IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
+			  IndexDeclaration{CompositeIndexesApi::kFieldNamePrice, "-", "int", IndexOpts(), 0}}},
+		Case{"second_index",
+			 {IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
+			  IndexDeclaration{CompositeIndexesApi::kFieldNamePages, "-", "int", IndexOpts(), 0}}},
+		Case{"both_indexes",
+			 {IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
+			  IndexDeclaration{CompositeIndexesApi::kFieldNamePrice, "-", "int", IndexOpts(), 0},
+			  IndexDeclaration{CompositeIndexesApi::kFieldNamePages, "-", "int", IndexOpts(), 0}}}};
+
+	for (const auto& c : caseSet) {
+		auto err = rt.reindexer->DropNamespace(default_namespace);
+		ASSERT_TRUE(err.ok()) << c.name;
+		err = rt.reindexer->OpenNamespace(default_namespace);
+		ASSERT_TRUE(err.ok()) << c.name;
+		DefineNamespaceDataset(default_namespace, c.idxs);
+		std::string compositeIndexName(getCompositeIndexName({kFieldNamePrice, kFieldNamePages}));
+		addCompositeIndex({kFieldNamePrice, kFieldNamePages}, CompositeIndexHash, IndexOpts());
+
+		int priceValue = 77777, pagesValue = 88888, bookid = 300;
+		const char* titleValue = "test book1 title";
+		const char* nameValue = "test book1 name";
+		for (int i = -5; i < 10; ++i) {
+			addOneRow(bookid + i, 3000 + i, titleValue + std::to_string(i), pagesValue, priceValue + i, nameValue + std::to_string(i));
+		}
+		auto qr = execAndCompareQuery(
+			Query(default_namespace).Explain().Where(kFieldNamePrice, CondEq, {priceValue}).Where(kFieldNameBookid, CondEq, {bookid}));
+		ASSERT_EQ(qr.Count(), 1) << c.name;
+		auto item = qr.begin().GetItem();
+		EXPECT_EQ(item[kFieldNameBookid].As<int>(), bookid) << c.name;
+		EXPECT_EQ(item[kFieldNamePrice].As<int>(), priceValue) << c.name;
+		EXPECT_EQ(item[kFieldNamePages].As<int>(), pagesValue) << c.name;
+	}
 }

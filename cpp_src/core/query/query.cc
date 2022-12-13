@@ -54,9 +54,9 @@ std::string Query::GetJSON() const { return dsl::toDsl(*this); }
 
 Query &Query::SetObject(std::string field, VariantArray value, bool hasExpressions) & {
 	for (auto &it : value) {
-		if (it.Type() != KeyValueString) {
-			throw Error(errLogic, "Unexpected variant type in SetObject: %s. Expecting KeyValueString with JSON-content",
-						Variant::TypeName(it.Type()));
+		if (!it.Type().Is<KeyValueType::String>()) {
+			throw Error(errLogic, "Unexpected variant type in SetObject: %s. Expecting KeyValueType::String with JSON-content",
+						it.Type().Name());
 		}
 	}
 	updateFields_.emplace_back(std::move(field), std::move(value), FieldModeSetJson, hasExpressions);
@@ -422,7 +422,7 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 			ser.PutVarUint(field.Values().IsArrayValue());
 			for (const Variant &val : field.Values()) {
 				ser.PutVarUint(0);
-				ser.PutVarUint(KeyValueString);
+				ser.PutVarUint(KeyValueType(KeyValueType::String{}).ToNumber());
 				auto v = val.As<std::string>();
 				ser.PutVString(v);
 			}
@@ -540,7 +540,7 @@ Query &Query::Merge(Query mq) & {
 	return *this;
 }
 
-void Query::WalkNested(bool withSelf, bool withMerged, const std::function<void(const Query &q)>& visitor) const {
+void Query::WalkNested(bool withSelf, bool withMerged, const std::function<void(const Query &q)> &visitor) const {
 	if (withSelf) visitor(*this);
 	if (withMerged)
 		for (auto &mq : mergeQueries_) visitor(mq);

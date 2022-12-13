@@ -240,7 +240,7 @@ TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
 		Variant id = item["id"];
 		ASSERT_TRUE(static_cast<int>(id) == 2);
 		Variant value = item["mac_address"];
-		ASSERT_TRUE(value.Type() == KeyValueString) << Variant::TypeName(value.Type());
+		ASSERT_TRUE(value.Type().Is<reindexer::KeyValueType::String>()) << value.Type().Name();
 	}
 
 	// Make sure while seeking for a number we only get an integer value as a result
@@ -253,7 +253,7 @@ TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
 		Variant id = item["id"];
 		ASSERT_TRUE(static_cast<int>(id) == 1);
 		Variant value = item["mac_address"];
-		ASSERT_TRUE(value.Type() == KeyValueInt64);
+		ASSERT_TRUE(value.Type().Is<reindexer::KeyValueType::Int64>());
 	}
 }
 

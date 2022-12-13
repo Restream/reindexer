@@ -1,6 +1,6 @@
 #include "raftmanager.h"
+#include "cluster/logger.h"
 #include "core/dbconfig.h"
-#include "tools/logger.h"
 #include "tools/randomgenerator.h"
 
 namespace reindexer {
@@ -8,9 +8,9 @@ namespace cluster {
 
 constexpr auto kRaftTimeout = std::chrono::seconds(2);
 
-RaftManager::RaftManager(net::ev::dynamic_loop& loop, ReplicationStatsCollector statsCollector,
+RaftManager::RaftManager(net::ev::dynamic_loop& loop, ReplicationStatsCollector statsCollector, const Logger& l,
 						 std::function<void(uint32_t, bool)> onNodeNetworkStatusChangedCb)
-	: loop_(loop), statsCollector_(statsCollector), onNodeNetworkStatusChangedCb_(std::move(onNodeNetworkStatusChangedCb)) {
+	: loop_(loop), statsCollector_(statsCollector), onNodeNetworkStatusChangedCb_(std::move(onNodeNetworkStatusChangedCb)), log_(l) {
 	assert(onNodeNetworkStatusChangedCb_);
 }
 
@@ -34,7 +34,7 @@ void RaftManager::Configure(const ReplicationConfigData& baseConfig, const Clust
 }
 
 Error RaftManager::SendDesiredLeaderId(int nextServerId) {
-	logPrintf(LogTrace, "[raftmanager] %d SendDesiredLeaderId nextLeaderId = %d", serverId_, nextServerId);
+	logTrace("%d SendDesiredLeaderId nextLeaderId = %d", serverId_, nextServerId);
 	size_t nextServerNodeIndex = nodes_.size();
 	for (size_t i = 0; i < nodes_.size(); i++) {
 		if (nodes_[i].serverId == nextServerId) {
@@ -103,10 +103,10 @@ RaftInfo::Role RaftManager::Elections() {
 	while (!terminate_.load()) {
 		const int nextServerId = nextServerId_.GetNextServerId();
 		int32_t term = beginElectionsTerm(nextServerId);
-		logPrintf(LogInfo, "[cluster:elections] Starting new elections term for %d. Term number: %d", serverId_, term);
+		logInfo("Starting new elections term for %d. Term number: %d", serverId_, term);
 		if (nextServerId != -1 && nextServerId != serverId_) {
 			endElections(term, RaftInfo::Role::Follower);
-			logPrintf(LogInfo, "[cluster:elections] Skipping elections (desired leader id is %d)", serverId_, nextServerId);
+			logInfo("Skipping elections (desired leader id is %d)", serverId_, nextServerId);
 			return RaftInfo::Role::Follower;
 		}
 		const bool isDesiredLeader = (nextServerId == serverId_);
@@ -129,11 +129,11 @@ RaftInfo::Role RaftManager::Elections() {
 				auto err = node.client.SuggestLeader(suggestion, result);
 				bool succeed = err.ok() && serverId_ == result.serverId;
 				if (succeed) {
-					logPrintf(LogInfo, "[cluster:elections] %d: Suggested as leader for node %d", serverId_, nodeId);
+					logInfo("%d: Suggested as leader for node %d", serverId_, nodeId);
 					++electionsStat.succeedPhase1;
 				} else {
-					logPrintf(LogInfo, "[cluster:elections] %d: Error on leader suggest for node %d (response leader is %d): %s", serverId_,
-							  nodeId, result.serverId, err.what());
+					logInfo("%d: Error on leader suggest for node %d (response leader is %d): %s", serverId_, nodeId, result.serverId,
+							err.what());
 					++electionsStat.failed;
 				}
 				if (electionsStat.failed + electionsStat.succeedPhase1 == nodes_.size() + 1 ||
@@ -158,17 +158,17 @@ RaftInfo::Role RaftManager::Elections() {
 
 				const bool leaderIsAvailable = !isDesiredLeader && LeaderIsAvailable(ClockT::now());
 				if (leaderIsAvailable || !isConsensus(electionsStat.succeedPhase1)) {
-					logPrintf(LogInfo,
-							  "[cluster:elections] %d: Skip leaders ping. Elections are outdated. leaderIsAvailable: %d. Successfull "
-							  "responses: %d",
-							  serverId_, leaderIsAvailable ? 1 : 0, electionsStat.succeedPhase1);
+					logInfo(
+						"%d: Skip leaders ping. Elections are outdated. leaderIsAvailable: %d. Successfull "
+						"responses: %d",
+						serverId_, leaderIsAvailable ? 1 : 0, electionsStat.succeedPhase1);
 					return;	 // This elections are outdated
 				}
 				err = node.client.LeadersPing(suggestion);
 				if (err.ok()) {
 					++electionsStat.succeedPhase2;
 				} else {
-					logPrintf(LogInfo, "[cluster:elections] %d: leader's ping error: %s", serverId_, err.what());
+					logInfo("%d: leader's ping error: %s", serverId_, err.what());
 				}
 			});
 		}
@@ -180,23 +180,21 @@ RaftInfo::Role RaftManager::Elections() {
 			if (isConsensus(electionsStat.succeedPhase2)) {
 				result = RaftInfo::Role::Leader;
 				if (endElections(term, result)) {
-					logPrintf(LogInfo, "[cluster:elections] %d: end elections with role: leader", serverId_);
+					logInfo("%d: end elections with role: leader", serverId_);
 					wg.wait();
 
 					return result;
 				}
 			}
 		}
-		logPrintf(LogInfo, "[cluster:elections] %d: votes stats: phase1: %d; phase2: %d; fails: %d", serverId_, electionsStat.succeedPhase1,
-				  electionsStat.succeedPhase2, electionsStat.failed);
+		logInfo("%d: votes stats: phase1: %d; phase2: %d; fails: %d", serverId_, electionsStat.succeedPhase1, electionsStat.succeedPhase2,
+				electionsStat.failed);
 
 		if (endElections(term, result)) {
-			logPrintf(LogInfo, "[cluster:elections] %d: end elections with role: %s(%d)", serverId_, RaftInfo::RoleToStr(result),
-					  GetLeaderId());
+			logInfo("[%d: end elections with role: %s(%d)", serverId_, RaftInfo::RoleToStr(result), GetLeaderId());
 			return result;
 		} else {
-			logPrintf(LogInfo, "[cluster:elections] %d: Failed to end elections with chosen role: %s", serverId_,
-					  RaftInfo::RoleToStr(result));
+			logInfo("%d: Failed to end elections with chosen role: %s", serverId_, RaftInfo::RoleToStr(result));
 		}
 	}
 	return RaftInfo::Role::Follower;
@@ -211,15 +209,14 @@ bool RaftManager::FollowersAreAvailable() {
 	for (auto& n : nodes_) {
 		n.isOk && ++aliveNodes;
 	}
-	logPrintf(LogTrace, "[cluster:elections] %d: Alive followers cnt: %d", serverId_, aliveNodes);
+	logTrace("%d: Alive followers cnt: %d", serverId_, aliveNodes);
 	return isConsensus(aliveNodes + 1);
 }
 
 Error RaftManager::SuggestLeader(const NodeData& suggestion, NodeData& response) {
-	auto now = ClockT::now();
-	logPrintf(LogTrace,
-			  "[cluster:elections] %d Leader suggestion info. Local leaderId: %d; local term: %d; local time: %d; leader's ts: %d)",
-			  serverId_, GetLeaderId(), GetTerm(), now.time_since_epoch().count(), lastLeaderPingTs_.load().time_since_epoch().count());
+	const auto now = ClockT::now();
+	logTrace("%d Leader suggestion info. Local leaderId: %d; local term: %d; local time: %d; leader's ts: %d)", serverId_, GetLeaderId(),
+			 GetTerm(), now.time_since_epoch().count(), lastLeaderPingTs_.load().time_since_epoch().count());
 	while (true) {
 		int64_t oldVoteData = voteData_.load();
 		int64_t newVoteData;
@@ -233,7 +230,7 @@ Error RaftManager::SuggestLeader(const NodeData& suggestion, NodeData& response)
 		}
 		response.electionsTerm = localTerm;
 		if (suggestion.electionsTerm > localTerm) {
-			logPrintf(LogTrace, "[cluster:elections] %d suggestion.electionsTerm > localTerm", serverId_);
+			logTrace("%d suggestion.electionsTerm > localTerm", serverId_);
 			const bool leaderIsAvailable = LeaderIsAvailable(now);
 			if (!leaderIsAvailable) {
 				int sId = suggestion.serverId;
@@ -262,11 +259,9 @@ Error RaftManager::SuggestLeader(const NodeData& suggestion, NodeData& response)
 		}
 	}
 
-	logPrintf(LogTrace,
-			  "[cluster:elections] %d Suggestion: servedId: %d; term: %d; Response: servedId: %d; term: %d; Local: servedId: %d; term: %d",
-			  serverId_, suggestion.serverId, suggestion.electionsTerm, response.serverId, response.electionsTerm, GetLeaderId(),
-			  GetTerm());
-	return errOK;
+	logTrace("%d Suggestion: servedId: %d; term: %d; Response: servedId: %d; term: %d; Local: servedId: %d; term: %d", serverId_,
+			 suggestion.serverId, suggestion.electionsTerm, response.serverId, response.electionsTerm, GetLeaderId(), GetTerm());
+	return Error();
 }
 
 Error RaftManager::LeadersPing(const NodeData& leader) {
@@ -288,7 +283,7 @@ Error RaftManager::LeadersPing(const NodeData& leader) {
 	} while (!voteData_.compare_exchange_strong(oldVoteData, newVoteData));
 	now = ClockT::now();
 	lastLeaderPingTs_.store(now);
-	return errOK;
+	return Error();
 }
 
 void RaftManager::AwaitTermination() {
@@ -325,8 +320,8 @@ void RaftManager::startPingRoutines() {
 						nodeId, node.isOk ? NodeStats::Status::Online
 										  : (isNetworkError ? NodeStats::Status::Offline : NodeStats::Status::RaftError));
 					if (isNetworkError != node.hasNetworkError) {
-						logPrintf(LogTrace, "[cluster:elections] %d Network status was changed for %d(%d). Status: %d, network: %d",
-								  serverId_, node.uid, node.serverId, node.isOk ? 1 : 0, isNetworkError ? 0 : 1);
+						logTrace("%d Network status was changed for %d(%d). Status: %d, network: %d", serverId_, node.uid, node.serverId,
+								 node.isOk ? 1 : 0, isNetworkError ? 0 : 1);
 						onNodeNetworkStatusChangedCb_(node.uid, !isNetworkError);
 					}
 					node.hasNetworkError = isNetworkError;
@@ -356,7 +351,7 @@ int32_t RaftManager::beginElectionsTerm(int presetLeader) {
 		newVoteData =
 			setLeaderId(setRole(setTerm(oldVoteData, term), RaftInfo::Role::Candidate), presetLeader >= 0 ? presetLeader : serverId_);
 	} while (!voteData_.compare_exchange_strong(oldVoteData, newVoteData));
-	logPrintf(LogTrace, "[cluster:elections] %d: Role has been switched to candidate from %s", serverId_, RaftInfo::RoleToStr(oldRole));
+	logTrace("%d: Role has been switched to candidate from %s", serverId_, RaftInfo::RoleToStr(oldRole));
 	if (oldRole == RaftInfo::Role::Leader) {
 		pingWg_.wait();
 	}
@@ -408,12 +403,11 @@ Error RaftManager::clientStatus(size_t index, std::chrono::seconds timeout) {
 
 Error RaftManager::sendDesiredServerIdToNode(size_t index, int nextServerId) {
 	Error err = clientStatus(index, kDesiredLeaderTimeout);
-	if (err.ok()) {
-		logPrintf(LogTrace, "[raftmanager] %d Sending desired server ID (%d) to node with server ID %d", serverId_, nextServerId,
-				  nodes_[index].serverId);
-		err = nodes_[index].client.WithTimeout(kDesiredLeaderTimeout).SetDesiredLeaderId(nextServerId);
+	if (!err.ok()) {
+		return err;
 	}
-	return err;
+	logTrace("%d Sending desired server ID (%d) to node with server ID %d", serverId_, nextServerId, nodes_[index].serverId);
+	return nodes_[index].client.WithTimeout(kDesiredLeaderTimeout).SetDesiredLeaderId(nextServerId);
 }
 
 }  // namespace cluster

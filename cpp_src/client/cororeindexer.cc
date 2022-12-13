@@ -47,9 +47,12 @@ Error CoroReindexer::RenameNamespace(std::string_view srcNsName, const std::stri
 	return impl_->RenameNamespace(srcNsName, dstNsName, ctx_);
 }
 Error CoroReindexer::Insert(std::string_view nsName, Item& item) { return impl_->Insert(nsName, item, RPCDataFormat::CJSON, ctx_); }
+Error CoroReindexer::Insert(std::string_view nsName, std::string_view cjson) { return impl_->Insert(nsName, cjson, ctx_); }
 Error CoroReindexer::Update(std::string_view nsName, Item& item) { return impl_->Update(nsName, item, RPCDataFormat::CJSON, ctx_); }
+Error CoroReindexer::Update(std::string_view nsName, std::string_view cjson) { return impl_->Update(nsName, cjson, ctx_); }
 Error CoroReindexer::Update(const Query& q, CoroQueryResults& result) { return impl_->Update(q, result, ctx_); }
 Error CoroReindexer::Upsert(std::string_view nsName, Item& item) { return impl_->Upsert(nsName, item, RPCDataFormat::CJSON, ctx_); }
+Error CoroReindexer::Upsert(std::string_view nsName, std::string_view cjson) { return impl_->Upsert(nsName, cjson, ctx_); }
 Error CoroReindexer::Delete(std::string_view nsName, Item& item) { return impl_->Delete(nsName, item, RPCDataFormat::CJSON, ctx_); }
 Item CoroReindexer::NewItem(std::string_view nsName) { return impl_->NewItem(nsName, *impl_, ctx_.execTimeout()); }
 Error CoroReindexer::GetMeta(std::string_view nsName, const std::string& key, std::string& data) {
@@ -63,6 +66,7 @@ Error CoroReindexer::PutMeta(std::string_view nsName, const std::string& key, st
 }
 Error CoroReindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& keys) { return impl_->EnumMeta(nsName, keys, ctx_); }
 Error CoroReindexer::Delete(const Query& q, CoroQueryResults& result) { return impl_->Delete(q, result, ctx_); }
+Error CoroReindexer::Delete(std::string_view nsName, std::string_view cjson) { return impl_->Delete(nsName, cjson, ctx_); }
 Error CoroReindexer::Select(std::string_view query, CoroQueryResults& result) { return impl_->Select(query, result, ctx_); }
 Error CoroReindexer::Select(const Query& q, CoroQueryResults& result) { return impl_->Select(q, result, ctx_); }
 Error CoroReindexer::Commit(std::string_view nsName) { return impl_->Commit(nsName, ctx_); }

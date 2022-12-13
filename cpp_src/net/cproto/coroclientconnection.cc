@@ -11,16 +11,17 @@ namespace reindexer {
 namespace net {
 namespace cproto {
 
-constexpr size_t kMaxRecycledChuncks = 1500;
-constexpr size_t kMaxChunckSizeToRecycle = 2048;
+constexpr size_t kMaxRecycledChuncks = 512;
+constexpr size_t kMaxChunckSizeToRecycle = 8192;
 constexpr size_t kMaxParallelRPCCalls = 512;
 constexpr auto kCoroSleepGranularity = std::chrono::milliseconds(150);
 constexpr auto kDeadlineCheckInterval = std::chrono::milliseconds(100);
 constexpr auto kKeepAliveInterval = std::chrono::seconds(30);
-constexpr size_t kReadBufReserveSize = 0x1000;
-constexpr size_t kWrChannelSize = 20;
+constexpr size_t kReadBufReserveSize = 4096;
+constexpr size_t kWrChannelSize = 30;
 constexpr size_t kCntToSendNow = 30;
-constexpr size_t kDataToSendNow = 2048;
+constexpr size_t kMaxSerializedSize = 8 * 1024 * 1024;
+constexpr size_t kDataToSendNow = 8192;
 constexpr BindingCapabilities kClientCaps = BindingCapabilities(kBindingCapabilityQrIdleTimeouts | kBindingCapabilityResultsWithShardIDs);
 
 CoroClientConnection::CoroClientConnection()
@@ -123,7 +124,7 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 	// Don't allow to add new requests, while error handling is in progress
 	errSyncCh_.pop();
 
-	uint32_t seq = seqp.first;
+	const uint32_t seq = seqp.first;
 	auto &call = rpcCalls_[seq % rpcCalls_.size()];
 	call.seq = seq;
 	call.used = true;
@@ -133,7 +134,7 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 	CoroRPCAnswer ans;
 	try {
 		wrCh_.push(packRPC(
-			opts.cmd, seq, args,
+			opts.cmd, seq, false, args,
 			Args{Arg{int64_t(opts.execTimeout.count())}, Arg{int64_t(opts.lsn)}, Arg{int64_t(opts.serverId)},
 				 Arg{opts.shardingParallelExecution ? int64_t{opts.shardId} | kShardingParallelExecutionBit : int64_t{opts.shardId}}},
 			opts.requiredLoginTs));
@@ -171,20 +172,20 @@ Error CoroClientConnection::callNoReply(const CommandParams &opts, uint32_t seq,
 	errSyncCh_.pop();
 
 	try {
-		wrCh_.push(packRPC(opts.cmd, seq, args, Args{Arg{int64_t(opts.execTimeout.count())}}, LoginTs()));
+		wrCh_.push(packRPC(opts.cmd, seq, true, args, Args{Arg{int64_t(opts.execTimeout.count())}}, LoginTs()));
 	} catch (...) {
 		return Error(errNetwork, "Writing channel is closed");
 	}
 	return errOK;
 }
 
-CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs,
-																std::optional<TimePointT> requiredLoginTs) {
+CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uint32_t seq, bool noReply, const Args &args,
+																const Args &ctxArgs, std::optional<TimePointT> requiredLoginTs) {
 	CProtoHeader hdr;
 	hdr.len = 0;
 	hdr.magic = kCprotoMagic;
 	hdr.version = kCprotoVersion;
-	hdr.compressed = enableSnappy_;
+	hdr.compressed = enableCompression_;
 	hdr.dedicatedThread = requestDedicatedThread_;
 	hdr.cmd = cmd;
 	hdr.seq = seq;
@@ -204,7 +205,7 @@ CoroClientConnection::MarkedChunk CoroClientConnection::packRPC(CmdCode cmd, uin
 	assertrx(ser.Len() < size_t(std::numeric_limits<int32_t>::max()));
 	reinterpret_cast<CProtoHeader *>(ser.Buf())->len = ser.Len() - sizeof(hdr);
 
-	return {seq, requiredLoginTs, ser.DetachChunk()};
+	return {seq, noReply, requiredLoginTs, ser.DetachChunk()};
 }
 
 void CoroClientConnection::appendChunck(std::vector<char> &buf, chunk &&ch) {
@@ -217,6 +218,7 @@ void CoroClientConnection::appendChunck(std::vector<char> &buf, chunk &&ch) {
 Error CoroClientConnection::login(std::vector<char> &buf) {
 	assertrx(conn_.state() != manual_connection::conn_state::connecting);
 	if (conn_.state() == manual_connection::conn_state::init) {
+		assertrx(buf.size() == 0);
 		readWg_.wait();
 		std::string port = connectData_.uri.port().length() ? connectData_.uri.port() : std::string("6534");
 		int ret = conn_.async_connect(connectData_.uri.hostname() + ":" + port);
@@ -242,7 +244,8 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 					 Arg{kClientCaps.caps}};
 		constexpr uint32_t seq = 0;	 // login's seq num is always 0
 		assertrx(buf.size() == 0);
-		appendChunck(buf, packRPC(kCmdLogin, seq, args, Args{Arg{int64_t(0)}, Arg{int64_t(lsn_t())}, Arg{int64_t(-1)}}, std::nullopt).data);
+		appendChunck(
+			buf, packRPC(kCmdLogin, seq, false, args, Args{Arg{int64_t(0)}, Arg{int64_t(lsn_t())}, Arg{int64_t(-1)}}, std::nullopt).data);
 		int err = 0;
 		auto written = conn_.async_write(buf, err);
 		auto toWrite = buf.size();
@@ -324,7 +327,7 @@ void CoroClientConnection::writerRoutine() {
 		do {
 			auto mch = wrCh_.pop();
 			if (!mch.second) {
-				// channels is closed
+				// channel is closed
 				return;
 			}
 			if (mch.first.requiredLoginTs.has_value() && mch.first.requiredLoginTs != LoginTs()) {
@@ -337,22 +340,33 @@ void CoroClientConnection::writerRoutine() {
 				}
 				continue;
 			}
+			if (mch.first.noReply && !loggedIn_) {
+				// Skip noreply requests (cmdClose) for disconnected client
+				recycleChunk(std::move(mch.first.data));
+				continue;
+			}
 			auto status = login(buf);
 			if (!status.ok()) {
 				recycleChunk(std::move(mch.first.data));
 				handleFatalErrorFromWriter(status);
 				continue;
 			}
-			appendChunck(buf, std::move(mch.first.data));
-			++cnt;
-		} while (cnt < kCntToSendNow && wrCh_.size());
+			const auto &rpcData = rpcCalls_[mch.first.seq % rpcCalls_.size()];
+			if ((rpcData.used && rpcData.seq == mch.first.seq) || mch.first.noReply) {
+				appendChunck(buf, std::move(mch.first.data));
+				++cnt;
+			} else {
+				// Skip handled requests (those request probably were dropped with errors, but still exist in buffered channel)
+				recycleChunk(std::move(mch.first.data));
+			}
+		} while (wrCh_.size() && buf.size() < kMaxSerializedSize);
 		int err = 0;
 		const bool sendNow = cnt == kCntToSendNow || buf.size() >= kDataToSendNow;
 		auto written = conn_.async_write(buf, err, sendNow);
 		if (err) {
 			// disconnected
-			buf.clear();
 			handleFatalErrorFromWriter(Error(errNetwork, "Write error: %s", err > 0 ? strerror(err) : "Connection closed"));
+			buf.clear();
 			continue;
 		}
 		assertrx(written == buf.size());
@@ -391,6 +405,9 @@ void CoroClientConnection::readerRoutine() {
 			handleFatalErrorFromReader(
 				Error(errParams, "Unsupported cproto version %04x. This client expects reindexer server v1.9.8+", int(hdr.version)));
 			break;
+		}
+		if (hdr.version < kCprotoMinSnappyVersion) {
+			enableCompression_ = false;
 		}
 
 		buf.resize(hdr.len);

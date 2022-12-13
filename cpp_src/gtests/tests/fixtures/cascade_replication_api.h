@@ -53,7 +53,7 @@ public:
 
 	Cluster CreateConfiguration(const std::vector<int>& clusterConfig, int basePort, int baseServerId, const std::string& dbPathMaster);
 	Cluster CreateConfiguration(std::vector<FollowerConfig> clusterConfig, int basePort, int baseServerId, const std::string& dbPathMaster,
-								AsyncReplicationConfigTest::NsSet&& nsList);
+								const AsyncReplicationConfigTest::NsSet& nsList);
 
 protected:
 	const std::string kBaseTestsetDbPath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "rx_test/CascadeReplicationApi");

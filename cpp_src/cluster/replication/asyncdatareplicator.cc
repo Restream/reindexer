@@ -40,13 +40,14 @@ void AsyncDataReplicator::Run() {
 	{
 		std::lock_guard lck(mtx_);
 		if (!isExpectingStartup()) {
-			logPrintf(LogWarning, "AsyncDataReplicator: startup is not expected");
+			log_.Warn([] { return "AsyncDataReplicator: startup is not expected"; });
 			return;
 		}
 
 		// NOLINTBEGIN (bugprone-unchecked-optional-access) Optionals were checked in isExpectingStartup()
 		statsCollector_.Init(config_->nodes);
-		updatesQueue_.ReinitAsyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(getMergedNsConfig(config_.value())));
+		log_.SetLevel(config_->logLevel);
+		updatesQueue_.ReinitAsyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(getMergedNsConfig(config_.value())), log_);
 		assert(replThreads_.empty());
 
 		ReplThreadConfig threadsConfig(baseConfig_.value(), config_.value());
@@ -58,7 +59,7 @@ void AsyncDataReplicator::Run() {
 			}
 			if (nodesShard.size()) {
 				replThreads_.emplace_back(baseConfig_->serverID, thisNode_, updatesQueue_.GetAsyncQueue(), config_->nodes, config_->mode,
-										  syncState_, statsCollector_);
+										  syncState_, statsCollector_, log_);
 				replThreads_.back().Run(threadsConfig, std::move(nodesShard), config_->nodes.size());
 			}
 		}
@@ -87,6 +88,7 @@ ReplicationStats AsyncDataReplicator::GetReplicationStats() const {
 	for (auto& node : stats.nodeStats) {
 		node.role = RaftInfo::Role::Follower;
 	}
+	stats.logLevel = log_.GetLevel();
 	return stats;
 }
 
@@ -116,7 +118,7 @@ void AsyncDataReplicator::stop() {
 		replThreads_.clear();
 		statsCollector_.Reset();
 		updatesQueue_.GetAsyncQueue()->SetWritable(false, Error());
-		updatesQueue_.ReinitAsyncQueue(statsCollector_, std::optional<NsNamesHashSetT>());
+		updatesQueue_.ReinitAsyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(), log_);
 	}
 }
 

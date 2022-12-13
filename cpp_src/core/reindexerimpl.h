@@ -18,6 +18,7 @@
 #include "reindexerconfig.h"
 #include "tools/errors.h"
 #include "tools/filecontentwatcher.h"
+#include "tools/tcmallocheapwathcher.h"
 #include "tools/nsversioncounter.h"
 #include "transaction/transaction.h"
 
@@ -231,6 +232,8 @@ protected:
 	void syncSystemNamespaces(std::string_view sysNsName, std::string_view filterNsName, const RdxContext &ctx);
 	void createSystemNamespaces();
 	void updateToSystemNamespace(std::string_view nsName, Item &, const RdxContext &ctx);
+	void handleConfigAction(const gason::JsonNode &action, const std::vector<std::pair<std::string, Namespace::Ptr>> &namespaces,
+							const RdxContext &ctx);
 	void updateConfigProvider(const gason::JsonNode &config);
 	template <typename ConfigT>
 	void updateConfFile(const ConfigT &newConf, std::string_view filename);
@@ -281,6 +284,10 @@ protected:
 	std::deque<FileContetWatcher> configWatchers_;
 
 	Locker nsLock_;
+
+#ifdef REINDEX_WITH_GPERFTOOLS
+	TCMallocHeapWathcher heapWatcher_;
+#endif
 
 	ActivityContainer activities_;
 

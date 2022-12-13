@@ -1,5 +1,6 @@
 
 #include "waltracker.h"
+#include "core/namespace/asyncstorage.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
 
@@ -8,6 +9,15 @@
 namespace reindexer {
 
 WALTracker::WALTracker(int64_t sz) : walSize_(sz) { logPrintf(LogTrace, "[WALTracker] Create LSN=%ld", lsnCounter_); }
+
+WALTracker::WALTracker(const WALTracker &wal, AsyncStorage &storage)
+	: records_(wal.records_),
+	  lsnCounter_(wal.lsnCounter_),
+	  lastLsn_(wal.lastLsn_),
+	  walSize_(wal.walSize_),
+	  walOffset_(wal.walOffset_),
+	  heapSize_(wal.heapSize_),
+	  storage_(&storage) {}
 
 lsn_t WALTracker::Add(const WALRecord &rec, lsn_t originLsn, lsn_t oldLsn) {
 	return add(rec, originLsn, rec.type != WalItemUpdate, oldLsn);
@@ -85,27 +95,20 @@ void WALTracker::Reset() {
 	std::vector<MarkedPackedWALRecord> oldRecords;
 	std::swap(records_, oldRecords);
 	heapSize_ = 0;
-	auto storage = storage_.lock();
-	if (storage) {
+	if (storage_ && storage_->IsValid()) {
 		StorageOpts opts;
-		std::unique_ptr<datastorage::Cursor> dbIter(storage->GetCursor(opts));
+		auto dbIter = storage_->GetCursor(opts);
 		for (dbIter->Seek(kStorageWALPrefix);
 			 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageWALPrefix "\xFF")) < 0;
 			 dbIter->Next()) {
-			storage->Delete(opts, dbIter->Key());
+			dbIter.RemoveThisKey(opts);
 		}
 	}
 }
 
-void WALTracker::SetStorage(std::weak_ptr<datastorage::IDataStorage> storage, bool expectingReset) {
-	assertrx(expectingReset || !storage_.lock());
-	(void)expectingReset;
-	storage_ = std::move(storage);
-}
-
-void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, std::weak_ptr<datastorage::IDataStorage> storage) {
+void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage &storage) {
 	logPrintf(LogTrace, "WALTracker::Init minLSN=%ld, maxLSN=%ld, size=%ld", minLSN, maxLSN, sz);
-	storage_ = std::move(storage);
+	storage_ = &storage;
 
 	// input maxLSN of namespace Item or -1 if namespace is empty
 	auto data = readFromStorage(maxLSN);  // return maxLSN of wal record or input value
@@ -157,8 +160,7 @@ bool WALTracker::available(lsn_t lsn, bool ignoreServer) const {
 }
 
 void WALTracker::writeToStorage(lsn_t lsn) {
-	auto storage = storage_.lock();
-	if (storage) {
+	if (storage_ && storage_->IsValid()) {
 		int64_t pos = lsn.Counter() % walSize_;
 
 		WrSerializer key, data;
@@ -167,7 +169,7 @@ void WALTracker::writeToStorage(lsn_t lsn) {
 		data.PutUInt64(int64_t(lsn));
 		data.Write(std::string_view(reinterpret_cast<char *>(records_[pos].data()), records_[pos].size()));
 
-		storage->Write(StorageOpts(), key.Slice(), data.Slice());
+		storage_->WriteSync(StorageOpts(), key.Slice(), data.Slice());
 	}
 }
 
@@ -177,11 +179,9 @@ std::vector<std::pair<lsn_t, std::string>> WALTracker::readFromStorage(int64_t &
 	StorageOpts opts;
 	opts.FillCache(false);
 
-	auto storage = storage_.lock();
-	if (!storage) return data;
+	if (!storage_ || !storage_->IsValid()) return data;
 
-	std::unique_ptr<datastorage::Cursor> dbIter(storage->GetCursor(opts));
-
+	auto dbIter = storage_->GetCursor(opts);
 	for (dbIter->Seek(kStorageWALPrefix);
 		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageWALPrefix "\xFF")) < 0;
 		 dbIter->Next()) {

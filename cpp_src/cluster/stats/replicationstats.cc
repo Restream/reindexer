@@ -156,6 +156,7 @@ Error ReplicationStats::FromJSON(const gason::JsonNode& root) {
 		pendingUpdatesCount = root["pending_updates_count"sv].As<int64_t>(pendingUpdatesCount);
 		allocatedUpdatesCount = root["allocated_updates_count"sv].As<int64_t>(allocatedUpdatesCount);
 		allocatedUpdatesSizeBytes = root["allocated_updates_size"sv].As<int64_t>(allocatedUpdatesSizeBytes);
+		logLevel = logLevelFromString(root["log_level"sv].As<std::string_view>("info"));
 		nodeStats.clear();
 		for (auto& nodeJson : root["nodes"sv]) {
 			NodeStats nodeSt;
@@ -188,6 +189,7 @@ void ReplicationStats::GetJSON(JsonBuilder& builder) const {
 	builder.Put("pending_updates_count"sv, pendingUpdatesCount);
 	builder.Put("allocated_updates_count"sv, allocatedUpdatesCount);
 	builder.Put("allocated_updates_size"sv, allocatedUpdatesSizeBytes);
+	builder.Put("log_level"sv, logLevelToString(logLevel));
 	{
 		auto arrNode = builder.Array("nodes"sv);
 		for (auto& node : nodeStats) {

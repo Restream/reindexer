@@ -151,7 +151,8 @@ struct ClusterConfigData {
 			   (batchingRoutinesCount == rdata.batchingRoutinesCount) && (leaderSyncThreads == rdata.leaderSyncThreads) &&
 			   (leaderSyncConcurrentSnapshotsPerNode == rdata.leaderSyncConcurrentSnapshotsPerNode) &&
 			   (syncTimeoutSec == rdata.syncTimeoutSec) && (proxyConnCount == rdata.proxyConnCount) &&
-			   (proxyConnConcurrency == rdata.proxyConnConcurrency) && (proxyConnThreads == rdata.proxyConnThreads);
+			   (proxyConnConcurrency == rdata.proxyConnConcurrency) && (proxyConnThreads == rdata.proxyConnThreads) &&
+			   (logLevel == rdata.logLevel);
 	}
 	bool operator!=(const ClusterConfigData &rdata) const noexcept { return !operator==(rdata); }
 
@@ -178,6 +179,7 @@ struct ClusterConfigData {
 	int proxyConnCount = kDefaultClusterProxyConnCount;
 	int proxyConnConcurrency = kDefaultClusterProxyCoroPerConn;
 	int proxyConnThreads = kDefaultClusterProxyConnThreads;
+	LogLevel logLevel = LogInfo;
 };
 
 constexpr uint32_t kDefaultShardingProxyConnCount = 8;
@@ -260,6 +262,8 @@ struct AsyncReplConfigData {
 	int batchingRoutinesCount = 100;
 	int maxWALDepthOnForceSync = 1000;
 	std::vector<AsyncReplNodeConfig> nodes;
+	int onlineUpdatesDelayMSec = 100;
+	LogLevel logLevel = LogInfo;
 
 	bool operator==(const AsyncReplConfigData &rdata) const noexcept {
 		return (role == rdata.role) && (mode == rdata.mode) && (replThreadsCount == rdata.replThreadsCount) &&
@@ -269,7 +273,8 @@ struct AsyncReplConfigData {
 			   (namespaces == rdata.namespaces || (namespaces && rdata.namespaces && *namespaces == *rdata.namespaces)) &&
 			   (enableCompression == rdata.enableCompression) && (appName == rdata.appName) &&
 			   (batchingRoutinesCount == rdata.batchingRoutinesCount) && (maxWALDepthOnForceSync == rdata.maxWALDepthOnForceSync) &&
-			   (syncTimeoutSec == rdata.syncTimeoutSec) && (nodes == rdata.nodes);
+			   (syncTimeoutSec == rdata.syncTimeoutSec) && (onlineUpdatesDelayMSec == rdata.onlineUpdatesDelayMSec) &&
+			   (logLevel == rdata.logLevel) && (nodes == rdata.nodes);
 	}
 	bool operator!=(const AsyncReplConfigData &rdata) const noexcept { return !operator==(rdata); }
 };

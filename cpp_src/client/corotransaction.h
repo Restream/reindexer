@@ -36,6 +36,10 @@ public:
 	Error Update(Item&& item, lsn_t lsn = lsn_t()) { return addTxItem(std::move(item), ModeUpdate, lsn); }
 	Error Upsert(Item&& item, lsn_t lsn = lsn_t()) { return addTxItem(std::move(item), ModeUpsert, lsn); }
 	Error Delete(Item&& item, lsn_t lsn = lsn_t()) { return addTxItem(std::move(item), ModeDelete, lsn); }
+	Error Insert(std::string_view cjson, lsn_t lsn) { return addTxItemRaw(cjson, ModeInsert, lsn); }
+	Error Update(std::string_view cjson, lsn_t lsn) { return addTxItemRaw(cjson, ModeUpdate, lsn); }
+	Error Upsert(std::string_view cjson, lsn_t lsn) { return addTxItemRaw(cjson, ModeUpsert, lsn); }
+	Error Delete(std::string_view cjson, lsn_t lsn) { return addTxItemRaw(cjson, ModeDelete, lsn); }
 	Error Modify(Item&& item, ItemModifyMode mode, lsn_t lsn = lsn_t()) { return addTxItem(std::move(item), mode, lsn); }
 	Error PutMeta(std::string_view key, std::string_view value, lsn_t lsn = lsn_t());
 	Error SetTagsMatcher(TagsMatcher&& tm, lsn_t lsn);
@@ -59,6 +63,7 @@ private:
 		: i_(rpcClient, txId, requestTimeout, execTimeout, ns) {}
 
 	Error addTxItem(Item&& item, ItemModifyMode mode, lsn_t lsn);
+	Error addTxItemRaw(std::string_view cjson, ItemModifyMode mode, lsn_t lsn);
 	void clear() noexcept {
 		i_.txId_ = -1;
 		i_.rpcClient_ = nullptr;

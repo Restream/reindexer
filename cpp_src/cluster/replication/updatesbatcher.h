@@ -7,12 +7,11 @@ namespace cluster {
 
 constexpr size_t kAsyncUpdatesRoutineStackSize = 64 * 1024;
 
-template <typename UpdateT, typename ContextT>
+template <typename UpdateT, typename ContextT, typename ApplyUpdateFnT, typename OnUpdateResultFnT, typename ConvertResultFnT>
 class UpdatesBatcher {
 public:
-	UpdatesBatcher(net::ev::dynamic_loop& loop, size_t coroCount, std::function<UpdateApplyStatus(const UpdateT&, ContextT&)> applyUpdateF,
-				   std::function<void(const UpdateT&, const UpdateApplyStatus&, ContextT&&)> onUpdateResult,
-				   std::function<UpdateApplyStatus(Error&& err, const UpdateT& upd)> convert)
+	UpdatesBatcher(net::ev::dynamic_loop& loop, size_t coroCount, ApplyUpdateFnT&& applyUpdateF, OnUpdateResultFnT&& onUpdateResult,
+				   ConvertResultFnT&& convert)
 		: applyUpdateF_(std::move(applyUpdateF)), onUpdateResult_(std::move(onUpdateResult)), convert_(std::move(convert)) {
 		channels_.reserve(coroCount);
 		for (size_t i = 0; i < coroCount; ++i) {
@@ -93,9 +92,9 @@ private:
 	size_t batchedUpdatesCount_ = 0;
 	coroutine::channel<ContextedUpdate> updatesCh_;
 	coroutine::wait_group workersWg_;
-	std::function<UpdateApplyStatus(const UpdateT&, ContextT&)> applyUpdateF_;
-	std::function<void(const UpdateT&, const UpdateApplyStatus&, ContextT&&)> onUpdateResult_;
-	std::function<UpdateApplyStatus(Error&& err, const UpdateT& upd)> convert_;
+	ApplyUpdateFnT applyUpdateF_;
+	OnUpdateResultFnT onUpdateResult_;
+	ConvertResultFnT convert_;
 	std::vector<std::unique_ptr<ResultChT>> channels_;
 	uint32_t nextResultsCh_ = 0;
 	uint64_t nextId_ = 0;

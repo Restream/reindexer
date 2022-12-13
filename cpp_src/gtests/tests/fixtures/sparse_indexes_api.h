@@ -48,11 +48,11 @@ protected:
 			Item ritem(it.GetItem(false));
 			std::string expectedName = "name" + std::to_string(expectedSerialNumber);
 			Variant nameVal = ritem[kFieldName];
-			EXPECT_TRUE(nameVal.Type() == KeyValueString);
+			EXPECT_TRUE(nameVal.Type().Is<reindexer::KeyValueType::String>());
 			EXPECT_TRUE(nameVal.As<std::string>() == expectedName);
 
 			Variant serialNumberVal = ritem[kFieldSerialNumber];
-			EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
+			EXPECT_TRUE(serialNumberVal.Type().Is<reindexer::KeyValueType::Int64>());
 			EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == expectedSerialNumber);
 			++expectedSerialNumber;
 		}
@@ -65,7 +65,7 @@ protected:
 		EXPECT_TRUE(qr.Count() == 1);
 		Item ritem(qr.begin().GetItem(false));
 		Variant nameVal = ritem[kFieldName];
-		EXPECT_TRUE(nameVal.Type() == KeyValueString);
+		EXPECT_TRUE(nameVal.Type().Is<reindexer::KeyValueType::String>());
 		EXPECT_TRUE(nameVal.As<std::string>() == "name5");
 
 		QueryResults qr2;
@@ -76,7 +76,7 @@ protected:
 		for (auto it : qr2) {
 			Item ritem(it.GetItem(false));
 			Variant nameVal = ritem[kFieldName];
-			EXPECT_TRUE(nameVal.Type() == KeyValueString);
+			EXPECT_TRUE(nameVal.Type().Is<reindexer::KeyValueType::String>());
 			EXPECT_TRUE(nameVal.As<std::string>().compare(toCompare) < 0);
 		}
 	}
@@ -90,7 +90,7 @@ protected:
 		for (auto& it : qr) {
 			Item ritem(it.GetItem(false));
 			Variant serialNumberVal = ritem[kFieldSerialNumber];
-			EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
+			EXPECT_TRUE(serialNumberVal.Type().Is<reindexer::KeyValueType::Int64>());
 			EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == expectedSerialNumber);
 			++expectedSerialNumber;
 		}
@@ -103,7 +103,7 @@ protected:
 
 		Item ritem(qr2.begin().GetItem(false));
 		Variant serialNumberVal = ritem[kFieldSerialNumber];
-		EXPECT_TRUE(serialNumberVal.Type() == KeyValueInt64);
+		EXPECT_TRUE(serialNumberVal.Type().Is<reindexer::KeyValueType::Int64>());
 		EXPECT_TRUE(static_cast<int64_t>(serialNumberVal) == expectedValue);
 	}
 

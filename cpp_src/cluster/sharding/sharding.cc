@@ -201,18 +201,18 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 	std::shared_ptr<SharedStatusData> stData = std::make_shared<SharedStatusData>(size);
 	for (size_t i = 0; i < size; ++i) {
 		auto conn = connections_[i];
-		auto err = conn->WithCompletion([i, stData, conn = std::move(conn)](const Error &err) {
-						   std::lock_guard lck(stData->mtx);
-						   ++stData->completed;
-						   if (err.ok()) {
-							   stData->onlineIdx = i;
-							   stData->statuses[i] = true;
-							   stData->cv.notify_one();
-						   } else if (stData->completed == stData->statuses.size()) {
-							   stData->cv.notify_one();
-						   }
-					   })
-					   .Status(true);
+		auto &c = *conn;
+		auto err = c.WithCompletion([i, stData, conn = std::move(conn)](const Error &err) {
+						std::lock_guard lck(stData->mtx);
+						++stData->completed;
+						if (err.ok()) {
+							stData->onlineIdx = i;
+							stData->statuses[i] = true;
+							stData->cv.notify_one();
+						} else if (stData->completed == stData->statuses.size()) {
+							stData->cv.notify_one();
+						}
+					}).Status(true);
 		if (!err.ok()) {
 			std::lock_guard lck(stData->mtx);
 			++stData->completed;
@@ -300,12 +300,8 @@ LocatorService::LocatorService(ReindexerImpl &rx, const cluster::ShardingConfig 
 	: rx_(rx), config_(config), routingStrategy_(config), actualShardId(config.thisShardId) {}
 
 Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vector<cluster::ShardingConfig::Key> &keys) {
-	switch (fieldType) {
-		case KeyValueInt64:
-		case KeyValueDouble:
-		case KeyValueString:
-		case KeyValueBool:
-		case KeyValueInt:
+	return fieldType.EvaluateOneOf(
+		[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int>) -> Error {
 			try {
 				for (auto &k : keys) {
 					for (Variant &v : k.values) {
@@ -315,13 +311,14 @@ Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vec
 			} catch (const Error &err) {
 				return err;
 			}
-			return errOK;
-		case KeyValueComposite:
-		case KeyValueTuple:
+			return Error();
+		},
+		[](OneOf<KeyValueType::Composite, KeyValueType::Tuple>) {
 			return Error{errLogic, "Sharding by composite index is unsupported"};
-		default:
-			return Error{errLogic, "Unsupported field type: %s", KeyValueTypeToStr(fieldType)};
-	}
+		},
+		[fieldType](OneOf<KeyValueType::Undefined, KeyValueType::Null>) {
+			return Error{errLogic, "Unsupported field type: %s", fieldType.Name()};
+		});
 }
 
 Error LocatorService::validateConfig() {

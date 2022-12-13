@@ -45,6 +45,6 @@ do
 	node=$((node+1))
 done
 
-gotestsum --junitfile server_replication_tests.xml ./test -bench . -benchmem -benchtime 100ms -dsn $DSN $CLUSTER -seedcount 50000 -seedcpu 8
+gotestsum --junitfile server_replication_tests.xml ./test -bench . -benchmem -benchtime 100ms -dsn $DSN $CLUSTER -seedcount 50000 -seedcpu 8 -timeout 15m
 
 KillServers

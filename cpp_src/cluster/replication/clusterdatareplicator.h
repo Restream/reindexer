@@ -33,8 +33,10 @@ public:
 	RaftInfo GetRaftInfo(bool allowTransitState, const RdxContext &ctx) const;
 	bool NamespaceIsInClusterConfig(std::string_view nsName) const;
 	ReplicationStats GetReplicationStats() const;
+	void SetLogLevel(LogLevel level) noexcept { log_.SetLevel(level); }
 
 private:
+	static constexpr std::string_view logModuleName() noexcept { return std::string_view("syncreplicator"); }
 	int serverID() const noexcept { return baseConfig_.has_value() ? baseConfig_->serverID : -1; }
 	bool isExpectingStartup() const noexcept;
 	size_t threadsCount() const noexcept {
@@ -94,6 +96,7 @@ private:
 	CommandQuery commands_;
 
 	std::atomic<bool> terminate_ = {false};
+	Logger log_;
 	RaftManager raftManager_;
 	UpdatesQueueT &updatesQueue_;
 	SharedSyncState<> &sharedSyncState_;

@@ -97,14 +97,14 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 }
 
 template <typename IdCont>
-vector<WordIdType> DataProcessor<IdCont>::BuildSuffix(words_map &words_um, DataHolder<IdCont> &holder) {
+std::vector<WordIdType> DataProcessor<IdCont>::BuildSuffix(words_map &words_um, DataHolder<IdCont> &holder) {
 	auto &words = holder.GetWords();
 
 	auto &suffix = holder.GetSuffix();
 
 	suffix.reserve(words_um.size() * 20, words_um.size());
 
-	vector<WordIdType> found;
+	std::vector<WordIdType> found;
 
 	found.reserve(words_um.size());
 
@@ -153,7 +153,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 	auto worker = [this, &ctxs, &vdocsTexts, offset, maxIndexWorkers, fieldscount, &cfg, &vdocs](int i) {
 		auto ctx = &ctxs[i];
 		std::string word, str;
-		vector<const char *> wrds;
+		std::vector<const char *> wrds;
 		std::vector<std::string> virtualWords;
 		for (VDocIdType j = i; j < VDocIdType(vdocsTexts.size()); j += maxIndexWorkers) {
 			size_t vdocId = offset + j;
@@ -242,9 +242,9 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 		}
 		logPrintf(LogInfo, "Potential stop words: %s", out.Slice());
 	}
-	vector<h_vector<std::pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts);
+	std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts);
 
-	vector<std::unique_ptr<std::string>>().swap(holder_.bufStrs_);
+	std::vector<std::unique_ptr<std::string>>().swap(holder_.bufStrs_);
 	return szCnt;
 }
 

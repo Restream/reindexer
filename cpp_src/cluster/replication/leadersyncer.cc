@@ -1,7 +1,7 @@
 #include "leadersyncer.h"
 #include "client/snapshot.h"
+#include "cluster/logger.h"
 #include "core/reindexerimpl.h"
-#include "tools/logger.h"
 
 namespace reindexer {
 namespace cluster {
@@ -15,7 +15,7 @@ Error LeaderSyncer::Sync(std::list<LeaderSyncQueue::Entry>&& entries, SharedSync
 	syncQueue_.Refill(std::move(entries));
 	assert(threads_.empty());
 	for (size_t i = 0; i < cfg_.threadsCount; ++i) {
-		threads_.emplace_back(thCfg, syncQueue_, sharedSyncState, thisNode, statsCollector);
+		threads_.emplace_back(thCfg, syncQueue_, sharedSyncState, thisNode, statsCollector, log_);
 	}
 	lck.unlock();
 
@@ -53,8 +53,7 @@ void LeaderSyncThread::sync() {
 				preferredNodeId = int32_t(nodeId);
 				client_.Stop();
 			}
-			logPrintf(LogInfo, "[cluster:leadersyncer] %d: Trying to sync ns '%s' from %d (TID: %d)", cfg_.serverId, entry.nsName, nodeId,
-					  std::this_thread::get_id());
+			logInfo("%d: Trying to sync ns '%s' from %d (TID: %d)", cfg_.serverId, entry.nsName, nodeId, std::this_thread::get_id());
 			std::string tmpNsName;
 			try {
 				// 2) Recv most recent data
@@ -72,9 +71,8 @@ void LeaderSyncThread::sync() {
 					}
 					const auto localLsn = ExtendedLsn(state.nsVersion, state.lastLsn);
 					if (state.dataHash == expectedDataHash) {
-						logPrintf(LogInfo,
-								  "[cluster:leadersyncer] %d: Local namespace '%s' was updated from node %d (ns version: %d, lsn: %d)",
-								  cfg_.serverId, entry.nsName, nodeId, localLsn.NsVersion(), localLsn.LSN());
+						logInfo("%d: Local namespace '%s' was updated from node %d (ns version: %d, lsn: %d)", cfg_.serverId, entry.nsName,
+								nodeId, localLsn.NsVersion(), localLsn.LSN());
 						break;
 					}
 
@@ -83,32 +81,29 @@ void LeaderSyncThread::sync() {
 									"%d: Datahash missmatch after full resync for local namespce '%s'. Expected: %d; actual: %d",
 									cfg_.serverId, entry.nsName, expectedDataHash, state.dataHash);
 					}
-					logPrintf(
-						LogWarning,
-						"[cluster:leadersyncer] %d: Datahash missmatch after local namespace '%s' sync. Expected: %d, actual: %d. Forcing "
+					logWarn(
+						"%d: Datahash missmatch after local namespace '%s' sync. Expected: %d, actual: "
+						"%d. Forcing "
 						"full resync...",
 						cfg_.serverId, entry.nsName, expectedDataHash, state.dataHash);
 				}
 				sharedSyncState_.MarkSynchronized(std::string(entry.nsName));
-			} catch (Error& err) {
-				logPrintf(LogError, "[cluster:leadersyncer] %d: Unable to sync local namespace '%s': %s", cfg_.serverId, entry.nsName,
-						  err.what());
+			} catch (const Error& err) {
+				lastError_ = err;
+				logError("%d: Unable to sync local namespace '%s': %s", cfg_.serverId, entry.nsName, lastError_.what());
 				if (!tmpNsName.empty()) {
-					logPrintf(LogError, "[cluster:leadersyncer] %d: Dropping '%s'...", cfg_.serverId, tmpNsName);
+					logError("%d: Dropping '%s'...", cfg_.serverId, tmpNsName);
 					thisNode_.DropNamespace(tmpNsName, RdxContext());
-					logPrintf(LogError, "[cluster:leadersyncer] %d: '%s' was dropped", cfg_.serverId, tmpNsName);
+					logError("%d: '%s' was dropped", cfg_.serverId, tmpNsName);
 				}
-				lastError_ = std::move(err);
 			} catch (...) {
-				Error err(errLogic, "Unexpected exception");
-				logPrintf(LogError, "[cluster:leadersyncer] %d: Unable to sync local namespace '%s': %s", cfg_.serverId, entry.nsName,
-						  err.what());
+				lastError_ = Error(errLogic, "Unexpected exception");
+				logError("%d: Unable to sync local namespace '%s': %s", cfg_.serverId, entry.nsName, lastError_.what());
 				if (!tmpNsName.empty()) {
-					logPrintf(LogError, "[cluster:leadersyncer] %d: Dropping '%s'...", cfg_.serverId, tmpNsName);
+					logError("%d: Dropping '%s'...", cfg_.serverId, tmpNsName);
 					thisNode_.DropNamespace(tmpNsName, RdxContext());
-					logPrintf(LogError, "[cluster:leadersyncer] %d: '%s' was dropped", cfg_.serverId, tmpNsName);
+					logError("%d: '%s' was dropped", cfg_.serverId, tmpNsName);
 				}
-				lastError_ = std::move(err);
 			}
 			syncQueue_.SyncDone(nodeId);
 			client_.Stop();
@@ -118,8 +113,7 @@ void LeaderSyncThread::sync() {
 }
 
 void LeaderSyncThread::syncNamespaceImpl(bool forced, const LeaderSyncQueue::Entry& syncEntry, std::string& tmpNsName) {
-	logPrintf(LogInfo, "[cluster:leadersyncer] %d: '%s'. Trying to synchronize namespace %s", cfg_.serverId, syncEntry.nsName,
-			  forced ? "forced" : "by wal");
+	logInfo("%d: '%s'. Trying to synchronize namespace %s", cfg_.serverId, syncEntry.nsName, forced ? "forced" : "by wal");
 	SyncTimeCounter timeCounter(SyncTimeCounter::Type::InitialWalSync, statsCollector_);
 	client::Snapshot snapshot;
 	auto err = client_.GetSnapshot(syncEntry.nsName, SnapshotOpts(forced ? ExtendedLsn() : syncEntry.localLsn, cfg_.maxWALDepthOnForceSync),

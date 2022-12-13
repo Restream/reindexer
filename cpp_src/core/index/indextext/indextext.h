@@ -24,7 +24,7 @@ public:
 		: IndexUnordered<T>(idef, std::move(payloadType), fields),
 		  cache_ft_(std::make_shared<FtIdSetCache>()),
 		  preselected_cache_ft_(std::make_shared<PreselectedFtIdSetCache>()) {
-		this->selectKeyType_ = KeyValueString;
+		this->selectKeyType_ = KeyValueType::String{};
 		initSearchers();
 	}
 

@@ -52,7 +52,7 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 		if (match) {
 			Error err;
 			size_t savePos = rdser.Pos();
-			KeyValueType fieldType = pl->Type().Field(field).Type();
+			const KeyValueType fieldType{pl->Type().Field(field).Type()};
 			if (tagType == TAG_ARRAY) {
 				carraytag atag = rdser.GetUInt32();
 				int ofs = pl->ResizeArray(field, atag.Count(), true);
@@ -67,10 +67,8 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 			} else if (tagType != TAG_NULL) {
 				pl->Set(field, {cjsonValueToVariant(tagType, rdser, fieldType, err)}, true);
 				if (err.ok()) {
-					// TODO: remove hardcoded conversion from KeyType to TAG
-
-					wrser.PutVarUint(
-						static_cast<int>(ctag(fieldType == KeyValueInt ? KeyValueType(TAG_VARINT) : fieldType, tagName, field)));
+					wrser.PutVarUint(static_cast<int>(
+						ctag((fieldType.Is<KeyValueType::Int>() ? KeyValueType::Int64{} : fieldType).ToNumber(), tagName, field)));
 				}
 			} else {
 				wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName)));

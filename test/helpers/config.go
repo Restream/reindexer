@@ -13,6 +13,7 @@ type ClusterConf struct {
 	EnableCompression     bool                `yaml:"enable_compression"`
 	SyncThreads           int                 `yaml:"sync_threads"`
 	SyncsPerThread        int                 `yaml:"syncs_per_thread"`
+	LogLevel              string              `yaml:"log_level"`
 	RetrySyncIntervalMsec int                 `yaml:"retry_sync_interval_msec"`
 	Nodes                 []ClusterNodeConfig `yaml:"nodes"`
 }
@@ -30,6 +31,7 @@ func DefaultClusterConf() *ClusterConf {
 		EnableCompression:     true,
 		SyncThreads:           5,
 		SyncsPerThread:        5,
+		LogLevel:              "trace",
 		RetrySyncIntervalMsec: 2000,
 	}
 }

@@ -54,7 +54,7 @@ CoroQueryResults::CoroQueryResults(NsArray &&nsArray, Item &item) : i_(std::move
 
 void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query *q) {
 	i_.queryID_ = id;
-	ResultSerializer ser(rawResult);
+	i_.isBound_ = true;
 
 	if (q) {
 		QueryData data;
@@ -68,6 +68,7 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query 
 		i_.qData_.reset();
 	}
 
+	ResultSerializer ser(rawResult);
 	try {
 		ser.GetRawQueryParams(
 			i_.queryParams_,

@@ -11,20 +11,21 @@ struct ReplicationConfigData;
 
 namespace cluster {
 
-constexpr auto kControlTimeout = std::chrono::milliseconds(1000);
 constexpr auto kLeaderPingInterval = std::chrono::milliseconds(200);
-constexpr auto kMinLeaderAwaitInterval = kLeaderPingInterval * 4;
-constexpr auto kMaxLeaderAwaitDiff = std::chrono::milliseconds(400);
-constexpr auto kMinStateCheckInerval = kLeaderPingInterval * 4;
-constexpr auto kMaxStateCheckDiff = std::chrono::milliseconds(400);
+constexpr auto kMinLeaderAwaitInterval = kLeaderPingInterval * 5;
+constexpr auto kMinStateCheckInerval = kLeaderPingInterval * 5;
+constexpr auto kMaxLeaderAwaitDiff = std::chrono::milliseconds(600);
+constexpr auto kMaxStateCheckDiff = std::chrono::milliseconds(600);
 constexpr auto kGranularSleepInterval = std::chrono::milliseconds(50);
 constexpr auto kDesiredLeaderTimeout = std::chrono::seconds(10);
+
+class Logger;
 
 class RaftManager {
 public:
 	using ClockT = std::chrono::steady_clock;
 
-	RaftManager(net::ev::dynamic_loop &loop, ReplicationStatsCollector statsCollector,
+	RaftManager(net::ev::dynamic_loop &loop, ReplicationStatsCollector statsCollector, const Logger &l,
 				std::function<void(uint32_t, bool)> onNodeNetworkStatusChangedCb);
 
 	void SetTerminateFlag(bool val) noexcept { terminate_ = val; }
@@ -80,6 +81,7 @@ private:
 		int serverId = -1;
 	};
 
+	constexpr std::string_view logModuleName() noexcept { return std::string_view("raftmanager"); }
 	void startPingRoutines();
 	static int32_t getLeaderId(int64_t voteData) { return int32_t(voteData & 0x00FFFFFF); }
 	static int64_t setLeaderId(int64_t voteData, int32_t leaderId) { return (leaderId & 0x00FFFFFF) | (voteData & ~0x00FFFFFFll); }
@@ -105,6 +107,7 @@ private:
 	int clusterID_ = 1;
 	NextServerId nextServerId_;
 	std::function<void(uint32_t, bool)> onNodeNetworkStatusChangedCb_;
+	const Logger &log_;
 };
 
 }  // namespace cluster

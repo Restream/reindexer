@@ -44,6 +44,9 @@ public:
 	void RegisterOutputTraffic(const std::string &db, std::string_view type, size_t bytes) {
 		setMetricValue(outputTraffic_, bytes, prometheus::kNoEpoch, db, type);
 	}
+	void RegisterStorageStatus(const std::string &db, const std::string &ns, bool isOK) {
+		setMetricValue(storageStatus_, isOK ? 1.0 : 0.0, prometheus::kNoEpoch, db, ns);
+	}
 
 	void NextEpoch();
 
@@ -65,6 +68,7 @@ private:
 	PFamily<PGauge> *rpcClients_{nullptr};
 	PFamily<PGauge> *inputTraffic_{nullptr};
 	PFamily<PGauge> *outputTraffic_{nullptr};
+	PFamily<PGauge> *storageStatus_{nullptr};
 	PFamily<PGauge> *itemsCount_{nullptr};
 	PFamily<PGauge> *rxInfo_{nullptr};
 };

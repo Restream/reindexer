@@ -19,26 +19,27 @@ class PayloadTypeImpl {
 
 public:
 	PayloadTypeImpl(std::string name, std::initializer_list<PayloadFieldType> fields = {}) : fields_(fields), name_(std::move(name)) {}
-	const PayloadFieldType &Field(int field) const {
+
+	const PayloadFieldType &Field(int field) const noexcept {
 		assertf(field < NumFields(), "%s: %d, %d", name_, field, NumFields());
 		return fields_[field];
 	}
 
 	const std::string &Name() const noexcept { return name_; }
-	void SetName(const std::string &name) { name_ = name; }
+	void SetName(std::string name) noexcept { name_ = std::move(name); }
 	int NumFields() const noexcept { return fields_.size(); }
 	void Add(PayloadFieldType f);
 	bool Drop(std::string_view field);
 	int FieldByName(std::string_view field) const;
-	bool FieldByName(std::string_view name, int &field) const;
-	bool Contains(std::string_view field) const;
-	int FieldByJsonPath(std::string_view jsonPath) const;
-	const std::vector<int> &StrFields() const { return strFields_; }
+	bool FieldByName(std::string_view name, int &field) const noexcept;
+	bool Contains(std::string_view field) const noexcept { return fieldsByName_.find(field) != fieldsByName_.end(); }
+	int FieldByJsonPath(std::string_view jsonPath) const noexcept;
+	const std::vector<int> &StrFields() const noexcept { return strFields_; }
 
 	void serialize(WrSerializer &ser) const;
 	void deserialize(Serializer &ser);
 
-	size_t TotalSize() const;
+	size_t TotalSize() const noexcept;
 	std::string ToString() const;
 	void Dump(std::ostream &, std::string_view step, std::string_view offset) const;
 

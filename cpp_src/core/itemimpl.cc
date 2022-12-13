@@ -16,7 +16,7 @@ namespace reindexer {
 void ItemImpl::SetField(int field, const VariantArray &krs) {
 	cjson_ = std::string_view();
 	payloadValue_.Clone();
-	if (!unsafe_ && !krs.empty() && krs[0].Type() == KeyValueString) {
+	if (!unsafe_ && !krs.empty() && krs[0].Type().Is<KeyValueType::String>()) {
 		VariantArray krsCopy;
 		krsCopy.reserve(krs.size());
 		if (!holder_) holder_.reset(new std::deque<std::string>);
@@ -301,7 +301,7 @@ std::string_view ItemImpl::GetCJSONWithTm(WrSerializer &ser) {
 VariantArray ItemImpl::GetValueByJSONPath(std::string_view jsonPath) {
 	ConstPayload pl(payloadType_, payloadValue_);
 	VariantArray krefs;
-	return pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs, KeyValueUndefined);
+	return pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs, KeyValueType::Undefined{});
 }
 
 }  // namespace reindexer

@@ -12,7 +12,8 @@
 
 namespace reindexer {
 
-struct ComparatorVars {
+class ComparatorVars {
+public:
 	ComparatorVars(CondType cond, KeyValueType type, bool isArray, PayloadType payloadType, const FieldsSet &fields, void *rawData,
 				   const CollateOpts &collateOpts)
 		: cond_(cond),
@@ -22,10 +23,10 @@ struct ComparatorVars {
 		  collateOpts_(collateOpts),
 		  payloadType_(std::move(payloadType)),
 		  fields_(fields) {}
-	ComparatorVars() = default;
+	ComparatorVars() = delete;
 
 	CondType cond_ = CondEq;
-	KeyValueType type_ = KeyValueUndefined;
+	KeyValueType type_;
 	bool isArray_ = false;
 	unsigned offset_ = 0;
 	unsigned sizeof_ = 0;
@@ -52,7 +53,7 @@ public:
 		}
 
 		for (Variant key : values) {
-			if (key.Type() == KeyValueString) {
+			if (key.Type().Is<KeyValueType::String>()) {
 				addValue(cond, T());
 			} else {
 				key.convert(type());
@@ -114,10 +115,10 @@ public:
 
 private:
 	KeyValueType type() {
-		if (std::is_same<T, int>::value) return KeyValueInt;
-		if (std::is_same<T, bool>::value) return KeyValueBool;
-		if (std::is_same<T, int64_t>::value) return KeyValueInt64;
-		if (std::is_same<T, double>::value) return KeyValueDouble;
+		if (std::is_same<T, int>::value) return KeyValueType::Int{};
+		if (std::is_same<T, bool>::value) return KeyValueType::Bool{};
+		if (std::is_same<T, int64_t>::value) return KeyValueType::Int64{};
+		if (std::is_same<T, double>::value) return KeyValueType::Double{};
 		std::abort();
 	}
 
@@ -144,7 +145,7 @@ public:
 		}
 
 		for (Variant key : values) {
-			key.convert(KeyValueString);
+			key.convert(KeyValueType::String{});
 			addValue(cond, static_cast<key_string>(key));
 		}
 	}
@@ -309,7 +310,7 @@ public:
 
 	void SetValues(const VariantArray &values) {
 		if (values.size() != 2) throw Error(errQueryExec, "CondDWithin expects two arguments");
-		if (values[0].Type() == KeyValueTuple) {
+		if (values[0].Type().Is<KeyValueType::Tuple>()) {
 			rhs_ = values[0].As<Point>();
 			distance_ = values[1].As<double>();
 		} else {

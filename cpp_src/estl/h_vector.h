@@ -120,7 +120,7 @@ public:
 	bool operator!=(const h_vector& other) const noexcept { return !operator==(other); }
 
 	template <bool FreeHeapMemory = true>
-	void clear() {
+	void clear() noexcept {
 		if constexpr (FreeHeapMemory) {
 			destruct();
 			is_hdata_ = 1;

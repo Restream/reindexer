@@ -14,6 +14,8 @@ class ReindexerImpl;
 
 namespace cluster {
 
+class Logger;
+
 class RoleSwitcher {
 public:
 	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str>;
@@ -29,7 +31,7 @@ public:
 		int maxConcurrentSnapshotsPerNode = -1;
 	};
 
-	RoleSwitcher(SharedSyncState<> &, SynchronizationList &, ReindexerImpl &, const ReplicationStatsCollector &);
+	RoleSwitcher(SharedSyncState<> &, SynchronizationList &, ReindexerImpl &, const ReplicationStatsCollector &, const Logger &);
 
 	void Run(std::vector<std::string> &&dsns, RoleSwitcher::Config &&cfg);
 	void OnRoleChanged() {
@@ -56,6 +58,7 @@ private:
 		client::CoroReindexer client;
 	};
 
+	static constexpr std::string_view logModuleName() noexcept { return std::string_view("roleswitcher"); }
 	void await();
 	void notify() {
 		if (!awaitCh_.full()) awaitCh_.push(true);
@@ -94,6 +97,7 @@ private:
 
 	std::mutex mtx_;
 	std::unique_ptr<LeaderSyncer> syncer_;
+	const Logger &log_;
 };
 
 }  // namespace cluster

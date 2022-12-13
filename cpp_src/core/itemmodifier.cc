@@ -54,9 +54,10 @@ void ItemModifier::FieldData::updateTagsPath(TagsMatcher &tm, const IndexExpress
 			if (vals.size() != 1) {
 				throw Error(errParams, "Index expression has wrong syntax: '%s'", node.Expression());
 			}
-			if (vals.front().Type() != KeyValueDouble && vals.front().Type() != KeyValueInt && vals.front().Type() != KeyValueInt64) {
-				throw Error(errParams, "Wrong type of index: '%s'", node.Expression());
-			}
+			vals.front().Type().EvaluateOneOf(
+				[](OneOf<KeyValueType::Double, KeyValueType::Int, KeyValueType::Int64>) noexcept {},
+				[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite,
+						  KeyValueType::Undefined>) { throw Error(errParams, "Wrong type of index: '%s'", node.Expression()); });
 			node.SetIndex(vals.front().As<int>());
 		}
 		if (isLast && isIndex_ && tagsPath_[i].IsWithIndex()) {
@@ -115,7 +116,7 @@ void ItemModifier::modifyCJSON(PayloadValue &pv, IdType id, FieldData &field, Va
 	cjsonCache_.Reset();
 	if (cjsonKref.size() > 0) {
 		Variant v = cjsonKref.front();
-		if (v.Type() == KeyValueString) {
+		if (v.Type().Is<KeyValueType::String>()) {
 			cjsonCache_.Assign(std::string_view(p_string(v)));
 		}
 	}

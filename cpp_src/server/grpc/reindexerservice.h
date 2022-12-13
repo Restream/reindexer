@@ -73,6 +73,7 @@ private:
 		std::string dbName, nsName;
 	};
 
+	Error execSqlQueryByType(QueryResults& res, const SelectSqlRequest& request);
 	static ::grpc::Status buildQueryResults(QueryResults& qr, ::grpc::ServerWriter<QueryResultsResponse>* writer, const OutputFlags& opts);
 	static Error buildItems(WrSerializer& wrser, QueryResults& qr, const OutputFlags& opts);
 

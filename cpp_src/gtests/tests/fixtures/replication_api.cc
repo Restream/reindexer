@@ -120,8 +120,8 @@ void ReplicationApi::SwitchMaster(size_t id, const AsyncReplicationConfigTest::N
 		if (i != id) {
 			auto srv = svc_[i].Get();
 			auto conf = srv->GetServerConfig(ServerControl::ConfigType::Namespace);
-			conf.nodes_.clear();
-			conf.role_ = "follower";
+			conf.nodes.clear();
+			conf.role = "follower";
 			srv->SetReplicationConfig(conf);
 			followers.emplace_back(ReplNode{fmt::format("cproto://127.0.0.1:{}/node{}", srv->RpcPort(), i)});
 		}

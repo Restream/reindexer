@@ -1,5 +1,6 @@
 #include "roleswitcher.h"
 #include "client/snapshot.h"
+#include "cluster/logger.h"
 #include "core/reindexerimpl.h"
 #include "coroutine/tokens_pool.h"
 #include "net/cproto/cproto.h"
@@ -11,8 +12,8 @@ namespace cluster {
 constexpr auto kLeaderNsResyncInterval = std::chrono::milliseconds(1000);
 
 RoleSwitcher::RoleSwitcher(SharedSyncState<>& syncState, SynchronizationList& syncList, ReindexerImpl& thisNode,
-						   const ReplicationStatsCollector& statsCollector)
-	: sharedSyncState_(syncState), thisNode_(thisNode), statsCollector_(statsCollector), syncList_(syncList) {
+						   const ReplicationStatsCollector& statsCollector, const Logger& l)
+	: sharedSyncState_(syncState), thisNode_(thisNode), statsCollector_(statsCollector), syncList_(syncList), log_(l) {
 	leaderResyncTimer_.set(loop_);
 	roleSwitchAsync_.set(loop_);
 }
@@ -20,8 +21,8 @@ RoleSwitcher::RoleSwitcher(SharedSyncState<>& syncState, SynchronizationList& sy
 void RoleSwitcher::Run(std::vector<std::string>&& dsns, RoleSwitcher::Config&& cfg) {
 	cfg_ = std::move(cfg);
 	client::ReindexerConfig clientCfg;
-	clientCfg.NetTimeout = cfg.netTimeout;
-	clientCfg.EnableCompression = cfg.enableCompression;
+	clientCfg.NetTimeout = cfg_.netTimeout;
+	clientCfg.EnableCompression = cfg_.enableCompression;
 	clientCfg.RequestDedicatedThread = true;
 
 	if (!awaitCh_.opened()) {
@@ -66,8 +67,8 @@ void RoleSwitcher::handleRoleSwitch() {
 	auto& newState = rolesPair.second;
 	auto& curState = rolesPair.first;
 	while (newState != curState) {
-		logPrintf(LogInfo, "[cluster:roleswitcher] %d: onRoleSwitchAsync: %s(%d) -> %s(%d)", cfg_.serverId,
-				  RaftInfo::RoleToStr(curState.role), curState.leaderId, RaftInfo::RoleToStr(newState.role), newState.leaderId);
+		logInfo("%d: onRoleSwitchAsync: %s(%d) -> %s(%d)", cfg_.serverId, RaftInfo::RoleToStr(curState.role), curState.leaderId,
+				RaftInfo::RoleToStr(newState.role), newState.leaderId);
 
 		// Set DB status
 		ClusterizationStatus status;
@@ -92,7 +93,7 @@ void RoleSwitcher::handleRoleSwitch() {
 			std::vector<NamespaceDef> nsDefs;
 			auto err = thisNode_.EnumNamespaces(nsDefs, EnumNamespacesOpts().OnlyNames().HideTemporary().HideSystem(), RdxContext());
 			if (!err.ok()) {
-				logPrintf(LogInfo, "[cluster:roleswitcher] %d: onRoleSwitchAsync error: %s", cfg_.serverId, err.what());
+				logInfo("%d: onRoleSwitchAsync error: %s", cfg_.serverId, err.what());
 			}
 			namespaces.reserve(nsDefs.size());
 			for (auto& ns : nsDefs) {
@@ -135,8 +136,8 @@ void RoleSwitcher::switchNamespaces(const RaftInfo& newState, const ContainerT& 
 					break;
 			}
 			status.leaderId = newState.leaderId;
-			logPrintf(LogInfo, "[cluster:roleswitcher] %d: Setting new role '%s' and leader id %d for '%s'", cfg_.serverId,
-					  RaftInfo::RoleToStr(newState.role), status.leaderId, nsName);
+			logInfo("%d: Setting new role '%s' and leader id %d for '%s'", cfg_.serverId, RaftInfo::RoleToStr(newState.role),
+					status.leaderId, nsName);
 			nsPtr->SetClusterizationStatus(std::move(status), ctx_);
 		}
 	}
@@ -156,30 +157,29 @@ void RoleSwitcher::handleInitialSync(RaftInfo::Role newRole) {
 				if (!timerIsCanceled_) {
 					double interval = std::chrono::duration_cast<std::chrono::milliseconds>(kLeaderNsResyncInterval).count();
 					timer.start(interval / 1000);
-					logPrintf(
-						LogWarning, "[cluster:roleswitcher] %d: Leader's sync failed. Last error is: %s. New sync was scheduled in %d ms",
-						cfg_.serverId, err.what(), std::chrono::duration_cast<std::chrono::milliseconds>(kLeaderNsResyncInterval).count());
+					logWarn("%d: Leader's sync failed. Last error is: %s. New sync was scheduled in %d ms", cfg_.serverId, err.what(),
+							std::chrono::duration_cast<std::chrono::milliseconds>(kLeaderNsResyncInterval).count());
 				}
 				return;
 			}
 
-			logPrintf(LogInfo, "[cluster:roleswitcher] %d: Leader's resync done", cfg_.serverId);
+			log_.Info([this] { rtfmt("%d: Leader's resync done", cfg_.serverId); });
 			statsCollector_.OnSyncStateChanged(ReplicationStatCounter::kLeaderUID, NodeStats::SyncState::OnlineReplication);
 			cfg_.onRoleSwitchDone();
 		});
 	};
 	leaderResyncTimer_.set(leaderSyncFn);
 
-	logPrintf(LogInfo, "[cluster:roleswitcher] %d: got new role: '%s'", cfg_.serverId, RaftInfo::RoleToStr(newRole));
+	logInfo("%d: got new role: '%s'", cfg_.serverId, RaftInfo::RoleToStr(newRole));
 	if (newRole == RaftInfo::Role::Leader) {
-		logPrintf(LogInfo, "[cluster:roleswitcher] %d: Leader resync has begun", cfg_.serverId);
+		log_.Info([this] { rtfmt("%d: Leader resync has begun", cfg_.serverId); });
 		statsCollector_.OnSyncStateChanged(ReplicationStatCounter::kLeaderUID, NodeStats::SyncState::InitialLeaderSync);
 		timerIsCanceled_ = false;
 		roleSwitchTm_ = std::chrono::high_resolution_clock::now();
 		leaderSyncFn(leaderResyncTimer_, 0);
 	} else {
 		if (curRole_ == RaftInfo::Role::Leader) {
-			logPrintf(LogInfo, "[cluster:roleswitcher] %d: Leader resync timer was canceled", cfg_.serverId);
+			log_.Info([this] { rtfmt("%d: Leader resync timer was canceled", cfg_.serverId); });
 			timerIsCanceled_ = true;
 			leaderResyncTimer_.stop();
 			leaderResyncWg_.wait();
@@ -204,7 +204,7 @@ void RoleSwitcher::initialLeadersSync() {
 	// coroutine::tokens_pool<bool> syncTokens(maxConcurrentSnapshots);
 	std::vector<size_t> snapshotsOnNode(nodes_.size(), 0);
 	for (auto& ns : nsList) {
-		logPrintf(LogInfo, "[cluster:roleswitcher] %d: Leader's resync timer: create coroutine for '%s'", cfg_.serverId, ns);
+		logInfo("%d: Leader's resync timer: create coroutine for '%s'", cfg_.serverId, ns);
 		loop_.spawn(leaderSyncWg, [this, &lastErr, &ns, &syncQueue]() mutable noexcept {
 			try {
 				auto err = getNodesListForNs(ns, syncQueue);
@@ -248,11 +248,11 @@ void RoleSwitcher::initialLeadersSync() {
 		if (terminate_) {
 			throw Error(errCanceled, "Terminated");
 		}
-		syncer_ = std::make_unique<LeaderSyncer>(syncerCfg);
+		syncer_ = std::make_unique<LeaderSyncer>(syncerCfg, log_);
 		lck.unlock();
-		logPrintf(LogInfo, "[cluster:roleswitcher] %d: Syncing namespaces from remote nodes", cfg_.serverId);
+		logInfo("%d: Syncing namespaces from remote nodes", cfg_.serverId);
 		lastErr = syncer_->Sync(std::move(syncQueue), sharedSyncState_, thisNode_, statsCollector_);
-		logPrintf(LogInfo, "[cluster:roleswitcher] %d: Sync namespaces from remote nodes done: %s", cfg_.serverId, lastErr.what());
+		logInfo("%d: Sync namespaces from remote nodes done: %s", cfg_.serverId, lastErr.what());
 		lck.lock();
 		syncer_.reset();
 		lck.unlock();
@@ -278,8 +278,8 @@ Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderS
 			nsEntry.localLsn = nsEntry.latestLsn = ExtendedLsn(state.nsVersion, state.lastLsn);
 			nsEntry.localDatahash = state.dataHash;
 		}
-		logPrintf(LogInfo, "[cluster:roleswitcher] %d: Begin leader's sync for '%s'. Ns version: %d, lsn: %d", cfg_.serverId, nsName,
-				  nsEntry.localLsn.NsVersion(), nsEntry.localLsn.LSN());
+		logInfo("%d: Begin leader's sync for '%s'. Ns version: %d, lsn: %d", cfg_.serverId, nsName, nsEntry.localLsn.NsVersion(),
+				nsEntry.localLsn.LSN());
 	}
 	size_t responses = 1;
 	coroutine::wait_group lwg;
@@ -290,8 +290,8 @@ Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderS
 			const auto& state = nodesStates[id].second;
 			if (err.ok()) {
 				++responses;
-				logPrintf(LogInfo, "[cluster:roleswitcher] %d: Got ns version %d and lsn %d from node %d for '%s'", cfg_.serverId,
-						  state.nsVersion, state.lastLsn, id, nsName);
+				logInfo("%d: Got ns version %d and lsn %d from node %d for '%s'", cfg_.serverId, state.nsVersion, state.lastLsn, id,
+						nsName);
 				const ExtendedLsn remoteLsn(state.nsVersion, state.lastLsn);
 				if (nsEntry.latestLsn.IsEmpty() ||
 					(nsEntry.latestLsn.IsCompatibleByNsVersion(remoteLsn) && !remoteLsn.LSN().isEmpty() &&
@@ -313,7 +313,7 @@ Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderS
 			nodesStates[id].first = std::move(err);
 		});
 	}
-	logPrintf(LogTrace, "[cluster:roleswitcher] %d Awaiting namespace collecting...(%d)", cfg_.serverId, lwg.wait_count());
+	logTrace("%d Awaiting namespace collecting...(%d)", cfg_.serverId, lwg.wait_count());
 	lwg.wait();
 	const auto consensusCnt = getConsensusCnt();
 	if (responses < consensusCnt) {
@@ -321,13 +321,12 @@ Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderS
 	}
 	if (nsEntry.IsLocal()) {
 		SyncTimeCounter timeCounter(SyncTimeCounter::Type::InitialWalSync, statsCollector_);
-		logPrintf(LogInfo, "[cluster:roleswitcher] %d: Local namespace '%s' is up-to-date (ns version: %d, lsn: %d)", cfg_.serverId, nsName,
-				  nsEntry.localLsn.NsVersion(), nsEntry.localLsn.LSN());
+		logInfo("%d: Local namespace '%s' is up-to-date (ns version: %d, lsn: %d)", cfg_.serverId, nsName, nsEntry.localLsn.NsVersion(),
+				nsEntry.localLsn.LSN());
 		sharedSyncState_.MarkSynchronized(std::string(nsName));
 	} else {
-		logPrintf(LogInfo, "[cluster:roleswitcher] %d: '%s'. Local ns version: %d, local lsn: %d, latest ns version: %d, latest lsn: %d",
-				  cfg_.serverId, nsName, nsEntry.localLsn.NsVersion(), nsEntry.localLsn.LSN(), nsEntry.latestLsn.NsVersion(),
-				  nsEntry.latestLsn.LSN());
+		logInfo("%d: '%s'. Local ns version: %d, local lsn: %d, latest ns version: %d, latest lsn: %d", cfg_.serverId, nsName,
+				nsEntry.localLsn.NsVersion(), nsEntry.localLsn.LSN(), nsEntry.latestLsn.NsVersion(), nsEntry.latestLsn.LSN());
 		syncQueue.emplace_back(std::move(nsEntry));
 	}
 	return Error();
@@ -345,8 +344,7 @@ RoleSwitcher::NsNamesHashSetT RoleSwitcher::collectNsNames() {
 			if (err.ok()) {
 				++responses;
 			} else {
-				logPrintf(LogInfo, "[cluster:roleswitcher] %d:%d Unable to recv namespaces on initial sync: %s", cfg_.serverId, nodeId,
-						  err.what());
+				logInfo("%d:%d Unable to recv namespaces on initial sync: %s", cfg_.serverId, nodeId, err.what());
 			}
 		});
 	}
@@ -354,7 +352,7 @@ RoleSwitcher::NsNamesHashSetT RoleSwitcher::collectNsNames() {
 	const auto consensusCnt = getConsensusCnt();
 	auto err = appendNsNamesFrom(thisNode_, set);
 	if (err.ok()) {
-		logPrintf(LogInfo, "[cluster:roleswitcher] %d Recv total %d namespaces on initial sync", cfg_.serverId, set.size());
+		logInfo("%d Recv total %d namespaces on initial sync", cfg_.serverId, set.size());
 	} else {
 		throw Error(errClusterConsensus, "Unable to recv local namespaces on initial sync: %s", err.what());
 	}

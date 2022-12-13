@@ -1,8 +1,8 @@
 #pragma once
 
 #include "asyncreplthread.h"
+#include "cluster/logger.h"
 #include "core/dbconfig.h"
-
 #include "updatesqueuepair.h"
 
 namespace reindexer {
@@ -25,8 +25,10 @@ public:
 	const std::optional<AsyncReplConfigData> &Config() const noexcept { return config_; }
 	ReplicationStats GetReplicationStats() const;
 	bool NamespaceIsInAsyncConfig(std::string_view nsName) const;
+	void SetLogLevel(LogLevel level) noexcept { log_.SetLevel(level); }
 
 private:
+	static constexpr std::string_view logModuleName() noexcept { return std::string_view("asyncreplicator"); }
 	bool isExpectingStartup() const noexcept;
 	size_t threadsCount() const noexcept {
 		return config_.has_value() && config_->replThreadsCount > 0 ? config_->replThreadsCount : kDefaultReplThreadCount;
@@ -45,6 +47,7 @@ private:
 	std::deque<AsyncReplThread> replThreads_;
 	std::optional<AsyncReplConfigData> config_;
 	std::optional<ReplicationConfigData> baseConfig_;
+	Logger log_;
 	static constexpr int kDefaultReplThreadCount = 4;
 };
 

@@ -11,10 +11,11 @@
 
 namespace reindexer {
 
-static CacheMode str2cacheMode(const std::string &mode) {
-	if (mode == "on") return CacheModeOn;
-	if (mode == "off" || mode == "") return CacheModeOff;
-	if (mode == "aggressive") return CacheModeAggressive;
+static CacheMode str2cacheMode(std::string_view mode) {
+	using namespace std::string_view_literals;
+	if (mode == "on"sv) return CacheModeOn;
+	if (mode == "off"sv || mode == ""sv) return CacheModeOff;
+	if (mode == "aggressive"sv) return CacheModeAggressive;
 
 	throw Error(errParams, "Unknown cache mode %s", mode);
 }
@@ -44,7 +45,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				data.noQueryIdleThreshold = nsNode["unload_idle_threshold"].As<int>();
 				data.logLevel = logLevelFromString(nsNode["log_level"].As<std::string>("none"));
 				data.strictMode = strictModeFromString(nsNode["strict_mode"].As<std::string>("names"));
-				data.cacheMode = str2cacheMode(nsNode["join_cache_mode"].As<std::string>("off"));
+				data.cacheMode = str2cacheMode(nsNode["join_cache_mode"].As<std::string_view>("off"));
 				data.startCopyPolicyTxSize = nsNode["start_copy_policy_tx_size"].As<int>(data.startCopyPolicyTxSize);
 				data.copyPolicyMultiplier = nsNode["copy_policy_multiplier"].As<int>(data.copyPolicyMultiplier);
 				data.txSizeToAlwaysCopy = nsNode["tx_size_to_always_copy"].As<int>(data.txSizeToAlwaysCopy);

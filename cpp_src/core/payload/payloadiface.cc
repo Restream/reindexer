@@ -12,11 +12,6 @@
 namespace reindexer {
 
 template <typename T>
-PayloadIface<T>::PayloadIface(const PayloadType &t, T &v) : t_(*t.get()), v_(&v) {}
-template <typename T>
-PayloadIface<T>::PayloadIface(const PayloadTypeImpl &t, T &v) : t_(t), v_(&v) {}
-
-template <typename T>
 VariantArray &PayloadIface<T>::Get(int field, VariantArray &keys, bool enableHold) const {
 	assertrx(field < NumFields());
 	keys.resize(0);
@@ -115,7 +110,7 @@ VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath &tagsPat
 	VariantArray values;
 	FieldsSet filter({tagsPath});
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
-	FieldsExtractor extractor(&values, KeyValueUndefined, tagsPath.size(), &filter, &offset, &size);
+	FieldsExtractor extractor(&values, KeyValueType::Undefined{}, tagsPath.size(), &filter, &offset, &size);
 
 	ConstPayload pl(t_, *v_);
 	encoder.Encode(&pl, extractor);
@@ -224,7 +219,7 @@ size_t PayloadIface<T>::RealSize() const {
 }
 
 template <typename T>
-PayloadFieldValue PayloadIface<T>::Field(int field) const {
+PayloadFieldValue PayloadIface<T>::Field(int field) const noexcept {
 	return PayloadFieldValue(t_.Field(field), v_->Ptr() + t_.Field(field).Offset());
 }
 
@@ -237,7 +232,7 @@ void PayloadIface<T>::SerializeFields(WrSerializer &ser, const FieldsSet &fields
 		if (field == IndexValueType::SetByJsonPath) {
 			assertrx(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx);
-			varr = GetByJsonPath(tagsPath, varr, KeyValueUndefined);
+			varr = GetByJsonPath(tagsPath, varr, KeyValueType::Undefined{});
 			if (varr.empty()) {
 				throw Error(errParams, "PK serializing error: field [%s] cannot not be empty", fields.getJsonPath(tagPathIdx));
 			}
@@ -319,7 +314,7 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 		} else {
 			assertrx(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			ret ^= GetByJsonPath(tagsPath, keys1, KeyValueUndefined).Hash();
+			ret ^= GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{}).Hash();
 		}
 	}
 	return ret;
@@ -327,7 +322,7 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 
 // Get complete hash
 template <typename T>
-uint64_t PayloadIface<T>::GetHash() const {
+uint64_t PayloadIface<T>::GetHash() const noexcept {
 	uint64_t ret = 0;
 
 	for (int field = 0; field < t_.NumFields(); field++) {
@@ -371,7 +366,8 @@ bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
 			}
 		} else {
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			if (GetByJsonPath(tagsPath, keys1, KeyValueUndefined) != o.GetByJsonPath(tagsPath, keys2, KeyValueUndefined)) return false;
+			if (GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{}) != o.GetByJsonPath(tagsPath, keys2, KeyValueType::Undefined{}))
+				return false;
 		}
 	}
 	return true;
@@ -383,12 +379,12 @@ int PayloadIface<T>::Compare(const PayloadIface<const T> &other, std::string_vie
 	VariantArray krefs1, krefs2;
 	int cmpRes = 0;
 	if (lForceByJsonPath || fieldIdx == IndexValueType::SetByJsonPath) {
-		GetByJsonPath(field, ltm, krefs1, KeyValueUndefined);
+		GetByJsonPath(field, ltm, krefs1, KeyValueType::Undefined{});
 	} else {
 		Get(fieldIdx, krefs1);
 	}
 	if (rForceByJsonPath || fieldIdx == IndexValueType::SetByJsonPath) {
-		other.GetByJsonPath(field, rtm, krefs2, KeyValueUndefined);
+		other.GetByJsonPath(field, rtm, krefs2, KeyValueType::Undefined{});
 	} else {
 		other.Get(fieldIdx, krefs2);
 	}
@@ -424,8 +420,8 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &fi
 		} else {
 			assertrx(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			krefs1 = GetByJsonPath(tagsPath, krefs1, KeyValueUndefined);
-			krefs2 = o.GetByJsonPath(tagsPath, krefs2, KeyValueUndefined);
+			krefs1 = GetByJsonPath(tagsPath, krefs1, KeyValueType::Undefined{});
+			krefs2 = o.GetByJsonPath(tagsPath, krefs2, KeyValueType::Undefined{});
 
 			size_t length = std::min(krefs1.size(), krefs2.size());
 			for (size_t i = 0; i < length; ++i) {
@@ -456,9 +452,9 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, const Coll
 }
 
 template <typename T>
-void PayloadIface<T>::AddRefStrings(int field) {
+void PayloadIface<T>::AddRefStrings(int field) noexcept {
 	auto &f = t_.Field(field);
-	assertrx(f.Type() == KeyValueString);
+	assertrx(f.Type().template Is<KeyValueType::String>());
 
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
@@ -474,14 +470,14 @@ void PayloadIface<T>::AddRefStrings(int field) {
 }
 
 template <typename T>
-void PayloadIface<T>::AddRefStrings() {
+void PayloadIface<T>::AddRefStrings() noexcept {
 	for (auto field : t_.StrFields()) AddRefStrings(field);
 }
 
 template <typename T>
-void PayloadIface<T>::ReleaseStrings(int field) {
+void PayloadIface<T>::ReleaseStrings(int field) noexcept {
 	auto &f = t_.Field(field);
-	assertrx(f.Type() == KeyValueString);
+	assertrx(f.Type().template Is<KeyValueType::String>());
 
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
@@ -500,7 +496,7 @@ template <typename T>
 template <typename StrHolder>
 void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder &dest, bool copy) {
 	auto &f = t_.Field(field);
-	assertrx(f.Type() == KeyValueString);
+	assertrx(f.Type().template Is<KeyValueType::String>());
 
 	// direct payloadvalue manipulation for speed optimize
 	if (!f.IsArray()) {
@@ -528,7 +524,7 @@ void PayloadIface<T>::CopyStrings(std::vector<key_string> &dest) {
 }
 
 template <typename T>
-void PayloadIface<T>::ReleaseStrings() {
+void PayloadIface<T>::ReleaseStrings() noexcept {
 	for (auto field : t_.StrFields()) ReleaseStrings(field);
 }
 

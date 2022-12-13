@@ -2,6 +2,7 @@
 
 #include <deque>
 #include <optional>
+#include "cluster/logger.h"
 #include "cluster/stats/relicationstatscollector.h"
 #include "core/rdxcontext.h"
 #include "estl/contexted_cond_var.h"
@@ -9,7 +10,6 @@
 #include "estl/h_vector.h"
 #include "estl/mutex.h"
 #include "tools/errors.h"
-#include "tools/logger.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -269,7 +269,7 @@ public:
 			return std::make_pair(invalidationErr_, false);
 		}
 		try {
-			logPrintf(LogTrace, "[cluster:queue] Push new sync updates (%d) for %s", localData.dataSize, data[0].GetNsName());
+			logTraceW([&] { rtfmt("Push new sync updates (%d) for %s", localData.dataSize, data[0].GetNsName()); });
 
 			entriesRange = addDataToQueue(std::move(data), &onResult, dropped);
 
@@ -287,7 +287,7 @@ public:
 				dummyCtx_);	 // Don't pass cancel context here, because data are already on the leader and we have to handle them
 			return std::make_pair(std::move(localData.err), true);
 		} catch (...) {
-			logPrintf(LogTrace, "[cluster:queue] PushAndWait call has recieved an exception");
+			logInfoW([] { return "PushAndWait call has recieved an exception"; });
 			for (auto i = entriesRange.first; i <= entriesRange.second; ++i) {
 				const auto idx = tryGetIdx(i);
 				if (idx >= 0) {
@@ -307,7 +307,7 @@ public:
 				return std::make_pair(invalidationErr_, false);
 			}
 
-			logPrintf(LogTrace, "[cluster:queue] Push new async updates (%d) for %s", data.size(), data[0].GetNsName());
+			logTraceW([&] { rtfmt("Push new async updates (%d) for %s", data.size(), data[0].GetNsName()); });
 
 			addDataToQueue<skipResultCounting>(std::move(data), dropped);
 		}
@@ -325,7 +325,8 @@ public:
 		return false;
 	}
 	template <typename ContainerT>
-	void Init(std::optional<ContainerT> &&allowList) {
+	void Init(std::optional<ContainerT> &&allowList, const Logger &l) {
+		log_ = &l;
 		allowList_.reset();
 		if (allowList.has_value()) {
 			allowList_.emplace();
@@ -344,6 +345,7 @@ private:
 		bool awaitsData = false;
 	};
 
+	constexpr static std::string_view logModuleName() noexcept { return std::string_view("queue"); }
 	std::pair<uint64_t, uint64_t> addDataToQueue(UpdatesContainerT &&data, std::function<void(Error &&)> *onResult,
 												 std::deque<UpdatePtr> &dropped) {
 		assert(onResult);
@@ -406,11 +408,13 @@ private:
 		const auto offset = id - updPtr->ID();
 		auto &entry = updPtr->value(offset);
 		updPtr->addSentResult();
-		if (entry.onResult_) {
-			logPrintf(LogTrace, "[cluster:queue] Sending result for update with ID %d", id);
-		} else {
-			logPrintf(LogTrace, "[cluster:queue] Trying to send result for update with ID %d, but it doesn't have result handler", id);
-		}
+		logTraceW([&] {
+			if (entry.onResult_) {
+				rtfmt("Sending result for update with ID %d", id);
+			} else {
+				rtfmt("Trying to send result for update with ID %d, but it doesn't have result handler", id);
+			}
+		});
 		onResult(entry, std::move(err));
 		eraseReplicated(lck);
 	}
@@ -468,13 +472,30 @@ private:
 
 			if (lastChunckId >= 0) {
 				const auto updateId = lastChunckId + kBatchSize - 1;
-				logPrintf(LogWarning, "[cluster:queue] Dropping updates: %d-%d. %d bytes", dropped.front()->ID(), updateId,
-						  droppedUpdatesSize);
+				logWarnW([&] { rtfmt("Dropping updates: %d-%d. %d bytes", dropped.front()->ID(), updateId, droppedUpdatesSize); });
 				updatedDropRecord_ =
 					make_intrusive<intrusive_atomic_rc_wrapper<UpdateT>>(updateId, *this, typename UpdateT::DroppedUpdatesT{});
 				stats_.OnUpdatesDrop(updateId, droppedUpdatesSize);
 				dataSize_ -= droppedUpdatesSize;
 			}
+		}
+	}
+	template <typename F>
+	void logWarnW(F &&f) const {
+		if (log_) {
+			log_->Warn(std::forward<F>(f));
+		}
+	}
+	template <typename F>
+	void logInfoW(F &&f) const {
+		if (log_) {
+			log_->Info(std::forward<F>(f));
+		}
+	}
+	template <typename F>
+	void logTraceW(F &&f) const {
+		if (log_) {
+			log_->Trace(std::forward<F>(f));
 		}
 	}
 
@@ -489,6 +510,7 @@ private:
 	uint64_t nextChunkID_ = 0;
 	ReplicationStatsCollector stats_;
 	uint64_t dataSize_ = 0;
+	const Logger *log_ = nullptr;
 };
 
 }  // namespace cluster

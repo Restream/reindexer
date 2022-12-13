@@ -47,6 +47,8 @@ void ServerConfig::Reset() {
 	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
 	MaxHttpReqSize = 2 * 1024 * 1024;
+	AllocatorCacheLimit = -1;
+	AllocatorCachePart = -1;
 }
 
 const std::string ServerConfig::kDedicatedThreading = "dedicated";
@@ -161,6 +163,23 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::Flag serviceF(winSvcGroup, "", "Run in service mode", {"service"});
 #endif
 
+#if REINDEX_WITH_GPERFTOOLS
+	std::string allocatorNote{""};
+	if (!tcMallocIsAvailable_) {
+		allocatorNote = "\n! NOTE !: Reindexer was compiled with tcmalloc, but tcmalloc shared library is not linked.";
+	}
+	args::Group systemGroup(parser, "Common system options");
+	args::ValueFlag<int64_t> allocatorCacheLimit(
+		systemGroup, "", "Recommended maximum free cache size of tcmalloc memory allocator in bytes" + allocatorNote,
+		{"allocator-cache-limit"}, AllocatorCacheLimit, args::Options::Single);
+
+	args::ValueFlag<float> allocatorCachePart(
+		systemGroup, "",
+		"Recommended maximum cache size of tcmalloc memory allocator in relation to total reindexer allocated memory size, in units" +
+			allocatorNote,
+		{"allocator-cache-part"}, AllocatorCachePart, args::Options::Single);
+#endif
+
 	try {
 		parser.ParseCLI(argc, argv);
 	} catch (const args::Help &) {
@@ -195,6 +214,12 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (serviceF) SvcMode = args::get(serviceF);
 
 #endif
+
+#if REINDEX_WITH_GPERFTOOLS
+	if (allocatorCacheLimit) AllocatorCacheLimit = args::get(allocatorCacheLimit);
+	if (allocatorCachePart) AllocatorCachePart = args::get(allocatorCachePart);
+#endif
+
 	if (securityF) EnableSecurity = args::get(securityF);
 #ifdef WITH_GRPC
 	if (grpcF) EnableGRPC = args::get(grpcF);
@@ -262,6 +287,9 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
 		Daemonize = root["system"]["daemonize"].as<bool>(Daemonize);
 		DaemonPidFile = root["system"]["pidfile"].as<std::string>(DaemonPidFile);
 #endif
+		AllocatorCacheLimit = root["system"]["allocator_cache_limit"].as<int64_t>(AllocatorCacheLimit);
+		AllocatorCachePart = root["system"]["allocator_cache_part"].as<float_t>(AllocatorCachePart);
+
 		DebugAllocs = root["debug"]["allocs"].as<bool>(DebugAllocs);
 		DebugPprof = root["debug"]["pprof"].as<bool>(DebugPprof);
 	} catch (const YAML::Exception &ex) {

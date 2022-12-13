@@ -1,0 +1,82 @@
+[
+  {
+    "test_case_description": "For English language, for single relevant word in a sentence should prefer items matching exactly with single word from query",
+    "fast_ranking_quality": 100.00,
+    "fuzz_ranking_quality": 100.00
+  },
+  {
+    "test_case_description": "For English language, for single relevant word in a sentence should prefer shortest items matching with incomplete word from query",
+    "fast_ranking_quality": 100.00,
+    "fuzz_ranking_quality": 100.00
+  },
+  {
+    "test_case_description": "For English language, for single relevant phrase in a sentence should prefer items matching exactly with single phrase from query",
+    "fast_ranking_quality": 100.00,
+    "fuzz_ranking_quality": 100.00
+  },
+  {
+    "test_case_description": "For English language, for single relevant phrase in a sentence should prefer shortest items matching with incomplete phrase from query",
+    "fast_ranking_quality": 100.00,
+    "fuzz_ranking_quality": 100.00
+  },
+  {
+    "test_case_description": "For English language, for multiple relevant words in a sentence should prefer items matching exactly with single word from query",
+    "fast_ranking_quality": 100.00,
+    "fuzz_ranking_quality": 100.00
+  },
+  {
+    "test_case_description": "For English language, for multiple relevant words in a sentence should prefer shortest items matching with incomplete word from query",
+    "fast_ranking_quality": 100.00,
+    "fuzz_ranking_quality": 100.00
+  },
+  {
+    "test_case_description": "For English language, for multiple relevant phrases in a sentence should prefer items matching exactly with single phrase from query",
+    "fast_ranking_quality": 85.71,
+    "fuzz_ranking_quality": 28.57
+  },
+  {
+    "test_case_description": "For English language, for multiple relevant phrases in a sentence should prefer shortest items matching with incomplete phrase from query",
+    "fast_ranking_quality": 85.71,
+    "fuzz_ranking_quality": 28.57
+  },
+  {
+    "test_case_description": "For Russian language, for single relevant word in a sentence should prefer items matching exactly with single word from query",
+    "fast_ranking_quality": 100.00,
+    "fuzz_ranking_quality": 100.00
+  },
+  {
+    "test_case_description": "For Russian language, for single relevant word in a sentence should prefer shortest items matching with incomplete word from query",
+    "fast_ranking_quality": 100.00,
+    "fuzz_ranking_quality": 100.00
+  },
+  {
+    "test_case_description": "For Russian language, for single relevant phrase in a sentence should prefer items matching exactly with single phrase from query",
+    "fast_ranking_quality": 75.00,
+    "fuzz_ranking_quality": 100.00
+  },
+  {
+    "test_case_description": "For Russian language, for single relevant phrase in a sentence should prefer shortest items matching with incomplete phrase from query",
+    "fast_ranking_quality": 75.00,
+    "fuzz_ranking_quality": 100.00
+  },
+  {
+    "test_case_description": "For Russian language, for multiple relevant words in a sentence should prefer items matching exactly with single word from query",
+    "fast_ranking_quality": 100.00,
+    "fuzz_ranking_quality": 71.43
+  },
+  {
+    "test_case_description": "For Russian language, for multiple relevant words in a sentence should prefer shortest items matching with incomplete word from query",
+    "fast_ranking_quality": 100.00,
+    "fuzz_ranking_quality": 42.86
+  },
+  {
+    "test_case_description": "For Russian language, for multiple relevant phrases in a sentence should prefer items matching exactly with single phrase from query",
+    "fast_ranking_quality": 28.57,
+    "fuzz_ranking_quality": 28.57
+  },
+  {
+    "test_case_description": "For Russian language, for multiple relevant phrases in a sentence should prefer shortest items matching with incomplete phrase from query",
+    "fast_ranking_quality": 28.57,
+    "fuzz_ranking_quality": 57.14
+  }
+]

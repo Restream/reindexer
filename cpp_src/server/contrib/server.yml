@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "4.6.1"
+  version: "4.7.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -3325,7 +3325,13 @@ definitions:
         description: "[[deperecated]]. do not use"
       storage_ok:
         type: boolean
-        description: "Status of disk storage"
+        description: "Status of disk storage (true, if storage is enabled and writable)"
+      storage_enabled:
+        type: boolean
+        description: "Shows if storage is enabled (hovewer it may still be unavailable)"
+      storage_status:
+        type: string
+        description: "More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error descrition"
       storage_path:
         type: string
         description: "Filesystem path to namespace storage"
@@ -3788,21 +3794,51 @@ definitions:
           - none
           - follower
           - leader
+      mode:
+        type: string
+        description: "Allows to configure async replication from sync raft-cluster (replicate either from each node, or from synchronous cluster leader)"
+        enum:
+          - default
+          - from_sync_leader
       app_name:
         type: string
         description: "Application name, used by replicator as a login tag"
       online_updates_timeout_sec:
         type: integer
-        description: "Network timeout for communication with followers (for force and wal synchronization), in seconds"
+        description: "Node response timeout for online-replication (seconds)"
       sync_timeout_sec:
         type: integer
         description: "Network timeout for communication with followers (for force and wal synchronization), in seconds"
+      retry_sync_interval_msec:
+        type: integer
+        description: "Resync timeout on network errors"
+      sync_threads:
+        type: integer
+        description: "Number of data replication threads"
+      syncs_per_thread:
+        type: integer
+        description: "Max number of concurrent force/wal sync's per thread"
+      batching_routines_count:
+        type: integer
+        description: "Number of coroutines for updates batching (per namespace). Higher value here may help to reduce networks triparound await time, but will require more RAM"
+      online_updates_delay_msec:
+        type: integer
+        description: "Delay between write operation and replication. Larger values here will leader to higher replication latency and bufferization, but also will provide more effective network batching and CPU untilization"
       enable_compression:
         type: boolean
         description: "Enable network traffic compression"
       max_wal_depth_on_force_sync:
         type: integer
         description: "Maximum number of WAL records, which will be copied after force-sync"
+      log_level:
+        type: string
+        description: "Replication log level on replicator's startup"
+        enum:
+          - none
+          - error
+          - warning
+          - info
+          - trace
       namespaces:
         type: array
         description: "General list of namespaces for replication. Empty means all of the namespaces. All replicated namespaces will become read only for followers"

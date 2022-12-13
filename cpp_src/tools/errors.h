@@ -25,12 +25,12 @@ public:
 #endif	// REINDEX_CORE_BUILD
 
 	const std::string &what() const noexcept;
-	int code() const noexcept;
+	int code() const noexcept { return ptr_ ? ptr_->code_ : errOK; }
 	bool ok() const noexcept { return !ptr_; }
 
-	explicit operator bool() const noexcept { return !ok(); }
-
-	bool operator==(const Error &other) const noexcept;
+	explicit operator bool() noexcept { return !ok(); }
+	bool operator==(const Error &other) const noexcept { return code() == other.code() && what() == other.what(); }
+	bool operator!=(const Error &other) const noexcept { return !(*this == other); }
 
 protected:
 	struct payload {

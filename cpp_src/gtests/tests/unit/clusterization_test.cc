@@ -13,7 +13,7 @@ TEST_F(ClusterizationApi, LeaderElections) {
 		constexpr size_t kClusterSize = 5;
 		Cluster cluster(loop, 0, kClusterSize, ports);
 		// Await leader and make sure, that it will be elected only once
-		auto leaderId = cluster.AwaitLeader(std::chrono::seconds(5), true);
+		auto leaderId = cluster.AwaitLeader(kMaxElectionsTime, true);
 		ASSERT_NE(leaderId, -1);
 		TestCout() << "Terminating servers..." << std::endl;
 		cluster.StopServers(0, kClusterSize);
@@ -261,6 +261,7 @@ static bool ValidateStatsOnTestEnding(int leaderId, int kTransitionServer, const
 	O_EXPECT_EQ(withAssertion, stats.initialSync.forceSyncs.maxTimeUs, 0)
 	O_EXPECT_EQ(withAssertion, stats.initialSync.forceSyncs.avgTimeUs, 0)
 	O_EXPECT_EQ(withAssertion, stats.forceSyncs.count, 0)
+	O_EXPECT_EQ(withAssertion, stats.logLevel, LogTrace)
 	if (leaderId == kTransitionServer) {
 		O_EXPECT_EQ(withAssertion, stats.walSyncs.count, kFirstNodesGroup.size())
 	} else {

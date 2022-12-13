@@ -270,9 +270,10 @@ R ClusterProxy::proxyCall(const RdxContext &_ctx, std::string_view nsName, FnA &
 	Error err;
 	if (_ctx.GetOriginLSN().isEmpty()) {
 		ErrorCode errCode = errOK;
+		bool allowCandidateRole = true;
 		do {
 			cluster::RaftInfo info;
-			err = impl_.GetRaftInfo(false, info, _ctx);
+			err = impl_.GetRaftInfo(allowCandidateRole, info, _ctx);
 			if (!err.ok()) {
 				if (err.code() == errTimeout || err.code() == errCanceled) {
 					err = Error(err.code(), "Unable to get cluster's leader: %s", err.what());
@@ -280,7 +281,7 @@ R ClusterProxy::proxyCall(const RdxContext &_ctx, std::string_view nsName, FnA &
 				setErrorCode(r, std::move(err));
 				return r;
 			}
-			if (info.role == cluster::RaftInfo::Role::None) {  // node is not in cluster
+			if (info.role == cluster::RaftInfo::Role::None) {  // fast way for non-cluster node
 				if (_ctx.HasEmmiterServer()) {
 					setErrorCode(r, Error(errLogic, "Request was proxied to non-cluster node"));
 					return r;
@@ -295,7 +296,7 @@ R ClusterProxy::proxyCall(const RdxContext &_ctx, std::string_view nsName, FnA &
 			}
 			const bool nsInClusterConf = impl_.clusterizator_->NamespaceIsInClusterConfig(nsName);
 			if (!nsInClusterConf) {	 // ns is not in cluster
-				clusterProxyLog(LogTrace, "[%d proxy]  proxyCall ns not in cluster config (local)", sId_.load(std::memory_order_relaxed));
+				clusterProxyLog(LogTrace, "[%d proxy] proxyCall ns not in cluster config (local)", sId_.load(std::memory_order_relaxed));
 				const bool firstError = (errCode == errOK);
 				r = localCall<Fn, fn, R, Args...>(_ctx, std::forward<Args>(args)...);
 				errCode = getErrCode(err, r);
@@ -324,6 +325,11 @@ R ClusterProxy::proxyCall(const RdxContext &_ctx, std::string_view nsName, FnA &
 				} catch (Error e) {
 					setErrorCode(r, std::move(e));
 				}
+			} else if (info.role == cluster::RaftInfo::Role::Candidate) {
+				allowCandidateRole = false;
+				errCode = errWrongReplicationData;
+				// Second attempt with awaiting of the role switch
+				continue;
 			}
 			errCode = getErrCode(err, r);
 		} while (errCode == errWrongReplicationData);
@@ -1383,7 +1389,8 @@ Error ClusterProxy::GetMeta(std::string_view nsName, const std::string &key, std
 	return impl_.GetMeta(nsName, key, data, rdxCtx);
 }
 
-Error ClusterProxy::GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data, const InternalRdxContext &ctx) {
+Error ClusterProxy::GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data,
+							const InternalRdxContext &ctx) {
 	WrSerializer ser;
 	const RdxContext rdxCtx = ctx.CreateRdxContext(
 		ctx.NeedTraceActivity() ? (ser << "SELECT SHARDED_META FROM " << nsName << " WHERE KEY = '" << key << '\'').Slice() : ""sv,
@@ -1399,7 +1406,8 @@ Error ClusterProxy::GetMeta(std::string_view nsName, const std::string &key, std
 		auto predicate = [](const ShardedMeta &) noexcept { return true; };
 		Error err = collectFromShardsByNs(
 			rdxCtx,
-			static_cast<Error (client::Reindexer::*)(std::string_view, const std::string &, std::vector<ShardedMeta> &)>(&client::Reindexer::GetMeta),
+			static_cast<Error (client::Reindexer::*)(std::string_view, const std::string &, std::vector<ShardedMeta> &)>(
+				&client::Reindexer::GetMeta),
 			std::move(localGetMeta), data, predicate, nsName, key);
 		return err;
 	}
@@ -1415,7 +1423,8 @@ Error ClusterProxy::PutMeta(std::string_view nsName, const std::string &key, std
 		impl_.activities_);
 
 	auto localPutMeta = [this, &rdxCtx](std::string_view nsName, const std::string &key, std::string_view data) {
-		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, const std::string &, std::string_view)>
+		std::function<Error(const RdxContext &, std::shared_ptr<client::Reindexer>, std::string_view, const std::string &,
+							std::string_view)>
 			action = std::bind(&ClusterProxy::baseFollowerAction<decltype(&client::Reindexer::PutMeta), &client::Reindexer::PutMeta,
 																 std::string_view, const std::string &, std::string_view>,
 							   this, _1, _2, _3, _4, _5);
@@ -1424,8 +1433,7 @@ Error ClusterProxy::PutMeta(std::string_view nsName, const std::string &key, std
 	};
 
 	if (isWithSharding(nsName, ctx)) {
-		Error err = delegateToShards(rdxCtx, &client::Reindexer::PutMeta, std::move(localPutMeta), nsName, key, data);
-		if (err.code() != errAlreadyConnected) return err;
+		return delegateToShards(rdxCtx, &client::Reindexer::PutMeta, std::move(localPutMeta), nsName, key, data);
 	}
 	return localPutMeta(nsName, key, data);
 }
@@ -1564,8 +1572,9 @@ bool ClusterProxy::shouldProxyQuery(const Query &q) {
 			auto nextIt = it;
 			++nextIt;
 			auto &entry = it->Value<QueryEntry>();
-			if (hasTypeCond || entry.condition != CondEq || entry.values.size() != 1 || entry.values[0].Type() != KeyValueString ||
-				it->operation != OpAnd || (nextIt != end && nextIt->operation == OpOr)) {
+			if (hasTypeCond || entry.condition != CondEq || entry.values.size() != 1 ||
+				!entry.values[0].Type().Is<KeyValueType::String>() || it->operation != OpAnd ||
+				(nextIt != end && nextIt->operation == OpOr)) {
 				throw Error(errParams, kConditionError);
 			}
 			auto str = entry.values[0].As<std::string>();

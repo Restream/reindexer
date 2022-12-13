@@ -243,13 +243,13 @@ public:
 			}
 			ASSERT_NO_THROW(pt.FieldByName(kIdField));
 			ASSERT_TRUE(pt.Field(1).Name() == kIdField) << pt.Field(1).Name();
-			ASSERT_TRUE(pt.Field(1).Type() == KeyValueInt) << pt.Field(1).Type();
+			ASSERT_TRUE(pt.Field(1).Type().Is<reindexer::KeyValueType::Int>()) << reindexer::KeyValueType{pt.Field(1).Type()}.Name();
 			if (nsid == 0) {
 				ASSERT_TRUE(pt.Field(2).Name() == kAgeField) << pt.Field(2).Name();
-				ASSERT_TRUE(pt.Field(2).Type() == KeyValueInt) << pt.Field(2).Type();
+				ASSERT_TRUE(pt.Field(2).Type().Is<reindexer::KeyValueType::Int>()) << reindexer::KeyValueType{pt.Field(2).Type()}.Name();
 			} else if (nsid == 1) {
 				ASSERT_TRUE(pt.Field(2).Name() == kPriceField) << pt.Field(2).Name();
-				ASSERT_TRUE(pt.Field(2).Type() == KeyValueInt) << pt.Field(2).Type();
+				ASSERT_TRUE(pt.Field(2).Type().Is<reindexer::KeyValueType::Int>()) << reindexer::KeyValueType{pt.Field(2).Type()}.Name();
 			}
 			types.emplace_back(tm, pt);
 		}
@@ -269,8 +269,8 @@ public:
 		ASSERT_TRUE(rdser.Eof());
 	}
 
-	void checkItem(reindexer::Serializer& rser, reindexer::grpc::OutputFlags* flags, const std::vector<NsType>& nsTypes, bool joined = false,
-				   bool print = false) {
+	void checkItem(reindexer::Serializer& rser, reindexer::grpc::OutputFlags* flags, const std::vector<NsType>& nsTypes,
+				   bool joined = false, bool print = false) {
 		uint64_t nsId = 0;
 		if (flags->withnsid()) {
 			nsId = rser.GetVarUint();

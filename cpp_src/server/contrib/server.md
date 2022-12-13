@@ -130,7 +130,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 4.6.1
+*Version* : 4.7.0
 
 
 ### License information
@@ -2042,13 +2042,20 @@ Specifies facet aggregations results sorting order
 |Name|Description|Schema|
 |---|---|---|
 |**app_name**  <br>*optional*|Application name, used by replicator as a login tag|string|
+|**batching_routines_count**  <br>*optional*|Number of coroutines for updates batching (per namespace). Higher value here may help to reduce networks triparound await time, but will require more RAM|integer|
 |**enable_compression**  <br>*optional*|Enable network traffic compression|boolean|
+|**log_level**  <br>*optional*|Replication log level on replicator's startup|enum (none, error, warning, info, trace)|
 |**max_wal_depth_on_force_sync**  <br>*optional*|Maximum number of WAL records, which will be copied after force-sync|integer|
+|**mode**  <br>*optional*|Allows to configure async replication from sync raft-cluster (replicate either from each node, or from synchronous cluster leader)|enum (default, from_sync_leader)|
 |**namespaces**  <br>*required*|General list of namespaces for replication. Empty means all of the namespaces. All replicated namespaces will become read only for followers|< string > array|
 |**nodes**  <br>*required*|Followers list|< [nodes](#asyncreplicationconfig-nodes) > array|
-|**online_updates_timeout_sec**  <br>*optional*|Network timeout for communication with followers (for force and wal synchronization), in seconds|integer|
+|**online_updates_delay_msec**  <br>*optional*|Delay between write operation and replication. Larger values here will leader to higher replication latency and bufferization, but also will provide more effective network batching and CPU untilization|integer|
+|**online_updates_timeout_sec**  <br>*optional*|Node response timeout for online-replication (seconds)|integer|
+|**retry_sync_interval_msec**  <br>*optional*|Resync timeout on network errors|integer|
 |**role**  <br>*required*|Replication role|enum (none, follower, leader)|
+|**sync_threads**  <br>*optional*|Number of data replication threads|integer|
 |**sync_timeout_sec**  <br>*optional*|Network timeout for communication with followers (for force and wal synchronization), in seconds|integer|
+|**syncs_per_thread**  <br>*optional*|Max number of concurrent force/wal sync's per thread|integer|
 
 
 **nodes**
@@ -2536,8 +2543,10 @@ List of meta info of the specified namespace
 |**optimization_completed**  <br>*optional*|Background indexes optimization has been completed|boolean|
 |**query_cache**  <br>*optional*||[QueryCacheMemStats](#querycachememstats)|
 |**replication**  <br>*optional*||[ReplicationStats](#replicationstats)|
-|**storage_ok**  <br>*optional*|Status of disk storage|boolean|
+|**storage_enabled**  <br>*optional*|Shows if storage is enabled (hovewer it may still be unavailable)|boolean|
+|**storage_ok**  <br>*optional*|Status of disk storage (true, if storage is enabled and writable)|boolean|
 |**storage_path**  <br>*optional*|Filesystem path to namespace storage|string|
+|**storage_status**  <br>*optional*|More detailed info about storage status. May contain 'OK', 'DISABLED', 'NO SPACE LEFT' or last error descrition|string|
 |**strings_waiting_to_be_deleted_size**  <br>*optional*|Size of strings deleted from namespace, but still used in queryResults|integer|
 |**total**  <br>*optional*|Summary of total namespace memory consumption|[total](#namespacememstats-total)|
 |**updated_unix_nano**  <br>*optional*|[[deperecated]]. do not use|integer|

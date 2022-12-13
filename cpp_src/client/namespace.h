@@ -23,6 +23,10 @@ public:
 		shared_lock<shared_timed_mutex> lk(lck_);
 		return tagsMatcher_;
 	}
+	int GetStateToken() const {
+		shared_lock<shared_timed_mutex> lk(lck_);
+		return int(tagsMatcher_.stateToken());
+	}
 
 	const std::string name;
 	const PayloadType payloadType;

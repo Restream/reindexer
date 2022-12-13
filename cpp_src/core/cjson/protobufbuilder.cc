@@ -1,5 +1,6 @@
 #include "protobufbuilder.h"
 #include "core/schema.h"
+#include "core/type_consts_helpers.h"
 
 namespace reindexer {
 
@@ -65,15 +66,13 @@ int ProtobufBuilder::getFieldTag(int fieldIdx) const {
 	return fieldIdx;
 }
 
-bool ProtobufBuilder::getExpectedFieldType(KeyValueType& expectedType) {
+std::pair<KeyValueType, bool> ProtobufBuilder::getExpectedFieldType() const {
 	if (schema_ && tagsPath_) {
 		bool isArray = false;
-		expectedType = schema_->GetFieldType(*tagsPath_, isArray);
-		if (expectedType != KeyValueUndefined) {
-			return true;
-		}
+		const auto expectedType = schema_->GetFieldType(*tagsPath_, isArray);
+		return {expectedType, !expectedType.Is<KeyValueType::Undefined>()};
 	}
-	return false;
+	return {KeyValueType::Undefined{}, false};
 }
 
 void ProtobufBuilder::putFieldHeader(int fieldIdx, ProtobufTypes type) { ser_->PutVarUint((getFieldTag(fieldIdx) << kNameBit) | type); }
@@ -81,73 +80,83 @@ void ProtobufBuilder::putFieldHeader(int fieldIdx, ProtobufTypes type) { ser_->P
 void ProtobufBuilder::put(int fieldIdx, bool val) { return put(fieldIdx, int(val)); }
 
 void ProtobufBuilder::put(int fieldIdx, int val) {
-	KeyValueType expectedType;
-	if (getExpectedFieldType(expectedType)) {
-		switch (expectedType) {
-			case KeyValueInt:
-			case KeyValueBool:
-				break;
-			case KeyValueInt64:
-				return put(fieldIdx, int64_t(val));
-			case KeyValueDouble:
-				return put(fieldIdx, double(val));
-			default:
-				throw Error(errParams, "Expected type '%s' for field '%s'", Variant::TypeName(expectedType), tm_->tag2name(fieldIdx));
+	bool done = false;
+	if (const auto res = getExpectedFieldType(); res.second) {
+		res.first.EvaluateOneOf(
+			[&](OneOf<KeyValueType::Int, KeyValueType::Bool>) noexcept {},
+			[&](KeyValueType::Int64) {
+				put(fieldIdx, int64_t(val));
+				done = true;
+			},
+			[&](KeyValueType::Double) {
+				put(fieldIdx, double(val));
+				done = true;
+			},
+			[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
+				throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+			});
+	}
+	if (!done) {
+		if (type_ != ObjType::TypeArray) {
+			putFieldHeader(fieldIdx, PBUF_TYPE_VARINT);
 		}
+		ser_->PutVarUint(val);
 	}
-	if (type_ != ObjType::TypeArray) {
-		putFieldHeader(fieldIdx, PBUF_TYPE_VARINT);
-	}
-	ser_->PutVarUint(val);
 }
 
 void ProtobufBuilder::put(int fieldIdx, int64_t val) {
-	KeyValueType expectedType;
-	if (getExpectedFieldType(expectedType)) {
-		switch (expectedType) {
-			case KeyValueInt64:
-				break;
-			case KeyValueBool:
-			case KeyValueInt:
-				return put(fieldIdx, int(val));
-			case KeyValueDouble:
-				return put(fieldIdx, double(val));
-			default:
-				throw Error(errParams, "Expected type '%s' for field '%s'", Variant::TypeName(expectedType), tm_->tag2name(fieldIdx));
+	bool done = false;
+	if (const auto res = getExpectedFieldType(); res.second) {
+		res.first.EvaluateOneOf(
+			[&](KeyValueType::Int64) noexcept {},
+			[&](OneOf<KeyValueType::Bool, KeyValueType::Int>) {
+				put(fieldIdx, int(val));
+				done = true;
+			},
+			[&](KeyValueType::Double) {
+				put(fieldIdx, double(val));
+				done = true;
+			},
+			[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
+				throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+			});
+	}
+	if (!done) {
+		if (type_ != ObjType::TypeArray) {
+			putFieldHeader(fieldIdx, PBUF_TYPE_VARINT);
 		}
+		ser_->PutVarUint(val);
 	}
-	if (type_ != ObjType::TypeArray) {
-		putFieldHeader(fieldIdx, PBUF_TYPE_VARINT);
-	}
-	ser_->PutVarUint(val);
 }
 
 void ProtobufBuilder::put(int fieldIdx, double val) {
-	KeyValueType expectedType;
-	if (getExpectedFieldType(expectedType)) {
-		switch (expectedType) {
-			case KeyValueDouble:
-				break;
-			case KeyValueInt:
-			case KeyValueBool:
-				return put(fieldIdx, int(val));
-			case KeyValueInt64:
-				return put(fieldIdx, int64_t(val));
-			default:
-				throw Error(errParams, "Expected type '%s' for field '%s'", Variant::TypeName(expectedType), tm_->tag2name(fieldIdx));
+	bool done = false;
+	if (const auto res = getExpectedFieldType(); res.second) {
+		res.first.EvaluateOneOf(
+			[&](KeyValueType::Double) noexcept {},
+			[&](OneOf<KeyValueType::Int, KeyValueType::Bool>) {
+				put(fieldIdx, int(val));
+				done = true;
+			},
+			[&](KeyValueType::Int64) {
+				put(fieldIdx, int64_t(val));
+				done = true;
+			},
+			[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
+				throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+			});
+	}
+	if (!done) {
+		if (type_ != ObjType::TypeArray) {
+			putFieldHeader(fieldIdx, PBUF_TYPE_FLOAT64);
 		}
+		ser_->PutDouble(val);
 	}
-
-	if (type_ != ObjType::TypeArray) {
-		putFieldHeader(fieldIdx, PBUF_TYPE_FLOAT64);
-	}
-	ser_->PutDouble(val);
 }
 
 void ProtobufBuilder::put(int fieldIdx, std::string_view val) {
-	KeyValueType expectedType;
-	if (getExpectedFieldType(expectedType)) {
-		if (expectedType != KeyValueString) {
+	if (const auto res = getExpectedFieldType(); res.second) {
+		if (!res.first.Is<KeyValueType::String>()) {
 			throw Error(errParams, "Expected type 'String' for field '%s'", tm_->tag2name(fieldIdx));
 		}
 	}
@@ -158,34 +167,17 @@ void ProtobufBuilder::put(int fieldIdx, std::string_view val) {
 }
 
 void ProtobufBuilder::put(int fieldIdx, const Variant& val) {
-	switch (val.Type()) {
-		case KeyValueInt64:
-			put(fieldIdx, int64_t(val));
-			break;
-		case KeyValueInt:
-			put(fieldIdx, int(val));
-			break;
-		case KeyValueDouble:
-			put(fieldIdx, double(val));
-			break;
-		case KeyValueString:
-			put(fieldIdx, std::string_view(val));
-			break;
-		case KeyValueBool:
-			put(fieldIdx, bool(val));
-			break;
-		case KeyValueTuple: {
-			auto arrNode = ArrayPacked(fieldIdx);
-			for (auto& itVal : val.getCompositeValues()) {
-				arrNode.Put(fieldIdx, itVal);
-			}
-			break;
-		}
-		case KeyValueNull:
-			break;
-		default:
-			break;
-	}
+	val.Type().EvaluateOneOf([&](KeyValueType::Int64) { put(fieldIdx, int64_t(val)); }, [&](KeyValueType::Int) { put(fieldIdx, int(val)); },
+							 [&](KeyValueType::Double) { put(fieldIdx, double(val)); },
+							 [&](KeyValueType::String) { put(fieldIdx, std::string_view(val)); },
+							 [&](KeyValueType::Bool) { put(fieldIdx, bool(val)); },
+							 [&](KeyValueType::Tuple) {
+								 auto arrNode = ArrayPacked(fieldIdx);
+								 for (auto& itVal : val.getCompositeValues()) {
+									 arrNode.Put(fieldIdx, itVal);
+								 }
+							 },
+							 [&](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite>) noexcept {});
 }
 
 ProtobufBuilder ProtobufBuilder::Object(int fieldIdx, int) {

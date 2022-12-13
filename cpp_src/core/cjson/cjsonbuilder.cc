@@ -117,28 +117,13 @@ CJsonBuilder &CJsonBuilder::Null(int tagName) {
 }
 
 CJsonBuilder &CJsonBuilder::Ref(int tagName, const Variant &v, int field) {
-	switch (v.Type()) {
-		case KeyValueInt:
-		case KeyValueInt64:
-			ser_->PutVarUint(static_cast<int>(ctag(TAG_VARINT, tagName, field)));
-			break;
-		case KeyValueBool:
-			ser_->PutVarUint(static_cast<int>(ctag(TAG_BOOL, tagName, field)));
-			break;
-		case KeyValueDouble:
-			ser_->PutVarUint(static_cast<int>(ctag(TAG_DOUBLE, tagName, field)));
-			break;
-		case KeyValueString:
-			ser_->PutVarUint(static_cast<int>(ctag(TAG_STRING, tagName, field)));
-			break;
-		case KeyValueUndefined:
-		case KeyValueNull:
-			ser_->PutVarUint(static_cast<int>(ctag(TAG_NULL, tagName)));
-			break;
-		default:
-			std::abort();
-	}
-
+	v.Type().EvaluateOneOf(
+		[&](OneOf<KeyValueType::Int, KeyValueType::Int64>) { ser_->PutVarUint(static_cast<int>(ctag(TAG_VARINT, tagName, field))); },
+		[&](KeyValueType::Bool) { ser_->PutVarUint(static_cast<int>(ctag(TAG_BOOL, tagName, field))); },
+		[&](KeyValueType::Double) { ser_->PutVarUint(static_cast<int>(ctag(TAG_DOUBLE, tagName, field))); },
+		[&](KeyValueType::String) { ser_->PutVarUint(static_cast<int>(ctag(TAG_STRING, tagName, field))); },
+		[&](OneOf<KeyValueType::Undefined, KeyValueType::Null>) { ser_->PutVarUint(static_cast<int>(ctag(TAG_NULL, tagName))); },
+		[](OneOf<KeyValueType::Tuple, KeyValueType::Composite>) noexcept { std::abort(); });
 	return *this;
 }
 CJsonBuilder &CJsonBuilder::ArrayRef(int tagName, int field, int count) {
@@ -148,29 +133,17 @@ CJsonBuilder &CJsonBuilder::ArrayRef(int tagName, int field, int count) {
 }
 
 CJsonBuilder &CJsonBuilder::Put(int tagName, const Variant &kv) {
-	switch (kv.Type()) {
-		case KeyValueInt:
-			return Put(tagName, int(kv));
-		case KeyValueInt64:
-			return Put(tagName, int64_t(kv));
-		case KeyValueDouble:
-			return Put(tagName, double(kv));
-		case KeyValueString:
-			return Put(tagName, std::string_view(kv));
-		case KeyValueNull:
-			return Null(tagName);
-		case KeyValueBool:
-			return Put(tagName, bool(kv));
-		case KeyValueTuple: {
-			auto arrNode = Array(tagName);
-			for (auto &val : kv.getCompositeValues()) {
-				arrNode.Put(nullptr, val);
-			}
-			return *this;
-		}
-		default:
-			break;
-	}
+	kv.Type().EvaluateOneOf([&](KeyValueType::Int) { Put(tagName, int(kv)); }, [&](KeyValueType::Int64) { Put(tagName, int64_t(kv)); },
+							[&](KeyValueType::Double) { Put(tagName, double(kv)); },
+							[&](KeyValueType::String) { Put(tagName, std::string_view(kv)); }, [&](KeyValueType::Null) { Null(tagName); },
+							[&](KeyValueType::Bool) { Put(tagName, bool(kv)); },
+							[&](KeyValueType::Tuple) {
+								auto arrNode = Array(tagName);
+								for (auto &val : kv.getCompositeValues()) {
+									arrNode.Put(nullptr, val);
+								}
+							},
+							[](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
 	return *this;
 }
 

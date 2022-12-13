@@ -10,9 +10,10 @@ namespace cluster {
 ClusterReplThread::ClusterReplThread(int serverId, ReindexerImpl& thisNode, const NsNamesHashSetT* namespaces,
 									 std::shared_ptr<UpdatesQueue<UpdateRecord>> q, SharedSyncState<>& syncState,
 									 SynchronizationList& syncList, std::function<void()> requestElectionsRestartCb,
-									 ReplicationStatsCollector statsCollector)
+									 ReplicationStatsCollector statsCollector, const Logger& l)
 	: base_(serverId, thisNode, std::move(q),
-			ClusterThreadParam(namespaces, leadershipAwaitCh, syncState, syncList, std::move(requestElectionsRestartCb)), statsCollector),
+			ClusterThreadParam(namespaces, leadershipAwaitCh, syncState, syncList, std::move(requestElectionsRestartCb)), statsCollector,
+			l),
 	  sharedSyncState_(syncState) {
 	roleSwitchAsync_.set(base_.loop);
 	roleSwitchAsync_.set([this](net::ev::async& watcher) {

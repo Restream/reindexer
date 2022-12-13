@@ -32,44 +32,47 @@ struct AsyncReplicationConfigTest {
 		std::optional<NsSet> nsList;
 	};
 
-	AsyncReplicationConfigTest(std::string role, std::vector<Node> followers = std::vector<Node>(), std::string appName = std::string(),
-							   std::string mode = std::string())
-		: role_(std::move(role)),
-		  mode_(std::move(mode)),
-		  nodes_(std::move(followers)),
-		  forceSyncOnLogicError_(false),
-		  forceSyncOnWrongDataHash_(true),
-		  appName_(std::move(appName)),
-		  serverId_(0) {}
-	AsyncReplicationConfigTest(std::string role, std::vector<Node> followers, bool forceSyncOnLogicError, bool forceSyncOnWrongDataHash,
-							   int serverId = 0, std::string appName = std::string(), NsSet namespaces = NsSet(),
-							   std::string mode = std::string())
-		: role_(std::move(role)),
-		  mode_(std::move(mode)),
-		  nodes_(std::move(followers)),
-		  forceSyncOnLogicError_(forceSyncOnLogicError),
-		  forceSyncOnWrongDataHash_(forceSyncOnWrongDataHash),
-		  appName_(std::move(appName)),
-		  namespaces_(std::move(namespaces)),
-		  serverId_(serverId) {}
+	AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers = std::vector<Node>(), std::string _appName = std::string(),
+							   std::string _mode = std::string())
+		: role(std::move(_role)),
+		  mode(std::move(_mode)),
+		  nodes(std::move(_followers)),
+		  forceSyncOnLogicError(false),
+		  forceSyncOnWrongDataHash(true),
+		  appName(std::move(_appName)),
+		  serverId(0) {}
+	AsyncReplicationConfigTest(std::string _role, std::vector<Node> _followers, bool _forceSyncOnLogicError, bool _forceSyncOnWrongDataHash,
+							   int _serverId = 0, std::string _appName = std::string(), NsSet _namespaces = NsSet(),
+							   std::string _mode = std::string(), int _onlineUpdatesDelayMSec = 100)
+		: role(std::move(_role)),
+		  mode(std::move(_mode)),
+		  nodes(std::move(_followers)),
+		  forceSyncOnLogicError(_forceSyncOnLogicError),
+		  forceSyncOnWrongDataHash(_forceSyncOnWrongDataHash),
+		  appName(std::move(_appName)),
+		  namespaces(std::move(_namespaces)),
+		  serverId(_serverId),
+		  onlineUpdatesDelayMSec(_onlineUpdatesDelayMSec) {}
 
 	bool operator==(const AsyncReplicationConfigTest& config) const {
-		return role_ == config.role_ && mode_ == config.mode_ && nodes_ == config.nodes_ &&
-			   forceSyncOnLogicError_ == config.forceSyncOnLogicError_ && forceSyncOnWrongDataHash_ == config.forceSyncOnWrongDataHash_ &&
-			   appName_ == config.appName_ && namespaces_ == config.namespaces_ && serverId_ == config.serverId_ &&
-			   syncThreads_ == config.syncThreads_ && concurrentSyncsPerThread_ == config.concurrentSyncsPerThread_;
+		return role == config.role && mode == config.mode && nodes == config.nodes &&
+			   forceSyncOnLogicError == config.forceSyncOnLogicError && forceSyncOnWrongDataHash == config.forceSyncOnWrongDataHash &&
+			   appName == config.appName && namespaces == config.namespaces && serverId == config.serverId &&
+			   syncThreads == config.syncThreads && concurrentSyncsPerThread == config.concurrentSyncsPerThread &&
+			   onlineUpdatesDelayMSec == config.onlineUpdatesDelayMSec;
 	}
 
-	std::string role_;
-	std::string mode_;
-	std::vector<Node> nodes_;
-	bool forceSyncOnLogicError_;
-	bool forceSyncOnWrongDataHash_;
-	int syncThreads_ = 2;
-	int concurrentSyncsPerThread_ = 2;
-	std::string appName_;
-	NsSet namespaces_;
-	int serverId_;
+	std::string role;
+	std::string mode;
+	std::vector<Node> nodes;
+	bool forceSyncOnLogicError;
+	bool forceSyncOnWrongDataHash;
+	int syncThreads = 2;
+	int concurrentSyncsPerThread = 2;
+	std::string appName;
+	NsSet namespaces;
+	int serverId;
+	int onlineUpdatesDelayMSec = 100;
 };
 
 struct ReplicationStateApi {
@@ -159,6 +162,7 @@ public:
 		reindexer::Error TryResetReplicationRole(const std::string& ns);
 		// Set cluster leader
 		void SetClusterLeader(int leaderId);
+		void SetReplicationLogLevel(LogLevel, std::string_view type);
 		BaseApi::ItemType CreateClusterChangeLeaderItem(int leaderId);
 		// get server config from file
 		AsyncReplicationConfigTest GetServerConfig(ConfigType type);

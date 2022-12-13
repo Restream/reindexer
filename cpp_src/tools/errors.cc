@@ -20,8 +20,4 @@ const std::string& Error::what() const noexcept {
 	return ptr_ ? ptr_->what_ : noerr;
 }
 
-int Error::code() const noexcept { return ptr_ ? ptr_->code_ : errOK; }
-
-bool Error::operator==(const Error& other) const noexcept { return code() == other.code() && what() == other.what(); }
-
 }  // namespace reindexer

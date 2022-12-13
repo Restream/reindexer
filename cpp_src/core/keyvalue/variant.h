@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/indexopts.h"
-#include "core/type_consts.h"
+#include "core/key_value_type.h"
 #include "estl/h_vector.h"
 #include "tools/errors.h"
 
@@ -19,11 +19,11 @@ struct Point;
 
 class Variant {
 public:
-	Variant() : type_(KeyValueNull), value_uint64() {}
-	explicit Variant(int v) : type_(KeyValueInt), value_int(v) {}
-	explicit Variant(bool v) : type_(KeyValueBool), value_bool(v) {}
-	explicit Variant(int64_t v) : type_(KeyValueInt64), value_int64(v) {}
-	explicit Variant(double v) : type_(KeyValueDouble), value_double(v) {}
+	Variant() noexcept : type_(KeyValueType::Null{}), value_uint64() {}
+	explicit Variant(int v) noexcept : type_(KeyValueType::Int{}), value_int(v) {}
+	explicit Variant(bool v) noexcept : type_(KeyValueType::Bool{}), value_bool(v) {}
+	explicit Variant(int64_t v) noexcept : type_(KeyValueType::Int64{}), value_int64(v) {}
+	explicit Variant(double v) noexcept : type_(KeyValueType::Double{}), value_double(v) {}
 	explicit Variant(const char *v);
 	explicit Variant(p_string v, bool enableHold = true);
 	explicit Variant(const std::string &v);
@@ -71,14 +71,14 @@ public:
 		return *this;
 	}
 
-	explicit operator int() const;
-	explicit operator bool() const;
-	explicit operator int64_t() const;
-	explicit operator double() const;
+	explicit operator int() const noexcept;
+	explicit operator bool() const noexcept;
+	explicit operator int64_t() const noexcept;
+	explicit operator double() const noexcept;
 
-	explicit operator p_string() const;
-	explicit operator std::string_view() const;
-	explicit operator const PayloadValue &() const;
+	explicit operator p_string() const noexcept;
+	explicit operator std::string_view() const noexcept;
+	explicit operator const PayloadValue &() const noexcept;
 	explicit operator key_string() const;
 	explicit operator Point() const;
 
@@ -88,7 +88,7 @@ public:
 	template <typename T>
 	T As(const PayloadType &, const FieldsSet &) const;
 
-	bool operator==(const Variant &other) const { return Type() == other.Type() && Compare(other) == 0; }
+	bool operator==(const Variant &other) const { return Type().IsSame(other.Type()) && Compare(other) == 0; }
 	bool operator!=(const Variant &other) const { return !operator==(other); }
 	bool operator<(const Variant &other) const { return Compare(other) < 0; }
 	bool operator>(const Variant &other) const { return Compare(other) > 0; }
@@ -96,32 +96,31 @@ public:
 
 	int Compare(const Variant &other, const CollateOpts &collateOpts = CollateOpts()) const;
 	int RelaxCompare(const Variant &other, const CollateOpts &collateOpts = CollateOpts()) const;
-	size_t Hash() const;
+	size_t Hash() const noexcept;
 	void EnsureUTF8() const;
 	Variant &EnsureHold();
 
 	KeyValueType Type() const noexcept { return type_; }
-	static const char *TypeName(KeyValueType t);
 
 	Variant &convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr);
 	Variant convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr) const;
 	VariantArray getCompositeValues() const;
 
-	bool IsNullValue() const;
+	bool IsNullValue() const noexcept { return type_.Is<KeyValueType::Null>(); }
 
 	template <typename T>
 	void Dump(T &os) const;
 
 protected:
 	void convertToComposite(const PayloadType *, const FieldsSet *);
-	void free();
+	void free() noexcept;
 	void copy(const Variant &other);
 	template <typename T>
-	const T *cast() const {
+	const T *cast() const noexcept {
 		return reinterpret_cast<const T *>(&value_uint64);
 	}
 	template <typename T>
-	T *cast() {
+	T *cast() noexcept {
 		return reinterpret_cast<T *>(&value_uint64);
 	}
 
@@ -163,15 +162,15 @@ public:
 	using h_vector<Variant, 2>::h_vector;
 	using h_vector<Variant, 2>::operator==;
 	using h_vector<Variant, 2>::operator!=;
-	size_t Hash() const {
+	size_t Hash() const noexcept {
 		size_t ret = this->size();
 		for (size_t i = 0; i < this->size(); ++i) ret = (ret * 127) ^ this->at(i).Hash();
 		return ret;
 	}
-	bool IsArrayValue() const noexcept;
+	bool IsArrayValue() const noexcept { return isArrayValue || (!isObjectValue && size() > 1); }
 	bool IsObjectValue() const noexcept { return isObjectValue; }
-	bool IsNullValue() const;
-	KeyValueType ArrayType() const;
+	bool IsNullValue() const noexcept { return size() == 1 && front().IsNullValue(); }
+	KeyValueType ArrayType() const noexcept { return empty() ? KeyValueType::Null{} : front().Type(); }
 	template <typename T>
 	void Dump(T &os) const;
 	int RelaxCompare(const VariantArray &other, const CollateOpts & = CollateOpts{}) const;

@@ -133,6 +133,13 @@ uintptr_t init_reindexer() {
 	return reinterpret_cast<uintptr_t>(db);
 }
 
+uintptr_t init_reindexer_with_config(reindexer_config config) {
+	reindexer_init_locale();
+	Reindexer* db =
+		new Reindexer(ReindexerConfig().WithAllocatorCacheLimits(config.allocator_cache_limit, config.allocator_max_cache_part));
+	return reinterpret_cast<uintptr_t>(db);
+}
+
 void destroy_reindexer(uintptr_t rx) {
 	auto db = reinterpret_cast<Reindexer*>(rx);
 	delete db;

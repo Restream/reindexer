@@ -125,6 +125,8 @@ const std::vector<NamespaceDef> kSystemNsDefs = {
 		.AddIndex("total.cache_size", "-", "int64", IndexOpts().Dense())
 		.AddIndex("strings_waiting_to_be_deleted_size", "-", "int64", IndexOpts().Dense())
 		.AddIndex("storage_ok", "-", "bool", IndexOpts().Dense())
+		.AddIndex("storage_enabled", "-", "bool", IndexOpts().Dense())
+		.AddIndex("storage_status", "-", "string", IndexOpts().Dense())
 		.AddIndex("storage_path", "-", "string", IndexOpts().Dense())
 		.AddIndex("storage_loaded", "-", "bool", IndexOpts().Dense())
 		.AddIndex("optimization_completed", "-", "bool", IndexOpts().Dense())
