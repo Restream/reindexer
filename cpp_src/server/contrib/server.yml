@@ -998,7 +998,7 @@ paths:
       summary: "Query documents from namespace"
       operationId: "getQuery"
       description: |
-        This opertaion queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
+        This operation queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
         Two level paging is supported. At first, applied normal SQL `LIMIT` and `OFFSET`,
         then `limit` and `offset` from http request.
       parameters:
@@ -1058,7 +1058,7 @@ paths:
       summary: "Query documents from namespace"
       operationId: "postQuery"
       description: |
-        This opertaion queries documents from namespace by DSL query.
+        This operation queries documents from namespace by DSL query.
       parameters:
       - name: "database"
         in: path
@@ -1109,7 +1109,7 @@ paths:
       summary: "Update documents in namespace"
       operationId: "updateQuery"
       description: |
-        This opertaion updates documents in namespace by DSL query.
+        This operation updates documents in namespace by DSL query.
       parameters:
       - name: "database"
         in: path
@@ -1139,7 +1139,7 @@ paths:
       summary: "Delete documents from namespace"
       operationId: "deleteQuery"
       description: |
-        This opertaion removes documents from namespace by DSL query.
+        This operation removes documents from namespace by DSL query.
       parameters:
       - name: "database"
         in: path
@@ -1629,7 +1629,7 @@ paths:
       summary: "Query documents from namespace"
       operationId: "postSQLQuery"
       description: |
-        This opertaion queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
+        This operation queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
       parameters:
       - name: "database"
         in: path
