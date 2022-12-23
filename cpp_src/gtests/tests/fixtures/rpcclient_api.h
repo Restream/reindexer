@@ -77,7 +77,21 @@ protected:
 	};
 
 	void SetUp() {}
-	void TearDown() {}
+	void TearDown() {
+		for (auto& fs : fakeServers_) {
+			fs.second->Stop();
+		}
+		for (auto& s : realServers_) {
+			if (s.second.serverThread) {
+				s.second.server->Stop();
+				assert(s.second.serverThread->joinable());
+				s.second.serverThread->join();
+				s.second.serverThread.reset();
+			}
+		}
+		fakeServers_.clear();
+		realServers_.clear();
+	}
 
 	void StartDefaultRealServer();
 	TestServer& AddFakeServer(const std::string& addr = kDefaultRPCServerAddr, const RPCServerConfig& conf = RPCServerConfig());

@@ -1,3 +1,18 @@
+# Version 3.12.0 (23.12.2022)
+## Core
+- [fea] Added logging for slow queries and transactions (check `profiling.long_queries_logging` section in `#config`-namespace)
+
+## Reindexer server
+- [fix] Fixed connections balancing and threads creation in default (shared) mode
+- [fix] Fixed cleanup for balancing mode for reused connections
+
+## Face
+- [fea] Renewed the Onboarding UI
+- [fea] Added the data-test attribute
+- [fix] Fixed console errors appeared on hover for the Client cell in the Current Statistics
+- [fix] Fixed the column width resizing on the page reloading
+- [fix] Fixed disapiaring of the Item table part on the Namespace page
+
 # Version 3.11.0 (02.12.2022)
 ## Core
 - [fea] Added background TCMalloc's cache sizes managment (this feature was also supported for Go-builtin, Go-builtinserver and standalone modes). Check `allocator-cache-*` section in server's config

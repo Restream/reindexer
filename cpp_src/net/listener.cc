@@ -29,11 +29,6 @@ Listener<LT>::Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared)
 	async_.start();
 	std::lock_guard lck(shared_->mtx_);
 	shared_->listeners_.emplace_back(this);
-	if constexpr (LT == ListenerType::Mixed) {
-		if (shared_->listeners_.size() == 2) {
-			shared_->cv_.notify_one();
-		}
-	}
 }
 
 template <ListenerType LT>
@@ -65,12 +60,8 @@ bool Listener<LT>::Bind(std::string addr) {
 
 	if constexpr (LT == ListenerType::Mixed) {
 		if (shared_->listeners_.size() == 1) {
-			{
-				std::unique_lock lck(shared_->mtx_);
-				std::thread th(&Listener::clone, shared_);
-				th.detach();
-				shared_->cv_.wait(lck, [this] { return shared_->listeners_.size() > 1; });
-			}
+			std::thread th(&Listener::clone, std::make_unique<ListeningThreadData>(shared_));
+			th.detach();
 			// Current listener is the only one, which reads the first messages
 			io_.start(shared_->sock_.fd(), ev::READ);
 			reserve_stack();
@@ -78,7 +69,7 @@ bool Listener<LT>::Bind(std::string addr) {
 	} else {
 		if (shared_->listenersCount_ == 1) {
 			shared_->listenersCount_.fetch_add(1, std::memory_order_release);
-			std::thread th(&Listener::clone, shared_);
+			std::thread th(&Listener::clone, std::make_unique<ListeningThreadData>(shared_));
 			th.detach();
 		}
 	}
@@ -124,7 +115,8 @@ void Listener<LT>::io_accept(ev::io & /*watcher*/, int revents) {
 			const auto balancingType = conn->GetBalancingType();
 			switch (balancingType) {
 				case IServerConnection::BalancingType::None:
-					assertrx(false);  // FIXME: Remove this assert after debug
+					logPrintf(LogError, "Listener: BalancingType::None. Interpreting as 'shared'");
+					[[fallthrough]];
 				case IServerConnection::BalancingType::Shared:
 					shared_->connCount_.fetch_add(1, std::memory_order_release);
 					startup_shared_thread();
@@ -135,7 +127,7 @@ void Listener<LT>::io_accept(ev::io & /*watcher*/, int revents) {
 					return;
 				case IServerConnection::BalancingType::Dedicated:
 					conn->Detach();
-					run_thread(std::move(conn));
+					run_dedicated_thread(std::move(conn));
 					break;
 				case IServerConnection::BalancingType::NotSet: {
 					auto c = conn.get();
@@ -250,7 +242,6 @@ void Listener<LT>::rebalance_from_acceptor() {
 				minConnCount = connCount;
 			}
 		}
-
 		assertrx(minIt != shared_->listeners_.end());
 		auto conn = std::move(connections_.back());
 		conn->Detach();
@@ -273,9 +264,10 @@ void Listener<LT>::rebalance_conn(IServerConnection *c, IServerConnection::Balan
 	if (type == IServerConnection::BalancingType::Dedicated) {
 		lck.unlock();
 		fc->Detach();
-		run_thread(std::move(fc));
+		run_dedicated_thread(std::move(fc));
 	} else {
 		connections_.emplace_back(std::move(fc));
+		shared_->connCount_.fetch_add(1, std::memory_order_release);
 		rebalance_from_acceptor();
 		lck.unlock();
 		startup_shared_thread();
@@ -283,7 +275,7 @@ void Listener<LT>::rebalance_conn(IServerConnection *c, IServerConnection::Balan
 }
 
 template <ListenerType LT>
-void Listener<LT>::run_thread(std::unique_ptr<IServerConnection> &&conn) {
+void Listener<LT>::run_dedicated_thread(std::unique_ptr<IServerConnection> &&conn) {
 	std::thread th([this, conn = std::move(conn)]() mutable {
 		try {
 #if REINDEX_WITH_GPERFTOOLS
@@ -300,8 +292,8 @@ void Listener<LT>::run_thread(std::unique_ptr<IServerConnection> &&conn) {
 			typename Shared::Worker w(std::move(conn), async);
 			auto pc = w.conn.get();
 			std::unique_lock lck(shared_->mtx_);
-			logPrintf(LogTrace, "Listener (%s) dedicated thread started. %d total", shared_->addr_, shared_->dedicatedWorkers_.size());
 			shared_->dedicatedWorkers_.emplace_back(std::move(w));
+			logPrintf(LogTrace, "Listener (%s) dedicated thread started. %d total", shared_->addr_, shared_->dedicatedWorkers_.size());
 			lck.unlock();
 			pc->Attach(loop);
 			pc->HandlePendingData();
@@ -333,8 +325,9 @@ template <ListenerType LT>
 void Listener<LT>::startup_shared_thread() {
 	int count = shared_->listenersCount_.load(std::memory_order_relaxed);
 	while (count < shared_->maxListeners_ && count <= (shared_->connCount_.load(std::memory_order_acquire) + 1)) {
-		if (shared_->listenersCount_.compare_exchange_strong(count, count + 1, std::memory_order_acq_rel)) {
-			std::thread th(&Listener::clone, shared_);
+		if (shared_->listenersCount_.compare_exchange_weak(count, count + 1, std::memory_order_acq_rel)) {
+			logPrintf(LogTrace, "Listener (%s). Creating new shared thread (%d total)", shared_->addr_, count);
+			std::thread th(&Listener::clone, std::make_unique<ListeningThreadData>(shared_));
 			th.detach();
 			break;
 		}
@@ -389,28 +382,32 @@ void Listener<LT>::Stop() {
 }
 
 template <ListenerType LT>
-void Listener<LT>::clone(std::shared_ptr<Shared> shared) {
-	std::unique_lock lck(shared->mtx_, std::defer_lock);
-	{
-		ev::dynamic_loop loop;
-		Listener listener(loop, shared);
+void Listener<LT>::clone(std::unique_ptr<ListeningThreadData> d) noexcept {
+	assertrx(d);
+	auto &shared = d->GetShared();
+	const auto &listener = d->GetListener();
+
+	try {
 #if REINDEX_WITH_GPERFTOOLS
 		if (alloc_ext::TCMallocIsAvailable()) {
 			reindexer_server::pprof::ProfilerRegisterThread();
 		}
 #endif
-		if constexpr (LT == ListenerType::Shared) {
-			listener.io_.start(listener.shared_->sock_.fd(), ev::READ);
-		}
-		while (!listener.shared_->terminating_) {
-			loop.run();
-		}
-		lck.lock();
-		auto it = std::find(shared->listeners_.begin(), shared->listeners_.end(), &listener);
-		assertrx(it != shared->listeners_.end());
-		shared->listeners_.erase(it);
+		d->Loop();
+	} catch (Error &e) {
+		logPrintf(LogError, "Unhandled excpetion in listener thread (%s): %s", shared.addr_, e.what());
+	} catch (std::exception &e) {
+		logPrintf(LogError, "Unhandled excpetion in listener thread (%s): %s", shared.addr_, e.what());
+	} catch (...) {
+		logPrintf(LogError, "Unhandled excpetion in listener thread (%s): <unknown>", shared.addr_);
 	}
-	shared->listenersCount_.fetch_sub(1, std::memory_order_release);
+
+	std::lock_guard lck(shared.mtx_);
+	auto it = std::find(shared.listeners_.begin(), shared.listeners_.end(), &listener);
+	assertrx(it != shared.listeners_.end());
+	shared.listeners_.erase(it);
+	d.reset();
+	shared.listenersCount_.fetch_sub(1, std::memory_order_release);
 }
 
 template <ListenerType LT>
@@ -490,7 +487,7 @@ void ForkedListener::io_accept(ev::io & /*watcher*/, int revents) {
 	}
 	++runningThreadsCount_;
 
-	std::thread th([this, client] {
+	std::thread th([this, client]() noexcept {
 		try {
 #if REINDEX_WITH_GPERFTOOLS
 			if (alloc_ext::TCMallocIsAvailable()) {

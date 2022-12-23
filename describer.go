@@ -339,6 +339,32 @@ type DBConfigItem struct {
 	Replication *DBReplicationConfig  `json:"replication,omitempty"`
 }
 
+// Section of long_queries_logging related to logging of SELECT, UPDATE and DELETE queries
+type LongQueryLoggingItem struct {
+	// Threshold value for logging SELECT, UPDATE or DELETE queries, if -1 logging is disabled
+	ThresholdUS int `json:"threshold_us"`
+	// Output the query in a normalized form
+	Normalized bool `json:"normalized"`
+}
+
+// Section of long_queries_logging related to logging of transactions
+type LongTxLoggingItem struct {
+	// Threshold value for total transaction commit time, if -1 logging based on commit time is disabled
+	ThresholdUS int `json:"threshold_us"`
+	// Threshold value for the average step duration time in a transaction, if -1 logging based on step duration is disabled
+	AverageTxStepThresholdUs int `json:"avg_step_threshold_us"`
+}
+
+// Section of ProfilingConfig related to logging of long queries
+type LongQueryLoggingConfig struct {
+	// Relates to logging of long select queries
+	SelectItem LongQueryLoggingItem `json:"select"`
+	// Relates to logging of long update and delete queries
+	UpdDelItem LongQueryLoggingItem `json:"update_delete"`
+	// Relates to logging of transactions
+	TxItem LongTxLoggingItem `json:"transaction"`
+}
+
 // DBProfilingConfig is part of reindexer configuration contains profiling options
 type DBProfilingConfig struct {
 	// Minimum query execution time to be recoreded in #queriesperfstats namespace
@@ -351,6 +377,9 @@ type DBProfilingConfig struct {
 	QueriesPerfStats bool `json:"queriesperfstats"`
 	// Enables recording of activity statistics into #activitystats namespace
 	ActivityStats bool `json:"activitystats"`
+
+	// Configured console logging of long queries
+	LongQueryLogging *LongQueryLoggingConfig `json:"long_queries_logging,omitempty"`
 }
 
 // DBNamespacesConfig is part of reindexer configuration contains namespaces options

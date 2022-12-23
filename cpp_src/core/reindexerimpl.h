@@ -94,7 +94,7 @@ public:
 	Error GetProtobufSchema(WrSerializer &ser, std::vector<std::string> &namespaces);
 	Error Status();
 
-	bool NeedTraceActivity() { return configProvider_.GetProfilingConfig().activityStats; }
+	bool NeedTraceActivity() { return configProvider_.ActivityStatsEnabled(); }
 
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index,
 					const InternalRdxContext &ctx = InternalRdxContext());

@@ -72,6 +72,8 @@ void ServerConnection::onClose() {
 		dispatcher_.onClose_(ctx, errOK);
 	}
 	clientData_.reset();
+	balancingType_ = BalancingType::NotSet;
+	rebalance_ = nullptr;
 	std::unique_lock<std::mutex> lck(updates_mtx_);
 	updates_.clear();
 	updatesSize_ = 0;

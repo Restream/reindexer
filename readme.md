@@ -35,7 +35,9 @@ Storages are compatible between those versions, hovewer, replication configs are
     - [Official docker image](#official-docker-image)
   - [Installation for embedded mode](#installation-for-embedded-mode)
     - [Prerequirements](#prerequirements)
-    - [Get Reindexer](#get-reindexer)
+    - [Get Reindexer using go.mod](#get-reindexer-using-gomod)
+    - [Get Reindexer using go.mod and replace](#get-reindexer-using-gomod-and-replace)
+    - [Get Reindexer (vendoring)](#get-reindexer-vendoring)
 - [Advanced Usage](#advanced-usage)
   - [Index Types and Their Capabilities](#index-types-and-their-capabilities)
   - [Nested Structs](#nested-structs)
@@ -64,6 +66,7 @@ Storages are compatible between those versions, hovewer, replication configs are
     - [Geometry](#geometry)
 - [Logging, debug and profiling](#logging-debug-and-profiling)
   - [Turn on logger](#turn-on-logger)
+  - [Slow actions logging](#slow-actions-logging)
   - [Debug queries](#debug-queries)
   - [Custom allocators support](#custom-allocators-support)
   - [Profiling](#profiling)
@@ -308,7 +311,7 @@ To build Reindexer, g++ 8+, clang 7+ or [mingw64](https://sourceforge.net/projec
 
 In those modes reindexer's Go-binding depends on reindexer's static libraries (core, server and resource).
 
-#### Get Reindexer (module)
+#### Get Reindexer using go.mod
 
 Go modules do not allow to build C++ libraries in modules' directories. Go-binding will use [pkg-config](https://pkg.go.dev/github.com/rjeczalik/pkgconfig/cmd/pkg-config) to detect libraries' directories.
 
@@ -320,21 +323,22 @@ Then get the module:
 go get -a github.com/restream/reindexer@master
 ```
 
-#### Get Reindexer (replace)
+#### Get Reindexer using go.mod and replace
 
-If you need modified reindexer's sources, you can use `replace` like that:
+If you need modified reindexer's sources, you can use `replace` like that.
 
+1. Download and build reindexer:
 ```bash
-# Get reindexer's sources
-go get -a github.com/restream/reindexer@master
+# Clone reindexer's repo (sources could be copied any other way, for example via 'go get -a github.com/restream/reindexer' on older Go versions)
+git clone https://github.com/restream/reindexer.git $GOPATH/src/reindexer
 # Generate builtin binding
 go generate $GOPATH/src/reindexer/bindings/builtin
 # Optional (build builtin server binding)
 go generate $GOPATH/src/reindexer/bindings/builtinserver
 ```
 
-Add reindexer's module into your application and the replace it with local package:
-```
+2. Add reindexer's module into your application and the replace it with local package:
+```bash
 # Go to your app's directory
 cd /your/app/path
 go get -a github.com/restream/reindexer@master
@@ -348,6 +352,10 @@ In this case, Go-binding will generate explicit libraries' and paths' list and w
 Go does not support proper vendoring for CGO code (https://github.com/golang/go/issues/26366), however, it's possible to use [vend](https://github.com/nomad-software/vend) to copy reindexer's sources into vendor-directory.
 
 With `vend` you'll be able to call `go generate -mod=vendor` for `builtin` and `builtinserver`, placed in your vendor-directory.
+
+It's also possible to copy simply copy reindexer's sources into yout project, using `git clone`.
+
+In this cases all the dependecies from reindexer's [go.mod](go.mod) must be installed manually with proper versions.
 
 ## Advanced Usage
 
@@ -1192,6 +1200,22 @@ func (Logger) Printf(level int, format string, msg ...interface{}) {
 ...
 	db.SetLogger (Logger{})
 ```
+
+### Slow actions logging
+
+Reindexer supports logging of slow actions. It can be configured via `profiling.long_queries_logging` section of the `#config` system namespace. The logging of next actions can be configured:
+
+- SELECT queries:
+  - `threshold_us (integer)`: The threshold value (in microseconds) for execution of SELECT query. If exceeded, a core-log entry will be made, if `threshold_us` is -1 logging is disabled.
+  - `normalized (boolean)`: Output the query in a normalized form.
+
+- UPDATE and  DELETE queries:
+  - `threshold_us (integer)`: The threshold value (in microseconds) for execution of UPDATE or DELETE query. If exceeded, a core-log entry will be made, if `threshold_us` is -1 logging is disabled.
+  - `normalized (boolean)`: Output the query in a normalized form.
+
+- Transactions:
+  - `threshold_us (integer)`: Threshold value (in microseconds) for total transaction commit time, if `threshold_us` is -1 logging by total transaction commit time is disabled.
+  - `avg_step_threshold_us (integer)`: Threshold value (in microseconds) for the average step duration time in the transaction. If `avg_step_threshold_us` is -1 logging by average transaction's step duraction is disabled.
 
 ### Debug queries
 

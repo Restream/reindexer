@@ -619,6 +619,10 @@ Error ReindexerImpl::Update(const Query& q, QueryResults& result, const Internal
 		WrSerializer ser;
 		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? q.GetSQL(ser).Slice() : ""sv, activities_, result);
 		auto ns = getNamespace(q._namespace, rdxCtx);
+
+		QueryStatCalculator statCalculator(long_actions::Logger<Query>{
+			q, q._namespace.size() && q._namespace[0] == '#' ? LongQueriesLoggingParams{} : configProvider_.GetUpdDelLoggingParams()});
+
 		ns->Update(q, result, rdxCtx);
 		if (ns->IsSystem(rdxCtx)) {
 			const std::string kNsName = ns->GetName(rdxCtx);
@@ -729,6 +733,9 @@ Error ReindexerImpl::Delete(std::string_view nsName, Item& item, QueryResults& q
 Error ReindexerImpl::Delete(const Query& q, QueryResults& result, const InternalRdxContext& ctx) {
 	const auto makeCtxStr = [&q](WrSerializer& ser) -> WrSerializer& { return q.GetSQL(ser); };
 	const std::string_view nsName = q._namespace;
+	QueryStatCalculator statCalculator(long_actions::Logger<Query>{
+		q, nsName.size() && nsName[0] == '#' ? LongQueriesLoggingParams{} : configProvider_.GetUpdDelLoggingParams()});
+
 	APPLY_NS_FUNCTION2(false, Delete, q, result);
 }
 
@@ -791,14 +798,21 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 			if (!ctx.NeedTraceActivity()) q.GetSQL(nonNormalizedSQL, false);
 		}
 		const QueriesStatTracer::QuerySQL sql{normalizedSQL.Slice(), nonNormalizedSQL.Slice()};
+
+		auto hitter = profilingCfg.queriesPerfStats
+		? [&sql, &tracker](bool lockHit, std::chrono::microseconds time) {
+			if (lockHit)
+				tracker.LockHit(sql, time);
+			else
+				tracker.Hit(sql, time);
+		}
+		: std::function<void(bool, std::chrono::microseconds)>{};
+
 		QueryStatCalculator statCalculator(
-			[&sql, &tracker](bool lockHit, std::chrono::microseconds time) {
-				if (lockHit)
-					tracker.LockHit(sql, time);
-				else
-					tracker.Hit(sql, time);
-			},
-			std::chrono::microseconds(profilingCfg.queriedThresholdUS), profilingCfg.queriesPerfStats);
+			std::move(hitter), std::chrono::microseconds(profilingCfg.queriedThresholdUS),
+			profilingCfg.queriesPerfStats || profilingCfg.longSelectLoggingParams.thresholdUs >= 0,
+			long_actions::Logger<Query>{
+				q, q._namespace.size() && q._namespace[0] == '#' ? LongQueriesLoggingParams{} : profilingCfg.longSelectLoggingParams});
 
 		if (q._namespace.size() && q._namespace[0] == '#') {
 			std::string filterNsName;
@@ -1141,10 +1155,13 @@ std::vector<std::pair<std::string, Namespace::Ptr>> ReindexerImpl::getNamespaces
 }
 
 std::vector<std::string> ReindexerImpl::getNamespacesNames(const RdxContext& ctx) {
-	SLock lock(mtx_, &ctx);
 	std::vector<std::string> ret;
+	SLock lock(mtx_, &ctx);
 	ret.reserve(namespaces_.size());
-	for (auto& ns : namespaces_) ret.push_back(ns.first);
+	for (auto& ns : namespaces_) {
+		ret.emplace_back();
+		reindexer::deepCopy(ret.back(), ns.first);	// Forced copy to avoid races with COW strings on centos7
+	}
 	return ret;
 }
 

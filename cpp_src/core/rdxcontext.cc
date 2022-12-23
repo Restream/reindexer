@@ -3,7 +3,7 @@
 
 namespace reindexer {
 
-RdxContext::RdxContext(RdxContext&& other)
+RdxContext::RdxContext(RdxContext&& other) noexcept
 	: fromReplication_(other.fromReplication_),
 	  LSNs_(other.LSNs_),
 	  holdStatus_(other.holdStatus_),

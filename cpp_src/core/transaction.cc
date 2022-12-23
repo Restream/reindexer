@@ -12,7 +12,7 @@ Transaction::~Transaction() = default;
 Transaction::Transaction(Transaction &&) noexcept = default;
 Transaction &Transaction::operator=(Transaction &&) noexcept = default;
 
-const std::string &Transaction::GetName() {
+const std::string &Transaction::GetName() const {
 	static std::string empty;
 	if (impl_)
 		return impl_->nsName_;

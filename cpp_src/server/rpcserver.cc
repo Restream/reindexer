@@ -185,6 +185,35 @@ void RPCServer::OnResponse(cproto::Context &ctx) {
 	}
 }
 
+Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults &res, cproto::Context &ctx) {
+	try {
+		reindexer::Query q;
+		q.FromSQL(sqlQuery);
+		switch (q.Type()) {
+			case QuerySelect: {
+				auto db = getDB(ctx, kRoleDataRead);
+				return db.Select(q, res);
+			}
+			case QueryDelete: {
+				auto db = getDB(ctx, kRoleDataWrite);
+				return db.Delete(q, res);
+			}
+			case QueryUpdate: {
+				auto db = getDB(ctx, kRoleDataWrite);
+				return db.Update(q, res);
+			}
+			case QueryTruncate: {
+				auto db = getDB(ctx, kRoleDBAdmin);
+				return db.TruncateNamespace(q._namespace);
+			}
+			default:
+				return Error(errParams, "unknown query type %d", q.Type());
+		}
+	} catch (Error &e) {
+		return e;
+	}
+}
+
 void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret) {
 	auto clientData = getClientDataUnsafe(ctx);
 	WrSerializer ser;
@@ -806,7 +835,7 @@ Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, i
 		}
 		throw;
 	}
-	auto ret = getDB(ctx, kRoleDataRead).Select(querySql, *qres);
+	auto ret = execSqlQueryByType(querySql, *qres, ctx);
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
 		return ret;

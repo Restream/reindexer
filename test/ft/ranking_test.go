@@ -56,17 +56,25 @@ func doRankingTest(t *testing.T, indexType string) {
 
 					if *qualityCheck {
 						qualityRound2f := math.Round(quality*100) / 100
-						if indexType == "fuzzytext" {
-							assert.GreaterOrEqualf(t, qualityRound2f, expectedQualities[i].FuzzRankingQuality, "Fuzz ranking quality has dropped")
-							if qualityRound2f > expectedQualities[i].FuzzRankingQuality {
-								newQualities[i].FuzzRankingQuality = qualityRound2f
+
+						k, is_found := getCasePositionInReference(testCase.Description, expectedQualities)
+						if is_found {
+							if indexType == "fuzzytext" {
+								assert.GreaterOrEqualf(t, qualityRound2f, expectedQualities[k].FuzzRankingQuality, "Fuzz ranking quality has dropped")
+								if qualityRound2f > expectedQualities[k].FuzzRankingQuality {
+									newQualities[k].FuzzRankingQuality = qualityRound2f
+								}
+							} else {
+								assert.GreaterOrEqualf(t, qualityRound2f, expectedQualities[k].FastRankingQuality, "Fast ranking quality has dropped")
+								if qualityRound2f > expectedQualities[k].FastRankingQuality {
+									newQualities[k].FastRankingQuality = qualityRound2f
+								}
 							}
 						} else {
-							assert.GreaterOrEqualf(t, qualityRound2f, expectedQualities[i].FastRankingQuality, "Fast ranking quality has dropped")
-							if qualityRound2f > expectedQualities[i].FastRankingQuality {
-								newQualities[i].FastRankingQuality = qualityRound2f
-							}
+							t.Fail()
+							t.Logf("Testcase <%s> not found in reference file", testCase.Description)
 						}
+						assert.Equal(t, len(testCases), len(expectedQualities), "Test cases number do not match reference file")
 					}
 				})
 			}
@@ -78,6 +86,15 @@ func doRankingTest(t *testing.T, indexType string) {
 	if *qualityCheck && *saveTestArtifacts {
 		SaveRankingQuality(newQualities)
 	}
+}
+
+func getCasePositionInReference(description string, slice []RankingQuality) (int, bool) {
+	for k, value := range slice {
+		if value.Description == description {
+			return k, true
+		}
+	}
+	return 0, false
 }
 
 func dbItemsToSliceOfDocuments(dbItems []interface{}) []string {

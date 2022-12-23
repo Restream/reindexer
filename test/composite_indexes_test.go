@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type TestCompositeSubstituitionStruct struct {
+type TestCompositeSubstitutionStruct struct {
 	ID      int `reindex:"id,,pk"`
 	First1  int `reindex:"first1,-" json:"first1"`
 	First2  int `reindex:"first2,-" json:"first2"`
@@ -22,17 +22,35 @@ type TestCompositeSubstituitionStruct struct {
 	_ struct{} `reindex:"first1+third,,composite"`
 }
 
+type TestItemCompositeNoSubstitution struct {
+	ID     int      `reindex:"id,hash,pk"`
+	First  int      `reindex:"first,-"`
+	Second int      `json:"second,-"`
+	_      struct{} `reindex:"id+second,,composite"`
+}
+
+type TestItemPkCompositeNoSubstitution struct {
+	ID     int      `reindex:"id,-"`
+	First  int      `reindex:"first,-"`
+	Second int      `json:"second,-"`
+	_      struct{} `reindex:"first+second,,composite,pk"`
+}
+
 const testCompositeIndexesSubstitutionNs = "test_composite_indexes_substitution"
+const testCompositeIndexesNoSubstitutionNs = "test_composite_indexes_no_substitution"
+const testPkCompositeIndexesNoSubstitutionNs = "test_pk_composite_indexes_no_substitution"
 
 func init() {
-	tnamespaces[testCompositeIndexesSubstitutionNs] = TestCompositeSubstituitionStruct{}
+	tnamespaces[testCompositeIndexesSubstitutionNs] = TestCompositeSubstitutionStruct{}
+	tnamespaces[testCompositeIndexesNoSubstitutionNs] = TestItemCompositeNoSubstitution{}
+	tnamespaces[testPkCompositeIndexesNoSubstitutionNs] = TestItemPkCompositeNoSubstitution{}
 }
 
 func TestCompositeIndexesSubstitution(t *testing.T) {
 	t.Parallel()
 
 	const ns = testCompositeIndexesSubstitutionNs
-	item := TestCompositeSubstituitionStruct{
+	item := TestCompositeSubstitutionStruct{
 		ID: rand.Intn(100), First1: rand.Intn(1000), First2: rand.Intn(1000), Second1: rand.Intn(1000), Second2: rand.Intn(1000), Third: rand.Intn(1000),
 	}
 
@@ -229,7 +247,7 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		}, "")
 	})
 
-	t.Run("multiple indexes substitution with id in the midle", func(t *testing.T) {
+	t.Run("multiple indexes substitution with id in the middle", func(t *testing.T) {
 		it := DB.Query(ns).Where("first2", reindexer.EQ, item.First2).Where("first1", reindexer.EQ, item.First1).
 			Where("id", reindexer.EQ, item.ID).
 			Where("second1", reindexer.EQ, item.Second1).Where("second2", reindexer.EQ, item.Second2).Explain().Exec(t)
@@ -261,7 +279,7 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 	})
 
 	t.Run("no substitution with OR", func(t *testing.T) {
-		// Expecting no index substituition with OR condition
+		// Expecting no index substitution with OR condition
 		it := DB.Query(ns).Where("first2", reindexer.EQ, item.First2).Or().Where("first1", reindexer.EQ, item.First1).Explain().Exec(t)
 		defer it.Close()
 		assert.Equal(t, it.Count(), 1)
@@ -284,7 +302,7 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 	})
 
 	t.Run("no substitution with OR and mixed indexes in brackets", func(t *testing.T) {
-		// Expecting no index substituition with OR condition, when index parts are distributed between brackets
+		// Expecting no index substitution with OR condition, when index parts are distributed between brackets
 		it := DB.Query(ns).
 			OpenBracket().
 			Where("first2", reindexer.EQ, item.First2).Where("second2", reindexer.EQ, item.Second2).
@@ -398,6 +416,204 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 						Matched: 0,
 					},
 				},
+			},
+		}, "")
+	})
+}
+
+func TestCompositeIndexNoSubstitutionWithoutSomeIndexes(t *testing.T) {
+	t.Parallel()
+
+	const ns = testCompositeIndexesNoSubstitutionNs
+	item := TestItemCompositeNoSubstitution{
+		ID: rand.Intn(100), First: rand.Intn(1000), Second: rand.Intn(1000),
+	}
+
+	err := DB.Upsert(ns, item)
+	require.NoError(t, err)
+
+	t.Run("no substitution idx and not idxed composited field", func(t *testing.T) {
+		it := DB.Query(ns).Where("first", reindexer.EQ, item.First).Where("second", reindexer.EQ, item.Second).Explain().Exec(t)
+		defer it.Close()
+		assert.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		assert.NoError(t, err)
+		assert.NotNil(t, explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:   "-scan",
+				Method:  "scan",
+				Keys:    0,
+				Matched: 1,
+			},
+			{
+				Field:       "first",
+				Method:      "scan",
+				Keys:        0,
+				Matched:     1,
+				Comparators: 1,
+			},
+			{
+				Field:       "second",
+				Method:      "scan",
+				Keys:        0,
+				Matched:     1,
+				Comparators: 1,
+			},
+		}, "")
+	})
+
+	t.Run("no substitution composited idx and not idxed composited field", func(t *testing.T) {
+		it := DB.Query(ns).Where("id", reindexer.EQ, item.ID).Where("second", reindexer.EQ, item.Second).Explain().Exec(t)
+		defer it.Close()
+		assert.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		assert.NoError(t, err)
+		assert.NotNil(t, explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:       "id",
+				Method:      "index",
+				Keys:        1,
+				Matched:     1,
+				Comparators: 0,
+			},
+			{
+				Field:       "second",
+				Method:      "scan",
+				Keys:        0,
+				Matched:     1,
+				Comparators: 1,
+			},
+		}, "")
+	})
+
+	t.Run("no substitution composited idx and not composited idx", func(t *testing.T) {
+		it := DB.Query(ns).Where("id", reindexer.EQ, item.ID).Where("first", reindexer.EQ, item.First).Explain().Exec(t)
+		defer it.Close()
+		assert.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		assert.NoError(t, err)
+		assert.NotNil(t, explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:       "id",
+				Method:      "index",
+				Keys:        1,
+				Matched:     1,
+				Comparators: 0,
+			},
+			{
+				Field:       "first",
+				Method:      "scan",
+				Keys:        0,
+				Matched:     1,
+				Comparators: 1,
+			},
+		}, "")
+	})
+}
+
+func TestPkCompositeIndexNoSubstitutionWithoutSomeIndexes(t *testing.T) {
+	t.Parallel()
+
+	const ns = testPkCompositeIndexesNoSubstitutionNs
+	item := TestItemPkCompositeNoSubstitution{
+		ID: rand.Intn(100), First: rand.Intn(1000), Second: rand.Intn(1000),
+	}
+
+	err := DB.Upsert(ns, item)
+	require.NoError(t, err)
+
+	t.Run("no substitution composited idx and not idxed composited field", func(t *testing.T) {
+		it := DB.Query(ns).Where("first", reindexer.EQ, item.First).Where("second", reindexer.EQ, item.Second).Explain().Exec(t)
+		defer it.Close()
+		assert.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		assert.NoError(t, err)
+		assert.NotNil(t, explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:   "-scan",
+				Method:  "scan",
+				Keys:    0,
+				Matched: 1,
+			},
+			{
+				Field:       "first",
+				Method:      "scan",
+				Keys:        0,
+				Matched:     1,
+				Comparators: 1,
+			},
+			{
+				Field:       "second",
+				Method:      "scan",
+				Keys:        0,
+				Matched:     1,
+				Comparators: 1,
+			},
+		}, "")
+	})
+
+	t.Run("no substitution idx and not idxed composited field", func(t *testing.T) {
+		it := DB.Query(ns).Where("id", reindexer.EQ, item.ID).Where("second", reindexer.EQ, item.Second).Explain().Exec(t)
+		defer it.Close()
+		assert.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		assert.NoError(t, err)
+		assert.NotNil(t, explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:   "-scan",
+				Method:  "scan",
+				Keys:    0,
+				Matched: 1,
+			},
+			{
+				Field:       "id",
+				Method:      "scan",
+				Keys:        0,
+				Matched:     1,
+				Comparators: 1,
+			},
+			{
+				Field:       "second",
+				Method:      "scan",
+				Keys:        0,
+				Matched:     1,
+				Comparators: 1,
+			},
+		}, "")
+	})
+
+	t.Run("no substitution idx and composited idx", func(t *testing.T) {
+		it := DB.Query(ns).Where("id", reindexer.EQ, item.ID).Where("first", reindexer.EQ, item.First).Explain().Exec(t)
+		defer it.Close()
+		assert.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		assert.NoError(t, err)
+		assert.NotNil(t, explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:   "-scan",
+				Method:  "scan",
+				Keys:    0,
+				Matched: 1,
+			},
+			{
+				Field:       "id",
+				Method:      "scan",
+				Keys:        0,
+				Matched:     1,
+				Comparators: 1,
+			},
+			{
+				Field:       "first",
+				Method:      "scan",
+				Keys:        0,
+				Matched:     1,
+				Comparators: 1,
 			},
 		}, "")
 	})

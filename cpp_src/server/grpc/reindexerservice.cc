@@ -630,15 +630,10 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 
 ::grpc::Status ReindexerService::SelectSql(::grpc::ServerContext*, const SelectSqlRequest* request,
 										   ::grpc::ServerWriter<QueryResultsResponse>* writer) {
-	reindexer::Reindexer* rx = nullptr;
-	Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
+	reindexer::QueryResults qr;
+	Error status = execSqlQueryByType(qr, *request);
 	if (status.ok()) {
-		reindexer::QueryResults qr;
-		assert(rx);
-		status = rx->Select(request->sql(), qr);
-		if (status.ok()) {
-			return buildQueryResults(qr, writer, request->flags());
-		}
+		return buildQueryResults(qr, writer, request->flags());
 	}
 	QueryResultsResponse response;
 	ErrorResponse* errResponse = response.errorresponse().New();
@@ -925,6 +920,55 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
 	response->set_what(status.what());
 	return ::grpc::Status::OK;
+}
+
+Error ReindexerService::execSqlQueryByType(QueryResults& res, const SelectSqlRequest& request) {
+	try {
+		reindexer::Query q;
+		reindexer_server::UserRole requiredRole;
+		q.FromSQL(request.sql());
+		switch (q.Type()) {
+			case QuerySelect: {
+				requiredRole = reindexer_server::kRoleDataRead;
+				break;
+			}
+			case QueryDelete:
+			case QueryUpdate: {
+				requiredRole = reindexer_server::kRoleDataWrite;
+				break;
+			}
+			case QueryTruncate: {
+				requiredRole = reindexer_server::kRoleDBAdmin;
+				break;
+			}
+			default:
+				return Error(errParams, "unknown query type %d", q.Type());
+		}
+		reindexer::Reindexer* rx = nullptr;
+		auto err = getDB(request.dbname(), requiredRole, &rx);
+		if (!err.ok()) {
+			return err;
+		}
+
+		switch (q.Type()) {
+			case QuerySelect: {
+				return rx->Select(q, res);
+			}
+			case QueryDelete: {
+				return rx->Delete(q, res);
+			}
+			case QueryUpdate: {
+				return rx->Update(q, res);
+			}
+			case QueryTruncate: {
+				return rx->TruncateNamespace(q._namespace);
+			}
+			default:
+				return Error(errParams, "unknown query type %d", q.Type());
+		}
+	} catch (Error& e) {
+		return e;
+	}
 }
 
 }  // namespace grpc

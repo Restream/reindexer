@@ -45,7 +45,7 @@ static_assert(QueryResults::kSizeofContext >= sizeof(QueryResults::Context),
 
 QueryResults::QueryResults(std::initializer_list<ItemRef> l) : items_(l) {}
 QueryResults::QueryResults(int /*flags*/) {}
-QueryResults::QueryResults(QueryResults &&obj)
+QueryResults::QueryResults(QueryResults &&obj) noexcept
 	: joined_(std::move(obj.joined_)),
 	  aggregationResults(std::move(obj.aggregationResults)),
 	  totalCount(obj.totalCount),

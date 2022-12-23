@@ -163,8 +163,8 @@ message ModifyItemRequest {
 // as a binary serialized buffer.
 message Query {
 	// Query can be encoded as following:
-	// 1. JSON
-	// 2. MSGPACK
+	// 1. JSON # Using DSL-queyr format, described here: https://github.com/Restream/reindexer/blob/v3.11.0/cpp_src/server/contrib/server.yml#L2310
+	// 2. MSGPACK # Not supported yet
 	EncodingType encdoingType = 1;
 	bytes data = 2;
 }

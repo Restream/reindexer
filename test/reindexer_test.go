@@ -64,8 +64,27 @@ func TestMain(m *testing.M) {
 	}
 
 	if err = DB.Upsert(reindexer.ConfigNamespaceName, reindexer.DBConfigItem{
-		Type:      "profiling",
-		Profiling: &reindexer.DBProfilingConfig{QueriesThresholdUS: 10, MemStats: true, PerfStats: true, QueriesPerfStats: true, ActivityStats: true},
+		Type: "profiling",
+		Profiling: &reindexer.DBProfilingConfig{
+			QueriesThresholdUS: 10,
+			MemStats:           true,
+			PerfStats:          true,
+			QueriesPerfStats:   true,
+			ActivityStats:      true,
+			LongQueryLogging: &reindexer.LongQueryLoggingConfig{
+				SelectItem: reindexer.LongQueryLoggingItem{
+					ThresholdUS: -1,
+					Normalized:  false,
+				},
+				UpdDelItem: reindexer.LongQueryLoggingItem{
+					ThresholdUS: -1,
+					Normalized:  false,
+				},
+				TxItem: reindexer.LongTxLoggingItem{
+					ThresholdUS:              1000,
+					AverageTxStepThresholdUs: 50,
+				},
+			}},
 	}); err != nil {
 		panic(err)
 	}

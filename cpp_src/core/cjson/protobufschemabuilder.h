@@ -16,7 +16,7 @@ public:
 	ProtobufSchemaBuilder();
 	ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsTypes* fieldsTypes, ObjType type, std::string_view name = std::string_view(),
 						  PayloadType* pt = nullptr, TagsMatcher* tm = nullptr);
-	ProtobufSchemaBuilder(ProtobufSchemaBuilder&&);
+	ProtobufSchemaBuilder(ProtobufSchemaBuilder&&) noexcept;
 	ProtobufSchemaBuilder(const ProtobufSchemaBuilder&) = delete;
 	ProtobufSchemaBuilder& operator=(ProtobufSchemaBuilder&&) = delete;
 	ProtobufSchemaBuilder& operator=(const ProtobufSchemaBuilder&) = delete;

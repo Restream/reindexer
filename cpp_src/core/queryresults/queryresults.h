@@ -38,7 +38,7 @@ public:
 	QueryResults(const ItemRefVector::const_iterator &b, const ItemRefVector::const_iterator &e);
 	QueryResults(std::initializer_list<ItemRef> l);
 	QueryResults(const QueryResults &) = delete;
-	QueryResults(QueryResults &&);
+	QueryResults(QueryResults &&) noexcept;
 	~QueryResults();
 	QueryResults &operator=(const QueryResults &) = delete;
 	QueryResults &operator=(QueryResults &&obj) noexcept;

@@ -67,8 +67,8 @@ public:
 	const size_t kMaxServerStartTimeSec = 20;
 	enum class ConfigType { File, Namespace };
 
-	ServerControl(ServerControl&& rhs);
-	ServerControl& operator=(ServerControl&&);
+	ServerControl(ServerControl&& rhs) noexcept;
+	ServerControl& operator=(ServerControl&&) noexcept;
 	ServerControl(ServerControl& rhs) = delete;
 	ServerControl& operator=(ServerControl& rhs) = delete;
 	ServerControl();

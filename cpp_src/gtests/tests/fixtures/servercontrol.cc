@@ -23,13 +23,13 @@ ServerControl::~ServerControl() {
 }
 void ServerControl::Stop() { interface->Stop(); }
 
-ServerControl::ServerControl(ServerControl&& rhs) {
+ServerControl::ServerControl(ServerControl&& rhs) noexcept {
 	WLock lock(rhs.mtx_);
 	interface = std::move(rhs.interface);
 	stopped_ = rhs.stopped_;
 	rhs.stopped_ = nullptr;
 }
-ServerControl& ServerControl::operator=(ServerControl&& rhs) {
+ServerControl& ServerControl::operator=(ServerControl&& rhs) noexcept {
 	WLock lock(rhs.mtx_);
 	interface = std::move(rhs.interface);
 	stopped_ = rhs.stopped_;

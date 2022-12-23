@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.11.0"
+  version: "3.12.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -3546,6 +3546,55 @@ definitions:
         type: integer
         description: "Minimum query execution time to be recoreded in #queriesperfstats namespace"
         default: 10
+      long_queries_logging:
+        $ref: "#/definitions/LongQueriesLogging"
+
+  LongQueriesLogging:
+        type: object
+        description: "Parameters for logging long queries and transactions"
+        properties:
+          select:
+            $ref: "#/definitions/SelectLogging"
+          update_delete:
+            $ref: "#/definitions/UpdateDeleteLogging"
+          transaction:
+            $ref: "#/definitions/TransactionLogging"
+
+  SelectLogging:
+    type: object
+    properties:
+      threshold_us:
+        type: integer
+        description: "Threshold value for logging SELECT queries, if -1 logging is disabled"
+        default: -1
+      normalized:
+        description: "Output the query in a normalized form"
+        type: boolean
+        default: false
+
+  UpdateDeleteLogging:
+            type: object
+            properties:
+              threshold_us:
+                type: integer
+                description: "Threshold value for logging UPDATE and DELETE queries, if -1 logging is disabled"
+                default: -1
+              normalized:
+                type: boolean
+                description: "Output the query in a normalized form"
+                default: false
+
+  TransactionLogging:
+    type: object
+    properties:
+      threshold_us:
+        type: integer
+        description: "Threshold value for total transaction commit time, if -1 logging is disabled"
+        default: -1
+      avg_step_threshold_us:
+        type: integer
+        description: "Threshold value for the average step duration time in a transaction, if -1 logging is disabled"
+        default: -1
 
   NamespacesConfig:
     type: object

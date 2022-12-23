@@ -86,6 +86,7 @@
   * [JoinCacheMemStats](#joincachememstats)
   * [JoinedDef](#joineddef)
   * [JsonObjectDef](#jsonobjectdef)
+  * [LongQueriesLogging](#longquerieslogging)
   * [MetaByKeyResponse](#metabykeyresponse)
   * [MetaInfo](#metainfo)
   * [MetaListResponse](#metalistresponse)
@@ -105,13 +106,16 @@
   * [ReplicationConfig](#replicationconfig)
   * [ReplicationStats](#replicationstats)
   * [SchemaDef](#schemadef)
+  * [SelectLogging](#selectlogging)
   * [SelectPerfStats](#selectperfstats)
   * [SortDef](#sortdef)
   * [StatusResponse](#statusresponse)
   * [SuggestItems](#suggestitems)
   * [SysInfo](#sysinfo)
   * [SystemConfigItem](#systemconfigitem)
+  * [TransactionLogging](#transactionlogging)
   * [TransactionsPerfStats](#transactionsperfstats)
+  * [UpdateDeleteLogging](#updatedeletelogging)
   * [UpdateField](#updatefield)
   * [UpdatePerfStats](#updateperfstats)
   * [UpdateResponse](#updateresponse)
@@ -126,7 +130,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.11.0
+*Version* : 3.12.0
 
 
 ### License information
@@ -2374,6 +2378,18 @@ Join cache stats. Stores results of selects to right table by ON condition
 
 
 
+### LongQueriesLogging
+Parameters for logging long queries and transactions
+
+
+|Name|Schema|
+|---|---|
+|**select**  <br>*optional*|[SelectLogging](#selectlogging)|
+|**transaction**  <br>*optional*|[TransactionLogging](#transactionlogging)|
+|**update_delete**  <br>*optional*|[UpdateDeleteLogging](#updatedeletelogging)|
+
+
+
 ### MetaByKeyResponse
 Meta info of the specified namespace
 
@@ -2539,6 +2555,7 @@ List of meta info of the specified namespace
 |Name|Description|Schema|
 |---|---|---|
 |**activitystats**  <br>*optional*|Enables tracking activity statistics  <br>**Default** : `false`|boolean|
+|**long_queries_logging**  <br>*optional*||[LongQueriesLogging](#longquerieslogging)|
 |**memstats**  <br>*optional*|Enables tracking memory statistics  <br>**Default** : `true`|boolean|
 |**perfstats**  <br>*optional*|Enables tracking overal perofrmance statistics  <br>**Default** : `false`|boolean|
 |**queries_threshold_us**  <br>*optional*|Minimum query execution time to be recoreded in #queriesperfstats namespace|integer|
@@ -2711,6 +2728,15 @@ State of namespace replication
 
 
 
+### SelectLogging
+
+|Name|Description|Schema|
+|---|---|---|
+|**normalized**  <br>*optional*|Output the query in a normalized form  <br>**Default** : `false`|boolean|
+|**threshold_us**  <br>*optional*|Threshold value for logging SELECT queries, if -1 logging is disabled|integer|
+
+
+
 ### SelectPerfStats
 Performance statistics for select operations
 
@@ -2795,6 +2821,15 @@ Specifies results sorting order
 
 
 
+### TransactionLogging
+
+|Name|Description|Schema|
+|---|---|---|
+|**avg_step_threshold_us**  <br>*optional*|Threshold value for the average step duration time in a transaction, if -1 logging is disabled|integer|
+|**threshold_us**  <br>*optional*|Threshold value for total transaction commit time, if -1 logging is disabled|integer|
+
+
+
 ### TransactionsPerfStats
 Performance statistics for transactions
 
@@ -2815,6 +2850,15 @@ Performance statistics for transactions
 |**min_steps_count**  <br>*optional*|Minimum steps count in transactions for this namespace|integer|
 |**total_copy_count**  <br>*optional*|Total namespace copy operations|integer|
 |**total_count**  <br>*optional*|Total transactions count for this namespace|integer|
+
+
+
+### UpdateDeleteLogging
+
+|Name|Description|Schema|
+|---|---|---|
+|**normalized**  <br>*optional*|Output the query in a normalized form  <br>**Default** : `false`|boolean|
+|**threshold_us**  <br>*optional*|Threshold value for logging UPDATE and DELETE queries, if -1 logging is disabled|integer|
 
 
 

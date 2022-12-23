@@ -20,12 +20,30 @@ class WrSerializer;
 
 enum ConfigType { ProfilingConf, NamespaceDataConf, ReplicationConf };
 
+struct LongQueriesLoggingParams {
+	int32_t thresholdUs = -1;
+	bool normalized = false;
+};
+
+struct LongTxLoggingParams {
+	LongTxLoggingParams() noexcept : thresholdUs(-1), avgTxStepThresholdUs(-1) {}
+
+	// Do not using 2 int32's here due to MSVC compatibility reasons (alignof should not be less than sizeof in this case to use it in
+	// atomic).
+	// Starting from C++14 both of the bit fields will be signed.
+	int64_t thresholdUs : 32;
+	int64_t avgTxStepThresholdUs : 32;
+};
+
 struct ProfilingConfigData {
 	bool queriesPerfStats = false;
 	size_t queriedThresholdUS = 10;
 	bool perfStats = false;
 	bool memStats = false;
 	bool activityStats = false;
+	LongQueriesLoggingParams longSelectLoggingParams;
+	LongQueriesLoggingParams longUpdDelLoggingParams;
+	LongTxLoggingParams longTxLoggingParams;
 };
 
 struct NamespaceConfigData {
@@ -98,6 +116,10 @@ public:
 	ProfilingConfigData GetProfilingConfig();
 	ReplicationConfigData GetReplicationConfig();
 	bool GetNamespaceConfig(const std::string &nsName, NamespaceConfigData &data);
+	LongQueriesLoggingParams GetSelectLoggingParams();
+	LongQueriesLoggingParams GetUpdDelLoggingParams();
+	LongTxLoggingParams GetTxLoggingParams();
+	bool ActivityStatsEnabled();
 
 private:
 	ProfilingConfigData profilingData_;

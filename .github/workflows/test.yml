@@ -39,7 +39,7 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-latest]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-latest]
         include:
           - os: ubuntu-latest
             sanitizer: ASAN
@@ -103,7 +103,7 @@ jobs:
   test:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-latest]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-latest]
         test: ['C++', 'GO']
         include:
           - os: ubuntu-latest
@@ -169,9 +169,9 @@ jobs:
         run: |
           if [[ $TEST == 'GO' ]]; then
             if [[ -z "${{matrix.sanitizer}}" ]]; then
-              go test -timeout 15m ./test/... -bench . -benchmem -benchtime 100ms
+              go test -timeout 15m ./test/... -bench . -benchmem -benchtime 100ms -seedcount=50000
             else
-              go test -timeout 35m ./test/... -bench . -benchmem -benchtime 100ms
+              go test -timeout 35m ./test/... -bench . -benchmem -benchtime 100ms -seedcount=50000
             fi
           else
             cd build
@@ -181,7 +181,7 @@ jobs:
   test-pyreindexer:
     strategy:
       matrix:
-        os: [ubuntu-20.04, macos-latest]
+        os: [ubuntu-20.04, ubuntu-22.04, macos-latest]
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build

@@ -34,7 +34,7 @@ public:
 	Item GetItem(TransactionStep &&st);
 	Error Status() { return status_; }
 
-	const std::string &GetName();
+	const std::string &GetName() const;
 
 	friend class ReindexerImpl;
 

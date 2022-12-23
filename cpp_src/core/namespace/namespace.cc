@@ -1,4 +1,5 @@
 #include "namespace.h"
+#include "core/querystat.h"
 #include "core/storage/storagefactory.h"
 #include "tools/flagguard.h"
 #include "tools/fsops.h"
@@ -14,6 +15,10 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 	if (enablePerfCounters) {
 		txStatsCounter_.Count(tx);
 	}
+	bool wasCopied = false;	 // NOLINT(*deadcode.DeadStores)
+	QueryStatCalculator statCalculator(
+		long_actions::Logger<Transaction>{tx, longTxLoggingParams_.load(std::memory_order_relaxed), wasCopied});
+
 	PerfStatCalculatorMT txCommitCalc(commitStatsCounter_, enablePerfCounters);
 	if (needNamespaceCopy(nsl, tx)) {
 		PerfStatCalculatorMT calc(nsl->updatePerfCounter_, enablePerfCounters);
@@ -49,6 +54,7 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 				calc.SetCounter(nsCopy_->updatePerfCounter_);
 				nsl->markReadOnly();
 				atomicStoreMainNs(nsCopy_.release());
+				wasCopied = true;  // NOLINT(*deadcode.DeadStores)
 				hasCopy_.store(false, std::memory_order_release);
 			} catch (...) {
 				calc.enable_ = false;
