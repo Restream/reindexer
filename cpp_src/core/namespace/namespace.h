@@ -129,6 +129,7 @@ public:
 		startCopyPolicyTxSize_.store(configData.startCopyPolicyTxSize, std::memory_order_relaxed);
 		copyPolicyMultiplier_.store(configData.copyPolicyMultiplier, std::memory_order_relaxed);
 		txSizeToAlwaysCopy_.store(configData.txSizeToAlwaysCopy, std::memory_order_relaxed);
+		longTxLoggingParams_.store(configProvider.GetTxLoggingParams(), std::memory_order_relaxed);
 		handleInvalidation(NamespaceImpl::OnConfigUpdated)(configProvider, ctx);
 	}
 	StorageOpts GetStorageOpts(const RdxContext &ctx) { return handleInvalidation(NamespaceImpl::GetStorageOpts)(ctx); }
@@ -260,6 +261,7 @@ private:
 	TxStatCounter txStatsCounter_{};
 	PerfStatCounterMT commitStatsCounter_;
 	PerfStatCounterMT copyStatsCounter_;
+	std::atomic<LongTxLoggingParams> longTxLoggingParams_;
 };
 
 #undef handleInvalidation

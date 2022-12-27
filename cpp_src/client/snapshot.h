@@ -10,9 +10,9 @@ class Snapshot {
 public:
 	Snapshot() = default;
 	Snapshot(const Snapshot &) = delete;
-	Snapshot(Snapshot &&);
+	Snapshot(Snapshot &&) noexcept;
 	Snapshot &operator=(const Snapshot &) = delete;
-	Snapshot &operator=(Snapshot &&);
+	Snapshot &operator=(Snapshot &&) noexcept;
 	~Snapshot();
 
 	class Iterator {

@@ -45,12 +45,12 @@ static_assert(LocalQueryResults::kSizeofContext >= sizeof(LocalQueryResults::Con
 
 LocalQueryResults::LocalQueryResults(std::initializer_list<ItemRef> l) : items_(l) {}
 LocalQueryResults::LocalQueryResults() = default;
-LocalQueryResults::LocalQueryResults(LocalQueryResults &&obj) = default;
+LocalQueryResults::LocalQueryResults(LocalQueryResults &&obj) noexcept = default;
 
 LocalQueryResults::LocalQueryResults(const ItemRefVector::const_iterator &begin, const ItemRefVector::const_iterator &end)
 	: items_(begin, end) {}
 
-LocalQueryResults &LocalQueryResults::operator=(LocalQueryResults &&obj) = default;
+LocalQueryResults &LocalQueryResults::operator=(LocalQueryResults &&obj) noexcept = default;
 
 LocalQueryResults::~LocalQueryResults() = default;
 

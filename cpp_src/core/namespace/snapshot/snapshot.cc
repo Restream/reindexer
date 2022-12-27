@@ -26,7 +26,7 @@ Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLs
 	lockItems(true);
 }
 
-Snapshot &Snapshot::operator=(Snapshot &&other) {
+Snapshot &Snapshot::operator=(Snapshot &&other) noexcept {
 	lockItems(false);
 	pt_ = std::move(other.pt_);
 	tm_ = std::move(other.tm_);
@@ -105,7 +105,7 @@ void Snapshot::ItemsContainer::LockItems(const PayloadType &pt, bool lock) {
 	}
 }
 
-void Snapshot::ItemsContainer::lockItem(const PayloadType &pt, ItemRef &itemref, bool lock) {
+void Snapshot::ItemsContainer::lockItem(const PayloadType &pt, ItemRef &itemref, bool lock) noexcept {
 	if (!itemref.Value().IsFree() && !itemref.Raw()) {
 		Payload pl(pt, itemref.Value());
 		if (lock) {

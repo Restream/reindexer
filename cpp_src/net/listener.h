@@ -87,8 +87,10 @@ protected:
 	void async_cb(ev::async &watcher);
 	void rebalance();
 	void rebalance_from_acceptor();
+	// Locks shared_->mtx_. Should not be calles under external lock.
 	void rebalance_conn(IServerConnection *, IServerConnection::BalancingType type);
-	void run_thread(std::unique_ptr<IServerConnection> &&conn);
+	void run_dedicated_thread(std::unique_ptr<IServerConnection> &&conn);
+	// May lock shared_->mtx_. Should not be calles under external lock.
 	void startup_shared_thread();
 
 	struct Shared {
@@ -115,7 +117,6 @@ protected:
 		std::atomic<int> connCount_ = {0};
 		std::vector<Listener *> listeners_;
 		std::mutex mtx_;
-		std::condition_variable cv_;
 		ConnectionFactory connFactory_;
 		std::atomic<bool> terminating_;
 		std::string addr_;
@@ -123,8 +124,29 @@ protected:
 		std::chrono::time_point<std::chrono::steady_clock> ts_;
 		std::vector<Worker> dedicatedWorkers_;
 	};
+	class ListeningThreadData {
+	public:
+		ListeningThreadData(std::shared_ptr<Shared> shared) : listener_(loop_, shared), shared_(std::move(shared)) { assertrx(shared_); }
+
+		void Loop() {
+			if constexpr (LT == ListenerType::Shared) {
+				listener_.io_.start(shared_->sock_.fd(), ev::READ);
+			}
+			while (!shared_->terminating_) {
+				loop_.run();
+			}
+		}
+		const Listener &GetListener() const noexcept { return listener_; }
+		Shared &GetShared() noexcept { return *shared_; }
+
+	private:
+		ev::dynamic_loop loop_;
+		Listener listener_;
+		std::shared_ptr<Shared> shared_;
+	};
+	// Locks shared_->mtx_. Should not be calles under external lock.
 	Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared);
-	static void clone(std::shared_ptr<Shared>);
+	static void clone(std::unique_ptr<ListeningThreadData> d) noexcept;
 
 	ev::io io_;
 	ev::periodic timer_;

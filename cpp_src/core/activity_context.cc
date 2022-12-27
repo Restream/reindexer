@@ -95,6 +95,7 @@ RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::str
 	parent_->Register(this);
 }
 
+// NOLINTNEXTLINE (performance-noexcept-move-constructor)
 RdxActivityContext::RdxActivityContext(RdxActivityContext&& other)
 	: data_(other.data_),
 	  state_(other.state_.load(std::memory_order_relaxed)),

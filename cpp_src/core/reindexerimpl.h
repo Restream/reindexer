@@ -114,7 +114,7 @@ public:
 	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm, const RdxContext &ctx);
 	void ShutdownCluster();
 
-	bool NeedTraceActivity() { return configProvider_.GetProfilingConfig().activityStats; }
+	bool NeedTraceActivity() { return configProvider_.ActivityStatsEnabled(); }
 
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index, const RdxContext &ctx);
 

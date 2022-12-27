@@ -77,8 +77,8 @@ private:
 		Impl(RPCClient* rpcClient, int64_t txId, std::chrono::milliseconds requestTimeout, std::chrono::milliseconds execTimeout,
 			 Namespace* ns) noexcept;
 		Impl(Error&& status) noexcept;
-		Impl(Impl&&);
-		Impl& operator=(Impl&&);
+		Impl(Impl&&) noexcept;
+		Impl& operator=(Impl&&) noexcept;
 		~Impl();
 
 		int64_t txId_ = -1;

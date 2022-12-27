@@ -3,14 +3,14 @@
 namespace reindexer {
 namespace client {
 
-Snapshot::Snapshot(Snapshot&& o) : i_(std::move(o.i_)) {
+Snapshot::Snapshot(Snapshot&& o) noexcept : i_(std::move(o.i_)) {
 	o.i_.count_ = 0;
 	o.i_.rawCount_ = 0;
 	o.i_.nsVersion_ = lsn_t();
 	o.setClosed();
 }
 
-Snapshot& Snapshot::operator=(Snapshot&& o) {
+Snapshot& Snapshot::operator=(Snapshot&& o) noexcept {
 	if (&o != this) {
 		i_ = std::move(o.i_);
 		o.i_.count_ = 0;

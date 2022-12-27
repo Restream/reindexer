@@ -22,7 +22,6 @@ Error RPCServerFake::Login(cproto::Context &ctx, p_string /*login*/, p_string /*
 
 	ctx.SetClientData(std::unique_ptr<RPCClientData>(new RPCClientData));
 	int64_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
-
 	if (loginError_.ok()) {
 		state_ = Connected;
 		ctx.Return({cproto::Arg(p_string(REINDEX_VERSION)), cproto::Arg(startTs)});

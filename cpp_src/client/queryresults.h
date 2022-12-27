@@ -27,7 +27,7 @@ class QueryResults {
 public:
 	QueryResults(int fetchFlags = 0, int fetchAmount = 0, bool lazyMode = false) noexcept : results_(fetchFlags, fetchAmount, lazyMode) {}
 	QueryResults(const QueryResults&) = delete;
-	QueryResults(QueryResults&&) = default;
+	QueryResults(QueryResults&&) noexcept = default;
 	QueryResults& operator=(const QueryResults&) = delete;
 	QueryResults& operator=(QueryResults&& obj) = default;
 	~QueryResults();

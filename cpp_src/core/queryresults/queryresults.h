@@ -98,7 +98,7 @@ public:
 	~QueryResults();
 	QueryResults(QueryResults &&);
 	QueryResults(const QueryResults &) = delete;
-	QueryResults &operator=(QueryResults &&qr);
+	QueryResults &operator=(QueryResults &&qr) noexcept;
 	QueryResults &operator=(const QueryResults &qr) = delete;
 
 	void AddQr(LocalQueryResults &&local, int shardID = ShardingKeyType::ProxyOff, bool rebuildMergedData = false);

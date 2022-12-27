@@ -15,8 +15,8 @@ public:
 	TraceEntry(uintptr_t addr);
 	TraceEntry() = default;
 	~TraceEntry();
-	TraceEntry(TraceEntry &&other);
-	TraceEntry &operator=(TraceEntry &&);
+	TraceEntry(TraceEntry &&other) noexcept;
+	TraceEntry &operator=(TraceEntry &&) noexcept;
 	TraceEntry(const TraceEntry &) = delete;
 	TraceEntry &operator=(const TraceEntry &) = delete;
 	std::ostream &Dump(std::ostream &os) const;

@@ -46,7 +46,11 @@ protected:
 	};
 
 	void SetUp() {}
-	void TearDown() { StopAllServers(); }
+	void TearDown() {
+		StopAllServers(); 
+		fakeServers_.clear();
+		realServers_.clear();
+	}
 
 public:
 	void StartDefaultRealServer();

@@ -3,7 +3,7 @@
 
 namespace reindexer {
 
-RdxContext::RdxContext(RdxContext&& other)
+RdxContext::RdxContext(RdxContext&& other) noexcept
 	: activityPtr_(nullptr),
 	  cancelCtx_(other.cancelCtx_),
 	  cmpl_(std::move(other.cmpl_)),

@@ -117,7 +117,7 @@ public:
 		if (holdStatus_ == HoldT::kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 	}
 
-	RdxContext(RdxContext&& other);
+	RdxContext(RdxContext&& other) noexcept;
 	~RdxContext();
 
 	RdxContext(const RdxContext&) = delete;

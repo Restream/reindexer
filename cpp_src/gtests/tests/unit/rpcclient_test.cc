@@ -9,6 +9,7 @@
 #include "client/snapshot.h"
 #include "core/cjson/jsonbuilder.h"
 #include "coroutine/waitgroup.h"
+#include "gtests/tests/gtest_cout.h"
 #include "net/ev/ev.h"
 #include "reindexertestapi.h"
 
@@ -40,11 +41,37 @@ TEST_F(RPCClientTestApi, CoroRequestTimeout) {
 	EXPECT_TRUE(err.ok()) << err.what();
 }
 
+static std::chrono::seconds GetMaxTimeForCoroSelectTimeout(unsigned requests, std::chrono::seconds delay) {
+	const auto cpus = std::thread::hardware_concurrency();
+	const auto kBase = std::max(requests * delay.count() / 16, delay.count());
+	const std::chrono::seconds kDefaultMaxTime(kBase + 10);
+	if (cpus == 0) {
+		TestCout() << fmt::sprintf("Unable to get CPUs count. Using test max time %d seconds Test may flack in this case",
+								   4 * kDefaultMaxTime.count())
+				   << std::endl;
+		return 4 * kDefaultMaxTime;
+	}
+	auto resultMaxTime = kDefaultMaxTime;
+	if (cpus == 1) {
+		resultMaxTime = 16 * kDefaultMaxTime;
+	} else if (cpus > 1 && cpus < 4) {
+		resultMaxTime = 8 * kDefaultMaxTime;
+	} else if (cpus >= 4 && cpus < 8) {
+		resultMaxTime = 4 * kDefaultMaxTime;
+	} else if (cpus >= 8 && cpus < 16) {
+		resultMaxTime = 2 * kDefaultMaxTime;
+	}
+	TestCout() << fmt::sprintf("Test max time: %d seconds for %d total requests on %d CPUs with %d seconds of delay for each request",
+							   resultMaxTime.count(), requests, cpus, delay.count())
+			   << std::endl;
+	return resultMaxTime;
+}
+
 TEST_F(RPCClientTestApi, CoroSelectTimeout) {
-	static const std::string kNamespaceName = "MyNamespace";
-	static constexpr size_t kCorCount = 16;
-	static constexpr size_t kQueriesCount = 3;
-	static constexpr std::chrono::seconds kSelectDelay{5};
+	const std::string kNamespaceName = "MyNamespace";
+	constexpr size_t kCorCount = 16;
+	constexpr size_t kQueriesCount = 3;
+	constexpr std::chrono::seconds kSelectDelay(4);
 	RPCServerConfig conf;
 	conf.loginDelay = std::chrono::seconds(0);
 	conf.selectDelay = kSelectDelay;
@@ -53,6 +80,15 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 	StartServer();
 	ev::dynamic_loop loop;
 	std::vector<bool> finished(kCorCount, false);
+	ev::timer testTimer;
+	testTimer.set([&](ev::timer&, int) {
+		// Just to print output on CI
+		ASSERT_TRUE(false) << fmt::sprintf("Test deadline exceeded. Closed count: %d. Expected: %d. %d|", server.CloseQRRequestsCount(),
+										   kCorCount * kQueriesCount, std::chrono::steady_clock::now().time_since_epoch().count());
+	});
+	testTimer.set(loop);
+	const auto kMaxTime = GetMaxTimeForCoroSelectTimeout(kCorCount * kQueriesCount, kSelectDelay);
+	testTimer.start(double(kMaxTime.count()));
 	for (size_t i = 0; i < kCorCount; ++i) {
 		loop.spawn([&, index = i] {
 			reindexer::client::ReindexerConfig config;
@@ -60,13 +96,20 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 			reindexer::client::CoroReindexer rx(config);
 			auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
 			ASSERT_TRUE(err.ok()) << err.what();
+			coroutine::wait_group wg;
+			wg.add(kQueriesCount);
 			for (size_t j = 0; j < kQueriesCount; ++j) {
-				reindexer::client::CoroQueryResults qr;
-				err = rx.Select(reindexer::Query(kNamespaceName), qr);
-				EXPECT_EQ(err.code(), errTimeout);
+				loop.spawn([&] {
+					coroutine::wait_group_guard wgg(wg);
+					reindexer::client::CoroQueryResults qr;
+					err = rx.Select(reindexer::Query(kNamespaceName), qr);
+					EXPECT_EQ(err.code(), errTimeout);
+				});
 			}
+			wg.wait();
 			loop.granular_sleep(kSelectDelay * kQueriesCount * kCorCount, std::chrono::milliseconds{300},
-								[&server] { return server.CloseQRRequestsCount() >= kCorCount * kQueriesCount; });
+								[&] { return server.CloseQRRequestsCount() >= kCorCount * kQueriesCount; });
+			EXPECT_EQ(server.CloseQRRequestsCount(), kCorCount * kQueriesCount);
 			err = rx.AddNamespace(reindexer::NamespaceDef(kNamespaceName + std::to_string(index)));
 			EXPECT_TRUE(err.ok()) << err.what();
 			finished[index] = true;

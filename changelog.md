@@ -1,3 +1,11 @@
+# Version 4.8.0 *beta* (27.12.2022)
+## Core
+- [fea] Added logging for slow queries and transactions (check `profiling.long_queries_logging` section in `#config`-namespace)
+
+## Reindexer server
+- [fix] Fixed connections balancing and threads creation in default (shared) mode
+- [fix] Fixed cleanup for balancing mode for reused connections
+
 # Version 4.7.0 *beta* (13.12.2022)
 ## Replication
 - [fea] Added `online_updates_delay_msec` param for async replication config. It significantly improves online updates batching and reduces CPU consumation for async online-replication.

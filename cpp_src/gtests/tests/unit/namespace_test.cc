@@ -274,14 +274,28 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	std::string newConfig = R"json({
-                       "type":"profiling",
-                       "profiling":{
-                           "queriesperfstats":true,
-                           "queries_threshold_us":0,
-                           "perfstats":true,
-                           "memstats":true
-                       }
-                   })json";
+                        "type":"profiling",
+                        "profiling":{
+                            "queriesperfstats":true,
+                            "queries_threshold_us":0,
+                            "perfstats":true,
+                            "memstats":true,
+                            "long_queries_logging":{
+                                "select":{
+                                    "threshold_us": 1000000,
+                                    "normalized": false
+                                },
+                                "update_delete":{
+                                    "threshold_us": 1000000,
+                                    "normalized": false
+                                },
+                                "transaction":{
+                                    "threshold_us": 1000000,
+                                    "avg_step_threshold_us": 1000
+                                }
+                            }
+                        }
+                    })json";
 
 	err = item.FromJSON(newConfig);
 	ASSERT_TRUE(err.ok()) << err.what();

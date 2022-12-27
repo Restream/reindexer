@@ -207,8 +207,8 @@ CoroTransaction::Impl::Impl(RPCClient* rpcClient, int64_t txId, std::chrono::mil
 
 CoroTransaction::Impl::Impl(Error&& status) noexcept : status_(std::move(status)), localTm_(std::make_unique<TagsMatcher>()) {}
 
-CoroTransaction::Impl::Impl(CoroTransaction::Impl&&) = default;
-CoroTransaction::Impl& CoroTransaction::Impl::operator=(CoroTransaction::Impl&&) = default;
+CoroTransaction::Impl::Impl(CoroTransaction::Impl&&) noexcept = default;
+CoroTransaction::Impl& CoroTransaction::Impl::operator=(CoroTransaction::Impl&&) noexcept = default;
 CoroTransaction::Impl::~Impl() = default;
 
 }  // namespace client

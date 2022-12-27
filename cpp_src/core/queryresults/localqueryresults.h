@@ -36,10 +36,10 @@ public:
 	LocalQueryResults(const ItemRefVector::const_iterator &b, const ItemRefVector::const_iterator &e);
 	LocalQueryResults(std::initializer_list<ItemRef> l);
 	LocalQueryResults(const LocalQueryResults &) = delete;
-	LocalQueryResults(LocalQueryResults &&);
+	LocalQueryResults(LocalQueryResults &&) noexcept;
 	~LocalQueryResults();
 	LocalQueryResults &operator=(const LocalQueryResults &) = delete;
-	LocalQueryResults &operator=(LocalQueryResults &&obj);
+	LocalQueryResults &operator=(LocalQueryResults &&obj) noexcept;
 	void Add(const ItemRef &);
 	// use enableHold = false only if you are sure that the LocalQueryResults will be destroyed before the item
 	// or if data from the item are contained in namespace added to the LocalQueryResults

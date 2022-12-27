@@ -36,7 +36,7 @@ namespace debug {
 
 using namespace std::string_view_literals;
 
-TraceEntry::TraceEntry(TraceEntry &&other)
+TraceEntry::TraceEntry(TraceEntry &&other) noexcept
 	: funcName_(other.funcName_),
 	  objFile_(other.objFile_),
 	  srcFile_(other.srcFile_),
@@ -48,7 +48,7 @@ TraceEntry::TraceEntry(TraceEntry &&other)
 	other.holder_ = nullptr;
 }
 
-TraceEntry &TraceEntry::operator=(TraceEntry &&other) {
+TraceEntry &TraceEntry::operator=(TraceEntry &&other) noexcept {
 	if (this != &other) {
 		funcName_ = other.funcName_;
 		objFile_ = other.objFile_;

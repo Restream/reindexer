@@ -128,8 +128,8 @@ public:
 		return name;
 	}
 
-	ServerControl(ServerControl&& rhs);
-	ServerControl& operator=(ServerControl&&);
+	ServerControl(ServerControl&& rhs) noexcept;
+	ServerControl& operator=(ServerControl&&) noexcept;
 	ServerControl(ServerControl& rhs) = delete;
 	ServerControl& operator=(ServerControl& rhs) = delete;
 	ServerControl();

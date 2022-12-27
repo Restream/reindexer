@@ -47,9 +47,10 @@ struct QueryResults::ItemDataStorage {
 QueryResults::QueryResults(int flags) : flags_(flags) {}
 
 QueryResults::~QueryResults() = default;
+// NOLINTNEXTLINE (performance-noexcept-move-constructor)
 QueryResults::QueryResults(QueryResults&&) = default;
 
-QueryResults& QueryResults::operator=(QueryResults&& qr) {
+QueryResults& QueryResults::operator=(QueryResults&& qr) noexcept {
 	if (this != &qr) {
 		shardingConfigVersion_ = qr.shardingConfigVersion_;
 		mergedData_ = std::move(qr.mergedData_);

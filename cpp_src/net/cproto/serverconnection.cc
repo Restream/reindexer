@@ -46,6 +46,8 @@ void ServerConnection::onClose() {
 		dispatcher_.onClose_(ctx, errOK);
 	}
 	clientData_.reset();
+	balancingType_ = BalancingType::NotSet;
+	rebalance_ = nullptr;
 }
 
 void ServerConnection::handleRPC(Context &ctx) {

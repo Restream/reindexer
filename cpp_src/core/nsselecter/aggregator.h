@@ -20,7 +20,7 @@ public:
 	Aggregator(const PayloadType &, const FieldsSet &, AggType aggType, const h_vector<std::string, 1> &names,
 			   const h_vector<SortingEntry, 1> &sort = {}, size_t limit = UINT_MAX, size_t offset = 0, bool compositeIndexFields = false);
 	Aggregator();
-	Aggregator(Aggregator &&);
+	Aggregator(Aggregator &&) noexcept;
 	~Aggregator();
 
 	void Aggregate(const PayloadValue &lhs);

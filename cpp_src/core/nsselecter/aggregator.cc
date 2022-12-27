@@ -199,7 +199,7 @@ bool Aggregator::SinglefieldComparator::operator()(const std::pair<Variant, int>
 }
 
 Aggregator::Aggregator() = default;
-Aggregator::Aggregator(Aggregator &&) = default;
+Aggregator::Aggregator(Aggregator &&) noexcept = default;
 Aggregator::~Aggregator() = default;
 
 Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, AggType aggType, const h_vector<std::string, 1> &names,

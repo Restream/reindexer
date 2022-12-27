@@ -15,7 +15,7 @@ public:
 	Snapshot(const Snapshot &) = delete;
 	Snapshot(Snapshot &&) = default;
 	Snapshot &operator=(const Snapshot &) = delete;
-	Snapshot &operator=(Snapshot &&);
+	Snapshot &operator=(Snapshot &&) noexcept;
 	~Snapshot();
 
 	class Iterator {
@@ -66,7 +66,7 @@ private:
 		void LockItems(const PayloadType &pt, bool lock);
 
 	private:
-		void lockItem(const PayloadType &pt, ItemRef &itemref, bool lock);
+		void lockItem(const PayloadType &pt, ItemRef &itemref, bool lock) noexcept;
 
 		std::vector<Chunk> data_;
 		size_t itemsCount_ = 0;

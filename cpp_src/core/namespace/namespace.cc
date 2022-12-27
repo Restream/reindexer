@@ -1,4 +1,5 @@
 #include "namespace.h"
+#include "core/querystat.h"
 #include "core/storage/storagefactory.h"
 #include "snapshot/snapshothandler.h"
 #include "snapshot/snapshotrecord.h"
@@ -16,6 +17,10 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 	if (enablePerfCounters) {
 		txStatsCounter_.Count(tx);
 	}
+	bool wasCopied = false;	 // NOLINT(*deadcode.DeadStores)
+	QueryStatCalculator statCalculator(
+		long_actions::Logger<LocalTransaction>{tx, longTxLoggingParams_.load(std::memory_order_relaxed), wasCopied});
+
 	PerfStatCalculatorMT txCommitCalc(commitStatsCounter_, enablePerfCounters);
 	if (needNamespaceCopy(nsl, tx)) {
 		PerfStatCalculatorMT calc(nsl->updatePerfCounter_, enablePerfCounters);
@@ -50,6 +55,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				calc.SetCounter(nsCopy_->updatePerfCounter_);
 				nsl->markReadOnly();
 				atomicStoreMainNs(nsCopy_.release());
+				wasCopied = true;  // NOLINT(*deadcode.DeadStores)
 				hasCopy_.store(false, std::memory_order_release);
 				if (!nsl->repl_.temporary && !nsCtx.inSnapshot) {
 					// If commit happens in ns copy, than the copier have to handle replication

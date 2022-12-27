@@ -22,7 +22,21 @@ const std::vector<std::string> kDefDBConfig = {
 			"queries_threshold_us":10,
 			"perfstats":false,
 			"memstats":true,
-			"activitystats":false
+			"activitystats":false,
+			"long_queries_logging":{
+				"select":{
+					"threshold_us": -1,
+					"normalized": false
+				},
+				"update_delete":{
+					"threshold_us": -1,
+					"normalized": false
+				},
+				"transaction":{
+					"threshold_us": -1,
+					"avg_step_threshold_us": -1
+				}
+			}
 		}
 	})json",
 	R"json({

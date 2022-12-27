@@ -9,7 +9,17 @@ if [ "$PACKAGE" == "deb" ]; then
   RX_SERVER_INSTALLED_VERSION="${RX_SERVER_INSTALLED_VERSION#*: }"
 elif [ "$PACKAGE" == "rpm" ]; then
   RX_SERVER_REQUIRED_VERSION="$(basename build/reindexer-4-server*.rpm .rpm)"
-  RX_SERVER_INSTALLED_VERSION="$(rpm -q reindexer-4-server)"
+  OS=$(echo ${ID} | tr '[:upper:]' '[:lower:]')
+  if [ "$OS" = "redos" ]; then
+    RX_SERVER_INSTALLED_VERSION="$(dnf list installed  \"reindexer-4-server\" | tail -n 1 | awk \'{print $$2}\')"
+    echo RX_SERVER_INSTALLED_VERSION=$RX_SERVER_INSTALLED_VERSION
+    echo "Installed!!!"
+    dnf list installed  \"reindexer-4-server\"
+    echo "More!!!"
+    dnf list installed  \"reindexer-4-server\" | tail -n 1
+  else
+    RX_SERVER_INSTALLED_VERSION="$(rpm -q reindexer-4-server)"
+  fi
 else
   echo "Unknown package extension"
 fi

@@ -38,7 +38,8 @@ centos7_debs="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make sn
 debian_debs="build-essential g++ libunwind-dev libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
 alpine_apks="g++ snappy-dev leveldb-dev libexecinfo-dev make curl cmake unzip git"
 arch_pkgs="gcc snappy leveldb make curl cmake unzip git"
-redos_debs="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git cmake"
+redos_rpms="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip git cmake"
+redos_deploy_rpms="rpm-build rpmdevtools"
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "
@@ -223,7 +224,7 @@ install_alpine() {
 }
 
 install_redos() {
-    for pkg in ${redos_debs}
+    for pkg in ${redos_rpms}
     do
         if dnf list --installed | grep -e ^${pkg}\\. > /dev/null ; then
             info_msg "Package '$pkg' already installed. Skip ....."
@@ -232,6 +233,63 @@ install_redos() {
             dnf install -y ${pkg} > /dev/null 2>&1
             if [ $? -eq 0 ]; then
                 success_msg "Package '$pkg' was installed successfully."
+            else
+                error_msg "Could not install '$pkg' package. Try 'dnf update && dnf install $pkg'" && return 1
+            fi
+        fi
+    done
+    if [ $? -eq 0 ]; then
+        info_msg "All the basic packages were installed successfully. It should be enough to build and install reindexer."
+        info_msg "There are also some deployment redos packages. If you're going to build reindexer RPM package, you should also run 'dependecies.sh install_deployment_deps' to install them."
+        info_msg "ATTENTION: install_deployment_deps will lead to RPM DB mogration (from BDB to SQLite). Make sure that you know, what you are doing."
+        return 0
+    fi
+    return $?
+}
+
+install_deployment_deps() {
+    detect_installer
+    if [ $? -ne 0 ]; then
+        error_msg "Unsupported OS type."
+        return 1
+    fi
+    if [ "$OS_TYPE" != "redos" ]; then
+        info_msg "There are no special deployment deps for $OS_TYPE."
+        return 0
+    fi
+    
+    rmp_rebuild_err_msg="Could not to rebuild old RPM DB. Try to execute 'rpmdb --rebuilddb' and rebuild RPM DB manually."
+
+    for pkg in ${redos_deploy_rpms}
+    do
+        if dnf list --installed | grep -e ^${pkg}\\. > /dev/null ; then
+            info_msg "Package '$pkg' already installed. Skip ....."
+        else
+            info_msg "Installing '$pkg' package ....."
+            dnf install -y ${pkg} > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                success_msg "Package '$pkg' was installed successfully."
+                if [ "${pkg}" == "rpm-build" ]; then
+                    info_msg "RPM-build package on redos requires RPM DB rebuilding ....."
+                    rpmdb --rebuilddb 2> /dev/null
+                    if [ $? -ne 0 ]; then
+                        db_dir=$(rpmdb --rebuilddb 2>&1 | grep -oE "/var/lib/rpmrebuilddb\.[0-9]+")
+                        if [ -n "${db_dir}" ]; then
+                            rm -rf /var/lib/rpm_backup_rx
+                            mv /var/lib/rpm /var/lib/rpm_backup_rx
+                            mv "${db_dir}" /var/lib/rpm
+                            if [ $? -ne 0 ]; then
+                                mv /var/lib/rpm_backup_rx /var/lib/rpm
+                                error_msg "${rmp_rebuild_err_msg}" && return 1
+                            fi
+                            info_msg "Successs. Your old RPM DB backup is in '/var/lib/rpm_backup_rx'. You may delete in manually if everithing is OK."
+                        else
+                            error_msg "${rmp_rebuild_err_msg}" && return 1
+                        fi
+                    else
+                        success_msg "RPM DB rebuild done."
+                    fi
+                fi
             else
                 error_msg "Could not install '$pkg' package. Try 'dnf update && dnf install $pkg'" && return 1
             fi
@@ -275,15 +333,19 @@ detect_installer() {
     fi
 }
 
-detect_installer
-if [ $? -eq 0 ]; then
-    INSTALL="install_${OS_TYPE}"
-    eval "$INSTALL"
+if [ -z "$@" ]; then
+    detect_installer
     if [ $? -eq 0 ]; then
-        success_msg "All dependencies installed."; exit 0
+        INSTALL="install_${OS_TYPE}"
+        eval "$INSTALL"
+        if [ $? -eq 0 ]; then
+            success_msg "All dependencies installed."; exit 0
+        else
+            error_msg "Dependencies installation was failed."; exit 1
+        fi
     else
-        error_msg "Dependencies installation was failed."; exit 1
+        error_msg "Unsupported OS type."
     fi
 else
-    error_msg "Unsupported OS type."
+  $@
 fi

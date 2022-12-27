@@ -25,7 +25,7 @@ ProtobufSchemaBuilder::ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsType
 	}
 }
 
-ProtobufSchemaBuilder::ProtobufSchemaBuilder(ProtobufSchemaBuilder&& obj)
+ProtobufSchemaBuilder::ProtobufSchemaBuilder(ProtobufSchemaBuilder&& obj) noexcept
 	: ser_(obj.ser_), fieldsTypes_(obj.fieldsTypes_), pt_(obj.pt_), tm_(obj.tm_), type_(obj.type_) {
 	obj.type_ = ObjType::TypePlain;
 }
