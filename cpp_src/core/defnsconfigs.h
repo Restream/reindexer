@@ -55,7 +55,7 @@ const std::vector<std::string> kDefDBConfig = {
 				"max_preselect_size":1000,
 				"max_preselect_part":0.1,
 				"index_updates_counting_mode":false,
-				"sync_storage_flush_limit":0
+				"sync_storage_flush_limit":20000
 			}
 		]
 	})json",

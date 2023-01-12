@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/v3"
 )
 
 func init() {

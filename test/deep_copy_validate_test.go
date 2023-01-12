@@ -3,7 +3,7 @@ package reindexer
 import (
 	"testing"
 
-	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/v3"
 )
 
 var testNsName = "test_deep_copy_type_equality"

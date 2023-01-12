@@ -365,9 +365,6 @@ void parseFilter(JsonValue& filter, Query& q, std::vector<std::pair<size_t, Equa
 					break;
 				case CondSet:
 				case CondAllSet:
-					if (values.size() < 1) {
-						throw Error(errLogic, "Condition SET must have at least 1 value, but %d values was provided", values.size());
-					}
 					break;
 				case CondAny:
 					if (values.size() != 0) {

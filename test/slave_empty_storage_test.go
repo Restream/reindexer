@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer"
-	"github.com/restream/reindexer/bindings/builtinserver/config"
-	"github.com/restream/reindexer/test/helpers"
+	"github.com/restream/reindexer/v3"
+	"github.com/restream/reindexer/v3/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v3/test/helpers"
 	"github.com/stretchr/testify/assert"
 )
 

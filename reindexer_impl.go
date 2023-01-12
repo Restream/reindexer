@@ -11,9 +11,9 @@ import (
 
 	lru "github.com/hashicorp/golang-lru"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/cjson"
-	"github.com/restream/reindexer/dsl"
+	"github.com/restream/reindexer/v3/bindings"
+	"github.com/restream/reindexer/v3/cjson"
+	"github.com/restream/reindexer/v3/dsl"
 )
 
 type reindexerNamespace struct {
@@ -144,7 +144,7 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 func (db *reindexerImpl) getStatus(ctx context.Context) bindings.Status {
 	status := db.binding.Status(ctx)
 	if db.status != nil {
-		status.Err = db.status  // If reindexerImpl has an error, return it.
+		status.Err = db.status // If reindexerImpl has an error, return it.
 	}
 
 	db.lock.RLock()

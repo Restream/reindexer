@@ -1,3 +1,14 @@
+# Version 3.13.0 (12.01.2023)
+## Core
+- [fix] Fixed composit indexes fields update after new indexes addition
+- [fix] Fixed SEGFAULT on string precepts
+
+## Go connector
+- [ref] Added version postfix to the modules' name (.../reindexer -> .../reindexer/v3)
+
+## Reindexer server
+- [fix] Allowed SET condition with 0 arguments in DSL query
+
 # Version 3.12.0 (23.12.2022)
 ## Core
 - [fea] Added logging for slow queries and transactions (check `profiling.long_queries_logging` section in `#config`-namespace)

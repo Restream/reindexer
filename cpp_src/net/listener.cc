@@ -506,8 +506,8 @@ void ForkedListener::io_accept(ev::io & /*watcher*/, int revents) {
 				pc->Detach();
 			} else {
 				std::unique_lock lck(mtx_);
+				workers_.emplace_back(std::move(w));
 				logPrintf(LogTrace, "Listener (%s) dedicated thread started. %d total", addr_, workers_.size());
-				workers_.push_back(std::move(w));
 				lck.unlock();
 				while (!terminating_) {
 					loop.run();

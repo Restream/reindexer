@@ -1,4 +1,5 @@
 #include <chrono>
+#include <string_view>
 #include "core/cbinding/resultserializer.h"
 #include "core/cjson/ctag.h"
 #include "core/cjson/jsonbuilder.h"
@@ -111,15 +112,16 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 											   IndexDeclaration{updatedTimeMSecFieldName.c_str(), "", "int64", IndexOpts(), 0},
 											   IndexDeclaration{updatedTimeUSecFieldName.c_str(), "", "int64", IndexOpts(), 0},
 											   IndexDeclaration{updatedTimeNSecFieldName.c_str(), "", "int64", IndexOpts(), 0},
-											   IndexDeclaration{serialFieldName.c_str(), "", "int64", IndexOpts(), 0}});
+											   IndexDeclaration{serialFieldName.c_str(), "", "int64", IndexOpts(), 0},
+											   IndexDeclaration{stringField.c_str(), "text", "string", IndexOpts(), 0}});
 
 	Item item = NewItem(default_namespace);
 	item[idIdxName] = idNum;
 
 	// Set precepts
-	std::vector<std::string> precepts = {updatedTimeSecFieldName + "=NOW()", updatedTimeMSecFieldName + "=NOW(msec)",
+	std::vector<std::string> precepts = {updatedTimeSecFieldName + "=NOW()",	  updatedTimeMSecFieldName + "=NOW(msec)",
 										 updatedTimeUSecFieldName + "=NOW(usec)", updatedTimeNSecFieldName + "=NOW(nsec)",
-										 serialFieldName + "=SERIAL()"};
+										 serialFieldName + "=SERIAL()",			  stringField + "=SERIAL()"};
 	item.SetPrecepts(precepts);
 
 	// Upsert item a few times
@@ -154,6 +156,10 @@ TEST_F(NsApi, UpsertWithPrecepts) {
 				int64_t value = item[field].Get<int64_t>();
 				ASSERT_TRUE(value == upsertTimes) << "Precept function `serial()` didn't increment a value to " << upsertTimes << " after "
 												  << upsertTimes << " upsert times";
+			} else if (field == stringField) {
+				auto value = item[field].Get<std::string_view>();
+				ASSERT_TRUE(value == std::to_string(upsertTimes)) << "Precept function `serial()` didn't increment a value to "
+																  << upsertTimes << " after " << upsertTimes << " upsert times";
 			}
 		}
 	}

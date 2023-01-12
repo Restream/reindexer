@@ -11,8 +11,6 @@ class TxStatCounter {
 	using QuantityCounter = QuantityCounterST<size_t>;
 
 public:
-	TxStatCounter() {}
-
 	void Count(const Transaction& tx) {
 		using std::chrono::duration_cast;
 		using std::chrono::microseconds;

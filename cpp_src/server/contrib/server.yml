@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.12.0"
+  version: "3.13.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2204,7 +2204,7 @@ definitions:
         description: "Specify, time to live for ttl index, in seconds"
         type: integer
       is_pk:
-        description: "Specifies, that index is primary key. The update opertations will checks, that PK field is unique. The namespace MUST have only 1 PK index"
+        description: "Specifies, that index is primary key. The update operations will checks, that PK field is unique. The namespace MUST have only 1 PK index"
         type: boolean
       is_array:
         description: "Specifies, that index is array. Array indexes can work with array fields, or work with multiple fields"
@@ -3664,7 +3664,7 @@ definitions:
         description: "Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time"
       sync_storage_flush_limit:
         type: integer
-        default: 0
+        default: 20000
         minimun: 0
         description: "Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only"
 

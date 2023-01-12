@@ -129,7 +129,7 @@ Error Item::FromProtobuf(std::string_view sbuf) { return impl_->FromProtobuf(sbu
 Error Item::GetMsgPack(WrSerializer &wrser) { return impl_->GetMsgPack(wrser); }
 Error Item::GetProtobuf(WrSerializer &wrser) { return impl_->GetProtobuf(wrser); }
 
-int Item::NumFields() { return impl_->Type().NumFields(); }
+int Item::NumFields() const { return impl_->Type().NumFields(); }
 Item::FieldRef Item::operator[](int field) const {
 	assertrx(field >= 0 && field < impl_->Type().NumFields());
 	return FieldRef(field, impl_);

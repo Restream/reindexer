@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer"
-	_ "github.com/restream/reindexer/bindings/builtinserver"
+	"github.com/restream/reindexer/v3"
+	_ "github.com/restream/reindexer/v3/bindings/builtinserver"
 	"github.com/stretchr/testify/require"
 )
 

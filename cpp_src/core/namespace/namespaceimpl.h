@@ -305,6 +305,8 @@ protected:
 	void insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string &realName);
 	void addIndex(const IndexDef &indexDef);
 	void addCompositeIndex(const IndexDef &indexDef);
+	template <typename PathsT, typename JsonPathsContainerT>
+	void createFieldsSet(const std::string &idxName, IndexType type, const PathsT &paths, FieldsSet &fields);
 	void verifyUpdateIndex(const IndexDef &indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
 	void updateIndex(const IndexDef &indexDef);

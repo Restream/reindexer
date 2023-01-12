@@ -81,7 +81,7 @@ type CacheMemStat struct {
 	HitCountLimit int64 `json:"hit_count_limit"`
 }
 
-//Operation counter and server id
+// Operation counter and server id
 type LsnT struct {
 	// Operation counter
 	Counter int64 `json:"counter"`
@@ -415,7 +415,8 @@ type DBNamespacesConfig struct {
 	// Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time
 	IndexUpdatesCountingMode bool `json:"index_updates_counting_mode"`
 	// Enables synchronous storage flush inside write-calls, if async updates count is more than SyncStorageFlushLimit
-	// 0 - disables synchronous storage flush (default). In this case storage will be flushed in background thread only
+	// 0 - disables synchronous storage flush. In this case storage will be flushed in background thread only
+	// Default value is 20000
 	SyncStorageFlushLimit int `json:"sync_storage_flush_limit"`
 }
 

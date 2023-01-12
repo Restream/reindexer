@@ -49,9 +49,9 @@ public:
 		FondWordsType foundWords;
 		std::vector<TextSearchResults> rawResults;
 	};
-	IDataHolder::MergeData mergeResults(std::vector<TextSearchResults>& rawResults, const std::vector<size_t>& synonymsBounds,
+	IDataHolder::MergeData mergeResults(std::vector<TextSearchResults>&& rawResults, const std::vector<size_t>& synonymsBounds,
 										bool inTransaction, FtMergeStatuses::Statuses mergeStatuses, const RdxContext&);
-	void mergeItaration(const TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
+	void mergeItaration(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
 						std::vector<IDataHolder::MergeInfo>& merged, std::vector<MergedIdRel>& merged_rd, std::vector<uint16_t>& idoffsets,
 						std::vector<bool>& curExists, bool hasBeenAnd, bool inTransaction, const RdxContext&);
 
@@ -68,7 +68,7 @@ public:
 
 	DataHolder<IdCont>& holder_;
 	size_t fieldSize_;
-	bool needArea_;
+	const bool needArea_;
 	int maxAreasInDoc_;
 };
 

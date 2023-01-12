@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer"
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/test/helpers"
+	"github.com/restream/reindexer/v3"
+	"github.com/restream/reindexer/v3/bindings"
+	"github.com/restream/reindexer/v3/test/helpers"
 )
 
 func BenchmarkGetConn(b *testing.B) {

@@ -10,7 +10,6 @@
 #include "core/keyvalue/variant.h"
 #include "core/query/query.h"
 #include "core/reindexer.h"
-#include "gtests/tests/gtest_cout.h"
 #include "reindexertestapi.h"
 #include "servercontrol.h"
 #include "tools/errors.h"
@@ -27,17 +26,17 @@ using reindexer::QueryEntry;
 using reindexer::QueryResults;
 using reindexer::Reindexer;
 
-class ReindexerApi : public ::testing::Test {
+class ReindexerApi : public virtual ::testing::Test {
 protected:
-	void SetUp() {
+	void SetUp() override {
 		auto err = rt.reindexer->Connect("builtin://");
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	void TearDown() {}
+	void TearDown() override {}
 
 public:
-	ReindexerApi() {}
+	ReindexerApi() = default;
 
 	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(ns, fields);
@@ -54,24 +53,11 @@ public:
 	void Upsert(std::string_view ns, Item &item) { rt.Upsert(ns, item); }
 
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) { rt.PrintQueryResults(ns, res); }
-	std::string PrintItem(Item &item) { return rt.PrintItem(item); }
 
 	std::string RandString() { return rt.RandString(); }
 	std::string RandLikePattern() { return rt.RandLikePattern(); }
 	std::string RuRandString() { return rt.RuRandString(); }
 	std::vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
-
-	struct QueryWatcher {
-		~QueryWatcher() {
-			if (::testing::Test::HasFailure()) {
-				reindexer::WrSerializer ser;
-				q.GetSQL(ser);
-				TEST_COUT << "Failed query dest: " << ser.Slice() << std::endl;
-			}
-		}
-
-		const Query &q;
-	};
 
 public:
 	const std::string default_namespace = "test_namespace";

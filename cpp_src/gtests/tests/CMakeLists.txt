@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.0)
 project(tests)
 
 SET(TARGET tests)
+SET(FUZZING_TARGET fuzzing)
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES})
 
 option(XML_REPORT "Enable XML xUnit report" OFF)
@@ -36,10 +37,14 @@ endif()
 include_directories(${REINDEXER_BINARY_PATH}/server/grpc ${GENERATED_PROTO_DIR})
 
 file (GLOB_RECURSE SRCS *.cc *.h ${GENERATED_PROTO_DIR}/*.cc)
+file (GLOB_RECURSE FUZZING_SRCS */fuzzing/* *fuzzing/*)
+list (REMOVE_ITEM SRCS ${FUZZING_SRCS})
 
 add_executable(${TARGET} ${SRCS})
+add_executable(${FUZZING_TARGET} ${FUZZING_SRCS})
 
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES})
+target_link_libraries(${FUZZING_TARGET} ${REINDEXER_LIBRARIES} ${GTEST_LIBRARIES})
 if (ENABLE_GRPC)
     add_definitions(-DWITH_GRPC)
     target_link_libraries(${TARGET} reindexer_grpc_library)

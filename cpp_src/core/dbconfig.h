@@ -62,7 +62,7 @@ struct NamespaceConfigData {
 	int64_t maxPreselectSize = 1000;
 	double maxPreselectPart = 0.1;
 	bool idxUpdatesCountingMode = false;
-	int syncStorageFlushLimit = 0;
+	int syncStorageFlushLimit = 20000;
 };
 
 enum ReplicationRole { ReplicationNone, ReplicationMaster, ReplicationSlave, ReplicationReadOnly };

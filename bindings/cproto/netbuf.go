@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/v3/bindings"
 	"github.com/golang/snappy"
 )
 

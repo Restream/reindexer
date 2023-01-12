@@ -21,7 +21,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	CheckGeomQueries();
 
 	int itemsCount = 0;
-	InsertedItemsByPk& items = insertedItems[default_namespace];
+	auto& items = insertedItems_[default_namespace];
 	for (auto it = items.begin(); it != items.end();) {
 		Error err = rt.reindexer->Delete(default_namespace, it->second);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -33,7 +33,6 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	FillDefaultNamespace(0, 1000, 5);
 
 	itemsCount = 0;
-	// items = insertedItems[default_namespace];
 	for (auto it = items.begin(); it != items.end();) {
 		Error err = rt.reindexer->Delete(default_namespace, it->second);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -328,7 +327,7 @@ TEST_F(QueriesApi, StrictModeTest) {
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
-		Verify(qr, Query(testSimpleNs));
+		Verify(qr, Query(testSimpleNs), *rt.reindexer);
 		qr.Clear();
 	}
 

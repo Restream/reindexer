@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"strconv"
 
-	"github.com/restream/reindexer"
-	_ "github.com/restream/reindexer/bindings/cproto"
+	"github.com/restream/reindexer/v3"
+	_ "github.com/restream/reindexer/v3/bindings/cproto"
 )
 
 type testItem struct {

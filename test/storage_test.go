@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/v3"
 	"github.com/stretchr/testify/assert"
 )
 

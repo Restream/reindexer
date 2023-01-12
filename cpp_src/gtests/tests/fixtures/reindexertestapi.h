@@ -19,7 +19,7 @@ public:
 	using ItemType = typename DB::ItemT;
 	using QueryResultsType = typename DB::QueryResultsT;
 
-	ReindexerTestApi() : reindexer(std::shared_ptr<DB>(new DB)) {}
+	ReindexerTestApi() : reindexer(std::make_shared<DB>()) {}
 	template <typename FieldsT>
 	static void DefineNamespaceDataset(DB &rx, const std::string &ns, const FieldsT &fields) {
 		auto err = reindexer::Error();
@@ -89,14 +89,6 @@ public:
 			TestCout() << outBuf << std::endl;
 		}
 		TestCout() << std::endl;
-	}
-	std::string PrintItem(ItemType &item) {
-		std::string outBuf = "";
-		for (auto idx = 1; idx < item.NumFields(); idx++) {
-			outBuf += std::string(item[idx].Name()) + "=";
-			outBuf += item[idx].template As<std::string>() + " ";
-		}
-		return outBuf;
 	}
 	std::string RandString(unsigned minLen = 4, unsigned maxRandLen = 4) {
 		std::string res;

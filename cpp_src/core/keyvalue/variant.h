@@ -160,6 +160,9 @@ public:
 	template <typename T>
 	void Dump(T &os) const;
 	int RelaxCompare(const VariantArray &other, const CollateOpts & = CollateOpts{}) const;
+	void EnsureHold() {
+		for (Variant &v : *this) v.EnsureHold();
+	}
 
 private:
 	bool isArrayValue = false;

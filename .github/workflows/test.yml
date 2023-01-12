@@ -153,13 +153,6 @@ jobs:
             ./dependencies.sh
           fi
           if [[ $TEST == 'GO' ]]; then
-            if [[ $OS == ubuntu* ]]; then
-              mkdir -p /home/runner/go/src/github.com/restream/
-              ln -s `pwd` /home/runner/go/src/github.com/restream/reindexer
-            else
-              mkdir -p /Users/runner/go/src/github.com/restream/
-              ln -s `pwd` /Users/runner/go/src/github.com/restream/reindexer
-            fi
             go mod download
           elif [[ $OS == ubuntu* ]]; then
             ./.github/workflows/install_gtest_parallel.sh
@@ -181,7 +174,7 @@ jobs:
   test-pyreindexer:
     strategy:
       matrix:
-        os: [ubuntu-20.04, ubuntu-22.04, macos-latest]
+        os: [ubuntu-20.04, ubuntu-22.04]
       fail-fast: false
     runs-on: ${{matrix.os}}
     needs: build

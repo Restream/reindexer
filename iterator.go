@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/v3/bindings"
 )
 
 type ExplainSelector struct {
@@ -28,9 +28,10 @@ type ExplainSelector struct {
 	// Preselect in joined namespace execution explainings
 	ExplainPreselect *ExplainResults `json:"explain_preselect,omitempty"`
 	// One of selects in joined namespace execution explainings
-	ExplainSelect *ExplainResults `json:"explain_select,omitempty"`
-	Selectors []ExplainSelector `json:"selectors,omitempty"`
+	ExplainSelect *ExplainResults   `json:"explain_select,omitempty"`
+	Selectors     []ExplainSelector `json:"selectors,omitempty"`
 }
+
 // ExplainResults presents query plan
 type ExplainResults struct {
 	// Total query execution time

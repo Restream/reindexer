@@ -122,11 +122,13 @@ public:
 	void clear() noexcept {
 		base_fields_set::clear();
 		tagsPaths_.clear();
+		jsonPaths_.clear();
 		mask_ = 0;
 	}
 
 	size_t getTagsPathsLength() const noexcept { return tagsPaths_.size(); }
 	size_t getJsonPathsLength() const noexcept { return jsonPaths_.size(); }
+	const h_vector<std::string, 1> &getJsonPaths() const noexcept { return jsonPaths_; }
 	bool isTagsPathIndexed(size_t idx) const noexcept {
 		assertrx(idx < tagsPaths_.size());
 		return (tagsPaths_[idx].index() == 1);
@@ -135,8 +137,10 @@ public:
 	const IndexedTagsPath &getIndexedTagsPath(size_t idx) const { return std::get<IndexedTagsPath>(tagsPaths_[idx]); }
 	const std::string &getJsonPath(size_t idx) const { return jsonPaths_[idx]; }
 
-	bool operator==(const FieldsSet &f) const noexcept { return (mask_ == f.mask_) && (tagsPaths_ == f.tagsPaths_); }
-	bool operator!=(const FieldsSet &f) const noexcept { return mask_ != f.mask_ || tagsPaths_ != f.tagsPaths_; }
+	bool operator==(const FieldsSet &f) const noexcept {
+		return (mask_ == f.mask_) && (tagsPaths_ == f.tagsPaths_) && (jsonPaths_ == jsonPaths_);
+	}
+	bool operator!=(const FieldsSet &f) const noexcept { return !(*this == f); }
 
 	template <typename T>
 	void Dump(T &os) const {

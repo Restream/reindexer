@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/restream/reindexer"
-	_ "github.com/restream/reindexer/bindings/cproto"
-	"github.com/restream/reindexer/test/helpers"
+	"github.com/restream/reindexer/v3"
+	_ "github.com/restream/reindexer/v3/bindings/cproto"
+	"github.com/restream/reindexer/v3/test/helpers"
 )
 
 type ReindexerWrapper struct {
@@ -251,6 +251,21 @@ func (dbw *ReindexerWrapper) RenameNamespace(srcNsName string, dstNsName string)
 func (dbw *ReindexerWrapper) CloseNamespace(namespace string) error {
 	dbw.SetSyncRequired()
 	return dbw.Reindexer.CloseNamespace(namespace)
+}
+
+func (dbw *ReindexerWrapper) AddIndex(namespace string, indexDef ...reindexer.IndexDef) error {
+	dbw.SetSyncRequired()
+	return dbw.Reindexer.AddIndex(namespace, indexDef...)
+}
+
+func (dbw *ReindexerWrapper) UpdateIndex(namespace string, indexDef reindexer.IndexDef) error {
+	dbw.SetSyncRequired()
+	return dbw.Reindexer.UpdateIndex(namespace, indexDef)
+}
+
+func (dbw *ReindexerWrapper) DropIndex(namespace, index string) error {
+	dbw.SetSyncRequired()
+	return dbw.Reindexer.DropIndex(namespace, index)
 }
 
 func (dbw *ReindexerWrapper) Upsert(namespace string, item interface{}, precepts ...string) error {

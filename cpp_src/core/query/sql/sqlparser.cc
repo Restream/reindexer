@@ -976,7 +976,6 @@ std::string SQLParser::parseJoinedFieldName(tokenizer &parser, std::string &name
 }
 
 void SQLParser::parseJoinEntries(tokenizer &parser, const std::string &mainNs, JoinedQuery &jquery) {
-	QueryJoinEntry je;
 	auto tok = peekSqlToken(parser, OnSqlToken);
 	if (tok.text() != "on"sv) {
 		throw Error(errParseSQL, "Expected 'ON', but found %s, %s", tok.text(), parser.where());
@@ -1005,17 +1004,18 @@ void SQLParser::parseJoinEntries(tokenizer &parser, const std::string &mainNs, J
 			return;
 		}
 
+		QueryJoinEntry je;
 		std::string ns1 = mainNs, ns2 = jquery._namespace;
 		std::string idx1 = parseJoinedFieldName(parser, ns1);
 		je.condition_ = getCondType(parser.next_token().text());
 		std::string idx2 = parseJoinedFieldName(parser, ns2);
 
 		if (ns1 == mainNs && ns2 == jquery._namespace) {
-			je.index_ = idx1;
-			je.joinIndex_ = idx2;
+			je.index_ = std::move(idx1);
+			je.joinIndex_ = std::move(idx2);
 		} else if (ns2 == mainNs && ns1 == jquery._namespace) {
-			je.index_ = idx2;
-			je.joinIndex_ = idx1;
+			je.index_ = std::move(idx2);
+			je.joinIndex_ = std::move(idx1);
 			je.condition_ = InvertJoinCondition(je.condition_);
 			je.reverseNamespacesOrder = true;
 		} else {
@@ -1025,7 +1025,7 @@ void SQLParser::parseJoinEntries(tokenizer &parser, const std::string &mainNs, J
 
 		je.op_ = jquery.nextOp_;
 		jquery.nextOp_ = OpAnd;
-		jquery.joinEntries_.push_back(std::move(je));
+		jquery.joinEntries_.emplace_back(std::move(je));
 		if (!braces) {
 			return;
 		}

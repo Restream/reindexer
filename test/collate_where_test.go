@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/v3"
 )
 
 type TestCollateWhereNumericItem struct {

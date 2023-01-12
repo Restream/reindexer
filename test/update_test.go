@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -88,7 +88,7 @@ func randInnerObject() []testInnerObject {
 	fourth := make([]string, 0, arraySize)
 	for i := 0; i < arraySize; i++ {
 		third = append(third, i)
-		fourth = append(fourth, "ALMOST EMPTY " + strconv.Itoa(i))
+		fourth = append(fourth, "ALMOST EMPTY "+strconv.Itoa(i))
 	}
 	innerObjectsCnt := rand.Int()%20 + 1
 	innerObjects := make([]testInnerObject, 0, innerObjectsCnt)
@@ -108,7 +108,7 @@ func randTestItemObject() testItemObject {
 	main := testInnerObject{First: rand.Int() % 1000, Second: randString()}
 	for i := 0; i < arraySize; i++ {
 		main.Third = append(main.Third, i)
-		main.Fourth = append(main.Fourth, "ALMOST EMPTY " + strconv.Itoa(i))
+		main.Fourth = append(main.Fourth, "ALMOST EMPTY "+strconv.Itoa(i))
 	}
 	return testItemObject{
 		Name:   randString(),
@@ -125,7 +125,7 @@ func newTestItemComplexObject(id int) *TestItemComplexObject {
 	main := testInnerObject{First: rand.Int() % 1000, Second: randString()}
 	for i := 0; i < arraySize; i++ {
 		main.Third = append(main.Third, i)
-		main.Fourth = append(main.Fourth, "ALMOST EMPTY " + strconv.Itoa(i))
+		main.Fourth = append(main.Fourth, "ALMOST EMPTY "+strconv.Itoa(i))
 	}
 	nestedItemObjectCnt := rand.Int()%10 + 1
 	nestedItemObject := make([]testItemObject, 0, nestedItemObjectCnt)
@@ -691,7 +691,7 @@ func CheckNonIndexedArrayItemUpdate1(t *testing.T) {
 						if l == 1 {
 							equal = (value == "best item of array")
 						} else {
-							equal = (value == "ALMOST EMPTY " + strconv.Itoa(l))
+							equal = (value == "ALMOST EMPTY "+strconv.Itoa(l))
 						}
 						if !equal {
 							fmt.Printf("%+v; i = %d\n", value, l)

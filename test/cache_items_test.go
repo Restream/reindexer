@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/v3"
 )
 
 func init() {

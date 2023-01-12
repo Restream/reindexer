@@ -169,7 +169,7 @@ public:
 	int64_t GetLSN();
 	/// Get count of indexed field
 	/// @return count of  field
-	int NumFields();
+	int NumFields() const;
 	/// Get field by number
 	/// @param field - number of field. Must be >= 0 && < NumFields
 	/// @return FieldRef which contains reference to indexed field

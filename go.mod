@@ -1,4 +1,4 @@
-module github.com/restream/reindexer
+module github.com/restream/reindexer/v3
 
 go 1.15
 

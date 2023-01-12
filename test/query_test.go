@@ -17,8 +17,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/restream/reindexer"
-	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/v3"
+	"github.com/restream/reindexer/v3/bindings"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1640,10 +1640,10 @@ func (qt *queryTestEntryTree) verifyConditions(t *testing.T, ns *testNamespace, 
 		}
 		if cond.op == opOR {
 			if found {
-				continue;
+				continue
 			}
 		} else if !found {
-			return false;
+			return false
 		}
 		var curFound bool
 		switch cond.dataType {

@@ -1403,6 +1403,7 @@ INSTANTIATE_TEST_SUITE_P(, FTApi,
 								 case reindexer::FtFastConfig::Optimization::CPU:
 									 return "OptimizationByCPU";
 								 default:
-									 assert(0);
+									 assert(false);
+									 std::abort();
 							 }
 						 });
