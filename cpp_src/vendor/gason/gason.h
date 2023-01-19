@@ -101,7 +101,7 @@ struct JsonNode {
 
 	template <typename T, typename std::enable_if<(std::is_integral<T>::value || std::is_floating_point<T>::value) &&
 												  !std::is_same<T, bool>::value>::type * = nullptr>
-	T As(T defval = T(), T minv = std::numeric_limits<T>::min(), T maxv = std::numeric_limits<T>::max()) const {
+	T As(T defval = T(), T minv = std::numeric_limits<T>::lowest(), T maxv = std::numeric_limits<T>::max()) const {
 		if (empty()) return defval;
 		if (value.getTag() != JSON_DOUBLE && value.getTag() != JSON_NUMBER)
 			throw Exception(std::string("Can't convert json field '") + std::string(key) + "' to number");
@@ -190,7 +190,7 @@ class JsonAllocator {
 	struct Zone {
 		Zone *next;
 		size_t used;
-	} * head;
+	} *head;
 
 public:
 	JsonAllocator() : head(nullptr) {}

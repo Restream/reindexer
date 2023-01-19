@@ -1,6 +1,5 @@
 #include "selectiteratorcontainer.h"
 #include <sstream>
-#include "core/index/index.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/rdxcontext.h"
 #include "nsselecter.h"
@@ -461,7 +460,7 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &q
 															FtCtx::Ptr &ftCtx, const RdxContext &rdxCtx) {
 	const auto &queries = qPreproc.GetQueryEntries();
 	auto equalPositions = prepareEqualPositions(queries, begin, end);
-	bool sortIndexCreated = false;
+	bool sortIndexFound = false;
 	bool containFT = false;
 	for (size_t i = begin, next = begin; i != end; i = next) {
 		next = queries.Next(i);
@@ -499,12 +498,18 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &q
 								}
 								selectResults = processQueryEntry(qe, ns, strictMode);
 							} else {
-								const bool enableSortIndexOptimize = !sortIndexCreated && (op == OpAnd) && !qe.distinct && (begin == 0) &&
-																	 (ctx_->sortingContext.uncommitedIndex == qe.idxNo) &&
-																	 (next == end || queries.GetOperation(next) != OpOr);
+								bool enableSortIndexOptimize = (ctx_->sortingContext.uncommitedIndex == qe.idxNo) && !sortIndexFound &&
+															   (op == OpAnd) && !qe.distinct && (begin == 0) &&
+															   (next == end || queries.GetOperation(next) != OpOr);
+								if (enableSortIndexOptimize) {
+									if (!IsExpectingOrderedResults(qe)) {
+										// Disable sorting index optimization if it somehow has incompatible conditions
+										enableSortIndexOptimize = false;
+									}
+									sortIndexFound = true;
+								}
 								selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc, isIndexFt,
 																  isIndexSparse, ftCtx, qPreproc, rdxCtx);
-								if (enableSortIndexOptimize) sortIndexCreated = true;
 							}
 							processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nonIndexField);
 							if (op != OpOr) {

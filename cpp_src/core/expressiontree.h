@@ -74,10 +74,14 @@ class ExpressionTree {
 		VisitorHelperImpl(F&& f) noexcept(noexcept(F{std::forward<F>(f)})) : functor_{std::forward<F>(f)} {}
 		R operator()(const Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
 		R operator()(Arg& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Arg>(arg)))) { return functor_(std::forward<Arg>(arg)); }
+		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Arg>(arg)))) {
+			return functor_(std::forward<Arg>(arg));
+		}
 		R operator()(const Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
 		R operator()(Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Ref<Arg>&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Ref<Arg>>(arg)))) { return functor_(std::forward<Ref<Arg>>(arg)); }
+		R operator()(Ref<Arg>&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Ref<Arg>>(arg)))) {
+			return functor_(std::forward<Ref<Arg>>(arg));
+		}
 
 	private:
 		F functor_;
@@ -386,14 +390,14 @@ public:
 		activeBrackets_ = other.activeBrackets_;
 		return *this;
 	}
-	bool operator==(const ExpressionTree& other) const {
+	bool operator==(const ExpressionTree& other) const noexcept {
 		if (container_.size() != other.container_.size()) return false;
 		for (size_t i = 0; i < container_.size(); ++i) {
 			if (container_[i] != other.container_[i]) return false;
 		}
 		return true;
 	}
-	bool operator!=(const ExpressionTree& other) const { return !operator==(other); }
+	bool operator!=(const ExpressionTree& other) const noexcept { return !operator==(other); }
 
 	/// Insert value at the position
 	template <typename T>
@@ -502,16 +506,16 @@ public:
 	}
 	/// Sets operation to last appended leaf or last closed subtree or last openned subtree if it is empty
 	void SetLastOperation(OperationType op) { container_[lastAppendedElement()].operation = op; }
-	bool Empty() const { return container_.empty(); }
-	size_t Size() const { return container_.size(); }
+	bool Empty() const noexcept { return container_.empty(); }
+	size_t Size() const noexcept { return container_.size(); }
 	void Reserve(size_t s) { container_.reserve(s); }
 	/// @return size of leaf of subtree beginning from i
-	size_t Size(size_t i) const {
+	size_t Size(size_t i) const noexcept {
 		assertrx(i < Size());
 		return container_[i].Size();
 	}
 	/// @return beginning of next children of the same parent
-	size_t Next(size_t i) const {
+	size_t Next(size_t i) const noexcept {
 		assertrx(i < Size());
 		return i + Size(i);
 	}
@@ -595,26 +599,26 @@ public:
 	/// iterates between children of the same parent
 	class const_iterator {
 	public:
-		const_iterator(typename Container::const_iterator it) : it_(it) {}
-		bool operator==(const const_iterator& other) const { return it_ == other.it_; }
-		bool operator!=(const const_iterator& other) const { return !operator==(other); }
-		const Node& operator*() const { return *it_; }
-		const Node* operator->() const { return &*it_; }
-		const_iterator& operator++() {
+		const_iterator(typename Container::const_iterator it) noexcept : it_(it) {}
+		bool operator==(const const_iterator& other) const noexcept { return it_ == other.it_; }
+		bool operator!=(const const_iterator& other) const noexcept { return !operator==(other); }
+		const Node& operator*() const noexcept { return *it_; }
+		const Node* operator->() const noexcept { return &*it_; }
+		const_iterator& operator++() noexcept {
 			it_ += it_->Size();
 			return *this;
 		}
-		const_iterator cbegin() const {
+		const_iterator cbegin() const noexcept {
 			assertrx(it_->IsSubTree());
 			return it_ + 1;
 		}
-		const_iterator begin() const { return cbegin(); }
-		const_iterator cend() const {
+		const_iterator begin() const noexcept { return cbegin(); }
+		const_iterator cend() const noexcept {
 			assertrx(it_->IsSubTree());
 			return it_ + it_->Size();
 		}
-		const_iterator end() const { return cend(); }
-		typename Container::const_iterator PlainIterator() const { return it_; }
+		const_iterator end() const noexcept { return cend(); }
+		typename Container::const_iterator PlainIterator() const noexcept { return it_; }
 
 	private:
 		typename Container::const_iterator it_;
@@ -624,46 +628,46 @@ public:
 	/// iterates between children of the same parent
 	class iterator {
 	public:
-		iterator(typename Container::iterator it) : it_(it) {}
-		bool operator==(const iterator& other) const { return it_ == other.it_; }
-		bool operator!=(const iterator& other) const { return !operator==(other); }
-		Node& operator*() const { return *it_; }
-		Node* operator->() const { return &*it_; }
-		iterator& operator++() {
+		iterator(typename Container::iterator it) noexcept : it_(it) {}
+		bool operator==(const iterator& other) const noexcept { return it_ == other.it_; }
+		bool operator!=(const iterator& other) const noexcept { return !operator==(other); }
+		Node& operator*() const noexcept { return *it_; }
+		Node* operator->() const noexcept { return &*it_; }
+		iterator& operator++() noexcept {
 			it_ += it_->Size();
 			return *this;
 		}
-		operator const_iterator() const { return const_iterator(it_); }
-		iterator begin() const {
+		operator const_iterator() const noexcept { return const_iterator(it_); }
+		iterator begin() const noexcept {
 			assertrx(it_->IsSubTree());
 			return it_ + 1;
 		}
-		const_iterator cbegin() const { return begin(); }
-		iterator end() const {
+		const_iterator cbegin() const noexcept { return begin(); }
+		iterator end() const noexcept {
 			assertrx(it_->IsSubTree());
 			return it_ + it_->Size();
 		}
-		const_iterator cend() const { return end(); }
-		typename Container::iterator PlainIterator() const { return it_; }
+		const_iterator cend() const noexcept { return end(); }
+		typename Container::iterator PlainIterator() const noexcept { return it_; }
 
 	private:
 		typename Container::iterator it_;
 	};
 
 	/// @return iterator points to the first child of root
-	iterator begin() { return {container_.begin()}; }
+	iterator begin() noexcept { return {container_.begin()}; }
 	/// @return iterator points to the first child of root
-	const_iterator begin() const { return {container_.begin()}; }
+	const_iterator begin() const noexcept { return {container_.begin()}; }
 	/// @return iterator points to the first child of root
-	const_iterator cbegin() const { return {container_.begin()}; }
+	const_iterator cbegin() const noexcept { return {container_.begin()}; }
 	/// @return iterator points to the node after the last child of root
-	iterator end() { return {container_.end()}; }
+	iterator end() noexcept { return {container_.end()}; }
 	/// @return iterator points to the node after the last child of root
-	const_iterator end() const { return {container_.end()}; }
+	const_iterator end() const noexcept { return {container_.end()}; }
 	/// @return iterator points to the node after the last child of root
-	const_iterator cend() const { return {container_.end()}; }
+	const_iterator cend() const noexcept { return {container_.end()}; }
 	/// @return iterator to first entry of current bracket
-	const_iterator begin_of_current_bracket() const {
+	const_iterator begin_of_current_bracket() const noexcept {
 		if (activeBrackets_.empty()) return container_.cbegin();
 		return container_.cbegin() + activeBrackets_.back() + 1;
 	}
@@ -687,7 +691,7 @@ protected:
 	}
 
 	/// @return the last appended leaf or last closed subtree or last openned subtree if it is empty
-	size_t lastAppendedElement() const {
+	size_t lastAppendedElement() const noexcept {
 		assertrx(!container_.empty());
 		size_t start = 0;  // start of last openned subtree;
 		if (!activeBrackets_.empty()) {

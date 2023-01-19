@@ -58,6 +58,19 @@ public:
 	std::string RandLikePattern() { return rt.RandLikePattern(); }
 	std::string RuRandString() { return rt.RuRandString(); }
 	std::vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
+	void AwaitIndexOptimization(const std::string &nsName) {
+		bool optimization_completed = false;
+		unsigned waitForIndexOptimizationCompleteIterations = 0;
+		while (!optimization_completed) {
+			ASSERT_LT(waitForIndexOptimizationCompleteIterations++, 200) << "Too long index optimization";
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			reindexer::QueryResults qr;
+			Error err = rt.reindexer->Select(Query("#memstats").Where("name", CondEq, nsName), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(1, qr.Count());
+			optimization_completed = qr[0].GetItem(false)["optimization_completed"].Get<bool>();
+		}
+	}
 
 public:
 	const std::string default_namespace = "test_namespace";

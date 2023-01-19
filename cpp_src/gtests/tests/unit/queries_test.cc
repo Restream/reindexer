@@ -461,3 +461,43 @@ TEST_F(QueriesApi, AllSet) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(qr.Count(), 1);
 }
+
+TEST_F(QueriesApi, SetByTreeIndex) {
+	// Execute query with sort and set condition by btree index
+	const std::string nsName = "set_by_tree_ns";
+	constexpr int kMaxID = 20;
+	Error err = rt.reindexer->OpenNamespace(nsName);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	setPkFields(nsName, {"id"});
+	for (int id = kMaxID; id != 0; --id) {
+		Item item = rt.NewItem(nsName);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item["id"] = id;
+		Upsert(nsName, item);
+		saveItem(std::move(item), nsName);
+	}
+
+	Query q{nsName};
+	q.Where("id", CondSet, {rand() % kMaxID, rand() % kMaxID, rand() % kMaxID, rand() % kMaxID}).Sort("id", false);
+	{
+		QueryResults qr;
+		ExecuteAndVerifyWithSql(q, qr);
+		// Expecting no sort index and filtering by index
+		EXPECT_NE(qr.explainResults.find(",\"sort_index\":\"-\","), std::string::npos);
+		EXPECT_NE(qr.explainResults.find(",\"method\":\"index\","), std::string::npos);
+		EXPECT_EQ(qr.explainResults.find("\"scan\""), std::string::npos);
+	}
+
+	{
+		// Execute the same query after indexes optimization
+		AwaitIndexOptimization(nsName);
+		QueryResults qr;
+		ExecuteAndVerifyWithSql(q, qr);
+		// Expecting 'id' as a sort index and filtering by index
+		EXPECT_NE(qr.explainResults.find(",\"sort_index\":\"id\","), std::string::npos);
+		EXPECT_NE(qr.explainResults.find(",\"method\":\"index\","), std::string::npos);
+		EXPECT_EQ(qr.explainResults.find("\"scan\""), std::string::npos);
+	}
+}

@@ -240,9 +240,11 @@ func DropField(t *testing.T, fieldName string) (items []interface{}) {
 	return results
 }
 
-func UpdateItemField(t *testing.T, fieldName string, values interface{}, objectField bool) (items []interface{}) {
+func UpdateItemField(t *testing.T, fieldName string, values interface{}, jsonObject bool) (items []interface{}) {
 	var q *queryTest
-	if objectField {
+	if jsonObject {
+		_, ok := values.([]byte)
+		require.True(t, ok, "'%v' is not JSON", values)
 		q = DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).SetObject(fieldName, values)
 	} else {
 		q = DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true).Set(fieldName, values)
@@ -263,8 +265,8 @@ func UpdateField(t *testing.T, fieldName string, values interface{}) (items []in
 	return UpdateItemField(t, fieldName, values, false)
 }
 
-func UpdateObject(t *testing.T, fieldName string, values interface{}) (items []interface{}) {
-	return UpdateItemField(t, fieldName, values, true)
+func UpdateObjectJSON(t *testing.T, fieldName string, json []uint8) (items []interface{}) {
+	return UpdateItemField(t, fieldName, json, true)
 }
 
 func CheckUpdateWithExpressions1(t *testing.T) {
@@ -387,7 +389,7 @@ func CheckUpdateObject2(t *testing.T) {
 	obj := randTestItemObject()
 	objJson, err := json.Marshal(obj)
 	require.NoError(t, err)
-	UpdateObject(t, "main_obj", objJson)
+	UpdateObjectJSON(t, "main_obj", objJson)
 	require.True(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))
 }
 
@@ -412,7 +414,7 @@ func CheckUpdateArrayObject(t *testing.T) {
 	// Update objects[0].nested[0] witn new value (set as JSON)
 	objJson, err := json.Marshal(obj)
 	require.NoError(t, err)
-	results := UpdateObject(t, "objects[0].nested[0]", objJson)
+	results := UpdateObjectJSON(t, "objects[0].nested[0]", objJson)
 
 	for i := 0; i < len(results); i++ {
 		objects := results[i].(*TestItemComplexObject).Objects
@@ -475,7 +477,7 @@ func CheckUpdateArrayOfObjects(t *testing.T, length int) {
 	for i := 0; i < len(objects); i++ {
 		objects[i] = randTestItemObject()
 	}
-	results := UpdateObject(t, "objects", objects)
+	results := UpdateField(t, "objects", objects)
 	for i := 0; i < len(results); i++ {
 		newObjects := results[i].(*TestItemComplexObject).Objects
 		require.NotNil(t, newObjects)
@@ -514,7 +516,7 @@ func CheckAddObject2(t *testing.T) {
 	nested["description"] = "weird"
 	nested["price"] = 699
 	newClient["nested"] = nested
-	UpdateObject(t, "optional", newClient)
+	UpdateField(t, "optional", newClient)
 	objJson, err := json.Marshal(newClient)
 	require.NoError(t, err)
 	require.True(t, CheckIfFieldInJSON(t, DB.Query(fieldsUpdateNs).Where("is_enabled", reindexer.EQ, true), string(objJson)))

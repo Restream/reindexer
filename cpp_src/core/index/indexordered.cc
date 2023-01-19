@@ -48,8 +48,11 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 	if (opts.forceComparator) return IndexStore<StoreIndexKeyType<T>>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 
 	// Get set of keys or single key
-	if (condition == CondSet || condition == CondAllSet || condition == CondEq || condition == CondAny || condition == CondEmpty ||
-		condition == CondLike) {
+	if (!IsOrderedCondition(condition)) {
+		if (opts.unbuiltSortOrders && keys.size() > 1) {
+			throw Error(errLogic, "Attemt to use btree index '%s' for sort optimization with unordered multivalue condition (%s)",
+						this->Name(), CondTypeToStr(condition));
+		}
 		return IndexUnordered<T>::SelectKey(keys, condition, sortId, opts, ctx, rdxCtx);
 	}
 

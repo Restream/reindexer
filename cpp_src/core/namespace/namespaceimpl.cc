@@ -536,6 +536,13 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef &indexDef) const {
 	const auto newIndex = std::unique_ptr<Index>(Index::New(indexDef, PayloadType(), FieldsSet()));
 	if (indexDef.opts_.IsSparse()) {
 		const auto newSparseIndex = std::unique_ptr<Index>(Index::New(indexDef, payloadType_, {}));
+		if (indexDef.jsonPaths_.size() != 1) {
+			throw Error(errParams, "Sparse index must have excatly 1 JSON-path, but %d paths found for '%s'", indexDef.jsonPaths_.size(),
+						indexDef.name_);
+		}
+		if (indexDef.jsonPaths_[0].empty()) {
+			throw Error(errParams, "JSON path for sparse index can not be empty ('%s')", indexDef.name_);
+		}
 	} else {
 		FieldsSet changedFields{idxNameIt->second};
 		PayloadType newPlType = payloadType_;
@@ -551,7 +558,7 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 	auto idxNameIt = indexesNames_.find(indexName);
 	int idxNo = payloadType_->NumFields();
 	IndexOpts opts = indexDef.opts_;
-	JsonPaths jsonPaths = indexDef.jsonPaths_;
+	const JsonPaths &jsonPaths = indexDef.jsonPaths_;
 	auto currentPKIndex = indexesNames_.find(kPKIndexName);
 
 	if (idxNameIt != indexesNames_.end()) {
@@ -592,6 +599,13 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 	}
 	if (opts.IsSparse()) {
 		FieldsSet fields;
+		if (jsonPaths.size() != 1) {
+			throw Error(errParams, "Sparse index must have excatly 1 JSON-path, but %d paths found for '%s':'%s'", jsonPaths.size(), name_,
+						indexDef.name_);
+		}
+		if (jsonPaths[0].empty()) {
+			throw Error(errParams, "JSON path for sparse index('%s':'%s') can not be empty)", name_, indexDef.name_);
+		}
 		for (const std::string &jsonPath : jsonPaths) {
 			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPath, true);
 			assertrx(tagsPath.size() > 0);
@@ -602,7 +616,6 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef) {
 		auto newIndex = Index::New(indexDef, payloadType_, fields);
 		insertIndex(std::move(newIndex), idxNo, indexName);
 		++sparseIndexesCount_;
-		assertrx(jsonPaths.size() == 1);
 		fillSparseIndex(*indexes_[idxNo], jsonPaths[0]);
 	} else {
 		PayloadType oldPlType = payloadType_;

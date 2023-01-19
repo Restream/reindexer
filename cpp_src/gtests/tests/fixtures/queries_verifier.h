@@ -791,32 +791,29 @@ private:
 		TestCout() << ")";
 	}
 
-	static void boldOn() { TestCout() << "\e[1m"; }
-	static void boldOff() { TestCout() << "\e[0m"; }
-
 	static void printFailedSortOrder(const reindexer::Query& query, const reindexer::QueryResults& qr, int itemIndex,
 									 int itemsToShow = 10) {
 		if (qr.Count() == 0) return;
 
 		TestCout() << "Sort order or last items:" << std::endl;
 		reindexer::Item rdummy(qr[0].GetItem(false));
-		boldOn();
+		TestCout().BoldOn();
 		for (size_t idx = 0; idx < query.sortingEntries_.size(); idx++) {
 			TestCout() << rdummy[query.sortingEntries_[idx].expression].Name() << " ";
 		}
-		boldOff();
-		TestCout() << std::endl << std::endl;
+		TestCout().Endl().Endl();
+		TestCout().BoldOff();
 
 		int firstItem = itemIndex - itemsToShow;
 		if (firstItem < 0) firstItem = 0;
 		for (int i = firstItem; i <= itemIndex; ++i) {
 			reindexer::Item item(qr[i].GetItem(false));
-			if (i == itemIndex) boldOn();
+			if (i == itemIndex) TestCout().BoldOn();
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 				TestCout() << item[query.sortingEntries_[j].expression].As<std::string>() << " ";
 			}
-			if (i == itemIndex) boldOff();
-			TestCout() << std::endl;
+			if (i == itemIndex) TestCout().BoldOff();
+			TestCout().Endl();
 		}
 
 		firstItem = itemIndex + 1;
@@ -829,10 +826,9 @@ private:
 			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
 				TestCout() << item[query.sortingEntries_[j].expression].As<std::string>() << " ";
 			}
-			TestCout() << std::endl;
+			TestCout().Endl();
 		}
-
-		TestCout() << std::endl << std::endl;
+		TestCout().Endl().Endl();
 	}
 
 	std::unordered_map<std::string, std::vector<std::string>> ns2pk_;

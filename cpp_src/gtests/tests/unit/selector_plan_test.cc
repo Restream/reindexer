@@ -36,18 +36,7 @@ int SelectorPlanTest::readFieldValue<int>(const std::string& str, std::string::s
 
 TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 	FillNs(btreeNs);
-
-	size_t waitForIndexOptimizationCompleteIterations = 0;
-	bool optimization_completed = false;
-	while (!optimization_completed) {
-		ASSERT_LT(waitForIndexOptimizationCompleteIterations++, 100) << "Too long index optimization";
-		std::this_thread::sleep_for(std::chrono::milliseconds(50));
-		reindexer::QueryResults qr;
-		Error err = rt.reindexer->Select(Query("#memstats").Where("name", CondEq, btreeNs), qr);
-		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_EQ(1, qr.Count());
-		optimization_completed = qr[0].GetItem(false)["optimization_completed"].Get<bool>();
-	}
+	AwaitIndexOptimization(btreeNs);
 	for (const char* searchField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
 		const bool searchByBtreeField = (searchField == kFieldTree1 || searchField == kFieldTree2);
 		for (CondType cond : {CondLt, CondLe, CondGt, CondGe}) {

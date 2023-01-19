@@ -1054,37 +1054,56 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 }
 
 bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, SelectCtx &ctx, const RdxContext &rdxCtx) {
-	if (qentries.Size() == 0 || (qentries.Size() == 1 && qentries.HoldsOrReferTo<QueryEntry>(0) &&
-								 qentries.Get<QueryEntry>(0).idxNo == ctx.sortingContext.uncommitedIndex))
+	if (qentries.Size() == 0) {
 		return true;
+	}
+	if (qentries.Size() == 1 && qentries.HoldsOrReferTo<QueryEntry>(0)) {
+		const auto &qe = qentries.Get<QueryEntry>(0);
+		if (qe.idxNo == ctx.sortingContext.uncommitedIndex && SelectIteratorContainer::IsExpectingOrderedResults(qe)) {
+			return true;
+		}
+	}
 
 	size_t costNormal = ns_->items_.size() - ns_->free_.size();
+	enum { SortIndexNotFound = 0, SortIndexFound, SortIndexHasUnorderedConditions } sortIndexSearchState = SortIndexNotFound;
 
-	qentries.ExecuteAppropriateForEach(Skip<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{},
-									   [this, &ctx, &rdxCtx, &costNormal](const QueryEntry &qe) {
-										   if (qe.idxNo < 0 || qe.idxNo == ctx.sortingContext.uncommitedIndex) return;
-										   if (costNormal == 0) return;
+	qentries.ExecuteAppropriateForEach(
+		Skip<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{},
+		[this, &ctx, &rdxCtx, &costNormal, &sortIndexSearchState](const QueryEntry &qe) {
+			if (qe.idxNo < 0) return;
+			if (qe.idxNo == ctx.sortingContext.uncommitedIndex) {
+				if (sortIndexSearchState == SortIndexNotFound && !SelectIteratorContainer::IsExpectingOrderedResults(qe)) {
+					sortIndexSearchState = SortIndexHasUnorderedConditions;
+				} else {
+					sortIndexSearchState = SortIndexFound;
+				}
+				return;
+			}
+			if (costNormal == 0) return;
 
-										   auto &index = ns_->indexes_[qe.idxNo];
-										   if (IsFullText(index->Type())) return;
+			auto &index = ns_->indexes_[qe.idxNo];
+			if (IsFullText(index->Type())) return;
 
-										   Index::SelectOpts opts;
-										   opts.disableIdSetCache = 1;
-										   opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
-										   opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
-										   opts.inTransaction = ctx.inTransaction;
+			Index::SelectOpts opts;
+			opts.disableIdSetCache = 1;
+			opts.itemsCountInNamespace = ns_->items_.size() - ns_->free_.size();
+			opts.indexesNotOptimized = !ctx.sortingContext.enableSortOrders;
+			opts.inTransaction = ctx.inTransaction;
 
-										   try {
-											   SelectKeyResults reslts =
-												   index->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
-											   for (const SelectKeyResult &res : reslts) {
-												   if (res.comparators_.empty()) {
-													   costNormal = std::min(costNormal, res.GetMaxIterations(costNormal));
-												   }
-											   }
-										   } catch (const Error &) {
-										   }
-									   });
+			try {
+				SelectKeyResults reslts = index->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
+				for (const SelectKeyResult &res : reslts) {
+					if (res.comparators_.empty()) {
+						costNormal = std::min(costNormal, res.GetMaxIterations(costNormal));
+					}
+				}
+			} catch (const Error &) {
+			}
+		});
+
+	if (sortIndexSearchState == SortIndexHasUnorderedConditions) {
+		return false;
+	}
 
 	size_t costOptimized = ns_->items_.size() - ns_->free_.size();
 	costNormal *= 2;

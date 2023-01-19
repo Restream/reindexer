@@ -19,6 +19,8 @@
 class QueriesApi : public ReindexerApi, public QueriesVerifier {
 public:
 	void SetUp() override {
+		Error err = rt.reindexer->InitSystemNamespaces();
+		ASSERT_TRUE(err.ok()) << err.what();
 		setPkFields(default_namespace, {kFieldNameId, kFieldNameTemp});
 		setPkFields(testSimpleNs, {kFieldNameId});
 		setPkFields(joinNs, {kFieldNameId});
@@ -33,7 +35,7 @@ public:
 						   {kFieldNameTemp, CollateOpts{CollateASCII}},
 						   {kFieldNameNumeric, CollateOpts{CollateUTF8}}};
 
-		Error err = rt.reindexer->OpenNamespace(default_namespace);
+		err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(
 			default_namespace,
@@ -142,6 +144,23 @@ public:
 		Query queryFromSql;
 		queryFromSql.FromSQL(query.GetSQL());
 		ExecuteAndVerify(queryFromSql);
+	}
+
+	template <typename... T>
+	void ExecuteAndVerify(const Query& query, QueryResults& qr, T... args) {
+		const_cast<Query&>(query).Explain();
+		Error err = rt.reindexer->Select(query, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		Verify(qr, query, *rt.reindexer);
+		Verify(qr, args...);
+	}
+
+	void ExecuteAndVerifyWithSql(const Query& query, QueryResults& qr) {
+		ExecuteAndVerify(query, qr);
+		Query queryFromSql;
+		queryFromSql.FromSQL(query.GetSQL());
+		qr.Clear();
+		ExecuteAndVerify(queryFromSql, qr);
 	}
 
 	void Verify(const reindexer::QueryResults&) const noexcept {}

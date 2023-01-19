@@ -1,3 +1,13 @@
+# Version 3.13.1 (19.01.2023)
+## Core
+- [fix] Fixed wrong sort order for unbuilt tree-indexes combined with unordered conditions (SET/IN/ALLSET)
+- [fix] Fixed assertion for sparse indexes with multiple JSON-paths
+- [fix] Fixed assertion for wrong CJSON tags in storage
+- [fix] Fixed double values restrictions for JSON-documents (previously in some cases negative double values could cause JSON parsing exceptions)
+
+## Go connector
+- [fix] Fixed Query.Set method with arrays of objects and maps (now it calls SetObject in those cases)
+
 # Version 3.13.0 (12.01.2023)
 ## Core
 - [fix] Fixed composit indexes fields update after new indexes addition

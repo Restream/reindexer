@@ -1,6 +1,7 @@
 #pragma once
 #include <limits>
 #include "core/expressiontree.h"
+#include "core/index/index.h"
 #include "core/nsselecter/fieldscomparator.h"
 #include "core/nsselecter/selectiterator.h"
 #include "core/selectfunc/ctx/ftctx.h"
@@ -65,6 +66,9 @@ public:
 	}
 	int GetMaxIterations(bool withZero = false) { return (withZero && wasZeroIterations_) ? 0 : maxIterations_; }
 	std::string Dump() const;
+	static bool IsExpectingOrderedResults(const QueryEntry &qe) noexcept {
+		return IsOrderedCondition(qe.condition) || (qe.condition != CondAny && qe.values.size() <= 1);
+	}
 
 private:
 	bool prepareIteratorsForSelectLoop(QueryPreprocessor &, size_t begin, size_t end, unsigned sortId, bool isFt, const NamespaceImpl &,
