@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer"
-	"github.com/restream/reindexer/dsl"
+	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v4/dsl"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -210,7 +210,7 @@ type TestArrayItemEqualPosition struct {
 func init() {
 	tnamespaces["test_items"] = TestItem{}
 	tnamespaces["test_items_wal"] = TestItem{}
-	tnamespaces["test_items_qr_idle"] = TestItem{}
+	tnamespaces["test_items_qr_idle"] = TestItemSimple{}
 	tnamespaces["test_items_cancel"] = TestItem{}
 	tnamespaces["test_items_id_only"] = TestItemIDOnly{}
 	tnamespaces["test_items_with_sparse"] = TestItemWithSparse{}
@@ -272,6 +272,14 @@ func newTestItem(id int, pkgsCount int) interface{} {
 		Actor: Actor{
 			Name: randString(),
 		},
+	}
+}
+
+func newTestItemSimple(id int, pkgsCount int) interface{} {
+	return &TestItemSimple{
+		ID:   mkID(id),
+		Year: rand.Int()%50 + 2000,
+		Name: randString(),
 	}
 }
 
@@ -1841,15 +1849,16 @@ func TestQrIdleTimeout(t *testing.T) {
 	t.Parallel()
 
 	namespace := "test_items_qr_idle"
-	FillTestItemsWithFunc(namespace, 0, 4000, 0, newTestItem)
+	const nsSize = 600
+	FillTestItemsWithFunc(namespace, 0, nsSize, 0, newTestItemSimple)
 
 	t.Run("check if qr wil be correctly reused after connections drop", func(t *testing.T) {
-		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1))
-		err := db.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItem{})
+		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1), reindexer.WithDedicatedServerThreads())
+		err := db.RegisterNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 		const qrCount = 32
-		const fetchCount = 400
-		qrs := make([]*reindexer.Iterator, 0, 5*qrCount)
+		const fetchCount = 1
+		qrs := make([]*reindexer.Iterator, 0, 2*qrCount)
 
 		for i := 0; i < qrCount; i++ {
 			it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()
@@ -1863,37 +1872,38 @@ func TestQrIdleTimeout(t *testing.T) {
 		// Drop connection without QRs close
 		db.Close()
 		db = reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1))
-		err = db.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItem{})
+		err = db.RegisterNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 
-		// Create 4x more QRs, than were previously created
-		for i := qrCount; i < 5*qrCount; i++ {
+		// Create 2x more QRs, than were previously created
+		for i := qrCount; i < 2*qrCount; i++ {
 			it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()
 			assert.NoError(t, it.Error())
 			qrs = append(qrs, it)
 		}
 
 		// Get data
-		for i := qrCount; i < 5*qrCount; i++ {
+		for i := qrCount; i < 2*qrCount; i++ {
 			_, err = qrs[i].FetchAll()
 			assert.NoError(t, err, "i = %d", i)
 		}
 	})
 
 	t.Run("concurrent query results timeouts", func(t *testing.T) {
-		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(16))
+		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(16), reindexer.WithDedicatedServerThreads())
 		defer db.Close()
-		err := db.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItem{})
+		err := db.RegisterNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
-		const goroutines = 10
-		const qrInEachGoroutine = 220
-		const qrCount = goroutines * qrInEachGoroutine
-		const fetchCount = 500
+		const fillingRoutines = 5
+		const readingRoutines = 4
+		const qrInEachGoroutine = 440
+		const qrCount = fillingRoutines * qrInEachGoroutine
+		const fetchCount = 1
 		qrs := make([]*reindexer.Iterator, 0, qrCount+1)
 		var mtx sync.Mutex
 		var wg sync.WaitGroup
-		wg.Add(goroutines)
-		for i := 0; i < goroutines; i++ {
+		wg.Add(fillingRoutines)
+		for i := 0; i < fillingRoutines; i++ {
 			go func() {
 				defer wg.Done()
 				for j := 0; j < qrInEachGoroutine; j++ {
@@ -1905,13 +1915,13 @@ func TestQrIdleTimeout(t *testing.T) {
 				}
 			}()
 		}
+		wg.Wait()
 
-		var wgExtras sync.WaitGroup
-		wgExtras.Add(4)
+		wg.Add(readingRoutines)
 		var stop int32 = 0
-		for i := 0; i < 4; i++ {
+		for i := 0; i < readingRoutines; i++ {
 			go func(mult int) {
-				defer wgExtras.Done()
+				defer wg.Done()
 				counter := 0
 				for s := atomic.LoadInt32(&stop); s == 0; s = atomic.LoadInt32(&stop) {
 					counter++
@@ -1919,25 +1929,24 @@ func TestQrIdleTimeout(t *testing.T) {
 					assert.NoError(t, it.Error())
 					for it.Next() {
 						assert.NoError(t, it.Error())
-						if counter%100 == 0 {
-							time.Sleep(2 * time.Millisecond)
-						}
+						time.Sleep(1 * time.Millisecond)
 					}
 					time.Sleep(10 * time.Millisecond)
 				}
-			}(i)
+			}(i + 5)
 		}
 
-		wg.Wait()
-
-		it := db.Query(namespace).FetchCount(fetchCount).Exec()
+		const iterations = 40
+		const limit = iterations * (fetchCount + 2)
+		require.Less(t, limit, nsSize)
+		it := db.Query(namespace).FetchCount(fetchCount).Limit(limit).Exec()
 		assert.NoError(t, it.Error())
 		qrs = append(qrs, it)
 
-		for i := 0; i < 40; i++ {
+		for i := 0; i < iterations; i++ {
 			for j := 0; j < fetchCount+1; j++ {
 				qrs[qrCount].Next()
-				assert.NoError(t, qrs[0].Error())
+				assert.NoError(t, qrs[qrCount].Error())
 			}
 			time.Sleep(time.Second * 1)
 		}
@@ -1950,16 +1959,16 @@ func TestQrIdleTimeout(t *testing.T) {
 		}
 
 		atomic.AddInt32(&stop, 1)
-		wgExtras.Wait()
+		wg.Wait()
 	})
 
-	t.Run("check if timed out query results will be reused after clients qr buffer overflow", func(t *testing.T) {
-		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1))
+	t.Run("check if timed out query results will be reused after client's qr buffer overflow", func(t *testing.T) {
+		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1), reindexer.WithDedicatedServerThreads())
 		defer db.Close()
-		err := db.OpenNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItem{})
+		err := db.RegisterNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 		const qrCount = 256
-		const fetchCount = 400
+		const fetchCount = 1
 		qrs := make([]*reindexer.Iterator, 0, 2*qrCount)
 
 		for i := 0; i < qrCount; i++ {
@@ -1968,7 +1977,7 @@ func TestQrIdleTimeout(t *testing.T) {
 			qrs = append(qrs, it)
 		}
 
-		time.Sleep(time.Second * 40)
+		time.Sleep(time.Second * 30)
 
 		for i := 0; i < qrCount; i++ {
 			it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()

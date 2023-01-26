@@ -83,14 +83,20 @@ std::optional<std::string> ActivityContainer::QueryForIpConnection(int id) {
 
 RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::string_view user, std::string_view query,
 									   ActivityContainer& parent, int ipConnectionId, bool clientState)
-	: data_{nextId(),		std::string(activityTracer),	  std::string(user),	std::string(query),
-			ipConnectionId, std::chrono::system_clock::now(), Activity::InProgress, ""sv},
+	: data_{nextId(),
+			ipConnectionId,
+			std::string(activityTracer),
+			std::string(user),
+			std::string(query),
+			std::chrono::system_clock::now(),
+			Activity::InProgress,
+			""sv},
 	  state_(serializeState(clientState ? Activity::Sending : Activity::InProgress)),
-	  parent_(&parent)
 #ifndef NDEBUG
-	  ,
-	  refCount_(0u)
+	  refCount_(0u),
 #endif
+	  parent_(&parent)
+
 {
 	parent_->Register(this);
 }
@@ -99,12 +105,10 @@ RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::str
 RdxActivityContext::RdxActivityContext(RdxActivityContext&& other)
 	: data_(other.data_),
 	  state_(other.state_.load(std::memory_order_relaxed)),
-	  parent_(other.parent_)
 #ifndef NDEBUG
-	  ,
-	  refCount_(0u)
+	  refCount_(0u),
 #endif
-{
+	  parent_(other.parent_) {
 	if (parent_) parent_->Reregister(&other, this);
 	other.parent_ = nullptr;
 }

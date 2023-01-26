@@ -238,6 +238,7 @@ private:
 	friend class client::Namespace;
 	friend class SnapshotHandler;
 	friend class ClusterProxy;
+	friend class ShardingProxy;
 };
 
 }  // namespace reindexer

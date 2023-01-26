@@ -116,7 +116,7 @@ private:
 
 class LocatorService {
 public:
-	LocatorService(ReindexerImpl &rx, const cluster::ShardingConfig &config);
+	LocatorService(ClusterProxy &rx, const cluster::ShardingConfig &config);
 	~LocatorService() = default;
 	LocatorService(const LocatorService &) = delete;
 	LocatorService(LocatorService &&) = delete;
@@ -124,7 +124,7 @@ public:
 	LocatorService &operator=(LocatorService &&) = delete;
 
 	Error Start();
-	Error AwaitShards(const InternalRdxContext &ctx) { return networkMonitor_.AwaitShards(ctx); }
+	Error AwaitShards(const RdxContext &ctx) { return networkMonitor_.AwaitShards(ctx); }
 	bool IsSharded(std::string_view ns) const noexcept { return routingStrategy_.IsSharded(ns); }
 	int GetShardId(std::string_view ns, const Item &item) const { return routingStrategy_.GetHostId(ns, item); }
 	ShardIDsContainer GetShardId(const Query &q) const { return routingStrategy_.GetHostsIds(q); }
@@ -151,7 +151,7 @@ private:
 	Error validateConfig();
 	Error convertShardingKeysValues(KeyValueType fieldType, std::vector<cluster::ShardingConfig::Key> &keys);
 
-	ReindexerImpl &rx_;
+	ClusterProxy &rx_;
 	cluster::ShardingConfig config_;
 	RoutingStrategy routingStrategy_;
 	const int actualShardId = ShardingKeyType::ProxyOff;

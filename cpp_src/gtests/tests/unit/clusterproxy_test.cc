@@ -448,7 +448,7 @@ static void Select0Helper(int node, const std::string& nsName, ClusterizationApi
 	BaseApi::QueryResultsType qr;
 	Error err = cluster.GetNode(node)->api.reindexer->Select(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 0);
+	ASSERT_EQ(qr.Count(), 0);
 };
 
 static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, int leaderId, int followerId) {

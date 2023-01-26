@@ -156,7 +156,7 @@ IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery &dsl, bool inTransac
 	}
 
 	for (auto &res : ctx.rawResults) results.emplace_back(std::move(res));
-	return mergeResults(results, synonymsBounds, inTransaction, std::move(mergeStatuses), rdxCtx);
+	return mergeResults(std::move(results), synonymsBounds, inTransaction, std::move(mergeStatuses), rdxCtx);
 }
 
 template <typename IdCont>
@@ -316,7 +316,7 @@ void Selecter<IdCont>::debugMergeStep(const char *msg, int vid, float normBm25, 
 }
 
 template <typename IdCont>
-void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t rawResIndex, FtMergeStatuses::Statuses &mergeStatuses,
+void Selecter<IdCont>::mergeItaration(TextSearchResults &rawRes, index_t rawResIndex, FtMergeStatuses::Statuses &mergeStatuses,
 									  std::vector<IDataHolder::MergeInfo> &merged, std::vector<MergedIdRel> &merged_rd,
 									  std::vector<uint16_t> &idoffsets, std::vector<bool> &curExists, const bool hasBeenAnd,
 									  const bool inTransaction, const RdxContext &rdxCtx) {
@@ -341,7 +341,7 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 		if (!inTransaction) ThrowOnCancel(rdxCtx);
 		auto idf = IDF(totalDocsCount, r.vids_->size());
 
-		for (auto &relid : *r.vids_) {
+		for (auto &&relid : *r.vids_) {
 			static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(relid), const IdRelType &>) ||
 							  (std::is_same_v<IdCont, PackedIdRelVec> && std::is_same_v<decltype(relid), IdRelType &>),
 						  "Expecting relid is movable for packed vector and not movable for simple vector");
@@ -428,6 +428,7 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, termLenBoost);
 			}
 
+			const IdRelType *movedRelId = nullptr;
 			// match of 2-rd, and next terms
 			if (!simple && vidStatus) {
 				assertrx(relid.Size());
@@ -464,8 +465,9 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 							}
 						}
 					}
-					curMrd.rank = finalRank;
 					curMrd.next = std::move(relid);
+					movedRelId = &curMrd.next;
+					curMrd.rank = finalRank;
 					curExists[vid] = true;
 				} else {
 					debugMergeStep("skiped ", vid, normBm25, normDist, finalRank, curMrd.rank);
@@ -484,7 +486,8 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 				if (needArea_) {
 					info.holder.reset(new AreaHolder);
 					info.holder->ReserveField(fieldSize_);
-					for (auto pos : relid.Pos()) {
+					auto &relidRef = movedRelId ? *movedRelId : relid;
+					for (auto pos : relidRef.Pos()) {
 						info.holder->AddWord(pos.pos(), r.wordLen_, pos.field(), maxAreasInDoc_);
 					}
 				}
@@ -499,15 +502,23 @@ void Selecter<IdCont>::mergeItaration(const TextSearchResults &rawRes, index_t r
 					}
 				}
 				if (simple) continue;
+
 				// prepare for intersect with next terms
-				merged_rd.push_back({IdRelType(std::move(relid)), IdRelType(), int(termRank), rawRes.term.opts.qpos});
+				if (movedRelId) {
+					// Due to move conditions, this branch is actually never works, so it's just double check
+					merged_rd.push_back({*movedRelId, IdRelType(), int(termRank), rawRes.term.opts.qpos});
+				} else {
+					// Moving relid only if it was not already moved before (movedRelId must be set right after move)
+					// NOLINTNEXTLINE(bugprone-use-after-move)
+					merged_rd.push_back({std::move(relid), IdRelType(), int(termRank), rawRes.term.opts.qpos});
+				}
 			}
 		}
 	}
 }
 
 template <typename IdCont>
-typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults> &rawResults,
+typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults> &&rawResults,
 															   const std::vector<size_t> &synonymsBounds, bool inTransaction,
 															   FtMergeStatuses::Statuses mergeStatuses, const RdxContext &rdxCtx) {
 	const auto &vdocs = holder_.vdocs_;
@@ -548,7 +559,7 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextS
 				lastGroupStart = i;
 			}
 		}
-		const auto &res = rawResults[i];
+		auto &res = rawResults[i];
 		mergeItaration(res, i, mergeStatuses, merged, merged_rd, idoffsets, exists[curExists], hasBeenAnd, inTransaction, rdxCtx);
 
 		if (res.term.opts.op == OpAnd && !exists[curExists].empty()) {

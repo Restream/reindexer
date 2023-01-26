@@ -6,9 +6,6 @@ namespace reindexer {
 
 Transaction::Transaction(LocalTransaction &&ltx) : impl_(std::make_unique<TransactionImpl>(std::move(ltx))) {}
 
-Transaction::Transaction(LocalTransaction &&ltx, client::Transaction &&tx)
-	: impl_(std::make_unique<TransactionImpl>(std::move(ltx), std::move(tx))) {}
-
 Transaction::Transaction(LocalTransaction &&ltx, client::Reindexer &&clusterLeader)
 	: impl_(std::make_unique<TransactionImpl>(std::move(ltx), std::move(clusterLeader))) {}
 
@@ -94,7 +91,8 @@ LocalTransaction Transaction::Transform(Transaction &&tx) {
 Transaction::Transaction(Error err) : status_(std::move(err)) {}
 
 Transaction::Transaction(Transaction &&tr, std::shared_ptr<sharding::LocatorService> shardingRouter) : Transaction(std::move(tr)) {
-	if (impl_) impl_->SetShardingRouter(std::move(shardingRouter));
+	assertrx(impl_);
+	impl_->SetShardingRouter(std::move(shardingRouter));
 }
 
 Transaction::Transaction() = default;

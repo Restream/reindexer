@@ -156,7 +156,7 @@ public:
 protected:
 	friend class ReindexerImpl;
 	friend class LocalQueryResults;
-	friend class ClusterProxy;
+	friend class ShardingProxy;
 	void updateSelectTime() const { handleInvalidation(NamespaceImpl::updateSelectTime)(); }
 	NamespaceImpl::Ptr getMainNs() const { return atomicLoadMainNs(); }
 	NamespaceImpl::Ptr awaitMainNs(const RdxContext &ctx) const {

@@ -5,83 +5,64 @@
 #include <map>
 #include <mutex>
 #include <random>
-#include <regex>
 #include <unordered_map>
 #include <unordered_set>
 #include "core/cjson/jsonbuilder.h"
-#include "core/key_value_type.h"
 #include "core/keyvalue/geometry.h"
 #include "core/nsselecter/joinedselectormock.h"
 #include "core/queryresults/joinresults.h"
 #include "core/sorting/sortexpression.h"
+#include "queries_verifier.h"
 #include "reindexer_api.h"
 #include "tools/random.h"
-#include "tools/string_regexp_functions.h"
 #include "tools/stringstools.h"
 
-class QueriesApi : public ReindexerApi {
+class QueriesApi : public ReindexerApi, public QueriesVerifier {
 public:
 	void SetUp() override {
-		indexesOptions = {
-			{kFieldNameId, IndexOpts()},
-			{kFieldNameGenre, IndexOpts()},
-			{kFieldNameYear, IndexOpts()},
-			{kFieldNamePackages, IndexOpts().Array()},
-			{kFieldNameName, IndexOpts()},
-			{kFieldNameCountries, IndexOpts().Array()},
-			{kFieldNameAge, IndexOpts()},
-			{kFieldNameDescription, IndexOpts()},
-			{kFieldNameRate, IndexOpts()},
-			{kFieldNameIsDeleted, IndexOpts()},
-			{kFieldNameActor, IndexOpts().SetCollateMode(CollateUTF8)},
-			{kFieldNamePriceId, IndexOpts().Array()},
-			{kFieldNameLocation, IndexOpts().SetCollateMode(CollateNone)},
-			{kFieldNameEndTime, IndexOpts()},
-			{kFieldNameStartTime, IndexOpts()},
-			{kFieldNamePhone, IndexOpts()},
-			{kFieldNameBtreeIdsets, IndexOpts()},
-			{kFieldNameTemp, IndexOpts().SetCollateMode(CollateASCII)},
-			{kFieldNameNumeric, IndexOpts().SetCollateMode(CollateUTF8)},
-			{kFieldNameId + compositePlus + kFieldNameTemp, IndexOpts().PK()},
-			{kFieldNameAge + compositePlus + kFieldNameGenre, IndexOpts()},
-			{kFieldNamePointQuadraticRTree, IndexOpts().RTreeType(IndexOpts::Quadratic)},
-			{kFieldNamePointLinearRTree, IndexOpts().RTreeType(IndexOpts::Linear)},
-			{kFieldNamePointGreeneRTree, IndexOpts().RTreeType(IndexOpts::Greene)},
-			{kFieldNamePointRStarRTree, IndexOpts().RTreeType(IndexOpts::RStar)},
-			{kFieldNameYearSparse, IndexOpts().Sparse()},
-		};
-
-		Error err = rt.reindexer->OpenNamespace(default_namespace);
+		Error err = rt.reindexer->InitSystemNamespaces();
 		ASSERT_TRUE(err.ok()) << err.what();
-		DefineNamespaceDataset(default_namespace,
-							   {
-								   IndexDeclaration{kFieldNameId, "hash", "int", indexesOptions[kFieldNameId], 0},
-								   IndexDeclaration{kFieldNameGenre, "tree", "int", indexesOptions[kFieldNameGenre], 0},
-								   IndexDeclaration{kFieldNameYear, "tree", "int", indexesOptions[kFieldNameYear], 0},
-								   IndexDeclaration{kFieldNamePackages, "hash", "int", indexesOptions[kFieldNamePackages], 0},
-								   IndexDeclaration{kFieldNameName, "tree", "string", indexesOptions[kFieldNameName], 0},
-								   IndexDeclaration{kFieldNameCountries, "tree", "string", indexesOptions[kFieldNameCountries], 0},
-								   IndexDeclaration{kFieldNameAge, "hash", "int", indexesOptions[kFieldNameAge], 0},
-								   IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", indexesOptions[kFieldNameDescription], 0},
-								   IndexDeclaration{kFieldNameRate, "tree", "double", indexesOptions[kFieldNameRate], 0},
-								   IndexDeclaration{kFieldNameIsDeleted, "-", "bool", indexesOptions[kFieldNameIsDeleted], 0},
-								   IndexDeclaration{kFieldNameActor, "tree", "string", indexesOptions[kFieldNameActor], 0},
-								   IndexDeclaration{kFieldNamePriceId, "hash", "int", indexesOptions[kFieldNamePriceId], 0},
-								   IndexDeclaration{kFieldNameLocation, "tree", "string", indexesOptions[kFieldNameLocation], 0},
-								   IndexDeclaration{kFieldNameEndTime, "hash", "int", indexesOptions[kFieldNameEndTime], 0},
-								   IndexDeclaration{kFieldNameStartTime, "tree", "int", indexesOptions[kFieldNameStartTime], 0},
-								   IndexDeclaration{kFieldNameBtreeIdsets, "hash", "int", indexesOptions[kFieldNameBtreeIdsets], 0},
-								   IndexDeclaration{kFieldNameTemp, "tree", "string", indexesOptions[kFieldNameTemp], 0},
-								   IndexDeclaration{kFieldNameNumeric, "tree", "string", indexesOptions[kFieldNameNumeric], 0},
-								   IndexDeclaration{(kFieldNameId + compositePlus + kFieldNameTemp).c_str(), "tree", "composite",
-													indexesOptions[kFieldNameId + compositePlus + kFieldNameTemp], 0},
-								   IndexDeclaration{(kFieldNameAge + compositePlus + kFieldNameGenre).c_str(), "hash", "composite",
-													indexesOptions[kFieldNameAge + compositePlus + kFieldNameGenre], 0},
-								   IndexDeclaration{kFieldNameYearSparse, "hash", "string", indexesOptions[kFieldNameYearSparse], 0},
-							   });
+		setPkFields(default_namespace, {kFieldNameId, kFieldNameTemp});
+		setPkFields(testSimpleNs, {kFieldNameId});
+		setPkFields(joinNs, {kFieldNameId});
+		setPkFields(compositeIndexesNs, {kFieldNameBookid, kFieldNameBookid2});
+		setPkFields(comparatorsNs, {kFieldNameColumnInt64});
+		setPkFields(forcedSortOffsetNs, {kFieldNameId});
+		setPkFields(geomNs, {kFieldNameId});
+		setPkFields(btreeIdxOptNs, {kFieldNameId});
 
-		defaultNsPks.push_back(kFieldNameId);
-		defaultNsPks.push_back(kFieldNameTemp);
+		indexesCollates = {{kFieldNameActor, CollateOpts{CollateUTF8}},
+						   {kFieldNameLocation, CollateOpts{CollateNone}},
+						   {kFieldNameTemp, CollateOpts{CollateASCII}},
+						   {kFieldNameNumeric, CollateOpts{CollateUTF8}}};
+
+		err = rt.reindexer->OpenNamespace(default_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
+		DefineNamespaceDataset(
+			default_namespace,
+			{
+				IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameGenre, "tree", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNamePackages, "hash", "int", IndexOpts{}.Array(), 0},
+				IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameCountries, "tree", "string", IndexOpts{}.Array(), 0},
+				IndexDeclaration{kFieldNameAge, "hash", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameRate, "tree", "double", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameIsDeleted, "-", "bool", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameActor, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
+				IndexDeclaration{kFieldNamePriceId, "hash", "int", IndexOpts{}.Array(), 0},
+				IndexDeclaration{kFieldNameLocation, "tree", "string", IndexOpts{}.SetCollateMode(CollateNone), 0},
+				IndexDeclaration{kFieldNameEndTime, "hash", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameBtreeIdsets, "hash", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameTemp, "tree", "string", IndexOpts{}.SetCollateMode(CollateASCII), 0},
+				IndexDeclaration{kFieldNameNumeric, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
+				IndexDeclaration{(kFieldNameId + compositePlus + kFieldNameTemp).c_str(), "tree", "composite", IndexOpts{}.PK(), 0},
+				IndexDeclaration{(kFieldNameAge + compositePlus + kFieldNameGenre).c_str(), "hash", "composite", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts{}.Sparse(), 0},
+			});
 
 		err = rt.reindexer->OpenNamespace(joinNs);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -90,7 +71,6 @@ public:
 										IndexDeclaration{kFieldNameAge, "tree", "int", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts().Sparse(), 0}});
-		joinNsPks.push_back(kFieldNameId);
 
 		err = rt.reindexer->OpenNamespace(testSimpleNs);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -100,7 +80,6 @@ public:
 												 IndexDeclaration{kFieldNameName, "hash", "string", IndexOpts(), 0},
 												 IndexDeclaration{kFieldNamePhone, "hash", "string", IndexOpts(), 0},
 											 });
-		simpleTestNsPks.push_back(kFieldNameId);
 
 		err = rt.reindexer->OpenNamespace(compositeIndexesNs);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -118,9 +97,6 @@ public:
 								IndexDeclaration{(std::string(kFieldNameBookid) + "+" + kFieldNameBookid2).c_str(), "hash", "composite",
 												 IndexOpts().PK(), 0}});
 
-		compositeIndexesNsPks.push_back(kFieldNameBookid);
-		compositeIndexesNsPks.push_back(kFieldNameBookid2);
-
 		err = rt.reindexer->OpenNamespace(comparatorsNs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(
@@ -132,30 +108,26 @@ public:
 			 IndexDeclaration{kFieldNameColumnString, "-", "string", IndexOpts(), 0},
 			 IndexDeclaration{kFieldNameColumnFullText, "text", "string", IndexOpts().SetConfig(R"xxx({"stemmers":[]})xxx"), 0},
 			 IndexDeclaration{kFieldNameColumnStringNumeric, "-", "string", IndexOpts().SetCollateMode(CollateNumeric), 0}});
-		comparatorsNsPks.push_back(kFieldNameColumnInt64);
 
 		err = rt.reindexer->OpenNamespace(forcedSortOffsetNs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(forcedSortOffsetNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
 													IndexDeclaration{kFieldNameColumnHash, "hash", "int", IndexOpts(), 0},
 													IndexDeclaration{kFieldNameColumnTree, "tree", "int", IndexOpts(), 0}});
-		forcedSortOffsetNsPks.push_back(kFieldNameId);
 
 		err = rt.reindexer->OpenNamespace(geomNs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(
 			geomNs, {IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts().PK(), 0},
-					 IndexDeclaration{kFieldNamePointQuadraticRTree, "rtree", "point", indexesOptions[kFieldNamePointQuadraticRTree], 0},
-					 IndexDeclaration{kFieldNamePointLinearRTree, "rtree", "point", indexesOptions[kFieldNamePointLinearRTree], 0},
-					 IndexDeclaration{kFieldNamePointGreeneRTree, "rtree", "point", indexesOptions[kFieldNamePointGreeneRTree], 0},
-					 IndexDeclaration{kFieldNamePointRStarRTree, "rtree", "point", indexesOptions[kFieldNamePointRStarRTree], 0}});
-		geomNsPks.push_back(kFieldNameId);
+					 IndexDeclaration{kFieldNamePointQuadraticRTree, "rtree", "point", IndexOpts{}.RTreeType(IndexOpts::Quadratic), 0},
+					 IndexDeclaration{kFieldNamePointLinearRTree, "rtree", "point", IndexOpts{}.RTreeType(IndexOpts::Linear), 0},
+					 IndexDeclaration{kFieldNamePointGreeneRTree, "rtree", "point", IndexOpts{}.RTreeType(IndexOpts::Greene), 0},
+					 IndexDeclaration{kFieldNamePointRStarRTree, "rtree", "point", IndexOpts{}.RTreeType(IndexOpts::RStar), 0}});
 
 		err = rt.reindexer->OpenNamespace(btreeIdxOptNs);
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(btreeIdxOptNs, {IndexDeclaration{kFieldNameId, "tree", "int", IndexOpts().PK(), 0},
 											   IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts(), 0}});
-		btreeIdxOptNsPks.push_back(kFieldNameId);
 	}
 
 	template <typename... T>
@@ -164,7 +136,7 @@ public:
 		const_cast<Query&>(query).Explain();
 		Error err = rt.reindexer->Select(query, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
-		Verify(qr, query);
+		Verify(qr, query, *rt.reindexer);
 		Verify(qr, args...);
 	}
 
@@ -175,105 +147,40 @@ public:
 		ExecuteAndVerify(queryFromSql);
 	}
 
-	static inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept {
-		return std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+	template <typename... T>
+	void ExecuteAndVerify(const Query& query, QueryResults& qr, T... args) {
+		const_cast<Query&>(query).Explain();
+		Error err = rt.reindexer->Select(query, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		Verify(qr, query, *rt.reindexer);
+		Verify(qr, args...);
 	}
 
-	static VariantArray getJoinedField(int id, const LocalQueryResults& qr, size_t nsIdx, int index, std::string_view column) noexcept {
-		const reindexer::joins::ItemIterator itemIt{&qr.joined_[0], id};
-		const auto joinedIt = itemIt.at(nsIdx);
-		assert(joinedIt.ItemsCount() == 1);
-		auto joinedItem = joinedIt.GetItem(0, qr.getPayloadType(nsIdx + 1), qr.getTagsMatcher(nsIdx + 1));
-		VariantArray values;
-		if (index == IndexValueType::SetByJsonPath || index == IndexValueType::NotSet) {
-			values = joinedItem.GetValueByJSONPath(column);
-		} else {
-			joinedItem.GetField(index, values);
-		}
-		return values;
+	void ExecuteAndVerifyWithSql(const Query& query, QueryResults& qr) {
+		ExecuteAndVerify(query, qr);
+		Query queryFromSql;
+		queryFromSql.FromSQL(query.GetSQL());
+		qr.Clear();
+		ExecuteAndVerify(queryFromSql, qr);
 	}
 
-	static double CalculateSortExpression(reindexer::SortExpression::const_iterator begin, reindexer::SortExpression::const_iterator end,
-										  Item& item, const LocalQueryResults& qr) {
-		double result = 0.0;
-		assert(begin != end);
-		assert(begin->operation.op == OpPlus);
-		for (auto it = begin; it != end; ++it) {
-			double value = it->InvokeAppropriate<double>(
-				[&it, &item, &qr](const reindexer::SortExpressionBracket&) {
-					return CalculateSortExpression(it.cbegin(), it.cend(), item, qr);
-				},
-				[](const reindexer::SortExprFuncs::Value& v) { return v.value; },
-				[&item](const reindexer::SortExprFuncs::Index& i) { return item[i.column].As<double>(); },
-				[&item, &qr](const reindexer::SortExprFuncs::JoinedIndex& i) {
-					const auto values = getJoinedField(item.GetID(), qr, i.nsIdx, i.index, i.column);
-					assert(values.size() == 1);
-					return values[0].As<double>();
-				},
-				[](const reindexer::SortExprFuncs::Rank&) -> double { abort(); },
-				[&item](const reindexer::SortExprFuncs::DistanceFromPoint& i) {
-					return distance(static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column])), i.point);
-				},
-				[&item, &qr](const reindexer::SortExprFuncs::DistanceJoinedIndexFromPoint& i) {
-					const auto values = getJoinedField(item.GetID(), qr, i.nsIdx, i.index, i.column);
-					return distance(static_cast<reindexer::Point>(values), i.point);
-				},
-				[&item](const reindexer::SortExprFuncs::DistanceBetweenIndexes& i) {
-					return distance(static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column1])),
-									static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column2])));
-				},
-				[&item, &qr](const reindexer::SortExprFuncs::DistanceBetweenIndexAndJoinedIndex& i) {
-					const auto jValues = getJoinedField(item.GetID(), qr, i.jNsIdx, i.jIndex, i.jColumn);
-					return distance(static_cast<reindexer::Point>(static_cast<reindexer::VariantArray>(item[i.column])),
-									static_cast<reindexer::Point>(jValues));
-				},
-				[&item, &qr](const reindexer::SortExprFuncs::DistanceBetweenJoinedIndexes& i) {
-					const auto values1 = getJoinedField(item.GetID(), qr, i.nsIdx1, i.index1, i.column1);
-					const auto values2 = getJoinedField(item.GetID(), qr, i.nsIdx2, i.index2, i.column2);
-					return distance(static_cast<reindexer::Point>(values1), static_cast<reindexer::Point>(values2));
-				},
-				[&item, &qr](const reindexer::SortExprFuncs::DistanceBetweenJoinedIndexesSameNs& i) {
-					const auto values1 = getJoinedField(item.GetID(), qr, i.nsIdx, i.index1, i.column1);
-					const auto values2 = getJoinedField(item.GetID(), qr, i.nsIdx, i.index2, i.column2);
-					return distance(static_cast<reindexer::Point>(values1), static_cast<reindexer::Point>(values2));
-				});
-			if (it->operation.negative) value = -value;
-			switch (it->operation.op) {
-				case OpPlus:
-					result += value;
-					break;
-				case OpMinus:
-					result -= value;
-					break;
-				case OpMult:
-					result *= value;
-					break;
-				case OpDiv:
-					assert(value != 0.0);
-					result /= value;
-					break;
-			}
-		}
-		return result;
-	}
-
-	void Verify(const QueryResults&) {}
-	void Verify(const LocalQueryResults&) {}
+	void Verify(const reindexer::QueryResults&) const noexcept {}
+	void Verify(const LocalQueryResults&) const noexcept {}
 
 	template <typename... T>
 	void Verify(const QueryResults& qr, const char* fieldName, const std::vector<Variant>& expectedValues, T... args) {
 		Verify(qr.ToLocalQr(), fieldName, expectedValues, std::forward<T>(args)...);
 	}
-
 	template <typename... T>
-	void Verify(const LocalQueryResults& qr, const char* fieldName, const std::vector<Variant>& expectedValues, T... args) {
+	void Verify(const reindexer::LocalQueryResults& qr, const char* fieldName, const std::vector<reindexer::Variant>& expectedValues,
+				T... args) {
 		reindexer::WrSerializer ser;
 		if (qr.Count() != expectedValues.size()) {
 			ser << "Sizes different: expected size " << expectedValues.size() << ", obtained size " << qr.Count() << '\n';
 		} else {
 			for (size_t i = 0; i < expectedValues.size(); ++i) {
-				Item item(qr[i].GetItem(false));
-				const Variant fieldValue = item[fieldName];
+				reindexer::Item item(qr[i].GetItem(false));
+				const reindexer::Variant fieldValue = item[fieldName];
 				if (fieldValue != expectedValues[i]) {
 					ser << "Field " << fieldName << " of item " << i << " different: expected ";
 					expectedValues[i].Dump(ser);
@@ -292,589 +199,17 @@ public:
 			ser << "\nObtained values:\n";
 			for (size_t i = 0; i < qr.Count(); ++i) {
 				if (i != 0) ser << ", ";
-				Item item(qr[i].GetItem(false));
-				const Variant fieldValue = item[fieldName];
+				reindexer::Item item(qr[i].GetItem(false));
+				const reindexer::Variant fieldValue = item[fieldName];
 				fieldValue.Dump(ser);
 			}
 			FAIL() << ser.Slice() << std::endl;
 		}
 		Verify(qr, args...);
 	}
-
-	void Verify(const QueryResults& qr, const Query& query) { Verify(qr.ToLocalQr(), query); }
-
-	void Verify(const LocalQueryResults& qr, const Query& query) {
-		std::unordered_set<std::string> pks;
-		std::unordered_map<std::string, std::unordered_set<std::string>> distincts;
-		QueryWatcher watcher{query};
-
-		VariantArray lastSortedColumnValues;
-		lastSortedColumnValues.resize(query.sortingEntries_.size());
-
-		auto joinedSelectors = getJoinedSelectors(query);
-		for (auto& js : joinedSelectors) {
-			const Error err = rt.reindexer->Select(js.JoinQuery(), js.QueryResults());
-			ASSERT_TRUE(err.ok()) << err.what();
-			Verify(js.QueryResults(), js.JoinQuery());
-		}
-		for (size_t i = 0; i < qr.Count(); ++i) {
-			Item itemr(qr[i].GetItem(false));
-
-			auto pk = getPkString(itemr, query._namespace);
-			EXPECT_TRUE(pks.insert(pk).second) << "Duplicated primary key: " + pk;
-
-			InsertedItemsByPk& insertedItemsByPk = insertedItems[query._namespace];
-			auto itInsertedItem = insertedItemsByPk.find(pk);
-			EXPECT_TRUE(itInsertedItem != insertedItemsByPk.end()) << "Item with such PK has not been inserted yet: " + pk;
-			if (itInsertedItem != insertedItemsByPk.end()) {
-				Item& insertedItem = itInsertedItem->second;
-				bool eq = (insertedItem.GetJSON() == itemr.GetJSON());
-				EXPECT_TRUE(eq) << "Items' jsons are different! pk: " << pk << std::endl
-								<< "expect json: " << insertedItem.GetJSON() << std::endl
-								<< "got json: " << itemr.GetJSON() << std::endl
-								<< "expect fields: " << PrintItem(insertedItem) << std::endl
-								<< "got fields: " << PrintItem(itemr) << std::endl
-								<< "explain: " << qr.GetExplainResults();
-			}
-
-			bool conditionsSatisfied = checkConditions(itemr, query.entries.cbegin(), query.entries.cend(), joinedSelectors);
-			if (!conditionsSatisfied) {
-				std::stringstream ss;
-				ss << "Item doesn't match conditions: " << itemr.GetJSON() << std::endl;
-				const auto& jit = qr[i].GetJoined();
-				if (jit.getJoinedItemsCount() > 0) {
-					ss << "Joined:" << std::endl;
-					for (int fIdx = 0, fCount = jit.getJoinedFieldsCount(); fIdx < fCount; ++fIdx) {
-						for (int j = 0, iCount = jit.at(fIdx).ItemsCount(); j < iCount; ++j) {
-							const auto nsCtxIdx = qr.GetJoinedNsCtxIndex(jit.at(fIdx)[j].Nsid());
-							ss << jit.at(fIdx).GetItem(j, qr.getPayloadType(nsCtxIdx), qr.getTagsMatcher(nsCtxIdx)).GetJSON() << std::endl;
-						}
-					}
-				}
-				ss << "explain: " << qr.GetExplainResults();
-				EXPECT_TRUE(conditionsSatisfied) << ss.str();
-				TEST_COUT << query.GetSQL() << std::endl;
-				PrintFailedQueryEntries(query.entries, joinedSelectors);
-			}
-			EXPECT_TRUE(checkDistincts(itemr, query, distincts)) << "Distinction check failed";
-
-			std::vector<int> cmpRes(query.sortingEntries_.size());
-			std::fill(cmpRes.begin(), cmpRes.end(), -1);
-
-			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-				const reindexer::SortingEntry& sortingEntry(query.sortingEntries_[j]);
-				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression, joinedSelectors);
-
-				Variant sortedValue;
-				if (sortExpr.ByField()) {
-					sortedValue = itemr[sortingEntry.expression];
-				} else if (sortExpr.ByJoinedField()) {
-					auto jItemIt = (qr.begin() + i).GetJoined();
-					EXPECT_EQ(jItemIt.getJoinedFieldsCount(), 1);
-					EXPECT_EQ(jItemIt.getJoinedItemsCount(), 1);
-					reindexer::ItemImpl joinItem(jItemIt.begin().GetItem(0, qr.getPayloadType(1), qr.getTagsMatcher(1)));
-					auto fieldName = sortingEntry.expression.substr(sortingEntry.expression.find_first_of('.'));
-					sortedValue = joinItem.GetValueByJSONPath(fieldName)[0];
-				} else {
-					sortedValue = Variant{CalculateSortExpression(sortExpr.cbegin(), sortExpr.cend(), itemr, qr)};
-				}
-				if (!lastSortedColumnValues[j].Type().Is<reindexer::KeyValueType::Null>()) {
-					bool needToVerify = true;
-					for (int k = j - 1; k >= 0; --k) {
-						if (cmpRes[k] != 0) {
-							needToVerify = false;
-							break;
-						}
-					}
-					if (needToVerify) {
-						if (j == 0 && !query.forcedSortOrder_.empty()) {
-							const auto currValIt = std::find(query.forcedSortOrder_.cbegin(), query.forcedSortOrder_.cend(), sortedValue);
-							const auto lastValIt =
-								std::find(query.forcedSortOrder_.cbegin(), query.forcedSortOrder_.cend(), lastSortedColumnValues[0]);
-							if (lastValIt < currValIt) {
-								cmpRes[0] = -1;
-							} else if (lastValIt > currValIt) {
-								cmpRes[0] = 1;
-							} else if (lastValIt == query.forcedSortOrder_.cend()) {
-								cmpRes[0] = lastSortedColumnValues[0].Compare(sortedValue);
-							} else {
-								cmpRes[0] = 0;
-							}
-						} else {
-							cmpRes[j] = lastSortedColumnValues[j].Compare(sortedValue);
-						}
-						bool sortOrderSatisfied =
-							(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);
-						if (!sortOrderSatisfied) {
-							EXPECT_TRUE(sortOrderSatisfied) << "\nSort order is incorrect for column: " << sortingEntry.expression;
-							TEST_COUT << query.GetSQL() << std::endl;
-							PrintFailedSortOrder(query, qr, i);
-						}
-					}
-				}
-				lastSortedColumnValues[j] = sortedValue;
-			}
-		}
-
-		// Check non found items, to not match conditions
-
-		// If query has limit and offset, skip verification
-		if (query.start != 0 || query.count != UINT_MAX) return;
-
-		// If query has distinct, skip verification
-		for (const auto& agg : query.aggregations_) {
-			if (agg.type_ == AggDistinct) return;
-		}
-
-		for (auto& insertedItem : insertedItems[query._namespace]) {
-			if (pks.find(insertedItem.first) != pks.end()) continue;
-			bool conditionsSatisfied = checkConditions(insertedItem.second, query.entries.cbegin(), query.entries.cend(), joinedSelectors);
-
-			EXPECT_FALSE(conditionsSatisfied) << "Item match conditions (found " << qr.Count()
-											  << " items), but not found: " << insertedItem.second.GetJSON() << std::endl
-											  << "query:" << query.GetSQL() << std::endl
-											  << "explain: " << qr.GetExplainResults() << std::endl;
-		}
-
-		auto aggResults = qr.GetAggregationResults();
-		if (query.calcTotal != ModeNoTotal) {
-			// calcTotal from version 3.0.2  also return total count in aggregations, so we have remove it from here for
-			// clean compare aggresults with aggregations
-			aggResults.pop_back();
-		}
-
-		EXPECT_EQ(aggResults.size(), query.aggregations_.size());
-
-		if (aggResults.size() == query.aggregations_.size()) {
-			for (size_t i = 0; i < aggResults.size(); ++i) {
-				EXPECT_EQ(aggResults[i].type, query.aggregations_[i].type_) << "i = " << i;
-				EXPECT_EQ(aggResults[i].fields.size(), query.aggregations_[i].fields_.size()) << "i = " << i;
-				if (aggResults[i].fields.size() == query.aggregations_[i].fields_.size()) {
-					for (size_t j = 0; j < aggResults[i].fields.size(); ++j) {
-						EXPECT_EQ(aggResults[i].fields[j], query.aggregations_[i].fields_[j]) << "i = " << i << ", j = " << j;
-					}
-				}
-				EXPECT_LE(aggResults[i].facets.size(), query.aggregations_[i].limit_) << "i = " << i;
-			}
-		}
-	}
+	using QueriesVerifier::Verify;
 
 protected:
-	const std::vector<std::string>& getNsPks(const std::string& ns) {
-		if (ns == default_namespace) return defaultNsPks;
-		if (ns == testSimpleNs) return simpleTestNsPks;
-		if (ns == joinNs) return joinNsPks;
-		if (ns == compositeIndexesNs) return compositeIndexesNsPks;
-		if (ns == comparatorsNs) return comparatorsNsPks;
-		if (ns == forcedSortOffsetNs) return forcedSortOffsetNsPks;
-		if (ns == geomNs) return geomNsPks;
-		if (ns == btreeIdxOptNs) return btreeIdxOptNsPks;
-		std::abort();
-	}
-
-	std::string getPkString(reindexer::Item& item, const std::string& ns) {
-		std::string ret;
-		const std::vector<std::string>& pkFields(getNsPks(ns));
-		for (const std::string& field : pkFields) {
-			ret += item[field].As<std::string>() + "#";
-		}
-		return ret;
-	}
-
-	static bool containsJoins(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator end) noexcept {
-		for (; it != end; ++it) {
-			if (it->InvokeAppropriate<bool>([&it](const reindexer::QueryEntriesBracket&) { return containsJoins(it.cbegin(), it.cend()); },
-											[](const reindexer::JoinQueryEntry&) { return true; }, [](const QueryEntry&) { return false; },
-											[](const reindexer::BetweenFieldsQueryEntry&) { return false; },
-											[](const reindexer::AlwaysFalse&) { return false; })) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	bool checkConditions(reindexer::Item& item, reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to,
-						 const std::vector<JoinedSelectorMock>& joinedSelectors) {
-		bool result = true;
-		for (; it != to; ++it) {
-			OpType op = it->operation;
-			if (op != OpOr && !result) return false;
-			bool skip = false;
-			bool const iterationResult = it->InvokeAppropriate<bool>(
-				[&](const reindexer::QueryEntriesBracket&) {
-					if (op == OpOr && result && !containsJoins(it.cbegin(), it.cend())) {
-						skip = true;
-						return false;
-					}
-					return checkConditions(item, it.cbegin(), it.cend(), joinedSelectors);
-				},
-				[&](const reindexer::QueryEntry& qe) {
-					if ((op == OpOr && result) || qe.distinct) {
-						skip = true;
-						return false;
-					}
-					return checkCondition(item, qe);
-				},
-				[&](const reindexer::JoinQueryEntry& jqe) {
-					assert(jqe.joinIndex < joinedSelectors.size());
-					if (joinedSelectors[jqe.joinIndex].Type() == OrInnerJoin) {
-						assert(op != OpNot);
-						op = OpOr;
-					}
-					return checkCondition(item, joinedSelectors[jqe.joinIndex]);
-				},
-				[&](const reindexer::BetweenFieldsQueryEntry& qe) {
-					if (op == OpOr && result) {
-						skip = true;
-						return false;
-					}
-					return checkCondition(item, qe);
-				},
-				[](const reindexer::AlwaysFalse&) { return false; });
-			if (skip) continue;
-			switch (op) {
-				case OpNot:
-					result = !iterationResult;
-					break;
-				case OpAnd:
-					result = iterationResult;
-					break;
-				case OpOr:
-					result = iterationResult || result;
-					break;
-			}
-		}
-		return result;
-	}
-
-	bool isIndexComposite(Item& item, const QueryEntry& qentry) {
-		if (qentry.idxNo >= item.NumFields()) return true;
-		return (qentry.values[0].Type().Is<reindexer::KeyValueType::Composite>() ||
-				qentry.values[0].Type().Is<reindexer::KeyValueType::Tuple>());
-	}
-
-	bool isLikeSqlPattern(std::string_view str, std::string_view pattern) {
-		return std::regex_match(std::string(str), std::regex{reindexer::sqlLikePattern2ECMAScript(std::string(pattern))});
-	}
-
-	bool compareValues(CondType condition, Variant key, const VariantArray& values, const CollateOpts& opts) {
-		if (values.empty()) return false;
-		bool result = false;
-		try {
-			key.convert(values[0].Type());
-		} catch (const Error& err) {
-			return false;
-		}
-		switch (condition) {
-			case CondGe:
-				result = (key.Compare(values[0], opts) >= 0);
-				break;
-			case CondGt:
-				result = (key.Compare(values[0], opts) > 0);
-				break;
-			case CondLt:
-				result = (key.Compare(values[0], opts) < 0);
-				break;
-			case CondLe:
-				result = (key.Compare(values[0], opts) <= 0);
-				break;
-			case CondRange:
-				result = (key.Compare(values[0], opts) >= 0) && (key.Compare(values[1], opts) <= 0);
-				break;
-			case CondEq:
-			case CondSet:
-				for (const Variant& kv : values) {
-					result = (key.Compare(kv, opts) == 0);
-					if (result) break;
-				}
-				break;
-			case CondLike:
-				if (!key.Type().Is<reindexer::KeyValueType::String>()) {
-					return false;
-				}
-				return isLikeSqlPattern(*static_cast<reindexer::key_string>(key.convert(reindexer::KeyValueType::String{})),
-										*static_cast<reindexer::key_string>(values[0].convert(reindexer::KeyValueType::String{})));
-			default:
-				std::abort();
-		}
-		return result;
-	}
-
-	VariantArray getValues(Item& item, const std::vector<std::string>& indexes) {
-		VariantArray kvalues;
-		for (const std::string& idxName : indexes) {
-			kvalues.push_back(item[idxName].operator Variant());
-		}
-		return kvalues;
-	}
-
-	int compareCompositeValues(const VariantArray& indexesValues, const Variant& keyValue, const CollateOpts& opts) {
-		VariantArray compositeValues = keyValue.getCompositeValues();
-		EXPECT_TRUE(indexesValues.size() == compositeValues.size());
-
-		int cmpRes = 0;
-		for (size_t i = 0; i < indexesValues.size() && (cmpRes == 0); ++i) {
-			compositeValues[i].convert(indexesValues[i].Type());
-			cmpRes = indexesValues[i].Compare(compositeValues[i], opts);
-		}
-
-		return cmpRes;
-	}
-
-	bool checkCompositeValues(Item& item, const QueryEntry& qentry, const CollateOpts& opts) {
-		std::vector<std::string> subIndexes;
-		reindexer::split(qentry.index, "+", true, subIndexes);
-
-		VariantArray indexesValues = getValues(item, subIndexes);
-		const VariantArray& keyValues = qentry.values;
-
-		switch (qentry.condition) {
-			case CondEmpty:
-				return indexesValues.size() == 0;
-			case CondAny:
-				return indexesValues.size() > 0;
-			case CondGe:
-				return compareCompositeValues(indexesValues, keyValues[0], opts) >= 0;
-			case CondGt:
-				return compareCompositeValues(indexesValues, keyValues[0], opts) > 0;
-			case CondLt:
-				return compareCompositeValues(indexesValues, keyValues[0], opts) < 0;
-			case CondLe:
-				return compareCompositeValues(indexesValues, keyValues[0], opts) <= 0;
-			case CondRange:
-				EXPECT_TRUE(keyValues.size() == 2);
-				return (compareCompositeValues(indexesValues, keyValues[0], opts) >= 0) &&
-					   (compareCompositeValues(indexesValues, keyValues[1], opts) <= 0);
-			case CondEq:
-			case CondSet:
-				for (const Variant& kv : keyValues) {
-					if (compareCompositeValues(indexesValues, kv, opts) == 0) return true;
-				}
-				return false;
-			case CondAllSet:
-				for (const Variant& kv : indexesValues) {
-					if (compareCompositeValues(indexesValues, kv, opts) != 0) return false;
-				}
-				return true;
-			default:
-				std::abort();
-		}
-	}
-
-	static bool isGeomConditions(CondType cond) noexcept { return cond == CondType::CondDWithin; }
-
-	bool checkGeomConditions(const Item& item, const QueryEntry& qentry) const {
-		assert(qentry.values.size() == 2);
-		const VariantArray idVariants = item[kFieldNameId];
-		assert(idVariants.size() == 1);
-		const size_t id = idVariants[0].As<int>();
-		const auto valueMapIt = insertedGeomObjects.find(id);
-		assert(valueMapIt != insertedGeomObjects.end());
-		const auto valueIt = valueMapIt->second.find(qentry.index);
-		assert(valueIt != valueMapIt->second.end());
-		switch (qentry.condition) {
-			case CondDWithin:
-				return DWithin(valueIt->second, qentry.values[0].As<reindexer::Point>(), qentry.values[1].As<double>());
-			default:
-				assert(0);
-				abort();
-		}
-	}
-
-	bool checkCondition(const Item& item, const JoinedSelectorMock& joinedSelector) {
-		for (auto it : joinedSelector.QueryResults()) {
-			const Item& rightItem = it.GetItem(false);
-			bool result = true;
-			const auto& joinEntries{joinedSelector.JoinQuery().joinEntries_};
-			assert(!joinEntries.empty());
-			assert(joinEntries[0].op_ != OpOr);
-			for (const auto& je : joinEntries) {
-				if (je.op_ == OpOr) {
-					if (result) continue;
-				} else if (!result) {
-					break;
-				}
-				const bool curResult = checkOnCondition(item, rightItem, je.index_, je.joinIndex_, je.condition_);
-				switch (je.op_) {
-					case OpAnd:
-						result = curResult;
-						break;
-					case OpNot:
-						result = !curResult;
-						break;
-					case OpOr:
-						result = result || curResult;
-						break;
-					default:
-						assert(0);
-				}
-			}
-			if (result) return true;
-		}
-		return false;
-	}
-	bool checkOnCondition(const Item& leftItem, const Item& rightItem, const std::string& leftIndexName, const std::string& rightIndexName,
-						  CondType cond) {
-		const IndexOpts& opts = indexesOptions[leftIndexName];
-		const VariantArray fieldValues = leftItem[leftIndexName];
-		for (const Variant& fieldValue : fieldValues) {
-			if (compareValues(cond, fieldValue, rightItem[rightIndexName], opts.collateOpts_)) return true;
-		}
-		return false;
-	}
-
-	bool checkCondition(Item& item, const QueryEntry& qentry) {
-		EXPECT_GT(item.NumFields(), 0);
-		if (isGeomConditions(qentry.condition)) {
-			return checkGeomConditions(item, qentry);
-		}
-		const IndexOpts& opts = indexesOptions[qentry.index];
-
-		if (isIndexComposite(item, qentry)) {
-			return checkCompositeValues(item, qentry, opts.collateOpts_);
-		} else {
-			VariantArray fieldValues = item[qentry.index];
-			switch (qentry.condition) {
-				case CondEmpty:
-					return fieldValues.size() == 0;
-				case CondAny:
-					return fieldValues.size() > 0;
-				case CondAllSet:
-					for (const auto& qvalue : qentry.values) {
-						if (!compareValues(CondSet, qvalue, fieldValues, opts.collateOpts_)) return false;
-					}
-					return true;
-				default:
-					break;
-			}
-			for (const Variant& fieldValue : fieldValues) {
-				if (compareValues(qentry.condition, fieldValue, qentry.values, opts.collateOpts_)) return true;
-			}
-		}
-
-		return false;
-	}
-
-	bool checkCompositeCondition(Item& item, const reindexer::BetweenFieldsQueryEntry& qentry) {
-		std::vector<std::string> firstSubIndexes, secondSubIndexes;
-		reindexer::split(qentry.firstIndex, "+", true, firstSubIndexes);
-		reindexer::split(qentry.secondIndex, "+", true, secondSubIndexes);
-		assert(firstSubIndexes.size() == secondSubIndexes.size());
-
-		reindexer::BetweenFieldsQueryEntry qe{qentry};
-		for (size_t i = 0; i < firstSubIndexes.size(); ++i) {
-			qe.firstIndex = firstSubIndexes[i];
-			qe.secondIndex = secondSubIndexes[i];
-			if (!checkCondition(item, qe)) return false;
-		}
-		return !firstSubIndexes.empty();
-	}
-
-	bool isIndexComposite(const reindexer::BetweenFieldsQueryEntry& qe) {
-		return qe.firstIndex.find('+') != std::string::npos || qe.secondIndex.find('+') != std::string::npos;
-	}
-
-	bool checkCondition(Item& item, const reindexer::BetweenFieldsQueryEntry& qentry) {
-		EXPECT_GT(item.NumFields(), 0);
-		assert(!isGeomConditions(qentry.Condition()));
-
-		const IndexOpts& opts = indexesOptions[qentry.firstIndex];
-
-		if (isIndexComposite(qentry)) {
-			return checkCompositeCondition(item, qentry);
-		}
-
-		VariantArray lValues = item[qentry.firstIndex];
-		VariantArray rValues = item[qentry.secondIndex];
-		switch (qentry.Condition()) {
-			case CondAllSet:
-				for (const auto& rv : rValues) {
-					if (!compareValues(CondSet, rv, lValues, opts.collateOpts_)) return false;
-				}
-				return true;
-			case CondRange:
-				assert(rValues.size() == 2);
-				for (const auto& lv : lValues) {
-					if (lv.RelaxCompare(rValues[0], opts.collateOpts_) >= 0 && lv.Compare(rValues[1], opts.collateOpts_) <= 0) return true;
-				}
-				return false;
-			case CondLike:
-				for (const Variant& lv : lValues) {
-					assert(lv.Type().Is<reindexer::KeyValueType::String>());
-					const auto lstr = *static_cast<reindexer::key_string>(lv.convert(reindexer::KeyValueType::String{}));
-					for (const Variant& rv : rValues) {
-						assert(rv.Type().Is<reindexer::KeyValueType::String>());
-						if (isLikeSqlPattern(lstr, *static_cast<reindexer::key_string>(rv.convert(reindexer::KeyValueType::String{}))))
-							return true;
-					}
-				}
-				return false;
-			default:
-				for (const Variant& lv : lValues) {
-					for (const Variant& rv : rValues) {
-						const int res = lv.RelaxCompare(rv, opts.collateOpts_);
-						switch (qentry.Condition()) {
-							case CondGe:
-								if (res >= 0) return true;
-								break;
-							case CondGt:
-								if (res > 0) return true;
-								break;
-							case CondLt:
-								if (res < 0) return true;
-								break;
-							case CondLe:
-								if (res <= 0) return true;
-								break;
-							case CondEq:
-							case CondSet:
-								if (res == 0) return true;
-								break;
-							default:
-								std::abort();
-						}
-					}
-				}
-				return false;
-		}
-	}
-
-	static std::vector<JoinedSelectorMock> getJoinedSelectors(const Query& query) {
-		std::vector<JoinedSelectorMock> result;
-		result.reserve(query.joinQueries_.size());
-		for (auto jq : query.joinQueries_) {
-			jq.count = UINT_MAX;
-			jq.start = 0;
-			jq.sortingEntries_.clear();
-			jq.forcedSortOrder_.clear();
-			result.emplace_back(InnerJoin, std::move(jq));
-		}
-		return result;
-	}
-
-	bool checkDistincts(reindexer::Item& item, const Query& qr,
-						std::unordered_map<std::string, std::unordered_set<std::string>>& distincts) {
-		bool result = true;
-		// check only on root level
-		for (auto it = qr.entries.cbegin(); it != qr.entries.cend(); ++it) {
-			if (!it->HoldsOrReferTo<QueryEntry>()) continue;
-			const QueryEntry& qentry = it->Value<QueryEntry>();
-			if (!qentry.distinct) continue;
-
-			reindexer::VariantArray fieldValue = item[qentry.index];
-
-			EXPECT_TRUE(fieldValue.size() == 1) << "Distinct field's size cannot be > 1";
-
-			std::unordered_set<std::string>& values = distincts[qentry.index];
-			Variant keyValue(fieldValue[0]);
-			bool inserted = values.insert(keyValue.As<std::string>()).second;
-			EXPECT_TRUE(inserted) << "Duplicate distinct item for index: " << keyValue.As<std::string>() << ", "
-								  << std::to_string(qentry.idxNo);
-			result &= inserted;
-		}
-		return result;
-	}
-
 	void FillCompositeIndexesNamespace(size_t since, size_t till) {
 		for (size_t i = since; i < till; ++i) {
 			int idValue(static_cast<int>(i));
@@ -889,8 +224,7 @@ protected:
 			Upsert(compositeIndexesNs, item);
 			Commit(compositeIndexesNs);
 
-			std::string pkString = getPkString(item, compositeIndexesNs);
-			insertedItems[compositeIndexesNs][pkString] = std::move(item);
+			saveItem(std::move(item), compositeIndexesNs);
 		}
 
 		Item lastItem = NewItem(compositeIndexesNs);
@@ -903,8 +237,7 @@ protected:
 		Upsert(compositeIndexesNs, lastItem);
 		Commit(compositeIndexesNs);
 
-		std::string pkString = getPkString(lastItem, compositeIndexesNs);
-		insertedItems[compositeIndexesNs][pkString] = std::move(lastItem);
+		saveItem(std::move(lastItem), compositeIndexesNs);
 	}
 
 	void FillForcedSortNamespace() {
@@ -917,8 +250,7 @@ protected:
 			item[kFieldNameColumnHash] = forcedSortOffsetValues.back().first;
 			item[kFieldNameColumnTree] = forcedSortOffsetValues.back().second;
 			Upsert(forcedSortOffsetNs, item);
-			std::string pkString = getPkString(item, forcedSortOffsetNs);
-			insertedItems[forcedSortOffsetNs][pkString] = std::move(item);
+			saveItem(std::move(item), forcedSortOffsetNs);
 		}
 		Commit(forcedSortOffsetNs);
 	}
@@ -935,8 +267,7 @@ protected:
 				item[kFieldNameYearSparse] = std::to_string(rand() % 50 + 2000);
 			}
 			Upsert(joinNs, item);
-			std::string pkString = getPkString(item, joinNs);
-			insertedItems[joinNs].emplace(std::move(pkString), std::move(item));
+			saveItem(std::move(item), joinNs);
 		}
 		Commit(testSimpleNs);
 	}
@@ -948,8 +279,7 @@ protected:
 		item1[kFieldNameName] = "SSS";
 		Upsert(testSimpleNs, item1);
 
-		std::string pkString = getPkString(item1, testSimpleNs);
-		insertedItems[testSimpleNs].emplace(pkString, std::move(item1));
+		saveItem(std::move(item1), testSimpleNs);
 
 		Item item2 = NewItem(testSimpleNs);
 		item2[kFieldNameId] = 2;
@@ -957,8 +287,7 @@ protected:
 		item2[kFieldNameName] = "MMM";
 		Upsert(testSimpleNs, item2);
 
-		pkString = getPkString(item2, testSimpleNs);
-		insertedItems[testSimpleNs].emplace(pkString, std::move(item2));
+		saveItem(std::move(item2), testSimpleNs);
 
 		Commit(testSimpleNs);
 	}
@@ -975,30 +304,25 @@ protected:
 				bld.Put(kFieldNameId, id);
 
 				reindexer::Point point{randPoint(10)};
-				insertedGeomObjects[id][kFieldNamePointQuadraticRTree] = point;
 				double arr[]{point.x, point.y};
 				bld.Array(kFieldNamePointQuadraticRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				insertedGeomObjects[id][kFieldNamePointLinearRTree] = point;
 				arr[0] = point.x;
 				arr[1] = point.y;
 				bld.Array(kFieldNamePointLinearRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				insertedGeomObjects[id][kFieldNamePointGreeneRTree] = point;
 				arr[0] = point.x;
 				arr[1] = point.y;
 				bld.Array(kFieldNamePointGreeneRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				insertedGeomObjects[id][kFieldNamePointRStarRTree] = point;
 				arr[0] = point.x;
 				arr[1] = point.y;
 				bld.Array(kFieldNamePointRStarRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				insertedGeomObjects[id][kFieldNamePointNonIndex] = point;
 				arr[0] = point.x;
 				arr[1] = point.y;
 				bld.Array(kFieldNamePointNonIndex, reindexer::span<double>{arr, 2});
@@ -1007,8 +331,7 @@ protected:
 			item.FromJSON(ser.Slice());
 			Upsert(geomNs, item);
 
-			std::string pkString = getPkString(item, geomNs);
-			insertedItems[geomNs][pkString] = std::move(item);
+			saveItem(std::move(item), geomNs);
 		}
 		Commit(geomNs);
 		lastId += geomNsSize;
@@ -1021,8 +344,7 @@ protected:
 		item[kFieldNameStartTime] = values.second;
 		Upsert(btreeIdxOptNs, item);
 
-		std::string pkString = getPkString(item, btreeIdxOptNs);
-		insertedItems[btreeIdxOptNs][pkString] = std::move(item);
+		saveItem(std::move(item), btreeIdxOptNs);
 
 		Error err = Commit(btreeIdxOptNs);
 		ASSERT_TRUE(err.ok());
@@ -1129,8 +451,7 @@ protected:
 
 			Upsert(comparatorsNs, item);
 
-			std::string pkString = getPkString(item, comparatorsNs);
-			insertedItems[comparatorsNs][pkString] = std::move(item);
+			saveItem(std::move(item), comparatorsNs);
 		}
 
 		Commit(comparatorsNs);
@@ -1141,8 +462,7 @@ protected:
 			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
 			Upsert(default_namespace, item);
 
-			std::string pkString = getPkString(item, default_namespace);
-			insertedItems[default_namespace].emplace(std::move(pkString), std::move(item));
+			saveItem(std::move(item), default_namespace);
 		}
 		Commit(default_namespace);
 	}
@@ -1151,8 +471,6 @@ protected:
 		for (int i = start; i < count; ++i) {
 			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
 			Upsert(default_namespace, item);
-
-			std::string pkString = getPkString(item, default_namespace);
 		}
 		Commit(default_namespace);
 	}
@@ -1162,9 +480,6 @@ protected:
 
 		for (int i = 0; i < count; ++i) {
 			Item item(GenerateDefaultNsItem(start + i, static_cast<size_t>(packagesCount)));
-
-			std::string pkString = getPkString(item, default_namespace);
-
 			tr.Insert(std::move(item));
 		}
 		QueryResults res;
@@ -2331,7 +1646,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << "Query: " << dslQuery << "; err: " << err.what();
 
 		CompareQueryResults(dslQuery, dslQr, checkQr);
-		Verify(checkQr, checkQuery);
+		Verify(checkQr, checkQuery, *rt.reindexer);
 	}
 
 	static std::string toString(double v) {
@@ -2388,7 +1703,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQuery, sqlQr1, checkQr1);
-		Verify(checkQr1, checkQuery1);
+		Verify(checkQr1, checkQuery1, *rt.reindexer);
 
 		sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE genre IN ('1',2,'3') ORDER BY year DESC LIMIT 10000000";
 		const Query checkQuery2{
@@ -2403,7 +1718,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQuery, sqlQr2, checkQr2);
-		Verify(checkQr2, checkQuery2);
+		Verify(checkQr2, checkQuery2, *rt.reindexer);
 
 		const std::string likePattern = RandLikePattern();
 		sqlQuery = "SELECT ID, Year, Genre FROM test_namespace WHERE name LIKE '" + likePattern + "' ORDER BY year DESC LIMIT 10000000";
@@ -2419,7 +1734,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQuery, sqlQr3, checkQr3);
-		Verify(checkQr3, checkQuery3);
+		Verify(checkQr3, checkQuery3, *rt.reindexer);
 
 		sqlQuery = "SELECT FACET(ID, Year ORDER BY ID DESC ORDER BY Year ASC LIMIT 20 OFFSET 1) FROM test_namespace LIMIT 10000000";
 		const Query checkQuery4{
@@ -2435,7 +1750,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQuery, sqlQr4, checkQr4);
-		Verify(checkQr4, checkQuery4);
+		Verify(checkQr4, checkQuery4, *rt.reindexer);
 
 		sqlQuery = "SELECT ID FROM test_namespace WHERE name LIKE '" + likePattern +
 				   "' AND (genre IN ('1', '2', '3') AND year > '2016' ) OR age IN ('1', '2', '3', '4') LIMIT 10000000";
@@ -2457,7 +1772,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQuery, sqlQr5, checkQr5);
-		Verify(checkQr5, checkQuery5);
+		Verify(checkQr5, checkQuery5, *rt.reindexer);
 
 		sqlQuery =
 			std::string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId + " * 5' DESC LIMIT 10000000";
@@ -2473,7 +1788,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQuery, sqlQr6, checkQr6);
-		Verify(checkQr6, checkQuery6);
+		Verify(checkQr6, checkQuery6, *rt.reindexer);
 
 		sqlQuery = std::string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId +
 				   " * 5' DESC ORDER BY '2 * " + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ")' ASC LIMIT 10000000";
@@ -2490,7 +1805,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQuery, sqlQr7, checkQr7);
-		Verify(checkQr7, checkQuery7);
+		Verify(checkQr7, checkQuery7, *rt.reindexer);
 
 		// Checks that SQL queries with DWithin and sort by Distance work and compares the result with the result of corresponding C++ query
 		reindexer::Point point = randPoint(10);
@@ -2508,7 +1823,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQuery, sqlQr8, checkQr8);
-		Verify(checkQr8, checkQuery8);
+		Verify(checkQr8, checkQuery8, *rt.reindexer);
 
 		point = randPoint(10);
 		distance = randBinDouble(0, 1);
@@ -2529,7 +1844,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQuery, sqlQr9, checkQr9);
-		Verify(checkQr9, checkQuery9);
+		Verify(checkQr9, checkQuery9, *rt.reindexer);
 
 		sqlQuery = "SELECT * FROM "s + default_namespace + " WHERE " + kFieldNameGenre + " >= " + kFieldNameRate + ';';
 		const Query checkQuery10{Query(default_namespace).WhereBetweenFields(kFieldNameGenre, CondGe, kFieldNameRate)};
@@ -2543,7 +1858,7 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		CompareQueryResults(sqlQuery, sqlQr10, checkQr10);
-		Verify(checkQr10, checkQuery10);
+		Verify(checkQr10, checkQuery10, *rt.reindexer);
 	}
 
 	void CheckCompositeIndexesQueries() {
@@ -2652,75 +1967,6 @@ protected:
 		ExecuteAndVerify(Query(comparatorsNs).Where("columnFullText", CondEq, RandString()));
 	}
 
-	static void PrintFailedQueryEntries(const reindexer::QueryEntries& failedEntries, const std::vector<JoinedSelectorMock>& js) {
-		TestCout() << "Failed entries: ";
-		PrintQueryEntries(failedEntries.cbegin(), failedEntries.cend(), js);
-		TestCout() << std::endl << std::endl;
-	}
-
-	static void PrintQueryEntries(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to,
-								  const std::vector<JoinedSelectorMock>& js) {
-		TestCout() << "(";
-		for (; it != to; ++it) {
-			TestCout() << (it->operation == OpAnd ? "AND" : (it->operation == OpOr ? "OR" : "NOT"));
-			it->InvokeAppropriate<void>(
-				[&it, &js](const reindexer::QueryEntriesBracket&) { PrintQueryEntries(it.cbegin(), it.cend(), js); },
-				[](const reindexer::QueryEntry& qe) { TestCout() << qe.Dump(); },
-				[&js](const reindexer::JoinQueryEntry& jqe) { TestCout() << jqe.Dump(js); },
-				[](const reindexer::BetweenFieldsQueryEntry& qe) { TestCout() << qe.Dump(); },
-				[](const reindexer::AlwaysFalse&) { TestCout() << "Always False"; });
-		}
-		TestCout() << ")";
-	}
-
-	static void boldOn() { TestCout() << "\e[1m"; }
-	static void boldOff() { TestCout() << "\e[0m"; }
-
-	void PrintFailedSortOrder(const Query& query, const LocalQueryResults& qr, int itemIndex, int itemsToShow = 10) {
-		if (qr.Count() == 0) return;
-
-		TestCout() << "Sort order or last items:" << std::endl;
-		Item rdummy(qr[0].GetItem(false));
-		boldOn();
-		for (size_t idx = 0; idx < query.sortingEntries_.size(); idx++) {
-			TestCout() << rdummy[query.sortingEntries_[idx].expression].Name() << " ";
-		}
-		boldOff();
-		TestCout() << std::endl << std::endl;
-
-		int firstItem = itemIndex - itemsToShow;
-		if (firstItem < 0) firstItem = 0;
-		for (int i = firstItem; i <= itemIndex; ++i) {
-			Item item(qr[i].GetItem(false));
-			if (i == itemIndex) boldOn();
-			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-				TestCout() << item[query.sortingEntries_[j].expression].As<std::string>() << " ";
-			}
-			if (i == itemIndex) boldOff();
-			TestCout() << std::endl;
-		}
-
-		firstItem = itemIndex + 1;
-		int lastItem = firstItem + itemsToShow;
-		const int count = static_cast<int>(qr.Count());
-		if (firstItem >= count) firstItem = count - 1;
-		if (lastItem > count) lastItem = count;
-		for (int i = firstItem; i < lastItem; ++i) {
-			Item item(qr[i].GetItem(false));
-			for (size_t j = 0; j < query.sortingEntries_.size(); ++j) {
-				TestCout() << item[query.sortingEntries_[j].expression].As<std::string>() << " ";
-			}
-			TestCout() << std::endl;
-		}
-
-		TestCout() << std::endl << std::endl;
-	}
-
-	using NamespaceName = std::string;
-	using InsertedItemsByPk = std::map<std::string, reindexer::Item>;
-	std::unordered_map<NamespaceName, InsertedItemsByPk> insertedItems;
-	std::unordered_map<std::string, IndexOpts> indexesOptions;
-
 	const char* kFieldNameId = "id";
 	const char* kFieldNameGenre = "genre";
 	const char* kFieldNameYear = "year";
@@ -2778,14 +2024,6 @@ protected:
 	const std::string kCompositeFieldPriceTitle = kFieldNamePrice + compositePlus + kFieldNameTitle;
 	const std::string kCompositeFieldPagesTitle = kFieldNamePages + compositePlus + kFieldNameTitle;
 
-	std::vector<std::string> defaultNsPks;
-	std::vector<std::string> simpleTestNsPks;
-	std::vector<std::string> joinNsPks;
-	std::vector<std::string> compositeIndexesNsPks;
-	std::vector<std::string> comparatorsNsPks;
-	std::vector<std::string> forcedSortOffsetNsPks;
-	std::vector<std::string> geomNsPks;
-	std::vector<std::string> btreeIdxOptNsPks;
 	std::mutex m_;
 
 	int currBtreeIdsetsValue = rand() % 10000;
@@ -2794,6 +2032,4 @@ protected:
 	static constexpr size_t geomNsSize = 10000;
 	static constexpr int btreeIdxOptNsSize = 10000;
 	std::vector<std::pair<int, int>> forcedSortOffsetValues;
-
-	std::unordered_map<size_t, std::map<std::string, reindexer::Point>> insertedGeomObjects;
 };

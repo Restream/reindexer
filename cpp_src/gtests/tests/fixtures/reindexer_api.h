@@ -10,7 +10,6 @@
 #include "core/keyvalue/variant.h"
 #include "core/query/query.h"
 #include "core/reindexer.h"
-#include "gtests/tests/gtest_cout.h"
 #include "reindexertestapi.h"
 #include "servercontrol.h"
 #include "tools/errors.h"
@@ -25,21 +24,21 @@ using reindexer::Query;
 using reindexer::QueryEntry;
 using reindexer::LocalQueryResults;
 
-class ReindexerApi : public ::testing::Test {
+class ReindexerApi : public virtual ::testing::Test {
 protected:
-	void SetUp() {
+	void SetUp() override {
 		auto err = rt.reindexer->Connect("builtin://");
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	void TearDown() {}
+	void TearDown() override {}
 
 public:
 	using Reindexer = reindexer::Reindexer;
 	using QueryResults = reindexer::QueryResults;
 	using Item = reindexer::Item;
 
-	ReindexerApi() {}
+	ReindexerApi() = default;
 
 	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
 		rt.DefineNamespaceDataset(ns, fields);
@@ -56,25 +55,25 @@ public:
 	void Upsert(std::string_view ns, Item &item) { rt.Upsert(ns, item); }
 
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) { rt.PrintQueryResults(ns, res); }
-	std::string PrintItem(Item &item) { return rt.PrintItem(item); }
 
 	std::string RandString() { return rt.RandString(); }
 	std::string RandString(unsigned len) { return rt.RandString(len); }
 	std::string RandLikePattern() { return rt.RandLikePattern(); }
 	std::string RuRandString() { return rt.RuRandString(); }
 	std::vector<int> RandIntVector(size_t size, int start, int range) { return rt.RandIntVector(size, start, range); }
-
-	struct QueryWatcher {
-		~QueryWatcher() {
-			if (::testing::Test::HasFailure()) {
-				reindexer::WrSerializer ser;
-				q.GetSQL(ser);
-				TEST_COUT << "Failed query dest: " << ser.Slice() << std::endl;
-			}
+	void AwaitIndexOptimization(const std::string &nsName) {
+		bool optimization_completed = false;
+		unsigned waitForIndexOptimizationCompleteIterations = 0;
+		while (!optimization_completed) {
+			ASSERT_LT(waitForIndexOptimizationCompleteIterations++, 200) << "Too long index optimization";
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+			reindexer::QueryResults qr;
+			Error err = rt.reindexer->Select(Query("#memstats").Where("name", CondEq, nsName), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(1, qr.Count());
+			optimization_completed = qr.begin().GetItem(false)["optimization_completed"].Get<bool>();
 		}
-
-		const Query &q;
-	};
+	}
 
 public:
 	const std::string default_namespace = "test_namespace";
@@ -103,16 +102,19 @@ class CanceledRdxContext : public reindexer::IRdxCancelContext {
 public:
 	reindexer::CancelType GetCancelType() const noexcept override { return reindexer::CancelType::Explicit; }
 	bool IsCancelable() const noexcept override { return true; }
+	std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override { return std::nullopt; }
 };
 
 class DummyRdxContext : public reindexer::IRdxCancelContext {
 public:
 	reindexer::CancelType GetCancelType() const noexcept override { return reindexer::CancelType::None; }
 	bool IsCancelable() const noexcept override { return false; }
+	std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override { return std::nullopt; }
 };
 
 class FakeRdxContext : public reindexer::IRdxCancelContext {
 public:
 	reindexer::CancelType GetCancelType() const noexcept override { return reindexer::CancelType::None; }
 	bool IsCancelable() const noexcept override { return true; }
+	std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override { return std::nullopt; }
 };

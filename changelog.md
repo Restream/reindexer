@@ -1,3 +1,27 @@
+# Version 4.9.0 *beta* (26.01.2023)
+## Core
+- [fix] Fixed potential memory access error on cluster's termination
+
+## Sharding
+- [fea] Added support for range-based based shard configs (check [sharding config example](cpp_src/cluster/sharding/sharding.conf) for details)
+- [fix] Fixed distibuted multishard queries for namespaces with upper case names
+
+## Go connector
+- [ref] Added version postfix to the modules' name (.../reindexer -> .../reindexer/v3)
+
+## Ported
+- [fea/fix] Ported all the features and fixes from v3.13.0 and v3.13.1
+
+## Build/Deploy
+- [fea] Switched Fedora's versions for prebuilt packages to Fedora 36/37
+
+## Face
+- [fea] Added the bulk deleting items on the list
+- [fea] Changed the lifetime of the editing form for the Item adding operation
+- [fix] Fixed collapsing/expanding details for the list items after the page changing
+- [fix] Changed the double quotes with the quotes for strings in json-view-tree
+- [fix] Fixed the Index list displaying after the DB removing
+
 # Version 4.8.0 *beta* (27.12.2022)
 ## Core
 - [fea] Added logging for slow queries and transactions (check `profiling.long_queries_logging` section in `#config`-namespace)

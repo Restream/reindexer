@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include "activity_context.h"
 #include "tools/errors.h"
 #include "tools/lsn.h"
@@ -14,6 +15,7 @@ enum class CancelType : uint8_t { None = 0, Explicit, Timeout };
 struct IRdxCancelContext {
 	virtual CancelType GetCancelType() const noexcept = 0;
 	virtual bool IsCancelable() const noexcept = 0;
+	virtual std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept = 0;
 
 	virtual ~IRdxCancelContext() = default;
 };
@@ -41,11 +43,10 @@ class RdxDeadlineContext : public IRdxCancelContext {
 public:
 	using ClockT = std::chrono::steady_clock;
 	using time_point = typename ClockT::time_point;
-	using duration = typename ClockT::duration;
 
 	RdxDeadlineContext(time_point deadline = time_point(), const IRdxCancelContext* parent = nullptr)
 		: deadline_(deadline), parent_(parent) {}
-	RdxDeadlineContext(duration timeout, const IRdxCancelContext* parent = nullptr)
+	RdxDeadlineContext(std::chrono::milliseconds timeout, const IRdxCancelContext* parent = nullptr)
 		: deadline_((timeout.count() > 0) ? (ClockT::now() + timeout) : time_point()), parent_(parent) {}
 
 	CancelType GetCancelType() const noexcept override final {
@@ -64,15 +65,20 @@ public:
 	CancelType CheckCancel() const noexcept { return GetCancelType(); }
 	const IRdxCancelContext* parent() const noexcept { return parent_; }
 	time_point deadline() const noexcept { return deadline_; }
-	std::chrono::milliseconds GetTimeout() const noexcept {
+	std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override {
+		std::optional<std::chrono::milliseconds> ret;
+		if (parent_) {
+			ret = parent_->GetRemainingTimeout();
+		}
 		if (deadline_.time_since_epoch().count() > 0) {
 			const auto diff = std::chrono::duration_cast<std::chrono::milliseconds>(deadline_ - ClockT::now());
 			if (diff.count() <= 0) {
-				return std::chrono::milliseconds(-1);
+				ret = std::chrono::milliseconds(-1);
+			} else if (!ret.has_value() || *ret > diff) {
+				ret = diff;
 			}
-			return diff;
 		}
-		return std::chrono::milliseconds(0);
+		return ret;
 	}
 
 private:
@@ -87,33 +93,38 @@ public:
 	RdxContext() : activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr), holdStatus_(HoldT::kEmpty) {}
 	explicit RdxContext(lsn_t originLsn)
 		: activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr), originLsn_(originLsn), holdStatus_(HoldT::kEmpty) {}
-	RdxContext(lsn_t originLsn, const IRdxCancelContext* cancelCtx, Completion cmpl, int emmiterServerId, bool parallel)
+	RdxContext(lsn_t originLsn, const IRdxCancelContext* cancelCtx, Completion cmpl, int emmiterServerId, int shardId, bool parallel)
 		: activityPtr_(nullptr),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(cmpl),
 		  originLsn_(originLsn),
 		  emmiterServerId_(emmiterServerId),
+		  shardId_(shardId),
 		  holdStatus_(HoldT::kEmpty),
 		  shardingParallelExecution_(parallel) {}
 	RdxContext(lsn_t originLsn, std::string_view activityTracer, std::string_view user, std::string_view query,
 			   ActivityContainer& container, int connectionId, const IRdxCancelContext* cancelCtx, Completion cmpl, int emmiterServerId,
-			   bool parallel)
+			   int shardId, bool parallel)
 		: activityCtx_(activityTracer, user, query, container, connectionId),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(cmpl),
 		  originLsn_(originLsn),
 		  emmiterServerId_(emmiterServerId),
+		  shardId_(shardId),
 		  holdStatus_(HoldT::kHold),
 		  shardingParallelExecution_(parallel) {}
 	explicit RdxContext(RdxActivityContext* ptr, lsn_t originLsn = lsn_t(), const IRdxCancelContext* cancelCtx = nullptr,
-						Completion cmpl = nullptr, int emmiterServerId = -1, bool parallel = false)
+						Completion cmpl = nullptr, int emmiterServerId = -1, int shardId = ShardingKeyType::NotSetShard,
+						bool parallel = false, bool noWaitSync = false)
 		: activityPtr_(ptr),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(cmpl),
 		  originLsn_(originLsn),
 		  emmiterServerId_(emmiterServerId),
+		  shardId_(shardId),
 		  holdStatus_(ptr ? HoldT::kPtr : HoldT::kEmpty),
-		  shardingParallelExecution_(parallel) {
+		  shardingParallelExecution_(parallel),
+		  noWaitSync_(noWaitSync) {
 		if (holdStatus_ == HoldT::kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 	}
 
@@ -124,6 +135,7 @@ public:
 	RdxContext& operator=(const RdxContext&) = delete;
 	RdxContext& operator=(RdxContext&&) = delete;
 
+	const IRdxCancelContext* GetCancelCtx() const noexcept { return cancelCtx_; }
 	bool IsCancelable() const noexcept { return cancelCtx_ && cancelCtx_->IsCancelable(); }
 	CancelType CheckCancel() const noexcept {
 		if (!cancelCtx_) return CancelType::None;
@@ -148,6 +160,21 @@ public:
 	lsn_t GetOriginLSN() const noexcept { return originLsn_; }
 	bool IsShardingParallelExecution() const noexcept { return shardingParallelExecution_; }
 	int EmmiterServerId() const noexcept { return emmiterServerId_; }
+	int ShardId() const noexcept { return shardId_; }
+	RdxContext WithCancelCtx(const IRdxCancelContext& cancelCtx) const {
+		return RdxContext{
+			Activity(), originLsn_, &cancelCtx, cmpl_, emmiterServerId_, shardingParallelExecution_, shardingParallelExecution_,
+			noWaitSync_};
+	}
+	RdxContext WithShardId(int shardId, bool shardingParallelExecution) const {
+		return RdxContext{Activity(), originLsn_, cancelCtx_, cmpl_, emmiterServerId_, shardId, shardingParallelExecution, noWaitSync_};
+	}
+	std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept {
+		if (cancelCtx_) {
+			return cancelCtx_->GetRemainingTimeout();
+		}
+		return std::nullopt;
+	}
 
 private:
 	union {
@@ -158,9 +185,10 @@ private:
 	Completion cmpl_;
 	const lsn_t originLsn_;
 	int emmiterServerId_ = -1;
+	int shardId_ = ShardingKeyType::NotSetShard;
 	enum class HoldT : uint8_t { kHold, kPtr, kEmpty } const holdStatus_;
-	mutable bool noWaitSync_ = false;  // FIXME: Create SyncContext and move this parameter into it
 	bool shardingParallelExecution_ = false;
+	mutable bool noWaitSync_ = false;  // FIXME: Create SyncContext and move this parameter into it
 };
 
 class QueryResults;
@@ -227,7 +255,7 @@ public:
 	bool HasEmmiterID() const noexcept { return emmiterServerId_ >= 0; }
 	bool HasDeadline() const noexcept { return deadlineCtx_.IsCancelable(); }
 	const RdxDeadlineContext* DeadlineCtx() const noexcept { return &deadlineCtx_; }
-	std::chrono::milliseconds GetTimeout() const noexcept { return deadlineCtx_.GetTimeout(); }
+	std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept { return deadlineCtx_.GetRemainingTimeout(); }
 	int ShardId() const noexcept { return shardId_; }
 	bool IsShardingParallelExecution() const noexcept { return shardingParallelExecution_; }
 	void SetShardingParallelExecution(bool parallel) noexcept { shardingParallelExecution_ = parallel; }

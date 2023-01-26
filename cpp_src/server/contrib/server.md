@@ -134,7 +134,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 4.8.0
+*Version* : 4.9.0
 
 
 ### License information
@@ -1082,7 +1082,7 @@ GET /db/{database}/query
 
 
 #### Description
-This opertaion queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
+This operation queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results. 
 Two level paging is supported. At first, applied normal SQL `LIMIT` and `OFFSET`,
 then `limit` and `offset` from http request.
 
@@ -1125,7 +1125,7 @@ PUT /db/{database}/query
 
 
 #### Description
-This opertaion updates documents in namespace by DSL query.
+This operation updates documents in namespace by DSL query.
 
 
 #### Parameters
@@ -1160,7 +1160,7 @@ POST /db/{database}/query
 
 
 #### Description
-This opertaion queries documents from namespace by DSL query.
+This operation queries documents from namespace by DSL query.
 
 
 #### Parameters
@@ -1198,7 +1198,7 @@ DELETE /db/{database}/query
 
 
 #### Description
-This opertaion removes documents from namespace by DSL query.
+This operation removes documents from namespace by DSL query.
 
 
 #### Parameters
@@ -1620,7 +1620,7 @@ POST /db/{database}/sqlquery
 
 
 #### Description
-This opertaion queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results.
+This operation queries documents from namespace by SQL query. Query can be preced by `EXPLAIN` statement, then query execution plan will be returned with query results.
 
 
 #### Parameters
@@ -2358,7 +2358,7 @@ Fulltext synonym definition
 |**index_type**  <br>*required*|Index structure type  <br>**Default** : `"hash"`|enum (hash, tree, text, rtree, ttl, -)|
 |**is_array**  <br>*optional*|Specifies, that index is array. Array indexes can work with array fields, or work with multiple fields  <br>**Default** : `false`|boolean|
 |**is_dense**  <br>*optional*|Reduces the index size. For hash and tree it will save ~8 bytes per unique key value. Useful for indexes with high selectivity, but for tree and hash indexes with low selectivity can seriously decrease update performance;  <br>**Default** : `false`|boolean|
-|**is_pk**  <br>*optional*|Specifies, that index is primary key. The update opertations will checks, that PK field is unique. The namespace MUST have only 1 PK index|boolean|
+|**is_pk**  <br>*optional*|Specifies, that index is primary key. The update operations will checks, that PK field is unique. The namespace MUST have only 1 PK index|boolean|
 |**is_simple_tag**  <br>*optional*|Use simple tag instead of actual index, which will notice rx about possible field name for strict policies  <br>**Default** : `false`|boolean|
 |**is_sparse**  <br>*optional*|Value of index may not present in the document, and threfore, reduce data size but decreases speed operations on index  <br>**Default** : `false`|boolean|
 |**json_paths**  <br>*required*|Fields path in json object, e.g 'id' or 'subobject.field'. If index is 'composite' or 'is_array', than multiple json_paths can be specified, and index will get values from all specified fields.|< string > array|

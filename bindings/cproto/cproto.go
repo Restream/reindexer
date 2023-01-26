@@ -13,8 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/cjson"
+	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v4/cjson"
 )
 
 const (

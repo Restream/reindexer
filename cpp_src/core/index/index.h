@@ -152,4 +152,17 @@ private:
 	void dump(S& os, std::string_view step, std::string_view offset) const;
 };
 
+constexpr inline bool IsOrderedCondition(CondType condition) noexcept {
+	switch (condition) {
+		case CondLt:
+		case CondLe:
+		case CondGt:
+		case CondGe:
+		case CondRange:
+			return true;
+		default:
+			return false;
+	}
+}
+
 }  // namespace reindexer

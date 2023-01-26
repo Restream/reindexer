@@ -499,7 +499,7 @@ TEST_F(ReplicationLoadApi, LogLevel) {
 	EXPECT_EQ(stats.logLevel, LogTrace);
 
 	// Changing log level
-	const LogLevel levels[] = {LogInfo, LogTrace, LogWarning, LogError, LogNone};
+	const LogLevel levels[] = {LogInfo, LogTrace, LogWarning, LogError, LogNone, LogInfo};
 	for (auto level : levels) {
 		SetReplicationLogLevel(masterId_, LogLevel(level));
 		stats = GetReplicationStats(masterId_);

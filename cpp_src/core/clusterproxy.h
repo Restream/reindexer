@@ -1,87 +1,230 @@
 #pragma once
+
 #include <condition_variable>
+#include "client/itemimpl.h"
 #include "client/reindexer.h"
-#include "core/item.h"
+#include "cluster/consts.h"
 #include "core/reindexerimpl.h"
-#include "core/shardedmeta.h"
-#include "estl/shared_mutex.h"
+#include "tools/clusterproxyloghelper.h"
 
 namespace reindexer {
 
-constexpr uint32_t kMaxClusterProxyConnCount = 64;
-constexpr uint32_t kMaxClusterProxyConnConcurrency = 1024;
+#define CallProxyFunction(Fn) proxyCall<decltype(&ReindexerImpl::Fn), &ReindexerImpl::Fn, Error>
 
-namespace sharding {
-class LocatorService;
-}
+#define DefFunctor1(P1, F, Action)                                    \
+	std::function<Error(const RdxContext &, LeaderRefT, P1)> action = \
+		std::bind(&ClusterProxy::Action<decltype(&client::Reindexer::F), &client::Reindexer::F, P1>, this, _1, _2, _3)
+
+#define DefFunctor2(P1, P2, F, Action)                                    \
+	std::function<Error(const RdxContext &, LeaderRefT, P1, P2)> action = \
+		std::bind(&ClusterProxy::Action<decltype(&client::Reindexer::F), &client::Reindexer::F, P1, P2>, this, _1, _2, _3, _4)
+
+#define DefFunctor3(P1, P2, P3, F, Action)                                    \
+	std::function<Error(const RdxContext &, LeaderRefT, P1, P2, P3)> action = \
+		std::bind(&ClusterProxy::Action<decltype(&client::Reindexer::F), &client::Reindexer::F, P1, P2, P3>, this, _1, _2, _3, _4, _5)
 
 class ClusterProxy {
 public:
-	ClusterProxy(ReindexerConfig cfg);
+	ClusterProxy(ReindexerConfig cfg, ActivityContainer &activities);
 	~ClusterProxy();
 	Error Connect(const std::string &dsn, ConnectOpts opts = ConnectOpts());
-	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts, const NsReplicationOpts &replOpts, const InternalRdxContext &ctx);
-	Error AddNamespace(const NamespaceDef &nsDef, const NsReplicationOpts &replOpts, const InternalRdxContext &ctx);
-	Error CloseNamespace(std::string_view nsName, const InternalRdxContext &ctx);  // deleted metod
-	Error DropNamespace(std::string_view nsName, const InternalRdxContext &ctx);
-	Error TruncateNamespace(std::string_view nsName, const InternalRdxContext &ctx);
-	Error RenameNamespace(std::string_view srcNsName, const std::string &dstNsName, const InternalRdxContext &ctx);
-	Error AddIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
-	Error UpdateIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
-	Error DropIndex(std::string_view nsName, const IndexDef &index, const InternalRdxContext &ctx);
-	Error SetSchema(std::string_view nsName, std::string_view schema, const InternalRdxContext &ctx);
-	Error GetSchema(std::string_view nsName, int format, std::string &schema, const InternalRdxContext &ctx);
-	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const InternalRdxContext &ctx);
-	Error Insert(std::string_view nsName, Item &item, const InternalRdxContext &ctx);
-	Error Insert(std::string_view nsName, Item &item, QueryResults &result, const InternalRdxContext &ctx);
-	Error Update(std::string_view nsName, Item &item, const InternalRdxContext &ctx);
-	Error Update(std::string_view nsName, Item &item, QueryResults &result, const InternalRdxContext &ctx);
-	Error Update(const Query &query, QueryResults &result, const InternalRdxContext &ctx);
-	Error Upsert(std::string_view nsName, Item &item, const InternalRdxContext &ctx);
-	Error Upsert(std::string_view nsName, Item &item, QueryResults &result, const InternalRdxContext &ctx);
-	Error Delete(std::string_view nsName, Item &item, const InternalRdxContext &ctx);
-	Error Delete(std::string_view nsName, Item &item, QueryResults &result, const InternalRdxContext &ctx);
-	Error Delete(const Query &query, QueryResults &result, const InternalRdxContext &ctx);
-	Error Select(std::string_view sql, QueryResults &result, unsigned proxyFetchLimit, const InternalRdxContext &ctx);
-	Error Select(const Query &query, QueryResults &result, unsigned proxyFetchLimit, const InternalRdxContext &ctx);
-	Error Commit(std::string_view nsName, const InternalRdxContext &ctx);
-	Item NewItem(std::string_view nsName, const InternalRdxContext &ctx);
+	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts, const NsReplicationOpts &replOpts, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor3(std::string_view, const StorageOpts &, const NsReplicationOpts &, OpenNamespace, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::OpenNamespace", getServerIDRel());
+		return CallProxyFunction(OpenNamespace)(ctx, nsName, action, nsName, opts, replOpts);
+	}
+	Error AddNamespace(const NamespaceDef &nsDef, const NsReplicationOpts &replOpts, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor2(const NamespaceDef &, const NsReplicationOpts &, AddNamespace, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::AddNamespace", getServerIDRel());
+		return CallProxyFunction(AddNamespace)(ctx, nsDef.name, action, nsDef, replOpts);
+	}
+	Error CloseNamespace(std::string_view nsName, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor1(std::string_view, CloseNamespace, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::DropNamespace", getServerIDRel());
+		return CallProxyFunction(CloseNamespace)(ctx, nsName, action, nsName);
+	}
+	Error DropNamespace(std::string_view nsName, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor1(std::string_view, DropNamespace, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::DropNamespace", getServerIDRel());
+		return CallProxyFunction(DropNamespace)(ctx, nsName, action, nsName);
+	}
+	Error TruncateNamespace(std::string_view nsName, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor1(std::string_view, TruncateNamespace, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::TruncateNamespace", getServerIDRel());
+		return CallProxyFunction(TruncateNamespace)(ctx, nsName, action, nsName);
+	}
+	Error RenameNamespace(std::string_view srcNsName, const std::string &dstNsName, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor2(std::string_view, const std::string &, RenameNamespace, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::RenameNamespace", getServerIDRel());
+		return CallProxyFunction(RenameNamespace)(ctx, std::string_view(), action, srcNsName, dstNsName);
+	}
+	Error AddIndex(std::string_view nsName, const IndexDef &index, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor2(std::string_view, const IndexDef &, AddIndex, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::AddIndex", getServerIDRel());
+		return CallProxyFunction(AddIndex)(ctx, nsName, action, nsName, index);
+	}
+	Error UpdateIndex(std::string_view nsName, const IndexDef &index, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor2(std::string_view, const IndexDef &, UpdateIndex, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::UpdateIndex", getServerIDRel());
+		return CallProxyFunction(UpdateIndex)(ctx, nsName, action, nsName, index);
+	}
+	Error DropIndex(std::string_view nsName, const IndexDef &index, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor2(std::string_view, const IndexDef &, DropIndex, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::DropIndex", getServerIDRel());
+		return CallProxyFunction(DropIndex)(ctx, nsName, action, nsName, index);
+	}
+	Error SetSchema(std::string_view nsName, std::string_view schema, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor2(std::string_view, std::string_view, SetSchema, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::SetSchema", getServerIDRel());
+		return CallProxyFunction(SetSchema)(ctx, nsName, action, nsName, schema);
+	}
+	Error GetSchema(std::string_view nsName, int format, std::string &schema, const RdxContext &ctx) {
+		return impl_.GetSchema(nsName, format, schema, ctx);
+	}
+	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts, const RdxContext &ctx) {
+		return impl_.EnumNamespaces(defs, opts, ctx);
+	}
+	Error Insert(std::string_view nsName, Item &item, const RdxContext &ctx) {
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName, Item &item) {
+			return itemFollowerAction<&client::Reindexer::Insert>(ctx, clientToLeader, nsName, item);
+		};
+		return proxyCall<LocalItemSimpleActionFT, &ReindexerImpl::Insert, Error>(ctx, nsName, action, nsName, item);
+	}
+	Error Insert(std::string_view nsName, Item &item, LocalQueryResults &qr, const RdxContext &ctx) {
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName, Item &item, LocalQueryResults &qr) {
+			return resultItemFollowerAction<&client::Reindexer::Insert>(ctx, clientToLeader, nsName, item, qr);
+		};
+		return proxyCall<LocalItemQrActionFT, &ReindexerImpl::Insert, Error>(ctx, nsName, action, nsName, item, qr);
+	}
+	Error Update(std::string_view nsName, Item &item, const RdxContext &ctx) {
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName, Item &item) {
+			return itemFollowerAction<&client::Reindexer::Update>(ctx, clientToLeader, nsName, item);
+		};
+		return proxyCall<LocalItemSimpleActionFT, &ReindexerImpl::Update, Error>(ctx, nsName, action, nsName, item);
+	}
+	Error Update(std::string_view nsName, Item &item, LocalQueryResults &qr, const RdxContext &ctx) {
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName, Item &item, LocalQueryResults &qr) {
+			return resultItemFollowerAction<&client::Reindexer::Update>(ctx, clientToLeader, nsName, item, qr);
+		};
+		return proxyCall<LocalItemQrActionFT, &ReindexerImpl::Update, Error>(ctx, nsName, action, nsName, item, qr);
+	}
+	Error Update(const Query &q, LocalQueryResults &qr, const RdxContext &ctx) {
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, const Query &q, LocalQueryResults &qr) {
+			return resultFollowerAction<&client::Reindexer::Update>(ctx, clientToLeader, q, qr);
+		};
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Update query", getServerIDRel());
+		return proxyCall<LocalQueryActionFT, &ReindexerImpl::Update, Error>(ctx, q._namespace, action, q, qr);
+	}
+	Error Upsert(std::string_view nsName, Item &item, const RdxContext &ctx) {
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName, Item &item) {
+			return itemFollowerAction<&client::Reindexer::Upsert>(ctx, clientToLeader, nsName, item);
+		};
+		return proxyCall<LocalItemSimpleActionFT, &ReindexerImpl::Upsert, Error>(ctx, nsName, action, nsName, item);
+	}
+	Error Upsert(std::string_view nsName, Item &item, LocalQueryResults &qr, const RdxContext &ctx) {
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName, Item &item, LocalQueryResults &qr) {
+			return resultItemFollowerAction<&client::Reindexer::Upsert>(ctx, clientToLeader, nsName, item, qr);
+		};
+		return proxyCall<LocalItemQrActionFT, &ReindexerImpl::Upsert, Error>(ctx, nsName, action, nsName, item, qr);
+	}
+	Error Delete(std::string_view nsName, Item &item, const RdxContext &ctx) {
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName, Item &item) {
+			return itemFollowerAction<&client::Reindexer::Delete>(ctx, clientToLeader, nsName, item);
+		};
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Delete ITEM", getServerIDRel());
+		return proxyCall<LocalItemSimpleActionFT, &ReindexerImpl::Delete, Error>(ctx, nsName, action, nsName, item);
+	}
+	Error Delete(std::string_view nsName, Item &item, LocalQueryResults &qr, const RdxContext &ctx) {
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName, Item &item, LocalQueryResults &qr) {
+			return resultItemFollowerAction<&client::Reindexer::Delete>(ctx, clientToLeader, nsName, item, qr);
+		};
+		return proxyCall<LocalItemQrActionFT, &ReindexerImpl::Delete, Error>(ctx, nsName, action, nsName, item, qr);
+	}
+	Error Delete(const Query &q, LocalQueryResults &qr, const RdxContext &ctx) {
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, const Query &q, LocalQueryResults &qr) {
+			return resultFollowerAction<&client::Reindexer::Delete>(ctx, clientToLeader, q, qr);
+		};
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Delete QUERY", getServerIDRel());
+		return proxyCall<LocalQueryActionFT, &ReindexerImpl::Delete, Error>(ctx, q._namespace, action, q, qr);
+	}
+	Error Select(const Query &q, LocalQueryResults &qr, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		if (!shouldProxyQuery(q)) {
+			clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Select query local", getServerIDRel());
+			return impl_.Select(q, qr, ctx);
+		}
+		const RdxDeadlineContext deadlineCtx(kReplicationStatsTimeout, ctx.GetCancelCtx());
+		const RdxContext rdxDeadlineCtx = ctx.WithCancelCtx(deadlineCtx);
 
-	Transaction NewTransaction(std::string_view nsName, const InternalRdxContext &ctx);
-	Error CommitTransaction(Transaction &tr, QueryResults &result, const InternalRdxContext &ctx);
-	Error RollBackTransaction(Transaction &tr, const InternalRdxContext &ctx);
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, const Query &q, LocalQueryResults &qr) {
+			return resultFollowerAction<&client::Reindexer::Select>(ctx, clientToLeader, q, qr);
+		};
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Select query proxied", getServerIDRel());
+		return proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q._namespace, action, q, qr);
+	}
+	Error Commit(std::string_view nsName) { return impl_.Commit(nsName); }
+	Item NewItem(std::string_view nsName, const RdxContext &ctx) { return impl_.NewItem(nsName, ctx); }
 
-	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx);
-	Error GetMeta(std::string_view nsName, const std::string &key, std::vector<ShardedMeta> &data, const InternalRdxContext &ctx);
-	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const InternalRdxContext &ctx);
-	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx);
+	Transaction NewTransaction(std::string_view nsName, const RdxContext &ctx) {
+		using LocalFT = LocalTransaction (ReindexerImpl::*)(std::string_view, const RdxContext &);
+		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName) {
+			try {
+				client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(getServerID());
+				return Transaction(impl_.NewTransaction(nsName, ctx), std::move(l));
+			} catch (const Error &err) {
+				return Transaction(err);
+			}
+		};
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::NewTransaction", getServerIDRel());
+		return proxyCall<LocalFT, &ReindexerImpl::NewTransaction, Transaction>(ctx, nsName, action, nsName);
+	}
+	Error CommitTransaction(Transaction &tr, QueryResults &qr, bool txExpectsSharding, const RdxContext &ctx) {
+		return tr.commit(getServerID(), txExpectsSharding, impl_, qr, ctx);
+	}
+	Error RollBackTransaction(Transaction &tr, const RdxContext &ctx) { return tr.rollback(getServerID(), ctx); }
 
-	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions, const InternalRdxContext &ctx) {
-		using namespace std::string_view_literals;
-		const auto rdxCtx = ctx.CreateRdxContext("SQL SUGGESTIONS"sv, impl_.activities_);
-		return impl_.GetSqlSuggestions(sqlQuery, pos, suggestions, rdxCtx);
+	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const RdxContext &ctx) {
+		return impl_.GetMeta(nsName, key, data, ctx);
+	}
+	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data, const RdxContext &ctx) {
+		using namespace std::placeholders;
+		DefFunctor3(std::string_view, const std::string &, std::string_view, PutMeta, baseFollowerAction);
+		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::PutMeta", getServerIDRel());
+		return CallProxyFunction(PutMeta)(ctx, nsName, action, nsName, key, data);
+	}
+	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const RdxContext &ctx) {
+		return impl_.EnumMeta(nsName, keys, ctx);
+	}
+
+	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions, const RdxContext &ctx) {
+		return impl_.GetSqlSuggestions(sqlQuery, pos, suggestions, ctx);
 	}
 	Error Status() { return impl_.Status(); }
 	Error GetProtobufSchema(WrSerializer &ser, std::vector<std::string> &namespaces) { return impl_.GetProtobufSchema(ser, namespaces); }
-	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const InternalRdxContext &ctx) {
-		using namespace std::string_view_literals;
-		WrSerializer ser;
-		const auto rdxCtx =
-			ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "GET repl_state FROM " << nsName).Slice() : ""sv, impl_.activities_);
-		return impl_.GetReplState(nsName, state, rdxCtx);
+	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const RdxContext &ctx) {
+		return impl_.GetReplState(nsName, state, ctx);
 	}
-	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus &status, const InternalRdxContext &ctx) {
-		using namespace std::string_view_literals;
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(
-			ctx.NeedTraceActivity() ? (ser << "SET clusterization_status ON " << nsName).Slice() : ""sv, impl_.activities_);
-
-		return impl_.SetClusterizationStatus(nsName, status, rdxCtx);
+	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus &status, const RdxContext &ctx) {
+		return impl_.SetClusterizationStatus(nsName, status, ctx);
 	}
 	bool NeedTraceActivity() { return impl_.NeedTraceActivity(); }
-	Error EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck, const InternalRdxContext &ctx);
+	Error EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck, const RdxContext &ctx) {
+		return impl_.EnableStorage(storagePath, skipPlaceholderCheck, ctx);
+	}
 	Error InitSystemNamespaces() { return impl_.InitSystemNamespaces(); }
-	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch, const InternalRdxContext &ctx);
+	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch, const RdxContext &ctx) {
+		return impl_.ApplySnapshotChunk(nsName, ch, ctx);
+	}
 
 	Error SuggestLeader(const cluster::NodeData &suggestion, cluster::NodeData &response) {
 		return impl_.SuggestLeader(suggestion, response);
@@ -96,29 +239,45 @@ public:
 		}
 		return err;
 	}
-	Error GetRaftInfo(cluster::RaftInfo &info, const InternalRdxContext &ctx);
-
+	Error GetRaftInfo(cluster::RaftInfo &info, const RdxContext &ctx) { return impl_.GetRaftInfo(true, info, ctx); }
 	Error CreateTemporaryNamespace(std::string_view baseName, std::string &resultName, const StorageOpts &opts, lsn_t nsVersion,
-								   const InternalRdxContext &ctx);
-	Error GetSnapshot(std::string_view nsName, const SnapshotOpts &opts, Snapshot &snapshot, const InternalRdxContext &ctx);
+								   const RdxContext &ctx) {
+		return impl_.CreateTemporaryNamespace(baseName, resultName, opts, nsVersion, ctx);
+	}
+	Error GetSnapshot(std::string_view nsName, const SnapshotOpts &opts, Snapshot &snapshot, const RdxContext &ctx) {
+		return impl_.GetSnapshot(nsName, opts, snapshot, ctx);
+	}
 	Error ClusterControlRequest(const ClusterControlRequestData &request) { return impl_.ClusterControlRequest(request); }
-	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm, const InternalRdxContext &ctx) {
-		using namespace std::string_view_literals;
-		WrSerializer ser;
-		const auto rdxCtx =
-			ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "SET TAGSMATCHER " << nsName).Slice() : ""sv, impl_.activities_);
-		return impl_.SetTagsMatcher(nsName, std::move(tm), rdxCtx);
+	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm, const RdxContext &ctx) {
+		return impl_.SetTagsMatcher(nsName, std::move(tm), ctx);
 	}
-	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index, const InternalRdxContext &ctx) {
-		using namespace std::string_view_literals;
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(
-			ctx.NeedTraceActivity() ? (ser << "DUMP INDEX " << index << " ON " << nsName).Slice() : ""sv, impl_.activities_);
-		return impl_.DumpIndex(os, nsName, index, rdxCtx);
+	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index, const RdxContext &ctx) {
+		return impl_.DumpIndex(os, nsName, index, ctx);
 	}
-	void ShutdownCluster();
+	void ShutdownCluster() {
+		impl_.ShutdownCluster();
+		clusterConns_.Shutdown();
+		resetLeader();
+	}
+
+	const atomic_unique_ptr<cluster::ShardingConfig> &GetShardingConfig() const noexcept { return impl_.shardingConfig_; }
+	Namespace::Ptr GetNamespacePtr(std::string_view nsName, const RdxContext &ctx) { return impl_.getNamespace(nsName, ctx); }
+	PayloadType GetPayloadType(std::string_view nsName) { return impl_.getPayloadType(nsName); }
+	std::set<std::string> GetFTIndexes(std::string_view nsName) { return impl_.getFTIndexes(nsName); }
 
 private:
+	static constexpr auto kReplicationStatsTimeout = std::chrono::seconds(10);
+	static constexpr uint32_t kMaxClusterProxyConnCount = 64;
+	static constexpr uint32_t kMaxClusterProxyConnConcurrency = 1024;
+
+	using LeaderRefT = const std::shared_ptr<client::Reindexer> &;
+	using LocalItemSimpleActionFT = Error (ReindexerImpl::*)(std::string_view, Item &, const RdxContext &);
+	using ProxiedItemSimpleActionFT = Error (client::Reindexer::*)(std::string_view, client::Item &);
+	using LocalItemQrActionFT = Error (ReindexerImpl::*)(std::string_view, Item &, LocalQueryResults &, const RdxContext &);
+	using ProxiedItemQrActionFT = Error (client::Reindexer::*)(std::string_view, client::Item &, client::QueryResults &);
+	using LocalQueryActionFT = Error (ReindexerImpl::*)(const Query &, LocalQueryResults &, const RdxContext &);
+	using ProxiedQueryActionFT = Error (client::Reindexer::*)(const Query &, client::QueryResults &);
+
 	class ConnectionsMap {
 	public:
 		void SetParams(int clientThreads, int clientConns, int clientConnConcurrency) {
@@ -189,83 +348,247 @@ private:
 	ConnectionsMap clusterConns_;
 	std::atomic<unsigned short> sId_;
 	int configHandlerId_;
-	std::shared_ptr<sharding::LocatorService> shardingRouter_;
-	std::atomic_bool shardingInitialized_ = {false};
 
 	std::condition_variable processPingEvent_;
 	std::mutex processPingEventMutex_;
 	int lastPingLeaderId_ = -1;
 
+	int getServerID() const noexcept { return sId_.load(std::memory_order_acquire); }
+	int getServerIDRel() const noexcept { return sId_.load(std::memory_order_relaxed); }
 	std::shared_ptr<client::Reindexer> getLeader(const cluster::RaftInfo &info);
 	void resetLeader();
-
 	template <typename R>
 	ErrorCode getErrCode(const Error &err, R &r);
-
 	template <typename R>
-	void setErrorCode(R &r, Error &&err);
+	void setErrorCode(R &r, Error &&err) {
+		if constexpr (std::is_same<R, Transaction>::value) {
+			r = Transaction(std::move(err));
+		} else {
+			r = std::move(err);
+		}
+	}
+
+#if RX_ENABLE_CLUSTERPROXY_LOGS
+
+	template <typename R, typename std::enable_if<std::is_same<R, Error>::value>::type * = nullptr>
+	static void printErr(const R &r) {
+		if (!r.ok()) {
+			clusterProxyLog(LogTrace, "[cluster proxy] Err: %s", r.what());
+		}
+	}
+
+	template <typename R, typename std::enable_if<std::is_same<R, Transaction>::value>::type * = nullptr>
+	static void printErr(const R &r) {
+		if (!r.Status().ok()) {
+			clusterProxyLog(LogTrace, "[cluster proxy] Tx err: %s", r.Status().what());
+		}
+	}
+
+#endif
 
 	template <typename Fn, Fn fn, typename R, typename... Args>
-	R localCall(const RdxContext &ctx, Args &&...args);
-
-	template <typename Fn, Fn fn, typename FnL, FnL fnl, typename R, typename FnA, typename... Args>
-	R proxyCall(const RdxContext &ctx, std::string_view nsName, FnA &action, Args &&...args);
-
+	R localCall(const RdxContext &ctx, Args &&...args) {
+		if constexpr (std::is_same_v<R, Transaction>) {
+			return R((impl_.*fn)(std::forward<Args>(args)..., ctx));
+		} else {
+			return (impl_.*fn)(std::forward<Args>(args)..., ctx);
+		}
+	}
+	template <typename Fn, Fn fn, typename R, typename FnA, typename... Args>
+	R proxyCall(const RdxContext &ctx, std::string_view nsName, const FnA &action, Args &&...args) {
+		R r;
+		Error err;
+		if (ctx.GetOriginLSN().isEmpty()) {
+			ErrorCode errCode = errOK;
+			bool allowCandidateRole = true;
+			do {
+				cluster::RaftInfo info;
+				err = impl_.GetRaftInfo(allowCandidateRole, info, ctx);
+				if (!err.ok()) {
+					if (err.code() == errTimeout || err.code() == errCanceled) {
+						err = Error(err.code(), "Unable to get cluster's leader: %s", err.what());
+					}
+					setErrorCode(r, std::move(err));
+					return r;
+				}
+				if (info.role == cluster::RaftInfo::Role::None) {  // fast way for non-cluster node
+					if (ctx.HasEmmiterServer()) {
+						setErrorCode(r, Error(errLogic, "Request was proxied to non-cluster node"));
+						return r;
+					}
+					r = localCall<Fn, fn, R, Args...>(ctx, std::forward<Args>(args)...);
+					errCode = getErrCode(err, r);
+					if (errCode == errWrongReplicationData && (!impl_.clusterConfig_ || !impl_.NamespaceIsInClusterConfig(nsName))) {
+						break;
+					}
+					continue;
+				}
+				const bool nsInClusterConf = impl_.NamespaceIsInClusterConfig(nsName);
+				if (!nsInClusterConf) {	 // ns is not in cluster
+					clusterProxyLog(LogTrace, "[%d proxy] proxyCall ns not in cluster config (local)", getServerIDRel());
+					const bool firstError = (errCode == errOK);
+					r = localCall<Fn, fn, R, Args...>(ctx, std::forward<Args>(args)...);
+					errCode = getErrCode(err, r);
+					if (firstError) {
+						continue;
+					}
+					break;
+				}
+				if (info.role == cluster::RaftInfo::Role::Leader) {
+					resetLeader();
+					clusterProxyLog(LogTrace, "[%d proxy] proxyCall RaftInfo::Role::Leader", getServerIDRel());
+					r = localCall<Fn, fn, R, Args...>(ctx, std::forward<Args>(args)...);
+#if RX_ENABLE_CLUSTERPROXY_LOGS
+					printErr(r);
+#endif
+					// the only place, where errUpdateReplication may appear
+				} else if (info.role == cluster::RaftInfo::Role::Follower) {
+					if (ctx.HasEmmiterServer()) {
+						setErrorCode(r, Error(errAlreadyProxied, "Request was proxied to follower node"));
+						return r;
+					}
+					try {
+						auto clientToLeader = getLeader(info);
+						clusterProxyLog(LogTrace, "[%d proxy] proxyCall RaftInfo::Role::Follower", getServerIDRel());
+						r = action(ctx, clientToLeader, std::forward<Args>(args)...);
+					} catch (Error e) {
+						setErrorCode(r, std::move(e));
+					}
+				} else if (info.role == cluster::RaftInfo::Role::Candidate) {
+					allowCandidateRole = false;
+					errCode = errWrongReplicationData;
+					// Second attempt with awaiting of the role switch
+					continue;
+				}
+				errCode = getErrCode(err, r);
+			} while (errCode == errWrongReplicationData);
+		} else {
+			clusterProxyLog(LogTrace, "[%d proxy] proxyCall LSN not empty (local call)", getServerIDRel());
+			r = localCall<Fn, fn, R, Args...>(ctx, std::forward<Args>(args)...);
+			// errWrongReplicationData means, that leader of the current node doesn't match leader from LSN
+			if (getErrCode(err, r) == errWrongReplicationData) {
+				cluster::RaftInfo info;
+				err = impl_.GetRaftInfo(false, info, ctx);
+				if (!err.ok()) {
+					if (err.code() == errTimeout || err.code() == errCanceled) {
+						err = Error(err.code(), "Unable to get cluster's leader: %s", err.what());
+					}
+					setErrorCode(r, std::move(err));
+					return r;
+				}
+				if (info.role != cluster::RaftInfo::Role::Follower) {
+					return r;
+				}
+				std::unique_lock<std::mutex> lck(processPingEventMutex_);
+				auto waitRes = processPingEvent_.wait_for(lck, cluster::kLeaderPingInterval * 10);	// Awaiting ping from current leader
+				if (waitRes == std::cv_status::timeout || lastPingLeaderId_ != ctx.GetOriginLSN().Server()) {
+					return r;
+				}
+				lck.unlock();
+				return localCall<Fn, fn, R, Args...>(ctx, std::forward<Args>(args)...);
+			}
+		}
+		return r;
+	}
 	template <typename FnL, FnL fnl, typename... Args>
-	Error baseFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader, Args &&...args);
+	Error baseFollowerAction(const RdxContext &ctx, LeaderRefT clientToLeader, Args &&...args) {
+		try {
+			client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+			const auto ward = ctx.BeforeClusterProxy();
+			Error err = (l.*fnl)(std::forward<Args>(args)...);
+			return err;
+		} catch (const Error &err) {
+			return err;
+		}
+	}
+	template <ProxiedItemSimpleActionFT fnl>
+	Error itemFollowerAction(const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName, Item &item) {
+		try {
+			Error err;
 
-	template <typename FnL, FnL fnl>
-	Error itemFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader, std::string_view nsName,
-							 Item &item);
-	template <typename FnL, FnL fnl>
-	Error resultFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader, const Query &query,
-							   LocalQueryResults &result);
-
-	template <typename FnL, FnL fnl>
-	Error resultItemFollowerAction(const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader, std::string_view nsName,
-								   Item &item, LocalQueryResults &result);
-
-	Transaction newTxFollowerAction(bool isWithSharding, const RdxContext &ctx, const std::shared_ptr<client::Reindexer> &clientToLeader,
-									std::string_view nsName);
-
-	reindexer::client::Item toClientItem(std::string_view ns, client::Reindexer *connection, reindexer::Item &clientItem);
+			client::Item clientItem = clientToLeader->NewItem(nsName);
+			if (clientItem.Status().ok()) {
+				auto jsonData = item.impl_->GetCJSON(true);
+				err = clientItem.FromCJSON(jsonData);
+				if (!err.ok()) {
+					return err;
+				}
+				clientItem.SetPrecepts(item.impl_->GetPrecepts());
+				client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+				{
+					const auto ward = ctx.BeforeClusterProxy();
+					err = (l.*fnl)(nsName, clientItem);
+				}
+				if (!err.ok()) {
+					return err;
+				}
+				*item.impl_ = ItemImpl(clientItem.impl_->Type(), clientItem.impl_->tagsMatcher());
+				err = item.FromCJSON(clientItem.GetCJSON());
+				item.setID(clientItem.GetID());
+				item.setLSN(clientItem.GetLSN());
+			} else {
+				err = clientItem.Status();
+			}
+			return err;
+		} catch (const Error &err) {
+			return err;
+		}
+	}
+	template <ProxiedQueryActionFT fnl>
+	Error resultFollowerAction(const RdxContext &ctx, LeaderRefT clientToLeader, const Query &query, LocalQueryResults &qr) {
+		try {
+			Error err;
+			client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+			client::QueryResults clientResults;
+			{
+				const auto ward = ctx.BeforeClusterProxy();
+				err = (l.*fnl)(query, clientResults);
+			}
+			if (!err.ok()) {
+				return err;
+			}
+			if (!query.joinQueries_.empty() || !query.mergeQueries_.empty()) {
+				return Error(errLogic, "Unable to proxy query with JOIN or MERGE");
+			}
+			clientToCoreQueryResults(clientResults, qr);
+			return err;
+		} catch (const Error &err) {
+			return err;
+		}
+	}
+	template <ProxiedItemQrActionFT fnl>
+	Error resultItemFollowerAction(const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName, Item &item,
+								   LocalQueryResults &qr) {
+		try {
+			Error err;
+			client::Item clientItem = clientToLeader->NewItem(nsName);
+			if (!clientItem.Status().ok()) {
+				return clientItem.Status();
+			}
+			auto jsonData = item.impl_->GetCJSON(true);
+			err = clientItem.FromCJSON(jsonData);
+			if (!err.ok()) {
+				return err;
+			}
+			clientItem.SetPrecepts(item.impl_->GetPrecepts());
+			client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(sId_);
+			client::QueryResults clientResults;
+			{
+				const auto ward = ctx.BeforeClusterProxy();
+				err = (l.*fnl)(nsName, clientItem, clientResults);
+			}
+			if (!err.ok()) {
+				return err;
+			}
+			item.setID(clientItem.GetID());
+			item.setLSN(clientItem.GetLSN());
+			clientToCoreQueryResults(clientResults, qr);
+			return err;
+		} catch (const Error &err) {
+			return err;
+		}
+	}
 	void clientToCoreQueryResults(client::QueryResults &, LocalQueryResults &);
-
-	bool isWithSharding(const Query &q, const InternalRdxContext &ctx) const;
-	bool isWithSharding(std::string_view nsName, const InternalRdxContext &ctx) const noexcept;
-	bool isWithSharding(const InternalRdxContext &ctx) const noexcept;
-	bool isSharderQuery(const Query &q) const;
 	bool shouldProxyQuery(const Query &q);
-
-	template <typename Func, typename FLocal, typename... Args>
-	Error delegateToShards(const RdxContext &rdxCtx, Func f, const FLocal &&local, Args &&...args);
-
-	template <typename Func, typename FLocal, typename... Args>
-	Error delegateToShardsByNs(const RdxContext &rdxCtx, Func f, const FLocal &&local, std::string_view nsName, Args &&...args);
-
-	typedef Error (client::Reindexer::*ItemModifyFun)(std::string_view, client::Item &);
-
-	template <ItemModifyFun fn>
-	Error modifyItemOnShard(const InternalRdxContext &ctx, const RdxContext &rdxCtx, std::string_view nsName, Item &item,
-							const std::function<Error(std::string_view, Item &)> &&localFn);
-
-	template <typename Func, typename FLocal, typename T, typename P = std::function<bool(const T &)>, typename... Args>
-	Error collectFromShardsByNs(const RdxContext &rdxCtx, Func f, const FLocal &&local, std::vector<T> &result, P predicate,
-								std::string_view nsName, [[maybe_unused]] Args &&...args);
-
-	typedef Error (client::Reindexer::*ItemModifyFunQr)(std::string_view, client::Item &, client::QueryResults &);
-
-	template <ItemModifyFunQr fn>
-	Error modifyItemOnShard(const InternalRdxContext &ctx, const RdxContext &rdxCtx, std::string_view nsName, Item &item,
-							QueryResults &result, const std::function<Error(std::string_view, Item &, LocalQueryResults &)> &&localFn);
-
-	Error executeQueryOnShard(const Query &query, QueryResults &result, unsigned proxyFetchLimit, const InternalRdxContext &,
-							  const RdxContext &,
-							  std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> && = {}) noexcept;
-	Error executeQueryOnClient(client::Reindexer &connection, const Query &q, client::QueryResults &qrClient,
-							   const std::function<void(size_t count, size_t totalCount)> &limitOffsetCalc);
-
-	void calculateNewLimitOfsset(size_t count, size_t totalCount, unsigned &limit, unsigned &offset);
-	void addEmptyLocalQrWithShardID(const Query &query, QueryResults &result);
 };
 }  // namespace reindexer

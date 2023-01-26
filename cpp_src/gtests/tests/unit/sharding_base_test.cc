@@ -1,10 +1,20 @@
+#include <algorithm>
 #include <future>
+#include <limits>
 #include <sstream>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include "cluster/sharding/ranges.h"
 #include "cluster/stats/replicationstats.h"
 #include "core/itemimpl.h"
+#include "core/queryresults/queryresults.h"
+#include "core/type_consts.h"
 #include "estl/tuple_utils.h"
+#include "gason/gason.h"
 #include "server/pprof/gperf_profiler.h"
 #include "sharding_api.h"
+#include "spdlog/fmt/bundled/printf.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 
 static void CheckServerIDs(std::vector<std::vector<ServerControl>> &svc) {
@@ -346,7 +356,7 @@ void ShardingApi::runDeleteItemsTest(std::string_view nsName) {
 		client::QueryResults qr;
 		err = rx->Select(q, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_TRUE(qr.Count() == 0) << qr.Count() << "; from proxy; shard = " << shard << "; location = " << key << std::endl;
+		ASSERT_EQ(qr.Count(), 0) << qr.Count() << "; from proxy; shard = " << shard << "; location = " << key << std::endl;
 	}
 }
 
@@ -387,13 +397,13 @@ void ShardingApi::runDropNamespaceTest(std::string_view nsName) {
 		client::QueryResults qr;
 		err = rx->Select(Query(std::string(nsName)).Where(kFieldLocation, CondEq, key), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_TRUE(qr.Count() == 0) << qr.Count();
+		ASSERT_EQ(qr.Count(), 0) << qr.Count();
 	}
 
 	client::QueryResults qr;
 	err = rx->Select(Query(std::string(nsName)), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 0) << qr.Count();
+	ASSERT_EQ(qr.Count(), 0) << qr.Count();
 
 	err = rx->DropNamespace(nsName);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -550,6 +560,275 @@ TEST_F(ShardingApi, BaseApiTestset) {
 	runUpdateIndexTest(nsIt++->name);
 	runDropNamespaceTest(nsIt++->name);
 	runTransactionsTest(nsIt++->name);
+}
+
+void ShardingApi::runTransactionsTestForRanges(std::string_view nsName, const std::map<int, std::set<int>> &shardDataDistrib) {
+	TestCout() << "Running TransactionsTest" << std::endl;
+
+	std::shared_ptr<client::Reindexer> rx = svc_[0][0].Get()->api.reindexer;
+	Error err = rx->TruncateNamespace(nsName);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	Query q = Query(std::string(nsName));
+	client::QueryResults qr;
+	err = rx->Select(q, qr);
+	ASSERT_TRUE(err.ok()) << err.what() << "; ns: " << nsName;
+	ASSERT_EQ(qr.Count(), 0);
+
+	for (size_t shard = 0; shard < kShards; ++shard) {
+		const auto &keys = shardDataDistrib.at(shard);
+
+		reindexer::client::Transaction tr = rx->NewTransaction(nsName);
+		ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
+		for (const auto &key : keys) {
+			client::Item item = tr.NewItem();
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+			WrSerializer wrser;
+			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			jsonBuilder.Put(kFieldId, key);
+			jsonBuilder.End();
+
+			err = item.FromJSON(wrser.Slice());
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+			err = tr.Upsert(std::move(item));
+			ASSERT_TRUE(err.ok()) << err.what() << "; shard = " << shard << "; key = " << key << std::endl;
+		}
+
+		client::QueryResults qrTx;
+		err = rx->CommitTransaction(tr, qrTx);
+		ASSERT_TRUE(err.ok()) << err.what() << "; shard = " << shard << std::endl;
+	}
+
+	q = Query(std::string(nsName));
+	qr = client::QueryResults();
+	err = rx->Select(q, qr);
+	ASSERT_TRUE(err.ok()) << err.what() << "; ns: " << nsName;
+	ASSERT_EQ(qr.Count(), 40);
+}
+
+template <typename T>
+void ShardingApi::runSelectTestForRanges(std::string_view nsName, const std::map<int, std::set<T>> &shardDataDistrib) {
+	TestCout() << "Running SELECT test for ranges" << std::endl;
+
+	std::set<T> checkData;
+	for (auto &[_, s] : shardDataDistrib) {
+		(void)_;
+		checkData.insert(s.begin(), s.end());
+	}
+
+	for (size_t i = 0; i < NodesCount(); ++i) {
+		std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
+		Query q = Query(std::string(nsName));
+		client::QueryResults qr;
+		Error err = rx->Select(q, qr);
+
+		ASSERT_TRUE(err.ok()) << err.what() << "; node index = " << i << std::endl;
+		ASSERT_EQ(qr.Count(), checkData.size());
+
+		for (auto &res : qr) {
+			WrSerializer wrser;
+			err = res.GetJSON(wrser);
+			ASSERT_TRUE(err.ok()) << err.what();
+
+			gason::JsonParser parser;
+			auto jsonNodeValue =
+				parser.Parse(wrser.Slice())["id"].As<T>(T(), std::numeric_limits<T>::lowest());	 // lowest for correct work with neg values
+
+			ASSERT_GT(checkData.count(jsonNodeValue), 0) << "Id = " << jsonNodeValue << "; Slice -" << wrser.Slice() << std::endl;
+		}
+	}
+}
+
+template <typename T>
+void ShardingApi::runLocalSelectTestForRanges(std::string_view nsName, const std::map<int, std::set<T>> &shardDataDistrib) {
+	TestCout() << "Running LOCAL SELECT test for ranges" << std::endl;
+
+	auto checkDataDistrib = [nsName, this, &shardDataDistrib](int shard) {
+		std::shared_ptr<client::Reindexer> rx = svc_[shard][0].Get()->api.reindexer;
+		Query q{std::string(nsName)};
+		q.Local();
+
+		client::QueryResults qr;
+		Error err = rx->Select(q, qr);
+
+		ASSERT_TRUE(err.ok()) << err.what() << "; ns: " << nsName;
+		ASSERT_EQ(qr.Count(), shardDataDistrib.at(shard).size()) << "Shard - " << shard << std::endl;
+
+		for (auto &res : qr) {
+			WrSerializer wrser;
+			err = res.GetJSON(wrser);
+			ASSERT_TRUE(err.ok()) << err.what();
+
+			gason::JsonParser parser;
+			auto jsonNodeValue =
+				parser.Parse(wrser.Slice())["id"].As<T>(T(), std::numeric_limits<T>::lowest());	 // lowest for correct work with neg values
+			ASSERT_GT(shardDataDistrib.at(shard).count(jsonNodeValue), 0)
+				<< "Id = " << jsonNodeValue << "; Slice -" << wrser.Slice() << std::endl;
+		}
+	};
+
+	for (size_t shard = 0; shard < kShards; ++shard) checkDataDistrib(shard);
+}
+
+template <typename T>
+void ShardingApi::fillWithDistribData(const std::map<int, std::set<T>> &shardDataDistrib, const std::string &kNsName,
+									  const std::string &kFieldId) {
+	TestCout() << "filling in the data" << std::endl;
+
+	auto rx = svc_[0][0].Get()->api.reindexer;
+
+	NamespaceDef nsDef{kNsName};
+
+	static_assert(std::is_integral_v<T> || std::is_floating_point_v<T> || std::is_same_v<T, std::string>,
+				  "Unsupported type for keys of sharding");
+
+	if constexpr (std::is_integral_v<T>) {
+		nsDef.AddIndex(kFieldId, "hash", "int", IndexOpts().PK());
+	} else if constexpr (std::is_floating_point_v<T>) {
+		nsDef.AddIndex(kFieldId, "tree", "double", IndexOpts().PK());
+	} else if constexpr (std::is_same_v<T, std::string>) {
+		nsDef.AddIndex(kFieldId, "hash", "string", IndexOpts().PK());
+	}
+
+	Error err = rx->AddNamespace(nsDef);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	for (auto &[_, values] : shardDataDistrib) {
+		(void)_;
+		for (const auto &value : values) {
+			WrSerializer wrser;
+			auto item = rx->NewItem(kNsName);
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+
+			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			jsonBuilder.Put(kFieldId, value);
+			jsonBuilder.End();
+
+			err = item.FromJSON(wrser.Slice());
+			ASSERT_TRUE(err.ok()) << err.what();
+			err = rx->Upsert(kNsName, item);
+			ASSERT_TRUE(err.ok()) << err.what();
+		}
+	}
+}
+
+TEST_F(ShardingApi, BaseApiTestsetForRanges) {
+	const std::map<int, std::set<int>> shardDataDistrib{
+		{0, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 20, 26, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39}},
+		{1, {11, 12, 13, 14, 15, 17, 18, 19}},
+		{2, {21, 22, 23, 24, 25, 27, 28, 29}}};
+	const std::string kNsName = "ns_for_ranges";
+
+	InitShardingConfig cfg;
+	cfg.additionalNss.emplace_back(kNsName);
+	cfg.additionalNss[0].indexName = "id";
+	cfg.additionalNss[0].keyValuesNodeCreation = [](int shard) {
+		// resulted key template for i shard
+		// 10i + 1
+		// [10i + 2, 10i + 5]
+		// [10i + 7, 10i + 9]
+		//
+		// 10i and 10i + 6 goes to default shard
+		reindexer::cluster::ShardingConfig::Key key;
+
+		key.values.emplace_back(Variant(10 * shard + 1));
+		key.values.emplace_back(Variant(10 * shard + 2));
+		key.values.emplace_back(Variant(10 * shard + 3));
+		key.values.emplace_back(sharding::Segment{Variant(10 * shard + 2), Variant(10 * shard + 5)});
+		key.values.emplace_back(Variant(10 * shard + 8));
+		key.values.emplace_back(Variant(10 * shard + 9));
+		key.values.emplace_back(sharding::Segment{Variant(10 * shard + 7), Variant(10 * shard + 9)});
+
+		key.shardId = shard;
+		key.algorithmType = ShardingAlgorithmType::ByRange;
+		return key;
+	};
+	Init(std::move(cfg));
+
+	fillWithDistribData(shardDataDistrib, kNsName, kFieldId);
+	waitSync(kNsName);
+	CheckServerIDs(svc_);
+	runLocalSelectTestForRanges(kNsName, shardDataDistrib);
+	runSelectTestForRanges(kNsName, shardDataDistrib);
+	runTransactionsTestForRanges(kNsName, shardDataDistrib);
+	waitSync(kNsName);
+
+	TestCout() << "Checking correct work of selects after apply of transactions" << std::endl;
+
+	runLocalSelectTestForRanges(kNsName, shardDataDistrib);
+	runSelectTestForRanges(kNsName, shardDataDistrib);
+}
+
+TEST_F(ShardingApi, SelectTestForRangesWithDoubleKeys) {
+	const std::map<int, std::set<double>> shardDataDistrib{
+		{0, {-2.61, 3.2, 7.09}}, {1, {-2.5, -2.0, 0, 1.9, 2.0, 3.0, 3.1}}, {2, {4.1, 5.25, 6.0}}, {3, {7.1, 7.2}}};
+	const std::string kNsName = "ns_for_ranges";
+
+	InitShardingConfig cfg;
+	cfg.additionalNss.emplace_back(kNsName);
+	cfg.additionalNss[0].indexName = "id";
+	cfg.additionalNss[0].keyValuesNodeCreation = [](int shard) {
+		reindexer::cluster::ShardingConfig::Key key;
+		switch (shard) {
+			case 1: {
+				key.values.emplace_back(Variant(2.0));
+				key.values.emplace_back(sharding::Segment{Variant(2.1), Variant(3.1)});
+				key.values.emplace_back(sharding::Segment{Variant(2.0), Variant(-2.5)});
+				break;
+			}
+			case 2: {
+				key.values.emplace_back(Variant(5.25));
+				key.values.emplace_back(sharding::Segment{Variant(6.0), Variant(4.1)});
+				break;
+			}
+			case 3: {
+				key.values.emplace_back(Variant(7.1));
+				key.values.emplace_back(sharding::Segment{Variant(7.1), Variant(7.1)});
+				key.values.emplace_back(sharding::Segment{Variant(7.2), Variant(7.2)});
+				break;
+			}
+			default:
+				break;
+		}
+		key.shardId = shard;
+		key.algorithmType = ShardingAlgorithmType::ByRange;
+		return key;
+	};
+	cfg.shards = 4;
+	Init(std::move(cfg));
+
+	fillWithDistribData(shardDataDistrib, kNsName, kFieldId);
+	waitSync(kNsName);
+	runLocalSelectTestForRanges(kNsName, shardDataDistrib);
+	runSelectTestForRanges(kNsName, shardDataDistrib);
+}
+
+TEST_F(ShardingApi, NsNamesCaseInsensitivityTest) {
+	const std::map<int, std::set<int>> shardDataDistrib{
+		{0, {0, 1, 2, 3, 4}}, {1, {10, 11, 12, 13, 14}}, {2, {20, 21, 22, 23, 24}}, {3, {30, 31, 32, 33, 34}}};
+
+	const std::string kNsName = "NameSPaCe1";
+
+	InitShardingConfig cfg;
+	cfg.additionalNss.emplace_back(kNsName);
+	cfg.additionalNss[0].indexName = kFieldId;
+	cfg.additionalNss[0].keyValuesNodeCreation = [](int shard) {
+		reindexer::cluster::ShardingConfig::Key key;
+		for (int i = 0; i < 5; ++i) key.values.emplace_back(Variant(10 * shard + i));
+
+		key.shardId = shard;
+		return key;
+	};
+	cfg.shards = 4;
+
+	Init(std::move(cfg));
+
+	fillWithDistribData(shardDataDistrib, kNsName, kFieldId);
+	waitSync(kNsName);
+	runSelectTestForRanges(toLower(kNsName), shardDataDistrib);
 }
 
 TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
@@ -895,6 +1174,42 @@ TEST_F(ShardingApi, EnumLocalNamespaces) {
 	}
 }
 
+const std::string ShardingApi::configTemplate = R"(version: 1
+namespaces:
+  - namespace: namespace1
+    default_shard: 0
+    index: count
+    keys:
+      - shard_id: 1
+        values:
+          ${0}
+      - shard_id: 2
+        values:
+          ${1}
+      - shard_id: 3
+        values:
+          ${2}
+shards:
+  - shard_id: 0
+    dsns:
+      - cproto://127.0.0.1:19000/shard0
+  - shard_id: 1
+    dsns:
+      - cproto://127.0.0.1:19010/shard1
+  - shard_id: 2
+    dsns:
+      - cproto://127.0.0.1:19020/shard2
+  - shard_id: 3
+    dsns:
+      - cproto://127.0.0.1:19030/shard3
+this_shard_id: 0
+reconnect_timeout_msec: 3000
+shards_awaiting_timeout_sec: 30
+proxy_conn_count: 8
+proxy_conn_concurrency: 8
+proxy_conn_threads: 4
+)";
+
 TEST_F(ShardingApi, ConfigYaml) {
 	using namespace std::string_literals;
 	using Cfg = reindexer::cluster::ShardingConfig;
@@ -909,10 +1224,162 @@ TEST_F(ShardingApi, ConfigYaml) {
 		}
 	}
 
-	struct {
+	struct TestCase {
 		std::string yaml;
 		std::variant<Cfg, Error> expected;
-	} testCases[]{
+		std::optional<std::string> yamlForCompare = std::nullopt;
+	};
+
+	auto substRangesInTemplate = [](const std::vector<std::string> &values) {
+		auto res = configTemplate;
+		for (size_t i = 0; i < 3; ++i) {
+			auto tmplt = fmt::sprintf("${%d}", i);
+			res.replace(res.find(tmplt), tmplt.size(), values[i]);
+		}
+		return res;
+	};
+
+	// clang-format off
+	std::vector rangesTestCases{
+		TestCase{substRangesInTemplate({
+	   R"(- 1
+          - 2
+          - 3
+          - 4
+          - [3, 5]
+          - [10, 15])",
+	   R"(- 16
+          - [36, 40]
+          - [40, 65]
+          - [100, 150])",
+	   R"(- 93
+          - 25
+          - 33
+          - [24, 35]
+          - [88, 95])"}), Cfg{{{"namespace1",
+							 "count",
+							 {Cfg::Key{1, ByRange, {sharding::Segment(Variant(1)), sharding::Segment(Variant(2)), sharding::Segment{Variant(3), Variant(5)}, sharding::Segment{Variant(10), Variant(15)}}},
+							  {2, ByRange, {sharding::Segment(Variant(16)), sharding::Segment{Variant(36), Variant(65)}, sharding::Segment{Variant(100), Variant(150)}}},
+							  {3, ByRange, {sharding::Segment{Variant(24), Variant(35)}, sharding::Segment{Variant(88), Variant(95)}}}},
+							 0}},
+
+						   {{0, {"cproto://127.0.0.1:19000/shard0"}},
+							{1, {"cproto://127.0.0.1:19010/shard1"}},
+							{2, {"cproto://127.0.0.1:19020/shard2"}},
+							{3, {"cproto://127.0.0.1:19030/shard3"}}},
+						   0},
+		substRangesInTemplate({
+	   R"(- 1
+          - 2
+          - [3, 5]
+          - [10, 15])",
+	   R"(- 16
+          - [36, 65]
+          - [100, 150])",
+	   R"(- [24, 35]
+          - [88, 95])"})},
+		TestCase{substRangesInTemplate({
+	   R"(- 1
+          - 2
+          - 3
+          - [0, 11]
+          - [10, 15])",
+	   R"(- 18
+          - [40, 65]
+          - [45, 57]
+          - [100, 150])",
+	   R"(- 17
+          - 22
+          - 33
+          - [24, 35]
+          - [39, 27]
+          - [88, 95])"}),Cfg{{{"namespace1",
+							 "count",
+							 {Cfg::Key{1, ByRange, {sharding::Segment{Variant(0), Variant(15)}}},
+							  {2, ByRange, {sharding::Segment(Variant(18)), sharding::Segment{Variant(40), Variant(65)}, sharding::Segment{Variant(100), Variant(150)}}},
+							  {3, ByRange, {sharding::Segment(Variant(17)), sharding::Segment(Variant(22)), sharding::Segment{Variant(24), Variant(39)}, sharding::Segment{Variant(88), Variant(95)}}}},
+							 0}},
+
+						   {{0, {"cproto://127.0.0.1:19000/shard0"}},
+							{1, {"cproto://127.0.0.1:19010/shard1"}},
+							{2, {"cproto://127.0.0.1:19020/shard2"}},
+							{3, {"cproto://127.0.0.1:19030/shard3"}}},
+						   0},
+		substRangesInTemplate({
+	   R"(- [0, 15])",
+	   R"(- 18
+          - [40, 65]
+          - [100, 150])",
+	   R"(- 17
+          - 22
+          - [24, 39]
+          - [88, 95])"})},
+		TestCase{substRangesInTemplate({
+	   R"(- 1
+          - 2
+          - 3
+          - [10, 15])",
+	   R"(- 29
+          - [40, 65]
+          - [4, 5]
+          - [100, 150])",
+	   R"(- 143
+          - 12)"}), Error{errParams, "Incorrect value '143'. Value already in use."}},
+		TestCase{substRangesInTemplate({
+	   R"(- "abd"
+          - 2
+          - 3
+          - [10, 15])",
+	   R"(- 29
+          - [40, 65]
+          - [4, 5]
+          - [100, 150])",
+	   R"(- 143
+          - 12)"}), Error{errParams, "Incorrect value '2'. Type of first value is 'string', current type is 'int64'"}},
+		TestCase{substRangesInTemplate({
+	   R"(- 2
+          - ["string1", "string2"])",
+	   R"(- 29
+          - [40, 65]
+          - [4, 5]
+          - [100, 150])",
+	   R"(- 143
+          - 12)"}), Error{errParams, "Incorrect value 'string1'. Type of first value is 'int64', current type is 'string'"}},
+		TestCase{substRangesInTemplate({
+	   R"(- 1.0
+          - 2
+          - 3
+          - [10, 15])",
+	   R"(- 29
+          - [40, 65]
+          - [4, 5]
+          - [100, 150])",
+	   R"(- 143
+          - 12)"}), Error{errParams, "Incorrect value '2'. Type of first value is 'double', current type is 'int64'"}},
+		TestCase{substRangesInTemplate({
+	   R"(- [1, 3]
+          - [2.3, 3]
+          - 3
+          - [10, 15])",
+	   R"(- 29
+          - [40, 65]
+          - [4, 5]
+          - [100, 150])",
+	   R"(- 143
+          - 12)"}), Error{errParams, "Incorrect segment '[2.300000, 3]'. Type of left value is 'double', right type is 'int64'"}},
+		TestCase{substRangesInTemplate({
+	   R"(- [1.4, "string"]
+          - 3
+          - [10, 15])",
+	   R"(- 29
+          - [40, 65]
+          - [4, 5]
+          - [100, 150])",
+	   R"(- 143
+          - 12)"}), Error{errParams, "Incorrect segment '[1.400000, string]'. Type of left value is 'double', right type is 'string'"}}};
+	// clang-format on
+
+	std::vector<TestCase> testCases{
 		{"this_shard_id: 0", Error{errParams, "Version of sharding config file is not specified"}},
 		{"version: 10", Error{errParams, "Unsupported version of sharding config file: 10"}},
 		{R"(version: 1
@@ -1135,7 +1602,11 @@ proxy_conn_count: 15
 proxy_conn_concurrency: 10
 proxy_conn_threads: 5
 )"s,
-		 Cfg{{{"best_namespace", "location", {Cfg::Key{1, ByValue, {"south", "west"}}, {2, ByValue, {"north"}}}, 0}},
+		 Cfg{{{"best_namespace",
+			   "location",
+			   {Cfg::Key{1, ByValue, {sharding::Segment(Variant("south")), sharding::Segment(Variant("west"))}},
+				{2, ByValue, {sharding::Segment(Variant("north"))}}},
+			   0}},
 			 {{0, {"cproto://127.0.0.1:19000/shard0"}}, {1, {"cproto://127.0.0.1:19001/shard1"}}, {2, {"cproto://127.0.0.2:19002/shard2"}}},
 			 0,
 			 std::chrono::milliseconds(5000),
@@ -1193,8 +1664,16 @@ proxy_conn_count: 8
 proxy_conn_concurrency: 8
 proxy_conn_threads: 4
 )"s,
-		 Cfg{{{"namespace1", "count", {Cfg::Key{1, ByValue, {0, 10, 20}}}, 0},
-			  {"namespace2", "city", {Cfg::Key{1, ByValue, {"Moscow"}}, {2, ByValue, {"London"}}, {3, ByValue, {"Paris"}}}, 1}},
+		 Cfg{{{"namespace1",
+			   "count",
+			   {Cfg::Key{1, ByValue, {sharding::Segment(Variant(0)), sharding::Segment(Variant(10)), sharding::Segment(Variant(20))}}},
+			   0},
+			  {"namespace2",
+			   "city",
+			   {Cfg::Key{1, ByValue, {sharding::Segment(Variant("Moscow"))}},
+				{2, ByValue, {sharding::Segment(Variant("London"))}},
+				{3, ByValue, {sharding::Segment(Variant("Paris"))}}},
+			   1}},
 			 {{0, {"cproto://127.0.0.1:19000/shard0", "cproto://127.0.0.1:19001/shard0", "cproto://127.0.0.1:19002/shard0"}},
 			  {1, {"cproto://127.0.0.1:19010/shard1", "cproto://127.0.0.1:19011/shard1"}},
 			  {2, {"cproto://127.0.0.2:19020/shard2"}},
@@ -1202,18 +1681,35 @@ proxy_conn_threads: 4
 			   {"cproto://127.0.0.2:19030/shard3", "cproto://127.0.0.2:19031/shard3", "cproto://127.0.0.2:19032/shard3",
 				"cproto://127.0.0.2:19033/shard3"}}},
 			 0}},
-		{sample.str(),
-		 Cfg{{{"namespace1", "count", {Cfg::Key{1, ByValue, {0, 10, 20}}, {2, ByValue, {1, 2, 3, 4}}, {3, ByValue, {11}}}, 0},
-			  {"namespace2", "city", {Cfg::Key{1, ByValue, {"Moscow"}}, {2, ByValue, {"London"}}, {3, ByValue, {"Paris"}}}, 3}},
-			 {{0, {"cproto://127.0.0.1:19000/shard0", "cproto://127.0.0.1:19001/shard0", "cproto://127.0.0.1:19002/shard0"}},
-			  {1, {"cproto://127.0.0.1:19010/shard1", "cproto://127.0.0.1:19011/shard1"}},
-			  {2, {"cproto://127.0.0.2:19020/shard2"}},
-			  {3,
-			   {"cproto://127.0.0.2:19030/shard3", "cproto://127.0.0.2:19031/shard3", "cproto://127.0.0.2:19032/shard3",
-				"cproto://127.0.0.2:19033/shard3"}}},
-			 0}}};
+		{sample.str(), Cfg{{{"namespace1",
+							 "count",
+							 {Cfg::Key{1,
+									   ByRange,
+									   {sharding::Segment(Variant(0)), sharding::Segment{Variant(7), Variant(10)},
+										sharding::Segment{Variant(13), Variant(21)}}},
+							  {2,
+							   ByValue,
+							   {sharding::Segment(Variant(1)), sharding::Segment(Variant(2)), sharding::Segment(Variant(3)),
+								sharding::Segment(Variant(4))}},
+							  {3, ByValue, {sharding::Segment(Variant(11))}}},
+							 0},
+							{"namespace2",
+							 "city",
+							 {Cfg::Key{1, ByValue, {sharding::Segment(Variant("Moscow"))}},
+							  {2, ByValue, {sharding::Segment(Variant("London"))}},
+							  {3, ByValue, {sharding::Segment(Variant("Paris"))}}},
+							 3}},
+						   {{0, {"cproto://127.0.0.1:19000/shard0", "cproto://127.0.0.1:19001/shard0", "cproto://127.0.0.1:19002/shard0"}},
+							{1, {"cproto://127.0.0.1:19010/shard1", "cproto://127.0.0.1:19011/shard1"}},
+							{2, {"cproto://127.0.0.2:19020/shard2"}},
+							{3,
+							 {"cproto://127.0.0.2:19030/shard3", "cproto://127.0.0.2:19031/shard3", "cproto://127.0.0.2:19032/shard3",
+							  "cproto://127.0.0.2:19033/shard3"}}},
+						   0}}};
 
-	for (const auto &[yaml, expected] : testCases) {
+	testCases.insert(testCases.end(), rangesTestCases.begin(), rangesTestCases.end());
+
+	for (const auto &[yaml, expected, yaml4Cmp] : testCases) {
 		const Error err = config.FromYAML(yaml);
 		if (std::holds_alternative<Cfg>(expected)) {
 			const auto &cfg{std::get<Cfg>(expected)};
@@ -1222,7 +1718,7 @@ proxy_conn_threads: 4
 				EXPECT_EQ(config, cfg) << yaml << "\nexpected:\n" << cfg.GetYAML();
 			}
 			const auto generatedYml = cfg.GetYAML();
-			EXPECT_EQ(generatedYml, yaml);
+			EXPECT_EQ(generatedYml, yaml4Cmp ? yaml4Cmp.value() : yaml);
 		} else {
 			EXPECT_FALSE(err.ok());
 			EXPECT_EQ(err.what(), std::get<Error>(expected).what());
@@ -1238,17 +1734,35 @@ TEST_F(ShardingApi, ConfigJson) {
 	struct {
 		std::string json;
 		Cfg expected;
+		std::optional<std::string> json4compare = std::nullopt;
 	} testCases[]{
 		{R"({"version":1,"namespaces":[{"namespace":"best_namespace","default_shard":0,"index":"location","keys":[{"shard_id":1,"values":["south","west"]},{"shard_id":2,"values":["north"]}]}],"shards":[{"shard_id":0,"dsns":["cproto://127.0.0.1:19000/shard0"]},{"shard_id":1,"dsns":["cproto://127.0.0.1:19001/shard1"]},{"shard_id":2,"dsns":["cproto://127.0.0.2:19002/shard2"]}],"this_shard_id":0,"reconnect_timeout_msec":5000,"shards_awaiting_timeout_sec":20,"proxy_conn_count":4,"proxy_conn_concurrency":8,"proxy_conn_threads":4})"s,
-		 Cfg{{{"best_namespace", "location", {Cfg::Key{1, ByValue, {"south", "west"}}, {2, ByValue, {"north"}}}, 0}},
+		 Cfg{{{"best_namespace",
+			   "location",
+			   {Cfg::Key{1, ByValue, {sharding::Segment(Variant("south")), sharding::Segment(Variant("west"))}},
+				{2, ByValue, {sharding::Segment(Variant("north"))}}},
+			   0}},
 			 {{0, {"cproto://127.0.0.1:19000/shard0"}}, {1, {"cproto://127.0.0.1:19001/shard1"}}, {2, {"cproto://127.0.0.2:19002/shard2"}}},
 			 0,
 			 std::chrono::milliseconds(5000),
 			 std::chrono::seconds(20),
 			 4}},
 		{R"({"version":1,"namespaces":[{"namespace":"namespace1","default_shard":0,"index":"count","keys":[{"shard_id":1,"values":[0,10,20]},{"shard_id":2,"values":[1,5,7,9]},{"shard_id":3,"values":[100]}]},{"namespace":"namespace2","default_shard":3,"index":"city","keys":[{"shard_id":1,"values":["Moscow"]},{"shard_id":2,"values":["London"]},{"shard_id":3,"values":["Paris"]}]}],"shards":[{"shard_id":0,"dsns":["cproto://127.0.0.1:19000/shard0","cproto://127.0.0.1:19001/shard0","cproto://127.0.0.1:19002/shard0"]},{"shard_id":1,"dsns":["cproto://127.0.0.1:19010/shard1","cproto://127.0.0.1:19011/shard1"]},{"shard_id":2,"dsns":["cproto://127.0.0.2:19020/shard2"]},{"shard_id":3,"dsns":["cproto://127.0.0.2:19030/shard3","cproto://127.0.0.2:19031/shard3","cproto://127.0.0.2:19032/shard3","cproto://127.0.0.2:19033/shard3"]}],"this_shard_id":0,"reconnect_timeout_msec":4000,"shards_awaiting_timeout_sec":30,"proxy_conn_count":3,"proxy_conn_concurrency":5,"proxy_conn_threads":2})"s,
-		 Cfg{{{"namespace1", "count", {Cfg::Key{1, ByValue, {0, 10, 20}}, {2, ByValue, {1, 5, 7, 9}}, {3, ByValue, {100}}}, 0},
-			  {"namespace2", "city", {Cfg::Key{1, ByValue, {"Moscow"}}, {2, ByValue, {"London"}}, {3, ByValue, {"Paris"}}}, 3}},
+		 Cfg{{{"namespace1",
+			   "count",
+			   {Cfg::Key{1, ByValue, {sharding::Segment(Variant(0)), sharding::Segment(Variant(10)), sharding::Segment(Variant(20))}},
+				{2,
+				 ByValue,
+				 {sharding::Segment(Variant(1)), sharding::Segment(Variant(5)), sharding::Segment(Variant(7)),
+				  sharding::Segment(Variant(9))}},
+				{3, ByValue, {sharding::Segment(Variant(100))}}},
+			   0},
+			  {"namespace2",
+			   "city",
+			   {Cfg::Key{1, ByValue, {sharding::Segment(Variant("Moscow"))}},
+				{2, ByValue, {sharding::Segment(Variant("London"))}},
+				{3, ByValue, {sharding::Segment(Variant("Paris"))}}},
+			   3}},
 			 {{0, {"cproto://127.0.0.1:19000/shard0", "cproto://127.0.0.1:19001/shard0", "cproto://127.0.0.1:19002/shard0"}},
 			  {1, {"cproto://127.0.0.1:19010/shard1", "cproto://127.0.0.1:19011/shard1"}},
 			  {2, {"cproto://127.0.0.2:19020/shard2"}},
@@ -1260,11 +1774,36 @@ TEST_F(ShardingApi, ConfigJson) {
 			 std::chrono::seconds(30),
 			 3,
 			 5,
-			 2}}};
+			 2}},
+		{R"({"version":1,"namespaces":[{"namespace":"namespace1","default_shard":0,"index":"count","keys":[{"shard_id":1,"values":[1,2,3,4,[3,5],[10,15]]},{"shard_id":2,"values":[16,[36,40],[40,65],[100,150]]},{"shard_id":3,"values":[93,25,33,[24,35],[88,95]]}]}],"shards":[{"shard_id":0,"dsns":["cproto://127.0.0.1:19000/shard0"]},{"shard_id":1,"dsns":["cproto://127.0.0.1:19010/shard1"]},{"shard_id":2,"dsns":["cproto://127.0.0.1:19020/shard2"]},{"shard_id":3,"dsns":["cproto://127.0.0.1:19030/shard3"]}],"this_shard_id":0,"reconnect_timeout_msec":4000,"shards_awaiting_timeout_sec":30,"proxy_conn_count":3,"proxy_conn_concurrency":5,"proxy_conn_threads":2})",
+		 Cfg{{{"namespace1",
+			   "count",
+			   {Cfg::Key{1,
+						 ByRange,
+						 {sharding::Segment(Variant(1)), sharding::Segment(Variant(2)), sharding::Segment{Variant(3), Variant(5)},
+						  sharding::Segment{Variant(10), Variant(15)}}},
+				{2,
+				 ByRange,
+				 {sharding::Segment(Variant(16)), sharding::Segment{Variant(36), Variant(65)},
+				  sharding::Segment{Variant(100), Variant(150)}}},
+				{3, ByRange, {sharding::Segment{Variant(24), Variant(35)}, sharding::Segment{Variant(88), Variant(95)}}}},
+			   0}},
 
-	for (const auto &[json, cfg] : testCases) {
+			 {{0, {"cproto://127.0.0.1:19000/shard0"}},
+			  {1, {"cproto://127.0.0.1:19010/shard1"}},
+			  {2, {"cproto://127.0.0.1:19020/shard2"}},
+			  {3, {"cproto://127.0.0.1:19030/shard3"}}},
+			 0,
+			 std::chrono::milliseconds(4000),
+			 std::chrono::seconds(30),
+			 3,
+			 5,
+			 2},
+		 R"({"version":1,"namespaces":[{"namespace":"namespace1","default_shard":0,"index":"count","keys":[{"shard_id":1,"values":[1,2,[3,5],[10,15]]},{"shard_id":2,"values":[16,[36,65],[100,150]]},{"shard_id":3,"values":[[24,35],[88,95]]}]}],"shards":[{"shard_id":0,"dsns":["cproto://127.0.0.1:19000/shard0"]},{"shard_id":1,"dsns":["cproto://127.0.0.1:19010/shard1"]},{"shard_id":2,"dsns":["cproto://127.0.0.1:19020/shard2"]},{"shard_id":3,"dsns":["cproto://127.0.0.1:19030/shard3"]}],"this_shard_id":0,"reconnect_timeout_msec":4000,"shards_awaiting_timeout_sec":30,"proxy_conn_count":3,"proxy_conn_concurrency":5,"proxy_conn_threads":2})"}};
+
+	for (const auto &[json, cfg, json4cmp] : testCases) {
 		const auto generatedJson = cfg.GetJSON();
-		EXPECT_EQ(generatedJson, json);
+		EXPECT_EQ(generatedJson, json4cmp ? json4cmp.value() : json);
 
 		const Error err = config.FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -1277,7 +1816,13 @@ TEST_F(ShardingApi, ConfigJson) {
 TEST_F(ShardingApi, ConfigKeyValues) {
 	struct shardInfo {
 		bool result;
-		using ShardKeys = std::vector<std::string>;
+		struct Key {
+			Key(const char *c_str) : left(std::string(c_str)) {}
+			Key(std::string &&left, std::string &&right) : left(std::move(left)), right(std::move(right)) {}
+			std::string left, right;
+			operator std::string() const { return right.empty() ? left : fmt::sprintf("[%s, %s]", left, right); }
+		};
+		using ShardKeys = std::vector<Key>;
 		std::vector<ShardKeys> shards;
 	};
 
@@ -1297,7 +1842,18 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 			for (size_t i = 0; i < info.shards.size(); i++) {
 				YAML::Node kY;
 				kY["shard_id"] = i + 1;
-				kY["values"] = info.shards[i];
+				kY["values"] = YAML::Node(YAML::NodeType::Sequence);
+				for (const auto &[left, right] : info.shards[i]) {
+					if (right.empty())
+						kY["values"].push_back(left);
+					else {
+						auto segmentNode = YAML::Node(YAML::NodeType::Sequence);
+						segmentNode.SetStyle(YAML::EmitterStyle::Flow);
+						segmentNode.push_back(left);
+						segmentNode.push_back(right);
+						kY["values"].push_back(std::move(segmentNode));
+					};
+				}
 				nsY["keys"].push_back(std::move(kY));
 			}
 			y["namespaces"].push_back(std::move(nsY));
@@ -1330,7 +1886,7 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 			conf += "                \"shard_id\": " + std::to_string(i + 1) + ",\n";
 			conf += "                \"values\": [\n";
 			for (size_t j = 0; j < info.shards[i].size(); j++) {
-				conf += "                    " + info.shards[i][j] + (j == info.shards[i].size() - 1 ? "\n" : ",\n");
+				conf += "                    " + std::string(info.shards[i][j]) + (j == info.shards[i].size() - 1 ? "\n" : ",\n");
 			}
 			conf += "                 ]\n";
 			conf += (i == info.shards.size() - 1) ? "            }\n" : "            },\n";
@@ -1381,11 +1937,16 @@ TEST_F(ShardingApi, ConfigKeyValues) {
 									{false, {{"false", "\"string\""}, {"true"}}},
 									{false, {{"false", }, {"true","\"string\""}}},
 
-
 									{false, {{"1.11", "2.22"}, {"3.33","1.11"}}},
 									{false, {{"true"}, {"false","true"}}},
 									{false, {{"\"key1\"", "\"key2\""}, {"\"key1\"","\"key3\""}}},
-									{false, {{"\"key1\"", "\"key2\"","\"key1\""}, {"\"key3\""}}},
+
+									{true, {{"\"key1\"", "\"key2\"","\"key1\""}, {"\"key3\""}}},
+
+									{true, {{"1", "2", "3", "4", {"3", "5"},  {"10", "15"}}, {"16",  {"36", "40"},  {"40", "65"},  {"100", "150"}},  {"93", "25", "33", {"24", "35"},  {"88", "95"}}}},
+									{true, {{"1", "2",  {"0", "11"},  {"10", "15"}}, {"18", {"40", "65"},  {"45", "57"},  {"100", "150"}},  {"17","22", "33", {"24", "35"},  {"39", "27"}, {"88", "95"}}}},
+									{false, {{"1", "2",  {"10", "15"}}, {"29",  {"40", "65"},  {"4", "5"},  {"100", "150"}},   {"143", "12"}}}
+
 								};
 	// clang-format on
 

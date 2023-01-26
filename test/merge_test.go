@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/v4"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -134,7 +134,7 @@ func FillTestFullTextItems(count int) {
 func UpdateFtIndex(t *testing.T, nsName string, idxName string, jsonPath string, enablePreselect bool) {
 	conf := reindexer.DefaultFtFastConfig()
 	conf.EnablePreselectBeforeFt = enablePreselect
-	err := DB.UpdateIndex(nsName, reindexer.IndexDef{Name:idxName, JSONPaths:[]string{jsonPath}, IndexType: "text", FieldType: "string", Config:conf})
+	err := DB.UpdateIndex(nsName, reindexer.IndexDef{Name: idxName, JSONPaths: []string{jsonPath}, IndexType: "text", FieldType: "string", Config: conf})
 	assert.NoError(t, err)
 }
 

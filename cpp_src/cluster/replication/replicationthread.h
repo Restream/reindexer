@@ -168,6 +168,7 @@ private:
 	void nodeReplicationRoutine(Node &node);
 	Error nodeReplicationImpl(Node &node);
 	void updatesNotifier() noexcept;
+	void terminateNotifier() noexcept;
 	std::tuple<bool, UpdateApplyStatus> handleNetworkCheckRecord(Node &node, UpdatesQueueT::UpdatePtr &updPtr, uint16_t offset,
 																 bool currentlyOnline, const UpdateRecord &rec) noexcept;
 
@@ -196,7 +197,6 @@ private:
 	std::unique_ptr<coroutine::tokens_pool<bool>> nsSyncTokens_;
 	net::ev::async updatesAsync_;
 	net::ev::timer updatesTimer_;
-	net::ev::async resyncAsync_;
 	bool notificationInProgress_ = false;
 	bool hasPendingNotificaions_ = false;
 	std::atomic<bool> terminate_ = {false};

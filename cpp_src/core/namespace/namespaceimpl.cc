@@ -202,6 +202,7 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider &configProvider, const RdxC
 }
 
 void NamespaceImpl::recreateCompositeIndexes(int startIdx, int endIdx) {
+	FieldsSet fields;
 	for (int i = startIdx; i < endIdx; ++i) {
 		std::unique_ptr<reindexer::Index> &index(indexes_[i]);
 		if (IsComposite(index->Type())) {
@@ -210,7 +211,8 @@ void NamespaceImpl::recreateCompositeIndexes(int startIdx, int endIdx) {
 			indexDef.opts_ = index->Opts();
 			indexDef.FromType(index->Type());
 
-			auto newIndex{Index::New(indexDef, payloadType_, index->Fields())};
+			createFieldsSet<FieldsSet, h_vector<std::string, 1>>(indexDef.name_, index->Type(), index->Fields(), fields);
+			auto newIndex{Index::New(indexDef, payloadType_, fields)};
 			if (index->HoldsStrings()) {
 				strHolder_->Add(std::move(index));
 			}
@@ -224,13 +226,10 @@ void NamespaceImpl::updateItems(const PayloadType &oldPlType, const FieldsSet &c
 
 	assertrx(oldPlType->NumFields() + deltaFields == payloadType_->NumFields());
 
-	int compositeStartIdx = 0;
-	if (deltaFields >= 0) {
-		compositeStartIdx = indexes_.firstCompositePos();
-	} else {
-		compositeStartIdx = indexes_.firstCompositePos(oldPlType, sparseIndexesCount_);
-	}
-	int compositeEndIdx = indexes_.totalSize();
+	const int compositeStartIdx =
+		(deltaFields >= 0) ? indexes_.firstCompositePos() : indexes_.firstCompositePos(oldPlType, sparseIndexesCount_);
+	const int compositeEndIdx = indexes_.totalSize();
+	// All the composite indexes must be recreated, beacuse those indexes are holding pointers to the old Payloads
 	recreateCompositeIndexes(compositeStartIdx, compositeEndIdx);
 
 	for (auto &idx : indexes_) {
@@ -408,7 +407,7 @@ std::string NamespaceImpl::GetSchema(int format, const RdxContext &ctx) {
 void NamespaceImpl::dumpIndex(std::ostream &os, std::string_view index) const {
 	auto itIdxName = indexesNames_.find(index);
 	if (itIdxName == indexesNames_.end()) {
-		const char *errMsg = "Cannot dump index %s: doesn't exist";
+		constexpr char errMsg[] = "Cannot dump index %s: doesn't exist";
 		logPrintf(LogError, errMsg, index);
 		throw Error(errParams, errMsg, index);
 	}
@@ -526,6 +525,13 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef &indexDef) const {
 	const auto newIndex = std::unique_ptr<Index>(Index::New(indexDef, PayloadType(), FieldsSet()));
 	if (indexDef.opts_.IsSparse()) {
 		const auto newSparseIndex = std::unique_ptr<Index>(Index::New(indexDef, payloadType_, {}));
+		if (indexDef.jsonPaths_.size() != 1) {
+			throw Error(errParams, "Sparse index must have excatly 1 JSON-path, but %d paths found for '%s'", indexDef.jsonPaths_.size(),
+						indexDef.name_);
+		}
+		if (indexDef.jsonPaths_[0].empty()) {
+			throw Error(errParams, "JSON path for sparse index can not be empty ('%s')", indexDef.name_);
+		}
 	} else {
 		FieldsSet changedFields{idxNameIt->second};
 		PayloadType newPlType = payloadType_;
@@ -536,11 +542,11 @@ void NamespaceImpl::verifyUpdateIndex(const IndexDef &indexDef) const {
 }
 
 void NamespaceImpl::addIndex(const IndexDef &indexDef, bool disableTmVersionInc, bool skipEqualityCheck) {
-	const std::string &indexName = indexDef.name_;
+	const auto &indexName = indexDef.name_;
 
 	int idxNo = payloadType_->NumFields();
 	IndexOpts opts = indexDef.opts_;
-	JsonPaths jsonPaths = indexDef.jsonPaths_;
+	const JsonPaths &jsonPaths = indexDef.jsonPaths_;
 	auto currentPKIndex = indexesNames_.find(kPKIndexName);
 
 	bool requireTtlUpdate = false;
@@ -570,6 +576,13 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef, bool disableTmVersionInc,
 	}
 	if (opts.IsSparse()) {
 		FieldsSet fields;
+		if (jsonPaths.size() != 1) {
+			throw Error(errParams, "Sparse index must have excatly 1 JSON-path, but %d paths found for '%s':'%s'", jsonPaths.size(), name_,
+						indexDef.name_);
+		}
+		if (jsonPaths[0].empty()) {
+			throw Error(errParams, "JSON path for sparse index('%s':'%s') can not be empty)", name_, indexDef.name_);
+		}
 		for (const std::string &jsonPath : jsonPaths) {
 			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPath, true);
 			assertrx(tagsPath.size() > 0);
@@ -579,7 +592,6 @@ void NamespaceImpl::addIndex(const IndexDef &indexDef, bool disableTmVersionInc,
 		auto newIndex = Index::New(indexDef, payloadType_, fields);
 		insertIndex(std::move(newIndex), idxNo, indexName);
 		++sparseIndexesCount_;
-		assertrx(jsonPaths.size() == 1);
 		fillSparseIndex(*indexes_[idxNo], jsonPaths[0]);
 	} else {
 		PayloadType oldPlType = payloadType_;
@@ -647,15 +659,12 @@ void NamespaceImpl::doUpdateIndex(const IndexDef &indexDef, UpdatesContainer &pe
 }
 
 IndexDef NamespaceImpl::getIndexDefinition(const std::string &indexName) const {
-	NamespaceDef nsDef = getDefinition();
-
-	auto indexes = nsDef.indexes;
-	auto indexDefIt = std::find_if(indexes.begin(), indexes.end(), [&](const IndexDef &idxDef) { return idxDef.name_ == indexName; });
-	if (indexDefIt == indexes.end()) {
-		throw Error(errParams, "Index '%s' not found in '%s'", indexName, name_);
+	for (unsigned i = 0; i < indexes_.size(); ++i) {
+		if (indexes_[i]->Name() == indexName) {
+			return getIndexDefinition(i);
+		}
 	}
-
-	return *indexDefIt;
+	throw Error(errParams, "Index '%s' not found in '%s'", indexName, name_);
 }
 
 void NamespaceImpl::verifyUpdateCompositeIndex(const IndexDef &indexDef) const {
@@ -672,36 +681,13 @@ void NamespaceImpl::verifyUpdateCompositeIndex(const IndexDef &indexDef) const {
 }
 
 void NamespaceImpl::addCompositeIndex(const IndexDef &indexDef) {
-	std::string indexName = indexDef.name_;
-	IndexType type = indexDef.Type();
-	IndexOpts opts = indexDef.opts_;
+	const auto &indexName = indexDef.name_;
 
 	FieldsSet fields;
-
-	for (auto &jsonPathOrSubIdx : indexDef.jsonPaths_) {
-		auto idxNameIt = indexesNames_.find(jsonPathOrSubIdx);
-		if (idxNameIt == indexesNames_.end()) {
-			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPathOrSubIdx, true);
-			if (tagsPath.empty()) {
-				throw Error(errParams, "Subindex '%s' for composite index '%s' does not exist", jsonPathOrSubIdx, indexName);
-			}
-			fields.push_back(tagsPath);
-			fields.push_back(jsonPathOrSubIdx);
-		} else if (indexes_[idxNameIt->second]->Opts().IsSparse() && !indexes_[idxNameIt->second]->Opts().IsArray()) {
-			fields.push_back(jsonPathOrSubIdx);
-			fields.push_back(indexes_[idxNameIt->second]->Fields().getTagsPath(0));
-		} else {
-			if (indexes_[idxNameIt->second]->Opts().IsArray() && (type == IndexCompositeBTree || type == IndexCompositeHash)) {
-				throw Error(errParams, "Cannot add array subindex '%s' to composite index '%s'", jsonPathOrSubIdx, indexName);
-			}
-			fields.push_back(idxNameIt->second);
-		}
-	}
-
-	assertrx(fields.getJsonPathsLength() == fields.getTagsPathsLength());
+	createFieldsSet<JsonPaths, JsonPaths>(indexName, indexDef.Type(), indexDef.jsonPaths_, fields);
 	assertrx(indexesNames_.find(indexName) == indexesNames_.end());
 
-	int idxPos = indexes_.size();
+	const int idxPos = indexes_.size();
 	insertIndex(Index::New(indexDef, payloadType_, fields), idxPos, indexName);
 
 	auto indexesCacheCleaner{GetIndexesCacheCleaner()};
@@ -713,6 +699,44 @@ void NamespaceImpl::addCompositeIndex(const IndexDef &indexDef) {
 		}
 	}
 	updateSortedIdxCount();
+}
+
+template <typename PathsT, typename JsonPathsContainerT>
+void NamespaceImpl::createFieldsSet(const std::string &idxName, IndexType type, const PathsT &paths, FieldsSet &fields) {
+	fields.clear();
+
+	const JsonPathsContainerT *jsonPaths = nullptr;
+	if constexpr (std::is_same_v<PathsT, FieldsSet>) {
+		jsonPaths = &paths.getJsonPaths();
+		for (int field : paths) {
+			// Moving index fields
+			fields.push_back(field);
+		}
+	} else {
+		jsonPaths = &paths;
+	}
+
+	for (const auto &jsonPathOrSubIdx : *jsonPaths) {
+		auto idxNameIt = indexesNames_.find(jsonPathOrSubIdx);
+		if (idxNameIt == indexesNames_.end() || idxName == jsonPathOrSubIdx) {
+			TagsPath tagsPath = tagsMatcher_.path2tag(jsonPathOrSubIdx, true);
+			if (tagsPath.empty()) {
+				throw Error(errLogic, "Unable to get or create json-path '%s' for composite index '%s'", jsonPathOrSubIdx, idxName);
+			}
+			fields.push_back(tagsPath);
+			fields.push_back(jsonPathOrSubIdx);
+		} else if (indexes_[idxNameIt->second]->Opts().IsSparse() && !indexes_[idxNameIt->second]->Opts().IsArray()) {
+			fields.push_back(jsonPathOrSubIdx);
+			fields.push_back(indexes_[idxNameIt->second]->Fields().getTagsPath(0));
+		} else {
+			if (indexes_[idxNameIt->second]->Opts().IsArray() && (type == IndexCompositeBTree || type == IndexCompositeHash)) {
+				throw Error(errParams, "Cannot add array subindex '%s' to composite index '%s'", jsonPathOrSubIdx, idxName);
+			}
+			fields.push_back(idxNameIt->second);
+		}
+	}
+
+	assertrx(fields.getJsonPathsLength() == fields.getTagsPathsLength());
 }
 
 bool NamespaceImpl::checkIfSameIndexExists(const IndexDef &indexDef, bool discardConfig, bool *requireTtlUpdate) {
@@ -749,7 +773,7 @@ void NamespaceImpl::insertIndex(std::unique_ptr<Index> newIndex, int idxNo, cons
 
 	for (auto &n : indexesNames_) {
 		if (n.second >= idxNo) {
-			n.second++;
+			++n.second;
 		}
 	}
 
@@ -2497,7 +2521,7 @@ IdType NamespaceImpl::createItem(size_t realSize, IdType suggestedId) {
 	return id;
 }
 
-void NamespaceImpl::setFieldsBasedOnPrecepts(ItemImpl *ritem, UpdatesContainer &replUpdates, const NsContext ctx) {
+void NamespaceImpl::setFieldsBasedOnPrecepts(ItemImpl *ritem, UpdatesContainer &replUpdates, const NsContext &ctx) {
 	for (auto &precept : ritem->GetPrecepts()) {
 		SelectFuncParser sqlFunc;
 		SelectFuncStruct sqlFuncStruct = sqlFunc.Parse(precept);
@@ -2505,15 +2529,18 @@ void NamespaceImpl::setFieldsBasedOnPrecepts(ItemImpl *ritem, UpdatesContainer &
 		VariantArray krs;
 		Variant field = ritem->GetPayload().Get(sqlFuncStruct.field, krs)[0];
 
-		Variant value(make_key_string(sqlFuncStruct.value));
+		VariantArray refs;
 		if (sqlFuncStruct.isFunction) {
-			value = FunctionExecutor(*this, replUpdates).Execute(sqlFuncStruct, ctx);
+			refs.emplace_back(FunctionExecutor(*this, replUpdates).Execute(sqlFuncStruct, ctx));
+		} else {
+			refs.emplace_back(make_key_string(sqlFuncStruct.value));
 		}
 
-		value.convert(field.Type());
-		VariantArray refs{value};
-
-		ritem->GetPayload().Set(sqlFuncStruct.field, refs, false);
+		refs.back().convert(field.Type());
+		bool unsafe = ritem->IsUnsafe();
+		ritem->Unsafe(false);
+		ritem->SetField(ritem->GetPayload().Type().FieldByName(sqlFuncStruct.field), refs);
+		ritem->Unsafe(unsafe);
 	}
 }
 

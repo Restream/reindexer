@@ -14,8 +14,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/cjson"
+	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v4/cjson"
 )
 
 type bufPtr struct {
@@ -147,7 +147,7 @@ type newConnParams struct {
 	appName                string
 	enableCompression      bool
 	requestDedicatedThread bool
-	caps              bindings.BindingCapabilities
+	caps                   bindings.BindingCapabilities
 }
 
 func newConnection(

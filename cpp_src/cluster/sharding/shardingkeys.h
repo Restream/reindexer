@@ -1,8 +1,14 @@
 #pragma once
 
+#include <functional>
+#include <variant>
 #include <vector>
 #include "core/keyvalue/variant.h"
 #include "estl/fast_hash_map.h"
+#include "estl/fast_hash_set.h"
+#include "estl/overloaded.h"
+#include "ranges.h"
+#include "tools/assertrx.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
@@ -18,7 +24,55 @@ using ShardIDsContainer = h_vector<int, kHvectorConnStack>;
 
 class ShardingKeys {
 public:
-	using ValuesData = fast_hash_map<Variant, int>;
+	struct Variant4Segment : Variant {
+		bool isRightBound = false;
+	};
+
+	struct BaseCompare {
+		bool IsInt(const Variant& lhs, const Variant& rhs) const noexcept {
+			return (lhs.Type().Is<KeyValueType::Int64>() && rhs.Type().Is<KeyValueType::Int>()) ||
+				   (lhs.Type().Is<KeyValueType::Int>() && rhs.Type().Is<KeyValueType::Int64>());
+		}
+		void ValidateTypes(const Variant& lhs, const Variant& rhs) const {
+			if (!lhs.Type().IsSame(rhs.Type()))
+				throw Error(errLogic, "Comparator internal error. Different compared types. Left - %s. Right - %s", lhs.Type().Name(),
+							rhs.Type().Name());
+		}
+	};
+
+	struct FastHashMapCompare : BaseCompare {
+		bool operator()(const Variant& lhs, const Variant& rhs) const { return compare(lhs, rhs); }
+
+	private:
+		bool compare(const Variant& lhs, const Variant& rhs) const {
+			if (IsInt(lhs, rhs)) return lhs.RelaxCompare(rhs) == 0;
+
+			ValidateTypes(lhs, rhs);
+			return lhs == rhs;
+		}
+	};
+
+	struct MapCompare : BaseCompare {
+		using is_transparent = void;
+
+		bool operator()(const Variant4Segment& lhs, const Variant4Segment& rhs) const { return compare(lhs, rhs); }
+		bool operator()(const Variant4Segment& lhs, const Variant& rhs) const { return compare(lhs, rhs); }
+		bool operator()(const Variant& lhs, const Variant4Segment& rhs) const { return compare(lhs, rhs); }
+
+	private:
+		bool compare(const Variant& lhs, const Variant& rhs) const {
+			if (IsInt(lhs, rhs)) return lhs.RelaxCompare(rhs) < 0;
+
+			ValidateTypes(lhs, rhs);
+			return lhs < rhs;
+		}
+	};
+
+	using VariantHashMap = fast_hash_map<Variant, int, std::hash<Variant>, FastHashMapCompare>;
+	using Variant4SegmentMap = std::map<Variant4Segment, int, MapCompare>;
+
+	using ValuesData = std::variant<VariantHashMap, Variant4SegmentMap>;
+
 	struct ShardIndexWithValues {
 		std::string_view name;
 		const ValuesData* values;
@@ -29,9 +83,16 @@ public:
 	int GetDefaultHost(std::string_view nsName) const;
 	bool IsShardIndex(std::string_view ns, std::string_view index) const;
 	int GetShardId(std::string_view ns, std::string_view index, const VariantArray& v, bool& isShardKey) const;
+	int GetShardId(std::string_view ns, const Variant& v) const;
 	ShardIDsContainer GetShardsIds(std::string_view ns) const;
 	ShardIDsContainer GetShardsIds() const;
 	bool IsSharded(std::string_view ns) const noexcept { return keys_.find(ns) != keys_.end(); }
+
+	template <typename ValuesDataType>
+	void FillUniqueIds(fast_hash_set<int>& uniqueIds, const ValuesDataType& keysToShard) const {
+		for (auto itValuesData = keysToShard.begin(); itValuesData != keysToShard.end(); ++itValuesData)
+			uniqueIds.insert(itValuesData->second);
+	}
 
 private:
 	using NsName = std::string_view;
@@ -39,8 +100,23 @@ private:
 		std::string_view indexName;
 		ValuesData keysToShard;
 		int defaultShard;
-		uint8_t padding[4];
+
+		int GetShardId(const Variant& val) const {
+			return std::visit(overloaded{[&val, this](const VariantHashMap& values) {
+											 auto it = values.find(val);
+											 if (it == values.end()) return defaultShard;
+											 return it->second;
+										 },
+										 [&val, this](const Variant4SegmentMap& values) {
+											 auto it = values.lower_bound(val);
+											 if (it == values.end() || (!it->first.isRightBound && it->first.RelaxCompare(val)))
+												 return defaultShard;
+											 return it->second;
+										 }},
+							  keysToShard);
+		}
 	};
+	fast_hash_set<int> getShardsIds(const NsData& ns) const;
 
 	fast_hash_map<NsName, NsData, nocase_hash_str, nocase_equal_str> keys_;
 	// ns

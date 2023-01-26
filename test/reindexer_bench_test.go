@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer"
-	"github.com/restream/reindexer/cjson"
+	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v4/cjson"
 )
 
 type TestItemBench struct {
@@ -626,8 +626,8 @@ func BenchmarkSelectByIdxAndUpdate(b *testing.B) {
 	}
 }
 
-//DBD.Query("test_items_bench")
-//DBD.Query("test_items_bench").WhereInt("year", reindexer.EQ, 2010).Limit(1).GetJson()
+// DBD.Query("test_items_bench")
+// DBD.Query("test_items_bench").WhereInt("year", reindexer.EQ, 2010).Limit(1).GetJson()
 func newTestBenchItem(id int, pkgCount int) *TestItemBench {
 	startTime := rand.Int() % 50000
 

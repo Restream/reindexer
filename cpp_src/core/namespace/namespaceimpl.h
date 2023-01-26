@@ -394,6 +394,8 @@ protected:
 	void doAddIndex(const IndexDef &indexDef, bool skipEqualityCheck, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void addCompositeIndex(const IndexDef &indexDef);
 	bool checkIfSameIndexExists(const IndexDef &indexDef, bool discardConfig, bool *requireTtlUpdate = nullptr);
+	template <typename PathsT, typename JsonPathsContainerT>
+	void createFieldsSet(const std::string &idxName, IndexType type, const PathsT &paths, FieldsSet &fields);
 	void verifyUpdateIndex(const IndexDef &indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
 	void updateIndex(const IndexDef &indexDef, bool disableTmVersionInc);
@@ -419,7 +421,7 @@ protected:
 	std::pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &);
 	int getSortedIdxCount() const;
 	void updateSortedIdxCount();
-	void setFieldsBasedOnPrecepts(ItemImpl *ritem, UpdatesContainer &replUpdates, const NsContext ctx);
+	void setFieldsBasedOnPrecepts(ItemImpl *ritem, UpdatesContainer &replUpdates, const NsContext &ctx);
 
 	void putToJoinCache(JoinCacheRes &res, std::shared_ptr<JoinPreResult> preResult) const;
 	void putToJoinCache(JoinCacheRes &res, JoinCacheVal &&val) const;

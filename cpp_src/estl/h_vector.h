@@ -23,7 +23,7 @@ template <typename T>
 using is_trivially_default_constructible = std::is_trivially_default_constructible<T>;
 #endif
 
-template <typename T, int holdSize = 4, int objSize = sizeof(T)>
+template <typename T, unsigned holdSize = 4, unsigned objSize = sizeof(T)>
 class h_vector {
 	static_assert(holdSize > 0);
 
@@ -193,7 +193,10 @@ public:
 	}
 	void reserve(size_type sz) {
 		if (sz > capacity()) {
-			assertrx(sz > holdSize);
+			if (sz <= holdSize) {
+				assertrx(false);
+				throw std::logic_error("Unexpected reserved size");
+			}
 			// NOLINTNEXTLINE(bugprone-sizeof-expression)
 			pointer new_data = static_cast<pointer>(operator new(sz * sizeof(T)));	// ?? dynamic
 			pointer oold_data = ptr();

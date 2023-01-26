@@ -169,7 +169,7 @@ void QueryResults::RebuildMergedData() {
 			const auto nss = qrp.qr.GetNamespaces();
 			const auto& agg = qrp.qr.GetAggregationResults();
 			if (mergedData_) {
-				if (mergedData_->pt.Name() != nss[0]) {
+				if (!iequals(mergedData_->pt.Name(), nss[0])) {
 					auto mrName = mergedData_->pt.Name();
 					throw Error(errLogic, "Query results in distributed query have different ns names: '%s' vs '%s'",
 								mergedData_->pt.Name(), nss[0]);

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/v4"
 )
 
 type TestDescribeStruct struct {

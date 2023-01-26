@@ -98,7 +98,7 @@ struct JsonNode {
 
 	template <typename T, typename std::enable_if<(std::is_integral<T>::value || std::is_floating_point<T>::value) &&
 												  !std::is_same<T, bool>::value>::type * = nullptr>
-	T As(T defval = T(), T minv = std::numeric_limits<T>::min(), T maxv = std::numeric_limits<T>::max()) const {
+	T As(T defval = T(), T minv = std::numeric_limits<T>::lowest(), T maxv = std::numeric_limits<T>::max()) const {
 		if (empty()) return defval;
 		if (value.getTag() != JSON_DOUBLE && value.getTag() != JSON_NUMBER)
 			throw Exception(std::string("Can't convert json field '") + std::string(key) + "' to number");
@@ -139,6 +139,11 @@ struct JsonNode {
 };
 
 struct JsonIterator {
+	using difference_type = long;
+	using value_type = JsonNode;
+	using pointer = JsonNode *;
+	using reference = JsonNode &;
+	using iterator_category = std::input_iterator_tag;
 	JsonNode *p;
 
 	void operator++() noexcept { p = p->next; }
@@ -151,6 +156,12 @@ inline JsonIterator begin(JsonValue o) { return JsonIterator{o.toNode()}; }
 inline JsonIterator end(JsonValue) noexcept { return JsonIterator{nullptr}; }
 
 struct JsonNodeIterator {
+	using difference_type = long;
+	using value_type = JsonNode;
+	using pointer = const JsonNode *;
+	using reference = const JsonNode &;
+	using iterator_category = std::input_iterator_tag;
+
 	const JsonNode *p;
 
 	void operator++() noexcept { p = p->next; }
@@ -187,7 +198,7 @@ class JsonAllocator {
 	struct Zone {
 		Zone *next;
 		size_t used;
-	} * head;
+	} *head;
 
 public:
 	JsonAllocator() noexcept : head(nullptr) {}

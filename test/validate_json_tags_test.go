@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/restream/reindexer"
-	"github.com/restream/reindexer/cjson"
+	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v4/cjson"
 )
 
 var nsName = "validate_json_tags"

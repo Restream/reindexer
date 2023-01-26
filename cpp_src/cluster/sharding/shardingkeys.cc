@@ -1,6 +1,5 @@
 #include "shardingkeys.h"
 #include "cluster/config.h"
-#include "estl/fast_hash_set.h"
 #include "sharding.h"
 
 namespace reindexer::sharding {
@@ -10,9 +9,21 @@ ShardingKeys::ShardingKeys(const reindexer::cluster::ShardingConfig& config) {
 		NsData& nsData = keys_[ns.ns];
 		nsData.indexName = ns.index;
 		nsData.defaultShard = ns.defaultShard;
+		if (auto it = std::find_if(ns.keys.begin(), ns.keys.end(),
+								   [](const auto& x) { return x.algorithmType == ShardingAlgorithmType::ByRange; });
+			it != ns.keys.end()) {
+			nsData.keysToShard = Variant4SegmentMap{};
+		}
+
 		for (const auto& key : ns.keys) {
-			for (const Variant& v : key.values) {
-				nsData.keysToShard[v] = key.shardId;
+			for (const auto& [l, r, _] : key.values) {
+				(void)_;
+				std::visit(overloaded{[&key, left = l](VariantHashMap& values) { values[left] = key.shardId; },
+									  [&key, left = l, right = r](Variant4SegmentMap& values) {
+										  values[{left}] = key.shardId;
+										  if (left != right) values[{right, true}] = key.shardId;
+									  }},
+						   nsData.keysToShard);
 			}
 		}
 	}
@@ -44,49 +55,58 @@ int ShardingKeys::GetShardId(std::string_view ns, std::string_view index, const 
 	isShardKey = false;
 	auto itNsData = keys_.find(ns);
 	if (itNsData == keys_.end()) {
-		throw Error(errLogic, "Namespace [%s] not found", ns);
+		throw Error(errLogic, "Namespace [%s] not found in sharding config", ns);
 	}
 	if (itNsData->second.indexName != index) {
 		return ShardingKeyType::ProxyOff;
 	}
 	isShardKey = true;
-	const auto& valuesData = itNsData->second.keysToShard;
 	if (vals.empty() || vals.size() > 1) {
 		throw Error(errLogic, "Sharding key value cannot be empty or an array");
 	}
-	auto it = valuesData.find(vals[0]);
-	if (it == valuesData.end()) {
-		return itNsData->second.defaultShard;
+
+	return itNsData->second.GetShardId(vals[0]);
+}
+
+int ShardingKeys::GetShardId(std::string_view ns, const Variant& v) const {
+	auto itNsData = keys_.find(ns);
+	if (itNsData == keys_.end()) {
+		throw Error(errLogic, "Namespace [%s] not found in sharding config", ns);
 	}
-	return it->second;
+	return itNsData->second.GetShardId(v);
+}
+
+fast_hash_set<int> ShardingKeys::getShardsIds(const NsData& nsData) const {
+	fast_hash_set<int> uniqueIds = {nsData.defaultShard};  // with Default host
+	std::visit(overloaded{[&uniqueIds, this](const VariantHashMap& values) { FillUniqueIds(uniqueIds, values); },
+						  [&uniqueIds, this](const Variant4SegmentMap& values) { FillUniqueIds(uniqueIds, values); }},
+			   nsData.keysToShard);
+	return uniqueIds;
 }
 
 ShardIDsContainer ShardingKeys::GetShardsIds(std::string_view ns) const {
 	auto itNsData = keys_.find(ns);
 	if (itNsData == keys_.end()) {
-		throw Error(errLogic, "Namespace [%s] not found", ns);
+		throw Error(errLogic, "Namespace [%s] not found in sharding config", ns);
 	}
 	ShardIDsContainer ids;
-	fast_hash_set<int> uniqueIds = {itNsData->second.defaultShard};	 // with Default host
-	for (auto itValuesData = itNsData->second.keysToShard.begin(); itValuesData != itNsData->second.keysToShard.end(); ++itValuesData) {
-		uniqueIds.insert(itValuesData->second);
-	}
+
+	auto uniqueIds = getShardsIds(itNsData->second);
 	ids.reserve(uniqueIds.size());
-	std::copy(uniqueIds.begin(), uniqueIds.end(), std::back_inserter(ids));
+	std::move(uniqueIds.begin(), uniqueIds.end(), std::back_inserter(ids));
 	return ids;
 }
 
 ShardIDsContainer ShardingKeys::GetShardsIds() const {
-	ShardIDsContainer ids;
 	fast_hash_set<int> uniqueIds;
 	for (auto itNsData = keys_.begin(); itNsData != keys_.end(); ++itNsData) {
-		uniqueIds.insert(itNsData->second.defaultShard);  // with Default host
-		for (auto itValuesData = itNsData->second.keysToShard.begin(); itValuesData != itNsData->second.keysToShard.end(); ++itValuesData) {
-			uniqueIds.insert(itValuesData->second);
-		}
+		auto ids = getShardsIds(itNsData->second);
+		std::move(ids.begin(), ids.end(), std::inserter(uniqueIds, uniqueIds.end()));
 	}
+
+	ShardIDsContainer ids;
 	ids.reserve(uniqueIds.size());
-	std::copy(uniqueIds.begin(), uniqueIds.end(), std::back_inserter(ids));
+	std::move(uniqueIds.begin(), uniqueIds.end(), std::back_inserter(ids));
 	return ids;
 }
 

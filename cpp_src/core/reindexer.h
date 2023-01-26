@@ -13,7 +13,7 @@
 namespace reindexer {
 using std::chrono::milliseconds;
 
-class ClusterProxy;
+class ShardingProxy;
 class ProtobufSchema;
 struct ReplicationStateV2;
 struct ClusterizationStatus;
@@ -52,6 +52,8 @@ public:
 
 	/// Connect - connect to reindexer database in embeded mode
 	/// Cancelation context doesn't affect this call
+	/// First Connect is NOT THREAD-SAFE. I.e. it must be called before any other DB's methods.
+	/// If Connect has succeed, any subsequent connects (even with different DSN) will not take any effect.
 	/// @param dsn - uri of database, like: `builtin:///var/lib/reindexer/dbname` or just `/var/lib/reindexer/dbname`
 	/// @param opts - Connect options. May contaion any of <br>
 	/// ConnectOpts::AllowNamespaceErrors() - true: Ignore errors during existing NS's load; false: Return error occured during NS's load
@@ -334,9 +336,9 @@ public:
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index);
 
 private:
-	Reindexer(ClusterProxy *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
+	Reindexer(ShardingProxy *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
 
-	ClusterProxy *impl_;
+	ShardingProxy *impl_;
 	bool owner_;
 	InternalRdxContext ctx_;
 };

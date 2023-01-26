@@ -1,8 +1,8 @@
 #include "sharding.h"
 #include "cluster/stats/replicationstats.h"
+#include "core/clusterproxy.h"
 #include "core/defnsconfigs.h"
 #include "core/item.h"
-#include "core/reindexerimpl.h"
 #include "core/type_consts.h"
 #include "tools/logger.h"
 
@@ -126,11 +126,8 @@ int RoutingStrategy::GetHostId(std::string_view ns, const Item &item) const {
 			throw Error(errLogic, "Sharding key value cannot be empty or an array");
 		}
 		assert(nsIndex.values);
-		const auto it = nsIndex.values->find(v[0]);
-		if (it == nsIndex.values->end()) {
-			return keys_.GetDefaultHost(ns);
-		}
-		return it->second;
+
+		return keys_.GetShardId(ns, v[0]);
 	}
 	throw Error(errLogic, "Item does not contain proper sharding key for '%s' (key with name '%s' is expected)", ns, nsIndex.name);
 }
@@ -296,7 +293,7 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::tryConnectToLeader(const std
 	return {};
 }
 
-LocatorService::LocatorService(ReindexerImpl &rx, const cluster::ShardingConfig &config)
+LocatorService::LocatorService(ClusterProxy &rx, const cluster::ShardingConfig &config)
 	: rx_(rx), config_(config), routingStrategy_(config), actualShardId(config.thisShardId) {}
 
 Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vector<cluster::ShardingConfig::Key> &keys) {
@@ -304,8 +301,10 @@ Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vec
 		[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int>) -> Error {
 			try {
 				for (auto &k : keys) {
-					for (Variant &v : k.values) {
-						v.convert(fieldType, nullptr, nullptr);
+					for (auto &[l, r, _] : k.values) {
+						(void)_;
+						l.convert(fieldType, nullptr, nullptr);
+						r.convert(fieldType, nullptr, nullptr);
 					}
 				}
 			} catch (const Error &err) {
@@ -323,12 +322,12 @@ Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vec
 
 Error LocatorService::validateConfig() {
 	for (auto &ns : config_.namespaces) {
-		const auto ftIndexes = rx_.getFTIndexes(ns.ns);
+		const auto ftIndexes = rx_.GetFTIndexes(ns.ns);
 		if (ftIndexes.find(ns.index) != ftIndexes.cend()) {
 			return Error(errLogic, "Sharding by full text index is not supported: %s", ns.index);
 		}
 		int field = ShardingKeyType::NotSetShard;
-		PayloadType pt = rx_.getPayloadType(ns.ns);
+		PayloadType pt = rx_.GetPayloadType(ns.ns);
 		if (!pt) continue;
 		if (pt.FieldByName(ns.index, field)) {
 			const KeyValueType fieldType{pt.Field(field).Type()};

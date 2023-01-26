@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/restream/reindexer"
-	_ "github.com/restream/reindexer/bindings/builtinserver"
-	"github.com/restream/reindexer/bindings/builtinserver/config"
+	"github.com/restream/reindexer/v4"
+	_ "github.com/restream/reindexer/v4/bindings/builtinserver"
+	"github.com/restream/reindexer/v4/bindings/builtinserver/config"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )

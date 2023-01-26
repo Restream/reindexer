@@ -39,7 +39,6 @@ public:
 	using TimepointT = std::chrono::time_point<ClockT>;
 
 	explicit Transaction(LocalTransaction &&ltx);
-	Transaction(LocalTransaction &&ltx, client::Transaction &&tx);
 	Transaction(LocalTransaction &&ltx, client::Reindexer &&clusterLeader);
 
 	~Transaction();
@@ -78,6 +77,7 @@ protected:
 	Error status_;
 
 	friend class ClusterProxy;
+	friend class ShardingProxy;
 	friend class reindexer_server::RPCServer;
 };
 

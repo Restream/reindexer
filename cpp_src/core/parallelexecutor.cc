@@ -31,10 +31,8 @@ Error ParallelExecutor::createIntegralError(h_vector<std::pair<Error, int>, 8> &
 }
 
 Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, const sharding::ConnectionsVector &connections,
-								   const InternalRdxContext &ctx, const RdxContext &rdxCtx,
-								   const std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> &&localAction) {
-	InternalRdxContext shardingCtx(ctx);
-	shardingCtx.SetShardingParallelExecution(true);
+								   const RdxContext &ctx,
+								   std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> &&localAction) {
 	std::condition_variable cv;
 	std::mutex mtx;
 
@@ -45,7 +43,7 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 	bool isLocalCall = false;
 	std::deque<ConnectionData<client::QueryResults>> clientResults;
 
-	auto ward = rdxCtx.BeforeShardingProxy();
+	auto ward = ctx.BeforeShardingProxy();
 
 	size_t clientCount = countClientConnection(connections);
 
@@ -60,7 +58,7 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 					.WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error &err) {
 						completionFunction(clientCount, clientCompl, clientErrors, shardId, mtx, cv, err);
 					})
-					.WithContext(shardingCtx.DeadlineCtx());
+					.WithContext(ctx.GetCancelCtx());
 
 			Error err = clientResults.back().connection.Select(query, clientResults.back().results);
 			if (!err.ok()) {
@@ -69,9 +67,9 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 			}
 
 		} else {
-			shardingCtx.WithShardId(localShardId_, connections.size() > 1);
+			const auto shCtx = ctx.WithShardId(localShardId_, true);
 			LocalQueryResults lqr;
-			Error status = localAction(query, lqr, rdxCtx);
+			Error status = localAction(query, lqr, shCtx);
 			isLocalCall = true;
 			if (status.ok()) {
 				result.AddQr(std::move(lqr), localShardId_, false);

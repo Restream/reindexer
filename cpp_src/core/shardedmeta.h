@@ -8,11 +8,14 @@ namespace reindexer {
 class WrSerializer;
 
 struct ShardedMeta {
-	int shardId = ShardingKeyType::ProxyOff;
+	ShardedMeta(int _shardId = ShardingKeyType::ProxyOff, std::string&& _data = std::string())
+		: shardId(_shardId), data(std::move(_data)) {}
+
+	int shardId;
 	std::string data;
 
 	Error FromJSON(span<char> json);
-	void GetJSON(WrSerializer &ser) const;
+	void GetJSON(WrSerializer& ser) const;
 };
 
 }  // namespace reindexer

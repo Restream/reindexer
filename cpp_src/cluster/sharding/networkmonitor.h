@@ -10,7 +10,7 @@
 
 namespace reindexer {
 
-class InternalRdxContext;
+class RdxContext;
 
 namespace sharding {
 
@@ -20,12 +20,12 @@ using ConnectionsMap = fast_hash_map<int, Connections>;
 class NetworkMonitor {
 public:
 	void Configure(ConnectionsMap& hostsConnections, std::chrono::seconds defaultTimeout, std::chrono::milliseconds statusCallTimeout);
-	Error AwaitShards(const InternalRdxContext& ctx) noexcept;
+	Error AwaitShards(const RdxContext& ctx) noexcept;
 	void Shutdown();
 
 private:
 	void sendStatusRequests();
-	Error awaitStatuses(std::unique_lock<std::recursive_mutex>& lck, const InternalRdxContext& ctx);
+	Error awaitStatuses(std::unique_lock<std::recursive_mutex>& lck, const RdxContext& ctx);
 	bool areStatusesReady() const noexcept;
 
 	bool inProgress_ = false;

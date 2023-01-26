@@ -4,7 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/restream/reindexer"
+	"github.com/restream/reindexer/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,14 +36,24 @@ type TestItemPkCompositeNoSubstitution struct {
 	_      struct{} `reindex:"first+second,,composite,pk"`
 }
 
+type TestUpdCompositeSubstituitionStruct struct {
+	ID     int `reindex:"id,,pk"`
+	First1 int `json:"first1"`
+	First2 int `json:"first2"`
+
+	_ struct{} `reindex:"first1+first2,,composite"`
+}
+
 const testCompositeIndexesSubstitutionNs = "test_composite_indexes_substitution"
 const testCompositeIndexesNoSubstitutionNs = "test_composite_indexes_no_substitution"
 const testPkCompositeIndexesNoSubstitutionNs = "test_pk_composite_indexes_no_substitution"
+const testCompositeIndexesFieldssetUpdateNs = "test_composite_indexes_fieldsset_update"
 
 func init() {
 	tnamespaces[testCompositeIndexesSubstitutionNs] = TestCompositeSubstitutionStruct{}
 	tnamespaces[testCompositeIndexesNoSubstitutionNs] = TestItemCompositeNoSubstitution{}
 	tnamespaces[testPkCompositeIndexesNoSubstitutionNs] = TestItemPkCompositeNoSubstitution{}
+	tnamespaces[testCompositeIndexesFieldssetUpdateNs] = TestUpdCompositeSubstituitionStruct{}
 }
 
 func TestCompositeIndexesSubstitution(t *testing.T) {
@@ -614,6 +624,68 @@ func TestPkCompositeIndexNoSubstitutionWithoutSomeIndexes(t *testing.T) {
 				Keys:        0,
 				Matched:     1,
 				Comparators: 1,
+			},
+		}, "")
+	})
+}
+
+func TestCompositeIndexesFieldsSetUpdate(t *testing.T) {
+	t.Parallel()
+
+	const ns = testCompositeIndexesFieldssetUpdateNs
+	item := TestUpdCompositeSubstituitionStruct{
+		ID: rand.Intn(100), First1: rand.Intn(1000), First2: rand.Intn(1000),
+	}
+
+	err := DB.Upsert(ns, item)
+	require.NoError(t, err)
+
+	t.Run("no substitution without indexes", func(t *testing.T) {
+		it := DB.Query(ns).Where("first1", reindexer.EQ, item.First1).Where("first2", reindexer.EQ, item.First2).Explain().Exec(t)
+		defer it.Close()
+		assert.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		assert.NoError(t, err)
+		assert.NotNil(t, explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:   "-scan",
+				Method:  "scan",
+				Matched: 1,
+			},
+			{
+				Field:       "first1",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+			{
+				Field:       "first2",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+		}, "")
+	})
+
+	err = DB.AddIndex(ns, reindexer.IndexDef{Name: "first1", JSONPaths: []string{"first1"}, IndexType: "-", FieldType: "int"})
+	require.NoError(t, err)
+	err = DB.AddIndex(ns, reindexer.IndexDef{Name: "first2", JSONPaths: []string{"first2"}, IndexType: "-", FieldType: "int"})
+	require.NoError(t, err)
+
+	t.Run("substitution works after indexes addition", func(t *testing.T) {
+		it := DB.Query(ns).Where("first1", reindexer.EQ, item.First1).Where("first2", reindexer.EQ, item.First2).Explain().Exec(t)
+		defer it.Close()
+		assert.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		assert.NoError(t, err)
+		assert.NotNil(t, explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:   "first1+first2",
+				Method:  "index",
+				Keys:    1,
+				Matched: 1,
 			},
 		}, "")
 	})

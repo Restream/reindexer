@@ -64,9 +64,10 @@ static unsigned ConcurrentNamespaceLoaders() noexcept {
 	return 10;
 }
 
-ReindexerImpl::ReindexerImpl(ReindexerConfig cfg)
+ReindexerImpl::ReindexerImpl(ReindexerConfig cfg, ActivityContainer& activities)
 	: clusterizator_(new cluster::Clusterizator(*this, cfg.maxReplUpdatesSize)),
 	  nsLock_(*clusterizator_, *this),
+	  activities_(activities),
 	  storageType_(StorageType::LevelDB),
 	  connected_(false),
 	  config_(std::move(cfg)) {
@@ -587,6 +588,10 @@ Error ReindexerImpl::SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm, c
 
 void ReindexerImpl::ShutdownCluster() { clusterizator_->Stop(true); }
 
+bool ReindexerImpl::NamespaceIsInClusterConfig(std::string_view nsName) {
+	return clusterizator_ && clusterizator_->NamespaceIsInClusterConfig(nsName);
+}
+
 Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::string& dstNsName, bool fromReplication, bool skipResync,
 									 const RdxContext& rdxCtx) {
 	Namespace::Ptr dstNs, srcNs;
@@ -900,35 +905,6 @@ Error ReindexerImpl::Delete(const Query& q, LocalQueryResults& result, const Rdx
 	QueryStatCalculator statCalculator(long_actions::Logger<Query>{
 		q, nsName.size() && nsName[0] == '#' ? LongQueriesLoggingParams{} : configProvider_.GetUpdDelLoggingParams()});
 	APPLY_NS_FUNCTION2(false, Delete, q, result);
-}
-
-Error ReindexerImpl::Select(std::string_view query, LocalQueryResults& result, const RdxContext& ctx) {
-	Error err = errOK;
-	try {
-		Query q;
-		q.FromSQL(query);
-		switch (q.type_) {
-			case QuerySelect:
-				err = Select(q, result, ctx);
-				break;
-			case QueryDelete:
-				err = Delete(q, result, ctx);
-				break;
-			case QueryUpdate:
-				err = Update(q, result, ctx);
-				break;
-			case QueryTruncate:
-				err = TruncateNamespace(q._namespace, ctx);
-				break;
-			default:
-				throw Error(errParams, "Error unsupported query type %d", q.type_);
-		}
-	} catch (const Error& e) {
-		err = e;
-	}
-
-	if (ctx.Compl()) ctx.Compl()(err);
-	return err;
 }
 
 struct ItemRefLess {

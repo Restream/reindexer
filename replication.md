@@ -655,7 +655,7 @@ Also follower-role should be set for both `follower1` and `follower2`:
 
 ```JSON
 {
-	"type":"replication",
+	"type":"async_replication",
 	"async_replication":{
 		"role":"follower"
 	}
@@ -805,7 +805,7 @@ Then follower-role should be set for `follower2`:
 
 ```JSON
 {
-	"type":"replication",
+	"type":"async_replication",
 	"async_replication":{
 		"role":"follower"
 	}

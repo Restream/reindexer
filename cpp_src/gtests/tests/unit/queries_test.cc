@@ -21,7 +21,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	CheckGeomQueries();
 
 	int itemsCount = 0;
-	InsertedItemsByPk& items = insertedItems[default_namespace];
+	auto& items = insertedItems_[default_namespace];
 	for (auto it = items.begin(); it != items.end();) {
 		Error err = rt.reindexer->Delete(default_namespace, it->second);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -33,7 +33,6 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 	FillDefaultNamespace(0, 1000, 5);
 
 	itemsCount = 0;
-	// items = insertedItems[default_namespace];
 	for (auto it = items.begin(); it != items.end();) {
 		Error err = rt.reindexer->Delete(default_namespace, it->second);
 		EXPECT_TRUE(err.ok()) << err.what();
@@ -328,7 +327,7 @@ TEST_F(QueriesApi, StrictModeTest) {
 		qr.Clear();
 		err = rt.reindexer->Select(query.Strict(StrictModeNone), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
-		Verify(qr, Query(testSimpleNs));
+		Verify(qr, Query(testSimpleNs), *rt.reindexer);
 		qr.Clear();
 	}
 
@@ -462,4 +461,44 @@ TEST_F(QueriesApi, AllSet) {
 	err = rt.reindexer->Select(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	EXPECT_EQ(qr.Count(), 1);
+}
+
+TEST_F(QueriesApi, SetByTreeIndex) {
+	// Execute query with sort and set condition by btree index
+	const std::string nsName = "set_by_tree_ns";
+	constexpr int kMaxID = 20;
+	Error err = rt.reindexer->OpenNamespace(nsName);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "tree", "int", IndexOpts{}.PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	setPkFields(nsName, {"id"});
+	for (int id = kMaxID; id != 0; --id) {
+		Item item = rt.NewItem(nsName);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item["id"] = id;
+		Upsert(nsName, item);
+		saveItem(std::move(item), nsName);
+	}
+
+	Query q{nsName};
+	q.Where("id", CondSet, {rand() % kMaxID, rand() % kMaxID, rand() % kMaxID, rand() % kMaxID}).Sort("id", false);
+	{
+		QueryResults qr;
+		ExecuteAndVerifyWithSql(q, qr);
+		// Expecting no sort index and filtering by index
+		EXPECT_NE(qr.GetExplainResults().find(",\"sort_index\":\"-\","), std::string::npos);
+		EXPECT_NE(qr.GetExplainResults().find(",\"method\":\"index\","), std::string::npos);
+		EXPECT_EQ(qr.GetExplainResults().find("\"scan\""), std::string::npos);
+	}
+
+	{
+		// Execute the same query after indexes optimization
+		AwaitIndexOptimization(nsName);
+		QueryResults qr;
+		ExecuteAndVerifyWithSql(q, qr);
+		// Expecting 'id' as a sort index and filtering by index
+		EXPECT_NE(qr.GetExplainResults().find(",\"sort_index\":\"id\","), std::string::npos);
+		EXPECT_NE(qr.GetExplainResults().find(",\"method\":\"index\","), std::string::npos);
+		EXPECT_EQ(qr.GetExplainResults().find("\"scan\""), std::string::npos);
+	}
 }

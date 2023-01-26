@@ -45,7 +45,14 @@ ReplThread<BehaviourParamT>::ReplThread(int serverId, ReindexerImpl& _thisNode, 
 			[this]() noexcept {
 				while (hasPendingNotificaions_) {
 					hasPendingNotificaions_ = false;
-					updatesNotifier();
+					if (!terminate_.load(std::memory_order_relaxed)) {
+						updatesNotifier();
+						if (terminate_.load(std::memory_order_relaxed)) {
+							terminateNotifier();
+						}
+					} else {
+						terminateNotifier();
+					}
 				}
 				notificationInProgress_ = false;
 			},
@@ -59,15 +66,21 @@ ReplThread<BehaviourParamT>::ReplThread(int serverId, ReindexerImpl& _thisNode, 
 	updatesAsync_.set(loop);
 	updatesAsync_.set([this, spawnNotifierRoutine](net::ev::async&) noexcept {
 		hasPendingNotificaions_ = true;
-		if (!notificationInProgress_) {
-			notificationInProgress_ = true;
-			if (config_.OnlineUpdatesDelaySec > 0) {
-				log_.Trace([this] { rtfmt("%d: new updates notification (delaying...)", serverId_); });
-				updatesTimer_.start(config_.OnlineUpdatesDelaySec);
-			} else {
-				log_.Trace([this] { rtfmt("%d: new updates notification (on async)", serverId_); });
-				spawnNotifierRoutine();
+		if (!terminate_.load(std::memory_order_relaxed)) {
+			if (!notificationInProgress_) {
+				notificationInProgress_ = true;
+				if (config_.OnlineUpdatesDelaySec > 0) {
+					log_.Trace([this] { rtfmt("%d: new updates notification (delaying...)", serverId_); });
+					updatesTimer_.start(config_.OnlineUpdatesDelaySec);
+				} else {
+					log_.Trace([this] { rtfmt("%d: new updates notification (on async)", serverId_); });
+					spawnNotifierRoutine();
+				}
 			}
+		} else {
+			notificationInProgress_ = true;
+			log_.Trace([this] { rtfmt("%d: new terminate notification", serverId_); });
+			spawnNotifierRoutine();
 		}
 	});
 }
@@ -132,6 +145,7 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 
 	updates_->RemoveDataNotifier(std::this_thread::get_id());
 	updatesAsync_.stop();
+	updatesTimer_.stop();
 
 	log_.Info([this] { rtfmt("%d: Replication thread was terminated. TID: %d", serverId_, std::this_thread::get_id()); });
 }
@@ -387,20 +401,21 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 
 template <typename BehaviourParamT>
 void ReplThread<BehaviourParamT>::updatesNotifier() noexcept {
-	if (!terminate_) {
-		for (auto& node : nodes) {
-			if (node.updateNotifier->opened() && !node.updateNotifier->full()) {
-				node.updateNotifier->push(true);
-			}
+	for (auto& node : nodes) {
+		if (node.updateNotifier->opened() && !node.updateNotifier->full()) {
+			node.updateNotifier->push(true);
 		}
-	} else {
-		logTrace("%d: got termination signal", serverId_);
-		DisconnectNodes();
-		for (auto& node : nodes) {
-			node.updateNotifier->close();
-		}
-		terminateCh_.close();
 	}
+}
+
+template <typename BehaviourParamT>
+void ReplThread<BehaviourParamT>::terminateNotifier() noexcept {
+	logTrace("%d: got termination signal", serverId_);
+	DisconnectNodes();
+	for (auto& node : nodes) {
+		node.updateNotifier->close();
+	}
+	terminateCh_.close();
 }
 
 template <typename BehaviourParamT>

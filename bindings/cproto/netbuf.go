@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/restream/reindexer/bindings"
+	"github.com/restream/reindexer/v4/bindings"
 	"github.com/golang/snappy"
 )
 

@@ -582,8 +582,7 @@ T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 	VariantArray kr;
 	T pv(RealSize() - totalReduce);
 	PayloadIface<T> copyValueInterface(modifiedType, pv);
-	for (size_t i = 0; i < fieldsLeft.size(); ++i) {
-		const std::string &fieldname(fieldsLeft[i]);
+	for (const auto &fieldname : fieldsLeft) {
 		Get(fieldname, kr);
 		copyValueInterface.Set(fieldname, kr, false);
 	}

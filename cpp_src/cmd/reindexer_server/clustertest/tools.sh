@@ -101,7 +101,12 @@ function KillServers {
 	while [[ $node -lt $NODES_COUNT ]]
 	do
 		kill ${SERVER_PIDS[$node]}
-		WaitForPid ${SERVER_PIDS[$node]}
 		node=$((node+1))
+	done
+	node=0
+	while [[ $node -lt $NODES_COUNT ]]
+	do
+	  WaitForPid ${SERVER_PIDS[$node]}
+	  node=$((node+1))
 	done
 }

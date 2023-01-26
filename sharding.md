@@ -15,7 +15,7 @@ Reindexer supports sharding by index values and currently this is the only mode.
 
 ## Overall description
 
-Reindexer is able to distribute namespaces over few nodes (shards). Each namespace may have only one sharding key (index) and own nodes list. Currently the only supported sharding mode is 'by value', where each shard has explicitly specified values of sharding key. If sharding key for item is not specified in config, than this item will be sent to the default shard (default shard has to be specified for each sharded namespace in config).
+Reindexer is able to distribute namespaces over few nodes (shards). Each namespace may have only one sharding key (index) and own nodes list. Currently, sharding keys' distribution may be configure either via explicit values sets (for numeric and string types) or via values ranges (for numeric types only). Explicit values and values ranges can be used in config simultaneously. During configuration, all intersections of values and ranges will be resolved and merged. If sharding key for item is not specified in config, than this item will be sent to the default shard (default shard has to be specified for each sharded namespace in config).
 
 It's recommended (hovewer, not required) to use composite primary key in sharded namespaces, where sharding key is part of this PK. Such approach allows to avoid PK conflicts during resharding. It's also recommended to create its own index for sharding key.
 

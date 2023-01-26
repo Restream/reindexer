@@ -94,7 +94,7 @@ public:
 		UID curUID = qrs.uid.load(std::memory_order_acquire);
 		if (curUID.freed) {
 			if (strictCheck) {
-				throw Error(errLogic, "Unexpected Query Results ID: %d (it was already freed)", id.main);
+				throw Error(errNotFound, "Unexpected Query Results ID: %d (it was already freed)", id.main);
 			} else {
 				return;
 			}

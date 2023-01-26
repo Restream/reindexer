@@ -6,6 +6,7 @@
 #include "core/type_consts.h"
 #include "estl/overloaded.h"
 #include "tools/assertrx.h"
+#include "tools/errors.h"
 
 namespace reindexer {
 
@@ -134,7 +135,7 @@ public:
 		return v.value_ == value_;
 	}
 	inline bool IsSame(KeyValueType other) const noexcept { return value_ == other.value_; }
-	inline static KeyValueType FromNumber(int n) noexcept {
+	inline static KeyValueType FromNumber(int n) {
 		switch (n) {
 			case static_cast<int>(KVT::Int64):
 			case static_cast<int>(KVT::Double):
@@ -147,8 +148,7 @@ public:
 			case static_cast<int>(KVT::Tuple):
 				return KeyValueType{static_cast<KVT>(n)};
 			default:
-				assertrx(0);
-				std::abort();
+				throw Error(errParams, "Invalid int value for KeyValueType: " + std::to_string(n));
 		}
 	}
 	inline int ToNumber() const noexcept { return static_cast<int>(value_); }

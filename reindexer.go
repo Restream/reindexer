@@ -3,8 +3,8 @@ package reindexer
 import (
 	"context"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/dsl"
+	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v4/dsl"
 )
 
 // Condition types

@@ -2,6 +2,7 @@
 
 #include <optional>
 #include "cluster/config.h"
+#include "cluster/consts.h"
 #include "core/perfstatcounter.h"
 #include "core/transaction/transaction.h"
 #include "estl/fast_hash_map.h"
@@ -10,9 +11,6 @@
 
 namespace reindexer {
 namespace cluster {
-
-const std::string_view kAsyncReplStatsType = "async";
-const std::string_view kClusterReplStatsType = "cluster";
 
 struct SyncStats {
 	void FromJSON(const gason::JsonNode&);

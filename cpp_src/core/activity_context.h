@@ -132,8 +132,8 @@ private:
 
 	const Activity data_;
 	std::atomic<unsigned> state_ = {serializeState(Activity::InProgress)};	// kStateShift lower bits for state, other for details
-	ActivityContainer* parent_ = nullptr;
 	std::atomic<unsigned> refCount_ = {0};
+	ActivityContainer* parent_ = nullptr;
 };
 
 }  // namespace reindexer

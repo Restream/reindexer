@@ -16,8 +16,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/cjson"
+	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v4/cjson"
 )
 
 const defCgoLimit = 2000
@@ -591,6 +591,7 @@ func (binding *Builtin) Commit(ctx context.Context, namespace string) error {
 }
 
 // CGoLogger logger function for C
+//
 //export CGoLogger
 func CGoLogger(level int, msg string) {
 	logMtx.RLock()

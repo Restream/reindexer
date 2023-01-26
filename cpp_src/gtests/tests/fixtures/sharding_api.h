@@ -7,9 +7,20 @@
 #include "yaml-cpp/yaml.h"
 
 struct InitShardingConfig {
-	struct Namespace {
+	class Namespace {
+	public:
+		Namespace(std::string n, bool wd = false) : name(std::move(n)), withData(wd) {}
+
 		std::string name;
-		bool withData = false;
+		bool withData;
+		std::function<reindexer::cluster::ShardingConfig::Key(int shard)> keyValuesNodeCreation = [](int shard) {
+			reindexer::cluster::ShardingConfig::Key key;
+			key.values.emplace_back(Variant(std::string("key") + std::to_string(shard)));
+			key.values.emplace_back(Variant(std::string("key") + std::to_string(shard) + "_" + std::to_string(shard)));
+			key.shardId = shard;
+			return key;
+		};
+		std::string indexName = "location";
 	};
 
 	int shards = 3;
@@ -26,6 +37,8 @@ struct InitShardingConfig {
 
 class ShardingApi : public ReindexerApi {
 public:
+	static const std::string configTemplate;
+
 	void Init(InitShardingConfig c = InitShardingConfig()) {
 		std::vector<InitShardingConfig::Namespace> namespaces = std::move(c.additionalNss);
 		namespaces.emplace_back(InitShardingConfig::Namespace{default_namespace, true});
@@ -43,7 +56,7 @@ public:
 		config_.namespaces.resize(namespaces.size());
 		for (size_t i = 0; i < namespaces.size(); ++i) {
 			config_.namespaces[i].ns = namespaces[i].name;
-			config_.namespaces[i].index = kFieldLocation;
+			config_.namespaces[i].index = namespaces[i].indexName;	// kFieldLocation;
 			config_.namespaces[i].defaultShard = 0;
 		}
 		config_.shards.clear();
@@ -53,12 +66,8 @@ public:
 			for (size_t node = 0; node < kNodesInCluster; ++node) {
 				config_.shards[shard].emplace_back(getHostDsn(id++));
 			}
-			reindexer::cluster::ShardingConfig::Key key;
-			key.values.emplace_back(std::string("key") + std::to_string(shard));
-			key.values.emplace_back(std::string("key") + std::to_string(shard) + "_" + std::to_string(shard));
-			key.shardId = shard;
 			for (size_t nsId = 0; nsId < namespaces.size(); ++nsId) {
-				config_.namespaces[nsId].keys.emplace_back(key);
+				config_.namespaces[nsId].keys.emplace_back(namespaces[nsId].keyValuesNodeCreation(shard));
 			}
 		}
 
@@ -407,6 +416,15 @@ protected:
 	void runUpdateIndexTest(std::string_view nsName);
 	void runDropNamespaceTest(std::string_view nsName);
 	void runTransactionsTest(std::string_view nsName);
+
+	template <typename T>
+	void fillWithDistribData(const std::map<int, std::set<T>>& shardDataDistrib, const std::string& kNsName, const std::string& kFieldId);
+
+	template <typename T>
+	void runLocalSelectTestForRanges(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib);
+	template <typename T>
+	void runSelectTestForRanges(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib);
+	void runTransactionsTestForRanges(std::string_view nsName, const std::map<int, std::set<int>>& shardDataDistrib);
 
 	size_t kShards = 3;
 	size_t kNodesInCluster = 3;

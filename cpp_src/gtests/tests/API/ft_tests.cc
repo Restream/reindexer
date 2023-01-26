@@ -545,7 +545,7 @@ TEST_P(FTApi, HugeNumberToWordsSelect2) {
 	auto err = rt.reindexer->Select(q, qr);
 	EXPECT_TRUE(err.ok()) << err.what();
 	// Make sure it has found absolutely nothing
-	ASSERT_TRUE(qr.Count() == 0);
+	ASSERT_EQ(qr.Count(), 0);
 }
 
 TEST_P(FTApi, DeleteTest) {
@@ -1414,6 +1414,7 @@ INSTANTIATE_TEST_SUITE_P(, FTApi,
 								 case reindexer::FtFastConfig::Optimization::CPU:
 									 return "OptimizationByCPU";
 								 default:
-									 assert(0);
+									 assert(false);
+									 std::abort();
 							 }
 						 });

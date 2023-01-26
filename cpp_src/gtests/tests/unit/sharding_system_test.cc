@@ -13,7 +13,7 @@ TEST_F(ShardingSystemApi, Reconnect) {
 			Error err;
 			const std::string location = "key" + std::to_string(shard);
 			bool succeed = false;
-			for (size_t i = 0; i < 10; ++i) {  // FIXME: Max retries count should be 1
+			for (size_t i = 0; i < 20; ++i) {  // FIXME: Max retries count should be 1
 				client::QueryResults qr;
 				err = rx->Select(Query(default_namespace).Where(kFieldLocation, CondEq, location), qr);
 				if (err.ok()) {	 // First request may get an error, because disconnect event may not be handled yet

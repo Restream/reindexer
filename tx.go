@@ -5,8 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/cjson"
+	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v4/cjson"
 )
 
 const maxAsyncRequests = 500

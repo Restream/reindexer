@@ -17,6 +17,7 @@ protected:
 			return canceld_.load() ? reindexer::CancelType::Explicit : reindexer::CancelType::None;
 		}
 		bool IsCancelable() const noexcept override { return true; }
+		std::optional<std::chrono::milliseconds> GetRemainingTimeout() const noexcept override { return std::nullopt; }
 		void Cancel() { canceld_ = true; }
 
 	private:

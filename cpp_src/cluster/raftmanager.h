@@ -3,6 +3,7 @@
 #include <vector>
 #include "client/raftclient.h"
 #include "cluster/config.h"
+#include "cluster/consts.h"
 #include "cluster/stats/relicationstatscollector.h"
 
 namespace reindexer {
@@ -10,14 +11,6 @@ namespace reindexer {
 struct ReplicationConfigData;
 
 namespace cluster {
-
-constexpr auto kLeaderPingInterval = std::chrono::milliseconds(200);
-constexpr auto kMinLeaderAwaitInterval = kLeaderPingInterval * 5;
-constexpr auto kMinStateCheckInerval = kLeaderPingInterval * 5;
-constexpr auto kMaxLeaderAwaitDiff = std::chrono::milliseconds(600);
-constexpr auto kMaxStateCheckDiff = std::chrono::milliseconds(600);
-constexpr auto kGranularSleepInterval = std::chrono::milliseconds(50);
-constexpr auto kDesiredLeaderTimeout = std::chrono::seconds(10);
 
 class Logger;
 

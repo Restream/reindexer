@@ -5,12 +5,14 @@
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/indexdef.h"
+#include "core/type_consts.h"
 #include "core/type_consts_helpers.h"
 #include "gason/gason.h"
 #include "tools/json2kv.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "vendor/urlparser/urlparser.h"
+#include "yaml-cpp/emitterstyle.h"
 #include "yaml-cpp/yaml.h"
 
 using namespace std::string_view_literals;
@@ -513,7 +515,7 @@ Error ShardingConfig::Namespace::FromYAML(const YAML::Node &yaml, const std::map
 	auto keysNode = yaml["keys"];
 	keys.clear();
 	keys.resize(keysNode.size());
-	fast_hash_set<Variant> checkVal;
+	std::vector<sharding::Segment<Variant>> checkVal;
 	KeyValueType valuesType(KeyValueType::Null{});
 	for (size_t i = 0; i < keys.size(); ++i) {
 		Error err = keys[i].FromYAML(keysNode[i], shards, valuesType, checkVal);
@@ -535,7 +537,7 @@ Error ShardingConfig::Namespace::FromJSON(const gason::JsonNode &root) {
 		}
 		const auto &keysNode = root["keys"];
 		keys.clear();
-		fast_hash_set<Variant> checkVal;
+		std::vector<sharding::Segment<Variant>> checkVal;
 		KeyValueType valuesType(KeyValueType::Null{});
 		for (const auto &kNode : keysNode) {
 			keys.emplace_back();
@@ -550,22 +552,100 @@ Error ShardingConfig::Namespace::FromJSON(const gason::JsonNode &root) {
 	return errOK;
 }
 
-Error ShardingConfig::Key::checkValue(const Variant &val, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal) {
+Error ShardingConfig::Key::checkValue(const sharding::Segment<Variant> &val, KeyValueType &valuesType,
+									  const std::vector<sharding::Segment<Variant>> &checkVal) {
 	if (valuesType.Is<KeyValueType::Null>()) {
-		valuesType = val.Type();
-	} else if (!valuesType.IsSame(val.Type())) {
-		return Error(errParams, "Incorrect value '%s'. Type of first value is '%s', current type is '%s'", val.As<std::string>(),
-					 valuesType.Name(), val.Type().Name());
+		valuesType = val.left.Type();
+	} else if (!valuesType.IsSame(val.left.Type())) {
+		return Error(errParams, "Incorrect value '%s'. Type of first value is '%s', current type is '%s'", val.left.As<std::string>(),
+					 valuesType.Name(), val.left.Type().Name());
 	}
-	if (checkVal.find(val) != checkVal.end()) {
-		return Error(errParams, "Incorrect value '%s'. Value already in use.", val.As<std::string>());
+	if (sharding::intersected(checkVal, val)) {
+		return Error(errParams, "Incorrect value '%s'. Value already in use.",
+					 val.left == val.right ? val.left.As<std::string>()
+										   : fmt::sprintf("[%s, %s]", val.left.As<std::string>(), val.right.As<std::string>()));
 	}
-	checkVal.emplace(val);
 	return Error();
 }
 
+sharding::Segment<Variant> ShardingConfig::Key::SegmentFromYAML(const YAML::Node &yaml) {
+	switch (yaml.Type()) {
+		case YAML::NodeType::Scalar: {
+			auto val = stringToVariant(yaml.as<std::string>());
+
+			if (val.Type().Is<KeyValueType::Null>()) {
+				throw Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", yaml.as<std::string>());
+			}
+
+			return sharding::Segment<Variant>{val, val};
+		}
+		case YAML::NodeType::Sequence: {
+			algorithmType = ByRange;
+			if (auto dist = std::distance(std::begin(yaml), std::end(yaml)); dist != 2)
+				throw Error(errParams, "Incorrect range for sharding key. Should contain 2 numbers but %d are received", dist);
+
+			Variant left, right;
+			auto getVariant = [&yaml](const std::string &str) {
+				auto val = stringToVariant(str);
+				if (val.Type().Is<KeyValueType::Null>()) {
+					throw Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", yaml.as<std::string>());
+				}
+				return val;
+			};
+
+			left = getVariant(std::begin(yaml)->as<std::string>());
+			right = getVariant(std::next(std::begin(yaml))->as<std::string>());
+
+			if (!left.Type().IsSame(right.Type()))
+				throw Error(errParams, "Incorrect segment '[%s, %s]'. Type of left value is '%s', right type is '%s'",
+							left.As<std::string>(), right.As<std::string>(), left.Type().Name(), right.Type().Name());
+
+			return sharding::Segment<Variant>{left, right};
+		}
+		default: {
+			throw Error(errParams, "Incorrect YAML::NodeType for sharding key");
+		}
+	}
+}
+
+sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::JsonNode &json) {
+	const auto &jsonValue = json.value;
+	switch (jsonValue.getTag()) {
+		case gason::JsonTag::JSON_TRUE:
+		case gason::JsonTag::JSON_FALSE:
+		case gason::JsonTag::JSON_STRING:
+		case gason::JsonTag::JSON_DOUBLE:
+		case gason::JsonTag::JSON_NUMBER: {
+			auto val = jsonValue2Variant(jsonValue, KeyValueType::Undefined{});
+
+			if (val.Type().Is<KeyValueType::Null>()) {
+				throw Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", jsonValue.toString());
+			}
+
+			return sharding::Segment<Variant>{val, val};
+		}
+		case gason::JsonTag::JSON_ARRAY: {
+			algorithmType = ByRange;
+			if (auto dist = std::distance(begin(json), end(json)); dist != 2)
+				throw Error(errParams, "Incorrect range for sharding key. Should contain 2 numbers but %d are received", dist);
+
+			auto left = jsonValue2Variant(begin(jsonValue)->value, KeyValueType::Undefined{});
+			auto right = jsonValue2Variant(begin(jsonValue)->next->value, KeyValueType::Undefined{});
+
+			if (!left.Type().IsSame(right.Type()))
+				throw Error(errParams, "Incorrect segment '[%s, %s]'. Type of left value is '%s', right type is '%s'",
+							left.As<std::string>(), right.As<std::string>(), left.Type().Name(), right.Type().Name());
+
+			return sharding::Segment<Variant>{std::move(left), std::move(right)};
+		}
+		default: {
+			throw Error(errParams, "Incorrect YAML::NodeType for sharding key");
+		}
+	}
+}
+
 Error ShardingConfig::Key::FromYAML(const YAML::Node &yaml, const std::map<int, std::vector<std::string>> &_shards,
-									KeyValueType &valuesType, fast_hash_set<Variant> &checkVal) {
+									KeyValueType &valuesType, std::vector<sharding::Segment<Variant>> &checkVal) {
 	values.clear();
 	const auto &shardIdNode = yaml["shard_id"];
 	if (!shardIdNode.IsDefined()) {
@@ -577,72 +657,52 @@ Error ShardingConfig::Key::FromYAML(const YAML::Node &yaml, const std::map<int, 
 	}
 
 	auto valuesNode = yaml["values"];
-#if 0
-	auto fromNode = yaml["from"];
-	auto toNode = yaml["to"];
-#endif
 	if (valuesNode.IsDefined()) {
 		algorithmType = ByValue;
 		for (const auto &value : valuesNode) {
-			Variant val = stringToVariant(value.as<std::string>());
-			if (val.Type().Is<KeyValueType::Null>()) {
-				return Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", value.as<std::string>());
-			}
-			Error err = checkValue(val, valuesType, checkVal);
-			if (!err.ok()) {
+			try {
+				auto segment = SegmentFromYAML(value);
+				Error err = checkValue(segment, valuesType, checkVal);
+				if (!err.ok()) {
+					return err;
+				}
+				values.push_back(std::move(segment));
+			} catch (const Error &err) {
 				return err;
 			}
-			values.emplace_back(val);
 		}
-	}
-#if 0
-	else if (!fromNode.IsNone() || !toNode.IsNone()) {
-		if (fromNode.IsNone() || toNode.IsNone()) {
-			return Error(errParams, "Key's range should be specifies by 'from' and 'to'");
-		}
-		algorithmType = ByRange;
-		Variant from = stringToVariant(fromNode.AsString());
-		Variant to = stringToVariant(toNode.AsString());
-		values.emplace_back(from);
-		values.emplace_back(to);
-	}
-#endif
-	else {
+		values = sharding::getUnion(values);
+		checkVal.insert(checkVal.end(), values.begin(), values.end());
+	} else {
 		return Error(errParams, "Unsupported sharding algorithm type: neither values nor range are specified");
 	}
 
 	return errOK;
 }
 
-Error ShardingConfig::Key::FromJSON(const gason::JsonNode &root, KeyValueType &valuesType, fast_hash_set<Variant> &checkVal) {
+Error ShardingConfig::Key::FromJSON(const gason::JsonNode &root, KeyValueType &valuesType,
+									std::vector<sharding::Segment<Variant>> &checkVal) {
 	try {
 		shardId = root["shard_id"].As<int>();
 		values.clear();
 		const auto &valuesNode = root["values"];
-#if 0
-		const auto &fromNode = root["from"];
-		const auto &toNode = root["to"];
-#endif
 		if (!valuesNode.empty()) {
 			algorithmType = ByValue;
 			for (const auto &vNode : valuesNode) {
-				Variant val = jsonValue2Variant(vNode.value, KeyValueType::Undefined{});
-				Error err = checkValue(val, valuesType, checkVal);
-				if (!err.ok()) {
+				try {
+					auto segment = SegmentFromJSON(vNode);
+					Error err = checkValue(segment, valuesType, checkVal);
+					if (!err.ok()) {
+						return err;
+					}
+					values.push_back(std::move(segment));
+				} catch (const Error &err) {
 					return err;
 				}
-				values.emplace_back(val);
 			}
-		}
-#if 0
-		else if (!fromNode.empty() && !toNode.empty()) {
-			algorithmType = ByRange;
-			values.reserve(2);
-			values.emplace_back(jsonValue2Variant(fromNode.value, KeyValueUndefined));
-			values.emplace_back(jsonValue2Variant(toNode.value, KeyValueUndefined));
-		}
-#endif
-		else {
+			values = sharding::getUnion(values);
+			checkVal.insert(checkVal.end(), values.begin(), values.end());
+		} else {
 			return Error(errParams, "Unsupported sharding algorithm type: neither values nor range are specified");
 		}
 
@@ -681,36 +741,52 @@ void ShardingConfig::Namespace::GetJSON(JsonBuilder &jb) const {
 void ShardingConfig::Key::GetYAML(YAML::Node &yaml) const {
 	YAML::Node key;
 	key["shard_id"] = shardId;
-	switch (algorithmType) {
-		case ByValue: {
-			YAML::Node valuesNode(YAML::NodeType::Sequence);
-			for (const auto &v : values) {
-				valuesNode.push_back(v.As<std::string>());
-			}
-			key["values"] = valuesNode;
-			break;
+	YAML::Node valuesNode(YAML::NodeType::Sequence);
+	for (const auto &[left, right, _] : values) {
+		(void)_;
+		if (left == right) {
+			valuesNode.push_back(left.As<std::string>());
+		} else {
+			YAML::Node bounds(YAML::NodeType::Sequence);
+			bounds.SetStyle(YAML::EmitterStyle::Flow);
+			bounds.push_back(left.As<std::string>());
+			bounds.push_back(right.As<std::string>());
+			valuesNode.push_back(bounds);
 		}
-		case ByRange:
-			assertrx(values.size() == 2);
-			key["from"] = values[0].As<std::string>();
-			key["to"] = values[1].As<std::string>();
-			break;
 	}
+	key["values"] = valuesNode;
 	yaml.push_back(key);
 }
 
 void ShardingConfig::Key::GetJSON(JsonBuilder &jb) const {
 	jb.Put("shard_id", shardId);
-	switch (algorithmType) {
-		case ByValue: {
-			auto valuesNode = jb.Array("values");
-			for (const auto &v : values) valuesNode.Put(0, v);
-			break;
+	auto valuesNode = jb.Array("values");
+	for (const auto &[left, right, _] : values) {
+		(void)_;
+		if (left == right) {
+			valuesNode.Put(0, left);
+		} else {
+			auto segmentNode = valuesNode.Array(0);
+			segmentNode.Put(0, left);
+			segmentNode.Put(0, right);
 		}
-		case ByRange:
-			jb.Put("from", values[0]);
-			jb.Put("to", values[1]);
-			break;
+	}
+}
+
+int ShardingConfig::Key::RelaxCompare(const std::vector<sharding::Segment<Variant>> &other, const CollateOpts &collateOpts) const {
+	auto lhsIt{values.cbegin()}, rhsIt{other.cbegin()};
+	auto const lhsEnd{values.cend()}, rhsEnd{other.cend()};
+	for (; lhsIt != lhsEnd && rhsIt != rhsEnd; ++lhsIt, ++rhsIt) {
+		auto res = lhsIt->left.RelaxCompare(rhsIt->left, collateOpts);
+		if (res != 0) return res;
+		res = lhsIt->right.RelaxCompare(rhsIt->right, collateOpts);
+		if (res != 0) return res;
+	}
+	if (lhsIt == lhsEnd) {
+		if (rhsIt == rhsEnd) return 0;
+		return -1;
+	} else {
+		return 1;
 	}
 }
 
@@ -829,7 +905,7 @@ bool operator==(const ShardingConfig &lhs, const ShardingConfig &rhs) {
 		   rhs.proxyConnThreads == lhs.proxyConnThreads;
 }
 bool operator==(const ShardingConfig::Key &lhs, const ShardingConfig::Key &rhs) {
-	return lhs.shardId == rhs.shardId && lhs.algorithmType == rhs.algorithmType && lhs.values.RelaxCompare(rhs.values) == 0;
+	return lhs.shardId == rhs.shardId && lhs.algorithmType == rhs.algorithmType && lhs.RelaxCompare(rhs.values) == 0;
 }
 bool operator==(const ShardingConfig::Namespace &lhs, const ShardingConfig::Namespace &rhs) {
 	return lhs.ns == rhs.ns && lhs.defaultShard == rhs.defaultShard && lhs.index == rhs.index && lhs.keys == rhs.keys;

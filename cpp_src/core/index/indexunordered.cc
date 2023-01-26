@@ -46,26 +46,26 @@ IndexUnordered<unordered_str_map<FtKeyEntry>>::IndexUnordered(const IndexDef &id
 template <>
 IndexUnordered<unordered_payload_map<FtKeyEntry, true>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType,
 																		const FieldsSet &fields)
-	: Base(idef, payloadType, fields), idx_map(std::move(payloadType), fields) {}
+	: Base(idef, payloadType, fields), idx_map(std::move(payloadType), Base::Fields()) {}
 
 template <>
 IndexUnordered<unordered_payload_map<Index::KeyEntry, true>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType,
 																			 const FieldsSet &fields)
-	: Base(idef, payloadType, fields), idx_map(std::move(payloadType), fields) {}
+	: Base(idef, payloadType, fields), idx_map(std::move(payloadType), Base::Fields()) {}
 
 template <>
 IndexUnordered<unordered_payload_map<Index::KeyEntryPlain, true>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType,
 																				  const FieldsSet &fields)
-	: Base(idef, payloadType, fields), idx_map(std::move(payloadType), fields) {}
+	: Base(idef, payloadType, fields), idx_map(std::move(payloadType), Base::Fields()) {}
 
 template <>
 IndexUnordered<payload_map<Index::KeyEntry, true>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields)
-	: Base(idef, payloadType, fields), idx_map(std::move(payloadType), fields) {}
+	: Base(idef, payloadType, fields), idx_map(std::move(payloadType), Base::Fields()) {}
 
 template <>
 IndexUnordered<payload_map<Index::KeyEntryPlain, true>>::IndexUnordered(const IndexDef &idef, PayloadType payloadType,
 																		const FieldsSet &fields)
-	: Base(idef, payloadType, fields), idx_map(std::move(payloadType), fields) {}
+	: Base(idef, payloadType, fields), idx_map(std::move(payloadType), Base::Fields()) {}
 
 template <typename T>
 bool IndexUnordered<T>::HoldsStrings() const noexcept {

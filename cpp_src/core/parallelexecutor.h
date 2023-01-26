@@ -24,7 +24,7 @@ public:
 	ParallelExecutor(int localShardId) : localShardId_(localShardId) {}
 
 	template <typename Func, typename FLocal, typename... Args>
-	Error Exec(const RdxContext &rdxCtx, sharding::ConnectionsPtr connections, Func f, const FLocal &&local, Args &&...args) {
+	Error Exec(const RdxContext &rdxCtx, sharding::ConnectionsPtr &&connections, const Func &f, const FLocal &local, Args &&...args) {
 		std::condition_variable cv;
 		std::mutex mtx;
 
@@ -70,9 +70,9 @@ public:
 		}
 		return createIntegralError(clientErrors, isLocalCall);
 	}
-	template <typename Func, typename FLocal, typename T, typename P, typename... Args>
-	Error ExecCollect(const RdxContext &rdxCtx, sharding::ConnectionsPtr connections, Func f, const FLocal &&local, std::vector<T> &result,
-					  P &&predicated, std::string_view nsName, Args &&...args) {
+	template <typename ClientF, typename LocalF, typename T, typename Predicate, typename... Args>
+	Error ExecCollect(const RdxContext &rdxCtx, sharding::ConnectionsPtr &&connections, const ClientF &clientF, const LocalF &local,
+					  std::vector<T> &result, const Predicate &predicated, std::string_view nsName, Args &&...args) {
 		std::condition_variable cv;
 		std::mutex mtx;
 
@@ -96,7 +96,7 @@ public:
 					connection->WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error &err) {
 						completionFunction(clientCount, clientCompl, clientErrors, shardId, mtx, cv, err);
 					});
-				Error err = std::invoke(f, results.back().connection, nsName, std::forward<Args>(args)..., results.back().results);
+				Error err = std::invoke(clientF, results.back().connection, nsName, std::forward<Args>(args)..., results.back().results);
 				if (!err.ok()) {
 					std::lock_guard lck(mtx);
 					clientErrors.emplace_back(std::move(err), shardId);
@@ -130,9 +130,8 @@ public:
 		return createIntegralError(clientErrors, isLocalCall);
 	}
 
-	Error ExecSelect(const Query &query, QueryResults &result, const sharding::ConnectionsVector &connections,
-					 const InternalRdxContext &ctx, const RdxContext &rdxCtx,
-					 const std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> &&localAction);
+	Error ExecSelect(const Query &query, QueryResults &result, const sharding::ConnectionsVector &connections, const RdxContext &ctx,
+					 std::function<Error(const Query &, LocalQueryResults &, const RdxContext &)> &&localAction);
 
 private:
 	Error createIntegralError(h_vector<std::pair<Error, int>, 8> &errors, size_t clientCount);

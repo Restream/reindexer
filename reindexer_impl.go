@@ -12,9 +12,9 @@ import (
 
 	lru "github.com/hashicorp/golang-lru"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/cjson"
-	"github.com/restream/reindexer/dsl"
+	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v4/dsl"
 )
 
 type reindexerNamespace struct {
@@ -241,7 +241,7 @@ func (db *reindexerImpl) getClusterStat(ctx context.Context) (*bindings.Replicat
 func (db *reindexerImpl) getStatus(ctx context.Context) bindings.Status {
 	status := db.binding.Status(ctx)
 	if db.status != nil {
-		status.Err = db.status  // If reindexerImpl has an error, return it.
+		status.Err = db.status // If reindexerImpl has an error, return it.
 	}
 
 	db.lock.RLock()

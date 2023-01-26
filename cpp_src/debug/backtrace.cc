@@ -138,7 +138,7 @@ int backtrace_internal(void **addrlist, size_t size, void *ctx, std::string_view
 	return addrlen;
 }
 
-void inline print_backtrace(std::ostream &sout, void *ctx, int sig) {
+void print_backtrace(std::ostream &sout, void *ctx, int sig) {
 #if !REINDEX_WITH_EXECINFO && !REINDEX_WITH_UNWIND && !REINDEX_WITH_LIBUNWIND
 	sout << "Sorry, reindexer has been compiled without any backtrace methods." << std::endl;
 #else

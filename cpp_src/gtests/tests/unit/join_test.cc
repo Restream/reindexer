@@ -6,6 +6,7 @@
 #include "core/nsselecter/joinedselector.h"
 #include "join_on_conditions_api.h"
 #include "join_selects_api.h"
+#include "test_helpers.h"
 
 TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest) {
 	Query queryGenres{Query(genres_namespace).Not().Where(genreid, CondEq, 1)};

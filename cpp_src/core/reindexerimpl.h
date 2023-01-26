@@ -18,8 +18,8 @@
 #include "reindexerconfig.h"
 #include "tools/errors.h"
 #include "tools/filecontentwatcher.h"
-#include "tools/tcmallocheapwathcher.h"
 #include "tools/nsversioncounter.h"
+#include "tools/tcmallocheapwathcher.h"
 #include "transaction/transaction.h"
 
 namespace reindexer {
@@ -55,7 +55,7 @@ class ReindexerImpl {
 public:
 	using Completion = std::function<void(const Error &err)>;
 
-	ReindexerImpl(ReindexerConfig cfg);
+	ReindexerImpl(ReindexerConfig cfg, ActivityContainer &activities);
 
 	~ReindexerImpl();
 
@@ -87,7 +87,6 @@ public:
 	Error Delete(std::string_view nsName, Item &item, const RdxContext &ctx);
 	Error Delete(std::string_view nsName, Item &item, LocalQueryResults &, const RdxContext &ctx);
 	Error Delete(const Query &query, LocalQueryResults &result, const RdxContext &ctx);
-	Error Select(std::string_view query, LocalQueryResults &result, const RdxContext &ctx);
 	Error Select(const Query &query, LocalQueryResults &result, const RdxContext &ctx);
 	Error Commit(std::string_view nsName);
 	Item NewItem(std::string_view nsName, const RdxContext &ctx);
@@ -117,6 +116,7 @@ public:
 	bool NeedTraceActivity() { return configProvider_.ActivityStatsEnabled(); }
 
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index, const RdxContext &ctx);
+	bool NamespaceIsInClusterConfig(std::string_view nsName);
 
 protected:
 	template <typename Context>
@@ -289,7 +289,7 @@ protected:
 	TCMallocHeapWathcher heapWatcher_;
 #endif
 
-	ActivityContainer activities_;
+	ActivityContainer &activities_;
 
 	StorageType storageType_;
 	bool autorepairEnabled_ = false;

@@ -18,9 +18,6 @@ class LocatorService;
 class TransactionImpl {
 public:
 	TransactionImpl(LocalTransaction &&ltx) : data_(std::move(ltx.data_)), tx_{std::move(ltx.tx_)}, status_(std::move(ltx.err_)) {}
-	TransactionImpl(LocalTransaction &&ltx, client::Transaction &&tx) : data_(std::move(ltx.data_)), status_(std::move(ltx.err_)) {
-		tx_ = std::make_unique<ProxiedTransaction>(std::move(tx), false);
-	}
 	TransactionImpl(LocalTransaction &&ltx, client::Reindexer &&clusterLeader)
 		: data_(std::move(ltx.data_)), tx_{std::move(clusterLeader)}, status_(std::move(ltx.err_)) {}
 
@@ -54,8 +51,11 @@ private:
 	using RxClientT = client::Reindexer;
 
 	void updateShardIdIfNecessary(int shardId);
-	void ensureShardIdIsCorrect(const Item &item);
-	void ensureShardIdIsCorrect(const Query &q);
+	void lazyInit(const Item &item);
+	void lazyInit(const Query &q);
+	void lazyInit();
+	void initProxiedTx(RxClientT *leader);
+	void initProxiedTxIfRequired();
 	void updateTagsMatcherIfNecessary(Item &item);
 
 	mutable std::mutex mtx_;

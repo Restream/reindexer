@@ -8,9 +8,9 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/cjson"
-	"github.com/restream/reindexer/jsonschema"
+	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v4/cjson"
+	"github.com/restream/reindexer/v4/jsonschema"
 )
 
 const (

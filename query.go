@@ -12,8 +12,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/restream/reindexer/bindings"
-	"github.com/restream/reindexer/cjson"
+	"github.com/restream/reindexer/v4/bindings"
+	"github.com/restream/reindexer/v4/cjson"
 )
 
 // Strict modes for queries
@@ -838,7 +838,10 @@ func (q *Query) SetObject(field string, values interface{}) *Query {
 // Set adds update field request for update query
 func (q *Query) Set(field string, values interface{}) *Query {
 	t := reflect.TypeOf(values)
-	if t.Kind() == reflect.Struct {
+	if t.Kind() == reflect.Struct || t.Kind() == reflect.Map {
+		return q.SetObject(field, values)
+	}
+	if (t.Kind() == reflect.Slice || t.Kind() == reflect.Array) && t.Elem().Kind() == reflect.Struct {
 		return q.SetObject(field, values)
 	}
 	v := reflect.ValueOf(values)

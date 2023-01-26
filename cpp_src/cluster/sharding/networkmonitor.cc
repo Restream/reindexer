@@ -19,29 +19,30 @@ void NetworkMonitor::Configure(ConnectionsMap& hostsConnections, std::chrono::se
 	}
 }
 
-Error NetworkMonitor::AwaitShards(const InternalRdxContext& ctx) noexcept {
+Error NetworkMonitor::AwaitShards(const RdxContext& ctx) noexcept {
 	Error err;
 	try {
-		InternalRdxContext defaultCtx;
+		const RdxDeadlineContext deadlineCtx(defaultTimeout_, ctx.GetCancelCtx());
+		std::unique_ptr<const RdxContext> defaultCtx;
 
 		std::unique_lock lck(mtx_);
-		if (!defaultTimeout_.count()) {
+		if (defaultTimeout_.count() <= 0) {
 			return Error();
 		}
 		if (!hostsConnections_) {
 			return Error(errLogic, "Shards' host connections are not configured");
 		}
-		const InternalRdxContext* actualCtx = &ctx;
-		if (!actualCtx->HasDeadline() && defaultTimeout_.count() > 0) {
-			defaultCtx.SetTimeout(defaultTimeout_);
-			actualCtx = &defaultCtx;
+		const RdxContext* actualCtx = &ctx;
+		if (!actualCtx->IsCancelable()) {
+			defaultCtx = std::make_unique<RdxContext>(ctx.WithCancelCtx(deadlineCtx));
+			actualCtx = defaultCtx.get();
 		}
 		do {
 			if (!err.ok()) {
 				lck.unlock();
-				ThrowOnCancel(*actualCtx->DeadlineCtx());
+				ThrowOnCancel(*actualCtx);
 				std::this_thread::sleep_for(kRetryInterval);
-				ThrowOnCancel(*actualCtx->DeadlineCtx());
+				ThrowOnCancel(*actualCtx);
 				lck.lock();
 				if (!hostsConnections_) {
 					return Error(errLogic, "Shards' host connections were reset");
@@ -101,11 +102,11 @@ void NetworkMonitor::sendStatusRequests() {
 	}
 }
 
-Error NetworkMonitor::awaitStatuses(std::unique_lock<std::recursive_mutex>& lck, const InternalRdxContext& ctx) {
+Error NetworkMonitor::awaitStatuses(std::unique_lock<std::recursive_mutex>& lck, const RdxContext& ctx) {
 	if (inProgress_) {
-		assert(ctx.DeadlineCtx());
+		assertrx(ctx.IsCancelable());
 		cv_.wait(
-			lck, [this] { return areStatusesReady(); }, *ctx.DeadlineCtx());
+			lck, [this] { return areStatusesReady(); }, ctx);
 		inProgress_ = false;
 	}
 	if (hostsConnections_->size() == succeed_.size()) {

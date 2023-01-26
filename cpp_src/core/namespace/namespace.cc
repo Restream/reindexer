@@ -136,12 +136,14 @@ bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const LocalTrans
 
 void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, const std::string& storagePath,
 						 const std::function<void(std::function<void()>)>& replicateCb, const RdxContext& ctx) {
+	logPrintf(LogTrace, "[rename] Trying to rename namespace '%s'...", GetName(ctx));
 	std::string dbpath;
 	const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
 	awaitMainNs(ctx)->storage_.Flush(flushOpts);
 	auto lck = handleInvalidation(NamespaceImpl::dataWLock)(ctx, true);
 	auto& srcNs = *atomicLoadMainNs();	// -V758
 	srcNs.storage_.Flush(flushOpts);	// Repeat flush, to raise any disk errors before attempt to close storage
+	logPrintf(LogTrace, "[rename] All the flushes done for '%s'...", srcNs.name_);
 	NamespaceImpl::Locker::WLockT dstLck;
 	NamespaceImpl::Ptr dstNs;
 	if (dst) {
@@ -190,18 +192,18 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 	}
 
 	if (dst) {
-		logPrintf(LogInfo, "Rename namespace '%s' to '%s'", srcNs.name_, dstNs->name_);
+		logPrintf(LogInfo, "[rename] Rename namespace '%s' to '%s'", srcNs.name_, dstNs->name_);
 		srcNs.name_ = dstNs->name_;
 		assertrx(dstLck.owns_lock());
 		dstLck.unlock();
 	} else {
-		logPrintf(LogInfo, "Rename namespace '%s' to '%s'", srcNs.name_, newName);
+		logPrintf(LogInfo, "[rename] Rename namespace '%s' to '%s'", srcNs.name_, newName);
 		srcNs.name_ = newName;
 	}
 	srcNs.payloadType_.SetName(srcNs.name_);
 
 	if (hadStorage) {
-		logPrintf(LogTrace, "Storage was moved from %s to %s", srcDbpath, dbpath);
+		logPrintf(LogTrace, "[rename] Storage was moved from %s to %s", srcDbpath, dbpath);
 		auto status = srcNs.storage_.Open(storageType, srcNs.name_, dbpath, srcNs.storageOpts_);
 		if (!status.ok()) {
 			srcNs.storage_.Close();

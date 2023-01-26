@@ -14,8 +14,8 @@ public:
 	size_t Sizeof() const noexcept;
 	size_t ElemSizeof() const noexcept;
 	size_t Alignof() const noexcept;
-	bool IsArray() const noexcept { return isArray_; };
-	void SetArray() noexcept { isArray_ = true; };
+	bool IsArray() const noexcept { return isArray_; }
+	void SetArray() noexcept { isArray_ = true; }
 	void SetOffset(size_t o) noexcept { offset_ = o; }
 	size_t Offset() const noexcept { return offset_; }
 	KeyValueType Type() const noexcept { return type_; }

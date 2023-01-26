@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/restream/reindexer"
-	_ "github.com/restream/reindexer/bindings/cproto"
-	"github.com/restream/reindexer/test/helpers"
+	"github.com/restream/reindexer/v4"
+	_ "github.com/restream/reindexer/v4/bindings/cproto"
+	"github.com/restream/reindexer/v4/test/helpers"
 )
 
 type ReindexerWrapper struct {
@@ -126,8 +126,8 @@ func (dbw *ReindexerWrapper) SetLogger(log reindexer.Logger) {
 }
 
 func (dbw *ReindexerWrapper) OpenNamespace(namespace string, opts *reindexer.NamespaceOptions, s interface{}) (err error) {
-	dbw.SetSyncRequired()
 	err = dbw.Reindexer.OpenNamespace(namespace, opts, s)
+	dbw.SetSyncRequired()
 	if err != nil {
 		return err
 	}
@@ -142,9 +142,8 @@ func (dbw *ReindexerWrapper) OpenNamespace(namespace string, opts *reindexer.Nam
 }
 
 func (dbw *ReindexerWrapper) DropNamespace(namespace string) error {
-	dbw.SetSyncRequired()
-
 	err := dbw.Reindexer.DropNamespace(namespace)
+	dbw.SetSyncRequired()
 	if err != nil {
 		return err
 	}
@@ -295,15 +294,15 @@ func (dbw *ReindexerWrapper) WaitForSyncWithMaster(t *testing.T) {
 	dbw.setSynced()
 }
 
-func (dbw *ReindexerWrapper) TruncateNamespace(namespace string) error {
+func (dbw *ReindexerWrapper) TruncateNamespace(namespace string) (err error) {
+	err = dbw.Reindexer.TruncateNamespace(namespace)
 	dbw.SetSyncRequired()
-	return dbw.Reindexer.TruncateNamespace(namespace)
+	return
 }
 
 func (dbw *ReindexerWrapper) RenameNamespace(srcNsName string, dstNsName string) error {
-	dbw.SetSyncRequired()
-
 	err := dbw.Reindexer.RenameNamespace(srcNsName, dstNsName)
+	dbw.SetSyncRequired()
 	if err != nil {
 		return err
 	}
@@ -316,47 +315,74 @@ func (dbw *ReindexerWrapper) RenameNamespace(srcNsName string, dstNsName string)
 	return err
 }
 
-func (dbw *ReindexerWrapper) CloseNamespace(namespace string) error {
+func (dbw *ReindexerWrapper) CloseNamespace(namespace string) (err error) {
+	err = dbw.Reindexer.CloseNamespace(namespace)
 	dbw.SetSyncRequired()
-	return dbw.Reindexer.CloseNamespace(namespace)
+	return
 }
 
-func (dbw *ReindexerWrapper) Upsert(namespace string, item interface{}, precepts ...string) error {
+func (dbw *ReindexerWrapper) AddIndex(namespace string, indexDef ...reindexer.IndexDef) (err error) {
+	err = dbw.Reindexer.AddIndex(namespace, indexDef...)
 	dbw.SetSyncRequired()
-	return dbw.Reindexer.Upsert(namespace, item, precepts...)
+	return
 }
 
-func (dbw *ReindexerWrapper) Insert(namespace string, item interface{}, precepts ...string) (int, error) {
+func (dbw *ReindexerWrapper) UpdateIndex(namespace string, indexDef reindexer.IndexDef) (err error) {
+	err = dbw.Reindexer.UpdateIndex(namespace, indexDef)
 	dbw.SetSyncRequired()
-	return dbw.Reindexer.Insert(namespace, item, precepts...)
+	return
 }
 
-func (dbw *ReindexerWrapper) Update(namespace string, item interface{}, precepts ...string) (int, error) {
+func (dbw *ReindexerWrapper) DropIndex(namespace, index string) (err error) {
+	err = dbw.Reindexer.DropIndex(namespace, index)
 	dbw.SetSyncRequired()
-	return dbw.Reindexer.Update(namespace, item, precepts...)
+	return
 }
 
-func (dbw *ReindexerWrapper) Delete(namespace string, item interface{}, precepts ...string) error {
+func (dbw *ReindexerWrapper) Upsert(namespace string, item interface{}, precepts ...string) (err error) {
+	err = dbw.Reindexer.Upsert(namespace, item, precepts...)
 	dbw.SetSyncRequired()
-	return dbw.Reindexer.Delete(namespace, item, precepts...)
+	return
 }
 
-func (dbw *ReindexerWrapper) UpsertCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) error {
+func (dbw *ReindexerWrapper) Insert(namespace string, item interface{}, precepts ...string) (upd int, err error) {
+	upd, err = dbw.Reindexer.Insert(namespace, item, precepts...)
 	dbw.SetSyncRequired()
-	return dbw.Reindexer.WithContext(ctx).Upsert(namespace, item, precepts...)
+	return
 }
 
-func (dbw *ReindexerWrapper) InsertCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (int, error) {
+func (dbw *ReindexerWrapper) Update(namespace string, item interface{}, precepts ...string) (upd int, err error) {
+	upd, err = dbw.Reindexer.Update(namespace, item, precepts...)
 	dbw.SetSyncRequired()
-	return dbw.Reindexer.WithContext(ctx).Insert(namespace, item, precepts...)
+	return
 }
 
-func (dbw *ReindexerWrapper) UpdateCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (int, error) {
+func (dbw *ReindexerWrapper) Delete(namespace string, item interface{}, precepts ...string) (err error) {
+	err = dbw.Reindexer.Delete(namespace, item, precepts...)
 	dbw.SetSyncRequired()
-	return dbw.Reindexer.WithContext(ctx).Update(namespace, item, precepts...)
+	return
 }
 
-func (dbw *ReindexerWrapper) DeleteCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) error {
+func (dbw *ReindexerWrapper) UpsertCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (err error) {
+	err = dbw.Reindexer.WithContext(ctx).Upsert(namespace, item, precepts...)
 	dbw.SetSyncRequired()
-	return dbw.Reindexer.WithContext(ctx).Delete(namespace, item, precepts...)
+	return
+}
+
+func (dbw *ReindexerWrapper) InsertCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (upd int, err error) {
+	upd, err = dbw.Reindexer.WithContext(ctx).Insert(namespace, item, precepts...)
+	dbw.SetSyncRequired()
+	return
+}
+
+func (dbw *ReindexerWrapper) UpdateCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (upd int, err error) {
+	upd, err = dbw.Reindexer.WithContext(ctx).Update(namespace, item, precepts...)
+	dbw.SetSyncRequired()
+	return
+}
+
+func (dbw *ReindexerWrapper) DeleteCtx(ctx context.Context, namespace string, item interface{}, precepts ...string) (err error) {
+	err = dbw.Reindexer.WithContext(ctx).Delete(namespace, item, precepts...)
+	dbw.SetSyncRequired()
+	return
 }

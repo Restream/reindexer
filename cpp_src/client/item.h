@@ -9,6 +9,7 @@
 namespace reindexer {
 
 class ClusterProxy;
+class ShardingProxy;
 class ProxiedTransaction;
 
 namespace client {
@@ -117,6 +118,7 @@ private:
 	friend class client::CoroReindexer;
 	friend class client::Namespace;
 	friend class client::Transaction;
+	friend class reindexer::ShardingProxy;
 	friend class reindexer::ClusterProxy;
 	friend class client::CoroTransaction;
 	friend class client::CoroQueryResults;

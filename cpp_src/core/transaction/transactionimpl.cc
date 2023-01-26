@@ -20,7 +20,7 @@ Error TransactionImpl::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
 	}
 
 	try {
-		ensureShardIdIsCorrect(item);
+		lazyInit(item);
 	} catch (Error &err) {
 		status_ = err;
 		return err;
@@ -45,7 +45,7 @@ Error TransactionImpl::Modify(Query &&query, lsn_t lsn) {
 	}
 
 	try {
-		ensureShardIdIsCorrect(query);
+		lazyInit(query);
 	} catch (Error &err) {
 		return err;
 	}
@@ -64,6 +64,11 @@ Error TransactionImpl::Nop(lsn_t lsn) {
 	std::lock_guard lck(mtx_);
 	if (!status_.ok()) {
 		return status_;
+	}
+	try {
+		lazyInit();
+	} catch (Error &err) {
+		return err;
 	}
 	if (auto *proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
 		status_ = Error(errLogic, "Nop() is not available for proxied transactions");
@@ -84,6 +89,11 @@ Error TransactionImpl::PutMeta(std::string_view key, std::string_view value, lsn
 	if (!status_.ok()) {
 		return status_;
 	}
+	try {
+		lazyInit();
+	} catch (Error &err) {
+		return err;
+	}
 	if (auto *proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
 		status_ = (*proxiedTx)->PutMeta(key, value, lsn);
 		return status_;
@@ -102,6 +112,11 @@ Error TransactionImpl::SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) {
 	std::lock_guard lck(mtx_);
 	if (!status_.ok()) {
 		return status_;
+	}
+	try {
+		lazyInit();
+	} catch (Error &err) {
+		return err;
 	}
 
 	try {
@@ -171,10 +186,8 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl &
 	if (!status_.ok()) {
 		return status_;
 	}
-	if (expectSharding) {
-		if (shardId_ == ShardingKeyType::NotSetShard) {
-			return Error(errLogic, "Error commiting transaction with sharding: shard ID is not set");
-		}
+	if (expectSharding && shardId_ == ShardingKeyType::NotSetShard) {
+		return Error(errLogic, "Error commiting transaction with sharding: shard ID is not set");
 	}
 
 	if (auto *proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
@@ -194,6 +207,9 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl &
 		} catch (Error &e) {
 			return e;
 		}
+	} else if (std::holds_alternative<RxClientT>(tx_)) {
+		// Empty proxied transaction. Just skipping commit
+		return Error();
 	}
 	return kTxImplIsNotValid;
 }
@@ -226,8 +242,7 @@ void TransactionImpl::updateShardIdIfNecessary(int shardId) {
 			}
 		} else if (status.ok()) {
 			if (auto *leader = std::get_if<RxClientT>(&tx_)) {
-				auto proxiedTx = std::make_unique<ProxiedTransaction>(leader->NewTransaction(data_->nsName), false);
-				tx_ = std::move(proxiedTx);
+				initProxiedTx(leader);
 			} else {
 				auto *proxiedTx = std::get_if<ProxiedTxPtr>(&tx_);
 				if (proxiedTx) {
@@ -239,7 +254,7 @@ void TransactionImpl::updateShardIdIfNecessary(int shardId) {
 	}
 }
 
-void TransactionImpl::ensureShardIdIsCorrect(const Query &q) {
+void TransactionImpl::lazyInit(const Query &q) {
 	if (shardingRouter_) {
 		const auto ids = shardingRouter_->GetShardId(q);
 		if (ids.size() != 1) {
@@ -248,12 +263,36 @@ void TransactionImpl::ensureShardIdIsCorrect(const Query &q) {
 			throw status;
 		}
 		updateShardIdIfNecessary(ids.front());
+	} else {
+		initProxiedTxIfRequired();
 	}
 }
 
-void TransactionImpl::ensureShardIdIsCorrect(const Item &item) {
+void TransactionImpl::lazyInit() {
+	if (shardingRouter_ && std::holds_alternative<RxClientT>(tx_)) {
+		Error status(errLogic, "Transaction, proxied by Sharding Proxy, can not start with Nop() or Meta() steps");
+		status_ = status;
+		throw status;
+	} else {
+		initProxiedTxIfRequired();
+	}
+}
+
+void TransactionImpl::initProxiedTx(RxClientT *leader) {
+	tx_ = std::make_unique<ProxiedTransaction>(leader->NewTransaction(data_->nsName), false);
+}
+
+void TransactionImpl::initProxiedTxIfRequired() {
+	if (auto *leader = std::get_if<RxClientT>(&tx_)) {
+		initProxiedTx(leader);
+	}
+}
+
+void TransactionImpl::lazyInit(const Item &item) {
 	if (shardingRouter_) {
 		updateShardIdIfNecessary(shardingRouter_->GetShardId(data_->nsName, item));
+	} else {
+		initProxiedTxIfRequired();
 	}
 }
 

@@ -165,7 +165,7 @@ public:
 		: base_hash_map(other), payload_str_fields_helper<hold>(other), payloadType_(other.payloadType_), fields_(other.fields_) {
 		for (auto &item : *this) this->add_ref(item.first);
 	}
-	unordered_payload_map(unordered_payload_map &&other) = default;
+	unordered_payload_map(unordered_payload_map &&) = default;
 
 	~unordered_payload_map() {
 		for (auto &item : *this) this->release(item.first);

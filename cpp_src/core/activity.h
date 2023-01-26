@@ -1,16 +1,16 @@
 #pragma once
-#include <string>
 #include <chrono>
+#include <string>
 namespace reindexer {
 
 class WrSerializer;
 
 struct Activity {
 	unsigned id;
+	int connectionId;
 	std::string activityTracer;
 	std::string user;
 	std::string query;
-	int connectionId;
 	std::chrono::system_clock::time_point startTime;
 	enum State : unsigned {
 		InProgress = 0,
