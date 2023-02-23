@@ -25,6 +25,15 @@ inline bool approxEqual(double lhs, double rhs) noexcept {
 inline bool operator==(Point lhs, Point rhs) noexcept { return approxEqual(lhs.x, rhs.x) && approxEqual(lhs.y, rhs.y); }
 inline bool operator!=(Point lhs, Point rhs) noexcept { return !(lhs == rhs); }
 
+struct point_strict_equal {
+	bool operator()(const Point& lhs, const Point& rhs) const noexcept {
+		return std::equal_to<double>()(lhs.x, rhs.x) && std::equal_to<double>()(lhs.y, rhs.y);
+	}
+};
+struct point_strict_less {
+	bool operator()(const Point& lhs, const Point& rhs) const noexcept { return lhs.x < rhs.x || lhs.y < rhs.y; }
+};
+
 inline bool DWithin(Point lhs, Point rhs, double distance) noexcept {
 	return (lhs.x - rhs.x) * (lhs.x - rhs.x) + (lhs.y - rhs.y) * (lhs.y - rhs.y) <= distance * distance;
 }

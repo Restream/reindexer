@@ -65,6 +65,7 @@ void IndexMemStat::GetJSON(JsonBuilder &builder) {
 	if (trackedUpdatesCount) builder.Put("tracked_updates_count", trackedUpdatesCount);
 	if (trackedUpdatesBuckets) builder.Put("tracked_updates_buckets", trackedUpdatesBuckets);
 	if (trackedUpdatesSize) builder.Put("tracked_updates_size", trackedUpdatesSize);
+	if (trackedUpdatesOveflow) builder.Put("tracked_updates_overflow", trackedUpdatesOveflow);
 	if (dataSize) builder.Put("data_size", dataSize);
 	if (idsetBTreeSize) builder.Put("idset_btree_size", idsetBTreeSize);
 	if (idsetPlainSize) builder.Put("idset_plain_size", idsetPlainSize);

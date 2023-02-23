@@ -349,7 +349,7 @@ protected:
 	bool SortOrdersBuilt() const noexcept { return optimizationState_.load(std::memory_order_acquire) == OptimizationCompleted; }
 
 	IndexesStorage indexes_;
-	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str> indexesNames_;
+	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str> indexesNames_;
 	// All items with data
 	Items items_;
 	std::vector<IdType> free_;

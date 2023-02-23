@@ -10,6 +10,7 @@
 #include "net/ev/ev.h"
 #include "tools/errors.h"
 #include "updatesobserver.h"
+#include "vendor/hopscotch/hopscotch_set.h"
 
 namespace reindexer {
 namespace client {
@@ -101,7 +102,7 @@ protected:
 		bool UpdatesLost = false;
 	};
 
-	fast_hash_map<std::string, UpdatesData, nocase_hash_str, nocase_equal_str> pendedUpdates_;
+	fast_hash_map<std::string, UpdatesData, nocase_hash_str, nocase_equal_str, nocase_less_str> pendedUpdates_;
 	tsl::hopscotch_set<std::string, nocase_hash_str, nocase_equal_str> syncedNamespaces_;
 	std::string currentSyncNs_;
 
@@ -111,7 +112,7 @@ protected:
 
 	const RdxContext dummyCtx_;
 	std::unordered_map<const Namespace *, Transaction> transactions_;
-	fast_hash_map<std::string, NsErrorMsg, nocase_hash_str, nocase_equal_str> lastNsErrMsg_;
+	fast_hash_map<std::string, NsErrorMsg, nocase_hash_str, nocase_equal_str, nocase_less_str> lastNsErrMsg_;
 
 	class SyncQuery {
 	public:

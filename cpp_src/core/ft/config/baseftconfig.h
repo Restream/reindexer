@@ -35,7 +35,7 @@ public:
 	bool enableKbLayout = true;
 	bool enableNumbersSearch = false;
 	bool enableWarmupOnNsCopy = false;
-	fast_hash_set<std::string, hash_str, equal_str> stopWords;
+	fast_hash_set<std::string, hash_str, equal_str, less_str> stopWords;
 	std::vector<Synonym> synonyms;
 	int logLevel = 0;
 	std::string extraWordSymbols = "-/+";

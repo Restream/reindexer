@@ -77,7 +77,7 @@ protected:
 	void checkForCommandNameMatch(std::string_view str, std::initializer_list<std::string_view> cmds,
 								  std::vector<std::string>& suggestions);
 
-	Error processImpl(const std::string& command);
+	Error processImpl(const std::string& command) noexcept;
 	Error stop(bool terminate);
 	void getSuggestions(const std::string& input, std::vector<std::string>& suggestions);
 	Error commandSelect(const std::string& command);

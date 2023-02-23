@@ -84,7 +84,7 @@ struct ReplicationConfigData {
 	int onlineReplErrorsThreshold = 100;
 	bool forceSyncOnLogicError = false;
 	bool forceSyncOnWrongDataHash = false;
-	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> namespaces;
+	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces;
 	bool enableCompression = true;
 	int serverId = 0;
 

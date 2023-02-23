@@ -91,7 +91,7 @@ const (
 )
 
 const (
-	defaultFetchCount = 100
+	defaultFetchCount = 1000
 )
 
 type nsArrayEntry struct {

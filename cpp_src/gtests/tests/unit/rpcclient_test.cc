@@ -896,3 +896,75 @@ TEST_F(RPCClientTestApi, UnknowResultsFlag) {
 	loop.run();
 	ASSERT_TRUE(finished);
 }
+
+TEST_F(RPCClientTestApi, FetchingWithJoin) {
+	// Check that particular results fetching does not break tagsmatchers
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+	using reindexer::coroutine::wait_group;
+	using reindexer::coroutine::wait_group_guard;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+
+	loop.spawn([&loop, this]() noexcept {
+		const std::string kLeftNsName = "left_ns";
+		const std::string kRightNsName = "right_ns";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		reindexer::client::ReindexerConfig cfg;
+		constexpr auto kFetchCount = 50;
+		constexpr auto kNsSize = kFetchCount * 3;
+		cfg.FetchAmount = kFetchCount;
+		CoroReindexer rx(cfg);
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CreateNamespace(rx, kLeftNsName);
+		CreateNamespace(rx, kRightNsName);
+
+		auto upsertFn = [&rx](const std::string& nsName, bool withValue) {
+			for (size_t i = 0; i < kNsSize; ++i) {
+				auto item = rx.NewItem(nsName);
+				ASSERT_TRUE(item.Status().ok()) << nsName << " " << item.Status().what();
+
+				WrSerializer wrser;
+				JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+				jsonBuilder.Put("id", i);
+				if (withValue) {
+					jsonBuilder.Put("value", "value_" + std::to_string(i));
+				}
+				jsonBuilder.End();
+				char* endp = nullptr;
+				auto err = item.Unsafe().FromJSON(wrser.Slice(), &endp);
+				ASSERT_TRUE(err.ok()) << nsName << " " << err.what();
+				err = rx.Upsert(nsName, item);
+				ASSERT_TRUE(err.ok()) << nsName << " " << err.what();
+			}
+		};
+
+		upsertFn(kLeftNsName, false);
+		upsertFn(kRightNsName, true);
+
+		client::CoroQueryResults qr;
+		err = rx.Select(Query(kLeftNsName).Join(InnerJoin, Query(kRightNsName)).On("id", CondEq, "id").Sort("id", false), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), kNsSize);
+		WrSerializer ser;
+		unsigned i = 0;
+		for (auto& it : qr) {
+			ser.Reset();
+			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+			err = it.GetJSON(ser, false);
+			ASSERT_TRUE(err.ok()) << err.what();
+			const auto expected = fmt::sprintf(R"json({"id":%d,"joined_%s":[{"id":%d,"value":"value_%d"}]})json", i, kRightNsName, i, i);
+			EXPECT_EQ(ser.Slice(), expected);
+			i++;
+		}
+		err = rx.Stop();
+		ASSERT_TRUE(err.ok()) << err.what();
+	});
+
+	loop.run();
+}

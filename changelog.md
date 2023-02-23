@@ -1,3 +1,41 @@
+# Version 3.13.2 (23.02.2023)
+## Core
+- [fix] Fixed collisions resolving in indexes hash map (worst case scenarious were significantly improved)
+- [fix] Fixed errors handling for custom indexes sort orderes in case of incorrect sort_orders config
+
+## Go connector
+- [fix] Enlarged default fetch limit for cproto binding
+
+## Reindexer tool
+- [fix] Fixed large join requests execution (with 10k+ documents in result)
+- [fix] Fixed 'pretty' output mode (now reindexer_tool will not stuck on formating after request)
+
+## Build/Deploy
+- [fea] Switched Fedora's versions for prebuilt packages to Fedora 36/37
+
+## Face
+- [fea] Added the bulk deleting items on the list
+- [fea] Chnaged the lifetime of the editing form for the Item adding operation
+- [fea] Replaced the Create new database label to the Choose a database in the main menu
+- [fea] Forbade entering cyrillic symbols for DB and NS titles
+- [fea] Added the ability to rollback to the default DB config
+- [fea]  Improved the filtering on the Namespace page
+- [fea] Replaced the empty page with the inform message on the Meta page
+- [fea] Disabled the Create NS button if none DB exists
+- [fea] Added the ability to export the SQL result in CSV
+- [fea] Added the settings of the slow requests logging to the NS config
+- [fea] Fixed the ability to change the Item limit on the page if it exceeds the item total
+- [fix] Fixed collapsing/expanding details for the list items after the page changing
+- [fix] Changed the double quotes with the quotes for strings in json-view-tree
+- [fix] Fixed the Index list displaying after the DB removing
+- [fix] Fixed the filtered list of Namespaces on the Memory page
+- [fix] Fixed the item list after removing of all items
+- [fix] Added the redirect from a selected namespace to the index page during the DB changing
+- [fix] Fixed boolean values displaying in the Grid view 
+- [fix] Fixed the displaying of the empty and fact result at the same time
+- [fix] Fixed the redirect to the Explain page during loading new items on the List and Grid list on the QUERY -> SQL page
+- [fix] Fixed the error appeared on the list resizing on the Query Builder page
+
 # Version 3.13.1 (19.01.2023)
 ## Core
 - [fix] Fixed wrong sort order for unbuilt tree-indexes combined with unordered conditions (SET/IN/ALLSET)

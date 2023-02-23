@@ -871,7 +871,7 @@ Error RPCServer::CloseResults(cproto::Context &ctx, int reqId, std::optional<int
 	try {
 		freeQueryResults(ctx, id);
 	} catch (Error &e) {
-		if (e.code() == errQrUIDMissmatch) {
+		if (e.code() == errQrUIDMissmatch || e.code() == errNotFound) {
 			return e;
 		}
 		throw;

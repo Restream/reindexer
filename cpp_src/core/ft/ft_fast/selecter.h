@@ -8,7 +8,7 @@ namespace reindexer {
 
 template <typename IdCont>
 class Selecter {
-	typedef fast_hash_map<WordIdType, std::pair<size_t, size_t>, WordIdTypeHash, WordIdTypequal> FondWordsType;
+	typedef fast_hash_map<WordIdType, std::pair<size_t, size_t>, WordIdTypeHash, WordIdTypeEqual, WordIdTypeLess> FoundWordsType;
 
 public:
 	Selecter(DataHolder<IdCont>& holder, size_t fieldSize, bool needArea, int maxAreasInDoc)
@@ -46,7 +46,7 @@ public:
 	struct FtSelectContext {
 		std::vector<FtVariantEntry> variants;
 
-		FondWordsType foundWords;
+		FoundWordsType foundWords;
 		std::vector<TextSearchResults> rawResults;
 	};
 	IDataHolder::MergeData mergeResults(std::vector<TextSearchResults>&& rawResults, const std::vector<size_t>& synonymsBounds,

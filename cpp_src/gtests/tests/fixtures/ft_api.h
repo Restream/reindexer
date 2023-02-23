@@ -319,7 +319,7 @@ protected:
 	};
 	struct FTDSLQueryParams {
 		reindexer::fast_hash_map<std::string, int> fields;
-		reindexer::fast_hash_set<std::string, reindexer::hash_str, reindexer::equal_str> stopWords;
+		reindexer::fast_hash_set<std::string, reindexer::hash_str, reindexer::equal_str, reindexer::less_str> stopWords;
 		std::string extraWordSymbols = "-/+";
 	};
 	int counter_ = 0;

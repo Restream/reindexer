@@ -27,10 +27,15 @@ union WordIdType {
 };
 
 struct WordIdTypeHash {
-	std::size_t operator()(const WordIdType& k) const { return std::hash<uint32_t>()(k.data); }
+	std::size_t operator()(const WordIdType& k) const noexcept { return std::hash<uint32_t>()(k.data); }
 };
 
-struct WordIdTypequal {
-	bool operator()(const WordIdType& lhs, const WordIdType& rhs) const { return lhs.data == rhs.data; }
+struct WordIdTypeEqual {
+	bool operator()(const WordIdType& lhs, const WordIdType& rhs) const noexcept { return lhs.data == rhs.data; }
 };
+
+struct WordIdTypeLess {
+	bool operator()(const WordIdType& lhs, const WordIdType& rhs) const noexcept { return lhs.data < rhs.data; }
+};
+
 }  // namespace reindexer

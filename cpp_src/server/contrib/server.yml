@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.13.1"
+  version: "3.13.2"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -3252,6 +3252,9 @@ definitions:
       tracked_updates_size:
         type: integer
         description: "Updates tracker map size in bytes"
+      tracked_updates_overflow:
+        type: integer
+        description: "Updates tracker map overflow (number of elements, stored outside of the main buckets)"
 
   JoinCacheMemStats:
     description: "Join cache stats. Stores results of selects to right table by ON condition"

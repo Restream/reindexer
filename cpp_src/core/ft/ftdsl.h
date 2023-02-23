@@ -40,7 +40,7 @@ struct FtDSLEntry {
 
 class FtDSLQuery : public h_vector<FtDSLEntry> {
 public:
-	FtDSLQuery(const fast_hash_map<std::string, int> &fields, const fast_hash_set<std::string, hash_str, equal_str> &stopWords,
+	FtDSLQuery(const fast_hash_map<std::string, int> &fields, const fast_hash_set<std::string, hash_str, equal_str, less_str> &stopWords,
 			   const std::string &extraWordSymbols) noexcept
 		: fields_(fields), stopWords_(stopWords), extraWordSymbols_(extraWordSymbols) {}
 	void parse(std::wstring &utf16str);
@@ -53,7 +53,7 @@ protected:
 	std::function<int(const std::string &)> resolver_;
 
 	const fast_hash_map<std::string, int> &fields_;
-	const fast_hash_set<std::string, hash_str, equal_str> &stopWords_;
+	const fast_hash_set<std::string, hash_str, equal_str, less_str> &stopWords_;
 	const std::string &extraWordSymbols_;
 };
 

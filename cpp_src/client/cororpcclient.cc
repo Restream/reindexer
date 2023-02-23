@@ -289,7 +289,7 @@ Error CoroRPCClient::selectImpl(std::string_view query, CoroQueryResults& result
 	h_vector<int32_t, 4> vers;
 	vec2pack(vers, pser);
 
-	result = CoroQueryResults(&conn_, {}, result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
+	result = CoroQueryResults(&conn_, {}, flags, config_.FetchAmount, config_.RequestTimeout);
 
 	auto ret = conn_.Call(mkCommand(cproto::kCmdSelectSQL, netTimeout, &ctx), query, flags, config_.FetchAmount, pser.Slice());
 	try {
@@ -329,7 +329,7 @@ Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, se
 	}
 	vec2pack(vers, pser);
 
-	result = CoroQueryResults(&conn_, std::move(nsArray), result.fetchFlags_, config_.FetchAmount, config_.RequestTimeout);
+	result = CoroQueryResults(&conn_, std::move(nsArray), flags, config_.FetchAmount, config_.RequestTimeout);
 
 	auto ret = conn_.Call(mkCommand(cproto::kCmdSelect, netTimeout, &ctx), qser.Slice(), flags, config_.FetchAmount, pser.Slice());
 	try {

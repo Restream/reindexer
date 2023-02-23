@@ -317,13 +317,15 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(ostream& o, const typena
 			});
 		} else {
 			if (isWALQuery) ser << "WalItemUpdate ";
-			Error err = it.GetJSON(ser, false);
-			if (!err.ok()) return err;
 
 			if (prettyPrint) {
-				std::string json(ser.Slice());
-				ser.Reset();
-				prettyPrintJSON(reindexer::giftStr(json), ser);
+				WrSerializer json;
+				Error err = it.GetJSON(json, false);
+				if (!err.ok()) return err;
+				prettyPrintJSON(reindexer::giftStr(json.Slice()), ser);
+			} else {
+				Error err = it.GetJSON(ser, false);
+				if (!err.ok()) return err;
 			}
 		}
 		if ((++i != r.Count()) && !isWALQuery) ser << ',';
@@ -436,7 +438,7 @@ void CommandsExecutor<DBInterface>::checkForCommandNameMatch(std::string_view st
 }
 
 template <typename DBInterface>
-Error CommandsExecutor<DBInterface>::processImpl(const std::string& command) {
+Error CommandsExecutor<DBInterface>::processImpl(const std::string& command) noexcept {
 	LineParser parser(command);
 	auto token = parser.NextToken();
 
@@ -444,13 +446,23 @@ Error CommandsExecutor<DBInterface>::processImpl(const std::string& command) {
 
 	Error ret;
 	for (auto& c : cmds_) {
-		if (iequals(token, c.command)) {
-			ret = (this->*(c.handler))(command);
-			if (cancelCtx_.IsCancelled()) {
-				ret = Error(errCanceled, "Canceled");
+		try {
+			if (iequals(token, c.command)) {
+				ret = (this->*(c.handler))(command);
+				if (cancelCtx_.IsCancelled()) {
+					ret = Error(errCanceled, "Canceled");
+				}
+				cancelCtx_.Reset();
+				return ret;
 			}
-			cancelCtx_.Reset();
-			return ret;
+		} catch (Error& e) {
+			return e;
+		} catch (gason::Exception& e) {
+			return Error(errLogic, "JSON exception during command's execution: %s", e.what());
+		} catch (std::exception& e) {
+			return Error(errLogic, "std::exception during command's execution: %s", e.what());
+		} catch (...) {
+			return Error(errLogic, "Unknow exception during command's execution");
 		}
 	}
 	return Error(errParams, "Unknown command '%s'. Type '\\help' to list of available commands", token);

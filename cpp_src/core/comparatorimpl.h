@@ -9,6 +9,7 @@
 #include "core/payload/fieldsset.h"
 #include "estl/intrusive_ptr.h"
 #include "tools/string_regexp_functions.h"
+#include "vendor/hopscotch/hopscotch_sc_set.h"
 
 namespace reindexer {
 
@@ -203,11 +204,12 @@ public:
 	h_vector<key_string, 1> values_;
 	std::string_view cachedValueSV_;
 
-	class key_string_set : public fast_hash_set<key_string, hash_key_string, equal_key_string> {
+	class key_string_set : public tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string> {
 	public:
 		key_string_set(const CollateOpts &opts)
-			: fast_hash_set<key_string, hash_key_string, equal_key_string>(1000, hash_key_string(CollateMode(opts.mode)),
-																		   equal_key_string(opts)) {}
+			: tsl::hopscotch_sc_set<key_string, hash_key_string, equal_key_string, less_key_string>(
+				  1000, hash_key_string(CollateMode(opts.mode)), equal_key_string(opts), std::allocator<key_string>(),
+				  less_key_string(opts)) {}
 	};
 
 	intrusive_ptr<intrusive_atomic_rc_wrapper<key_string_set>> valuesS_;

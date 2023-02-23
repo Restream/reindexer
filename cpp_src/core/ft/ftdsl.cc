@@ -138,8 +138,8 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 			if (int(fte.pattern.length()) > maxPatternLen) {
 				maxPatternLen = fte.pattern.length();
 			}
-			push_back(fte);
-			if (ingroup) groupcnt++;
+			emplace_back(std::move(fte));
+			if (ingroup) ++groupcnt;
 		}
 	}
 	if (ingroup) {

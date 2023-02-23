@@ -398,7 +398,8 @@ IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext &ctx) {
 	if (cache_) ret.idsetCache = cache_->GetMemStat();
 	ret.trackedUpdatesCount = tracker_.updatesSize();
 	ret.trackedUpdatesBuckets = tracker_.updatesBuckets();
-	ret.trackedUpdatesSize = tracker_.GetMemStat();
+	ret.trackedUpdatesSize = tracker_.allocated();
+	ret.trackedUpdatesOveflow = tracker_.overflow();
 	return ret;
 }
 

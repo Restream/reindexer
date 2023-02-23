@@ -137,7 +137,7 @@ protected:
 		std::chrono::time_point<TxDeadlineClock> txDeadline;
 		std::string dbName;
 	};
-	fast_hash_map<std::string, TxInfo, nocase_hash_str, nocase_equal_str> txMap_;
+	fast_hash_map<std::string, TxInfo, nocase_hash_str, nocase_equal_str, nocase_less_str> txMap_;
 	std::mutex txMtx_;
 	ev::timer deadlineChecker_;
 

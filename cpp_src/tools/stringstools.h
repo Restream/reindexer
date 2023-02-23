@@ -84,11 +84,12 @@ LogLevel logLevelFromString(const std::string& strLogLevel);
 StrictMode strictModeFromString(const std::string& strStrictMode);
 std::string_view strictModeToString(StrictMode mode);
 
-bool iequals(std::string_view lhs, std::string_view rhs);
+bool iequals(std::string_view lhs, std::string_view rhs) noexcept;
+bool iless(std::string_view lhs, std::string_view rhs) noexcept;
 bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive = false) noexcept;
 bool checkIfEndsWith(std::string_view pattern, std::string_view src, bool casesensitive = false) noexcept;
-bool isPrintable(std::string_view str);
-bool isBlank(std::string_view token);
+bool isPrintable(std::string_view str) noexcept;
+bool isBlank(std::string_view token) noexcept;
 
 Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
 
@@ -97,29 +98,51 @@ std::string randStringAlph(size_t len);
 struct nocase_equal_str {
 	using is_transparent = void;
 
-	bool operator()(std::string_view lhs, const std::string& rhs) const { return iequals(lhs, rhs); }
-	bool operator()(const std::string& lhs, std::string_view rhs) const { return iequals(lhs, rhs); }
-	bool operator()(const std::string& lhs, const std::string& rhs) const { return iequals(lhs, rhs); }
+	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return iequals(lhs, rhs); }
+	bool operator()(std::string_view lhs, const std::string& rhs) const noexcept { return iequals(lhs, rhs); }
+	bool operator()(const std::string& lhs, std::string_view rhs) const noexcept { return iequals(lhs, rhs); }
+	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return iequals(lhs, rhs); }
+};
+
+struct nocase_less_str {
+	using is_transparent = void;
+
+	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return iless(lhs, rhs); }
+	bool operator()(std::string_view lhs, const std::string& rhs) const noexcept { return iless(lhs, rhs); }
+	bool operator()(const std::string& lhs, std::string_view rhs) const noexcept { return iless(lhs, rhs); }
+	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return iless(lhs, rhs); }
 };
 
 struct nocase_hash_str {
 	using is_transparent = void;
-	size_t operator()(std::string_view hs) const { return collateHash(hs, CollateASCII); }
-	size_t operator()(const std::string& hs) const { return collateHash(hs, CollateASCII); }
+
+	size_t operator()(std::string_view hs) const noexcept { return collateHash(hs, CollateASCII); }
+	size_t operator()(const std::string& hs) const noexcept { return collateHash(hs, CollateASCII); }
+};
+
+struct less_str {
+	using is_transparent = void;
+
+	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return lhs < rhs; }
+	bool operator()(std::string_view lhs, const std::string& rhs) const noexcept { return lhs < std::string_view(rhs); }
+	bool operator()(const std::string& lhs, std::string_view rhs) const noexcept { return std::string_view(lhs) < rhs; }
+	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return lhs < rhs; }
 };
 
 struct equal_str {
 	using is_transparent = void;
 
-	bool operator()(std::string_view lhs, const std::string& rhs) const { return lhs == rhs; }
-	bool operator()(const std::string& lhs, std::string_view rhs) const { return rhs == lhs; }
-	bool operator()(const std::string& lhs, const std::string& rhs) const { return lhs == rhs; }
+	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return lhs == rhs; }
+	bool operator()(std::string_view lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
+	bool operator()(const std::string& lhs, std::string_view rhs) const noexcept { return rhs == lhs; }
+	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return lhs == rhs; }
 };
 
 struct hash_str {
 	using is_transparent = void;
-	size_t operator()(std::string_view hs) const { return collateHash(hs, CollateNone); }
-	size_t operator()(const std::string& hs) const { return collateHash(hs, CollateNone); }
+
+	size_t operator()(std::string_view hs) const noexcept { return collateHash(hs, CollateNone); }
+	size_t operator()(const std::string& hs) const noexcept { return collateHash(hs, CollateNone); }
 };
 
 inline void deepCopy(std::string& dst, const std::string& src) {

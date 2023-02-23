@@ -44,9 +44,12 @@ void RPCQrWatcher::Register(net::ev::dynamic_loop& loop, LoggerWrapper logger) {
 				to = std::min(from + partSize, size);
 			}
 			prevToValue = (to == size) ? 0 : to;
+			const auto bt = std::chrono::high_resolution_clock::now();
 			const auto cnt = removeExpired(now, from, to);
 			if (cnt) {
-				logger.info("{} query results were removed due to idle timeout", cnt);
+				const auto et = std::chrono::high_resolution_clock::now();
+				logger.info("{} query results were removed due to idle timeout. Cleanup time: {} us", cnt,
+							std::chrono::duration_cast<std::chrono::microseconds>(et - bt).count());
 			}
 		}
 	});

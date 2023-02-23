@@ -14,8 +14,8 @@ class WrSerializer;
 
 // Type of all payload object
 class PayloadTypeImpl {
-	typedef fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str> FieldMap;
-	typedef fast_hash_map<std::string, int, hash_str, equal_str> JsonPathMap;
+	typedef fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str> FieldMap;
+	typedef fast_hash_map<std::string, int, hash_str, equal_str, less_str> JsonPathMap;
 
 public:
 	PayloadTypeImpl(std::string name, std::initializer_list<PayloadFieldType> fields = {}) : fields_(fields), name_(std::move(name)) {}

@@ -1738,6 +1738,7 @@ Error NamespaceImpl::loadLatestSysRecord(std::string_view baseSysTag, uint64_t &
 	version = 0;
 	Error err;
 	for (int i = 0; i < kSysRecordsBackupCount; ++i) {
+		content.clear();
 		Error status = storage_.Read(StorageOpts().FillCache(), std::string_view(key + std::to_string(i)), content);
 		if (!status.ok() && status.code() != errNotFound) {
 			logPrintf(LogTrace, "Error on namespace service info(tag: %s, id: %u) load '%s': %s", baseSysTag, i, name_, status.what());
@@ -1757,6 +1758,7 @@ Error NamespaceImpl::loadLatestSysRecord(std::string_view baseSysTag, uint64_t &
 	}
 
 	if (latestContent.empty()) {
+		content.clear();
 		Error status = storage_.Read(StorageOpts().FillCache(), baseSysTag, content);
 		if (!content.empty()) {
 			logPrintf(LogTrace, "Converting %s for %s to new format", baseSysTag, name_);

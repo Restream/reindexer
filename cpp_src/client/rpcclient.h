@@ -113,7 +113,7 @@ protected:
 
 	std::vector<std::unique_ptr<net::cproto::ClientConnection>> connections_;
 
-	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
+	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;
 
 	shared_timed_mutex nsMutex_;
 	std::vector<worker> workers_;

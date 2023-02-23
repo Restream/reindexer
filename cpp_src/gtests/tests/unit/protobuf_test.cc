@@ -20,25 +20,29 @@ const std::string kPostalCodeValue = "9745 123 ";
 const double kSalaryValue = 11238761238768.232342342;
 
 TEST_F(ReindexerApi, ProtobufConvesrionTest) {
-	// clang-froamt off
-	const std::string schema = R"z({
-                            "type": "object",
-                            "required": [
-                              "id",
-                              "numbers"
-                            ],
-                            "properties": {
-                              "id": {
-                                "type": "integer"
-                              },
-                              "numbers": {
-                                "items": {
-                                  "type": "integer"
-                                },
-                                "type": "array"
-                              }
-                            }
-                          })z";
+	// Check protobuf for basic types (int/double/array) and double <-> int conversion
+	// !!! This test is using schema from cpp_src/gtests/tests/proto/conversion.proto.
+	// !!! Protobuf indexes are not constant and depend from the internal reindexer::Schema implementation.
+	// clang-format off
+	const std::string schema = R"z(
+			{
+			  "type": "object",
+			  "required": [
+				"id",
+				"numbers"
+			  ],
+			  "properties": {
+				"id": {
+				  "type": "integer"
+				},
+				"numbers": {
+				  "items": {
+					"type": "integer"
+				  },
+				  "type": "array"
+				}
+			  }
+			})z";
 	// clang-format on
 
 	const std::string_view nsName = "conversion_namespace";
@@ -79,48 +83,50 @@ TEST_F(ReindexerApi, ProtobufConvesrionTest) {
 	conversion_namespace testNs;
 	ASSERT_TRUE(testNs.ParseFromArray(rrser.Buf(), rrser.Len()));
 
-	ASSERT_TRUE(testNs.id() == 1) << testNs.id();
-	ASSERT_TRUE(testNs.numbers_size() == int(numbers.size())) << testNs.numbers_size();
+	EXPECT_EQ(testNs.id(), 1);
+	ASSERT_EQ(testNs.numbers_size(), int(numbers.size()));
 	for (size_t i = 0; i < numbers.size(); ++i) {
-		ASSERT_TRUE(testNs.numbers(i) == int64_t(numbers[i]));
+		EXPECT_EQ(testNs.numbers(i), int64_t(numbers[i]));
 	}
 }
 
 TEST_F(ReindexerApi, ProtobufEasyArrayTest) {
-	// clang-froamt off
+	// Check protobuf for arrays and nested objects
+	// !!! This test is using schema from cpp_src/gtests/tests/proto/easyarrays.proto.
+	// !!! Protobuf indexes are not constant and depend from the internal reindexer::Schema implementation.
+	// clang-format off
 	const std::string schema = R"z(
-                               {
-                                   "type": "object",
-                                   "required": [
-                                       "id",
-                                       "object_of_array"
-                                   ],
-                                   "properties": {
-                                       "id": {
-                                           "type": "integer"
-                                       },
-                                       "object_of_array": {
-                                           "additionalProperties": false,
-                                           "type": "object",
-                                           "required": ["nums"],
-                                           "properties": {
-                                               "nums": {
-                                                   "items": {
-                                                       "type": "integer"
-                                                   },
-                                                   "type": "array"
-                                               },
-                                               "strings": {
-                                                   "type": "array",
-                                                   "items": {
-                                                       "type": "string"
-                                                   }
-                                               }
-                                           }
-                                       }
-                                   }
-                               }
-                               )z";
+			{
+			  "type": "object",
+			  "required": [
+				"id",
+				"object_of_array"
+			  ],
+			  "properties": {
+				"id": {
+				  "type": "integer"
+				},
+				"object_of_array": {
+				  "additionalProperties": false,
+				  "type": "object",
+				  "required": ["nums"],
+				  "properties": {
+					"nums": {
+					  "items": {
+						"type": "integer"
+					  },
+					  "type": "array"
+					},
+					"strings": {
+					  "type": "array",
+					  "items": {
+						"type": "string"
+					  }
+					}
+				  }
+				}
+			  }
+			})z";
 	// clang-format on
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();

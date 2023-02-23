@@ -93,7 +93,7 @@ protected:
 	cproto::CommandParams mkCommand(cproto::CmdCode cmd, const InternalRdxContext *ctx = nullptr) const noexcept;
 	static cproto::CommandParams mkCommand(cproto::CmdCode cmd, seconds reqTimeout, const InternalRdxContext *ctx) noexcept;
 
-	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
+	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;
 
 	ReindexerConfig config_;
 	UpdatesObservers observers_;

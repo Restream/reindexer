@@ -16,7 +16,8 @@ namespace reindexer {
 
 class Error {
 public:
-	Error(int code = errOK);
+	Error() = default;
+	Error(int code);
 	Error(int code, std::string_view what);
 #ifdef REINDEX_CORE_BUILD
 	template <typename... Args>

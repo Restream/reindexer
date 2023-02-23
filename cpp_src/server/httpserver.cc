@@ -653,7 +653,10 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 	db.EnumNamespaces(nsDefs, EnumNamespacesOpts().WithFilter(nsName));
 
 	reindexer::IndexDef idxDef;
-	idxDef.FromJSON(giftStr(json));
+	auto err = idxDef.FromJSON(giftStr(json));
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus{err});
+	}
 
 	if (!nsDefs.empty()) {
 		auto &indexes = nsDefs[0].indexes;
@@ -664,11 +667,9 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 		}
 	}
 
-	auto status = db.AddIndex(nsName, idxDef);
-	if (!status.ok()) {
-		http::HttpStatus httpStatus(status);
-
-		return jsonStatus(ctx, httpStatus);
+	err = db.AddIndex(nsName, idxDef);
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus{err});
 	}
 
 	return jsonStatus(ctx);
@@ -684,13 +685,14 @@ int HTTPServer::PutIndex(http::Context &ctx) {
 
 	reindexer::IndexDef idxDef;
 	std::string body = ctx.body->Read();
-	idxDef.FromJSON(giftStr(body));
-
-	auto status = db.UpdateIndex(nsName, idxDef);
-	if (!status.ok()) {
-		return jsonStatus(ctx, http::HttpStatus(status));
+	auto err = idxDef.FromJSON(giftStr(body));
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus{err});
 	}
-
+	err = db.UpdateIndex(nsName, idxDef);
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus{err});
+	}
 	return jsonStatus(ctx);
 }
 

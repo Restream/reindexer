@@ -21,13 +21,16 @@ using namespace reindexer;
 
 #ifndef DEBUG_FT
 struct DataStructHash {
-	inline size_t operator()(const std::wstring &ent) const { return Hash(ent); }
+	inline size_t operator()(const std::wstring &ent) const noexcept { return Hash(ent); }
 };
 struct DataStructEQ {
-	inline bool operator()(const std::wstring &ent, const std::wstring &ent1) const { return ent == ent1; }
+	inline bool operator()(const std::wstring &ent, const std::wstring &ent1) const noexcept { return ent == ent1; }
+};
+struct DataStructLess {
+	inline bool operator()(const std::wstring &ent, const std::wstring &ent1) const noexcept { return ent < ent1; }
 };
 template <typename T1>
-using data_map = fast_hash_map<std::wstring, T1, DataStructHash, DataStructEQ>;
+using data_map = fast_hash_map<std::wstring, T1, DataStructHash, DataStructEQ, DataStructLess>;
 typedef fast_hash_set<std::wstring, DataStructHash, DataStructEQ> data_set;
 
 #else

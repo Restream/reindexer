@@ -222,12 +222,22 @@ void split(std::string_view utf8Str, wstring &utf16str, std::vector<std::wstring
 	}
 }
 
-bool iequals(std::string_view lhs, std::string_view rhs) {
+bool iequals(std::string_view lhs, std::string_view rhs) noexcept {
 	if (lhs.size() != rhs.size()) return false;
 	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
 		if (tolower(*itl++) != tolower(*itr++)) return false;
 	}
 	return true;
+}
+
+bool iless(std::string_view lhs, std::string_view rhs) noexcept {
+	const auto len = std::min(lhs.size(), rhs.size());
+	for (size_t i = 0; i < len; ++i) {
+		if (const auto l = tolower(lhs[i]), r = tolower(rhs[i]); l != r) {
+			return l < r;
+		}
+	}
+	return lhs.size() < rhs.size();
 }
 
 bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive) noexcept {
@@ -458,7 +468,7 @@ std::string_view strictModeToString(StrictMode mode) {
 	return empty;
 }
 
-bool isPrintable(std::string_view str) {
+bool isPrintable(std::string_view str) noexcept {
 	if (str.length() > 256) {
 		return false;
 	}
@@ -471,7 +481,7 @@ bool isPrintable(std::string_view str) {
 	return true;
 }
 
-bool isBlank(std::string_view str) {
+bool isBlank(std::string_view str) noexcept {
 	if (str.empty()) return true;
 	for (size_t i = 0; i < str.length(); ++i)
 		if (!isspace(str[i])) return false;

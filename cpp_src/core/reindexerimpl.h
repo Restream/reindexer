@@ -194,7 +194,7 @@ protected:
 	Error renameNamespace(std::string_view srcNsName, const std::string &dstNsName, bool fromReplication = false,
 						  const InternalRdxContext &ctx = InternalRdxContext());
 
-	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
+	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;
 
 	Mutex mtx_;
 	std::string storagePath_;
