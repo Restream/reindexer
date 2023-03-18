@@ -11,6 +11,7 @@ namespace client {
 class ResultSerializer : public Serializer {
 public:
 	using Serializer::Serializer;
+	enum class AggsFlag { DontClearAggregations = 0, ClearAggregations = 1 };
 
 	struct ItemParams {
 		int id = 0;
@@ -30,7 +31,7 @@ public:
 		std::string explainResults;
 	};
 
-	void GetRawQueryParams(QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc);
+	void GetRawQueryParams(QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc, AggsFlag clearAggs);
 	ItemParams GetItemParams(int flags);
 };
 }  // namespace client

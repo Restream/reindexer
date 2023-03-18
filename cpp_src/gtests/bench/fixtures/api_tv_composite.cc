@@ -52,7 +52,7 @@ reindexer::Item ApiTvComposite::MakeItem() {
 	item["field1"] = id;
 	item["field2"] = id;
 	item["genre"] = std::to_string(random<int>(0, 49));
-	item["sub_id"] = id_seq_->As<string>();
+	item["sub_id"] = id_seq_->As<std::string>();
 
 	return item;
 }

@@ -140,6 +140,7 @@ public:
 		}
 		return vec;
 	}
+	void SetVerbose(bool v) noexcept { verbose = v; }
 	std::shared_ptr<DB> reindexer;
 
 private:

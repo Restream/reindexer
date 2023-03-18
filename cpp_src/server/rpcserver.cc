@@ -437,9 +437,10 @@ Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId, std::optional<int>
 			if (tr.IsTagsUpdated()) flags |= kResultsWithPayloadTypes;
 		}
 		if (tr.IsTagsUpdated()) {
-			opts = ResultFetchOpts{flags, span<int32_t>(&ptVers, 1), 0, INT_MAX};
+			opts = ResultFetchOpts{
+				.flags = flags, .ptVersions = {&ptVers, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 		} else {
-			opts = ResultFetchOpts{flags, {}, 0, INT_MAX};
+			opts = ResultFetchOpts{.flags = flags, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 		}
 		err = sendResults(ctx, qres, RPCQrId(), opts);
 	}
@@ -552,9 +553,14 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 	int32_t ptVers = -1;
 	ResultFetchOpts opts;
 	if (tmUpdated) {
-		opts = ResultFetchOpts{kResultsWithItemID | kResultsWithPayloadTypes, span<int32_t>(&ptVers, 1), 0, INT_MAX};
+		opts = ResultFetchOpts{.flags = kResultsWithItemID | kResultsWithPayloadTypes,
+							   .ptVersions = {&ptVers, 1},
+							   .fetchOffset = 0,
+							   .fetchLimit = INT_MAX,
+							   .withAggregations = true};
 	} else {
-		opts = ResultFetchOpts{kResultsWithItemID, {}, 0, INT_MAX};
+		opts = ResultFetchOpts{
+			.flags = kResultsWithItemID, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 	}
 	if (sendItemBack) {
 		if (format == FormatMsgPack) {
@@ -586,7 +592,7 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, std::optio
 	if (flagsOpts) {
 		flags = *flagsOpts;
 	}
-	ResultFetchOpts opts{flags, {}, 0, INT_MAX};
+	ResultFetchOpts opts{.flags = flags, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 	return sendResults(ctx, qres, RPCQrId(), opts);
 }
 
@@ -609,7 +615,7 @@ Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, std::optio
 	int32_t ptVersion = -1;
 	int flags = kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson;
 	if (flagsOpts) flags = *flagsOpts;
-	ResultFetchOpts opts{flags, {&ptVersion, 1}, 0, INT_MAX};
+	ResultFetchOpts opts{.flags = flags, .ptVersions = {&ptVersion, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 	return sendResults(ctx, qres, RPCQrId(), opts);
 }
 
@@ -819,7 +825,8 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 		return ret;
 	}
 	auto ptVersions = pack2vec(ptVersionsPck);
-	ResultFetchOpts opts{flags, ptVersions, 0, unsigned(limit)};
+	ResultFetchOpts opts{
+		.flags = flags, .ptVersions = ptVersions, .fetchOffset = 0, .fetchLimit = unsigned(limit), .withAggregations = true};
 
 	return sendResults(ctx, *qres, id, opts);
 }
@@ -841,7 +848,8 @@ Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, i
 		return ret;
 	}
 	auto ptVersions = pack2vec(ptVersionsPck);
-	ResultFetchOpts opts{flags, ptVersions, 0, unsigned(limit)};
+	ResultFetchOpts opts{
+		.flags = flags, .ptVersions = ptVersions, .fetchOffset = 0, .fetchLimit = unsigned(limit), .withAggregations = true};
 
 	return sendResults(ctx, *qres, id, opts);
 }
@@ -859,7 +867,8 @@ Error RPCServer::FetchResults(cproto::Context &ctx, int reqId, int flags, int of
 		throw;
 	}
 
-	ResultFetchOpts opts = {flags, {}, unsigned(offset), unsigned(limit)};
+	ResultFetchOpts opts{
+		.flags = flags, .ptVersions = {}, .fetchOffset = unsigned(offset), .fetchLimit = unsigned(limit), .withAggregations = false};
 	return sendResults(ctx, *qres, id, opts);
 }
 

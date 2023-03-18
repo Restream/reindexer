@@ -13,6 +13,8 @@ class Node;
 
 namespace reindexer_server {
 
+enum class ServerMode { Standalone, Builtin };
+
 struct ServerConfig {
 	ServerConfig(bool tcMallocIsAvailable)
 #ifdef REINDEX_WITH_GPERFTOOLS
@@ -44,6 +46,7 @@ struct ServerConfig {
 	std::string StoragePath;
 	bool StartWithErrors;
 	bool Autorepair;
+	bool AllowNamespaceLeak;
 #ifndef _WIN32
 	std::string UserName;
 	std::string DaemonPidFile;

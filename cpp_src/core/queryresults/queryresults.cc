@@ -30,7 +30,7 @@ void QueryResults::RemoveNamespace(const NamespaceImpl *ns) {
 }
 
 struct QueryResults::Context {
-	Context() {}
+	Context() = default;
 	Context(PayloadType type, TagsMatcher tagsMatcher, const FieldsSet &fieldsFilter, std::shared_ptr<const Schema> schema)
 		: type_(std::move(type)), tagsMatcher_(std::move(tagsMatcher)), fieldsFilter_(fieldsFilter), schema_(std::move(schema)) {}
 
@@ -41,7 +41,7 @@ struct QueryResults::Context {
 };
 
 static_assert(QueryResults::kSizeofContext >= sizeof(QueryResults::Context),
-			  "QueryResults::kSizeofContext should >=  sizeof(QueryResults::Context)");
+			  "QueryResults::kSizeofContext should >= sizeof(QueryResults::Context)");
 
 QueryResults::QueryResults(std::initializer_list<ItemRef> l) : items_(l) {}
 QueryResults::QueryResults(int /*flags*/) {}

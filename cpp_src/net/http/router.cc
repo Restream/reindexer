@@ -129,7 +129,7 @@ int Context::File(int code, std::string_view path, std::string_view data, bool i
 	std::string content;
 
 	if (data.length() == 0) {
-		if (fs::ReadFile(isGzip ? string(path) + kGzSuffix : string(path), content) < 0) {
+		if (fs::ReadFile(isGzip ? std::string(path) + kGzSuffix : std::string(path), content) < 0) {
 			return String(http::StatusNotFound, "File not found");
 		}
 	} else {

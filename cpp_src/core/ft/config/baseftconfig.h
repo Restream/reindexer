@@ -6,6 +6,7 @@
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
 #include "tools/stringstools.h"
+#include "core/ft/usingcontainer.h"
 
 namespace gason {
 struct JsonNode;
@@ -26,7 +27,7 @@ public:
 	BaseFTConfig();
 	virtual ~BaseFTConfig() = default;
 
-	virtual void parse(std::string_view sv, const fast_hash_map<std::string, int>& fields) = 0;
+	virtual void parse(std::string_view sv, const RHashMap<std::string, int>& fields) = 0;
 	virtual std::string GetJson(const fast_hash_map<std::string, int>& fields) const = 0;
 
 	int mergeLimit = 20000;
@@ -38,7 +39,7 @@ public:
 	fast_hash_set<std::string, hash_str, equal_str, less_str> stopWords;
 	std::vector<Synonym> synonyms;
 	int logLevel = 0;
-	std::string extraWordSymbols = "-/+";
+	std::string extraWordSymbols = "-/+";	// word contains symbols (IsAlpa | IsDigit) {IsAlpa | IsDigit | IsExtra}
 
 protected:
 	void parseBase(const gason::JsonNode& root);

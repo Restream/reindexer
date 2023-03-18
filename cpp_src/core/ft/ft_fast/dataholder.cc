@@ -43,7 +43,7 @@ void IDataHolder::Clear() {
 	avgWordsCount_.clear();
 	vdocs_.clear();
 	vdocsTexts.clear();
-	vodcsOffset_ = 0;
+	vdocsOffset_ = 0;
 	szCnt = 0;
 	rowId2Vdoc_.clear();
 }
@@ -161,7 +161,7 @@ void DataHolder<IdCont>::StartCommit(bool complte_updated) {
 		}
 
 		steps.back().clear();
-	} else {
+	} else {  // if the last step is full, then create a new
 		for (auto& word : words_) {
 			word.cur_step_pos_ = word.vids_.pos(word.vids_.end());
 		}
@@ -172,14 +172,14 @@ void DataHolder<IdCont>::StartCommit(bool complte_updated) {
 }
 
 template <typename IdCont>
-IDataHolder::MergeData DataHolder<IdCont>::Select(FtDSLQuery& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
-												  FtMergeStatuses::Statuses mergeStatuses, bool mergeStatusesEmpty,
+IDataHolder::MergeData DataHolder<IdCont>::Select(FtDSLQuery&& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
+												  FtMergeStatuses::Statuses&& mergeStatuses, bool mergeStatusesEmpty,
 												  const RdxContext& rdxCtx) {
 	if (mergeStatusesEmpty) {
-		return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.template Process<true>(dsl, inTransaction,
+		return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.template Process<true>(std::move(dsl), inTransaction,
 																								  std::move(mergeStatuses), rdxCtx);
 	} else {
-		return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.template Process<false>(dsl, inTransaction,
+		return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.template Process<false>(std::move(dsl), inTransaction,
 																								   std::move(mergeStatuses), rdxCtx);
 	}
 }

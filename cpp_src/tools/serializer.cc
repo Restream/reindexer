@@ -7,23 +7,7 @@
 
 namespace reindexer {
 
-Variant Serializer::GetRawVariant(KeyValueType type) {
-	return type.EvaluateOneOf(
-		[&](KeyValueType::Int) { return Variant(int(GetVarint())); }, [&](KeyValueType::Bool) { return Variant(bool(GetVarUint())); },
-		[&](KeyValueType::Int64) { return Variant(int64_t(GetVarint())); }, [&](KeyValueType::Double) { return Variant(GetDouble()); },
-		[&](KeyValueType::String) { return Variant(GetPVString()); }, [&](KeyValueType::Null) noexcept { return Variant(); },
-		[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) -> Variant {
-			throw Error(errParseBin, "Unknown type %s while parsing binary buffer", type.Name());
-		});
-}
-
-p_string Serializer::GetPVString() {
-	auto ret = reinterpret_cast<const v_string_hdr *>(buf_ + pos_);
-	auto l = GetVarUint();
-	checkbound(pos_, l, len_);
-	pos_ += l;
-	return p_string(ret);
-}
+p_string Serializer::GetPVString() { return p_string(getPVStringPtr()); }
 
 p_string Serializer::GetPSlice() {
 	auto ret = reinterpret_cast<const l_string_hdr *>(buf_ + pos_);
@@ -39,6 +23,20 @@ p_string Serializer::GetPSlice() {
 
 [[noreturn]] void Serializer::throwScanIntError(std::string_view type) {
 	throw Error(errParseBin, "Binary buffer broken - %s failed: pos=%d,len=%d", type, pos_, len_);
+}
+
+[[noreturn]] void Serializer::throwUnknowTypeError(std::string_view type) {
+	throw Error(errParseBin, "Unknown type %s while parsing binary buffer", type);
+}
+
+Variant Serializer::getPVStringVariant() { return Variant(GetPVString()); }
+
+const v_string_hdr *Serializer::getPVStringPtr() {
+	auto ret = reinterpret_cast<const v_string_hdr *>(buf_ + pos_);
+	auto l = GetVarUint();
+	checkbound(pos_, l, len_);
+	pos_ += l;
+	return ret;
 }
 
 static unsigned uint32ByteSize(uint32_t value) noexcept {

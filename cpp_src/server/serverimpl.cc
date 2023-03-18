@@ -38,6 +38,10 @@ void init_resources() {}
 #include "grpc/grpcexport.h"
 #endif
 
+namespace reindexer {
+extern std::atomic<bool> rxAllowNamespaceLeak;
+}  // namespace reindexer
+
 namespace reindexer_server {
 
 using std::string;
@@ -47,7 +51,7 @@ using std::vector;
 using reindexer::fs::GetDirPath;
 using reindexer::logLevelFromString;
 
-ServerImpl::ServerImpl()
+ServerImpl::ServerImpl(ServerMode mode)
 	:
 #ifdef REINDEX_WITH_GPERFTOOLS
 	  config_(alloc_ext::TCMallocIsAvailable()),
@@ -56,9 +60,10 @@ ServerImpl::ServerImpl()
 #endif
 	  coreLogLevel_(LogNone),
 	  storageLoaded_(false),
-	  running_(false) {
+	  running_(false),
+	  mode_(mode) {
 	async_.set(loop_);
-}  // namespace reindexer_server
+}
 
 Error ServerImpl::InitFromCLI(int argc, char *argv[]) {
 	Error err = config_.ParseCmd(argc, argv);
@@ -110,7 +115,7 @@ Error ServerImpl::init() {
 
 	init_resources();
 
-	vector<string> dirs = {
+	std::vector<std::string> dirs = {
 #ifndef _WIN32
 		GetDirPath(config_.DaemonPidFile),
 #endif
@@ -166,7 +171,7 @@ int ServerImpl::Start() {
 
 	if (config_.InstallSvc) {
 		auto &args = config_.Args();
-		string cmdline = args.front();
+		std::string cmdline = args.front();
 		for (size_t i = 1; i < args.size(); i++) {
 			cmdline += " ";
 			if (!iequals(args[i], "--install")) {
@@ -348,6 +353,11 @@ int ServerImpl::run() {
 #endif
 		auto sigCallback = [&](ev::sig &sig) {
 			logger_.info("Signal received. Terminating...");
+#ifndef REINDEX_WITH_ASAN
+			if (config_.AllowNamespaceLeak && mode_ == ServerMode::Standalone) {
+				rxAllowNamespaceLeak = true;
+			}
+#endif
 			running_ = false;
 			sig.loop.break_loop();
 		};
@@ -510,6 +520,11 @@ void ServerImpl::initCoreLogger() {
 }
 
 ServerImpl::~ServerImpl() {
+#ifndef REINDEX_WITH_ASAN
+	if (config_.AllowNamespaceLeak && mode_ == ServerMode::Standalone) {
+		rxAllowNamespaceLeak = true;
+	}
+#endif
 	if (coreLogLevel_) reindexer::logInstallWriter(nullptr);
 	async_.reset();
 }

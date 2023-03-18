@@ -86,11 +86,11 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Missed `q` parameter"));
 	}
 	reindexer::QueryResults res;
-
 	auto ret = execSqlQueryByType(sqlQuery, res, ctx);
 	if (!ret.ok()) {
 		return status(ctx, http::HttpStatus(ret));
 	}
+
 	return queryResults(ctx, res, true, limit, offset);
 }
 
@@ -786,6 +786,22 @@ int HTTPServer::Check(http::Context &ctx) {
 		builder.Put("log_level", serverConfig_.LogLevel);
 		builder.Put("core_log", serverConfig_.CoreLog);
 		builder.Put("server_log", serverConfig_.ServerLog);
+		{
+			auto heapWatcher = builder.Object("heap_watcher");
+			if (serverConfig_.AllocatorCacheLimit >= 0) {
+				heapWatcher.Put("cache_limit_bytes", serverConfig_.AllocatorCacheLimit);
+			} else {
+				heapWatcher.Put("cache_limit_bytes", "disabled");
+			}
+			std::string allocatorCachePartStr;
+			if (serverConfig_.AllocatorCachePart >= 0) {
+				allocatorCachePartStr = std::to_string(int(serverConfig_.AllocatorCachePart * 100));
+				allocatorCachePartStr += '%';
+			} else {
+				allocatorCachePartStr = "disabled";
+			}
+			heapWatcher.Put("cache_limit_part", allocatorCachePartStr);
+		}
 
 #if REINDEX_WITH_JEMALLOC
 		if (alloc_ext::JEMallocIsAvailable()) {
@@ -1102,7 +1118,8 @@ int HTTPServer::modifyItemsMsgPack(http::Context &ctx, std::string &nsName, cons
 	return ctx.MSGPACK(http::StatusOK, wrSer.DetachChunk());
 }
 
-int HTTPServer::modifyItemsProtobuf(http::Context &ctx, std::string &nsName, const std::vector<std::string> &precepts, ItemModifyMode mode) {
+int HTTPServer::modifyItemsProtobuf(http::Context &ctx, std::string &nsName, const std::vector<std::string> &precepts,
+									ItemModifyMode mode) {
 	WrSerializer wrSer(ctx.writer->GetChunk());
 	ProtobufBuilder builder(&wrSer);
 

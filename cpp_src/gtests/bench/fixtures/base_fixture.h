@@ -37,15 +37,9 @@ public:
 		  id_seq_(std::make_shared<Sequence>(idStart, maxItems, 1)),
 		  useBenchamrkPrefixName_(useBenchamrkPrefixName) {}
 
-	BaseFixture(Reindexer* db, NamespaceDef& nsdef, size_t maxItems, size_t idStart = 1, bool useBenchamrkPrefixName = true)
-		: db_(db),
-		  nsdef_(nsdef),
-		  id_seq_(std::make_shared<Sequence>(idStart, maxItems, 1)),
-		  useBenchamrkPrefixName_(useBenchamrkPrefixName) {}
-
 	virtual reindexer::Error Initialize();
 
-	virtual void RegisterAllCases();
+	void RegisterAllCases();
 
 protected:
 	void Insert(State& state);

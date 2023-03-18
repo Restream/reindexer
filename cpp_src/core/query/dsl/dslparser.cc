@@ -118,8 +118,10 @@ static const fast_str_map<Aggregation> aggregation_map = {{"fields", Aggregation
 														  {"sort", Aggregation::Sort},
 														  {"limit", Aggregation::Limit},
 														  {"offset", Aggregation::Offset}};
-static const fast_str_map<AggType> aggregation_types = {{"sum", AggSum}, {"avg", AggAvg},	  {"max", AggMax},
-														{"min", AggMin}, {"facet", AggFacet}, {"distinct", AggDistinct}};
+static const fast_str_map<AggType> aggregation_types = {
+	{"sum", AggSum},	 {"avg", AggAvg},			{"max", AggMax},	 {"min", AggMin},
+	{"facet", AggFacet}, {"distinct", AggDistinct}, {"count", AggCount}, {"count_cached", AggCountCached},
+};
 
 // additionalfor parse field 'equation_positions'
 static const fast_str_map<EqualPosition> equationPosition_map = {{"positions", EqualPosition::Positions}};

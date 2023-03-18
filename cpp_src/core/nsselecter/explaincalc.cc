@@ -165,7 +165,7 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 			},
 			[&](const SelectIterator &siter) {
 				auto jsonSel = builder.Object();
-				const bool isScanIterator{siter.name == "-scan"};
+				const bool isScanIterator{std::string_view(siter.name) == "-scan"};
 				if (!isScanIterator) {
 					jsonSel.Put("keys", siter.size());
 					jsonSel.Put("comparators", siter.comparators_.size());

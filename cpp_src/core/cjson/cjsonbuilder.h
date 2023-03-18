@@ -12,10 +12,10 @@ void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser);
 class CJsonBuilder {
 public:
 	CJsonBuilder(WrSerializer &ser, ObjType = ObjType::TypeObject, const TagsMatcher *tm = nullptr, int tagName = 0);
-	CJsonBuilder() : tm_(nullptr), ser_(nullptr), type_(ObjType::TypePlain) {}
-	~CJsonBuilder();
+	CJsonBuilder() noexcept : tm_(nullptr), ser_(nullptr), type_(ObjType::TypePlain) {}
+	~CJsonBuilder() { End(); }
 	CJsonBuilder(const CJsonBuilder &) = delete;
-	CJsonBuilder(CJsonBuilder &&other)
+	CJsonBuilder(CJsonBuilder &&other) noexcept
 		: tm_(other.tm_), ser_(other.ser_), type_(other.type_), savePos_(other.savePos_), count_(other.count_), itemType_(other.itemType_) {
 		other.type_ = ObjType::TypePlain;
 	}
@@ -24,13 +24,12 @@ public:
 	CJsonBuilder &operator=(CJsonBuilder &&) = delete;
 
 	void SetTagsMatcher(const TagsMatcher *tm) { tm_ = tm; }
-	void SetTagsPath(const TagsPath *) {}
 
 	/// Start new object
 	CJsonBuilder Object(int tagName);
 	CJsonBuilder Array(int tagName, ObjType type = ObjType::TypeObjectArray);
 
-	CJsonBuilder Array(std::string_view name, ObjType type = ObjType::TypeObjectArray) {
+	[[noreturn]] CJsonBuilder Array(std::string_view name, ObjType type = ObjType::TypeObjectArray) {
 		throw Error(errLogic, "CJSON builder doesn't work with string tags [%s, %d]!", name.data(), int(type));
 	}
 	CJsonBuilder Object(std::nullptr_t) { return Object(0); }
@@ -86,10 +85,26 @@ public:
 	CJsonBuilder &ArrayRef(int tagName, int field, int count);
 	CJsonBuilder &Null(int tagName);
 	CJsonBuilder &Put(int tagName, const Variant &kv);
-	CJsonBuilder &Put(int tagName, const char *arg) { return Put(tagName, std::string_view(arg)); };
-	CJsonBuilder &End();
+	CJsonBuilder &Put(int tagName, const char *arg) { return Put(tagName, std::string_view(arg)); }
+	CJsonBuilder &End() {
+		switch (type_) {
+			case ObjType::TypeArray:
+				*(reinterpret_cast<int *>(ser_->Buf() + savePos_)) = static_cast<int>(carraytag(count_, itemType_));
+				break;
+			case ObjType::TypeObjectArray:
+				*(reinterpret_cast<int *>(ser_->Buf() + savePos_)) = static_cast<int>(carraytag(count_, TAG_OBJECT));
+				break;
+			case ObjType::TypeObject:
+				ser_->PutVarUint(static_cast<int>(ctag(TAG_END)));
+				break;
+			case ObjType::TypePlain:
+				break;
+		}
+		type_ = ObjType::TypePlain;
+		return *this;
+	}
 
-	ObjType Type() const { return type_; }
+	ObjType Type() const noexcept { return type_; }
 
 protected:
 	inline void putTag(int tag, int tagType);

@@ -5,7 +5,7 @@
 
 int main(int argc, char* argv[]) {
 	reindexer::debug::backtrace_init();
-	reindexer_server::Server svc;
+	reindexer_server::Server svc(reindexer_server::ServerMode::Standalone);
 	auto err = svc.InitFromCLI(argc, argv);
 	if (!err.ok()) {
 		std::cerr << err.what() << std::endl;

@@ -95,7 +95,7 @@ public:
 
 	struct Context;
 	// precalc context size
-	static constexpr int kSizeofContext = 144;	// sizeof(void *) * 2 + sizeof(void *) * 3 + 32 + sizeof(void *) + sizeof(void *)*2;
+	static constexpr int kSizeofContext = 208;	// sizeof(PayloadType) + sizeof(TagsMatcher) + sizeof(FieldsSet) + sizeof(shared_ptr);
 
 	// Order of storing contexts for namespaces:
 	// [0]      - main NS context

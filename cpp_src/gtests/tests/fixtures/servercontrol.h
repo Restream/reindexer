@@ -11,6 +11,12 @@
 #include "server/server.h"
 #include "tools/stringstools.h"
 
+#ifdef REINDEXER_WITH_SC_AS_PROCESS
+const bool kAsServerProcess = true;
+#else
+const bool kAsServerProcess = false;
+#endif
+
 struct ReplicationConfigTest {
 	using NsSet = std::unordered_set<std::string, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
 
@@ -67,6 +73,14 @@ public:
 	const size_t kMaxServerStartTimeSec = 20;
 	enum class ConfigType { File, Namespace };
 
+	static std::string getTestLogPath() {
+		const char* testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
+		const char* testName = ::testing::UnitTest::GetInstance()->current_test_info()->name();
+		std::string name;
+		name = name + "logs/" + testSetName + "/" + testName + "/";
+		return name;
+	}
+
 	ServerControl(ServerControl&& rhs) noexcept;
 	ServerControl& operator=(ServerControl&&) noexcept;
 	ServerControl(ServerControl& rhs) = delete;
@@ -80,6 +94,7 @@ public:
 		Interface(size_t id, std::atomic_bool& stopped, const std::string& ReplicationConfigFilename, const std::string& StoragePath,
 				  unsigned short httpPort, unsigned short rpcPort, const std::string& dbName, bool enableStats, size_t maxUpdatesSize = 0);
 		~Interface();
+		void Init();
 		// Stop server
 		void Stop();
 
@@ -101,12 +116,20 @@ public:
 		void SetOptmizationSortWorkers(size_t cnt, std::string_view nsName);
 
 		reindexer_server::Server srv;
+#ifndef _WIN32
+		pid_t reindexerServerPID = -1;
+		pid_t reindexerServerPIDWait = -1;
+#endif
+		bool asServerProcess = kAsServerProcess;
 		BaseApi api;
 
 	private:
 		template <typename ValueT>
 		void setNamespaceConfigItem(std::string_view nsName, std::string_view paramName, ValueT&& value);
 		void setReplicationConfig(size_t masterId, const ReplicationConfigTest& config);
+
+		std::string getLogName(const std::string& log, bool core = false);
+		std::vector<std::string> getCLIParamArray(bool enableStats, size_t maxUpdatesSize);
 
 		size_t id_;
 		std::unique_ptr<std::thread> tr;
@@ -118,6 +141,8 @@ public:
 		const unsigned short kRpcPort;
 		const unsigned short kHttpPort;
 		const std::string dbName_;
+		const bool enableStats_;
+		const size_t maxUpdatesSize_;
 	};
 	// Get server - wait means wait until server starts if no server
 	Interface::Ptr Get(bool wait = true);

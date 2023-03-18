@@ -1,19 +1,48 @@
 #include "servercontrol.h"
 #include <fstream>
 #include "core/cjson/jsonbuilder.h"
+#include "systemhelpers.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
 #include "yaml-cpp/yaml.h"
 
+#ifndef REINDEXER_SERVER_PATH
+#define REINDEXER_SERVER_PATH ""
+#endif
+
 using namespace reindexer;
 
 ServerControl::Interface::~Interface() {
-	srv.Stop();
-	tr->join();
+	Stop();
+	if (tr) {
+		tr->join();
+	}
+	if (reindexerServerPIDWait != -1) {
+		auto err = reindexer::WaitEndProcess(reindexerServerPIDWait);
+		assertf(err.ok(), "WaitEndProcess error: %s", err.what());
+	}
 	stopped_ = true;
 }
 
-void ServerControl::Interface::Stop() { srv.Stop(); }
+void ServerControl::Interface::Stop() {
+	if (asServerProcess) {
+		if (reindexerServerPID != -1) {
+			auto err = reindexer::EndProcess(reindexerServerPID);
+			assertf(err.ok(), "EndProcess error: %s", err.what());
+			reindexerServerPIDWait = reindexerServerPID;
+			reindexerServerPID = -1;
+		}
+	} else {
+		srv.Stop();
+	}
+}
+std::string ServerControl::Interface::getLogName(const std::string& log, bool core) {
+	std::string name = getTestLogPath();
+	name += (log + "_");
+	if (!core) name += std::to_string(id_);
+	name += ".log";
+	return name;
+}
 
 ServerControl::ServerControl() { stopped_ = new std::atomic_bool(false); }
 ServerControl::~ServerControl() {
@@ -98,6 +127,80 @@ void ServerControl::Interface::SetWALSize(int64_t size, std::string_view nsName)
 void ServerControl::Interface::SetOptmizationSortWorkers(size_t cnt, std::string_view nsName) {
 	setNamespaceConfigItem(nsName, "optimization_sort_workers", cnt);
 }
+void ServerControl::Interface::Init() {
+	stopped_ = false;
+	YAML::Node y;
+	y["storage"]["path"] = kStoragePath;
+	y["metrics"]["clientsstats"] = enableStats_;
+	y["logger"]["loglevel"] = "trace";
+	y["logger"]["rpclog"] = getLogName("rpc");
+	y["logger"]["serverlog"] = getLogName("server");
+	y["logger"]["corelog"] = getLogName("core", true);
+	y["net"]["httpaddr"] = "0.0.0.0:" + std::to_string(kHttpPort);
+	y["net"]["rpcaddr"] = "0.0.0.0:" + std::to_string(kRpcPort);
+	if (maxUpdatesSize_) {
+		y["net"]["maxupdatessize"] = maxUpdatesSize_;
+	}
+
+	if (asServerProcess) {
+		try {
+			std::vector<std::string> paramArray = getCLIParamArray(enableStats_, maxUpdatesSize_);
+			std::string reindexerServerPath(REINDEXER_SERVER_PATH);
+			if (reindexerServerPath.empty()) {	// -V547
+				throw Error(errLogic, "REINDEXER_SERVER_PATH empty");
+			}
+			reindexerServerPID = reindexer::StartProcess(reindexerServerPath, paramArray);
+		} catch (Error& e) {
+			EXPECT_TRUE(false) << e.what();
+		}
+	} else {
+		auto err = srv.InitFromYAML(YAML::Dump(y));
+		EXPECT_TRUE(err.ok()) << err.what();
+
+		tr = std::unique_ptr<std::thread>(new std::thread([this]() {
+			auto res = this->srv.Start();
+			if (res != EXIT_SUCCESS) {
+				std::cerr << "Exit code: " << res << std::endl;
+			}
+			assert(res == EXIT_SUCCESS);
+		}));
+		while (!srv.IsRunning() || !srv.IsReady()) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+	}
+
+	// init client
+	std::string dsn = "cproto://127.0.0.1:" + std::to_string(kRpcPort) + "/" + dbName_;
+	Error err;
+	err = api.reindexer->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
+	EXPECT_TRUE(err.ok()) << err.what();
+
+	while (!api.reindexer->Status().ok()) {
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
+	}
+}
+
+std::vector<std::string> ServerControl::Interface::getCLIParamArray(bool enableStats, size_t maxUpdatesSize) {
+	std::vector<std::string> paramArray;
+	paramArray.push_back("reindexer_server");
+	paramArray.push_back("--db=" + kStoragePath);
+	if (enableStats) {
+		paramArray.push_back("--clientsstats");
+	}
+	paramArray.push_back("--loglevel=trace");
+	paramArray.push_back("--rpclog=" + getLogName("rpc"));
+	paramArray.push_back("--serverlog=" + getLogName("server"));
+	// paramArray.push_back("--httplog");
+	paramArray.push_back("--corelog=" + getLogName("core"));
+
+	paramArray.push_back("--httpaddr=0.0.0.0:" + std::to_string(kHttpPort));
+	paramArray.push_back("--rpcaddr=0.0.0.0:" + std::to_string(kRpcPort));
+	if (maxUpdatesSize) {
+		paramArray.push_back("--updatessize=" + std::to_string(maxUpdatesSize));
+	}
+
+	return paramArray;
+}
 
 ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const std::string& ReplicationConfigFilename,
 									const std::string& StoragePath, unsigned short httpPort, unsigned short rpcPort,
@@ -108,49 +211,11 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
 	  kStoragePath(StoragePath),
 	  kRpcPort(rpcPort),
 	  kHttpPort(httpPort),
-	  dbName_(dbName) {
-	// Init server in thread
+	  dbName_(dbName),
+	  enableStats_(enableStats),
+	  maxUpdatesSize_(maxUpdatesSize) {
 	stopped_ = false;
-	std::string testSetName = ::testing::UnitTest::GetInstance()->current_test_info()->test_case_name();
-	auto getLogName = [&testSetName, &id](const std::string& log, bool core = false) {
-		std::string name("logs/" + testSetName + "/" + log + "_");
-		if (!core) name += std::to_string(id);
-		name += ".log";
-		return name;
-	};
-	YAML::Node y;
-	y["storage"]["path"] = kStoragePath;
-	y["metrics"]["clientsstats"] = enableStats;
-	y["logger"]["loglevel"] = "trace";
-	y["logger"]["rpclog"] = getLogName("rpc");
-	y["logger"]["serverlog"] = getLogName("server");
-	y["logger"]["corelog"] = getLogName("core", true);
-	y["net"]["httpaddr"] = "0.0.0.0:" + std::to_string(kHttpPort);
-	y["net"]["rpcaddr"] = "0.0.0.0:" + std::to_string(kRpcPort);
-	if (maxUpdatesSize) {
-		y["net"]["maxupdatessize"] = maxUpdatesSize;
-	}
-
-	auto err = srv.InitFromYAML(YAML::Dump(y));
-	EXPECT_TRUE(err.ok()) << err.what();
-
-	tr = std::unique_ptr<std::thread>(new std::thread([this]() {
-		auto res = this->srv.Start();
-		if (res != EXIT_SUCCESS) {
-			std::cerr << "Exit code: " << res << std::endl;
-		}
-		assert(res == EXIT_SUCCESS);
-	}));
-	while (!srv.IsRunning() || !srv.IsReady()) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	}
-	// init client
-	std::string dsn = "cproto://127.0.0.1:" + std::to_string(kRpcPort) + "/" + dbName_;
-	err = api.reindexer->Connect(dsn, client::ConnectOpts().CreateDBIfMissing());
-	EXPECT_TRUE(err.ok()) << err.what();
-	while (!api.reindexer->Status().ok()) {
-		std::this_thread::sleep_for(std::chrono::milliseconds(10));
-	}
+	Init();
 }
 
 void ServerControl::Interface::MakeMaster(const ReplicationConfigTest& config) {

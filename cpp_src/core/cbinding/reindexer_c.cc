@@ -90,7 +90,7 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 
 	flags |= (pt_versions && as_json == 0) ? kResultsWithPayloadTypes : 0;
 
-	result->ser.SetOpts({flags, span<int32_t>(pt_versions, pt_versions_count), 0, INT_MAX});
+	result->ser.SetOpts({flags, span<int32_t>(pt_versions, pt_versions_count), 0, INT_MAX, true});
 
 	result->ser.PutResults(result.get());
 

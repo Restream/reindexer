@@ -56,12 +56,12 @@ const string& getNumorder(int numorder, int i) {
 int ansiCharacterToDigit(char ch) { return static_cast<int>(ch - 48); }
 
 vector<string> getOrders(std::string_view str) {
-	string numStr(str);
+	std::string numStr(str);
 	std::reverse(numStr.begin(), numStr.end());
 	int numChars = numStr.length();
-	vector<string> orders;
+	std::vector<std::string> orders;
 	for (int i = 0; i < numChars; i += 3) {
-		string tempString;
+		std::string tempString;
 		if (i <= numChars - 3) {
 			tempString += numStr[i + 2];
 			tempString += numStr[i + 1];
@@ -84,7 +84,7 @@ vector<string> getOrders(std::string_view str) {
 }
 
 vector<string> getDecimal(const string& str, int i) {
-	vector<string> words;
+	std::vector<std::string> words;
 	int v = std::stoi(str);
 	if (v < 10) {
 		words.emplace_back(units[v]);
@@ -103,7 +103,7 @@ vector<string> getDecimal(const string& str, int i) {
 }
 
 string getNumOrders(int i, int num) {
-	string orders;
+	std::string orders;
 	if (i > 0) {
 		if (num % 10 > 4 || (num % 100 > 10 && num % 100 < 20) || num % 10 == 0) {
 			orders = getNumorder(i - 1, 2);
@@ -117,14 +117,14 @@ string getNumOrders(int i, int num) {
 }
 
 vector<string> formTextString(const string& str, int i) {
-	vector<string> words;
+	std::vector<std::string> words;
 	int strlen = str.length();
 	if (strlen == 3) {
 		words.emplace_back(hundreads[ansiCharacterToDigit(str[0])]);
-		string decimal;
+		std::string decimal;
 		decimal += str[1];
 		decimal += str[2];
-		vector<string> decimalWords(getDecimal(decimal, i));
+		std::vector<std::string> decimalWords(getDecimal(decimal, i));
 		words.insert(words.end(), make_move_iterator(decimalWords.begin()), make_move_iterator(decimalWords.end()));
 	} else if (strlen == 2) {
 		words = getDecimal(str, i);
@@ -151,10 +151,10 @@ vector<string>& NumToText::convert(std::string_view str, std::vector<std::string
 	if (str.length() > 27) {
 		return output;
 	}
-	vector<string> orders(getOrders(str));
+	std::vector<std::string> orders(getOrders(str));
 	for (size_t i = 0; i < orders.size(); ++i) {
 		size_t oppositeSideIndex = orders.size() - 1 - i;
-		vector<string> digits(formTextString(orders[oppositeSideIndex], oppositeSideIndex));
+		std::vector<std::string> digits(formTextString(orders[oppositeSideIndex], oppositeSideIndex));
 		output.insert(output.end(), make_move_iterator(digits.begin()), make_move_iterator(digits.end()));
 	}
 	return output;

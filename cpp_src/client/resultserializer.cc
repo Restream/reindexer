@@ -5,13 +5,16 @@
 namespace reindexer {
 namespace client {
 
-void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc) {
+void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc,
+										 AggsFlag clearAggs) {
 	ret.flags = GetVarUint();
 	ret.totalcount = GetVarUint();
 	ret.qcount = GetVarUint();
 	ret.count = GetVarUint();
-	ret.aggResults.clear();
-	ret.explainResults.clear();
+	if (clearAggs == AggsFlag::ClearAggregations) {
+		ret.aggResults.clear();
+		ret.explainResults.clear();
+	}
 
 	if (ret.flags & kResultsWithPayloadTypes) {
 		int ptCount = GetVarUint();
@@ -25,9 +28,15 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, con
 		}
 	}
 
+	bool firstAgg = true;
 	for (;;) {
 		int tag = GetVarUint();
 		if (tag == QueryResultEnd) break;
+		if ((clearAggs == AggsFlag::DontClearAggregations) && firstAgg) {
+			firstAgg = false;
+			ret.aggResults.clear();
+			ret.explainResults.clear();
+		}
 		std::string_view data = GetSlice();
 		switch (tag) {
 			case QueryResultAggregation:

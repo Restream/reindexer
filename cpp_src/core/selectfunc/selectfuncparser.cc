@@ -1,5 +1,6 @@
 #include "core/selectfunc/selectfuncparser.h"
 #include <ctime>
+#include <set>
 #include <string>
 #include "tools/errors.h"
 #include "tools/logger.h"
@@ -34,7 +35,138 @@ SelectFuncStruct &SelectFuncParser::Parse(const std::string &query) {
 	return selectFuncStruct_;
 }
 
+void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer &parser, const Args &args) {
+	using namespace std::string_view_literals;
+	token tok;
+	tok = parser.next_token(false);
+	if (!(tok.type == TokenSymbol && tok.text() == "("sv)) {
+		throw Error(errParseDSL, "%s: An open parenthesis is required, but found `%s`", selectFuncStruct_.funcName, tok.text());
+	}
+	std::string argFirstPart;
+	std::string argSecondPart;
+	enum class NamedArgState { Name = 0, Eq = 1, Val = 2, End = 3, End2 = 4 };
+	NamedArgState expectedToken = NamedArgState::Name;
+
+	while (!parser.end()) {
+		tok = parser.next_token(false);
+		switch (tok.type) {
+			case TokenSymbol:
+				if (tok.text() == ")"sv) {
+					token nextTok = parser.next_token(false);
+					if (nextTok.text().length() > 0) {
+						throw Error(errParseDSL, "%s: Unexpected character `%s` after closing parenthesis.", selectFuncStruct_.funcName,
+									nextTok.text());
+					}
+
+					switch (expectedToken) {
+						case NamedArgState::End2:  // add last argument position
+							selectFuncStruct_.funcArgs.emplace_back(std::move(argFirstPart));
+							argFirstPart.clear();
+							if (selectFuncStruct_.funcArgs.size() != args.posArgsCount) {
+								throw Error(errParseDSL, "%s: Incorrect count of position arguments. Found %d required %d.",
+											selectFuncStruct_.funcName, selectFuncStruct_.funcArgs.size(), args.posArgsCount,
+											args.posArgsCount);
+							}
+							break;
+						case NamedArgState::End: {	// add last argument named
+							if (selectFuncStruct_.funcArgs.size() != args.posArgsCount) {
+								throw Error(errParseDSL, "%s: Incorrect count of position arguments. Found %d required %d.",
+											selectFuncStruct_.funcName, selectFuncStruct_.funcArgs.size(), args.posArgsCount,
+											args.posArgsCount);
+							}
+							if (args.namedArgs.find(argFirstPart) == args.namedArgs.end()) {
+								throw Error(errParseDSL, "%s: Unknown argument name '%s'.", selectFuncStruct_.funcName, argFirstPart);
+							}
+							auto r = selectFuncStruct_.namedArgs.emplace(std::move(argFirstPart), "");
+							argFirstPart.clear();
+							if (!r.second) {
+								throw Error(errParseDSL, "%s: Argument already added '%s'.", selectFuncStruct_.funcName, r.first->first);
+							}
+							r.first->second = std::move(argSecondPart);
+							argSecondPart.clear();
+						} break;
+						default:
+							throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, argFirstPart);
+					}
+
+					selectFuncStruct_.isFunction = true;
+					break;
+				} else if (tok.text() == ","sv) {
+					if (selectFuncStruct_.funcArgs.size() >= args.posArgsCount) {
+						if (expectedToken != NamedArgState::End) {
+							throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, tok.text());
+						}
+						if (args.namedArgs.find(argFirstPart) == args.namedArgs.end()) {
+							throw Error(errParseDSL, "%s: Unknown argument name '%s'.", selectFuncStruct_.funcName, argFirstPart);
+						}
+						auto r = selectFuncStruct_.namedArgs.emplace(std::move(argFirstPart), "");
+						if (!r.second) {
+							throw Error(errParseDSL, "%s: Argument already added '%s'.", selectFuncStruct_.funcName, r.first->first);
+						}
+						r.first->second = std::move(argSecondPart);
+					} else {  // posible only posArgs
+						if (expectedToken != NamedArgState::End2) {
+							throw Error(errParseDSL,
+										"%s: Unexpected token '%s', expecting positional argument (%d more positional args required)",
+										selectFuncStruct_.funcName, tok.text(), args.posArgsCount - selectFuncStruct_.funcArgs.size());
+						}
+						selectFuncStruct_.funcArgs.emplace_back(std::move(argFirstPart));
+					}
+					argFirstPart.clear();
+					argSecondPart.clear();
+					expectedToken = NamedArgState::Name;
+				} else {
+					throw Error(errParseDSL, "%s: Unexpected token '%s'", selectFuncStruct_.funcName, tok.text());
+				}
+				break;
+			case TokenOp:
+				if (tok.text() == "="sv) {
+					if (argFirstPart.empty()) {
+						throw Error(errParseDSL, "%s: Argument name is empty.", selectFuncStruct_.funcName);
+					} else if (expectedToken != NamedArgState::Eq) {
+						throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, tok.text());
+					}
+					expectedToken = NamedArgState::Val;
+				} else {
+					throw Error(errParseDSL, "%s: Unexpected token '%s'", selectFuncStruct_.funcName, tok.text());
+				}
+				break;
+			case TokenNumber:
+			case TokenString:
+				switch (expectedToken) {
+					case NamedArgState::Val:
+						argSecondPart = tok.text();
+						expectedToken = NamedArgState::End;
+						break;
+
+					case NamedArgState::Name:
+						argFirstPart = tok.text();
+						expectedToken = NamedArgState::End2;
+						break;
+
+					default:
+						throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, tok.text());
+				}
+				break;
+			case TokenName:
+				if (expectedToken != NamedArgState::Name) {
+					throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, tok.text());
+				} else {
+					argFirstPart = tok.text();
+					expectedToken = NamedArgState::Eq;
+				}
+				break;
+			default:
+				throw Error(errParseDSL, "%s: Unexpected token '%s'", selectFuncStruct_.funcName, tok.text());
+		}
+	}
+	if (!selectFuncStruct_.isFunction) {
+		throw Error(errParseDSL, "%s: The closing parenthesis is required, but found `%s`", selectFuncStruct_.funcName, tok.text());
+	}
+}
+
 SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOfExpression, token tok) {
+	using namespace std::string_view_literals;
 	if (tok.text().empty()) {
 		tok = parser.next_token(true);
 	}
@@ -42,34 +174,45 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncSnippet;
 	} else if (tok.text() == "highlight") {
 		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncHighlight;
+	} else if (tok.text() == "snippet_n") {
+		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncSnippetN;
+		selectFuncStruct_.funcName = std::string(tok.text());
+		static const Args args(4, {"pre_delim", "post_delim"});
+		parsePositionalAndNamedArgs(parser, args);
+		return selectFuncStruct_;
 	}
 	selectFuncStruct_.funcName = std::string(tok.text());
 
 	tok = parser.next_token(false);
 	if (tok.text() == "(") {
-		std::string agr;
+		std::string arg;
 		while (!parser.end()) {
 			tok = parser.next_token(false);
 			if (tok.text() == ")") {
 				if (!partOfExpression) {
 					token nextTok = parser.next_token(false);
 					if (nextTok.text().length() > 0) {
-						throw Error(errParseDSL, "Unexpected character `%s` after close parenthesis", nextTok.text());
+						throw Error(errParseDSL, "%s: Unexpected character `%s` after closing parenthesis", selectFuncStruct_.funcName,
+									nextTok.text());
 					}
 				}
-				selectFuncStruct_.funcArgs.push_back(agr);
+				selectFuncStruct_.funcArgs.emplace_back(std::move(arg));
 				selectFuncStruct_.isFunction = true;
+				arg.clear();
 				break;
 			}
-			if (tok.text() == ",") {
-				selectFuncStruct_.funcArgs.push_back(agr);
-				agr.clear();
+			if (tok.text() == "," && tok.type == TokenSymbol) {
+				selectFuncStruct_.funcArgs.emplace_back(std::move(arg));
+				arg.clear();
 			} else {
-				agr += std::string(tok.text());
+				arg += tok.text();
 			}
 		}
+		if (!selectFuncStruct_.isFunction) {
+			throw Error(errParseDSL, "%s: The closing parenthesis is required, but found `%s`", selectFuncStruct_.funcName, tok.text());
+		}
 	} else {
-		throw Error(errParseDSL, "An open parenthesis is required, but found `%s`", tok.text());
+		throw Error(errParseDSL, "%s: An open parenthesis is required, but found `%s`", selectFuncStruct_.funcName, tok.text());
 	}
 
 	return selectFuncStruct_;

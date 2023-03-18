@@ -49,7 +49,7 @@ void split(std::string_view str, std::string& buf, std::vector<const char*>& wor
 size_t calcUTf8Size(const char* s, size_t size, size_t limit);
 size_t calcUTf8SizeEnd(const char* end, int pos, size_t limit);
 
-int getUTF8StringCharactersCount(std::string_view str);
+int getUTF8StringCharactersCount(std::string_view str) noexcept;
 
 class Word2PosHelper {
 public:

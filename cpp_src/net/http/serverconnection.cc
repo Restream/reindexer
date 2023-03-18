@@ -53,7 +53,7 @@ void ServerConnection::handleException(Context &ctx, const Error &status) {
 	}
 }
 
-void ServerConnection::setJsonStatus(Context &ctx, bool success, int responseCode, const string &status) {
+void ServerConnection::setJsonStatus(Context &ctx, bool success, int responseCode, const std::string &status) {
 	WrSerializer ser;
 	JsonBuilder builder(ser);
 	builder.Put("success", success);

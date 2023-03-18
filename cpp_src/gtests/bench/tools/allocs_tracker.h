@@ -11,9 +11,6 @@
 #include "debug/backtrace.h"
 #include "helpers.h"
 
-using std::string;
-using std::unique_ptr;
-
 namespace benchmark {
 
 struct AllocsTracker {

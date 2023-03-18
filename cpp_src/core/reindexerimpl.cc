@@ -60,7 +60,7 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg)
 	  storageType_(StorageType::LevelDB),
 	  connected_(false),
 	  clientsStats_(cfg.clientsStats) {
-	stopBackgroundThreads_ = false;
+	dbDestroyed_ = false;
 	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfiligConfigLoad, this));
 	backgroundThread_ = std::thread([this]() { this->backgroundRoutine(); });
 
@@ -78,7 +78,11 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg)
 }
 
 ReindexerImpl::~ReindexerImpl() {
-	stopBackgroundThreads_ = true;
+	for (auto& ns : namespaces_) {
+		ns.second->SetDestroyFlag();
+	}
+
+	dbDestroyed_ = true;
 	backgroundThread_.join();
 	storageFlushingThread_.join();
 	replicator_->Stop();
@@ -208,7 +212,7 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 	if (enableStorage && opts.IsOpenNamespaces()) {
 		const size_t maxLoadWorkers = ConcurrentNamespaceLoaders();
 		std::unique_ptr<std::thread[]> thrs(new std::thread[maxLoadWorkers]);
-		std::atomic_flag hasNsErrors{false};
+		std::atomic_flag hasNsErrors = ATOMIC_FLAG_INIT;
 		for (size_t i = 0; i < maxLoadWorkers; i++) {
 			thrs[i] = std::thread(
 				[&](size_t begin) {
@@ -942,8 +946,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 		JoinPreResult::Ptr preResult = std::make_shared<JoinPreResult>();
 		uint32_t joinedFieldIdx = uint32_t(joinedSelectors.size());
 		JoinCacheRes joinRes;
-		joinRes.key.SetData(jq);
-		jns->getFromJoinCache(joinRes);
+		jns->getFromJoinCache(jq, joinRes);
 		jjq.explain_ = q.explain_;
 		jjq.Strict(q.strictMode);
 		if (!jjq.entries.Empty() && !joinRes.haveData) {
@@ -1232,7 +1235,7 @@ void ReindexerImpl::backgroundRoutine() {
 		}
 	};
 
-	while (!stopBackgroundThreads_) {
+	while (!dbDestroyed_) {
 		nsBackground();
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
@@ -1286,7 +1289,7 @@ void ReindexerImpl::storageFlushingRoutine() {
 		errors = std::move(newErrors);
 	};
 
-	while (!stopBackgroundThreads_) {
+	while (!dbDestroyed_) {
 		nsFlush();
 #ifdef REINDEX_WITH_GPERFTOOLS
 		this->heapWatcher_.CheckHeapUsagePeriodic();
@@ -1417,7 +1420,7 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 					needStartReplicator = true;
 				}
 			}
-			if (replicationEnabled_ && needStartReplicator && !stopBackgroundThreads_) {
+			if (replicationEnabled_ && needStartReplicator && !dbDestroyed_) {
 				if (Error err = replicator_->Start()) throw err;
 			}
 		} catch (gason::Exception& e) {

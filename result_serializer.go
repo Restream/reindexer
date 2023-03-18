@@ -68,7 +68,7 @@ func (s *resultSerializer) readRawtItemParams() (v rawResultItemParams) {
 	return v
 }
 
-func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayloadTypeFunc) (v rawResultQueryParams) {
+func (s *resultSerializer) readRawQueryParamsKeepExtras(v *rawResultQueryParams, updatePayloadType ...updatePayloadTypeFunc) {
 
 	v.flags = int(s.GetVarUInt())
 	v.totalcount = int(s.GetVarUInt())
@@ -87,19 +87,27 @@ func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayload
 			updatePayloadType[0](nsid)
 		}
 	}
-	s.readExtraResults(&v)
+	s.readExtraResults(v)
 	s.flags = v.flags
+}
 
+func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayloadTypeFunc) (v rawResultQueryParams) {
+	s.readRawQueryParamsKeepExtras(&v, updatePayloadType...)
 	return v
 }
 
 func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
-
+	firstAgg := true
 	for {
 
 		tag := s.GetVarUInt()
 		if tag == bindings.QueryResultEnd {
 			break
+		}
+		if firstAgg {
+			v.aggResults = v.aggResults[:0]
+			v.explainResults = v.explainResults[:0]
+			firstAgg = false
 		}
 
 		data := s.GetBytes()
@@ -110,5 +118,4 @@ func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
 			v.aggResults = append(v.aggResults, data)
 		}
 	}
-	return
 }

@@ -26,7 +26,7 @@ public:
 		const auto pause = std::chrono::milliseconds(100);
 		ReplicationStateApi state1{};
 		ReplicationStateApi state2{};
-	
+
 		while (true) {
 			now += pause;
 			ASSERT_TRUE(now < kMaxSyncTime) << "Wait sync is too long. s1 lsn: " << state1.lsn << "; s2 lsn: " << state2.lsn
@@ -452,21 +452,21 @@ TEST_F(ReplicationSlaveSlaveApi, ForceSync3Node) {
 	master.Get()->MakeMaster();
 
 	ServerControl slave1;
-	slave1.InitServer(0, 7771, 7881, kBaseDbPath + "/slave1", "db", true);
+	slave1.InitServer(1, 7771, 7881, kBaseDbPath + "/slave1", "db", true);
 	std::string upDsn1 = "cproto://127.0.0.1:7770/db";
-	ReplicationConfigTest configSlave1("slave", false, true, 0, upDsn1);
+	ReplicationConfigTest configSlave1("slave", false, true, 1, upDsn1);
 	slave1.Get()->MakeMaster();
 
 	ServerControl slave2;
-	slave2.InitServer(0, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
+	slave2.InitServer(2, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
 	std::string upDsn2 = "cproto://127.0.0.1:7771/db";
-	ReplicationConfigTest configSlave2("slave", false, true, 0, upDsn2);
+	ReplicationConfigTest configSlave2("slave", false, true, 2, upDsn2);
 	slave2.Get()->MakeSlave(0, configSlave2);
 
 	ServerControl slave3;
-	slave3.InitServer(0, 7773, 7883, kBaseDbPath + "/slave3", "db", true);
+	slave3.InitServer(3, 7773, 7883, kBaseDbPath + "/slave3", "db", true);
 	std::string upDsn3 = "cproto://127.0.0.1:7772/db";
-	ReplicationConfigTest configSlave3("slave", false, true, 0, upDsn3);
+	ReplicationConfigTest configSlave3("slave", false, true, 3, upDsn3);
 	slave3.Get()->MakeSlave(0, configSlave3);
 
 	slave1.Get()->MakeSlave(0, configSlave1);
@@ -737,7 +737,7 @@ TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
 			slave2.InitServer(2, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
 			ReplicationConfigTest configSlave1("slave", false, true, 1, upDsn1, "slave1");
 			slave1.Get()->MakeSlave(0, configSlave1);
-			ReplicationConfigTest configSlave2("slave", false, true, 1, upDsn2, "slave2");
+			ReplicationConfigTest configSlave2("slave", false, true, 2, upDsn2, "slave2");
 			slave2.Get()->MakeSlave(0, configSlave2);
 			WaitSync(master, slave1, "ns1");
 			WaitSync(master, slave2, "ns1");

@@ -11,13 +11,21 @@ struct ResultFetchOpts {
 	span<int32_t> ptVersions;
 	unsigned fetchOffset;
 	unsigned fetchLimit;
+	bool withAggregations;
 };
 
 class WrResultSerializer : public WrSerializer {
 public:
-	WrResultSerializer(const ResultFetchOpts& opts = {0, {}, 0, 0}) : opts_(opts) { resetUnknownFlags(); }
+	WrResultSerializer(
+		const ResultFetchOpts& opts = {.flags = 0, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = 0, .withAggregations = true})
+		: opts_(opts) {
+		resetUnknownFlags();
+	}
 	template <unsigned N>
-	WrResultSerializer(uint8_t (&buf)[N], const ResultFetchOpts& opts = {0, {}, 0, 0}) : WrSerializer(buf), opts_(opts) {
+	WrResultSerializer(
+		uint8_t (&buf)[N],
+		const ResultFetchOpts& opts = {.flags = 0, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = 0, .withAggregations = true})
+		: WrSerializer(buf), opts_(opts) {
 		resetUnknownFlags();
 	}
 

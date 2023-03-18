@@ -488,7 +488,7 @@ bool isBlank(std::string_view str) noexcept {
 	return true;
 }
 
-int getUTF8StringCharactersCount(std::string_view str) {
+int getUTF8StringCharactersCount(std::string_view str) noexcept {
 	int len = 0;
 	try {
 		for (auto it = str.begin(); it != str.end(); ++len) {

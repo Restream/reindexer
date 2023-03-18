@@ -25,6 +25,13 @@ public:
 	IndexMemStat GetMemStat(const RdxContext &) override;
 	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string> || std::is_same_v<T, key_string_with_hash>; }
 	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override;
+	virtual void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &) override;
+	virtual bool IsDestroyPartSupported() const noexcept override { return true; }
+
+	template <typename, typename = void>
+	struct HasAddTask : std::false_type {};
+	template <typename H>
+	struct HasAddTask<H, std::void_t<decltype(std::declval<H>().add_destroy_task(nullptr))>> : public std::true_type {};
 
 protected:
 	unordered_str_map<int> str_map;

@@ -266,13 +266,18 @@ bool QueryPreprocessor::ContainsFullTextIndexes() const {
 	return false;
 }
 
-SortingEntries QueryPreprocessor::GetSortingEntries(bool havePreresult) const {
+[[nodiscard]] SortingEntries QueryPreprocessor::GetSortingEntries(const SelectCtx &ctx) const {
 	if (ftEntry_) return {};
 	// DO NOT use deducted sort order in the following cases:
 	// - query contains explicity specified sort order
 	// - query contains FullText query.
-	const bool disableOptimizeSortOrder = ContainsFullTextIndexes() || !query_.sortingEntries_.empty() || havePreresult;
-	return disableOptimizeSortOrder ? query_.sortingEntries_ : detectOptimalSortOrder();
+	// - query contains limit and does not require full selection (in this case result will be sorted by internal IDs)
+	const bool disableOptimizedSortOrder = !query_.sortingEntries_.empty() || ContainsFullTextIndexes() || ctx.preResult;
+	if (disableOptimizedSortOrder) {
+		return query_.sortingEntries_;
+	}
+	const bool optimizedSortOrderMayForceAll = !ctx.isForceAll && query_.HasLimit();
+	return optimizedSortOrderMayForceAll ? query_.sortingEntries_ : detectOptimalSortOrder();
 }
 
 template <typename T>
@@ -418,7 +423,7 @@ void QueryPreprocessor::convertWhereValues(QueryEntries::iterator begin, QueryEn
 	}
 }
 
-SortingEntries QueryPreprocessor::detectOptimalSortOrder() const {
+[[nodiscard]] SortingEntries QueryPreprocessor::detectOptimalSortOrder() const {
 	if (!AvailableSelectBySortIndex()) return {};
 	if (const Index *maxIdx = findMaxIndex(cbegin(), cend())) {
 		SortingEntries sortingEntries;
@@ -428,28 +433,58 @@ SortingEntries QueryPreprocessor::detectOptimalSortOrder() const {
 	return SortingEntries();
 }
 
-const Index *QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const {
-	const Index *maxIdx = nullptr;
+[[nodiscard]] const Index *QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const {
+	thread_local h_vector<FoundIndexInfo, 32> foundIndexes;
+	foundIndexes.clear<false>();
+	findMaxIndex(begin, end, foundIndexes);
+	boost::sort::pdqsort(foundIndexes.begin(), foundIndexes.end(), [](const FoundIndexInfo &l, const FoundIndexInfo &r) noexcept {
+		if (l.isFitForSortOptimization > r.isFitForSortOptimization) {
+			return true;
+		}
+		if (l.isFitForSortOptimization == r.isFitForSortOptimization) {
+			return l.size > r.size;
+		}
+		return false;
+	});
+	if (foundIndexes.size() && foundIndexes[0].isFitForSortOptimization) {
+		return foundIndexes[0].index;
+	}
+	return nullptr;
+}
+
+void QueryPreprocessor::findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end,
+									 h_vector<FoundIndexInfo, 32> &foundIndexes) const {
 	for (auto it = begin; it != end; ++it) {
-		const Index *foundIdx = it->InvokeAppropriate<const Index *>(
-			[this, &it](const QueryEntriesBracket &) { return findMaxIndex(it.cbegin(), it.cend()); },
-			[this](const QueryEntry &entry) -> const Index * {
-				if (((entry.idxNo != IndexValueType::SetByJsonPath) &&
-					 (entry.condition == CondGe || entry.condition == CondGt || entry.condition == CondLe || entry.condition == CondLt ||
-					  entry.condition == CondRange)) &&
-					!entry.distinct && ns_.indexes_[entry.idxNo]->IsOrdered() && !ns_.indexes_[entry.idxNo]->Opts().IsArray()) {
-					return ns_.indexes_[entry.idxNo].get();
-				} else {
-					return nullptr;
-				}
+		const FoundIndexInfo foundIdx = it->InvokeAppropriate<FoundIndexInfo>(
+			[this, &it, &foundIndexes](const QueryEntriesBracket &) {
+				findMaxIndex(it.cbegin(), it.cend(), foundIndexes);
+				return FoundIndexInfo();
 			},
-			[](const JoinQueryEntry &) { return nullptr; }, [](const BetweenFieldsQueryEntry &) { return nullptr; },
-			[](const AlwaysFalse &) { return nullptr; });
-		if (!maxIdx || (foundIdx && foundIdx->Size() > maxIdx->Size())) {
-			maxIdx = foundIdx;
+			[this](const QueryEntry &entry) -> FoundIndexInfo {
+				if (entry.idxNo != IndexValueType::SetByJsonPath && !entry.distinct) {
+					const auto idxPtr = ns_.indexes_[entry.idxNo].get();
+					if (idxPtr->IsOrdered() && !idxPtr->Opts().IsArray()) {
+						if (IsOrderedCondition(entry.condition)) {
+							return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Compatible};
+						} else if (entry.condition == CondAny || entry.values.size() > 1) {
+							return FoundIndexInfo{idxPtr, FoundIndexInfo::ConditionType::Incompatible};
+						}
+					}
+				}
+				return FoundIndexInfo();
+			},
+			[](const JoinQueryEntry &) { return FoundIndexInfo(); }, [](const BetweenFieldsQueryEntry &) { return FoundIndexInfo(); },
+			[](const AlwaysFalse &) { return FoundIndexInfo(); });
+		if (foundIdx.index) {
+			auto found = std::find_if(foundIndexes.begin(), foundIndexes.end(),
+									  [foundIdx](const FoundIndexInfo &i) { return i.index == foundIdx.index; });
+			if (found == foundIndexes.end()) {
+				foundIndexes.emplace_back(foundIdx);
+			} else {
+				found->isFitForSortOptimization &= foundIdx.isFitForSortOptimization;
+			}
 		}
 	}
-	return maxIdx;
 }
 
 bool QueryPreprocessor::mergeQueryEntries(size_t lhs, size_t rhs) {
@@ -586,8 +621,10 @@ void QueryPreprocessor::fillQueryEntryFromOnCondition(QueryEntry &queryEntry, Na
 		case CondLe:
 		case CondGt:
 		case CondGe:
-			queryEntry.condition = condition;
-			queryEntry.values.emplace_back(qr.aggregationResults[0].value);
+			if (auto value = qr.aggregationResults[0].GetValue()) {
+				queryEntry.condition = condition;
+				queryEntry.values.emplace_back(*value);
+			}
 			break;
 		default:
 			throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(condition));

@@ -11,8 +11,7 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &que
 	assertrx(rightNs_);
 
 	JoinCacheRes joinResLong;
-	joinResLong.key.SetData(joinQuery_, query);
-	rightNs_->getFromJoinCache(joinResLong);
+	rightNs_->getFromJoinCache(query, joinQuery_, joinResLong);
 
 	rightNs_->getIndsideFromJoinCache(joinRes_);
 	if (joinRes_.needPut) {
@@ -51,8 +50,9 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &que
 void JoinedSelector::selectFromPreResultValues(QueryResults &joinItemR, const Query &query, bool &found, bool &matchedAtLeastOnce) const {
 	size_t matched = 0;
 	for (const ItemRef &item : preResult_->values) {
-		assertrx(!item.Value().IsFree());
-		if (query.entries.CheckIfSatisfyConditions({preResult_->values.payloadType, item.Value()}, preResult_->values.tagsMatcher)) {
+		auto &v = item.Value();
+		assertrx(!v.IsFree());
+		if (query.entries.CheckIfSatisfyConditions({preResult_->values.payloadType, v}, preResult_->values.tagsMatcher)) {
 			if (++matched > query.count) break;
 			found = true;
 			joinItemR.Add(item);

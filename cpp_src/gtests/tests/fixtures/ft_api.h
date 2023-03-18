@@ -83,11 +83,8 @@ public:
 			reindexer::Item item = rt.NewItem(default_namespace);
 			item["id"] = counter_;
 			auto ft1 = rt.RandString();
-
 			counter_++;
-
 			item["ft1"] = ft1;
-
 			rt.Upsert(default_namespace, item);
 			rt.Commit(default_namespace);
 		}
@@ -162,10 +159,12 @@ public:
 		rt.Commit(ns);
 	}
 
-	reindexer::QueryResults SimpleSelect(std::string word) {
+	reindexer::QueryResults SimpleSelect(std::string word, bool withHighlight = true) {
 		auto qr{reindexer::Query("nm1").Where("ft3", CondEq, std::move(word))};
 		reindexer::QueryResults res;
-		qr.AddFunction("ft3 = highlight(!,!)");
+		if (withHighlight) {
+			qr.AddFunction("ft3 = highlight(!,!)");
+		}
 		auto err = rt.reindexer->Select(qr, res);
 		EXPECT_TRUE(err.ok()) << err.what();
 
@@ -245,14 +244,15 @@ public:
 	}
 	void CheckAllPermutations(const std::string& queryStart, const std::vector<std::string>& words, const std::string& queryEnd,
 							  const std::vector<std::tuple<std::string, std::string>>& expectedResults, bool withOrder = false,
-							  const std::string& sep = " ") {
+							  const std::string& sep = " ", bool withHighlight = true) {
 		for (const auto& query : CreateAllPermutatedQueries(queryStart, words, queryEnd, sep)) {
-			CheckResults(query, expectedResults, withOrder);
+			CheckResults(query, expectedResults, withOrder, withHighlight);
 		}
 	}
 
-	void CheckResults(const std::string& query, std::vector<std::tuple<std::string, std::string>> expectedResults, bool withOrder) {
-		const auto qr = SimpleSelect(query);
+	void CheckResults(const std::string& query, std::vector<std::tuple<std::string, std::string>> expectedResults, bool withOrder,
+					  bool withHighlight = true) {
+		const auto qr = SimpleSelect(query, withHighlight);
 		CheckResults(query, qr, expectedResults, withOrder);
 	}
 
@@ -309,6 +309,14 @@ public:
 		}
 	}
 
+	std::vector<std::tuple<std::string, std::string>>& DelHighlightSign(std::vector<std::tuple<std::string, std::string>>& in) {
+		for (auto& v : in) {
+			std::string& v2 = std::get<0>(v);
+			v2.erase(std::remove(v2.begin(), v2.end(), '!'), v2.end());
+		}
+		return in;
+	}
+
 protected:
 	static constexpr int kMaxMergeLimitValue = 65000;
 	static constexpr int kMinMergeLimitValue = 0;
@@ -318,7 +326,7 @@ protected:
 		std::string ft2;
 	};
 	struct FTDSLQueryParams {
-		reindexer::fast_hash_map<std::string, int> fields;
+		reindexer::RHashMap<std::string, int> fields;
 		reindexer::fast_hash_set<std::string, reindexer::hash_str, reindexer::equal_str, reindexer::less_str> stopWords;
 		std::string extraWordSymbols = "-/+";
 	};

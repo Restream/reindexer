@@ -438,6 +438,14 @@ void IndexUnordered<T>::Dump(std::ostream &os, std::string_view step, std::strin
 	dump(os, step, offset);
 }
 
+template <typename T>
+void IndexUnordered<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &q) {
+	if constexpr (Base::template HasAddTask<decltype(idx_map)>::value) {
+		idx_map.add_destroy_task(&q);
+	}
+	(void)q;
+}
+
 template <typename KeyEntryT>
 static std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
 	switch (idef.Type()) {

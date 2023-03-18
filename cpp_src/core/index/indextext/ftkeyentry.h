@@ -5,16 +5,19 @@ namespace reindexer {
 
 class FtKeyEntryData : public KeyEntry<IdSetPlain> {
 	using Base = KeyEntry<IdSetPlain>;
+	friend class FtKeyEntry;
 
 public:
-	int vdoc_id_ = ndoc;
 	static constexpr int ndoc = -1;
 
-	int& VDocID() { return vdoc_id_; }
-	const int& VDocID() const { return vdoc_id_; }
+	void SetVDocID(int vdoc_id) noexcept { vdoc_id_ = vdoc_id; }
+	const int& VDocID() const noexcept { return vdoc_id_; }
 	FtKeyEntryData* get() { return this; }
 	const FtKeyEntryData* get() const { return this; }
 	void Dump(std::ostream& os, std::string_view step, std::string_view offset) const;
+
+private:
+	int vdoc_id_ = ndoc;  // index in array IDataHolder::vdocs_
 };
 
 // IndexText need stable pointers to KeyEntry - they are used for expand idset, returned by Select from vdocs
@@ -38,7 +41,7 @@ public:
 	const IdSetPlain& Unsorted() const { return impl_->Unsorted(); }
 	IdSetRef Sorted(unsigned sortId) const { return impl_->Sorted(sortId); }
 	void UpdateSortedIds(const UpdateSortedContext& ctx) { impl_->UpdateSortedIds(ctx); }
-	int& VDocID() { return impl_->vdoc_id_; }
+	void SetVDocID(int vdoc_id) noexcept { impl_->SetVDocID(vdoc_id); }
 	const int& VDocID() const { return impl_->vdoc_id_; }
 	FtKeyEntryData* get() { return impl_.get(); }
 	const FtKeyEntryData* get() const { return impl_.get(); }

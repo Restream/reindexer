@@ -18,27 +18,8 @@ CJsonBuilder::CJsonBuilder(WrSerializer &ser, ObjType type, const TagsMatcher *t
 	}
 }
 
-CJsonBuilder::~CJsonBuilder() { End(); }
-CJsonBuilder &CJsonBuilder::End() {
-	switch (type_) {
-		case ObjType::TypeArray:
-			*(reinterpret_cast<int *>(ser_->Buf() + savePos_)) = static_cast<int>(carraytag(count_, itemType_));
-			break;
-		case ObjType::TypeObjectArray:
-			*(reinterpret_cast<int *>(ser_->Buf() + savePos_)) = static_cast<int>(carraytag(count_, TAG_OBJECT));
-			break;
-		case ObjType::TypeObject:
-			ser_->PutVarUint(static_cast<int>(ctag(TAG_END)));
-			break;
-		case ObjType::TypePlain:
-			break;
-	}
-	type_ = ObjType::TypePlain;
-	return *this;
-}
-
 CJsonBuilder CJsonBuilder::Object(int tagName) {
-	count_++;
+	++count_;
 	return CJsonBuilder(*ser_, ObjType::TypeObject, tm_, tagName);
 }
 

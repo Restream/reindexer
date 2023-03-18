@@ -2,7 +2,6 @@
 #include "idrelset.h"
 #include <algorithm>
 #include "estl/h_vector.h"
-#include "sort/pdqsort.hpp"
 #include "tools/varint.h"
 
 namespace reindexer {
@@ -49,6 +48,7 @@ size_t IdRelType::unpack(const uint8_t* buf, unsigned len) {
 
 int IdRelType::Distance(const IdRelType& other, int max) const {
 	for (auto i = pos_.begin(), j = other.pos_.begin(); i != pos_.end() && j != other.pos_.end();) {
+		// fpos - field number + word position in the field
 		bool sign = i->fpos > j->fpos;
 		int cur = sign ? i->fpos - j->fpos : j->fpos - i->fpos;
 		if (cur < max && cur < (1 << PosType::posBits)) {
@@ -60,11 +60,11 @@ int IdRelType::Distance(const IdRelType& other, int max) const {
 	return max;
 }
 int IdRelType::WordsInField(int field) const noexcept {
-	const auto lower = std::lower_bound(pos_.cbegin(), pos_.cend(), field, [](PosType p, int f){return p.field() < f;});
-	return std::upper_bound(lower, pos_.cend(), field, [](int f, PosType p){return f < p.field();}) - lower;
+	const auto lower = std::lower_bound(pos_.cbegin(), pos_.cend(), field, [](PosType p, int f) { return p.field() < f; });
+	return std::upper_bound(lower, pos_.cend(), field, [](int f, PosType p) { return f < p.field(); }) - lower;
 }
 int IdRelType::MinPositionInField(int field) const noexcept {
-	auto lower = std::lower_bound(pos_.cbegin(), pos_.cend(), field, [](PosType p, int f){return p.field() < f;});
+	auto lower = std::lower_bound(pos_.cbegin(), pos_.cend(), field, [](PosType p, int f) { return p.field() < f; });
 	assertrx(lower != pos_.cend() && lower->field() == field);
 	int res = lower->pos();
 	while (++lower != pos_.cend() && lower->field() == field) {

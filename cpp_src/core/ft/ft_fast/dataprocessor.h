@@ -9,7 +9,9 @@ namespace reindexer {
 template <typename IdCont>
 class DataProcessor {
 public:
-	using words_map = fast_hash_map<std::string, WordEntry>;
+
+	using words_map = RHashMap<std::string, WordEntry>;
+
 	DataProcessor(DataHolder<IdCont>& holder, size_t fieldSize) : holder_(holder), multithread_(false), fieldSize_(fieldSize) {}
 
 	void Process(bool multithread);

@@ -5,6 +5,7 @@
 #include <vector>
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
+#include "usingcontainer.h"
 
 namespace reindexer {
 
@@ -33,23 +34,20 @@ struct Area {
 	int end_;
 };
 
-using AreaVec = h_vector<Area, 2>;
+using AreaVec = RVector<Area, 2>;
 class AreaHolder {
 public:
 	typedef std::shared_ptr<AreaHolder> Ptr;
 	typedef std::unique_ptr<AreaHolder> UniquePtr;
 
-	AreaHolder(int buffer_size, int total_size, int space_size)
-		: buffer_size_(buffer_size), total_size_(total_size), space_size_(space_size), commited_(false) {}
 	AreaHolder() = default;
 	~AreaHolder() = default;
 	void Reserve(int size);
 	void ReserveField(int size);
-	void AddTreeGramm(int pos, int filed, int maxAreasInDoc);
 	void Commit();
-	int GetSize() { return total_size_; }
-	bool AddWord(int start_pos, int size, int filed, int maxAreasInDoc);
+	bool AddWord(int pos, int filed, int maxAreasInDoc);
 	AreaVec *GetAreas(int field);
+	AreaVec *GetAreasRaw(int field);
 	bool IsCommited() const noexcept { return commited_; }
 	size_t GetAreasCount() const noexcept {
 		size_t size = 0;
@@ -58,13 +56,10 @@ public:
 		}
 		return size;
 	}
+	bool InsertArea(Area &&area, int filed, int maxAreasInDoc);
 
 private:
-	bool insertArea(Area &&area, int filed, int maxAreasInDoc);
-	int buffer_size_ = 0;
-	int total_size_ = 0;
-	int space_size_ = 0;
 	bool commited_ = false;
-	h_vector<AreaVec, 3> areas;
+	RVector<AreaVec, 3> areas;
 };
 }  // namespace reindexer

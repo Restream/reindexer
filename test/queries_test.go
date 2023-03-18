@@ -211,6 +211,7 @@ func init() {
 	tnamespaces["test_items"] = TestItem{}
 	tnamespaces["test_items_wal"] = TestItem{}
 	tnamespaces["test_items_qr_idle"] = TestItemSimple{}
+	tnamespaces["test_items_aggs_fetching"] = TestItemSimple{}
 	tnamespaces["test_items_cancel"] = TestItem{}
 	tnamespaces["test_items_id_only"] = TestItemIDOnly{}
 	tnamespaces["test_items_with_sparse"] = TestItemWithSparse{}
@@ -672,11 +673,11 @@ func CheckAggregateQueries(t *testing.T) {
 	sort.Sort(compositeFacetResult)
 	compositeFacetResult = compositeFacetResult[min(facetOffset, len(compositeFacetResult)):min(facetOffset+facetLimit, len(compositeFacetResult))]
 
-	if sum != aggregations[1].Value {
-		panic(fmt.Errorf("%f != %f", sum, aggregations[1].Value))
+	if sum != *aggregations[1].Value {
+		panic(fmt.Errorf("%f != %f", sum, *aggregations[1].Value))
 	}
-	if sum/float64(len(res)) != aggregations[0].Value {
-		panic(fmt.Errorf("%f != %f,len=%d", sum/float64(len(res)), aggregations[0].Value, len(res)))
+	if sum/float64(len(res)) != *aggregations[0].Value {
+		panic(fmt.Errorf("%f != %f,len=%d", sum/float64(len(res)), *aggregations[0].Value, len(res)))
 	}
 
 	if len(aggregations[2].Fields) != 1 {
@@ -712,11 +713,11 @@ func CheckAggregateQueries(t *testing.T) {
 			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[3].Fields[0], facet.Values[0], count, facet.Count))
 		}
 	}
-	if ageMin != int(aggregations[4].Value) {
-		panic(fmt.Errorf("%d != %f", ageMin, aggregations[4].Value))
+	if ageMin != int(*aggregations[4].Value) {
+		panic(fmt.Errorf("%d != %f", ageMin, *aggregations[4].Value))
 	}
-	if ageMax != int(aggregations[5].Value) {
-		panic(fmt.Errorf("%d != %f", ageMax, aggregations[5].Value))
+	if ageMax != int(*aggregations[5].Value) {
+		panic(fmt.Errorf("%d != %f", ageMax, *aggregations[5].Value))
 	}
 	if len(aggregations[6].Fields) != 2 {
 		panic(fmt.Errorf("%d != 1", len(aggregations[6].Fields)))
@@ -1835,6 +1836,74 @@ func TestStrictMode(t *testing.T) {
 		}
 	})
 
+	nonExistentField := "NonExistentField"
+
+	t.Run("Aggregate no error with non-existent field and strict_mode=none", func(t *testing.T) {
+		q := DB.Query("test_items")
+		q.q.Strict(reindexer.QueryStrictModeNone)
+
+		q.AggregateSum(nonExistentField)
+		it := q.Exec(t)
+		require.NoError(t, it.Error())
+		defer it.Close()
+
+		aggregations := it.AggResults()
+		assert.Equal(t, len(aggregations), 1)
+		assert.Empty(t, aggregations[0].Value)
+	})
+
+	t.Run("Aggregate error with non-existent field and strict_mode=indexes", func(t *testing.T) {
+		q := DB.Query("test_items")
+		q.q.Strict(reindexer.QueryStrictModeIndexes)
+
+		q.AggregateSum(nonExistentField)
+		it := q.Exec(t)
+		require.Error(t, it.Error())
+		defer it.Close()
+
+		err_msg := "Current query strict mode allows aggregate index fields only. There are no indexes with name 'NonExistentField' in namespace 'test_items'"
+		assert.ErrorContains(t, it.Error(), err_msg)
+	})
+
+	t.Run("Aggregate error with non-existent field and strict_mode=names", func(t *testing.T) {
+		q := DB.Query("test_items")
+		q.q.Strict(reindexer.QueryStrictModeNames)
+
+		q.AggregateSum(nonExistentField)
+		it := q.Exec(t)
+		require.Error(t, it.Error())
+		defer it.Close()
+
+		err_msg := "Current query strict mode allows aggregate existing fields only. There are no fields with name 'NonExistentField' in namespace 'test_items'"
+		assert.ErrorContains(t, it.Error(), err_msg)
+	})
+}
+
+func TestAggregationsFetching(t *testing.T) {
+	// Validate, that distinct results will remain valid after query results fetching.
+	// Actual aggregation values will be sent for initial 'select' only, but must be available at any point of iterator's lifetime.
+
+	namespace := "test_items_aggs_fetching"
+	const nsSize = 50
+	FillTestItemsWithFunc(namespace, 0, nsSize, 0, newTestItemSimple)
+
+	it := DBD.Query(namespace).FetchCount(nsSize / 5).Distinct("id").ReqTotal().Explain().MustExec()
+	defer it.Close()
+	assert.NoError(t, it.Error())
+	assert.Equal(t, nsSize, it.Count())
+	aggs := it.AggResults()
+	assert.Equal(t, 2, len(aggs))
+	assert.Equal(t, "distinct", aggs[0].Type)
+	assert.Equal(t, "count", aggs[1].Type)
+	explain, err := it.GetExplainResults()
+	assert.NoError(t, err)
+	for it.Next() {
+		assert.NoError(t, it.Error())
+		assert.Equal(t, aggs, it.AggResults())
+		exp, err := it.GetExplainResults()
+		assert.NoError(t, err)
+		assert.Equal(t, explain, exp)
+	}
 }
 
 func TestQrIdleTimeout(t *testing.T) {

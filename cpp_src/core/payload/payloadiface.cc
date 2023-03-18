@@ -62,7 +62,7 @@ VariantArray PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatch
 		if (fieldIdx == -1) {
 			kvs.clear();
 			return kvs;
-		};
+		}
 		if (t_.Field(fieldIdx).IsArray()) {
 			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath, nullptr, false);
 			if (tagsPath.back().IsWithIndex()) {

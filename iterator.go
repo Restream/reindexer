@@ -98,7 +98,7 @@ func newIterator(
 	if joinObjSize > 0 {
 		it.current.joinObj = make([][]interface{}, joinObjSize)
 	}
-	it.setBuffer(result)
+	it.setBuffer(result, true)
 
 	return
 }
@@ -143,12 +143,18 @@ type Iterator struct {
 	userCtx context.Context
 }
 
-func (it *Iterator) setBuffer(result bindings.RawBuffer) {
+func (it *Iterator) setBuffer(result bindings.RawBuffer, cleanup bool) {
 	it.ser = newSerializer(result.GetBuf())
 	it.result = result
-	it.rawQueryParams = it.ser.readRawQueryParams(func(nsid int) {
-		it.nsArray[nsid].localCjsonState = it.nsArray[nsid].cjsonState.ReadPayloadType(&it.ser.Serializer)
-	})
+	if cleanup {
+		it.rawQueryParams = it.ser.readRawQueryParams(func(nsid int) {
+			it.nsArray[nsid].localCjsonState = it.nsArray[nsid].cjsonState.ReadPayloadType(&it.ser.Serializer)
+		})
+	} else {
+		it.ser.readRawQueryParamsKeepExtras(&it.rawQueryParams, func(nsid int) {
+			it.nsArray[nsid].localCjsonState = it.nsArray[nsid].cjsonState.ReadPayloadType(&it.ser.Serializer)
+		})
+	}
 }
 
 // Next moves iterator pointer to the next element.
@@ -250,15 +256,31 @@ func (it *Iterator) fetchResults() {
 			fetchCount = it.query.fetchCount
 		}
 
+		if it.ptr <= it.rawQueryParams.count {
+			// Copy aggregation results before the first fetch
+			if len(it.rawQueryParams.aggResults) > 0 {
+				duplicate := make([][]byte, len(it.rawQueryParams.aggResults))
+				for i := range it.rawQueryParams.aggResults {
+					duplicate[i] = make([]byte, len(it.rawQueryParams.aggResults[i]))
+					copy(duplicate[i], it.rawQueryParams.aggResults[i])
+				}
+				it.rawQueryParams.aggResults = duplicate
+			}
+			if len(it.rawQueryParams.explainResults) > 0 {
+				duplicate := make([]byte, len(it.rawQueryParams.explainResults))
+				copy(duplicate, it.rawQueryParams.explainResults)
+				it.rawQueryParams.explainResults = duplicate
+			}
+		}
+
 		if it.err = fetchMore.Fetch(it.userCtx, it.ptr, fetchCount, false); it.err != nil {
 			return
 		}
 		it.resPtr = 0
-		it.setBuffer(it.result)
+		it.setBuffer(it.result, false)
 	} else {
 		panic(fmt.Errorf("unexpected behavior: have the partial query but binding not support that"))
 	}
-	return
 }
 
 func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{}) {
@@ -418,9 +440,9 @@ func (it *Iterator) AggResults() (v []AggregationResult) {
 }
 
 // GetAggreatedValue - Return aggregation sum of field
-func (it *Iterator) GetAggreatedValue(idx int) float64 {
+func (it *Iterator) GetAggreatedValue(idx int) *float64 {
 	if idx < 0 || idx >= len(it.rawQueryParams.aggResults) {
-		return 0
+		return nil
 	}
 	res := AggregationResult{}
 	json.Unmarshal(it.rawQueryParams.aggResults[idx], &res)
@@ -448,13 +470,14 @@ func (it *Iterator) Error() error {
 // Close closes the iterator and freed CGO resources
 func (it *Iterator) Close() {
 	if it.result != nil {
+		it.rawQueryParams.aggResults = nil
+		it.rawQueryParams.explainResults = nil
 		it.result.Free()
 		it.result = nil
 		if it.query != nil {
 			it.query.close()
 		}
 	}
-	return
 }
 
 func (it *Iterator) findJoinFieldIndex(field string) (index int) {

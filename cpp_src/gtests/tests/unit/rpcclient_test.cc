@@ -5,6 +5,7 @@
 #include "coroutine/waitgroup.h"
 #include "gtests/tests/gtest_cout.h"
 #include "net/ev/ev.h"
+#include "query_aggregate_strict_mode_test.h"
 #include "rpcclient_api.h"
 #include "rpcserver_fake.h"
 #include "tools/fsops.h"
@@ -962,6 +963,86 @@ TEST_F(RPCClientTestApi, FetchingWithJoin) {
 			EXPECT_EQ(ser.Slice(), expected);
 			i++;
 		}
+		err = rx.Stop();
+		ASSERT_TRUE(err.ok()) << err.what();
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, AggregationsWithStrictModeTest) {
+	using namespace reindexer::client;
+	StartDefaultRealServer();
+	dynamic_loop loop;
+
+	loop.spawn([&loop]() noexcept {
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		reindexer::client::ReindexerConfig cfg;
+		auto rx = std::make_unique<CoroReindexer>(cfg);
+		auto err = rx->Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryAggStrictModeTest(rx);
+	});
+
+	loop.run();
+}
+TEST_F(RPCClientTestApi, AggregationsFetching) {
+	// Validate, that distinct results will remain valid after query results fetching.
+	// Actual aggregation values will be sent for initial 'select' only, but must be available at any point of iterator's lifetime.
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+	constexpr unsigned kItemsCount = 100;
+	constexpr unsigned kFetchLimit = kItemsCount / 5;
+
+	loop.spawn([&loop, this, kItemsCount]() noexcept {
+		const std::string nsName = "ns1";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		client::ReindexerConfig cfg;
+		cfg.FetchAmount = kFetchLimit;
+		CoroReindexer rx(cfg);
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CreateNamespace(rx, nsName);
+		FillData(rx, nsName, 0, kItemsCount);
+
+		{
+			CoroQueryResults qr;
+			const auto q = Query(nsName).Distinct("id").ReqTotal().Explain();
+			err = rx.Select(q, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), kItemsCount);
+			const auto initialAggs = qr.GetAggregationResults();
+			ASSERT_EQ(initialAggs.size(), 2);
+			ASSERT_EQ(initialAggs[0].type, AggDistinct);
+			ASSERT_EQ(initialAggs[1].type, AggCount);
+			const std::string explain = qr.GetExplainResults();
+			ASSERT_GT(explain.size(), 0);
+			WrSerializer wser;
+			initialAggs[0].GetJSON(wser);
+			initialAggs[1].GetJSON(wser);
+			const std::string initialAggJSON(wser.Slice());
+			for (auto& it : qr) {
+				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+				auto& aggs = qr.GetAggregationResults();
+				ASSERT_EQ(aggs.size(), 2);
+				wser.Reset();
+				aggs[0].GetJSON(wser);
+				aggs[1].GetJSON(wser);
+				EXPECT_EQ(initialAggJSON, wser.Slice()) << q.GetSQL();
+				EXPECT_EQ(qr.TotalCount(), kItemsCount);
+				EXPECT_EQ(explain, qr.GetExplainResults());
+			}
+		}
+
 		err = rx.Stop();
 		ASSERT_TRUE(err.ok()) << err.what();
 	});

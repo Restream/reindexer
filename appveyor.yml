@@ -2,20 +2,10 @@ version: '{build}'
 
 # Uncomment this to enable the fast build environment if your account does not
 # support it automatically:
-image: Visual Studio 2017
+image: Visual Studio 2019
 
 environment:
   matrix:
-    - BUILD_TYPE: Release
-      COMPILER: MSVC17
-      PLATFORM: x64
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
-
-    - BUILD_TYPE: Release
-      COMPILER: MSVC17
-      PLATFORM: Win32
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2017
-
     - BUILD_TYPE: Release
       COMPILER: MinGW-w64
       PLATFORM: x64

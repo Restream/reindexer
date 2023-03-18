@@ -9,6 +9,8 @@
 #include "core/ft/config/ftfastconfig.h"
 #include "tools/stringstools.h"
 
+#include <dlfcn.h>
+
 using benchmark::State;
 using benchmark::AllocsTracker;
 
@@ -18,7 +20,11 @@ using reindexer::utf16_to_utf8;
 
 uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
 
-FullText::FullText(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems, 1, false) {
+FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
+	: BaseFixture(db, name, maxItems, 1, false), lowWordsDiversityNsDef_("LowWordsDiversityNs") {
+#ifdef REINDEX_FT_EXTRA_DEBUG
+	std::cout << "!!!REINDEXER WITH FT_EXTRA_DEBUG FLAG!!!!!" << std::endl;
+#endif
 	static reindexer::FtFastConfig ftCfg(1);
 	static IndexOpts ftIndexOpts;
 	ftCfg.optimization = reindexer::FtFastConfig::Optimization::Memory;
@@ -30,6 +36,10 @@ FullText::FullText(Reindexer* db, const string& name, size_t maxItems) : BaseFix
 		.AddIndex("countries", "tree", "string", IndexOpts().Array())
 		.AddIndex("searchfast", {"countries", "description"}, "text", "composite", ftIndexOpts)
 		.AddIndex("searchfuzzy", {"countries", "description"}, "fuzzytext", "composite", IndexOpts());
+	lowWordsDiversityNsDef_.AddIndex("id", "hash", "int", IndexOpts().PK())
+		.AddIndex("description1", "-", "string", IndexOpts())
+		.AddIndex("description2", "-", "string", IndexOpts())
+		.AddIndex("search", {"description1", "description2"}, "text", "composite", ftIndexOpts);
 }
 
 template <reindexer::FtFastConfig::Optimization opt>
@@ -58,12 +68,16 @@ reindexer::Error FullText::Initialize() {
 	auto err = BaseFixture::Initialize();
 	if (!err.ok()) return err;
 
-	std::ifstream file;
-	file.open(RX_BENCH_DICT_PATH);
+	err = db_->AddNamespace(lowWordsDiversityNsDef_);
+	if (!err.ok()) return err;
 
-	if (!file) return reindexer::Error(errNotValid, "%s", strerror(errno));
 	words_.reserve(140000);
-	std::copy(std::istream_iterator<string>(file), std::istream_iterator<string>(), std::back_inserter(words_));
+	err = readDictFile(RX_BENCH_DICT_PATH, words_);
+	if (!err.ok()) return err;
+
+	words2_ = {"стол", "столом", "столы", "cnjk",	"stol",		  "бежит",	"бегут", "бежали",	 ",tu",	  "beg",
+			   "дом",  "доме",	 "ljv",	  "ракета", "ракетой",	  "ракеты", "hfrtn", "raketa",	 "летит", "летает",
+			   "цель", "цели",	 "взрыв", "vzryv",	"взорвалось", "мир",	"танк",	 "танковый", "танки", "tayr"};
 
 	// clang-format off
 	countries_ = {
@@ -97,33 +111,51 @@ reindexer::Error FullText::Initialize() {
 	return 0;
 }
 
-void FullText::RegisterAllCases() {
+void FullText::RegisterAllCases(size_t iterationCount) {
 	constexpr static auto Mem = reindexer::FtFastConfig::Optimization::Memory;
 	constexpr static auto CPU = reindexer::FtFastConfig::Optimization::CPU;
+
+	RegisterWrapper wrap(iterationCount);  //-1 test limit - default time
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
+	Register("BuildAndInsertNs2", &FullText::BuildAndInsertLowWordsDiversityNs, this)->Iterations(1000)->Unit(benchmark::kMicrosecond);
+	wrap.SetOptions(Register("Fast3PhraseLowDiversity", &FullText::Fast3PhraseLowDiversity, this));
+	wrap.SetOptions(Register("Fast3WordsLowDiversity", &FullText::Fast3WordsLowDiversity, this));
+
+	wrap.SetOptions(Register("Fast3WordsWithAreasLowDiversity", &FullText::Fast3WordsWithAreasLowDiversity, this));
+	wrap.SetOptions(Register("Fast3PhraseWithAreasLowDiversity", &FullText::Fast3PhraseWithAreasLowDiversity, this));
+
+	wrap.SetOptions(Register("Fast2PhraseLowDiversity", &FullText::Fast2PhraseLowDiversity, this));
+	wrap.SetOptions(Register("Fast2AndWordLowDiversity", &FullText::Fast2AndWordLowDiversity, this));
+
 	Register("Insert", &FullText::Insert, this)->Iterations(id_seq_->Count())->Unit(benchmark::kMicrosecond);
 
 	// Register("BuildCommonIndexes", &FullText::BuildCommonIndexes, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 	Register("BuildFastTextIndex", &FullText::BuildFastTextIndex, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 	// Register("BuildFuzzyTextIndex", &FullText::BuildFuzzyTextIndex, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 
-	Register("Fast1WordMatch.OptByMem", &FullText::Fast1WordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2WordsMatch.OptByMem", &FullText::Fast2WordsMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1PrefixMatch.OptByMem", &FullText::Fast1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2PrefixMatch.OptByMem", &FullText::Fast2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1SuffixMatch.OptByMem", &FullText::Fast1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2SuffixMatch.OptByMem", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1TypoWordMatch.OptByMem", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2TypoWordMatch.OptByMem", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	wrap.SetOptions(Register("Fast1WordMatch.OptByMem", &FullText::Fast1WordMatch, this));
+	wrap.SetOptions(Register("Fast2WordsMatch.OptByMem", &FullText::Fast2WordsMatch, this));
+	wrap.SetOptions(Register("Fast1PrefixMatch.OptByMem", &FullText::Fast1PrefixMatch, this));
+	wrap.SetOptions(Register("Fast2PrefixMatch.OptByMem", &FullText::Fast2PrefixMatch, this));
+	wrap.SetOptions(Register("Fast1SuffixMatch.OptByMem", &FullText::Fast1SuffixMatch, this));
+
+	wrap.SetOptions(Register("Fast2SuffixMatch.OptByMem", &FullText::Fast2SuffixMatch, this));
+
+	wrap.SetOptions(Register("Fast1TypoWordMatch.OptByMem", &FullText::Fast1TypoWordMatch, this));
+	wrap.SetOptions(Register("Fast2TypoWordMatch.OptByMem", &FullText::Fast2TypoWordMatch, this));
+	wrap.SetOptions(Register("Fast1WordWithAreaHighDiversity.optByMem", &FullText::Fast1WordWithAreaHighDiversity, this));
+
 	Register("SetOptimizationByCPU", &FullText::UpdateIndex<CPU>, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
-	Register("Fast1WordMatch.OptByCPU", &FullText::Fast1WordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2WordsMatch.OptByCPU", &FullText::Fast2WordsMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1PrefixMatch.OptByCPU", &FullText::Fast1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2PrefixMatch.OptByCPU", &FullText::Fast2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1SuffixMatch.OptByCPU", &FullText::Fast1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2SuffixMatch.OptByCPU", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1TypoWordMatch.OptByCPU", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2TypoWordMatch.OptByCPU", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+
+	wrap.SetOptions(Register("Fast1WordMatch.OptByCPU", &FullText::Fast1WordMatch, this));
+
+	wrap.SetOptions(Register("Fast2WordsMatch.OptByCPU", &FullText::Fast2WordsMatch, this));
+	wrap.SetOptions(Register("Fast1PrefixMatch.OptByCPU", &FullText::Fast1PrefixMatch, this));
+	wrap.SetOptions(Register("Fast2PrefixMatch.OptByCPU", &FullText::Fast2PrefixMatch, this));
+	wrap.SetOptions(Register("Fast1SuffixMatch.OptByCPU", &FullText::Fast1SuffixMatch, this));
+	wrap.SetOptions(Register("Fast2SuffixMatch.OptByCPU", &FullText::Fast2SuffixMatch, this));
+	wrap.SetOptions(Register("Fast1TypoWordMatch.OptByCPU", &FullText::Fast1TypoWordMatch, this));
+	wrap.SetOptions(Register("Fast2TypoWordMatch.OptByCPU", &FullText::Fast2TypoWordMatch, this));
 
 	// Register("Fuzzy1WordMatch", &FullText::Fuzzy1WordMatch, this)->Unit(benchmark::kMicrosecond);
 	// Register("Fuzzy2WordsMatch", &FullText::Fuzzy2WordsMatch, this)->Unit(benchmark::kMicrosecond);
@@ -133,44 +165,49 @@ void FullText::RegisterAllCases() {
 	// Register("Fuzzy2SuffixMatch", &FullText::Fuzzy2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
 	// Register("Fuzzy1TypoWordMatch", &FullText::Fuzzy1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
 	// Register("Fuzzy2TypoWordMatch", &FullText::Fuzzy2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+
 	Register("SetOptimizationByMemory", &FullText::UpdateIndex<Mem>, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
+
 	Register("BuildInsertSteps", &FullText::BuildInsertSteps, this)->Iterations(id_seq_->Count())->Unit(benchmark::kMicrosecond);
-	Register("Fast1WordMatchSteps.OptByMem", &FullText::Fast1WordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2WordsMatchSteps.OptByMem", &FullText::Fast2WordsMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1PrefixMatchSteps.OptByMem", &FullText::Fast1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2PrefixMatchSteps.OptByMem", &FullText::Fast2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1SuffixMatchSteps.OptByMem", &FullText::Fast1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2SuffixMatchSteps.OptByMem", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1TypoWordMatchSteps.OptByMem", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2TypoWordMatchSteps.OptByMem", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("SetOptimizationByCPU", &FullText::UpdateIndex<CPU>, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
-	Register("Fast1WordMatch.OptByCPU", &FullText::Fast1WordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2WordsMatch.OptByCPU", &FullText::Fast2WordsMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1PrefixMatch.OptByCPU", &FullText::Fast1PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2PrefixMatch.OptByCPU", &FullText::Fast2PrefixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1SuffixMatch.OptByCPU", &FullText::Fast1SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2SuffixMatch.OptByCPU", &FullText::Fast2SuffixMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast1TypoWordMatch.OptByCPU", &FullText::Fast1TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
-	Register("Fast2TypoWordMatch.OptByCPU", &FullText::Fast2TypoWordMatch, this)->Unit(benchmark::kMicrosecond);
+	// Register("Fast1WordMatchSteps.OptByMem", &FullText::Fast1WordMatch,
+	// this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !	Register("Fast2WordsMatchSteps.OptByMem",
+	//&FullText::Fast2WordsMatch, this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !
+	// Register("Fast1PrefixMatchSteps.OptByMem", &FullText::Fast1PrefixMatch,
+	// this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !	Register("Fast2PrefixMatchSteps.OptByMem",
+	//&FullText::Fast2PrefixMatch, this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !
+	// Register("Fast1SuffixMatchSteps.OptByMem", &FullText::Fast1SuffixMatch,
+	// this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !	Register("Fast2SuffixMatchSteps.OptByMem",
+	//&FullText::Fast2SuffixMatch, this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !
+	// Register("Fast1TypoWordMatchSteps.OptByMem", &FullText::Fast1TypoWordMatch,
+	// this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !	Register("Fast2TypoWordMatchSteps.OptByMem",
+	//&FullText::Fast2TypoWordMatch, this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); ! Register("SetOptimizationByCPU",
+	//&FullText::UpdateIndex<CPU>, this)->Iterations(1)->Unit(benchmark::kMicrosecond); !	Register("Fast1WordMatch.OptByCPU",
+	//&FullText::Fast1WordMatch, this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); ! Register("Fast2WordsMatch.OptByCPU",
+	//&FullText::Fast2WordsMatch, this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !
+	// Register("Fast1PrefixMatch.OptByCPU", &FullText::Fast1PrefixMatch,
+	// this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !	Register("Fast2PrefixMatch.OptByCPU",
+	//&FullText::Fast2PrefixMatch, this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !
+	// Register("Fast1SuffixMatch.OptByCPU", &FullText::Fast1SuffixMatch,
+	// this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); ! Register("Fast2SuffixMatch.OptByCPU",
+	// &FullText::Fast2SuffixMatch, this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !
+	// Register("Fast1TypoWordMatch.OptByCPU", &FullText::Fast1TypoWordMatch,
+	// this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond); !	Register("Fast2TypoWordMatch.OptByCPU",
+	//&FullText::Fast2TypoWordMatch, this)->Iterations(IterationsCount)->Unit(benchmark::kMicrosecond);
 
 	Register("InitForAlternatingUpdatesAndSelects.OptByMem", &FullText::InitForAlternatingUpdatesAndSelects<Mem>, this)
 		->Iterations(1)
 		->Unit(benchmark::kMicrosecond);
-	Register("AlternatingUpdatesAndSelects.OptByMem", &FullText::AlternatingUpdatesAndSelects, this)->Unit(benchmark::kMicrosecond);
-	Register("AlternatingUpdatesAndSelectsByComposite.OptByMem", &FullText::AlternatingUpdatesAndSelectsByComposite, this)
-		->Unit(benchmark::kMicrosecond);
-	Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields.OptByMem",
-			 &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields, this)
-		->Unit(benchmark::kMicrosecond);
+	wrap.SetOptions(Register("AlternatingUpdatesAndSelects.OptByMem", &FullText::AlternatingUpdatesAndSelects, this));
+	wrap.SetOptions(Register("AlternatingUpdatesAndSelectsByComposite.OptByMem", &FullText::AlternatingUpdatesAndSelectsByComposite, this));
+	wrap.SetOptions(Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields.OptByMem",
+							 &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields, this));
 	Register("InitForAlternatingUpdatesAndSelects.OptByCPU", &FullText::InitForAlternatingUpdatesAndSelects<CPU>, this)
 		->Iterations(1)
 		->Unit(benchmark::kMicrosecond);
-	Register("AlternatingUpdatesAndSelects.OptByCPU", &FullText::AlternatingUpdatesAndSelects, this)->Unit(benchmark::kMicrosecond);
-	Register("AlternatingUpdatesAndSelectsByComposite.OptByCPU", &FullText::AlternatingUpdatesAndSelectsByComposite, this)
-		->Unit(benchmark::kMicrosecond);
-	Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields.OptByCPU",
-			 &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields, this)
-		->Unit(benchmark::kMicrosecond);
+	wrap.SetOptions(Register("AlternatingUpdatesAndSelects.OptByCPU", &FullText::AlternatingUpdatesAndSelects, this));
+	wrap.SetOptions(Register("AlternatingUpdatesAndSelectsByComposite.OptByCPU", &FullText::AlternatingUpdatesAndSelectsByComposite, this));
+	wrap.SetOptions(Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields.OptByCPU",
+							 &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields, this));
 	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
@@ -195,8 +232,8 @@ reindexer::Item FullText::MakeItem() {
 
 	item["id"] = id_seq_->Next();
 	item["description"] = phrase;
-	item["year"] = random<int>(2000, 2049);
-	item["countries"] = toArray<string>(countries);
+	item["year"] = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{2000, 2049});
+	item["countries"] = toArray<std::string>(countries);
 
 	return item;
 }
@@ -205,25 +242,27 @@ void FullText::BuildInsertSteps(State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 
 	db_->DropNamespace(nsdef_.name);
+	id_seq_->Reset();
+
 	auto err = BaseFixture::Initialize();
-	nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex("description", "-", "string", IndexOpts());
 	size_t i = 0;
 	size_t mem = 0;
 
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeSpecialItem();
 		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
-
-		auto err = db_->Insert(nsdef_.name, item);
+		err = db_->Insert(nsdef_.name, item);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 
 		if (i % 12000 == 0) {
 			Query q(nsdef_.name);
-			q.Where("searchfast", CondEq, words_.at(random<size_t>(0, words_.size() - 1))).Limit(20);
+			q.Where("searchfast", CondEq,
+					words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})))
+				.Limit(20);
 
 			QueryResults qres;
 			size_t memory = get_alloc_size();
-			auto err = db_->Select(q, qres);
+			err = db_->Select(q, qres);
 
 			memory = get_alloc_size() - memory;
 			if (!err.ok()) state.SkipWithError(err.what().c_str());
@@ -263,12 +302,217 @@ void FullText::BuildCommonIndexes(benchmark::State& state) {
 	}
 }
 
+void FullText::BuildAndInsertLowWordsDiversityNs(State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	auto createText = [&]() {
+		size_t wordCnt = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{5, 50});
+		reindexer::WrSerializer r;
+		r.Reserve(wordCnt * 30);
+
+		for (size_t i = 0; i < wordCnt; i++) {
+			r << words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+			if (i < wordCnt - 1) r << " ";
+		}
+		return std::string(r.Slice());
+	};
+
+	int idCounter = 0;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		auto item = db_->NewItem(lowWordsDiversityNsDef_.name);
+		auto d1 = createText();
+		auto d2 = createText();
+		item["id"] = idCounter;
+		item["description1"] = d1;
+		item["description2"] = d2;
+
+		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+
+		auto err = db_->Insert(lowWordsDiversityNsDef_.name, item);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		idCounter++;
+	}
+
+	Query q(lowWordsDiversityNsDef_.name);
+	q.Where("search", CondEq, words2_.at(0)).Limit(1);
+	QueryResults qres;
+	auto err = db_->Select(q, qres);
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
+}
+
+void FullText::Fast3PhraseLowDiversity(State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	size_t cnt = 0;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(lowWordsDiversityNsDef_.name);
+		std::string& w1 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string& w2 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string& w3 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string ftQuery;
+		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
+		ftQuery.append("'").append(w1).append(" ").append(w2).append("' ").append(w3);
+		q.Where("search", CondEq, ftQuery);
+		QueryResults qres;
+
+		auto err = db_->Select(q, qres);
+
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		cnt += qres.Count();
+	}
+
+	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
+}
+
+void FullText::Fast3WordsLowDiversity(State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	size_t cnt = 0;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(lowWordsDiversityNsDef_.name);
+		std::string& w1 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string& w2 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string& w3 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string ftQuery;
+		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
+		ftQuery.append("+").append(w1).append(" +").append(w2).append(" +").append(w3);
+		q.Where("search", CondEq, ftQuery);
+		QueryResults qres;
+
+		auto err = db_->Select(q, qres);
+
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		cnt += qres.Count();
+	}
+
+	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
+}
+
+void FullText::Fast2PhraseLowDiversity(State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	size_t cnt = 0;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(lowWordsDiversityNsDef_.name);
+		std::string& w1 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string& w2 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string ftQuery;
+		ftQuery.reserve(w1.size() + w2.size() + 32);
+		ftQuery.append("'").append(w1).append(" ").append(w2).append("'~50");
+		q.Where("search", CondEq, ftQuery);
+		QueryResults qres;
+
+		auto err = db_->Select(q, qres);
+
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		cnt += qres.Count();
+	}
+
+	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
+}
+
+void FullText::Fast2AndWordLowDiversity(State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	size_t cnt = 0;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(lowWordsDiversityNsDef_.name);
+		std::string& w1 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string& w2 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string ftQuery;
+		ftQuery.reserve(w1.size() + w2.size() + 32);
+		ftQuery.append("+").append(w1).append(" +").append(w2);
+		q.Where("search", CondEq, ftQuery);
+		QueryResults qres;
+
+		auto err = db_->Select(q, qres);
+
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		cnt += qres.Count();
+	}
+
+	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
+}
+
+void FullText::Fast3PhraseWithAreasLowDiversity(State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	size_t cnt = 0;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(lowWordsDiversityNsDef_.name);
+		std::string& w1 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string& w2 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string& w3 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string ftQuery;
+		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
+		ftQuery.append("'").append(w1).append(" ").append(w2).append("' ").append(w3);
+		q.Where("search", CondEq, ftQuery);
+		q.AddFunction("search = highlight(!,!)");
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		cnt += qres.Count();
+	}
+
+	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
+}
+void FullText::Fast1WordWithAreaHighDiversity(State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	size_t cnt = 0;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		std::string& word =
+			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)}));
+		q.Where("searchfast", CondEq, word);
+		q.AddFunction("search = highlight(!,!)");
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		cnt += qres.Count();
+	}
+
+	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
+}
+void FullText::Fast3WordsWithAreasLowDiversity(State& state) {
+	AllocsTracker allocsTracker(state, printFlags);
+	size_t cnt = 0;
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(lowWordsDiversityNsDef_.name);
+		std::string& w1 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string& w2 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string& w3 =
+			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
+		std::string ftQuery;
+		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
+		ftQuery.append(w1).append(" ").append(w2).append(" ").append(w3);
+		q.Where("search", CondEq, ftQuery);
+		q.AddFunction("search = highlight(!,!)");
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		cnt += qres.Count();
+	}
+
+	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
+}
+
 void FullText::BuildFastTextIndex(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	size_t mem = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		q.Where("searchfast", CondEq, words_.at(random<size_t>(0, words_.size() - 1))).Limit(20);
+		q.Where("searchfast", CondEq,
+				words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})))
+			.Limit(20);
 
 		QueryResults qres;
 
@@ -287,7 +531,9 @@ void FullText::BuildFuzzyTextIndex(benchmark::State& state) {
 	size_t mem = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, words_.at(random<size_t>(0, words_.size() - 1))).Limit(20);
+		q.Where("searchfuzzy", CondEq,
+				words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})))
+			.Limit(20);
 
 		QueryResults qres;
 
@@ -303,13 +549,18 @@ void FullText::BuildFuzzyTextIndex(benchmark::State& state) {
 
 void FullText::Fast1WordMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
+	TIMETRACKER("Fast1WordMatch.gist");
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+
+		TIMEMEASURE();
 		Query q(nsdef_.name);
 
-		q.Where("searchfast", CondEq, words_.at(random<size_t>(0, words_.size() - 1)));
+		q.Where("searchfast", CondEq,
+				words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})));
 
 		QueryResults qres;
+
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 		cnt += qres.Count();
@@ -319,18 +570,22 @@ void FullText::Fast1WordMatch(benchmark::State& state) {
 
 void FullText::Fast2WordsMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
+	TIMETRACKER("Fast2WordsMatch.gist");
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		TIMEMEASURE();
 		Query q(nsdef_.name);
-		string words = words_.at(random<size_t>(0, words_.size() - 1)) + " " + words_.at(random<size_t>(0, words_.size() - 1));
+		std::string words =
+			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})) + " " +
+			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)}));
 
 		q.Where("searchfast", CondEq, words);
-
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 		cnt += qres.Count();
 	}
+
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 
@@ -340,7 +595,8 @@ void FullText::Fuzzy1WordMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
-		q.Where("searchfuzzy", CondEq, words_.at(random<size_t>(0, words_.size() - 1)));
+		q.Where("searchfuzzy", CondEq,
+				words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -355,7 +611,9 @@ void FullText::Fuzzy2WordsMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		string words = words_.at(random<size_t>(0, words_.size() - 1)) + " " + words_.at(random<size_t>(0, words_.size() - 1));
+		std::string words =
+			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})) + " " +
+			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)}));
 
 		q.Where("searchfuzzy", CondEq, words);
 
@@ -369,8 +627,10 @@ void FullText::Fuzzy2WordsMatch(benchmark::State& state) {
 
 void FullText::Fast1PrefixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
+	TIMETRACKER("Fast1PrefixMatch.gist");
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		TIMEMEASURE();
 		Query q(nsdef_.name);
 
 		auto word = MakePrefixWord();
@@ -386,8 +646,10 @@ void FullText::Fast1PrefixMatch(benchmark::State& state) {
 
 void FullText::Fast2PrefixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
+	TIMETRACKER("Fast2PrefixMatch.gist");
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		TIMEMEASURE();
 		Query q(nsdef_.name);
 
 		auto words = MakePrefixWord() + " " + MakePrefixWord();
@@ -424,7 +686,7 @@ void FullText::Fuzzy2PrefixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
-		string words = MakePrefixWord() + " " + MakePrefixWord();
+		std::string words = MakePrefixWord() + " " + MakePrefixWord();
 		q.Where("searchfuzzy", CondEq, words);
 
 		QueryResults qres;
@@ -437,13 +699,13 @@ void FullText::Fuzzy2PrefixMatch(benchmark::State& state) {
 
 void FullText::Fast1SuffixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
+	TIMETRACKER("Fast1SuffixMatch.gist");
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		TIMEMEASURE();
 		Query q(nsdef_.name);
-
-		string word = MakeSuffixWord();
+		std::string word = MakeSuffixWord();
 		q.Where("searchfast", CondEq, word);
-
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
@@ -454,11 +716,13 @@ void FullText::Fast1SuffixMatch(benchmark::State& state) {
 
 void FullText::Fast2SuffixMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
+	TIMETRACKER("Fast2SuffixMatch.gist");
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		TIMEMEASURE();
 		Query q(nsdef_.name);
 
-		string words = MakeSuffixWord() + " " + MakeSuffixWord();
+		std::string words = MakeSuffixWord() + " " + MakeSuffixWord();
 		q.Where("searchfast", CondEq, words);
 
 		QueryResults qres;
@@ -475,7 +739,7 @@ void FullText::Fuzzy1SuffixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
-		string word = MakeSuffixWord();
+		std::string word = MakeSuffixWord();
 		q.Where("searchfuzzy", CondEq, word);
 
 		QueryResults qres;
@@ -492,7 +756,7 @@ void FullText::Fuzzy2SuffixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
-		string words = MakeSuffixWord() + " " + MakeSuffixWord();
+		std::string words = MakeSuffixWord() + " " + MakeSuffixWord();
 		q.Where("searchfuzzy", CondEq, words);
 
 		QueryResults qres;
@@ -505,11 +769,13 @@ void FullText::Fuzzy2SuffixMatch(benchmark::State& state) {
 
 void FullText::Fast1TypoWordMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
+	TIMETRACKER("Fast1TypoWordMatch.gist");
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		TIMEMEASURE();
 		Query q(nsdef_.name);
 
-		string word = MakeTypoWord();
+		std::string word = MakeTypoWord();
 		q.Where("searchfast", CondEq, word);
 
 		QueryResults qres;
@@ -522,11 +788,13 @@ void FullText::Fast1TypoWordMatch(benchmark::State& state) {
 
 void FullText::Fast2TypoWordMatch(benchmark::State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
+	TIMETRACKER("Fast2TypoWordMatch.gist");
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		TIMEMEASURE();
 		Query q(nsdef_.name);
 
-		string words = MakeTypoWord() + " " + MakeTypoWord();
+		std::string words = MakeTypoWord() + " " + MakeTypoWord();
 		q.Where("searchfast", CondEq, words);
 
 		QueryResults qres;
@@ -543,7 +811,7 @@ void FullText::Fuzzy1TypoWordMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
-		string word = MakeTypoWord();
+		std::string word = MakeTypoWord();
 		q.Where("searchfuzzy", CondEq, word);
 
 		QueryResults qres;
@@ -560,7 +828,7 @@ void FullText::Fuzzy2TypoWordMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 
-		string words = MakeTypoWord() + " " + MakeTypoWord();
+		std::string words = MakeTypoWord() + " " + MakeTypoWord();
 		q.Where("searchfuzzy", CondEq, words);
 
 		QueryResults qres;
@@ -571,42 +839,43 @@ void FullText::Fuzzy2TypoWordMatch(benchmark::State& state) {
 	state.SetLabel(FormatString("RPR: %.1f", cnt / double(state.iterations())));
 }
 
-string FullText::CreatePhrase() {
+std::string FullText::CreatePhrase() {
 	size_t wordCnt = 100;
 	reindexer::WrSerializer r;
 	r.Reserve(wordCnt * 30);
 
 	for (size_t i = 0; i < wordCnt; i++) {
-		r << words_.at(random<size_t>(0, words_.size() - 1));
+		r << words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)}));
 		if (i < wordCnt - 1) r << " ";
 	}
 
-	return string(r.Slice());
+	return std::string(r.Slice());
 }
 
-string FullText::MakePrefixWord() {
+std::string FullText::MakePrefixWord() {
 	auto word = GetRandomUTF16WordByLength(4);
 
-	auto pos = random<std::wstring::size_type>(2, word.length() - 2);
+	auto pos = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{2, int(word.length() - 2)});
 	word.erase(pos, word.length() - pos);
 	word += L"*";
 
 	return reindexer::utf16_to_utf8(word);
 }
 
-string FullText::MakeSuffixWord() {
+std::string FullText::MakeSuffixWord() {
 	auto word = GetRandomUTF16WordByLength(4);
-	auto cnt = random<std::wstring::size_type>(0, word.length() / 2);
+	auto cnt = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(word.length() / 2)});
 	word.erase(0, cnt);
 	word = L"*" + word;
 	return utf16_to_utf8(word);
 }
 
-string FullText::MakeTypoWord() {
+std::string FullText::MakeTypoWord() {
 	static const std::wstring wchars =
 		L"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZабвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
 	auto word = GetRandomUTF16WordByLength(2);
-	word[random<std::wstring::size_type>(0, word.length() - 1)] = wchars.at(random<std::wstring::size_type>(0, wchars.size() - 1));
+	word[randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(word.length() - 1)})] =
+		wchars.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(wchars.size() - 1)}));
 	word += L"~";
 	return utf16_to_utf8(word);
 }
@@ -614,17 +883,19 @@ string FullText::MakeTypoWord() {
 std::wstring FullText::GetRandomUTF16WordByLength(size_t minLen) {
 	std::wstring word;
 	for (; word.length() < minLen;) {
-		auto& w = words_.at(random<size_t>(0, words_.size() - 1));
+		int index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)});
+		auto& w = words_.at(index);
 		word = reindexer::utf8_to_utf16(w);
 	}
 	return word;
 }
 
-vector<std::string> FullText::GetRandomCountries(size_t cnt) {
-	vector<string> result;
+std::vector<std::string> FullText::GetRandomCountries(size_t cnt) {
+	std::vector<std::string> result;
 	result.reserve(cnt);
 	for (auto i = cnt; i > 0; i--) {
-		result.emplace_back(countries_.at(random<size_t>(0, countries_.size() - 1)));
+		result.emplace_back(
+			countries_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(countries_.size() - 1)})));
 	}
 	return result;
 }
@@ -675,18 +946,22 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 
 	// Init index build
-	Query q = Query(alternatingNs_).Where("search1", CondEq, values_[random<size_t>(0, values_.size() - 1)].search1);
+	Query q =
+		Query(alternatingNs_)
+			.Where("search1", CondEq,
+				   values_[randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)})]
+					   .search1);
 	QueryResults qres;
 	err = db_->Select(q, qres);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 
-	size_t index = random<size_t>(0, values_.size() - 1);
+	size_t index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
 	q = Query(alternatingNs_).Where("search_comp", CondEq, values_[index].search1 + ' ' + values_[index].search2);
 	qres.Clear();
 	err = db_->Select(q, qres);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 
-	index = random<size_t>(0, values_.size() - 1);
+	index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
 	q = Query(alternatingNs_).Where("search_comp_not_index_fields", CondEq, values_[index].field1 + ' ' + values_[index].field2);
 	qres.Clear();
 	err = db_->Select(q, qres);
@@ -695,7 +970,7 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 
 void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::State& state) {
 	using namespace std::string_literals;
-	const int i = random<int>(0, values_.size() - 1);
+	const int i = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
 	ser.Reset();
 	reindexer::JsonBuilder bld(ser);
 	bld.Put("id", i);
@@ -713,8 +988,9 @@ void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::Stat
 	err = db_->Update(alternatingNs_, item);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 
-	const std::string sql = "UPDATE "s + alternatingNs_ + " SET rand = " + std::to_string(rand()) +
-							" WHERE id = " + std::to_string(random<int>(0, values_.size() - 1));
+	const std::string sql =
+		"UPDATE "s + alternatingNs_ + " SET rand = " + std::to_string(rand()) + " WHERE id = " +
+		std::to_string(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)}));
 	QueryResults qres;
 	err = db_->Select(sql, qres);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
@@ -726,7 +1002,11 @@ void FullText::AlternatingUpdatesAndSelects(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		state.PauseTiming();
 		updateAlternatingNs(ser, state);
-		Query q = Query(alternatingNs_).Where("search1", CondEq, values_[random<size_t>(0, values_.size() - 1)].search1);
+		Query q =
+			Query(alternatingNs_)
+				.Where("search1", CondEq,
+					   values_[randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)})]
+						   .search1);
 		QueryResults qres;
 		state.ResumeTiming();
 		const auto err = db_->Select(q, qres);
@@ -740,7 +1020,7 @@ void FullText::AlternatingUpdatesAndSelectsByComposite(benchmark::State& state) 
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		state.PauseTiming();
 		updateAlternatingNs(ser, state);
-		const size_t index = random<size_t>(0, values_.size() - 1);
+		const size_t index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
 		Query q = Query(alternatingNs_).Where("search_comp", CondEq, values_[index].search1 + ' ' + values_[index].search2);
 		QueryResults qres;
 		state.ResumeTiming();
@@ -755,11 +1035,19 @@ void FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields(benchmark
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		state.PauseTiming();
 		updateAlternatingNs(ser, state);
-		const size_t index = random<size_t>(0, values_.size() - 1);
+		const size_t index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
 		Query q = Query(alternatingNs_).Where("search_comp_not_index_fields", CondEq, values_[index].field1 + ' ' + values_[index].field2);
 		QueryResults qres;
 		state.ResumeTiming();
 		const auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 	}
+}
+
+reindexer::Error FullText::readDictFile(const std::string& fileName, std::vector<std::string>& words) {
+	std::ifstream file;
+	file.open(fileName);
+	if (!file) return reindexer::Error(errNotValid, "%s", strerror(errno));
+	std::copy(std::istream_iterator<std::string>(file), std::istream_iterator<std::string>(), std::back_inserter(words));
+	return reindexer::Error();
 }

@@ -7,8 +7,7 @@ namespace reindexer {
 
 constexpr int kSynonymProc = 95;
 
-Synonyms::Synonyms() {}
-void Synonyms::GetVariants(const std::wstring& data, std::vector<std::pair<std::wstring, int>>& result) {
+void Synonyms::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result) {
 	if (one2one_.empty()) return;
 
 	auto it = one2one_.find(data);
@@ -62,6 +61,10 @@ static void divOptsForAlternatives(FtDslOpts& opts, size_t size) {
 }
 
 void Synonyms::PostProcess(const FtDSLEntry& term, const FtDSLQuery& dsl, size_t termIdx, std::vector<SynonymsDsl>& synonymsDsl) const {
+	if (term.opts.groupNum != -1) {
+		// Skip multiword synonyms for phrase search
+		return;
+	}
 	auto it = one2many_.find(term.pattern);
 	if (it == one2many_.end()) {
 		return;
@@ -80,7 +83,7 @@ void Synonyms::PreProcess(const FtDSLQuery& dsl, std::vector<SynonymsDsl>& synon
 		std::vector<size_t> termsIdx;
 		for (auto termIt = multiSynonyms.first.cbegin(); termIt != multiSynonyms.first.cend(); ++termIt) {
 			const auto isAppropriateEntry = [&termIt](const FtDSLEntry& dslEntry) {
-				return dslEntry.opts.op != OpNot && dslEntry.pattern == *termIt;
+				return dslEntry.opts.op != OpNot && dslEntry.opts.groupNum == -1 && dslEntry.pattern == *termIt;
 			};
 			const auto dslIt = std::find_if(dsl.cbegin(), dsl.cend(), isAppropriateEntry);
 			if (dslIt == dsl.cend()) {

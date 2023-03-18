@@ -12,7 +12,7 @@ std::unique_ptr<Index> FuzzyIndexText<T>::Clone() {
 }
 
 template <typename T>
-IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
+IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
 									 const RdxContext& rdxCtx) {
 	assertrx(mergeStatusesEmpty);
 	(void)mergeStatusesEmpty;

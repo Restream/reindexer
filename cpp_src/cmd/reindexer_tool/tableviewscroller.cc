@@ -88,7 +88,7 @@ void TableViewScroller<QueryResultsT>::Scroll(Output& output, const std::functio
 		}
 #else
 		if (viaMoreCmd && pfile) {
-			string buf = ss.str();
+			std::string buf = ss.str();
 			fwrite(buf.data(), sizeof(char), buf.length(), pfile);
 			ss.str("");
 		}

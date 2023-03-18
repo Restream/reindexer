@@ -751,15 +751,15 @@ void ApiTvSimple::Query2CondInnerJoin(benchmark::State& state) {
 
 void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& state) {
 	using reindexer::JoinedSelector;
-	static const string rightNs = "rightNs";
-	static const vector<string> leftNs = {"leftNs1", "leftNs2", "leftNs3", "leftNs4"};
+	static const std::string rightNs = "rightNs";
+	static const std::vector<std::string> leftNs = {"leftNs1", "leftNs2", "leftNs3", "leftNs4"};
 	static constexpr char const* id = "id";
 	static constexpr char const* data = "data";
 	static constexpr int maxDataValue = 10;
 	static constexpr int maxRightNsRowCount = maxDataValue * (JoinedSelector::MaxIterationsForPreResultStoreValuesOptimization() - 1);
 	static constexpr int maxLeftNsRowCount = 10000;
 
-	const auto createNs = [this, &state](const string& ns) {
+	const auto createNs = [this, &state](const std::string& ns) {
 		reindexer::Error err = db_->OpenNamespace(ns);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 		err = db_->AddIndex(ns, {id, "hash", "int", IndexOpts().PK()});
@@ -767,7 +767,7 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 		err = db_->AddIndex(ns, {data, "hash", "int", IndexOpts()});
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 	};
-	const auto fill = [this, &state](const string& ns, int startId, int endId) {
+	const auto fill = [this, &state](const std::string& ns, int startId, int endId) {
 		reindexer::Error err;
 		for (int i = startId; i < endId; ++i) {
 			reindexer::Item item = db_->NewItem(ns);
@@ -788,7 +788,7 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 	}
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		vector<std::thread> threads;
+		std::vector<std::thread> threads;
 		threads.reserve(leftNs.size());
 		for (size_t i = 0; i < leftNs.size(); ++i) {
 			threads.emplace_back([this, i, &state]() {

@@ -24,6 +24,10 @@ else
     RX_ARGS="$RX_ARGS --rpc-qr-idle-timeout 0"
 fi
 
+if [ -n "$RX_DISABLE_NS_LEAK" ]; then
+    RX_ARGS="$RX_ARGS --disable-ns-leak"
+fi
+
 if [ -z "$@" ]; then
    reindexer_server $RX_ARGS
 else 

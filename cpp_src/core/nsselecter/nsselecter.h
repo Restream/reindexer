@@ -78,6 +78,8 @@ private:
 
 	bool isSortOptimizatonEffective(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
 	static bool validateField(StrictMode strictMode, std::string_view name, const std::string &nsName, const TagsMatcher &tagsMatcher);
+	void checkStrictModeAgg(StrictMode strictMode, const std::string &name, const std::string &nsName,
+							const TagsMatcher &tagsMatcher) const;
 
 	NamespaceImpl *ns_;
 	SelectFunction::Ptr fnc_;

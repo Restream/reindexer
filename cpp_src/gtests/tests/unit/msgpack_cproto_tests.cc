@@ -1,5 +1,6 @@
 #include <unordered_set>
 #include "msgpack_cproto_api.h"
+#include "query_aggregate_strict_mode_test.h"
 
 TEST_F(MsgPackCprotoApi, SelectTest) {
 	reindexer::client::QueryResults qr;
@@ -52,8 +53,10 @@ TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
 	ASSERT_EQ(sum.fields.size(), 1);
 	EXPECT_EQ(sum.fields[0], kFieldId);
 	double val = (999.0 / 2.0) * 1000.0;
-	EXPECT_EQ(sum.value, int64_t(val)) << sum.value << "; " << val;
+	EXPECT_EQ(sum.GetValueOrZero(), int64_t(val)) << sum.GetValueOrZero() << "; " << val;
 }
+
+TEST_F(MsgPackCprotoApi, AggregationsWithStrictModeTest) { QueryAggStrictModeTest(client_); }
 
 TEST_F(MsgPackCprotoApi, ModifyItemsTest) {
 	reindexer::client::Item item = client_->NewItem(default_namespace);

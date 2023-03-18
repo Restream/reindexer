@@ -12,8 +12,11 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	if (func.funcArgs.size() < 4) throw Error(errParams, "Invalid snippet params need minimum 4 - have %d", func.funcArgs.size());
 
 	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(func.ctx);
-	AreaHolder::Ptr area = ftctx->Area(res.Id());
-	if (!area) return false;
+	auto dataFtCtx = ftctx->GetData();
+	auto it = dataFtCtx->holders_.find(res.Id());
+	if (it == dataFtCtx->holders_.end()) {
+		return false;
+	}
 	Payload pl(pl_type, res.Value());
 
 	VariantArray kr;
@@ -24,7 +27,7 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	}
 
 	const std::string *data = p_string(kr[0]).getCxxstr();
-	auto pva = area->GetAreas(func.fieldNo);
+	auto pva = dataFtCtx->area_[it->second].GetAreas(func.fieldNo);
 	if (!pva || pva->empty()) return false;
 	int front, back;
 	try {
@@ -95,20 +98,35 @@ bool Snippet::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 				break;
 			}
 		}
-		if (func.funcArgs.size() > 5) {
-			result_string.append(func.funcArgs[5]);
-			offset += func.funcArgs[5].size();
-		} else {
-			result_string.append(" ");
-			offset++;
+		if (func.type == SelectFuncStruct::kSelectFuncSnippet) {
+			if (func.funcArgs.size() > 5) {
+				result_string.append(func.funcArgs[5]);
+				offset += func.funcArgs[5].size();
+			} else {
+				result_string.append(" ");
+				offset++;
+			}
+
+			if (func.funcArgs.size() > 4) {
+				result_string.insert(cur_pos, func.funcArgs[4]);
+				offset += func.funcArgs[4].size();
+			}
 		}
-		if (func.funcArgs.size() > 4) {
-			result_string.insert(cur_pos, func.funcArgs[4]);
-			offset += func.funcArgs[4].size();
+		else if (func.type == SelectFuncStruct::kSelectFuncSnippetN) {
+			auto namedArg = func.namedArgs.find("pre_delim");
+			if (namedArg != func.namedArgs.end()) {
+				result_string.insert(cur_pos, namedArg->second);
+				offset += namedArg->second.size();
+			}
+			namedArg = func.namedArgs.find("post_delim");
+			if (namedArg != func.namedArgs.end()) {
+				result_string.append(namedArg->second);
+				offset += namedArg->second.size();
+			}
 		}
 	}
 
-	stringsHolder.emplace_back(make_key_string(result_string));
+	stringsHolder.emplace_back(make_key_string(std::move(result_string)));
 	res.Value().Clone();
 
 	if (func.tagsPath.empty()) {

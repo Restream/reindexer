@@ -38,19 +38,19 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	// Step 4: Commit suffixes array. It runs in parallel with next step
 	auto &suffixes = holder_.GetSuffix();
 	auto tm3 = high_resolution_clock::now(), tm4 = high_resolution_clock::now();
-	std::thread sufBuildThread([&suffixes, &tm3]() {
+	auto sufBuildFun = [&suffixes, &tm3]() {
 		suffixes.build();
 		tm3 = high_resolution_clock::now();
-	});
-
+	};
+	std::thread sufBuildThread(sufBuildFun);
 	// Step 5: Normalize and sort idrelsets. It runs in parallel with next step
 	size_t idsetcnt = 0;
 
 	auto wIt = words.begin() + wrdOffset;
 
-	std::thread idrelsetCommitThread([&wIt, &found, getWordByIdFunc, &tm4, &idsetcnt, &words_um]() {
+	auto idrelsetCommitFun = [&wIt, &found, getWordByIdFunc, &tm4, &idsetcnt, &words_um]() {
 		uint32_t i = 0;
-		for (auto keyIt = words_um.begin(); keyIt != words_um.end(); keyIt++, i++) {
+		for (auto keyIt = words_um.begin(), endIt = words_um.end(); keyIt != endIt; ++keyIt, ++i) {
 			// Pack idrelset
 
 			PackedWordEntry<IdCont> *word;
@@ -70,12 +70,13 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 			idsetcnt += word->vids_.heap_size();
 		}
 		tm4 = high_resolution_clock::now();
-	});
+	};
+
+	std::thread idrelsetCommitThread(idrelsetCommitFun);
 
 	// Wait for suf array build. It is neccessary for typos
 	sufBuildThread.join();
 
-	// std::cout << suffixes.dump() << std::endl;
 	idrelsetCommitThread.join();
 
 	// Step 6: Build typos hash map
@@ -108,12 +109,12 @@ std::vector<WordIdType> DataProcessor<IdCont>::BuildSuffix(words_map &words_um, 
 
 	found.reserve(words_um.size());
 
-	for (auto keyIt = words_um.begin(); keyIt != words_um.end(); keyIt++) {
+	for (auto &keyIt : words_um) {
 		// if we still haven't whis word we add it to new suffix tree else we will only add info to current word
 
 		auto id = words.size();
 		WordIdType pos;
-		pos = holder_.findWord(keyIt->first);
+		pos = holder_.findWord(keyIt.first);
 		found.push_back(pos);
 
 		if (!pos.isEmpty()) {
@@ -122,10 +123,10 @@ std::vector<WordIdType> DataProcessor<IdCont>::BuildSuffix(words_map &words_um, 
 
 		words.emplace_back(PackedWordEntry<IdCont>());
 		pos = holder_.BuildWordId(id);
-		if (holder_.cfg_->enableNumbersSearch && keyIt->second.virtualWord) {
-			suffix.insert(keyIt->first, pos, kDigitUtfSizeof);
+		if (holder_.cfg_->enableNumbersSearch && keyIt.second.virtualWord) {
+			suffix.insert(keyIt.first, pos, kDigitUtfSizeof);
 		} else {
-			suffix.insert(keyIt->first, pos);
+			suffix.insert(keyIt.first, pos);
 		}
 	}
 	return found;
@@ -148,7 +149,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 	auto &vdocs = holder_.vdocs_;
 	// int fieldscount = std::max(1, int(this->fields_.size()));
 	int fieldscount = fieldSize_;
-	size_t offset = holder_.vodcsOffset_;
+	size_t offset = holder_.vdocsOffset_;
 	// build words map parallel in maxIndexWorkers threads
 	auto worker = [this, &ctxs, &vdocsTexts, offset, maxIndexWorkers, fieldscount, &cfg, &vdocs](int i) {
 		auto ctx = &ctxs[i];
@@ -201,7 +202,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 		for (uint32_t i = 0; i < maxIndexWorkers; i++) {
 			try {
 				ctxs[i].thread.join();
-				for (auto it = ctxs[i].words_um.begin(); it != ctxs[i].words_um.end(); it++) {
+				for (auto it = ctxs[i].words_um.begin(), endIt = ctxs[i].words_um.end(); it != endIt; ++it) {
 					auto idxIt = words_um.find(it->first);
 
 					if (idxIt == words_um.end()) {
@@ -238,11 +239,13 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 	if (holder_.cfg_->logLevel >= LogInfo) {
 		WrSerializer out;
 		for (auto &w : words_um) {
-			if (w.second.vids_.size() > vdocs.size() / 5) out << w.first << " ";
+			if (w.second.vids_.size() > vdocs.size() / 5 || int64_t(w.second.vids_.size()) > holder_.cfg_->mergeLimit) {
+				out << w.first << "(" << w.second.vids_.size() << ") ";
+			}
 		}
-		logPrintf(LogInfo, "Potential stop words: %s", out.Slice());
+		logPrintf(LogInfo, "Total documents: %d. Potential stop words (with corresponding docs count): %s", vdocs.size(), out.Slice());
 	}
-	std::vector<h_vector<std::pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts);
+	std::vector<RVector<std::pair<std::string_view, uint32_t>, 8>>().swap(holder_.vdocsTexts);
 
 	std::vector<std::unique_ptr<std::string>>().swap(holder_.bufStrs_);
 	return szCnt;

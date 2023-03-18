@@ -25,6 +25,7 @@ public:
 		cmpString.ClearDistinct();
 		cmpGeom.ClearDistinct();
 	}
+	bool HasJsonPaths() const noexcept { return fields_.getTagsPathsLength(); }
 
 protected:
 	bool compare(const Variant &kr) {

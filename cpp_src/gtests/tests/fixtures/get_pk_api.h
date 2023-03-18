@@ -66,7 +66,7 @@ public:
 		if (!item.Status().ok()) return ResultType(item.Status(), std::move(item), Data{0, 0, nullptr, nullptr, 0, 0});
 
 		Data data = (d == nullptr) ? randomItemData() : *d;
-		string json = StringFormat(jsonPattern, data.id, data.name, data.color, data.weight, data.height, data.fk_id);
+		std::string json = StringFormat(jsonPattern, data.id, data.name, data.color, data.weight, data.height, data.fk_id);
 
 		return ResultType(item.FromJSON(json), std::move(item), data);
 	}

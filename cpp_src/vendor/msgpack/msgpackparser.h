@@ -24,7 +24,7 @@ struct MsgPackValue {
 
 	template <typename T, typename std::enable_if<(std::is_integral<T>::value || std::is_floating_point<T>::value) &&
 												  !std::is_same<T, bool>::value>::type* = nullptr>
-	T As(T defval = T(), T minv = std::numeric_limits<T>::min(), T maxv = std::numeric_limits<T>::max()) const {
+	T As(T defval = T(), T minv = std::numeric_limits<T>::lowest(), T maxv = std::numeric_limits<T>::max()) const {
 		if (!isValid()) return defval;
 		T v;
 		MsgPackTag tag = getTag();
@@ -42,7 +42,7 @@ struct MsgPackValue {
 			default:
 				throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%d] to number", tag);
 		}
-		if (v < minv || v > maxv) throw reindexer::Error(errParams, "Value is out of bounds: [%d,%d]", minv, maxv);
+		if (v < minv || v > maxv) throw reindexer::Error(errParams, fmt::format("Value is out of bounds: [{},{}]", minv, maxv));
 		return v;
 	}
 	template <typename T,

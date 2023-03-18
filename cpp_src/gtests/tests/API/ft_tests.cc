@@ -177,7 +177,263 @@ TEST_P(FTApi, SelectWithDistance) {
 	Add("Her nose was exceptionally long"sv);
 	Add("Her nose was long"sv);
 
-	CheckAllPermutations("", {"'nose long'~3"}, "", {{"Her !nose! was !long!", ""}, {"Her !nose! was exceptionally !long!", ""}}, true);
+	CheckResults("'nose long'~3", {{"Her !nose was long!", ""}, {"Her !nose was exceptionally long!", ""}}, true);
+}
+
+TEST_P(FTApi, SelectWithDistance2) {
+	auto check = [&](bool withHighlight) {
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {
+				{"!one two!", ""}, {"!one ецщ!", ""}, {"empty !one two!", ""}, {"empty !one two! word", ""}};
+			CheckResults(R"s("one two")s", withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {
+				{"!one two!", ""}, {"!one ецщ!", ""}, {"empty !one two!", ""}, {"empty !one two! word", ""}};
+			CheckResults(R"s("one two"~1)s", withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!one two!", ""},
+																				  {"!one ецщ!", ""},
+																				  {"empty !one two!", ""},
+																				  {"!one empty two!", ""},
+																				  {"empty !one two! word", ""},
+																				  {"word !one empty two!", ""},
+																				  {"word !one empty empty two! word", ""}};
+			CheckResults(R"s(+"one two"~3)s", withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!one two!", ""},
+																				  {"!one ецщ!", ""},
+																				  {"empty !one two!", ""},
+																				  {"!one empty two!", ""},
+																				  {"empty !one two! word", ""},
+																				  {"word !one empty two!", ""},
+																				  {"word !one empty empty two! word", ""}};
+			CheckResults(R"s("one two"~3)s", withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {
+				{"!one two!", ""}, {"!one ецщ!", ""}, {"!empty one two!", ""}, {"!empty one two! word", ""}};
+			CheckAllPermutations("", {"empty", R"s(+"one two")s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!empty one two!", ""}, {"!empty one two! word", ""}};
+			CheckAllPermutations("", {"+empty", R"s(+"one two")s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!empty!", ""},
+																				  {"!one two!", ""},
+																				  {"!one ецщ!", ""},
+																				  {"!empty one two!", ""},
+																				  {"!empty one two! word", ""},
+																				  {"one !empty! two", ""},
+																				  {"word one !empty empty! two word", ""},
+																				  {"word one !empty empty empty! two word", ""},
+																				  {"word one !empty! two", ""},
+																				  {"word one !empty empty empty! two two word", ""},
+																				  {"word one one !empty empty empty! two word", ""}};
+			CheckAllPermutations("", {"empty", R"s("one two")s"}, "", withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH),
+								 false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!empty!", ""},
+																				  {"one !empty! two", ""},
+																				  {"word one !empty! two", ""},
+																				  {"word one !empty empty! two word", ""},
+																				  {"word one !empty empty empty! two word", ""},
+																				  {"word one !empty empty empty! two two word", ""},
+																				  {"word one one !empty empty empty! two word", ""}};
+			CheckAllPermutations("", {"empty", R"s(-"one two")s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!empty!", ""},
+																				  {"one !empty! two", ""},
+																				  {"word one !empty! two", ""},
+																				  {"word one !empty empty! two word", ""},
+																				  {"word one !empty empty empty! two word", ""},
+																				  {"word one !empty empty empty! two two word", ""},
+																				  {"word one one !empty empty empty! two word", ""}};
+			CheckAllPermutations("", {R"s(-"one two")s", "+empty"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		CheckAllPermutations("", {R"s(-"one two")s", "-empty"}, "", {}, false, " ", withHighlight);
+	};
+
+	Init(GetDefaultConfig());
+
+	Add("one"sv);
+	Add("two"sv);
+	Add("empty"sv);
+	Add("one two"sv);
+	Add("empty one two"sv);
+	Add("empty one two word"sv);
+	Add("one empty two"sv);
+	Add("word one empty two"sv);
+	Add("word one empty empty two word"sv);
+	Add("word one empty empty empty two word"sv);
+	Add("one ецщ"sv);
+	Add("word one empty empty empty two two word"sv);
+	Add("word one one empty empty empty two word"sv);
+
+	check(true);
+	check(false);
+}
+
+TEST_P(FTApi, SelectWithDistance3) {
+	Init(GetDefaultConfig());
+
+	Add("one"sv);
+	Add("two"sv);
+	Add("three"sv);
+	Add("empty"sv);
+	Add("one two three"sv);
+	Add("empty one two three"sv);
+	Add("empty one two three word"sv);
+	Add("one empty two three"sv);
+	Add("word one empty two three"sv);
+	Add("word one empty empty two word three"sv);
+	Add("word one empty empty empty two word three"sv);
+	Add("one ецщ three"sv);
+	Add("one two empty two three"sv);
+	Add("one two empty two empty empty three"sv);
+	auto check = [&](bool withHighlight) {
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {
+				{"!one two three!", ""}, {"!one ецщ three!", ""}, {"empty !one two three!", ""}, {"empty !one two three! word", ""}};
+			CheckResults(R"s("one two three")s", withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false,
+						 withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {
+				{"!one two three!", ""}, {"!one ецщ three!", ""}, {"empty !one two three!", ""}, {"empty !one two three! word", ""}};
+			CheckResults(R"s("one two three"~1)s", withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false,
+						 withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!one two three!", ""},
+																				  {"!one ецщ three!", ""},
+																				  {"empty !one two three!", ""},
+																				  {"!one empty two three!", ""},
+																				  {"empty !one two three! word", ""},
+																				  {"word !one empty two three!", ""},
+																				  {"word !one empty empty two word three!", ""},
+																				  {"!one two empty two three!", ""},
+																				  {"!one two empty two empty empty three!", ""}};
+			CheckResults(R"s("one two three"~3)s", withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false,
+						 withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!one two three!", ""},
+																				  {"!one ецщ three!", ""},
+																				  {"empty !one two three!", ""},
+																				  {"!one empty two three!", ""},
+																				  {"empty !one two three! word", ""},
+																				  {"word !one empty two three!", ""}};
+			CheckResults(R"s("one two three"~2)s", withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false,
+						 withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {
+				{"!one two three!", ""}, {"!one ецщ three!", ""}, {"!empty one two three!", ""}, {"!empty one two three! word", ""}};
+			CheckAllPermutations("", {"empty", R"s(+"one two three")s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!empty one two three!", ""},
+																				  {"!empty one two three! word", ""}};
+			CheckAllPermutations("", {"+empty", R"s(+"one two three")s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!empty!", ""},
+																				  {"!one two three!", ""},
+																				  {"!one ецщ three!", ""},
+																				  {"!empty one two three!", ""},
+																				  {"one two !empty! two three", ""},
+																				  {"!empty one two three! word", ""},
+																				  {"one !empty! two three", ""},
+																				  {"word one !empty empty! two word three", ""},
+																				  {"word one !empty empty empty! two word three", ""},
+																				  {"word one !empty! two three", ""},
+																				  {"one two !empty! two !empty empty! three", ""}};
+			CheckAllPermutations("", {"empty", R"s("one two three")s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!empty!", ""},
+																				  {"one !empty! two three", ""},
+																				  {"word one !empty! two three", ""},
+																				  {"word one !empty empty! two word three", ""},
+																				  {"word one !empty empty empty! two word three", ""},
+																				  {"one two !empty! two three", ""},
+																				  {"one two !empty! two !empty empty! three", ""}};
+			CheckAllPermutations("", {"empty", R"s(-"one two three")s"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		{
+			std::vector<std::tuple<std::string, std::string>> expectedResultsH = {{"!empty!", ""},
+																				  {"one !empty! two three", ""},
+																				  {"word one !empty! two three", ""},
+																				  {"word one !empty empty! two word three", ""},
+																				  {"word one !empty empty empty! two word three", ""},
+																				  {"one two !empty! two three", ""},
+																				  {"one two !empty! two !empty empty! three", ""}};
+			CheckAllPermutations("", {R"s(-"one two three")s", "+empty"}, "",
+								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
+		}
+		CheckResults(R"s(-"one two three"~3)s", {}, false, withHighlight);
+	};
+	check(true);
+	check(false);
+}
+TEST_P(FTApi, SelectWithDistanceSubTerm) {
+	Init(GetDefaultConfig());
+	Add("one two empty щту two empty one ецщ"sv);
+	CheckResults(R"s("one two")s", {{"!one two! empty !щту two! empty !one ецщ!", ""}}, false, true);
+	CheckResults(R"s("one two")s", {{"one two empty щту two empty one ецщ", ""}}, false, false);
+}
+
+TEST_P(FTApi, SelectWithMultSynonymArea) {
+	reindexer::FtFastConfig config = GetDefaultConfig();
+	// hyponyms as synonyms
+	config.synonyms = {{{"digit", "one", "two", "three", "big number"}, {"digit", "one", "two", "big number"}},
+					   {{"animal", "cat", "dog", "lion"}, {"animal", "cat", "dog", "lion"}}};
+	config.maxAreasInDoc = 100;
+	Init(config);
+
+	Add("digit cat empty one animal"sv);
+
+	CheckResults(R"s("big number animal")s", {}, false, true);
+	CheckResults(R"s("digit animal")s", {{"!digit cat! empty !one animal!", ""}}, false, true);
+	CheckResults(R"s("two lion")s", {{"!digit cat! empty !one animal!", ""}}, false, true);
+}
+
+TEST_P(FTApi, SelectWithDistance2Field) {
+	Init(GetDefaultConfig());
+	Add("empty two empty two one"sv, "two"sv);
+	// 24 bits - the number of words in the field
+	CheckResults("'one two'~" + std::to_string((1 << 24) + 100), {}, false);
+}
+
+TEST_P(FTApi, SelectWithSeveralGroup) {
+	Init(GetDefaultConfig());
+
+	Add("one empty two word three four"sv);
+	Add("word one empty two word three four word"sv);
+	Add("one three two four"sv);
+	Add("word three one two four word"sv);
+	CheckAllPermutations("", {R"s(+"one two"~2)s", R"s(+"three four"~3)s"}, "",
+						 {{"!one empty two! word !three four!", ""},
+						  {"word !one empty two! word !three four! word", ""},
+						  {"!one three two four!", ""},
+						  {"word !three one two four! word", ""}},
+						 false);
 }
 
 TEST_P(FTApi, ConcurrencyCheck) {
@@ -218,8 +474,7 @@ TEST_P(FTApi, ConcurrencyCheck) {
 				++runningThreads;
 				cv.wait(lck, [&] { return ready; });
 				lck.unlock();
-				CheckAllPermutations("", {"'nose long'~3"}, "",
-									 {{"Her !nose! was !long!", ""}, {"Her !nose! was exceptionally !long!", ""}}, true);
+				CheckResults("'nose long'~3", {{"Her !nose was long!", ""}, {"Her !nose was exceptionally long!", ""}}, true);
 			}));
 		}
 	}
@@ -443,6 +698,7 @@ TEST_P(FTApi, FTDslParserWrongRelevancyTest) {
 
 TEST_P(FTApi, FTDslParserDistanceTest) {
 	FTDSLQueryParams params;
+
 	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
 	ftdsl.parse("'long nose'~3");
 	EXPECT_TRUE(ftdsl.size() == 2);
@@ -454,8 +710,22 @@ TEST_P(FTApi, FTDslParserDistanceTest) {
 
 TEST_P(FTApi, FTDslParserWrongDistanceTest) {
 	FTDSLQueryParams params;
-	reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
-	EXPECT_THROW(ftdsl.parse("'this is a wrong distance'~X"), reindexer::Error);
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
+		EXPECT_THROW(ftdsl.parse("'this is a wrong distance'~X"), reindexer::Error);
+	}
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
+		EXPECT_THROW(ftdsl.parse("'long nose'~-1"), reindexer::Error);
+	}
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
+		EXPECT_THROW(ftdsl.parse("'long nose'~0"), reindexer::Error);
+	}
+	{
+		reindexer::FtDSLQuery ftdsl(params.fields, params.stopWords, params.extraWordSymbols);
+		EXPECT_THROW(ftdsl.parse("'long nose'~2.89"), reindexer::Error);
+	}
 }
 
 TEST_P(FTApi, FTDslParserNoClosingQuoteTest) {
@@ -1354,6 +1624,299 @@ TEST_P(FTApi, MergeLimitConstraints) {
 	cfg.mergeLimit = kMaxMergeLimitValue;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+TEST_P(FTApi, Snippet_n) {
+	auto ftCfg = GetDefaultConfig();
+	Init(ftCfg);
+
+	Add("one two three gg three empty empty empty empty three"sv);
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,'{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Incorrect count of position arguments. Found 5 required 4.");
+	}
+	{  // check other case, error on not last argument
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,'{','{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ','.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',pre_delim='}')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Argument already added 'pre_delim'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',pre_delim='}',post_delim='!')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Argument already added 'pre_delim'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Incorrect count of position arguments. Found 3 required 4.");
+	}
+	{  // check other case, error on not last argument
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>' , '</b>',5,pre_delim='{',post_delim='')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ',', expecting positional argument (1 more positional args required)");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',pre_delim='}') g");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected character `g` after closing parenthesis.");
+	}
+
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',,5,pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ',', expecting positional argument (2 more positional args required)");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,,pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ','.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{',,post_delim='}')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token ','.");
+	}
+
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>''n','</b>',5,5,pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'n'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>'n,'</b>',5,5,pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'n'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>'5,5,5,pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '5'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5'v',5,pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'v'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,\"pre_delim\"pre_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'pre_delim'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim= ='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '='.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim='{'8)");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '8'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim=)");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'pre_delim'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,not_delim='{')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unknown argument name 'not_delim'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,not_delim='{',pre_delim='}')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unknown argument name 'not_delim'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: The closing parenthesis is required, but found `5`");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n{('<b>','</b>',5,5}");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: An open parenthesis is required, but found `{`");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n('<b>','</b>',5,5,"post_delim"="v"})#");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token 'v'.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n(<>,'</b>',5,5,"post_delim"='v'})#");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Unexpected token '<>'");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Where("ft1", CondEq, "three").AddFunction(R"#(ft1=snippet_n('<>','</b>',5,5,='v'})#");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "snippet_n: Argument name is empty.");
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction("ft1=snippet_n('<b>','</b>',5,5,pre_delim=',')");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(res.Count(), 1);
+		reindexer::WrSerializer wrSer;
+		err = res.begin().GetJSON(wrSer, false);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(std::string(wrSer.Slice()), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt,mpty <b>three</b>"})S");
+	}
+
+	{
+		reindexer::Query q("nm1");
+		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>' , 		'</b>'
+																											,5	,5 ,       pre_delim=','))S");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(res.Count(), 1);
+		reindexer::WrSerializer wrSer;
+		err = res.begin().GetJSON(wrSer, false);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(std::string(wrSer.Slice()), R"S({"ft1":", two <b>three</b> gg <b>three</b> empt,mpty <b>three</b>"})S");
+	}
+
+	{
+		reindexer::Query q("nm1");
+		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,pre_delim=' g ', post_delim='h'))S");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(res.Count(), 1);
+		if (res.Count()) {
+			reindexer::WrSerializer wrSer;
+			err = res.begin().GetJSON(wrSer, false);
+			EXPECT_TRUE(err.ok()) << err.what();
+			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":" g  two <b>three</b> gg <b>three</b> empth g mpty <b>three</b>h"})S");
+		}
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>','</b>','5',5,post_delim='h',pre_delim=' g '))S");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(res.Count(), 1);
+		if(res.Count()) {
+			reindexer::WrSerializer wrSer;
+			err = res.begin().GetJSON(wrSer, false);
+			EXPECT_TRUE(err.ok()) << err.what();
+			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":" g  two <b>three</b> gg <b>three</b> empth g mpty <b>three</b>h"})S");
+		}
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,post_delim='h'))S");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(res.Count(), 1);
+		if(res.Count()) {
+			reindexer::WrSerializer wrSer;
+			err = res.begin().GetJSON(wrSer, false);
+			EXPECT_TRUE(err.ok()) << err.what();
+			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":" two <b>three</b> gg <b>three</b> empthmpty <b>three</b>h"})S");
+		}
+	}
+	{
+		reindexer::Query q("nm1");
+		q.Select({"ft1"}).Where("ft1", CondEq, "three").AddFunction(R"S(ft1=snippet_n('<b>','</b>',5,5,pre_delim='!'))S");
+		reindexer::QueryResults res;
+		reindexer::Error err = rt.reindexer->Select(q, res);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(res.Count(), 1);
+		if(res.Count()) {
+			reindexer::WrSerializer wrSer;
+			err = res.begin().GetJSON(wrSer, false);
+			EXPECT_TRUE(err.ok()) << err.what();
+			EXPECT_EQ(wrSer.Slice(), R"S({"ft1":"! two <b>three</b> gg <b>three</b> empt!mpty <b>three</b>"})S");
+		}
+	}
+
 }
 
 TEST_P(FTApi, LargeMergeLimit) {

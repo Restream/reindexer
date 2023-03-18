@@ -20,7 +20,7 @@ class ITokenFilter {
 public:
 	using Ptr = std::unique_ptr<ITokenFilter>;
 
-	virtual void GetVariants(const std::wstring& data, std::vector<std::pair<std::wstring, int>>& result) = 0;
+	virtual void GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result) = 0;
 	virtual void SetConfig(BaseFTConfig*) {}
 	virtual void PreProcess(const FtDSLQuery&, std::vector<SynonymsDsl>&) const {}
 	virtual void PostProcess(const FtDSLEntry&, const FtDSLQuery&, size_t /*termIdx*/, std::vector<SynonymsDsl>&) const {}

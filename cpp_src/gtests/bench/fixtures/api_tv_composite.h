@@ -6,14 +6,11 @@
 #include "allocs_tracker.h"
 #include "base_fixture.h"
 
-using std::string;
-using std::vector;
-
 using benchmark::AllocsTracker;
 
 class ApiTvComposite : protected BaseFixture {
 public:
-	ApiTvComposite(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	ApiTvComposite(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts())
 			.AddIndex("sub_id", "tree", "string", IndexOpts().SetCollateMode(CollateNumeric))
 			.AddIndex("name", "hash", "string", IndexOpts().SetCollateMode(CollateUTF8))
@@ -86,6 +83,6 @@ protected:
 
 private:
 	std::vector<VariantArray> compositeIdSet_;
-	vector<string> locations_;
-	vector<string> names_;
+	std::vector<std::string> locations_;
+	std::vector<std::string> names_;
 };

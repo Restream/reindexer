@@ -21,6 +21,7 @@ void ServerConfig::Reset() {
 	CoreLog = "stdout";
 	HttpLog = "stdout";
 	RpcLog = "stdout";
+	AllowNamespaceLeak = true;
 #ifndef _WIN32
 	StoragePath = "/tmp/reindex";
 	UserName.clear();
@@ -101,6 +102,8 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::ValueFlag<std::string> storageEngineF(dbGroup, "NAME", "'reindexer' storage engine (" + availabledStorages + ")", {'e', "engine"},
 												StorageEngine, args::Options::Single);
 	args::Flag autorepairF(dbGroup, "", "Enable autorepair for storages after unexpected shutdowns", {"autorepair"});
+	args::Flag disableNamespaceLeakF(dbGroup, "", "Disable namespaces leak on database destruction (may slow down server's termination)",
+									 {"disable-ns-leak"});
 
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<std::string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
@@ -190,9 +193,11 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (storageEngineF) StorageEngine = args::get(storageEngineF);
 	if (startWithErrorsF) StartWithErrors = args::get(startWithErrorsF);
 	if (autorepairF) Autorepair = args::get(autorepairF);
+	if (disableNamespaceLeakF) AllowNamespaceLeak = !args::get(disableNamespaceLeakF);
 	if (logLevelF) LogLevel = args::get(logLevelF);
 	if (httpAddrF) HTTPAddr = args::get(httpAddrF);
 	if (rpcAddrF) RPCAddr = args::get(rpcAddrF);
+
 	if (rpcThreadingModeF) RPCThreadingMode = args::get(rpcThreadingModeF);
 	if (httpThreadingModeF) HttpThreadingMode = args::get(httpThreadingModeF);
 	if (webRootF) WebRoot = args::get(webRootF);
@@ -236,6 +241,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 
 reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
 	try {
+		AllowNamespaceLeak = root["db"]["ns_leak"].as<bool>(AllowNamespaceLeak);
 		StoragePath = root["storage"]["path"].as<std::string>(StoragePath);
 		StorageEngine = root["storage"]["engine"].as<std::string>(StorageEngine);
 		StartWithErrors = root["storage"]["startwitherrors"].as<bool>(StartWithErrors);

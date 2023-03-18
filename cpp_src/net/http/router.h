@@ -23,8 +23,6 @@ namespace http {
 #undef DELETE
 #endif
 
-using std::string;
-
 enum HttpStatusCode {
 	StatusContinue = 100,
 	StatusOK = 200,
@@ -66,11 +64,11 @@ typedef std::string_view UrlParam;
 
 struct HttpStatus {
 	HttpStatus() { code = StatusOK; }
-	HttpStatus(HttpStatusCode httpcode, string httpwhat) : code(httpcode), what(std::move(httpwhat)) {}
+	HttpStatus(HttpStatusCode httpcode, std::string httpwhat) : code(httpcode), what(std::move(httpwhat)) {}
 	explicit HttpStatus(const Error &err) : what(err.what()) { code = errCodeToHttpStatus(err.code()); }
 
 	HttpStatusCode code;
-	string what;
+	std::string what;
 
 	static HttpStatusCode errCodeToHttpStatus(int errCode);
 };
@@ -282,9 +280,9 @@ protected:
 	};
 
 	struct Route {
-		Route(string path, Handler h) : path_(std::move(path)), h_(std::move(h)) {}
+		Route(std::string path, Handler h) : path_(std::move(path)), h_(std::move(h)) {}
 
-		string path_;
+		std::string path_;
 		Handler h_;
 	};
 

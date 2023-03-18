@@ -134,6 +134,7 @@ public:
 	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) {
 		return handleInvalidation(NamespaceImpl::DumpIndex)(os, index, ctx);
 	}
+	void SetDestroyFlag() { return handleInvalidation(NamespaceImpl::SetDestroyFlag)(); }
 
 protected:
 	friend class ReindexerImpl;
@@ -234,3 +235,4 @@ private:
 #undef handleInvalidation
 
 }  // namespace reindexer
+

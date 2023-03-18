@@ -151,6 +151,14 @@ void IndexStore<T>::Dump(std::ostream &os, std::string_view step, std::string_vi
 	dump(os, step, offset);
 }
 
+template <typename T>
+void IndexStore<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &q) {
+	if constexpr (HasAddTask<decltype(str_map)>::value) {
+		str_map.add_destroy_task(&q);
+	}
+	(void)q;
+}
+
 std::unique_ptr<Index> IndexStore_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
 	switch (idef.Type()) {
 		case IndexBool:

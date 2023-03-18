@@ -12,6 +12,7 @@ char *i64toa(int64_t value, char *buffer);
 namespace reindexer {
 
 struct p_string;
+struct v_string_hdr;
 class chunk;
 
 class Serializer {
@@ -33,7 +34,25 @@ public:
 			return GetRawVariant(type);
 		}
 	}
-	Variant GetRawVariant(KeyValueType type);
+	Variant GetRawVariant(KeyValueType type) {
+		return type.EvaluateOneOf([this](KeyValueType::Int) { return Variant(int(GetVarint())); },
+								  [this](KeyValueType::Bool) { return Variant(bool(GetVarUint())); },
+								  [this](KeyValueType::Int64) { return Variant(int64_t(GetVarint())); },
+								  [this](KeyValueType::Double) { return Variant(GetDouble()); },
+								  [this](KeyValueType::String) { return getPVStringVariant(); },
+								  [](KeyValueType::Null) noexcept { return Variant(); },
+								  [this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) -> Variant {
+									  throwUnknowTypeError(type.Name());
+								  });
+	}
+	void SkipRawVariant(KeyValueType type) {
+		type.EvaluateOneOf([this](KeyValueType::Int) { GetVarint(); }, [this](KeyValueType::Bool) { GetVarUint(); },
+						   [this](KeyValueType::Int64) { GetVarint(); }, [this](KeyValueType::Double) { GetDouble(); },
+						   [this](KeyValueType::String) { getPVStringPtr(); }, [](KeyValueType::Null) noexcept {},
+						   [this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) {
+							   throwUnknowTypeError(type.Name());
+						   });
+	}
 	std::string_view GetSlice() {
 		auto l = GetUInt32();
 		std::string_view b(reinterpret_cast<const char *>(buf_ + pos_), l);
@@ -62,7 +81,6 @@ public:
 		pos_ += sizeof(ret);
 		return ret;
 	}
-
 	int64_t GetVarint() {
 		auto l = scan_varint(len_ - pos_, buf_ + pos_);
 		if (l == 0) {
@@ -106,6 +124,9 @@ protected:
 	}
 	[[noreturn]] void throwUnderflowError(uint64_t pos, uint64_t need, uint64_t len);
 	[[noreturn]] void throwScanIntError(std::string_view type);
+	[[noreturn]] void throwUnknowTypeError(std::string_view type);
+	Variant getPVStringVariant();
+	const v_string_hdr *getPVStringPtr();
 
 	const uint8_t *buf_;
 	size_t len_;

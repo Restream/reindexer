@@ -22,7 +22,9 @@ template <typename Builder>
 void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, IAdditionalDatasource<Builder>* ds) {
 	Serializer rdser(tuple);
 	builder.SetTagsMatcher(tagsMatcher_);
-	builder.SetTagsPath(&curTagsPath_);
+	if constexpr (kWithTagsPathTracking) {
+		builder.SetTagsPath(&curTagsPath_);
+	}
 
 	ctag begTag = rdser.GetVarUint();
 	(void)begTag;
@@ -44,9 +46,11 @@ void BaseEncoder<Builder>::Encode(ConstPayload* pl, Builder& builder, IAdditiona
 	}
 
 	objectScalarIndexes_ = 0;
-	for (int i = 0; i < pl->NumFields(); ++i) fieldsoutcnt_[i] = 0;
+	std::fill_n(std::begin(fieldsoutcnt_), pl->NumFields(), 0);
 	builder.SetTagsMatcher(tagsMatcher_);
-	builder.SetTagsPath(&curTagsPath_);
+	if constexpr (kWithTagsPathTracking) {
+		builder.SetTagsPath(&curTagsPath_);
+	}
 	ctag begTag = rdser.GetVarUint();
 	(void)begTag;
 	assertrx(begTag.Type() == TAG_OBJECT);
@@ -128,11 +132,10 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 		return false;
 	}
 	const int tagName = tag.Name();
-
-	TagsPathScope<TagsPath> pathScope(curTagsPath_, tagName);
-	TagsPathScope<IndexedTagsPath> indexedPathScope(indexedTagsPath_, tagName);
-	if (tagName && filter_) {
-		visible = visible && filter_->match(indexedTagsPath_);
+	PathScopeT pathScope(curTagsPath_, tagName);
+	TagsPathScope<IndexedTagsPathInternalT> indexedPathScope(indexedTagsPath_, visible ? tagName : 0);
+	if (visible && filter_ && tagName) {
+		visible = filter_->match(indexedTagsPath_);
 	}
 
 	const int tagField = tag.Field();
@@ -142,10 +145,10 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 		if (!pl) throw Error(errParams, "Trying to encode index field %d without payload", tagField);
 		if ((objectScalarIndexes_ & (1ULL << tagField)) && (tagType != TAG_ARRAY)) {
 			std::string fieldName;
-			if (tag.Name() && tagsMatcher_) {
-				fieldName = tagsMatcher_->tag2name(tag.Name());
+			if (tagName && tagsMatcher_) {
+				fieldName = tagsMatcher_->tag2name(tagName);
 			}
-			throw Error(errParams, "Non-array field '%s' [%d] can only be encoded once.", fieldName, tagField);
+			throw Error(errParams, "Non-array field '%s' [%d] from '%s' can only be encoded once.", fieldName, tagField, pl->Type().Name());
 		}
 		objectScalarIndexes_ |= (1ULL << tagField);
 		assertrx(tagField < pl->NumFields());
@@ -155,13 +158,11 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				int count = rdser.GetVarUint();
 				if (visible) {
 					pl->Type().Field(tagField).Type().EvaluateOneOf(
-						[&](KeyValueType::Bool) { builder.Array(tagName, pl->GetArray<bool>(tagField).subspan((*cnt), count), *cnt); },
-						[&](KeyValueType::Int) { builder.Array(tagName, pl->GetArray<int>(tagField).subspan((*cnt), count), *cnt); },
-						[&](KeyValueType::Int64) { builder.Array(tagName, pl->GetArray<int64_t>(tagField).subspan((*cnt), count), *cnt); },
-						[&](KeyValueType::Double) { builder.Array(tagName, pl->GetArray<double>(tagField).subspan((*cnt), count), *cnt); },
-						[&](KeyValueType::String) {
-							builder.Array(tagName, pl->GetArray<p_string>(tagField).subspan((*cnt), count), *cnt);
-						},
+						[&](KeyValueType::Bool) { builder.Array(tagName, pl->GetArray<bool>(tagField).subspan(*cnt, count), *cnt); },
+						[&](KeyValueType::Int) { builder.Array(tagName, pl->GetArray<int>(tagField).subspan(*cnt, count), *cnt); },
+						[&](KeyValueType::Int64) { builder.Array(tagName, pl->GetArray<int64_t>(tagField).subspan(*cnt, count), *cnt); },
+						[&](KeyValueType::Double) { builder.Array(tagName, pl->GetArray<double>(tagField).subspan(*cnt, count), *cnt); },
+						[&](KeyValueType::String) { builder.Array(tagName, pl->GetArray<p_string>(tagField).subspan(*cnt, count), *cnt); },
 						[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite>) noexcept {
 							assertrx(0);
 							abort();
@@ -175,36 +176,56 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				break;
 			default:
 				if (visible) builder.Put(tagName, pl->Get(tagField, (*cnt)));
-				(*cnt)++;
+				++(*cnt);
 				break;
 		}
 	} else {
 		switch (tagType) {
 			case TAG_ARRAY: {
 				carraytag atag = rdser.GetUInt32();
-				if (atag.Tag() == TAG_OBJECT) {
-					auto arrNode = visible ? builder.Array(tagName) : Builder();
-					for (int i = 0; i < atag.Count(); i++) {
-						indexedTagsPath_.back().SetIndex(i);
-						encode(pl, rdser, arrNode, visible);
+				const auto atagTag = atag.Tag();
+				const auto atagCount = atag.Count();
+				if (atagTag == TAG_OBJECT) {
+					if (visible) {
+						auto arrNode = builder.Array(tagName);
+						auto& lastIdxTag = indexedTagsPath_.back();
+						for (int i = 0; i < atagCount; ++i) {
+							lastIdxTag.SetIndex(i);
+							encode(pl, rdser, arrNode, true);
+						}
+					} else {
+						thread_local static Builder arrNode;
+						for (int i = 0; i < atagCount; ++i) {
+							encode(pl, rdser, arrNode, false);
+						}
 					}
 				} else if (visible) {
-					builder.Array(tagName, rdser, atag.Tag(), atag.Count());
+					builder.Array(tagName, rdser, atagTag, atagCount);
 				} else {
-					for (int i = 0; i < atag.Count(); i++) rdser.GetRawVariant(KeyValueType::FromNumber(atag.Tag()));
+					for (int i = 0; i < atagCount; ++i) rdser.SkipRawVariant(KeyValueType::FromNumber(atagTag));
 				}
 				break;
 			}
 			case TAG_OBJECT: {
 				objectScalarIndexes_ = 0;
-				auto objNode = visible ? builder.Object(tagName) : Builder();
-				while (encode(pl, rdser, objNode, visible))
-					;
+				if (visible) {
+					auto objNode = builder.Object(tagName);
+					while (encode(pl, rdser, objNode, true))
+						;
+				} else {
+					thread_local static Builder objNode;
+					while (encode(pl, rdser, objNode, false))
+						;
+				}
 				break;
 			}
 			default: {
-				Variant value = rdser.GetRawVariant(KeyValueType::FromNumber(tagType));
-				if (visible) builder.Put(tagName, value);
+				if (visible) {
+					Variant value = rdser.GetRawVariant(KeyValueType::FromNumber(tagType));
+					builder.Put(tagName, std::move(value));
+				} else {
+					rdser.SkipRawVariant(KeyValueType::FromNumber(tagType));
+				}
 			}
 		}
 	}
@@ -245,16 +266,18 @@ bool BaseEncoder<Builder>::collectTagsSizes(ConstPayload* pl, Serializer& rdser)
 		switch (tagType) {
 			case TAG_ARRAY: {
 				carraytag atag = rdser.GetUInt32();
-				tagsLengths_.back() = atag.Count();
-				if (atag.Tag() == TAG_OBJECT) {
-					for (int i = 0; i < atag.Count(); i++) {
+				const auto atagCount = atag.Count();
+				const auto atagTag = atag.Tag();
+				tagsLengths_.back() = atagCount;
+				if (atagTag == TAG_OBJECT) {
+					for (int i = 0; i < atagCount; i++) {
 						tagsLengths_.push_back(StartArrayItem);
 						collectTagsSizes(pl, rdser);
 						tagsLengths_.push_back(EndArrayItem);
 					}
 				} else {
-					for (int i = 0; i < atag.Count(); i++) {
-						rdser.GetRawVariant(KeyValueType::FromNumber(atag.Tag()));
+					for (int i = 0; i < atagCount; i++) {
+						rdser.GetRawVariant(KeyValueType::FromNumber(atagTag));
 					}
 				}
 				break;

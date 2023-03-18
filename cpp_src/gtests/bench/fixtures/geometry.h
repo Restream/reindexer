@@ -8,11 +8,11 @@
 class Geometry : protected BaseFixture {
 public:
 	~Geometry() override = default;
-	Geometry(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	Geometry(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK());
 	}
 
-	void RegisterAllCases() override;
+	void RegisterAllCases();
 	reindexer::Error Initialize() override;
 
 protected:

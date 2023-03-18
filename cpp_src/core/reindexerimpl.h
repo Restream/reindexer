@@ -201,7 +201,7 @@ protected:
 
 	std::thread backgroundThread_;
 	std::thread storageFlushingThread_;
-	std::atomic<bool> stopBackgroundThreads_;
+	std::atomic<bool> dbDestroyed_;
 
 	QueriesStatTracer queriesStatTracker_;
 	UpdatesObservers observers_;

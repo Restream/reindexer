@@ -249,6 +249,7 @@ public:
 	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext &ctx) const;
 	int getNsNumber() const { return schema_ ? schema_->GetProtobufNsNumber() : 0; }
 	IndexesCacheCleaner GetIndexesCacheCleaner() { return IndexesCacheCleaner{*this}; }
+	void SetDestroyFlag() { dbDestroyed_ = true; }
 
 protected:
 	struct SysRecordsVersions {
@@ -332,7 +333,9 @@ protected:
 
 	void putToJoinCache(JoinCacheRes &res, std::shared_ptr<JoinPreResult> preResult) const;
 	void putToJoinCache(JoinCacheRes &res, JoinCacheVal &&val) const;
-	void getFromJoinCache(JoinCacheRes &ctx) const;
+	void getFromJoinCache(const Query &, const JoinedQuery &, JoinCacheRes &out) const;
+	void getFromJoinCache(const Query &, JoinCacheRes &out) const;
+	void getFromJoinCacheImpl(JoinCacheRes &out) const;
 	void getIndsideFromJoinCache(JoinCacheRes &ctx) const;
 
 	const FieldsSet &pkFields();
@@ -435,6 +438,7 @@ private:
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
 	std::chrono::seconds lastExpirationCheckTs_;
 	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_ = {0};
+	std::atomic<bool> dbDestroyed_{false};
 };
 
 }  // namespace reindexer

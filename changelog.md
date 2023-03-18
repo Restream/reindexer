@@ -1,3 +1,21 @@
+# Version 3.14.0 (18.03.2023)
+## Core
+- [fea] Reworked fulltext search for multiword phrases in quotes (check description [here](fulltext.md#phrase-search))
+- [fea] Optimized database/server termination
+- [fea] Improved and optimized suffix tree selection for terms from stemmers in fulltext index
+- [fea] Optimized select queries with limit/offset and ordered index in conditions, but without explicit sort orders
+- [fea] Changed weights for ordered queries with limit/offset and ordered index in `where` or `order by` sections
+- [fea] Improved performance for large joined namespaces
+- [fea] Improved selection plan for non-index fields and optimized non-index field filtration
+- [fea] Added [snippet_n](fulltext.md#using-select-functions) function for fulltext highlighting. It will get more functionality later on
+- [fix] Fixed aggregation results for empty namespaces and non-existing fields
+
+## Reindexer server
+- [fea] Optimized aggregations results sending. From now all the aggregations results will be sent only once
+
+## Go connector
+- [fea] Changed aggregations interface to support optional aggregations results
+
 # Version 3.13.2 (23.02.2023)
 ## Core
 - [fix] Fixed collisions resolving in indexes hash map (worst case scenarious were significantly improved)

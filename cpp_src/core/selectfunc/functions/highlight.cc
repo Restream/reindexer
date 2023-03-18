@@ -11,10 +11,12 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	if (!func.ctx || func.ctx->type != BaseFunctionCtx::kFtCtx) return false;
 
 	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(func.ctx);
-	AreaHolder::Ptr area = ftctx->Area(res.Id());
-	if (!area) {
+	auto dataFtCtx = ftctx->GetData();
+	auto it = dataFtCtx->holders_.find(res.Id());
+	if (it == dataFtCtx->holders_.end()) {
 		return false;
 	}
+
 	Payload pl(pl_type, res.Value());
 
 	VariantArray kr;
@@ -25,7 +27,7 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	}
 
 	const std::string *data = p_string(kr[0]).getCxxstr();
-	auto pva = area->GetAreas(func.fieldNo);
+	auto pva = dataFtCtx->area_[it->second].GetAreas(func.fieldNo);
 	if (!pva || pva->empty()) return false;
 	auto &va = *pva;
 
@@ -50,7 +52,7 @@ bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 		offset += func.funcArgs[1].size();
 	}
 
-	stringsHolder.emplace_back(make_key_string(result_string));
+	stringsHolder.emplace_back(make_key_string(std::move(result_string)));
 	res.Value().Clone();
 
 	if (func.tagsPath.empty()) {

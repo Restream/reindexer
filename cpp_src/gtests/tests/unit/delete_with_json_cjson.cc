@@ -104,7 +104,7 @@ TEST_F(ExtractPK, DeleteByPKOnlyJSON) {
 	}
 
 	// generate JSON
-	string json = StringFormat(SIMPLE_JSON_PATTERN, data.id, data.name, data.color, data.weight, data.height, data.fk_id);
+	std::string json = StringFormat(SIMPLE_JSON_PATTERN, data.id, data.name, data.color, data.weight, data.height, data.fk_id);
 
 	// we need create new 'Item' for getting updated TagsMatcher
 	Item itemForDelete = db_->NewItem(SIMPLE_ITEM_NAMESPACE);
@@ -154,7 +154,7 @@ TEST_F(ExtractPK, ChangedTypeJSON) {
 		}
 	}
 
-	string json = StringFormat(CHANGE_TYPE_JSON_PATTERN, data.id, data.weight, data.height, data.name, data.color, data.fk_id);
+	std::string json = StringFormat(CHANGE_TYPE_JSON_PATTERN, data.id, data.weight, data.height, data.name, data.color, data.fk_id);
 	Item cItem = db_->NewItem(SIMPLE_ITEM_NAMESPACE);
 	CHECK_SUCCESS(cItem.FromJSON(json, nullptr, true));
 	CHECK_SUCCESS(db_->Delete(SIMPLE_ITEM_NAMESPACE, cItem));
@@ -200,7 +200,7 @@ TEST_F(ExtractPK, NestedJSON) {
 		}
 	}
 
-	string json = StringFormat(NESTED_JSON_PATTERN, ++data.id, data.name, data.color, data.weight, data.height, ++data.fk_id);
+	std::string json = StringFormat(NESTED_JSON_PATTERN, ++data.id, data.name, data.color, data.weight, data.height, ++data.fk_id);
 	Item checkItem = db_->NewItem(NESTED_ITEM_NAMESPACE);
 	CHECK_SUCCESS(checkItem.FromJSON(json, nullptr, true));
 	CHECK_SUCCESS(db_->Delete(NESTED_ITEM_NAMESPACE, checkItem));
@@ -233,7 +233,7 @@ TEST_F(ExtractPK, CJson2CJson_PrintJSON) {
 	CHECK_SUCCESS(item.Status());
 	CHECK_SUCCESS(UpsertAndCommit(SIMPLE_ITEM_NAMESPACE, item));
 
-	string originalJson(item.GetJSON());
+	std::string originalJson(item.GetJSON());
 
 	Item test = db_->NewItem(SIMPLE_ITEM_NAMESPACE);
 	CHECK_SUCCESS(test.FromCJSON(item.GetCJSON()));

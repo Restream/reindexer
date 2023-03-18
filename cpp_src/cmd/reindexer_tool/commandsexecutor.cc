@@ -590,7 +590,7 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) {
 						break;
 					default:
 						assertrx(agg.fields.size() == 1);
-						output_() << agg.aggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.value << std::endl;
+						output_() << agg.aggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.GetValueOrZero() << std::endl;
 				}
 			}
 		}

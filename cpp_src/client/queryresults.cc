@@ -65,24 +65,27 @@ void QueryResults::Bind(std::string_view rawResult, int queryID) {
 	ResultSerializer ser(rawResult);
 
 	try {
-		ser.GetRawQueryParams(queryParams_, [&ser, this](int nsIdx) {
-			uint32_t stateToken = ser.GetVarUint();
-			int version = ser.GetVarUint();
+		ser.GetRawQueryParams(
+			queryParams_,
+			[&ser, this](int nsIdx) {
+				uint32_t stateToken = ser.GetVarUint();
+				int version = ser.GetVarUint();
 
-			std::unique_lock<shared_timed_mutex> lck(nsArray_[nsIdx]->lck_);
+				std::unique_lock<shared_timed_mutex> lck(nsArray_[nsIdx]->lck_);
 
-			bool skip = nsArray_[nsIdx]->tagsMatcher_.version() >= version && nsArray_[nsIdx]->tagsMatcher_.stateToken() == stateToken;
-			if (skip) {
-				TagsMatcher().deserialize(ser);
-				// PayloadType("tmp").clone()->deserialize(ser);
-			} else {
-				nsArray_[nsIdx]->tagsMatcher_ = TagsMatcher();
-				nsArray_[nsIdx]->tagsMatcher_.deserialize(ser, version, stateToken);
-				// nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
-				// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
-			}
-			PayloadType("tmp").clone()->deserialize(ser);
-		});
+				bool skip = nsArray_[nsIdx]->tagsMatcher_.version() >= version && nsArray_[nsIdx]->tagsMatcher_.stateToken() == stateToken;
+				if (skip) {
+					TagsMatcher().deserialize(ser);
+					// PayloadType("tmp").clone()->deserialize(ser);
+				} else {
+					nsArray_[nsIdx]->tagsMatcher_ = TagsMatcher();
+					nsArray_[nsIdx]->tagsMatcher_.deserialize(ser, version, stateToken);
+					// nsArray[nsIdx]->payloadType_.clone()->deserialize(ser);
+					// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
+				}
+				PayloadType("tmp").clone()->deserialize(ser);
+			},
+			ResultSerializer::AggsFlag::ClearAggregations);
 	} catch (const Error &err) {
 		status_ = err;
 	}
@@ -106,7 +109,7 @@ void QueryResults::fetchNextResults() {
 	std::string_view rawResult = p_string(args[0]);
 	ResultSerializer ser(rawResult);
 
-	ser.GetRawQueryParams(queryParams_, nullptr);
+	ser.GetRawQueryParams(queryParams_, nullptr, ResultSerializer::AggsFlag::DontClearAggregations);
 
 	rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
 }

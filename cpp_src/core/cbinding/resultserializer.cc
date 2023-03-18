@@ -58,19 +58,21 @@ void WrResultSerializer::putQueryParams(const QueryResults* results) {
 }
 
 void WrResultSerializer::putExtraParams(const QueryResults* results) {
-	for (const AggregationResult& aggregationRes : results->aggregationResults) {
-		PutVarUint(QueryResultAggregation);
-		auto slicePosSaver = StartSlice();
-		if ((opts_.flags & kResultsFormatMask) == kResultsMsgPack) {
-			aggregationRes.GetMsgPack(*this);
-		} else {
-			aggregationRes.GetJSON(*this);
+	if (opts_.withAggregations) {
+		for (const AggregationResult& aggregationRes : results->aggregationResults) {
+			PutVarUint(QueryResultAggregation);
+			auto slicePosSaver = StartSlice();
+			if ((opts_.flags & kResultsFormatMask) == kResultsMsgPack) {
+				aggregationRes.GetMsgPack(*this);
+			} else {
+				aggregationRes.GetJSON(*this);
+			}
 		}
-	}
 
-	if (!results->explainResults.empty()) {
-		PutVarUint(QueryResultExplain);
-		PutSlice(results->explainResults);
+		if (!results->explainResults.empty()) {
+			PutVarUint(QueryResultExplain);
+			PutSlice(results->explainResults);
+		}
 	}
 	PutVarUint(QueryResultEnd);
 }

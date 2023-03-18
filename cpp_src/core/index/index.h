@@ -78,6 +78,9 @@ public:
 	virtual IndexIterator::Ptr CreateIterator() const { return nullptr; }
 	virtual bool RequireWarmupOnNsCopy() const noexcept { return false; }
 
+	virtual bool IsDestroyPartSupported() const noexcept { return false; }
+	virtual void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue&) {}
+
 	const PayloadType& GetPayloadType() const { return payloadType_; }
 	void UpdatePayloadType(PayloadType payloadType) { payloadType_ = std::move(payloadType); }
 

@@ -408,7 +408,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				std::string_view rawResult = p_string(args[0]);
 				ResultSerializer ser(rawResult);
 
-				ser.GetRawQueryParams(coroResults.queryParams_, nullptr);
+				ser.GetRawQueryParams(coroResults.queryParams_, nullptr, ResultSerializer::AggsFlag::DontClearAggregations);
 
 				coroResults.rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
 

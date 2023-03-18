@@ -2,14 +2,14 @@
 
 #include <cmath>
 
-string HumanReadableNumber(size_t number, bool si, const string& unitLabel) {
-	const string siPrefix = "kMGTPE";
-	const string prefix = "KMGTPE";
+std::string HumanReadableNumber(size_t number, bool si, const std::string& unitLabel) {
+	const std::string siPrefix = "kMGTPE";
+	const std::string prefix = "KMGTPE";
 
 	size_t unit = si ? 1000 : 1024;
 	if (number < unit) return std::to_string(number) + " " + unitLabel;
 	int exp = static_cast<int>(std::log(number) / std::log(unit));
-	string pre;
+	std::string pre;
 
 	if (si) {
 		pre = siPrefix[exp - 1];
@@ -22,19 +22,19 @@ string HumanReadableNumber(size_t number, bool si, const string& unitLabel) {
 	std::string format = "%.2f %s" + unitLabel;
 
 	size_t size = snprintf(nullptr, 0, format.c_str(), result, pre.c_str()) + 1;
-	unique_ptr<char[]> buf(new char[size]);
+	std::unique_ptr<char[]> buf(new char[size]);
 	snprintf(buf.get(), size, format.c_str(), result, pre.c_str());
-	return string(buf.get(), buf.get() + size - 1);
+	return std::string(buf.get(), buf.get() + size - 1);
 }
 
-string FormatString(const char* msg, va_list args) {
+std::string FormatString(const char* msg, va_list args) {
 	// we might need a second shot at this, so pre-emptivly make a copy
 	va_list args_cp;
 	va_copy(args_cp, args);
 
 	std::size_t size = 256;
 	char local_buff[256];
-	auto ret = vsnprintf(local_buff, size, msg, args_cp); // NOLINT(*valist.Uninitialized) False positive
+	auto ret = vsnprintf(local_buff, size, msg, args_cp);  // NOLINT(*valist.Uninitialized) False positive
 
 	va_end(args_cp);
 
@@ -52,7 +52,7 @@ string FormatString(const char* msg, va_list args) {
 	}
 }
 
-string FormatString(const char* msg, ...) {
+std::string FormatString(const char* msg, ...) {
 	va_list args;
 	va_start(args, msg);
 	auto tmp = FormatString(msg, args);

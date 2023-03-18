@@ -20,7 +20,6 @@ public:
 	JsonBuilder &operator=(JsonBuilder &&) = delete;
 
 	void SetTagsMatcher(const TagsMatcher *tm) { tm_ = tm; }
-	void SetTagsPath(const TagsPath *) {}
 
 	/// Start new object
 	JsonBuilder Object(std::string_view name = {}, int size = KUnknownFieldSize);

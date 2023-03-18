@@ -6,22 +6,6 @@ using std::vector;
 
 void AreaHolder::Reserve(int size) { areas.reserve(size); }
 
-void AreaHolder::AddTreeGramm(int pos, int filed, int maxAreasInDoc) {
-	Area thr_area(0, 0);
-	if (pos < space_size_) {
-		thr_area.start_ = 0;
-		thr_area.end_ = pos + (buffer_size_ - 1) - space_size_;
-	} else if (pos > (total_size_ - space_size_)) {
-		thr_area.start_ = pos - space_size_;
-		thr_area.end_ = buffer_size_ - 1 + total_size_ - (2 * space_size_);
-	} else {
-		thr_area.start_ = pos - space_size_;
-		thr_area.end_ = pos - space_size_ + (buffer_size_ - 1);
-	}
-
-	insertArea(std::move(thr_area), filed, maxAreasInDoc); // NOLINT(performance-move-const-arg)
-}
-
 void AreaHolder::Commit() {
 	commited_ = true;
 	for (auto &area : areas) {
@@ -37,17 +21,18 @@ void AreaHolder::Commit() {
 	}
 }
 
-bool AreaHolder::AddWord(int start_pos, int /*size*/, int filed, int maxAreasInDoc) {
-	Area thr_area{start_pos, start_pos + 1};
-	return insertArea(std::move(thr_area), filed, maxAreasInDoc); // NOLINT(performance-move-const-arg)
+bool AreaHolder::AddWord(int pos, int filed, int maxAreasInDoc) {
+	Area thr_area{pos, pos + 1};
+	return InsertArea(std::move(thr_area), filed, maxAreasInDoc);
 }
 
-bool AreaHolder::insertArea(Area &&area, int field, int maxAreasInDoc) {
+bool AreaHolder::InsertArea(Area &&area, int field, int maxAreasInDoc) {
 	commited_ = false;
 	if (areas.size() <= size_t(field)) areas.resize(field + 1);
-	if (areas[field].empty() || !areas[field].back().Concat(area)) {
-		if (maxAreasInDoc >= 0 && areas[field].size() >= unsigned(maxAreasInDoc)) return false;
-		areas[field].emplace_back(std::move(area)); // NOLINT(performance-move-const-arg)
+	auto &fieldAreas = areas[field];
+	if (fieldAreas.empty() || !fieldAreas.back().Concat(area)) {
+		if (maxAreasInDoc >= 0 && fieldAreas.size() >= unsigned(maxAreasInDoc)) return false;
+		fieldAreas.emplace_back(std::move(area));
 	}
 	return true;
 }
@@ -59,4 +44,9 @@ AreaVec *AreaHolder::GetAreas(int field) {
 	if (areas.size() <= size_t(field)) return nullptr;
 	return &areas[field];
 }
+AreaVec *AreaHolder::GetAreasRaw(int field) {
+	if (areas.size() <= size_t(field)) return nullptr;
+	return &areas[field];
+}
+
 }  // namespace reindexer

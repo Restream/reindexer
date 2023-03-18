@@ -9,7 +9,7 @@
 class ApiTvSimple : protected BaseFixture {
 public:
 	virtual ~ApiTvSimple() {}
-	ApiTvSimple(Reindexer* db, const string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
+	ApiTvSimple(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts().PK())
 			.AddIndex("genre", "tree", "int64", IndexOpts())
 			.AddIndex("year", "tree", "int", IndexOpts())
@@ -85,12 +85,12 @@ private:
 
 	constexpr static unsigned kTotalItemsMainJoinNs = 1000000;
 
-	vector<string> countries_;
-	vector<string> countryLikePatterns_;
-	vector<string> locations_;
-	vector<int> start_times_;
-	vector<vector<int>> packages_;
-	vector<vector<int>> priceIDs_;
+	std::vector<std::string> countries_;
+	std::vector<std::string> countryLikePatterns_;
+	std::vector<std::string> locations_;
+	std::vector<int> start_times_;
+	std::vector<std::vector<int>> packages_;
+	std::vector<std::vector<int>> priceIDs_;
 #if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 	constexpr static unsigned idsetsSz_[] = {10, 100, 500, 2000, 20000};
 #else	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)

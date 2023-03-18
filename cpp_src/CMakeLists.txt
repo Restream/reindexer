@@ -1,7 +1,13 @@
 cmake_minimum_required(VERSION 3.0)
 
 # Configure cmake options
-set(CMAKE_CXX_STANDARD 17)
+if (MSVC)
+  # Enable C++20 for windows build to be able to use designated initializers.
+  # GCC/Clang support them even with C++17.
+  set(CMAKE_CXX_STANDARD 20)
+else ()
+  set(CMAKE_CXX_STANDARD 17)
+endif ()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(CMakeToolsHelpers OPTIONAL)
 include(ExternalProject)
@@ -28,7 +34,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.13.2")
+set (REINDEXER_VERSION_DEFAULT "3.14.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")

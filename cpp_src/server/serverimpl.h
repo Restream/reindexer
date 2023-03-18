@@ -27,7 +27,7 @@ class ServerImpl {
 	using SinkMap = std::unordered_map<std::string, std::shared_ptr<spdlog::sinks::fast_file_sink>>;
 
 public:
-	ServerImpl();
+	ServerImpl(ServerMode mode);
 	~ServerImpl();
 
 	Error InitFromCLI(int argc, char* argv[]);
@@ -68,5 +68,6 @@ private:
 	bool enableHandleSignals_ = false;
 	ev::async async_;
 	ev::dynamic_loop loop_;
+	ServerMode mode_ = ServerMode::Builtin;
 };
 }  // namespace reindexer_server

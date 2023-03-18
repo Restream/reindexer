@@ -55,14 +55,22 @@ public:
 	}
 	h_vector(const h_vector& other) : e_{0, 0}, size_(0), is_hdata_(1) {
 		reserve(other.capacity());
-		for (size_type i = 0; i < other.size(); i++) new (ptr() + i) T(other.ptr()[i]);
+		const pointer p = ptr();
+		const_pointer op = other.ptr();
+		for (size_type i = 0; i < other.size(); i++) {
+			new (p + i) T(op[i]);
+		}
 		size_ = other.size_;
 	}
 	h_vector(h_vector&& other) noexcept : size_(0), is_hdata_(1) {
 		if (other.is_hdata()) {
+			const pointer p = reinterpret_cast<pointer>(hdata_);
+			const pointer op = reinterpret_cast<pointer>(other.hdata_);
 			for (size_type i = 0; i < other.size(); i++) {
-				new (ptr() + i) T(std::move(other.ptr()[i]));
-				if (!std::is_trivially_destructible<T>::value) other.ptr()[i].~T();
+				new (p + i) T(std::move(op[i]));
+				if constexpr (!std::is_trivially_destructible<T>::value) {
+					op[i].~T();
+				}
 			}
 		} else {
 			e_.data_ = other.e_.data_;
@@ -80,9 +88,14 @@ public:
 			size_type mv = other.size() > size() ? size() : other.size();
 			std::copy(other.begin(), other.begin() + mv, begin());
 			size_type i = mv;
-			for (; i < other.size(); i++) new (ptr() + i) T(other.ptr()[i]);
-			if (!std::is_trivially_destructible<T>::value)
-				for (; i < size(); i++) ptr()[i].~T();
+			const pointer p = ptr();
+			const_pointer op = other.ptr();
+			for (; i < other.size(); i++) {
+				new (p + i) T(op[i]);
+			}
+			if constexpr (!std::is_trivially_destructible<T>::value) {
+				for (; i < size(); i++) p[i].~T();
+			}
 			size_ = other.size_;
 		}
 		return *this;
@@ -93,8 +106,12 @@ public:
 			clear();
 			if (other.is_hdata()) {
 				for (size_type i = 0; i < other.size(); i++) {
-					new (ptr() + i) T(std::move(other.ptr()[i]));
-					if constexpr (!std::is_trivially_destructible<T>::value) other.ptr()[i].~T();
+					const pointer p = ptr();
+					const pointer op = other.ptr();
+					new (p + i) T(std::move(op[i]));
+					if constexpr (!std::is_trivially_destructible<T>::value) {
+						op[i].~T();
+					}
 				}
 			} else {
 				e_.data_ = other.e_.data_;
@@ -126,7 +143,7 @@ public:
 			destruct();
 			is_hdata_ = 1;
 		} else if constexpr (!std::is_trivially_destructible_v<T>) {
-			auto p = ptr();
+			const pointer p = ptr();
 			for (size_type i = 0; i < size_; ++i) p[i].~T();
 		}
 		size_ = 0;
@@ -185,10 +202,12 @@ public:
 	void resize(size_type sz) {
 		grow(sz);
 		if constexpr (!reindexer::is_trivially_default_constructible<T>::value) {
-			for (size_type i = size_; i < sz; i++) new (ptr() + i) T();
+			const pointer p = ptr();
+			for (size_type i = size_; i < sz; ++i) new (p + i) T();
 		}
 		if constexpr (!std::is_trivially_destructible<T>::value) {
-			for (size_type i = sz; i < size_; i++) ptr()[i].~T();
+			const pointer p = ptr();
+			for (size_type i = sz; i < size_; ++i) p[i].~T();
 		}
 		size_ = sz;
 	}
@@ -214,7 +233,8 @@ public:
 		}
 	}
 	void grow(size_type sz) {
-		if (sz > capacity()) reserve(std::max(sz, capacity() * 2));
+		const auto cap = capacity();
+		if (sz > cap) reserve(std::max(sz, cap * 2));
 	}
 	void push_back(const T& v) {
 		grow(size_ + 1);
@@ -234,7 +254,11 @@ public:
 	}
 	void pop_back() {
 		assertrx(size_);
-		resize(size_ - 1);
+		if constexpr (!std::is_trivially_destructible<T>::value) {
+			ptr()[--size_].~T();
+		} else {
+			--size_;
+		}
 	}
 	iterator insert(const_iterator pos, const T& v) {
 		const size_type i = pos - begin();
