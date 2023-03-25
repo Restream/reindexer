@@ -41,6 +41,8 @@ protected:
 	intrusive_ptr<intrusive_atomic_rc_wrapper<payload>> ptr_;
 };
 
+std::ostream &operator<<(std::ostream &os, const Error &error);
+
 #if defined(REINDEX_CORE_BUILD)
 #if defined(NDEBUG)
 #define assertf(...) ((void)0)

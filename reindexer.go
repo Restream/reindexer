@@ -145,7 +145,7 @@ var (
 type AggregationResult struct {
 	Fields []string `json:"fields"`
 	Type   string   `json:"type"`
-	Value  float64  `json:"value,omitempty"`
+	Value  *float64 `json:"value,omitempty"`
 	Facets []struct {
 		Values []string `json:"values"`
 		Count  int      `json:"count"`

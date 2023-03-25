@@ -47,7 +47,7 @@ reindexer::Item JoinItems::MakeItem() {
 }
 
 std::string JoinItems::randomString(const std::string& prefix) {
-	string result;
+	std::string result;
 	if (!prefix.empty()) result += prefix + "_";
 	result += adjectives_.at(random<size_t>(0, adjectives_.size() - 1));
 	result += "_";

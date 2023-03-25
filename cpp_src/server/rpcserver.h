@@ -29,7 +29,7 @@ struct RPCClientData : public cproto::ClientData {
 	h_vector<RPCQrId, 8> results;
 	h_vector<std::pair<Snapshot, bool>, 1> snapshots;
 	std::vector<Transaction> txs;
-	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> tmpNss;
+	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> tmpNss;
 	std::shared_ptr<TxStats> txStats;
 
 	AuthContext auth;

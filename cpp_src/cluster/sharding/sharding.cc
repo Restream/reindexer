@@ -276,20 +276,31 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::doReconnect(int shardID, Err
 
 std::shared_ptr<client::Reindexer> ConnectStrategy::tryConnectToLeader(const std::vector<std::string> &dsns,
 																	   const cluster::ReplicationStats &stats, Error &reconnectStatus) {
-	for (auto &node : stats.nodeStats) {
-		if (node.role == cluster::RaftInfo::Role::Leader) {
-			for (size_t i = 0; i < dsns.size(); ++i) {
-				if (dsns[i] == node.dsn) {
-					auto &conn = *connections_[i];
-					reconnectStatus = conn.WithTimeout(config_.reconnectTimeout).Status(true);
-					connections_.actualIndex = i;
-					return connections_[i];
-				}
+	auto tryGetConnection = [this, &reconnectStatus](const std::vector<std::string> &dsns,
+													 const std::string &dsn) -> std::shared_ptr<reindexer::client::Reindexer> {
+		for (size_t i = 0; i < dsns.size(); ++i) {
+			if (dsns[i] == dsn) {
+				auto &conn = *connections_[i];
+				reconnectStatus = conn.WithTimeout(config_.reconnectTimeout).Status(true);
+				connections_.actualIndex = i;
+				return connections_[i];
 			}
-			break;
 		}
+		return {};
+	};
+
+	auto leaderIt = std::find_if(stats.nodeStats.begin(), stats.nodeStats.end(),
+								 [](const cluster::NodeStats &node) { return node.role == cluster::RaftInfo::Role::Leader; });
+
+	std::shared_ptr<reindexer::client::Reindexer> connection;
+	if (leaderIt != stats.nodeStats.end() && (connection = tryGetConnection(dsns, leaderIt->dsn), connection)) return connection;
+
+	for (auto &node : stats.nodeStats) {
+		if (node.role == cluster::RaftInfo::Role::Leader) continue;
+		if (auto conn = tryGetConnection(dsns, node.dsn)) return conn;
 	}
-	reconnectStatus = Error(errLogic, "Unable to connect to the leader-shard");
+
+	reconnectStatus = Error(errLogic, "Unable to connect to either the leader-shard or the allowed followers");
 	return {};
 }
 

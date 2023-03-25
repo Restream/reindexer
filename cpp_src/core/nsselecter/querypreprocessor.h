@@ -53,7 +53,7 @@ public:
 	void InitIndexNumbers();
 	using QueryEntries::Size;
 	using QueryEntries::Dump;
-	SortingEntries GetSortingEntries(bool havePreresult) const;
+	[[nodiscard]] SortingEntries GetSortingEntries(const SelectCtx &ctx) const;
 	bool IsFtExcluded() const noexcept { return ftEntry_.has_value(); }
 	void ExcludeFtQuery(const SelectFunction &, const RdxContext &);
 	FtMergeStatuses &GetFtMergeStatuses() noexcept {
@@ -67,7 +67,18 @@ public:
 	bool IsFtPreselected() const noexcept { return ftPreselect_ && !ftEntry_; }
 
 private:
-	SortingEntries detectOptimalSortOrder() const;
+	struct FoundIndexInfo {
+		enum class ConditionType { Incompatible = 0, Compatible = 1 };
+
+		FoundIndexInfo() noexcept : index(nullptr), size(0), isFitForSortOptimization(0) {}
+		FoundIndexInfo(const Index *i, ConditionType ct) noexcept : index(i), size(i->Size()), isFitForSortOptimization(unsigned(ct)) {}
+
+		const Index *index;
+		uint64_t size : 63;
+		uint64_t isFitForSortOptimization : 1;
+	};
+
+	[[nodiscard]] SortingEntries detectOptimalSortOrder() const;
 	bool forcedStage() const noexcept { return evaluationsCount_ == (desc_ ? 1 : 0); }
 	size_t lookupQueryIndexes(size_t dst, size_t srcBegin, size_t srcEnd);
 	size_t substituteCompositeIndexes(size_t from, size_t to);
@@ -76,7 +87,9 @@ private:
 	int getCompositeIndex(const T &) const;
 	void convertWhereValues(QueryEntries::iterator begin, QueryEntries::iterator end) const;
 	void convertWhereValues(QueryEntry *) const;
-	const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
+	[[nodiscard]] const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
+	void findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end,
+					  h_vector<FoundIndexInfo, 32> &foundIndexes) const;
 	void injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &, const RdxContext &);
 	void fillQueryEntryFromOnCondition(QueryEntry &, NamespaceImpl &rightNs, Query joinQuery, std::string joinIndex, CondType condition,
 									   KeyValueType, const RdxContext &);

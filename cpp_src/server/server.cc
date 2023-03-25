@@ -3,7 +3,7 @@
 
 namespace reindexer_server {
 
-Server::Server() : impl_(new ServerImpl) {}
+Server::Server(ServerMode mode) : impl_(new ServerImpl(mode)) {}
 Server::~Server() = default;
 Error Server::InitFromCLI(int argc, char *argv[]) { return impl_->InitFromCLI(argc, argv); }
 Error Server::InitFromFile(const char *filePath) { return impl_->InitFromFile(filePath); }

@@ -120,6 +120,7 @@ enum ErrorCode {
 	errAlreadyProxied = 34,
 	errStrictMode = 35,
 	errQrUIDMissmatch = 36,
+	errParseYAML = 37,
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };

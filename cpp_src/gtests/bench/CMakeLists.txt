@@ -18,11 +18,13 @@ set (BENCH_DICT_PATH ${CMAKE_CURRENT_SOURCE_DIR}/dict.txt)
 
 add_executable(${TARGET} ${FIXT_SRCS} ${TOOLS_SRCS} reindexer_bench.cc)
 target_link_libraries(${TARGET} ${REINDEXER_LIBRARIES} ${GBENCHMARK_LIBRARY})
-target_compile_definitions(${TARGET} PRIVATE -DRX_BENCH_DICT_PATH="${BENCH_DICT_PATH}")
+target_compile_definitions(${TARGET} PRIVATE RX_BENCH_DICT_PATH="${BENCH_DICT_PATH}")
+
 
 add_executable(${FT_TARGET} ${FT_FIXT_SRCS} ${TOOLS_SRCS} ft_bench.cc)
 target_link_libraries(${FT_TARGET} ${REINDEXER_LIBRARIES} ${GBENCHMARK_LIBRARY})
-target_compile_definitions(${FT_TARGET} PRIVATE -DRX_BENCH_DICT_PATH="${BENCH_DICT_PATH}")
+target_compile_definitions(${FT_TARGET} PRIVATE RX_BENCH_DICT_PATH="${BENCH_DICT_PATH}")
+
 
 if(BENCH_REPORT)
     message("Benchmark report flag is activated")

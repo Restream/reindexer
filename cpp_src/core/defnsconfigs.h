@@ -73,6 +73,7 @@ const std::vector<std::string> kDefDBConfig = {
 		"type":"async_replication",
 		"async_replication":{
 			"role": "none",
+			"log_level":"none",
 			"sync_threads":4,
 			"syncs_per_thread":2,
 			"online_updates_timeout_sec":20,

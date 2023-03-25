@@ -11,7 +11,7 @@
 
 namespace reindexer {
 
-using TagsPath = h_vector<int16_t, 6>;
+using TagsPath = h_vector<int16_t, 16>;
 
 class IndexedPathNode {
 	struct AllItemsType {};
@@ -75,16 +75,19 @@ private:
 	key_string expression_;
 };
 
-class IndexedTagsPath : public h_vector<IndexedPathNode, 6> {
+template <unsigned hvSize>
+class IndexedTagsPathImpl : public h_vector<IndexedPathNode, hvSize> {
 public:
-	using Base = h_vector<IndexedPathNode, 6>;
+	using Base = h_vector<IndexedPathNode, hvSize>;
 	using Base::Base;
-	bool Compare(const IndexedTagsPath &obj) const noexcept {
-		const size_t ourSize = size();
+
+	template <unsigned hvSizeO>
+	bool Compare(const IndexedTagsPathImpl<hvSizeO> &obj) const noexcept {
+		const size_t ourSize = this->size();
 		if (obj.size() != ourSize) return false;
-		if (back().IsArrayNode() != obj.back().IsArrayNode()) return false;
+		if (this->back().IsArrayNode() != obj.back().IsArrayNode()) return false;
 		for (size_t i = 0; i < ourSize; ++i) {
-			const IndexedPathNode &ourNode = operator[](i);
+			const auto &ourNode = this->operator[](i);
 			if (i == ourSize - 1) {
 				if (ourNode.IsArrayNode()) {
 					if (ourNode.NameTag() != obj[i].NameTag()) return false;
@@ -100,22 +103,25 @@ public:
 		return true;
 	}
 	bool Compare(const TagsPath &obj) const noexcept {
-		if (obj.size() != size()) return false;
-		for (size_t i = 0; i < size(); ++i) {
-			if (operator[](i).NameTag() != obj[i]) return false;
+		if (obj.size() != this->size()) return false;
+		for (size_t i = 0; i < this->size(); ++i) {
+			if (this->operator[](i).NameTag() != obj[i]) return false;
 		}
 		return true;
 	}
 };
+using IndexedTagsPath = IndexedTagsPathImpl<6>;
 
 using IndexExpressionEvaluator = std::function<VariantArray(std::string_view)>;
 
 template <typename TagsPath>
 class TagsPathScope {
 public:
-	template <typename Node>
-	TagsPathScope(TagsPath &tagsPath, Node &&node) : tagsPath_(tagsPath), tagName_(static_cast<int>(node)) {
-		if (tagName_) tagsPath_.emplace_back(std::forward<Node>(node));
+	TagsPathScope(TagsPath &tagsPath, int16_t tagName) : tagsPath_(tagsPath), tagName_(tagName) {
+		if (tagName_) tagsPath_.emplace_back(tagName);
+	}
+	TagsPathScope(TagsPath &tagsPath, int16_t tagName, int32_t index) : tagsPath_(tagsPath), tagName_(tagName) {
+		if (tagName_) tagsPath_.emplace_back(tagName, index);
 	}
 	~TagsPathScope() {
 		if (tagName_ && !tagsPath_.empty()) tagsPath_.pop_back();
@@ -125,7 +131,7 @@ public:
 
 private:
 	TagsPath &tagsPath_;
-	int tagName_;
+	const int16_t tagName_;
 };
 
 }  // namespace reindexer

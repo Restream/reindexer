@@ -45,6 +45,7 @@ struct IndexMemStat {
 	size_t trackedUpdatesCount = 0;
 	size_t trackedUpdatesBuckets = 0;
 	size_t trackedUpdatesSize = 0;
+	size_t trackedUpdatesOveflow = 0;
 	LRUCacheMemStat idsetCache;
 	size_t GetIndexStructSize() const noexcept {
 		return idsetPlainSize + idsetBTreeSize + sortOrdersSize + fulltextSize + columnSize + trackedUpdatesSize;
@@ -106,6 +107,7 @@ struct ReplicationStat : public ReplicationState {
 	void GetJSON(JsonBuilder &builder);
 	size_t walCount = 0;
 	size_t walSize = 0;
+	int16_t serverId = 0;
 };
 
 struct NamespaceMemStat {

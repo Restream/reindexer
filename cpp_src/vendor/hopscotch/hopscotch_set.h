@@ -28,10 +28,10 @@
 #include <cstddef>
 #include <functional>
 #include <initializer_list>
-#include <list>
 #include <memory>
 #include <type_traits>
 #include <utility>
+#include "estl/elist.h"
 #include "hopscotch_hash.h"
 
 namespace tsl {
@@ -82,7 +82,7 @@ private:
 		key_type& operator()(Key& key) { return key; }
 	};
 
-	using overflow_container_type = std::list<Key, Allocator>;
+	using overflow_container_type = reindexer::elist<Key, Allocator>;
 	using ht = detail_hopscotch_hash::hopscotch_hash<Key, KeySelect, void, Hash, KeyEqual, Allocator, NeighborhoodSize, StoreHash,
 													 GrowthPolicy, overflow_container_type>;
 

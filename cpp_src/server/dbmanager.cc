@@ -283,7 +283,7 @@ Error DBManager::readUsersYAML() noexcept {
 			}
 		}
 	} catch (const YAML::Exception &ex) {
-		return Error(errParseJson, "Users: %s", ex.what());
+		return Error(errParseYAML, "Users: %s", ex.what());
 	}
 	return errOK;
 }

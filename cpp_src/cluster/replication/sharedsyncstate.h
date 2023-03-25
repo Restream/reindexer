@@ -17,7 +17,7 @@ template <typename MtxT = shared_timed_mutex>
 class SharedSyncState {
 public:
 	using GetNameF = std::function<std::string()>;
-	using ContainerT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str>;
+	using ContainerT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>;
 
 	void MarkSynchronized(std::string name) {
 		std::unique_lock<MtxT> lck(mtx_);

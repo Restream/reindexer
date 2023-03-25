@@ -1,3 +1,53 @@
+# Version 4.10.0 *beta* (25.03.2023)
+## Core
+- [fix] Fixed cost calculation for 'between fields' comparators
+
+## Reindexer server
+- [fix] Fixed server connections drops after outdated Close() call from RPC-client
+
+## Go connector
+- [fix] Fixed client connections drops after some of the queries time outs (CPROTO)
+
+## Replication
+- [fix] Fixed server ID validation
+
+## Sharding
+- [fea] Changed default sorting order for distributed query results. If explicit sort was not requested, results will be sorted by shard IDs
+- [fix] Fixed reconnect between shards with RAFT cluster in case, when shard config does not contain all of the RAFT nodes
+
+## Ported
+- [fea/fix] Ported all the features and fixes from [v3.13.2](https://github.com/Restream/reindexer/blob/v3.13.2/changelog.md#version-3132-23022023) and [v3.14.0](https://github.com/Restream/reindexer/blob/v3.14.0/changelog.md#version-3140-18032023)
+
+## Face
+- [fea] Added the information about supported browsers
+- [fea] Replaced the Create new database label to the Choose a database in the main menu
+- [fea] Forbade entering cyrillic symbols for DB and NS titles
+- [fea] Added the ability to rollback to the default DB config
+- [fea] Improved the filtering on the Namespace page
+- [fea] Replaced the empty page with the inform message on the Meta page
+- [fea] Disabled the Create NS button if none DB exists
+- [fea] Added the ability to export the SQL result in CSV
+- [fea] Added the settings of the slow requests logging to the NS config
+- [fea] Fixed the ability to change the Item limit on the page if it exceeds the item total
+- [fix] Added the redirect from a selected namespace to the index page during the DB changing
+- [fix] Fixed the pagination on the Connections page
+- [fix] Fixed minor issues with Queriesperfstats and Explain features
+- [fix] Fixed the filtered list of Namespaces on the Memory page
+- [fix] Fixed the item list after removing of all items on a page
+- [fix] Fixed the displaying of the empty and fact result at the same time
+- [fix] Fixed the redirect to the Explain page during loading new items on the List and Grid list on the QUERY -> SQL page
+- [fix] Fixed the error appeared on the list resizing on the Query Builder page
+- [fix] Fixed the infinity requests to namespases on the Config page
+- [fix] Fixed boolean values displaying in the Grid view 
+- [fix] Fixed the validator of the tag field
+- [fix] Fixed the error on the Explain page
+- [fix] Fixed issues with the Position boost
+- [fix] Replaced the step from 0.001 to 0.05 for input fields
+- [fix] Fixed the sorting pointer icon on the Queries table
+- [fix] Fixed the column settings for the Statistics table
+- [fix] Improved the Statistics UI
+- [fix] Fixed the SQL -> truncate response
+
 # Version 4.9.0 *beta* (26.01.2023)
 ## Core
 - [fix] Fixed potential memory access error on cluster's termination

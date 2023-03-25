@@ -26,7 +26,7 @@ bool FtFastFieldConfig::operator==(const FtFastFieldConfig& other) const noexcep
 		   termLenWeight == other.termLenWeight && positionBoost == other.positionBoost && positionWeight == other.positionWeight;
 }
 
-void FtFastConfig::parse(std::string_view json, const fast_hash_map<std::string, int>& fields) {
+void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>& fields) {
 	fieldsCfg.clear();
 	if (json.empty()) {
 		fieldsCfg.resize(fields.size() ? fields.size() : 1);

@@ -7,16 +7,6 @@ image: Visual Studio 2019
 environment:
   matrix:
     - BUILD_TYPE: Release
-      COMPILER: MSVC19
-      PLATFORM: x64
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-
-    - BUILD_TYPE: Release
-      COMPILER: MSVC19
-      PLATFORM: Win32
-      APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
-
-    - BUILD_TYPE: Release
       COMPILER: MinGW-w64
       PLATFORM: x64
       TOOLCHAIN: x86_64-8.1.0-posix-seh-rt_v6-rev0
@@ -32,8 +22,6 @@ build_script:
   - git describe --tags
   - mkdir build
   - cd build
-  - if [%COMPILER%]==[MSVC19] if [%PLATFORM%]==[Win32] cmake -G "Visual Studio 16 2019" -A Win32 ..
-  - if [%COMPILER%]==[MSVC19] if [%PLATFORM%]==[x64] cmake -G "Visual Studio 16 2019" -A x64 ..
   - if [%COMPILER%]==[MinGW] set PATH=C:\MinGW-w64\%TOOLCHAIN%\mingw32\bin;%PATH:C:\Program Files\Git\usr\bin;=%
   - if [%COMPILER%]==[MinGW-w64] set PATH=C:\MinGW-w64\%TOOLCHAIN%\mingw64\bin;%PATH:C:\Program Files\Git\usr\bin;=%
   - if [%COMPILER%]==[MinGW] cmake -G "MinGW Makefiles" -DCMAKE_PREFIX_PATH=C:\mingw-w64\%TOOLCHAIN% -DCMAKE_CXX_STANDARD=17 -DCMAKE_BUILD_TYPE=%BUILD_TYPE% ..

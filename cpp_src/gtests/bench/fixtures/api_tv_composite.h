@@ -6,9 +6,6 @@
 #include "allocs_tracker.h"
 #include "base_fixture.h"
 
-using std::string;
-using std::vector;
-
 using benchmark::AllocsTracker;
 
 class ApiTvComposite : protected BaseFixture {
@@ -86,6 +83,6 @@ protected:
 
 private:
 	std::vector<VariantArray> compositeIdSet_;
-	vector<std::string> locations_;
-	vector<std::string> names_;
+	std::vector<std::string> locations_;
+	std::vector<std::string> names_;
 };

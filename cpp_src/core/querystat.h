@@ -43,7 +43,7 @@ protected:
 	void hit(const QuerySQL&, std::chrono::microseconds);
 
 	std::mutex mtx_;
-	fast_hash_map<std::string, Stat, hash_str, equal_str> stat_;
+	fast_hash_map<std::string, Stat, hash_str, equal_str, less_str> stat_;
 };
 extern template void QueriesStatTracer::hit<&PerfStatCounterST::Hit>(const QuerySQL&, std::chrono::microseconds);
 extern template void QueriesStatTracer::hit<&PerfStatCounterST::LockHit>(const QuerySQL&, std::chrono::microseconds);

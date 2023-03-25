@@ -199,6 +199,7 @@ public:
 	 * Modifiers
 	 */
 	void clear() noexcept { m_ht.clear(); }
+	void add_destroy_task(detail_sparse_hash::ThreadTaskQueue *q) { m_ht.add_destroy_task(q); }
 
 	std::pair<iterator, bool> insert(const value_type &value) { return m_ht.insert(value); }
 
@@ -682,7 +683,7 @@ private:
  * tsl::sh::prime_growth_policy>`.
  */
 template <class Key, class T, class Hash = std::hash<Key>, class KeyEqual = std::equal_to<Key>,
-          class Allocator = std::allocator<std::pair<Key, T>>>
+		  class Allocator = std::allocator<std::pair<Key, T>>>
 using sparse_pg_map = sparse_map<Key, T, Hash, KeyEqual, Allocator, tsl::sh::prime_growth_policy>;
 
 }  // end namespace tsl

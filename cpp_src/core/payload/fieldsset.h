@@ -123,7 +123,8 @@ public:
 		}
 		return false;
 	}
-	bool match(const IndexedTagsPath &tagsPath) const noexcept {
+	template <unsigned hvSize>
+	bool match(const IndexedTagsPathImpl<hvSize> &tagsPath) const noexcept {
 		if (tagsPaths_.empty()) return true;
 		for (auto &flt : tagsPaths_) {
 			if (flt.index() == 1) {
@@ -181,15 +182,15 @@ public:
 
 protected:
 	template <typename TPath1, typename TPath2>
-	bool comparePaths(const TPath1 &lhs, const TPath2 &rhs) const {
+	bool comparePaths(const TPath1 &lhs, const TPath2 &rhs) const noexcept {
 		unsigned i = 0, count = std::min(lhs.size(), rhs.size());
-		for (; i < count && lhs[i] == rhs[i]; i++) {
+		for (; i < count && lhs[i] == rhs[i]; ++i) {
 		}
 		return (i == count);
 	}
 
 	uint64_t mask_ = 0;
-	std::vector<FieldsPath> tagsPaths_;
+	h_vector<FieldsPath, 1> tagsPaths_;
 	/// Json paths to non indexed fields.
 	/// Necessary only for composite full text
 	/// indexes. There is a connection with

@@ -298,7 +298,7 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	cluster::AsyncReplConfigData asyncReplConf;
 	asyncReplConf.appName = config.appName;
 	asyncReplConf.role = cluster::AsyncReplConfigData::Str2role(config.role);
-	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
+	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss;
 	for (auto& ns : config.namespaces) {
 		nss.emplace(ns);
 	}
@@ -314,7 +314,7 @@ void ServerControl::Interface::SetReplicationConfig(const AsyncReplicationConfig
 	for (auto& node : config.nodes) {
 		asyncReplConf.nodes.emplace_back(cluster::AsyncReplNodeConfig{node.dsn});
 		if (node.nsList.has_value()) {
-			fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
+			fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss;
 			for (auto& ns : node.nsList.value()) {
 				nss.emplace(ns);
 			}
@@ -361,7 +361,7 @@ void ServerControl::Interface::AddFollower(const std::string& dsn, std::optional
 	ASSERT_TRUE(found == curConf.nodes.end());
 	curConf.nodes.emplace_back(std::move(newNode));
 	if (nsList.has_value()) {
-		fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss;
+		fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss;
 		for (auto&& ns : nsList.value()) {
 			nss.emplace(std::move(ns));
 		}

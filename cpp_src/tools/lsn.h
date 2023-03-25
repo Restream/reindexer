@@ -23,7 +23,8 @@ struct lsn_t {
 	static constexpr int64_t kCounterbitCount = 48;
 	static constexpr int64_t kCounterMask = (1ull << kCounterbitCount) - 1ull;
 
-	static constexpr int64_t kMaxServerIDValue = 999;
+	static constexpr int16_t kMinServerIDValue = 0;
+	static constexpr int16_t kMaxServerIDValue = 999;
 
 	void GetJSON(JsonBuilder &builder) const;
 
@@ -46,9 +47,7 @@ struct lsn_t {
 		}
 	}
 	lsn_t(int64_t counter, int16_t server) {
-		if (server > kMaxServerIDValue) {
-			throw Error(errLogic, "Server id > 999");
-		}
+		validateServerId(server);
 		if ((counter & kCounterMask) == kCounterMask) counter = kDigitCountLSNMult - 1ll;
 		const int64_t s = server * kDigitCountLSNMult;
 		payload_ = s + counter;
@@ -73,9 +72,7 @@ struct lsn_t {
 	bool operator!=(lsn_t o) const noexcept { return payload_ != o.payload_; }
 
 	int64_t SetServer(int16_t s) {
-		if (s > kMaxServerIDValue) {
-			throw Error(errLogic, "Server id > 999");
-		}
+		validateServerId(s);
 		const int64_t server = s * kDigitCountLSNMult;
 		const int64_t serverOld = payload_ / kDigitCountLSNMult;
 		payload_ = payload_ - serverOld * kDigitCountLSNMult + server;
@@ -118,6 +115,7 @@ struct lsn_t {
 
 protected:
 	int64_t payload_ = kDigitCountLSNMult - 1ll;
+	void validateServerId(int16_t server);
 };
 
 inline static std::ostream &operator<<(std::ostream &o, const reindexer::lsn_t &sv) {

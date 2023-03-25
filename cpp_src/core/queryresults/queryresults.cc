@@ -186,21 +186,27 @@ void QueryResults::RebuildMergedData() {
 					if (newAgg.type != mergedAgg.type) {
 						throw Error(errLogic, "Aggregations are incompatible between query results inside distributed query results");
 					}
+
+					auto newValue = newAgg.GetValue();
+					if (!newValue) continue;
+
+					auto value = mergedAgg.GetValue();
+
 					switch (newAgg.type) {
 						case AggMin:
-							if (mergedAgg.value > newAgg.value) {
-								mergedAgg.value = newAgg.value;
+							if (!value || *value > *newValue) {
+								mergedAgg.SetValue(*newValue);
 							}
 							break;
 						case AggMax:
-							if (mergedAgg.value < newAgg.value) {
-								mergedAgg.value = newAgg.value;
+							if (!value || *value < *newValue) {
+								mergedAgg.SetValue(*newValue);
 							}
 							break;
 						case AggSum:
 						case AggCount:
 						case AggCountCached:
-							mergedAgg.value += newAgg.value;
+							mergedAgg.SetValue(*newValue + mergedAgg.GetValueOrZero());
 							break;
 						default:
 							throw Error(errLogic, "Remote query result (within distributed results) has unsupported aggregations");
@@ -1006,15 +1012,12 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 
 	auto* qr = const_cast<QueryResults*>(qr_);
 	if (!qr_->orderedQrs_ || qr_->type_ == Type::SingleRemote) {
-		bool qrIdWasChanged = false;
 		if (qr->curQrId_ < 0) {
 			++qr->local_->it;
 			++qr->lastSeenIdx_;
 			++idx_;
 			if (qr->local_->it == qr->local_->qr.end()) {
-				qr->curQrId_ = 0;
-				qrIdWasChanged = true;
-				assertrx(qr_->remote_.size());
+				qr->curQrId_ = qr->findFirstQrWithItems(qr->local_->shardID);
 			}
 		} else if (size_t(qr->curQrId_) < qr_->remote_.size()) {
 			auto& remoteQrp = qr->remote_[size_t(qr_->curQrId_)];
@@ -1022,14 +1025,8 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 			++qr->lastSeenIdx_;
 			++idx_;
 			if (remoteQrp.it == remoteQrp.qr.end()) {
-				++qr->curQrId_;
-				qrIdWasChanged = true;
+				qr->curQrId_ = qr->findFirstQrWithItems(remoteQrp.shardID);
 			}
-		}
-		// Find next qr with items
-		while (qrIdWasChanged && size_t(qr_->curQrId_) < qr->remote_.size() &&
-			   qr->remote_[size_t(qr_->curQrId_)].it == qr->remote_[size_t(qr_->curQrId_)].qr.end()) {
-			++qr->curQrId_;
 		}
 	} else if (!qr->orderedQrs_->empty()) {
 		++qr->lastSeenIdx_;
@@ -1124,7 +1121,7 @@ const QueryResults::MergedData& QueryResults::getMergedData() const {
 
 bool QueryResults::ordering() const noexcept { return orderedQrs_ && (type_ == Type::Mixed || type_ == Type::MultipleRemote); }
 
-int QueryResults::findFirstQrWithItems() {
+int QueryResults::findFirstQrWithItems(int minShardId) {
 	if (ordering()) {
 		if (local_ && local_->qr.Count()) {
 			assertrx(local_->it == local_->qr.begin());
@@ -1142,15 +1139,19 @@ int QueryResults::findFirstQrWithItems() {
 			return *orderedQrs_->begin();
 		}
 	} else {
-		if (local_ && local_->qr.Count()) {
-			return -1;
+		int foundPos = remote_.size();
+		int foundShardId = std::numeric_limits<int>().max();
+		if (local_ && local_->qr.Count() && local_->shardID > minShardId) {
+			foundPos = -1;
+			foundShardId = local_->shardID;
 		}
 		for (int i = 0, size = remote_.size(); i < size; ++i) {
-			if (remote_[i].qr.Count()) {
-				return i;
+			if (remote_[i].qr.Count() && remote_[i].shardID < foundShardId && remote_[i].shardID > minShardId) {
+				foundPos = i;
+				foundShardId = remote_[i].shardID;
 			}
 		}
-		return remote_.size();
+		return foundPos;
 	}
 }
 

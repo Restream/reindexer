@@ -398,7 +398,8 @@ IndexMemStat IndexUnordered<T>::GetMemStat(const RdxContext &ctx) {
 	if (cache_) ret.idsetCache = cache_->GetMemStat();
 	ret.trackedUpdatesCount = tracker_.updatesSize();
 	ret.trackedUpdatesBuckets = tracker_.updatesBuckets();
-	ret.trackedUpdatesSize = tracker_.GetMemStat();
+	ret.trackedUpdatesSize = tracker_.allocated();
+	ret.trackedUpdatesOveflow = tracker_.overflow();
 	return ret;
 }
 
@@ -435,6 +436,14 @@ void IndexUnordered<T>::dump(S &os, std::string_view step, std::string_view offs
 template <typename T>
 void IndexUnordered<T>::Dump(std::ostream &os, std::string_view step, std::string_view offset) const {
 	dump(os, step, offset);
+}
+
+template <typename T>
+void IndexUnordered<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &q) {
+	if constexpr (Base::template HasAddTask<decltype(idx_map)>::value) {
+		idx_map.add_destroy_task(&q);
+	}
+	(void)q;
 }
 
 template <typename KeyEntryT>

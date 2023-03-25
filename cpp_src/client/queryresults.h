@@ -25,7 +25,10 @@ class Reindexer;
 
 class QueryResults {
 public:
-	QueryResults(int fetchFlags = 0, int fetchAmount = 0, bool lazyMode = false) noexcept : results_(fetchFlags, fetchAmount, lazyMode) {}
+	QueryResults(int fetchFlags = 0, int fetchAmount = 0) noexcept : results_(fetchFlags, fetchAmount) {}
+	// This constructor enables lazy parsing for aggregations and explain results. This mode is usefull for raw buffer qr's proxying on
+	// sharded server
+	QueryResults(int fetchFlags, int fetchAmount, LazyQueryResultsMode m) noexcept : results_(fetchFlags, fetchAmount, m) {}
 	QueryResults(const QueryResults&) = delete;
 	QueryResults(QueryResults&&) noexcept = default;
 	QueryResults& operator=(const QueryResults&) = delete;

@@ -286,7 +286,7 @@ Error RPCClient::modifyItemRaw(std::string_view nsName, std::string_view cjson, 
 					nsPtr->TryReplaceTagsMatcher(std::move(newTm));
 					PayloadType("tmp").clone()->deserialize(ser);
 				},
-				true, pdata);
+				ResultSerializer::Options{ResultSerializer::LazyMode | ResultSerializer::ClearAggregations}, pdata);
 		}
 	} catch (const Error& err) {
 		return err;

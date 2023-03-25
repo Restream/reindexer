@@ -6,17 +6,19 @@ namespace reindexer {
 namespace client {
 
 void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, const std::function<void(int nsId)>& updatePayloadFunc,
-										 bool lazyMode, ParsingData& parsingData) {
+										 Options opts, ParsingData& parsingData) {
 	ret.flags = GetVarUint();
 	ret.totalcount = GetVarUint();
 	ret.qcount = GetVarUint();
 	ret.count = GetVarUint();
-	if (lazyMode) {
-		ret.aggResults = std::nullopt;
-		ret.explainResults = std::nullopt;
-	} else {
-		ret.aggResults.emplace();	   // std::vector<AggregationResult>();
-		ret.explainResults.emplace();  // = std::string();
+	if (opts.IsWithClearAggs()) {
+		if (opts.IsWithLazyMode()) {
+			ret.aggResults = std::nullopt;
+			ret.explainResults = std::nullopt;
+		} else {
+			ret.aggResults.emplace();
+			ret.explainResults.emplace();
+		}
 	}
 	parsingData = ParsingData();
 
@@ -34,21 +36,32 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, con
 	}
 
 	parsingData.pts.end = parsingData.extraData.begin = Pos();
-	GetExtraParams(ret, lazyMode);
+	GetExtraParams(ret, opts);
 	parsingData.extraData.end = parsingData.itemsPos = Pos();
 }
 
-void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, bool lazyMode) {
-	if (!lazyMode && !ret.aggResults.has_value()) {
-		throw Error(errLogic, "Empty lazy aggregations value");
+void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, Options opts) {
+	if (!opts.IsWithLazyMode() && opts.IsWithClearAggs()) {
+		if (!ret.aggResults.has_value()) {
+			throw Error(errLogic, "Empty lazy aggregations value");
+		}
+		if (!ret.explainResults.has_value()) {
+			throw Error(errLogic, "Empty lazy explain value");
+		}
 	}
+	bool firstLazyData = true;
 	for (;;) {
 		const int tag = GetVarUint();
 		if (tag == QueryResultEnd) break;
 		switch (tag) {
 			case QueryResultAggregation: {
 				std::string_view data = GetSlice();
-				if (!lazyMode) {
+				if (!opts.IsWithLazyMode()) {
+					if (firstLazyData) {
+						firstLazyData = false;
+						ret.aggResults.emplace();
+						ret.explainResults.emplace();
+					}
 					ret.aggResults->emplace_back();
 					if ((ret.flags & kResultsFormatMask) == kResultsMsgPack) {
 						ret.aggResults->back().FromMsgPack(data);
@@ -59,7 +72,13 @@ void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, bool l
 				break;
 			}
 			case QueryResultExplain: {
-				if (!lazyMode) {
+				if (opts.IsWithLazyMode()) {
+					GetSlice();
+				} else {
+					if (firstLazyData) {
+						firstLazyData = false;
+						ret.aggResults.emplace();
+					}
 					ret.explainResults = GetSlice();
 				}
 				break;

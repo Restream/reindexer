@@ -1,6 +1,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <thread>
+#include "query_aggregate_strict_mode_test.h"
 #include "rpcclient_api.h"
 #include "rpcserver_fake.h"
 #include "tools/fsops.h"
@@ -697,6 +698,315 @@ TEST_F(RPCClientTestApi, FirstSelectWithFetch) {
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_EQ(res.Count(), kTrItemCount);
 		}
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, FetchingWithJoin) {
+	// Check that particular results fetching does not break tagsmatchers
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+	using reindexer::coroutine::wait_group;
+	using reindexer::coroutine::wait_group_guard;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+
+	loop.spawn([&loop]() noexcept {
+		const std::string kLeftNsName = "left_ns";
+		const std::string kRightNsName = "right_ns";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		reindexer::client::ReindexerConfig cfg;
+		constexpr auto kFetchCount = 50;
+		constexpr auto kNsSize = kFetchCount * 3;
+		cfg.FetchAmount = kFetchCount;
+		CoroReindexer rx(cfg);
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		err = rx.OpenNamespace(kLeftNsName);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rx.AddIndex(kLeftNsName, {"id", {"id"}, "tree", "int", IndexOpts().PK()});
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		err = rx.OpenNamespace(kRightNsName);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rx.AddIndex(kRightNsName, {"id", {"id"}, "hash", "int", IndexOpts().PK()});
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		auto upsertFn = [&rx](const std::string& nsName, bool withValue) {
+			for (size_t i = 0; i < kNsSize; ++i) {
+				auto item = rx.NewItem(nsName);
+				ASSERT_TRUE(item.Status().ok()) << nsName << " " << item.Status().what();
+
+				WrSerializer wrser;
+				JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+				jsonBuilder.Put("id", i);
+				if (withValue) {
+					jsonBuilder.Put("value", "value_" + std::to_string(i));
+				}
+				jsonBuilder.End();
+				char* endp = nullptr;
+				auto err = item.Unsafe().FromJSON(wrser.Slice(), &endp);
+				ASSERT_TRUE(err.ok()) << nsName << " " << err.what();
+				err = rx.Upsert(nsName, item);
+				ASSERT_TRUE(err.ok()) << nsName << " " << err.what();
+			}
+		};
+
+		upsertFn(kLeftNsName, false);
+		upsertFn(kRightNsName, true);
+
+		client::CoroQueryResults qr;
+		err = rx.Select(Query(kLeftNsName).Join(InnerJoin, Query(kRightNsName)).On("id", CondEq, "id").Sort("id", false), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), kNsSize);
+		WrSerializer ser;
+		unsigned i = 0;
+		for (auto& it : qr) {
+			ser.Reset();
+			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+			err = it.GetJSON(ser, false);
+			ASSERT_TRUE(err.ok()) << err.what();
+			const auto expected = fmt::sprintf(R"json({"id":%d,"joined_%s":[{"id":%d,"value":"value_%d"}]})json", i, kRightNsName, i, i);
+			EXPECT_EQ(ser.Slice(), expected);
+			i++;
+		}
+		err = rx.Stop();
+		ASSERT_TRUE(err.ok()) << err.what();
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, QRWithMultipleIterationLoops) {
+	// Check if iterator has error status if user attempts to iterate over qrs, which were already fetched
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+
+	loop.spawn([&loop, this]() noexcept {
+		const std::string kNsName = "QRWithMultipleIterationLoops";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		client::ReindexerConfig cfg;
+		constexpr auto kFetchCount = 50;
+		constexpr auto kNsSize = kFetchCount * 3;
+		cfg.FetchAmount = kFetchCount;
+		CoroReindexer rx(cfg);
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CreateNamespace(rx, kNsName);
+		FillData(rx, kNsName, 0, kNsSize);
+
+		client::CoroQueryResults qr;
+		err = rx.Select(Query(kNsName), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), kNsSize);
+		WrSerializer ser;
+		// First iteration loop (all of the items must be valid)
+		for (auto& it : qr) {
+			ser.Reset();
+			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+			err = it.GetJSON(ser, false);
+			ASSERT_TRUE(err.ok()) << err.what();
+			auto item = it.GetItem();
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		}
+		// Second iteration loop (unavailable items must be invalid)
+		unsigned id = 0;
+		for (auto& it : qr) {
+			ser.Reset();
+			if (id >= kNsSize - kFetchCount) {
+				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+				err = it.GetJSON(ser, false);
+				ASSERT_TRUE(err.ok()) << err.what();
+				EXPECT_EQ(fmt::sprintf("{\"id\":%d}", id), ser.Slice());
+			} else {
+				EXPECT_FALSE(it.Status().ok()) << it.Status().what();
+				err = it.GetJSON(ser, false);
+				EXPECT_FALSE(err.ok()) << err.what();
+				auto item = it.GetItem();
+				EXPECT_FALSE(item.Status().ok()) << item.Status().what();
+				err = it.GetCJSON(ser, false);
+				EXPECT_FALSE(err.ok()) << err.what();
+				err = it.GetMsgPack(ser, false);
+				EXPECT_FALSE(err.ok()) << err.what();
+			}
+			++id;
+		}
+		err = rx.Stop();
+		ASSERT_TRUE(err.ok()) << err.what();
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, AggregationsFetching) {
+	// Validate, that distinct results will remain valid after query results fetching.
+	// Actual aggregation values will be sent for initial 'select' only, but must be available at any point of iterator's lifetime.
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+	constexpr unsigned kItemsCount = 100;
+	constexpr unsigned kFetchLimit = kItemsCount / 5;
+
+	loop.spawn([&loop, this, kItemsCount]() noexcept {
+		const std::string nsName = "ns1";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		client::ReindexerConfig cfg;
+		cfg.FetchAmount = kFetchLimit;
+		CoroReindexer rx(cfg);
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CreateNamespace(rx, nsName);
+		FillData(rx, nsName, 0, kItemsCount);
+
+		{
+			CoroQueryResults qr;
+			const auto q = Query(nsName).Distinct("id").ReqTotal().Explain();
+			err = rx.Select(q, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), kItemsCount);
+			const auto initialAggs = qr.GetAggregationResults();
+			ASSERT_EQ(initialAggs.size(), 2);
+			ASSERT_EQ(initialAggs[0].type, AggDistinct);
+			ASSERT_EQ(initialAggs[1].type, AggCount);
+			const std::string explain = qr.GetExplainResults();
+			ASSERT_GT(explain.size(), 0);
+			WrSerializer wser;
+			initialAggs[0].GetJSON(wser);
+			initialAggs[1].GetJSON(wser);
+			const std::string initialAggJSON(wser.Slice());
+			for (auto& it : qr) {
+				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+				auto& aggs = qr.GetAggregationResults();
+				ASSERT_EQ(aggs.size(), 2);
+				wser.Reset();
+				aggs[0].GetJSON(wser);
+				aggs[1].GetJSON(wser);
+				EXPECT_EQ(initialAggJSON, wser.Slice()) << q.GetSQL();
+				EXPECT_EQ(qr.TotalCount(), kItemsCount);
+				EXPECT_EQ(explain, qr.GetExplainResults());
+			}
+		}
+
+		err = rx.Stop();
+		ASSERT_TRUE(err.ok()) << err.what();
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, AggregationsFetchingWithLazyMode) {
+	// Validate, that distinct results will remain valid after query results fetching in lazy mode
+	// Actual aggregation values will be sent for initial 'select' only, but must be available at any point of iterator's lifetime.
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+	constexpr unsigned kItemsCount = 100;
+	constexpr unsigned kFetchLimit = kItemsCount / 5;
+
+	loop.spawn([&loop, this, kItemsCount]() noexcept {
+		const std::string nsName = "ns1";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		client::ReindexerConfig cfg;
+		cfg.FetchAmount = kFetchLimit;
+		CoroReindexer rx(cfg);
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CreateNamespace(rx, nsName);
+		FillData(rx, nsName, 0, kItemsCount);
+
+		{
+			// Aggregation and explain will be available, if first access was perfomed before fetching
+			CoroQueryResults qr(0, 0, client::LazyQueryResultsMode{});
+			const auto q = Query(nsName).Distinct("id").ReqTotal().Explain();
+			err = rx.Select(q, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), kItemsCount);
+			const auto initialAggs = qr.GetAggregationResults();
+			ASSERT_EQ(initialAggs.size(), 2);
+			ASSERT_EQ(initialAggs[0].type, AggDistinct);
+			ASSERT_EQ(initialAggs[1].type, AggCount);
+			const std::string explain = qr.GetExplainResults();
+			ASSERT_GT(explain.size(), 0);
+			WrSerializer wser;
+			initialAggs[0].GetJSON(wser);
+			initialAggs[1].GetJSON(wser);
+			const std::string initialAggJSON(wser.Slice());
+			for (auto& it : qr) {
+				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+				auto& aggs = qr.GetAggregationResults();
+				ASSERT_EQ(aggs.size(), 2);
+				wser.Reset();
+				aggs[0].GetJSON(wser);
+				aggs[1].GetJSON(wser);
+				EXPECT_EQ(initialAggJSON, wser.Slice()) << q.GetSQL();
+				EXPECT_EQ(qr.TotalCount(), kItemsCount);
+				EXPECT_EQ(explain, qr.GetExplainResults());
+			}
+		}
+		{
+			// Aggregation and explain will throw exception, if first access was perfomed after fetching
+			CoroQueryResults qr(0, 0, client::LazyQueryResultsMode{});
+			const auto q = Query(nsName).Distinct("id").ReqTotal().Explain();
+			err = rx.Select(q, qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), kItemsCount);
+			unsigned i = 0;
+			for (auto& it : qr) {
+				ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+				if (i++ > kFetchLimit) {
+					break;
+				}
+			}
+
+			EXPECT_THROW(qr.GetAggregationResults(), Error);
+			EXPECT_THROW(qr.GetExplainResults(), Error);
+			EXPECT_EQ(qr.TotalCount(), kItemsCount);  // Total count is still available
+		}
+
+		err = rx.Stop();
+		ASSERT_TRUE(err.ok()) << err.what();
+	});
+
+	loop.run();
+}
+TEST_F(RPCClientTestApi, AggregationsWithStrictModeTest) {
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+
+	loop.spawn([&loop]() noexcept {
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		reindexer::client::ReindexerConfig cfg;
+		auto rx = std::make_unique<CoroReindexer>(cfg);
+		auto err = rx->Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		QueryAggStrictModeTest(rx);
 	});
 
 	loop.run();

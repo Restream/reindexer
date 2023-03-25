@@ -32,7 +32,6 @@ public:
 	MsgPackBuilder &operator=(MsgPackBuilder &&) = delete;
 
 	void SetTagsMatcher(const TagsMatcher *tm) { tm_ = tm; }
-	void SetTagsPath(const TagsPath *) {}
 	MsgPackBuilder Raw(std::string_view, std::string_view) { return MsgPackBuilder(); }
 	MsgPackBuilder Raw(std::nullptr_t, std::string_view arg) { return Raw(std::string_view{}, arg); }
 

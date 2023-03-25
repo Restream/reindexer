@@ -7,8 +7,6 @@
 
 #include "helpers.h"
 
-using std::string;
-
 namespace internal {
 
 template <typename fromT, typename toT>
@@ -17,13 +15,13 @@ struct cast_helper {
 };
 
 template <typename fromT>
-struct cast_helper<fromT, string> {
-	static string cast(const fromT& value);
+struct cast_helper<fromT, std::string> {
+	static std::string cast(const fromT& value);
 };
 }  // namespace internal
 
 template <typename fromT>
-string internal::cast_helper<fromT, string>::cast(const fromT& value) {
+std::string internal::cast_helper<fromT, std::string>::cast(const fromT& value) {
 	return std::to_string(value);
 }
 

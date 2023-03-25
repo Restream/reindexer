@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <unordered_set>
 #include "core/index/payload_map.h"
 #include "estl/one_of.h"
@@ -47,7 +48,7 @@ protected:
 
 	PayloadType payloadType_;
 	FieldsSet fields_;
-	double result_ = 0;
+	std::optional<double> result_ = std::nullopt;
 	int hitCount_ = 0;
 	AggType aggType_;
 	h_vector<std::string, 1> names_;

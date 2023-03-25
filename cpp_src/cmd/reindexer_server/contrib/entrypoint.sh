@@ -24,8 +24,8 @@ else
     RX_ARGS="$RX_ARGS --rpc-qr-idle-timeout 0"
 fi
 
-if [ -n "$RX_ENABLE_CLUSTER" ]; then
-    RX_ARGS="$RX_ARGS --enable-cluster"
+if [ -n "$RX_DISABLE_NS_LEAK" ]; then
+    RX_ARGS="$RX_ARGS --disable-ns-leak"
 fi
 
 if [ -n "$RX_HTTP_READ_TIMEOUT" ]; then

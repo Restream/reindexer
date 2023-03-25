@@ -151,7 +151,8 @@ void RoleSwitcher::handleInitialSync(RaftInfo::Role newRole) {
 				connectNodes();
 				initialLeadersSync();
 				disconnectNodes();
-			} catch (Error& err) {
+			} catch (const Error& e) {
+				Error err = e;	// MSVC19 in our CI can not handle cath in lambda without this
 				disconnectNodes();
 
 				if (!timerIsCanceled_) {

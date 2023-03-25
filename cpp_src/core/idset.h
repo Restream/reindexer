@@ -113,7 +113,7 @@ public:
 		return make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>(std::move(ids));
 	}
 	bool Add(IdType id, EditMode editMode, int sortedIdxCount) {
-		// Reserve extra space for sort orders data
+		// reserve extra space for sort orders data
 		grow(((set_ ? set_->size() : size()) + 1) * (sortedIdxCount + 1));
 
 		if (editMode == Unordered) {
@@ -139,6 +139,11 @@ public:
 			usingBtree_.store(true, std::memory_order_release);
 			return set_->insert(id).second;
 		}
+	}
+
+	void AddUnordered(IdType id) {
+		assertrx(!set_);
+		push_back(id);
 	}
 
 	template <typename InputIt>

@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include "config.h"
 #include "tools/errors.h"
 
 namespace reindexer_server {
@@ -13,7 +14,7 @@ class DBManager;
 
 class Server {
 public:
-	Server();
+	Server(ServerMode mode = ServerMode::Builtin);
 	~Server();
 
 	Error InitFromCLI(int argc, char* argv[]);

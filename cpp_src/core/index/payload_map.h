@@ -4,8 +4,8 @@
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadiface.h"
 #include "cpp-btree/btree_map.h"
-#include "estl/fast_hash_set.h"
 #include "sparse-map/sparse_map.h"
+#include "vendor/hopscotch/hopscotch_set.h"
 
 namespace reindexer {
 

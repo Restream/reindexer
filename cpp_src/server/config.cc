@@ -21,6 +21,7 @@ void ServerConfig::Reset() {
 	CoreLog = "stdout";
 	HttpLog = "stdout";
 	RpcLog = "stdout";
+	AllowNamespaceLeak = true;
 #ifndef _WIN32
 	StoragePath = "/tmp/reindex";
 	UserName.clear();
@@ -60,7 +61,7 @@ reindexer::Error ServerConfig::ParseYaml(const std::string &yaml) {
 		YAML::Node root = YAML::Load(yaml);
 		err = fromYaml(root);
 	} catch (const YAML::Exception &ex) {
-		err = Error(errParams, "Error with config string. Reason: '%s'", ex.what());
+		err = Error(errParseYAML, "Error with config string. Reason: '%s'", ex.what());
 	}
 	return err;
 }
@@ -71,7 +72,7 @@ Error ServerConfig::ParseFile(const std::string &filePath) {
 		YAML::Node root = YAML::LoadFile(filePath);
 		err = fromYaml(root);
 	} catch (const YAML::Exception &ex) {
-		err = Error(errParams, "Error with config file '%s'. Reason: %s", filePath, ex.what());
+		err = Error(errParseYAML, "Error with config file '%s'. Reason: %s", filePath, ex.what());
 	}
 	return err;
 }
@@ -102,6 +103,8 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::ValueFlag<std::string> storageEngineF(dbGroup, "NAME", "'reindexer' storage engine (" + availabledStorages + ")", {'e', "engine"},
 												StorageEngine, args::Options::Single);
 	args::Flag autorepairF(dbGroup, "", "Enable autorepair for storages after unexpected shutdowns", {"autorepair"});
+	args::Flag disableNamespaceLeakF(dbGroup, "", "Disable namespaces leak on database destruction (may slow down server's termination)",
+									 {"disable-ns-leak"});
 
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<std::string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
@@ -197,9 +200,11 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (storageEngineF) StorageEngine = args::get(storageEngineF);
 	if (startWithErrorsF) StartWithErrors = args::get(startWithErrorsF);
 	if (autorepairF) Autorepair = args::get(autorepairF);
+	if (disableNamespaceLeakF) AllowNamespaceLeak = !args::get(disableNamespaceLeakF);
 	if (logLevelF) LogLevel = args::get(logLevelF);
 	if (httpAddrF) HTTPAddr = args::get(httpAddrF);
 	if (rpcAddrF) RPCAddr = args::get(rpcAddrF);
+
 	if (rpcThreadingModeF) RPCThreadingMode = args::get(rpcThreadingModeF);
 	if (httpThreadingModeF) HttpThreadingMode = args::get(httpThreadingModeF);
 	if (webRootF) WebRoot = args::get(webRootF);
@@ -255,6 +260,7 @@ void ServerConfig::SetHttpWriteTimeout(std::chrono::seconds val) noexcept {
 
 reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
 	try {
+		AllowNamespaceLeak = root["db"]["ns_leak"].as<bool>(AllowNamespaceLeak);
 		StoragePath = root["storage"]["path"].as<std::string>(StoragePath);
 		StorageEngine = root["storage"]["engine"].as<std::string>(StorageEngine);
 		StartWithErrors = root["storage"]["startwitherrors"].as<bool>(StartWithErrors);
@@ -293,7 +299,7 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
 		DebugAllocs = root["debug"]["allocs"].as<bool>(DebugAllocs);
 		DebugPprof = root["debug"]["pprof"].as<bool>(DebugPprof);
 	} catch (const YAML::Exception &ex) {
-		return Error(errParams, "Unable to parse YML server config: %s", ex.what());
+		return Error(errParseYAML, "Unable to parse YML server config: %s", ex.what());
 	}
 	return Error();
 }

@@ -34,6 +34,7 @@
 #include <limits>
 #include <memory>
 #include <stdexcept>
+#include <thread>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -853,6 +854,11 @@ private:
 	bool m_last_array;
 };
 
+class ThreadTaskQueue {
+public:
+	virtual void AddTask(std::function<void()> f) = 0;
+};
+
 /**
  * Internal common class used by `sparse_map` and `sparse_set`.
  *
@@ -884,7 +890,7 @@ private:
  * `sparse_array::index_in_sparse_bucket(ibucket)`.
  */
 template <class ValueType, class KeySelect, class ValueSelect, class Hash, class KeyEqual, class Allocator, class GrowthPolicy,
-          tsl::sh::exception_safety ExceptionSafety, tsl::sh::sparsity Sparsity, tsl::sh::probing Probing>
+		  tsl::sh::exception_safety ExceptionSafety, tsl::sh::sparsity Sparsity, tsl::sh::probing Probing>
 class sparse_hash : private Allocator, private Hash, private KeyEqual, private GrowthPolicy {
 private:
 	template <typename U>
@@ -1224,9 +1230,29 @@ public:
 		for (auto &bucket : m_sparse_buckets_data) {
 			bucket.clear(*this);
 		}
-
 		m_nb_elements = 0;
 		m_nb_deleted_buckets = 0;
+	}
+
+	void add_destroy_task(ThreadTaskQueue *q) {
+		if (m_nb_elements < 500000) {
+			q->AddTask([this]() {
+				for (auto &bucket : m_sparse_buckets_data) {
+					bucket.clear(*this);
+				}
+			});
+		} else {
+			unsigned int partCount = std::thread::hardware_concurrency();
+			for (unsigned int i = 0; i < partCount; i++) {
+				size_t from = m_sparse_buckets_data.size() / partCount * i;
+				size_t to = i + 1 == partCount ? m_sparse_buckets_data.size() : m_sparse_buckets_data.size() / partCount * (i + 1);
+				q->AddTask([this, from, to]() {
+					for (size_t l = from; l < to; l++) {
+						m_sparse_buckets_data[l].clear(*this);
+					}
+				});
+			}
+		}
 	}
 
 	template <typename P>

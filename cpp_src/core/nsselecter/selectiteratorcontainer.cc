@@ -619,9 +619,14 @@ IdType SelectIteratorContainer::next(const_iterator it, IdType from) {
 	return it->InvokeAppropriate<IdType>(
 		[it, from](const SelectIteratorsBracket &) { return getNextItemId<reverse>(it.cbegin(), it.cend(), from); },
 		[from](const SelectIterator &sit) {
-			if (sit.comparators_.size() || sit.End()) return from;
-			if (reverse && sit.Val() < from) return sit.Val() + 1;
-			if (!reverse && sit.Val() > from) return sit.Val() - 1;
+			if (sit.comparators_.size()) return from;
+			if constexpr (reverse) {
+				if (sit.End()) return std::numeric_limits<IdType>::lowest();
+				if (sit.Val() < from) return sit.Val() + 1;
+			} else {
+				if (sit.End()) return std::numeric_limits<IdType>::max();
+				if (sit.Val() > from) return sit.Val() - 1;
+			}
 			return from;
 		},
 		[from](const JoinSelectIterator &) { return from; }, [from](const FieldsComparator &) { return from; },

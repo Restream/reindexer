@@ -11,8 +11,8 @@
 using namespace std::string_view_literals;
 
 constexpr int kMinIterationsForInnerJoinOptimization = 100;
-constexpr int kMaxIterationsForIdsetPreresult = 10000;
-constexpr int kCancelCheckFrequency = 1000;
+constexpr int kMaxIterationsForIdsetPreresult = 1000000;
+constexpr int kCancelCheckFrequency = 1024;
 
 namespace reindexer {
 
@@ -30,11 +30,20 @@ void NsSelecter::operator()(LocalQueryResults &result, SelectCtx &ctx, const Rdx
 
 	explain.StartTiming();
 
+	auto containSomeAggCount = [&ctx](const AggType &type) {
+		auto it = std::find_if(ctx.query.aggregations_.begin(), ctx.query.aggregations_.end(),
+							   [&type](const AggregateEntry &agg) { return agg.type_ == type; });
+		return it != ctx.query.aggregations_.end();
+	};
+
 	bool needPutCachedTotal = false;
-	bool needCalcTotal = ctx.query.calcTotal == ModeAccurateTotal;
+	bool containAggCount = containSomeAggCount(AggCount);
+	bool containAggCountCached = containAggCount ? false : containSomeAggCount(AggCountCached);
+
+	bool needCalcTotal = ctx.query.calcTotal == ModeAccurateTotal || containAggCount;
 
 	QueryCacheKey ckey;
-	if (ctx.query.calcTotal == ModeCachedTotal) {
+	if (ctx.query.calcTotal == ModeCachedTotal || containAggCountCached) {
 		ckey = QueryCacheKey{ctx.query};
 
 		auto cached = ns_->queryTotalCountCache_->Get(ckey);
@@ -120,7 +129,7 @@ void NsSelecter::operator()(LocalQueryResults &result, SelectCtx &ctx, const Rdx
 
 		// Prepare sorting context
 		ctx.sortingContext.forcedMode = qPreproc.ContainsForcedSortOrder();
-		SortingEntries sortBy = qPreproc.GetSortingEntries(static_cast<bool>(ctx.preResult));
+		SortingEntries sortBy = qPreproc.GetSortingEntries(ctx);
 		prepareSortingContext(sortBy, ctx, isFt, qPreproc.AvailableSelectBySortIndex());
 
 		if (ctx.sortingContext.isOptimizationEnabled()) {
@@ -226,20 +235,20 @@ void NsSelecter::operator()(LocalQueryResults &result, SelectCtx &ctx, const Rdx
 			if (ctx.sortingContext.isOptimizationEnabled()) {
 				auto it = ns_->indexes_[ctx.sortingContext.uncommitedIndex]->CreateIterator();
 				it->SetMaxIterations(ns_->items_.size());
-				scan.push_back(SingleSelectKeyResult(it));
+				scan.emplace_back(it);
 				maxIterations = ns_->items_.size();
 			} else {
 				// special case - no idset in query
 				IdType limit = ns_->items_.size();
 				if (ctx.sortingContext.isIndexOrdered() && ctx.sortingContext.enableSortOrders) {
-					Index *index = ctx.sortingContext.sortIndex();
+					const Index *index = ctx.sortingContext.sortIndex();
 					assertrx(index);
 					limit = index->SortOrders().size();
 				}
-				scan.push_back(SingleSelectKeyResult(0, limit));
+				scan.emplace_back(0, limit);
 				maxIterations = limit;
 			}
-			qres.AppendFront(OpAnd, SelectIterator{scan, false, "-scan", true});
+			qres.AppendFront(OpAnd, SelectIterator{std::move(scan), false, "-scan", true});
 		}
 		// Get maximum iterations count, for right calculation comparators costs
 		qres.SortByCost(maxIterations);
@@ -311,11 +320,11 @@ void NsSelecter::operator()(LocalQueryResults &result, SelectCtx &ctx, const Rdx
 		result.aggregationResults.push_back(aggregator.GetResult());
 	}
 	//	Put count/count_cached to aggretions
-	if (ctx.query.calcTotal != ModeNoTotal) {
+	if (ctx.query.calcTotal != ModeNoTotal || containAggCount || containAggCountCached) {
 		AggregationResult ret;
 		ret.fields = {"*"};
-		ret.type = ctx.query.calcTotal == ModeAccurateTotal ? AggCount : AggCountCached;
-		ret.value = result.totalCount;
+		ret.type = (ctx.query.calcTotal == ModeAccurateTotal || containAggCount) ? AggCount : AggCountCached;
+		ret.SetValue(result.totalCount);
 		result.aggregationResults.push_back(ret);
 	}
 
@@ -800,14 +809,14 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 	if (sctx.preResult && sctx.preResult->executionMode == JoinPreResult::ModeBuild) {
 		switch (sctx.preResult->dataMode) {
 			case JoinPreResult::ModeIdSet:
-				sctx.preResult->ids.Add(rowId, IdSet::Unordered, 0);
+				sctx.preResult->ids.AddUnordered(rowId);
 				break;
 			case JoinPreResult::ModeValues:
 				if (!sctx.sortingContext.expressions.empty()) {
-					sctx.preResult->values.push_back({properRowId, sctx.sortingContext.exprResults[0].size(), proc, sctx.nsid});
+					sctx.preResult->values.emplace_back(properRowId, sctx.sortingContext.exprResults[0].size(), proc, sctx.nsid);
 					calculateSortExpressions(proc, rowId, properRowId, sctx, result);
 				} else {
-					sctx.preResult->values.push_back({properRowId, ns_->items_[properRowId], proc, sctx.nsid});
+					sctx.preResult->values.emplace_back(properRowId, ns_->items_[properRowId], proc, sctx.nsid);
 				}
 				break;
 			default:
@@ -830,6 +839,25 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 	}
 }
 
+void NsSelecter::checkStrictModeAgg(StrictMode strictMode, const std::string &name, const std::string &nsName,
+									const TagsMatcher &tagsMatcher) const {
+	if (int index = IndexValueType::SetByJsonPath; ns_->getIndexByName(name, index)) return;
+
+	if (strictMode == StrictModeIndexes) {
+		throw Error(errParams,
+					"Current query strict mode allows aggregate index fields only. There are no indexes with name '%s' in namespace '%s'",
+					name, nsName);
+	}
+	if (strictMode == StrictModeNames) {
+		if (tagsMatcher.path2tag(name).empty()) {
+			throw Error(
+				errParams,
+				"Current query strict mode allows aggregate existing fields only. There are no fields with name '%s' in namespace '%s'",
+				name, nsName);
+		}
+	}
+}
+
 h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 	static constexpr int NotFilled = -2;
 	h_vector<Aggregator, 4> ret;
@@ -837,6 +865,13 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 
 	for (auto &ag : q.aggregations_) {
 		bool compositeIndexFields = false;
+
+		if (ag.type_ == AggCount || ag.type_ == AggCountCached) {
+			if (!ag.fields_.empty()) {
+				throw Error(errQueryExec, "Not empty set of fields for aggregation %s", AggregationResult::aggTypeToStr(ag.type_));
+			}
+			continue;
+		}
 		if (ag.fields_.empty()) {
 			throw Error(errQueryExec, "Empty set of fields for aggregation %s", AggregationResult::aggTypeToStr(ag.type_));
 		}
@@ -860,6 +895,9 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 		}
 		int idx = -1;
 		for (size_t i = 0; i < ag.fields_.size(); ++i) {
+			checkStrictModeAgg(q.strictMode == StrictModeNotSet ? ns_->config_.strictMode : q.strictMode, ag.fields_[i], ns_->name_,
+							   ns_->tagsMatcher_);
+
 			for (size_t j = 0; j < sortingEntries.size(); ++j) {
 				if (iequals(ag.fields_[i], ag.sortingEntries_[j].expression)) {
 					sortingEntries[j].field = i;
@@ -1104,9 +1142,11 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 	if (sortIndexSearchState == SortIndexHasUnorderedConditions) {
 		return false;
 	}
-
+	if (costNormal == 0) {
+		return false;
+	}
 	size_t costOptimized = ns_->items_.size() - ns_->free_.size();
-	costNormal *= 2;
+	costNormal = size_t(double(costNormal) * log2(costNormal));
 	if (costNormal < costOptimized) {
 		costOptimized = costNormal + 1;
 		qentries.ExecuteAppropriateForEach(Skip<QueryEntriesBracket, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>{},
@@ -1131,6 +1171,18 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 											   } catch (const Error &) {
 											   }
 										   });
+	} else {
+		return true;
+	}
+
+	if (costNormal < costOptimized && !ctx.isForceAll && ctx.query.HasLimit()) {
+		// If optimization will be disabled, selecter will must to iterate over all the results, ignoring limit
+		// Experimental value. It was chosen during debugging request from issue #1402.
+		// TODO: It's possible to evaluate this multiplier, based on the query conditions, but the only way to avoid corner cases is to
+		// allow user to hint this optimization.
+		constexpr static unsigned kLimitMultiplier = 20;
+		const auto offset = ctx.query.HasOffset() ? ctx.query.start : 1;
+		costOptimized = kLimitMultiplier * (ctx.query.count + offset);
 	}
 
 	return costOptimized <= costNormal;

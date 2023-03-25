@@ -32,7 +32,7 @@ While using docker, you may pass reindexer server config options via envinronmen
 - `RX_SECURITY` - if RX_SECURITY is not empty, enables authorization. Disabled by default.
 - `RX_PROMETHEUS` - if RX_PROMETHEUS is not empty, enables prometheus metrics. Disabled by default.
 - `RX_RPC_QR_IDLE_TIMEOUT` - RPC query results idle timeout (in seconds). Default value is 0 (timeout disabled).
-- `RX_ENABLE_CLUSTER` - if RX_ENABLE_CLUSTER is not empty, allows this node to be a part of raft-cluster.
+- `RX_DISABLE_NS_LEAK` - Disables namespaces memory leak on database destruction (will slow down server's termination) 
 - `RX_HTTP_READ_TIMEOUT` - if RX_HTTP_READ_TIMEOUT is not empty, sets execution timeout for HTTP read operations in seconds. 0 mean no timeout. Default value is 0.
 - `RX_HTTP_WRITE_TIMEOUT` - if RX_HTTP_WRITE_TIMEOUT is not empty, sets execution timeout for HTTP write operations in seconds. 0 mean no timeout. Default value is 0 if cluster is disabled and 20 if cluster is enabled.
 

@@ -112,12 +112,18 @@ void ClusterProxy::resetLeader() {
 	leaderId_ = -1;
 }
 
-ClusterProxy::ClusterProxy(ReindexerConfig cfg, ActivityContainer &activities) : impl_(std::move(cfg), activities), leaderId_(-1) {
+ClusterProxy::ClusterProxy(ReindexerConfig cfg, ActivityContainer &activities, ReindexerImpl::CallbackMap &&proxyCallbacks)
+	: impl_(std::move(cfg), activities, addCallbacks(std::move(proxyCallbacks))), leaderId_(-1) {
 	sId_.store(impl_.configProvider_.GetReplicationConfig().serverID, std::memory_order_release);
 	configHandlerId_ =
 		impl_.configProvider_.setHandler([this](ReplicationConfigData data) { sId_.store(data.serverID, std::memory_order_release); });
 }
 ClusterProxy::~ClusterProxy() { impl_.configProvider_.unsetHandler(configHandlerId_); }
+
+ReindexerImpl::CallbackMap ClusterProxy::addCallbacks(ReindexerImpl::CallbackMap &&callbackMap) const {
+	// TODO: add callbacks for actions of ClusterProxy level
+	return std::move(callbackMap);
+}
 
 Error ClusterProxy::Connect(const std::string &dsn, ConnectOpts opts) {
 	Error err = impl_.Connect(dsn, opts);

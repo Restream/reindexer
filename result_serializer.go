@@ -79,7 +79,7 @@ func (s *resultSerializer) readRawtItemParams(shardId int) (v rawResultItemParam
 	return v
 }
 
-func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayloadTypeFunc) (v rawResultQueryParams) {
+func (s *resultSerializer) readRawQueryParamsKeepExtras(v *rawResultQueryParams, updatePayloadType ...updatePayloadTypeFunc) {
 
 	v.flags = int(s.GetVarUInt())
 	v.totalcount = int(s.GetVarUInt())
@@ -98,14 +98,17 @@ func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayload
 			updatePayloadType[0](nsid)
 		}
 	}
-	s.readExtraResults(&v)
+	s.readExtraResults(v)
 	s.flags = v.flags
+}
 
+func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayloadTypeFunc) (v rawResultQueryParams) {
+	s.readRawQueryParamsKeepExtras(&v, updatePayloadType...)
 	return v
 }
 
 func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
-
+	firstAgg := true
 	v.shardingConfigVersion = -1
 	v.shardId = bindings.ShardingProxyOff
 	for {
@@ -113,6 +116,12 @@ func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
 		if tag == bindings.QueryResultEnd {
 			break
 		}
+		if firstAgg && (tag == bindings.QueryResultAggregation || tag == bindings.QueryResultExplain) {
+			v.aggResults = v.aggResults[:0]
+			v.explainResults = v.explainResults[:0]
+			firstAgg = false
+		}
+
 		switch tag {
 		case bindings.QueryResultExplain:
 			v.explainResults = s.GetBytes()

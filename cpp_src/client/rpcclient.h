@@ -33,7 +33,7 @@ class Snapshot;
 template <typename MtxT>
 class NamespacesImpl : public INamespaces::IntrusiveT {
 public:
-	using MapT = fast_hash_map<std::string, std::unique_ptr<Namespace>, nocase_hash_str, nocase_equal_str>;
+	using MapT = fast_hash_map<std::string, std::unique_ptr<Namespace>, nocase_hash_str, nocase_equal_str, nocase_less_str>;
 	void Add(const std::string &name) override final {
 		std::lock_guard ulck(mtx_);
 		namespaces_.emplace(name, std::make_unique<Namespace>(name));

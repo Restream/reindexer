@@ -19,11 +19,11 @@ public:
 protected:
 	virtual reindexer::Item MakeItem();
 
-	string randomString(const std::string& prefix);
+	std::string randomString(const std::string& prefix);
 
 private:
-	vector<std::string> adjectives_;
-	vector<std::string> devices_;
-	vector<std::string> locations_;
-	vector<std::string> names_;
+	std::vector<std::string> adjectives_;
+	std::vector<std::string> devices_;
+	std::vector<std::string> locations_;
+	std::vector<std::string> names_;
 };

@@ -15,7 +15,7 @@ public:
 		nsdef_.AddIndex("str_data", "hash", "string", IndexOpts());
 	}
 
-	void RegisterAllCases() override;
+	void RegisterAllCases();
 	reindexer::Error Initialize() override;
 
 protected:

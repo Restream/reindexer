@@ -9,6 +9,8 @@ Reindexer has builtin full text search engine. This document describes usage of 
 	- [Patterns](#patterns)
 	- [Field selection](#field-selection)
 	- [Binary operators](#binary-operators)
+	- [Escape character](#escape-character)
+	- [Phrase search](#phrase-search)
 - [Examples of text queris](#examples-of-text-queris)
 - [Natural language processing](#natural-language-processing)
 - [Merging queries results](#merging-queries-results)
@@ -115,18 +117,31 @@ The format of query is:
 `\` character allows to include any special character (`+`,`-`,`@`,`*`,`^`,`~`) to a word to be searched:
 `\*crisis` means to search literally `*crisis` and not all words that end with 'crisis'.
 
+### Phrase search
+The DSL's operand can be a phrase:
+`"word1 word2 ..."[~N]`. 
+In this case `word1`, `word2`, ... are the words that make up the phrase in the given sequence. 
+Words order is matter, i.e. sequence `word2 word1` will not be found with `"word1 word2"` DSL.
+
+`~N` - max distance (in words) between adjacent word positions. This argument is optional, default value for `N` is 1.
+
+Synonyms of multiple words are not supported in the phrase.
+
 ## Examples of text queris
 
-`termina* -genesis` - find documents contains words begins with `termina`, exclude documents contains word `genesis`  
-`black~` - find documents contains word black with 1 possible mistake. e.g `block`, `blck`, or `blask`  
-`tom jerry cruz^2` - find documents contains at least one of word `tom`, `cruz` `jerry`. relevancy of documents, which contains `tom cruz` will be greater, than `tom jerry`  
-`fox +fast` - find documents contains both words: `fox` and `fast`  
-`"one two"` - find documents with phrase `one two`  
-`"one two"~5` - find documents with words `one` and `two` with distance between terms < 5  
-`@name rush` - find docuemnts with word `rush` only in `name` field  
-`@name^1.5,* rush` - find documents with word `rush`, and boost 1.5 results from `name` field  
-`=windows` - find documents with exact term `windows` without language specific term variants (stemmers/translit/wrong kb layout)  
-
+`termina* -genesis` - find documents contains words begins with `termina`, exclude documents contains word `genesis`
+`black~` - find documents contains word black with 1 possible mistake. e.g `block`, `blck`, or `blask`
+`tom jerry cruz^2` - find documents contains at least one of word `tom`, `cruz` `jerry`. relevancy of documents, which contains `tom cruz` will be greater, than `tom jerry`
+`fox +fast` - find documents contains both words: `fox` and `fast`
+`"one two"` - find documents with phrase `one two`
+`"one two"~5` - find documents with words `one` and `two` with distance between terms < 5. Order of terms is matter. If you need to search those terms in any order, all the required permutations must be explicitly specified in DSL: `"one two"~5 "two one"~5`
+`@name rush` - find docuemnts with word `rush` only in `name` field
+`@name^1.5,* rush` - find documents with word `rush`, and boost 1.5 results from `name` field
+`=windows` - find documents with exact term `windows` without language specific term variants (stemmers/translit/wrong kb layout)
+`one -"phrase example"` - find documents containing the word `one` and not containing the phrase `"phrase example"`
+`one "phrase example"` - find documents containing the word `one` or the phrase `"phrase example"` or both
+`+one +"phrase example"` - find documents containing the word `one` and the phrase `"phrase example"`
+`one "phrase example"~3` - find documents containing the word `one` or the phrase `"phrase example"` (with max distance equals of 3 word between `phrase` and `example`) or both
 
 ## Natural language processing
 
@@ -161,8 +176,9 @@ It is possible to merge multiple queries results and sort final result by releva
 ```
 ## Using select functions
 It is possible to use select functions to process result data.
-For now you can use snippet and highlight. Those functions does not work for composite fulltext indexes.
-You can not put [,)\0] symbols in functions params.
+For now you can use snippet, snippet_n and highlight. Those functions does not work for composite fulltext indexes.
+You can not put [,)\0] symbols in functions params. If the value contains special characters, it must be enclosed
+in single quotes.
 
 highlight - only highlights text area that was found
 it has two arguments -
@@ -184,7 +200,7 @@ it has six arguments - last two is default
 - `third`  number of symbols that will be placed before area
 - `fourth`  number of symbols that will be placed after area
 - `fifth` delimiter before snippets ,default  space
-- `sixth` delimiter after snippets ,default  nothing
+- `sixth` delimiter after snippets ,default nothing
 
 Example:
 word: "some text"
@@ -192,16 +208,45 @@ word: "some text"
 ```go
 b.Query("items").Match("text", query).Limit(limit).Offset(offset).Functions("text.snippet(<b>,</b>,2,0)")
 ```
+
 result: "e <b>text</b>"
+
+snippet_n - highlights text area and erase other text
+it has 4 position arguments and two named arguments. The named arguments are optional and can be passed in any order.
+
+- `first` String that will be inserted before found text area
+- `second` String that will be inserted after found text area
+- `third`  Number of symbols that will be placed before area
+- `fourth`  Number of symbols that will be placed after area
+- `pre_delim` Named argument. Delimiter before snippets ,default space
+- `post_delim` Named argument. Delimiter after snippets ,default nothing
+
+String values must be enclosed into single quotes.
+
+Parameters' names may be specified without quotes or in double quotes.
+
+Numbers may be passed without quotes or in single quotes.
+
+Example:
+word: "some text"
+
+```go
+b.Query("items").Match("text", query).Limit(limit).Offset(offset).Functions("text.snippet_n('<b>','</b>',2,0,pre_delim='{',post_delim='}')")
+```
+
+result: "{e <b>text</b>}"
 
 ## Typos algorithm
 
 Reindexer finds misspelled words by matching terms with deleted symbols.
-`MaxTypos` in fulltext index configuration limits how many symbols could be deleted in two words (in query and searching document).
+`MaxTypos` in fulltext index configuration limits how many symbols could be deleted in two words (in query and searching
+document).
 In each word could be deleted up to `MaxTypos / 2` with rounding to a large value.
 
 #### Examples.
-`MaxTypos = 1` - 1 symbol could be deleted. `black` and `blaack` matches if delete excess `a` in the second word. `black` and `block` do not match.
+
+`MaxTypos = 1` - 1 symbol could be deleted. `black` and `blaack` matches if delete excess `a` in the second
+word. `black` and `block` do not match.
 
 `MaxTypos = 2` - by 1 symbol could be deleted in each word (up to 2 symbols in sum). `black` and `blaack` match if delete excess `a` in the second word. `black` and `block` match if delete `a` in the first word and `o` in the second word. `black` and `blok` do not match.
 

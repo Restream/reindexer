@@ -33,6 +33,8 @@ struct InitShardingConfig {
 	fast_hash_map<int, std::string>* insertedItemsById = nullptr;
 	int nodeIdInThread = -1;  // Allows to run one of the nodes in thread, instead fo process
 	uint8_t strlen = 0;		  // Strings len in items, which will be created during Fill()
+	// if it is necessary to explicitly set specific cluster nodes in shards
+	std::optional<std::map<int, std::vector<std::string>>> shardsMap = std::nullopt;
 };
 
 class ShardingApi : public ReindexerApi {
@@ -62,9 +64,13 @@ public:
 		config_.shards.clear();
 
 		for (size_t shard = 0, id = 0; shard < kShards; ++shard) {
-			config_.shards[shard].reserve(kNodesInCluster);
-			for (size_t node = 0; node < kNodesInCluster; ++node) {
-				config_.shards[shard].emplace_back(getHostDsn(id++));
+			if (c.shardsMap) {
+				config_.shards[shard] = (*c.shardsMap).at(shard);
+			} else {
+				config_.shards[shard].reserve(kNodesInCluster);
+				for (size_t node = 0; node < kNodesInCluster; ++node) {
+					config_.shards[shard].emplace_back(getHostDsn(id++));
+				}
 			}
 			for (size_t nsId = 0; nsId < namespaces.size(); ++nsId) {
 				config_.namespaces[nsId].keys.emplace_back(namespaces[nsId].keyValuesNodeCreation(shard));

@@ -70,6 +70,8 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query 
 
 	ResultSerializer ser(rawResult);
 	try {
+		const auto opts = i_.lazyMode_ ? ResultSerializer::Options{ResultSerializer::ClearAggregations | ResultSerializer::LazyMode}
+									   : ResultSerializer::Options{ResultSerializer::ClearAggregations};
 		ser.GetRawQueryParams(
 			i_.queryParams_,
 			[&ser, this](int nsIdx) {
@@ -82,7 +84,7 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query 
 				// nsArray[nsIdx]->tagsMatcher_.updatePayloadType(nsArray[nsIdx]->payloadType_, false);
 				PayloadType("tmp").clone()->deserialize(ser);
 			},
-			i_.lazyMode_, i_.parsingData_);
+			opts, i_.parsingData_);
 	} catch (const Error &err) {
 		i_.status_ = err;
 	}
@@ -115,8 +117,7 @@ void CoroQueryResults::handleFetchedBuf(net::cproto::CoroRPCAnswer &ans) {
 	std::string_view rawResult = p_string(args[0]);
 	ResultSerializer ser(rawResult);
 
-	ser.GetRawQueryParams(i_.queryParams_, nullptr, i_.lazyMode_, i_.parsingData_);
-
+	ser.GetRawQueryParams(i_.queryParams_, nullptr, ResultSerializer::Options{}, i_.parsingData_);
 	if (i_.lazyMode_) {
 		i_.rawResult_.assign(rawResult.begin(), rawResult.end());
 	} else {
@@ -127,12 +128,15 @@ void CoroQueryResults::handleFetchedBuf(net::cproto::CoroRPCAnswer &ans) {
 
 void CoroQueryResults::parseExtraData() {
 	if (i_.lazyMode_) {
+		if (hadFetchedRemoteData()) {
+			throw Error(errLogic, "Lazy data (aggregations/explain) unavailable. They must be read before the first results fetching");
+		}
 		std::string_view rawResult(i_.rawResult_.data() + i_.parsingData_.extraData.begin,
 								   i_.parsingData_.extraData.end - i_.parsingData_.extraData.begin);
 		ResultSerializer ser(rawResult);
 		i_.queryParams_.aggResults.emplace();
 		i_.queryParams_.explainResults.emplace();
-		ser.GetExtraParams(i_.queryParams_, false);
+		ser.GetExtraParams(i_.queryParams_, ResultSerializer::Options{});
 	} else {
 		throw Error(errLogic, "Unable to parse clients explain or aggregation results (lazy parsing mode was expected)");
 	}
@@ -286,24 +290,38 @@ void CoroQueryResults::Iterator::getJSONFromCJSON(std::string_view cjson, WrSeri
 	enc.Encode(cjson, builder, dss);
 }
 
-Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
-	readNext();
-	int type = qr_->i_.queryParams_.flags & kResultsFormatMask;
-	if (type == kResultsMsgPack) {
-		if (withHdrLen) {
-			wrser.PutSlice(itemParams_.data);
-		} else {
-			wrser.Write(itemParams_.data);
-		}
-	} else {
-		return Error(errParseBin, "Impossible to get data in MsgPack because of a different format: %d", type);
+void CoroQueryResults::Iterator::checkIdx() const {
+	if (!isAvailable()) {
+		throw Error(errNotValid, "QueryResults iterator refers to unavailable item index (%d). Current fetch offset is %d", idx_,
+					qr_->i_.fetchOffset_);
 	}
+}
+
+Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
+	try {
+		checkIdx();
+		readNext();
+		int type = qr_->i_.queryParams_.flags & kResultsFormatMask;
+		if (type == kResultsMsgPack) {
+			if (withHdrLen) {
+				wrser.PutSlice(itemParams_.data);
+			} else {
+				wrser.Write(itemParams_.data);
+			}
+		} else {
+			return Error(errParseBin, "Impossible to get data in MsgPack because of a different format: %d", type);
+		}
+	} catch (const Error &err) {
+		return err;
+	}
+
 	return errOK;
 }
 
 Error CoroQueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) {
-	readNext();
 	try {
+		checkIdx();
+		readNext();
 		switch (qr_->i_.queryParams_.flags & kResultsFormatMask) {
 			case kResultsCJson: {
 				getJSONFromCJSON(itemParams_.data, wrser, withHdrLen);
@@ -335,8 +353,9 @@ Error CoroQueryResults::Iterator::GetJSON(WrSerializer &wrser, bool withHdrLen) 
 }
 
 Error CoroQueryResults::Iterator::GetCJSON(WrSerializer &wrser, bool withHdrLen) {
-	readNext();
 	try {
+		checkIdx();
+		readNext();
 		switch (qr_->i_.queryParams_.flags & kResultsFormatMask) {
 			case kResultsCJson:
 				if (withHdrLen) {
@@ -359,9 +378,10 @@ Error CoroQueryResults::Iterator::GetCJSON(WrSerializer &wrser, bool withHdrLen)
 }
 
 Item CoroQueryResults::Iterator::GetItem() {
-	readNext();
 	Error err;
 	try {
+		checkIdx();
+		readNext();
 		Item item = qr_->i_.nsArray_[itemParams_.nsid]->NewItem();
 		item.setID(itemParams_.id);
 		item.setLSN(itemParams_.lsn);

@@ -8,7 +8,7 @@ class Translit : public ITokenFilter {
 public:
 	Translit();
 
-	virtual void GetVariants(const std::wstring &data, std::vector<std::pair<std::wstring, int>> &result) override final;
+	virtual void GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &result) override final;
 
 private:
 	void PrepareRussian();
@@ -36,9 +36,9 @@ private:
 	static const int enLettersStartUTF16 = 97;
 	static const int ruAlfavitSize = 32;
 	static const int enAlfavitSize = 26;
-	static const int maxTraslitVariants = 3;
+	static const int maxTranslitVariants = 3;
 
-	std::wstring ru_buf_[ruAlfavitSize][maxTraslitVariants];
+	std::wstring ru_buf_[ruAlfavitSize][maxTranslitVariants];
 	wchar_t en_buf_[enAlfavitSize];
 	wchar_t en_d_buf_[enAlfavitSize][enAlfavitSize];
 	wchar_t en_t_buf_[enAlfavitSize][enAlfavitSize][enAlfavitSize];

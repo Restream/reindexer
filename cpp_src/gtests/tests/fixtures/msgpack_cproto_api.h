@@ -5,7 +5,7 @@
 #include "core/indexopts.h"
 #include "core/type_consts.h"
 #include "reindexer_api.h"
-#include "rpcclientmock.h"
+#include "rpc_test_client.h"
 #include "server/dbmanager.h"
 #include "server/server.h"
 #include "tools/fsops.h"
@@ -43,7 +43,7 @@ public:
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}
 
-		client_.reset(new reindexer::client::RPCClientMock());
+		client_.reset(new reindexer::client::RPCTestClient());
 		err = client_->Connect("cproto://127.0.0.1:25677/" + kDbPath, reindexer::client::ConnectOpts().CreateDBIfMissing());
 		ASSERT_TRUE(err.ok()) << err.what();
 
@@ -118,5 +118,5 @@ protected:
 
 	reindexer_server::Server server_;
 	std::unique_ptr<std::thread> serverThread_;
-	std::unique_ptr<reindexer::client::RPCClientMock> client_;
+	std::unique_ptr<reindexer::client::RPCTestClient> client_;
 };

@@ -10,6 +10,14 @@ void ShardingProxy::ShutdownCluster() {
 	}
 }
 
+ShardingProxy::ShardingProxy(ReindexerConfig cfg)
+	: impl_(std::move(cfg), activities_, {{"apply_sharding_config", [this](const gason::JsonNode &action, const RdxContext &ctx) -> Error {
+											   (void)this;
+											   (void)action;
+											   (void)ctx;
+											   return errOK;
+										   }}}) {}
+
 Error ShardingProxy::Connect(const std::string &dsn, ConnectOpts opts) {
 	try {
 		Error err = impl_.Connect(dsn, opts);
@@ -655,7 +663,7 @@ Error ShardingProxy::modifyItemOnShard(const RdxContext &ctx, std::string_view n
 	}
 	if (connection) {
 		client::Item clientItem = toClientItem(nsName, connection.get(), item);
-		client::QueryResults qrClient(result.Flags(), 0, false);
+		client::QueryResults qrClient(result.Flags(), 0);
 		if (!clientItem.Status().ok()) return clientItem.Status();
 
 		const auto timeout = ctx.GetRemainingTimeout();
@@ -713,7 +721,7 @@ Error ShardingProxy::executeQueryOnShard(const Query &query, QueryResults &resul
 					timeout.has_value()
 						? connections[0]->WithShardingParallelExecution(false).WithContext(ctx.GetCancelCtx()).WithTimeout(*timeout)
 						: connections[0]->WithShardingParallelExecution(false).WithContext(ctx.GetCancelCtx());
-				client::QueryResults qrClient(result.Flags(), proxyFetchLimit, true);
+				client::QueryResults qrClient(result.Flags(), proxyFetchLimit, client::LazyQueryResultsMode{});
 				status = executeQueryOnClient(connection, query, qrClient, [](size_t, size_t) {});
 				if (status.ok()) {
 					result.AddQr(std::move(qrClient), connections[0].ShardId(), true);
@@ -766,7 +774,7 @@ Error ShardingProxy::executeQueryOnShard(const Query &query, QueryResults &resul
 								  .WithContext(ctx.GetCancelCtx())
 								  .WithTimeout(*timeout)
 							: connections[i]->WithShardingParallelExecution(connections.size() > 1).WithContext(ctx.GetCancelCtx());
-					client::QueryResults qrClient(result.Flags(), proxyFetchLimit, false);
+					client::QueryResults qrClient(result.Flags(), proxyFetchLimit);
 
 					if (distributedQuery.sortingEntries_.empty()) {
 						distributedQuery.Limit(limit);

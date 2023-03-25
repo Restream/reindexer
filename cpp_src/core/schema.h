@@ -42,8 +42,9 @@ public:
 	FieldProps(FieldProps&&) = default;
 	FieldProps& operator=(FieldProps&&) = default;
 
-	bool operator==(const FieldProps& rh) const {
-		return type == rh.type && isArray == rh.isArray && isRequired == rh.isRequired && allowAdditionalProps == rh.allowAdditionalProps;
+	bool operator==(const FieldProps& rh) const noexcept {
+		return type == rh.type && xGoType == rh.xGoType && isArray == rh.isArray && isRequired == rh.isRequired &&
+			   allowAdditionalProps == rh.allowAdditionalProps;
 	}
 
 	std::string type;
@@ -92,13 +93,18 @@ public:
 	bool HasPath(std::string_view path, bool allowAdditionalFields) const noexcept;
 	Error BuildProtobufSchema(WrSerializer& schema, TagsMatcher& tm, PayloadType& pt) noexcept;
 
-	struct PrefixTreeNode;
-	using map = tsl::hopscotch_map<std::string, std::unique_ptr<PrefixTreeNode>, hash_str, equal_str>;
-	struct PrefixTreeNode {
+	class PrefixTreeNode;
+	using map = fast_hash_map<std::string, std::unique_ptr<PrefixTreeNode>, hash_str, equal_str, less_str>;
+
+	class PrefixTreeNode {
+	public:
+		PrefixTreeNode() = default;
+		PrefixTreeNode(FieldProps&& p) : props(std::move(p)) {}
+
 		void GetPaths(std::string&& basePath, std::vector<std::string>& pathsList) const;
 
-		FieldProps props_;
-		map children_;
+		FieldProps props;
+		map children;
 	};
 
 private:

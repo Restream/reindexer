@@ -8,6 +8,7 @@
 #include "estl/fast_hash_map.h"
 #include "estl/one_of.h"
 #include "itoa/itoa.h"
+#include "stringstools.h"
 #include "tools/customlocal.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
@@ -276,12 +277,22 @@ void split(std::string_view utf8Str, wstring &utf16str, std::vector<std::wstring
 	}
 }
 
-bool iequals(std::string_view lhs, std::string_view rhs) {
+bool iequals(std::string_view lhs, std::string_view rhs) noexcept {
 	if (lhs.size() != rhs.size()) return false;
 	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
 		if (tolower(*itl++) != tolower(*itr++)) return false;
 	}
 	return true;
+}
+
+bool iless(std::string_view lhs, std::string_view rhs) noexcept {
+	const auto len = std::min(lhs.size(), rhs.size());
+	for (size_t i = 0; i < len; ++i) {
+		if (const auto l = tolower(lhs[i]), r = tolower(rhs[i]); l != r) {
+			return l < r;
+		}
+	}
+	return lhs.size() < rhs.size();
 }
 
 bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive) noexcept {
@@ -313,6 +324,14 @@ bool checkIfEndsWith(std::string_view pattern, std::string_view src, bool casese
 		}
 	}
 	return true;
+}
+
+bool endsWith(const std::string &source, std::string_view ending) noexcept {
+	if (source.length() >= ending.length()) {
+		return (0 == source.compare(source.length() - ending.length(), ending.length(), ending));
+	} else {
+		return false;
+	}
 }
 
 int collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts &collateOpts) {
@@ -480,7 +499,7 @@ bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept 
 	return true;
 }
 
-const static fast_hash_map<std::string, LogLevel, nocase_hash_str, nocase_equal_str> kLogLevels = {
+const static fast_hash_map<std::string, LogLevel, nocase_hash_str, nocase_equal_str, nocase_less_str> kLogLevels = {
 	{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}};
 
 LogLevel logLevelFromString(std::string_view strLogLevel) {
@@ -501,7 +520,7 @@ const std::string &logLevelToString(LogLevel level) {
 	return none;
 }
 
-const static fast_hash_map<std::string, StrictMode, nocase_hash_str, nocase_equal_str> kStrictModes = {
+const static fast_hash_map<std::string, StrictMode, nocase_hash_str, nocase_equal_str, nocase_less_str> kStrictModes = {
 	{"", StrictModeNotSet}, {"none", StrictModeNone}, {"names", StrictModeNames}, {"indexes", StrictModeIndexes}};
 
 StrictMode strictModeFromString(std::string_view strStrictMode) {
@@ -522,7 +541,7 @@ const std::string &strictModeToString(StrictMode mode) {
 	return empty;
 }
 
-bool isPrintable(std::string_view str) {
+bool isPrintable(std::string_view str) noexcept {
 	if (str.length() > 256) {
 		return false;
 	}
@@ -535,14 +554,21 @@ bool isPrintable(std::string_view str) {
 	return true;
 }
 
-bool isBlank(std::string_view str) {
+bool isBlank(std::string_view str) noexcept {
 	if (str.empty()) return true;
 	for (size_t i = 0; i < str.length(); ++i)
 		if (!isspace(str[i])) return false;
 	return true;
 }
 
-int getUTF8StringCharactersCount(std::string_view str) {
+std::string &ensureEndsWith(std::string &source, std::string_view ending) {
+	if (!source.empty() && !endsWith(source, ending)) {
+		source += ending;
+	}
+	return source;
+}
+
+int getUTF8StringCharactersCount(std::string_view str) noexcept {
 	int len = 0;
 	try {
 		for (auto it = str.begin(); it != str.end(); ++len) {

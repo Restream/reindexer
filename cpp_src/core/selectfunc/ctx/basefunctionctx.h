@@ -21,7 +21,7 @@ public:
 	virtual ~BaseFunctionCtx() {}
 
 	void AddFunction(const std::string& name, SelectFuncStruct::Type function) { functions_[name].insert(function); }
-	bool CheckFunction(const std::string& name, const std::vector<SelectFuncStruct::Type>& types) {
+	bool CheckFunction(const std::string& name, std::initializer_list<SelectFuncStruct::Type> types) {
 		auto it = functions_.find(name);
 
 		if (it == functions_.end()) return false;

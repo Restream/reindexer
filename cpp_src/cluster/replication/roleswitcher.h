@@ -18,7 +18,7 @@ class Logger;
 
 class RoleSwitcher {
 public:
-	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str>;
+	using NsNamesHashSetT = fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>;
 	struct Config {
 		bool enableCompression = false;
 		int clusterId = 0;

@@ -50,20 +50,9 @@ private:
 	public:
 		QrMetaData(QrT &&_qr = QrT()) : qr(std::move(_qr)), it(qr.begin()) {}
 		QrMetaData(const QrMetaData &) = delete;
-		QrMetaData(QrMetaData &&o) : qr(std::move(o.qr)), it(std::move(o.it)), hasCompatibleTm(o.hasCompatibleTm), shardID(o.shardID) {
-			it.qr_ = &qr;
-		}
+		QrMetaData(QrMetaData &&) = delete;
 		QrMetaData &operator=(const QrMetaData &) = delete;
-		QrMetaData &operator=(QrMetaData &&o) {
-			if (this != &o) {
-				qr = std::move(o.qr);
-				it = std::move(o.it);
-				it.qr_ = &qr;
-				hasCompatibleTm = o.hasCompatibleTm;
-				shardID = o.shardID;
-			}
-			return *this;
-		}
+		QrMetaData &operator=(QrMetaData &&) = delete;
 
 		QrT qr;
 		typename QrT::Iterator it;
@@ -412,7 +401,7 @@ private:
 	class Comparator;
 	class CompositeFieldForceComparator;
 	const MergedData &getMergedData() const;
-	int findFirstQrWithItems();
+	int findFirstQrWithItems(int minShardId = std::numeric_limits<int>().min());
 	bool ordering() const noexcept;
 	void beginImpl() const;
 	void setFlags(int flags) noexcept { flags_ = flags; }

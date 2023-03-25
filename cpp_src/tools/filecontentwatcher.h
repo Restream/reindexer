@@ -12,7 +12,7 @@ public:
 					  std::function<Error(const std::string&)> loadFromFile) noexcept
 		: filename_(std::move(filename)), loadFromYaml_(std::move(loadFromYaml)), loadFromFile_(std::move(loadFromFile)) {
 		assertrx(loadFromYaml_);
-		assertrx(loadFromYaml_);
+		assertrx(loadFromFile_);
 	}
 	void SetDirectory(const std::string& directory) noexcept {
 		assertrx(!hasFilepath_.load(std::memory_order_acquire));

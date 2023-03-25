@@ -55,7 +55,10 @@ class ReindexerImpl {
 public:
 	using Completion = std::function<void(const Error &err)>;
 
-	ReindexerImpl(ReindexerConfig cfg, ActivityContainer &activities);
+	using CallbackFT = std::function<Error(const gason::JsonNode &action, const RdxContext &ctx)>;
+	using CallbackMap = fast_hash_map<std::string_view, CallbackFT>;
+
+	ReindexerImpl(ReindexerConfig cfg, ActivityContainer &activities, CallbackMap &&proxyCallbacks);
 
 	~ReindexerImpl();
 
@@ -229,12 +232,13 @@ protected:
 	void prepareJoinResults(const Query &q, LocalQueryResults &result);
 	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns);
 
+	Error insertDontUpdateSystemNS(std::string_view nsName, Item &item, const RdxContext &ctx);
 	void syncSystemNamespaces(std::string_view sysNsName, std::string_view filterNsName, const RdxContext &ctx);
 	void createSystemNamespaces();
 	void updateToSystemNamespace(std::string_view nsName, Item &, const RdxContext &ctx);
 	void handleConfigAction(const gason::JsonNode &action, const std::vector<std::pair<std::string, Namespace::Ptr>> &namespaces,
 							const RdxContext &ctx);
-	void updateConfigProvider(const gason::JsonNode &config);
+	void updateConfigProvider(const gason::JsonNode &config, bool autoCorrect = false);
 	template <typename ConfigT>
 	void updateConfFile(const ConfigT &newConf, std::string_view filename);
 	void onProfiligConfigLoad();
@@ -267,13 +271,13 @@ protected:
 	void setClusterizationStatus(ClusterizationStatus &&status, const RdxContext &ctx);
 	std::string generateTemporaryNamespaceName(std::string_view baseName);
 
-	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str> namespaces_;
+	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;
 
 	std::string storagePath_;
 
 	std::thread backgroundThread_;
 	std::thread storageFlushingThread_;
-	std::atomic<bool> stopBackgroundThreads_;
+	std::atomic<bool> dbDestroyed_;
 
 	QueriesStatTracer queriesStatTracker_;
 	std::unique_ptr<cluster::Clusterizator> clusterizator_;
@@ -299,6 +303,8 @@ protected:
 	ReindexerConfig config_;
 
 	NsVersionCounter nsVersion_;
+
+	const CallbackMap proxyCallbacks_;
 
 	friend class Replicator;
 	friend class cluster::DataReplicator;

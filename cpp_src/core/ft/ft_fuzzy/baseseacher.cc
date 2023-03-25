@@ -74,7 +74,7 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr &holder, const FtDSLQue
 								   const reindexer::RdxContext &rdxCtx) {
 	size_t data_size = 0;
 
-	std::vector<std::pair<std::wstring, int>> data;
+	std::vector<FtDSLVariant> data;
 	std::pair<PosType, ProcType> pos;
 	pos.first = 0;
 
@@ -82,7 +82,6 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr &holder, const FtDSLQue
 	std::vector<FirstResult> rusults;
 	int max_id = 0;
 	int min_id = INT32_MAX;
-	FtDslOpts opts;
 
 	if (!inTransaction) ThrowOnCancel(rdxCtx);
 	for (auto &term : dsl) {
@@ -91,12 +90,12 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr &holder, const FtDSLQue
 		if (holder->cfg_.enableTranslit) {
 			searchers_[0]->GetVariants(term.pattern, data);
 
-			ParseData(holder, data[0].first, max_id, min_id, rusults, term.opts, holder->cfg_.startDefaultDecreese);
+			ParseData(holder, data[0].pattern, max_id, min_id, rusults, term.opts, holder->cfg_.startDefaultDecreese);
 		}
 		if (holder->cfg_.enableKbLayout) {
 			data.clear();
 			searchers_[1]->GetVariants(term.pattern, data);
-			ParseData(holder, data[0].first, max_id, min_id, rusults, term.opts, holder->cfg_.startDefaultDecreese);
+			ParseData(holder, data[0].pattern, max_id, min_id, rusults, term.opts, holder->cfg_.startDefaultDecreese);
 		}
 	}
 

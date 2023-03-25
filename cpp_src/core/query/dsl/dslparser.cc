@@ -47,7 +47,7 @@ enum class UpdateFieldType { Object, Expression, Value };
 
 // additional for parse root DSL fields
 template <typename T>
-using fast_str_map = fast_hash_map<std::string, T, nocase_hash_str, nocase_equal_str>;
+using fast_str_map = fast_hash_map<std::string, T, nocase_hash_str, nocase_equal_str, nocase_less_str>;
 
 static const fast_str_map<Root> root_map = {
 	{"namespace", Root::Namespace},
@@ -120,8 +120,10 @@ static const fast_str_map<Aggregation> aggregation_map = {{"fields", Aggregation
 														  {"sort", Aggregation::Sort},
 														  {"limit", Aggregation::Limit},
 														  {"offset", Aggregation::Offset}};
-static const fast_str_map<AggType> aggregation_types = {{"sum", AggSum}, {"avg", AggAvg},	  {"max", AggMax},
-														{"min", AggMin}, {"facet", AggFacet}, {"distinct", AggDistinct}};
+static const fast_str_map<AggType> aggregation_types = {
+	{"sum", AggSum},	 {"avg", AggAvg},			{"max", AggMax},	 {"min", AggMin},
+	{"facet", AggFacet}, {"distinct", AggDistinct}, {"count", AggCount}, {"count_cached", AggCountCached},
+};
 
 // additionalfor parse field 'equation_positions'
 static const fast_str_map<EqualPosition> equationPosition_map = {{"positions", EqualPosition::Positions}};
@@ -217,7 +219,7 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 	for (auto subelement : entry) {
 		auto& v = subelement->value;
 		std::string_view name = subelement->key;
-		switch (get(sort_map, name, "sort"sv)) {
+		switch (get<Sort>(sort_map, name, "sort"sv)) {
 			case Sort::Desc:
 				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
 				sortingEntry.desc = (v.getTag() == JSON_TRUE);
@@ -247,7 +249,7 @@ void parseSortEntry(JsonValue& entry, AggregateEntry& agg) {
 	for (auto subelement : entry) {
 		auto& v = subelement->value;
 		std::string_view name = subelement->key;
-		switch (get(sort_map, name, "sort"sv)) {
+		switch (get<Sort>(sort_map, name, "sort"sv)) {
 			case Sort::Desc:
 				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
 				sortingEntry.desc = (v.getTag() == JSON_TRUE);
@@ -291,15 +293,15 @@ void parseFilter(JsonValue& filter, Query& q, std::vector<std::pair<size_t, Equa
 	for (auto elem : filter) {
 		auto& v = elem->value;
 		auto name = elem->key;
-		switch (get(filter_map, name, "filter"sv)) {
+		switch (get<Filter>(filter_map, name, "filter"sv)) {
 			case Filter::Cond:
 				checkJsonValueType(v, name, JSON_STRING);
-				condition = get(cond_map, v.toString(), "condition enum"sv);
+				condition = get<CondType>(cond_map, v.toString(), "condition enum"sv);
 				break;
 
 			case Filter::Op:
 				checkJsonValueType(v, name, JSON_STRING);
-				op = get(op_map, v.toString(), "operation enum"sv);
+				op = get<OpType>(op_map, v.toString(), "operation enum"sv);
 				break;
 
 			case Filter::Value:
@@ -407,7 +409,7 @@ void parseJoinedEntries(JsonValue& joinEntries, JoinedQuery& qjoin) {
 		for (auto subelement : joinEntry) {
 			auto& value = subelement->value;
 			std::string_view name = subelement->key;
-			switch (get(joined_entry_map, name, "join_query.on"sv)) {
+			switch (get<JoinEntry>(joined_entry_map, name, "join_query.on"sv)) {
 				case JoinEntry::LeftField:
 					checkJsonValueType(value, name, JSON_STRING);
 					qjoinEntry.index_ = std::string(value.toString());
@@ -418,11 +420,11 @@ void parseJoinedEntries(JsonValue& joinEntries, JoinedQuery& qjoin) {
 					break;
 				case JoinEntry::Cond:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoinEntry.condition_ = get(cond_map, value.toString(), "condition enum"sv);
+					qjoinEntry.condition_ = get<CondType>(cond_map, value.toString(), "condition enum"sv);
 					break;
 				case JoinEntry::Op:
 					checkJsonValueType(value, name, JSON_STRING);
-					qjoinEntry.op_ = get(op_map, value.toString(), "operation enum"sv);
+					qjoinEntry.op_ = get<OpType>(op_map, value.toString(), "operation enum"sv);
 					break;
 			}
 		}
@@ -436,10 +438,10 @@ void parseSingleJoinQuery(JsonValue& join, Query& query) {
 	for (auto subelement : join) {
 		auto& value = subelement->value;
 		std::string_view name = subelement->key;
-		switch (get(joins_map, name, "join_query"sv)) {
+		switch (get<JoinRoot>(joins_map, name, "join_query"sv)) {
 			case JoinRoot::Type:
 				checkJsonValueType(value, name, JSON_STRING);
-				qjoin.joinType = get(join_types, value.toString(), "join_types enum"sv);
+				qjoin.joinType = get<JoinType>(join_types, value.toString(), "join_types enum"sv);
 				break;
 			case JoinRoot::Namespace:
 				checkJsonValueType(value, name, JSON_STRING);
@@ -500,7 +502,7 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 	for (auto element : aggregation) {
 		auto& value = element->value;
 		std::string_view name = element->key;
-		switch (get(aggregation_map, name, "aggregations"sv)) {
+		switch (get<Aggregation>(aggregation_map, name, "aggregations"sv)) {
 			case Aggregation::Fields:
 				checkJsonValueType(value, name, JSON_ARRAY);
 				for (auto subElem : value) {
@@ -510,7 +512,7 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 				break;
 			case Aggregation::Type:
 				checkJsonValueType(value, name, JSON_STRING);
-				aggEntry.type_ = get(aggregation_types, value.toString(), "aggregation type enum"sv);
+				aggEntry.type_ = get<AggType>(aggregation_types, value.toString(), "aggregation type enum"sv);
 				if (!query.CanAddAggregation(aggEntry.type_)) {
 					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 				}
@@ -538,7 +540,7 @@ void parseEqualPositions(JsonValue& dsl, std::vector<std::pair<size_t, EqualPosi
 		for (auto element : subArray) {
 			auto& value = element->value;
 			std::string_view name = element->key;
-			switch (get(equationPosition_map, name, "equal_positions"sv)) {
+			switch (get<EqualPosition>(equationPosition_map, name, "equal_positions"sv)) {
 				case EqualPosition::Positions: {
 					EqualPosition_t ep;
 					for (auto f : value) {
@@ -565,14 +567,14 @@ void parseUpdateFields(JsonValue& updateFields, Query& query) {
 		for (auto v : field) {
 			auto& value = v->value;
 			std::string_view name = v->key;
-			switch (get(update_field_map, name, "update_fields"sv)) {
+			switch (get<UpdateField>(update_field_map, name, "update_fields"sv)) {
 				case UpdateField::Name:
 					checkJsonValueType(value, name, JSON_STRING);
 					fieldName.assign(value.sval.data(), value.sval.size());
 					break;
 				case UpdateField::Type: {
 					checkJsonValueType(value, name, JSON_STRING);
-					switch (get(update_field_type_map, value.toString(), "update_fields_type"sv)) {
+					switch (get<UpdateFieldType>(update_field_type_map, value.toString(), "update_fields_type"sv)) {
 						case UpdateFieldType::Object:
 							isObject = true;
 							break;
@@ -612,7 +614,7 @@ void parse(JsonValue& root, Query& q) {
 	for (auto elem : root) {
 		auto& v = elem->value;
 		auto name = elem->key;
-		switch (get(root_map, name, "root"sv)) {
+		switch (get<Root>(root_map, name, "root"sv)) {
 			case Root::Namespace:
 				checkJsonValueType(v, name, JSON_STRING);
 				q._namespace = std::string(v.toString());
@@ -654,7 +656,7 @@ void parse(JsonValue& root, Query& q) {
 				break;
 			case Root::ReqTotal:
 				checkJsonValueType(v, name, JSON_STRING);
-				q.calcTotal = get(reqtotal_values, v.toString(), "req_total enum"sv);
+				q.calcTotal = get<CalcTotalMode>(reqtotal_values, v.toString(), "req_total enum"sv);
 				break;
 			case Root::Aggregations:
 				checkJsonValueType(v, name, JSON_ARRAY);
@@ -684,7 +686,7 @@ void parse(JsonValue& root, Query& q) {
 				break;
 			case Root::QueryType:
 				checkJsonValueType(v, name, JSON_STRING);
-				q.type_ = get(query_types, v.toString(), "query_type"sv);
+				q.type_ = get<QueryType>(query_types, v.toString(), "query_type"sv);
 				break;
 			case Root::DropFields:
 				checkJsonValueType(v, name, JSON_ARRAY);

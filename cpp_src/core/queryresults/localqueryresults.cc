@@ -41,7 +41,7 @@ struct LocalQueryResults::Context {
 };
 
 static_assert(LocalQueryResults::kSizeofContext >= sizeof(LocalQueryResults::Context),
-			  "LocalQueryResults::kSizeofContext should >=  sizeof(LocalQueryResults::Context)");
+			  "LocalQueryResults::kSizeofContext should >= sizeof(LocalQueryResults::Context)");
 
 LocalQueryResults::LocalQueryResults(std::initializer_list<ItemRef> l) : items_(l) {}
 LocalQueryResults::LocalQueryResults() = default;

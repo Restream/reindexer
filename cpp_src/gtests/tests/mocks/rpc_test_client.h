@@ -5,9 +5,9 @@
 namespace reindexer {
 namespace client {
 
-class RPCClientMock {
+class RPCTestClient {
 public:
-	RPCClientMock() : impl_(ReindexerConfig(), 1, 1) {}
+	RPCTestClient() : impl_(ReindexerConfig(), 1, 1) {}
 	Error Connect(const std::string &dsn, const client::ConnectOpts &opts) { return impl_.Connect(dsn, opts); }
 	Error Stop() { return impl_.Stop(); }
 	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts) {

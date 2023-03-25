@@ -313,7 +313,7 @@ protected:
 		}
 	}
 
-	fast_hash_map<std::string, int, hash_str, equal_str> names2tags_;
+	fast_hash_map<std::string, int, hash_str, equal_str, less_str> names2tags_;
 	std::vector<std::string> tags2names_;
 	PayloadType payloadType_;
 	int32_t version_;

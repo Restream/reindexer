@@ -146,6 +146,11 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 	updates_->RemoveDataNotifier(std::this_thread::get_id());
 	updatesAsync_.stop();
 	updatesTimer_.stop();
+	for (auto& node : nodes) {
+		node.updateNotifier->close();
+	}
+	terminateCh_.close();
+	nodes.clear();
 
 	log_.Info([this] { rtfmt("%d: Replication thread was terminated. TID: %d", serverId_, std::this_thread::get_id()); });
 }

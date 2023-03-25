@@ -1,4 +1,5 @@
 #include "json_parsing_test.h"
+
 #include "core/cjson/jsonbuilder.h"
 
 TEST_F(JSONParsingTest, EmptyDocument) {
@@ -16,6 +17,24 @@ TEST_F(JSONParsingTest, EmptyDocument) {
 
 	err = item.FromJSON(" ");
 	EXPECT_EQ(err.code(), errParseJson);
+}
+
+TEST_F(JSONParsingTest, NestedNodesRead) {
+	constexpr std::string_view jsonTest{R"json({
+								"type":"replication",
+								"replication":{
+									"server_id":  10,
+									"cluster_id": 11
+								}
+							})json"};
+
+	// Parse json and check keys
+	gason::JsonParser parser;
+	auto root = parser.Parse(jsonTest);
+
+	EXPECT_EQ(root["replication"]["server_id"].As<int>(), 10);
+	EXPECT_EQ(root["replication"]["cluster_id"].As<int>(), 11);
+	EXPECT_ANY_THROW(root["no-node"]["server_id"].As<int>());
 }
 
 TEST_F(JSONParsingTest, Strings) {

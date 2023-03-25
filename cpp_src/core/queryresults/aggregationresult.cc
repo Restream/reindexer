@@ -85,7 +85,7 @@ void AggregationResult::GetJSON(WrSerializer &ser) const {
 
 void AggregationResult::GetMsgPack(WrSerializer &wrser) const {
 	int elements = 2;
-	if (value != 0) ++elements;
+	if (value_) ++elements;
 	if (!facets.empty()) ++elements;
 	if (!distincts.empty()) ++elements;
 	MsgPackBuilder msgpackBuilder(wrser, ObjType::TypeObject, elements);

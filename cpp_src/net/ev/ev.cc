@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
+#include <sstream>
+#include "debug/backtrace.h"
 #include "tools/oscompat.h"
 
 #ifdef HAVE_EVENT_FD
@@ -428,6 +430,9 @@ dynamic_loop::~dynamic_loop() {
 void dynamic_loop::run() {
 	if (coroTid_ != std::thread::id() && coroTid_ != std::this_thread::get_id()) {
 		// Loop has coroutines from another thread
+		std::stringstream ss;
+		reindexer::debug::print_backtrace(ss, nullptr, -1);
+		fprintf(stderr, "Backtrace:\n%s\n", ss.str().c_str());
 		assertrx(false);
 	}
 

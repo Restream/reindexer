@@ -5,6 +5,7 @@
 #include <type_traits>
 #include "core/index/payload_map.h"
 #include "core/index/string_map.h"
+#include "core/keyvalue/geometry.h"
 #include "estl/fast_hash_set.h"
 
 namespace reindexer {
@@ -17,22 +18,32 @@ public:
 
 	template <typename T1>
 	struct hash_ptr {
-		size_t operator()(const T1 &obj) const { return std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(obj.get())); }
+		size_t operator()(const T1 &obj) const noexcept { return std::hash<uintptr_t>()(reinterpret_cast<uintptr_t>(obj.get())); }
 	};
-
 	template <typename T1>
 	struct equal_ptr {
-		bool operator()(const T1 &lhs, const T1 &rhs) const {
+		bool operator()(const T1 &lhs, const T1 &rhs) const noexcept {
 			return reinterpret_cast<uintptr_t>(lhs.get()) == reinterpret_cast<uintptr_t>(rhs.get());
 		}
 	};
+	template <typename T1>
+	struct less_ptr {
+		bool operator()(const T1 &lhs, const T1 &rhs) const noexcept {
+			return reinterpret_cast<uintptr_t>(lhs.get()) < reinterpret_cast<uintptr_t>(rhs.get());
+		}
+	};
 
-	using key_type = typename std::conditional<
-		std::is_same_v<typename T::key_type, PayloadValueWithHash>, PayloadValue,
-		typename std::conditional<std::is_same_v<typename T::key_type, key_string_with_hash>, key_string, typename T::key_type>::type>::type;
+	using key_type = typename std::conditional<std::is_same_v<typename T::key_type, PayloadValueWithHash>, PayloadValue,
+											   typename std::conditional<std::is_same_v<typename T::key_type, key_string_with_hash>,
+																		 key_string, typename T::key_type>::type>::type;
+	using pointers_set = fast_hash_set_s<key_type, hash_ptr<key_type>, equal_ptr<key_type>, less_ptr<key_type>>;
+	using points_set = fast_hash_set_s<Point, std::hash<Point>, point_strict_equal, point_strict_less>;
+	using generic_set = fast_hash_set_s<key_type, std::hash<key_type>, std::equal_to<key_type>, std::less<key_type>>;
+	constexpr static bool kHoldsPointers = std::is_same_v<key_type, PayloadValue> || std::is_same_v<key_type, key_string>;
+	constexpr static bool kHoldsPoints = std::is_same_v<key_type, Point>;
+
 	using hash_map =
-		typename std::conditional<std::is_same<key_type, PayloadValue>::value || std::is_same<key_type, key_string>::value,
-								  fast_hash_set<key_type, hash_ptr<key_type>, equal_ptr<key_type>>, fast_hash_set<key_type>>::type;
+		typename std::conditional_t<kHoldsPointers, pointers_set, typename std::conditional_t<kHoldsPoints, points_set, generic_set>>;
 
 	UpdateTracker() = default;
 	UpdateTracker(const UpdateTracker<T> &other)
@@ -50,7 +61,7 @@ public:
 			return;
 		}
 		if (completeUpdate_) return;
-		if (updated_.size() > static_cast<size_t>(idx_map.size() / 8)) {
+		if (updated_.size() > static_cast<size_t>(idx_map.size() / 8) || updated_.size() > 10000000) {
 			completeUpdate_ = true;
 			clearUpdates();
 			return;
@@ -85,14 +96,16 @@ public:
 	const hash_map &updated() const { return updated_; }
 	uint32_t updatesSize() const noexcept { return updatesSize_.load(std::memory_order_relaxed); }
 	uint32_t updatesBuckets() const noexcept { return updatesBuckets_.load(std::memory_order_relaxed); }
-	uint32_t GetMemStat() const noexcept { return allocatedMem_.load(std::memory_order_relaxed); }
+	uint32_t allocated() const noexcept { return allocatedMem_.load(std::memory_order_relaxed); }
+	uint32_t overflow() const noexcept { return overflowSize_.load(std::memory_order_relaxed); }
 	void enableCountingMode(bool val) noexcept {
 		if (!simpleCounting_ && val) {
 			hash_map m;
 			std::swap(m, updated_);
 			updatesSize_.store(0, std::memory_order_relaxed);
 			updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
-			allocatedMem_.store(updated_.allocated_mem_size(), std::memory_order_relaxed);
+			allocatedMem_.store(getMapAllocatedMemSize(), std::memory_order_relaxed);
+			overflowSize_.store(getMapOverflowSize(), std::memory_order_relaxed);
 		} else if (simpleCounting_ && !val) {
 			completeUpdate_ = true;
 		}
@@ -104,19 +117,36 @@ protected:
 		updated_.erase(k->first);
 		updatesSize_.store(updated_.size(), std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
-		allocatedMem_.store(updated_.allocated_mem_size(), std::memory_order_relaxed);
+		allocatedMem_.store(getMapAllocatedMemSize(), std::memory_order_relaxed);
+		overflowSize_.store(getMapOverflowSize(), std::memory_order_relaxed);
 	}
 	void emplaceUpdate(typename T::iterator &k) {
 		updated_.emplace(k->first);
 		updatesSize_.store(updated_.size(), std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
-		allocatedMem_.store(updated_.allocated_mem_size(), std::memory_order_relaxed);
+		allocatedMem_.store(getMapAllocatedMemSize(), std::memory_order_relaxed);
+		overflowSize_.store(getMapOverflowSize(), std::memory_order_relaxed);
 	}
 	void clearUpdates() {
 		updated_.clear();
 		updatesSize_.store(0, std::memory_order_relaxed);
 		updatesBuckets_.store(updated_.bucket_count(), std::memory_order_relaxed);
-		allocatedMem_.store(updated_.allocated_mem_size(), std::memory_order_relaxed);
+		allocatedMem_.store(getMapAllocatedMemSize(), std::memory_order_relaxed);
+		overflowSize_.store(getMapOverflowSize(), std::memory_order_relaxed);
+	}
+	size_t getMapAllocatedMemSize() {
+		if constexpr (kUsingSTDFastHashSet) {
+			return 0;
+		} else {
+			return updated_.allocated_mem_size();
+		}
+	}
+	size_t getMapOverflowSize() {
+		if constexpr (kUsingSTDFastHashSet) {
+			return 0;
+		} else {
+			return updated_.overflow_size();
+		}
 	}
 
 	// Set of updated keys. Depends on safe/unsafe indexes' map iterator implementation.
@@ -124,6 +154,7 @@ protected:
 	std::atomic<uint32_t> updatesSize_ = {0};
 	std::atomic<uint32_t> updatesBuckets_ = {0};
 	std::atomic<uint64_t> allocatedMem_ = {0};
+	std::atomic<uint32_t> overflowSize_ = {0};
 
 	// Becomes true, when updates set is to large. In this case indexes must be fully scanned to optimize
 	bool completeUpdate_ = false;

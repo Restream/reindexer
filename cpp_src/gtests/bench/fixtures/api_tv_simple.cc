@@ -751,7 +751,7 @@ void ApiTvSimple::Query2CondInnerJoin(benchmark::State& state) {
 
 void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& state) {
 	using reindexer::JoinedSelector;
-	static const string rightNs = "rightNs";
+	static const std::string rightNs = "rightNs";
 	static const std::vector<std::string> leftNs = {"leftNs1", "leftNs2", "leftNs3", "leftNs4"};
 	static constexpr char const* id = "id";
 	static constexpr char const* data = "data";
@@ -788,7 +788,7 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 	}
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		vector<std::thread> threads;
+		std::vector<std::thread> threads;
 		threads.reserve(leftNs.size());
 		for (size_t i = 0; i < leftNs.size(); ++i) {
 			threads.emplace_back([this, i, &state]() {

@@ -134,7 +134,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 4.9.0
+*Version* : 4.10.0
 
 
 ### License information
@@ -2396,6 +2396,7 @@ Idset cache stats. Stores merged reverse index results of SELECT field IN(...) b
 |**sort_orders_size**  <br>*optional*|Total memory consumption of SORT statement and `GT`, `LT` conditions optimized structures. Applicabe only to `tree` indexes|integer|
 |**tracked_updates_buckets**  <br>*optional*|Buckets count in index updates tracker map|integer|
 |**tracked_updates_count**  <br>*optional*|Updates count, pending in index updates tracker|integer|
+|**tracked_updates_overflow**  <br>*optional*|Updates tracker map overflow (number of elements, stored outside of the main buckets)|integer|
 |**tracked_updates_size**  <br>*optional*|Updates tracker map size in bytes|integer|
 |**unique_keys_count**  <br>*optional*|Count of unique keys values stored in index|integer|
 

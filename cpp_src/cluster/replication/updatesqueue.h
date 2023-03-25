@@ -22,6 +22,7 @@ class UpdatesQueue {
 public:
 	using HashT = nocase_hash_str;
 	using CompareT = nocase_equal_str;
+	using LessT = nocase_less_str;
 	using UpdatesContainerT = h_vector<T, 2>;
 	static constexpr auto kBatchSize = 500;
 	template <typename U, uint16_t kBatch>
@@ -184,7 +185,7 @@ public:
 
 	using UpdateT = QueueEntry<T, kBatchSize>;
 	using UpdatePtr = intrusive_ptr<intrusive_atomic_rc_wrapper<UpdateT>>;
-	using TokensHashSetT = fast_hash_set<std::string, HashT, CompareT>;
+	using TokensHashSetT = fast_hash_set<std::string, HashT, CompareT, LessT>;
 
 	static constexpr uint64_t kMinUpdatesBound = 1024 * 1024;
 

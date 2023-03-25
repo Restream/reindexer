@@ -113,24 +113,26 @@ BaseFunctionCtx::Ptr SelectFunction::createFuncForProc(int indexNo) {
 bool SelectFunction::NeedArea(int indexNo) const {
 	if (functions_.empty()) return false;
 	IndexType indexType = nm_.getIndexType(indexNo);
+
+	auto checkField = [&](int field) -> bool {
+		const auto it = functions_.find(field);
+		if (it != functions_.end()) {
+			if (it->second.type == SelectFuncStruct::kSelectFuncSnippet || it->second.type == SelectFuncStruct::kSelectFuncSnippetN ||
+				it->second.type == SelectFuncStruct::kSelectFuncHighlight) {
+				return true;
+			}
+		}
+		return false;
+	};
+
 	if (IsComposite(indexType)) {
 		int cjsonFieldIdx = nm_.getIndexesCount();
 		for (auto field : nm_.getIndexFields(indexNo)) {
 			if (field == IndexValueType::SetByJsonPath) field = cjsonFieldIdx++;
-			const auto it = functions_.find(field);
-			if (it != functions_.end()) {
-				if (it->second.type == SelectFuncStruct::kSelectFuncSnippet || it->second.type == SelectFuncStruct::kSelectFuncHighlight) {
-					return true;
-				}
-			}
+			if (checkField(field)) return true;
 		}
 	} else {
-		const auto it = functions_.find(indexNo);
-		if (it != functions_.end()) {
-			if (it->second.type == SelectFuncStruct::kSelectFuncSnippet || it->second.type == SelectFuncStruct::kSelectFuncHighlight) {
-				return true;
-			}
-		}
+		return checkField(indexNo);
 	}
 	return false;
 }
@@ -176,7 +178,6 @@ BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
 void SelectFunctionsHolder::Process(LocalQueryResults &res) {
 	if (!querys_ || querys_->empty() || force_only_) return;
 	bool changed = false;
-
 	for (size_t i = 0; i < res.Count(); ++i) {
 		auto &pl_type = res.getPayloadType(res.Items()[i].Nsid());
 		auto it = querys_->find(pl_type.Name());
@@ -192,11 +193,13 @@ bool SelectFunction::ProcessItem(ItemRef &res, PayloadType &pl_type, std::vector
 		if (!func.second.ctx) continue;
 		switch (func.second.type) {
 			case SelectFuncStruct::kSelectFuncSnippet:
+			case SelectFuncStruct::kSelectFuncSnippetN:
 				if (Snippet::process(res, pl_type, func.second, stringsHolder)) changed = true;
 				break;
 			case SelectFuncStruct::kSelectFuncHighlight:
 				if (Highlight::process(res, pl_type, func.second, stringsHolder)) changed = true;
 				break;
+
 			case SelectFuncStruct::kSelectFuncNone:
 			case SelectFuncStruct::kSelectFuncProc:
 				break;
@@ -211,6 +214,7 @@ BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct &data, BaseFunct
 		case SelectFuncStruct::kSelectFuncSnippet:
 		case SelectFuncStruct::kSelectFuncHighlight:
 		case SelectFuncStruct::kSelectFuncProc:
+		case SelectFuncStruct::kSelectFuncSnippetN:
 			if (IsFullText(index_type)) {
 				if (!ctx) {
 					data.ctx = std::make_shared<FtCtx>();

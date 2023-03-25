@@ -5,6 +5,7 @@
 #include "tools/fsops.h"
 #include "tools/reporter.h"
 
+#include "args/args.hpp"
 #include "ft_fixture.h"
 
 const std::string kStoragePath = "/tmp/reindex/ft_bench_test";
@@ -15,7 +16,8 @@ using reindexer::Reindexer;
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
 const int kItemsInBenchDataset = 1000;
 #else
-const int kItemsInBenchDataset = 100000;
+const int kItemsInBenchDataset = 100'000;
+
 #endif
 
 int main(int argc, char** argv) {
@@ -35,9 +37,22 @@ int main(int argc, char** argv) {
 	if (!err.ok()) return err.code();
 
 	::benchmark::Initialize(&argc, argv);
-	if (::benchmark::ReportUnrecognizedArguments(argc, argv)) return 1;
-
-	ft.RegisterAllCases();
+	size_t iterationCount = -1;	 // count is determined by the execution time
+	if (argc > 1) {
+		try {
+			args::ArgumentParser parser("ft_bench additional args");
+			args::ValueFlag<size_t> iterCountF(parser, "ITERCOUNT", "iteration count", {"iteration_count"}, args::Options::Single);
+			parser.ParseCLI(argc, argv);
+			if (iterCountF) {
+				iterationCount = args::get(iterCountF);
+				argc--;	 // only one additional argument, otherwise need to rearrange the argv rows
+			}
+		} catch (const args::ParseError& e) {
+			std::cout << "argument parse error '" << e.what() << "'" << std::endl;
+			return 1;
+		}
+	}
+	ft.RegisterAllCases(iterationCount);
 
 	benchmark::Reporter reporter;
 	::benchmark::RunSpecifiedBenchmarks(&reporter);

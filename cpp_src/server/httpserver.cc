@@ -101,11 +101,11 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Missed `q` parameter"));
 	}
 	reindexer::QueryResults res;
-
 	auto ret = execSqlQueryByType(sqlQuery, res, ctx);
 	if (!ret.ok()) {
 		return status(ctx, http::HttpStatus(ret));
 	}
+
 	return queryResults(ctx, res, true, limit, offset);
 }
 
@@ -675,7 +675,10 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 	db.EnumNamespaces(nsDefs, EnumNamespacesOpts().WithFilter(nsName));
 
 	reindexer::IndexDef idxDef;
-	idxDef.FromJSON(giftStr(json));
+	auto err = idxDef.FromJSON(giftStr(json));
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus{err});
+	}
 
 	if (!nsDefs.empty()) {
 		auto &indexes = nsDefs[0].indexes;
@@ -686,11 +689,9 @@ int HTTPServer::PostIndex(http::Context &ctx) {
 		}
 	}
 
-	auto status = db.AddIndex(nsName, idxDef);
-	if (!status.ok()) {
-		http::HttpStatus httpStatus(status);
-
-		return jsonStatus(ctx, httpStatus);
+	err = db.AddIndex(nsName, idxDef);
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus{err});
 	}
 
 	return jsonStatus(ctx);
@@ -706,13 +707,14 @@ int HTTPServer::PutIndex(http::Context &ctx) {
 
 	reindexer::IndexDef idxDef;
 	std::string body = ctx.body->Read();
-	idxDef.FromJSON(giftStr(body));
-
-	auto status = db.UpdateIndex(nsName, idxDef);
-	if (!status.ok()) {
-		return jsonStatus(ctx, http::HttpStatus(status));
+	auto err = idxDef.FromJSON(giftStr(body));
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus{err});
 	}
-
+	err = db.UpdateIndex(nsName, idxDef);
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus{err});
+	}
 	return jsonStatus(ctx);
 }
 
@@ -806,6 +808,22 @@ int HTTPServer::Check(http::Context &ctx) {
 		builder.Put("log_level", serverConfig_.LogLevel);
 		builder.Put("core_log", serverConfig_.CoreLog);
 		builder.Put("server_log", serverConfig_.ServerLog);
+		{
+			auto heapWatcher = builder.Object("heap_watcher");
+			if (serverConfig_.AllocatorCacheLimit >= 0) {
+				heapWatcher.Put("cache_limit_bytes", serverConfig_.AllocatorCacheLimit);
+			} else {
+				heapWatcher.Put("cache_limit_bytes", "disabled");
+			}
+			std::string allocatorCachePartStr;
+			if (serverConfig_.AllocatorCachePart >= 0) {
+				allocatorCachePartStr = std::to_string(int(serverConfig_.AllocatorCachePart * 100));
+				allocatorCachePartStr += '%';
+			} else {
+				allocatorCachePartStr = "disabled";
+			}
+			heapWatcher.Put("cache_limit_part", allocatorCachePartStr);
+		}
 
 #if REINDEX_WITH_JEMALLOC
 		if (alloc_ext::JEMallocIsAvailable()) {

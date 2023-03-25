@@ -1,3 +1,4 @@
+#include <gtest/gtest.h>
 #include <algorithm>
 #include <future>
 #include <limits>
@@ -606,7 +607,10 @@ void ShardingApi::runTransactionsTestForRanges(std::string_view nsName, const st
 	qr = client::QueryResults();
 	err = rx->Select(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what() << "; ns: " << nsName;
-	ASSERT_EQ(qr.Count(), 40);
+
+	int sizeQR = std::accumulate(shardDataDistrib.begin(), shardDataDistrib.end(), 0,
+								 [](int sum, const auto &el) { return sum + el.second.size(); });
+	ASSERT_EQ(qr.Count(), sizeQR);
 }
 
 template <typename T>
@@ -831,6 +835,80 @@ TEST_F(ShardingApi, NsNamesCaseInsensitivityTest) {
 	runSelectTestForRanges(toLower(kNsName), shardDataDistrib);
 }
 
+TEST_F(ShardingApi, PartialClusterNodesSetInShardingCfgTest) {
+	// Сhecking the ability to connect not only to cluster leaders,
+	// if not all of clusters nodes are listed in the sharding config
+	const std::string kNsName = "ns";
+	const std::map<int, std::set<int>> shardDataDistrib{{0, {0, 1, 2, 3, 4, 5}}, {1, {11, 12, 13, 14, 15}}, {2, {21, 22, 23, 24, 25}}};
+	const int knodesInCluster = 7;	//  in order to reduce the probability of connecting to the leader
+	InitShardingConfig cfg;
+
+	cfg.additionalNss.emplace_back(kNsName);
+	cfg.additionalNss[0].indexName = "id";
+	cfg.additionalNss[0].keyValuesNodeCreation = [](int shard) {
+		reindexer::cluster::ShardingConfig::Key key;
+		for (int i = 0; i < 6; ++i) key.values.emplace_back(Variant(10 * shard + i));
+		key.shardId = shard;
+		key.algorithmType = ShardingAlgorithmType::ByRange;
+		return key;
+	};
+
+	std::map<int, std::vector<std::string>> shardsMap;
+	for (int shard = 0; shard < cfg.shards; ++shard) {
+		// must comply with node numbering given by in Init function
+		// take only one node for shard from cluster
+		auto nodeId = shard * knodesInCluster;
+		shardsMap[shard].push_back(fmt::format("cproto://127.0.0.1:{}/shard{}", GetDefaults().defaultRpcPort + nodeId, nodeId));
+	}
+	// replace shards part in sharding config due to in one shard was only one of 7 nodes of sync cluster
+	cfg.shardsMap = std::move(shardsMap);
+	cfg.nodesInCluster = knodesInCluster;
+	Init(std::move(cfg));
+
+	fillWithDistribData(shardDataDistrib, kNsName, kFieldId);
+	waitSync(kNsName);
+	runLocalSelectTestForRanges(kNsName, shardDataDistrib);
+	runSelectTestForRanges(kNsName, shardDataDistrib);
+	runTransactionsTestForRanges(kNsName, shardDataDistrib);
+	waitSync(kNsName);
+
+	TestCout() << "Checking correct work of selects after apply of transactions" << std::endl;
+
+	runLocalSelectTestForRanges(kNsName, shardDataDistrib);
+	runSelectTestForRanges(kNsName, shardDataDistrib);
+}
+
+TEST_F(ShardingApi, CheckSortQueryResultsByShardID) {
+	// Check if query results sorted by sharding ID if ordering is not specified in query
+	InitShardingConfig cfg;
+	cfg.nodesInCluster = 1;	 // Only one node in the cluster is enough for the test
+	const int count = cfg.rowsInTableOnShard * cfg.shards;
+	Init(std::move(cfg));
+
+	// For the test, it is enough to use default_namespace, which will contain `count` items
+	const auto q = Query(std::string(default_namespace));
+	for (size_t i = 0; i < NodesCount(); ++i) {
+		std::shared_ptr<client::Reindexer> rx = getNode(i)->api.reindexer;
+		client::QueryResults qr(kResultsWithShardId);
+		Error err = rx->Select(q, qr);
+
+		ASSERT_TRUE(err.ok()) << err.what() << "; node index = " << i << std::endl;
+		ASSERT_EQ(qr.Count(), count);
+
+		int curShardId = -1;
+		WrSerializer wrser;
+
+		// Checking on each node that the output is sorted by shard ID
+		for (auto &res : qr) {
+			wrser.Reset();
+			err = res.GetJSON(wrser);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_GE(res.GetShardID(), curShardId) << "Query results not sorted by shardID" << std::endl;
+			curShardId = res.GetShardID();
+		}
+	}
+}
+
 TEST_F(ShardingApi, DISABLED_SelectProxyBench) {
 	const size_t kShardDataCount = 10000;
 	constexpr unsigned kTotalRequestsCount = 500000;
@@ -905,11 +983,14 @@ TEST_F(ShardingApi, Aggregations) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.GetAggregationResults().size(), 3);
 	EXPECT_EQ(qr.GetAggregationResults()[0].type, AggSum);
-	EXPECT_EQ(qr.GetAggregationResults()[0].value, (itemsCount - 1) * itemsCount / 2);
+	EXPECT_TRUE(qr.GetAggregationResults()[0].GetValue());
+	EXPECT_EQ(qr.GetAggregationResults()[0].GetValueOrZero(), (itemsCount - 1) * itemsCount / 2);
 	EXPECT_EQ(qr.GetAggregationResults()[1].type, AggMin);
-	EXPECT_EQ(qr.GetAggregationResults()[1].value, 0);
+	EXPECT_TRUE(qr.GetAggregationResults()[1].GetValue());
+	EXPECT_EQ(qr.GetAggregationResults()[1].GetValueOrZero(), 0);
 	EXPECT_EQ(qr.GetAggregationResults()[2].type, AggMax);
-	EXPECT_EQ(qr.GetAggregationResults()[2].value, itemsCount - 1);
+	EXPECT_TRUE(qr.GetAggregationResults()[2].GetValue());
+	EXPECT_EQ(qr.GetAggregationResults()[2].GetValueOrZero(), itemsCount - 1);
 }
 
 TEST_F(ShardingApi, CheckQueryWithSharding) {
@@ -2038,7 +2119,8 @@ static void CheckCachedCountAggregations(std::shared_ptr<client::Reindexer> &rx,
 		auto &agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
 		ASSERT_EQ(agg[0].type, AggCountCached);
-		ASSERT_EQ(agg[0].value, qr.TotalCount());
+		ASSERT_TRUE(agg[0].GetValue());
+		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}
 	{
 		// Check distributed query with offset
@@ -2049,7 +2131,8 @@ static void CheckCachedCountAggregations(std::shared_ptr<client::Reindexer> &rx,
 		auto &agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
 		ASSERT_EQ(agg[0].type, AggCount);  // Here agg type was change to 'AggCount' by internal proxy
-		ASSERT_EQ(agg[0].value, qr.TotalCount());
+		ASSERT_TRUE(agg[0].GetValue());
+		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}
 	{
 		// Check single shard query without offset
@@ -2060,7 +2143,8 @@ static void CheckCachedCountAggregations(std::shared_ptr<client::Reindexer> &rx,
 		auto &agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
 		ASSERT_EQ(agg[0].type, AggCountCached);
-		ASSERT_EQ(agg[0].value, qr.TotalCount());
+		ASSERT_TRUE(agg[0].GetValue());
+		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}
 	{
 		// Check single shard query with offset
@@ -2071,7 +2155,8 @@ static void CheckCachedCountAggregations(std::shared_ptr<client::Reindexer> &rx,
 		auto &agg = qr.GetAggregationResults();
 		ASSERT_EQ(agg.size(), 1);
 		ASSERT_EQ(agg[0].type, AggCountCached);
-		ASSERT_EQ(agg[0].value, qr.TotalCount());
+		ASSERT_TRUE(agg[0].GetValue());
+		ASSERT_EQ(agg[0].GetValueOrZero(), qr.TotalCount());
 	}
 }
 

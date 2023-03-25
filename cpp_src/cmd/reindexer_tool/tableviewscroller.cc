@@ -85,7 +85,7 @@ void TableViewScroller::Scroll(Output& output, std::vector<std::string>&& jsonDa
 		}
 #else
 		if (viaMoreCmd && pfile) {
-			string buf = ss.str();
+			std::string buf = ss.str();
 			fwrite(buf.data(), sizeof(char), buf.length(), pfile);
 			ss.str("");
 		}

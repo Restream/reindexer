@@ -9,10 +9,6 @@
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
 
-using std::string;
-using std::vector;
-using std::unique_ptr;
-
 using reindexer::Variant;
 using reindexer::VariantArray;
 using reindexer::p_string;
@@ -30,7 +26,7 @@ struct to_array_helper {
 };
 
 template <>
-struct to_array_helper<string> {
+struct to_array_helper<std::string> {
 	static VariantArray to_array(const std::vector<std::string>& vec) {
 		VariantArray krs;
 		krs.reserve(vec.size());
@@ -59,13 +55,13 @@ T random(T from, T to) {
 }
 
 template <typename T>
-vector<T> randomNumArray(int count, int start, int region) {
-	vector<T> result;
+std::vector<T> randomNumArray(int count, int start, int region) {
+	std::vector<T> result;
 	result.reserve(count);
 	for (int i = 0; i < count; i++) result.emplace_back(random<T>(start, start + region));
 	return result;
 }
 
-string FormatString(const char* msg, va_list args);
-string FormatString(const char* msg, ...);
-string HumanReadableNumber(size_t number, bool si, const std::string& unitLabel = "");
+std::string FormatString(const char* msg, va_list args);
+std::string FormatString(const char* msg, ...);
+std::string HumanReadableNumber(size_t number, bool si, const std::string& unitLabel = "");

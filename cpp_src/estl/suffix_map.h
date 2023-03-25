@@ -131,10 +131,10 @@ public:
 		int wpos = text_.size();
 		size_t real_len = word.length();
 		text_.insert(text_.end(), word.begin(), word.end());
-		text_.push_back('\0');
+		text_.emplace_back('\0');
 		mapped_.insert(mapped_.end(), real_len + 1, val);
-		words_.push_back(wpos);
-		words_len_.push_back(std::make_pair(real_len, virtual_len));
+		words_.emplace_back(wpos);
+		words_len_.emplace_back(real_len, virtual_len);
 		built_ = false;
 		return wpos;
 	}

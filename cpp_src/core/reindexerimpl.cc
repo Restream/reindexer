@@ -1,4 +1,5 @@
 #include "core/reindexerimpl.h"
+
 #include <stdio.h>
 #include <chrono>
 #include <thread>
@@ -64,14 +65,15 @@ static unsigned ConcurrentNamespaceLoaders() noexcept {
 	return 10;
 }
 
-ReindexerImpl::ReindexerImpl(ReindexerConfig cfg, ActivityContainer& activities)
-	: clusterizator_(new cluster::Clusterizator(*this, cfg.maxReplUpdatesSize)),
+ReindexerImpl::ReindexerImpl(ReindexerConfig cfg, ActivityContainer& activities, CallbackMap&& proxyCallbacks)
+	: dbDestroyed_{false},
+	  clusterizator_(new cluster::Clusterizator(*this, cfg.maxReplUpdatesSize)),
 	  nsLock_(*clusterizator_, *this),
 	  activities_(activities),
 	  storageType_(StorageType::LevelDB),
 	  connected_(false),
-	  config_(std::move(cfg)) {
-	stopBackgroundThreads_ = false;
+	  config_(std::move(cfg)),
+	  proxyCallbacks_(std::move(proxyCallbacks)) {
 	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfiligConfigLoad, this));
 
 	configWatchers_.emplace_back(
@@ -101,7 +103,11 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg, ActivityContainer& activities)
 }
 
 ReindexerImpl::~ReindexerImpl() {
-	stopBackgroundThreads_ = true;
+	for (auto& ns : namespaces_) {
+		ns.second->SetDestroyFlag();
+	}
+
+	dbDestroyed_ = true;
 	clusterizator_->Stop();
 	backgroundThread_.join();
 	storageFlushingThread_.join();
@@ -234,7 +240,7 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 	if (enableStorage && opts.IsOpenNamespaces()) {
 		const size_t maxLoadWorkers = ConcurrentNamespaceLoaders();
 		std::unique_ptr<std::thread[]> thrs(new std::thread[maxLoadWorkers]);
-		std::atomic_flag hasNsErrors{false};
+		std::atomic_flag hasNsErrors = ATOMIC_FLAG_INIT;
 		std::atomic<int64_t> maxNsVersion = -1;
 		for (size_t i = 0; i < maxLoadWorkers; i++) {
 			thrs[i] = std::thread(
@@ -336,6 +342,7 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 		if (nsDef.isTemporary) {
 			ns->awaitMainNs(rdxCtx)->setTemporary();
 		}
+
 		if (readyToLoadStorage) {
 			ns->EnableStorage(storagePath_, nsDef.storage, storageType_, rdxCtx);
 		}
@@ -815,6 +822,10 @@ Error ReindexerImpl::applyNsFunction(std::string_view nsName, const RdxContext& 
 
 Error ReindexerImpl::Insert(std::string_view nsName, Item& item, const RdxContext& ctx) { APPLY_NS_FUNCTION1(true, Insert, item); }
 
+Error ReindexerImpl::insertDontUpdateSystemNS(std::string_view nsName, Item& item, const RdxContext& ctx) {
+	APPLY_NS_FUNCTION1(false, Insert, item);
+}
+
 Error ReindexerImpl::Insert(std::string_view nsName, Item& item, LocalQueryResults& qr, const RdxContext& ctx) {
 	APPLY_NS_FUNCTION2(true, Insert, item, qr);
 }
@@ -1084,8 +1095,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, LocalQuery
 		JoinPreResult::Ptr preResult = std::make_shared<JoinPreResult>();
 		uint32_t joinedFieldIdx = uint32_t(joinedSelectors.size());
 		JoinCacheRes joinRes;
-		joinRes.key.SetData(jq);
-		jns->getFromJoinCache(joinRes);
+		jns->getFromJoinCache(jq, joinRes);
 		jjq.explain_ = q.explain_;
 		jjq.Strict(q.strictMode);
 		if (!jjq.entries.Empty() && !joinRes.haveData) {
@@ -1406,7 +1416,7 @@ void ReindexerImpl::backgroundRoutine() {
 		}
 	};
 
-	while (!stopBackgroundThreads_) {
+	while (!dbDestroyed_) {
 		nsBackground();
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
@@ -1460,7 +1470,7 @@ void ReindexerImpl::storageFlushingRoutine() {
 		errors = std::move(newErrors);
 	};
 
-	while (!stopBackgroundThreads_) {
+	while (!dbDestroyed_) {
 		nsFlush();
 #ifdef REINDEX_WITH_GPERFTOOLS
 		this->heapWatcher_.CheckHeapUsagePeriodic();
@@ -1502,35 +1512,55 @@ Error ReindexerImpl::InitSystemNamespaces() {
 	bool hasBaseReplicationConfig = false;
 	bool hasAsyncReplicationConfig = false;
 	bool hasShardingConfig = false;
+
+	// Fail earlier
+	// Reading config files first
+	{
+		logPrintf(LogInfo, "Attempting to load replication config from '%s'", kReplicationConfFilename);
+		err = tryLoadConfFromFile<kReplicationConfigType, ReplicationConfigData>(kReplicationConfFilename);
+		if (err.ok()) {
+			hasBaseReplicationConfig = true;
+			logPrintf(LogInfo, "Replication config loaded from '%s'", kReplicationConfFilename);
+		} else if (err.code() == errNotFound) {
+			logPrintf(LogInfo, "Not found '%s'", kReplicationConfFilename);
+		} else {
+			return Error(err.code(), "Failed to load general replication config file: '%s'", err.what());
+		}
+	}
+
+	{
+		logPrintf(LogInfo, "Attempting to load async replication config from '%s'", kAsyncReplicationConfFilename);
+		err = tryLoadConfFromFile<kAsyncReplicationConfigType, cluster::AsyncReplConfigData>(kAsyncReplicationConfFilename);
+		if (err.ok()) {
+			hasAsyncReplicationConfig = true;
+			logPrintf(LogInfo, "Async replication config loaded from '%s'", kAsyncReplicationConfFilename);
+		} else if (err.code() == errNotFound) {
+			logPrintf(LogInfo, "Not found '%s'", kAsyncReplicationConfFilename);
+		} else {
+			return Error(err.code(), "Failed to load async replication config file: '%s'", err.what());
+		}
+	}
+
+	if (shardingConfig_) {
+		// Ignore error check here (it always returns fake error for now)
+		tryLoadShardingConf();
+		if (err.ok() || (err.code() == errLogic)) {
+			hasShardingConfig = true;
+		}
+	}
+
+	// Filling rest of default config
 	if (results.Count() == 0) {
-		// Set default config
+		logPrintf(LogInfo, "Initializing default DB config for missed sections");
 		for (const auto& conf : kDefDBConfig) {
 			if (!hasBaseReplicationConfig || !hasAsyncReplicationConfig || !hasShardingConfig) {
 				gason::JsonParser parser;
 				gason::JsonNode configJson = parser.Parse(std::string_view(conf));
 				const std::string_view type = configJson["type"].As<std::string_view>();
-				if (type == kReplicationConfigType) {
-					hasBaseReplicationConfig = true;
-					err = tryLoadConfFromFile<kReplicationConfigType, ReplicationConfigData>(kReplicationConfFilename);
-					if (err.ok()) {
-						continue;
-					} else if (err.code() != errNotFound) {
-						return Error(err.code(), "Failed to load general replication config file: '%s'", err.what());
-					}
-				} else if (type == kAsyncReplicationConfigType) {
-					hasAsyncReplicationConfig = true;
-					err = tryLoadConfFromFile<kAsyncReplicationConfigType, cluster::AsyncReplConfigData>(kAsyncReplicationConfFilename);
-					if (err.ok()) {
-						continue;
-					} else if (err.code() != errNotFound) {
-						return Error(err.code(), "Failed to load async replication config file: '%s'", err.what());
-					}
-				} else if (type == kShardingConfigType && shardingConfig_) {
-					hasShardingConfig = true;
-					// Ignore error check here (it always returns fake error for now)
-					if (tryLoadShardingConf().ok()) {
-						continue;
-					}
+				if ((type == kReplicationConfigType && hasBaseReplicationConfig) ||
+					(type == kAsyncReplicationConfigType && hasAsyncReplicationConfig) ||
+					(type == kShardingConfigType && shardingConfig_ && hasShardingConfig)) {
+					continue;
 				}
 			}
 
@@ -1538,35 +1568,52 @@ Error ReindexerImpl::InitSystemNamespaces() {
 			if (!item.Status().ok()) return item.Status();
 			err = item.FromJSON(conf);
 			if (!err.ok()) return err;
-			err = Insert(kConfigNamespace, item, RdxContext());
+			err = insertDontUpdateSystemNS(kConfigNamespace, item, RdxContext());
 			if (!err.ok()) return err;
 		}
-	} else {
-		// Load config from namespace #config
+	}
+
+	// #config probably was updated, so we need to reload previous results
+	results = LocalQueryResults();
+	err = Select(Query(kConfigNamespace), results, RdxContext());
+	if (!err.ok()) return err;
+
+	{
+		logPrintf(LogInfo, "Reading configuration from namespace #config");
 		for (auto it : results) {
 			auto item = it.GetItem(false);
 			try {
 				gason::JsonParser parser;
 				gason::JsonNode configJson = parser.Parse(item.GetJSON());
-				updateConfigProvider(configJson);
+				const std::string_view type = configJson["type"].As<std::string_view>();
+
+				if ((type == kReplicationConfigType && hasBaseReplicationConfig) ||
+					(type == kAsyncReplicationConfigType && hasAsyncReplicationConfig) ||
+					(type == kShardingConfigType && shardingConfig_ && hasShardingConfig)) {
+					continue;
+				}
+
+				updateConfigProvider(configJson, true);
 			} catch (const Error& err) {
 				return err;
 			}
 		}
+		if (auto configLoadErrors = configProvider_.GetConfigParseErrors()) {
+			logPrintf(LogError, "Config load errors:\n%s", configLoadErrors.what());
+		}
 	}
 
-	if (!hasBaseReplicationConfig) {
-		tryLoadConfFromFile<kReplicationConfigType, ReplicationConfigData>(kReplicationConfFilename);
-	}
-	if (!hasAsyncReplicationConfig) {
-		tryLoadConfFromFile<kAsyncReplicationConfigType, cluster::AsyncReplConfigData>(kAsyncReplicationConfFilename);
-	}
-	if (!hasShardingConfig && shardingConfig_) {
-		tryLoadShardingConf();
-	}
+	auto replConfig = configProvider_.GetReplicationConfig();
+	nsVersion_.SetServer(replConfig.serverID);
 
-	nsVersion_.SetServer(configProvider_.GetReplicationConfig().serverID);
-
+	// Update nsVersion.serverID for system namespaces
+	RdxContext ctx;
+	auto namespaces = getNamespaces(ctx);
+	for (auto& ns : namespaces) {
+		if (ns.second->IsSystem(ctx)) {
+			ns.second->OnConfigUpdated(configProvider_, ctx);
+		}
+	}
 	return errOK;
 }
 
@@ -1590,7 +1637,7 @@ Error ReindexerImpl::tryLoadConfFromYAML(const std::string& yamlConf) {
 	Error err = config.FromYAML(yamlConf);
 	if (!err.ok()) {
 		logPrintf(LogError, "Error parsing config YML for %s: %s", type, err.what());
-		return Error(errParams, "Error parsing replication config YML for %s: %s", type, err.what());
+		return Error(err.code(), "Error parsing config YML for %s: %s", type, err.what());
 	} else {
 		WrSerializer ser;
 		JsonBuilder jb(ser);
@@ -1622,6 +1669,7 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 			}
 			bool isChangedActivityStats = configProvider_.GetProfilingConfig().activityStats;
 			updateConfigProvider(configJson);
+
 			isChangedActivityStats = isChangedActivityStats != configProvider_.GetProfilingConfig().activityStats;
 			if (isChangedActivityStats) {
 				activities_.Reset();
@@ -1629,11 +1677,11 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 
 			if (!configJson[kReplicationConfigType].empty()) {
 				auto replConf = configProvider_.GetReplicationConfig();
+				updateConfFile(replConf, kReplicationConfFilename);
 				{
 					auto wlck = nsLock_.SimpleWLock(ctx);
 					nsVersion_.SetServer(replConf.serverID);
 				}
-				updateConfFile(replConf, kReplicationConfFilename);
 				clusterizator_->Configure(std::move(replConf));
 			}
 			if (!configJson[kAsyncReplicationConfigType].empty()) {
@@ -1652,12 +1700,13 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 			const auto& actionNode = configJson[kActionConfigType];
 			handleConfigAction(actionNode, namespaces, ctx);
 
-			if (replicationEnabled_ && !stopBackgroundThreads_ && clusterizator_->IsExpectingAsyncReplStartup()) {
+			if (replicationEnabled_ && clusterizator_->IsExpectingAsyncReplStartup()) {
 				if (Error err = clusterizator_->StartAsyncRepl()) throw err;
 			}
-			if (replicationEnabled_ && !stopBackgroundThreads_ && clusterizator_->IsExpectingClusterStartup()) {
+			if (replicationEnabled_ && !dbDestroyed_ && clusterizator_->IsExpectingClusterStartup()) {
 				if (Error err = clusterizator_->StartClusterRepl()) throw err;
 			}
+			if (Error err = configProvider_.GetConfigParseErrors()) throw err;
 		} catch (gason::Exception& e) {
 			throw Error(errParseJson, "JSON parsing error: %s", e.what());
 		}
@@ -1722,17 +1771,27 @@ void ReindexerImpl::handleConfigAction(const gason::JsonNode& action, const std:
 				throw Error(errParams, "Unknow logs type in config-action: '%s'", type);
 			}
 		}
+
+		if (const auto it = proxyCallbacks_.find(command); it != proxyCallbacks_.end()) it->second(action, ctx);
 	}
 }
 
-void ReindexerImpl::updateConfigProvider(const gason::JsonNode& config) {
+void ReindexerImpl::updateConfigProvider(const gason::JsonNode& config, bool autoCorrect) {
 	Error err;
 	try {
-		err = configProvider_.FromJSON(config);
+		err = configProvider_.FromJSON(config, autoCorrect);
 	} catch (const gason::Exception& ex) {
-		err = Error(errParseJson, "updateConfigProvider: %s", ex.what());
+		err = Error(errParseJson, ex.what());
 	}
-	if (!err.ok()) throw err;
+
+	if (!err.ok()) {
+		if (autoCorrect) {
+			logPrintf(LogError, "DBConfigProvider: Non fatal error %d \"%s\"", err.code(), err.what());
+			return;
+		}
+
+		throw err;
+	}
 }
 
 template <typename ConfigT>

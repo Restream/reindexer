@@ -23,7 +23,6 @@ public:
 	FieldsExtractor &operator=(FieldsExtractor &&) = delete;
 
 	void SetTagsMatcher(const TagsMatcher *) {}
-	void SetTagsPath(const TagsPath *) {}
 
 	FieldsExtractor Object(int) { return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, index_, length_); }
 	FieldsExtractor Array(int) { return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, index_, length_); }
@@ -59,7 +58,7 @@ public:
 		for (int i = 0; i < count; ++i) {
 			Variant value = ser.GetRawVariant(KeyValueType::FromNumber(tagType));
 			if (pathNode.IsForAllItems() || i == pathNode.Index()) {
-				Put(0, value);
+				Put(0, std::move(value));
 			}
 		}
 	}
@@ -70,7 +69,7 @@ public:
 			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String,
 					  KeyValueType::Null, KeyValueType::Tuple>) { arg.convert(expectedType_); },
 			[](OneOf<KeyValueType::Undefined, KeyValueType::Composite>) noexcept {});
-		values_->push_back(arg);
+		values_->push_back(std::move(arg));
 		if (expectedPathDepth_ < 0) values_->MarkObject();
 		return *this;
 	}

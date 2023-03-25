@@ -106,7 +106,11 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 		result->IsRawProxiedBufferAvailable(flags) && WrResultSerializer::IsRawResultsSupported(bindingCaps.load(), *result);
 	std::string_view rawBufOut;
 	if (rawResProxying) {
-		result->ser.SetOpts({flags, span<int32_t>(pt_versions, pt_versions_count), 0, INT_MAX});
+		result->ser.SetOpts({.flags = flags,
+							 .ptVersions = span<int32_t>(pt_versions, pt_versions_count),
+							 .fetchOffset = 0,
+							 .fetchLimit = INT_MAX,
+							 .withAggregations = true});
 		result->ser.PutResultsRaw(result.get(), &rawBufOut);
 		out->len = rawBufOut.size() ? rawBufOut.size() : result->ser.Len();
 		out->data = rawBufOut.size() ? uintptr_t(rawBufOut.data()) : uintptr_t(result->ser.Buf());
@@ -115,7 +119,11 @@ static void results2c(std::unique_ptr<QueryResultsWrapper> result, struct reinde
 		if (pt_versions && as_json == 0) {
 			flags |= kResultsWithPayloadTypes;
 		}
-		result->ser.SetOpts({flags, span<int32_t>(pt_versions, pt_versions_count), 0, INT_MAX});
+		result->ser.SetOpts({.flags = flags,
+							 .ptVersions = span<int32_t>(pt_versions, pt_versions_count),
+							 .fetchOffset = 0,
+							 .fetchLimit = INT_MAX,
+							 .withAggregations = true});
 		result->ser.PutResults(result.get(), bindingCaps.load(std::memory_order_relaxed), &result->proxiedRefsStorage);
 		out->len = result->ser.Len();
 		out->data = uintptr_t(result->ser.Buf());

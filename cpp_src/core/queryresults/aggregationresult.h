@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include "core/keyvalue/variant.h"
@@ -11,6 +12,10 @@
 #include "tools/errors.h"
 
 struct msgpack_object;
+struct MsgPackValue;
+namespace gason {
+struct JsonNode;
+}
 
 namespace reindexer {
 class WrSerializer;
@@ -58,9 +63,12 @@ struct AggregationResult {
 	Error FromJSON(T json);
 	Error FromMsgPack(std::string_view msgpack);
 	Error FromMsgPack(span<char> msgpack) { return FromMsgPack(std::string_view(msgpack.data(), msgpack.size())); }
+	double GetValueOrZero() const noexcept { return value_ ? *value_ : 0; }
+	std::optional<double> GetValue() const noexcept { return value_; }
+	void SetValue(double value) { value_ = value; }
+
 	AggType type = AggSum;
 	h_vector<std::string, 1> fields;
-	double value = 0;
 	std::vector<FacetResult> facets;
 	VariantArray distincts;
 	FieldsSet distinctsFields;
@@ -72,7 +80,12 @@ struct AggregationResult {
 
 	template <typename Node>
 	void from(Node root) {
-		value = root[Parameters::Value()].template As<double>();
+		const Node &node = root[Parameters::Value()];
+		bool isValid = false;
+		if constexpr (std::is_same_v<MsgPackValue, Node>) isValid = node.isValid();
+		if constexpr (std::is_same_v<gason::JsonNode, Node>) isValid = !node.empty();
+		if (isValid) value_ = node.template As<double>();
+
 		type = strToAggType(root[Parameters::Type()].template As<std::string>());
 
 		for (const auto &subElem : root[Parameters::Fields()]) {
@@ -95,7 +108,7 @@ struct AggregationResult {
 
 	template <typename Builder, typename Fields>
 	void get(Builder &builder, const Fields &parametersFields) const {
-		if (value != 0) builder.Put(parametersFields.Value(), value);
+		if (value_) builder.Put(parametersFields.Value(), *value_);
 		builder.Put(parametersFields.Type(), aggTypeToStr(type));
 		if (!facets.empty()) {
 			auto facetsArray = builder.Array(parametersFields.Facets(), facets.size());
@@ -118,6 +131,9 @@ struct AggregationResult {
 		for (auto &v : fields) fieldsArray.Put(0, v);
 		fieldsArray.End();
 	}
+
+private:
+	std::optional<double> value_ = std::nullopt;
 };
 
 };	// namespace reindexer

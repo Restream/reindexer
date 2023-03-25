@@ -6,7 +6,7 @@ namespace reindexer {
 
 class ShardingProxy {
 public:
-	ShardingProxy(ReindexerConfig cfg) : impl_(std::move(cfg), activities_) {}
+	ShardingProxy(ReindexerConfig cfg);
 	Error Connect(const std::string &dsn, ConnectOpts opts);
 	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts, const NsReplicationOpts &replOpts, const RdxContext &ctx);
 	Error AddNamespace(const NamespaceDef &nsDef, const NsReplicationOpts &replOpts, const RdxContext &ctx);

@@ -72,7 +72,7 @@ public:
 	 * Called on map creation and rehash. The number of buckets requested is passed by parameter.
 	 * This number is a minimum, the policy may update this value with a higher value if needed.
 	 */
-	power_of_two_growth_policy(std::size_t& min_bucket_count_in_out) {
+	power_of_two_growth_policy(std::size_t& min_bucket_count_in_out) noexcept {
 		const std::size_t min_bucket_count = MIN_BUCKETS_SIZE;
 
 		min_bucket_count_in_out = std::max(min_bucket_count, min_bucket_count_in_out);
@@ -83,16 +83,16 @@ public:
 	/**
 	 * Return the bucket [0, bucket_count()) to which the hash belongs.
 	 */
-	std::size_t bucket_for_hash(std::size_t hash) const { return hash & m_mask; }
+	std::size_t bucket_for_hash(std::size_t hash) const noexcept { return hash & m_mask; }
 
 	/**
 	 * Return the bucket count to uses when the bucket array grows on rehash.
 	 */
-	std::size_t next_bucket_count() const { return (m_mask + 1) * 2; }
+	std::size_t next_bucket_count() const noexcept { return (m_mask + 1) * 2; }
 
 private:
 	// TODO could be faster
-	static std::size_t round_up_to_power_of_two(std::size_t value) {
+	static std::size_t round_up_to_power_of_two(std::size_t value) noexcept {
 		if (is_power_of_two(value)) {
 			return value;
 		}
@@ -105,7 +105,7 @@ private:
 		return power;
 	}
 
-	static constexpr bool is_power_of_two(std::size_t value) { return value != 0 && (value & (value - 1)) == 0; }
+	static constexpr bool is_power_of_two(std::size_t value) noexcept { return value != 0 && (value & (value - 1)) == 0; }
 
 private:
 	static const std::size_t MIN_BUCKETS_SIZE = 2;
@@ -120,19 +120,19 @@ private:
 template <class GrowthFactor = std::ratio<3, 2>>
 class mod_growth_policy {
 public:
-	mod_growth_policy(std::size_t& min_bucket_count_in_out) {
+	mod_growth_policy(std::size_t& min_bucket_count_in_out) noexcept {
 		const std::size_t min_bucket_count = MIN_BUCKETS_SIZE;
 
 		min_bucket_count_in_out = std::max(min_bucket_count, min_bucket_count_in_out);
 		m_bucket_count = min_bucket_count_in_out;
 	}
 
-	std::size_t bucket_for_hash(std::size_t hash) const {
+	std::size_t bucket_for_hash(std::size_t hash) const noexcept {
 		tsl_assert(m_bucket_count != 0);
 		return hash % m_bucket_count;
 	}
 
-	std::size_t next_bucket_count() const {
+	std::size_t next_bucket_count() const noexcept {
 		return static_cast<std::size_t>(std::ceil(static_cast<double>(m_bucket_count) * REHASH_SIZE_MULTIPLICATION_FACTOR));
 	}
 
@@ -146,23 +146,24 @@ private:
 
 namespace detail_hopscotch_hash {
 
-static constexpr const std::array<std::size_t, 38> PRIMES = {
-	{17ul,		 29ul,		  37ul,		   53ul,		67ul,		 79ul,		   97ul,		 131ul,		  193ul,	  257ul,
-	 389ul,		 521ul,		  769ul,	   1031ul,		1543ul,		 2053ul,	   3079ul,		 6151ul,	  12289ul,	  24593ul,
-	 49157ul,	 98317ul,	  196613ul,	   393241ul,	786433ul,	 1572869ul,	   3145739ul,	 6291469ul,	  12582917ul, 25165843ul,
-	 50331653ul, 100663319ul, 201326611ul, 402653189ul, 805306457ul, 1610612741ul, 3221225473ul, 4294967291ul}};
+constexpr static unsigned PRIMES_COUNT = 29;
+static constexpr const std::array<uint32_t, PRIMES_COUNT> PRIMES = {
+	{17ul,		 37ul,		 79ul,		  131ul,	   257ul,		521ul,		 1031ul,	   2053ul,		 6151ul,	  12289ul,
+	 24593ul,	 49157ul,	 98317ul,	  196613ul,	   393241ul,	786433ul,	 1572869ul,	   3145739ul,	 6291469ul,	  12582917ul,
+	 25165843ul, 50331653ul, 100663319ul, 201326611ul, 402653189ul, 805306457ul, 1610612741ul, 3221225473ul, 4294967291ul}};
+static_assert(std::numeric_limits<uint32_t>::max() >= PRIMES[PRIMES_COUNT - 1], "Values exceeds type limits");
 
 template <unsigned int IPrime>
-static std::size_t mod(std::size_t hash) {
+static uint32_t mod(std::size_t hash) noexcept {
 	return hash % PRIMES[IPrime];
 }
 
 // MOD_PRIME[iprime](hash) returns hash % PRIMES[iprime]. This table allows for faster modulo as the
 // compiler can optimize the modulo code better with a constant known at the compilation.
-static constexpr const std::array<std::size_t (*)(std::size_t), 38> MOD_PRIME = {
-	{&mod<0>,  &mod<1>,	 &mod<2>,  &mod<3>,	 &mod<4>,  &mod<5>,	 &mod<6>,  &mod<7>,	 &mod<8>,  &mod<9>,	 &mod<10>, &mod<11>, &mod<12>,
-	 &mod<13>, &mod<14>, &mod<15>, &mod<16>, &mod<17>, &mod<18>, &mod<19>, &mod<20>, &mod<21>, &mod<22>, &mod<23>, &mod<24>, &mod<25>,
-	 &mod<26>, &mod<27>, &mod<28>, &mod<29>, &mod<30>, &mod<31>, &mod<32>, &mod<33>, &mod<34>, &mod<35>, &mod<36>, &mod<37>}};
+static constexpr const std::array<uint32_t (*)(std::size_t), PRIMES_COUNT> MOD_PRIME = {
+	{&mod<0>,  &mod<1>,	 &mod<2>,  &mod<3>,	 &mod<4>,  &mod<5>,	 &mod<6>,  &mod<7>,	 &mod<8>,  &mod<9>,
+	 &mod<10>, &mod<11>, &mod<12>, &mod<13>, &mod<14>, &mod<15>, &mod<16>, &mod<17>, &mod<18>, &mod<19>,
+	 &mod<20>, &mod<21>, &mod<22>, &mod<23>, &mod<24>, &mod<25>, &mod<26>, &mod<27>, &mod<28>}};
 
 }  // namespace detail_hopscotch_hash
 
@@ -183,7 +184,7 @@ public:
 		min_bucket_count_in_out = *it_prime;
 	}
 
-	std::size_t bucket_for_hash(std::size_t hash) const { return bucket_for_hash_iprime(hash, m_iprime); }
+	std::size_t bucket_for_hash(std::size_t hash) const noexcept { return bucket_for_hash_iprime(hash, m_iprime); }
 
 	std::size_t next_bucket_count() const {
 		if (m_iprime + 1 >= tsl::detail_hopscotch_hash::PRIMES.size()) {
@@ -194,7 +195,7 @@ public:
 	}
 
 private:
-	std::size_t bucket_for_hash_iprime(std::size_t hash, unsigned int iprime) const {
+	std::size_t bucket_for_hash_iprime(std::size_t hash, unsigned int iprime) const noexcept {
 		tsl_assert(iprime < tsl::detail_hopscotch_hash::MOD_PRIME.size());
 		return tsl::detail_hopscotch_hash::MOD_PRIME[iprime](hash);
 	}
@@ -275,17 +276,17 @@ class hopscotch_bucket_hash {
 public:
 	using hash_type = std::false_type;
 
-	bool bucket_hash_equal(std::size_t /*hash*/) const { return true; }
+	bool bucket_hash_equal(std::size_t /*hash*/) const noexcept { return true; }
 
-	std::size_t truncated_bucket_hash() const {
+	std::size_t truncated_bucket_hash() const noexcept {
 		assert(false);
 		return 0;
 	}
 
 protected:
-	void copy_hash(const hopscotch_bucket_hash&) {}
+	void copy_hash(const hopscotch_bucket_hash&) noexcept {}
 
-	void set_hash(std::size_t /*hash*/) {}
+	void set_hash(std::size_t /*hash*/) noexcept {}
 };
 
 template <>
@@ -294,14 +295,14 @@ public:
 	using hash_type = std::uint_least32_t;
 	static_assert(sizeof(hash_type) <= sizeof(std::size_t), "");
 
-	bool bucket_hash_equal(std::size_t hash) const { return m_hash == static_cast<hash_type>(hash); }
+	bool bucket_hash_equal(std::size_t hash) const noexcept { return m_hash == static_cast<hash_type>(hash); }
 
-	std::size_t truncated_bucket_hash() const { return m_hash; }
+	std::size_t truncated_bucket_hash() const noexcept { return m_hash; }
 
 protected:
-	void copy_hash(const hopscotch_bucket_hash& bucket) { m_hash = bucket.m_hash; }
+	void copy_hash(const hopscotch_bucket_hash& bucket) noexcept { m_hash = bucket.m_hash; }
 
-	void set_hash(std::size_t hash) { m_hash = static_cast<hash_type>(hash); }
+	void set_hash(std::size_t hash) noexcept { m_hash = static_cast<hash_type>(hash); }
 
 private:
 	hash_type m_hash;
@@ -637,8 +638,6 @@ public:
 			return std::addressof(*m_overflow_iterator);
 		}
 
-		//		template <typename U = iterator_bucket, typename std::enable_if<is_const>::type* = nullptr>
-
 		template <class U = hopscotch_hash, typename std::enable_if<!std::is_same<U, void>::value>::type* = nullptr>
 		typename std::conditional<is_const, const typename U::value_type*, typename U::value_type*>::type operator->() {
 			if (m_buckets_iterator != m_buckets_end_iterator) {
@@ -647,15 +646,6 @@ public:
 
 			return std::addressof(*m_overflow_iterator);
 		}
-
-		// template <typename U = iterator_bucket, typename std::enable_if<!is_const>::type* = nullptr>
-		// pointer operator->() {
-		// 	if (m_buckets_iterator != m_buckets_end_iterator) {
-		// 		return std::addressof(m_buckets_iterator->get_value());
-		// 	}
-
-		// 	return std::addressof(*m_overflow_iterator);
-		// }
 
 		hopscotch_iterator& operator++() {
 			if (m_buckets_iterator == m_buckets_end_iterator) {
@@ -676,11 +666,11 @@ public:
 			return tmp;
 		}
 
-		friend bool operator==(const hopscotch_iterator& lhs, const hopscotch_iterator& rhs) {
+		friend bool operator==(const hopscotch_iterator& lhs, const hopscotch_iterator& rhs) noexcept {
 			return lhs.m_buckets_iterator == rhs.m_buckets_iterator && lhs.m_overflow_iterator == rhs.m_overflow_iterator;
 		}
 
-		friend bool operator!=(const hopscotch_iterator& lhs, const hopscotch_iterator& rhs) { return !(lhs == rhs); }
+		friend bool operator!=(const hopscotch_iterator& lhs, const hopscotch_iterator& rhs) noexcept { return !(lhs == rhs); }
 
 	private:
 		iterator_bucket m_buckets_iterator;
@@ -738,7 +728,7 @@ public:
 		return *this;
 	}
 
-	allocator_type get_allocator() const { return m_buckets.get_allocator(); }
+	allocator_type get_allocator() const noexcept { return m_buckets.get_allocator(); }
 
 	/*
 	 * Iterators
@@ -1126,9 +1116,11 @@ public:
 		return m_overflow_elements.key_comp();
 	}
 
-	size_type allocated_mem_size() {
+	size_type allocated_mem_size() const noexcept {
+		// Size of buckets + size of overflow container elements + extra size for pointer in the overflow containder (either list or set)
 		return m_buckets.capacity() * sizeof(hopscotch_bucket) +
-			   m_overflow_elements.size() * sizeof(typename overflow_container_type::value_type);
+			   m_overflow_elements.size() *
+				   (sizeof(typename overflow_container_type::value_type) + 2 * sizeof(typename overflow_container_type::pointer));
 	}
 
 private:
@@ -1358,7 +1350,8 @@ private:
 		}
 
 		// Load factor is too low or a rehash will not change the neighborhood, put the value in overflow list
-		if (load_factor() < MIN_LOAD_FACTOR_FOR_REHASH || !will_neighborhood_change_on_rehash(ibucket_for_hash)) {
+		const auto load_f = load_factor();
+		if (load_f < m_max_load_factor && (load_f < MIN_LOAD_FACTOR_FOR_REHASH || !will_neighborhood_change_on_rehash(ibucket_for_hash))) {
 			auto it_insert = m_overflow_elements.insert(m_overflow_elements.end(), std::forward<P>(value));
 			m_buckets[ibucket_for_hash].set_overflow(true);
 			m_nb_elements++;
@@ -1397,7 +1390,7 @@ private:
 	 * Return the index of an empty bucket in m_buckets.
 	 * If none, the returned index equals m_buckets.size()
 	 */
-	std::size_t find_empty_bucket(std::size_t ibucket_start) const {
+	std::size_t find_empty_bucket(std::size_t ibucket_start) const noexcept {
 		const std::size_t limit = std::min(ibucket_start + MAX_PROBES_FOR_EMPTY_BUCKET, m_buckets.size());
 		for (; ibucket_start < limit; ibucket_start++) {
 			if (m_buckets[ibucket_start].is_empty()) {
@@ -1466,12 +1459,12 @@ private:
 		return false;
 	}
 
-	iterator_buckets get_first_non_empty_buckets_iterator() {
+	iterator_buckets get_first_non_empty_buckets_iterator() noexcept {
 		auto it_first = static_cast<const hopscotch_hash*>(this)->get_first_non_empty_buckets_iterator();
 		return m_buckets.begin() + std::distance(m_buckets.cbegin(), it_first);
 	}
 
-	const_iterator_buckets get_first_non_empty_buckets_iterator() const {
+	const_iterator_buckets get_first_non_empty_buckets_iterator() const noexcept {
 		auto begin = m_buckets.cbegin();
 		while (begin != m_buckets.cend() && begin->is_empty()) {
 			++begin;

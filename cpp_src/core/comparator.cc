@@ -74,7 +74,41 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 	if (cmpEqualPosition.IsBinded()) {
 		return cmpEqualPosition.Compare(data, *this);
 	}
-	if (fields_.getTagsPathsLength() > 0) {
+	if (fields_.getTagsPathsLength() == 0) {
+		if (cond_ == CondAllSet) clearIndividualAllSetValues();
+		// Comparing field from payload by offset (fast path)
+
+		// Special case: compare by composite condition. Pass pointer to PayloadValue
+		if (type_.Is<KeyValueType::Composite>()) return compare(&data);
+
+		// Check if we have column (rawData_), then go to fastest path with column
+		if (rawData_) return compare(rawData_ + rowId * sizeof_);
+
+		// Not array: Just compare field by offset in PayloadValue
+		if (!isArray_) return compare(data.Ptr() + offset_);
+
+		const PayloadFieldValue::Array *arr = reinterpret_cast<const PayloadFieldValue::Array *>(data.Ptr() + offset_);
+
+		switch (cond_) {
+			case CondEmpty:
+				return arr->len == 0;
+			case CondAny:
+				if (arr->len == 0) return false;
+				break;
+			default:
+				break;
+		}
+
+		const uint8_t *ptr = data.Ptr() + arr->offset;
+		if (cond_ == CondDWithin) {
+			if (arr->len != 2 || !type_.Is<KeyValueType::Double>()) throw Error(errQueryExec, "DWithin with not point data");
+			return cmpGeom.Compare({*reinterpret_cast<const double *>(ptr), *reinterpret_cast<const double *>(ptr + sizeof_)});
+		}
+
+		for (int i = 0; i < arr->len; ++i, ptr += sizeof_) {
+			if (compare(ptr)) return true;
+		}
+	} else {
 		VariantArray rhs;
 		ConstPayload(payloadType_, data).GetByJsonPath(fields_.getTagsPath(0), rhs, type_);
 		if (isNumericComparison(rhs)) {
@@ -97,40 +131,6 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 		}
 		for (const Variant &kr : rhs) {
 			if (compare(kr)) return true;
-		}
-	} else {
-		if (cond_ == CondAllSet) clearIndividualAllSetValues();
-		// Comparing field from payload by offset (fast path)
-
-		// Special case: compare by composite condition. Pass pointer to PayloadValue
-		if (type_.Is<KeyValueType::Composite>()) return compare(&data);
-
-		// Check if we have column (rawData_), then go to fastest path with column
-		if (rawData_) return compare(rawData_ + rowId * sizeof_);
-
-		// Not array: Just compare field by offset in PayloadValue
-		if (!isArray_) return compare(data.Ptr() + offset_);
-
-		PayloadFieldValue::Array *arr = reinterpret_cast<PayloadFieldValue::Array *>(data.Ptr() + offset_);
-
-		switch (cond_) {
-			case CondEmpty:
-				return arr->len == 0;
-			case CondAny:
-				if (arr->len == 0) return false;
-				break;
-			default:
-				break;
-		}
-
-		uint8_t *ptr = data.Ptr() + arr->offset;
-		if (cond_ == CondDWithin) {
-			if (arr->len != 2 || !type_.Is<KeyValueType::Double>()) throw Error(errQueryExec, "DWithin with not point data");
-			return cmpGeom.Compare({*reinterpret_cast<const double *>(ptr), *reinterpret_cast<const double *>(ptr + sizeof_)});
-		}
-
-		for (int i = 0; i < arr->len; i++, ptr += sizeof_) {
-			if (compare(ptr)) return true;
 		}
 	}
 

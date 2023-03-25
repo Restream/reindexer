@@ -18,7 +18,7 @@ public:
 
 	FastIndexText(const FastIndexText& other) : Base(other) {
 		initConfig(other.GetConfig());
-		for (auto& idx : this->idx_map) idx.second.VDocID() = FtKeyEntryData::ndoc;
+		for (auto& idx : this->idx_map) idx.second.SetVDocID(FtKeyEntryData::ndoc);
 		this->CommitFulltext();
 	}
 
@@ -26,7 +26,7 @@ public:
 		initConfig();
 	}
 	std::unique_ptr<Index> Clone() override;
-	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
+	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
 					  const RdxContext&) override final;
 	IndexMemStat GetMemStat(const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;

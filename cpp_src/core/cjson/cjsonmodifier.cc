@@ -233,7 +233,7 @@ bool CJsonModifier::updateFieldInTuple(Context &ctx) {
 					} else {
 						switch (atag.Tag()) {
 							case TAG_OBJECT: {
-								TagsPathScope<IndexedTagsPath> pathScope(ctx.currObjPath, IndexedPathNode(tagName, i));
+								TagsPathScope<IndexedTagsPath> pathScope(ctx.currObjPath, tagName, i);
 								updateFieldInTuple(ctx);
 								break;
 							}
@@ -309,7 +309,7 @@ bool CJsonModifier::dropFieldInTuple(Context &ctx) {
 				} else {
 					switch (atag.Tag()) {
 						case TAG_OBJECT: {
-							TagsPathScope<IndexedTagsPath> pathScope(ctx.currObjPath, IndexedPathNode(tagName, i));
+							TagsPathScope<IndexedTagsPath> pathScope(ctx.currObjPath, tagName, i);
 							dropFieldInTuple(ctx);
 							break;
 						}

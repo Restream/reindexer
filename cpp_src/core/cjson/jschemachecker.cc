@@ -28,40 +28,41 @@ bool JsonSchemaChecker::isSimpleType(std::string_view tp) {
 }
 
 std::string JsonSchemaChecker::createType(const PrefixTree::PrefixTreeNode* node, const std::string& typeName) {
+	using namespace std::string_view_literals;
 	JsonSchemaChecker::TypeDescr typeDescr;
 	if (indexes_.find(typeName) != indexes_.end()) return typeName;
-	if (node->children_.empty() && node->props_.allowAdditionalProps == true) {
+	if (node->children.empty() && node->props.allowAdditionalProps == true) {
 		return std::string("any");
 	}
 	std::string tpName(typeName);
 	if (tpName.empty()) {
-		tpName = "type_" + std::to_string(typeIndex_);
-		typeIndex_++;
+		tpName = "type_" + std::to_string(typeIndex_++);
 	}
-	for (auto it = node->children_.begin(); it != node->children_.end(); ++it) {
+	for (const auto& ch : node->children) {
 		SubElement subElement;
-		subElement.required = it->second->props_.isRequired;
-		subElement.array = it->second->props_.isArray;
-		if (isSimpleType(it->second->props_.type)) {
-			if (!it->second->children_.empty()) {
+		const auto& chProps = ch.second->props;
+		subElement.required = chProps.isRequired;
+		subElement.array = chProps.isArray;
+		if (isSimpleType(chProps.type)) {
+			if (!ch.second->children.empty()) {
 				throw Error(errLogic, "Simple type has childs");
 			}
-			subElement.typeName = it->second->props_.type;
+			subElement.typeName = chProps.type;
 
-		} else if (it->second->props_.type == "object") {
-			subElement.typeName = createType(it->second.get());
+		} else if (chProps.type == "object"sv) {
+			subElement.typeName = createType(ch.second.get());
 		} else {
-			throw Error(errLogic, "Incorrect schema type [%s]", it->second->props_.type);
+			throw Error(errLogic, "Incorrect schema type [%s]", chProps.type);
 		}
 		auto typeIndexIt = indexes_.find(subElement.typeName);
 		if (typeIndexIt == indexes_.end()) throw Error(errLogic, "Incorrect type %s", subElement.typeName);
 		subElement.typeIndex = typeIndexIt->second;
-		typeDescr.subElementsTable.emplace_back(it->first, subElement);
+		typeDescr.subElementsTable.emplace_back(ch.first, std::move(subElement));
 	}
 	typeDescr.name = tpName;
-	typeDescr.allowAdditionalProps = node->props_.allowAdditionalProps;
+	typeDescr.allowAdditionalProps = node->props.allowAdditionalProps;
 	typeDescr.init();
-	typesTable_.push_back(std::move(typeDescr));
+	typesTable_.emplace_back(std::move(typeDescr));
 	indexes_.insert(std::make_pair(tpName, typesTable_.size() - 1));
 	return tpName;
 }

@@ -3,9 +3,10 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <limits>
+#include <ostream>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include "estl/span.h"
 #include "tools/jsonstring.h"

@@ -26,6 +26,8 @@ struct ParsedQrRawBuffer {
 	ResultSerializer::ParsingData parsingData;
 };
 
+struct LazyQueryResultsMode {};
+
 using std::chrono::seconds;
 using std::chrono::milliseconds;
 
@@ -36,7 +38,10 @@ class CoroQueryResults {
 public:
 	using NsArray = h_vector<Namespace*, 1>;
 
-	CoroQueryResults(int fetchFlags = 0, int fetchAmount = 0, bool lazyMode = false) noexcept : i_(fetchFlags, fetchAmount, lazyMode) {}
+	CoroQueryResults(int fetchFlags = 0, int fetchAmount = 0) noexcept : i_(fetchFlags, fetchAmount, false) {}
+	// This constructor enables lazy parsing for aggregations and explain results. This mode is usefull for raw buffer qr's proxying on
+	// sharded server
+	CoroQueryResults(int fetchFlags, int fetchAmount, LazyQueryResultsMode) noexcept : i_(fetchFlags, fetchAmount, true) {}
 	CoroQueryResults(const CoroQueryResults&) = delete;
 	CoroQueryResults(CoroQueryResults&& o) noexcept : i_(std::move(o.i_)) { o.setClosed(); }
 	CoroQueryResults& operator=(const CoroQueryResults&) = delete;
@@ -65,12 +70,24 @@ public:
 		std::string_view GetRaw();
 		const JoinedData& GetJoined();
 		Iterator& operator++();
-		Error Status() const noexcept { return qr_->i_.status_; }
+		Error Status() const noexcept {
+			if (!qr_->i_.status_.ok()) {
+				return qr_->i_.status_;
+			}
+			if (!isAvailable()) {
+				static const Error kErrUnavailable(errNotValid, "Requested item's index in not available in this QueryResults");
+				return kErrUnavailable;
+			}
+			return Error();
+		}
 		bool operator!=(const Iterator& other) const noexcept { return idx_ != other.idx_; }
 		bool operator==(const Iterator& other) const noexcept { return idx_ == other.idx_; }
 		Iterator& operator*() { return *this; }
+
 		void readNext();
 		void getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen = true) const;
+		void checkIdx() const;
+		bool isAvailable() const noexcept { return idx_ >= qr_->i_.fetchOffset_ && idx_ < qr_->i_.queryParams_.qcount; }
 
 		const CoroQueryResults* qr_;
 		int idx_, pos_, nextPos_;
@@ -147,6 +164,7 @@ private:
 	bool holdsRemoteData() const noexcept {
 		return i_.conn_ && i_.queryID_.main >= 0 && i_.fetchOffset_ + i_.queryParams_.count < i_.queryParams_.qcount;
 	}
+	bool hadFetchedRemoteData() const noexcept { return i_.fetchOffset_ > 0; }
 	void setClosed() noexcept {
 		i_.conn_ = nullptr;
 		i_.queryID_ = RPCQrId{};

@@ -47,6 +47,9 @@ public:
 	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override;
 	void EnableUpdatesCountingMode(bool val) override { tracker_.enableCountingMode(val); }
 
+	void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &) override;
+	bool IsDestroyPartSupported() const noexcept override { return true; }
+
 protected:
 	bool tryIdsetCache(const VariantArray &keys, CondType condition, SortType sortId,
 					   const std::function<bool(SelectKeyResult &, size_t &)> &selector, SelectKeyResult &res);

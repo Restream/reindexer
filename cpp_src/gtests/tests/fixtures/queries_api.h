@@ -1560,9 +1560,10 @@ protected:
 		frameFacet(arrayFacetByCount, facetOffset, facetLimit);
 
 		ASSERT_EQ(testQr.GetAggregationResults().size(), 10);
-		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[0].value, yearSum / checkQr.Count()) << "Aggregation Avg result is incorrect!";
-		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[1].value, yearSum) << "Aggregation Sum result is incorrect!";
-		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[2].value, packagesMin) << "Aggregation Min result is incorrect!";
+		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[0].GetValueOrZero(), yearSum / checkQr.Count())
+			<< "Aggregation Avg result is incorrect!";
+		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[1].GetValueOrZero(), yearSum) << "Aggregation Sum result is incorrect!";
+		EXPECT_DOUBLE_EQ(testQr.GetAggregationResults()[2].GetValueOrZero(), packagesMin) << "Aggregation Min result is incorrect!";
 		checkFacetUnordered(testQr.GetAggregationResults()[3].facets, singlefieldFacetUnordered, "SinglefieldUnordered");
 		checkFacet(testQr.GetAggregationResults()[4].facets, singlefieldFacetByName, "SinglefieldName");
 		checkFacet(testQr.GetAggregationResults()[5].facets, singlefieldFacetByCount, "SinglefieldCount");
@@ -1604,7 +1605,7 @@ protected:
 					const auto& aggRes1 = rhs.aggregationResults[i];
 					const auto& aggRes2 = lhs.aggregationResults[i];
 					EXPECT_EQ(aggRes1.type, aggRes2.type);
-					EXPECT_DOUBLE_EQ(aggRes1.value, aggRes2.value);
+					EXPECT_DOUBLE_EQ(aggRes1.GetValueOrZero(), aggRes2.GetValueOrZero());
 					EXPECT_EQ(aggRes1.fields.size(), aggRes2.fields.size());
 					if (aggRes1.fields.size() == aggRes2.fields.size()) {
 						for (size_t j = 0; j < aggRes1.fields.size(); ++j) {

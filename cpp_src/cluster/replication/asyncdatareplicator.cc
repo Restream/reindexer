@@ -36,7 +36,7 @@ bool AsyncDataReplicator::IsExpectingStartup() const noexcept {
 
 void AsyncDataReplicator::Run() {
 	auto localNamespaces = getLocalNamespaces();
-	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> namespaces;
+	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces;
 	{
 		std::lock_guard lck(mtx_);
 		if (!isExpectingStartup()) {

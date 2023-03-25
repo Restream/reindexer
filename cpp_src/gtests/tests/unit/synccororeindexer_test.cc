@@ -649,3 +649,69 @@ TEST(SyncCoroRx, QrInvalidation) {
 		ASSERT_TRUE(false) << err.what();
 	}
 }
+
+TEST(SyncCoroRx, QRWithMultipleIterationLoops) {
+	// Check if iterator has error status if user attempts to iterate over qrs, which were already fetched
+	const std::string kTestDbPath = fs::JoinPath(fs::GetTempDir(), "SyncCoroRx/QRWithMultipleIterationLoops");
+	reindexer::fs::RmDirAll(kTestDbPath);
+	const std::string kNsName = "ns_test";
+	constexpr unsigned kFetchCount = 50;
+	constexpr unsigned kNsSize = kFetchCount * 3;
+	client::ReindexerConfig cfg(kFetchCount);
+
+	ServerControl server;
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kTestDbPath, "db"));
+
+	// Reconnect with correct options
+	client::Reindexer rx(cfg);
+	Error err = rx.Connect(server.Get()->kRPCDsn);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rx.Status(true);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rx.OpenNamespace(kNsName);
+	ASSERT_TRUE(err.ok()) << err.what();
+	IndexDef indDef("id", "hash", "int", IndexOpts().PK());
+	err = rx.AddIndex(kNsName, indDef);
+	ASSERT_TRUE(err.ok()) << err.what();
+	SyncCoroRxHelpers::FillData(rx, kNsName, kNsSize);
+
+	client::QueryResults qr;
+	err = rx.Select(Query(kNsName), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), kNsSize);
+	WrSerializer ser;
+	// First iteration loop (all of the items must be valid)
+	for (auto& it : qr) {
+		ser.Reset();
+		ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+		err = it.GetJSON(ser, false);
+		ASSERT_TRUE(err.ok()) << err.what();
+		auto item = it.GetItem();
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	}
+	// Second iteration loop (unavailable items must be invalid)
+	unsigned id = 0;
+	for (auto& it : qr) {
+		ser.Reset();
+		if (id >= kNsSize - kFetchCount) {
+			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+			err = it.GetJSON(ser, false);
+			ASSERT_TRUE(err.ok()) << err.what();
+			EXPECT_EQ(fmt::sprintf(R"js({"id":%d,"val":"aaaaaaaaaaaaaaa"})js", id), ser.Slice());
+		} else {
+			EXPECT_FALSE(it.Status().ok()) << it.Status().what();
+			err = it.GetJSON(ser, false);
+			EXPECT_FALSE(err.ok()) << err.what();
+			auto item = it.GetItem();
+			EXPECT_FALSE(item.Status().ok()) << item.Status().what();
+			err = it.GetCJSON(ser, false);
+			EXPECT_FALSE(err.ok()) << err.what();
+			err = it.GetMsgPack(ser, false);
+			EXPECT_FALSE(err.ok()) << err.what();
+		}
+		++id;
+	}
+	err = rx.Stop();
+	ASSERT_TRUE(err.ok()) << err.what();
+}

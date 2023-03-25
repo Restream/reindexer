@@ -13,6 +13,17 @@ namespace client {
 class ResultSerializer : public Serializer {
 public:
 	using Serializer::Serializer;
+	enum Option { LazyMode = 0x1, ClearAggregations = 0x1 << 1 };
+	class Options {
+	public:
+		explicit Options(unsigned v = 0) noexcept : v_(v) {}
+
+		bool IsWithLazyMode() const noexcept { return v_ & LazyMode; }
+		bool IsWithClearAggs() const noexcept { return v_ & ClearAggregations; }
+
+	private:
+		unsigned v_;
+	};
 
 	struct ItemParams {
 		int id = -1;
@@ -50,9 +61,9 @@ public:
 		Serializer ser(Buf(), Len());
 		return ser.GetVarUint() & kResultsWithPayloadTypes;
 	}
-	void GetRawQueryParams(QueryParams &ret, const std::function<void(int nsId)> &updatePayloadFunc, bool lazyMode,
+	void GetRawQueryParams(QueryParams &ret, const std::function<void(int nsId)> &updatePayloadFunc, Options options,
 						   ParsingData &parsingData);
-	void GetExtraParams(QueryParams &ret, bool lazyMode);
+	void GetExtraParams(QueryParams &ret, Options opts);
 	ItemParams GetItemData(int flags, int shardId);
 };
 

@@ -85,12 +85,12 @@ private:
 
 	constexpr static unsigned kTotalItemsMainJoinNs = 1000000;
 
-	vector<std::string> countries_;
-	vector<std::string> countryLikePatterns_;
-	vector<std::string> locations_;
-	vector<int> start_times_;
-	vector<vector<int>> packages_;
-	vector<vector<int>> priceIDs_;
+	std::vector<std::string> countries_;
+	std::vector<std::string> countryLikePatterns_;
+	std::vector<std::string> locations_;
+	std::vector<int> start_times_;
+	std::vector<std::vector<int>> packages_;
+	std::vector<std::vector<int>> priceIDs_;
 #if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 	constexpr static unsigned idsetsSz_[] = {10, 100, 500, 2000, 20000};
 #else	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)

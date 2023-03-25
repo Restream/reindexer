@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/comparator.h"
 #include "core/indexopts.h"
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadtype.h"
@@ -13,7 +14,21 @@ class FieldsComparator {
 public:
 	FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType);
 	bool Compare(const PayloadValue& item);
-	double Cost(int expectedIterations) const noexcept { return expectedIterations + 1; }
+	double Cost(int expectedIterations) const noexcept {
+		double cost = 1.0;
+		bool hasNonIdxFields = true;
+		if (ctx_.size()) {
+			if (ctx_[0].lCtx_.fields_.getTagsPathsLength() > 0) {
+				cost += expectedIterations * kNonIdxFieldComparatorCostMultiplier;
+				hasNonIdxFields = false;
+			}
+			if (ctx_[0].rCtx_.fields_.getTagsPathsLength() > 0) {
+				cost += expectedIterations * kNonIdxFieldComparatorCostMultiplier;
+				hasNonIdxFields = false;
+			}
+		}
+		return hasNonIdxFields ? cost : expectedIterations + cost;
+	}
 	const std::string& Name() const noexcept { return name_; }
 	std::string Dump() const { return Name(); }
 	int GetMatchedCount() const noexcept { return matchedCount_; }

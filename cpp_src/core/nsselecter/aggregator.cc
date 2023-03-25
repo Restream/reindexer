@@ -231,11 +231,7 @@ Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, 
 			distincts_.reset(new HashSetVariantRelax(16, DistinctHasher(payloadType, fields), RelaxVariantCompare(payloadType, fields)));
 			break;
 		case AggMin:
-			result_ = std::numeric_limits<double>::max();
-			break;
 		case AggMax:
-			result_ = std::numeric_limits<double>::min();
-			break;
 		case AggAvg:
 		case AggSum:
 			break;
@@ -284,12 +280,12 @@ AggregationResult Aggregator::GetResult() const {
 
 	switch (aggType_) {
 		case AggAvg:
-			ret.value = double(hitCount_ == 0 ? 0 : (result_ / hitCount_));
+			if (result_) ret.SetValue(double(hitCount_ == 0 ? 0 : (*result_ / hitCount_)));
 			break;
 		case AggSum:
 		case AggMin:
 		case AggMax:
-			ret.value = result_;
+			if (result_) ret.SetValue(*result_);
 			break;
 		case AggFacet:
 			std::visit(overloaded{[&](const SinglefieldOrderedMap &fm) { fillOrderedFacetResult(ret.facets, fm, offset_, limit_); },
@@ -368,14 +364,14 @@ void Aggregator::aggregate(const Variant &v) {
 	switch (aggType_) {
 		case AggSum:
 		case AggAvg:
-			result_ += v.As<double>();
+			result_ = (result_ ? *result_ : 0) + v.As<double>();
 			hitCount_++;
 			break;
 		case AggMin:
-			result_ = std::min(v.As<double>(), result_);
+			result_ = result_ ? std::min(v.As<double>(), *result_) : v.As<double>();
 			break;
 		case AggMax:
-			result_ = std::max(v.As<double>(), result_);
+			result_ = result_ ? std::max(v.As<double>(), *result_) : v.As<double>();
 			break;
 		case AggFacet:
 			std::visit(overloaded{[&v](SinglefieldUnorderedMap &fm) { ++fm[v]; }, [&v](SinglefieldOrderedMap &fm) { ++fm[v]; },

@@ -18,10 +18,10 @@ public:
 
 private:
 	struct SubElement {
-		bool required = false;
-		bool array = false;
 		std::string typeName;
 		int typeIndex = -1;
+		bool required = false;
+		bool array = false;
 	};
 
 	struct ValAppearance {
@@ -38,7 +38,7 @@ private:
 			}
 		}
 		std::string name;
-		fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str> subElementsIndex;
+		fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str> subElementsIndex;
 		bool allowAdditionalProps = false;
 		std::vector<std::pair<std::string, SubElement>> subElementsTable;
 	};

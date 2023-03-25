@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-void FtFuzzyConfig::parse(std::string_view json, const fast_hash_map<std::string, int> &) {
+void FtFuzzyConfig::parse(std::string_view json, const RHashMap<std::string, int> &) {
 	if (json.empty()) return;
 
 	try {

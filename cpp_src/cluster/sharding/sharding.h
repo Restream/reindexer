@@ -163,7 +163,7 @@ private:
 	using ConnectionTable = fast_hash_map<int, ConnectionsPtr>;
 	// nsName - connectionTable
 	// nsName=="" for all connection
-	using ConnectionsCache = fast_hash_map<std::string, ConnectionTable, nocase_hash_str, nocase_equal_str>;
+	using ConnectionsCache = fast_hash_map<std::string, ConnectionTable, nocase_hash_str, nocase_equal_str, nocase_less_str>;
 	ConnectionsCache connectionsCache_;
 	NetworkMonitor networkMonitor_;
 };

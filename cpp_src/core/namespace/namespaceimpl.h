@@ -353,6 +353,7 @@ public:
 	void ApplySnapshotChunk(const SnapshotChunk &ch, bool isInitialLeaderSync, const RdxContext &ctx);
 	void GetSnapshot(Snapshot &snapshot, const SnapshotOpts &opts, const RdxContext &ctx);
 	void SetTagsMatcher(TagsMatcher &&tm, const RdxContext &ctx);
+	void SetDestroyFlag() noexcept { dbDestroyed_ = true; }
 
 protected:
 	struct SysRecordsVersions {
@@ -425,7 +426,9 @@ protected:
 
 	void putToJoinCache(JoinCacheRes &res, std::shared_ptr<JoinPreResult> preResult) const;
 	void putToJoinCache(JoinCacheRes &res, JoinCacheVal &&val) const;
-	void getFromJoinCache(JoinCacheRes &ctx) const;
+	void getFromJoinCache(const Query &, const JoinedQuery &, JoinCacheRes &out) const;
+	void getFromJoinCache(const Query &, JoinCacheRes &out) const;
+	void getFromJoinCacheImpl(JoinCacheRes &out) const;
 	void getIndsideFromJoinCache(JoinCacheRes &ctx) const;
 
 	const FieldsSet &pkFields();
@@ -449,7 +452,7 @@ protected:
 	bool SortOrdersBuilt() const noexcept { return optimizationState_.load(std::memory_order_acquire) == OptimizationCompleted; }
 
 	IndexesStorage indexes_;
-	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str> indexesNames_;
+	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str> indexesNames_;
 	// All items with data
 	Items items_;
 	std::vector<IdType> free_;
@@ -534,8 +537,8 @@ private:
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
 	std::chrono::seconds lastExpirationCheckTs_;
 	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_ = {0};
-
 	cluster::INsDataReplicator *clusterizator_;
+	std::atomic<bool> dbDestroyed_{false};
 };
 
 }  // namespace reindexer

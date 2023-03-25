@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include "estl/fast_hash_traits.h"
 #include "estl/intrusive_ptr.h"
 
 namespace reindexer {
@@ -109,6 +110,11 @@ inline static bool operator==(const key_string &rhs, const key_string &lhs) noex
 // It assumes, that all strings in payload are intrusive_ptr
 inline void key_string_add_ref(std::string *str) noexcept { intrusive_ptr_add_ref(reinterpret_cast<base_key_string *>(str)); }
 inline void key_string_release(std::string *str) noexcept { intrusive_ptr_release(reinterpret_cast<base_key_string *>(str)); }
+
+template <>
+struct is_recommends_sc_hash_map<key_string> {
+	constexpr static bool value = true;
+};
 
 }  // namespace reindexer
 namespace std {

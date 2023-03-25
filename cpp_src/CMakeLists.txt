@@ -1,7 +1,13 @@
 cmake_minimum_required(VERSION 3.0)
 
 # Configure cmake options
-set(CMAKE_CXX_STANDARD 17)
+if (MSVC)
+  # Enable C++20 for windows build to be able to use designated initializers.
+  # GCC/Clang support them even with C++17.
+  set(CMAKE_CXX_STANDARD 20)
+else ()
+  set(CMAKE_CXX_STANDARD 17)
+endif ()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(CMakeToolsHelpers OPTIONAL)
 include(ExternalProject)
@@ -29,7 +35,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "4.9.0")
+set (REINDEXER_VERSION_DEFAULT "4.10.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -678,6 +684,7 @@ if (NOT WIN32)
     "core/expressiontree.h" "tools/lsn.h" "core/cjson/tagspath.h" "estl/cow.h" "core/shardedmeta.h" "estl/overloaded.h" "estl/one_of.h"
     "core/queryresults/localqueryresults.h"
     "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h" "estl/chunk.h"
+    "estl/fast_hash_traits.h"
     "client/item.h" "client/resultserializer.h"
     "client/internalrdxcontext.h" "client/reindexer.h" "client/reindexerconfig.h"
     "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h" "client/connectopts.h"

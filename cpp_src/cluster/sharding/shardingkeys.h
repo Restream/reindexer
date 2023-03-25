@@ -118,7 +118,7 @@ private:
 	};
 	fast_hash_set<int> getShardsIds(const NsData& ns) const;
 
-	fast_hash_map<NsName, NsData, nocase_hash_str, nocase_equal_str> keys_;
+	fast_hash_map<NsName, NsData, nocase_hash_str, nocase_equal_str, nocase_less_str> keys_;
 	// ns
 	//   value_i1 - shardNodeId1
 	//   value_i2 - shardNodeId2

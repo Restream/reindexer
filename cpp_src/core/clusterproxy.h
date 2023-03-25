@@ -25,7 +25,7 @@ namespace reindexer {
 
 class ClusterProxy {
 public:
-	ClusterProxy(ReindexerConfig cfg, ActivityContainer &activities);
+	ClusterProxy(ReindexerConfig cfg, ActivityContainer &activities, ReindexerImpl::CallbackMap &&proxyCallbacks);
 	~ClusterProxy();
 	Error Connect(const std::string &dsn, ConnectOpts opts = ConnectOpts());
 	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts, const NsReplicationOpts &replOpts, const RdxContext &ctx) {
@@ -590,5 +590,7 @@ private:
 	}
 	void clientToCoreQueryResults(client::QueryResults &, LocalQueryResults &);
 	bool shouldProxyQuery(const Query &q);
+
+	ReindexerImpl::CallbackMap addCallbacks(ReindexerImpl::CallbackMap &&callbackMap) const;
 };
 }  // namespace reindexer

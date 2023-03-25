@@ -33,7 +33,7 @@ public:
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&, FtPreselectT&&,
 							   const RdxContext&) override;
 	void UpdateSortedIds(const UpdateSortedContext&) override {}
-	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
+	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
 							  const RdxContext&) = 0;
 	void SetOpts(const IndexOpts& opts) override;
 	void Commit() override final {
@@ -77,7 +77,8 @@ protected:
 
 	std::shared_ptr<FtIdSetCache> cache_ft_;
 	std::shared_ptr<PreselectedFtIdSetCache> preselected_cache_ft_;
-	fast_hash_map<std::string, int> ftFields_;
+
+	RHashMap<std::string, int> ftFields_;
 	std::unique_ptr<BaseFTConfig> cfg_;
 	Mutex mtx_;
 };

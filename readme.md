@@ -642,8 +642,9 @@ will create the following nested objects: nested, nested2, nested3, nested4 and 
 Example of using Update queries in golang code:
 
 ```go
-db.Query("items").Where("id", reindexer.EQ, 40).Set("field1", values).Update()
+db.Query("items").Where("id", reindexer.EQ, 40).Set("field1", value1).Set("field2", value2).Update()
 ```
+- there can be multiple `.Set` expressoins - one for a field. Also, it is possible to combine several `Set...` expressions of different types in one query, like this: `Set().SetExpression().SetObject()...`
 
 Reindexer enables to update and add object fields. Object can be set by either a struct, a map or a byte array (that is a JSON version of object representation).
 
@@ -682,7 +683,7 @@ WHERE condition;
 ```
 
 ```go
-db.Query("items").Where("id", reindexer.EQ, 40).Drop("field1").Update()
+db.Query("items").Where("id", reindexer.EQ, 40).Drop("field1").Drop("field2").Update()
 ```
 
 Reindexer update mechanism enables to modify array fields: to modify a certain item of an existing array or even to replace an entire field.

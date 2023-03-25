@@ -74,14 +74,14 @@ class AsyncReplNodeConfig {
 public:
 	class NamespaceListImpl {
 	public:
-		NamespaceListImpl() = default;
-		NamespaceListImpl(fast_hash_set<std::string, nocase_hash_str, nocase_equal_str>&& n) : data(std::move(n)) {}
+		NamespaceListImpl() {}
+		NamespaceListImpl(fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str>&& n) : data(std::move(n)) {}
 		bool IsInList(std::string_view ns, size_t hash) const noexcept { return data.empty() || (data.find(ns, hash) != data.end()); }
 		bool IsInList(std::string_view ns) const noexcept { return data.empty() || (data.find(ns) != data.end()); }
 		bool Empty() const noexcept { return data.empty(); }
 		bool operator==(const NamespaceListImpl& r) const noexcept { return data == r.data; }
 
-		const fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> data;
+		const fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> data;
 	};
 	using NamespaceList = intrusive_atomic_rc_wrapper<NamespaceListImpl>;
 
@@ -96,7 +96,7 @@ public:
 	void GetYAML(YAML::Node& yaml) const;
 
 	bool HasOwnNsList() const noexcept { return hasOwnNsList_; }
-	void SetOwnNamespaceList(fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> nss) {
+	void SetOwnNamespaceList(fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> nss) {
 		namespaces_ = make_intrusive<NamespaceList>(std::move(nss));
 		hasOwnNsList_ = true;
 	}
@@ -166,7 +166,7 @@ struct ClusterConfigData {
 	}
 
 	std::vector<ClusterNodeConfig> nodes;
-	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str> namespaces;
+	fast_hash_set<std::string, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces;
 	std::string appName = "rx_cluster_node";
 	int onlineUpdatesTimeoutSec = 20;
 	int syncTimeoutSec = 60;
@@ -271,7 +271,7 @@ struct AsyncReplConfigData {
 	int maxWALDepthOnForceSync = 1000;
 	std::vector<AsyncReplNodeConfig> nodes;
 	int onlineUpdatesDelayMSec = 100;
-	LogLevel logLevel = LogInfo;
+	LogLevel logLevel = LogNone;
 
 	bool operator==(const AsyncReplConfigData& rdata) const noexcept {
 		return (role == rdata.role) && (mode == rdata.mode) && (replThreadsCount == rdata.replThreadsCount) &&

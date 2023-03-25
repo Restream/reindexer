@@ -33,21 +33,24 @@ public:
 		lastUpdates_[nodeId] = updateId;
 	}
 	std::vector<int64_t> GetSynchronized(uint32_t synchronizedCount) const {
-		std::lock_guard lck(mtx_);
-		std::vector<int64_t> res = lastUpdates_;
+		std::vector<int64_t> res;
+		{
+			std::lock_guard lck(mtx_);
+			res = lastUpdates_;
+		}
 		filterNodesBySynchonizedCount(res, synchronizedCount);
 		return res;
 	}
 
 private:
-	void filterNodesByLastAcceptedId(std::vector<int64_t>& res, int64_t lastAcceptedId) const noexcept {
+	static void filterNodesByLastAcceptedId(std::vector<int64_t>& res, int64_t lastAcceptedId) noexcept {
 		for (auto& updateId : res) {
 			if (updateId < lastAcceptedId) {
 				updateId = kUnsynchronizedID;
 			}
 		}
 	}
-	void filterNodesBySynchonizedCount(std::vector<int64_t>& res, uint32_t synchronizedCount) const {
+	static void filterNodesBySynchonizedCount(std::vector<int64_t>& res, uint32_t synchronizedCount) {
 		std::map<int64_t, uint32_t> countingMap;
 		for (auto updateId : res) {
 			if (updateId != kUnsynchronizedID) {

@@ -221,6 +221,8 @@ type NamespaceMemStat struct {
 		TrackedUpdatesBuckets int64 `json:"tracked_updates_buckets"`
 		// Updates tracker map size in bytes
 		TrackedUpdatesSize int64 `json:"tracked_updates_size"`
+		// Updates tracker map overflow (number of elements, stored outside of the main buckets)
+		TrackedUpdatesOverflow int64 `json:"tracked_updates_overflow"`
 	} `json:"indexes"`
 	// Join cache stats. Stores results of selects to right table by ON condition
 	JoinCache CacheMemStat `json:"join_cache"`

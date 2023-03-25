@@ -78,6 +78,7 @@ Error RPCServerFake::Select(cproto::Context &ctx, p_string /*query*/, int /*flag
 		}
 		auto [it, inserted] = usedQrIds_.insert(qrId);
 		assert(inserted);
+		(void)it;
 		(void)inserted;
 		(void)it;
 	}

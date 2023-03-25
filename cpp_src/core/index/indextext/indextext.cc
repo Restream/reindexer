@@ -128,7 +128,7 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray &keys, Cache &cach
 	FtDSLQuery dsl(this->ftFields_, this->cfg_->stopWords, this->cfg_->extraWordSymbols);
 	dsl.parse(keys[0].As<std::string>());
 
-	auto mergedIds = Select(ftctx, dsl, inTransaction, std::move(mergeStatuses), std::is_same_v<Cache, FtIdSetCache>, rdxCtx);
+	auto mergedIds = Select(ftctx, std::move(dsl), inTransaction, std::move(mergeStatuses), std::is_same_v<Cache, FtIdSetCache>, rdxCtx);
 	SelectKeyResult res;
 	if (mergedIds) {
 		bool need_put = ckey.has_value();
@@ -138,7 +138,7 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray &keys, Cache &cach
 				auto d = ftctx->GetData();
 				size_t totalAreas = 0;
 				for (auto &area : d->holders_) {
-					totalAreas += area.second->GetAreasCount();
+					totalAreas += d->area_[area.second].GetAreasCount();
 				}
 				if (totalAreas > unsigned(config->maxTotalAreasToCache)) {
 					need_put = false;
@@ -149,8 +149,8 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray &keys, Cache &cach
 			// This areas will be shared via cache, so lazy commit may race
 			auto d = ftctx->GetData();
 			for (auto &area : d->holders_) {
-				if (!area.second->IsCommited()) {
-					area.second->Commit();
+				if (!d->area_[area.second].IsCommited()) {
+					d->area_[area.second].Commit();
 				}
 			}
 			cache.Put(*ckey, FtIdSetCacheVal{mergedIds, std::move(d)});

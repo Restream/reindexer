@@ -27,8 +27,9 @@ void FtDSLQuery::parse(const std::string &q) {
 	parse(utf16str);
 }
 void FtDSLQuery::parse(std::wstring &utf16str) {
-	int groupcnt = 0;
-	bool ingroup = false;
+	int groupTermCounter = 0;
+	bool inGroup = false;
+	int groupCounter = 0;
 	int maxPatternLen = 1;
 	h_vector<FtDslFieldOpts, 8> fieldsOpts;
 	fieldsOpts.insert(fieldsOpts.end(), std::max(int(fields_.size()), 1), {1.0, false});
@@ -60,30 +61,41 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 				it++;
 			}
 			if (it != utf16str.end() && (*it == '\'' || *it == '\"')) {
-				ingroup = !ingroup;
+				inGroup = !inGroup;
 				it++;
 				// closing group
-				if (!ingroup) {
+				if (!inGroup) {
 					int distance = 1;
 					if (it != utf16str.end() && *it == '~') {
 						++it;
 						if (it == utf16str.end()) {
 							throw Error(errParseDSL, "Expected digit after '~' operator in phrase, but found nothing");
 						}
-						wchar_t *end = nullptr, *start = &*it;
-						distance = wcstod(start, &end);
-						it += end - start;
-						if (end == start)
-							throw Error(errParseDSL, "Expected digit after '~' operator in phrase, but found '%c' ", char(*start));
-					}
-					assertf(groupcnt <= int(size()), "groupcnt=%d,size=%d", groupcnt, size());
-					if (groupcnt > 1) {
-						auto fteIt = end();
-						while (--groupcnt) {
-							fteIt--;
-							fteIt->opts.distance = distance;
-							fteIt->opts.op = OpAnd;
+						if (!std::isdigit(*it)) {
+							throw Error(errParseDSL, "Expected digit after '~' operator in phrase, but found '%c' ", char(*it));
 						}
+						wchar_t *end = nullptr, *start = &*it;
+						distance = wcstoul(start, &end, 10);
+						if (*end != 0 && !std::isspace(*end)) {
+							throw Error(errParseDSL, "Expected space after '~digit' operator in phrase, but found '%c' ", char(*it));
+						}
+						if (distance == 0) {
+							throw Error(errParseDSL, "Expected positive integer after '~', but found '0'");
+						}
+						it += end - start;
+					}
+					assertf(groupTermCounter <= int(size()), "groupTermCounter=%d,size=%d", groupTermCounter, size());
+					if (groupTermCounter > 1) {
+						auto fteIt = end();
+						while (--groupTermCounter >= 0) {
+							fteIt--;
+							if (groupTermCounter > 0) {
+								fteIt->opts.distance = distance;
+							}
+							fteIt->opts.groupNum = groupCounter;
+						}
+						groupTermCounter = 0;
+						groupCounter++;
 					}
 				}
 			}
@@ -138,11 +150,11 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 			if (int(fte.pattern.length()) > maxPatternLen) {
 				maxPatternLen = fte.pattern.length();
 			}
-			push_back(fte);
-			if (ingroup) groupcnt++;
+			emplace_back(std::move(fte));
+			if (inGroup) ++groupTermCounter;
 		}
 	}
-	if (ingroup) {
+	if (inGroup) {
 		throw Error(errParseDSL, "No closing quote in full text search query DSL");
 	}
 

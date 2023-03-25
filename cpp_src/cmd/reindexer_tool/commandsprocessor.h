@@ -38,7 +38,7 @@ protected:
 
 	Error process(const std::string& command);
 
-	string inFileName_;
+	std::string inFileName_;
 	CommandsExecutor<DBInterface> executor_;
 };
 

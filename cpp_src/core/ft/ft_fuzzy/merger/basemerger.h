@@ -15,7 +15,7 @@ class RdxContext;
 namespace search_engine {
 
 struct IDCtx {
-	const h_vector<IdRelType::PosType, 3> *data;
+	const RVector<IdRelType::PosType, 3> *data;
 	int pos;
 	double *max_proc;
 	size_t total_size;
