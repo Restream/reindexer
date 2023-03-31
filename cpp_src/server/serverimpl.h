@@ -68,6 +68,8 @@ private:
 	bool enableHandleSignals_ = false;
 	ev::async async_;
 	ev::dynamic_loop loop_;
+#ifndef REINDEX_WITH_ASAN
 	ServerMode mode_ = ServerMode::Builtin;
+#endif	// REINDEX_WITH_ASAN
 };
 }  // namespace reindexer_server

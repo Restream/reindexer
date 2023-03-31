@@ -210,43 +210,45 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 	if (!err.ok()) return err;
 
 	if (enableStorage && opts.IsOpenNamespaces()) {
+		std::sort(foundNs.begin(), foundNs.end(),
+				  [](const fs::DirEntry& ld, const fs::DirEntry& rd) { return ld.internalFilesCount > rd.internalFilesCount; });
 		const size_t maxLoadWorkers = ConcurrentNamespaceLoaders();
 		std::unique_ptr<std::thread[]> thrs(new std::thread[maxLoadWorkers]);
 		std::atomic_flag hasNsErrors = ATOMIC_FLAG_INIT;
+		std::atomic<unsigned> nsIdx = {0};
 		for (size_t i = 0; i < maxLoadWorkers; i++) {
-			thrs[i] = std::thread(
-				[&](size_t begin) {
-					for (size_t j = begin; j < foundNs.size(); j += maxLoadWorkers) {
-						auto& de = foundNs[j];
-						if (de.isDir && validateObjectName(de.name, true)) {
-							if (de.name[0] == '@') {
-								const std::string tmpPath = fs::JoinPath(storagePath_, de.name);
-								logPrintf(LogWarning, "Dropping tmp namespace '%s'", de.name);
-								if (fs::RmDirAll(tmpPath) < 0) {
-									logPrintf(LogWarning, "Failed to remove '%s' temporary namespace from filesystem, path: %s", de.name,
-											  tmpPath);
-									hasNsErrors.test_and_set(std::memory_order_relaxed);
-								}
-								continue;
-							}
-							auto status = OpenNamespace(de.name, StorageOpts().Enabled());
-							if (status.ok()) {
-								const RdxContext dummyCtx;
-								if (getNamespace(de.name, dummyCtx)->IsTemporary(dummyCtx)) {
-									logPrintf(LogWarning, "Dropping tmp namespace '%s'", de.name);
-									status = closeNamespace(de.name, dummyCtx, true, true);
-								}
-							}
-							if (!status.ok()) {
-								logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name, status.what());
+			thrs[i] = std::thread([&] {
+				for (unsigned idx = nsIdx.fetch_add(1, std::memory_order_relaxed); idx < foundNs.size();
+					 idx = nsIdx.fetch_add(1, std::memory_order_relaxed)) {
+					auto& de = foundNs[idx];
+					if (de.isDir && validateObjectName(de.name, true)) {
+						if (de.name[0] == '@') {
+							const std::string tmpPath = fs::JoinPath(storagePath_, de.name);
+							logPrintf(LogWarning, "Dropping tmp namespace '%s'", de.name);
+							if (fs::RmDirAll(tmpPath) < 0) {
+								logPrintf(LogWarning, "Failed to remove '%s' temporary namespace from filesystem, path: %s", de.name,
+										  tmpPath);
 								hasNsErrors.test_and_set(std::memory_order_relaxed);
 							}
+							continue;
+						}
+						auto status = OpenNamespace(de.name, StorageOpts().Enabled());
+						if (status.ok()) {
+							const RdxContext dummyCtx;
+							if (getNamespace(de.name, dummyCtx)->IsTemporary(dummyCtx)) {
+								logPrintf(LogWarning, "Dropping tmp namespace '%s'", de.name);
+								status = closeNamespace(de.name, dummyCtx, true, true);
+							}
+						}
+						if (!status.ok()) {
+							logPrintf(LogError, "Failed to open namespace '%s' - %s", de.name, status.what());
+							hasNsErrors.test_and_set(std::memory_order_relaxed);
 						}
 					}
-				},
-				i);
+				}
+			});
 		}
-		for (size_t i = 0; i < maxLoadWorkers; i++) thrs[i].join();
+		for (size_t i = 0; i < maxLoadWorkers; ++i) thrs[i].join();
 
 		if (!opts.IsAllowNamespaceErrors() && hasNsErrors.test_and_set(std::memory_order_relaxed)) {
 			return Error(errNotValid, "Namespaces load error");

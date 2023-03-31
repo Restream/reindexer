@@ -472,19 +472,17 @@ bool isPrintable(std::string_view str) noexcept {
 	if (str.length() > 256) {
 		return false;
 	}
-
-	for (int i = 0; i < int(str.length()); i++) {
-		if (unsigned(str.data()[i]) < 0x20) {
-			return false;
-		}
+	for (auto c : str) {
+		if (c < 0x20) return false;
 	}
 	return true;
 }
 
 bool isBlank(std::string_view str) noexcept {
 	if (str.empty()) return true;
-	for (size_t i = 0; i < str.length(); ++i)
-		if (!isspace(str[i])) return false;
+	for (auto c : str) {
+		if (!isspace(c)) return false;
+	}
 	return true;
 }
 

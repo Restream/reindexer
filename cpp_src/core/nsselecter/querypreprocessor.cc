@@ -271,13 +271,12 @@ bool QueryPreprocessor::ContainsFullTextIndexes() const {
 	// DO NOT use deducted sort order in the following cases:
 	// - query contains explicity specified sort order
 	// - query contains FullText query.
-	// - query contains limit and does not require full selection (in this case result will be sorted by internal IDs)
 	const bool disableOptimizedSortOrder = !query_.sortingEntries_.empty() || ContainsFullTextIndexes() || ctx.preResult;
-	if (disableOptimizedSortOrder) {
-		return query_.sortingEntries_;
-	}
-	const bool optimizedSortOrderMayForceAll = !ctx.isForceAll && query_.HasLimit();
-	return optimizedSortOrderMayForceAll ? query_.sortingEntries_ : detectOptimalSortOrder();
+	// Queries with ordered indexes may have different selection plan depending on filters' values.
+	// This may lead to items reordering when SingleRange becomes main selection method.
+	// By default all the results are ordereb by internal IDs, but with SingleRange results will be ordered by values first.
+	// So we're trying to order results by values in any case, even if there are no SingleRange in selection plan.
+	return disableOptimizedSortOrder ? query_.sortingEntries_ : detectOptimalSortOrder();
 }
 
 template <typename T>

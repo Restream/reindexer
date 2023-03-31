@@ -258,7 +258,7 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	magic := ser.GetUInt32()
 
 	if magic != cprotoMagic {
-		return fmt.Errorf("Invalid cproto magic '%08X'", magic)
+		return fmt.Errorf("invalid cproto magic '%08X'", magic)
 	}
 
 	version := ser.GetUInt16()
@@ -270,7 +270,7 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	version &= cprotoVersionMask
 
 	if version < cprotoMinCompatVersion {
-		return fmt.Errorf("Unsupported cproto version '%04X'. This client expects reindexer server v1.9.8+", version)
+		return fmt.Errorf("unsupported cproto version '%04X'. This client expects reindexer server v1.9.8+", version)
 	}
 
 	if c.owner.compression.EnableCompression && version >= cprotoMinSnappyVersion {
@@ -292,7 +292,7 @@ func (c *connection) readReply(hdr []byte) (err error) {
 			if compressed {
 				answ.decompress()
 			}
-			err = setReqId(answ)
+			trySetReqId(answ)
 		} else {
 			io.CopyN(ioutil.Discard, c.rdBuf, int64(size))
 		}
@@ -329,10 +329,7 @@ func (c *connection) readReply(hdr []byte) (err error) {
 	} else {
 		defer answ.FreeNoReply(rseq)
 		if needCancelAnswer(cmd) {
-			err = setReqId(answ)
-			if err != nil {
-				return
-			}
+			trySetReqId(answ)
 		}
 		return fmt.Errorf("unexpected answer: %v", answ)
 	}
@@ -348,8 +345,8 @@ func needCancelAnswer(cmd int) bool {
 	}
 }
 
-func setReqId(answ *NetBuffer) (err error) {
-	err = answ.parseArgs()
+func trySetReqId(answ *NetBuffer) {
+	err := answ.parseArgs()
 	if err != nil {
 		return
 	}
@@ -359,7 +356,6 @@ func setReqId(answ *NetBuffer) (err error) {
 			answ.uid = answ.args[2].(int64)
 		}
 	}
-	return
 }
 
 func (c *connection) write(buf []byte) {
@@ -498,8 +494,6 @@ func (c *connection) rpcCallAsync(ctx context.Context, cmd int, netTimeout uint3
 	c.requests[reqID].cmplLock.Unlock()
 
 	c.packRPC(cmd, seq, int(timeout.Milliseconds()), args...)
-
-	return
 }
 
 func (c *connection) rpcCall(ctx context.Context, cmd int, netTimeout uint32, args ...interface{}) (buf *NetBuffer, err error) {
@@ -527,7 +521,7 @@ for_loop:
 				break for_loop
 			} else {
 				if needCancelAnswer(bufPtr.cmd) {
-					setReqId(bufPtr.buf)
+					trySetReqId(bufPtr.buf)
 				}
 				bufPtr.buf.FreeNoReply(bufPtr.rseq)
 			}
@@ -631,7 +625,7 @@ func (c *connection) lastReadTime() time.Time {
 }
 
 func (c *connection) Close() {
-	c.onError(errors.New("Connection closed"))
+	c.onError(errors.New("connection closed"))
 }
 
 func (c *connection) Finalize() error {

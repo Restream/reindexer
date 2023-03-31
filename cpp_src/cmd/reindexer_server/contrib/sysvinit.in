@@ -16,7 +16,7 @@ config_file="/etc/reindexer.conf"
 
 cmd="${CMAKE_INSTALL_PREFIX}/bin/$service -c $config_file -d --pidfile=$pid_file"
 
-stop_attempts=5
+stop_attempts=40
 stop_timeout_sec=5
 
 # Add user, if not present

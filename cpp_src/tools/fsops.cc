@@ -13,24 +13,28 @@
 namespace reindexer {
 namespace fs {
 
-int MkDirAll(const std::string &path) {
-	std::string tmpStr = path;
-	char *p = nullptr, *tmp = tmpStr.data();
-	int err;
-	const auto len = tmpStr.size();
-	if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') tmp[len - 1] = 0;
-	for (p = tmp + 1; *p; p++) {
-		if (*p == '/' || *p == '\\') {
-			*p = 0;
-			err = mkdir(tmp, S_IRWXU);
-			if ((err < 0) && (errno != EEXIST)) return err;
-			*p = '/';
+[[nodiscard]] int MkDirAll(const std::string &path) noexcept {
+	try {
+		std::string tmpStr = path;
+		char *p = nullptr, *tmp = tmpStr.data();
+		int err;
+		const auto len = tmpStr.size();
+		if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') tmp[len - 1] = 0;
+		for (p = tmp + 1; *p; p++) {
+			if (*p == '/' || *p == '\\') {
+				*p = 0;
+				err = mkdir(tmp, S_IRWXU);
+				if ((err < 0) && (errno != EEXIST)) return err;
+				*p = '/';
+			}
 		}
+		return ((mkdir(tmp, S_IRWXU) < 0) && errno != EEXIST) ? -1 : 0;
+	} catch (std::exception &) {
+		return -1;
 	}
-	return ((mkdir(tmp, S_IRWXU) < 0) && errno != EEXIST) ? -1 : 0;
 }
 
-int RmDirAll(const std::string &path) {
+int RmDirAll(const std::string &path) noexcept {
 #ifndef _WIN32
 	return nftw(
 		path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64, FTW_DEPTH | FTW_PHYS);
@@ -40,21 +44,25 @@ int RmDirAll(const std::string &path) {
 #endif
 }
 
-int ReadFile(const std::string &path, std::string &content) {
-	FILE *f = fopen(path.c_str(), "rb");
-	if (!f) {
+[[nodiscard]] int ReadFile(const std::string &path, std::string &content) noexcept {
+	try {
+		FILE *f = fopen(path.c_str(), "rb");
+		if (!f) {
+			return -1;
+		}
+		fseek(f, 0, SEEK_END);
+		size_t sz = ftell(f);
+		content.resize(sz);
+		fseek(f, 0, SEEK_SET);
+		auto nread = fread(&content[0], 1, sz, f);
+		fclose(f);
+		return nread;
+	} catch (std::exception &) {
 		return -1;
 	}
-	fseek(f, 0, SEEK_END);
-	size_t sz = ftell(f);
-	content.resize(sz);
-	fseek(f, 0, SEEK_SET);
-	auto nread = fread(&content[0], 1, sz, f);
-	fclose(f);
-	return nread;
 }
 
-int64_t WriteFile(const std::string &path, std::string_view content) {
+[[nodiscard]] int64_t WriteFile(const std::string &path, std::string_view content) noexcept {
 	FILE *f = fopen(path.c_str(), "w");
 	if (!f) {
 		return -1;
@@ -65,7 +73,7 @@ int64_t WriteFile(const std::string &path, std::string_view content) {
 	return static_cast<int64_t>((written > 0) ? content.size() : written);
 }
 
-int ReadDir(const std::string &path, std::vector<DirEntry> &content) {
+[[nodiscard]] int ReadDir(const std::string &path, std::vector<DirEntry> &content) noexcept {
 #ifndef _WIN32
 	struct dirent *entry;
 	auto dir = opendir(path.c_str());
@@ -74,32 +82,59 @@ int ReadDir(const std::string &path, std::vector<DirEntry> &content) {
 		return -1;
 	}
 
+	std::string dirPath;
 	while ((entry = readdir(dir)) != NULL) {
 		if (entry->d_name[0] == '.') {
 			continue;
 		}
 		bool isDir = entry->d_type == DT_DIR;
-		if (entry->d_type == DT_UNKNOWN) {
+		unsigned internalFiles = 0;
+		dirPath.clear();
+		if (isDir) {
+			dirPath.append(path).append("/").append(entry->d_name);
+		} else if (entry->d_type == DT_UNKNOWN) {
 			struct stat stat;
-			if (lstat((path + "/" + entry->d_name).c_str(), &stat) >= 0 && S_ISDIR(stat.st_mode)) {
+			dirPath.append(path).append("/").append(entry->d_name);
+			if (lstat(dirPath.c_str(), &stat) >= 0 && S_ISDIR(stat.st_mode)) {
 				isDir = true;
 			}
 		}
-		content.push_back({entry->d_name, isDir});
-	};
+		if (isDir) {
+			auto internalDir = opendir(dirPath.c_str());
+			if (internalDir) {
+				while (readdir(internalDir) != NULL) {
+					++internalFiles;
+				}
+				closedir(internalDir);
+			}
+		}
+		content.push_back({entry->d_name, isDir, internalFiles});
+	}
 
 	closedir(dir);
 #else
-	HANDLE hFind;
 	WIN32_FIND_DATA entry;
 
-	if ((hFind = FindFirstFile((path + "/*.*").c_str(), &entry)) != INVALID_HANDLE_VALUE) {
+	if (HANDLE hFind = FindFirstFile((path + "/*.*").c_str(), &entry); hFind != INVALID_HANDLE_VALUE) {
+		std::string dirPath;
 		do {
 			if (entry.cFileName[0] == '.') {
 				continue;
 			}
-			bool isDir = entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
-			content.push_back({entry.cFileName, isDir});
+			const bool isDir = entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+			unsigned internalFiles = 0;
+			if (isDir) {
+				WIN32_FIND_DATA internalEntry;
+				dirPath.clear();
+				dirPath.append(path).append("/").append(entry.cFileName).append("/*.*");
+				if (HANDLE hInternal = FindFirstFile((path + "/*.*").c_str(), &internalEntry); hInternal != INVALID_HANDLE_VALUE) {
+					do {
+						++internalFiles;
+					} while (FindNextFile(hInternal, &internalEntry));
+					FindClose(hInternal);
+				}
+			}
+			content.push_back({entry.cFileName, isDir, internalFiles});
 		} while (FindNextFile(hFind, &entry));
 		FindClose(hFind);
 	}
@@ -178,7 +213,7 @@ TimeStats StatTime(const std::string &path) {
 	return {-1, -1, -1};
 }
 
-bool DirectoryExists(const std::string &directory) {
+[[nodiscard]] bool DirectoryExists(const std::string &directory) noexcept {
 	if (!directory.empty()) {
 #ifdef _WIN32
 		if (_access(directory.c_str(), 0) == 0) {

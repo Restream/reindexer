@@ -1,3 +1,21 @@
+# Version 3.14.1 (31.03.2023)
+## Core
+- [fix] Fixed cost calculation for 'between fields' comparators
+- [fix] Improved namespaces loading order
+
+## Reindexer server
+- [fix] Fixed server connections drops after outdated Close() call from RPC-client
+- [fix] Fixed 'SetSchema' RPC-call logging
+- [fix] Enlarged stop attemtps before SIGKILL for reindexer service
+
+## Go connector
+- [fix] Fixed client connections drops after some of the queries time outs (CPROTO)
+
+## Face
+- [fix] Fixed minor issues with queriesperfstats and explain
+- [fix] Fixed the visible field set storing for the same SQL queries
+- [fix] Restored the Load more feature to the Connections page
+
 # Version 3.14.0 (18.03.2023)
 ## Core
 - [fea] Reworked fulltext search for multiword phrases in quotes (check description [here](fulltext.md#phrase-search))
@@ -15,6 +33,18 @@
 
 ## Go connector
 - [fea] Changed aggregations interface to support optional aggregations results
+
+## Face
+- [fea] Added the information about supported browsers
+- [fix] Fixed the column settings for the Statistics table
+- [fix] Improved the Statistics UI
+- [fix] Fixed the SQL -> truncate response
+- [fix] Fixed the infinity requests to namespases on the Config page
+- [fix] Fixed the validator of the tag field
+- [fix] Fixed the error on the Explain page
+- [fix] Fixed issues with the Position boost
+- [fix] Replaced the step from 0.001 to 0.05 for input fields
+- [fix] Fixed the sorting pointer icon on the Queries table
 
 # Version 3.13.2 (23.02.2023)
 ## Core

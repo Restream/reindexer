@@ -73,6 +73,8 @@ std::string_view CmdName(uint16_t cmd) {
 			return "PutMeta"sv;
 		case kCmdEnumMeta:
 			return "EnumMeta"sv;
+		case kCmdSetSchema:
+			return "SetSchema"sv;
 		case kCmdSubscribeUpdates:
 			return "SubscribeUpdates"sv;
 		case kCmdUpdates:

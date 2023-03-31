@@ -130,7 +130,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.14.0
+*Version* : 3.14.1
 
 
 ### License information

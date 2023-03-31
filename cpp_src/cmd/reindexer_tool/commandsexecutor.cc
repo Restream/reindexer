@@ -891,9 +891,12 @@ Error CommandsExecutor<DBInterface>::commandSet(const std::string& command) {
 		configBuilder.Put(it->first, it->second);
 	}
 	configBuilder.End();
-	reindexer::fs::WriteFile(reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile), wrser.Slice());
-
-	return errOK;
+	const auto cfgPath = reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile);
+	const int writeRes = reindexer::fs::WriteFile(cfgPath, wrser.Slice());
+	if (writeRes < 0) {
+		return Error(errLogic, "Unable to write config file: '%s'", cfgPath);
+	}
+	return Error();
 }
 
 template <typename DBInterface>

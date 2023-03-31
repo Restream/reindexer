@@ -215,11 +215,11 @@ Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults &res
 }
 
 void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret) {
-	auto clientData = getClientDataUnsafe(ctx);
+	const auto clientData = getClientDataUnsafe(ctx);
 	WrSerializer ser;
 
 	if (clientData) {
-		ser << "c='"sv << clientData->connID << "' db='"sv << clientData->auth.Login() << "@"sv << clientData->auth.DBName() << "' "sv;
+		ser << "c='"sv << clientData->connID << "' db='"sv << clientData->auth.Login() << '@' << clientData->auth.DBName() << "' "sv;
 	} else {
 		ser << "- - "sv;
 	}
@@ -442,7 +442,8 @@ Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId, std::optional<int>
 		} else {
 			opts = ResultFetchOpts{.flags = flags, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 		}
-		err = sendResults(ctx, qres, RPCQrId(), opts);
+		clearTx(ctx, txId);
+		return sendResults(ctx, qres, RPCQrId(), opts);
 	}
 	clearTx(ctx, txId);
 	return err;
@@ -880,10 +881,7 @@ Error RPCServer::CloseResults(cproto::Context &ctx, int reqId, std::optional<int
 	try {
 		freeQueryResults(ctx, id);
 	} catch (Error &e) {
-		if (e.code() == errQrUIDMissmatch || e.code() == errNotFound) {
-			return e;
-		}
-		throw;
+		return e;
 	}
 	return errOK;
 }

@@ -60,8 +60,13 @@ ServerImpl::ServerImpl(ServerMode mode)
 #endif
 	  coreLogLevel_(LogNone),
 	  storageLoaded_(false),
-	  running_(false),
-	  mode_(mode) {
+	  running_(false)
+#ifndef REINDEX_WITH_ASAN
+	  ,
+	  mode_(mode)
+#endif	// REINDEX_WITH_ASAN
+{
+	(void)mode;
 	async_.set(loop_);
 }
 
