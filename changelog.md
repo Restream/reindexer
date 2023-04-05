@@ -1,3 +1,7 @@
+# Version 3.14.2 (05.04.2023)
+## Core
+- [fix] Reduced preselect limit for joined queries (previous values from v3.14.0 could cause some performance issues)
+
 # Version 3.14.1 (31.03.2023)
 ## Core
 - [fix] Fixed cost calculation for 'between fields' comparators
