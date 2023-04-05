@@ -11,7 +11,7 @@
 using namespace std::string_view_literals;
 
 constexpr int kMinIterationsForInnerJoinOptimization = 100;
-constexpr int kMaxIterationsForIdsetPreresult = 1000000;
+constexpr int kMaxIterationsForIdsetPreresult = 10000;
 constexpr int kCancelCheckFrequency = 1024;
 
 namespace reindexer {

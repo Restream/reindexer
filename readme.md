@@ -985,6 +985,11 @@ Example code for aggregate `items` by `price` and `name`
 	query.AggregateMax("price")
 	query.AggregateFacet("name", "price").Sort("name", true).Sort("count", false).Offset(10).Limit(100)
 	iterator := query.Exec()
+	// Check the error
+	if err := iterator.Error(); err != nil {
+		panic(err)
+	}
+	defere iterator.Close()
 
 	aggMaxRes := iterator.AggResults()[0]
 
@@ -1004,6 +1009,11 @@ Example code for aggregate `items` by `price` and `name`
 	query := db.Query("items")
 	query.Distinct("name").Distinct("price")
 	iterator := query.Exec()
+	// Check the error
+	if err := iterator.Error(); err != nil {
+		panic(err)
+	}
+	defere iterator.Close()
 
 	aggResults := iterator.aggResults()
 

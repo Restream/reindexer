@@ -24,17 +24,17 @@ void Args::Pack(WrSerializer &ser) const {
 void Args::Dump(WrSerializer &wrser) const {
 	wrser << '{';
 
-	for (auto &arg : *this) {
+	for (const auto &arg : *this) {
 		if (&arg != &at(0)) {
 			wrser << ", ";
 		}
 		arg.Type().EvaluateOneOf(
 			[&](KeyValueType::String) {
-				p_string str(arg);
+				std::string_view str(arg);
 				if (isPrintable(str)) {
-					wrser << '\'' << std::string_view(str) << '\'';
+					wrser << '\'' << str << '\'';
 				} else {
-					wrser << "slice{len:" << str.length() << "}";
+					wrser << "slice{len:" << str.length() << '}';
 				}
 			},
 			[&](KeyValueType::Int) { wrser << int(arg); }, [&](KeyValueType::Bool) { wrser << bool(arg); },

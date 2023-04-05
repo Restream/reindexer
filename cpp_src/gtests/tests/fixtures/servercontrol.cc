@@ -195,7 +195,9 @@ ServerControl::Interface::Interface(std::atomic_bool& stopped, ServerControlConf
 	  stopped_(stopped),
 	  config_(std::move(config)) {
 	std::string path = reindexer::fs::JoinPath(config_.storagePath, config_.dbName);
-	reindexer::fs::MkDirAll(path);
+	if (reindexer::fs::MkDirAll(path) < 0) {
+		assertf(false, "Unable to remove %s", path);
+	}
 	WriteConfigFile(reindexer::fs::JoinPath(path, kStorageTypeFilename), "leveldb");
 	if (!ReplicationConfig.IsNull()) {
 		WriteReplicationConfig(YAML::Dump(ReplicationConfig));

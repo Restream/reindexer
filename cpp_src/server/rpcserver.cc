@@ -208,11 +208,11 @@ Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults &res
 }
 
 void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret) {
-	auto clientData = getClientDataUnsafe(ctx);
+	const auto clientData = getClientDataUnsafe(ctx);
 	WrSerializer ser;
 
 	if (clientData) {
-		ser << "c='"sv << clientData->connID << "' db='"sv << clientData->auth.Login() << "@"sv << clientData->auth.DBName() << "' "sv;
+		ser << "c='"sv << clientData->connID << "' db='"sv << clientData->auth.Login() << '@' << clientData->auth.DBName() << "' "sv;
 	} else {
 		ser << "- - "sv;
 	}

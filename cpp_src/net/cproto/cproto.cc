@@ -39,7 +39,6 @@ std::string_view CmdName(uint16_t cmd) {
 			return "DropIndex"sv;
 		case kCmdUpdateIndex:
 			return "UpdateIndex"sv;
-
 		case kCmdAddTxItem:
 			return "AddTxItem"sv;
 		case kCmdCommitTx:
@@ -52,7 +51,6 @@ std::string_view CmdName(uint16_t cmd) {
 			return "DeleteQueryTx"sv;
 		case kCmdUpdateQueryTx:
 			return "UpdateQueryTx"sv;
-
 		case kCmdCommit:
 			return "Commit"sv;
 		case kCmdModifyItem:
@@ -61,7 +59,6 @@ std::string_view CmdName(uint16_t cmd) {
 			return "DeleteQuery"sv;
 		case kCmdUpdateQuery:
 			return "UpdateQuery"sv;
-
 		case kCmdSelect:
 			return "Select"sv;
 		case kCmdSelectSQL:

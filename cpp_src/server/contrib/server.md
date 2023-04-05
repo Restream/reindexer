@@ -134,7 +134,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 4.10.0
+*Version* : 4.10.1
 
 
 ### License information

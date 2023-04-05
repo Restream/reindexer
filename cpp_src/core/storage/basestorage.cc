@@ -80,7 +80,9 @@ void BaseStorage::DirectoryInfo::RemovePlaceholder() noexcept {
 
 void BaseStorage::DirectoryInfo::CreatePaceholder() noexcept {
 	if (fs::Stat(path_) == fs::StatError) {
-		fs::MkDirAll(path_);
+		if (fs::MkDirAll(path_) < 0) {
+			logPrintf(LogWarning, "Unable to create directory for shutdown placeholder: %s", placeholderPath_);
+		}
 	}
 	FILE* f = fopen(placeholderPath_.c_str(), "w");
 	if (f) {

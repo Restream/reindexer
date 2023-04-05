@@ -1,3 +1,10 @@
+# Version 4.10.1 *beta* (05.04.2023)
+## Core
+- [fix] Reduced preselect limit for joined queries (previous values from v4.10.0 could cause some performance issues)
+
+## Ported
+- [fix] Ported all the fixes from [v3.14.1](https://github.com/Restream/reindexer/blob/v3.14.1/changelog.md#version-3141-31032023) and [v3.14.2](https://github.com/Restream/reindexer/blob/v3.14.2/changelog.md#version-3142-05042023)
+
 # Version 4.10.0 *beta* (25.03.2023)
 ## Core
 - [fix] Fixed cost calculation for 'between fields' comparators

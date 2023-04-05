@@ -11,6 +11,7 @@ namespace fs {
 struct DirEntry {
 	std::string name;
 	bool isDir;
+	unsigned internalFilesCount;
 };
 
 enum FileStatus {
@@ -25,12 +26,12 @@ struct TimeStats {
 	int64_t mtime;
 };
 
-int MkDirAll(const std::string &path);
-int RmDirAll(const std::string &path);
-int ReadFile(const std::string &path, std::string &content);
-int64_t WriteFile(const std::string &path, std::string_view content);
-int ReadDir(const std::string &path, std::vector<DirEntry> &content);
-bool DirectoryExists(const std::string &directory);
+[[nodiscard]] int MkDirAll(const std::string &path) noexcept;
+int RmDirAll(const std::string &path) noexcept;
+[[nodiscard]] int ReadFile(const std::string &path, std::string &content) noexcept;
+[[nodiscard]] int64_t WriteFile(const std::string &path, std::string_view content) noexcept;
+[[nodiscard]] int ReadDir(const std::string &path, std::vector<DirEntry> &content) noexcept;
+[[nodiscard]] bool DirectoryExists(const std::string &directory) noexcept;
 FileStatus Stat(const std::string &path);
 TimeStats StatTime(const std::string &path);
 std::string GetCwd();
