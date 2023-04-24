@@ -117,10 +117,10 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		switch (type) {
 			case AggCount:
 			case AggCountCached: {
+				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(qr.GetAggregationResults().size(), 1);
 				auto value = qr.GetAggregationResults()[0].GetValue();
 
-				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_TRUE(value);
 				ASSERT_EQ(results.at(type), *value);
 				return;
@@ -128,6 +128,7 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 			default:
 				switch (expectedError) {
 					case Ok: {
+						ASSERT_TRUE(err.ok()) << "AggType: " << type << "; " << err.what();
 						ASSERT_EQ(qr.GetAggregationResults().size(), 1);
 						auto value = qr.GetAggregationResults()[0].GetValue();
 
@@ -137,7 +138,6 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 						} else {
 							ASSERT_FALSE(value);
 						}
-						ASSERT_TRUE(err.ok()) << "AggType: " << type << "; " << err.what();
 						break;
 					}
 					case ErrName:

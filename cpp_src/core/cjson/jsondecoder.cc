@@ -2,6 +2,7 @@
 #include "cjsonbuilder.h"
 #include "cjsontools.h"
 #include "tagsmatcher.h"
+#include "tools/flagguard.h"
 #include "tools/json2kv.h"
 #include "tools/serializer.h"
 #include "vendor/gason/gason.h"
@@ -21,7 +22,7 @@ Error JsonDecoder::Decode(Payload *pl, WrSerializer &wrser, const gason::JsonVal
 	catch (const Error &err) {
 		return err;
 	}
-	return 0;
+	return {};
 }
 
 void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, const gason::JsonValue &v, bool match) {
@@ -56,6 +57,9 @@ void JsonDecoder::decodeJsonObject(Payload *pl, CJsonBuilder &builder, const gas
 					pl->Set(field, pos++, jsonValue2Variant(subelem->value, f.Type(), f.Name()));
 				}
 				builder.ArrayRef(tagName, field, count);
+			} else if (isInArray() && !f.IsArray()) {
+				throw Error(errLogic, "Error parsing json field '%s' - got value in the nested array, but expected scalar %s", f.Name(),
+							f.Type().Name());
 			} else if (elem->value.getTag() != gason::JSON_NULL) {
 				Variant v = jsonValue2Variant(elem->value, f.Type(), f.Name());
 				pl->Set(field, {v}, true);
@@ -97,6 +101,7 @@ void JsonDecoder::decodeJson(Payload *pl, CJsonBuilder &builder, const gason::Js
 			break;
 		case gason::JSON_ARRAY: {
 			ObjType type;
+			CounterGuardIR32 g(arrayLevel_);
 			if (gason::isHomogeneousArray(v)) {
 				type = ObjType::TypeArray;
 			} else {

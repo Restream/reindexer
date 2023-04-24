@@ -469,6 +469,10 @@ func WithConnPoolSize(connPoolSize int) interface{} {
 	return bindings.OptionConnPoolSize{ConnPoolSize: connPoolSize}
 }
 
+func WithConnPoolLoadBalancing(algorithm bindings.LoadBalancingAlgorithm) interface{} {
+	return bindings.OptionConnPoolLoadBalancing{Algorithm: algorithm}
+}
+
 func WithRetryAttempts(read int, write int) interface{} {
 	return bindings.OptionRetryAttempts{Read: read, Write: write}
 }

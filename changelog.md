@@ -1,3 +1,41 @@
+# Version 3.15.0 (24.04.2023)
+## Core
+- [fea] Improved typos handling agorithm for `text`-indexes. New options: `max_typo_distance`,`max_symbol_permutation_distance`,`max_missing_letters` and `max_extra_letters` were added
+- [fea] Improved composite indexes substitution. Now optimizer is able to find composite index' parts on almost any positions in query and choose the largest corresponding composite index if multiple substitutions are available
+- [fea] Improved sorting by fields from joined-namespaces (for `inner joins`). Added support for string types and improved conversion logic (previously this type of sorting were able to sort only numeric fields)
+- [fea] Added more options for `snippet_n`: `with_area`, `left_bound` and `right_bound`. [Details](fulltext.md#snippet_n)
+- [fix] Fixed handling of update-queries (with `set`), which tried to update non-existing array element. Now those queries will return error and will not change target array-content
+
+## Reindexer server
+- [fea] Added support for non-string map keys for msgpack decoded (positive and negative integer values may be used as tag names in msgpack messages now) 
+
+## Go connector
+- [fea] Added `OptionConnPoolLoadBalancing`. This options allows to chose load balancing algorithm for cproto connections
+
+## Face
+- [fea] Automized filling the key field on the Meta creation page
+- [fea] Added new fields to the full-text config
+- [fea] Improved the layout of the Namespace renaming window 
+- [fea] Replaced the load more feature with the pagination one on the Connection and Queries pages
+- [fea] Changed the "Close" button title with "Save changes" on the namespace page
+- [fix] Fixed a few small issues on the Statistics page
+- [fix] Fixed the onboarding pointer in the case of undefined namespace
+- [fix] Fixed the namespace choosing on the page reloading on the Indexes and Meta tabs
+- [fix] Improved UI for long values in the Add item window
+- [fix] Fixed the layout of the error message on the Query page
+- [fix] Fixed the notification about necessity of the statistics activation on the Memory page
+- [fix] Fixed the index value with precept 
+- [fix] Fixed the console issue during the namespace switching
+- [fix] Fixed the wrong namespace redirecting on the Horizontal bar and Pie chart in Statistics 
+- [fix] Changed the column title on the Performance page
+- [fix] Fixed the spelling issues
+- [fix] Fixed the Add Database action
+- [fix] Fixed grammar in the "Query performance statistics is disabled" popup
+- [fix] Fixed the database list layout when the list is big
+- [fix] Changed the design of the tooltip appeared on the "Collapse the sidebar" icon
+- [fix] Fixed the NavigationDuplicate console issue
+- [fix] Fixed the issue with the Gear button on the Statistics -> memory page
+
 # Version 3.14.2 (05.04.2023)
 ## Core
 - [fix] Reduced preselect limit for joined queries (previous values from v3.14.0 could cause some performance issues)
@@ -29,7 +67,7 @@
 - [fea] Changed weights for ordered queries with limit/offset and ordered index in `where` or `order by` sections
 - [fea] Improved performance for large joined namespaces
 - [fea] Improved selection plan for non-index fields and optimized non-index field filtration
-- [fea] Added [snippet_n](fulltext.md#using-select-functions) function for fulltext highlighting. It will get more functionality later on
+- [fea] Added [snippet_n](fulltext.md#snippet_n) function for fulltext highlighting. It will get more functionality later on
 - [fix] Fixed aggregation results for empty namespaces and non-existing fields
 
 ## Reindexer server

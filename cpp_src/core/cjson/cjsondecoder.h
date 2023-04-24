@@ -19,11 +19,13 @@ public:
 
 protected:
 	bool decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrser, bool match);
+	bool isInArray() const noexcept { return arrayLevel_ > 0; }
 
 	TagsMatcher &tagsMatcher_;
 	const FieldsSet *filter_;
 	TagsPath tagsPath_;
 	Error lastErr_;
+	int32_t arrayLevel_ = 0;
 };
 
 }  // namespace reindexer

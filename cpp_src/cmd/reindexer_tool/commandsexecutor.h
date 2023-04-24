@@ -69,7 +69,7 @@ protected:
 		return T(loop_, config);
 	}
 	std::string getCurrentDsn(bool withPath = false) const;
-	Error queryResultsToJson(ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery, bool fstream);
+	Error queryResultsToJson(std::ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery, bool fstream);
 	Error getAvailableDatabases(std::vector<std::string>&);
 
 	void addCommandsSuggestions(std::string const& input, std::vector<std::string>& suggestions);

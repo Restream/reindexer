@@ -58,6 +58,7 @@ void NamespaceImpl::IndexesStorage::MoveBase(IndexesStorage&& src) { Base::opera
 NamespaceImpl::NamespaceImpl(const NamespaceImpl& src, AsyncStorage::FullLockT& storageLock)
 	: indexes_{*this},
 	  indexesNames_{src.indexesNames_},
+	  indexesToComposites_{src.indexesToComposites_},
 	  items_{src.items_},
 	  free_{src.free_},
 	  name_{src.name_},
@@ -312,6 +313,7 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider& configProvider, const RdxC
 
 void NamespaceImpl::recreateCompositeIndexes(int startIdx, int endIdx) {
 	FieldsSet fields;
+	indexesToComposites_.clear();
 	for (int i = startIdx; i < endIdx; ++i) {
 		std::unique_ptr<reindexer::Index>& index(indexes_[i]);
 		if (IsComposite(index->Type())) {
@@ -326,6 +328,10 @@ void NamespaceImpl::recreateCompositeIndexes(int startIdx, int endIdx) {
 				strHolder_->Add(std::move(index));
 			}
 			std::swap(index, newIndex);
+
+			for (auto field : fields) {
+				indexesToComposites_[field].emplace_back(i);
+			}
 		}
 	}
 }
@@ -518,7 +524,7 @@ void NamespaceImpl::dropIndex(const IndexDef& index) {
 	// Check, that index to remove is not a part of composite index
 	for (int i = indexes_.firstCompositePos(); i < indexes_.totalSize(); ++i) {
 		if (indexes_[i]->Fields().contains(fieldIdx))
-			throw Error(LogError, "Cannot remove index %s : it's a part of a composite index %s", index.name_, indexes_[i]->Name());
+			throw Error(errLogic, "Cannot remove index %s : it's a part of a composite index %s", index.name_, indexes_[i]->Name());
 	}
 	for (auto& namePair : indexesNames_) {
 		if (namePair.second >= fieldIdx) {
@@ -546,7 +552,15 @@ void NamespaceImpl::dropIndex(const IndexDef& index) {
 		idx->SetFields(std::move(newFields));
 	}
 
-	if (!IsComposite(indexToRemove->Type()) && !indexToRemove->Opts().IsSparse()) {
+	const bool isComposite = IsComposite(indexToRemove->Type());
+	if (isComposite) {
+		for (auto& v : indexesToComposites_) {
+			const auto f = std::find(v.second.begin(), v.second.end(), fieldIdx);
+			if (f != v.second.end()) {
+				v.second.erase(f);
+			}
+		}
+	} else if (!indexToRemove->Opts().IsSparse()) {
 		PayloadType oldPlType = payloadType_;
 		payloadType_.Drop(index.name_);
 		tagsMatcher_.UpdatePayloadType(payloadType_);
@@ -778,6 +792,11 @@ void NamespaceImpl::addCompositeIndex(const IndexDef& indexDef) {
 			if (needClearCache && indexes_[idxPos]->IsOrdered()) indexesCacheCleaner.Add(indexes_[idxPos]->SortId());
 		}
 	}
+
+	for (auto field : fields) {
+		indexesToComposites_[field].emplace_back(idxPos);
+	}
+
 	updateSortedIdxCount();
 }
 
@@ -912,7 +931,6 @@ void NamespaceImpl::Update(const Query& query, QueryResults& result, const NsCon
 		Payload pl(payloadType_, pv);
 		uint64_t oldPlHash = pl.GetHash();
 		size_t oldItemCapacity = pv.GetCapacity();
-		pv.Clone(pl.RealSize());
 		itemModifier.Modify(item.Id(), ctx);
 		replicateItem(item.Id(), ctx, statementReplication, oldPlHash, oldItemCapacity);
 		item.Value() = items_[item.Id()];
@@ -1042,7 +1060,8 @@ void NamespaceImpl::doDelete(IdType id) {
 	}
 
 	// Holder for tuple. It is required for sparse indexes will be valid
-	VariantArray tupleHolder(pl.Get(0, skrefs));
+	VariantArray tupleHolder;
+	pl.Get(0, tupleHolder);
 
 	// Deleteing fields from dense and sparse indexes:
 	// we start with 1st index (not index 0) because
@@ -2411,7 +2430,7 @@ void NamespaceImpl::setFieldsBasedOnPrecepts(ItemImpl* ritem) {
 		SelectFuncStruct sqlFuncStruct = sqlFunc.Parse(precept);
 
 		VariantArray krs;
-		Variant field = ritem->GetPayload().Get(sqlFuncStruct.field, krs)[0];
+		ritem->GetPayload().Get(sqlFuncStruct.field, krs);
 
 		VariantArray refs;
 		if (sqlFuncStruct.isFunction) {
@@ -2420,7 +2439,7 @@ void NamespaceImpl::setFieldsBasedOnPrecepts(ItemImpl* ritem) {
 			refs.emplace_back(make_key_string(sqlFuncStruct.value));
 		}
 
-		refs.back().convert(field.Type());
+		refs.back().convert(krs[0].Type());
 		bool unsafe = ritem->IsUnsafe();
 		ritem->Unsafe(false);
 		ritem->SetField(ritem->GetPayload().Type().FieldByName(sqlFuncStruct.field), refs);
@@ -2448,19 +2467,19 @@ void NamespaceImpl::FillResult(QueryResults& result, const IdSet& ids) const {
 	}
 }
 
-void NamespaceImpl::getFromJoinCache(const Query &q, const JoinedQuery &jq, JoinCacheRes &out) const {
+void NamespaceImpl::getFromJoinCache(const Query& q, const JoinedQuery& jq, JoinCacheRes& out) const {
 	if (config_.cacheMode == CacheModeOff || optimizationState_ != OptimizationCompleted) return;
 	out.key.SetData(jq, q);
 	getFromJoinCacheImpl(out);
 }
 
-void NamespaceImpl::getFromJoinCache(const Query &q, JoinCacheRes &out) const {
+void NamespaceImpl::getFromJoinCache(const Query& q, JoinCacheRes& out) const {
 	if (config_.cacheMode == CacheModeOff || optimizationState_ != OptimizationCompleted) return;
 	out.key.SetData(q);
 	getFromJoinCacheImpl(out);
 }
 
-void NamespaceImpl::getFromJoinCacheImpl(JoinCacheRes &ctx) const {
+void NamespaceImpl::getFromJoinCacheImpl(JoinCacheRes& ctx) const {
 	auto it = joinCache_->Get(ctx.key);
 	ctx.needPut = false;
 	ctx.haveData = false;

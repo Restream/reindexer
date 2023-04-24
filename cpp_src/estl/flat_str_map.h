@@ -35,23 +35,23 @@ protected:
 
 	struct equal_flat_str_map {
 		using is_transparent = void;
-		equal_flat_str_map(const holder_t *buf) : buf_(buf) {}
+		equal_flat_str_map(const holder_t *buf) noexcept : buf_(buf) {}
 		bool operator()(size_t lhs, size_t rhs) const { return buf_->get(lhs) == buf_->get(rhs); }
 		bool operator()(string_view_t lhs, size_t rhs) const { return lhs == buf_->get(rhs); }
 		bool operator()(size_t lhs, string_view_t rhs) const { return rhs == buf_->get(lhs); }
 
 	protected:
-		const holder_t *buf_ = nullptr;
+		const holder_t *buf_;
 	};
 
 	struct hash_flat_str_map {
 		using is_transparent = void;
-		hash_flat_str_map(const holder_t *buf) : buf_(buf) {}
+		hash_flat_str_map(const holder_t *buf) noexcept : buf_(buf) {}
 		size_t operator()(string_view_t hs) const { return _Hash_bytes(hs.data(), hs.length()); }
 		size_t operator()(size_t hs) const { return operator()(buf_->get(hs)); }
 
 	protected:
-		const holder_t *buf_ = nullptr;
+		const holder_t *buf_;
 	};
 	using hash_map = tsl::hopscotch_map<size_t, V, hash_flat_str_map, equal_flat_str_map, std::allocator<std::pair<size_t, V>>, 30, false,
 										tsl::mod_growth_policy<std::ratio<3, 2>>>;
@@ -100,29 +100,37 @@ public:
 		}
 
 		value_type operator->() {
-			if (Multi && it_->second & kMultiValueLinkFlag) {
-				assertrx(multi_idx_ != -1);
-				return value_type(m_->holder_->get(it_->first), m_->multi_[multi_idx_].val);
-			} else
-				return value_type(m_->holder_->get(it_->first), it_->second);
+			if constexpr (Multi) {
+				if (it_->second & kMultiValueLinkFlag) {
+					assertrx(multi_idx_ != -1);
+					return value_type(m_->holder_->get(it_->first), m_->multi_[multi_idx_].val);
+				}
+			}
+			return value_type(m_->holder_->get(it_->first), it_->second);
 		}
 
 		const value_type operator->() const {
-			if (Multi && it_->second & kMultiValueLinkFlag) {
-				assertrx(multi_idx_ != -1);
-				return value_type(m_->holder_->get(it_->first), m_->multi_[multi_idx_].val);
-			} else
-				return value_type(m_->holder_->get(it_->first), it_->second);
+			if constexpr (Multi) {
+				if (it_->second & kMultiValueLinkFlag) {
+					assertrx(multi_idx_ != -1);
+					return value_type(m_->holder_->get(it_->first), m_->multi_[multi_idx_].val);
+				}
+			}
+			return value_type(m_->holder_->get(it_->first), it_->second);
 		}
 
 		base_iterator &operator++() {
-			if (Multi && multi_idx_ != -1) {
-				multi_idx_ = m_->multi_[multi_idx_].next;
-				if (multi_idx_ != -1) return *this;
+			if constexpr (Multi) {
+				if (multi_idx_ != -1) {
+					multi_idx_ = m_->multi_[multi_idx_].next;
+					if (multi_idx_ != -1) return *this;
+				}
 			}
 			++it_;
-			if (Multi && it_ != m_->map_->end() && it_->second & kMultiValueLinkFlag) {
-				multi_idx_ = it_->second & ~kMultiValueLinkFlag;
+			if constexpr (Multi) {
+				if (it_ != m_->map_->end() && it_->second & kMultiValueLinkFlag) {
+					multi_idx_ = it_->second & ~kMultiValueLinkFlag;
+				}
 			}
 			return *this;
 		}
@@ -187,7 +195,7 @@ public:
 		int multi_pos = -1;
 		if (!res.second) {
 			holder_->resize(pos);
-			if (Multi) {
+			if constexpr (Multi) {
 				multi_pos = multi_.size();
 				if (!(res.first->second & kMultiValueLinkFlag)) {
 					multi_.push_back({res.first->second, multi_pos + 1});
@@ -204,7 +212,9 @@ public:
 	void clear() {
 		holder_->clear();
 		map_->clear();
-		multi_.clear();
+		if constexpr (Multi) {
+			multi_.clear();
+		}
 	}
 
 	std::pair<iterator, bool> emplace(string_view_t str, const V &v) { return insert(str, v); }
@@ -212,17 +222,19 @@ public:
 	void reserve(size_t map_sz, size_t str_sz) {
 		map_->reserve(map_sz);
 		holder_->reserve(str_sz);
-		if (Multi) multi_.reserve(map_sz / 10);
+		if constexpr (Multi) {
+			multi_.reserve(map_sz / 10);
+		}
 	}
 
 	size_t size() const { return map_->size(); }
-	size_t heap_size() const {
-		return holder_->capacity() + map_->size() * sizeof(typename hash_map::value_type) + multi_.capacity() * sizeof(multi_node);
-	}
+	size_t heap_size() const { return holder_->capacity() + map_->allocated_mem_size() + multi_.capacity() * sizeof(multi_node); }
 
 	void shrink_to_fit() {
 		holder_->shrink_to_fit();
-		multi_.shrink_to_fit();
+		if constexpr (Multi) {
+			multi_.shrink_to_fit();
+		}
 	}
 
 protected:

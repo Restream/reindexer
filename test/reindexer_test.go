@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/restream/reindexer/v3"
 	_ "github.com/restream/reindexer/v3/bindings/builtin"
@@ -25,6 +26,7 @@ var slaveCount = flag.Int("slavecount", 1, "reindex slave db count")
 
 var benchmarkSeedCount = flag.Int("seedcount", 500000, "count of items for benchmark seed")
 var benchmarkSeedCPU = flag.Int("seedcpu", 1, "number threads of for seeding")
+var benchmarkSeed = flag.Int64("seed", time.Now().Unix(), "seed number for random")
 
 func TestMain(m *testing.M) {
 

@@ -150,9 +150,16 @@ IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 			if (res.term.opts.typos) {
 				typos_context tctx[kMaxTyposInWord];
 				mktypos(tctx, res.term.pattern, holder_.cfg_->MaxTyposInWord(), holder_.cfg_->maxTypoLen,
-						[&wrSer](std::string_view typo, int) {
+						[&wrSer](std::string_view typo, int, const typos_context::TyposVec& positions) {
 							wrSer << typo;
-							wrSer << ", ";
+							wrSer << ":(";
+							for (unsigned j = 0, sz = positions.size(); j < sz; ++j) {
+								if (j) {
+									wrSer << ',';
+								}
+								wrSer << positions[j];
+							}
+							wrSer << "), ";
 						});
 			}
 			logPrintf(LogInfo, "Variants: [%s]", wrSer.Slice());
@@ -161,7 +168,8 @@ IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 		processVariants<mergeStatusesEmpty>(ctx, mergeStatuses);
 		if (res.term.opts.typos) {
 			// Lookup typos from typos_ map and fill results
-			processTypos(ctx, res.term);
+			TyposHandler h(*holder_.cfg_);
+			h(ctx.rawResults, holder_, res.term);
 		}
 	}
 
@@ -380,55 +388,6 @@ void Selecter<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMerge
 				}
 				break;
 			}
-		}
-	}
-}
-
-template <typename IdCont>
-void Selecter<IdCont>::processTypos(FtSelectContext& ctx, const FtDSLEntry& term) {
-	TextSearchResults& res = ctx.rawResults.back();
-	const unsigned curRawResultIdx = ctx.rawResults.size() - 1;
-	const auto maxTyposInWord = holder_.cfg_->MaxTyposInWord();
-	const bool dontUseMaxTyposForBoth = maxTyposInWord != holder_.cfg_->maxTypos / 2;
-	const size_t patternSize = utf16_to_utf8(term.pattern).size();
-	for (auto& step : holder_.steps) {
-		typos_context tctx[kMaxTyposInWord];
-		const decltype(step.typosHalf_)* typoses[2]{&step.typosHalf_, &step.typosMax_};
-		int matched = 0, skiped = 0, vids = 0;
-		mktypos(tctx, term.pattern, maxTyposInWord, holder_.cfg_->maxTypoLen, [&](std::string_view typo, int level) {
-			const int tcount = maxTyposInWord - level;
-			for (const auto* typos : typoses) {
-				const auto typoRng = typos->equal_range(typo);
-				for (auto typoIt = typoRng.first; typoIt != typoRng.second; ++typoIt) {
-					const WordIdType wordIdglb = typoIt->second;
-					auto& step = holder_.GetStep(wordIdglb);
-
-					auto wordIdSfx = holder_.GetSuffixWordId(wordIdglb, step);
-
-					// bool virtualWord = suffixes_.is_word_virtual(wordId);
-					uint8_t wordLength = step.suffixes_.word_len_at(wordIdSfx);
-					int proc = kTypoProc - tcount * kTypoStepProc / std::max((wordLength - tcount) / 3, 1);
-					auto it = res.foundWords->find(wordIdglb);
-					if (it == res.foundWords->end() || it->second.first != curRawResultIdx) {
-						const auto& hword = holder_.getWordById(wordIdglb);
-						res.push_back({&hword.vids_, typoIt->first, proc, step.suffixes_.virtual_word_len(wordIdSfx)});
-						res.idsCnt_ += hword.vids_.size();
-						res.foundWords->emplace(wordIdglb, std::make_pair(curRawResultIdx, res.size() - 1));
-
-						if (holder_.cfg_->logLevel >= LogTrace)
-							logPrintf(LogInfo, " matched typo '%s' of word '%s', %d ids, %d%%", typoIt->first,
-									  step.suffixes_.word_at(wordIdSfx), hword.vids_.size(), proc);
-						++matched;
-						vids += hword.vids_.size();
-					} else {
-						++skiped;
-					}
-				}
-				if (dontUseMaxTyposForBoth && level == 1 && typo.size() != patternSize) return;
-			}
-		});
-		if (holder_.cfg_->logLevel >= LogInfo) {
-			logPrintf(LogInfo, "Lookup typos, matched %d typos, with %d vids, skiped %d", matched, vids, skiped);
 		}
 	}
 }
@@ -1042,7 +1001,243 @@ void Selecter<IdCont>::mergeResultsPart(std::vector<TextSearchResults>& rawResul
 }
 
 template <typename IdCont>
+void Selecter<IdCont>::TyposHandler::operator()(std::vector<TextSearchResults>& rawResults, const DataHolder<IdCont>& holder,
+												const FtDSLEntry& term) {
+	TextSearchResults& res = rawResults.back();
+	const unsigned curRawResultIdx = rawResults.size() - 1;
+	const size_t patternSize = utf16_to_utf8(term.pattern).size();
 
+	for (auto& step : holder.steps) {
+		typos_context tctx[kMaxTyposInWord];
+		const decltype(step.typosHalf_)* typoses[2]{&step.typosHalf_, &step.typosMax_};
+		int matched = 0, skiped = 0, vids = 0;
+		mktypos(
+			tctx, term.pattern, maxTyposInWord_, holder.cfg_->maxTypoLen,
+			[&, this](std::string_view typo, int level, const typos_context::TyposVec& positions) {
+				for (const auto* typos : typoses) {
+					const auto typoRng = typos->equal_range(typo);
+					for (auto typoIt = typoRng.first; typoIt != typoRng.second; ++typoIt) {
+						const WordTypo wordTypo = typoIt->second;
+						const int tcount = std::max(positions.size(), wordTypo.positions.size());  // Each letter switch equals to 1 typo
+						const auto& step = holder.GetStep(wordTypo.word);
+						auto wordIdSfx = holder.GetSuffixWordId(wordTypo.word, step);
+						if (positions.size() > wordTypo.positions.size() &&
+							(positions.size() - wordTypo.positions.size()) > int(maxExtraLetts_)) {
+							logTraceF(LogInfo, " skipping typo '%s' of word '%s': to many extra letters (%d)", typoIt->first,
+									  step.suffixes_.word_at(wordIdSfx), positions.size() - wordTypo.positions.size());
+							++skiped;
+							continue;
+						}
+						if (wordTypo.positions.size() > positions.size() &&
+							(wordTypo.positions.size() - positions.size()) > int(maxMissingLetts_)) {
+							logTraceF(LogInfo, " skipping typo '%s' of word '%s': to many missing letters (%d)", typoIt->first,
+									  step.suffixes_.word_at(wordIdSfx), wordTypo.positions.size() - positions.size());
+							++skiped;
+							continue;
+						}
+						if (!isWordFitMaxTyposDist(wordTypo, positions)) {
+							const bool needMaxLettPermCheck = useMaxTypoDist_ && (!useMaxLettPermDist_ || maxLettPermDist_ > maxTypoDist_);
+							if (!needMaxLettPermCheck ||
+								!isWordFitMaxLettPerm(step.suffixes_.word_at(wordIdSfx), wordTypo, term.pattern, positions)) {
+								logTraceF(LogInfo, " skipping typo '%s' of word '%s' due to max_typos_distance settings", typoIt->first,
+										  step.suffixes_.word_at(wordIdSfx));
+								++skiped;
+								continue;
+							}
+						}
+
+						const uint8_t wordLength = step.suffixes_.word_len_at(wordIdSfx);
+						const int proc = kTypoProc - tcount * kTypoStepProc / std::max((wordLength - tcount) / 3, 1);
+						const auto it = res.foundWords->find(wordTypo.word);
+						if (it == res.foundWords->end() || it->second.first != curRawResultIdx) {
+							const auto& hword = holder.getWordById(wordTypo.word);
+							res.push_back({&hword.vids_, typoIt->first, proc, step.suffixes_.virtual_word_len(wordIdSfx)});
+							res.idsCnt_ += hword.vids_.size();
+							res.foundWords->emplace(wordTypo.word, std::make_pair(curRawResultIdx, res.size() - 1));
+
+							logTraceF(LogInfo, " matched typo '%s' of word '%s', %d ids, %d%%", typoIt->first,
+									  step.suffixes_.word_at(wordIdSfx), hword.vids_.size(), proc);
+							++matched;
+							vids += hword.vids_.size();
+						} else {
+							++skiped;
+						}
+					}
+					if (dontUseMaxTyposForBoth_ && level == 1 && typo.size() != patternSize) return;
+				}
+			});
+		if (holder.cfg_->logLevel >= LogInfo) {
+			logPrintf(LogInfo, "Lookup typos, matched %d typos, with %d vids, skiped %d", matched, vids, skiped);
+		}
+	}
+}
+
+static unsigned uabs(int a) { return unsigned(std::abs(a)); }
+
+template <typename IdCont>
+template <typename... Args>
+void Selecter<IdCont>::TyposHandler::logTraceF(int level, const char* fmt, Args&&... args) {
+	if (logLevel_ >= LogTrace) {
+		logPrintf(level, fmt, std::forward<Args>(args)...);
+	}
+}
+
+template <typename IdCont>
+bool Selecter<IdCont>::TyposHandler::isWordFitMaxTyposDist(const WordTypo& found, const typos_context::TyposVec& current) {
+	static_assert(kMaxTyposInWord <= 2, "Code in this function is expecting specific size of the typos positions arrays");
+	if (!useMaxTypoDist_ || found.positions.size() == 0) {
+		return true;
+	}
+	switch (current.size()) {
+		case 0:
+			return true;
+		case 1: {
+			const auto curP0 = current[0];
+			const auto foundP0 = found.positions[0];
+
+			if (found.positions.size() == 1) {
+				// current.len == 1 && found.len == 1. I.e. exactly one letter must be changed and moved up to maxTypoDist_ value
+				return uabs(curP0 - foundP0) <= maxTypoDist_;
+			}
+			// current.len == 1 && found.len == 2. I.e. exactly one letter must be changed and moved up to maxTypoDist_ value and the other
+			// letter is missing in 'current'
+			auto foundLeft = foundP0;
+			auto foundRight = found.positions[1];
+			if (foundLeft > foundRight) {
+				std::swap(foundLeft, foundRight);
+			}
+			return uabs((foundRight - 1) - curP0) <= maxTypoDist_ || uabs(foundLeft - curP0) <= maxTypoDist_;
+		}
+		case 2: {
+			const auto foundP0 = found.positions[0];
+			const auto curP0 = current[0];
+			const auto curP1 = current[1];
+
+			if (found.positions.size() == 1) {
+				// current.len == 2 && found.len == 1. I.e. exactly one letter must be changed and moved up to maxTypoDist_ value and
+				// 'current' also has one extra letter
+				auto curLeft = curP0;
+				auto curRight = curP1;
+				if (curLeft > curRight) {
+					std::swap(curLeft, curRight);
+				}
+
+				return uabs((curRight - 1) - foundP0) <= maxTypoDist_ || uabs(curLeft - foundP0) <= maxTypoDist_;
+			}
+
+			// current.len == 2 && found.len == 2. I.e. exactly two letters must be changed and moved up to maxTypoDist_ value
+			const auto foundP1 = found.positions[1];
+			return ((uabs(curP0 - foundP0) <= maxTypoDist_) && (uabs(curP1 - foundP1) <= maxTypoDist_)) ||
+				   ((uabs(curP0 - foundP1) <= maxTypoDist_) && (uabs(curP1 - foundP0) <= maxTypoDist_));
+		}
+		default:
+			throw Error(errLogic, "Unexpected typos count: %u", current.size());
+	}
+}
+
+template <typename IdCont>
+bool Selecter<IdCont>::TyposHandler::isWordFitMaxLettPerm(const std::string_view foundWord, const WordTypo& found,
+														  const std::wstring& currentWord, const typos_context::TyposVec& current) {
+	if (found.positions.size() == 0) {
+		return true;
+	}
+	static_assert(kMaxTyposInWord <= 2, "Code in this function is expecting specific size of the typos positions arrays");
+	utf8_to_utf16(foundWord, foundWordUTF16_);
+	switch (current.size()) {
+		case 0:
+			throw Error(errLogic, "Internal logic error. Unable to handle max_typos_distance or max_symbol_permutation_distance settings");
+		case 1: {
+			const auto foundP0 = found.positions[0];
+			const auto curP0 = current[0];
+			if (foundWordUTF16_[foundP0] == currentWord[curP0] && (!useMaxLettPermDist_ || uabs(curP0 - foundP0) <= maxLettPermDist_)) {
+				return true;
+			}
+			const auto foundP1 = found.positions[1];
+			return (found.positions.size() == 2 && foundWordUTF16_[foundP1] == currentWord[curP0] &&
+					(!useMaxLettPermDist_ || uabs(curP0 - foundP1) <= maxLettPermDist_));
+
+			if (found.positions.size() == 1) {
+				// current.len == 1 && found.len == 1. I.e. exactly one letter must be moved up to maxLettPermDist_ value
+				return (foundWordUTF16_[foundP0] == currentWord[curP0]) &&
+					   (!useMaxLettPermDist_ || uabs(curP0 - foundP0) <= maxLettPermDist_);
+			}
+			// current.len == 1 && found.len == 2. I.e. exactly one letter must be moved up to maxLettPermDist_ value and the other letter
+			// is missing in 'current'
+			auto foundLeft = foundP0;
+			auto foundRight = found.positions[1];
+			if (foundLeft > foundRight) {
+				std::swap(foundLeft, foundRight);
+			}
+
+			// Rigth letter position requires correction for the comparison with distance, but not for the letter itself
+			const auto foundRightLetter = foundWordUTF16_[foundRight--];
+			const auto foundLeftLetter = foundWordUTF16_[foundLeft];
+			const auto curP0Letter = currentWord[curP0];
+			return (foundRightLetter == curP0Letter && (!useMaxLettPermDist_ || uabs(foundRight - curP0) <= maxLettPermDist_)) ||
+				   (foundLeftLetter == curP0Letter && (!useMaxLettPermDist_ || uabs(foundLeft - curP0) <= maxLettPermDist_));
+		}
+		case 2: {
+			const auto foundP0 = found.positions[0];
+			const auto curP0 = current[0];
+			const auto curP1 = current[1];
+
+			if (found.positions.size() == 1) {
+				// current.len == 2 && found.len == 1. I.e. exactly one letter must be moved up to maxLettPermDist_ value and 'current' also
+				// has one extra letter
+				auto curLeft = curP0;
+				auto curRight = curP1;
+				if (curLeft > curRight) {
+					std::swap(curLeft, curRight);
+				}
+				// Rigth letter position requires correction for the comparison with distance, but not for the letter itself
+				const auto curRightLetter = currentWord[curRight--];
+				const auto curLeftLetter = currentWord[curLeft];
+				const auto foundP0Letter = foundWordUTF16_[foundP0];
+				return (foundP0Letter == curRightLetter && (!useMaxLettPermDist_ || uabs((curRight - 1) - foundP0) <= maxLettPermDist_)) ||
+					   (foundP0Letter == curLeftLetter && (!useMaxLettPermDist_ || uabs(curLeft - foundP0) <= maxLettPermDist_));
+			}
+
+			// current.len == 2 && found.len == 2. I.e. two letters must be moved up to maxLettPermDist_ value
+			const auto foundP1 = found.positions[1];
+			const auto foundP0Letter = foundWordUTF16_[foundP0];
+			const auto foundP1Letter = foundWordUTF16_[foundP1];
+			const auto curP0Letter = currentWord[curP0];
+			const auto curP1Letter = currentWord[curP1];
+			const bool permutationOn00 =
+				(foundP0Letter == curP0Letter && (!useMaxLettPermDist_ || uabs(curP0 - foundP0) <= maxLettPermDist_));
+			const bool permutationOn11 =
+				(foundP1Letter == curP1Letter && (!useMaxLettPermDist_ || uabs(curP1 - foundP1) <= maxLettPermDist_));
+			if (permutationOn00 && permutationOn11) {
+				return true;
+			}
+			const bool permutationOn01 =
+				(foundP0Letter == curP1Letter && (!useMaxLettPermDist_ || uabs(curP1 - foundP0) <= maxLettPermDist_));
+			const bool permutationOn10 =
+				(foundP1Letter == curP0Letter && (!useMaxLettPermDist_ || uabs(curP0 - foundP1) <= maxLettPermDist_));
+			if (permutationOn01 && permutationOn10) {
+				return true;
+			}
+			const bool switchOn00 = (uabs(curP0 - foundP0) <= maxTypoDist_);
+			if (permutationOn11 && switchOn00) {
+				return true;
+			}
+			const bool switchOn11 = (uabs(curP1 - foundP1) <= maxTypoDist_);
+			if (permutationOn00 && switchOn11) {
+				return true;
+			}
+			const bool switchOn10 = (uabs(curP0 - foundP1) <= maxTypoDist_);
+			if (permutationOn01 && switchOn10) {
+				return true;
+			}
+			const bool switchOn01 = (uabs(curP1 - foundP0) <= maxTypoDist_);
+			return permutationOn10 && switchOn01;
+		}
+		default:
+			throw Error(errLogic, "Unexpected typos count: %u", current.size());
+	}
+}
+
+template <typename IdCont>
 typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawResults, size_t totalORVids,
 															   const std::vector<size_t>& synonymsBounds, bool inTransaction,
 															   FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {

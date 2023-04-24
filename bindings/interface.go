@@ -237,6 +237,22 @@ type OptionConnPoolSize struct {
 	ConnPoolSize int
 }
 
+type LoadBalancingAlgorithm int
+
+// LBRoundRobin - choose connections in round-robin fashion. Used by default
+// LBRandom - choose connections randomly
+// LBPowerOfTwoChoices - choose connections using "Power of Two Choices" algorithm (https://www.nginx.com/blog/nginx-power-of-two-choices-load-balancing-algorithm/)
+const (
+	LBRoundRobin LoadBalancingAlgorithm = iota
+	LBRandom
+	LBPowerOfTwoChoices
+)
+
+// OptionConnPoolLoadBalancing sets algorithm, which will be used to choose connection for cproto requests' balancing
+type OptionConnPoolLoadBalancing struct {
+	Algorithm LoadBalancingAlgorithm
+}
+
 // OptionTimeouts sets client-side network timeouts on login(connect) and requests
 // Timer resolution here is 1 second
 type OptionTimeouts struct {

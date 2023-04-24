@@ -7,6 +7,7 @@
 #include "core/payload/fieldsset.h"
 #include "core/payload/payloadtype.h"
 #include "core/type_consts.h"
+#include "core/type_consts_helpers.h"
 #include "estl/h_vector.h"
 #include "estl/span.h"
 #include "tools/errors.h"
@@ -72,7 +73,6 @@ struct AggregationResult {
 	PayloadType payloadType;
 
 	static AggType strToAggType(std::string_view type);
-	static std::string_view aggTypeToStr(AggType type);
 	static void GetProtobufSchema(ProtobufSchemaBuilder &);
 
 	template <typename Node>
@@ -106,7 +106,7 @@ struct AggregationResult {
 	template <typename Builder, typename Fields>
 	void get(Builder &builder, const Fields &parametersFields) const {
 		if (value_) builder.Put(parametersFields.Value(), *value_);
-		builder.Put(parametersFields.Type(), aggTypeToStr(type));
+		builder.Put(parametersFields.Type(), AggTypeToStr(type));
 		if (!facets.empty()) {
 			auto facetsArray = builder.Array(parametersFields.Facets(), facets.size());
 			for (auto &facet : facets) {

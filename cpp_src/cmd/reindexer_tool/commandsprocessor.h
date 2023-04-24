@@ -15,7 +15,7 @@ template <typename DBInterface>
 class CommandsProcessor {
 public:
 	template <typename... Args>
-	CommandsProcessor(const string& outFileName, const string& inFileName, int numThreads, Args... args)
+	CommandsProcessor(const std::string& outFileName, const std::string& inFileName, int numThreads, Args... args)
 		: inFileName_(inFileName), executor_(outFileName, numThreads, std::move(args)...) {}
 	CommandsProcessor(const CommandsProcessor&) = delete;
 	CommandsProcessor(CommandsProcessor&&) = delete;
@@ -23,7 +23,7 @@ public:
 	CommandsProcessor& operator=(CommandsProcessor&&) = delete;
 	~CommandsProcessor();
 	template <typename... Args>
-	Error Connect(const string& dsn, const Args&... args);
+	Error Connect(const std::string& dsn, const Args&... args);
 	bool Run(const std::string& command);
 
 protected:

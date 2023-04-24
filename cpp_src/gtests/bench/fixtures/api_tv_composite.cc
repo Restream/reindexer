@@ -3,8 +3,7 @@
 #include "core/query/query.h"
 #include "helpers.h"
 
-using benchmark::RegisterBenchmark;
-using std::placeholders::_1;
+using benchmark::AllocsTracker;
 
 using reindexer::Query;
 using reindexer::QueryResults;
@@ -32,10 +31,10 @@ reindexer::Error ApiTvComposite::Initialize() {
 		v = VariantArray{Variant{counter}, Variant{counter}};
 	}
 
-	return 0;
+	return {};
 }
 
-reindexer::Item ApiTvComposite::MakeItem() {
+reindexer::Item ApiTvComposite::MakeItem(benchmark::State&) {
 	auto item = db_->NewItem(nsdef_.name);
 
 	auto startTime = random<int64_t>(0, 50000);

@@ -19,3 +19,6 @@ __pycache__
 *.so
 .pytest_cache/
 qa_tests/logs/
+
+#ignore directory with compile commands
+.cache

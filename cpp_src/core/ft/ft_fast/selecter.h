@@ -97,6 +97,47 @@ private:
 		std::vector<TextSearchResults> rawResults;
 		size_t totalORVids = 0;
 	};
+
+	class TyposHandler {
+	public:
+		TyposHandler(const FtFastConfig& cfg) noexcept
+			: maxTyposInWord_(cfg.MaxTyposInWord()),
+			  dontUseMaxTyposForBoth_(maxTyposInWord_ != cfg.maxTypos / 2),
+			  maxMissingLetts_(cfg.MaxMissingLetters()),
+			  maxExtraLetts_(cfg.MaxExtraLetters()),
+			  logLevel_(cfg.logLevel) {
+			{
+				const auto maxTypoDist = cfg.MaxTypoDistance();
+				maxTypoDist_ = maxTypoDist.first;
+				useMaxTypoDist_ = maxTypoDist.second;
+			}
+			{
+				const auto maxLettPermDist = cfg.MaxSymbolPermutationDistance();
+				maxLettPermDist_ = maxLettPermDist.first;
+				useMaxLettPermDist_ = maxLettPermDist.second;
+			}
+		}
+		void operator()(std::vector<TextSearchResults>&, const DataHolder<IdCont>&, const FtDSLEntry&);
+
+	private:
+		template <typename... Args>
+		void logTraceF(int level, const char* fmt, Args&&... args);
+		bool isWordFitMaxTyposDist(const WordTypo& found, const typos_context::TyposVec& current);
+		bool isWordFitMaxLettPerm(const std::string_view foundWord, const WordTypo& found, const std::wstring& currentWord,
+								  const typos_context::TyposVec& current);
+
+		const int maxTyposInWord_;
+		const bool dontUseMaxTyposForBoth_;
+		bool useMaxTypoDist_;
+		bool useMaxLettPermDist_;
+		unsigned maxTypoDist_;
+		unsigned maxLettPermDist_;
+		unsigned maxMissingLetts_;
+		unsigned maxExtraLetts_;
+		int logLevel_;
+		std::wstring foundWordUTF16_;
+	};
+
 	IDataHolder::MergeData mergeResults(std::vector<TextSearchResults>&& rawResults, size_t totalORVids,
 										const std::vector<size_t>& synonymsBounds, bool inTransaction,
 										FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
@@ -163,8 +204,6 @@ private:
 	template <bool withStatuses>
 	void processStepVariants(FtSelectContext& ctx, typename DataHolder<IdCont>::CommitStep& step, const FtVariantEntry& variant,
 							 unsigned curRawResultIdx, const FtMergeStatuses::Statuses& mergeStatuses, int vidsLimit);
-
-	void processTypos(FtSelectContext&, const FtDSLEntry&);
 
 	DataHolder<IdCont>& holder_;
 	size_t fieldSize_;

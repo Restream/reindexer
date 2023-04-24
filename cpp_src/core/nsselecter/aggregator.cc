@@ -129,7 +129,7 @@ bool Aggregator::MultifieldComparator::operator()(const PayloadValue &lhs, const
 		assertrx(type_);
 		assertrx(!lhs.IsFree());
 		assertrx(!rhs.IsFree());
-		int less = ConstPayload(type_, lhs).Compare(rhs, opt.fields);
+		int less = ConstPayload(type_, lhs).Compare<WithString::No>(rhs, opt.fields);
 		if (less == 0) continue;
 		return less * opt.direction < 0;
 	}
@@ -145,7 +145,7 @@ bool Aggregator::MultifieldComparator::operator()(const std::pair<PayloadValue, 
 		assertrx(type_);
 		assertrx(!lhs.first.IsFree());
 		assertrx(!rhs.first.IsFree());
-		int less = ConstPayload(type_, lhs.first).Compare(rhs.first, opt.fields);
+		int less = ConstPayload(type_, lhs.first).Compare<WithString::No>(rhs.first, opt.fields);
 		if (less == 0) continue;
 		return less * opt.direction < 0;
 	}

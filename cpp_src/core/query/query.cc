@@ -29,7 +29,7 @@ bool Query::operator==(const Query &obj) const {
 	if (strictMode != obj.strictMode) return false;
 	if (forcedSortOrder_.size() != obj.forcedSortOrder_.size()) return false;
 	for (size_t i = 0, s = forcedSortOrder_.size(); i < s; ++i) {
-		if (forcedSortOrder_[i].RelaxCompare(obj.forcedSortOrder_[i]) != 0) return false;
+		if (forcedSortOrder_[i].RelaxCompare<WithString::Yes>(obj.forcedSortOrder_[i]) != 0) return false;
 	}
 
 	if (selectFilter_ != obj.selectFilter_) return false;
@@ -123,26 +123,28 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				break;
 			}
 			case QueryAggregation: {
-				AggregateEntry ae;
-				ae.type_ = static_cast<AggType>(ser.GetVarUint());
+				const AggType type = static_cast<AggType>(ser.GetVarUint());
 				size_t fieldsCount = ser.GetVarUint();
-				ae.fields_.reserve(fieldsCount);
-				while (fieldsCount--) ae.fields_.push_back(std::string(ser.GetVString()));
+				h_vector<std::string, 1> fields;
+				fields.reserve(fieldsCount);
+				while (fieldsCount--) fields.emplace_back(std::string(ser.GetVString()));
 				auto pos = ser.Pos();
 				bool aggEnd = false;
+				aggregations_.emplace_back(type, std::move(fields));
+				auto &ae = aggregations_.back();
 				while (!ser.Eof() && !aggEnd) {
 					int atype = ser.GetVarUint();
 					switch (atype) {
 						case QueryAggregationSort: {
 							auto fieldName = ser.GetVString();
-							ae.sortingEntries_.push_back({std::string(fieldName), ser.GetVarUint() != 0});
+							ae.AddSortingEntry({std::string(fieldName), ser.GetVarUint() != 0});
 							break;
 						}
 						case QueryAggregationLimit:
-							ae.limit_ = ser.GetVarUint();
+							ae.SetLimit(ser.GetVarUint());
 							break;
 						case QueryAggregationOffset:
-							ae.offset_ = ser.GetVarUint();
+							ae.SetOffset(ser.GetVarUint());
 							break;
 						default:
 							ser.SetPos(pos);
@@ -150,7 +152,6 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 					}
 					pos = ser.Pos();
 				}
-				aggregations_.push_back(std::move(ae));
 				break;
 			}
 			case QueryDistinct: {
@@ -297,23 +298,23 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 
 	for (const auto &agg : aggregations_) {
 		ser.PutVarUint(QueryAggregation);
-		ser.PutVarUint(agg.type_);
-		ser.PutVarUint(agg.fields_.size());
-		for (const auto &field : agg.fields_) {
+		ser.PutVarUint(agg.Type());
+		ser.PutVarUint(agg.Fields().size());
+		for (const auto &field : agg.Fields()) {
 			ser.PutVString(field);
 		}
-		for (const auto &se : agg.sortingEntries_) {
+		for (const auto &se : agg.Sorting()) {
 			ser.PutVarUint(QueryAggregationSort);
 			ser.PutVString(se.expression);
 			ser.PutVarUint(se.desc);
 		}
-		if (agg.limit_ != UINT_MAX) {
+		if (agg.Limit() != AggregateEntry::kDefaultLimit) {
 			ser.PutVarUint(QueryAggregationLimit);
-			ser.PutVarUint(agg.limit_);
+			ser.PutVarUint(agg.Limit());
 		}
-		if (agg.offset_ != 0) {
+		if (agg.Offset() != AggregateEntry::kDefaultOffset) {
 			ser.PutVarUint(QueryAggregationOffset);
-			ser.PutVarUint(agg.offset_);
+			ser.PutVarUint(agg.Offset());
 		}
 	}
 

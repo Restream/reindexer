@@ -284,7 +284,8 @@ private:
 	std::uniform_int_distribution<> rndInt_;
 	std::uniform_int_distribution<size_t> rndSize_;
 	std::uniform_int_distribution<int64_t> rndInt64_;
-	std::uniform_int_distribution<char> rndChar_;
+	std::uniform_int_distribution<int> rndChar_ =
+		std::uniform_int_distribution<int>{std::numeric_limits<int8_t>::min(), std::numeric_limits<int8_t>::max()};
 	std::bernoulli_distribution rndBool_;
 	std::normal_distribution<double> rndDouble_;
 	std::discrete_distribution<int> rndError_;

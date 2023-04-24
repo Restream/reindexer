@@ -437,17 +437,25 @@ type ComplexItem struct {
 
 ### Sort
 
-Reindexer can sort documents by fields (including nested and fields of joined `namespaces`) or by expressions in ascending or descending order.
+Reindexer can sort documents by fields (including nested and fields of the joined namespaces) or by expressions in ascending or descending order.
 
-Sort expressions can contain fields names (including nested and fields of joined `namespaces`) of int, float or bool type, numbers, functions rank(), abs() and ST_Distance(), parenthesis and arithmetic operations: +, - (unary and binary), \* and /.
-If field name followed by '+' they must be separated by space (to distinguish composite index name).
-Fields of joined namespaces writes in form `joined_namespace.field`.
+To sort by non-index fields all the values must be convertible to each other, i.e. either have the same types or be one of th numeric types (`bool`, `int`, `int64` or `float`).
 
-Abs() means absolute value of an argument.
+Sort expressions can contain:
+ - fields and indexes names (including nested fields and fields of the joined namespaces) of `bool`, `int`, `int64`, `float` or `string` types. All the values must be convertible to numbers ignoring leading and finishing spaces;
+ - numbers;
+ - functions `rank()`, `abs()` and `ST_Distance()`;
+ - parenthesis;
+ - arithmetic operations: `+`, `-` (unary and binary), `*` and `/`.
 
-Rank() means fulltext rank of match and is applicable only in fulltext query.
+If field name followed by `+` they must be separated by space to distinguish composite index name.
+Fields of the joined namespaces must be written like this: `joined_namespace.field`.
 
-ST_Distance() means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText('point(1 -3)')`
+`Abs()` means absolute value of an argument.
+
+`Rank()` means fulltext rank of match and is applicable only in fulltext query.
+
+`ST_Distance()` means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText('point(1 -3)')`
 
 In SQL query sort expression must be quoted.
 

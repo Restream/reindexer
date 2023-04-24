@@ -4,6 +4,7 @@
 #include "core/keyvalue/p_string.h"
 #include "core/namespace/namespace.h"
 #include "core/rdxcontext.h"
+#include "tools/catch_and_return.h"
 
 namespace reindexer {
 
@@ -120,14 +121,22 @@ Item::~Item() {
 	delete impl_;
 }
 
-Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) { return impl_->FromJSON(slice, endp, pkOnly); }
-Error Item::FromCJSON(std::string_view slice, bool pkOnly) { return impl_->FromCJSON(slice, pkOnly); }
+Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) &noexcept {
+	RETURN_RESULT_NOEXCEPT(impl_->FromJSON(slice, endp, pkOnly));
+}
+
+Error Item::FromCJSON(std::string_view slice, bool pkOnly) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromCJSON(slice, pkOnly)); }
+
 std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
-Error Item::FromMsgPack(std::string_view buf, size_t &offset) { return impl_->FromMsgPack(buf, offset); }
-Error Item::FromProtobuf(std::string_view sbuf) { return impl_->FromProtobuf(sbuf); }
-Error Item::GetMsgPack(WrSerializer &wrser) { return impl_->GetMsgPack(wrser); }
-Error Item::GetProtobuf(WrSerializer &wrser) { return impl_->GetProtobuf(wrser); }
+
+Error Item::FromMsgPack(std::string_view buf, size_t &offset) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromMsgPack(buf, offset)); }
+
+Error Item::FromProtobuf(std::string_view sbuf) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromProtobuf(sbuf)); }
+
+Error Item::GetMsgPack(WrSerializer &wrser) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetMsgPack(wrser)); }
+
+Error Item::GetProtobuf(WrSerializer &wrser) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetProtobuf(wrser)); }
 
 int Item::NumFields() const { return impl_->Type().NumFields(); }
 Item::FieldRef Item::operator[](int field) const {
@@ -146,11 +155,11 @@ Item::FieldRef Item::operator[](std::string_view name) const {
 
 int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }
-void Item::SetPrecepts(const std::vector<std::string> &precepts) { impl_->SetPrecepts(precepts); }
+void Item::SetPrecepts(const std::vector<std::string> &precepts) & { impl_->SetPrecepts(precepts); }
 bool Item::IsTagsUpdated() { return impl_->tagsMatcher().isUpdated(); }
 int Item::GetStateToken() { return impl_->tagsMatcher().stateToken(); }
 
-Item &Item::Unsafe(bool enable) {
+Item &Item::Unsafe(bool enable) &noexcept {
 	impl_->Unsafe(enable);
 	return *this;
 }

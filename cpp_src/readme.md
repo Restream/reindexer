@@ -74,7 +74,7 @@ Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](htt
 
 ### Dependencies
 
-Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so the Cmake, C++17 toolchain and LevelDB must be installed before installing Reindexer. To build Reindexer, g++ 8+, clang 3+ or MSVC 2017+ is required.
+Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so the Cmake, C++17 toolchain and LevelDB must be installed before installing Reindexer. To build Reindexer, g++ 8+, clang 5+ or MSVC 2019+ is required.
 Dependencies can be installed automatically by this script:
 
 ```bash
@@ -141,17 +141,17 @@ The concept of streaming is described [here](https://grpc.io/docs/what-is-grpc/c
 
 ## Monitoring
 
-### Prometheus
+### Prometheus (server-side)
 
 Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i.e. `http://localhost:9088/metrics`). This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some of the metrics also require `perfstats` to be enabled in `profiling`-config
 
-`reindexer_qps_total` - total queries per second for each database, namespace and query type  
-`reindexer_avg_latency` - average queryies latency for each database, namespace and query type  
-`reindexer_caches_size_bytes`, `reindexer_indexes_size_bytes`, `reindexer_data_size_bytes` - caches, indexes and data size for each namespace  
-`reindexer_items_count` - items count in each namespace  
-`reindexer_memory_allocated_bytes` - current amount of dynamicly allocated memory according to tcmalloc/jemalloc  
-`reindexer_rpc_clients_count` - current number of RPC clients for each database  
-`reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database  
+`reindexer_qps_total` - total queries per second for each database, namespace and query type
+`reindexer_avg_latency` - average queryies latency for each database, namespace and query type
+`reindexer_caches_size_bytes`, `reindexer_indexes_size_bytes`, `reindexer_data_size_bytes` - caches, indexes and data size for each namespace
+`reindexer_items_count` - items count in each namespace
+`reindexer_memory_allocated_bytes` - current amount of dynamicly allocated memory according to tcmalloc/jemalloc
+`reindexer_rpc_clients_count` - current number of RPC clients for each database
+`reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database
 `reindexer_info` - generic reindexer server info (currently it's just a version number)
 
 ## Maintenance

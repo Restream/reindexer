@@ -400,7 +400,6 @@ void CoroClientConnection::readerRoutine() {
 		(void)read;
 
 		CoroRPCAnswer ans;
-		int errCode = 0;
 		try {
 			Serializer ser(buf.data(), hdr.len);
 			if (hdr.compressed) {
@@ -411,10 +410,10 @@ void CoroClientConnection::readerRoutine() {
 				ser = Serializer(uncompressed);
 			}
 
-			errCode = ser.GetVarUint();
+			const int errCode = ser.GetVarUint();
 			std::string_view errMsg = ser.GetVString();
 			if (errCode != errOK) {
-				ans.status_ = Error(errCode, errMsg);
+				ans.status_ = Error(static_cast<ErrorCode>(errCode), std::string{errMsg});
 			}
 			ans.data_ = span<uint8_t>(ser.Buf() + ser.Pos(), ser.Len() - ser.Pos());
 		} catch (const Error &err) {

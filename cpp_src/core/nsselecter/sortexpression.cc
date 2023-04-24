@@ -45,31 +45,28 @@ using SortExprFuncs::DistanceBetweenJoinedIndexes;
 using SortExprFuncs::DistanceBetweenIndexAndJoinedIndex;
 using SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 
-ItemImpl SortExpression::getJoinedItem(IdType rowId, const joins::NamespaceResults& joinResults,
-									   const std::vector<JoinedSelector>& joinedSelectors, size_t nsIdx) {
+const PayloadValue& SortExpression::getJoinedValue(IdType rowId, const joins::NamespaceResults& joinResults,
+												   const std::vector<JoinedSelector>& joinedSelectors, size_t nsIdx) {
 	assertrx(joinedSelectors.size() > nsIdx);
 	const auto& js = joinedSelectors[nsIdx];
 	const joins::ItemIterator jIt{&joinResults, rowId};
 	const auto jfIt = jIt.at(nsIdx);
 	if (jfIt == jIt.end() || jfIt.ItemsCount() == 0) throw Error(errQueryExec, "Not found value joined from ns %s", js.RightNsName());
 	if (jfIt.ItemsCount() > 1) throw Error(errQueryExec, "Found more than 1 value joined from ns %s", js.RightNsName());
-	const PayloadType& pt =
-		js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.payloadType : js.rightNs_->payloadType_;
-	TagsMatcher& tm = js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.tagsMatcher : js.rightNs_->tagsMatcher_;
-	return jfIt.GetItem(0, pt, tm);
+	return jfIt[0].Value();
 }
 
-VariantArray SortExpression::getJoinedFieldValues(IdType rowId, const joins::NamespaceResults& joinResults,
+VariantArray SortExpression::GetJoinedFieldValues(IdType rowId, const joins::NamespaceResults& joinResults,
 												  const std::vector<JoinedSelector>& joinedSelectors, size_t nsIdx, std::string_view column,
 												  int index) {
 	const auto& js = joinedSelectors[nsIdx];
 	const PayloadType& pt =
 		js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.payloadType : js.rightNs_->payloadType_;
-	ItemImpl item{getJoinedItem(rowId, joinResults, joinedSelectors, nsIdx)};
-	const ConstPayload pv{pt, item.Value()};
-	TagsMatcher& tm = js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.tagsMatcher : js.rightNs_->tagsMatcher_;
+	const ConstPayload pv{pt, getJoinedValue(rowId, joinResults, joinedSelectors, nsIdx)};
 	VariantArray values;
 	if (index == IndexValueType::SetByJsonPath) {
+		TagsMatcher& tm =
+			js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.tagsMatcher : js.rightNs_->tagsMatcher_;
 		pv.GetByJsonPath(column, tm, values, KeyValueType::Undefined{});
 	} else {
 		pv.Get(index, values);
@@ -77,14 +74,19 @@ VariantArray SortExpression::getJoinedFieldValues(IdType rowId, const joins::Nam
 	return values;
 }
 
-bool SortExpression::ByIndexField() const {
+bool SortExpression::ByIndexField() const noexcept {
 	static constexpr SortExpressionOperation noOperation;
 	return Size() == 1 && container_[0].HoldsOrReferTo<SortExprFuncs::Index>() && GetOperation(0) == noOperation;
 }
 
-bool SortExpression::ByJoinedIndexField() const {
+bool SortExpression::ByJoinedIndexField() const noexcept {
 	static constexpr SortExpressionOperation noOperation;
 	return Size() == 1 && container_[0].HoldsOrReferTo<JoinedIndex>() && GetOperation(0) == noOperation;
+}
+
+const SortExprFuncs::JoinedIndex& SortExpression::GetJoinedIndex() const noexcept {
+	assertrx(Size() == 1);
+	return container_[0].Value<JoinedIndex>();
 }
 
 double SortExprFuncs::Index::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) const {
@@ -103,8 +105,8 @@ double DistanceFromPoint::GetValue(ConstPayload pv, TagsMatcher& tagsMatcher) co
 
 double JoinedIndex::GetValue(IdType rowId, const joins::NamespaceResults& joinResults,
 							 const std::vector<JoinedSelector>& joinedSelectors) const {
-	const VariantArray values = SortExpression::getJoinedFieldValues(rowId, joinResults, joinedSelectors, nsIdx, column, index);
-	if (values.empty()) throw Error(errQueryExec, "Empty field in sort expression: %s %s", static_cast<int>(nsIdx), column);
+	const VariantArray values = SortExpression::GetJoinedFieldValues(rowId, joinResults, joinedSelectors, nsIdx, column, index);
+	if (values.empty()) throw Error(errQueryExec, "Empty field in sort expression: %s %s", joinedSelectors[nsIdx].RightNsName(), column);
 	if (values.size() > 1 || values[0].Type().Is<KeyValueType::Composite>() || values[0].Type().Is<KeyValueType::Tuple>()) {
 		throw Error(errQueryExec, "Array, composite or tuple field in sort expression");
 	}
@@ -113,7 +115,7 @@ double JoinedIndex::GetValue(IdType rowId, const joins::NamespaceResults& joinRe
 
 double DistanceJoinedIndexFromPoint::GetValue(IdType rowId, const joins::NamespaceResults& joinResults,
 											  const std::vector<JoinedSelector>& joinedSelectors) const {
-	const VariantArray values = SortExpression::getJoinedFieldValues(rowId, joinResults, joinedSelectors, nsIdx, column, index);
+	const VariantArray values = SortExpression::GetJoinedFieldValues(rowId, joinResults, joinedSelectors, nsIdx, column, index);
 	return distance(static_cast<Point>(values), point);
 }
 
@@ -127,14 +129,14 @@ double DistanceBetweenIndexAndJoinedIndex::GetValue(ConstPayload pv, TagsMatcher
 													const joins::NamespaceResults& joinResults,
 													const std::vector<JoinedSelector>& joinedSelectors) const {
 	const VariantArray values1 = getFieldValues(pv, tagsMatcher, index, column);
-	const VariantArray values2 = SortExpression::getJoinedFieldValues(rowId, joinResults, joinedSelectors, jNsIdx, jColumn, jIndex);
+	const VariantArray values2 = SortExpression::GetJoinedFieldValues(rowId, joinResults, joinedSelectors, jNsIdx, jColumn, jIndex);
 	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 }
 
 double DistanceBetweenJoinedIndexes::GetValue(IdType rowId, const joins::NamespaceResults& joinResults,
 											  const std::vector<JoinedSelector>& joinedSelectors) const {
-	const VariantArray values1 = SortExpression::getJoinedFieldValues(rowId, joinResults, joinedSelectors, nsIdx1, column1, index1);
-	const VariantArray values2 = SortExpression::getJoinedFieldValues(rowId, joinResults, joinedSelectors, nsIdx2, column2, index2);
+	const VariantArray values1 = SortExpression::GetJoinedFieldValues(rowId, joinResults, joinedSelectors, nsIdx1, column1, index1);
+	const VariantArray values2 = SortExpression::GetJoinedFieldValues(rowId, joinResults, joinedSelectors, nsIdx2, column2, index2);
 	return distance(static_cast<Point>(values1), static_cast<Point>(values2));
 }
 
@@ -143,8 +145,7 @@ double DistanceBetweenJoinedIndexesSameNs::GetValue(IdType rowId, const joins::N
 	const auto& js = joinedSelectors[nsIdx];
 	const PayloadType& pt =
 		js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.payloadType : js.rightNs_->payloadType_;
-	ItemImpl item{SortExpression::getJoinedItem(rowId, joinResults, joinedSelectors, nsIdx)};
-	const ConstPayload pv{pt, item.Value()};
+	const ConstPayload pv{pt, SortExpression::getJoinedValue(rowId, joinResults, joinedSelectors, nsIdx)};
 	TagsMatcher& tm = js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.tagsMatcher : js.rightNs_->tagsMatcher_;
 	VariantArray values1;
 	if (index1 == IndexValueType::SetByJsonPath) {

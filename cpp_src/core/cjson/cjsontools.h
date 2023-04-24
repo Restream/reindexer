@@ -14,7 +14,7 @@ void putCJsonRef(int tagType, int tagName, int tagField, const VariantArray &val
 void putCJsonValue(int tagType, int tagName, const VariantArray &values, WrSerializer &wrser);
 
 int kvType2Tag(KeyValueType kvType);
-void skipCjsonTag(ctag tag, Serializer &rdser);
+void skipCjsonTag(ctag tag, Serializer &rdser, std::array<unsigned, maxIndexes> *fieldsArrayOffsets = nullptr);
 Variant cjsonValueToVariant(int tag, Serializer &rdser, KeyValueType dstType, Error &err);
 
 }  // namespace reindexer

@@ -322,7 +322,8 @@ protected:
 				bld.Array(kFieldNamePointNonIndex, reindexer::span<double>{arr, 2});
 			}
 			auto item = NewItem(geomNs);
-			item.FromJSON(ser.Slice());
+			const auto err = item.FromJSON(ser.Slice());
+			ASSERT_TRUE(err.ok()) << err.what();
 			Upsert(geomNs, item);
 
 			saveItem(std::move(item), geomNs);
@@ -641,12 +642,22 @@ protected:
 										 .Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(Query(default_namespace)
+										 .Where(kFieldNameGenre, CondEq, std::to_string(randomGenre))
+										 .Distinct(distinct.c_str())
+										 .Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(Query(default_namespace)
 										 .Where(kFieldNameName, CondEq, RandString())
 										 .Distinct(distinct.c_str())
 										 .Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(Query(default_namespace)
-										 .Where(kFieldNameRate, CondEq, static_cast<double>(rand() % 100) / 10)
+										 .Where(kFieldNameRate, CondEq, (rand() % 100) / 10.0)
+										 .Distinct(distinct.c_str())
+										 .Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(Query(default_namespace)
+										 .Where(kFieldNameRate, CondEq, std::to_string((rand() % 100) / 10.0))
 										 .Distinct(distinct.c_str())
 										 .Sort(sortIdx, sortOrder));
 
@@ -662,7 +673,7 @@ protected:
 										 .Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(Query(default_namespace)
-										 .Where(kFieldNameRate, CondGt, static_cast<double>(rand() % 100) / 10)
+										 .Where(kFieldNameRate, CondGt, (rand() % 100) / 10.0)
 										 .Distinct(distinct.c_str())
 										 .Sort(sortIdx, sortOrder));
 
@@ -672,12 +683,22 @@ protected:
 										 .Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(Query(default_namespace)
+										 .Where(kFieldNameGenre, CondLt, std::to_string(randomGenre))
+										 .Distinct(distinct.c_str())
+										 .Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(Query(default_namespace)
 										 .Where(kFieldNameName, CondLt, RandString())
 										 .Distinct(distinct.c_str())
 										 .Sort(sortIdx, sortOrder));
 
 					ExecuteAndVerify(Query(default_namespace)
-										 .Where(kFieldNameRate, CondLt, static_cast<double>(rand() % 100) / 10)
+										 .Where(kFieldNameRate, CondLt, (rand() % 100) / 10.0)
+										 .Distinct(distinct.c_str())
+										 .Sort(sortIdx, sortOrder));
+
+					ExecuteAndVerify(Query(default_namespace)
+										 .Where(kFieldNameRate, CondLt, std::to_string((rand() % 100) / 10.0))
 										 .Distinct(distinct.c_str())
 										 .Sort(sortIdx, sortOrder));
 
@@ -1011,6 +1032,12 @@ protected:
 										 .Sort(sortIdx, sortOrder)
 										 .WhereComposite(compositeIndexName.c_str(), CondLe, {{Variant(27), Variant(10000)}}));
 
+					ExecuteAndVerify(Query(default_namespace)
+										 .ReqTotal()
+										 .Distinct(distinct)
+										 .Sort(kFieldNameAge + " + "s + kFieldNameId, sortOrder)
+										 .Sort(kFieldNameRate + " * "s + kFieldNameGenre, sortOrder));
+
 					ExecuteAndVerify(
 						Query(default_namespace)
 							.ReqTotal()
@@ -1026,8 +1053,13 @@ protected:
 					ExecuteAndVerify(Query(default_namespace)
 										 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, Query(joinNs))
 										 .Distinct(distinct)
+										 .Sort(joinNs + '.' + kFieldNameName, sortOrder));
+
+					ExecuteAndVerify(Query(default_namespace)
+										 .InnerJoin(kFieldNameYear, kFieldNameYear, CondEq, Query(joinNs))
+										 .Distinct(distinct)
 										 .Sort(joinNs + '.' + kFieldNameId + " * " + joinNs + '.' + kFieldNameGenre +
-												   (sortIdx.empty() || (sortIdx == "name") ? "" : (" + " + sortIdx)),
+												   (sortIdx.empty() || (sortIdx == kFieldNameName) ? "" : (" + " + sortIdx)),
 											   sortOrder));
 
 					ExecuteAndVerify(Query(default_namespace)
@@ -1434,7 +1466,8 @@ protected:
 			objNode.End();
 			bld.End();
 			auto item = NewItem(nsWithObject);
-			item.FromJSON(ser.Slice());
+			const auto err = item.FromJSON(ser.Slice());
+			ASSERT_TRUE(err.ok()) << err.what();
 			Upsert(nsWithObject, item);
 		}
 		Commit(nsWithObject);
@@ -1444,46 +1477,30 @@ protected:
 		constexpr size_t facetLimit = 10;
 		constexpr size_t facetOffset = 10;
 
-		const Query wrongQuery1{Query(default_namespace).Aggregate(AggAvg, {})};
+		EXPECT_THROW(Query(default_namespace).Aggregate(AggAvg, {}), reindexer::Error);
+
+		EXPECT_THROW(Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear, kFieldNameName}), reindexer::Error);
+
+		EXPECT_THROW(Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {{kFieldNameYear, true}}), reindexer::Error);
+
+		EXPECT_THROW(Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {}, 10), reindexer::Error);
+
+		const Query wrongQuery1{Query(default_namespace).Aggregate(AggFacet, {kFieldNameYear}, {{kFieldNameName, true}})};
 		reindexer::QueryResults wrongQr1;
-		Error err = rt.reindexer->Select(wrongQuery1, wrongQr1);
-		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Empty set of fields for aggregation avg");
-
-		const Query wrongQuery2{Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear, kFieldNameName})};
-		reindexer::QueryResults wrongQr2;
-		err = rt.reindexer->Select(wrongQuery2, wrongQr2);
-		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "For aggregation avg is available exactly one field");
-
-		const Query wrongQuery3{Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {{kFieldNameYear, true}})};
-		reindexer::QueryResults wrongQr3;
-		err = rt.reindexer->Select(wrongQuery3, wrongQr3);
-		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Sort is not available for aggregation avg");
-
-		const Query wrongQuery4{Query(default_namespace).Aggregate(AggAvg, {kFieldNameYear}, {}, 10)};
-		reindexer::QueryResults wrongQr4;
-		err = rt.reindexer->Select(wrongQuery4, wrongQr4);
-		ASSERT_FALSE(err.ok());
-		EXPECT_EQ(err.what(), "Limit or offset are not available for aggregation avg");
-
-		const Query wrongQuery5{Query(default_namespace).Aggregate(AggFacet, {kFieldNameYear}, {{kFieldNameName, true}})};
-		reindexer::QueryResults wrongQr5;
-		err = rt.reindexer->Select(wrongQuery5, wrongQr5);
+		auto err = rt.reindexer->Select(wrongQuery1, wrongQr1);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "The aggregation facet cannot provide sort by 'name'");
 
-		const Query wrongQuery6{Query(default_namespace).Aggregate(AggFacet, {kFieldNameCountries, kFieldNameYear})};
-		reindexer::QueryResults wrongQr6;
-		err = rt.reindexer->Select(wrongQuery6, wrongQr6);
+		const Query wrongQuery2{Query(default_namespace).Aggregate(AggFacet, {kFieldNameCountries, kFieldNameYear})};
+		reindexer::QueryResults wrongQr2;
+		err = rt.reindexer->Select(wrongQuery2, wrongQr2);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Multifield facet cannot contain an array field");
 
 		InitNSObj();
-		const Query wrongQuery7{Query(nsWithObject).Distinct(kFieldNameObjectField)};
-		reindexer::QueryResults wrongQr7;
-		err = rt.reindexer->Select(wrongQuery7, wrongQr7);
+		const Query wrongQuery3{Query(nsWithObject).Distinct(kFieldNameObjectField)};
+		reindexer::QueryResults wrongQr3;
+		err = rt.reindexer->Select(wrongQuery3, wrongQr3);
 		ASSERT_FALSE(err.ok());
 		EXPECT_EQ(err.what(), "Cannot aggregate object field");
 
@@ -1609,6 +1626,9 @@ protected:
 							EXPECT_EQ(aggRes1.facets[j].values.size(), aggRes2.facets[j].values.size());
 							if (aggRes1.facets[j].values.size() == aggRes2.facets[j].values.size()) {
 								for (size_t k = 0; k < aggRes1.facets[j].values.size(); ++k) {
+									if (aggRes1.facets[j].values[k] != aggRes2.facets[j].values[k]) {
+										assertrx(0);
+									}
 									EXPECT_EQ(aggRes1.facets[j].values[k], aggRes2.facets[j].values[k]) << aggRes1.facets[j].values[0];
 								}
 							}
@@ -1957,6 +1977,7 @@ protected:
 		ExecuteAndVerify(Query(comparatorsNs).Where("columnStringNumeric", CondEq, std::string("777")));
 		ExecuteAndVerify(Query(comparatorsNs).Where("columnFullText", CondEq, RandString()));
 	}
+	void sortByNsDifferentTypesImpl(std::string_view fillingNs, const reindexer::Query& q, const std::string& sortPrefix);
 
 	const char* kFieldNameId = "id";
 	const char* kFieldNameGenre = "genre";

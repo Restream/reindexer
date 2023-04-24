@@ -6,7 +6,7 @@
 
 #include "base_fixture.h"
 
-class ApiTvSimple : protected BaseFixture {
+class ApiTvSimple : private BaseFixture {
 public:
 	virtual ~ApiTvSimple() {}
 	ApiTvSimple(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
@@ -22,14 +22,13 @@ public:
 			.AddIndex("start_time", "tree", "int", IndexOpts());
 	}
 
-	virtual void RegisterAllCases();
-	virtual reindexer::Error Initialize();
+	void RegisterAllCases();
+	reindexer::Error Initialize() override;
 
-protected:
-	virtual reindexer::Item MakeItem();
+private:
+	reindexer::Item MakeItem(benchmark::State&) override;
 	reindexer::Item MakeStrItem();
 
-protected:
 	void WarmUpIndexes(State& state);
 
 	void StringsSelect(State& state);
@@ -79,7 +78,6 @@ protected:
 	void FromCJSON(State&);
 	void GetCJSON(State&);
 
-private:
 	void query2CondIdSet(State& state, const std::vector<std::vector<int>>& idsets);
 	reindexer::Error prepareCJsonBench();
 

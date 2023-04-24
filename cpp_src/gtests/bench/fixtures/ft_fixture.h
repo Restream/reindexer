@@ -13,7 +13,7 @@
 
 // #define ENABLE_TIME_TRACKER
 
-class FullText : protected BaseFixture {
+class FullText : private BaseFixture {
 public:
 	virtual ~FullText() {}
 	FullText(Reindexer* db, const std::string& name, size_t maxItems);
@@ -21,10 +21,9 @@ public:
 	virtual reindexer::Error Initialize() override;
 	void RegisterAllCases(size_t iterationCount = -1);
 
-protected:
-	virtual reindexer::Item MakeItem() override;
+private:
+	virtual reindexer::Item MakeItem(benchmark::State&) override;
 
-protected:
 	template <reindexer::FtFastConfig::Optimization>
 	void UpdateIndex(State&);
 	void Insert(State& state);
@@ -76,7 +75,6 @@ protected:
 	void AlternatingUpdatesAndSelectsByComposite(benchmark::State&);
 	void AlternatingUpdatesAndSelectsByCompositeByNotIndexFields(benchmark::State&);
 
-protected:
 	std::string CreatePhrase();
 
 	std::string MakePrefixWord();
@@ -88,7 +86,6 @@ protected:
 	std::vector<std::string> GetRandomCountries(size_t cnt = 5);
 	reindexer::Item MakeSpecialItem();
 
-protected:
 	std::vector<std::string> words_;
 	std::vector<std::string> words2_;
 	std::vector<std::string> countries_;
@@ -102,7 +99,6 @@ protected:
 	};
 	std::vector<Values> values_;
 
-private:
 	class RegisterWrapper {
 	public:
 		//-1 test iteration limit - time

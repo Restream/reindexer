@@ -48,21 +48,11 @@ TEST_F(JoinSelectsApi, MergedQueriesDSLTest) {
 TEST_F(JoinSelectsApi, AggregateFunctonsDSLTest) {
 	Query query{Query(books_namespace, 10, 100).Where(pages, CondGe, 150)};
 
-	reindexer::AggregateEntry aggEntry;
-	aggEntry.fields_ = {price};
-	aggEntry.type_ = AggAvg;
-	query.aggregations_.push_back(aggEntry);
+	query.aggregations_.push_back({AggAvg, {price}});
 
-	aggEntry.fields_ = {pages};
-	aggEntry.type_ = AggSum;
-	query.aggregations_.push_back(aggEntry);
+	query.aggregations_.push_back({AggSum, {pages}});
 
-	aggEntry.fields_ = {title, pages};
-	aggEntry.type_ = AggFacet;
-	aggEntry.sortingEntries_.push_back({title, true});
-	aggEntry.limit_ = 100;
-	aggEntry.offset_ = 10;
-	query.aggregations_.push_back(aggEntry);
+	query.aggregations_.push_back({AggFacet, {title, pages}, {{{title, true}}}, 100, 10});
 
 	std::string dsl = query.GetJSON();
 	Query testLoadDslQuery;
@@ -164,10 +154,7 @@ TEST_F(JoinSelectsApi, GeneralDSLTest) {
 	testDslQuery.AddFunction("f1()");
 	testDslQuery.AddFunction("f2()");
 
-	reindexer::AggregateEntry aggEntry;
-	aggEntry.fields_ = {bookid};
-	aggEntry.type_ = AggDistinct;
-	testDslQuery.aggregations_.push_back(aggEntry);
+	testDslQuery.aggregations_.push_back({AggDistinct, {bookid}});
 
 	Query testLoadDslQuery;
 	const std::string dsl1 = testDslQuery.GetJSON();

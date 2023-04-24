@@ -256,18 +256,18 @@ public:
 		ConstPayload lhs(vars.payloadType_, leftValue);
 		switch (cond) {
 			case CondEq:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) == 0);
+				return (lhs.Compare<WithString::Yes>(*rightValue, vars.fields_, vars.collateOpts_) == 0);
 			case CondGe:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) >= 0);
+				return (lhs.Compare<WithString::Yes>(*rightValue, vars.fields_, vars.collateOpts_) >= 0);
 			case CondGt:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) > 0);
+				return (lhs.Compare<WithString::Yes>(*rightValue, vars.fields_, vars.collateOpts_) > 0);
 			case CondLe:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) <= 0);
+				return (lhs.Compare<WithString::Yes>(*rightValue, vars.fields_, vars.collateOpts_) <= 0);
 			case CondLt:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) < 0);
+				return (lhs.Compare<WithString::Yes>(*rightValue, vars.fields_, vars.collateOpts_) < 0);
 			case CondRange:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) >= 0) &&
-					   (lhs.Compare(values_[1], vars.fields_, vars.collateOpts_) <= 0);
+				return (lhs.Compare<WithString::Yes>(*rightValue, vars.fields_, vars.collateOpts_) >= 0) &&
+					   (lhs.Compare<WithString::Yes>(values_[1], vars.fields_, vars.collateOpts_) <= 0);
 			case CondSet:
 				return valuesSet_->find(leftValue) != valuesSet_->end();
 			case CondAllSet: {

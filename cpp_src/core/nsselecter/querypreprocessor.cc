@@ -9,6 +9,7 @@
 #include "core/query/queryentry.h"
 #include "estl/overloaded.h"
 #include "nsselecter.h"
+#include "substitutionhelpers.h"
 
 namespace reindexer {
 
@@ -119,9 +120,9 @@ void QueryPreprocessor::checkStrictMode(const std::string &index, int idxNo) con
 void QueryPreprocessor::Reduce(bool isFt) {
 	bool changed;
 	do {
-		changed = LookupQueryIndexes();
+		changed = removeBrackets();
+		changed = LookupQueryIndexes() || changed;
 		if (!isFt) changed = SubstituteCompositeIndexes() || changed;
-		changed = removeBrackets() || changed;
 	} while (changed);
 }
 
@@ -279,30 +280,25 @@ bool QueryPreprocessor::ContainsFullTextIndexes() const {
 	return disableOptimizedSortOrder ? query_.sortingEntries_ : detectOptimalSortOrder();
 }
 
-template <typename T>
-int QueryPreprocessor::getCompositeIndex(const T &fields) const {
-	if constexpr (std::is_same_v<T, FieldsSet>) {
-		if (fields.getTagsPathsLength() != 0) {
-			return -1;
-		}
+const std::vector<int> *QueryPreprocessor::getCompositeIndex(int field) const {
+	auto f = ns_.indexesToComposites_.find(field);
+	if (f != ns_.indexesToComposites_.end()) {
+		return &f->second;
 	}
-	for (int i = ns_.indexes_.firstCompositePos(), idxsCount = ns_.indexes_.totalSize(); i < idxsCount; ++i) {
-		if (!IsFullText(ns_.indexes_[i]->Type()) && ns_.indexes_[i]->Fields().contains(fields)) return i;
-	}
-	return -1;
+	return nullptr;
 }
 
 static void createCompositeKeyValues(const h_vector<std::pair<int, VariantArray>, 4> &values, const PayloadType &plType, Payload *pl,
-									 VariantArray &ret, int n) {
+									 VariantArray &ret, unsigned n) {
 	PayloadValue d(plType.TotalSize());
 	Payload pl1(plType, d);
 	if (!pl) pl = &pl1;
 
-	assertrx(n >= 0 && n < static_cast<int>(values.size()));
+	assertrx(n < values.size());
 	const auto &v = values[n];
 	for (auto it = v.second.cbegin(), end = v.second.cend(); it != end; ++it) {
 		pl->Set(v.first, {*it});
-		if (n + 1 < static_cast<int>(values.size())) {
+		if (n + 1 < values.size()) {
 			createCompositeKeyValues(values, plType, pl, ret, n + 1);
 		} else {
 			PayloadValue pv(*pl->Value());
@@ -313,85 +309,69 @@ static void createCompositeKeyValues(const h_vector<std::pair<int, VariantArray>
 }
 
 size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const size_t to) {
-	size_t deleted = 0;
-	struct {
-		void Clear() noexcept {
-			fields.clear();
-			targetCompositeIdx = -1;
-		}
+	using composite_substitution_helpers::CompositeSearcher;
+	using composite_substitution_helpers::EntriesRanges;
 
-		FieldsSet fields;
-		int targetCompositeIdx = -1;
-	} tmp;
-	for (size_t cur = from, first = from, end = to; cur < end; cur = Next(cur), end = to - deleted) {
-		if (!HoldsOrReferTo<QueryEntry>(cur) || GetOperation(cur) != OpAnd || (Next(cur) < end && GetOperation(Next(cur)) == OpOr) ||
-			(Get<QueryEntry>(cur).condition != CondEq && Get<QueryEntry>(cur).condition != CondSet) ||
-			Get<QueryEntry>(cur).idxNo >= ns_.payloadType_.NumFields() || Get<QueryEntry>(cur).idxNo < 0) {
-			// If query already rewritten, then copy current unmatched part
-			first = Next(cur);
-			tmp.Clear();
-			if (container_[cur].IsSubTree()) {
-				deleted += substituteCompositeIndexes(cur + 1, Next(cur));
-			}
+	size_t deleted = 0;
+	CompositeSearcher searcher(ns_);
+	for (size_t cur = from, end = to; cur < end; cur = Next(cur), end = to - deleted) {
+		if (IsSubTree(cur)) {
+			const auto &bracket = Get<QueryEntriesBracket>(cur);
+			auto bracketSize = bracket.Size();
+			deleted += substituteCompositeIndexes(cur + 1, cur + bracketSize);
+			continue;
+		}
+		if (!HoldsOrReferTo<QueryEntry>(cur) || GetOperation(cur) != OpAnd) {
+			continue;
+		}
+		const auto next = Next(cur);
+		if ((next < end && GetOperation(next) == OpOr)) {
 			continue;
 		}
 		auto &qe = Get<QueryEntry>(cur);
-		int found = getCompositeIndex(qe.idxNo);
-		if (found < 0) {
-			// If field does not belong to any composite index
-			tmp.Clear();
-			first = Next(cur);
+		if ((qe.condition != CondEq && qe.condition != CondSet) || qe.idxNo >= ns_.payloadType_.NumFields() || qe.idxNo < 0) {
 			continue;
 		}
-		tmp.fields.push_back(qe.idxNo);
-		if (tmp.targetCompositeIdx >= 0) {
-			if (found != tmp.targetCompositeIdx) {
-				const auto savedFound = found;
-				found = getCompositeIndex(tmp.fields);
 
-				if (found < 0) {
-					tmp.Clear();
-					first = cur;
-					tmp.fields.push_back(qe.idxNo);
-					found = savedFound;
-				}
-				tmp.targetCompositeIdx = found;
-			}
-		} else {
-			tmp.targetCompositeIdx = found;
-		}
-
-		// composite idx found: replace conditions
-		const auto &idxFields = ns_.indexes_[found]->Fields();
-		if (tmp.fields.size() != idxFields.size() || !tmp.fields.contains(idxFields)) {
-			// Not all of the composite fields were found in query
+		const std::vector<int> *found = getCompositeIndex(qe.idxNo);
+		if (!found || found->empty()) {
 			continue;
 		}
+		searcher.Add(qe.idxNo, *found, cur);
+	}
+
+	EntriesRanges deleteRanges;
+	for (auto resIdx = searcher.GetResult(); resIdx >= 0; resIdx = searcher.RemoveAndGetNext(resIdx)) {
+		auto &res = searcher[resIdx];
 		h_vector<std::pair<int, VariantArray>, 4> values;
-		for (size_t i = first; i <= cur; i = Next(i)) {
-			if (!idxFields.contains(Get<QueryEntry>(i).idxNo)) {
+		for (auto i : res.entries) {
+			auto &qe = Get<QueryEntry>(i);
+			if (!res.fields.contains(qe.idxNo)) {
 				throw Error(errLogic, "Error during composite index's fields substitution (this should not happen)");
 			}
-			auto &qe = Get<QueryEntry>(i);
 			if (qe.condition == CondEq && qe.values.size() == 0) {
 				throw Error(errParams, "Condition EQ must have at least 1 argument, but provided 0");
+			}
+			for (auto &v : qe.values) {
+				v.convert(ns_.indexes_[qe.idxNo]->KeyType());
 			}
 			values.emplace_back(qe.idxNo, std::move(qe.values));
 		}
 		{
-			QueryEntry ce(CondSet, ns_.indexes_[found]->Name(), found);
+			QueryEntry ce(CondSet, ns_.indexes_[res.idx]->Name(), res.idx);
 			createCompositeKeyValues(values, ns_.payloadType_, nullptr, ce.values, 0);
 			if (ce.values.size() == 1) {
 				ce.condition = CondEq;
 			}
+			const auto first = res.entries.front();
 			SetOperation(OpAnd, first);
 			container_[first].SetValue(std::move(ce));
 		}
-		deleted += (Next(cur) - Next(first));
-		Erase(Next(first), Next(cur));
-		cur = first;
-		first = Next(first);
-		tmp.Clear();
+		deleteRanges.Add(span(res.entries.data() + 1, res.entries.size() - 1));
+	}
+	for (auto rit = deleteRanges.rbegin(); rit != deleteRanges.rend(); ++rit) {
+		Erase(rit->From(), rit->To());
+		deleted += rit->Size();
 	}
 	return deleted;
 }

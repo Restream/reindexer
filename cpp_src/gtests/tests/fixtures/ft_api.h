@@ -308,6 +308,38 @@ public:
 			ADD_FAILURE() << "Query: " << query;
 		}
 	}
+	template <typename T>
+	std::string DumpStrings(const T& container) {
+		bool first = true;
+		std::string res;
+		res.append("[");
+		for (auto& v : container) {
+			if (first) {
+				res.append(v);
+				first = false;
+			} else {
+				res.append(",").append(v);
+			}
+		}
+		res.append("]");
+		return res;
+	}
+	void CheckResultsByField(const reindexer::QueryResults& res, const std::set<std::string>& expected, std::string_view fieldName,
+							 std::string_view description) {
+		std::set<std::string> resSet;
+		for (auto& r : res) {
+			auto word = r.GetItem(false)[fieldName].As<std::string>();
+			EXPECT_TRUE(expected.find(word) != expected.end()) << description << ": word '" << word << "' was not expected in results";
+			resSet.emplace(std::move(word));
+		}
+		for (auto& e : expected) {
+			EXPECT_TRUE(resSet.find(e) != resSet.end()) << description << ": word '" << e << "' was expected in results, but was not found";
+		}
+		if (!::testing::Test::HasFailure()) {
+			EXPECT_EQ(res.Count(), expected.size())
+				<< description << "; expected(values): " << DumpStrings(expected) << "; got(IDs): " << res.Dump();
+		}
+	}
 
 	std::vector<std::tuple<std::string, std::string>>& DelHighlightSign(std::vector<std::tuple<std::string, std::string>>& in) {
 		for (auto& v : in) {

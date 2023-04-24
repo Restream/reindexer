@@ -5,7 +5,7 @@
 #include "core/selectfunc/ctx/ftctx.h"
 namespace reindexer {
 
-bool Highlight::process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func, std::vector<key_string> &stringsHolder) {
+bool Highlight::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct &func, std::vector<key_string> &stringsHolder) {
 	if (func.funcArgs.size() < 2) throw Error(errParams, "Invalid highlight params need minimum 2 - have %d", func.funcArgs.size());
 
 	if (!func.ctx || func.ctx->type != BaseFunctionCtx::kFtCtx) return false;

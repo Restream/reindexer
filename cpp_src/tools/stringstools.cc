@@ -75,18 +75,57 @@ std::string utf16_to_utf8(const wstring &src) {
 	return utf16_to_utf8(src, dst);
 }
 
-// This functions calc how many bytes takes limit symbols in UTF8 forward
-size_t calcUTf8Size(const char *str, size_t size, size_t limit) {
+// This functions calculate how many bytes takes limit symbols in UTF8 forward
+size_t calcUtf8After(std::string_view str, size_t limit) noexcept {
 	const char *ptr;
-	for (ptr = str; limit && ptr < str + size; limit--) utf8::unchecked::next(ptr);
-	return ptr - str;
+	const char *strEnd = str.data() + str.size();
+	for (ptr = str.data(); limit && ptr < strEnd; limit--) utf8::unchecked::next(ptr);
+	return ptr - str.data();
+}
+std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit, std::string_view delims) noexcept {
+	const char *ptr;
+	const char *strEnd;
+	const char *ptrDelims;
+	const char *delimsEnd;
+	size_t charCounter = 0;
+	for (ptr = str.data(), strEnd = str.data() + str.size(); limit && ptr < strEnd; limit--) {
+		uint32_t c = utf8::unchecked::next(ptr);
+		charCounter++;
+		for (ptrDelims = delims.data(), delimsEnd = delims.data() + delims.size(); ptrDelims < delimsEnd;) {
+			uint32_t d = utf8::unchecked::next(ptrDelims);
+			if (c == d) {
+				utf8::unchecked::prior(ptr);
+				return std::make_pair(ptr - str.data(), charCounter - 1);
+			}
+		}
+	}
+	return std::make_pair(ptr - str.data(), charCounter);
 }
 
-// This functions calc how many bytes takes limit symbols in UTF8 backward
-size_t calcUTf8SizeEnd(const char *end, int pos, size_t limit) {
-	const char *ptr;
-	for (ptr = end; limit && ptr > end - pos; limit--) utf8::unchecked::prior(ptr);
-	return end - ptr;
+// This functions calculate how many bytes takes limit symbols in UTF8 backward
+size_t calcUtf8Before(const char *str, int pos, size_t limit) noexcept {
+	const char *ptr = str + pos;
+	for (; limit && ptr > str; limit--) utf8::unchecked::prior(ptr);
+	return str + pos - ptr;
+}
+
+std::pair<size_t, size_t> calcUtf8BeforeDelims(const char *str, int pos, size_t limit, std::string_view delims) noexcept {
+	const char *ptr = str + pos;
+	const char *ptrDelim;
+	const char *delimsEnd;
+	int charCounter = 0;
+	for (; limit && ptr > str; limit--) {
+		uint32_t c = utf8::unchecked::prior(ptr);
+		charCounter++;
+		for (ptrDelim = delims.data(), delimsEnd = delims.data() + delims.size(); ptrDelim < delimsEnd;) {
+			uint32_t d = utf8::unchecked::next(ptrDelim);
+			if (c == d) {
+				utf8::unchecked::next(ptr);
+				return std::make_pair(str + pos - ptr, charCounter - 1);
+			}
+		}
+	}
+	return std::make_pair(str + pos - ptr, charCounter);
 }
 
 void check_for_replacement(wchar_t &ch) {
@@ -139,6 +178,63 @@ void split(std::string_view str, std::string &buf, std::vector<const char *> &wo
 		}
 	}
 }
+template <typename Pos>
+Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::string &extraWordSymbols) {
+	auto wordStartIt = str.begin();
+	auto wordEndIt = str.begin();
+	auto it = str.begin();
+	Pos wp;
+	const bool constexpr neadChar = std::is_same_v<Pos, WordPositionEx>;
+	if constexpr (neadChar) {
+		wp.start.ch = -1;
+	}
+	for (; it != str.end();) {
+		auto ch = utf8::unchecked::next(it);
+		if constexpr (neadChar) {
+			wp.start.ch++;
+		}
+		// skip not word symbols
+		while (it != str.end() && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
+			wordStartIt = it;
+			ch = utf8::unchecked::next(it);
+			if constexpr (neadChar) {
+				wp.start.ch++;
+			}
+		}
+		if constexpr (neadChar) {
+			wp.end.ch = wp.start.ch;
+		}
+		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
+			wordEndIt = it;
+			if constexpr (neadChar) {
+				wp.end.ch++;
+			}
+			if (it == str.end()) {
+				break;
+			}
+			ch = utf8::unchecked::next(it);
+		}
+
+		if (wordStartIt != it) {
+			if (!wordPosition) {
+				break;
+			} else {
+				wordPosition--;
+				wordStartIt = it;
+			}
+		}
+		if constexpr (neadChar) {
+			wp.start.ch = wp.end.ch;
+		}
+	}
+	if(wordPosition!=0){
+		throw Error(errParams,"wordToByteAndCharPos: incorrect input string=%s wordPosition=%d",str,wordPosition);
+	}
+	wp.SetBytePosition(wordStartIt - str.begin(), wordEndIt - str.begin());
+	return wp;
+}
+template WordPositionEx wordToByteAndCharPos<WordPositionEx>(std::string_view str, int wordPosition, const std::string &extraWordSymbols);
+template WordPosition wordToByteAndCharPos<WordPosition>(std::string_view str, int wordPosition, const std::string &extraWordSymbols);
 
 std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, const std::string &extraWordSymbols) {
 	auto wordStartIt = str.begin();
@@ -240,16 +336,16 @@ bool iless(std::string_view lhs, std::string_view rhs) noexcept {
 	return lhs.size() < rhs.size();
 }
 
-bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive) noexcept {
-	if (src.empty() || pattern.empty()) return false;
-	if (src.length() > pattern.length()) return false;
+bool checkIfStartsWith(std::string_view pattern, std::string_view str, bool casesensitive) noexcept {
+	if (pattern.empty() || str.empty()) return false;
+	if (pattern.length() > str.length()) return false;
 	if (casesensitive) {
-		for (size_t i = 0; i < src.length(); ++i) {
-			if (src[i] != pattern[i]) return false;
+		for (size_t i = 0; i < pattern.length(); ++i) {
+			if (pattern[i] != str[i]) return false;
 		}
 	} else {
-		for (size_t i = 0; i < src.length(); ++i) {
-			if (tolower(src[i]) != tolower(pattern[i])) return false;
+		for (size_t i = 0; i < pattern.length(); ++i) {
+			if (tolower(pattern[i]) != tolower(str[i])) return false;
 		}
 	}
 	return true;

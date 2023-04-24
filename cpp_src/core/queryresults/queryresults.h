@@ -72,7 +72,7 @@ public:
 		std::string_view GetRaw() const;
 		Iterator &operator++();
 		Iterator &operator+(int delta);
-		Error Status() { return err_; }
+		const Error &Status() const noexcept { return err_; }
 		bool operator!=(const Iterator &) const;
 		bool operator==(const Iterator &) const;
 		Iterator &operator*() { return *this; }

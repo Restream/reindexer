@@ -6,9 +6,7 @@
 #include "allocs_tracker.h"
 #include "base_fixture.h"
 
-using benchmark::AllocsTracker;
-
-class ApiTvComposite : protected BaseFixture {
+class ApiTvComposite : private BaseFixture {
 public:
 	ApiTvComposite(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
 		nsdef_.AddIndex("id", "hash", "int", IndexOpts())
@@ -36,11 +34,11 @@ public:
 		//		AddIndex("year+rate", "", "tree", "composite", IndexOpts());   // tree int and double
 	}
 
-	reindexer::Error Initialize();
-	reindexer::Item MakeItem();
+	reindexer::Error Initialize() override;
+	reindexer::Item MakeItem(benchmark::State&) override;
 	void RegisterAllCases();
 
-protected:
+private:
 	void Insert(State& state);
 	void WarmUpIndexes(State& state);
 	void GetByCompositePK(State& state);
@@ -81,7 +79,6 @@ protected:
 	void ForcedSortWithSecondCondition(State& state);
 	void Query2CondIdSetComposite(State& state);
 
-private:
 	std::vector<VariantArray> compositeIdSet_;
 	std::vector<std::string> locations_;
 	std::vector<std::string> names_;

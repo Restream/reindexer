@@ -226,7 +226,7 @@ void ReplicationState::GetJSON(JsonBuilder &builder) {
 		lastUpstreamLSN.GetJSON(lastUpstreamLSNObj);
 	}
 	if (replicatorEnabled) {
-		builder.Put("error_code", replError.code());
+		builder.Put("error_code", static_cast<int>(replError.code()));
 		builder.Put("error_message", replError.what());
 		auto masterObj = builder.Object("master_state");
 		masterState.GetJSON(masterObj);
@@ -253,8 +253,8 @@ void ReplicationState::FromJSON(span<char> json) {
 		LoadLsn(lastSelfLSN, root["last_self_lsn"]);
 		LoadLsn(lastUpstreamLSN, root["last_upstream_lsn"]);
 		if (replicatorEnabled) {
-			int errCode = root["error_code"].As<int>();
-			replError = Error(errCode, root["error_message"].As<std::string>());
+			const int errCode = root["error_code"].As<int>();
+			replError = Error(static_cast<ErrorCode>(errCode), root["error_message"].As<std::string>());
 			try {
 				masterState.FromJSON(root["master_state"]);
 			} catch (const Error &e) {

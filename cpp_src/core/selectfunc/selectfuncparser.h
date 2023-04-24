@@ -7,15 +7,38 @@
 #include <vector>
 #include "core/cjson/tagsmatcher.h"
 #include "estl/tokenizer.h"
+#include "functions/highlight.h"
+#include "functions/snippet.h"
 
 namespace reindexer {
 
 class BaseFunctionCtx;
 
-struct SelectFuncStruct {
-	enum Type { kSelectFuncNone = 0, kSelectFuncSnippet = 1, kSelectFuncHighlight = 2, kSelectFuncProc = 3, kSelectFuncSnippetN = 4 };
+class FuncNone {
+public:
+	bool Process(ItemRef &, PayloadType &, const SelectFuncStruct &, std::vector<key_string> &) { return false; }
+};
 
-	Type type = kSelectFuncNone;
+template <typename VariantType, typename T, std::size_t index = 0>
+constexpr std::size_t variant_index() {
+	static_assert(std::variant_size_v<VariantType> > index, "Type not found in variant");
+	if constexpr (std::is_same_v<std::variant_alternative_t<index, VariantType>, T>) {
+		return index;
+	} else {
+		return variant_index<VariantType, T, index + 1>();
+	}
+}
+
+struct SelectFuncStruct {
+	using FuncVariant = std::variant<FuncNone, Snippet, Highlight, SnippetN>;
+	enum class SelectFuncType {
+		None = variant_index<FuncVariant, FuncNone>(),
+		Snippet = variant_index<FuncVariant, Snippet>(),
+		Highlight = variant_index<FuncVariant, Highlight>(),
+		SnippetN = variant_index<FuncVariant, SnippetN>()
+	};
+
+	FuncVariant func;
 	bool isFunction = false;
 	std::string field;
 	std::string value;

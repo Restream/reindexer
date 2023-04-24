@@ -109,34 +109,41 @@ int SQLParser::selectParse(tokenizer &parser) {
 					if (!query_.CanAddAggregation(agg) || (wasSelectFilter && agg != AggDistinct)) {
 						throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 					}
-					AggregateEntry entry{agg, {std::string(tok.text())}, UINT_MAX, 0};
+					h_vector<std::string, 1> fields{{std::string(tok.text())}};
 					tok = parser.next_token();
 					for (tok = parser.peek_token(); tok.text() == ","sv; tok = parser.peek_token()) {
 						parser.next_token();
 						tok = peekSqlToken(parser, SingleSelectFieldSqlToken);
-						entry.fields_.push_back(std::string(tok.text()));
+						fields.emplace_back(tok.text());
 						tok = parser.next_token();
 					}
+					AggregateEntry entry{agg, std::move(fields)};
 					for (tok = parser.peek_token(); tok.text() != ")"sv; tok = parser.peek_token()) {
 						if (tok.text() == "order"sv) {
 							parser.next_token();
 							std::vector<Variant> orders;
-							parseOrderBy(parser, entry.sortingEntries_, orders);
+							SortingEntries sortingEntries;
+							parseOrderBy(parser, sortingEntries, orders);
 							if (!orders.empty()) {
 								throw Error(errParseSQL, "Forced sort order is not available in aggregation sort");
+							}
+							for (auto s : sortingEntries) {
+								entry.AddSortingEntry(std::move(s));
 							}
 						} else if (tok.text() == "limit"sv) {
 							parser.next_token();
 							tok = parser.next_token();
-							if (tok.type != TokenNumber)
+							if (tok.type != TokenNumber) {
 								throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
-							entry.limit_ = stoi(tok.text());
+							}
+							entry.SetLimit(stoi(tok.text()));
 						} else if (tok.text() == "offset"sv) {
 							parser.next_token();
 							tok = parser.next_token();
-							if (tok.type != TokenNumber)
+							if (tok.type != TokenNumber) {
 								throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
-							entry.offset_ = stoi(tok.text());
+							}
+							entry.SetOffset(stoi(tok.text()));
 						} else {
 							break;
 						}

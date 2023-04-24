@@ -34,7 +34,7 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 }
 
 void ItemImpl::ModifyField(std::string_view jsonPath, const VariantArray &keys, const IndexExpressionEvaluator &ev, FieldModifyMode mode) {
-	return ModifyField(tagsMatcher_.path2indexedtag(jsonPath, ev, mode != FieldModeDrop), keys, mode);
+	ModifyField(tagsMatcher_.path2indexedtag(jsonPath, ev, mode != FieldModeDrop), keys, mode);
 }
 
 void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &keys, FieldModifyMode mode) {
@@ -49,22 +49,26 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 		cjson = generatedCjson.Slice();
 	}
 
-	Error err;
 	CJsonModifier cjsonModifier(tagsMatcher_, payloadType_);
-	switch (mode) {
-		case FieldModeSet:
-			err = cjsonModifier.SetFieldValue(cjson, tagsPath, keys, ser_);
-			break;
-		case FieldModeSetJson:
-			err = cjsonModifier.SetObject(cjson, tagsPath, keys, ser_, &pl);
-			break;
-		case FieldModeDrop:
-			err = cjsonModifier.RemoveField(cjson, tagsPath, ser_);
-			break;
-		default:
-			throw Error(errLogic, "Update mode is not supported: %d", mode);
+	try {
+		switch (mode) {
+			case FieldModeSet:
+				cjsonModifier.SetFieldValue(cjson, tagsPath, keys, ser_);
+				break;
+			case FieldModeSetJson:
+				cjsonModifier.SetObject(cjson, tagsPath, keys, ser_, &pl);
+				break;
+			case FieldModeDrop:
+				cjsonModifier.RemoveField(cjson, tagsPath, ser_);
+				break;
+			default:
+				throw Error(errLogic, "Update mode is not supported: %d", mode);
+		}
+	} catch (const Error &e) {
+		throw Error(e.code(), "Error modifying field value: '%s'", e.what());
+	} catch (std::exception &e) {
+		throw Error(errLogic, "Error modifying field value: '%s'", e.what());
 	}
-	if (!err.ok()) throw Error(errLogic, "Error modifying field value: '%s'", err.what());
 
 	tupleData_ = ser_.DetachLStr();
 	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
@@ -281,7 +285,8 @@ std::string_view ItemImpl::GetCJSON(WrSerializer &ser, bool withTagsMatcher) {
 VariantArray ItemImpl::GetValueByJSONPath(std::string_view jsonPath) {
 	ConstPayload pl(payloadType_, payloadValue_);
 	VariantArray krefs;
-	return pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs, KeyValueType::Undefined{});
+	pl.GetByJsonPath(jsonPath, tagsMatcher_, krefs, KeyValueType::Undefined{});
+	return krefs;
 }
 
 }  // namespace reindexer

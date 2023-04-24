@@ -17,6 +17,8 @@ class key_string;
 struct p_string;
 struct Point;
 
+enum class WithString : bool { No = false, Yes = true };
+
 class Variant {
 public:
 	Variant() noexcept : type_(KeyValueType::Null{}), value_uint64() {}
@@ -93,6 +95,7 @@ public:
 	bool operator>=(const Variant &other) const { return Compare(other) >= 0; }
 
 	int Compare(const Variant &other, const CollateOpts &collateOpts = CollateOpts()) const;
+	template <WithString>
 	int RelaxCompare(const Variant &other, const CollateOpts &collateOpts = CollateOpts()) const;
 	size_t Hash() const noexcept;
 	void EnsureUTF8() const;
@@ -101,7 +104,7 @@ public:
 	KeyValueType Type() const noexcept { return type_; }
 
 	Variant &convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr);
-	Variant convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr) const;
+	[[nodiscard]] Variant convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr) const;
 	VariantArray getCompositeValues() const;
 
 	bool IsNullValue() const noexcept { return type_.Is<KeyValueType::Null>(); }
@@ -109,7 +112,7 @@ public:
 	template <typename T>
 	void Dump(T &os) const;
 
-protected:
+private:
 	void convertToComposite(const PayloadType *, const FieldsSet *);
 	void free() noexcept;
 	void copy(const Variant &other);
@@ -138,6 +141,20 @@ protected:
 	int relaxCompareWithString(std::string_view) const;
 };
 
+extern template int Variant::RelaxCompare<WithString::Yes>(const Variant &, const CollateOpts &) const;
+extern template int Variant::RelaxCompare<WithString::No>(const Variant &, const CollateOpts &) const;
+
+template <>
+int Variant::As<int>() const;
+template <>
+int64_t Variant::As<int64_t>() const;
+template <>
+double Variant::As<double>() const;
+template <>
+bool Variant::As<bool>() const;
+template <>
+std::string Variant::As<std::string>() const;
+
 class VariantArray : public h_vector<Variant, 2> {
 public:
 	VariantArray() noexcept = default;
@@ -159,6 +176,7 @@ public:
 	KeyValueType ArrayType() const noexcept { return empty() ? KeyValueType::Null{} : front().Type(); }
 	template <typename T>
 	void Dump(T &os) const;
+	template <WithString>
 	int RelaxCompare(const VariantArray &other, const CollateOpts & = CollateOpts{}) const;
 	void EnsureHold() {
 		for (Variant &v : *this) v.EnsureHold();
@@ -169,16 +187,8 @@ private:
 	bool isObjectValue = false;
 };
 
-template <>
-int Variant::As<int>() const;
-template <>
-int64_t Variant::As<int64_t>() const;
-template <>
-double Variant::As<double>() const;
-template <>
-bool Variant::As<bool>() const;
-template <>
-std::string Variant::As<std::string>() const;
+extern template int VariantArray::RelaxCompare<WithString::Yes>(const VariantArray &, const CollateOpts &) const;
+extern template int VariantArray::RelaxCompare<WithString::No>(const VariantArray &, const CollateOpts &) const;
 
 }  // namespace reindexer
 namespace std {

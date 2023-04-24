@@ -33,29 +33,6 @@ struct ParameterFieldGetter {
 	std::string_view at(std::string_view field) const { return field; }
 };
 
-std::string_view AggregationResult::aggTypeToStr(AggType type) {
-	switch (type) {
-		case AggMax:
-			return "max"sv;
-		case AggMin:
-			return "min"sv;
-		case AggSum:
-			return "sum"sv;
-		case AggFacet:
-			return "facet"sv;
-		case AggAvg:
-			return "avg"sv;
-		case AggDistinct:
-			return "distinct"sv;
-		case AggCount:
-			return "count"sv;
-		case AggCountCached:
-			return "count_cached"sv;
-		default:
-			return "?"sv;
-	}
-}
-
 AggType AggregationResult::strToAggType(std::string_view type) {
 	if (type == "avg"sv) {
 		return AggAvg;

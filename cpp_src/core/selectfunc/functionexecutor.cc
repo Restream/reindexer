@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-FunctionExecutor::FunctionExecutor(NamespaceImpl& ns) : ns_(ns) {}
+FunctionExecutor::FunctionExecutor(NamespaceImpl& ns) noexcept : ns_(ns) {}
 
 Variant FunctionExecutor::Execute(SelectFuncStruct& funcData) {
 	if (funcData.funcName == "now") {

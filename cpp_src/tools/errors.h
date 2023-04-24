@@ -15,30 +15,82 @@
 namespace reindexer {
 
 class Error {
+	using WhatT = intrusive_atomic_rc_wrapper<std::string>;
+	using WhatPtr = intrusive_ptr<WhatT>;
+	const static WhatPtr defaultErrorText_;
+
 public:
-	Error() = default;
-	Error(int code);
-	Error(int code, std::string_view what);
+	Error() noexcept = default;
+	Error(ErrorCode code) noexcept : code_{code} {}
+	Error(ErrorCode code, std::string what) noexcept : code_{code} {
+		try {
+			what_ = make_intrusive<WhatT>(std::move(what));
+		} catch (...) {
+			what_ = defaultErrorText_;
+		}
+	}
+	Error(ErrorCode code, std::string_view what) noexcept : code_{code} {
+		try {
+			what_ = make_intrusive<WhatT>(what);
+		} catch (...) {
+			what_ = defaultErrorText_;
+		}
+	}
+	Error(ErrorCode code, const char *what) noexcept : code_{code} {
+		try {
+			what_ = make_intrusive<WhatT>(what);
+		} catch (...) {
+			what_ = defaultErrorText_;
+		}
+	}
+	Error(const std::exception &e) noexcept : code_{errSystem} {
+		try {
+			what_ = make_intrusive<WhatT>(e.what());
+		} catch (...) {
+			what_ = defaultErrorText_;
+		}
+	}
+	Error(const Error &) noexcept = default;
+	Error(Error &&) noexcept = default;
+	Error &operator=(const Error &) noexcept = default;
+	Error &operator=(Error &&) noexcept = default;
+
 #ifdef REINDEX_CORE_BUILD
 	template <typename... Args>
-	Error(int code, const char *fmt, const Args &...args) : Error(code, fmt::sprintf(fmt, args...)) {}
+	Error(ErrorCode code, const char *fmt, const Args &...args) noexcept : code_{code} {
+		try {
+			try {
+				what_ = make_intrusive<WhatT>(fmt::sprintf(fmt, args...));
+			} catch (const fmt::FormatError &) {
+				what_ = make_intrusive<WhatT>(fmt);
+			}
+		} catch (...) {
+			what_ = defaultErrorText_;
+		}
+	}
 #endif	// REINDEX_CORE_BUILD
 
-	const std::string &what() const noexcept;
-	int code() const noexcept { return ptr_ ? ptr_->code_ : errOK; }
-	bool ok() const noexcept { return !ptr_; }
+	[[nodiscard]] const std::string &what() const &noexcept {
+		static std::string noerr = "";
+		return what_ ? *what_ : noerr;
+	}
+	[[nodiscard]] std::string what() &&noexcept {
+		if (what_) {
+			return std::move(*what_);
+		} else {
+			return {};
+		}
+	}
+	[[nodiscard]] ErrorCode code() const noexcept { return code_; }
+	[[nodiscard]] bool ok() const noexcept { return code_ == errOK; }
 
-	explicit operator bool() noexcept { return !ok(); }
-	bool operator==(const Error &other) const noexcept { return code() == other.code() && what() == other.what(); }
-	bool operator!=(const Error &other) const noexcept { return !(*this == other); }
+	explicit operator bool() const noexcept { return !ok(); }
+	[[nodiscard]] bool operator==(const Error &other) const noexcept { return code() == other.code() && what() == other.what(); }
+	[[nodiscard]] bool operator!=(const Error &other) const noexcept { return !(*this == other); }
 
-protected:
-	struct payload {
-		payload(int code, const std::string &what) : code_(code), what_(what) {}
-		int code_;
-		std::string what_;
-	};
-	intrusive_ptr<intrusive_atomic_rc_wrapper<payload>> ptr_;
+private:
+	WhatPtr what_;
+	ErrorCode code_{errOK};
 };
 
 #if defined(REINDEX_CORE_BUILD)

@@ -171,13 +171,13 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 		tok = parser.next_token(true);
 	}
 	if (tok.text() == "snippet") {
-		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncSnippet;
+		selectFuncStruct_.func = Snippet();
 	} else if (tok.text() == "highlight") {
-		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncHighlight;
+		selectFuncStruct_.func = Highlight();
 	} else if (tok.text() == "snippet_n") {
-		selectFuncStruct_.type = SelectFuncStruct::kSelectFuncSnippetN;
+		selectFuncStruct_.func = SnippetN();
 		selectFuncStruct_.funcName = std::string(tok.text());
-		static const Args args(4, {"pre_delim", "post_delim"});
+		static const Args args(4, {"pre_delim", "post_delim", "with_area", "left_bound", "right_bound"});
 		parsePositionalAndNamedArgs(parser, args);
 		return selectFuncStruct_;
 	}

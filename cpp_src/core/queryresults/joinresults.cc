@@ -76,7 +76,7 @@ int JoinedFieldIterator::ItemsCount() const {
 	return 0;
 }
 
-const JoinedFieldIterator noJoinedDataIt(nullptr, 0, 0);
+const JoinedFieldIterator noJoinedDataIt(nullptr, {}, 0);
 
 ItemIterator::ItemIterator(const NamespaceResults* parent, IdType rowid) : joinRes_(parent), rowid_(rowid) {}
 

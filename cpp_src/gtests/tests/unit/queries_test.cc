@@ -1,85 +1,94 @@
+#include <gmock/gmock.h>
 #include <thread>
 #include "queries_api.h"
 
 #if !defined(REINDEX_WITH_TSAN)
 TEST_F(QueriesApi, QueriesStandardTestSet) {
-	FillDefaultNamespace(0, 2500, 20);
-	FillDefaultNamespace(2500, 2500, 0);
-	FillCompositeIndexesNamespace(0, 1000);
-	FillTestSimpleNamespace();
-	FillComparatorsNamespace();
-	FillTestJoinNamespace();
-	FillGeomNamespace();
+	try {
+		FillDefaultNamespace(0, 2500, 20);
+		FillDefaultNamespace(2500, 2500, 0);
+		FillCompositeIndexesNamespace(0, 1000);
+		FillTestSimpleNamespace();
+		FillComparatorsNamespace();
+		FillTestJoinNamespace();
+		FillGeomNamespace();
 
-	CheckStandartQueries();
-	CheckAggregationQueries();
-	CheckSqlQueries();
-	CheckDslQueries();
-	CheckCompositeIndexesQueries();
-	CheckComparatorsQueries();
-	CheckDistinctQueries();
-	CheckGeomQueries();
+		CheckStandartQueries();
+		CheckAggregationQueries();
+		CheckSqlQueries();
+		CheckDslQueries();
+		CheckCompositeIndexesQueries();
+		CheckComparatorsQueries();
+		CheckDistinctQueries();
+		CheckGeomQueries();
 
-	int itemsCount = 0;
-	auto& items = insertedItems_[default_namespace];
-	for (auto it = items.begin(); it != items.end();) {
-		Error err = rt.reindexer->Delete(default_namespace, it->second);
-		EXPECT_TRUE(err.ok()) << err.what();
-		it = items.erase(it);
-		if (++itemsCount == 4000) break;
-	}
-
-	FillDefaultNamespace(0, 500, 0);
-	FillDefaultNamespace(0, 1000, 5);
-
-	itemsCount = 0;
-	for (auto it = items.begin(); it != items.end();) {
-		Error err = rt.reindexer->Delete(default_namespace, it->second);
-		EXPECT_TRUE(err.ok()) << err.what();
-		it = items.erase(it);
-		if (++itemsCount == 5000) break;
-	}
-
-	for (size_t i = 0; i < 5000; ++i) {
-		auto itToRemove = items.begin();
-		if (itToRemove != items.end()) {
-			Error err = rt.reindexer->Delete(default_namespace, itToRemove->second);
+		int itemsCount = 0;
+		auto& items = insertedItems_[default_namespace];
+		for (auto it = items.begin(); it != items.end();) {
+			Error err = rt.reindexer->Delete(default_namespace, it->second);
 			EXPECT_TRUE(err.ok()) << err.what();
-			items.erase(itToRemove);
+			it = items.erase(it);
+			if (++itemsCount == 4000) break;
 		}
-		FillDefaultNamespace(rand() % 100, 1, 0);
 
-		if (!items.empty()) {
-			itToRemove = items.begin();
-			std::advance(itToRemove, rand() % std::min(100, int(items.size())));
+		FillDefaultNamespace(0, 500, 0);
+		FillDefaultNamespace(0, 1000, 5);
+
+		itemsCount = 0;
+		for (auto it = items.begin(); it != items.end();) {
+			Error err = rt.reindexer->Delete(default_namespace, it->second);
+			EXPECT_TRUE(err.ok()) << err.what();
+			it = items.erase(it);
+			if (++itemsCount == 5000) break;
+		}
+
+		for (size_t i = 0; i < 5000; ++i) {
+			auto itToRemove = items.begin();
 			if (itToRemove != items.end()) {
 				Error err = rt.reindexer->Delete(default_namespace, itToRemove->second);
 				EXPECT_TRUE(err.ok()) << err.what();
 				items.erase(itToRemove);
 			}
+			FillDefaultNamespace(rand() % 100, 1, 0);
+
+			if (!items.empty()) {
+				itToRemove = items.begin();
+				std::advance(itToRemove, rand() % std::min(100, int(items.size())));
+				if (itToRemove != items.end()) {
+					Error err = rt.reindexer->Delete(default_namespace, itToRemove->second);
+					EXPECT_TRUE(err.ok()) << err.what();
+					items.erase(itToRemove);
+				}
+			}
 		}
+
+		for (auto it = items.begin(); it != items.end();) {
+			Error err = rt.reindexer->Delete(default_namespace, it->second);
+			EXPECT_TRUE(err.ok()) << err.what();
+			it = items.erase(it);
+		}
+
+		FillDefaultNamespace(3000, 1000, 20);
+		FillDefaultNamespace(1000, 500, 00);
+		FillCompositeIndexesNamespace(1000, 1000);
+		FillComparatorsNamespace();
+		FillGeomNamespace();
+
+		CheckStandartQueries();
+		CheckAggregationQueries();
+		CheckSqlQueries();
+		CheckDslQueries();
+		CheckCompositeIndexesQueries();
+		CheckComparatorsQueries();
+		CheckDistinctQueries();
+		CheckGeomQueries();
+	} catch (const reindexer::Error& e) {
+		ASSERT_TRUE(false) << e.what() << std::endl;
+	} catch (const std::exception& e) {
+		ASSERT_TRUE(false) << e.what() << std::endl;
+	} catch (...) {
+		ASSERT_TRUE(false);
 	}
-
-	for (auto it = items.begin(); it != items.end();) {
-		Error err = rt.reindexer->Delete(default_namespace, it->second);
-		EXPECT_TRUE(err.ok()) << err.what();
-		it = items.erase(it);
-	}
-
-	FillDefaultNamespace(3000, 1000, 20);
-	FillDefaultNamespace(1000, 500, 00);
-	FillCompositeIndexesNamespace(1000, 1000);
-	FillComparatorsNamespace();
-	FillGeomNamespace();
-
-	CheckStandartQueries();
-	CheckAggregationQueries();
-	CheckSqlQueries();
-	CheckDslQueries();
-	CheckCompositeIndexesQueries();
-	CheckComparatorsQueries();
-	CheckDistinctQueries();
-	CheckGeomQueries();
 }
 #endif
 
@@ -500,4 +509,217 @@ TEST_F(QueriesApi, SetByTreeIndex) {
 		EXPECT_NE(qr.explainResults.find(",\"method\":\"index\","), std::string::npos);
 		EXPECT_EQ(qr.explainResults.find("\"scan\""), std::string::npos);
 	}
+}
+
+TEST_F(QueriesApi, ConvertationStringToDoubleDuringSorting) {
+	using namespace std::string_literals;
+	const std::string nsName = "ns_convertation_string_to_double_during_sorting";
+	Error err = rt.reindexer->OpenNamespace(nsName);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"str_idx", {"str_idx"}, "hash", "string", IndexOpts{}});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	const auto addItem = [&](int id, std::string_view strIdx, std::string_view strFld) {
+		reindexer::WrSerializer ser;
+		{
+			reindexer::JsonBuilder json{ser};
+			json.Put("id", id);
+			json.Put("str_idx", strIdx);
+			json.Put("str_fld", strFld);
+		}
+		Item item = rt.reindexer->NewItem(nsName);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		err = item.FromJSON(ser.Slice());
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Upsert(nsName, item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	};
+	addItem(0, "123.5", "123.5");
+	addItem(1, " 23.5", " 23.5");
+	addItem(2, "3.5 ", "3.5 ");
+	addItem(3, " .5", " .5");
+	addItem(4, " .15 ", " .15 ");
+	addItem(10, "123.5 and something", "123.5 and something");
+	addItem(11, " 23.5 and something", " 23.5 and something");
+	addItem(12, "3.5 and something", "3.5 and something");
+	addItem(13, " .5 and something", " .5 and something");
+
+	for (const auto& f : {"str_idx"s, "str_fld"s}) {
+		Query q = Query{nsName}.Where("id", CondLt, 5).Sort("2 * "s + f, false).Strict(StrictModeNames);
+		reindexer::QueryResults qr;
+		err = rt.reindexer->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		int prevId = 10;
+		for (auto& it : qr) {
+			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+			const auto item = it.GetItem();
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			const auto currId = item["id"].As<int>();
+			EXPECT_LT(currId, prevId);
+			prevId = currId;
+		}
+	}
+
+	for (const auto& f : {"str_idx"s, "str_fld"s}) {
+		Query q = Query{nsName}.Where("id", CondGt, 5).Sort("2 * "s + f, false).Strict(StrictModeNames);
+		reindexer::QueryResults qr;
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_THAT(err.what(), testing::MatchesRegex("Can't convert '.*' to number"));
+	}
+}
+
+std::string print(const reindexer::Query& q, reindexer::QueryResults::Iterator& currIt, reindexer::QueryResults::Iterator& prevIt,
+				  const reindexer::QueryResults& qr) {
+	std::string res = '\n' + q.GetSQL() + "\ncurr: ";
+	reindexer::WrSerializer ser;
+	currIt.GetJSON(ser, false);
+	res += ser.Slice();
+	if (prevIt != qr.end()) {
+		res += "\nprev: ";
+		ser.Reset();
+		prevIt.GetJSON(ser, false);
+		res += ser.Slice();
+	}
+	return res;
+}
+
+void QueriesApi::sortByNsDifferentTypesImpl(std::string_view fillingNs, const reindexer::Query& qTemplate, const std::string& sortPrefix) {
+	const auto addItem = [&](int id, auto v) {
+		reindexer::WrSerializer ser;
+		{
+			reindexer::JsonBuilder json{ser};
+			json.Put("id", id);
+			json.Put("value", v);
+			{
+				auto obj = json.Object("object");
+				obj.Put("nested_value", v);
+			}
+		}
+		Item item = rt.reindexer->NewItem(fillingNs);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		const auto err = item.FromJSON(ser.Slice());
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Upsert(fillingNs, item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	};
+	for (int id = 0; id < 100; ++id) {
+		addItem(id, id);
+	}
+	for (int id = 100; id < 200; ++id) {
+		addItem(id, int64_t(id));
+	}
+	for (int id = 200; id < 300; ++id) {
+		addItem(id, double(id) + 0.5);
+	}
+	for (int id = 500; id < 600; ++id) {
+		addItem(id, std::to_string(id));
+	}
+	for (int id = 600; id < 700; ++id) {
+		addItem(id, std::to_string(id) + RandString());
+	}
+	for (int id = 700; id < 800; ++id) {
+		addItem(id, char('a' + (id % 100) / 10) + std::string{char('a' + id % 10)} + RandString());
+	}
+
+	const auto check = [&](CondType cond, std::vector<int> values, const char* expectedErr = nullptr) {
+		for (bool desc : {true, false}) {
+			for (const char* sortField : {"value", "object.nested_value"}) {
+				auto q = qTemplate;
+				q.Where("id", cond, values).Sort(sortPrefix + sortField, desc);
+				reindexer::QueryResults qr;
+				const auto err = rt.reindexer->Select(q, qr);
+				if (expectedErr) {
+					EXPECT_FALSE(err.ok()) << q.GetSQL();
+					EXPECT_EQ(err.what(), expectedErr) << q.GetSQL();
+				} else {
+					ASSERT_TRUE(err.ok()) << err.what() << '\n' << q.GetSQL();
+					switch (cond) {
+						case CondRange:
+							EXPECT_EQ(qr.Count(), values.at(1) - values.at(0) + 1) << q.GetSQL();
+							break;
+						case CondSet:
+						case CondEq:
+							EXPECT_EQ(qr.Count(), values.size()) << q.GetSQL();
+							break;
+						case CondAny:
+						case CondEmpty:
+						case CondLike:
+						case CondDWithin:
+						case CondLt:
+						case CondLe:
+						case CondGt:
+						case CondGe:
+						case CondAllSet:
+							assert(0);
+					}
+					int prevId = 10000 * (desc ? 1 : -1);
+					auto prevIt = qr.end();
+					for (auto& it : qr) {
+						ASSERT_TRUE(it.Status().ok()) << it.Status().what() << print(q, it, prevIt, qr);
+						const auto item = it.GetItem();
+						ASSERT_TRUE(item.Status().ok()) << item.Status().what() << print(q, it, prevIt, qr);
+						const auto currId = item["id"].As<int>();
+						if (desc) {
+							EXPECT_LT(currId, prevId) << print(q, it, prevIt, qr);
+						} else {
+							EXPECT_GT(currId, prevId) << print(q, it, prevIt, qr);
+						}
+						prevId = currId;
+						prevIt = it;
+					}
+				}
+			}
+		}
+	};
+	// same types
+	for (int id : {0, 100, 200, 500, 600, 700}) {
+		check(CondRange, {id, id + 99});
+	}
+	// numeric types
+	check(CondRange, {0, 299});
+	// string
+	check(CondRange, {500, 799});
+	// different types
+	for (int i = 0; i < 10; ++i) {
+		check(CondSet, {rand() % 100 + 100, 500 + rand() % 300}, "Not comparable types: string and int64");
+		check(CondSet, {rand() % 100 + 200, 500 + rand() % 300}, "Not comparable types: string and double");
+	}
+}
+
+TEST_F(QueriesApi, SortByJoinedNsDifferentTypes) {
+	const std::string nsMain{"sort_by_joined_ns_different_types_main"};
+	const std::string nsRight{"sort_by_joined_ns_different_types_right"};
+	Error err = rt.reindexer->OpenNamespace(nsMain);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(nsMain, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->OpenNamespace(nsRight);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(nsRight, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	for (int id = 0; id < 1000; ++id) {
+		Item item = rt.reindexer->NewItem(nsMain);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		item["id"] = id;
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Upsert(nsMain, item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	}
+
+	sortByNsDifferentTypesImpl(nsRight, Query{nsMain}.InnerJoin("id", "id", CondEq, Query{nsRight}), nsRight + '.');
+}
+
+TEST_F(QueriesApi, SortByFieldWithDifferentTypes) {
+	const std::string nsName{"sort_by_field_different_types"};
+	Error err = rt.reindexer->OpenNamespace(nsName);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	sortByNsDifferentTypesImpl(nsName, Query{nsName}, "");
 }

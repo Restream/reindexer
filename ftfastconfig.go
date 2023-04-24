@@ -22,6 +22,25 @@ type FtFastFieldConfig struct {
 	PositionWeight float64 `json:"position_weight"`
 }
 
+type FtTyposDetailedConfig struct {
+	// Maximum distance between symbols in initial and target words to perform substitution
+	// Values range: [-1,100]
+	// Default: 0
+	MaxTypoDistance int `json:"max_typo_distance"`
+	// Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbolws were switched with each other)
+	// Values range: [-1,100]
+	// Default: 1
+	MaxSymbolPermutationDistance int `json:"max_symbol_permutation_distance"`
+	// Maximum number of symbols, which may be removed from the initial term to transform it into the result word
+	// Values range: [-1,2]
+	// Default: 2
+	MaxMissingLetters int `json:"max_missing_letters"`
+	// Maximum number of symbols, which may be added to the initial term to transform it into the result word
+	// Values range: [-1,2]
+	// Default: 2
+	MaxExtraLetters int `json:"max_extra_letters"`
+}
+
 // FtFastConfig configurarion of FullText search index
 type FtFastConfig struct {
 	// boost of bm25 ranking. default value 1.
@@ -58,10 +77,14 @@ type FtFastConfig struct {
 	// Maximum possible typos in word.
 	// 0: typos is disabled, words with typos will not match
 	// N: words with N possible typos will match
+	// Values range: [0,4]
+	// Default: 2
 	// It is not recommended to set more than 2 possible typo: It will serously increase RAM usage, and decrease search speed
 	MaxTypos int `json:"max_typos"`
 	// Maximum word length for building and matching variants with typos. Default value is 15
 	MaxTypoLen int `json:"max_typo_len"`
+	// Config for more precise typos algorithm tuning
+	TyposDetailedConfig *FtTyposDetailedConfig `json:"typos_detailed_config,omitempty"`
 	// Maximum commit steps - set it 1 for always full rebuild - it can be from 1 to 500
 	MaxRebuildSteps int `json:"max_rebuild_steps"`
 	// Maximum words in one commit - it can be from 5 to DOUBLE_MAX
@@ -122,6 +145,7 @@ func DefaultFtFastConfig() FtFastConfig {
 		MinRelevancy:            0.05,
 		MaxTypos:                2,
 		MaxTypoLen:              15,
+		TyposDetailedConfig:     &FtTyposDetailedConfig{MaxTypoDistance: 0, MaxSymbolPermutationDistance: 1, MaxExtraLetters: 2, MaxMissingLetters: 2},
 		MaxRebuildSteps:         50,
 		MaxStepSize:             4000,
 		MergeLimit:              20000,

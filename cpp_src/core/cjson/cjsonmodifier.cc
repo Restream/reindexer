@@ -19,6 +19,7 @@ struct CJsonModifier::Context {
 		if (mode == FieldModeSet && fieldPath.back().IsArrayNode() && value.empty()) {
 			throw Error(errParams, "Array item should not be an empty value");
 		}
+		std::fill(std::begin(fieldsArrayOffsets), std::end(fieldsArrayOffsets), 0);
 	}
 	const VariantArray &value;
 	WrSerializer &wrser;
@@ -28,54 +29,46 @@ struct CJsonModifier::Context {
 	FieldModifyMode mode;
 	const Payload *payload = nullptr;
 	bool fieldUpdated = false;
+	std::array<unsigned, maxIndexes> fieldsArrayOffsets;
 };
 
 CJsonModifier::CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt) : pt_(std::move(pt)), tagsMatcher_(tagsMatcher) {}
 
-Error CJsonModifier::SetFieldValue(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser) {
+void CJsonModifier::SetFieldValue(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser) {
 	if (fieldPath.empty()) {
-		return Error(errLogic, kWrongFieldsAmountMsg);
+		throw Error(errLogic, kWrongFieldsAmountMsg);
 	}
-	try {
-		tagsPath_.clear();
-		Context ctx(fieldPath, val, ser, tuple, FieldModeSet, nullptr);
-		fieldPath_ = std::move(fieldPath);
-		updateFieldInTuple(ctx);
-	} catch (const Error &err) {
-		return err;
+	tagsPath_.clear();
+	Context ctx(fieldPath, val, ser, tuple, FieldModeSet, nullptr);
+	fieldPath_ = std::move(fieldPath);
+	updateFieldInTuple(ctx);
+	if (!ctx.fieldUpdated && !fieldPath_.back().IsForAllItems()) {
+		throw Error(errParams, "[SetFieldValue] Requested field or array's index was not found");
 	}
-	return errOK;
 }
 
-Error CJsonModifier::SetObject(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser,
-							   const Payload *pl) {
+void CJsonModifier::SetObject(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser,
+							  const Payload *pl) {
 	if (fieldPath.empty()) {
-		return Error(errLogic, kWrongFieldsAmountMsg);
+		throw Error(errLogic, kWrongFieldsAmountMsg);
 	}
-	try {
-		tagsPath_.clear();
-		Context ctx(fieldPath, val, ser, tuple, FieldModeSetJson, pl);
-		fieldPath_ = std::move(fieldPath);
-		buildCJSON(ctx);
-	} catch (const Error &err) {
-		return err;
+	tagsPath_.clear();
+	Context ctx(fieldPath, val, ser, tuple, FieldModeSetJson, pl);
+	fieldPath_ = std::move(fieldPath);
+	buildCJSON(ctx);
+	if (!ctx.fieldUpdated && !fieldPath_.back().IsForAllItems()) {
+		throw Error(errParams, "[SetObject] Requested field or array's index was not found");
 	}
-	return errOK;
 }
 
-Error CJsonModifier::RemoveField(std::string_view tuple, IndexedTagsPath fieldPath, WrSerializer &wrser) {
+void CJsonModifier::RemoveField(std::string_view tuple, IndexedTagsPath fieldPath, WrSerializer &wrser) {
 	if (fieldPath.empty()) {
-		return Error(errLogic, kWrongFieldsAmountMsg);
+		throw Error(errLogic, kWrongFieldsAmountMsg);
 	}
-	try {
-		tagsPath_.clear();
-		Context ctx(fieldPath, {}, wrser, tuple, FieldModeDrop);
-		fieldPath_ = std::move(fieldPath);
-		dropFieldInTuple(ctx);
-	} catch (const Error &err) {
-		return err;
-	}
-	return errOK;
+	tagsPath_.clear();
+	Context ctx(fieldPath, {}, wrser, tuple, FieldModeDrop);
+	fieldPath_ = std::move(fieldPath);
+	dropFieldInTuple(ctx);
 }
 
 void CJsonModifier::updateObject(Context &ctx, int tagName) {
@@ -140,7 +133,17 @@ bool CJsonModifier::needToInsertField(Context &ctx) {
 				break;
 			}
 		}
-		return correctPath;
+		if (correctPath) {
+			bool containsArrayIndex = false;
+			for (auto &node : fieldPath_) {
+				if (node.IsArrayNode()) {
+					containsArrayIndex = true;
+					break;
+				}
+			}
+			return !containsArrayIndex || fieldPath_.size() == ctx.currObjPath.size();
+		}
+		return false;
 	}
 	return false;
 }
@@ -215,7 +218,7 @@ bool CJsonModifier::updateFieldInTuple(Context &ctx) {
 			}
 		} else if (tagType == TAG_ARRAY) {
 			if (tagMatched) {
-				skipCjsonTag(tag, ctx.rdser);
+				skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
 				ctx.wrser.PutUInt32(int(carraytag(ctx.value.size(), ctx.value.ArrayType().ToNumber())));
 				for (size_t i = 0; i < ctx.value.size(); ++i) {
 					updateField(ctx, i);
@@ -229,7 +232,7 @@ bool CJsonModifier::updateFieldInTuple(Context &ctx) {
 					tagMatched = checkIfFoundTag(ctx, isLastItem);
 					if (tagMatched) {
 						copyCJsonValue(atag.Tag(), ctx.value.front(), ctx.wrser);
-						skipCjsonTag(atag.Tag(), ctx.rdser);
+						skipCjsonTag(atag.Tag(), ctx.rdser, &ctx.fieldsArrayOffsets);
 					} else {
 						switch (atag.Tag()) {
 							case TAG_OBJECT: {
@@ -252,7 +255,7 @@ bool CJsonModifier::updateFieldInTuple(Context &ctx) {
 					}
 					updateField(ctx, 0);
 				}
-				skipCjsonTag(tag, ctx.rdser);
+				skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
 			} else {
 				copyCJsonValue(tagType, ctx.rdser, ctx.wrser);
 			}
@@ -275,7 +278,7 @@ bool CJsonModifier::dropFieldInTuple(Context &ctx) {
 
 	bool tagMatched = (!ctx.fieldUpdated && fieldPath_.Compare(tagsPath_));
 	if (tagMatched) {
-		skipCjsonTag(tag, ctx.rdser);
+		skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
 		ctx.fieldUpdated = true;
 		return true;
 	}
@@ -305,7 +308,7 @@ bool CJsonModifier::dropFieldInTuple(Context &ctx) {
 			for (int i = 0; i < size; i++) {
 				tagsPath_.back().SetIndex(i);
 				if (tagMatched && (i == fieldPath_.back().Index() || fieldPath_.back().IsForAllItems())) {
-					skipCjsonTag(atag.Tag(), ctx.rdser);
+					skipCjsonTag(atag.Tag(), ctx.rdser, &ctx.fieldsArrayOffsets);
 				} else {
 					switch (atag.Tag()) {
 						case TAG_OBJECT: {
@@ -332,10 +335,8 @@ void CJsonModifier::embedFieldValue(int type, int field, Context &ctx, size_t id
 		copyCJsonValue(type, ctx.rdser, ctx.wrser);
 	} else {
 		assertrx(ctx.payload);
-		VariantArray v;
-		ctx.payload->Get(field, v);
-		assertrx(idx < v.size());
-		copyCJsonValue(type, v[idx], ctx.wrser);
+		Variant v = ctx.payload->Get(field, ctx.fieldsArrayOffsets[field] + idx);
+		copyCJsonValue(type, v, ctx.wrser);
 	}
 }
 
@@ -348,17 +349,21 @@ bool CJsonModifier::buildCJSON(Context &ctx) {
 		return false;
 	}
 
-	int tagName = tag.Name();
+	const int tagName = tag.Name();
 	TagsPathScope<IndexedTagsPath> pathScope(tagsPath_, tagName);
 
-	bool embeddedField = (tag.Field() < 0);
+	const auto field = tag.Field();
+	bool embeddedField = (field < 0);
 	bool tagMatched = fieldPath_.Compare(tagsPath_);
-	if (!tagMatched) ctx.wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName)));
-	if (tagMatched) tagType = TAG_OBJECT;
+	if (!tagMatched) {
+		ctx.wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName)));
+	} else {
+		tagType = TAG_OBJECT;
+	}
 
 	if (tagType == TAG_OBJECT) {
 		if (tagMatched) {
-			skipCjsonTag(tag, ctx.rdser);
+			skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
 			updateObject(ctx, tagName);
 		} else {
 			TagsPathScope<IndexedTagsPath> pathScope(ctx.currObjPath, tagName);
@@ -375,12 +380,13 @@ bool CJsonModifier::buildCJSON(Context &ctx) {
 			atag = carraytag(count, kvType2Tag(kvType));
 		}
 		ctx.wrser.PutUInt32(static_cast<int>(atag));
-		for (int i = 0; i < atag.Count(); i++) {
+		const auto arrSize = atag.Count();
+		for (int i = 0; i < arrSize; i++) {
 			tagsPath_.back().SetIndex(i);
 			tagMatched = fieldPath_.Compare(tagsPath_);
 			if (tagMatched) {
 				updateObject(ctx, 0);
-				skipCjsonTag(ctx.rdser.GetVarUint(), ctx.rdser);
+				skipCjsonTag(ctx.rdser.GetVarUint(), ctx.rdser, &ctx.fieldsArrayOffsets);
 			} else {
 				switch (atag.Tag()) {
 					case TAG_OBJECT: {
@@ -389,13 +395,19 @@ bool CJsonModifier::buildCJSON(Context &ctx) {
 						break;
 					}
 					default:
-						embedFieldValue(atag.Tag(), tag.Field(), ctx, i);
+						embedFieldValue(atag.Tag(), field, ctx, i);
 						break;
 				}
 			}
 		}
+		if (field >= 0) {
+			ctx.fieldsArrayOffsets[field] += arrSize;
+		}
 	} else {
-		embedFieldValue(tagType, tag.Field(), ctx, 0);
+		embedFieldValue(tagType, field, ctx, 0);
+		if (field >= 0) {
+			ctx.fieldsArrayOffsets[field] += 1;
+		}
 	}
 
 	return true;

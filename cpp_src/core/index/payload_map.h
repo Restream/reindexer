@@ -66,7 +66,7 @@ struct less_composite {
 		assertrx(type_);
 		assertrx(!lhs.IsFree());
 		assertrx(!rhs.IsFree());
-		return (ConstPayload(type_, lhs).Compare(rhs, fields_) < 0);
+		return (ConstPayload(type_, lhs).Compare<WithString::No>(rhs, fields_) < 0);
 	}
 	PayloadType type_;
 	FieldsSet fields_;

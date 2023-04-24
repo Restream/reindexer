@@ -21,7 +21,8 @@ public:
 			reindexer::JsonBuilder builder(ser);
 			builder.Put("id", id);
 			builder.End();
-			item.FromJSON(ser.c_str());
+			err = item.FromJSON(ser.c_str());
+			ASSERT_TRUE(err.ok()) << err.what();
 			rt.reindexer->Insert(leftNs, item);
 		}
 
@@ -37,7 +38,8 @@ public:
 				}
 			}
 			builder.End();
-			item.FromJSON(ser.c_str());
+			err = item.FromJSON(ser.c_str());
+			ASSERT_TRUE(err.ok()) << err.what();
 			rt.reindexer->Insert(rightNs, item);
 		}
 	}

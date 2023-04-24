@@ -24,7 +24,7 @@ const size_t kCtxArrSize = 1024;
 const size_t kWarnLargeResultsLimit = 0x40000000;
 const size_t kMaxPooledResultsCap = 0x10000;
 
-static Error err_not_init(-1, "Reindexer db has not initialized");
+static Error err_not_init(errNotValid, "Reindexer db has not initialized");
 static Error err_too_many_queries(errLogic, "Too many parallel queries");
 
 static reindexer_error error2c(const Error& err_) {
@@ -142,7 +142,7 @@ static void procces_packed_item(Item& item, int mode, int state_token, reindexer
 				}
 				break;
 			default:
-				err = Error(-1, "Invalid source item format %d", format);
+				err = Error(errNotValid, "Invalid source item format %d", format);
 		}
 		if (err.ok()) {
 			item.SetPrecepts(precepts);

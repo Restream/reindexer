@@ -5,7 +5,7 @@
 
 #include "base_fixture.h"
 
-class Geometry : protected BaseFixture {
+class Geometry : private BaseFixture {
 public:
 	~Geometry() override = default;
 	Geometry(Reindexer* db, const std::string& name, size_t maxItems) : BaseFixture(db, name, maxItems) {
@@ -15,8 +15,8 @@ public:
 	void RegisterAllCases();
 	reindexer::Error Initialize() override;
 
-protected:
-	reindexer::Item MakeItem() override;
+private:
+	reindexer::Item MakeItem(benchmark::State&) override;
 
 	template <size_t N>
 	void Insert(State& state);
@@ -25,7 +25,6 @@ protected:
 	template <IndexOpts::RTreeIndexType rtreeType>
 	void Reset(State& state);
 
-private:
 	reindexer::WrSerializer wrSer_;
 	int id_ = 0;
 };

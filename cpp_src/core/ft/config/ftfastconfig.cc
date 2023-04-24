@@ -4,6 +4,7 @@
 #include <set>
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/stopwords/stop.h"
+#include "core/ft/typos.h"
 #include "tools/errors.h"
 #include "tools/jsontools.h"
 
@@ -47,15 +48,24 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 				throw Error(errParseDSL,
 							"Fulltext configuration cannot contain 'max_typos' and 'max_typos_in_word' fields at the same time");
 			}
-			maxTypos = 2 * root["max_typos_in_word"].As<>(MaxTyposInWord(), 0, 2);
+			maxTypos = 2 * root["max_typos_in_word"].As<>(MaxTyposInWord(), 0, kMaxTyposInWord);
 		} else {
 			const auto& maxTyposNode = root["max_typos"];
 			if (!maxTyposNode.empty() && maxTyposNode.value.getTag() != gason::JSON_NUMBER) {
 				throw Error(errParseDSL, "Fulltext configuration field 'max_typos' should be integer");
 			}
-			maxTypos = maxTyposNode.As<>(maxTypos, 0, 4);
+			maxTypos = maxTyposNode.As<>(maxTypos, 0, 2 * kMaxTyposInWord);
 		}
-		maxTypoLen = root["max_typo_len"].As<>(maxTypoLen, 0, 100);
+		maxTypoLen = root["max_typo_len"].As<>(maxTypoLen, 0, kMaxTypoLenLimit);
+		if (!root["typos_detailed_config"].empty()) {
+			auto typos = root["typos_detailed_config"];
+			maxTypoDistance = typos["max_typo_distance"].As<>(maxTypoDistance, -1, kMaxTypoLenLimit);
+			maxSymbolPermutationDistance =
+				typos["max_symbol_permutation_distance"].As<>(maxSymbolPermutationDistance, -1, kMaxTypoLenLimit);
+			maxMissingLetters = typos["max_missing_letters"].As<>(maxMissingLetters, -1, kMaxTyposInWord);
+			maxExtraLetters = typos["max_extra_letters"].As<>(maxExtraLetters, -1, kMaxTyposInWord);
+		}
+
 		maxRebuildSteps = root["max_rebuild_steps"].As<>(maxRebuildSteps, 1, 500);
 		maxStepSize = root["max_step_size"].As<>(maxStepSize, 5);
 		maxAreasInDoc = root["max_areas_in_doc"].As<int>(maxAreasInDoc);
@@ -125,6 +135,13 @@ std::string FtFastConfig::GetJson(const fast_hash_map<std::string, int>& fields)
 	jsonBuilder.Put("partial_match_decrease", partialMatchDecrease);
 	jsonBuilder.Put("min_relevancy", minRelevancy);
 	jsonBuilder.Put("max_typos", maxTypos);
+	{
+		auto typos = jsonBuilder.Object("typos_detailed_config");
+		typos.Put("max_typo_distance", maxTypoDistance);
+		typos.Put("max_symbol_permutation_distance", maxSymbolPermutationDistance);
+		typos.Put("max_missing_letters", maxMissingLetters);
+		typos.Put("max_extra_letters", maxExtraLetters);
+	}
 	jsonBuilder.Put("max_typo_len", maxTypoLen);
 	jsonBuilder.Put("max_rebuild_steps", maxRebuildSteps);
 	jsonBuilder.Put("max_step_size", maxStepSize);
@@ -163,7 +180,7 @@ std::string FtFastConfig::GetJson(const fast_hash_map<std::string, int>& fields)
 		}
 	}
 	jsonBuilder.End();
-	return wrser.c_str();
+	return std::string(wrser.Slice());
 }
 
 }  // namespace reindexer

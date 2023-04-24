@@ -98,7 +98,9 @@ bool FieldsComparator::compare(const LArr &lhs, const RArr &rhs) {
 				if constexpr (needCompareTypes) {
 					if (!compareTypes(v.Type(), rhs[0].Type()) || !compareTypes(v.Type(), rhs[1].Type())) continue;
 				}
-				if (v.RelaxCompare(rhs[0], collateOpts_) >= 0 && v.RelaxCompare(rhs[1], collateOpts_) <= 0) return true;
+				if (v.RelaxCompare<WithString::Yes>(rhs[0], collateOpts_) >= 0 &&
+					v.RelaxCompare<WithString::Yes>(rhs[1], collateOpts_) <= 0)
+					return true;
 			}
 			return false;
 		case CondLike:
@@ -120,7 +122,7 @@ bool FieldsComparator::compare(const LArr &lhs, const RArr &rhs) {
 					if constexpr (needCompareTypes) {
 						if (!compareTypes(lv.Type(), rv.Type())) continue;
 					}
-					if (lv.RelaxCompare(rv, collateOpts_) == 0) {
+					if (lv.RelaxCompare<WithString::Yes>(rv, collateOpts_) == 0) {
 						found = true;
 						break;
 					}
@@ -136,7 +138,7 @@ bool FieldsComparator::compare(const LArr &lhs, const RArr &rhs) {
 					if constexpr (needCompareTypes) {
 						if (!compareTypes(lv.Type(), rv.Type())) continue;
 					}
-					const int compRes = lv.RelaxCompare(rv, collateOpts_);
+					const int compRes = lv.RelaxCompare<WithString::Yes>(rv, collateOpts_);
 					switch (condition_) {
 						case CondEq:
 						case CondSet:

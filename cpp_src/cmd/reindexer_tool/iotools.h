@@ -8,39 +8,32 @@
 
 namespace reindexer_tool {
 
-using std::ofstream;
-using std::ostream;
-using std::istream;
-using std::string;
-using std::stringstream;
-using std::numeric_limits;
 using reindexer::Error;
-using reindexer::WrSerializer;
 
 class Output {
 public:
 	Output() : isCout_(true), errState_(0) {}
-	Output(const string& filePath) : f_(filePath, std::ios::out | std::ios::trunc), isCout_(filePath.empty()) {
+	Output(const std::string& filePath) : f_(filePath, std::ios::out | std::ios::trunc), isCout_(filePath.empty()) {
 		errState_ = (isCout_ || f_.is_open()) ? 0 : errno;
 	}
 
-	ostream& operator()() {
+	std::ostream& operator()() {
 		if (!isCout_ && !f_.is_open()) throw Error(errLogic, "%s", strerror(errState_));
 		return isCout_ ? std::cout : f_;
 	}
 
-	Error Status() const { return errState_ ? Error(errLogic, "%s", strerror(errState_)) : 0; }
+	Error Status() const { return errState_ ? Error(errLogic, "%s", strerror(errState_)) : Error{}; }
 	bool IsCout() const { return isCout_; }
 
 private:
-	ofstream f_;
+	std::ofstream f_;
 	bool isCout_;
 	int errState_;
 };
 
 class LineParser {
 public:
-	LineParser(const string& line) : line_(line), cur_(line.data()) {}
+	LineParser(const std::string& line) : line_(line), cur_(line.data()) {}
 	std::string_view NextToken() {
 		while (*cur_ == ' ' || *cur_ == '\t') cur_++;
 
@@ -55,7 +48,7 @@ public:
 	std::string_view CurPtr() { return std::string_view(cur_, line_.size() - (cur_ - line_.data())); }
 
 protected:
-	const string& line_;
+	const std::string& line_;
 	const char* cur_;
 };
 

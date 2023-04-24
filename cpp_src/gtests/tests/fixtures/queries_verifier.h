@@ -143,7 +143,7 @@ protected:
 
 		// If query has distinct, skip verification
 		for (const auto& agg : query.aggregations_) {
-			if (agg.type_ == AggDistinct) return;
+			if (agg.Type() == AggDistinct) return;
 		}
 
 		for (auto& insertedItem : insertedItems_[query._namespace]) {
@@ -168,14 +168,14 @@ protected:
 
 		if (aggResults.size() == query.aggregations_.size()) {
 			for (size_t i = 0; i < aggResults.size(); ++i) {
-				EXPECT_EQ(aggResults[i].type, query.aggregations_[i].type_) << "i = " << i;
-				EXPECT_EQ(aggResults[i].fields.size(), query.aggregations_[i].fields_.size()) << "i = " << i;
-				if (aggResults[i].fields.size() == query.aggregations_[i].fields_.size()) {
+				EXPECT_EQ(aggResults[i].type, query.aggregations_[i].Type()) << "i = " << i;
+				EXPECT_EQ(aggResults[i].fields.size(), query.aggregations_[i].Fields().size()) << "i = " << i;
+				if (aggResults[i].fields.size() == query.aggregations_[i].Fields().size()) {
 					for (size_t j = 0; j < aggResults[i].fields.size(); ++j) {
-						EXPECT_EQ(aggResults[i].fields[j], query.aggregations_[i].fields_[j]) << "i = " << i << ", j = " << j;
+						EXPECT_EQ(aggResults[i].fields[j], query.aggregations_[i].Fields()[j]) << "i = " << i << ", j = " << j;
 					}
 				}
-				EXPECT_LE(aggResults[i].facets.size(), query.aggregations_[i].limit_) << "i = " << i;
+				EXPECT_LE(aggResults[i].facets.size(), query.aggregations_[i].Limit()) << "i = " << i;
 			}
 		}
 	}
@@ -495,36 +495,40 @@ private:
 	static bool compareValues(CondType condition, reindexer::Variant key, const reindexer::VariantArray& values, const CollateOpts& opts) {
 		if (values.empty()) return false;
 		try {
-			key.convert(values[0].Type());
-		} catch (const reindexer::Error& err) {
-			return false;
-		}
-		switch (condition) {
-			case CondGe:
-				return key.Compare(values[0], opts) >= 0;
-			case CondGt:
-				return key.Compare(values[0], opts) > 0;
-			case CondLt:
-				return key.Compare(values[0], opts) < 0;
-			case CondLe:
-				return key.Compare(values[0], opts) <= 0;
-			case CondRange:
-				assert(values.size() > 1);
-				return (key.Compare(values[0], opts) >= 0) && (key.Compare(values[1], opts) <= 0);
-			case CondEq:
-			case CondSet:
-				for (const reindexer::Variant& kv : values) {
-					if (key.Compare(kv, opts) == 0) return true;
-				}
-				return false;
-			case CondLike:
-				if (!key.Type().Is<reindexer::KeyValueType::String>()) {
+			switch (condition) {
+				case CondGe:
+					return key.RelaxCompare<reindexer::WithString::Yes>(values[0], opts) >= 0;
+				case CondGt:
+					return key.RelaxCompare<reindexer::WithString::Yes>(values[0], opts) > 0;
+				case CondLt:
+					return key.RelaxCompare<reindexer::WithString::Yes>(values[0], opts) < 0;
+				case CondLe:
+					return key.RelaxCompare<reindexer::WithString::Yes>(values[0], opts) <= 0;
+				case CondRange:
+					assert(values.size() > 1);
+					return (key.RelaxCompare<reindexer::WithString::Yes>(values[0], opts) >= 0) &&
+						   (key.RelaxCompare<reindexer::WithString::Yes>(values[1], opts) <= 0);
+				case CondEq:
+				case CondSet:
+					for (const reindexer::Variant& kv : values) {
+						if (key.RelaxCompare<reindexer::WithString::Yes>(kv, opts) == 0) return true;
+					}
 					return false;
-				}
-				return isLikeSqlPattern(*static_cast<reindexer::key_string>(key.convert(reindexer::KeyValueType::String{})),
-										*static_cast<reindexer::key_string>(values[0].convert(reindexer::KeyValueType::String{})));
-			default:
-				std::abort();
+				case CondLike:
+					if (!key.Type().Is<reindexer::KeyValueType::String>()) {
+						return false;
+					}
+					return isLikeSqlPattern(*static_cast<reindexer::key_string>(key.convert(reindexer::KeyValueType::String{})),
+											*static_cast<reindexer::key_string>(values[0].convert(reindexer::KeyValueType::String{})));
+				default:
+					std::abort();
+			}
+		} catch (const reindexer::Error& err) {
+			if (err.code() == errParams && reindexer::checkIfStartsWith("Can't convert ", err.what())) {
+				return false;
+			} else {
+				throw;
+			}
 		}
 	}
 
@@ -585,7 +589,8 @@ private:
 			case CondRange:
 				assert(rValues.size() == 2);
 				for (const auto& lv : lValues) {
-					if (lv.RelaxCompare(rValues[0], collate) >= 0 && lv.Compare(rValues[1], collate) <= 0) return true;
+					if (lv.RelaxCompare<reindexer::WithString::Yes>(rValues[0], collate) >= 0 && lv.Compare(rValues[1], collate) <= 0)
+						return true;
 				}
 				return false;
 			case CondLike:
@@ -602,7 +607,7 @@ private:
 			default:
 				for (const reindexer::Variant& lv : lValues) {
 					for (const reindexer::Variant& rv : rValues) {
-						const int res = lv.RelaxCompare(rv, collate);
+						const int res = lv.RelaxCompare<reindexer::WithString::Yes>(rv, collate);
 						switch (qentry.Condition()) {
 							case CondGe:
 								if (res >= 0) return true;

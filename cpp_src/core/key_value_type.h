@@ -31,21 +31,8 @@ private:
 	static constexpr bool ForAnyType = T<Int64>::value || T<Double>::value || T<String>::value || T<Bool>::value || T<Null>::value ||
 									   T<Int>::value || T<Undefined>::value || T<Composite>::value || T<Tuple>::value;
 
-	template <typename T>
-	struct FunctionTraits {
-		using Arg = typename FunctionTraits<decltype(&T::operator())>::Arg;
-	};
-	template <typename T, typename R, typename A>
-	struct FunctionTraits<R (T::*)(A) const> {
-		using Arg = A;
-	};
-	template <typename T, typename R, typename A>
-	struct FunctionTraits<R (T::*)(A) const noexcept> {
-		using Arg = A;
-	};
 	template <typename F, typename... Fs>
 	struct IsNoexcept {
-		static constexpr bool value = IsNoexcept<F>::value && IsNoexcept<Fs...>::value;
 		template <typename T>
 		struct Overloaded {
 			static constexpr bool value = noexcept(std::declval<overloaded<F, Fs...>>()(std::declval<T>()));
@@ -53,7 +40,6 @@ private:
 	};
 	template <typename F>
 	struct IsNoexcept<F> {
-		static constexpr bool value = noexcept(std::declval<F>()(std::declval<typename FunctionTraits<F>::Arg>()));
 		template <typename T>
 		struct Overloaded {
 			static constexpr bool value = noexcept(std::declval<overloaded<F>>()(std::declval<T>()));
@@ -66,6 +52,19 @@ private:
 		struct IsInvocable {
 			static constexpr bool value = std::disjunction_v<std::is_invocable<Fs, A>...>;
 		};
+	};
+
+	template <typename T, typename Visitor>
+	class VisitorWrapper {
+	public:
+		explicit VisitorWrapper(Visitor& v) noexcept : visitor_{v} {}
+		template <typename... Ts>
+		auto operator()(Ts... vs) const noexcept(noexcept(std::declval<Visitor>()(Ts{}..., T{}))) {
+			return visitor_(vs..., T{});
+		}
+
+	private:
+		Visitor& visitor_;
 	};
 
 	enum class KVT {
@@ -125,8 +124,46 @@ public:
 		std::abort();
 	}
 	template <typename... Fs>
-	inline auto EvaluateOneOf(Fs... fs) const noexcept(IsNoexcept<Fs...>::value) {
+	inline auto EvaluateOneOf(Fs... fs) const noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
 		return EvaluateOneOf(overloaded<Fs...>{std::move(fs)...});
+	}
+	template <typename Visitor>
+	static inline auto Visit(Visitor visitor, KeyValueType t) noexcept(ForAllTypes<IsNoexcept<Visitor>::template Overloaded>) {
+		return t.EvaluateOneOf(std::move(visitor));
+	}
+	template <typename Visitor>
+	static inline auto Visit(Visitor visitor, KeyValueType t1, KeyValueType t2) noexcept {
+		switch (t2.value_) {
+			case KVT::Int64:
+				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Int64, Visitor>>::template Overloaded>);
+				return Visit(VisitorWrapper<Int64, Visitor>{visitor}, t1);
+			case KVT::Double:
+				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Double, Visitor>>::template Overloaded>);
+				return Visit(VisitorWrapper<Double, Visitor>{visitor}, t1);
+			case KVT::String:
+				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<String, Visitor>>::template Overloaded>);
+				return Visit(VisitorWrapper<String, Visitor>{visitor}, t1);
+			case KVT::Bool:
+				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Bool, Visitor>>::template Overloaded>);
+				return Visit(VisitorWrapper<Bool, Visitor>{visitor}, t1);
+			case KVT::Null:
+				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Null, Visitor>>::template Overloaded>);
+				return Visit(VisitorWrapper<Null, Visitor>{visitor}, t1);
+			case KVT::Int:
+				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Int, Visitor>>::template Overloaded>);
+				return Visit(VisitorWrapper<Int, Visitor>{visitor}, t1);
+			case KVT::Undefined:
+				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Undefined, Visitor>>::template Overloaded>);
+				return Visit(VisitorWrapper<Undefined, Visitor>{visitor}, t1);
+			case KVT::Composite:
+				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Composite, Visitor>>::template Overloaded>);
+				return Visit(VisitorWrapper<Composite, Visitor>{visitor}, t1);
+			case KVT::Tuple:
+				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Tuple, Visitor>>::template Overloaded>);
+				return Visit(VisitorWrapper<Tuple, Visitor>{visitor}, t1);
+		}
+		assertrx(0);
+		std::abort();
 	}
 
 	template <typename T>
@@ -150,6 +187,23 @@ public:
 			default:
 				throw Error(errParams, "Invalid int value for KeyValueType: " + std::to_string(n));
 		}
+	}
+	inline bool IsNumeric() const noexcept {
+		switch (value_) {
+			case KVT::Int64:
+			case KVT::Double:
+			case KVT::Int:
+			case KVT::Bool:
+				return true;
+			case KVT::String:
+			case KVT::Null:
+			case KVT::Undefined:
+			case KVT::Composite:
+			case KVT::Tuple:
+				return false;
+		}
+		assertrx(0);
+		std::abort();
 	}
 	inline int ToNumber() const noexcept { return static_cast<int>(value_); }
 	inline std::string_view Name() const noexcept {

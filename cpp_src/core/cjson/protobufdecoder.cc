@@ -49,20 +49,20 @@ ProtobufDecoder::ProtobufDecoder(TagsMatcher& tagsMatcher, std::shared_ptr<const
 
 void ProtobufDecoder::setValue(Payload* pl, CJsonBuilder& builder, const ProtobufValue& item) {
 	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
-	item.value.convert(item.itemType);
+	auto value = item.value.convert(item.itemType);
 	if (field > 0) {
-		pl->Set(field, {item.value}, true);
+		pl->Set(field, {value}, true);
 		if (item.isArray) {
 			arraysStorage_.UpdateArraySize(item.tagName, field);
 		} else {
-			builder.Ref(item.tagName, item.value, field);
+			builder.Ref(item.tagName, value, field);
 		}
 	} else {
 		if (item.isArray) {
 			auto& array = arraysStorage_.GetArray(item.tagName);
-			array.Put(0, item.value);
+			array.Put(0, value);
 		} else {
-			builder.Put(item.tagName, item.value);
+			builder.Put(item.tagName, value);
 		}
 	}
 }

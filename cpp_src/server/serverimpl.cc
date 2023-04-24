@@ -44,14 +44,10 @@ extern std::atomic<bool> rxAllowNamespaceLeak;
 
 namespace reindexer_server {
 
-using std::string;
-using std::pair;
-using std::vector;
-
 using reindexer::fs::GetDirPath;
 using reindexer::logLevelFromString;
 
-ServerImpl::ServerImpl(ServerMode mode)
+ServerImpl::ServerImpl([[maybe_unused]] ServerMode mode)
 	:
 #ifdef REINDEX_WITH_GPERFTOOLS
 	  config_(alloc_ext::TCMallocIsAvailable()),
@@ -66,7 +62,6 @@ ServerImpl::ServerImpl(ServerMode mode)
 	  mode_(mode)
 #endif	// REINDEX_WITH_ASAN
 {
-	(void)mode;
 	async_.set(loop_);
 }
 
@@ -98,7 +93,7 @@ Error ServerImpl::InitFromFile(const char *filePath) {
 	return init();
 }
 
-Error ServerImpl::InitFromYAML(const string &yaml) {
+Error ServerImpl::InitFromYAML(const std::string &yaml) {
 	Error err = config_.ParseYaml(yaml);
 	if (!err.ok()) {
 		if (err.code() == errParams) {
@@ -127,7 +122,7 @@ Error ServerImpl::init() {
 		GetDirPath(config_.CoreLog),	   GetDirPath(config_.HttpLog), GetDirPath(config_.RpcLog),
 		GetDirPath(config_.ServerLog),	   config_.StoragePath};
 
-	for (const string &dir : dirs) {
+	for (const std::string &dir : dirs) {
 		err = TryCreateDirectory(dir);
 		if (!err.ok()) return err;
 #ifndef _WIN32
@@ -145,7 +140,7 @@ Error ServerImpl::init() {
 #endif
 
 	coreLogLevel_ = logLevelFromString(config_.LogLevel);
-	return 0;
+	return {};
 }
 
 int ServerImpl::Start() {
@@ -459,7 +454,7 @@ Error ServerImpl::daemonize() {
 			exit(EXIT_SUCCESS);
 			//	break;
 	}
-	return 0;
+	return {};
 }
 #endif
 
@@ -471,7 +466,7 @@ Error ServerImpl::loggerConfigure() {
 		spdlog::set_pattern("[%L%d/%m %T.%e %t] %v");
 	});
 
-	vector<pair<string, string>> loggers = {
+	std::vector<std::pair<std::string, std::string>> loggers = {
 		{"server", config_.ServerLog}, {"core", config_.CoreLog}, {"http", config_.HttpLog}, {"rpc", config_.RpcLog}};
 
 	for (auto &logger : loggers) {
@@ -491,7 +486,7 @@ Error ServerImpl::loggerConfigure() {
 		}
 	}
 	logger_ = LoggerWrapper("server");
-	return 0;
+	return {};
 }
 
 void ServerImpl::initCoreLogger() {

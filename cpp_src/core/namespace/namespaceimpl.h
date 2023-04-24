@@ -72,6 +72,10 @@ struct NsContext {
 	bool inTransaction = false;
 };
 
+namespace composite_substitution_helpers {
+class CompositeSearcher;
+}
+
 class NamespaceImpl {  // NOLINT(*performance.Padding) Padding does not matter for this class
 	class IndexesCacheCleaner {
 	public:
@@ -98,6 +102,7 @@ protected:
 	friend class WALSelecter;
 	friend class NsSelectFuncInterface;
 	friend class QueryPreprocessor;
+	friend class composite_substitution_helpers::CompositeSearcher;
 	friend class SelectIteratorContainer;
 	friend class ItemComparator;
 	friend class ItemModifier;
@@ -353,6 +358,7 @@ protected:
 
 	IndexesStorage indexes_;
 	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str> indexesNames_;
+	fast_hash_map<int, std::vector<int>> indexesToComposites_;	// Maps index fields to corresponding composite indexes
 	// All items with data
 	Items items_;
 	std::vector<IdType> free_;

@@ -200,7 +200,8 @@ reindexer::Error ApiTvSimple::Initialize() {
 		bld.Put("id", i);
 		bld.Put("field", i);
 		bld.End();
-		mItem.FromJSON(wrSer_.Slice());
+		err = mItem.FromJSON(wrSer_.Slice());
+		if (!err.ok()) return err;
 		err = db_->Insert(mainNsDef.name, mItem);
 		if (!err.ok()) return err;
 
@@ -212,7 +213,8 @@ reindexer::Error ApiTvSimple::Initialize() {
 		bld2.Put("id", i);
 		bld2.Put("field", i);
 		bld2.End();
-		rItem.FromJSON(wrSer_.Slice());
+		err = rItem.FromJSON(wrSer_.Slice());
+		if (!err.ok()) return err;
 		err = db_->Insert(rightNsDef.name, rItem);
 		if (!err.ok()) return err;
 	}
@@ -362,12 +364,13 @@ reindexer::Item ApiTvSimple::MakeStrItem() {
 		bld.Put("field_int", id);
 		bld.Put("field_str", "value_" + idStr);
 		bld.End();
-		item.FromJSON(wrSer_.Slice());
+		const auto err = item.FromJSON(wrSer_.Slice());
+		if (!err.ok()) assert(!item.Status().ok());
 	}
 	return item;
 }
 
-reindexer::Item ApiTvSimple::MakeItem() {
+reindexer::Item ApiTvSimple::MakeItem(benchmark::State&) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
 	item.Unsafe();
@@ -427,7 +430,7 @@ void ApiTvSimple::GetCJSON(benchmark::State& state) {
 	assert(itemForCjsonBench_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		itemForCjsonBench_->GetCJSON();
+		[[maybe_unused]] const auto ret = itemForCjsonBench_->GetCJSON();
 	}
 }
 

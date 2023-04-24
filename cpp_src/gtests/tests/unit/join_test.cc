@@ -328,7 +328,8 @@ TEST_F(JoinSelectsApi, TestSortingByJoinedNs) {
 	reindexer::QueryResults joinQueryRes1;
 	Error err = rt.reindexer->Select(query1, joinQueryRes1);
 	// several book to one author, cannot sort
-	ASSERT_FALSE(err.ok()) << err.what();
+	ASSERT_FALSE(err.ok());
+	EXPECT_EQ(err.what(), "Not found value joined from ns books_namespace");
 
 	Query joinedQuery2 = Query(authors_namespace);
 	Query query2{Query(books_namespace)

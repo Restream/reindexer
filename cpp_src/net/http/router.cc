@@ -1,4 +1,5 @@
 #include "router.h"
+
 #include <cstdarg>
 #include <unordered_map>
 #include "debug/allocdebug.h"
@@ -45,8 +46,10 @@ HttpStatusCode HttpStatus::errCodeToHttpStatus(int errCode) {
 			return StatusOK;
 		case errNotFound:
 			return StatusNotFound;
+		case errNotValid:
 		case errParams:
 		case errParseSQL:
+		case errParseDSL:
 			return StatusBadRequest;
 		case errForbidden:
 			return StatusForbidden;

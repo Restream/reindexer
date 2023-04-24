@@ -15,6 +15,35 @@ static constexpr int maxIndexes = 64;
 using base_fields_set = h_vector<int8_t, 6>;
 using FieldsPath = std::variant<TagsPath, IndexedTagsPath>;
 
+class IndexesFieldsSet {
+public:
+	IndexesFieldsSet() noexcept = default;
+	IndexesFieldsSet(std::initializer_list<int> l) {
+		for (auto i : l) {
+			push_back(i);
+		}
+	}
+	bool contains(int f) const noexcept { return f >= 0 && f <= maxIndexes && (mask_ & (1ULL << f)); }
+	void push_back(int f) {
+		if (f < 0) return;
+		if (f > maxIndexes) {
+			throwMaxValueError(f);
+		}
+		if (!contains(f)) {
+			mask_ |= 1ULL << f;
+			++count_;
+		}
+	}
+	uint64_t mask() const noexcept { return mask_; }
+	unsigned size() const noexcept { return count_; }
+
+private:
+	[[noreturn]] void throwMaxValueError(int f);
+
+	uint64_t mask_ = 0;
+	unsigned count_ = 0;
+};
+
 class FieldsSet : protected base_fields_set {
 public:
 	using base_fields_set::begin;
@@ -36,13 +65,32 @@ public:
 	FieldsSet() = default;
 
 	void push_back(const std::string &jsonPath) {
-		if (!contains(jsonPath)) jsonPaths_.push_back(jsonPath);
+		if (!contains(jsonPath)) {
+			jsonPaths_.push_back(jsonPath);
+		}
+	}
+	void push_back(std::string &&jsonPath) {
+		if (!contains(jsonPath)) {
+			jsonPaths_.emplace_back(std::move(jsonPath));
+		}
 	}
 
 	void push_back(const TagsPath &tagsPath) {
 		if (!contains(tagsPath)) {
 			base_fields_set::push_back(IndexValueType::SetByJsonPath);
 			tagsPaths_.emplace_back(tagsPath);
+		}
+	}
+	void push_back(TagsPath &&tagsPath) {
+		if (!contains(tagsPath)) {
+			base_fields_set::push_back(IndexValueType::SetByJsonPath);
+			tagsPaths_.emplace_back(std::move(tagsPath));
+		}
+	}
+	void push_front(TagsPath &&tagsPath) {
+		if (!contains(tagsPath)) {
+			base_fields_set::insert(begin(), IndexValueType::SetByJsonPath);
+			tagsPaths_.insert(tagsPaths_.begin(), std::move(tagsPath));
 		}
 	}
 
@@ -52,6 +100,12 @@ public:
 			tagsPaths_.emplace_back(tagsPath);
 		}
 	}
+	void push_back(IndexedTagsPath &&tagsPath) {
+		if (!contains(tagsPath)) {
+			base_fields_set::push_back(IndexValueType::SetByJsonPath);
+			tagsPaths_.emplace_back(std::move(tagsPath));
+		}
+	}
 
 	void push_back(int f) {
 		if (f == IndexValueType::SetByJsonPath) return;
@@ -59,6 +113,14 @@ public:
 		if (!contains(f)) {
 			mask_ |= 1ULL << f;
 			base_fields_set::push_back(f);
+		}
+	}
+	void push_front(int f) {
+		if (f == IndexValueType::SetByJsonPath) return;
+		assertrx(f < maxIndexes);
+		if (!contains(f)) {
+			mask_ |= 1ULL << f;
+			base_fields_set::insert(begin(), f);
 		}
 	}
 
@@ -77,6 +139,7 @@ public:
 	bool contains(const std::string &jsonPath) const noexcept {
 		return std::find(jsonPaths_.begin(), jsonPaths_.end(), jsonPath) != jsonPaths_.end();
 	}
+	bool contains(const IndexesFieldsSet &f) const noexcept { return mask_ && ((mask_ & f.mask()) == f.mask()); }
 	bool contains(const TagsPath &tagsPath) const noexcept {
 		for (const FieldsPath &path : tagsPaths_) {
 			if (path.index() == 0) {

@@ -46,8 +46,10 @@ Container& split(const typename Container::value_type& str, const std::string& d
 void split(const std::string& utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words);
 void split(std::string_view utf8Str, std::wstring& utf16str, std::vector<std::wstring>& words, const std::string& extraWordSymbols);
 void split(std::string_view str, std::string& buf, std::vector<const char*>& words, const std::string& extraWordSymbols);
-size_t calcUTf8Size(const char* s, size_t size, size_t limit);
-size_t calcUTf8SizeEnd(const char* end, int pos, size_t limit);
+[[nodiscard]] size_t calcUtf8After(std::string_view s, size_t limit) noexcept;
+[[nodiscard]] std::pair<size_t, size_t> calcUtf8AfterDelims(std::string_view str, size_t limit, std::string_view delims) noexcept;
+[[nodiscard]] size_t calcUtf8Before(const char* str, int pos, size_t limit) noexcept;
+[[nodiscard]] std::pair<size_t, size_t> calcUtf8BeforeDelims(const char* str, int pos, size_t limit, std::string_view delims) noexcept;
 
 int getUTF8StringCharactersCount(std::string_view str) noexcept;
 
@@ -61,6 +63,36 @@ protected:
 	int lastWordPos_, lastOffset_;
 	const std::string& extraWordSymbols_;
 };
+
+struct TextOffset {
+	int byte = 0;
+	int ch = 0;
+};
+
+struct WordPositionEx {
+	TextOffset start;
+	TextOffset end;
+	void SetBytePosition(int s, int e) noexcept {
+		start.byte = s;
+		end.byte = e;
+	}
+	[[nodiscard]] int StartByte() const noexcept { return start.byte; }
+	[[nodiscard]] int EndByte() const noexcept { return end.byte; }
+};
+
+struct WordPosition {
+	int start;
+	int end;
+	void SetBytePosition(int s, int e) noexcept {
+		start = s;
+		end = e;
+	}
+	[[nodiscard]] int StartByte() const noexcept { return start; }
+	[[nodiscard]] int EndByte() const noexcept { return end; }
+};
+
+template <typename Pos>
+[[nodiscard]] Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::string& extraWordSymbols);
 
 int collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts& collateOpts);
 
@@ -86,7 +118,7 @@ std::string_view strictModeToString(StrictMode mode);
 
 bool iequals(std::string_view lhs, std::string_view rhs) noexcept;
 bool iless(std::string_view lhs, std::string_view rhs) noexcept;
-bool checkIfStartsWith(std::string_view src, std::string_view pattern, bool casesensitive = false) noexcept;
+bool checkIfStartsWith(std::string_view pattern, std::string_view src, bool casesensitive = false) noexcept;
 bool checkIfEndsWith(std::string_view pattern, std::string_view src, bool casesensitive = false) noexcept;
 bool isPrintable(std::string_view str) noexcept;
 bool isBlank(std::string_view token) noexcept;

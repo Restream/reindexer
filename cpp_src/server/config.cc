@@ -236,7 +236,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (rpcQrIdleTimeoutF) RPCQrIdleTimeout = std::chrono::seconds(args::get(rpcQrIdleTimeoutF));
 	if (maxUpdatesSizeF) MaxUpdatesSize = args::get(maxUpdatesSizeF);
 
-	return 0;
+	return {};
 }
 
 reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
@@ -279,7 +279,7 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
 	} catch (const YAML::Exception &ex) {
 		return Error(errParams, "Unable to parse YML server config: %s", ex.what());
 	}
-	return 0;
+	return {};
 }
 
 }  // namespace reindexer_server

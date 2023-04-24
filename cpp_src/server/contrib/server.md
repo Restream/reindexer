@@ -130,7 +130,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.14.1
+*Version* : 3.15.0
 
 
 ### License information
@@ -2217,6 +2217,17 @@ Fulltext Index configuration
 |**synonyms**  <br>*optional*|List of synonyms for replacement|< [FulltextSynonym](#fulltextsynonym) > array|
 |**term_len_boost**  <br>*optional*|Boost of search query term length  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**term_len_weight**  <br>*optional*|Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range  <br>**Default** : `0.3`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**typos_detailed_config**  <br>*optional*|Config for more precise typos algorithm tuning|[typos_detailed_config](#fulltextconfig-typos_detailed_config)|
+
+
+**typos_detailed_config**
+
+|Name|Description|Schema|
+|---|---|---|
+|**max_extra_letters**  <br>*optional*|Maximum number of symbols, which may be added to the initial term to transform it into the result word  <br>**Minimum value** : `-1`  <br>**Maximum value** : `2`|integer|
+|**max_missing_letters**  <br>*optional*|Maximum number of symbols, which may be removed from the initial term to transform it into the result word  <br>**Minimum value** : `-1`  <br>**Maximum value** : `2`|integer|
+|**max_symbol_permutation_distance**  <br>*optional*|Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbolws were switched with each other)  <br>**Minimum value** : `-1`  <br>**Maximum value** : `100`|integer|
+|**max_typo_distance**  <br>*optional*|Maximum distance between symbols in initial and target words to perform substitution  <br>**Minimum value** : `-1`  <br>**Maximum value** : `100`|integer|
 
 
 

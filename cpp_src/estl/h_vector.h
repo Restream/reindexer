@@ -41,7 +41,7 @@ public:
 	typedef unsigned size_type;
 	typedef std::ptrdiff_t difference_type;
 	h_vector() noexcept : e_{0, 0}, size_(0), is_hdata_(1) {}
-	h_vector(size_type size) : h_vector() { resize(size); }
+	explicit h_vector(size_type size) : h_vector() { resize(size); }
 	h_vector(size_type size, const T& v) : h_vector() {
 		reserve(size);
 		const pointer p = ptr();

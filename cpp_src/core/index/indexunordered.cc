@@ -306,7 +306,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 		case CondAllSet: {
 			// Get set of key, where all request keys are present
 			SelectKeyResults rslts;
-			for (auto &key : keys) {
+			for (auto key : keys) {
 				SelectKeyResult res1;
 				key.convert(this->KeyType());
 				auto keyIt = this->idx_map.find(static_cast<ref_type>(key));

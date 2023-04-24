@@ -431,8 +431,10 @@ public:
 	}
 	std::string_view Slice() const noexcept { return std::string_view(reinterpret_cast<const char *>(buf_), len_); }
 	const char *c_str() noexcept {
-		grow(1);
-		buf_[len_] = 0;
+		if (!len_ || buf_[len_] != 0) {
+			grow(1);
+			buf_[len_] = 0;
+		}
 		return reinterpret_cast<const char *>(buf_);
 	}
 

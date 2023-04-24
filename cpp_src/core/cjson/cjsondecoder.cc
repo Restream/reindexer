@@ -2,6 +2,7 @@
 #include "cjsontools.h"
 #include "core/keyvalue/p_string.h"
 #include "tagsmatcher.h"
+#include "tools/flagguard.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -52,8 +53,13 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 		if (match) {
 			Error err = errOK;
 			size_t savePos = rdser.Pos();
-			const KeyValueType fieldType{pl->Type().Field(field).Type()};
+			const auto &fieldRef = pl->Type().Field(field);
+			const KeyValueType fieldType{fieldRef.Type()};
 			if (tagType == TAG_ARRAY) {
+				if (!fieldRef.IsArray()) {
+					throw Error(errLogic, "Error parsing cjson field '%s' - got array, expected scalar %s", fieldRef.Name(),
+								fieldRef.Type().Name());
+				}
 				carraytag atag = rdser.GetUInt32();
 				int ofs = pl->ResizeArray(field, atag.Count(), true);
 				for (int count = 0; count < atag.Count() && err.ok(); count++) {
@@ -64,6 +70,9 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 					wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, field)));
 					wrser.PutVarUint(atag.Count());
 				}
+			} else if (isInArray() && !fieldRef.IsArray()) {
+				throw Error(errLogic, "Error parsing cjson field '%s' - got value in the nested array, but expected scalar %s",
+							fieldRef.Name(), fieldRef.Type().Name());
 			} else if (tagType != TAG_NULL) {
 				pl->Set(field, {cjsonValueToVariant(tagType, rdser, fieldType, err)}, true);
 				if (err.ok()) {
@@ -96,6 +105,7 @@ bool CJsonDecoder::decodeCJson(Payload *pl, Serializer &rdser, WrSerializer &wrs
 		} else if (tagType == TAG_ARRAY) {
 			carraytag atag = rdser.GetUInt32();
 			wrser.PutUInt32(static_cast<int>(atag));
+			CounterGuardIR32 g(arrayLevel_);
 			for (int count = 0; count < atag.Count(); count++) {
 				switch (atag.Tag()) {
 					case TAG_OBJECT:

@@ -15,6 +15,11 @@ IDataHolder::CommitStep& IDataHolder::GetStep(WordIdType id) {
 	return steps[id.b.step_num];
 }
 
+const IDataHolder::CommitStep& IDataHolder::GetStep(WordIdType id) const {
+	assertrx(id.b.step_num < steps.size());
+	return steps[id.b.step_num];
+}
+
 bool IDataHolder::NeedRebuild(bool complte_updated) {
 	return steps.empty() || complte_updated || steps.size() >= size_t(cfg_->maxRebuildSteps) ||
 		   (steps.size() == 1 && steps.front().suffixes_.word_size() < size_t(cfg_->maxStepSize));
@@ -82,7 +87,7 @@ std::string IDataHolder::Dump() {
 	return ss.str();
 }
 
-uint32_t IDataHolder::GetSuffixWordId(WordIdType id, const CommitStep& step) {
+uint32_t IDataHolder::GetSuffixWordId(WordIdType id, const CommitStep& step) const noexcept {
 	assertrx(!id.isEmpty());
 	assertrx(id.b.step_num < steps.size());
 
@@ -90,8 +95,6 @@ uint32_t IDataHolder::GetSuffixWordId(WordIdType id, const CommitStep& step) {
 	assertrx(id.b.id - step.wordOffset_ < step.suffixes_.word_size());
 	return id.b.id - step.wordOffset_;
 }
-
-uint32_t IDataHolder::GetSuffixWordId(WordIdType id) { return GetSuffixWordId(id, steps.back()); }
 
 WordIdType IDataHolder::findWord(std::string_view word) {
 	WordIdType id;
@@ -134,7 +137,14 @@ size_t DataHolder<IdCont>::GetMemStat() {
 }
 
 template <typename IdCont>
-PackedWordEntry<IdCont>& DataHolder<IdCont>::getWordById(WordIdType id) {
+PackedWordEntry<IdCont>& DataHolder<IdCont>::getWordById(WordIdType id) noexcept {
+	assertrx(!id.isEmpty());
+	assertrx(id.b.id < words_.size());
+	return words_[id.b.id];
+}
+
+template <typename IdCont>
+const PackedWordEntry<IdCont>& DataHolder<IdCont>::getWordById(WordIdType id) const noexcept {
 	assertrx(!id.isEmpty());
 	assertrx(id.b.id < words_.size());
 	return words_[id.b.id];

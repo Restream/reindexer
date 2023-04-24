@@ -285,7 +285,7 @@ std::string CommandsExecutor<DBInterface>::getCurrentDsn(bool withPath) const {
 }
 
 template <typename DBInterface>
-Error CommandsExecutor<DBInterface>::queryResultsToJson(ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery,
+Error CommandsExecutor<DBInterface>::queryResultsToJson(std::ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery,
 														bool fstream) {
 	if (cancelCtx_.IsCancelled()) return errOK;
 	WrSerializer ser;
@@ -310,11 +310,16 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(ostream& o, const typena
 		}
 		if (it.IsRaw()) {
 			reindexer::WALRecord rec(it.GetRaw());
-			rec.Dump(ser, [this, &r](std::string_view cjson) {
-				auto item = db().NewItem(r.GetNamespaces()[0]);
-				item.FromCJSON(cjson);
-				return std::string(item.GetJSON());
-			});
+			try {
+				rec.Dump(ser, [this, &r](std::string_view cjson) {
+					auto item = db().NewItem(r.GetNamespaces()[0]);
+					const auto err = item.FromCJSON(cjson);
+					if (!err.ok()) throw err;
+					return std::string(item.GetJSON());
+				});
+			} catch (const Error& err) {
+				return err;
+			}
 		} else {
 			if (isWALQuery) ser << "WalItemUpdate ";
 
@@ -590,7 +595,8 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) {
 						break;
 					default:
 						assertrx(agg.fields.size() == 1);
-						output_() << agg.aggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.GetValueOrZero() << std::endl;
+						output_() << reindexer::AggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.GetValueOrZero()
+								  << std::endl;
 				}
 			}
 		}
@@ -1147,7 +1153,8 @@ void CommandsExecutor<DBInterface>::OnWALUpdate(reindexer::LSNPair LSNs, std::st
 	ser << "# LSN " << int64_t(LSNs.upstreamLSN_) << " originLSN " << int64_t(LSNs.originLSN_) << " " << nsName << " ";
 	wrec.Dump(ser, [this, nsName](std::string_view cjson) {
 		auto item = db().NewItem(nsName);
-		item.FromCJSON(cjson);
+		const auto err = item.FromCJSON(cjson);
+		if (!err.ok()) throw err;
 		return std::string(item.GetJSON());
 	});
 	output_() << ser.Slice() << std::endl;

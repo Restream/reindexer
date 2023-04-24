@@ -9,10 +9,20 @@ namespace reindexer {
 
 #ifdef REINDEX_FT_EXTRA_DEBUG
 template <typename T, int holdSize = 4>
-using RVector = std::vector<T>;
+class RVector : public std::vector<T> {
+public:
+	using std::vector<T>::vector;
+	template <bool F = true>
+	void clear() noexcept {
+		std::vector<T>::clear();
+	}
+};
 #else
 template <typename T, int holdSize = 4>
-using RVector = h_vector<T, holdSize>;
+class RVector : public h_vector<T, holdSize> {
+public:
+	using h_vector<T, holdSize>::h_vector;
+};
 #endif
 
 #ifdef REINDEX_FT_EXTRA_DEBUG

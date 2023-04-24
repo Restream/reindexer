@@ -1,14 +1,9 @@
+#pragma once
+
 #include "core/payload/fieldsset.h"
 #include "sortingcontext.h"
 
 namespace reindexer {
-
-struct ItemComparatorState {
-	FieldsSet fields_;
-	h_vector<const CollateOpts *, 1> collateOpts_;
-	std::vector<std::pair<size_t, bool>> byExpr_;
-	std::vector<std::pair<size_t, bool>> byIndex_;
-};
 
 class NamespaceImpl;
 struct SelectCtx;
@@ -16,27 +11,47 @@ class ItemRef;
 
 class ItemComparator {
 public:
-	ItemComparator(const NamespaceImpl &ns, const SelectCtx &ctx, ItemComparatorState &state)
-		: ns_(ns), ctx_(ctx), fields_(state.fields_), collateOpts_(state.collateOpts_), byExpr_(state.byExpr_), byIndex_(state.byIndex_) {}
+	ItemComparator(const NamespaceImpl &ns, const SelectCtx &ctx, const joins::NamespaceResults &jr) noexcept
+		: ns_(ns), ctx_(ctx), joinResults_(jr) {}
+	ItemComparator(const ItemComparator &) = delete;
+	ItemComparator(ItemComparator &&) = delete;
+	ItemComparator &operator=(const ItemComparator &) = delete;
+	ItemComparator &operator=(ItemComparator &&) = delete;
 
-	bool operator()(const ItemRef &lhs, const ItemRef &rhs) const;
+	[[nodiscard]] bool operator()(const ItemRef &lhs, const ItemRef &rhs) const;
 
 	void BindForForcedSort();
 	void BindForGeneralSort();
 
 private:
 	template <typename Inserter>
-	void bindOne(size_t index, const SortingContext::Entry &sortingCtx, Inserter insert, bool multiSort);
+	void bindOne(const SortingContext::Entry &sortingCtx, Inserter insert, bool multiSort);
 
 	class BackInserter;
 	class FrontInserter;
+	struct CompareByField {
+		bool desc;
+	};
+	struct CompareByJoinedField {
+		size_t joinedNs;
+		bool desc;
+	};
+	struct CompareByExpression {
+		bool desc;
+	};
+	struct Joined {
+		const JoinedSelector *joinedSelector{nullptr};
+		FieldsSet fields;
+		h_vector<const CollateOpts *, 1> collateOpts;
+	};
 
 	const NamespaceImpl &ns_;
 	const SelectCtx &ctx_;
-	FieldsSet &fields_;
-	h_vector<const CollateOpts *, 1> &collateOpts_;
-	std::vector<std::pair<size_t, bool>> &byExpr_;
-	std::vector<std::pair<size_t, bool>> &byIndex_;
+	const joins::NamespaceResults &joinResults_;
+	FieldsSet fields_;
+	std::vector<Joined> joined_;
+	h_vector<const CollateOpts *, 1> collateOpts_;
+	h_vector<std::variant<CompareByField, CompareByJoinedField, CompareByExpression>, 4> comparators_;
 };
 
 }  // namespace reindexer

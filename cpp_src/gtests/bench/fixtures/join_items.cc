@@ -28,12 +28,12 @@ reindexer::Error JoinItems::Initialize() {
 			  "mole", "moth", "mule", "mutt", "newt", "orca", "oryx", "pika", "pony", "puma", "seal", "shad", "slug", "sole",
 			  "stag", "stud", "swan", "tahr", "teal", "tick", "toad", "tuna", "wasp", "wolf", "worm", "wren", "yeti"};
 
-	return 0;
+	return {};
 }
 
 void JoinItems::RegisterAllCases() { BaseFixture::RegisterAllCases(); }
 
-reindexer::Item JoinItems::MakeItem() {
+reindexer::Item JoinItems::MakeItem(benchmark::State&) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	if (item.Status().ok()) {
 		item["id"] = id_seq_->Next();

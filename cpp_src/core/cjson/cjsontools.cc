@@ -80,8 +80,9 @@ void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser) {
 	}
 }
 
-void skipCjsonTag(ctag tag, Serializer &rdser) {
-	const bool embeddedField = (tag.Field() < 0);
+void skipCjsonTag(ctag tag, Serializer &rdser, std::array<unsigned, maxIndexes> *fieldsArrayOffsets) {
+	const auto field = tag.Field();
+	const bool embeddedField = (field < 0);
 	switch (tag.Type()) {
 		case TAG_ARRAY: {
 			if (embeddedField) {
@@ -91,17 +92,24 @@ void skipCjsonTag(ctag tag, Serializer &rdser) {
 					skipCjsonTag(t, rdser);
 				}
 			} else {
-				rdser.GetVarUint();
+				const auto len = rdser.GetVarUint();
+				if (fieldsArrayOffsets) {
+					(*fieldsArrayOffsets)[field] += len;
+				}
 			}
 		} break;
 
 		case TAG_OBJECT:
 			for (ctag otag = rdser.GetVarUint(); otag.Type() != TAG_END; otag = rdser.GetVarUint()) {
-				skipCjsonTag(otag, rdser);
+				skipCjsonTag(otag, rdser, fieldsArrayOffsets);
 			}
 			break;
 		default:
-			if (embeddedField) rdser.GetRawVariant(KeyValueType::FromNumber(tag.Type()));
+			if (embeddedField) {
+				rdser.GetRawVariant(KeyValueType::FromNumber(tag.Type()));
+			} else if (fieldsArrayOffsets) {
+				(*fieldsArrayOffsets)[field] += 1;
+			}
 	}
 }
 

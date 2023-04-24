@@ -15,6 +15,9 @@ Reindexer has builtin full text search engine. This document describes usage of 
 - [Natural language processing](#natural-language-processing)
 - [Merging queries results](#merging-queries-results)
 - [Using select functions](#using-select-functions)
+    - [Highlight](#highlight)
+    - [Snippet](#snippet)
+    - [Snippet_n](#snippet_n)
 - [Typos algorithm](#typos-algorithm)
 - [Performance and memory usage](#performance-and-memory-usage)
 - [Configuration](#configuration)
@@ -63,7 +66,7 @@ type Item struct {
 ```
 In this example full text index will include fields `name` and `description`,`text_search` is short alias of composite index name for using in Queries.
 
-Full text index is case insensitive. The source text is tokenized to set of words. Word is sequence of any utf8 letters, digits or `+`, `-` or `/` symbols. First symbol of word is letter or digit.
+Full text index is case insensitive. The source text is tokenized to set of words. Word is sequence of any UTF-8 letters, digits or `+`, `-` or `/` symbols. First symbol of word is letter or digit.
 
 ## Query to full text index
 
@@ -129,19 +132,24 @@ Synonyms of multiple words are not supported in the phrase.
 
 ## Examples of text queris
 
-`termina* -genesis` - find documents contains words begins with `termina`, exclude documents contains word `genesis`
-`black~` - find documents contains word black with 1 possible mistake. e.g `block`, `blck`, or `blask`
-`tom jerry cruz^2` - find documents contains at least one of word `tom`, `cruz` `jerry`. relevancy of documents, which contains `tom cruz` will be greater, than `tom jerry`
-`fox +fast` - find documents contains both words: `fox` and `fast`
-`"one two"` - find documents with phrase `one two`
-`"one two"~5` - find documents with words `one` and `two` with distance between terms < 5. Order of terms is matter. If you need to search those terms in any order, all the required permutations must be explicitly specified in DSL: `"one two"~5 "two one"~5`
-`@name rush` - find docuemnts with word `rush` only in `name` field
-`@name^1.5,* rush` - find documents with word `rush`, and boost 1.5 results from `name` field
-`=windows` - find documents with exact term `windows` without language specific term variants (stemmers/translit/wrong kb layout)
-`one -"phrase example"` - find documents containing the word `one` and not containing the phrase `"phrase example"`
-`one "phrase example"` - find documents containing the word `one` or the phrase `"phrase example"` or both
-`+one +"phrase example"` - find documents containing the word `one` and the phrase `"phrase example"`
-`one "phrase example"~3` - find documents containing the word `one` or the phrase `"phrase example"` (with max distance equals of 3 word between `phrase` and `example`) or both
+- `termina* -genesis` - find documents contains words begins with `termina`, exclude documents contains word `genesis`
+- `black~` - find documents contains word black with 1 possible mistake. e.g `block`, `blck`, or `blask`
+- `tom jerry cruz^2` - find documents contains at least one of word `tom`, `cruz` `jerry`. relevancy of documents, which
+  contains `tom cruz` will be greater, than `tom jerry`
+- `fox +fast` - find documents contains both words: `fox` and `fast`
+- `"one two"` - find documents with phrase `one two`
+- `"one two"~5` - find documents with words `one` and `two` with distance between terms < 5. Order of terms is matter.
+  If you need to search those terms in any order, all the required permutations must be explicitly specified in
+  DSL: `"one two"~5 "two one"~5`
+- `@name rush` - find docuemnts with word `rush` only in `name` field
+- `@name^1.5,* rush` - find documents with word `rush`, and boost 1.5 results from `name` field
+- `=windows` - find documents with exact term `windows` without language specific term variants (stemmers/translit/wrong
+  kb layout)
+- `one -"phrase example"` - find documents containing the word `one` and not containing the phrase `"phrase example"`
+- `one "phrase example"` - find documents containing the word `one` or the phrase `"phrase example"` or both
+- `+one +"phrase example"` - find documents containing the word `one` and the phrase `"phrase example"`
+- `one "phrase example"~3` - find documents containing the word `one` or the phrase `"phrase example"` (with max
+  distance equals of 3 word between `phrase` and `example`) or both
 
 ## Natural language processing
 
@@ -180,8 +188,9 @@ For now you can use snippet, snippet_n and highlight. Those functions does not w
 You can not put [,)\0] symbols in functions params. If the value contains special characters, it must be enclosed
 in single quotes.
 
-highlight - only highlights text area that was found
-it has two arguments -
+### Highlight
+This functions just highlights text area that was found.
+It has two arguments -
 - `first` string that will be inserted before found text area
 - `second` string that will be inserted after found text area
 
@@ -193,14 +202,15 @@ b.Query("items").Match("text", query).Limit(limit).Offset(offset).Functions("tex
 ```
 result: "some <b>text</b>"
 
-snippet -  highlights text area and erase other text
-it has six arguments - last two is default
+### Snippet
+Snippet highlights text area and erase other text.
+It has six arguments - last two is default
 - `first` string that will be inserted before found text area
 - `second` string that will be inserted after found text area
 - `third`  number of symbols that will be placed before area
 - `fourth`  number of symbols that will be placed after area
-- `fifth` delimiter before snippets ,default  space
-- `sixth` delimiter after snippets ,default nothing
+- `fifth` delimiter before snippets, default nothing
+- `sixth` delimiter after snippets, default space
 
 Example:
 word: "some text"
@@ -211,15 +221,23 @@ b.Query("items").Match("text", query).Limit(limit).Offset(offset).Functions("tex
 
 result: "e <b>text</b>"
 
-snippet_n - highlights text area and erase other text
-it has 4 position arguments and two named arguments. The named arguments are optional and can be passed in any order.
+### Snippet_n
+
+Snippet_n highlights text area and erase other text. More flexible version of the snippet function.
+It has 4 position arguments and 5 named arguments. The named arguments are optional and can be passed in any order.
 
 - `first` String that will be inserted before found text area
 - `second` String that will be inserted after found text area
 - `third`  Number of symbols that will be placed before area
 - `fourth`  Number of symbols that will be placed after area
-- `pre_delim` Named argument. Delimiter before snippets ,default space
-- `post_delim` Named argument. Delimiter after snippets ,default nothing
+- `pre_delim` Named argument. Delimiter before snippets, default nothing
+- `post_delim` Named argument. Delimiter after snippets, default space
+- `with_area` Named argument. Takes the value 0 or 1. Print the beginning and end of the fragment relative to the
+  beginning of the document in characters (UTF-8) in the format [B,E] after `pre_delim`
+- `left_bound` Named argument. UTF-8 character string. The beginning of the fragment is the character from the
+  string `left_bound` if it occurs before `third`
+- `right_bound` Named argument. UTF-8 character string. The end of the fragment is a character from the
+  string `right_bound` if it occurs before `fourth`
 
 String values must be enclosed into single quotes.
 
@@ -227,14 +245,20 @@ Parameters' names may be specified without quotes or in double quotes.
 
 Numbers may be passed without quotes or in single quotes.
 
-Example:
-word: "some text"
+Examples:
+word: "some text string"
 
 ```go
-b.Query("items").Match("text", query).Limit(limit).Offset(offset).Functions("text.snippet_n('<b>','</b>',2,0,pre_delim='{',post_delim='}')")
+b.Query("items").Match("text", query).Limit(limit).Offset(offset).Functions("text.snippet_n('<b>','</b>',2,2,pre_delim='{',post_delim='}',with_area=1)")
 ```
 
-result: "{e <b>text</b>}"
+result: "{[3,11]e <b>text</b> s}"
+
+```go
+b.Query("items").Match("text", query).Limit(limit).Offset(offset).Functions("text.snippet_n('<b>','</b>',5,5,pre_delim='{',post_delim='}',left_bound='o',right_bound='i')")
+```
+
+result: "{me <b>text</b> str}"
 
 ## Typos algorithm
 
@@ -287,37 +311,66 @@ Several parameters of full text search engine can be configured from application
 Here is list of available parameters:
 
 
-|   |    Parameter name     |   Type   |                                                                                                                        Description                                                                                                                        | Default value |
-|---|:---------------------:|:--------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------:|
-|   | Bm25Boost             |   float  | Boost of bm25 ranking                                                                                                                                                                                                                                     |       1       |
-|   | Bm25Weight            |   float  | Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to fin l rank in 0 - 100% range.                                                                                                                                |      0.5      |
-|   | DistanceBoost         |   float  | Boost of search query term distance in found document.                                                                                                                                                                                                    |       1       |
-|   | DistanceWeight        |   float  | Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range.                                                                                    |      0.5      |
-|   | TermLenBoost          |   float  | Boost of search query term length                                                                                                                                                                                                                         |       1       |
-|   | TermLenWeight         |   float  | Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range                                                                                                   |      0.3      |
-|   | PositionBoost         |   float  | Boost of search query term position                                                                                                                                                                                                                       |      1.0      |
-|   | PositionWeight        |   float  | Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range                                                                                             |      0.1      |
-|   | FullMatchBoost        |   float  | Boost of full match of search phrase with doc                                                                                                                                                                                                             |      1.1      |
-|   | PartialMatchDecrease  |    int   | Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)                                                                                                                               |       15      |
-|   | MinRelevancy          |   float  | Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned                                                                                                                        |      0.05     |
-|   | MaxTypos              |    int   | Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 2 possible typo -It will seriously increase RAM usage, and decrease search speed. Default value 2 if MaxTyposInWord is not specified, 2*MaxTyposInWord otherwise |       2       |
-|   | MaxTyposInWord        |    int   | Deprecated, use MaxTypos instead of this. Cannot be used with MaxTypos. Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 2 possible typo -It will seriously increase RAM usage, and decrease search speed |       0       |
-|   | MaxTypoLen            |    int   | Maximum word length for building and matching variants with typos.                                                                                                                                                                                        |       15      |
-|   | MaxRebuildSteps       |    int   | Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15.                                                                                                                                                     |       50      |
-|   | MaxStepSize           |    int   | Maximum unique words to step                                                                                                                                                                                                                              |      4000     |
-|   | MergeLimit            |    int   | Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed                                                                    |     20000     |
-|   | Stemmers              | []string | List of stemmers to use                                                                                                                                                                                                                                   |    "en","ru"  |
-|   | EnableTranslit        |   bool   | Enable russian translit variants processing. e.g. term "luntik" will match word "лунтик"                                                                                                                                                                  |      true     |
-|   | EnableKbLayout        |   bool   | Enable wrong keyboard layout variants processing. e.g. term "keynbr" will match word "лунтик"                                                                                                                                                             |      true     |
-|   | StopWords             | []string | List of stop words. Words from this list will be ignored in documents and queries                                                                                                                                                                         |               |
-|   | SumRanksByFieldsRatio |   float  | Ratio of summation of ranks of match one term in several fields                                                                                                                                                                                           |      0.0      |
-|   | LogLevel              |    int   | Log level of full text search engine                                                                                                                                                                                                                      |       0       |
-|   | FieldsCfg             | []struct | Configs for certain fields. Overlaps parameters from main config. Contains parameters: FieldName, Bm25Boost, Bm25Weight, TermLenBoost, TermLenWeight, PositionBoost, PositionWeight.                                                                      |     empty     |
-|   | EnableWarmupOnNsCopy  |   bool   | Enable automatic index warmup after transaction, which has performed namespace copy                                                                                                                                                                       |     false     |
-|   | ExtraWordSymbols      |  string  | Extra symbols, which will be threated as parts of word to addition to letters and digits                                                                                                                                                                  |     "+/-"     |
-|   | MaxAreasInDoc         |    int   | Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited                                                                                                                                     |       5       |
-|   | MaxTotalAreasToCache  |    int   | Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited                                                                                                                                             |      -1       |
-|   | Optimization          |  string  | Optimize the index by 'memory' or by 'cpu'                                                                                                                                                                                                                |    "memory"   |
+|   |       Parameter name         |   Type   |                                                                                                                        Description                                                                                                                        | Default value |
+|---|:----------------------------:|:--------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------:|
+|   | Bm25Boost                    |   float  | Boost of bm25 ranking                                                                                                                                                                                                                                     |       1       |
+|   | Bm25Weight                   |   float  | Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to fin l rank in 0 - 100% range.                                                                                                                                |      0.1      |
+|   | DistanceBoost                |   float  | Boost of search query term distance in found document.                                                                                                                                                                                                    |       1       |
+|   | DistanceWeight               |   float  | Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range.                                                                                    |      0.5      |
+|   | TermLenBoost                 |   float  | Boost of search query term length                                                                                                                                                                                                                         |       1       |
+|   | TermLenWeight                |   float  | Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range                                                                                                   |      0.3      |
+|   | PositionBoost                |   float  | Boost of search query term position                                                                                                                                                                                                                       |      1.0      |
+|   | PositionWeight               |   float  | Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range                                                                                             |      0.1      |
+|   | FullMatchBoost               |   float  | Boost of full match of search phrase with doc                                                                                                                                                                                                             |      1.1      |
+|   | PartialMatchDecrease         |    int   | Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)                                                                                                                               |       15      |
+|   | MinRelevancy                 |   float  | Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned                                                                                                                        |      0.05     |
+|   | MaxTypos                     |    int   | Maximum possible typos in word. 0: typos are disabled, words with typos will not match. N: words with N possible typos will match. Check [typos handling](#typos-handling) section for detailed description.                                              |       2       |
+|   | MaxTyposInWord               |    int   | Deprecated, use MaxTypos instead of this. Cannot be used with MaxTypos. Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed |       -       |
+|   | MaxTypoLen                   |    int   | Maximum word length for building and matching variants with typos.                                                                                                                                                                                        |       15      |
+|   | MaxTypoDistance              |    int   | Maximum distance between symbols in initial and target words to perform substitution. Check [typos handling](#typos-handling) section for detailed description.                                                                                           |       0       |
+|   | MaxSymbolPermutationDistance |    int   | aximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbolws were switched with each other). Check [typos handling](#typos-handling) section for detailed description.                    |       1       |
+|   | MaxMissingLetters            |    int   | Maximum number of symbols, which may be removed from the initial term to transform it into the result word. Check [typos handling](#typos-handling) section for detailed description.                                                                     |       2       |
+|   | MaxExtraLetters              |    int   | Maximum number of symbols, which may be added to the initial term to transform it into the result word. Check [typos handling](#typos-handling) section for detailed description.                                                                         |       2       |
+|   | MaxRebuildSteps              |    int   | Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15.                                                                                                                                                     |       50      |
+|   | MaxStepSize                  |    int   | Maximum unique words to step                                                                                                                                                                                                                              |      4000     |
+|   | MergeLimit                   |    int   | Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed                                                                    |     20000     |
+|   | Stemmers                     | []string | List of stemmers to use                                                                                                                                                                                                                                   |    "en","ru"  |
+|   | EnableTranslit               |   bool   | Enable russian translit variants processing. e.g. term "luntik" will match word "лунтик"                                                                                                                                                                  |      true     |
+|   | EnableKbLayout               |   bool   | Enable wrong keyboard layout variants processing. e.g. term "keynbr" will match word "лунтик"                                                                                                                                                             |      true     |
+|   | StopWords                    | []string | List of stop words. Words from this list will be ignored in documents and queries                                                                                                                                                                         |               |
+|   | SumRanksByFieldsRatio        |   float  | Ratio of summation of ranks of match one term in several fields                                                                                                                                                                                           |      0.0      |
+|   | LogLevel                     |    int   | Log level of full text search engine                                                                                                                                                                                                                      |       0       |
+|   | FieldsCfg                    | []struct | Configs for certain fields. Overlaps parameters from main config. Contains parameters: FieldName, Bm25Boost, Bm25Weight, TermLenBoost, TermLenWeight, PositionBoost, PositionWeight.                                                                      |     empty     |
+|   | EnableWarmupOnNsCopy         |   bool   | Enable automatic index warmup after transaction, which has performed namespace copy                                                                                                                                                                       |     false     |
+|   | ExtraWordSymbols             |  string  | Extra symbols, which will be threated as parts of word to addition to letters and digits                                                                                                                                                                  |     "+/-"     |
+|   | MaxAreasInDoc                |    int   | Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited                                                                                                                                     |       5       |
+|   | MaxTotalAreasToCache         |    int   | Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited                                                                                                                                             |      -1       |
+|   | Optimization                 |  string  | Optimize the index by 'memory' or by 'cpu'                                                                                                                                                                                                                |    "memory"   |
+
+
+## Typos handling
+
+Typos handling algorithm is language independant and simply checks possible word permutations. There are a banch of parameters to tune it:
+
+- MaxTypos - configures possible number of typos. Available values: [0, 4]. Larger values allow to handle more permutations, however will require much more RAM and will decrease search speed. Recommended (and default) value is 2.
+  Behavior, depending on MaxTypos value:
+  - 0 - typos are disabled.
+  - 1 - allows to find words with 1 missing or 1 extra symbol. For example, query `world~` will match to `world`, `word` and `worlds`.
+  - 2 - same as '1', but also allows to find words with 1 changed symbol. For example, query `sward~` will match to `sward`, `sword`, `ward` and `swards`.
+  - 3 - same as '2', but also allows to find words with 1 changed symbol AND 1 extra/missing symbol at the same time. For example, query `sward~` will match to `sward`, `sword`, `swords`, `ward`, `wards`, `war` and `swards`.
+  - 4 - same as '3', but also allows to find words with 2 changed symbols at the same time. For example, query `sward~` will match to `dword` (in addition to all the results, which it would match to with `MaxTypos == 3`).
+- MaxTypoLen - Maximum word length for building and matching variants with typos. Larger values will also require more RAM for typos mappings.
+- TyposDetailedConfig - those configs are serving to tune tune typos algorithm more precisely. 
+  - MaxMissingLetters - allows to configure maximum number of symbols, which may be removed from the initial term to transform it into the result word. Posible values are: [-1, 2]. Values, larger than `(MaxTypos / 2) + (MaxTypos % 2)` will be reduced to this value.
+  - MaxExtraLetters - allows to configure maximum number of symbols, which may be added to the initial term to transform it into the result word. Posible values are: [-1, 2]. Values, larger than `(MaxTypos / 2) + (MaxTypos % 2)` will be reduced to this value.
+  - MaxTypoDistance - allows to configure maximum distance between removed and added symbol in case of the symbols switch (requires MaxTypos >= 2).
+    For example, with `MaxTypoDistance = -1` (means 'no limitations') and `MaxTypos == 2` query `dword~` will match to both `sword` and `words` (i.e. initial symbol may not only be changed, but also may be moved to any distance).
+    And with `MaxTypoDistance = 0` (default) and `MaxTypos == 2` positions of the initial and result symbol must be the same. I.e. query `dword~` will match to `sword`, but will not match to `words`.
+    Possible values for MaxTypoDistance: [-1,100].
+  - MaxSymbolPermutationDistance - by design this parameter goes in pair with MaxTypoDistance. It allows to relax restrictions from MaxTypoDistance to be able to handle repositioning of the same symbol.
+    For example, with `MaxSymbolPermutationDistance = 0`, `MaxTypoDistance = 0` and `MaxTypos == 2` query `wsord~` will not match to the word `sword`, because it requires to either switch 2 letters with each other or change 2 letters on the same positions.
+    With `MaxSymbolPermutationDistance = 1`, this symbol perutation will be handled independant from `MaxTypoDistance = 0` and query `wsord~` will be able to recieve `sword` as a result.
+  
 
 ### Limitations and know issues
 

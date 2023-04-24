@@ -49,7 +49,7 @@ void WaitEnterToContinue(std::ostream& o, int terminalWidth, const std::function
 		}
 #endif
 	}
-	o << "\r" << string(terminalWidth, ' ') << "\r" << std::flush;
+	o << "\r" << std::string(terminalWidth, ' ') << "\r" << std::flush;
 	if (isCanceled()) {
 		o << "Canceled" << std::endl;
 	}
@@ -76,7 +76,7 @@ void TableViewScroller<QueryResultsT>::Scroll(Output& output, const std::functio
 	viaMoreCmd = false;
 #endif
 
-	stringstream ss;
+	std::stringstream ss;
 	std::ostream& o = viaMoreCmd ? ss : output();
 	tableBuilder_.BuildHeader(o, tableCalculator, isCanceled);
 

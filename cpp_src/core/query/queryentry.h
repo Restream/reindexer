@@ -5,6 +5,7 @@
 #include <vector>
 #include "core/expressiontree.h"
 #include "core/keyvalue/variant.h"
+#include "core/type_consts.h"
 #include "core/type_consts_helpers.h"
 #include "estl/h_vector.h"
 #include "tools/serializer.h"
@@ -212,8 +213,8 @@ struct QueryJoinEntry {
 };
 
 struct SortingEntry {
-	SortingEntry() {}
-	SortingEntry(const std::string &e, bool d) : expression(e), desc(d) {}
+	SortingEntry() noexcept = default;
+	SortingEntry(std::string e, bool d) noexcept : expression(std::move(e)), desc(d) {}
 	bool operator==(const SortingEntry &) const noexcept;
 	bool operator!=(const SortingEntry &se) const noexcept { return !operator==(se); }
 	std::string expression;
@@ -223,17 +224,29 @@ struct SortingEntry {
 
 struct SortingEntries : public h_vector<SortingEntry, 1> {};
 
-struct AggregateEntry {
-	AggregateEntry() = default;
-	AggregateEntry(AggType type, h_vector<std::string, 1> fields, unsigned limit = UINT_MAX, unsigned offset = 0)
-		: type_(type), fields_(std::move(fields)), limit_(limit), offset_(offset) {}
-	bool operator==(const AggregateEntry &) const noexcept;
-	bool operator!=(const AggregateEntry &ae) const noexcept { return !operator==(ae); }
+class AggregateEntry {
+public:
+	static constexpr unsigned kDefaultLimit = UINT_MAX;
+	static constexpr unsigned kDefaultOffset = 0;
+
+	AggregateEntry(AggType type, h_vector<std::string, 1> fields, SortingEntries sort = {}, unsigned limit = UINT_MAX, unsigned offset = 0);
+	[[nodiscard]] bool operator==(const AggregateEntry &) const noexcept;
+	[[nodiscard]] bool operator!=(const AggregateEntry &ae) const noexcept { return !operator==(ae); }
+	[[nodiscard]] AggType Type() const noexcept { return type_; }
+	[[nodiscard]] const h_vector<std::string, 1> &Fields() const noexcept { return fields_; }
+	[[nodiscard]] const SortingEntries &Sorting() const noexcept { return sortingEntries_; }
+	[[nodiscard]] unsigned Limit() const noexcept { return limit_; }
+	[[nodiscard]] unsigned Offset() const noexcept { return offset_; }
+	void AddSortingEntry(SortingEntry);
+	void SetLimit(unsigned);
+	void SetOffset(unsigned);
+
+private:
 	AggType type_;
 	h_vector<std::string, 1> fields_;
 	SortingEntries sortingEntries_;
-	unsigned limit_ = UINT_MAX;
-	unsigned offset_ = 0;
+	unsigned limit_ = kDefaultLimit;
+	unsigned offset_ = kDefaultOffset;
 };
 
 }  // namespace reindexer

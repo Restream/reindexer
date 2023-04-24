@@ -22,7 +22,7 @@ CondType InvertJoinCondition(CondType cond) {
 	}
 }
 
-std::string_view CondTypeToStr(CondType t) {
+std::string_view CondTypeToStr(CondType t) noexcept {
 	using namespace std::string_view_literals;
 	switch (t) {
 		case CondAny:
@@ -51,6 +51,31 @@ std::string_view CondTypeToStr(CondType t) {
 			return "CondDWithin"sv;
 		default:
 			return "Unknown"sv;
+	}
+}
+
+std::string_view AggTypeToStr(AggType t) noexcept {
+	using namespace std::string_view_literals;
+	switch (t) {
+		case AggMin:
+			return "min"sv;
+		case AggMax:
+			return "max"sv;
+		case AggSum:
+			return "sum"sv;
+		case AggAvg:
+			return "avg"sv;
+		case AggDistinct:
+			return "distinct"sv;
+		case AggFacet:
+			return "facet"sv;
+		case AggCount:
+			return "count"sv;
+		case AggCountCached:
+			return "count_cached"sv;
+		case AggUnknown:
+		default:
+			return "unknown"sv;
 	}
 }
 

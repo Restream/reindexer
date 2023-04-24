@@ -9,7 +9,7 @@ RPCServerFake::RPCServerFake(const RPCServerConfig &conf) : startTs_(std::chrono
 
 Error RPCServerFake::Ping(cproto::Context &) {
 	//
-	return 0;
+	return {};
 }
 
 Error RPCServerFake::Login(cproto::Context &ctx, p_string /*login*/, p_string /*password*/, p_string /*db*/) {
@@ -34,19 +34,19 @@ Error RPCServerFake::CheckAuth(cproto::Context &ctx) {
 	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
 
 	if (ctx.call->cmd == cproto::kCmdLogin || ctx.call->cmd == cproto::kCmdPing) {
-		return 0;
+		return {};
 	}
 
 	if (!clientData) {
 		return Error(errForbidden, "You should login");
 	}
 
-	return 0;
+	return {};
 }
 
 Error RPCServerFake::OpenNamespace(cproto::Context &, p_string) {
 	std::this_thread::sleep_for(conf_.openNsDelay);
-	return 0;
+	return {};
 }
 
 Error RPCServerFake::DropNamespace(cproto::Context &, p_string) { return Error(errOK); }

@@ -35,7 +35,7 @@ void BaseFixture::Insert(State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (int i = 0; i < id_seq_->Count(); ++i) {
-			auto item = MakeItem();
+			auto item = MakeItem(state);
 			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
 
 			auto err = db_->Insert(nsdef_.name, item);
@@ -52,7 +52,7 @@ void BaseFixture::Update(benchmark::State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
 	id_seq_->Reset();
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		auto item = MakeItem();
+		auto item = MakeItem(state);
 		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
 
 		auto err = db_->Update(nsdef_.name, item);

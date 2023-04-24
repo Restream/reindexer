@@ -10,7 +10,7 @@ namespace reindexer_tool {
 
 template <typename DBInterface>
 template <typename... Args>
-Error CommandsProcessor<DBInterface>::Connect(const string& dsn, const Args&... args) {
+Error CommandsProcessor<DBInterface>::Connect(const std::string& dsn, const Args&... args) {
 	return executor_.Run(dsn, args...);
 }
 
@@ -20,7 +20,7 @@ CommandsProcessor<DBInterface>::~CommandsProcessor() {
 }
 
 template <typename DBInterface>
-Error CommandsProcessor<DBInterface>::process(const string& command) {
+Error CommandsProcessor<DBInterface>::process(const std::string& command) {
 	return executor_.Process(command);
 }
 
@@ -28,10 +28,10 @@ template <typename DBInterface>
 template <typename T>
 void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(new_v_callback_t const&)) {
 	(rx.*set_completion_callback)([this](std::string const& input, int) -> replxx::Replxx::completions_t {
-		std::vector<string> completions;
+		std::vector<std::string> completions;
 		executor_.GetSuggestions(input, completions);
 		replxx::Replxx::completions_t result;
-		for (const string& suggestion : completions) result.emplace_back(suggestion);
+		for (const std::string& suggestion : completions) result.emplace_back(suggestion);
 		return result;
 	});
 }
@@ -41,7 +41,7 @@ template <typename T>
 void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(old_v_callback_t const&, void*)) {
 	(rx.*set_completion_callback)(
 		[this](std::string const& input, int, void*) -> replxx::Replxx::completions_t {
-			std::vector<string> completions;
+			std::vector<std::string> completions;
 			executor_.GetSuggestions(input, completions);
 			return completions;
 		},
@@ -161,7 +161,8 @@ Error CommandsProcessor<DBInterface>::stop() {
 
 template class CommandsProcessor<reindexer::client::CoroReindexer>;
 template class CommandsProcessor<reindexer::Reindexer>;
-template Error CommandsProcessor<reindexer::Reindexer>::Connect(const string& dsn, const ConnectOpts& opts);
-template Error CommandsProcessor<reindexer::client::CoroReindexer>::Connect(const string& dsn, const reindexer::client::ConnectOpts& opt);
+template Error CommandsProcessor<reindexer::Reindexer>::Connect(const std::string& dsn, const ConnectOpts& opts);
+template Error CommandsProcessor<reindexer::client::CoroReindexer>::Connect(const std::string& dsn,
+																			const reindexer::client::ConnectOpts& opt);
 
 }  // namespace reindexer_tool

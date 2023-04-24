@@ -20,14 +20,13 @@ public:
 	enum CtxType { kFtCtx = 0 };
 	virtual ~BaseFunctionCtx() {}
 
-	void AddFunction(const std::string& name, SelectFuncStruct::Type function) { functions_[name].insert(function); }
-	bool CheckFunction(const std::string& name, std::initializer_list<SelectFuncStruct::Type> types) {
+	void AddFunction(const std::string& name, SelectFuncStruct::SelectFuncType functionIndx) { functions_[name].insert(functionIndx); }
+	bool CheckFunction(const std::string& name, std::initializer_list<SelectFuncStruct::SelectFuncType> types) {
 		auto it = functions_.find(name);
 
 		if (it == functions_.end()) return false;
-
-		for (auto type : types) {
-			auto fit = it->second.find(type);
+		for (auto t : types) {
+			auto fit = it->second.find(t);
 			if (fit != it->second.end()) return true;
 		}
 		return false;
@@ -35,7 +34,7 @@ public:
 	CtxType type;
 
 protected:
-	fast_hash_map<std::string, fast_hash_set<SelectFuncStruct::Type, std::hash<int>>> functions_;
+	fast_hash_map<std::string, fast_hash_set<SelectFuncStruct::SelectFuncType, std::hash<SelectFuncStruct::SelectFuncType>>> functions_;
 };
 
 }  // namespace reindexer

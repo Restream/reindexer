@@ -328,7 +328,7 @@ Error ReindexerImpl::OpenNamespace(std::string_view name, const StorageOpts& sto
 			auto nsIt = namespaces_.find(name);
 			if (nsIt != namespaces_.end() && nsIt->second) {
 				if (storageOpts.IsSlaveMode()) nsIt->second->setSlaveMode(rdxCtx);
-				return 0;
+				return {};
 			}
 		}
 		if (!validateObjectName(name, false)) {
@@ -866,7 +866,43 @@ struct ReindexerImpl::QueryResultsContext {
 	std::shared_ptr<const Schema> schema_;
 };
 
-bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns) {
+[[nodiscard]] bool byJoinedField(std::string_view sortExpr, std::string_view joinedNs) {
+	static const fast_hash_set<char> allowedSymbolsInIndexName{
+		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+		'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
+		'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+'};
+	std::string_view::size_type i = 0;
+	const auto s = sortExpr.size();
+	while (i < s && isspace(sortExpr[i])) ++i;
+	bool inQuotes = false;
+	if (i < s && sortExpr[i] == '"') {
+		++i;
+		inQuotes = true;
+	}
+	while (i < s && isspace(sortExpr[i])) ++i;
+	std::string_view::size_type j = 0, s2 = joinedNs.size();
+	for (; j < s2 && i < s; ++i, ++j) {
+		if (sortExpr[i] != joinedNs[j]) return false;
+	}
+	if (i >= s || sortExpr[i] != '.') return false;
+	for (++i; i < s; ++i) {
+		if (allowedSymbolsInIndexName.find(sortExpr[i]) == allowedSymbolsInIndexName.end()) {
+			if (isspace(sortExpr[i])) break;
+			if (inQuotes && sortExpr[i] == '"') {
+				inQuotes = false;
+				++i;
+				break;
+			}
+			return false;
+		}
+	}
+	while (i < s && isspace(sortExpr[i])) ++i;
+	if (inQuotes && i < s && sortExpr[i] == '"') ++i;
+	while (i < s && isspace(sortExpr[i])) ++i;
+	return i == s;
+}
+
+bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns, const Query& mainQ) {
 	bool result = true;
 	jItemQ.entries.ExecuteAppropriateForEach(
 		Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse>{},
@@ -888,7 +924,11 @@ bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jIte
 				if (IsComposite(jns->indexes_[qe.secondIdxNo]->Type())) result = false;
 			}
 		});
-	return result;
+	if (!result) return false;
+	for (const auto& se : mainQ.sortingEntries_) {
+		if (byJoinedField(se.expression, jItemQ._namespace)) return false;	// TODO maybe allow #1410
+	}
+	return true;
 }
 
 void ReindexerImpl::prepareJoinResults(const Query& q, QueryResults& result) {
@@ -957,7 +997,7 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 			SelectCtx ctx(jjq, &q);
 			ctx.preResult = preResult;
 			ctx.preResult->executionMode = JoinPreResult::ModeBuild;
-			ctx.preResult->enableStoredValues = isPreResultValuesModeOptimizationAvailable(jItemQ, jns);
+			ctx.preResult->enableStoredValues = isPreResultValuesModeOptimizationAvailable(jItemQ, jns, q);
 			ctx.functions = &func;
 			ctx.requiresCrashTracking = true;
 			jns->Select(jr, ctx, rdxCtx);

@@ -7,7 +7,8 @@
 namespace reindexer {
 
 CondType InvertJoinCondition(CondType cond);
-std::string_view CondTypeToStr(CondType t);
+std::string_view CondTypeToStr(CondType t) noexcept;
+std::string_view AggTypeToStr(AggType t) noexcept;
 
 template <typename T>
 auto& operator<<(T& os, CondType cond) {

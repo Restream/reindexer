@@ -95,7 +95,7 @@ public:
 	const IndexOpts& Opts() const { return opts_; }
 	virtual void SetOpts(const IndexOpts& opts) { opts_ = opts; }
 	virtual void SetFields(FieldsSet&& fields) { fields_ = std::move(fields); }
-	SortType SortId() const { return sortId_; }
+	[[nodiscard]] SortType SortId() const noexcept { return sortId_; }
 	virtual void SetSortedIdxCount(int sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
 	virtual FtMergeStatuses GetFtMergeStatuses(const RdxContext&) {
 		assertrx(0);

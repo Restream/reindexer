@@ -33,7 +33,7 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	size_t wrdOffset = words.size();
 
 	auto found = BuildSuffix(words_um, holder_);
-	auto getWordByIdFunc = std::bind(&DataHolder<IdCont>::getWordById, &holder_, _1);
+	auto getWordByIdFunc = [this](WordIdType id) -> PackedWordEntry<IdCont> & { return holder_.getWordById(id); };
 
 	// Step 4: Commit suffixes array. It runs in parallel with next step
 	auto &suffixes = holder_.GetSuffix();
@@ -48,7 +48,7 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 
 	auto wIt = words.begin() + wrdOffset;
 
-	auto idrelsetCommitFun = [&wIt, &found, getWordByIdFunc, &tm4, &idsetcnt, &words_um]() {
+	auto idrelsetCommitFun = [&wIt, &found, &getWordByIdFunc, &tm4, &idsetcnt, &words_um]() {
 		uint32_t i = 0;
 		for (auto keyIt = words_um.begin(), endIt = words_um.end(); keyIt != endIt; ++keyIt, ++i) {
 			// Pack idrelset
@@ -306,12 +306,14 @@ void DataProcessor<IdCont>::buildTyposMap(uint32_t startPos, const std::vector<W
 		const std::string_view word = holder_.GetSuffix().word_at(holder_.GetSuffixWordId(wordId));
 		mktypos(tctx, word, maxTyposInWord, holder_.cfg_->maxTypoLen,
 				maxTyposInWord == halfMaxTypos
-					? typos_context::CallBack{[&typosHalf, wordId](std::string_view typo, int) { typosHalf.emplace(typo, wordId); }}
-					: typos_context::CallBack{[&](std::string_view typo, int level) {
+					? typos_context::CallBack{[&typosHalf, wordId](std::string_view typo, int, const typos_context::TyposVec &positions) {
+						  typosHalf.emplace(typo, WordTypo{wordId, positions});
+					  }}
+					: typos_context::CallBack{[&](std::string_view typo, int level, const typos_context::TyposVec &positions) {
 						  if (level > 1 || typo.size() == word.size()) {
-							  typosHalf.emplace(typo, wordId);
+							  typosHalf.emplace(typo, WordTypo{wordId, positions});
 						  } else {
-							  typosMax.emplace(typo, wordId);
+							  typosMax.emplace(typo, WordTypo{wordId, positions});
 						  }
 					  }});
 		startPos++;
