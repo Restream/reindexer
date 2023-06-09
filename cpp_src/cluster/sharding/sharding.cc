@@ -109,7 +109,7 @@ ShardIDsContainer RoutingStrategy::GetHostsIds(const Query &q) const {
 			throw Error(errLogic, "Query to all shard can't contain JOIN or MERGE");
 		}
 		for (const auto &agg : q.aggregations_) {
-			if (agg.type_ == AggAvg || agg.type_ == AggFacet || agg.type_ == AggDistinct || agg.type_ == AggUnknown) {
+			if (agg.Type() == AggAvg || agg.Type() == AggFacet || agg.Type() == AggDistinct || agg.Type() == AggUnknown) {
 				throw Error(errLogic, "Query to all shard can't contain aggregations AVG, Facet or Distinct");
 			}
 		}
@@ -309,7 +309,8 @@ LocatorService::LocatorService(ClusterProxy &rx, const cluster::ShardingConfig &
 
 Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vector<cluster::ShardingConfig::Key> &keys) {
 	return fieldType.EvaluateOneOf(
-		[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int>) -> Error {
+		[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
+				  KeyValueType::Uuid>) -> Error {
 			try {
 				for (auto &k : keys) {
 					for (auto &[l, r, _] : k.values) {

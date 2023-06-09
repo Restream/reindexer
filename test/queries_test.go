@@ -66,10 +66,13 @@ type TestItem struct {
 	StartTime     int             `reindex:"start_time,tree"`
 	Tmp           string          `reindex:"tmp,-"`
 	Nested        StrictTestNest  `reindex:"-" json:"nested"`
+	Uuid          string          `reindex:"uuid,hash,uuid" json:"uuid"`
+	UuidArray     []string        `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
 	_             struct{}        `reindex:"id+tmp,,composite,pk"`
 	_             struct{}        `reindex:"age+genre,,composite"`
 	_             struct{}        `reindex:"location+rate,,composite"`
 	_             struct{}        `reindex:"rate+age,,composite"`
+	_             struct{}        `reindex:"uuid+age,,composite"`
 }
 
 // TestItemIDOnly test case for non-indexed fields
@@ -98,9 +101,12 @@ type TestItemIDOnly struct {
 	EndTime       int             `json:"end_time"`
 	StartTime     int             `json:"start_time"`
 	Tmp           string          `reindex:"tmp,-"`
+	Uuid          string          `reindex:"uuid,hash,uuid" json:"uuid"`
+	UuidArray     []string        `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
 	_             struct{}        `reindex:"id+tmp,,composite,pk"`
 	_             struct{}        `reindex:"age+genre,,composite"`
 	_             struct{}        `reindex:"location+rate,,composite"`
+	_             struct{}        `reindex:"uuid+age,,composite"`
 }
 
 // TestItemWithSparse test case for sparse indexes
@@ -129,9 +135,12 @@ type TestItemWithSparse struct {
 	EndTime       int             `reindex:"end_time,-"`
 	StartTime     int             `reindex:"start_time,tree"`
 	Tmp           string          `reindex:"tmp,-"`
+	Uuid          string          `reindex:"uuid,hash,uuid" json:"uuid"`
+	UuidArray     []string        `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
 	_             struct{}        `reindex:"id+tmp,,composite,pk"`
 	_             struct{}        `reindex:"age+genre,,composite"`
 	_             struct{}        `reindex:"location+rate,,composite"`
+	_             struct{}        `reindex:"uuid+age,,composite"`
 }
 
 type TestItemSimple struct {
@@ -273,6 +282,8 @@ func newTestItem(id int, pkgsCount int) interface{} {
 		Actor: Actor{
 			Name: randString(),
 		},
+		Uuid:          randUuid(),
+		UuidArray:     randUuidArray(rand.Int() % 20),
 	}
 }
 
@@ -320,6 +331,8 @@ func newTestItemIDOnly(id int, pkgsCount int) interface{} {
 		Actor: Actor{
 			Name: randString(),
 		},
+		Uuid:          randUuid(),
+		UuidArray:     randUuidArray(rand.Int() % 20),
 	}
 }
 
@@ -348,6 +361,8 @@ func newTestItemWithSparse(id int, pkgsCount int) interface{} {
 		Actor: Actor{
 			Name: randString(),
 		},
+		Uuid:          randUuid(),
+		UuidArray:     randUuidArray(rand.Int() % 20),
 	}
 }
 
@@ -625,23 +640,17 @@ func CheckAggregateQueries(t *testing.T) {
 	q.AggregateFacet("packages")
 	it := q.ExecCtx(t, ctx)
 	cancel()
-	if it.Error() != nil {
-		panic(it.Error())
-	}
+	require.NoError(t, it.Error())
 	defer it.Close()
 
 	qcheck := DB.Query("test_items")
 	res, err := qcheck.Exec(t).FetchAll()
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 
 	aggregations := it.AggResults()
-	if len(aggregations) != 8 {
-		panic(fmt.Errorf("%d != 8", len(aggregations)))
-	}
+	require.Len(t, aggregations, 8)
 
-	var sum float64
+	sum := 0.0
 	ageFacet := make(map[int]int, 0)
 	nameFacet := make(map[string]int, 0)
 	packagesFacet := make(map[int]int, 0)
@@ -676,96 +685,53 @@ func CheckAggregateQueries(t *testing.T) {
 	sort.Sort(compositeFacetResult)
 	compositeFacetResult = compositeFacetResult[min(facetOffset, len(compositeFacetResult)):min(facetOffset+facetLimit, len(compositeFacetResult))]
 
-	if sum != *aggregations[1].Value {
-		panic(fmt.Errorf("%f != %f", sum, *aggregations[1].Value))
-	}
-	if sum/float64(len(res)) != *aggregations[0].Value {
-		panic(fmt.Errorf("%f != %f,len=%d", sum/float64(len(res)), *aggregations[0].Value, len(res)))
-	}
+	require.Len(t, aggregations[1].Fields, 1)
+	assert.Equal(t, "YEAR", aggregations[1].Fields[0])
+	assert.Equal(t, sum, *aggregations[1].Value)
+	assert.Equal(t, sum/float64(len(res)), *aggregations[0].Value)
 
-	if len(aggregations[2].Fields) != 1 {
-		panic(fmt.Errorf("%d != 1", len(aggregations[2].Fields)))
-	}
-	if aggregations[2].Fields[0] != "age" {
-		panic(fmt.Errorf("%s != %s", aggregations[2].Fields[0], "age"))
-	}
-	if len(aggregations[2].Facets) != len(ageFacet) {
-		panic(fmt.Errorf("%d != %d", len(aggregations[2].Facets), len(ageFacet)))
-	}
+	require.Len(t, aggregations[2].Fields, 1)
+	assert.Equal(t, aggregations[2].Fields[0], "age")
+	require.Equal(t, len(aggregations[2].Facets), len(ageFacet))
 	for _, facet := range aggregations[2].Facets {
-		if len(facet.Values) != 1 {
-			panic(fmt.Errorf("%d != 1", len(facet.Values)))
-		}
+		require.Len(t, facet.Values, 1)
 		intVal, _ := strconv.Atoi(facet.Values[0])
-		if count, ok := ageFacet[intVal]; ok != true || count != facet.Count {
-			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[2].Fields[0], facet.Values[0], count, facet.Count))
-		}
+		count, ok := ageFacet[intVal]
+		require.True(t, ok)
+		assert.Equal(t, count, facet.Count)
 	}
 
-	if len(aggregations[3].Fields) != 1 {
-		panic(fmt.Errorf("%d != 1", len(aggregations[3].Fields)))
-	}
-	if aggregations[3].Fields[0] != "name" {
-		panic(fmt.Errorf("%s != %s", aggregations[3].Fields[0], "name"))
-	}
+	require.Len(t, aggregations[3].Fields, 1)
+	assert.Equal(t, aggregations[3].Fields[0], "name")
 	for _, facet := range aggregations[3].Facets {
-		if len(facet.Values) != 1 {
-			panic(fmt.Errorf("%d != 1", len(facet.Values)))
-		}
-		if count, ok := nameFacet[facet.Values[0]]; ok != true || count != facet.Count {
-			panic(fmt.Errorf("facet '%s' val '%s': %d != %d", aggregations[3].Fields[0], facet.Values[0], count, facet.Count))
-		}
+		require.Len(t, facet.Values, 1)
+		count, ok := nameFacet[facet.Values[0]]
+		require.True(t, ok)
+		assert.Equal(t, count, facet.Count)
 	}
-	if ageMin != int(*aggregations[4].Value) {
-		panic(fmt.Errorf("%d != %f", ageMin, *aggregations[4].Value))
-	}
-	if ageMax != int(*aggregations[5].Value) {
-		panic(fmt.Errorf("%d != %f", ageMax, *aggregations[5].Value))
-	}
-	if len(aggregations[6].Fields) != 2 {
-		panic(fmt.Errorf("%d != 1", len(aggregations[6].Fields)))
-	}
-	if aggregations[6].Fields[0] != "company_name" {
-		panic(fmt.Errorf("%s != %s", aggregations[6].Fields[0], "company_name"))
-	}
-	if aggregations[6].Fields[1] != "rate" {
-		panic(fmt.Errorf("%s != %s", aggregations[6].Fields[1], "rate"))
-	}
-	if len(compositeFacetResult) != len(aggregations[6].Facets) {
-		panic(fmt.Errorf("Composite facet sizes differ: %d != %d", len(compositeFacetResult), len(aggregations[6].Facets)))
-	}
+	assert.Equal(t, ageMin, int(*aggregations[4].Value))
+	assert.Equal(t, ageMax, int(*aggregations[5].Value))
+	require.Len(t, aggregations[6].Fields, 2)
+	assert.Equal(t, aggregations[6].Fields[0], "company_name")
+	assert.Equal(t, aggregations[6].Fields[1], "rate")
+	require.Equal(t, len(compositeFacetResult), len(aggregations[6].Facets))
 	for i := 0; i < len(compositeFacetResult); i++ {
-		if len(aggregations[6].Facets[i].Values) != 2 {
-			panic(fmt.Errorf("%d != 2", len(aggregations[6].Facets[i].Values)))
-		}
+		require.Len(t, aggregations[6].Facets[i].Values, 2)
 		rate, err := strconv.ParseFloat(aggregations[6].Facets[i].Values[1], 64)
-		if err != nil {
-			panic(err)
-		}
-		if compositeFacetResult[i].CompanyName != aggregations[6].Facets[i].Values[0] || compositeFacetResult[i].Rate != rate ||
-			compositeFacetResult[i].Count != aggregations[6].Facets[i].Count {
-			panic(fmt.Errorf("Facet 'company_name', 'rate' #%d {'%s', '%s': %d} != {'%s', '%f': %d}", i,
-				aggregations[6].Facets[i].Values[0], aggregations[6].Facets[i].Values[1], aggregations[6].Facets[i].Count,
-				compositeFacetResult[i].CompanyName, compositeFacetResult[i].Rate, compositeFacetResult[i].Count))
-		}
+		require.NoError(t, err)
+		assert.Equal(t, compositeFacetResult[i].CompanyName, aggregations[6].Facets[i].Values[0])
+		assert.Equal(t, compositeFacetResult[i].Rate, rate)
+		assert.Equal(t, compositeFacetResult[i].Count, aggregations[6].Facets[i].Count)
 	}
-	if len(aggregations[7].Fields) != 1 {
-		panic(fmt.Errorf("%d != 1", len(aggregations[7].Fields)))
-	}
-	if aggregations[7].Fields[0] != "packages" {
-		panic(fmt.Errorf("%s != %s", aggregations[7].Fields[0], "packages"))
-	}
+	require.Len(t, aggregations[7].Fields, 1)
+	assert.Equal(t, aggregations[7].Fields[0], "packages")
 	for _, facet := range aggregations[7].Facets {
-		if len(facet.Values) != 1 {
-			panic(fmt.Errorf("%d != 1", len(facet.Values)))
-		}
+		require.Len(t, facet.Values, 1)
 		value, err := strconv.Atoi(facet.Values[0])
-		if err != nil {
-			panic(err)
-		}
-		if count, ok := packagesFacet[value]; ok != true || count != facet.Count {
-			panic(fmt.Errorf("facet '%s' val '%s' (%d): %d != %d", aggregations[7].Fields[0], facet.Values[0], value, count, facet.Count))
-		}
+		require.NoError(t, err)
+		count, ok := packagesFacet[value]
+		require.True(t, ok)
+		assert.Equal(t, count, facet.Count)
 	}
 }
 
@@ -1085,6 +1051,22 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		Sort(sort, desc).
 		ExecAndVerify(t)
 
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Not().Where("uuid", reindexer.EQ, randUuid()).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		WhereUuid("uuid", reindexer.LT, randUuid()).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Not().Where("uuid_array", reindexer.SET, randUuidArray(rand.Int() % 10)).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		WhereUuid("uuid_array", reindexer.SET, randUuidArray(rand.Int() % 10)...).
+		ExecAndVerify(t)
+
 	if !testComposite {
 		return
 	}
@@ -1150,6 +1132,15 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		WhereBetweenFields("age+genre", reindexer.GT, "rate+age").
 		Or().
 		WhereBetweenFields("age+genre", reindexer.LT, "rate+age").
+		ExecAndVerify(t)
+
+	compositeValues = []interface{}{
+		[]interface{}{randUuid(), rand.Int() % 10},
+		[]interface{}{randUuid(), rand.Int() % 10},
+	}
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("uuid+age", reindexer.EQ, compositeValues).
 		ExecAndVerify(t)
 }
 
@@ -1690,7 +1681,8 @@ func TestStrictMode(t *testing.T) {
 			RealNewField: i % 3,
 		})
 		assert.NoError(t, err)
-		tx.tx.UpsertJSON(itemJSON)
+		err = tx.tx.UpsertJSON(itemJSON)
+		assert.NoError(t, err, "json: %s", itemJSON)
 	}
 	tx.MustCommit()
 

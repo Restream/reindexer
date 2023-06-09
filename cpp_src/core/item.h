@@ -26,7 +26,7 @@ class TagsMatcher;
 class Item {
 public:
 	/// Construct empty Item
-	Item() : impl_(nullptr), status_(errNotValid) {}
+	Item() noexcept : impl_(nullptr), status_(errNotValid) {}
 	/// Destroy Item
 	~Item();
 	Item(const Item &) = delete;
@@ -123,93 +123,94 @@ public:
 	/// @param slice - data slice with Json.
 	/// @param endp - pointer to end of parsed part of slice
 	/// @param pkOnly - if TRUE, that mean a JSON string will be parse only primary key fields
-	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false);
+	[[nodiscard]] Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false) &noexcept;
 
 	/// Build item from JSON<br>
 	/// If Item is in *Unsafe Mode*, then Item will not store slice, but just keep pointer to data in slice,
 	/// application *MUST* hold slice until end of life of Item
 	/// @param slice - data slice with CJson
 	/// @param pkOnly - if TRUE, that mean a JSON string will be parse only primary key fields
-	Error FromCJSON(std::string_view slice, bool pkOnly = false);
+	[[nodiscard]] Error FromCJSON(std::string_view slice, bool pkOnly = false) &noexcept;
+	void FromCJSONImpl(std::string_view slice, bool pkOnly = false) &;
 
 	/// Builds item from msgpack::object.
 	/// @param buf - msgpack encoded data buffer.
 	/// @param offset - position to start from.
-	Error FromMsgPack(std::string_view buf, size_t &offset);
+	[[nodiscard]] Error FromMsgPack(std::string_view buf, size_t &offset) &noexcept;
 
 	/// Builds item from Protobuf
 	/// @param sbuf - Protobuf encoded data
-	Error FromProtobuf(std::string_view sbuf);
+	[[nodiscard]] Error FromProtobuf(std::string_view sbuf) &noexcept;
 
 	/// Packs data in msgpack format
 	/// @param wrser - buffer to serialize data to
-	Error GetMsgPack(WrSerializer &wrser);
+	[[nodiscard]] Error GetMsgPack(WrSerializer &wrser) &noexcept;
 
 	/// Packs item data to Protobuf
 	/// @param wrser - buffer to serialize data to
-	Error GetProtobuf(WrSerializer &wrser);
+	[[nodiscard]] Error GetProtobuf(WrSerializer &wrser) &noexcept;
 
 	/// Serialize item to CJSON.<br>
-	/// If Item is in *Unfafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation
+	/// If Item is in *Unsafe Mode*, then returned slice is allocated in temporary buffer, and can be invalidated by any next operation
 	/// with Item
 	/// @param withTagsMatcher - need to serialize TagsMatcher
 	/// @return data slice with CJSON
-	std::string_view GetCJSON(bool withTagsMatcher = false);
+	[[nodiscard]] std::string_view GetCJSON(bool withTagsMatcher = false);
 	/// Serialize item to JSON.<br>
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
 	/// operation with Item
-	std::string_view GetJSON();
+	[[nodiscard]] std::string_view GetJSON();
 	/// Get status of item
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next
 	/// operation with Item
-	Error Status() { return status_; }
+	[[nodiscard]] Error Status() const noexcept { return status_; }
 	/// Get internal ID of item
 	/// @return ID of item
-	int GetID() const noexcept { return id_; }
+	[[nodiscard]] int GetID() const noexcept { return id_; }
 	/// Get internal shardId of item
 	/// @return shardId of item
-	int GetShardID() const noexcept { return shardId_; }
+	[[nodiscard]] int GetShardID() const noexcept { return shardId_; }
 	/// Get internal version of item
 	/// @return version of item
-	lsn_t GetLSN();
+	[[nodiscard]] lsn_t GetLSN();
 	/// Get count of indexed field
 	/// @return count of  field
-	int NumFields() const;
+	[[nodiscard]] int NumFields() const;
 	/// Get field by number
 	/// @param field - number of field. Must be >= 0 && < NumFields
 	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](int field) const noexcept;
+	[[nodiscard]] FieldRef operator[](int field) const noexcept;
 	/// Get field by name
 	/// @param name - name of field
 	/// @return FieldRef which contains reference to indexed field
-	FieldRef operator[](std::string_view name) const noexcept;
+	[[nodiscard]] FieldRef operator[](std::string_view name) const noexcept;
 	/// Get field's name tag
 	/// @param name - field name
 	/// @return name's numeric tag value
-	int GetFieldTag(std::string_view name) const;
+	[[nodiscard]] int GetFieldTag(std::string_view name) const;
 	/// Get field's index by name
 	/// @param name - field name
 	/// @return name's numeric field value
-	int GetFieldIndex(std::string_view name) const;
+	[[nodiscard]] int GetFieldIndex(std::string_view name) const;
 	/// Get PK fields
-	FieldsSet PkFields() const;
+	[[nodiscard]] FieldsSet PkFields() const;
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
-	void SetPrecepts(std::vector<std::string> precepts);
+	void SetPrecepts(std::vector<std::string> precepts) &;
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
-	bool IsTagsUpdated() const noexcept;
+	[[nodiscard]] bool IsTagsUpdated() const noexcept;
 	/// Get state token
 	/// @return Current state token
-	int GetStateToken() const noexcept;
+	[[nodiscard]] int GetStateToken() const noexcept;
 	/// Check is item valid. If is not valid, then any futher operations with item will raise nullptr dereference
-	bool operator!() const noexcept { return impl_ == nullptr; }
+	[[nodiscard]] bool operator!() const noexcept { return impl_ == nullptr; }
 	/// Enable Unsafe Mode<br>.
 	/// USE WITH CAUTION. In unsafe mode most of Item methods will not store  strings and slices, passed from/to application.<br>
 	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>
 	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containters in many cases invalidates references -
 	/// and in unsafe mode caller is responsibe to guarantee, that all resources passed to Item will keep valid
-	Item &Unsafe(bool enable = true) noexcept;
+	Item &Unsafe(bool enable = true) &noexcept;
 
 private:
 	explicit Item(ItemImpl *impl) : impl_(impl) {}

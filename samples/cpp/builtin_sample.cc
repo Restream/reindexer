@@ -17,9 +17,10 @@ int main() {
 	//// Insert some data in JSON format
 	Item item = db.NewItem("mytable");
 	std::string data = "{\"id\":100,\"name\":\"Some name\" \"genre\":\"some genre\"}";
-	item.FromJSON(data);
-	err = db.Upsert("mytable", item);
+	err = item.FromJSON(data);
 	if (!err.ok()) return -4;
+	err = db.Upsert("mytable", item);
+	if (!err.ok()) return -5;
 
 	// Build & execute query
 	auto query = Query("mytable").Where("id", CondEq, 100);
@@ -27,7 +28,7 @@ int main() {
 	err = db.Select(query, results);
 	if (!err.ok()) {
 		std::cerr << "Select error" << err.what() << std::endl;
-		return -5;
+		return -6;
 	}
 
 	// Fetch and print results

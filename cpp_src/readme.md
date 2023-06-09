@@ -93,7 +93,7 @@ Download and install [64 bit](https://repo.reindexer.io/win/64/) or [32 bit](htt
 
 ### Dependencies
 
-Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so the Cmake, C++17 toolchain and LevelDB must be installed before installing Reindexer. To build Reindexer, g++ 8+, clang 3+ or MSVC 2017+ is required.
+Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so the Cmake, C++17 toolchain and LevelDB must be installed before installing Reindexer. To build Reindexer, g++ 8+, clang 5+ or MSVC 2019+ is required.
 Dependencies can be installed automatically by this script:
 
 ```bash
@@ -160,18 +160,33 @@ The concept of streaming is described [here](https://grpc.io/docs/what-is-grpc/c
 
 ## Monitoring
 
-### Prometheus
+### Prometheus (server-side)
 
 Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i.e. `http://localhost:9088/metrics`). This metrics may be enabled by passing `--prometheus` as reindexer_server command line argument or by setting `metrics:prometheus` flag in server yaml-config file. Some of the metrics also require `perfstats` to be enabled in `profiling`-config
 
-`reindexer_qps_total` - total queries per second for each database, namespace and query type  
-`reindexer_avg_latency` - average queryies latency for each database, namespace and query type  
-`reindexer_caches_size_bytes`, `reindexer_indexes_size_bytes`, `reindexer_data_size_bytes` - caches, indexes and data size for each namespace  
-`reindexer_items_count` - items count in each namespace  
-`reindexer_memory_allocated_bytes` - current amount of dynamicly allocated memory according to tcmalloc/jemalloc  
-`reindexer_rpc_clients_count` - current number of RPC clients for each database  
-`reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database  
+`reindexer_qps_total` - total queries per second for each database, namespace and query type
+`reindexer_avg_latency` - average queryies latency for each database, namespace and query type
+`reindexer_caches_size_bytes`, `reindexer_indexes_size_bytes`, `reindexer_data_size_bytes` - caches, indexes and data size for each namespace
+`reindexer_items_count` - items count in each namespace
+`reindexer_memory_allocated_bytes` - current amount of dynamicly allocated memory according to tcmalloc/jemalloc
+`reindexer_rpc_clients_count` - current number of RPC clients for each database
+`reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database
 `reindexer_info` - generic reindexer server info (currently it's just a version number)
+
+### Prometheus (client-side, Go)
+
+Go binding for reindexer is using [prometheus/client_golang](https://github.com/prometheus/client_golang) to collect some metrics (RPS and request's latency) from client's side. Pass `WithPrometheusMetrics()`-option to enable metric's collecting:
+```
+// Create DB connection for cproto-mode with metrics enabled
+db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindex.WithPrometheusMetrics())
+// Register prometheus handle for your HTTP-server to be able to get metrics from the outside
+http.Handle("/metrics", promhttp.Handler())
+```
+
+All of the metricts will be exported into `DefaultRegistry`. Check [this](https://github.com/prometheus/client_golang/blob/main/prometheus/promauto/auto.go#L57-L85) for basic prometheus usage example.
+
+Both server-side and client-side metrics contain 'latency', however, client-side latency will also count all the time consumed by the binding's queue, network communication (for cproto) and deseriallization.
+So client-side latency may be more rellevant for user's applications the server-side latency.
 
 ## Maintenance
 

@@ -27,7 +27,7 @@ void ClientsStatsApi::RunServerInThread(bool statEnable) {
 	serverThread_ = std::unique_ptr<std::thread>(new std::thread([this]() {
 		auto res = this->server_.Start();
 		(void)res;
-		assert(res == EXIT_SUCCESS);
+		assertrx(res == EXIT_SUCCESS);
 	}));
 	while (!server_.IsRunning()) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -95,7 +95,7 @@ uint32_t ClientsStatsApi::StatsTxCount(CoroReindexer& rx) {
 		gason::JsonNode clientsStats = parser.Parse(wrser.Slice());
 		return clientsStats["tx_count"].As<uint32_t>();
 	} catch (...) {
-		assert(false);
+		assertrx(false);
 	}
 	EXPECT_TRUE(false);
 	return 0;

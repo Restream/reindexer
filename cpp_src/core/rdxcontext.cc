@@ -35,6 +35,7 @@ RdxActivityContext* RdxContext::Activity() const noexcept {
 			return &activityCtx_;
 		case HoldT::kPtr:
 			return activityPtr_;
+		case HoldT::kEmpty:
 		default:
 			return nullptr;
 	}
@@ -46,6 +47,7 @@ RdxActivityContext::Ward RdxContext::BeforeLock(MutexMark mutexMark) const {
 			return activityCtx_.BeforeLock(mutexMark);
 		case HoldT::kPtr:
 			return activityPtr_->BeforeLock(mutexMark);
+		case HoldT::kEmpty:
 		default:
 			return RdxActivityContext::Ward{nullptr, mutexMark};
 	}
@@ -57,6 +59,7 @@ RdxActivityContext::Ward RdxContext::BeforeIndexWork() const {
 			return activityCtx_.BeforeIndexWork();
 		case HoldT::kPtr:
 			return activityPtr_->BeforeIndexWork();
+		case HoldT::kEmpty:
 		default:
 			return RdxActivityContext::Ward{nullptr, Activity::IndexesLookup};
 	}
@@ -68,6 +71,7 @@ RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const {
 			return activityCtx_.BeforeSelectLoop();
 		case HoldT::kPtr:
 			return activityPtr_->BeforeSelectLoop();
+		case HoldT::kEmpty:
 		default:
 			return RdxActivityContext::Ward{nullptr, Activity::SelectLoop};
 	}
@@ -79,6 +83,7 @@ RdxActivityContext::Ward RdxContext::BeforeClusterProxy() const {
 			return activityCtx_.BeforeClusterProxy();
 		case HoldT::kPtr:
 			return activityPtr_->BeforeClusterProxy();
+		case HoldT::kEmpty:
 		default:
 			return RdxActivityContext::Ward{nullptr, Activity::ProxiedViaClusterProxy};
 	}
@@ -89,6 +94,7 @@ RdxActivityContext::Ward RdxContext::BeforeShardingProxy() const {
 			return activityCtx_.BeforeShardingProxy();
 		case HoldT::kPtr:
 			return activityPtr_->BeforeShardingProxy();
+		case HoldT::kEmpty:
 		default:
 			return RdxActivityContext::Ward{nullptr, Activity::ProxiedViaShardingProxy};
 	}
@@ -101,6 +107,7 @@ RdxActivityContext::Ward RdxContext::BeforeSimpleState(Activity::State st) const
 			return activityCtx_.BeforeState(st);
 		case HoldT::kPtr:
 			return activityPtr_->BeforeState(st);
+		case HoldT::kEmpty:
 		default:
 			return RdxActivityContext::Ward{nullptr, Activity::IndexesLookup};
 	}

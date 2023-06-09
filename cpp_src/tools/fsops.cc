@@ -247,7 +247,7 @@ Error TryCreateDirectory(const std::string &dir) {
 			return Error(errLogic, "Could not access dir '%s'. Reason: %s\n", dir.c_str(), strerror(errno));
 		}
 	}
-	return 0;
+	return {};
 }
 
 std::string GetDirPath(const std::string &path) {
@@ -281,7 +281,7 @@ Error ChownDir(const std::string &path, const std::string &user) {
 	(void)path;
 	(void)user;
 #endif
-	return 0;
+	return {};
 }
 
 Error ChangeUser(const char *userName) {
@@ -304,7 +304,7 @@ Error ChangeUser(const char *userName) {
 #else
 	(void)userName;
 #endif
-	return 0;
+	return {};
 }
 
 std::string GetRelativePath(const std::string &path, unsigned maxUp) {

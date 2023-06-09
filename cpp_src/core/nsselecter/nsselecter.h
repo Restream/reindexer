@@ -31,6 +31,10 @@ class ExplainCalc;
 class QueryPreprocessor;
 
 class NsSelecter {
+	template <typename It>
+	class MainNsValueGetter;
+	class JoinedNsValueGetter;
+
 public:
 	NsSelecter(NamespaceImpl *parent) : ns_(parent) {}
 
@@ -54,7 +58,10 @@ private:
 	template <bool reverse, bool haveComparators, bool aggregationsOnly, typename ResultsT>
 	void selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &);
 	template <bool desc, bool multiColumnSort, typename It>
-	It applyForcedSort(It begin, It end, const ItemComparator &, const SelectCtx &ctx);
+	It applyForcedSort(It begin, It end, const ItemComparator &, const SelectCtx &ctx, const joins::NamespaceResults *);
+	template <bool desc, bool multiColumnSort, typename It, typename ValueGetter>
+	static It applyForcedSortImpl(NamespaceImpl &, It begin, It end, const ItemComparator &, const std::vector<Variant> &forcedSortOrder,
+								  const std::string &fieldName, const ValueGetter &);
 	template <typename It>
 	void applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator &, const SelectCtx &ctx);
 
@@ -66,18 +73,18 @@ private:
 	h_vector<Aggregator, 4> getAggregators(const Query &) const;
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
 	void prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, bool isFt, bool availableSelectBySortIndex);
-	void prepareSortIndex(std::string &column, int &index, bool &skipSortingEntry, StrictMode);
+	static void prepareSortIndex(const NamespaceImpl &, std::string &column, int &index, bool &skipSortingEntry, StrictMode);
 	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int &index, const std::vector<JoinedSelector> &,
 									   bool &skipSortingEntry, StrictMode);
-	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc, const joins::NamespaceResults &,
+	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc, const joins::NamespaceResults *,
 						   const JoinedSelectors &);
 	void processLeftJoins(LocalQueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext &);
 	bool checkIfThereAreLeftJoins(SelectCtx &sctx) const;
 	template <typename It>
-	void sortResults(LoopCtx &sctx, It begin, It end, const SortingOptions &sortingOptions);
+	void sortResults(LoopCtx &sctx, It begin, It end, const SortingOptions &sortingOptions, const joins::NamespaceResults *);
 
 	bool isSortOptimizatonEffective(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
-	static bool validateField(StrictMode strictMode, std::string_view name, const std::string &nsName, const TagsMatcher &tagsMatcher);
+	static bool validateField(StrictMode strictMode, std::string_view name, std::string_view nsName, const TagsMatcher &tagsMatcher);
 	void checkStrictModeAgg(StrictMode strictMode, const std::string &name, const std::string &nsName,
 							const TagsMatcher &tagsMatcher) const;
 

@@ -57,7 +57,7 @@ Error DBManager::Init() {
 		}
 	}
 
-	return 0;
+	return {};
 }
 
 Error DBManager::OpenDatabase(const std::string &dbName, AuthContext &auth, bool canCreate) {
@@ -162,7 +162,7 @@ Error DBManager::DropDatabase(AuthContext &auth) {
 	auth.ResetDB();
 
 	fs::RmDirAll(fs::JoinPath(config_.StoragePath, dbName));
-	return 0;
+	return {};
 }
 
 std::vector<std::string> DBManager::EnumDatabases() {
@@ -186,17 +186,17 @@ void DBManager::ShutdownClusters() {
 Error DBManager::Login(const std::string &dbName, AuthContext &auth) {
 	if (kRoleSystem == auth.role_) {
 		auth.dbName_ = dbName;
-		return 0;
+		return {};
 	}
 
 	if (IsNoSecurity()) {
 		auth.role_ = kRoleOwner;
 		auth.dbName_ = dbName;
-		return 0;
+		return {};
 	}
 
 	if (auth.role_ != kUnauthorized && dbName == auth.dbName_) {
-		return 0;
+		return {};
 	}
 
 	auto it = users_.find(auth.login_);
@@ -230,7 +230,7 @@ Error DBManager::Login(const std::string &dbName, AuthContext &auth) {
 	auth.dbName_ = dbName;
 	// logPrintf(LogInfo, "Authorized user '%s', to db '%s', role=%s", auth.login_, dbName, UserRoleName(auth.role_));
 
-	return 0;
+	return {};
 }
 
 Error DBManager::readUsers() noexcept {

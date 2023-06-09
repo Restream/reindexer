@@ -9,6 +9,7 @@ using benchmark::ConsoleReporter;
 
 namespace benchmark {
 
+#ifndef _GLIBCXX_DEBUG
 class Reporter : public ConsoleReporter {
 protected:
 	void PrintHeader(const Run& run) {
@@ -114,10 +115,14 @@ private:
 			case kMicrosecond:
 				return "us";
 			case kNanosecond:
-			default:
 				return "ns";
+			case kSecond:
+				return "s";
+			default:
+				abort();
 		}
 	}
 };
+#endif	// #ifndef _GLIBCXX_DEBUG
 
 }  // namespace benchmark

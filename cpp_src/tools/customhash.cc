@@ -131,6 +131,8 @@ uint32_t collateHash(std::string_view s, CollateMode collateMode) noexcept {
 		case CollateUTF8:
 		case CollateCustom:
 			return _Hash_bytes_collate_utf8(s.data(), s.length());
+		case CollateNone:
+		case CollateNumeric:
 		default:
 			return _Hash_bytes(s.data(), s.length());
 	}

@@ -39,6 +39,11 @@ struct MsgPackValue {
 			case MSGPACK_FLOAT64:
 				v = T(p->via.f64);
 				break;
+			case MSGPACK_NULL:
+			case MSGPACK_BOOLEAN:
+			case MSGPACK_STRING:
+			case MSGPACK_ARRAY:
+			case MSGPACK_MAP:
 			default:
 				throw reindexer::Error(errParseMsgPack, "Impossible to convert type [%d] to number", tag);
 		}

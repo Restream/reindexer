@@ -94,7 +94,13 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 				// execution of count-queries does not depend on fields and StrictMode and is checked separately
 				query.Aggregate(type, {});
 				break;
-			default:
+			case AggMin:
+			case AggMax:
+			case AggSum:
+			case AggAvg:
+			case AggDistinct:
+			case AggFacet:
+			case AggUnknown:
 				query.Aggregate(type, {field});
 		}
 
@@ -103,18 +109,24 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 		switch (type) {
 			case AggCount:
 			case AggCountCached: {
+				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(qr.GetAggregationResults().size(), 1);
 				auto value = qr.GetAggregationResults()[0].GetValue();
 
-				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_TRUE(value);
 				ASSERT_EQ(results.at(type), *value);
 				return;
 			}
-			default:
-				break;
+			case AggMin:
+			case AggMax:
+			case AggSum:
+			case AggAvg:
+			case AggDistinct:
+			case AggFacet:
+			case AggUnknown:
 				switch (expectedError) {
 					case Ok: {
+						ASSERT_TRUE(err.ok()) << "AggType: " << type << "; " << err.what();
 						ASSERT_EQ(qr.GetAggregationResults().size(), 1);
 						auto value = qr.GetAggregationResults()[0].GetValue();
 
@@ -124,7 +136,6 @@ void QueryAggStrictModeTest(const std::unique_ptr<Client>& client) {
 						} else {
 							ASSERT_FALSE(value);
 						}
-						ASSERT_TRUE(err.ok()) << "AggType: " << type << "; " << err.what();
 						break;
 					}
 					case ErrName:

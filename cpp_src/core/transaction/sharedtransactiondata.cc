@@ -34,7 +34,7 @@ void SharedTransactionData::SetTagsMatcher(TagsMatcher &&tm) {
 		throw Error(errParams, "Tx tm statetoken missmatch: %08X vs %08X", tagsMatcher_.stateToken(), tm.stateToken());
 	}
 	tagsMatcher_ = std::move(tm);
-	tagsMatcher_.UpdatePayloadType(payloadType_, false);
+	tagsMatcher_.UpdatePayloadType(payloadType_, NeedChangeTmVersion::No);
 	tagsUpdated_ = true;
 }
 

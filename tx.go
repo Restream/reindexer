@@ -5,6 +5,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/prometheus/client_golang/prometheus"
+	otelattr "go.opentelemetry.io/otel/attribute"
+
 	"github.com/restream/reindexer/v4/bindings"
 	"github.com/restream/reindexer/v4/cjson"
 )
@@ -52,18 +55,23 @@ func (tx *Tx) startTxCtx(ctx context.Context) (err error) {
 	if err != nil {
 		return
 	}
+
 	if tx.started {
 		return nil
 	}
+
 	tx.asyncRspCnt = 0
 	tx.started = true
+
 	tx.ctx, err = tx.db.binding.BeginTx(ctx, tx.namespace)
 	if err != nil {
 		return err
 	}
+
 	tx.ctx.UserCtx = ctx
 	tx.cmplCh = nil
 	tx.cmplCond = nil
+
 	return nil
 }
 
@@ -78,128 +86,240 @@ func (tx *Tx) startAsyncRoutines() error {
 }
 
 func (tx *Tx) Insert(item interface{}, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.Insert", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.Insert", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
+
 	return tx.modifyInternal(item, nil, modeInsert, precepts...)
 }
 
 func (tx *Tx) Update(item interface{}, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.Update", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.Update", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
+
 	return tx.modifyInternal(item, nil, modeUpdate, precepts...)
 }
 
 // Upsert (Insert or Update) item to namespace
 func (tx *Tx) Upsert(item interface{}, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.Upsert", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.Upsert", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
+
 	return tx.modifyInternal(item, nil, modeUpsert, precepts...)
 }
 
 // UpsertJSON (Insert or Update) item to namespace
 func (tx *Tx) UpsertJSON(json []byte, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.UpsertJSON", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.UpsertJSON", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
+
 	return tx.modifyInternal(nil, json, modeUpsert, precepts...)
 }
 
 // Delete - remove item by id from namespace
 func (tx *Tx) Delete(item interface{}, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.Delete", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.Delete", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
-	return tx.modifyInternal(item, nil, modeDelete, precepts...)
 
+	return tx.modifyInternal(item, nil, modeDelete, precepts...)
 }
 
 // DeleteJSON - remove item by id from namespace
 func (tx *Tx) DeleteJSON(json []byte, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.DeleteJSON", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.DeleteJSON", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
+
 	return tx.modifyInternal(nil, json, modeDelete, precepts...)
 }
 
 // InsertAsync Insert item to namespace. Calls completion on result
 func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.InsertAsync", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.InsertAsync", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
+
 	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
+
 	return tx.modifyInternalAsync(item, nil, modeInsert, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
 
 // UpdateAsync Update item to namespace. Calls completion on result
 func (tx *Tx) UpdateAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.UpdateAsync", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.UpdateAsync", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
+
 	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
+
 	return tx.modifyInternalAsync(item, nil, modeUpdate, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
 
 // UpsertAsync (Insert or Update) item to namespace. Calls completion on result
 func (tx *Tx) UpsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.UpsertAsync", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.UpsertAsync", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
+
 	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
+
 	return tx.modifyInternalAsync(item, nil, modeUpsert, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
 
 // UpsertJSONAsync (Insert or Update) item to index. Calls completion on result
 func (tx *Tx) UpsertJSONAsync(json []byte, cmpl bindings.Completion, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.UpsertJSONAsync", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.UpsertJSONAsync", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
+
 	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
+
 	return tx.modifyInternalAsync(nil, json, modeUpsert, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
 
 // DeleteAsync - remove item by id from namespace. Calls completion on result
 func (tx *Tx) DeleteAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.DeleteAsync", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.DeleteAsync", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
+
 	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
-	return tx.modifyInternalAsync(item, nil, modeDelete, cmpl, retriesOnInvalidStateCnt, precepts...)
 
+	return tx.modifyInternalAsync(item, nil, modeDelete, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
 
 // DeleteJSONAsync - remove item by id from namespace. Calls completion on result
 func (tx *Tx) DeleteJSONAsync(json []byte, cmpl bindings.Completion, precepts ...string) error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.DeleteJSONAsync", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.DeleteJSONAsync", tx.namespace)).ObserveDuration()
+	}
+
 	err := tx.startTx()
 	if err != nil {
 		return err
 	}
+
 	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
+
 	return tx.modifyInternalAsync(nil, json, modeDelete, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
 
@@ -212,6 +332,14 @@ func (tx *Tx) checkFinalization() error {
 
 // CommitWithCount apply changes, and return count of changed items
 func (tx *Tx) CommitWithCount() (count int, err error) {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.CommitWithCount", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.CommitWithCount", tx.namespace)).ObserveDuration()
+	}
+
 	if !tx.started {
 		return 0, nil
 	}
@@ -219,6 +347,7 @@ func (tx *Tx) CommitWithCount() (count int, err error) {
 	if count, err = tx.commitInternal(); err != nil {
 		return
 	}
+
 	return
 }
 
@@ -237,6 +366,7 @@ func (tx *Tx) MustCommit() int {
 	if err != nil {
 		panic(err)
 	}
+
 	return count
 }
 
@@ -450,6 +580,14 @@ func (tx *Tx) commitInternal() (count int, err error) {
 // Rollback transaction.
 // It is safe to call Rollback after Commit
 func (tx *Tx) Rollback() error {
+	if tx.db.otelTracer != nil {
+		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.Rollback", otelattr.String("rx.ns", tx.namespace)).End()
+	}
+
+	if tx.db.promMetrics != nil {
+		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.Rollback", tx.namespace)).ObserveDuration()
+	}
+
 	tx.AwaitResults()
 	tx.asyncErr = nil
 	defer tx.finalize()

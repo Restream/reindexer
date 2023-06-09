@@ -1039,16 +1039,20 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 	};
 
 	std::vector<std::string> selectedStrValues;
-	auto itSortedStr(allStrValues.begin());
-	collectQrStringFieldValues(sortByStrQr, "valueString", selectedStrValues);
-	for (auto it = selectedStrValues.begin(); it != selectedStrValues.end(); ++it) {
-		EXPECT_EQ(*it, *itSortedStr++);
+	{
+		auto itSortedStr(allStrValues.begin());
+		collectQrStringFieldValues(sortByStrQr, "valueString", selectedStrValues);
+		for (auto it = selectedStrValues.begin(); it != selectedStrValues.end(); ++it) {
+			EXPECT_EQ(*it, *itSortedStr++);
+		}
 	}
 
-	itSortedStr = allStrValuesASCII.begin();
-	collectQrStringFieldValues(sortByASCIIStrQr, "valueStringASCII", selectedStrValues);
-	for (auto it = selectedStrValues.begin(); it != selectedStrValues.end(); ++it) {
-		EXPECT_EQ(*it, *itSortedStr++);
+	{
+		auto itSortedStr = allStrValuesASCII.begin();
+		collectQrStringFieldValues(sortByASCIIStrQr, "valueStringASCII", selectedStrValues);
+		for (auto it = selectedStrValues.begin(); it != selectedStrValues.end(); ++it) {
+			EXPECT_EQ(*it, *itSortedStr++);
+		}
 	}
 
 	auto itSortedNumericStr = allStrValuesNumeric.cbegin();
@@ -1057,10 +1061,12 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 		EXPECT_EQ(*it, *itSortedNumericStr++);
 	}
 
-	itSortedStr = allStrValuesUTF8.cbegin();
-	collectQrStringFieldValues(sortByUTF8StrQr, "valueStringUTF8", selectedStrValues);
-	for (auto it = selectedStrValues.begin(); it != selectedStrValues.end(); ++it) {
-		EXPECT_EQ(*it, *itSortedStr++);
+	{
+		auto itSortedStr = allStrValuesUTF8.cbegin();
+		collectQrStringFieldValues(sortByUTF8StrQr, "valueStringUTF8", selectedStrValues);
+		for (auto it = selectedStrValues.begin(); it != selectedStrValues.end(); ++it) {
+			EXPECT_EQ(*it, *itSortedStr++);
+		}
 	}
 }
 
@@ -1328,12 +1334,12 @@ TEST_F(ReindexerApi, DistinctQueriesEncodingTest) {
 	q1.FromSQL(sql);
 	EXPECT_EQ(q1.entries.Size(), 0);
 	ASSERT_EQ(q1.aggregations_.size(), 2);
-	EXPECT_EQ(q1.aggregations_[0].type_, AggDistinct);
-	ASSERT_EQ(q1.aggregations_[0].fields_.size(), 1);
-	EXPECT_EQ(q1.aggregations_[0].fields_[0], "country");
-	EXPECT_EQ(q1.aggregations_[1].type_, AggDistinct);
-	ASSERT_EQ(q1.aggregations_[1].fields_.size(), 1);
-	EXPECT_EQ(q1.aggregations_[1].fields_[0], "city");
+	EXPECT_EQ(q1.aggregations_[0].Type(), AggDistinct);
+	ASSERT_EQ(q1.aggregations_[0].Fields().size(), 1);
+	EXPECT_EQ(q1.aggregations_[0].Fields()[0], "country");
+	EXPECT_EQ(q1.aggregations_[1].Type(), AggDistinct);
+	ASSERT_EQ(q1.aggregations_[1].Fields().size(), 1);
+	EXPECT_EQ(q1.aggregations_[1].Fields()[0], "city");
 
 	std::string dsl = q1.GetJSON();
 	Query q2;

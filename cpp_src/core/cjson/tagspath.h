@@ -80,7 +80,10 @@ class IndexedTagsPathImpl : public h_vector<IndexedPathNode, hvSize> {
 public:
 	using Base = h_vector<IndexedPathNode, hvSize>;
 	using Base::Base;
-
+	explicit IndexedTagsPathImpl(const TagsPath &tp) {
+		this->reserve(tp.size());
+		for (auto t : tp) this->emplace_back(t);
+	}
 	template <unsigned hvSizeO>
 	bool Compare(const IndexedTagsPathImpl<hvSizeO> &obj) const noexcept {
 		const size_t ourSize = this->size();

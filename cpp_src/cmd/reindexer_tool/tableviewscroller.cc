@@ -73,7 +73,7 @@ void TableViewScroller::Scroll(Output& output, std::vector<std::string>&& jsonDa
 	viaMoreCmd = false;
 #endif
 
-	stringstream ss;
+	std::stringstream ss;
 	std::ostream& o = viaMoreCmd ? ss : output();
 	tableBuilder_.BuildHeader(o, tableCalculator, isCanceled);
 

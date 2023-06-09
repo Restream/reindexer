@@ -45,7 +45,7 @@ public:
 
 	private:
 		bool compare(const Variant& lhs, const Variant& rhs) const {
-			if (IsInt(lhs, rhs)) return lhs.RelaxCompare(rhs) == 0;
+			if (IsInt(lhs, rhs)) return lhs.RelaxCompare<WithString::Yes>(rhs) == 0;
 
 			ValidateTypes(lhs, rhs);
 			return lhs == rhs;
@@ -61,7 +61,7 @@ public:
 
 	private:
 		bool compare(const Variant& lhs, const Variant& rhs) const {
-			if (IsInt(lhs, rhs)) return lhs.RelaxCompare(rhs) < 0;
+			if (IsInt(lhs, rhs)) return lhs.RelaxCompare<WithString::Yes>(rhs) < 0;
 
 			ValidateTypes(lhs, rhs);
 			return lhs < rhs;
@@ -102,18 +102,19 @@ private:
 		int defaultShard;
 
 		int GetShardId(const Variant& val) const {
-			return std::visit(overloaded{[&val, this](const VariantHashMap& values) {
-											 auto it = values.find(val);
-											 if (it == values.end()) return defaultShard;
-											 return it->second;
-										 },
-										 [&val, this](const Variant4SegmentMap& values) {
-											 auto it = values.lower_bound(val);
-											 if (it == values.end() || (!it->first.isRightBound && it->first.RelaxCompare(val)))
-												 return defaultShard;
-											 return it->second;
-										 }},
-							  keysToShard);
+			return std::visit(
+				overloaded{[&val, this](const VariantHashMap& values) {
+							   auto it = values.find(val);
+							   if (it == values.end()) return defaultShard;
+							   return it->second;
+						   },
+						   [&val, this](const Variant4SegmentMap& values) {
+							   auto it = values.lower_bound(val);
+							   if (it == values.end() || (!it->first.isRightBound && it->first.RelaxCompare<WithString::Yes>(val)))
+								   return defaultShard;
+							   return it->second;
+						   }},
+				keysToShard);
 		}
 	};
 	fast_hash_set<int> getShardsIds(const NsData& ns) const;

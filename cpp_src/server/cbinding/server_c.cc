@@ -8,11 +8,9 @@
 #include "server/server.h"
 
 using namespace reindexer_server;
-using std::string;
 using reindexer::Error;
-using std::shared_ptr;
 
-static Error err_not_init(-1, "Reindexer server has not initialized");
+static Error err_not_init(errNotValid, "Reindexer server has not initialized");
 
 int check_server_ready(uintptr_t psvc) {
 	auto svc = reinterpret_cast<Server*>(psvc);
@@ -26,7 +24,7 @@ static reindexer_error error2c(const Error& err_) {
 	return err;
 }
 
-static string str2c(reindexer_string gs) { return std::string(reinterpret_cast<const char*>(gs.p), gs.n); }
+static std::string str2c(reindexer_string gs) { return std::string(reinterpret_cast<const char*>(gs.p), gs.n); }
 
 uintptr_t init_reindexer_server() {
 	reindexer_init_locale();
@@ -45,7 +43,7 @@ reindexer_error start_reindexer_server(uintptr_t psvc, reindexer_string _config)
 	if (svc) {
 		err = svc->InitFromYAML(str2c(_config));
 		if (!err.ok()) return error2c(err);
-		err = (svc->Start() == 0 ? 0 : Error(errLogic, "server startup error"));
+		err = (svc->Start() == 0 ? Error{} : Error(errLogic, "server startup error"));
 	}
 	return error2c(err);
 }

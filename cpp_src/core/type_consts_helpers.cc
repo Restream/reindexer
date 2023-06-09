@@ -3,7 +3,7 @@
 
 namespace reindexer {
 
-CondType InvertJoinCondition(CondType cond) {
+[[nodiscard]] CondType InvertJoinCondition(CondType cond) {
 	switch (cond) {
 		case CondSet:
 			return CondSet;
@@ -17,12 +17,18 @@ CondType InvertJoinCondition(CondType cond) {
 			return CondLe;
 		case CondLe:
 			return CondGe;
+		case CondAny:
+		case CondRange:
+		case CondAllSet:
+		case CondEmpty:
+		case CondLike:
+		case CondDWithin:
 		default:
 			throw Error(errForbidden, "Not invertible conditional operator '%s(%d)' in query", CondTypeToStr(cond), cond);
 	}
 }
 
-std::string_view CondTypeToStr(CondType t) {
+[[nodiscard]] std::string_view CondTypeToStr(CondType t) {
 	using namespace std::string_view_literals;
 	switch (t) {
 		case CondAny:
@@ -50,7 +56,58 @@ std::string_view CondTypeToStr(CondType t) {
 		case CondDWithin:
 			return "CondDWithin"sv;
 		default:
-			return "Unknown"sv;
+			throw Error{errNotValid, "Invalid condition type: %d", t};
+	}
+}
+
+[[nodiscard]] std::string_view TagTypeToStr(TagType t) {
+	using namespace std::string_view_literals;
+	switch (t) {
+		case TAG_VARINT:
+			return "<varint>"sv;
+		case TAG_OBJECT:
+			return "<object>"sv;
+		case TAG_END:
+			return "<end>"sv;
+		case TAG_ARRAY:
+			return "<array>"sv;
+		case TAG_BOOL:
+			return "<bool>"sv;
+		case TAG_STRING:
+			return "<string>"sv;
+		case TAG_DOUBLE:
+			return "<double>"sv;
+		case TAG_NULL:
+			return "<null>"sv;
+		case TAG_UUID:
+			return "<uuid>"sv;
+		default:
+			throw Error{errNotValid, "Invalid tag type: %d", t};
+	}
+}
+
+[[nodiscard]] std::string_view AggTypeToStr(AggType t) noexcept {
+	using namespace std::string_view_literals;
+	switch (t) {
+		case AggMin:
+			return "min"sv;
+		case AggMax:
+			return "max"sv;
+		case AggSum:
+			return "sum"sv;
+		case AggAvg:
+			return "avg"sv;
+		case AggDistinct:
+			return "distinct"sv;
+		case AggFacet:
+			return "facet"sv;
+		case AggCount:
+			return "count"sv;
+		case AggCountCached:
+			return "count_cached"sv;
+		case AggUnknown:
+		default:
+			return "unknown"sv;
 	}
 }
 

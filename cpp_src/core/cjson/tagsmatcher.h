@@ -77,8 +77,8 @@ public:
 		}
 	}
 
-	void UpdatePayloadType(PayloadType payloadType, bool incVersion) {
-		impl_.clone()->updatePayloadType(std::move(payloadType), updated_, incVersion);
+	void UpdatePayloadType(PayloadType payloadType, NeedChangeTmVersion changeVersion) {
+		impl_.clone()->updatePayloadType(std::move(payloadType), updated_, changeVersion);
 	}
 	static TagsMatcher CreateMergedTagsMatcher(PayloadType payloadType, const std::vector<TagsMatcher>& tmList) {
 		TagsMatcherImpl::TmListT implList;

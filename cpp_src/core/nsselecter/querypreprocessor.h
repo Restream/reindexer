@@ -83,8 +83,7 @@ private:
 	size_t lookupQueryIndexes(size_t dst, size_t srcBegin, size_t srcEnd);
 	size_t substituteCompositeIndexes(size_t from, size_t to);
 	bool mergeQueryEntries(size_t lhs, size_t rhs);
-	template <typename T>
-	int getCompositeIndex(const T &) const;
+	const std::vector<int> *getCompositeIndex(int field) const;
 	void convertWhereValues(QueryEntries::iterator begin, QueryEntries::iterator end) const;
 	void convertWhereValues(QueryEntry *) const;
 	[[nodiscard]] const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;

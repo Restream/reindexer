@@ -18,7 +18,7 @@ public:
 	Variant Upsert(const Variant &key, IdType id, bool &clearCache) override;
 	void MakeSortOrders(UpdateSortedContext &ctx) override;
 	IndexIterator::Ptr CreateIterator() const override;
-	std::unique_ptr<Index> Clone() override;
+	std::unique_ptr<Index> Clone() const override { return std::unique_ptr<Index>{new IndexOrdered<T>(*this)}; }
 	bool IsOrdered() const noexcept override { return true; }
 };
 

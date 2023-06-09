@@ -152,7 +152,7 @@ bool ClusterProxy::shouldProxyQuery(const Query &q) {
 	bool isAsyncReplQuery = false;
 	bool isClusterReplQuery = false;
 	constexpr auto kConditionError =
-		"Query to #replicationstats has to contain one of the following conditions: type=async or type=cluster"sv;
+		"Query to #replicationstats has to contain one of the following conditions: type='async' or type='cluster'"sv;
 	for (auto it = q.entries.cbegin(), end = q.entries.cend(); it != end; ++it) {
 		if (it->HoldsOrReferTo<QueryEntry>() && it->Value<QueryEntry>().index == "type"sv) {
 			auto nextIt = it;

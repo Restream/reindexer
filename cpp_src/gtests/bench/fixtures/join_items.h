@@ -2,7 +2,7 @@
 
 #include "base_fixture.h"
 
-class JoinItems : protected BaseFixture {
+class JoinItems : private BaseFixture {
 public:
 	virtual ~JoinItems() {}
 
@@ -13,15 +13,14 @@ public:
 			.AddIndex("device", "hash", "string", IndexOpts());
 	}
 
-	virtual reindexer::Error Initialize();
-	virtual void RegisterAllCases();
+	reindexer::Error Initialize() override;
+	void RegisterAllCases();
 
-protected:
-	virtual reindexer::Item MakeItem();
+private:
+	reindexer::Item MakeItem(benchmark::State&) override;
 
 	std::string randomString(const std::string& prefix);
 
-private:
 	std::vector<std::string> adjectives_;
 	std::vector<std::string> devices_;
 	std::vector<std::string> locations_;

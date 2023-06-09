@@ -985,7 +985,7 @@ TEST_F(ClusterizationProxyApi, ClusterStatsErrorHandling) {
 				Error err = cluster.GetNode(nodeId)->api.reindexer->Select(q, qr);
 				ASSERT_EQ(err.code(), errParams) << q.GetSQL();
 				ASSERT_EQ(err.what(),
-						  "Query to #replicationstats has to contain one of the following conditions: type=async or type=cluster")
+						  "Query to #replicationstats has to contain one of the following conditions: type='async' or type='cluster'")
 					<< q.GetSQL();
 			}
 			for (auto& q : queries) {
@@ -994,7 +994,7 @@ TEST_F(ClusterizationProxyApi, ClusterStatsErrorHandling) {
 				Error err = cluster.GetNode(nodeId)->api.reindexer->Select(sql, qr);
 				ASSERT_EQ(err.code(), errParams) << sql;
 				ASSERT_EQ(err.what(),
-						  "Query to #replicationstats has to contain one of the following conditions: type=async or type=cluster")
+						  "Query to #replicationstats has to contain one of the following conditions: type='async' or type='cluster'")
 					<< sql;
 			}
 		}

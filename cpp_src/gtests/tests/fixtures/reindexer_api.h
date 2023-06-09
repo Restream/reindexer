@@ -51,7 +51,7 @@ public:
 	}
 	Item NewItem(std::string_view ns) { return rt.NewItem(ns); }
 
-	Error Commit(std::string_view ns) { return rt.Commit(ns); }
+	[[nodiscard]] Error Commit(std::string_view ns) { return rt.Commit(ns); }
 	void Upsert(std::string_view ns, Item &item) { rt.Upsert(ns, item); }
 
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) { rt.PrintQueryResults(ns, res); }

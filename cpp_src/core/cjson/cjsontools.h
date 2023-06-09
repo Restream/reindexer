@@ -6,15 +6,15 @@
 namespace reindexer {
 
 template <typename T>
-void buildPayloadTuple(const PayloadIface<T> *pl, const TagsMatcher *tagsMatcher, WrSerializer &wrser);
+void buildPayloadTuple(const PayloadIface<T> &pl, const TagsMatcher *tagsMatcher, WrSerializer &wrser);
 
-void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser);
-void copyCJsonValue(int tagType, const Variant &value, WrSerializer &wrser);
-void putCJsonRef(int tagType, int tagName, int tagField, const VariantArray &values, WrSerializer &wrser);
-void putCJsonValue(int tagType, int tagName, const VariantArray &values, WrSerializer &wrser);
+void copyCJsonValue(TagType tagType, Serializer &rdser, WrSerializer &wrser);
+void copyCJsonValue(TagType tagType, Variant value, WrSerializer &wrser);
+void putCJsonRef(TagType tagType, int tagName, int tagField, const VariantArray &values, WrSerializer &wrser);
+void putCJsonValue(TagType tagType, int tagName, const VariantArray &values, WrSerializer &wrser);
 
-int kvType2Tag(KeyValueType kvType);
-void skipCjsonTag(ctag tag, Serializer &rdser);
-Variant cjsonValueToVariant(int tag, Serializer &rdser, KeyValueType dstType, Error &err);
+[[nodiscard]] TagType kvType2Tag(KeyValueType kvType) noexcept;
+void skipCjsonTag(ctag tag, Serializer &rdser, std::array<unsigned, maxIndexes> *fieldsArrayOffsets = nullptr);
+[[nodiscard]] Variant cjsonValueToVariant(TagType tag, Serializer &rdser, KeyValueType dstType);
 
 }  // namespace reindexer

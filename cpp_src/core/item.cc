@@ -4,6 +4,7 @@
 #include "core/keyvalue/p_string.h"
 #include "core/namespace/namespace.h"
 #include "core/rdxcontext.h"
+#include "tools/catch_and_return.h"
 
 namespace reindexer {
 
@@ -76,6 +77,8 @@ Item::FieldRef &Item::FieldRef::operator=(const VariantArray &krs) {
 
 template <typename T>
 Item::FieldRef &Item::FieldRef::operator=(span<T> arr) {
+	constexpr static bool kIsStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
+								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char *>;
 	if (field_ < 0) {
 		throw Error(errConflict, "Item::FieldRef::SetValue by json path not implemented yet");
 	}
@@ -83,10 +86,8 @@ Item::FieldRef &Item::FieldRef::operator=(span<T> arr) {
 	auto pl(itemImpl_->GetPayload());
 	int pos = pl.ResizeArray(field_, arr.size(), false);
 
-	constexpr bool isStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
-						   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char *>;
-	if constexpr (isStr) {
-		if (itemImpl_->IsUnsafe()) {
+	if constexpr (kIsStr) {
+		if (itemImpl_->IsUnsafe() || itemImpl_->Type()->Field(field_).Type().Is<KeyValueType::Uuid>()) {
 			for (auto &elem : arr) {
 				pl.Set(field_, pos++, Variant(elem));
 			}
@@ -120,14 +121,30 @@ Item::~Item() {
 	delete impl_;
 }
 
-Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) { return impl_->FromJSON(slice, endp, pkOnly); }
-Error Item::FromCJSON(std::string_view slice, bool pkOnly) { return impl_->FromCJSON(slice, pkOnly); }
+Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) &noexcept {
+	RETURN_RESULT_NOEXCEPT(impl_->FromJSON(slice, endp, pkOnly));
+}
+
+Error Item::FromCJSON(std::string_view slice, bool pkOnly) &noexcept {
+	try {
+		impl_->FromCJSON(slice, pkOnly);
+	}
+	CATCH_AND_RETURN;
+	return {};
+}
+void Item::FromCJSONImpl(std::string_view slice, bool pkOnly) & { impl_->FromCJSON(slice, pkOnly); }
+
 std::string_view Item::GetCJSON(bool withTagsMatcher) { return impl_->GetCJSON(withTagsMatcher); }
+
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
-Error Item::FromMsgPack(std::string_view buf, size_t &offset) { return impl_->FromMsgPack(buf, offset); }
-Error Item::FromProtobuf(std::string_view sbuf) { return impl_->FromProtobuf(sbuf); }
-Error Item::GetMsgPack(WrSerializer &wrser) { return impl_->GetMsgPack(wrser); }
-Error Item::GetProtobuf(WrSerializer &wrser) { return impl_->GetProtobuf(wrser); }
+
+Error Item::FromMsgPack(std::string_view buf, size_t &offset) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromMsgPack(buf, offset)); }
+
+Error Item::FromProtobuf(std::string_view sbuf) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromProtobuf(sbuf)); }
+
+Error Item::GetMsgPack(WrSerializer &wrser) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetMsgPack(wrser)); }
+
+Error Item::GetProtobuf(WrSerializer &wrser) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetProtobuf(wrser)); }
 
 int Item::NumFields() const { return impl_->Type().NumFields(); }
 Item::FieldRef Item::operator[](int field) const noexcept {
@@ -147,11 +164,11 @@ Item::FieldRef Item::operator[](std::string_view name) const noexcept {
 int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }
 int Item::GetFieldIndex(std::string_view name) const { return impl_->FieldIndex(name); }
 FieldsSet Item::PkFields() const { return impl_->PkFields(); }
-void Item::SetPrecepts(std::vector<std::string> precepts) { impl_->SetPrecepts(std::move(precepts)); }
+void Item::SetPrecepts(std::vector<std::string> precepts) & { impl_->SetPrecepts(std::move(precepts)); }
 bool Item::IsTagsUpdated() const noexcept { return impl_->tagsMatcher().isUpdated(); }
 int Item::GetStateToken() const noexcept { return impl_->tagsMatcher().stateToken(); }
 
-Item &Item::Unsafe(bool enable) noexcept {
+Item &Item::Unsafe(bool enable) &noexcept {
 	impl_->Unsafe(enable);
 	return *this;
 }
@@ -163,5 +180,6 @@ template Item::FieldRef &Item::FieldRef::operator=(span<int> arr);
 template Item::FieldRef &Item::FieldRef::operator=(span<int64_t> arr);
 template Item::FieldRef &Item::FieldRef::operator=(span<std::string> arr);
 template Item::FieldRef &Item::FieldRef::operator=(span<double>);
+template Item::FieldRef &Item::FieldRef::operator=(span<Uuid>);
 
 }  // namespace reindexer

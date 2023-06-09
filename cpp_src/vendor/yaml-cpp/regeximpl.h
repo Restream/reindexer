@@ -55,6 +55,11 @@ inline bool RegEx::IsValidSource<StringCharSource>(const StringCharSource& sourc
 		case REGEX_MATCH:
 		case REGEX_RANGE:
 			return source;
+		case REGEX_EMPTY:
+		case REGEX_OR:
+		case REGEX_AND:
+		case REGEX_NOT:
+		case REGEX_SEQ:
 		default:
 			return true;
 	}

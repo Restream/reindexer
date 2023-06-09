@@ -69,8 +69,7 @@ void ShardingApi::runSelectTest(std::string_view nsName) {
 					for (const auto &itemData : joinedItems) {
 						ItemImpl itemimpl = ItemImpl(qr.GetPayloadType(1), qr.GetTagsMatcher(1));
 						itemimpl.Unsafe(true);
-						err = itemimpl.FromCJSON(itemData.data);
-						ASSERT_TRUE(err.ok()) << err.what();
+						itemimpl.FromCJSON(itemData.data);
 
 						std::string_view joinedJson = itemimpl.GetJSON();
 

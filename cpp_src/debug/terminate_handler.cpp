@@ -19,24 +19,31 @@ void terminate_handler() {
 		const char *type = abi::__cxa_current_exception_type()->name();
 		int status;
 		const char *demangled = abi::__cxa_demangle(type, NULL, NULL, &status);
-		sout << "Terminating with uncaught exception of type " << (demangled ? demangled : type);
+		sout << "*** Terminating with uncaught exception of type " << (demangled ? demangled : type);
 #else
-		sout << "Terminating with uncaught exception ";
+		sout << "*** Terminating with uncaught exception ";
 #endif
 		try {
 			std::rethrow_exception(exptr);
 		} catch (std::exception &ex) {
-			sout << ": " << ex.what() << std::endl;
+			sout << ": " << ex.what();
 		} catch (Error &err) {
-			sout << ": " << err.what() << std::endl;
+			sout << ": " << err.what();
 		} catch (...) {
-			sout << std::endl;
 		}
+		sout << " ***" << std::endl;
+	} else {
+		sout << "*** Backtrace on terminate call ***" << std::endl;
 	}
-
-	print_backtrace(sout, nullptr, -1);
+	const auto writer = backtrace_get_writer();
+	writer(sout.str());
+	sout.str(std::string());
+	sout.clear();
 	print_crash_query(sout);
-	auto writer = backtrace_get_writer();
+	writer(sout.str());
+	sout.str(std::string());
+	sout.clear();
+	print_backtrace(sout, nullptr, -1);
 	writer(sout.str());
 	exit(-1);
 }

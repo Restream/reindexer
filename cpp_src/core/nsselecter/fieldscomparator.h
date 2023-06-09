@@ -121,10 +121,10 @@ private:
 				return rType.EvaluateOneOf(
 					[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept { return true; },
 					[](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
-							 KeyValueType::Tuple>) noexcept { return false; });
+							 KeyValueType::Tuple, KeyValueType::Uuid>) noexcept { return false; });
 			},
 			[](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite,
-					 KeyValueType::Tuple>) noexcept { return false; });
+					 KeyValueType::Tuple, KeyValueType::Uuid>) noexcept { return false; });
 	}
 
 	std::string name_;

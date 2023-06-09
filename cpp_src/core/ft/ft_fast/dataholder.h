@@ -6,6 +6,7 @@
 #include "core/ft/filters/itokenfilter.h"
 #include "core/ft/idrelset.h"
 #include "core/ft/stemmer.h"
+#include "core/ft/typos.h"
 #include "core/ft/usingcontainer.h"
 #include "core/index/ft_preselect.h"
 #include "core/index/indextext/ftkeyentry.h"
@@ -45,6 +46,21 @@ public:
 };
 enum ProcessStatus { FullRebuild, RecommitLast, CreateNew };
 
+struct WordTypo {
+	WordTypo() = default;
+	explicit WordTypo(WordIdType w) noexcept : word(w) {}
+	explicit WordTypo(WordIdType w, const typos_context::TyposVec& p) noexcept : word(w), positions(p) {}
+	uint32_t operator&(uint32_t v) const noexcept { return uint32_t(word) & v; }
+	WordTypo& operator=(uint32_t v) noexcept {
+		word = v;
+		return *this;
+	}
+
+	WordIdType word;
+	typos_context::TyposVec positions;
+};
+static_assert(sizeof(WordTypo) <= 16, "This size is matter for overall size of the typos map");
+
 class IDataHolder {
 public:
 	struct CommitStep {
@@ -59,9 +75,9 @@ public:
 		suffix_map<char, WordIdType> suffixes_;
 		// Typos maps. typo string <-> original word id
 		// typosHalf_ contains words with <=maxTypos/2 typos
-		flat_str_multimap<char, WordIdType> typosHalf_;
+		flat_str_multimap<char, WordTypo> typosHalf_;
 		// typosMax_ contains words with MaxTyposInWord() typos if MaxTyposInWord() != maxTypos/2
-		flat_str_multimap<char, WordIdType> typosMax_;
+		flat_str_multimap<char, WordTypo> typosMax_;
 		// word offset for given step in DataHolder::words_
 		uint32_t wordOffset_;
 
@@ -74,19 +90,17 @@ public:
 
 	// Intermediate information about found document in current merge step. Used only for queries with 2 or more terms
 	struct MergedIdRel {
-		explicit MergedIdRel(IdRelType&& c, int r, int q) : cur(std::move(c)), rank(r), qpos(q) {}
+		explicit MergedIdRel(IdRelType&& c, int r, int q) : next(std::move(c)), rank(r), qpos(q) {}
 		explicit MergedIdRel(int r, int q) : rank(r), qpos(q) {}
-		MergedIdRel() = default;
 		MergedIdRel(MergedIdRel&&) = default;
 		IdRelType cur;	 // Ids & pos of matched document of current step
 		IdRelType next;	 // Ids & pos of matched document of next step
-		int rank;		 // Rank of curent matched document
-		int qpos;		 // Position in query
+		int32_t rank;	 // Rank of curent matched document
+		int32_t qpos;	 // Position in query
 	};
 
 	struct MergedIdRelEx : public MergedIdRel {
 		explicit MergedIdRelEx(IdRelType&& c, int r, int q) : MergedIdRel(r, q), posTmp(std::move(c)) {}
-		MergedIdRelEx() = default;
 		MergedIdRelEx(MergedIdRelEx&&) = default;
 		IdRelType posTmp;  // For group only. Collect all positions for subpatterns and the index in the vector with which we merged
 	};
@@ -94,7 +108,6 @@ public:
 	struct MergedIdRelExArea : public MergedIdRel {
 		MergedIdRelExArea(IdRelType&& c, int r, int q, RVector<std::pair<IdRelType::PosType, int>, 4>&& p)
 			: MergedIdRel(std::move(c), r, q), posTmp(std::move(p)) {}
-		MergedIdRelExArea() = default;
 		MergedIdRelExArea(MergedIdRelExArea&&) = default;
 
 		RVector<std::pair<IdRelType::PosType, int>, 4>
@@ -102,14 +115,16 @@ public:
 		h_vector<RVector<std::pair<IdRelType::PosType, int>, 4>, 2> wordPosForChain;
 	};
 
+	using MergedOffsetT = uint16_t;
+	static_assert(std::numeric_limits<MergedOffsetT>::max() > kMaxMergeLimitValue,
+				  "Merged offset type must be able to hold any value up to kMaxMergeLimitValue");
 	// Final information about found document
 	struct MergeInfo {
-		IdType id;		 // Virtual id of merged document (index in vdocs)
-		int32_t proc;	 // Rank of document
-		int8_t matched;	 // Count of matched terms in document
-		int8_t field;	 // Field index, where was match
-		int32_t areaIndex = -1;
-		uint32_t indexAdd = -1;	 // index in merged_rd
+		IdType id;	   // Virtual id of merged document (index in vdocs)
+		int32_t proc;  // Rank of document
+		uint32_t areaIndex = std::numeric_limits<uint32_t>::max();
+		int8_t field;														 // Field index, where was match
+		MergedOffsetT indexAdd = std::numeric_limits<MergedOffsetT>::max();	 // index in merged_rd
 	};
 
 	struct MergeData : public std::vector<MergeInfo> {
@@ -126,16 +141,17 @@ public:
 	virtual void StartCommit(bool complte_updated) = 0;
 	void SetConfig(FtFastConfig* cfg);
 	CommitStep& GetStep(WordIdType id);
+	const CommitStep& GetStep(WordIdType id) const;
 	bool NeedRebuild(bool complte_updated);
 	bool NeedRecomitLast();
 	void SetWordsOffset(uint32_t word_offset);
 	bool NeedClear(bool complte_updated);
 	suffix_map<char, WordIdType>& GetSuffix() noexcept { return steps.back().suffixes_; }
-	flat_str_multimap<char, WordIdType>& GetTyposHalf() noexcept { return steps.back().typosHalf_; }
-	flat_str_multimap<char, WordIdType>& GetTyposMax() noexcept { return steps.back().typosMax_; }
+	flat_str_multimap<char, WordTypo>& GetTyposHalf() noexcept { return steps.back().typosHalf_; }
+	flat_str_multimap<char, WordTypo>& GetTyposMax() noexcept { return steps.back().typosMax_; }
 	WordIdType findWord(std::string_view word);
-	uint32_t GetSuffixWordId(WordIdType id);
-	uint32_t GetSuffixWordId(WordIdType id, const CommitStep& step);
+	uint32_t GetSuffixWordId(WordIdType id) const noexcept { return GetSuffixWordId(id, steps.back()); }
+	uint32_t GetSuffixWordId(WordIdType id, const CommitStep& step) const noexcept;
 	uint32_t GetWordsOffset();
 	// returns id and found or not found
 	WordIdType BuildWordId(uint32_t id);
@@ -176,7 +192,8 @@ public:
 	void StartCommit(bool complte_updated) override final;
 	void Clear() override final;
 	std::vector<PackedWordEntry<IdCont>>& GetWords() noexcept { return words_; }
-	PackedWordEntry<IdCont>& getWordById(WordIdType id);
+	PackedWordEntry<IdCont>& getWordById(WordIdType id) noexcept;
+	const PackedWordEntry<IdCont>& getWordById(WordIdType id) const noexcept;
 	std::vector<PackedWordEntry<IdCont>> words_;
 };
 

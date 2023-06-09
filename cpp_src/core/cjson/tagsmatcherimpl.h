@@ -16,6 +16,8 @@
 
 namespace reindexer {
 
+enum class NeedChangeTmVersion { Increment, Decrement, No };
+
 class TagsMatcherImpl {
 public:
 	using TmListT = h_vector<const TagsMatcherImpl *, 10>;
@@ -92,7 +94,7 @@ public:
 							values.front().Type().EvaluateOneOf(
 								[](OneOf<KeyValueType::Double, KeyValueType::Int, KeyValueType::Int64>) noexcept {},
 								[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite,
-										  KeyValueType::Null, KeyValueType::Undefined>) {
+										  KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Uuid>) {
 									throw Error(errParams, "Wrong type of index: '%s'", content);
 								});
 							node.SetExpression(content);
@@ -126,6 +128,7 @@ public:
 		if (tag || !canAdd) return tag;
 
 		std::string name(n);
+		validateTagSize(tags2names_.size() + 1);
 		auto res = names2tags_.emplace(name, tags2names_.size());
 		if (res.second) {
 			tags2names_.emplace_back(std::move(name));
@@ -135,12 +138,12 @@ public:
 		return res.first->second + 1;
 	}
 
-	const std::string &tag2name(int tag) const {
-		tag &= (1 << ctag::nameBits) - 1;
+	const std::string &tag2name(uint32_t tag) const {
 		static std::string emptystr;
+		tag &= ctag::kNameMask;
 		if (tag == 0) return emptystr;
 
-		if (tag - 1 >= int(tags2names_.size())) {
+		if (tag - 1 >= tags2names_.size()) {
 			throw Error(errTagsMissmatch, "Unknown tag %d in cjson", tag);
 		}
 
@@ -167,10 +170,19 @@ public:
 			}
 		}
 	}
-	void updatePayloadType(PayloadType payloadType, bool &updated, bool incVersion) {
+	void updatePayloadType(PayloadType payloadType, bool &updated, NeedChangeTmVersion changeVersion) {
 		updated = true;
 		payloadType_ = std::move(payloadType);
-		if (incVersion) version_++;
+		switch (changeVersion) {
+			case NeedChangeTmVersion::Increment:
+				++version_;
+				break;
+			case NeedChangeTmVersion::Decrement:
+				--version_;
+				break;
+			case NeedChangeTmVersion::No:
+				break;
+		}
 		buildTagsCache(updated);
 	}
 
@@ -182,6 +194,7 @@ public:
 	void deserialize(Serializer &ser) {
 		clear();
 		size_t cnt = ser.GetVarUint();
+		validateTagSize(cnt);
 		tags2names_.resize(cnt);
 		for (size_t tag = 0; tag < tags2names_.size(); ++tag) {
 			std::string name(ser.GetVString());
@@ -201,7 +214,10 @@ public:
 		auto sz = tm.names2tags_.size();
 		auto oldSz = size();
 
-		if (tags2names_.size() < sz) tags2names_.resize(sz);
+		if (tags2names_.size() < sz) {
+			validateTagSize(sz);
+			tags2names_.resize(sz);
+		}
 
 		for (auto it = tm.names2tags_.begin(), end = tm.names2tags_.end(); it != end; ++it) {
 			auto r = names2tags_.emplace(it->first, it->second);
@@ -310,6 +326,13 @@ protected:
 					tags2names_.emplace_back(tm->tags2names_[tag]);
 				}
 			}
+		}
+	}
+
+	void validateTagSize(size_t sz) {
+		if (sz > ctag::kNameMax) {
+			throw Error(errParams, "Exceeded the maximum allowed number (%d) of tags for TagsMatcher. Attempt to place %d tags",
+						ctag::kNameMax, sz);
 		}
 	}
 

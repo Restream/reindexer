@@ -13,7 +13,7 @@ void Geometry::Insert(State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (size_t i = 0; i < N; ++i) {
-			auto item = MakeItem();
+			auto item = MakeItem(state);
 			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
 
 			auto err = db_->Insert(nsdef_.name, item);
@@ -102,14 +102,14 @@ void Geometry::RegisterAllCases() {
 }
 
 reindexer::Error Geometry::Initialize() {
-	assert(db_);
+	assertrx(db_);
 	auto err = db_->AddNamespace(nsdef_);
 	if (!err.ok()) return err;
 
-	return 0;
+	return {};
 }
 
-reindexer::Item Geometry::MakeItem() {
+reindexer::Item Geometry::MakeItem(benchmark::State& state) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
 	item.Unsafe();
@@ -121,7 +121,8 @@ reindexer::Item Geometry::MakeItem() {
 	double coords[]{point.x, point.y};
 	bld.Array("point", reindexer::span<double>(coords, 2));
 	bld.End();
-	item.FromJSON(wrSer_.Slice());
+	const auto err = item.FromJSON(wrSer_.Slice());
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
 
 	return item;
 }

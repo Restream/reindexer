@@ -101,7 +101,9 @@ void QueryResults::AddQr(LocalQueryResults&& local, int shardID, bool buildMerge
 			case Type::MultipleRemote:
 				type_ = Type::Mixed;
 				break;
-			default:;
+			case Type::Local:
+			case Type::Mixed:
+				break;
 		}
 	}
 	if (buildMergedData) {
@@ -134,7 +136,9 @@ void QueryResults::AddQr(client::QueryResults&& remote, int shardID, bool buildM
 				type_ = Type::Mixed;
 				local_->hasCompatibleTm = false;
 				break;
-			default:;
+			case Type::MultipleRemote:
+			case Type::Mixed:
+				break;
 		}
 	}
 	if (buildMergedData) {
@@ -208,7 +212,10 @@ void QueryResults::RebuildMergedData() {
 						case AggCountCached:
 							mergedAgg.SetValue(*newValue + mergedAgg.GetValueOrZero());
 							break;
-						default:
+						case AggUnknown:
+						case AggAvg:
+						case AggFacet:
+						case AggDistinct:
 							throw Error(errLogic, "Remote query result (within distributed results) has unsupported aggregations");
 					}
 				}
@@ -260,6 +267,8 @@ int QueryResults::GetMergedNSCount() const noexcept {
 		case Type::SingleRemote: {
 			return remote_[0].qr.GetMergedNSCount();
 		}
+		case Type::MultipleRemote:
+		case Type::Mixed:
 		default:
 			return 1;  // No joined/merged nss in distributed qr
 	}
@@ -277,6 +286,8 @@ const std::vector<AggregationResult>& QueryResults::GetAggregationResults() {
 		case Type::SingleRemote: {
 			return remote_[0].qr.GetAggregationResults();
 		}
+		case Type::MultipleRemote:
+		case Type::Mixed:
 		default:
 			return getMergedData().aggregationResults;
 	}
@@ -290,6 +301,8 @@ h_vector<std::string_view, 1> QueryResults::GetNamespaces() const {
 			return local_->qr.GetNamespaces();
 		case Type::SingleRemote:
 			return remote_[0].qr.GetNamespaces();
+		case Type::MultipleRemote:
+		case Type::Mixed:
 		default:
 			return h_vector<std::string_view, 1>{getMergedData().pt.Name()};
 	}
@@ -301,6 +314,9 @@ bool QueryResults::IsCacheEnabled() const noexcept {
 			return true;
 		case Type::Local:
 			return local_->qr.IsCacheEnabled();
+		case Type::SingleRemote:
+		case Type::MultipleRemote:
+		case Type::Mixed:
 		default: {
 			bool res = true;
 			if (local_) {
@@ -334,7 +350,9 @@ int QueryResults::GetCommonShardID() const {
 			return local_->shardID;
 		case Type::SingleRemote:
 			return remote_[0].shardID;
-		default:;
+		case Type::MultipleRemote:
+		case Type::Mixed:
+			break;
 	}
 	std::optional<int> shardId;
 	if (local_) {
@@ -360,6 +378,8 @@ PayloadType QueryResults::GetPayloadType(int nsid) const noexcept {
 			return local_->qr.getPayloadType(nsid);
 		case Type::SingleRemote:
 			return remote_[0].qr.GetPayloadType(nsid);
+		case Type::MultipleRemote:
+		case Type::Mixed:
 		default:
 			return getMergedData().pt;
 	}
@@ -373,6 +393,8 @@ TagsMatcher QueryResults::GetTagsMatcher(int nsid) const noexcept {
 			return local_->qr.getTagsMatcher(nsid);
 		case Type::SingleRemote:
 			return remote_[0].qr.GetTagsMatcher(nsid);
+		case Type::MultipleRemote:
+		case Type::Mixed:
 		default:
 			return getMergedData().tm;
 	}
@@ -386,7 +408,9 @@ bool QueryResults::HaveRank() const noexcept {
 			return local_->qr.haveRank;
 		case Type::SingleRemote:
 			return remote_[0].qr.HaveRank();
-		default:;
+		case Type::MultipleRemote:
+		case Type::Mixed:
+			break;
 	}
 	return getMergedData().haveRank;
 }
@@ -399,7 +423,9 @@ bool QueryResults::NeedOutputRank() const noexcept {
 			return local_->qr.needOutputRank;
 		case Type::SingleRemote:
 			return remote_[0].qr.NeedOutputRank();
-		default:;
+		case Type::MultipleRemote:
+		case Type::Mixed:
+			break;
 	}
 	return getMergedData().needOutputRank;
 }
@@ -412,7 +438,9 @@ bool QueryResults::HaveJoined() const noexcept {
 			return local_->qr.joined_.size();
 		case Type::SingleRemote:
 			return remote_[0].qr.HaveJoined();
-		default:;
+		case Type::MultipleRemote:
+		case Type::Mixed:
+			break;
 	}
 	return false;
 }
@@ -473,7 +501,10 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
 			case Type::Local:
 				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 				return localIt_->GetCJSON(wrser, withHdrLen);
-			default:;
+			case Type::SingleRemote:
+			case Type::MultipleRemote:
+			case Type::Mixed:
+				break;
 		}
 
 		Error err = std::visit(overloaded{[&](LocalQueryResults::Iterator&& it) {
@@ -524,7 +555,10 @@ Item QueryResults::Iterator::GetItem(bool enableHold) {
 			case Type::Local:
 				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 				return localIt_->GetItem(enableHold);
-			default:;
+			case Type::SingleRemote:
+			case Type::MultipleRemote:
+			case Type::Mixed:
+				break;
 		}
 
 		auto vit = getVariantIt();
@@ -605,10 +639,7 @@ joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>*
 					const auto& joinedItems = joinedData[i];
 					for (const auto& itemData : joinedItems) {
 						ItemImpl itemimpl(qr_->remote_[0].qr.GetPayloadType(jField), qr_->remote_[0].qr.GetTagsMatcher(jField));
-						Error err = itemimpl.FromCJSON(itemData.data);
-						if (!err.ok()) {
-							throw err;
-						}
+						itemimpl.FromCJSON(itemData.data);
 
 						qrJoined.Add(ItemRef(itemData.id, itemimpl.Value(), itemData.proc, itemData.nsid, true));
 						if (!storage) {
@@ -666,7 +697,7 @@ private:
 
 class FieldComparator {
 	struct RelaxedCompare {
-		bool operator()(const Variant& lhs, const Variant& rhs) const { return lhs.RelaxCompare(rhs) == 0; }
+		bool operator()(const Variant& lhs, const Variant& rhs) const { return lhs.RelaxCompare<WithString::No>(rhs) == 0; }
 	};
 
 public:
@@ -718,7 +749,7 @@ public:
 				return -1;
 			}
 		}
-		return -lpv.Compare(rpv, fieldName_, fieldIdx_, collateOpts_, ltm, rtm, !lLocal, !rLocal);
+		return -lpv.Compare<WithString::No>(rpv, fieldName_, fieldIdx_, collateOpts_, ltm, rtm, !lLocal, !rLocal);
 	}
 
 private:
@@ -730,7 +761,7 @@ private:
 
 class QueryResults::CompositeFieldForceComparator {
 	struct RelaxedCompare {
-		bool operator()(const Variant& lhs, const Variant& rhs) const { return lhs.RelaxCompare(rhs) == 0; }
+		bool operator()(const Variant& lhs, const Variant& rhs) const { return lhs.RelaxCompare<WithString::No>(rhs) == 0; }
 	};
 
 public:
@@ -1002,7 +1033,10 @@ QueryResults::Iterator& QueryResults::Iterator::operator++() {
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			++(*localIt_);
 			return *this;
-		default:;
+		case Type::SingleRemote:
+		case Type::MultipleRemote:
+		case Type::Mixed:
+			break;
 	}
 
 	if (idx_ < qr_->lastSeenIdx_) {
@@ -1083,7 +1117,10 @@ ItemRef QueryResults::Iterator::GetItemRef(ProxiedRefsStorage* storage) {
 		case Type::Local:
 			// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 			return localIt_->GetItemRef();
-		default:;
+		case Type::SingleRemote:
+		case Type::MultipleRemote:
+		case Type::Mixed:
+			break;
 	}
 	ItemRef iref = std::visit(
 		overloaded{[](QrMetaData<LocalQueryResults>* qr) noexcept { return qr->it.GetItemRef(); },
@@ -1168,10 +1205,10 @@ Error QueryResults::fillItemImpl(QrItT& it, ItemImpl& itemImpl, bool convertViaJ
 	Error err;
 	if (!convertViaJSON) {
 		err = it.GetCJSON(wrser, false);
-		if (err.ok()) err = itemImpl.FromCJSON(wrser.Slice());
+		itemImpl.FromCJSON(wrser.Slice());
 	} else {
 		err = it.GetJSON(wrser, false);
-		if (err.ok()) err = itemImpl.FromJSON(wrser.Slice());
+		itemImpl.FromJSON(wrser.Slice());
 	}
 	if (err.ok()) itemImpl.Value().SetLSN(it.GetLSN());
 	return err;

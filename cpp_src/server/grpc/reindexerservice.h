@@ -1,6 +1,6 @@
 #pragma once
 
-#ifdef WITH_GRPC
+#if defined(WITH_GRPC)
 #include "reindexer.grpc.pb.h"
 
 #include <unordered_map>

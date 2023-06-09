@@ -69,12 +69,13 @@ public:
 	virtual void MakeSortOrders(UpdateSortedContext&) {}
 
 	virtual void UpdateSortedIds(const UpdateSortedContext& ctx) = 0;
-	virtual size_t Size() const { return 0; }
-	virtual std::unique_ptr<Index> Clone() = 0;
+	virtual size_t Size() const noexcept { return 0; }
+	virtual std::unique_ptr<Index> Clone() const = 0;
 	virtual bool IsOrdered() const noexcept { return false; }
 	virtual bool IsFulltext() const noexcept { return false; }
+	virtual bool IsUuid() const noexcept { return false; }
 	virtual IndexMemStat GetMemStat(const RdxContext&) = 0;
-	virtual int64_t GetTTLValue() const { return 0; }
+	virtual int64_t GetTTLValue() const noexcept { return 0; }
 	virtual IndexIterator::Ptr CreateIterator() const { return nullptr; }
 	virtual bool RequireWarmupOnNsCopy() const noexcept { return false; }
 
@@ -95,7 +96,7 @@ public:
 	const IndexOpts& Opts() const { return opts_; }
 	virtual void SetOpts(const IndexOpts& opts) { opts_ = opts; }
 	virtual void SetFields(FieldsSet&& fields) { fields_ = std::move(fields); }
-	SortType SortId() const { return sortId_; }
+	[[nodiscard]] SortType SortId() const noexcept { return sortId_; }
 	virtual void SetSortedIdxCount(int sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
 	virtual FtMergeStatuses GetFtMergeStatuses(const RdxContext&) {
 		assertrx(0);
@@ -122,7 +123,7 @@ public:
 	virtual void ClearCache(const std::bitset<64>&) {}
 	virtual bool IsBuilt() const noexcept { return isBuilt_; }
 	virtual void MarkBuilt() noexcept { isBuilt_ = true; }
-	virtual void EnableUpdatesCountingMode(bool /*val*/) {}
+	virtual void EnableUpdatesCountingMode(bool) noexcept {}
 
 	virtual void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const { dump(os, step, offset); }
 
@@ -163,8 +164,16 @@ constexpr inline bool IsOrderedCondition(CondType condition) noexcept {
 		case CondGe:
 		case CondRange:
 			return true;
-		default:
+		case CondAny:
+		case CondEq:
+		case CondSet:
+		case CondAllSet:
+		case CondLike:
+		case CondEmpty:
+		case CondDWithin:
 			return false;
+		default:
+			abort();
 	}
 }
 

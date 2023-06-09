@@ -5,7 +5,7 @@
 
 namespace reindexer {
 
-FunctionExecutor::FunctionExecutor(NamespaceImpl& ns, h_vector<cluster::UpdateRecord, 2>& replUpdates)
+FunctionExecutor::FunctionExecutor(NamespaceImpl& ns, h_vector<cluster::UpdateRecord, 2>& replUpdates) noexcept
 	: ns_(ns), replUpdates_(replUpdates) {}
 
 Variant FunctionExecutor::Execute(SelectFuncStruct& funcData, const NsContext& ctx) {

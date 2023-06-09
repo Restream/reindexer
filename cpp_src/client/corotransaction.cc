@@ -65,6 +65,8 @@ Error CoroTransaction::Modify(Query&& query, lsn_t lsn) {
 					  ser.Slice(), i_.txId_)
 				.Status();
 		}
+		case QuerySelect:
+		case QueryTruncate:
 		default:
 			return Error(errParams, "Incorrect query type in transaction modify %d", query.type_);
 	}

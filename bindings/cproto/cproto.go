@@ -18,9 +18,10 @@ import (
 )
 
 const (
-	defConnPoolSize  = 8
-	pingerTimeoutSec = 60
-	defAppName       = "Go-connector"
+	defConnPoolSize        = 8
+	defConnPoolLBAlgorithm = bindings.LBRoundRobin
+	pingerTimeoutSec       = 60
+	defAppName             = "Go-connector"
 
 	opRd = 0
 	opWr = 1
@@ -81,11 +82,6 @@ type NetCProto struct {
 	lock               sync.RWMutex
 }
 
-type pool struct {
-	conns []connection
-	next  uint64
-}
-
 type dsn struct {
 	connFactory          connFactory
 	urls                 []url.URL
@@ -94,18 +90,6 @@ type dsn struct {
 	active               int
 	reconnectionStrategy string
 	allowUnknownNodes    bool
-}
-
-func (p *pool) get() connection {
-	id := atomic.AddUint64(&p.next, 1)
-	for id >= uint64(len(p.conns)) {
-		if atomic.CompareAndSwapUint64(&p.next, id, 0) {
-			id = 0
-		} else {
-			id = atomic.AddUint64(&p.next, 1)
-		}
-	}
-	return p.conns[id]
 }
 
 func (binding *NetCProto) getActiveDSN() *url.URL {
@@ -278,28 +262,44 @@ func (binding *NetCProto) GetDSNs() []url.URL {
 
 func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) {
 	connPoolSize := defConnPoolSize
+	connPoolLBAlgorithm := defConnPoolLBAlgorithm
 	binding.appName = defAppName
 	binding.caps = *bindings.DefaultBindingCapabilities().WithQrIdleTimeouts(true).WithResultsWithShardIDs(true)
 
 	for _, option := range options {
 		switch v := option.(type) {
+		case bindings.OptionPrometheusMetrics:
+			// nothing
+		case bindings.OptionOpenTelemetry:
+			// nothing
 		case bindings.OptionConnPoolSize:
 			connPoolSize = v.ConnPoolSize
+
+		case bindings.OptionConnPoolLoadBalancing:
+			connPoolLBAlgorithm = v.Algorithm
+
 		case bindings.OptionRetryAttempts:
 			binding.retryAttempts = v
+
 		case bindings.OptionTimeouts:
 			binding.timeouts = v
+
 		case bindings.OptionConnect:
 			binding.connectOpts = v
+
 		case bindings.OptionCompression:
 			binding.compression = v
+
 		case bindings.OptionAppName:
 			binding.appName = v.AppName
+
 		case bindings.OptionDedicatedThreads:
 			binding.dedicatedThreads = v
+
 		case bindings.OptionReconnectionStrategy:
 			binding.dsn.reconnectionStrategy = v.Strategy
 			binding.dsn.allowUnknownNodes = v.AllowUnknownNodes
+
 		default:
 			fmt.Printf("Unknown cproto option: %#v\n", option)
 		}
@@ -318,24 +318,28 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 
 	binding.dsn.connFactory = &connFactoryImpl{}
 	binding.dsn.urls = u
-	binding.connectDSN(context.Background(), connPoolSize)
+	binding.connectDSN(context.Background(), connPoolSize, connPoolLBAlgorithm)
 	binding.termCh = make(chan struct{})
 	go binding.pinger()
 	return
 }
 
-func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int) error {
+func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int, connPoolLBAlgorithm bindings.LoadBalancingAlgorithm) error {
 	var wg sync.WaitGroup
 	for _, conn := range binding.pool.conns {
 		conn.finalize()
 	}
+
 	binding.pool = pool{
-		conns: make([]connection, connPoolSize),
+		conns:       make([]connection, connPoolSize),
+		lbAlgorithm: connPoolLBAlgorithm,
 	}
+
 	wg.Add(connPoolSize)
 	for i := 0; i < connPoolSize; i++ {
 		go func(binding *NetCProto, wg *sync.WaitGroup, i int) {
 			defer wg.Done()
+
 			conn, serverStartTS, _ := binding.dsn.connFactory.newConnection(
 				ctx,
 				newConnParams{
@@ -361,11 +365,13 @@ func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int) error {
 		}(binding, &wg, i)
 	}
 	wg.Wait()
+
 	for _, conn := range binding.pool.conns {
 		if conn.hasError() {
 			return conn.curError()
 		}
 	}
+
 	return nil
 }
 
@@ -642,12 +648,12 @@ func (binding *NetCProto) Status(ctx context.Context) bindings.Status {
 		if queueUsage > 0 {
 			connUsage++
 		}
-		remoteAddr = conn.getConn().RemoteAddr().String()
+		remoteAddr = conn.getConnection().RemoteAddr().String()
 	}
 
 	var err error
 	if activeConns == 0 {
-		_, err = binding.getConn(ctx)
+		_, err = binding.getConnection(ctx)
 	}
 
 	return bindings.Status{
@@ -687,10 +693,10 @@ func (binding *NetCProto) logMsg(level int, fmt string, msg ...interface{}) {
 	}
 }
 
-func (binding *NetCProto) getConn(ctx context.Context) (conn connection, err error) {
+func (binding *NetCProto) getConnection(ctx context.Context) (conn connection, err error) {
 	for {
 		binding.lock.RLock()
-		conn = binding.pool.get()
+		conn = binding.pool.GetConnection()
 		currVersion := binding.dsn.connVersion
 		binding.lock.RUnlock()
 
@@ -734,7 +740,7 @@ func (binding *NetCProto) getConn(ctx context.Context) (conn connection, err err
 							return nil, err
 						}
 					} else {
-						conn = binding.pool.get()
+						conn = binding.pool.GetConnection()
 						binding.lock.Unlock()
 						if conn.hasError() {
 							continue
@@ -747,7 +753,7 @@ func (binding *NetCProto) getConn(ctx context.Context) (conn connection, err err
 				}
 				return conn, nil
 			} else {
-				conn = binding.pool.get()
+				conn = binding.pool.GetConnection()
 				binding.lock.Unlock()
 				if conn.hasError() {
 					continue
@@ -760,10 +766,10 @@ func (binding *NetCProto) getConn(ctx context.Context) (conn connection, err err
 	}
 }
 
-func (binding *NetCProto) connectDSN(ctx context.Context, connPoolSize int) error {
+func (binding *NetCProto) connectDSN(ctx context.Context, connPoolSize int, connPoolLBAlgorithm bindings.LoadBalancingAlgorithm) error {
 	errWrap := errors.New("failed to connect with provided dsn")
 	for i := 0; i < len(binding.dsn.urls); i++ {
-		err := binding.newPool(ctx, connPoolSize)
+		err := binding.newPool(ctx, connPoolSize, connPoolLBAlgorithm)
 		if err != nil {
 			if errDSN := binding.nextDSN(ctx, reconnectStrategyNext, nil); errDSN != nil {
 				errWrap = fmt.Errorf("%s; %s", errWrap, errDSN)
@@ -784,14 +790,14 @@ func (binding *NetCProto) reconnect(ctx context.Context) (conn connection, err e
 	if binding.dsn.connTry < 100 {
 		binding.dsn.connTry++
 	}
-	err = binding.connectDSN(ctx, len(binding.pool.conns))
+	err = binding.connectDSN(ctx, len(binding.pool.conns), binding.pool.lbAlgorithm)
 	if err != nil {
 		time.Sleep(time.Duration(binding.dsn.connTry) * time.Millisecond)
 	} else {
 		binding.dsn.connTry = 0
 	}
 
-	return binding.pool.get(), err
+	return binding.pool.GetConnection(), err
 }
 
 func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...interface{}) (buf *NetBuffer, err error) {
@@ -804,7 +810,7 @@ func (binding *NetCProto) rpcCall(ctx context.Context, op int, cmd int, args ...
 	}
 	for i := 0; i < attempts; i++ {
 		var conn connection
-		if conn, err = binding.getConn(ctx); err == nil {
+		if conn, err = binding.getConnection(ctx); err == nil {
 			if buf, err = conn.rpcCall(ctx, cmd, uint32(binding.timeouts.RequestTimeout/time.Second), args...); err == nil {
 				return
 			}

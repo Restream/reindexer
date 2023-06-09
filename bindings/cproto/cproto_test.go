@@ -5,10 +5,12 @@ package cproto
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,6 +19,8 @@ import (
 	"github.com/restream/reindexer/v4/bindings"
 	"github.com/restream/reindexer/v4/test/helpers"
 )
+
+var benchmarkSeed = flag.Int64("seed", time.Now().Unix(), "seed number for random")
 
 func BenchmarkGetConn(b *testing.B) {
 	srv1 := helpers.TestServer{T: nil, RpcPort: "6651", HttpPort: "9951", DbName: "cproto", SrvType: helpers.ServerTypeBuiltin}
@@ -37,7 +41,7 @@ func BenchmarkGetConn(b *testing.B) {
 		var conn connection
 		ctx := context.Background()
 		for i := 0; i < b.N; i++ {
-			conn, err = binding.getConn(ctx)
+			conn, err = binding.getConnection(ctx)
 			if err != nil {
 				panic(err)
 			}
@@ -78,7 +82,7 @@ func TestCprotoPool(t *testing.T) {
 
 		conns := make(map[connection]bool)
 		for i := 0; i < defConnPoolSize; i++ {
-			conn, err := c.getConn(context.Background())
+			conn, err := c.getConnection(context.Background())
 			require.NoError(t, err)
 			if _, ok := conns[conn]; ok {
 				t.Fatalf("getConn not rotate conn")
@@ -87,7 +91,7 @@ func TestCprotoPool(t *testing.T) {
 		}
 
 		// return anew from the pool
-		conn, err := c.getConn(context.Background())
+		conn, err := c.getConnection(context.Background())
 		require.NoError(t, err)
 		if _, ok := conns[conn]; !ok {
 			t.Fatalf("getConn not rotate conn")

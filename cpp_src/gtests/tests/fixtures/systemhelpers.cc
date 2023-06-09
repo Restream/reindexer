@@ -52,7 +52,7 @@ pid_t StartProcess(const std::string& program, const std::vector<std::string>& p
 #else
 	(void)program;
 	(void)params;
-	assert(false);
+	assertrx(false);
 #endif
 	return 0;
 }
@@ -63,7 +63,7 @@ Error EndProcess(pid_t PID) {
 	if (r != 0) return Error(errLogic, "errno=%d (%s)", errno, strerror(errno));
 #else
 	(void)PID;
-	assert(false);
+	assertrx(false);
 #endif
 	return errOK;
 }
@@ -81,7 +81,7 @@ Error WaitEndProcess(pid_t PID) {
 	if (waitres != PID) return Error(errLogic, "waitres != PID. errno=%d (%s)", errno, strerror(errno));
 #else
 	(void)PID;
-	assert(false);
+	assertrx(false);
 #endif
 	return errOK;
 }

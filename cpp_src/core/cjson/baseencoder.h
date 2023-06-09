@@ -39,12 +39,12 @@ template <typename Builder>
 class BaseEncoder {
 public:
 	BaseEncoder(const TagsMatcher *tagsMatcher, const FieldsSet *filter = nullptr);
-	void Encode(ConstPayload *pl, Builder &builder,
+	void Encode(ConstPayload &pl, Builder &builder,
 				const h_vector<IAdditionalDatasource<Builder> *, 2> &dss = h_vector<IAdditionalDatasource<Builder> *, 2>());
 	void Encode(std::string_view tuple, Builder &wrSer,
 				const h_vector<IAdditionalDatasource<Builder> *, 2> &dss = h_vector<IAdditionalDatasource<Builder> *, 2>());
 
-	const TagsLengths &GetTagsMeasures(ConstPayload *pl, IEncoderDatasourceWithJoins *ds = nullptr);
+	const TagsLengths &GetTagsMeasures(ConstPayload &pl, IEncoderDatasourceWithJoins *ds = nullptr);
 
 protected:
 	using IndexedTagsPathInternalT = IndexedTagsPathImpl<16>;
@@ -57,10 +57,10 @@ protected:
 
 	bool encode(ConstPayload *pl, Serializer &rdser, Builder &builder, bool visible);
 	void encodeJoinedItems(Builder &builder, IEncoderDatasourceWithJoins *ds, size_t joinedIdx);
-	bool collectTagsSizes(ConstPayload *pl, Serializer &rdser);
+	bool collectTagsSizes(ConstPayload &pl, Serializer &rdser);
 	void collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoins *ds, size_t rowid);
 
-	std::string_view getPlTuple(ConstPayload *pl);
+	std::string_view getPlTuple(ConstPayload &pl);
 
 	const TagsMatcher *tagsMatcher_;
 	int fieldsoutcnt_[maxIndexes];

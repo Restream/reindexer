@@ -135,8 +135,12 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 				terminateCh_.reopen();
 			}
 			terminateCh_.pop();
-			wg.wait();
 		}
+
+		wg.wait();
+		updatesAsync_.stop();
+		updatesTimer_.stop();
+		wg.wait();
 	});
 
 	updatesAsync_.start();
@@ -144,8 +148,6 @@ void ReplThread<BehaviourParamT>::Run(ReplThreadConfig config, const std::vector
 	loop.run();
 
 	updates_->RemoveDataNotifier(std::this_thread::get_id());
-	updatesAsync_.stop();
-	updatesTimer_.stop();
 	for (auto& node : nodes) {
 		node.updateNotifier->close();
 	}
@@ -1042,6 +1044,35 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 						return UpdateApplyStatus(nsData.tx.Delete(data->cjson.Slice(), lsn), rec.type);
 					case UpdateRecord::Type::ItemInsertTx:
 						return UpdateApplyStatus(nsData.tx.Insert(data->cjson.Slice(), lsn), rec.type);
+					case UpdateRecord::Type::None:
+					case UpdateRecord::Type::ItemUpdate:
+					case UpdateRecord::Type::ItemUpsert:
+					case UpdateRecord::Type::ItemDelete:
+					case UpdateRecord::Type::ItemInsert:
+					case UpdateRecord::Type::IndexAdd:
+					case UpdateRecord::Type::IndexDrop:
+					case UpdateRecord::Type::IndexUpdate:
+					case UpdateRecord::Type::PutMeta:
+					case UpdateRecord::Type::PutMetaTx:
+					case UpdateRecord::Type::UpdateQuery:
+					case UpdateRecord::Type::DeleteQuery:
+					case UpdateRecord::Type::UpdateQueryTx:
+					case UpdateRecord::Type::DeleteQueryTx:
+					case UpdateRecord::Type::SetSchema:
+					case UpdateRecord::Type::Truncate:
+					case UpdateRecord::Type::BeginTx:
+					case UpdateRecord::Type::CommitTx:
+					case UpdateRecord::Type::AddNamespace:
+					case UpdateRecord::Type::DropNamespace:
+					case UpdateRecord::Type::CloseNamespace:
+					case UpdateRecord::Type::RenameNamespace:
+					case UpdateRecord::Type::ResyncNamespaceGeneric:
+					case UpdateRecord::Type::ResyncNamespaceLeaderInit:
+					case UpdateRecord::Type::ResyncOnUpdatesDrop:
+					case UpdateRecord::Type::EmptyUpdate:
+					case UpdateRecord::Type::NodeNetworkCheck:
+					case UpdateRecord::Type::SetTagsMatcher:
+					case UpdateRecord::Type::SetTagsMatcherTx:
 					default:
 						std::abort();
 				}
@@ -1112,7 +1143,10 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 				TagsMatcher tm = data->tm;
 				return UpdateApplyStatus(client.WithLSN(lsn).SetTagsMatcher(nsName, std::move(tm)), rec.type);
 			}
-			default:
+			case UpdateRecord::Type::None:
+			case UpdateRecord::Type::EmptyUpdate:
+			case UpdateRecord::Type::ResyncOnUpdatesDrop:
+			case UpdateRecord::Type::NodeNetworkCheck:
 				std::abort();
 		}
 	} catch (std::bad_variant_access& e) {

@@ -190,7 +190,7 @@ SnapshotChunk Snapshot::Iterator::Chunk() const {
 			CJsonBuilder builder(ser_, ObjType::TypePlain);
 			CJsonEncoder cjsonEncoder(&sn_->tm_);
 
-			cjsonEncoder.Encode(&pl, builder);
+			cjsonEncoder.Encode(pl, builder);
 			pwrec.Pack(WALRecord(WalRawItem, itemRef.Id(), ser_.Slice()));
 		}
 		chunk.records.emplace_back(itemRef.Value().GetLSN(), std::move(pwrec));

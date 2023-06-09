@@ -130,10 +130,7 @@ void WrResultSerializer::putItemParams(ItT& it, int shardId, QueryResults::Proxi
 			reindexer::WALRecord rec(it.GetRaw());
 			rec.GetJSON(obj, [&itemRef, result](std::string_view cjson) {
 				ItemImpl item(result->GetPayloadType(itemRef.Nsid()), result->GetTagsMatcher(itemRef.Nsid()));
-				auto err = item.FromCJSON(cjson);
-				if (!err.ok()) {
-					throw Error(err.code(), "Unable to parse CJSON for WAL item: %s", err.what());
-				}
+				item.FromCJSON(cjson);
 				return std::string(item.GetJSON());
 			});
 		}

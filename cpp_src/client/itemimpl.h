@@ -19,8 +19,8 @@ public:
 	ItemImpl<C> &operator=(ItemImpl<C> &&) = default;
 	ItemImpl<C> &operator=(const ItemImpl<C> &) = delete;
 
-protected:
-	Error tryToUpdateTagsMatcher() override final;
+private:
+	[[nodiscard]] Error tryToUpdateTagsMatcher() override final;
 
 	std::chrono::milliseconds requestTimeout_ = std::chrono::milliseconds{0};
 	C *client_ = nullptr;

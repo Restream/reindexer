@@ -57,8 +57,8 @@ public:
 class Schema;
 
 struct SchemaFieldType {
-	KeyValueType type_;
-	bool isArray_;
+	KeyValueType type_{KeyValueType::Undefined{}};
+	bool isArray_{false};
 };
 
 class SchemaFieldsTypes {

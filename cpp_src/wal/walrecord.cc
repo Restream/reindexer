@@ -156,12 +156,16 @@ static std::string_view wrecType2Str(WALRecType t) {
 			return "WalWALSync"sv;
 		case WalSetSchema:
 			return "WalSetSchema"sv;
+		case WalTagsMatcher:
+		case WalResetLocalWal:
+		case WalRawItem:
+		case WalShallowItem:
 		default:
 			return "<Unknown>"sv;
 	}
 }
 
-WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string(std::string_view)>& cjsonViewer) const {
+WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string(std::string_view)> &cjsonViewer) const {
 	ser << wrecType2Str(type);
 	if (inTransaction) ser << " InTransaction";
 	switch (type) {
@@ -188,12 +192,16 @@ WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string
 			return ser << ' ' << putMeta.key << "=" << putMeta.value;
 		case WalItemModify:
 			return ser << (itemModify.modifyMode == ModeDelete ? " Delete " : " Update ") << cjsonViewer(itemModify.itemCJson);
+		case WalTagsMatcher:
+		case WalResetLocalWal:
+		case WalRawItem:
+		case WalShallowItem:
 		default:
 			return ser << " <unhandled record of type " << int(type) << '>';
 	}
 }
 
-void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)>& cjsonViewer) const {
+void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)> &cjsonViewer) const {
 	jb.Put("type", wrecType2Str(type));
 	jb.Put("in_transaction", inTransaction);
 
@@ -236,7 +244,10 @@ void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::st
 		case WalSetSchema:
 			jb.Raw("schema", data);
 			return;
-		default:
+		case WalTagsMatcher:
+		case WalResetLocalWal:
+		case WalRawItem:
+		case WalShallowItem:
 			fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
 			std::abort();
 	}

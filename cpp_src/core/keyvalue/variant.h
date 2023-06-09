@@ -16,14 +16,19 @@ class VariantArray;
 class key_string;
 struct p_string;
 struct Point;
+class Uuid;
+
+enum class WithString : bool { No = false, Yes = true };
 
 class Variant {
+	friend Uuid;
+
 public:
-	Variant() noexcept : type_(KeyValueType::Null{}), value_uint64() {}
-	explicit Variant(int v) noexcept : type_(KeyValueType::Int{}), value_int(v) {}
-	explicit Variant(bool v) noexcept : type_(KeyValueType::Bool{}), value_bool(v) {}
-	explicit Variant(int64_t v) noexcept : type_(KeyValueType::Int64{}), value_int64(v) {}
-	explicit Variant(double v) noexcept : type_(KeyValueType::Double{}), value_double(v) {}
+	Variant() noexcept : variant_{0, 0, KeyValueType::Null{}, uint64_t{}} {}
+	explicit Variant(int v) noexcept : variant_{0, 0, KeyValueType::Int{}, v} {}
+	explicit Variant(bool v) noexcept : variant_{0, 0, KeyValueType::Bool{}, v} {}
+	explicit Variant(int64_t v) noexcept : variant_{0, 0, KeyValueType::Int64{}, v} {}
+	explicit Variant(double v) noexcept : variant_{0, 0, KeyValueType::Double{}, v} {}
 	explicit Variant(const char *v);
 	explicit Variant(p_string v, bool enableHold = true);
 	explicit Variant(const std::string &v);
@@ -33,40 +38,56 @@ public:
 	explicit Variant(PayloadValue &&v);
 	explicit Variant(const VariantArray &values);
 	explicit Variant(Point);
-	Variant(const Variant &other) : type_(other.type_), hold_(other.hold_) {
-		if (hold_)
-			copy(other);
-		else
-			value_uint64 = other.value_uint64;
+	explicit Variant(Uuid) noexcept;
+	Variant(const Variant &other) : uuid_{other.uuid_} {
+		if (!isUuid()) {
+			uuid_.~UUID();
+			new (&variant_) Var{other.variant_};
+			if (variant_.hold != 0) {
+				copy(other);
+			}
+		}
 	}
-	Variant(Variant &&other) noexcept : type_(other.type_), hold_(other.hold_), value_uint64(other.value_uint64) { other.hold_ = false; }
+	Variant(Variant &&other) noexcept : uuid_{other.uuid_} {
+		if (!isUuid()) {
+			uuid_.~UUID();
+			new (&variant_) Var{other.variant_};
+			other.variant_.hold = 0;
+		}
+	}
 	template <typename... Ts>
 	Variant(const std::tuple<Ts...> &);
 
 	~Variant() {
-		if (hold_) free();
+		if (!isUuid() && variant_.hold != 0) free();
 	}
 
-	Variant &operator=(const Variant &other) {
-		if (this != &other) {
-			if (hold_) free();
-			type_ = other.type_;
-			hold_ = other.hold_;
-			if (hold_)
-				copy(other);
-			else
-				value_uint64 = other.value_uint64;
+	Variant &operator=(Variant &&other) &noexcept {
+		if (this == &other) return *this;
+		if (isUuid()) {
+			if (other.isUuid()) {
+				uuid_ = other.uuid_;
+			} else {
+				uuid_.~UUID();
+				new (&variant_) Var{other.variant_};
+				other.variant_.hold = 0;
+			}
+		} else {
+			if (variant_.hold != 0) free();
+			if (other.isUuid()) {
+				variant_.~Var();
+				new (&uuid_) UUID{other.uuid_};
+			} else {
+				variant_ = other.variant_;
+				other.variant_.hold = 0;
+			}
 		}
 		return *this;
 	}
-
-	Variant &operator=(Variant &&other) noexcept {
+	Variant &operator=(const Variant &other) & {
 		if (this != &other) {
-			if (hold_) free();
-			type_ = other.type_;
-			hold_ = other.hold_;
-			value_uint64 = other.value_uint64;
-			other.hold_ = false;
+			Variant tmp{other};
+			operator=(std::move(tmp));
 		}
 		return *this;
 	}
@@ -83,10 +104,10 @@ public:
 	explicit operator Point() const;
 
 	template <typename T>
-	T As() const;
+	[[nodiscard]] T As() const;
 
 	template <typename T>
-	T As(const PayloadType &, const FieldsSet &) const;
+	[[nodiscard]] T As(const PayloadType &, const FieldsSet &) const;
 
 	bool operator==(const Variant &other) const { return Type().IsSame(other.Type()) && Compare(other) == 0; }
 	bool operator!=(const Variant &other) const { return !operator==(other); }
@@ -95,50 +116,101 @@ public:
 	bool operator>=(const Variant &other) const { return Compare(other) >= 0; }
 
 	int Compare(const Variant &other, const CollateOpts &collateOpts = CollateOpts()) const;
+	template <WithString>
 	int RelaxCompare(const Variant &other, const CollateOpts &collateOpts = CollateOpts()) const;
 	size_t Hash() const noexcept;
 	void EnsureUTF8() const;
-	Variant &EnsureHold();
+	Variant &EnsureHold() &;
+	Variant EnsureHold() && { return std::move(EnsureHold()); }
 
-	KeyValueType Type() const noexcept { return type_; }
+	KeyValueType Type() const noexcept {
+		if (isUuid()) {
+			return KeyValueType::Uuid{};
+		} else {
+			return variant_.type;
+		}
+	}
 
-	Variant &convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr);
-	Variant convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr) const;
+	Variant &convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr) &;
+	Variant convert(KeyValueType type, const PayloadType *pt = nullptr, const FieldsSet *fs = nullptr) && {
+		return std::move(convert(type, pt, fs));
+	}
+	[[nodiscard]] Variant convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr) const &;
 	VariantArray getCompositeValues() const;
 
-	bool IsNullValue() const noexcept { return type_.Is<KeyValueType::Null>(); }
+	bool IsNullValue() const noexcept { return Type().Is<KeyValueType::Null>(); }
 
 	template <typename T>
 	void Dump(T &os) const;
 
-protected:
+private:
+	bool isUuid() const noexcept { return uuid_.isUuid != 0; }
 	void convertToComposite(const PayloadType *, const FieldsSet *);
 	void free() noexcept;
 	void copy(const Variant &other);
 	template <typename T>
 	const T *cast() const noexcept {
-		return reinterpret_cast<const T *>(&value_uint64);
+		assertrx(!isUuid());
+		return reinterpret_cast<const T *>(&variant_.value_uint64);
 	}
 	template <typename T>
 	T *cast() noexcept {
-		return reinterpret_cast<T *>(&value_uint64);
+		assertrx(!isUuid());
+		return reinterpret_cast<T *>(&variant_.value_uint64);
 	}
-
-	KeyValueType type_;
-	bool hold_ = false;
-	union {
-		bool value_bool;
-		int value_int;
-		int64_t value_int64;
-		uint64_t value_uint64;
-		double value_double;
-		// runtime cast
-		// p_string value_string;
-		// PayloadValue value_composite;
-		// key_string h_value_string;
-	};
 	int relaxCompareWithString(std::string_view) const;
+
+	struct Var {
+		Var(uint8_t isu, uint8_t h, KeyValueType t) noexcept : isUuid{isu}, hold{h}, type{t} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, bool b) noexcept : isUuid{isu}, hold{h}, type{t}, value_bool{b} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, int i) noexcept : isUuid{isu}, hold{h}, type{t}, value_int{i} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, int64_t i) noexcept : isUuid{isu}, hold{h}, type{t}, value_int64{i} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, uint64_t u) noexcept : isUuid{isu}, hold{h}, type{t}, value_uint64{u} {}
+		Var(uint8_t isu, uint8_t h, KeyValueType t, double d) noexcept : isUuid{isu}, hold{h}, type{t}, value_double{d} {}
+
+		uint8_t isUuid : 1;
+		uint8_t hold : 1;
+		KeyValueType type;
+		union {
+			bool value_bool;
+			int value_int;
+			int64_t value_int64;
+			uint64_t value_uint64;
+			double value_double;
+			// runtime cast
+			// p_string value_string;
+			// PayloadValue value_composite;
+			// key_string h_value_string;
+		};
+	};
+	struct UUID {
+		uint8_t isUuid : 1;
+		uint8_t v0 : 7;
+		uint8_t vs[7];
+		uint64_t v1;
+	};
+	static_assert(sizeof(UUID) == sizeof(Var));
+	static_assert(alignof(UUID) == alignof(Var));
+	union {
+		Var variant_;
+		UUID uuid_;
+	};
 };
+static_assert(sizeof(Variant) == 16);
+
+extern template int Variant::RelaxCompare<WithString::Yes>(const Variant &, const CollateOpts &) const;
+extern template int Variant::RelaxCompare<WithString::No>(const Variant &, const CollateOpts &) const;
+
+template <>
+int Variant::As<int>() const;
+template <>
+int64_t Variant::As<int64_t>() const;
+template <>
+double Variant::As<double>() const;
+template <>
+bool Variant::As<bool>() const;
+template <>
+std::string Variant::As<std::string>() const;
 
 class VariantArray : public h_vector<Variant, 2> {
 public:
@@ -173,9 +245,14 @@ public:
 	KeyValueType ArrayType() const noexcept { return empty() ? KeyValueType::Null{} : front().Type(); }
 	template <typename T>
 	void Dump(T &os) const;
+	template <WithString>
 	int RelaxCompare(const VariantArray &other, const CollateOpts & = CollateOpts{}) const;
 	void EnsureHold() {
 		for (Variant &v : *this) v.EnsureHold();
+	}
+	template <typename... Ts>
+	static VariantArray Create(Ts &&...vs) {
+		return VariantArray{Variant{std::forward<Ts>(vs)}...};
 	}
 
 private:
@@ -183,22 +260,13 @@ private:
 	bool isObjectValue = false;
 };
 
-template <>
-int Variant::As<int>() const;
-template <>
-int64_t Variant::As<int64_t>() const;
-template <>
-double Variant::As<double>() const;
-template <>
-bool Variant::As<bool>() const;
-template <>
-std::string Variant::As<std::string>() const;
+extern template int VariantArray::RelaxCompare<WithString::Yes>(const VariantArray &, const CollateOpts &) const;
+extern template int VariantArray::RelaxCompare<WithString::No>(const VariantArray &, const CollateOpts &) const;
 
 }  // namespace reindexer
 namespace std {
 template <>
 struct hash<reindexer::Variant> {
-public:
 	size_t operator()(const reindexer::Variant &kv) const { return kv.Hash(); }
 };
 }  // namespace std

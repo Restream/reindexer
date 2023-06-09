@@ -3,16 +3,19 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include "core/ft/usingcontainer.h"
 #include "estl/fast_hash_map.h"
 #include "estl/fast_hash_set.h"
 #include "tools/stringstools.h"
-#include "core/ft/usingcontainer.h"
 
 namespace gason {
 struct JsonNode;
 }
 
 namespace reindexer {
+
+static constexpr int kMaxMergeLimitValue = 65000;
+static constexpr int kMinMergeLimitValue = 0;
 
 class JsonBuilder;
 
@@ -39,7 +42,7 @@ public:
 	fast_hash_set<std::string, hash_str, equal_str, less_str> stopWords;
 	std::vector<Synonym> synonyms;
 	int logLevel = 0;
-	std::string extraWordSymbols = "-/+";	// word contains symbols (IsAlpa | IsDigit) {IsAlpa | IsDigit | IsExtra}
+	std::string extraWordSymbols = "-/+";  // word contains symbols (IsAlpa | IsDigit) {IsAlpa | IsDigit | IsExtra}
 
 protected:
 	void parseBase(const gason::JsonNode& root);

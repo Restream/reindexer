@@ -35,7 +35,7 @@ struct JsonString {
 	JsonString(const char *end = nullptr) noexcept : ptr(end) {}
 
 	size_t length() const noexcept {
-		assert(ptr);
+		assertrx(ptr);
 		return reindexer::json_string::length(reinterpret_cast<const uint8_t *>(ptr));
 	}
 	size_t size() const noexcept { return ptr ? length() : 0; }
@@ -64,21 +64,21 @@ union JsonValue {
 	JsonTag getTag() const noexcept { return JsonTag(u.tag); }
 
 	int64_t toNumber() const noexcept {
-		assert(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
+		assertrx(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
 		if (getTag() == JSON_NUMBER) return ival;
 		return fval;
 	}
 	double toDouble() const noexcept {
-		assert(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
+		assertrx(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
 		if (getTag() == JSON_DOUBLE) return fval;
 		return ival;
 	}
 	std::string_view toString() const noexcept {
-		assert(getTag() == JSON_STRING);
+		assertrx(getTag() == JSON_STRING);
 		return sval;
 	}
 	JsonNode *toNode() const noexcept {
-		assert(getTag() == JSON_ARRAY || getTag() == JSON_OBJECT);
+		assertrx(getTag() == JSON_ARRAY || getTag() == JSON_OBJECT);
 		return node;
 	}
 
@@ -129,6 +129,12 @@ struct JsonNode {
 				return true;
 			case JSON_FALSE:
 				return false;
+			case JSON_STRING:
+			case JSON_NUMBER:
+			case JSON_DOUBLE:
+			case JSON_ARRAY:
+			case JSON_OBJECT:
+			case JSON_NULL:
 			default:
 				throw Exception(std::string("Can't convert json field '") + std::string(key) + "' to bool");
 		}

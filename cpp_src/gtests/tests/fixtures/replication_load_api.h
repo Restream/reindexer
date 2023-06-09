@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cluster/stats/replicationstats.h"
+#include "gtests/tools.h"
 #include "replication_api.h"
 #include "tools/errors.h"
 #include "vendor/hopscotch/hopscotch_map.h"
@@ -25,15 +26,18 @@ public:
 											   IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
 											   IndexDeclaration{"int", "tree", "int", IndexOpts(), 0},
 											   IndexDeclaration{"string", "hash", "string", IndexOpts(), 0},
+											   IndexDeclaration{"uuid", "hash", "uuid", IndexOpts(), 0},
 										   });
 		api.DefineNamespaceDataset("some1", {
 												IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
 												IndexDeclaration{"int", "tree", "int", IndexOpts(), 0},
 												IndexDeclaration{"string", "hash", "string", IndexOpts(), 0},
+												IndexDeclaration{"uuid", "hash", "uuid", IndexOpts(), 0},
 											});
 	}
 
 	void FillData(size_t count) {
+		SCOPED_TRACE("Fill data " + std::to_string(count));
 		// untill we use shared ptr it will be not destroyed
 		auto srv = GetSrv(masterId_);
 		auto &api = srv->api;
@@ -43,18 +47,21 @@ public:
 		for (size_t i = 0; i < count; ++i) {
 			BaseApi::ItemType item = api.NewItem("some");
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			Error err = item.FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s"})json", counter_++, rand(), api.RandString()));
+			Error err = item.FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
+												   api.RandString(), randStrUuid()));
 			ASSERT_TRUE(err.ok()) << err.what();
 			api.Upsert("some", item);
 
 			item = api.NewItem("some1");
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			err = item.FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s"})json", counter_++, rand(), api.RandString()));
+			err = item.FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
+											 api.RandString(), randStrUuid()));
 			ASSERT_TRUE(err.ok()) << err.what();
 			api.Upsert("some1", item);
 		}
 	}
 	BaseApi::QueryResultsType SimpleSelect(size_t num) {
+		SCOPED_TRACE("Selecting some");
 		Query qr = Query("some");
 		auto srv = GetSrv(num);
 		auto &api = srv->api;
@@ -65,6 +72,7 @@ public:
 		return res;
 	}
 	BaseApi::QueryResultsType DeleteFromMaster() {
+		SCOPED_TRACE("Deleting some from master");
 		auto srv = GetSrv(masterId_);
 		auto &api = srv->api;
 		BaseApi::QueryResultsType res;
@@ -73,36 +81,47 @@ public:
 		return res;
 	}
 	cluster::ReplicationStats GetReplicationStats(size_t num) { return GetSrv(num)->GetReplicationStats(cluster::kAsyncReplStatsType); }
-	void SetReplicationLogLevel(size_t num, LogLevel level) { GetSrv(num)->SetReplicationLogLevel(level, "async_replication"); }
-	void ForceSync() { GetSrv(masterId_)->ForceSync(); }
+	void SetReplicationLogLevel(size_t num, LogLevel level) {
+		SCOPED_TRACE("SetReplicationLogLevel");
+		GetSrv(num)->SetReplicationLogLevel(level, "async_replication");
+	}
+	void ForceSync() {
+		SCOPED_TRACE("ForceSync");
+		GetSrv(masterId_)->ForceSync();
+	}
 	void RestartWithReplicationConfigFiles(size_t num, const std::string &asyncReplConfigYaml, const std::string &replConfigYaml) {
+		SCOPED_TRACE("RestartWithReplicationConfigFiles");
 		GetSrv(num)->WriteAsyncReplicationConfig(asyncReplConfigYaml);
 		GetSrv(num)->WriteReplicationConfig(replConfigYaml);
 		ASSERT_TRUE(StopServer(num));
 		ASSERT_TRUE(StartServer(num));
 	}
 	void SetServerConfig(size_t num, const AsyncReplicationConfigTest &config) {
+		SCOPED_TRACE("SetServerConfig");
 		auto srv = GetSrv(num);
 		srv->SetReplicationConfig(config);
 	}
-	void CheckReplicationConfigFile(size_t num, const AsyncReplicationConfigTest &config) {
+	void CheckReplicationConfigFile(size_t num, const AsyncReplicationConfigTest &expConfig) {
+		SCOPED_TRACE("Checking config from file");
 		auto srv = GetSrv(num);
 		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::File);
-		EXPECT_TRUE(config == curConfig);
+		EXPECT_EQ(expConfig, curConfig);
 	}
-	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest &config, std::chrono::seconds awaitTime) {
+	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest &expConfig, std::chrono::seconds awaitTime) {
+		SCOPED_TRACE("Checking config from namespace with timeout");
 		auto srv = GetSrv(num);
 		for (int i = 0; i < awaitTime.count(); ++i) {
 			auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::Namespace);
-			if (config == curConfig) {
+			if (expConfig == curConfig) {
 				return;
 			}
 			std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
-		EXPECT_TRUE(config == srv->GetServerConfig(ServerControl::ConfigType::Namespace));
+		EXPECT_EQ(expConfig, srv->GetServerConfig(ServerControl::ConfigType::Namespace));
 	}
-	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest &config) {
-		EXPECT_TRUE(config == GetSrv(num)->GetServerConfig(ServerControl::ConfigType::Namespace));
+	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest &expConfig) {
+		SCOPED_TRACE("Checking config from namespace");
+		EXPECT_EQ(expConfig, GetSrv(num)->GetServerConfig(ServerControl::ConfigType::Namespace));
 	}
 	std::atomic_bool stop;
 

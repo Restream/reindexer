@@ -2,6 +2,7 @@
 #include <cassert>
 #include <iterator>
 #include <sstream>
+#include "tools/assertrx.h"
 
 #include "yaml-cpp/exceptions.h"
 #include "yaml-cpp/node/detail/memory.h"
@@ -64,7 +65,7 @@ void node_data::set_type(NodeType::value type) {
 			reset_map();
 			break;
 		case NodeType::Undefined:
-			assert(false);
+			assertrx(false);
 			break;
 	}
 }
@@ -95,7 +96,9 @@ std::size_t node_data::size() const {
 		case NodeType::Map:
 			compute_map_size();
 			return m_map.size() - m_undefinedPairs.size();
-		default:
+		case NodeType::Undefined:
+		case NodeType::Null:
+		case NodeType::Scalar:
 			return 0;
 	}
 	return 0;
@@ -122,6 +125,9 @@ const_node_iterator node_data::begin() const {
 			return const_node_iterator(m_sequence.begin());
 		case NodeType::Map:
 			return const_node_iterator(m_map.begin(), m_map.end());
+		case NodeType::Undefined:
+		case NodeType::Null:
+		case NodeType::Scalar:
 		default:
 			return {};
 	}
@@ -135,6 +141,9 @@ node_iterator node_data::begin() {
 			return node_iterator(m_sequence.begin());
 		case NodeType::Map:
 			return node_iterator(m_map.begin(), m_map.end());
+		case NodeType::Undefined:
+		case NodeType::Null:
+		case NodeType::Scalar:
 		default:
 			return {};
 	}
@@ -148,6 +157,9 @@ const_node_iterator node_data::end() const {
 			return const_node_iterator(m_sequence.end());
 		case NodeType::Map:
 			return const_node_iterator(m_map.end(), m_map.end());
+		case NodeType::Undefined:
+		case NodeType::Null:
+		case NodeType::Scalar:
 		default:
 			return {};
 	}
@@ -161,6 +173,9 @@ node_iterator node_data::end() {
 			return node_iterator(m_sequence.end());
 		case NodeType::Map:
 			return node_iterator(m_map.end(), m_map.end());
+		case NodeType::Undefined:
+		case NodeType::Null:
+		case NodeType::Scalar:
 		default:
 			return {};
 	}
@@ -278,13 +293,13 @@ void node_data::convert_to_map(const shared_memory_holder& pMemory) {
 		case NodeType::Map:
 			break;
 		case NodeType::Scalar:
-			assert(false);
+			assertrx(false);
 			break;
 	}
 }
 
 void node_data::convert_sequence_to_map(const shared_memory_holder& pMemory) {
-	assert(m_type == NodeType::Sequence);
+	assertrx(m_type == NodeType::Sequence);
 
 	reset_map();
 	for (std::size_t i = 0; i < m_sequence.size(); i++) {

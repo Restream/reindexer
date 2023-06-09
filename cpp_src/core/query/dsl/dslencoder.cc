@@ -99,14 +99,14 @@ void encodeSelectFunctions(const Query& query, JsonBuilder& builder) {
 void encodeAggregationFunctions(const Query& query, JsonBuilder& builder) {
 	auto arrNode = builder.Array("aggregations");
 
-	for (auto& entry : query.aggregations_) {
+	for (const auto& entry : query.aggregations_) {
 		auto aggNode = arrNode.Object();
-		aggNode.Put("type", AggregationResult::aggTypeToStr(entry.type_));
-		encodeSorting(entry.sortingEntries_, aggNode);
-		if (entry.limit_ != UINT_MAX) aggNode.Put("limit", entry.limit_);
-		if (entry.offset_ != 0) aggNode.Put("offset", entry.offset_);
+		aggNode.Put("type", AggTypeToStr(entry.Type()));
+		encodeSorting(entry.Sorting(), aggNode);
+		if (entry.Limit() != AggregateEntry::kDefaultLimit) aggNode.Put("limit", entry.Limit());
+		if (entry.Offset() != AggregateEntry::kDefaultOffset) aggNode.Put("offset", entry.Offset());
 		auto fldNode = aggNode.Array("fields");
-		for (const auto& field : entry.fields_) {
+		for (const auto& field : entry.Fields()) {
 			fldNode.Put(nullptr, field);
 		}
 	}

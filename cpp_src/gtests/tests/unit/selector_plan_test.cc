@@ -4,11 +4,11 @@
 template <>
 std::string SelectorPlanTest::readFieldValue<std::string>(const std::string& str, std::string::size_type pos) {
 	pos = findFieldValueStart(str, pos);
-	assert(str[pos] == '"');
+	assertrx(str[pos] == '"');
 	++pos;
-	assert(pos < str.size());
+	assertrx(pos < str.size());
 	const std::string::size_type end = str.find('"', pos);
-	assert(end != std::string::npos);
+	assertrx(end != std::string::npos);
 	return str.substr(pos, end - pos);
 }
 
@@ -20,7 +20,7 @@ bool SelectorPlanTest::readFieldValue<bool>(const std::string& str, std::string:
 	} else if (reindexer::checkIfStartsWith("false", str.substr(pos))) {
 		return false;
 	} else {
-		assert(0);
+		assertrx(0);
 	}
 	return false;
 }
@@ -29,8 +29,8 @@ template <>
 int SelectorPlanTest::readFieldValue<int>(const std::string& str, std::string::size_type pos) {
 	pos = findFieldValueStart(str, pos);
 	const std::string::size_type end = str.find_first_not_of("+-0123456789", pos);
-	assert(end != std::string::npos);
-	assert(end != pos);
+	assertrx(end != std::string::npos);
+	assertrx(end != pos);
 	return std::stoi(str.substr(pos, end - pos));
 }
 

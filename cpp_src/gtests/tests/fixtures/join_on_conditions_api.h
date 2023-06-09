@@ -21,7 +21,8 @@ public:
 			reindexer::JsonBuilder builder(ser);
 			builder.Put("id", id);
 			builder.End();
-			item.FromJSON(ser.c_str());
+			err = item.FromJSON(ser.c_str());
+			ASSERT_TRUE(err.ok()) << err.what();
 			rt.reindexer->Insert(leftNs, item);
 		}
 
@@ -37,7 +38,8 @@ public:
 				}
 			}
 			builder.End();
-			item.FromJSON(ser.c_str());
+			err = item.FromJSON(ser.c_str());
+			ASSERT_TRUE(err.ok()) << err.what();
 			rt.reindexer->Insert(rightNs, item);
 		}
 	}
@@ -55,6 +57,12 @@ public:
 			case CondSet:
 			case CondEq:
 				return (v1 == v2);
+			case CondAny:
+			case CondRange:
+			case CondAllSet:
+			case CondEmpty:
+			case CondLike:
+			case CondDWithin:
 			default:
 				throw Error(errLogic, "Not supported condition!");
 		}
@@ -74,6 +82,12 @@ public:
 				return fmt::sprintf(sql, "=");
 			case CondSet:
 				return fmt::sprintf(sql, "in");
+			case CondAny:
+			case CondRange:
+			case CondAllSet:
+			case CondEmpty:
+			case CondLike:
+			case CondDWithin:
 			default:
 				throw Error(errLogic, "Not supported condition!");
 		}

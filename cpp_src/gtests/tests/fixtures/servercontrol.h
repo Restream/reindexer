@@ -2,10 +2,12 @@
 
 #include <atomic>
 #include <memory>
+#include <ostream>
 #include <thread>
 #include <unordered_set>
 #include "client/reindexer.h"
 #include "cluster/stats/replicationstats.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "core/namespace/namespacestat.h"
 #include "estl/shared_mutex.h"
@@ -27,6 +29,14 @@ struct AsyncReplicationConfigTest {
 		Node(std::string _dsn, std::optional<NsSet> _nsList = std::optional<NsSet>()) : dsn(std::move(_dsn)), nsList(std::move(_nsList)) {}
 		bool operator==(const Node& node) const noexcept { return dsn == node.dsn && nsList == node.nsList; }
 		bool operator!=(const Node& node) const noexcept { return !(*this == node); }
+
+		void GetJSON(reindexer::JsonBuilder& jb) const {
+			jb.Put("dsn", dsn);
+			auto arrNode = jb.Array("namespaces");
+			if (nsList) {
+				for (const auto& ns : *nsList) arrNode.Put(nullptr, ns);
+			}
+		};
 
 		std::string dsn;
 		std::optional<NsSet> nsList;
@@ -61,6 +71,30 @@ struct AsyncReplicationConfigTest {
 			   syncThreads == config.syncThreads && concurrentSyncsPerThread == config.concurrentSyncsPerThread &&
 			   onlineUpdatesDelayMSec == config.onlineUpdatesDelayMSec;
 	}
+	bool operator!=(const AsyncReplicationConfigTest& config) const { return !(this->operator==(config)); }
+
+	void GetJSON(reindexer::JsonBuilder& jb) const {
+		jb.Put("app_name", appName);
+		jb.Put("server_id", serverId);
+		jb.Put("role", role);
+		jb.Put("mode", mode);
+		jb.Put("force_sync_on_logic_error", forceSyncOnLogicError);
+		jb.Put("force_sync_on_wrong_data_hash", forceSyncOnWrongDataHash);
+		jb.Put("sync_threads", syncThreads);
+		jb.Put("syncs_per_thread", concurrentSyncsPerThread);
+		jb.Put("online_updates_delay_msec", onlineUpdatesDelayMSec);
+		{
+			auto arrNode = jb.Array("namespaces");
+			for (const auto& ns : namespaces) arrNode.Put(nullptr, ns);
+		}
+		{
+			auto arrNode = jb.Array("nodes");
+			for (const auto& node : nodes) {
+				auto obj = arrNode.Object();
+				node.GetJSON(obj);
+			}
+		}
+	};
 
 	std::string role;
 	std::string mode;
@@ -73,6 +107,15 @@ struct AsyncReplicationConfigTest {
 	NsSet namespaces;
 	int serverId;
 	int onlineUpdatesDelayMSec = 100;
+
+	friend std::ostream& operator<<(std::ostream& os, const AsyncReplicationConfigTest& cfg) {
+		reindexer::WrSerializer ser;
+		{
+			reindexer::JsonBuilder jb(ser);
+			cfg.GetJSON(jb);
+		}
+		return os << ser.Slice();
+	}
 };
 
 struct ReplicationStateApi {

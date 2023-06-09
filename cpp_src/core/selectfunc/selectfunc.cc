@@ -93,7 +93,6 @@ void SelectFunction::createFunc(SelectFuncStruct &data) {
 BaseFunctionCtx::Ptr SelectFunction::createFuncForProc(int indexNo) {
 	SelectFuncStruct data;
 	data.isFunction = true;
-	data.type = SelectFuncStruct::kSelectFuncProc;
 	data.indexNo = indexNo;
 	int lastCjsonIdx = currCjsonFieldIdx_;
 	createFunc(data);
@@ -117,8 +116,8 @@ bool SelectFunction::NeedArea(int indexNo) const {
 	auto checkField = [&](int field) -> bool {
 		const auto it = functions_.find(field);
 		if (it != functions_.end()) {
-			if (it->second.type == SelectFuncStruct::kSelectFuncSnippet || it->second.type == SelectFuncStruct::kSelectFuncSnippetN ||
-				it->second.type == SelectFuncStruct::kSelectFuncHighlight) {
+			if (std::holds_alternative<Snippet>(it->second.func) || std::holds_alternative<SnippetN>(it->second.func) ||
+				std::holds_alternative<Highlight>(it->second.func)) {
 				return true;
 			}
 		}
@@ -156,9 +155,6 @@ BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
 			auto it = functions_.find(field);
 			if (it != functions_.end()) {
 				it->second.fieldNo = fieldNo;
-				if (IsFullText(indexType) && (it->second.type == SelectFuncStruct::kSelectFuncNone)) {
-					it->second.type = SelectFuncStruct::kSelectFuncProc;
-				}
 				ctx = createCtx(it->second, ctx, indexType);
 			}
 			fieldNo++;
@@ -191,39 +187,22 @@ bool SelectFunction::ProcessItem(ItemRef &res, PayloadType &pl_type, std::vector
 	bool changed = false;
 	for (auto &func : functions_) {
 		if (!func.second.ctx) continue;
-		switch (func.second.type) {
-			case SelectFuncStruct::kSelectFuncSnippet:
-			case SelectFuncStruct::kSelectFuncSnippetN:
-				if (Snippet::process(res, pl_type, func.second, stringsHolder)) changed = true;
-				break;
-			case SelectFuncStruct::kSelectFuncHighlight:
-				if (Highlight::process(res, pl_type, func.second, stringsHolder)) changed = true;
-				break;
-
-			case SelectFuncStruct::kSelectFuncNone:
-			case SelectFuncStruct::kSelectFuncProc:
-				break;
+		if (std::visit([&](auto &f) -> bool { return f.Process(res, pl_type, func.second, stringsHolder); }, func.second.func)) {
+			changed = true;
 		}
 	}
 	return changed;
 }
 
 BaseFunctionCtx::Ptr SelectFunction::createCtx(SelectFuncStruct &data, BaseFunctionCtx::Ptr ctx, IndexType index_type) {
-	switch (data.type) {
-		case SelectFuncStruct::kSelectFuncNone:
-		case SelectFuncStruct::kSelectFuncSnippet:
-		case SelectFuncStruct::kSelectFuncHighlight:
-		case SelectFuncStruct::kSelectFuncProc:
-		case SelectFuncStruct::kSelectFuncSnippetN:
-			if (IsFullText(index_type)) {
-				if (!ctx) {
-					data.ctx = std::make_shared<FtCtx>();
-				} else {
-					data.ctx = std::move(ctx);
-				}
-				const std::string &indexName = (data.indexNo >= nm_.getIndexesCount()) ? data.field : nm_.getIndexName(data.indexNo);
-				data.ctx->AddFunction(indexName, data.type);
-			}
+	if (IsFullText(index_type)) {
+		if (!ctx) {
+			data.ctx = std::make_shared<FtCtx>();
+		} else {
+			data.ctx = std::move(ctx);
+		}
+		const std::string &indexName = (data.indexNo >= nm_.getIndexesCount()) ? data.field : nm_.getIndexName(data.indexNo);
+		data.ctx->AddFunction(indexName, SelectFuncStruct::SelectFuncType(data.func.index()));
 	}
 	return data.ctx;
 }

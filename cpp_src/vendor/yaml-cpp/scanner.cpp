@@ -1,5 +1,6 @@
 #include <cassert>
 #include <memory>
+#include "tools/assertrx.h"
 
 #include "exp.h"
 #include "scanner.h"
@@ -34,9 +35,9 @@ void Scanner::pop() {
 
 Token& Scanner::peek() {
 	EnsureTokensInQueue();
-	assert(!m_tokens.empty());	// should we be asserting here? I mean, we really
-								// just be checking
-								// if it's empty before peeking.
+	assertrx(!m_tokens.empty());  // should we be asserting here? I mean, we really
+								  // just be checking
+								  // if it's empty before peeking.
 
 #if 0
 		static Token *pLast = 0;
@@ -275,10 +276,10 @@ Token::TYPE Scanner::GetStartTokenFor(IndentMarker::INDENT_TYPE type) const {
 		case IndentMarker::MAP:
 			return Token::BLOCK_MAP_START;
 		case IndentMarker::NONE:
-			assert(false);
+			assertrx(false);
 			break;
 	}
-	assert(false);
+	assertrx(false);
 	throw std::runtime_error("yaml-cpp: internal error, invalid indent type");
 }
 

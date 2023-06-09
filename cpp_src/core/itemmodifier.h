@@ -31,13 +31,11 @@ private:
 		int index() const noexcept { return fieldIndex_; }
 		bool isIndex() const noexcept { return isIndex_; }
 		const std::string &name() const noexcept { return entry_.Column(); }
-		const std::string &jsonpath() const noexcept { return jsonPath_; }
 
 	private:
 		const UpdateEntry &entry_;
 		IndexedTagsPath tagsPath_;
-		std::string jsonPath_;
-		int fieldIndex_;
+		int fieldIndex_{IndexValueType::SetByJsonPath};
 		int arrayIndex_;
 		bool isIndex_;
 	};

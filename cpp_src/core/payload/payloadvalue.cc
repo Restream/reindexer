@@ -90,7 +90,7 @@ std::ostream &operator<<(std::ostream &os, const PayloadValue &pv) {
 			os << static_cast<unsigned>(ptr[i]);
 		}
 		os << std::dec << "], tuple: ";
-		assert(cap >= sizeof(p_string));
+		assertrx(cap >= sizeof(p_string));
 		const p_string &str = *reinterpret_cast<const p_string *>(ptr);
 		str.Dump(os);
 	}

@@ -13,7 +13,7 @@ namespace reindexer {
 namespace client {
 
 // Construct item from compressed json
-Error ItemImplBase::FromCJSON(std::string_view slice) {
+void ItemImplBase::FromCJSON(std::string_view slice) {
 	GetPayload().Reset();
 	std::string_view data = slice;
 	if (!unsafe_) {
@@ -38,31 +38,29 @@ Error ItemImplBase::FromCJSON(std::string_view slice) {
 	Payload pl = GetPayload();
 	CJsonDecoder decoder(tagsMatcher_);
 	ser_.Reset();
-	auto err = decoder.Decode(&pl, rdser, ser_);
-
-	if (!hasBundledTm && !err.ok()) {
-		err = tryToUpdateTagsMatcher();
-		if (!err.ok()) {
-			return Error(errParseJson, "Error parsing CJSON: %s", err.what());
+	try {
+		decoder.Decode(pl, rdser, ser_);
+	} catch (const Error &) {
+		if (!hasBundledTm) {
+			const auto err = tryToUpdateTagsMatcher();
+			if (!err.ok()) {
+				throw Error(errParseJson, "Error parsing CJSON: %s", err.what());
+			}
+			ser_.Reset();
+			rdser.SetPos(0);
+			CJsonDecoder decoder(tagsMatcher_);
+			decoder.Decode(pl, rdser, ser_);
 		}
-		ser_.Reset();
-		rdser.SetPos(0);
-		CJsonDecoder decoder(tagsMatcher_);
-		err = decoder.Decode(&pl, rdser, ser_);
 	}
 
-	if (err.ok() && !rdser.Eof() && rdser.Pos() != tmOffset) {
-		return Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
+	if (!rdser.Eof() && rdser.Pos() != tmOffset) {
+		throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
 	}
 
-	if (err.ok()) {
-		const auto tupleSize = ser_.Len();
-		tupleHolder_ = ser_.DetachBuf();
-		tupleData_ = std::string_view(reinterpret_cast<char *>(tupleHolder_.get()), tupleSize);
-		pl.Set(0, {Variant(p_string(&tupleData_))});
-	}
-
-	return err;
+	const auto tupleSize = ser_.Len();
+	tupleHolder_ = ser_.DetachBuf();
+	tupleData_ = std::string_view(reinterpret_cast<char *>(tupleHolder_.get()), tupleSize);
+	pl.Set(0, {Variant(p_string(&tupleData_))});
 }
 
 Error ItemImplBase::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
@@ -92,7 +90,7 @@ Error ItemImplBase::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*
 	JsonDecoder decoder(tagsMatcher_);
 	Payload pl = GetPayload();
 	ser_.Reset();
-	auto err = decoder.Decode(&pl, ser_, node.value);
+	auto err = decoder.Decode(pl, ser_, node.value);
 
 	if (err.ok()) {
 		// Put tuple to field[0]
@@ -116,7 +114,7 @@ Error ItemImplBase::FromMsgPack(std::string_view buf, size_t &offset) {
 	}
 
 	ser_.Reset();
-	Error err = decoder.Decode(data, &pl, ser_, offset);
+	Error err = decoder.Decode(data, pl, ser_, offset);
 	if (err.ok()) {
 		const auto tupleSize = ser_.Len();
 		tupleHolder_ = ser_.DetachBuf();
@@ -126,11 +124,9 @@ Error ItemImplBase::FromMsgPack(std::string_view buf, size_t &offset) {
 	return err;
 }
 
-Error ItemImplBase::FromCJSON(ItemImplBase *other) {
+void ItemImplBase::FromCJSON(ItemImplBase *other) {
 	auto cjson = other->GetCJSON();
-	auto err = FromCJSON(cjson);
-	assert(err.ok());
-	return err;
+	FromCJSON(cjson);
 }
 
 std::string_view ItemImplBase::GetMsgPack() {
@@ -138,11 +134,11 @@ std::string_view ItemImplBase::GetMsgPack() {
 	ConstPayload pl = GetConstPayload();
 
 	MsgPackEncoder msgpackEncoder(&tagsMatcher_);
-	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(&pl);
+	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
 
 	ser_.Reset();
 	MsgPackBuilder msgpackBuilder(ser_, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);
-	msgpackEncoder.Encode(&pl, msgpackBuilder);
+	msgpackEncoder.Encode(pl, msgpackBuilder);
 
 	return ser_.Slice();
 }
@@ -153,7 +149,7 @@ std::string_view ItemImplBase::GetJSON() {
 	JsonEncoder encoder(&tagsMatcher_);
 
 	ser_.Reset();
-	encoder.Encode(&pl, builder);
+	encoder.Encode(pl, builder);
 
 	return ser_.Slice();
 }
@@ -164,10 +160,10 @@ std::string_view ItemImplBase::GetCJSON() {
 	CJsonEncoder encoder(&tagsMatcher_);
 
 	ser_.Reset();
-	ser_.PutVarUint(TAG_END);
+	ser_.PutCTag(kCTagEnd);
 	int pos = ser_.Len();
 	ser_.PutUInt32(0);
-	encoder.Encode(&pl, builder);
+	encoder.Encode(pl, builder);
 
 	if (tagsMatcher_.isUpdated()) {
 		uint32_t tmOffset = ser_.Len();

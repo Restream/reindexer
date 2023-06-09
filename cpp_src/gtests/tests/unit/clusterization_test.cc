@@ -58,6 +58,36 @@ TEST_F(ClusterizationApi, LeaderElections) {
 	loop.run();
 }
 
+TEST_F(ClusterizationApi, TransactionTimeout) {
+	// Checking correct timeout processing when creating transaction on cluster without consensus
+	net::ev::dynamic_loop loop;
+	auto ports = GetDefaults();
+	loop.spawn([&loop, &ports]() noexcept {
+		constexpr size_t kClusterSize = 3;
+		constexpr size_t kNodesCountToStart = 1;
+		const std::string_view kNsSome = "some";
+
+		TestCout() << "Starting cluster with one cluster node of " << kClusterSize << "..." << std::endl;
+		auto config = Cluster::CreateClusterConfigStatic(0, kClusterSize, ports);
+		Cluster cluster(loop, 0, kNodesCountToStart, ports, 0UL, config);
+		// Nodes startup is checked during cluster initialization
+
+		TestCout() << "Attempting to create new transaction. Attempt timeout: 1 sec" << std::endl;
+		auto start = std::chrono::steady_clock::now();
+		auto db = cluster.GetNode(0)->api.reindexer->WithTimeout(std::chrono::seconds(1));
+		auto tx = db.NewTransaction(kNsSome);
+		const auto& err = tx.Status();
+		ASSERT_EQ(err.code(), errTimeout) << err;
+		auto elapsedSec = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start).count();
+		auto thresholdSec = std::chrono::seconds(5).count();
+		ASSERT_LE(elapsedSec, thresholdSec);
+
+		TestCout() << "Done" << std::endl;
+	});
+
+	loop.run();
+}
+
 TEST_F(ClusterizationApi, OnlineUpdates) {
 	// Check basic online replication in cluster
 	net::ev::dynamic_loop loop;

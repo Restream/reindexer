@@ -230,7 +230,7 @@ protected:
 	JoinedSelectors prepareJoinedSelectors(const Query &q, LocalQueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func,
 										   std::vector<QueryResultsContext> &, const RdxContext &ctx);
 	void prepareJoinResults(const Query &q, LocalQueryResults &result);
-	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns);
+	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns, const Query &mainQ);
 
 	Error insertDontUpdateSystemNS(std::string_view nsName, Item &item, const RdxContext &ctx);
 	void syncSystemNamespaces(std::string_view sysNsName, std::string_view filterNsName, const RdxContext &ctx);
@@ -265,6 +265,7 @@ protected:
 	std::vector<std::string> getNamespacesNames(const RdxContext &ctx);
 	Error renameNamespace(std::string_view srcNsName, const std::string &dstNsName, bool fromReplication = false, bool skipResync = false,
 						  const RdxContext &ctx = RdxContext());
+	[[nodiscard]] bool isSystemNamespaceName(std::string_view name) const noexcept;
 	Error readClusterConfigFile();
 	Error readShardingConfigFile();
 	void checkClusterRole(std::string_view nsName, lsn_t originLsn) const;

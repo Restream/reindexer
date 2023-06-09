@@ -163,7 +163,7 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 			if (outputShardId >= 0) {
 				dss.push_back(&dsShardId);
 			}
-			encoder.Encode(&pl, builder, dss);
+			encoder.Encode(pl, builder, dss);
 
 			return;
 		}
@@ -180,7 +180,7 @@ void LocalQueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 		dss.push_back(&dsShardId);
 	}
 
-	encoder.Encode(&pl, builder, dss);
+	encoder.Encode(pl, builder, dss);
 }
 
 joins::ItemIterator LocalQueryResults::Iterator::GetJoined() { return reindexer::joins::ItemIterator::CreateFrom(*this); }
@@ -197,13 +197,13 @@ Error LocalQueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrL
 	int startTag = 0;
 	ConstPayload pl(ctx.type_, itemRef.Value());
 	MsgPackEncoder msgpackEncoder(&ctx.tagsMatcher_);
-	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(&pl);
+	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
 	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, const_cast<TagsMatcher *>(&ctx.tagsMatcher_));
 	if (withHdrLen) {
 		auto slicePosSaver = wrser.StartSlice();
-		msgpackEncoder.Encode(&pl, msgpackBuilder);
+		msgpackEncoder.Encode(pl, msgpackBuilder);
 	} else {
-		msgpackEncoder.Encode(&pl, msgpackBuilder);
+		msgpackEncoder.Encode(pl, msgpackBuilder);
 	}
 	return errOK;
 }
@@ -222,9 +222,9 @@ Error LocalQueryResults::Iterator::GetProtobuf(WrSerializer &wrser, bool withHdr
 	ProtobufBuilder builder(&wrser, ObjType::TypePlain, ctx.schema_.get(), const_cast<TagsMatcher *>(&ctx.tagsMatcher_));
 	if (withHdrLen) {
 		auto slicePosSaver = wrser.StartSlice();
-		encoder.Encode(&pl, builder);
+		encoder.Encode(pl, builder);
 	} else {
-		encoder.Encode(&pl, builder);
+		encoder.Encode(pl, builder);
 	}
 
 	return errOK;
@@ -261,9 +261,9 @@ Error LocalQueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) 
 
 		if (withHdrLen) {
 			auto slicePosSaver = ser.StartSlice();
-			cjsonEncoder.Encode(&pl, builder);
+			cjsonEncoder.Encode(pl, builder);
 		} else {
-			cjsonEncoder.Encode(&pl, builder);
+			cjsonEncoder.Encode(pl, builder);
 		}
 	} catch (const Error &err) {
 		err_ = err;

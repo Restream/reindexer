@@ -199,8 +199,7 @@ public:
 		itemimpl_ = ItemImpl<RPCClient>(qr_.GetPayloadType(getJoinedNsID(dataIt.nsid)), qr_.GetTagsMatcher(getJoinedNsID(dataIt.nsid)),
 										nullptr, std::chrono::milliseconds());
 		itemimpl_.Unsafe(true);
-		auto err = itemimpl_.FromCJSON(dataIt.data);
-		if (!err.ok()) throw err;
+		itemimpl_.FromCJSON(dataIt.data);
 		return itemimpl_.GetConstPayload();
 	}
 	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) final {

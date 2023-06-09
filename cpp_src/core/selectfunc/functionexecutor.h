@@ -11,7 +11,7 @@ class NsContext;
 
 class FunctionExecutor {
 public:
-	explicit FunctionExecutor(NamespaceImpl& ns, h_vector<cluster::UpdateRecord, 2>& replUpdates);
+	explicit FunctionExecutor(NamespaceImpl& ns, h_vector<cluster::UpdateRecord, 2>& replUpdates) noexcept;
 	Variant Execute(SelectFuncStruct& funcData, const NsContext& ctx);
 
 private:

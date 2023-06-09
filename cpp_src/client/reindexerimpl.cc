@@ -663,7 +663,7 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, Connectio
 					WrSerializer ser;
 					std::get<1>(cd->arguments).Serialize(ser);
 					switch (std::get<1>(cd->arguments).type_) {
-						case QueryUpdate: {
+						case QueryUpdate:
 							err =
 								txConn
 									->Call({cproto::kCmdUpdateQueryTx, tr.i_.requestTimeout_, tr.i_.execTimeout_,
@@ -671,8 +671,7 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, Connectio
 										   ser.Slice(), tr.i_.txId_)
 									.Status();
 							break;
-						}
-						case QueryDelete: {
+						case QueryDelete:
 							err =
 								txConn
 									->Call({cproto::kCmdDeleteQueryTx, tr.i_.requestTimeout_, tr.i_.execTimeout_,
@@ -680,8 +679,8 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, Connectio
 										   ser.Slice(), tr.i_.txId_)
 									.Status();
 							break;
-						}
-						default:
+						case QuerySelect:
+						case QueryTruncate:
 							err = Error(errParams, "Incorrect query type in transaction modify %d", std::get<1>(cd->arguments).type_);
 					}
 				}
@@ -698,7 +697,7 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, Connectio
 				});
 				break;
 			}
-			default:
+			case DbCmdNone:
 				assert(false);
 				break;
 		}

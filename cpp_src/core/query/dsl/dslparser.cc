@@ -213,7 +213,7 @@ void parseValues(JsonValue& values, Array& kvs) {
 
 void parse(JsonValue& root, Query& q);
 
-void parseSortEntry(JsonValue& entry, Query& q) {
+void parseSortEntry(JsonValue& entry, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder) {
 	checkJsonValueType(entry, "Sort", JSON_OBJECT);
 	SortingEntry sortingEntry;
 	for (auto subelement : entry) {
@@ -231,49 +231,23 @@ void parseSortEntry(JsonValue& entry, Query& q) {
 				break;
 
 			case Sort::Values:
-				if (!q.sortingEntries_.empty()) {
+				if (!sortingEntries.empty()) {
 					throw Error(errParseJson, "Forced sort order is allowed for the first sorting entry only");
 				}
-				parseValues(v, q.forcedSortOrder_);
+				parseValues(v, forcedSortOrder);
 				break;
 		}
 	}
 	if (!sortingEntry.expression.empty()) {
-		q.sortingEntries_.push_back(std::move(sortingEntry));
+		sortingEntries.push_back(std::move(sortingEntry));
 	}
 }
 
-void parseSortEntry(JsonValue& entry, AggregateEntry& agg) {
-	checkJsonValueType(entry, "Sort", JSON_OBJECT);
-	SortingEntry sortingEntry;
-	for (auto subelement : entry) {
-		auto& v = subelement->value;
-		std::string_view name = subelement->key;
-		switch (get<Sort>(sort_map, name, "sort"sv)) {
-			case Sort::Desc:
-				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
-				sortingEntry.desc = (v.getTag() == JSON_TRUE);
-				break;
-
-			case Sort::Field:
-				checkJsonValueType(v, name, JSON_STRING);
-				sortingEntry.expression.assign(std::string(v.toString()));
-				break;
-
-			case Sort::Values:
-				throw Error(errConflict, "Fixed values not available in aggregation sort");
-		}
-	}
-	if (!sortingEntry.expression.empty()) {
-		agg.sortingEntries_.push_back(std::move(sortingEntry));
-	}
-}
-template <typename T>
-void parseSort(JsonValue& v, T& q) {
+void parseSort(JsonValue& v, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder) {
 	if (v.getTag() == JSON_ARRAY) {
-		for (auto entry : v) parseSort(entry->value, q);
+		for (auto entry : v) parseSort(entry->value, sortingEntries, forcedSortOrder);
 	} else if (v.getTag() == JSON_OBJECT) {
-		parseSortEntry(v, q);
+		parseSortEntry(v, sortingEntries, forcedSortOrder);
 	} else {
 		throw Error(errConflict, "Wrong type of field 'Sort'");
 	}
@@ -375,7 +349,8 @@ void parseFilter(JsonValue& filter, Query& q, std::vector<std::pair<size_t, Equa
 						throw Error(errLogic, "Condition ANY must have 0 values, but %d values was provided", values.size());
 					}
 					break;
-				default:
+				case CondEmpty:
+				case CondDWithin:
 					break;
 			}
 			q.entries.Append(op, QueryEntry{std::move(fields[0]), condition, std::move(values)});
@@ -452,7 +427,7 @@ void parseSingleJoinQuery(JsonValue& join, Query& query) {
 				for (auto filter : value) parseFilter(filter->value, qjoin, equalPositions, 0);
 				break;
 			case JoinRoot::Sort:
-				parseSort(value, qjoin);
+				parseSort(value, qjoin.sortingEntries_, qjoin.forcedSortOrder_);
 				break;
 			case JoinRoot::Limit:
 				checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
@@ -498,7 +473,11 @@ void parseMergeQueries(JsonValue& mergeQueries, Query& query) {
 
 void parseAggregation(JsonValue& aggregation, Query& query) {
 	checkJsonValueType(aggregation, "Aggregation", JSON_OBJECT);
-	AggregateEntry aggEntry;
+	h_vector<std::string, 1> fields;
+	AggType type = AggUnknown;
+	SortingEntries sortingEntries;
+	unsigned limit{AggregateEntry::kDefaultLimit};
+	unsigned offset{AggregateEntry::kDefaultOffset};
 	for (auto element : aggregation) {
 		auto& value = element->value;
 		std::string_view name = element->key;
@@ -507,30 +486,34 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 				checkJsonValueType(value, name, JSON_ARRAY);
 				for (auto subElem : value) {
 					if (subElem->value.getTag() != JSON_STRING) throw Error(errParseJson, "Expected string in array 'fields'");
-					aggEntry.fields_.push_back(std::string(subElem->value.toString()));
+					fields.push_back(std::string(subElem->value.toString()));
 				}
 				break;
 			case Aggregation::Type:
 				checkJsonValueType(value, name, JSON_STRING);
-				aggEntry.type_ = get<AggType>(aggregation_types, value.toString(), "aggregation type enum"sv);
-				if (!query.CanAddAggregation(aggEntry.type_)) {
+				type = get<AggType>(aggregation_types, value.toString(), "aggregation type enum"sv);
+				if (!query.CanAddAggregation(type)) {
 					throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 				}
 				break;
-			case Aggregation::Sort:
-				parseSort(value, aggEntry);
-				break;
+			case Aggregation::Sort: {
+				std::vector<Variant> forcedSortOrder;
+				parseSort(value, sortingEntries, forcedSortOrder);
+				if (!forcedSortOrder.empty()) {
+					throw Error(errConflict, "Fixed values not available in aggregation sort");
+				}
+			} break;
 			case Aggregation::Limit:
 				checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
-				aggEntry.limit_ = value.toNumber();
+				limit = value.toNumber();
 				break;
 			case Aggregation::Offset:
 				checkJsonValueType(value, name, JSON_NUMBER, JSON_DOUBLE);
-				aggEntry.offset_ = value.toNumber();
+				offset = value.toNumber();
 				break;
 		}
 	}
-	query.aggregations_.push_back(aggEntry);
+	query.aggregations_.emplace_back(type, std::move(fields), std::move(sortingEntries), limit, offset);
 }
 
 void parseEqualPositions(JsonValue& dsl, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions, size_t lastBracketPosition) {
@@ -636,7 +619,7 @@ void parse(JsonValue& root, Query& q) {
 				break;
 
 			case Root::Sort:
-				parseSort(v, q);
+				parseSort(v, q.sortingEntries_, q.forcedSortOrder_);
 				break;
 			case Root::Merged:
 				checkJsonValueType(v, name, JSON_ARRAY);

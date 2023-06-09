@@ -1,6 +1,6 @@
-
 #include "client/item.h"
 #include "client/itemimpl.h"
+#include "tools/catch_and_return.h"
 
 namespace reindexer {
 namespace client {
@@ -17,7 +17,14 @@ Item &Item::operator=(Item &&other) noexcept = default;
 Item::~Item() = default;
 
 Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) { return impl_->FromJSON(slice, endp, pkOnly); }
-Error Item::FromCJSON(std::string_view slice) { return impl_->FromCJSON(slice); }
+Error Item::FromCJSON(std::string_view slice) &noexcept {
+	try {
+		impl_->FromCJSON(slice);
+	}
+	CATCH_AND_RETURN;
+	return {};
+}
+void Item::FromCJSONImpl(std::string_view slice) & { impl_->FromCJSON(slice); }
 Error Item::FromMsgPack(std::string_view slice, size_t &offset) { return impl_->FromMsgPack(slice, offset); }
 std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }

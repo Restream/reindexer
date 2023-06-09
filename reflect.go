@@ -1,7 +1,6 @@
 package reindexer
 
 import (
-	"bytes"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -35,6 +34,7 @@ type indexOptions struct {
 	isPk        bool
 	isSparse    bool
 	rtreeType   string
+	isUuid      bool
 }
 
 func parseRxTags(field reflect.StructField) (idxName string, idxType string, expireAfter string, idxSettings []string) {
@@ -52,7 +52,7 @@ func parseRxTags(field reflect.StructField) (idxName string, idxType string, exp
 			idxOpts = tagsSlice[2]
 		}
 	}
-	idxSettings = splitOptions(idxOpts)
+	idxSettings = cjson.SplitFieldOptions(idxOpts)
 	return
 }
 
@@ -163,6 +163,12 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 			} else if fieldType, err = getFieldType(t); err != nil {
 				return err
 			}
+			if opts.isUuid {
+				if fieldType != "string" {
+					return fmt.Errorf("UUID index is not applicable with '%v' field, only with 'string'", fieldType)
+				}
+				fieldType = "uuid"
+			}
 			indexDef := makeIndexDef(reindexPath, []string{jsonPath}, idxType, fieldType, opts, collateMode, sortOrderLetters, parseExpireAfter(expireAfter))
 			if err := indexDefAppend(indexDefs, indexDef, opts.isAppenable); err != nil {
 				return err
@@ -174,39 +180,6 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 	}
 
 	return nil
-}
-
-func splitOptions(str string) []string {
-
-	words := make([]string, 0)
-
-	var word bytes.Buffer
-
-	strLen := len(str)
-
-	for i := 0; i < strLen; i++ {
-		if str[i] == '\\' && i < strLen-1 && str[i+1] == ',' {
-			word.WriteByte(str[i+1])
-			i++
-			continue
-		}
-
-		if str[i] == ',' {
-			words = append(words, word.String())
-			word.Reset()
-			continue
-		}
-
-		word.WriteByte(str[i])
-
-		if i == strLen-1 {
-			words = append(words, word.String())
-			word.Reset()
-			continue
-		}
-	}
-
-	return words
 }
 
 func parseOpts(idxSettingsBuf *[]string) indexOptions {
@@ -227,6 +200,8 @@ func parseOpts(idxSettingsBuf *[]string) indexOptions {
 			opts.isAppenable = true
 		case "linear", "quadratic", "greene", "rstar":
 			opts.rtreeType = idxSetting
+		case "uuid":
+			opts.isUuid = true
 		default:
 			newIdxSettingsBuf = append(newIdxSettingsBuf, idxSetting)
 		}

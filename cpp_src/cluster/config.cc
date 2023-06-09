@@ -633,9 +633,11 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromYAML(const YAML::Node
 
 			return sharding::Segment<Variant>{left, right};
 		}
-		default: {
+		case YAML::NodeType::Undefined:
+		case YAML::NodeType::Null:
+		case YAML::NodeType::Map:
+		default:
 			throw Error(errParams, "Incorrect YAML::NodeType for sharding key");
-		}
 	}
 }
 
@@ -669,9 +671,10 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 
 			return sharding::Segment<Variant>{std::move(left), std::move(right)};
 		}
-		default: {
+		case gason::JsonTag::JSON_OBJECT:
+		case gason::JsonTag::JSON_NULL:
+		default:
 			throw Error(errParams, "Incorrect YAML::NodeType for sharding key");
-		}
 	}
 }
 
@@ -808,9 +811,9 @@ int ShardingConfig::Key::RelaxCompare(const std::vector<sharding::Segment<Varian
 	auto lhsIt{values.cbegin()}, rhsIt{other.cbegin()};
 	auto const lhsEnd{values.cend()}, rhsEnd{other.cend()};
 	for (; lhsIt != lhsEnd && rhsIt != rhsEnd; ++lhsIt, ++rhsIt) {
-		auto res = lhsIt->left.RelaxCompare(rhsIt->left, collateOpts);
+		auto res = lhsIt->left.RelaxCompare<WithString::Yes>(rhsIt->left, collateOpts);
 		if (res != 0) return res;
-		res = lhsIt->right.RelaxCompare(rhsIt->right, collateOpts);
+		res = lhsIt->right.RelaxCompare<WithString::Yes>(rhsIt->right, collateOpts);
 		if (res != 0) return res;
 	}
 	if (lhsIt == lhsEnd) {

@@ -7,7 +7,7 @@
 #include <thread>
 
 reindexer::Error BaseFixture::Initialize() {
-	assert(db_);
+	assertrx(db_);
 	return db_->AddNamespace(nsdef_);
 }
 
@@ -35,7 +35,7 @@ void BaseFixture::Insert(State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (int i = 0; i < id_seq_->Count(); ++i) {
-			auto item = MakeItem();
+			auto item = MakeItem(state);
 			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
 
 			auto err = db_->Insert(nsdef_.name, item);
@@ -52,7 +52,7 @@ void BaseFixture::Update(benchmark::State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
 	id_seq_->Reset();
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		auto item = MakeItem();
+		auto item = MakeItem(state);
 		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
 
 		auto err = db_->Update(nsdef_.name, item);
@@ -74,9 +74,9 @@ void BaseFixture::WaitForOptimization() {
 		q.Where("name", CondEq, nsdef_.name);
 		reindexer::QueryResults res;
 		auto e = db_->Select(q, res);
-		assert(e.ok());
-		assert(res.Count() == 1);
-		assert(res.IsLocal());
+		assertrx(e.ok());
+		assertrx(res.Count() == 1);
+		assertrx(res.IsLocal());
 		auto item = res.ToLocalQr().begin().GetItem(false);
 		if (item["optimization_completed"].As<bool>() == true) {
 			break;

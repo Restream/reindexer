@@ -39,10 +39,10 @@ public:
 
 	std::string_view GetJSON();
 	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false);
-	Error FromCJSON(ItemImplBase *other);
+	void FromCJSON(ItemImplBase *other);
 
 	std::string_view GetCJSON();
-	Error FromCJSON(std::string_view slice);
+	void FromCJSON(std::string_view slice);
 
 	std::string_view GetMsgPack();
 	Error FromMsgPack(std::string_view slice, size_t &offset);
@@ -64,7 +64,7 @@ public:
 		Serializer rser(cjson);
 		return ReadBundledTmTag(rser);
 	}
-	static bool ReadBundledTmTag(Serializer &ser) { return ser.GetVarUint() == TAG_END; }
+	static bool ReadBundledTmTag(Serializer &ser) { return ser.GetCTag() == kCTagEnd; }
 
 protected:
 	virtual Error tryToUpdateTagsMatcher() = 0;

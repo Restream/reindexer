@@ -34,7 +34,7 @@ void init_resources() { CMRC_INIT(reindexer_server_resources); }
 void init_resources() {}
 #endif
 
-#ifdef WITH_GRPC
+#if defined(WITH_GRPC)
 #include "grpc/grpcexport.h"
 #endif
 
@@ -44,14 +44,10 @@ extern std::atomic<bool> rxAllowNamespaceLeak;
 
 namespace reindexer_server {
 
-using std::string;
-using std::pair;
-using std::vector;
-
 using reindexer::fs::GetDirPath;
 using reindexer::logLevelFromString;
 
-ServerImpl::ServerImpl(ServerMode mode)
+ServerImpl::ServerImpl([[maybe_unused]] ServerMode mode)
 	:
 #ifdef REINDEX_WITH_GPERFTOOLS
 	  config_(alloc_ext::TCMallocIsAvailable()),
@@ -66,7 +62,6 @@ ServerImpl::ServerImpl(ServerMode mode)
 	  mode_(mode)
 #endif	// REINDEX_WITH_ASAN
 {
-	(void)mode;
 	async_.set(loop_);
 }
 
@@ -145,7 +140,7 @@ Error ServerImpl::init() {
 #endif
 
 	coreLogLevel_ = logLevelFromString(config_.LogLevel);
-	return 0;
+	return {};
 }
 
 int ServerImpl::Start() {
@@ -217,6 +212,7 @@ int ServerImpl::run() {
 	reindexer::debug::backtrace_set_writer([](std::string_view out) {
 		auto logger = spdlog::get("server");
 		if (logger) {
+			logger->flush();  // Extra flush to avoid backtrace message drop due to logger overflow
 			logger->info("{}", out);
 			logger->flush();
 		} else {
@@ -465,7 +461,7 @@ Error ServerImpl::daemonize() {
 			exit(EXIT_SUCCESS);
 			//	break;
 	}
-	return 0;
+	return {};
 }
 #endif
 
@@ -477,7 +473,7 @@ Error ServerImpl::loggerConfigure() {
 		spdlog::set_pattern("[%L%d/%m %T.%e %t] %v");
 	});
 
-	vector<std::pair<std::string, string>> loggers = {
+	std::vector<std::pair<std::string, std::string>> loggers = {
 		{"server", config_.ServerLog}, {"core", config_.CoreLog}, {"http", config_.HttpLog}, {"rpc", config_.RpcLog}};
 
 	for (auto &logger : loggers) {
@@ -497,7 +493,7 @@ Error ServerImpl::loggerConfigure() {
 		}
 	}
 	logger_ = LoggerWrapper("server");
-	return 0;
+	return {};
 }
 
 void ServerImpl::initCoreLogger() {

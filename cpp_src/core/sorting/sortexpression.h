@@ -201,16 +201,20 @@ class SortExpression : public ExpressionTree<SortExpressionOperation, SortExpres
 public:
 	template <typename T>
 	static SortExpression Parse(std::string_view, const std::vector<T>& joinedSelectors);
-	double Calculate(IdType rowId, ConstPayload pv, const joins::NamespaceResults& results, const std::vector<JoinedSelector>& js,
-					 uint8_t proc, TagsMatcher& tagsMatcher) const {
+	[[nodiscard]] double Calculate(IdType rowId, ConstPayload pv, const joins::NamespaceResults* results,
+								   const std::vector<JoinedSelector>& js, uint8_t proc, TagsMatcher& tagsMatcher) const {
 		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher);
 	}
-	bool ByField() const;
-	bool ByJoinedField() const;
+	[[nodiscard]] bool ByField() const noexcept;
+	[[nodiscard]] bool ByJoinedField() const noexcept;
+	[[nodiscard]] SortExprFuncs::JoinedIndex& GetJoinedIndex() noexcept;
 	void PrepareIndexes(const NamespaceImpl&);
 	static void PrepareSortIndex(std::string& column, int& index, const NamespaceImpl&);
 
-	std::string Dump() const;
+	[[nodiscard]] std::string Dump() const;
+	[[nodiscard]] static VariantArray GetJoinedFieldValues(IdType rowId, const joins::NamespaceResults& joinResults,
+														   const std::vector<JoinedSelector>&, size_t nsIdx, std::string_view column,
+														   int index);
 
 private:
 	friend SortExprFuncs::JoinedIndex;
@@ -219,20 +223,18 @@ private:
 	friend SortExprFuncs::DistanceBetweenJoinedIndexes;
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	template <typename T>
-	std::string_view parse(std::string_view expr, bool* containIndexOrFunction, std::string_view fullExpr,
-						   const std::vector<T>& joinedSelectors);
+	[[nodiscard]] std::string_view parse(std::string_view expr, bool* containIndexOrFunction, std::string_view fullExpr,
+										 const std::vector<T>& joinedSelectors);
 	template <typename T, typename SkipSW>
 	void parseDistance(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view fullExpr, ArithmeticOpType,
 					   bool negative, const SkipSW& skipSpaces);
-	static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload, const joins::NamespaceResults&,
-							const std::vector<JoinedSelector>&, uint8_t proc, TagsMatcher&);
+	[[nodiscard]] static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload,
+										  const joins::NamespaceResults*, const std::vector<JoinedSelector>&, uint8_t proc, TagsMatcher&);
 
 	void openBracketBeforeLastAppended();
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);
-	static ItemImpl getJoinedItem(IdType rowId, const joins::NamespaceResults& joinResults, const std::vector<JoinedSelector>&,
-								  size_t nsIdx);
-	static VariantArray getJoinedFieldValues(IdType rowId, const joins::NamespaceResults& joinResults, const std::vector<JoinedSelector>&,
-											 size_t nsIdx, std::string_view column, int index);
+	[[nodiscard]] static const PayloadValue& getJoinedValue(IdType rowId, const joins::NamespaceResults& joinResults,
+															const std::vector<JoinedSelector>&, size_t nsIdx);
 };
 std::ostream& operator<<(std::ostream&, const SortExpression&);
 

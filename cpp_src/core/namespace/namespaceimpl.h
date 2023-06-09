@@ -17,6 +17,7 @@
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
 #include "core/querycache.h"
+#include "core/rollback.h"
 #include "core/schema.h"
 #include "core/storage/idatastorage.h"
 #include "core/storage/storagetype.h"
@@ -95,7 +96,17 @@ private:
 	lsn_t originLsn_;
 };
 
+namespace composite_substitution_helpers {
+class CompositeSearcher;
+}
+
 class NamespaceImpl {  // NOLINT(*performance.Padding) Padding does not matter for this class
+	class RollBack_insertIndex;
+	class RollBack_addIndex;
+	template <NeedRollBack needRollBack>
+	class RollBack_recreateCompositeIndexes;
+	template <NeedRollBack needRollBack>
+	class RollBack_updateItems;
 	class IndexesCacheCleaner {
 	public:
 		explicit IndexesCacheCleaner(NamespaceImpl &ns) : ns_{ns} {}
@@ -115,12 +126,12 @@ class NamespaceImpl {  // NOLINT(*performance.Padding) Padding does not matter f
 		std::bitset<64> sorts_;
 	};
 
-protected:
 	friend class NsSelecter;
 	friend class JoinedSelector;
 	friend class WALSelecter;
 	friend class NsSelectFuncInterface;
 	friend class QueryPreprocessor;
+	friend class composite_substitution_helpers::CompositeSearcher;
 	friend class SelectIteratorContainer;
 	friend class ItemComparator;
 	friend class ItemModifier;
@@ -152,7 +163,7 @@ protected:
 		const std::vector<SortType> &ids2Sorts() const noexcept override { return ids2Sorts_; }
 		std::vector<SortType> &ids2Sorts() noexcept override { return ids2Sorts_; }
 
-	protected:
+	private:
 		const NamespaceImpl &ns_;
 		const int sorted_indexes_;
 		const IdType curSortId_;
@@ -334,8 +345,10 @@ public:
 	void PutMeta(const std::string &key, std::string_view data, const RdxContext &);
 	int64_t GetSerial(const std::string &field, UpdatesContainer &replUpdates, const NsContext &ctx);
 
-	int getIndexByName(const std::string &index) const;
-	bool getIndexByName(const std::string &name, int &index) const;
+	int getIndexByName(std::string_view index) const;
+	int getIndexByNameOrJsonPath(std::string_view name) const;
+	bool getIndexByName(std::string_view name, int &index) const;
+	bool getIndexByNameOrJsonPath(std::string_view name, int &index) const;
 	PayloadType getPayloadType(const RdxContext &ctx) const;
 
 	void FillResult(LocalQueryResults &result, const IdSet &ids) const;
@@ -355,7 +368,7 @@ public:
 	void SetTagsMatcher(TagsMatcher &&tm, const RdxContext &ctx);
 	void SetDestroyFlag() noexcept { dbDestroyed_ = true; }
 
-protected:
+private:
 	struct SysRecordsVersions {
 		uint64_t idxVersion{0};
 		uint64_t tagsVersion{0};
@@ -385,18 +398,21 @@ protected:
 	void deleteItem(Item &item, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void doModifyItem(Item &item, int mode, UpdatesContainer &pendedRepl, const NsContext &ctx, IdType suggestedId = -1);
 	void updateTagsMatcherFromItem(ItemImpl *ritem, const NsContext &ctx);
-	void updateItems(const PayloadType &oldPlType, const FieldsSet &changedFields, int deltaFields);
+	template <NeedRollBack needRollBack>
+	[[nodiscard]] RollBack_updateItems<needRollBack> updateItems(const PayloadType &oldPlType, const FieldsSet &changedFields,
+																 int deltaFields);
 	void fillSparseIndex(Index &, std::string_view jsonPath);
 	void doDelete(IdType id);
 	void doTruncate(UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void optimizeIndexes(const NsContext &);
-	void insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string &realName);
+	[[nodiscard]] RollBack_insertIndex insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string &realName);
 	void addIndex(const IndexDef &indexDef, bool disableTmVersionInc, bool skipEqualityCheck = false);
 	void doAddIndex(const IndexDef &indexDef, bool skipEqualityCheck, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void addCompositeIndex(const IndexDef &indexDef);
 	bool checkIfSameIndexExists(const IndexDef &indexDef, bool discardConfig, bool *requireTtlUpdate = nullptr);
 	template <typename PathsT, typename JsonPathsContainerT>
 	void createFieldsSet(const std::string &idxName, IndexType type, const PathsT &paths, FieldsSet &fields);
+	void verifyCompositeIndex(const IndexDef &indexDef) const;
 	void verifyUpdateIndex(const IndexDef &indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
 	void updateIndex(const IndexDef &indexDef, bool disableTmVersionInc);
@@ -412,7 +428,8 @@ protected:
 	void replicateItem(IdType itemId, const NsContext &ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity,
 					   int oldTmVersion, UpdatesContainer &pendedRepl);
 
-	void recreateCompositeIndexes(int startIdx, int endIdx);
+	template <NeedRollBack needRollBack>
+	[[nodiscard]] RollBack_recreateCompositeIndexes<needRollBack> recreateCompositeIndexes(size_t startIdx, size_t endIdx);
 	NamespaceDef getDefinition() const;
 	IndexDef getIndexDefinition(const std::string &indexName) const;
 	IndexDef getIndexDefinition(size_t) const;
@@ -420,7 +437,7 @@ protected:
 	std::string getMeta(const std::string &key) const;
 	void putMeta(const std::string &key, std::string_view data, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	std::pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &);
-	int getSortedIdxCount() const;
+	int getSortedIdxCount() const noexcept;
 	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem, UpdatesContainer &replUpdates, const NsContext &ctx);
 
@@ -453,6 +470,7 @@ protected:
 
 	IndexesStorage indexes_;
 	fast_hash_map<std::string, int, nocase_hash_str, nocase_equal_str, nocase_less_str> indexesNames_;
+	fast_hash_map<int, std::vector<int>> indexesToComposites_;	// Maps index fields to corresponding composite indexes
 	// All items with data
 	Items items_;
 	std::vector<IdType> free_;
@@ -486,7 +504,6 @@ protected:
 
 	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) const;
 
-private:
 	NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &storageLock);
 
 	bool isSystem() const noexcept { return !name_.empty() && name_[0] == '#'; }

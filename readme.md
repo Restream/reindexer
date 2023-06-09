@@ -68,12 +68,13 @@ Storages are compatible between those versions, hovewer, replication configs are
     - [Get shared objects from object cache (USE WITH CAUTION)](#get-shared-objects-from-object-cache-use-with-caution)
     - [Limit size of object cache](#limit-size-of-object-cache)
     - [Geometry](#geometry)
-- [Logging, debug and profiling](#logging-debug-and-profiling)
+- [Logging, debug, profiling and tracing](#logging-debug-profiling-and-tracing)
   - [Turn on logger](#turn-on-logger)
   - [Slow actions logging](#slow-actions-logging)
   - [Debug queries](#debug-queries)
   - [Custom allocators support](#custom-allocators-support)
   - [Profiling](#profiling)
+  - [Tracing](#tracing)
 - [Integration with other program languages](#integration-with-other-program-languages)
   - [Reindexer-for-python](#reindexer-for-python)
   - [Reindexer-for-java](#reindexer-for-java)
@@ -83,6 +84,7 @@ Storages are compatible between those versions, hovewer, replication configs are
     - [.NET](#.net)
 - [Limitations and known issues](#limitations-and-known-issues)
 - [Getting help](#getting-help)
+- [References](#references]
 
 ## Features
 
@@ -421,6 +423,7 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
   - `collate_utf8` - create case-insensitive string index works with UTF8. The field type must be a string.
   - `collate_custom=<ORDER>` - create custom order string index. The field type must be a string. `<ORDER>` is sequence of letters, which defines sort order.
   - `linear`, `quadratic`, `greene` or `rstar` - specify algorithm for construction of `rtree` index (by default `rstar`). For details see [geometry subsection](#geometry).
+  - `uuid` - store this value as UUID. This is much more effective from the RAM/network consumation standpoint for UUIDs, than strings. Only `hash` and `-` index types are supported for UUIDs. Can be used with any UUID variant, except variant 0
 
 Fields with regular indexes are not nullable. Condition `is NULL` is supported only by `sparse` and `array` indexes.
 
@@ -434,7 +437,8 @@ type Actor struct {
 }
 
 type BaseItem struct {
-	ID int64 `reindex:"id,hash,pk"`
+	ID        int64  `reindex:"id,hash,pk"`
+	UUIDValue string `reindex:"uuid_value,hash,uuid"`
 }
 
 type ComplexItem struct {
@@ -448,17 +452,25 @@ type ComplexItem struct {
 
 ### Sort
 
-Reindexer can sort documents by fields (including nested and fields of joined `namespaces`) or by expressions in ascending or descending order.
+Reindexer can sort documents by fields (including nested and fields of the joined namespaces) or by expressions in ascending or descending order.
 
-Sort expressions can contain fields names (including nested and fields of joined `namespaces`) of int, float or bool type, numbers, functions rank(), abs() and ST_Distance(), parenthesis and arithmetic operations: +, - (unary and binary), \* and /.
-If field name followed by '+' they must be separated by space (to distinguish composite index name).
-Fields of joined namespaces writes in form `joined_namespace.field`.
+To sort by non-index fields all the values must be convertible to each other, i.e. either have the same types or be one of th numeric types (`bool`, `int`, `int64` or `float`).
 
-Abs() means absolute value of an argument.
+Sort expressions can contain:
+ - fields and indexes names (including nested fields and fields of the joined namespaces) of `bool`, `int`, `int64`, `float` or `string` types. All the values must be convertible to numbers ignoring leading and finishing spaces;
+ - numbers;
+ - functions `rank()`, `abs()` and `ST_Distance()`;
+ - parenthesis;
+ - arithmetic operations: `+`, `-` (unary and binary), `*` and `/`.
 
-Rank() means fulltext rank of match and is applicable only in fulltext query.
+If field name followed by `+` they must be separated by space to distinguish composite index name.
+Fields of the joined namespaces must be written like this: `joined_namespace.field`.
 
-ST_Distance() means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText('point(1 -3)')`
+`Abs()` means absolute value of an argument.
+
+`Rank()` means fulltext rank of match and is applicable only in fulltext query.
+
+`ST_Distance()` means distance between geometry points (see [geometry subsection](#geometry)). The points could be columns in current or joined namespaces or fixed point in format `ST_GeomFromText('point(1 -3)')`
 
 In SQL query sort expression must be quoted.
 
@@ -1263,7 +1275,7 @@ query1 := db.Query("items").DWithin("point_indexed", [2]float64{-1.0, 1.0}, 4.0)
 SELECT * FROM items WHERE ST_DWithin(point_non_indexed, ST_GeomFromText('point(1 -3.5)'), 5.0);
 ```
 
-## Logging, debug and profiling
+## Logging, debug,  profiling and tracing
 
 ### Turn on logger
 
@@ -1380,6 +1392,34 @@ pprof -symbolize remote http://localhost:6060/debug/pprof/profile?seconds=10
 
 Due to internal Golang's specific it's not recommended to try to get CPU and heap profiles simultaneously, because it may cause deadlock inside the profiler.
 
+### Tracing
+
+Go binding for Reindexer comes with optional support for [OpenTelemetry](https://opentelemetry.io/) integration.
+
+To enable generation of OpenTelemetry tracing spans for all exported client side calls (`OpenNamespace`, `Upsert`, etc),
+pass `reindexer.WithOpenTelemetry()` option when creating a Reindexer DB instance:
+
+```go
+db := reindexer.NewReindex("cproto://user:pass@127.0.0.1:6534/testdb", reindexer.WithOpenTelemetry())
+```
+
+All client side calls on the `db` instance will generate OpenTelemetry spans with the name of the performed
+operation and information about Reindexer DSN, namespace name (if applicable), etc.
+
+For example, a call like this on the `db` instance above:
+
+```go
+db.OpenNamespace("items", reindexer.DefaultNamespaceOptions(), Item{})
+```
+
+will generate an OpenTelemetry span with the span name of `Reindexer.OpenNamespace` and with span attributes like this:
+
+- `rx.dsn`: `cproto://user:pass@127.0.0.1:6534/testdb`
+- `rx.ns`: `items`
+
+Use [opentelemetry-go](https://opentelemetry.io/docs/instrumentation/go/getting-started/) in your client go application
+to export the information externally. For example, as a minumum, you will need to configure OpenTelemetry SDK exporter
+to expose the generated spans externally (see the `Getting Started` guide for more information).
 
 ## Integration with other program languages
 
@@ -1455,4 +1495,12 @@ You can get help in several ways:
 
 1. Join Reindexer [Telegram group](https://t.me/reindexer)
 2. Write [an issue](https://github.com/restream/reindexer/issues/new)
+
+## References
+
+Landing: https://reindexer.io/
+
+Packages repo: https://repo.reindexer.io/
+
+More documentation (RU): https://reindexer.io/reindexer-docs/
 

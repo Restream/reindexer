@@ -37,8 +37,8 @@ public:
 	FtKeyEntry(FtKeyEntry&& /*other*/) noexcept = default;
 	FtKeyEntry& operator=(FtKeyEntry&& /*other*/) noexcept = default;
 
-	IdSetPlain& Unsorted() { return impl_->Unsorted(); }
-	const IdSetPlain& Unsorted() const { return impl_->Unsorted(); }
+	IdSetPlain& Unsorted() noexcept { return impl_->Unsorted(); }
+	const IdSetPlain& Unsorted() const noexcept { return impl_->Unsorted(); }
 	IdSetRef Sorted(unsigned sortId) const { return impl_->Sorted(sortId); }
 	void UpdateSortedIds(const UpdateSortedContext& ctx) { impl_->UpdateSortedIds(ctx); }
 	void SetVDocID(int vdoc_id) noexcept { impl_->SetVDocID(vdoc_id); }

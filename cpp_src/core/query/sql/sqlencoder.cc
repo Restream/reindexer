@@ -168,24 +168,24 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 				} else {
 					needComma = true;
 				}
-				ser << AggregationResult::aggTypeToStr(a.type_) << "(";
-				for (const auto &f : a.fields_) {
-					if (&f != &*a.fields_.begin()) ser << ", ";
+				ser << AggTypeToStr(a.Type()) << "(";
+				for (const auto &f : a.Fields()) {
+					if (&f != &*a.Fields().begin()) ser << ", ";
 					ser << f;
 				}
-				for (const auto &se : a.sortingEntries_) {
+				for (const auto &se : a.Sorting()) {
 					ser << " ORDER BY " << '\'' << escapeQuotes(se.expression) << '\'' << (se.desc ? " DESC" : " ASC");
 				}
 
-				if (a.offset_ != 0 && !stripArgs) ser << " OFFSET " << a.offset_;
-				if (a.limit_ != UINT_MAX && !stripArgs) ser << " LIMIT " << a.limit_;
+				if (a.Offset() != AggregateEntry::kDefaultOffset && !stripArgs) ser << " OFFSET " << a.Offset();
+				if (a.Limit() != AggregateEntry::kDefaultLimit && !stripArgs) ser << " LIMIT " << a.Limit();
 				ser << ')';
 			}
-			if (query_.aggregations_.empty() || (query_.aggregations_.size() == 1 && query_.aggregations_[0].type_ == AggDistinct)) {
+			if (query_.aggregations_.empty() || (query_.aggregations_.size() == 1 && query_.aggregations_[0].Type() == AggDistinct)) {
 				std::string distinctIndex;
 				if (!query_.aggregations_.empty()) {
-					assertrx(query_.aggregations_[0].fields_.size() == 1);
-					distinctIndex = query_.aggregations_[0].fields_[0];
+					assertrx(query_.aggregations_[0].Fields().size() == 1);
+					distinctIndex = query_.aggregations_[0].Fields()[0];
 				}
 				if (query_.selectFilter_.empty()) {
 					if (query_.count != 0 || query_.calcTotal == ModeNoTotal) {

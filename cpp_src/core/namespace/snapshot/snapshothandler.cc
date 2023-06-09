@@ -185,7 +185,7 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 				case QueryTruncate:
 					ns_.doTruncate(pendedRepl, ctx);
 					break;
-				default:
+				case QuerySelect:
 					break;
 			}
 			break;
@@ -214,7 +214,7 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			logPrintf(LogInfo, "Changing tm's statetoken on %d: %08X->%08X", ns_.wal_.GetServer(), ns_.tagsMatcher_.stateToken(),
 					  stateToken);
 			ns_.tagsMatcher_ = std::move(tm);
-			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, false);
+			ns_.tagsMatcher_.UpdatePayloadType(ns_.payloadType_, NeedChangeTmVersion::No);
 			ns_.tagsMatcher_.setUpdated();
 			ns_.saveTagsMatcherToStorage(false);
 			break;
@@ -295,7 +295,23 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 				if (!err.ok()) throw err;
 				break;
 			}
-			default:
+			case WalReplState:
+			case WalItemUpdate:
+			case WalIndexAdd:
+			case WalIndexDrop:
+			case WalIndexUpdate:
+			case WalPutMeta:
+			case WalNamespaceAdd:
+			case WalNamespaceDrop:
+			case WalNamespaceRename:
+			case WalInitTransaction:
+			case WalCommitTransaction:
+			case WalForceSync:
+			case WalSetSchema:
+			case WalWALSync:
+			case WalTagsMatcher:
+			case WalResetLocalWal:
+			case WalShallowItem:
 				throw Error(errLogic, "Unexpected tx WAL rec type %d\n", wrec.type);
 		}
 	}

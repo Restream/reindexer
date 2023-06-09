@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "4.10.1"
+  version: "4.11.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -344,7 +344,7 @@ paths:
       - name: "with_values"
         in: query
         required: false
-        description: "Includ values in response"
+        description: "Include values in response"
         type: boolean
         default: false
       - name: "offset"
@@ -2886,6 +2886,34 @@ definitions:
         default: 15
         minimum: 0
         maximum: 100
+      typos_detailed_config:
+        type: object
+        description: "Config for more precise typos algorithm tuning"
+        properties:
+          max_typo_distance:
+            type: integer
+            description: "Maximum distance between symbols in initial and target words to perform substitution"
+            default: 0
+            minimum: -1
+            maximum: 100
+          max_symbol_permutation_distance:
+            type: integer
+            description: "Maximum distance between same symbols in initial and target words to perform substitution (to handle cases, when two symbolws were switched with each other)"
+            default: 1
+            minimum: -1
+            maximum: 100
+          max_missing_letters:
+            type: integer
+            description: "Maximum number of symbols, which may be removed from the initial term to transform it into the result word"
+            default: 2
+            minimum: -1
+            maximum: 2
+          max_extra_letters:
+            type: integer
+            description: "Maximum number of symbols, which may be added to the initial term to transform it into the result word"
+            default: 2
+            minimum: -1
+            maximum: 2
       max_rebuild_steps:
         type: integer
         description: "Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15."

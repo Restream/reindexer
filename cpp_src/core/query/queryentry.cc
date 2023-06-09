@@ -11,7 +11,7 @@ namespace reindexer {
 
 bool QueryEntry::operator==(const QueryEntry &obj) const {
 	return condition == obj.condition && index == obj.index && idxNo == obj.idxNo && distinct == obj.distinct &&
-		   values.RelaxCompare(obj.values) == 0;
+		   values.RelaxCompare<WithString::Yes>(obj.values) == 0;
 }
 
 std::string QueryEntry::Dump() const {
@@ -29,6 +29,75 @@ std::string QueryEntry::Dump() const {
 		if (severalValues) ser << ')';
 	}
 	return std::string{ser.Slice()};
+}
+
+AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1> fields, SortingEntries sort, unsigned limit, unsigned offset)
+	: type_(type), fields_(std::move(fields)), sortingEntries_{std::move(sort)}, limit_(limit), offset_(offset) {
+	switch (type_) {
+		case AggFacet:
+			if (fields_.empty()) {
+				throw Error(errQueryExec, "Empty set of fields for aggregation %s", AggTypeToStr(type_));
+			}
+			break;
+		case AggDistinct:
+		case AggMin:
+		case AggMax:
+		case AggSum:
+		case AggAvg:
+			if (fields_.size() != 1) {
+				throw Error{errQueryExec, "For aggregation %s is available exactly one field", AggTypeToStr(type_)};
+			}
+			break;
+		case AggCount:
+		case AggCountCached:
+			if (!fields_.empty()) {
+				throw Error(errQueryExec, "Not empty set of fields for aggregation %s", AggTypeToStr(type_));
+			}
+			break;
+		case AggUnknown:
+			throw Error{errQueryExec, "Unknown aggregation type"};
+	}
+	switch (type_) {
+		case AggDistinct:
+		case AggMin:
+		case AggMax:
+		case AggSum:
+		case AggAvg:
+		case AggCount:
+		case AggCountCached:
+			if (limit_ != kDefaultLimit || offset_ != kDefaultOffset) {
+				throw Error(errQueryExec, "Limit or offset are not available for aggregation %s", AggTypeToStr(type_));
+			}
+			if (!sortingEntries_.empty()) {
+				throw Error(errQueryExec, "Sort is not available for aggregation %s", AggTypeToStr(type_));
+			}
+			break;
+		case AggUnknown:
+			throw Error{errQueryExec, "Unknown aggregation type"};
+		case AggFacet:
+			break;
+	}
+}
+
+void AggregateEntry::AddSortingEntry(SortingEntry sorting) {
+	if (type_ != AggFacet) {
+		throw Error(errQueryExec, "Sort is not available for aggregation %s", AggTypeToStr(type_));
+	}
+	sortingEntries_.emplace_back(std::move(sorting));
+}
+
+void AggregateEntry::SetLimit(unsigned l) {
+	if (type_ != AggFacet) {
+		throw Error(errQueryExec, "Limit or offset are not available for aggregation %s", AggTypeToStr(type_));
+	}
+	limit_ = l;
+}
+
+void AggregateEntry::SetOffset(unsigned o) {
+	if (type_ != AggFacet) {
+		throw Error(errQueryExec, "Limit or offset are not available for aggregation %s", AggTypeToStr(type_));
+	}
+	offset_ = o;
 }
 
 BetweenFieldsQueryEntry::BetweenFieldsQueryEntry(std::string fstIdx, CondType cond, std::string sndIdx)
@@ -187,7 +256,7 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 		case CondType::CondSet:
 			for (const auto &lhs : lValues) {
 				for (const auto &rhs : rValues) {
-					if (lhs.RelaxCompare(rhs) == 0) return true;
+					if (lhs.RelaxCompare<WithString::Yes>(rhs) == 0) return true;
 				}
 			}
 			return false;
@@ -196,7 +265,7 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 			for (const auto &v : rValues) {
 				auto it = lValues.cbegin();
 				for (; it != lValues.cend(); ++it) {
-					if (it->RelaxCompare(v) == 0) break;
+					if (it->RelaxCompare<WithString::Yes>(v) == 0) break;
 				}
 				if (it == lValues.cend()) return false;
 			}
@@ -206,7 +275,7 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 			auto lit = lValues.cbegin();
 			auto rit = rValues.cbegin();
 			for (; lit != lValues.cend() && rit != rValues.cend(); ++lit, ++rit) {
-				const int res = lit->RelaxCompare(*rit);
+				const int res = lit->RelaxCompare<WithString::Yes>(*rit);
 				if (res < 0) return true;
 				if (res > 0) return false;
 			}
@@ -218,7 +287,7 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 			auto lit = lValues.cbegin();
 			auto rit = rValues.cbegin();
 			for (; lit != lValues.cend() && rit != rValues.cend(); ++lit, ++rit) {
-				const int res = lit->RelaxCompare(*rit);
+				const int res = lit->RelaxCompare<WithString::Yes>(*rit);
 				if (res > 0) return true;
 				if (res < 0) return false;
 			}
@@ -228,7 +297,7 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 		case CondType::CondRange:
 			if (rValues.size() != 2) throw Error(errParams, "For ranged query reuqired 2 arguments, but provided %d", rValues.size());
 			for (const auto &v : lValues) {
-				if (v.RelaxCompare(rValues[0]) < 0 || v.RelaxCompare(rValues[1]) > 0) return false;
+				if (v.RelaxCompare<WithString::Yes>(rValues[0]) < 0 || v.RelaxCompare<WithString::Yes>(rValues[1]) > 0) return false;
 			}
 			return true;
 		case CondType::CondLike:

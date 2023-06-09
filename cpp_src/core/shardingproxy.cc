@@ -836,7 +836,7 @@ Error ShardingProxy::executeQueryOnClient(client::Reindexer &connection, const Q
 			status = connection.Delete(q, qrClient);
 			break;
 		}
-		default:
+		case QueryTruncate:
 			std::abort();
 	}
 	return status;

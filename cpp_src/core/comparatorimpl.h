@@ -43,7 +43,7 @@ class ComparatorImpl {
 	using AllSetValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<const T *>>;
 
 public:
-	ComparatorImpl(bool distinct = false) : distS_(distinct ? new intrusive_atomic_rc_wrapper<std::unordered_set<T>> : nullptr) {}
+	ComparatorImpl(bool distinct = false) : distS_(distinct ? new ValuesSet : nullptr) {}
 
 	void SetValues(CondType cond, const VariantArray &values) {
 		if (cond == CondSet) {
@@ -54,30 +54,35 @@ public:
 		}
 
 		for (Variant key : values) {
-			if (key.Type().Is<KeyValueType::String>()) {
-				addValue(cond, T());
-			} else {
-				key.convert(type());
-				addValue(cond, static_cast<T>(key));
-			}
+			key.Type().EvaluateOneOf([](OneOf<KeyValueType::String, KeyValueType::Uuid>) {},
+									 [&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+											   KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null>) {
+										 key.convert(type());
+										 addValue(cond, static_cast<T>(key));
+									 });
 		}
 	}
 
 	inline bool Compare2(CondType cond, T lhs) {
-		T rhs = values_[0];
 		switch (cond) {
 			case CondEq:
-				return lhs == rhs;
+				assertrx_throw(!values_.empty());
+				return lhs == values_[0];
 			case CondGe:
-				return lhs >= rhs;
+				assertrx_throw(!values_.empty());
+				return lhs >= values_[0];
 			case CondLe:
-				return lhs <= rhs;
+				assertrx_throw(!values_.empty());
+				return lhs <= values_[0];
 			case CondLt:
-				return lhs < rhs;
+				assertrx_throw(!values_.empty());
+				return lhs < values_[0];
 			case CondGt:
-				return lhs > rhs;
+				assertrx_throw(!values_.empty());
+				return lhs > values_[0];
 			case CondRange:
-				return lhs >= rhs && lhs <= values_[1];
+				assertrx_throw(values_.size() == 2);
+				return lhs >= values_[0] && lhs <= values_[1];
 			case CondSet:
 				return valuesS_->find(lhs) != valuesS_->end();
 			case CondAllSet: {
@@ -91,6 +96,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 				return false;
+			case CondDWithin:
 			default:
 				abort();
 		}
@@ -116,14 +122,112 @@ public:
 
 private:
 	KeyValueType type() {
-		if (std::is_same<T, int>::value) return KeyValueType::Int{};
-		if (std::is_same<T, bool>::value) return KeyValueType::Bool{};
-		if (std::is_same<T, int64_t>::value) return KeyValueType::Int64{};
-		if (std::is_same<T, double>::value) return KeyValueType::Double{};
+		if constexpr (std::is_same_v<T, int>) return KeyValueType::Int{};
+		if constexpr (std::is_same_v<T, bool>) return KeyValueType::Bool{};
+		if constexpr (std::is_same_v<T, int64_t>) return KeyValueType::Int64{};
+		if constexpr (std::is_same_v<T, double>) return KeyValueType::Double{};
+		if constexpr (std::is_same_v<T, Uuid>) return KeyValueType::Uuid{};
 		std::abort();
 	}
 
 	void addValue(CondType cond, T value) {
+		if (cond == CondSet || cond == CondAllSet) {
+			valuesS_->emplace(value);
+		} else {
+			values_.emplace_back(value);
+		}
+	}
+};
+
+template <>
+class ComparatorImpl<Uuid> {
+	using ValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<Uuid>>;
+	using AllSetValuesSet = intrusive_atomic_rc_wrapper<std::unordered_set<const Uuid *>>;
+
+public:
+	ComparatorImpl(bool distinct = false) : distS_(distinct ? new ValuesSet : nullptr) {}
+
+	void SetValues(CondType cond, const VariantArray &values) {
+		if (cond == CondSet) {
+			valuesS_.reset(new ValuesSet{});
+		} else if (cond == CondAllSet) {
+			valuesS_.reset(new ValuesSet{});
+			allSetValuesS_.reset(new AllSetValuesSet{});
+		}
+
+		for (const Variant &key : values) {
+			key.Type().EvaluateOneOf(
+				overloaded{[&](KeyValueType::Uuid) { addValue(cond, key.As<Uuid>()); },
+						   [&](KeyValueType::String) {
+							   const auto uuid{Uuid::TryParse(key.As<p_string>())};
+							   if (uuid) {
+								   addValue(cond, *uuid);
+							   }
+						   },
+						   [](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool,
+									KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Tuple>) {}});
+		}
+	}
+
+	inline bool Compare2(CondType cond, Uuid lhs) {
+		switch (cond) {
+			case CondEq:
+				assertrx_throw(!values_.empty());
+				return lhs == values_[0];
+			case CondGe:
+				assertrx_throw(!values_.empty());
+				return lhs >= values_[0];
+			case CondLe:
+				assertrx_throw(!values_.empty());
+				return lhs <= values_[0];
+			case CondLt:
+				assertrx_throw(!values_.empty());
+				return lhs < values_[0];
+			case CondGt:
+				assertrx_throw(!values_.empty());
+				return lhs > values_[0];
+			case CondRange:
+				assertrx_throw(values_.size() >= 2);
+				return lhs >= values_[0] && lhs <= values_[1];
+			case CondSet:
+				return valuesS_->find(lhs) != valuesS_->end();
+			case CondAllSet: {
+				const auto it = valuesS_->find(lhs);
+				if (it == valuesS_->end()) return false;
+				allSetValuesS_->insert(&*it);
+				return allSetValuesS_->size() == valuesS_->size();
+			}
+			case CondAny:
+				return true;
+			case CondEmpty:
+			case CondLike:
+				return false;
+			case CondDWithin:
+			default:
+				abort();
+		}
+	}
+	bool Compare(CondType cond, Uuid lhs) {
+		bool ret = Compare2(cond, lhs);
+		if (!ret || !distS_) return ret;
+		return distS_->find(lhs) == distS_->end();
+	}
+
+	void ExcludeDistinct(Uuid value) { distS_->emplace(value); }
+	void ClearDistinct() {
+		if (distS_) distS_->clear();
+	}
+	void ClearAllSetValues() {
+		assertrx(allSetValuesS_);
+		allSetValuesS_->clear();
+	}
+
+	h_vector<Uuid, 1> values_;
+	intrusive_ptr<ValuesSet> valuesS_, distS_;
+	intrusive_ptr<AllSetValuesSet> allSetValuesS_;
+
+private:
+	void addValue(CondType cond, Uuid value) {
 		if (cond == CondSet || cond == CondAllSet) {
 			valuesS_->emplace(value);
 		} else {
@@ -182,6 +286,7 @@ public:
 			case CondLike: {
 				return matchLikePattern(std::string_view(lhs), rhs);
 			}
+			case CondDWithin:
 			default:
 				abort();
 		}
@@ -250,27 +355,33 @@ public:
 	}
 
 	bool Compare(CondType cond, const PayloadValue &leftValue, const ComparatorVars &vars) {
-		assertrx(!values_.empty() || !valuesSet_->empty());
 		assertrx(vars.fields_.size() > 0);
-		PayloadValue *rightValue(&values_[0]);
 		ConstPayload lhs(vars.payloadType_, leftValue);
 		switch (cond) {
 			case CondEq:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) == 0);
+				assertrx_throw(!values_.empty());
+				return (lhs.Compare<WithString::Yes>(values_[0], vars.fields_, vars.collateOpts_) == 0);
 			case CondGe:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) >= 0);
+				assertrx_throw(!values_.empty());
+				return (lhs.Compare<WithString::Yes>(values_[0], vars.fields_, vars.collateOpts_) >= 0);
 			case CondGt:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) > 0);
+				assertrx_throw(!values_.empty());
+				return (lhs.Compare<WithString::Yes>(values_[0], vars.fields_, vars.collateOpts_) > 0);
 			case CondLe:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) <= 0);
+				assertrx_throw(!values_.empty());
+				return (lhs.Compare<WithString::Yes>(values_[0], vars.fields_, vars.collateOpts_) <= 0);
 			case CondLt:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) < 0);
+				assertrx_throw(!values_.empty());
+				return (lhs.Compare<WithString::Yes>(values_[0], vars.fields_, vars.collateOpts_) < 0);
 			case CondRange:
-				return (lhs.Compare(*rightValue, vars.fields_, vars.collateOpts_) >= 0) &&
-					   (lhs.Compare(values_[1], vars.fields_, vars.collateOpts_) <= 0);
+				assertrx_throw(values_.size() == 2);
+				return (lhs.Compare<WithString::Yes>(values_[0], vars.fields_, vars.collateOpts_) >= 0) &&
+					   (lhs.Compare<WithString::Yes>(values_[1], vars.fields_, vars.collateOpts_) <= 0);
 			case CondSet:
+				assertrx_throw(!valuesSet_->empty());
 				return valuesSet_->find(leftValue) != valuesSet_->end();
 			case CondAllSet: {
+				assertrx_throw(!valuesSet_->empty());
 				auto it = valuesSet_->find(leftValue);
 				if (it == valuesSet_->end()) return false;
 				allSetValuesSet_->insert(&*it);
@@ -281,6 +392,7 @@ public:
 			case CondEmpty:
 			case CondLike:
 				return false;
+			case CondDWithin:
 			default:
 				abort();
 		}

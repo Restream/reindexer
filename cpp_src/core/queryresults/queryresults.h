@@ -146,6 +146,7 @@ public:
 					}
 				}
 				[[fallthrough]];
+			case Type::None:
 			default: {
 				static std::string kEmpty;
 				return kEmpty;
@@ -243,7 +244,10 @@ public:
 					return ShardingKeyType::ProxyOff;
 				case Type::Local:
 					return qr_->local_->shardID;
-				default:;
+				case Type::SingleRemote:
+				case Type::MultipleRemote:
+				case Type::Mixed:
+					break;
 			}
 			validateProxiedIterator();
 			if (qr_->curQrId_ < 0) {
@@ -274,7 +278,10 @@ public:
 				case Type::Local:
 					localIt_ = *localIt_ + delta;
 					return *this;
-				default:;
+				case Type::SingleRemote:
+				case Type::MultipleRemote:
+				case Type::Mixed:
+					break;
 			}
 
 			if (idx_ < qr_->lastSeenIdx_) {
@@ -299,7 +306,10 @@ public:
 					return Error();
 				case Type::Local:
 					return localIt_->Status();
-				default:;
+				case Type::SingleRemote:
+				case Type::MultipleRemote:
+				case Type::Mixed:
+					break;
 			}
 			if (qr_->lastSeenIdx_ != idx_) return Error(errNotValid, "Iterator is not valid, it points to already removed data");
 			if (qr_->curQrId_ < 0) return Error();
@@ -312,7 +322,10 @@ public:
 					return qr_ == other.qr_;
 				case Type::Local:
 					return qr_ == other.qr_ && localIt_ == other.localIt_;
-				default:;
+				case Type::SingleRemote:
+				case Type::MultipleRemote:
+				case Type::Mixed:
+					break;
 			}
 			return qr_ == other.qr_ && idx_ == other.idx_;
 		}
@@ -328,7 +341,10 @@ public:
 					throw Error(errLogic, "QueryResults are empty");
 				case Type::Local:
 					throw Error(errLogic, "QueryResults are local");
-				default:;
+				case Type::SingleRemote:
+				case Type::MultipleRemote:
+				case Type::Mixed:
+					break;
 			}
 			validateProxiedIterator();
 
@@ -348,7 +364,10 @@ public:
 					throw Error(errLogic, "QueryResults are empty");
 				case Type::Local:
 					return *localIt_;
-				default:;
+				case Type::SingleRemote:
+				case Type::MultipleRemote:
+				case Type::Mixed:
+					break;
 			}
 			validateProxiedIterator();
 

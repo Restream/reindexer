@@ -1,11 +1,12 @@
 #include "clusterization_api.h"
+
 #include <fstream>
 #include <thread>
+
 #include "core/cjson/jsonbuilder.h"
 #include "core/dbconfig.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
-#include "yaml-cpp/yaml.h"
 
 const std::string ClusterizationApi::kConfigNs = "#config";
 const std::chrono::seconds ClusterizationApi::kMaxServerStartTime = std::chrono::seconds(15);
@@ -28,44 +29,38 @@ void ClusterizationApi::TearDown()	// -V524
 	reindexer::fs::RmDirAll(def.baseTestsetDbPath);
 }
 
+void ClusterizationApi::Cluster::initCluster(size_t count, size_t initialServerId, const YAML::Node& clusterConf) {
+	for (size_t i = 0; i < count; ++i) {
+		YAML::Node replConf;
+		replConf["cluster_id"] = 2;
+		replConf["server_id"] = i + initialServerId;
+
+		svc_.emplace_back();
+		InitServer(i, clusterConf, replConf, initialServerId);
+
+		clients_.emplace_back();
+		clients_.back().Connect(svc_.back().Get(false)->kRPCDsn, loop_);
+	}
+}
+
+ClusterizationApi::Cluster::Cluster(net::ev::dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports,
+									size_t maxUpdatesSize, const YAML::Node& clusterConf)
+	: loop_(loop), defaults_(std::move(ports)), maxUpdatesSize_(maxUpdatesSize) {
+	initCluster(count, initialServerId, clusterConf);
+}
+
 ClusterizationApi::Cluster::Cluster(net::ev::dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports,
 									const std::vector<std::string>& nsList, std::chrono::milliseconds resyncTimeout, int maxSyncCount,
 									int syncThreadsCount, size_t maxUpdatesSize)
 	: loop_(loop), defaults_(std::move(ports)), maxUpdatesSize_(maxUpdatesSize) {
+	// Initializing cluster config as YAML node
 	if (maxSyncCount < 0) {
 		maxSyncCount = rand() % 3;
 		TestCout() << "Cluster's max_sync_count was chosen randomly: " << maxSyncCount << std::endl;
 	}
+	YAML::Node clusterConf = CreateClusterConfig(initialServerId, count, nsList, resyncTimeout, maxSyncCount, syncThreadsCount);
 
-	YAML::Node clusterConf;
-	clusterConf["app_name"] = "rx_node";
-	clusterConf["namespaces"] = nsList;
-	clusterConf["sync_threads"] = syncThreadsCount;
-	clusterConf["enable_compression"] = true;
-	clusterConf["online_updates_timeout_sec"] = 20;
-	clusterConf["sync_timeout_sec"] = 60;
-	clusterConf["syncs_per_thread"] = maxSyncCount;
-	clusterConf["retry_sync_interval_msec"] = resyncTimeout.count();
-	clusterConf["nodes"] = YAML::Node(YAML::NodeType::Sequence);
-	clusterConf["log_level"] = logLevelToString(LogTrace);
-	for (size_t i = initialServerId; i < initialServerId + count; ++i) {
-		YAML::Node node;
-		node["dsn"] = fmt::format("cproto://127.0.0.1:{}/node{}", defaults_.defaultRpcPort + i, i);
-		node["server_id"] = i;
-		clusterConf["nodes"].push_back(node);
-	}
-
-	size_t id = initialServerId;
-	for (size_t i = 0; i < count; ++i) {
-		YAML::Node replConf;
-		replConf["cluster_id"] = 2;
-		replConf["server_id"] = id;
-		svc_.emplace_back();
-		InitServer(i, clusterConf, replConf, initialServerId);
-		clients_.emplace_back();
-		clients_.back().Connect(svc_.back().Get(false)->kRPCDsn, loop_);
-		++id;
-	}
+	initCluster(count, initialServerId, clusterConf);
 }
 
 ClusterizationApi::Cluster::~Cluster() {
@@ -459,4 +454,51 @@ void ClusterizationApi::Cluster::AwaitLeaderBecomeAvailable(size_t nodeId, std::
 		std::this_thread::sleep_for(pause);
 	}
 	ASSERT_TRUE(now < awaitTime) << "Leader is not available from node " << nodeId;
+}
+
+YAML::Node ClusterizationApi::Cluster::CreateClusterConfigStatic(size_t initialServerId, size_t count, const Defaults& ports,
+																 const std::vector<std::string>& nsList,
+																 std::chrono::milliseconds resyncTimeout, int maxSyncCount,
+																 int syncThreadsCount) {
+	std::vector<size_t> nodeIds;
+	for (size_t id = initialServerId; id < initialServerId + count; ++id) {
+		nodeIds.emplace_back(id);
+	}
+
+	return CreateClusterConfigStatic(nodeIds, ports, nsList, resyncTimeout, maxSyncCount, syncThreadsCount);
+}
+
+YAML::Node ClusterizationApi::Cluster::CreateClusterConfigStatic(const std::vector<size_t>& nodeIds, const Defaults& ports,
+																 const std::vector<std::string>& nsList,
+																 std::chrono::milliseconds resyncTimeout, int maxSyncCount,
+																 int syncThreadsCount) {
+	if (maxSyncCount < 0) {
+		maxSyncCount = rand() % 3;
+		TestCout() << "Cluster's max_sync_count was chosen randomly: " << maxSyncCount << std::endl;
+	}
+	YAML::Node clusterConf;
+	clusterConf["app_name"] = "rx_node";
+	clusterConf["namespaces"] = nsList;
+	clusterConf["sync_threads"] = syncThreadsCount;
+	clusterConf["enable_compression"] = true;
+	clusterConf["online_updates_timeout_sec"] = 20;
+	clusterConf["sync_timeout_sec"] = 60;
+	clusterConf["syncs_per_thread"] = maxSyncCount;
+	clusterConf["retry_sync_interval_msec"] = resyncTimeout.count();
+	clusterConf["log_level"] = logLevelToString(LogTrace);
+	clusterConf["nodes"] = YAML::Node(YAML::NodeType::Sequence);
+	for (size_t id : nodeIds) {
+		YAML::Node node;
+		node["dsn"] = fmt::format("cproto://127.0.0.1:{}/node{}", ports.defaultRpcPort + id, id);
+		node["server_id"] = id;
+		clusterConf["nodes"].push_back(node);
+	}
+
+	return clusterConf;
+}
+
+YAML::Node ClusterizationApi::Cluster::CreateClusterConfig(size_t initialServerId, size_t count, const std::vector<std::string>& nsList,
+														   std::chrono::milliseconds resyncTimeout, int maxSyncCount,
+														   int syncThreadsCount) {
+	return Cluster::CreateClusterConfigStatic(initialServerId, count, defaults_, nsList, resyncTimeout, maxSyncCount, syncThreadsCount);
 }

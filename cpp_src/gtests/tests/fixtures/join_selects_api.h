@@ -93,7 +93,8 @@ protected:
 			item[locationid_fk] = int(rand() % locations.size());
 
 			Upsert(authors_namespace, item);
-			Commit(authors_namespace);
+			const auto err = Commit(authors_namespace);
+			ASSERT_TRUE(err.ok()) << err.what();
 
 			{
 				std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -106,7 +107,8 @@ protected:
 		bestItem[name] = "Fedor Dostoevsky";
 		bestItem[age] = 60;
 		Upsert(authors_namespace, bestItem);
-		Commit(authors_namespace);
+		const auto err = Commit(authors_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
 
 		{
 			std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -135,7 +137,8 @@ protected:
 
 			item[genreId_fk] = genresIds[rand() % genresIds.size()];
 			Upsert(books_namespace, item);
-			Commit(books_namespace);
+			const auto err = Commit(books_namespace);
+			ASSERT_TRUE(err.ok()) << err.what();
 
 			{
 				reindexer::shared_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
@@ -173,7 +176,8 @@ protected:
 		item[genreid] = id;
 		item[genrename] = name;
 		Upsert(genres_namespace, item);
-		Commit(genres_namespace);
+		const auto err = Commit(genres_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
 		genresIds.push_back(id);
 	}
 

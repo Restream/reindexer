@@ -530,6 +530,8 @@ public:
 
 	friend void swap(hopscotch_map& lhs, hopscotch_map& rhs) { lhs.swap(rhs); }
 
+	size_type allocated_mem_size() const noexcept { return m_ht.allocated_mem_size(); }
+
 private:
 	ht m_ht;
 };

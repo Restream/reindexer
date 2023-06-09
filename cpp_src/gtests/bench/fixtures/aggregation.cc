@@ -7,7 +7,7 @@ void Aggregation::Insert(State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		for (size_t i = 0; i < N; ++i) {
-			auto item = MakeItem();
+			auto item = MakeItem(state);
 			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
 
 			auto err = db_->Insert(nsdef_.name, item);
@@ -29,13 +29,13 @@ void Aggregation::RegisterAllCases() {
 }
 
 reindexer::Error Aggregation::Initialize() {
-	assert(db_);
+	assertrx(db_);
 	auto err = db_->AddNamespace(nsdef_);
 	if (!err.ok()) return err;
 	return {};
 }
 
-reindexer::Item Aggregation::MakeItem() {
+reindexer::Item Aggregation::MakeItem(benchmark::State& state) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
 	item.Unsafe();
@@ -52,7 +52,8 @@ reindexer::Item Aggregation::MakeItem() {
 	}
 	arr.End();
 	bld.End();
-	item.FromJSON(wrSer_.Slice());
+	const auto err = item.FromJSON(wrSer_.Slice());
+	if (!err.ok()) state.SkipWithError(err.what().c_str());
 	return item;
 }
 

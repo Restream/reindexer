@@ -13,7 +13,38 @@ UpdateRecord::UpdateRecord(UpdateRecord::Type _type, std::string _nsName, int _e
 	switch (type) {
 		case Type::EmptyUpdate:
 			break;
-		default:
+		case Type::None:
+		case Type::ItemUpdate:
+		case Type::ItemUpsert:
+		case Type::ItemDelete:
+		case Type::ItemInsert:
+		case Type::ItemUpdateTx:
+		case Type::ItemUpsertTx:
+		case Type::ItemDeleteTx:
+		case Type::ItemInsertTx:
+		case Type::IndexAdd:
+		case Type::IndexDrop:
+		case Type::IndexUpdate:
+		case Type::PutMeta:
+		case Type::PutMetaTx:
+		case Type::UpdateQuery:
+		case Type::DeleteQuery:
+		case Type::UpdateQueryTx:
+		case Type::DeleteQueryTx:
+		case Type::SetSchema:
+		case Type::Truncate:
+		case Type::BeginTx:
+		case Type::CommitTx:
+		case Type::AddNamespace:
+		case Type::DropNamespace:
+		case Type::CloseNamespace:
+		case Type::RenameNamespace:
+		case Type::ResyncNamespaceGeneric:
+		case Type::ResyncNamespaceLeaderInit:
+		case Type::ResyncOnUpdatesDrop:
+		case Type::NodeNetworkCheck:
+		case Type::SetTagsMatcher:
+		case Type::SetTagsMatcherTx:
 			assert(false);
 	}
 }
@@ -29,7 +60,32 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::ResyncNamespaceGeneric:
 		case Type::ResyncNamespaceLeaderInit:
 			break;
-		default:
+		case Type::None:
+		case Type::ItemUpdate:
+		case Type::ItemUpsert:
+		case Type::ItemDelete:
+		case Type::ItemInsert:
+		case Type::ItemUpdateTx:
+		case Type::ItemUpsertTx:
+		case Type::ItemDeleteTx:
+		case Type::ItemInsertTx:
+		case Type::IndexAdd:
+		case Type::IndexDrop:
+		case Type::IndexUpdate:
+		case Type::PutMeta:
+		case Type::PutMetaTx:
+		case Type::UpdateQuery:
+		case Type::DeleteQuery:
+		case Type::UpdateQueryTx:
+		case Type::DeleteQueryTx:
+		case Type::SetSchema:
+		case Type::AddNamespace:
+		case Type::RenameNamespace:
+		case Type::ResyncOnUpdatesDrop:
+		case Type::NodeNetworkCheck:
+		case Type::SetTagsMatcher:
+		case Type::SetTagsMatcherTx:
+		case Type::EmptyUpdate:
 			assert(false);
 	}
 }
@@ -49,7 +105,33 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::DeleteQueryTx:
 			data.emplace<std::unique_ptr<QueryReplicationRecord>>(new QueryReplicationRecord{std::move(_data)});
 			break;
-		default:
+		case Type::None:
+		case Type::ItemUpdate:
+		case Type::ItemUpsert:
+		case Type::ItemDelete:
+		case Type::ItemInsert:
+		case Type::ItemUpdateTx:
+		case Type::ItemUpsertTx:
+		case Type::ItemDeleteTx:
+		case Type::ItemInsertTx:
+		case Type::IndexAdd:
+		case Type::IndexDrop:
+		case Type::IndexUpdate:
+		case Type::PutMeta:
+		case Type::PutMetaTx:
+		case Type::Truncate:
+		case Type::BeginTx:
+		case Type::CommitTx:
+		case Type::AddNamespace:
+		case Type::DropNamespace:
+		case Type::CloseNamespace:
+		case Type::ResyncNamespaceGeneric:
+		case Type::ResyncNamespaceLeaderInit:
+		case Type::ResyncOnUpdatesDrop:
+		case Type::NodeNetworkCheck:
+		case Type::SetTagsMatcher:
+		case Type::SetTagsMatcherTx:
+		case Type::EmptyUpdate:
 			assert(false);
 	}
 }
@@ -68,7 +150,31 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 			data.emplace<std::unique_ptr<ItemReplicationRecord>>(new ItemReplicationRecord{std::move(_data)});
 			break;
 		}
-		default:
+		case Type::None:
+		case Type::IndexAdd:
+		case Type::IndexDrop:
+		case Type::IndexUpdate:
+		case Type::PutMeta:
+		case Type::PutMetaTx:
+		case Type::UpdateQuery:
+		case Type::DeleteQuery:
+		case Type::UpdateQueryTx:
+		case Type::DeleteQueryTx:
+		case Type::SetSchema:
+		case Type::Truncate:
+		case Type::BeginTx:
+		case Type::CommitTx:
+		case Type::AddNamespace:
+		case Type::DropNamespace:
+		case Type::CloseNamespace:
+		case Type::RenameNamespace:
+		case Type::ResyncNamespaceGeneric:
+		case Type::ResyncNamespaceLeaderInit:
+		case Type::ResyncOnUpdatesDrop:
+		case Type::NodeNetworkCheck:
+		case Type::SetTagsMatcher:
+		case Type::SetTagsMatcherTx:
+		case Type::EmptyUpdate:
 			assert(false);
 	}
 }
@@ -88,7 +194,37 @@ UpdateRecord::UpdateRecord(UpdateRecord::Type _type, std::string _nsName, lsn_t 
 				new TagsMatcherReplicationRecord{std::move(tm), wser.Slice().size() * 4});
 			break;
 		}
-		default:
+		case Type::None:
+		case Type::ItemUpdate:
+		case Type::ItemUpsert:
+		case Type::ItemDelete:
+		case Type::ItemInsert:
+		case Type::ItemUpdateTx:
+		case Type::ItemUpsertTx:
+		case Type::ItemDeleteTx:
+		case Type::ItemInsertTx:
+		case Type::IndexAdd:
+		case Type::IndexDrop:
+		case Type::IndexUpdate:
+		case Type::PutMeta:
+		case Type::PutMetaTx:
+		case Type::UpdateQuery:
+		case Type::DeleteQuery:
+		case Type::UpdateQueryTx:
+		case Type::DeleteQueryTx:
+		case Type::SetSchema:
+		case Type::Truncate:
+		case Type::BeginTx:
+		case Type::CommitTx:
+		case Type::AddNamespace:
+		case Type::DropNamespace:
+		case Type::CloseNamespace:
+		case Type::RenameNamespace:
+		case Type::ResyncNamespaceGeneric:
+		case Type::ResyncNamespaceLeaderInit:
+		case Type::ResyncOnUpdatesDrop:
+		case Type::NodeNetworkCheck:
+		case Type::EmptyUpdate:
 			assert(false);
 	}
 }
@@ -104,7 +240,36 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::IndexDrop:
 		case Type::IndexUpdate:
 			break;
-		default:
+		case Type::None:
+		case Type::ItemUpdate:
+		case Type::ItemUpsert:
+		case Type::ItemDelete:
+		case Type::ItemInsert:
+		case Type::ItemUpdateTx:
+		case Type::ItemUpsertTx:
+		case Type::ItemDeleteTx:
+		case Type::ItemInsertTx:
+		case Type::PutMeta:
+		case Type::PutMetaTx:
+		case Type::UpdateQuery:
+		case Type::DeleteQuery:
+		case Type::UpdateQueryTx:
+		case Type::DeleteQueryTx:
+		case Type::SetSchema:
+		case Type::Truncate:
+		case Type::BeginTx:
+		case Type::CommitTx:
+		case Type::AddNamespace:
+		case Type::DropNamespace:
+		case Type::CloseNamespace:
+		case Type::RenameNamespace:
+		case Type::ResyncNamespaceGeneric:
+		case Type::ResyncNamespaceLeaderInit:
+		case Type::ResyncOnUpdatesDrop:
+		case Type::NodeNetworkCheck:
+		case Type::SetTagsMatcher:
+		case Type::SetTagsMatcherTx:
+		case Type::EmptyUpdate:
 			assert(false);
 	}
 }
@@ -115,7 +280,38 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _nsVersion, in
 		case Type::AddNamespace:
 			data.emplace<std::unique_ptr<AddNamespaceReplicationRecord>>(new AddNamespaceReplicationRecord{std::move(_def), _stateToken});
 			break;
-		default:
+		case Type::IndexAdd:
+		case Type::IndexDrop:
+		case Type::IndexUpdate:
+		case Type::None:
+		case Type::ItemUpdate:
+		case Type::ItemUpsert:
+		case Type::ItemDelete:
+		case Type::ItemInsert:
+		case Type::ItemUpdateTx:
+		case Type::ItemUpsertTx:
+		case Type::ItemDeleteTx:
+		case Type::ItemInsertTx:
+		case Type::PutMeta:
+		case Type::PutMetaTx:
+		case Type::UpdateQuery:
+		case Type::DeleteQuery:
+		case Type::UpdateQueryTx:
+		case Type::DeleteQueryTx:
+		case Type::SetSchema:
+		case Type::Truncate:
+		case Type::BeginTx:
+		case Type::CommitTx:
+		case Type::DropNamespace:
+		case Type::CloseNamespace:
+		case Type::RenameNamespace:
+		case Type::ResyncNamespaceGeneric:
+		case Type::ResyncNamespaceLeaderInit:
+		case Type::ResyncOnUpdatesDrop:
+		case Type::NodeNetworkCheck:
+		case Type::SetTagsMatcher:
+		case Type::SetTagsMatcherTx:
+		case Type::EmptyUpdate:
 			assert(false);
 	}
 }
@@ -128,7 +324,37 @@ UpdateRecord::UpdateRecord(UpdateRecord::Type _type, std::string _nsName, lsn_t 
 		case Type::PutMetaTx:
 			data.emplace<std::unique_ptr<MetaReplicationRecord>>(new MetaReplicationRecord{std::move(_k), std::move(_v)});
 			break;
-		default:
+		case Type::IndexAdd:
+		case Type::IndexDrop:
+		case Type::IndexUpdate:
+		case Type::None:
+		case Type::ItemUpdate:
+		case Type::ItemUpsert:
+		case Type::ItemDelete:
+		case Type::ItemInsert:
+		case Type::ItemUpdateTx:
+		case Type::ItemUpsertTx:
+		case Type::ItemDeleteTx:
+		case Type::ItemInsertTx:
+		case Type::UpdateQuery:
+		case Type::DeleteQuery:
+		case Type::UpdateQueryTx:
+		case Type::DeleteQueryTx:
+		case Type::SetSchema:
+		case Type::Truncate:
+		case Type::BeginTx:
+		case Type::CommitTx:
+		case Type::AddNamespace:
+		case Type::DropNamespace:
+		case Type::CloseNamespace:
+		case Type::RenameNamespace:
+		case Type::ResyncNamespaceGeneric:
+		case Type::ResyncNamespaceLeaderInit:
+		case Type::ResyncOnUpdatesDrop:
+		case Type::NodeNetworkCheck:
+		case Type::SetTagsMatcher:
+		case Type::SetTagsMatcherTx:
+		case Type::EmptyUpdate:
 			assert(false);
 	}
 }
@@ -177,6 +403,7 @@ size_t UpdateRecord::DataSize() const noexcept {
 		case Type::SetTagsMatcher:
 		case Type::SetTagsMatcherTx:
 			return std::get<std::unique_ptr<TagsMatcherReplicationRecord>>(data)->Size();
+		case Type::None:
 		default:
 			std::abort();
 	}

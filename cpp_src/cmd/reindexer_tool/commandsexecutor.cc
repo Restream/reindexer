@@ -349,7 +349,7 @@ std::string CommandsExecutor<DBInterface>::getCurrentDsn(bool withPath) const {
 }
 
 template <typename DBInterface>
-Error CommandsExecutor<DBInterface>::queryResultsToJson(ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery,
+Error CommandsExecutor<DBInterface>::queryResultsToJson(std::ostream& o, const typename DBInterface::QueryResultsT& r, bool isWALQuery,
 														bool fstream) {
 	if (cancelCtx_.IsCancelled()) return errOK;
 	WrSerializer ser;
@@ -362,6 +362,7 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(ostream& o, const typena
 	}
 	bool prettyPrint = variables_[kVariableOutput] == kOutputModePretty;
 	for (auto it : r) {
+		if (auto err = it.Status(); !err.ok()) return err;
 		if (cancelCtx_.IsCancelled()) break;
 		if (isWALQuery) {
 			ser << '#';
@@ -373,11 +374,15 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(ostream& o, const typena
 		}
 		if (isWALQuery && it.IsRaw()) {
 			reindexer::WALRecord rec(it.GetRaw());
-			rec.Dump(ser, [this, &r](std::string_view cjson) {
-				auto item = db().NewItem(r.GetNamespaces()[0]);
-				item.FromCJSON(cjson);
-				return std::string(item.GetJSON());
-			});
+			try {
+				rec.Dump(ser, [this, &r](std::string_view cjson) {
+					auto item = db().NewItem(r.GetNamespaces()[0]);
+					item.FromCJSONImpl(cjson);
+					return std::string(item.GetJSON());
+				});
+			} catch (Error& err) {
+				return std::move(err);
+			}
 		} else {
 			if (isWALQuery) ser << "WalItemUpdate ";
 
@@ -682,9 +687,16 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) {
 						}
 						output_() << "Returned " << agg.distincts.size() << " values" << std::endl;
 						break;
-					default:
+					case AggSum:
+					case AggAvg:
+					case AggMin:
+					case AggMax:
+					case AggCount:
+					case AggCountCached:
+					case AggUnknown:
 						assertrx(agg.fields.size() == 1);
-						output_() << agg.aggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.GetValueOrZero() << std::endl;
+						output_() << reindexer::AggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.GetValueOrZero()
+								  << std::endl;
 				}
 			}
 		}
@@ -877,7 +889,7 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 		if (!err.ok()) return err;
 
 		for (auto it : itemResults) {
-			if (!it.Status().ok()) return it.Status();
+			if (auto err = it.Status(); !err.ok()) return err;
 			if (cancelCtx_.IsCancelled()) {
 				return Error(errCanceled, "Canceled");
 			}

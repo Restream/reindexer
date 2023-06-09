@@ -16,21 +16,19 @@ size_t FtCtx::Size() const noexcept { return data_->proc_.size(); }
 
 bool FtCtx::NeedArea() const noexcept { return data_->need_area_; }
 
-
 bool FtCtx::PrepareAreas(const RHashMap<std::string, int> &fields, const std::string &name) {
 	if (!fields.empty()) data_->is_composite_ = true;
 
 	if (data_->is_composite_) {
 		for (auto &field : fields) {
-			data_->need_area_ = CheckFunction(field.first, {SelectFuncStruct::SelectFuncStruct::kSelectFuncSnippetN,
-															SelectFuncStruct::SelectFuncStruct::kSelectFuncSnippet,
-															SelectFuncStruct::SelectFuncStruct::kSelectFuncHighlight});
+			data_->need_area_ =
+				CheckFunction(field.first, {SelectFuncStruct::SelectFuncType::Snippet, SelectFuncStruct::SelectFuncType::SnippetN,
+											SelectFuncStruct::SelectFuncType::Highlight});
 			if (data_->need_area_) return true;
 		}
 	}
-	data_->need_area_ = CheckFunction(
-		name, {SelectFuncStruct::SelectFuncStruct::kSelectFuncSnippet, SelectFuncStruct::SelectFuncStruct::kSelectFuncSnippetN,
-			   SelectFuncStruct::SelectFuncStruct::kSelectFuncHighlight});
+	data_->need_area_ = CheckFunction(name, {SelectFuncStruct::SelectFuncType::Snippet, SelectFuncStruct::SelectFuncType::SnippetN,
+											 SelectFuncStruct::SelectFuncType::Highlight});
 	return data_->need_area_;
 }
 void FtCtx::SetData(Data::Ptr data) { data_ = std::move(data); }

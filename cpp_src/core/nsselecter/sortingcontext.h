@@ -10,21 +10,36 @@ class Index;
 struct SortingEntry;
 
 struct SortingContext {
-	struct Entry {
-		enum { NoExpression = -1 };
+	struct FieldEntry {
 		Index *index = nullptr;
-		const SortingEntry *data = nullptr;
+		const SortingEntry &data;
 		const CollateOpts *opts = nullptr;
-		int expression = NoExpression;
 	};
+	struct JoinedFieldEntry {
+		JoinedFieldEntry(const SortingEntry &d, unsigned nsI, std::string &&f, int i)
+			: data(d), nsIdx(nsI), index(i), field(std::move(f)) {}
+		JoinedFieldEntry(const JoinedFieldEntry &) = delete;
+		JoinedFieldEntry(JoinedFieldEntry &&) = default;
+		JoinedFieldEntry &operator=(const JoinedFieldEntry &) = delete;
 
-	int sortId() const;
-	Index *sortIndex() const;
-	const Index *sortIndexIfOrdered() const;
-	bool isOptimizationEnabled() const;
-	bool isIndexOrdered() const;
-	const Entry *getFirstColumnEntry() const;
-	void resetOptimization();
+		const SortingEntry &data;
+		unsigned nsIdx;
+		int index;	// = IndexValueType::NotSet;
+		std::string field;
+	};
+	struct ExpressionEntry {
+		const SortingEntry &data;
+		size_t expression;
+	};
+	using Entry = std::variant<FieldEntry, JoinedFieldEntry, ExpressionEntry>;
+
+	[[nodiscard]] int sortId() const noexcept;
+	[[nodiscard]] Index *sortIndex() const noexcept;
+	[[nodiscard]] const Index *sortIndexIfOrdered() const noexcept;
+	[[nodiscard]] bool isOptimizationEnabled() const noexcept;
+	[[nodiscard]] bool isIndexOrdered() const noexcept;
+	[[nodiscard]] const Entry &getFirstColumnEntry() const noexcept;
+	void resetOptimization() noexcept;
 
 	bool enableSortOrders = false;
 	h_vector<Entry, 1> entries;
@@ -35,8 +50,8 @@ struct SortingContext {
 };
 
 struct SortingOptions {
-	SortingOptions(const SortingContext &sortingContext);
-	bool postLoopSortingRequired() const;
+	SortingOptions(const SortingContext &sortingContext) noexcept;
+	[[nodiscard]] bool postLoopSortingRequired() const noexcept;
 
 	bool byBtreeIndex = false;
 	bool usingGeneralAlgorithm = true;

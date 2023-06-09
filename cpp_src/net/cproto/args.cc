@@ -38,7 +38,7 @@ void Args::Dump(WrSerializer &wrser) const {
 				}
 			},
 			[&](KeyValueType::Int) { wrser << int(arg); }, [&](KeyValueType::Bool) { wrser << bool(arg); },
-			[&](KeyValueType::Int64) { wrser << int64_t(arg); },
+			[&](KeyValueType::Int64) { wrser << int64_t(arg); }, [&](KeyValueType::Uuid) { wrser << Uuid{arg}; },
 			[&](OneOf<KeyValueType::Double, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
 				wrser << "??";
 			});

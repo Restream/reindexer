@@ -221,11 +221,10 @@ Error RPCClient::modifyItemFormat(std::string_view nsName, Item& item, RPCDataFo
 
 	std::string_view data;
 	switch (format) {
-		case RPCDataFormat::MsgPack: {
+		case RPCDataFormat::MsgPack:
 			data = item.GetMsgPack();
 			break;
-		}
-		default:
+		case RPCDataFormat::CJSON:
 			return Error(errParams, "Unsupported format: %d", int(format));
 	}
 	auto ret = conn_.Call(mkCommand(cproto::kCmdModifyItem, netTimeout, &ctx), nsName, int(format), data, mode, ser.Slice(),

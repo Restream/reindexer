@@ -30,7 +30,11 @@ struct FtFastConfig : public BaseFTConfig {
 	double minRelevancy = 0.05;
 
 	int maxTypos = 2;
+	int maxExtraLetters = 2;
+	int maxMissingLetters = 2;
 	int maxTypoLen = 15;
+	int maxTypoDistance = 0;
+	int maxSymbolPermutationDistance = 1;
 
 	int maxRebuildSteps = 50;
 	int maxStepSize = 4000;
@@ -38,10 +42,23 @@ struct FtFastConfig : public BaseFTConfig {
 	double summationRanksByFieldsRatio = 0.0;
 	int maxAreasInDoc = 5;
 	int maxTotalAreasToCache = -1;
-	h_vector<FtFastFieldConfig, 8> fieldsCfg;
+	RVector<FtFastFieldConfig, 8> fieldsCfg;
 	enum class Optimization { CPU, Memory } optimization = Optimization::Memory;
 	bool enablePreselectBeforeFt = false;
 	int MaxTyposInWord() const noexcept { return (maxTypos / 2) + (maxTypos % 2); }
+	unsigned MaxExtraLetters() const noexcept { return maxExtraLetters >= 0 ? unsigned(maxExtraLetters) : std::numeric_limits<int>::max(); }
+	unsigned MaxMissingLetters() const noexcept {
+		return maxMissingLetters >= 0 ? unsigned(maxMissingLetters) : std::numeric_limits<int>::max();
+	}
+	std::pair<unsigned, bool> MaxSymbolPermutationDistance() const noexcept {
+		if (maxSymbolPermutationDistance < 0) {
+			return std::make_pair(0u, false);
+		}
+		return std::make_pair(unsigned(maxSymbolPermutationDistance), true);
+	}
+	std::pair<unsigned, bool> MaxTypoDistance() const noexcept {
+		return maxTypoDistance >= 0 ? std::make_pair(unsigned(maxTypoDistance), true) : std::make_pair(0u, false);
+	}
 };
 
 }  // namespace reindexer

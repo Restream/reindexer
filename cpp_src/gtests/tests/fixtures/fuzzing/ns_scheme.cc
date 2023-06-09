@@ -7,8 +7,8 @@ namespace fuzzing {
 void NsScheme::NewItem(reindexer::WrSerializer& ser, RandomGenerator& rnd) {
 	ser.Reset();
 	if (rnd.RndErr()) {
-		enum Err : uint8_t { Zero, Random };
-		switch (rnd.RndWhich<Err, 1 /*, 1*/>()) {  // TODO
+		enum Err : uint8_t { Zero, Random, END = Random };
+		switch (rnd.RndWhich<Err, 1, 1>()) {
 			case Zero:
 				return;
 			case Random: {
@@ -19,7 +19,7 @@ void NsScheme::NewItem(reindexer::WrSerializer& ser, RandomGenerator& rnd) {
 				}
 			} break;
 			default:
-				assert(0);
+				assertrx(0);
 		}
 	}
 	reindexer::JsonBuilder builder{ser};
@@ -43,6 +43,9 @@ void NsScheme::rndValueToJson(reindexer::JsonBuilder& builder, FieldType ft, std
 		case FieldType::String:
 			builder.Put(name, rnd.RndStringValue());
 			break;
+		case FieldType::Uuid:
+			builder.Put(name, rnd.RndStrUuidValue());
+			break;
 		case FieldType::Point:
 			builder.Array(name, {rnd.RndDoubleValue(), rnd.RndDoubleValue()});
 			break;
@@ -54,7 +57,7 @@ void NsScheme::rndValueToJson(reindexer::JsonBuilder& builder, FieldType ft, std
 			toJson(obj, children, rnd);
 		} break;
 		default:
-			assert(0);
+			assertrx(0);
 	}
 }
 

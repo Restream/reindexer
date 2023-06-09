@@ -1,4 +1,3 @@
-
 #include "activitylog.h"
 
 #ifdef RX_LOGACTIVITY

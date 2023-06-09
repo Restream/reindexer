@@ -107,7 +107,7 @@ type connection interface {
 	curError() error
 	lastReadTime() time.Time
 	finalize() error
-	getConn() net.Conn
+	getConnection() net.Conn
 	getSeqs() chan uint32
 	getRequestTimeout() uint32
 }
@@ -682,7 +682,7 @@ func (c *connectionImpl) finalize() error {
 	return nil
 }
 
-func (c *connectionImpl) getConn() net.Conn {
+func (c *connectionImpl) getConnection() net.Conn {
 	return c.conn
 }
 

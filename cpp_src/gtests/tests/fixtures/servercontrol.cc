@@ -67,6 +67,7 @@ ServerControl& ServerControl::operator=(ServerControl&& rhs) noexcept {
 }
 
 AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType type) {
+	SCOPED_TRACE(fmt::format("Loading server config from: {}", (type == ConfigType::File) ? "File" : "Namespace"));
 	cluster::AsyncReplConfigData asyncReplConf;
 	ReplicationConfigData replConf;
 	switch (type) {
@@ -107,7 +108,7 @@ AsyncReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType 
 						EXPECT_TRUE(err.ok()) << err.what();
 					}
 				} catch (const Error&) {
-					assert(false);
+					assertrx(false);
 				}
 			}
 			break;
@@ -258,7 +259,7 @@ void ServerControl::Interface::Init() {
 			if (res != EXIT_SUCCESS) {
 				std::cerr << "Exit code: " << res << std::endl;
 			}
-			assert(res == EXIT_SUCCESS);
+			assertrx(res == EXIT_SUCCESS);
 		}));
 		while (!srv.IsRunning() || !srv.IsReady()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -419,7 +420,7 @@ ServerControl::Interface::Ptr ServerControl::Get(bool wait) {
 			counter++;
 			// we have only 10sec timeout to restart server!!!!
 			EXPECT_TRUE(counter / 1000 < kMaxServerStartTimeSec);
-			assert(counter / 1000 < kMaxServerStartTimeSec);
+			assertrx(counter / 1000 < kMaxServerStartTimeSec);
 
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}

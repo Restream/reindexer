@@ -11,7 +11,8 @@ Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &val
 	  cmpInt64(distinct),
 	  cmpDouble(distinct),
 	  cmpString(distinct),
-	  cmpGeom(distinct) {
+	  cmpGeom(distinct),
+	  cmpUuid(distinct) {
 	if (type.Is<KeyValueType::Composite>()) assertrx(fields_.size() > 0);
 	if (cond_ == CondEq && values.size() != 1) cond_ = CondSet;
 	if (cond_ == CondAllSet && values.size() == 1) cond_ = CondEq;
@@ -32,6 +33,7 @@ void Comparator::setValues(const VariantArray &values) {
 		cmpInt64.SetValues(cond_, values);
 		cmpDouble.SetValues(cond_, values);
 		cmpString.SetValues(cond_, values, collateOpts_);
+		cmpUuid.SetValues(cond_, values);
 	} else {
 		type_.EvaluateOneOf([&](KeyValueType::Bool) { cmpBool.SetValues(cond_, values); },
 							[&](KeyValueType::Int) { cmpInt.SetValues(cond_, values); },
@@ -39,6 +41,7 @@ void Comparator::setValues(const VariantArray &values) {
 							[&](KeyValueType::Double) { cmpDouble.SetValues(cond_, values); },
 							[&](KeyValueType::String) { cmpString.SetValues(cond_, values, collateOpts_); },
 							[&](KeyValueType::Composite) { cmpComposite.SetValues(cond_, values, *this); },
+							[&](KeyValueType::Uuid) { cmpUuid.SetValues(cond_, values); },
 							[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
 								assertrx(0);
 								abort();
@@ -95,7 +98,16 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 			case CondAny:
 				if (arr->len == 0) return false;
 				break;
-			default:
+			case CondEq:
+			case CondLt:
+			case CondLe:
+			case CondGt:
+			case CondGe:
+			case CondRange:
+			case CondSet:
+			case CondAllSet:
+			case CondLike:
+			case CondDWithin:
 				break;
 		}
 
@@ -126,7 +138,14 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 			case CondAny:
 				if (rhs.empty() || rhs[0].Type().Is<KeyValueType::Null>()) return false;
 				break;
-			default:
+			case CondEq:
+			case CondLt:
+			case CondLe:
+			case CondGt:
+			case CondGe:
+			case CondRange:
+			case CondSet:
+			case CondLike:
 				break;
 		}
 		for (const Variant &kr : rhs) {

@@ -15,6 +15,7 @@
 #include <stack>
 #include <stdexcept>
 #include <vector>
+#include "tools/assertrx.h"
 
 namespace YAML {
 struct FmtScope {
@@ -171,7 +172,7 @@ private:
 			}
 
 			// can't get here
-			assert(false);
+			assertrx(false);
 			return EmitterNodeType::NoType;
 		}
 	};
@@ -197,7 +198,7 @@ void EmitterState::_Set(Setting<T>& fmt, T value, FmtScope::value scope) {
 			// it restores to the value here, and not the previous one
 			break;
 		default:
-			assert(false);
+			assertrx(false);
 	}
 }
 }  // namespace YAML

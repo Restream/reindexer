@@ -98,7 +98,31 @@ Emitter& Emitter::SetLocalValue(EMITTER_MANIP value) {
 		case Newline:
 			EmitNewline();
 			break;
-		default:
+		case Auto:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case Flow:
+		case Block:
+		case LongKey:
 			m_pState->SetLocalValue(value);
 			break;
 	}
@@ -246,7 +270,7 @@ void Emitter::PrepareNode(EmitterNodeType::value child) {
 			break;
 		case EmitterNodeType::Property:
 		case EmitterNodeType::Scalar:
-			assert(false);
+			assertrx(false);
 			break;
 	}
 }
@@ -297,7 +321,7 @@ void Emitter::FlowSeqPrepareNode(EmitterNodeType::value child) {
 			break;
 		case EmitterNodeType::BlockSeq:
 		case EmitterNodeType::BlockMap:
-			assert(false);
+			assertrx(false);
 			break;
 	}
 }
@@ -373,7 +397,7 @@ void Emitter::FlowMapPrepareLongKey(EmitterNodeType::value child) {
 			break;
 		case EmitterNodeType::BlockSeq:
 		case EmitterNodeType::BlockMap:
-			assert(false);
+			assertrx(false);
 			break;
 	}
 }
@@ -398,7 +422,7 @@ void Emitter::FlowMapPrepareLongKeyValue(EmitterNodeType::value child) {
 			break;
 		case EmitterNodeType::BlockSeq:
 		case EmitterNodeType::BlockMap:
-			assert(false);
+			assertrx(false);
 			break;
 	}
 }
@@ -426,7 +450,7 @@ void Emitter::FlowMapPrepareSimpleKey(EmitterNodeType::value child) {
 			break;
 		case EmitterNodeType::BlockSeq:
 		case EmitterNodeType::BlockMap:
-			assert(false);
+			assertrx(false);
 			break;
 	}
 }
@@ -454,7 +478,7 @@ void Emitter::FlowMapPrepareSimpleKeyValue(EmitterNodeType::value child) {
 			break;
 		case EmitterNodeType::BlockSeq:
 		case EmitterNodeType::BlockMap:
-			assert(false);
+			assertrx(false);
 			break;
 	}
 }
@@ -612,8 +636,39 @@ void Emitter::PrepareIntegralStream(std::stringstream& stream) const {
 			stream << "0";
 			stream << std::oct;
 			break;
-		default:
-			assert(false);
+		case Auto:
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
+			assertrx(false);
 	}
 }
 
@@ -628,9 +683,41 @@ StringEscaping::value GetStringEscapingStyle(const EMITTER_MANIP emitterManip) {
 			return StringEscaping::NonAscii;
 		case EscapeAsJson:
 			return StringEscaping::JSON;
+		case Auto:
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 		default:
 			return StringEscaping::None;
-			break;
 	}
 }
 
@@ -682,7 +769,38 @@ const char* Emitter::ComputeFullBoolName(bool b) const {
 					return b ? "Yes" : "No";
 				case LowerCase:
 					return b ? "yes" : "no";
-				default:
+				case Auto:
+				case TagByKind:
+				case Newline:
+				case EmitNonAscii:
+				case EscapeNonAscii:
+				case EscapeAsJson:
+				case SingleQuoted:
+				case DoubleQuoted:
+				case Literal:
+				case LowerNull:
+				case UpperNull:
+				case CamelNull:
+				case TildeNull:
+				case YesNoBool:
+				case TrueFalseBool:
+				case OnOffBool:
+				case LongBool:
+				case ShortBool:
+				case Dec:
+				case Hex:
+				case Oct:
+				case BeginDoc:
+				case EndDoc:
+				case BeginSeq:
+				case EndSeq:
+				case Flow:
+				case Block:
+				case BeginMap:
+				case EndMap:
+				case Key:
+				case Value:
+				case LongKey:
 					break;
 			}
 			break;
@@ -694,7 +812,38 @@ const char* Emitter::ComputeFullBoolName(bool b) const {
 					return b ? "On" : "Off";
 				case LowerCase:
 					return b ? "on" : "off";
-				default:
+				case Auto:
+				case TagByKind:
+				case Newline:
+				case EmitNonAscii:
+				case EscapeNonAscii:
+				case EscapeAsJson:
+				case SingleQuoted:
+				case DoubleQuoted:
+				case Literal:
+				case LowerNull:
+				case UpperNull:
+				case CamelNull:
+				case TildeNull:
+				case YesNoBool:
+				case TrueFalseBool:
+				case OnOffBool:
+				case LongBool:
+				case ShortBool:
+				case Dec:
+				case Hex:
+				case Oct:
+				case BeginDoc:
+				case EndDoc:
+				case BeginSeq:
+				case EndSeq:
+				case Flow:
+				case Block:
+				case BeginMap:
+				case EndMap:
+				case Key:
+				case Value:
+				case LongKey:
 					break;
 			}
 			break;
@@ -706,11 +855,73 @@ const char* Emitter::ComputeFullBoolName(bool b) const {
 					return b ? "True" : "False";
 				case LowerCase:
 					return b ? "true" : "false";
-				default:
+				case Auto:
+				case TagByKind:
+				case Newline:
+				case EmitNonAscii:
+				case EscapeNonAscii:
+				case EscapeAsJson:
+				case SingleQuoted:
+				case DoubleQuoted:
+				case Literal:
+				case LowerNull:
+				case UpperNull:
+				case CamelNull:
+				case TildeNull:
+				case YesNoBool:
+				case TrueFalseBool:
+				case OnOffBool:
+				case LongBool:
+				case ShortBool:
+				case Dec:
+				case Hex:
+				case Oct:
+				case BeginDoc:
+				case EndDoc:
+				case BeginSeq:
+				case EndSeq:
+				case Flow:
+				case Block:
+				case BeginMap:
+				case EndMap:
+				case Key:
+				case Value:
+				case LongKey:
 					break;
 			}
 			break;
-		default:
+		case Auto:
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 			break;
 	}
 	return b ? "y" : "n";  // should never get here, but it can't hurt to give
@@ -725,8 +936,38 @@ const char* Emitter::ComputeNullName() const {
 			return "NULL";
 		case CamelNull:
 			return "Null";
+		case Auto:
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
 		case TildeNull:
-			// fallthrough
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 		default:
 			return "~";
 	}

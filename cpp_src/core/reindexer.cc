@@ -46,6 +46,9 @@ Error Reindexer::EnableStorage(const std::string& storagePath, bool skipPlacehol
 	return impl_->EnableStorage(storagePath, skipPlaceholderCheck, rdxCtx);
 }
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts) {
+	if (!validateUserNsName(nsDef.name)) {
+		return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+	}
 	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "CREATE NAMESPACE "sv << nsDef.name; });
 	return impl_->AddNamespace(nsDef, replOpts, rdxCtx);
 }

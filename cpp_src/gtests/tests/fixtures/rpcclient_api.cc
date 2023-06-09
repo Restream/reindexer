@@ -15,7 +15,7 @@ void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLog
 		stop_.set([&](ev::async& sig) { sig.loop.break_loop(); });
 		stop_.start();
 		bool res = server_->Start(addr, loop_, errOnLogin);
-		assert(res);
+		assertrx(res);
 		(void)res;
 		serverIsReady_ = true;
 		while (!terminate_) {
@@ -87,14 +87,14 @@ void RPCClientTestApi::StartServer(const std::string& addr, Error errOnLogin) {
 		auto it = realServers_.find(addr);
 		if (it != realServers_.end()) {
 			if (it->second.serverThread && it->second.serverThread->joinable()) {
-				assert(it->second.server->IsReady());
-				assert(it->second.server->IsRunning());
+				assertrx(it->second.server->IsReady());
+				assertrx(it->second.server->IsRunning());
 				return;
 			}
 			it->second.serverThread.reset(new std::thread(
 				[](reindexer_server::Server* server) {
 					int res = server->Start();
-					assert(res == EXIT_SUCCESS);
+					assertrx(res == EXIT_SUCCESS);
 					(void)res;
 				},
 				it->second.server.get()));
@@ -119,8 +119,8 @@ Error RPCClientTestApi::StopServer(const std::string& addr) {
 		auto it = realServers_.find(addr);
 		if (it != realServers_.end()) {
 			it->second.server->Stop();
-			assert(it->second.serverThread);
-			assert(it->second.serverThread->joinable());
+			assertrx(it->second.serverThread);
+			assertrx(it->second.serverThread->joinable());
 			it->second.serverThread->join();
 			it->second.serverThread.reset();
 			return errOK;

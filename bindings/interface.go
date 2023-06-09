@@ -271,6 +271,22 @@ type OptionConnPoolSize struct {
 	ConnPoolSize int
 }
 
+type LoadBalancingAlgorithm int
+
+// LBRoundRobin - choose connections in round-robin fashion. Used by default
+// LBRandom - choose connections randomly
+// LBPowerOfTwoChoices - choose connections using "Power of Two Choices" algorithm (https://www.nginx.com/blog/nginx-power-of-two-choices-load-balancing-algorithm/)
+const (
+	LBRoundRobin LoadBalancingAlgorithm = iota
+	LBRandom
+	LBPowerOfTwoChoices
+)
+
+// OptionConnPoolLoadBalancing sets algorithm, which will be used to choose connection for cproto requests' balancing
+type OptionConnPoolLoadBalancing struct {
+	Algorithm LoadBalancingAlgorithm
+}
+
 // OptionTimeouts sets client-side network timeouts on login(connect) and requests
 // Timer resolution here is 1 second
 type OptionTimeouts struct {
@@ -318,6 +334,17 @@ type OptionDedicatedThreads struct {
 // AppName - Application name, which will be used in server connect info
 type OptionAppName struct {
 	AppName string
+}
+
+// OptionPrometheusMetrics - enables collection of Reindexer's client side metrics (for example,
+// information about latency and rpc of all rx client calls like Upsert, Select, etc).
+type OptionPrometheusMetrics struct {
+	EnablePrometheusMetrics bool
+}
+
+// OptionOpenTelemetry - enables OpenTelemetry integration.
+type OptionOpenTelemetry struct {
+	EnableTracing bool
 }
 
 // Strategy - Strategy used for reconnect to server on connection error

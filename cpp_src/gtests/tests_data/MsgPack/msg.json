@@ -1,0 +1,633 @@
+{
+    "id": 3,
+    "title": "Подвеска 4061550300",
+    "vendorCode": "4061550300",
+    "imageId": null,
+    "categoryId": 6,
+    "stickerIds": [],
+    "options": [
+        {
+            "id": 1,
+            "title": "Тип изделия",
+            "code": "tip_izdeliya",
+            "values": [
+                {
+                    "id": 1,
+                    "title": "Подвеска",
+                    "code": "podveska",
+                    "sort": 100
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "title": "Металл",
+            "code": "metall",
+            "values": [
+                {
+                    "id": 9,
+                    "title": "Серебро",
+                    "code": "serebro",
+                    "sort": 100
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "title": "Номенклатурная группа",
+            "code": "nomenklaturnaya_gruppa",
+            "values": [
+                {
+                    "id": 11,
+                    "title": "изделия с фианитами и синтетической шпинелью",
+                    "code": "izdeliya_s_fianitami_i_sinteticheskoy_shpinel_yu",
+                    "sort": 100
+                }
+            ]
+        },
+        {
+            "id": 4,
+            "title": "Ценовая группа",
+            "code": "tsenovaya_gruppa",
+            "values": [
+                {
+                    "id": 22,
+                    "title": "Фианит (многокаменка)",
+                    "code": "fianit_mnogokamenka",
+                    "sort": 100
+                }
+            ]
+        }
+    ],
+    "tags": [
+        4,
+        10,
+        18,
+        20,
+        31
+    ],
+    "categories": [
+        {
+            "id": 6,
+            "title": "Подвески",
+            "code": "podveski",
+            "parentId": 3,
+            "childrenIds": "[]"
+        },
+        {
+            "id": 3,
+            "title": "Ювелирные изделия",
+            "code": "yuvelirnyye_izdeliya",
+            "parentId": null,
+            "childrenIds": "[4,6,7,9,10,11,8,70,71]"
+        }
+    ],
+    "offers": [
+        {
+            "id": 9,
+            "barcode": "2000003938421",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 17,
+                        "price": 426.65,
+                        "oldPrice": 426.65
+                    },
+                    "guest": {
+                        "id": 18,
+                        "price": 426.65,
+                        "oldPrice": 426.65
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 10,
+            "barcode": "2000003938490",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 19,
+                        "price": 424.0,
+                        "oldPrice": 424.0
+                    },
+                    "guest": {
+                        "id": 20,
+                        "price": 424.0,
+                        "oldPrice": 424.0
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 11,
+            "barcode": "2000005421624",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 21,
+                        "price": 694.2,
+                        "oldPrice": 694.2
+                    },
+                    "guest": {
+                        "id": 22,
+                        "price": 694.2,
+                        "oldPrice": 694.2
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 14,
+            "barcode": "2000005015519",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 27,
+                        "price": 667.5,
+                        "oldPrice": 667.5
+                    },
+                    "guest": {
+                        "id": 28,
+                        "price": 667.5,
+                        "oldPrice": 667.5
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 15,
+            "barcode": "2000005015526",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 29,
+                        "price": 623.0,
+                        "oldPrice": 623.0
+                    },
+                    "guest": {
+                        "id": 30,
+                        "price": 623.0,
+                        "oldPrice": 623.0
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 19,
+            "barcode": "2200005494462",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 37,
+                        "price": 698.65,
+                        "oldPrice": 698.65
+                    },
+                    "guest": {
+                        "id": 38,
+                        "price": 698.65,
+                        "oldPrice": 698.65
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 20,
+            "barcode": "2200005494899",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 39,
+                        "price": 402.8,
+                        "oldPrice": 402.8
+                    },
+                    "guest": {
+                        "id": 40,
+                        "price": 402.8,
+                        "oldPrice": 402.8
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 21,
+            "barcode": "2000004619046",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "guest": {
+                        "id": 42,
+                        "price": 631.9,
+                        "oldPrice": 631.9
+                    },
+                    "user": {
+                        "id": 41,
+                        "price": 631.9,
+                        "oldPrice": 631.9
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 22,
+            "barcode": "2000004295233",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 43,
+                        "price": 349.8,
+                        "oldPrice": 349.8
+                    },
+                    "guest": {
+                        "id": 44,
+                        "price": 349.8,
+                        "oldPrice": 349.8
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 25,
+            "barcode": "2000004087845",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 49,
+                        "price": 790.5,
+                        "oldPrice": 790.5
+                    },
+                    "guest": {
+                        "id": 50,
+                        "price": 790.5,
+                        "oldPrice": 790.5
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 26,
+            "barcode": "2000004087883",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 51,
+                        "price": 790.5,
+                        "oldPrice": 790.5
+                    },
+                    "guest": {
+                        "id": 52,
+                        "price": 790.5,
+                        "oldPrice": 790.5
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 27,
+            "barcode": "2000004446130",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 53,
+                        "price": 397.5,
+                        "oldPrice": 397.5
+                    },
+                    "guest": {
+                        "id": 54,
+                        "price": 397.5,
+                        "oldPrice": 397.5
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 28,
+            "barcode": "2000004446147",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 55,
+                        "price": 371.0,
+                        "oldPrice": 371.0
+                    },
+                    "guest": {
+                        "id": 56,
+                        "price": 371.0,
+                        "oldPrice": 371.0
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 16,
+            "barcode": "2000005015533",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 31,
+                        "price": 357.75,
+                        "oldPrice": 357.75
+                    },
+                    "guest": {
+                        "id": 32,
+                        "price": 357.75,
+                        "oldPrice": 357.75
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 12,
+            "barcode": "2000005421631",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 23,
+                        "price": 371.0,
+                        "oldPrice": 371.0
+                    },
+                    "guest": {
+                        "id": 24,
+                        "price": 371.0,
+                        "oldPrice": 371.0
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 13,
+            "barcode": "2000005015502",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 25,
+                        "price": 565.15,
+                        "oldPrice": 565.15
+                    },
+                    "guest": {
+                        "id": 26,
+                        "price": 565.15,
+                        "oldPrice": 565.15
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 18,
+            "barcode": "2200005494455",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 35,
+                        "price": 667.5,
+                        "oldPrice": 667.5
+                    },
+                    "guest": {
+                        "id": 36,
+                        "price": 667.5,
+                        "oldPrice": 667.5
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 17,
+            "barcode": "2000005015557",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 33,
+                        "price": 600.75,
+                        "oldPrice": 600.75
+                    },
+                    "guest": {
+                        "id": 34,
+                        "price": 600.75,
+                        "oldPrice": 600.75
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 23,
+            "barcode": "2000004296674",
+            "title": "",
+            "groupId": null,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 45,
+                        "price": 667.5,
+                        "oldPrice": 667.5
+                    },
+                    "guest": {
+                        "id": 46,
+                        "price": 667.5,
+                        "oldPrice": 667.5
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        },
+        {
+            "id": 24,
+            "barcode": "2000004087838",
+            "title": "12",
+            "groupId": 1,
+            "prices": {
+                "1": {
+                    "user": {
+                        "id": 2088,
+                        "price": 410.75,
+                        "oldPrice": 410.75
+                    },
+                    "guest": {
+                        "id": 2089,
+                        "price": 410.75,
+                        "oldPrice": 410.75
+                    }
+                }
+            },
+            "remnants": {
+                "total": 1,
+                "detail": {
+                    "1": 1
+                }
+            },
+            "options": []
+        }
+    ],
+    "groups": [
+        {
+            "id": 1,
+            "title": "12"
+        }
+    ]
+}

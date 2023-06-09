@@ -1950,7 +1950,19 @@ void ArgMap<Char>::init(const ArgList &args) {
 					named_arg = static_cast<const NamedArg *>(args.values_[i].pointer);
 					map_.push_back(Pair(named_arg->name, *named_arg));
 					break;
-				default:
+				case internal::Arg::INT:
+				case internal::Arg::UINT:
+				case internal::Arg::LONG_LONG:
+				case internal::Arg::ULONG_LONG:
+				case internal::Arg::BOOL:
+				case internal::Arg::CHAR:
+				case internal::Arg::DOUBLE:
+				case internal::Arg::LONG_DOUBLE:
+				case internal::Arg::CSTRING:
+				case internal::Arg::STRING:
+				case internal::Arg::WSTRING:
+				case internal::Arg::POINTER:
+				case internal::Arg::CUSTOM:
 					/*nothing*/
 					;
 			}
@@ -1972,7 +1984,19 @@ void ArgMap<Char>::init(const ArgList &args) {
 				named_arg = static_cast<const NamedArg *>(args.args_[i].pointer);
 				map_.push_back(Pair(named_arg->name, *named_arg));
 				break;
-			default:
+			case internal::Arg::INT:
+			case internal::Arg::UINT:
+			case internal::Arg::LONG_LONG:
+			case internal::Arg::ULONG_LONG:
+			case internal::Arg::BOOL:
+			case internal::Arg::CHAR:
+			case internal::Arg::DOUBLE:
+			case internal::Arg::LONG_DOUBLE:
+			case internal::Arg::CSTRING:
+			case internal::Arg::STRING:
+			case internal::Arg::WSTRING:
+			case internal::Arg::POINTER:
+			case internal::Arg::CUSTOM:
 				/*nothing*/
 				;
 		}
@@ -2276,7 +2300,7 @@ struct ArgArray<N, false /*IsPacked*/> {
 
 #if FMT_USE_VARIADIC_TEMPLATES
 template <typename Arg, typename... Args>
-inline uint64_t make_type(const Arg &first, const Args &... tail) {
+inline uint64_t make_type(const Arg &first, const Args &...tail) {
 	return make_type(first) | (make_type(tail...) << 4);
 }
 
@@ -2311,7 +2335,7 @@ inline uint64_t make_type(FMT_GEN15(FMT_ARG_TYPE_DEFAULT)) {
 // Defines a variadic function returning void.
 #define FMT_VARIADIC_VOID(func, arg_type)                                                           \
 	template <typename... Args>                                                                     \
-	void func(arg_type arg0, const Args &... args) {                                                \
+	void func(arg_type arg0, const Args &...args) {                                                 \
 		typedef fmt::internal::ArgArray<sizeof...(Args)> ArgArray;                                  \
 		typename ArgArray::Type array{ArgArray::template make<fmt::BasicFormatter<Char>>(args)...}; \
 		func(arg0, fmt::ArgList(fmt::internal::make_type(args...), array));                         \
@@ -2320,7 +2344,7 @@ inline uint64_t make_type(FMT_GEN15(FMT_ARG_TYPE_DEFAULT)) {
 // Defines a variadic constructor.
 #define FMT_VARIADIC_CTOR(ctor, func, arg0_type, arg1_type)                                         \
 	template <typename... Args>                                                                     \
-	ctor(arg0_type arg0, arg1_type arg1, const Args &... args) {                                    \
+	ctor(arg0_type arg0, arg1_type arg1, const Args &...args) {                                     \
 		typedef fmt::internal::ArgArray<sizeof...(Args)> ArgArray;                                  \
 		typename ArgArray::Type array{ArgArray::template make<fmt::BasicFormatter<Char>>(args)...}; \
 		func(arg0, arg1, fmt::ArgList(fmt::internal::make_type(args...), array));                   \
@@ -3451,7 +3475,7 @@ void arg(WStringRef, const internal::NamedArg<Char> &) FMT_DELETED_OR_UNDEFINED;
 #if FMT_USE_VARIADIC_TEMPLATES
 #define FMT_VARIADIC_(Const, Char, ReturnType, func, call, ...)                                                    \
 	template <typename... Args>                                                                                    \
-	ReturnType func(FMT_FOR_EACH(FMT_ADD_ARG_NAME, __VA_ARGS__), const Args &... args) Const {                     \
+	ReturnType func(FMT_FOR_EACH(FMT_ADD_ARG_NAME, __VA_ARGS__), const Args &...args) Const {                      \
 		typedef fmt::internal::ArgArray<sizeof...(Args)> ArgArray;                                                 \
 		typename ArgArray::Type array{ArgArray::template make<fmt::BasicFormatter<Char>>(args)...};                \
 		call(FMT_FOR_EACH(FMT_GET_ARG_NAME, __VA_ARGS__), fmt::ArgList(fmt::internal::make_type(args...), array)); \
@@ -3872,7 +3896,7 @@ struct UdlFormat {
 	const Char *str;
 
 	template <typename... Args>
-	auto operator()(Args &&... args) const -> decltype(format(str, std::forward<Args>(args)...)) {
+	auto operator()(Args &&...args) const -> decltype(format(str, std::forward<Args>(args)...)) {
 		return format(str, std::forward<Args>(args)...);
 	}
 };

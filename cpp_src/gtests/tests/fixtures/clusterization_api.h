@@ -13,6 +13,7 @@
 #include "tools/fsops.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
+#include "yaml-cpp/yaml.h"
 
 using namespace reindexer_server;
 using std::shared_ptr;
@@ -50,6 +51,8 @@ public:
 
 	class Cluster {
 	public:
+		Cluster(net::ev::dynamic_loop& loop, size_t initialServerId, size_t count, Defaults ports, size_t maxUpdatesSize,
+				const YAML::Node& clusterConf);
 		Cluster(net::ev::dynamic_loop& loop, size_t initialServerId, size_t count, Defaults defaults,
 				const std::vector<std::string>& nsList = std::vector<std::string>(),
 				std::chrono::milliseconds resyncTimeout = std::chrono::milliseconds(3000), int maxSyncCount = -1, int syncThreadsCount = 2,
@@ -88,6 +91,25 @@ public:
 		void AddAsyncNode(size_t nodeId, const std::string& dsn, cluster::AsyncReplicationMode replMode,
 						  std::optional<std::vector<std::string> >&& nsList = {});
 		void AwaitLeaderBecomeAvailable(size_t nodeId, std::chrono::milliseconds awaitTime = std::chrono::milliseconds(5000));
+
+		/// @brief Creates cluster config YAML, uses previously defined Defaults.defaultRpcPort on Cluster class creation.
+		YAML::Node CreateClusterConfig(size_t initialServerId, size_t count,
+									   const std::vector<std::string>& nsList = std::vector<std::string>(),
+									   std::chrono::milliseconds resyncTimeout = std::chrono::milliseconds(3000), int maxSyncCount = -1,
+									   int syncThreadsCount = 2);
+
+		static YAML::Node CreateClusterConfigStatic(size_t initialServerId, size_t count, const Defaults& ports,
+													const std::vector<std::string>& nsList = std::vector<std::string>(),
+													std::chrono::milliseconds resyncTimeout = std::chrono::milliseconds(3000),
+													int maxSyncCount = -1, int syncThreadsCount = 2);
+
+		static YAML::Node CreateClusterConfigStatic(const std::vector<size_t>& nodeIds, const Defaults& ports,
+													const std::vector<std::string>& nsList = std::vector<std::string>(),
+													std::chrono::milliseconds resyncTimeout = std::chrono::milliseconds(3000),
+													int maxSyncCount = -1, int syncThreadsCount = 2);
+
+	protected:
+		void initCluster(size_t count, size_t initialServerId, const YAML::Node& clusterConf);
 
 	private:
 		std::vector<ServerControl> svc_;

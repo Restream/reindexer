@@ -75,7 +75,7 @@ int JoinedFieldIterator::ItemsCount() const {
 	return 0;
 }
 
-const JoinedFieldIterator noJoinedDataIt(nullptr, 0, 0);
+const JoinedFieldIterator noJoinedDataIt(nullptr, {}, 0);
 
 JoinedFieldIterator ItemIterator::begin() const {
 	auto it = joinRes_->offsets_.find(rowid_);

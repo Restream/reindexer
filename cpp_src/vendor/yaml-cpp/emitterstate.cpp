@@ -61,17 +61,17 @@ void EmitterState::SetTag() { m_hasTag = true; }
 void EmitterState::SetNonContent() { m_hasNonContent = true; }
 
 void EmitterState::SetLongKey() {
-	assert(!m_groups.empty());
+	assertrx(!m_groups.empty());
 	if (m_groups.empty()) {
 		return;
 	}
 
-	assert(m_groups.back()->type == GroupType::Map);
+	assertrx(m_groups.back()->type == GroupType::Map);
 	m_groups.back()->longKey = true;
 }
 
 void EmitterState::ForceFlow() {
-	assert(!m_groups.empty());
+	assertrx(!m_groups.empty());
 	if (m_groups.empty()) {
 		return;
 	}
@@ -105,7 +105,7 @@ EmitterNodeType::value EmitterState::NextGroupType(GroupType::value type) const 
 	return EmitterNodeType::FlowMap;
 
 	// can't happen
-	assert(false);
+	assertrx(false);
 	return EmitterNodeType::NoType;
 }
 
@@ -178,7 +178,7 @@ void EmitterState::EndedGroup(GroupType::value type) {
 
 	// reset old settings
 	std::size_t lastIndent = (m_groups.empty() ? 0 : m_groups.back()->indent);
-	assert(m_curIndent >= lastIndent);
+	assertrx(m_curIndent >= lastIndent);
 	m_curIndent -= lastIndent;
 
 	// some global settings that we changed may have been overridden
@@ -228,6 +228,38 @@ bool EmitterState::SetOutputCharset(EMITTER_MANIP value, FmtScope::value scope) 
 		case EscapeAsJson:
 			_Set(m_charset, value, scope);
 			return true;
+		case Auto:
+		case TagByKind:
+		case Newline:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 		default:
 			return false;
 	}
@@ -241,6 +273,37 @@ bool EmitterState::SetStringFormat(EMITTER_MANIP value, FmtScope::value scope) {
 		case Literal:
 			_Set(m_strFmt, value, scope);
 			return true;
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 		default:
 			return false;
 	}
@@ -253,6 +316,38 @@ bool EmitterState::SetBoolFormat(EMITTER_MANIP value, FmtScope::value scope) {
 		case YesNoBool:
 			_Set(m_boolFmt, value, scope);
 			return true;
+		case Auto:
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 		default:
 			return false;
 	}
@@ -264,6 +359,39 @@ bool EmitterState::SetBoolLengthFormat(EMITTER_MANIP value, FmtScope::value scop
 		case ShortBool:
 			_Set(m_boolLengthFmt, value, scope);
 			return true;
+		case Auto:
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 		default:
 			return false;
 	}
@@ -276,6 +404,38 @@ bool EmitterState::SetBoolCaseFormat(EMITTER_MANIP value, FmtScope::value scope)
 		case CamelCase:
 			_Set(m_boolCaseFmt, value, scope);
 			return true;
+		case Auto:
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 		default:
 			return false;
 	}
@@ -289,6 +449,37 @@ bool EmitterState::SetNullFormat(EMITTER_MANIP value, FmtScope::value scope) {
 		case TildeNull:
 			_Set(m_nullFmt, value, scope);
 			return true;
+		case Auto:
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 		default:
 			return false;
 	}
@@ -301,6 +492,38 @@ bool EmitterState::SetIntFormat(EMITTER_MANIP value, FmtScope::value scope) {
 		case Oct:
 			_Set(m_intFmt, value, scope);
 			return true;
+		case Auto:
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 		default:
 			return false;
 	}
@@ -333,6 +556,39 @@ bool EmitterState::SetFlowType(GroupType::value groupType, EMITTER_MANIP value, 
 		case Flow:
 			_Set(groupType == GroupType::Seq ? m_seqFmt : m_mapFmt, value, scope);
 			return true;
+		case Auto:
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 		default:
 			return false;
 	}
@@ -352,6 +608,39 @@ bool EmitterState::SetMapKeyFormat(EMITTER_MANIP value, FmtScope::value scope) {
 		case LongKey:
 			_Set(m_mapKeyFmt, value, scope);
 			return true;
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case SingleQuoted:
+		case DoubleQuoted:
+		case Literal:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
 		default:
 			return false;
 	}

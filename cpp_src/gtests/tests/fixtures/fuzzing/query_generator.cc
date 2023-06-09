@@ -10,7 +10,7 @@ reindexer::Query QueryGenerator::operator()() {
 	}
 	const auto& ns = rndGen_.RndWhich(namespaces_);
 	reindexer::Query query{ns.GetName()};
-	enum By : uint8_t { Index, Field, Empty };
+	enum By : uint8_t { Index, Field, Empty, END = Empty };
 	switch (rndGen_.RndWhich<By, 1, 1, 1>()) {
 		case Index:
 			if (const auto& indexes = ns.GetIndexes(); !indexes.empty()) {
@@ -35,7 +35,7 @@ reindexer::Query QueryGenerator::operator()() {
 		case Empty:
 			break;
 		default:
-			assert(0);
+			assertrx(0);
 	}
 	return query;
 }

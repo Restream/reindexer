@@ -22,9 +22,10 @@ static bool availablePkFieldType(FieldType ft) {
 		case FieldType::Int64:
 		case FieldType::Double:
 		case FieldType::String:
+		case FieldType::Uuid:
 			return true;
 		default:
-			assert(false);
+			assertrx(false);
 			std::abort();
 	}
 }

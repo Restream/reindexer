@@ -47,6 +47,5 @@ public:
 
 private:
 	Data::Ptr data_;
-
-};	// namespace reindexer
+};
 }  // namespace reindexer

@@ -27,10 +27,17 @@ var resultChPool = sync.Pool{
 	},
 }
 
+//Wrapper of 'chan ctxWatcherCmd' for correct processing of the closed chan if StopWatchOnCtx called after Finalize
+type watcherTSWrapper struct {
+	ch       chan ctxWatcherCmd
+	isClosed bool
+	mtx      sync.RWMutex
+}
+
 //CtxWatcher perfomrs contexts canceling on expiration with some delay
 type CtxWatcher struct {
 	resultChPool sync.Pool
-	cmdChArr     []chan ctxWatcherCmd
+	cmdChArr     []watcherTSWrapper
 	watchDelay   time.Duration
 }
 
@@ -39,7 +46,7 @@ type CCtxWrapper struct {
 	cCtx         C.reindexer_ctx_info
 	goCtx        context.Context
 	isCancelable bool
-	watcherCh    chan ctxWatcherCmd
+	watcherCh    *watcherTSWrapper
 }
 
 type ctxWatcherCmdCode int
@@ -59,10 +66,10 @@ func NewCtxWatcher(watchersPoolSize int, watchDelay time.Duration) *CtxWatcher {
 	if watchersPoolSize < 1 {
 		watchersPoolSize = defWatchersPoolSize
 	}
-	watcher := CtxWatcher{cmdChArr: make([]chan ctxWatcherCmd, watchersPoolSize), watchDelay: watchDelay}
+	watcher := CtxWatcher{cmdChArr: make([]watcherTSWrapper, watchersPoolSize), watchDelay: watchDelay}
 	for i := 0; i < watchersPoolSize; i++ {
-		watcher.cmdChArr[i] = make(chan ctxWatcherCmd, watcherChSize)
-		go watcher.watchRoutine(watcher.cmdChArr[i])
+		watcher.cmdChArr[i] = watcherTSWrapper{ch: make(chan ctxWatcherCmd, watcherChSize), isClosed: false}
+		go watcher.watchRoutine(watcher.cmdChArr[i].ch)
 	}
 	return &watcher
 }
@@ -129,6 +136,8 @@ func (watcher *CtxWatcher) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, er
 		}
 
 		watcherID := rand.Intn(len(watcher.cmdChArr))
+		watcher.cmdChArr[watcherID].mtx.RLock()
+		defer watcher.cmdChArr[watcherID].mtx.RUnlock()
 		ctxInfo := CCtxWrapper{
 			cCtx: C.reindexer_ctx_info{
 				ctx_id:       C.uint64_t(ctxID),
@@ -136,14 +145,13 @@ func (watcher *CtxWatcher) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, er
 			},
 			goCtx:        ctx,
 			isCancelable: true,
-			watcherCh:    watcher.cmdChArr[watcherID],
+			watcherCh:    &watcher.cmdChArr[watcherID],
 		}
 
-		cmd := ctxWatcherCmd{
+		ctxInfo.watcherCh.ch <- ctxWatcherCmd{
 			ctx:     ctxInfo,
 			cmdCode: cWCCAdd,
 		}
-		ctxInfo.watcherCh <- cmd
 
 		return ctxInfo, nil
 	}
@@ -162,11 +170,14 @@ func (watcher *CtxWatcher) StartWatchOnCtx(ctx context.Context) (CCtxWrapper, er
 //StopWatchOnCtx removes context from watch queue
 func (watcher *CtxWatcher) StopWatchOnCtx(ctxInfo CCtxWrapper) {
 	if ctxInfo.isCancelable {
-		cmd := ctxWatcherCmd{
-			ctx:     ctxInfo,
-			cmdCode: cWCCRemove,
+		ctxInfo.watcherCh.mtx.RLock()
+		defer ctxInfo.watcherCh.mtx.RUnlock()
+		if !ctxInfo.watcherCh.isClosed {
+			ctxInfo.watcherCh.ch <- ctxWatcherCmd{
+				ctx:     ctxInfo,
+				cmdCode: cWCCRemove,
+			}
 		}
-		ctxInfo.watcherCh <- cmd
 	}
 }
 
@@ -219,8 +230,13 @@ func (watcher *CtxWatcher) watchRoutine(watchCh chan ctxWatcherCmd) {
 
 //Finalize CtxWatcher
 func (watcher *CtxWatcher) Finalize() error {
-	for _, ch := range watcher.cmdChArr {
-		close(ch)
+	for idx := range watcher.cmdChArr {
+		chWr := &watcher.cmdChArr[idx]
+
+		chWr.mtx.Lock()
+		defer chWr.mtx.Unlock()
+		chWr.isClosed = true
+		close(chWr.ch)
 	}
 	return nil
 }

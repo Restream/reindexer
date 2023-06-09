@@ -5,6 +5,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
+#include "core/defnsconfigs.h"
 #include "core/itemimpl.h"
 #include "estl/span.h"
 #include "ns_api.h"
@@ -1066,9 +1067,89 @@ TEST_F(NsApi, UpdateObjectsArray3) {
 	for (auto it : qrUpdate) {
 		Item item = it.GetItem(false);
 		checkIfItemJSONValid(it);
-		ASSERT_TRUE(item.GetJSON().find(
-						R"("nested_array":[{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3}]})") !=
-					std::string::npos);
+		const auto json = item.GetJSON();
+		ASSERT_NE(json.find(R"("nested_array":[{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3},{"ein":1,"zwei":2,"drei":3}]})"),
+				  std::string::npos)
+			<< json;
+		ASSERT_NE(json.find(R"("objects":[{"more":[{"array":[9,8,7,6,5]},{"array":[4,3,2,1,0]}]}])"), std::string::npos) << json;
+	}
+}
+
+TEST_F(NsApi, UpdateOutOfBoundsArrayField) {
+	// Check, that item modifier does not allow to set value in the array with out of bound index
+	const int kTargetID = 1500;
+
+	// 1. Define NS
+	// 2. Fill NS
+	DefineDefaultNamespace();
+	AddUnindexedData();
+
+	struct Case {
+		const std::string name;
+		const std::string baseUpdateExpr;
+		const std::vector<int> arrayIdx;
+		const std::function<Query(const std::string &)> createQueryF;
+	};
+	const std::vector<Case> cases = {
+		{.name = "update-index-array-field",
+		 .baseUpdateExpr = "indexed_array_field[%d]",
+		 .arrayIdx = {9, 10, 100, 10000, 5000000},
+		 .createQueryF =
+			 [&](const std::string &path) {
+				 return Query(default_namespace).Where("id", CondEq, kTargetID).Set(path, static_cast<int>(777));
+			 }},
+		{.name = "update-non-indexed-array-field",
+		 .baseUpdateExpr = "array_field[%d]",
+		 .arrayIdx = {3, 4, 100, 10000, 5000000},
+		 .createQueryF =
+			 [&](const std::string &path) {
+				 return Query(default_namespace).Where("id", CondEq, kTargetID).Set(path, static_cast<int>(777));
+			 }},
+		{.name = "update-object-array-field",
+		 .baseUpdateExpr = "nested.nested_array[%d]",
+		 .arrayIdx = {3, 4, 100, 10000, 5000000},
+		 .createQueryF = [&](const std::string &path) {
+			 return Query(default_namespace)
+				 .Where("id", CondEq, kTargetID)
+				 .SetObject(path, Variant(std::string(R"({"id":5,"name":"fifth", "prices":[3,5,5]})")), false);
+		 }}};
+
+	for (auto &c : cases) {
+		TestCout() << c.name << std::endl;
+
+		for (auto idx : c.arrayIdx) {
+			// 3. Get initial array value
+			std::string initialItemJSON;
+			{
+				QueryResults qr;
+				Error err = rt.reindexer->Select(Query(default_namespace).Where("id", CondEq, kTargetID), qr);
+				ASSERT_TRUE(err.ok()) << err.what();
+				ASSERT_EQ(qr.Count(), 1);
+				reindexer::WrSerializer ser;
+				err = qr.begin().GetJSON(ser, false);
+				ASSERT_TRUE(err.ok()) << err.what();
+				initialItemJSON = ser.Slice();
+			}
+
+			// 4. Set item with out of bound index to specific value via Query builder
+			const auto path = fmt::sprintf(c.baseUpdateExpr, idx);
+			QueryResults qrUpdate;
+			const auto updateQuery = c.createQueryF(path);
+			Error err = rt.reindexer->Update(updateQuery, qrUpdate);
+			EXPECT_FALSE(err.ok()) << path;
+
+			{
+				// 5. Make sure, that item was not changed
+				QueryResults qr;
+				err = rt.reindexer->Select(Query(default_namespace).Where("id", CondEq, kTargetID), qr);
+				ASSERT_TRUE(err.ok()) << err.what() << "; " << path;
+				ASSERT_EQ(qr.Count(), 1) << path;
+				reindexer::WrSerializer ser;
+				err = qr.begin().GetJSON(ser, false);
+				ASSERT_TRUE(err.ok()) << err.what() << "; " << path;
+				ASSERT_EQ(initialItemJSON, ser.Slice()) << path;
+			}
+		}
 	}
 }
 
@@ -1963,6 +2044,47 @@ TEST_F(NsApi, DeleteLastItems) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), 2);
 }
+
+
+TEST_F(NsApi, IncorrectNsName) {
+	auto check = [&](const std::vector<std::string> &names, auto func) {
+		for (const auto &v : names) {
+			func(v);
+		}
+	};
+	std::vector<std::string> variants = {"tes@t1", "@test1", "test1@",	"tes#t1",	 "#test1",		 "test1#", "test 1",
+										 " test1", "test1 ", "'test1'", "\"test1\"", "<a>test1</a>", "/test1", "test1,test2"};
+
+	auto open = [&](const std::string &name) {
+		Error err = rt.reindexer->OpenNamespace(name);
+		ASSERT_FALSE(err.ok());
+		ASSERT_EQ(err.what(), "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+	};
+	check(variants, open);
+
+	variants.emplace_back(reindexer::kConfigNamespace);
+	auto add = [&](const std::string &name) {
+		reindexer::NamespaceDef nsDef(name);
+		Error err = rt.reindexer->AddNamespace(nsDef);
+		ASSERT_FALSE(err.ok());
+		ASSERT_EQ(err.what(), "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+	};
+	check(variants, add);
+
+	auto rename = [&](const std::string &name) {
+		const std::string kNsName("test3");
+		reindexer::NamespaceDef nsDef(kNsName);
+		Error err = rt.reindexer->AddNamespace(nsDef);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->RenameNamespace(kNsName, name);
+		ASSERT_FALSE(err.ok());
+		ASSERT_EQ(err.what(), "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed ("+name+")");
+		err = rt.reindexer->DropNamespace(kNsName);
+		ASSERT_TRUE(err.ok()) << err.what();
+	};
+	check(variants, rename);
+}
+
 
 TEST_F(NsApi, TagsmatchersMerge) {
 	using reindexer::TagsMatcher;

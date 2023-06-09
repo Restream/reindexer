@@ -381,7 +381,8 @@ bool RaftManager::endElections(int32_t term, RaftInfo::Role result) {
 			randomizedSleep(loop_, kMinLeaderAwaitInterval, kMaxLeaderAwaitDiff);
 			return LeaderIsAvailable(RaftManager::ClockT::now());
 		}
-		default:
+		case RaftInfo::Role::None:
+		case RaftInfo::Role::Candidate:
 			assert(false);
 			// This should not happen
 	}

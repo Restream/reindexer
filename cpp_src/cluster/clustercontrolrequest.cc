@@ -24,7 +24,7 @@ Error ClusterControlRequestData::FromJSON(span<char> json) {
 				std::visit([&payloadNode](auto& d) { d.FromJSON(payloadNode); }, data);
 				break;
 			}
-			default:
+			case Type::Empty:
 				return Error(errParams, "Unknown cluster command request. Command type [%d].", int(commandType));
 		}
 		type = commandType;

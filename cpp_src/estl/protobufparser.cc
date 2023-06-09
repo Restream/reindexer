@@ -7,9 +7,9 @@ namespace reindexer {
 
 ProtobufValue ProtobufParser::ReadValue() {
 	bool isArray = false;
-	auto tag = object_.ser.GetVarUint();
+	const uint64_t tag = object_.ser.GetVarUint();
 	int tagType = (tag & kTypeMask);
-	int tagName = (tag >> kNameBit);
+	int tagName = (tag >> kTypeBit);
 	TagsPath currPath{object_.tagsPath};
 	currPath.push_back(tagName);
 	KeyValueType itemType = object_.schema.GetFieldType(currPath, isArray);
@@ -34,13 +34,15 @@ ProtobufValue ProtobufParser::ReadValue() {
 }
 
 Variant ProtobufParser::ReadArrayItem(KeyValueType fieldType) {
-	return fieldType.EvaluateOneOf(
-		[&](KeyValueType::Int64) { return Variant(int64_t(object_.ser.GetVarUint())); },
-		[&](KeyValueType::Int) { return Variant(int(object_.ser.GetVarUint())); },
-		[&](KeyValueType::Double) { return Variant(object_.ser.GetDouble()); },
-		[&](KeyValueType::Bool) { return Variant(object_.ser.GetBool()); },
-		[&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::String>)
-			-> Variant { throw Error(errParseProtobuf, "Error parsing packed indexed array: unexpected type [%s]", fieldType.Name()); });
+	return fieldType.EvaluateOneOf([&](KeyValueType::Int64) { return Variant(int64_t(object_.ser.GetVarUint())); },
+								   [&](KeyValueType::Int) { return Variant(int(object_.ser.GetVarUint())); },
+								   [&](KeyValueType::Double) { return Variant(object_.ser.GetDouble()); },
+								   [&](KeyValueType::Bool) { return Variant(object_.ser.GetBool()); },
+								   [&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
+											 KeyValueType::String, KeyValueType::Uuid>) -> Variant {
+									   throw Error(errParseProtobuf, "Error parsing packed indexed array: unexpected type [%s]",
+												   fieldType.Name());
+								   });
 }
 
 bool ProtobufParser::IsEof() const { return !(object_.ser.Pos() < object_.ser.Len()); }

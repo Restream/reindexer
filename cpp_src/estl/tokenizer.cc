@@ -35,12 +35,13 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken, bool inOrderBy
 
 	if (isalpha(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '@') {
 		res.type = TokenName;
+		int openBrackets{0};
 		do {
 			if (*cur_ == '*' && *(cur_ - 1) != '[') break;
 			res.text_.push_back(to_lower ? tolower(*cur_++) : *cur_++);
 			++pos_;
 		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '@' || *cur_ == '.' ||
-									  *cur_ == '*' || *cur_ == '[' || *cur_ == ']'));
+									  *cur_ == '*' || (*cur_ == '[' && (++openBrackets, true)) || (*cur_ == ']' && (--openBrackets >= 0))));
 	} else if (*cur_ == '"') {
 		res.type = TokenName;
 		const size_t startPos = ++pos_;
@@ -50,7 +51,8 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken, bool inOrderBy
 		while (++cur_ != q_.end() && *cur_ != '"') {
 			if (pos_ == startPos) {
 				if (*cur_ != '#' && *cur_ != '_' && !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {
-					throw Error{errParseSQL, "Identifier should starts with alpha, digit, '_', '#' or '@', but found '%c'; %s", *cur_, where()};
+					throw Error{errParseSQL, "Identifier should starts with alpha, digit, '_', '#' or '@', but found '%c'; %s", *cur_,
+								where()};
 				}
 			} else if (*cur_ != '+' && *cur_ != '.' && *cur_ != '_' && *cur_ != '#' && *cur_ != '[' && *cur_ != ']' && *cur_ != '*' &&
 					   !isalpha(*cur_) && !isdigit(*cur_) && *cur_ != '@') {

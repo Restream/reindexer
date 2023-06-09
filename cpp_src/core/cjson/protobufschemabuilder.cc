@@ -20,7 +20,8 @@ ProtobufSchemaBuilder::ProtobufSchemaBuilder(WrSerializer* ser, SchemaFieldsType
 			if (ser_) ser_->Write(name);
 			if (ser_) ser_->Write(" {\n");
 			break;
-		default:
+		case ObjType::TypeObjectArray:
+		case ObjType::TypeArray:
 			break;
 	}
 }
@@ -80,8 +81,8 @@ void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const Fiel
 			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) {
 				if (ser_) ser_->Write(" [packed=true]");
 			},
-			[](OneOf<KeyValueType::String, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined,
-					 KeyValueType::Null>) noexcept {});
+			[](OneOf<KeyValueType::String, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Null,
+					 KeyValueType::Uuid>) noexcept {});
 	} else {
 		writeField(name, typeName, tagName);
 	}

@@ -97,8 +97,9 @@ void ItemsLoader::reading() {
 			dataSlice = std::string_view(sliceStorageP.data.get(), dataSlice.size());
 			sliceId = (sliceId + 1) % slices_.size();
 			item.impl.Unsafe(true);
-			auto err = item.impl.FromCJSON(dataSlice);
-			if (!err.ok()) {
+			try {
+				item.impl.FromCJSON(dataSlice);
+			} catch (const Error &err) {
 				logPrintf(LogTrace, "Error load item to '%s' from storage: '%s'", ns_.name_, err.what());
 				++errCount;
 				lastErr = err;

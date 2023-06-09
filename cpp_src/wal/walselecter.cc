@@ -127,7 +127,16 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 						putWalRecord(it, rec);	// TODO: Check if it's possible to remove empty records fro, snapshot
 					}
 					break;
-				default:
+				case WalReplState:
+				case WalNamespaceAdd:
+				case WalNamespaceDrop:
+				case WalNamespaceRename:
+				case WalForceSync:
+				case WalWALSync:
+				case WalRawItem:
+				case WalShallowItem:
+				case WalTagsMatcher:
+				case WalResetLocalWal:
 					std::abort();
 			}
 		}

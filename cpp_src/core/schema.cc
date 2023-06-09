@@ -14,7 +14,7 @@ std::string_view kvTypeToJsonSchemaType(KeyValueType type) {
 	return type.EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64>) noexcept { return "integer"sv; },
 							  [](KeyValueType::Double) noexcept { return "number"sv; },
 							  [](KeyValueType::Bool) noexcept { return "boolean"sv; },
-							  [](KeyValueType::String) noexcept { return "string"sv; },
+							  [](OneOf<KeyValueType::String, KeyValueType::Uuid>) noexcept { return "string"sv; },
 							  [](KeyValueType::Null) noexcept { return "null"sv; }, [](KeyValueType::Tuple) noexcept { return "object"sv; },
 							  [&](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) -> std::string_view {
 								  throw Error(errParams, "Impossible to convert type [%s] to json schema type", type.Name());

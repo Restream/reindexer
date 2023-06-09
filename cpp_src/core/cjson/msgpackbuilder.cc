@@ -1,4 +1,5 @@
 #include "msgpackbuilder.h"
+#include "core/type_consts_helpers.h"
 #include "tools/serializer.h"
 #include "vendor/gason/gason.h"
 #include "vendor/msgpack/msgpack.h"
@@ -31,7 +32,7 @@ MsgPackBuilder::MsgPackBuilder(msgpack_packer &packer, const TagsLengths *tagsLe
 
 MsgPackBuilder::~MsgPackBuilder() { End(); }
 
-void MsgPackBuilder::Array(int tagName, Serializer &ser, int tagType, int count) {
+void MsgPackBuilder::Array(int tagName, Serializer &ser, TagType tagType, int count) {
 	checkIfCorrectArray(tagName);
 	skipTag();
 	packKeyName(tagName);
@@ -79,7 +80,7 @@ void MsgPackBuilder::init(int size) {
 	}
 }
 
-void MsgPackBuilder::packCJsonValue(int tagType, Serializer &rdser) {
+void MsgPackBuilder::packCJsonValue(TagType tagType, Serializer &rdser) {
 	switch (tagType) {
 		case TAG_DOUBLE:
 			packValue(rdser.GetDouble());
@@ -91,13 +92,18 @@ void MsgPackBuilder::packCJsonValue(int tagType, Serializer &rdser) {
 			packValue(rdser.GetBool());
 			break;
 		case TAG_STRING:
-			packValue(std::string(rdser.GetVString()));
+			packValue(rdser.GetVString());
+			break;
+		case TAG_UUID:
+			packValue(rdser.GetUuid());
 			break;
 		case TAG_NULL:
 			packNil();
 			break;
-		default:
-			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", ctag(tagType).TypeName());
+		case TAG_END:
+		case TAG_ARRAY:
+		case TAG_OBJECT:
+			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", TagTypeToStr(tagType));
 	}
 }
 

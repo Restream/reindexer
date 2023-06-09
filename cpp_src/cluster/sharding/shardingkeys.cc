@@ -93,7 +93,7 @@ ShardIDsContainer ShardingKeys::GetShardsIds(std::string_view ns) const {
 
 	auto uniqueIds = getShardsIds(itNsData->second);
 	ids.reserve(uniqueIds.size());
-	std::move(uniqueIds.begin(), uniqueIds.end(), std::back_inserter(ids));
+	std::copy(uniqueIds.begin(), uniqueIds.end(), std::back_inserter(ids));
 	return ids;
 }
 
@@ -101,12 +101,12 @@ ShardIDsContainer ShardingKeys::GetShardsIds() const {
 	fast_hash_set<int> uniqueIds;
 	for (auto itNsData = keys_.begin(); itNsData != keys_.end(); ++itNsData) {
 		auto ids = getShardsIds(itNsData->second);
-		std::move(ids.begin(), ids.end(), std::inserter(uniqueIds, uniqueIds.end()));
+		std::copy(ids.begin(), ids.end(), std::inserter(uniqueIds, uniqueIds.end()));
 	}
 
 	ShardIDsContainer ids;
 	ids.reserve(uniqueIds.size());
-	std::move(uniqueIds.begin(), uniqueIds.end(), std::back_inserter(ids));
+	std::copy(uniqueIds.begin(), uniqueIds.end(), std::back_inserter(ids));
 	return ids;
 }
 

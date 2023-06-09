@@ -31,11 +31,16 @@ RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *cli
 	  startTs_(std::chrono::system_clock::now()),
 	  qrWatcher_(serverConfig_.RPCQrIdleTimeout) {}
 
-RPCServer::~RPCServer() { listener_.reset(); }
+RPCServer::~RPCServer() {
+	if (qrWatcherThread_.joinable()) {
+		Stop();
+	}
+	listener_.reset();
+}
 
 Error RPCServer::Ping(cproto::Context &) {
 	//
-	return 0;
+	return {};
 }
 
 static std::atomic<int> connCounter = {0};
@@ -553,7 +558,7 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 			break;
 		}
 		default:
-			err = Error(-1, "Invalid source item format %d", format);
+			err = Error(errNotValid, "Invalid source item format %d", format);
 	}
 	if (!err.ok()) {
 		return err;
@@ -770,7 +775,7 @@ Error RPCServer::processTxItem(DataFormat format, std::string_view itemData, Ite
 			return item.FromMsgPack(itemData, offset);
 		}
 		default:
-			return Error(-1, "Invalid source item format %d", format);
+			return Error(errNotValid, "Invalid source item format %d", format);
 	}
 }
 
@@ -1281,7 +1286,7 @@ bool RPCServer::Start(const std::string &addr, ev::dynamic_loop &loop) {
 		listener_.reset(new Listener<ListenerType::Mixed>(loop, std::move(factory)));
 	}
 
-	assert(!qrWatcherThread_.joinable());
+	assertrx(!qrWatcherThread_.joinable());
 	auto thLoop = std::make_unique<ev::dynamic_loop>();
 	qrWatcherTerminateAsync_.set([](ev::async &a) { a.loop.break_loop(); });
 	qrWatcherTerminateAsync_.set(*thLoop);

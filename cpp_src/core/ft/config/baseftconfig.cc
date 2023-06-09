@@ -18,7 +18,7 @@ void BaseFTConfig::parseBase(const gason::JsonNode &root) {
 	enableNumbersSearch = root["enable_numbers_search"].As<>(enableNumbersSearch);
 	enableKbLayout = root["enable_kb_layout"].As<>(enableKbLayout);
 	enableWarmupOnNsCopy = root["enable_warmup_on_ns_copy"].As<>(enableWarmupOnNsCopy);
-	mergeLimit = root["merge_limit"].As<>(mergeLimit, 0, 65000);
+	mergeLimit = root["merge_limit"].As<>(mergeLimit, kMinMergeLimitValue, kMaxMergeLimitValue);
 	logLevel = root["log_level"].As<>(logLevel, 0, 5);
 	extraWordSymbols = root["extra_word_symbols"].As<>(extraWordSymbols);
 

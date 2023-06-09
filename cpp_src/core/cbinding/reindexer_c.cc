@@ -24,7 +24,7 @@ const size_t kCtxArrSize = 1024;
 const size_t kWarnLargeResultsLimit = 0x40000000;
 const size_t kMaxPooledResultsCap = 0x10000;
 
-static Error err_not_init(-1, "Reindexer db has not initialized");
+static Error err_not_init(errNotValid, "Reindexer db has not initialized");
 static Error err_too_many_queries(errLogic, "Too many parallel queries");
 
 static std::atomic<BindingCapabilities> bindingCaps;
@@ -175,7 +175,7 @@ static void procces_packed_item(Item& item, int /*mode*/, int state_token, reind
 				}
 				break;
 			default:
-				err = Error(-1, "Invalid source item format %d", format);
+				err = Error(errNotValid, "Invalid source item format %d", format);
 		}
 	} else {
 		err = item.Status();
@@ -690,7 +690,7 @@ reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int
 	CJsonBuilder builder(ser, ObjType::TypePlain);
 	CJsonEncoder cjsonEncoder(&tagsMatcher);
 
-	cjsonEncoder.Encode(&pl, builder);
+	cjsonEncoder.Encode(pl, builder);
 	const int n = ser.Len();
 	uint8_t* p = ser.DetachBuf().release();
 	return reindexer_buffer{p, n};

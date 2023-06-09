@@ -1,3 +1,17 @@
+# Version 4.11.0 *beta* (09.06.2023)
+## Server
+- [fix] Fixed HTTP-transactions timeout handling
+
+## Replication
+- [fix] Fixed SEGFAULT on 'set_leader_node'-command, when RAFT cluster is not configured
+
+## Face
+- [fix] Fixed the issue with the total section of the Memory/Grid table appeared on scrolling
+- [fix] Added the tab choice to the local storage on the Statistics-> Replication page
+
+## Ported
+- [fea/fix] Ported all the fixes from [v3.15.0](https://github.com/Restream/reindexer/releases/tag/v3.15.0) and [v3.16.0](https://github.com/Restream/reindexer/releases/tag/v3.16.0)
+
 # Version 4.10.1 *beta* (05.04.2023)
 ## Core
 - [fix] Reduced preselect limit for joined queries (previous values from v4.10.0 could cause some performance issues)

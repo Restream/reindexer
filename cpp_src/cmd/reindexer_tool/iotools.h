@@ -8,14 +8,7 @@
 
 namespace reindexer_tool {
 
-using std::ofstream;
-using std::ostream;
-using std::istream;
-using std::string;
-using std::stringstream;
-using std::numeric_limits;
 using reindexer::Error;
-using reindexer::WrSerializer;
 
 class Output {
 public:
@@ -24,16 +17,16 @@ public:
 		errState_ = (isCout_ || f_.is_open()) ? 0 : errno;
 	}
 
-	ostream& operator()() {
+	std::ostream& operator()() {
 		if (!isCout_ && !f_.is_open()) throw Error(errLogic, "%s", strerror(errState_));
 		return isCout_ ? std::cout : f_;
 	}
 
-	Error Status() const { return errState_ ? Error(errLogic, "%s", strerror(errState_)) : 0; }
+	Error Status() const { return errState_ ? Error(errLogic, "%s", strerror(errState_)) : Error{}; }
 	bool IsCout() const { return isCout_; }
 
 private:
-	ofstream f_;
+	std::ofstream f_;
 	bool isCout_;
 	int errState_;
 };

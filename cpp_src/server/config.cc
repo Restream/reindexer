@@ -117,7 +117,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::ValueFlag<size_t> MaxHttpReqSizeF(
 		netGroup, "", "Max HTTP request size in bytes. Default value is 2 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
 		{"max-http-req"}, MaxHttpReqSize, args::Options::Single);
-#ifdef WITH_GRPC
+#if defined(WITH_GRPC)
 	args::ValueFlag<std::string> grpcAddrF(netGroup, "GPORT", "GRPC listen host:port", {'g', "grpcaddr"}, RPCAddr, args::Options::Single);
 	args::Flag grpcF(netGroup, "", "Enable gRpc service", {"grpc"});
 #endif
@@ -226,7 +226,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 #endif
 
 	if (securityF) EnableSecurity = args::get(securityF);
-#ifdef WITH_GRPC
+#if defined(WITH_GRPC)
 	if (grpcF) EnableGRPC = args::get(grpcF);
 	if (grpcAddrF) GRPCAddr = args::get(grpcAddrF);
 #endif
@@ -245,7 +245,7 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (rpcQrIdleTimeoutF) RPCQrIdleTimeout = std::chrono::seconds(args::get(rpcQrIdleTimeoutF));
 	if (maxUpdatesSizeF) MaxUpdatesSize = args::get(maxUpdatesSizeF);
 
-	return Error();
+	return {};
 }
 
 void ServerConfig::SetHttpWriteTimeout(std::chrono::seconds val) noexcept {
@@ -301,7 +301,7 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
 	} catch (const YAML::Exception &ex) {
 		return Error(errParseYAML, "Unable to parse YML server config: %s", ex.what());
 	}
-	return Error();
+	return {};
 }
 
 }  // namespace reindexer_server

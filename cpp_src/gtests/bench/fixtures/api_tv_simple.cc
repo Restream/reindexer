@@ -4,6 +4,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/nsselecter/joinedselector.h"
 #include "core/reindexer.h"
+#include "gtests/tools.h"
 #include "tools/string_regexp_functions.h"
 
 #include "helpers.h"
@@ -68,6 +69,8 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("GetLikeString", &ApiTvSimple::GetLikeString, this);
 	Register("GetByRangeIDAndSortByHash", &ApiTvSimple::GetByRangeIDAndSortByHash, this);
 	Register("GetByRangeIDAndSortByTree", &ApiTvSimple::GetByRangeIDAndSortByTree, this);
+	Register("GetUuid", &ApiTvSimple::GetUuid, this);
+	Register("GetUuidStr", &ApiTvSimple::GetUuidStr, this);
 
 	Register("Query1Cond", &ApiTvSimple::Query1Cond, this);
 	Register("Query1CondTotal", &ApiTvSimple::Query1CondTotal, this);
@@ -95,22 +98,22 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query4CondRange", &ApiTvSimple::Query4CondRange, this);
 	Register("Query4CondRangeTotal", &ApiTvSimple::Query4CondRangeTotal, this);
 	Register("Query4CondRangeCachedTotal", &ApiTvSimple::Query4CondRangeCachedTotal, this);
-#if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+#if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	Register("Query2CondIdSet10", &ApiTvSimple::Query2CondIdSet10, this);
 #endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
 	Register("Query2CondIdSet100", &ApiTvSimple::Query2CondIdSet100, this);
 	Register("Query2CondIdSet500", &ApiTvSimple::Query2CondIdSet500, this);
-#if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+#if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	Register("Query2CondIdSet2000", &ApiTvSimple::Query2CondIdSet2000, this);
 	Register("Query2CondIdSet20000", &ApiTvSimple::Query2CondIdSet20000, this);
-#endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+#endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	Register("FromCJSON", &ApiTvSimple::FromCJSON, this);
 	Register("GetCJSON", &ApiTvSimple::GetCJSON, this);
 	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
 reindexer::Error ApiTvSimple::Initialize() {
-	assert(db_);
+	assertrx(db_);
 	auto err = db_->AddNamespace(nsdef_);
 
 	if (!err.ok()) return err;
@@ -131,6 +134,10 @@ reindexer::Error ApiTvSimple::Initialize() {
 	countryLikePatterns_.reserve(countries_.size());
 	for (const auto& country : countries_) {
 		countryLikePatterns_.push_back(reindexer::makeLikePattern(country));
+	}
+	uuids_.reserve(1000);
+	for (size_t i = 0; i < 1000; ++i) {
+		uuids_.push_back(randStrUuid());
 	}
 
 	locations_ = {"mos", "ct", "dv", "sth", "vlg", "sib", "ural"};
@@ -200,7 +207,8 @@ reindexer::Error ApiTvSimple::Initialize() {
 		bld.Put("id", i);
 		bld.Put("field", i);
 		bld.End();
-		mItem.FromJSON(wrSer_.Slice());
+		err = mItem.FromJSON(wrSer_.Slice());
+		if (!err.ok()) return err;
 		err = db_->Insert(mainNsDef.name, mItem);
 		if (!err.ok()) return err;
 
@@ -212,7 +220,8 @@ reindexer::Error ApiTvSimple::Initialize() {
 		bld2.Put("id", i);
 		bld2.Put("field", i);
 		bld2.End();
-		rItem.FromJSON(wrSer_.Slice());
+		err = rItem.FromJSON(wrSer_.Slice());
+		if (!err.ok()) return err;
 		err = db_->Insert(rightNsDef.name, rItem);
 		if (!err.ok()) return err;
 	}
@@ -362,12 +371,13 @@ reindexer::Item ApiTvSimple::MakeStrItem() {
 		bld.Put("field_int", id);
 		bld.Put("field_str", "value_" + idStr);
 		bld.End();
-		item.FromJSON(wrSer_.Slice());
+		const auto err = item.FromJSON(wrSer_.Slice());
+		if (!err.ok()) assert(!item.Status().ok());
 	}
 	return item;
 }
 
-reindexer::Item ApiTvSimple::MakeItem() {
+reindexer::Item ApiTvSimple::MakeItem(benchmark::State&) {
 	reindexer::Item item = db_->NewItem(nsdef_.name);
 	// All strings passed to item must be holded by app
 	item.Unsafe();
@@ -384,6 +394,8 @@ reindexer::Item ApiTvSimple::MakeItem() {
 	item["location"] = locations_.at(random<size_t>(0, locations_.size() - 1));
 	item["start_time"] = start_times_.at(random<size_t>(0, start_times_.size() - 1));
 	item["end_time"] = startTime + random<int>(1, 5) * 1000;
+	item["uuid"] = reindexer::Uuid{uuids_[rand() % uuids_.size()]};
+	item["uuid_str"] = uuids_[rand() % uuids_.size()];
 
 	return item;
 }
@@ -424,10 +436,10 @@ void ApiTvSimple::WarmUpIndexes(State& state) {
 }
 
 void ApiTvSimple::GetCJSON(benchmark::State& state) {
-	assert(itemForCjsonBench_);
+	assertrx(itemForCjsonBench_);
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		itemForCjsonBench_->GetCJSON();
+		[[maybe_unused]] const auto ret = itemForCjsonBench_->GetCJSON();
 	}
 }
 
@@ -485,6 +497,32 @@ void ApiTvSimple::GetEqInt(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
 		q.Where("start_time", CondEq, start_times_.at(random<size_t>(0, start_times_.size() - 1)));
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+	}
+}
+
+void ApiTvSimple::GetUuid(benchmark::State& state) {
+	reindexer::Uuid uuid{uuids_[rand() % uuids_.size()]};
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Where("uuid", CondEq, uuid);
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+	}
+}
+
+void ApiTvSimple::GetUuidStr(benchmark::State& state) {
+	const auto& uuid = uuids_[rand() % uuids_.size()];
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Where("uuid_str", CondEq, uuid);
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());

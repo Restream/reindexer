@@ -10,8 +10,8 @@ namespace reindexer {
 template <typename T>
 class shared_cow_ptr {
 public:
-	explicit shared_cow_ptr(intrusive_ptr<intrusive_atomic_rc_wrapper<T>> &&ptr) : payload_(std::move(ptr)) {}
-	shared_cow_ptr() = default;
+	explicit shared_cow_ptr(intrusive_ptr<intrusive_atomic_rc_wrapper<T>> &&ptr) noexcept : payload_(std::move(ptr)) {}
+	shared_cow_ptr() noexcept = default;
 
 	const T *operator->() const noexcept { return payload_.get(); }
 
@@ -29,7 +29,6 @@ private:
 		if (!payload_.unique()) payload_ = make_intrusive<intrusive_atomic_rc_wrapper<T>>(*payload_);
 	}
 
-private:
 	intrusive_ptr<intrusive_atomic_rc_wrapper<T>> payload_;
 };
 

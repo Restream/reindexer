@@ -98,12 +98,12 @@ public:
 		assertrx(!valueInitialized_);
 		return sortExprResultsIdx_;
 	}
-	void SetValue(PayloadValue&& value) {
+	void SetValue(PayloadValue&& value) noexcept {
 		assertrx(!valueInitialized_);
 		new (&value_) PayloadValue(std::move(value));
 		valueInitialized_ = true;
 	}
-	void SetValue(const PayloadValue& value) {
+	void SetValue(const PayloadValue& value) noexcept {
 		assertrx(!valueInitialized_);
 		new (&value_) PayloadValue(value);
 		valueInitialized_ = true;

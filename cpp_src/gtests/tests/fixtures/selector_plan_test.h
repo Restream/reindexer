@@ -85,12 +85,12 @@ private:
 	}
 
 	static std::string::size_type findFieldValueStart(const std::string& str, std::string::size_type pos) {
-		assert(pos + 1 < str.size());
+		assertrx(pos + 1 < str.size());
 		pos = str.find("\":", pos + 1);
-		assert(pos != std::string::npos);
-		assert(pos + 2 < str.size());
+		assertrx(pos != std::string::npos);
+		assertrx(pos + 2 < str.size());
 		pos = str.find_first_not_of(" \t\n", pos + 2);
-		assert(pos != std::string::npos);
+		assertrx(pos != std::string::npos);
 		return pos;
 	}
 

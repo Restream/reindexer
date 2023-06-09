@@ -32,7 +32,7 @@ void FastIndexText<T>::initHolder(FtFastConfig &cfg) {
 			holder_.reset(new DataHolder<IdRelVec>);
 			break;
 		default:
-			assert(0);
+			assertrx(0);
 	}
 	holder_->stemmers_.clear();
 	holder_->translit_.reset(new Translit);
@@ -42,11 +42,6 @@ void FastIndexText<T>::initHolder(FtFastConfig &cfg) {
 		holder_->stemmers_.emplace(*lang, *lang);
 	}
 	holder_->SetConfig(&cfg);
-}
-
-template <typename T>
-std::unique_ptr<Index> FastIndexText<T>::Clone() {
-	return std::unique_ptr<Index>{new FastIndexText<T>(*this)};
 }
 
 template <typename T>
@@ -178,7 +173,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 		assertrx(!vdocs[id].keyEntry->Unsorted().empty());
 		if (vid.proc <= minRelevancy) break;
 		if (mergeStatusesEmpty) {
-			if (vid.areaIndex == -1) {
+			if (vid.areaIndex == std::numeric_limits<uint32_t>::max()) {
 				fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc);
 			} else {
 				fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc,
@@ -186,7 +181,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 			}
 			mergedIds->Append(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), IdSet::Unordered);
 		} else {
-			if (vid.areaIndex == -1) {
+			if (vid.areaIndex == std::numeric_limits<uint32_t>::max()) {
 				fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc, statuses.rowIds);
 			} else {
 				fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc, statuses.rowIds,
@@ -382,6 +377,25 @@ std::unique_ptr<Index> FastIndexText_New(const IndexDef &idef, PayloadType paylo
 			return std::unique_ptr<Index>{new FastIndexText<unordered_str_map<FtKeyEntry>>(idef, std::move(payloadType), fields)};
 		case IndexCompositeFastFT:
 			return std::unique_ptr<Index>{new FastIndexText<unordered_payload_map<FtKeyEntry, true>>(idef, std::move(payloadType), fields)};
+		case IndexStrHash:
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexIntHash:
+		case IndexInt64BTree:
+		case IndexInt64Hash:
+		case IndexDoubleBTree:
+		case IndexFuzzyFT:
+		case IndexCompositeBTree:
+		case IndexCompositeHash:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexCompositeFuzzyFT:
+		case IndexTtl:
+		case IndexRTree:
+		case IndexUuidHash:
 		default:
 			abort();
 	}

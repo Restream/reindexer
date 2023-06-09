@@ -1,4 +1,5 @@
 #include "basestorage.h"
+#include "tools/assertrx.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 

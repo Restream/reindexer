@@ -26,10 +26,11 @@ public:
 		cmpDouble.ClearDistinct();
 		cmpString.ClearDistinct();
 		cmpGeom.ClearDistinct();
+		cmpUuid.ClearDistinct();
 	}
 	bool HasJsonPaths() const noexcept { return fields_.getTagsPathsLength(); }
 
-protected:
+private:
 	bool compare(const Variant &kr) {
 		return kr.Type().EvaluateOneOf(
 			[&](KeyValueType::Null) noexcept { return cond_ == CondEmpty; },
@@ -39,6 +40,7 @@ protected:
 			[&](KeyValueType::Double) { return cmpDouble.Compare(cond_, static_cast<double>(kr)); },
 			[&](KeyValueType::String) { return cmpString.Compare(cond_, static_cast<p_string>(kr), collateOpts_); },
 			[&](KeyValueType::Composite) { return cmpComposite.Compare(cond_, static_cast<const PayloadValue &>(kr), *this); },
+			[&](KeyValueType::Uuid) { return cmpUuid.Compare(cond_, Uuid{kr}); },
 			[](OneOf<KeyValueType::Undefined, KeyValueType::Tuple>) noexcept -> bool { abort(); });
 	}
 
@@ -50,6 +52,7 @@ protected:
 			[&](KeyValueType::Int64) { return cmpInt64.Compare(cond_, *static_cast<const int64_t *>(ptr)); },
 			[&](KeyValueType::Double) { return cmpDouble.Compare(cond_, *static_cast<const double *>(ptr)); },
 			[&](KeyValueType::String) { return cmpString.Compare(cond_, *static_cast<const p_string *>(ptr), collateOpts_); },
+			[&](KeyValueType::Uuid) { return cmpUuid.Compare(cond_, *static_cast<const Uuid *>(ptr)); },
 			[&](KeyValueType::Composite) { return cmpComposite.Compare(cond_, *static_cast<const PayloadValue *>(ptr), *this); },
 			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined>) noexcept -> bool {
 				assertrx(0);
@@ -63,6 +66,7 @@ protected:
 								[&](KeyValueType::Int64) { cmpInt64.ExcludeDistinct(static_cast<int64_t>(kr)); },
 								[&](KeyValueType::Double) { cmpDouble.ExcludeDistinct(static_cast<double>(kr)); },
 								[&](KeyValueType::String) { cmpString.ExcludeDistinct(static_cast<p_string>(kr)); },
+								[&](KeyValueType::Uuid) { cmpUuid.ExcludeDistinct(Uuid{kr}); },
 								[](KeyValueType::Composite) { throw Error(errQueryExec, "Distinct by composite index"); },
 								[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {});
 	}
@@ -73,6 +77,7 @@ protected:
 							[&](KeyValueType::Int64) { cmpInt64.ExcludeDistinct(*static_cast<const int64_t *>(ptr)); },
 							[&](KeyValueType::Double) { cmpDouble.ExcludeDistinct(*static_cast<const double *>(ptr)); },
 							[&](KeyValueType::String) { cmpString.ExcludeDistinct(*static_cast<const p_string *>(ptr)); },
+							[&](KeyValueType::Uuid) { cmpUuid.ExcludeDistinct(*static_cast<const Uuid *>(ptr)); },
 							[](KeyValueType::Composite) { throw Error(errQueryExec, "Distinct by composite index"); },
 							[](KeyValueType::Null) noexcept {},
 							[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
@@ -99,6 +104,7 @@ protected:
 							[&](KeyValueType::Double) noexcept { cmpDouble.ClearAllSetValues(); },
 							[&](KeyValueType::String) noexcept { cmpString.ClearAllSetValues(); },
 							[&](KeyValueType::Composite) noexcept { cmpComposite.ClearAllSetValues(); }, [](KeyValueType::Null) noexcept {},
+							[&](KeyValueType::Uuid) noexcept { cmpUuid.ClearAllSetValues(); },
 							[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined>) noexcept {
 								assertrx(0);
 								abort();
@@ -111,6 +117,7 @@ protected:
 	ComparatorImpl<key_string> cmpString;
 	ComparatorImpl<PayloadValue> cmpComposite;
 	ComparatorImpl<Point> cmpGeom;
+	ComparatorImpl<Uuid> cmpUuid;
 	CompositeArrayComparator cmpEqualPosition;
 	KeyValueType valuesType_{KeyValueType::Undefined{}};
 };

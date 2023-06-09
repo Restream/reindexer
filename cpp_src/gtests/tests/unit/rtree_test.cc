@@ -307,12 +307,12 @@ TEST_F(ReindexerApi, EmptyRTreeSparseValues) {
 	// Make sure we can select data normally and access newly added RTree null fields
 	{
 		QueryResults qr;
-		err = rt.reindexer->Select(Query(default_namespace).Where("id", CondEq, Variant(int(13))), qr);
+		err = rt.reindexer->Select(Query(default_namespace).Where("id", CondEq, 13), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qr.Count() == 1);
 		Item item = qr.begin().GetItem(false);
 		Variant idVal = item["id"];
-		ASSERT_TRUE(static_cast<int>(idVal) == 13);
+		ASSERT_TRUE(idVal.As<int>() == 13);
 		Variant idPoint1 = item["point1"];
 		ASSERT_TRUE(idPoint1.IsNullValue());
 		Variant idPoint2 = item["point2"];
@@ -322,7 +322,7 @@ TEST_F(ReindexerApi, EmptyRTreeSparseValues) {
 	// Make sure removal of items with null RTree items works as expected
 	{
 		QueryResults qr;
-		err = rt.reindexer->Delete(Query(default_namespace).Where("id", CondEq, Variant(int(13))), qr);
+		err = rt.reindexer->Delete(Query(default_namespace).Where("id", CondEq, 13), qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qr.Count() == 1);
 	}

@@ -22,3 +22,5 @@ qa_tests/logs/
 qa_tests/logs/
 qa_tests/venv/
 
+#ignore directory with compile commands
+.cache

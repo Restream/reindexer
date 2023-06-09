@@ -15,6 +15,7 @@ void CompositeArrayComparator::BindField(int field, const VariantArray &values, 
 	ctx.cmpInt64.SetValues(condType, values);
 	ctx.cmpString.SetValues(condType, values, CollateOpts());
 	ctx.cmpDouble.SetValues(condType, values);
+	ctx.cmpUuid.SetValues(condType, values);
 
 	assertrx(ctx_.size() == fields_.size());
 }
@@ -30,6 +31,7 @@ void CompositeArrayComparator::BindField(const TagsPath &tagsPath, const Variant
 	ctx.cmpInt64.SetValues(condType, values);
 	ctx.cmpString.SetValues(condType, values, CollateOpts());
 	ctx.cmpDouble.SetValues(condType, values);
+	ctx.cmpUuid.SetValues(condType, values);
 }
 
 bool CompositeArrayComparator::Compare(const PayloadValue &pv, const ComparatorVars &vars) {
@@ -70,6 +72,7 @@ bool CompositeArrayComparator::compareField(size_t field, const Variant &v, cons
 		[&](KeyValueType::Int64) { return ctx_[field].cmpInt64.Compare(ctx_[field].cond, static_cast<int64_t>(v)); },
 		[&](KeyValueType::Double) { return ctx_[field].cmpDouble.Compare(ctx_[field].cond, static_cast<double>(v)); },
 		[&](KeyValueType::String) { return ctx_[field].cmpString.Compare(ctx_[field].cond, static_cast<p_string>(v), vars.collateOpts_); },
+		[&](KeyValueType::Uuid) { return ctx_[field].cmpUuid.Compare(ctx_[field].cond, Uuid{v}); },
 		[](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Tuple>) noexcept { return false; });
 }
 

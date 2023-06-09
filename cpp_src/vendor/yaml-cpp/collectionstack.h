@@ -8,6 +8,7 @@
 
 #include <cassert>
 #include <stack>
+#include "tools/assertrx.h"
 
 namespace YAML {
 struct CollectionType {
@@ -24,7 +25,7 @@ public:
 
 	void PushCollectionType(CollectionType::value type) { collectionStack.push(type); }
 	void PopCollectionType(CollectionType::value type) {
-		assert(type == GetCurCollectionType());
+		assertrx(type == GetCurCollectionType());
 		(void)type;
 		collectionStack.pop();
 	}

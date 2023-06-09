@@ -44,7 +44,8 @@ static std::string_view NodeStatusToStr(NodeStats::Status status) noexcept {
 			return "online"sv;
 		case NodeStats::Status::RaftError:
 			return "raft_error"sv;
-		default:;
+		case NodeStats::Status::None:
+			break;
 	}
 	return "none"sv;
 }
@@ -96,7 +97,7 @@ static NodeStats::SyncState NodeSyncStateFromStr(std::string_view state) {
 static Error NodeErrorFromJson(const gason::JsonNode& lastErrorRoot) {
 	int code = lastErrorRoot["code"sv].As<int>(0);
 	std::string_view what = lastErrorRoot["message"sv].As<std::string_view>(""sv);
-	return Error(code, what);
+	return Error(ErrorCode(code), what);
 }
 
 void NodeStats::FromJSON(const gason::JsonNode& root) {
@@ -123,7 +124,7 @@ void NodeStats::GetJSON(JsonBuilder& builder) const {
 	builder.Put("is_synchronized"sv, isSynchronized);
 	{
 		auto lastErrorJsonBuilder = builder.Object("last_error"sv);
-		lastErrorJsonBuilder.Put("code"sv, lastError.code());
+		lastErrorJsonBuilder.Put("code"sv, int(lastError.code()));
 		lastErrorJsonBuilder.Put("message"sv, lastError.what());
 	}
 	{

@@ -6,8 +6,10 @@
 
 namespace reindexer {
 
-CondType InvertJoinCondition(CondType cond);
-std::string_view CondTypeToStr(CondType t);
+[[nodiscard]] CondType InvertJoinCondition(CondType cond);
+[[nodiscard]] std::string_view CondTypeToStr(CondType);
+[[nodiscard]] std::string_view TagTypeToStr(TagType);
+[[nodiscard]] std::string_view AggTypeToStr(AggType t) noexcept;
 
 template <typename T>
 auto& operator<<(T& os, CondType cond) {
@@ -114,6 +116,8 @@ T& operator<<(T& os, IndexType it) {
 			return os << "Ttl";
 		case ::IndexRTree:
 			return os << "RTree";
+		case IndexUuidHash:
+			return os << "UuidHash";
 		default:
 			abort();
 	}

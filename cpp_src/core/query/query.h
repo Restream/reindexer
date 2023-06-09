@@ -494,11 +494,11 @@ public:
 	/// @param sort - sorting column name.
 	/// @param desc - is sorting direction descending or ascending.
 	/// @return Query object.
-	Query &Sort(const std::string &sort, bool desc) & {	 // -V1071
-		if (sort.length()) sortingEntries_.push_back({sort, desc});
+	Query &Sort(std::string sort, bool desc) & {  // -V1071
+		if (sort.length()) sortingEntries_.emplace_back(std::move(sort), desc);
 		return *this;
 	}
-	Query &&Sort(const std::string &sort, bool desc) && { return std::move(Sort(sort, desc)); }
+	Query &&Sort(std::string sort, bool desc) && { return std::move(Sort(std::move(sort), desc)); }
 
 	/// Performs sorting by certain column. Analog to sql ORDER BY.
 	/// @param sort - sorting column name.
@@ -506,16 +506,16 @@ public:
 	/// @param forcedSortOrder - list of values for forced sort order.
 	/// @return Query object.
 	template <typename T>
-	Query &Sort(const std::string &sort, bool desc, std::initializer_list<T> forcedSortOrder) & {
+	Query &Sort(std::string sort, bool desc, std::initializer_list<T> forcedSortOrder) & {
 		if (!sortingEntries_.empty() && !std::empty(forcedSortOrder))
 			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
-		sortingEntries_.push_back({sort, desc});
+		sortingEntries_.emplace_back(std::move(sort), desc);
 		for (const T &v : forcedSortOrder) forcedSortOrder_.emplace_back(v);
 		return *this;
 	}
 	template <typename T>
-	Query &&Sort(const std::string &sort, bool desc, std::initializer_list<T> forcedSortOrder) && {
-		return std::move(Sort<T>(sort, desc, std::move(forcedSortOrder)));
+	Query &&Sort(std::string sort, bool desc, std::initializer_list<T> forcedSortOrder) && {
+		return std::move(Sort<T>(std::move(sort), desc, std::move(forcedSortOrder)));
 	}
 
 	/// Performs sorting by certain column. Analog to sql ORDER BY.
@@ -524,16 +524,16 @@ public:
 	/// @param forcedSortOrder - list of values for forced sort order.
 	/// @return Query object.
 	template <typename T>
-	Query &Sort(const std::string &sort, bool desc, const T &forcedSortOrder) & {
+	Query &Sort(std::string sort, bool desc, const T &forcedSortOrder) & {
 		if (!sortingEntries_.empty() && !forcedSortOrder.empty())
 			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
-		sortingEntries_.push_back({sort, desc});
+		sortingEntries_.emplace_back(std::move(sort), desc);
 		for (const auto &v : forcedSortOrder) forcedSortOrder_.emplace_back(v);
 		return *this;
 	}
 	template <typename T>
-	Query &&Sort(const std::string &sort, bool desc, const T &forcedSortOrder) && {
-		return std::move(Sort<T>(sort, desc, forcedSortOrder));
+	Query &&Sort(std::string sort, bool desc, const T &forcedSortOrder) && {
+		return std::move(Sort<T>(std::move(sort), desc, forcedSortOrder));
 	}
 
 	/// Performs distinct for a certain index.
@@ -572,12 +572,11 @@ public:
 		if (!CanAddAggregation(type)) {
 			throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 		}
-		AggregateEntry aggEntry{type, std::move(fields), limit, offset};
-		aggEntry.sortingEntries_.reserve(sort.size());
+		SortingEntries sorting;
 		for (const auto &s : sort) {
-			aggEntry.sortingEntries_.push_back({s.first, s.second});
+			sorting.emplace_back(s.first, s.second);
 		}
-		aggregations_.push_back(aggEntry);
+		aggregations_.emplace_back(type, std::move(fields), std::move(sorting), limit, offset);
 		return *this;
 	}
 	Query &&Aggregate(AggType type, h_vector<std::string, 1> fields, const std::vector<std::pair<std::string, bool>> &sort = {},
@@ -672,7 +671,7 @@ public:
 	/// or new select fields to a current query?
 	bool CanAddAggregation(AggType type) const noexcept { return type == AggDistinct || (selectFilter_.empty()); }
 	bool CanAddSelectFilter() const noexcept {
-		return aggregations_.empty() || (aggregations_.size() == 1 && aggregations_.front().type_ == AggDistinct);
+		return aggregations_.empty() || (aggregations_.size() == 1 && aggregations_.front().Type() == AggDistinct);
 	}
 
 	/// Serializes query data to stream.

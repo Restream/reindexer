@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v4/bindings/builtin"
 )
 
 func init() {
@@ -274,4 +275,31 @@ func TestRaceConditionsTx(t *testing.T) {
 	time.Sleep(time.Millisecond * 15000)
 	close(done)
 	wg.Wait()
+}
+
+func TestCtxWatcherRace(t *testing.T) {
+	t.Run("Checking the correctness of processing a closed chan if StopWatchOnCtx called after Finalize", func(t *testing.T) {
+		const defWatchersPoolSize = 4
+		const defCtxWatchDelay = time.Millisecond * 100
+
+		watcher := builtin.NewCtxWatcher(defWatchersPoolSize, defCtxWatchDelay)
+
+		// cancel context required for StopWatchOnCtx func
+		ctx, _ := context.WithCancel(context.Background())
+		ctxInfo, _ := watcher.StartWatchOnCtx(ctx)
+
+		wg := sync.WaitGroup{}
+		wg.Add(2)
+
+		go func() {
+			watcher.Finalize()
+			wg.Done()
+		}()
+		go func() {
+			watcher.StopWatchOnCtx(ctxInfo)
+			wg.Done()
+		}()
+
+		wg.Wait()
+	})
 }

@@ -1,4 +1,4 @@
-#ifdef WITH_GRPC
+#if defined(WITH_GRPC)
 
 #include "core/itemimpl.h"
 #include "grpcclient_api.h"

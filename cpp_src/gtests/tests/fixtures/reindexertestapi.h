@@ -65,17 +65,17 @@ public:
 	ItemType NewItem(std::string_view ns) { return reindexer->NewItem(ns); }
 	reindexer::Error Commit(std::string_view ns) { return reindexer->Commit(ns); }
 	void Upsert(std::string_view ns, ItemType &item) {
-		assert(!!item);
+		assertrx(!!item);
 		auto err = reindexer->WithTimeout(kBasicTimeout).Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	void Delete(std::string_view ns, ItemType &item) {
-		assert(!!item);
+		assertrx(!!item);
 		auto err = reindexer->WithTimeout(kBasicTimeout).Delete(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	void Upsert(std::string_view ns, ItemType &item, std::function<void(const reindexer::Error &)> cmpl) {
-		assert(!!item);
+		assertrx(!!item);
 		auto err = reindexer->WithTimeout(kBasicTimeout).WithCompletion(cmpl).Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}

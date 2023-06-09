@@ -19,9 +19,11 @@ using std::shared_ptr;
 using reindexer::Reindexer;
 
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
-const int kItemsInBenchDataset = 5000;
+const int kItemsInBenchDataset = 5'000;
+#elif defined(RX_WITH_STDLIB_DEBUG)
+const int kItemsInBenchDataset = 50'000;
 #else
-const int kItemsInBenchDataset = 500000;
+const int kItemsInBenchDataset = 500'000;
 #endif
 
 int main(int argc, char** argv) {

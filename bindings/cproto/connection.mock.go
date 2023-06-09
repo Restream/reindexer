@@ -145,7 +145,7 @@ func (mc *MockConnection) lastReadTime() time.Time {
 func (mc *MockConnection) finalize() error {
 	return nil
 }
-func (mc *MockConnection) getConn() net.Conn {
+func (mc *MockConnection) getConnection() net.Conn {
 	return nil
 }
 func (mc *MockConnection) getSeqs() chan uint32 {

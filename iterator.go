@@ -7,6 +7,9 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus"
+	otelattr "go.opentelemetry.io/otel/attribute"
+
 	"github.com/restream/reindexer/v4/bindings"
 )
 
@@ -64,6 +67,8 @@ func errJSONIterator(err error) *JSONIterator {
 
 func newIterator(
 	userCtx context.Context,
+	db *reindexerImpl,
+	namespace string,
 	q *Query,
 	result bindings.RawBuffer,
 	nsArray []nsArrayEntry,
@@ -77,6 +82,8 @@ func newIterator(
 	} else {
 		it = &Iterator{}
 	}
+	it.db = db
+	it.namespace = namespace
 	it.nsArray = nsArray
 	it.joinToFields = joinToFields
 	it.joinHandlers = joinHandlers
@@ -123,6 +130,8 @@ func newJSONIterator(ctx context.Context, q *Query, json []byte, jsonOffsets []i
 
 // Iterator presents query results
 type Iterator struct {
+	db             *reindexerImpl
+	namespace      string
 	ser            resultSerializer
 	rawQueryParams rawResultQueryParams
 	result         bindings.RawBuffer
@@ -250,6 +259,14 @@ func (it *Iterator) needMore() bool {
 }
 
 func (it *Iterator) fetchResults() {
+	if it.db.otelTracer != nil {
+		defer it.db.startTracingSpan(it.userCtx, "Reindexer.Iterator.FetchResults", otelattr.String("rx.ns", it.namespace)).End()
+	}
+
+	if it.db.promMetrics != nil {
+		defer prometheus.NewTimer(it.db.promMetrics.clientCallsLatency.WithLabelValues("Iterator.FetchResults", it.namespace)).ObserveDuration()
+	}
+
 	if fetchMore, ok := it.result.(bindings.FetchMore); ok {
 		fetchCount := defaultFetchCount
 		if it.query != nil {

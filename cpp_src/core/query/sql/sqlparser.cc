@@ -125,34 +125,41 @@ int SQLParser::selectParse(tokenizer &parser) {
 					if (!query_.CanAddAggregation(agg) || (wasSelectFilter && agg != AggDistinct)) {
 						throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 					}
-					AggregateEntry entry{agg, {std::string(tok.text())}, UINT_MAX, 0};
+					h_vector<std::string, 1> fields{{std::string(tok.text())}};
 					tok = parser.next_token();
 					for (tok = parser.peek_token(); tok.text() == ","sv; tok = parser.peek_token()) {
 						parser.next_token();
 						tok = peekSqlToken(parser, SingleSelectFieldSqlToken);
-						entry.fields_.push_back(std::string(tok.text()));
+						fields.emplace_back(tok.text());
 						tok = parser.next_token();
 					}
+					AggregateEntry entry{agg, std::move(fields)};
 					for (tok = parser.peek_token(); tok.text() != ")"sv; tok = parser.peek_token()) {
 						if (tok.text() == "order"sv) {
 							parser.next_token();
 							std::vector<Variant> orders;
-							parseOrderBy(parser, entry.sortingEntries_, orders);
+							SortingEntries sortingEntries;
+							parseOrderBy(parser, sortingEntries, orders);
 							if (!orders.empty()) {
 								throw Error(errParseSQL, "Forced sort order is not available in aggregation sort");
+							}
+							for (auto s : sortingEntries) {
+								entry.AddSortingEntry(std::move(s));
 							}
 						} else if (tok.text() == "limit"sv) {
 							parser.next_token();
 							tok = parser.next_token();
-							if (tok.type != TokenNumber)
+							if (tok.type != TokenNumber) {
 								throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
-							entry.limit_ = stoi(tok.text());
+							}
+							entry.SetLimit(stoi(tok.text()));
 						} else if (tok.text() == "offset"sv) {
 							parser.next_token();
 							tok = parser.next_token();
-							if (tok.type != TokenNumber)
+							if (tok.type != TokenNumber) {
 								throw Error(errParseSQL, "Expected number, but found '%s' in query, %s", tok.text(), parser.where());
-							entry.offset_ = stoi(tok.text());
+							}
+							entry.SetOffset(stoi(tok.text()));
 						} else {
 							break;
 						}
@@ -334,7 +341,7 @@ Variant token2kv(const token &currTok, tokenizer &parser, bool allowComposite) {
 		},
 		[&](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
 		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Composite,
-				 KeyValueType::Null>) noexcept -> Variant {
+				 KeyValueType::Null, KeyValueType::Uuid>) noexcept -> Variant {
 			assertrx(0);
 			abort();
 		});
@@ -511,8 +518,9 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 			addUpdateValue(tok, parser, updateField);
 			tok = parser.next_token(false);
 			if (tok.text() == "]"sv) break;
-			if (tok.text() != ","sv)
+			if (tok.text() != ","sv) {
 				throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
+			}
 		}
 	} else {
 		addUpdateValue(tok, parser, updateField);
@@ -890,10 +898,11 @@ void SQLParser::parseDWithin(tokenizer &parser, OpType nextOp) {
 
 	tok = parser.next_token();
 	const auto distance = token2kv(tok, parser, false);
-	distance.Type().EvaluateOneOf(
-		[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept {},
-		[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite,
-				  KeyValueType::Undefined>) { throw Error(errParseSQL, "Expected number, but found '%s', %s", tok.text(), parser.where()); });
+	distance.Type().EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept {},
+								  [&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple,
+											KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Uuid>) {
+									  throw Error(errParseSQL, "Expected number, but found '%s', %s", tok.text(), parser.where());
+								  });
 
 	tok = parser.next_token();
 	if (tok.text() != ")"sv) {

@@ -1,4 +1,5 @@
 #include "httpserver.h"
+
 #include <sys/stat.h>
 #include <iomanip>
 #include <sstream>
@@ -1301,7 +1302,10 @@ int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &re
 	WrSerializer itemSer;
 	auto cjsonViewer = [this, &res, &ctx](std::string_view cjson) {
 		auto item = getDB(ctx, kRoleDataRead).WithTimeout(serverConfig_.HttpReadTimeout).NewItem(res.GetNamespaces()[0]);
-		item.FromCJSON(cjson);
+		auto err = item.FromCJSON(cjson);
+		if (!err.ok()) {
+			throw Error(err.code(), "Unable to parse CJSON for WAL item: %s", err.what());
+		}
 		return std::string(item.GetJSON());
 	};
 	const bool isWALQuery = res.IsWALQuery();
@@ -1765,7 +1769,7 @@ int HTTPServer::BeginTx(http::Context &ctx) {
 	}
 
 	std::string dbName;
-	auto db = getDB(ctx, kRoleDataWrite, &dbName);
+	auto db = getDB(ctx, kRoleDataWrite, &dbName).WithTimeout(serverConfig_.HttpWriteTimeout());
 	auto tx = db.NewTransaction(nsName);
 	if (!tx.Status().ok()) {
 		return status(ctx, http::HttpStatus(tx.Status()));
@@ -1793,7 +1797,7 @@ int HTTPServer::CommitTx(http::Context &ctx) {
 	}
 
 	std::string dbName;
-	auto db = getDB(ctx, kRoleDataWrite, &dbName);
+	auto db = getDB(ctx, kRoleDataWrite, &dbName).WithTimeout(serverConfig_.HttpWriteTimeout());
 	auto tx = getTx(dbName, txId);
 	QueryResults qr;
 	auto ret = db.CommitTransaction(*tx, qr);
@@ -1811,7 +1815,7 @@ int HTTPServer::RollbackTx(http::Context &ctx) {
 	}
 
 	std::string dbName;
-	auto db = getDB(ctx, kRoleDataWrite, &dbName);
+	auto db = getDB(ctx, kRoleDataWrite, &dbName).WithTimeout(serverConfig_.HttpWriteTimeout());
 	auto tx = getTx(dbName, txId);
 	QueryResults qr;
 	auto ret = db.RollBackTransaction(*tx);
@@ -1850,8 +1854,11 @@ int HTTPServer::GetSQLQueryTx(http::Context &ctx) {
 			case QueryDelete:
 			case QueryUpdate:
 				return modifyQueryTxImpl(ctx, dbName, txId, q);
-			default:
+			case QuerySelect:
+			case QueryTruncate:
 				return status(ctx, http::HttpStatus(http::StatusInternalServerError, "Transactions support update/delete queries only"));
+			default:
+				abort();
 		}
 	} catch (const Error &e) {
 		return status(ctx, http::HttpStatus(e));

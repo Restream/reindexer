@@ -10,13 +10,7 @@ public:
 	FieldsExtractor() = default;
 	FieldsExtractor(VariantArray *va, KeyValueType expectedType, int expectedPathDepth, FieldsSet *filter = nullptr, int *index = nullptr,
 					int *size = nullptr)
-		: values_(va),
-		  expectedType_(expectedType),
-		  expectedPathDepth_(expectedPathDepth),
-		  tagsPath_(nullptr),
-		  filter_(filter),
-		  index_(index),
-		  length_(size) {}
+		: values_(va), expectedType_(expectedType), expectedPathDepth_(expectedPathDepth), filter_(filter), index_(index), length_(size) {}
 	FieldsExtractor(FieldsExtractor &&other) = default;
 	FieldsExtractor(const FieldsExtractor &) = delete;
 	FieldsExtractor &operator=(const FieldsExtractor &) = delete;
@@ -53,10 +47,10 @@ public:
 		}
 	}
 
-	void Array(int, Serializer &ser, int tagType, int count) {
+	void Array(int, Serializer &ser, TagType tagType, int count) {
 		const IndexedPathNode &pathNode = getArrayPathNode();
 		for (int i = 0; i < count; ++i) {
-			Variant value = ser.GetRawVariant(KeyValueType::FromNumber(tagType));
+			Variant value = ser.GetRawVariant(KeyValueType{tagType});
 			if (pathNode.IsForAllItems() || i == pathNode.Index()) {
 				Put(0, std::move(value));
 			}
@@ -67,16 +61,21 @@ public:
 		if (expectedPathDepth_ > 0) return *this;
 		expectedType_.EvaluateOneOf(
 			[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String,
-					  KeyValueType::Null, KeyValueType::Tuple>) { arg.convert(expectedType_); },
+					  KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Uuid>) { arg.convert(expectedType_); },
 			[](OneOf<KeyValueType::Undefined, KeyValueType::Composite>) noexcept {});
 		values_->push_back(std::move(arg));
 		if (expectedPathDepth_ < 0) values_->MarkObject();
 		return *this;
 	}
 
+	template <typename T>
+	FieldsExtractor &Put(int tag, const T &arg) {
+		return Put(tag, Variant{arg});
+	}
+
 	FieldsExtractor &Null(int) { return *this; }
 
-protected:
+private:
 	const IndexedPathNode &getArrayPathNode() const {
 		if (filter_ && filter_->getTagsPathsLength() > 0) {
 			size_t lastItemIndex = filter_->getTagsPathsLength() - 1;
@@ -91,9 +90,8 @@ protected:
 	}
 
 	VariantArray *values_ = nullptr;
-	KeyValueType expectedType_;
+	KeyValueType expectedType_{KeyValueType::Undefined{}};
 	int expectedPathDepth_ = 0;
-	IndexedTagsPath *tagsPath_;
 	FieldsSet *filter_;
 	int *index_;
 	int *length_;

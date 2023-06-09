@@ -57,7 +57,7 @@ if (GH_CI_OSX)
 endif()
 
 set (GTEST_TIMEOUT 800)
-if (WITH_ASAN OR WITH_TSAN)
+if (WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG)
     set(GTEST_TIMEOUT 1200)
 endif ()
 
@@ -76,6 +76,7 @@ if (WITH_TSAN)
     set_tests_properties(gtests PROPERTIES ENVIRONMENT TSAN_OPTIONS=suppressions=${REINDEXER_SOURCE_PATH}/gtests/tsan.suppressions)
 endif ()
 
+add_definitions(-DREINDEXER_TESTS_DATA_PATH="${REINDEXER_SOURCE_PATH}/gtests/tests_data")
 if (ENABLE_SERVER_AS_PROCESS_IN_TEST)
     if (CMAKE_SYSTEM_NAME MATCHES "Linux")
         add_definitions(-DREINDEXER_WITH_SC_AS_PROCESS)

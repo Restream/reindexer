@@ -80,6 +80,8 @@ func (server *BuiltinServer) Init(u []url.URL, options ...interface{}) error {
 
 	for _, option := range options {
 		switch v := option.(type) {
+		case bindings.OptionPrometheusMetrics:
+		case bindings.OptionOpenTelemetry:
 		case bindings.OptionCgoLimit:
 		case bindings.OptionBuiltintCtxWatch:
 		case bindings.ConnectOptions:

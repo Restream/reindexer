@@ -27,13 +27,13 @@ public:
 
 	void Reset() noexcept { memset(v_->Ptr(), 0, t_.TotalSize()); }
 	// Get element(s) by field index
-	VariantArray &Get(int field, VariantArray &, bool enableHold = false) const;
+	void Get(int field, VariantArray &, bool enableHold = false) const;
 	// Get element by field and array index
-	Variant Get(int field, int idx, bool enableHold = false) const;
+	[[nodiscard]] Variant Get(int field, int idx, bool enableHold = false) const;
 
 	// Get array as span of typed elements
 	template <typename Elem>
-	span<Elem> GetArray(int field) {
+	span<Elem> GetArray(int field) & {
 		assertrx(field < Type().NumFields());
 		assertrx(Type().Field(field).IsArray());
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
@@ -74,12 +74,12 @@ public:
 	T CopyTo(PayloadType t, bool newFields = true);
 
 	// Get element(s) by field index
-	VariantArray &Get(std::string_view field, VariantArray &, bool enableHold = false) const;
+	void Get(std::string_view field, VariantArray &, bool enableHold = false) const;
 
 	// Get element(s) by json path
-	VariantArray GetByJsonPath(std::string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
-	VariantArray GetByJsonPath(const TagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
-	VariantArray GetByJsonPath(const IndexedTagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
+	void GetByJsonPath(std::string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
+	void GetByJsonPath(const TagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
+	void GetByJsonPath(const IndexedTagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
 	VariantArray GetIndexedArrayData(const IndexedTagsPath &jsonPath, int &offset, int &size) const;
 
 	// Get fields count
@@ -103,9 +103,12 @@ public:
 	uint64_t GetHash() const noexcept;
 
 	// Compare 2 objects by field mask
+	template <WithString>
 	int Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts = CollateOpts()) const;
+	template <WithString>
 	int Compare(const T &other, const FieldsSet &fields, size_t &firstDifferentFieldIdx,
 				const h_vector<const CollateOpts *, 1> &collateOpts) const;
+	template <WithString>
 	int Compare(const PayloadIface<const T> &other, std::string_view field, int fieldIdx, const CollateOpts &collateOpts, TagsMatcher &ltm,
 				TagsMatcher &rtm, bool lForceByJsonPath, bool rForceByJsonPath) const;
 
@@ -136,12 +139,40 @@ private:
 	template <typename StrHolder>
 	void copyOrMoveStrings(int field, StrHolder &dest, bool copy);
 
-protected:
 	// Array of elements types , not owning
 	const PayloadTypeImpl &t_;
 	// Data of elements, not owning
 	T *v_;
 };
+
+template <>
+void PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher &, WrSerializer &);
+template <>
+std::string PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher &);
+template <>
+void PayloadIface<PayloadValue>::GetJSON(const TagsMatcher &, WrSerializer &) = delete;
+template <>
+std::string PayloadIface<PayloadValue>::GetJSON(const TagsMatcher &) = delete;
+
+extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(std::string_view, VariantArray const &, bool);
+extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, VariantArray const &, bool);
+extern template void PayloadIface<PayloadValue>::Set<PayloadValue, static_cast<void *>(0)>(int, int, const Variant &);
+extern template void PayloadIface<PayloadValue>::SetSingleElement<PayloadValue, static_cast<void *>(0)>(int, const Variant &);
+
+extern template PayloadValue PayloadIface<PayloadValue>::CopyTo<PayloadValue, static_cast<void *>(0)>(PayloadType t, bool newFields);
+extern template PayloadValue PayloadIface<PayloadValue>::CopyWithNewOrUpdatedFields<PayloadValue, static_cast<void *>(0)>(PayloadType t);
+extern template PayloadValue PayloadIface<PayloadValue>::CopyWithRemovedFields<PayloadValue, static_cast<void *>(0)>(PayloadType t);
+
+extern template int PayloadIface<PayloadValue>::Compare<WithString::Yes>(const PayloadValue &, const FieldsSet &,
+																		 const CollateOpts &) const;
+extern template int PayloadIface<PayloadValue>::Compare<WithString::No>(const PayloadValue &, const FieldsSet &, const CollateOpts &) const;
+extern template int PayloadIface<const PayloadValue>::Compare<WithString::Yes>(const PayloadValue &, const FieldsSet &,
+																			   const CollateOpts &) const;
+extern template int PayloadIface<const PayloadValue>::Compare<WithString::No>(const PayloadValue &, const FieldsSet &,
+																			  const CollateOpts &) const;
+
+extern template class PayloadIface<PayloadValue>;
+extern template class PayloadIface<const PayloadValue>;
 
 using Payload = PayloadIface<PayloadValue>;
 using ConstPayload = PayloadIface<const PayloadValue>;

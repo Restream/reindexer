@@ -8,6 +8,7 @@ import (
 	"github.com/restream/reindexer/v4"
 	"github.com/restream/reindexer/v4/test/custom_struct_another"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func init() {
@@ -30,17 +31,17 @@ func TestQueryIter(t *testing.T) {
 		_ = iter.Object()
 		i++
 	}
-	assert.NoError(t, iter.Error())
+	require.NoError(t, iter.Error())
 	assert.Equal(t, i, limit, "Unexpected result count: %d (want %d)", i, limit)
 
 	// check all
 	items, err := DB.Query("test_items_iter").Exec(t).FetchAll()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, len(items), total, "Unexpected result count: %d (want %d)", len(items), total)
 
 	// check one
 	item, err := DB.Query("test_items_iter").Exec(t).FetchOne()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.NotNil(t, item, "Iterator.FetchOne: item is nil")
 }
 
@@ -48,7 +49,7 @@ func TestNextObj(t *testing.T) {
 	ctx := context.Background()
 
 	err := DB.OpenNamespace("test_items_iter_next_obj", reindexer.DefaultNamespaceOptions(), TestItem{})
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	itemsExp := []*TestItem{
 		newTestItem(20000, 5).(*TestItem),

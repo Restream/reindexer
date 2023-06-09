@@ -13,8 +13,8 @@ namespace reindexer {
 class Schema;
 class TagsMatcher;
 
-const int kNameBit = 0x3;
-const int kTypeMask = 0x7;
+constexpr uint64_t kTypeBit = 0x3;
+constexpr uint64_t kTypeMask = (uint64_t(1) << kTypeBit) - uint64_t(1);
 
 enum ProtobufTypes {
 	PBUF_TYPE_VARINT = 0,
@@ -84,6 +84,12 @@ public:
 			array.put(fieldIdx, std::string_view(item));
 		}
 	}
+	void Array(int fieldIdx, span<Uuid> data, int /*offset*/ = 0) {
+		auto array = ArrayNotPacked(fieldIdx);
+		for (Uuid item : data) {
+			array.put(fieldIdx, item);
+		}
+	}
 
 	ProtobufBuilder ArrayNotPacked(int fieldIdx) {
 		assertrx(type_ != ObjType::TypeArray && type_ != ObjType::TypeObjectArray);
@@ -98,7 +104,7 @@ public:
 	ProtobufBuilder Array(std::string_view tagName, int size = KUnknownFieldSize) { return Array(tm_->name2tag(tagName), size); }
 	ProtobufBuilder Array(int fieldIdx, int = KUnknownFieldSize) { return ArrayNotPacked(fieldIdx); }
 
-	void Array(int fieldIdx, Serializer& rdser, int tagType, int count) {
+	void Array(int fieldIdx, Serializer& rdser, TagType tagType, int count) {
 		if (tagType == TAG_VARINT || tagType == TAG_DOUBLE || tagType == TAG_BOOL) {
 			auto array = ArrayPacked(fieldIdx);
 			while (count--) packItem(fieldIdx, tagType, rdser, array);
@@ -123,6 +129,7 @@ private:
 	void put(int fieldIdx, double val);
 	void put(int fieldIdx, std::string_view val);
 	void put(int fieldIdx, const Variant& val);
+	void put(int fieldIdx, Uuid val);
 
 	ObjType type_;
 	WrSerializer* ser_;
@@ -134,7 +141,7 @@ private:
 
 	int getFieldTag(int fieldIdx) const;
 	void putFieldHeader(int fieldIdx, ProtobufTypes type);
-	static void packItem(int fieldIdx, int tagType, Serializer& rdser, ProtobufBuilder& array);
+	static void packItem(int fieldIdx, TagType tagType, Serializer& rdser, ProtobufBuilder& array);
 };
 
 }  // namespace reindexer

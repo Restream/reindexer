@@ -149,6 +149,26 @@ struct UpdateRecord {
 			case Type::DeleteQueryTx:
 			case Type::Truncate:
 				return true;
+			case Type::None:
+			case Type::IndexAdd:
+			case Type::IndexDrop:
+			case Type::IndexUpdate:
+			case Type::UpdateQuery:
+			case Type::DeleteQuery:
+			case Type::SetSchema:
+			case Type::BeginTx:
+			case Type::CommitTx:
+			case Type::AddNamespace:
+			case Type::CloseNamespace:
+			case Type::DropNamespace:
+			case Type::RenameNamespace:
+			case Type::ResyncNamespaceGeneric:
+			case Type::ResyncNamespaceLeaderInit:
+			case Type::ResyncOnUpdatesDrop:
+			case Type::EmptyUpdate:
+			case Type::NodeNetworkCheck:
+			case Type::SetTagsMatcher:
+			case Type::SetTagsMatcherTx:
 			default:
 				return false;
 		}

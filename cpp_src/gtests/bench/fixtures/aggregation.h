@@ -18,8 +18,8 @@ public:
 	void RegisterAllCases();
 	reindexer::Error Initialize() override;
 
-protected:
-	reindexer::Item MakeItem() override;
+private:
+	reindexer::Item MakeItem(benchmark::State&) override;
 
 	template <size_t N>
 	void Insert(State& state);
@@ -27,7 +27,6 @@ protected:
 	void ArrayFacet(State&);
 	void MultiFacet(State&);
 
-private:
 	reindexer::WrSerializer wrSer_;
 	int id_ = 0;
 };

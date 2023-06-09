@@ -85,7 +85,7 @@ private:
 		std::vector<FtVariantEntry> variants;
 		// Variants with low relevancy. For example, short terms, recieved from stemmers.
 		// Those variants will be handled separately from main variants array (and some of them will probably be excluded)
-		h_vector<FtBoundVariantEntry, 4> lowRelVariants;
+		RVector<FtBoundVariantEntry, 4> lowRelVariants;
 
 		// Found words map, shared between all the terms
 		// The main purpose is to detect unique words and also reuse already allocated map buckets
@@ -97,38 +97,88 @@ private:
 		std::vector<TextSearchResults> rawResults;
 		size_t totalORVids = 0;
 	};
+
+	class TyposHandler {
+	public:
+		TyposHandler(const FtFastConfig& cfg) noexcept
+			: maxTyposInWord_(cfg.MaxTyposInWord()),
+			  dontUseMaxTyposForBoth_(maxTyposInWord_ != cfg.maxTypos / 2),
+			  maxMissingLetts_(cfg.MaxMissingLetters()),
+			  maxExtraLetts_(cfg.MaxExtraLetters()),
+			  logLevel_(cfg.logLevel) {
+			{
+				const auto maxTypoDist = cfg.MaxTypoDistance();
+				maxTypoDist_ = maxTypoDist.first;
+				useMaxTypoDist_ = maxTypoDist.second;
+			}
+			{
+				const auto maxLettPermDist = cfg.MaxSymbolPermutationDistance();
+				maxLettPermDist_ = maxLettPermDist.first;
+				useMaxLettPermDist_ = maxLettPermDist.second;
+			}
+		}
+		void operator()(std::vector<TextSearchResults>&, const DataHolder<IdCont>&, const FtDSLEntry&);
+
+	private:
+		template <typename... Args>
+		void logTraceF(int level, const char* fmt, Args&&... args);
+		bool isWordFitMaxTyposDist(const WordTypo& found, const typos_context::TyposVec& current);
+		bool isWordFitMaxLettPerm(const std::string_view foundWord, const WordTypo& found, const std::wstring& currentWord,
+								  const typos_context::TyposVec& current);
+
+		const int maxTyposInWord_;
+		const bool dontUseMaxTyposForBoth_;
+		bool useMaxTypoDist_;
+		bool useMaxLettPermDist_;
+		unsigned maxTypoDist_;
+		unsigned maxLettPermDist_;
+		unsigned maxMissingLetts_;
+		unsigned maxExtraLetts_;
+		int logLevel_;
+		std::wstring foundWordUTF16_;
+	};
+
 	IDataHolder::MergeData mergeResults(std::vector<TextSearchResults>&& rawResults, size_t totalORVids,
 										const std::vector<size_t>& synonymsBounds, bool inTransaction,
 										FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
 
 	void mergeIteration(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
-						IDataHolder::MergeData& merged, std::vector<IDataHolder::MergedIdRel>& merged_rd, std::vector<uint16_t>& idoffsets,
-						std::vector<bool>& curExists, const bool hasBeenAnd, const bool inTransaction, const RdxContext&);
+						IDataHolder::MergeData& merged, std::vector<IDataHolder::MergedIdRel>& merged_rd,
+						std::vector<IDataHolder::MergedOffsetT>& idoffsets, std::vector<bool>& curExists, const bool hasBeenAnd,
+						const bool inTransaction, const RdxContext&);
 
 	template <typename P>
 	void mergeIterationGroup(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
-							 IDataHolder::MergeData& merged, std::vector<P>& merged_rd, std::vector<uint16_t>& idoffsets,
+							 IDataHolder::MergeData& merged, std::vector<P>& merged_rd, std::vector<IDataHolder::MergedOffsetT>& idoffsets,
 							 std::vector<bool>& present, const bool firstTerm, const bool inTransaction, const RdxContext& rdxCtx);
 
 	template <typename PosType>
 	void mergeGroupResult(std::vector<TextSearchResults>& rawResults, size_t from, size_t to, FtMergeStatuses::Statuses& mergeStatuses,
 						  IDataHolder::MergeData& merged, std::vector<IDataHolder::MergedIdRel>& merged_rd, OpType op,
-						  const bool hasBeenAnd, std::vector<uint16_t>& idoffsets, const bool inTransaction, const RdxContext& rdxCtx);
+						  const bool hasBeenAnd, std::vector<IDataHolder::MergedOffsetT>& idoffsets, const bool inTransaction,
+						  const RdxContext& rdxCtx);
 
 	template <typename PosType>
 	void mergeResultsPart(std::vector<TextSearchResults>& rawResults, size_t from, size_t to, IDataHolder::MergeData& merged,
 						  std::vector<PosType>& mergedPos, const bool inTransaction, const RdxContext& rdxCtx);
 	AreaHolder createAreaFromSubMerge(const IDataHolder::MergedIdRelExArea& posInfo);
-	void copyAreas(AreaHolder& subMerged, AreaHolder& merged);
+	void copyAreas(AreaHolder& subMerged, AreaHolder& merged, int32_t rank);
 
 	template <typename PosType>
 	void subMergeLoop(std::vector<IDataHolder::MergeInfo>& subMerged, std::vector<PosType>& subMergedPos, IDataHolder::MergeData& merged,
 					  std::vector<IDataHolder::MergedIdRel>& merged_rd, FtMergeStatuses::Statuses& mergeStatuses,
-					  std::vector<uint16_t>& idoffsets, std::vector<bool>* checkAndOpMerge, const bool hasBeenAnd);
+					  std::vector<IDataHolder::MergedOffsetT>& idoffsets, std::vector<bool>* checkAndOpMerge, const bool hasBeenAnd);
 
 	void calcFieldBoost(double idf, unsigned long long f, const IdRelType& relid, const FtDslOpts& opts, int termProc, double& termRank,
 						double& normBm25, bool& dontSkipCurTermRank, h_vector<double, 4>& ranksInFields, int& field);
-	std::pair<double, int> calcTermRank(const TextSearchResults& rawRes, double idf, const IdRelType& relid, int proc, double& normBm25);
+	std::pair<double, int> calcTermRank(const TextSearchResults& rawRes, double idf, const IdRelType& relid, int proc);
+
+	void addNewTerm(FtMergeStatuses::Statuses& mergeStatuses, IDataHolder::MergeData& merged,
+					std::vector<IDataHolder::MergedOffsetT>& idoffsets, std::vector<bool>& curExists, const IdRelType& relid,
+					index_t rawResIndex, int32_t termRank, int field);
+
+	void addAreas(IDataHolder::MergeData& merged, int32_t areaIndex, const IdRelType& relid, int32_t termRank);
+
 	template <typename PosType>
 	static constexpr bool isSingleTermMerge() noexcept {
 		static_assert(std::is_same_v<PosType, IDataHolder::MergedIdRelEx> || std::is_same_v<PosType, IDataHolder::MergedIdRelExArea> ||
@@ -158,13 +208,11 @@ private:
 	void processVariants(FtSelectContext&, const FtMergeStatuses::Statuses& mergeStatuses);
 	template <bool withStatuses>
 	void processLowRelVariants(FtSelectContext&, const FtMergeStatuses::Statuses& mergeStatuses);
-	void prepareVariants(std::vector<FtVariantEntry>&, h_vector<FtBoundVariantEntry, 4>* lowRelVariants, size_t termIdx,
+	void prepareVariants(std::vector<FtVariantEntry>&, RVector<FtBoundVariantEntry, 4>* lowRelVariants, size_t termIdx,
 						 const std::vector<std::string>& langs, const FtDSLQuery&, std::vector<SynonymsDsl>*);
 	template <bool withStatuses>
 	void processStepVariants(FtSelectContext& ctx, typename DataHolder<IdCont>::CommitStep& step, const FtVariantEntry& variant,
 							 unsigned curRawResultIdx, const FtMergeStatuses::Statuses& mergeStatuses, int vidsLimit);
-
-	void processTypos(FtSelectContext&, const FtDSLEntry&);
 
 	DataHolder<IdCont>& holder_;
 	size_t fieldSize_;

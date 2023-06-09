@@ -3,6 +3,7 @@ package cjson
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"unsafe"
 
 	"github.com/restream/reindexer/v4/bindings"
@@ -14,6 +15,7 @@ const (
 	valueInt64  = bindings.ValueInt64
 	valueDouble = bindings.ValueDouble
 	valueString = bindings.ValueString
+	valueUuid   = bindings.ValueUuid
 )
 
 // to avoid gcc toolchain requirement
@@ -109,6 +111,22 @@ func (pl *payloadIface) ptr(field, idx, typ int) unsafe.Pointer {
 	return unsafe.Pointer(pl.p + uintptr(arr.offset) + uintptr(idx)*f.Size)
 }
 
+const hexChars = "0123456789abcdef"
+
+func createUuid(v [2]uint64) string {
+	var b strings.Builder
+	b.Grow(36)
+	for i, j := 0, 0; i < 36; i++ {
+		switch i {
+		case 8, 13, 18, 23: b.WriteByte('-')
+		default:
+			b.WriteByte(hexChars[(v[j / 16] >> ((15 - j % 16) * 4)) & 0xF])
+			j++
+		}
+	}
+	return b.String()
+}
+
 func (pl *payloadIface) getInt(field, idx int) int {
 	p := pl.ptr(field, idx, valueInt)
 	return int(*(*Cint)(p))
@@ -117,6 +135,11 @@ func (pl *payloadIface) getInt(field, idx int) int {
 func (pl *payloadIface) getInt64(field, idx int) int64 {
 	p := pl.ptr(field, idx, valueInt64)
 	return *(*int64)(p)
+}
+
+func (pl *payloadIface) getUuid(field, idx int) string {
+	p := pl.ptr(field, idx, valueUuid)
+	return createUuid(*(*[2]uint64)(p))
 }
 
 func (pl *payloadIface) getFloat64(field, idx int) float64 {
@@ -197,6 +220,8 @@ func (pl *payloadIface) getValue(field int, idx int, v reflect.Value) {
 		v.SetFloat(pl.getFloat64(field, idx))
 	case valueString:
 		v.SetString(pl.getString(field, idx))
+	case valueUuid:
+		v.SetString(pl.getUuid(field, idx))
 	default:
 		panic(fmt.Errorf("Unknown key value type %d", pl.t.Fields[field].Type))
 	}
@@ -433,6 +458,27 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 			}
 			v.Set(slice)
 		}
+	case valueUuid:
+		pi := (*[1 << 27]uint64)(ptr)[:l * 2:l * 2]
+		if a, ok := v.Addr().Interface().(*[]string); ok {
+			*a = make([]string, cnt, cnt)
+			for i := 0; i < cnt; i++ {
+				(*a)[i] = createUuid([2]uint64{pi[i * 2], pi[i * 2 + 1]})
+			}
+		} else {
+			slice := reflect.MakeSlice(v.Type(), cnt, cnt)
+			for i := 0; i < cnt; i++ {
+				sv := slice.Index(i)
+				if sv.Type().Kind() == reflect.Ptr {
+					el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
+					el.Elem().SetString(createUuid([2]uint64{pi[i * 2], pi[i * 2 + 1]}))
+					sv.Set(el)
+				} else {
+					sv.SetString(createUuid([2]uint64{pi[i * 2], pi[i * 2 + 1]}))
+				}
+			}
+			v.Set(slice)
+		}
 	default:
 		panic(fmt.Errorf("Got C array with elements of unknown C type %d in field '%s' for go type '%s'", pl.t.Fields[field].Type, pl.t.Fields[field].Name, v.Type().Elem().Kind().String()))
 	}
@@ -452,6 +498,8 @@ func (pl *payloadIface) getIface(field int) interface{} {
 			return pl.getFloat64(field, 0)
 		case valueString:
 			return pl.getString(field, 0)
+		case valueUuid:
+			return pl.getUuid(field, 0)
 		}
 	}
 
@@ -480,6 +528,12 @@ func (pl *payloadIface) getIface(field int) interface{} {
 		a := make([]string, l, l)
 		for i := 0; i < l; i++ {
 			a[i] = pl.getString(field, i)
+		}
+		return a
+	case valueUuid:
+		a := make([]string, l, l)
+		for i := 0; i < l; i++ {
+			a[i] = pl.getUuid(field, i)
 		}
 		return a
 	}

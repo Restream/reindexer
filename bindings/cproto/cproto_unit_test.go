@@ -212,7 +212,7 @@ func TestConnectDSN(t *testing.T) {
 		}
 		fx.mockConnFactory.expect().newConnection(ctx, params).Return(conn, int64(0), nil)
 
-		err := fx.connectDSN(ctx, connCount)
+		err := fx.connectDSN(ctx, connCount, bindings.LBRoundRobin)
 		require.NoError(t, err)
 	})
 }
@@ -246,7 +246,7 @@ func TestGetConn(t *testing.T) {
 			return stat, nil
 		})
 
-		_, err := fx.getConn(ctx)
+		_, err := fx.getConnection(ctx)
 		require.NoError(t, err)
 	})
 	t.Run("should not get stat for random strategy", func(t *testing.T) {
@@ -270,7 +270,7 @@ func TestGetConn(t *testing.T) {
 		fx.mockConns[1].expect().hasError().Return(true)
 		fx.mockConns[1].expect().curError().Return(errors.New("exp"))
 
-		_, err := fx.getConn(ctx)
+		_, err := fx.getConnection(ctx)
 		require.NoError(t, err)
 	})
 }

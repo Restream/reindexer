@@ -76,11 +76,11 @@ bool PayloadTypeImpl::Drop(std::string_view field) {
 	if (it == fieldsByName_.end()) return false;
 
 	int fieldIdx = it->second;
-	for (auto &it : fieldsByName_) {
-		if (it.second > fieldIdx) --it.second;
+	for (auto &f : fieldsByName_) {
+		if (f.second > fieldIdx) --f.second;
 	}
-	for (auto &it : fieldsByJsonPath_) {
-		if (it.second > fieldIdx) --it.second;
+	for (auto &f : fieldsByJsonPath_) {
+		if (f.second > fieldIdx) --f.second;
 	}
 
 	const auto fieldType = fields_[fieldIdx].Type();
@@ -88,8 +88,9 @@ bool PayloadTypeImpl::Drop(std::string_view field) {
 		if ((*it == fieldIdx) && (fieldType.Is<KeyValueType::String>())) {
 			it = strFields_.erase(it);
 			continue;
-		} else if (*it > fieldIdx)
+		} else if (*it > fieldIdx) {
 			--(*it);
+		}
 		++it;
 	}
 
@@ -137,7 +138,7 @@ void PayloadTypeImpl::serialize(WrSerializer &ser) const {
 	ser.PutVarUint(base_key_string::export_hdr_offset());
 	ser.PutVarUint(NumFields());
 	for (int i = 0; i < NumFields(); i++) {
-		ser.PutVarUint(Field(i).Type().ToNumber());
+		ser.PutKeyValueType(Field(i).Type());
 		ser.PutVString(Field(i).Name());
 		ser.PutVarUint(Field(i).Offset());
 		ser.PutVarUint(Field(i).ElemSizeof());
@@ -158,7 +159,7 @@ void PayloadTypeImpl::deserialize(Serializer &ser) {
 	unsigned count = ser.GetVarUint();
 
 	for (unsigned i = 0; i < count; i++) {
-		const auto t = KeyValueType::FromNumber(ser.GetVarUint());
+		const auto t = ser.GetKeyValueType();
 		std::string name(ser.GetVString());
 		std::vector<std::string> jsonPaths;
 		int offset = ser.GetVarUint();

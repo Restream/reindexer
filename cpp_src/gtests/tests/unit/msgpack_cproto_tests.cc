@@ -1,8 +1,39 @@
-#include <unordered_set>
 #include "msgpack_cproto_api.h"
+
+#include <unordered_set>
+#include "gtests/tests/tests_data.h"
 #include "query_aggregate_strict_mode_test.h"
 
 using reindexer::client::RPCDataFormat;
+
+TEST_F(MsgPackCprotoApi, MsgPackDecodeTest) {
+	using namespace reindexer;
+	auto testDataPath = reindexer::fs::JoinPath(std::string(kTestsDataPath), "MsgPack");
+	auto msgPackPath = fs::JoinPath(testDataPath, "msg.uu");
+	auto msgJsonPath = fs::JoinPath(testDataPath, "msg.json");
+
+	std::string content;
+	int res = reindexer::fs::ReadFile(msgPackPath, content);
+	ASSERT_GT(res, 0) << "Test data file not found: '" << msgPackPath << "'";
+	reindexer::client::Item msgPackItem = client_->NewItem(default_namespace);
+	if (res > 0) {
+		size_t offset = 0;
+		auto err = msgPackItem.FromMsgPack(content, offset);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	content.clear();
+	res = reindexer::fs::ReadFile(msgJsonPath, content);
+	ASSERT_GT(res, 0) << "Test data file not found: '" << msgJsonPath << "'";
+	ASSERT_GT(content.size(), 1);
+
+	reindexer::client::Item msgJsonItem = client_->NewItem(default_namespace);
+	if (res > 0) {
+		auto err = msgJsonItem.FromJSON(content);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	EXPECT_EQ(msgJsonItem.GetJSON(), msgPackItem.GetJSON());
+}
 
 TEST_F(MsgPackCprotoApi, SelectTest) {
 	QueryResults qr(kResultsMsgPack | kResultsWithItemID);
@@ -57,7 +88,7 @@ TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
 	ASSERT_EQ(sum.fields.size(), 1);
 	EXPECT_EQ(sum.fields[0], kFieldId);
 	double val = (999.0 / 2.0) * 1000.0;
-	EXPECT_EQ(sum.GetValueOrZero(), int64_t(val)) << sum.GetValueOrZero() << "; " << val;
+	EXPECT_DOUBLE_EQ(sum.GetValueOrZero(), val) << sum.GetValueOrZero() << "; " << val;
 }
 
 TEST_F(MsgPackCprotoApi, AggregationsWithStrictModeTest) { QueryAggStrictModeTest(client_); }

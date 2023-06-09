@@ -2,7 +2,17 @@
 
 #include <stdint.h>
 
-enum { TAG_VARINT, TAG_DOUBLE, TAG_STRING, TAG_BOOL, TAG_NULL, TAG_ARRAY, TAG_OBJECT, TAG_END };
+typedef enum TagType {
+	TAG_VARINT = 0,
+	TAG_DOUBLE = 1,
+	TAG_STRING = 2,
+	TAG_BOOL = 3,
+	TAG_NULL = 4,
+	TAG_ARRAY = 5,
+	TAG_OBJECT = 6,
+	TAG_END = 7,
+	TAG_UUID = 8,
+} TagType;
 
 typedef enum IndexType {
 	IndexStrHash = 0,
@@ -25,6 +35,7 @@ typedef enum IndexType {
 	IndexCompositeFuzzyFT = 17,
 	IndexTtl = 18,
 	IndexRTree = 19,
+	IndexUuidHash = 20,
 } IndexType;
 
 typedef enum QueryItemType {
@@ -120,7 +131,9 @@ enum ErrorCode {
 	errAlreadyProxied = 34,
 	errStrictMode = 35,
 	errQrUIDMissmatch = 36,
-	errParseYAML = 37,
+	errSystem = 37,
+	errAssert = 38,
+	errParseYAML = 39,
 };
 
 enum SchemaType { JsonSchemaType, ProtobufSchemaType };

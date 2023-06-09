@@ -12,9 +12,9 @@
 namespace reindexer {
 
 template <typename T>
-VariantArray &PayloadIface<T>::Get(int field, VariantArray &keys, bool enableHold) const {
+void PayloadIface<T>::Get(int field, VariantArray &keys, bool enableHold) const {
 	assertrx(field < NumFields());
-	keys.resize(0);
+	keys.clear<false>();
 	if (t_.Field(field).IsArray()) {
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
 		keys.reserve(arr->len);
@@ -23,9 +23,9 @@ VariantArray &PayloadIface<T>::Get(int field, VariantArray &keys, bool enableHol
 			PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
 			keys.push_back(pv.Get(enableHold));
 		}
-	} else
+	} else {
 		keys.push_back(Field(field).Get(enableHold));
-	return keys;
+	}
 }
 
 template <typename T>
@@ -47,58 +47,57 @@ Variant PayloadIface<T>::Get(int field, int idx, bool enableHold) const {
 
 // Get element(s) by field index
 template <typename T>
-VariantArray &PayloadIface<T>::Get(std::string_view field, VariantArray &kvs, bool enableHold) const {
-	return Get(t_.FieldByName(field), kvs, enableHold);
+void PayloadIface<T>::Get(std::string_view field, VariantArray &kvs, bool enableHold) const {
+	Get(t_.FieldByName(field), kvs, enableHold);
 }
 
 template <typename T>
-VariantArray PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &kvs,
-											KeyValueType expectedType) const {
+void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &kvs,
+									KeyValueType expectedType) const {
 	VariantArray krefs;
 	Get(0, krefs);
 	std::string_view tuple(krefs[0]);
 	if (tuple.length() == 0) {
 		int fieldIdx = t_.FieldByJsonPath(jsonPath);
 		if (fieldIdx == -1) {
-			kvs.clear();
-			return kvs;
+			kvs.clear<false>();
+			return;
 		}
 		if (t_.Field(fieldIdx).IsArray()) {
 			IndexedTagsPath tagsPath = tagsMatcher.path2indexedtag(jsonPath, nullptr, false);
 			if (tagsPath.back().IsWithIndex()) {
-				return {Get(fieldIdx, tagsPath.back().Index())};
+				kvs.clear<false>();
+				kvs.emplace_back(Get(fieldIdx, tagsPath.back().Index()));
+				return;
 			}
 		}
 		return Get(fieldIdx, kvs);
 	}
-	VariantArray values = GetByJsonPath(tagsMatcher.path2indexedtag(jsonPath, nullptr, false), kvs, expectedType);
-	return values;
+	GetByJsonPath(tagsMatcher.path2indexedtag(jsonPath, nullptr, false), kvs, expectedType);
 }
 
 template <typename T>
-VariantArray PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, VariantArray &krefs, KeyValueType expectedType) const {
+void PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, VariantArray &krefs, KeyValueType expectedType) const {
 	ConstPayload pl(t_, *v_);
 	FieldsSet filter({jsonPath});
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
-	krefs.resize(0);
+	krefs.clear<false>();
 	if (!jsonPath.empty()) {
 		FieldsExtractor extractor(&krefs, expectedType, jsonPath.size());
-		encoder.Encode(&pl, extractor);
+		encoder.Encode(pl, extractor);
 	}
-	return krefs;
 }
 
 template <typename T>
-VariantArray PayloadIface<T>::GetByJsonPath(const IndexedTagsPath &tagsPath, VariantArray &krefs, KeyValueType expectedType) const {
+void PayloadIface<T>::GetByJsonPath(const IndexedTagsPath &tagsPath, VariantArray &krefs, KeyValueType expectedType) const {
 	ConstPayload pl(t_, *v_);
 	FieldsSet filter({tagsPath});
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
-	krefs.resize(0);
+	krefs.clear<false>();
 	if (!tagsPath.empty()) {
 		FieldsExtractor extractor(&krefs, expectedType, tagsPath.size(), &filter);
-		encoder.Encode(&pl, extractor);
+		encoder.Encode(pl, extractor);
 	}
-	return krefs;
 }
 
 template <typename T>
@@ -113,7 +112,7 @@ VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath &tagsPat
 	FieldsExtractor extractor(&values, KeyValueType::Undefined{}, tagsPath.size(), &filter, &offset, &size);
 
 	ConstPayload pl(t_, *v_);
-	encoder.Encode(&pl, extractor);
+	encoder.Encode(pl, extractor);
 	return values;
 }
 
@@ -127,7 +126,8 @@ void PayloadIface<T>::Set(std::string_view field, const VariantArray &keys, bool
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
 void PayloadIface<T>::Set(int field, const VariantArray &keys, bool append) {
-	if (!t_.Field(field).IsArray() && keys.size() >= 1) {
+	const auto size = keys.size();
+	if (!t_.Field(field).IsArray() && size >= 1) {
 		Field(field).Set(keys[0]);
 		return;
 	}
@@ -137,14 +137,13 @@ void PayloadIface<T>::Set(int field, const VariantArray &keys, bool append) {
 		return;
 	}
 
-	int pos = ResizeArray(field, keys.size(), append);
-	auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
-	auto elemSize = t_.Field(field).ElemSizeof();
+	int pos = ResizeArray(field, size, append);
+	auto const *const arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
+	const auto elemSize = t_.Field(field).ElemSizeof();
 
-	for (auto &kv : keys) {
-		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + pos * elemSize);
+	for (const Variant &kv : keys) {
+		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + (pos++) * elemSize);
 		pv.Set(kv);
-		pos++;
 	}
 }
 
@@ -161,11 +160,11 @@ void PayloadIface<T>::SetSingleElement(int field, const Variant &key) {
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
 void PayloadIface<T>::Set(int field, int idx, const Variant &v) {
-	auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
-	auto elemSize = t_.Field(field).ElemSizeof();
+	assertrx(idx >= 0);
 	assertrx(t_.Field(field).IsArray());
-	assertrx(idx >= 0 && idx < arr->len);
-
+	auto const *const arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
+	const auto elemSize = t_.Field(field).ElemSizeof();
+	assertrx(idx < arr->len);
 	PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + idx * elemSize);
 	pv.Set(v);
 }
@@ -232,7 +231,7 @@ void PayloadIface<T>::SerializeFields(WrSerializer &ser, const FieldsSet &fields
 		if (field == IndexValueType::SetByJsonPath) {
 			assertrx(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx);
-			varr = GetByJsonPath(tagsPath, varr, KeyValueType::Undefined{});
+			GetByJsonPath(tagsPath, varr, KeyValueType::Undefined{});
 			if (varr.empty()) {
 				throw Error(errParams, "PK serializing error: field [%s] cannot not be empty", fields.getJsonPath(tagPathIdx));
 			}
@@ -282,7 +281,7 @@ template <>
 void PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher &tm, WrSerializer &ser) {
 	JsonBuilder b(ser);
 	JsonEncoder e(&tm);
-	e.Encode(this, b);
+	e.Encode(*this, b);
 }
 
 template <>
@@ -314,7 +313,8 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 		} else {
 			assertrx(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			ret ^= GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{}).Hash();
+			GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{});
+			ret ^= keys1.Hash();
 		}
 	}
 	return ret;
@@ -366,14 +366,18 @@ bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
 			}
 		} else {
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			if (GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{}) != o.GetByJsonPath(tagsPath, keys2, KeyValueType::Undefined{}))
+			GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{});
+			o.GetByJsonPath(tagsPath, keys2, KeyValueType::Undefined{});
+			if (keys1 != keys2) {
 				return false;
+			}
 		}
 	}
 	return true;
 }
 
 template <typename T>
+template <WithString withString>
 int PayloadIface<T>::Compare(const PayloadIface<const T> &other, std::string_view field, int fieldIdx, const CollateOpts &collateOpts,
 							 TagsMatcher &ltm, TagsMatcher &rtm, bool lForceByJsonPath, bool rForceByJsonPath) const {
 	VariantArray krefs1, krefs2;
@@ -390,7 +394,7 @@ int PayloadIface<T>::Compare(const PayloadIface<const T> &other, std::string_vie
 	}
 	const size_t length = std::min(krefs1.size(), krefs2.size());
 	for (size_t i = 0; i < length; ++i) {
-		cmpRes = krefs1[i].RelaxCompare(krefs2[i], collateOpts);
+		cmpRes = krefs1[i].RelaxCompare<withString>(krefs2[i], collateOpts);
 		if (cmpRes) return cmpRes;
 	}
 	if (krefs1.size() == krefs2.size()) {
@@ -403,6 +407,7 @@ int PayloadIface<T>::Compare(const PayloadIface<const T> &other, std::string_vie
 }
 
 template <typename T>
+template <WithString withString>
 int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &firstDifferentFieldIdx,
 							 const h_vector<const CollateOpts *, 1> &collateOpts) const {
 	size_t tagPathIdx = 0;
@@ -414,18 +419,23 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &fi
 	for (size_t i = 0; i < fields.size(); ++i) {
 		int cmpRes = 0;
 		const auto field(fields[i]);
+		if (commonOpts) {
+			assertrx(collateOpts.size());
+		} else {
+			assertrx(i < collateOpts.size());
+		}
 		const CollateOpts *opts(commonOpts ? collateOpts[0] : collateOpts[i]);
 		if (field != IndexValueType::SetByJsonPath) {
 			cmpRes = Field(field).Get().Compare(o.Field(field).Get(), opts ? *opts : CollateOpts());
 		} else {
 			assertrx(tagPathIdx < fields.getTagsPathsLength());
 			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			krefs1 = GetByJsonPath(tagsPath, krefs1, KeyValueType::Undefined{});
-			krefs2 = o.GetByJsonPath(tagsPath, krefs2, KeyValueType::Undefined{});
+			GetByJsonPath(tagsPath, krefs1, KeyValueType::Undefined{});
+			o.GetByJsonPath(tagsPath, krefs2, KeyValueType::Undefined{});
 
 			size_t length = std::min(krefs1.size(), krefs2.size());
-			for (size_t i = 0; i < length; ++i) {
-				cmpRes = krefs1[i].RelaxCompare(krefs2[i], opts ? *opts : CollateOpts());
+			for (size_t j = 0; j < length; ++j) {
+				cmpRes = krefs1[j].RelaxCompare<withString>(krefs2[j], opts ? *opts : CollateOpts());
 				if (cmpRes) break;
 			}
 			if (cmpRes == 0) {
@@ -446,9 +456,10 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &fi
 }
 
 template <typename T>
+template <WithString withString>
 int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, const CollateOpts &collateOpts) const {
 	size_t firstDifferentFieldIdx = 0;
-	return Compare(other, fields, firstDifferentFieldIdx, {&collateOpts});
+	return Compare<withString>(other, fields, firstDifferentFieldIdx, {&collateOpts});
 }
 
 template <typename T>
@@ -590,9 +601,6 @@ T PayloadIface<T>::CopyWithRemovedFields(PayloadType modifiedType) {
 	return pv;
 }
 
-template class PayloadIface<PayloadValue>;
-template class PayloadIface<const PayloadValue>;
-
 #ifdef _MSC_VER
 #pragma warning(disable : 5037)
 #endif
@@ -605,5 +613,18 @@ template void PayloadIface<PayloadValue>::SetSingleElement<PayloadValue, static_
 template PayloadValue PayloadIface<PayloadValue>::CopyTo<PayloadValue, static_cast<void *>(0)>(PayloadType t, bool newFields);
 template PayloadValue PayloadIface<PayloadValue>::CopyWithNewOrUpdatedFields<PayloadValue, static_cast<void *>(0)>(PayloadType t);
 template PayloadValue PayloadIface<PayloadValue>::CopyWithRemovedFields<PayloadValue, static_cast<void *>(0)>(PayloadType t);
+
+template int PayloadIface<PayloadValue>::Compare<WithString::Yes>(const PayloadValue &, const FieldsSet &, const CollateOpts &) const;
+template int PayloadIface<PayloadValue>::Compare<WithString::No>(const PayloadValue &, const FieldsSet &, const CollateOpts &) const;
+template int PayloadIface<const PayloadValue>::Compare<WithString::Yes>(const PayloadValue &, const FieldsSet &, const CollateOpts &) const;
+template int PayloadIface<const PayloadValue>::Compare<WithString::No>(const PayloadValue &, const FieldsSet &, const CollateOpts &) const;
+template int PayloadIface<const PayloadValue>::Compare<WithString::Yes>(const PayloadIface<const PayloadValue> &, std::string_view, int,
+																		const CollateOpts &, TagsMatcher &, TagsMatcher &, bool,
+																		bool) const;
+template int PayloadIface<const PayloadValue>::Compare<WithString::No>(const PayloadIface<const PayloadValue> &, std::string_view, int,
+																	   const CollateOpts &, TagsMatcher &, TagsMatcher &, bool, bool) const;
+
+template class PayloadIface<PayloadValue>;
+template class PayloadIface<const PayloadValue>;
 
 }  // namespace reindexer

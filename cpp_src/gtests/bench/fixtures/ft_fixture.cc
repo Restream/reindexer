@@ -47,7 +47,7 @@ void FullText::UpdateIndex(State& state) {
 	static reindexer::FtFastConfig ftCfg(1);
 	ftCfg.optimization = opt;
 	const auto it = std::find_if(nsdef_.indexes.begin(), nsdef_.indexes.end(), [](const auto& idx) { return idx.name_ == "searchfast"; });
-	assert(it != nsdef_.indexes.end());
+	assertrx(it != nsdef_.indexes.end());
 	it->opts_.config = ftCfg.GetJSON({});
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
@@ -108,7 +108,7 @@ reindexer::Error FullText::Initialize() {
 		"Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe"
 	};
 	// clang-format on
-	return 0;
+	return {};
 }
 
 void FullText::RegisterAllCases(size_t iterationCount) {
@@ -221,7 +221,7 @@ reindexer::Item FullText::MakeSpecialItem() {
 	return item;
 }
 
-reindexer::Item FullText::MakeItem() {
+reindexer::Item FullText::MakeItem(benchmark::State&) {
 	auto item = db_->NewItem(nsdef_.name);
 	item.Unsafe(false);
 
@@ -278,7 +278,7 @@ void FullText::BuildInsertSteps(State& state) {
 void FullText::Insert(State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		auto item = MakeItem();
+		auto item = MakeItem(state);
 		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
 
 		auto err = db_->Insert(nsdef_.name, item);

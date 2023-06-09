@@ -6,7 +6,9 @@ import (
 	"math/rand"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/restream/reindexer/v4"
 	_ "github.com/restream/reindexer/v4/bindings/builtin"
@@ -37,6 +39,7 @@ var dsnSlave = flag.String("dsnslave", "", "reindex slave db dsn")
 var slaveCount = flag.Int("slavecount", 1, "reindex slave db count")
 var benchmarkSeedCount = flag.Int("seedcount", 500000, "count of items for benchmark seed")
 var benchmarkSeedCPU = flag.Int("seedcpu", 1, "number threads of for seeding")
+var benchmarkSeed = flag.Int64("seed", time.Now().Unix(), "seed number for random")
 var legacyServerBinary = flag.String("legacyserver", "", "legacy server binary for compatibility check")
 
 func TestMain(m *testing.M) {
@@ -156,6 +159,17 @@ func randSearchString() string {
 
 }
 
+func randStringArr(cnt int) []string {
+	if cnt < 1 {
+		return nil
+	}
+	arr := make([]string, 0, cnt)
+	for i := 0; i < cnt; i++ {
+		arr = append(arr, randString())
+	}
+	return arr
+}
+
 func randDevice() string {
 	return devices[rand.Int()%len(devices)]
 }
@@ -196,6 +210,39 @@ func randInt32Arr(cnt int, start int, rng int) (arr []int32) {
 	arr = make([]int32, 0, cnt)
 	for j := 0; j < cnt; j++ {
 		arr = append(arr, int32(start+rand.Int()%rng))
+	}
+	return arr
+}
+
+const nilUuid = "00000000-0000-0000-0000-000000000000"
+const hexChars = "0123456789abcdef"
+
+func randUuid() string {
+	if rand.Int()%1000 == 0 {
+		return nilUuid
+	}
+	var b strings.Builder
+	b.Grow(36)
+	for i := 0; i < 36; i++ {
+		switch i {
+		case 8, 13, 18, 23:
+			b.WriteByte('-')
+		case 19:
+			b.WriteByte(hexChars[8+(rand.Int()%(len(hexChars)-8))])
+		default:
+			b.WriteByte(hexChars[rand.Int()%len(hexChars)])
+		}
+	}
+	return b.String()
+}
+
+func randUuidArray(cnt int) []string {
+	if cnt < 1 {
+		return nil
+	}
+	arr := make([]string, 0, cnt)
+	for i := 0; i < cnt; i++ {
+		arr = append(arr, randUuid())
 	}
 	return arr
 }

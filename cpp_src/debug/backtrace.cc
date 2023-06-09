@@ -167,10 +167,17 @@ void print_crash_query(std::ostream &sout) {
 }
 
 static void sighandler(int sig, siginfo_t *, void *ctx) {
+	const auto writer = backtrace_get_writer();
 	std::ostringstream sout;
-	print_backtrace(sout, ctx, sig);
+	sout << "*** Backtrace on signal: " << sig << " ***" << std::endl;
+	writer(sout.str());
+	sout.str(std::string());
+	sout.clear();
 	print_crash_query(sout);
-	auto writer = backtrace_get_writer();
+	writer(sout.str());
+	sout.str(std::string());
+	sout.clear();
+	print_backtrace(sout, ctx, sig);
 	writer(sout.str());
 
 	exit(-1);

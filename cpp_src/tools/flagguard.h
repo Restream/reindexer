@@ -18,6 +18,39 @@ private:
 	bool& flag_;
 };
 
+template <typename CounterT>
+class NACounterGuard {
+public:
+	NACounterGuard() = default;
+	NACounterGuard(const NACounterGuard&) = delete;
+	NACounterGuard(NACounterGuard&& o) noexcept : counter_(o.counter_) { o.counter_ = nullptr; }
+	NACounterGuard(CounterT& counter) noexcept : counter_(&counter) { ++counter; }
+	NACounterGuard& operator=(const NACounterGuard&) = delete;
+	NACounterGuard& operator=(NACounterGuard&& o) noexcept {
+		if (this != &o) {
+			Reset();
+			counter_ = o.counter_;
+			o.counter_ = nullptr;
+		}
+		return *this;
+	}
+	void Reset() noexcept {
+		if (counter_) {
+			--(*counter_);
+			counter_ = nullptr;
+		}
+	}
+	~NACounterGuard() {
+		if (counter_) {
+			--(*counter_);
+			assertrx(*counter_ >= 0);
+		}
+	}
+
+private:
+	CounterT* counter_ = nullptr;
+};
+
 template <typename CounterT, std::memory_order MemoryOrdering>
 class CounterGuard {
 public:
@@ -57,6 +90,7 @@ private:
 
 using CounterGuardAIR32 = CounterGuard<int32_t, std::memory_order_relaxed>;
 using CounterGuardAIRL32 = CounterGuard<int32_t, std::memory_order_release>;
+using CounterGuardIR32 = NACounterGuard<int32_t>;
 using FlagGuardT = FlagGuard<true>;
 using FlagGuardF = FlagGuard<false>;
 

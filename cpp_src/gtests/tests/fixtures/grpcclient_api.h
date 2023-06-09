@@ -35,7 +35,7 @@ public:
 			if (res != EXIT_SUCCESS) {
 				std::cerr << "Exit code: " << res << std::endl;
 			}
-			assert(res == EXIT_SUCCESS);
+			assertrx(res == EXIT_SUCCESS);
 		});
 		while (!srv_.IsReady()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -264,8 +264,7 @@ public:
 		reindexer::Serializer rdser(cjson);
 
 		reindexer::CJsonDecoder decoder(const_cast<reindexer::TagsMatcher&>(nsTypes.first));
-		Error status = decoder.Decode(&pl, rdser, wrser);
-		ASSERT_TRUE(status.ok()) << status.what();
+		ASSERT_NO_THROW(decoder.Decode(pl, rdser, wrser));
 		ASSERT_TRUE(rdser.Eof());
 	}
 

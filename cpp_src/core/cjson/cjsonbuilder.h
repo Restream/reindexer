@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-void copyCJsonValue(int tagType, Serializer &rdser, WrSerializer &wrser);
+void copyCJsonValue(TagType tagType, Serializer &rdser, WrSerializer &wrser);
 
 class CJsonBuilder {
 public:
@@ -35,33 +35,34 @@ public:
 	CJsonBuilder Object(std::nullptr_t) { return Object(0); }
 
 	void Array(int tagName, span<p_string> data, int /*offset*/ = 0) {
-		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
-		ser_->PutUInt32(int(carraytag(data.size(), TAG_STRING)));
+		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
+		ser_->PutCArrayTag(carraytag(data.size(), TAG_STRING));
 		for (auto d : data) ser_->PutVString(d);
 	}
+	void Array(int tagName, span<Uuid> data, int offset = 0);
 	void Array(int tagName, span<int> data, int /*offset*/ = 0) {
-		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
-		ser_->PutUInt32(int(carraytag(data.size(), TAG_VARINT)));
+		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
+		ser_->PutCArrayTag(carraytag(data.size(), TAG_VARINT));
 		for (auto d : data) ser_->PutVarint(d);
 	}
 	void Array(int tagName, span<int64_t> data, int /*offset*/ = 0) {
-		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
-		ser_->PutUInt32(int(carraytag(data.size(), TAG_VARINT)));
+		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
+		ser_->PutCArrayTag(carraytag(data.size(), TAG_VARINT));
 		for (auto d : data) ser_->PutVarint(d);
 	}
 	void Array(int tagName, span<bool> data, int /*offset*/ = 0) {
-		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
-		ser_->PutUInt32(int(carraytag(data.size(), TAG_BOOL)));
+		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
+		ser_->PutCArrayTag(carraytag(data.size(), TAG_BOOL));
 		for (auto d : data) ser_->PutBool(d);
 	}
 	void Array(int tagName, span<double> data, int /*offset*/ = 0) {
-		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
-		ser_->PutUInt32(int(carraytag(data.size(), TAG_DOUBLE)));
+		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
+		ser_->PutCArrayTag(carraytag(data.size(), TAG_DOUBLE));
 		for (auto d : data) ser_->PutDouble(d);
 	}
-	void Array(int tagName, Serializer &ser, int tagType, int count) {
-		ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
-		ser_->PutUInt32(int(carraytag(count, tagType)));
+	void Array(int tagName, Serializer &ser, TagType tagType, int count) {
+		ser_->PutCTag(ctag{TAG_ARRAY, tagName});
+		ser_->PutCArrayTag(carraytag(count, tagType));
 		while (count--) copyCJsonValue(tagType, ser, *ser_);
 	}
 
@@ -73,14 +74,13 @@ public:
 	void Write(std::string_view data) { ser_->Write(data); }
 
 	CJsonBuilder &Null(std::nullptr_t) { return Null(0); }
-	CJsonBuilder &Ref(std::nullptr_t, int type, int field) { return Ref(0, type, field); }
 
 	CJsonBuilder &Put(int tagName, bool arg);
 	CJsonBuilder &Put(int tagName, int arg);
 	CJsonBuilder &Put(int tagName, int64_t arg);
 	CJsonBuilder &Put(int tagName, double arg);
 	CJsonBuilder &Put(int tagName, std::string_view arg);
-	CJsonBuilder &Ref(int tagName, int type, int field);
+	CJsonBuilder &Put(int tagName, Uuid arg);
 	CJsonBuilder &Ref(int tagName, const Variant &v, int field);
 	CJsonBuilder &ArrayRef(int tagName, int field, int count);
 	CJsonBuilder &Null(int tagName);
@@ -89,13 +89,13 @@ public:
 	CJsonBuilder &End() {
 		switch (type_) {
 			case ObjType::TypeArray:
-				*(reinterpret_cast<int *>(ser_->Buf() + savePos_)) = static_cast<int>(carraytag(count_, itemType_));
+				*(reinterpret_cast<carraytag *>(ser_->Buf() + savePos_)) = carraytag(count_, itemType_);
 				break;
 			case ObjType::TypeObjectArray:
-				*(reinterpret_cast<int *>(ser_->Buf() + savePos_)) = static_cast<int>(carraytag(count_, TAG_OBJECT));
+				*(reinterpret_cast<carraytag *>(ser_->Buf() + savePos_)) = carraytag(count_, TAG_OBJECT);
 				break;
 			case ObjType::TypeObject:
-				ser_->PutVarUint(static_cast<int>(ctag(TAG_END)));
+				ser_->PutCTag(kCTagEnd);
 				break;
 			case ObjType::TypePlain:
 				break;
@@ -106,14 +106,15 @@ public:
 
 	ObjType Type() const noexcept { return type_; }
 
-protected:
-	inline void putTag(int tag, int tagType);
+private:
+	inline void putTag(int tagName, TagType tagType) { ser_->PutCTag(ctag{tagType, tagName}); }
+
 	const TagsMatcher *tm_;
 	WrSerializer *ser_;
 	ObjType type_;
 	int savePos_ = 0;
 	int count_ = 0;
-	int itemType_ = TAG_OBJECT;
+	TagType itemType_ = TAG_OBJECT;
 };
 
 }  // namespace reindexer
