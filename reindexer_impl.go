@@ -10,6 +10,10 @@ import (
 	"sync"
 
 	lru "github.com/hashicorp/golang-lru"
+	"github.com/prometheus/client_golang/prometheus"
+	otel "go.opentelemetry.io/otel"
+	otelattr "go.opentelemetry.io/otel/attribute"
+	oteltrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/restream/reindexer/v3/bindings"
 	"github.com/restream/reindexer/v3/cjson"
@@ -40,6 +44,11 @@ type reindexerImpl struct {
 	debugLevels   map[string]int
 	nsHashCounter int
 	status        error
+
+	promMetrics *reindexerPrometheusMetrics
+
+	otelTracer           oteltrace.Tracer
+	otelCommonTraceAttrs []otelattr.KeyValue
 }
 
 type cacheItems struct {
@@ -115,9 +124,30 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 	}
 
 	binding = binding.Clone()
+
 	rx := &reindexerImpl{
 		ns:      make(map[string]*reindexerNamespace, 100),
 		binding: binding,
+	}
+
+	for _, opt := range options {
+		switch v := opt.(type) {
+		case bindings.OptionPrometheusMetrics:
+			if v.EnablePrometheusMetrics {
+				rx.promMetrics = newPrometheusMetrics(dsnParsed)
+			}
+
+		case bindings.OptionOpenTelemetry:
+			if v.EnableTracing {
+				rx.otelTracer = otel.Tracer(
+					"reindexer/v3",
+					oteltrace.WithInstrumentationVersion(bindings.ReindexerVersion),
+				)
+				rx.otelCommonTraceAttrs = []otelattr.KeyValue{
+					otelattr.String("rx.dsn", dsnString(dsnParsed)),
+				}
+			}
+		}
 	}
 
 	if err := binding.Init(dsnParsed, options...); err != nil {
@@ -142,6 +172,14 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 
 // getStatus will return current db status
 func (db *reindexerImpl) getStatus(ctx context.Context) bindings.Status {
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Status").End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Status", "")).ObserveDuration()
+	}
+
 	status := db.binding.Status(ctx)
 	if db.status != nil {
 		status.Err = db.status // If reindexerImpl has an error, return it.
@@ -178,6 +216,14 @@ func (db *reindexerImpl) reopenLogFiles() error {
 
 // ping checks connection with reindexer
 func (db *reindexerImpl) ping(ctx context.Context) error {
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Ping").End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Ping", "")).ObserveDuration()
+	}
+
 	return db.binding.Ping(ctx)
 }
 
@@ -191,8 +237,17 @@ func (db *reindexerImpl) close() {
 // IndexDef fields of struct are marked by `reindex:` tag
 func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, opts *NamespaceOptions, s interface{}) (err error) {
 	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.OpenNamespace", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("OpenNamespace", namespace)).ObserveDuration()
+	}
+
 	if err = db.registerNamespaceImpl(namespace, opts, s); err != nil {
-		panic(err)
+		return err
 	}
 
 	ns, err := db.getNS(namespace)
@@ -239,8 +294,17 @@ func (db *reindexerImpl) openNamespace(ctx context.Context, namespace string, op
 }
 
 // RegisterNamespace Register go type against namespace. There are no data and indexes changes will be performed
-func (db *reindexerImpl) registerNamespace(namespace string, opts *NamespaceOptions, s interface{}) (err error) {
+func (db *reindexerImpl) registerNamespace(ctx context.Context, namespace string, opts *NamespaceOptions, s interface{}) (err error) {
 	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.RegisterNamespace", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("RegisterNamespace", namespace)).ObserveDuration()
+	}
+
 	return db.registerNamespaceImpl(namespace, opts, s)
 }
 
@@ -315,6 +379,15 @@ func (db *reindexerImpl) registerNamespaceImpl(namespace string, opts *Namespace
 // dropNamespace - drop whole namespace from DB
 func (db *reindexerImpl) dropNamespace(ctx context.Context, namespace string) error {
 	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.DropNamespace", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("DropNamespace", namespace)).ObserveDuration()
+	}
+
 	db.lock.Lock()
 	delete(db.ns, namespace)
 	db.lock.Unlock()
@@ -325,6 +398,15 @@ func (db *reindexerImpl) dropNamespace(ctx context.Context, namespace string) er
 // truncateNamespace - delete all items from namespace
 func (db *reindexerImpl) truncateNamespace(ctx context.Context, namespace string) error {
 	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.TruncateNamespace", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("TruncateNamespace", namespace)).ObserveDuration()
+	}
+
 	return db.binding.TruncateNamespace(ctx, namespace)
 }
 
@@ -332,6 +414,15 @@ func (db *reindexerImpl) truncateNamespace(ctx context.Context, namespace string
 func (db *reindexerImpl) renameNamespace(ctx context.Context, srcNsName string, dstNsName string) error {
 	srcNsName = strings.ToLower(srcNsName)
 	dstNsName = strings.ToLower(dstNsName)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.RenameNamespace", otelattr.String("rx.ns", srcNsName)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("RenameNamespace", srcNsName)).ObserveDuration()
+	}
+
 	err := db.binding.RenameNamespace(ctx, srcNsName, dstNsName)
 	if err != nil {
 		return err
@@ -352,6 +443,15 @@ func (db *reindexerImpl) renameNamespace(ctx context.Context, srcNsName string, 
 // closeNamespace - close namespace, but keep storage
 func (db *reindexerImpl) closeNamespace(ctx context.Context, namespace string) error {
 	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.CloseNamespace", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("CloseNamespace", namespace)).ObserveDuration()
+	}
+
 	db.lock.Lock()
 	delete(db.ns, namespace)
 	db.lock.Unlock()
@@ -362,6 +462,16 @@ func (db *reindexerImpl) closeNamespace(ctx context.Context, namespace string) e
 // upsert (Insert or Update) item to index
 // Item must be the same type as item passed to OpenNamespace, or []byte with json
 func (db *reindexerImpl) upsert(ctx context.Context, namespace string, item interface{}, precepts ...string) error {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Upsert", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Upsert", namespace)).ObserveDuration()
+	}
+
 	_, err := db.modifyItem(ctx, namespace, nil, item, nil, modeUpsert, precepts...)
 	return err
 }
@@ -370,6 +480,16 @@ func (db *reindexerImpl) upsert(ctx context.Context, namespace string, item inte
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
 // Return 0, if no item was inserted, 1 if item was inserted
 func (db *reindexerImpl) insert(ctx context.Context, namespace string, item interface{}, precepts ...string) (int, error) {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Insert", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Insert", namespace)).ObserveDuration()
+	}
+
 	return db.modifyItem(ctx, namespace, nil, item, nil, modeInsert, precepts...)
 }
 
@@ -377,20 +497,50 @@ func (db *reindexerImpl) insert(ctx context.Context, namespace string, item inte
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
 // Return 0, if no item was updated, 1 if item was updated
 func (db *reindexerImpl) update(ctx context.Context, namespace string, item interface{}, precepts ...string) (int, error) {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Update", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Update", namespace)).ObserveDuration()
+	}
+
 	return db.modifyItem(ctx, namespace, nil, item, nil, modeUpdate, precepts...)
 }
 
 // delete - remove single item from namespace by PK
 // Item must be the same type as item passed to OpenNamespace, or []byte with json data
 func (db *reindexerImpl) delete(ctx context.Context, namespace string, item interface{}, precepts ...string) error {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Delete", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Delete", namespace)).ObserveDuration()
+	}
+
 	_, err := db.modifyItem(ctx, namespace, nil, item, nil, modeDelete, precepts...)
 	return err
 }
 
-// configureIndex - congigure index.
+// configureIndex - configure an index.
 // config argument must be struct with index configuration
 // Deprecated: Use UpdateIndex instead.
 func (db *reindexerImpl) configureIndex(ctx context.Context, namespace, index string, config interface{}) error {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.ConfigureIndex", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("ConfigureIndex", namespace)).ObserveDuration()
+	}
+
 	nsDef, err := db.describeNamespace(ctx, namespace)
 	if err != nil {
 		return err
@@ -406,8 +556,18 @@ func (db *reindexerImpl) configureIndex(ctx context.Context, namespace, index st
 	return fmt.Errorf("rq: Index '%s' not found in namespace %s", index, namespace)
 }
 
-// addIndex - add index.
+// addIndex - add an index.
 func (db *reindexerImpl) addIndex(ctx context.Context, namespace string, indexDef ...IndexDef) error {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.AddIndex", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("AddIndex", namespace)).ObserveDuration()
+	}
+
 	for _, index := range indexDef {
 		if err := db.binding.AddIndex(ctx, namespace, bindings.IndexDef(index)); err != nil {
 			return err
@@ -416,14 +576,72 @@ func (db *reindexerImpl) addIndex(ctx context.Context, namespace string, indexDe
 	return nil
 }
 
-// updateIndex - update index.
+// updateIndex - update an index.
 func (db *reindexerImpl) updateIndex(ctx context.Context, namespace string, indexDef IndexDef) error {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.UpdateIndex", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("UpdateIndex", namespace)).ObserveDuration()
+	}
+
 	return db.binding.UpdateIndex(ctx, namespace, bindings.IndexDef(indexDef))
 }
 
 // dropIndex - drop index.
 func (db *reindexerImpl) dropIndex(ctx context.Context, namespace, index string) error {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.DropIndex", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("DropIndex", namespace)).ObserveDuration()
+	}
+
 	return db.binding.DropIndex(ctx, namespace, index)
+}
+
+func (db *reindexerImpl) putMeta(ctx context.Context, namespace, key string, data []byte) error {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.PutMeta", otelattr.String("rx.ns", namespace), otelattr.String("rx.meta.key", key)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("PutMeta", namespace)).ObserveDuration()
+	}
+
+	return db.binding.PutMeta(ctx, namespace, key, string(data))
+}
+
+func (db *reindexerImpl) getMeta(ctx context.Context, namespace, key string) ([]byte, error) {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.GetMeta", otelattr.String("rx.ns", namespace), otelattr.String("rx.meta.key", key)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("GetMeta", namespace)).ObserveDuration()
+	}
+
+	out, err := db.binding.GetMeta(ctx, namespace, key)
+	if err != nil {
+		return nil, err
+	}
+
+	defer out.Free()
+
+	ret := make([]byte, len(out.GetBuf()))
+	copy(ret, out.GetBuf())
+
+	return ret, nil
 }
 
 func loglevelToString(logLevel int) string {
@@ -488,10 +706,14 @@ func (db *reindexerImpl) setDefaultQueryDebug(ctx context.Context, namespace str
 
 // query Create new Query for building request
 func (db *reindexerImpl) query(namespace string) *Query {
+	namespace = strings.ToLower(namespace)
+
 	return newQuery(db, namespace, nil)
 }
 
 func (db *reindexerImpl) queryTx(namespace string, tx *Tx) *Query {
+	namespace = strings.ToLower(namespace)
+
 	return newQuery(db, namespace, tx)
 }
 
@@ -499,11 +721,22 @@ func (db *reindexerImpl) queryTx(namespace string, tx *Tx) *Query {
 // Return Iterator.
 func (db *reindexerImpl) execSQL(ctx context.Context, query string) *Iterator {
 	namespace := getQueryNamespace(query)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.ExecSQL", otelattr.String("rx.ns", namespace), otelattr.String("rx.sql", query)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("ExecSQL", namespace)).ObserveDuration()
+	}
+
 	result, nsArray, err := db.prepareSQL(ctx, namespace, query, false)
 	if err != nil {
 		return errIterator(err)
 	}
-	iter := newIterator(ctx, nil, result, nsArray, nil, nil, nil)
+
+	iter := newIterator(ctx, db, namespace, nil, result, nsArray, nil, nil, nil)
+
 	return iter
 }
 
@@ -511,15 +744,27 @@ func (db *reindexerImpl) execSQL(ctx context.Context, query string) *Iterator {
 // Return JSONIterator.
 func (db *reindexerImpl) execSQLToJSON(ctx context.Context, query string) *JSONIterator {
 	namespace := getQueryNamespace(query)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.ExecSQLToJSON", otelattr.String("rx.ns", namespace), otelattr.String("rx.sql", query)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("ExecSQLToJSON", namespace)).ObserveDuration()
+	}
+
 	result, _, err := db.prepareSQL(ctx, namespace, query, true)
 	if err != nil {
 		return errJSONIterator(err)
 	}
+
 	defer result.Free()
+
 	json, jsonOffsets, explain, err := db.rawResultToJson(result.GetBuf(), namespace, "total", nil, nil)
 	if err != nil {
 		return errJSONIterator(err)
 	}
+
 	return newJSONIterator(ctx, nil, json, jsonOffsets, explain)
 }
 
@@ -534,20 +779,32 @@ func getQueryNamespace(query string) string {
 			break
 		}
 	}
+
 	return namespace
 }
 
 // beginTx - start update transaction
 func (db *reindexerImpl) beginTx(ctx context.Context, namespace string) (*Tx, error) {
+	namespace = strings.ToLower(namespace)
+
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Tx.Begin", otelattr.String("rx.ns", namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Tx.Begin", namespace)).ObserveDuration()
+	}
+
 	return newTx(db, namespace, ctx)
 }
 
 // mustBeginTx - start update transaction, panic on error
 func (db *reindexerImpl) mustBeginTx(ctx context.Context, namespace string) *Tx {
-	tx, err := newTx(db, namespace, ctx)
+	tx, err := db.beginTx(ctx, namespace)
 	if err != nil {
 		panic(err)
 	}
+
 	return tx
 }
 
@@ -659,6 +916,15 @@ func dsnParse(dsn interface{}) (string, []url.URL) {
 	}
 
 	return scheme, dsnParsed
+}
+
+func dsnString(dsnParsed []url.URL) string {
+	dsnLabelParts := []string{}
+	for _, dsn := range dsnParsed {
+		dsnLabelParts = append(dsnLabelParts, strings.TrimSpace(dsn.String()))
+	}
+
+	return strings.Join(dsnLabelParts, ",")
 }
 
 // GetStats Get local thread reindexer usage stats

@@ -7,7 +7,7 @@
 #include <thread>
 
 reindexer::Error BaseFixture::Initialize() {
-	assert(db_);
+	assertrx(db_);
 	return db_->AddNamespace(nsdef_);
 }
 
@@ -74,8 +74,8 @@ void BaseFixture::WaitForOptimization() {
 		q.Where("name", CondEq, nsdef_.name);
 		reindexer::QueryResults res;
 		auto e = db_->Select(q, res);
-		assert(e.ok());
-		assert(res.Count() == 1);
+		assertrx(e.ok());
+		assertrx(res.Count() == 1);
 		auto item = res[0].GetItem(false);
 		if (item["optimization_completed"].As<bool>() == true) {
 			break;

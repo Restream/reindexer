@@ -7,11 +7,6 @@
 namespace reindexer {
 
 template <typename T>
-std::unique_ptr<Index> FuzzyIndexText<T>::Clone() {
-	return std::unique_ptr<Index>{new FuzzyIndexText<T>(*this)};
-}
-
-template <typename T>
 IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
 									 const RdxContext& rdxCtx) {
 	assertrx(mergeStatusesEmpty);
@@ -80,6 +75,25 @@ std::unique_ptr<Index> FuzzyIndexText_New(const IndexDef& idef, PayloadType payl
 		case IndexCompositeFuzzyFT:
 			return std::unique_ptr<Index>{
 				new FuzzyIndexText<unordered_payload_map<FtKeyEntry, true>>(idef, std::move(payloadType), fields)};
+		case IndexStrHash:
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexIntHash:
+		case IndexInt64BTree:
+		case IndexInt64Hash:
+		case IndexDoubleBTree:
+		case IndexFastFT:
+		case IndexCompositeBTree:
+		case IndexCompositeHash:
+		case IndexCompositeFastFT:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexTtl:
+		case IndexRTree:
+		case IndexUuidHash:
 		default:
 			abort();
 	}

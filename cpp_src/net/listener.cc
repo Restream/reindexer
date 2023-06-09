@@ -307,7 +307,7 @@ void Listener<LT>::run_dedicated_thread(std::unique_ptr<IServerConnection> &&con
 			lck.lock();
 			const auto it = std::find_if(shared_->dedicatedWorkers_.begin(), shared_->dedicatedWorkers_.end(),
 										 [&pc](const typename Shared::Worker &cw) { return cw.conn.get() == pc; });
-			assert(it != shared_->dedicatedWorkers_.end());
+			assertrx(it != shared_->dedicatedWorkers_.end());
 			shared_->dedicatedWorkers_.erase(it);
 			logPrintf(LogTrace, "Listener (%s) dedicated thread finished. %d left", shared_->addr_, shared_->dedicatedWorkers_.size());
 		} catch (Error &e) {
@@ -518,7 +518,7 @@ void ForkedListener::io_accept(ev::io & /*watcher*/, int revents) {
 				}
 				lck.lock();
 				const auto it = std::find_if(workers_.begin(), workers_.end(), [&pc](const Worker &cw) { return cw.conn.get() == pc; });
-				assert(it != workers_.end());
+				assertrx(it != workers_.end());
 				workers_.erase(it);
 				logPrintf(LogTrace, "Listener (%s) dedicated thread finished. %d left", addr_, workers_.size());
 			}

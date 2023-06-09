@@ -97,7 +97,7 @@ ReplicationConfigTest ServerControl::Interface::GetServerConfig(ConfigType type)
 					EXPECT_TRUE(err.ok()) << err.what();
 					break;
 				} catch (const Error&) {
-					assert(false);
+					assertrx(false);
 				}
 			}
 			break;
@@ -162,7 +162,7 @@ void ServerControl::Interface::Init() {
 			if (res != EXIT_SUCCESS) {
 				std::cerr << "Exit code: " << res << std::endl;
 			}
-			assert(res == EXIT_SUCCESS);
+			assertrx(res == EXIT_SUCCESS);
 		}));
 		while (!srv.IsRunning() || !srv.IsReady()) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -219,12 +219,12 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
 }
 
 void ServerControl::Interface::MakeMaster(const ReplicationConfigTest& config) {
-	assert(config.role_ == "master");
+	assertrx(config.role_ == "master");
 	setReplicationConfig(id_, config);
 }
 void ServerControl::Interface::MakeSlave(size_t masterId, const ReplicationConfigTest& config) {
-	assert(config.role_ == "slave");
-	assert(!config.dsn_.empty());
+	assertrx(config.role_ == "slave");
+	assertrx(!config.dsn_.empty());
 	setReplicationConfig(masterId, config);
 }
 
@@ -294,7 +294,7 @@ ServerControl::Interface::Ptr ServerControl::Get(bool wait) {
 			counter++;
 			// we have only 10sec timeout to restart server!!!!
 			EXPECT_TRUE(counter / 1000 < kMaxServerStartTimeSec);
-			assert(counter / 1000 < kMaxServerStartTimeSec);
+			assertrx(counter / 1000 < kMaxServerStartTimeSec);
 
 			std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		}

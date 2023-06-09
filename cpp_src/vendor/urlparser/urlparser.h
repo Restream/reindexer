@@ -27,42 +27,42 @@ public:
 	bool isValid() const { return valid; }
 
 	const std::string& scheme() const {
-		assert(isValid());
+		assertrx(isValid());
 		return url.scheme;
 	}
 
 	const std::string& username() const {
-		assert(isValid());
+		assertrx(isValid());
 		return url.username;
 	}
 
 	const std::string& password() const {
-		assert(isValid());
+		assertrx(isValid());
 		return url.password;
 	}
 
 	const std::string& hostname() const {
-		assert(isValid());
+		assertrx(isValid());
 		return url.hostname;
 	}
 
 	const std::string& port() const {
-		assert(isValid());
+		assertrx(isValid());
 		return url.port;
 	}
 
 	const std::string& path() const {
-		assert(isValid());
+		assertrx(isValid());
 		return url.path;
 	}
 
 	const std::string& query() const {
-		assert(isValid());
+		assertrx(isValid());
 		return url.query;
 	}
 
 	const std::string& fragment() const {
-		assert(isValid());
+		assertrx(isValid());
 		return url.fragment;
 	}
 
@@ -70,7 +70,7 @@ public:
 		const uint16_t defaultHttpPort = 80;
 		const uint16_t defaultHttpsPort = 443;
 
-		assert(isValid());
+		assertrx(isValid());
 
 		if (url.port.empty()) {
 			if (scheme() == "https")
@@ -256,7 +256,7 @@ private:
 			url.integerPort = atoi(url.port.c_str());
 		}
 
-		assert(portOrPassword.empty());
+		assertrx(portOrPassword.empty());
 
 		if (!usernameOrHostname.empty()) url.hostname = usernameOrHostname;
 	}

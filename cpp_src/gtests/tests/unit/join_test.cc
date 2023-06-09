@@ -475,7 +475,8 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 			item[data] = rand() % maxDataValue;
 			Upsert(ns, item);
 		}
-		Commit(ns);
+		const auto err = Commit(ns);
+		ASSERT_TRUE(err.ok()) << err.what();
 	};
 
 	createNs(rightNs);

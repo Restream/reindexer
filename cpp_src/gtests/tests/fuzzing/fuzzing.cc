@@ -40,7 +40,7 @@ TEST_F(Fuzzing, BaseTest) {
 					indexes.erase(indexes.begin() + i);
 				}
 			}
-			for (size_t i = 0, s = ns.GetRandomGenerator().ItemsCount(); i < s; ++i) {
+			for (size_t i = 0, s = ns.GetRandomGenerator().RndItemsCount(); i < s; ++i) {
 				auto item = rx_.NewItem(ns.GetName());
 				err = item.Status();
 				EXPECT_TRUE(err.ok()) << err.what();
@@ -52,7 +52,7 @@ TEST_F(Fuzzing, BaseTest) {
 				err = item.Status();
 				EXPECT_TRUE(err.ok()) << err.what();
 				if (!err.ok()) continue;
-				enum Op : uint8_t { Insert, Upsert, Update, Delete };
+				enum Op : uint8_t { Insert, Upsert, Update, Delete, END = Delete };
 				switch (rnd.RndWhich<Op, 10, 100, 1, 1>()) {
 					case Insert:
 						err = rx_.Insert(rnd.NsName(ns.GetName(), generatedNames), item);
@@ -80,7 +80,7 @@ TEST_F(Fuzzing, BaseTest) {
 						}
 					} break;
 					default:
-						assert(0);
+						assertrx(0);
 				}
 				EXPECT_TRUE(err.ok()) << err.what();
 			}

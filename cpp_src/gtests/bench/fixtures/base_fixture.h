@@ -24,7 +24,7 @@ using reindexer::Reindexer;
 class BaseFixture {
 public:
 	virtual ~BaseFixture() {
-		assert(db_);
+		assertrx(db_);
 		auto err = db_->CloseNamespace(nsdef_.name);
 		if (!err.ok()) {
 			std::cerr << "Error while closing namespace '" << nsdef_.name << "'. Reason: " << err.what() << std::endl;

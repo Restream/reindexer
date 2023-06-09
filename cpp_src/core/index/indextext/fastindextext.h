@@ -25,7 +25,7 @@ public:
 	FastIndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields) : Base(idef, std::move(payloadType), fields) {
 		initConfig();
 	}
-	std::unique_ptr<Index> Clone() override;
+	std::unique_ptr<Index> Clone() const override { return std::unique_ptr<Index>{new FastIndexText<T>(*this)}; }
 	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
 					  const RdxContext&) override final;
 	IndexMemStat GetMemStat(const RdxContext&) override final;

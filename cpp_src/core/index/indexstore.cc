@@ -1,5 +1,5 @@
-
 #include "indexstore.h"
+#include "core/keyvalue/uuid.h"
 #include "core/rdxcontext.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
@@ -112,12 +112,6 @@ SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType con
 }
 
 template <typename T>
-std::unique_ptr<Index> IndexStore<T>::Clone() {
-	std::unique_ptr<Index> ret{new IndexStore<T>(*this)};
-	return ret;
-}
-
-template <typename T>
 IndexMemStat IndexStore<T>::GetMemStat(const RdxContext &) {
 	IndexMemStat ret = memStat_;
 	ret.name = name_;
@@ -147,11 +141,6 @@ void IndexStore<T>::dump(S &os, std::string_view step, std::string_view offset) 
 }
 
 template <typename T>
-void IndexStore<T>::Dump(std::ostream &os, std::string_view step, std::string_view offset) const {
-	dump(os, step, offset);
-}
-
-template <typename T>
 void IndexStore<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &q) {
 	if constexpr (HasAddTask<decltype(str_map)>::value) {
 		str_map.add_destroy_task(&q);
@@ -171,6 +160,22 @@ std::unique_ptr<Index> IndexStore_New(const IndexDef &idef, PayloadType payloadT
 			return std::unique_ptr<Index>{new IndexStore<double>(idef, std::move(payloadType), fields)};
 		case IndexStrStore:
 			return std::unique_ptr<Index>{new IndexStore<key_string>(idef, std::move(payloadType), fields)};
+		case IndexStrHash:
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexIntHash:
+		case IndexInt64BTree:
+		case IndexInt64Hash:
+		case IndexDoubleBTree:
+		case IndexFastFT:
+		case IndexFuzzyFT:
+		case IndexCompositeBTree:
+		case IndexCompositeHash:
+		case IndexCompositeFastFT:
+		case IndexCompositeFuzzyFT:
+		case IndexTtl:
+		case IndexRTree:
+		case IndexUuidHash:
 		default:
 			abort();
 	}
@@ -183,5 +188,6 @@ template class IndexStore<double>;
 template class IndexStore<key_string>;
 template class IndexStore<PayloadValue>;
 template class IndexStore<Point>;
+template class IndexStore<Uuid>;
 
 }  // namespace reindexer

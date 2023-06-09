@@ -33,7 +33,7 @@ public:
 
 	// Get array as span of typed elements
 	template <typename Elem>
-	span<Elem> GetArray(int field) {
+	span<Elem> GetArray(int field) & {
 		assertrx(field < Type().NumFields());
 		assertrx(Type().Field(field).IsArray());
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);

@@ -23,24 +23,30 @@ public:
 	Error() noexcept = default;
 	Error(ErrorCode code) noexcept : code_{code} {}
 	Error(ErrorCode code, std::string what) noexcept : code_{code} {
-		try {
-			what_ = make_intrusive<WhatT>(std::move(what));
-		} catch (...) {
-			what_ = defaultErrorText_;
+		if (code_ != errOK) {
+			try {
+				what_ = make_intrusive<WhatT>(std::move(what));
+			} catch (...) {
+				what_ = defaultErrorText_;
+			}
 		}
 	}
 	Error(ErrorCode code, std::string_view what) noexcept : code_{code} {
-		try {
-			what_ = make_intrusive<WhatT>(what);
-		} catch (...) {
-			what_ = defaultErrorText_;
+		if (code_ != errOK) {
+			try {
+				what_ = make_intrusive<WhatT>(what);
+			} catch (...) {
+				what_ = defaultErrorText_;
+			}
 		}
 	}
 	Error(ErrorCode code, const char *what) noexcept : code_{code} {
-		try {
-			what_ = make_intrusive<WhatT>(what);
-		} catch (...) {
-			what_ = defaultErrorText_;
+		if (code_ != errOK) {
+			try {
+				what_ = make_intrusive<WhatT>(what);
+			} catch (...) {
+				what_ = defaultErrorText_;
+			}
 		}
 	}
 	Error(const std::exception &e) noexcept : code_{errSystem} {
@@ -58,20 +64,22 @@ public:
 #ifdef REINDEX_CORE_BUILD
 	template <typename... Args>
 	Error(ErrorCode code, const char *fmt, const Args &...args) noexcept : code_{code} {
-		try {
+		if (code_ != errOK) {
 			try {
-				what_ = make_intrusive<WhatT>(fmt::sprintf(fmt, args...));
-			} catch (const fmt::FormatError &) {
-				what_ = make_intrusive<WhatT>(fmt);
+				try {
+					what_ = make_intrusive<WhatT>(fmt::sprintf(fmt, args...));
+				} catch (const fmt::FormatError &) {
+					what_ = make_intrusive<WhatT>(fmt);
+				}
+			} catch (...) {
+				what_ = defaultErrorText_;
 			}
-		} catch (...) {
-			what_ = defaultErrorText_;
 		}
 	}
 #endif	// REINDEX_CORE_BUILD
 
 	[[nodiscard]] const std::string &what() const &noexcept {
-		static std::string noerr = "";
+		static const std::string noerr;
 		return what_ ? *what_ : noerr;
 	}
 	[[nodiscard]] std::string what() &&noexcept {

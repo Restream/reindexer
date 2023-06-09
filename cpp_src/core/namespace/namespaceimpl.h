@@ -16,6 +16,7 @@
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
 #include "core/querycache.h"
+#include "core/rollback.h"
 #include "core/schema.h"
 #include "core/storage/idatastorage.h"
 #include "core/storage/storagetype.h"
@@ -77,6 +78,12 @@ class CompositeSearcher;
 }
 
 class NamespaceImpl {  // NOLINT(*performance.Padding) Padding does not matter for this class
+	class RollBack_insertIndex;
+	class RollBack_addIndex;
+	template <NeedRollBack needRollBack>
+	class RollBack_recreateCompositeIndexes;
+	template <NeedRollBack needRollBack>
+	class RollBack_updateItems;
 	class IndexesCacheCleaner {
 	public:
 		explicit IndexesCacheCleaner(NamespaceImpl &ns) : ns_{ns} {}
@@ -96,7 +103,6 @@ class NamespaceImpl {  // NOLINT(*performance.Padding) Padding does not matter f
 		std::bitset<64> sorts_;
 	};
 
-protected:
 	friend class NsSelecter;
 	friend class JoinedSelector;
 	friend class WALSelecter;
@@ -130,7 +136,7 @@ protected:
 		const std::vector<SortType> &ids2Sorts() const noexcept override { return ids2Sorts_; }
 		std::vector<SortType> &ids2Sorts() noexcept override { return ids2Sorts_; }
 
-	protected:
+	private:
 		const NamespaceImpl &ns_;
 		const int sorted_indexes_;
 		const IdType curSortId_;
@@ -233,8 +239,10 @@ public:
 	void PutMeta(const std::string &key, std::string_view data, const NsContext &);
 	int64_t GetSerial(const std::string &field);
 
-	int getIndexByName(const std::string &index) const;
-	bool getIndexByName(const std::string &name, int &index) const;
+	int getIndexByName(std::string_view index) const;
+	int getIndexByNameOrJsonPath(std::string_view name) const;
+	bool getIndexByName(std::string_view name, int &index) const;
+	bool getIndexByNameOrJsonPath(std::string_view name, int &index) const;
 
 	void FillResult(QueryResults &result, const IdSet &ids) const;
 
@@ -256,7 +264,7 @@ public:
 	IndexesCacheCleaner GetIndexesCacheCleaner() { return IndexesCacheCleaner{*this}; }
 	void SetDestroyFlag() { dbDestroyed_ = true; }
 
-protected:
+private:
 	struct SysRecordsVersions {
 		uint64_t idxVersion{0};
 		uint64_t tagsVersion{0};
@@ -304,15 +312,18 @@ protected:
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
 	void modifyItem(Item &item, const NsContext &, int mode = ModeUpsert);
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
-	void updateItems(const PayloadType &oldPlType, const FieldsSet &changedFields, int deltaFields);
+	template <NeedRollBack needRollBack>
+	[[nodiscard]] RollBack_updateItems<needRollBack> updateItems(const PayloadType &oldPlType, const FieldsSet &changedFields,
+																 int deltaFields);
 	void fillSparseIndex(Index &, std::string_view jsonPath);
 	void doDelete(IdType id);
 	void optimizeIndexes(const NsContext &);
-	void insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string &realName);
+	[[nodiscard]] RollBack_insertIndex insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string &realName);
 	void addIndex(const IndexDef &indexDef);
 	void addCompositeIndex(const IndexDef &indexDef);
 	template <typename PathsT, typename JsonPathsContainerT>
 	void createFieldsSet(const std::string &idxName, IndexType type, const PathsT &paths, FieldsSet &fields);
+	void verifyCompositeIndex(const IndexDef &indexDef) const;
 	void verifyUpdateIndex(const IndexDef &indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
 	void updateIndex(const IndexDef &indexDef);
@@ -323,7 +334,8 @@ protected:
 	void removeExpiredItems(RdxActivityContext *);
 	void removeExpiredStrings(RdxActivityContext *);
 
-	void recreateCompositeIndexes(int startIdx, int endIdx);
+	template <NeedRollBack needRollBack>
+	[[nodiscard]] RollBack_recreateCompositeIndexes<needRollBack> recreateCompositeIndexes(size_t startIdx, size_t endIdx);
 	NamespaceDef getDefinition() const;
 	IndexDef getIndexDefinition(const std::string &indexName) const;
 	IndexDef getIndexDefinition(size_t) const;
@@ -332,7 +344,7 @@ protected:
 	void putMeta(const std::string &key, std::string_view data, const RdxContext &ctx);
 
 	std::pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &);
-	int getSortedIdxCount() const;
+	int getSortedIdxCount() const noexcept;
 	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
 
@@ -391,7 +403,6 @@ protected:
 
 	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) const;
 
-private:
 	NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &storageLock);
 
 	bool isSystem() const { return !name_.empty() && name_[0] == '#'; }

@@ -705,7 +705,8 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 		auto ns = getNamespace(nsName);
 
 		// Check if cjson with bundled tagsMatcher
-		bool bundledTagsMatcher = wrec.itemModify.itemCJson.length() > 0 && wrec.itemModify.itemCJson[0] == TAG_END;
+		const bool bundledTagsMatcher =
+			wrec.itemModify.itemCJson.length() > 0 && Serializer{wrec.itemModify.itemCJson}.GetCTag() == kCTagEnd;
 
 		ns->lck_.lock_shared();
 		auto tmVersion = ns->tagsMatcher_.version();
@@ -737,7 +738,7 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 			if (bundledTagsMatcher) {
 				// printf("%s bundled tm %d to %d\n", ns->name_.c_str(), ns->tagsMatcher_.version(), wrec.itemModify.tmVersion);
 				Serializer rdser(wrec.itemModify.itemCJson);
-				rdser.GetVarUint();
+				[[maybe_unused]] const ctag tag = rdser.GetCTag();
 				uint32_t tmOffset = rdser.GetUInt32();
 				// read tags matcher update
 				rdser.SetPos(tmOffset);

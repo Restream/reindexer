@@ -34,7 +34,7 @@ void init_resources() { CMRC_INIT(reindexer_server_resources); }
 void init_resources() {}
 #endif
 
-#ifdef WITH_GRPC
+#if defined(WITH_GRPC)
 #include "grpc/grpcexport.h"
 #endif
 
@@ -212,6 +212,7 @@ int ServerImpl::run() {
 	reindexer::debug::backtrace_set_writer([](std::string_view out) {
 		auto logger = spdlog::get("server");
 		if (logger) {
+			logger->flush();  // Extra flush to avoid backtrace message drop due to logger overflow
 			logger->info("{}", out);
 			logger->flush();
 		} else {
@@ -326,7 +327,7 @@ int ServerImpl::run() {
 			logger_.error("Can't listen RPC on '{0}'", config_.RPCAddr);
 			return EXIT_FAILURE;
 		}
-#ifdef WITH_GRPC
+#if defined(WITH_GRPC)
 		void *hGRPCService = nullptr;
 #if REINDEX_WITH_LIBDL
 #ifdef __APPLE__
@@ -399,7 +400,7 @@ int ServerImpl::run() {
 		logger_.info("RPC Server shutdown completed.");
 		httpServer.Stop();
 		logger_.info("HTTP Server shutdown completed.");
-#ifdef WITH_GRPC
+#if defined(WITH_GRPC)
 #if REINDEX_WITH_LIBDL
 		if (hGRPCServiceLib && config_.EnableGRPC) {
 			auto stop_grpc = reinterpret_cast<p_stop_reindexer_grpc>(dlsym(hGRPCServiceLib, "stop_reindexer_grpc"));

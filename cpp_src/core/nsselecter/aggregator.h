@@ -34,7 +34,7 @@ public:
 	AggType Type() const noexcept { return aggType_; }
 	const h_vector<std::string, 1> &Names() const noexcept { return names_; }
 
-protected:
+private:
 	enum Direction { Desc = -1, Asc = 1 };
 	class MultifieldComparator;
 	class SinglefieldComparator;
@@ -63,9 +63,8 @@ protected:
 		bool operator()(const Variant &v1, const Variant &v2) const {
 			if (!v1.Type().IsSame(v2.Type())) return false;
 			return v1.Type().EvaluateOneOf(
-				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int>) {
-					return v1.Compare(v2) == 0;
-				},
+				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
+						  KeyValueType::Uuid>) { return v1.Compare(v2) == 0; },
 				[&](KeyValueType::Composite) {
 					return ConstPayload(type_, static_cast<const PayloadValue &>(v1)).IsEQ(static_cast<const PayloadValue &>(v2), fields_);
 				},
@@ -80,8 +79,8 @@ protected:
 		DistinctHasher(const PayloadType &type, const FieldsSet &fields) : type_(type), fields_(fields) {}
 		size_t operator()(const Variant &v) const {
 			return v.Type().EvaluateOneOf(
-				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool,
-						  KeyValueType::Int>) noexcept { return v.Hash(); },
+				[&](OneOf<KeyValueType::Int64, KeyValueType::Double, KeyValueType::String, KeyValueType::Bool, KeyValueType::Int,
+						  KeyValueType::Uuid>) noexcept { return v.Hash(); },
 				[&](KeyValueType::Composite) { return ConstPayload(type_, static_cast<const PayloadValue &>(v)).GetHash(fields_); },
 				[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Undefined>) noexcept -> size_t { abort(); });
 			assertrx(type_);

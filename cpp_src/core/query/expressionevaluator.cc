@@ -25,7 +25,9 @@ void ExpressionEvaluator::captureArrayContent(tokenizer& parser) {
 		arrayValues_.emplace_back(token2kv(tok, parser, false));
 		tok = parser.next_token();
 		if (tok.text() == "]"sv) break;
-		if (tok.text() != ","sv) throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
+		if (tok.text() != ","sv) {
+			throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
+		}
 	};
 }
 
@@ -74,8 +76,8 @@ double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValu
 					[&](OneOf<KeyValueType::Bool, KeyValueType::String>) -> double {
 						throw Error(errLogic, kWrongFieldTypeError, tok.text());
 					},
-					[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept
-					-> double {
+					[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
+							 KeyValueType::Uuid>) noexcept -> double {
 						assertrx(0);
 						abort();
 					});
@@ -97,7 +99,7 @@ double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValu
 							return fieldValues.front().As<double>();
 						},
 						[&](OneOf<KeyValueType::String, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Undefined,
-								  KeyValueType::Composite, KeyValueType::Tuple>) -> double {
+								  KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Uuid>) -> double {
 							throw Error(errLogic, kWrongFieldTypeError, tok.text());
 						});
 				}

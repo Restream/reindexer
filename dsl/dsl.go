@@ -13,7 +13,7 @@ type DSL struct {
 	Namespace    string        `json:"namespace"`
 	Offset       int           `json:"offset"`
 	Limit        int           `json:"limit"`
-	Distinct     string        `json:"distinct"`  // deprecated, use aggregation with type AggDistinct instead
+	Distinct     string        `json:"distinct"` // deprecated, use aggregation with type AggDistinct instead
 	Sort         Sort          `json:"sort"`
 	Filters      []Filter      `json:"filters"`
 	Explain      bool          `json:"explain,omitempty"`
@@ -116,9 +116,11 @@ func (f *Filter) ParseValue(data string) error {
 		}
 		if data == "true" {
 			f.Value = true
+			break
 		}
 		if data == "false" {
 			f.Value = false
+			break
 		}
 		if strings.HasPrefix(data, `[`) && strings.HasSuffix(data, `]`) {
 			return errors.New("filter value must not be array")

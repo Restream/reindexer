@@ -177,6 +177,10 @@ func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 	connectOptions.Opts |= bindings.ConnectOptWarnVersion
 	for _, option := range options {
 		switch v := option.(type) {
+		case bindings.OptionPrometheusMetrics:
+			// nothing
+		case bindings.OptionOpenTelemetry:
+			// nothing
 		case bindings.OptionBuiltinWithServer:
 			// nothing
 		case bindings.OptionCgoLimit:

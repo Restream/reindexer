@@ -445,7 +445,7 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 				cd->ret.set_value(err);
 				break;
 			}
-			default:
+			case DbCmdNone:
 				break;
 		}
 	}

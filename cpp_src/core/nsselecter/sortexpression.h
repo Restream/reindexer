@@ -169,7 +169,7 @@ class SortExpression : public ExpressionTree<SortExpressionOperation, SortExpres
 public:
 	template <typename T>
 	static SortExpression Parse(std::string_view, const std::vector<T>& joinedSelectors);
-	[[nodiscard]] double Calculate(IdType rowId, ConstPayload pv, const joins::NamespaceResults& results,
+	[[nodiscard]] double Calculate(IdType rowId, ConstPayload pv, const joins::NamespaceResults* results,
 								   const std::vector<JoinedSelector>& js, uint8_t proc, TagsMatcher& tagsMatcher) const {
 		return calculate(cbegin(), cend(), rowId, pv, results, js, proc, tagsMatcher);
 	}
@@ -195,7 +195,7 @@ private:
 	void parseDistance(std::string_view& expr, const std::vector<T>& joinedSelectors, std::string_view fullExpr, ArithmeticOpType,
 					   bool negative, const SkipSW& skipSpaces);
 	[[nodiscard]] static double calculate(const_iterator begin, const_iterator end, IdType rowId, ConstPayload,
-										  const joins::NamespaceResults&, const std::vector<JoinedSelector>&, uint8_t proc, TagsMatcher&);
+										  const joins::NamespaceResults*, const std::vector<JoinedSelector>&, uint8_t proc, TagsMatcher&);
 
 	void openBracketBeforeLastAppended();
 	static void dump(const_iterator begin, const_iterator end, WrSerializer&);

@@ -10,22 +10,22 @@ namespace reindexer {
 MsgPackDecoder::MsgPackDecoder(TagsMatcher* tagsMatcher) : tm_(tagsMatcher) {}
 
 template <typename T>
-void MsgPackDecoder::setValue(Payload* pl, CJsonBuilder& builder, const T& value, int tagName) {
+void MsgPackDecoder::setValue(Payload& pl, CJsonBuilder& builder, const T& value, int tagName) {
 	int field = tm_->tags2field(tagsPath_.data(), tagsPath_.size());
 	if (field > 0) {
-		auto& f = pl->Type().Field(field);
+		const auto& f = pl.Type().Field(field);
 		if (isInArray() && !f.IsArray()) {
 			throw Error(errLogic, "Error parsing msgpack field '%s' - got array, expected scalar %s", f.Name(), f.Type().Name());
 		}
 		Variant val(value);
-		pl->Set(field, {val}, true);
+		pl.Set(field, {val}, true);
 		builder.Ref(tagName, val, field);
 	} else {
 		builder.Put(tagName, value);
 	}
 }
 
-void MsgPackDecoder::iterateOverArray(const msgpack_object* begin, const msgpack_object* end, Payload* pl, CJsonBuilder& array) {
+void MsgPackDecoder::iterateOverArray(const msgpack_object* begin, const msgpack_object* end, Payload& pl, CJsonBuilder& array) {
 	for (const msgpack_object* p = begin; p != end; ++p) {
 		decode(pl, array, *p, 0);
 	}
@@ -54,7 +54,7 @@ int MsgPackDecoder::decodeKeyToTag(const msgpack_object_kv& obj) {
 	}
 }
 
-void MsgPackDecoder::decode(Payload* pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName) {
+void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName) {
 	if (tagName) tagsPath_.push_back(tagName);
 	switch (obj.type) {
 		case MSGPACK_OBJECT_NIL:
@@ -121,7 +121,7 @@ void MsgPackDecoder::decode(Payload* pl, CJsonBuilder& builder, const msgpack_ob
 	if (tagName) tagsPath_.pop_back();
 }
 
-Error MsgPackDecoder::Decode(std::string_view buf, Payload* pl, WrSerializer& wrser, size_t& offset) {
+Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, size_t& offset) {
 	try {
 		tagsPath_.clear();
 		size_t baseOffset = offset;

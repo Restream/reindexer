@@ -24,6 +24,8 @@ type TestItemBench struct {
 	LocationID string          `reindex:"location"`
 	EndTime    int32           `reindex:"end_time,-"`
 	StartTime  int32           `reindex:"start_time,tree"`
+	Uuid       string          `reindex:"uuid,hash,uuid"`
+	UuidStr    string          `reindex:"uuid_str,hash"`
 }
 type TestJoinCtx struct {
 	allPrices []*TestJoinItem
@@ -552,6 +554,20 @@ func Benchmark1CondQuery(b *testing.B) {
 	}
 }
 
+func BenchmarkUuid(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		q := DBD.Query("test_items_bench").Limit(20).WhereUuid("uuid", reindexer.EQ, randUuid())
+		q.MustExec().FetchAll()
+	}
+}
+
+func BenchmarkUuidStr(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		q := DBD.Query("test_items_bench").Limit(20).WhereString("uuid_str", reindexer.EQ, randUuid())
+		q.MustExec().FetchAll()
+	}
+}
+
 func Benchmark1CondQueryUnsafe(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		q := DBD.Query("test_items_bench").Limit(20).WhereInt("year", reindexer.GT, 2020)
@@ -667,6 +683,8 @@ func newTestBenchItem(id int, pkgCount int) *TestItemBench {
 		LocationID: randLocation(),
 		StartTime:  int32(startTime),
 		EndTime:    int32(startTime + (rand.Int()%5)*1000),
+		Uuid:       randUuid(),
+		UuidStr:    randUuid(),
 	}
 }
 

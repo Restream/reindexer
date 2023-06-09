@@ -387,10 +387,8 @@ func (qt *queryTest) DeepReplEqual() *queryTest {
 	return qt
 }
 
-// Where - Add where condition to DB query
-func (qt *queryTest) Where(index string, condition int, keys interface{}) *queryTest {
+func (qt *queryTest) where(index string, condition int, keys interface{}) *queryTest {
 	qte := queryTestEntry{index: index, condition: condition, ikeys: keys}
-	qt.q.Where(index, condition, keys)
 
 	if reflect.TypeOf(keys).Kind() == reflect.Slice || reflect.TypeOf(keys).Kind() == reflect.Array {
 		for i := 0; i < reflect.ValueOf(keys).Len(); i++ {
@@ -404,6 +402,17 @@ func (qt *queryTest) Where(index string, condition int, keys interface{}) *query
 	qt.nextOp = opAND
 
 	return qt
+}
+
+// Where - Add where condition to DB query
+func (qt *queryTest) Where(index string, condition int, keys interface{}) *queryTest {
+	qt.q.Where(index, condition, keys)
+	return qt.where(index, condition, keys)
+}
+
+func (qt *queryTest) WhereUuid(index string, condition int, keys ...string) *queryTest {
+	qt.q.WhereUuid(index, condition, keys...)
+	return qt.where(index, condition, keys)
 }
 
 func (qt *queryTest) WhereBetweenFields(firstField string, condition int, secondField string) *queryTest {
@@ -632,6 +641,7 @@ func (qt *queryTest) ExecAndVerify(t *testing.T) *reindexer.Iterator {
 func (qt *queryTest) ExecAndVerifyCtx(t *testing.T, ctx context.Context) *reindexer.Iterator {
 	defer qt.close()
 	it := qt.ManualClose().ExecCtx(t, ctx)
+	require.NoError(t, it.Error())
 	qt.totalCount = it.TotalCount()
 	aggregations := it.AggResults()
 	it.AllowUnsafe(true)
@@ -640,10 +650,8 @@ func (qt *queryTest) ExecAndVerifyCtx(t *testing.T, ctx context.Context) *reinde
 	for it.Next() {
 		items = append(items, it.Object())
 	}
+	require.NoError(t, it.Error())
 
-	if it.Error() != nil {
-		panic(it.Error())
-	}
 	qt.Verify(t, items, aggregations, true)
 	//	logger.Printf(reindexer.INFO, "%s -> %d\n", qt.toString(), len(items))
 	_ = items
@@ -1419,7 +1427,6 @@ func checkEqualPosition(t *testing.T, item interface{}, qt *queryTest) bool {
 }
 
 func compareComposite(t *testing.T, vals []reflect.Value, keyValue interface{}, item interface{}) int {
-
 	if reflect.ValueOf(keyValue).Len() != len(vals) {
 		panic("Amount of subindexes and values to compare are different!")
 	}
@@ -1433,31 +1440,35 @@ func compareComposite(t *testing.T, vals []reflect.Value, keyValue interface{}, 
 
 func checkCompositeCondition(t *testing.T, vals []reflect.Value, cond *queryTestEntry, item interface{}) bool {
 	keys := cond.ikeys.([]interface{})
-	result := false
-
-	switch cond.condition {
-	case reindexer.EQ:
-		result = compareComposite(t, vals, keys[0], item) == 0
-	case reindexer.GT:
-		result = compareComposite(t, vals, keys[0], item) > 0
-	case reindexer.GE:
-		result = compareComposite(t, vals, keys[0], item) >= 0
-	case reindexer.LT:
-		result = compareComposite(t, vals, keys[0], item) < 0
-	case reindexer.LE:
-		result = compareComposite(t, vals, keys[0], item) <= 0
-	case reindexer.RANGE:
-		result = compareComposite(t, vals, keys[0], item) >= 0 && compareComposite(t, vals, keys[1], item) <= 0
-	case reindexer.SET:
-		for i := range keys {
-			result = compareComposite(t, vals, keys[i], item) == 0
-			if result {
-				break
-			}
+	
+	if cond.condition == reindexer.RANGE {
+		if len(keys) != 2 {
+			panic("expected 2 keys in range condition")
 		}
+		return compareComposite(t, vals, keys[0], item) >= 0 && compareComposite(t, vals, keys[1], item) <= 0
 	}
 
-	return result
+	for _, k := range keys {
+		var result bool
+		switch cond.condition {
+		case reindexer.EQ, reindexer.SET:
+			result = compareComposite(t, vals, k, item) == 0
+		case reindexer.GT:
+			result = compareComposite(t, vals, k, item) > 0
+		case reindexer.GE:
+			result = compareComposite(t, vals, k, item) >= 0
+		case reindexer.LT:
+			result = compareComposite(t, vals, k, item) < 0
+		case reindexer.LE:
+			result = compareComposite(t, vals, k, item) <= 0
+		default:
+			panic("Unsupported condition")
+		}
+		if result {
+			return true
+		}
+	}
+	return false
 }
 
 func checkDWithin(point1 [2]float64, point2 [2]float64, distance float64) bool {
@@ -1479,40 +1490,44 @@ func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item 
 		return checkDWithin([2]float64{vals[0].Float(), vals[1].Float()}, [2]float64{cond.keys[0].Float(), cond.keys[1].Float()}, cond.keys[2].Float())
 	}
 
-	found := false
-
 	if len(vals) > 1 && len(cond.fieldIdx) > 1 {
 		return checkCompositeCondition(t, vals, cond, item)
 	}
 
 	for _, v := range vals {
-		switch cond.condition {
-		case reindexer.EQ:
-			found = compareValues(t, v, cond.keys[0]) == 0
-		case reindexer.GT:
-			found = compareValues(t, v, cond.keys[0]) > 0
-		case reindexer.GE:
-			found = compareValues(t, v, cond.keys[0]) >= 0
-		case reindexer.LT:
-			found = compareValues(t, v, cond.keys[0]) < 0
-		case reindexer.LE:
-			found = compareValues(t, v, cond.keys[0]) <= 0
-		case reindexer.RANGE:
-			found = compareValues(t, v, cond.keys[0]) >= 0 && compareValues(t, v, cond.keys[1]) <= 0
-		case reindexer.SET:
+		if cond.condition == reindexer.RANGE {
+			if len(cond.keys) != 2 {
+				panic("expected 2 keys in range condition")
+			}
+			if compareValues(t, v, cond.keys[0]) >= 0 && compareValues(t, v, cond.keys[1]) <= 0 {
+				return true
+			}
+		} else {
 			for _, k := range cond.keys {
-				if found = compareValues(t, v, k) == 0; found {
-					break
+				var found bool
+				switch cond.condition {
+				case reindexer.EQ, reindexer.SET:
+					found = compareValues(t, v, k) == 0
+				case reindexer.GT:
+					found = compareValues(t, v, k) > 0
+				case reindexer.GE:
+					found = compareValues(t, v, k) >= 0
+				case reindexer.LT:
+					found = compareValues(t, v, k) < 0
+				case reindexer.LE:
+					found = compareValues(t, v, k) <= 0
+				case reindexer.LIKE:
+					found = likeValues(v, k)
+				default:
+					panic("Unsupported condition")
+				}
+				if found {
+					return true
 				}
 			}
-		case reindexer.LIKE:
-			found = likeValues(v, cond.keys[0])
-		}
-		if found {
-			break
 		}
 	}
-	return found
+	return false
 }
 
 func isIndexComposite(entry *queryBetweenFieldsTestEntry) bool {

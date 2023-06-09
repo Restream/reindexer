@@ -88,6 +88,7 @@ const (
 	valueString    = bindings.ValueString
 	valueComposite = bindings.ValueComposite
 	valueTuple     = bindings.ValueTuple
+	valueUuid      = bindings.ValueUuid
 )
 
 const (
@@ -433,6 +434,25 @@ func (q *Query) WhereString(index string, condition int, keys ...string) *Query 
 	return q
 }
 
+// WhereUuid - Add where condition to DB query with UUID args
+func (q *Query) WhereUuid(index string, condition int, keys ...string) *Query {
+
+	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)
+	q.nextOp = opAND
+	q.queriesCount++
+
+	q.ser.PutVarCUInt(len(keys))
+	for _, v := range keys {
+		uuid, err := cjson.ParseUuid(v)
+		if err != nil {
+			q.ser.PutVarCUInt(valueString).PutVString(v)
+		} else {
+			q.ser.PutVarCUInt(valueUuid).PutUuid(uuid)
+		}
+	}
+	return q
+}
+
 // WhereComposite - Add where condition to DB query with interface args for composite indexes
 func (q *Query) WhereComposite(index string, condition int, keys ...interface{}) *Query {
 	return q.Where(index, condition, keys)
@@ -703,6 +723,7 @@ func (q *Query) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *JSONIte
 	// if q.tx != nil {
 	// 	panic(errors.New("For tx query only Update or Delete operations are supported"))
 	// }
+
 	q.executed = true
 
 	jsonRoot := q.Namespace
@@ -710,7 +731,7 @@ func (q *Query) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *JSONIte
 		jsonRoot = jsonRoots[0]
 	}
 
-	return q.db.execJSONQuery(ctx, q, jsonRoot)
+	return q.db.execToJsonQuery(ctx, q, jsonRoot)
 }
 
 func (q *Query) close() {
@@ -766,14 +787,17 @@ func (q *Query) DeleteCtx(ctx context.Context) (int, error) {
 	if q.root != nil || len(q.joinQueries) != 0 {
 		return 0, errors.New("Delete does not support joined queries")
 	}
+
 	if q.closed {
 		q.panicTrace("Delete call on already closed query. You should create new Query")
 	}
 
 	defer q.close()
+
 	if q.tx != nil {
 		return q.db.deleteQueryTx(ctx, q, q.tx)
 	}
+
 	return q.db.deleteQuery(ctx, q)
 }
 
@@ -917,7 +941,9 @@ func (q *Query) UpdateCtx(ctx context.Context) *Iterator {
 	if q.closed {
 		q.panicTrace("Update call on already closed query. You shoud create new Query")
 	}
+
 	q.executed = true
+
 	if q.tx != nil {
 		return q.db.updateQueryTx(ctx, q, q.tx)
 	}

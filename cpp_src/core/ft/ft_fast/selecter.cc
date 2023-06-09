@@ -36,7 +36,7 @@ constexpr int kMaxStemSkipLen = 1;
 constexpr bool kVariantsWithDifLength = (kMinStemRellevantLen - kMaxStemSkipLen) > 2;
 
 template <typename IdCont>
-void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, h_vector<FtBoundVariantEntry, 4>* lowRelVariants,
+void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RVector<FtBoundVariantEntry, 4>* lowRelVariants,
 									   size_t termIdx, const std::vector<std::string>& langs, const FtDSLQuery& dsl,
 									   std::vector<SynonymsDsl>* synonymsDsl) {
 	const FtDSLEntry& term = dsl[termIdx];
@@ -464,19 +464,20 @@ AreaHolder Selecter<IdCont>::createAreaFromSubMerge(const IDataHolder::MergedIdR
 			first = pos;
 			indx--;
 		}
-		assert(first.field() == last.field());
-		area.InsertArea(Area(first.pos(), last.pos() + 1), v.first.field(), maxAreasInDoc_);
+		assertrx(first.field() == last.field());
+		if (area.InsertArea(Area(first.pos(), last.pos() + 1), v.first.field(), posInfo.rank, maxAreasInDoc_)) {
+			area.UpdateRank(float(posInfo.rank));
+		}
 	}
 	return area;
 }
+
 template <typename IdCont>
-void Selecter<IdCont>::copyAreas(AreaHolder& subMerged, AreaHolder& merged) {
+void Selecter<IdCont>::copyAreas(AreaHolder& subMerged, AreaHolder& merged, int32_t rank) {
 	for (size_t f = 0; f < fieldSize_; f++) {
 		auto areas = subMerged.GetAreas(f);
 		if (areas) {
-			for (auto& v : *areas) {
-				merged.InsertArea(std::move(v), f, maxAreasInDoc_);
-			}
+			areas->MoveAreas(merged, f, rank, maxAreasInDoc_);
 		}
 	}
 }
@@ -485,51 +486,45 @@ template <typename IdCont>
 template <typename PosType>
 void Selecter<IdCont>::subMergeLoop(std::vector<IDataHolder::MergeInfo>& subMerged, std::vector<PosType>& subMergedPos,
 									IDataHolder::MergeData& merged, std::vector<IDataHolder::MergedIdRel>& merged_rd,
-									FtMergeStatuses::Statuses& mergeStatuses, std::vector<uint16_t>& idoffsets,
+									FtMergeStatuses::Statuses& mergeStatuses, std::vector<IDataHolder::MergedOffsetT>& idoffsets,
 									std::vector<bool>* checkAndOpMerge, const bool hasBeenAnd) {
-	for (auto& mergeInfo : subMerged) {
-		if (mergeInfo.proc == 0) {
+	for (auto& subMergeInfo : subMerged) {
+		if (subMergeInfo.proc == 0) {
 			break;
 		}
-
-		index_t& mergeStatus = mergeStatuses[mergeInfo.id];
-		if (mergeStatus == 0 && !hasBeenAnd && int(merged.size()) < holder_.cfg_->mergeLimit) {
+		index_t& mergeStatus = mergeStatuses[subMergeInfo.id];
+		if (mergeStatus == 0 && !hasBeenAnd && int(merged.size()) < holder_.cfg_->mergeLimit) {	 // add new
 			mergeStatus = 1;
 			IDataHolder::MergeInfo m;
-			IDataHolder::MergedIdRel mPos;
 
-			m.id = mergeInfo.id;
-			m.proc = mergeInfo.proc;
-			m.matched = mergeInfo.matched;
-			m.field = mergeInfo.field;
-			PosType& smPos = subMergedPos[mergeInfo.indexAdd];
+			m.id = subMergeInfo.id;
+			m.proc = subMergeInfo.proc;
+			m.field = subMergeInfo.field;
+			PosType& smPos = subMergedPos[subMergeInfo.indexAdd];
+			IDataHolder::MergedIdRel mPos(smPos.rank, smPos.qpos);
 			if constexpr (isGroupMergeWithAreas<PosType>()) {
 				mPos.next.reserve(smPos.posTmp.size());
 				for (const auto& p : smPos.posTmp) {
 					mPos.next.Add(p.first);
 				}
-				AreaHolder area = createAreaFromSubMerge(smPos);
-				merged.vectorAreas.push_back(std::move(area));
+				merged.vectorAreas.emplace_back(createAreaFromSubMerge(smPos));
 				m.areaIndex = merged.vectorAreas.size() - 1;
 			} else {
 				mPos.next = std::move(smPos.posTmp);
 			}
 
 			mPos.cur = std::move(smPos.cur);
-			mPos.rank = smPos.rank;
-			mPos.qpos = smPos.qpos;
 
 			m.indexAdd = merged.size();
 			merged.emplace_back(std::move(m));
 			merged_rd.emplace_back(std::move(mPos));
-			idoffsets[mergeInfo.id] = merged.size() - 1;
+			idoffsets[subMergeInfo.id] = merged.size() - 1;
 		} else if (mergeStatus != 0 && mergeStatus != FtMergeStatuses::kExcluded) {
-			const size_t mergedIndex = idoffsets[mergeInfo.id];
-			if (merged[mergedIndex].proc < mergeInfo.proc) {
-				// TODO calc proc
-				merged[mergedIndex].proc = mergeInfo.proc;
-			}
-			auto& subPos = subMergedPos[mergeInfo.indexAdd];
+			const size_t mergedIndex = idoffsets[subMergeInfo.id];
+
+			merged[mergedIndex].proc += subMergeInfo.proc;
+
+			auto& subPos = subMergedPos[subMergeInfo.indexAdd];
 			if constexpr (isGroupMergeWithAreas<PosType>()) {
 				subPos.next.reserve(subPos.posTmp.size());
 				for (const auto& p : subPos.posTmp) {
@@ -542,7 +537,7 @@ void Selecter<IdCont>::subMergeLoop(std::vector<IDataHolder::MergeInfo>& subMerg
 								merged.vectorAreas.size());
 				}
 				AreaHolder& areaTo = merged.vectorAreas[areaIndex];
-				copyAreas(area, areaTo);
+				copyAreas(area, areaTo, subMergeInfo.proc);
 			} else {
 				subPos.next = std::move(subPos.posTmp);
 			}
@@ -551,10 +546,9 @@ void Selecter<IdCont>::subMergeLoop(std::vector<IDataHolder::MergeInfo>& subMerg
 			mergedPosVectorElemPointer.next = std::move(subPos.next);
 			mergedPosVectorElemPointer.rank = subPos.rank;
 			mergedPosVectorElemPointer.qpos = subPos.qpos;
-			merged[mergedIndex].matched += mergeInfo.matched;
 		}
 		if (checkAndOpMerge) {
-			(*checkAndOpMerge)[mergeInfo.id] = true;
+			(*checkAndOpMerge)[subMergeInfo.id] = true;
 		}
 	}
 }
@@ -564,7 +558,8 @@ template <typename PosType>
 void Selecter<IdCont>::mergeGroupResult(std::vector<TextSearchResults>& rawResults, size_t from, size_t to,
 										FtMergeStatuses::Statuses& mergeStatuses, IDataHolder::MergeData& merged,
 										std::vector<IDataHolder::MergedIdRel>& merged_rd, OpType op, const bool hasBeenAnd,
-										std::vector<uint16_t>& idoffsets, const bool inTransaction, const RdxContext& rdxCtx) {
+										std::vector<IDataHolder::MergedOffsetT>& idoffsets, const bool inTransaction,
+										const RdxContext& rdxCtx) {
 	// And - MustPresent
 	// Or  - MayBePresent
 	// Not - NotPresent
@@ -608,12 +603,65 @@ void Selecter<IdCont>::mergeGroupResult(std::vector<TextSearchResults>& rawResul
 			abort();
 	}
 }
+template <typename IdCont>
+void Selecter<IdCont>::addNewTerm(FtMergeStatuses::Statuses& mergeStatuses, IDataHolder::MergeData& merged,
+								  std::vector<IDataHolder::MergedOffsetT>& idoffsets, std::vector<bool>& curExists, const IdRelType& relid,
+								  index_t rawResIndex, int32_t termRank, int field) {
+	const int vid = relid.Id();
+	IDataHolder::MergeInfo info;
+	info.id = vid;
+	info.proc = termRank;
+	info.field = field;
+	if (needArea_) {
+		auto& area = merged.vectorAreas.emplace_back();
+		info.areaIndex = merged.vectorAreas.size() - 1;
+		area.ReserveField(fieldSize_);
+		for (auto pos : relid.Pos()) {
+			[[maybe_unused]] bool r = area.AddWord(pos.pos(), pos.field(), termRank, maxAreasInDoc_);
+		}
+		area.UpdateRank(termRank);
+	}
+	info.indexAdd = merged.size();
+	merged.push_back(std::move(info));
+	mergeStatuses[vid] = rawResIndex + 1;
+	if (!curExists.empty()) {
+		curExists[vid] = true;
+		idoffsets[vid] = merged.size() - 1;
+	}
+};
 
+template <typename IdCont>
+void Selecter<IdCont>::addAreas(IDataHolder::MergeData& merged, int32_t areaIndex, const IdRelType& relid, int32_t termRank) {
+	if (needArea_) {
+		AreaHolder& area = merged.vectorAreas[areaIndex];
+		for (auto pos : relid.Pos()) {
+			if (!area.AddWord(pos.pos(), pos.field(), termRank, maxAreasInDoc_)) {
+				break;
+			}
+		}
+		area.UpdateRank(termRank);
+	}
+};
+
+// idf=max(0.2, log((N-M+1)/M)/log(1+N))
+// N - document count
+// M - the number of documents in which the term was found
+// bm25= idf* T * (k1 + 1.0) / (T + k1 * (1.0 - b + b * wordsInDoc / avgDocLen)
+//  T - the number of terms in the document
+//  bm25_norm= (1.0 - weight) + b525 * boost * weight
+//  weight - fieldCfg.bm25Weight,
+//  boost - fieldCfg.bm25Boost
+//  subTermRank = opts.fieldsOpts[f].boost * termProc * bm25_norm * opts.boost * termLenBoost * positionRank
+//  positionRank - weight depending on the position of the word
+//  termLenBoost - weight depending on the length of the word
+//  termProc - weight depending on the type of subTerm
+//  docRank=summ(max(subTermRank))*255/allmax
+//  allmax=max(docRank)
 template <typename IdCont>
 void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
 									  IDataHolder::MergeData& merged, std::vector<IDataHolder::MergedIdRel>& merged_rd,
-									  std::vector<uint16_t>& idoffsets, std::vector<bool>& curExists, const bool hasBeenAnd,
-									  const bool inTransaction, const RdxContext& rdxCtx) {
+									  std::vector<IDataHolder::MergedOffsetT>& idoffsets, std::vector<bool>& curExists,
+									  const bool hasBeenAnd, const bool inTransaction, const RdxContext& rdxCtx) {
 	const auto& vdocs = holder_.vdocs_;
 
 	const size_t totalDocsCount = vdocs.size();
@@ -629,7 +677,10 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 	}
 
 	for (auto& m_rd : merged_rd) {
-		if (m_rd.next.Size()) m_rd.cur = std::move(m_rd.next);
+		if (m_rd.next.Size()) {
+			m_rd.cur = std::move(m_rd.next);
+			m_rd.rank = 0;
+		}
 	}
 
 	// loop on subterm (word, translit, stemmmer,...)
@@ -658,129 +709,66 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 			}
 
 			// keyEntry can be assigned nullptr when removed
-			if (!vdocs[vid].keyEntry) continue;
+			if (!vdocs[vid].keyEntry) {
+				continue;
+			}
 
 			// Find field with max rank
-			double normBm25 = 0.0;
-			auto [termRank, field] = calcTermRank(rawRes, idf, relid, r.proc_, normBm25);
-			if (!termRank) continue;
+			auto [termRank, field] = calcTermRank(rawRes, idf, relid, r.proc_);
+			if (!termRank) {
+				continue;
+			}
 			if (holder_.cfg_->logLevel >= LogTrace) {
 				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, rawRes.term.opts.termLenBoost);
 			}
-			// match of 2-rd, and next terms (we will get here with the second subterm)
-			// non text queries put kExcluded (not 0) in mergeStatuses
-			const IdRelType* movedRelId = nullptr;
-			if (!simple && vidStatus) {
-				assertrx(relid.Size());
-				auto& curMerged = merged[idoffsets[vid]];
-				auto& curMerged_rd = merged_rd[curMerged.indexAdd];
 
-				assertrx(curMerged_rd.cur.Size());
-
-				// Calculate words distance
-				int distance = 0;
-				float normDist = 1;
-				if (curMerged_rd.qpos != rawRes.term.opts.qpos) {  // do not calculate the distance if it is a subterm of the FIRST term
-					distance = curMerged_rd.cur.Distance(relid, INT_MAX);
-					// Normalized distance
-					normDist = bound(1.0 / double(std::max(distance, 1)), holder_.cfg_->distanceWeight, holder_.cfg_->distanceBoost);
-				}
-				int finalRank = normDist * termRank;
-				if (distance <= rawRes.term.opts.distance && (!curExists[vid] || finalRank > curMerged_rd.rank)) {
-					// distance and rank is better, than prev. update rank
-					if (curExists[vid]) {
-						curMerged.proc -= curMerged_rd.rank;
-						debugMergeStep("merged better score ", vid, normBm25, normDist, finalRank, curMerged_rd.rank);
-					} else {
-						debugMergeStep("merged new ", vid, normBm25, normDist, finalRank, curMerged_rd.rank);
-						curMerged.matched++;
-					}
-					curMerged.proc += finalRank;
-					if (needArea_) {
-						for (auto pos : relid.Pos()) {
-							if (!merged.vectorAreas[curMerged.areaIndex].AddWord(pos.pos(), pos.field(), maxAreasInDoc_)) {
-								break;
-							}
-						}
-					}
-					curMerged_rd.rank = finalRank;
-					curMerged_rd.next = std::move(relid);
-					movedRelId = &curMerged_rd.next;
-					curExists[vid] = true;
-				} else {
-					debugMergeStep("skiped ", vid, normBm25, normDist, finalRank, curMerged_rd.rank);
-				}
-			}
-
-			if (int(merged.size()) < holder_.cfg_->mergeLimit && !hasBeenAnd) {
-				const bool currentlyAddedLessRankedMerge =
-					!curExists.empty() && curExists[vid] && merged[idoffsets[vid]].proc < static_cast<int32_t>(termRank);
-				if (!(simple && currentlyAddedLessRankedMerge) && vidStatus) {
-					continue;
-				}
-				// match of 1-st term
-				IDataHolder::MergeInfo info;
-				info.id = vid;
-				info.proc = termRank;
-				info.matched = 1;
-				info.field = field;
-
-				if (needArea_) {
-					merged.vectorAreas.push_back(AreaHolder());
-					info.areaIndex = merged.vectorAreas.size() - 1;
-					auto& area = merged.vectorAreas.back();
-					area.ReserveField(fieldSize_);
-					auto& relidRef = movedRelId ? *movedRelId : relid;
-					for (auto pos : relidRef.Pos()) {
-						area.AddWord(pos.pos(), pos.field(), maxAreasInDoc_);
-					}
-				}
-
+			if (simple) {  // one term
 				if (vidStatus) {
-					info.indexAdd = merged[idoffsets[vid]].indexAdd;
-					if (!simple) {
-						if (movedRelId) {
-							merged_rd[info.indexAdd].cur = *movedRelId;
-						} else {
-							// NOLINTNEXTLINE(bugprone-use-after-move)
-							merged_rd[info.indexAdd].cur = std::move(relid);
-						}
-						merged_rd[info.indexAdd].next = IdRelType();
-						merged_rd[info.indexAdd].rank = termRank;
-						merged_rd[info.indexAdd].qpos = rawRes.term.opts.qpos;
+					IDataHolder::MergeInfo& info = merged[idoffsets[vid]];
+					addAreas(merged, info.areaIndex, relid, termRank);
+					if (info.proc < static_cast<int32_t>(termRank)) {
+						info.proc = termRank;
+						info.field = field;
 					}
-					merged[idoffsets[vid]] = std::move(info);
-				} else {  // add new document
-					info.indexAdd = merged.size();
-					merged.push_back(std::move(info));
-					mergeStatuses[vid] = rawResIndex + 1;
-					if (!curExists.empty()) {
-						curExists[vid] = true;
-						idoffsets[vid] = merged.size() - 1;
+				} else if (int(merged.size()) < holder_.cfg_->mergeLimit) {	 // add new
+					addNewTerm(mergeStatuses, merged, idoffsets, curExists, relid, rawResIndex, int32_t(termRank), field);
+				}
+			} else {
+				if (vidStatus) {
+					int distance = 0;
+					float normDist = 1;
+					auto& info = merged[idoffsets[vid]];
+					auto& curMerged_rd = merged_rd[info.indexAdd];
+					if (!curMerged_rd.cur.empty()) {  // do not calculate the distance if it is a subterm of the FIRST added term
+						distance = curMerged_rd.cur.Distance(relid, INT_MAX);
+						// Normalized distance
+						normDist = bound(1.0 / double(std::max(distance, 1)), holder_.cfg_->distanceWeight, holder_.cfg_->distanceBoost);
 					}
+					int finalRank = normDist * termRank;
 
-					if (!simple) {
-						if (movedRelId) {
-							// Due to move conditions, this branch is actually never works, so it's just double check
-							merged_rd.emplace_back(IdRelType(*movedRelId), int(termRank), rawRes.term.opts.qpos);
-						} else {
-							// Moving relid only if it was not already moved before (movedRelId must be set right after move)
-							merged_rd.emplace_back(IdRelType(std::move(relid)), int(termRank), rawRes.term.opts.qpos);
-						}
+					addAreas(merged, info.areaIndex, relid, termRank);
+					if (finalRank > curMerged_rd.rank) {
+						info.proc -= curMerged_rd.rank;
+						info.proc += finalRank;
+						curMerged_rd.rank = finalRank;
+						curMerged_rd.next = std::move(relid);
 					}
+					curExists[vid] = true;
+				} else if (int(merged.size()) < holder_.cfg_->mergeLimit && !hasBeenAnd) {	// add new
+					addNewTerm(mergeStatuses, merged, idoffsets, curExists, relid, rawResIndex, termRank, field);
+					merged_rd.emplace_back(IdRelType(std::move(relid)), int32_t(termRank), rawRes.term.opts.qpos);
 				}
 			}
 		}
 	}
 }
 template <typename IdCont>
-std::pair<double, int> Selecter<IdCont>::calcTermRank(const TextSearchResults& rawRes, double idf, const IdRelType& relid, int proc,
-													  double& normBm25) {
+std::pair<double, int> Selecter<IdCont>::calcTermRank(const TextSearchResults& rawRes, double idf, const IdRelType& relid, int proc) {
 	// Find field with max rank
 	int field = 0;
 	double termRank = 0.0;
 	bool dontSkipCurTermRank = false;
-	normBm25 = 0.0;
+	double normBm25 = 0.0;
 
 	h_vector<double, 4> ranksInFields;
 	for (unsigned long long fieldsMask = relid.UsedFieldsMask(), f = 0; fieldsMask; ++f, fieldsMask >>= 1) {
@@ -818,9 +806,9 @@ std::pair<double, int> Selecter<IdCont>::calcTermRank(const TextSearchResults& r
 template <typename IdCont>
 template <typename P>
 void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
-										   IDataHolder::MergeData& merged, std::vector<P>& merged_rd, std::vector<uint16_t>& idoffsets,
-										   std::vector<bool>& present, const bool firstTerm, const bool inTransaction,
-										   const RdxContext& rdxCtx) {
+										   IDataHolder::MergeData& merged, std::vector<P>& merged_rd,
+										   std::vector<IDataHolder::MergedOffsetT>& idoffsets, std::vector<bool>& present,
+										   const bool firstTerm, const bool inTransaction, const RdxContext& rdxCtx) {
 	const auto& vdocs = holder_.vdocs_;
 
 	const size_t totalDocsCount = vdocs.size();
@@ -850,8 +838,7 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 			if (!vdocs[vid].keyEntry) continue;
 
 			// Find field with max rank
-			double normBm25 = 0.0;
-			auto [termRank, field] = calcTermRank(rawRes, idf, relid, r.proc_, normBm25);
+			auto [termRank, field] = calcTermRank(rawRes, idf, relid, r.proc_);
 			if (!termRank) continue;
 
 			if (holder_.cfg_->logLevel >= LogTrace) {
@@ -868,6 +855,9 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 					present[vid] = true;
 					double normDist = bound(1.0 / minDist, holder_.cfg_->distanceWeight, holder_.cfg_->distanceBoost);
 					int finalRank = normDist * termRank;
+					//'rank' of the current subTerm is greater than the previous subTerm, update the overall 'rank' and save the rank of the
+					// subTerm for possible
+					// further updates
 					if (finalRank > curMergedPos.rank) {
 						curMerged.proc -= curMergedPos.rank;
 						curMergedPos.rank = finalRank;
@@ -894,7 +884,6 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 					IDataHolder::MergeInfo info;
 					info.id = vid;
 					info.proc = termRank;
-					info.matched = 1;
 					info.field = field;
 					info.indexAdd = merged.size();
 					merged.push_back(std::move(info));
@@ -924,6 +913,7 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 			mergeStatuses[mergedInfo.id] = 0;
 			mergedPosInfo.cur.Clear();
 			mergedPosInfo.next.Clear();
+			mergedPosInfo.rank = 0;
 			continue;
 		}
 		if constexpr (isGroupMerge<P>()) {
@@ -931,6 +921,7 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 			mergedPosInfo.cur = std::move(mergedPosInfo.posTmp);
 			mergedPosInfo.next.Clear();
 			mergedPosInfo.posTmp.Clear();
+			mergedPosInfo.rank = 0;
 		} else {
 			auto& posTmp = mergedPosInfo.posTmp;
 			boost::sort::pdqsort(
@@ -946,6 +937,7 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 			mergedPosInfo.wordPosForChain.emplace_back(std::move(mergedPosInfo.posTmp));
 			mergedPosInfo.posTmp.clear();
 			mergedPosInfo.next.Clear();
+			mergedPosInfo.rank = 0;
 		}
 	}
 }
@@ -957,7 +949,7 @@ void Selecter<IdCont>::mergeResultsPart(std::vector<TextSearchResults>& rawResul
 	// Current implementation supports OpAnd only
 	assertrx(to <= rawResults.size());
 	FtMergeStatuses::Statuses mergeStatuses;
-	std::vector<uint16_t> idoffsets;
+	std::vector<IDataHolder::MergedOffsetT> idoffsets;
 
 	mergeStatuses.resize(holder_.vdocs_.size(), 0);
 
@@ -1250,7 +1242,7 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextS
 	assertrx(mergeStatuses.size() == vdocs.size());
 	std::vector<IDataHolder::MergedIdRel> merged_rd;
 
-	std::vector<uint16_t> idoffsets;
+	std::vector<IDataHolder::MergedOffsetT> idoffsets;
 
 	for (auto& rawRes : rawResults) {
 		boost::sort::pdqsort(rawRes.begin(), rawRes.end(),

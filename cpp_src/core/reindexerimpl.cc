@@ -154,7 +154,14 @@ Error ReindexerImpl::EnableStorage(const std::string& storagePath, bool skipPlac
 
 	Error res = errOK;
 	if (isHaveConfig) {
-		res = OpenNamespace(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing(), ctx);
+		try {
+			WrSerializer ser;
+			const auto rdxCtx =
+				ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "OPEN NAMESPACE " << kConfigNamespace).Slice() : ""sv, activities_);
+			res = openNamespace(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing(), rdxCtx);
+		} catch (const Error& err) {
+			return err;
+		}
 	}
 	replConfigFileChecker_.SetFilepath(fs::JoinPath(storagePath_, kReplicationConfFilename));
 
@@ -232,9 +239,9 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 							}
 							continue;
 						}
-						auto status = OpenNamespace(de.name, StorageOpts().Enabled());
+						const RdxContext dummyCtx;
+						auto status = openNamespace(de.name, StorageOpts().Enabled(), dummyCtx);
 						if (status.ok()) {
-							const RdxContext dummyCtx;
 							if (getNamespace(de.name, dummyCtx)->IsTemporary(dummyCtx)) {
 								logPrintf(LogWarning, "Dropping tmp namespace '%s'", de.name);
 								status = closeNamespace(de.name, dummyCtx, true, true);
@@ -276,12 +283,43 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 	return err;
 }
 
+Error ReindexerImpl::OpenNamespace(std::string_view nsName, const StorageOpts& opts, const InternalRdxContext& ctx) {
+	try {
+		WrSerializer ser;
+		const auto rdxCtx =
+			ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "OPEN NAMESPACE " << nsName).Slice() : ""sv, activities_);
+		{
+			SLock lock(mtx_, &rdxCtx);
+			auto it = namespaces_.find(nsName);
+			if (it == namespaces_.end()) {	// create new namespace
+				if (!validateUserNsName(nsName)) {
+					return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+				}
+			}
+		}
+		return openNamespace(nsName, opts, rdxCtx);
+	} catch (const Error& err) {
+		return err;
+	}
+}
+
 Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContext& ctx) {
-	Namespace::Ptr ns;
+	if (!validateUserNsName(nsDef.name)) {
+		return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+	}
 	try {
 		WrSerializer ser;
 		const auto rdxCtx =
 			ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "CREATE NAMESPACE " << nsDef.name).Slice() : ""sv, activities_);
+		return addNamespace(nsDef, rdxCtx);
+	} catch (const Error& err) {
+		return err;
+	}
+}
+
+Error ReindexerImpl::addNamespace(const NamespaceDef& nsDef, const RdxContext& rdxCtx) {
+	Namespace::Ptr ns;
+	try {
 		{
 			ULock lock(mtx_, &rdxCtx);
 			if (namespaces_.find(nsDef.name) != namespaces_.end()) {
@@ -319,10 +357,8 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, const InternalRdxCo
 	return errOK;
 }
 
-Error ReindexerImpl::OpenNamespace(std::string_view name, const StorageOpts& storageOpts, const InternalRdxContext& ctx) {
+Error ReindexerImpl::openNamespace(std::string_view name, const StorageOpts& storageOpts, const RdxContext& rdxCtx) {
 	try {
-		WrSerializer ser;
-		const auto rdxCtx = ctx.CreateRdxContext(ctx.NeedTraceActivity() ? (ser << "OPEN NAMESPACE " << name).Slice() : ""sv, activities_);
 		{
 			SLock lock(mtx_, &rdxCtx);
 			auto nsIt = namespaces_.find(name);
@@ -385,7 +421,11 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 			return Error(errLogic, "Can't modify slave ns '%s'", nsName);
 		}
 
+		if (isSystemNamespaceName(nsName)) {
+			return Error(errLogic, "Can't delete system ns '%s'", nsName);
+		}
 		namespaces_.erase(nsIt);
+
 		if (dropStorage) {
 			ns->DeleteStorage(ctx);
 		} else {
@@ -463,19 +503,14 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 	Namespace::Ptr dstNs, srcNs;
 	try {
 		if (dstNsName == srcNsName.data()) return errOK;
-		const char kSystemNamespacePrefix = '#';
-		if (!srcNsName.empty() && srcNsName[0] == kSystemNamespacePrefix) {
+		if (isSystemNamespaceName(srcNsName)) {
 			return Error(errParams, "Can't rename system namespace (%s)", srcNsName);
 		}
 		if (dstNsName.empty()) {
 			return Error(errParams, "Can't rename namespace to empty name");
 		}
-		if (!validateObjectName(dstNsName, false)) {
-			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed (%s)", dstNsName);
-		}
-
-		if (dstNsName[0] == kSystemNamespacePrefix) {
-			return Error(errParams, "Can't rename to system namespace name (%s)", dstNsName);
+		if (!validateUserNsName(dstNsName)) {
+			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
 
 		WrSerializer ser;
@@ -1343,8 +1378,9 @@ void ReindexerImpl::storageFlushingRoutine() {
 }
 
 void ReindexerImpl::createSystemNamespaces() {
+	const RdxContext dummyCtx;
 	for (const auto& nsDef : kSystemNsDefs) {
-		AddNamespace(nsDef);
+		addNamespace(nsDef, dummyCtx);
 	}
 }
 
@@ -1749,6 +1785,11 @@ Error ReindexerImpl::GetProtobufSchema(WrSerializer& ser, std::vector<std::strin
 	});
 	schemaBuilder.End();
 	return errOK;
+}
+
+[[nodiscard]] bool ReindexerImpl::isSystemNamespaceName(std::string_view name) noexcept {
+	return std::find_if(kSystemNsDefs.begin(), kSystemNsDefs.end(), [name](const NamespaceDef& nsDef) { return nsDef.name == name; }) !=
+		   kSystemNsDefs.end();
 }
 
 Error ReindexerImpl::Status() {

@@ -162,7 +162,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 				case JoinPreResult::ModeIterators:
 					qres.LazyAppend(ctx.preResult->iterators.begin(), ctx.preResult->iterators.end());
 					break;
-				default:
+				case JoinPreResult::ModeValues:
 					assertrx(0);
 			}
 		}
@@ -371,7 +371,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 							  ctx.preResult->values.size(), ctx.query.GetSQL());
 				}
 				break;
-			default:
+			case JoinPreResult::ModeIterators:
 				assertrx(0);
 		}
 		ctx.preResult->executionMode = JoinPreResult::ModeExecute;
@@ -437,7 +437,7 @@ private:
 };
 
 template <bool desc, bool multiColumnSort, typename It>
-It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator &compare, const SelectCtx &ctx, const joins::NamespaceResults &jr) {
+It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator &compare, const SelectCtx &ctx, const joins::NamespaceResults *jr) {
 	assertrx_throw(!ctx.sortingContext.entries.empty());
 	if (ctx.query.mergeQueries_.size() > 1) throw Error(errLogic, "Force sort could not be applied to 'merged' queries.");
 	return std::visit(overloaded{
@@ -451,10 +451,11 @@ It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator &compare, 
 						  [&](const SortingContext::JoinedFieldEntry &e) {
 							  assertrx_throw(ctx.joinedSelectors);
 							  assertrx_throw(ctx.joinedSelectors->size() >= e.nsIdx);
+							  assertrx_throw(jr);
 							  const auto &joinedSelector = (*ctx.joinedSelectors)[e.nsIdx];
 							  return applyForcedSortImpl<desc, multiColumnSort, It>(
 								  *joinedSelector.RightNs(), begin, end, compare, ctx.query.forcedSortOrder_, std::string{e.field},
-								  JoinedNsValueGetter{*joinedSelector.RightNs(), jr, e.nsIdx});
+								  JoinedNsValueGetter{*joinedSelector.RightNs(), *jr, e.nsIdx});
 						  },
 
 					  },
@@ -483,60 +484,75 @@ struct RelaxedHasher {
 					   [&v](KeyValueType::String) noexcept {
 						   return std::pair<size_t, size_t>{4, v.Hash()};
 					   },
+					   [&v](KeyValueType::Uuid) noexcept {
+						   return std::pair<size_t, size_t>{5, v.Hash()};
+					   },
 					   [&v](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>)
 						   -> std::pair<size_t, size_t> {
-						   throw Error{errQueryExec, "Cannot compare value of '%s' type with number of string", v.Type().Name()};
+						   throw Error{errQueryExec, "Cannot compare value of '%s' type with number, string or uuid", v.Type().Name()};
 					   }});
 	}
 	static size_t hash(size_t i, const Variant &v) {
 		switch (i) {
 			case 0:
-				return v.Type().EvaluateOneOf(overloaded{
-					[&v](KeyValueType::Bool) noexcept { return v.Hash(); },
-					[v](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String>) {
-						return v.convert(KeyValueType::Bool{}).Hash();
-					},
-					[&v](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> size_t {
-						throw Error{errQueryExec, "Cannot compare value of '%s' type with number of string", v.Type().Name()};
-					}});
+				return v.Type().EvaluateOneOf(
+					overloaded{[&v](KeyValueType::Bool) noexcept { return v.Hash(); },
+							   [v](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String>) {
+								   return v.convert(KeyValueType::Bool{}).Hash();
+							   },
+							   [&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										  KeyValueType::Null>) -> size_t {
+								   throw Error{errQueryExec, "Cannot compare value of '%s' type with bool", v.Type().Name()};
+							   }});
 			case 1:
-				return v.Type().EvaluateOneOf(overloaded{
-					[&v](KeyValueType::Int) noexcept { return v.Hash(); },
-					[v](OneOf<KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String>) {
-						return v.convert(KeyValueType::Int{}).Hash();
-					},
-					[&v](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> size_t {
-						throw Error{errQueryExec, "Cannot compare value of '%s' type with number of string", v.Type().Name()};
-					}});
+				return v.Type().EvaluateOneOf(
+					overloaded{[&v](KeyValueType::Int) noexcept { return v.Hash(); },
+							   [v](OneOf<KeyValueType::Bool, KeyValueType::Int64, KeyValueType::Double, KeyValueType::String>) {
+								   return v.convert(KeyValueType::Int{}).Hash();
+							   },
+							   [&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										  KeyValueType::Null>) -> size_t {
+								   throw Error{errQueryExec, "Cannot compare value of '%s' type with number", v.Type().Name()};
+							   }});
 			case 2:
-				return v.Type().EvaluateOneOf(overloaded{
-					[&v](KeyValueType::Int64) noexcept { return v.Hash(); },
-					[v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Double, KeyValueType::String>) {
-						return v.convert(KeyValueType::Int64{}).Hash();
-					},
-					[&v](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> size_t {
-						throw Error{errQueryExec, "Cannot compare value of '%s' type with number of string", v.Type().Name()};
-					}});
+				return v.Type().EvaluateOneOf(
+					overloaded{[&v](KeyValueType::Int64) noexcept { return v.Hash(); },
+							   [v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Double, KeyValueType::String>) {
+								   return v.convert(KeyValueType::Int64{}).Hash();
+							   },
+							   [&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										  KeyValueType::Null>) -> size_t {
+								   throw Error{errQueryExec, "Cannot compare value of '%s' type with number", v.Type().Name()};
+							   }});
 			case 3:
-				return v.Type().EvaluateOneOf(overloaded{
-					[&v](KeyValueType::Double) noexcept { return v.Hash(); },
-					[v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::String>) {
-						return v.convert(KeyValueType::Double{}).Hash();
-					},
-					[&v](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> size_t {
-						throw Error{errQueryExec, "Cannot compare value of '%s' type with number of string", v.Type().Name()};
-					}});
+				return v.Type().EvaluateOneOf(
+					overloaded{[&v](KeyValueType::Double) noexcept { return v.Hash(); },
+							   [v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::String>) {
+								   return v.convert(KeyValueType::Double{}).Hash();
+							   },
+							   [&v](OneOf<KeyValueType::Uuid, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite,
+										  KeyValueType::Null>) -> size_t {
+								   throw Error{errQueryExec, "Cannot compare value of '%s' type with number", v.Type().Name()};
+							   }});
 			case 4:
 				return v.Type().EvaluateOneOf(overloaded{
 					[&v](KeyValueType::String) noexcept { return v.Hash(); },
-					[v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) {
+					[v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Uuid>) {
 						return v.convert(KeyValueType::String{}).Hash();
 					},
 					[&v](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> size_t {
-						throw Error{errQueryExec, "Cannot compare value of '%s' type with number of string", v.Type().Name()};
+						throw Error{errQueryExec, "Cannot compare value of '%s' type with string", v.Type().Name()};
+					}});
+			case 5:
+				return v.Type().EvaluateOneOf(overloaded{
+					[&v](KeyValueType::Uuid) noexcept { return v.Hash(); },
+					[v](KeyValueType::String) noexcept { return v.convert(KeyValueType::Uuid{}).Hash(); },
+					[v](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Tuple,
+							  KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> size_t {
+						throw Error{errQueryExec, "Cannot compare value of '%s' type with uuid", v.Type().Name()};
 					}});
 			default:
-				assertrx_throw(i < 5);
+				assertrx_throw(i < 6);
 				abort();
 		}
 	}
@@ -552,8 +568,9 @@ class ForcedSortMap {
 
 public:
 	ForcedSortMap(Variant k, size_t v, size_t size)
-		: data_{k.Type().Is<KeyValueType::String>() || k.Type().IsNumeric() ? DataType{MultiMap{size}}
-																			: DataType{SingleTypeMap{k.Type(), {}}}} {
+		: data_{k.Type().Is<KeyValueType::String>() || k.Type().Is<KeyValueType::Uuid>() || k.Type().IsNumeric()
+					? DataType{MultiMap{size}}
+					: DataType{SingleTypeMap{k.Type(), {}}}} {
 		std::visit(overloaded{[&](MultiMap &m) { m.insert(std::move(k), v); }, [&](SingleTypeMap &m) { m.map_.emplace(std::move(k), v); }},
 				   data_);
 	}
@@ -602,7 +619,7 @@ template <bool desc, bool multiColumnSort, typename It, typename ValueGetter>
 It NsSelecter::applyForcedSortImpl(NamespaceImpl &ns, It begin, It end, const ItemComparator &compare,
 								   const std::vector<Variant> &forcedSortOrder, const std::string &fieldName,
 								   const ValueGetter &valueGetter) {
-	if (int idx; ns.getIndexByName(fieldName, idx)) {
+	if (int idx; ns.getIndexByNameOrJsonPath(fieldName, idx)) {
 		if (ns.indexes_[idx]->Opts().IsArray())
 			throw Error(errQueryExec, "This type of sorting cannot be applied to a field of array type.");
 		const KeyValueType fieldType{ns.indexes_[idx]->KeyType()};
@@ -825,7 +842,7 @@ bool NsSelecter::checkIfThereAreLeftJoins(SelectCtx &sctx) const {
 }
 
 template <typename It>
-void NsSelecter::sortResults(LoopCtx &ctx, It begin, It end, const SortingOptions &sortingOptions, const joins::NamespaceResults &jr) {
+void NsSelecter::sortResults(LoopCtx &ctx, It begin, It end, const SortingOptions &sortingOptions, const joins::NamespaceResults *jr) {
 	SelectCtx &sctx = ctx.sctx;
 	ctx.explain.StartSort();
 #ifndef NDEBUG
@@ -947,7 +964,8 @@ void NsSelecter::selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &rd
 				if ((ctx.start || (ctx.count == 0)) && sortingOptions.multiColumnByBtreeIndex) {
 					VariantArray recentValues;
 					size_t lastResSize = result.Count();
-					getSortIndexValue(sctx.sortingContext, properRowId, recentValues, proc, result.joined_[sctx.nsid], joinedSelectors);
+					getSortIndexValue(sctx.sortingContext, properRowId, recentValues, proc,
+									  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors);
 					if (prevValues.empty() && result.Items().empty()) {
 						prevValues = recentValues;
 					} else {
@@ -977,7 +995,8 @@ void NsSelecter::selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &rd
 					addSelectResult<aggregationsOnly>(proc, rowId, properRowId, sctx, ctx.aggregators, result, ctx.preselectForFt);
 					--ctx.count;
 					if (!ctx.count && sortingOptions.multiColumn && !multiSortFinished)
-						getSortIndexValue(sctx.sortingContext, properRowId, prevValues, proc, result.joined_[sctx.nsid], joinedSelectors);
+						getSortIndexValue(sctx.sortingContext, properRowId, prevValues, proc,
+										  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors);
 				}
 				if (!ctx.count && !ctx.calcTotal && multiSortFinished) break;
 				if (ctx.calcTotal) result.totalCount++;
@@ -1011,11 +1030,12 @@ void NsSelecter::selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &rd
 		if (sctx.preResult && sctx.preResult->dataMode == JoinPreResult::ModeValues) {
 			assertrx(sctx.preResult->executionMode == JoinPreResult::ModeBuild);
 			sortResults(ctx, sctx.preResult->values.begin() + initCount, sctx.preResult->values.end(), sortingOptions,
-						result.joined_[sctx.nsid]);
+						sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr);
 		} else if (sortingOptions.postLoopSortingRequired()) {
 			const size_t offset = sctx.isForceAll ? ctx.qPreproc.Start() : multisortLimitLeft;
 			if (result.Items().size() > offset) {
-				sortResults(ctx, result.Items().begin() + initCount, result.Items().end(), sortingOptions, result.joined_[sctx.nsid]);
+				sortResults(ctx, result.Items().begin() + initCount, result.Items().end(), sortingOptions,
+							sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr);
 			}
 			setLimitAndOffset(result.Items(), offset, ctx.qPreproc.Count() + initCount);
 		}
@@ -1032,7 +1052,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &rd
 }
 
 void NsSelecter::getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc,
-								   const joins::NamespaceResults &joinResults, const JoinedSelectors &js) {
+								   const joins::NamespaceResults *joinResults, const JoinedSelectors &js) {
 	ConstPayload pv(ns_->payloadType_, ns_->items_[rowId]);
 	std::visit(overloaded{[&](const SortingContext::ExpressionEntry &e) {
 							  assertrx(e.expression < sortCtx.expressions.size());
@@ -1040,7 +1060,8 @@ void NsSelecter::getSortIndexValue(const SortingContext &sortCtx, IdType rowId, 
 								  sortCtx.expressions[e.expression].Calculate(rowId, pv, joinResults, js, proc, ns_->tagsMatcher_)}};
 						  },
 						  [&](const SortingContext::JoinedFieldEntry &e) {
-							  value = SortExpression::GetJoinedFieldValues(rowId, joinResults, js, e.nsIdx, e.field, e.index);
+							  assertrx_throw(joinResults);
+							  value = SortExpression::GetJoinedFieldValues(rowId, *joinResults, js, e.nsIdx, e.field, e.index);
 						  },
 						  [&](const SortingContext::FieldEntry &e) {
 							  if ((e.data.index == IndexValueType::SetByJsonPath) || ns_->indexes_[e.data.index]->Opts().IsSparse()) {
@@ -1059,8 +1080,9 @@ void NsSelecter::calculateSortExpressions(uint8_t proc, IdType rowId, IdType pro
 	assertrx(exprs.size() == exprResults.size());
 	const ConstPayload pv(ns_->payloadType_, ns_->items_[properRowId]);
 	const auto &joinedSelectors = sctx.joinedSelectors ? *sctx.joinedSelectors : emptyJoinedSelectors;
+	const auto joinedResultPtr = sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr;
 	for (size_t i = 0; i < exprs.size(); ++i) {
-		exprResults[i].push_back(exprs[i].Calculate(rowId, pv, result.joined_[sctx.nsid], joinedSelectors, proc, ns_->tagsMatcher_));
+		exprResults[i].push_back(exprs[i].Calculate(rowId, pv, joinedResultPtr, joinedSelectors, proc, ns_->tagsMatcher_));
 	}
 }
 
@@ -1083,7 +1105,7 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 					sctx.preResult->values.emplace_back(properRowId, ns_->items_[properRowId], proc, sctx.nsid);
 				}
 				break;
-			default:
+			case JoinPreResult::ModeIterators:
 				abort();
 		}
 	} else {
@@ -1149,7 +1171,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 					sortingEntries[j].field = i;
 				}
 			}
-			if (ns_->getIndexByName(ag.Fields()[i], idx)) {
+			if (ns_->getIndexByNameOrJsonPath(ag.Fields()[i], idx)) {
 				if (ns_->indexes_[idx]->Opts().IsSparse()) {
 					fields.push_back(ns_->indexes_[idx]->Fields().getTagsPath(0));
 				} else if (ag.Type() == AggFacet && ag.Fields().size() > 1 && ns_->indexes_[idx]->Opts().IsArray()) {
@@ -1194,7 +1216,7 @@ void NsSelecter::prepareSortIndex(const NamespaceImpl &ns, std::string_view colu
 								  StrictMode strictMode) {
 	assertrx(!column.empty());
 	index = IndexValueType::SetByJsonPath;
-	if (ns.getIndexByName(std::string{column}, index) && ns.indexes_[index]->Opts().IsSparse()) {
+	if (ns.getIndexByNameOrJsonPath(std::string{column}, index) && ns.indexes_[index]->Opts().IsSparse()) {
 		index = IndexValueType::SetByJsonPath;
 	}
 	if (index == IndexValueType::SetByJsonPath) {
@@ -1255,7 +1277,7 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 			SortingContext::FieldEntry entry{nullptr, sortingEntry};
 			removeQuotesFromExpression(sortingEntry.expression);
 			sortingEntry.index = IndexValueType::SetByJsonPath;
-			ns_->getIndexByName(sortingEntry.expression, sortingEntry.index);
+			ns_->getIndexByNameOrJsonPath(sortingEntry.expression, sortingEntry.index);
 			if (sortingEntry.index >= 0) {
 				reindexer::Index *sortIndex = ns_->indexes_[sortingEntry.index].get();
 				entry.index = sortIndex;

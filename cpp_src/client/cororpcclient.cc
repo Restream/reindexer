@@ -484,7 +484,8 @@ void CoroRPCClient::onUpdates(const cproto::CoroRPCAnswer& ans) {
 		auto ns = getNamespace(nsName);
 
 		// Check if cjson with bundled tagsMatcher
-		bool bundledTagsMatcher = wrec.itemModify.itemCJson.length() > 0 && wrec.itemModify.itemCJson[0] == TAG_END;
+		const bool bundledTagsMatcher =
+			wrec.itemModify.itemCJson.length() > 0 && Serializer{wrec.itemModify.itemCJson}.GetCTag() == kCTagEnd;
 
 		auto tmVersion = ns->tagsMatcher_.version();
 
@@ -502,7 +503,7 @@ void CoroRPCClient::onUpdates(const cproto::CoroRPCAnswer& ans) {
 				try {
 					// printf("%s bundled tm %d to %d\n", ns->name_.c_str(), ns->tagsMatcher_.version(), wrec.itemModify.tmVersion);
 					Serializer rdser(wrec.itemModify.itemCJson);
-					rdser.GetVarUint();
+					[[maybe_unused]] const ctag tag = rdser.GetCTag();
 					uint32_t tmOffset = rdser.GetUInt32();
 					// read tags matcher update
 					rdser.SetPos(tmOffset);

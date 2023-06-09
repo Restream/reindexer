@@ -235,6 +235,7 @@ class loop_epoll_backend_private {
 public:
 	int ctlfd_ = -1;
 	std::vector<epoll_event> events_;
+	std::vector<epoll_event> eventsTmp_;
 };
 
 loop_epoll_backend::loop_epoll_backend() : private_(new loop_epoll_backend_private) {}
@@ -252,6 +253,7 @@ void loop_epoll_backend::init(dynamic_loop *owner) {
 	}
 	private_->events_.reserve(2048);
 	private_->events_.resize(1);
+	private_->eventsTmp_.reserve(private_->events_.capacity());
 }
 
 void loop_epoll_backend::set(int fd, int events, int oldevents) {
@@ -262,7 +264,7 @@ void loop_epoll_backend::set(int fd, int events, int oldevents) {
 		perror("epoll_ctl EPOLL_CTL_MOD");
 	}
 	if (oldevents == 0) {
-		private_->events_.resize(private_->events_.size() + 1);
+		private_->events_.emplace_back();
 	}
 }
 
@@ -278,12 +280,13 @@ void loop_epoll_backend::stop(int fd) {
 int loop_epoll_backend::runonce(int64_t t) {
 	int ret = epoll_wait(private_->ctlfd_, &private_->events_[0], private_->events_.size(), t != -1 ? t / 1000 : -1);
 
-	assertrx(ret <= static_cast<int>(private_->events_.size()));
-
+	assertrx(ret < static_cast<int>(private_->events_.size()));
+	std::swap(private_->events_, private_->eventsTmp_);
+	private_->events_.resize(private_->eventsTmp_.size());
 	for (int i = 0; i < ret; i++) {
-		int events =
-			((private_->events_[i].events & (EPOLLIN | EPOLLHUP)) ? READ : 0) | ((private_->events_[i].events & EPOLLOUT) ? WRITE : 0);
-		int fd = private_->events_[i].data.fd;
+		auto &eventRef = private_->eventsTmp_[i];
+		int events = ((eventRef.events & (EPOLLIN | EPOLLHUP)) ? READ : 0) | ((eventRef.events & EPOLLOUT) ? WRITE : 0);
+		int fd = eventRef.data.fd;
 		if (!check_async(fd)) owner_->io_callback(fd, events);
 	}
 	return ret;

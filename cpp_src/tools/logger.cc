@@ -1,4 +1,5 @@
 #include "tools/logger.h"
+#include <atomic>
 #include "estl/shared_mutex.h"
 #include "estl/smart_lock.h"
 

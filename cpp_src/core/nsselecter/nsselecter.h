@@ -58,7 +58,7 @@ private:
 	template <bool reverse, bool haveComparators, bool aggregationsOnly, typename ResultsT>
 	void selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &);
 	template <bool desc, bool multiColumnSort, typename It>
-	It applyForcedSort(It begin, It end, const ItemComparator &, const SelectCtx &ctx, const joins::NamespaceResults &);
+	It applyForcedSort(It begin, It end, const ItemComparator &, const SelectCtx &ctx, const joins::NamespaceResults *);
 	template <bool desc, bool multiColumnSort, typename It, typename ValueGetter>
 	static It applyForcedSortImpl(NamespaceImpl &, It begin, It end, const ItemComparator &, const std::vector<Variant> &forcedSortOrder,
 								  const std::string &fieldName, const ValueGetter &);
@@ -76,12 +76,12 @@ private:
 	static void prepareSortIndex(const NamespaceImpl &, std::string_view column, int &index, bool &skipSortingEntry, StrictMode);
 	static void prepareSortJoinedIndex(size_t nsIdx, std::string_view column, int &index, const std::vector<JoinedSelector> &,
 									   bool &skipSortingEntry, StrictMode);
-	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc, const joins::NamespaceResults &,
+	void getSortIndexValue(const SortingContext &sortCtx, IdType rowId, VariantArray &value, uint8_t proc, const joins::NamespaceResults *,
 						   const JoinedSelectors &);
 	void processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext &);
 	bool checkIfThereAreLeftJoins(SelectCtx &sctx) const;
 	template <typename It>
-	void sortResults(LoopCtx &sctx, It begin, It end, const SortingOptions &sortingOptions, const joins::NamespaceResults &);
+	void sortResults(LoopCtx &sctx, It begin, It end, const SortingOptions &sortingOptions, const joins::NamespaceResults *);
 
 	bool isSortOptimizatonEffective(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
 	static bool validateField(StrictMode strictMode, std::string_view name, std::string_view nsName, const TagsMatcher &tagsMatcher);

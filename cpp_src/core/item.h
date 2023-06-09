@@ -130,6 +130,7 @@ public:
 	/// @param slice - data slice with CJson
 	/// @param pkOnly - if TRUE, that mean a JSON string will be parse only primary key fields
 	[[nodiscard]] Error FromCJSON(std::string_view slice, bool pkOnly = false) &noexcept;
+	void FromCJSONImpl(std::string_view slice, bool pkOnly = false) &;
 
 	/// Builds item from msgpack::object.
 	/// @param buf - msgpack encoded data buffer.

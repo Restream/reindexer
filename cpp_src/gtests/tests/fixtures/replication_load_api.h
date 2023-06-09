@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gtests/tools.h"
 #include "replication_api.h"
 #include "replicator/updatesobserver.h"
 #include "vendor/hopscotch/hopscotch_map.h"
@@ -61,11 +62,13 @@ public:
 											   IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
 											   IndexDeclaration{"int", "tree", "int", IndexOpts(), 0},
 											   IndexDeclaration{"string", "hash", "string", IndexOpts(), 0},
+											   IndexDeclaration{"uuid", "hash", "uuid", IndexOpts(), 0},
 										   });
 		api.DefineNamespaceDataset("some1", {
 												IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0},
 												IndexDeclaration{"int", "tree", "int", IndexOpts(), 0},
 												IndexDeclaration{"string", "hash", "string", IndexOpts(), 0},
+												IndexDeclaration{"uuid", "hash", "uuid", IndexOpts(), 0},
 											});
 	}
 
@@ -85,6 +88,7 @@ public:
                         "\"id\":" + std::to_string(counter_)+",\n"
                         "\"int\":" + std::to_string(rand())+",\n"
                         "\"string\":\"" + api.RandString()+"\"\n"
+                        "\"uuid\":\"" + randStrUuid() + "\"\n"
                         "}");
 			// clang-format on
 
@@ -106,6 +110,7 @@ public:
 							"\"string\":\"" +
 							api.RandString() +
 							"\"\n"
+							"\"uuid\":\"" + randStrUuid() + "\"\n"
 							"}");
 			// clang-format on
 
@@ -146,13 +151,13 @@ public:
 		}
 	}
 	void CheckSlaveConfigFile(size_t num, const ReplicationConfigTest &config) {
-		assert(num);
+		assertrx(num);
 		auto srv = GetSrv(num);
 		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::File);
 		EXPECT_TRUE(config == curConfig);
 	}
 	void CheckSlaveConfigNamespace(size_t num, const ReplicationConfigTest &config, std::chrono::seconds awaitTime) {
-		assert(num);
+		assertrx(num);
 		auto srv = GetSrv(num);
 		for (int i = 0; i < awaitTime.count(); ++i) {
 			auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::Namespace);

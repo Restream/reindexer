@@ -11,8 +11,8 @@
 		return Error{errAssert, "Unexpected exception"}; \
 	}
 
-#define RETURN_RESULT_NOEXCEPT(expr) \
-	try {                            \
-		return expr;                 \
-	}                                \
+#define RETURN_RESULT_NOEXCEPT(...) \
+	try {                           \
+		return __VA_ARGS__;         \
+	}                               \
 	CATCH_AND_RETURN

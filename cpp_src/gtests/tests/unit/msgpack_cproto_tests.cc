@@ -84,7 +84,7 @@ TEST_F(MsgPackCprotoApi, AggregationSelectTest) {
 	ASSERT_EQ(sum.fields.size(), 1);
 	EXPECT_EQ(sum.fields[0], kFieldId);
 	double val = (999.0 / 2.0) * 1000.0;
-	EXPECT_EQ(sum.GetValueOrZero(), int64_t(val)) << sum.GetValueOrZero() << "; " << val;
+	EXPECT_DOUBLE_EQ(sum.GetValueOrZero(), val) << sum.GetValueOrZero() << "; " << val;
 }
 
 TEST_F(MsgPackCprotoApi, AggregationsWithStrictModeTest) { QueryAggStrictModeTest(client_); }

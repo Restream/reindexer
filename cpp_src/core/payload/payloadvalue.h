@@ -54,7 +54,7 @@ public:
 	int64_t GetLSN() const { return p_ ? header()->lsn : 0; }
 	bool IsFree() const { return bool(p_ == nullptr); }
 	void Free() { release(); }
-	size_t GetCapacity() const { return header()->cap; }
+	size_t GetCapacity() const noexcept { return header()->cap; }
 	const uint8_t *get() const noexcept { return p_; }
 
 protected:

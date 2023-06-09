@@ -694,7 +694,8 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 									// If server was restarted, updates have to return OK
 									ASSERT_TRUE(err.ok()) << err.what();
 									break;
-								default:;  // No additional checks in transition states
+								case Step::ShutdownInProgress:
+								case Step::RestartInProgress:;	// No additional checks in transition states
 							}
 						}
 					}

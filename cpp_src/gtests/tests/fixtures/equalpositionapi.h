@@ -34,7 +34,8 @@ protected:
 			}
 			Upsert(default_namespace, item);
 		}
-		Commit(default_namespace);
+		auto err = Commit(default_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	std::vector<int> randIntVec(int length, int initVal, int multipleCond) {

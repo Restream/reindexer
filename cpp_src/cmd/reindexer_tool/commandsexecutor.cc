@@ -298,6 +298,7 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(std::ostream& o, const t
 	}
 	bool prettyPrint = variables_[kVariableOutput] == kOutputModePretty;
 	for (auto it : r) {
+		if (auto err = it.Status(); !err.ok()) return err;
 		if (cancelCtx_.IsCancelled()) break;
 		if (isWALQuery) {
 			ser << '#';
@@ -313,12 +314,11 @@ Error CommandsExecutor<DBInterface>::queryResultsToJson(std::ostream& o, const t
 			try {
 				rec.Dump(ser, [this, &r](std::string_view cjson) {
 					auto item = db().NewItem(r.GetNamespaces()[0]);
-					const auto err = item.FromCJSON(cjson);
-					if (!err.ok()) throw err;
+					item.FromCJSONImpl(cjson);
 					return std::string(item.GetJSON());
 				});
-			} catch (const Error& err) {
-				return err;
+			} catch (Error& err) {
+				return std::move(err);
 			}
 		} else {
 			if (isWALQuery) ser << "WalItemUpdate ";
@@ -593,7 +593,13 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) {
 						}
 						output_() << "Returned " << agg.distincts.size() << " values" << std::endl;
 						break;
-					default:
+					case AggSum:
+					case AggAvg:
+					case AggMin:
+					case AggMax:
+					case AggCount:
+					case AggCountCached:
+					case AggUnknown:
 						assertrx(agg.fields.size() == 1);
 						output_() << reindexer::AggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.GetValueOrZero()
 								  << std::endl;
@@ -749,7 +755,7 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 		if (!err.ok()) return err;
 
 		for (auto it : itemResults) {
-			if (!it.Status().ok()) return it.Status();
+			if (auto err = it.Status(); !err.ok()) return err;
 			if (cancelCtx_.IsCancelled()) {
 				return Error(errCanceled, "Canceled");
 			}
@@ -1151,12 +1157,16 @@ template <typename DBInterface>
 void CommandsExecutor<DBInterface>::OnWALUpdate(reindexer::LSNPair LSNs, std::string_view nsName, const reindexer::WALRecord& wrec) {
 	WrSerializer ser;
 	ser << "# LSN " << int64_t(LSNs.upstreamLSN_) << " originLSN " << int64_t(LSNs.originLSN_) << " " << nsName << " ";
-	wrec.Dump(ser, [this, nsName](std::string_view cjson) {
-		auto item = db().NewItem(nsName);
-		const auto err = item.FromCJSON(cjson);
-		if (!err.ok()) throw err;
-		return std::string(item.GetJSON());
-	});
+	try {
+		wrec.Dump(ser, [this, nsName](std::string_view cjson) {
+			auto item = db().NewItem(nsName);
+			item.FromCJSONImpl(cjson);
+			return std::string(item.GetJSON());
+		});
+	} catch (const Error& err) {
+		std::cerr << "[OnWALUpdate] " << err.what() << std::endl;
+		return;
+	}
 	output_() << ser.Slice() << std::endl;
 }
 

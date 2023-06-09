@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include "tools/assertrx.h"
 
 #include "prometheus/check_names.h"
 #include "prometheus/client_metric.h"
@@ -145,7 +146,7 @@ private:
 template <typename T>
 Family<T>::Family(const std::string& name, const std::string& help, const std::map<std::string, std::string>& constant_labels)
 	: name_(name), help_(help), constant_labels_(constant_labels) {
-	assert(CheckMetricName(name_));
+	assertrx(CheckMetricName(name_));
 }
 
 template <typename T>
@@ -158,9 +159,9 @@ T& Family<T>::Add(std::map<std::string, std::string>&& labels, int64_t epoch, Ar
 	if (metrics_iter != metrics_.end()) {
 #ifndef NDEBUG
 		auto labels_iter = labels_.find(hash);
-		assert(labels_iter != labels_.end());
+		assertrx(labels_iter != labels_.end());
 		const auto& old_labels = labels_iter->second;
-		assert(labels == old_labels);
+		assertrx(labels == old_labels);
 #endif
 		metrics_iter->second.epoch = epoch;
 		return *metrics_iter->second.ptr;
@@ -168,12 +169,12 @@ T& Family<T>::Add(std::map<std::string, std::string>&& labels, int64_t epoch, Ar
 #ifndef NDEBUG
 		for (auto& label_pair : labels) {
 			auto& label_name = label_pair.first;
-			assert(CheckLabelName(label_name));
+			assertrx(CheckLabelName(label_name));
 		}
 #endif
 
 		auto metric = metrics_.insert(std::make_pair(hash, MarkedMetric{epoch, detail::make_unique<T>(args...)}));
-		assert(metric.second);
+		assertrx(metric.second);
 		labels_.emplace(hash, std::move(labels));
 		labels_reverse_lookup_.emplace(metric.first->second.ptr.get(), hash);
 		return *(metric.first->second.ptr);

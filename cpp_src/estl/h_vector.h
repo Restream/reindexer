@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <stdint.h>
@@ -6,7 +5,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <type_traits>
-#include <vector>
+#include "debug_macros.h"
 #include "tools/assertrx.h"
 #include "trivial_reverse_iterator.h"
 
@@ -178,8 +177,14 @@ public:
 	size_type size() const noexcept { return size_; }
 	size_type capacity() const noexcept { return is_hdata_ ? holdSize : e_.cap_; }
 	bool empty() const noexcept { return size_ == 0; }
-	const_reference operator[](size_type pos) const noexcept { return ptr()[pos]; }
-	reference operator[](size_type pos) noexcept { return ptr()[pos]; }
+	const_reference operator[](size_type pos) const noexcept {
+		rx_debug_check_subscript(pos);
+		return ptr()[pos];
+	}
+	reference operator[](size_type pos) noexcept {
+		rx_debug_check_subscript(pos);
+		return ptr()[pos];
+	}
 	const_reference at(size_type pos) const {
 		if (pos >= size()) {
 			throw std::logic_error("h_vector: Out of range (pos: " + std::to_string(pos) + ", size: " + std::to_string(size()));
@@ -192,10 +197,22 @@ public:
 		}
 		return ptr()[pos];
 	}
-	reference back() noexcept { return ptr()[size() - 1]; }
-	reference front() noexcept { return ptr()[0]; }
-	const_reference back() const noexcept { return ptr()[size() - 1]; }
-	const_reference front() const noexcept { return ptr()[0]; }
+	reference back() noexcept {
+		rx_debug_check_nonempty();
+		return ptr()[size() - 1];
+	}
+	reference front() noexcept {
+		rx_debug_check_nonempty();
+		return ptr()[0];
+	}
+	const_reference back() const noexcept {
+		rx_debug_check_nonempty();
+		return ptr()[size() - 1];
+	}
+	const_reference front() const noexcept {
+		rx_debug_check_nonempty();
+		return ptr()[0];
+	}
 	const_pointer data() const noexcept { return ptr(); }
 	pointer data() noexcept { return ptr(); }
 
@@ -208,6 +225,14 @@ public:
 		if constexpr (!std::is_trivially_destructible<T>::value) {
 			const pointer p = ptr();
 			for (size_type i = sz; i < size_; ++i) p[i].~T();
+		}
+		size_ = sz;
+	}
+	void resize(size_type sz, const T& default_value) {
+		grow(sz);
+		for (size_type i = size_; i < sz; i++) new (ptr() + i) T(default_value);
+		if constexpr (!std::is_trivially_destructible<T>::value) {
+			for (size_type i = sz; i < size_; i++) ptr()[i].~T();
 		}
 		size_ = sz;
 	}
@@ -334,13 +359,25 @@ public:
 		}
 		return begin() + i;
 	}
-	iterator erase(const_iterator it) { return erase(it, it + 1); }
+	iterator erase(const_iterator it) {
+		pointer p = ptr();
+		const size_type i = it - p;
+		assertrx(i < size_);
+
+		auto firstPtr = p + i;
+		std::move(firstPtr + 1, p + size_, firstPtr);
+		--size_;
+		if constexpr (!std::is_trivially_destructible<T>::value) {
+			p[size_].~T();
+		}
+		return firstPtr;
+	}
 	template <class InputIt>
 	iterator insert(const_iterator pos, InputIt first, InputIt last) {
 		assertrx(last >= first);
 		const difference_type cnt = last - first;
 		if (cnt == 0) return const_cast<iterator>(pos);
-		difference_type i = pos - begin();
+		const difference_type i = pos - begin();
 		assertrx(i <= size());
 		grow(size_ + cnt);
 		const pointer p = ptr();
@@ -358,7 +395,8 @@ public:
 			p[j] = *--last;
 		}
 		size_ += cnt;
-		return begin() + i;
+		assertrx(p == begin());
+		return p + i;
 	}
 	template <class InputIt>
 	void assign(InputIt first, InputIt last) {
@@ -366,18 +404,24 @@ public:
 		insert(begin(), first, last);
 	}
 	iterator erase(const_iterator first, const_iterator last) {
-		const size_type i = first - ptr();
+		assertrx(last >= first);
+		pointer p = ptr();
+		const size_type i = first - p;
 		const auto cnt = last - first;
-		assertrx(i <= size());
+		auto firstPtr = p + i;
+		if (cnt == 0) {
+			assertrx(i <= size_);
+			return firstPtr;
+		}
+		assertrx(i < size_);
 
-		if (cnt == 0) return begin() + i;
-		std::move(begin() + i + cnt, end(), begin() + i);
+		std::move(firstPtr + cnt, p + size_, firstPtr);
 		const auto newSize = size_ - cnt;
 		if constexpr (!std::is_trivially_destructible<T>::value) {
-			for (size_type i = newSize; i < size_; i++) ptr()[i].~T();
+			for (size_type j = newSize; j < size_; ++j) p[j].~T();
 		}
 		size_ = newSize;
-		return begin() + i;
+		return firstPtr;
 	}
 	void shrink_to_fit() {
 		if (is_hdata() || size_ == capacity()) return;

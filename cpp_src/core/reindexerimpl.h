@@ -193,6 +193,10 @@ protected:
 	std::vector<std::string> getNamespacesNames(const RdxContext &ctx);
 	Error renameNamespace(std::string_view srcNsName, const std::string &dstNsName, bool fromReplication = false,
 						  const InternalRdxContext &ctx = InternalRdxContext());
+	Error openNamespace(std::string_view name, const StorageOpts &storageOpts, const RdxContext &rdxCtx);
+	Error addNamespace(const NamespaceDef &nsDef, const RdxContext &rdxCtx);
+
+	[[nodiscard]] bool isSystemNamespaceName(std::string_view name) noexcept;
 
 	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;
 

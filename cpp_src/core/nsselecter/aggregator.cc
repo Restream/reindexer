@@ -235,7 +235,9 @@ Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, 
 		case AggAvg:
 		case AggSum:
 			break;
-		default:
+		case AggCount:
+		case AggCountCached:
+		case AggUnknown:
 			throw Error(errParams, "Unknown aggregation type %d", aggType_);
 	}
 }
@@ -307,7 +309,9 @@ AggregationResult Aggregator::GetResult() const {
 				ret.distincts.push_back(value);
 			}
 			break;
-		default:
+		case AggCount:
+		case AggCountCached:
+		case AggUnknown:
 			abort();
 	}
 	return ret;
@@ -349,14 +353,12 @@ void Aggregator::Aggregate(const PayloadValue &data) {
 	const auto &fieldType = payloadType_.Field(fields_[0]);
 	if (!fieldType.IsArray()) {
 		aggregate(PayloadFieldValue(fieldType, data.Ptr() + fieldType.Offset()).Get());
-		return;
-	}
-
-	PayloadFieldValue::Array *arr = reinterpret_cast<PayloadFieldValue::Array *>(data.Ptr() + fieldType.Offset());
-
-	uint8_t *ptr = data.Ptr() + arr->offset;
-	for (int i = 0; i < arr->len; i++, ptr += fieldType.ElemSizeof()) {
-		aggregate(PayloadFieldValue(fieldType, ptr).Get());
+	} else {
+		PayloadFieldValue::Array *arr = reinterpret_cast<PayloadFieldValue::Array *>(data.Ptr() + fieldType.Offset());
+		uint8_t *ptr = data.Ptr() + arr->offset;
+		for (int i = 0; i < arr->len; i++, ptr += fieldType.ElemSizeof()) {
+			aggregate(PayloadFieldValue(fieldType, ptr).Get());
+		}
 	}
 }
 

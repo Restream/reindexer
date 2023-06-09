@@ -24,8 +24,8 @@ SingleDocParser::~SingleDocParser() = default;
 // . Handles the next document
 // . Throws a ParserException on error.
 void SingleDocParser::HandleDocument(EventHandler& eventHandler) {
-	assert(!m_scanner.empty());	 // guaranteed that there are tokens
-	assert(!m_curAnchor);
+	assertrx(!m_scanner.empty());	 // guaranteed that there are tokens
+	assertrx(!m_curAnchor);
 
 	eventHandler.OnDocumentStart(m_scanner.peek().mark);
 
@@ -128,7 +128,20 @@ void SingleDocParser::HandleNode(EventHandler& eventHandler) {
 				return;
 			}
 			break;
-		default:
+		case Token::DIRECTIVE:
+		case Token::DOC_START:
+		case Token::DOC_END:
+		case Token::BLOCK_SEQ_END:
+		case Token::BLOCK_MAP_END:
+		case Token::BLOCK_ENTRY:
+		case Token::FLOW_SEQ_END:
+		case Token::FLOW_MAP_END:
+		case Token::FLOW_MAP_COMPACT:
+		case Token::FLOW_ENTRY:
+		case Token::VALUE:
+		case Token::ANCHOR:
+		case Token::ALIAS:
+		case Token::TAG:
 			break;
 	}
 
@@ -147,7 +160,25 @@ void SingleDocParser::HandleSequence(EventHandler& eventHandler) {
 		case Token::FLOW_SEQ_START:
 			HandleFlowSequence(eventHandler);
 			break;
-		default:
+		case Token::DIRECTIVE:
+		case Token::DOC_START:
+		case Token::DOC_END:
+		case Token::BLOCK_MAP_START:
+		case Token::BLOCK_SEQ_END:
+		case Token::BLOCK_MAP_END:
+		case Token::BLOCK_ENTRY:
+		case Token::FLOW_MAP_START:
+		case Token::FLOW_SEQ_END:
+		case Token::FLOW_MAP_END:
+		case Token::FLOW_MAP_COMPACT:
+		case Token::FLOW_ENTRY:
+		case Token::KEY:
+		case Token::VALUE:
+		case Token::ANCHOR:
+		case Token::ALIAS:
+		case Token::TAG:
+		case Token::PLAIN_SCALAR:
+		case Token::NON_PLAIN_SCALAR:
 			break;
 	}
 }
@@ -227,7 +258,23 @@ void SingleDocParser::HandleMap(EventHandler& eventHandler) {
 		case Token::VALUE:
 			HandleCompactMapWithNoKey(eventHandler);
 			break;
-		default:
+		case Token::DIRECTIVE:
+		case Token::DOC_START:
+		case Token::DOC_END:
+		case Token::BLOCK_SEQ_START:
+		case Token::BLOCK_SEQ_END:
+		case Token::BLOCK_MAP_END:
+		case Token::BLOCK_ENTRY:
+		case Token::FLOW_SEQ_START:
+		case Token::FLOW_SEQ_END:
+		case Token::FLOW_MAP_END:
+		case Token::FLOW_MAP_COMPACT:
+		case Token::FLOW_ENTRY:
+		case Token::ANCHOR:
+		case Token::ALIAS:
+		case Token::TAG:
+		case Token::PLAIN_SCALAR:
+		case Token::NON_PLAIN_SCALAR:
 			break;
 	}
 }
@@ -366,7 +413,25 @@ void SingleDocParser::ParseProperties(std::string& tag, anchor_t& anchor, std::s
 			case Token::ANCHOR:
 				ParseAnchor(anchor, anchor_name);
 				break;
-			default:
+			case Token::DIRECTIVE:
+			case Token::DOC_START:
+			case Token::DOC_END:
+			case Token::BLOCK_SEQ_START:
+			case Token::BLOCK_MAP_START:
+			case Token::BLOCK_SEQ_END:
+			case Token::BLOCK_MAP_END:
+			case Token::BLOCK_ENTRY:
+			case Token::FLOW_SEQ_START:
+			case Token::FLOW_MAP_START:
+			case Token::FLOW_SEQ_END:
+			case Token::FLOW_MAP_END:
+			case Token::FLOW_MAP_COMPACT:
+			case Token::FLOW_ENTRY:
+			case Token::KEY:
+			case Token::VALUE:
+			case Token::ALIAS:
+			case Token::PLAIN_SCALAR:
+			case Token::NON_PLAIN_SCALAR:
 				return;
 		}
 	}

@@ -84,7 +84,7 @@ protected:
 		for (auto& s : realServers_) {
 			if (s.second.serverThread) {
 				s.second.server->Stop();
-				assert(s.second.serverThread->joinable());
+				assertrx(s.second.serverThread->joinable());
 				s.second.serverThread->join();
 				s.second.serverThread.reset();
 			}

@@ -17,7 +17,8 @@ namespace reindexer {
 void ItemImpl::SetField(int field, const VariantArray &krs) {
 	cjson_ = std::string_view();
 	payloadValue_.Clone();
-	if (!unsafe_ && !krs.empty() && krs[0].Type().Is<KeyValueType::String>()) {
+	if (!unsafe_ && !krs.empty() && krs[0].Type().Is<KeyValueType::String>() &&
+		!payloadType_.Field(field).Type().Is<KeyValueType::Uuid>()) {
 		VariantArray krsCopy;
 		krsCopy.reserve(krs.size());
 		if (!holder_) holder_.reset(new std::deque<std::string>);
@@ -45,7 +46,7 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 	WrSerializer generatedCjson;
 	std::string_view cjson(pl.Get(0, 0));
 	if (cjson.empty()) {
-		buildPayloadTuple(&pl, &tagsMatcher_, generatedCjson);
+		buildPayloadTuple(pl, &tagsMatcher_, generatedCjson);
 		cjson = generatedCjson.Slice();
 	}
 
@@ -61,7 +62,8 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 			case FieldModeDrop:
 				cjsonModifier.RemoveField(cjson, tagsPath, ser_);
 				break;
-			default:
+			case FieldModeArrayPushBack:
+			case FieldModeArrayPushFront:
 				throw Error(errLogic, "Update mode is not supported: %d", mode);
 		}
 	} catch (const Error &e) {
@@ -89,7 +91,7 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	Error err = msgPackDecoder_->Decode(buf, &pl, ser_, offset);
+	Error err = msgPackDecoder_->Decode(buf, pl, ser_, offset);
 	if (err.ok()) {
 		tupleData_ = ser_.DetachLStr();
 		pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
@@ -104,7 +106,7 @@ Error ItemImpl::FromProtobuf(std::string_view buf) {
 
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	Error err = decoder.Decode(buf, &pl, ser_);
+	Error err = decoder.Decode(buf, pl, ser_);
 	if (err.ok()) {
 		tupleData_ = ser_.DetachLStr();
 		pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
@@ -117,10 +119,10 @@ Error ItemImpl::GetMsgPack(WrSerializer &wrser) {
 	ConstPayload pl = GetConstPayload();
 
 	MsgPackEncoder msgpackEncoder(&tagsMatcher_);
-	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(&pl);
+	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
 
 	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);
-	msgpackEncoder.Encode(&pl, msgpackBuilder);
+	msgpackEncoder.Encode(pl, msgpackBuilder);
 	return errOK;
 }
 
@@ -129,12 +131,12 @@ Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
 	ConstPayload pl = GetConstPayload();
 	ProtobufBuilder protobufBuilder(&wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
 	ProtobufEncoder protobufEncoder(&tagsMatcher_);
-	protobufEncoder.Encode(&pl, protobufBuilder);
+	protobufEncoder.Encode(pl, protobufBuilder);
 	return errOK;
 }
 
 // Construct item from compressed json
-Error ItemImpl::FromCJSON(std::string_view slice, bool pkOnly) {
+void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder *recoder) {
 	GetPayload().Reset();
 	std::string_view data = slice;
 	if (!unsafe_) {
@@ -144,36 +146,27 @@ Error ItemImpl::FromCJSON(std::string_view slice, bool pkOnly) {
 	}
 
 	// check tags matcher update
-
-	uint32_t tmOffset = 0;
-	try {
-		Serializer rdser(data);
-		int tag = rdser.GetVarUint();
-		if (tag == TAG_END) {
-			tmOffset = rdser.GetUInt32();
-			// read tags matcher update
-			Serializer tser(slice.substr(tmOffset));
-			tagsMatcher_.deserialize(tser);
-			tagsMatcher_.setUpdated();
-			data = data.substr(1 + sizeof(uint32_t), tmOffset - 5);
-		}
-	} catch (const Error &err) {
-		return err;
+	if (Serializer rdser(data); rdser.GetCTag() == kCTagEnd) {
+		const auto tmOffset = rdser.GetUInt32();
+		// read tags matcher update
+		Serializer tser(slice.substr(tmOffset));
+		tagsMatcher_.deserialize(tser);
+		tagsMatcher_.setUpdated();
+		data = data.substr(1 + sizeof(uint32_t), tmOffset - 5);
 	}
 	cjson_ = data;
 	Serializer rdser(data);
 
 	Payload pl = GetPayload();
-	CJsonDecoder decoder(tagsMatcher_, pkOnly ? &pkFields_ : nullptr);
+	CJsonDecoder decoder(tagsMatcher_, pkOnly ? &pkFields_ : nullptr, recoder);
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	auto err = decoder.Decode(&pl, rdser, ser_);
+	decoder.Decode(pl, rdser, ser_);
 
-	if (err.ok() && !rdser.Eof()) return Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
+	if (!rdser.Eof()) throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
 
 	tupleData_ = ser_.DetachLStr();
 	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
-	return err;
 }
 
 Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
@@ -220,7 +213,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	auto err = decoder.Decode(&pl, ser_, node.value);
+	auto err = decoder.Decode(pl, ser_, node.value);
 
 	// Put tuple to field[0]
 	tupleData_ = ser_.DetachLStr();
@@ -228,10 +221,9 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 	return err;
 }
 
-Error ItemImpl::FromCJSON(ItemImpl *other) {
-	auto ret = FromCJSON(other->GetCJSON());
+void ItemImpl::FromCJSON(ItemImpl *other, Recoder *recoder) {
+	FromCJSON(other->GetCJSON(), false, recoder);
 	cjson_ = std::string_view();
-	return ret;
 }
 
 std::string_view ItemImpl::GetJSON() {
@@ -241,7 +233,7 @@ std::string_view ItemImpl::GetJSON() {
 	JsonBuilder builder(ser_, ObjType::TypePlain);
 
 	ser_.Reset();
-	encoder.Encode(&pl, builder);
+	encoder.Encode(pl, builder);
 
 	return ser_.Slice();
 }
@@ -268,15 +260,15 @@ std::string_view ItemImpl::GetCJSON(WrSerializer &ser, bool withTagsMatcher) {
 	CJsonEncoder encoder(&tagsMatcher_);
 
 	if (withTagsMatcher) {
-		ser.PutVarUint(TAG_END);
+		ser.PutCTag(kCTagEnd);
 		int pos = ser.Len();
 		ser.PutUInt32(0);
-		encoder.Encode(&pl, builder);
+		encoder.Encode(pl, builder);
 		uint32_t tmOffset = ser.Len();
 		memcpy(ser.Buf() + pos, &tmOffset, sizeof(tmOffset));
 		tagsMatcher_.serialize(ser);
 	} else {
-		encoder.Encode(&pl, builder);
+		encoder.Encode(pl, builder);
 	}
 
 	return ser.Slice();

@@ -525,7 +525,7 @@ void DoTest(const char *name, T *b, const std::vector<V> &values) {
 		mutable_b.insert(values[i]);
 		mutable_b.value_check(values[i]);
 	}
-	assert(mutable_b.size() == values.size());
+	assertrx(mutable_b.size() == values.size());
 
 	const_b.verify();
 	printf("    %s fullness=%0.2f  overhead=%0.2f  bytes-per-value=%0.2f\n", name, const_b.fullness(), const_b.overhead(),

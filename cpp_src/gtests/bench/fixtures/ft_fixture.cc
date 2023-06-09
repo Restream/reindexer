@@ -47,7 +47,7 @@ void FullText::UpdateIndex(State& state) {
 	static reindexer::FtFastConfig ftCfg(1);
 	ftCfg.optimization = opt;
 	const auto it = std::find_if(nsdef_.indexes.begin(), nsdef_.indexes.end(), [](const auto& idx) { return idx.name_ == "searchfast"; });
-	assert(it != nsdef_.indexes.end());
+	assertrx(it != nsdef_.indexes.end());
 	it->opts_.config = ftCfg.GetJson({});
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)

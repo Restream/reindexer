@@ -495,27 +495,42 @@ template SortExpression SortExpression::Parse(std::string_view, const std::vecto
 template SortExpression SortExpression::Parse(std::string_view, const std::vector<JoinedNsNameMock>&);
 
 double SortExpression::calculate(const_iterator it, const_iterator end, IdType rowId, ConstPayload pv,
-								 const joins::NamespaceResults& joinedResults, const std::vector<JoinedSelector>& js, uint8_t proc,
+								 const joins::NamespaceResults* joinedResults, const std::vector<JoinedSelector>& js, uint8_t proc,
 								 TagsMatcher& tagsMatcher) {
 	assertrx(it != end);
 	assertrx(it->operation.op == OpPlus);
 	double result = 0.0;
 	for (; it != end; ++it) {
 		double value = it->InvokeAppropriate<double>(
-			[&pv, &tagsMatcher, it, proc, rowId, &joinedResults, &js](const SortExpressionBracket& b) {
+			[&pv, &tagsMatcher, it, proc, rowId, joinedResults, &js](const SortExpressionBracket& b) {
 				const double res = calculate(it.cbegin(), it.cend(), rowId, pv, joinedResults, js, proc, tagsMatcher);
 				return (b.IsAbs() && res < 0) ? -res : res;
 			},
 			[](const Value& v) { return v.value; },
 			[&pv, &tagsMatcher](const SortExprFuncs::Index& i) { return i.GetValue(pv, tagsMatcher); },
-			[rowId, &joinedResults, &js](const JoinedIndex& i) { return i.GetValue(rowId, joinedResults, js); },
+			[rowId, joinedResults, &js](const JoinedIndex& i) {
+				assertrx_throw(joinedResults);
+				return i.GetValue(rowId, *joinedResults, js);
+			},
 			[proc](const Rank&) -> double { return proc; },
 			[&pv, &tagsMatcher](const DistanceFromPoint& i) { return i.GetValue(pv, tagsMatcher); },
-			[rowId, &joinedResults, &js](const DistanceJoinedIndexFromPoint& i) { return i.GetValue(rowId, joinedResults, js); },
+			[rowId, joinedResults, &js](const DistanceJoinedIndexFromPoint& i) {
+				assertrx_throw(joinedResults);
+				return i.GetValue(rowId, *joinedResults, js);
+			},
 			[&pv, &tagsMatcher](const DistanceBetweenIndexes& i) { return i.GetValue(pv, tagsMatcher); },
-			[&](const DistanceBetweenIndexAndJoinedIndex& i) { return i.GetValue(pv, tagsMatcher, rowId, joinedResults, js); },
-			[&](const DistanceBetweenJoinedIndexes& i) { return i.GetValue(rowId, joinedResults, js); },
-			[&](const DistanceBetweenJoinedIndexesSameNs& i) { return i.GetValue(rowId, joinedResults, js); });
+			[&](const DistanceBetweenIndexAndJoinedIndex& i) {
+				assertrx_throw(joinedResults);
+				return i.GetValue(pv, tagsMatcher, rowId, *joinedResults, js);
+			},
+			[&](const DistanceBetweenJoinedIndexes& i) {
+				assertrx_throw(joinedResults);
+				return i.GetValue(rowId, *joinedResults, js);
+			},
+			[&](const DistanceBetweenJoinedIndexesSameNs& i) {
+				assertrx_throw(joinedResults);
+				return i.GetValue(rowId, *joinedResults, js);
+			});
 		if (it->operation.negative) value = -value;
 		switch (it->operation.op) {
 			case OpPlus:

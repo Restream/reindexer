@@ -19,7 +19,9 @@ public:
 			.AddIndex("price_id", "hash", "int", IndexOpts().Array())
 			.AddIndex("location", "hash", "string", IndexOpts())
 			.AddIndex("end_time", "hash", "int", IndexOpts())
-			.AddIndex("start_time", "tree", "int", IndexOpts());
+			.AddIndex("start_time", "tree", "int", IndexOpts())
+			.AddIndex("uuid", "hash", "uuid", IndexOpts())
+			.AddIndex("uuid_str", "hash", "string", IndexOpts());
 	}
 
 	void RegisterAllCases();
@@ -40,6 +42,8 @@ private:
 	void GetLikeString(State& state);
 	void GetByRangeIDAndSortByHash(State& state);
 	void GetByRangeIDAndSortByTree(State& state);
+	void GetUuid(State&);
+	void GetUuidStr(State&);
 
 	void Query1Cond(State& state);
 	void Query1CondTotal(State& state);
@@ -89,11 +93,12 @@ private:
 	std::vector<int> start_times_;
 	std::vector<std::vector<int>> packages_;
 	std::vector<std::vector<int>> priceIDs_;
-#if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+	std::vector<std::string> uuids_;
+#if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	constexpr static unsigned idsetsSz_[] = {10, 100, 500, 2000, 20000};
-#else	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+#else	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	constexpr static unsigned idsetsSz_[] = {100, 500};
-#endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
+#endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	std::unordered_map<unsigned, std::vector<std::vector<int>>> idsets_;
 	reindexer::WrSerializer wrSer_;
 	std::string stringSelectNs_{"string_select_ns"};

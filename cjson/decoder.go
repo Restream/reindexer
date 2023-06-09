@@ -83,16 +83,16 @@ func (dec *Decoder) skipStruct(pl *payloadIface, rdser *Serializer, fieldsoutcnt
 	} else {
 		switch ctagType {
 		case TAG_OBJECT:
-			for dec.skipStruct(pl, rdser, fieldsoutcnt, ctag(rdser.GetVarUInt())) {
+			for dec.skipStruct(pl, rdser, fieldsoutcnt, rdser.GetCTag()) {
 			}
 		case TAG_ARRAY:
-			atag := carraytag(rdser.GetUInt32())
+			atag := rdser.GetCArrayTag()
 			count := atag.Count()
 			subtag := atag.Tag()
 			for i := 0; i < count; i++ {
 				switch subtag {
 				case TAG_OBJECT:
-					dec.skipStruct(pl, rdser, fieldsoutcnt, ctag(rdser.GetVarUInt()))
+					dec.skipStruct(pl, rdser, fieldsoutcnt, rdser.GetCTag())
 				default:
 					skipTag(rdser, subtag)
 				}
@@ -114,6 +114,8 @@ func skipTag(rdser *Serializer, tagType int) {
 	case TAG_NULL:
 	case TAG_STRING:
 		rdser.GetVString()
+	case TAG_UUID:
+		rdser.GetUuid()
 	default:
 		panic(fmt.Errorf("Can't skip tagType %s", tagTypeName(tagType)))
 	}
@@ -147,6 +149,8 @@ func asString(rdser *Serializer, tagType int) string {
 	switch tagType {
 	case TAG_STRING:
 		return rdser.GetVString()
+	case TAG_UUID:
+		return rdser.GetUuid()
 	default:
 		panic(fmt.Errorf("Can't convert tagType %s to string", tagTypeName(tagType)))
 	}
@@ -172,6 +176,8 @@ func asIface(rdser *Serializer, tagType int) interface{} {
 		return rdser.GetVString()
 	case TAG_NULL:
 		return nil
+	case TAG_UUID:
+		return rdser.GetUuid()
 	default:
 		panic(fmt.Errorf("Can't convert tagType %s to iface", tagTypeName(tagType)))
 	}
@@ -214,7 +220,7 @@ func mkSlice(v *reflect.Value, count int) {
 
 func mkValue(ctagType int) (v reflect.Value) {
 	switch ctagType {
-	case TAG_STRING:
+	case TAG_STRING, TAG_UUID:
 		v = reflect.New(reflect.TypeOf("")).Elem()
 	case TAG_VARINT:
 		v = reflect.New(reflect.TypeOf(0)).Elem()
@@ -233,7 +239,7 @@ func mkValue(ctagType int) (v reflect.Value) {
 }
 
 func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.Value, fieldsoutcnt []int, cctagsPath []int) {
-	atag := carraytag(rdser.GetUInt32())
+	atag := rdser.GetCArrayTag()
 	count := atag.Count()
 	subtag := atag.Tag()
 
@@ -470,7 +476,7 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 
 func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.Value, fieldsoutcnt []int, cctagsPath []int) bool {
 
-	ctag := ctag(rdser.GetVarUInt())
+	ctag := rdser.GetCTag()
 	ctagType := ctag.Type()
 
 	switch ctagType {
@@ -511,7 +517,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		} else if k == reflect.Struct {
 
 			// try to find in cache in RO mode
-			idx = dec.ctagsCache.Lockup(cctagsPath, false)
+			idx = dec.ctagsCache.Lookup(cctagsPath, false)
 
 			if idx == nil || len(*idx) == 0 {
 				// not found in cache
@@ -521,7 +527,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 				dec.state.lock.RUnlock()
 				dec.state.lock.Lock()
 				if idx == nil {
-					idx = dec.ctagsCache.Lockup(cctagsPath, true)
+					idx = dec.ctagsCache.Lookup(cctagsPath, true)
 				}
 				if len(*idx) == 0 {
 					if sf, ok := fieldByTag(v.Type(), name); ok {
@@ -576,8 +582,13 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		case TAG_OBJECT:
 			for dec.decodeValue(pl, rdser, v, fieldsoutcnt, cctagsPath) {
 			}
-		case TAG_STRING:
-			str := rdser.GetVString()
+		case TAG_STRING, TAG_UUID:
+			var str string
+			if ctagType == TAG_UUID {
+				str = rdser.GetUuid()
+			} else {
+				str = rdser.GetVString()
+			}
 			switch {
 			case k == reflect.String:
 				v.SetString(str)

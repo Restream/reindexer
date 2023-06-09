@@ -74,13 +74,13 @@ public:
 	ProtobufDecoder& operator=(const ProtobufDecoder&) = delete;
 	ProtobufDecoder& operator=(ProtobufDecoder&&) = delete;
 
-	Error Decode(std::string_view buf, Payload* pl, WrSerializer& wrser);
+	Error Decode(std::string_view buf, Payload& pl, WrSerializer& wrser);
 
 private:
-	void setValue(Payload* pl, CJsonBuilder& builder, const ProtobufValue& item);
-	Error decode(Payload* pl, CJsonBuilder& builder, const ProtobufValue& val);
-	Error decodeObject(Payload* pl, CJsonBuilder& builder, ProtobufObject& object);
-	Error decodeArray(Payload* pl, CJsonBuilder& builder, const ProtobufValue& val);
+	void setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue item);
+	Error decode(Payload& pl, CJsonBuilder& builder, const ProtobufValue& val);
+	Error decodeObject(Payload& pl, CJsonBuilder& builder, ProtobufObject& object);
+	Error decodeArray(Payload& pl, CJsonBuilder& builder, const ProtobufValue& val);
 
 	TagsMatcher& tm_;
 	std::shared_ptr<const Schema> schema_;

@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <memory.h>
 #include <algorithm>
 #include <cctype>
@@ -9,6 +8,7 @@
 
 #include "atoi/atoi.h"
 #include "itoa/itoa.h"
+#include "tools/assertrx.h"
 #include "tools/customlocal.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
@@ -227,8 +227,8 @@ Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::stri
 			wp.start.ch = wp.end.ch;
 		}
 	}
-	if(wordPosition!=0){
-		throw Error(errParams,"wordToByteAndCharPos: incorrect input string=%s wordPosition=%d",str,wordPosition);
+	if (wordPosition != 0) {
+		throw Error(errParams, "wordToByteAndCharPos: incorrect input string=%s wordPosition=%d", str, wordPosition);
 	}
 	wp.SetBytePosition(wordStartIt - str.begin(), wordEndIt - str.begin());
 	return wp;
@@ -482,7 +482,7 @@ static std::string_view urldecode2(char *buf, std::string_view str) {
 	return std::string_view(buf, dst - buf);
 }
 
-std::string urldecode2(const std::string_view str) {
+std::string urldecode2(std::string_view str) {
 	std::string ret(str.length(), ' ');
 	std::string_view sret = urldecode2(&ret[0], str);
 	ret.resize(sret.size());
@@ -494,7 +494,7 @@ std::string urldecode2(const std::string_view str) {
 static const char *daysOfWeek[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
 static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
 
-inline static char *strappend(char *dst, const char *src) {
+inline static char *strappend(char *dst, const char *src) noexcept {
 	while (*src) *dst++ = *src++;
 	return dst;
 }
@@ -525,7 +525,19 @@ bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept 
 		return false;
 	}
 	for (auto c : name) {
-		if (!(std::isalpha(c) || std::isdigit(c) || c == '_' || c == '-' || c == '#' || (c == '@' && allowSpecialChars))) {
+		if (!(std::isalnum(c) || c == '_' || c == '-' || c == '#' || (c == '@' && allowSpecialChars))) {
+			return false;
+		}
+	}
+	return true;
+}
+
+bool validateUserNsName(std::string_view name) noexcept {
+	if (!name.length()) {
+		return false;
+	}
+	for (auto c : name) {
+		if (!(std::isalnum(c) || c == '_' || c == '-')) {
 			return false;
 		}
 	}

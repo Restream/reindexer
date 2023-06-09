@@ -82,7 +82,7 @@ void Geometry::RegisterAllCases() {
 }
 
 reindexer::Error Geometry::Initialize() {
-	assert(db_);
+	assertrx(db_);
 	auto err = db_->AddNamespace(nsdef_);
 	if (!err.ok()) return err;
 

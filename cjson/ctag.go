@@ -2,10 +2,18 @@ package cjson
 
 import "fmt"
 
-type ctag int
+type ctag uint32
 
-const typeBits = 3
-const nameBits = 12
+const (
+	typeBits     = 3
+	typeMask     = (1 << typeBits) - 1
+	nameBits     = 12
+	nameMask     = (1 << nameBits) - 1
+	fieldBits    = 10
+	fieldMask    = (1 << fieldBits) - 1
+	reservedBits = 4
+	type2Offset  = typeBits + nameBits + fieldBits + reservedBits
+)
 
 const (
 	TAG_VARINT = 0
@@ -16,18 +24,19 @@ const (
 	TAG_ARRAY  = 5
 	TAG_OBJECT = 6
 	TAG_END    = 7
+	TAG_UUID   = 8
 )
 
 func (c ctag) Name() int {
-	return int(c>>typeBits) & ((1 << nameBits) - 1)
+	return int(c>>typeBits) & nameMask
 }
 
 func (c ctag) Type() int {
-	return int(c) & ((1 << typeBits) - 1)
+	return (int(c) & typeMask) | (((int(c) >> type2Offset) & typeMask) << typeBits)
 }
 
 func (c ctag) Field() int {
-	return (int(c) >> (typeBits + nameBits)) - 1
+	return ((int(c) >> (typeBits + nameBits)) & fieldMask) - 1
 }
 
 func (c ctag) Dump() string {
@@ -52,27 +61,32 @@ func tagTypeName(tagType int) string {
 		return "<double>"
 	case TAG_NULL:
 		return "<null>"
+	case TAG_UUID:
+		return "<uuid>"
 	default:
 		return fmt.Sprintf("<unknown %d>", tagType)
 	}
 }
 
-func mkctag(ctagType int, ctagName int, ctagField int) uint64 {
-	return uint64(ctagType | (ctagName << typeBits) | (ctagField << (nameBits + typeBits)))
+func mkctag(ctagType int, ctagName int, ctagField int) ctag {
+	return ctag((ctagType & typeMask) | (ctagName << typeBits) | (ctagField << (nameBits + typeBits)) | (((ctagType >> typeBits) & typeMask) << type2Offset))
 }
 
-const countBits = 24
+const (
+	countBits = 24
+	countMask = (1 << countBits) - 1
+)
 
 type carraytag uint32
 
 func (t carraytag) Count() int {
-	return int(t) & ((1 << countBits) - 1)
+	return int(t) & countMask
 }
 
 func (t carraytag) Tag() int {
 	return int(t) >> countBits
 }
 
-func mkcarraytag(count int, tag int) uint32 {
-	return uint32(count | (tag << countBits))
+func mkcarraytag(count int, tag int) carraytag {
+	return carraytag(count | (tag << countBits))
 }

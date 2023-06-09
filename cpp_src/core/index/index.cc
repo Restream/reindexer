@@ -6,6 +6,7 @@
 #include "rtree/indexrtree.h"
 #include "tools/logger.h"
 #include "ttlindex.h"
+#include "uuid_index.h"
 
 namespace reindexer {
 
@@ -56,6 +57,8 @@ std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType payloadType,
 			return TtlIndex_New(idef, std::move(payloadType), fields);
 		case ::IndexRTree:
 			return IndexRTree_New(idef, std::move(payloadType), fields);
+		case IndexUuidHash:
+			return IndexUuid_New(idef, std::move(payloadType), fields);
 		default:
 			throw Error(errParams, "Ivalid index type %d for index '%s'", idef.Type(), idef.name_);
 	}

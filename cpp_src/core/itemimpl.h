@@ -31,6 +31,7 @@ struct ItemImplRawData {
 
 class Namespace;
 class Schema;
+class Recoder;
 
 class ItemImpl : public ItemImplRawData {
 public:
@@ -79,17 +80,17 @@ public:
 
 	std::string_view GetJSON();
 	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false);
-	Error FromCJSON(ItemImpl *other);
+	void FromCJSON(ItemImpl *other, Recoder *);
 
 	std::string_view GetCJSON(bool withTagsMatcher = false);
 	std::string_view GetCJSON(WrSerializer &ser, bool withTagsMatcher = false);
-	Error FromCJSON(std::string_view slice, bool pkOnly = false);
+	void FromCJSON(std::string_view slice, bool pkOnly = false, Recoder * = nullptr);
 	Error FromMsgPack(std::string_view sbuf, size_t &offset);
 	Error FromProtobuf(std::string_view sbuf);
 	Error GetMsgPack(WrSerializer &wrser);
 	Error GetProtobuf(WrSerializer &wrser);
 
-	PayloadType Type() const noexcept { return payloadType_; }
+	const PayloadType &Type() const noexcept { return payloadType_; }
 	PayloadValue &Value() noexcept { return payloadValue_; }
 	PayloadValue &RealValue() noexcept { return realValue_; }
 	Payload GetPayload() noexcept { return Payload(payloadType_, payloadValue_); }

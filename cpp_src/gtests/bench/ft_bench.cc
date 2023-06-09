@@ -14,10 +14,11 @@ using std::shared_ptr;
 using reindexer::Reindexer;
 
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
-const int kItemsInBenchDataset = 1000;
+const int kItemsInBenchDataset = 1'000;
+#elif defined(RX_WITH_STDLIB_DEBUG)
+const int kItemsInBenchDataset = 10'000;
 #else
 const int kItemsInBenchDataset = 100'000;
-
 #endif
 
 int main(int argc, char** argv) {
@@ -54,8 +55,12 @@ int main(int argc, char** argv) {
 	}
 	ft.RegisterAllCases(iterationCount);
 
+#ifdef _GLIBCXX_DEBUG
+	::benchmark::RunSpecifiedBenchmarks();
+#else	// #ifdef _GLIBCXX_DEBUG
 	benchmark::Reporter reporter;
 	::benchmark::RunSpecifiedBenchmarks(&reporter);
+#endif	// #ifdef _GLIBCXX_DEBUG
 
 	return 0;
 }

@@ -67,7 +67,7 @@ DistanceBetweenIndexAndJoinedIndex Distance(const char* c, size_t ns, const char
 
 static void append(SortExpression& se, char op, const char* field) { se.Append({operation(op), false}, SortExprFuncs::Index{field}); }
 static void append(SortExpression& se, char op, char neg, const char* field) {
-	assert(neg == '-');
+	assertrx(neg == '-');
 	(void)neg;
 	se.Append({operation(op), true}, SortExprFuncs::Index{field});
 }
@@ -75,14 +75,14 @@ static void append(SortExpression& se, char op, const Joined& join) {
 	se.Append({operation(op), false}, SortExprFuncs::JoinedIndex{join.nsIdx, join.column});
 }
 static void append(SortExpression& se, char op, char neg, const Joined& join) {
-	assert(neg == '-');
+	assertrx(neg == '-');
 	(void)neg;
 	se.Append({operation(op), true}, SortExprFuncs::JoinedIndex{join.nsIdx, join.column});
 }
 static void append(SortExpression& se, char op, double value) { se.Append({operation(op), false}, SortExprFuncs::Value{value}); }
 static void append(SortExpression& se, char op, RankFunction) { se.Append({operation(op), false}, SortExprFuncs::Rank{}); }
 static void append(SortExpression& se, char op, char neg, RankFunction) {
-	assert(neg == '-');
+	assertrx(neg == '-');
 	(void)neg;
 	se.Append({operation(op), true}, SortExprFuncs::Rank{});
 }
@@ -105,7 +105,7 @@ static void append(SortExpression& se, char op, DistanceBetweenIndexAndJoinedInd
 	se.Append({operation(op), false}, SortExprFuncs::DistanceBetweenIndexAndJoinedIndex{d.column, d.nsIdx, d.jColumn});
 }
 static void append(SortExpression& se, char op, char neg, DistanceBetweenJoinedIndexes d) {
-	assert(neg == '-');
+	assertrx(neg == '-');
 	(void)neg;
 	se.Append({operation(op), true}, SortExprFuncs::DistanceBetweenJoinedIndexes{d.nsIdx1, d.column1, d.nsIdx2, d.column2});
 }
@@ -139,7 +139,7 @@ static void append(SortExpression& se, char op, OpenBracket, Args... args) {
 
 template <typename... Args>
 static void append(SortExpression& se, char op, char neg, OpenBracket, Args... args) {
-	assert(neg == '-');
+	assertrx(neg == '-');
 	(void)neg;
 	se.OpenBracket({operation(op), true});
 	append(se, '+', args...);

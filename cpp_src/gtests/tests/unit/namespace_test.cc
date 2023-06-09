@@ -2035,3 +2035,41 @@ TEST_F(NsApi, DeleteLastItems) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), 2);
 }
+
+TEST_F(NsApi, IncorrectNsName) {
+	auto check = [&](const std::vector<std::string> &names, auto func) {
+		for (const auto &v : names) {
+			func(v);
+		}
+	};
+	std::vector<std::string> variants = {"tes@t1", "@test1", "test1@",	"tes#t1",	 "#test1",		 "test1#", "test 1",
+										 " test1", "test1 ", "'test1'", "\"test1\"", "<a>test1</a>", "/test1", "test1,test2"};
+
+	auto open = [&](const std::string &name) {
+		Error err = rt.reindexer->OpenNamespace(name);
+		ASSERT_FALSE(err.ok());
+		ASSERT_EQ(err.what(), "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+	};
+	check(variants, open);
+
+	auto add = [&](const std::string &name) {
+		reindexer::NamespaceDef nsDef(name);
+		Error err = rt.reindexer->AddNamespace(nsDef);
+		ASSERT_FALSE(err.ok());
+		ASSERT_EQ(err.what(), "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+	};
+	check(variants, add);
+
+	auto rename = [&](const std::string &name) {
+		const std::string kNsName("test3");
+		reindexer::NamespaceDef nsDef(kNsName);
+		Error err = rt.reindexer->AddNamespace(nsDef);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->RenameNamespace(kNsName, name);
+		ASSERT_FALSE(err.ok());
+		ASSERT_EQ(err.what(), "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
+		err = rt.reindexer->DropNamespace(kNsName);
+		ASSERT_TRUE(err.ok()) << err.what();
+	};
+	check(variants, rename);
+}

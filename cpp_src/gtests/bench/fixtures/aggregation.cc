@@ -29,7 +29,7 @@ void Aggregation::RegisterAllCases() {
 }
 
 reindexer::Error Aggregation::Initialize() {
-	assert(db_);
+	assertrx(db_);
 	auto err = db_->AddNamespace(nsdef_);
 	if (!err.ok()) return err;
 	return {};

@@ -39,9 +39,9 @@ public:
 			return std::get<Node::Children>(ns_.content).size();
 		}
 		const Node::Children& ref = findLastContainer(path);
-		assert(ref.size() > path.back());
+		assertrx(ref.size() > path.back());
 		return std::visit(reindexer::overloaded{[](const Node::Child&) noexcept -> size_t {
-													assert(false);
+													assertrx(false);
 													return 0;
 												},
 												[](const Node::Children& c) noexcept { return c.size(); }},
@@ -50,13 +50,13 @@ public:
 	bool IsStruct(const FieldPath& path) const noexcept {
 		if (path.empty()) return true;
 		const Node::Children& ref = findLastContainer(path);
-		assert(ref.size() > path.back());
+		assertrx(ref.size() > path.back());
 		return std::holds_alternative<Node::Children>(ref[path.back()].content);
 	}
 	bool IsPoint(const FieldPath& path) const noexcept {
 		if (path.empty()) return false;
 		const Node::Children& ref = findLastContainer(path);
-		assert(ref.size() > path.back());
+		assertrx(ref.size() > path.back());
 		return !std::holds_alternative<Node::Children>(ref[path.back()].content) &&
 			   std::get<Node::Child>(ref[path.back()].content).type == FieldType::Point;
 	}
@@ -64,28 +64,28 @@ public:
 		if (path.empty()) return ns_.array;
 		const Node::Children* ptr = &std::get<Node::Children>(ns_.content);
 		for (size_t i = 0, s = path.size() - 1; i < s; ++i) {
-			assert(ptr->size() > path[i]);
+			assertrx(ptr->size() > path[i]);
 			const auto& idx = (*ptr)[path[i]];
 			if (idx.array) return true;
 			std::visit(reindexer::overloaded{[&ptr](const Node::Children& c) noexcept { ptr = &c; },
 											 [](const Node::Child&) noexcept { assert(0); }},
 					   idx.content);
 		}
-		assert(ptr->size() > path.back());
+		assertrx(ptr->size() > path.back());
 		return (*ptr)[path.back()].array;
 	}
 	FieldType GetFieldType(const FieldPath& path) const noexcept {
-		assert(!path.empty());
+		assertrx(!path.empty());
 		const Node::Children& ref = findLastContainer(path);
-		assert(ref.size() > path.back());
+		assertrx(ref.size() > path.back());
 		return std::visit(reindexer::overloaded{[](const Node::Child& c) noexcept { return c.type; },
 												[](const Node::Children&) noexcept { return FieldType::Struct; }},
 						  ref[path.back()].content);
 	}
 	void SetFieldType(const FieldPath& path, FieldType ft) noexcept {
-		assert(!path.empty());
+		assertrx(!path.empty());
 		Node::Children& ref = findLastContainer(path);
-		assert(ref.size() > path.back());
+		assertrx(ref.size() > path.back());
 		return std::visit(
 			reindexer::overloaded{[ft](Node::Child& c) noexcept { c.type = ft; }, [](Node::Children&) noexcept { assert(0); }},
 			ref[path.back()].content);
@@ -95,7 +95,7 @@ public:
 		std::string res;
 		const Node::Children* ptr = &std::get<Node::Children>(ns_.content);
 		for (size_t i = 0, s = path.size() - 1; i < s; ++i) {
-			assert(ptr->size() > path[i]);
+			assertrx(ptr->size() > path[i]);
 			const auto& idx = (*ptr)[path[i]];
 			res += idx.name;
 			std::visit(reindexer::overloaded{[&ptr](const Node::Children& c) noexcept { ptr = &c; },
@@ -103,7 +103,7 @@ public:
 					   idx.content);
 			res += '.';
 		}
-		assert(ptr->size() > path.back());
+		assertrx(ptr->size() > path.back());
 		res += (*ptr)[path.back()].name;
 		return res;
 	}
@@ -112,14 +112,14 @@ public:
 		if (!isSparse) ns_.sparse = false;
 		Node::Children* ptr = &std::get<Node::Children>(ns_.content);
 		for (size_t i = 0, s = path.size() - 1; i < s; ++i) {
-			assert(ptr->size() > path[i]);
+			assertrx(ptr->size() > path[i]);
 			if (!isSparse) {
 				(*ptr)[path[i]].sparse = false;
 			}
 			std::visit(reindexer::overloaded{[&ptr](Node::Children& c) noexcept { ptr = &c; }, [](Node::Child&) noexcept { assert(0); }},
 					   (*ptr)[path[i]].content);
 		}
-		assert(ptr->size() > path.back());
+		assertrx(ptr->size() > path.back());
 		mark((*ptr)[path.back()], isSparse);
 	}
 	void NewItem(reindexer::WrSerializer&, RandomGenerator&);
@@ -174,7 +174,7 @@ private:
 	const Node::Children& findLastContainer(const FieldPath& path) const noexcept {
 		const Node::Children* ptr = &std::get<Node::Children>(ns_.content);
 		for (size_t i = 0, s = path.size() - 1; i < s; ++i) {
-			assert(ptr->size() > path[i]);
+			assertrx(ptr->size() > path[i]);
 			std::visit(reindexer::overloaded{[&ptr](const Node::Children& c) noexcept { ptr = &c; },
 											 [](const Node::Child&) noexcept { assert(0); }},
 					   (*ptr)[path[i]].content);
@@ -184,7 +184,7 @@ private:
 	Node::Children& findLastContainer(const FieldPath& path) noexcept {
 		Node::Children* ptr = &std::get<Node::Children>(ns_.content);
 		for (size_t i = 0, s = path.size() - 1; i < s; ++i) {
-			assert(ptr->size() > path[i]);
+			assertrx(ptr->size() > path[i]);
 			std::visit(reindexer::overloaded{[&ptr](Node::Children& c) noexcept { ptr = &c; }, [](Node::Child&) noexcept { assert(0); }},
 					   (*ptr)[path[i]].content);
 		}

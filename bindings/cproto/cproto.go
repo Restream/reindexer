@@ -76,6 +76,10 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 
 	for _, option := range options {
 		switch v := option.(type) {
+		case bindings.OptionPrometheusMetrics:
+			// nothing
+		case bindings.OptionOpenTelemetry:
+			// nothing
 		case bindings.OptionConnPoolSize:
 			connPoolSize = v.ConnPoolSize
 

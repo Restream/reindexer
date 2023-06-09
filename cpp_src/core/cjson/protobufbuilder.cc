@@ -16,7 +16,7 @@ ProtobufBuilder::ProtobufBuilder(WrSerializer* wrser, ObjType type, const Schema
 		case ObjType::TypeObjectArray:
 			itemsFieldIndex_ = fieldIdx;
 			break;
-		default:
+		case ObjType::TypePlain:
 			break;
 	}
 }
@@ -31,13 +31,13 @@ void ProtobufBuilder::End() {
 		case ObjType::TypeObjectArray:
 			itemsFieldIndex_ = -1;
 			break;
-		default:
+		case ObjType::TypePlain:
 			break;
 	}
 	type_ = ObjType::TypePlain;
 }
 
-void ProtobufBuilder::packItem(int fieldIdx, int tagType, Serializer& rdser, ProtobufBuilder& array) {
+void ProtobufBuilder::packItem(int fieldIdx, TagType tagType, Serializer& rdser, ProtobufBuilder& array) {
 	switch (tagType) {
 		case TAG_DOUBLE:
 			array.put(fieldIdx, rdser.GetDouble());
@@ -49,13 +49,18 @@ void ProtobufBuilder::packItem(int fieldIdx, int tagType, Serializer& rdser, Pro
 			array.put(fieldIdx, rdser.GetBool());
 			break;
 		case TAG_STRING:
-			array.put(fieldIdx, std::string(rdser.GetVString()));
+			array.put(fieldIdx, rdser.GetVString());
+			break;
+		case TAG_UUID:
+			array.put(fieldIdx, rdser.GetUuid());
 			break;
 		case TAG_NULL:
 			array.Null(fieldIdx);
 			break;
-		default:
-			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", ctag(tagType).TypeName());
+		case TAG_ARRAY:
+		case TAG_OBJECT:
+		case TAG_END:
+			throw Error(errParseJson, "Unexpected cjson typeTag '%s' while parsing value", TagTypeToStr(tagType));
 	}
 }
 
@@ -75,26 +80,26 @@ std::pair<KeyValueType, bool> ProtobufBuilder::getExpectedFieldType() const {
 	return {KeyValueType::Undefined{}, false};
 }
 
-void ProtobufBuilder::putFieldHeader(int fieldIdx, ProtobufTypes type) { ser_->PutVarUint((getFieldTag(fieldIdx) << kNameBit) | type); }
+void ProtobufBuilder::putFieldHeader(int fieldIdx, ProtobufTypes type) { ser_->PutVarUint((getFieldTag(fieldIdx) << kTypeBit) | type); }
 
 void ProtobufBuilder::put(int fieldIdx, bool val) { return put(fieldIdx, int(val)); }
 
 void ProtobufBuilder::put(int fieldIdx, int val) {
 	bool done = false;
 	if (const auto res = getExpectedFieldType(); res.second) {
-		res.first.EvaluateOneOf(
-			[&](OneOf<KeyValueType::Int, KeyValueType::Bool>) noexcept {},
-			[&](KeyValueType::Int64) {
-				put(fieldIdx, int64_t(val));
-				done = true;
-			},
-			[&](KeyValueType::Double) {
-				put(fieldIdx, double(val));
-				done = true;
-			},
-			[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
-				throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
-			});
+		res.first.EvaluateOneOf([&](OneOf<KeyValueType::Int, KeyValueType::Bool>) noexcept {},
+								[&](KeyValueType::Int64) {
+									put(fieldIdx, int64_t(val));
+									done = true;
+								},
+								[&](KeyValueType::Double) {
+									put(fieldIdx, double(val));
+									done = true;
+								},
+								[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+										  KeyValueType::Undefined, KeyValueType::Uuid>) {
+									throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+								});
 	}
 	if (!done) {
 		if (type_ != ObjType::TypeArray) {
@@ -107,19 +112,19 @@ void ProtobufBuilder::put(int fieldIdx, int val) {
 void ProtobufBuilder::put(int fieldIdx, int64_t val) {
 	bool done = false;
 	if (const auto res = getExpectedFieldType(); res.second) {
-		res.first.EvaluateOneOf(
-			[&](KeyValueType::Int64) noexcept {},
-			[&](OneOf<KeyValueType::Bool, KeyValueType::Int>) {
-				put(fieldIdx, int(val));
-				done = true;
-			},
-			[&](KeyValueType::Double) {
-				put(fieldIdx, double(val));
-				done = true;
-			},
-			[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
-				throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
-			});
+		res.first.EvaluateOneOf([&](KeyValueType::Int64) noexcept {},
+								[&](OneOf<KeyValueType::Bool, KeyValueType::Int>) {
+									put(fieldIdx, int(val));
+									done = true;
+								},
+								[&](KeyValueType::Double) {
+									put(fieldIdx, double(val));
+									done = true;
+								},
+								[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+										  KeyValueType::Undefined, KeyValueType::Uuid>) {
+									throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+								});
 	}
 	if (!done) {
 		if (type_ != ObjType::TypeArray) {
@@ -132,19 +137,19 @@ void ProtobufBuilder::put(int fieldIdx, int64_t val) {
 void ProtobufBuilder::put(int fieldIdx, double val) {
 	bool done = false;
 	if (const auto res = getExpectedFieldType(); res.second) {
-		res.first.EvaluateOneOf(
-			[&](KeyValueType::Double) noexcept {},
-			[&](OneOf<KeyValueType::Int, KeyValueType::Bool>) {
-				put(fieldIdx, int(val));
-				done = true;
-			},
-			[&](KeyValueType::Int64) {
-				put(fieldIdx, int64_t(val));
-				done = true;
-			},
-			[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
-				throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
-			});
+		res.first.EvaluateOneOf([&](KeyValueType::Double) noexcept {},
+								[&](OneOf<KeyValueType::Int, KeyValueType::Bool>) {
+									put(fieldIdx, int(val));
+									done = true;
+								},
+								[&](KeyValueType::Int64) {
+									put(fieldIdx, int64_t(val));
+									done = true;
+								},
+								[&](OneOf<KeyValueType::String, KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple,
+										  KeyValueType::Undefined, KeyValueType::Uuid>) {
+									throw Error(errParams, "Expected type '%s' for field '%s'", res.first.Name(), tm_->tag2name(fieldIdx));
+								});
 	}
 	if (!done) {
 		if (type_ != ObjType::TypeArray) {
@@ -166,6 +171,18 @@ void ProtobufBuilder::put(int fieldIdx, std::string_view val) {
 	ser_->PutVString(val);
 }
 
+void ProtobufBuilder::put(int fieldIdx, Uuid val) {
+	if (const auto res = getExpectedFieldType(); res.second) {
+		if (!res.first.Is<KeyValueType::String>()) {
+			throw Error(errParams, "Expected type 'String' for field '%s'", tm_->tag2name(fieldIdx));
+		}
+	}
+	if (type_ != ObjType::TypeArray) {
+		putFieldHeader(fieldIdx, PBUF_TYPE_LENGTHENCODED);
+	}
+	ser_->PutStrUuid(val);
+}
+
 void ProtobufBuilder::put(int fieldIdx, const Variant& val) {
 	val.Type().EvaluateOneOf([&](KeyValueType::Int64) { put(fieldIdx, int64_t(val)); }, [&](KeyValueType::Int) { put(fieldIdx, int(val)); },
 							 [&](KeyValueType::Double) { put(fieldIdx, double(val)); },
@@ -177,6 +194,7 @@ void ProtobufBuilder::put(int fieldIdx, const Variant& val) {
 									 arrNode.Put(fieldIdx, itVal);
 								 }
 							 },
+							 [&](KeyValueType::Uuid) { put(fieldIdx, Uuid{val}); },
 							 [&](OneOf<KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Composite>) noexcept {});
 }
 

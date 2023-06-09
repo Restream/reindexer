@@ -28,21 +28,19 @@ bool Highlight::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 
 	const std::string *data = p_string(kr[0]).getCxxstr();
 	auto pva = dataFtCtx->area_[it->second].GetAreas(func.fieldNo);
-	if (!pva || pva->empty()) return false;
+	if (!pva || pva->Empty()) return false;
 	auto &va = *pva;
 
 	std::string result_string;
-	result_string.reserve(data->size() + va.size() * (func.funcArgs[0].size() + func.funcArgs[1].size()));
+	result_string.reserve(data->size() + va.Size() * (func.funcArgs[0].size() + func.funcArgs[1].size()));
 	result_string = *data;
 
-	int offset = 0;
-
 	Word2PosHelper word2pos(*data, ftctx->GetData()->extraWordSymbols_);
-	for (auto area : va) {
-		std::pair<int, int> pos =
-			ftctx->GetData()->isWordPositions_ ? word2pos.convert(area.start_, area.end_) : std::make_pair(area.start_, area.end_);
 
-		// printf("%d(%d),%d(%d) %s\n", area.start_, pos.first, area.end_, pos.second, data->c_str());
+	int offset = 0;
+	for (auto area : va.GetData()) {
+		std::pair<int, int> pos =
+			ftctx->GetData()->isWordPositions_ ? word2pos.convert(area.start, area.end) : std::make_pair(area.start, area.end);
 
 		result_string.insert(pos.first + offset, func.funcArgs[0]);
 		offset += func.funcArgs[0].size();

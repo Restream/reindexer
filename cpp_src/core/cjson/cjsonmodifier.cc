@@ -1,6 +1,6 @@
-
 #include "cjsonmodifier.h"
 #include "core/keyvalue/p_string.h"
+#include "core/type_consts_helpers.h"
 #include "jsondecoder.h"
 #include "tagsmatcher.h"
 #include "tools/serializer.h"
@@ -76,7 +76,7 @@ void CJsonModifier::updateObject(Context &ctx, int tagName) {
 	if (ctx.value.IsArrayValue()) {
 		CJsonBuilder cjsonBuilder(ctx.wrser, ObjType::TypeArray, &tagsMatcher_, tagName);
 		for (size_t i = 0; i < ctx.value.size(); ++i) {
-			CJsonBuilder objBuilder = cjsonBuilder.Object(nullptr);
+			auto objBuilder = cjsonBuilder.Object(nullptr);
 			jsonDecoder.Decode(std::string_view(ctx.value[i]), objBuilder, ctx.jsonPath);
 		}
 	} else {
@@ -99,13 +99,13 @@ void CJsonModifier::insertField(Context &ctx) {
 	int nestedObjects = 0;
 	for (size_t i = ctx.currObjPath.size(); i < fieldPath_.size(); ++i) {
 		int tagName = fieldPath_[i].NameTag();
-		bool finalTag = (i == fieldPath_.size() - 1);
+		const bool finalTag = (i == fieldPath_.size() - 1);
 		if (finalTag) {
 			if (ctx.mode == FieldModeSetJson) {
 				updateObject(ctx, tagName);
 			} else {
 				int field = tagsMatcher_.tags2field(ctx.jsonPath.data(), fieldPath_.size());
-				int tagType = determineUpdateTagType(ctx, field);
+				const TagType tagType = determineUpdateTagType(ctx, field);
 				if (field > 0) {
 					putCJsonRef(tagType, tagName, field, ctx.value, ctx.wrser);
 				} else {
@@ -113,12 +113,12 @@ void CJsonModifier::insertField(Context &ctx) {
 				}
 			}
 		} else {
-			ctx.wrser.PutVarUint(static_cast<int>(ctag(TAG_OBJECT, tagName)));
+			ctx.wrser.PutCTag(ctag{TAG_OBJECT, tagName});
 			++nestedObjects;
 		}
 	}
 
-	while (nestedObjects-- > 0) ctx.wrser.PutVarUint(TAG_END);
+	while (nestedObjects-- > 0) ctx.wrser.PutCTag(kCTagEnd);
 	ctx.currObjPath.clear();
 }
 
@@ -148,12 +148,12 @@ bool CJsonModifier::needToInsertField(Context &ctx) {
 	return false;
 }
 
-int CJsonModifier::determineUpdateTagType(const Context &ctx, int field) {
+TagType CJsonModifier::determineUpdateTagType(const Context &ctx, int field) {
 	if (field != -1) {
 		const PayloadFieldType &fieldType = pt_.Field(field);
 		if (ctx.value.size() > 0 && !fieldType.Type().IsSame(ctx.value.front().Type())) {
 			throw Error(errParams, "Inserted field %s type [%s] doesn't match it's index type [%s]", fieldType.Name(),
-						ctag(kvType2Tag(ctx.value.front().Type())).TypeName(), ctag(kvType2Tag(fieldType.Type())).TypeName());
+						TagTypeToStr(kvType2Tag(ctx.value.front().Type())), TagTypeToStr(kvType2Tag(fieldType.Type())));
 		}
 	}
 	if (ctx.value.IsArrayValue()) {
@@ -183,12 +183,12 @@ bool CJsonModifier::checkIfFoundTag(Context &ctx, bool isLastItem) {
 }
 
 bool CJsonModifier::updateFieldInTuple(Context &ctx) {
-	ctag tag = ctx.rdser.GetVarUint();
+	const ctag tag = ctx.rdser.GetCTag();
 
-	int tagType = tag.Type();
+	TagType tagType = tag.Type();
 	if (tagType == TAG_END) {
 		if (needToInsertField(ctx)) insertField(ctx);
-		ctx.wrser.PutVarUint(TAG_END);
+		ctx.wrser.PutCTag(kCTagEnd);
 		return false;
 	}
 
@@ -201,13 +201,13 @@ bool CJsonModifier::updateFieldInTuple(Context &ctx) {
 		tagType = determineUpdateTagType(ctx);
 	}
 
-	ctx.wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, field)));
+	ctx.wrser.PutCTag(ctag{tagType, tagName, field});
 
 	if (field >= 0) {
 		if (tagType == TAG_ARRAY) {
-			int count = ctx.rdser.GetVarUint();
+			auto count = ctx.rdser.GetVarUint();
 			if (tagMatched) {
-				count = ctx.value.IsNullValue() ? 0 : ctx.value.size();
+				count = (ctx.value.empty() || ctx.value.IsNullValue()) ? 0 : ctx.value.size();
 			}
 			ctx.wrser.PutVarUint(count);
 		}
@@ -219,29 +219,38 @@ bool CJsonModifier::updateFieldInTuple(Context &ctx) {
 		} else if (tagType == TAG_ARRAY) {
 			if (tagMatched) {
 				skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
-				ctx.wrser.PutUInt32(int(carraytag(ctx.value.size(), ctx.value.ArrayType().ToNumber())));
+				ctx.wrser.PutCArrayTag(carraytag{ctx.value.size(), ctx.value.ArrayType().ToTagType()});
 				for (size_t i = 0; i < ctx.value.size(); ++i) {
 					updateField(ctx, i);
 				}
 			} else {
-				carraytag atag = ctx.rdser.GetUInt32();
-				ctx.wrser.PutUInt32(static_cast<int>(atag));
-				for (int i = 0; i < atag.Count(); i++) {
+				const carraytag atag = ctx.rdser.GetCArrayTag();
+				ctx.wrser.PutCArrayTag(atag);
+				const TagType atagType = atag.Type();
+				const auto count = atag.Count();
+				for (size_t i = 0; i < count; ++i) {
 					tagsPath_.back().SetIndex(i);
-					bool isLastItem = (i == atag.Count() - 1);
+					const bool isLastItem = (i == count - 1);
 					tagMatched = checkIfFoundTag(ctx, isLastItem);
 					if (tagMatched) {
-						copyCJsonValue(atag.Tag(), ctx.value.front(), ctx.wrser);
-						skipCjsonTag(atag.Tag(), ctx.rdser, &ctx.fieldsArrayOffsets);
+						copyCJsonValue(atagType, ctx.value.front(), ctx.wrser);
+						skipCjsonTag(ctag{atagType}, ctx.rdser, &ctx.fieldsArrayOffsets);
 					} else {
-						switch (atag.Tag()) {
+						switch (atagType) {
 							case TAG_OBJECT: {
 								TagsPathScope<IndexedTagsPath> pathScope(ctx.currObjPath, tagName, i);
 								updateFieldInTuple(ctx);
 								break;
 							}
-							default:
-								copyCJsonValue(atag.Tag(), ctx.rdser, ctx.wrser);
+							case TAG_VARINT:
+							case TAG_DOUBLE:
+							case TAG_STRING:
+							case TAG_ARRAY:
+							case TAG_NULL:
+							case TAG_BOOL:
+							case TAG_END:
+							case TAG_UUID:
+								copyCJsonValue(atagType, ctx.rdser, ctx.wrser);
 								break;
 						}
 					}
@@ -266,10 +275,10 @@ bool CJsonModifier::updateFieldInTuple(Context &ctx) {
 }
 
 bool CJsonModifier::dropFieldInTuple(Context &ctx) {
-	ctag tag = ctx.rdser.GetVarUint();
-	int tagType = tag.Type();
+	const ctag tag = ctx.rdser.GetCTag();
+	const TagType tagType = tag.Type();
 	if (tagType == TAG_END) {
-		ctx.wrser.PutVarUint(TAG_END);
+		ctx.wrser.PutCTag(kCTagEnd);
 		return false;
 	}
 
@@ -284,11 +293,11 @@ bool CJsonModifier::dropFieldInTuple(Context &ctx) {
 	}
 
 	int field = tag.Field();
-	ctx.wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName, field)));
+	ctx.wrser.PutCTag(ctag{tagType, tagName, field});
 
 	if (field >= 0) {
 		if (tagType == TAG_ARRAY) {
-			int count = ctx.rdser.GetVarUint();
+			const auto count = ctx.rdser.GetVarUint();
 			ctx.wrser.PutVarUint(count);
 		}
 	} else {
@@ -297,27 +306,35 @@ bool CJsonModifier::dropFieldInTuple(Context &ctx) {
 			while (dropFieldInTuple(ctx)) {
 			}
 		} else if (tagType == TAG_ARRAY) {
-			carraytag atag = ctx.rdser.GetUInt32();
-			int size = atag.Count();
+			carraytag atag = ctx.rdser.GetCArrayTag();
+			const TagType atagType = atag.Type();
+			const int size = atag.Count();
 			tagMatched = (fieldPath_.back().IsArrayNode() && tagsPath_ == fieldPath_);
 			if (tagMatched) {
-				atag = carraytag(fieldPath_.back().IsForAllItems() ? 0 : atag.Count() - 1, atag.Tag());
+				atag = carraytag(fieldPath_.back().IsForAllItems() ? 0 : size - 1, atagType);
 				ctx.fieldUpdated = true;
 			}
-			ctx.wrser.PutUInt32(static_cast<int>(atag));
+			ctx.wrser.PutCArrayTag(atag);
 			for (int i = 0; i < size; i++) {
 				tagsPath_.back().SetIndex(i);
 				if (tagMatched && (i == fieldPath_.back().Index() || fieldPath_.back().IsForAllItems())) {
-					skipCjsonTag(atag.Tag(), ctx.rdser, &ctx.fieldsArrayOffsets);
+					skipCjsonTag(ctag{atagType}, ctx.rdser, &ctx.fieldsArrayOffsets);
 				} else {
-					switch (atag.Tag()) {
+					switch (atagType) {
 						case TAG_OBJECT: {
 							TagsPathScope<IndexedTagsPath> pathScope(ctx.currObjPath, tagName, i);
 							dropFieldInTuple(ctx);
 							break;
 						}
-						default:
-							copyCJsonValue(atag.Tag(), ctx.rdser, ctx.wrser);
+						case TAG_VARINT:
+						case TAG_STRING:
+						case TAG_DOUBLE:
+						case TAG_BOOL:
+						case TAG_ARRAY:
+						case TAG_NULL:
+						case TAG_END:
+						case TAG_UUID:
+							copyCJsonValue(atagType, ctx.rdser, ctx.wrser);
 							break;
 					}
 				}
@@ -330,7 +347,7 @@ bool CJsonModifier::dropFieldInTuple(Context &ctx) {
 	return true;
 }
 
-void CJsonModifier::embedFieldValue(int type, int field, Context &ctx, size_t idx) {
+void CJsonModifier::embedFieldValue(TagType type, int field, Context &ctx, size_t idx) {
 	if (field < 0) {
 		copyCJsonValue(type, ctx.rdser, ctx.wrser);
 	} else {
@@ -341,11 +358,11 @@ void CJsonModifier::embedFieldValue(int type, int field, Context &ctx, size_t id
 }
 
 bool CJsonModifier::buildCJSON(Context &ctx) {
-	ctag tag = ctx.rdser.GetVarUint();
-	int tagType = tag.Type();
+	const ctag tag = ctx.rdser.GetCTag();
+	TagType tagType = tag.Type();
 	if (tagType == TAG_END) {
 		if (needToInsertField(ctx)) insertField(ctx);
-		ctx.wrser.PutVarUint(TAG_END);
+		ctx.wrser.PutCTag(kCTagEnd);
 		return false;
 	}
 
@@ -356,7 +373,7 @@ bool CJsonModifier::buildCJSON(Context &ctx) {
 	bool embeddedField = (field < 0);
 	bool tagMatched = fieldPath_.Compare(tagsPath_);
 	if (!tagMatched) {
-		ctx.wrser.PutVarUint(static_cast<int>(ctag(tagType, tagName)));
+		ctx.wrser.PutCTag(ctag{tagType, tagName});
 	} else {
 		tagType = TAG_OBJECT;
 	}
@@ -371,31 +388,32 @@ bool CJsonModifier::buildCJSON(Context &ctx) {
 			}
 		}
 	} else if (tagType == TAG_ARRAY) {
-		carraytag atag(0);
-		if (embeddedField) {
-			atag = ctx.rdser.GetUInt32();
-		} else {
-			const uint64_t count = ctx.rdser.GetVarUint();
-			const KeyValueType kvType{pt_.Field(tag.Field()).Type()};
-			atag = carraytag(count, kvType2Tag(kvType));
-		}
-		ctx.wrser.PutUInt32(static_cast<int>(atag));
+		const carraytag atag{embeddedField ? ctx.rdser.GetCArrayTag()
+										   : carraytag(ctx.rdser.GetVarUint(), kvType2Tag(pt_.Field(tag.Field()).Type()))};
+		ctx.wrser.PutCArrayTag(atag);
 		const auto arrSize = atag.Count();
-		for (int i = 0; i < arrSize; i++) {
+		for (size_t i = 0; i < arrSize; ++i) {
 			tagsPath_.back().SetIndex(i);
 			tagMatched = fieldPath_.Compare(tagsPath_);
 			if (tagMatched) {
 				updateObject(ctx, 0);
-				skipCjsonTag(ctx.rdser.GetVarUint(), ctx.rdser, &ctx.fieldsArrayOffsets);
+				skipCjsonTag(ctx.rdser.GetCTag(), ctx.rdser, &ctx.fieldsArrayOffsets);
 			} else {
-				switch (atag.Tag()) {
+				switch (atag.Type()) {
 					case TAG_OBJECT: {
 						TagsPathScope<IndexedTagsPath> pathScope(ctx.currObjPath, tagName);
 						buildCJSON(ctx);
 						break;
 					}
-					default:
-						embedFieldValue(atag.Tag(), field, ctx, i);
+					case TAG_VARINT:
+					case TAG_DOUBLE:
+					case TAG_STRING:
+					case TAG_BOOL:
+					case TAG_ARRAY:
+					case TAG_NULL:
+					case TAG_END:
+					case TAG_UUID:
+						embedFieldValue(atag.Type(), field, ctx, i);
 						break;
 				}
 			}

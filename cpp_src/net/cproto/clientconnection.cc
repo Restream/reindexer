@@ -413,7 +413,7 @@ void ClientConnection::call(const Completion &cmpl, const CommandParams &opts, c
 			case CancelType::Timeout:
 				cmpl(RPCAnswer(Error(errTimeout, "Canceled by timeout")), this);
 				return;
-			default:
+			case CancelType::None:
 				break;
 		}
 	}

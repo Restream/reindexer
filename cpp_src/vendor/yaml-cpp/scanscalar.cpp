@@ -234,7 +234,7 @@ std::string ScanScalar(Stream& INPUT, ScanScalarParams& params) {
 				scalar.erase(pos + 1);
 			}
 		} break;
-		default:
+		case KEEP:
 			break;
 	}
 

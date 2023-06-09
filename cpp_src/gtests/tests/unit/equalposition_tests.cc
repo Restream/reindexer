@@ -13,7 +13,13 @@ bool Compare(const Variant& key1, const Variant& key2, CondType condType) {
 			return res <= 0;
 		case CondLt:
 			return res < 0;
-		default:
+		case CondAny:
+		case CondRange:
+		case CondSet:
+		case CondAllSet:
+		case CondEmpty:
+		case CondLike:
+		case CondDWithin:
 			throw std::runtime_error("Do not support this operation yet!");
 	}
 	return false;

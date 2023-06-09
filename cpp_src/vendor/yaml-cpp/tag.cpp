@@ -1,5 +1,6 @@
 #include <cassert>
 #include <stdexcept>
+#include "tools/assertrx.h"
 
 #include "directives.h"	 // IWYU pragma: keep
 #include "tag.h"
@@ -24,7 +25,7 @@ Tag::Tag(const Token& token) : type(static_cast<TYPE>(token.data)), handle{}, va
 		case NON_SPECIFIC:
 			break;
 		default:
-			assert(false);
+			assertrx(false);
 	}
 }
 
@@ -42,7 +43,7 @@ std::string Tag::Translate(const Directives& directives) {
 			// TODO:
 			return "!";
 		default:
-			assert(false);
+			assertrx(false);
 	}
 	throw std::runtime_error("yaml-cpp: internal error, bad tag type");
 }

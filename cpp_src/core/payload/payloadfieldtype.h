@@ -19,8 +19,10 @@ public:
 	void SetOffset(size_t o) noexcept { offset_ = o; }
 	size_t Offset() const noexcept { return offset_; }
 	KeyValueType Type() const noexcept { return type_; }
-	const std::string &Name() const noexcept { return name_; }
-	const std::vector<std::string> &JsonPaths() const noexcept { return jsonPaths_; }
+	const std::string &Name() const &noexcept { return name_; }
+	const std::string &Name() && = delete;
+	const std::vector<std::string> &JsonPaths() const &noexcept { return jsonPaths_; }
+	const std::vector<std::string> &JsonPaths() && = delete;
 	void AddJsonPath(const std::string &jsonPath) { jsonPaths_.push_back(jsonPath); }
 
 private:

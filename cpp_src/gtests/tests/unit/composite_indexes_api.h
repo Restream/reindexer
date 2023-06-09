@@ -36,7 +36,8 @@ public:
 		item[this->kFieldNamePrice] = price;
 		item[this->kFieldNameName] = name;
 		Upsert(default_namespace, item);
-		Commit(default_namespace);
+		const auto err = Commit(default_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void addCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const IndexOpts& opts) {

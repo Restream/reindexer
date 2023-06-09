@@ -154,6 +154,21 @@ Reindexer has a bunch of prometheus metrics available via http-URL `/metrics` (i
 `reindexer_input_traffic_total_bytes`, `reindexer_output_traffic_total_bytes` - total input/output RPC/http traffic for each database
 `reindexer_info` - generic reindexer server info (currently it's just a version number)
 
+### Prometheus (client-side, Go)
+
+Go binding for reindexer is using [prometheus/client_golang](https://github.com/prometheus/client_golang) to collect some metrics (RPS and request's latency) from client's side. Pass `WithPrometheusMetrics()`-option to enable metric's collecting:
+```
+// Create DB connection for cproto-mode with metrics enabled
+db := reindexer.NewReindex("cproto://127.0.0.1:6534/testdb", reindex.WithPrometheusMetrics())
+// Register prometheus handle for your HTTP-server to be able to get metrics from the outside
+http.Handle("/metrics", promhttp.Handler())
+```
+
+All of the metricts will be exported into `DefaultRegistry`. Check [this](https://github.com/prometheus/client_golang/blob/main/prometheus/promauto/auto.go#L57-L85) for basic prometheus usage example.
+
+Both server-side and client-side metrics contain 'latency', however, client-side latency will also count all the time consumed by the binding's queue, network communication (for cproto) and deseriallization.
+So client-side latency may be more rellevant for user's applications the server-side latency.
+
 ## Maintenance
 
 For maintenance and work with data, stored in reindexer database there are 2 methods available:

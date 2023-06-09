@@ -47,11 +47,11 @@ void ArraysStorage::onObjectBuilt(CJsonBuilder& parent) {
 ProtobufDecoder::ProtobufDecoder(TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema)
 	: tm_(tagsMatcher), schema_(std::move(schema)), arraysStorage_(tm_) {}
 
-void ProtobufDecoder::setValue(Payload* pl, CJsonBuilder& builder, const ProtobufValue& item) {
+void ProtobufDecoder::setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue item) {
 	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
 	auto value = item.value.convert(item.itemType);
 	if (field > 0) {
-		pl->Set(field, {value}, true);
+		pl.Set(field, {value}, true);
 		if (item.isArray) {
 			arraysStorage_.UpdateArraySize(item.tagName, field);
 		} else {
@@ -67,7 +67,7 @@ void ProtobufDecoder::setValue(Payload* pl, CJsonBuilder& builder, const Protobu
 	}
 }
 
-Error ProtobufDecoder::decodeArray(Payload* pl, CJsonBuilder& builder, const ProtobufValue& item) {
+Error ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const ProtobufValue& item) {
 	ProtobufObject object(item.As<std::string_view>(), *schema_, tagsPath_, tm_);
 	ProtobufParser parser(object);
 	bool packed = item.IsOfPrimitiveType();
@@ -76,7 +76,7 @@ Error ProtobufDecoder::decodeArray(Payload* pl, CJsonBuilder& builder, const Pro
 		if (packed) {
 			int count = 0;
 			while (!parser.IsEof()) {
-				pl->Set(field, {parser.ReadArrayItem(item.itemType)}, true);
+				pl.Set(field, {parser.ReadArrayItem(item.itemType)}, true);
 				++count;
 			}
 			builder.ArrayRef(item.tagName, field, count);
@@ -104,7 +104,7 @@ Error ProtobufDecoder::decodeArray(Payload* pl, CJsonBuilder& builder, const Pro
 	return errOK;
 }
 
-Error ProtobufDecoder::decode(Payload* pl, CJsonBuilder& builder, const ProtobufValue& item) {
+Error ProtobufDecoder::decode(Payload& pl, CJsonBuilder& builder, const ProtobufValue& item) {
 	TagsPathScope<TagsPath> tagScope(tagsPath_, item.tagName);
 	return item.value.Type().EvaluateOneOf(
 		[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool>) {
@@ -126,18 +126,18 @@ Error ProtobufDecoder::decode(Payload* pl, CJsonBuilder& builder, const Protobuf
 						return decodeObject(pl, objBuilder, object);
 					},
 					[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::Null,
-							  KeyValueType::Tuple, KeyValueType::Undefined>) {
+							  KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Uuid>) {
 						return Error(errParseProtobuf, "Error parsing length-encoded type: [%s] for field [%s]", item.itemType.Name(),
 									 tm_.tag2name(item.tagName));
 					});
 			}
 		},
-		[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null>) {
+		[&](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Uuid>) {
 			return Error(errParseProtobuf, "Unknown field type [%s] while parsing Protobuf", item.value.Type().Name());
 		});
 }
 
-Error ProtobufDecoder::decodeObject(Payload* pl, CJsonBuilder& builder, ProtobufObject& object) {
+Error ProtobufDecoder::decodeObject(Payload& pl, CJsonBuilder& builder, ProtobufObject& object) {
 	Error status{errOK};
 	ProtobufParser parser(object);
 	while (status.ok() && !parser.IsEof()) {
@@ -146,7 +146,7 @@ Error ProtobufDecoder::decodeObject(Payload* pl, CJsonBuilder& builder, Protobuf
 	return status;
 }
 
-Error ProtobufDecoder::Decode(std::string_view buf, Payload* pl, WrSerializer& wrser) {
+Error ProtobufDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wrser) {
 	try {
 		tagsPath_.clear();
 		CJsonProtobufObjectBuilder cjsonBuilder(arraysStorage_, wrser, &tm_, 0);

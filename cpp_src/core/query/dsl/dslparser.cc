@@ -347,7 +347,8 @@ void parseFilter(JsonValue& filter, Query& q, std::vector<std::pair<size_t, Equa
 						throw Error(errLogic, "Condition ANY must have 0 values, but %d values was provided", values.size());
 					}
 					break;
-				default:
+				case CondEmpty:
+				case CondDWithin:
 					break;
 			}
 			q.entries.Append(op, QueryEntry{std::move(fields[0]), condition, std::move(values)});

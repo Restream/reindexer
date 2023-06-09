@@ -109,7 +109,7 @@ static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpT
 				jsonSel.Raw("explain_select", js.PreResult()->explainOneSelect);
 			}
 			break;
-		default:
+		case JoinType::Merge:
 			break;
 	}
 	return name;

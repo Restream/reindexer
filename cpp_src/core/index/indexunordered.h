@@ -35,17 +35,17 @@ public:
 							   const BaseFunctionCtx::Ptr &ctx, const RdxContext &) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext &) override;
-	std::unique_ptr<Index> Clone() override;
+	std::unique_ptr<Index> Clone() const override { return std::unique_ptr<Index>{new IndexUnordered<T>(*this)}; }
 	IndexMemStat GetMemStat(const RdxContext &) override;
-	size_t Size() const override final { return idx_map.size(); }
+	size_t Size() const noexcept override final { return idx_map.size(); }
 	void SetSortedIdxCount(int sortedIdxCount) override;
 	bool HoldsStrings() const noexcept override;
 	void ClearCache() override { cache_.reset(); }
 	void ClearCache(const std::bitset<64> &s) override {
 		if (cache_) cache_->ClearSorted(s);
 	}
-	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override;
-	void EnableUpdatesCountingMode(bool val) override { tracker_.enableCountingMode(val); }
+	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
+	void EnableUpdatesCountingMode(bool val) noexcept override { tracker_.enableCountingMode(val); }
 
 	void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &) override;
 	bool IsDestroyPartSupported() const noexcept override { return true; }

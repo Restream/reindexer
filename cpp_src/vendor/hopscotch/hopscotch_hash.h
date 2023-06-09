@@ -42,6 +42,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include "tools/assertrx.h"
 
 #if (defined(__GNUC__) && (__GNUC__ == 4) && (__GNUC_MINOR__ < 9))
 #define TSL_NO_RANGE_ERASE_WITH_CONST_ITERATOR
@@ -279,7 +280,7 @@ public:
 	bool bucket_hash_equal(std::size_t /*hash*/) const noexcept { return true; }
 
 	std::size_t truncated_bucket_hash() const noexcept {
-		assert(false);
+		assertrx(false);
 		return 0;
 	}
 

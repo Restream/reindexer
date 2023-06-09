@@ -325,7 +325,7 @@ Variant token2kv(const token &currTok, tokenizer &parser, bool allowComposite) {
 		},
 		[&](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
 		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Composite,
-				 KeyValueType::Null>) noexcept -> Variant {
+				 KeyValueType::Null, KeyValueType::Uuid>) noexcept -> Variant {
 			assertrx(0);
 			abort();
 		});
@@ -502,8 +502,9 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 			addUpdateValue(tok, parser, updateField);
 			tok = parser.next_token(false);
 			if (tok.text() == "]"sv) break;
-			if (tok.text() != ","sv)
+			if (tok.text() != ","sv) {
 				throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
+			}
 		}
 	} else {
 		addUpdateValue(tok, parser, updateField);
@@ -881,10 +882,11 @@ void SQLParser::parseDWithin(tokenizer &parser, OpType nextOp) {
 
 	tok = parser.next_token();
 	const auto distance = token2kv(tok, parser, false);
-	distance.Type().EvaluateOneOf(
-		[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept {},
-		[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite,
-				  KeyValueType::Undefined>) { throw Error(errParseSQL, "Expected number, but found %s, %s", tok.text(), parser.where()); });
+	distance.Type().EvaluateOneOf([](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) noexcept {},
+								  [&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Null, KeyValueType::Tuple,
+											KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Uuid>) {
+									  throw Error(errParseSQL, "Expected number, but found %s, %s", tok.text(), parser.where());
+								  });
 
 	tok = parser.next_token();
 	if (tok.text() != ")"sv) {

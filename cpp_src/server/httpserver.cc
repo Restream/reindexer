@@ -1768,8 +1768,11 @@ int HTTPServer::GetSQLQueryTx(http::Context &ctx) {
 			case QueryDelete:
 			case QueryUpdate:
 				return modifyQueryTxImpl(ctx, dbName, txId, q);
-			default:
+			case QuerySelect:
+			case QueryTruncate:
 				return status(ctx, http::HttpStatus(http::StatusInternalServerError, "Transactions support update/delete queries only"));
+			default:
+				abort();
 		}
 	} catch (const Error &e) {
 		return status(ctx, http::HttpStatus(e));

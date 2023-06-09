@@ -130,7 +130,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.15.0
+*Version* : 3.16.0
 
 
 ### License information
@@ -503,7 +503,7 @@ This operation will return list of keys of all meta of specified namespace
 |**Query**|**limit**  <br>*optional*|If 0 - no limit|integer|`0`|
 |**Query**|**offset**  <br>*optional*||integer|`0`|
 |**Query**|**sort_order**  <br>*optional*|Sort Order|enum (asc, desc)||
-|**Query**|**with_values**  <br>*optional*|Includ values in response|boolean|`"false"`|
+|**Query**|**with_values**  <br>*optional*|Include values in response|boolean|`"false"`|
 
 
 #### Responses

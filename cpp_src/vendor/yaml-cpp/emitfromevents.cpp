@@ -1,5 +1,6 @@
 #include <cassert>
 #include <sstream>
+#include "tools/assertrx.h"
 
 #include "yaml-cpp/emitfromevents.h"
 #include "yaml-cpp/emitter.h"
@@ -52,7 +53,7 @@ void EmitFromEvents::OnSequenceStart(const Mark&, const std::string& tag, anchor
 		case EmitterStyle::Flow:
 			m_emitter << Flow;
 			break;
-		default:
+		case EmitterStyle::Default:
 			break;
 	}
 	// Restore the global settings to eliminate the override from node style
@@ -63,7 +64,7 @@ void EmitFromEvents::OnSequenceStart(const Mark&, const std::string& tag, anchor
 
 void EmitFromEvents::OnSequenceEnd() {
 	m_emitter << EndSeq;
-	assert(m_stateStack.top() == State::WaitingForSequenceEntry);
+	assertrx(m_stateStack.top() == State::WaitingForSequenceEntry);
 	m_stateStack.pop();
 }
 
@@ -77,7 +78,7 @@ void EmitFromEvents::OnMapStart(const Mark&, const std::string& tag, anchor_t an
 		case EmitterStyle::Flow:
 			m_emitter << Flow;
 			break;
-		default:
+		case EmitterStyle::Default:
 			break;
 	}
 	// Restore the global settings to eliminate the override from node style
@@ -88,7 +89,7 @@ void EmitFromEvents::OnMapStart(const Mark&, const std::string& tag, anchor_t an
 
 void EmitFromEvents::OnMapEnd() {
 	m_emitter << EndMap;
-	assert(m_stateStack.top() == State::WaitingForKey);
+	assertrx(m_stateStack.top() == State::WaitingForKey);
 	m_stateStack.pop();
 }
 
@@ -104,7 +105,7 @@ void EmitFromEvents::BeginNode() {
 			m_emitter << Value;
 			m_stateStack.top() = State::WaitingForKey;
 			break;
-		default:
+		case State::WaitingForSequenceEntry:
 			break;
 	}
 }

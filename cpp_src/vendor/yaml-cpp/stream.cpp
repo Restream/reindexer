@@ -194,7 +194,20 @@ Stream::Stream(std::istream& input)
 		case uis_utf32be:
 			m_charSet = utf32be;
 			break;
-		default:
+		case uis_start:
+		case uis_utfbe_b1:
+		case uis_utf32be_b2:
+		case uis_utf32be_bom3:
+		case uis_utf16be_bom1:
+		case uis_utfle_bom1:
+		case uis_utf16le_bom2:
+		case uis_utf32le_bom3:
+		case uis_utf8_imp:
+		case uis_utf16le_imp:
+		case uis_utf32le_imp3:
+		case uis_utf8_bom1:
+		case uis_utf8_bom2:
+		case uis_error:
 			m_charSet = utf8;
 			break;
 	}

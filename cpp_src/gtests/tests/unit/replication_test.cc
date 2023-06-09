@@ -49,13 +49,13 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(0)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
-		EXPECT_EQ(qr.Count(), 3);
+		EXPECT_EQ(qr.Count(), 4);
 	}
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(2)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
-		EXPECT_EQ(qr.Count(), 1);
+		EXPECT_EQ(qr.Count(), 2);
 	}
 
 	FillData(500);
@@ -68,69 +68,69 @@ TEST_F(ReplicationLoadApi, WALResizeStaticData) {
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
 		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(0)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
-		EXPECT_EQ(qr.Count(), 503);
+		EXPECT_EQ(qr.Count(), 504);
 	}
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(502)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(504)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
 	{
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(402)), qrLast100_1);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(403)), qrLast100_1);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qrLast100_1.Count(), 101);
 	}
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 100, nsName));
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(401)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(402)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 	}
 	{
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(402)), qrLast100_2);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(403)), qrLast100_2);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qrLast100_2.Count(), 101);
 	}
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(502)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(504)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
 	ASSERT_NO_FATAL_FAILURE(SetWALSize(masterId_, 2000, nsName));
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(401)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(402)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
 	{
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(402)), qrLast100_3);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(403)), qrLast100_3);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qrLast100_3.Count(), 101);
 	}
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(502)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(503)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(504)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
@@ -171,12 +171,12 @@ TEST_F(ReplicationLoadApi, WALResizeDynamicData) {
 	FillData(50);
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(451)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(452)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 	}
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(452)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(453)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 101);
 	}
@@ -184,25 +184,25 @@ TEST_F(ReplicationLoadApi, WALResizeDynamicData) {
 	FillData(500);
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(851)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(852)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(852)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(853)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 201);
 	}
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(1052)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(1053)), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 1);
 	}
 	{
 		BaseApi::QueryResultsType qr(master.get(), kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(1053)), qr);
+		Error err = master->Select(Query(nsName).Where("#lsn", CondGt, int64_t(1054)), qr);
 		EXPECT_EQ(err.code(), errOutdatedWAL) << err.what();
 		EXPECT_EQ(qr.Count(), 0);
 	}

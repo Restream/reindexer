@@ -36,7 +36,8 @@ TEST_F(CompositeIndexesApi, AddIndexWithExistingCompositeIndex) {
 		item[this->kFieldNameName] = names[i];
 		item[this->kFieldNameTitle] = kFieldNameTitle;
 		Upsert(namespaceName, item);
-		Commit(namespaceName);
+		err = Commit(namespaceName);
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 	err = rt.reindexer->AddIndex(namespaceName, {kFieldNameName, {kFieldNameName}, "text", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();

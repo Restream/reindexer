@@ -77,6 +77,8 @@ Item::FieldRef &Item::FieldRef::operator=(const VariantArray &krs) {
 
 template <typename T>
 Item::FieldRef &Item::FieldRef::operator=(span<T> arr) {
+	constexpr static bool kIsStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
+								   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char *>;
 	if (field_ < 0) {
 		throw Error(errConflict, "Item::FieldRef::SetValue by json path not implemented yet");
 	}
@@ -84,10 +86,8 @@ Item::FieldRef &Item::FieldRef::operator=(span<T> arr) {
 	auto pl(itemImpl_->GetPayload());
 	int pos = pl.ResizeArray(field_, arr.size(), false);
 
-	constexpr bool isStr = std::is_same_v<T, std::string> || std::is_same_v<T, key_string> || std::is_same_v<T, p_string> ||
-						   std::is_same_v<T, std::string_view> || std::is_same_v<T, const char *>;
-	if constexpr (isStr) {
-		if (itemImpl_->IsUnsafe()) {
+	if constexpr (kIsStr) {
+		if (itemImpl_->IsUnsafe() || itemImpl_->Type()->Field(field_).Type().Is<KeyValueType::Uuid>()) {
 			for (auto &elem : arr) {
 				pl.Set(field_, pos++, Variant(elem));
 			}
@@ -125,7 +125,14 @@ Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) &noexcept
 	RETURN_RESULT_NOEXCEPT(impl_->FromJSON(slice, endp, pkOnly));
 }
 
-Error Item::FromCJSON(std::string_view slice, bool pkOnly) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->FromCJSON(slice, pkOnly)); }
+Error Item::FromCJSON(std::string_view slice, bool pkOnly) &noexcept {
+	try {
+		impl_->FromCJSON(slice, pkOnly);
+	}
+	CATCH_AND_RETURN;
+	return {};
+}
+void Item::FromCJSONImpl(std::string_view slice, bool pkOnly) & { impl_->FromCJSON(slice, pkOnly); }
 
 std::string_view Item::GetCJSON() { return impl_->GetCJSON(); }
 std::string_view Item::GetJSON() { return impl_->GetJSON(); }
@@ -171,6 +178,7 @@ template Item::FieldRef &Item::FieldRef::operator=(span<int> arr);
 template Item::FieldRef &Item::FieldRef::operator=(span<int64_t> arr);
 template Item::FieldRef &Item::FieldRef::operator=(span<std::string> arr);
 template Item::FieldRef &Item::FieldRef::operator=(span<double>);
+template Item::FieldRef &Item::FieldRef::operator=(span<Uuid>);
 
 }  // namespace reindexer
    // namespace reindexer

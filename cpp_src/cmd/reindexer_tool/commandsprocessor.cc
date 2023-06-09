@@ -24,6 +24,7 @@ Error CommandsProcessor<DBInterface>::process(const std::string& command) {
 	return executor_.Process(command);
 }
 
+#if REINDEX_WITH_REPLXX
 template <typename DBInterface>
 template <typename T>
 void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_completion_callback)(new_v_callback_t const&)) {
@@ -47,6 +48,7 @@ void CommandsProcessor<DBInterface>::setCompletionCallback(T& rx, void (T::*set_
 		},
 		nullptr);
 }
+#endif	// REINDEX_WITH_REPLXX
 
 template <typename T>
 class HasSetMaxLineSize {
@@ -111,7 +113,7 @@ bool CommandsProcessor<DBInterface>::interactive() {
 		std::string command;
 		std::cout << prompt;
 		if (!std::getline(std::cin, command)) break;
-		Error err = ProcessCommand(command);
+		Error err = process(command);
 		if (!err.ok()) {
 			std::cerr << "ERROR: " << err.what() << std::endl;
 			wasError = true;

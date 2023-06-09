@@ -1,3 +1,31 @@
+# Version 3.16.0 (09.06.2023)
+## Core
+- [fea] Add UUID field type for indexes
+- [fix] Fixed fulltext areas highlighting for the queries with prefixes/suffixes/postfixes
+- [fix] Fixed segfault on max unique json names overflowing
+- [fix] Dissalowed system namespaces deletion/renaming
+
+## Go connector
+- [fea] Added support for OpenTelemetry traces. [Details](readme.md#tracing)
+- [fea] Added prometheus client-side metrics. [Details](cpp_src/readme.md#prometheus-client-side-go)
+- [fix] Fixed bool value parsing/validation in DSL package
+
+## Face
+- [fea] Added the Namespace name length limitation
+- [fea] Added the UUID Index type
+- [fea] Added the notification about doubles in the Query Builder filter
+- [fix] Fixed the scroll in the Index table
+- [fix] Fixed the empty table in Statistics->Memory
+- [fix] Removed the select_functions parameter from the JSON preview of Query Builder
+- [fix] Fixed the URL clearing after clicking by opened Namespace tabs
+- [fix] Fixed the Memory table layout
+- [fix] Fixed the console errors on the replication config page
+- [fix] Fixed the column displaying for the Query -> Facet request
+- [fix] Fixed the synonyms displaying for the UI view
+- [fix] Fixed the console errors on the namespace pin icon clicking 
+- [fix] Added the bottom padding to the legend of the Statistics
+- [fix] Fixed the NavigationDuplicated console error on the pagination using on the Queries page
+
 # Version 3.15.0 (24.04.2023)
 ## Core
 - [fea] Improved typos handling agorithm for `text`-indexes. New options: `max_typo_distance`,`max_symbol_permutation_distance`,`max_missing_letters` and `max_extra_letters` were added

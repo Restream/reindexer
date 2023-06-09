@@ -85,7 +85,9 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer &parser, const Args
 							r.first->second = std::move(argSecondPart);
 							argSecondPart.clear();
 						} break;
-						default:
+						case NamedArgState::Name:
+						case NamedArgState::Eq:
+						case NamedArgState::Val:
 							throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, argFirstPart);
 					}
 
@@ -144,7 +146,9 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer &parser, const Args
 						expectedToken = NamedArgState::End2;
 						break;
 
-					default:
+					case NamedArgState::Eq:
+					case NamedArgState::End:
+					case NamedArgState::End2:
 						throw Error(errParseDSL, "%s: Unexpected token '%s'.", selectFuncStruct_.funcName, tok.text());
 				}
 				break;
@@ -156,7 +160,8 @@ void SelectFuncParser::parsePositionalAndNamedArgs(tokenizer &parser, const Args
 					expectedToken = NamedArgState::Eq;
 				}
 				break;
-			default:
+			case TokenSign:
+			case TokenEnd:
 				throw Error(errParseDSL, "%s: Unexpected token '%s'", selectFuncStruct_.funcName, tok.text());
 		}
 	}

@@ -17,7 +17,7 @@ func (tc *ctagsCache) Reset() {
 	*tc = (*tc)[:0]
 }
 
-func (tc *ctagsCache) Lockup(cachePath []int, canAdd bool) *[]int {
+func (tc *ctagsCache) Lookup(cachePath []int, canAdd bool) *[]int {
 	ctag := cachePath[0]
 	if len(*tc) <= ctag {
 		if !canAdd {
@@ -36,7 +36,7 @@ func (tc *ctagsCache) Lockup(cachePath []int, canAdd bool) *[]int {
 		return &(*tc)[ctag].structIdx
 	}
 
-	return (*tc)[ctag].subCache.Lockup(cachePath[1:], canAdd)
+	return (*tc)[ctag].subCache.Lookup(cachePath[1:], canAdd)
 }
 
 type ctagsWCacheEntry struct {
@@ -50,7 +50,7 @@ func (tc *ctagsWCache) Reset() {
 	(*tc) = (*tc)[:0]
 }
 
-func (tc *ctagsWCache) Lookup(idx []int, canAdd bool) *ctagsWCacheEntry {
+func (tc *ctagsWCache) Lookup(idx []int) *ctagsWCacheEntry {
 	if len(idx) == 0 {
 		return &ctagsWCacheEntry{}
 	}
@@ -58,9 +58,6 @@ func (tc *ctagsWCache) Lookup(idx []int, canAdd bool) *ctagsWCacheEntry {
 	field := idx[0]
 
 	if len(*tc) <= field {
-		if !canAdd {
-			return nil
-		}
 		if cap(*tc) <= field {
 			nc := make([]ctagsWCacheEntry, len(*tc), field+1)
 			copy(nc, *tc)
@@ -74,5 +71,5 @@ func (tc *ctagsWCache) Lookup(idx []int, canAdd bool) *ctagsWCacheEntry {
 		return &(*tc)[field]
 	}
 
-	return (*tc)[field].subCache.Lookup(idx[1:], canAdd)
+	return (*tc)[field].subCache.Lookup(idx[1:])
 }

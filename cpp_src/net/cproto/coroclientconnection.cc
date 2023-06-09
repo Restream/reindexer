@@ -123,7 +123,7 @@ CoroRPCAnswer CoroClientConnection::call(const CommandParams &opts, const Args &
 				return Error(errCanceled, "Canceled by context");
 			case CancelType::Timeout:
 				return Error(errTimeout, "Canceled by timeout");
-			default:
+			case CancelType::None:
 				break;
 		}
 	}
@@ -171,7 +171,7 @@ Error CoroClientConnection::callNoReply(const CommandParams &opts, uint32_t seq,
 				return Error(errCanceled, "Canceled by context");
 			case CancelType::Timeout:
 				return Error(errTimeout, "Canceled by timeout");
-			default:
+			case CancelType::None:
 				break;
 		}
 	}

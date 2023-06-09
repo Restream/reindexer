@@ -4,6 +4,7 @@
 #include <string_view>
 #include <utility>
 #include "core/type_consts.h"
+#include "core/type_consts_helpers.h"
 #include "estl/overloaded.h"
 #include "tools/assertrx.h"
 #include "tools/errors.h"
@@ -11,6 +12,9 @@
 namespace reindexer {
 
 class KeyValueType {
+	friend class Serializer;
+	friend class WrSerializer;
+
 public:
 	// Change name of function Is<> when add new type
 	struct Int64 {};
@@ -22,14 +26,15 @@ public:
 	struct Undefined {};
 	struct Composite {};
 	struct Tuple {};
+	struct Uuid {};
 
 private:
 	template <template <typename> typename T>
 	static constexpr bool ForAllTypes = T<Int64>::value && T<Double>::value && T<String>::value && T<Bool>::value && T<Null>::value &&
-										T<Int>::value && T<Undefined>::value && T<Composite>::value && T<Tuple>::value;
+										T<Int>::value && T<Undefined>::value && T<Composite>::value && T<Tuple>::value && T<Uuid>::value;
 	template <template <typename> typename T>
 	static constexpr bool ForAnyType = T<Int64>::value || T<Double>::value || T<String>::value || T<Bool>::value || T<Null>::value ||
-									   T<Int>::value || T<Undefined>::value || T<Composite>::value || T<Tuple>::value;
+									   T<Int>::value || T<Undefined>::value || T<Composite>::value || T<Tuple>::value || T<Uuid>::value;
 
 	template <typename F, typename... Fs>
 	struct IsNoexcept {
@@ -76,12 +81,31 @@ private:
 		Int = TAG_END + 1,
 		Undefined,
 		Composite,
-		Tuple
+		Tuple,
+		Uuid
 	} value_;
 	constexpr explicit KeyValueType(KVT v) noexcept : value_{v} {}
 
+	[[nodiscard]] static KeyValueType fromNumber(int n) {
+		switch (n) {
+			case static_cast<int>(KVT::Int64):
+			case static_cast<int>(KVT::Double):
+			case static_cast<int>(KVT::String):
+			case static_cast<int>(KVT::Bool):
+			case static_cast<int>(KVT::Null):
+			case static_cast<int>(KVT::Int):
+			case static_cast<int>(KVT::Undefined):
+			case static_cast<int>(KVT::Composite):
+			case static_cast<int>(KVT::Tuple):
+			case static_cast<int>(KVT::Uuid):
+				return KeyValueType{static_cast<KVT>(n)};
+			default:
+				throw Error(errParams, "Invalid int value for KeyValueType: " + std::to_string(n));
+		}
+	}
+	[[nodiscard]] int toNumber() const noexcept { return static_cast<int>(value_); }
+
 public:
-	KeyValueType() = default;
 	constexpr KeyValueType(Int64) noexcept : value_{KVT::Int64} {}
 	constexpr KeyValueType(Double) noexcept : value_{KVT::Double} {}
 	constexpr KeyValueType(String) noexcept : value_{KVT::String} {}
@@ -91,14 +115,41 @@ public:
 	constexpr KeyValueType(Undefined) noexcept : value_{KVT::Undefined} {}
 	constexpr KeyValueType(Composite) noexcept : value_{KVT::Composite} {}
 	constexpr KeyValueType(Tuple) noexcept : value_{KVT::Tuple} {}
+	constexpr KeyValueType(Uuid) noexcept : value_{KVT::Uuid} {}
 	constexpr KeyValueType(const KeyValueType& other) noexcept : value_{other.value_} {}
 	constexpr KeyValueType& operator=(const KeyValueType& other) noexcept {
 		value_ = other.value_;
 		return *this;
 	}
+	explicit KeyValueType(TagType t) {
+		switch (t) {
+			case TAG_VARINT:
+				value_ = KVT::Int64;
+				return;
+			case TAG_NULL:
+				value_ = KVT::Null;
+				return;
+			case TAG_BOOL:
+				value_ = KVT::Bool;
+				return;
+			case TAG_STRING:
+				value_ = KVT::String;
+				return;
+			case TAG_DOUBLE:
+				value_ = KVT::Double;
+				return;
+			case TAG_UUID:
+				value_ = KVT::Uuid;
+				return;
+			case TAG_ARRAY:
+			case TAG_OBJECT:
+			case TAG_END:
+				throw Error(errParams, "Invalid tag type value for KeyValueType: " + std::string{TagTypeToStr(t)});
+		}
+	}
 
 	template <typename... Fs>
-	inline auto EvaluateOneOf(overloaded<Fs...> f) const noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
+	[[nodiscard]] auto EvaluateOneOf(overloaded<Fs...> f) const noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
 		static_assert(ForAnyType<OneOf<Fs...>::template IsInvocable>);
 		switch (value_) {
 			case KVT::Int64:
@@ -119,20 +170,22 @@ public:
 				return f(Composite{});
 			case KVT::Tuple:
 				return f(Tuple{});
+			case KVT::Uuid:
+				return f(Uuid{});
 		}
 		assertrx(0);
 		std::abort();
 	}
 	template <typename... Fs>
-	inline auto EvaluateOneOf(Fs... fs) const noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
+	[[nodiscard]] auto EvaluateOneOf(Fs... fs) const noexcept(ForAllTypes<IsNoexcept<Fs...>::template Overloaded>) {
 		return EvaluateOneOf(overloaded<Fs...>{std::move(fs)...});
 	}
 	template <typename Visitor>
-	static inline auto Visit(Visitor visitor, KeyValueType t) noexcept(ForAllTypes<IsNoexcept<Visitor>::template Overloaded>) {
+	static auto Visit(Visitor visitor, KeyValueType t) noexcept(ForAllTypes<IsNoexcept<Visitor>::template Overloaded>) {
 		return t.EvaluateOneOf(std::move(visitor));
 	}
 	template <typename Visitor>
-	static inline auto Visit(Visitor visitor, KeyValueType t1, KeyValueType t2) noexcept {
+	static auto Visit(Visitor visitor, KeyValueType t1, KeyValueType t2) noexcept {
 		switch (t2.value_) {
 			case KVT::Int64:
 				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Int64, Visitor>>::template Overloaded>);
@@ -161,34 +214,44 @@ public:
 			case KVT::Tuple:
 				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Tuple, Visitor>>::template Overloaded>);
 				return Visit(VisitorWrapper<Tuple, Visitor>{visitor}, t1);
+			case KVT::Uuid:
+				static_assert(ForAllTypes<IsNoexcept<VisitorWrapper<Uuid, Visitor>>::template Overloaded>);
+				return Visit(VisitorWrapper<Uuid, Visitor>{visitor}, t1);
 		}
 		assertrx(0);
 		std::abort();
 	}
 
 	template <typename T>
-	inline bool Is() const noexcept {
+	[[nodiscard]] bool Is() const noexcept {
 		static constexpr KeyValueType v{T{}};
 		return v.value_ == value_;
 	}
-	inline bool IsSame(KeyValueType other) const noexcept { return value_ == other.value_; }
-	inline static KeyValueType FromNumber(int n) {
-		switch (n) {
-			case static_cast<int>(KVT::Int64):
-			case static_cast<int>(KVT::Double):
-			case static_cast<int>(KVT::String):
-			case static_cast<int>(KVT::Bool):
-			case static_cast<int>(KVT::Null):
-			case static_cast<int>(KVT::Int):
-			case static_cast<int>(KVT::Undefined):
-			case static_cast<int>(KVT::Composite):
-			case static_cast<int>(KVT::Tuple):
-				return KeyValueType{static_cast<KVT>(n)};
-			default:
-				throw Error(errParams, "Invalid int value for KeyValueType: " + std::to_string(n));
+	[[nodiscard]] bool IsSame(KeyValueType other) const noexcept { return value_ == other.value_; }
+	[[nodiscard]] TagType ToTagType() const {
+		switch (value_) {
+			case KVT::Int64:
+			case KVT::Int:
+				return TAG_VARINT;
+			case KVT::Double:
+				return TAG_DOUBLE;
+			case KVT::String:
+				return TAG_STRING;
+			case KVT::Bool:
+				return TAG_BOOL;
+			case KVT::Null:
+				return TAG_NULL;
+			case KVT::Uuid:
+				return TAG_UUID;
+			case KVT::Undefined:
+			case KVT::Composite:
+			case KVT::Tuple:
+				break;
 		}
+		assertrx(0);
+		std::abort();
 	}
-	inline bool IsNumeric() const noexcept {
+	[[nodiscard]] bool IsNumeric() const noexcept {
 		switch (value_) {
 			case KVT::Int64:
 			case KVT::Double:
@@ -200,13 +263,13 @@ public:
 			case KVT::Undefined:
 			case KVT::Composite:
 			case KVT::Tuple:
+			case KVT::Uuid:
 				return false;
 		}
 		assertrx(0);
 		std::abort();
 	}
-	inline int ToNumber() const noexcept { return static_cast<int>(value_); }
-	inline std::string_view Name() const noexcept {
+	[[nodiscard]] std::string_view Name() const noexcept {
 		using namespace std::string_view_literals;
 		switch (value_) {
 			case KVT::Int64:
@@ -227,6 +290,8 @@ public:
 				return "composite"sv;
 			case KVT::Tuple:
 				return "tuple"sv;
+			case KVT::Uuid:
+				return "uuid"sv;
 		}
 		assertrx(0);
 		std::abort();

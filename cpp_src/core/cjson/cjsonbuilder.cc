@@ -6,12 +6,12 @@ CJsonBuilder::CJsonBuilder(WrSerializer &ser, ObjType type, const TagsMatcher *t
 	switch (type_) {
 		case ObjType::TypeArray:
 		case ObjType::TypeObjectArray:
-			ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName)));
+			ser_->PutCTag(ctag{TAG_ARRAY, tagName});
 			savePos_ = ser_->Len();
-			ser_->PutUInt32(0);
+			ser_->PutCArrayTag(carraytag{0, TAG_NULL});
 			break;
 		case ObjType::TypeObject:
-			ser_->PutVarUint(static_cast<int>(ctag(TAG_OBJECT, tagName)));
+			ser_->PutCTag(ctag{TAG_OBJECT, tagName});
 			break;
 		case ObjType::TypePlain:
 			break;
@@ -31,7 +31,13 @@ CJsonBuilder CJsonBuilder::Array(int tagName, ObjType type) {
 	return CJsonBuilder(*ser_, type, tm_, tagName);
 }
 
-inline void CJsonBuilder::putTag(int tagName, int tagType) { ser_->PutVarUint(static_cast<int>(ctag(tagType, tagName))); }
+void CJsonBuilder::Array(int tagName, span<Uuid> data, int /*offset*/) {
+	ser_->PutCTag(ctag{TAG_ARRAY, tagName});
+	ser_->PutCArrayTag(carraytag(data.size(), TAG_UUID));
+	for (auto d : data) {
+		ser_->PutUuid(d);
+	}
+}
 
 CJsonBuilder &CJsonBuilder::Put(int tagName, bool arg) {
 	if (type_ == ObjType::TypeArray) {
@@ -76,6 +82,7 @@ CJsonBuilder &CJsonBuilder::Put(int tagName, double arg) {
 	++count_;
 	return *this;
 }
+
 CJsonBuilder &CJsonBuilder::Put(int tagName, std::string_view arg) {
 	if (type_ == ObjType::TypeArray) {
 		itemType_ = TAG_STRING;
@@ -84,6 +91,12 @@ CJsonBuilder &CJsonBuilder::Put(int tagName, std::string_view arg) {
 	}
 	ser_->PutVString(arg);
 	++count_;
+	return *this;
+}
+
+CJsonBuilder &CJsonBuilder::Put(int tagName, Uuid arg) {
+	ser_->PutCTag(ctag{TAG_UUID, tagName});
+	ser_->PutUuid(arg);
 	return *this;
 }
 
@@ -99,32 +112,46 @@ CJsonBuilder &CJsonBuilder::Null(int tagName) {
 
 CJsonBuilder &CJsonBuilder::Ref(int tagName, const Variant &v, int field) {
 	v.Type().EvaluateOneOf(
-		[&](OneOf<KeyValueType::Int, KeyValueType::Int64>) { ser_->PutVarUint(static_cast<int>(ctag(TAG_VARINT, tagName, field))); },
-		[&](KeyValueType::Bool) { ser_->PutVarUint(static_cast<int>(ctag(TAG_BOOL, tagName, field))); },
-		[&](KeyValueType::Double) { ser_->PutVarUint(static_cast<int>(ctag(TAG_DOUBLE, tagName, field))); },
-		[&](KeyValueType::String) { ser_->PutVarUint(static_cast<int>(ctag(TAG_STRING, tagName, field))); },
-		[&](OneOf<KeyValueType::Undefined, KeyValueType::Null>) { ser_->PutVarUint(static_cast<int>(ctag(TAG_NULL, tagName))); },
+		[&](OneOf<KeyValueType::Int, KeyValueType::Int64>) {
+			ser_->PutCTag(ctag{TAG_VARINT, tagName, field});
+		},
+		[&](KeyValueType::Bool) {
+			ser_->PutCTag(ctag{TAG_BOOL, tagName, field});
+		},
+		[&](KeyValueType::Double) {
+			ser_->PutCTag(ctag{TAG_DOUBLE, tagName, field});
+		},
+		[&](KeyValueType::String) {
+			ser_->PutCTag(ctag{TAG_STRING, tagName, field});
+		},
+		[&](KeyValueType::Uuid) {
+			ser_->PutCTag(ctag{TAG_UUID, tagName, field});
+		},
+		[&](OneOf<KeyValueType::Undefined, KeyValueType::Null>) {
+			ser_->PutCTag(ctag{TAG_NULL, tagName});
+		},
 		[](OneOf<KeyValueType::Tuple, KeyValueType::Composite>) noexcept { std::abort(); });
 	return *this;
 }
+
 CJsonBuilder &CJsonBuilder::ArrayRef(int tagName, int field, int count) {
-	ser_->PutVarUint(static_cast<int>(ctag(TAG_ARRAY, tagName, field)));
+	ser_->PutCTag(ctag{TAG_ARRAY, tagName, field});
 	ser_->PutVarUint(count);
 	return *this;
 }
 
 CJsonBuilder &CJsonBuilder::Put(int tagName, const Variant &kv) {
-	kv.Type().EvaluateOneOf([&](KeyValueType::Int) { Put(tagName, int(kv)); }, [&](KeyValueType::Int64) { Put(tagName, int64_t(kv)); },
-							[&](KeyValueType::Double) { Put(tagName, double(kv)); },
-							[&](KeyValueType::String) { Put(tagName, std::string_view(kv)); }, [&](KeyValueType::Null) { Null(tagName); },
-							[&](KeyValueType::Bool) { Put(tagName, bool(kv)); },
-							[&](KeyValueType::Tuple) {
-								auto arrNode = Array(tagName);
-								for (auto &val : kv.getCompositeValues()) {
-									arrNode.Put(nullptr, val);
-								}
-							},
-							[](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
+	kv.Type().EvaluateOneOf(
+		[&](KeyValueType::Int) { Put(tagName, int(kv)); }, [&](KeyValueType::Int64) { Put(tagName, int64_t(kv)); },
+		[&](KeyValueType::Double) { Put(tagName, double(kv)); }, [&](KeyValueType::String) { Put(tagName, std::string_view(kv)); },
+		[&](KeyValueType::Null) { Null(tagName); }, [&](KeyValueType::Bool) { Put(tagName, bool(kv)); },
+		[&](KeyValueType::Tuple) {
+			auto arrNode = Array(tagName);
+			for (auto &val : kv.getCompositeValues()) {
+				arrNode.Put(nullptr, val);
+			}
+		},
+		[&](KeyValueType::Uuid) { Put(tagName, Uuid{kv}); }, [](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
 	return *this;
 }
 

@@ -57,6 +57,12 @@ public:
 			case CondSet:
 			case CondEq:
 				return (v1 == v2);
+			case CondAny:
+			case CondRange:
+			case CondAllSet:
+			case CondEmpty:
+			case CondLike:
+			case CondDWithin:
 			default:
 				throw Error(errLogic, "Not supported condition!");
 		}
@@ -76,6 +82,12 @@ public:
 				return fmt::sprintf(sql, "=");
 			case CondSet:
 				return fmt::sprintf(sql, "in");
+			case CondAny:
+			case CondRange:
+			case CondAllSet:
+			case CondEmpty:
+			case CondLike:
+			case CondDWithin:
 			default:
 				throw Error(errLogic, "Not supported condition!");
 		}

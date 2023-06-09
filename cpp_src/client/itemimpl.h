@@ -36,10 +36,10 @@ public:
 
 	std::string_view GetJSON();
 	Error FromJSON(std::string_view slice, char **endp = nullptr, bool pkOnly = false);
-	Error FromCJSON(ItemImpl *other);
+	void FromCJSON(ItemImpl *other);
 
 	std::string_view GetCJSON();
-	Error FromCJSON(std::string_view slice);
+	void FromCJSON(std::string_view slice);
 
 	std::string_view GetMsgPack();
 	Error FromMsgPack(std::string_view slice, size_t &offset);

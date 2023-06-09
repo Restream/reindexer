@@ -95,7 +95,13 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			}
 
 		} break;
-		default:
+		case CondAny:
+		case CondEq:
+		case CondSet:
+		case CondAllSet:
+		case CondEmpty:
+		case CondLike:
+		case CondDWithin:
 			throw Error(errParams, "Unknown query type %d", condition);
 	}
 
@@ -196,11 +202,6 @@ void IndexOrdered<T>::MakeSortOrders(UpdateSortedContext &ctx) {
 }
 
 template <typename T>
-std::unique_ptr<Index> IndexOrdered<T>::Clone() {
-	return std::unique_ptr<Index>{new IndexOrdered<T>(*this)};
-}
-
-template <typename T>
 IndexIterator::Ptr IndexOrdered<T>::CreateIterator() const {
 	return make_intrusive<BtreeIndexIterator<T>>(this->idx_map);
 }
@@ -218,6 +219,22 @@ static std::unique_ptr<Index> IndexOrdered_New(const IndexDef &idef, PayloadType
 			return std::unique_ptr<Index>{new IndexOrdered<number_map<double, KeyEntryT>>(idef, std::move(payloadType), fields)};
 		case IndexCompositeBTree:
 			return std::unique_ptr<Index>{new IndexOrdered<payload_map<KeyEntryT, true>>(idef, std::move(payloadType), fields)};
+		case IndexStrHash:
+		case IndexIntHash:
+		case IndexInt64Hash:
+		case IndexFastFT:
+		case IndexFuzzyFT:
+		case IndexCompositeHash:
+		case IndexCompositeFastFT:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexCompositeFuzzyFT:
+		case IndexTtl:
+		case IndexRTree:
+		case IndexUuidHash:
 		default:
 			abort();
 	}

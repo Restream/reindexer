@@ -1,10 +1,12 @@
 #pragma once
 
 #include "core/keyvalue/key_string.h"
+#include "core/keyvalue/uuid.h"
 #include "core/payload/payloadtype.h"
 #include "cpp-btree/btree_map.h"
 #include "sparse-map/sparse_map.h"
 #include "tools/stringstools.h"
+
 namespace reindexer {
 
 class FieldsSet;
@@ -109,7 +111,6 @@ private:
 template <typename T1>
 class str_map : public btree::btree_map<key_string, T1, less_key_string> {
 	using base_tree_map = btree::btree_map<key_string, T1, less_key_string>;
-	using base_tree_map::erase;
 
 public:
 	using typename base_tree_map::iterator;
@@ -135,21 +136,25 @@ struct hash_int {};
 
 template <>
 struct hash_int<int64_t> {
-	size_t operator()(int64_t k) const { return (k ^ 14695981039346656037ULL) * 1099511628211ULL; }
+	size_t operator()(int64_t k) const noexcept { return (k ^ 14695981039346656037ULL) * 1099511628211ULL; }
+};
+
+template <>
+struct hash_int<uint64_t> {
+	size_t operator()(uint64_t k) const noexcept { return (k ^ 14695981039346656037ULL) * 1099511628211ULL; }
 };
 
 template <>
 struct hash_int<int32_t> {
-	size_t operator()(int32_t k) const { return (k ^ 2166136261U) * 16777619UL; }
+	size_t operator()(int32_t k) const noexcept { return (k ^ 2166136261U) * 16777619UL; }
 };
 
-template <typename K, typename T1>
+template <typename K, typename T>
 class unordered_number_map
-	: public tsl::sparse_map<K, T1, hash_int<K>, std::equal_to<K>, std::allocator<std::pair<K, T1>>, tsl::sh::power_of_two_growth_policy<2>,
+	: public tsl::sparse_map<K, T, hash_int<K>, std::equal_to<K>, std::allocator<std::pair<K, T>>, tsl::sh::power_of_two_growth_policy<2>,
 							 tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
-	using base_hash_map = tsl::sparse_map<K, T1, hash_int<K>, std::equal_to<K>, std::allocator<std::pair<K, T1>>,
+	using base_hash_map = tsl::sparse_map<K, T, hash_int<K>, std::equal_to<K>, std::allocator<std::pair<K, T>>,
 										  tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
-	using base_hash_map::erase;
 
 public:
 	using typename base_hash_map::iterator;
@@ -163,10 +168,35 @@ public:
 	}
 };
 
+struct hash_uuid {
+	size_t operator()(Uuid uuid) const noexcept {
+		constexpr static hash_int<uint64_t> intHasher;
+		return intHasher(uuid.data_[0]) ^ (intHasher(uuid.data_[1]) << 19) ^ (intHasher(uuid.data_[1]) >> 23);
+	}
+};
+
+template <typename T>
+class unordered_uuid_map
+	: public tsl::sparse_map<Uuid, T, hash_uuid, std::equal_to<Uuid>, std::allocator<std::pair<Uuid, T>>,
+							 tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low> {
+	using base_hash_map = tsl::sparse_map<Uuid, T, hash_uuid, std::equal_to<Uuid>, std::allocator<std::pair<Uuid, T>>,
+										  tsl::sh::power_of_two_growth_policy<2>, tsl::sh::exception_safety::basic, tsl::sh::sparsity::low>;
+
+public:
+	using typename base_hash_map::iterator;
+	unordered_uuid_map() = default;
+
+	template <typename deep_cleaner>
+	iterator erase(iterator pos) {
+		static const deep_cleaner deep_clean;
+		deep_clean(*pos);
+		return base_hash_map::erase(pos);
+	}
+};
+
 template <typename K, typename T1>
 class number_map : public btree::btree_map<K, T1> {
 	using base_tree_map = btree::btree_map<K, T1>;
-	using base_tree_map::erase;
 
 public:
 	number_map() = default;

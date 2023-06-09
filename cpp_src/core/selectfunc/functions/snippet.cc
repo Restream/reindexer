@@ -98,24 +98,24 @@ void Snippet::addSnippet(std::string &resultString, const std::string &data, con
 	resultString.append(preDelim_);
 
 	resultString += '[';
-	resultString += std::to_string(snippetAreaPrevChar.start_);
+	resultString += std::to_string(snippetAreaPrevChar.start);
 	resultString += ',';
-	resultString += std::to_string(snippetAreaPrevChar.end_);
+	resultString += std::to_string(snippetAreaPrevChar.end);
 	resultString += ']';
 
-	resultString.append(data.begin() + snippetAreaPrev.start_, data.begin() + zonesList_[0].start_);
+	resultString.append(data.begin() + snippetAreaPrev.start, data.begin() + zonesList_[0].start);
 	bool firstZone = true;
 	size_t z = 0;
 	for (; z < zonesList_.size(); z++) {
 		if (!firstZone) {
-			resultString.append(data.begin() + zonesList_[z - 1].end_, data.begin() + zonesList_[z].start_);
+			resultString.append(data.begin() + zonesList_[z - 1].end, data.begin() + zonesList_[z].start);
 		}
 		resultString.append(markerBefore_);
-		resultString.append(data.begin() + zonesList_[z].start_, data.begin() + zonesList_[z].end_);
+		resultString.append(data.begin() + zonesList_[z].start, data.begin() + zonesList_[z].end);
 		resultString.append(markerAfter_);
 		firstZone = false;
 	}
-	resultString.append(data.begin() + zonesList_[z - 1].end_, data.begin() + snippetAreaPrev.end_);
+	resultString.append(data.begin() + zonesList_[z - 1].end, data.begin() + snippetAreaPrev.end);
 	resultString.append(postDelim_);
 };
 
@@ -133,23 +133,23 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area &area) {
 	using PointType = std::conditional_t<std::is_same_v<Areas, A>, WordPosition, WordPositionEx>;
 	constexpr bool needChar = std::is_same_v<AreasEx, A>;
 	A outAreas;
-	PointType p1 = wordToByteAndCharPos<PointType>(str_, area.start_ - wordCount_, extraWordSymbols_);
+	PointType p1 = wordToByteAndCharPos<PointType>(str_, area.start - wordCount_, extraWordSymbols_);
 
-	wordCount_ += area.start_ - wordCount_;
-	outAreas.zoneArea.start_ = p1.StartByte() + stringBeginOffsetByte_;
-	if (area.end_ - area.start_ > 1) {
+	wordCount_ += area.start - wordCount_;
+	outAreas.zoneArea.start = p1.StartByte() + stringBeginOffsetByte_;
+	if (area.end - area.start > 1) {
 		wordCount_++;
 		stringBeginOffsetByte_ += p1.EndByte();
 		if constexpr (needChar) {
-			outAreas.snippetAreaChar.start_ = p1.start.ch + stringBeginOffsetChar_;
+			outAreas.snippetAreaChar.start = p1.start.ch + stringBeginOffsetChar_;
 			stringBeginOffsetChar_ += p1.end.ch;
 		}
 		str_ = str_.substr(p1.EndByte());
-		auto p2 = wordToByteAndCharPos<PointType>(str_, area.end_ - wordCount_ - 1, extraWordSymbols_);
-		wordCount_ += area.end_ - wordCount_;
-		outAreas.zoneArea.end_ = p2.EndByte() + stringBeginOffsetByte_;
+		auto p2 = wordToByteAndCharPos<PointType>(str_, area.end - wordCount_ - 1, extraWordSymbols_);
+		wordCount_ += area.end - wordCount_;
+		outAreas.zoneArea.end = p2.EndByte() + stringBeginOffsetByte_;
 		if constexpr (needChar) {
-			outAreas.snippetAreaChar.end_ = p2.end.ch + stringBeginOffsetChar_;
+			outAreas.snippetAreaChar.end = p2.end.ch + stringBeginOffsetChar_;
 			stringBeginOffsetChar_ += p2.end.ch;
 		}
 
@@ -157,10 +157,10 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area &area) {
 		stringBeginOffsetByte_ += p2.EndByte();
 
 	} else {
-		outAreas.zoneArea.end_ = p1.EndByte() + stringBeginOffsetByte_;
+		outAreas.zoneArea.end = p1.EndByte() + stringBeginOffsetByte_;
 		if constexpr (needChar) {
-			outAreas.snippetAreaChar.start_ = p1.start.ch + stringBeginOffsetChar_;
-			outAreas.snippetAreaChar.end_ = p1.end.ch + stringBeginOffsetChar_;
+			outAreas.snippetAreaChar.start = p1.start.ch + stringBeginOffsetChar_;
+			outAreas.snippetAreaChar.end = p1.end.ch + stringBeginOffsetChar_;
 			stringBeginOffsetChar_ += p1.end.ch;
 		}
 		str_ = str_.substr(p1.EndByte());
@@ -168,85 +168,83 @@ A Snippet::RecalcZoneHelper::RecalcZoneToOffset(const Area &area) {
 		wordCount_++;
 	}
 
-	auto b = calcUtf8BeforeDelims(data_.data(), outAreas.zoneArea.start_, before_, leftBound_);
-	auto a = calcUtf8AfterDelims({data_.data() + outAreas.zoneArea.end_, data_.size() - outAreas.zoneArea.end_}, after_, rightBound_);
-	outAreas.snippetArea.start_ = outAreas.zoneArea.start_ - b.first;
-	outAreas.snippetArea.end_ = outAreas.zoneArea.end_ + a.first;
+	auto b = calcUtf8BeforeDelims(data_.data(), outAreas.zoneArea.start, before_, leftBound_);
+	auto a = calcUtf8AfterDelims({data_.data() + outAreas.zoneArea.end, data_.size() - outAreas.zoneArea.end}, after_, rightBound_);
+	outAreas.snippetArea.start = outAreas.zoneArea.start - b.first;
+	outAreas.snippetArea.end = outAreas.zoneArea.end + a.first;
 	if constexpr (needChar) {
-		outAreas.snippetAreaChar.start_ -= b.second;
-		outAreas.snippetAreaChar.end_ += a.second;
+		outAreas.snippetAreaChar.start -= b.second;
+		outAreas.snippetAreaChar.end += a.second;
 	}
 	return outAreas;
 }
 
-void Snippet::buildResult(RecalcZoneHelper &recalcZoneHelper, const AreaVec &pva, const std::string &data, std::string &resultString) {
+void Snippet::buildResult(RecalcZoneHelper &recalcZoneHelper, const AreaBuffer &pva, const std::string &data, std::string &resultString) {
 	// resultString =preDelim_+with_area_str+data_str_before+marker_before+zone_str+marker_after+data_strAfter+postDelim_
 	Area snippetAreaPrev;
 	Area snippetAreaPrevChar;
 	zonesList_.clear<false>();
 
-	for (const auto &area : pva) {
-		Areas a;
-		a = recalcZoneHelper.RecalcZoneToOffset<Areas>(area);
+	for (const auto &area : pva.GetData()) {
+		Areas a = recalcZoneHelper.RecalcZoneToOffset<Areas>(area);
 
-		if (snippetAreaPrev.start_ == 0 && snippetAreaPrev.end_ == 0) {
+		if (snippetAreaPrev.start == 0 && snippetAreaPrev.end == 0) {
 			snippetAreaPrev = a.snippetArea;
-			zonesList_.push_back(a.zoneArea);
+			zonesList_.emplace_back(a.zoneArea);
 
 			resultString.append(preDelim_);
-			resultString.append(data.begin() + snippetAreaPrev.start_, data.begin() + a.zoneArea.start_);
+			resultString.append(data.begin() + snippetAreaPrev.start, data.begin() + a.zoneArea.start);
 			resultString.append(markerBefore_);
-			resultString.append(data.begin() + a.zoneArea.start_, data.begin() + a.zoneArea.end_);
+			resultString.append(data.begin() + a.zoneArea.start, data.begin() + a.zoneArea.end);
 			resultString.append(markerAfter_);
 		} else {
 			if (snippetAreaPrev.Concat(a.snippetArea)) {
-				resultString.append(data.begin() + zonesList_[0].end_, data.begin() + a.zoneArea.start_);
+				resultString.append(data.begin() + zonesList_[0].end, data.begin() + a.zoneArea.start);
 				resultString.append(markerBefore_);
-				resultString.append(data.begin() + a.zoneArea.start_, data.begin() + a.zoneArea.end_);
+				resultString.append(data.begin() + a.zoneArea.start, data.begin() + a.zoneArea.end);
 				resultString.append(markerAfter_);
 				zonesList_[0] = a.zoneArea;
 			} else {
-				resultString.append(data.begin() + zonesList_[0].end_, data.begin() + snippetAreaPrev.end_);
+				resultString.append(data.begin() + zonesList_[0].end, data.begin() + snippetAreaPrev.end);
 				resultString.append(postDelim_);
 				resultString.append(preDelim_);
-				resultString.append(data.begin() + a.snippetArea.start_, data.begin() + a.zoneArea.start_);
+				resultString.append(data.begin() + a.snippetArea.start, data.begin() + a.zoneArea.start);
 				resultString.append(markerBefore_);
-				resultString.append(data.begin() + a.zoneArea.start_, data.begin() + a.zoneArea.end_);
+				resultString.append(data.begin() + a.zoneArea.start, data.begin() + a.zoneArea.end);
 				resultString.append(markerAfter_);
 				zonesList_.clear<false>();
 				snippetAreaPrev = a.snippetArea;
-				zonesList_.push_back(a.zoneArea);
+				zonesList_.emplace_back(a.zoneArea);
 			}
 		}
 	}
-	resultString.append(data.begin() + zonesList_[0].end_, data.begin() + snippetAreaPrev.end_);
+	resultString.append(data.begin() + zonesList_[0].end, data.begin() + snippetAreaPrev.end);
 	resultString.append(postDelim_);
 }
 
-void Snippet::buildResultWithPrefix(RecalcZoneHelper &recalcZoneHelper, const AreaVec &pva, const std::string &data,
+void Snippet::buildResultWithPrefix(RecalcZoneHelper &recalcZoneHelper, const AreaBuffer &pva, const std::string &data,
 									std::string &resultString) {
 	// resultString =preDelim_+with_area_str+data_str_before+marker_before+zone_str+marker_after+data_strAfter+postDelim_
 	Area snippetAreaPrev;
 	Area snippetAreaPrevChar;
 	zonesList_.clear<false>();
 
-	for (const auto &area : pva) {
-		AreasEx a;
-		a = recalcZoneHelper.RecalcZoneToOffset<AreasEx>(area);
-		if (snippetAreaPrev.start_ == 0 && snippetAreaPrev.end_ == 0) {
+	for (const auto &area : pva.GetData()) {
+		AreasEx a = recalcZoneHelper.RecalcZoneToOffset<AreasEx>(area);
+		if (snippetAreaPrev.start == 0 && snippetAreaPrev.end == 0) {
 			snippetAreaPrev = a.snippetArea;
 			snippetAreaPrevChar = a.snippetAreaChar;
-			zonesList_.push_back(a.zoneArea);
+			zonesList_.emplace_back(a.zoneArea);
 		} else {
 			if (snippetAreaPrev.Concat(a.snippetArea)) {
-				snippetAreaPrevChar.Concat(a.snippetAreaChar);
-				zonesList_.push_back(a.zoneArea);
+				[[maybe_unused]] bool r = snippetAreaPrevChar.Concat(a.snippetAreaChar);
+				zonesList_.emplace_back(a.zoneArea);
 			} else {
 				addSnippet(resultString, data, snippetAreaPrev, snippetAreaPrevChar);
 				zonesList_.clear<false>();
 				snippetAreaPrevChar = a.snippetAreaChar;
 				snippetAreaPrev = a.snippetArea;
-				zonesList_.push_back(a.zoneArea);
+				zonesList_.emplace_back(a.zoneArea);
 			}
 		}
 	}
@@ -276,7 +274,7 @@ bool Snippet::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 
 	const std::string *data = p_string(kr[0]).getCxxstr();
 	auto pva = dataFtCtx->area_[it->second].GetAreas(func.fieldNo);
-	if (!pva || pva->empty()) return false;
+	if (!pva || pva->Empty()) return false;
 
 	std::string resultString;
 	resultString.reserve(data->size());

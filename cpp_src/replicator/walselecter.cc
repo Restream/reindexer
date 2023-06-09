@@ -101,7 +101,12 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 					break;
 				case WalEmpty:
 					break;
-				default:
+				case WalReplState:
+				case WalNamespaceAdd:
+				case WalNamespaceDrop:
+				case WalNamespaceRename:
+				case WalForceSync:
+				case WalWALSync:
 					std::abort();
 			}
 		}

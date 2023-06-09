@@ -3,6 +3,7 @@
 #include "core/index/payload_map.h"
 #include "core/index/string_map.h"
 #include "core/indexdef.h"
+#include "core/keyvalue/uuid.h"
 #include "core/rdxcontext.h"
 #include "rtree/greenesplitter.h"
 #include "rtree/linearsplitter.h"
@@ -71,8 +72,9 @@ template <typename T>
 bool IndexUnordered<T>::HoldsStrings() const noexcept {
 	if constexpr (is_payload_map_v<T>) {
 		return idx_map.have_str_fields();
+	} else {
+		return is_str_map_v<T>;
 	}
-	return is_str_map_v<T>;
 }
 
 template <typename T>
@@ -126,7 +128,7 @@ void IndexUnordered<T>::delMemStat(typename T::iterator it) {
 template <typename T>
 Variant IndexUnordered<T>::Upsert(const Variant &key, IdType id, bool &clearCache) {
 	// reset cache
-	if (key.Type().Is<KeyValueType::Null>()) {
+	if (key.Type().Is<KeyValueType::Null>()) {	// TODO maybe error or default value if the index is not sparse
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, this->sortedIdxCount_)) {
 			if (cache_) cache_.reset();
 			clearCache = true;
@@ -308,8 +310,7 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 			SelectKeyResults rslts;
 			for (auto key : keys) {
 				SelectKeyResult res1;
-				key.convert(this->KeyType());
-				auto keyIt = this->idx_map.find(static_cast<ref_type>(key));
+				auto keyIt = this->idx_map.find(static_cast<ref_type>(key.convert(this->KeyType())));
 				if (keyIt == this->idx_map.end()) {
 					rslts.clear();
 					rslts.emplace_back(std::move(res1));
@@ -337,8 +338,8 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 		case CondLt:
 		case CondLike:
 			return Base::SelectKey(keys, condition, sortId, opts, funcCtx, rdxCtx);
-		default:
-			throw Error(errQueryExec, "Unknown query on index '%s'", this->name_);
+		case CondDWithin:
+			throw Error(errQueryExec, "DWithin query on index '%s'", this->name_);
 	}
 
 	return SelectKeyResults(std::move(res));
@@ -376,11 +377,6 @@ void IndexUnordered<T>::UpdateSortedIds(const UpdateSortedContext &ctx) {
 	}
 
 	this->empty_ids_.UpdateSortedIds(ctx);
-}
-
-template <typename T>
-std::unique_ptr<Index> IndexUnordered<T>::Clone() {
-	return std::unique_ptr<Index>{new IndexUnordered<T>(*this)};
 }
 
 template <typename T>
@@ -434,11 +430,6 @@ void IndexUnordered<T>::dump(S &os, std::string_view step, std::string_view offs
 }
 
 template <typename T>
-void IndexUnordered<T>::Dump(std::ostream &os, std::string_view step, std::string_view offset) const {
-	dump(os, step, offset);
-}
-
-template <typename T>
 void IndexUnordered<T>::AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &q) {
 	if constexpr (Base::template HasAddTask<decltype(idx_map)>::value) {
 		idx_map.add_destroy_task(&q);
@@ -458,6 +449,23 @@ static std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadTy
 			return std::unique_ptr<Index>{new IndexUnordered<unordered_str_map<KeyEntryT>>(idef, std::move(payloadType), fields)};
 		case IndexCompositeHash:
 			return std::unique_ptr<Index>{new IndexUnordered<unordered_payload_map<KeyEntryT, true>>(idef, std::move(payloadType), fields)};
+		case IndexStrBTree:
+		case IndexIntBTree:
+		case IndexInt64BTree:
+		case IndexDoubleBTree:
+		case IndexFastFT:
+		case IndexFuzzyFT:
+		case IndexCompositeBTree:
+		case IndexCompositeFastFT:
+		case IndexBool:
+		case IndexIntStore:
+		case IndexInt64Store:
+		case IndexStrStore:
+		case IndexDoubleStore:
+		case IndexCompositeFuzzyFT:
+		case IndexTtl:
+		case IndexRTree:
+		case IndexUuidHash:
 		default:
 			abort();
 	}
@@ -490,5 +498,6 @@ template class IndexUnordered<GeometryMap<Index::KeyEntry, GreeneSplitter, 16, 4
 template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, GreeneSplitter, 16, 4>>;
 template class IndexUnordered<GeometryMap<Index::KeyEntry, RStarSplitter, 32, 4>>;
 template class IndexUnordered<GeometryMap<Index::KeyEntryPlain, RStarSplitter, 32, 4>>;
+template class IndexUnordered<unordered_uuid_map<Index::KeyEntryPlain>>;
 
 }  // namespace reindexer

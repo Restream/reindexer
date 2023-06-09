@@ -5,6 +5,7 @@
 #include <leveldb/comparator.h>
 #include <leveldb/db.h>
 #include <leveldb/slice.h>
+#include "tools/assertrx.h"
 
 namespace reindexer {
 namespace datastorage {

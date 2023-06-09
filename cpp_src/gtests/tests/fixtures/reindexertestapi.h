@@ -59,7 +59,7 @@ public:
 	ItemType NewItem(std::string_view ns) { return reindexer->NewItem(ns); }
 	reindexer::Error Commit(std::string_view ns) { return reindexer->Commit(ns); }
 	void Upsert(std::string_view ns, ItemType &item) {
-		assert(!!item);
+		assertrx(!!item);
 		auto err = reindexer->Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}

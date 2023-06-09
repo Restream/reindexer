@@ -1,6 +1,7 @@
 #include "serializer.h"
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/p_string.h"
+#include "estl/span.h"
 #include "tools/errors.h"
 #include "vendor/double-conversion/double-conversion.h"
 #include "vendor/itoa/itoa.h"
@@ -141,6 +142,23 @@ void WrSerializer::PrintJsonString(std::string_view str) {
 				}
 		}
 	}
+	*d++ = '"';
+	len_ = d - reinterpret_cast<char *>(buf_);
+}
+
+void WrSerializer::PutStrUuid(Uuid uuid) {
+	grow(Uuid::kStrFormLen + 10);
+	len_ += uint32_pack(Uuid::kStrFormLen, buf_ + len_);
+	uuid.PutToStr({reinterpret_cast<char *>(buf_ + len_), cap_ - len_});
+	len_ += Uuid::kStrFormLen;
+}
+
+void WrSerializer::PrintJsonUuid(Uuid uuid) {
+	grow(Uuid::kStrFormLen + 2);
+	char *d = reinterpret_cast<char *>(buf_ + len_);
+	*d++ = '"';
+	uuid.PutToStr({d, cap_ - len_});
+	d += Uuid::kStrFormLen;
 	*d++ = '"';
 	len_ = d - reinterpret_cast<char *>(buf_);
 }

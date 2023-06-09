@@ -11,7 +11,6 @@
 #include "tools/stringstools.h"
 
 using std::chrono::high_resolution_clock;
-using std::placeholders::_1;
 using std::chrono::duration_cast;
 using std::chrono::milliseconds;
 

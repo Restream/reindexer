@@ -302,6 +302,17 @@ type OptionAppName struct {
 	AppName string
 }
 
+// OptionPrometheusMetrics - enables collection of Reindexer's client side metrics (for example,
+// information about latency and rpc of all rx client calls like Upsert, Select, etc).
+type OptionPrometheusMetrics struct {
+	EnablePrometheusMetrics bool
+}
+
+// OptionOpenTelemetry - enables OpenTelemetry integration.
+type OptionOpenTelemetry struct {
+	EnableTracing bool
+}
+
 type Status struct {
 	Err     error
 	CProto  StatusCProto

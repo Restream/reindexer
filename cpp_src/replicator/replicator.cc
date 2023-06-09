@@ -158,6 +158,41 @@ static bool errorIsFatal(const Error &err) {
 		case errTimeout:
 		case errCanceled:
 			return false;
+		case errParseSQL:
+		case errQueryExec:
+		case errParams:
+		case errLogic:
+		case errParseJson:
+		case errParseDSL:
+		case errConflict:
+		case errParseBin:
+		case errForbidden:
+		case errWasRelock:
+		case errNotValid:
+		case errNotFound:
+		case errStateInvalidated:
+		case errBadTransaction:
+		case errOutdatedWAL:
+		case errNoWAL:
+		case errDataHashMismatch:
+		case errTagsMissmatch:
+		case errReplParams:
+		case errNamespaceInvalidated:
+		case errParseMsgPack:
+		case errParseProtobuf:
+		case errUpdatesLost:
+		case errWrongReplicationData:
+		case errUpdateReplication:
+		case errClusterConsensus:
+		case errTerminated:
+		case errTxDoesNotExist:
+		case errAlreadyConnected:
+		case errTxInvalidLeader:
+		case errAlreadyProxied:
+		case errStrictMode:
+		case errQrUIDMissmatch:
+		case errSystem:
+		case errAssert:
 		default:
 			return true;
 	}
@@ -334,7 +369,7 @@ Error Replicator::syncDatabase() {
 		}
 
 		ReplicationState replState;
-		err = slave_->OpenNamespace(ns.name, StorageOpts().Enabled().SlaveMode());
+		err = slave_->openNamespace(ns.name, StorageOpts().Enabled().SlaveMode(), dummyCtx_);
 		auto slaveNs = slave_->getNamespaceNoThrow(ns.name, dummyCtx_);
 		if (err.ok() && slaveNs) {
 			replState = slaveNs->GetReplState(dummyCtx_);
@@ -413,6 +448,42 @@ Error Replicator::syncNamespaceByWAL(const NamespaceDef &nsDef) {
 		case errNoWAL:
 			terminate_ = true;
 			return err;
+		case errNetwork:
+		case errTimeout:
+		case errCanceled:
+		case errParseSQL:
+		case errQueryExec:
+		case errParams:
+		case errLogic:
+		case errParseJson:
+		case errParseDSL:
+		case errConflict:
+		case errParseBin:
+		case errForbidden:
+		case errWasRelock:
+		case errNotValid:
+		case errNotFound:
+		case errStateInvalidated:
+		case errBadTransaction:
+		case errDataHashMismatch:
+		case errTagsMissmatch:
+		case errReplParams:
+		case errNamespaceInvalidated:
+		case errParseMsgPack:
+		case errParseProtobuf:
+		case errUpdatesLost:
+		case errWrongReplicationData:
+		case errUpdateReplication:
+		case errClusterConsensus:
+		case errTerminated:
+		case errTxDoesNotExist:
+		case errAlreadyConnected:
+		case errTxInvalidLeader:
+		case errAlreadyProxied:
+		case errStrictMode:
+		case errQrUIDMissmatch:
+		case errSystem:
+		case errAssert:
 		default:
 			return err;
 	}
@@ -442,7 +513,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 		}
 	};
 
-	auto err = slave_->AddNamespace(tmpNsDef);
+	auto err = slave_->addNamespace(tmpNsDef, RdxContext());
 	if (!err.ok()) {
 		logPrintf(LogWarning, "Unable to create temporary namespace %s for the force sync: %s", tmpNsDef.name, err.what());
 		dropTmpNs();
@@ -591,7 +662,19 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			slaveNs->CommitTransaction(tx, res, rdxContext);
 			tx = Transaction{};
 		} break;
-		default:
+		case WalEmpty:
+		case WalReplState:
+		case WalItemUpdate:
+		case WalIndexAdd:
+		case WalIndexDrop:
+		case WalIndexUpdate:
+		case WalPutMeta:
+		case WalNamespaceAdd:
+		case WalNamespaceDrop:
+		case WalNamespaceRename:
+		case WalForceSync:
+		case WalSetSchema:
+		case WalWALSync:
 			return Error(errLogic, "Unexpected for transaction WAL rec type %d\n", int(rec.type));
 	}
 	return {};
@@ -681,14 +764,14 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 				case QueryTruncate:
 					slaveNs->Truncate(nsCtx);
 					break;
-				default:
+				case QuerySelect:
 					break;
 			}
 			break;
 		}
 		// New namespace
 		case WalNamespaceAdd: {
-			err = slave_->OpenNamespace(nsName, StorageOpts().Enabled().CreateIfMissing().SlaveMode());
+			err = slave_->openNamespace(nsName, StorageOpts().Enabled().CreateIfMissing().SlaveMode(), dummyCtx_);
 			break;
 		}
 		// Drop namespace
@@ -723,7 +806,10 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			slaveNs->SetSchema(rec.data, dummyCtx_);
 			stat.schemasSet++;
 			break;
-		default:
+		case WalEmpty:
+		case WalItemUpdate:
+		case WalInitTransaction:
+		case WalCommitTransaction:
 			return Error(errLogic, "Unexpected WAL rec type %d\n", int(rec.type));
 	}
 	return err;

@@ -648,7 +648,7 @@ reindexer_buffer reindexer_cptr2cjson(uintptr_t results_ptr, uintptr_t cptr, int
 	CJsonBuilder builder(ser, ObjType::TypePlain);
 	CJsonEncoder cjsonEncoder(&tagsMatcher);
 
-	cjsonEncoder.Encode(&pl, builder);
+	cjsonEncoder.Encode(pl, builder);
 	int n = ser.Len();
 	uint8_t* p = ser.DetachBuf().release();
 	return reindexer_buffer{p, n};

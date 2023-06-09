@@ -3,7 +3,7 @@
 MsgPackValue::MsgPackValue(const msgpack_object* _p) : p(_p) {}
 
 MsgPackTag MsgPackValue::getTag() const {
-	assert(p);
+	assertrx(p);
 	return MsgPackTag(p->type);
 }
 
@@ -41,7 +41,7 @@ bool MsgPackValue::isValid() const { return (p != nullptr); }
 MsgPackIterator::MsgPackIterator(int idx, const MsgPackValue* v) : index(idx), val(v) {}
 
 void MsgPackIterator::operator++() {
-	assert(val);
+	assertrx(val);
 	int tag = val->getTag();
 	if (tag == MSGPACK_ARRAY || tag == MSGPACK_MAP) ++index;
 }
@@ -49,11 +49,11 @@ void MsgPackIterator::operator++() {
 bool MsgPackIterator::operator!=(const MsgPackIterator& x) const { return index != x.index; }
 
 MsgPackValue MsgPackIterator::operator*() const {
-	assert(val && val->p);
+	assertrx(val && val->p);
 	int tag = val->getTag();
 	if (tag == MSGPACK_MAP) {
 		msgpack_object_kv* kv = val->p->via.map.ptr + index;
-		assert(kv);
+		assertrx(kv);
 		return MsgPackValue{&kv->val};
 	} else if (tag == MSGPACK_ARRAY) {
 		return MsgPackValue{val->p->via.array.ptr + index};

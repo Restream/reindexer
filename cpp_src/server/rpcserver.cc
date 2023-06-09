@@ -26,7 +26,12 @@ RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *cli
 	  startTs_(std::chrono::system_clock::now()),
 	  qrWatcher_(serverConfig_.RPCQrIdleTimeout) {}
 
-RPCServer::~RPCServer() { listener_.reset(); }
+RPCServer::~RPCServer() {
+	if (qrWatcherThread_.joinable()) {
+		Stop();
+	}
+	listener_.reset();
+}
 
 Error RPCServer::Ping(cproto::Context &) {
 	//
@@ -1012,7 +1017,7 @@ bool RPCServer::Start(const std::string &addr, ev::dynamic_loop &loop) {
 		listener_.reset(new Listener<ListenerType::Mixed>(loop, std::move(factory)));
 	}
 
-	assert(!qrWatcherThread_.joinable());
+	assertrx(!qrWatcherThread_.joinable());
 	auto thLoop = std::make_unique<ev::dynamic_loop>();
 	qrWatcherTerminateAsync_.set([](ev::async &a) { a.loop.break_loop(); });
 	qrWatcherTerminateAsync_.set(*thLoop);

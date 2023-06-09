@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"strings"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	otelattr "go.opentelemetry.io/otel/attribute"
 
 	"github.com/restream/reindexer/v3/bindings"
 	"github.com/restream/reindexer/v3/bindings/builtinserver/config"
@@ -112,27 +114,13 @@ func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.
 func (db *reindexerImpl) getNS(namespace string) (*reindexerNamespace, error) {
 	db.lock.RLock()
 	defer db.lock.RUnlock()
-	ns, ok := db.ns[strings.ToLower(namespace)]
+
+	ns, ok := db.ns[namespace]
 	if !ok {
 		return nil, errNsNotFound
 	}
+
 	return ns, nil
-}
-
-func (db *reindexerImpl) putMeta(ctx context.Context, namespace, key string, data []byte) error {
-	return db.binding.PutMeta(ctx, namespace, key, string(data))
-}
-
-func (db *reindexerImpl) getMeta(ctx context.Context, namespace, key string) ([]byte, error) {
-
-	out, err := db.binding.GetMeta(ctx, namespace, key)
-	if err != nil {
-		return nil, err
-	}
-	defer out.Free()
-	ret := make([]byte, len(out.GetBuf()))
-	copy(ret, out.GetBuf())
-	return ret, nil
 }
 
 func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool, nonCacheableData bool, item interface{}) (interface{}, error) {
@@ -317,15 +305,31 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 
 // Execute query
 func (db *reindexerImpl) execQuery(ctx context.Context, q *Query) *Iterator {
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Query.Exec", otelattr.String("rx.ns", q.Namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Query.Exec", q.Namespace)).ObserveDuration()
+	}
+
 	result, err := db.prepareQuery(ctx, q, false)
 	if err != nil {
 		return errIterator(err)
 	}
-	iter := newIterator(ctx, q, result, q.nsArray, q.joinToFields, q.joinHandlers, q.context)
+	iter := newIterator(ctx, q.db, q.Namespace, q, result, q.nsArray, q.joinToFields, q.joinHandlers, q.context)
 	return iter
 }
 
-func (db *reindexerImpl) execJSONQuery(ctx context.Context, q *Query, jsonRoot string) *JSONIterator {
+func (db *reindexerImpl) execToJsonQuery(ctx context.Context, q *Query, jsonRoot string) *JSONIterator {
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Query.ExecToJson", otelattr.String("rx.ns", q.Namespace)).End()
+	}
+
+	if q.db.promMetrics != nil {
+		defer prometheus.NewTimer(q.db.promMetrics.clientCallsLatency.WithLabelValues("Query.ExecToJson", q.Namespace)).ObserveDuration()
+	}
+
 	result, err := db.prepareQuery(ctx, q, true)
 	if err != nil {
 		return errJSONIterator(err)
@@ -360,6 +364,13 @@ func (db *reindexerImpl) prepareSQL(ctx context.Context, namespace, query string
 
 // Execute query
 func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error) {
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Query.Delete", otelattr.String("rx.ns", q.Namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Query.Delete", q.Namespace)).ObserveDuration()
+	}
 
 	ns, err := db.getNS(q.Namespace)
 	if err != nil {
@@ -393,6 +404,13 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 
 // Execute query
 func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Query.Update", otelattr.String("rx.ns", q.Namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Query.Update", q.Namespace)).ObserveDuration()
+	}
 
 	ns, err := db.getNS(q.Namespace)
 	if err != nil {
@@ -424,17 +442,33 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 	}
 
 	q.nsArray = append(q.nsArray, nsArrayEntry{ns, ns.cjsonState.Copy()})
-	return newIterator(ctx, q, result, q.nsArray, nil, nil, nil)
+	return newIterator(ctx, q.db, q.Namespace, q, result, q.nsArray, nil, nil, nil)
 }
 
 // Execute query
 func (db *reindexerImpl) updateQueryTx(ctx context.Context, q *Query, tx *Tx) *Iterator {
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Tx.Query.Update", otelattr.String("rx.ns", q.Namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Tx.Query.Update", q.Namespace)).ObserveDuration()
+	}
+
 	err := db.binding.UpdateQueryTx(&tx.ctx, q.ser.Bytes())
 	return errIterator(err)
 }
 
 // Execute query
 func (db *reindexerImpl) deleteQueryTx(ctx context.Context, q *Query, tx *Tx) (int, error) {
+	if db.otelTracer != nil {
+		defer db.startTracingSpan(ctx, "Reindexer.Tx.Query.Delete", otelattr.String("rx.ns", q.Namespace)).End()
+	}
+
+	if db.promMetrics != nil {
+		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Tx.Query.Delete", q.Namespace)).ObserveDuration()
+	}
+
 	err := db.binding.DeleteQueryTx(&tx.ctx, q.ser.Bytes())
 	return 0, err
 }
@@ -499,4 +533,12 @@ func WithDedicatedServerThreads() interface{} {
 
 func WithAppName(appName string) interface{} {
 	return bindings.OptionAppName{AppName: appName}
+}
+
+func WithPrometheusMetrics() interface{} {
+	return bindings.OptionPrometheusMetrics{EnablePrometheusMetrics: true}
+}
+
+func WithOpenTelemetry() interface{} {
+	return bindings.OptionOpenTelemetry{EnableTracing: true}
 }

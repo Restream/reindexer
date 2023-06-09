@@ -198,7 +198,8 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		VariantArray values;
 		if (preResult_->dataMode == JoinPreResult::ModeIdSet) {
 			int rightIdxNo = IndexValueType::NotSet;
-			if (rightNs_->getIndexByName(joinEntry.joinIndex_, rightIdxNo) && !rightNs_->indexes_[rightIdxNo]->Opts().IsSparse()) {
+			if (rightNs_->getIndexByNameOrJsonPath(joinEntry.joinIndex_, rightIdxNo) &&
+				!rightNs_->indexes_[rightIdxNo]->Opts().IsSparse()) {
 				readValuesFromRightNs<false>(values, leftIndex->SelectKeyType(), rightIdxNo, joinEntry.joinIndex_);
 			} else {
 				readValuesFromRightNs<true>(values, leftIndex->SelectKeyType(), rightIdxNo, joinEntry.joinIndex_);

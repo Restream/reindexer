@@ -112,6 +112,7 @@ int stoi(std::string_view sl);
 int64_t stoll(std::string_view sl);
 
 bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
+bool validateUserNsName(std::string_view name) noexcept;
 LogLevel logLevelFromString(const std::string& strLogLevel);
 StrictMode strictModeFromString(const std::string& strStrictMode);
 std::string_view strictModeToString(StrictMode mode);

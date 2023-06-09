@@ -32,6 +32,7 @@ RdxActivityContext* RdxContext::Activity() const {
 			return &activityCtx_;
 		case kPtr:
 			return activityPtr_;
+		case kEmpty:
 		default:
 			return nullptr;
 	}
@@ -43,6 +44,7 @@ RdxActivityContext::Ward RdxContext::BeforeLock(MutexMark mutexMark) const {
 			return activityCtx_.BeforeLock(mutexMark);
 		case kPtr:
 			return activityPtr_->BeforeLock(mutexMark);
+		case kEmpty:
 		default:
 			return RdxActivityContext::Ward{nullptr, mutexMark};
 	}
@@ -54,6 +56,7 @@ RdxActivityContext::Ward RdxContext::BeforeIndexWork() const {
 			return activityCtx_.BeforeIndexWork();
 		case kPtr:
 			return activityPtr_->BeforeIndexWork();
+		case kEmpty:
 		default:
 			return RdxActivityContext::Ward{nullptr, Activity::IndexesLookup};
 	}
@@ -65,6 +68,7 @@ RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const {
 			return activityCtx_.BeforeSelectLoop();
 		case kPtr:
 			return activityPtr_->BeforeSelectLoop();
+		case kEmpty:
 		default:
 			return RdxActivityContext::Ward{nullptr, Activity::SelectLoop};
 	}

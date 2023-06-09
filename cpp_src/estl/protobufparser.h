@@ -50,8 +50,8 @@ struct ProtobufValue {
 	bool IsOfPrimitiveType() const {
 		return itemType.EvaluateOneOf(
 			[](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Bool>) noexcept { return true; },
-			[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::String,
-					 KeyValueType::Undefined>) noexcept { return false; });
+			[](OneOf<KeyValueType::Null, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::String, KeyValueType::Undefined,
+					 KeyValueType::Uuid>) noexcept { return false; });
 	}
 
 	Variant value;

@@ -61,7 +61,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		opts.DisableReplication(request->connectopts().disablereplication());
 		opts.AllowNamespaceErrors(request->connectopts().allownamespaceerrors());
 
-		assert(rx);
+		assertrx(rx);
 		status = rx->Connect(dsn, opts);
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
@@ -98,7 +98,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 		opts.VerifyChecksums(request->storageoptions().verifychecksums());
 		opts.DropOnFileFormatError(request->storageoptions().droponfileformaterror());
 
-		assert(rx);
+		assertrx(rx);
 		status = rx->OpenNamespace(request->storageoptions().nsname(), opts);
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
@@ -139,7 +139,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 			}
 			nsDef.indexes.emplace_back(indexDef);
 		}
-		assert(rx);
+		assertrx(rx);
 		status = rx->AddNamespace(nsDef);
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
@@ -151,7 +151,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
 	if (status.ok()) {
-		assert(rx);
+		assertrx(rx);
 		status = rx->CloseNamespace(request->nsname());
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
@@ -163,7 +163,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
 	if (status.ok()) {
-		assert(rx);
+		assertrx(rx);
 		status = rx->DropNamespace(request->nsname());
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
@@ -176,7 +176,7 @@ Error ReindexerService::getDB(const std::string& dbName, int userRole, reindexer
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
 	if (status.ok()) {
-		assert(rx);
+		assertrx(rx);
 		status = rx->TruncateNamespace(request->nsname());
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
@@ -211,7 +211,7 @@ static IndexDef toIndexDef(const Index& src) {
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
 	if (status.ok()) {
-		assert(rx);
+		assertrx(rx);
 		IndexDef indexDef(toIndexDef(request->definition()));
 		status = rx->AddIndex(request->nsname(), indexDef);
 	}
@@ -224,7 +224,7 @@ static IndexDef toIndexDef(const Index& src) {
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
 	if (status.ok()) {
-		assert(rx);
+		assertrx(rx);
 		IndexDef indexDef(toIndexDef(request->definition()));
 		status = rx->UpdateIndex(request->nsname(), indexDef);
 	}
@@ -237,7 +237,7 @@ static IndexDef toIndexDef(const Index& src) {
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
 	if (status.ok()) {
-		assert(rx);
+		assertrx(rx);
 		IndexDef indexDef(toIndexDef(request->definition()));
 		status = rx->DropIndex(request->nsname(), indexDef);
 	}
@@ -250,7 +250,7 @@ static IndexDef toIndexDef(const Index& src) {
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDBAdmin, &rx);
 	if (status.ok()) {
-		assert(rx);
+		assertrx(rx);
 		status = rx->SetSchema(request->schemadefinitionrequest().nsname(), request->schemadefinitionrequest().jsondata());
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
@@ -269,7 +269,7 @@ static IndexDef toIndexDef(const Index& src) {
 			nses.emplace_back(ns);
 		}
 		WrSerializer ser;
-		assert(rx);
+		assertrx(rx);
 		status = rx->GetProtobufSchema(ser, nses);
 		if (status.ok()) {
 			std::string_view proto = ser.Slice();
@@ -295,7 +295,7 @@ static IndexDef toIndexDef(const Index& src) {
 		opts.WithFilter(request->options().filter());
 
 		std::vector<NamespaceDef> nsDefs;
-		assert(rx);
+		assertrx(rx);
 		status = rx->EnumNamespaces(nsDefs, opts);
 		if (status.ok()) {
 			for (const NamespaceDef& src : nsDefs) {
@@ -368,7 +368,7 @@ static IndexDef toIndexDef(const Index& src) {
 			break;
 		}
 
-		assert(rx);
+		assertrx(rx);
 		Item item = rx->NewItem(itemRequest.nsname());
 		if (!item.Status().ok()) {
 			status = item.Status();
@@ -390,6 +390,8 @@ static IndexDef toIndexDef(const Index& src) {
 			case EncodingType::PROTOBUF:
 				status = item.FromProtobuf(data);
 				break;
+			case EncodingType_INT_MAX_SENTINEL_DO_NOT_USE_:
+			case EncodingType_INT_MIN_SENTINEL_DO_NOT_USE_:
 			default:
 				return ::grpc::Status(::grpc::INVALID_ARGUMENT, "Unsupported encoding type");
 		}
@@ -409,6 +411,8 @@ static IndexDef toIndexDef(const Index& src) {
 			case ModifyMode::DELETE:
 				status = rx->Delete(itemRequest.nsname(), item);
 				break;
+			case ModifyMode_INT_MIN_SENTINEL_DO_NOT_USE_:
+			case ModifyMode_INT_MAX_SENTINEL_DO_NOT_USE_:
 			default:
 				break;
 		}
@@ -536,6 +540,8 @@ Error ReindexerService::buildItems(WrSerializer& wrser, const reindexer::QueryRe
 			}
 			break;
 		}
+		case EncodingType_INT_MAX_SENTINEL_DO_NOT_USE_:
+		case EncodingType_INT_MIN_SENTINEL_DO_NOT_USE_:
 		default:
 			return Error(errParams, "Unsupported encoding type");
 	}
@@ -561,6 +567,10 @@ Error ReindexerService::buildAggregation(Builder& builder, WrSerializer& wrser, 
 			}
 			break;
 		}
+		case EncodingType::CJSON:
+		case EncodingType::PROTOBUF:
+		case EncodingType_INT_MAX_SENTINEL_DO_NOT_USE_:
+		case EncodingType_INT_MIN_SENTINEL_DO_NOT_USE_:
 		default:
 			return Error(errParams, "Unsupported encoding type");
 	}
@@ -602,6 +612,10 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 		case EncodingType::MSGPACK:
 			// TODO: merge from appropriate MR
 			return Error(errLogic, "MSGPACK is not yet supported for Query");
+		case EncodingType::CJSON:
+		case EncodingType::PROTOBUF:
+		case EncodingType_INT_MAX_SENTINEL_DO_NOT_USE_:
+		case EncodingType_INT_MIN_SENTINEL_DO_NOT_USE_:
 		default:
 			return Error(errParams, "Unsupported encoding type");
 	}
@@ -609,7 +623,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 		reindexer::Reindexer* rx = nullptr;
 		status = getDB(dbName, type == QueryType::QuerySelect ? reindexer_server::kRoleDataRead : reindexer_server::kRoleDataWrite, &rx);
 		if (status.ok()) {
-			assert(rx);
+			assertrx(rx);
 			switch (type) {
 				case QueryType::QuerySelect:
 					status = rx->Select(q, qr);
@@ -620,6 +634,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 				case QueryType::QueryDelete:
 					status = rx->Delete(q, qr);
 					break;
+				case QueryType::QueryTruncate:
 				default:
 					return Error(errParams, "Unsupported type of query");
 			}
@@ -700,7 +715,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
 	if (status.ok()) {
 		std::string data;
-		assert(rx);
+		assertrx(rx);
 		status = rx->GetMeta(request->metadata().nsname(), request->metadata().key(), data);
 		if (status.ok()) {
 			response->set_metadata(data);
@@ -717,7 +732,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDataWrite, &rx);
 	if (status.ok()) {
-		assert(rx);
+		assertrx(rx);
 		status = rx->PutMeta(request->metadata().nsname(), request->metadata().key(), request->metadata().value());
 	}
 	response->set_code(ErrorResponse::ErrorCode(status.code()));
@@ -730,7 +745,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDataRead, &rx);
 	if (status.ok()) {
 		std::vector<std::string> keys;
-		assert(rx);
+		assertrx(rx);
 		status = rx->EnumMeta(request->nsname(), keys);
 		if (status.ok()) {
 			for (const std::string& key : keys) {
@@ -750,7 +765,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	reindexer::Reindexer* rx = nullptr;
 	Error status = getDB(request->dbname(), reindexer_server::kRoleDataWrite, &rx);
 	if (status.ok()) {
-		assert(rx);
+		assertrx(rx);
 		reindexer::Transaction tr = rx->NewTransaction(request->nsname());
 		status = tr.Status();
 		if (status.ok()) {
@@ -821,7 +836,7 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 			break;
 		}
 
-		assert(rx);
+		assertrx(rx);
 		Item item = rx->NewItem(txData.nsName);
 		if (!item.Status().ok()) {
 			status = item.Status();
@@ -843,6 +858,8 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 			case EncodingType::PROTOBUF:
 				status = item.FromProtobuf(request.data());
 				break;
+			case EncodingType_INT_MAX_SENTINEL_DO_NOT_USE_:
+			case EncodingType_INT_MIN_SENTINEL_DO_NOT_USE_:
 			default:
 				return ::grpc::Status(::grpc::INVALID_ARGUMENT, "Unsupported encoding type");
 		}
@@ -862,6 +879,8 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 			case ModifyMode::DELETE:
 				txData.tx->Delete(std::move(item));
 				break;
+			case ModifyMode_INT_MAX_SENTINEL_DO_NOT_USE_:
+			case ModifyMode_INT_MIN_SENTINEL_DO_NOT_USE_:
 			default:
 				break;
 		}
@@ -888,7 +907,7 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 		status = getDB(txData.dbName, reindexer_server::kRoleDataWrite, &rx);
 		if (status.ok()) {
 			reindexer::QueryResults qr;
-			assert(rx);
+			assertrx(rx);
 			status = rx->CommitTransaction(*txData.tx, qr);
 			{
 				std::lock_guard<std::mutex> lck(m_);
@@ -909,7 +928,7 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 		reindexer::Reindexer* rx = nullptr;
 		status = getDB(txData.dbName, reindexer_server::kRoleDataWrite, &rx);
 		if (status.ok()) {
-			assert(rx);
+			assertrx(rx);
 			status = rx->RollBackTransaction(*txData.tx);
 			{
 				std::lock_guard<std::mutex> lck(m_);
@@ -988,6 +1007,9 @@ extern "C" void* start_reindexer_grpc(reindexer_server::DBManager& dbMgr, std::c
 	builder.AddListeningPort(address, ::grpc::InsecureServerCredentials());
 	builder.RegisterService(data->service_.get());
 	data->grpcServer_ = builder.BuildAndStart();
+	if (!data->grpcServer_) {
+		throw reindexer::Error(errLogic, "Unable to create GRPC server. Check logs for details");
+	}
 	return data;
 }
 

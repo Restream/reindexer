@@ -11,7 +11,7 @@ class ItemRef;
 
 class ItemComparator {
 public:
-	ItemComparator(const NamespaceImpl &ns, const SelectCtx &ctx, const joins::NamespaceResults &jr) noexcept
+	ItemComparator(const NamespaceImpl &ns, const SelectCtx &ctx, const joins::NamespaceResults *jr) noexcept
 		: ns_(ns), ctx_(ctx), joinResults_(jr) {}
 	ItemComparator(const ItemComparator &) = delete;
 	ItemComparator(ItemComparator &&) = delete;
@@ -47,7 +47,7 @@ private:
 
 	const NamespaceImpl &ns_;
 	const SelectCtx &ctx_;
-	const joins::NamespaceResults &joinResults_;
+	const joins::NamespaceResults *joinResults_;
 	FieldsSet fields_;
 	std::vector<Joined> joined_;
 	h_vector<const CollateOpts *, 1> collateOpts_;

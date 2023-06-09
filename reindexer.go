@@ -256,7 +256,7 @@ func (db *Reindexer) OpenNamespace(namespace string, opts *NamespaceOptions, s i
 
 // RegisterNamespace Register go type against namespace. There are no data and indexes changes will be performed
 func (db *Reindexer) RegisterNamespace(namespace string, opts *NamespaceOptions, s interface{}) (err error) {
-	return db.impl.registerNamespace(namespace, opts, s)
+	return db.impl.registerNamespace(db.ctx, namespace, opts, s)
 }
 
 // DropNamespace - drop whole namespace from DB

@@ -16,6 +16,10 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesAddTest) {
 		AddDataForRuntimeGPointIndex(i);
 		AddRuntimeSPointIndex(i);
 		AddDataForRuntimeSPointIndex(i);
+		AddRuntimeUuidIndex(i);
+		AddDataForRuntimeUuidIndex(i);
+		AddRuntimeUuidArrayIndex(i);
+		AddDataForRuntimeUuidArrayIndex(i);
 	}
 
 	FillNamespaces(101, 200);
@@ -33,6 +37,10 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesAddTest) {
 		AddDataForRuntimeGPointIndex(i);
 		AddRuntimeSPointIndex(i);
 		AddDataForRuntimeSPointIndex(i);
+		AddRuntimeUuidIndex(i);
+		AddDataForRuntimeUuidIndex(i);
+		AddRuntimeUuidArrayIndex(i);
+		AddDataForRuntimeUuidArrayIndex(i);
 	}
 
 	FillNamespaces(201, 300);
@@ -54,6 +62,10 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesDropTest) {
 		AddDataForRuntimeGPointIndex(i);
 		AddRuntimeSPointIndex(i);
 		AddDataForRuntimeSPointIndex(i);
+		AddRuntimeUuidIndex(i);
+		AddDataForRuntimeUuidIndex(i);
+		AddRuntimeUuidArrayIndex(i);
+		AddDataForRuntimeUuidArrayIndex(i);
 	}
 
 	for (int i = 4; i >= 0; --i) {
@@ -63,6 +75,8 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesDropTest) {
 		DropRuntimeLPointIndex(i);
 		DropRuntimeGPointIndex(i);
 		DropRuntimeSPointIndex(i);
+		DropRuntimeUuidIndex(i);
+		DropRuntimeUuidArrayIndex(i);
 	}
 
 	FillNamespaces(101, 200);
@@ -80,12 +94,18 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesDropTest) {
 		AddDataForRuntimeGPointIndex(i);
 		AddRuntimeSPointIndex(i);
 		AddDataForRuntimeSPointIndex(i);
+		AddRuntimeUuidIndex(i);
+		AddDataForRuntimeUuidIndex(i);
+		AddRuntimeUuidArrayIndex(i);
+		AddDataForRuntimeUuidArrayIndex(i);
 		DropRuntimeIntArrayIndex(i);
 		DropRuntimeStringIndex(i);
 		DropRuntimeQPointIndex(i);
 		DropRuntimeLPointIndex(i);
 		DropRuntimeGPointIndex(i);
 		DropRuntimeSPointIndex(i);
+		DropRuntimeUuidIndex(i);
+		DropRuntimeUuidArrayIndex(i);
 	}
 
 	FillNamespaces(201, 300);
@@ -107,6 +127,10 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesDropTest2) {
 		AddDataForRuntimeGPointIndex(i);
 		AddRuntimeSPointIndex(i);
 		AddDataForRuntimeSPointIndex(i);
+		AddRuntimeUuidIndex(i);
+		AddDataForRuntimeUuidIndex(i);
+		AddRuntimeUuidArrayIndex(i);
+		AddDataForRuntimeUuidArrayIndex(i);
 	}
 
 	FillNamespaces(101, 200);
@@ -119,6 +143,8 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesDropTest2) {
 		DropRuntimeLPointIndex(i);
 		DropRuntimeGPointIndex(i);
 		DropRuntimeSPointIndex(i);
+		DropRuntimeUuidIndex(i);
+		DropRuntimeUuidArrayIndex(i);
 	}
 
 	FillNamespaces(301, 400);
@@ -172,6 +198,10 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
 		AddDataForRuntimeGPointIndex(i);
 		AddRuntimeSPointIndex(i);
 		AddDataForRuntimeSPointIndex(i);
+		AddRuntimeUuidIndex(i);
+		AddDataForRuntimeUuidIndex(i);
+		AddRuntimeUuidArrayIndex(i);
+		AddDataForRuntimeUuidArrayIndex(i);
 	}
 
 	AddRuntimeCompositeIndex();
@@ -186,6 +216,8 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
 	DropRuntimeLPointIndex(1);
 	DropRuntimeGPointIndex(1);
 	DropRuntimeSPointIndex(1);
+	DropRuntimeUuidIndex(1);
+	DropRuntimeUuidArrayIndex(1);
 
 	CheckSelectValidity(Query(default_namespace));
 	CheckSelectValidity(Query(default_namespace).Where(getRuntimeStringIndexName(2).c_str(), CondGt, RandString()));
@@ -193,6 +225,18 @@ TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
 	CheckSelectValidity(
 		Query(default_namespace)
 			.WhereComposite(getRuntimeCompositeIndexName(false).c_str(), CondGt, {{Variant(rand()), Variant(RandString())}}));
+
+	CheckSelectValidity(
+		Query(default_namespace).Where(getRuntimeUuidIndexName(2).c_str(), CondEq, {Variant{randUuid()}, Variant{randStrUuid()}}));
+
+	CheckSelectValidity(
+		Query(default_namespace).Where(getRuntimeUuidIndexName(1).c_str(), CondEq, {Variant{randUuid()}, Variant{randStrUuid()}}));
+
+	CheckSelectValidity(
+		Query(default_namespace).Where(getRuntimeUuidArrayIndexName(2).c_str(), CondEq, {Variant{randUuid()}, Variant{randStrUuid()}}));
+
+	CheckSelectValidity(
+		Query(default_namespace).Where(getRuntimeUuidArrayIndexName(1).c_str(), CondEq, {Variant{randUuid()}, Variant{randStrUuid()}}));
 
 	CheckSelectValidity(Query(geom_namespace)
 							.DWithin(getRuntimeQPointIndexName(2), randPoint(10), randBinDouble(0, 1))

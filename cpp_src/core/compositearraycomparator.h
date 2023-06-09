@@ -24,6 +24,7 @@ private:
 		ComparatorImpl<int64_t> cmpInt64;
 		ComparatorImpl<double> cmpDouble;
 		ComparatorImpl<key_string> cmpString;
+		ComparatorImpl<Uuid> cmpUuid;
 	};
 
 	std::vector<Context> ctx_;

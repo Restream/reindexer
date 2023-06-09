@@ -88,11 +88,11 @@ public:
 		handleInvalidation(NamespaceImpl::PutMeta)(key, data, ctx);
 	}
 	int64_t GetSerial(const std::string &field) { return handleInvalidation(NamespaceImpl::GetSerial)(field); }
-	int getIndexByName(const std::string &index) const {
-		return nsFuncWrapper<int (NamespaceImpl::*)(const std::string &) const, &NamespaceImpl::getIndexByName>(index);
+	int getIndexByName(std::string_view index) const {
+		return nsFuncWrapper<int (NamespaceImpl::*)(std::string_view) const, &NamespaceImpl::getIndexByName>(index);
 	}
-	bool getIndexByName(const std::string &name, int &index) const {
-		return nsFuncWrapper<bool (NamespaceImpl::*)(const std::string &, int &) const, &NamespaceImpl::getIndexByName>(name, index);
+	bool getIndexByName(std::string_view name, int &index) const {
+		return nsFuncWrapper<bool (NamespaceImpl::*)(std::string_view, int &) const, &NamespaceImpl::getIndexByName>(name, index);
 	}
 	void FillResult(QueryResults &result, const IdSet &ids) const { handleInvalidation(NamespaceImpl::FillResult)(result, ids); }
 	void EnablePerfCounters(bool enable = true) { handleInvalidation(NamespaceImpl::EnablePerfCounters)(enable); }

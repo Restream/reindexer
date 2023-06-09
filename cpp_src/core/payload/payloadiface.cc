@@ -14,7 +14,7 @@ namespace reindexer {
 template <typename T>
 void PayloadIface<T>::Get(int field, VariantArray &keys, bool enableHold) const {
 	assertrx(field < NumFields());
-	keys.resize(0);
+	keys.clear<false>();
 	if (t_.Field(field).IsArray()) {
 		auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
 		keys.reserve(arr->len);
@@ -81,10 +81,10 @@ void PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, VariantArray &kref
 	ConstPayload pl(t_, *v_);
 	FieldsSet filter({jsonPath});
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
-	krefs.resize(0);
+	krefs.clear<false>();
 	if (!jsonPath.empty()) {
 		FieldsExtractor extractor(&krefs, expectedType, jsonPath.size());
-		encoder.Encode(&pl, extractor);
+		encoder.Encode(pl, extractor);
 	}
 }
 
@@ -93,10 +93,10 @@ void PayloadIface<T>::GetByJsonPath(const IndexedTagsPath &tagsPath, VariantArra
 	ConstPayload pl(t_, *v_);
 	FieldsSet filter({tagsPath});
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
-	krefs.resize(0);
+	krefs.clear<false>();
 	if (!tagsPath.empty()) {
 		FieldsExtractor extractor(&krefs, expectedType, tagsPath.size(), &filter);
-		encoder.Encode(&pl, extractor);
+		encoder.Encode(pl, extractor);
 	}
 }
 
@@ -112,7 +112,7 @@ VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath &tagsPat
 	FieldsExtractor extractor(&values, KeyValueType::Undefined{}, tagsPath.size(), &filter, &offset, &size);
 
 	ConstPayload pl(t_, *v_);
-	encoder.Encode(&pl, extractor);
+	encoder.Encode(pl, extractor);
 	return values;
 }
 
@@ -126,7 +126,8 @@ void PayloadIface<T>::Set(std::string_view field, const VariantArray &keys, bool
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
 void PayloadIface<T>::Set(int field, const VariantArray &keys, bool append) {
-	if (!t_.Field(field).IsArray() && keys.size() >= 1) {
+	const auto size = keys.size();
+	if (!t_.Field(field).IsArray() && size >= 1) {
 		Field(field).Set(keys[0]);
 		return;
 	}
@@ -136,14 +137,13 @@ void PayloadIface<T>::Set(int field, const VariantArray &keys, bool append) {
 		return;
 	}
 
-	int pos = ResizeArray(field, keys.size(), append);
-	auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
-	auto elemSize = t_.Field(field).ElemSizeof();
+	int pos = ResizeArray(field, size, append);
+	auto const *const arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
+	const auto elemSize = t_.Field(field).ElemSizeof();
 
-	for (auto &kv : keys) {
-		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + pos * elemSize);
+	for (const Variant &kv : keys) {
+		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + (pos++) * elemSize);
 		pv.Set(kv);
-		pos++;
 	}
 }
 
@@ -160,11 +160,11 @@ void PayloadIface<T>::SetSingleElement(int field, const Variant &key) {
 template <typename T>
 template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
 void PayloadIface<T>::Set(int field, int idx, const Variant &v) {
-	auto *arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
-	auto elemSize = t_.Field(field).ElemSizeof();
+	assertrx(idx >= 0);
 	assertrx(t_.Field(field).IsArray());
-	assertrx(idx >= 0 && idx < arr->len);
-
+	auto const *const arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
+	const auto elemSize = t_.Field(field).ElemSizeof();
+	assertrx(idx < arr->len);
 	PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + idx * elemSize);
 	pv.Set(v);
 }
@@ -281,7 +281,7 @@ template <>
 void PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher &tm, WrSerializer &ser) {
 	JsonBuilder b(ser);
 	JsonEncoder e(&tm);
-	e.Encode(this, b);
+	e.Encode(*this, b);
 }
 
 template <>

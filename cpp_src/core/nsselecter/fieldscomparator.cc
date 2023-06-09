@@ -46,6 +46,9 @@ public:
 			},
 			[&](reindexer::KeyValueType::Bool) noexcept { return reindexer::Variant{*reinterpret_cast<const bool *>(ptr_ + sizeof_ * i)}; },
 			[&](reindexer::KeyValueType::Int) noexcept { return reindexer::Variant{*reinterpret_cast<const int *>(ptr_ + sizeof_ * i)}; },
+			[&](reindexer::KeyValueType::Uuid) noexcept {
+				return reindexer::Variant{*reinterpret_cast<const reindexer::Uuid *>(ptr_ + sizeof_ * i)};
+			},
 			[&](reindexer::OneOf<reindexer::KeyValueType::Null, reindexer::KeyValueType::Tuple, reindexer::KeyValueType::Composite,
 								 reindexer::KeyValueType::Undefined>) -> reindexer::Variant {
 				throw reindexer::Error{errQueryExec, "Field type %s is not supported for two field comparing", type_.Name()};
@@ -78,7 +81,9 @@ FieldsComparator::FieldsComparator(std::string_view lField, CondType cond, std::
 		case CondAllSet:
 		case CondLike:
 			break;
-		default:
+		case CondAny:
+		case CondEmpty:
+		case CondDWithin:
 			throw Error{errQueryExec, "Condition %s is not supported for two field comparing", CondTypeToStr(condition_)};
 	}
 	std::stringstream nameStream;
@@ -130,6 +135,15 @@ bool FieldsComparator::compare(const LArr &lhs, const RArr &rhs) {
 				if (!found) return false;
 			}
 			return true;
+		case CondAny:
+		case CondEq:
+		case CondLt:
+		case CondLe:
+		case CondGt:
+		case CondGe:
+		case CondSet:
+		case CondEmpty:
+		case CondDWithin:
 		default:
 			for (const Variant &lv : lhs) {
 				if (lv.Type().Is<KeyValueType::Null>()) continue;
@@ -156,8 +170,14 @@ bool FieldsComparator::compare(const LArr &lhs, const RArr &rhs) {
 						case CondGe:
 							if (compRes >= 0) return true;
 							break;
-						default:
+						case CondAny:
+						case CondEmpty:
+						case CondDWithin:
 							throw Error{errQueryExec, "Condition %s is not supported for two field comparing", CondTypeToStr(condition_)};
+						case CondRange:
+						case CondAllSet:
+						case CondLike:
+							abort();
 					}
 				}
 			}
@@ -236,7 +256,7 @@ void FieldsComparator::validateTypes(KeyValueType lType, KeyValueType rType) con
 		[&](KeyValueType::Bool) {
 			throw Error{errQueryExec, "Cannot compare a boolean field with a non-boolean one: %s", name_};
 		},
-		[&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
+		[&](OneOf<KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Uuid>) {
 			throw Error{errQueryExec, "Field of type %s cannot be compared with another field: %s", lType.Name(), name_};
 		});
 }

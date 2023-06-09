@@ -79,6 +79,17 @@ func (s *Serializer) PutUInt32(v uint32) *Serializer {
 	return s
 }
 
+func (s *Serializer) PutUInt64(v uint64) *Serializer {
+	s.writeIntBits(int64(v), unsafe.Sizeof(v))
+	return s
+}
+
+func (s *Serializer) PutUuid(v [2]uint64) *Serializer {
+	s.PutUInt64(v[0])
+	s.PutUInt64(v[1])
+	return s
+}
+
 func (s *Serializer) PutDouble(v float64) *Serializer {
 	s.writeIntBits(int64(math.Float64bits(v)), unsafe.Sizeof(v))
 	return s
@@ -137,6 +148,16 @@ func (s *Serializer) PutVarUInt(v uint64) *Serializer {
 	return s
 }
 
+func (s *Serializer) PutCTag(v ctag) *Serializer {
+	s.PutVarUInt(uint64(v))
+	return s
+}
+
+func (s *Serializer) PutCArrayTag(v carraytag) *Serializer {
+	s.PutUInt32(uint32(v))
+	return s
+}
+
 func (s *Serializer) PutVarCUInt(v int) *Serializer {
 	return s.PutVarUInt(uint64(v))
 }
@@ -167,6 +188,10 @@ func (s *Serializer) GetUInt16() (v uint16) {
 
 func (s *Serializer) GetUInt32() (v uint32) {
 	return uint32(s.readIntBits(unsafe.Sizeof(v)))
+}
+
+func (s *Serializer) GetCArrayTag() carraytag {
+	return carraytag(s.GetUInt32())
 }
 
 func (s *Serializer) GetUInt64() (v uint64) {
@@ -225,6 +250,16 @@ func (s *Serializer) GetVarUInt() uint64 {
 	ret, l := binary.Uvarint(s.buf[s.pos:])
 	s.pos += l
 	return ret
+}
+
+func (s *Serializer) GetCTag() ctag {
+	return ctag(s.GetVarUInt())
+}
+
+func (s *Serializer) GetUuid() string {
+	v0 := s.GetUInt64()
+	v1 := s.GetUInt64()
+	return createUuid([2]uint64{v0, v1})
 }
 
 func (s *Serializer) GetVarInt() int64 {

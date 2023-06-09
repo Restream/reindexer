@@ -219,6 +219,7 @@ std::string ReplicationConfigData::role2str(ReplicationRole role) noexcept {
 			return "slave";
 		case ReplicationNone:
 			return "none";
+		case ReplicationReadOnly:
 		default:
 			std::abort();
 	}

@@ -32,7 +32,7 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query,
 			for (const auto &v : query.forcedSortOrder_) qe.values.push_back(v);
 			qe.condition = query.forcedSortOrder_.size() == 1 ? CondEq : CondSet;
 			qe.index = sEntry.expression;
-			if (!ns_.getIndexByName(qe.index, qe.idxNo)) {
+			if (!ns_.getIndexByNameOrJsonPath(qe.index, qe.idxNo)) {
 				qe.idxNo = IndexValueType::SetByJsonPath;
 			}
 			desc_ = sEntry.desc;
@@ -112,7 +112,8 @@ void QueryPreprocessor::checkStrictMode(const std::string &index, int idxNo) con
 							"namespace '%s'",
 							index, ns_.name_);
 			}
-		default:
+		case StrictModeNotSet:
+		case StrictModeNone:
 			return;
 	}
 }
@@ -167,7 +168,7 @@ void QueryPreprocessor::InitIndexNumbers() {
 		Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse>{},
 		[this](QueryEntry &entry) {
 			if (entry.idxNo == IndexValueType::NotSet) {
-				if (!ns_.getIndexByName(entry.index, entry.idxNo)) {
+				if (!ns_.getIndexByNameOrJsonPath(entry.index, entry.idxNo)) {
 					entry.idxNo = IndexValueType::SetByJsonPath;
 				}
 			}
@@ -175,13 +176,13 @@ void QueryPreprocessor::InitIndexNumbers() {
 		},
 		[this](BetweenFieldsQueryEntry &entry) {
 			if (entry.firstIdxNo == IndexValueType::NotSet) {
-				if (!ns_.getIndexByName(entry.firstIndex, entry.firstIdxNo)) {
+				if (!ns_.getIndexByNameOrJsonPath(entry.firstIndex, entry.firstIdxNo)) {
 					entry.firstIdxNo = IndexValueType::SetByJsonPath;
 				}
 			}
 			checkStrictMode(entry.firstIndex, entry.firstIdxNo);
 			if (entry.secondIdxNo == IndexValueType::NotSet) {
-				if (!ns_.getIndexByName(entry.secondIndex, entry.secondIdxNo)) {
+				if (!ns_.getIndexByNameOrJsonPath(entry.secondIndex, entry.secondIdxNo)) {
 					entry.secondIdxNo = IndexValueType::SetByJsonPath;
 				}
 			}
@@ -562,7 +563,12 @@ void QueryPreprocessor::fillQueryEntryFromOnCondition(QueryEntry &queryEntry, Na
 		case CondGe:
 			joinQuery.Aggregate(AggMin, {std::move(joinIndex)});
 			break;
-		default:
+		case CondAny:
+		case CondRange:
+		case CondAllSet:
+		case CondEmpty:
+		case CondLike:
+		case CondDWithin:
 			throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(condition));
 	}
 	SelectCtx ctx{joinQuery, nullptr};
@@ -605,7 +611,12 @@ void QueryPreprocessor::fillQueryEntryFromOnCondition(QueryEntry &queryEntry, Na
 				queryEntry.values.emplace_back(*value);
 			}
 			break;
-		default:
+		case CondAny:
+		case CondRange:
+		case CondAllSet:
+		case CondEmpty:
+		case CondLike:
+		case CondDWithin:
 			throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(condition));
 	}
 }
@@ -655,7 +666,12 @@ void QueryPreprocessor::fillQueryEntryFromOnCondition(QueryEntry &queryEntry, st
 				}
 			}
 		} break;
-		default:
+		case CondAny:
+		case CondRange:
+		case CondAllSet:
+		case CondEmpty:
+		case CondLike:
+		case CondDWithin:
 			throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(condition));
 	}
 }
@@ -721,7 +737,12 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 								case CondSet:
 									prevIsSkipped = true;
 									continue;
-								default:
+								case CondAny:
+								case CondRange:
+								case CondAllSet:
+								case CondEmpty:
+								case CondLike:
+								case CondDWithin:
 									throw Error(errParams, "Unsupported condition in ON statment: %s", CondTypeToStr(condition));
 							}
 							operation = OpAnd;
@@ -739,7 +760,7 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 					newEntry.idxNo = IndexValueType::SetByJsonPath;
 					KeyValueType valuesType = KeyValueType::Undefined{};
 					CollateOpts collate;
-					if (ns_.getIndexByName(newEntry.index, newEntry.idxNo)) {
+					if (ns_.getIndexByNameOrJsonPath(newEntry.index, newEntry.idxNo)) {
 						const Index &index = *ns_.indexes_[newEntry.idxNo];
 						valuesType = index.SelectKeyType();
 						collate = index.Opts().collateOpts_;
@@ -757,8 +778,30 @@ void QueryPreprocessor::injectConditionsFromJoins(size_t from, size_t to, Joined
 																 rightIdxNo, collate);
 						}
 					} else {
-						fillQueryEntryFromOnCondition(newEntry, *joinedSelector.RightNs(), joinedSelector.JoinQuery(), joinEntry.joinIndex_,
-													  condition, valuesType, rdxCtx);
+						bool skip = false;
+						switch (condition) {
+							case CondLt:
+							case CondLe:
+							case CondGt:
+							case CondGe: {
+								const QueryEntry &qe = joinedSelector.itemQuery_.entries.Get<QueryEntry>(i);
+								skip = qe.idxNo != IndexValueType::SetByJsonPath && joinedSelector.RightNs()->indexes_[qe.idxNo]->IsUuid();
+								break;
+							}
+							case CondEq:
+							case CondSet:
+							case CondAllSet:
+							case CondAny:
+							case CondEmpty:
+							case CondRange:
+							case CondLike:
+							case CondDWithin:
+								break;
+						}
+						if (!skip) {
+							fillQueryEntryFromOnCondition(newEntry, *joinedSelector.RightNs(), joinedSelector.JoinQuery(),
+														  joinEntry.joinIndex_, condition, valuesType, rdxCtx);
+						}
 					}
 					if (!newEntry.values.empty()) {
 						Insert(cur, operation, std::move(newEntry));

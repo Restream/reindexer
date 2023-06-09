@@ -207,19 +207,19 @@ void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
 			EncoderDatasourceWithJoins joinsDs(itemIt, ctxs, GetJoinedNsCtxIndex(itemRef.Nsid()));
 			if (needOutputRank) {
 				AdditionalDatasource ds(itemRef.Proc(), &joinsDs);
-				encoder.Encode(&pl, builder, &ds);
+				encoder.Encode(pl, builder, &ds);
 			} else {
 				AdditionalDatasource ds(&joinsDs);
-				encoder.Encode(&pl, builder, &ds);
+				encoder.Encode(pl, builder, &ds);
 			}
 			return;
 		}
 	}
 	if (needOutputRank) {
 		AdditionalDatasource ds(itemRef.Proc(), nullptr);
-		encoder.Encode(&pl, builder, &ds);
+		encoder.Encode(pl, builder, &ds);
 	} else {
-		encoder.Encode(&pl, builder);
+		encoder.Encode(pl, builder);
 	}
 }
 
@@ -237,13 +237,13 @@ Error QueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLen) {
 	int startTag = 0;
 	ConstPayload pl(ctx.type_, itemRef.Value());
 	MsgPackEncoder msgpackEncoder(&ctx.tagsMatcher_);
-	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(&pl);
+	const TagsLengths &tagsLengths = msgpackEncoder.GetTagsMeasures(pl);
 	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, const_cast<TagsMatcher *>(&ctx.tagsMatcher_));
 	if (withHdrLen) {
 		auto slicePosSaver = wrser.StartSlice();
-		msgpackEncoder.Encode(&pl, msgpackBuilder);
+		msgpackEncoder.Encode(pl, msgpackBuilder);
 	} else {
-		msgpackEncoder.Encode(&pl, msgpackBuilder);
+		msgpackEncoder.Encode(pl, msgpackBuilder);
 	}
 	return errOK;
 }
@@ -262,9 +262,9 @@ Error QueryResults::Iterator::GetProtobuf(WrSerializer &wrser, bool withHdrLen) 
 	ProtobufBuilder builder(&wrser, ObjType::TypePlain, ctx.schema_.get(), const_cast<TagsMatcher *>(&ctx.tagsMatcher_));
 	if (withHdrLen) {
 		auto slicePosSaver = wrser.StartSlice();
-		encoder.Encode(&pl, builder);
+		encoder.Encode(pl, builder);
 	} else {
-		encoder.Encode(&pl, builder);
+		encoder.Encode(pl, builder);
 	}
 
 	return errOK;
@@ -301,9 +301,9 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
 
 		if (withHdrLen) {
 			auto slicePosSaver = ser.StartSlice();
-			cjsonEncoder.Encode(&pl, builder);
+			cjsonEncoder.Encode(pl, builder);
 		} else {
-			cjsonEncoder.Encode(&pl, builder);
+			cjsonEncoder.Encode(pl, builder);
 		}
 	} catch (const Error &err) {
 		err_ = err;

@@ -1229,6 +1229,12 @@ static int find_address_ranges(struct backtrace_state *state, uintptr_t base_add
 					if (abbrev->tag == DW_TAG_compile_unit && val.encoding == ATTR_VAL_STRING) u->comp_dir = val.u.string;
 					break;
 
+				case DW_AT_abstract_origin:
+				case DW_AT_specification:
+				case DW_AT_call_file:
+				case DW_AT_call_line:
+				case DW_AT_linkage_name:
+				case DW_AT_MIPS_linkage_name:
 				default:
 					break;
 			}
@@ -1865,6 +1871,14 @@ static const char *read_referenced_name(struct dwarf_data *ddata, struct unit *u
 				}
 				break;
 
+			case DW_AT_stmt_list:
+			case DW_AT_low_pc:
+			case DW_AT_high_pc:
+			case DW_AT_comp_dir:
+			case DW_AT_abstract_origin:
+			case DW_AT_ranges:
+			case DW_AT_call_file:
+			case DW_AT_call_line:
 			default:
 				break;
 		}
@@ -2085,6 +2099,8 @@ static int read_function_entry(struct backtrace_state *state, struct dwarf_data 
 						}
 						break;
 
+					case DW_AT_stmt_list:
+					case DW_AT_comp_dir:
 					default:
 						break;
 				}

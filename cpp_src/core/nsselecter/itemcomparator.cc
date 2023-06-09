@@ -50,8 +50,8 @@ bool ItemComparator::operator()(const ItemRef &lhs, const ItemRef &rhs) const {
 							   assertrx_throw(joined_.size() > c.joinedNs);
 							   const auto &jNs = joined_[c.joinedNs];
 							   const auto &joinedSelector = *jNs.joinedSelector;
-							   const joins::ItemIterator ljIt{&joinResults_, lhs.Id()};
-							   const joins::ItemIterator rjIt{&joinResults_, rhs.Id()};
+							   const joins::ItemIterator ljIt{joinResults_, lhs.Id()};
+							   const joins::ItemIterator rjIt{joinResults_, rhs.Id()};
 							   const auto ljfIt = ljIt.at(c.joinedNs);
 							   const auto rjfIt = rjIt.at(c.joinedNs);
 							   if (ljfIt == ljIt.end() || ljfIt.ItemsCount() == 0 || rjfIt == rjIt.end() || rjfIt.ItemsCount() == 0) {

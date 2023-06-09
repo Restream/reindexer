@@ -1,6 +1,6 @@
 #include "sortingprioritiestable.h"
 #include <algorithm>
-#include <cassert>
+#include "tools/assertrx.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 
@@ -71,7 +71,7 @@ bool SortingPrioritiesTable::checkForRangeIntersection(std::map<uint16_t, uint16
 
 int SortingPrioritiesTable::GetPriority(wchar_t c) const {
 	assertrx(sortOrder_.get() != nullptr);
-	// assert(static_cast<uint32_t>(c) < tableSize);
+	// assertrx(static_cast<uint32_t>(c) < tableSize);
 	uint16_t ch(static_cast<uint16_t>(c));
 	return sortOrder_->operator[](ch);
 }

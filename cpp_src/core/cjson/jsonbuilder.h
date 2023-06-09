@@ -45,14 +45,15 @@ public:
 		for (const auto &d : data) node.Put({}, d);
 	}
 
-	void Array(int tagName, Serializer &ser, int tagType, int count) {
+	void Array(int tagName, Serializer &ser, TagType tagType, int count) {
 		JsonBuilder node = Array(tagName);
-		while (count--) node.Put({}, ser.GetRawVariant(KeyValueType::FromNumber(tagType)));
+		while (count--) node.Put({}, ser.GetRawVariant(KeyValueType{tagType}));
 	}
 
 	JsonBuilder &Put(std::string_view name, const Variant &arg);
 	JsonBuilder &Put(std::nullptr_t, const Variant &arg) { return Put(std::string_view{}, arg); }
 	JsonBuilder &Put(std::string_view name, std::string_view arg);
+	JsonBuilder &Put(std::string_view name, Uuid arg);
 	JsonBuilder &Put(std::nullptr_t, std::string_view arg) { return Put(std::string_view{}, arg); }
 	JsonBuilder &Put(std::string_view name, const char *arg) { return Put(name, std::string_view(arg)); }
 	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value>::type * = nullptr>

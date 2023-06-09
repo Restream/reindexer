@@ -169,7 +169,7 @@ std::string FtFastConfig::GetJson(const fast_hash_map<std::string, int>& fields)
 		auto fieldsNode = jsonBuilder.Array("fields");
 		for (const auto& f : fields) {
 			auto fldNode = fieldsNode.Object();
-			assert(0 <= f.second && f.second < static_cast<int>(fieldsCfg.size()));
+			assertrx(0 <= f.second && f.second < static_cast<int>(fieldsCfg.size()));
 			fldNode.Put("field_name", f.first);
 			fldNode.Put("bm25_boost", fieldsCfg[f.second].bm25Boost);
 			fldNode.Put("bm25_weight", fieldsCfg[f.second].bm25Weight);

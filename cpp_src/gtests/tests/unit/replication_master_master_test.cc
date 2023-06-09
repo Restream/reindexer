@@ -58,7 +58,7 @@ public:
 	}
 
 	void RestartServer(size_t id, std::vector<ServerControl>& nodes, int port, const std::string& dbPathMaster) {
-		assert(id < nodes.size());
+		assertrx(id < nodes.size());
 		if (nodes[id].Get()) {
 			nodes[id].Stop();
 			nodes[id].Drop();
@@ -67,7 +67,7 @@ public:
 				counter++;
 				// we have only 10sec timeout to restart server!!!!
 				EXPECT_TRUE(counter < 1000);
-				assert(counter < 1000);
+				assertrx(counter < 1000);
 
 				std::this_thread::sleep_for(std::chrono::milliseconds(10));
 			}
@@ -158,7 +158,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSyncByWalAddRow) {
 			counter++;
 			// we have only 10sec timeout to restart server!!!!
 			EXPECT_TRUE(counter < 1000);
-			assert(counter < 1000);
+			assertrx(counter < 1000);
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 	}
@@ -221,7 +221,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveStart) {
 			counter++;
 			// we have only 10sec timeout to restart server!!!!
 			EXPECT_TRUE(counter < 1000);
-			assert(counter < 1000);
+			assertrx(counter < 1000);
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
 	}

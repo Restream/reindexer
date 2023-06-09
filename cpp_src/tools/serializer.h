@@ -1,9 +1,12 @@
 #pragma once
 
 #include <string_view>
+#include "core/cjson/ctag.h"
+#include "core/keyvalue/uuid.h"
 #include "core/keyvalue/variant.h"
 #include "estl/chunk.h"
 #include "estl/one_of.h"
+#include "estl/span.h"
 #include "tools/varint.h"
 
 char *i32toa(int32_t value, char *buffer);
@@ -20,8 +23,9 @@ public:
 	Serializer(const void *buf, size_t len) noexcept : buf_(static_cast<const uint8_t *>(buf)), len_(len), pos_(0) {}
 	Serializer(std::string_view buf) noexcept : buf_(reinterpret_cast<const uint8_t *>(buf.data())), len_(buf.length()), pos_(0) {}
 	bool Eof() const noexcept { return pos_ >= len_; }
-	Variant GetVariant() {
-		const KeyValueType type = KeyValueType::FromNumber(GetVarUint());
+	[[nodiscard]] KeyValueType GetKeyValueType() { return KeyValueType::fromNumber(GetVarUint()); }
+	[[nodiscard]] Variant GetVariant() {
+		const KeyValueType type = GetKeyValueType();
 		if (type.Is<KeyValueType::Tuple>()) {
 			VariantArray compositeValues;
 			uint64_t count = GetVarUint();
@@ -34,21 +38,22 @@ public:
 			return GetRawVariant(type);
 		}
 	}
-	Variant GetRawVariant(KeyValueType type) {
-		return type.EvaluateOneOf([this](KeyValueType::Int) { return Variant(int(GetVarint())); },
-								  [this](KeyValueType::Bool) { return Variant(bool(GetVarUint())); },
-								  [this](KeyValueType::Int64) { return Variant(int64_t(GetVarint())); },
-								  [this](KeyValueType::Double) { return Variant(GetDouble()); },
-								  [this](KeyValueType::String) { return getPVStringVariant(); },
-								  [](KeyValueType::Null) noexcept { return Variant(); },
-								  [this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) -> Variant {
-									  throwUnknowTypeError(type.Name());
-								  });
+	[[nodiscard]] Variant GetRawVariant(KeyValueType type) {
+		return type.EvaluateOneOf(
+			[this](KeyValueType::Int) { return Variant(int(GetVarint())); },
+			[this](KeyValueType::Bool) { return Variant(bool(GetVarUint())); },
+			[this](KeyValueType::Int64) { return Variant(int64_t(GetVarint())); },
+			[this](KeyValueType::Double) { return Variant(GetDouble()); }, [this](KeyValueType::String) { return getPVStringVariant(); },
+			[](KeyValueType::Null) noexcept { return Variant(); }, [this](KeyValueType::Uuid) { return Variant{GetUuid()}; },
+			[this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) -> Variant {
+				throwUnknowTypeError(type.Name());
+			});
 	}
 	void SkipRawVariant(KeyValueType type) {
 		type.EvaluateOneOf([this](KeyValueType::Int) { GetVarint(); }, [this](KeyValueType::Bool) { GetVarUint(); },
 						   [this](KeyValueType::Int64) { GetVarint(); }, [this](KeyValueType::Double) { GetDouble(); },
 						   [this](KeyValueType::String) { getPVStringPtr(); }, [](KeyValueType::Null) noexcept {},
+						   [this](KeyValueType::Uuid) { GetUuid(); },
 						   [this, &type](OneOf<KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Undefined>) {
 							   throwUnknowTypeError(type.Name());
 						   });
@@ -81,6 +86,11 @@ public:
 		pos_ += sizeof(ret);
 		return ret;
 	}
+	Uuid GetUuid() {
+		const uint64_t v1 = GetUInt64();
+		const uint64_t v2 = GetUInt64();
+		return Uuid{v1, v2};
+	}
 	int64_t GetVarint() {
 		auto l = scan_varint(len_ - pos_, buf_ + pos_);
 		if (l == 0) {
@@ -102,6 +112,8 @@ public:
 		pos_ += l;
 		return parse_uint64(l, buf_ + pos_ - l);
 	}
+	[[nodiscard]] ctag GetCTag() { return ctag{GetVarUint()}; }
+	[[nodiscard]] carraytag GetCArrayTag() { return carraytag{GetUInt32()}; }
 	std::string_view GetVString() {
 		auto l = GetVarUint();
 		checkbound(pos_, l, len_);
@@ -110,13 +122,15 @@ public:
 	}
 	p_string GetPVString();
 	p_string GetPSlice();
+	[[nodiscard]] Uuid GetStrUuid() { return Uuid{GetVString()}; }
 	bool GetBool() { return bool(GetVarUint()); }
 	size_t Pos() const noexcept { return pos_; }
 	void SetPos(size_t p) noexcept { pos_ = p; }
 	const uint8_t *Buf() const noexcept { return buf_; }
 	size_t Len() const noexcept { return len_; }
+	void Reset() noexcept { pos_ = 0; }
 
-protected:
+private:
 	void checkbound(uint64_t pos, uint64_t need, uint64_t len) {
 		if (pos + need > len) {
 			throwUnderflowError(pos, need, len);
@@ -195,9 +209,10 @@ public:
 	}
 	bool HasAllocatedBuffer() const noexcept { return buf_ != inBuf_ && !hasExternalBuf_; }
 
+	void PutKeyValueType(KeyValueType t) { PutVarUint(t.toNumber()); }
 	// Put variant
 	void PutVariant(const Variant &kv) {
-		PutVarUint(kv.Type().ToNumber());
+		PutKeyValueType(kv.Type());
 		kv.Type().EvaluateOneOf(
 			[&](KeyValueType::Tuple) {
 				auto compositeValues = kv.getCompositeValues();
@@ -207,18 +222,22 @@ public:
 				}
 			},
 			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::String,
-					  KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null>) { PutRawVariant(kv); });
+					  KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Uuid>) { putRawVariant(kv); });
 	}
-	void PutRawVariant(const Variant &kv) {
+
+private:
+	void putRawVariant(const Variant &kv) {
 		kv.Type().EvaluateOneOf([&](KeyValueType::Bool) { PutBool(bool(kv)); }, [&](KeyValueType::Int64) { PutVarint(int64_t(kv)); },
 								[&](KeyValueType::Int) { PutVarint(int(kv)); }, [&](KeyValueType::Double) { PutDouble(double(kv)); },
 								[&](KeyValueType::String) { PutVString(std::string_view(kv)); }, [&](KeyValueType::Null) noexcept {},
+								[&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
 								[&](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
 									fprintf(stderr, "Unknown keyType %s\n", kv.Type().Name().data());
 									abort();
 								});
 	}
 
+public:
 	// Put slice with 4 bytes len header
 	void PutSlice(std::string_view slice) {
 		PutUInt32(slice.size());
@@ -290,6 +309,7 @@ public:
 		memcpy(&buf_[len_], &v, sizeof(v));
 		len_ += sizeof(v);
 	}
+	void PutCArrayTag(carraytag atag) { PutUInt32(atag.asNumber()); }
 	void PutUInt64(uint64_t v) {
 		grow(sizeof(v));
 		memcpy(&buf_[len_], &v, sizeof(v));
@@ -335,8 +355,15 @@ public:
 		return *this;
 	}
 	WrSerializer &operator<<(double v);
+	WrSerializer &operator<<(Uuid uuid) {
+		grow(Uuid::kStrFormLen);
+		uuid.PutToStr(span<char>{reinterpret_cast<char *>(&buf_[len_]), Uuid::kStrFormLen});
+		len_ += Uuid::kStrFormLen;
+		return *this;
+	}
 
 	void PrintJsonString(std::string_view str);
+	void PrintJsonUuid(Uuid);
 	void PrintHexDump(std::string_view str);
 	void Fill(char c, size_t count) {
 		grow(count);
@@ -369,6 +396,7 @@ public:
 		grow(1);
 		buf_[len_++] = v;
 	}
+	void PutCTag(ctag tag) { PutVarUint(tag.asNumber()); }
 	void PutBool(bool v) {
 		grow(1);
 		len_ += boolean_pack(v, buf_ + len_);
@@ -376,6 +404,11 @@ public:
 	void PutVString(std::string_view str) {
 		grow(str.size() + 10);
 		len_ += string_pack(str.data(), str.size(), buf_ + len_);
+	}
+	void PutStrUuid(Uuid);
+	void PutUuid(Uuid uuid) {
+		PutUInt64(uuid[0]);
+		PutUInt64(uuid[1]);
 	}
 
 	// Buffer manipulation functions

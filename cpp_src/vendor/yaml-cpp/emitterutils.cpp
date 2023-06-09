@@ -265,7 +265,37 @@ StringFormat::value ComputeStringFormat(const std::string& str, EMITTER_MANIP st
 				return StringFormat::Literal;
 			}
 			return StringFormat::DoubleQuoted;
-		default:
+		case TagByKind:
+		case Newline:
+		case EmitNonAscii:
+		case EscapeNonAscii:
+		case EscapeAsJson:
+		case LowerNull:
+		case UpperNull:
+		case CamelNull:
+		case TildeNull:
+		case YesNoBool:
+		case TrueFalseBool:
+		case OnOffBool:
+		case UpperCase:
+		case LowerCase:
+		case CamelCase:
+		case LongBool:
+		case ShortBool:
+		case Dec:
+		case Hex:
+		case Oct:
+		case BeginDoc:
+		case EndDoc:
+		case BeginSeq:
+		case EndSeq:
+		case Flow:
+		case Block:
+		case BeginMap:
+		case EndMap:
+		case Key:
+		case Value:
+		case LongKey:
 			break;
 	}
 

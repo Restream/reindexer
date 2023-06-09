@@ -13,7 +13,7 @@ const std::string ReplicationApi::kConfigNs = "#config";
 bool ReplicationApi::StopServer(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
 
-	assert(id < svc_.size());
+	assertrx(id < svc_.size());
 	if (!svc_[id].Get()) return false;
 	svc_[id].Drop();
 	auto now = std::chrono::milliseconds(0);
@@ -21,7 +21,7 @@ bool ReplicationApi::StopServer(size_t id) {
 	while (svc_[id].IsRunning()) {
 		now += pause;
 		EXPECT_TRUE(now < kMaxServerStartTime);
-		assert(now < kMaxServerStartTime);
+		assertrx(now < kMaxServerStartTime);
 
 		std::this_thread::sleep_for(pause);
 	}
@@ -31,7 +31,7 @@ bool ReplicationApi::StopServer(size_t id) {
 bool ReplicationApi::StartServer(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
 
-	assert(id < svc_.size());
+	assertrx(id < svc_.size());
 	if (svc_[id].IsRunning()) return false;
 	svc_[id].InitServer(id, kDefaultRpcPort + id, kDefaultHttpPort + id, kStoragePath + "node/" + std::to_string(id),
 						"node" + std::to_string(id), true);
@@ -40,7 +40,7 @@ bool ReplicationApi::StartServer(size_t id) {
 void ReplicationApi::RestartServer(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
 
-	assert(id < svc_.size());
+	assertrx(id < svc_.size());
 	if (id == 0) {
 		restartMutex_.lock();
 	}
@@ -51,7 +51,7 @@ void ReplicationApi::RestartServer(size_t id) {
 			counter++;
 			// we have only 10sec timeout to restart server!!!!
 			EXPECT_TRUE(counter < 1000);
-			assert(counter < 1000);
+			assertrx(counter < 1000);
 
 			std::this_thread::sleep_for(std::chrono::milliseconds(10));
 		}
@@ -131,9 +131,9 @@ void ReplicationApi::SetOptmizationSortWorkers(size_t id, size_t cnt, std::strin
 
 ServerControl::Interface::Ptr ReplicationApi::GetSrv(size_t id) {
 	std::lock_guard<std::mutex> lock(m_);
-	assert(id < svc_.size());
+	assertrx(id < svc_.size());
 	auto srv = svc_[id].Get();
-	assert(srv);
+	assertrx(srv);
 	return srv;
 }
 
