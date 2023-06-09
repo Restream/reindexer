@@ -1,6 +1,6 @@
 # Version 3.16.0 (09.06.2023)
 ## Core
-- [fea] Add UUID field type for indexes
+- [fea] Added UUID field type for indexes
 - [fix] Fixed fulltext areas highlighting for the queries with prefixes/suffixes/postfixes
 - [fix] Fixed segfault on max unique json names overflowing
 - [fix] Dissalowed system namespaces deletion/renaming
