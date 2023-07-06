@@ -65,7 +65,7 @@ AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1> fields, So
 		case AggAvg:
 		case AggCount:
 		case AggCountCached:
-			if (limit_ != kDefaultLimit || offset_ != kDefaultOffset) {
+			if (limit_ != QueryEntry::kDefaultLimit || offset_ != QueryEntry::kDefaultOffset) {
 				throw Error(errQueryExec, "Limit or offset are not available for aggregation %s", AggTypeToStr(type_));
 			}
 			if (!sortingEntries_.empty()) {
@@ -141,13 +141,13 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 					ser.PutVarUint(3);
 					if (entry.values[0].Type().Is<KeyValueType::Tuple>()) {
 						const Point point = static_cast<Point>(entry.values[0]);
-						ser.PutDouble(point.x);
-						ser.PutDouble(point.y);
+						ser.PutDouble(point.X());
+						ser.PutDouble(point.Y());
 						ser.PutVariant(entry.values[1]);
 					} else {
 						const Point point = static_cast<Point>(entry.values[1]);
-						ser.PutDouble(point.x);
-						ser.PutDouble(point.y);
+						ser.PutDouble(point.X());
+						ser.PutDouble(point.Y());
 						ser.PutVariant(entry.values[0]);
 					}
 				} else {
@@ -314,7 +314,7 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 				if (matchLikePattern(std::string_view(v), std::string_view(rValues[0]))) return true;
 			}
 			return false;
-		case CondType::CondDWithin:
+		case CondType::CondDWithin: {
 			if (rValues.size() != 2) {
 				throw Error(errLogic, "Condition DWithin must have exact 2 value, but %d values was provided", rValues.size());
 			}
@@ -328,6 +328,7 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 				distance = rValues[0].As<double>();
 			}
 			return DWithin(static_cast<Point>(lValues), point, distance);
+		}
 		default:
 			assertrx(0);
 	}

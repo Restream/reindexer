@@ -46,7 +46,7 @@ yum update
 yum install reindexer-server
 ```
 
-Available distros: `centos-7`, `fedora-36`, `fedora-37`
+Available distros: `centos-7`, `fedora-36`, `fedora-37`, `redos-7`
 
 ### Ubuntu/Debian
 

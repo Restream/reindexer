@@ -39,13 +39,13 @@ std::string GetDirPath(const std::string &path);
 std::string GetTempDir();
 std::string GetHomeDir();
 std::string GetRelativePath(const std::string &path, unsigned maxUp = 1024);
-inline static int Rename(const std::string &from, const std::string &to) { return rename(from.c_str(), to.c_str()); }
+inline int Rename(const std::string &from, const std::string &to) { return rename(from.c_str(), to.c_str()); }
 
 Error TryCreateDirectory(const std::string &dir);
 Error ChangeUser(const char *userName);
 Error ChownDir(const std::string &path, const std::string &user);
 
-inline static std::string JoinPath(const std::string &base, const std::string &name) {
+inline std::string JoinPath(const std::string &base, const std::string &name) {
 	return base + ((!base.empty() && base.back() != '/') ? "/" : "") + name;
 }
 }  // namespace fs

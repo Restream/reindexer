@@ -9,18 +9,27 @@ namespace reindexer {
 
 const std::string_view kWrongFieldsAmountMsg = "Number of fields for update should be > 0";
 
-struct CJsonModifier::Context {
+class CJsonModifier::Context {
+public:
 	Context(const IndexedTagsPath &fieldPath, const VariantArray &v, WrSerializer &ser, std::string_view tuple, FieldModifyMode m,
 			const Payload *pl = nullptr)
 		: value(v), wrser(ser), rdser(tuple), mode(m), payload(pl) {
+		jsonPath.reserve(fieldPath.size());
 		for (const IndexedPathNode &node : fieldPath) {
+			isForAllItems_ = isForAllItems_ || node.IsForAllItems();
 			jsonPath.emplace_back(node.NameTag());
 		}
-		if (mode == FieldModeSet && fieldPath.back().IsArrayNode() && value.empty()) {
-			throw Error(errParams, "Array item should not be an empty value");
+		if (fieldPath.back().IsArrayNode()) {
+			updateArrayElements = true;
+			if (mode == FieldModeSet && value.empty()) {
+				throw Error(errParams, "Array item should not be an empty value");
+			}
 		}
+
 		std::fill(std::begin(fieldsArrayOffsets), std::end(fieldsArrayOffsets), 0);
 	}
+	bool IsForAllItems() const noexcept { return isForAllItems_; }
+
 	const VariantArray &value;
 	WrSerializer &wrser;
 	Serializer rdser;
@@ -29,34 +38,39 @@ struct CJsonModifier::Context {
 	FieldModifyMode mode;
 	const Payload *payload = nullptr;
 	bool fieldUpdated = false;
+	bool updateArrayElements = false;
 	std::array<unsigned, maxIndexes> fieldsArrayOffsets;
+
+private:
+	bool isForAllItems_ = false;
 };
 
 CJsonModifier::CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt) : pt_(std::move(pt)), tagsMatcher_(tagsMatcher) {}
 
-void CJsonModifier::SetFieldValue(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser) {
+void CJsonModifier::SetFieldValue(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser,
+								  const Payload &pl) {
 	if (fieldPath.empty()) {
 		throw Error(errLogic, kWrongFieldsAmountMsg);
 	}
-	tagsPath_.clear();
-	Context ctx(fieldPath, val, ser, tuple, FieldModeSet, nullptr);
+	tagsPath_.clear<false>();
+	Context ctx(fieldPath, val, ser, tuple, FieldModeSet, &pl);
 	fieldPath_ = std::move(fieldPath);
 	updateFieldInTuple(ctx);
-	if (!ctx.fieldUpdated && !fieldPath_.back().IsForAllItems()) {
+	if (!ctx.fieldUpdated && !ctx.IsForAllItems()) {
 		throw Error(errParams, "[SetFieldValue] Requested field or array's index was not found");
 	}
 }
 
 void CJsonModifier::SetObject(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser,
-							  const Payload *pl) {
+							  const Payload &pl) {
 	if (fieldPath.empty()) {
 		throw Error(errLogic, kWrongFieldsAmountMsg);
 	}
-	tagsPath_.clear();
-	Context ctx(fieldPath, val, ser, tuple, FieldModeSetJson, pl);
+	tagsPath_.clear<false>();
+	Context ctx(fieldPath, val, ser, tuple, FieldModeSetJson, &pl);
 	fieldPath_ = std::move(fieldPath);
 	buildCJSON(ctx);
-	if (!ctx.fieldUpdated && !fieldPath_.back().IsForAllItems()) {
+	if (!ctx.fieldUpdated && !ctx.IsForAllItems()) {
 		throw Error(errParams, "[SetObject] Requested field or array's index was not found");
 	}
 }
@@ -65,7 +79,7 @@ void CJsonModifier::RemoveField(std::string_view tuple, IndexedTagsPath fieldPat
 	if (fieldPath.empty()) {
 		throw Error(errLogic, kWrongFieldsAmountMsg);
 	}
-	tagsPath_.clear();
+	tagsPath_.clear<false>();
 	Context ctx(fieldPath, {}, wrser, tuple, FieldModeDrop);
 	fieldPath_ = std::move(fieldPath);
 	dropFieldInTuple(ctx);
@@ -104,7 +118,7 @@ void CJsonModifier::insertField(Context &ctx) {
 			if (ctx.mode == FieldModeSetJson) {
 				updateObject(ctx, tagName);
 			} else {
-				int field = tagsMatcher_.tags2field(ctx.jsonPath.data(), fieldPath_.size());
+				const int field = tagsMatcher_.tags2field(ctx.jsonPath.data(), fieldPath_.size());
 				const TagType tagType = determineUpdateTagType(ctx, field);
 				if (field > 0) {
 					putCJsonRef(tagType, tagName, field, ctx.value, ctx.wrser);
@@ -122,47 +136,55 @@ void CJsonModifier::insertField(Context &ctx) {
 	ctx.currObjPath.clear();
 }
 
-bool CJsonModifier::needToInsertField(Context &ctx) {
+bool CJsonModifier::needToInsertField(const Context &ctx) {
 	if (ctx.fieldUpdated) return false;
 	if (fieldPath_.back().IsArrayNode()) return false;
 	if (ctx.currObjPath.size() < fieldPath_.size()) {
-		bool correctPath = true;
-		for (size_t i = 0; i < ctx.currObjPath.size(); ++i) {
+		for (unsigned i = 0; i < ctx.currObjPath.size(); ++i) {
 			if (fieldPath_[i] != ctx.currObjPath[i]) {
-				correctPath = false;
-				break;
+				return false;
 			}
 		}
-		if (correctPath) {
-			bool containsArrayIndex = false;
-			for (auto &node : fieldPath_) {
-				if (node.IsArrayNode()) {
-					containsArrayIndex = true;
-					break;
-				}
-			}
-			return !containsArrayIndex || fieldPath_.size() == ctx.currObjPath.size();
+		if (ctx.IsForAllItems()) {
+			throw Error(errParams, "Unable to insert new field with 'all items ([*])' syntax");
 		}
-		return false;
+		for (unsigned i = ctx.currObjPath.size(); i < fieldPath_.size(); ++i) {
+			if (fieldPath_[i].IsArrayNode()) {
+				return false;
+			}
+		}
+		return true;
 	}
 	return false;
 }
 
 TagType CJsonModifier::determineUpdateTagType(const Context &ctx, int field) {
-	if (field != -1) {
+	if (field >= 0) {
 		const PayloadFieldType &fieldType = pt_.Field(field);
-		if (ctx.value.size() > 0 && !fieldType.Type().IsSame(ctx.value.front().Type())) {
-			throw Error(errParams, "Inserted field %s type [%s] doesn't match it's index type [%s]", fieldType.Name(),
-						TagTypeToStr(kvType2Tag(ctx.value.front().Type())), TagTypeToStr(kvType2Tag(fieldType.Type())));
+		if (!fieldType.IsArray() || ctx.updateArrayElements || !ctx.value.IsNullValue()) {
+			for (auto &v : ctx.value) {
+				if (!fieldType.Type().IsSame(v.Type())) {
+					throw Error(errParams, "Inserted field %s type [%s] doesn't match it's index type [%s]", fieldType.Name(),
+								v.Type().Name(), fieldType.Type().Name());
+				}
+			}
+		}
+	} else if (ctx.value.size() > 1) {
+		const auto type = kvType2Tag(ctx.value.front().Type());
+		for (auto it = ctx.value.begin() + 1, end = ctx.value.end(); it != end; ++it) {
+			if (type != kvType2Tag(it->Type())) {
+				throw Error(errParams, "Unable to update field with heterogeneous array. Type[0] is [%s] and type[%d] is [%s]",
+							TagTypeToStr(type), it - ctx.value.begin(), TagTypeToStr(kvType2Tag(it->Type())));
+			}
 		}
 	}
-	if (ctx.value.IsArrayValue()) {
+
+	if (ctx.updateArrayElements || ctx.value.IsArrayValue()) {
 		return TAG_ARRAY;
-	} else if (ctx.value.empty()) {
+	} else if (ctx.value.IsNullValue() || ctx.value.empty()) {
 		return TAG_NULL;
-	} else {
-		return kvType2Tag(ctx.value.front().Type());
 	}
+	return kvType2Tag(ctx.value.front().Type());
 }
 
 bool CJsonModifier::checkIfFoundTag(Context &ctx, bool isLastItem) {
@@ -191,83 +213,114 @@ bool CJsonModifier::updateFieldInTuple(Context &ctx) {
 		ctx.wrser.PutCTag(kCTagEnd);
 		return false;
 	}
-
-	int field = tag.Field();
-	int tagName = tag.Name();
+	const int field = tag.Field();
+	const int tagName = tag.Name();
 	TagsPathScope<IndexedTagsPath> pathScope(tagsPath_, tagName);
 
 	bool tagMatched = checkIfFoundTag(ctx);
-	if (tagMatched && field < 0) {
-		tagType = determineUpdateTagType(ctx);
-	}
-
-	ctx.wrser.PutCTag(ctag{tagType, tagName, field});
-
 	if (field >= 0) {
 		if (tagType == TAG_ARRAY) {
-			auto count = ctx.rdser.GetVarUint();
-			if (tagMatched) {
-				count = (ctx.value.empty() || ctx.value.IsNullValue()) ? 0 : ctx.value.size();
+			const int count = ctx.rdser.GetVarUint();
+			if (!tagMatched || !ctx.fieldUpdated) {
+				auto &lastTag = tagsPath_.back();
+				for (int i = 0; i < count; ++i) {
+					lastTag.SetIndex(i);
+					const bool isLastItem = (i + 1 == count);
+					tagMatched = checkIfFoundTag(ctx, isLastItem);
+					if (tagMatched && ctx.fieldUpdated) {
+						break;
+					}
+				}
 			}
-			ctx.wrser.PutVarUint(count);
+
+			if (tagMatched && ctx.fieldUpdated) {
+				const auto resultTagType = determineUpdateTagType(ctx, field);
+				ctx.wrser.PutCTag(ctag{resultTagType, tagName, field});
+
+				if (resultTagType == TAG_ARRAY) {
+					if (ctx.updateArrayElements) {
+						ctx.wrser.PutVarUint(count);
+					} else {
+						ctx.wrser.PutVarUint(ctx.value.size());
+					}
+				}
+			} else {
+				ctx.wrser.PutCTag(ctag{tagType, tagName, field});
+				ctx.wrser.PutVarUint(count);
+			}
+		} else {
+			if (tagMatched) {
+				if (ctx.updateArrayElements) {
+					throw Error(errParams, "Unable to update scalar value by index");
+				}
+				const auto resultTagType = determineUpdateTagType(ctx, field);
+				ctx.wrser.PutCTag(ctag{resultTagType, tagName, field});
+
+				if (resultTagType == TAG_ARRAY) {
+					ctx.wrser.PutVarUint(ctx.value.size());
+				}
+			} else {
+				ctx.wrser.PutCTag(ctag{tagType, tagName, field});
+			}
 		}
 	} else {
-		if (tagType == TAG_OBJECT) {
+		const auto resultTagType = tagMatched ? determineUpdateTagType(ctx, field) : tagType;
+		ctx.wrser.PutCTag(ctag{resultTagType, tagName, field});
+		if (tagMatched) {
+			if (ctx.updateArrayElements && tagType != TAG_ARRAY) {
+				throw Error(errParams, "Unable to update scalar value by index");
+			}
+			if (resultTagType != TAG_NULL) {
+				if (resultTagType == TAG_ARRAY) {
+					ctx.wrser.PutCArrayTag(carraytag{ctx.value.size(), kvType2Tag(ctx.value.ArrayType())});
+				} else if (ctx.value.empty()) {
+					throw Error(errLogic, "Update value for field [%s] cannot be empty", tagsMatcher_.tag2name(tagName));
+				}
+				for (size_t i = 0, size = ctx.value.size(); i < size; ++i) {
+					updateField(ctx, i);
+				}
+			}
+			skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
+		} else if (tagType == TAG_OBJECT) {
 			TagsPathScope<IndexedTagsPath> pathScope(ctx.currObjPath, tagName);
 			while (updateFieldInTuple(ctx)) {
 			}
 		} else if (tagType == TAG_ARRAY) {
-			if (tagMatched) {
-				skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
-				ctx.wrser.PutCArrayTag(carraytag{ctx.value.size(), ctx.value.ArrayType().ToTagType()});
-				for (size_t i = 0; i < ctx.value.size(); ++i) {
-					updateField(ctx, i);
-				}
-			} else {
-				const carraytag atag = ctx.rdser.GetCArrayTag();
-				ctx.wrser.PutCArrayTag(atag);
-				const TagType atagType = atag.Type();
-				const auto count = atag.Count();
-				for (size_t i = 0; i < count; ++i) {
-					tagsPath_.back().SetIndex(i);
-					const bool isLastItem = (i == count - 1);
-					tagMatched = checkIfFoundTag(ctx, isLastItem);
-					if (tagMatched) {
-						copyCJsonValue(atagType, ctx.value.front(), ctx.wrser);
-						skipCjsonTag(ctag{atagType}, ctx.rdser, &ctx.fieldsArrayOffsets);
-					} else {
-						switch (atagType) {
-							case TAG_OBJECT: {
-								TagsPathScope<IndexedTagsPath> pathScope(ctx.currObjPath, tagName, i);
-								updateFieldInTuple(ctx);
-								break;
-							}
-							case TAG_VARINT:
-							case TAG_DOUBLE:
-							case TAG_STRING:
-							case TAG_ARRAY:
-							case TAG_NULL:
-							case TAG_BOOL:
-							case TAG_END:
-							case TAG_UUID:
-								copyCJsonValue(atagType, ctx.rdser, ctx.wrser);
-								break;
+			const carraytag atag = ctx.rdser.GetCArrayTag();
+			ctx.wrser.PutCArrayTag(atag);
+			const TagType atagType = atag.Type();
+			const auto count = atag.Count();
+			for (unsigned i = 0; i < count; i++) {
+				tagsPath_.back().SetIndex(i);
+				const bool isLastItem = (i + 1 == atag.Count());
+				if (checkIfFoundTag(ctx, isLastItem)) {
+					if (ctx.value.IsArrayValue()) {
+						throw Error(errParams, "Unable to update non-indexed array's element with array-value");
+					}
+					copyCJsonValue(atagType, ctx.value.front(), ctx.wrser);
+					skipCjsonTag(ctag{atagType}, ctx.rdser, &ctx.fieldsArrayOffsets);
+				} else {
+					switch (atagType) {
+						case TAG_OBJECT: {
+							TagsPathScope<IndexedTagsPath> pathScope(ctx.currObjPath, tagName, i);
+							updateFieldInTuple(ctx);
+							break;
 						}
+						case TAG_VARINT:
+						case TAG_DOUBLE:
+						case TAG_STRING:
+						case TAG_ARRAY:
+						case TAG_NULL:
+						case TAG_BOOL:
+						case TAG_END:
+						case TAG_UUID:
+							copyCJsonValue(atagType, ctx.rdser, ctx.wrser);
+							break;
 					}
 				}
 			}
 		} else {
-			if (tagMatched) {
-				if (tagType != TAG_NULL) {
-					if (ctx.value.empty()) {
-						throw Error(errLogic, "Update value for field [%s] cannot be empty", tagsMatcher_.tag2name(tagName));
-					}
-					updateField(ctx, 0);
-				}
-				skipCjsonTag(tag, ctx.rdser, &ctx.fieldsArrayOffsets);
-			} else {
-				copyCJsonValue(tagType, ctx.rdser, ctx.wrser);
-			}
+			copyCJsonValue(tagType, ctx.rdser, ctx.wrser);
 		}
 	}
 

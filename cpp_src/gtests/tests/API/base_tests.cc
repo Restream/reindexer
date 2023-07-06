@@ -215,6 +215,10 @@ TEST_F(ReindexerApi, DistinctCompositeIndex) {
 
 	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(default_namespace, {"v1", "-", "int", IndexOpts()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(default_namespace, {"v2", "-", "int", IndexOpts()});
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::IndexDef indexDeclr;
 	indexDeclr.name_ = "v1+v2";
@@ -317,6 +321,48 @@ TEST_F(ReindexerApi, DistinctCompositeIndex) {
 		err = rt.reindexer->Select(q, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 		EXPECT_EQ(qr.Count(), 5);
+	}
+}
+
+TEST_F(ReindexerApi, CompositeIndexCreationError) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(default_namespace, {"x", "hash", "int", IndexOpts()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	constexpr char kExpectedErrMsgField[] =
+		"Composite indexes over non-indexed field ('%s') are not supported yet (except for full-text indexes). Create at least column "
+		"index('-') over each field inside the composite index";
+	{
+		// Attempt to create composite over 2 non-index fields
+		reindexer::IndexDef indexDeclr{"v1+v2", reindexer::JsonPaths({"v1", "v2"}), "hash", "composite", IndexOpts()};
+		err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), fmt::sprintf(kExpectedErrMsgField, "v1"));
+	}
+	{
+		// Attempt to create composite over 1 index and 1 non-index fields
+		reindexer::IndexDef indexDeclr{"id+v2", reindexer::JsonPaths({"id", "v2"}), "hash", "composite", IndexOpts()};
+		err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), fmt::sprintf(kExpectedErrMsgField, "v2"));
+	}
+	{
+		// Attempt to create composite over 1 index and 1 non-index fields
+		reindexer::IndexDef indexDeclr{"v2+id", reindexer::JsonPaths({"v2", "id"}), "hash", "composite", IndexOpts()};
+		err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), fmt::sprintf(kExpectedErrMsgField, "v2"));
+	}
+	{
+		// Attempt to create sparse composite index
+		reindexer::IndexDef indexDeclr{"id+x", reindexer::JsonPaths({"id", "x"}), "hash", "composite", IndexOpts().Sparse()};
+		err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), "Composite index cannot be sparse. Use non-sparse composite instead");
 	}
 }
 

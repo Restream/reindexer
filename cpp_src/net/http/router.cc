@@ -74,6 +74,16 @@ int Context::JSON(int code, chunk &&chunk) {
 	return 0;
 }
 
+int Context::CSV(int code, chunk &&chunk) {
+	writer->SetRespCode(code);
+	writer->SetHeader(http::Header{"Content-Type"sv, "application/csv; charset=utf-8"sv});
+	if (auto filename = request->headers.Get("Save-Csv-To"sv); !filename.empty()) {
+		writer->SetHeader(http::Header{"Content-Disposition"sv, fmt::sprintf("attachment; filename=\"%s\"", filename)});
+	}
+	writer->Write(std::move(chunk), Writer::WriteMode::PreChunkedBody);
+	return 0;
+}
+
 int Context::MSGPACK(int code, chunk &&chunk) {
 	writer->SetContentLength(chunk.len_);
 	writer->SetRespCode(code);
@@ -169,7 +179,7 @@ int Router::handle(Context &ctx) {
 
 	for (auto &r : routes_[method]) {
 		std::string_view url = ctx.request->path;
-		std::string_view route = r.path_;
+		std::string_view route = r.path;
 		ctx.request->urlParams.clear();
 
 		for (;;) {
@@ -179,12 +189,12 @@ int Router::handle(Context &ctx) {
 				if (url.substr(0, asteriskPos) != route.substr(0, asteriskPos)) break;
 
 				for (auto &mw : middlewares_) {
-					res = mw.func_(mw.object_, ctx);
+					res = mw.func(mw.object, ctx);
 					if (res != 0) {
 						return res;
 					}
 				}
-				return r.h_.func_(r.h_.object_, ctx);
+				return r.h.func(r.h.object, ctx);
 			}
 
 			if (url.substr(0, patternPos) != route.substr(0, patternPos)) break;
@@ -201,8 +211,8 @@ int Router::handle(Context &ctx) {
 			route = route.substr(nextRoutePos == std::string_view::npos ? route.size() : nextRoutePos + 1);
 		}
 	}
-	res = notFoundHandler_.object_ != nullptr ? notFoundHandler_.func_(notFoundHandler_.object_, ctx)
-											  : ctx.String(StatusNotFound, "Not found"sv);
+	res = notFoundHandler_.object != nullptr ? notFoundHandler_.func(notFoundHandler_.object, ctx)
+											 : ctx.String(StatusNotFound, "Not found"sv);
 	return res;
 }
 }  // namespace http

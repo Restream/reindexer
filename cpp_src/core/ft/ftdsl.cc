@@ -1,4 +1,3 @@
-
 #include "core/ft/ftdsl.h"
 #include <algorithm>
 #include <locale>
@@ -9,14 +8,14 @@
 namespace reindexer {
 
 // Format: see fulltext.md
-bool is_term(int ch, const std::string &extraWordSymbols) {
+static bool is_term(int ch, const std::string &extraWordSymbols) noexcept {
 	return IsAlpha(ch) || IsDigit(ch) ||
 		   extraWordSymbols.find(ch) != std::string::npos
 		   // wrong kb layout
 		   || ch == '[' || ch == ';' || ch == ',' || ch == '.';
 }
 
-bool is_dslbegin(int ch, const std::string &extraWordSymbols) {
+static bool is_dslbegin(int ch, const std::string &extraWordSymbols) noexcept {
 	return is_term(ch, extraWordSymbols) || ch == '+' || ch == '-' || ch == '*' || ch == '\'' || ch == '\"' || ch == '@' || ch == '=' ||
 		   ch == '\\';
 }
@@ -29,9 +28,11 @@ void FtDSLQuery::parse(const std::string &q) {
 void FtDSLQuery::parse(std::wstring &utf16str) {
 	int groupTermCounter = 0;
 	bool inGroup = false;
+	bool hasAnythingExceptNot = false;
 	int groupCounter = 0;
 	int maxPatternLen = 1;
 	h_vector<FtDslFieldOpts, 8> fieldsOpts;
+	std::string utf8str;
 	fieldsOpts.insert(fieldsOpts.end(), std::max(int(fields_.size()), 1), {1.0, false});
 
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
@@ -141,8 +142,12 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 
 		if (endIt != begIt) {
 			fte.pattern.assign(begIt, endIt);
-			std::string utf8str = utf16_to_utf8(fte.pattern);
+			utf16_to_utf8(fte.pattern, utf8str);
 			if (is_number(utf8str)) fte.opts.number = true;
+			if (fte.opts.op != OpNot && groupTermCounter == 0) {
+				// Setting up this flag before stopWords check, to prevent error on DSL with stop word + NOT
+				hasAnythingExceptNot = true;
+			}
 			if (stopWords_.find(utf8str) != stopWords_.end()) {
 				continue;
 			}
@@ -156,6 +161,9 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 	}
 	if (inGroup) {
 		throw Error(errParseDSL, "No closing quote in full text search query DSL");
+	}
+	if (!hasAnythingExceptNot && size()) {
+		throw Error(errParams, "Fulltext query can not contain only 'NOT' terms (i.e. terms with minus)");
 	}
 
 	int cnt = 0;

@@ -54,7 +54,7 @@ enum CmdCode : uint16_t {
 	kCmdCodeMax = 128
 };
 
-std::string_view CmdName(uint16_t code);
+std::string_view CmdName(uint16_t cmd) noexcept;
 
 // Maximum number of active queries per client
 const uint32_t kMaxConcurentQueries = 256;

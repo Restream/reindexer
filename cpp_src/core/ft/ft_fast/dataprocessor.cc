@@ -16,7 +16,7 @@ using std::chrono::milliseconds;
 
 namespace reindexer {
 
-const int kDigitUtfSizeof = 1;
+constexpr int kDigitUtfSizeof = 1;
 
 template <typename IdCont>
 void DataProcessor<IdCont>::Process(bool multithread) {
@@ -112,15 +112,13 @@ std::vector<WordIdType> DataProcessor<IdCont>::BuildSuffix(words_map &words_um, 
 		// if we still haven't whis word we add it to new suffix tree else we will only add info to current word
 
 		auto id = words.size();
-		WordIdType pos;
-		pos = holder_.findWord(keyIt.first);
-		found.push_back(pos);
+		WordIdType pos = found.emplace_back(holder_.findWord(keyIt.first));
 
 		if (!pos.isEmpty()) {
 			continue;
 		}
 
-		words.emplace_back(PackedWordEntry<IdCont>());
+		words.emplace_back();
 		pos = holder_.BuildWordId(id);
 		if (holder_.cfg_->enableNumbersSearch && keyIt.second.virtualWord) {
 			suffix.insert(keyIt.first, pos, kDigitUtfSizeof);
@@ -133,9 +131,12 @@ std::vector<WordIdType> DataProcessor<IdCont>::BuildSuffix(words_map &words_um, 
 
 template <typename IdCont>
 size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
-	uint32_t maxIndexWorkers = multithread_ ? std::thread::hardware_concurrency() : 0;
-	if (!maxIndexWorkers) maxIndexWorkers = 1;
-	if (maxIndexWorkers > 8) maxIndexWorkers = 8;
+	uint32_t maxIndexWorkers = multithread_ ? std::thread::hardware_concurrency() : 1;
+	if (!maxIndexWorkers) {
+		maxIndexWorkers = 1;
+	} else if (maxIndexWorkers > 8) {
+		maxIndexWorkers = 8;
+	}
 	size_t szCnt = 0;
 	struct context {
 		words_map words_um;
@@ -146,7 +147,6 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 	auto &cfg = holder_.cfg_;
 	auto &vdocsTexts = holder_.vdocsTexts;
 	auto &vdocs = holder_.vdocs_;
-	// int fieldscount = std::max(1, int(this->fields_.size()));
 	int fieldscount = fieldSize_;
 	size_t offset = holder_.vdocsOffset_;
 	// build words map parallel in maxIndexWorkers threads
@@ -155,17 +155,19 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 		std::string word, str;
 		std::vector<const char *> wrds;
 		std::vector<std::string> virtualWords;
-		for (VDocIdType j = i; j < VDocIdType(vdocsTexts.size()); j += maxIndexWorkers) {
-			size_t vdocId = offset + j;
-			vdocs[vdocId].wordsCount.insert(vdocs[vdocId].wordsCount.begin(), fieldscount, 0.0);
-			vdocs[vdocId].mostFreqWordCount.insert(vdocs[vdocId].mostFreqWordCount.begin(), fieldscount, 0.0);
+		for (VDocIdType j = i, sz = VDocIdType(vdocsTexts.size()); j < sz; j += maxIndexWorkers) {
+			const size_t vdocId = offset + j;
+			auto &vdoc = vdocs[vdocId];
+			vdoc.wordsCount.insert(vdoc.wordsCount.begin(), fieldscount, 0.0);
+			vdoc.mostFreqWordCount.insert(vdoc.mostFreqWordCount.begin(), fieldscount, 0.0);
 
-			for (size_t field = 0; field < vdocsTexts[j].size(); ++field) {
-				split(vdocsTexts[j][field].first, str, wrds, cfg->extraWordSymbols);
-				int rfield = vdocsTexts[j][field].second;
+			auto &vdocsText = vdocsTexts[j];
+			for (size_t field = 0, sz = vdocsText.size(); field < sz; ++field) {
+				split(vdocsText[field].first, str, wrds, cfg->extraWordSymbols);
+				const int rfield = vdocsText[field].second;
 				assertrx(rfield < fieldscount);
 
-				vdocs[vdocId].wordsCount[rfield] = wrds.size();
+				vdoc.wordsCount[rfield] = wrds.size();
 
 				int insertPos = -1;
 				for (auto w : wrds) {
@@ -173,14 +175,11 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 					word.assign(w);
 					if (!word.length() || cfg->stopWords.find(word) != cfg->stopWords.end()) continue;
 
-					auto idxIt = ctx->words_um.find(word);
-					if (idxIt == ctx->words_um.end()) {
-						idxIt = ctx->words_um.emplace(word, WordEntry()).first;
-						// idxIt->second.vids_.reserve(16);
-					}
-					int mfcnt = idxIt->second.vids_.Add(vdocId, insertPos, rfield);
-					if (mfcnt > vdocs[vdocId].mostFreqWordCount[rfield]) {
-						vdocs[vdocId].mostFreqWordCount[rfield] = mfcnt;
+					auto [idxIt, emplaced] = ctx->words_um.try_emplace(word, WordEntry());
+					(void)emplaced;
+					const int mfcnt = idxIt->second.vids_.Add(vdocId, insertPos, rfield);
+					if (mfcnt > vdoc.mostFreqWordCount[rfield]) {
+						vdoc.mostFreqWordCount[rfield] = mfcnt;
 					}
 
 					if (cfg->enableNumbersSearch && is_number(word)) {
@@ -191,35 +190,44 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 		}
 	};
 
+	for (uint32_t t = 1; t < maxIndexWorkers; ++t) {
+		ctxs[t].thread = std::thread(worker, t);
+	}
 	// If there was only 1 build thread. Just return it's build results
-	if (maxIndexWorkers == 1) {
-		worker(0);
-		words_um.swap(ctxs[0].words_um);
-	} else {
-		for (uint32_t t = 0; t < maxIndexWorkers; t++) ctxs[t].thread = std::thread(worker, t);
-		// Merge results into single map
-		for (uint32_t i = 0; i < maxIndexWorkers; i++) {
-			try {
-				ctxs[i].thread.join();
-				for (auto it = ctxs[i].words_um.begin(), endIt = ctxs[i].words_um.end(); it != endIt; ++it) {
-					auto idxIt = words_um.find(it->first);
-
-					if (idxIt == words_um.end()) {
-						words_um.emplace(it->first, std::move(it->second));
-					} else {
-						idxIt->second.vids_.reserve(it->second.vids_.size() + idxIt->second.vids_.size());
-						for (auto &r : it->second.vids_) idxIt->second.vids_.push_back(std::move(r));
-						it->second.vids_ = IdRelSet();
-					}
+	worker(0);
+	words_um = std::move(ctxs[0].words_um);
+	// Merge results into single map
+	for (uint32_t i = 1; i < maxIndexWorkers; ++i) {
+		try {
+			auto &ctx = ctxs[i];
+			ctx.thread.join();
+			for (auto &it : ctx.words_um) {
+#if defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
+				const auto fBeforeMove = it.first;
+				const auto sBeforeMove = it.second;
+				const auto sCapacityBeforeMove = it.second.vids_.capacity();
+#endif	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
+				auto [idxIt, emplaced] = words_um.try_emplace(std::move(it.first), std::move(it.second));
+				if (!emplaced) {
+#if defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
+					// Make sure, that try_emplace did not moved the values
+					assertrx(it.first == fBeforeMove);
+					assertrx(it.second.virtualWord == sBeforeMove.virtualWord);
+					assertrx(it.second.vids_.size() == sBeforeMove.vids_.size());
+					assertrx(it.second.vids_.capacity() == sCapacityBeforeMove);
+#endif	// defined(RX_WITH_STDLIB_DEBUG) || defined(REINDEX_WITH_ASAN)
+					idxIt->second.vids_.reserve(it.second.vids_.size() + idxIt->second.vids_.size());
+					for (auto &&r : it.second.vids_) idxIt->second.vids_.emplace_back(std::move(r));
+					it.second.vids_ = IdRelSet();
 				}
-				words_map().swap(ctxs[i].words_um);
-			} catch (const Error &e) {
-				logPrintf(LogError, "Exeption in loop with thread.join() error= [%s]", e.what());
-			} catch (const std::exception &e) {
-				logPrintf(LogError, "Exeption in loop with thread.join() error= [%s]", e.what());
-			} catch (...) {
-				logPrintf(LogError, "Exeption in loop with thread.join()");
 			}
+			words_map().swap(ctx.words_um);
+		} catch (const Error &e) {
+			logPrintf(LogError, "Exeption in loop with thread.join() error:[%s]", e.what());
+		} catch (const std::exception &e) {
+			logPrintf(LogError, "Exeption in loop with thread.join() error:[%s]", e.what());
+		} catch (...) {
+			logPrintf(LogError, "Exeption in loop with thread.join()");
 		}
 	}
 
@@ -235,7 +243,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 	}
 
 	// Check and print potential stop words
-	if (holder_.cfg_->logLevel >= LogInfo) {
+	if (rx_unlikely(holder_.cfg_->logLevel >= LogInfo)) {
 		WrSerializer out;
 		for (auto &w : words_um) {
 			if (w.second.vids_.size() > vdocs.size() / 5 || int64_t(w.second.vids_.size()) > holder_.cfg_->mergeLimit) {
@@ -252,16 +260,16 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 
 template <typename IdCont>
 void DataProcessor<IdCont>::buildVirtualWord(std::string_view word, words_map &words_um, VDocIdType docType, int rfield, size_t insertPos,
-											 std::vector<std::string> &output) {
+											 std::vector<std::string> &container) {
 	auto &vdocs = holder_.vdocs_;
 
 	auto &vdoc(vdocs[docType]);
-	NumToText::convert(word, output);
-	for (const std::string &numberWord : output) {
+	NumToText::convert(word, container);
+	for (std::string &numberWord : container) {
 		WordEntry wentry;
 		wentry.virtualWord = true;
-		auto idxIt = words_um.emplace(numberWord, std::move(wentry)).first;
-		int mfcnt = idxIt->second.vids_.Add(docType, insertPos, rfield);
+		auto idxIt = words_um.emplace(std::move(numberWord), std::move(wentry)).first;
+		const int mfcnt = idxIt->second.vids_.Add(docType, insertPos, rfield);
 		if (mfcnt > vdoc.mostFreqWordCount[rfield]) {
 			vdoc.mostFreqWordCount[rfield] = mfcnt;
 		}

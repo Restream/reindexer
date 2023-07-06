@@ -247,22 +247,33 @@ public:
 	/// @param activityTracer - name of activity tracer
 	/// @param user - user identifying information
 	/// @param connectionId - unique identifier for the connection
-	Reindexer WithActivityTracer(std::string_view activityTracer, std::string_view user, int connectionId) const {
-		return Reindexer(impl_, ctx_.WithActivityTracer(activityTracer, user, connectionId));
+	Reindexer WithActivityTracer(std::string_view activityTracer, std::string &&user, int connectionId) const {
+		return Reindexer(impl_, ctx_.WithActivityTracer(activityTracer, std::move(user), connectionId));
 	}
-	Reindexer WithActivityTracer(std::string_view activityTracer, std::string_view user) const {
-		return Reindexer(impl_, ctx_.WithActivityTracer(activityTracer, user));
+	Reindexer WithActivityTracer(std::string_view activityTracer, std::string &&user) const {
+		return Reindexer(impl_, ctx_.WithActivityTracer(activityTracer, std::move(user)));
+	}
+	/// Allows to set multiple context params at once
+	/// @param timeout - Execution timeout
+	/// @param activityTracer - name of activity tracer
+	/// @param user - user identifying information
+	/// @param connectionId - unique identifier for the connection
+	Reindexer WithContextParams(milliseconds timeout, std::string_view activityTracer, std::string user, int connectionId) const {
+		return Reindexer(impl_, ctx_.WithContextParams(timeout, activityTracer, std::move(user), connectionId));
 	}
 
 	/// Set activityTracer to current DB
 	/// @param activityTracer - name of activity tracer
 	/// @param user - user identifying information
-	void SetActivityTracer(std::string_view activityTracer, std::string_view user) { ctx_.SetActivityTracer(activityTracer, user); }
-	void SetActivityTracer(std::string_view activityTracer, std::string_view user, int connectionId) {
-		ctx_.SetActivityTracer(activityTracer, user, connectionId);
+	/// @param connectionId - unique identifier for the connection
+	void SetActivityTracer(std::string &&activityTracer, std::string &&user, int connectionId) {
+		ctx_.SetActivityTracer(std::move(activityTracer), std::move(user), connectionId);
+	}
+	void SetActivityTracer(std::string &&activityTracer, std::string &&user) {
+		ctx_.SetActivityTracer(std::move(activityTracer), std::move(user));
 	}
 
-	bool NeedTraceActivity() const;
+	bool NeedTraceActivity() const noexcept;
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;
@@ -270,7 +281,7 @@ public:
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index);
 
 private:
-	Reindexer(ReindexerImpl *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
+	Reindexer(ReindexerImpl *impl, InternalRdxContext &&ctx) noexcept : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
 
 	ReindexerImpl *impl_;
 	bool owner_;

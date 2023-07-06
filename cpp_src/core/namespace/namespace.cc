@@ -119,7 +119,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 				}
 			}
 		}
-		dbpath = dstNs->storage_.Path();
+		dbpath = dstNs->storage_.GetPath();
 	} else if (newName == srcNs.name_) {
 		return;
 	}
@@ -132,9 +132,9 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 
 	const bool hadStorage = (srcNs.storage_.IsValid());
 	auto storageType = StorageType::LevelDB;
-	const auto srcDbpath = srcNs.storage_.Path();
+	const auto srcDbpath = srcNs.storage_.GetPath();
 	if (hadStorage) {
-		storageType = srcNs.storage_.Type();
+		storageType = srcNs.storage_.GetType();
 		srcNs.storage_.Close();
 		fs::RmDirAll(dbpath);
 		int renameRes = fs::Rename(srcDbpath, dbpath);

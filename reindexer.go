@@ -93,6 +93,9 @@ type Error interface {
 	Code() int
 }
 
+// Point 2-dimensional point
+type Point [2]float64
+
 // Joinable is an interface for append joined items
 type Joinable interface {
 	Join(field string, subitems []interface{}, context interface{})

@@ -22,17 +22,17 @@ public:
 				   const TagsMatcher *tm = nullptr);
 	MsgPackBuilder(msgpack_packer &packer, const TagsLengths *tagsLengths, int *startTag, ObjType = ObjType::TypeObject,
 				   const TagsMatcher *tm = nullptr);
-	MsgPackBuilder() : tm_(nullptr), packer_(), tagsLengths_(nullptr), type_(ObjType::TypePlain), tagIndex_(nullptr) {}
-	~MsgPackBuilder();
-	MsgPackBuilder(MsgPackBuilder &&other)
+	MsgPackBuilder() noexcept : tm_(nullptr), packer_(), tagsLengths_(nullptr), type_(ObjType::TypePlain), tagIndex_(nullptr) {}
+	~MsgPackBuilder() { End(); }
+	MsgPackBuilder(MsgPackBuilder &&other) noexcept
 		: tm_(other.tm_), packer_(other.packer_), tagsLengths_(other.tagsLengths_), type_(other.type_), tagIndex_(other.tagIndex_) {}
 
 	MsgPackBuilder(const MsgPackBuilder &) = delete;
 	MsgPackBuilder &operator=(const MsgPackBuilder &) = delete;
 	MsgPackBuilder &operator=(MsgPackBuilder &&) = delete;
 
-	void SetTagsMatcher(const TagsMatcher *tm) { tm_ = tm; }
-	MsgPackBuilder Raw(std::string_view, std::string_view) { return MsgPackBuilder(); }
+	void SetTagsMatcher(const TagsMatcher *tm) noexcept { tm_ = tm; }
+	MsgPackBuilder Raw(std::string_view, std::string_view) noexcept { return MsgPackBuilder(); }
 	MsgPackBuilder Raw(std::nullptr_t, std::string_view arg) { return Raw(std::string_view{}, arg); }
 
 	template <typename N, typename T>
@@ -95,7 +95,7 @@ public:
 	}
 
 	template <typename T, typename N>
-	MsgPackBuilder &Put(N tagName, T arg) {
+	MsgPackBuilder &Put(N tagName, const T &arg, int /*offset*/ = 0) {
 		if (isArray()) skipTag();
 		skipTag();
 		packKeyName(tagName);
@@ -115,7 +115,7 @@ public:
 	}
 
 	template <typename T>
-	MsgPackBuilder &Put(T tagName, const Variant &kv) {
+	MsgPackBuilder &Put(T tagName, const Variant &kv, int offset = 0) {
 		if (isArray()) skipTag();
 		skipTag();
 		packKeyName(tagName);
@@ -126,7 +126,7 @@ public:
 			[&](KeyValueType::Tuple) {
 				auto arrNode = Array(tagName);
 				for (auto &val : kv.getCompositeValues()) {
-					arrNode.Put(0, val);
+					arrNode.Put(0, val, offset);
 				}
 			},
 			[&](KeyValueType::Uuid) { packValue(Uuid{kv}); }, [](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});

@@ -23,7 +23,7 @@ public:
 	CJsonBuilder &operator=(const CJsonBuilder &) = delete;
 	CJsonBuilder &operator=(CJsonBuilder &&) = delete;
 
-	void SetTagsMatcher(const TagsMatcher *tm) { tm_ = tm; }
+	void SetTagsMatcher(const TagsMatcher *tm) noexcept { tm_ = tm; }
 
 	/// Start new object
 	CJsonBuilder Object(int tagName);
@@ -67,25 +67,25 @@ public:
 	}
 
 	template <typename T>
-	CJsonBuilder &Put(std::nullptr_t, T arg) {
-		return Put(0, arg);
+	CJsonBuilder &Put(std::nullptr_t, const T &arg, int offset = 0) {
+		return Put(0, arg, offset);
 	}
 
 	void Write(std::string_view data) { ser_->Write(data); }
 
 	CJsonBuilder &Null(std::nullptr_t) { return Null(0); }
 
-	CJsonBuilder &Put(int tagName, bool arg);
-	CJsonBuilder &Put(int tagName, int arg);
-	CJsonBuilder &Put(int tagName, int64_t arg);
-	CJsonBuilder &Put(int tagName, double arg);
-	CJsonBuilder &Put(int tagName, std::string_view arg);
-	CJsonBuilder &Put(int tagName, Uuid arg);
+	CJsonBuilder &Put(int tagName, bool arg, int offset = 0);
+	CJsonBuilder &Put(int tagName, int arg, int offset = 0);
+	CJsonBuilder &Put(int tagName, int64_t arg, int offset = 0);
+	CJsonBuilder &Put(int tagName, double arg, int offset = 0);
+	CJsonBuilder &Put(int tagName, std::string_view arg, int offset = 0);
+	CJsonBuilder &Put(int tagName, Uuid arg, int offset = 0);
 	CJsonBuilder &Ref(int tagName, const Variant &v, int field);
 	CJsonBuilder &ArrayRef(int tagName, int field, int count);
 	CJsonBuilder &Null(int tagName);
-	CJsonBuilder &Put(int tagName, const Variant &kv);
-	CJsonBuilder &Put(int tagName, const char *arg) { return Put(tagName, std::string_view(arg)); }
+	CJsonBuilder &Put(int tagName, const Variant &kv, int offset = 0);
+	CJsonBuilder &Put(int tagName, const char *arg, int offset = 0) { return Put(tagName, std::string_view(arg), offset); }
 	CJsonBuilder &End() {
 		switch (type_) {
 			case ObjType::TypeArray:

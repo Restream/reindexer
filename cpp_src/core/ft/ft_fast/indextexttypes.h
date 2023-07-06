@@ -38,4 +38,6 @@ struct WordIdTypeLess {
 	bool operator()(const WordIdType& lhs, const WordIdType& rhs) const noexcept { return lhs.data < rhs.data; }
 };
 
+enum class FtUseExternStatuses : bool { Yes, No };
+
 }  // namespace reindexer

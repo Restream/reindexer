@@ -298,7 +298,6 @@ int ServerImpl::run() {
 		auto status = dbMgr_->Init(config_.StorageEngine, config_.StartWithErrors, config_.Autorepair);
 		if (!status.ok()) {
 			logger_.error("Error init database manager: {0}", status.what());
-			std::cout << status.what() << std::endl;
 			return EXIT_FAILURE;
 		}
 		storageLoaded_ = true;
@@ -310,7 +309,7 @@ int ServerImpl::run() {
 		std::unique_ptr<StatsCollector> statsCollector;
 		if (config_.EnablePrometheus) {
 			prometheus.reset(new Prometheus);
-			statsCollector.reset(new StatsCollector(prometheus.get(), config_.PrometheusCollectPeriod));
+			statsCollector.reset(new StatsCollector(*dbMgr_, prometheus.get(), config_.PrometheusCollectPeriod, logger_));
 		}
 
 		LoggerWrapper httpLogger("http");
@@ -363,7 +362,7 @@ int ServerImpl::run() {
 			sig.loop.break_loop();
 		};
 
-		if (statsCollector) statsCollector->Start(*dbMgr_);
+		if (statsCollector) statsCollector->Start();
 
 		ev::sig sterm, sint, shup;
 

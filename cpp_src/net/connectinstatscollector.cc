@@ -6,8 +6,6 @@ namespace net {
 
 constexpr double k_stats_update_period = 1.0;
 
-connection_stats_collector::connection_stats_collector() { stat_ = std::make_shared<connection_stat>(); }
-
 void connection_stats_collector::attach(ev::dynamic_loop& loop) noexcept {
 	stats_update_timer_.set<connection_stats_collector, &connection_stats_collector::stats_check_cb>(this);
 	stats_update_timer_.set(loop);

@@ -120,6 +120,8 @@ public:
 	/// cost goes before others.
 	double Cost(int expectedIterations) const noexcept;
 
+	void SetNotOperationFlag(bool isNotOperation) noexcept { isNotOperation_ = isNotOperation; }
+
 	/// Switches SingleSelectKeyResult to btree search
 	/// mode if it's more efficient than just comparing
 	/// each object in sequence.
@@ -161,9 +163,10 @@ protected:
 	bool isUnsorted = false;
 	bool isReverse_ = false;
 	bool forcedFirst_ = false;
+	bool isNotOperation_ = false;
 	int type_ = 0;
-	IdType lastVal_ = INT_MIN;
 	iterator lastIt_ = nullptr;
+	IdType lastVal_ = INT_MIN;
 	IdType end_ = 0;
 	int matchedCount_ = 0;
 };

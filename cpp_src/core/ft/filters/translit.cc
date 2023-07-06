@@ -9,7 +9,7 @@ Translit::Translit() {
 	PrepareEnglish();
 }
 
-void Translit::GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &result) {
+void Translit::GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &result, int proc) {
 	std::wstring strings[maxTranslitVariants];
 	Context ctx;
 
@@ -54,7 +54,7 @@ void Translit::GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &
 		}
 		if (!skip && curent != result_string && curent.length()) {
 			result_string = curent;
-			result.emplace_back(std::move(curent), 90);
+			result.emplace_back(std::move(curent), proc);
 		}
 	}
 }

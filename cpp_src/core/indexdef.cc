@@ -185,13 +185,8 @@ void IndexDef::FromJSON(const gason::JsonNode &root) {
 	opts_.Array(root["is_array"].As<bool>());
 	opts_.Dense(root["is_dense"].As<bool>());
 	opts_.Sparse(root["is_sparse"].As<bool>());
-	if (fieldType_ == "uuid") {
-		if (indexType_ != "hash") {
-			throw Error(errParams, "Unsupported combination of field '%s' type 'uuid' and index type '%s'", name_, indexType_);
-		}
-		if (opts_.IsSparse()) {
-			throw Error(errParams, "UUID index cannot be sparse");
-		}
+	if (fieldType_ == "uuid" && opts_.IsSparse()) {
+		throw Error(errParams, "UUID index cannot be sparse");
 	}
 	opts_.SetConfig(stringifyJson(root["config"]));
 	const std::string rtreeType = root["rtree_type"].As<std::string>();

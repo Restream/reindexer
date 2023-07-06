@@ -169,7 +169,7 @@ reindexer_error reindexer_modify_item_packed_tx(uintptr_t rx, uintptr_t tr, rein
 	unsigned preceptsCount = ser.GetVarUint();
 	std::vector<std::string> precepts;
 	while (preceptsCount--) {
-		precepts.push_back(std::string(ser.GetVString()));
+		precepts.emplace_back(ser.GetVString());
 	}
 	Error err = err_not_init;
 	auto item = trw->tr_.NewItem();

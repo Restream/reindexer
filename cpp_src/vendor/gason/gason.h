@@ -63,7 +63,7 @@ union JsonValue {
 		u.tag = tag;
 		ival = uintptr_t(payload);
 	}
-	JsonTag getTag() const { return JsonTag(u.tag); }
+	JsonTag getTag() const noexcept { return JsonTag(u.tag); }
 
 	int64_t toNumber() const {
 		assertrx(getTag() == JSON_NUMBER || getTag() == JSON_DOUBLE);
@@ -150,26 +150,26 @@ struct JsonNode {
 struct JsonIterator {
 	JsonNode *p;
 
-	void operator++() { p = p->next; }
-	bool operator!=(const JsonIterator &x) const { return p != x.p; }
-	JsonNode *operator*() const { return p; }
-	JsonNode *operator->() const { return p; }
+	void operator++() noexcept { p = p->next; }
+	bool operator!=(const JsonIterator &x) const noexcept { return p != x.p; }
+	JsonNode &operator*() const noexcept { return *p; }
+	JsonNode *operator->() const noexcept { return p; }
 };
 
-inline JsonIterator begin(JsonValue o) { return JsonIterator{o.toNode()}; }
-inline JsonIterator end(JsonValue) { return JsonIterator{nullptr}; }
+inline JsonIterator begin(const JsonValue o) { return JsonIterator{o.toNode()}; }
+inline JsonIterator end(JsonValue) noexcept { return JsonIterator{nullptr}; }
 
 struct JsonNodeIterator {
 	const JsonNode *p;
 
-	void operator++() { p = p->next; }
-	bool operator!=(const JsonNodeIterator &x) const { return p != x.p; }
-	const JsonNode &operator*() const { return *p; }
-	const JsonNode *operator->() const { return p; }
+	void operator++() noexcept { p = p->next; }
+	bool operator!=(const JsonNodeIterator &x) const noexcept { return p != x.p; }
+	const JsonNode &operator*() const noexcept { return *p; }
+	const JsonNode *operator->() const noexcept { return p; }
 };
 
 inline JsonNodeIterator begin(const JsonNode &w) { return JsonNodeIterator{w.toNode()}; }
-inline JsonNodeIterator end(const JsonNode &) { return JsonNodeIterator{nullptr}; }
+inline JsonNodeIterator end(const JsonNode &) noexcept { return JsonNodeIterator{nullptr}; }
 
 #define JSON_ERRNO_MAP(XX)                           \
 	XX(OK, "ok")                                     \
@@ -216,7 +216,7 @@ public:
 	void deallocate();
 };
 
-bool isHomogeneousArray(const JsonValue &v);
+bool isHomogeneousArray(const JsonValue &v) noexcept;
 
 // Parser wrapper
 class JsonParser {

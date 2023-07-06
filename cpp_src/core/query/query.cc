@@ -308,11 +308,11 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 			ser.PutVString(se.expression);
 			ser.PutVarUint(se.desc);
 		}
-		if (agg.Limit() != AggregateEntry::kDefaultLimit) {
+		if (agg.Limit() != QueryEntry::kDefaultLimit) {
 			ser.PutVarUint(QueryAggregationLimit);
 			ser.PutVarUint(agg.Limit());
 		}
-		if (agg.Offset() != AggregateEntry::kDefaultOffset) {
+		if (agg.Offset() != QueryEntry::kDefaultOffset) {
 			ser.PutVarUint(QueryAggregationOffset);
 			ser.PutVarUint(agg.Offset());
 		}
@@ -460,8 +460,8 @@ Query &Query::Join(JoinType joinType, const std::string &index, const std::strin
 	joinEntry.condition_ = cond;
 	joinEntry.index_ = index;
 	joinEntry.joinIndex_ = joinIndex;
-	joinQueries_.emplace_back(joinType, std::move(qr));
-	joinQueries_.back().joinEntries_.emplace_back(std::move(joinEntry));
+	auto &jq = joinQueries_.emplace_back(joinType, std::move(qr));
+	jq.joinEntries_.emplace_back(std::move(joinEntry));
 	if (joinType != JoinType::LeftJoin) {
 		entries.Append((joinType == JoinType::InnerJoin) ? OpType::OpAnd : OpType::OpOr, JoinQueryEntry(joinQueries_.size() - 1));
 	}
@@ -512,6 +512,32 @@ Query::OnHelperR Query::Join(JoinType joinType, const Query &q) && {
 		entries.Append((joinType == JoinType::InnerJoin) ? OpType::OpAnd : OpType::OpOr, JoinQueryEntry(joinQueries_.size() - 1));
 	}
 	return {std::move(*this), joinQueries_.back()};
+}
+
+Query &Query::Merge(const Query &q) & {
+	mergeQueries_.emplace_back(JoinType::Merge, q);
+	return *this;
+}
+
+Query &Query::Merge(Query &&q) & {
+	mergeQueries_.emplace_back(JoinType::Merge, std::move(q));
+	return *this;
+}
+
+Query &Query::SortStDistance(std::string_view field, Point p, bool desc) & {
+	if (field.empty()) {
+		throw Error(errParams, "Field name for ST_Distance can not be empty");
+	}
+	sortingEntries_.emplace_back(fmt::sprintf("ST_Distance(%s,ST_GeomFromText('point(%.12f %.12f)'))", field, p.X(), p.Y()), desc);
+	return *this;
+}
+
+Query &Query::SortStDistance(std::string_view field1, std::string_view field2, bool desc) & {
+	if (field1.empty() || field2.empty()) {
+		throw Error(errParams, "Fields names for ST_Distance can not be empty");
+	}
+	sortingEntries_.emplace_back(fmt::sprintf("ST_Distance(%s,%s)", field1, field2), desc);
+	return *this;
 }
 
 void Query::WalkNested(bool withSelf, bool withMerged, const std::function<void(const Query &q)> &visitor) const {

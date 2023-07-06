@@ -1,4 +1,3 @@
-
 #pragma once
 
 #ifdef _MSC_VER
@@ -55,42 +54,42 @@ public:
 	__shared_mutex_pthread(const __shared_mutex_pthread&) = delete;
 	__shared_mutex_pthread& operator=(const __shared_mutex_pthread&) = delete;
 
-	void lock() {
+	void lock() noexcept {
 		int __ret = pthread_rwlock_wrlock(&_M_rwlock);
 		assertrx(__ret == 0);
 		(void)__ret;
 	}
 
-	bool try_lock() {
+	bool try_lock() noexcept {
 		int __ret = pthread_rwlock_trywrlock(&_M_rwlock);
 		if (__ret == EBUSY) return false;
 		assertrx(__ret == 0);
 		return true;
 	}
 
-	void unlock() {
+	void unlock() noexcept {
 		int __ret = pthread_rwlock_unlock(&_M_rwlock);
 		assertrx(__ret == 0);
 		(void)__ret;
 	}
 
-	void lock_shared() {
+	void lock_shared() noexcept {
 		int __ret;
 		do __ret = pthread_rwlock_rdlock(&_M_rwlock);
 		while (__ret == EAGAIN || __ret == EBUSY);
 		assertrx(__ret == 0);
 	}
 
-	bool try_lock_shared() {
+	bool try_lock_shared() noexcept {
 		int __ret = pthread_rwlock_tryrdlock(&_M_rwlock);
 		if (__ret == EBUSY || __ret == EAGAIN) return false;
 		assertrx(__ret == 0);
 		return true;
 	}
 
-	void unlock_shared() { unlock(); }
+	void unlock_shared() noexcept { unlock(); }
 
-	void* native_handle() { return &_M_rwlock; }
+	void* native_handle() noexcept { return &_M_rwlock; }
 };
 
 template <typename _Mutex>
@@ -100,7 +99,7 @@ public:
 
 	shared_lock() noexcept : _M_pm(nullptr), _M_owns(false) {}
 
-	explicit shared_lock(mutex_type& __m) : _M_pm(&__m), _M_owns(true) { __m.lock_shared(); }
+	explicit shared_lock(mutex_type& __m) noexcept : _M_pm(&__m), _M_owns(true) { __m.lock_shared(); }
 
 	~shared_lock() {
 		if (_M_owns) _M_pm->unlock_shared();
@@ -116,19 +115,19 @@ public:
 		return *this;
 	}
 
-	void lock() {
+	void lock() noexcept {
 		_M_lockable();
 		_M_pm->lock_shared();
 		_M_owns = true;
 	}
 
-	bool try_lock() {
+	bool try_lock() noexcept {
 		_M_lockable();
 		return _M_owns = _M_pm->try_lock_shared();
 	}
 
-	void unlock() {
-		if (!_M_owns) assertrx(0);
+	void unlock() noexcept {
+		assertrx(_M_owns);
 		_M_pm->unlock_shared();
 		_M_owns = false;
 	}
@@ -150,9 +149,9 @@ public:
 	mutex_type* mutex() const noexcept { return _M_pm; }
 
 private:
-	void _M_lockable() const {
-		if (_M_pm == nullptr) assertrx(0);
-		if (_M_owns) assertrx(0);
+	void _M_lockable() const noexcept {
+		assertrx(_M_pm != nullptr);
+		assertrx(!_M_owns);
 	}
 
 	mutex_type* _M_pm;

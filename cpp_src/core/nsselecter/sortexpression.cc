@@ -17,7 +17,7 @@ static void throwParseError(const std::string_view sortExpr, char const* const p
 }
 
 static inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept {
-	return std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+	return std::sqrt((p1.X() - p2.X()) * (p1.X() - p2.X()) + (p1.Y() - p2.Y()) * (p1.Y() - p2.Y()));
 }
 
 static reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, int index,
@@ -281,7 +281,7 @@ static Point parsePoint(std::string_view& expr, std::string_view funcName, const
 	skipSpaces();
 	if (expr.empty() || expr[0] != ')') throwParseError(fullExpr, expr.data(), "Expected ')'.");
 	expr.remove_prefix(1);
-	return {x, y};
+	return Point{x, y};
 }
 
 template <typename T, typename SkipSW>
@@ -587,9 +587,11 @@ void SortExpression::dump(const_iterator begin, const_iterator end, WrSerializer
 			},
 			[&ser](const Value& v) { ser << v.value; }, [&ser](const SortExprFuncs::Index& i) { ser << i.column; },
 			[&ser](const JoinedIndex& i) { ser << "joined " << i.nsIdx << ' ' << i.column; }, [&ser](const Rank&) { ser << "rank()"; },
-			[&ser](const DistanceFromPoint& i) { ser << "ST_Distance(" << i.column << ", [" << i.point.x << ", " << i.point.y << "])"; },
+			[&ser](const DistanceFromPoint& i) {
+				ser << "ST_Distance(" << i.column << ", [" << i.point.X() << ", " << i.point.Y() << "])";
+			},
 			[&ser](const DistanceJoinedIndexFromPoint& i) {
-				ser << "ST_Distance(joined " << i.nsIdx << ' ' << i.column << ", [" << i.point.x << ", " << i.point.y << "])";
+				ser << "ST_Distance(joined " << i.nsIdx << ' ' << i.column << ", [" << i.point.X() << ", " << i.point.Y() << "])";
 			},
 			[&ser](const DistanceBetweenIndexes& i) { ser << "ST_Distance(" << i.column1 << ", " << i.column2 << ')'; },
 			[&ser](const DistanceBetweenIndexAndJoinedIndex& i) {

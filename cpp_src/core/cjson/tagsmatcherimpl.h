@@ -40,7 +40,7 @@ public:
 					fieldTags.clear();
 					return fieldTags;
 				}
-				fieldTags.push_back(static_cast<int16_t>(fieldTag));
+				fieldTags.emplace_back(static_cast<int16_t>(fieldTag));
 			}
 		}
 		return fieldTags;
@@ -154,7 +154,7 @@ public:
 				if (!jsonPath.length()) continue;
 				pathIdx.clear();
 				for (auto &name : split(jsonPath, ".", true, pathParts)) {
-					pathIdx.push_back(name2tag(name, true, updated));
+					pathIdx.emplace_back(name2tag(name, true, updated));
 				}
 				pathCache_.set(pathIdx.data(), pathIdx.size(), i);
 			}

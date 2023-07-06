@@ -41,7 +41,7 @@ test_outdated_instance() {
 	init_storages
 	${master_cmd} --db "${master_db_path}" -l0 --serverlog=\"\" --corelog=\"\" --httplog=\"\" --rpclog=\"\" &
 	master_pid=$!
-	sleep 1
+	sleep 4
 	go run ${script_dir}/filler.go --dsn "${master_dsn}/${db_name}" --offset 0
 	echo "====Force sync"
 	${slave_cmd} --db "${slave_db_path}" -p 9089 -r 6535 -l0 --serverlog=\"\" --corelog=\"\" --httplog=\"\" --rpclog=\"\" &

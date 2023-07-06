@@ -123,7 +123,7 @@ void ServerConnection::parseParams(std::string_view str) {
 			case '&':
 				if (!value) namelen = p - name;
 				if (name) {
-					request_.params.push_back(Param{std::string_view(name, namelen), std::string_view(value, value ? p - value : 0)});
+					request_.params.emplace_back(std::string_view(name, namelen), std::string_view(value, value ? p - value : 0));
 					name = value = nullptr;
 					namelen = 0;
 				}
@@ -141,7 +141,7 @@ void ServerConnection::parseParams(std::string_view str) {
 	}
 	if (name) {
 		if (!value) namelen = p - name;
-		request_.params.push_back(Param{std::string_view(name, namelen), std::string_view(value, value ? p - value : 0)});
+		request_.params.emplace_back(std::string_view(name, namelen), std::string_view(value, value ? p - value : 0));
 	}
 }
 
@@ -304,7 +304,7 @@ bool ServerConnection::ResponseWriter::SetContentLength(size_t length) {
 	return true;
 }
 
-ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk) {
+ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk, Writer::WriteMode mode) {
 	char szBuf[64], dtBuf[128];
 	if (!respSend_) {
 		conn_->writeHttpResponse(code_);
@@ -332,7 +332,7 @@ ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk) {
 	}
 
 	size_t len = chunk.len_;
-	if (isChunkedResponse()) {
+	if (isChunkedResponse() && mode == WriteMode::Default) {
 		size_t l = u32toax(len, szBuf) - szBuf;
 		conn_->wrBuf_.write({szBuf, l});
 		conn_->wrBuf_.write(kStrEOL);
@@ -341,7 +341,7 @@ ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk) {
 	conn_->wrBuf_.write(std::move(chunk));
 
 	written_ += len;
-	if (isChunkedResponse()) {
+	if (isChunkedResponse() && mode == WriteMode::Default) {
 		conn_->wrBuf_.write(kStrEOL);
 	}
 	if (!len && !conn_->enableHttp11_) {

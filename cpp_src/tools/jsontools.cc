@@ -31,10 +31,10 @@ void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int ind
 			ser << '[';
 			if (enableEol) ser << '\n';
 
-			for (auto i : o) {
+			for (const auto &i : o) {
 				ser.Fill(' ', indent + shift);
-				jsonValueToString(i->value, ser, shift, indent + shift);
-				if (i->next) ser << ',';
+				jsonValueToString(i.value, ser, shift, indent + shift);
+				if (i.next) ser << ',';
 				if (enableEol) ser << '\n';
 			}
 			ser.Fill(' ', indent);
@@ -48,12 +48,12 @@ void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int ind
 			ser << '{';
 			if (enableEol) ser << '\n';
 
-			for (auto i : o) {
+			for (const auto &i : o) {
 				ser.Fill(' ', indent + shift);
-				ser.PrintJsonString(i->key);
+				ser.PrintJsonString(i.key);
 				ser << ": ";
-				jsonValueToString(i->value, ser, shift, indent + shift);
-				if (i->next) ser << ',';
+				jsonValueToString(i.value, ser, shift, indent + shift);
+				if (i.next) ser << ',';
 				if (enableEol) ser << '\n';
 			}
 			ser.Fill(' ', indent);

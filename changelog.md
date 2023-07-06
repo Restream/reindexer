@@ -1,3 +1,26 @@
+# Version 3.17.0 (06.07.2023)
+## Core
+- [fea] Optimized namespaces' locks for queries to the system namespaces, containing explicit list of names (for example, `SELECT * FROM #memstats WHERE "name" IN ('ns1', 'nsx', 'ns19')` now requires shared locks for the listed namespaces only)
+- [fea] Added update queries for the arrays of objects (i.e. queries like `UPDATE ns SET object_array[11].field = 999`)
+- [fea] Added more fulltext index options for the base rankings tuning. Check `FtBaseRanking` struct in the [config doc](fulltext.md#configuration)
+- [fix] Fixed update queries for the sparse indexed arrays
+- [fix] Fixed selection plans and cost calculation for `NOT`-conditions in queries
+- [fix] Disabled composite indexes over non-indexed fields (except fulltext indexes) and sparse composite indexes. Previously those indexes could be created, but was not actually implemented, so queries with them could lead to unexpected errors
+- [fix] Fixed merging of the conditions by the same index in queries' optimizer (previously it could sometimes cause SIGABORT in case of the empty resulting set)
+- [fix] Disabled LIMIT for internal merged queries (it was not implemented and did not work properly on previous versions)
+- [fix] Fixed cache behavior for fulltext queires with JOINs and `enable_preselect_before_ft: true`
+
+## Reindexer server
+- [fea] Optimized perfstats config access
+- [fea] Added support for CSV results for select queries via HTTP (experimental, probably this API will be modified later on)
+
+## Go connector
+- [fea] Added `SortStPointDistance` and `SortStFieldDistance` (simplified aliases for the long constructions with `ST_Distance`)
+- [ref] Added `reindexer.Point` type instead of `[2]float64`
+
+## Build
+- [fea] Added support and deploy for RedOS 7.3.2
+
 # Version 3.16.0 (09.06.2023)
 ## Core
 - [fea] Added UUID field type for indexes

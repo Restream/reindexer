@@ -101,15 +101,20 @@ void PayloadIface<T>::GetByJsonPath(const IndexedTagsPath &tagsPath, VariantArra
 }
 
 template <typename T>
-VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath &tagsPath, int &offset, int &size) const {
+VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath &tagsPath, int field, int &offset, int &size) const {
 	if (tagsPath.empty()) {
 		throw Error(errParams, "GetIndexedArrayData(): tagsPath shouldn't be empty!");
 	}
-
+	if (field < 0 || field >= maxIndexes) {
+		throw Error(errParams, "GetIndexedArrayData(): field must be a valid index number");
+	}
 	VariantArray values;
 	FieldsSet filter({tagsPath});
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
-	FieldsExtractor extractor(&values, KeyValueType::Undefined{}, tagsPath.size(), &filter, &offset, &size);
+	offset = -1;
+	size = -1;
+	FieldsExtractor::FieldParams params{.index = offset, .length = size, .field = field};
+	FieldsExtractor extractor(&values, KeyValueType::Undefined{}, tagsPath.size(), &filter, &params);
 
 	ConstPayload pl(t_, *v_);
 	encoder.Encode(pl, extractor);

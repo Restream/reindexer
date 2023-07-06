@@ -500,10 +500,10 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 	for (auto& th : threads) th.join();
 }
 
-bool checkForAllowedJsonTags(const std::vector<std::string>& tags, gason::JsonValue jsonValue) {
+static bool checkForAllowedJsonTags(const std::vector<std::string>& tags, gason::JsonValue jsonValue) {
 	size_t count = 0;
-	for (auto elem : jsonValue) {
-		if (std::find(tags.begin(), tags.end(), std::string(elem->key)) == tags.end()) {
+	for (const auto& elem : jsonValue) {
+		if (std::find(tags.begin(), tags.end(), std::string_view(elem.key)) == tags.end()) {
 			return false;
 		}
 		++count;

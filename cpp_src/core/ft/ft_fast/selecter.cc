@@ -3,11 +3,12 @@
 #include "core/ft/bm25.h"
 #include "core/ft/typos.h"
 #include "core/rdxcontext.h"
+#include "estl/defines.h"
 #include "sort/pdqsort.hpp"
 #include "tools/logger.h"
 
 namespace {
-inline double pos2rank(int pos) {
+RX_ALWAYS_INLINE double pos2rank(int pos) {
 	if (pos <= 10) return 1.0 - (pos / 100.0);
 	if (pos <= 100) return 0.9 - (pos / 1000.0);
 	if (pos <= 1000) return 0.8 - (pos / 10000.0);
@@ -18,17 +19,6 @@ inline double pos2rank(int pos) {
 }  // namespace
 
 namespace reindexer {
-// Relevancy procent of full word match
-const int kFullMatchProc = 100;
-// Mininum relevancy procent of prefix word match.
-const int kPrefixMinProc = 50;
-const int kSuffixMinProc = 10;
-// Maximum relevancy procent of typo match
-const int kTypoProc = 85;
-// Relevancy step of typo match
-const int kTypoStepProc = 15;
-// Decrease procent of relevancy if pattern found by word stem
-const int kStemProcDecrease = 15;
 // Minimal relevant length of the stemmer's term
 constexpr int kMinStemRellevantLen = 3;
 // Max length of the stemming result, which will be skipped
@@ -42,20 +32,20 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 	const FtDSLEntry& term = dsl[termIdx];
 	variants.clear();
 
-	std::vector<FtDSLVariant> variantsUtf16{{term.pattern, kFullMatchProc}};
+	std::vector<FtDSLVariant> variantsUtf16{{term.pattern, holder_.cfg_->rankingConfig.fullMatch}};
 
 	if (synonymsDsl && (!holder_.cfg_->enableNumbersSearch || !term.opts.number)) {
 		// Make translit and kblayout variants
 		if (holder_.cfg_->enableTranslit && !term.opts.exact) {
-			holder_.translit_->GetVariants(term.pattern, variantsUtf16);
+			holder_.translit_->GetVariants(term.pattern, variantsUtf16, holder_.cfg_->rankingConfig.translit);
 		}
 		if (holder_.cfg_->enableKbLayout && !term.opts.exact) {
-			holder_.kbLayout_->GetVariants(term.pattern, variantsUtf16);
+			holder_.kbLayout_->GetVariants(term.pattern, variantsUtf16, holder_.cfg_->rankingConfig.kblayout);
 		}
 		// Synonyms
-		if (term.opts.op != OpNot) {
-			holder_.synonyms_->GetVariants(term.pattern, variantsUtf16);
-			holder_.synonyms_->PostProcess(term, dsl, termIdx, *synonymsDsl);
+		if (rx_likely(term.opts.op != OpNot)) {
+			holder_.synonyms_->GetVariants(term.pattern, variantsUtf16, holder_.cfg_->rankingConfig.synonyms);
+			holder_.synonyms_->PostProcess(term, dsl, termIdx, *synonymsDsl, holder_.cfg_->rankingConfig.kblayout);
 		}
 	}
 
@@ -70,7 +60,7 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 		if (!term.opts.exact) {
 			if (term.opts.op == OpNot && term.opts.suff) {
 				// More strict match for negative (excluding) suffix terms
-				if (holder_.cfg_->logLevel >= LogTrace) {
+				if (rx_unlikely(holder_.cfg_->logLevel >= LogTrace)) {
 					logPrintf(LogInfo, "Skipping stemming for '%s%s%s'", term.opts.suff ? "*" : "", tmpstr, term.opts.pref ? "*" : "");
 				}
 				continue;
@@ -85,7 +75,7 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 				if (tmpstr != stemstr && !stemstr.empty()) {
 					const auto charsCount = getUTF8StringCharactersCount(stemstr);
 					if (charsCount <= kMaxStemSkipLen) {
-						if (holder_.cfg_->logLevel >= LogTrace) {
+						if (rx_unlikely(holder_.cfg_->logLevel >= LogTrace)) {
 							logPrintf(LogInfo, "Skipping too short stemmer's term '%s%s*'",
 									  term.opts.suff && &v != &variantsUtf16[0] ? "*" : "", stemstr);
 						}
@@ -98,9 +88,15 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 
 					const auto charCount = getUTF8StringCharactersCount(stemstr);
 					if (charCount >= kMinStemRellevantLen || !lowRelVariants) {
-						variants.emplace_back(std::move(stemstr), std::move(opts), v.proc - kStemProcDecrease, charsCount);
+						variants.emplace_back(std::move(stemstr), std::move(opts),
+											  std::max(v.proc - holder_.cfg_->rankingConfig.stemmerPenalty,
+													   BaseFTConfig::BaseRankingConfig::kMinProcAfterPenalty),
+											  charsCount);
 					} else {
-						lowRelVariants->emplace_back(std::move(stemstr), std::move(opts), v.proc - kStemProcDecrease, charsCount);
+						lowRelVariants->emplace_back(std::move(stemstr), std::move(opts),
+													 std::max(v.proc - holder_.cfg_->rankingConfig.stemmerPenalty,
+															  BaseFTConfig::BaseRankingConfig::kMinProcAfterPenalty),
+													 charsCount);
 					}
 				}
 			}
@@ -108,15 +104,16 @@ void Selecter<IdCont>::prepareVariants(std::vector<FtVariantEntry>& variants, RV
 	}
 }
 
+// RX_NO_INLINE just for build test purpose. Do not expect any effect here
 template <typename IdCont>
-template <bool mergeStatusesEmpty>
-IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses::Statuses&& mergeStatuses,
+template <FtUseExternStatuses useExternSt>
+RX_NO_INLINE IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses::Statuses&& mergeStatuses,
 												 const RdxContext& rdxCtx) {
 	FtSelectContext ctx;
 	ctx.rawResults.reserve(dsl.size());
 	// STEP 2: Search dsl terms for each variant
 	std::vector<SynonymsDsl> synonymsDsl;
-	holder_.synonyms_->PreProcess(dsl, synonymsDsl);
+	holder_.synonyms_->PreProcess(dsl, synonymsDsl, holder_.cfg_->rankingConfig.synonyms);
 	if (!inTransaction) ThrowOnCancel(rdxCtx);
 	for (size_t i = 0; i < dsl.size(); ++i) {
 		const auto irrVariantsCount = ctx.lowRelVariants.size();
@@ -134,7 +131,7 @@ IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 			ctx.lowRelVariants[j].rawResultIdx = ctx.rawResults.size() - 1;
 		}
 
-		if (holder_.cfg_->logLevel >= LogInfo) {
+		if (rx_unlikely(holder_.cfg_->logLevel >= LogInfo)) {
 			WrSerializer wrSer;
 			wrSer << "variants: [";
 			for (auto& variant : ctx.variants) {
@@ -165,7 +162,7 @@ IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 			logPrintf(LogInfo, "Variants: [%s]", wrSer.Slice());
 		}
 
-		processVariants<mergeStatusesEmpty>(ctx, mergeStatuses);
+		processVariants<useExternSt>(ctx, mergeStatuses);
 		if (res.term.opts.typos) {
 			// Lookup typos from typos_ map and fill results
 			TyposHandler h(*holder_.cfg_);
@@ -185,7 +182,7 @@ IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 		synCtx.rawResults.reserve(synDsl.dsl.size());
 		for (size_t i = 0; i < synDsl.dsl.size(); ++i) {
 			prepareVariants(synCtx.variants, nullptr, i, holder_.cfg_->stemmers, synDsl.dsl, nullptr);
-			if (holder_.cfg_->logLevel >= LogInfo) {
+			if (rx_unlikely(holder_.cfg_->logLevel >= LogInfo)) {
 				WrSerializer wrSer;
 				for (auto& variant : synCtx.variants) {
 					if (&variant != &*synCtx.variants.begin()) wrSer << ", ";
@@ -198,7 +195,7 @@ IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 			if (synCtx.rawResults.back().term.opts.op == OpAnd) {
 				ctx.rawResults.back().SwitchToInternalWordsMap();
 			}
-			processVariants<mergeStatusesEmpty>(synCtx, mergeStatuses);
+			processVariants<useExternSt>(synCtx, mergeStatuses);
 		}
 		for (size_t idx : synDsl.termsIdx) {
 			assertrx(idx < ctx.rawResults.size());
@@ -210,7 +207,7 @@ IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 		}
 		synonymsBounds.push_back(results.size());
 	}
-	processLowRelVariants<mergeStatusesEmpty>(ctx, mergeStatuses);
+	processLowRelVariants<useExternSt>(ctx, mergeStatuses);
 	// Typos for terms with low relevancy will not be processed
 
 	for (auto& res : ctx.rawResults) results.emplace_back(std::move(res));
@@ -218,7 +215,7 @@ IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, bool inTransa
 }
 
 template <typename IdCont>
-template <bool mergeStatusesEmpty>
+template <FtUseExternStatuses useExternSt>
 void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHolder<IdCont>::CommitStep& step,
 										   const FtVariantEntry& variant, unsigned curRawResultIdx,
 										   const FtMergeStatuses::Statuses& mergeStatuses, int vidsLimit) {
@@ -240,8 +237,8 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 	do {
 		if (keyIt == suffixes.end()) break;
 		if (vidsLimit <= vids) {
-			if (holder_.cfg_->logLevel >= LogInfo) {
-				logPrintf(LogInfo, "Terminating suffix loop on limit (%d). Current vairiant is '%s%s%s'", initialLimit,
+			if (rx_unlikely(holder_.cfg_->logLevel >= LogInfo)) {
+				logPrintf(LogInfo, "Terminating suffix loop on limit (%d). Current variant is '%s%s%s'", initialLimit,
 						  variant.opts.suff ? "*" : "", variant.pattern, variant.opts.pref ? "*" : "");
 			}
 			break;
@@ -250,7 +247,7 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 		const WordIdType glbwordId = keyIt->second;
 		const auto& hword = holder_.getWordById(glbwordId);
 
-		if constexpr (!mergeStatusesEmpty) {
+		if constexpr (useExternSt == FtUseExternStatuses::Yes) {
 			bool excluded = true;
 			for (const auto& id : hword.vids_) {
 				if (mergeStatuses[id.Id()] != FtMergeStatuses::kExcluded) {
@@ -277,7 +274,7 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 
 		const int matchDif = std::abs(long(wordLength - matchLen + suffixLen));
 		const int proc = std::max(variant.proc - holder_.cfg_->partialMatchDecrease * matchDif / std::max(matchLen, 3),
-								  suffixLen ? kSuffixMinProc : kPrefixMinProc);
+								  suffixLen ? holder_.cfg_->rankingConfig.suffixMin : holder_.cfg_->rankingConfig.prefixMin);
 
 		const auto it = res.foundWords->find(glbwordId);
 		if (it == res.foundWords->end() || it->second.first != curRawResultIdx) {
@@ -288,7 +285,7 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 				ctx.totalORVids += vidsSize;
 			}
 			(*res.foundWords)[glbwordId] = std::make_pair(curRawResultIdx, res.size() - 1);
-			if (holder_.cfg_->logLevel >= LogTrace) {
+			if (rx_unlikely(holder_.cfg_->logLevel >= LogTrace)) {
 				logPrintf(LogInfo, " matched %s '%s' of word '%s' (variant '%s'), %d vids, %d%%", suffixLen ? "suffix" : "prefix",
 						  keyIt->first, word, variant.pattern, holder_.getWordById(glbwordId).vids_.size(), proc);
 			}
@@ -300,7 +297,7 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 			++skipped;
 		}
 	} while ((keyIt++).lcp() >= int(tmpstr.length()));
-	if (holder_.cfg_->logLevel >= LogInfo) {
+	if (rx_unlikely(holder_.cfg_->logLevel >= LogInfo)) {
 		std::string limitString;
 		if (vidsLimit <= vids) {
 			limitString = fmt::sprintf(". Lookup terminated by VIDs limit(%d)", initialLimit);
@@ -311,18 +308,17 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 }
 
 template <typename IdCont>
-template <bool mergeStatusesEmpty>
+template <FtUseExternStatuses useExternSt>
 void Selecter<IdCont>::processVariants(FtSelectContext& ctx, const FtMergeStatuses::Statuses& mergeStatuses) {
 	for (const FtVariantEntry& variant : ctx.variants) {
 		for (auto& step : holder_.steps) {
-			processStepVariants<mergeStatusesEmpty>(ctx, step, variant, ctx.rawResults.size() - 1, mergeStatuses,
-													std::numeric_limits<int>::max());
+			processStepVariants<useExternSt>(ctx, step, variant, ctx.rawResults.size() - 1, mergeStatuses, std::numeric_limits<int>::max());
 		}
 	}
 }
 
 template <typename IdCont>
-template <bool mergeStatusesEmpty>
+template <FtUseExternStatuses useExternSt>
 void Selecter<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMergeStatuses::Statuses& mergeStatuses) {
 	// Add words from low relevancy variants, ordered by length & proc
 	if constexpr (kVariantsWithDifLength) {
@@ -352,7 +348,7 @@ void Selecter<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMerge
 		if constexpr (kVariantsWithDifLength) {
 			if (variant.GetLenCached() != lastVariantLen) {
 				if (unsigned(targetORLimit) <= ctx.totalORVids) {
-					if (holder_.cfg_->logLevel >= LogTrace) {
+					if (rx_unlikely(holder_.cfg_->logLevel >= LogTrace)) {
 						logPrintf(LogInfo, "Terminating on target OR limit. Current vairiant is '%s%s%s'", variant.opts.suff ? "*" : "",
 								  variant.pattern, variant.opts.pref ? "*" : "");
 					}
@@ -363,7 +359,7 @@ void Selecter<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMerge
 		} else {
 			(void)lastVariantLen;
 		}
-		if (holder_.cfg_->logLevel >= LogTrace) {
+		if (rx_unlikely(holder_.cfg_->logLevel >= LogTrace)) {
 			logPrintf(LogInfo, "Handling '%s%s%s' as variant with low relevancy", variant.opts.suff ? "*" : "", variant.pattern,
 					  variant.opts.pref ? "*" : "");
 		}
@@ -372,7 +368,7 @@ void Selecter<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMerge
 				int remainingLimit = targetORLimit - ctx.totalORVids;
 				if (remainingLimit > 0) {
 					for (auto& step : holder_.steps) {
-						processStepVariants<mergeStatusesEmpty>(ctx, step, variant, variant.rawResultIdx, mergeStatuses, remainingLimit);
+						processStepVariants<useExternSt>(ctx, step, variant, variant.rawResultIdx, mergeStatuses, remainingLimit);
 					}
 				}
 				break;
@@ -383,7 +379,7 @@ void Selecter<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMerge
 				int remainingLimit = targetANDLimit - res.idsCnt_;
 				if (remainingLimit > 0) {
 					for (auto& step : holder_.steps) {
-						processStepVariants<mergeStatusesEmpty>(ctx, step, variant, variant.rawResultIdx, mergeStatuses, remainingLimit);
+						processStepVariants<useExternSt>(ctx, step, variant, variant.rawResultIdx, mergeStatuses, remainingLimit);
 					}
 				}
 				break;
@@ -392,10 +388,11 @@ void Selecter<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMerge
 	}
 }
 
-static double bound(double k, double weight, double boost) noexcept { return (1.0 - weight) + k * boost * weight; }
+RX_ALWAYS_INLINE double bound(double k, double weight, double boost) noexcept { return (1.0 - weight) + k * boost * weight; }
 
 template <typename IdCont>
-void Selecter<IdCont>::debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank) {
+RX_ALWAYS_INLINE void Selecter<IdCont>::debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank,
+													   int prevRank) {
 #ifdef REINDEX_FT_EXTRA_DEBUG
 	if (holder_.cfg_->logLevel < LogTrace) return;
 
@@ -411,9 +408,9 @@ void Selecter<IdCont>::debugMergeStep(const char* msg, int vid, float normBm25, 
 #endif
 }
 template <typename IdCont>
-void Selecter<IdCont>::calcFieldBoost(double idf, unsigned long long f, const IdRelType& relid, const FtDslOpts& opts, int termProc,
-									  double& termRank, double& normBm25, bool& dontSkipCurTermRank, h_vector<double, 4>& ranksInFields,
-									  int& field) {
+RX_ALWAYS_INLINE void Selecter<IdCont>::calcFieldBoost(double idf, unsigned long long f, const IdRelType& relid, const FtDslOpts& opts,
+													   int termProc, double& termRank, double& normBm25, bool& dontSkipCurTermRank,
+													   h_vector<double, 4>& ranksInFields, int& field) {
 	assertrx(f < holder_.cfg_->fieldsCfg.size());
 	const auto& fldCfg = holder_.cfg_->fieldsCfg[f];
 	// raw bm25
@@ -718,7 +715,7 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 			if (!termRank) {
 				continue;
 			}
-			if (holder_.cfg_->logLevel >= LogTrace) {
+			if (rx_unlikely(holder_.cfg_->logLevel >= LogTrace)) {
 				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, rawRes.term.opts.termLenBoost);
 			}
 
@@ -841,7 +838,7 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 			auto [termRank, field] = calcTermRank(rawRes, idf, relid, r.proc_);
 			if (!termRank) continue;
 
-			if (holder_.cfg_->logLevel >= LogTrace) {
+			if (rx_unlikely(holder_.cfg_->logLevel >= LogTrace)) {
 				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, rawRes.term.opts.termLenBoost);
 			}
 
@@ -1039,7 +1036,10 @@ void Selecter<IdCont>::TyposHandler::operator()(std::vector<TextSearchResults>& 
 						}
 
 						const uint8_t wordLength = step.suffixes_.word_len_at(wordIdSfx);
-						const int proc = kTypoProc - tcount * kTypoStepProc / std::max((wordLength - tcount) / 3, 1);
+						const int proc = std::max(holder.cfg_->rankingConfig.typo -
+										 tcount * holder.cfg_->rankingConfig.typoPenalty /
+											 std::max((wordLength - tcount) / 3, BaseFTConfig::BaseRankingConfig::kMinProcAfterPenalty),
+									 1);
 						const auto it = res.foundWords->find(wordTypo.word);
 						if (it == res.foundWords->end() || it->second.first != curRawResultIdx) {
 							const auto& hword = holder.getWordById(wordTypo.word);
@@ -1058,18 +1058,18 @@ void Selecter<IdCont>::TyposHandler::operator()(std::vector<TextSearchResults>& 
 					if (dontUseMaxTyposForBoth_ && level == 1 && typo.size() != patternSize) return;
 				}
 			});
-		if (holder.cfg_->logLevel >= LogInfo) {
+		if (rx_unlikely(holder.cfg_->logLevel >= LogInfo)) {
 			logPrintf(LogInfo, "Lookup typos, matched %d typos, with %d vids, skiped %d", matched, vids, skiped);
 		}
 	}
 }
 
-static unsigned uabs(int a) { return unsigned(std::abs(a)); }
+RX_ALWAYS_INLINE unsigned uabs(int a) { return unsigned(std::abs(a)); }
 
 template <typename IdCont>
 template <typename... Args>
 void Selecter<IdCont>::TyposHandler::logTraceF(int level, const char* fmt, Args&&... args) {
-	if (logLevel_ >= LogTrace) {
+	if (rx_unlikely(logLevel_ >= LogTrace)) {
 		logPrintf(level, fmt, std::forward<Args>(args)...);
 	}
 }
@@ -1316,7 +1316,7 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextS
 			}
 		}
 	}
-	if (holder_.cfg_->logLevel >= LogInfo) {
+	if (rx_unlikely(holder_.cfg_->logLevel >= LogInfo)) {
 		logPrintf(LogInfo, "Complex merge (%d patterns): out %d vids", rawResults.size(), merged.size());
 	}
 
@@ -1337,11 +1337,14 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextS
 }
 
 template class Selecter<PackedIdRelVec>;
-template IDataHolder::MergeData Selecter<PackedIdRelVec>::Process<true>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&, const RdxContext&);
-template IDataHolder::MergeData Selecter<PackedIdRelVec>::Process<false>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&,
-																		 const RdxContext&);
+template IDataHolder::MergeData Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&,
+																						   const RdxContext&);
+template IDataHolder::MergeData Selecter<PackedIdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&,
+																							const RdxContext&);
 template class Selecter<IdRelVec>;
-template IDataHolder::MergeData Selecter<IdRelVec>::Process<true>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&, const RdxContext&);
-template IDataHolder::MergeData Selecter<IdRelVec>::Process<false>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&, const RdxContext&);
+template IDataHolder::MergeData Selecter<IdRelVec>::Process<FtUseExternStatuses::No>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&,
+																					 const RdxContext&);
+template IDataHolder::MergeData Selecter<IdRelVec>::Process<FtUseExternStatuses::Yes>(FtDSLQuery&&, bool, FtMergeStatuses::Statuses&&,
+																					  const RdxContext&);
 
 }  // namespace reindexer

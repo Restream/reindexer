@@ -14,7 +14,7 @@ public:
 	Selecter(DataHolder<IdCont>& holder, size_t fieldSize, bool needArea, int maxAreasInDoc)
 		: holder_(holder), fieldSize_(fieldSize), needArea_(needArea), maxAreasInDoc_(maxAreasInDoc) {}
 
-	template <bool mergeStatusesEmpty>
+	template <FtUseExternStatuses>
 	IDataHolder::MergeData Process(FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext&);
 
 private:
@@ -204,13 +204,13 @@ private:
 	}
 
 	void debugMergeStep(const char* msg, int vid, float normBm25, float normDist, int finalRank, int prevRank);
-	template <bool withStatuses>
+	template <FtUseExternStatuses>
 	void processVariants(FtSelectContext&, const FtMergeStatuses::Statuses& mergeStatuses);
-	template <bool withStatuses>
+	template <FtUseExternStatuses>
 	void processLowRelVariants(FtSelectContext&, const FtMergeStatuses::Statuses& mergeStatuses);
 	void prepareVariants(std::vector<FtVariantEntry>&, RVector<FtBoundVariantEntry, 4>* lowRelVariants, size_t termIdx,
 						 const std::vector<std::string>& langs, const FtDSLQuery&, std::vector<SynonymsDsl>*);
-	template <bool withStatuses>
+	template <FtUseExternStatuses>
 	void processStepVariants(FtSelectContext& ctx, typename DataHolder<IdCont>::CommitStep& step, const FtVariantEntry& variant,
 							 unsigned curRawResultIdx, const FtMergeStatuses::Statuses& mergeStatuses, int vidsLimit);
 

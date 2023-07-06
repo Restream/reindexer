@@ -26,7 +26,7 @@ public:
 		initConfig();
 	}
 	std::unique_ptr<Index> Clone() const override { return std::unique_ptr<Index>{new FastIndexText<T>(*this)}; }
-	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
+	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, FtUseExternStatuses,
 					  const RdxContext&) override final;
 	IndexMemStat GetMemStat(const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
@@ -35,10 +35,9 @@ public:
 	FtMergeStatuses GetFtMergeStatuses(const RdxContext& rdxCtx) override final {
 		this->build(rdxCtx);
 		return {FtMergeStatuses::Statuses(holder_->vdocs_.size(), 0), std::vector<bool>(holder_->rowId2Vdoc_.size(), false),
-				&holder_->rowId2Vdoc_, std::nullopt};
+				&holder_->rowId2Vdoc_};
 	}
-	reindexer::FtPreselectT FtPreselect(const QueryEntries& qentries, int idxNo, const SelectFunction& fnCtx,
-										const RdxContext& rdxCtx) override final;
+	reindexer::FtPreselectT FtPreselect(const RdxContext& rdxCtx) override final;
 	bool EnablePreselectBeforeFt() const override final { return GetConfig()->enablePreselectBeforeFt; }
 
 protected:

@@ -136,7 +136,7 @@ public:
 
 	bool contains(int f) const noexcept { return mask_ & (1ULL << f); }
 	bool contains(const FieldsSet &f) const noexcept { return mask_ && ((mask_ & f.mask_) == f.mask_); }
-	bool contains(const std::string &jsonPath) const noexcept {
+	bool contains(std::string_view jsonPath) const noexcept {
 		return std::find(jsonPaths_.begin(), jsonPaths_.end(), jsonPath) != jsonPaths_.end();
 	}
 	bool contains(const IndexesFieldsSet &f) const noexcept { return mask_ && ((mask_ & f.mask()) == f.mask()); }

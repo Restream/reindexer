@@ -56,12 +56,17 @@ public:
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
 
-	ItemType NewItem(std::string_view ns) { return reindexer->NewItem(ns); }
+	ItemType NewItem(std::string_view ns) {
+		ItemType item = reindexer->NewItem(ns);
+		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+		return item;
+	}
 	reindexer::Error Commit(std::string_view ns) { return reindexer->Commit(ns); }
 	void Upsert(std::string_view ns, ItemType &item) {
 		assertrx(!!item);
 		auto err = reindexer->Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	}
 	reindexer::Error DumpIndex(std::ostream &os, std::string_view ns, std::string_view index) {
 		return reindexer->DumpIndex(os, ns, index);
@@ -103,6 +108,7 @@ public:
 	std::string RandLikePattern() {
 		std::string res;
 		const uint8_t len = rand() % 4 + 4;
+		res.reserve(len);
 		for (uint8_t i = 0; i < len;) {
 			if (rand() % 3 == 0) {
 				res += '%';

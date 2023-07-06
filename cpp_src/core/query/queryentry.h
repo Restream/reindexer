@@ -45,6 +45,9 @@ struct JoinQueryEntry {
 };
 
 struct QueryEntry {
+	static constexpr unsigned kDefaultLimit = UINT_MAX;
+	static constexpr unsigned kDefaultOffset = 0;
+
 	QueryEntry(std::string idx, CondType cond, VariantArray v) : index{std::move(idx)}, condition{cond}, values(std::move(v)) {}
 	QueryEntry(CondType cond, std::string idx, int idxN, bool dist = false)
 		: index(std::move(idx)), idxNo(idxN), condition(cond), distinct(dist) {}
@@ -226,10 +229,8 @@ struct SortingEntries : public h_vector<SortingEntry, 1> {};
 
 class AggregateEntry {
 public:
-	static constexpr unsigned kDefaultLimit = UINT_MAX;
-	static constexpr unsigned kDefaultOffset = 0;
-
-	AggregateEntry(AggType type, h_vector<std::string, 1> fields, SortingEntries sort = {}, unsigned limit = UINT_MAX, unsigned offset = 0);
+	AggregateEntry(AggType type, h_vector<std::string, 1> fields, SortingEntries sort = {}, unsigned limit = QueryEntry::kDefaultLimit,
+				   unsigned offset = QueryEntry::kDefaultOffset);
 	[[nodiscard]] bool operator==(const AggregateEntry &) const noexcept;
 	[[nodiscard]] bool operator!=(const AggregateEntry &ae) const noexcept { return !operator==(ae); }
 	[[nodiscard]] AggType Type() const noexcept { return type_; }
@@ -245,8 +246,8 @@ private:
 	AggType type_;
 	h_vector<std::string, 1> fields_;
 	SortingEntries sortingEntries_;
-	unsigned limit_ = kDefaultLimit;
-	unsigned offset_ = kDefaultOffset;
+	unsigned limit_ = QueryEntry::kDefaultLimit;
+	unsigned offset_ = QueryEntry::kDefaultOffset;
 };
 
 }  // namespace reindexer

@@ -15,7 +15,7 @@ class FieldsSet;
 class VariantArray;
 class key_string;
 struct p_string;
-struct Point;
+class Point;
 class Uuid;
 
 enum class WithString : bool { No = false, Yes = true };
@@ -32,7 +32,9 @@ public:
 	explicit Variant(const char *v);
 	explicit Variant(p_string v, bool enableHold = true);
 	explicit Variant(const std::string &v);
+	explicit Variant(std::string &&v);
 	explicit Variant(const key_string &v);
+	explicit Variant(key_string &&v);
 	explicit Variant(const PayloadValue &v);
 	explicit Variant(PayloadValue &&v);
 	explicit Variant(const VariantArray &values);

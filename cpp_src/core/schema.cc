@@ -345,4 +345,30 @@ void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& split
 	}
 }
 
+std::vector<int> Schema::MakeCsvTagOrdering(const TagsMatcher& tm) const {
+	if (paths_.root_.children.empty()) {
+		return {};
+	}
+
+	gason::JsonParser parser;
+	auto tags0lvl = parser.Parse(std::string_view(originalJson_))["required"];
+
+	if (tags0lvl.value.getTag() != gason::JsonTag::JSON_ARRAY) {
+		throw Error(errParams, "Incorrect type of \"required\" tag in namespace json-schema");
+	}
+
+	std::vector<int> result;
+	for (const auto& tagNode : tags0lvl.value) {
+		const auto& tagName = tagNode.As<std::string_view>();
+		auto tag = tm.name2tag(tagName);
+		if (tag == 0) {
+			throw Error(errParams, "Tag %s not found in tagsmatcher", tagName);
+		}
+		result.emplace_back(tag);
+	}
+	return result;
+}
+
+bool Schema::IsEmpty() const noexcept { return paths_.root_.children.empty(); }
+
 }  // namespace reindexer

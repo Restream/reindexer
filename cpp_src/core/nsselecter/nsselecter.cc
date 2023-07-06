@@ -5,6 +5,7 @@
 #include "estl/multihash_map.h"
 #include "explaincalc.h"
 #include "itemcomparator.h"
+#include "qresexplainholder.h"
 #include "querypreprocessor.h"
 #include "sortexpression.h"
 #include "tools/logger.h"
@@ -61,7 +62,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	QueryPreprocessor qPreproc((ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeExecute)
 								   ? const_cast<QueryEntries *>(&ctx.query.entries)->MakeLazyCopy()
 								   : QueryEntries{ctx.query.entries},
-							   ctx.query, ns_, ctx.reqMatchedOnceFlag, ctx.inTransaction);
+							   ns_, ctx);
 	if (ctx.joinedSelectors) {
 		qPreproc.InjectConditionsFromJoins(*ctx.joinedSelectors, rdxCtx);
 	}
@@ -70,17 +71,27 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	const bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
 	qPreproc.InitIndexNumbers();
 	bool isFt = qPreproc.ContainsFullTextIndexes();
+	if (ctx.isMergeQuery == IsMergeQuery::Yes && ctx.query.sortingEntries_.empty()) {
+		if (ctx.isFtQuery == IsFTQuery::NotSet) {
+			ctx.isFtQuery = isFt ? IsFTQuery::Yes : IsFTQuery::No;
+		} else {
+			if (isFt != (ctx.isFtQuery == IsFTQuery::Yes)) {
+				throw Error{errNotValid,
+							"In merge query without sorting all subqueries should be fulltext or not fulltext at the same time"};
+			}
+		}
+	}
 	// Prepare data for select functions
 	if (ctx.functions) {
 		fnc_ = ctx.functions->AddNamespace(ctx.query, *ns_, isFt);
 	}
 
-	if (isFt) {
-		qPreproc.CheckUniqueFtQuery();
-		qPreproc.ExcludeFtQuery(*fnc_, rdxCtx);
-	}
 	if (!ctx.skipIndexesLookup) {
 		qPreproc.Reduce(isFt);
+	}
+	if (isFt) {
+		qPreproc.CheckUniqueFtQuery();
+		qPreproc.ExcludeFtQuery(rdxCtx);
 	}
 	qPreproc.ConvertWhereValues();
 
@@ -100,6 +111,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	}
 
 	SelectIteratorContainer qres(ns_->payloadType_, &ctx);
+	QresExplainHolder qresHolder(qres, (explain.IsEnabled() || ctx.query.debugLevel >= LogTrace) ? QresExplainHolder::ExplainEnabled::Yes
+																								 : QresExplainHolder::ExplainEnabled::No);
 	LoopCtx lctx(qres, ctx, qPreproc, aggregators, explain);
 	if (!ctx.query.forcedSortOrder_.empty() && !qPreproc.MoreThanOneEvaluation()) {
 		ctx.isForceAll = true;
@@ -108,8 +121,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	do {
 		isFt = qPreproc.ContainsFullTextIndexes();
 		qres.Clear();
-		lctx.start = 0;
-		lctx.count = UINT_MAX;
+		lctx.start = QueryEntry::kDefaultOffset;
+		lctx.count = QueryEntry::kDefaultLimit;
 		ctx.isForceAll = isForceAll;
 
 		if (ctx.preResult) {
@@ -189,7 +202,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 							!ctx.sortingContext.sortIndex())				   // 2. We have sorted query, by unordered index
 						   || ctx.preResult->btreeIndexOptimizationEnabled) {  // 3. We have btree-index that is not committed yet
 					ctx.preResult->iterators.Append(qres.cbegin(), qres.cend());
-					if (ctx.query.debugLevel >= LogInfo) {
+					if (rx_unlikely(ctx.query.debugLevel >= LogInfo)) {
 						logPrintf(LogInfo, "Built preResult (expected %d iterations) with %d iterators, q='%s'", maxIterations, qres.Size(),
 								  ctx.query.GetSQL());
 					}
@@ -271,19 +284,33 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 						 (hasComparators || qPreproc.MoreThanOneEvaluation() || qres.Size() > 1 || qres.Get<SelectIterator>(0).size() > 1);
 
 		if (qPreproc.IsFtExcluded()) {
-			if (reverse && hasComparators) selectLoop<true, true, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
-			if (!reverse && hasComparators) selectLoop<false, true, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
-			if (reverse && !hasComparators) selectLoop<true, false, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
-			if (!reverse && !hasComparators) selectLoop<false, false, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
+			if (reverse && hasComparators) {
+				selectLoop<true, true, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
+			} else if (!reverse && hasComparators) {
+				selectLoop<false, true, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
+			} else if (reverse && !hasComparators) {
+				selectLoop<true, false, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
+			} else {
+				selectLoop<false, false, false>(lctx, qPreproc.GetFtMergeStatuses(), rdxCtx);
+			}
 		} else {
-			if (reverse && hasComparators && aggregationsOnly) selectLoop<true, true, true>(lctx, result, rdxCtx);
-			if (!reverse && hasComparators && aggregationsOnly) selectLoop<false, true, true>(lctx, result, rdxCtx);
-			if (reverse && !hasComparators && aggregationsOnly) selectLoop<true, false, true>(lctx, result, rdxCtx);
-			if (!reverse && !hasComparators && aggregationsOnly) selectLoop<false, false, true>(lctx, result, rdxCtx);
-			if (reverse && hasComparators && !aggregationsOnly) selectLoop<true, true, false>(lctx, result, rdxCtx);
-			if (!reverse && hasComparators && !aggregationsOnly) selectLoop<false, true, false>(lctx, result, rdxCtx);
-			if (reverse && !hasComparators && !aggregationsOnly) selectLoop<true, false, false>(lctx, result, rdxCtx);
-			if (!reverse && !hasComparators && !aggregationsOnly) selectLoop<false, false, false>(lctx, result, rdxCtx);
+			if (reverse && hasComparators && aggregationsOnly) {
+				selectLoop<true, true, true>(lctx, result, rdxCtx);
+			} else if (!reverse && hasComparators && aggregationsOnly) {
+				selectLoop<false, true, true>(lctx, result, rdxCtx);
+			} else if (reverse && !hasComparators && aggregationsOnly) {
+				selectLoop<true, false, true>(lctx, result, rdxCtx);
+			} else if (!reverse && !hasComparators && aggregationsOnly) {
+				selectLoop<false, false, true>(lctx, result, rdxCtx);
+			} else if (reverse && hasComparators && !aggregationsOnly) {
+				selectLoop<true, true, false>(lctx, result, rdxCtx);
+			} else if (!reverse && hasComparators && !aggregationsOnly) {
+				selectLoop<false, true, false>(lctx, result, rdxCtx);
+			} else if (reverse && !hasComparators && !aggregationsOnly) {
+				selectLoop<true, false, false>(lctx, result, rdxCtx);
+			} else if (!reverse && !hasComparators && !aggregationsOnly) {
+				selectLoop<false, false, false>(lctx, result, rdxCtx);
+			}
 		}
 
 		// Get total count for simple query with 1 condition and 1 idset
@@ -299,7 +326,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		if (!ctx.inTransaction) {
 			ThrowOnCancel(rdxCtx);
 		}
-	} while (qPreproc.NeedNextEvaluation(lctx.start, lctx.count, ctx.matchedAtLeastOnce));
+	} while (qPreproc.NeedNextEvaluation(lctx.start, lctx.count, ctx.matchedAtLeastOnce, qresHolder));
 
 	processLeftJoins(result, ctx, resultInitSize, rdxCtx);
 	if (!ctx.sortingContext.expressions.empty()) {
@@ -335,10 +362,10 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	explain.PutCount((ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild)
 						 ? (ctx.preResult->dataMode == JoinPreResult::ModeIdSet ? ctx.preResult->ids.size() : ctx.preResult->values.size())
 						 : result.Count());
-	explain.PutSelectors(&qres);
+	explain.PutSelectors(&qresHolder.GetResultsRef());
 	explain.PutJoinedSelectors(ctx.joinedSelectors);
 
-	if (ctx.query.debugLevel >= LogInfo) {
+	if (rx_unlikely(ctx.query.debugLevel >= LogInfo)) {
 		logPrintf(LogInfo, "%s", ctx.query.GetSQL());
 		explain.LogDump(ctx.query.debugLevel);
 	}
@@ -349,7 +376,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 			result.explainResults = explain.GetJSON();
 		}
 	}
-	if (ctx.query.debugLevel >= LogTrace) {
+	if (rx_unlikely(ctx.query.debugLevel >= LogTrace)) {
 		logPrintf(LogInfo, "Query returned: [%s]; total=%d", result.Dump(), result.totalCount);
 	}
 
@@ -360,13 +387,13 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	if (ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
 		switch (ctx.preResult->dataMode) {
 			case JoinPreResult::ModeIdSet:
-				if (ctx.query.debugLevel >= LogInfo) {
+				if (rx_unlikely(ctx.query.debugLevel >= LogInfo)) {
 					logPrintf(LogInfo, "Built idset preResult (expected %d iterations) with %d ids, q = '%s'", explain.Iterations(),
 							  ctx.preResult->ids.size(), ctx.query.GetSQL());
 				}
 				break;
 			case JoinPreResult::ModeValues:
-				if (ctx.query.debugLevel >= LogInfo) {
+				if (rx_unlikely(ctx.query.debugLevel >= LogInfo)) {
 					logPrintf(LogInfo, "Built values preResult (expected %d iterations) with %d values, q = '%s'", explain.Iterations(),
 							  ctx.preResult->values.size(), ctx.query.GetSQL());
 				}
@@ -1038,6 +1065,8 @@ void NsSelecter::selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &rd
 							sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr);
 			}
 			setLimitAndOffset(result.Items(), offset, ctx.qPreproc.Count() + initCount);
+		} else if (sctx.isForceAll) {
+			setLimitAndOffset(result.Items(), ctx.qPreproc.Start(), ctx.qPreproc.Count() + initCount);
 		}
 
 		if (sctx.isForceAll) {
@@ -1217,6 +1246,7 @@ void NsSelecter::prepareSortIndex(const NamespaceImpl &ns, std::string_view colu
 	assertrx(!column.empty());
 	index = IndexValueType::SetByJsonPath;
 	if (ns.getIndexByNameOrJsonPath(std::string{column}, index) && ns.indexes_[index]->Opts().IsSparse()) {
+		// FIXME: Sparse index will not be found if jsonpath does not equal to index name
 		index = IndexValueType::SetByJsonPath;
 	}
 	if (index == IndexValueType::SetByJsonPath) {

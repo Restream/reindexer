@@ -80,7 +80,7 @@ public:
 	void GetByJsonPath(std::string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
 	void GetByJsonPath(const TagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
 	void GetByJsonPath(const IndexedTagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
-	VariantArray GetIndexedArrayData(const IndexedTagsPath &jsonPath, int &offset, int &size) const;
+	VariantArray GetIndexedArrayData(const IndexedTagsPath &jsonPath, int field, int &offset, int &size) const;
 
 	// Get fields count
 	int NumFields() const noexcept { return t_.NumFields(); }

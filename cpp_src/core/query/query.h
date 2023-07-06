@@ -71,7 +71,8 @@ public:
 	/// @param start - number of the first row to get from selected set. Analog to sql OFFSET Offset.
 	/// @param count - number of rows to get from result set. Analog to sql LIMIT RowsCount.
 	/// @param calcTotal - calculation mode.
-	explicit Query(const std::string &nsName, unsigned start = 0, unsigned count = UINT_MAX, CalcTotalMode calcTotal = ModeNoTotal);
+	explicit Query(const std::string &nsName, unsigned start = QueryEntry::kDefaultOffset, unsigned count = QueryEntry::kDefaultLimit,
+				   CalcTotalMode calcTotal = ModeNoTotal);
 
 	/// Creates an empty object.
 	Query() = default;
@@ -465,26 +466,30 @@ public:
 	Query &&OrInnerJoin(const std::string &index, const std::string &joinIndex, CondType cond, const Query &qr) && {
 		return std::move(OrInnerJoin(index, joinIndex, cond, qr));
 	}
+	Query &Merge(const Query &q) &;
+	Query &&Merge(const Query &q) && { return std::move(Merge(q)); }
+	Query &Merge(Query &&q) &;
+	Query &&Merge(Query &&q) && { return std::move(Merge(std::move(q))); }
 
 	/// Changes debug level.
 	/// @param level - debug level.
 	/// @return Query object.
-	Query &Debug(int level) & {	 // -V1071
+	Query &Debug(int level) &noexcept {
 		debugLevel = level;
 		return *this;
 	}
-	Query &&Debug(int level) && { return std::move(Debug(level)); }
+	Query &&Debug(int level) &&noexcept { return std::move(Debug(level)); }
 
 	/// Changes strict mode.
 	/// @param mode - strict mode.
 	/// @return Query object.
-	Query &Strict(StrictMode mode) & {
+	Query &Strict(StrictMode mode) &noexcept {
 		strictMode = mode;
 		return *this;
 	}
-	Query &&Strict(StrictMode mode) && { return std::move(Strict(mode)); }
+	Query &&Strict(StrictMode mode) &&noexcept { return std::move(Strict(mode)); }
 
-	/// Performs sorting by certain column. Analog to sql ORDER BY.
+	/// Performs sorting by certain column. Same as sql 'ORDER BY'.
 	/// @param sort - sorting column name.
 	/// @param desc - is sorting direction descending or ascending.
 	/// @return Query object.
@@ -493,6 +498,23 @@ public:
 		return *this;
 	}
 	Query &&Sort(std::string sort, bool desc) && { return std::move(Sort(std::move(sort), desc)); }
+
+	/// Performs sorting by ST_Distance() expressions for geometry index. Sorting function will use distance between field and target point.
+	/// @param field - field's name. This field must contain Point.
+	/// @param p - target point.
+	/// @param desc - is sorting direction descending or ascending.
+	/// @return Query object.
+	Query &SortStDistance(std::string_view field, reindexer::Point p, bool desc) &;
+	Query &&SortStDistance(std::string_view field, reindexer::Point p, bool desc) && { return std::move(SortStDistance(field, p, desc)); }
+	/// Performs sorting by ST_Distance() expressions for geometry index. Sorting function will use distance 2 fields.
+	/// @param field1 - first field name. This field must contain Point.
+	/// @param field2 - second field name.This field must contain Point.
+	/// @param desc - is sorting direction descending or ascending.
+	/// @return Query object.
+	Query &SortStDistance(std::string_view field1, std::string_view field2, bool desc) &;
+	Query &&SortStDistance(std::string_view field1, std::string_view field2, bool desc) && {
+		return std::move(SortStDistance(field1, field2, desc));
+	}
 
 	/// Performs sorting by certain column. Analog to sql ORDER BY.
 	/// @param sort - sorting column name.
@@ -534,8 +556,7 @@ public:
 	/// @param indexName - name of index for distict operation.
 	Query &Distinct(std::string indexName) & {
 		if (indexName.length()) {
-			AggregateEntry aggEntry{AggDistinct, {std::move(indexName)}};
-			aggregations_.emplace_back(std::move(aggEntry));
+			aggregations_.emplace_back(AggDistinct, h_vector<std::string, 1>{std::move(indexName)});
 		}
 		return *this;
 	}
@@ -562,11 +583,12 @@ public:
 	/// @param offset - index of the first row to get from result set.
 	/// @return Query object ready to be executed.
 	Query &Aggregate(AggType type, h_vector<std::string, 1> fields, const std::vector<std::pair<std::string, bool>> &sort = {},
-					 unsigned limit = UINT_MAX, unsigned offset = 0) & {
+					 unsigned limit = QueryEntry::kDefaultLimit, unsigned offset = QueryEntry::kDefaultOffset) & {
 		if (!CanAddAggregation(type)) {
 			throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 		}
 		SortingEntries sorting;
+		sorting.reserve(sort.size());
 		for (const auto &s : sort) {
 			sorting.emplace_back(s.first, s.second);
 		}
@@ -574,7 +596,7 @@ public:
 		return *this;
 	}
 	Query &&Aggregate(AggType type, h_vector<std::string, 1> fields, const std::vector<std::pair<std::string, bool>> &sort = {},
-					  unsigned limit = UINT_MAX, unsigned offset = 0) && {
+					  unsigned limit = QueryEntry::kDefaultLimit, unsigned offset = QueryEntry::kDefaultOffset) && {
 		return std::move(Aggregate(type, std::move(fields), sort, limit, offset));
 	}
 
@@ -676,32 +698,31 @@ public:
 
 	void WalkNested(bool withSelf, bool withMerged, const std::function<void(const Query &q)> &visitor) const;
 
-	bool HasLimit() const noexcept { return count != UINT_MAX; }
-	bool HasOffset() const noexcept { return start != 0; }
+	bool HasLimit() const noexcept { return count != QueryEntry::kDefaultLimit; }
+	bool HasOffset() const noexcept { return start != QueryEntry::kDefaultOffset; }
 	bool IsWALQuery() const noexcept;
 	const std::vector<UpdateEntry> &UpdateFields() const noexcept { return updateFields_; }
-
-	QueryType Type() const { return type_; }
+	QueryType Type() const noexcept { return type_; }
 
 protected:
 	void deserialize(Serializer &ser, bool &hasJoinConditions);
 
 public:
-	std::string _namespace;						/// Name of the namespace.
-	unsigned start = 0;							/// First row index from result set.
-	unsigned count = UINT_MAX;					/// Number of rows from result set.
-	int debugLevel = 0;							/// Debug level.
-	StrictMode strictMode = StrictModeNotSet;	/// Strict mode.
-	bool explain_ = false;						/// Explain query if true
-	CalcTotalMode calcTotal = ModeNoTotal;		/// Calculation mode.
-	QueryType type_ = QuerySelect;				/// Query type
-	OpType nextOp_ = OpAnd;						/// Next operation constant.
-	SortingEntries sortingEntries_;				/// Sorting data.
-	std::vector<Variant> forcedSortOrder_;		/// Keys that always go first - before any ordered values.
-	std::vector<JoinedQuery> joinQueries_;		/// List of queries for join.
-	std::vector<JoinedQuery> mergeQueries_;		/// List of merge queries.
-	h_vector<std::string, 1> selectFilter_;		/// List of columns in a final result set.
-	std::vector<std::string> selectFunctions_;	/// List of sql functions
+	std::string _namespace;						  /// Name of the namespace.
+	unsigned start = QueryEntry::kDefaultOffset;  /// First row index from result set.
+	unsigned count = QueryEntry::kDefaultLimit;	  /// Number of rows from result set.
+	int debugLevel = 0;							  /// Debug level.
+	StrictMode strictMode = StrictModeNotSet;	  /// Strict mode.
+	bool explain_ = false;						  /// Explain query if true
+	CalcTotalMode calcTotal = ModeNoTotal;		  /// Calculation mode.
+	QueryType type_ = QuerySelect;				  /// Query type
+	OpType nextOp_ = OpAnd;						  /// Next operation constant.
+	SortingEntries sortingEntries_;				  /// Sorting data.
+	std::vector<Variant> forcedSortOrder_;		  /// Keys that always go first - before any ordered values.
+	std::vector<JoinedQuery> joinQueries_;		  /// List of queries for join.
+	std::vector<JoinedQuery> mergeQueries_;		  /// List of merge queries.
+	h_vector<std::string, 1> selectFilter_;		  /// List of columns in a final result set.
+	std::vector<std::string> selectFunctions_;	  /// List of sql functions
 
 	QueryEntries entries;
 

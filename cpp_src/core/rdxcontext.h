@@ -42,9 +42,9 @@ public:
 	using time_point = typename ClockT::time_point;
 	using duration = typename ClockT::duration;
 
-	RdxDeadlineContext(time_point deadline = time_point(), const IRdxCancelContext* parent = nullptr)
+	RdxDeadlineContext(time_point deadline = time_point(), const IRdxCancelContext* parent = nullptr) noexcept
 		: deadline_(deadline), parent_(parent) {}
-	RdxDeadlineContext(duration timeout, const IRdxCancelContext* parent = nullptr)
+	RdxDeadlineContext(duration timeout, const IRdxCancelContext* parent = nullptr) noexcept
 		: deadline_((timeout.count() > 0) ? (ClockT::now() + timeout) : time_point()), parent_(parent) {}
 
 	CancelType GetCancelType() const noexcept override final {
@@ -61,7 +61,7 @@ public:
 		return (deadline_.time_since_epoch().count() > 0) || (parent_ != nullptr && parent_->IsCancelable());
 	}
 	const IRdxCancelContext* parent() const noexcept { return parent_; }
-	const time_point deadline() const noexcept { return deadline_; }
+	time_point deadline() const noexcept { return deadline_; }
 
 private:
 	time_point deadline_;
@@ -72,11 +72,11 @@ class RdxContext {
 public:
 	using Completion = std::function<void(const Error&)>;
 
-	RdxContext() : fromReplication_(false), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr) {}
-	RdxContext(bool fromReplication, const LSNPair& LSNs)
+	RdxContext() noexcept : fromReplication_(false), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr) {}
+	RdxContext(bool fromReplication, const LSNPair& LSNs) noexcept
 		: fromReplication_(fromReplication), LSNs_(LSNs), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(nullptr), cmpl_(nullptr) {}
 
-	RdxContext(const IRdxCancelContext* cancelCtx, Completion cmpl)
+	RdxContext(const IRdxCancelContext* cancelCtx, Completion cmpl) noexcept
 		: fromReplication_(false), holdStatus_(kEmpty), activityPtr_(nullptr), cancelCtx_(cancelCtx), cmpl_(std::move(cmpl)) {}
 	RdxContext(std::string_view activityTracer, std::string_view user, std::string_view query, ActivityContainer& container,
 			   int connectionId, const IRdxCancelContext* cancelCtx, Completion cmpl)
@@ -85,7 +85,7 @@ public:
 		  activityCtx_(activityTracer, user, query, container, connectionId),
 		  cancelCtx_(cancelCtx),
 		  cmpl_(std::move(cmpl)) {}
-	explicit RdxContext(RdxActivityContext* ptr, const IRdxCancelContext* cancelCtx = nullptr, Completion cmpl = nullptr)
+	explicit RdxContext(RdxActivityContext* ptr, const IRdxCancelContext* cancelCtx = nullptr, Completion cmpl = nullptr) noexcept
 		: fromReplication_(false), holdStatus_(ptr ? kPtr : kEmpty), activityPtr_(ptr), cancelCtx_(cancelCtx), cmpl_(std::move(cmpl)) {
 		if (holdStatus_ == kPtr) activityPtr_->refCount_.fetch_add(1u, std::memory_order_relaxed);
 	}
@@ -104,12 +104,12 @@ public:
 	}
 	/// returning value should be assined to a local variable which will be destroyed after the locking complete
 	/// lifetime of the local variable should not exceed of the context's
-	RdxActivityContext::Ward BeforeLock(MutexMark mutexMark) const;
-	RdxActivityContext::Ward BeforeIndexWork() const;
-	RdxActivityContext::Ward BeforeSelectLoop() const;
+	RdxActivityContext::Ward BeforeLock(MutexMark mutexMark) const noexcept;
+	RdxActivityContext::Ward BeforeIndexWork() const noexcept;
+	RdxActivityContext::Ward BeforeSelectLoop() const noexcept;
 	/// lifetime of the returning value should not exceed of the context's
 	RdxContext OnlyActivity() const { return RdxContext{Activity()}; }
-	RdxActivityContext* Activity() const;
+	RdxActivityContext* Activity() const noexcept;
 	Completion Compl() const { return cmpl_; }
 
 	const bool fromReplication_;
@@ -129,10 +129,14 @@ class QueryResults;
 
 class InternalRdxContext {
 public:
-	InternalRdxContext() noexcept : cmpl_(nullptr) {}
-	InternalRdxContext(RdxContext::Completion cmpl, RdxDeadlineContext ctx, std::string_view activityTracer, std::string_view user,
+	InternalRdxContext() noexcept {}
+	InternalRdxContext(RdxContext::Completion cmpl, RdxDeadlineContext ctx, std::string activityTracer, std::string user,
 					   int connectionId) noexcept
-		: cmpl_(std::move(cmpl)), deadlineCtx_(std::move(ctx)), activityTracer_(activityTracer), user_(user), connectionId_(connectionId) {}
+		: cmpl_(std::move(cmpl)),
+		  deadlineCtx_(std::move(ctx)),
+		  activityTracer_(std::move(activityTracer)),
+		  user_(std::move(user)),
+		  connectionId_(connectionId) {}
 
 	InternalRdxContext WithCompletion(RdxContext::Completion cmpl) const noexcept {
 		return InternalRdxContext(std::move(cmpl), deadlineCtx_, activityTracer_, user_, connectionId_);
@@ -143,17 +147,26 @@ public:
 	InternalRdxContext WithCancelParent(const IRdxCancelContext* parent) const noexcept {
 		return InternalRdxContext(cmpl_, RdxDeadlineContext(deadlineCtx_.deadline(), parent), activityTracer_, user_, connectionId_);
 	}
-	InternalRdxContext WithActivityTracer(std::string_view activityTracer, std::string_view user,
-										  int connectionId = kNoConnectionId) const {
+	InternalRdxContext WithActivityTracer(std::string_view activityTracer, std::string&& user, int connectionId = kNoConnectionId) const {
 		return activityTracer.empty()
 				   ? *this
 				   : InternalRdxContext(cmpl_, deadlineCtx_,
-										(activityTracer_.empty() ? "" : activityTracer_ + "/") + std::string(activityTracer), user,
-										connectionId);
+										activityTracer_.empty() ? std::string(activityTracer)
+																: std::string(activityTracer_).append("/").append(activityTracer),
+										std::move(user), connectionId);
 	}
-	void SetActivityTracer(std::string_view activityTracer, std::string_view user, int connectionId = kNoConnectionId) {
-		activityTracer_ = std::string(activityTracer);
-		user_ = std::string(user);
+	InternalRdxContext WithContextParams(milliseconds timeout, std::string_view activityTracer, std::string&& user,
+										  int connectionId) const {
+		return activityTracer.empty()
+				   ? InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()), activityTracer_, user_, connectionId_)
+				   : InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()),
+										activityTracer_.empty() ? std::string(activityTracer)
+																: std::string(activityTracer_).append("/").append(activityTracer),
+										std::move(user), connectionId);
+	}
+	void SetActivityTracer(std::string&& activityTracer, std::string&& user, int connectionId = kNoConnectionId) noexcept {
+		activityTracer_ = std::move(activityTracer);
+		user_ = std::move(user);
 		connectionId_ = connectionId;
 	}
 

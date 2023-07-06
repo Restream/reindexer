@@ -23,6 +23,7 @@ AsyncStorage::AsyncStorage(const AsyncStorage& o, AsyncStorage::FullLockT& stora
 	storage_ = o.storage_;
 	path_ = o.path_;
 	curUpdatesChunck_ = createUpdatesCollection();
+	updateStatusCache();
 	// Do not copying lastFlushError_ and reopenTs_, because copied storage does not performs actual writes
 }
 
@@ -41,6 +42,7 @@ Error AsyncStorage::Open(datastorage::StorageType storageType, const std::string
 		path_ = path;
 		curUpdatesChunck_ = createUpdatesCollection();
 	}
+	updateStatusCache();
 	return err;
 }
 
@@ -86,15 +88,16 @@ void AsyncStorage::RemoveSync(const StorageOpts& opts, std::string_view key) {
 void AsyncStorage::Flush(const StorageFlushOpts& opts) {
 	// Flush must be performed in single thread
 	std::lock_guard flushLck(flushMtx_);
+	statusCache_.UpdatePart(bool(storage_.get()), path_);  // Actualize cache part. Just in case
 	flush(opts);
 }
 
-std::string AsyncStorage::Path() const noexcept {
+std::string AsyncStorage::GetPath() const noexcept {
 	std::lock_guard lck(storageMtx_);
 	return path_;
 }
 
-datastorage::StorageType AsyncStorage::Type() const noexcept {
+datastorage::StorageType AsyncStorage::GetType() const noexcept {
 	std::lock_guard lck(storageMtx_);
 	if (storage_) {
 		return storage_->Type();
@@ -134,6 +137,7 @@ void AsyncStorage::InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLockT
 			if (lastBatchWithSyncUpdates_ >= 0) ++lastBatchWithSyncUpdates_;
 		}
 		src.storage_.reset();
+		// Do not update lockfree status here to avoid status flickering on ns copying
 	}
 	isCopiedNsStorage_ = false;
 }
@@ -262,7 +266,7 @@ void AsyncStorage::tryReopenStorage() {
 			throw lastFlushError_;
 		}
 		logPrintf(LogInfo, "Storage was reopened for '%s'", path_);
-		lastFlushError_ = Error();
+		setLastFlushError(Error());
 		reopenTs_ = TimepointT();
 	}
 }

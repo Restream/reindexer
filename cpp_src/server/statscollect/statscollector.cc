@@ -7,27 +7,56 @@
 
 namespace reindexer_server {
 
-void StatsCollector::Start(DBManager& dbMngr) {
+void StatsCollector::Start() {
+	std::lock_guard lck(threadMtx_);
 	if (statsCollectingThread_.joinable()) {
 		throw reindexer::Error(errLogic, "Stats collectiong thread is already running");
 	}
 	if (prometheus_) {
-		statsCollectingThread_ = std::thread([this, &dbMngr]() {
-			const auto kSleepTime = std::chrono::milliseconds(100);
-			std::chrono::milliseconds now{0};
-			while (!terminate_.load(std::memory_order_acquire)) {
-				std::this_thread::sleep_for(kSleepTime);
-				now += kSleepTime;
-				if (now.count() % collectPeriod_.count() == 0) {
-					this->collectStats(dbMngr);
-				}
-			}
-		});
+		startImpl();
 		enabled_.store(true, std::memory_order_release);
 	}
 }
 
+void StatsCollector::Restart(std::unique_lock<std::mutex>&& lck) noexcept {
+	try {
+#ifdef RX_WITH_STDLIB_DEBUG
+		assertrx(lck.mutex() == &threadMtx_);
+		assertrx(lck.owns_lock());
+		assertrx(enabled_.load(std::memory_order_acquire));
+		assertrx(!statsCollectingThread_.joinable());
+#endif
+		if (lck.mutex() != &threadMtx_) {
+			logger_.error("Unable to restart prometheus stats collecting thread (internal logic error: incorrect mutex ptr)");
+			return;
+		}
+		if (!lck.owns_lock()) {
+			logger_.error("Unable to restart prometheus stats collecting thread (internal logic error: mutex was not locked)");
+			return;
+		}
+		if (!enabled_.load(std::memory_order_acquire)) {
+			logger_.error("Attempt to restart stats collector, which was prevously disabled");
+			return;
+		}
+		if (statsCollectingThread_.joinable()) {
+			logger_.error("Attempt to restart stats collector, which is already running");
+			return;
+		}
+		logger_.info("Restarting stats collector...");
+		startImpl();
+		logger_.info("Stats collector was started successfully");
+	} catch (...) {
+		if (!statsCollectingThread_.joinable()) {
+			logger_.error("Unhandled exception during stats collector restarting. Stats collector was not restarted");
+		}
+#ifdef RX_WITH_STDLIB_DEBUG
+		assertrx(false);
+#endif
+	}
+}
+
 void StatsCollector::Stop() {
+	std::lock_guard lck(threadMtx_);
 	if (statsCollectingThread_.joinable()) {
 		terminate_.store(true, std::memory_order_release);
 		statsCollectingThread_.join();
@@ -35,32 +64,58 @@ void StatsCollector::Stop() {
 	enabled_.store(false, std::memory_order_release);
 }
 
+StatsWatcherSuspend StatsCollector::SuspendStatsThread() {
+	std::unique_lock lck(threadMtx_);
+	if (statsCollectingThread_.joinable()) {
+		logger_.info("Suspending stats collector...");
+		terminate_.store(true, std::memory_order_release);
+		statsCollectingThread_.join();
+		terminate_.store(false, std::memory_order_release);
+		return StatsWatcherSuspend(std::move(lck), *this, true);
+	}
+	return StatsWatcherSuspend(std::move(lck), *this, false);
+}
+
 void StatsCollector::OnInputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard<std::mutex> lck(mtx_);
+		std::lock_guard lck(countersMtx_);
 		getCounters(db, source).inputTraffic += bytes;
 	}
 }
 
 void StatsCollector::OnOutputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard<std::mutex> lck(mtx_);
+		std::lock_guard lck(countersMtx_);
 		getCounters(db, source).outputTraffic += bytes;
 	}
 }
 
 void StatsCollector::OnClientConnected(const std::string& db, std::string_view source) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard<std::mutex> lck(mtx_);
+		std::lock_guard lck(countersMtx_);
 		++(getCounters(db, source).clients);
 	}
 }
 
 void StatsCollector::OnClientDisconnected(const std::string& db, std::string_view source) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
-		std::lock_guard<std::mutex> lck(mtx_);
+		std::lock_guard lck(countersMtx_);
 		--(getCounters(db, source).clients);
 	}
+}
+
+void StatsCollector::startImpl() {
+	statsCollectingThread_ = std::thread([this]() {
+		const auto kSleepTime = std::chrono::milliseconds(100);
+		std::chrono::milliseconds now{0};
+		while (!terminate_.load(std::memory_order_acquire)) {
+			std::this_thread::sleep_for(kSleepTime);
+			now += kSleepTime;
+			if (now.count() % collectPeriod_.count() == 0) {
+				this->collectStats(dbMngr_);
+			}
+		}
+	});
 }
 
 void StatsCollector::collectStats(DBManager& dbMngr) {
@@ -68,6 +123,10 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 	auto dbNames = dbMngr.EnumDatabases();
 	NSMap collectedDBs;
 	for (auto& dbName : dbNames) {
+		if (isTerminating()) {
+			return;
+		}
+
 		auto ctx = MakeSystemAuthContext();
 		auto status = dbMngr.OpenDatabase(dbName, ctx, false);
 		if (!status.ok()) {
@@ -106,6 +165,11 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 				prometheus_->RegisterLatency(dbName, nsName, kUpdateQueryType, item["updates.last_sec_avg_latency_us"].As<int64_t>());
 			}
 		}
+
+		if (isTerminating()) {
+			return;
+		}
+
 		qr.Clear();
 		status = db->Select(Query(std::string(kMemstatsNs)), qr);
 		if (status.ok() && qr.Count()) {
@@ -119,6 +183,10 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 				prometheus_->RegisterStorageStatus(dbName, nsName, item["storage_ok"].As<bool>());
 			}
 		}
+	}
+
+	if (isTerminating()) {
+		return;
 	}
 
 #if REINDEX_WITH_GPERFTOOLS
@@ -137,7 +205,7 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 #endif	// REINDEX_WITH_JEMALLOC
 
 	{
-		std::lock_guard<std::mutex> lck(mtx_);
+		std::lock_guard lck(countersMtx_);
 		for (const auto& dbCounters : counters_) {
 			for (const auto& counter : dbCounters.second) {
 				if (std::string_view(dbCounters.first) == "rpc"sv) {

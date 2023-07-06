@@ -277,9 +277,10 @@ double SelectIterator::Cost(int expectedIterations) const noexcept {
 		const auto jsonPathComparators =
 			std::count_if(comparators_.begin(), comparators_.end(), [](const Comparator &c) noexcept { return c.HasJsonPaths(); });
 		// Comparatos with non index fields must have much higher cost, than comparators with index fields
-		result = jsonPathComparators ? (8 * expectedIterations + jsonPathComparators + 1) : (expectedIterations + 1);
+		result = jsonPathComparators ? (8 * double(expectedIterations) + jsonPathComparators + 1) : (double(expectedIterations) + 1);
 	}
-	return result + static_cast<double>(distinct ? 1 : GetMaxIterations()) * size();
+	result += static_cast<double>(distinct ? 1 : GetMaxIterations()) * size();
+	return isNotOperation_ ? expectedIterations + result : result;
 }
 
 IdType SelectIterator::Val() const noexcept {

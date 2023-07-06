@@ -13,8 +13,9 @@ class FieldsComparator {
 public:
 	FieldsComparator(std::string_view lField, CondType cond, std::string_view rField, PayloadType plType);
 	bool Compare(const PayloadValue& item);
-	double Cost(int expectedIterations) const noexcept { return expectedIterations + 1; }
-	const std::string& Name() const noexcept { return name_; }
+	double Cost(int expectedIterations) const noexcept { return double(expectedIterations) + 1; }
+	const std::string& Name() const& noexcept { return name_; }
+	const std::string& Name() const&& = delete;
 	std::string Dump() const { return Name(); }
 	int GetMatchedCount() const noexcept { return matchedCount_; }
 	void SetLeftField(const TagsPath& tpath) {

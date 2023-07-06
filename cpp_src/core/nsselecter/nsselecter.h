@@ -6,6 +6,9 @@
 
 namespace reindexer {
 
+enum class IsMergeQuery : bool { Yes = true, No = false };
+enum class IsFTQuery { Yes, No, NotSet };
+
 struct SelectCtx {
 	explicit SelectCtx(const Query &query_, const Query *parentQuery_) : query(query_), parentQuery(parentQuery_) {}
 	const Query &query;
@@ -21,6 +24,8 @@ struct SelectCtx {
 	bool reqMatchedOnceFlag = false;
 	bool contextCollectingMode = false;
 	bool inTransaction = false;
+	IsMergeQuery isMergeQuery = IsMergeQuery::No;
+	IsFTQuery isFtQuery = IsFTQuery::NotSet;
 
 	const Query *parentQuery = nullptr;
 	bool requiresCrashTracking = false;
@@ -50,8 +55,8 @@ private:
 		const QueryPreprocessor &qPreproc;
 		h_vector<Aggregator, 4> &aggregators;
 		ExplainCalc &explain;
-		unsigned start = 0;
-		unsigned count = UINT_MAX;
+		unsigned start = QueryEntry::kDefaultOffset;
+		unsigned count = QueryEntry::kDefaultLimit;
 		bool preselectForFt = false;
 	};
 

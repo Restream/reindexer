@@ -149,15 +149,15 @@ static const fast_str_map<UpdateFieldType> update_field_type_map = {
 	{"value", UpdateFieldType::Value},
 };
 
-bool checkTag(JsonValue& val, JsonTag tag) { return val.getTag() == tag; }
+static bool checkTag(const JsonValue& val, JsonTag tag) noexcept { return val.getTag() == tag; }
 
 template <typename... Tags>
-bool checkTag(JsonValue& val, JsonTag tag, Tags... tags) {
+bool checkTag(const JsonValue& val, JsonTag tag, Tags... tags) noexcept {
 	return std::max(tag == val.getTag(), checkTag(val, tags...));
 }
 
 template <typename... JsonTags>
-void checkJsonValueType(JsonValue& val, std::string_view name, JsonTags... possibleTags) {
+void checkJsonValueType(const JsonValue& val, std::string_view name, JsonTags... possibleTags) {
 	if (!checkTag(val, possibleTags...)) throw Error(errParseJson, "Wrong type of field '%s'", name);
 }
 
@@ -171,23 +171,23 @@ T get(fast_str_map<T> const& m, std::string_view name, std::string_view mapName)
 }
 
 template <typename Arr>
-void parseStringArray(JsonValue& stringArray, Arr& array) {
-	for (auto element : stringArray) {
-		auto& value = element->value;
+void parseStringArray(const JsonValue& stringArray, Arr& array) {
+	for (const auto& element : stringArray) {
+		auto& value = element.value;
 		checkJsonValueType(value, "string array item", JSON_STRING);
-		array.push_back(std::string(value.toString()));
+		array.emplace_back(value.toString());
 	}
 }
 
 template <typename Array>
-void parseValues(JsonValue& values, Array& kvs) {
+void parseValues(const JsonValue& values, Array& kvs) {
 	if (values.getTag() == JSON_ARRAY) {
-		for (auto elem : values) {
+		for (const auto& elem : values) {
 			Variant kv;
-			if (elem->value.getTag() == JSON_OBJECT) {
-				kv = Variant(stringifyJson(*elem));
-			} else if (elem->value.getTag() != JSON_NULL) {
-				kv = jsonValue2Variant(elem->value, KeyValueType::Undefined{});
+			if (elem.value.getTag() == JSON_OBJECT) {
+				kv = Variant(stringifyJson(elem));
+			} else if (elem.value.getTag() != JSON_NULL) {
+				kv = jsonValue2Variant(elem.value, KeyValueType::Undefined{});
 				kv.EnsureHold();
 			}
 			if (!kvs.empty() && !kvs.back().Type().IsSame(kv.Type())) {
@@ -209,14 +209,14 @@ void parseValues(JsonValue& values, Array& kvs) {
 	}
 }
 
-void parse(JsonValue& root, Query& q);
+void parse(const JsonValue& root, Query& q);
 
-void parseSortEntry(JsonValue& entry, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder) {
+static void parseSortEntry(const JsonValue& entry, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder) {
 	checkJsonValueType(entry, "Sort", JSON_OBJECT);
 	SortingEntry sortingEntry;
-	for (auto subelement : entry) {
-		auto& v = subelement->value;
-		std::string_view name = subelement->key;
+	for (const auto& subelement : entry) {
+		auto& v = subelement.value;
+		std::string_view name = subelement.key;
 		switch (get<Sort>(sort_map, name, "sort"sv)) {
 			case Sort::Desc:
 				if ((v.getTag() != JSON_TRUE) && (v.getTag() != JSON_FALSE)) throw Error(errParseJson, "Wrong type of field '%s'", name);
@@ -241,9 +241,9 @@ void parseSortEntry(JsonValue& entry, SortingEntries& sortingEntries, std::vecto
 	}
 }
 
-void parseSort(JsonValue& v, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder) {
+static void parseSort(const JsonValue& v, SortingEntries& sortingEntries, std::vector<Variant>& forcedSortOrder) {
 	if (v.getTag() == JSON_ARRAY) {
-		for (auto entry : v) parseSort(entry->value, sortingEntries, forcedSortOrder);
+		for (auto entry : v) parseSort(entry.value, sortingEntries, forcedSortOrder);
 	} else if (v.getTag() == JSON_OBJECT) {
 		parseSortEntry(v, sortingEntries, forcedSortOrder);
 	} else {
@@ -251,10 +251,11 @@ void parseSort(JsonValue& v, SortingEntries& sortingEntries, std::vector<Variant
 	}
 }
 
-void parseSingleJoinQuery(JsonValue& join, Query& query);
-void parseEqualPositions(JsonValue& dsl, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions, size_t lastBracketPosition);
+void parseSingleJoinQuery(const JsonValue& join, Query& query);
+void parseEqualPositions(const JsonValue& dsl, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions, size_t lastBracketPosition);
 
-void parseFilter(JsonValue& filter, Query& q, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions, size_t lastBracketPosition) {
+static void parseFilter(const JsonValue& filter, Query& q, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions,
+						size_t lastBracketPosition) {
 	OpType op = OpAnd;
 	CondType condition{CondEq};
 	VariantArray values;
@@ -262,9 +263,9 @@ void parseFilter(JsonValue& filter, Query& q, std::vector<std::pair<size_t, Equa
 	checkJsonValueType(filter, "filter", JSON_OBJECT);
 	enum { ENTRY, BRACKET, TWO_FIELDS_ENTRY, JOIN, EQUAL_POSITIONS } entryType = ENTRY;
 	int elemsParsed = 0;
-	for (auto elem : filter) {
-		auto& v = elem->value;
-		auto name = elem->key;
+	for (const auto& elem : filter) {
+		auto& v = elem.value;
+		std::string_view name(elem.key);
 		switch (get<Filter>(filter_map, name, "filter"sv)) {
 			case Filter::Cond:
 				checkJsonValueType(v, name, JSON_STRING);
@@ -307,7 +308,7 @@ void parseFilter(JsonValue& filter, Query& q, std::vector<std::pair<size_t, Equa
 				checkJsonValueType(v, name, JSON_ARRAY);
 				q.entries.OpenBracket(op);
 				const auto bracketPosition = q.entries.Size();
-				for (auto f : v) parseFilter(f->value, q, equalPositions, bracketPosition);
+				for (const auto& f : v) parseFilter(f.value, q, equalPositions, bracketPosition);
 				q.entries.CloseBracket();
 				entryType = BRACKET;
 				break;
@@ -372,16 +373,16 @@ void parseFilter(JsonValue& filter, Query& q, std::vector<std::pair<size_t, Equa
 	}
 }
 
-void parseJoinedEntries(JsonValue& joinEntries, JoinedQuery& qjoin) {
+static void parseJoinedEntries(const JsonValue& joinEntries, JoinedQuery& qjoin) {
 	checkJsonValueType(joinEntries, "Joined", JSON_ARRAY);
-	for (auto element : joinEntries) {
-		auto& joinEntry = element->value;
+	for (const auto& element : joinEntries) {
+		auto& joinEntry = element.value;
 		checkJsonValueType(joinEntry, "Joined", JSON_OBJECT);
 
 		QueryJoinEntry qjoinEntry;
-		for (auto subelement : joinEntry) {
-			auto& value = subelement->value;
-			std::string_view name = subelement->key;
+		for (const auto& subelement : joinEntry) {
+			auto& value = subelement.value;
+			std::string_view name = subelement.key;
 			switch (get<JoinEntry>(joined_entry_map, name, "join_query.on"sv)) {
 				case JoinEntry::LeftField:
 					checkJsonValueType(value, name, JSON_STRING);
@@ -405,12 +406,12 @@ void parseJoinedEntries(JsonValue& joinEntries, JoinedQuery& qjoin) {
 	}
 }
 
-void parseSingleJoinQuery(JsonValue& join, Query& query) {
+void parseSingleJoinQuery(const JsonValue& join, Query& query) {
 	JoinedQuery qjoin;
 	std::vector<std::pair<size_t, EqualPosition_t>> equalPositions;
-	for (auto subelement : join) {
-		auto& value = subelement->value;
-		std::string_view name = subelement->key;
+	for (const auto& subelement : join) {
+		auto& value = subelement.value;
+		std::string_view name = subelement.key;
 		switch (get<JoinRoot>(joins_map, name, "join_query"sv)) {
 			case JoinRoot::Type:
 				checkJsonValueType(value, name, JSON_STRING);
@@ -422,7 +423,7 @@ void parseSingleJoinQuery(JsonValue& join, Query& query) {
 				break;
 			case JoinRoot::Filters:
 				checkJsonValueType(value, name, JSON_ARRAY);
-				for (auto filter : value) parseFilter(filter->value, qjoin, equalPositions, 0);
+				for (const auto& filter : value) parseFilter(filter.value, qjoin, equalPositions, 0);
 				break;
 			case JoinRoot::Sort:
 				parseSort(value, qjoin.sortingEntries_, qjoin.forcedSortOrder_);
@@ -458,9 +459,9 @@ void parseSingleJoinQuery(JsonValue& join, Query& query) {
 	query.joinQueries_.emplace_back(std::move(qjoin));
 }
 
-void parseMergeQueries(JsonValue& mergeQueries, Query& query) {
-	for (auto element : mergeQueries) {
-		auto& merged = element->value;
+static void parseMergeQueries(const JsonValue& mergeQueries, Query& query) {
+	for (const auto& element : mergeQueries) {
+		auto& merged = element.value;
 		checkJsonValueType(merged, "Merged", JSON_OBJECT);
 		JoinedQuery qmerged;
 		parse(merged, qmerged);
@@ -469,22 +470,22 @@ void parseMergeQueries(JsonValue& mergeQueries, Query& query) {
 	}
 }
 
-void parseAggregation(JsonValue& aggregation, Query& query) {
+static void parseAggregation(const JsonValue& aggregation, Query& query) {
 	checkJsonValueType(aggregation, "Aggregation", JSON_OBJECT);
 	h_vector<std::string, 1> fields;
 	AggType type = AggUnknown;
 	SortingEntries sortingEntries;
-	unsigned limit{AggregateEntry::kDefaultLimit};
-	unsigned offset{AggregateEntry::kDefaultOffset};
-	for (auto element : aggregation) {
-		auto& value = element->value;
-		std::string_view name = element->key;
+	unsigned limit{QueryEntry::kDefaultLimit};
+	unsigned offset{QueryEntry::kDefaultOffset};
+	for (const auto& element : aggregation) {
+		auto& value = element.value;
+		std::string_view name = element.key;
 		switch (get<Aggregation>(aggregation_map, name, "aggregations"sv)) {
 			case Aggregation::Fields:
 				checkJsonValueType(value, name, JSON_ARRAY);
-				for (auto subElem : value) {
-					if (subElem->value.getTag() != JSON_STRING) throw Error(errParseJson, "Expected string in array 'fields'");
-					fields.push_back(std::string(subElem->value.toString()));
+				for (const auto& subElem : value) {
+					if (subElem.value.getTag() != JSON_STRING) throw Error(errParseJson, "Expected string in array 'fields'");
+					fields.emplace_back(subElem.value.toString());
 				}
 				break;
 			case Aggregation::Type:
@@ -514,23 +515,25 @@ void parseAggregation(JsonValue& aggregation, Query& query) {
 	query.aggregations_.emplace_back(type, std::move(fields), std::move(sortingEntries), limit, offset);
 }
 
-void parseEqualPositions(JsonValue& dsl, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions, size_t lastBracketPosition) {
-	for (auto ar : dsl) {
-		auto subArray = ar->value;
-		checkJsonValueType(subArray, ar->key, JSON_OBJECT);
-		for (auto element : subArray) {
-			auto& value = element->value;
-			std::string_view name = element->key;
+void parseEqualPositions(const JsonValue& dsl, std::vector<std::pair<size_t, EqualPosition_t>>& equalPositions,
+						 size_t lastBracketPosition) {
+	for (const auto& ar : dsl) {
+		auto subArray = ar.value;
+		checkJsonValueType(subArray, ar.key, JSON_OBJECT);
+		for (const auto& element : subArray) {
+			auto& value = element.value;
+			std::string_view name = element.key;
 			switch (get<EqualPosition>(equationPosition_map, name, "equal_positions"sv)) {
 				case EqualPosition::Positions: {
 					EqualPosition_t ep;
-					for (auto f : value) {
-						checkJsonValueType(f->value, f->key, JSON_STRING);
-						ep.emplace_back(f->value.toString());
+					for (const auto& f : value) {
+						checkJsonValueType(f.value, f.key, JSON_STRING);
+						ep.emplace_back(f.value.toString());
 					}
-					if (ep.size() < 2)
+					if (ep.size() < 2) {
 						throw Error(errLogic, "equal_position() is supposed to have at least 2 arguments. Arguments: [%s]",
 									ep.size() == 1 ? ep[0] : "");
+					}
 					equalPositions.emplace_back(lastBracketPosition, std::move(ep));
 				}
 			}
@@ -538,16 +541,16 @@ void parseEqualPositions(JsonValue& dsl, std::vector<std::pair<size_t, EqualPosi
 	}
 }
 
-void parseUpdateFields(JsonValue& updateFields, Query& query) {
-	for (auto item : updateFields) {
-		auto& field = item->value;
-		checkJsonValueType(field, item->key, JSON_OBJECT);
+static void parseUpdateFields(const JsonValue& updateFields, Query& query) {
+	for (const auto& item : updateFields) {
+		auto& field = item.value;
+		checkJsonValueType(field, item.key, JSON_OBJECT);
 		std::string fieldName;
 		bool isObject = false, isExpression = false;
 		VariantArray values;
-		for (auto v : field) {
-			auto& value = v->value;
-			std::string_view name = v->key;
+		for (const auto& v : field) {
+			auto& value = v.value;
+			std::string_view name = v.key;
 			switch (get<UpdateField>(update_field_map, name, "update_fields"sv)) {
 				case UpdateField::Name:
 					checkJsonValueType(value, name, JSON_STRING);
@@ -586,15 +589,15 @@ void parseUpdateFields(JsonValue& updateFields, Query& query) {
 	}
 }
 
-void parse(JsonValue& root, Query& q) {
+void parse(const JsonValue& root, Query& q) {
 	if (root.getTag() != JSON_OBJECT) {
 		throw Error(errParseJson, "Json is malformed: %d", root.getTag());
 	}
 
 	std::vector<std::pair<size_t, EqualPosition_t>> equalPositions;
-	for (auto elem : root) {
-		auto& v = elem->value;
-		auto name = elem->key;
+	for (const auto& elem : root) {
+		auto& v = elem.value;
+		auto name = elem.key;
 		switch (get<Root>(root_map, name, "root"sv)) {
 			case Root::Namespace:
 				checkJsonValueType(v, name, JSON_STRING);
@@ -613,7 +616,7 @@ void parse(JsonValue& root, Query& q) {
 
 			case Root::Filters:
 				checkJsonValueType(v, name, JSON_ARRAY);
-				for (auto filter : v) parseFilter(filter->value, q, equalPositions, 0);
+				for (const auto& filter : v) parseFilter(filter.value, q, equalPositions, 0);
 				break;
 
 			case Root::Sort:
@@ -641,7 +644,7 @@ void parse(JsonValue& root, Query& q) {
 				break;
 			case Root::Aggregations:
 				checkJsonValueType(v, name, JSON_ARRAY);
-				for (auto aggregation : v) parseAggregation(aggregation->value, q);
+				for (const auto& aggregation : v) parseAggregation(aggregation.value, q);
 				break;
 			case Root::Explain:
 				checkJsonValueType(v, name, JSON_FALSE, JSON_TRUE);
@@ -660,15 +663,14 @@ void parse(JsonValue& root, Query& q) {
 				break;
 			case Root::EqualPositions:
 				throw Error(errParseDSL, "Unsupported old DSL format. Equal positions should be in filters.");
-				break;
 			case Root::QueryType:
 				checkJsonValueType(v, name, JSON_STRING);
 				q.type_ = get<QueryType>(query_types, v.toString(), "query_type"sv);
 				break;
 			case Root::DropFields:
 				checkJsonValueType(v, name, JSON_ARRAY);
-				for (auto element : v) {
-					auto& value = element->value;
+				for (const auto& element : v) {
+					auto& value = element.value;
 					checkJsonValueType(value, "string array item", JSON_STRING);
 					q.Drop(std::string(value.toString()));
 				}
@@ -677,8 +679,6 @@ void parse(JsonValue& root, Query& q) {
 				checkJsonValueType(v, name, JSON_ARRAY);
 				parseUpdateFields(v, q);
 				break;
-			default:
-				throw Error(errParseDSL, "incorrect tag '%'", name);
 		}
 	}
 	for (auto&& eqPos : equalPositions) {

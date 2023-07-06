@@ -43,7 +43,7 @@ TEST_F(CompositeIndexesApi, AddIndexWithExistingCompositeIndex) {
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-void selectAll(reindexer::Reindexer* reindexer, const std::string& ns) {
+static void selectAll(reindexer::Reindexer* reindexer, const std::string& ns) {
 	QueryResults qr;
 	Error err = reindexer->Select(Query(ns, 0, 1000, ModeAccurateTotal), qr);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -196,18 +196,22 @@ TEST_F(CompositeIndexesApi, SelectsBySubIndexes) {
 		const std::vector<IndexDeclaration> idxs;
 	};
 
-	const std::vector<Case> caseSet = {
-		Case{"no_indexes", {IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0}}},
-		Case{"first_index",
-			 {IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
-			  IndexDeclaration{CompositeIndexesApi::kFieldNamePrice, "-", "int", IndexOpts(), 0}}},
-		Case{"second_index",
-			 {IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
-			  IndexDeclaration{CompositeIndexesApi::kFieldNamePages, "-", "int", IndexOpts(), 0}}},
-		Case{"both_indexes",
-			 {IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
-			  IndexDeclaration{CompositeIndexesApi::kFieldNamePrice, "-", "int", IndexOpts(), 0},
-			  IndexDeclaration{CompositeIndexesApi::kFieldNamePages, "-", "int", IndexOpts(), 0}}}};
+	const std::vector<Case> caseSet = {Case{"hash+store",
+											{IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
+											 IndexDeclaration{CompositeIndexesApi::kFieldNamePrice, "hash", "int", IndexOpts(), 0},
+											 IndexDeclaration{CompositeIndexesApi::kFieldNamePages, "-", "int", IndexOpts(), 0}}},
+									   Case{"store+hash",
+											{IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
+											 IndexDeclaration{CompositeIndexesApi::kFieldNamePrice, "-", "int", IndexOpts(), 0},
+											 IndexDeclaration{CompositeIndexesApi::kFieldNamePages, "hash", "int", IndexOpts(), 0}}},
+									   Case{"store+store",
+											{IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
+											 IndexDeclaration{CompositeIndexesApi::kFieldNamePrice, "-", "int", IndexOpts(), 0},
+											 IndexDeclaration{CompositeIndexesApi::kFieldNamePages, "-", "int", IndexOpts(), 0}}},
+									   Case{"hash+tree",
+											{IndexDeclaration{CompositeIndexesApi::kFieldNameBookid, "hash", "int", IndexOpts().PK(), 0},
+											 IndexDeclaration{CompositeIndexesApi::kFieldNamePrice, "hash", "int", IndexOpts(), 0},
+											 IndexDeclaration{CompositeIndexesApi::kFieldNamePages, "tree", "int", IndexOpts(), 0}}}};
 
 	for (const auto& c : caseSet) {
 		auto err = rt.reindexer->DropNamespace(default_namespace);

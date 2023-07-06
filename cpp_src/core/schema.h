@@ -138,6 +138,9 @@ public:
 	int GetProtobufNsNumber() const { return protobufNsNumber_; }
 	const PrefixTree::PrefixTreeNode* GetRoot() const { return &paths_.root_; }
 
+	std::vector<int> MakeCsvTagOrdering(const TagsMatcher& tm) const;
+	bool IsEmpty() const noexcept;
+
 private:
 	void parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& splittedPath, bool isRequired);
 

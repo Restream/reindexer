@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
 #include "core/query/query.h"
@@ -25,6 +26,9 @@ private:
 		void updateTagsPath(TagsMatcher &tm, const IndexExpressionEvaluator &ev);
 		const UpdateEntry &details() const noexcept { return entry_; }
 		const IndexedTagsPath &tagspath() const noexcept { return tagsPath_; }
+		const IndexedTagsPath &tagspathWithLastIndex() const noexcept {
+			return tagsPathWithLastIndex_ ? *tagsPathWithLastIndex_ : tagsPath_;
+		}
 		int arrayIndex() const noexcept { return arrayIndex_; }
 		int index() const noexcept { return fieldIndex_; }
 		bool isIndex() const noexcept { return isIndex_; }
@@ -33,6 +37,7 @@ private:
 	private:
 		const UpdateEntry &entry_;
 		IndexedTagsPath tagsPath_;
+		std::optional<IndexedTagsPath> tagsPathWithLastIndex_;
 		int fieldIndex_{IndexValueType::SetByJsonPath};
 		int arrayIndex_;
 		bool isIndex_;

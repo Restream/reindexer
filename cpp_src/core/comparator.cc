@@ -114,7 +114,7 @@ bool Comparator::Compare(const PayloadValue &data, int rowId) {
 		const uint8_t *ptr = data.Ptr() + arr->offset;
 		if (cond_ == CondDWithin) {
 			if (arr->len != 2 || !type_.Is<KeyValueType::Double>()) throw Error(errQueryExec, "DWithin with not point data");
-			return cmpGeom.Compare({*reinterpret_cast<const double *>(ptr), *reinterpret_cast<const double *>(ptr + sizeof_)});
+			return cmpGeom.Compare(Point{*reinterpret_cast<const double *>(ptr), *reinterpret_cast<const double *>(ptr + sizeof_)});
 		}
 
 		for (int i = 0; i < arr->len; ++i, ptr += sizeof_) {
@@ -182,7 +182,7 @@ void Comparator::ExcludeDistinct(const PayloadValue &data, int rowId) {
 		uint8_t *ptr = data.Ptr() + arr->offset;
 		if (cond_ == CondDWithin) {
 			if (arr->len != 2 || !type_.Is<KeyValueType::Double>()) throw Error(errQueryExec, "DWithin with not point data");
-			return cmpGeom.ExcludeDistinct({*reinterpret_cast<const double *>(ptr), *reinterpret_cast<const double *>(ptr + sizeof_)});
+			return cmpGeom.ExcludeDistinct(Point{*reinterpret_cast<const double *>(ptr), *reinterpret_cast<const double *>(ptr + sizeof_)});
 		}
 
 		for (int i = 0; i < arr->len; i++, ptr += sizeof_) excludeDistinct(ptr);

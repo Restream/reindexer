@@ -434,7 +434,7 @@ public:
 	}
 };
 
-char *GenerateDigits(char buf[16], int val, int maxval) {
+inline char *GenerateDigits(char buf[16], int val, int maxval) {
 	EXPECT_LE(val, maxval);
 	int p = 15;
 	buf[p--] = 0;
@@ -476,7 +476,7 @@ struct Generator<std::pair<T, U> > {
 };
 
 // Generate values for our tests and benchmarks. Value range is [0, maxval].
-const std::vector<int> &GenerateNumbers(int n, int maxval) {
+const inline std::vector<int> &GenerateNumbers(int n, int maxval) {
 	static std::vector<int> values;
 	static std::set<int> unique_values;
 
@@ -864,4 +864,4 @@ void BtreeMultiMapTest() {
 
 }  // namespace btree
 
-#endif  // UTIL_BTREE_BTREE_TEST_H__
+#endif	// UTIL_BTREE_BTREE_TEST_H__

@@ -152,9 +152,9 @@ Error JsonSchemaChecker::checkScheme(const gason::JsonNode& node, int typeIndex,
 				if (!descr.subElementsTable[subElemIndex->second].second.array) {
 					return Error(errParseJson, "Element [%s] should array in [%s].", elem.key, path);
 				}
-				for (auto entry : elem.value) {
-					if (entry->value.getTag() == gason::JSON_ARRAY || entry->value.getTag() == gason::JSON_OBJECT) {
-						err = checkScheme(*entry, descr.subElementsTable[subElemIndex->second].second.typeIndex, path,
+				for (const auto& entry : elem.value) {
+					if (entry.value.getTag() == gason::JSON_ARRAY || entry.value.getTag() == gason::JSON_OBJECT) {
+						err = checkScheme(entry, descr.subElementsTable[subElemIndex->second].second.typeIndex, path,
 										  descr.subElementsTable[subElemIndex->second].first);
 						if (!err.ok()) return err;
 					}

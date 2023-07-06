@@ -168,7 +168,7 @@ void UpdatesObservers::OnModifyItem(LSNPair LSNs, std::string_view nsName, ItemI
 
 void UpdatesObservers::OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &walRec) {
 	// Disable updates of system namespaces (it may cause recursive lock)
-	if (nsName.size() && nsName[0] == '#') return;
+	if (isSystemNamespaceNameFast(nsName)) return;
 
 	bool skipFilters = walRec.type == WalNamespaceAdd || walRec.type == WalNamespaceDrop || walRec.type == WalNamespaceRename ||
 					   walRec.type == WalForceSync || nsName.empty();

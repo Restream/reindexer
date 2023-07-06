@@ -3,8 +3,8 @@
 #include <memory>
 #include "basefunctionctx.h"
 #include "core/ft/areaholder.h"
-#include "estl/h_vector.h"
 #include "core/ft/usingcontainer.h"
+#include "estl/h_vector.h"
 
 namespace reindexer {
 
@@ -24,8 +24,8 @@ public:
 
 	FtCtx();
 	int16_t Proc(size_t pos);
-	bool isComposite() { return data_->is_composite_; }
-	size_t GetSize();
+	bool isComposite() const noexcept { return data_->is_composite_; }
+	size_t GetSize() const noexcept { return data_->proc_.size(); }
 
 	template <typename InputIterator>
 	void Add(InputIterator begin, InputIterator end, int16_t proc, AreaHolder &&holder);
@@ -42,8 +42,8 @@ public:
 	bool NeedArea() const noexcept;
 	bool PrepareAreas(const RHashMap<std::string, int> &fields, const std::string &name);
 
-	void SetData(Data::Ptr data);
-	Data::Ptr GetData();
+	void SetData(Data::Ptr data) noexcept { data_ = std::move(data); }
+	const Data::Ptr &GetData() const noexcept { return data_; }
 
 private:
 	Data::Ptr data_;

@@ -55,7 +55,7 @@ int MsgPackDecoder::decodeKeyToTag(const msgpack_object_kv& obj) {
 }
 
 void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName) {
-	if (tagName) tagsPath_.push_back(tagName);
+	if (tagName) tagsPath_.emplace_back(tagName);
 	switch (obj.type) {
 		case MSGPACK_OBJECT_NIL:
 			builder.Null(tagName);

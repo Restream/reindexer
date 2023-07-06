@@ -426,7 +426,7 @@ func (qt *queryTest) WhereBetweenFields(firstField string, condition int, second
 }
 
 // DWithin - Add DWithin condition to DB query
-func (qt *queryTest) DWithin(index string, point [2]float64, distance float64) *queryTest {
+func (qt *queryTest) DWithin(index string, point reindexer.Point, distance float64) *queryTest {
 	keys := make([]reflect.Value, 0)
 	keys = append(keys, reflect.ValueOf(point[0]), reflect.ValueOf(point[1]), reflect.ValueOf(distance))
 	qte := queryTestEntry{index: index, condition: reindexer.DWITHIN, ikeys: keys}
@@ -1440,7 +1440,7 @@ func compareComposite(t *testing.T, vals []reflect.Value, keyValue interface{}, 
 
 func checkCompositeCondition(t *testing.T, vals []reflect.Value, cond *queryTestEntry, item interface{}) bool {
 	keys := cond.ikeys.([]interface{})
-	
+
 	if cond.condition == reindexer.RANGE {
 		if len(keys) != 2 {
 			panic("expected 2 keys in range condition")
@@ -1471,7 +1471,7 @@ func checkCompositeCondition(t *testing.T, vals []reflect.Value, cond *queryTest
 	return false
 }
 
-func checkDWithin(point1 [2]float64, point2 [2]float64, distance float64) bool {
+func checkDWithin(point1 reindexer.Point, point2 reindexer.Point, distance float64) bool {
 	diffX := point1[0] - point2[0]
 	diffY := point1[1] - point2[1]
 	return (diffX*diffX + diffY*diffY) <= (distance * distance)
@@ -1487,7 +1487,7 @@ func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item 
 		return len(vals) > 0
 	case reindexer.DWITHIN:
 		require.Equal(t, 2, len(vals), "Expected point %#v in item %#v", vals, item)
-		return checkDWithin([2]float64{vals[0].Float(), vals[1].Float()}, [2]float64{cond.keys[0].Float(), cond.keys[1].Float()}, cond.keys[2].Float())
+		return checkDWithin(reindexer.Point{vals[0].Float(), vals[1].Float()}, reindexer.Point{cond.keys[0].Float(), cond.keys[1].Float()}, cond.keys[2].Float())
 	}
 
 	if len(vals) > 1 && len(cond.fieldIdx) > 1 {

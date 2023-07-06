@@ -14,7 +14,7 @@ Reindexer::~Reindexer() {
 Reindexer::Reindexer(const Reindexer& rdx) noexcept : impl_(rdx.impl_), owner_(false), ctx_(rdx.ctx_) {}
 Reindexer::Reindexer(Reindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(std::move(rdx.ctx_)) { rdx.owner_ = false; }
 
-bool Reindexer::NeedTraceActivity() const { return impl_->NeedTraceActivity(); }
+bool Reindexer::NeedTraceActivity() const noexcept { return impl_->NeedTraceActivity(); }
 
 Error Reindexer::Connect(const std::string& dsn, ConnectOpts opts) { return impl_->Connect(dsn, opts); }
 

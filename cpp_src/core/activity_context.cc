@@ -1,6 +1,7 @@
 #include "activity_context.h"
 #include <iomanip>
 #include <sstream>
+#include "activity_context.h"
 #include "cjson/jsonbuilder.h"
 #include "tools/stringstools.h"
 
@@ -9,25 +10,32 @@ namespace reindexer {
 using namespace std::string_view_literals;
 
 void ActivityContainer::Register(const RdxActivityContext* context) {
-	std::unique_lock<std::mutex> lck(mtx_);
+	std::unique_lock lck(mtx_);
 	const auto res = cont_.insert(context);
+	lck.unlock();
+
 	assertrx(res.second);
 	(void)res;
 }
 
 void ActivityContainer::Unregister(const RdxActivityContext* context) {
-	std::unique_lock<std::mutex> lck(mtx_);
+	std::unique_lock lck(mtx_);
 	const auto count = cont_.erase(context);
+	lck.unlock();
+
 	assertrx(count == 1u);
 	(void)count;
 }
 
 void ActivityContainer::Reregister(const RdxActivityContext* oldCtx, const RdxActivityContext* newCtx) {
 	if (oldCtx == newCtx) return;
-	std::unique_lock<std::mutex> lck(mtx_);
+
+	std::unique_lock lck(mtx_);
 	const auto eraseCount = cont_.erase(oldCtx);
-	assertrx(eraseCount == 1u);
 	const auto insertRes = cont_.insert(newCtx);
+	lck.unlock();
+
+	assertrx(eraseCount == 1u);
 	assertrx(insertRes.second);
 	(void)eraseCount;
 	(void)insertRes;
@@ -35,20 +43,22 @@ void ActivityContainer::Reregister(const RdxActivityContext* oldCtx, const RdxAc
 
 std::vector<Activity> ActivityContainer::List() {
 	std::vector<Activity> ret;
-	std::unique_lock<std::mutex> lck(mtx_);
-	ret.reserve(cont_.size());
-	for (const RdxActivityContext* ctx : cont_) ret.push_back(*ctx);
+	{
+		std::lock_guard lck(mtx_);
+		ret.reserve(cont_.size());
+		for (const RdxActivityContext* ctx : cont_) ret.emplace_back(*ctx);
+	}
 	return ret;
 }
 
 std::optional<std::string> ActivityContainer::QueryForIpConnection(int id) {
-	std::unique_lock<std::mutex> lck(mtx_);
+	std::lock_guard lck(mtx_);
 
 	for (const RdxActivityContext* ctx : cont_) {
 		if (ctx->CheckConnectionId(id)) {
 			std::string ret;
 			deepCopy(ret, ctx->Query());
-			return ret;
+			return std::optional{std::move(ret)};
 		}
 	}
 
@@ -126,16 +136,11 @@ RdxActivityContext::operator Activity() const {
 	return ret;
 }
 
-unsigned RdxActivityContext::serializeState(MutexMark mark) { return Activity::WaitLock | (static_cast<unsigned>(mark) << kStateShift); }
-unsigned RdxActivityContext::serializeState(Activity::State state) { return static_cast<unsigned>(state); }
-
 std::pair<Activity::State, std::string_view> RdxActivityContext::deserializeState(unsigned state) {
 	const Activity::State decodedState = static_cast<Activity::State>(state & kStateMask);
-	if (decodedState == Activity::WaitLock) {
-		return {decodedState, DescribeMutexMark(static_cast<MutexMark>(state >> kStateShift))};
-	} else {
-		return {decodedState, ""};
-	}
+	return decodedState == Activity::WaitLock
+			   ? std::make_pair(decodedState, DescribeMutexMark(static_cast<MutexMark>(state >> kStateShift)))
+			   : std::make_pair(decodedState, "");
 }
 
 unsigned RdxActivityContext::nextId() noexcept {

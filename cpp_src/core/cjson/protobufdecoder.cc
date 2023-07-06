@@ -14,7 +14,7 @@ CJsonBuilder& ArraysStorage::GetArray(int tagName, int field) {
 	assertrx(indexes_.size() > 0);
 	auto it = data_.find(tagName);
 	if (it == data_.end()) {
-		indexes_.back().push_back(tagName);
+		indexes_.back().emplace_back(tagName);
 		auto itArrayData =
 			data_.emplace(std::piecewise_construct, std::forward_as_tuple(tagName), std::forward_as_tuple(&tm_, tagName, field));
 		itArrayData.first->second.size = 1;

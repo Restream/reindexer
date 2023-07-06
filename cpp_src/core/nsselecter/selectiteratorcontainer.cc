@@ -333,7 +333,8 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 					}
 					SelectIterator &lastAppended = lastAppendedIt->Value<SelectIterator>();
 					lastAppended.Bind(ns.payloadType_, qe.idxNo);
-					const int cur = lastAppended.GetMaxIterations();
+					lastAppended.SetNotOperationFlag(op == OpNot);
+					const int cur = op == OpNot ? ns.items_.size() - lastAppended.GetMaxIterations() : lastAppended.GetMaxIterations();
 					if (lastAppended.comparators_.empty()) {
 						if (cur && cur < maxIterations_) maxIterations_ = cur;
 						if (!cur) wasZeroIterations_ = true;

@@ -7,10 +7,10 @@
 namespace reindexer {
 
 template <typename T>
-IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
-									 const RdxContext& rdxCtx) {
-	assertrx(mergeStatusesEmpty);
-	(void)mergeStatusesEmpty;
+IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&,
+									 FtUseExternStatuses withExternSt, const RdxContext& rdxCtx) {
+	assertrx_throw(withExternSt == FtUseExternStatuses::No);
+	(void)withExternSt;
 	auto result = engine_.Search(dsl, inTransaction, rdxCtx);
 
 	auto mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();

@@ -105,12 +105,18 @@ void Replicator::run() {
 	logPrintf(LogInfo, "[repl] Replicator with %s started", config_.masterDSN);
 
 	if (config_.namespaces.empty()) {
-		master_->SubscribeUpdates(this, UpdatesFilters());
+		const auto err = master_->SubscribeUpdates(this, UpdatesFilters());
+		if (!err.ok()) {
+			logPrintf(LogError, "[repl] SubscribeUpdates error: %s", err.what());
+		}
 	} else {
 		// Just to get any subscription for add/delete updates
 		UpdatesFilters filters;
 		filters.AddFilter(*config_.namespaces.begin(), UpdatesFilters::Filter());
-		master_->SubscribeUpdates(this, filters, SubscriptionOpts().IncrementSubscription());
+		const auto err = master_->SubscribeUpdates(this, filters, SubscriptionOpts().IncrementSubscription());
+		if (!err.ok()) {
+			logPrintf(LogError, "[repl] SubscribeUpdates error: %s", err.what());
+		}
 	}
 	{
 		std::lock_guard<std::mutex> lck(syncMtx_);
@@ -147,7 +153,10 @@ void Replicator::run() {
 	resyncTimer_.stop();
 	walSyncAsync_.stop();
 	resyncUpdatesLostAsync_.stop();
-	master_->UnsubscribeUpdates(this);
+	const auto err = master_->UnsubscribeUpdates(this);
+	if (!err.ok()) {
+		logPrintf(LogError, "[repl] UnsubscribeUpdates error: %s", err.what());
+	}
 	logPrintf(LogInfo, "[repl] Replicator with %s stopped", config_.masterDSN);
 }
 
@@ -213,7 +222,10 @@ void Replicator::subscribeUpdatesIfRequired(const std::string &nsName) {
 	if (config_.namespaces.find(nsName) != config_.namespaces.end()) {
 		UpdatesFilters filters;
 		filters.AddFilter(nsName, UpdatesFilters::Filter());
-		master_->SubscribeUpdates(this, filters, SubscriptionOpts().IncrementSubscription());
+		const auto err = master_->SubscribeUpdates(this, filters, SubscriptionOpts().IncrementSubscription());
+		if (!err.ok()) {
+			logPrintf(LogError, "[repl] SubscribeUpdates error: %s", err.what());
+		}
 	}
 }
 
@@ -338,8 +350,6 @@ Error Replicator::syncDatabase() {
 
 	Error err = master_->EnumNamespaces(nses, EnumNamespacesOpts());
 	if (!err.ok()) {
-		logPrintf(LogError, "[repl:%s] EnumNamespaces error: %s%s", slave_->storagePath_, err.what(),
-				  terminate_ ? ", terminating replication"sv : ""sv);
 		if (err.code() == errForbidden || err.code() == errReplParams) {
 			terminate_ = true;
 		} else {
@@ -347,7 +357,28 @@ Error Replicator::syncDatabase() {
 		}
 		logPrintf(LogTrace, "[repl:%s] return error", slave_->storagePath_);
 		state_.store(StateInit, std::memory_order_release);
+		logPrintf(LogError, "[repl:%s] EnumNamespaces error: %s%s", slave_->storagePath_, err.what(),
+				  terminate_ ? ", terminating replication"sv : ""sv);
 		return err;
+	}
+
+	if (config_.namespaces.empty()) {
+		err = master_->SubscribeUpdates(this, UpdatesFilters{});
+		if (!err.ok()) {
+			bool exit = false;
+			if (err.code() == errForbidden || err.code() == errReplParams) {
+				terminate_ = true;
+				exit = true;
+			} else if (retryIfNetworkError(err)) {
+				exit = true;
+			}
+			logPrintf(LogError, "[repl:%s] SubscribeUpdates error: %s%s", slave_->storagePath_, err.what(),
+					  terminate_ ? ", terminating replication"sv : ""sv);
+			if (exit) {
+				state_.store(StateInit, std::memory_order_release);
+				return err;
+			}
+		}
 	}
 
 	resyncTimer_.stop();
@@ -1109,7 +1140,7 @@ bool Replicator::canApplyUpdate(LSNPair LSNs, std::string_view nsName, const WAL
 
 bool Replicator::isSyncEnabled(std::string_view nsName) {
 	// SKip system ns
-	if (nsName.size() && nsName[0] == '#') return false;
+	if (isSystemNamespaceNameFast(nsName)) return false;
 
 	// skip non enabled namespaces
 	if (config_.namespaces.size() && config_.namespaces.find(nsName) == config_.namespaces.end()) {

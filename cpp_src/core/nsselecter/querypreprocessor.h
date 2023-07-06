@@ -9,13 +9,12 @@
 
 namespace reindexer {
 
-class Index;
 class NamespaceImpl;
-class SelectIteratorContainer;
+class QresExplainHolder;
 
 class QueryPreprocessor : private QueryEntries {
 public:
-	QueryPreprocessor(QueryEntries &&, const Query &, NamespaceImpl *, bool reqMatchedOnce, bool inTransaction);
+	QueryPreprocessor(QueryEntries &&, NamespaceImpl *, const SelectCtx &);
 	const QueryEntries &GetQueryEntries() const noexcept { return *this; }
 	bool LookupQueryIndexes() {
 		const size_t merged = lookupQueryIndexes(0, 0, container_.size() - queryEntryAddedByForcedSortOptimization_);
@@ -41,7 +40,7 @@ public:
 	}
 	void ConvertWhereValues() { convertWhereValues(begin(), end()); }
 	void AddDistinctEntries(const h_vector<Aggregator, 4> &);
-	bool NeedNextEvaluation(unsigned start, unsigned count, bool &matchedAtLeastOnce) noexcept;
+	bool NeedNextEvaluation(unsigned start, unsigned count, bool &matchedAtLeastOnce, QresExplainHolder &qresHolder) noexcept;
 	unsigned Start() const noexcept { return start_; }
 	unsigned Count() const noexcept { return count_; }
 	bool MoreThanOneEvaluation() const noexcept { return queryEntryAddedByForcedSortOptimization_; }
@@ -55,10 +54,10 @@ public:
 	using QueryEntries::Dump;
 	[[nodiscard]] SortingEntries GetSortingEntries(const SelectCtx &ctx) const;
 	bool IsFtExcluded() const noexcept { return ftEntry_.has_value(); }
-	void ExcludeFtQuery(const SelectFunction &, const RdxContext &);
+	void ExcludeFtQuery(const RdxContext &);
 	FtMergeStatuses &GetFtMergeStatuses() noexcept {
 		assertrx(ftPreselect_);
-		return std::get<FtMergeStatuses>(*ftPreselect_);
+		return *ftPreselect_;
 	}
 	FtPreselectT &&MoveFtPreselect() noexcept {
 		assertrx(ftPreselect_);
@@ -101,15 +100,15 @@ private:
 	bool canRemoveBracket(size_t i) const;
 
 	NamespaceImpl &ns_;
+	const Query &query_;
 	StrictMode strictMode_;
 	size_t evaluationsCount_ = 0;
-	unsigned start_ = 0;
-	unsigned count_ = UINT_MAX;
+	unsigned start_ = QueryEntry::kDefaultOffset;
+	unsigned count_ = QueryEntry::kDefaultLimit;
 	bool queryEntryAddedByForcedSortOptimization_ = false;
 	bool desc_ = false;
 	bool forcedSortOrder_ = false;
 	bool reqMatchedOnce_ = false;
-	const Query &query_;
 	std::optional<QueryEntry> ftEntry_;
 	std::optional<FtPreselectT> ftPreselect_;
 };

@@ -133,8 +133,8 @@ public:
 	};
 
 	virtual ~IDataHolder() = default;
-	virtual MergeData Select(FtDSLQuery&& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
-							 FtMergeStatuses::Statuses&& mergeStatuses, bool mergeStatusesEmpty, const RdxContext&) = 0;
+	virtual MergeData Select(FtDSLQuery&&, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
+							 FtMergeStatuses::Statuses&&, FtUseExternStatuses, const RdxContext&) = 0;
 	virtual void Process(size_t fieldSize, bool multithread) = 0;
 	virtual size_t GetMemStat() = 0;
 	virtual void Clear() = 0;
@@ -185,8 +185,8 @@ public:
 template <typename IdCont>
 class DataHolder : public IDataHolder {
 public:
-	MergeData Select(FtDSLQuery&& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
-					 FtMergeStatuses::Statuses&& mergeStatuses, bool mergeStatusesEmpty, const RdxContext&) final;
+	virtual MergeData Select(FtDSLQuery&&, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
+							 FtMergeStatuses::Statuses&&, FtUseExternStatuses, const RdxContext&) override final;
 	void Process(size_t fieldSize, bool multithread) final;
 	size_t GetMemStat() override final;
 	void StartCommit(bool complte_updated) override final;

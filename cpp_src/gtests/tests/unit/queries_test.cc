@@ -1,6 +1,10 @@
 #include <gmock/gmock.h>
 #include <thread>
+#include "core/cjson/csvbuilder.h"
+#include "core/schema.h"
+#include "csv2jsonconverter.h"
 #include "queries_api.h"
+#include "tools/jsontools.h"
 
 #if !defined(REINDEX_WITH_TSAN)
 TEST_F(QueriesApi, QueriesStandardTestSet) {
@@ -21,6 +25,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		CheckComparatorsQueries();
 		CheckDistinctQueries();
 		CheckGeomQueries();
+		CheckMergeQueriesWithLimit();
 
 		int itemsCount = 0;
 		auto& items = insertedItems_[default_namespace];
@@ -82,6 +87,8 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		CheckComparatorsQueries();
 		CheckDistinctQueries();
 		CheckGeomQueries();
+		CheckMergeQueriesWithLimit();
+		CheckConditionsMergingQueries();
 	} catch (const reindexer::Error& e) {
 		ASSERT_TRUE(false) << e.what() << std::endl;
 	} catch (const std::exception& e) {
@@ -146,7 +153,7 @@ TEST_F(QueriesApi, TransactionStress) {
 				uint32_t oldsize = current_size.load();
 				current_size += oldsize;
 				FillDefaultNamespaceTransaction(current_size, start_pos + oldsize, 10);
-			};
+			}
 		}));
 	}
 
@@ -199,7 +206,7 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		 "rand())'",
 		 Query{"test_namespace"}.InnerJoin("id", "id", CondEq, Query{"join_ns"}).Sort("year + join_ns.year * (5 - rand())", false)},
 		{"SELECT * FROM "s + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex + ", ST_GeomFromText('POINT(1.25 -7.25)'), 0.5)",
-		 Query{geomNs}.DWithin(kFieldNamePointNonIndex, {1.25, -7.25}, 0.5)},
+		 Query{geomNs}.DWithin(kFieldNamePointNonIndex, reindexer::Point{1.25, -7.25}, 0.5)},
 		{"SELECT * FROM test_namespace ORDER BY FIELD(index, 10, 20, 30)", Query{"test_namespace"}.Sort("index", false, {10, 20, 30})},
 		{"SELECT * FROM test_namespace ORDER BY FIELD(index, 'str1', 'str2', 'str3') DESC",
 		 Query{"test_namespace"}.Sort("index", true, {"str1", "str2", "str3"})},
@@ -508,6 +515,226 @@ TEST_F(QueriesApi, SetByTreeIndex) {
 		EXPECT_NE(qr.explainResults.find(",\"sort_index\":\"id\","), std::string::npos);
 		EXPECT_NE(qr.explainResults.find(",\"method\":\"index\","), std::string::npos);
 		EXPECT_EQ(qr.explainResults.find("\"scan\""), std::string::npos);
+	}
+}
+
+TEST_F(QueriesApi, TestCsvParsing) {
+	std::vector<std::vector<std::string_view>> fieldsArr{
+		{"field0", "", "\"field1\"", "field2", "", "", "", "field3", "field4", "", "", "field5", ""},
+		{"", "", "\"field6\"", "field7", "field8", "field9", "", "", "", "", "", "field10", "field11"},
+		{"field12", "field13", "\"field14\"", "", "", "", "", "field15", "field16", "", "", "field17", "field18"},
+		{"", "", "\"field19\"", "field20", "", "", "", "field21", "", "", "field22", "", ""},
+		{"", "", "\"\"", "", "", "", "", "", "", "", "", "", ""},
+		{"", "field23", "\"field24\"", "field25", "", "", "", "", "field26", "", "", "", ""}};
+
+	std::string_view dblQuote = "\"\"";
+
+	for (const auto& fields : fieldsArr) {
+		std::stringstream ss;
+		for (size_t i = 0; i < fields.size(); ++i) {
+			if (i == 2) {
+				ss << dblQuote << fields[i] << dblQuote;
+			} else {
+				ss << fields[i];
+			}
+			if (i < fields.size() - 1) {
+				ss << ',';
+			}
+		}
+
+		auto resFields = reindexer::parseCSVRow(ss.str());
+		ASSERT_EQ(resFields.size(), fields.size());
+
+		for (size_t i = 0; i < fields.size(); ++i) {
+			ASSERT_EQ(resFields[i], fields[i]);
+		}
+	}
+}
+
+TEST_F(QueriesApi, TestCsvProcessingWithSchema) {
+	using namespace std::string_literals;
+	std::array<const std::string, 3> nsNames = {"csv_test1", "csv_test2", "csv_test3"};
+
+	auto openNs = [this](std::string_view nsName) {
+		Error err = rt.reindexer->OpenNamespace(nsName);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->AddIndex(nsName, reindexer::IndexDef{"id", {"id"}, "hash", "int", IndexOpts{}.PK()});
+		ASSERT_TRUE(err.ok()) << err.what();
+	};
+
+	for (auto& nsName : nsNames) {
+		openNs(nsName);
+	}
+
+	const std::string jsonschema = R"!(
+	{
+		"required":
+		[
+			"id",
+			"Field0",
+			"Field1",
+			"Field2",
+			"Field3",
+			"Field4",
+			"Field5",
+			"Field6",
+			"Field7",
+			"quoted_field",
+			"join_field",
+			"Array_level0_id_0",
+			"Array_level0_id_1",
+			"Array_level0_id_2",
+			"Array_level0_id_3",
+			"Array_level0_id_4",
+			"Object_level0_id_0",
+			"Object_level0_id_1",
+			"Object_level0_id_2",
+			"Object_level0_id_3",
+			"Object_level0_id_4"
+		],
+		"properties":
+		{
+			"id": { "type": "int" },
+			"Field0": { "type": "string" },
+			"Field1": { "type": "string" },
+			"Field2": { "type": "string" },
+			"Field3": { "type": "string" },
+			"Field4": { "type": "string" },
+			"Field5": { "type": "string" },
+			"Field6": { "type": "string" },
+			"Field7": { "type": "string" },
+
+			"quoted_field":{ "type": "string" },
+			"join_field": { "type": "int" },
+
+			"Array_level0_id_0":{"items":{"type": "string"},"type": "array"},
+			"Array_level0_id_1":{"items":{"type": "string"},"type": "array"},
+			"Array_level0_id_2":{"items":{"type": "string"},"type": "array"},
+			"Array_level0_id_3":{"items":{"type": "string"},"type": "array"},
+			"Array_level0_id_4":{"items":{"type": "string"},"type": "array"}
+
+			"Object_level0_id_0":{"additionalProperties": false,"type": "object"},
+			"Object_level0_id_1":{"additionalProperties": false,"type": "object"},
+			"Object_level0_id_2":{"additionalProperties": false,"type": "object"},
+			"Object_level0_id_3":{"additionalProperties": false,"type": "object"},
+			"Object_level0_id_4":{"additionalProperties": false,"type": "object"}
+		},
+		"additionalProperties": false,
+		"type": "object"
+	})!";
+
+	auto err = rt.reindexer->SetSchema(nsNames[0], jsonschema);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	int fieldNum = 0;
+	const auto addItem = [&fieldNum, this](int id, std::string_view nsName, bool needJoinField = true) {
+		reindexer::WrSerializer ser;
+		{
+			reindexer::JsonBuilder json{ser};
+			json.Put("id", id);
+			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			++fieldNum;
+			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			++fieldNum;
+			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			++fieldNum;
+			json.Put(fmt::sprintf("Field%d", fieldNum), fmt::sprintf("field_%d_data", fieldNum));
+			json.Put("quoted_field", "\"field_with_\"quoted\"");
+			if (needJoinField) {
+				json.Put("join_field", id % 3);
+			}
+			{
+				auto data0 = json.Array(fmt::sprintf("Array_level0_id_%d", id));
+				for (int i = 0; i < 5; ++i) data0.Put(nullptr, fmt::sprintf("array_data_0_%d", i));
+				data0.Put(nullptr, std::string("\"arr_quoted_field(\"this is quoted too\")\""));
+			}
+			{
+				auto data0 = json.Object(fmt::sprintf("Object_level0_id_%d", id));
+				for (int i = 0; i < 5; ++i) data0.Put(fmt::sprintf("Object_%d", i), fmt::sprintf("object_data_0_%d", i));
+				data0.Put("Quoted Field lvl0", std::string("\"obj_quoted_field(\"this is quoted too\")\""));
+				{
+					auto data1 = data0.Object(fmt::sprintf("Object_level1_id_%d", id));
+					for (int j = 0; j < 5; ++j) data1.Put(fmt::sprintf("objectData1 %d", j), fmt::sprintf("objectData1 %d", j));
+					data1.Put("Quoted Field lvl1", std::string("\"obj_quoted_field(\"this is quoted too\")\""));
+				}
+			}
+		}
+		Item item = rt.reindexer->NewItem(nsName);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		auto err = item.FromJSON(ser.Slice());
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Upsert(nsName, item);
+	};
+
+	for (auto& nsName : nsNames) {
+		for (int i = 0; i < 5; i++) {
+			addItem(i, nsName, !(i == 4 && nsName == "csv_test1"));	 // one item for check when item without joined nss
+			fieldNum -= 2;
+		}
+	}
+
+	Query q = Query{nsNames[0]};
+	q.Join(LeftJoin, "join_field", "join_field", CondEq, OpAnd, Query(nsNames[1]));
+	q.Join(LeftJoin, "id", "join_field", CondEq, OpAnd, Query(nsNames[2]));
+	reindexer::QueryResults qr;
+	err = rt.reindexer->Select(q, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	for (auto& ordering : std::array<reindexer::CsvOrdering, 2>{qr.getSchema(0)->MakeCsvTagOrdering(qr.getTagsMatcher(0)),
+																qr.MakeCSVTagOrdering(std::numeric_limits<int>::max(), 0)}) {
+		auto csv2jsonSchema = [&ordering, &qr] {
+			std::vector<std::string> res;
+			for (auto tag : ordering) {
+				res.emplace_back(qr.getTagsMatcher(0).tag2name(tag));
+			}
+			res.emplace_back("joined_nss_map");
+			return res;
+		}();
+
+		reindexer::WrSerializer serCsv, serJson;
+		for (auto& q : qr) {
+			err = q.GetCSV(serCsv, ordering);
+			ASSERT_TRUE(err.ok()) << err.what();
+
+			err = q.GetJSON(serJson, false);
+			ASSERT_TRUE(err.ok()) << err.what();
+
+			gason::JsonParser parserCsv, parserJson;
+			auto converted = parserCsv.Parse(std::string_view(reindexer::csv2json(serCsv.Slice(), csv2jsonSchema)));
+			auto orig = parserJson.Parse(serJson.Slice());
+
+			for (const auto& fieldName : csv2jsonSchema) {
+				if (fieldName == "joined_nss_map" && !converted[fieldName].empty()) {
+					EXPECT_EQ(converted[fieldName].value.getTag(), gason::JSON_OBJECT);
+					for (auto& node : converted[fieldName]) {
+						EXPECT_TRUE(!orig[node.key].empty()) << "not found joined data: " << node.key;
+						auto origStr = reindexer::stringifyJson(orig[node.key]);
+						auto convertedStr = reindexer::stringifyJson(node);
+						EXPECT_EQ(origStr, convertedStr);
+					}
+					continue;
+				}
+
+				if (converted[fieldName].empty() || orig[fieldName].empty()) {
+					EXPECT_TRUE(converted[fieldName].empty() && orig[fieldName].empty()) << "fieldName: " << fieldName;
+					continue;
+				}
+
+				if (orig[fieldName].value.getTag() == gason::JSON_NUMBER) {
+					EXPECT_EQ(orig[fieldName].As<int>(), converted[fieldName].As<int>());
+				} else if (orig[fieldName].value.getTag() == gason::JSON_STRING) {
+					EXPECT_EQ(orig[fieldName].As<std::string>(), converted[fieldName].As<std::string>());
+				} else if (orig[fieldName].value.getTag() == gason::JSON_OBJECT || orig[fieldName].value.getTag() == gason::JSON_ARRAY) {
+					auto origStr = reindexer::stringifyJson(orig[fieldName]);
+					auto convertedStr = reindexer::stringifyJson(converted[fieldName]);
+					EXPECT_EQ(origStr, convertedStr);
+				}
+			}
+
+			serCsv.Reset();
+			serJson.Reset();
+		}
 	}
 }
 

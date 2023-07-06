@@ -29,6 +29,13 @@ Item &Item::operator=(Item &&other) noexcept {
 	return *this;
 }
 
+KeyValueType Item::GetIndexType(int field) const noexcept {
+	if (!impl_ || field < 0 || field >= impl_->Type().NumFields()) {
+		return KeyValueType::Undefined{};
+	}
+	return impl_->Type().Field(field).Type();
+}
+
 std::string_view Item::FieldRef::Name() const { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
 
 Item::FieldRef::operator Variant() const {

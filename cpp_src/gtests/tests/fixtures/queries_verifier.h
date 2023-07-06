@@ -138,7 +138,7 @@ protected:
 		// Check non found items, to not match conditions
 
 		// If query has limit and offset, skip verification
-		if (query.start != 0 || query.count != UINT_MAX) return;
+		if (query.start != 0 || query.count != reindexer::QueryEntry::kDefaultLimit) return;
 
 		// If query has distinct, skip verification
 		for (const auto& agg : query.aggregations_) {
@@ -420,7 +420,7 @@ private:
 		const double x = coordinates[0].As<double>();
 		const double y = coordinates[1].As<double>();
 		if (qentry.condition == CondDWithin) {
-			return DWithin({x, y}, qentry.values[0].As<reindexer::Point>(), qentry.values[1].As<double>());
+			return DWithin(reindexer::Point{x, y}, qentry.values[0].As<reindexer::Point>(), qentry.values[1].As<double>());
 		} else {
 			assertrx(0);
 			abort();
@@ -572,9 +572,12 @@ private:
 	}
 
 	static bool isIndexComposite(const reindexer::Item& item, const reindexer::QueryEntry& qentry) {
-		if (qentry.idxNo >= item.NumFields()) return true;
-		return qentry.values[0].Type().Is<reindexer::KeyValueType::Composite>() ||
-			   qentry.values[0].Type().Is<reindexer::KeyValueType::Tuple>();
+		if (qentry.idxNo < 0) {
+			return qentry.values.size() && (qentry.values[0].Type().Is<reindexer::KeyValueType::Composite>() ||
+											qentry.values[0].Type().Is<reindexer::KeyValueType::Tuple>());
+		}
+		const auto indexType = item.GetIndexType(qentry.idxNo);
+		return indexType.Is<reindexer::KeyValueType::Composite>() || indexType.Is<reindexer::KeyValueType::Tuple>();
 	}
 
 	bool checkCondition(const reindexer::Item& item, const reindexer::BetweenFieldsQueryEntry& qentry,
@@ -663,7 +666,7 @@ private:
 	}
 
 	static inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept {
-		return std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+		return std::sqrt((p1.X() - p2.X()) * (p1.X() - p2.X()) + (p1.Y() - p2.Y()) * (p1.Y() - p2.Y()));
 	}
 
 	static reindexer::VariantArray getJoinedField(int id, const reindexer::QueryResults& qr, size_t nsIdx, int index,
@@ -761,8 +764,8 @@ private:
 		std::vector<JoinedSelectorMock> result;
 		result.reserve(query.joinQueries_.size());
 		for (auto jq : query.joinQueries_) {
-			jq.count = UINT_MAX;
-			jq.start = 0;
+			jq.count = reindexer::QueryEntry::kDefaultLimit;
+			jq.start = reindexer::QueryEntry::kDefaultOffset;
 			jq.sortingEntries_.clear();
 			jq.forcedSortOrder_.clear();
 			result.emplace_back(InnerJoin, std::move(jq));

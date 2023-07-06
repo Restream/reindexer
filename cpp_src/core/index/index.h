@@ -102,7 +102,7 @@ public:
 		assertrx(0);
 		abort();
 	}
-	virtual reindexer::FtPreselectT FtPreselect(const QueryEntries&, int /*idxNo*/, const SelectFunction&, const RdxContext&) {
+	virtual reindexer::FtPreselectT FtPreselect(const RdxContext&) {
 		assertrx(0);
 		abort();
 	}

@@ -81,41 +81,17 @@ public:
 
 		for (size_t i = 0; i < count; ++i) {
 			BaseApi::ItemType item = api.NewItem("some");
-			// clang-format off
-
-			Error err = item.FromJSON(
-                        "{\n"
-                        "\"id\":" + std::to_string(counter_)+",\n"
-                        "\"int\":" + std::to_string(rand())+",\n"
-                        "\"string\":\"" + api.RandString()+"\"\n"
-                        "\"uuid\":\"" + randStrUuid() + "\"\n"
-                        "}");
-			// clang-format on
-
-			counter_++;
-
+			auto json = fmt::sprintf(R"json({"id":"%d", "int":"%d", "string":"%s", "uuid":"%s"})json", counter_, rand(), api.RandString(),
+									 randStrUuid());
+			Error err = item.Unsafe(true).FromJSON(json);
+			++counter_;
 			api.Upsert("some", item);
 
 			BaseApi::ItemType item1 = api.NewItem("some1");
-			// clang-format off
-
-						err = item1.FromJSON(
-							"{\n"
-							"\"id\":" +
-							std::to_string(counter_) +
-							",\n"
-							"\"int\":" +
-							std::to_string(rand()) +
-							",\n"
-							"\"string\":\"" +
-							api.RandString() +
-							"\"\n"
-							"\"uuid\":\"" + randStrUuid() + "\"\n"
-							"}");
-			// clang-format on
-
-			counter_++;
-
+			json = fmt::sprintf(R"json({"id":"%d", "int":"%d", "string":"%s", "uuid":"%s"})json", counter_, rand(), api.RandString(),
+								randStrUuid());
+			err = item1.Unsafe(true).FromJSON(json);
+			++counter_;
 			api.Upsert("some1", item1);
 		}
 	}

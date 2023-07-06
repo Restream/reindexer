@@ -5,16 +5,37 @@
 #include <functional>
 #include <limits>
 #include "tools/assertrx.h"
+#include "tools/errors.h"
 
 namespace reindexer {
 
-struct Point {
-	double x, y;
+class Point {
+public:
+	explicit Point(double x = 0.0, double y = 0.0) : x_(x), y_(y) {
+		validate(x, "x");
+		validate(y, "y");
+	}
+	double X() const noexcept { return x_; }
+	double Y() const noexcept { return y_; }
+
+private:
+	void validate(double v, std::string_view name) {
+		if (rx_unlikely(std::isinf(v))) {
+			throwInfError(name);
+		}
+		if (rx_unlikely(std::isnan(v))) {
+			throwNanError(name);
+		}
+	}
+	[[noreturn]] void throwInfError(std::string_view name);
+	[[noreturn]] void throwNanError(std::string_view name);
+
+	double x_, y_;
 };
 
 template <typename T>
 T& operator<<(T& os, Point p) {
-	return os << '{' << p.x << ", " << p.y << '}';
+	return os << '{' << p.X() << ", " << p.Y() << '}';
 }
 
 inline bool approxEqual(double lhs, double rhs) noexcept {
@@ -22,27 +43,27 @@ inline bool approxEqual(double lhs, double rhs) noexcept {
 		   ((std::abs(lhs) < std::abs(rhs) ? std::abs(rhs) : std::abs(lhs)) * std::numeric_limits<double>::epsilon());
 }
 
-inline bool operator==(Point lhs, Point rhs) noexcept { return approxEqual(lhs.x, rhs.x) && approxEqual(lhs.y, rhs.y); }
+inline bool operator==(Point lhs, Point rhs) noexcept { return approxEqual(lhs.X(), rhs.X()) && approxEqual(lhs.Y(), rhs.Y()); }
 inline bool operator!=(Point lhs, Point rhs) noexcept { return !(lhs == rhs); }
 
 struct point_strict_equal {
 	bool operator()(const Point& lhs, const Point& rhs) const noexcept {
-		return std::equal_to<double>()(lhs.x, rhs.x) && std::equal_to<double>()(lhs.y, rhs.y);
+		return std::equal_to<double>()(lhs.X(), rhs.X()) && std::equal_to<double>()(lhs.Y(), rhs.Y());
 	}
 };
 struct point_strict_less {
-	bool operator()(const Point& lhs, const Point& rhs) const noexcept { return lhs.x < rhs.x || lhs.y < rhs.y; }
+	bool operator()(const Point& lhs, const Point& rhs) const noexcept { return lhs.X() < rhs.X() || lhs.Y() < rhs.Y(); }
 };
 
 inline bool DWithin(Point lhs, Point rhs, double distance) noexcept {
-	return (lhs.x - rhs.x) * (lhs.x - rhs.x) + (lhs.y - rhs.y) * (lhs.y - rhs.y) <= distance * distance;
+	return (lhs.X() - rhs.X()) * (lhs.X() - rhs.X()) + (lhs.Y() - rhs.Y()) * (lhs.Y() - rhs.Y()) <= distance * distance;
 }
 
 class Rectangle {
 public:
 	Rectangle() noexcept : left_{}, right_{}, bottom_{}, top_{} {}
 	Rectangle(Point a, Point b) noexcept
-		: left_{std::min(a.x, b.x)}, right_{std::max(a.x, b.x)}, bottom_{std::min(a.y, b.y)}, top_{std::max(a.y, b.y)} {}
+		: left_{std::min(a.X(), b.X())}, right_{std::max(a.X(), b.X())}, bottom_{std::min(a.Y(), b.Y())}, top_{std::max(a.Y(), b.Y())} {}
 	Rectangle(double l, double r, double b, double t) noexcept
 		: left_{std::min(l, r)}, right_{std::max(l, r)}, bottom_{std::min(b, t)}, top_{std::max(b, t)} {}
 	double Left() const noexcept { return left_; }
@@ -50,7 +71,7 @@ public:
 	double Bottom() const noexcept { return bottom_; }
 	double Top() const noexcept { return top_; }
 	double Area() const noexcept { return (right_ - left_) * (top_ - bottom_); }
-	bool Contain(Point p) const noexcept { return left_ <= p.x && p.x <= right_ && bottom_ <= p.y && p.y <= top_; }
+	bool Contain(Point p) const noexcept { return left_ <= p.X() && p.X() <= right_ && bottom_ <= p.Y() && p.Y() <= top_; }
 	bool Contain(const Rectangle& r) const noexcept {
 		return left_ <= r.left_ && r.right_ <= right_ && bottom_ <= r.bottom_ && r.top_ <= top_;
 	}
@@ -70,7 +91,7 @@ inline bool DWithin(const Rectangle& r, Point p, double distance) noexcept {
 		   DWithin(Point{r.Right(), r.Bottom()}, p, distance) && DWithin(Point{r.Right(), r.Top()}, p, distance);
 }
 
-inline Rectangle boundRect(Point p) noexcept { return {p.x, p.x, p.y, p.y}; }
+inline Rectangle boundRect(Point p) noexcept { return {p.X(), p.X(), p.Y(), p.Y()}; }
 
 inline Rectangle boundRect(const Rectangle& r1, const Rectangle& r2) noexcept {
 	return {std::min(r1.Left(), r2.Left()), std::max(r1.Right(), r2.Right()), std::min(r1.Bottom(), r2.Bottom()),
@@ -78,7 +99,7 @@ inline Rectangle boundRect(const Rectangle& r1, const Rectangle& r2) noexcept {
 }
 
 inline Rectangle boundRect(const Rectangle& r, Point p) noexcept {
-	return {std::min(r.Left(), p.x), std::max(r.Right(), p.x), std::min(r.Bottom(), p.y), std::max(r.Top(), p.y)};
+	return {std::min(r.Left(), p.X()), std::max(r.Right(), p.X()), std::min(r.Bottom(), p.Y()), std::max(r.Top(), p.Y())};
 }
 
 class Circle {
@@ -94,30 +115,30 @@ private:
 };
 
 inline bool intersect(const Rectangle& r, const Circle& c) noexcept {
-	if (c.Center().x < r.Left()) {
-		const auto diffX = r.Left() - c.Center().x;
-		if (c.Center().y < r.Bottom()) {
-			const auto diffY = r.Bottom() - c.Center().y;
+	if (c.Center().X() < r.Left()) {
+		const auto diffX = r.Left() - c.Center().X();
+		if (c.Center().Y() < r.Bottom()) {
+			const auto diffY = r.Bottom() - c.Center().Y();
 			return diffX * diffX + diffY * diffY <= c.Radius() * c.Radius();
-		} else if (c.Center().y > r.Top()) {
-			const auto diffY = c.Center().y - r.Top();
+		} else if (c.Center().Y() > r.Top()) {
+			const auto diffY = c.Center().Y() - r.Top();
 			return diffX * diffX + diffY * diffY <= c.Radius() * c.Radius();
 		} else {
 			return diffX <= c.Radius();
 		}
-	} else if (c.Center().x > r.Right()) {
-		const auto diffX = c.Center().x - r.Right();
-		if (c.Center().y < r.Bottom()) {
-			const auto diffY = r.Bottom() - c.Center().y;
+	} else if (c.Center().X() > r.Right()) {
+		const auto diffX = c.Center().X() - r.Right();
+		if (c.Center().Y() < r.Bottom()) {
+			const auto diffY = r.Bottom() - c.Center().Y();
 			return diffX * diffX + diffY * diffY <= c.Radius() * c.Radius();
-		} else if (c.Center().y > r.Top()) {
-			const auto diffY = c.Center().y - r.Top();
+		} else if (c.Center().Y() > r.Top()) {
+			const auto diffY = c.Center().Y() - r.Top();
 			return diffX * diffX + diffY * diffY <= c.Radius() * c.Radius();
 		} else {
 			return diffX <= c.Radius();
 		}
 	} else {
-		return c.Center().y + c.Radius() >= r.Bottom() && c.Center().y - c.Radius() <= r.Top();
+		return c.Center().Y() + c.Radius() >= r.Bottom() && c.Center().Y() - c.Radius() <= r.Top();
 	}
 }
 
@@ -127,7 +148,7 @@ namespace std {
 
 template <>
 struct hash<reindexer::Point> {
-	size_t operator()(reindexer::Point p) const noexcept { return (hash<double>()(p.x) << 1) ^ hash<double>()(p.y); }
+	size_t operator()(reindexer::Point p) const noexcept { return (hash<double>()(p.X()) << 1) ^ hash<double>()(p.Y()); }
 };
 
 }  // namespace std

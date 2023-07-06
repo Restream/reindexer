@@ -14,6 +14,7 @@ class TagsMatcher;
 class JsonBuilder;
 class MsgPackBuilder;
 class ProtobufBuilder;
+class CsvBuilder;
 
 class IEncoderDatasourceWithJoins {
 public:
@@ -47,6 +48,7 @@ public:
 protected:
 	using IndexedTagsPathInternalT = IndexedTagsPathImpl<16>;
 	constexpr static bool kWithTagsPathTracking = std::is_same_v<ProtobufBuilder, Builder>;
+	constexpr static bool kWithFieldExtractor = std::is_same_v<FieldsExtractor, Builder>;
 
 	struct DummyTagsPathScope {
 		DummyTagsPathScope(TagsPath & /*tagsPath*/, int16_t /*tagName*/) noexcept {}
@@ -74,5 +76,6 @@ using JsonEncoder = BaseEncoder<JsonBuilder>;
 using CJsonEncoder = BaseEncoder<CJsonBuilder>;
 using MsgPackEncoder = BaseEncoder<MsgPackBuilder>;
 using ProtobufEncoder = BaseEncoder<ProtobufBuilder>;
+using CsvEncoder = BaseEncoder<CsvBuilder>;
 
 }  // namespace reindexer

@@ -26,7 +26,7 @@ RdxContext::~RdxContext() {
 	}
 }
 
-RdxActivityContext* RdxContext::Activity() const {
+RdxActivityContext* RdxContext::Activity() const noexcept {
 	switch (holdStatus_) {
 		case kHold:
 			return &activityCtx_;
@@ -38,7 +38,7 @@ RdxActivityContext* RdxContext::Activity() const {
 	}
 }
 
-RdxActivityContext::Ward RdxContext::BeforeLock(MutexMark mutexMark) const {
+RdxActivityContext::Ward RdxContext::BeforeLock(MutexMark mutexMark) const noexcept {
 	switch (holdStatus_) {
 		case kHold:
 			return activityCtx_.BeforeLock(mutexMark);
@@ -50,7 +50,7 @@ RdxActivityContext::Ward RdxContext::BeforeLock(MutexMark mutexMark) const {
 	}
 }
 
-RdxActivityContext::Ward RdxContext::BeforeIndexWork() const {
+RdxActivityContext::Ward RdxContext::BeforeIndexWork() const noexcept {
 	switch (holdStatus_) {
 		case kHold:
 			return activityCtx_.BeforeIndexWork();
@@ -62,7 +62,7 @@ RdxActivityContext::Ward RdxContext::BeforeIndexWork() const {
 	}
 }
 
-RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const {
+RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const noexcept {
 	switch (holdStatus_) {
 		case kHold:
 			return activityCtx_.BeforeSelectLoop();

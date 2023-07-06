@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.16.0"
+  version: "3.17.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -732,6 +732,7 @@ paths:
           - json
           - msgpack
           - protobuf
+          - csv-file
       responses:
         200:
           description: "successful operation"
@@ -1039,6 +1040,7 @@ paths:
           - json
           - msgpack
           - protobuf
+          - csv-file
       responses:
         200:
           description: "successful operation"
@@ -1090,6 +1092,7 @@ paths:
           - json
           - msgpack
           - protobuf
+          - csv-file
       responses:
         200:
           description: "successful operation"
@@ -1652,6 +1655,16 @@ paths:
         type: integer
         description: "Total width in rows of view for table format output"
         required: false
+      - name: "format"
+        in: query
+        type: string
+        description: "encoding data format"
+        required: false
+        enum:
+          - json
+          - msgpack
+          - protobuf
+          - csv-file
       responses:
         200:
           description: "successful operation"
@@ -2810,6 +2823,64 @@ definitions:
         description: "Configuration for certian field if it differ from whole index configuration"
         items:
           $ref: "#/definitions/FulltextFieldConfig"
+      base_ranking:
+        type: object
+        description: "Config for subterm proc rank."
+        properties:
+          full_match_proc:
+            type: integer
+            description: "Relevancy of full word match"
+            default: 100
+            minimum: 0
+            maximum: 500
+          prefix_min_proc:
+            type: integer
+            description: "Mininum relevancy of prefix word match"
+            default: 50
+            minimum: 0
+            maximum: 500
+          suffix_min_proc:
+            type: integer
+            description: "Mininum relevancy of suffix word match"
+            default: 10
+            minimum: 0
+            maximum: 500
+          base_typo_proc:
+            type: integer
+            description: "Base relevancy of typo match"
+            default: 85
+            minimum: 0
+            maximum: 500
+          typo_proc_penalty:
+            type: integer
+            description: "Extra penalty for each word's permutation (addition/deletion of the symbol) in typo algorithm"
+            default: 15
+            minimum: 0
+            maximum: 500
+          stemmer_proc_penalty:
+            type: integer
+            description: "Penalty for the variants, created by stemming"
+            default: 15
+            minimum: 0
+            maximum: 500
+          kblayout_proc:
+            type: integer
+            description: "Relevancy of the match in incorrect kblayout"
+            default: 90
+            minimum: 0
+            maximum: 500
+          translit_proc:
+            type: integer
+            description: "Relevancy of the match in translit"
+            default: 90
+            minimum: 0
+            maximum: 500
+          synonyms_proc:
+            type: integer
+            description: "Relevancy of the synonym match"
+            default: 95
+            minimum: 0
+            maximum: 500
 
   FulltextFieldConfig:
     type: object

@@ -11,6 +11,7 @@
 #include "core/keyvalue/geometry.h"
 #include "core/nsselecter/sortexpression.h"
 #include "core/queryresults/joinresults.h"
+#include "core/type_consts_helpers.h"
 #include "gtests/tools.h"
 #include "queries_verifier.h"
 #include "reindexer_api.h"
@@ -73,6 +74,7 @@ public:
 										IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameAge, "tree", "int", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts(), 0},
+										IndexDeclaration{kFieldNameDescription, "text", "string", IndexOpts{}, 0},
 										IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts().Sparse(), 0}});
 
 		err = rt.reindexer->OpenNamespace(testSimpleNs);
@@ -264,6 +266,7 @@ protected:
 			item[kFieldNameAge] = rand() % 50;
 			item[kFieldNameName] = RandString().c_str();
 			item[kFieldNameGenre] = rand() % 50;
+			item[kFieldNameDescription] = RandString();
 			if (rand() % 4 != 0) {
 				item[kFieldNameYearSparse] = std::to_string(rand() % 50 + 2000);
 			}
@@ -307,27 +310,27 @@ protected:
 				bld.Put(kFieldNameId, id);
 
 				reindexer::Point point{randPoint(10)};
-				double arr[]{point.x, point.y};
+				double arr[]{point.X(), point.Y()};
 				bld.Array(kFieldNamePointQuadraticRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				arr[0] = point.x;
-				arr[1] = point.y;
+				arr[0] = point.X();
+				arr[1] = point.Y();
 				bld.Array(kFieldNamePointLinearRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				arr[0] = point.x;
-				arr[1] = point.y;
+				arr[0] = point.X();
+				arr[1] = point.Y();
 				bld.Array(kFieldNamePointGreeneRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				arr[0] = point.x;
-				arr[1] = point.y;
+				arr[0] = point.X();
+				arr[1] = point.Y();
 				bld.Array(kFieldNamePointRStarRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				arr[0] = point.x;
-				arr[1] = point.y;
+				arr[0] = point.X();
+				arr[1] = point.Y();
 				bld.Array(kFieldNamePointNonIndex, reindexer::span<double>{arr, 2});
 			}
 			auto item = NewItem(geomNs);
@@ -497,9 +500,12 @@ protected:
 	}
 
 	int GetcurrBtreeIdsetsValue(int id) {
-		std::lock_guard<std::mutex> l(m_);
-		if (id % 200) currBtreeIdsetsValue = rand() % 10000;
-		return currBtreeIdsetsValue;
+		if (id % 200) {
+			auto newValue = rand() % 10000;
+			currBtreeIdsetsValue.store(newValue, std::memory_order_relaxed);
+			return newValue;
+		}
+		return currBtreeIdsetsValue.load(std::memory_order_relaxed);
 	}
 
 	std::vector<std::string> RandStrVector(size_t count) {
@@ -555,13 +561,20 @@ protected:
 		return item;
 	}
 
-	static std::string pointToSQL(reindexer::Point point, bool escape = false) {
-		std::ostringstream res;
-		res.precision(std::numeric_limits<double>::digits10 + 1);
-		std::string quote = escape ? "\\'" : "'";
-		res << "ST_GeomFromText(" << quote << "point(" << point.x << ' ' << point.y << ')' << quote << ')';
-		return res.str();
+	void RandVariantArray(size_t size, size_t max, VariantArray& arr) {
+		arr.clear<false>();
+		arr.reserve(size);
+		for (size_t i = 0; i < size; ++i) {
+			arr.emplace_back(int(rand() % max));
+		}
 	}
+
+	static std::string pointToSQL(reindexer::Point point, bool escape = false) {
+		return escape ? fmt::sprintf("ST_GeomFromText(\\'point(%.12f %.12f)\\')", point.X(), point.Y())
+					  : fmt::sprintf("ST_GeomFromText('point(%.12f %.12f)')", point.X(), point.Y());
+	}
+
+	void CheckMergeQueriesWithLimit();
 
 	void CheckGeomQueries() {
 		for (size_t i = 0; i < 10; ++i) {
@@ -571,10 +584,13 @@ protected:
 			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointGreeneRTree, randPoint(10), randBinDouble(0, 1)));
 			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointRStarRTree, randPoint(10), randBinDouble(0, 1)));
 			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointNonIndex, randPoint(10), randBinDouble(0, 1)));
+			ExecuteAndVerify(Query(geomNs)
+								 .DWithin(kFieldNamePointLinearRTree, randPoint(10), randBinDouble(0, 1))
+								 .SortStDistance(kFieldNamePointNonIndex, kFieldNamePointLinearRTree, false));
 			ExecuteAndVerify(
 				Query(geomNs)
 					.DWithin(kFieldNamePointLinearRTree, randPoint(10), randBinDouble(0, 1))
-					.Sort(std::string("ST_Distance(") + kFieldNamePointNonIndex + ", " + pointToSQL(randPoint(10)) + ')', false)
+					.SortStDistance(kFieldNamePointNonIndex, randPoint(10), false)
 					.Sort(std::string("ST_Distance(") + pointToSQL(randPoint(10)) + ", " + kFieldNamePointGreeneRTree + ')', false));
 			ExecuteAndVerify(Query(geomNs)
 								 .DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBinDouble(0, 1))
@@ -630,14 +646,22 @@ protected:
 		}
 	}
 
-	static std::vector<int> Range(int start, int end) {
-		const int step = start > end ? -1 : 1;
-		std::vector<int> result;
-		result.reserve(step * (end - start));
-		for (; start != end; start += step) {
-			result.push_back(start);
+	void CheckConditionsMergingQueries() {
+		// Check merging of conditions by the same index with large sets of values
+		VariantArray arr1, arr2, emptyArr;
+		for (size_t i = 0; i < 3; ++i) {
+			RandVariantArray(500, 1000, arr1);
+			RandVariantArray(100, 1000, arr2);
+			arr2.insert(arr2.end(), arr1.begin(), arr1.begin() + 100);
+
+			ExecuteAndVerifyWithSql(
+				Query(default_namespace).Where(kFieldNameNumeric, CondSet, arr1).Where(kFieldNameNumeric, CondSet, arr2));
+
+			ExecuteAndVerifyWithSql(Query(default_namespace)
+										.Where(kFieldNameNumeric, CondSet, arr1)
+										.Where(kFieldNameNumeric, CondSet, emptyArr)
+										.Where(kFieldNameNumeric, CondSet, arr2));
 		}
-		return result;
 	}
 
 	void CheckStandartQueries() {
@@ -1579,7 +1603,7 @@ protected:
 			objNode.End();
 			bld.End();
 			auto item = NewItem(nsWithObject);
-			const auto err = item.FromJSON(ser.Slice());
+			const auto err = item.Unsafe(true).FromJSON(ser.Slice());
 			ASSERT_TRUE(err.ok()) << err.what();
 			Upsert(nsWithObject, item);
 		}
@@ -1789,7 +1813,7 @@ protected:
 		std::string dslQuery =
 			std::string(R"({"namespace":")") + geomNs +
 			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
-			kFieldNamePointLinearRTree + R"(","value":[[)" + toString(point.x) + ',' + toString(point.y) + "]," + toString(distance) +
+			kFieldNamePointLinearRTree + R"(","value":[[)" + toString(point.X()) + ',' + toString(point.Y()) + "]," + toString(distance) +
 			R"(]}],"merge_queries":[],"aggregations":[]})";
 		const Query checkQuery1{Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance)};
 		checkDslQuery(dslQuery, checkQuery1);
@@ -1800,7 +1824,7 @@ protected:
 		dslQuery =
 			std::string(R"({"namespace":")") + geomNs +
 			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
-			kFieldNamePointLinearRTree + R"(","value":[)" + toString(distance) + ",[" + toString(point.x) + ',' + toString(point.y) +
+			kFieldNamePointLinearRTree + R"(","value":[)" + toString(distance) + ",[" + toString(point.X()) + ',' + toString(point.Y()) +
 			R"(]]}],"merge_queries":[],"aggregations":[]})";
 		const Query checkQuery2{Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance)};
 		checkDslQuery(dslQuery, checkQuery2);
@@ -1899,8 +1923,7 @@ protected:
 		CompareQueryResults(sqlQuery, sqlQr5, checkQr5);
 		Verify(checkQr5, checkQuery5, *rt.reindexer);
 
-		sqlQuery =
-			std::string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId + " * 5' DESC LIMIT 10000000";
+		sqlQuery = fmt::sprintf("SELECT ID FROM test_namespace ORDER BY '%s + %s * 5' DESC LIMIT 10000000", kFieldNameYear, kFieldNameId);
 		const Query checkQuery6{
 			Query(default_namespace, 0, 10000000).Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", true)};
 
@@ -1915,8 +1938,8 @@ protected:
 		CompareQueryResults(sqlQuery, sqlQr6, checkQr6);
 		Verify(checkQr6, checkQuery6, *rt.reindexer);
 
-		sqlQuery = std::string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId +
-				   " * 5' DESC ORDER BY '2 * " + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ")' ASC LIMIT 10000000";
+		sqlQuery = fmt::sprintf("SELECT ID FROM test_namespace ORDER BY '%s + %s * 5' DESC ORDER BY '2 * %s / (1 + %s)' ASC LIMIT 10000000",
+								kFieldNameYear, kFieldNameId, kFieldNameGenre, kFieldNameIsDeleted);
 		const Query checkQuery7{Query(default_namespace, 0, 10000000)
 									.Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", true)
 									.Sort(std::string("2 * ") + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ')', false)};
@@ -1935,8 +1958,8 @@ protected:
 		// Checks that SQL queries with DWithin and sort by Distance work and compares the result with the result of corresponding C++ query
 		reindexer::Point point = randPoint(10);
 		double distance = randBinDouble(0, 1);
-		sqlQuery = std::string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex + ", " + pointToSQL(point) +
-				   ", " + toString(distance) + ");";
+		sqlQuery = fmt::sprintf("SELECT * FROM %s WHERE ST_DWithin(%s, %s, %s);", geomNs, kFieldNamePointNonIndex, pointToSQL(point),
+								toString(distance));
 		const Query checkQuery8{Query(geomNs).DWithin(kFieldNamePointNonIndex, point, distance)};
 
 		QueryResults sqlQr8;
@@ -1952,9 +1975,8 @@ protected:
 
 		point = randPoint(10);
 		distance = randBinDouble(0, 1);
-		sqlQuery = std::string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + pointToSQL(point) + ", " + kFieldNamePointNonIndex +
-				   ", " + toString(distance) + ") ORDER BY 'ST_Distance(" + kFieldNamePointLinearRTree + ", " + pointToSQL(point, true) +
-				   ")';";
+		sqlQuery = fmt::sprintf("SELECT * FROM %s WHERE ST_DWithin(%s, %s, %s) ORDER BY 'ST_Distance(%s, %s)';", geomNs, pointToSQL(point),
+								kFieldNamePointNonIndex, toString(distance), kFieldNamePointLinearRTree, pointToSQL(point, true));
 		const Query checkQuery9{
 			Query(geomNs)
 				.DWithin(kFieldNamePointNonIndex, point, distance)
@@ -1971,7 +1993,7 @@ protected:
 		CompareQueryResults(sqlQuery, sqlQr9, checkQr9);
 		Verify(checkQr9, checkQuery9, *rt.reindexer);
 
-		sqlQuery = "SELECT * FROM "s + default_namespace + " WHERE " + kFieldNameGenre + " >= " + kFieldNameRate + ';';
+		sqlQuery = fmt::sprintf("SELECT * FROM %s WHERE %s >= %s;", default_namespace, kFieldNameGenre, kFieldNameRate);
 		const Query checkQuery10{Query(default_namespace).WhereBetweenFields(kFieldNameGenre, CondGe, kFieldNameRate)};
 
 		QueryResults sqlQr10;
@@ -2052,6 +2074,7 @@ protected:
 		ExecuteAndVerify(Query(comparatorsNs).Where("columnInt64", CondLe, {Variant(static_cast<int64_t>(10000))}));
 
 		std::vector<double> doubleSet;
+		doubleSet.reserve(1010);
 		for (size_t i = 0; i < 1010; i++) {
 			doubleSet.emplace_back(static_cast<double>(rand()) / RAND_MAX);
 		}
@@ -2066,6 +2089,7 @@ protected:
 		ExecuteAndVerify(Query(comparatorsNs).Where("columnString", CondEq, std::string("test_string3")));
 
 		std::vector<std::string> stringSet;
+		stringSet.reserve(1010);
 		for (size_t i = 0; i < 1010; i++) {
 			stringSet.emplace_back(RandString());
 		}
@@ -2152,9 +2176,7 @@ protected:
 	const std::string kCompositeFieldPriceTitle = kFieldNamePrice + compositePlus + kFieldNameTitle;
 	const std::string kCompositeFieldPagesTitle = kFieldNamePages + compositePlus + kFieldNameTitle;
 
-	std::mutex m_;
-
-	int currBtreeIdsetsValue = rand() % 10000;
+	std::atomic<int> currBtreeIdsetsValue = rand() % 10000;
 	static constexpr size_t forcedSortOffsetNsSize = 1000;
 	static constexpr int forcedSortOffsetMaxValue = 1000;
 	static constexpr size_t geomNsSize = 10000;

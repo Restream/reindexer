@@ -60,7 +60,7 @@ public:
 
 		for (size_t i = 0; i < 1000; ++i) {
 			reindexer::WrSerializer wrser;
-			reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+			reindexer::JsonBuilder jsonBuilder(wrser, reindexer::ObjType::TypeObject);
 			jsonBuilder.Put(kFieldId, i);
 			jsonBuilder.Put(kFieldA1, i * 2);
 			jsonBuilder.Put(kFieldA2, i * 3);

@@ -227,7 +227,7 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider& configProvider, const RdxC
 	configProvider.GetNamespaceConfig(GetName(ctx), configData);
 	ReplicationConfigData replicationConf = configProvider.GetReplicationConfig();
 
-	enablePerfCounters_ = configProvider.GetProfilingConfig().perfStats;
+	enablePerfCounters_ = configProvider.PerfStatsEnabled();
 
 	auto wlck = wLock(ctx);
 
@@ -759,18 +759,23 @@ static void verifyConvertTypes(KeyValueType from, KeyValueType to, const Payload
 
 void NamespaceImpl::verifyCompositeIndex(const IndexDef& indexDef) const {
 	const auto type = indexDef.Type();
-	const bool isSparse = indexDef.opts_.IsSparse();
+	if (indexDef.opts_.IsSparse()) {
+		throw Error{errParams, "Composite index cannot be sparse. Use non-sparse composite instead"};
+	}
 	for (const auto& jp : indexDef.jsonPaths_) {
 		const auto it = indexesNames_.find(jp);
-		if (it == indexesNames_.end()) continue;  // TODO maybe error
+		if (it == indexesNames_.end()) {
+			if (!IsFullText(indexDef.Type())) {
+				throw Error(errParams,
+							"Composite indexes over non-indexed field ('%s') are not supported yet (except for full-text indexes). Create "
+							"at least column index('-') over each field inside the composite index",
+							jp);
+			}
+			continue;
+		}
 		const auto& idx = indexes_[it->second];
-		if (idx->IsUuid()) {
-			if (type != IndexCompositeHash) {
-				throw Error{errParams, "Only hash index allowed on UUID field"};
-			}
-			if (isSparse) {
-				throw Error{errParams, "Index on UUID field cannot be sparse"};
-			}
+		if (idx->IsUuid() && type != IndexCompositeHash) {
+			throw Error{errParams, "Only hash index allowed on UUID field"};
 		}
 	}
 }
@@ -1170,9 +1175,19 @@ bool NamespaceImpl::getIndexByNameOrJsonPath(std::string_view name, int& index) 
 	if (idx > 0) {
 		index = idx;
 		return true;
-	} else {
-		return false;
 	}
+	return false;
+}
+
+bool NamespaceImpl::getSparseIndexByJsonPath(std::string_view jsonPath, int& index) const {
+	// FIXME: Try to merge getIndexByNameOrJsonPath and getSparseIndexByJsonPath if it's possible
+	for (int i = indexes_.firstSparsePos(), end = indexes_.firstSparsePos() + indexes_.sparseIndexesSize(); i < end; ++i) {
+		if (indexes_[i]->Fields().contains(jsonPath)) {
+			index = i;
+			return true;
+		}
+	}
+	return false;
 }
 
 void NamespaceImpl::Insert(Item& item, const NsContext& ctx) { modifyItem(item, ctx, ModeInsert); }
@@ -1257,7 +1272,7 @@ void NamespaceImpl::Update(const Query& query, QueryResults& result, const NsCon
 		if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
 	}
 
-	if (query.debugLevel >= LogInfo) {
+	if (rx_unlikely(query.debugLevel >= LogInfo)) {
 		logPrintf(LogInfo, "Updated %d items in %d µs", result.Count(),
 				  duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count());
 	}
@@ -1447,7 +1462,7 @@ void NamespaceImpl::Delete(const Query& q, QueryResults& result, const NsContext
 			processWalRecord(wrec, ctx.rdxContext);
 		}
 	}
-	if (q.debugLevel >= LogInfo) {
+	if (rx_unlikely(q.debugLevel >= LogInfo)) {
 		logPrintf(LogInfo, "Deleted %d items in %d µs", result.Count(),
 				  duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count());
 	}
@@ -2023,7 +2038,7 @@ IndexDef NamespaceImpl::getIndexDefinition(size_t i) const {
 
 NamespaceDef NamespaceImpl::getDefinition() const {
 	auto pt = this->payloadType_;
-	NamespaceDef nsDef(name_, StorageOpts().Enabled(storage_.IsValid()));
+	NamespaceDef nsDef(name_, StorageOpts().Enabled(storage_.GetStatusCached().isEnabled));
 	nsDef.indexes.reserve(indexes_.size());
 	for (size_t i = 1; i < indexes_.size(); ++i) {
 		nsDef.AddIndex(getIndexDefinition(i));
@@ -2070,7 +2085,7 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext& ctx) {
 		ret.Total.cacheSize += istat.idsetCache.totalSize;
 	}
 
-	const auto storageStatus = storage_.GetStatus();
+	const auto storageStatus = storage_.GetStatusCached();
 	ret.storageOK = storageStatus.isEnabled && storageStatus.err.ok();
 	ret.storageEnabled = storageStatus.isEnabled;
 	if (storageStatus.isEnabled) {
@@ -2084,7 +2099,7 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext& ctx) {
 	} else {
 		ret.storageStatus = "DISABLED"sv;
 	}
-	ret.storagePath = storage_.Path();
+	ret.storagePath = storage_.GetPathCached();
 	ret.optimizationCompleted = (optimizationState_ == OptimizationCompleted);
 
 	ret.stringsWaitingToBeDeletedSize = strHolder_->MemStat();

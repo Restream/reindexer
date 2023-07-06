@@ -12,6 +12,7 @@
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
 #include "estl/smart_lock.h"
+#include "net/ev/ev.h"
 #include "querystat.h"
 #include "reindexerconfig.h"
 #include "replicator/updatesobserver.h"
@@ -28,7 +29,7 @@ class ProtobufSchema;
 
 class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
-	using StorageMutex = MarkedMutex<shared_timed_mutex, MutexMark::ReindexerStorage>;
+	using StatsSelectMutex = MarkedMutex<std::timed_mutex, MutexMark::ReindexerStats>;
 	struct NsLockerItem {
 		NsLockerItem(NamespaceImpl::Ptr ins = {}) : ns(std::move(ins)), count(1) {}
 		NamespaceImpl::Ptr ns;
@@ -94,7 +95,7 @@ public:
 	Error GetProtobufSchema(WrSerializer &ser, std::vector<std::string> &namespaces);
 	Error Status();
 
-	bool NeedTraceActivity() { return configProvider_.ActivityStatsEnabled(); }
+	bool NeedTraceActivity() const noexcept { return configProvider_.ActivityStatsEnabled(); }
 
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index,
 					const InternalRdxContext &ctx = InternalRdxContext());
@@ -102,8 +103,7 @@ public:
 protected:
 	typedef contexted_shared_lock<Mutex, const RdxContext> SLock;
 	typedef contexted_unique_lock<Mutex, const RdxContext> ULock;
-	typedef contexted_shared_lock<StorageMutex, const RdxContext> SStorageLock;
-	typedef contexted_unique_lock<StorageMutex, const RdxContext> UStorageLock;
+	using FilterNsNamesT = std::optional<h_vector<std::string, 6>>;
 
 	template <typename Context>
 	class NsLocker : private h_vector<NsLockerItem, 4> {
@@ -162,6 +162,44 @@ protected:
 		bool locked_ = false;
 		const Context &context_;
 	};
+
+	class BackgroundThread {
+	public:
+		~BackgroundThread() { Stop(); }
+
+		template <typename F>
+		void Run(F &&f) {
+			Stop();
+			async_.set(loop_);
+			async_.set([this](net::ev::async &) noexcept { loop_.break_loop(); });
+			async_.start();
+			th_ = std::thread(std::forward<F>(f), std::ref(loop_));
+		}
+		void Stop() {
+			if (th_.joinable()) {
+				async_.send();
+				th_.join();
+				async_.stop();
+			}
+		}
+
+	private:
+		std::thread th_;
+		net::ev::async async_;
+		net::ev::dynamic_loop loop_;
+	};
+
+	class StatsLocker {
+	public:
+		using StatsLockT = contexted_unique_lock<StatsSelectMutex, const RdxContext>;
+
+		StatsLocker();
+		[[nodiscard]] StatsLockT LockIfRequired(std::string_view sysNsName, const RdxContext &);
+
+	private:
+		std::unordered_map<std::string_view, StatsSelectMutex, nocase_hash_str, nocase_equal_str> mtxMap_;
+	};
+
 	template <typename T>
 	void doSelect(const Query &q, QueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func, const RdxContext &ctx);
 	struct QueryResultsContext;
@@ -171,7 +209,8 @@ protected:
 	void prepareJoinResults(const Query &q, QueryResults &result);
 	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns, const Query &mainQ);
 
-	void syncSystemNamespaces(std::string_view sysNsName, std::string_view filterNsName, const RdxContext &ctx);
+	FilterNsNamesT detectFilterNsNames(const Query &q);
+	[[nodiscard]] StatsLocker::StatsLockT syncSystemNamespaces(std::string_view sysNsName, const FilterNsNamesT &, const RdxContext &);
 	void createSystemNamespaces();
 	void updateToSystemNamespace(std::string_view nsName, Item &, const RdxContext &ctx);
 	void updateConfigProvider(const gason::JsonNode &config);
@@ -180,8 +219,8 @@ protected:
 	Error tryLoadReplicatorConfFromFile();
 	Error tryLoadReplicatorConfFromYAML(const std::string &yamlReplConf);
 
-	void backgroundRoutine();
-	void storageFlushingRoutine();
+	void backgroundRoutine(net::ev::dynamic_loop &loop);
+	void storageFlushingRoutine(net::ev::dynamic_loop &loop);
 	Error closeNamespace(std::string_view nsName, const RdxContext &ctx, bool dropStorage, bool enableDropSlave = false);
 
 	Error syncDownstream(std::string_view nsName, bool force, const InternalRdxContext &ctx = InternalRdxContext());
@@ -196,23 +235,24 @@ protected:
 	Error openNamespace(std::string_view name, const StorageOpts &storageOpts, const RdxContext &rdxCtx);
 	Error addNamespace(const NamespaceDef &nsDef, const RdxContext &rdxCtx);
 
-	[[nodiscard]] bool isSystemNamespaceName(std::string_view name) noexcept;
+	[[nodiscard]] bool isSystemNamespaceNameStrict(std::string_view name) noexcept;
 
 	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;
 
+	StatsLocker statsLocker_;
 	Mutex mtx_;
 	std::string storagePath_;
 
-	std::thread backgroundThread_;
-	std::thread storageFlushingThread_;
-	std::atomic<bool> dbDestroyed_;
+	BackgroundThread backgroundThread_;
+	BackgroundThread storageFlushingThread_;
+	std::atomic<bool> dbDestroyed_ = {false};
 
 	QueriesStatTracer queriesStatTracker_;
 	UpdatesObservers observers_;
 	std::unique_ptr<Replicator> replicator_;
 	DBConfigProvider configProvider_;
 	FileContetWatcher replConfigFileChecker_;
-	bool hasReplConfigLoadError_;
+	bool hasReplConfigLoadError_ = false;
 
 #ifdef REINDEX_WITH_GPERFTOOLS
 	TCMallocHeapWathcher heapWatcher_;
@@ -220,11 +260,10 @@ protected:
 
 	ActivityContainer activities_;
 
-	StorageMutex storageMtx_;
 	StorageType storageType_;
 	bool autorepairEnabled_ = false;
 	bool replicationEnabled_ = true;
-	std::atomic<bool> connected_;
+	std::atomic<bool> connected_ = {false};
 
 	IClientsStats *clientsStats_ = nullptr;
 

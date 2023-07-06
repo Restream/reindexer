@@ -1,11 +1,13 @@
 #include "core/queryresults/queryresults.h"
 #include "core/cbinding/resultserializer.h"
 #include "core/cjson/baseencoder.h"
+#include "core/cjson/csvbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/protobufbuilder.h"
 #include "core/itemimpl.h"
 #include "core/namespace/namespace.h"
 #include "joinresults.h"
+#include "tools/catch_and_return.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -131,7 +133,7 @@ int QueryResults::GetJoinedNsCtxIndex(int nsid) const {
 	int ctxIndex = joined_.size();
 	for (int ns = 0; ns < nsid; ++ns) {
 		ctxIndex += joined_[ns].GetJoinedSelectorsCount();
-	};
+	}
 	return ctxIndex;
 }
 
@@ -185,6 +187,16 @@ private:
 	IEncoderDatasourceWithJoins *joinsDs_;
 	bool withRank_;
 	double rank_;
+};
+
+class AdditionalDatasourceCSV : public IAdditionalDatasource<CsvBuilder> {
+public:
+	AdditionalDatasourceCSV(IEncoderDatasourceWithJoins *jds) : joinsDs_(jds) {}
+	void PutAdditionalFields(CsvBuilder &) const final {}
+	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return joinsDs_; }
+
+private:
+	IEncoderDatasourceWithJoins *joinsDs_;
 };
 
 void QueryResults::encodeJSON(int idx, WrSerializer &ser) const {
@@ -282,6 +294,68 @@ Error QueryResults::Iterator::GetJSON(WrSerializer &ser, bool withHdrLen) {
 		err_ = err;
 		return err;
 	}
+	return errOK;
+}
+
+CsvOrdering QueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offset) const {
+	if (!ctxs[0].fieldsFilter_.empty()) {
+		std::vector<int> ordering;
+		ordering.reserve(ctxs[0].fieldsFilter_.size());
+		for (const auto &tag : ctxs[0].fieldsFilter_) {
+			ordering.emplace_back(tag);
+		}
+		return ordering;
+	}
+
+	std::vector<int> ordering;
+	ordering.reserve(128);
+	fast_hash_set<int> fieldsTmIds;
+	WrSerializer ser;
+	const auto &tm = getTagsMatcher(0);
+	for (size_t i = offset; i < items_.size() && i < offset + limit; ++i) {
+		ser.Reset();
+		encodeJSON(i, ser);
+
+		gason::JsonParser parser;
+		auto jsonNode = parser.Parse(giftStr(ser.Slice()));
+
+		for (const auto &child : jsonNode) {
+			auto [it, inserted] = fieldsTmIds.insert(tm.name2tag(child.key));
+			if (inserted && *it > 0) {
+				ordering.emplace_back(*it);
+			}
+		}
+	}
+	return ordering;
+}
+
+[[nodiscard]] Error QueryResults::Iterator::GetCSV(WrSerializer &ser, CsvOrdering &ordering) noexcept {
+	try {
+		auto &itemRef = qr_->items_[idx_];
+		assertrx(qr_->ctxs.size() > itemRef.Nsid());
+		auto &ctx = qr_->ctxs[itemRef.Nsid()];
+
+		if (itemRef.Value().IsFree()) {
+			return Error(errNotFound, "Item not found");
+		}
+
+		ConstPayload pl(ctx.type_, itemRef.Value());
+		CsvBuilder builder(ser, ordering);
+		CsvEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
+
+		if (!qr_->joined_.empty()) {
+			joins::ItemIterator itemIt = (qr_->begin() + idx_).GetJoined();
+			if (itemIt.getJoinedItemsCount() > 0) {
+				EncoderDatasourceWithJoins joinsDs(itemIt, qr_->ctxs, qr_->GetJoinedNsCtxIndex(itemRef.Nsid()));
+				AdditionalDatasourceCSV ds(&joinsDs);
+				encoder.Encode(pl, builder, &ds);
+				return errOK;
+			}
+		}
+
+		encoder.Encode(pl, builder);
+	}
+	CATCH_AND_RETURN
 	return errOK;
 }
 

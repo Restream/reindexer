@@ -115,17 +115,15 @@ public:
 			}
 		}
 	}
-	bool IsValid() const {
+	bool IsValid() const noexcept {
 		std::lock_guard lck(storageMtx_);
 		return storage_.get();
 	}
-	Status GetStatus() const {
-		std::lock_guard lck(storageMtx_);
-		return Status{storage_.get() != nullptr, lastFlushError_};
-	}
+	Status GetStatusCached() const noexcept { return statusCache_.GetStatus(); }
 	FullLockT FullLock() { return FullLockT{flushMtx_, storageMtx_}; }
-	std::string Path() const noexcept;
-	datastorage::StorageType Type() const noexcept;
+	std::string GetPathCached() const noexcept { return statusCache_.GetPath(); }
+	std::string GetPath() const noexcept;
+	datastorage::StorageType GetType() const noexcept;
 	void InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLockT& storageLock);
 	AdviceGuardT AdviceBatching() noexcept { return AdviceGuardT(batchingAdvices_); }
 	void SetForceFlushLimit(uint32_t limit) noexcept { forceFlushLimit_.store(limit, std::memory_order_relaxed); }
@@ -215,8 +213,8 @@ private:
 
 	UpdatesPtrT createUpdatesCollection() noexcept;
 	void recycleUpdatesCollection(UpdatesPtrT&& p) noexcept;
-	void scheduleFilesReopen(Error&& e) {
-		lastFlushError_ = std::move(e);
+	void scheduleFilesReopen(Error&& e) noexcept {
+		setLastFlushError(std::move(e));
 		reopenTs_ = ClockT::now() + kStorageReopenPeriod;
 	}
 	void reset() noexcept {
@@ -225,16 +223,52 @@ private:
 		lastFlushError_ = Error();
 		reopenTs_ = TimepointT();
 		lastBatchWithSyncUpdates_ = -1;
+		updateStatusCache();
 	}
 	void tryReopenStorage();
+	void updateStatusCache() noexcept { statusCache_.Update(Status{bool(storage_.get()), lastFlushError_}, path_); }
+	void setLastFlushError(Error&& e) {
+		lastFlushError_ = std::move(e);
+		updateStatusCache();
+	}
 
+	class StatusCache {
+	public:
+		void Update(Status&& st, std::string path) noexcept {
+			std::lock_guard lck(mtx_);
+			status_ = std::move(st);
+			path_ = std::move(path);
+		}
+		void UpdatePart(bool isEnabled, std::string path) noexcept {
+			std::lock_guard lck(mtx_);
+			status_.isEnabled = isEnabled;
+			path_ = std::move(path);
+		}
+		Status GetStatus() const noexcept {
+			std::lock_guard lck(mtx_);
+			return status_;
+		}
+		std::string GetPath() const noexcept {
+			std::lock_guard lck(mtx_);
+			return path_;
+		}
+
+	private:
+		mutable std::mutex mtx_;
+		Status status_;
+		std::string path_;
+	};
+
+	StatusCache statusCache_;  // Status cache to avoid any long locks
 	std::deque<UpdatesPtrT> finishedUpdateChuncks_;
 	UpdatesPtrT curUpdatesChunck_;
 	std::atomic<uint32_t> totalUpdatesCount_ = {0};
+	// path_ value and storage_ pointer may be changed under full lock only, so it's valid to read their values under any of flushMtx_ or
+	// storageMtx_ locks
 	shared_ptr<datastorage::IDataStorage> storage_;
+	std::string path_;
 	mutable std::mutex storageMtx_;
 	mutable std::mutex flushMtx_;
-	std::string path_;
 	bool isCopiedNsStorage_ = false;
 	h_vector<UpdatesPtrT, kMaxRecycledChunks> recycled_;
 	std::atomic<int32_t> batchingAdvices_ = {0};

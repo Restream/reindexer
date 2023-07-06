@@ -130,7 +130,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.16.0
+*Version* : 3.17.0
 
 
 ### License information
@@ -613,7 +613,7 @@ This operation will select documents from namespace with specified filters, and 
 |**Path**|**name**  <br>*required*|Namespace name|string|
 |**Query**|**fields**  <br>*optional*|Comma-separated list of returned fields|string|
 |**Query**|**filter**  <br>*optional*|Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf, csv-file)|
 |**Query**|**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**Query**|**offset**  <br>*optional*|Offset of first returned item|integer|
 |**Query**|**sort_field**  <br>*optional*|Sort Field|string|
@@ -1086,7 +1086,7 @@ then `limit` and `offset` from http request.
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf, csv-file)|
 |**Query**|**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**Query**|**offset**  <br>*optional*|Offset of first returned item|integer|
 |**Query**|**q**  <br>*required*|SQL query|string|
@@ -1161,7 +1161,7 @@ This operation queries documents from namespace by DSL query.
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf, csv-file)|
 |**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
 |**Query**|**with_columns**  <br>*optional*|Return columns names and widths for table format output|boolean|
 |**Body**|**body**  <br>*required*|DSL query|[Query](#query)|
@@ -1621,6 +1621,7 @@ This operation queries documents from namespace by SQL query. Query can be prece
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf, csv-file)|
 |**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
 |**Query**|**with_columns**  <br>*optional*|Return columns names and widths for table format output|boolean|
 |**Body**|**q**  <br>*required*|SQL query|string|
@@ -2186,6 +2187,7 @@ Fulltext Index configuration
 
 |Name|Description|Schema|
 |---|---|---|
+|**base_ranking**  <br>*optional*|Config for subterm proc rank.|[base_ranking](#fulltextconfig-base_ranking)|
 |**bm25_boost**  <br>*optional*|Boost of bm25 ranking  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**bm25_weight**  <br>*optional*|Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**distance_boost**  <br>*optional*|Boost of search query term distance in found document  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
@@ -2218,6 +2220,21 @@ Fulltext Index configuration
 |**term_len_boost**  <br>*optional*|Boost of search query term length  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**term_len_weight**  <br>*optional*|Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range  <br>**Default** : `0.3`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**typos_detailed_config**  <br>*optional*|Config for more precise typos algorithm tuning|[typos_detailed_config](#fulltextconfig-typos_detailed_config)|
+
+
+**base_ranking**
+
+|Name|Description|Schema|
+|---|---|---|
+|**base_typo_proc**  <br>*optional*|Base relevancy of typo match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**full_match_proc**  <br>*optional*|Relevancy of full word match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**kblayout_proc**  <br>*optional*|Relevancy of the match in incorrect kblayout  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**prefix_min_proc**  <br>*optional*|Mininum relevancy of prefix word match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**stemmer_proc_penalty**  <br>*optional*|Penalty for the variants, created by stemming  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**suffix_min_proc**  <br>*optional*|Mininum relevancy of suffix word match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**synonyms_proc**  <br>*optional*|Relevancy of the synonym match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**translit_proc**  <br>*optional*|Relevancy of the match in translit  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**typo_proc_penalty**  <br>*optional*|Extra penalty for each word's permutation (addition/deletion of the symbol) in typo algorithm  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 
 
 **typos_detailed_config**

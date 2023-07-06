@@ -18,9 +18,8 @@ struct FtMergeStatuses {
 	Statuses statuses;
 	std::vector<bool> rowIds;
 	const std::vector<size_t>* rowId2Vdoc;
-	std::optional<QueryCacheKey> cacheKey;
 };
 
-using FtPreselectT = std::variant<FtMergeStatuses, PreselectedFtIdSetCache::Iterator>;
+using FtPreselectT = FtMergeStatuses;
 
 }  // namespace reindexer

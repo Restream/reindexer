@@ -7,7 +7,7 @@ namespace reindexer {
 class KbLayout : public ITokenFilter {
 public:
 	KbLayout();
-	virtual void GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result) override final;
+	virtual void GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result, int proc) override final;
 
 private:
 	void PrepareRuLayout();

@@ -1,11 +1,12 @@
 #include "customlocal.h"
 #include <algorithm>
+#include <array>
 #include <vector>
 
 namespace reindexer {
 
 using std::vector;
-static vector<uint16_t> low_dataset = {
+static const vector<uint16_t> low_dataset = {
 	0x0061, 0x0062, 0x0063, 0x0064, 0x0065, 0x0066, 0x0067, 0x0068, 0x0069, 0x006A, 0x006B, 0x006C, 0x006D, 0x006E, 0x006F, 0x0070, 0x0071,
 	0x0072, 0x0073, 0x0074, 0x0075, 0x0076, 0x0077, 0x0078, 0x0079, 0x007A, 0x00E0, 0x00E1, 0x00E2, 0x00E3, 0x00E4, 0x00E5, 0x00E6, 0x00E7,
 	0x00E8, 0x00E9, 0x00EA, 0x00EB, 0x00EC, 0x00ED, 0x00EE, 0x00EF, 0x00F0, 0x00F1, 0x00F2, 0x00F3, 0x00F4, 0x00F5, 0x00F6, 0x00F8, 0x00F9,
@@ -47,7 +48,7 @@ static vector<uint16_t> low_dataset = {
 	0xFF47, 0xFF48, 0xFF49, 0xFF4A, 0xFF4B, 0xFF4C, 0xFF4D, 0xFF4E, 0xFF4F, 0xFF50, 0xFF51, 0xFF52, 0xFF53, 0xFF54, 0xFF55, 0xFF56, 0xFF57,
 	0xFF58, 0xFF59, 0xFF5A};
 
-static vector<uint16_t> up_dataset = {
+static const vector<uint16_t> up_dataset = {
 	0x0041, 0x0042, 0x0043, 0x0044, 0x0045, 0x0046, 0x0047, 0x0048, 0x0049, 0x004A, 0x004B, 0x004C, 0x004D, 0x004E, 0x004F, 0x0050, 0x0051,
 	0x0052, 0x0053, 0x0054, 0x0055, 0x0056, 0x0057, 0x0058, 0x0059, 0x005A, 0x00C0, 0x00C1, 0x00C2, 0x00C3, 0x00C4, 0x00C5, 0x00C6, 0x00C7,
 	0x00C8, 0x00C9, 0x00CA, 0x00CB, 0x00CC, 0x00CD, 0x00CE, 0x00CF, 0x00D0, 0x00D1, 0x00D2, 0x00D3, 0x00D4, 0x00D5, 0x00D6, 0x00D8, 0x00D9,
@@ -93,18 +94,18 @@ using std::vector;
 
 class CustomLocal {
 public:
-	static CustomLocal& Init() {
+	static CustomLocal& Init() noexcept {
 		static CustomLocal singleton;
 		return singleton;
 	}
-	void ToLower(wstring& data) {
+	void ToLower(wstring& data) noexcept {
 		for (size_t i = 0; i < data.size(); ++i) {
 			if (data[i] < UINT16_MAX && data[i] > 0) {
 				data[i] = custom_local_[data[i]].lower;
 			}
 		}
 	}
-	wchar_t ToLower(wchar_t ch) {
+	wchar_t ToLower(wchar_t ch) noexcept {
 		uint32_t ofs = ch;
 		if (ofs < UINT16_MAX) {
 			ch = custom_local_[ofs].lower;
@@ -112,7 +113,7 @@ public:
 		return ch;
 	}
 
-	bool IsAlpha(wchar_t ch) {
+	bool IsAlpha(wchar_t ch) noexcept {
 		uint32_t ofs = ch;
 		if (ofs >= custom_local_.size()) {
 			return false;
@@ -121,20 +122,16 @@ public:
 	}
 
 private:
-	CustomLocal() : custom_local_(UINT16_MAX) {
-		for (uint16_t i = 0; i < UINT16_MAX; i++) {
+	CustomLocal() {
+		for (uint32_t i = 0; i < custom_local_.size(); ++i) {
 			auto it = std::find(up_dataset.begin(), up_dataset.end(), i);
 			if (it != up_dataset.end()) {
 				custom_local_[i].lower = *(low_dataset.begin() + (it - up_dataset.begin()));
 				custom_local_[i].is_alfa = true;
 			} else {
-				custom_local_[i].lower = i;
+				custom_local_[i].lower = uint16_t(i);
 				it = std::find(low_dataset.begin(), low_dataset.end(), i);
-				if (it != low_dataset.end()) {
-					custom_local_[i].is_alfa = true;
-				} else {
-					custom_local_[i].is_alfa = false;
-				}
+				custom_local_[i].is_alfa = (it != low_dataset.end());
 			}
 		}
 	}
@@ -144,12 +141,12 @@ private:
 		uint16_t lower;
 		bool is_alfa;
 	};
-	std::vector<LocalCtx> custom_local_;
+	std::array<LocalCtx, UINT16_MAX> custom_local_;
 };
 
-void ToLower(wstring& data) { CustomLocal::Init().ToLower(data); }
-wchar_t ToLower(wchar_t ch) { return CustomLocal::Init().ToLower(ch); }
+void ToLower(wstring& data) noexcept { CustomLocal::Init().ToLower(data); }
+wchar_t ToLower(wchar_t ch) noexcept { return CustomLocal::Init().ToLower(ch); }
 
-bool IsAlpha(wchar_t ch) { return CustomLocal::Init().IsAlpha(ch); }
-bool IsDigit(wchar_t ch) { return ch >= '0' && ch <= '9'; }
+bool IsAlpha(wchar_t ch) noexcept { return CustomLocal::Init().IsAlpha(ch); }
+bool IsDigit(wchar_t ch) noexcept { return ch >= '0' && ch <= '9'; }
 }  // namespace reindexer

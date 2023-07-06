@@ -4,6 +4,7 @@
 #include "cjsonbuilder.h"
 #include "cjsontools.h"
 #include "core/keyvalue/p_string.h"
+#include "csvbuilder.h"
 #include "jsonbuilder.h"
 #include "msgpackbuilder.h"
 #include "protobufbuilder.h"
@@ -126,6 +127,14 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 	const TagType tagType = tag.Type();
 
 	if (tagType == TAG_END) {
+		if constexpr (kWithFieldExtractor) {
+			if (visible && filter_ && indexedTagsPath_.size() && indexedTagsPath_.back().IsWithIndex()) {
+				const auto field = builder.TargetField();
+				if (field >= 0 && !builder.IsHavingOffset() && filter_->match(indexedTagsPath_)) {
+					builder.OnScopeEnd(fieldsoutcnt_[field]);
+				}
+			}
+		}
 		return false;
 	}
 	const int tagName = tag.Name();
@@ -179,7 +188,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			case TAG_END:
 			case TAG_OBJECT:
 			case TAG_UUID:
-				if (visible) builder.Put(tagName, pl->Get(tagField, (*cnt)));
+				if (visible) builder.Put(tagName, pl->Get(tagField, (*cnt)), *cnt);
 				++(*cnt);
 				break;
 		}
@@ -232,7 +241,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			case TAG_UUID:
 				if (visible) {
 					Variant value = rdser.GetRawVariant(KeyValueType{tagType});
-					builder.Put(tagName, std::move(value));
+					builder.Put(tagName, std::move(value), 0);
 				} else {
 					rdser.SkipRawVariant(KeyValueType{tagType});
 				}
@@ -340,5 +349,6 @@ template class BaseEncoder<CJsonBuilder>;
 template class BaseEncoder<MsgPackBuilder>;
 template class BaseEncoder<ProtobufBuilder>;
 template class BaseEncoder<FieldsExtractor>;
+template class BaseEncoder<CsvBuilder>;
 
 }  // namespace reindexer

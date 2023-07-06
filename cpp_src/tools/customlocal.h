@@ -5,9 +5,9 @@ namespace reindexer {
 
 using std::wstring;
 
-void ToLower(wstring& data);
-wchar_t ToLower(wchar_t ch);
+void ToLower(wstring& data) noexcept;
+wchar_t ToLower(wchar_t ch) noexcept;
 
-bool IsAlpha(wchar_t ch);
-bool IsDigit(wchar_t ch);
+bool IsAlpha(wchar_t ch) noexcept;
+bool IsDigit(wchar_t ch) noexcept;
 }  // namespace reindexer

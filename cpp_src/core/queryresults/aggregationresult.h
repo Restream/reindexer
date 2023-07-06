@@ -50,8 +50,9 @@ private:
 };
 
 struct FacetResult {
-	FacetResult(const h_vector<std::string, 1> &v, int c) : values(v), count(c) {}
-	FacetResult() : count(0) {}
+	FacetResult(const h_vector<std::string, 1> &v, int c) noexcept : values(v), count(c) {}
+	FacetResult() noexcept : count(0) {}
+
 	h_vector<std::string, 1> values;
 	int count;
 };

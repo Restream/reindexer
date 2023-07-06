@@ -69,7 +69,7 @@ void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripAr
 	assertrx(idx < query_.joinQueries_.size());
 	const auto &jq = query_.joinQueries_[idx];
 	ser << ' ' << JoinTypeName(jq.joinType);
-	if (jq.entries.Empty() && jq.count == UINT_MAX && jq.sortingEntries_.empty()) {
+	if (jq.entries.Empty() && jq.count == QueryEntry::kDefaultLimit && jq.sortingEntries_.empty()) {
 		ser << ' ' << jq._namespace << " ON ";
 	} else {
 		ser << " (";
@@ -174,8 +174,8 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					ser << " ORDER BY " << '\'' << escapeQuotes(se.expression) << '\'' << (se.desc ? " DESC" : " ASC");
 				}
 
-				if (a.Offset() != AggregateEntry::kDefaultOffset && !stripArgs) ser << " OFFSET " << a.Offset();
-				if (a.Limit() != AggregateEntry::kDefaultLimit && !stripArgs) ser << " LIMIT " << a.Limit();
+				if (a.Offset() != QueryEntry::kDefaultOffset && !stripArgs) ser << " OFFSET " << a.Offset();
+				if (a.Limit() != QueryEntry::kDefaultLimit && !stripArgs) ser << " LIMIT " << a.Limit();
 				ser << ')';
 			}
 			if (query_.aggregations_.empty() || (query_.aggregations_.size() == 1 && query_.aggregations_[0].Type() == AggDistinct)) {
@@ -256,8 +256,8 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 	dumpMerged(ser, stripArgs);
 	dumpOrderBy(ser, stripArgs);
 
-	if (query_.start != 0 && !stripArgs) ser << " OFFSET " << query_.start;
-	if (query_.count != UINT_MAX && !stripArgs) ser << " LIMIT " << query_.count;
+	if (query_.start != QueryEntry::kDefaultOffset && !stripArgs) ser << " OFFSET " << query_.start;
+	if (query_.count != QueryEntry::kDefaultLimit && !stripArgs) ser << " LIMIT " << query_.count;
 	return ser;
 }
 
@@ -304,7 +304,7 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 							point = static_cast<Point>(entry.values[1]);
 							distance = entry.values[0].As<double>();
 						}
-						ser << ", ST_GeomFromText('POINT(" << point.x << ' ' << point.y << ")'), " << distance << ')';
+						ser << ", ST_GeomFromText('POINT(" << point.X() << ' ' << point.Y() << ")'), " << distance << ')';
 					}
 				} else {
 					indexToSql(entry.index, ser);

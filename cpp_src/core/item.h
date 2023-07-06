@@ -64,7 +64,7 @@ public:
 		/// Set single point type value
 		/// @param p - point value, which will be setted to field
 		FieldRef &operator=(Point p) {
-			const double arr[]{p.x, p.y};
+			const double arr[]{p.X(), p.Y()};
 			return operator=(span<double>(arr, 2));
 		}
 
@@ -202,6 +202,9 @@ public:
 	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containters in many cases invalidates references -
 	/// and in unsafe mode caller is responsibe to guarantee, that all resources passed to Item will keep valid
 	Item &Unsafe(bool enable = true) &noexcept;
+	/// Get index type by field id
+	/// @return either index type or Undefined (if index with this number does not exist or PayloadType is not available)
+	KeyValueType GetIndexType(int field) const noexcept;
 
 private:
 	explicit Item(ItemImpl *impl) : impl_(impl) {}

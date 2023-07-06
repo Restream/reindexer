@@ -8,6 +8,7 @@
 #include "tableviewscroller.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
+#include "tools/stringstools.h"
 
 namespace reindexer_tool {
 
@@ -558,7 +559,7 @@ Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) {
 						reindexer::h_vector<int, 1> maxW;
 						maxW.reserve(agg.fields.size());
 						for (const auto& field : agg.fields) {
-							maxW.push_back(field.length());
+							maxW.emplace_back(field.length());
 						}
 						for (auto& row : agg.facets) {
 							assertrx(row.values.size() == agg.fields.size());
@@ -707,7 +708,7 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 			auto ns = parser.NextToken();
 			auto nsDef = std::find_if(allNsDefs.begin(), allNsDefs.end(), [&ns](const NamespaceDef& nsDef) { return ns == nsDef.name; });
 			if (nsDef != allNsDefs.end()) {
-				doNsDefs.push_back(std::move(*nsDef));
+				doNsDefs.emplace_back(std::move(*nsDef));
 				allNsDefs.erase(nsDef);
 			} else {
 				std::cerr << "Namespace '" << ns << "' - skipped. (not found in storage)" << std::endl;
@@ -724,7 +725,7 @@ Error CommandsExecutor<DBInterface>::commandDump(const std::string& command) {
 
 	for (auto& nsDef : doNsDefs) {
 		// skip system namespaces, except #config
-		if (nsDef.name.length() > 0 && nsDef.name[0] == '#' && nsDef.name != "#config") continue;
+		if (reindexer::isSystemNamespaceNameFast(nsDef.name) && nsDef.name != "#config") continue;
 
 		wrser << "-- Dumping namespace '" << nsDef.name << "' ..." << '\n';
 

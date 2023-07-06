@@ -37,8 +37,9 @@ Container& split(const typename Container::value_type& str, const std::string& d
 			pos = str.length();
 			if (pos != lastPos || !trimEmpty) tokens.push_back(str.substr(lastPos, pos - lastPos));
 			break;
-		} else if (pos != lastPos || !trimEmpty)
+		} else if (pos != lastPos || !trimEmpty) {
 			tokens.push_back(str.substr(lastPos, pos - lastPos));
+		}
 	}
 	return tokens;
 }
@@ -113,6 +114,7 @@ int64_t stoll(std::string_view sl);
 
 bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
 bool validateUserNsName(std::string_view name) noexcept;
+RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return name.size() && name[0] == '#'; }
 LogLevel logLevelFromString(const std::string& strLogLevel);
 StrictMode strictModeFromString(const std::string& strStrictMode);
 std::string_view strictModeToString(StrictMode mode);

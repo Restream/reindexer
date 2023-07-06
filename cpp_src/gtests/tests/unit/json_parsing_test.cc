@@ -1,23 +1,32 @@
-#include "json_parsing_test.h"
+#include <gtest/gtest.h>
+#include "core/reindexer.h"
 
-TEST_F(JSONParsingTest, EmptyDocument) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
+using reindexer::Error;
+using reindexer::Item;
+
+TEST(JSONParsingTest, EmptyDocument) {
+	reindexer::Reindexer rx;
+	constexpr std::string_view kNsName("json_empty_doc_test");
+	Error err = rx.OpenNamespace(kNsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	Item item(rt.reindexer->NewItem(default_namespace));
+	Item item(rx.NewItem(kNsName));
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	err = item.FromJSON("\n");
 	EXPECT_EQ(err.code(), errParseJson);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	err = item.FromJSON("\t");
 	EXPECT_EQ(err.code(), errParseJson);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	err = item.FromJSON(" ");
 	EXPECT_EQ(err.code(), errParseJson);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 }
 
-TEST_F(JSONParsingTest, Strings) {
+TEST(JSONParsingTest, Strings) {
 	const std::vector<unsigned> lens = {0, 100, 8 < 10, 2 << 20, 8 << 20, 16 << 20, 32 << 20, 60 << 20};
 	for (auto len : lens) {
 		std::string strs[2];

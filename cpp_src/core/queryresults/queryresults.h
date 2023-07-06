@@ -21,6 +21,7 @@ struct NsContext;
 struct ResultFetchOpts;
 class SelectFunctionsHolder;
 class NamespaceImpl;
+struct CsvOrdering;
 
 namespace joins {
 class NamespaceResults;
@@ -57,12 +58,16 @@ public:
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return !nonCacheableData; }
 
+	CsvOrdering MakeCSVTagOrdering(unsigned limit, unsigned offset) const;
+
 	class Iterator {
 	public:
 		Error GetJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetMsgPack(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetProtobuf(WrSerializer &wrser, bool withHdrLen = true);
+		[[nodiscard]] Error GetCSV(WrSerializer &wrser, CsvOrdering &ordering) noexcept;
+
 		// use enableHold = false only if you are sure that the item will be destroyed before the queryResults
 		Item GetItem(bool enableHold = true);
 		joins::ItemIterator GetJoined();

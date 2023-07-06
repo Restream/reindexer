@@ -7,7 +7,7 @@
 
 namespace reindexer {
 
-Variant jsonValue2Variant(gason::JsonValue &v, KeyValueType t, std::string_view fieldName) {
+Variant jsonValue2Variant(const gason::JsonValue &v, KeyValueType t, std::string_view fieldName) {
 	switch (v.getTag()) {
 		case gason::JSON_NUMBER:
 			return t.EvaluateOneOf(
@@ -68,15 +68,13 @@ Variant jsonValue2Variant(gason::JsonValue &v, KeyValueType t, std::string_view 
 			throw Error(errLogic, "Error parsing json field '%s' - got object, expected %s", fieldName, t.Name());
 		case gason::JSON_ARRAY: {
 			VariantArray variants;
-			for (auto elem : v) {
-				if (elem->value.getTag() != gason::JSON_NULL) {
-					variants.push_back(jsonValue2Variant(elem->value, KeyValueType::Undefined{}));
+			for (const auto &elem : v) {
+				if (elem.value.getTag() != gason::JSON_NULL) {
+					variants.emplace_back(jsonValue2Variant(elem.value, KeyValueType::Undefined{}));
 				}
 			}
 			return Variant(variants);
 		}
-		default:
-			abort();
 	}
 	return Variant();
 }

@@ -21,8 +21,10 @@ Variant::Variant(const PayloadValue &v) : variant_{0, 1, KeyValueType::Composite
 Variant::Variant(PayloadValue &&v) : variant_{0, 1, KeyValueType::Composite{}} { new (cast<void>()) PayloadValue(std::move(v)); }
 
 Variant::Variant(const std::string &v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
+Variant::Variant(std::string &&v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(std::move(v))); }
 
 Variant::Variant(const key_string &v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(v); }
+Variant::Variant(key_string &&v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(std::move(v)); }
 Variant::Variant(const char *v) : Variant(p_string(v)) {}
 Variant::Variant(p_string v, bool enableHold) : variant_{0, 0, KeyValueType::String{}} {
 	if (v.type() == p_string::tagKeyString && enableHold) {
@@ -59,7 +61,7 @@ Variant::Variant(Uuid uuid) noexcept : uuid_() {
 	}
 }
 
-void serialize(WrSerializer &, const std::tuple<> &) noexcept {}
+static void serialize(WrSerializer &, const std::tuple<> &) noexcept {}
 
 template <typename... Ts>
 void serialize(WrSerializer &ser, const std::tuple<Ts...> &v) {
@@ -697,15 +699,15 @@ template void VariantArray::Dump(WrSerializer &) const;
 template void VariantArray::Dump(std::ostream &) const;
 
 VariantArray::VariantArray(Point p) noexcept {
-	emplace_back(p.x);
-	emplace_back(p.y);
+	emplace_back(p.X());
+	emplace_back(p.Y());
 }
 
 VariantArray::operator Point() const {
 	if (size() != 2) {
 		throw Error(errParams, "Can't convert array of %d elements to Point", size());
 	}
-	return {(*this)[0].As<double>(), (*this)[1].As<double>()};
+	return Point{(*this)[0].As<double>(), (*this)[1].As<double>()};
 }
 
 template <WithString withString>

@@ -94,7 +94,7 @@ WrSerializer &WrSerializer::operator<<(double v) {
 	return *this;
 }
 
-void WrSerializer::PrintJsonString(std::string_view str) {
+void WrSerializer::PrintJsonString(std::string_view str, PrintJsonStringMode mode) {
 	const char *s = str.data();
 	size_t l = str.size();
 	grow(l * 6 + 3);
@@ -131,6 +131,9 @@ void WrSerializer::PrintJsonString(std::string_view str) {
 			case '"':
 				*d++ = '\\';
 				*d++ = '"';
+				if (mode == PrintJsonStringMode::QuotedQuote) {
+					*d++ = '"';
+				}
 				break;
 			default:
 				if (c < 0x20) {

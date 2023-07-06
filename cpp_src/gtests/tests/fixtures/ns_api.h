@@ -64,6 +64,38 @@ protected:
 		}
 	}
 
+	void AddHeterogeniousNestedData() {
+		char sourceJson[4096];
+		const char jsonPattern[] =
+			R"json({
+			"id": %s,
+			"int_field":1,
+			"indexed_array_field": [11,22,33,44,55,66,77,88,99],
+			"objects":[{"array":[{"field":[9,8,7,6,5]},{"field":11},{"field":[4,3,2,1,0]},{"field":[99]}]}],
+			"":{"empty_obj_field":"not empty"},
+			"array_field": [1,2,3],
+			"string_array":["first", "second", "third"],
+			"extra" : "%s",
+			"sparse_field": %ld,
+			"nested":{"bonus":%ld, "nested_array":[{"id":1,"name":"first", "prices":[1,2,3]},{"id":2,"name":"second","prices":[4,5,6]},{"id":3,"name":"third", "nested":{"array":[0,0,0]}, "prices":[7,8,9]}]}, "nested2":{"bonus2":%ld}
+			})json";
+
+		for (size_t i = 1000; i < 2000; ++i) {
+			Item item = NewItem(default_namespace);
+			EXPECT_TRUE(item.Status().ok()) << item.Status().what();
+
+			std::string serial = std::to_string(i);
+			snprintf(sourceJson, sizeof(sourceJson) - 1, jsonPattern, serial.c_str(), serial.c_str(), i, i * 2, i * 3);
+
+			Error err = item.FromJSON(sourceJson);
+			EXPECT_TRUE(err.ok()) << err.what();
+			Upsert(default_namespace, item);
+
+			err = Commit(default_namespace);
+			EXPECT_TRUE(err.ok()) << err.what();
+		}
+	}
+
 	void InsertNewTruncateItem(int i) {
 		Item item = NewItem(truncate_namespace);
 		item[idIdxName] = i;

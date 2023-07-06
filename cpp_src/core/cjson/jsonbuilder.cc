@@ -17,8 +17,6 @@ JsonBuilder::JsonBuilder(WrSerializer &ser, ObjType type, const TagsMatcher *tm)
 	}
 }
 
-JsonBuilder::~JsonBuilder() { End(); }
-
 std::string_view JsonBuilder::getNameByTag(int tagName) { return tagName ? tm_->tag2name(tagName) : std::string_view(); }
 
 JsonBuilder &JsonBuilder::End() {
@@ -56,13 +54,13 @@ void JsonBuilder::putName(std::string_view name) {
 	}
 }
 
-JsonBuilder &JsonBuilder::Put(std::string_view name, std::string_view arg) {
+JsonBuilder &JsonBuilder::Put(std::string_view name, std::string_view arg, int /*offset*/) {
 	putName(name);
 	ser_->PrintJsonString(arg);
 	return *this;
 }
 
-JsonBuilder &JsonBuilder::Put(std::string_view name, Uuid arg) {
+JsonBuilder &JsonBuilder::Put(std::string_view name, Uuid arg, int /*offset*/) {
 	putName(name);
 	ser_->PrintJsonUuid(arg);
 	return *this;
@@ -80,18 +78,19 @@ JsonBuilder &JsonBuilder::Null(std::string_view name) {
 	return *this;
 }
 
-JsonBuilder &JsonBuilder::Put(std::string_view name, const Variant &kv) {
+JsonBuilder &JsonBuilder::Put(std::string_view name, const Variant &kv, int offset) {
 	kv.Type().EvaluateOneOf(
-		[&](KeyValueType::Int) { Put(name, int(kv)); }, [&](KeyValueType::Int64) { Put(name, int64_t(kv)); },
-		[&](KeyValueType::Double) { Put(name, double(kv)); }, [&](KeyValueType::String) { Put(name, std::string_view(kv)); },
-		[&](KeyValueType::Null) { Null(name); }, [&](KeyValueType::Bool) { Put(name, bool(kv)); },
+		[&](KeyValueType::Int) { Put(name, int(kv), offset); }, [&](KeyValueType::Int64) { Put(name, int64_t(kv), offset); },
+		[&](KeyValueType::Double) { Put(name, double(kv), offset); },
+		[&](KeyValueType::String) { Put(name, std::string_view(kv), offset); }, [&](KeyValueType::Null) { Null(name); },
+		[&](KeyValueType::Bool) { Put(name, bool(kv), offset); },
 		[&](KeyValueType::Tuple) {
 			auto arrNode = Array(name);
 			for (auto &val : kv.getCompositeValues()) {
-				arrNode.Put({nullptr, 0}, val);
+				arrNode.Put({nullptr, 0}, val, offset);
 			}
 		},
-		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}); }, [](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
+		[&](KeyValueType::Uuid) { Put(name, Uuid{kv}, offset); }, [](OneOf<KeyValueType::Composite, KeyValueType::Undefined>) noexcept {});
 	return *this;
 }
 

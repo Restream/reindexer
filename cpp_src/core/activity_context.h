@@ -56,7 +56,7 @@ class RdxActivityContext {
 
 	class Ward {
 	public:
-		Ward(RdxActivityContext* cont, Activity::State state) : context_(cont) {
+		Ward(RdxActivityContext* cont, Activity::State state) noexcept : context_(cont) {
 			if (context_) {
 				prevState_ = context_->state_.exchange(serializeState(state), std::memory_order_relaxed);
 #ifndef NDEBUG
@@ -64,7 +64,7 @@ class RdxActivityContext {
 #endif
 			}
 		}
-		Ward(RdxActivityContext* cont, MutexMark mutexMark) : context_(cont) {
+		Ward(RdxActivityContext* cont, MutexMark mutexMark) noexcept : context_(cont) {
 			if (context_) {
 				prevState_ = context_->state_.exchange(serializeState(mutexMark), std::memory_order_relaxed);
 #ifndef NDEBUG
@@ -72,7 +72,7 @@ class RdxActivityContext {
 #endif
 			}
 		}
-		Ward(Ward&& other) : context_(other.context_), prevState_(other.prevState_) { other.context_ = nullptr; }
+		Ward(Ward&& other) noexcept : context_(other.context_), prevState_(other.prevState_) { other.context_ = nullptr; }
 		~Ward() {
 			if (context_) {
 				context_->state_.store(prevState_, std::memory_order_relaxed);
@@ -107,15 +107,15 @@ public:
 
 	/// returning value of these functions should be assined to a local variable which will be destroyed after the waiting work complete
 	/// lifetime of the local variable should not exceed of the activityContext's
-	Ward BeforeLock(MutexMark mutexMark) { return Ward(this, mutexMark); }
-	Ward BeforeIndexWork() { return Ward(this, Activity::IndexesLookup); }
-	Ward BeforeSelectLoop() { return Ward(this, Activity::SelectLoop); }
+	Ward BeforeLock(MutexMark mutexMark) noexcept { return Ward(this, mutexMark); }
+	Ward BeforeIndexWork() noexcept { return Ward(this, Activity::IndexesLookup); }
+	Ward BeforeSelectLoop() noexcept { return Ward(this, Activity::SelectLoop); }
 
 	bool CheckConnectionId(int connectionId) const noexcept { return data_.connectionId == connectionId; }
 
 private:
-	static unsigned serializeState(MutexMark);
-	static unsigned serializeState(Activity::State);
+	static unsigned serializeState(MutexMark mark) noexcept { return Activity::WaitLock | (static_cast<unsigned>(mark) << kStateShift); }
+	static unsigned serializeState(Activity::State state) noexcept { return static_cast<unsigned>(state); }
 	static std::pair<Activity::State, std::string_view> deserializeState(unsigned state);
 	static unsigned nextId() noexcept;
 

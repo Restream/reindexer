@@ -23,7 +23,7 @@ std::string toLower(std::string_view src) {
 }
 
 std::string escapeString(std::string_view str) {
-	std::string dst = "";
+	std::string dst;
 	dst.reserve(str.length());
 	for (auto it = str.begin(); it != str.end(); it++) {
 		if (*it < 0x20 || unsigned(*it) >= 0x80 || *it == '\\') {
@@ -37,7 +37,7 @@ std::string escapeString(std::string_view str) {
 }
 
 std::string unescapeString(std::string_view str) {
-	std::string dst = "";
+	std::string dst;
 	dst.reserve(str.length());
 	for (auto it = str.begin(); it != str.end(); it++) {
 		if (*it == '\\' && ++it != str.end() && it + 1 != str.end()) {
@@ -174,7 +174,7 @@ void split(std::string_view str, std::string &buf, std::vector<const char *> &wo
 
 		if (begIt != bufIt) {
 			if (bufIt != buf.end()) *bufIt++ = 0;
-			words.push_back(&*begIt);
+			words.emplace_back(&*begIt);
 		}
 	}
 }
@@ -313,7 +313,7 @@ void split(std::string_view utf8Str, wstring &utf16str, std::vector<std::wstring
 		}
 		size_t sz = it - begIt;
 		if (sz) {
-			words.push_back({&*begIt, &*(begIt + sz)});
+			words.emplace_back(&*begIt, &*(begIt + sz));
 		}
 	}
 }

@@ -1,12 +1,10 @@
-#include <unordered_map>
-
 #include "cproto.h"
 
 namespace reindexer {
 namespace net {
 namespace cproto {
 
-std::string_view CmdName(uint16_t cmd) {
+std::string_view CmdName(uint16_t cmd) noexcept {
 	using namespace std::string_view_literals;
 	switch (cmd) {
 		case kCmdPing:

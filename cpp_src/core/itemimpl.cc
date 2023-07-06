@@ -54,10 +54,10 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 	try {
 		switch (mode) {
 			case FieldModeSet:
-				cjsonModifier.SetFieldValue(cjson, tagsPath, keys, ser_);
+				cjsonModifier.SetFieldValue(cjson, tagsPath, keys, ser_, pl);
 				break;
 			case FieldModeSetJson:
-				cjsonModifier.SetObject(cjson, tagsPath, keys, ser_, &pl);
+				cjsonModifier.SetObject(cjson, tagsPath, keys, ser_, pl);
 				break;
 			case FieldModeDrop:
 				cjsonModifier.RemoveField(cjson, tagsPath, ser_);

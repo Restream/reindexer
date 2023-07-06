@@ -113,7 +113,7 @@ static RPCClientData *getClientDataUnsafe(cproto::Context &ctx) { return dynamic
 
 static RPCClientData *getClientDataSafe(cproto::Context &ctx) {
 	auto ret = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-	if (!ret) std::abort();	 // It should be set by middleware
+	if (rx_unlikely(!ret)) std::abort();  // It has to be set by the middleware
 	return ret;
 }
 
@@ -136,6 +136,11 @@ Error RPCServer::CloseDatabase(cproto::Context &ctx) {
 }
 Error RPCServer::DropDatabase(cproto::Context &ctx) {
 	auto clientData = getClientDataSafe(ctx);
+	if (statsWatcher_) {
+		// Avoid database access from the stats collecting thread during database drop
+		auto statsSuspend = statsWatcher_->SuspendStatsThread();
+		return dbMgr_.DropDatabase(clientData->auth);
+	}
 	return dbMgr_.DropDatabase(clientData->auth);
 }
 
@@ -195,22 +200,14 @@ Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults &res
 		reindexer::Query q;
 		q.FromSQL(sqlQuery);
 		switch (q.Type()) {
-			case QuerySelect: {
-				auto db = getDB(ctx, kRoleDataRead);
-				return db.Select(q, res);
-			}
-			case QueryDelete: {
-				auto db = getDB(ctx, kRoleDataWrite);
-				return db.Delete(q, res);
-			}
-			case QueryUpdate: {
-				auto db = getDB(ctx, kRoleDataWrite);
-				return db.Update(q, res);
-			}
-			case QueryTruncate: {
-				auto db = getDB(ctx, kRoleDBAdmin);
-				return db.TruncateNamespace(q._namespace);
-			}
+			case QuerySelect:
+				return getDB(ctx, kRoleDataRead).Select(q, res);
+			case QueryDelete:
+				return getDB(ctx, kRoleDataWrite).Delete(q, res);
+			case QueryUpdate:
+				return getDB(ctx, kRoleDataWrite).Update(q, res);
+			case QueryTruncate:
+				return getDB(ctx, kRoleDBAdmin).TruncateNamespace(q._namespace);
 			default:
 				return Error(errParams, "unknown query type %d", q.Type());
 		}
@@ -222,7 +219,6 @@ Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults &res
 void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret) {
 	const auto clientData = getClientDataUnsafe(ctx);
 	WrSerializer ser;
-
 	if (clientData) {
 		ser << "c='"sv << clientData->connID << "' db='"sv << clientData->auth.Login() << '@' << clientData->auth.DBName() << "' "sv;
 	} else {
@@ -515,8 +511,7 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 		unsigned preceptsCount = ser.GetVarUint();
 		std::vector<std::string> precepts;
 		for (unsigned prIndex = 0; prIndex < preceptsCount; prIndex++) {
-			std::string precept(ser.GetVString());
-			precepts.push_back(precept);
+			precepts.emplace_back(ser.GetVString());
 		}
 		item.SetPrecepts(precepts);
 		if (preceptsCount) sendItemBack = true;
@@ -626,20 +621,17 @@ Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, std::optio
 }
 
 Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
-	auto rawClientData = ctx.GetClientData();
-	if (rawClientData) {
-		auto clientData = dynamic_cast<RPCClientData *>(rawClientData);
-		if (clientData) {
-			Reindexer *db = nullptr;
-			auto status = clientData->auth.GetDB(role, &db);
-			if (!status.ok()) {
-				throw status;
-			}
-			if (db != nullptr) {
-				return db->NeedTraceActivity() ? db->WithTimeout(ctx.call->execTimeout_)
-													 .WithActivityTracer(ctx.clientAddr, clientData->auth.Login(), clientData->connID)
-											   : db->WithTimeout(ctx.call->execTimeout_);
-			}
+	auto clientData = dynamic_cast<RPCClientData *>(ctx.GetClientData());
+	if (rx_likely(clientData)) {
+		Reindexer *db = nullptr;
+		auto status = clientData->auth.GetDB(role, &db);
+		if (rx_unlikely(!status.ok())) {
+			throw status;
+		}
+		if (rx_likely(db != nullptr)) {
+			return db->NeedTraceActivity()
+					   ? db->WithContextParams(ctx.call->execTimeout_, ctx.clientAddr, clientData->auth.Login(), clientData->connID)
+					   : db->WithTimeout(ctx.call->execTimeout_);
 		}
 	}
 	throw Error(errParams, "Database is not opened, you should open it first");
@@ -708,7 +700,7 @@ RPCQrWatcher::Ref RPCServer::createQueryResults(cproto::Context &ctx, RPCQrId &i
 		}
 	}
 
-	if (data->results.size() >= cproto::kMaxConcurentQueries) {
+	if (rx_unlikely(data->results.size() >= cproto::kMaxConcurentQueries)) {
 		for (unsigned idx = 0; idx < data->results.size(); ++idx) {
 			RPCQrId tmpQrId{data->results[idx].main, data->results[idx].uid};
 			assertrx(tmpQrId.main >= 0);
@@ -796,7 +788,8 @@ static h_vector<int32_t, 4> pack2vec(p_string pack) {
 	Serializer ser(pack.data(), pack.size());
 	h_vector<int32_t, 4> vec;
 	int cnt = ser.GetVarUint();
-	for (int i = 0; i < cnt; i++) vec.push_back(ser.GetVarUint());
+	vec.reserve(cnt);
+	for (int i = 0; i < cnt; i++) vec.emplace_back(ser.GetVarUint());
 	return vec;
 }
 
@@ -898,7 +891,7 @@ Error RPCServer::GetSQLSuggestions(cproto::Context &ctx, p_string query, int pos
 	if (err.ok()) {
 		cproto::Args ret;
 		ret.reserve(suggests.size());
-		for (auto &suggest : suggests) ret.push_back(cproto::Arg(suggest));
+		for (auto &suggest : suggests) ret.emplace_back(std::move(suggest));
 		ctx.Return(ret);
 	}
 	return err;
@@ -929,7 +922,7 @@ Error RPCServer::EnumMeta(cproto::Context &ctx, p_string ns) {
 	}
 	cproto::Args ret;
 	for (auto &key : keys) {
-		ret.push_back(cproto::Arg(key));
+		ret.emplace_back(std::move(key));
 	}
 	ctx.Return(ret);
 	return errOK;

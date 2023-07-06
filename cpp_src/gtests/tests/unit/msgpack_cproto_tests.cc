@@ -94,7 +94,7 @@ TEST_F(MsgPackCprotoApi, ModifyItemsTest) {
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	reindexer::WrSerializer wrser;
-	reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+	reindexer::JsonBuilder jsonBuilder(wrser, reindexer::ObjType::TypeObject);
 	jsonBuilder.Put(kFieldId, 7);
 	jsonBuilder.Put(kFieldA1, 77);
 	jsonBuilder.Put(kFieldA2, 777);
@@ -137,7 +137,7 @@ TEST_F(MsgPackCprotoApi, UpdateTest) {
 		checkItem(it);
 
 		reindexer::WrSerializer json;
-		reindexer::JsonBuilder jsonBuilder(json, ObjType::TypeObject);
+		reindexer::JsonBuilder jsonBuilder(json, reindexer::ObjType::TypeObject);
 		jsonBuilder.Put(kFieldId, id);
 		jsonBuilder.Put(kFieldA1, 7);
 		jsonBuilder.Put(kFieldA2, id * 3);
@@ -166,7 +166,7 @@ TEST_F(MsgPackCprotoApi, DeleteTest) {
 		checkItem(it);
 
 		reindexer::WrSerializer json;
-		reindexer::JsonBuilder jsonBuilder(json, ObjType::TypeObject);
+		reindexer::JsonBuilder jsonBuilder(json, reindexer::ObjType::TypeObject);
 		jsonBuilder.Put(kFieldId, id);
 		jsonBuilder.Put(kFieldA1, id * 2);
 		jsonBuilder.Put(kFieldA2, id * 3);

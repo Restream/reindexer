@@ -9,28 +9,30 @@
 #include "core/query/queryentry.h"
 #include "estl/overloaded.h"
 #include "nsselecter.h"
+#include "qresexplainholder.h"
 #include "substitutionhelpers.h"
 
 namespace reindexer {
 
-QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query, NamespaceImpl *ns, bool reqMatchedOnce, bool inTransaction)
+QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, NamespaceImpl *ns, const SelectCtx &ctx)
 	: QueryEntries(std::move(queries)),
 	  ns_(*ns),
-	  strictMode_(inTransaction ? StrictModeNone : ((query.strictMode == StrictModeNotSet) ? ns_.config_.strictMode : query.strictMode)),
-	  start_(query.start),
-	  count_(query.count),
-	  forcedSortOrder_(!query.forcedSortOrder_.empty()),
-	  reqMatchedOnce_(reqMatchedOnce),
-	  query_{query} {
-	if (forcedSortOrder_ && (start_ > 0 || count_ < UINT_MAX)) {
-		assertrx(!query.sortingEntries_.empty());
+	  query_{ctx.query},
+	  strictMode_(ctx.inTransaction ? StrictModeNone
+									: ((query_.strictMode == StrictModeNotSet) ? ns_.config_.strictMode : query_.strictMode)),
+	  start_(query_.start),
+	  count_(query_.count),
+	  forcedSortOrder_(!query_.forcedSortOrder_.empty()),
+	  reqMatchedOnce_(ctx.reqMatchedOnceFlag) {
+	if (forcedSortOrder_ && (start_ > QueryEntry::kDefaultOffset || count_ < QueryEntry::kDefaultLimit)) {
+		assertrx(!query_.sortingEntries_.empty());
 		static const std::vector<JoinedSelector> emptyJoinedSelectors;
-		const auto &sEntry = query.sortingEntries_[0];
+		const auto &sEntry = query_.sortingEntries_[0];
 		if (SortExpression::Parse(sEntry.expression, emptyJoinedSelectors).ByIndexField()) {
 			QueryEntry qe;
-			qe.values.reserve(query.forcedSortOrder_.size());
-			for (const auto &v : query.forcedSortOrder_) qe.values.push_back(v);
-			qe.condition = query.forcedSortOrder_.size() == 1 ? CondEq : CondSet;
+			qe.values.reserve(query_.forcedSortOrder_.size());
+			for (const auto &v : query_.forcedSortOrder_) qe.values.push_back(v);
+			qe.condition = query_.forcedSortOrder_.size() == 1 ? CondEq : CondSet;
 			qe.index = sEntry.expression;
 			if (!ns_.getIndexByNameOrJsonPath(qe.index, qe.idxNo)) {
 				qe.idxNo = IndexValueType::SetByJsonPath;
@@ -40,9 +42,17 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, const Query &query,
 			queryEntryAddedByForcedSortOptimization_ = true;
 		}
 	}
+	if (ctx.isMergeQuery == IsMergeQuery::Yes) {
+		if (QueryEntry::kDefaultLimit - start_ > count_) {
+			count_ += start_;
+		} else {
+			count_ = QueryEntry::kDefaultLimit;
+		}
+		start_ = QueryEntry::kDefaultOffset;
+	}
 }
 
-void QueryPreprocessor::ExcludeFtQuery(const SelectFunction &fnCtx, const RdxContext &rdxCtx) {
+void QueryPreprocessor::ExcludeFtQuery(const RdxContext &rdxCtx) {
 	if (queryEntryAddedByForcedSortOptimization_ || Size() <= 1) return;
 	for (auto it = begin(), next = it, endIt = end(); it != endIt; it = next) {
 		++next;
@@ -51,29 +61,20 @@ void QueryPreprocessor::ExcludeFtQuery(const SelectFunction &fnCtx, const RdxCon
 			auto &index = ns_.indexes_[indexNo];
 			if (!IsFastFullText(index->Type())) continue;
 			if (it->operation != OpAnd || (next != endIt && next->operation == OpOr) || !index->EnablePreselectBeforeFt()) break;
-			ftPreselect_ = index->FtPreselect(*this, indexNo, fnCtx, rdxCtx);
-			std::visit(overloaded{[&](const FtMergeStatuses &) {
-									  start_ = 0;
-									  count_ = UINT_MAX;
-									  forcedSortOrder_ = false;
-									  ftEntry_ = std::move(it->Value<QueryEntry>());
-									  const size_t pos = it.PlainIterator() - cbegin().PlainIterator();
-									  Erase(pos, pos + 1);
-								  },
-								  [&](const PreselectedFtIdSetCache::Iterator &) {
-									  const size_t pos = it.PlainIterator() - cbegin().PlainIterator();
-									  if (pos != 0) {
-										  container_[0] = std::move(container_[pos]);
-									  }
-									  Erase(1, Size());
-								  }},
-					   *ftPreselect_);
+			ftPreselect_ = index->FtPreselect(rdxCtx);
+			start_ = QueryEntry::kDefaultOffset;
+			count_ = QueryEntry::kDefaultLimit;
+			forcedSortOrder_ = false;
+			ftEntry_ = std::move(it->Value<QueryEntry>());
+			const size_t pos = it.PlainIterator() - cbegin().PlainIterator();
+			Erase(pos, pos + 1);
 			break;
 		}
 	}
 }
 
-bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool &matchedAtLeastOnce) noexcept {
+bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool &matchedAtLeastOnce,
+										   QresExplainHolder &qresHolder) noexcept {
 	if (evaluationsCount_++) return false;
 	if (queryEntryAddedByForcedSortOptimization_) {
 		container_.back().operation = desc_ ? OpAnd : OpNot;
@@ -84,12 +85,12 @@ bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool 
 		return count_ || (reqMatchedOnce_ && !matchedAtLeastOnce);
 	} else if (ftEntry_) {
 		if (!matchedAtLeastOnce) return false;
+		qresHolder.BackupContainer();
 		start_ = query_.start;
 		count_ = query_.count;
 		forcedSortOrder_ = !query_.forcedSortOrder_.empty();
-		Erase(1, container_.size());
-		container_[0].SetValue(std::move(*ftEntry_));
-		container_[0].operation = OpAnd;
+		clear();
+		Append(OpAnd, std::move(*ftEntry_));
 		ftEntry_ = std::nullopt;
 		matchedAtLeastOnce = false;
 		equalPositions.clear();
@@ -215,13 +216,14 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, const size_t srcBegin, 
 							iidx.resize(entry.idxNo + 1);
 							std::fill(iidx.begin() + oldSize, iidx.begin() + iidx.size(), -1);
 						}
-						if (iidx[entry.idxNo] >= 0 && !ns_.indexes_[entry.idxNo]->Opts().IsArray()) {
-							if (mergeQueryEntries(iidx[entry.idxNo], src)) {
+						auto &iidxRef = iidx[entry.idxNo];
+						if (iidxRef >= 0 && !ns_.indexes_[entry.idxNo]->Opts().IsArray()) {
+							if (mergeQueryEntries(iidxRef, src)) {
 								++merged;
 								return false;
 							}
 						} else {
-							iidx[entry.idxNo] = dst;
+							iidxRef = dst;
 						}
 					}
 				}
@@ -471,30 +473,51 @@ bool QueryPreprocessor::mergeQueryEntries(size_t lhs, size_t rhs) {
 	QueryEntry *lqe = &Get<QueryEntry>(lhs);
 	QueryEntry &rqe = Get<QueryEntry>(rhs);
 	if ((lqe->condition == CondEq || lqe->condition == CondSet) && (rqe.condition == CondEq || rqe.condition == CondSet)) {
-		// intersect 2 queryenries on same index
-
-		convertWhereValues(lqe);
-		std::sort(lqe->values.begin(), lqe->values.end());
-		lqe->values.erase(std::unique(lqe->values.begin(), lqe->values.end()), lqe->values.end());
-
-		convertWhereValues(&rqe);
-		std::sort(rqe.values.begin(), rqe.values.end());
-		rqe.values.erase(std::unique(rqe.values.begin(), rqe.values.end()), rqe.values.end());
-
-		VariantArray setValues;
-		setValues.reserve(std::min(lqe->values.size(), rqe.values.size()));
-		std::set_intersection(lqe->values.begin(), lqe->values.end(), rqe.values.begin(), rqe.values.end(), std::back_inserter(setValues));
-		if (setValues.empty()) {
-			container_[lhs].SetValue(AlwaysFalse{});
-		} else {
-			if (container_[lhs].IsRef()) {
-				container_[lhs].SetValue(const_cast<const QueryEntry &>(*lqe));
-				lqe = &Get<QueryEntry>(lhs);
-			}
-			lqe->condition = (setValues.size() == 1) ? CondEq : CondSet;
-			lqe->values = std::move(setValues);
-			lqe->distinct |= rqe.distinct;
+		// intersect 2 queryentries on the same index
+		if (rx_unlikely(lqe->values.empty())) {
+			return true;
 		}
+		if (container_[lhs].IsRef()) {
+			container_[lhs].SetValue(const_cast<const QueryEntry &>(*lqe));
+			lqe = &Get<QueryEntry>(lhs);
+		}
+		VariantArray setValues;
+		if (rx_likely(!rqe.values.empty())) {
+			convertWhereValues(lqe);
+			convertWhereValues(&rqe);
+			VariantArray *first = &lqe->values;
+			VariantArray *second = &rqe.values;
+			if (lqe->values.size() > rqe.values.size()) {
+				std::swap(first, second);
+			}
+			setValues.reserve(first->size());
+			constexpr size_t kMinArraySizeToUseHashSet = 250;
+			if (second->size() < kMinArraySizeToUseHashSet) {
+				// Intersect via binary search + sort for small vectors
+				std::sort(first->begin(), first->end());
+				for (auto &&v : *second) {
+					if (std::binary_search(first->begin(), first->end(), v)) {
+						setValues.emplace_back(std::move(v));
+					}
+				}
+			} else {
+				// Intersect via hash_set for large vectors
+				reindexer::fast_hash_set<reindexer::Variant> set;
+				set.reserve(first->size() * 2);
+				for (auto &&v : *first) {
+					set.emplace(std::move(v));
+				}
+				for (auto &&v : *second) {
+					if (set.erase(v)) {
+						setValues.emplace_back(std::move(v));
+					}
+				}
+			}
+		}
+
+		lqe->values = std::move(setValues);
+		lqe->condition = (lqe->values.size() == 1) ? CondEq : CondSet;
+		lqe->distinct |= rqe.distinct;
 		return true;
 	} else if (rqe.condition == CondAny) {
 		if (!lqe->distinct && rqe.distinct) {
@@ -506,12 +529,13 @@ bool QueryPreprocessor::mergeQueryEntries(size_t lhs, size_t rhs) {
 		}
 		return true;
 	} else if (lqe->condition == CondAny) {
-		rqe.distinct |= lqe->distinct;
+		const bool distinct = lqe->distinct || rqe.distinct;
 		if (container_[rhs].IsRef()) {
 			container_[lhs].SetValue(const_cast<const QueryEntry &>(rqe));
 		} else {
 			container_[lhs].SetValue(std::move(rqe));
 		}
+		Get<QueryEntry>(lhs).distinct = distinct;
 		return true;
 	}
 

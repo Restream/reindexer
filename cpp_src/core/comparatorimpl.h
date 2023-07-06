@@ -326,7 +326,7 @@ private:
 		if (cond == CondSet || cond == CondAllSet) {
 			valuesS_->emplace(value);
 		} else {
-			values_.push_back(value);
+			values_.emplace_back(value);
 			if (values_.size() == 1) {
 				cachedValueSV_ = std::string_view(*values_[0]);
 			}

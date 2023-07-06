@@ -35,7 +35,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.16.0")
+set (REINDEXER_VERSION_DEFAULT "3.17.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -529,7 +529,7 @@ set(CPACK_GENERATOR "TGZ")
 
 if (WIN32) 
   set (CPACK_GENERATOR "NSIS")
-elseif (LINUX_ISSUE MATCHES "Fedora" OR LINUX_ISSUE MATCHES "CentOS" OR LINUX_ISSUE MATCHES "Mandriva")
+elseif (LINUX_ISSUE MATCHES "Fedora" OR LINUX_ISSUE MATCHES "CentOS" OR LINUX_ISSUE MATCHES "Mandriva" OR LINUX_ISSUE MATCHES "RED OS")
   set(CPACK_GENERATOR "RPM")
   set(CPACK_PACKAGE_RELOCATABLE OFF)
 elseif (LINUX_ISSUE MATCHES "Ubuntu" OR LINUX_ISSUE MATCHES "Debian" OR LINUX_ISSUE MATCHES "Mint")
@@ -691,7 +691,7 @@ if (NOT WIN32)
     "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h" "core/key_value_type.h" "core/keyvalue/uuid.h"
     "core/expressiontree.h" "core/lsn.h" "core/cjson/tagspath.h" "core/cjson/ctag.h"
 	"estl/cow.h" "estl/overloaded.h" "estl/one_of.h" "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h"
-	"estl/span.h" "estl/chunk.h" "estl/fast_hash_traits.h" "estl/debug_macros.h"
+	"estl/span.h" "estl/chunk.h" "estl/fast_hash_traits.h" "estl/debug_macros.h" "estl/defines.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h" "client/transaction.h"
     "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h"

@@ -85,7 +85,7 @@ public:
 	}
 
 	void unlock() {
-		if (!_M_owns) assertrx(0);
+		assertrx(_M_owns);
 		_M_mtx->unlock();
 		_M_owns = false;
 	}

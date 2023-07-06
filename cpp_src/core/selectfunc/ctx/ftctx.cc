@@ -31,9 +31,6 @@ bool FtCtx::PrepareAreas(const RHashMap<std::string, int> &fields, const std::st
 											 SelectFuncStruct::SelectFuncType::Highlight});
 	return data_->need_area_;
 }
-void FtCtx::SetData(Data::Ptr data) { data_ = std::move(data); }
-FtCtx::Data::Ptr FtCtx::GetData() { return data_; }
-size_t FtCtx::GetSize() { return data_->proc_.size(); }
 
 template <typename InputIterator>
 void FtCtx::Add(InputIterator begin, InputIterator end, int16_t proc, AreaHolder &&holder) {

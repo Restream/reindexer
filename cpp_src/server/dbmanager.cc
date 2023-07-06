@@ -146,25 +146,26 @@ Error DBManager::DropDatabase(AuthContext &auth) {
 			return status;
 		}
 	}
-	std::string dbName = auth.dbName_;
+	const std::string &dbName = auth.dbName_;
 
 	std::unique_lock<shared_timed_mutex> lck(mtx_);
-	auto it = dbs_.find(auth.dbName_);
+	auto it = dbs_.find(dbName);
 	if (it == dbs_.end()) {
 		return Error(errParams, "Database %s not found", dbName);
 	}
 	dbs_.erase(it);
+	fs::RmDirAll(fs::JoinPath(dbpath_, dbName));
 	auth.ResetDB();
 
-	fs::RmDirAll(fs::JoinPath(dbpath_, dbName));
 	return {};
 }
 
 std::vector<std::string> DBManager::EnumDatabases() {
-	shared_lock<shared_timed_mutex> lck(mtx_);
 	std::vector<std::string> dbs;
+
+	shared_lock<shared_timed_mutex> lck(mtx_);
 	dbs.reserve(dbs_.size());
-	for (auto &it : dbs_) dbs.push_back(it.first);
+	for (const auto &it : dbs_) dbs.emplace_back(it.first);
 	return dbs;
 }
 

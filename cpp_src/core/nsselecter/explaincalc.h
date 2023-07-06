@@ -22,7 +22,7 @@ private:
 	typedef Clock::time_point time_point;
 
 public:
-	ExplainCalc(bool enable) : enabled_(enable) {}
+	ExplainCalc(bool enable) noexcept : enabled_(enable) {}
 
 	void StartTiming();
 	void StopTiming();
@@ -35,23 +35,23 @@ public:
 	void StartSort();
 	void StopSort();
 
-	void PutCount(int cnt) { count_ = cnt; }
+	void PutCount(int cnt) noexcept { count_ = cnt; }
 	void PutSortIndex(std::string_view index);
 	void PutSelectors(SelectIteratorContainer *qres);
 	void PutJoinedSelectors(JoinedSelectors *jselectors);
-	void SetSortOptimization(bool enable) { sortOptimization_ = enable; }
+	void SetSortOptimization(bool enable) noexcept { sortOptimization_ = enable; }
 
 	void LogDump(int logLevel);
 	std::string GetJSON();
 	Duration Total() const noexcept { return total_; }
 	size_t Iterations() const noexcept { return iters_; }
 	static int To_us(const Duration &d);
+	bool IsEnabled() const noexcept { return enabled_; }
 
-protected:
+private:
 	Duration lap();
 	static const char *JoinTypeName(JoinType jtype);
 
-protected:
 	time_point last_point_, sort_start_point_;
 	Duration total_, prepare_ = Duration::zero();
 	Duration select_ = Duration::zero();
@@ -62,10 +62,10 @@ protected:
 	std::string_view sortIndex_;
 	SelectIteratorContainer *selectors_ = nullptr;
 	JoinedSelectors *jselectors_ = nullptr;
-	bool sortOptimization_ = false;
 	int iters_ = 0;
 	int count_ = 0;
-	bool enabled_;
+	bool sortOptimization_ = false;
+	const bool enabled_;
 };
 
 }  // namespace reindexer

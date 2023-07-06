@@ -26,27 +26,24 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 
 		auto &profilingNode = root["profiling"];
 		if (!profilingNode.empty()) {
-			profilingData_ = {};
+			profilingData_ = ProfilingConfigData{};
 			profilingData_.queriesPerfStats = profilingNode["queriesperfstats"].As<bool>();
-			profilingData_.queriedThresholdUS = profilingNode["queries_threshold_us"].As<size_t>();
+			profilingData_.queriesThresholdUS = profilingNode["queries_threshold_us"].As<size_t>();
 			profilingData_.perfStats = profilingNode["perfstats"].As<bool>();
 			profilingData_.memStats = profilingNode["memstats"].As<bool>();
 			profilingData_.activityStats = profilingNode["activitystats"].As<bool>();
 			if (!profilingNode["long_queries_logging"].empty()) {
-				profilingData_.longSelectLoggingParams.thresholdUs =
-					profilingNode["long_queries_logging"]["select"]["threshold_us"].As<int32_t>();
-				profilingData_.longSelectLoggingParams.normalized =
-					profilingNode["long_queries_logging"]["select"]["normalized"].As<bool>();
+				profilingData_.longSelectLoggingParams.store(
+					LongQueriesLoggingParams{profilingNode["long_queries_logging"]["select"]["threshold_us"].As<int32_t>(),
+											 profilingNode["long_queries_logging"]["select"]["normalized"].As<bool>()});
 
-				profilingData_.longUpdDelLoggingParams.thresholdUs =
-					profilingNode["long_queries_logging"]["update_delete"]["threshold_us"].As<int32_t>();
-				profilingData_.longUpdDelLoggingParams.normalized =
-					profilingNode["long_queries_logging"]["update_delete"]["normalized"].As<bool>();
+				profilingData_.longUpdDelLoggingParams.store(
+					LongQueriesLoggingParams{profilingNode["long_queries_logging"]["update_delete"]["threshold_us"].As<int32_t>(),
+											 profilingNode["long_queries_logging"]["update_delete"]["normalized"].As<bool>()});
 
-				profilingData_.longTxLoggingParams.thresholdUs =
-					profilingNode["long_queries_logging"]["transaction"]["threshold_us"].As<int32_t>();
-				profilingData_.longTxLoggingParams.avgTxStepThresholdUs =
-					profilingNode["long_queries_logging"]["transaction"]["avg_step_threshold_us"].As<int32_t>();
+				profilingData_.longTxLoggingParams.store(
+					LongTxLoggingParams{profilingNode["long_queries_logging"]["transaction"]["threshold_us"].As<int32_t>(),
+										profilingNode["long_queries_logging"]["transaction"]["avg_step_threshold_us"].As<int32_t>()});
 			}
 			auto it = handlers_.find(ProfilingConf);
 			if (it != handlers_.end()) (it->second)();
@@ -99,42 +96,17 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 }
 
 void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> handler) {
-	smart_lock<shared_timed_mutex> lk(mtx_, true);
+	std::lock_guard<shared_timed_mutex> lk(mtx_);
 	handlers_[cfgType] = std::move(handler);
 }
 
-ProfilingConfigData DBConfigProvider::GetProfilingConfig() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
-	return profilingData_;
-}
-
-LongQueriesLoggingParams DBConfigProvider::GetSelectLoggingParams() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
-	return profilingData_.longSelectLoggingParams;
-}
-
-LongQueriesLoggingParams DBConfigProvider::GetUpdDelLoggingParams() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
-	return profilingData_.longUpdDelLoggingParams;
-}
-
-LongTxLoggingParams DBConfigProvider::GetTxLoggingParams() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
-	return profilingData_.longTxLoggingParams;
-}
-
-bool DBConfigProvider::ActivityStatsEnabled() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
-	return profilingData_.activityStats;
-}
-
 ReplicationConfigData DBConfigProvider::GetReplicationConfig() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
+	shared_lock<shared_timed_mutex> lk(mtx_);
 	return replicationData_;
 }
 
 bool DBConfigProvider::GetNamespaceConfig(const std::string &nsName, NamespaceConfigData &data) {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
+	shared_lock<shared_timed_mutex> lk(mtx_);
 	auto it = namespacesData_.find(nsName);
 	if (it == namespacesData_.end()) {
 		it = namespacesData_.find("*");

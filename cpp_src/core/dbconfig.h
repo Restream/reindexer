@@ -20,13 +20,19 @@ class WrSerializer;
 
 enum ConfigType { ProfilingConf, NamespaceDataConf, ReplicationConf };
 
-struct LongQueriesLoggingParams {
-	int32_t thresholdUs = -1;
-	bool normalized = false;
+class LongQueriesLoggingParams {
+public:
+	LongQueriesLoggingParams(int32_t t = -1, bool n = false) noexcept : thresholdUs(t), normalized(n ? 1 : 0) {}
+
+	// Do not using int32 + bool here due to MSVC compatibility reasons (alignof should not be less than sizeof in this case to use it in
+	// atomic).
+	int64_t thresholdUs : 32;
+	int64_t normalized : 1;
 };
 
-struct LongTxLoggingParams {
-	LongTxLoggingParams() noexcept : thresholdUs(-1), avgTxStepThresholdUs(-1) {}
+class LongTxLoggingParams {
+public:
+	LongTxLoggingParams(int32_t t = -1, int32_t a = -1) noexcept : thresholdUs(t), avgTxStepThresholdUs(a) {}
 
 	// Do not using 2 int32's here due to MSVC compatibility reasons (alignof should not be less than sizeof in this case to use it in
 	// atomic).
@@ -35,15 +41,28 @@ struct LongTxLoggingParams {
 	int64_t avgTxStepThresholdUs : 32;
 };
 
-struct ProfilingConfigData {
-	bool queriesPerfStats = false;
-	size_t queriedThresholdUS = 10;
-	bool perfStats = false;
-	bool memStats = false;
-	bool activityStats = false;
-	LongQueriesLoggingParams longSelectLoggingParams;
-	LongQueriesLoggingParams longUpdDelLoggingParams;
-	LongTxLoggingParams longTxLoggingParams;
+class ProfilingConfigData {
+public:
+	ProfilingConfigData &operator=(const ProfilingConfigData &d) noexcept {
+		queriesThresholdUS.store(d.queriesThresholdUS, std::memory_order_relaxed);
+		queriesPerfStats.store(d.queriesPerfStats, std::memory_order_relaxed);
+		perfStats.store(d.perfStats, std::memory_order_relaxed);
+		memStats.store(d.memStats, std::memory_order_relaxed);
+		activityStats.store(d.activityStats, std::memory_order_relaxed);
+		longSelectLoggingParams.store(d.longSelectLoggingParams, std::memory_order_relaxed);
+		longUpdDelLoggingParams.store(d.longUpdDelLoggingParams, std::memory_order_relaxed);
+		longTxLoggingParams.store(d.longTxLoggingParams, std::memory_order_relaxed);
+		return *this;
+	}
+
+	std::atomic<size_t> queriesThresholdUS = {10};
+	std::atomic<bool> queriesPerfStats = {false};
+	std::atomic<bool> perfStats = {false};
+	std::atomic<bool> memStats = {false};
+	std::atomic<bool> activityStats = {false};
+	std::atomic<LongQueriesLoggingParams> longSelectLoggingParams;
+	std::atomic<LongQueriesLoggingParams> longUpdDelLoggingParams;
+	std::atomic<LongTxLoggingParams> longTxLoggingParams;
 };
 
 struct NamespaceConfigData {
@@ -113,13 +132,20 @@ public:
 	Error FromJSON(const gason::JsonNode &root);
 	void setHandler(ConfigType cfgType, std::function<void()> handler);
 
-	ProfilingConfigData GetProfilingConfig();
 	ReplicationConfigData GetReplicationConfig();
 	bool GetNamespaceConfig(const std::string &nsName, NamespaceConfigData &data);
-	LongQueriesLoggingParams GetSelectLoggingParams();
-	LongQueriesLoggingParams GetUpdDelLoggingParams();
-	LongTxLoggingParams GetTxLoggingParams();
-	bool ActivityStatsEnabled();
+	LongQueriesLoggingParams GetSelectLoggingParams() const noexcept {
+		return profilingData_.longSelectLoggingParams.load(std::memory_order_relaxed);
+	}
+	LongQueriesLoggingParams GetUpdDelLoggingParams() const noexcept {
+		return profilingData_.longUpdDelLoggingParams.load(std::memory_order_relaxed);
+	}
+	LongTxLoggingParams GetTxLoggingParams() const noexcept { return profilingData_.longTxLoggingParams.load(std::memory_order_relaxed); }
+	bool ActivityStatsEnabled() const noexcept { return profilingData_.activityStats.load(std::memory_order_relaxed); }
+	bool MemStatsEnabled() const noexcept { return profilingData_.memStats.load(std::memory_order_relaxed); }
+	bool PerfStatsEnabled() const noexcept { return profilingData_.perfStats.load(std::memory_order_relaxed); }
+	bool QueriesPerfStatsEnabled() const noexcept { return profilingData_.queriesPerfStats.load(std::memory_order_relaxed); }
+	unsigned QueriesThresholdUS() const noexcept { return profilingData_.queriesThresholdUS.load(std::memory_order_relaxed); }
 
 private:
 	ProfilingConfigData profilingData_;

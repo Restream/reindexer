@@ -243,6 +243,7 @@ public:
 	int getIndexByNameOrJsonPath(std::string_view name) const;
 	bool getIndexByName(std::string_view name, int &index) const;
 	bool getIndexByNameOrJsonPath(std::string_view name, int &index) const;
+	bool getSparseIndexByJsonPath(std::string_view jsonPath, int &index) const;
 
 	void FillResult(QueryResults &result, const IdSet &ids) const;
 

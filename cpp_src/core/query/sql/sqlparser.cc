@@ -12,8 +12,6 @@ namespace reindexer {
 
 using namespace std::string_view_literals;
 
-SQLParser::SQLParser(Query &query) : query_(query) {}
-
 int SQLParser::Parse(std::string_view q) {
 	tokenizer parser(q);
 	return Parse(parser);
@@ -165,13 +163,13 @@ int SQLParser::selectParse(tokenizer &parser) {
 				throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 			}
 			query_.selectFilter_.push_back(std::string(nameWithCase.text()));
-			query_.count = UINT_MAX;
+			query_.count = QueryEntry::kDefaultLimit;
 			wasSelectFilter = true;
 		} else if (name.text() == "*"sv) {
 			if (!query_.CanAddSelectFilter()) {
 				throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 			}
-			query_.count = UINT_MAX;
+			query_.count = QueryEntry::kDefaultLimit;
 			wasSelectFilter = true;
 			query_.selectFilter_.clear();
 		}
@@ -836,7 +834,7 @@ Point SQLParser::parseGeomFromText(tokenizer &parser) const {
 	if (tok.text() != ")"sv) {
 		throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text(), parser.where());
 	}
-	return {x, y};
+	return Point{x, y};
 }
 
 void SQLParser::parseDWithin(tokenizer &parser, OpType nextOp) {

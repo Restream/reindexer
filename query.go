@@ -8,6 +8,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
@@ -498,7 +499,7 @@ func (q *Query) WhereDouble(index string, condition int, keys ...float64) *Query
 }
 
 // DWithin - Add DWithin condition to DB query
-func (q *Query) DWithin(index string, point [2]float64, distance float64) *Query {
+func (q *Query) DWithin(index string, point Point, distance float64) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(DWITHIN)
 	q.nextOp = opAND
@@ -582,6 +583,32 @@ func (q *Query) Sort(sortIndex string, desc bool, values ...interface{}) *Query 
 	}
 
 	return q
+}
+
+// SortStDistance - wrapper for geometry sorting by shortes distance between geometry field and point (ST_Distance)
+func (q *Query) SortStPointDistance(field string, p Point, desc bool) *Query {
+	var sb strings.Builder
+	sb.Grow(256)
+	sb.WriteString("ST_Distance(")
+	sb.WriteString(field)
+	sb.WriteString(",ST_GeomFromText('point(")
+	sb.WriteString(strconv.FormatFloat(p[0], 'f', -1, 64))
+	sb.WriteRune(' ')
+	sb.WriteString(strconv.FormatFloat(p[1], 'f', -1, 64))
+	sb.WriteString(")'))")
+	return q.Sort(sb.String(), desc)
+}
+
+// SortStDistance - wrapper for geometry sorting by shortes distance between 2 geometry fields (ST_Distance)
+func (q *Query) SortStFieldDistance(field1 string, field2 string, desc bool) *Query {
+	var sb strings.Builder
+	sb.Grow(256)
+	sb.WriteString("ST_Distance(")
+	sb.WriteString(field1)
+	sb.WriteRune(',')
+	sb.WriteString(field2)
+	sb.WriteRune(')')
+	return q.Sort(sb.String(), desc)
 }
 
 // OR - next condition will added with OR
