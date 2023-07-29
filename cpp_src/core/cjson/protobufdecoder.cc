@@ -51,7 +51,7 @@ void ProtobufDecoder::setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue
 	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
 	auto value = item.value.convert(item.itemType);
 	if (field > 0) {
-		pl.Set(field, {value}, true);
+		pl.Set(field, value, true);
 		if (item.isArray) {
 			arraysStorage_.UpdateArraySize(item.tagName, field);
 		} else {
@@ -76,7 +76,7 @@ Error ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Pro
 		if (packed) {
 			int count = 0;
 			while (!parser.IsEof()) {
-				pl.Set(field, {parser.ReadArrayItem(item.itemType)}, true);
+				pl.Set(field, parser.ReadArrayItem(item.itemType), true);
 				++count;
 			}
 			builder.ArrayRef(item.tagName, field, count);

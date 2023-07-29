@@ -9,21 +9,24 @@ namespace reindexer {
 
 template <typename K, typename V, size_t N, typename H, typename C>
 class MultiHashMap {
+	using StoreType = std::vector<std::pair<const K, V>>;
+
 public:
+	using Iterator = typename StoreType::const_iterator;
 	MultiHashMap(size_t s) : capacity_{2 * s} {
 		data_.reserve(s);
 		for (auto& i : indexes_) {
 			i.resize(capacity_);
 		}
 	}
-	bool insert(K k, V v) {
+	std::pair<Iterator, bool> insert(K k, V v) {
 		assertrx(size_ * 2 < capacity_);  // rehash is not implemented
 		auto [firstIdx, firstHash] = H::hash(k);
 		assertrx_throw(firstIdx < indexes_.size());
 		firstHash %= capacity_;
 		for (size_t i : indexes_[firstIdx][firstHash]) {
 			if (C::equal(k, data_[i].first)) {
-				return false;
+				return std::make_pair(data_.cbegin() + i, false);
 			}
 		}
 		const size_t s = data_.size();
@@ -56,9 +59,9 @@ public:
 			throw;
 		}
 		++size_;
-		return true;
+		return std::make_pair(data_.cbegin() + s, true);
 	}
-	auto find(const K& k) const {
+	Iterator find(const K& k) const {
 		auto [firstIdx, hash] = H::hash(k);
 		assertrx_throw(firstIdx < indexes_.size());
 		hash %= capacity_;
@@ -83,10 +86,10 @@ public:
 		}
 		return cend();
 	}
-	auto cend() const noexcept { return data_.cend(); }
+	Iterator cend() const noexcept { return data_.cend(); }
 
 private:
-	std::vector<std::pair<K, V>> data_;
+	StoreType data_;
 	std::array<std::vector<h_vector<size_t, 2>>, N> indexes_;
 	size_t size_{0};
 	const size_t capacity_;

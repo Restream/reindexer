@@ -372,7 +372,7 @@ func (db *Reindexer) MustBeginTx(namespace string) *Tx {
 
 // QueryFrom - create query from DSL and execute it
 func (db *Reindexer) QueryFrom(d dsl.DSL) (*Query, error) {
-	return db.impl.queryFrom(d)
+	return db.impl.queryFrom(&d)
 }
 
 // GetStats Get local thread reindexer usage stats

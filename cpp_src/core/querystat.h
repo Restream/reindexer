@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include "core/nsselecter/explaincalc.h"
 #include "estl/fast_hash_map.h"
 #include "namespace/namespacestat.h"
 #include "perfstatcounter.h"
@@ -57,7 +58,7 @@ public:
 		if (enable_) tmStart = std::chrono::high_resolution_clock::now();
 	}
 
-	QueryStatCalculator(Logger<T> logger) : enable_(true), logger_(std::move(logger)) {
+	QueryStatCalculator(Logger<T> logger, bool enable = true) : enable_(enable), logger_(std::move(logger)) {
 		if (enable_) tmStart = std::chrono::high_resolution_clock::now();
 	}
 	~QueryStatCalculator() {
@@ -77,12 +78,57 @@ public:
 		}
 	}
 
+	template <long_actions::DurationStorageIdx index, typename Type, typename Method, typename... Args>
+	auto LogDuration(Type& var, Method method, Args&&... args) {
+		return exec<index>([&var, &method](Args&&... aa) { return (var.*method)(std::forward<Args>(aa)...); }, std::forward<Args>(args)...);
+	}
+
+	template <typename Type, typename Method, typename... Args>
+	auto LogFlushDuration(Type& var, Method method, Args&&... args) {
+		return LogDuration<long_actions::DurationStorageIdx::DataFlush>(var, method, std::forward<Args>(args)...);
+	}
+
+	template <typename Type, typename Method, typename... Args>
+	auto CreateLock(Type& var, Method method, Args&&... args) {
+		return LogDuration<long_actions::DurationStorageIdxCast(decltype((var.*method)(std::forward<Args>(args)...))::MutexType::mark)>(
+			var, method, std::forward<Args>(args)...);
+	}
+
+	template <template <typename...> class MutexType, typename... Args>
+	auto CreateLock(Args&&... args) {
+		return exec<long_actions::DurationStorageIdxCast(decltype(MutexType(std::forward<Args>(args)...))::MutexType::mark)>(
+			[](Args&&... aa) { return MutexType(std::forward<Args>(aa)...); }, std::forward<Args>(args)...);
+	}
+
+	void AddExplain(const ExplainCalc& explain) { logger_.Add(explain); }
+
+private:
+	template <long_actions::DurationStorageIdx index, typename Callable, typename... Args>
+	auto exec(Callable&& callable, Args&&... args) {
+		if (enable_) {
+			class LogGuard {
+			public:
+				LogGuard(Logger<T>& logger) : logger_{logger}, start_{std::chrono::high_resolution_clock::now()} {}
+				~LogGuard() {
+					logger_.Add(index,
+								std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start_));
+				}
+
+			private:
+				Logger<T>& logger_;
+				std::chrono::high_resolution_clock::time_point start_;
+			} logGuard{logger_};
+			return callable(std::forward<Args>(args)...);
+
+		} else {
+			return callable(std::forward<Args>(args)...);
+		}
+	}
+
 	std::chrono::time_point<std::chrono::high_resolution_clock> tmStart;
 	std::function<void(bool, std::chrono::microseconds)> hitter_;
 	std::chrono::microseconds threshold_;
 	bool enable_;
-
-private:
 	Logger<T> logger_;
 };
 

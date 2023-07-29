@@ -1,4 +1,5 @@
 #include "selectiteratorcontainer.h"
+#include <numeric>
 #include <sstream>
 #include "core/namespace/namespaceimpl.h"
 #include "core/rdxcontext.h"
@@ -15,9 +16,7 @@ void SelectIteratorContainer::SortByCost(int expectedIterations) {
 		indexes.resize(container_.size());
 		costs.resize(container_.size());
 	}
-	for (size_t i = 0; i < container_.size(); ++i) {
-		indexes[i] = i;
-	}
+	std::iota(indexes.begin(), indexes.begin() + container_.size(), 0);
 	sortByCost(indexes, costs, 0, container_.size(), expectedIterations);
 	for (size_t i = 0; i < container_.size(); ++i) {
 		if (indexes[i] != i) {
@@ -299,7 +298,14 @@ void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry &jqe, OpType
 }
 
 void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectResults, OpType op, const NamespaceImpl &ns,
-													   const QueryEntry &qe, bool isIndexFt, bool isIndexSparse, bool nonIndexField) {
+													   const QueryEntry &qe, bool isIndexFt, bool isIndexSparse, bool nonIndexField,
+													   std::optional<OpType> nextOp) {
+	if (selectResults.empty()) {
+		if (op == OpAnd) {
+			Append(OpAnd, AlwaysFalse{});
+		}
+		return;
+	}
 	for (SelectKeyResult &res : selectResults) {
 		switch (op) {
 			case OpOr: {
@@ -334,8 +340,9 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 					SelectIterator &lastAppended = lastAppendedIt->Value<SelectIterator>();
 					lastAppended.Bind(ns.payloadType_, qe.idxNo);
 					lastAppended.SetNotOperationFlag(op == OpNot);
-					const int cur = op == OpNot ? ns.items_.size() - lastAppended.GetMaxIterations() : lastAppended.GetMaxIterations();
-					if (lastAppended.comparators_.empty()) {
+					const auto maxIterations = lastAppended.GetMaxIterations();
+					const int cur = op == OpNot ? ns.items_.size() - maxIterations : maxIterations;
+					if (lastAppended.comparators_.empty() && (!nextOp.has_value() || nextOp.value() != OpOr)) {
 						if (cur && cur < maxIterations_) maxIterations_ = cur;
 						if (!cur) wasZeroIterations_ = true;
 					}
@@ -512,7 +519,11 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &q
 								selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc, isIndexFt,
 																  isIndexSparse, ftCtx, qPreproc, rdxCtx);
 							}
-							processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nonIndexField);
+							std::optional<OpType> nextOp;
+							if (next != end) {
+								nextOp = queries.GetOperation(next);
+							}
+							processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nonIndexField, nextOp);
 							if (op != OpOr) {
 								for (auto &ep : equalPositions) {
 									const auto lastPosition = ep.queryEntriesPositions.back();
@@ -631,7 +642,13 @@ IdType SelectIteratorContainer::next(const_iterator it, IdType from) {
 			return from;
 		},
 		[from](const JoinSelectIterator &) { return from; }, [from](const FieldsComparator &) { return from; },
-		[from](const AlwaysFalse &) { return from; });
+		[](const AlwaysFalse &) {
+			if constexpr (reverse) {
+				return std::numeric_limits<IdType>::lowest();
+			} else {
+				return std::numeric_limits<IdType>::max();
+			}
+		});
 }
 
 template <bool reverse>

@@ -90,7 +90,8 @@ void SQLSuggester::getMatchingFieldsNames(const std::string &token, std::vector<
 	auto dotPos = token.find('.');
 	for (auto &idx : namespaces[0].indexes) {
 		if (idx.name_ == "#pk" || idx.name_ == "-tuple") continue;
-		if (isBlank(token) || checkIfStartsWith(token, idx.name_, dotPos != std::string::npos)) {
+		if (isBlank(token) || (dotPos != std::string::npos ? checkIfStartsWith<CaseSensitive::Yes>(token, idx.name_)
+														   : checkIfStartsWith<CaseSensitive::No>(token, idx.name_))) {
 			if (dotPos == std::string::npos) {
 				variants.push_back(idx.name_);
 			} else {

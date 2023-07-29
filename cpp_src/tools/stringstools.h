@@ -95,7 +95,33 @@ struct WordPosition {
 template <typename Pos>
 [[nodiscard]] Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::string& extraWordSymbols);
 
-int collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts& collateOpts);
+template <CollateMode collateMode>
+[[nodiscard]] int collateCompare(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable& sortOrderTable);
+template <>
+[[nodiscard]] int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+template <>
+[[nodiscard]] int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+template <>
+[[nodiscard]] int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+template <>
+[[nodiscard]] int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+template <>
+[[nodiscard]] int collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+[[nodiscard]] inline int collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts& collateOpts) {
+	switch (collateOpts.mode) {
+		case CollateASCII:
+			return collateCompare<CollateASCII>(lhs, rhs, collateOpts.sortOrderTable);
+		case CollateUTF8:
+			return collateCompare<CollateUTF8>(lhs, rhs, collateOpts.sortOrderTable);
+		case CollateNumeric:
+			return collateCompare<CollateNumeric>(lhs, rhs, collateOpts.sortOrderTable);
+		case CollateCustom:
+			return collateCompare<CollateCustom>(lhs, rhs, collateOpts.sortOrderTable);
+		case CollateNone:
+			return collateCompare<CollateNone>(lhs, rhs, collateOpts.sortOrderTable);
+	}
+	return collateCompare<CollateNone>(lhs, rhs, collateOpts.sortOrderTable);
+}
 
 std::wstring utf8_to_utf16(std::string_view src);
 std::string utf16_to_utf8(const std::wstring& src);
@@ -121,8 +147,20 @@ std::string_view strictModeToString(StrictMode mode);
 
 bool iequals(std::string_view lhs, std::string_view rhs) noexcept;
 bool iless(std::string_view lhs, std::string_view rhs) noexcept;
-bool checkIfStartsWith(std::string_view pattern, std::string_view src, bool casesensitive = false) noexcept;
-bool checkIfEndsWith(std::string_view pattern, std::string_view src, bool casesensitive = false) noexcept;
+
+enum class CaseSensitive : bool { No, Yes };
+template <CaseSensitive sensitivity>
+bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept;
+RX_ALWAYS_INLINE bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept {
+	return checkIfStartsWith<CaseSensitive::No>(pattern, src);
+}
+
+template <CaseSensitive sensitivity>
+bool checkIfEndsWith(std::string_view pattern, std::string_view src) noexcept;
+RX_ALWAYS_INLINE bool checkIfEndsWith(std::string_view pattern, std::string_view src) noexcept {
+	return checkIfEndsWith<CaseSensitive::No>(pattern, src);
+}
+
 bool isPrintable(std::string_view str) noexcept;
 bool isBlank(std::string_view token) noexcept;
 
@@ -151,8 +189,8 @@ struct nocase_less_str {
 struct nocase_hash_str {
 	using is_transparent = void;
 
-	size_t operator()(std::string_view hs) const noexcept { return collateHash(hs, CollateASCII); }
-	size_t operator()(const std::string& hs) const noexcept { return collateHash(hs, CollateASCII); }
+	size_t operator()(std::string_view hs) const noexcept { return collateHash<CollateASCII>(hs); }
+	size_t operator()(const std::string& hs) const noexcept { return collateHash<CollateASCII>(hs); }
 };
 
 struct less_str {
@@ -176,8 +214,8 @@ struct equal_str {
 struct hash_str {
 	using is_transparent = void;
 
-	size_t operator()(std::string_view hs) const noexcept { return collateHash(hs, CollateNone); }
-	size_t operator()(const std::string& hs) const noexcept { return collateHash(hs, CollateNone); }
+	size_t operator()(std::string_view hs) const noexcept { return collateHash<CollateNone>(hs); }
+	size_t operator()(const std::string& hs) const noexcept { return collateHash<CollateNone>(hs); }
 };
 
 inline void deepCopy(std::string& dst, const std::string& src) {

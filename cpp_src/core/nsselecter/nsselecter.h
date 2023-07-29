@@ -1,6 +1,7 @@
 #pragma once
 #include "aggregator.h"
 #include "core/index/index.h"
+#include "explaincalc.h"
 #include "joinedselector.h"
 #include "sortingcontext.h"
 
@@ -28,6 +29,7 @@ struct SelectCtx {
 	IsFTQuery isFtQuery = IsFTQuery::NotSet;
 
 	const Query *parentQuery = nullptr;
+	ExplainCalc explain;
 	bool requiresCrashTracking = false;
 };
 
@@ -88,6 +90,8 @@ private:
 	template <typename It>
 	void sortResults(LoopCtx &sctx, It begin, It end, const SortingOptions &sortingOptions, const joins::NamespaceResults *);
 
+	size_t calculateNormalCost(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
+	size_t calculateOptimizedCost(size_t costNormal, const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
 	bool isSortOptimizatonEffective(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
 	static bool validateField(StrictMode strictMode, std::string_view name, std::string_view nsName, const TagsMatcher &tagsMatcher);
 	void checkStrictModeAgg(StrictMode strictMode, const std::string &name, const std::string &nsName,

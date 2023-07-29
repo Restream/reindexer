@@ -63,16 +63,18 @@ func TestNumberOfArgumentsInSetAndEq(t *testing.T) {
 	ids := generateRandomNumberIds(5)
 	ids = append(ids, testItem.ID)
 
-	t.Run("eq can't take nil", func(t *testing.T) {
+	t.Run("eq can take nil", func(t *testing.T) {
 		query := DBD.Query(ns).Where("name", reindexer.EQ, nil)
-		_, err := query.Exec().FetchAll()
-		require.Error(t, err, "For condition required at least 1 argument, but provided 0")
+		result, err := query.Exec().FetchAll()
+		require.NoError(t, err)
+		assert.Nil(t, result)
 	})
 
-	t.Run("eq can't take 0 arguments", func(t *testing.T) {
+	t.Run("eq can take 0 arguments", func(t *testing.T) {
 		query := DBD.Query(ns).WhereString("name", reindexer.EQ)
-		_, err := query.Exec().FetchAll()
-		require.Error(t, err, "For condition required at least 1 argument, but provided 0")
+		result, err := query.Exec().FetchAll()
+		require.NoError(t, err)
+		assert.Nil(t, result)
 	})
 
 	t.Run("eq can take more than 1 arguments", func(t *testing.T) {
@@ -126,16 +128,18 @@ func TestEmptySetAndEq(t *testing.T) {
 		query := DBD.Query(ns).
 			WhereString("name", reindexer.EQ).
 			WhereInt("year", reindexer.SET, testItem.Year)
-		_, err := query.Exec().FetchAll()
-		require.Error(t, err, "For condition required at least 1 argument, but provided 0")
+		result, err := query.Exec().FetchAll()
+		require.NoError(t, err)
+		assert.Nil(t, result)
 	})
 
 	t.Run("empty set and eq in where condition", func(t *testing.T) {
 		query := DBD.Query(ns).
 			WhereString("name", reindexer.EQ).
 			WhereInt("year", reindexer.SET)
-		_, err := query.Exec().FetchAll()
-		require.Error(t, err, "For condition required at least 1 argument, but provided 0")
+		result, err := query.Exec().FetchAll()
+		require.NoError(t, err)
+		assert.Nil(t, result)
 	})
 }
 

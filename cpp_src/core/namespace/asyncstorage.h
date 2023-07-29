@@ -4,6 +4,7 @@
 #include <mutex>
 #include "core/storage/idatastorage.h"
 #include "estl/h_vector.h"
+#include "estl/mutex.h"
 #include "tools/assertrx.h"
 #include "tools/flagguard.h"
 
@@ -39,6 +40,7 @@ public:
 	using AdviceGuardT = CounterGuardAIRL32;
 	using ClockT = std::chrono::system_clock;
 	using TimepointT = ClockT::time_point;
+	using Mutex = MarkedMutex<std::mutex, MutexMark::AsyncStorage>;
 
 	struct Status {
 		bool isEnabled = false;
@@ -47,8 +49,7 @@ public:
 
 	class Cursor {
 	public:
-		Cursor(std::unique_lock<std::mutex>&& lck, std::unique_ptr<datastorage::Cursor>&& c) noexcept
-			: lck_(std::move(lck)), c_(std::move(c)) {
+		Cursor(std::unique_lock<Mutex>&& lck, std::unique_ptr<datastorage::Cursor>&& c) noexcept : lck_(std::move(lck)), c_(std::move(c)) {
 			assertrx(lck_.owns_lock());
 			assertrx(c_);
 		}
@@ -58,24 +59,20 @@ public:
 		// NOTE: Cursor owns unique storage lock. I.e. nobody is able to read stroage or write into it, while cursor exists.
 		// Currently the only place, where it matter is EnumMeta method. However, we should to consider switching to shared_mutex, if
 		// the number of such concurrent Cursors will grow.
-		std::unique_lock<std::mutex> lck_;
+		std::unique_lock<Mutex> lck_;
 		std::unique_ptr<datastorage::Cursor> c_;
 	};
 
 	class FullLockT {
 	public:
-		FullLockT(std::mutex& flushMtx, std::mutex& updatesMtx) : flushLck_(flushMtx), storageLck_(updatesMtx) {}
-		~FullLockT() {
-			// Specify unlock order
-			storageLck_.unlock();
-			flushLck_.unlock();
-		}
-		bool OwnsThisFlushMutex(std::mutex& mtx) const noexcept { return flushLck_.owns_lock() && flushLck_.mutex() == &mtx; }
-		bool OwnsThisStorageMutex(std::mutex& mtx) const noexcept { return storageLck_.owns_lock() && storageLck_.mutex() == &mtx; }
+		using MutexType = Mutex;
+		FullLockT(Mutex& flushMtx, Mutex& updatesMtx) : flushLck_(flushMtx), storageLck_(updatesMtx) {}
+		bool OwnsThisFlushMutex(Mutex& mtx) const noexcept { return flushLck_.owns_lock() && flushLck_.mutex() == &mtx; }
+		bool OwnsThisStorageMutex(Mutex& mtx) const noexcept { return storageLck_.owns_lock() && storageLck_.mutex() == &mtx; }
 
 	private:
-		std::unique_lock<std::mutex> flushLck_;
-		std::unique_lock<std::mutex> storageLck_;
+		std::unique_lock<Mutex> flushLck_;
+		std::unique_lock<Mutex> storageLck_;
 	};
 
 	AsyncStorage() = default;
@@ -267,8 +264,8 @@ private:
 	// storageMtx_ locks
 	shared_ptr<datastorage::IDataStorage> storage_;
 	std::string path_;
-	mutable std::mutex storageMtx_;
-	mutable std::mutex flushMtx_;
+	mutable Mutex storageMtx_;
+	mutable Mutex flushMtx_;
 	bool isCopiedNsStorage_ = false;
 	h_vector<UpdatesPtrT, kMaxRecycledChunks> recycled_;
 	std::atomic<int32_t> batchingAdvices_ = {0};

@@ -12,6 +12,7 @@
 namespace reindexer {
 
 typedef uint32_t VDocIdType;
+static constexpr int kMaxFtCompositeFields = 63;
 
 // the position of the word in the document (the index of the word in the field (pos), the field in which the word field was
 // encountered (field)
@@ -39,12 +40,13 @@ public:
 	struct PosType {
 		static const int posBits = 24;
 		PosType() = default;
-		PosType(int pos, int field) : fpos(pos | (field << posBits)) {}
+		PosType(int pos, int field) noexcept : fpos(pos | (field << posBits)) {}
 		int pos() const noexcept { return fpos & ((1 << posBits) - 1); }
 		int field() const noexcept { return fpos >> posBits; }
 		bool operator<(PosType other) const noexcept { return fpos < other.fpos; }
 		bool operator==(PosType other) const noexcept { return fpos == other.fpos; }
-		unsigned fpos;
+
+		uint32_t fpos;
 	};
 
 	template <typename PosType>
@@ -89,12 +91,15 @@ public:
 	}
 
 	void Add(int pos, int field) {
+		assertrx_throw(0 <= field && field <= kMaxFtCompositeFields);
 		pos_.emplace_back(pos, field);
 		addField(field);
 	}
 	void Add(PosType p) {
+		const auto field = p.field();
+		assertrx_throw(0 <= field && field <= kMaxFtCompositeFields);
 		pos_.emplace_back(p);
-		addField(p.field());
+		addField(field);
 	}
 	void SortAndUnique() {
 		boost::sort::pdqsort(pos_.begin(), pos_.end());
@@ -117,12 +122,7 @@ public:
 	size_t HeapSize() const noexcept { return heapSize(pos_); }
 
 private:
-	static constexpr int maxField = 63;
-
-	void addField(int field) noexcept {
-		assertrx(0 <= field && field <= maxField);
-		usedFieldsMask_ |= (uint64_t(1) << field);
-	}
+	void addField(int field) noexcept { usedFieldsMask_ |= (uint64_t(1) << field); }
 
 	template <typename T>
 	size_t heapSize(const T& p) const noexcept {

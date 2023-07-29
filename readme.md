@@ -94,7 +94,7 @@ Key features:
 - Composite indices
 - Join operations
 - Full-text search
-- Up to 64 indices for one namespace
+- Up to 256 indexes (255 user's index + 1 internal index) for each namespace
 - ORM-like query interface
 - SQL queries
 

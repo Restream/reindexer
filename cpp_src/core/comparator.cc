@@ -14,12 +14,33 @@ Comparator::Comparator(CondType cond, KeyValueType type, const VariantArray &val
 	  cmpGeom(distinct),
 	  cmpUuid(distinct) {
 	if (type.Is<KeyValueType::Composite>()) assertrx(fields_.size() > 0);
-	if (cond_ == CondEq && values.size() != 1) cond_ = CondSet;
-	if (cond_ == CondAllSet && values.size() == 1) cond_ = CondEq;
-	if (cond_ == CondDWithin) {
-		cmpGeom.SetValues(values);
-	} else {
-		setValues(values);
+	switch (cond) {
+		case CondEq:
+			if (values.size() != 1) {
+				cond_ = CondSet;
+			}
+			setValues(values);
+			break;
+		case CondSet:
+		case CondAllSet:
+			if (values.size() == 1) {
+				cond_ = CondEq;
+			}
+			[[fallthrough]];
+		case CondLt:
+		case CondLe:
+		case CondGt:
+		case CondGe:
+		case CondLike:
+		case CondRange:
+			setValues(values);
+			break;
+		case CondDWithin:
+			cmpGeom.SetValues(values);
+			break;
+		case CondEmpty:
+		case CondAny:
+			break;
 	}
 }
 

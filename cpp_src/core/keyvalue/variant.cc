@@ -223,10 +223,14 @@ std::string Variant::As<std::string>(const PayloadType &pt, const FieldsSet &fie
 
 template <typename T>
 std::optional<T> tryParseAs(std::string_view str) noexcept {
-	const auto end = str.data() + str.size();
+	auto begin = str.data();
+	const auto end = begin + str.size();
+	while (begin != end && std::isspace(*begin)) {
+		++begin;
+	}
 	T res;
-	auto [ptr, err] = std::from_chars(str.data(), end, res);
-	if (ptr == str.data() || err == std::errc::invalid_argument || err == std::errc::result_out_of_range) {
+	auto [ptr, err] = std::from_chars(begin, end, res);
+	if (ptr == begin || err == std::errc::invalid_argument || err == std::errc::result_out_of_range) {
 		return std::nullopt;
 	}
 	for (; ptr != end; ++ptr) {
@@ -607,7 +611,7 @@ void Variant::convertToComposite(const PayloadType *payloadType, const FieldsSet
 
 	for (auto field : *fields) {
 		if (field != IndexValueType::SetByJsonPath) {
-			pl.Set(field, {ser.GetVariant()});
+			pl.Set(field, ser.GetVariant());
 		} else {
 			// TODO: will have to implement SetByJsonPath in PayloadIFace
 			// or this "mixed" composite queries (by ordinary indexes + indexes
@@ -684,6 +688,7 @@ void Variant::Dump(T &os) const {
 
 template void Variant::Dump(WrSerializer &) const;
 template void Variant::Dump(std::ostream &) const;
+template void Variant::Dump(std::stringstream &) const;
 
 template <typename T>
 void VariantArray::Dump(T &os) const {
@@ -697,6 +702,7 @@ void VariantArray::Dump(T &os) const {
 
 template void VariantArray::Dump(WrSerializer &) const;
 template void VariantArray::Dump(std::ostream &) const;
+template void VariantArray::Dump(std::stringstream &) const;
 
 VariantArray::VariantArray(Point p) noexcept {
 	emplace_back(p.X());

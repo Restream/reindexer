@@ -229,9 +229,9 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 	if (sortDirection) {
 		std::sort(dbs.begin(), dbs.end(), [sortDirection](const std::string &lhs, const std::string &rhs) {
 			if (sortDirection > 0)
-				return collateCompare(lhs, rhs, CollateOpts(CollateASCII)) < 0;
+				return collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) < 0;
 			else
-				return collateCompare(lhs, rhs, CollateOpts(CollateASCII)) > 0;
+				return collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) > 0;
 		});
 	}
 
@@ -322,9 +322,9 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 	if (sortDirection) {
 		std::sort(nsDefs.begin(), nsDefs.end(), [sortDirection](const NamespaceDef &lhs, const NamespaceDef &rhs) {
 			if (sortDirection > 0)
-				return collateCompare(lhs.name, rhs.name, CollateOpts(CollateASCII)) < 0;
+				return collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) < 0;
 			else
-				return collateCompare(lhs.name, rhs.name, CollateOpts(CollateASCII)) > 0;
+				return collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) > 0;
 		});
 	}
 

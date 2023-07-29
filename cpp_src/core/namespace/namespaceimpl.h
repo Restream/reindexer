@@ -53,6 +53,14 @@ class ItemComparator;
 class SortExpression;
 class ProtobufSchema;
 class QueryResults;
+
+namespace long_actions {
+template <typename T>
+struct Logger;
+}
+template <typename T, template <typename> class>
+class QueryStatCalculator;
+
 namespace SortExprFuncs {
 struct DistanceBetweenJoinedIndexesSameNs;
 }  // namespace SortExprFuncs
@@ -86,12 +94,15 @@ class NamespaceImpl {  // NOLINT(*performance.Padding) Padding does not matter f
 	class RollBack_updateItems;
 	class IndexesCacheCleaner {
 	public:
-		explicit IndexesCacheCleaner(NamespaceImpl &ns) : ns_{ns} {}
+		explicit IndexesCacheCleaner(NamespaceImpl &ns) noexcept : ns_{ns} {}
 		IndexesCacheCleaner(const IndexesCacheCleaner &) = delete;
 		IndexesCacheCleaner(IndexesCacheCleaner &&) = delete;
 		IndexesCacheCleaner &operator=(const IndexesCacheCleaner &) = delete;
 		IndexesCacheCleaner &operator=(IndexesCacheCleaner &&) = delete;
 		void Add(SortType s) {
+			if (rx_unlikely(s >= sorts_.size())) {
+				throw Error(errLogic, "Index sort type overflow: %d. Limit is %d", s, sorts_.size() - 1);
+			}
 			if (s > 0) {
 				sorts_.set(s);
 			}
@@ -100,7 +111,7 @@ class NamespaceImpl {  // NOLINT(*performance.Padding) Padding does not matter f
 
 	private:
 		NamespaceImpl &ns_;
-		std::bitset<64> sorts_;
+		std::bitset<kMaxIndexes> sorts_;
 	};
 
 	friend class NsSelecter;
@@ -229,7 +240,8 @@ public:
 	void CloseStorage(const RdxContext &);
 
 	Transaction NewTransaction(const RdxContext &ctx);
-	void CommitTransaction(Transaction &tx, QueryResults &result, NsContext ctx);
+	void CommitTransaction(Transaction &tx, QueryResults &result, NsContext ctx,
+						   QueryStatCalculator<Transaction, long_actions::Logger> &queryStatCalculator);
 
 	Item NewItem(const NsContext &ctx);
 	void ToPool(ItemImpl *item);

@@ -42,8 +42,8 @@ public:
 	explicit h_vector(size_type size) : h_vector() { resize(size); }
 	h_vector(size_type size, const T& v) : h_vector() {
 		reserve(size);
-		const pointer p = ptr();
-		for (size_type i = 0; i < size; ++i) new (p + i) T(v);
+		const iterator p = ptr();
+		std::uninitialized_fill(p, p + size, v);
 		size_ = size;
 	}
 	h_vector(std::initializer_list<T> l) : e_{0, 0}, size_(0), is_hdata_(1) { insert(begin(), l.begin(), l.end()); }

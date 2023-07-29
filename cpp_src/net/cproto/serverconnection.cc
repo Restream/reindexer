@@ -322,6 +322,10 @@ void ServerConnection::sendUpdates() {
 	updates.swap(updates_);
 	updateLostFlag_ = false;
 	updates_mtx_.unlock();
+	if (updates.empty()) {
+		return;
+	}
+
 	RPCCall callUpdate{kCmdUpdates, 0, {}, milliseconds(0)};
 	cproto::Context ctx{"", &callUpdate, this, {{}, {}}, false};
 	size_t len = 0;

@@ -147,7 +147,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 	auto &cfg = holder_.cfg_;
 	auto &vdocsTexts = holder_.vdocsTexts;
 	auto &vdocs = holder_.vdocs_;
-	int fieldscount = fieldSize_;
+	const int fieldscount = fieldSize_;
 	size_t offset = holder_.vdocsOffset_;
 	// build words map parallel in maxIndexWorkers threads
 	auto worker = [this, &ctxs, &vdocsTexts, offset, maxIndexWorkers, fieldscount, &cfg, &vdocs](int i) {

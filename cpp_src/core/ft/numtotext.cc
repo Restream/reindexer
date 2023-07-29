@@ -1,37 +1,33 @@
 
 #include "numtotext.h"
 
-#include <math.h>
-#include <stdlib.h>
 #include <algorithm>
-#include <vector>
+#include <cmath>
+#include <cstdlib>
 #include "tools/errors.h"
 
 namespace reindexer {
 
-using std::string;
-using std::vector;
-using std::pair;
-
-const string units[] = {"", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"};
-const string unitsNominat[] = {"", "одна", "две"};
-const string tens[] = {"",			 "одиннадцать", "двенадцать", "тринадцать",	  "четырнадцать",
-					   "пятнадцать", "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать"};
-const string decades[] = {"",		   "десять",	 "двадцать",  "тридцать",	 "сорок",
-						  "пятьдесят", "шестьдесят", "семьдесят", "восемьдесят", "девяносто"};
-const string hundreads[] = {"", "сто", "двести", "триста", "четыреста", "пятьсот", "шестьсот", "семьсот", "восемьсот", "девятьсот"};
-const string thousands[] = {"тысяча", "тысячи", "тысяч"};
-const string millions[] = {"миллион", "миллиона", "миллионов"};
-const string billions[] = {"миллиард", "миллиарда", "миллиардов"};
-const string trillions[] = {"триллион", "триллиона", "триллионов"};
-const string quadrillion[] = {"квадриллион", "квадриллиона", "квадриллионов"};
-const string quintillion[] = {"квинтиллион", "квинтиллиона", "квинтиллионов"};
-const string sextillion[] = {"секстиллион", "секстиллиона", "секстиллионов"};
-const string septillion[] = {"септиллион", "септиллиона", "септиллионов"};
+constexpr std::string_view units[] = {"", "один", "два", "три", "четыре", "пять", "шесть", "семь", "восемь", "девять"};
+constexpr std::string_view unitsNominat[] = {"", "одна", "две"};
+constexpr std::string_view tens[] = {"",		   "одиннадцать", "двенадцать", "тринадцать",	"четырнадцать",
+									 "пятнадцать", "шестнадцать", "семнадцать", "восемнадцать", "девятнадцать"};
+constexpr std::string_view decades[] = {"",			 "десять",	   "двадцать",	"тридцать",	   "сорок",
+										"пятьдесят", "шестьдесят", "семьдесят", "восемьдесят", "девяносто"};
+constexpr std::string_view hundreads[] = {"",		 "сто",		 "двести",	"триста",	 "четыреста",
+										  "пятьсот", "шестьсот", "семьсот", "восемьсот", "девятьсот"};
+constexpr std::string_view thousands[] = {"тысяча", "тысячи", "тысяч"};
+constexpr std::string_view millions[] = {"миллион", "миллиона", "миллионов"};
+constexpr std::string_view billions[] = {"миллиард", "миллиарда", "миллиардов"};
+constexpr std::string_view trillions[] = {"триллион", "триллиона", "триллионов"};
+constexpr std::string_view quadrillion[] = {"квадриллион", "квадриллиона", "квадриллионов"};
+constexpr std::string_view quintillion[] = {"квинтиллион", "квинтиллиона", "квинтиллионов"};
+constexpr std::string_view sextillion[] = {"секстиллион", "секстиллиона", "секстиллионов"};
+constexpr std::string_view septillion[] = {"септиллион", "септиллиона", "септиллионов"};
 
 enum Numorders : int { Thousands, Millions, Billions, Trillions, Quadrillion, Quintillion, Sextillion, Septillion };
 
-const string& getNumorder(int numorder, int i) {
+static std::string_view getNumorder(int numorder, int i) {
 	switch (numorder) {
 		case Thousands:
 			return thousands[i];
@@ -53,13 +49,14 @@ const string& getNumorder(int numorder, int i) {
 	throw Error(errParams, "Incorrect order [%s]: too big", numorder);
 }
 
-int ansiCharacterToDigit(char ch) { return static_cast<int>(ch - 48); }
+RX_ALWAYS_INLINE int ansiCharacterToDigit(char ch) noexcept { return static_cast<int>(ch - 48); }
 
-vector<string> getOrders(std::string_view str) {
+static std::vector<std::string> getOrders(std::string_view str) {
 	std::string numStr(str);
 	std::reverse(numStr.begin(), numStr.end());
 	int numChars = numStr.length();
 	std::vector<std::string> orders;
+	orders.reserve(numChars / 3);
 	for (int i = 0; i < numChars; i += 3) {
 		std::string tempString;
 		if (i <= numChars - 3) {
@@ -78,12 +75,12 @@ vector<string> getOrders(std::string_view str) {
 					break;
 			}
 		}
-		orders.push_back(tempString);
+		orders.emplace_back(std::move(tempString));
 	}
 	return orders;
 }
 
-vector<string> getDecimal(const string& str, int i) {
+static std::vector<std::string> getDecimal(const std::string& str, int i) {
 	std::vector<std::string> words;
 	int v = std::stoi(str);
 	if (v < 10) {
@@ -102,7 +99,7 @@ vector<string> getDecimal(const string& str, int i) {
 	return words;
 }
 
-string getNumOrders(int i, int num) {
+static std::string getNumOrders(int i, int num) {
 	std::string orders;
 	if (i > 0) {
 		if (num % 10 > 4 || (num % 100 > 10 && num % 100 < 20) || num % 10 == 0) {
@@ -116,7 +113,7 @@ string getNumOrders(int i, int num) {
 	return orders;
 }
 
-vector<string> formTextString(const string& str, int i) {
+static std::vector<std::string> formTextString(const std::string& str, int i) {
 	std::vector<std::string> words;
 	int strlen = str.length();
 	if (strlen == 3) {
@@ -141,8 +138,8 @@ vector<string> formTextString(const string& str, int i) {
 	return words;
 }
 
-vector<string>& NumToText::convert(std::string_view str, std::vector<std::string>& output) {
-	output.clear();
+std::vector<std::string>& NumToText::convert(std::string_view str, std::vector<std::string>& output) {
+	output.resize(0);
 	if ((str.length() == 1) && (str[0] == '0')) {
 		output = {"ноль"};
 		return output;
@@ -159,4 +156,5 @@ vector<string>& NumToText::convert(std::string_view str, std::vector<std::string
 	}
 	return output;
 }
+
 }  // namespace reindexer

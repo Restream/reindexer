@@ -54,15 +54,18 @@ TEST_F(NsApi, IndexDrop) {
 }
 
 TEST_F(NsApi, AddTooManyIndexes) {
-	static constexpr size_t kHalfOfStartNotCompositeIndexesCount = 10;
+	constexpr size_t kHalfOfStartNotCompositeIndexesCount = 80;
+	constexpr size_t kMaxCompositeIndexesCount = 100;
 	static const std::string ns = "too_many_indexes";
 	Error err = rt.reindexer->OpenNamespace(ns);
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	size_t notCompositeIndexesCount = 0;
-	while (notCompositeIndexesCount < reindexer::maxIndexes - 1) {
+	size_t compositeIndexesCount = 0;
+	while (notCompositeIndexesCount < reindexer::kMaxIndexes - 1) {
 		reindexer::IndexDef idxDef;
-		if (notCompositeIndexesCount < 2 * kHalfOfStartNotCompositeIndexesCount || rand() % 2 == 0) {
+		if (notCompositeIndexesCount < 2 * kHalfOfStartNotCompositeIndexesCount || rand() % 4 != 0 ||
+			compositeIndexesCount >= kMaxCompositeIndexesCount) {
 			const std::string indexName = "index_" + std::to_string(notCompositeIndexesCount);
 			idxDef = reindexer::IndexDef{indexName, {indexName}, "tree", "int", IndexOpts{}};
 			++notCompositeIndexesCount;
@@ -72,6 +75,7 @@ TEST_F(NsApi, AddTooManyIndexes) {
 				"index_" + std::to_string(rand() % kHalfOfStartNotCompositeIndexesCount + kHalfOfStartNotCompositeIndexesCount);
 			const std::string indexName = std::string(firstSubIndex).append("+").append(secondSubIndex);
 			idxDef = reindexer::IndexDef{indexName, {firstSubIndex, secondSubIndex}, "tree", "composite", IndexOpts{}};
+			++compositeIndexesCount;
 		}
 		err = rt.reindexer->AddIndex(ns, idxDef);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -89,7 +93,7 @@ TEST_F(NsApi, AddTooManyIndexes) {
 	err = rt.reindexer->AddIndex(ns, reindexer::IndexDef{indexName, {indexName}, "tree", "int", IndexOpts{}});
 	ASSERT_FALSE(err.ok());
 	ASSERT_EQ(err.what(),
-			  "Cannot add index 'too_many_indexes.index_63'. Too many non-composite indexes. 63 non-composite indexes are allowed only");
+			  "Cannot add index 'too_many_indexes.index_255'. Too many non-composite indexes. 255 non-composite indexes are allowed only");
 
 	// Add composite index
 	firstSubIndex = "index_" + std::to_string(rand() % kHalfOfStartNotCompositeIndexesCount);

@@ -261,7 +261,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 	return ser;
 }
 
-const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
+static const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
 
 void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntries::const_iterator to, WrSerializer &ser,
 								  bool stripArgs) const {

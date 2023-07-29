@@ -35,12 +35,25 @@ type TestItemMultipleCompositeSubindexes struct {
 	_      struct{} `reindex:"first+second+third+fourth,,composite"`
 }
 
+type TestItemCompositesLimit struct {
+	ID     int      `reindex:"id,hash,pk"`
+	First  int      `reindex:"first,-"`
+	Second int      `reindex:"second,-"`
+	Third  int      `reindex:"third,-"`
+	Fourth int      `reindex:"fourth,-"`
+	_      struct{} `reindex:"first+second,,composite"`
+	_      struct{} `reindex:"first+second+third,,composite"`
+	_      struct{} `reindex:"first+second+fourth,,composite"`
+}
+
 const testCompositeIndexesSubstitutionNs = "test_composite_indexes_substitution"
 const testMultipleCompositeSubindexes = "test_composite_indexes_multiple_subindexes"
+const testCompositesLimit = "test_composites_limit"
 
 func init() {
 	tnamespaces[testCompositeIndexesSubstitutionNs] = TestCompositeSubstitutionStruct{}
 	tnamespaces[testMultipleCompositeSubindexes] = TestItemMultipleCompositeSubindexes{}
+	tnamespaces[testCompositesLimit] = TestItemCompositesLimit{}
 }
 
 func printExplainRes(res *reindexer.ExplainResults) {
@@ -815,7 +828,7 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 	})
 }
 
-func TestCompositeIndexesBestSubstituition(t *testing.T) {
+func TestCompositeIndexesBestSubstitution(t *testing.T) {
 	t.Parallel()
 
 	const ns = testMultipleCompositeSubindexes
@@ -1015,6 +1028,176 @@ func TestCompositeIndexesBestSubstituition(t *testing.T) {
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
+			},
+		}, "")
+	})
+}
+
+func appendRandInts(arr []int, skipValue int, size int) []int {
+	for len(arr) < size {
+		v := rand.Intn(3000)
+		if v == skipValue {
+			continue
+		}
+		arr = append(arr, v)
+	}
+	return arr
+}
+
+func createRandIntArrayWithValue(val int, size int) []int {
+	arr := make([]int, 0, size)
+	arr = append(arr, val)
+	return appendRandInts(arr, val, size)
+}
+
+func TestCompositeSubstitutionLimit(t *testing.T) {
+	t.Parallel()
+
+	const ns = testCompositesLimit
+	item := TestItemCompositesLimit{
+		ID: rand.Intn(100), First: rand.Intn(1000), Second: rand.Intn(1000), Third: rand.Intn(1000), Fourth: rand.Intn(1000),
+	}
+	err := DB.Upsert(ns, item)
+	require.NoError(t, err)
+
+	t.Run("substitution of the 3 parts composite within limit (first index)", func(t *testing.T) {
+		first := createRandIntArrayWithValue(item.First, 20)
+		second := createRandIntArrayWithValue(item.Second, 20)
+		third := createRandIntArrayWithValue(item.Third, 10)
+		fourth := createRandIntArrayWithValue(item.Fourth, 2)
+
+		it := DB.Query(ns).
+			Where("first", reindexer.SET, first).
+			Where("second", reindexer.SET, second).
+			Where("third", reindexer.SET, third).
+			Where("fourth", reindexer.SET, fourth).
+			Explain().Exec(t)
+		require.NoError(t, it.Error())
+		defer it.Close()
+		require.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		require.NoError(t, err)
+		require.NotNil(t, explainRes)
+
+		printExplainRes(explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:   "first+second+fourth",
+				Method:  "index",
+				Keys:    1,
+				Matched: 1,
+			},
+			{
+				Field:       "third",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+		}, "")
+	})
+
+	t.Run("substitution of the 3 parts composite within limit (second index)", func(t *testing.T) {
+		first := createRandIntArrayWithValue(item.First, 20)
+		second := createRandIntArrayWithValue(item.Second, 20)
+		third := createRandIntArrayWithValue(item.Third, 2)
+		fourth := createRandIntArrayWithValue(item.Fourth, 10)
+
+		it := DB.Query(ns).
+			Where("first", reindexer.SET, first).
+			Where("second", reindexer.SET, second).
+			Where("third", reindexer.SET, third).
+			Where("fourth", reindexer.SET, fourth).
+			Explain().Exec(t)
+		require.NoError(t, it.Error())
+		defer it.Close()
+		require.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		require.NoError(t, err)
+		require.NotNil(t, explainRes)
+
+		printExplainRes(explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:   "first+second+third",
+				Method:  "index",
+				Keys:    1,
+				Matched: 1,
+			},
+			{
+				Field:       "fourth",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+		}, "")
+	})
+
+	t.Run("substitution of the 2 parts composite when 3 parts indexes' value sets are too large", func(t *testing.T) {
+		first := createRandIntArrayWithValue(item.First, 20)
+		second := createRandIntArrayWithValue(item.Second, 10)
+		third := createRandIntArrayWithValue(item.Third, 20)
+		fourth := createRandIntArrayWithValue(item.Fourth, 20)
+
+		it := DB.Query(ns).
+			Where("first", reindexer.SET, first).
+			Where("second", reindexer.SET, second).
+			Where("third", reindexer.SET, third).
+			Where("fourth", reindexer.SET, fourth).
+			Explain().Exec(t)
+		require.NoError(t, it.Error())
+		defer it.Close()
+		require.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		require.NoError(t, err)
+		require.NotNil(t, explainRes)
+
+		printExplainRes(explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:   "first+second",
+				Method:  "index",
+				Keys:    1,
+				Matched: 1,
+			},
+			{
+				Field:       "third",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+			{
+				Field:       "fourth",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+		}, "")
+	})
+
+	t.Run("substitution of the 3 parts composite with single value set exceeding the limit", func(t *testing.T) {
+		first := createRandIntArrayWithValue(item.First, 4000)
+		second := createRandIntArrayWithValue(item.Second, 1)
+		third := createRandIntArrayWithValue(item.Third, 1)
+
+		it := DB.Query(ns).
+			Where("first", reindexer.SET, first).
+			Where("second", reindexer.SET, second).
+			Where("third", reindexer.SET, third).
+			Explain().Exec(t)
+		require.NoError(t, it.Error())
+		defer it.Close()
+		require.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		require.NoError(t, err)
+		require.NotNil(t, explainRes)
+
+		printExplainRes(explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:   "first+second+third",
+				Method:  "index",
+				Keys:    1,
+				Matched: 1,
 			},
 		}, "")
 	})

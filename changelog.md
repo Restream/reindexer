@@ -1,3 +1,38 @@
+# Version 3.18.0 (29.07.2023)
+## Core
+- [fea] Increased max indexes count for each namespace up to 255 user-defined indexes (previously it was 63)
+- [fea] Added more info to the [slow logger's](readme.md#slow-actions-logging) output: mutexes timing for transactions and basic `explain` info for `select`-queries
+- [fea] Improved logic of the cost evaluation for the btree indexes usage in situations, when backgroud indexes ordering was not completed (right after write operations). Expecting more optimal execution plan in those cases
+- [fix] Changed logic of the `ALLSET` operator. Now `ALLSET` condition returns `false` for empty values sets and the result behavior is similar to MongoDB [$all](https://www.mongodb.com/docs/manual/reference/operator/query/all/)
+- [fix] Fixed automatic conversion for numeric strings with leading or trailing spaces (i.e. ' 1234' or '1234 ') into integers/floats in `WHERE`/`ORDER BY`
+- [fix] Allowed non-unique values in forced sort (`ORDER BY (id,4,2,2,5)`). If forced sort order contains same values on the different positions (i.e. `ORDER BY (id,1,2,1,5)`), then the first occurance of the value will be used for sorting
+- [fix] Added limits for the large values sets in the composite indexes substitution algorithm, introduced in v3.15.0 (due to performance issues in some cases). If the result size of the set is exceeding corresponding limit, reindexer will try to find another composite index or skip the substitution
+
+## Go connector
+- [fea] Added support for JOINs and brackets into [JSON DSL wrapper](dsl/dsl.go)
+
+## Build
+- [fea] Added support and deploy for Debian 12 (bookworm). Debian 10 (buster) build was deprecated
+- [fea] Enabled SSE4.2 for the default reindexer's builds and for the prebuilt packages. SSE may still be disabled by passing `-DENABLE_SSE=OFF` to `cmake` command
+
+## Face
+- [fea] Changed the scale window icon for textareas
+- [fea] Added the background color to the Close icon in the search history on the Namespace page
+- [fea] Improved the buttons' behavior on the Query builder page
+- [fea] Added the database name size limit.
+- [fea] Improved the drop-down section behavior on the Query builder page
+- [fea] Added new proc settings to the Index config
+- [fix] Fixed the columns' settings resetting after the Perfstats page reloading
+- [fix] Removed the double requests on the Perfstats page
+- [fix] Fixed the JSON Paths tooltip description
+- [fix] Fixed the pie chart position in Safari
+- [fix] Fixed the popup window size for the long text
+- [fix] Fixed the bottom padding on the statistics legend window
+- [fix] Fixed the modal window to inform about disabled memory statistics
+- [fix] Fixed the filter removal
+- [fix] Fixed the filter result page when the filter is removed
+- [fix] Fixed the redirect to the wrong page after all items were removed
+
 # Version 3.17.0 (06.07.2023)
 ## Core
 - [fea] Optimized namespaces' locks for queries to the system namespaces, containing explicit list of names (for example, `SELECT * FROM #memstats WHERE "name" IN ('ns1', 'nsx', 'ns19')` now requires shared locks for the listed namespaces only)

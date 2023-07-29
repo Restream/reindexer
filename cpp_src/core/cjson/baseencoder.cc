@@ -14,10 +14,7 @@
 namespace reindexer {
 
 template <typename Builder>
-BaseEncoder<Builder>::BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSet* filter) : tagsMatcher_(tagsMatcher), filter_(filter) {
-	static_assert(std::numeric_limits<decltype(objectScalarIndexes_)>::digits >= maxIndexes,
-				  "objectScalarIndexes_ needs to provide 'maxIndexes' bits or more");
-}
+BaseEncoder<Builder>::BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSet* filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
 
 template <typename Builder>
 void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, IAdditionalDatasource<Builder>* ds) {
@@ -45,7 +42,7 @@ void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, IAdditiona
 		return;
 	}
 
-	objectScalarIndexes_ = 0;
+	objectScalarIndexes_.reset();
 	std::fill_n(std::begin(fieldsoutcnt_), pl.NumFields(), 0);
 	builder.SetTagsMatcher(tagsMatcher_);
 	if constexpr (kWithTagsPathTracking) {
@@ -75,7 +72,7 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEnco
 		[[maybe_unused]] const ctag beginTag = rdser.GetCTag();
 		assertrx(beginTag.Type() == TAG_OBJECT);
 
-		tagsLengths_.reserve(maxIndexes);
+		tagsLengths_.reserve(kMaxIndexes);
 		tagsLengths_.push_back(StartObject);
 
 		while (collectTagsSizes(pl, rdser)) {
@@ -149,14 +146,14 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 	// get field from indexed field
 	if (tagField >= 0) {
 		if (!pl) throw Error(errParams, "Trying to encode index field %d without payload", tagField);
-		if ((objectScalarIndexes_ & (1ULL << tagField)) && (tagType != TAG_ARRAY)) {
+		if (objectScalarIndexes_.test(tagField) && (tagType != TAG_ARRAY)) {
 			std::string fieldName;
 			if (tagName && tagsMatcher_) {
 				fieldName = tagsMatcher_->tag2name(tagName);
 			}
 			throw Error(errParams, "Non-array field '%s' [%d] from '%s' can only be encoded once.", fieldName, tagField, pl->Type().Name());
 		}
-		objectScalarIndexes_ |= (1ULL << tagField);
+		objectScalarIndexes_.set(tagField);
 		assertrx(tagField < pl->NumFields());
 		int* cnt = &fieldsoutcnt_[tagField];
 		switch (tagType) {
@@ -220,7 +217,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				break;
 			}
 			case TAG_OBJECT: {
-				objectScalarIndexes_ = 0;
+				objectScalarIndexes_.reset();
 				if (visible) {
 					auto objNode = builder.Object(tagName);
 					while (encode(pl, rdser, objNode, true))

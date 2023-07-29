@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -1774,7 +1773,7 @@ func getPK(ns *testNamespace, val reflect.Value) string {
 		case reflect.String:
 			buf.WriteString(v.String())
 		default:
-			panic(errors.New("invalid pk field type"))
+			panic(fmt.Errorf("invalid pk field type: '%s'", v.Kind().String()))
 		}
 		buf.WriteByte('#')
 	}

@@ -287,9 +287,12 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 	auto strHolder = ns_.StrHolder(ctx);
 	auto indexesCacheCleaner{ns_.GetIndexesCacheCleaner()};
 	h_vector<bool, 32> needUpdateCompIndexes(ns_.indexes_.compositeIndexesSize(), false);
-	for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
-		const auto &fields = ns_.indexes_[i]->Fields();
-		const auto idxId = i - ns_.indexes_.firstCompositePos();
+	const auto firstCompositePos = ns_.indexes_.firstCompositePos();
+	const auto totalIndexes = ns_.indexes_.totalSize();
+	for (int i = firstCompositePos; i < totalIndexes; ++i) {
+		auto &compositeIdx = ns_.indexes_[i];
+		const auto &fields = compositeIdx->Fields();
+		const auto idxId = i - firstCompositePos;
 		for (const auto f : fields) {
 			if (f == IndexValueType::SetByJsonPath) continue;
 			if (f == field.index()) {
@@ -307,16 +310,17 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 			if (!needUpdateCompIndexes[idxId]) continue;
 		}
 		bool needClearCache{false};
-		ns_.indexes_[i]->Delete(Variant(ns_.items_[itemId]), itemId, *strHolder, needClearCache);
-		if (needClearCache && ns_.indexes_[i]->IsOrdered()) indexesCacheCleaner.Add(ns_.indexes_[i]->SortId());
+		compositeIdx->Delete(Variant(ns_.items_[itemId]), itemId, *strHolder, needClearCache);
+		if (needClearCache && compositeIdx->IsOrdered()) indexesCacheCleaner.Add(compositeIdx->SortId());
 	}
 
 	const auto insertItemIntoCompositeIndexes = [&] {
-		for (int i = ns_.indexes_.firstCompositePos(); i < ns_.indexes_.totalSize(); ++i) {
-			if (!needUpdateCompIndexes[i - ns_.indexes_.firstCompositePos()]) continue;
+		for (int i = firstCompositePos; i < totalIndexes; ++i) {
+			if (!needUpdateCompIndexes[i - firstCompositePos]) continue;
 			bool needClearCache{false};
-			ns_.indexes_[i]->Upsert(Variant(ns_.items_[itemId]), itemId, needClearCache);
-			if (needClearCache && ns_.indexes_[i]->IsOrdered()) indexesCacheCleaner.Add(ns_.indexes_[i]->SortId());
+			auto &compositeIdx = ns_.indexes_[i];
+			compositeIdx->Upsert(Variant(ns_.items_[itemId]), itemId, needClearCache);
+			if (needClearCache && compositeIdx->IsOrdered()) indexesCacheCleaner.Add(compositeIdx->SortId());
 		}
 	};
 
@@ -330,7 +334,8 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 			Variant oldTupleValue = item.GetField(0);
 			oldTupleValue.EnsureHold();
 			bool needClearCache{false};
-			ns_.indexes_[0]->Delete(oldTupleValue, itemId, *strHolder, needClearCache);
+			auto &tupleIdx = ns_.indexes_[0];
+			tupleIdx->Delete(oldTupleValue, itemId, *strHolder, needClearCache);
 			Variant tupleValue;
 			std::exception_ptr exception;
 			try {
@@ -338,9 +343,9 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 			} catch (...) {
 				exception = std::current_exception();
 			}
-			tupleValue = ns_.indexes_[0]->Upsert(item.GetField(0), itemId, needClearCache);
-			if (needClearCache && ns_.indexes_[0]->IsOrdered()) indexesCacheCleaner.Add(ns_.indexes_[0]->SortId());
-			pl.Set(0, {std::move(tupleValue)});
+			tupleValue = tupleIdx->Upsert(item.GetField(0), itemId, needClearCache);
+			if (needClearCache && tupleIdx->IsOrdered()) indexesCacheCleaner.Add(tupleIdx->SortId());
+			pl.Set(0, std::move(tupleValue));
 			ns_.tagsMatcher_.try_merge(item.tagsMatcher());
 			if (exception) {
 				std::rethrow_exception(exception);

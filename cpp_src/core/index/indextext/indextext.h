@@ -49,7 +49,7 @@ public:
 		Base::ClearCache();
 		cache_ft_.reset();
 	}
-	void ClearCache(const std::bitset<64>& s) override { Base::ClearCache(s); }
+	void ClearCache(const std::bitset<kMaxIndexes>& s) override { Base::ClearCache(s); }
 	void MarkBuilt() noexcept override { assertrx(0); }
 	bool IsFulltext() const noexcept override { return true; }
 
@@ -60,7 +60,7 @@ protected:
 	FtCtx::Ptr prepareFtCtx(const BaseFunctionCtx::Ptr&);
 	SelectKeyResults doSelectKey(const VariantArray& keys, const std::optional<IdSetCacheKey>&, FtMergeStatuses&&,
 								 FtUseExternStatuses useExternSt, bool inTransaction, FtCtx::Ptr, const RdxContext&);
-	SelectKeyResults resultFromCache(const VariantArray& keys, const FtIdSetCache::Iterator&, FtCtx::Ptr&);
+	SelectKeyResults resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&&, FtCtx::Ptr&);
 	void build(const RdxContext& rdxCtx);
 
 	void initSearchers();

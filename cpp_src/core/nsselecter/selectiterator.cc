@@ -77,7 +77,7 @@ void SelectIterator::Start(bool reverse, int maxIterations) {
 }
 
 // Generic next implementation
-bool SelectIterator::nextFwd(IdType minHint) {
+bool SelectIterator::nextFwd(IdType minHint) noexcept {
 	if (minHint > lastVal_) lastVal_ = minHint - 1;
 	int minVal = INT_MAX;
 	for (auto it = begin(); it != end(); it++) {
@@ -112,7 +112,7 @@ bool SelectIterator::nextFwd(IdType minHint) {
 	return lastVal_ != INT_MAX;
 }
 
-bool SelectIterator::nextRev(IdType maxHint) {
+bool SelectIterator::nextRev(IdType maxHint) noexcept {
 	if (maxHint < lastVal_) lastVal_ = maxHint + 1;
 
 	int maxVal = INT_MIN;
@@ -145,7 +145,7 @@ bool SelectIterator::nextRev(IdType maxHint) {
 }
 
 // Single idset next implementation
-bool SelectIterator::nextFwdSingleIdset(IdType minHint) {
+bool SelectIterator::nextFwdSingleIdset(IdType minHint) noexcept {
 	if (minHint > lastVal_) lastVal_ = minHint - 1;
 	auto it = begin();
 	if (it->useBtree_) {
@@ -167,7 +167,7 @@ bool SelectIterator::nextFwdSingleIdset(IdType minHint) {
 	return !(lastVal_ == INT_MAX);
 }
 
-bool SelectIterator::nextRevSingleIdset(IdType maxHint) {
+bool SelectIterator::nextRevSingleIdset(IdType maxHint) noexcept {
 	if (maxHint < lastVal_) lastVal_ = maxHint + 1;
 
 	auto it = begin();
@@ -185,8 +185,10 @@ bool SelectIterator::nextRevSingleIdset(IdType maxHint) {
 	return !(lastVal_ == INT_MIN);
 }
 
+bool SelectIterator::nextUnbuiltSortOrders() noexcept { return begin()->indexForwardIter_->Next(); }
+
 // Single range next implementation
-bool SelectIterator::nextFwdSingleRange(IdType minHint) {
+bool SelectIterator::nextFwdSingleRange(IdType minHint) noexcept {
 	if (minHint > lastVal_) lastVal_ = minHint - 1;
 
 	if (lastVal_ < begin()->rBegin_) lastVal_ = begin()->rBegin_ - 1;
@@ -196,7 +198,7 @@ bool SelectIterator::nextFwdSingleRange(IdType minHint) {
 	return (lastVal_ != INT_MAX);
 }
 
-bool SelectIterator::nextRevSingleRange(IdType maxHint) {
+bool SelectIterator::nextRevSingleRange(IdType maxHint) noexcept {
 	if (maxHint < lastVal_) lastVal_ = maxHint + 1;
 
 	if (lastVal_ > begin()->rrBegin_) lastVal_ = begin()->rrBegin_ + 1;
@@ -207,7 +209,7 @@ bool SelectIterator::nextRevSingleRange(IdType maxHint) {
 }
 
 // Unsorted next implementation
-bool SelectIterator::nextUnsorted() {
+bool SelectIterator::nextUnsorted() noexcept {
 	if (lastIt_ == end()) {
 		return false;
 	} else if (lastIt_->it_ == lastIt_->end_) {
@@ -229,8 +231,6 @@ bool SelectIterator::nextUnsorted() {
 
 	return false;
 }
-
-bool SelectIterator::nextUnbuiltSortOrders() { return begin()->indexForwardIter_->Next(); }
 
 void SelectIterator::ExcludeLastSet(const PayloadValue &value, IdType rowId, IdType properRowId) {
 	for (auto &comp : comparators_) comp.ExcludeDistinct(value, properRowId);
@@ -270,8 +270,12 @@ void SelectIterator::AppendAndBind(SelectKeyResult &other, const PayloadType &ty
 }
 
 double SelectIterator::Cost(int expectedIterations) const noexcept {
-	if (type_ == UnbuiltSortOrdersIndex) return -1;
-	if (forcedFirst_) return -GetMaxIterations();
+	if (type_ == UnbuiltSortOrdersIndex) {
+		return -1;
+	}
+	if (forcedFirst_) {
+		return -GetMaxIterations();
+	}
 	double result{0.0};
 	if (!comparators_.empty()) {
 		const auto jsonPathComparators =
@@ -279,7 +283,13 @@ double SelectIterator::Cost(int expectedIterations) const noexcept {
 		// Comparatos with non index fields must have much higher cost, than comparators with index fields
 		result = jsonPathComparators ? (8 * double(expectedIterations) + jsonPathComparators + 1) : (double(expectedIterations) + 1);
 	}
-	result += static_cast<double>(distinct ? 1 : GetMaxIterations()) * size();
+	if (distinct) {
+		result += size();
+	} else if (type_ != SingleIdSetWithDeferedSort && type_ != RevSingleIdSetWithDeferedSort && !deferedExplicitSort) {
+		result += static_cast<double>(GetMaxIterations()) * size();
+	} else {
+		result += static_cast<double>(CostWithDefferedSort(size(), GetMaxIterations(), expectedIterations));
+	}
 	return isNotOperation_ ? expectedIterations + result : result;
 }
 

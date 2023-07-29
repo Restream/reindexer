@@ -220,7 +220,7 @@ private:
 	std::shared_ptr<NamespaceImpl> ns_;
 	std::unique_ptr<NamespaceImpl> nsCopy_;
 	std::atomic<bool> hasCopy_ = {false};
-	using Mutex = MarkedMutex<std::timed_mutex, MutexMark::Namespace>;
+	using Mutex = MarkedMutex<std::timed_mutex, MutexMark::CloneNs>;
 	mutable Mutex clonerMtx_;
 	mutable spinlock nsPtrSpinlock_;
 	std::atomic<int> startCopyPolicyTxSize_;
@@ -235,4 +235,3 @@ private:
 #undef handleInvalidation
 
 }  // namespace reindexer
-

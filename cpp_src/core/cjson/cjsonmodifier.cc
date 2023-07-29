@@ -36,10 +36,10 @@ public:
 	TagsPath jsonPath;
 	IndexedTagsPath currObjPath;
 	FieldModifyMode mode;
-	const Payload *payload = nullptr;
 	bool fieldUpdated = false;
 	bool updateArrayElements = false;
-	std::array<unsigned, maxIndexes> fieldsArrayOffsets;
+	const Payload *payload = nullptr;
+	std::array<unsigned, kMaxIndexes> fieldsArrayOffsets;
 
 private:
 	bool isForAllItems_ = false;

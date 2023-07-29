@@ -39,34 +39,39 @@ public:
 
 		err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
-		DefineNamespaceDataset(
-			default_namespace,
-			{
-				IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameGenre, "tree", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNamePackages, "hash", "int", IndexOpts{}.Array(), 0},
-				IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameCountries, "tree", "string", IndexOpts{}.Array(), 0},
-				IndexDeclaration{kFieldNameAge, "hash", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameRate, "tree", "double", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameIsDeleted, "-", "bool", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameActor, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
-				IndexDeclaration{kFieldNamePriceId, "hash", "int", IndexOpts{}.Array(), 0},
-				IndexDeclaration{kFieldNameLocation, "tree", "string", IndexOpts{}.SetCollateMode(CollateNone), 0},
-				IndexDeclaration{kFieldNameEndTime, "hash", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameBtreeIdsets, "hash", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameTemp, "tree", "string", IndexOpts{}.SetCollateMode(CollateASCII), 0},
-				IndexDeclaration{kFieldNameNumeric, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
-				IndexDeclaration{kFieldNameUuid, "hash", "uuid", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameUuidArr, "hash", "uuid", IndexOpts{}.Array(), 0},
-				IndexDeclaration{(kFieldNameId + compositePlus + kFieldNameTemp).c_str(), "tree", "composite", IndexOpts{}.PK(), 0},
-				IndexDeclaration{(kFieldNameAge + compositePlus + kFieldNameGenre).c_str(), "hash", "composite", IndexOpts{}, 0},
-				IndexDeclaration{(kFieldNameUuid + compositePlus + kFieldNameName).c_str(), "hash", "composite", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts{}.Sparse(), 0},
-			});
+		DefineNamespaceDataset(default_namespace,
+							   {
+								   IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameGenre, "tree", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNamePackages, "hash", "int", IndexOpts{}.Array(), 0},
+								   IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameCountries, "tree", "string", IndexOpts{}.Array(), 0},
+								   IndexDeclaration{kFieldNameAge, "hash", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameRate, "tree", "double", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameIsDeleted, "-", "bool", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameActor, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
+								   IndexDeclaration{kFieldNamePriceId, "hash", "int", IndexOpts{}.Array(), 0},
+								   IndexDeclaration{kFieldNameLocation, "tree", "string", IndexOpts{}.SetCollateMode(CollateNone), 0},
+								   IndexDeclaration{kFieldNameEndTime, "hash", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameBtreeIdsets, "hash", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameTemp, "tree", "string", IndexOpts{}.SetCollateMode(CollateASCII), 0},
+								   IndexDeclaration{kFieldNameNumeric, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
+								   IndexDeclaration{kFieldNameUuid, "hash", "uuid", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameUuidArr, "hash", "uuid", IndexOpts{}.Array(), 0},
+								   IndexDeclaration{kCompositeFieldIdTemp, "tree", "composite", IndexOpts{}.PK(), 0},
+								   IndexDeclaration{kCompositeFieldAgeGenre, "hash", "composite", IndexOpts{}, 0},
+								   IndexDeclaration{kCompositeFieldUuidName, "hash", "composite", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts{}.Sparse(), 0},
+							   });
+		addIndexFields(default_namespace, kCompositeFieldIdTemp,
+					   {{kFieldNameId, reindexer::KeyValueType::Int{}}, {kFieldNameTemp, reindexer::KeyValueType::String{}}});
+		addIndexFields(default_namespace, kCompositeFieldAgeGenre,
+					   {{kFieldNameAge, reindexer::KeyValueType::Int{}}, {kFieldNameGenre, reindexer::KeyValueType::Int{}}});
+		addIndexFields(default_namespace, kCompositeFieldUuidName,
+					   {{kFieldNameUuid, reindexer::KeyValueType::Uuid{}}, {kFieldNameName, reindexer::KeyValueType::String{}}});
 
 		err = rt.reindexer->OpenNamespace(joinNs);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -95,12 +100,21 @@ public:
 								IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts(), 0},
 								IndexDeclaration{kFieldNamePrice, "hash", "int", IndexOpts(), 0},
 								IndexDeclaration{kFieldNameName, "text", "string", IndexOpts(), 0},
-								IndexDeclaration{kCompositeFieldPricePages.c_str(), "hash", "composite", IndexOpts(), 0},
-								IndexDeclaration{kCompositeFieldTitleName.c_str(), "tree", "composite", IndexOpts(), 0},
-								IndexDeclaration{kCompositeFieldPriceTitle.c_str(), "hash", "composite", IndexOpts(), 0},
-								IndexDeclaration{kCompositeFieldPagesTitle.c_str(), "hash", "composite", IndexOpts(), 0},
-								IndexDeclaration{(std::string(kFieldNameBookid) + "+" + kFieldNameBookid2).c_str(), "hash", "composite",
-												 IndexOpts().PK(), 0}});
+								IndexDeclaration{kCompositeFieldPricePages, "hash", "composite", IndexOpts(), 0},
+								IndexDeclaration{kCompositeFieldTitleName, "tree", "composite", IndexOpts(), 0},
+								IndexDeclaration{kCompositeFieldPriceTitle, "hash", "composite", IndexOpts(), 0},
+								IndexDeclaration{kCompositeFieldPagesTitle, "hash", "composite", IndexOpts(), 0},
+								IndexDeclaration{kCompositeFieldBookidBookid2, "hash", "composite", IndexOpts().PK(), 0}});
+		addIndexFields(compositeIndexesNs, kCompositeFieldPricePages,
+					   {{kFieldNamePrice, reindexer::KeyValueType::Int{}}, {kFieldNamePages, reindexer::KeyValueType::Int{}}});
+		addIndexFields(compositeIndexesNs, kCompositeFieldTitleName,
+					   {{kFieldNameTitle, reindexer::KeyValueType::String{}}, {kFieldNameName, reindexer::KeyValueType::String{}}});
+		addIndexFields(compositeIndexesNs, kCompositeFieldPriceTitle,
+					   {{kFieldNamePrice, reindexer::KeyValueType::Int{}}, {kFieldNameTitle, reindexer::KeyValueType::String{}}});
+		addIndexFields(compositeIndexesNs, kCompositeFieldPagesTitle,
+					   {{kFieldNamePages, reindexer::KeyValueType::Int{}}, {kFieldNameTitle, reindexer::KeyValueType::String{}}});
+		addIndexFields(compositeIndexesNs, kCompositeFieldBookidBookid2,
+					   {{kFieldNameBookid, reindexer::KeyValueType::Int{}}, {kFieldNameBookid2, reindexer::KeyValueType::Int{}}});
 
 		err = rt.reindexer->OpenNamespace(comparatorsNs);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -133,7 +147,14 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(btreeIdxOptNs, {IndexDeclaration{kFieldNameId, "tree", "int", IndexOpts().PK(), 0},
 											   IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts(), 0}});
+		initConditionsNs();
 	}
+
+	void initConditionsNs();
+	void FillConditionsNs();
+	void CheckConditions();
+	enum class NullAllowed : bool { Yes = true, No = false };
+	void checkAllConditions(const std::string& fieldName, reindexer::KeyValueType fieldType, NullAllowed);
 
 	template <typename... T>
 	void ExecuteAndVerify(const Query& query, T... args) {
@@ -1810,32 +1831,34 @@ protected:
 		// ----------
 		reindexer::Point point{randPoint(10)};
 		double distance = randBinDouble(0, 1);
-		std::string dslQuery =
-			std::string(R"({"namespace":")") + geomNs +
-			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
-			kFieldNamePointLinearRTree + R"(","value":[[)" + toString(point.X()) + ',' + toString(point.Y()) + "]," + toString(distance) +
-			R"(]}],"merge_queries":[],"aggregations":[]})";
+		std::string dslQuery = fmt::sprintf(
+			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":"%s","value":[[%f, %f], %f]}],"merge_queries":[],"aggregations":[]})",
+			geomNs, kFieldNamePointLinearRTree, point.X(), point.Y(), distance);
 		const Query checkQuery1{Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance)};
 		checkDslQuery(dslQuery, checkQuery1);
 
 		// ----------
 		point = randPoint(10);
 		distance = randBinDouble(0, 1);
-		dslQuery =
-			std::string(R"({"namespace":")") + geomNs +
-			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
-			kFieldNamePointLinearRTree + R"(","value":[)" + toString(distance) + ",[" + toString(point.X()) + ',' + toString(point.Y()) +
-			R"(]]}],"merge_queries":[],"aggregations":[]})";
+		dslQuery = fmt::sprintf(
+			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":"%s","value":[%f,[%f,%f]]}],"merge_queries":[],"aggregations":[]})",
+			geomNs, kFieldNamePointLinearRTree, distance, point.X(), point.Y());
 		const Query checkQuery2{Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance)};
 		checkDslQuery(dslQuery, checkQuery2);
 
 		// ----------
-		dslQuery =
-			R"({"namespace":")"s + default_namespace +
-			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"gt","first_field":")" +
-			kFieldNameStartTime + R"(","second_field":")" + kFieldNamePackages + R"("}],"merge_queries":[],"aggregations":[]})";
+		dslQuery = fmt::sprintf(
+			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"gt","first_field":"%s","second_field":"%s"}],"merge_queries":[],"aggregations":[]})",
+			default_namespace, kFieldNameStartTime, kFieldNamePackages);
 		const Query checkQuery3{Query{default_namespace}.WhereBetweenFields(kFieldNameStartTime, CondGt, kFieldNamePackages)};
 		checkDslQuery(dslQuery, checkQuery3);
+
+		// -------
+		dslQuery = fmt::sprintf(
+			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"SET","field":"%s","Value":["1", " 10 ", "100 ", " 1000"]}],"merge_queries":[],"aggregations":[]})",
+			default_namespace, kFieldNameId);
+		const Query checkQuery4{Query{default_namespace}.Where(kFieldNameId, CondSet, {1, 10, 100, 1000})};
+		checkDslQuery(dslQuery, checkQuery4);
 	}
 
 	void CheckSqlQueries() {
@@ -2117,7 +2140,7 @@ protected:
 	}
 	void sortByNsDifferentTypesImpl(std::string_view fillingNs, const reindexer::Query& q, const std::string& sortPrefix);
 
-	const char* kFieldNameId = "id";
+	const std::string kFieldNameId = "id";
 	const char* kFieldNameGenre = "genre";
 	const char* kFieldNameYear = "year";
 	const char* kFieldNameYearSparse = "year_sparse";
@@ -2134,10 +2157,10 @@ protected:
 	const char* kFieldNameEndTime = "end_time";
 	const char* kFieldNameStartTime = "start_time";
 	const char* kFieldNamePhone = "phone";
-	const char* kFieldNameTemp = "tmp";
+	const std::string kFieldNameTemp = "tmp";
 	const char* kFieldNameNumeric = "numeric";
-	const char* kFieldNameBookid = "bookid";
-	const char* kFieldNameBookid2 = "bookid2";
+	const std::string kFieldNameBookid = "bookid";
+	const std::string kFieldNameBookid2 = "bookid2";
 	const char* kFieldNameTitle = "title";
 	const char* kFieldNamePages = "pages";
 	const char* kFieldNamePrice = "price";
@@ -2151,7 +2174,7 @@ protected:
 	const char* kFieldNamePointNonIndex = "point_field_non_index";
 
 	const char* kFieldNameColumnInt = "columnInt";
-	const char* kFieldNameColumnInt64 = "columnInt64";
+	const std::string kFieldNameColumnInt64 = "columnInt64";
 	const char* kFieldNameColumnDouble = "columnDouble";
 	const char* kFieldNameColumnString = "columnString";
 	const char* kFieldNameColumnFullText = "columnFullText";
@@ -2161,7 +2184,6 @@ protected:
 	const char* kFieldNameColumnTree = "columnTree";
 	const char* kFieldNameObjectField = "object";
 
-	const std::string compositePlus = "+";
 	const std::string testSimpleNs = "test_simple_namespace";
 	const std::string joinNs = "join_namespace";
 	const std::string compositeIndexesNs = "composite_indexes_namespace";
@@ -2170,16 +2192,23 @@ protected:
 	const std::string nsWithObject = "namespace_with_object";
 	const std::string geomNs = "geom_namespace";
 	const std::string btreeIdxOptNs = "btree_idx_opt_namespace";
+	const std::string conditionsNs = "conditions_namespace";
 
+	const std::string compositePlus = "+";
+	const std::string kCompositeFieldIdTemp = kFieldNameId + compositePlus + kFieldNameTemp;
+	const std::string kCompositeFieldAgeGenre = kFieldNameAge + compositePlus + kFieldNameGenre;
+	const std::string kCompositeFieldUuidName = kFieldNameUuid + compositePlus + kFieldNameName;
 	const std::string kCompositeFieldPricePages = kFieldNamePrice + compositePlus + kFieldNamePages;
 	const std::string kCompositeFieldTitleName = kFieldNameTitle + compositePlus + kFieldNameName;
 	const std::string kCompositeFieldPriceTitle = kFieldNamePrice + compositePlus + kFieldNameTitle;
 	const std::string kCompositeFieldPagesTitle = kFieldNamePages + compositePlus + kFieldNameTitle;
+	const std::string kCompositeFieldBookidBookid2 = kFieldNameBookid + compositePlus + kFieldNameBookid2;
 
 	std::atomic<int> currBtreeIdsetsValue = rand() % 10000;
 	static constexpr size_t forcedSortOffsetNsSize = 1000;
 	static constexpr int forcedSortOffsetMaxValue = 1000;
 	static constexpr size_t geomNsSize = 10000;
 	static constexpr int btreeIdxOptNsSize = 10000;
+	size_t conditionsNsSize = 0;
 	std::vector<std::pair<int, int>> forcedSortOffsetValues;
 };

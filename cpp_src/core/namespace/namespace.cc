@@ -16,13 +16,15 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 		txStatsCounter_.Count(tx);
 	}
 	bool wasCopied = false;	 // NOLINT(*deadcode.DeadStores)
-	QueryStatCalculator statCalculator(
-		long_actions::Logger<Transaction>{tx, longTxLoggingParams_.load(std::memory_order_relaxed), wasCopied});
+	auto params = longTxLoggingParams_.load(std::memory_order_relaxed);
+	QueryStatCalculator statCalculator(long_actions::Logger<Transaction>{tx, params, wasCopied}, params.thresholdUs >= 0);
 
 	PerfStatCalculatorMT txCommitCalc(commitStatsCounter_, enablePerfCounters);
 	if (needNamespaceCopy(nsl, tx)) {
 		PerfStatCalculatorMT calc(nsl->updatePerfCounter_, enablePerfCounters);
-		contexted_unique_lock<Mutex, const RdxContext> lck(clonerMtx_, &ctx);
+
+		auto lck = statCalculator.CreateLock<contexted_unique_lock>(clonerMtx_, &ctx);
+
 		nsl = ns_;
 		if (needNamespaceCopy(nsl, tx)) {
 			PerfStatCalculatorMT nsCopyCalc(copyStatsCounter_, enablePerfCounters);
@@ -32,12 +34,13 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 			hasCopy_.store(true, std::memory_order_release);
 			CounterGuardAIR32 cg(nsl->cancelCommitCnt_);
 			try {
-				auto rlck = nsl->rLock(ctx);
-				auto storageLock = nsl->storage_.FullLock();
+				auto rlck = statCalculator.CreateLock(*nsl, &NamespaceImpl::rLock, ctx);
+				auto storageLock = statCalculator.CreateLock(nsl->storage_, &AsyncStorage::FullLock);
+
 				cg.Reset();
 				nsCopy_.reset(new NamespaceImpl(*nsl, storageLock));
 				nsCopyCalc.HitManualy();
-				nsCopy_->CommitTransaction(tx, result, NsContext(ctx).NoLock());
+				nsCopy_->CommitTransaction(tx, result, NsContext(ctx).NoLock(), statCalculator);
 				if (nsCopy_->lastUpdateTime_) {
 					nsCopy_->lastUpdateTime_ -= nsCopy_->config_.optimizationTimeout * 2;
 					nsCopy_->optimizeIndexes(NsContext(ctx).NoLock());
@@ -64,11 +67,11 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 			}
 			nsl = ns_;
 			lck.unlock();
-			nsl->storage_.TryForceFlush();
+			statCalculator.LogFlushDuration(nsl->storage_, &AsyncStorage::TryForceFlush);
 			return;
 		}
 	}
-	handleInvalidation(NamespaceImpl::CommitTransaction)(tx, result, NsContext(ctx));
+	handleInvalidation(NamespaceImpl::CommitTransaction)(tx, result, NsContext(ctx), statCalculator);
 }
 
 NamespacePerfStat Namespace::GetPerfStat(const RdxContext& ctx) {

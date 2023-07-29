@@ -46,7 +46,7 @@ void ExplainCalc::LogDump(int logLevel) {
 	}
 }
 
-static const char *joinTypeName(JoinType type) {
+constexpr inline const char *joinTypeName(JoinType type) noexcept {
 	switch (type) {
 		case JoinType::InnerJoin:
 			return "inner_join ";
@@ -61,7 +61,7 @@ static const char *joinTypeName(JoinType type) {
 	}
 }
 
-static const char *opName(OpType op, bool first = true) {
+constexpr inline const char *opName(OpType op, bool first = true) {
 	switch (op) {
 		case OpAnd:
 			return first ? "" : "and ";
@@ -70,7 +70,7 @@ static const char *opName(OpType op, bool first = true) {
 		case OpNot:
 			return "not ";
 		default:
-			abort();
+			throw Error(errLogic, "Unexpected op type: %d", int(op));
 	}
 }
 
@@ -207,50 +207,50 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 	return name.str();
 }
 
-ExplainCalc::Duration ExplainCalc::lap() {
+ExplainCalc::Duration ExplainCalc::lap() noexcept {
 	auto now = Clock::now();
 	Duration d = now - last_point_;
 	last_point_ = now;
 	return d;
 }
 
-int ExplainCalc::To_us(const ExplainCalc::Duration &d) { return duration_cast<microseconds>(d).count(); }
+int ExplainCalc::To_us(const ExplainCalc::Duration &d) noexcept { return duration_cast<microseconds>(d).count(); }
 
-void reindexer::ExplainCalc::StartTiming() {
+void reindexer::ExplainCalc::StartTiming() noexcept {
 	if (enabled_) lap();
 }
 
-void reindexer::ExplainCalc::StopTiming() {
+void reindexer::ExplainCalc::StopTiming() noexcept {
 	if (enabled_) total_ = prepare_ + select_ + postprocess_ + loop_;
 }
 
-void reindexer::ExplainCalc::AddPrepareTime() {
+void reindexer::ExplainCalc::AddPrepareTime() noexcept {
 	if (enabled_) prepare_ += lap();
 }
 
-void reindexer::ExplainCalc::AddSelectTime() {
+void reindexer::ExplainCalc::AddSelectTime() noexcept {
 	if (enabled_) select_ += lap();
 }
 
-void reindexer::ExplainCalc::AddPostprocessTime() {
+void reindexer::ExplainCalc::AddPostprocessTime() noexcept {
 	if (enabled_) postprocess_ += lap();
 }
 
-void reindexer::ExplainCalc::AddLoopTime() {
+void reindexer::ExplainCalc::AddLoopTime() noexcept {
 	if (enabled_) loop_ += lap();
 }
 
-void reindexer::ExplainCalc::StartSort() {
+void reindexer::ExplainCalc::StartSort() noexcept {
 	if (enabled_) sort_start_point_ = Clock::now();
 }
 
-void reindexer::ExplainCalc::StopSort() {
+void reindexer::ExplainCalc::StopSort() noexcept {
 	if (enabled_) sort_ = Clock::now() - sort_start_point_;
 }
 
-void reindexer::ExplainCalc::AddIterations(int iters) { iters_ += iters; }
-void reindexer::ExplainCalc::PutSortIndex(std::string_view index) { sortIndex_ = index; }
-void ExplainCalc::PutSelectors(SelectIteratorContainer *qres) { selectors_ = qres; }
-void ExplainCalc::PutJoinedSelectors(JoinedSelectors *jselectors) { jselectors_ = jselectors; }
+void reindexer::ExplainCalc::AddIterations(int iters) noexcept { iters_ += iters; }
+void reindexer::ExplainCalc::PutSortIndex(std::string_view index) noexcept { sortIndex_ = index; }
+void ExplainCalc::PutSelectors(SelectIteratorContainer *qres) noexcept { selectors_ = qres; }
+void ExplainCalc::PutJoinedSelectors(JoinedSelectors *jselectors) noexcept { jselectors_ = jselectors; }
 
 }  // namespace reindexer

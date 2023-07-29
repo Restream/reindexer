@@ -7,6 +7,7 @@
 #include "debug/backtrace.h"
 #include "reindexer_version.h"
 #include "repair_tool.h"
+#include "tools/cpucheck.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
 
@@ -41,6 +42,8 @@ static void InstallLogLevel(const std::vector<std::string>& args) {
 int main(int argc, char* argv[]) {
 	using namespace reindexer_tool;
 	reindexer::debug::backtrace_init();
+
+	reindexer::CheckRequiredSSESupport();
 
 	args::ArgumentParser parser("Reindexer client tool");
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});

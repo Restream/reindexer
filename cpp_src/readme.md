@@ -57,7 +57,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-buster`, `debian-bullseye`, `ubuntu-bionic`, `ubuntu-focal`, `ubuntu-jammy`
+Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-bionic`, `ubuntu-focal`, `ubuntu-jammy`
 
 ## OSX brew
 

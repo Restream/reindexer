@@ -22,34 +22,42 @@ private:
 	typedef Clock::time_point time_point;
 
 public:
+	ExplainCalc() = default;
 	ExplainCalc(bool enable) noexcept : enabled_(enable) {}
 
-	void StartTiming();
-	void StopTiming();
+	void StartTiming() noexcept;
+	void StopTiming() noexcept;
 
-	void AddPrepareTime();
-	void AddSelectTime();
-	void AddPostprocessTime();
-	void AddLoopTime();
-	void AddIterations(int iters);
-	void StartSort();
-	void StopSort();
+	void AddPrepareTime() noexcept;
+	void AddSelectTime() noexcept;
+	void AddPostprocessTime() noexcept;
+	void AddLoopTime() noexcept;
+	void AddIterations(int iters) noexcept;
+	void StartSort() noexcept;
+	void StopSort() noexcept;
 
 	void PutCount(int cnt) noexcept { count_ = cnt; }
-	void PutSortIndex(std::string_view index);
-	void PutSelectors(SelectIteratorContainer *qres);
-	void PutJoinedSelectors(JoinedSelectors *jselectors);
+	void PutSortIndex(std::string_view index) noexcept;
+	void PutSelectors(SelectIteratorContainer *qres) noexcept;
+	void PutJoinedSelectors(JoinedSelectors *jselectors) noexcept;
 	void SetSortOptimization(bool enable) noexcept { sortOptimization_ = enable; }
 
 	void LogDump(int logLevel);
 	std::string GetJSON();
+
 	Duration Total() const noexcept { return total_; }
+	Duration Prepare() const noexcept { return prepare_; }
+	Duration Indexes() const noexcept { return select_; }
+	Duration Postprocess() const noexcept { return postprocess_; }
+	Duration Loop() const noexcept { return loop_; }
+	Duration Sort() const noexcept { return sort_; }
+
 	size_t Iterations() const noexcept { return iters_; }
-	static int To_us(const Duration &d);
+	static int To_us(const Duration &d) noexcept;
 	bool IsEnabled() const noexcept { return enabled_; }
 
 private:
-	Duration lap();
+	Duration lap() noexcept;
 	static const char *JoinTypeName(JoinType jtype);
 
 	time_point last_point_, sort_start_point_;
@@ -65,7 +73,7 @@ private:
 	int iters_ = 0;
 	int count_ = 0;
 	bool sortOptimization_ = false;
-	const bool enabled_;
+	bool enabled_ = false;
 };
 
 }  // namespace reindexer

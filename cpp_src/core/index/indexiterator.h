@@ -9,11 +9,11 @@ class IndexIteratorBase {
 public:
 	virtual ~IndexIteratorBase() = default;
 	virtual void Start(bool reverse) = 0;
-	virtual IdType Value() const = 0;
-	virtual bool Next() = 0;
-	virtual void ExcludeLastSet() = 0;
+	virtual IdType Value() const noexcept = 0;
+	virtual bool Next() noexcept = 0;
+	virtual void ExcludeLastSet() noexcept = 0;
 	virtual size_t GetMaxIterations(size_t limitIters) noexcept = 0;
-	virtual void SetMaxIterations(size_t iters) = 0;
+	virtual void SetMaxIterations(size_t iters) noexcept = 0;
 };
 
 class IndexIterator : public intrusive_atomic_rc_wrapper<IndexIteratorBase> {

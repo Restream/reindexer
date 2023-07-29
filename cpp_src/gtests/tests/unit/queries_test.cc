@@ -99,6 +99,11 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 }
 #endif
 
+TEST_F(QueriesApi, QueriesConditions) {
+	FillConditionsNs();
+	CheckConditions();
+}
+
 TEST_F(QueriesApi, IndexCacheInvalidationTest) {
 	std::vector<std::pair<int, int>> data{{0, 10}, {1, 9}, {2, 8}, {3, 7}, {4, 6},	{5, 5},
 										  {6, 4},  {7, 3}, {8, 2}, {9, 1}, {10, 0}, {11, -1}};

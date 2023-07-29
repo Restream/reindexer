@@ -2,13 +2,14 @@
 #include <string.h>
 #include <string_view>
 #include "customlocal.h"
+#include "estl/defines.h"
 #include "utf8cpp/utf8.h"
 
 namespace reindexer {
 
 static const uint32_t seed = 3339675911UL;
 
-inline uint32_t unaligned_load(const char* p) noexcept {
+RX_ALWAYS_INLINE uint32_t unaligned_load(const char* p) noexcept {
 	uint32_t result;
 	memcpy(&result, p, sizeof(result));
 	return result;
@@ -54,7 +55,7 @@ uint32_t _Hash_bytes(const void* ptr, uint32_t len) noexcept {
 	return hash;
 }
 
-uint32_t _Hash_bytes_collate_ascii(const void* ptr, uint32_t len) noexcept {
+static uint32_t _Hash_bytes_collate_ascii(const void* ptr, uint32_t len) noexcept {
 	const uint32_t m = 0x5bd1e995;
 	uint32_t hash = seed ^ len;
 	const char* buf = static_cast<const char*>(ptr);
@@ -95,7 +96,7 @@ uint32_t _Hash_bytes_collate_ascii(const void* ptr, uint32_t len) noexcept {
 	return hash;
 }
 
-uint32_t _Hash_bytes_collate_utf8(const void* ptr, uint32_t len) noexcept {
+static uint32_t _Hash_bytes_collate_utf8(const void* ptr, uint32_t len) noexcept {
 	const uint32_t m = 0x5bd1e995;
 	uint32_t hash = seed ^ len;
 	const char* buf = static_cast<const char*>(ptr);
@@ -124,18 +125,25 @@ uint32_t _Hash_bytes_collate_utf8(const void* ptr, uint32_t len) noexcept {
 }
 
 uint32_t Hash(const wstring& s) noexcept { return _Hash_bytes(s.data(), s.length() * sizeof(wchar_t)); }
-uint32_t collateHash(std::string_view s, CollateMode collateMode) noexcept {
-	switch (collateMode) {
-		case CollateASCII:
-			return _Hash_bytes_collate_ascii(s.data(), s.length());
-		case CollateUTF8:
-		case CollateCustom:
-			return _Hash_bytes_collate_utf8(s.data(), s.length());
-		case CollateNone:
-		case CollateNumeric:
-		default:
-			return _Hash_bytes(s.data(), s.length());
-	}
+template <>
+uint32_t collateHash<CollateASCII>(std::string_view s) noexcept {
+	return _Hash_bytes_collate_ascii(s.data(), s.length());
+}
+template <>
+uint32_t collateHash<CollateUTF8>(std::string_view s) noexcept {
+	return _Hash_bytes_collate_utf8(s.data(), s.length());
+}
+template <>
+uint32_t collateHash<CollateCustom>(std::string_view s) noexcept {
+	return _Hash_bytes_collate_utf8(s.data(), s.length());
+}
+template <>
+uint32_t collateHash<CollateNone>(std::string_view s) noexcept {
+	return _Hash_bytes(s.data(), s.length());
+}
+template <>
+uint32_t collateHash<CollateNumeric>(std::string_view s) noexcept {
+	return _Hash_bytes(s.data(), s.length());
 }
 
 uint32_t HashTreGram(const wchar_t* ptr) noexcept { return _Hash_bytes(ptr, 3 * sizeof(wchar_t)); }

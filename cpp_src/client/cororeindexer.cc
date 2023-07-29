@@ -1,11 +1,14 @@
 #include "client/cororeindexer.h"
 #include "client/cororpcclient.h"
+#include "tools/cpucheck.h"
 #include "tools/logger.h"
 
 namespace reindexer {
 namespace client {
 
-CoroReindexer::CoroReindexer(const ReindexerConfig& config) : impl_(new CoroRPCClient(config)), owner_(true), ctx_() {}
+CoroReindexer::CoroReindexer(const ReindexerConfig& config) : impl_(new CoroRPCClient(config)), owner_(true), ctx_() {
+	reindexer::CheckRequiredSSESupport();
+}
 CoroReindexer::~CoroReindexer() {
 	if (owner_) {
 		delete impl_;

@@ -17,7 +17,9 @@ public:
 	QueryPreprocessor(QueryEntries &&, NamespaceImpl *, const SelectCtx &);
 	const QueryEntries &GetQueryEntries() const noexcept { return *this; }
 	bool LookupQueryIndexes() {
-		const size_t merged = lookupQueryIndexes(0, 0, container_.size() - queryEntryAddedByForcedSortOptimization_);
+		const unsigned lookupEnd = queryEntryAddedByForcedSortOptimization_ ? container_.size() - 1 : container_.size();
+		assertrx_throw(lookupEnd <= uint32_t(std::numeric_limits<uint16_t>::max() - 1));
+		const size_t merged = lookupQueryIndexes(0, 0, lookupEnd);
 		if (queryEntryAddedByForcedSortOptimization_) {
 			container_[container_.size() - merged - 1] = std::move(container_.back());
 		}
@@ -79,7 +81,7 @@ private:
 
 	[[nodiscard]] SortingEntries detectOptimalSortOrder() const;
 	bool forcedStage() const noexcept { return evaluationsCount_ == (desc_ ? 1 : 0); }
-	size_t lookupQueryIndexes(size_t dst, size_t srcBegin, size_t srcEnd);
+	size_t lookupQueryIndexes(uint16_t dst, uint16_t srcBegin, uint16_t srcEnd);
 	size_t substituteCompositeIndexes(size_t from, size_t to);
 	bool mergeQueryEntries(size_t lhs, size_t rhs);
 	const std::vector<int> *getCompositeIndex(int field) const;

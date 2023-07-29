@@ -191,10 +191,9 @@ void QueryPreprocessor::InitIndexNumbers() {
 		});
 }
 
-size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, const size_t srcBegin, const size_t srcEnd) {
+size_t QueryPreprocessor::lookupQueryIndexes(uint16_t dst, uint16_t srcBegin, uint16_t srcEnd) {
 	assertrx(dst <= srcBegin);
-	h_vector<int, maxIndexes> iidx(maxIndexes);
-	std::fill(iidx.begin(), iidx.begin() + maxIndexes, -1);
+	h_vector<uint16_t, kMaxIndexes> iidx(kMaxIndexes, uint16_t(0));
 	size_t merged = 0;
 	for (size_t src = srcBegin, nextSrc; src < srcEnd; src = nextSrc) {
 		nextSrc = Next(src);
@@ -207,23 +206,24 @@ size_t QueryPreprocessor::lookupQueryIndexes(size_t dst, const size_t srcBegin, 
 				return true;
 			},
 			[&](QueryEntry &entry) {
-				const bool isIndexField = (entry.idxNo != IndexValueType::SetByJsonPath);
+				const bool isIndexField = (entry.idxNo >= 0);
 				if (isIndexField) {
 					// try merge entries with AND opetator
 					if ((GetOperation(src) == OpAnd) && (nextSrc >= srcEnd || GetOperation(nextSrc) != OpOr)) {
-						if (static_cast<size_t>(entry.idxNo) >= iidx.size()) {
+						if (size_t(entry.idxNo) >= iidx.size()) {
 							const auto oldSize = iidx.size();
-							iidx.resize(entry.idxNo + 1);
-							std::fill(iidx.begin() + oldSize, iidx.begin() + iidx.size(), -1);
+							iidx.resize(size_t(entry.idxNo) + 1);
+							std::fill(iidx.begin() + oldSize, iidx.begin() + iidx.size(), 0);
 						}
 						auto &iidxRef = iidx[entry.idxNo];
-						if (iidxRef >= 0 && !ns_.indexes_[entry.idxNo]->Opts().IsArray()) {
-							if (mergeQueryEntries(iidxRef, src)) {
+						if (iidxRef > 0 && !ns_.indexes_[entry.idxNo]->Opts().IsArray()) {
+							if (mergeQueryEntries(iidxRef - 1, src)) {
 								++merged;
 								return false;
 							}
 						} else {
-							iidxRef = dst;
+							assertrx_throw(dst < std::numeric_limits<uint16_t>::max() - 1);
+							iidxRef = dst + 1;
 						}
 					}
 				}
@@ -291,29 +291,32 @@ const std::vector<int> *QueryPreprocessor::getCompositeIndex(int field) const {
 	return nullptr;
 }
 
-static void createCompositeKeyValues(const h_vector<std::pair<int, VariantArray>, 4> &values, const PayloadType &plType, Payload *pl,
+static void createCompositeKeyValues(const h_vector<std::pair<int, VariantArray>, 4> &values, const PayloadType &plType, Payload &pl,
 									 VariantArray &ret, unsigned n) {
-	PayloadValue d(plType.TotalSize());
-	Payload pl1(plType, d);
-	if (!pl) pl = &pl1;
-
-	assertrx(n < values.size());
 	const auto &v = values[n];
 	for (auto it = v.second.cbegin(), end = v.second.cend(); it != end; ++it) {
-		pl->Set(v.first, {*it});
+		pl.Set(v.first, *it);
 		if (n + 1 < values.size()) {
 			createCompositeKeyValues(values, plType, pl, ret, n + 1);
 		} else {
-			PayloadValue pv(*pl->Value());
+			PayloadValue pv(*(pl.Value()));
 			pv.Clone();
-			ret.push_back(Variant(std::move(pv)));
+			ret.emplace_back(std::move(pv));
 		}
 	}
+}
+
+static void createCompositeKeyValues(const h_vector<std::pair<int, VariantArray>, 4> &values, const PayloadType &plType,
+									 VariantArray &ret) {
+	PayloadValue d(plType.TotalSize());
+	Payload pl(plType, d);
+	createCompositeKeyValues(values, plType, pl, ret, 0);
 }
 
 size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const size_t to) {
 	using composite_substitution_helpers::CompositeSearcher;
 	using composite_substitution_helpers::EntriesRanges;
+	using composite_substitution_helpers::CompositeValuesCountLimits;
 
 	size_t deleted = 0;
 	CompositeSearcher searcher(ns_);
@@ -344,25 +347,46 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 	}
 
 	EntriesRanges deleteRanges;
-	for (auto resIdx = searcher.GetResult(); resIdx >= 0; resIdx = searcher.RemoveAndGetNext(resIdx)) {
+	h_vector<std::pair<int, VariantArray>, 4> values;
+	auto resIdx = searcher.GetResult();
+	while (resIdx >= 0) {
 		auto &res = searcher[resIdx];
-		h_vector<std::pair<int, VariantArray>, 4> values;
+		values.clear<false>();
+		uint32_t resultSetSize = 0;
+		uint32_t maxSetSize = 0;
 		for (auto i : res.entries) {
 			auto &qe = Get<QueryEntry>(i);
-			if (!res.fields.contains(qe.idxNo)) {
+			if (rx_unlikely(!res.fields.contains(qe.idxNo))) {
 				throw Error(errLogic, "Error during composite index's fields substitution (this should not happen)");
 			}
-			if (qe.condition == CondEq && qe.values.size() == 0) {
+			if (rx_unlikely(qe.condition == CondEq && qe.values.size() == 0)) {
 				throw Error(errParams, "Condition EQ must have at least 1 argument, but provided 0");
 			}
+			maxSetSize = std::max(maxSetSize, qe.values.size());
+			resultSetSize = (resultSetSize == 0) ? qe.values.size() : (resultSetSize * qe.values.size());
+		}
+		static const CompositeValuesCountLimits kCompositeSetLimits;
+		if (resultSetSize != maxSetSize) {
+			// Do not perform substitution if result set size becoms larger than initial indexes set size
+			// and this size is greater than limit
+			// TODO: This is potential customization point for the user's hints system
+			if (resultSetSize > kCompositeSetLimits[res.entries.size()]) {
+				resIdx = searcher.RemoveUnusedAndGetNext(resIdx);
+				continue;
+			}
+		}
+		for (auto i : res.entries) {
+			auto &qe = Get<QueryEntry>(i);
+			const auto idxKeyType = ns_.indexes_[qe.idxNo]->KeyType();
 			for (auto &v : qe.values) {
-				v.convert(ns_.indexes_[qe.idxNo]->KeyType());
+				v.convert(idxKeyType);
 			}
 			values.emplace_back(qe.idxNo, std::move(qe.values));
 		}
 		{
 			QueryEntry ce(CondSet, ns_.indexes_[res.idx]->Name(), res.idx);
-			createCompositeKeyValues(values, ns_.payloadType_, nullptr, ce.values, 0);
+			ce.values.reserve(resultSetSize);
+			createCompositeKeyValues(values, ns_.payloadType_, ce.values);
 			if (ce.values.size() == 1) {
 				ce.condition = CondEq;
 			}
@@ -371,6 +395,7 @@ size_t QueryPreprocessor::substituteCompositeIndexes(const size_t from, const si
 			container_[first].SetValue(std::move(ce));
 		}
 		deleteRanges.Add(span(res.entries.data() + 1, res.entries.size() - 1));
+		resIdx = searcher.RemoveUsedAndGetNext(resIdx);
 	}
 	for (auto rit = deleteRanges.rbegin(); rit != deleteRanges.rend(); ++rit) {
 		Erase(rit->From(), rit->To());

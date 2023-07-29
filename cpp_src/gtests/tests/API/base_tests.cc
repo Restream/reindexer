@@ -776,10 +776,7 @@ TEST_F(ReindexerApi, WithTimeoutInterface) {
 template <CollateMode collateMode>
 struct CollateComparer {
 	bool operator()(const std::string& lhs, const std::string& rhs) const {
-		std::string_view sl1(lhs.c_str(), lhs.length());
-		std::string_view sl2(rhs.c_str(), rhs.length());
-		CollateOpts opts(collateMode);
-		return reindexer::collateCompare(sl1, sl2, opts) < 0;
+		return reindexer::collateCompare<collateMode>(lhs, rhs, reindexer::SortingPrioritiesTable()) < 0;
 	}
 };
 

@@ -611,6 +611,13 @@ func (q *Query) SortStFieldDistance(field1 string, field2 string, desc bool) *Qu
 	return q.Sort(sb.String(), desc)
 }
 
+// AND - next condition will added with AND
+// This is the default operation for WHERE statement. Do not have to be called explicitly in user's code. Used in DSL convertion
+func (q *Query) And() *Query {
+	q.nextOp = opAND
+	return q
+}
+
 // OR - next condition will added with OR
 // Implements short-circuiting:
 // if the previous condition is successful the next will not be evaluated, but except Join conditions

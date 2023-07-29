@@ -4,6 +4,7 @@
 #include "client/itemimpl.h"
 #include "core/namespacedef.h"
 #include "gason/gason.h"
+#include "tools/cpucheck.h"
 #include "tools/errors.h"
 #include "tools/logger.h"
 #include "vendor/gason/gason.h"
@@ -14,6 +15,8 @@ namespace client {
 using reindexer::net::cproto::RPCAnswer;
 
 RPCClient::RPCClient(const ReindexerConfig& config) : workers_(config.WorkerThreads), config_(config), updatesConn_(nullptr) {
+	reindexer::CheckRequiredSSESupport();
+
 	if (config_.ConnectTimeout > config_.RequestTimeout) {
 		config_.RequestTimeout = config_.ConnectTimeout;
 	}

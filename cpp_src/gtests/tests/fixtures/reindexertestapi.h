@@ -11,7 +11,13 @@
 #include "tools/stringstools.h"
 #include "vendor/utf8cpp/utf8.h"
 
-typedef std::tuple<const char *, const char *, const char *, IndexOpts, int64_t> IndexDeclaration;
+struct IndexDeclaration {
+	std::string_view indexName;
+	std::string_view fieldType;
+	std::string_view indexType;
+	IndexOpts indexOpts;
+	int64_t expireAfter;
+};
 
 template <typename DB>
 class ReindexerTestApi {
@@ -24,25 +30,25 @@ public:
 	static void DefineNamespaceDataset(DB &rx, const std::string &ns, const FieldsT &fields) {
 		auto err = reindexer::Error();
 		for (const auto &field : fields) {
-			std::string indexName = std::get<0>(field);
-			std::string fieldType = std::get<1>(field);
-			std::string indexType = std::get<2>(field);
-			int64_t expireAfter = std::get<4>(field);
-
-			if (indexType != "composite") {
-				err = rx.AddIndex(ns, {indexName, {indexName}, fieldType, indexType, std::get<3>(field)});
+			if (field.indexType != "composite") {
+				err = rx.AddIndex(ns, {std::string{field.indexName},
+									   {std::string{field.indexName}},
+									   std::string{field.fieldType},
+									   std::string{field.indexType},
+									   field.indexOpts});
 			} else {
-				std::string realName = indexName;
-				std::string idxContents = indexName;
+				std::string indexName{field.indexName};
+				std::string idxContents{field.indexName};
 				auto eqPos = indexName.find_first_of('=');
 				if (eqPos != std::string::npos) {
 					idxContents = indexName.substr(0, eqPos);
-					realName = indexName.substr(eqPos + 1);
+					indexName = indexName.substr(eqPos + 1);
 				}
 				reindexer::JsonPaths jsonPaths;
 				jsonPaths = reindexer::split(idxContents, "+", true, jsonPaths);
 
-				err = rx.AddIndex(ns, {realName, jsonPaths, fieldType, indexType, std::get<3>(field), expireAfter});
+				err = rx.AddIndex(ns, {indexName, jsonPaths, std::string{field.fieldType}, std::string{field.indexType}, field.indexOpts,
+									   field.expireAfter});
 			}
 			ASSERT_TRUE(err.ok()) << err.what();
 		}

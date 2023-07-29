@@ -105,7 +105,7 @@ VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath &tagsPat
 	if (tagsPath.empty()) {
 		throw Error(errParams, "GetIndexedArrayData(): tagsPath shouldn't be empty!");
 	}
-	if (field < 0 || field >= maxIndexes) {
+	if (field < 0 || field >= kMaxIndexes) {
 		throw Error(errParams, "GetIndexedArrayData(): field must be a valid index number");
 	}
 	VariantArray values;
@@ -119,37 +119,6 @@ VariantArray PayloadIface<T>::GetIndexedArrayData(const IndexedTagsPath &tagsPat
 	ConstPayload pl(t_, *v_);
 	encoder.Encode(pl, extractor);
 	return values;
-}
-
-// Set element or array by field index
-template <typename T>
-template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
-void PayloadIface<T>::Set(std::string_view field, const VariantArray &keys, bool append) {
-	return Set(t_.FieldByName(field), keys, append);
-}
-
-template <typename T>
-template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
-void PayloadIface<T>::Set(int field, const VariantArray &keys, bool append) {
-	const auto size = keys.size();
-	if (!t_.Field(field).IsArray() && size >= 1) {
-		Field(field).Set(keys[0]);
-		return;
-	}
-
-	if (keys.IsNullValue()) {
-		ResizeArray(field, 0, append);
-		return;
-	}
-
-	int pos = ResizeArray(field, size, append);
-	auto const *const arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
-	const auto elemSize = t_.Field(field).ElemSizeof();
-
-	for (const Variant &kv : keys) {
-		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + (pos++) * elemSize);
-		pv.Set(kv);
-	}
 }
 
 template <typename T>
@@ -220,11 +189,6 @@ size_t PayloadIface<T>::RealSize() const {
 		}
 
 	return sz;
-}
-
-template <typename T>
-PayloadFieldValue PayloadIface<T>::Field(int field) const noexcept {
-	return PayloadFieldValue(t_.Field(field), v_->Ptr() + t_.Field(field).Offset());
 }
 
 // Serialize field values
@@ -488,6 +452,24 @@ void PayloadIface<T>::copyOrMoveStrings(int field, StrHolder &dest, bool copy) {
 			auto str = *reinterpret_cast<const p_string *>(v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
 			dest.emplace_back(reinterpret_cast<base_key_string *>(const_cast<std::string *>(str.getCxxstr())), copy);
 		}
+	}
+}
+
+template <typename T>
+template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
+void PayloadIface<T>::setArray(int field, const VariantArray &keys, bool append) {
+	if (keys.IsNullValue()) {
+		ResizeArray(field, 0, append);
+		return;
+	}
+
+	int pos = ResizeArray(field, keys.size(), append);
+	auto const *const arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);
+	const auto elemSize = t_.Field(field).ElemSizeof();
+
+	for (const Variant &kv : keys) {
+		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + (pos++) * elemSize);
+		pv.Set(kv);
 	}
 }
 

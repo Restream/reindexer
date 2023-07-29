@@ -201,7 +201,8 @@ protected:
 	};
 
 	template <typename T>
-	void doSelect(const Query &q, QueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func, const RdxContext &ctx);
+	void doSelect(const Query &q, QueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func, const RdxContext &ctx,
+				  QueryStatCalculator<Query> &queryStatCalculator);
 	struct QueryResultsContext;
 	template <typename T>
 	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func,

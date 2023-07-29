@@ -32,11 +32,11 @@ public:
 	void Start(bool reverse, int maxIterations);
 	/// Signalizes if iteration is over.
 	/// @return true if iteration is done.
-	inline bool End() const noexcept { return lastVal_ == (isReverse_ ? INT_MIN : INT_MAX) && !comparators_.size(); }
+	RX_ALWAYS_INLINE bool End() const noexcept { return lastVal_ == (isReverse_ ? INT_MIN : INT_MAX) && !comparators_.size(); }
 	/// Iterates to a next item of result.
 	/// @param minHint - rowId value to start from.
 	/// @return true if operation succeed.
-	inline bool Next(IdType minHint) {
+	RX_ALWAYS_INLINE bool Next(IdType minHint) {
 		bool res = false;
 		switch (type_) {
 			case Forward:
@@ -73,7 +73,7 @@ public:
 	}
 
 	/// Sets Unsorted iteration mode
-	inline void SetUnsorted() noexcept { isUnsorted = true; }
+	RX_ALWAYS_INLINE void SetUnsorted() noexcept { isUnsorted = true; }
 
 	/// Current rowId
 	IdType Val() const noexcept;
@@ -92,12 +92,13 @@ public:
 	/// Uses each comparator to compare with pl.
 	/// @param pl - PayloadValue to be compared.
 	/// @param rowId - rowId.
-	inline bool TryCompare(const PayloadValue &pl, int rowId) noexcept {
-		for (auto &cmp : comparators_)
+	RX_ALWAYS_INLINE bool TryCompare(const PayloadValue &pl, int rowId) {
+		for (auto &cmp : comparators_) {
 			if (cmp.Compare(pl, rowId)) {
 				matchedCount_++;
 				return true;
 			}
+		}
 		return false;
 	}
 	/// @return amonut of matched items
@@ -139,14 +140,14 @@ protected:
 	// Iterates to a next item of result
 	// depending on iterator type starting
 	// from minHint which is the least rowId.
-	bool nextFwd(IdType minHint);
-	bool nextRev(IdType minHint);
-	bool nextFwdSingleRange(IdType minHint);
-	bool nextFwdSingleIdset(IdType minHint);
-	bool nextRevSingleRange(IdType minHint);
-	bool nextRevSingleIdset(IdType minHint);
-	bool nextUnbuiltSortOrders();
-	bool nextUnsorted();
+	bool nextFwd(IdType minHint) noexcept;
+	bool nextRev(IdType minHint) noexcept;
+	bool nextFwdSingleRange(IdType minHint) noexcept;
+	bool nextFwdSingleIdset(IdType minHint) noexcept;
+	bool nextRevSingleRange(IdType minHint) noexcept;
+	bool nextRevSingleIdset(IdType minHint) noexcept;
+	bool nextUnbuiltSortOrders() noexcept;
+	bool nextUnsorted() noexcept;
 
 	/// Performs ID sets merge and sort in case, when this sort was defered earlier and still effective with current maxIterations value
 	bool applyDeferedSort(int maxIterations) {

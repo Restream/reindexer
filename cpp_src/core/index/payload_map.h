@@ -173,13 +173,27 @@ public:
 
 	std::pair<iterator, bool> insert(const std::pair<PayloadValue, T1> &v) {
 		PayloadValueWithHash key(v.first, payloadType_, fields_);
-		auto res = base_hash_map::insert(std::make_pair(std::move(key), v.second));
+		auto res = base_hash_map::emplate(std::move(key), v.second);
 		if (res.second) add_ref(res.first->first);
 		return res;
 	}
 	std::pair<iterator, bool> insert(std::pair<PayloadValue, T1> &&v) {
 		PayloadValueWithHash key(std::move(v.first), payloadType_, fields_);
-		auto res = base_hash_map::insert(std::make_pair(std::move(key), std::move(v.second)));
+		auto res = base_hash_map::emplace(std::move(key), std::move(v.second));
+		if (res.second) this->add_ref(res.first->first);
+		return res;
+	}
+	template <typename V>
+	std::pair<iterator, bool> emplace(const PayloadValue &pl, V &&v) {
+		PayloadValueWithHash key(pl, payloadType_, fields_);
+		auto res = base_hash_map::emplace(std::move(key), std::forward<V>(v));
+		if (res.second) this->add_ref(res.first->first);
+		return res;
+	}
+	template <typename V>
+	std::pair<iterator, bool> emplace(PayloadValue &&pl, V &&v) {
+		PayloadValueWithHash key(std::move(pl), payloadType_, fields_);
+		auto res = base_hash_map::emplace(std::move(key), std::forward<V>(v));
 		if (res.second) this->add_ref(res.first->first);
 		return res;
 	}

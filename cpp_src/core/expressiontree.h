@@ -466,7 +466,7 @@ public:
 	void EncloseInBracket(size_t from, size_t to, OperationType op, Args&&... args) {
 		assertrx(to > from);
 		assertrx(to <= container_.size());
-		for (unsigned b : activeBrackets_) {
+		for (unsigned& b : activeBrackets_) {
 			assertrx(b < container_.size());
 			if (b >= from) ++b;
 		}

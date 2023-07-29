@@ -1,9 +1,13 @@
 #include "core/reindexer.h"
 #include "core/reindexerimpl.h"
+#include "tools/cpucheck.h"
 
 namespace reindexer {
 
-Reindexer::Reindexer(ReindexerConfig cfg) : impl_(new ReindexerImpl(cfg)), owner_(true) {}
+Reindexer::Reindexer(ReindexerConfig cfg) : impl_(new ReindexerImpl(cfg)), owner_(true) {
+	//
+	reindexer::CheckRequiredSSESupport();
+}
 
 Reindexer::~Reindexer() {
 	if (owner_) {

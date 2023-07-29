@@ -19,13 +19,10 @@ struct QueryTotalCountCacheVal {
 
 struct QueryCacheKey {
 	QueryCacheKey() = default;
-	QueryCacheKey(const QueryCacheKey& other) : buf(other.buf) {}
-	QueryCacheKey& operator=(const QueryCacheKey& other) {
-		if (this != &other) {
-			buf = other.buf;
-		}
-		return *this;
-	}
+	QueryCacheKey(QueryCacheKey&& other) = default;
+	QueryCacheKey(const QueryCacheKey& other) = default;
+	QueryCacheKey& operator=(QueryCacheKey&& other) = default;
+	QueryCacheKey& operator=(const QueryCacheKey& other) = delete;
 	QueryCacheKey(const Query& q) {
 		WrSerializer ser;
 		q.Serialize(ser, (SkipJoinQueries | SkipMergeQueries | SkipLimitOffset));
@@ -39,13 +36,13 @@ struct QueryCacheKey {
 };
 
 struct EqQueryCacheKey {
-	bool operator()(const QueryCacheKey& lhs, const QueryCacheKey& rhs) const {
+	bool operator()(const QueryCacheKey& lhs, const QueryCacheKey& rhs) const noexcept {
 		return (lhs.buf.size() == rhs.buf.size()) && (memcmp(lhs.buf.data(), rhs.buf.data(), lhs.buf.size()) == 0);
 	}
 };
 
 struct HashQueryCacheKey {
-	size_t operator()(const QueryCacheKey& q) const {
+	size_t operator()(const QueryCacheKey& q) const noexcept {
 		uint64_t hash[2];
 		MurmurHash3_x64_128(q.buf.data(), q.buf.size(), 0, &hash);
 		return hash[0];

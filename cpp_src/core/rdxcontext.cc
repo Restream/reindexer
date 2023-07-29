@@ -12,8 +12,11 @@ RdxContext::RdxContext(RdxContext&& other) noexcept
 	  cmpl_(other.cmpl_) {
 	if (holdStatus_ == kHold) {
 		new (&activityCtx_) RdxActivityContext(std::move(other.activityCtx_));
+		other.activityCtx_.~RdxActivityContext();
+		other.holdStatus_ = kEmpty;
 	} else if (holdStatus_ == kPtr) {
 		activityPtr_ = other.activityPtr_;
+		other.holdStatus_ = kEmpty;
 	}
 }
 

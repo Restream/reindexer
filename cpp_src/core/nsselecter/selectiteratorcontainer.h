@@ -104,7 +104,7 @@ private:
 	void processField(FieldsComparator &, std::string_view field, int idxNo, const NamespaceImpl &ns) const;
 	void processJoinEntry(const JoinQueryEntry &, OpType);
 	void processQueryEntryResults(SelectKeyResults &selectResults, OpType, const NamespaceImpl &ns, const QueryEntry &qe, bool isIndexFt,
-								  bool isIndexSparse, bool nonIndexField);
+								  bool isIndexSparse, bool nonIndexField, std::optional<OpType> nextOp);
 	struct EqualPositions {
 		h_vector<size_t, 4> queryEntriesPositions;
 		size_t positionToInsertIterator = 0;

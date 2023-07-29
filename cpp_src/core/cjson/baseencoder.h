@@ -63,13 +63,13 @@ protected:
 	std::string_view getPlTuple(ConstPayload &pl);
 
 	const TagsMatcher *tagsMatcher_;
-	int fieldsoutcnt_[maxIndexes];
+	int fieldsoutcnt_[kMaxIndexes];
 	const FieldsSet *filter_;
 	WrSerializer tmpPlTuple_;
 	TagsPath curTagsPath_;
 	IndexedTagsPathInternalT indexedTagsPath_;
 	TagsLengths tagsLengths_;
-	uint64_t objectScalarIndexes_ = 0;
+	std::bitset<kMaxIndexes> objectScalarIndexes_;
 };
 
 using JsonEncoder = BaseEncoder<JsonBuilder>;

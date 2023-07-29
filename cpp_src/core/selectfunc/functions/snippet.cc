@@ -290,7 +290,7 @@ bool Snippet::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 	stringsHolder.emplace_back(make_key_string(std::move(resultString)));
 	res.Value().Clone();
 
-	pl.Set(func.field, VariantArray{Variant{stringsHolder.back()}});
+	pl.Set(func.field, Variant{stringsHolder.back()});
 	return true;
 }
 }  // namespace reindexer

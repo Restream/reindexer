@@ -18,7 +18,7 @@ void MsgPackDecoder::setValue(Payload& pl, CJsonBuilder& builder, const T& value
 			throw Error(errLogic, "Error parsing msgpack field '%s' - got array, expected scalar %s", f.Name(), f.Type().Name());
 		}
 		Variant val(value);
-		pl.Set(field, {val}, true);
+		pl.Set(field, val, true);
 		builder.Ref(tagName, val, field);
 	} else {
 		builder.Put(tagName, value);

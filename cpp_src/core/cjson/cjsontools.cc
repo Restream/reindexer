@@ -92,7 +92,7 @@ void copyCJsonValue(TagType tagType, Serializer &rdser, WrSerializer &wrser) {
 	}
 }
 
-void skipCjsonTag(ctag tag, Serializer &rdser, std::array<unsigned, maxIndexes> *fieldsArrayOffsets) {
+void skipCjsonTag(ctag tag, Serializer &rdser, std::array<unsigned, kMaxIndexes> *fieldsArrayOffsets) {
 	const auto field = tag.Field();
 	const bool embeddedField = (field < 0);
 	switch (tag.Type()) {

@@ -81,7 +81,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 					throw Error(errLogic, "Error parsing cjson field '%s' - got value in the nested array, but expected scalar %s",
 								fieldRef.Name(), fieldType.Name());
 				} else {
-					pl.Set(field, {cjsonValueToVariant(tagType, rdser, fieldType)}, true);
+					pl.Set(field, cjsonValueToVariant(tagType, rdser, fieldType), true);
 					fieldType.EvaluateOneOf(
 						[&](OneOf<KeyValueType::Int, KeyValueType::Int64>) {
 							wrser.PutCTag(ctag{TAG_VARINT, tagName, field});

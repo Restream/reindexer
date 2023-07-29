@@ -12,6 +12,7 @@
 #include "core/itemmodifier.h"
 #include "core/nsselecter/nsselecter.h"
 #include "core/payload/payloadiface.h"
+#include "core/querystat.h"
 #include "core/rdxcontext.h"
 #include "core/selectfunc/functionexecutor.h"
 #include "itemsloader.h"
@@ -974,9 +975,9 @@ void NamespaceImpl::addIndex(const IndexDef& indexDef) {
 	}
 
 	const int idxNo = payloadType_->NumFields();
-	if (idxNo >= maxIndexes) {
+	if (idxNo >= kMaxIndexes) {
 		throw Error(errConflict, "Cannot add index '%s.%s'. Too many non-composite indexes. %d non-composite indexes are allowed only",
-					name_, indexName, maxIndexes - 1);
+					name_, indexName, kMaxIndexes - 1);
 	}
 	const JsonPaths& jsonPaths = indexDef.jsonPaths_;
 	RollBack_addIndex rollbacker{*this};
@@ -1005,7 +1006,7 @@ void NamespaceImpl::addIndex(const IndexDef& indexDef) {
 		rollbacker.SetOldPayloadType(std::move(oldPlType));
 		tagsMatcher_.UpdatePayloadType(payloadType_);
 		rollbacker.NeedResetPayloadTypeInTagsMatcher();
-		newIndex->SetFields(FieldsSet{idxNo});
+		newIndex->SetFields(FieldsSet(idxNo));
 		newIndex->UpdatePayloadType(payloadType_);
 
 		FieldsSet changedFields{0, idxNo};
@@ -1591,13 +1592,14 @@ Transaction NamespaceImpl::NewTransaction(const RdxContext& ctx) {
 	return Transaction(name_, payloadType_, tagsMatcher_, pkFields(), schema_);
 }
 
-void NamespaceImpl::CommitTransaction(Transaction& tx, QueryResults& result, NsContext ctx) {
+void NamespaceImpl::CommitTransaction(Transaction& tx, QueryResults& result, NsContext ctx,
+									  QueryStatCalculator<Transaction, long_actions::Logger>& queryStatCalculator) {
 	logPrintf(LogTrace, "[repl:%s]:%d CommitTransaction start", name_, serverId_);
 	Locker::WLockT wlck;
 	if (!ctx.noLock) {
 		PerfStatCalculatorMT calc(updatePerfCounter_, enablePerfCounters_);
 		CounterGuardAIR32 cg(cancelCommitCnt_);
-		wlck = wLock(ctx.rdxContext);
+		wlck = queryStatCalculator.CreateLock(*this, &NamespaceImpl::wLock, ctx.rdxContext);
 		cg.Reset();
 		calc.LockHit();
 	}
@@ -1640,7 +1642,7 @@ void NamespaceImpl::CommitTransaction(Transaction& tx, QueryResults& result, NsC
 	processWalRecord(commitWrec, ctx.rdxContext);
 	logPrintf(LogTrace, "[repl:%s]:%d CommitTransaction end", name_, serverId_);
 
-	tryForceFlush(std::move(wlck));
+	queryStatCalculator.LogFlushDuration(*this, &NamespaceImpl::tryForceFlush, std::move(wlck));
 }
 
 void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate) {
@@ -2091,7 +2093,7 @@ NamespaceMemStat NamespaceImpl::GetMemStat(const RdxContext& ctx) {
 	if (storageStatus.isEnabled) {
 		if (storageStatus.err.ok()) {
 			ret.storageStatus = "OK"sv;
-		} else if (checkIfEndsWith("No space left on device"sv, storageStatus.err.what(), true)) {
+		} else if (checkIfEndsWith<CaseSensitive::Yes>("No space left on device"sv, storageStatus.err.what())) {
 			ret.storageStatus = "NO SPACE LEFT"sv;
 		} else {
 			ret.storageStatus = storageStatus.err.what();

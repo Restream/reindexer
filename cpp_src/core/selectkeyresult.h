@@ -151,6 +151,14 @@ public:
 	static bool IsGenericSortRecommended(size_t idsetsCount, size_t idsCount, size_t maxIterations) noexcept {
 		return idsetsCount >= 30 && idsCount && GetGenericSortCost(idsCount) < GetMergeSortCost(maxIterations, idsetsCount);
 	}
+	static size_t CostWithDefferedSort(size_t idsetsCount, size_t idsCount, size_t maxIterations) noexcept {
+		const auto genSortCost = GetGenericSortCost(idsCount);
+		if (idsetsCount < 30 || !idsCount) {
+			return genSortCost;
+		}
+		const auto mrgSortCost = GetMergeSortCost(maxIterations, idsetsCount);
+		return std::min(genSortCost, mrgSortCost);
+	}
 
 	void ClearDistinct() {
 		for (Comparator &comp : comparators_) comp.ClearDistinct();

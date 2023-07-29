@@ -116,7 +116,7 @@ public:
 	LSNPair LSNs_;
 
 private:
-	enum { kHold, kPtr, kEmpty } const holdStatus_;
+	enum { kHold, kPtr, kEmpty } holdStatus_;
 	union {
 		mutable RdxActivityContext activityCtx_;
 		RdxActivityContext* activityPtr_;

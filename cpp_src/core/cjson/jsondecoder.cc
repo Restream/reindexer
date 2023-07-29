@@ -77,7 +77,7 @@ void JsonDecoder::decodeJsonObject(Payload &pl, CJsonBuilder &builder, const gas
 									f.Name(), f.Type().Name());
 					}
 					Variant v = jsonValue2Variant(elem.value, f.Type(), f.Name());
-					pl.Set(field, {v}, true);
+					pl.Set(field, v, true);
 					builder.Ref(tagName, v, field);
 				} break;
 			}

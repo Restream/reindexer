@@ -13,7 +13,7 @@ public:
 	explicit BtreeIndexIterator(const T& idxMap) : idxMap_(idxMap), first_(idxMap.begin()), last_(idxMap.end()) {}
 	BtreeIndexIterator(const T& idxMap, const typename T::iterator& first, const typename T::iterator& last)
 		: idxMap_(idxMap), first_(first), last_(last) {}
-	~BtreeIndexIterator() override final {}
+	~BtreeIndexIterator() override final = default;
 
 	void Start(bool reverse) final override {
 		if (reverse) {
@@ -26,7 +26,7 @@ public:
 		impl_->shiftIdsetToBegin();
 	}
 
-	bool Next() final override {
+	bool Next() noexcept final override {
 		assertrx(impl_);
 		if (impl_->isOver()) {
 			return impl_->finishIteration();
@@ -41,12 +41,12 @@ public:
 		return true;
 	}
 
-	void ExcludeLastSet() override {
+	void ExcludeLastSet() noexcept override {
 		assertrx(impl_);
 		impl_->shiftToNextIdset();
 	}
 
-	IdType Value() const override final {
+	IdType Value() const noexcept override final {
 		assertrx(impl_);
 		return impl_->getValue();
 	}
@@ -54,7 +54,7 @@ public:
 		if (cachedIters_ != std::numeric_limits<size_t>::max()) return cachedIters_;
 		return BtreeIndexForwardIteratorImpl<T>(idxMap_, first_, last_).getMaxIterations(limitIters);
 	}
-	void SetMaxIterations(size_t iters) final { cachedIters_ = iters; }
+	void SetMaxIterations(size_t iters) noexcept final { cachedIters_ = iters; }
 
 private:
 	std::shared_ptr<BtreeIndexIteratorImpl<T>> impl_;

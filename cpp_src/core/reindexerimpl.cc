@@ -894,7 +894,7 @@ Error ReindexerImpl::Select(const Query& q, QueryResults& result, const Internal
 		}
 
 		SelectFunctionsHolder func;
-		doSelect(q, result, locks, func, rdxCtx);
+		doSelect(q, result, locks, func, rdxCtx, statCalculator);
 		func.Process(result);
 	} catch (const Error& err) {
 		if (ctx.Compl()) ctx.Compl()(err);
@@ -1098,7 +1098,8 @@ JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, QueryResul
 }
 
 template <typename T>
-void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func, const RdxContext& ctx) {
+void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func, const RdxContext& ctx,
+							 QueryStatCalculator<Query>& queryStatCalculator) {
 	auto ns = locks.Get(q._namespace);
 	assertrx(ns);
 	if (!ns) {
@@ -1128,6 +1129,9 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 		ns->Select(result, selCtx, ctx);
 		result.AddNamespace(ns, {ctx, true});
 		isFtQuery = selCtx.isFtQuery;
+		if (selCtx.explain.IsEnabled()) {
+			queryStatCalculator.AddExplain(selCtx.explain);
+		}
 	}
 
 	// should be destroyed after results.lockResults()
@@ -1185,7 +1189,8 @@ void ReindexerImpl::doSelect(const Query& q, QueryResults& result, NsLocker<T>& 
 	for (const auto& jctx : joinQueryResultsContexts) result.addNSContext(jctx.type_, jctx.tagsMatcher_, jctx.fieldsFilter_, jctx.schema_);
 }
 
-template void ReindexerImpl::doSelect(const Query&, QueryResults&, NsLocker<RdxContext>&, SelectFunctionsHolder&, const RdxContext&);
+template void ReindexerImpl::doSelect(const Query&, QueryResults&, NsLocker<RdxContext>&, SelectFunctionsHolder&, const RdxContext&,
+									  QueryStatCalculator<Query>&);
 
 Error ReindexerImpl::Commit(std::string_view /*_namespace*/) {
 	try {
