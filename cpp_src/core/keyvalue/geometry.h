@@ -20,10 +20,10 @@ public:
 
 private:
 	void validate(double v, std::string_view name) {
-		if (rx_unlikely(std::isinf(v))) {
+		if rx_unlikely (std::isinf(v)) {
 			throwInfError(name);
 		}
-		if (rx_unlikely(std::isnan(v))) {
+		if rx_unlikely (std::isnan(v)) {
 			throwNanError(name);
 		}
 	}

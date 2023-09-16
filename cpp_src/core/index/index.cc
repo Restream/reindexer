@@ -46,6 +46,7 @@ std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType payloadType,
 		case IndexInt64Store:
 		case IndexDoubleStore:
 		case IndexBool:
+		case IndexUuidStore:
 			return IndexStore_New(idef, std::move(payloadType), fields);
 		case IndexFastFT:
 		case IndexCompositeFastFT:
@@ -59,9 +60,8 @@ std::unique_ptr<Index> Index::New(const IndexDef& idef, PayloadType payloadType,
 			return IndexRTree_New(idef, std::move(payloadType), fields);
 		case IndexUuidHash:
 			return IndexUuid_New(idef, std::move(payloadType), fields);
-		default:
-			throw Error(errParams, "Ivalid index type %d for index '%s'", idef.Type(), idef.name_);
 	}
+	throw Error(errParams, "Ivalid index type %d for index '%s'", idef.Type(), idef.name_);
 }
 
 template <typename S>

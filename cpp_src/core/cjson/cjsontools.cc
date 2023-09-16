@@ -140,9 +140,11 @@ Variant cjsonValueToVariant(TagType tagType, Serializer &rdser, KeyValueType dst
 template <typename T>
 void buildPayloadTuple(const PayloadIface<T> &pl, const TagsMatcher *tagsMatcher, WrSerializer &wrser) {
 	CJsonBuilder builder(wrser, ObjType::TypeObject);
-	for (int field = 1; field < pl.NumFields(); ++field) {
+	for (int field = 1, numFields = pl.NumFields(); field < numFields; ++field) {
 		const PayloadFieldType &fieldType = pl.Type().Field(field);
-		if (fieldType.JsonPaths().size() < 1 || fieldType.JsonPaths()[0].empty()) continue;
+		if (fieldType.JsonPaths().size() < 1 || fieldType.JsonPaths()[0].empty()) {
+			continue;
+		}
 
 		int tagName = tagsMatcher->name2tag(fieldType.JsonPaths()[0]);
 		assertf(tagName != 0, "ns=%s, field=%s", pl.Type().Name(), fieldType.JsonPaths()[0]);
@@ -155,8 +157,7 @@ void buildPayloadTuple(const PayloadIface<T> &pl, const TagsMatcher *tagsMatcher
 	}
 }
 
-template void buildPayloadTuple<const PayloadValue>(const PayloadIface<const PayloadValue> &pl, const TagsMatcher *tagsMatcher,
-													WrSerializer &wrser);
-template void buildPayloadTuple<PayloadValue>(const PayloadIface<PayloadValue> &pl, const TagsMatcher *tagsMatcher, WrSerializer &wrser);
+template void buildPayloadTuple<const PayloadValue>(const PayloadIface<const PayloadValue> &, const TagsMatcher *, WrSerializer &);
+template void buildPayloadTuple<PayloadValue>(const PayloadIface<PayloadValue> &, const TagsMatcher *, WrSerializer &);
 
 }  // namespace reindexer

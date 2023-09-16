@@ -146,14 +146,10 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 	// get field from indexed field
 	if (tagField >= 0) {
 		if (!pl) throw Error(errParams, "Trying to encode index field %d without payload", tagField);
-		if (objectScalarIndexes_.test(tagField) && (tagType != TAG_ARRAY)) {
-			std::string fieldName;
-			if (tagName && tagsMatcher_) {
-				fieldName = tagsMatcher_->tag2name(tagName);
-			}
-			throw Error(errParams, "Non-array field '%s' [%d] from '%s' can only be encoded once.", fieldName, tagField, pl->Type().Name());
+		const auto& f = pl->Type().Field(tagField);
+		if (!f.IsArray() && objectScalarIndexes_.test(tagField)) {
+			throw Error(errParams, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), tagField, pl->Type().Name());
 		}
-		objectScalarIndexes_.set(tagField);
 		assertrx(tagField < pl->NumFields());
 		int* cnt = &fieldsoutcnt_[tagField];
 		switch (tagType) {
@@ -176,6 +172,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				break;
 			}
 			case TAG_NULL:
+				objectScalarIndexes_.set(tagField);
 				if (visible) builder.Null(tagName);
 				break;
 			case TAG_VARINT:
@@ -185,6 +182,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			case TAG_END:
 			case TAG_OBJECT:
 			case TAG_UUID:
+				objectScalarIndexes_.set(tagField);
 				if (visible) builder.Put(tagName, pl->Get(tagField, (*cnt)), *cnt);
 				++(*cnt);
 				break;
@@ -217,7 +215,6 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				break;
 			}
 			case TAG_OBJECT: {
-				objectScalarIndexes_.reset();
 				if (visible) {
 					auto objNode = builder.Object(tagName);
 					while (encode(pl, rdser, objNode, true))

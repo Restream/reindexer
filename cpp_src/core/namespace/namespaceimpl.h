@@ -57,27 +57,34 @@ class QueryResults;
 namespace long_actions {
 template <typename T>
 struct Logger;
-}
+
+template <QueryType queryType>
+struct QueryEnum2Type;
+}  // namespace long_actions
+
 template <typename T, template <typename> class>
 class QueryStatCalculator;
+
+template <QueryType queryType>
+using QueryStatCalculatorUpdDel = QueryStatCalculator<long_actions::QueryEnum2Type<queryType>, long_actions::Logger>;
 
 namespace SortExprFuncs {
 struct DistanceBetweenJoinedIndexesSameNs;
 }  // namespace SortExprFuncs
 
 struct NsContext {
-	NsContext(const RdxContext &rdxCtx, bool noLock_ = false) noexcept : rdxContext{rdxCtx}, noLock{noLock_} {}
-	NsContext &NoLock() noexcept {
-		noLock = true;
-		return *this;
-	}
+	NsContext(const RdxContext &rdxCtx) noexcept : rdxContext{rdxCtx} {}
 	NsContext &InTransaction() noexcept {
 		inTransaction = true;
 		return *this;
 	}
+	NsContext &CopiedNsRequest() noexcept {
+		isCopiedNsRequest = true;
+		return *this;
+	}
 
 	const RdxContext &rdxContext;
-	bool noLock = false;
+	bool isCopiedNsRequest = false;
 	bool inTransaction = false;
 };
 
@@ -85,7 +92,7 @@ namespace composite_substitution_helpers {
 class CompositeSearcher;
 }
 
-class NamespaceImpl {  // NOLINT(*performance.Padding) Padding does not matter for this class
+class NamespaceImpl : public intrusive_atomic_rc_base {	 // NOLINT(*performance.Padding) Padding does not matter for this class
 	class RollBack_insertIndex;
 	class RollBack_addIndex;
 	template <NeedRollBack needRollBack>
@@ -100,7 +107,7 @@ class NamespaceImpl {  // NOLINT(*performance.Padding) Padding does not matter f
 		IndexesCacheCleaner &operator=(const IndexesCacheCleaner &) = delete;
 		IndexesCacheCleaner &operator=(IndexesCacheCleaner &&) = delete;
 		void Add(SortType s) {
-			if (rx_unlikely(s >= sorts_.size())) {
+			if rx_unlikely (s >= sorts_.size()) {
 				throw Error(errLogic, "Index sort type overflow: %d. Limit is %d", s, sorts_.size() - 1);
 			}
 			if (s > 0) {
@@ -189,7 +196,7 @@ class NamespaceImpl {  // NOLINT(*performance.Padding) Padding does not matter f
 public:
 	enum OptimizationState : int { NotOptimized, OptimizedPartially, OptimizationCompleted };
 
-	typedef shared_ptr<NamespaceImpl> Ptr;
+	using Ptr = intrusive_ptr<NamespaceImpl>;
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Namespace>;
 
 	NamespaceImpl(const std::string &_name, UpdatesObservers &observers);
@@ -218,15 +225,13 @@ public:
 	void SetSchema(std::string_view schema, const RdxContext &ctx);
 	std::string GetSchema(int format, const RdxContext &ctx);
 
-	void Insert(Item &item, const NsContext &ctx);
-	void Update(Item &item, const NsContext &ctx);
-	void Update(const Query &query, QueryResults &result, const NsContext &);
-	void Upsert(Item &item, const NsContext &);
-
-	void Delete(Item &item, const NsContext &);
-	void Delete(const Query &query, QueryResults &result, const NsContext &);
-	void Truncate(const NsContext &);
-	void Refill(std::vector<Item> &, const NsContext &);
+	void Insert(Item &item, const RdxContext &ctx);
+	void Update(Item &item, const RdxContext &ctx);
+	void Upsert(Item &item, const RdxContext &);
+	void Delete(Item &item, const RdxContext &);
+	void ModifyItem(Item &item, ItemModifyMode mode, const RdxContext &ctx);
+	void Truncate(const RdxContext &);
+	void Refill(std::vector<Item> &, const RdxContext &);
 
 	void Select(QueryResults &result, SelectCtx &params, const RdxContext &);
 	NamespaceDef GetDefinition(const RdxContext &ctx);
@@ -243,12 +248,12 @@ public:
 	void CommitTransaction(Transaction &tx, QueryResults &result, NsContext ctx,
 						   QueryStatCalculator<Transaction, long_actions::Logger> &queryStatCalculator);
 
-	Item NewItem(const NsContext &ctx);
+	Item NewItem(const RdxContext &ctx);
 	void ToPool(ItemImpl *item);
 	// Get meta data from storage by key
 	std::string GetMeta(const std::string &key, const RdxContext &ctx);
 	// Put meta data to storage by key
-	void PutMeta(const std::string &key, std::string_view data, const NsContext &);
+	void PutMeta(const std::string &key, std::string_view data, const RdxContext &);
 	int64_t GetSerial(const std::string &field);
 
 	int getIndexByName(std::string_view index) const;
@@ -322,8 +327,13 @@ private:
 	void initWAL(int64_t minLSN, int64_t maxLSN);
 
 	void markUpdated(bool forceOptimizeAllIndexes);
+	void doUpdate(const Query &query, QueryResults &result, const NsContext &);
+	void doDelete(const Query &query, QueryResults &result, const NsContext &);
+	void doTruncate(const NsContext &ctx);
 	void doUpsert(ItemImpl *ritem, IdType id, bool doUpdate);
-	void modifyItem(Item &item, const NsContext &, int mode = ModeUpsert);
+	void modifyItem(Item &item, ItemModifyMode mode, const NsContext &);
+	void doModifyItem(Item &item, ItemModifyMode mode, const NsContext &ctx);
+	void deleteItem(Item &item, const NsContext &ctx);
 	void updateTagsMatcherFromItem(ItemImpl *ritem);
 	template <NeedRollBack needRollBack>
 	[[nodiscard]] RollBack_updateItems<needRollBack> updateItems(const PayloadType &oldPlType, const FieldsSet &changedFields,
@@ -337,6 +347,8 @@ private:
 	template <typename PathsT, typename JsonPathsContainerT>
 	void createFieldsSet(const std::string &idxName, IndexType type, const PathsT &paths, FieldsSet &fields);
 	void verifyCompositeIndex(const IndexDef &indexDef) const;
+	template <typename GetNameF>
+	void verifyAddIndex(const IndexDef &indexDef, GetNameF &&) const;
 	void verifyUpdateIndex(const IndexDef &indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
 	void updateIndex(const IndexDef &indexDef);
@@ -346,6 +358,7 @@ private:
 	void replicateItem(IdType itemId, const NsContext &ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity);
 	void removeExpiredItems(RdxActivityContext *);
 	void removeExpiredStrings(RdxActivityContext *);
+	Item newItem();
 
 	template <NeedRollBack needRollBack>
 	[[nodiscard]] RollBack_recreateCompositeIndexes<needRollBack> recreateCompositeIndexes(size_t startIdx, size_t endIdx);
@@ -410,7 +423,7 @@ private:
 	Locker locker_;
 	std::shared_ptr<Schema> schema_;
 
-	StringsHolderPtr StrHolder(const NsContext &);
+	StringsHolderPtr strHolder() const noexcept { return strHolder_; }
 	size_t ItemsCount() const noexcept { return items_.size() - free_.size(); }
 	const NamespaceConfigData &Config() const noexcept { return config_; }
 
@@ -470,5 +483,4 @@ private:
 	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_ = {0};
 	std::atomic<bool> dbDestroyed_{false};
 };
-
 }  // namespace reindexer

@@ -24,7 +24,7 @@ IdSet::Ptr FuzzyIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inT
 	size_t counter = 0;
 	for (auto it = result.data_->begin(); it != result.data_->end(); ++it, ++counter) {
 		it->proc_ *= coof;
-		if (it->proc_ < GetConfig()->minOkProc) continue;
+		if (it->proc_ < getConfig()->minOkProc) continue;
 		assertrx(it->id_ < this->vdocs_.size());
 		const auto& id_set = this->vdocs_[it->id_].keyEntry->Sorted(0);
 		fctx->Add(id_set.begin(), id_set.end(), it->proc_);
@@ -54,10 +54,7 @@ void FuzzyIndexText<T>::commitFulltextImpl() {
 	engine_.Commit();
 	this->isBuilt_ = true;
 }
-template <typename T>
-FtFuzzyConfig* FuzzyIndexText<T>::GetConfig() const {
-	return dynamic_cast<FtFuzzyConfig*>(this->cfg_.get());
-}
+
 template <typename T>
 void FuzzyIndexText<T>::CreateConfig(const FtFuzzyConfig* cfg) {
 	if (cfg) {
@@ -94,9 +91,10 @@ std::unique_ptr<Index> FuzzyIndexText_New(const IndexDef& idef, PayloadType payl
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:
-		default:
-			abort();
+		case IndexUuidStore:
+			break;
 	}
+	std::abort();
 }
 
 }  // namespace reindexer

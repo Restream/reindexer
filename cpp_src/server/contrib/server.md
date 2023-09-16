@@ -130,7 +130,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.18.0
+*Version* : 3.19.0
 
 
 ### License information
@@ -2138,13 +2138,42 @@ Query execution explainings
 |---|---|---|
 |**general_sort_us**  <br>*optional*|Result sort time|integer|
 |**indexes_us**  <br>*optional*|Indexes keys selection time|integer|
+|**join_on_conditions**  <br>*optional*|Describes Join ON conditions injections|< [join_on_conditions](#explaindef-join_on_conditions) > array|
 |**loop_us**  <br>*optional*|Intersection loop time|integer|
 |**postprocess_us**  <br>*optional*|Query post process time|integer|
 |**prepare_us**  <br>*optional*|Query prepare and optimize time|integer|
-|**selectors**  <br>*optional*|Filter selectos, used to proccess query conditions|< [selectors](#explaindef-selectors) > array|
+|**preselect_us**  <br>*optional*|Query preselect processing time|integer|
+|**selectors**  <br>*optional*|Filter selectors, used to proccess query conditions|< [selectors](#explaindef-selectors) > array|
 |**sort_by_uncommitted_index**  <br>*optional*|Optimization of sort by uncompleted index has been performed|boolean|
 |**sort_index**  <br>*optional*|Index, which used for sort results|string|
 |**total_us**  <br>*optional*|Total query execution time|integer|
+
+
+**join_on_conditions**
+
+|Name|Description|Schema|
+|---|---|---|
+|**conditions**  <br>*optional*|Individual conditions processing results|< [conditions](#explaindef-conditions) > array|
+|**injected_condition**  <br>*optional*|Injected condition. SQL-like string|string|
+|**namespace**  <br>*optional*|Joinable ns name|string|
+|**on_condition**  <br>*optional*|Original ON-conditions clause. SQL-like string|string|
+|**reason**  <br>*optional*|Optional{succeed==false}. Explains condition injection failure|string|
+|**success**  <br>*optional*|Result of injection attempt|boolean|
+|**type**  <br>*optional*|Values source: preselect values(by_value) or additional select(select)|string|
+
+
+**conditions**
+
+|Name|Description|Schema|
+|---|---|---|
+|**agg_type**  <br>*optional*|Optional. Aggregation type used in subquery|enum (min, max, distinct)|
+|**condition**  <br>*optional*|single condition from Join ON section. SQL-like string|string|
+|**explain_select**  <br>*optional*|Optional. Explain of Select subquery|[ExplainDef](#explaindef)|
+|**new_condition**  <br>*optional*|substituted injected condition. SQL-like string|string|
+|**reason**  <br>*optional*|Optional. Explains condition injection failure|string|
+|**success**  <br>*optional*|result of injection attempt|boolean|
+|**total_time_us**  <br>*optional*|total time elapsed from injection attempt start till the end of substitution or rejection|integer|
+|**values_count**  <br>*optional*|resulting size of query values set|integer|
 
 
 **selectors**

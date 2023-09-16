@@ -435,7 +435,9 @@ func (q *Query) WhereString(index string, condition int, keys ...string) *Query 
 	return q
 }
 
-// WhereUuid - Add where condition to DB query with UUID args
+// WhereUuid - Add where condition to DB query with UUID args.
+// This function applies binary encoding to the uuid value.
+// 'index' MUST be declared as uuid index in this case
 func (q *Query) WhereUuid(index string, condition int, keys ...string) *Query {
 
 	q.ser.PutVarCUInt(queryCondition).PutVString(index).PutVarCUInt(q.nextOp).PutVarCUInt(condition)

@@ -52,25 +52,25 @@ std::string unescapeString(std::string_view str) {
 	return dst;
 }
 
-wstring &utf8_to_utf16(std::string_view src, wstring &dst) {
+std::wstring &utf8_to_utf16(std::string_view src, std::wstring &dst) {
 	dst.resize(src.length());
 	auto end = utf8::unchecked::utf8to32(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
 	return dst;
 }
 
-std::string &utf16_to_utf8(const wstring &src, std::string &dst) {
+std::string &utf16_to_utf8(const std::wstring &src, std::string &dst) {
 	dst.resize(src.length() * 4);
 	auto end = utf8::unchecked::utf32to8(src.begin(), src.end(), dst.begin());
 	dst.resize(std::distance(dst.begin(), end));
 	return dst;
 }
 
-wstring utf8_to_utf16(std::string_view src) {
-	wstring dst;
+std::wstring utf8_to_utf16(std::string_view src) {
+	std::wstring dst;
 	return utf8_to_utf16(src, dst);
 }
-std::string utf16_to_utf8(const wstring &src) {
+std::string utf16_to_utf8(const std::wstring &src) {
 	std::string dst;
 	return utf16_to_utf8(src, dst);
 }
@@ -147,6 +147,7 @@ bool is_number(std::string_view str) {
 }
 
 void split(std::string_view str, std::string &buf, std::vector<const char *> &words, const std::string &extraWordSymbols) {
+	//assuming that the 'ToLower' function and the 'check for replacement' function should not change the character size in bytes
 	buf.resize(str.length());
 	words.resize(0);
 	auto bufIt = buf.begin();
@@ -300,7 +301,7 @@ std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
 	return ret;
 }
 
-void split(std::string_view utf8Str, wstring &utf16str, std::vector<std::wstring> &words, const std::string &extraWordSymbols) {
+void split(std::string_view utf8Str, std::wstring &utf16str, std::vector<std::wstring> &words, const std::string &extraWordSymbols) {
 	utf8_to_utf16(utf8Str, utf16str);
 	words.resize(0);
 	for (auto it = utf16str.begin(); it != utf16str.end();) {
@@ -309,31 +310,13 @@ void split(std::string_view utf8Str, wstring &utf16str, std::vector<std::wstring
 		auto begIt = it;
 		while (it != utf16str.end() && (IsAlpha(*it) || IsDigit(*it) || extraWordSymbols.find(*it) != std::string::npos)) {
 			*it = ToLower(*it);
-			it++;
+			++it;
 		}
 		size_t sz = it - begIt;
 		if (sz) {
 			words.emplace_back(&*begIt, &*(begIt + sz));
 		}
 	}
-}
-
-bool iequals(std::string_view lhs, std::string_view rhs) noexcept {
-	if (lhs.size() != rhs.size()) return false;
-	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
-		if (tolower(*itl++) != tolower(*itr++)) return false;
-	}
-	return true;
-}
-
-bool iless(std::string_view lhs, std::string_view rhs) noexcept {
-	const auto len = std::min(lhs.size(), rhs.size());
-	for (size_t i = 0; i < len; ++i) {
-		if (const auto l = tolower(lhs[i]), r = tolower(rhs[i]); l != r) {
-			return l < r;
-		}
-	}
-	return lhs.size() < rhs.size();
 }
 
 template <CaseSensitive sensitivity>

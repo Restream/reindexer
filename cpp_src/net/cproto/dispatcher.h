@@ -34,7 +34,7 @@ struct ClientData {
 
 struct Context;
 struct IRPCCall {
-	void (*Get)(IRPCCall *, CmdCode &, Args &);
+	void (*Get)(IRPCCall *, CmdCode &, std::string_view &nsName, Args &);
 	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> data_;
 };
 

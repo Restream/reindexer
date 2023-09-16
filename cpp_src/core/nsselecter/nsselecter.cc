@@ -1,4 +1,6 @@
 #include "nsselecter.h"
+
+#include "core/cjson/jsonbuilder.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/queryresults/joinresults.h"
 #include "crashqueryreporter.h"
@@ -30,27 +32,31 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	explain = ExplainCalc(ctx.query.explain_ || ctx.query.debugLevel >= LogInfo);
 	ActiveQueryScope queryScope(ctx, ns_->optimizationState_, explain, ns_->locker_.IsReadOnly(), ns_->strHolder_.get());
 
+	explain.SetPreselectTime(ctx.preResultTimeTotal);
 	explain.StartTiming();
 
-	auto containSomeAggCount = [&ctx](const AggType &type) {
-		auto it = std::find_if(ctx.query.aggregations_.begin(), ctx.query.aggregations_.end(),
-							   [&type](const AggregateEntry &agg) { return agg.Type() == type; });
-		return it != ctx.query.aggregations_.end();
+	const auto &aggregationQueryRef = ctx.isMergeQuerySubQuery() ? *ctx.parentQuery : ctx.query;
+
+	auto containSomeAggCount = [&aggregationQueryRef](AggType type) noexcept {
+		auto it = std::find_if(aggregationQueryRef.aggregations_.begin(), aggregationQueryRef.aggregations_.end(),
+							   [type](const AggregateEntry &agg) { return agg.Type() == type; });
+		return it != aggregationQueryRef.aggregations_.end();
 	};
 
 	bool needPutCachedTotal = false;
+	const auto initTotalCount = result.totalCount;
 	bool containAggCount = containSomeAggCount(AggCount);
 	bool containAggCountCached = containAggCount ? false : containSomeAggCount(AggCountCached);
 
-	bool needCalcTotal = ctx.query.calcTotal == ModeAccurateTotal || containAggCount;
+	bool needCalcTotal = aggregationQueryRef.calcTotal == ModeAccurateTotal || containAggCount;
 
 	QueryCacheKey ckey;
-	if (ctx.query.calcTotal == ModeCachedTotal || containAggCountCached) {
+	if (aggregationQueryRef.calcTotal == ModeCachedTotal || containAggCountCached) {
 		ckey = QueryCacheKey{ctx.query};
 
 		auto cached = ns_->queryTotalCountCache_->Get(ckey);
 		if (cached.valid && cached.val.total_count >= 0) {
-			result.totalCount = cached.val.total_count;
+			result.totalCount += cached.val.total_count;
 			logPrintf(LogTrace, "[%s] using value from cache: %d", ns_->name_, result.totalCount);
 		} else {
 			needPutCachedTotal = cached.valid;
@@ -59,14 +65,17 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		}
 	}
 
+	OnConditionInjections explainInjectedOnConditions;
 	QueryPreprocessor qPreproc((ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeExecute)
 								   ? const_cast<QueryEntries *>(&ctx.query.entries)->MakeLazyCopy()
 								   : QueryEntries{ctx.query.entries},
 							   ns_, ctx);
 	if (ctx.joinedSelectors) {
-		qPreproc.InjectConditionsFromJoins(*ctx.joinedSelectors, rdxCtx);
+		qPreproc.InjectConditionsFromJoins(*ctx.joinedSelectors, explainInjectedOnConditions, rdxCtx);
+		explain.PutOnConditionInjections(&explainInjectedOnConditions);
 	}
-	auto aggregators = getAggregators(ctx.query);
+	auto aggregators = getAggregators(aggregationQueryRef.aggregations_, aggregationQueryRef.strictMode);
+
 	qPreproc.AddDistinctEntries(aggregators);
 	const bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
 	qPreproc.InitIndexNumbers();
@@ -170,7 +179,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 					SelectKeyResult res;
 					res.emplace_back(std::move(ctx.preResult->ids));
 					static const std::string pr = "-preresult";
-					qres.Append(OpAnd, SelectIterator(std::move(res), false, pr));
+					// Iterator Field Kind: Preselect IdSet -> None
+					qres.Append(OpAnd, SelectIterator(std::move(res), false, pr, IteratorFieldKind::None));
 				} break;
 				case JoinPreResult::ModeIterators:
 					qres.LazyAppend(ctx.preResult->iterators.begin(), ctx.preResult->iterators.end());
@@ -202,7 +212,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 							!ctx.sortingContext.sortIndex())				   // 2. We have sorted query, by unordered index
 						   || ctx.preResult->btreeIndexOptimizationEnabled) {  // 3. We have btree-index that is not committed yet
 					ctx.preResult->iterators.Append(qres.cbegin(), qres.cend());
-					if (rx_unlikely(ctx.query.debugLevel >= LogInfo)) {
+					if rx_unlikely (ctx.query.debugLevel >= LogInfo) {
 						logPrintf(LogInfo, "Built preResult (expected %d iterations) with %d iterators, q='%s'", maxIterations, qres.Size(),
 								  ctx.query.GetSQL());
 					}
@@ -261,7 +271,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 				scan.emplace_back(0, limit);
 				maxIterations = limit;
 			}
-			qres.AppendFront(OpAnd, SelectIterator{std::move(scan), false, "-scan", true});
+			// Iterator Field Kind: -scan. Sorting Context! -> None
+			qres.AppendFront(OpAnd, SelectIterator{std::move(scan), false, "-scan", IteratorFieldKind::None, true});
 		}
 		// Get maximum iterations count, for right calculation comparators costs
 		qres.SortByCost(maxIterations);
@@ -269,7 +280,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		// Check idset must be 1st
 		qres.CheckFirstQuery();
 
-		// Rewing all results iterators
+		// Rewind all results iterators
 		qres.ExecuteAppropriateForEach(Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysFalse>{},
 									   [reverse, maxIterations](SelectIterator &it) { it.Start(reverse, maxIterations); });
 
@@ -316,9 +327,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		// Get total count for simple query with 1 condition and 1 idset
 		if (needCalcTotal && !lctx.calcTotal) {
 			if (!ctx.query.entries.Empty()) {
-				result.totalCount = qres.Get<SelectIterator>(0).GetMaxIterations();
+				result.totalCount += qres.Get<SelectIterator>(0).GetMaxIterations();
 			} else {
-				result.totalCount = ns_->items_.size() - ns_->free_.size();
+				result.totalCount += ns_->items_.size() - ns_->free_.size();
 			}
 		}
 		explain.AddLoopTime();
@@ -343,16 +354,27 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 			}
 		}
 	}
-	for (auto &aggregator : aggregators) {
-		result.aggregationResults.push_back(aggregator.GetResult());
+	if (rx_unlikely(ctx.isMergeQuerySubQuery())) {
+		writeAggregationResultMergeSubQuery(result, aggregators, ctx);
+	} else {
+		for (auto &aggregator : aggregators) {
+			result.aggregationResults.push_back(aggregator.GetResult());
+		}
 	}
 	//	Put count/count_cached to aggretions
-	if (ctx.query.calcTotal != ModeNoTotal || containAggCount || containAggCountCached) {
+	if (aggregationQueryRef.calcTotal != ModeNoTotal || containAggCount || containAggCountCached) {
 		AggregationResult ret;
 		ret.fields = {"*"};
-		ret.type = (ctx.query.calcTotal == ModeAccurateTotal || containAggCount) ? AggCount : AggCountCached;
-		ret.SetValue(result.totalCount);
-		result.aggregationResults.push_back(ret);
+		ret.type = (aggregationQueryRef.calcTotal == ModeAccurateTotal || containAggCount) ? AggCount : AggCountCached;
+		if (ctx.isMergeQuerySubQuery()) {
+			assertrx_throw(!result.aggregationResults.empty());
+			auto &agg = result.aggregationResults.back();
+			assertrx_throw(agg.type == ret.type);
+			agg.SetValue(result.totalCount);
+		} else {
+			ret.SetValue(result.totalCount);
+			result.aggregationResults.emplace_back(std::move(ret));
+		}
 	}
 
 	explain.AddPostprocessTime();
@@ -365,7 +387,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	explain.PutSelectors(&qresHolder.GetResultsRef());
 	explain.PutJoinedSelectors(ctx.joinedSelectors);
 
-	if (rx_unlikely(ctx.query.debugLevel >= LogInfo)) {
+	if rx_unlikely (ctx.query.debugLevel >= LogInfo) {
 		logPrintf(LogInfo, "%s", ctx.query.GetSQL());
 		explain.LogDump(ctx.query.debugLevel);
 	}
@@ -376,24 +398,24 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 			result.explainResults = explain.GetJSON();
 		}
 	}
-	if (rx_unlikely(ctx.query.debugLevel >= LogTrace)) {
+	if rx_unlikely (ctx.query.debugLevel >= LogTrace) {
 		logPrintf(LogInfo, "Query returned: [%s]; total=%d", result.Dump(), result.totalCount);
 	}
 
 	if (needPutCachedTotal) {
 		logPrintf(LogTrace, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
-		ns_->queryTotalCountCache_->Put(ckey, {static_cast<size_t>(result.totalCount)});
+		ns_->queryTotalCountCache_->Put(ckey, {static_cast<size_t>(result.totalCount - initTotalCount)});
 	}
 	if (ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
 		switch (ctx.preResult->dataMode) {
 			case JoinPreResult::ModeIdSet:
-				if (rx_unlikely(ctx.query.debugLevel >= LogInfo)) {
+				if rx_unlikely (ctx.query.debugLevel >= LogInfo) {
 					logPrintf(LogInfo, "Built idset preResult (expected %d iterations) with %d ids, q = '%s'", explain.Iterations(),
 							  ctx.preResult->ids.size(), ctx.query.GetSQL());
 				}
 				break;
 			case JoinPreResult::ModeValues:
-				if (rx_unlikely(ctx.query.debugLevel >= LogInfo)) {
+				if rx_unlikely (ctx.query.debugLevel >= LogInfo) {
 					logPrintf(LogInfo, "Built values preResult (expected %d iterations) with %d values, q = '%s'", explain.Iterations(),
 							  ctx.preResult->values.size(), ctx.query.GetSQL());
 				}
@@ -1210,12 +1232,12 @@ void NsSelecter::checkStrictModeAgg(StrictMode strictMode, const std::string &na
 	}
 }
 
-h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
+h_vector<Aggregator, 4> NsSelecter::getAggregators(const std::vector<AggregateEntry> &aggEntries, StrictMode strictMode) const {
 	static constexpr int NotFilled = -2;
 	h_vector<Aggregator, 4> ret;
 	h_vector<size_t, 4> distinctIndexes;
 
-	for (const auto &ag : q.aggregations_) {
+	for (const auto &ag : aggEntries) {
 		if (ag.Type() == AggCount || ag.Type() == AggCountCached) {
 			continue;
 		}
@@ -1229,7 +1251,7 @@ h_vector<Aggregator, 4> NsSelecter::getAggregators(const Query &q) const {
 		}
 		int idx = -1;
 		for (size_t i = 0; i < ag.Fields().size(); ++i) {
-			checkStrictModeAgg(q.strictMode == StrictModeNotSet ? ns_->config_.strictMode : q.strictMode, ag.Fields()[i], ns_->name_,
+			checkStrictModeAgg(strictMode == StrictModeNotSet ? ns_->config_.strictMode : strictMode, ag.Fields()[i], ns_->name_,
 							   ns_->tagsMatcher_);
 
 			for (size_t j = 0; j < sortingEntries.size(); ++j) {
@@ -1680,4 +1702,62 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 	return costOptimized <= costNormal;
 }
 
+void NsSelecter::writeAggregationResultMergeSubQuery(QueryResults &result, h_vector<Aggregator, 4> &aggregators, SelectCtx &ctx) {
+	if (result.aggregationResults.size() < aggregators.size()) {
+		throw Error(errQueryExec, "Merged query(%s) aggregators count (%d) does not match to the parent query aggregations (%d)",
+					ctx.query.GetSQL(false), aggregators.size(), result.aggregationResults.size());
+	}
+	for (size_t i = 0; i < aggregators.size(); i++) {
+		AggregationResult r = aggregators[i].GetResult();
+		AggregationResult &parentRes = result.aggregationResults[i];
+		if (r.type != parentRes.type || r.fields != parentRes.fields) {
+			std::stringstream strParentRes;
+			std::stringstream strR;
+			throw Error(errQueryExec, "Aggregation incorrect ns %s type of parent %s type of query %s parent field %s query field %s",
+						ns_->name_, AggTypeToStr(parentRes.type), AggTypeToStr(r.type), parentRes.DumpFields(strParentRes).str(),
+						r.DumpFields(strR).str());
+		}
+		switch (r.type) {
+			case AggSum: {
+				std::optional<double> newVal = r.GetValue();
+				std::optional<double> curVal = parentRes.GetValue();
+				if (newVal.has_value()) {
+					double cur = 0.0;
+					if (curVal.has_value()) {
+						cur = curVal.value();
+					}
+					parentRes.SetValue(newVal.value() + cur);
+				}
+				break;
+			}
+			case AggMin: {
+				std::optional<double> newVal = r.GetValue();
+				std::optional<double> curVal = parentRes.GetValue();
+				if (newVal.has_value()) {
+					if (!curVal.has_value() || newVal.value() < curVal.value()) {
+						parentRes.SetValue(newVal.value());
+					}
+				}
+				break;
+			}
+			case AggMax: {
+				std::optional<double> newVal = r.GetValue();
+				std::optional<double> curVal = parentRes.GetValue();
+				if (newVal.has_value()) {
+					if (!curVal.has_value() || newVal.value() > curVal.value()) {
+						parentRes.SetValue(newVal.value());
+					}
+				}
+				break;
+			}
+			case AggAvg:
+			case AggFacet:
+			case AggDistinct:
+			case AggCount:
+			case AggCountCached:
+			case AggUnknown:
+				assertrx_throw(false);
+		}
+	}
+}
 }  // namespace reindexer

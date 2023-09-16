@@ -87,7 +87,7 @@ public:
 			auto mIt = items_.find(**it);
 			assertrx(mIt != items_.end());
 			const size_t oldSize = sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size();
-			if (rx_unlikely(oldSize > totalCacheSize_)) {
+			if rx_unlikely (oldSize > totalCacheSize_) {
 				clearAll();
 				return;
 			}

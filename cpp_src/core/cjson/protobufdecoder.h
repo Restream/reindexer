@@ -12,7 +12,7 @@ struct ProtobufObject;
 
 class ArraysStorage {
 public:
-	explicit ArraysStorage(TagsMatcher& tm);
+	explicit ArraysStorage(TagsMatcher& tm) noexcept : tm_(tm) {}
 	ArraysStorage(const ArraysStorage&) = delete;
 	ArraysStorage(ArraysStorage&&) = delete;
 	ArraysStorage& operator=(const ArraysStorage&) = delete;
@@ -68,7 +68,8 @@ private:
 
 class ProtobufDecoder {
 public:
-	ProtobufDecoder(TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema);
+	ProtobufDecoder(TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema) noexcept
+		: tm_(tagsMatcher), schema_(std::move(schema)), arraysStorage_(tm_) {}
 	ProtobufDecoder(const ProtobufDecoder&) = delete;
 	ProtobufDecoder(ProtobufDecoder&&) = delete;
 	ProtobufDecoder& operator=(const ProtobufDecoder&) = delete;
@@ -86,6 +87,7 @@ private:
 	std::shared_ptr<const Schema> schema_;
 	TagsPath tagsPath_;
 	ArraysStorage arraysStorage_;
+	ScalarIndexesSetT objectScalarIndexes_;
 };
 
 }  // namespace reindexer

@@ -1,4 +1,5 @@
 #include "type_consts_helpers.h"
+
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -23,9 +24,9 @@ namespace reindexer {
 		case CondEmpty:
 		case CondLike:
 		case CondDWithin:
-		default:
-			throw Error(errForbidden, "Not invertible conditional operator '%s(%d)' in query", CondTypeToStr(cond), cond);
+			break;
 	}
+	throw Error(errForbidden, "Not invertible conditional operator '%s(%d)' in query", CondTypeToStr(cond), cond);
 }
 
 [[nodiscard]] std::string_view CondTypeToStr(CondType t) {
@@ -55,9 +56,8 @@ namespace reindexer {
 			return "CondLike"sv;
 		case CondDWithin:
 			return "CondDWithin"sv;
-		default:
-			throw Error{errNotValid, "Invalid condition type: %d", t};
 	}
+	throw Error{errNotValid, "Invalid condition type: %d", t};
 }
 
 [[nodiscard]] std::string_view TagTypeToStr(TagType t) {
@@ -81,9 +81,8 @@ namespace reindexer {
 			return "<null>"sv;
 		case TAG_UUID:
 			return "<uuid>"sv;
-		default:
-			throw Error{errNotValid, "Invalid tag type: %d", t};
 	}
+	throw Error{errNotValid, "Invalid tag type: %d", t};
 }
 
 [[nodiscard]] std::string_view AggTypeToStr(AggType t) noexcept {
@@ -106,9 +105,26 @@ namespace reindexer {
 		case AggCountCached:
 			return "count_cached"sv;
 		case AggUnknown:
-		default:
-			return "unknown"sv;
+			break;
 	}
+	return "unknown"sv;
+}
+
+[[nodiscard]] std::string_view JoinTypeName(JoinType type) {
+	using namespace std::string_view_literals;
+
+	switch (type) {
+		case JoinType::InnerJoin:
+			return "INNER JOIN"sv;
+		case JoinType::OrInnerJoin:
+			return "OR INNER JOIN"sv;
+		case JoinType::LeftJoin:
+			return "LEFT JOIN"sv;
+		case JoinType::Merge:
+			return "MERGE"sv;
+	}
+	assertrx(false);
+	return "unknown"sv;
 }
 
 }  // namespace reindexer

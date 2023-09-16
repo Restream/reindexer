@@ -26,6 +26,7 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		CheckDistinctQueries();
 		CheckGeomQueries();
 		CheckMergeQueriesWithLimit();
+		CheckMergeQueriesWithAggregation();
 
 		int itemsCount = 0;
 		auto& items = insertedItems_[default_namespace];

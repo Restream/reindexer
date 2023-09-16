@@ -243,7 +243,7 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 	}
 
 	// Check and print potential stop words
-	if (rx_unlikely(holder_.cfg_->logLevel >= LogInfo)) {
+	if rx_unlikely (holder_.cfg_->logLevel >= LogInfo) {
 		WrSerializer out;
 		for (auto &w : words_um) {
 			if (w.second.vids_.size() > vdocs.size() / 5 || int64_t(w.second.vids_.size()) > holder_.cfg_->mergeLimit) {

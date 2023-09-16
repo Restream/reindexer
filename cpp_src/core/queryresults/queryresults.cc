@@ -12,12 +12,11 @@
 
 namespace reindexer {
 
-void QueryResults::AddNamespace(std::shared_ptr<NamespaceImpl> ns, const NsContext &ctx) {
-	assertrx(ctx.noLock);
+void QueryResults::AddNamespace(NamespaceImplPtr ns, [[maybe_unused]] bool noLock) {
+	assertrx(noLock);
 	const NamespaceImpl *nsPtr = ns.get();
-	auto strHolder = ns->StrHolder(ctx);
-	const auto it =
-		std::find_if(nsData_.cbegin(), nsData_.cend(), [nsPtr](const NsDataHolder &nsData) { return nsData.ns.get() == nsPtr; });
+	auto strHolder = ns->strHolder();
+	const auto it = std::find_if(nsData_.cbegin(), nsData_.cend(), [nsPtr](const NsDataHolder &nsData) { return nsData.ns == nsPtr; });
 	if (it != nsData_.cend()) {
 		assertrx(it->strHolder.get() == strHolder.get());
 		return;
@@ -25,8 +24,19 @@ void QueryResults::AddNamespace(std::shared_ptr<NamespaceImpl> ns, const NsConte
 	nsData_.emplace_back(std::move(ns), std::move(strHolder));
 }
 
+void QueryResults::AddNamespace(NamespaceImpl *ns, [[maybe_unused]] bool noLock) {
+	assertrx(noLock);
+	auto strHolder = ns->strHolder();
+	const auto it = std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder &nsData) { return nsData.ns == ns; });
+	if (it != nsData_.cend()) {
+		assertrx(it->strHolder.get() == strHolder.get());
+		return;
+	}
+	nsData_.emplace_back(ns, std::move(strHolder));
+}
+
 void QueryResults::RemoveNamespace(const NamespaceImpl *ns) {
-	const auto it = std::find_if(nsData_.begin(), nsData_.end(), [ns](const NsDataHolder &nsData) { return nsData.ns.get() == ns; });
+	const auto it = std::find_if(nsData_.begin(), nsData_.end(), [ns](const NsDataHolder &nsData) { return nsData.ns == ns; });
 	assertrx(it != nsData_.end());
 	nsData_.erase(it);
 }
@@ -447,38 +457,19 @@ void QueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 	}
 }
 
-const TagsMatcher &QueryResults::getTagsMatcher(int nsid) const {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].tagsMatcher_;
-}
+const TagsMatcher &QueryResults::getTagsMatcher(int nsid) const { return ctxs[nsid].tagsMatcher_; }
 
-const PayloadType &QueryResults::getPayloadType(int nsid) const {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].type_;
-}
+const PayloadType &QueryResults::getPayloadType(int nsid) const { return ctxs[nsid].type_; }
 
-const FieldsSet &QueryResults::getFieldsFilter(int nsid) const {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].fieldsFilter_;
-}
+const FieldsSet &QueryResults::getFieldsFilter(int nsid) const { return ctxs[nsid].fieldsFilter_; }
 
-TagsMatcher &QueryResults::getTagsMatcher(int nsid) {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].tagsMatcher_;
-}
+TagsMatcher &QueryResults::getTagsMatcher(int nsid) { return ctxs[nsid].tagsMatcher_; }
 
-PayloadType &QueryResults::getPayloadType(int nsid) {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].type_;
-}
+PayloadType &QueryResults::getPayloadType(int nsid) { return ctxs[nsid].type_; }
 
-std::shared_ptr<const Schema> QueryResults::getSchema(int nsid) const {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].schema_;
-}
+std::shared_ptr<const Schema> QueryResults::getSchema(int nsid) const { return ctxs[nsid].schema_; }
 
 int QueryResults::getNsNumber(int nsid) const {
-	assertrx(nsid < int(ctxs.size()));
 	assertrx(ctxs[nsid].schema_);
 	return ctxs[nsid].schema_->GetProtobufNsNumber();
 }
@@ -491,5 +482,11 @@ void QueryResults::addNSContext(const PayloadType &type, const TagsMatcher &tags
 
 	ctxs.push_back(Context(type, tagsMatcher, filter, std::move(schema)));
 }
+
+QueryResults::NsDataHolder::NsDataHolder(QueryResults::NamespaceImplPtr &&_ns, StringsHolderPtr &&strHldr) noexcept
+	: nsPtr_{std::move(_ns)}, ns(nsPtr_.get()), strHolder{std::move(strHldr)} {}
+
+QueryResults::NsDataHolder::NsDataHolder(NamespaceImpl *_ns, StringsHolderPtr &&strHldr) noexcept
+	: ns(_ns), strHolder(std::move(strHldr)) {}
 
 }  // namespace reindexer

@@ -191,8 +191,21 @@ func (tx *Tx) DeleteJSON(json []byte, precepts ...string) error {
 	return tx.modifyInternal(nil, json, modeDelete, precepts...)
 }
 
+func (tx *Tx) handleRecoverFromAsyncOp(rec interface{}) error {
+	tx.cmplCond.L.Lock()
+	atomic.AddUint32(&tx.asyncRspCnt, ^uint32(0))
+	tx.cmplCond.Broadcast()
+	tx.cmplCond.L.Unlock()
+	switch x := rec.(type) {
+	case error:
+		return x
+	default:
+		return bindings.NewError("Unknown panic type", ErrCodeLogic)
+	}
+}
+
 // InsertAsync Insert item to namespace. Calls completion on result
-func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
+func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) (err error) {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.InsertAsync", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -201,7 +214,7 @@ func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts .
 		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.InsertAsync", tx.namespace)).ObserveDuration()
 	}
 
-	err := tx.startTx()
+	err = tx.startTx()
 	if err != nil {
 		return err
 	}
@@ -210,11 +223,17 @@ func (tx *Tx) InsertAsync(item interface{}, cmpl bindings.Completion, precepts .
 		return err
 	}
 
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = tx.handleRecoverFromAsyncOp(rec)
+		}
+	}()
+
 	return tx.modifyInternalAsync(item, nil, modeInsert, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
 
 // UpdateAsync Update item to namespace. Calls completion on result
-func (tx *Tx) UpdateAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
+func (tx *Tx) UpdateAsync(item interface{}, cmpl bindings.Completion, precepts ...string) (err error) {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.UpdateAsync", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -223,7 +242,7 @@ func (tx *Tx) UpdateAsync(item interface{}, cmpl bindings.Completion, precepts .
 		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.UpdateAsync", tx.namespace)).ObserveDuration()
 	}
 
-	err := tx.startTx()
+	err = tx.startTx()
 	if err != nil {
 		return err
 	}
@@ -232,11 +251,17 @@ func (tx *Tx) UpdateAsync(item interface{}, cmpl bindings.Completion, precepts .
 		return err
 	}
 
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = tx.handleRecoverFromAsyncOp(rec)
+		}
+	}()
+
 	return tx.modifyInternalAsync(item, nil, modeUpdate, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
 
 // UpsertAsync (Insert or Update) item to namespace. Calls completion on result
-func (tx *Tx) UpsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
+func (tx *Tx) UpsertAsync(item interface{}, cmpl bindings.Completion, precepts ...string) (err error) {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.UpsertAsync", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -245,7 +270,7 @@ func (tx *Tx) UpsertAsync(item interface{}, cmpl bindings.Completion, precepts .
 		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.UpsertAsync", tx.namespace)).ObserveDuration()
 	}
 
-	err := tx.startTx()
+	err = tx.startTx()
 	if err != nil {
 		return err
 	}
@@ -253,6 +278,12 @@ func (tx *Tx) UpsertAsync(item interface{}, cmpl bindings.Completion, precepts .
 	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
+
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = tx.handleRecoverFromAsyncOp(rec)
+		}
+	}()
 
 	return tx.modifyInternalAsync(item, nil, modeUpsert, cmpl, retriesOnInvalidStateCnt, precepts...)
 }
@@ -280,7 +311,7 @@ func (tx *Tx) UpsertJSONAsync(json []byte, cmpl bindings.Completion, precepts ..
 }
 
 // DeleteAsync - remove item by id from namespace. Calls completion on result
-func (tx *Tx) DeleteAsync(item interface{}, cmpl bindings.Completion, precepts ...string) error {
+func (tx *Tx) DeleteAsync(item interface{}, cmpl bindings.Completion, precepts ...string) (err error) {
 	if tx.db.otelTracer != nil {
 		defer tx.db.startTracingSpan(tx.ctx.UserCtx, "Reindexer.Tx.DeleteAsync", otelattr.String("rx.ns", tx.namespace)).End()
 	}
@@ -289,7 +320,7 @@ func (tx *Tx) DeleteAsync(item interface{}, cmpl bindings.Completion, precepts .
 		defer prometheus.NewTimer(tx.db.promMetrics.clientCallsLatency.WithLabelValues("Tx.DeleteAsync", tx.namespace)).ObserveDuration()
 	}
 
-	err := tx.startTx()
+	err = tx.startTx()
 	if err != nil {
 		return err
 	}
@@ -297,6 +328,12 @@ func (tx *Tx) DeleteAsync(item interface{}, cmpl bindings.Completion, precepts .
 	if err = tx.startAsyncRoutines(); err != nil {
 		return err
 	}
+
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = tx.handleRecoverFromAsyncOp(rec)
+		}
+	}()
 
 	return tx.modifyInternalAsync(item, nil, modeDelete, cmpl, retriesOnInvalidStateCnt, precepts...)
 }

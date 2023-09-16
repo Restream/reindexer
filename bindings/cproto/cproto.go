@@ -18,8 +18,9 @@ import (
 
 const (
 	defConnPoolSize        = 8
-	defConnPoolLBAlgorithm = bindings.LBRoundRobin
-	pingerTimeoutSec       = 60
+	defConnPoolLBAlgorithm = bindings.LBPowerOfTwoChoices
+	pingerTimeoutSec       = uint32(60)
+	pingResponseTimeoutSec = uint32(20)
 	defAppName             = "Go-connector"
 
 	opRd = 0
@@ -586,7 +587,7 @@ func (binding *NetCProto) rpcCallNoResults(ctx context.Context, op int, cmd int,
 func (binding *NetCProto) pinger() {
 	timeout := time.Second
 	ticker := time.NewTicker(timeout)
-	var ticksCount uint16
+	var ticksCount uint32
 	for now := range ticker.C {
 		ticksCount++
 		select {
@@ -597,15 +598,32 @@ func (binding *NetCProto) pinger() {
 		if ticksCount == pingerTimeoutSec {
 			ticksCount = 0
 			conns := binding.getAllConns()
+			var wg sync.WaitGroup
+			cmpl := func(buf bindings.RawBuffer, err error) {
+				wg.Done()
+				if buf != nil {
+					buf.Free()
+				}
+			}
 			for _, conn := range conns {
 				if conn.hasError() {
 					continue
 				}
-				if conn.lastReadTime().Add(timeout).Before(now) {
-					buf, _ := conn.rpcCall(context.TODO(), cmdPing, uint32(binding.timeouts.RequestTimeout*time.Second))
-					buf.Free()
+				if !conn.lastReadTime().Add(timeout).Before(now) {
+					continue
 				}
+				if cap(conn.seqs)-len(conn.seqs) > 0 {
+					continue
+				}
+				timeout := pingResponseTimeoutSec
+				if uint32(binding.timeouts.RequestTimeout) > timeout {
+					timeout = uint32(binding.timeouts.RequestTimeout)
+				}
+
+				wg.Add(1)
+				conn.rpcCallAsync(context.TODO(), cmdPing, uint32(timeout), cmpl)
 			}
+			wg.Wait()
 		}
 	}
 }

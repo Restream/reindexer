@@ -86,7 +86,7 @@ void ItemImpl::GetField(int field, VariantArray &values) { GetPayload().Get(fiel
 Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 	Payload pl = GetPayload();
 	if (!msgPackDecoder_) {
-		msgPackDecoder_.reset(new MsgPackDecoder(&tagsMatcher_));
+		msgPackDecoder_.reset(new MsgPackDecoder(tagsMatcher_));
 	}
 
 	ser_.Reset();
@@ -123,7 +123,7 @@ Error ItemImpl::GetMsgPack(WrSerializer &wrser) {
 
 	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);
 	msgpackEncoder.Encode(pl, msgpackBuilder);
-	return errOK;
+	return Error();
 }
 
 Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
@@ -132,7 +132,7 @@ Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
 	ProtobufBuilder protobufBuilder(&wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
 	ProtobufEncoder protobufEncoder(&tagsMatcher_);
 	protobufEncoder.Encode(pl, protobufBuilder);
-	return errOK;
+	return Error();
 }
 
 // Construct item from compressed json

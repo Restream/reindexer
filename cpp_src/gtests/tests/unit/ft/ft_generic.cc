@@ -583,7 +583,7 @@ TEST_P(FTGenericApi, Unique) {
 	std::vector<std::string> data;
 	std::set<size_t> check;
 	std::set<std::string> checks;
-	reindexer::logInstallWriter([](int, char*) { /*std::cout << buf << std::endl;*/ });
+	reindexer::logInstallWriter([](int, char*) { /*std::cout << buf << std::endl;*/ }, reindexer::LoggerPolicy::WithLocks);
 
 	for (int i = 0; i < 1000; ++i) {
 		bool inserted = false;

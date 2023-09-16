@@ -1,13 +1,14 @@
 
 #include "selectiterator.h"
+
 #include <algorithm>
 #include <cmath>
 #include "core/index/indexiterator.h"
 
 namespace reindexer {
 
-SelectIterator::SelectIterator(SelectKeyResult res, bool dist, std::string n, bool forcedFirst)
-	: SelectKeyResult(std::move(res)), distinct(dist), name(std::move(n)), forcedFirst_(forcedFirst), type_(Forward) {}
+SelectIterator::SelectIterator(SelectKeyResult res, bool dist, std::string n, IteratorFieldKind fKind, bool forcedFirst)
+	: SelectKeyResult(std::move(res)), distinct(dist), name(std::move(n)), fieldKind(fKind), forcedFirst_(forcedFirst), type_(Forward) {}
 
 void SelectIterator::Bind(const PayloadType &type, int field) {
 	for (Comparator &cmp : comparators_) cmp.Bind(type, field);

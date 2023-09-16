@@ -11,6 +11,11 @@ namespace reindexer {
 [[nodiscard]] std::string_view TagTypeToStr(TagType);
 [[nodiscard]] std::string_view AggTypeToStr(AggType t) noexcept;
 
+/// Get readable Join Type
+/// @param type - join type
+/// @returns string with join type name
+[[nodiscard]] std::string_view JoinTypeName(JoinType type);
+
 template <typename T>
 auto& operator<<(T& os, CondType cond) {
 	switch (cond) {
@@ -38,9 +43,8 @@ auto& operator<<(T& os, CondType cond) {
 			return os << "LIKE";
 		case CondDWithin:
 			return os << "DWITHIN";
-		default:
-			abort();
 	}
+	std::abort();
 }
 
 template <typename T>
@@ -52,25 +56,13 @@ auto& operator<<(T& os, OpType op) {
 			return os << "AND";
 		case OpNot:
 			return os << "NOT";
-		default:
-			abort();
 	}
+	std::abort();
 }
 
 template <typename T>
 auto& operator<<(T& os, JoinType jt) {
-	switch (jt) {
-		case LeftJoin:
-			return os << "LEFT JOIN";
-		case InnerJoin:
-			return os << "INNER JOIN";
-		case OrInnerJoin:
-			return os << "OR INNER JOIN";
-		case Merge:
-			return os << "MERGE";
-		default:
-			abort();
-	}
+	return os << JoinTypeName(jt);
 }
 
 template <typename T>
@@ -118,9 +110,10 @@ T& operator<<(T& os, IndexType it) {
 			return os << "RTree";
 		case IndexUuidHash:
 			return os << "UuidHash";
-		default:
-			abort();
+		case IndexUuidStore:
+			return os << "UuidStore";
 	}
+	std::abort();
 }
 
 template <typename T>
@@ -136,9 +129,8 @@ T& operator<<(T& os, CollateMode m) {
 			return os << "Numeric";
 		case CollateCustom:
 			return os << "Custom";
-		default:
-			abort();
 	}
+	std::abort();
 }
 
 constexpr bool IsComposite(IndexType type) noexcept {

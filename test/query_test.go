@@ -240,6 +240,12 @@ func (tx *txTest) UpsertAsync(s interface{}, cmpl bindings.Completion) error {
 	return tx.tx.UpsertAsync(s, cmpl)
 }
 
+func (tx *txTest) DeleteAsync(s interface{}, cmpl bindings.Completion) error {
+	val := reflect.Indirect(reflect.ValueOf(s))
+	tx.ns.items[getPK(tx.ns, val)] = s
+	return tx.tx.DeleteAsync(s, cmpl)
+}
+
 func (tx *txTest) Commit() (int, error) {
 	res, err := tx.tx.CommitWithCount()
 	tx.db.SetSyncRequired()
@@ -409,6 +415,9 @@ func (qt *queryTest) Where(index string, condition int, keys interface{}) *query
 	return qt.where(index, condition, keys)
 }
 
+// WhereUUID - Add where condition with UUID args.
+// This function applies binary encoding to the uuid value.
+// 'index' MUST be declared as uuid index in this case
 func (qt *queryTest) WhereUuid(index string, condition int, keys ...string) *queryTest {
 	qt.q.WhereUuid(index, condition, keys...)
 	return qt.where(index, condition, keys)

@@ -213,3 +213,33 @@ func TestAsyncTxTimeout(t *testing.T) {
 	// Check, that there are no changes in namespace
 	CheckTYx(t, testTxAsyncTimeoutItemNs, count1)
 }
+
+func callTxMethod(t *testing.T, method func(interface{}, bindings.Completion) error) {
+	type OtherItem struct {
+		Id   int64
+		Data int64
+	}
+
+	err := method(OtherItem{
+		Id:   0,
+		Data: 0,
+	}, func(err error) {})
+
+	assert.NotNil(t, err)
+	rerr, ok := err.(bindings.Error)
+	assert.True(t, ok)
+	assert.Equal(t, rerr.Code(), reindexer.ErrCodeParams)
+}
+
+func TestRollbackAsyncOpWithIncorrectItem(t *testing.T) {
+	tx := newTestTx(DB, testTxItemNs)
+
+	callTxMethod(t, tx.UpdateAsync)
+	callTxMethod(t, tx.UpsertAsync)
+	callTxMethod(t, tx.InsertAsync)
+	callTxMethod(t, tx.DeleteAsync)
+
+	err := tx.Rollback()
+
+	assert.Nil(t, err)
+}

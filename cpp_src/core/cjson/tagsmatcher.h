@@ -39,10 +39,10 @@ public:
 		auto res = impl_->path2indexedtag(jsonPath, ev);
 		return res.empty() && canAdd ? impl_.clone()->path2indexedtag(jsonPath, ev, canAdd, updated_) : res;
 	}
-	int version() const { return impl_->version(); }
-	size_t size() const { return impl_->size(); }
-	bool isUpdated() const { return updated_; }
-	uint32_t stateToken() const { return impl_->stateToken(); }
+	int version() const noexcept { return impl_->version(); }
+	size_t size() const noexcept { return impl_->size(); }
+	bool isUpdated() const noexcept { return updated_; }
+	uint32_t stateToken() const noexcept { return impl_->stateToken(); }
 	void clear() { impl_.clone()->clear(); }
 	void serialize(WrSerializer& ser) const { impl_->serialize(ser); }
 	void deserialize(Serializer& ser) {
@@ -53,8 +53,8 @@ public:
 		impl_.clone()->deserialize(ser, version, stateToken);
 		impl_.clone()->buildTagsCache(updated_);
 	}
-	void clearUpdated() { updated_ = false; }
-	void setUpdated() { updated_ = true; }
+	void clearUpdated() noexcept { updated_ = false; }
+	void setUpdated() noexcept { updated_ = true; }
 
 	bool try_merge(const TagsMatcher& tm) {
 		auto tmp = impl_;

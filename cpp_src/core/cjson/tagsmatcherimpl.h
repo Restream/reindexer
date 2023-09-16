@@ -220,9 +220,9 @@ public:
 		return true;
 	}
 
-	size_t size() const { return tags2names_.size(); }
-	int version() const { return version_; }
-	int stateToken() const { return stateToken_; }
+	size_t size() const noexcept { return tags2names_.size(); }
+	int version() const noexcept { return version_; }
+	int stateToken() const noexcept { return stateToken_; }
 
 	void clear() {
 		names2tags_.clear();

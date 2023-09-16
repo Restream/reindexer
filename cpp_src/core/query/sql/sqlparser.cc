@@ -6,6 +6,7 @@
 #include "core/queryresults/aggregationresult.h"
 #include "core/type_consts_helpers.h"
 #include "sqltokentype.h"
+#include "vendor/double-conversion/double-conversion.h"
 #include "vendor/gason/gason.h"
 
 namespace reindexer {
@@ -23,7 +24,7 @@ bool SQLParser::reachedAutocompleteToken(tokenizer &parser, const token &tok) {
 }
 
 token SQLParser::peekSqlToken(tokenizer &parser, int tokenType, bool toLower) {
-	token tok = parser.peek_token(toLower);
+	token tok = parser.peek_token(toLower ? tokenizer::flags::to_lower : tokenizer::flags::no_flags);
 	bool eof = ((parser.getPos() + tok.text().length()) == parser.length());
 	if (ctx_.autocompleteMode && !tok.text().empty() && reachedAutocompleteToken(parser, tok)) {
 		size_t tokenLen = 0;
@@ -91,12 +92,16 @@ int SQLParser::selectParse(tokenizer &parser) {
 			tok = peekSqlToken(parser, SingleSelectFieldSqlToken);
 			if (name.text() == "count"sv) {
 				query_.calcTotal = ModeAccurateTotal;
-				if (!wasSelectFilter) query_.count = 0;
+				if (!wasSelectFilter) {
+					query_.count = 0;
+				}
 				tok = parser.next_token();
 				if (tok.text() != "*") throw Error(errParseSQL, "Expected '*', but found '%s' in query, %s", tok.text(), parser.where());
 			} else if (name.text() == "count_cached"sv) {
 				query_.calcTotal = ModeCachedTotal;
-				if (!wasSelectFilter) query_.count = 0;
+				if (!wasSelectFilter) {
+					query_.count = 0;
+				}
 				tok = parser.next_token();
 				if (tok.text() != "*"sv) throw Error(errParseSQL, "Expected '*', but found '%s' in query, %s", tok.text(), parser.where());
 			} else if (name.text() == "rank"sv) {
@@ -146,7 +151,7 @@ int SQLParser::selectParse(tokenizer &parser) {
 							break;
 						}
 					}
-					query_.aggregations_.push_back(std::move(entry));
+					query_.aggregations_.emplace_back(std::move(entry));
 				} else {
 					throw Error(errParams, "Unknown function name SQL - %s, %s", name.text(), parser.where());
 				}
@@ -162,7 +167,7 @@ int SQLParser::selectParse(tokenizer &parser) {
 			if (!query_.CanAddSelectFilter()) {
 				throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 			}
-			query_.selectFilter_.push_back(std::string(nameWithCase.text()));
+			query_.selectFilter_.emplace_back(nameWithCase.text());
 			query_.count = QueryEntry::kDefaultLimit;
 			wasSelectFilter = true;
 		} else if (name.text() == "*"sv) {
@@ -318,8 +323,14 @@ Variant token2kv(const token &currTok, tokenizer &parser, bool allowComposite) {
 	return detectValueType(currTok).EvaluateOneOf(
 		[&](KeyValueType::Int64) { return Variant(int64_t(stoll(value))); },
 		[&](KeyValueType::Double) {
-			char *p = 0;
-			return Variant(double(strtod(value.data(), &p)));
+			try {
+				using double_conversion::StringToDoubleConverter;
+				static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+				int countOfCharsParsedAsDouble;
+				return Variant(converter.StringToDouble(value.data(), value.size(), &countOfCharsParsedAsDouble));
+			} catch (...) {
+				throw Error(errParseSQL, "Unable to convert '%s' to double value", value);
+			}
 		},
 		[&](KeyValueType::String) { return Variant(make_key_string(value.data(), value.length())); },
 		[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Bool, KeyValueType::Int, KeyValueType::Composite,
@@ -335,7 +346,7 @@ int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, s
 	parser.next_token();
 	for (;;) {
 		auto nameWithCase = peekSqlToken(parser, FieldNameSqlToken);
-		auto tok = parser.next_token(false, false, true);
+		auto tok = parser.next_token(tokenizer::flags::in_order_by);
 		if (tok.type != TokenName && tok.type != TokenString) {
 			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 		}
@@ -352,7 +363,7 @@ int SQLParser::parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, s
 				throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 			}
 			sortingEntry.expression = std::string(tok.text());
-			tok = parser.next_token(false);
+			tok = parser.next_token(tokenizer::flags::no_flags);
 			for (;;) {
 				tok = parser.next_token();
 				if (tok.text() == ")"sv) break;
@@ -455,7 +466,8 @@ static void addUpdateValue(const token &currTok, tokenizer &parser, UpdateEntry 
 			std::string expression(currTok.text());
 			bool inArray = false;
 			while (!eof(parser, inArray)) {
-				expression += std::string{parser.next_token(false, true).text()};
+				auto tok = parser.next_token(tokenizer::flags::treat_sign_as_token);
+				expression += tok.type == TokenString ? '\'' + std::string{tok.text()} + '\'' : std::string{tok.text()};
 				++count;
 			}
 			if (count > 0) {
@@ -488,17 +500,17 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 	size_t startPos = parser.getPos();
 	bool withArrayExpressions = false;
 
-	tok = parser.next_token(false);
+	tok = parser.next_token(tokenizer::flags::no_flags);
 	if (tok.text() == "["sv) {
 		updateField.Values().MarkArray();
 		for (;;) {
-			tok = parser.next_token(false);
+			tok = parser.next_token(tokenizer::flags::no_flags);
 			if (tok.text() == "]") {
 				if (updateField.Values().empty()) break;
 				throw Error(errParseSQL, "Expected field value, but found ']' in query, %s", parser.where());
 			}
 			addUpdateValue(tok, parser, updateField);
-			tok = parser.next_token(false);
+			tok = parser.next_token(tokenizer::flags::no_flags);
 			if (tok.text() == "]"sv) break;
 			if (tok.text() != ","sv) {
 				throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
@@ -748,7 +760,7 @@ void SQLParser::parseEqualPositions(tokenizer &parser, std::vector<std::pair<siz
 	EqualPosition_t fields;
 	for (;;) {
 		auto nameWithCase = peekSqlToken(parser, FieldNameSqlToken);
-		tok = parser.next_token(false);
+		tok = parser.next_token(tokenizer::flags::no_flags);
 		if (tok.type != TokenName) {
 			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 		}
@@ -765,7 +777,7 @@ void SQLParser::parseEqualPositions(tokenizer &parser, std::vector<std::pair<siz
 						nameWithCase.text(), parser.where());
 		}
 		fields.emplace_back(nameWithCase.text());
-		tok = parser.next_token(false);
+		tok = parser.next_token(tokenizer::flags::no_flags);
 		if (tok.text() == ")"sv) break;
 		if (tok.text() != ","sv) {
 			throw Error(errParseSQL, "Expected ',', but found %s, %s", tok.text(), parser.where());

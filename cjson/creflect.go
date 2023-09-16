@@ -3,7 +3,6 @@ package cjson
 import (
 	"fmt"
 	"reflect"
-	"strings"
 	"unsafe"
 
 	"github.com/restream/reindexer/v3/bindings"
@@ -107,17 +106,44 @@ func (pl *payloadIface) ptr(field, idx, typ int) unsafe.Pointer {
 const hexChars = "0123456789abcdef"
 
 func createUuid(v [2]uint64) string {
-	var b strings.Builder
-	b.Grow(36)
-	for i, j := 0, 0; i < 36; i++ {
-		switch i {
-		case 8, 13, 18, 23: b.WriteByte('-')
-		default:
-			b.WriteByte(hexChars[(v[j / 16] >> ((15 - j % 16) * 4)) & 0xF])
-			j++
-		}
-	}
-	return b.String()
+	buf := make([]byte, 36)
+	buf[0] = hexChars[(v[0] >> 60) & 0xF];
+	buf[1] = hexChars[(v[0] >> 56) & 0xF];
+	buf[2] = hexChars[(v[0] >> 52) & 0xF];
+	buf[3] = hexChars[(v[0] >> 48) & 0xF];
+	buf[4] = hexChars[(v[0] >> 44) & 0xF];
+	buf[5] = hexChars[(v[0] >> 40) & 0xF];
+	buf[6] = hexChars[(v[0] >> 36) & 0xF];
+	buf[7] = hexChars[(v[0] >> 32) & 0xF];
+	buf[8] = '-';
+	buf[9] = hexChars[(v[0] >> 28) & 0xF];
+	buf[10] = hexChars[(v[0] >> 24) & 0xF];
+	buf[11] = hexChars[(v[0] >> 20) & 0xF];
+	buf[12] = hexChars[(v[0] >> 16) & 0xF];
+	buf[13] = '-';
+	buf[14] = hexChars[(v[0] >> 12) & 0xF];
+	buf[15] = hexChars[(v[0] >> 8) & 0xF];
+	buf[16] = hexChars[(v[0] >> 4) & 0xF];
+	buf[17] = hexChars[v[0] & 0xF];
+	buf[18] = '-';
+	buf[19] = hexChars[(v[1] >> 60) & 0xF];
+	buf[20] = hexChars[(v[1] >> 56) & 0xF];
+	buf[21] = hexChars[(v[1] >> 52) & 0xF];
+	buf[22] = hexChars[(v[1] >> 48) & 0xF];
+	buf[23] = '-';
+	buf[24] = hexChars[(v[1] >> 44) & 0xF];
+	buf[25] = hexChars[(v[1] >> 40) & 0xF];
+	buf[26] = hexChars[(v[1] >> 36) & 0xF];
+	buf[27] = hexChars[(v[1] >> 32) & 0xF];
+	buf[28] = hexChars[(v[1] >> 28) & 0xF];
+	buf[29] = hexChars[(v[1] >> 24) & 0xF];
+	buf[30] = hexChars[(v[1] >> 20) & 0xF];
+	buf[31] = hexChars[(v[1] >> 16) & 0xF];
+	buf[32] = hexChars[(v[1] >> 12) & 0xF];
+	buf[33] = hexChars[(v[1] >> 8) & 0xF];
+	buf[34] = hexChars[(v[1] >> 4) & 0xF];
+	buf[35] = hexChars[v[1] & 0xF];
+	return string(buf)
 }
 
 func (pl *payloadIface) getInt(field, idx int) int {

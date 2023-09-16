@@ -129,6 +129,20 @@ struct AggregationResult {
 		for (auto &v : fields) fieldsArray.Put(0, v);
 		fieldsArray.End();
 	}
+	template <typename S>
+	S &DumpFields(S &os) {
+		os << '[';
+		bool first = true;
+		for (const auto &f : fields) {
+			if (!first) {
+				os << ", ";
+			}
+			first = false;
+			os << f;
+		}
+		os << ']';
+		return os;
+	}
 
 private:
 	std::optional<double> value_ = std::nullopt;

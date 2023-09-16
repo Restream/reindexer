@@ -1,6 +1,5 @@
 #include "logginglongqueries.h"
 #include "core/nsselecter/explaincalc.h"
-#include "core/query/query.h"
 #include "core/transactionimpl.h"
 #include "logger.h"
 
@@ -69,8 +68,21 @@ static std::string_view describeDurationStorageIdx(DurationStorageIdx idx) {
 	throw Error(errLogic, "Unknown duration storage index");
 }
 
+template <typename Storage>
+static auto fillStorageInfo(std::ostringstream& os, const Storage& storage) {
+	os << "[slowlog] Waiting for a mutex lock:" << std::endl;
+	for (size_t i = 0; i < storage.size(); ++i) {
+		if (!storage.at(i)) {
+			continue;
+		}
+		// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
+		os << describeDurationStorageIdx(DurationStorageIdx{static_cast<unsigned>(i)}) << ": " << storage.at(i)->count() << "us"
+		   << std::endl;
+	}
+}
+
 template <>
-void Logger<Query>::Dump(std::chrono::microseconds time) {
+void Logger<QueryEnum2Type<QueryType::QuerySelect>>::Dump(std::chrono::microseconds time) {
 	if (wrapper_.loggingParams.thresholdUs >= 0 && time.count() > wrapper_.loggingParams.thresholdUs) {
 		std::ostringstream os;
 		os << fmt::sprintf("[slowlog] Long execution query: sql - %s; (%dus)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
@@ -83,7 +95,27 @@ void Logger<Query>::Dump(std::chrono::microseconds time) {
 				os << describeExplainDuration(ExplainDuration{i}) << ": " << (*wrapper_.durationStorage)[i].count() << "us" << std::endl;
 			}
 		}
+		logPrint(LogWarning, os.str().data());
+	}
+}
 
+template <>
+void Logger<QueryEnum2Type<QueryType::QueryUpdate>>::Dump(std::chrono::microseconds time) {
+	if (wrapper_.loggingParams.thresholdUs >= 0 && time.count() > wrapper_.loggingParams.thresholdUs) {
+		std::ostringstream os;
+		os << fmt::sprintf("[slowlog] Long execution query: sql - %s; (%dus)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
+						   time.count());
+		fillStorageInfo(os, wrapper_.durationStorage);
+		logPrint(LogWarning, os.str().data());
+	}
+}
+template <>
+void Logger<QueryEnum2Type<QueryType::QueryDelete>>::Dump(std::chrono::microseconds time) {
+	if (wrapper_.loggingParams.thresholdUs >= 0 && time.count() > wrapper_.loggingParams.thresholdUs) {
+		std::ostringstream os;
+		os << fmt::sprintf("[slowlog] Long execution query: sql - %s; (%dus)\n", wrapper_.query.GetSQL(wrapper_.loggingParams.normalized),
+						   time.count());
+		fillStorageInfo(os, wrapper_.durationStorage);
 		logPrint(LogWarning, os.str().data());
 	}
 }
@@ -101,13 +133,7 @@ void Logger<Transaction>::Dump(std::chrono::microseconds time) {
 
 	if (longAvgStep || longTotal) {
 		std::ostringstream os;
-		os << "[slowlog] Waiting for a mutex lock:" << std::endl;
-		for (size_t i = 0; i < wrapper_.durationStorage.size(); ++i) {
-			if (wrapper_.durationStorage[i]) {
-				os << describeDurationStorageIdx(DurationStorageIdx{static_cast<unsigned>(i)}) << ": "
-				   << wrapper_.durationStorage[i]->count() << "us" << std::endl;  // NOLINT(bugprone-unchecked-optional-access)
-			}
-		}
+		fillStorageInfo(os, wrapper_.durationStorage);
 
 		logPrintf(LogWarning, "[slowlog] Long tx apply: namespace - %s; was%scopied; %d steps;%s%s\n%s", wrapper_.tx.GetName(),
 				  wrapper_.wasCopied ? " " : " not ", wrapper_.tx.GetSteps().size(),
@@ -116,16 +142,18 @@ void Logger<Transaction>::Dump(std::chrono::microseconds time) {
 	}
 }
 
-template <ActionWrapper<Query>::ExplainMethodType... methods>
-void ActionWrapper<Query>::add(const ExplainCalc& explain) {
+template <ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::ExplainMethodType... methods>
+void ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::add(const ExplainCalc& explain) {
 	durationStorage = {std::chrono::duration_cast<std::chrono::microseconds>((explain.*methods)())...};
 }
 
-void ActionWrapper<Query>::Add(const ExplainCalc& explain) {
+void ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>>::Add(const ExplainCalc& explain) {
 	add<&ExplainCalc::Total, &ExplainCalc::Prepare, &ExplainCalc::Indexes, &ExplainCalc::Postprocess, &ExplainCalc::Loop,
 		&ExplainCalc::Sort>(explain);
 }
 
-template struct Logger<Query>;
 template struct Logger<Transaction>;
+template struct Logger<QueryEnum2Type<QueryType::QuerySelect>>;
+template struct Logger<QueryEnum2Type<QueryType::QueryUpdate>>;
+template struct Logger<QueryEnum2Type<QueryType::QueryDelete>>;
 }  // namespace reindexer::long_actions

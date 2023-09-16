@@ -60,7 +60,7 @@ public:
 #if !defined(REINDEXER_WITH_TSAN) && !defined(REINDEX_WITH_ASAN)
 		constexpr auto kStep = std::chrono::milliseconds(100);
 #else	// !defined (REINDEXER_WITH_TSAN) && !defined(REINDEX_WITH_ASAN)
-		constexpr auto kStep = std::chrono::milliseconds(200);
+		constexpr auto kStep = std::chrono::milliseconds(300);
 #endif	// !defined (REINDEXER_WITH_TSAN) && !defined(REINDEX_WITH_ASAN)
 		size_t count = GetItemsCount();
 		if (count > 0) {

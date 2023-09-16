@@ -20,6 +20,8 @@ static_assert(std::numeric_limits<base_fields_set::value_type>::min() <= SetByJs
 static_assert(sizeof(std::bitset<kMaxIndexes>) == 32, "Expecting no overhead from std::bitset");
 using FieldsPath = std::variant<TagsPath, IndexedTagsPath>;
 
+using ScalarIndexesSetT = std::bitset<kMaxIndexes>;
+
 class IndexesFieldsSet {
 public:
 	IndexesFieldsSet() noexcept = default;

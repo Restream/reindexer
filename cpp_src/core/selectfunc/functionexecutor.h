@@ -9,7 +9,7 @@ struct SelectFuncStruct;
 
 class FunctionExecutor {
 public:
-	explicit FunctionExecutor(NamespaceImpl& ns) noexcept;
+	explicit FunctionExecutor(NamespaceImpl& ns) noexcept : ns_(ns) {}
 	Variant Execute(SelectFuncStruct& funcData);
 
 private:

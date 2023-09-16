@@ -16,9 +16,9 @@ namespace reindexer {
 std::string escapeString(std::string_view str);
 std::string unescapeString(std::string_view str);
 
-inline bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
-inline bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
-inline char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
+[[nodiscard]] RX_ALWAYS_INLINE bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
+[[nodiscard]] RX_ALWAYS_INLINE bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
+[[nodiscard]] RX_ALWAYS_INLINE char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
 std::string toLower(std::string_view src);
 inline std::string_view skipSpace(std::string_view str) {
 	size_t i = 0;
@@ -28,7 +28,7 @@ inline std::string_view skipSpace(std::string_view str) {
 }
 
 template <typename Container>
-Container& split(const typename Container::value_type& str, const std::string& delimiters, bool trimEmpty, Container& tokens) {
+Container& split(const typename Container::value_type& str, std::string_view delimiters, bool trimEmpty, Container& tokens) {
 	tokens.resize(0);
 
 	for (size_t pos, lastPos = 0;; lastPos = pos + 1) {
@@ -145,8 +145,22 @@ LogLevel logLevelFromString(const std::string& strLogLevel);
 StrictMode strictModeFromString(const std::string& strStrictMode);
 std::string_view strictModeToString(StrictMode mode);
 
-bool iequals(std::string_view lhs, std::string_view rhs) noexcept;
-bool iless(std::string_view lhs, std::string_view rhs) noexcept;
+inline bool iequals(std::string_view lhs, std::string_view rhs) noexcept {
+	if (lhs.size() != rhs.size()) return false;
+	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
+		if (tolower(*itl++) != tolower(*itr++)) return false;
+	}
+	return true;
+}
+inline bool iless(std::string_view lhs, std::string_view rhs) noexcept {
+	const auto len = std::min(lhs.size(), rhs.size());
+	for (size_t i = 0; i < len; ++i) {
+		if (const auto l = tolower(lhs[i]), r = tolower(rhs[i]); l != r) {
+			return l < r;
+		}
+	}
+	return lhs.size() < rhs.size();
+}
 
 enum class CaseSensitive : bool { No, Yes };
 template <CaseSensitive sensitivity>

@@ -1,4 +1,5 @@
 #include "joinedselector.h"
+
 #include "core/namespace/namespaceimpl.h"
 #include "core/queryresults/joinresults.h"
 #include "nsselecter.h"
@@ -229,7 +230,8 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		bool was = false;
 		for (SelectKeyResult &res : leftIndex->SelectKey(values, CondSet, sortId, opts, ctx, rdxCtx)) {
 			if (!res.comparators_.empty()) continue;
-			SelectIterator selIter{res, false, joinEntry.index_, false};
+			SelectIterator selIter{res, false, joinEntry.index_,
+								   (joinEntry.idxNo < 0 ? IteratorFieldKind::NonIndexed : IteratorFieldKind::Indexed), false};
 			selIter.Bind(leftNs_->payloadType_, joinEntry.idxNo);
 			const int curIterations = selIter.GetMaxIterations();
 			if (curIterations && curIterations < *maxIterations) *maxIterations = curIterations;

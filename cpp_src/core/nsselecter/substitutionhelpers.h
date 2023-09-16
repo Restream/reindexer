@@ -10,7 +10,7 @@ namespace composite_substitution_helpers {
 class CompositeValuesCountLimits {
 public:
 	uint32_t operator[](uint32_t fieldsCount) const noexcept {
-		if (rx_unlikely(fieldsCount >= limits_.size())) {
+		if rx_unlikely (fieldsCount >= limits_.size()) {
 			return kMaxValuesCount;
 		}
 		return limits_[fieldsCount];

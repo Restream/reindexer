@@ -21,10 +21,11 @@ void RPCUpdatesPusher::OnWALUpdate(LSNPair LSNs, std::string_view nsName, const 
 		pwalRec = walRec.GetShared(int64_t(LSNs.upstreamLSN_), int64_t(LSNs.originLSN_), nsName);
 	}
 
-	writer_->CallRPC({[](IRPCCall *self, CmdCode &cmd, Args &args) {
+	writer_->CallRPC({[](IRPCCall *self, CmdCode &cmd, std::string_view &ns, Args &args) {
 						  auto unpacked = SharedWALRecord(self->data_).Unpack();
 						  cmd = kCmdUpdates;
 						  args = {Arg(unpacked.upstreamLSN), Arg(unpacked.nsName), Arg(unpacked.pwalRec), Arg(unpacked.originLSN)};
+						  ns = std::string_view(args[1]);
 					  },
 					  pwalRec.packed_
 

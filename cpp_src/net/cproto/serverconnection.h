@@ -70,8 +70,8 @@ protected:
 	RPCCall call_;
 
 	std::vector<IRPCCall> updates_;
-	std::atomic<size_t> updatesSize_;
-	std::atomic<bool> updateLostFlag_;
+	size_t updatesSize_;
+	bool updateLostFlag_;
 	const size_t maxUpdatesSize_;
 	std::mutex updates_mtx_;
 

@@ -13,7 +13,7 @@ const int kMaxHitCountToCache = 1024;
 
 template <typename K, typename V, typename hash, typename equal>
 typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(const K &key) {
-	if (rx_unlikely(cacheSizeLimit_ == 0)) return Iterator();
+	if rx_unlikely (cacheSizeLimit_ == 0) return Iterator();
 
 	std::lock_guard lk(lock_);
 
@@ -21,7 +21,7 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 	if (emplaced) {
 		totalCacheSize_ += kElemSizeOverhead + sizeof(Entry) + key.Size();
 		it->second.lruPos = lru_.insert(lru_.end(), &it->first);
-		if (rx_unlikely(!eraseLRU())) {
+		if rx_unlikely (!eraseLRU()) {
 			return Iterator();
 		}
 	} else if (std::next(it->second.lruPos) != lru_.end()) {
@@ -41,7 +41,7 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 
 template <typename K, typename V, typename hash, typename equal>
 void LRUCache<K, V, hash, equal>::Put(const K &key, V &&v) {
-	if (rx_unlikely(cacheSizeLimit_ == 0)) return;
+	if rx_unlikely (cacheSizeLimit_ == 0) return;
 
 	std::lock_guard lk(lock_);
 	auto it = items_.find(key);
@@ -56,7 +56,7 @@ void LRUCache<K, V, hash, equal>::Put(const K &key, V &&v) {
 
 	eraseLRU();
 
-	if (rx_unlikely(putCount_ * 16 > getCount_ && eraseCount_)) {
+	if rx_unlikely (putCount_ * 16 > getCount_ && eraseCount_) {
 		logPrintf(LogWarning, "IdSetCache::eraseLRU () cache invalidates too fast eraseCount=%d,putCount=%d,getCount=%d", eraseCount_,
 				  putCount_, eraseCount_);
 		eraseCount_ = 0;
@@ -74,7 +74,7 @@ RX_ALWAYS_INLINE bool LRUCache<K, V, hash, equal>::eraseLRU() {
 		// just to save us if totalCacheSize_ >0 and lru is empty
 		// someone can make bad key or val with wrong size
 		// TODO: Probably we should remove this logic, since there is no access to sizes outside of the lrucache
-		if (rx_unlikely(lru_.empty())) {
+		if rx_unlikely (lru_.empty()) {
 			clearAll();
 			logPrintf(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_=%d", totalCacheSize_);
 			return false;
@@ -84,7 +84,7 @@ RX_ALWAYS_INLINE bool LRUCache<K, V, hash, equal>::eraseLRU() {
 
 		const size_t oldSize = sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size();
 
-		if (rx_unlikely(oldSize > totalCacheSize_)) {
+		if rx_unlikely (oldSize > totalCacheSize_) {
 			clearAll();
 			logPrintf(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_=%d,oldSize=%d",
 					  totalCacheSize_, oldSize);

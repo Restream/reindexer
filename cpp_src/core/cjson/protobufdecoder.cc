@@ -6,8 +6,6 @@
 
 namespace reindexer {
 
-ArraysStorage::ArraysStorage(TagsMatcher& tm) : tm_(tm) {}
-
 void ArraysStorage::UpdateArraySize(int tagName, int field) { GetArray(tagName, field); }
 
 CJsonBuilder& ArraysStorage::GetArray(int tagName, int field) {
@@ -44,19 +42,21 @@ void ArraysStorage::onObjectBuilt(CJsonBuilder& parent) {
 	indexes_.pop_back();
 }
 
-ProtobufDecoder::ProtobufDecoder(TagsMatcher& tagsMatcher, std::shared_ptr<const Schema> schema)
-	: tm_(tagsMatcher), schema_(std::move(schema)), arraysStorage_(tm_) {}
-
 void ProtobufDecoder::setValue(Payload& pl, CJsonBuilder& builder, ProtobufValue item) {
 	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
 	auto value = item.value.convert(item.itemType);
 	if (field > 0) {
-		pl.Set(field, value, true);
+		const auto& f = pl.Type().Field(field);
+		if rx_unlikely (!f.IsArray() && objectScalarIndexes_.test(field)) {
+			throw Error(errLogic, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), field, pl.Type().Name());
+		}
 		if (item.isArray) {
 			arraysStorage_.UpdateArraySize(item.tagName, field);
 		} else {
 			builder.Ref(item.tagName, value, field);
 		}
+		pl.Set(field, std::move(value), true);
+		objectScalarIndexes_.set(field);
 	} else {
 		if (item.isArray) {
 			auto& array = arraysStorage_.GetArray(item.tagName);
@@ -73,6 +73,10 @@ Error ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Pro
 	bool packed = item.IsOfPrimitiveType();
 	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
 	if (field > 0) {
+		auto& f = pl.Type().Field(field);
+		if rx_unlikely (!f.IsArray()) {
+			throw Error(errLogic, "Error parsing protobuf field '%s' - got array, expected scalar %s", f.Name(), f.Type().Name());
+		}
 		if (packed) {
 			int count = 0;
 			while (!parser.IsEof()) {
@@ -91,7 +95,7 @@ Error ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Pro
 			}
 		} else {
 			if (item.itemType.Is<KeyValueType::Composite>()) {
-				Error status{errOK};
+				Error status;
 				CJsonProtobufObjectBuilder obj(array, 0, arraysStorage_);
 				while (status.ok() && !parser.IsEof()) {
 					status = decode(pl, obj, parser.ReadValue());
@@ -101,7 +105,7 @@ Error ProtobufDecoder::decodeArray(Payload& pl, CJsonBuilder& builder, const Pro
 			}
 		}
 	}
-	return errOK;
+	return Error();
 }
 
 Error ProtobufDecoder::decode(Payload& pl, CJsonBuilder& builder, const ProtobufValue& item) {
@@ -138,7 +142,7 @@ Error ProtobufDecoder::decode(Payload& pl, CJsonBuilder& builder, const Protobuf
 }
 
 Error ProtobufDecoder::decodeObject(Payload& pl, CJsonBuilder& builder, ProtobufObject& object) {
-	Error status{errOK};
+	Error status;
 	ProtobufParser parser(object);
 	while (status.ok() && !parser.IsEof()) {
 		status = decode(pl, builder, parser.ReadValue());
@@ -149,6 +153,7 @@ Error ProtobufDecoder::decodeObject(Payload& pl, CJsonBuilder& builder, Protobuf
 Error ProtobufDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wrser) {
 	try {
 		tagsPath_.clear();
+		objectScalarIndexes_.reset();
 		CJsonProtobufObjectBuilder cjsonBuilder(arraysStorage_, wrser, &tm_, 0);
 		ProtobufObject object(buf, *schema_, tagsPath_, tm_);
 		return decodeObject(pl, cjsonBuilder, object);

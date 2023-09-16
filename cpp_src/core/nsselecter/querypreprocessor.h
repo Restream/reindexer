@@ -47,13 +47,12 @@ public:
 	unsigned Count() const noexcept { return count_; }
 	bool MoreThanOneEvaluation() const noexcept { return queryEntryAddedByForcedSortOptimization_; }
 	bool AvailableSelectBySortIndex() const noexcept { return !queryEntryAddedByForcedSortOptimization_ || !forcedStage(); }
-	void InjectConditionsFromJoins(JoinedSelectors &js, const RdxContext &rdxCtx) {
-		injectConditionsFromJoins(0, container_.size(), js, rdxCtx);
-	}
+	void InjectConditionsFromJoins(JoinedSelectors &js, OnConditionInjections &expalainOnInjections, const RdxContext &rdxCtx);
 	void Reduce(bool isFt);
 	void InitIndexNumbers();
 	using QueryEntries::Size;
 	using QueryEntries::Dump;
+	using QueryEntries::ToDsl;
 	[[nodiscard]] SortingEntries GetSortingEntries(const SelectCtx &ctx) const;
 	bool IsFtExcluded() const noexcept { return ftEntry_.has_value(); }
 	void ExcludeFtQuery(const RdxContext &);
@@ -90,9 +89,13 @@ private:
 	[[nodiscard]] const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
 	void findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end,
 					  h_vector<FoundIndexInfo, 32> &foundIndexes) const;
-	void injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &, const RdxContext &);
-	void fillQueryEntryFromOnCondition(QueryEntry &, NamespaceImpl &rightNs, Query joinQuery, std::string joinIndex, CondType condition,
-									   KeyValueType, const RdxContext &);
+	/** @brief recurrently checks and injects Join ON conditions
+	 *  @returns injected conditions and EntryBrackets count
+	 */
+	template <typename ExplainPolicy>
+	size_t injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &, OnConditionInjections &, const RdxContext &);
+	void fillQueryEntryFromOnCondition(QueryEntry &, std::string &outExplainStr, AggType &, NamespaceImpl &rightNs, Query joinQuery,
+									   std::string joinIndex, CondType condition, KeyValueType, const RdxContext &);
 	template <bool byJsonPath>
 	void fillQueryEntryFromOnCondition(QueryEntry &, std::string_view joinIndex, CondType condition, const JoinedSelector &, KeyValueType,
 									   int rightIdxNo, const CollateOpts &);
@@ -100,6 +103,9 @@ private:
 	bool removeBrackets();
 	size_t removeBrackets(size_t begin, size_t end);
 	bool canRemoveBracket(size_t i) const;
+
+	template <typename JS>
+	void briefDump(size_t from, size_t to, const std::vector<JS> &joinedSelectors, WrSerializer &ser) const;
 
 	NamespaceImpl &ns_;
 	const Query &query_;

@@ -171,10 +171,11 @@ std::string Variant::As<std::string>() const {
 			[&](KeyValueType::Int64) { return std::to_string(variant_.value_int64); },
 			[&](KeyValueType::Double) { return std::to_string(variant_.value_double); },
 			[&](KeyValueType::String) {
-				if (this->operator p_string().type() == p_string::tagCxxstr || this->operator p_string().type() == p_string::tagKeyString) {
-					return *(this->operator p_string().getCxxstr());
+				const auto pstr = this->operator p_string();
+				if (pstr.type() == p_string::tagCxxstr || pstr.type() == p_string::tagKeyString) {
+					return *(pstr.getCxxstr());
 				}
-				return this->operator p_string().toString();
+				return pstr.toString();
 			},
 			[&](KeyValueType::Null) { return "null"s; }, [&](KeyValueType::Composite) { return std::string(); },
 			[&](KeyValueType::Tuple) {
@@ -359,7 +360,7 @@ int Variant::Compare(const Variant &other, const CollateOpts &collateOpts) const
 					   : (variant_.value_double > other.variant_.value_double) ? 1
 																			   : -1;
 			},
-			[&](KeyValueType::Tuple) { return getCompositeValues() == other.getCompositeValues() ? 0 : 1; },
+			[&](KeyValueType::Tuple) -> int { throw Error(errParams, "KeyValueType::Tuple comparison is not implemented"); },
 			[&](KeyValueType::String) { return collateCompare(this->operator p_string(), other.operator p_string(), collateOpts); },
 			[&](KeyValueType::Uuid) { return Uuid{*this}.Compare(Uuid{other}); },
 			[](KeyValueType::Null) -> int {
@@ -539,7 +540,8 @@ size_t Variant::Hash() const noexcept {
 
 void Variant::EnsureUTF8() const {
 	if (!isUuid() && variant_.type.Is<KeyValueType::String>()) {
-		if (!utf8::is_valid(operator p_string().data(), operator p_string().data() + operator p_string().size())) {
+		const auto pstr = this->operator p_string();
+		if (!utf8::is_valid(pstr.data(), pstr.data() + pstr.size())) {
 			throw Error(errParams, "Invalid UTF8 string passed to index with CollateUTF8 mode");
 		}
 	}

@@ -17,7 +17,7 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 	}
 	bool wasCopied = false;	 // NOLINT(*deadcode.DeadStores)
 	auto params = longTxLoggingParams_.load(std::memory_order_relaxed);
-	QueryStatCalculator statCalculator(long_actions::Logger<Transaction>{tx, params, wasCopied}, params.thresholdUs >= 0);
+	QueryStatCalculator statCalculator(long_actions::MakeLogger(tx, params, wasCopied), params.thresholdUs >= 0);
 
 	PerfStatCalculatorMT txCommitCalc(commitStatsCounter_, enablePerfCounters);
 	if (needNamespaceCopy(nsl, tx)) {
@@ -40,10 +40,12 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 				cg.Reset();
 				nsCopy_.reset(new NamespaceImpl(*nsl, storageLock));
 				nsCopyCalc.HitManualy();
-				nsCopy_->CommitTransaction(tx, result, NsContext(ctx).NoLock(), statCalculator);
+				NsContext nsCtx(ctx);
+				nsCtx.CopiedNsRequest();
+				nsCopy_->CommitTransaction(tx, result, nsCtx, statCalculator);
 				if (nsCopy_->lastUpdateTime_) {
 					nsCopy_->lastUpdateTime_ -= nsCopy_->config_.optimizationTimeout * 2;
-					nsCopy_->optimizeIndexes(NsContext(ctx).NoLock());
+					nsCopy_->optimizeIndexes(nsCtx);
 					nsCopy_->warmupFtIndexes();
 				}
 				try {
@@ -65,6 +67,7 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 				hasCopy_.store(false, std::memory_order_release);
 				throw;
 			}
+			bgDeleter_.Add(std::move(nsl));
 			nsl = ns_;
 			lck.unlock();
 			statCalculator.LogFlushDuration(nsl->storage_, &AsyncStorage::TryForceFlush);

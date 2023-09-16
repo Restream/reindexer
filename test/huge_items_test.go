@@ -72,66 +72,75 @@ func FillTestItemWide(nsName string, typ reflect.Type, start int, count int) {
 func buildWideItemsExpectedExplain(initialIndexes int) []expectedExplain {
 	resExplain := []expectedExplain{
 		{
-			Field:   "id",
-			Method:  "index",
-			Keys:    1,
-			Matched: 1,
+			Field:     "id",
+			FieldType: "indexed",
+			Method:    "index",
+			Keys:      1,
+			Matched:   1,
 		},
 	}
 	// Part of the expected explain set manually and may be changed. Result depends on the inrernal core's substitutions ordering
 	resExplain = append(resExplain, expectedExplain{
 		Field:       "field_6",
+		FieldType:   "indexed",
 		Method:      "scan",
 		Keys:        0,
 		Matched:     1,
 		Comparators: 1,
 	})
 	resExplain = append(resExplain, expectedExplain{
-		Field:   "field_0+field_1+field_2+field_3",
-		Method:  "index",
-		Keys:    1,
-		Matched: 1,
+		Field:     "field_0+field_1+field_2+field_3",
+		FieldType: "indexed",
+		Method:    "index",
+		Keys:      1,
+		Matched:   1,
 	})
 	resExplain = append(resExplain, expectedExplain{
-		Field:   "field_4",
-		Method:  "index",
-		Keys:    1,
-		Matched: 1,
+		Field:     "field_4",
+		FieldType: "indexed",
+		Method:    "index",
+		Keys:      1,
+		Matched:   1,
 	})
 	resExplain = append(resExplain, expectedExplain{
-		Field:   "field_5",
-		Method:  "index",
-		Keys:    1,
-		Matched: 1,
+		Field:     "field_5",
+		FieldType: "indexed",
+		Method:    "index",
+		Keys:      1,
+		Matched:   1,
 	})
 	resExplain = append(resExplain, expectedExplain{
-		Field:   "field_7",
-		Method:  "index",
-		Keys:    1,
-		Matched: 1,
+		Field:     "field_7",
+		FieldType: "indexed",
+		Method:    "index",
+		Keys:      1,
+		Matched:   1,
 	})
 	resExplain = append(resExplain, expectedExplain{
-		Field:   "field_8",
-		Method:  "index",
-		Keys:    1,
-		Matched: 1,
+		Field:     "field_8",
+		FieldType: "indexed",
+		Method:    "index",
+		Keys:      1,
+		Matched:   1,
 	})
 	for i := 9; i < initialIndexes-1; {
 		var explainField expectedExplain
 		if i%3 == 0 {
 			explainField = expectedExplain{
-				Field:   fmt.Sprintf("field_%d+field_%d+field_%d+field_%d", i, i+1, i+2, i+3),
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     fmt.Sprintf("field_%d+field_%d+field_%d+field_%d", i, i+1, i+2, i+3),
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			}
 			i += 4
 		} else {
 			explainField = expectedExplain{
-				Field:   fmt.Sprintf("field_%d", i),
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     fmt.Sprintf("field_%d", i),
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			}
 			i += 1
 		}

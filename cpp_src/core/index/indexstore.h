@@ -27,6 +27,7 @@ public:
 	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
 	virtual void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &) override;
 	virtual bool IsDestroyPartSupported() const noexcept override { return true; }
+	virtual bool IsUuid() const noexcept override final { return std::is_same_v<T, Uuid>; }
 
 	template <typename, typename = void>
 	struct HasAddTask : std::false_type {};

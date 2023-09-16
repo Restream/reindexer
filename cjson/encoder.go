@@ -223,67 +223,375 @@ func (enc *Encoder) encodeMap(v reflect.Value, rdser *Serializer, idx []int) err
 	return nil
 }
 
-func ParseUuid(s string) (res [2]uint64, err error) {
-	if len(s) == 0 {
-		return
+var hexCharToUint = [256]uint64{
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 255, 255, 255, 255, 255, 255,
+	255, 10, 11, 12, 13, 14, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 10, 11, 12, 13, 14, 15, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+	255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+}
+
+func generateError(ch byte, str string) (res [2]uint64, err error) {
+	if ch == '-' {
+		err = fmt.Errorf("Invalid UUID format: '%s'", str)
+	} else {
+		err = fmt.Errorf("UUID cannot contain char '%c': '%s'", ch, str)
 	}
-	i := 0
-	for _, ch := range s {
-		if i >= 32 && ch != '-' {
-			err = fmt.Errorf("UUID should consist of 32 hexadecimal digits: '%s'", s)
+	return
+}
+
+func ParseUuid(str string) (res [2]uint64, err error) {
+	switch len(str) {
+	case 0:
+		return
+	case 32:
+		ch := str[0]
+		num := hexCharToUint[ch]
+		if num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] = num << 60
+		ch = str[1]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 56
+		ch = str[2]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 52
+		ch = str[3]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 48
+		ch = str[4]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 44
+		ch = str[5]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 40
+		ch = str[6]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 36
+		ch = str[7]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 32
+		ch = str[8]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 28
+		ch = str[9]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 24
+		ch = str[10]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 20
+		ch = str[11]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 16
+		ch = str[12]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 12
+		ch = str[13]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 8
+		ch = str[14]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 4
+		ch = str[15]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num
+		ch = str[16]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] = num << 60
+		ch = str[17]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 56
+		ch = str[18]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 52
+		ch = str[19]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 48
+		ch = str[20]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 44
+		ch = str[21]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 40
+		ch = str[22]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 36
+		ch = str[23]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 32
+		ch = str[24]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 28
+		ch = str[25]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 24
+		ch = str[26]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 20
+		ch = str[27]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 16
+		ch = str[28]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 12
+		ch = str[29]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 8
+		ch = str[30]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 4
+		ch = str[31]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num
+		break
+	case 36:
+		if str[8] != '-' || str[13] != '-' || str[18] != '-' || str[23] != '-' {
+			err = fmt.Errorf("Invalid UUID format: '%s'", str)
 			return
 		}
-		var v uint64
-		switch ch {
-		case '0':
-			v = 0
-		case '1':
-			v = 1
-		case '2':
-			v = 2
-		case '3':
-			v = 3
-		case '4':
-			v = 4
-		case '5':
-			v = 5
-		case '6':
-			v = 6
-		case '7':
-			v = 7
-		case '8':
-			v = 8
-		case '9':
-			v = 9
-		case 'a', 'A':
-			v = 10
-		case 'b', 'B':
-			v = 11
-		case 'c', 'C':
-			v = 12
-		case 'd', 'D':
-			v = 13
-		case 'e', 'E':
-			v = 14
-		case 'f', 'F':
-			v = 15
-		case '-':
-			continue
-		default:
-			err = fmt.Errorf("UUID cannot contain char '%c': '%s'", ch, s)
-			return
+		ch := str[0]
+		num := hexCharToUint[ch]
+		if num > 15 {
+			return generateError(ch, str)
 		}
-		res[i/16] = (res[i/16] << 4) | v
-		i++
-	}
-	if i != 32 {
-		err = fmt.Errorf("UUID should consist of 32 hexadecimal digits: '%s'", s)
+		res[0] = num << 60
+		ch = str[1]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 56
+		ch = str[2]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 52
+		ch = str[3]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 48
+		ch = str[4]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 44
+		ch = str[5]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 40
+		ch = str[6]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 36
+		ch = str[7]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 32
+		ch = str[9]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 28
+		ch = str[10]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 24
+		ch = str[11]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 20
+		ch = str[12]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 16
+		ch = str[14]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 12
+		ch = str[15]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 8
+		ch = str[16]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num << 4
+		ch = str[17]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[0] |= num
+		ch = str[19]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] = num << 60
+		ch = str[20]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 56
+		ch = str[21]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 52
+		ch = str[22]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 48
+		ch = str[24]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 44
+		ch = str[25]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 40
+		ch = str[26]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 36
+		ch = str[27]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 32
+		ch = str[28]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 28
+		ch = str[29]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 24
+		ch = str[30]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 20
+		ch = str[31]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 16
+		ch = str[32]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 12
+		ch = str[33]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 8
+		ch = str[34]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num << 4
+		ch = str[35]
+		if num = hexCharToUint[ch]; num > 15 {
+			return generateError(ch, str)
+		}
+		res[1] |= num
+		break
+	default:
+		err = fmt.Errorf("UUID should consist of 32 hexadecimal digits: '%s'", str)
 		return
 	}
-	if (res[0] != 0 || res[1] != 0) && (res[1]>>63) == 0 {
-		err = fmt.Errorf("Variant 0 of UUID is unsupported: '%s'", s)
-		return
-	}
+	if (res[0] != 0 || res[1] != 0) && (res[1] >> 63) == 0 {
+		err = fmt.Errorf("Variant 0 of UUID is unsupported: '%s'", str)
+ 	}
 	return
 }
 

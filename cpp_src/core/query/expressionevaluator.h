@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include "core/keyvalue/variant.h"
 
 namespace reindexer {
@@ -11,25 +12,34 @@ class TagsMatcher;
 
 class ExpressionEvaluator {
 public:
-	ExpressionEvaluator(const PayloadType& type, TagsMatcher& tagsMatcher, FunctionExecutor& func);
+	ExpressionEvaluator(const PayloadType& type, TagsMatcher& tagsMatcher, FunctionExecutor& func) noexcept
+		: type_(type), tagsMatcher_(tagsMatcher), functionExecutor_(func) {}
 
-	VariantArray Evaluate(tokenizer& parser, const PayloadValue& v, std::string_view forField);
 	VariantArray Evaluate(std::string_view expr, const PayloadValue& v, std::string_view forField);
 
 private:
-	double getPrimaryToken(tokenizer& parser, const PayloadValue& v);
-	double performSumAndSubtracting(tokenizer& parser, const PayloadValue& v);
-	double performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& lastTok);
-	double performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& lastTok);
+	struct PrimaryToken {
+		enum class Type { Scalar, Array, Null };
+
+		std::optional<double> value;
+		Type type;
+	};
+
+	[[nodiscard]] PrimaryToken getPrimaryToken(tokenizer& parser, const PayloadValue& v, token& outTok);
+	[[nodiscard]] PrimaryToken handleTokenName(tokenizer& parser, const PayloadValue& v, token& outTok);
+	[[nodiscard]] double performSumAndSubtracting(tokenizer& parser, const PayloadValue& v);
+	[[nodiscard]] double performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& lastTok);
+	[[nodiscard]] double performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& lastTok);
 
 	void captureArrayContent(tokenizer& parser);
+	[[noreturn]] void throwUnexpectedTokenError(tokenizer& parser, const token& outTok);
 
 	enum State { None = 0, StateArrayConcat, StateMultiplyAndDivide, StateSumAndSubtract };
 
 	const PayloadType& type_;
 	TagsMatcher& tagsMatcher_;
 	FunctionExecutor& functionExecutor_;
-	std::string forField_;
+	std::string_view forField_;
 	VariantArray arrayValues_;
 	State state_ = None;
 };

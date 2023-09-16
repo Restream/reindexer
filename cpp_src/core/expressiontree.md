@@ -19,9 +19,12 @@ class ExpressionTree;
 
 `ExpressionTree` does not support operator precedence.
 You can support it manually as it done in `QueryEntries` and `SelectIteratorContainer`, or by enclosing higher priority operators in brackets as it done in `SortExpression`.
-Here do not used traditional way for constructing of trees with inheritance of nodes, allocations of separate nodes and holding of pointers to they.
+Here is not used the traditional way for constructing trees with inheritance of nodes, allocations of separate nodes and holding  pointers to them.
 `ExpressionTree` holds all nodes by value in a vector (`container_`) sequentially in type `Node` based on `variant`.
-In order to support lazy copying `Node` can hold a reference to payload of another `Node` by using `ExpressionTree::Ref<T>` type. !Warning! lazy copy should not live over the original one.
+In order to support lazy copying `Node` can hold a reference to payload of another `Node` by using `ExpressionTree::Ref<T>` type. 
+
+**Warning**: The lazy copy node shall not live longer than the original one.
+
 Subtree is stored in `container_` just behind its head (`SubTree`) which holds occupied space. For details see examples.
 This architecture allows to reduce count of allocations and virtual functions calls.
 
@@ -187,21 +190,23 @@ It contains operation (value of `OperationType`) and a value of one of the types
 - `void Node::Append()` increments size of subexpression if it is head of subexpression, fails otherwise.
 - `void Node::Erase(size_t)` reduces size of subexpression if it is head of subexpression, fails otherwise.
 - ```c++
-template <typename... Args>
-void Node::ExecuteAppropriate(const std::function<void(Args&)>&... funcs);
-template <typename... Args>
-void Node::ExecuteAppropriate(const std::function<void(const Args&)>&... funcs) const;
-```
-invoke appropriate functor if the `Node` holds value of one of `Args...` types or `Ref<T>` where `T` is one of `Args...` types, no functor will be invoked otherwise.
+  template <typename... Args>
+  void Node::ExecuteAppropriate(const std::function<void(Args&)>&... funcs);
+  template <typename... Args>
+  void Node::ExecuteAppropriate(const std::function<void(const Args&)>&... funcs) const;
+  ```
+
+  invokes appropriate functor if the `Node` holds value of one of `Args...` types or `Ref<T>`, where `T` is one of `Args...` types, no functor will be invoked otherwise.
+
 - ```c++
-template <typename R>
-R Node::CalculateAppropriate(const std::function<R(const SubTree&)>& f, const std::function<R(const Ts&)>&... funcs) const;
-```
-invokes appropriate functor depending on type of value is holded by `Node` and provides returned value.
+  template <typename R>
+  R Node::CalculateAppropriate(const std::function<R(const SubTree&)>& f, const std::function<R(const Ts&)>&... funcs) const;
+  ```
+  invokes appropriate functor depending on type of value is held by `Node` and provides returned value.
 - `Node Node::MakeLazyCopy()&`
-!Warning! the copy should not live over the origin.
 	* returns copy of origin one if it is head of subexpression or holds value of `Ref<T>` type.
 	* returns new `Node` that holds `Ref<T>` which references to payload of origin one if it holds `T` (one of `Ts...`).
+  > **Warning** the copy shall not live longer than the origin.
 - `Node Node::MakeDeepCopy() const &`
 	* returns copy of origin one if it is head of subexpression or holds value of one of `Ts...` types.
 	* returns new `Node` which holds copy of value that `Ref<T>` references to if origin one holds value of `Ref<T>` type.

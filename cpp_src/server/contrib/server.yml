@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.18.0"
+  version: "3.19.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -3077,6 +3077,9 @@ definitions:
       postprocess_us:
         type: integer
         description: "Query post process time"
+      preselect_us:
+        type: integer
+        description: "Query preselect processing time"
       prepare_us:
         type: integer
         description: "Query prepare and optimize time"
@@ -3091,7 +3094,7 @@ definitions:
         description: "Optimization of sort by uncompleted index has been performed"
       selectors:
         type: array
-        description: "Filter selectos, used to proccess query conditions"
+        description: "Filter selectors, used to proccess query conditions"
         items:
           type: object
           properties:
@@ -3127,6 +3130,68 @@ definitions:
             explain_select:
               description: "One of selects in joined namespace execution explainings"
               $ref: "#/definitions/ExplainDef"
+      join_on_conditions:
+        type: array
+        description: "Describes Join ON conditions injections"
+        items:
+          type: object
+          properties:
+            namespace:
+              type: string
+              description: "Joinable ns name"
+            on_condition:
+              type: string
+              description: "Original ON-conditions clause. SQL-like string"
+            total_time_us:
+              type: int
+              description: "Total amount of time spent on checking and substituting all conditions"
+            success:
+              type: boolean
+              description: "Result of injection attempt"
+            reason:
+              type: string
+              description: "Optional{succeed==false}. Explains condition injection failure"
+            type:
+              type: string
+              description: "Values source: preselect values(by_value) or additional select(select)"
+            injected_condition:
+              type: string
+              description: "Injected condition. SQL-like string"
+            conditions:
+              type: array
+              description: "Individual conditions processing results"
+              items:
+                type: object
+                properties:
+                  condition:
+                    type: string
+                    description: single condition from Join ON section. SQL-like string
+                  total_time_us:
+                    type: integer
+                    description: total time elapsed from injection attempt start till the end of substitution or rejection
+                  explain_select:
+                    description: Optional. Explain of Select subquery
+                    $ref: "#/definitions/ExplainDef"
+                  agg_type:
+                    type: string
+                    description: Optional. Aggregation type used in subquery
+                    enum:
+                    - "min"
+                    - "max"
+                    - "distinct"
+                  success:
+                    type: boolean
+                    description: result of injection attempt
+                  reason:
+                    type: string
+                    description: Optional. Explains condition injection failure
+                  new_condition:
+                    type: string
+                    description: substituted injected condition. SQL-like string
+                  values_count:
+                    type: integer
+                    description: resulting size of query values set
+
 
   AggregationResDef:
     type: object

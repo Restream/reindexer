@@ -96,7 +96,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
 
 Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 	Payload pl = GetPayload();
-	MsgPackDecoder decoder(&tagsMatcher_);
+	MsgPackDecoder decoder(tagsMatcher_);
 
 	ser_.Reset();
 	Error err = decoder.Decode(buf, pl, ser_, offset);

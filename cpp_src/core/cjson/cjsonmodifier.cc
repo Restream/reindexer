@@ -45,8 +45,6 @@ private:
 	bool isForAllItems_ = false;
 };
 
-CJsonModifier::CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt) : pt_(std::move(pt)), tagsMatcher_(tagsMatcher) {}
-
 void CJsonModifier::SetFieldValue(std::string_view tuple, IndexedTagsPath fieldPath, const VariantArray &val, WrSerializer &ser,
 								  const Payload &pl) {
 	if (fieldPath.empty()) {

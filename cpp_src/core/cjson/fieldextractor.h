@@ -27,7 +27,10 @@ public:
 	void SetTagsMatcher(const TagsMatcher *) noexcept {}
 
 	FieldsExtractor Object(int) noexcept { return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, params_); }
-	FieldsExtractor Array(int) noexcept { return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, params_); }
+	FieldsExtractor Array(int) noexcept {
+		assertrx_throw(values_);
+		return FieldsExtractor(&values_->MarkArray(), expectedType_, expectedPathDepth_ - 1, filter_, params_);
+	}
 	FieldsExtractor Object(std::string_view) noexcept {
 		return FieldsExtractor(values_, expectedType_, expectedPathDepth_ - 1, filter_, params_);
 	}
@@ -67,6 +70,10 @@ public:
 				put(0, Variant(d));
 			}
 		}
+		if (expectedPathDepth_ <= 0) {
+			assertrx_throw(values_);
+			values_->MarkArray();
+		}
 	}
 
 	void Array(int, Serializer &ser, TagType tagType, int count) {
@@ -97,6 +104,10 @@ public:
 			for (int i = 0; i < count; ++i) {
 				put(0, ser.GetRawVariant(KeyValueType(tagType)));
 			}
+		}
+		if (expectedPathDepth_ <= 0) {
+			assertrx_throw(values_);
+			values_->MarkArray();
 		}
 	}
 

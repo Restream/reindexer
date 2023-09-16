@@ -1,14 +1,9 @@
 #include "tokenizer.h"
-#include <stdlib.h>
 #include "tools/stringstools.h"
 
 namespace reindexer {
 
-tokenizer::tokenizer(std::string_view query) : q_(query), cur_(query.begin()) {}
-
-bool tokenizer::end() const { return cur_ == q_.end(); }
-
-void tokenizer::skip_space() {
+void tokenizer::skip_space() noexcept {
 	for (;;) {
 		while (cur_ != q_.end() && (*cur_ == ' ' || *cur_ == '\t' || *cur_ == '\n')) {
 			cur_++;
@@ -26,7 +21,7 @@ void tokenizer::skip_space() {
 	}
 }
 
-token tokenizer::next_token(bool to_lower, bool treatSignAsToken, bool inOrderBy) {
+token tokenizer::next_token(flags flgs) {
 	skip_space();
 
 	if (cur_ == q_.end()) return token(TokenEnd);
@@ -38,14 +33,14 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken, bool inOrderBy
 		int openBrackets{0};
 		do {
 			if (*cur_ == '*' && *(cur_ - 1) != '[') break;
-			res.text_.push_back(to_lower ? tolower(*cur_++) : *cur_++);
+			res.text_.push_back(flgs.has_to_lower() ? tolower(*cur_++) : *cur_++);
 			++pos_;
 		} while (cur_ != q_.end() && (isalpha(*cur_) || isdigit(*cur_) || *cur_ == '_' || *cur_ == '#' || *cur_ == '.' || *cur_ == '*' ||
 									  (*cur_ == '[' && (++openBrackets, true)) || (*cur_ == ']' && (--openBrackets >= 0))));
 	} else if (*cur_ == '"') {
 		res.type = TokenName;
 		const size_t startPos = ++pos_;
-		if (inOrderBy) {
+		if (flgs.has_in_order_by()) {
 			res.text_.push_back('"');
 		}
 		while (++cur_ != q_.end() && *cur_ != '"') {
@@ -58,10 +53,10 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken, bool inOrderBy
 					   !isalpha(*cur_) && !isdigit(*cur_)) {
 				throw Error{errParseSQL, "Identifier should not contain '%c'; %s", *cur_, where()};
 			}
-			res.text_.push_back(to_lower ? tolower(*cur_) : *cur_);
+			res.text_.push_back(flgs.has_to_lower() ? tolower(*cur_) : *cur_);
 			++pos_;
 		}
-		if (inOrderBy) {
+		if (flgs.has_in_order_by()) {
 			res.text_.push_back('"');
 		}
 		if (cur_ == q_.end()) {
@@ -69,13 +64,13 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken, bool inOrderBy
 		}
 		++cur_;
 		++pos_;
-	} else if (isdigit(*cur_) || (!treatSignAsToken && (*cur_ == '-' || *cur_ == '+'))) {
+	} else if (isdigit(*cur_) || (!flgs.has_treat_sign_as_token() && (*cur_ == '-' || *cur_ == '+'))) {
 		res.type = TokenNumber;
 		do {
 			res.text_.push_back(*cur_++);
 			++pos_;
 		} while (cur_ != q_.end() && (isdigit(*cur_) || *cur_ == '.'));
-	} else if (treatSignAsToken && (*cur_ == '-' || *cur_ == '+')) {
+	} else if (flgs.has_treat_sign_as_token() && (*cur_ == '-' || *cur_ == '+')) {
 		res.type = TokenSign;
 		res.text_.push_back(*cur_++);
 		++pos_;
@@ -121,8 +116,9 @@ token tokenizer::next_token(bool to_lower, bool treatSignAsToken, bool inOrderBy
 				}
 			}
 			res.text_.push_back(c);
-			++pos_, ++cur_;
-		};
+			++pos_;
+			++cur_;
+		}
 	} else {
 		res.text_.push_back(*cur_++);
 		++pos_;
@@ -145,26 +141,13 @@ std::string tokenizer::where() const {
 		} else
 			col++;
 	}
-	return "line: " + std::to_string(line) + " column: " + std::to_string(col) + " " + std::to_string(q_.size());
+	return std::string()
+		.append("line: ")
+		.append(std::to_string(line))
+		.append(" column: ")
+		.append(std::to_string(col))
+		.append(" ")
+		.append(std::to_string(q_.size()));
 }
-
-token tokenizer::peek_token(bool to_lower, bool treatSignAsToken, bool inOrderBy) {
-	auto save_cur = cur_;
-	auto save_pos = pos_;
-	auto res = next_token(to_lower, treatSignAsToken, inOrderBy);
-	cur_ = save_cur;
-	pos_ = save_pos;
-	return res;
-}
-
-void tokenizer::setPos(size_t pos) {
-	int delta = pos - pos_;
-	pos_ += delta;
-	cur_ += delta;
-}
-size_t tokenizer::getPos() const { return pos_; }
-
-size_t tokenizer::length() const { return q_.length(); }
-const char *tokenizer::begin() const { return q_.data(); }
 
 }  // namespace reindexer

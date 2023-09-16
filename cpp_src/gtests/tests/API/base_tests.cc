@@ -1616,11 +1616,13 @@ TEST_F(ReindexerApi, LoggerWriteInterruptTest) {
 		std::shared_ptr<spdlog::sinks::fast_file_sink> sinkPtr;
 	} instance;
 
-	reindexer::logInstallWriter([&](int level, char* buf) {
-		if (level <= LogTrace) {
-			instance.logger.trace(buf);
-		}
-	});
+	reindexer::logInstallWriter(
+		[&](int level, char* buf) {
+			if (level <= LogTrace) {
+				instance.logger.trace(buf);
+			}
+		},
+		reindexer::LoggerPolicy::WithLocks);
 	auto writeThread = std::thread([]() {
 		for (size_t i = 0; i < 10000; ++i) {
 			reindexer::logPrintf(LogTrace, "Detailed and amazing description of this error: [%d]!", i);
@@ -1636,7 +1638,7 @@ TEST_F(ReindexerApi, LoggerWriteInterruptTest) {
 	writeThread.join();
 	reopenThread.join();
 	reindexer::logPrintf(LogTrace, "FINISHED\n");
-	reindexer::logInstallWriter(nullptr);
+	reindexer::logInstallWriter(nullptr, reindexer::LoggerPolicy::WithLocks);
 }
 
 TEST_F(ReindexerApi, IntToStringIndexUpdate) {
@@ -1718,4 +1720,84 @@ TEST_F(ReindexerApi, SelectFilterWithAggregationConstraints) {
 	EXPECT_THROW(Query().FromSQL("select *, max(id) from test_namespace"), Error);
 	EXPECT_NO_THROW(Query().FromSQL("select *, count(*) from test_namespace"));
 	EXPECT_NO_THROW(Query().FromSQL("select count(*), * from test_namespace"));
+}
+
+TEST_F(ReindexerApi, InsertIncorrectItemWithJsonPathsDuplication) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	Item oldTagsItemCJSON = rt.reindexer->NewItem(default_namespace);
+	ASSERT_TRUE(oldTagsItemCJSON.Status().ok()) << oldTagsItemCJSON.Status().what();
+	Item oldTagsItemJSON = rt.reindexer->NewItem(default_namespace);
+	ASSERT_TRUE(oldTagsItemJSON.Status().ok()) << oldTagsItemJSON.Status().what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"value", reindexer::JsonPaths{"value1"}, "hash", "string", IndexOpts()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	{
+		// Check item unmarshaled from json
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		err = item.FromJSON(R"_({"id":0,"value1":"v","obj":{"id":11},"value1":"p"})_");
+		EXPECT_EQ(err.code(), errLogic) << err.what();
+	}
+	{
+		// Check item unmarshaled from cjson (with correct tags)
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		constexpr char cjson[] = {0x06, 0x08, 0x00, 0x12, 0x01, 0x70, 0x12, 0x01, 0x70, 0x07};
+		err = item.FromCJSON(std::string_view(cjson, sizeof(cjson)));
+		ASSERT_EQ(err.code(), errLogic);
+	}
+	{
+		// Check item unmarshaled from msgpack
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		constexpr uint8_t msgpack[] = {0xDF, 0x00, 0x00, 0x00, 0x04, 0xA2, 0x69, 0x64, 0x00, 0xA6, 0x76, 0x61, 0x6C, 0x75,
+									   0x65, 0x31, 0xA1, 0x76, 0xA3, 0x6F, 0x62, 0x6A, 0xDF, 0x00, 0x00, 0x00, 0x01, 0xA2,
+									   0x69, 0x64, 0x0B, 0xA6, 0x76, 0x61, 0x6C, 0x75, 0x65, 0x31, 0xA1, 0x70};
+		size_t offset = 0;
+		err = item.FromMsgPack(std::string_view(reinterpret_cast<const char*>(msgpack), sizeof(msgpack)), offset);
+		EXPECT_EQ(err.code(), errLogic) << err.what();
+	}
+	{
+		// Check item unmarshaled from msgpack (different encoding)
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		constexpr uint8_t msgpack[] = {0x84, 0xA2, 0x69, 0x64, 0x00, 0xA6, 0x76, 0x61, 0x6C, 0x75, 0x65, 0x31, 0xA1, 0x70, 0xA3, 0x6F,
+									   0x62, 0x6A, 0x81, 0xA2, 0x69, 0x64, 0x0B, 0xA6, 0x76, 0x61, 0x6C, 0x75, 0x65, 0x31, 0xA1, 0x70};
+		size_t offset = 0;
+		err = item.FromMsgPack(std::string_view(reinterpret_cast<const char*>(msgpack), sizeof(msgpack)), offset);
+		EXPECT_EQ(err.code(), errLogic) << err.what();
+	}
+
+	{
+		// Check item unmarshaled from cjson (with outdated tags)
+		constexpr char cjson[] = {0x07, 0x13, 0x00, 0x00, 0x00, 0x06, 0x08, 0x00, 0x12, 0x01, 0x76, 0x1E, 0x08, 0x16, 0x07, 0x12, 0x01,
+								  0x70, 0x07, 0x03, 0x02, 0x69, 0x64, 0x06, 0x76, 0x61, 0x6C, 0x75, 0x65, 0x31, 0x03, 0x6F, 0x62, 0x6A};
+		err = oldTagsItemCJSON.FromCJSON(std::string_view(cjson, sizeof(cjson)));
+		EXPECT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->Insert(default_namespace, oldTagsItemCJSON);
+		ASSERT_EQ(err.code(), errLogic);
+
+		QueryResults qr;
+		err = rt.reindexer->Select(Query(default_namespace), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), 0);
+	}
+	{
+		// Check item unmarshaled from json with outdated tags
+		err = oldTagsItemJSON.FromJSON(R"_({"id":0,"value1":"v","obj":{"id":11},"value1":"p"})_");
+		EXPECT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->Insert(default_namespace, oldTagsItemJSON);
+		ASSERT_EQ(err.code(), errLogic);
+
+		QueryResults qr;
+		err = rt.reindexer->Select(Query(default_namespace), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), 0);
+	}
 }

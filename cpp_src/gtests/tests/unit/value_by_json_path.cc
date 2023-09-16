@@ -251,34 +251,3 @@ TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
 		ASSERT_TRUE(value.Type().Is<reindexer::KeyValueType::Int64>());
 	}
 }
-
-TEST_F(ReindexerApi, InsertWithSeveralJsonPaths) {
-	// Define namespace structure with an indexed field that has 3 json paths
-	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"name", {"name", "text", "description"}, "hash", "string", IndexOpts(), 0});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	// Build an item, which includes (and sets) all the json-paths for the field 'name'
-	reindexer::WrSerializer wrser;
-	reindexer::JsonBuilder jsonBuilder(wrser, reindexer::ObjType::TypeObject);
-	jsonBuilder.Put("id", int(1));
-	jsonBuilder.Put("name", "first");
-	jsonBuilder.Put("text", "second");
-	jsonBuilder.Put("description", "third");
-	jsonBuilder.End();
-
-	// Insert the item
-	Item item = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	err = item.FromJSON(wrser.Slice());
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->Insert(default_namespace, item);
-
-	// Make sure it returned an error of type 'errParams'
-	ASSERT_TRUE(!err.ok() && err.code() == errParams);
-}

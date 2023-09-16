@@ -30,11 +30,13 @@ static void InstallLogLevel(const std::vector<std::string>& args) {
 		llevel = 3;
 	}
 
-	reindexer::logInstallWriter([](int level, char* buf) {
-		if (level <= llevel) {
-			std::cout << buf << std::endl;
-		}
-	});
+	reindexer::logInstallWriter(
+		[](int level, char* buf) {
+			if (level <= llevel) {
+				std::cout << buf << std::endl;
+			}
+		},
+		reindexer::LoggerPolicy::WithoutLocks);
 }
 
 }  // namespace reindexer_tool
@@ -43,7 +45,12 @@ int main(int argc, char* argv[]) {
 	using namespace reindexer_tool;
 	reindexer::debug::backtrace_init();
 
-	reindexer::CheckRequiredSSESupport();
+	try {
+		reindexer::CheckRequiredSSESupport();
+	} catch (Error& err) {
+		std::cerr << err.what();
+		return EXIT_FAILURE;
+	}
 
 	args::ArgumentParser parser("Reindexer client tool");
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});

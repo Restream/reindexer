@@ -5,7 +5,7 @@
 #if defined(__GNUC__) || defined(__clang__)
 #define rx_likely(x) (__builtin_expect(!!(x), 1))
 #else  // defined(__GNUC__) || defined(__clang__)
-#define rx_likely(x) x
+#define rx_likely(x) (x)
 #endif	// defined(__GNUC__) || defined(__clang__)
 #else	// !defined(likely)
 #define rx_likely(x) likely(x)
@@ -16,7 +16,7 @@
 #if defined(__GNUC__) || defined(__clang__)
 #define rx_unlikely(x) (__builtin_expect(!!(x), 0))
 #else  // defined(__GNUC__) || defined(__clang__)
-#define rx_unlikely(x) x
+#define rx_unlikely(x) (x)
 #endif	// defined(__GNUC__) || defined(__clang__)
 #else	// !defined(unlikely)
 #define rx_unlikely(x) unlikely(x)

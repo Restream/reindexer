@@ -1,4 +1,5 @@
 #include "selectiteratorcontainer.h"
+
 #include <numeric>
 #include <sstream>
 #include "core/namespace/namespaceimpl.h"
@@ -189,6 +190,34 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 
 	FieldsSet fields;
 	TagsPath tagsPath = ns.tagsMatcher_.path2tag(qe.index);
+
+	// TODO: it may be necessary to remove or change this switch after QueryEntry refactoring
+	switch (qe.condition) {
+		case CondAny:
+		case CondEmpty:
+		case CondAllSet:
+		case CondEq:
+		case CondSet:
+			break;
+		case CondRange:
+		case CondDWithin:
+			if (qe.values.size() != 2) {
+				throw Error(errParams, "For condition %s required exactly 2 arguments, but provided %d", CondTypeToStr(qe.condition),
+							qe.values.size());
+			}
+			break;
+		case CondLt:
+		case CondLe:
+		case CondGt:
+		case CondGe:
+		case CondLike:
+			if (qe.values.size() != 1) {
+				throw Error(errParams, "For condition %s required exactly 1 argument, but provided %d", CondTypeToStr(qe.condition),
+							qe.values.size());
+			}
+			break;
+	}
+
 	if (!tagsPath.empty()) {
 		SelectKeyResult comparisonResult;
 		fields.push_back(tagsPath);
@@ -330,7 +359,9 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 				[[fallthrough]];
 			case OpNot:
 			case OpAnd:
-				Append(op, SelectIterator(res, qe.distinct, qe.index, isIndexFt));
+				// Iterator Field Kind: Query entry results. Field known.
+				Append(op, SelectIterator(res, qe.distinct, qe.index,
+										  qe.idxNo < 0 ? IteratorFieldKind::NonIndexed : IteratorFieldKind::Indexed, isIndexFt));
 				if (!nonIndexField && !isIndexSparse) {
 					// last appended is always a SelectIterator
 					const auto lastAppendedIt = lastAppendedOrClosed();

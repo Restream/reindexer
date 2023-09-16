@@ -93,7 +93,7 @@ void PayloadIface<T>::GetByJsonPath(const IndexedTagsPath &tagsPath, VariantArra
 	ConstPayload pl(t_, *v_);
 	FieldsSet filter({tagsPath});
 	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
-	krefs.clear<false>();
+	krefs.Clear();
 	if (!tagsPath.empty()) {
 		FieldsExtractor extractor(&krefs, expectedType, tagsPath.size(), &filter);
 		encoder.Encode(pl, extractor);

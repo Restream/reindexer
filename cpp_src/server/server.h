@@ -22,10 +22,10 @@ public:
 	Error InitFromFile(const char* filepath);
 	int Start();
 	void Stop();
-	void EnableHandleSignals(bool enable = true);
-	DBManager& GetDBManager();
-	bool IsReady();
-	bool IsRunning();
+	void EnableHandleSignals(bool enable = true) noexcept;
+	DBManager& GetDBManager() noexcept;
+	bool IsReady() const noexcept;
+	bool IsRunning() const noexcept;
 	void ReopenLogFiles();
 
 protected:

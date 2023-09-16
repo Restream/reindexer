@@ -71,6 +71,196 @@ void QueriesApi::CheckMergeQueriesWithLimit() {
 	EXPECT_EQ(qr.getMergedNSCount(), 2);
 }
 
+void QueriesApi::CheckMergeQueriesWithAggregation() {
+	auto AggSelect = [this](const Query& q, AggType tp, double& val) -> void {
+		QueryResults qr;
+		Error err = rt.reindexer->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.aggregationResults.size(), 1);
+		ASSERT_TRUE(qr.aggregationResults[0].GetValue().has_value());
+		ASSERT_EQ(qr.aggregationResults[0].type, tp);
+		val = qr.aggregationResults[0].GetValue().value();
+		if (tp == AggCount || tp == AggCountCached) {
+			ASSERT_EQ(val, qr.totalCount);
+		}
+	};
+	// check the correctness of the aggregation functions with the merge query
+	{
+		double c1;
+		AggSelect(Query{default_namespace}.Aggregate(AggCount, {}), AggCount, c1);
+		double c2;
+		AggSelect(Query{joinNs}.Aggregate(AggCount, {}), AggCount, c2);
+		double c3;
+		AggSelect(Query{default_namespace}.Aggregate(AggCount, {}).Merge(Query{joinNs}), AggCount, c3);
+		double c4;
+		AggSelect(Query{testSimpleNs}.Aggregate(AggCount, {}), AggCount, c4);
+		double c5;
+		AggSelect(Query{default_namespace}.Aggregate(AggCount, {}).Merge(Query{joinNs}).Merge(Query{testSimpleNs}), AggCount, c5);
+		{
+			QueryResults qr;
+			Error err = rt.reindexer->Select(Query{default_namespace}.ReqTotal().Merge(Query{joinNs}).Merge(Query{testSimpleNs}), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.totalCount, c5);
+		}
+		ASSERT_EQ(c1 + c2, c3);
+		ASSERT_EQ(c1 + c2 + c4, c5);
+	}
+
+	{
+		double c1;
+		AggSelect(Query{default_namespace}.Aggregate(AggCount, {}), AggCount, c1);
+		double c2;
+		AggSelect(Query{joinNs}.Aggregate(AggCount, {}), AggCount, c2);
+		double c4;
+		AggSelect(Query{testSimpleNs}.Aggregate(AggCount, {}), AggCount, c4);
+		double c3;
+		Query q3;
+		q3.FromSQL(fmt::sprintf("SELECT count(*) FROM %s MERGE (SELECT * FROM %s)", default_namespace, joinNs));
+		AggSelect(q3, AggCount, c3);
+		double c5;
+		Query q5;
+		q5.FromSQL(fmt::sprintf("SELECT count(*) FROM %s MERGE (SELECT * FROM %s) MERGE (SELECT * FROM %s)", default_namespace, joinNs,
+								testSimpleNs));
+		AggSelect(q5, AggCount, c5);
+		{
+			QueryResults qr;
+			Error err = rt.reindexer->Select(Query{default_namespace}.CachedTotal().Merge(Query{joinNs}).Merge(Query{testSimpleNs}), qr);
+			ASSERT_EQ(qr.totalCount, c5);
+		}
+		ASSERT_EQ(c1 + c2, c3);
+		ASSERT_EQ(c1 + c2 + c4, c5);
+	}
+
+	{
+		double c1;
+		AggSelect(Query{default_namespace}.Aggregate(AggCountCached, {}), AggCountCached, c1);
+		double c2;
+		AggSelect(Query{joinNs}.Aggregate(AggCountCached, {}), AggCountCached, c2);
+		double c3;
+		AggSelect(Query{default_namespace}.Aggregate(AggCountCached, {}).Merge(Query{joinNs}), AggCountCached, c3);
+		double c4;
+		AggSelect(Query{testSimpleNs}.Aggregate(AggCountCached, {}), AggCountCached, c4);
+		double c5;
+		AggSelect(Query{default_namespace}.Aggregate(AggCountCached, {}).Merge(Query{joinNs}).Merge(Query{testSimpleNs}), AggCountCached, c5);
+		ASSERT_EQ(c1 + c2, c3);
+		ASSERT_EQ(c1 + c2 + c4, c5);
+	}
+
+	{
+		double c1;
+		AggSelect(Query{default_namespace}.Aggregate(AggMin, {"id"}), AggMin, c1);
+		double c2;
+		AggSelect(Query{joinNs}.Aggregate(AggMin, {"id"}), AggMin, c2);
+		double c3;
+		AggSelect(Query{default_namespace}.Aggregate(AggMin, {"id"}).Merge(Query{joinNs}), AggMin, c3);
+		double c4;
+		AggSelect(Query{testSimpleNs}.Aggregate(AggMin, {"id"}), AggMin, c4);
+		double c5;
+		AggSelect(Query{default_namespace}.Aggregate(AggMin, {"id"}).Merge(Query{joinNs}).Merge(Query{testSimpleNs}), AggMin, c5);
+		ASSERT_EQ(std::min(c1, c2), c3);
+		ASSERT_EQ(std::min({c1, c2, c4}), c5);
+	}
+	{
+		double c1;
+		AggSelect(Query{default_namespace}.Aggregate(AggMax, {"id"}), AggMax, c1);
+		double c2;
+		AggSelect(Query{joinNs}.Aggregate(AggMax, {"id"}), AggMax, c2);
+		double c3;
+		AggSelect(Query{default_namespace}.Aggregate(AggMax, {"id"}).Merge(Query{joinNs}), AggMax, c3);
+		double c4;
+		AggSelect(Query{testSimpleNs}.Aggregate(AggMax, {"id"}), AggMax, c4);
+		double c5;
+		AggSelect(Query{default_namespace}.Aggregate(AggMax, {"id"}).Merge(Query{joinNs}).Merge(Query{testSimpleNs}), AggMax, c5);
+		ASSERT_EQ(std::max(c1, c2), c3);
+		ASSERT_EQ(std::max({c1, c2, c4}), c5);
+	}
+
+	{
+		double c1;
+		AggSelect(Query{default_namespace}.Aggregate(AggSum, {"id"}), AggSum, c1);
+		double c2;
+		AggSelect(Query{joinNs}.Aggregate(AggSum, {"id"}), AggSum, c2);
+		double c3;
+		AggSelect(Query{default_namespace}.Aggregate(AggSum, {"id"}).Merge(Query{joinNs}), AggSum, c3);
+		double c4;
+		AggSelect(Query{testSimpleNs}.Aggregate(AggSum, {"id"}), AggSum, c4);
+		double c5;
+		AggSelect(Query{default_namespace}.Aggregate(AggSum, {"id"}).Merge(Query{joinNs}).Merge(Query{testSimpleNs}), AggSum, c5);
+		ASSERT_EQ(c1 + c2, c3);
+		ASSERT_EQ(c1 + c2 + c4, c5);
+	}
+	// check the correctness of the error for unsupported cases
+	{
+		QueryResults qr;
+		Error err = rt.reindexer->Select(Query{default_namespace}.Aggregate(AggSum, {"id"}).Limit(10).Offset(10).Merge(Query{joinNs}), qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "Limit and offset are not supported for aggregations 'sum'");
+	}
+	{
+		QueryResults qr;
+		Error err = rt.reindexer->Select(Query{default_namespace}.Aggregate(AggMin, {"id"}).Limit(10).Merge(Query{joinNs}), qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "Limit and offset are not supported for aggregations 'min'");
+	}
+	{
+		QueryResults qr;
+		Error err = rt.reindexer->Select(Query{default_namespace}.Aggregate(AggMax, {"id"}).Offset(10).Merge(Query{joinNs}), qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "Limit and offset are not supported for aggregations 'max'");
+	}
+	{
+		QueryResults qr;
+		Error err = rt.reindexer->Select(Query{default_namespace}.Merge(Query{joinNs}.ReqTotal()), qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "Aggregations in inner merge query is not allowed");
+	}
+	{
+		QueryResults qr;
+		Error err = rt.reindexer->Select(Query{default_namespace}.Merge(Query{joinNs}.CachedTotal()), qr);
+		EXPECT_FALSE(err.ok());
+		EXPECT_EQ(err.what(), "Aggregations in inner merge query is not allowed");
+	}
+	// checking the work of several aggregate functions with the merge query
+	{
+		Query q = Query{default_namespace}
+					  .Aggregate(AggSum, {"id"})
+					  .Aggregate(AggCount, {})
+					  .Aggregate(AggMin, {"id"})
+					  .Merge(Query{joinNs})
+					  .Merge(Query{testSimpleNs});
+		QueryResults qr;
+		Error err = rt.reindexer->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.aggregationResults.size(), 3);
+		for (auto a : {AggSum, AggCount, AggMin}) {
+			int exist = 0;
+			for (const auto& ar : qr.aggregationResults) {
+				if (ar.type == a) {
+					exist++;
+				}
+			}
+			ASSERT_EQ(exist, 1);
+		}
+	}
+	{
+		double c1;
+		AggSelect(Query{default_namespace}.Aggregate(AggCount, {}), AggCount, c1);
+		double c2;
+		AggSelect(Query{joinNs}.Aggregate(AggCount, {}), AggCount, c2);
+		double c3;
+		AggSelect(Query{testSimpleNs}.Aggregate(AggCount, {}), AggCount, c3);
+
+		Query q =
+			Query{default_namespace}.Aggregate(AggCount, {}).Aggregate(AggCountCached, {}).Merge(Query{joinNs}).Merge(Query{testSimpleNs});
+		QueryResults qr;
+		Error err = rt.reindexer->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.aggregationResults.size(), 1);
+		ASSERT_EQ(qr.aggregationResults[0].type, AggCount);
+		ASSERT_EQ(qr.aggregationResults[0].GetValueOrZero(), c1 + c2 + c3);
+	}
+}
+
 static struct {
 	reindexer::KeyValueType fieldType;
 	std::vector<std::string> indexTypes;

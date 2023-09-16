@@ -113,7 +113,7 @@ static RPCClientData *getClientDataUnsafe(cproto::Context &ctx) { return dynamic
 
 static RPCClientData *getClientDataSafe(cproto::Context &ctx) {
 	auto ret = dynamic_cast<RPCClientData *>(ctx.GetClientData());
-	if (rx_unlikely(!ret)) std::abort();  // It has to be set by the middleware
+	if rx_unlikely (!ret) std::abort();	 // It has to be set by the middleware
 	return ret;
 }
 
@@ -593,7 +593,8 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, std::optio
 	if (flagsOpts) {
 		flags = *flagsOpts;
 	}
-	ResultFetchOpts opts{.flags = flags, .ptVersions = {}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
+	int32_t ptVersion = -1;
+	ResultFetchOpts opts{.flags = flags, .ptVersions = {&ptVersion, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
 	return sendResults(ctx, qres, RPCQrId(), opts);
 }
 
@@ -625,7 +626,7 @@ Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
 	if (rx_likely(clientData)) {
 		Reindexer *db = nullptr;
 		auto status = clientData->auth.GetDB(role, &db);
-		if (rx_unlikely(!status.ok())) {
+		if rx_unlikely (!status.ok()) {
 			throw status;
 		}
 		if (rx_likely(db != nullptr)) {
@@ -700,7 +701,7 @@ RPCQrWatcher::Ref RPCServer::createQueryResults(cproto::Context &ctx, RPCQrId &i
 		}
 	}
 
-	if (rx_unlikely(data->results.size() >= cproto::kMaxConcurentQueries)) {
+	if rx_unlikely (data->results.size() >= cproto::kMaxConcurentQueries) {
 		for (unsigned idx = 0; idx < data->results.size(); ++idx) {
 			RPCQrId tmpQrId{data->results[idx].main, data->results[idx].uid};
 			assertrx(tmpQrId.main >= 0);

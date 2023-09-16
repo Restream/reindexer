@@ -1,5 +1,6 @@
 #include "msgpackdecoder.h"
 
+#include "core/cjson/cjsontools.h"
 #include "core/cjson/objtype.h"
 #include "core/cjson/tagsmatcher.h"
 #include "tools/flagguard.h"
@@ -7,19 +8,15 @@
 
 namespace reindexer {
 
-MsgPackDecoder::MsgPackDecoder(TagsMatcher* tagsMatcher) : tm_(tagsMatcher) {}
-
 template <typename T>
 void MsgPackDecoder::setValue(Payload& pl, CJsonBuilder& builder, const T& value, int tagName) {
-	int field = tm_->tags2field(tagsPath_.data(), tagsPath_.size());
+	int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
 	if (field > 0) {
-		const auto& f = pl.Type().Field(field);
-		if (isInArray() && !f.IsArray()) {
-			throw Error(errLogic, "Error parsing msgpack field '%s' - got array, expected scalar %s", f.Name(), f.Type().Name());
-		}
+		validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, pl.Type().Field(field), field, isInArray(), "msgpack");
 		Variant val(value);
-		pl.Set(field, val, true);
 		builder.Ref(tagName, val, field);
+		pl.Set(field, std::move(val), true);
+		objectScalarIndexes_.set(field);
 	} else {
 		builder.Put(tagName, value);
 	}
@@ -35,13 +32,13 @@ int MsgPackDecoder::decodeKeyToTag(const msgpack_object_kv& obj) {
 	using namespace std::string_view_literals;
 	switch (obj.key.type) {
 		case MSGPACK_OBJECT_BOOLEAN:
-			return tm_->name2tag(obj.key.via.boolean ? "true"sv : "false"sv, true);
+			return tm_.name2tag(obj.key.via.boolean ? "true"sv : "false"sv, true);
 		case MSGPACK_OBJECT_POSITIVE_INTEGER:
-			return tm_->name2tag(std::to_string(obj.key.via.u64), true);
+			return tm_.name2tag(std::to_string(obj.key.via.u64), true);
 		case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-			return tm_->name2tag(std::to_string(obj.key.via.i64), true);
+			return tm_.name2tag(std::to_string(obj.key.via.i64), true);
 		case MSGPACK_OBJECT_STR:
-			return tm_->name2tag(std::string_view(obj.key.via.str.ptr, obj.key.via.str.size), true);
+			return tm_.name2tag(std::string_view(obj.key.via.str.ptr, obj.key.via.str.size), true);
 		case MSGPACK_OBJECT_FLOAT32:
 		case MSGPACK_OBJECT_FLOAT64:
 		case MSGPACK_OBJECT_NIL:
@@ -49,9 +46,9 @@ int MsgPackDecoder::decodeKeyToTag(const msgpack_object_kv& obj) {
 		case MSGPACK_OBJECT_MAP:
 		case MSGPACK_OBJECT_BIN:
 		case MSGPACK_OBJECT_EXT:
-		default:
-			throw Error(errParams, "Unsupported MsgPack map key type: %s(%d)", ToString(obj.key.type), obj.key.type);
+			break;
 	}
+	throw Error(errParams, "Unsupported MsgPack map key type: %s(%d)", ToString(obj.key.type), obj.key.type);
 }
 
 void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_object& obj, int tagName) {
@@ -91,8 +88,12 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 					prevType = p->type;
 				}
 			}
-			int field = tm_->tags2field(tagsPath_.data(), tagsPath_.size());
+			int field = tm_.tags2field(tagsPath_.data(), tagsPath_.size());
 			if (field > 0) {
+				auto& f = pl.Type().Field(field);
+				if rx_unlikely (!f.IsArray()) {
+					throw Error(errLogic, "Error parsing msgpack field '%s' - got array, expected scalar %s", f.Name(), f.Type().Name());
+				}
 				auto& array = builder.ArrayRef(tagName, field, count);
 				iterateOverArray(begin, end, pl, array);
 			} else {
@@ -123,17 +124,18 @@ void MsgPackDecoder::decode(Payload& pl, CJsonBuilder& builder, const msgpack_ob
 
 Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wrser, size_t& offset) {
 	try {
+		objectScalarIndexes_.reset();
 		tagsPath_.clear();
 		size_t baseOffset = offset;
 		MsgPackValue data = parser_.Parse(buf, offset);
-		if (!data.p) return Error(errLogic, "Error unpacking msgpack data");
-		if (data.p->type != MSGPACK_OBJECT_MAP) {
+		if rx_unlikely (!data.p) return Error(errLogic, "Error unpacking msgpack data");
+		if rx_unlikely (data.p->type != MSGPACK_OBJECT_MAP) {
 			std::string_view slice = buf.substr(baseOffset, 16);
 			return Error(errNotValid, "Unexpected MsgPack value. Expected %s, but got %s(%d) at %d(~>\"%s\"...)",
 						 ToString(MSGPACK_OBJECT_MAP), ToString(data.p->type), data.p->type, baseOffset, slice);
 		}
 
-		CJsonBuilder cjsonBuilder(wrser, ObjType::TypePlain, tm_, 0);
+		CJsonBuilder cjsonBuilder(wrser, ObjType::TypePlain, &tm_, 0);
 		decode(pl, cjsonBuilder, *(data.p), 0);
 	} catch (const Error& err) {
 		return err;
@@ -144,7 +146,7 @@ Error MsgPackDecoder::Decode(std::string_view buf, Payload& pl, WrSerializer& wr
 		return Error(errNotValid, "Unexpected exception");
 	}
 
-	return errOK;
+	return Error();
 }
 
 constexpr std::string_view ToString(msgpack_object_type type) {
@@ -177,9 +179,8 @@ constexpr std::string_view ToString(msgpack_object_type type) {
 			return "BIN"sv;
 		case MSGPACK_OBJECT_EXT:
 			return "EXT"sv;
-		default:
-			return "UNKNOWN_TYPE"sv;
 	}
+	return "UNKNOWN_TYPE"sv;
 }
 
 }  // namespace reindexer

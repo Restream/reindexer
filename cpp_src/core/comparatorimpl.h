@@ -97,9 +97,9 @@ public:
 			case CondLike:
 				return false;
 			case CondDWithin:
-			default:
-				abort();
+				break;
 		}
+		std::abort();
 	}
 	bool Compare(CondType cond, T lhs) {
 		bool ret = Compare2(cond, lhs);
@@ -122,12 +122,19 @@ public:
 
 private:
 	KeyValueType type() {
-		if constexpr (std::is_same_v<T, int>) return KeyValueType::Int{};
-		if constexpr (std::is_same_v<T, bool>) return KeyValueType::Bool{};
-		if constexpr (std::is_same_v<T, int64_t>) return KeyValueType::Int64{};
-		if constexpr (std::is_same_v<T, double>) return KeyValueType::Double{};
-		if constexpr (std::is_same_v<T, Uuid>) return KeyValueType::Uuid{};
-		std::abort();
+		if constexpr (std::is_same_v<T, int>)
+			return KeyValueType::Int{};
+		else if constexpr (std::is_same_v<T, bool>)
+			return KeyValueType::Bool{};
+		else if constexpr (std::is_same_v<T, int64_t>)
+			return KeyValueType::Int64{};
+		else if constexpr (std::is_same_v<T, double>)
+			return KeyValueType::Double{};
+		else if constexpr (std::is_same_v<T, Uuid>)
+			return KeyValueType::Uuid{};
+		else {
+			static_assert(std::is_same_v<T, int>, "Unknown KeyValueType");
+		}
 	}
 
 	void addValue(CondType cond, T value) {
@@ -203,9 +210,9 @@ public:
 			case CondLike:
 				return false;
 			case CondDWithin:
-			default:
-				abort();
+				break;
 		}
+		std::abort();
 	}
 	bool Compare(CondType cond, Uuid lhs) {
 		bool ret = Compare2(cond, lhs);
@@ -287,9 +294,9 @@ public:
 				return matchLikePattern(std::string_view(lhs), rhs);
 			}
 			case CondDWithin:
-			default:
-				abort();
+				break;
 		}
+		std::abort();
 	}
 	bool Compare(CondType cond, p_string lhs, const CollateOpts &collateOpts) {
 		bool ret = Compare2(cond, lhs, collateOpts);
@@ -393,9 +400,9 @@ public:
 			case CondLike:
 				return false;
 			case CondDWithin:
-			default:
-				abort();
+				break;
 		}
+		std::abort();
 	}
 	void ClearAllSetValues() {
 		assertrx(allSetValuesSet_);

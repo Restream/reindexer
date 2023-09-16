@@ -183,7 +183,7 @@ static void sighandler(int sig, siginfo_t *, void *ctx) {
 	exit(-1);
 }
 
-void backtrace_init() {
+void backtrace_init() noexcept {
 	struct sigaction sa;
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_sigaction = sighandler;
@@ -220,7 +220,7 @@ static std::recursive_mutex g_mutex;
 static crash_query_reporter_t g_crash_query_reporter = [](std::ostream &) {};
 static backtrace_writer_t g_writer = [](std::string_view sv) { std::cerr << sv; };
 
-void backtrace_init() {}
+void backtrace_init() noexcept {}
 void backtrace_set_writer(backtrace_writer_t) {}
 int backtrace_internal(void **, size_t, void *, std::string_view &) { return 0; }
 void backtrace_set_crash_query_reporter(crash_query_reporter_t reporter) {

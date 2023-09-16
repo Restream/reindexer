@@ -1,3 +1,53 @@
+# Version 3.19.0 (16.09.2023)
+## Core
+- [fea] Added background namespaces deleteion. Previously in some cases atomic transactions could cause the namespace's deletion in the querie's execution thread, which lead to the latency spike
+- [fea] Added locks and flush timings for UPDATE and DELETE queries into [slow log](readme.md#slow-actions-logging)
+- [fea] Added support for the [COUNT/COUNT_CACHED](readme.md#aggregations) aggregations for the MERGE-queries
+- [fea] Added basic support for the SUM/MAX/MIN aggregations for the MERGE-queries without LIMIT/OFFSET
+- [fea] Added more information about JOINs condtitions injection into `explain` (check `on_conditions_injections` field in the explain results)
+- [fea] Added `field_type` into the `explain`. This fields shows, which kind of field/comparator was used in the query: `indexed` or `non-indexed`
+- [fea] Added support for store (`-`) UUID indexes
+- [fea] Optimized string<->UUID convertions in the C++ library
+- [fix] Fixed `total_us` time calculation in the `explain` (previously `preselect` time was in the explain results, but was not counted in the `total_us` field)
+- [fix] Fixed JOINs conditions injection for the queries with multiple JOINs. Previously this optimization could skip some of the JOIN queries
+- [fix] Fixed multiple UPDATE arrays concatenation issues: empty arrays, string array, array with scalar, etc.
+- [fix] Composite indexes over the other composite indexes were explicitly disabled
+- [fix] Fixed check for nested JOINs and MERGEs (nested JOIN/MERGE is not allowed)
+- [fix] Multiple JSON-paths were explicitly disabled for the scalar indexes (multiple JSON-paths are allowed for composite and array indexes only)
+- [fix] Fixed crash on the CJSON deserialization for array indexes with multiple JSON-paths
+
+## Replication
+- [fix] Fixed handling of the updates buffer overflow (previously this logic may lead to multiple extra resyncs)
+
+## Fulltext
+- [fea] Added experimental support for Armenian, Hebrew, Arabic and Devanagari alphabets (prefixes/postfixes/suffixes search, typos, stop-words and synonyms are supported)
+
+## Reindexer server
+- [fix] Fixed SSE4.2 support check on startup (server has to print error message if SSE support is required for the current build)
+- [fix] Fixed DELETE-queries compatibility between `reindexer_server v3` and `reindexer_tool v4` in cproto mode
+- [fix] Fixed RPC-timeout handling (extra check for unread data wasd added). Previously connect could be dropped in case of the some very long queries
+
+## Go connector
+- [fea] Optimized string<->UUID convertions in the Go bindings
+- [fea] Default balancing algorithm for `cproto` was changed from RoundRobin to PowerOfTwoChoices. RoundRobin may still be enabled via `WithConnPoolLoadBalancing` option of the binding
+- [fix] Fixed transactions `Commit`/`Rollback` stucking in case of the incomatible items' sctructs in client and DB
+- [fix] Fixed `builtinserver` logger initialization in cases when single app run multiple instances of the `builtinserver`
+- [fix] Fixed RPC-connections background pinging (Ping requests became asynchronous)
+
+## Build
+- [fix] Fixed build with GCC 13.2
+
+## Face
+- [fea] Changed the numeric values position in the Grid
+- [fea] Added the ability to use spaces for JSON paths
+- [fix] Fixed the Statistics chart for undefined replication.wal_size
+- [fix] Fixed the column set for the namespace items during the namespace switching
+- [fix] Fixed the JSON paths view for values included spaces
+- [fix] Changed the value format for width on the integer for sqlquery
+- [fix] Fixed the bug related to the query history on the Namespace Items list
+- [fix] Fixed the column titles in the table settings menu on the Performance page
+- [fix] Added the validation of the negative values for the index settings
+
 # Version 3.18.0 (29.07.2023)
 ## Core
 - [fea] Increased max indexes count for each namespace up to 255 user-defined indexes (previously it was 63)

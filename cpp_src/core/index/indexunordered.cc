@@ -462,9 +462,10 @@ static std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadTy
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:
-		default:
-			abort();
+		case IndexUuidStore:
+			break;
 	}
+	std::abort();
 }
 
 // NOLINTBEGIN(*cplusplus.NewDeleteLeaks)

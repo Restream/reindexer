@@ -390,6 +390,21 @@ protected:
 			EXPECT_TRUE(pagesConditionResult || joinsBracketConditionsResult || priceConditionResult || joinsNoBracketConditionsResult);
 		}
 	}
+	void ValidateQueryError(std::string_view sql, ErrorCode expectedCode, std::string_view expectedText) {
+		QueryResults qr;
+		{
+			auto err = rt.reindexer->Select(sql, qr);
+			EXPECT_EQ(err.code(), expectedCode) << sql;
+			EXPECT_EQ(err.what(), expectedText) << sql;
+		}
+		{
+			Query q;
+			q.FromSQL(sql);
+			auto err = rt.reindexer->Select(q, qr);
+			EXPECT_EQ(err.code(), expectedCode) << sql;
+			EXPECT_EQ(err.what(), expectedText) << sql;
+		}
+	}
 
 	static std::string addQuotes(const std::string& str) {
 		std::string output;

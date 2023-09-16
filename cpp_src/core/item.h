@@ -109,8 +109,8 @@ public:
 		FieldRef &operator=(const VariantArray &krs);
 
 	private:
-		FieldRef(int field, ItemImpl *itemImpl);
-		FieldRef(std::string_view jsonPath, ItemImpl *itemImpl);
+		FieldRef(int field, ItemImpl *itemImpl) noexcept : itemImpl_(itemImpl), field_(field) {}
+		FieldRef(std::string_view jsonPath, ItemImpl *itemImpl) noexcept : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
 		ItemImpl *itemImpl_;
 		std::string_view jsonPath_;
 		int field_;
@@ -190,12 +190,12 @@ public:
 	void SetPrecepts(const std::vector<std::string> &precepts) &;
 	/// Check was names tags updated while modify operation
 	/// @return true: tags was updated.
-	[[nodiscard]] bool IsTagsUpdated();
+	[[nodiscard]] bool IsTagsUpdated() const noexcept;
 	/// Get state token
 	/// @return Current state token
-	[[nodiscard]] int GetStateToken();
+	[[nodiscard]] int GetStateToken() const noexcept;
 	/// Check is item valid. If is not valid, then any futher operations with item will raise nullptr dereference
-	[[nodiscard]] bool operator!() const { return impl_ == nullptr; }
+	[[nodiscard]] bool operator!() const noexcept { return impl_ == nullptr; }
 	/// Enable Unsafe Mode<br>.
 	/// USE WITH CAUTION. In unsafe mode most of Item methods will not store  strings and slices, passed from/to application.<br>
 	/// The advantage of unsafe mode is speed. It does not call extra memory allocation from heap and copying data.<br>

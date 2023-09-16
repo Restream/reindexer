@@ -596,6 +596,7 @@ protected:
 	}
 
 	void CheckMergeQueriesWithLimit();
+	void CheckMergeQueriesWithAggregation();
 
 	void CheckGeomQueries() {
 		for (size_t i = 0; i < 10; ++i) {
@@ -1461,6 +1462,7 @@ protected:
 								.Distinct(distinct));
 
 						for (CondType cond : {CondEq, CondSet, CondLt, CondLe, CondGt, CondGe}) {
+							const bool multyArgCond = cond == CondEq || cond == CondSet;
 							ExecuteAndVerify(Query(default_namespace)
 												 .Where(kFieldNameUuid, cond, randUuid())
 												 .Distinct(distinct.c_str())
@@ -1471,12 +1473,13 @@ protected:
 												 .Distinct(distinct.c_str())
 												 .Sort(sortIdx, sortOrder));
 
-							ExecuteAndVerify(
-								Query(default_namespace)
-									.Where(kFieldNameUuid, cond,
-										   VariantArray::Create(randUuid(), randStrUuid(), randUuid(), randStrUuid(), randUuid()))
-									.Distinct(distinct.c_str())
-									.Sort(sortIdx, sortOrder));
+							ExecuteAndVerify(Query(default_namespace)
+												 .Where(kFieldNameUuid, cond,
+														multyArgCond ? VariantArray::Create(randUuid(), randStrUuid(), randUuid(),
+																							randStrUuid(), randUuid())
+																	 : VariantArray::Create(randUuid()))
+												 .Distinct(distinct.c_str())
+												 .Sort(sortIdx, sortOrder));
 
 							ExecuteAndVerify(Query(default_namespace)
 												 .Where(kFieldNameUuidArr, cond, randUuid())
@@ -1490,27 +1493,37 @@ protected:
 
 							ExecuteAndVerify(Query(default_namespace)
 												 .Where(kFieldNameUuidArr, cond,
-														VariantArray::Create(randUuid(), randStrUuid(), randUuid(), randStrUuid(),
-																			 randUuid(), randStrUuid()))
+														multyArgCond ? VariantArray::Create(randUuid(), randStrUuid(), randUuid(),
+																							randStrUuid(), randUuid(), randStrUuid())
+																	 : VariantArray::Create(randUuid()))
 												 .Distinct(distinct.c_str())
 												 .Sort(sortIdx, sortOrder));
 
-							ExecuteAndVerify(
-								Query(default_namespace)
-									.WhereComposite(
-										kFieldNameUuid + compositePlus + kFieldNameName, cond,
-										{VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString())})
-									.Distinct(distinct.c_str())
-									.Sort(sortIdx, sortOrder));
+							ExecuteAndVerify(Query(default_namespace)
+												 .WhereComposite(kFieldNameUuid + compositePlus + kFieldNameName, cond,
+																 multyArgCond
+																	 ? std::vector{VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString())}
+																	 : std::vector{VariantArray::Create(randUuid(), RandString())})
+												 .Distinct(distinct.c_str())
+												 .Sort(sortIdx, sortOrder));
 						}
 
 						ExecuteAndVerify(Query(default_namespace)

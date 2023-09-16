@@ -14,10 +14,12 @@ import (
 )
 
 type TestUuidStruct struct {
-	ID        int      `reindex:"id,,pk"`
-	Uuid      string   `reindex:"uuid,hash,uuid" json:"uuid"`
-	UuidArray []string `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
-	_         struct{} `reindex:"id+uuid,,composite"`
+	ID             int      `reindex:"id,,pk"`
+	Uuid           string   `reindex:"uuid,hash,uuid" json:"uuid"`
+	UuidStore      string   `reindex:"uuid_store,-,uuid" json:"uuid_store"`
+	UuidArray      []string `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
+	UuidStoreArray []string `reindex:"uuid_store_array,-,uuid" json:"uuid_store_array"`
+	_              struct{} `reindex:"id+uuid,,composite"`
 }
 
 type TestIntItemWithUuidTagStruct struct {
@@ -106,10 +108,11 @@ func checkExplainSelect(t *testing.T, it reindexer.Iterator, item interface{}) {
 	assert.NoError(t, err)
 	checkExplain(t, explainRes.Selectors, []expectedExplain{
 		{
-			Field:   "uuid",
-			Method:  "index",
-			Keys:    1,
-			Matched: 1,
+			Field:     "uuid",
+			FieldType: "indexed",
+			Method:    "index",
+			Keys:      1,
+			Matched:   1,
 		},
 	}, "")
 }
@@ -135,39 +138,98 @@ func TestUuidItemCreate(t *testing.T) {
 
 	t.Run("add item with valid uuid", func(t *testing.T) {
 		item := TestUuidStruct{
-			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randUuidArray(rand.Intn(5)),
+			ID: rand.Intn(100), Uuid: randUuid(), UuidStore: randUuid(),
+			UuidArray: randUuidArray(rand.Intn(5)), UuidStoreArray: randUuidArray(rand.Intn(5)),
 		}
 		err := DB.Upsert(ns, item)
 		require.NoError(t, err)
 	})
 
-	t.Run("add item with invalid uuid", func(t *testing.T) {
-		item := TestUuidStruct{
+	t.Run("add item with invalid uuid: random string", func(t *testing.T) {
+		item1 := TestUuidStruct{
 			ID: rand.Intn(100), Uuid: randString(), UuidArray: randUuidArray(rand.Intn(5)),
 		}
+		item2 := TestUuidStruct{
+			ID: rand.Intn(100), UuidStore: randString(), UuidStoreArray: randUuidArray(rand.Intn(5)),
+		}
+		err1 := DB.Upsert(ns, item1)
+		require.Error(t, err1)
+		err2 := DB.Upsert(ns, item2)
+		require.Error(t, err2)
+		errExp := "UUID should consist of 32 hexadecimal digits"
+		assert.Contains(t, err1.Error(), errExp)
+		assert.Contains(t, err2.Error(), errExp)
+	})
+
+	t.Run("add item with invalid uuid: invalid char", func(t *testing.T) {
+		item := TestUuidStruct{
+			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randUuidArray(rand.Intn(5)),
+		}
+		invalidUuid := []byte(item.Uuid)
+		invalidUuid[5] = 'x'
+		item.Uuid = string(invalidUuid)
 		err := DB.Upsert(ns, item)
 		require.Error(t, err)
 		errExp := "UUID cannot contain char"
 		assert.Contains(t, err.Error(), errExp)
 	})
 
-	t.Run("add item with invalid array uuid", func(t *testing.T) {
+	t.Run("add item with invalid uuid: invalid format", func(t *testing.T) {
 		item := TestUuidStruct{
+			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randUuidArray(rand.Intn(5)),
+		}
+		invalidUuid := []byte(item.Uuid)
+		invalidUuid[8] = invalidUuid[7]
+		invalidUuid[7] = '-'
+		item.Uuid = string(invalidUuid)
+		err := DB.Upsert(ns, item)
+		require.Error(t, err)
+		errExp := "Invalid UUID format"
+		assert.Contains(t, err.Error(), errExp)
+	})
+
+	t.Run("add item with invalid array uuid: random strings", func(t *testing.T) {
+		item1 := TestUuidStruct{
 			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randStringArr(rand.Intn(5) + 1),
 		}
+		item2 := TestUuidStruct{
+			ID: rand.Intn(100), UuidStore: randUuid(), UuidStoreArray: randStringArr(rand.Intn(5) + 1),
+		}
+		err1 := DB.Upsert(ns, item1)
+		require.Error(t, err1)
+		err2 := DB.Upsert(ns, item2)
+		require.Error(t, err2)
+		errExp := "UUID should consist of 32 hexadecimal digits"
+		assert.Contains(t, err1.Error(), errExp)
+		assert.Contains(t, err2.Error(), errExp)
+	})
+
+	t.Run("add item with invalid array uuid: invalid char", func(t *testing.T) {
+		item := TestUuidStruct{
+			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randUuidArray(rand.Intn(5) + 1),
+		}
+		invalidUuid := []byte(item.UuidArray[0])
+		invalidUuid[15] = '%'
+		item.UuidArray[0] = string(invalidUuid)
 		err := DB.Upsert(ns, item)
 		require.Error(t, err)
 		errExp := "UUID cannot contain char"
 		assert.Contains(t, err.Error(), errExp)
 	})
 
-	t.Run("add item with invalid uuid and array uuid", func(t *testing.T) {
+	t.Run("add item with invalid uuid and array uuid: invalid format", func(t *testing.T) {
 		item := TestUuidStruct{
-			ID: rand.Intn(100), Uuid: randString(), UuidArray: randStringArr(rand.Intn(5) + 1),
+			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randUuidArray(rand.Intn(5) + 1),
 		}
+		invalidUuid := []byte(item.Uuid)
+		invalidUuid[0] = '-'
+		item.Uuid = string(invalidUuid)
+		invalidUuid = []byte(item.UuidArray[0])
+		invalidUuid[30] = '-'
+		item.UuidArray[0] = string(invalidUuid)
 		err := DB.Upsert(ns, item)
 		require.Error(t, err)
-		errExp := "UUID cannot contain char"
+		errExp := "Invalid UUID format"
 		assert.Contains(t, err.Error(), errExp)
 	})
 }

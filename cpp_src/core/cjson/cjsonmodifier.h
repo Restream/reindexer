@@ -6,7 +6,7 @@ namespace reindexer {
 
 class CJsonModifier {
 public:
-	CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt);
+	CJsonModifier(TagsMatcher &tagsMatcher, PayloadType pt) noexcept : pt_(std::move(pt)), tagsMatcher_(tagsMatcher) {}
 	void SetFieldValue(std::string_view tuple, IndexedTagsPath path, const VariantArray &v, WrSerializer &ser, const Payload &pl);
 	void SetObject(std::string_view tuple, IndexedTagsPath path, const VariantArray &v, WrSerializer &ser, const Payload &pl);
 	void RemoveField(std::string_view tuple, IndexedTagsPath fieldPath, WrSerializer &wrser);

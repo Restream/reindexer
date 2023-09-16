@@ -13,7 +13,7 @@ class FuzzyIndexText : public IndexText<T> {
 	using Base = IndexText<T>;
 
 public:
-	FuzzyIndexText(const FuzzyIndexText<T>& other) : Base(other) { CreateConfig(other.GetConfig()); }
+	FuzzyIndexText(const FuzzyIndexText<T>& other) : Base(other) { CreateConfig(other.getConfig()); }
 
 	FuzzyIndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields) : Base(idef, std::move(payloadType), fields) {
 		CreateConfig();
@@ -42,7 +42,7 @@ public:
 
 protected:
 	void commitFulltextImpl() override final;
-	FtFuzzyConfig* GetConfig() const;
+	FtFuzzyConfig* getConfig() const noexcept { return dynamic_cast<FtFuzzyConfig*>(this->cfg_.get()); }
 	void CreateConfig(const FtFuzzyConfig* cfg = nullptr);
 
 	search_engine::SearchEngine engine_;

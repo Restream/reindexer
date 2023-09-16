@@ -940,8 +940,13 @@ type Item struct {
 
 ### Aggregations
 
-Reindexer allows to retrieve aggregated results. Currently Average, Sum, Minimum, Maximum Facet and Distinct aggregations are supported.
+Reindexer allows to retrieve aggregated results. Currently Count, CountCached, Average, Sum, Minimum, Maximum, Facet and
+Distinct
+aggregations are supported.
 
+- `Count` - get total number of documents that meet the querie's conditions
+- `CountCached` - get total number of documents that meet the querie's conditions. Result value will be cached and may
+  be reused by the other queries with CountCached aggregation
 - `AggregateMax` - get maximum field value
 - `AggregateMin` - get minimum field value
 - `AggregateSum` - get sum field value
@@ -949,11 +954,19 @@ Reindexer allows to retrieve aggregated results. Currently Average, Sum, Minimum
 - `AggregateFacet` - get fields facet value
 - `Distinct` - get list of unique values of the field
 
-In order to support aggregation, `Query` has methods `AggregateAvg`, `AggregateSum`, `AggregateMin`, `AggregateMax`, `AggregateFacet` and `Distinct` those should be called before the `Query` execution: this will ask reindexer to calculate data aggregations.
-Aggregation Facet is applicable to multiple data columns and the result of that could be sorted by any data column or 'count' and cutted off by offset and limit.
-In order to support this functionality method `AggregateFacet` returns `AggregationFacetRequest` which has methods `Sort`, `Limit` and `Offset`.
+In order to support aggregation, `Query` has methods `AggregateAvg`, `AggregateSum`, `AggregateMin`, `AggregateMax`
+, `AggregateFacet` and `Distinct` those should be called before the `Query` execution: this will ask reindexer to
+calculate data aggregations.
+Aggregation Facet is applicable to multiple data columns and the result of that could be sorted by any data column or '
+count' and cutted off by offset and limit.
+In order to support this functionality method `AggregateFacet` returns `AggregationFacetRequest` which has
+methods `Sort`, `Limit` and `Offset`.
 
-To get aggregation results, `Iterator` has method `AggResults`: it is available after query execution and returns slice of results.
+Queries with MERGE will apply aggregations from the main query to all the merged subqueries. Subqueries can not have
+their own aggregations. Available aggregations for MERGE-queries are: Count, CountCached, Sum, Min and Max.
+
+To get aggregation results, `Iterator` has method `AggResults`: it is available after query execution and returns slice
+of results.
 
 Example code for aggregate `items` by `price` and `name`
 
