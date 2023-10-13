@@ -9,11 +9,9 @@
 
 namespace reindexer {
 
-JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher), filter_(nullptr) {}
-JsonDecoder::JsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet *filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
-
 Error JsonDecoder::Decode(Payload &pl, WrSerializer &wrser, const gason::JsonValue &v) {
 	try {
+		objectScalarIndexes_.reset();
 		tagsPath_.clear();
 		CJsonBuilder builder(wrser, ObjType::TypePlain, &tagsMatcher_);
 		decodeJson(&pl, builder, v, 0, true);
@@ -27,9 +25,9 @@ Error JsonDecoder::Decode(Payload &pl, WrSerializer &wrser, const gason::JsonVal
 
 void JsonDecoder::decodeJsonObject(Payload &pl, CJsonBuilder &builder, const gason::JsonValue &v, bool match) {
 	for (const auto &elem : v) {
-		int tagName = tagsMatcher_.name2tag(elem->key, true);
+		int tagName = tagsMatcher_.name2tag(elem.key, true);
 		assertrx(tagName);
-		tagsPath_.push_back(tagName);
+		tagsPath_.emplace_back(tagName);
 		int field = tagsMatcher_.tags2field(tagsPath_.data(), tagsPath_.size());
 		if (filter_) {
 			if (field >= 0)
@@ -39,31 +37,29 @@ void JsonDecoder::decodeJsonObject(Payload &pl, CJsonBuilder &builder, const gas
 		}
 
 		if (field < 0) {
-			decodeJson(&pl, builder, elem->value, tagName, match);
+			decodeJson(&pl, builder, elem.value, tagName, match);
 		} else if (match) {
 			// Indexed field. extract it
 			const auto &f = pl.Type().Field(field);
-			switch (elem->value.getTag()) {
+			switch (elem.value.getTag()) {
 				case gason::JSON_ARRAY: {
-					if (!f.IsArray()) {
+					if rx_unlikely (!f.IsArray()) {
 						throw Error(errLogic, "Error parsing json field '%s' - got array, expected scalar %s", f.Name(), f.Type().Name());
 					}
 					int count = 0;
-					for (auto subelem : elem->value) {
+					for (auto &subelem : elem.value) {
 						(void)subelem;
-						count++;
+						++count;
 					}
 					int pos = pl.ResizeArray(field, count, true);
-					for (auto subelem : elem->value) {
-						pl.Set(field, pos++, jsonValue2Variant(subelem->value, f.Type(), f.Name()));
+					for (auto &subelem : elem.value) {
+						pl.Set(field, pos++, jsonValue2Variant(subelem.value, f.Type(), f.Name()));
 					}
 					builder.ArrayRef(tagName, field, count);
 				} break;
 				case gason::JSON_NULL:
-					if (isInArray() && !f.IsArray()) {
-						throw Error(errLogic, "Error parsing json field '%s' - got value in the nested array, but expected scalar %s",
-									f.Name(), f.Type().Name());
-					}
+					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, field, isInArray(), "json");
+					objectScalarIndexes_.set(field);
 					builder.Null(tagName);
 					break;
 				case gason::JSON_NUMBER:
@@ -72,17 +68,15 @@ void JsonDecoder::decodeJsonObject(Payload &pl, CJsonBuilder &builder, const gas
 				case gason::JSON_STRING:
 				case gason::JSON_TRUE:
 				case gason::JSON_FALSE: {
-					if (isInArray() && !f.IsArray()) {
-						throw Error(errLogic, "Error parsing json field '%s' - got value in the nested array, but expected scalar %s",
-									f.Name(), f.Type().Name());
-					}
-					Variant v = jsonValue2Variant(elem->value, f.Type(), f.Name());
-					pl.Set(field, {v}, true);
+					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, f, field, isInArray(), "json");
+					objectScalarIndexes_.set(field);
+					Variant v = jsonValue2Variant(elem.value, f.Type(), f.Name());
 					builder.Ref(tagName, v, field);
+					pl.Set(field, std::move(v), true);
 				} break;
-				default:
-					abort();
 			}
+		} else {
+			// objectScalarIndexes_.set(field); - do not change objectScalarIndexes_ value for the filtered out fields
 		}
 		tagsPath_.pop_back();
 	}
@@ -125,7 +119,7 @@ void JsonDecoder::decodeJson(Payload *pl, CJsonBuilder &builder, const gason::Js
 			}
 			auto arrNode = builder.Array(tagName, type);
 			for (const auto &elem : v) {
-				decodeJson(pl, arrNode, elem->value, 0, match);
+				decodeJson(pl, arrNode, elem.value, 0, match);
 			}
 			break;
 		}
@@ -143,7 +137,7 @@ void JsonDecoder::decodeJson(Payload *pl, CJsonBuilder &builder, const gason::Js
 
 class TagsPathGuard {
 public:
-	TagsPathGuard(TagsPath &tagsPath, int tagName) : tagsPath_(tagsPath) { tagsPath_.push_back(tagName); }
+	TagsPathGuard(TagsPath &tagsPath, int tagName) noexcept : tagsPath_(tagsPath) { tagsPath_.emplace_back(tagName); }
 	~TagsPathGuard() { tagsPath_.pop_back(); }
 
 public:
@@ -152,14 +146,15 @@ public:
 
 void JsonDecoder::decodeJsonObject(const gason::JsonValue &root, CJsonBuilder &builder) {
 	for (const auto &elem : root) {
-		int tagName = tagsMatcher_.name2tag(elem->key, true);
+		int tagName = tagsMatcher_.name2tag(elem.key, true);
 		TagsPathGuard tagsPathGuard(tagsPath_, tagName);
-		decodeJson(nullptr, builder, elem->value, tagName, true);
+		decodeJson(nullptr, builder, elem.value, tagName, true);
 	}
 }
 
 void JsonDecoder::Decode(std::string_view json, CJsonBuilder &builder, const TagsPath &fieldPath) {
 	try {
+		objectScalarIndexes_.reset();
 		tagsPath_ = fieldPath;
 		gason::JsonParser jsonParser;
 		gason::JsonNode root = jsonParser.Parse(json);

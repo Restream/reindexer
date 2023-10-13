@@ -98,12 +98,12 @@ TEST_F(ShardingExtrasApi, LocalQuery) {
 			Query localQuery;
 			localQuery.FromSQL(localPreffix + " select * from "s + default_namespace);
 			auto err = getNode(i)->api.reindexer->Select(localQuery, localQr);
-			EXPECT_TRUE(err.ok());
+			EXPECT_TRUE(err.ok()) << err.what();
 
 			client::QueryResults shardQr;
 			Query shardQuery = Query{default_namespace}.Where(kFieldLocation, CondEq, "key" + std::to_string((i % kNodesInCluster) + 1));
 			err = getNode(rand() % NodesCount())->api.reindexer->Select(shardQuery, shardQr);
-			EXPECT_TRUE(err.ok());
+			EXPECT_TRUE(err.ok()) << err.what();
 
 			EXPECT_EQ(localQr.Count(), shardQr.Count()) << " i = " << i;
 		}

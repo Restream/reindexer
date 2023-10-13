@@ -4,12 +4,13 @@
 #include "core/idset.h"
 #include "core/keyvalue/variant.h"
 #include "core/lrucache.h"
+#include "core/payload/fieldsset.h"
 #include "core/type_consts_helpers.h"
 
 namespace reindexer {
 
 struct IdSetCacheKey {
-	IdSetCacheKey(const VariantArray &keys, CondType cond, SortType sort) : keys(&keys), cond(cond), sort(sort) {}
+	IdSetCacheKey(const VariantArray &keys, CondType cond, SortType sort) noexcept : keys(&keys), cond(cond), sort(sort) {}
 	IdSetCacheKey(const IdSetCacheKey &other) : keys(&hkeys), cond(other.cond), sort(other.sort), hkeys(*other.keys) {}
 	IdSetCacheKey(IdSetCacheKey &&other) noexcept : keys(&hkeys), cond(other.cond), sort(other.sort) {
 		if (&other.hkeys == other.keys) {
@@ -41,7 +42,7 @@ struct IdSetCacheKey {
 		return *this;
 	}
 
-	size_t Size() const { return sizeof(IdSetCacheKey) + keys->size() * sizeof(VariantArray::value_type); }
+	size_t Size() const noexcept { return sizeof(IdSetCacheKey) + keys->size() * sizeof(VariantArray::value_type); }
 
 	const VariantArray *keys;
 	CondType cond;
@@ -57,9 +58,9 @@ T &operator<<(T &os, const IdSetCacheKey &k) {
 }
 
 struct IdSetCacheVal {
-	IdSetCacheVal() : ids(nullptr) {}
-	IdSetCacheVal(const IdSet::Ptr &i) : ids(i) {}
-	size_t Size() const { return ids ? sizeof(*ids.get()) + ids->heap_size() : 0; }
+	IdSetCacheVal() = default;
+	IdSetCacheVal(IdSet::Ptr &&i) noexcept : ids(std::move(i)) {}
+	size_t Size() const noexcept { return ids ? (sizeof(*ids.get()) + ids->heap_size()) : 0; }
 
 	IdSet::Ptr ids;
 };
@@ -84,7 +85,7 @@ struct hash_idset_cache_key {
 
 class IdSetCache : public LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key> {
 public:
-	void ClearSorted(const std::bitset<64> &s) {
+	void ClearSorted(const std::bitset<kMaxIndexes> &s) {
 		if (s.any()) {
 			Clear([&s](const IdSetCacheKey &k) { return s.test(k.sort); });
 		}

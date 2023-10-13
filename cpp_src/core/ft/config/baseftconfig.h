@@ -43,6 +43,28 @@ public:
 	std::vector<Synonym> synonyms;
 	int logLevel = 0;
 	std::string extraWordSymbols = "-/+";  // word contains symbols (IsAlpa | IsDigit) {IsAlpa | IsDigit | IsExtra}
+	struct BaseRankingConfig {
+		static constexpr int kMinProcAfterPenalty = 1;
+		// Relevancy of full word match
+		int fullMatch = 100;
+		// Mininum relevancy of prefix word match.
+		int prefixMin = 50;
+		// Mininum relevancy of suffix word match.
+		int suffixMin = 10;
+		// Base relevancy of typo match
+		int typo = 85;
+		// Extra penalty for each word's permutation (addition/deletion of the symbol) in typo algorithm
+		int typoPenalty = 15;
+		// Penalty for the variants, created by stemming
+		int stemmerPenalty = 15;
+		// Relevancy of the match in incorrect kblayout
+		int kblayout = 90;
+		// Relevancy of the match in translit
+		int translit = 90;
+		// Relevancy of the synonym match
+		int synonyms = 95;
+	};
+	BaseRankingConfig rankingConfig;
 
 protected:
 	void parseBase(const gason::JsonNode& root);

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include "cluster/updaterecord.h"
 #include "core/keyvalue/p_string.h"
 #include "core/payload/payloadiface.h"
@@ -27,6 +28,9 @@ private:
 		void updateTagsPath(TagsMatcher &tm, const IndexExpressionEvaluator &ev);
 		const UpdateEntry &details() const noexcept { return entry_; }
 		const IndexedTagsPath &tagspath() const noexcept { return tagsPath_; }
+		const IndexedTagsPath &tagspathWithLastIndex() const noexcept {
+			return tagsPathWithLastIndex_ ? *tagsPathWithLastIndex_ : tagsPath_;
+		}
 		int arrayIndex() const noexcept { return arrayIndex_; }
 		int index() const noexcept { return fieldIndex_; }
 		bool isIndex() const noexcept { return isIndex_; }
@@ -35,6 +39,7 @@ private:
 	private:
 		const UpdateEntry &entry_;
 		IndexedTagsPath tagsPath_;
+		std::optional<IndexedTagsPath> tagsPathWithLastIndex_;
 		int fieldIndex_{IndexValueType::SetByJsonPath};
 		int arrayIndex_;
 		bool isIndex_;
@@ -58,10 +63,10 @@ private:
 		std::string_view cjson_;
 	};
 
-	void modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values, const RdxContext &);
+	void modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values);
 	void modifyCJSON(PayloadValue &pv, IdType itemId, FieldData &field, VariantArray &values,
 					 h_vector<cluster::UpdateRecord, 2> &pendedRepl, const RdxContext &);
-	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl, const RdxContext &);
+	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl);
 
 	NamespaceImpl &ns_;
 	const std::vector<UpdateEntry> &updateEntries_;

@@ -13,7 +13,7 @@ class FuzzyIndexText : public IndexText<T> {
 	using Base = IndexText<T>;
 
 public:
-	FuzzyIndexText(const FuzzyIndexText<T>& other) : Base(other) { CreateConfig(other.GetConfig()); }
+	FuzzyIndexText(const FuzzyIndexText<T>& other) : Base(other) { CreateConfig(other.getConfig()); }
 
 	FuzzyIndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields) : Base(idef, std::move(payloadType), fields) {
 		CreateConfig();
@@ -25,7 +25,7 @@ public:
 		abort();
 	}
 	std::unique_ptr<Index> Clone() const override final { return std::unique_ptr<Index>{new FuzzyIndexText<T>(*this)}; }
-	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
+	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, FtUseExternStatuses,
 					  const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final {
 		this->isBuilt_ = false;
@@ -37,12 +37,12 @@ public:
 	}
 	FtMergeStatuses GetFtMergeStatuses(const RdxContext& rdxCtx) override final {
 		this->build(rdxCtx);
-		return {{}, {}, nullptr, std::nullopt};
+		return {{}, {}, nullptr};
 	}
 
 protected:
 	void commitFulltextImpl() override final;
-	FtFuzzyConfig* GetConfig() const;
+	FtFuzzyConfig* getConfig() const noexcept { return dynamic_cast<FtFuzzyConfig*>(this->cfg_.get()); }
 	void CreateConfig(const FtFuzzyConfig* cfg = nullptr);
 
 	search_engine::SearchEngine engine_;

@@ -649,10 +649,10 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 		case gason::JsonTag::JSON_STRING:
 		case gason::JsonTag::JSON_DOUBLE:
 		case gason::JsonTag::JSON_NUMBER: {
-			auto val = jsonValue2Variant(jsonValue, KeyValueType::Undefined{});
+			auto val = stringToVariant(stringifyJson(json, false));
 
 			if (val.Type().Is<KeyValueType::Null>()) {
-				throw Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", jsonValue.toString());
+				throw Error(errParams, "Incorrect value '%s'. Type is equal to 'KeyValueNull'", stringifyJson(json, false));
 			}
 
 			return sharding::Segment<Variant>{val, val};
@@ -662,8 +662,8 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 			if (auto dist = std::distance(begin(json), end(json)); dist != 2)
 				throw Error(errParams, "Incorrect range for sharding key. Should contain 2 numbers but %d are received", dist);
 
-			auto left = jsonValue2Variant(begin(jsonValue)->value, KeyValueType::Undefined{});
-			auto right = jsonValue2Variant(begin(jsonValue)->next->value, KeyValueType::Undefined{});
+			auto left = stringToVariant(stringifyJson(*begin(json), false));
+			auto right = stringToVariant(stringifyJson(*begin(json)->next, false));
 
 			if (!left.Type().IsSame(right.Type()))
 				throw Error(errParams, "Incorrect segment '[%s, %s]'. Type of left value is '%s', right type is '%s'",

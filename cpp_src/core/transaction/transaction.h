@@ -15,7 +15,7 @@ class Reindexer;
 }  // namespace client
 
 namespace sharding {
-class LocatorService;
+class LocatorServiceAdapter;
 }
 
 class TransactionImpl;
@@ -68,7 +68,7 @@ public:
 protected:
 	Transaction(Error err);
 	Transaction();
-	Transaction(Transaction &&tr, std::shared_ptr<sharding::LocatorService> shardingRouter);
+	Transaction(Transaction &&tr, sharding::LocatorServiceAdapter shardingRouter);
 
 	Error rollback(int serverId, const RdxContext &);
 	Error commit(int serverId, bool expectSharding, ReindexerImpl &rx, QueryResults &result, const RdxContext &ctx);

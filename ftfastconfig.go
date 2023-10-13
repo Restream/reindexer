@@ -41,6 +41,46 @@ type FtTyposDetailedConfig struct {
 	MaxExtraLetters int `json:"max_extra_letters"`
 }
 
+
+type FtBaseRanking struct {
+	// Relevancy of full word match
+	// Values range: [0,500]
+	// Default: 100
+	FullMatch int `json:"full_match_proc"`
+	// Mininum relevancy of prefix word match.
+	// Values range: [0,500]
+	// Default: 50
+	PrefixMin int `json:"prefix_min_proc"`
+	// Mininum relevancy of suffix word match.
+	// Values range: [0,500]
+	// Default: 10
+	SuffixMin int `json:"suffix_min_proc"`
+	// Base relevancy of typo match
+	// Values range: [0,500]
+	// Default: 85
+	Typo int `json:"base_typo_proc"`
+	// Extra penalty for each word's permutation (addition/deletion of the symbol) in typo algorithm
+	// Values range: [0,500]
+	// Default: 15
+	TypoPenalty int `json:"typo_proc_penalty"`
+	// Penalty for the variants, created by stemming
+	// Values range: [0,500]
+	// Default: 15
+	StemmerPenalty int `json:"stemmer_proc_penalty"`
+	// Relevancy of the match in incorrect kblayout
+	// Values range: [0,500]
+	// Default: 90
+	Kblayout int `json:"kblayout_proc"`
+	// Relevancy of the match in translit
+	// Values range: [0,500]
+	// Default: 90
+	Translit int `json:"translit_proc"`
+	// Relevancy of the synonym match
+	// Values range: [0,500]
+	// Default: 95
+	Synonyms int `json:"synonyms_proc"`
+}
+
 // FtFastConfig configurarion of FullText search index
 type FtFastConfig struct {
 	// boost of bm25 ranking. default value 1.
@@ -128,6 +168,8 @@ type FtFastConfig struct {
 	Optimization string `json:"optimization,omitempty"`
 	// Enable to execute others queries before the ft query
 	EnablePreselectBeforeFt bool `json:"enable_preselect_before_ft"`
+	// Config for subterm rank multiplier
+	FtBaseRankingConfig *FtBaseRanking `json:"base_ranking,omitempty"`
 }
 
 func DefaultFtFastConfig() FtFastConfig {
@@ -159,6 +201,8 @@ func DefaultFtFastConfig() FtFastConfig {
 		MaxTotalAreasToCache:    -1,
 		Optimization:            "Memory",
 		EnablePreselectBeforeFt: false,
+		FtBaseRankingConfig:  &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin:10, Typo:85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit:90, Synonyms:95},
+
 	}
 }
 

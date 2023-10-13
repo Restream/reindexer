@@ -90,7 +90,7 @@ LocalTransaction Transaction::Transform(Transaction &&tx) {
 
 Transaction::Transaction(Error err) : status_(std::move(err)) {}
 
-Transaction::Transaction(Transaction &&tr, std::shared_ptr<sharding::LocatorService> shardingRouter) : Transaction(std::move(tr)) {
+Transaction::Transaction(Transaction &&tr, sharding::LocatorServiceAdapter shardingRouter) : Transaction(std::move(tr)) {
 	assertrx(impl_);
 	impl_->SetShardingRouter(std::move(shardingRouter));
 }

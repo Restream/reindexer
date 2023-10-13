@@ -134,7 +134,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 4.11.0
+*Version* : 4.12.0
 
 
 ### License information
@@ -617,7 +617,7 @@ This operation will select documents from namespace with specified filters, and 
 |**Path**|**name**  <br>*required*|Namespace name|string|
 |**Query**|**fields**  <br>*optional*|Comma-separated list of returned fields|string|
 |**Query**|**filter**  <br>*optional*|Filter with SQL syntax, e.g: field1 = 'v1' AND field2 > 'v2'|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf, csv-file)|
 |**Query**|**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**Query**|**offset**  <br>*optional*|Offset of first returned item|integer|
 |**Query**|**sharding**  <br>*optional*|if off then get items from current node only|enum (true, false)|
@@ -1092,7 +1092,7 @@ then `limit` and `offset` from http request.
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf, csv-file)|
 |**Query**|**limit**  <br>*optional*|Maximum count of returned items|integer|
 |**Query**|**offset**  <br>*optional*|Offset of first returned item|integer|
 |**Query**|**q**  <br>*required*|SQL query|string|
@@ -1168,7 +1168,7 @@ This operation queries documents from namespace by DSL query.
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
-|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf)|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf, csv-file)|
 |**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
 |**Query**|**with_columns**  <br>*optional*|Return columns names and widths for table format output|boolean|
 |**Body**|**body**  <br>*required*|DSL query|[Query](#query)|
@@ -1628,6 +1628,7 @@ This operation queries documents from namespace by SQL query. Query can be prece
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
+|**Query**|**format**  <br>*optional*|encoding data format|enum (json, msgpack, protobuf, csv-file)|
 |**Query**|**width**  <br>*optional*|Total width in rows of view for table format output|integer|
 |**Query**|**with_columns**  <br>*optional*|Return columns names and widths for table format output|boolean|
 |**Body**|**q**  <br>*required*|SQL query|string|
@@ -2191,13 +2192,42 @@ Query execution explainings
 |---|---|---|
 |**general_sort_us**  <br>*optional*|Result sort time|integer|
 |**indexes_us**  <br>*optional*|Indexes keys selection time|integer|
+|**join_on_conditions**  <br>*optional*|Describes Join ON conditions injections|< [join_on_conditions](#explaindef-join_on_conditions) > array|
 |**loop_us**  <br>*optional*|Intersection loop time|integer|
 |**postprocess_us**  <br>*optional*|Query post process time|integer|
 |**prepare_us**  <br>*optional*|Query prepare and optimize time|integer|
-|**selectors**  <br>*optional*|Filter selectos, used to proccess query conditions|< [selectors](#explaindef-selectors) > array|
+|**preselect_us**  <br>*optional*|Query preselect processing time|integer|
+|**selectors**  <br>*optional*|Filter selectors, used to proccess query conditions|< [selectors](#explaindef-selectors) > array|
 |**sort_by_uncommitted_index**  <br>*optional*|Optimization of sort by uncompleted index has been performed|boolean|
 |**sort_index**  <br>*optional*|Index, which used for sort results|string|
 |**total_us**  <br>*optional*|Total query execution time|integer|
+
+
+**join_on_conditions**
+
+|Name|Description|Schema|
+|---|---|---|
+|**conditions**  <br>*optional*|Individual conditions processing results|< [conditions](#explaindef-conditions) > array|
+|**injected_condition**  <br>*optional*|Injected condition. SQL-like string|string|
+|**namespace**  <br>*optional*|Joinable ns name|string|
+|**on_condition**  <br>*optional*|Original ON-conditions clause. SQL-like string|string|
+|**reason**  <br>*optional*|Optional{succeed==false}. Explains condition injection failure|string|
+|**success**  <br>*optional*|Result of injection attempt|boolean|
+|**type**  <br>*optional*|Values source: preselect values(by_value) or additional select(select)|string|
+
+
+**conditions**
+
+|Name|Description|Schema|
+|---|---|---|
+|**agg_type**  <br>*optional*|Optional. Aggregation type used in subquery|enum (min, max, distinct)|
+|**condition**  <br>*optional*|single condition from Join ON section. SQL-like string|string|
+|**explain_select**  <br>*optional*|Optional. Explain of Select subquery|[ExplainDef](#explaindef)|
+|**new_condition**  <br>*optional*|substituted injected condition. SQL-like string|string|
+|**reason**  <br>*optional*|Optional. Explains condition injection failure|string|
+|**success**  <br>*optional*|result of injection attempt|boolean|
+|**total_time_us**  <br>*optional*|total time elapsed from injection attempt start till the end of substitution or rejection|integer|
+|**values_count**  <br>*optional*|resulting size of query values set|integer|
 
 
 **selectors**
@@ -2240,6 +2270,7 @@ Fulltext Index configuration
 
 |Name|Description|Schema|
 |---|---|---|
+|**base_ranking**  <br>*optional*|Config for subterm proc rank.|[base_ranking](#fulltextconfig-base_ranking)|
 |**bm25_boost**  <br>*optional*|Boost of bm25 ranking  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**bm25_weight**  <br>*optional*|Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**distance_boost**  <br>*optional*|Boost of search query term distance in found document  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
@@ -2272,6 +2303,21 @@ Fulltext Index configuration
 |**term_len_boost**  <br>*optional*|Boost of search query term length  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**term_len_weight**  <br>*optional*|Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range  <br>**Default** : `0.3`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**typos_detailed_config**  <br>*optional*|Config for more precise typos algorithm tuning|[typos_detailed_config](#fulltextconfig-typos_detailed_config)|
+
+
+**base_ranking**
+
+|Name|Description|Schema|
+|---|---|---|
+|**base_typo_proc**  <br>*optional*|Base relevancy of typo match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**full_match_proc**  <br>*optional*|Relevancy of full word match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**kblayout_proc**  <br>*optional*|Relevancy of the match in incorrect kblayout  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**prefix_min_proc**  <br>*optional*|Mininum relevancy of prefix word match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**stemmer_proc_penalty**  <br>*optional*|Penalty for the variants, created by stemming  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**suffix_min_proc**  <br>*optional*|Mininum relevancy of suffix word match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**synonyms_proc**  <br>*optional*|Relevancy of the synonym match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**translit_proc**  <br>*optional*|Relevancy of the match in translit  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+|**typo_proc_penalty**  <br>*optional*|Extra penalty for each word's permutation (addition/deletion of the symbol) in typo algorithm  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 
 
 **typos_detailed_config**

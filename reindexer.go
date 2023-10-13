@@ -93,6 +93,9 @@ type Error interface {
 	Code() int
 }
 
+// Point 2-dimensional point
+type Point [2]float64
+
 // Joinable is an interface for append joined items
 type Joinable interface {
 	Join(field string, subitems []interface{}, context interface{})
@@ -369,7 +372,7 @@ func (db *Reindexer) MustBeginTx(namespace string) *Tx {
 
 // QueryFrom - create query from DSL and execute it
 func (db *Reindexer) QueryFrom(d dsl.DSL) (*Query, error) {
-	return db.impl.queryFrom(d)
+	return db.impl.queryFrom(&d)
 }
 
 // GetStats Get local thread reindexer usage stats

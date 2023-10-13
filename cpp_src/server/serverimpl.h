@@ -36,10 +36,10 @@ public:
 	Error InitFromFile(const char* filepath);
 	int Start();
 	void Stop();
-	void EnableHandleSignals(bool enable = true) { enableHandleSignals_ = enable; }
-	DBManager& GetDBManager() { return *dbMgr_; }
-	bool IsReady() const { return storageLoaded_.load(); }
-	bool IsRunning() const { return running_.load(); }
+	void EnableHandleSignals(bool enable = true) noexcept { enableHandleSignals_ = enable; }
+	DBManager& GetDBManager() noexcept { return *dbMgr_; }
+	bool IsReady() const noexcept { return storageLoaded_.load(); }
+	bool IsRunning() const noexcept { return running_.load(); }
 	void ReopenLogFiles();
 
 protected:
@@ -68,8 +68,6 @@ private:
 	bool enableHandleSignals_ = false;
 	ev::async async_;
 	ev::dynamic_loop loop_;
-#ifndef REINDEX_WITH_ASAN
 	ServerMode mode_ = ServerMode::Builtin;
-#endif	// REINDEX_WITH_ASAN
 };
 }  // namespace reindexer_server

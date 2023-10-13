@@ -28,6 +28,7 @@ struct InitShardingConfig {
 	int rowsInTableOnShard = 40;
 	bool disableNetworkTimeout = false;
 	bool createAdditionalIndexes = true;
+	bool needFillDefaultNs = true;
 	std::vector<Namespace> additionalNss;
 	std::chrono::seconds awaitTimeout = std::chrono::seconds(30);
 	fast_hash_map<int, std::string>* insertedItemsById = nullptr;
@@ -43,7 +44,7 @@ public:
 
 	void Init(InitShardingConfig c = InitShardingConfig()) {
 		std::vector<InitShardingConfig::Namespace> namespaces = std::move(c.additionalNss);
-		namespaces.emplace_back(InitShardingConfig::Namespace{default_namespace, true});
+		namespaces.emplace_back(InitShardingConfig::Namespace{default_namespace, c.needFillDefaultNs});
 		kShards = c.shards;
 		kNodesInCluster = c.nodesInCluster;
 		svc_.resize(kShards);
@@ -431,6 +432,17 @@ protected:
 	template <typename T>
 	void runSelectTestForRanges(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib);
 	void runTransactionsTestForRanges(std::string_view nsName, const std::map<int, std::set<int>>& shardDataDistrib);
+
+	template <typename T>
+	reindexer::cluster::ShardingConfig makeShardingConfigByDistrib(std::string_view nsName,
+																   const std::map<int, std::set<T>>& shardDataDistrib, int shards = 3,
+																   int nodes = 3) const;
+
+	Error applyNewShardingConfig(const std::shared_ptr<client::Reindexer>& rx, const reindexer::cluster::ShardingConfig& config,
+								 bool locally = false) const;
+
+	void MultyThreadApplyConfigTest(bool locally = false);
+	void CheckConfig(const ServerControl::Interface::Ptr& server, const cluster::ShardingConfig& config);
 
 	size_t kShards = 3;
 	size_t kNodesInCluster = 3;

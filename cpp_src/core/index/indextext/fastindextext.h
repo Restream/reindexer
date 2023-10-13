@@ -17,7 +17,7 @@ public:
 	using ref_type = typename IndexUnordered<T>::ref_type;
 
 	FastIndexText(const FastIndexText& other) : Base(other) {
-		initConfig(other.GetConfig());
+		initConfig(other.getConfig());
 		for (auto& idx : this->idx_map) idx.second.SetVDocID(FtKeyEntryData::ndoc);
 		this->CommitFulltext();
 	}
@@ -26,7 +26,7 @@ public:
 		initConfig();
 	}
 	std::unique_ptr<Index> Clone() const override { return std::unique_ptr<Index>{new FastIndexText<T>(*this)}; }
-	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
+	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, FtUseExternStatuses,
 					  const RdxContext&) override final;
 	IndexMemStat GetMemStat(const RdxContext&) override final;
 	Variant Upsert(const Variant& key, IdType id, bool& clearCache) override final;
@@ -35,20 +35,21 @@ public:
 	FtMergeStatuses GetFtMergeStatuses(const RdxContext& rdxCtx) override final {
 		this->build(rdxCtx);
 		return {FtMergeStatuses::Statuses(holder_->vdocs_.size(), 0), std::vector<bool>(holder_->rowId2Vdoc_.size(), false),
-				&holder_->rowId2Vdoc_, std::nullopt};
+				&holder_->rowId2Vdoc_};
 	}
-	reindexer::FtPreselectT FtPreselect(const QueryEntries& qentries, int idxNo, const SelectFunction& fnCtx,
-										const RdxContext& rdxCtx) override final;
-	bool EnablePreselectBeforeFt() const override final { return GetConfig()->enablePreselectBeforeFt; }
+	reindexer::FtPreselectT FtPreselect(const RdxContext& rdxCtx) override final;
+	bool EnablePreselectBeforeFt() const override final { return getConfig()->enablePreselectBeforeFt; }
 
 protected:
 	void commitFulltextImpl() override final;
-	FtFastConfig* GetConfig() const;
+	FtFastConfig* getConfig() const noexcept { return dynamic_cast<FtFastConfig*>(this->cfg_.get()); }
 	void initConfig(const FtFastConfig* = nullptr);
 	void initHolder(FtFastConfig&);
-
 	template <class Data>
 	void buildVdocs(Data& data);
+	template <typename F>
+	void appendMergedIds(IDataHolder::MergeData& merged, size_t releventDocs, F&& appender);
+
 	std::unique_ptr<IDataHolder> holder_;
 };
 

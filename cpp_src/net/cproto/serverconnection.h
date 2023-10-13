@@ -45,9 +45,9 @@ public:
 	// Writer iterface implementation
 	void WriteRPCReturn(Context &ctx, const Args &args, const Error &status) override final { responceRPC(ctx, status, args); }
 	void CallRPC(const IRPCCall & /*call*/) override final {}
-	void SetClientData(std::unique_ptr<ClientData> data) override final { clientData_ = std::move(data); }
-	ClientData *GetClientData() override final { return clientData_.get(); }
-	std::shared_ptr<connection_stat> GetConnectionStat() override final {
+	void SetClientData(std::unique_ptr<ClientData> &&data) noexcept override final { clientData_ = std::move(data); }
+	ClientData *GetClientData() noexcept override final { return clientData_.get(); }
+	std::shared_ptr<connection_stat> GetConnectionStat() noexcept override final {
 		return ConnectionST::stats_ ? ConnectionST::stats_->get_stat() : std::shared_ptr<connection_stat>();
 	}
 

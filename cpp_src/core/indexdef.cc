@@ -68,6 +68,7 @@ static const std::unordered_map<IndexType, IndexInfo, std::hash<int>, std::equal
 		{IndexFuzzyFT,			{"string"s, "fuzzytext"s,		condsText(),	CapFullText}},
 		{IndexRTree,			{"point"s, "rtree"s,			condsGeom(),	0}},
 		{IndexUuidHash,			{"uuid"s, "hash"s,				condsUsual(),	CapSortable}},
+		{IndexUuidStore,		{"uuid"s, "-"s,					condsUsual(),	CapSortable}},
 	};
 	// clang-format on
 	return data;
@@ -116,13 +117,14 @@ bool IndexDef::IsEqual(const IndexDef &other, bool skipConfig) const {
 }
 
 IndexType IndexDef::Type() const {
-	std::string iType = indexType_;
+	using namespace std::string_view_literals;
+	std::string_view iType = indexType_;
 	if (iType == "") {
-		if (fieldType_ == "double") {
+		if (fieldType_ == "double"sv) {
 			iType = "tree";
-		} else if (fieldType_ == "bool") {
+		} else if (fieldType_ == "bool"sv) {
 			iType = "-";
-		} else if (fieldType_ == "point") {
+		} else if (fieldType_ == "point"sv) {
 			iType = "rtree";
 		} else {
 			iType = "hash";
@@ -150,7 +152,8 @@ const std::vector<std::string> &IndexDef::Conditions() const {
 bool isSortable(IndexType type) { return availableIndexes().at(type).caps & CapSortable; }
 
 bool isStore(IndexType type) noexcept {
-	return type == IndexIntStore || type == IndexInt64Store || type == IndexStrStore || type == IndexDoubleStore || type == IndexBool;
+	return type == IndexIntStore || type == IndexInt64Store || type == IndexStrStore || type == IndexDoubleStore || type == IndexBool ||
+		   type == IndexUuidStore;
 }
 
 std::string IndexDef::getCollateMode() const { return availableCollates().at(opts_.GetCollateMode()); }
@@ -179,13 +182,8 @@ void IndexDef::FromJSON(const gason::JsonNode &root) {
 	opts_.Array(root["is_array"].As<bool>());
 	opts_.Dense(root["is_dense"].As<bool>());
 	opts_.Sparse(root["is_sparse"].As<bool>());
-	if (fieldType_ == "uuid") {
-		if (indexType_ != "hash") {
-			throw Error(errParams, "Unsupported combination of field '%s' type 'uuid' and index type '%s'", name_, indexType_);
-		}
-		if (opts_.IsSparse()) {
-			throw Error(errParams, "UUID index cannot be sparse");
-		}
+	if (fieldType_ == "uuid" && opts_.IsSparse()) {
+		throw Error(errParams, "UUID index cannot be sparse");
 	}
 	opts_.SetConfig(stringifyJson(root["config"]));
 	const std::string rtreeType = root["rtree_type"].As<std::string>();

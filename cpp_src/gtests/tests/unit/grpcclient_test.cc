@@ -64,26 +64,26 @@ TEST_F(GrpcClientApi, SelectJSON) {
 		ASSERT_NO_THROW(root = parser.Parse(json, &len));
 		ASSERT_TRUE(len > 0);
 
-		for (auto elem : root) {
-			gason::JsonValue& v(elem.value);
+		for (const auto& elem : root) {
+			const auto& v(elem.value);
 			std::string_view name(elem.key);
 			if (name == "items") {
 				ASSERT_TRUE(v.getTag() == gason::JSON_ARRAY);
-				for (auto element : v) {
-					auto& object = element->value;
+				for (const auto& element : v) {
+					auto& object = element.value;
 					ASSERT_TRUE(object.getTag() == gason::JSON_OBJECT);
 					for (auto field : object) {
-						name = std::string_view(field->key);
-						gason::JsonValue& fieldValue(field->value);
+						name = std::string_view(field.key);
+						const auto& fieldValue(field.value);
 						if (name == "id") {
 							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_NUMBER);
 						} else if (name == "joined_test_namespace2") {
 							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_ARRAY);
-							for (auto item : fieldValue) {
-								ASSERT_TRUE(item->value.getTag() == gason::JSON_OBJECT);
-								for (auto joinedField : item->value) {
-									name = std::string_view(joinedField->key);
-									gason::JsonValue& joinedFieldValue(joinedField->value);
+							for (const auto& item : fieldValue) {
+								ASSERT_TRUE(item.value.getTag() == gason::JSON_OBJECT);
+								for (const auto& joinedField : item.value) {
+									name = std::string_view(joinedField.key);
+									const auto& joinedFieldValue(joinedField.value);
 									if (name == "id") {
 										ASSERT_TRUE(joinedFieldValue.getTag() == gason::JSON_NUMBER);
 									} else if (name == "price") {
@@ -100,25 +100,25 @@ TEST_F(GrpcClientApi, SelectJSON) {
 				}
 			} else if (name == "aggregations") {
 				ASSERT_TRUE(v.getTag() == gason::JSON_ARRAY);
-				for (auto element : v) {
-					auto& object = element->value;
+				for (const auto& element : v) {
+					auto& object = element.value;
 					ASSERT_TRUE(object.getTag() == gason::JSON_OBJECT);
-					for (auto field : object) {
-						name = std::string_view(field->key);
-						gason::JsonValue& fieldValue(field->value);
+					for (const auto& field : object) {
+						name = std::string_view(field.key);
+						const auto& fieldValue(field.value);
 						if (name == "type") {
 							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_STRING);
 							ASSERT_TRUE(fieldValue.toString() == "distinct");
 						} else if (name == "distincts") {
 							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_ARRAY);
-							for (auto items : fieldValue) {
-								ASSERT_TRUE(items->value.getTag() == gason::JSON_STRING);
+							for (const auto& items : fieldValue) {
+								ASSERT_TRUE(items.value.getTag() == gason::JSON_STRING);
 							}
 						} else if (name == "fields") {
 							ASSERT_TRUE(fieldValue.getTag() == gason::JSON_ARRAY);
-							for (auto items : fieldValue) {
-								ASSERT_TRUE(items->value.getTag() == gason::JSON_STRING);
-								ASSERT_TRUE(items->value.toString() == "age");
+							for (const auto& items : fieldValue) {
+								ASSERT_TRUE(items.value.getTag() == gason::JSON_STRING);
+								ASSERT_TRUE(items.value.toString() == "age");
 							}
 						}
 					}

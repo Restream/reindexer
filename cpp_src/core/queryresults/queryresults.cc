@@ -7,6 +7,7 @@
 #include "core/type_consts.h"
 #include "estl/overloaded.h"
 #include "joinresults.h"
+#include "tools/catch_and_return.h"
 
 namespace reindexer {
 
@@ -507,13 +508,13 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer& wrser, bool withHdrLen) {
 				break;
 		}
 
-		Error err = std::visit(overloaded{[&](LocalQueryResults::Iterator&& it) {
+		Error err = std::visit(overloaded{[&](LocalQueryResults::Iterator it) {
 											  if (qr_->local_->hasCompatibleTm) {
 												  return it.GetCJSON(wrser, withHdrLen);
 											  }
 											  return getCJSONviaJSON(wrser, withHdrLen, it);
 										  },
-										  [&](client::QueryResults::Iterator&& it) {
+										  [&](client::QueryResults::Iterator it) {
 											  if (qr_->type_ == Type::SingleRemote || qr_->remote_[size_t(qr_->curQrId_)].hasCompatibleTm) {
 												  return it.GetCJSON(wrser, withHdrLen);
 											  }
@@ -536,8 +537,8 @@ Error QueryResults::Iterator::GetMsgPack(WrSerializer& wrser, bool withHdrLen) {
 
 Error QueryResults::Iterator::GetProtobuf(WrSerializer& wrser, bool withHdrLen) {
 	try {
-		return std::visit(overloaded{[&wrser, withHdrLen](LocalQueryResults::Iterator&& it) { return it.GetProtobuf(wrser, withHdrLen); },
-									 [](client::QueryResults::Iterator&&) {
+		return std::visit(overloaded{[&wrser, withHdrLen](LocalQueryResults::Iterator it) { return it.GetProtobuf(wrser, withHdrLen); },
+									 [](const client::QueryResults::Iterator&) {
 										 return Error(errParams, "Protobuf is not supported for distributed and proxied queries");
 										 // return it.GetProtobuf(wrser, withHdrLen);
 									 }},
@@ -604,6 +605,13 @@ void QueryResults::QrMetaData<QrT>::ResetJoinStorage(int64_t idx) const {
 	} else {
 		nsJoinRes_ = std::make_unique<ItemDataStorage<JoinResStorage>>(idx);
 	}
+}
+
+[[nodiscard]] Error QueryResults::Iterator::GetCSV(WrSerializer& ser, CsvOrdering& ordering) noexcept {
+	try {
+		return std::visit(overloaded{[&ser, &ordering](auto it) { return it.GetCSV(ser, ordering); }}, getVariantIt());
+	}
+	CATCH_AND_RETURN
 }
 
 joins::ItemIterator QueryResults::Iterator::GetJoined(std::vector<ItemRefCache>* storage) {

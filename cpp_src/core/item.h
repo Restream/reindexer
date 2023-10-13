@@ -65,7 +65,7 @@ public:
 		/// Set single point type value
 		/// @param p - point value, which will be setted to field
 		FieldRef &operator=(Point p) {
-			const double arr[]{p.x, p.y};
+			const double arr[]{p.X(), p.Y()};
 			return operator=(span<double>(arr, 2));
 		}
 
@@ -110,8 +110,8 @@ public:
 		FieldRef &operator=(const VariantArray &krs);
 
 	private:
-		FieldRef(int field, ItemImpl *itemImpl) noexcept;
-		FieldRef(std::string_view jsonPath, ItemImpl *itemImpl) noexcept;
+		FieldRef(int field, ItemImpl *itemImpl) noexcept : itemImpl_(itemImpl), field_(field) {}
+		FieldRef(std::string_view jsonPath, ItemImpl *itemImpl) noexcept : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
 		ItemImpl *itemImpl_;
 		std::string_view jsonPath_;
 		int field_;
@@ -179,7 +179,7 @@ public:
 	/// Get field by number
 	/// @param field - number of field. Must be >= 0 && < NumFields
 	/// @return FieldRef which contains reference to indexed field
-	[[nodiscard]] FieldRef operator[](int field) const noexcept;
+	[[nodiscard]] FieldRef operator[](int field) const;
 	/// Get field by name
 	/// @param name - name of field
 	/// @return FieldRef which contains reference to indexed field
@@ -211,6 +211,9 @@ public:
 	/// The disadvantage of unsafe mode is potentially danger code. Most of C++ stl containters in many cases invalidates references -
 	/// and in unsafe mode caller is responsibe to guarantee, that all resources passed to Item will keep valid
 	Item &Unsafe(bool enable = true) &noexcept;
+	/// Get index type by field id
+	/// @return either index type or Undefined (if index with this number does not exist or PayloadType is not available)
+	KeyValueType GetIndexType(int field) const noexcept;
 
 private:
 	explicit Item(ItemImpl *impl) : impl_(impl) {}

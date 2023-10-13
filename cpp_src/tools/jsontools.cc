@@ -31,10 +31,10 @@ void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int ind
 			ser << '[';
 			if (enableEol) ser << '\n';
 
-			for (auto i : o) {
+			for (const auto &i : o) {
 				ser.Fill(' ', indent + shift);
-				jsonValueToString(i->value, ser, shift, indent + shift);
-				if (i->next) ser << ',';
+				jsonValueToString(i.value, ser, shift, indent + shift);
+				if (i.next) ser << ',';
 				if (enableEol) ser << '\n';
 			}
 			ser.Fill(' ', indent);
@@ -48,12 +48,12 @@ void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift, int ind
 			ser << '{';
 			if (enableEol) ser << '\n';
 
-			for (auto i : o) {
+			for (const auto &i : o) {
 				ser.Fill(' ', indent + shift);
-				ser.PrintJsonString(i->key);
+				ser.PrintJsonString(i.key);
 				ser << ": ";
-				jsonValueToString(i->value, ser, shift, indent + shift);
-				if (i->next) ser << ',';
+				jsonValueToString(i.value, ser, shift, indent + shift);
+				if (i.next) ser << ',';
 				if (enableEol) ser << '\n';
 			}
 			ser.Fill(' ', indent);
@@ -75,9 +75,9 @@ void prettyPrintJSON(span<char> json, WrSerializer &ser, int shift) {
 	jsonValueToString(gason::JsonParser().Parse(json).value, ser, shift, 0);
 }
 
-std::string stringifyJson(const gason::JsonNode &elem) {
+std::string stringifyJson(const gason::JsonNode &elem, bool escapeStrings) {
 	WrSerializer ser;
-	jsonValueToString(elem.value, ser, 0, 0);
+	jsonValueToString(elem.value, ser, 0, 0, escapeStrings);
 
 	return std::string(ser.Slice());
 }

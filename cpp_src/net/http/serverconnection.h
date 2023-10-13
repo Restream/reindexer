@@ -50,7 +50,7 @@ protected:
 		virtual bool SetRespCode(int code) override final;
 		virtual bool SetContentLength(size_t len) override final;
 		virtual bool SetConnectionClose() override final;
-		ssize_t Write(chunk &&chunk) override final;
+		ssize_t Write(chunk &&chunk, Writer::WriteMode mode = WriteMode::Default) override final;
 		ssize_t Write(std::string_view data) override final;
 		virtual chunk GetChunk() override final;
 

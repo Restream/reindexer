@@ -9,7 +9,7 @@ namespace reindexer {
 template <typename Mutex>
 class smart_lock {
 public:
-	smart_lock() : mtx_(nullptr), unique_(false), locked_(false) {}
+	smart_lock() noexcept : mtx_(nullptr), unique_(false), locked_(false) {}
 
 	smart_lock(Mutex& mtx, bool unique = false) : mtx_(&mtx), unique_(unique), locked_(true) {
 		if (unique_)
@@ -44,13 +44,13 @@ public:
 	smart_lock(const smart_lock&) = delete;
 	smart_lock& operator=(const smart_lock&) = delete;
 
-	smart_lock(smart_lock&& other) {
+	smart_lock(smart_lock&& other) noexcept {
 		mtx_ = other.mtx_;
 		unique_ = other.unique_;
 		locked_ = other.locked_;
 		other.mtx_ = nullptr;
 	}
-	smart_lock& operator=(smart_lock&& other) {
+	smart_lock& operator=(smart_lock&& other) noexcept {
 		if (this != &other) {
 			unlock();
 			mtx_ = other.mtx_;

@@ -160,7 +160,19 @@ typename Connection<Mutex>::ReadResT Connection<Mutex>::read_cb() {
 	return ReadResT::Default;
 }
 template <typename Mutex>
-void Connection<Mutex>::timeout_cb(ev::periodic & /*watcher*/, int /*time*/) {
+void Connection<Mutex>::timeout_cb(ev::periodic &watcher, int /*time*/) {
+	if (sock_.has_pending_data()) {
+		fprintf(stdout,
+				"Connection got idle timeout, but socket has pending data. Do not dropping the connection\nThis probably means, that "
+				"there are some very long queries in some of the connections, which may affect the other connections. Consider to use "
+				"dedicated threads for them\n");
+		if (!watcher.has_period()) {
+			watcher.start(watcher.last_delay());
+		}
+		return;
+	}
+
+	fprintf(stderr, "Dropping RPC-connection on the idle timeout\n");
 	closeConn();
 }
 template <typename Mutex>

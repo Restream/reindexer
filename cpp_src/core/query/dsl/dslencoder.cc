@@ -1,4 +1,5 @@
 #include "dslencoder.h"
+
 #include <unordered_map>
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/key_string.h"
@@ -103,8 +104,8 @@ void encodeAggregationFunctions(const Query& query, JsonBuilder& builder) {
 		auto aggNode = arrNode.Object();
 		aggNode.Put("type", AggTypeToStr(entry.Type()));
 		encodeSorting(entry.Sorting(), aggNode);
-		if (entry.Limit() != AggregateEntry::kDefaultLimit) aggNode.Put("limit", entry.Limit());
-		if (entry.Offset() != AggregateEntry::kDefaultOffset) aggNode.Put("offset", entry.Offset());
+		if (entry.Limit() != QueryEntry::kDefaultLimit) aggNode.Put("limit", entry.Limit());
+		if (entry.Offset() != QueryEntry::kDefaultOffset) aggNode.Put("offset", entry.Offset());
 		auto fldNode = aggNode.Array("fields");
 		for (const auto& field : entry.Fields()) {
 			fldNode.Put(nullptr, field);

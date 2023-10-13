@@ -191,7 +191,7 @@ void ProtobufBuilder::put(int fieldIdx, const Variant& val) {
 							 [&](KeyValueType::Tuple) {
 								 auto arrNode = ArrayPacked(fieldIdx);
 								 for (auto& itVal : val.getCompositeValues()) {
-									 arrNode.Put(fieldIdx, itVal);
+									 arrNode.Put(fieldIdx, itVal, 0);
 								 }
 							 },
 							 [&](KeyValueType::Uuid) { put(fieldIdx, Uuid{val}); },

@@ -1,8 +1,8 @@
 #pragma once
 
+#include "core/ft/usingcontainer.h"
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
-#include "core/ft/usingcontainer.h"
 #include "itokenfilter.h"
 #include "tools/stringstools.h"
 
@@ -13,10 +13,10 @@ struct FtDslOpts;
 class Synonyms : public ITokenFilter {
 public:
 	Synonyms() = default;
-	virtual void GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result) override final;
+	virtual void GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result, int proc) override final;
 	void SetConfig(BaseFTConfig* cfg) override final;
-	void PreProcess(const FtDSLQuery&, std::vector<SynonymsDsl>&) const override final;
-	void PostProcess(const FtDSLEntry&, const FtDSLQuery&, size_t termIdx, std::vector<SynonymsDsl>&) const override final;
+	void PreProcess(const FtDSLQuery&, std::vector<SynonymsDsl>&, int proc) const override final;
+	void PostProcess(const FtDSLEntry&, const FtDSLQuery&, size_t termIdx, std::vector<SynonymsDsl>&, int proc) const override final;
 
 private:
 	using SingleAlternativeCont = std::vector<std::wstring>;

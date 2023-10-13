@@ -23,11 +23,17 @@ TEST_F(Fuzzing, BaseTest) {
 				EXPECT_TRUE(err.ok()) << err.what();
 				if (err.ok()) {
 					ns.AddIndex(indexes[i], !idxDef.opts_.IsDense() && idxDef.opts_.IsSparse() && !idxDef.opts_.IsPK());
-					std::vector<std::string> fields;
+					std::vector<FieldData> fields;
 					std::visit(reindexer::overloaded{
-								   [&](const fuzzing::Index::Child& c) { fields.push_back(ns.GetScheme().GetJsonPath(c.fieldPath)); },
+								   [&](const fuzzing::Index::Child& c) {
+									   fields.push_back(FieldData{ns.GetScheme().GetJsonPath(c.fieldPath),
+																  ToKeyValueType(ns.GetScheme().GetFieldType(c.fieldPath))});
+								   },
 								   [&](const fuzzing::Index::Children& c) {
-									   for (const auto& child : c) fields.push_back(ns.GetScheme().GetJsonPath(child.fieldPath));
+									   for (const auto& child : c) {
+										   fields.push_back(FieldData{ns.GetScheme().GetJsonPath(child.fieldPath),
+																	  ToKeyValueType(ns.GetScheme().GetFieldType(child.fieldPath))});
+									   }
 								   }},
 							   indexes[i].content);
 					if (indexes[i].isPk) {

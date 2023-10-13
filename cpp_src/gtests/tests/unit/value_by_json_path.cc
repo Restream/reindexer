@@ -152,21 +152,17 @@ TEST_F(ReindexerApi, CompositeFTSelectByJsonPath) {
 	err = rt.reindexer->Commit(default_namespace);
 	EXPECT_TRUE(err.ok()) << err.what();
 
-	const char jsonPattern[] = R"xxx({"id": "%s", "locale" : "%s", "nested": {"name": "%s", "count": %ld}})xxx";
+	const char jsonPattern[] = R"xxx({"id": "key%d", "locale" : "%s", "nested": {"name": "name%d", "count": %ld}})xxx";
 
-	for (int i = 0; i < 100000; ++i) {
+	for (int i = 0; i < 20'000; ++i) {
 		Item item = rt.reindexer->NewItem(default_namespace);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		char json[1024];
-		auto index = std::to_string(i);
-		auto pk = "key" + index;
-		std::string name = "name" + index;
-		std::string locale = i % 2 ? "en" : "ru";
 		long count = i;
-		snprintf(json, sizeof(json) - 1, jsonPattern, pk.c_str(), locale.c_str(), name.c_str(), count);
+		snprintf(json, sizeof(json) - 1, jsonPattern, i, i % 2 ? "en" : "ru", i, count);
 
-		err = item.FromJSON(json);
+		err = item.Unsafe(true).FromJSON(json);
 		EXPECT_TRUE(err.ok()) << err.what();
 
 		err = rt.reindexer->Upsert(default_namespace, item);
@@ -203,7 +199,7 @@ TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	reindexer::WrSerializer wrser;
-	reindexer::JsonBuilder item1Builder(wrser, ObjType::TypeObject);
+	reindexer::JsonBuilder item1Builder(wrser, reindexer::ObjType::TypeObject);
 
 	// Insert one item with integer 'mac_address' value
 	Item item1 = rt.reindexer->NewItem(default_namespace);
@@ -219,7 +215,7 @@ TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
 	wrser.Reset();
 
 	// Insert another item with string 'mac_address' value
-	reindexer::JsonBuilder item2Builder(wrser, ObjType::TypeObject);
+	reindexer::JsonBuilder item2Builder(wrser, reindexer::ObjType::TypeObject);
 	Item item2 = rt.reindexer->NewItem(default_namespace);
 	ASSERT_TRUE(item2.Status().ok()) << item2.Status().what();
 	item2Builder.Put("id", int(2));
@@ -255,35 +251,4 @@ TEST_F(ReindexerApi, NumericSearchForNonIndexedField) {
 		Variant value = item["mac_address"];
 		ASSERT_TRUE(value.Type().Is<reindexer::KeyValueType::Int64>());
 	}
-}
-
-TEST_F(ReindexerApi, InsertWithSeveralJsonPaths) {
-	// Define namespace structure with an indexed field that has 3 json paths
-	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	err = rt.reindexer->AddIndex(default_namespace, {"name", {"name", "text", "description"}, "hash", "string", IndexOpts(), 0});
-	ASSERT_TRUE(err.ok()) << err.what();
-
-	// Build an item, which includes (and sets) all the json-paths for the field 'name'
-	reindexer::WrSerializer wrser;
-	reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
-	jsonBuilder.Put("id", int(1));
-	jsonBuilder.Put("name", "first");
-	jsonBuilder.Put("text", "second");
-	jsonBuilder.Put("description", "third");
-	jsonBuilder.End();
-
-	// Insert the item
-	Item item = rt.reindexer->NewItem(default_namespace);
-	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-	err = item.FromJSON(wrser.Slice());
-	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->Insert(default_namespace, item);
-
-	// Make sure it returned an error of type 'errParams'
-	ASSERT_TRUE(!err.ok() && err.code() == errParams);
 }

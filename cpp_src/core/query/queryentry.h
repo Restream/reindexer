@@ -25,26 +25,16 @@ struct JoinQueryEntry {
 	bool operator!=(const JoinQueryEntry &other) const noexcept { return !operator==(other); }
 
 	template <typename JS>
-	std::string Dump(const std::vector<JS> &joinedSelectors) const {
-		WrSerializer ser;
-		const auto &js = joinedSelectors.at(joinIndex);
-		const auto &q = js.JoinQuery();
-		ser << js.Type() << " (" << q.GetSQL() << ") ON ";
-		ser << '(';
-		for (const auto &jqe : q.joinEntries_) {
-			if (&jqe != &q.joinEntries_.front()) {
-				ser << ' ' << jqe.op_ << ' ';
-			} else {
-				assertrx(jqe.op_ == OpAnd);
-			}
-			ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << InvertJoinCondition(jqe.condition_) << ' ' << jqe.index_;
-		}
-		ser << ')';
-		return std::string{ser.Slice()};
-	}
+	std::string Dump(const std::vector<JS> &joinedSelectors) const;
+
+	template <typename JS>
+	std::string DumpOnCondition(const std::vector<JS> &joinedSelectors) const;
 };
 
 struct QueryEntry {
+	static constexpr unsigned kDefaultLimit = UINT_MAX;
+	static constexpr unsigned kDefaultOffset = 0;
+
 	QueryEntry(std::string idx, CondType cond, VariantArray v) : index{std::move(idx)}, condition{cond}, values(std::move(v)) {}
 	QueryEntry(CondType cond, std::string idx, int idxN, bool dist = false)
 		: index(std::move(idx)), idxNo(idxN), condition(cond), distinct(dist) {}
@@ -60,6 +50,7 @@ struct QueryEntry {
 	VariantArray values;
 
 	std::string Dump() const;
+	std::string DumpBrief() const;
 };
 
 class BetweenFieldsQueryEntry {
@@ -133,6 +124,8 @@ private:
 	static bool checkIfSatisfyCondition(const QueryEntry &, const ConstPayload &, TagsMatcher &);
 	static bool checkIfSatisfyCondition(const BetweenFieldsQueryEntry &, const ConstPayload &, TagsMatcher &);
 	static bool checkIfSatisfyCondition(const VariantArray &lValues, CondType, const VariantArray &rValues);
+
+protected:
 	static void dumpEqualPositions(size_t level, WrSerializer &ser, const EqualPositions_t &equalPositions) {
 		for (const auto &eq : equalPositions) {
 			for (size_t i = 0; i < level; ++i) {
@@ -146,6 +139,7 @@ private:
 			ser << ")\n";
 		}
 	}
+
 	template <typename JS>
 	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS> &joinedSelectors, WrSerializer &ser) {
 		for (const_iterator it = begin; it != end; ++it) {
@@ -205,11 +199,24 @@ struct QueryJoinEntry {
 	bool operator==(const QueryJoinEntry &) const noexcept;
 	bool operator!=(const QueryJoinEntry &qje) const noexcept { return !operator==(qje); }
 	OpType op_ = OpAnd;
-	CondType condition_ = CondEq;
-	std::string index_;
-	std::string joinIndex_;
-	int idxNo = -1;
-	bool reverseNamespacesOrder = false;
+	CondType condition_ = CondEq;		  ///< Condition applied to expression: index_ COND joinIndex_
+	std::string index_;					  ///< main ns index field name
+	std::string joinIndex_;				  ///< joining ns index field name
+	int idxNo = -1;						  ///< index_ field Index number in main ns
+	bool reverseNamespacesOrder = false;  ///< controls SQL encoding order
+										  ///< false: mainNs.index Condition joinNs.joinIndex
+										  ///< true:  joinNs.joinIndex Invert(Condition) mainNs.index
+
+	template <typename JS>
+	std::string DumpCondition(const JS &joinedSelector, bool needOp = false) const {
+		WrSerializer ser;
+		const auto &q = joinedSelector.JoinQuery();
+		if (needOp) {
+			ser << ' ' << op_ << ' ';
+		}
+		ser << q._namespace << '.' << joinIndex_ << ' ' << InvertJoinCondition(condition_) << ' ' << index_;
+		return std::string{ser.Slice()};
+	}
 };
 
 struct SortingEntry {
@@ -226,10 +233,8 @@ struct SortingEntries : public h_vector<SortingEntry, 1> {};
 
 class AggregateEntry {
 public:
-	static constexpr unsigned kDefaultLimit = UINT_MAX;
-	static constexpr unsigned kDefaultOffset = 0;
-
-	AggregateEntry(AggType type, h_vector<std::string, 1> fields, SortingEntries sort = {}, unsigned limit = UINT_MAX, unsigned offset = 0);
+	AggregateEntry(AggType type, h_vector<std::string, 1> fields, SortingEntries sort = {}, unsigned limit = QueryEntry::kDefaultLimit,
+				   unsigned offset = QueryEntry::kDefaultOffset);
 	[[nodiscard]] bool operator==(const AggregateEntry &) const noexcept;
 	[[nodiscard]] bool operator!=(const AggregateEntry &ae) const noexcept { return !operator==(ae); }
 	[[nodiscard]] AggType Type() const noexcept { return type_; }
@@ -245,8 +250,8 @@ private:
 	AggType type_;
 	h_vector<std::string, 1> fields_;
 	SortingEntries sortingEntries_;
-	unsigned limit_ = kDefaultLimit;
-	unsigned offset_ = kDefaultOffset;
+	unsigned limit_ = QueryEntry::kDefaultLimit;
+	unsigned offset_ = QueryEntry::kDefaultOffset;
 };
 
 }  // namespace reindexer

@@ -2,6 +2,7 @@
 
 #include <optional>
 #include "client/reindexer.h"
+#include "cluster/sharding/locatorserviceadapter.h"
 #include "localtransaction.h"
 #include "proxiedtransaction.h"
 
@@ -10,10 +11,6 @@ namespace reindexer {
 namespace client {
 class Transaction;
 }  // namespace client
-
-namespace sharding {
-class LocatorService;
-}
 
 class TransactionImpl {
 public:
@@ -38,7 +35,7 @@ public:
 	const std::string &GetNsName() const noexcept { return data_->nsName; }
 	bool IsTagsUpdated() const noexcept;
 	Transaction::TimepointT GetStartTime() const noexcept { return data_->startTime; }
-	void SetShardingRouter(std::shared_ptr<sharding::LocatorService> shardingRouter);
+	void SetShardingRouter(sharding::LocatorServiceAdapter shardingRouter);
 	Error Rollback(int serverId, const RdxContext &ctx);
 	Error Commit(int serverId, bool expectSharding, ReindexerImpl &rx, QueryResults &result, const RdxContext &ctx);
 
@@ -60,7 +57,7 @@ private:
 
 	mutable std::mutex mtx_;
 	std::unique_ptr<SharedTransactionData> data_;
-	std::shared_ptr<sharding::LocatorService> shardingRouter_;
+	sharding::LocatorServiceAdapter shardingRouter_;
 	std::variant<Empty, TxStepsPtr, ProxiedTxPtr, RxClientT> tx_;
 	int shardId_ = ShardingKeyType::NotSetShard;
 	Error status_;

@@ -8,10 +8,10 @@ namespace reindexer {
 
 template <typename It>
 static void moveFrames(It &begin, It &end, size_t size, size_t offset, size_t limit) {
-	if (offset > 0) {
+	if (offset > QueryEntry::kDefaultOffset) {
 		std::advance(begin, offset);
 	}
-	if (limit != UINT_MAX && offset + limit < size) {
+	if (limit != QueryEntry::kDefaultLimit && offset + limit < size) {
 		end = begin;
 		std::advance(end, limit);
 	}

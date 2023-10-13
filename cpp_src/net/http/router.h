@@ -79,6 +79,9 @@ struct Header {
 };
 
 struct Param {
+	Param() = default;
+	Param(std::string_view n, std::string_view v) noexcept : name(n), val(v) {}
+
 	std::string_view name;
 	std::string_view val;
 };
@@ -86,7 +89,7 @@ struct Param {
 class Headers : public h_vector<Header, 16> {
 public:
 	using h_vector::h_vector;
-	std::string_view Get(std::string_view name) {
+	std::string_view Get(std::string_view name) noexcept {
 		auto it = std::find_if(begin(), end(), [=](const Header &hdr) { return iequals(name, hdr.name); });
 		return it != end() ? it->val : std::string_view();
 	}
@@ -116,7 +119,8 @@ struct Request {
 
 class Writer {
 public:
-	virtual ssize_t Write(chunk &&ch) = 0;
+	enum class WriteMode { Default = 0, PreChunkedBody = 1 };
+	virtual ssize_t Write(chunk &&ch, WriteMode mode = WriteMode::Default) = 0;
 	virtual ssize_t Write(std::string_view data) = 0;
 	virtual chunk GetChunk() = 0;
 
@@ -147,6 +151,7 @@ static const std::string kGzSuffix(".gz");
 struct Context {
 	int JSON(int code, std::string_view slice);
 	int JSON(int code, chunk &&chunk);
+	int CSV(int code, chunk &&chunk);
 	int MSGPACK(int code, chunk &&chunk);
 	int Protobuf(int code, chunk &&chunk);
 	int String(int code, std::string_view slice);
@@ -230,8 +235,7 @@ public:
 	/// @tparam func - handler
 	template <class K, int (K::*func)(Context &)>
 	void Middleware(K *object) {
-		Handler h{func_wrapper<K, func>, object};
-		middlewares_.push_back(h);
+		middlewares_.emplace_back(func_wrapper<K, func>, object);
 	}
 	/// Add logger for requests
 	/// @param object - logger class object
@@ -264,9 +268,7 @@ protected:
 
 	template <class K, int (K::*func)(Context &)>
 	void addRoute(HttpMethod method, const char *path, K *object) {
-		Handler h{func_wrapper<K, func>, object};
-		Route r(path, h);
-		routes_[method].push_back(r);
+		routes_[method].emplace_back(path, Handler{func_wrapper<K, func>, object});
 	}
 
 	template <class K, int (K::*func)(Context &ctx)>
@@ -275,15 +277,18 @@ protected:
 	}
 
 	struct Handler {
-		std::function<int(void *obj, Context &ctx)> func_;
-		void *object_;
+		using FuncT = std::function<int(void *obj, Context &ctx)>;
+		Handler(FuncT &&f, void *o) noexcept : func(std::move(f)), object(o) {}
+
+		FuncT func;
+		void *object;
 	};
 
 	struct Route {
-		Route(std::string path, Handler h) : path_(std::move(path)), h_(std::move(h)) {}
+		Route(std::string &&p, Handler &&_h) : path(std::move(p)), h(std::move(_h)) {}
 
-		std::string path_;
-		Handler h_;
+		std::string path;
+		Handler h;
 	};
 
 	std::vector<Route> routes_[kMaxMethod];

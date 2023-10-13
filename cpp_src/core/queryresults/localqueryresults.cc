@@ -2,20 +2,21 @@
 #include "additionaldatasource.h"
 #include "cluster/sharding/sharding.h"
 #include "core/cbinding/resultserializer.h"
+#include "core/cjson/csvbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/protobufbuilder.h"
 #include "core/itemimpl.h"
 #include "core/namespace/namespace.h"
 #include "joinresults.h"
+#include "tools/catch_and_return.h"
 
 namespace reindexer {
 
-void LocalQueryResults::AddNamespace(std::shared_ptr<NamespaceImpl> ns, bool noLock, const RdxContext &ctx) {
+void LocalQueryResults::AddNamespace(NamespaceImplPtr ns, [[maybe_unused]] bool noLock) {
 	assertrx(noLock);
 	const NamespaceImpl *nsPtr = ns.get();
-	auto strHolder = ns->StrHolder(noLock, ctx);
-	const auto it =
-		std::find_if(nsData_.cbegin(), nsData_.cend(), [nsPtr](const NsDataHolder &nsData) { return nsData.ns.get() == nsPtr; });
+	auto strHolder = ns->strHolder();
+	const auto it = std::find_if(nsData_.cbegin(), nsData_.cend(), [nsPtr](const NsDataHolder &nsData) { return nsData.ns == nsPtr; });
 	if (it != nsData_.cend()) {
 		assertrx(it->strHolder.get() == strHolder.get());
 		return;
@@ -23,8 +24,19 @@ void LocalQueryResults::AddNamespace(std::shared_ptr<NamespaceImpl> ns, bool noL
 	nsData_.emplace_back(std::move(ns), std::move(strHolder));
 }
 
+void LocalQueryResults::AddNamespace(NamespaceImpl *ns, [[maybe_unused]] bool noLock) {
+	assertrx(noLock);
+	auto strHolder = ns->strHolder();
+	const auto it = std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder &nsData) { return nsData.ns == ns; });
+	if (it != nsData_.cend()) {
+		assertrx(it->strHolder.get() == strHolder.get());
+		return;
+	}
+	nsData_.emplace_back(ns, std::move(strHolder));
+}
+
 void LocalQueryResults::RemoveNamespace(const NamespaceImpl *ns) {
-	const auto it = std::find_if(nsData_.begin(), nsData_.end(), [ns](const NsDataHolder &nsData) { return nsData.ns.get() == ns; });
+	const auto it = std::find_if(nsData_.begin(), nsData_.end(), [ns](const NsDataHolder &nsData) { return nsData.ns == ns; });
 	assertrx(it != nsData_.end());
 	nsData_.erase(it);
 }
@@ -245,6 +257,70 @@ Error LocalQueryResults::Iterator::GetJSON(WrSerializer &ser, bool withHdrLen) {
 	return errOK;
 }
 
+CsvOrdering LocalQueryResults::MakeCSVTagOrdering(unsigned limit, unsigned offset) const {
+	if (!ctxs[0].fieldsFilter_.empty()) {
+		std::vector<int> ordering;
+		ordering.reserve(ctxs[0].fieldsFilter_.size());
+		for (const auto &tag : ctxs[0].fieldsFilter_) {
+			ordering.emplace_back(tag);
+		}
+		return ordering;
+	}
+
+	std::vector<int> ordering;
+	ordering.reserve(128);
+	fast_hash_set<int> fieldsTmIds;
+	WrSerializer ser;
+	const auto &tm = getTagsMatcher(0);
+	for (size_t i = offset; i < items_.size() && i < offset + limit; ++i) {
+		ser.Reset();
+		encodeJSON(i, ser);
+
+		gason::JsonParser parser;
+		auto jsonNode = parser.Parse(giftStr(ser.Slice()));
+
+		for (const auto &child : jsonNode) {
+			auto [it, inserted] = fieldsTmIds.insert(tm.name2tag(child.key));
+			if (inserted && *it > 0) {
+				ordering.emplace_back(*it);
+			}
+		}
+	}
+	return ordering;
+}
+
+[[nodiscard]] Error LocalQueryResults::Iterator::GetCSV(WrSerializer &ser, CsvOrdering &ordering) noexcept {
+	try {
+		auto &itemRef = qr_->items_[idx_];
+		assertrx(qr_->ctxs.size() > itemRef.Nsid());
+		auto &ctx = qr_->ctxs[itemRef.Nsid()];
+
+		if (itemRef.Value().IsFree()) {
+			return Error(errNotFound, "Item not found");
+		}
+
+		ConstPayload pl(ctx.type_, itemRef.Value());
+		CsvBuilder builder(ser, ordering);
+		CsvEncoder encoder(&ctx.tagsMatcher_, &ctx.fieldsFilter_);
+
+		if (!qr_->joined_.empty()) {
+			joins::ItemIterator itemIt = (qr_->begin() + idx_).GetJoined();
+			if (itemIt.getJoinedItemsCount() > 0) {
+				EncoderDatasourceWithJoins joinsDs(itemIt, qr_->ctxs, qr_->GetJoinedNsCtxIndex(itemRef.Nsid()));
+				h_vector<IAdditionalDatasource<CsvBuilder> *, 2> dss;
+				AdditionalDatasourceCSV ds(&joinsDs);
+				dss.push_back(&ds);
+				encoder.Encode(pl, builder, dss);
+				return errOK;
+			}
+		}
+
+		encoder.Encode(pl, builder);
+	}
+	CATCH_AND_RETURN
+	return errOK;
+}
+
 Error LocalQueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
 	try {
 		auto &itemRef = qr_->items_[idx_];
@@ -333,38 +409,19 @@ void LocalQueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 	}
 }
 
-const TagsMatcher &LocalQueryResults::getTagsMatcher(int nsid) const noexcept {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].tagsMatcher_;
-}
+const TagsMatcher &LocalQueryResults::getTagsMatcher(int nsid) const noexcept { return ctxs[nsid].tagsMatcher_; }
 
-const PayloadType &LocalQueryResults::getPayloadType(int nsid) const noexcept {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].type_;
-}
+const PayloadType &LocalQueryResults::getPayloadType(int nsid) const noexcept { return ctxs[nsid].type_; }
 
-const FieldsSet &LocalQueryResults::getFieldsFilter(int nsid) const noexcept {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].fieldsFilter_;
-}
+const FieldsSet &LocalQueryResults::getFieldsFilter(int nsid) const noexcept { return ctxs[nsid].fieldsFilter_; }
 
-TagsMatcher &LocalQueryResults::getTagsMatcher(int nsid) noexcept {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].tagsMatcher_;
-}
+TagsMatcher &LocalQueryResults::getTagsMatcher(int nsid) noexcept { return ctxs[nsid].tagsMatcher_; }
 
-PayloadType &LocalQueryResults::getPayloadType(int nsid) noexcept {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].type_;
-}
+PayloadType &LocalQueryResults::getPayloadType(int nsid) noexcept { return ctxs[nsid].type_; }
 
-std::shared_ptr<const Schema> LocalQueryResults::getSchema(int nsid) const noexcept {
-	assertrx(nsid < int(ctxs.size()));
-	return ctxs[nsid].schema_;
-}
+std::shared_ptr<const Schema> LocalQueryResults::getSchema(int nsid) const noexcept { return ctxs[nsid].schema_; }
 
 int LocalQueryResults::getNsNumber(int nsid) const noexcept {
-	assertrx(nsid < int(ctxs.size()));
 	assertrx(ctxs[nsid].schema_);
 	return ctxs[nsid].schema_->GetProtobufNsNumber();
 }
@@ -377,5 +434,11 @@ void LocalQueryResults::addNSContext(const PayloadType &type, const TagsMatcher 
 
 	ctxs.push_back(Context(type, tagsMatcher, filter, std::move(schema)));
 }
+
+LocalQueryResults::NsDataHolder::NsDataHolder(LocalQueryResults::NamespaceImplPtr &&_ns, StringsHolderPtr &&strHldr) noexcept
+	: nsPtr_{std::move(_ns)}, ns(nsPtr_.get()), strHolder{std::move(strHldr)} {}
+
+LocalQueryResults::NsDataHolder::NsDataHolder(NamespaceImpl *_ns, StringsHolderPtr &&strHldr) noexcept
+	: ns(_ns), strHolder(std::move(strHldr)) {}
 
 }  // namespace reindexer

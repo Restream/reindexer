@@ -1,10 +1,12 @@
 #include "client/coroqueryresults.h"
 #include "client/itemimpl.h"
 #include "client/namespace.h"
+#include "core/cjson/csvbuilder.h"
 #include "core/keyvalue/p_string.h"
 #include "core/queryresults/additionaldatasource.h"
 #include "net/cproto/coroclientconnection.h"
 #include "server/rpcqrwatcher.h"
+#include "tools/catch_and_return.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -314,6 +316,39 @@ Error CoroQueryResults::Iterator::GetMsgPack(WrSerializer &wrser, bool withHdrLe
 		return err;
 	}
 
+	return errOK;
+}
+
+void CoroQueryResults::Iterator::getCSVFromCJSON(std::string_view cjson, WrSerializer &wrser, CsvOrdering &ordering) const {
+	auto tm = qr_->GetTagsMatcher(itemParams_.nsid);
+	CsvBuilder builder(wrser, ordering);
+	CsvEncoder encoder(&tm);
+
+	if (qr_->HaveJoined() && joinedData_.size()) {
+		EncoderDatasourceWithJoins joinsDs(joinedData_, *qr_);
+		h_vector<IAdditionalDatasource<CsvBuilder> *, 2> dss;
+		AdditionalDatasourceCSV ds(&joinsDs);
+		encoder.Encode(cjson, builder, dss);
+		return;
+	}
+
+	encoder.Encode(cjson, builder);
+}
+
+[[nodiscard]] Error CoroQueryResults::Iterator::GetCSV(WrSerializer &wrser, CsvOrdering &ordering) noexcept {
+	try {
+		checkIdx();
+		readNext();
+		switch (qr_->i_.queryParams_.flags & kResultsFormatMask) {
+			case kResultsCJson: {
+				getCSVFromCJSON(itemParams_.data, wrser, ordering);
+				return errOK;
+			}
+			default:
+				return Error(errParseBin, "Server returned data in unexpected format %d", qr_->i_.queryParams_.flags & kResultsFormatMask);
+		}
+	}
+	CATCH_AND_RETURN
 	return errOK;
 }
 

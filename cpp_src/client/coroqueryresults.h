@@ -9,6 +9,7 @@
 namespace reindexer {
 
 class Query;
+struct CsvOrdering;
 
 namespace net {
 namespace cproto {
@@ -60,6 +61,7 @@ public:
 		Error GetJSON(WrSerializer& wrser, bool withHdrLen = true);
 		Error GetCJSON(WrSerializer& wrser, bool withHdrLen = true);
 		Error GetMsgPack(WrSerializer& wrser, bool withHdrLen = true);
+		[[nodiscard]] Error GetCSV(WrSerializer& wrser, CsvOrdering& ordering) noexcept;
 		Item GetItem();
 		lsn_t GetLSN();
 		int GetNSID();
@@ -86,6 +88,7 @@ public:
 
 		void readNext();
 		void getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen = true) const;
+		void getCSVFromCJSON(std::string_view cjson, WrSerializer& wrser, CsvOrdering& ordering) const;
 		void checkIdx() const;
 		bool isAvailable() const noexcept { return idx_ >= qr_->i_.fetchOffset_ && idx_ < qr_->i_.queryParams_.qcount; }
 

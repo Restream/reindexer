@@ -175,11 +175,11 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 			q.FromSQL(rec.data);
 			switch (q.type_) {
 				case QueryDelete:
-					result.AddNamespace(std::shared_ptr<NamespaceImpl>{&ns_, [](NamespaceImpl*) {}}, true, ctx.rdxContext);
+					result.AddNamespace(&ns_, true);
 					ns_.doDelete(q, result, pendedRepl, ctx);
 					break;
 				case QueryUpdate:
-					result.AddNamespace(std::shared_ptr<NamespaceImpl>{&ns_, [](NamespaceImpl*) {}}, true, ctx.rdxContext);
+					result.AddNamespace(&ns_, true);
 					ns_.doUpdate(q, result, pendedRepl, ctx);
 					break;
 				case QueryTruncate:

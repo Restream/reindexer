@@ -88,8 +88,8 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 				throw Error(errParseDSL, "Configuration for single field fulltext index cannot contain field specifications");
 			}
 			std::set<size_t> modifiedFields;
-			for (const auto fldCfg : fieldsCfgNode.value) {
-				const std::string fieldName = (*fldCfg)["field_name"].As<std::string>();
+			for (const auto& fldCfg : fieldsCfgNode.value) {
+				const std::string fieldName = fldCfg["field_name"].As<std::string>();
 				const auto fldIt = fields.find(fieldName);
 				if (fldIt == fields.end()) {
 					throw Error(errParseDSL, "Field '%s' is not included to full text index", fieldName);
@@ -100,12 +100,12 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 				}
 				modifiedFields.insert(fldIt->second);
 				FtFastFieldConfig& curFieldCfg = fieldsCfg[fldIt->second];
-				curFieldCfg.bm25Boost = (*fldCfg)["bm25_boost"].As<>(defaultFieldCfg.bm25Boost);
-				curFieldCfg.bm25Weight = (*fldCfg)["bm25_weight"].As<>(defaultFieldCfg.bm25Weight);
-				curFieldCfg.termLenBoost = (*fldCfg)["term_len_boost"].As<>(defaultFieldCfg.termLenBoost);
-				curFieldCfg.termLenWeight = (*fldCfg)["term_len_weight"].As<>(defaultFieldCfg.termLenWeight);
-				curFieldCfg.positionBoost = (*fldCfg)["position_boost"].As<>(defaultFieldCfg.positionBoost);
-				curFieldCfg.positionWeight = (*fldCfg)["position_weight"].As<>(defaultFieldCfg.positionWeight);
+				curFieldCfg.bm25Boost = fldCfg["bm25_boost"].As<>(defaultFieldCfg.bm25Boost);
+				curFieldCfg.bm25Weight = fldCfg["bm25_weight"].As<>(defaultFieldCfg.bm25Weight);
+				curFieldCfg.termLenBoost = fldCfg["term_len_boost"].As<>(defaultFieldCfg.termLenBoost);
+				curFieldCfg.termLenWeight = fldCfg["term_len_weight"].As<>(defaultFieldCfg.termLenWeight);
+				curFieldCfg.positionBoost = fldCfg["position_boost"].As<>(defaultFieldCfg.positionBoost);
+				curFieldCfg.positionWeight = fldCfg["position_weight"].As<>(defaultFieldCfg.positionWeight);
 			}
 		}
 

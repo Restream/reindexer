@@ -15,8 +15,11 @@ RdxContext::RdxContext(RdxContext&& other) noexcept
 	  noWaitSync_(other.noWaitSync_) {
 	if (holdStatus_ == HoldT::kHold) {
 		new (&activityCtx_) RdxActivityContext(std::move(other.activityCtx_));
+		other.activityCtx_.~RdxActivityContext();
+		other.holdStatus_ = HoldT::kEmpty;
 	} else if (holdStatus_ == HoldT::kPtr) {
 		activityPtr_ = other.activityPtr_;
+		other.holdStatus_ = HoldT::kEmpty;
 	}
 }
 
@@ -41,7 +44,7 @@ RdxActivityContext* RdxContext::Activity() const noexcept {
 	}
 }
 
-RdxActivityContext::Ward RdxContext::BeforeLock(MutexMark mutexMark) const {
+RdxActivityContext::Ward RdxContext::BeforeLock(MutexMark mutexMark) const noexcept {
 	switch (holdStatus_) {
 		case HoldT::kHold:
 			return activityCtx_.BeforeLock(mutexMark);
@@ -53,7 +56,7 @@ RdxActivityContext::Ward RdxContext::BeforeLock(MutexMark mutexMark) const {
 	}
 }
 
-RdxActivityContext::Ward RdxContext::BeforeIndexWork() const {
+RdxActivityContext::Ward RdxContext::BeforeIndexWork() const noexcept {
 	switch (holdStatus_) {
 		case HoldT::kHold:
 			return activityCtx_.BeforeIndexWork();
@@ -65,7 +68,7 @@ RdxActivityContext::Ward RdxContext::BeforeIndexWork() const {
 	}
 }
 
-RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const {
+RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const noexcept {
 	switch (holdStatus_) {
 		case HoldT::kHold:
 			return activityCtx_.BeforeSelectLoop();
@@ -77,7 +80,7 @@ RdxActivityContext::Ward RdxContext::BeforeSelectLoop() const {
 	}
 }
 
-RdxActivityContext::Ward RdxContext::BeforeClusterProxy() const {
+RdxActivityContext::Ward RdxContext::BeforeClusterProxy() const noexcept {
 	switch (holdStatus_) {
 		case HoldT::kHold:
 			return activityCtx_.BeforeClusterProxy();
@@ -88,7 +91,7 @@ RdxActivityContext::Ward RdxContext::BeforeClusterProxy() const {
 			return RdxActivityContext::Ward{nullptr, Activity::ProxiedViaClusterProxy};
 	}
 }
-RdxActivityContext::Ward RdxContext::BeforeShardingProxy() const {
+RdxActivityContext::Ward RdxContext::BeforeShardingProxy() const noexcept {
 	switch (holdStatus_) {
 		case HoldT::kHold:
 			return activityCtx_.BeforeShardingProxy();
@@ -100,7 +103,7 @@ RdxActivityContext::Ward RdxContext::BeforeShardingProxy() const {
 	}
 }
 
-RdxActivityContext::Ward RdxContext::BeforeSimpleState(Activity::State st) const {
+RdxActivityContext::Ward RdxContext::BeforeSimpleState(Activity::State st) const noexcept {
 	assert(st != Activity::WaitLock);
 	switch (holdStatus_) {
 		case HoldT::kHold:

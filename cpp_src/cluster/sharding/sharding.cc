@@ -12,7 +12,7 @@ namespace sharding {
 constexpr size_t kMaxShardingProxyConnCount = 64;
 constexpr size_t kMaxShardingProxyConnConcurrency = 1024;
 
-RoutingStrategy::RoutingStrategy(const cluster::ShardingConfig &config) : config_(config), keys_(config_) {}
+RoutingStrategy::RoutingStrategy(const cluster::ShardingConfig &config) : keys_(config) {}
 
 bool RoutingStrategy::getHostIdForQuery(const Query &q, int &hostId) const {
 	bool containsKey = false;
@@ -304,8 +304,8 @@ std::shared_ptr<client::Reindexer> ConnectStrategy::tryConnectToLeader(const std
 	return {};
 }
 
-LocatorService::LocatorService(ClusterProxy &rx, const cluster::ShardingConfig &config)
-	: rx_(rx), config_(config), routingStrategy_(config), actualShardId(config.thisShardId) {}
+LocatorService::LocatorService(ClusterProxy &rx, cluster::ShardingConfig config)
+	: rx_(rx), config_(std::move(config)), routingStrategy_(config_), actualShardId(config.thisShardId) {}
 
 Error LocatorService::convertShardingKeysValues(KeyValueType fieldType, std::vector<cluster::ShardingConfig::Key> &keys) {
 	return fieldType.EvaluateOneOf(
@@ -371,6 +371,7 @@ Error LocatorService::Start() {
 		}
 	}
 	cfg.EnableCompression = true;
+	cfg.RequestDedicatedThread = true;
 
 	uint32_t proxyConnCount = cluster::kDefaultShardingProxyConnCount;
 	if (config_.proxyConnCount > 0) {
@@ -427,6 +428,20 @@ ConnectionsPtr LocatorService::GetShardsConnections(std::string_view ns, int sha
 				rowIt = insPair.first;
 			}
 			rowIt->second.emplace(shardId, connections);
+		}
+	}
+	return connections;
+}
+
+ConnectionsPtr LocatorService::GetAllShardsConnections(Error &status) {
+	ConnectionsPtr connections = std::make_shared<h_vector<ShardConnection, kHvectorConnStack>>();
+	connections->reserve(hostsConnections_.size());
+	for (const auto &[shardID, con] : hostsConnections_) {
+		connections->emplace_back(getShardConnection(shardID, status), shardID);
+		if (!status.ok()) return {};
+		if (connections->back().IsOnThisShard() && connections->size() > 1) {
+			connections->back() = std::move(connections->front());
+			connections->front() = {nullptr, shardID};
 		}
 	}
 	return connections;
@@ -507,12 +522,14 @@ std::shared_ptr<client::Reindexer> LocatorService::GetShardConnection(std::strin
 		if (actualShardId == defaultShard) {
 			return {};
 		}
-		return peekHostForShard(hostsConnections_[defaultShard], defaultShard, status);
+		shardId = defaultShard;
 	}
-	if (actualShardId == shardId) {
+	auto it = hostsConnections_.find(shardId);
+	if (actualShardId == shardId || it == hostsConnections_.end()) {
 		return {};
 	}
-	return peekHostForShard(hostsConnections_[shardId], shardId, status);
+
+	return peekHostForShard(it->second, shardId, status);
 }
 
 std::shared_ptr<client::Reindexer> LocatorService::getShardConnection(int shardId, Error &status) {

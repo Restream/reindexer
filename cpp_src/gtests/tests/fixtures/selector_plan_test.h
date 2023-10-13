@@ -174,3 +174,5 @@ template <>
 bool SelectorPlanTest::readFieldValue<bool>(const std::string&, std::string::size_type);
 template <>
 int SelectorPlanTest::readFieldValue<int>(const std::string&, std::string::size_type);
+template <>
+int64_t SelectorPlanTest::readFieldValue<int64_t>(const std::string&, std::string::size_type);

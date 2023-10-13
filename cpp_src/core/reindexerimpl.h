@@ -14,6 +14,7 @@
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
 #include "estl/smart_lock.h"
+#include "net/ev/ev.h"
 #include "querystat.h"
 #include "reindexerconfig.h"
 #include "tools/errors.h"
@@ -41,6 +42,7 @@ struct RaftInfo;
 
 class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
+	using StatsSelectMutex = MarkedMutex<std::timed_mutex, MutexMark::ReindexerStats>;
 	struct NsLockerItem {
 		NsLockerItem(NamespaceImpl::Ptr ins = {}) : ns(std::move(ins)), count(1) {}
 		NamespaceImpl::Ptr ns;
@@ -55,7 +57,7 @@ class ReindexerImpl {
 public:
 	using Completion = std::function<void(const Error &err)>;
 
-	using CallbackFT = std::function<Error(const gason::JsonNode &action, const RdxContext &ctx)>;
+	using CallbackFT = std::function<void(const gason::JsonNode &action, const RdxContext &ctx)>;
 	using CallbackMap = fast_hash_map<std::string_view, CallbackFT>;
 
 	ReindexerImpl(ReindexerConfig cfg, ActivityContainer &activities, CallbackMap &&proxyCallbacks);
@@ -116,12 +118,14 @@ public:
 	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm, const RdxContext &ctx);
 	void ShutdownCluster();
 
-	bool NeedTraceActivity() { return configProvider_.ActivityStatsEnabled(); }
+	bool NeedTraceActivity() const noexcept { return configProvider_.ActivityStatsEnabled(); }
 
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index, const RdxContext &ctx);
 	bool NamespaceIsInClusterConfig(std::string_view nsName);
 
 protected:
+	using FilterNsNamesT = std::optional<h_vector<std::string, 6>>;
+
 	template <typename Context>
 	class NsLocker : private h_vector<NsLockerItem, 4> {
 	public:
@@ -180,6 +184,43 @@ protected:
 		const Context &context_;
 	};
 
+	class BackgroundThread {
+	public:
+		~BackgroundThread() { Stop(); }
+
+		template <typename F>
+		void Run(F &&f) {
+			Stop();
+			async_.set(loop_);
+			async_.set([this](net::ev::async &) noexcept { loop_.break_loop(); });
+			async_.start();
+			th_ = std::thread(std::forward<F>(f), std::ref(loop_));
+		}
+		void Stop() {
+			if (th_.joinable()) {
+				async_.send();
+				th_.join();
+				async_.stop();
+			}
+		}
+
+	private:
+		std::thread th_;
+		net::ev::async async_;
+		net::ev::dynamic_loop loop_;
+	};
+
+	class StatsLocker {
+	public:
+		using StatsLockT = contexted_unique_lock<StatsSelectMutex, const RdxContext>;
+
+		StatsLocker();
+		[[nodiscard]] StatsLockT LockIfRequired(std::string_view sysNsName, const RdxContext &);
+
+	private:
+		std::unordered_map<std::string_view, StatsSelectMutex, nocase_hash_str, nocase_equal_str> mtxMap_;
+	};
+
 	class Locker {
 	public:
 		class NsWLock {
@@ -223,17 +264,18 @@ protected:
 		ReindexerImpl &owner_;
 	};
 
-	template <typename T>
-	void doSelect(const Query &q, LocalQueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func, const RdxContext &ctx);
+	template <typename T, typename QueryType>
+	void doSelect(const Query &q, LocalQueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func, const RdxContext &ctx,
+				  QueryStatCalculator<QueryType> &queryStatCalculator);
 	struct QueryResultsContext;
 	template <typename T>
 	JoinedSelectors prepareJoinedSelectors(const Query &q, LocalQueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func,
 										   std::vector<QueryResultsContext> &, const RdxContext &ctx);
-	void prepareJoinResults(const Query &q, LocalQueryResults &result);
 	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns, const Query &mainQ);
 
 	Error insertDontUpdateSystemNS(std::string_view nsName, Item &item, const RdxContext &ctx);
-	void syncSystemNamespaces(std::string_view sysNsName, std::string_view filterNsName, const RdxContext &ctx);
+	FilterNsNamesT detectFilterNsNames(const Query &q);
+	[[nodiscard]] StatsLocker::StatsLockT syncSystemNamespaces(std::string_view sysNsName, const FilterNsNamesT &, const RdxContext &ctx);
 	void createSystemNamespaces();
 	void updateToSystemNamespace(std::string_view nsName, Item &, const RdxContext &ctx);
 	void handleConfigAction(const gason::JsonNode &action, const std::vector<std::pair<std::string, Namespace::Ptr>> &namespaces,
@@ -246,10 +288,10 @@ protected:
 	Error tryLoadConfFromFile(const std::string &filename);
 	template <char const *type, typename ConfigT>
 	Error tryLoadConfFromYAML(const std::string &yamlConf);
-	Error tryLoadShardingConf();
+	[[nodiscard]] Error tryLoadShardingConf(const RdxContext &ctx = RdxContext()) noexcept;
 
-	void backgroundRoutine();
-	void storageFlushingRoutine();
+	void backgroundRoutine(net::ev::dynamic_loop &loop);
+	void storageFlushingRoutine(net::ev::dynamic_loop &loop);
 	Error closeNamespace(std::string_view nsName, const RdxContext &ctx, bool dropStorage);
 
 	PayloadType getPayloadType(std::string_view nsName);
@@ -265,27 +307,62 @@ protected:
 	std::vector<std::string> getNamespacesNames(const RdxContext &ctx);
 	Error renameNamespace(std::string_view srcNsName, const std::string &dstNsName, bool fromReplication = false, bool skipResync = false,
 						  const RdxContext &ctx = RdxContext());
-	[[nodiscard]] bool isSystemNamespaceName(std::string_view name) const noexcept;
+	[[nodiscard]] bool isSystemNamespaceNameStrict(std::string_view name) noexcept;
 	Error readClusterConfigFile();
 	Error readShardingConfigFile();
+	void saveNewShardingConfigFile(const cluster::ShardingConfig &config) const;
 	void checkClusterRole(std::string_view nsName, lsn_t originLsn) const;
 	void setClusterizationStatus(ClusterizationStatus &&status, const RdxContext &ctx);
 	std::string generateTemporaryNamespaceName(std::string_view baseName);
 
+	[[nodiscard]] Error saveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext &ctx) noexcept;
+	[[nodiscard]] Error applyShardingCfgCandidate(int64_t sourceId, const RdxContext &ctx) noexcept;
+	[[nodiscard]] Error resetOldShardingConfig(int64_t sourceId, const RdxContext &ctx) noexcept;
+	[[nodiscard]] Error resetShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept;
+	[[nodiscard]] Error rollbackShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept;
+
+	template <typename PreReplFunc, typename... Args>
+	[[nodiscard]] Error shardingConfigReplAction(const RdxContext &ctx, PreReplFunc func, Args &&...args) noexcept;
+
+	template <typename... Args>
+	[[nodiscard]] Error shardingConfigReplAction(const RdxContext &ctx, cluster::UpdateRecord::Type type, Args &&...args) noexcept;
+
 	fast_hash_map<std::string, Namespace::Ptr, nocase_hash_str, nocase_equal_str, nocase_less_str> namespaces_;
 
+	StatsLocker statsLocker_;
 	std::string storagePath_;
 
-	std::thread backgroundThread_;
-	std::thread storageFlushingThread_;
-	std::atomic<bool> dbDestroyed_;
+	BackgroundThread backgroundThread_;
+	BackgroundThread storageFlushingThread_;
+	std::atomic<bool> dbDestroyed_ = {false};
+	BackgroundNamespaceDeleter bgDeleter_;
 
 	QueriesStatTracer queriesStatTracker_;
 	std::unique_ptr<cluster::Clusterizator> clusterizator_;
 	ClusterizationStatus clusterStatus_;
 	DBConfigProvider configProvider_;
 	atomic_unique_ptr<cluster::ClusterConfigData> clusterConfig_;
-	atomic_unique_ptr<cluster::ShardingConfig> shardingConfig_;
+	struct {
+		auto Get() const noexcept {
+			std::lock_guard lk(m);
+			return config;
+		}
+
+		void Set(std::optional<cluster::ShardingConfig> &&other) noexcept {
+			std::lock_guard lk(m);
+			config.reset(other ? new intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>(std::move(*other)) : nullptr);
+		}
+
+		operator bool() const noexcept {
+			std::lock_guard lk(m);
+			return config;
+		}
+
+	private:
+		mutable spinlock m;
+		intrusive_ptr<intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>> config;
+	} shardingConfig_;
+
 	std::deque<FileContetWatcher> configWatchers_;
 
 	Locker nsLock_;
@@ -299,7 +376,7 @@ protected:
 	StorageType storageType_;
 	bool autorepairEnabled_ = false;
 	bool replicationEnabled_ = true;
-	std::atomic<bool> connected_;
+	std::atomic<bool> connected_ = {false};
 
 	ReindexerConfig config_;
 
@@ -311,7 +388,7 @@ protected:
 	friend class cluster::DataReplicator;
 	friend class cluster::ReplThread<cluster::ClusterThreadParam>;
 	friend class ClusterProxy;
-	friend class sharding::LocatorService;
+	friend class sharding::LocatorServiceAdapter;
 	friend class cluster::LeaderSyncThread;
 	friend class cluster::RoleSwitcher;
 };

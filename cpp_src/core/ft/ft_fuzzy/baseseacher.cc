@@ -88,13 +88,13 @@ SearchResult BaseSearcher::Compare(const BaseHolder::Ptr &holder, const FtDSLQue
 		data_size += ParseData(holder, term.pattern, max_id, min_id, rusults, term.opts, 1);
 
 		if (holder->cfg_.enableTranslit) {
-			searchers_[0]->GetVariants(term.pattern, data);
+			searchers_[0]->GetVariants(term.pattern, data, holder->cfg_.rankingConfig.translit);
 
 			ParseData(holder, data[0].pattern, max_id, min_id, rusults, term.opts, holder->cfg_.startDefaultDecreese);
 		}
 		if (holder->cfg_.enableKbLayout) {
 			data.clear();
-			searchers_[1]->GetVariants(term.pattern, data);
+			searchers_[1]->GetVariants(term.pattern, data, holder->cfg_.rankingConfig.kblayout);
 			ParseData(holder, data[0].pattern, max_id, min_id, rusults, term.opts, holder->cfg_.startDefaultDecreese);
 		}
 	}

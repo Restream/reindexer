@@ -46,7 +46,7 @@ void FastIndexText<T>::initHolder(FtFastConfig &cfg) {
 
 template <typename T>
 Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache) {
-	if (key.Type().Is<KeyValueType::Null>()) {
+	if rx_unlikely (key.Type().Is<KeyValueType::Null>()) {
 		if (this->empty_ids_.Unsorted().Add(id, IdSet::Auto, 0)) {
 			this->isBuilt_ = false;
 		}
@@ -64,7 +64,6 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, 0)) {
 		this->isBuilt_ = false;
 		if (this->cache_ft_) this->cache_ft_->Clear();
-		if (this->preselected_cache_ft_) this->preselected_cache_ft_->Clear();
 		clearCache = true;
 	}
 	this->addMemStat(keyIt);
@@ -79,7 +78,7 @@ Variant FastIndexText<T>::Upsert(const Variant &key, IdType id, bool &clearCache
 template <typename T>
 void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strHolder, bool &clearCache) {
 	int delcnt = 0;
-	if (key.Type().Is<KeyValueType::Null>()) {
+	if rx_unlikely (key.Type().Is<KeyValueType::Null>()) {
 		delcnt = this->empty_ids_.Unsorted().Erase(id);
 		assertrx(delcnt);
 		this->isBuilt_ = false;
@@ -117,7 +116,6 @@ void FastIndexText<T>::Delete(const Variant &key, IdType id, StringsHolder &strH
 		IndexStore<StoreIndexKeyType<T>>::Delete(key, id, strHolder, clearCache);
 	}
 	if (this->cache_ft_) this->cache_ft_->Clear();
-	if (this->preselected_cache_ft_) this->preselected_cache_ft_->Clear();
 	clearCache = true;
 }
 
@@ -128,70 +126,78 @@ IndexMemStat FastIndexText<T>::GetMemStat(const RdxContext &ctx) {
 	contexted_shared_lock lck(this->mtx_, &ctx);
 	ret.fulltextSize = this->holder_->GetMemStat();
 	if (this->cache_ft_) ret.idsetCache = this->cache_ft_->GetMemStat();
-	if (this->preselected_cache_ft_) ret.idsetCache += this->preselected_cache_ft_->GetMemStat();
 	return ret;
 }
 
 template <typename T>
 IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTransaction, FtMergeStatuses &&statuses,
-									bool mergeStatusesEmpty, const RdxContext &rdxCtx) {
-	fctx->GetData()->extraWordSymbols_ = this->GetConfig()->extraWordSymbols;
+									FtUseExternStatuses useExternSt, const RdxContext &rdxCtx) {
+	fctx->GetData()->extraWordSymbols_ = this->getConfig()->extraWordSymbols;
 	fctx->GetData()->isWordPositions_ = true;
 
-	auto mergeData = this->holder_->Select(std::move(dsl), this->fields_.size(), fctx->NeedArea(), GetConfig()->maxAreasInDoc,
-										   inTransaction, std::move(statuses.statuses), mergeStatusesEmpty, rdxCtx);
+	auto mergeData = this->holder_->Select(std::move(dsl), this->fields_.size(), fctx->NeedArea(), getConfig()->maxAreasInDoc,
+										   inTransaction, std::move(statuses.statuses), useExternSt, rdxCtx);
 	// convert vids(uniq documents id) to ids (real ids)
 	IdSet::Ptr mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 	auto &holder = *this->holder_;
-	auto &vdocs = holder.vdocs_;
 
 	if (mergeData.empty()) {
 		return mergedIds;
 	}
 	int cnt = 0;
 	const double scalingFactor = mergeData.maxRank > 255 ? 255.0 / mergeData.maxRank : 1.0;
-	int minRelevancy = GetConfig()->minRelevancy * 100 * scalingFactor;
+	const int minRelevancy = getConfig()->minRelevancy * 100 * scalingFactor;
+	size_t releventDocs = 0;
 	for (auto &vid : mergeData) {
-		assertrx(vid.id < int(vdocs.size()));
-		if (!vdocs[vid.id].keyEntry) {
+		auto &vdoc = holder.vdocs_[vid.id];
+		if (!vdoc.keyEntry) {
 			continue;
 		}
 		vid.proc *= scalingFactor;
 		if (vid.proc <= minRelevancy) break;
-		cnt += vdocs[vid.id].keyEntry->Sorted(0).size();
+
+		assertrx_throw(!vdoc.keyEntry->Unsorted().empty());
+		cnt += vdoc.keyEntry->Sorted(0).size();
+		++releventDocs;
 	}
 
 	mergedIds->reserve(cnt);
 	fctx->Reserve(cnt);
-	for (auto &vid : mergeData) {
-		auto id = vid.id;
-		assertrx(id < IdType(vdocs.size()));
-
-		if (!vdocs[id].keyEntry) {
-			continue;
-		}
-		assertrx(!vdocs[id].keyEntry->Unsorted().empty());
-		if (vid.proc <= minRelevancy) break;
-		if (mergeStatusesEmpty) {
-			if (vid.areaIndex == std::numeric_limits<uint32_t>::max()) {
-				fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc);
-			} else {
-				fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc,
-						  std::move(mergeData.vectorAreas[vid.areaIndex]));
-			}
-			mergedIds->Append(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), IdSet::Unordered);
+	if (!fctx->NeedArea()) {
+		if (useExternSt == FtUseExternStatuses::No) {
+			appendMergedIds(mergeData, releventDocs,
+							[&fctx, &mergedIds](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const IDataHolder::MergeInfo &vid) {
+								fctx->Add(ebegin, eend, vid.proc);
+								mergedIds->Append(ebegin, eend, IdSet::Unordered);
+							});
 		} else {
-			if (vid.areaIndex == std::numeric_limits<uint32_t>::max()) {
-				fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc, statuses.rowIds);
-			} else {
-				fctx->Add(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), vid.proc, statuses.rowIds,
-						  std::move(mergeData.vectorAreas[vid.areaIndex]));
-			}
-			mergedIds->Append(vdocs[id].keyEntry->Sorted(0).begin(), vdocs[id].keyEntry->Sorted(0).end(), statuses.rowIds,
-							  IdSet::Unordered);
+			appendMergedIds(
+				mergeData, releventDocs,
+				[&fctx, &mergedIds, &statuses](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const IDataHolder::MergeInfo &vid) {
+					fctx->Add(ebegin, eend, vid.proc, statuses.rowIds);
+					mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
+				});
+		}
+	} else {
+		if (useExternSt == FtUseExternStatuses::No) {
+			appendMergedIds(
+				mergeData, releventDocs,
+				[&fctx, &mergedIds, &mergeData](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const IDataHolder::MergeInfo &vid) {
+					assertrx_throw(vid.areaIndex != std::numeric_limits<uint32_t>::max());
+					fctx->Add(ebegin, eend, vid.proc, std::move(mergeData.vectorAreas[vid.areaIndex]));
+					mergedIds->Append(ebegin, eend, IdSet::Unordered);
+				});
+		} else {
+			appendMergedIds(mergeData, releventDocs,
+							[&fctx, &mergedIds, &mergeData, &statuses](IdSetRef::iterator ebegin, IdSetRef::iterator eend,
+																	   const IDataHolder::MergeInfo &vid) {
+								assertrx_throw(vid.areaIndex != std::numeric_limits<uint32_t>::max());
+								fctx->Add(ebegin, eend, vid.proc, statuses.rowIds, std::move(mergeData.vectorAreas[vid.areaIndex]));
+								mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
+							});
 		}
 	}
-	if (GetConfig()->logLevel >= LogInfo) {
+	if rx_unlikely (getConfig()->logLevel >= LogInfo) {
 		logPrintf(LogInfo, "Total merge out: %d ids", mergedIds->size());
 
 		std::string str;
@@ -210,7 +216,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 		}
 		logPrintf(LogInfo, "Relevancy(%d): %s", fctx->GetSize(), str);
 	}
-	assertrx(mergedIds->size() == fctx->GetSize());
+	assertrx_throw(mergedIds->size() == fctx->GetSize());
 	return mergedIds;
 }
 template <typename T>
@@ -243,8 +249,8 @@ void FastIndexText<T>::commitFulltextImpl() {
 			}
 		}
 	}
-	auto tm2 = high_resolution_clock::now();
-	if (GetConfig()->logLevel >= LogInfo) {
+	if rx_unlikely (getConfig()->logLevel >= LogInfo) {
+		auto tm2 = high_resolution_clock::now();
 		logPrintf(LogInfo, "FastIndexText::Commit elapsed %d ms total [ build vdocs %d ms,  process data %d ms ]",
 				  duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
 				  duration_cast<milliseconds>(tm2 - tm1).count());
@@ -295,7 +301,7 @@ void FastIndexText<T>::buildVdocs(Container &data) {
 		vdocs.push_back({doc->second.get(), {}, {}});
 #endif
 
-		if (GetConfig()->logLevel <= LogInfo) {
+		if rx_unlikely (getConfig()->logLevel <= LogInfo) {
 			for (auto &f : vdocsTexts.back()) this->holder_->szCnt += f.first.length();
 		}
 	}
@@ -305,9 +311,18 @@ void FastIndexText<T>::buildVdocs(Container &data) {
 }
 
 template <typename T>
-FtFastConfig *FastIndexText<T>::GetConfig() const {
-	return dynamic_cast<FtFastConfig *>(this->cfg_.get());
+template <typename F>
+RX_ALWAYS_INLINE void FastIndexText<T>::appendMergedIds(IDataHolder::MergeData &mergeData, size_t releventDocs, F &&appender) {
+	auto &holder = *this->holder_;
+	for (size_t i = 0; i < releventDocs; ++i) {
+		auto &vid = mergeData[i];
+		auto &vdoc = holder.vdocs_[vid.id];
+		if (vdoc.keyEntry) {
+			appender(vdoc.keyEntry->Sorted(0).begin(), vdoc.keyEntry->Sorted(0).end(), vid);
+		}
+	}
 }
+
 template <typename T>
 void FastIndexText<T>::initConfig(const FtFastConfig *cfg) {
 	if (cfg) {
@@ -316,7 +331,7 @@ void FastIndexText<T>::initConfig(const FtFastConfig *cfg) {
 		this->cfg_.reset(new FtFastConfig(this->ftFields_.size()));
 		this->cfg_->parse(this->opts_.config, this->ftFields_);
 	}
-	initHolder(*GetConfig());  // -V522
+	initHolder(*getConfig());  // -V522
 	this->holder_->synonyms_->SetConfig(this->cfg_.get());
 }
 
@@ -327,9 +342,9 @@ bool eq_c(Container &c1, Container &c2) {
 
 template <typename T>
 void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
-	auto oldCfg = *GetConfig();
+	auto oldCfg = *getConfig();
 	IndexText<T>::SetOpts(opts);
-	auto &newCfg = *GetConfig();
+	auto &newCfg = *getConfig();
 
 	if (!eq_c(oldCfg.stopWords, newCfg.stopWords) || oldCfg.stemmers != newCfg.stemmers || oldCfg.maxTypoLen != newCfg.maxTypoLen ||
 		oldCfg.enableNumbersSearch != newCfg.enableNumbersSearch || oldCfg.extraWordSymbols != newCfg.extraWordSymbols ||
@@ -343,32 +358,19 @@ void FastIndexText<T>::SetOpts(const IndexOpts &opts) {
 		}
 		this->holder_->status_ = FullRebuild;
 		if (this->cache_ft_) this->cache_ft_->Clear();
-		if (this->preselected_cache_ft_) this->preselected_cache_ft_->Clear();
 		for (auto &idx : this->idx_map) idx.second.SetVDocID(FtKeyEntryData::ndoc);
 	} else {
 		logPrintf(LogInfo, "FulltextIndex config changed, cache cleared");
 		if (this->cache_ft_) this->cache_ft_->Clear();
-		if (this->preselected_cache_ft_) this->preselected_cache_ft_->Clear();
 	}
 	this->holder_->synonyms_->SetConfig(&newCfg);
 }
 
 template <typename T>
-reindexer::FtPreselectT FastIndexText<T>::FtPreselect(const QueryEntries &qentries, int idxNo, const SelectFunction &fnCtx,
-													  const RdxContext &rdxCtx) {
-	WrSerializer ser;
-	qentries.Serialize(ser);
-	QueryCacheKey ckey{ser};
+reindexer::FtPreselectT FastIndexText<T>::FtPreselect(const RdxContext &rdxCtx) {
 	this->build(rdxCtx);
-	auto cacheIt = this->preselected_cache_ft_->Get(ckey);
-	if (cacheIt.valid && cacheIt.val.ids->size()) {
-		if (cacheIt.val.ctx->need_area_ || !fnCtx.NeedArea(idxNo)) {
-			return {std::move(cacheIt)};
-		}
-	}
 	return FtMergeStatuses{FtMergeStatuses::Statuses(holder_->vdocs_.size(), FtMergeStatuses::kExcluded),
-						   std::vector<bool>(holder_->rowId2Vdoc_.size(), false), &holder_->rowId2Vdoc_,
-						   cacheIt.valid ? std::optional{std::move(ckey)} : std::nullopt};
+						   std::vector<bool>(holder_->rowId2Vdoc_.size(), false), &holder_->rowId2Vdoc_};
 }
 
 std::unique_ptr<Index> FastIndexText_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
@@ -396,9 +398,10 @@ std::unique_ptr<Index> FastIndexText_New(const IndexDef &idef, PayloadType paylo
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:
-		default:
-			abort();
+		case IndexUuidStore:
+			break;
 	}
+	std::abort();
 }
 
 }  // namespace reindexer

@@ -106,6 +106,41 @@ SelectKeyResults IndexStore<T>::SelectKey(const VariantArray &keys, CondType con
 	if (condition == CondAny && !this->opts_.IsArray() && !this->opts_.IsSparse() && !sopts.distinct)
 		throw Error(errParams, "The 'NOT NULL' condition is suported only by 'sparse' or 'array' indexes");
 
+	// TODO: it may be necessary to remove or change this switch after QueryEntry refactoring
+	switch (condition) {
+		case CondAny:
+			if (!this->opts_.IsArray() && !this->opts_.IsSparse() && !sopts.distinct) {
+				throw Error(errParams, "The 'NOT NULL' condition is suported only by 'sparse' or 'array' indexes");
+			}
+			break;
+		case CondEmpty:
+			if (!this->opts_.IsArray() && !this->opts_.IsSparse()) {
+				throw Error(errParams, "The 'is NULL' condition is suported only by 'sparse' or 'array' indexes");
+			}
+			break;
+		case CondAllSet:
+		case CondSet:
+		case CondEq:
+			break;
+		case CondRange:
+		case CondDWithin:
+			if (keys.size() != 2) {
+				throw Error(errParams, "For condition %s required exactly 2 arguments, but provided %d", CondTypeToStr(condition),
+							keys.size());
+			}
+			break;
+		case CondLt:
+		case CondLe:
+		case CondGt:
+		case CondGe:
+		case CondLike:
+			if (keys.size() != 1) {
+				throw Error(errParams, "For condition %s required exactly 1 argument, but provided %d", CondTypeToStr(condition),
+							keys.size());
+			}
+			break;
+	}
+
 	res.comparators_.push_back(Comparator(condition, KeyType(), keys, opts_.IsArray(), sopts.distinct, payloadType_, fields_,
 										  idx_data.size() ? idx_data.data() : nullptr, opts_.collateOpts_));
 	return SelectKeyResults(std::move(res));
@@ -160,6 +195,8 @@ std::unique_ptr<Index> IndexStore_New(const IndexDef &idef, PayloadType payloadT
 			return std::unique_ptr<Index>{new IndexStore<double>(idef, std::move(payloadType), fields)};
 		case IndexStrStore:
 			return std::unique_ptr<Index>{new IndexStore<key_string>(idef, std::move(payloadType), fields)};
+		case IndexUuidStore:
+			return std::unique_ptr<Index>{new IndexStore<Uuid>(idef, std::move(payloadType), fields)};
 		case IndexStrHash:
 		case IndexStrBTree:
 		case IndexIntBTree:
@@ -176,9 +213,9 @@ std::unique_ptr<Index> IndexStore_New(const IndexDef &idef, PayloadType payloadT
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:
-		default:
-			abort();
+			break;
 	}
+	std::abort();
 }
 
 template class IndexStore<bool>;

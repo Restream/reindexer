@@ -1,13 +1,42 @@
 #include <gtest/gtest-param-test.h>
 #include <unordered_map>
+#include "core/cjson/jsonbuilder.h"
 #include "ft_api.h"
 #include "tools/logger.h"
+#include "yaml-cpp/yaml.h"
 
 using namespace std::string_view_literals;
+using reindexer::fast_hash_map;
+using reindexer::Query;
 
 class FTGenericApi : public FTApi {
 protected:
 	std::string_view GetDefaultNamespace() noexcept override { return "ft_generic_default_namespace"; }
+
+	void CreateAndFillSimpleNs(const std::string& ns, int from, int to, fast_hash_map<int, std::string>* outItems) {
+		assertrx(from <= to);
+		std::vector<std::string> items;
+		items.reserve(to - from);
+		auto err = rt.reindexer->OpenNamespace(ns);
+		ASSERT_TRUE(err.ok()) << err.what();
+		rt.DefineNamespaceDataset(
+			ns, {IndexDeclaration{"id", "hash", "int", IndexOpts().PK(), 0}, IndexDeclaration{"data", "hash", "string", IndexOpts(), 0}});
+		reindexer::WrSerializer ser;
+		for (int i = from; i < to; ++i) {
+			ser.Reset();
+			reindexer::JsonBuilder jb(ser);
+			jb.Put("id", i);
+			jb.Put("data", rt.RandString());
+			jb.End();
+			auto item = rt.NewItem(ns);
+			if (outItems) {
+				(*outItems)[i] = ser.Slice();
+			}
+			err = item.FromJSON(ser.Slice());
+			ASSERT_TRUE(err.ok()) << err.what();
+			rt.Upsert(ns, item);
+		}
+	}
 };
 
 TEST_P(FTGenericApi, CompositeSelect) {
@@ -281,7 +310,6 @@ TEST_P(FTGenericApi, SelectWithDistance2) {
 			CheckAllPermutations("", {R"s(-"one two")s", "+empty"}, "",
 								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
 		}
-		CheckAllPermutations("", {R"s(-"one two")s", "-empty"}, "", {}, false, " ", withHighlight);
 	};
 
 	Init(GetDefaultConfig());
@@ -408,7 +436,6 @@ TEST_P(FTGenericApi, SelectWithDistance3) {
 			CheckAllPermutations("", {R"s(-"one two three")s", "+empty"}, "",
 								 withHighlight ? expectedResultsH : DelHighlightSign(expectedResultsH), false, " ", withHighlight);
 		}
-		CheckResults(R"s(-"one two three"~3)s", {}, false, withHighlight);
 	};
 	check(true);
 	check(false);
@@ -556,7 +583,7 @@ TEST_P(FTGenericApi, Unique) {
 	std::vector<std::string> data;
 	std::set<size_t> check;
 	std::set<std::string> checks;
-	reindexer::logInstallWriter([](int, char*) { /*std::cout << buf << std::endl;*/ });
+	reindexer::logInstallWriter([](int, char*) { /*std::cout << buf << std::endl;*/ }, reindexer::LoggerPolicy::WithLocks);
 
 	for (int i = 0; i < 1000; ++i) {
 		bool inserted = false;
@@ -950,6 +977,305 @@ TEST_P(FTGenericApi, MergeLimitConstraints) {
 	cfg.mergeLimit = kMaxMergeLimitValue;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
+}
+
+TEST_P(FTGenericApi, ConfigFtProc) {
+	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
+	cfgDef.synonyms = {{{"тестов"}, {"задача"}}};
+	reindexer::FtFastConfig cfg = cfgDef;
+
+	cfg.rankingConfig.fullMatch = 100;
+	cfg.rankingConfig.stemmerPenalty = 1;  // for idf/tf boost
+	cfg.rankingConfig.translit = 50;
+	cfg.rankingConfig.kblayout = 40;
+	cfg.rankingConfig.synonyms = 30;
+	Init(cfg);
+	Add("nm1"sv, "маленький тест"sv, "");
+	Add("nm1"sv, "один тестов очень очень тестов тестов тестов"sv, "");
+	Add("nm1"sv, "два тестов очень очень тестов тестов тестов"sv, "");
+	Add("nm1"sv, "testov"sv, "");
+	Add("nm1"sv, "ntcnjd"sv, "");
+	Add("nm1"sv, "задача"sv, "");
+	Add("nm1"sv, "Местов"sv, "");
+	Add("nm1"sv, "МестоД"sv, "");
+
+	reindexer::Error err;
+	CheckResults("тестов",
+				 {{"маленький !тест!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"!testov!", ""},
+				  {"!ntcnjd!", ""},
+				  {"!задача!", ""}},
+				 true);
+	cfg = cfgDef;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	CheckResults("тестов",
+				 {{"!задача!", ""},
+				  {"!testov!", ""},
+				  {"!ntcnjd!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"маленький !тест!", ""}},
+				 true);
+	cfg = cfgDef;
+	cfg.rankingConfig.stemmerPenalty = 500;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	CheckResults("тестов",
+				 {{"!задача!", ""},
+				  {"!testov!", ""},
+				  {"!ntcnjd!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"маленький !тест!", ""}},
+				 true);
+
+	cfg = cfgDef;
+	cfg.rankingConfig.stemmerPenalty = -1;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_EQ(err.code(), errParseJson);
+	ASSERT_EQ(err.what(), "FtFastConfig: Value of 'stemmer_proc_penalty' - -1 is out of bounds: [0,500]");
+
+	cfg = cfgDef;
+	cfg.rankingConfig.synonyms = 500;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	CheckResults("тестов",
+				 {{"!задача!", ""},
+				  {"!testov!", ""},
+				  {"!ntcnjd!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"маленький !тест!", ""}},
+				 true);
+	cfg = cfgDef;
+	cfg.rankingConfig.synonyms = 501;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_EQ(err.code(), errParseJson);
+	ASSERT_EQ(err.what(), "FtFastConfig: Value of 'synonyms_proc' - 501 is out of bounds: [0,500]");
+
+	cfg = cfgDef;
+	cfg.rankingConfig.translit = 200;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	CheckResults("тестов",
+				 {{"!testov!", ""},
+				  {"!задача!", ""},
+				  {"!ntcnjd!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"маленький !тест!", ""}},
+				 true);
+
+	cfg = cfgDef;
+	cfg.rankingConfig.typo = 300;
+	cfg.rankingConfig.translit = 200;
+	cfg.maxTypos = 4;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	CheckResults("тестов~",
+				 {{"!Местов!", ""},
+				  {"!МестоД!", ""},
+				  {"!testov!", ""},
+				  {"!задача!", ""},
+				  {"!ntcnjd!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"маленький !тест!", ""}},
+				 true);
+
+	cfg = cfgDef;
+	cfg.rankingConfig.typo = 300;
+	cfg.rankingConfig.typoPenalty = 150;
+	cfg.rankingConfig.translit = 200;
+	cfg.maxTypos = 4;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	CheckResults("тестов~",
+				 {{"!Местов!", ""},
+				  {"!testov!", ""},
+				  {"!МестоД!", ""},
+				  {"!задача!", ""},
+				  {"!ntcnjd!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"маленький !тест!", ""}},
+				 true);
+
+	cfg = cfgDef;
+	cfg.rankingConfig.typo = 300;
+	cfg.rankingConfig.typoPenalty = 500;
+	cfg.rankingConfig.translit = 200;
+	cfg.maxTypos = 4;
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+	CheckResults("тестов~",
+				 {{"!testov!", ""},
+				  {"!Местов!", ""},
+				  {"!задача!", ""},
+				  {"!ntcnjd!", ""},
+				  {"один !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"два !тестов! очень очень !тестов тестов тестов!", ""},
+				  {"маленький !тест!", ""}},
+				 true);
+}
+
+TEST_P(FTGenericApi, InvalidDSLErrors) {
+	auto cfg = GetDefaultConfig();
+	cfg.stopWords.clear();
+	cfg.stopWords.emplace("teststopword");
+	Init(cfg);
+	constexpr std::string_view kExpectedErrorMessage = "Fulltext query can not contain only 'NOT' terms (i.e. terms with minus)";
+
+	{
+		auto q = Query("nm1").Where("ft3", CondEq, "-word");
+		reindexer::QueryResults qr;
+		auto err = rt.reindexer->Select(q, qr);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), kExpectedErrorMessage);
+
+		qr.Clear();
+		q = Query("nm1").Where("ft3", CondEq, "-word1 -word2 -word3");
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), kExpectedErrorMessage);
+
+		qr.Clear();
+		q = Query("nm1").Where("ft3", CondEq, "-\"word1 word2\"");
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), kExpectedErrorMessage);
+
+		qr.Clear();
+		q = Query("nm1").Where("ft3", CondEq, "-'word1 word2'");
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), kExpectedErrorMessage);
+
+		qr.Clear();
+		q = Query("nm1").Where("ft3", CondEq, "-word0 -'word1 word2' -word7");
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_EQ(err.code(), errParams) << err.what();
+		EXPECT_EQ(err.what(), kExpectedErrorMessage);
+
+		// Empty DSL is allowed
+		qr.Clear();
+		q = Query("nm1").Where("ft3", CondEq, "");
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 0);
+
+		// Stop-word + 'minus' have to return empty response, to avoid random errors for user
+		qr.Clear();
+		q = Query("nm1").Where("ft3", CondEq, "-word1 teststopword -word2");
+		err = rt.reindexer->Select(q, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 0);
+	}
+}
+
+// Check ft preselect logic with joins. Joined results have to be return even after multiple queries (issue #1437)
+TEST_P(FTGenericApi, JoinsWithFtPreselect) {
+	using reindexer::Query;
+	using reindexer::QueryResults;
+
+	auto cfg = GetDefaultConfig();
+	cfg.enablePreselectBeforeFt = true;
+	Init(cfg);
+	const int firstId = counter_;
+	Add("word1 word2 word3"sv);
+	Add("word3 word4"sv);
+	Add("word2 word5 word7"sv);
+
+	fast_hash_map<int, std::string> joinedNsItems;
+	const std::string kJoinedNs = "ns_for_joins";
+	const std::string kMainNs = "nm1";
+	constexpr unsigned kQueryRepetitions = 6;
+	CreateAndFillSimpleNs(kJoinedNs, 0, 10, &joinedNsItems);
+
+	const Query q =
+		Query(kMainNs).Where("ft3", CondEq, "word2").InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 1));
+	const auto expectedJoinedJSON = fmt::sprintf(R"json("joined_%s":[%s])json", kJoinedNs, joinedNsItems[firstId]);
+	for (unsigned i = 0; i < kQueryRepetitions; ++i) {
+		QueryResults qr;
+		auto err = rt.reindexer->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), 1);
+		auto item = qr.begin().GetItem();
+		ASSERT_EQ(item["id"].As<int>(), firstId);
+		reindexer::WrSerializer wser;
+		err = qr.begin().GetJSON(wser, false);
+		ASSERT_TRUE(err.ok()) << err.what();
+		EXPECT_TRUE(wser.Slice().find(expectedJoinedJSON) != std::string_view::npos)
+			<< "Expecting substring '" << expectedJoinedJSON << "', but json was: '" << wser.Slice() << "'. Iteration: " << i;
+	}
+}
+
+// Check that explain with ft preselect contains all the expected entries (issue #1437)
+TEST_P(FTGenericApi, ExplainWithFtPreselect) {
+	using reindexer::Query;
+	using reindexer::QueryResults;
+
+	auto cfg = GetDefaultConfig();
+	cfg.enablePreselectBeforeFt = true;
+	Init(cfg);
+	const int firstId = counter_;
+	Add("word1 word2 word3"sv);
+	Add("word3 word4"sv);
+	Add("word2 word5 word7"sv);
+	const int lastId = counter_;
+
+	const std::string kJoinedNs = "ns_for_joins";
+	const std::string kMainNs = "nm1";
+	CreateAndFillSimpleNs(kJoinedNs, 0, 10, nullptr);
+
+	{
+		const Query q = Query(kMainNs)
+							.Where("ft3", CondEq, "word2")
+							.OpenBracket()
+							.InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 1))
+							.Or()
+							.Where("id", CondEq, lastId - 1)
+							.CloseBracket()
+							.Explain();
+		QueryResults qr;
+		auto err = rt.reindexer->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 2);
+		// Check explain's content
+		YAML::Node root = YAML::Load(qr.GetExplainResults());
+		auto selectors = root["selectors"];
+		ASSERT_TRUE(selectors.IsSequence()) << qr.GetExplainResults();
+		ASSERT_EQ(selectors.size(), 2) << qr.GetExplainResults();
+		ASSERT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.GetExplainResults();
+		ASSERT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.GetExplainResults();
+	}
+	{
+		// Check the same query with extra brackets over ft condition. Make sure, that ft-index was still move to the end of the query
+		const Query q = Query(kMainNs)
+							.OpenBracket()
+							.Where("ft3", CondEq, "word2")
+							.CloseBracket()
+							.OpenBracket()
+							.InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 1))
+							.Or()
+							.Where("id", CondEq, lastId - 1)
+							.CloseBracket()
+							.Explain();
+		QueryResults qr;
+		auto err = rt.reindexer->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		EXPECT_EQ(qr.Count(), 2);
+		// Check explain's content
+		YAML::Node root = YAML::Load(qr.GetExplainResults());
+		auto selectors = root["selectors"];
+		ASSERT_TRUE(selectors.IsSequence()) << qr.GetExplainResults();
+		ASSERT_EQ(selectors.size(), 2) << qr.GetExplainResults();
+		ASSERT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.GetExplainResults();
+		ASSERT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.GetExplainResults();
+	}
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTGenericApi,

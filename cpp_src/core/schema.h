@@ -140,6 +140,9 @@ public:
 	const PrefixTree::PrefixTreeNode* GetRoot() const noexcept { return &paths_.root_; }
 	static std::string AppendProtobufNumber(std::string_view json, int protobufNsNumber);
 
+	std::vector<int> MakeCsvTagOrdering(const TagsMatcher& tm) const;
+	bool IsEmpty() const noexcept;
+
 private:
 	void parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& splittedPath, bool isRequired);
 

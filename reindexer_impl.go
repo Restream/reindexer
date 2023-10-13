@@ -930,21 +930,156 @@ func (db *reindexerImpl) mustBeginTx(ctx context.Context, namespace string) *Tx 
 	return tx
 }
 
-func (db *reindexerImpl) queryFrom(d dsl.DSL) (*Query, error) {
+func (db *reindexerImpl) addFilterDSL(filter *dsl.Filter, q *Query) error {
+	if filter.Field == "" {
+		return ErrEmptyFieldName
+	}
+	cond, err := GetCondType(filter.Cond)
+	if err != nil {
+		return err
+	}
+	if filter.Value != nil {
+		// Skip filter if value is nil (for backwards compatibility reasons)
+		q.Where(filter.Field, cond, filter.Value)
+	} else {
+		q.And()
+	}
+
+	return nil
+}
+
+func (db *reindexerImpl) addJoinedDSL(joined *dsl.JoinQuery, resultField string, q *Query) error {
+	if joined.Namespace == "" {
+		return ErrEmptyNamespace
+	}
+
+	jq := db.query(joined.Namespace).Offset(joined.Offset)
+	if joined.Limit > 0 {
+		jq.Limit(joined.Limit)
+	}
+	if joined.Sort.Field != "" {
+		jq.Sort(joined.Sort.Field, joined.Sort.Desc, joined.Sort.Values...)
+	}
+
+	_, err := db.handleFiltersDSL(joined.Filters, nil, jq)
+	if err != nil {
+		return err
+	}
+
+	switch strings.ToLower(joined.Type) {
+	case "left":
+		q.LeftJoin(jq, resultField)
+	case "inner":
+		q.InnerJoin(jq, resultField)
+	case "orinner":
+		q.Or().InnerJoin(jq, resultField)
+	default:
+		return bindings.NewError("rq: join type is invalid", ErrCodeParams)
+	}
+
+	for _, on := range joined.On {
+		cond, err := GetCondType(on.Cond)
+		if err != nil {
+			return err
+		}
+		if on.LeftField == "" {
+			return bindings.NewError("rq: dsl join on empty field (left)", ErrCodeParams)
+		}
+		if on.RightField == "" {
+			return bindings.NewError("rq: dsl join on empty field (right)", ErrCodeParams)
+		}
+		switch strings.ToLower(on.Op) {
+		case "":
+			jq.On(on.LeftField, cond, on.RightField)
+		case "and":
+			jq.On(on.LeftField, cond, on.RightField)
+		case "or":
+			jq.Or().On(on.LeftField, cond, on.RightField)
+		default:
+			return bindings.NewError("rq: dsl join_query op is invalid", ErrCodeParams)
+		}
+	}
+	q.JoinHandler(resultField, func(field string, item interface{}, subitems []interface{}) bool {
+		return false // Do not handle joined data
+	})
+
+	return nil
+}
+
+func (db *reindexerImpl) handleFiltersDSL(filters []dsl.Filter, joinIDs *map[string]int, q *Query) (*Query, error) {
+	for fi, _ := range filters {
+		filter := &filters[fi]
+		switch strings.ToLower(filters[fi].Op) {
+		case "":
+			q.And()
+		case "and":
+			q.And()
+		case "or":
+			q.Or()
+		case "not":
+			q.Not()
+		default:
+			return nil, bindings.NewError("rq: dsl filter op is invalid", ErrCodeParams)
+		}
+
+		if filter.Joined != nil {
+			if joinIDs == nil {
+				return nil, bindings.NewError("rq: nested join quieries are not supported", ErrCodeParams)
+			}
+			if filter.Field != "" || filter.Cond != "" {
+				return nil, bindings.NewError("rq: dsl filter can not contain both 'field' and 'join_query' at the same time", ErrCodeParams)
+			}
+			if len(filter.Filters) != 0 {
+				return nil, bindings.NewError("rq: dsl filter can not contain both 'fielters' and 'join_query' at the same time", ErrCodeParams)
+			}
+
+			var joinedFieldName string
+			if v, found := (*joinIDs)[filter.Joined.Namespace]; found {
+				joinedFieldName = fmt.Sprintf("_dsl_joined_%s_%d", filter.Joined.Namespace, v)
+				(*joinIDs)[filter.Joined.Namespace] += 1
+			} else {
+				joinedFieldName = fmt.Sprintf("_dsl_joined_%s", filter.Joined.Namespace)
+				(*joinIDs)[filter.Joined.Namespace] = 0
+			}
+			err := db.addJoinedDSL(filter.Joined, joinedFieldName, q)
+			if err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		if len(filter.Filters) != 0 {
+			if len(filter.Field) != 0 || len(filter.Cond) != 0 {
+				return nil, bindings.NewError("rq: dsl filter can not contain both 'field' and 'filters' at the same time", ErrCodeParams)
+			}
+			q.OpenBracket()
+			_, err := db.handleFiltersDSL(filter.Filters, joinIDs, q)
+			if err != nil {
+				return nil, err
+			}
+			q.CloseBracket()
+			continue
+		}
+		err := db.addFilterDSL(filter, q)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return q, nil
+}
+
+func (db *reindexerImpl) queryFrom(d *dsl.DSL) (*Query, error) {
 	if d.Namespace == "" {
 		return nil, ErrEmptyNamespace
 	}
 
 	q := db.query(d.Namespace).Offset(d.Offset)
-
 	if d.Explain {
 		q.Explain()
 	}
-
 	if d.Limit > 0 {
 		q.Limit(d.Limit)
 	}
-
 	if d.Distinct != "" {
 		q.Distinct(d.Distinct)
 	}
@@ -977,31 +1112,15 @@ func (db *reindexerImpl) queryFrom(d dsl.DSL) (*Query, error) {
 	if d.Sort.Field != "" {
 		q.Sort(d.Sort.Field, d.Sort.Desc, d.Sort.Values...)
 	}
-
-	for _, filter := range d.Filters {
-		if filter.Field == "" {
-			return nil, ErrEmptyFieldName
-		}
-		if filter.Value == nil {
-			continue
-		}
-
-		cond, err := GetCondType(filter.Cond)
-		if err != nil {
-			return nil, err
-		}
-
-		switch strings.ToUpper(filter.Op) {
-		case "":
-			q.Where(filter.Field, cond, filter.Value)
-		case "NOT":
-			q.Not().Where(filter.Field, cond, filter.Value)
-		default:
-			return nil, ErrOpInvalid
-		}
+	if d.ReqTotal {
+		q.ReqTotal()
+	}
+	if d.WithRank {
+		q.WithRank()
 	}
 
-	return q, nil
+	joinIDs := make(map[string]int)
+	return db.handleFiltersDSL(d.Filters, &joinIDs, q)
 }
 
 func dsnParse(dsn interface{}) (string, []url.URL) {

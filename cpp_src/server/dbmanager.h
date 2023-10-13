@@ -60,7 +60,7 @@ public:
 	AuthContext(const std::string &login, const std::string &password) : login_(login), password_(password) {}
 	/// Set expected leader's replication clusted ID
 	/// @param clusterID - Expected cluster ID value
-	void SetExpectedClusterID(int clusterID) {
+	void SetExpectedClusterID(int clusterID) noexcept {
 		checkClusterID_ = true;
 		expectedClusterID_ = clusterID;
 	}
@@ -76,25 +76,25 @@ public:
 		return errOK;
 	}
 	/// Reset Reindexer DB object pointer in context
-	void ResetDB() {
+	void ResetDB() noexcept {
 		db_ = nullptr;
 		dbName_.clear();
 	}
 	/// Check does context have an valid Reindexer DB object pointer
 	/// @return true if db is ok
-	bool HaveDB() { return db_ != nullptr; }
+	bool HaveDB() const noexcept { return db_ != nullptr; }
 	/// Get user login
 	/// @return user login
-	const std::string &Login() { return login_; }
+	const std::string &Login() const noexcept { return login_; }
 	/// Get database name
 	/// @return db name
-	const std::string &DBName() { return dbName_; }
+	const std::string &DBName() const noexcept { return dbName_; }
 	/// Get user rights
 	/// @return user rights
-	UserRole UserRights() const { return role_; }
+	UserRole UserRights() const noexcept { return role_; }
 
 protected:
-	AuthContext(UserRole role) : role_(role) {}
+	AuthContext(UserRole role) noexcept : role_(role) {}
 
 	std::string login_;
 	std::string password_;

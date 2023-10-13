@@ -1,9 +1,11 @@
 #include "asyncreplthread.h"
 #include "client/snapshot.h"
+#include "cluster/sharding/shardingcontrolrequest.h"
 #include "clusterreplthread.h"
 #include "core/defnsconfigs.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "core/reindexerimpl.h"
+#include "tools/catch_and_return.h"
 #include "tools/flagguard.h"
 #include "updatesbatcher.h"
 #include "updatesqueue.h"
@@ -255,6 +257,56 @@ void ReplThread<BehaviourParamT>::nodeReplicationRoutine(Node& node) {
 	node.client.Stop();
 }
 
+template <>
+[[nodiscard]] Error ReplThread<ClusterThreadParam>::syncShardingConfig(Node& node) noexcept {
+	///////////////////////////////  ATTENTION!  /////////////////////////////////
+	///////// This	 specialization	  	is	 necessary because clang-tyde ////////
+	///////// falsely 	diagnoses 	the private	member access error here, ////////
+	///////// despite the fact that  this code  is  under 'if constexpr'. ////////
+	//////////////////////////////////////////////////////////////////////////////
+	///////// This specialization should be located up to the point of use ///////
+	///////// in function  `nodeReplicationImpl` in order to avoid 	IFNDR. ///////
+	//////////////////////////////////////////////////////////////////////////////
+	try {
+		for (size_t i = 0; i < kMaxRetriesOnRoleSwitchAwait; ++i) {
+			ReplicationStateV2 replState;
+			auto err = node.client.GetReplState(std::string_view(), replState);
+
+			if (!bhvParam_.IsLeader()) {
+				return Error(errParams, "Leader was switched");
+			}
+
+			if (!err.ok()) {
+				logWarn("%d:%d Unable to get repl state: %s", serverId_, node.uid, err.what());
+				return err;
+			}
+
+			statsCollector_.OnSyncStateChanged(node.uid, NodeStats::SyncState::Syncing);
+			updateNodeStatus(node.uid, NodeStats::Status::Online);
+			if (replState.clusterStatus.role != ClusterizationStatus::Role::ClusterReplica ||
+				replState.clusterStatus.leaderId != serverId_) {
+				// Await transition
+				logTrace("%d:%d Awaiting role switch on remote node", serverId_, node.uid);
+				loop.sleep(kRoleSwitchStepTime);
+				// TODO: Check if cluster is configured on remote node
+				continue;
+			}
+
+			logInfo("%d:%d Start applying leader's sharding config locally", serverId_, node.uid);
+			std::string config;
+			if (auto configPtr = thisNode.shardingConfig_.Get()) {
+				config = configPtr->GetJSON();
+			}
+
+			return node.client.WithLSN(lsn_t(0, serverId_))
+				.ShardingControlRequest(
+					sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ApplyLeaderConfig>(config, -1));
+		};
+		return Error(errTimeout, "%d:%d DB role switch waiting timeout", serverId_, node.uid);
+	}
+	CATCH_AND_RETURN
+}
+
 template <typename BehaviourParamT>
 Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 	std::vector<NamespaceDef> nsList;
@@ -279,6 +331,14 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 			++nsDataIt;
 		} else {
 			nsDataIt = node.namespaceData.erase(nsDataIt);
+		}
+	}
+
+	if constexpr (isClusterReplThread()) {
+		integralError = syncShardingConfig(node);
+		if (!integralError.ok()) {
+			logWarn("%s", integralError.what());
+			return integralError;
 		}
 	}
 
@@ -363,34 +423,6 @@ Error ReplThread<BehaviourParamT>::nodeReplicationImpl(Node& node) {
 				return;
 			}
 		});
-	}
-	if constexpr (isClusterReplThread()) {
-		if (!localWg.wait_count()) {
-			size_t i;
-			logInfo("%d:%d No sync coroutines were created. Just awating DB role switch...", serverId_, node.uid);
-			for (i = 0; i < kMaxRetriesOnRoleSwitchAwait; ++i) {
-				ReplicationStateV2 replState;
-				auto err = node.client.GetReplState(std::string_view(), replState);
-				if (!err.ok()) {
-					return err;
-				}
-				if (!bhvParam_.IsLeader()) {
-					return Error(errParams, "Leader was switched");
-				}
-				if (replState.clusterStatus.role != ClusterizationStatus::Role::ClusterReplica ||
-					replState.clusterStatus.leaderId != serverId_) {
-					// Await transition
-					logTrace("%d:%d Awaiting DB role switch on remote node", serverId_, node.uid);
-					loop.sleep(kRoleSwitchStepTime);
-					// TODO: Check if cluster is configured on remote node
-					continue;
-				}
-				break;
-			}
-			if (i == kMaxRetriesOnRoleSwitchAwait) {
-				return Error(errTimeout, "%d:%d DB role switch waiting timeout", serverId_, node.uid);
-			}
-		}
 	}
 	localWg.wait();
 	if (!integralError.ok()) {
@@ -1073,9 +1105,14 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 					case UpdateRecord::Type::NodeNetworkCheck:
 					case UpdateRecord::Type::SetTagsMatcher:
 					case UpdateRecord::Type::SetTagsMatcherTx:
-					default:
-						std::abort();
+					case UpdateRecord::Type::SaveShardingConfig:
+					case UpdateRecord::Type::ApplyShardingConfig:
+					case UpdateRecord::Type::ResetOldShardingConfig:
+					case UpdateRecord::Type::ResetCandidateConfig:
+					case UpdateRecord::Type::RollbackCandidateConfig:
+						break;
 				}
+				std::abort();
 			}
 			case UpdateRecord::Type::UpdateQueryTx:
 			case UpdateRecord::Type::DeleteQueryTx: {
@@ -1143,6 +1180,44 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 				TagsMatcher tm = data->tm;
 				return UpdateApplyStatus(client.WithLSN(lsn).SetTagsMatcher(nsName, std::move(tm)), rec.type);
 			}
+			case UpdateRecord::Type::SaveShardingConfig: {
+				auto& data = std::get<std::unique_ptr<SaveNewShardingCfgRecord>>(rec.data);
+				auto err = client.WithLSN(lsn_t(0, serverId_))
+							   .ShardingControlRequest(sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::SaveCandidate>(
+								   data->config, data->sourceId));
+				return UpdateApplyStatus(std::move(err), rec.type);
+			}
+
+			case UpdateRecord::Type::ApplyShardingConfig: {
+				auto& data = std::get<std::unique_ptr<ApplyNewShardingCfgRecord>>(rec.data);
+				auto err = client.WithLSN(lsn_t(0, serverId_))
+							   .ShardingControlRequest(
+								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ApplyNew>(data->sourceId));
+				return UpdateApplyStatus(std::move(err), rec.type);
+			}
+			case UpdateRecord::Type::ResetOldShardingConfig: {
+				auto& data = std::get<std::unique_ptr<ResetShardingCfgRecord>>(rec.data);
+				auto err = client.WithLSN(lsn_t(0, serverId_))
+							   .ShardingControlRequest(
+								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetOldSharding>(data->sourceId));
+				return UpdateApplyStatus(std::move(err), rec.type);
+			}
+			case UpdateRecord::Type::ResetCandidateConfig: {
+				auto& data = std::get<std::unique_ptr<ResetShardingCfgRecord>>(rec.data);
+				auto err = client.WithLSN(lsn_t(0, serverId_))
+							   .ShardingControlRequest(
+								   sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetCandidate>(data->sourceId));
+				return UpdateApplyStatus(std::move(err), rec.type);
+			}
+			case UpdateRecord::Type::RollbackCandidateConfig: {
+				auto& data = std::get<std::unique_ptr<ResetShardingCfgRecord>>(rec.data);
+				auto err =
+					client.WithLSN(lsn_t(0, serverId_))
+						.ShardingControlRequest(
+							sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::RollbackCandidate>(data->sourceId));
+				return UpdateApplyStatus(std::move(err), rec.type);
+			}
+
 			case UpdateRecord::Type::None:
 			case UpdateRecord::Type::EmptyUpdate:
 			case UpdateRecord::Type::ResyncOnUpdatesDrop:

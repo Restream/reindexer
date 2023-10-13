@@ -15,7 +15,7 @@ class FieldsSet;
 class VariantArray;
 class key_string;
 struct p_string;
-struct Point;
+class Point;
 class Uuid;
 
 enum class WithString : bool { No = false, Yes = true };
@@ -32,8 +32,10 @@ public:
 	explicit Variant(const char *v);
 	explicit Variant(p_string v, bool enableHold = true);
 	explicit Variant(const std::string &v);
+	explicit Variant(std::string &&v);
 	explicit Variant(std::string_view v);
 	explicit Variant(const key_string &v);
+	explicit Variant(key_string &&v);
 	explicit Variant(const PayloadValue &v);
 	explicit Variant(PayloadValue &&v);
 	explicit Variant(const VariantArray &values);
@@ -126,9 +128,8 @@ public:
 	KeyValueType Type() const noexcept {
 		if (isUuid()) {
 			return KeyValueType::Uuid{};
-		} else {
-			return variant_.type;
 		}
+		return variant_.type;
 	}
 
 	Variant &convert(KeyValueType type, const PayloadType * = nullptr, const FieldsSet * = nullptr) &;
@@ -229,7 +230,14 @@ public:
 	}
 	explicit VariantArray(Point) noexcept;
 	explicit operator Point() const;
-	void MarkArray() noexcept { isArrayValue = true; }
+	VariantArray &MarkArray(bool v = true) &noexcept {
+		isArrayValue = v;
+		return *this;
+	}
+	VariantArray &&MarkArray(bool v = true) &&noexcept {
+		isArrayValue = v;
+		return std::move(*this);
+	}
 	void MarkObject() noexcept { isObjectValue = true; }
 	using h_vector<Variant, 2>::h_vector;
 	using h_vector<Variant, 2>::operator==;
@@ -253,6 +261,11 @@ public:
 	template <typename... Ts>
 	static VariantArray Create(Ts &&...vs) {
 		return VariantArray{Variant{std::forward<Ts>(vs)}...};
+	}
+	void Clear() noexcept {
+		clear<false>();
+		isArrayValue = false;
+		isObjectValue = false;
 	}
 
 private:

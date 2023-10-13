@@ -15,7 +15,7 @@ class UpdateEntry;
 using EqualPosition_t = h_vector<std::string, 2>;
 class SQLParser {
 public:
-	explicit SQLParser(Query &q);
+	explicit SQLParser(Query &q) noexcept : query_(q) {}
 
 	/// Parses pure sql select query and initializes Query object data members as a result.
 	/// @param q - sql query.

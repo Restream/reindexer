@@ -16,7 +16,7 @@ class BaseFunctionCtx;
 
 class FuncNone {
 public:
-	bool Process(ItemRef &, PayloadType &, const SelectFuncStruct &, std::vector<key_string> &) { return false; }
+	bool Process(ItemRef &, PayloadType &, const SelectFuncStruct &, std::vector<key_string> &) noexcept { return false; }
 };
 
 template <typename VariantType, typename T, std::size_t index = 0>
@@ -53,13 +53,10 @@ struct SelectFuncStruct {
 
 class SelectFuncParser {
 public:
-	SelectFuncParser() {}
-	~SelectFuncParser() {}
-
 	SelectFuncStruct &Parse(const std::string &query);
-	SelectFuncStruct &ParseFunction(tokenizer &parser, bool partOfExpression, token tok = token());
-	static bool IsFunction(std::string_view val);
-	static bool IsFunction(const VariantArray &val);
+	SelectFuncStruct &ParseFunction(tokenizer &parser, bool partOfExpression, token &tok);
+	static bool IsFunction(std::string_view val) noexcept;
+	static bool IsFunction(const VariantArray &val) noexcept;
 
 protected:
 	struct Args {

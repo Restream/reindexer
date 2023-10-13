@@ -75,6 +75,12 @@ public:
 	Error RollBackTransaction(Transaction &tr, const InternalRdxContext &ctx);
 	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const InternalRdxContext &ctx);
 
+	[[nodiscard]] Error SaveNewShardingConfig(std::string_view config, int64_t sourceId, const InternalRdxContext &ctx) noexcept;
+	[[nodiscard]] Error ResetOldShardingConfig(int64_t sourceId, const InternalRdxContext &ctx) noexcept;
+	[[nodiscard]] Error ResetShardingConfigCandidate(int64_t sourceId, const InternalRdxContext &ctx) noexcept;
+	[[nodiscard]] Error RollbackShardingConfigCandidate(int64_t sourceId, const InternalRdxContext &ctx) noexcept;
+	[[nodiscard]] Error ApplyNewShardingConfig(int64_t sourceId, const InternalRdxContext &ctx) noexcept;
+
 private:
 	friend class QueryResults;
 	friend class Transaction;
@@ -136,6 +142,11 @@ private:
 		DbCmdModifyTx,
 		DbCmdGetReplState,
 		DbCmdSetTxTagsMatcher,
+		DbCmdSaveNewShardingCfg,
+		DbCmdResetOldShardingCfg,
+		DbCmdResetConfigCandidate,
+		DbCmdRollbackConfigCandidate,
+		DbCmdApplyNewShardingCfg,
 	};
 
 	template <typename T>
@@ -266,7 +277,7 @@ private:
 					return R(Error(errNetwork, "Request for invalid connection (probably this connection was broken and invalidated)"));
 				}
 			}
-			return R(Error(errTerminated, "Client is not connected"));
+			return R(Error(errTerminated, "Client is not connected: %s", err.what()));
 		}
 		if constexpr (std::is_same_v<R, Error>) {
 			DatabaseCommandData<R, Args...> cmd(c, ctx, std::forward<Args>(args)...);

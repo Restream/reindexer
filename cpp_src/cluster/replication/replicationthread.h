@@ -173,6 +173,7 @@ private:
 																 bool currentlyOnline, const UpdateRecord &rec) noexcept;
 
 	Error syncNamespace(Node &node, const std::string &nsName, const ReplicationStateV2 &followerState);
+	[[nodiscard]] Error syncShardingConfig(Node &node) noexcept;
 	UpdateApplyStatus nodeUpdatesHandlingLoop(Node &node) noexcept;
 	bool handleUpdatesWithError(Node &node, const Error &err);
 	Error checkIfReplicationAllowed(Node &node, LogLevel &logLevel);

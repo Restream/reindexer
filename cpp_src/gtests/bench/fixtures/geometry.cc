@@ -118,7 +118,7 @@ reindexer::Item Geometry::MakeItem(benchmark::State& state) {
 	reindexer::JsonBuilder bld(wrSer_);
 	bld.Put("id", id_++);
 	const reindexer::Point point = randPoint(kRange);
-	double coords[]{point.x, point.y};
+	double coords[]{point.X(), point.Y()};
 	bld.Array("point", reindexer::span<double>(coords, 2));
 	bld.End();
 	const auto err = item.FromJSON(wrSer_.Slice());

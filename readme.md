@@ -84,7 +84,7 @@ Storages are compatible between those versions, hovewer, replication configs are
     - [.NET](#.net)
 - [Limitations and known issues](#limitations-and-known-issues)
 - [Getting help](#getting-help)
-- [References](#references]
+- [References](#references)
 
 ## Features
 
@@ -97,7 +97,7 @@ Key features:
 - Composite indices
 - Join operations
 - Full-text search
-- Up to 64 indices for one namespace
+- Up to 256 indexes (255 user's index + 1 internal index) for each namespace
 - ORM-like query interface
 - SQL queries
 
@@ -411,7 +411,7 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
   - `text` – full text search index. Usage details of full text search is described [here](fulltext.md)
   - `-` – column index. Can't perform fast select because it's implemented with full-scan technic. Has the smallest memory overhead.
   - `ttl` - TTL index that works only with int64 fields. These indexes are quite convenient for representation of date fields (stored as UNIX timestamps) that expire after specified amount of seconds.
-  - `rtree` - available only DWITHIN match. Acceptable only for `[2]float64` field type. For details see [geometry subsection](#geometry).
+  - `rtree` - available only DWITHIN match. Acceptable only for `[2]float64` (or `reindexer.Point`) field type. For details see [geometry subsection](#geometry).
 - `opts` – additional index options:
   - `pk` – field is part of a primary key. Struct must have at least 1 field tagged with `pk`
   - `composite` – create composite index. The field type must be an empty struct: `struct{}`.
@@ -481,18 +481,18 @@ type Person struct {
 }
 
 type City struct {
-	Id                 int        `reindex:"id"`
-	NumberOfPopulation int        `reindex:"population"`
-	Center             [2]float64 `reindex:"center,rtree,linear"`
+	Id                 int               `reindex:"id"`
+	NumberOfPopulation int               `reindex:"population"`
+	Center             reindexer.Point `reindex:"center,rtree,linear"`
 }
 
 type Actor struct {
-	ID          int        `reindex:"id"`
-	PersonData  Person     `reindex:"person"`
-	Price       int        `reindex:"price"`
-	Description string     `reindex:"description,text"`
-	BirthPlace  int        `reindex:"birth_place_id"`
-	Location    [2]float64 `reindex:"location,rtree,greene"`
+	ID          int               `reindex:"id"`
+	PersonData  Person            `reindex:"person"`
+	Price       int               `reindex:"price"`
+	Description string            `reindex:"description,text"`
+	BirthPlace  int               `reindex:"birth_place_id"`
+	Location    reindexer.Point `reindex:"location,rtree,greene"`
 }
 ....
 
@@ -515,8 +515,8 @@ query = db.Query("actors").Where("description", reindexer.EQ, "ququ").
 // Sort by geometry distance
 query = db.Query("actors").
     Join(db.Query("cities")).On("birth_place_id", reindexer.EQ, "id").
-    Sort("ST_Distance(cities.center, ST_GeomFromText('point(1 -3)'))", true).
-    Sort("ST_Distance(location, cities.center)", true)
+    SortStPointDistance(cities.center, reindexer.Point{1.0, -3.0}, true).
+    SortStFieldDistance("location", "cities.center", true)
 ....
 // In SQL query:
 iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY person.name ASC")
@@ -524,6 +524,8 @@ iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY person.name ASC")
 iterator := db.ExecSQL ("SELECT * FROM actors WHERE description = 'ququ' ORDER BY 'rank() + id / 100' DESC")
 ....
 iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY 'ST_Distance(location, ST_GeomFromText(\'point(1 -3)\'))' ASC")
+....
+iterator := db.ExecSQL ("SELECT * FROM actors ORDER BY 'ST_Distance(location, cities.center)' ASC")
 ```
 
 It is also possible to set a custom sort order like this
@@ -972,10 +974,26 @@ For make query to the composite index, pass []interface{} to `.WhereComposite` f
 	query := db.Query("items").WhereComposite("rating+year", reindexer.EQ,[]interface{}{5,2010})
 ```
 
+All the fields in regular (non-fulltext) composite index must be indexed. I.e. to be able to create composite index `rating+year`, it is nessesary to create some kind of indexes for both `raiting` and `year` first:
+
+```go
+type Item struct {
+	ID     int64 `reindex:"id,,pk"`
+	Rating int   `reindex:"rating,-"` // this field must be indexed (using index type '-' in this example)
+	Year   int   `reindex:"year"`     // this field must be indexed (using index type 'hash' in this example)
+	_ struct{} `reindex:"rating+year,tree,composite"`
+}
+```
+
 ### Aggregations
 
-Reindexer allows to retrieve aggregated results. Currently Average, Sum, Minimum, Maximum Facet and Distinct aggregations are supported.
+Reindexer allows to retrieve aggregated results. Currently Count, CountCached, Average, Sum, Minimum, Maximum, Facet and
+Distinct
+aggregations are supported.
 
+- `Count` - get total number of documents that meet the querie's conditions
+- `CountCached` - get total number of documents that meet the querie's conditions. Result value will be cached and may
+  be reused by the other queries with CountCached aggregation
 - `AggregateMax` - get maximum field value
 - `AggregateMin` - get minimum field value
 - `AggregateSum` - get sum field value
@@ -983,11 +1001,19 @@ Reindexer allows to retrieve aggregated results. Currently Average, Sum, Minimum
 - `AggregateFacet` - get fields facet value
 - `Distinct` - get list of unique values of the field
 
-In order to support aggregation, `Query` has methods `AggregateAvg`, `AggregateSum`, `AggregateMin`, `AggregateMax`, `AggregateFacet` and `Distinct` those should be called before the `Query` execution: this will ask reindexer to calculate data aggregations.
-Aggregation Facet is applicable to multiple data columns and the result of that could be sorted by any data column or 'count' and cutted off by offset and limit.
-In order to support this functionality method `AggregateFacet` returns `AggregationFacetRequest` which has methods `Sort`, `Limit` and `Offset`.
+In order to support aggregation, `Query` has methods `AggregateAvg`, `AggregateSum`, `AggregateMin`, `AggregateMax`
+, `AggregateFacet` and `Distinct` those should be called before the `Query` execution: this will ask reindexer to
+calculate data aggregations.
+Aggregation Facet is applicable to multiple data columns and the result of that could be sorted by any data column or '
+count' and cutted off by offset and limit.
+In order to support this functionality method `AggregateFacet` returns `AggregationFacetRequest` which has
+methods `Sort`, `Limit` and `Offset`.
 
-To get aggregation results, `Iterator` has method `AggResults`: it is available after query execution and returns slice of results.
+Queries with MERGE will apply aggregations from the main query to all the merged subqueries. Subqueries can not have
+their own aggregations. Available aggregations for MERGE-queries are: Count, CountCached, Sum, Min and Max.
+
+To get aggregation results, `Iterator` has method `AggResults`: it is available after query execution and returns slice
+of results.
 
 Example code for aggregate `items` by `price` and `name`
 
@@ -1250,7 +1276,7 @@ to OpenNamespace. e.g.
 
 ### Geometry
 
-The only supported geometry data type is 2D point, which implemented in Golang as `[2]float64`.
+The only supported geometry data type is 2D point, which implemented in Golang as `[2]float64` (`reindexer.Point`).
 
 In SQL, a point can be created as `ST_GeomFromText('point(1 -3)')`.
 
@@ -1263,12 +1289,12 @@ RTree index can be created for points. To do so, `rtree` and `linear`, `quadrati
 
 ```go
 type Item struct {
-	id              int        `reindex:"id,,pk"`
-	pointIndexed    [2]float64 `reindex:"point_indexed,rtree,linear"`
-	pointNonIndexed [2]float64 `json:"point_non_indexed"`
+	id              int               `reindex:"id,,pk"`
+	pointIndexed    reindexer.Point `reindex:"point_indexed,rtree,linear"`
+	pointNonIndexed reindexer.Point `json:"point_non_indexed"`
 }
 
-query1 := db.Query("items").DWithin("point_indexed", [2]float64{-1.0, 1.0}, 4.0)
+query1 := db.Query("items").DWithin("point_indexed", reindexer.Point{-1.0, 1.0}, 4.0)
 ```
 
 ```SQL

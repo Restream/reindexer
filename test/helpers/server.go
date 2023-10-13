@@ -26,14 +26,13 @@ const (
 var httpCl = http.DefaultClient
 
 type TestServer struct {
-	T             *testing.T
-	RpcPort       string
-	HttpPort      string
-	DbName        string
-	db            *reindexer.Reindexer
-	proc          *exec.Cmd
-	SrvType       string
-	EnableCluster bool
+	T        *testing.T
+	RpcPort  string
+	HttpPort string
+	DbName   string
+	db       *reindexer.Reindexer
+	proc     *exec.Cmd
+	SrvType  string
 }
 
 func (srv *TestServer) GetDSN() string {
@@ -60,7 +59,6 @@ func (srv *TestServer) Run() error {
 	cfg := config.DefaultServerConfig()
 	cfg.Net.RPCAddr = "127.0.0.1:" + srv.RpcPort
 	cfg.Net.HTTPAddr = "127.0.0.1:" + srv.HttpPort
-	cfg.Net.RAFTCluster = srv.EnableCluster
 	cfg.Storage.Path = "/tmp/reindex_" + srv.RpcPort
 	cfg.Logger.LogLevel = "error"
 	cfg.Logger.ServerLog = "/tmp/reindex_" + srv.RpcPort + "/server.log"
@@ -87,9 +85,6 @@ func (srv *TestServer) Run() error {
 		}
 
 		args := []string{"--config=/tmp/reindex_cluster_" + srv.RpcPort + ".conf"}
-		if srv.EnableCluster {
-			args = append(args, "--enable-cluster")
-		}
 		cmd := exec.Command("../build/cpp_src/cmd/reindexer_server/reindexer_server", args...)
 		if err := cmd.Start(); err != nil {
 			require.NoError(srv.T, err)
@@ -179,7 +174,6 @@ func (srv *TestServer) Stop() error {
 func CreateCluster(t *testing.T, servers []*TestServer, nsName string, nsItem interface{}) {
 	clusterConf := DefaultClusterConf()
 	for i := range servers {
-		servers[i].EnableCluster = true
 		clusterConf.Nodes = append(clusterConf.Nodes, ClusterNodeConfig{
 			DSN:      fmt.Sprintf("cproto://127.0.0.1:%s/%s", servers[i].RpcPort, servers[i].GetDbName()),
 			ServerID: i + 1,

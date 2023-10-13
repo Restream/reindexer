@@ -14,10 +14,12 @@ import (
 )
 
 type TestUuidStruct struct {
-	ID        int      `reindex:"id,,pk"`
-	Uuid      string   `reindex:"uuid,hash,uuid" json:"uuid"`
-	UuidArray []string `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
-	_         struct{} `reindex:"id+uuid,,composite"`
+	ID             int      `reindex:"id,,pk"`
+	Uuid           string   `reindex:"uuid,hash,uuid" json:"uuid"`
+	UuidStore      string   `reindex:"uuid_store,-,uuid" json:"uuid_store"`
+	UuidArray      []string `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
+	UuidStoreArray []string `reindex:"uuid_store_array,-,uuid" json:"uuid_store_array"`
+	_              struct{} `reindex:"id+uuid,,composite"`
 }
 
 type TestIntItemWithUuidTagStruct struct {
@@ -86,10 +88,11 @@ func checkExplainSelect(t *testing.T, it reindexer.Iterator, item interface{}) {
 	require.NoError(t, err)
 	checkExplain(t, explainRes.Selectors, []expectedExplain{
 		{
-			Field:   "uuid",
-			Method:  "index",
-			Keys:    1,
-			Matched: 1,
+			Field:     "uuid",
+			FieldType: "indexed",
+			Method:    "index",
+			Keys:      1,
+			Matched:   1,
 		},
 	}, "")
 }
@@ -115,39 +118,98 @@ func TestUuidItemCreate(t *testing.T) {
 
 	t.Run("add item with valid uuid", func(t *testing.T) {
 		item := TestUuidStruct{
-			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randUuidArray(rand.Intn(5)),
+			ID: rand.Intn(100), Uuid: randUuid(), UuidStore: randUuid(),
+			UuidArray: randUuidArray(rand.Intn(5)), UuidStoreArray: randUuidArray(rand.Intn(5)),
 		}
 		err := DB.Upsert(ns, item)
 		require.NoError(t, err)
 	})
 
-	t.Run("add item with invalid uuid", func(t *testing.T) {
-		item := TestUuidStruct{
+	t.Run("add item with invalid uuid: random string", func(t *testing.T) {
+		item1 := TestUuidStruct{
 			ID: rand.Intn(100), Uuid: randString(), UuidArray: randUuidArray(rand.Intn(5)),
 		}
+		item2 := TestUuidStruct{
+			ID: rand.Intn(100), UuidStore: randString(), UuidStoreArray: randUuidArray(rand.Intn(5)),
+		}
+		err1 := DB.Upsert(ns, item1)
+		require.Error(t, err1)
+		err2 := DB.Upsert(ns, item2)
+		require.Error(t, err2)
+		errExp := "UUID should consist of 32 hexadecimal digits"
+		assert.Contains(t, err1.Error(), errExp)
+		assert.Contains(t, err2.Error(), errExp)
+	})
+
+	t.Run("add item with invalid uuid: invalid char", func(t *testing.T) {
+		item := TestUuidStruct{
+			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randUuidArray(rand.Intn(5)),
+		}
+		invalidUuid := []byte(item.Uuid)
+		invalidUuid[5] = 'x'
+		item.Uuid = string(invalidUuid)
 		err := DB.Upsert(ns, item)
 		require.Error(t, err)
 		errExp := "UUID cannot contain char"
 		assert.Contains(t, err.Error(), errExp)
 	})
 
-	t.Run("add item with invalid array uuid", func(t *testing.T) {
+	t.Run("add item with invalid uuid: invalid format", func(t *testing.T) {
 		item := TestUuidStruct{
+			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randUuidArray(rand.Intn(5)),
+		}
+		invalidUuid := []byte(item.Uuid)
+		invalidUuid[8] = invalidUuid[7]
+		invalidUuid[7] = '-'
+		item.Uuid = string(invalidUuid)
+		err := DB.Upsert(ns, item)
+		require.Error(t, err)
+		errExp := "Invalid UUID format"
+		assert.Contains(t, err.Error(), errExp)
+	})
+
+	t.Run("add item with invalid array uuid: random strings", func(t *testing.T) {
+		item1 := TestUuidStruct{
 			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randStringArr(rand.Intn(5) + 1),
 		}
+		item2 := TestUuidStruct{
+			ID: rand.Intn(100), UuidStore: randUuid(), UuidStoreArray: randStringArr(rand.Intn(5) + 1),
+		}
+		err1 := DB.Upsert(ns, item1)
+		require.Error(t, err1)
+		err2 := DB.Upsert(ns, item2)
+		require.Error(t, err2)
+		errExp := "UUID should consist of 32 hexadecimal digits"
+		assert.Contains(t, err1.Error(), errExp)
+		assert.Contains(t, err2.Error(), errExp)
+	})
+
+	t.Run("add item with invalid array uuid: invalid char", func(t *testing.T) {
+		item := TestUuidStruct{
+			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randUuidArray(rand.Intn(5) + 1),
+		}
+		invalidUuid := []byte(item.UuidArray[0])
+		invalidUuid[15] = '%'
+		item.UuidArray[0] = string(invalidUuid)
 		err := DB.Upsert(ns, item)
 		require.Error(t, err)
 		errExp := "UUID cannot contain char"
 		assert.Contains(t, err.Error(), errExp)
 	})
 
-	t.Run("add item with invalid uuid and array uuid", func(t *testing.T) {
+	t.Run("add item with invalid uuid and array uuid: invalid format", func(t *testing.T) {
 		item := TestUuidStruct{
-			ID: rand.Intn(100), Uuid: randString(), UuidArray: randStringArr(rand.Intn(5) + 1),
+			ID: rand.Intn(100), Uuid: randUuid(), UuidArray: randUuidArray(rand.Intn(5) + 1),
 		}
+		invalidUuid := []byte(item.Uuid)
+		invalidUuid[0] = '-'
+		item.Uuid = string(invalidUuid)
+		invalidUuid = []byte(item.UuidArray[0])
+		invalidUuid[30] = '-'
+		item.UuidArray[0] = string(invalidUuid)
 		err := DB.Upsert(ns, item)
 		require.Error(t, err)
-		errExp := "UUID cannot contain char"
+		errExp := "Invalid UUID format"
 		assert.Contains(t, err.Error(), errExp)
 	})
 }
@@ -200,6 +262,36 @@ func TestNotStringItemsWithUuidTag(t *testing.T) {
 	})
 }
 
+func upsertUniqueTestUuidStructNoIdx(t *testing.T, rx *reindexer.Reindexer, ns string, ID int, uuids *map[string]bool) *TestUuidStructNoIdx {
+	var item TestUuidStructNoIdx
+	for {
+		uuid := randUuid()
+		if _, ok := (*uuids)[uuid]; !ok {
+			(*uuids)[uuid] = true
+			item = TestUuidStructNoIdx{ID: ID, Uuid: uuid}
+			err := rx.Upsert(ns, item)
+			require.NoError(t, err)
+			break
+		}
+	}
+	return &item
+}
+
+func upsertUniqueTestUuidStructNoTag(t *testing.T, rx *reindexer.Reindexer, ns string, ID int, uuids *map[string]bool) *TestUuidStructNoTag {
+	var item TestUuidStructNoTag
+	for {
+		uuid := randUuid()
+		if _, ok := (*uuids)[uuid]; !ok {
+			(*uuids)[uuid] = true
+			item = TestUuidStructNoTag{ID: ID, Uuid: uuid}
+			err := rx.Upsert(ns, item)
+			require.NoError(t, err)
+			break
+		}
+	}
+	return &item
+}
+
 func TestUuidClientCproto(t *testing.T) {
 
 	ns := "test_uuid_cproto_connect"
@@ -209,13 +301,11 @@ func TestUuidClientCproto(t *testing.T) {
 		defer rx1.Close()
 		require.NoError(t, rx1.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &TestUuidStructNoIdx{}))
 
+		uuids := map[string]bool{}
 		for i := 0; i < 50; i++ {
-			testItem := TestUuidStructNoIdx{ID: i, Uuid: randUuid()}
-			err := rx1.Upsert(ns, &testItem)
-			require.NoError(t, err)
+			upsertUniqueTestUuidStructNoIdx(t, rx1, ns, i, &uuids)
 		}
-		item := TestUuidStructNoIdx{ID: 50, Uuid: randUuid()}
-		rx1.Upsert(ns, item)
+		item := upsertUniqueTestUuidStructNoIdx(t, rx1, ns, 50, &uuids)
 
 		rx2 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
 		defer rx2.Close()
@@ -225,7 +315,7 @@ func TestUuidClientCproto(t *testing.T) {
 		defer it1.Close()
 		assert.Equal(t, 1, it1.Count())
 		for it1.Next() {
-			assert.EqualValues(t, it1.Object(), &item)
+			assert.EqualValues(t, it1.Object(), item)
 		}
 
 		rx3 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
@@ -242,17 +332,16 @@ func TestUuidClientCproto(t *testing.T) {
 		defer it2.Close()
 		assert.Equal(t, it2.Count(), 1)
 		for it2.Next() {
-			assert.EqualValues(t, it2.Object(), &item)
+			assert.EqualValues(t, it2.Object(), item)
 		}
 
 		// add new item
-		item = TestUuidStructNoIdx{ID: 51, Uuid: randUuid()}
-		rx3.Upsert(ns, item)
+		item = upsertUniqueTestUuidStructNoIdx(t, rx3, ns, 51, &uuids)
 
 		// make select with new item, uuid index must be used
 		it3 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).Explain().MustExec()
 		defer it3.Close()
-		checkExplainSelect(t, *it3, &item)
+		checkExplainSelect(t, *it3, item)
 	})
 
 	t.Run("test update index from string to uuid", func(t *testing.T) {
@@ -260,13 +349,11 @@ func TestUuidClientCproto(t *testing.T) {
 		defer rx1.Close()
 		require.NoError(t, rx1.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), &TestUuidStructNoTag{}))
 
+		uuids := map[string]bool{}
 		for i := 0; i < 50; i++ {
-			testItem := TestUuidStructNoTag{ID: i, Uuid: randUuid()}
-			err := rx1.Upsert(ns, &testItem)
-			require.NoError(t, err)
+			upsertUniqueTestUuidStructNoTag(t, rx1, ns, i, &uuids)
 		}
-		item := TestUuidStructNoTag{ID: 50, Uuid: randUuid()}
-		rx1.Upsert(ns, item)
+		item := upsertUniqueTestUuidStructNoTag(t, rx1, ns, 50, &uuids)
 
 		rx2 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
 		defer rx2.Close()
@@ -276,7 +363,7 @@ func TestUuidClientCproto(t *testing.T) {
 		defer it1.Close()
 		assert.Equal(t, 1, it1.Count())
 		for it1.Next() {
-			assert.EqualValues(t, it1.Object(), &item)
+			assert.EqualValues(t, it1.Object(), item)
 		}
 
 		rx3 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
@@ -291,16 +378,15 @@ func TestUuidClientCproto(t *testing.T) {
 		// make select with same filter
 		it2 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).Explain().MustExec()
 		defer it2.Close()
-		checkExplainSelect(t, *it2, &item)
+		checkExplainSelect(t, *it2, item)
 
 		// add new item
-		item = TestUuidStructNoTag{ID: 51, Uuid: randUuid()}
-		rx3.Upsert(ns, item)
+		item = upsertUniqueTestUuidStructNoTag(t, rx1, ns, 51, &uuids)
 
 		// make select with new item, uuid index must be used
 		it3 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).Explain().MustExec()
 		defer it3.Close()
-		checkExplainSelect(t, *it3, &item)
+		checkExplainSelect(t, *it3, item)
 	})
 }
 
@@ -324,15 +410,11 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 		err = rx2.OpenNamespace(ns, nsOption, TestUuidStructNoIdx{})
 		require.NoError(t, err)
 
-		helpers.WaitForSyncWithMaster(t, rx1, rx2)
+		uuids := map[string]bool{}
 		for i := 0; i < 50; i++ {
-			testItem := TestUuidStructNoIdx{ID: i, Uuid: randUuid()}
-			err := rx1.Upsert(ns, &testItem)
-			require.NoError(t, err)
+			upsertUniqueTestUuidStructNoIdx(t, rx1, ns, i, &uuids)
 		}
-		item := TestUuidStructNoIdx{ID: 50, Uuid: randUuid()}
-		err = rx1.Upsert(ns, item)
-		require.NoError(t, err)
+		item := upsertUniqueTestUuidStructNoIdx(t, rx1, ns, 50, &uuids)
 		helpers.WaitForSyncWithMaster(t, rx1, rx2)
 
 		it1 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).MustExec()
@@ -340,8 +422,7 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 		require.NoError(t, it1.Error())
 		assert.Equal(t, 1, it1.Count())
 		for it1.Next() {
-			require.NoError(t, it1.Error())
-			assert.EqualValues(t, it1.Object(), &item)
+			assert.EqualValues(t, it1.Object(), item)
 		}
 
 		rx3 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
@@ -360,21 +441,18 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 		require.NoError(t, it2.Error())
 		assert.Equal(t, it2.Count(), 1)
 		for it2.Next() {
-			require.NoError(t, it2.Error())
-			assert.EqualValues(t, it2.Object(), &item)
+			assert.EqualValues(t, it2.Object(), item)
 		}
 
 		// add new item
-		item = TestUuidStructNoIdx{ID: 51, Uuid: randUuid()}
-		err = rx3.Upsert(ns, item)
-		require.NoError(t, err)
+		item = upsertUniqueTestUuidStructNoIdx(t, rx3, ns, 51, &uuids)
 		helpers.WaitForSyncWithMaster(t, rx1, rx2)
 
 		// make select with new item, uuid index must be used
 		it3 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).Explain().MustExec()
 		require.NoError(t, it3.Error())
 		defer it3.Close()
-		checkExplainSelect(t, *it3, &item)
+		checkExplainSelect(t, *it3, item)
 	})
 
 	t.Run("test update index from string to uuid", func(t *testing.T) {
@@ -393,14 +471,11 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 		err = rx2.OpenNamespace(ns, nsOption, TestUuidStructNoTag{})
 		require.NoError(t, err)
 
+		uuids := map[string]bool{}
 		for i := 0; i < 50; i++ {
-			testItem := TestUuidStructNoTag{ID: i, Uuid: randUuid()}
-			err := rx1.Upsert(ns, &testItem)
-			require.NoError(t, err)
+			upsertUniqueTestUuidStructNoTag(t, rx1, ns, i, &uuids)
 		}
-		item := TestUuidStructNoTag{ID: 50, Uuid: randUuid()}
-		err = rx1.Upsert(ns, item)
-		require.NoError(t, err)
+		item := upsertUniqueTestUuidStructNoTag(t, rx1, ns, 50, &uuids)
 		helpers.WaitForSyncWithMaster(t, rx1, rx2)
 
 		it1 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).MustExec()
@@ -408,8 +483,7 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 		require.NoError(t, it1.Error())
 		assert.Equal(t, 1, it1.Count())
 		for it1.Next() {
-			require.NoError(t, it1.Error())
-			assert.EqualValues(t, it1.Object(), &item)
+			assert.EqualValues(t, it1.Object(), item)
 		}
 
 		rx3 := reindexer.NewReindex("cproto://127.0.0.1:26634/uudb")
@@ -426,17 +500,15 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 		it2 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).Explain().MustExec()
 		defer it2.Close()
 		require.NoError(t, it2.Error())
-		checkExplainSelect(t, *it2, &item)
+		checkExplainSelect(t, *it2, item)
 
 		// add new item
-		item = TestUuidStructNoTag{ID: 51, Uuid: randUuid()}
-		err = rx3.Upsert(ns, item)
-		require.NoError(t, err)
+		upsertUniqueTestUuidStructNoTag(t, rx3, ns, 51, &uuids)
 		helpers.WaitForSyncWithMaster(t, rx1, rx2)
 
 		it3 := rx2.Query(ns).Where("uuid", reindexer.EQ, item.Uuid).Explain().MustExec()
 		defer it3.Close()
 		require.NoError(t, it3.Error())
-		checkExplainSelect(t, *it3, &item)
+		checkExplainSelect(t, *it3, item)
 	})
 }

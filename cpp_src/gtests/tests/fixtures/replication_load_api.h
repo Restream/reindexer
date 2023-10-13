@@ -47,15 +47,15 @@ public:
 		for (size_t i = 0; i < count; ++i) {
 			BaseApi::ItemType item = api.NewItem("some");
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			Error err = item.FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
-												   api.RandString(), randStrUuid()));
+			Error err = item.Unsafe().FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
+															api.RandString(), randStrUuid()));
 			ASSERT_TRUE(err.ok()) << err.what();
 			api.Upsert("some", item);
 
 			item = api.NewItem("some1");
 			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-			err = item.FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
-											 api.RandString(), randStrUuid()));
+			err = item.Unsafe().FromJSON(fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", counter_++, rand(),
+													  api.RandString(), randStrUuid()));
 			ASSERT_TRUE(err.ok()) << err.what();
 			api.Upsert("some1", item);
 		}

@@ -7,17 +7,16 @@
 namespace reindexer {
 
 struct FtIdSetCacheVal {
-	FtIdSetCacheVal() : ids(make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>()) {}
-	FtIdSetCacheVal(IdSet::Ptr i) noexcept : ids(std::move(i)) {}
-	FtIdSetCacheVal(IdSet::Ptr i, FtCtx::Data::Ptr c) noexcept : ids(std::move(i)), ctx(std::move(c)) {}
+	FtIdSetCacheVal() = default;
+	FtIdSetCacheVal(IdSet::Ptr&& i) noexcept : ids(std::move(i)) {}
+	FtIdSetCacheVal(IdSet::Ptr&& i, FtCtx::Data::Ptr&& c) noexcept : ids(std::move(i)), ctx(std::move(c)) {}
 
-	size_t Size() const noexcept { return ids ? sizeof(*ids.get()) + ids->heap_size() : 0; }
+	size_t Size() const noexcept { return ids ? (sizeof(*ids.get()) + ids->heap_size()) : 0; }
 
 	IdSet::Ptr ids;
 	FtCtx::Data::Ptr ctx;
 };
 
 class FtIdSetCache : public LRUCache<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key> {};
-class PreselectedFtIdSetCache : public LRUCache<QueryCacheKey, FtIdSetCacheVal, HashQueryCacheKey, EqQueryCacheKey> {};
 
 }  // namespace reindexer

@@ -99,7 +99,7 @@ WALRecord::WALRecord(span<uint8_t> packed) {
 			break;
 		case WalItemModify:
 			itemModify.itemCJson = ser.GetVString();
-			itemModify.modifyMode = ser.GetVarUint();
+			itemModify.modifyMode = ItemModifyMode(ser.GetVarUint());
 			itemModify.tmVersion = ser.GetVarUint();
 			break;
 		case WalRawItem:
@@ -238,7 +238,7 @@ void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::st
 			jb.Put("value", putMeta.value);
 			return;
 		case WalItemModify:
-			jb.Put("mode", itemModify.modifyMode);
+			jb.Put("mode", uint64_t(itemModify.modifyMode));
 			jb.Raw("item", cjsonViewer(itemModify.itemCJson));
 			return;
 		case WalSetSchema:

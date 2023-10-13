@@ -3,143 +3,224 @@
 #include "core/payload/payloadiface.h"
 #include "core/selectfunc/functionexecutor.h"
 #include "core/selectfunc/selectfunc.h"
+#include "double-conversion/double-conversion.h"
 #include "estl/tokenizer.h"
 
 namespace reindexer {
 
 using namespace std::string_view_literals;
 
-const char* kWrongFieldTypeError = "Only integral type non-array fields are supported in arithmetical expressions: %s";
-
-ExpressionEvaluator::ExpressionEvaluator(const PayloadType& type, TagsMatcher& tagsMatcher, FunctionExecutor& func)
-	: type_(type), tagsMatcher_(tagsMatcher), functionExecutor_(func) {}
+constexpr char kWrongFieldTypeError[] = "Only integral type non-array fields are supported in arithmetical expressions: %s";
+constexpr char kScalarsInConcatenationError[] = "Unable to use scalar values in the arrays concatenation expressions: %s";
 
 void ExpressionEvaluator::captureArrayContent(tokenizer& parser) {
-	token tok = parser.next_token(false);
-	for (;;) {
-		tok = parser.next_token(false);
-		if (tok.text() == "]"sv) {
-			if (arrayValues_.empty()) break;
+	arrayValues_.MarkArray();
+	token tok = parser.next_token(tokenizer::flags::no_flags);
+	if (tok.text() == "]") {
+		return;
+	}
+	for (;; tok = parser.next_token(tokenizer::flags::no_flags)) {
+		if rx_unlikely (tok.text() == "]"sv) {
 			throw Error(errParseSQL, "Expected field value, but found ']' in query, %s", parser.where());
 		}
 		arrayValues_.emplace_back(token2kv(tok, parser, false));
-		tok = parser.next_token();
-		if (tok.text() == "]"sv) break;
-		if (tok.text() != ","sv) {
+		tok = parser.next_token(tokenizer::flags::no_flags);
+		if (tok.text() == "]"sv) {
+			break;
+		}
+		if rx_unlikely (tok.text() != ","sv) {
 			throw Error(errParseSQL, "Expected ']' or ',', but found '%s' in query, %s", tok.text(), parser.where());
 		}
 	}
 }
 
-double ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValue& v, const NsContext& ctx) {
-	token tok = parser.peek_token(true, true);
-	if (tok.text() == "("sv) {
-		parser.next_token();
-		double val = performSumAndSubtracting(parser, v, ctx);
-		if (parser.next_token().text() != ")"sv) throw Error(errLogic, "')' expected in arithmetical expression");
-		return val;
-	} else if (tok.text() == "["sv) {
+void ExpressionEvaluator::throwUnexpectedTokenError(tokenizer& parser, const token& outTok) {
+	if (state_ == StateArrayConcat || parser.peek_token(tokenizer::flags::treat_sign_as_token).text() == "|"sv) {
+		throw Error(errParams, kScalarsInConcatenationError, outTok.text());
+	}
+	throw Error(errParams, kWrongFieldTypeError, outTok.text());
+}
+
+ExpressionEvaluator::PrimaryToken ExpressionEvaluator::getPrimaryToken(tokenizer& parser, const PayloadValue& v, token& outTok,
+																	   const NsContext& ctx) {
+	outTok = parser.next_token();
+	if (outTok.text() == "("sv) {
+		const double val = performSumAndSubtracting(parser, v, ctx);
+		if rx_unlikely (parser.next_token().text() != ")"sv) {
+			throw Error(errParams, "')' expected in arithmetical expression");
+		}
+		return {.value = val, .type = PrimaryToken::Type::Scalar};
+	} else if (outTok.text() == "["sv) {
 		captureArrayContent(parser);
-	} else if (tok.type == TokenNumber) {
-		char* p = nullptr;
-		parser.next_token();
-		return strtod(tok.text().data(), &p);
-	} else if (tok.type == TokenName) {
-		int field = 0;
-		VariantArray fieldValues;
-		ConstPayload pv(type_, v);
-		if (type_.FieldByName(tok.text(), field)) {
-			const auto type = type_.Field(field).Type();
-			if (type_.Field(field).IsArray()) {
-				pv.Get(field, fieldValues);
-				for (const Variant& v : fieldValues) {
-					arrayValues_.emplace_back(v);
-				}
-				parser.next_token();
-				return 0.0;
-			} else if (state_ == StateArrayConcat) {
-				VariantArray vals;
-				pv.GetByJsonPath(tok.text(), tagsMatcher_, vals, KeyValueType::Undefined{});
-				for (const Variant& v : vals) {
-					arrayValues_.emplace_back(v);
-				}
-				parser.next_token();
-				return 0.0;
-			} else {
-				return type.EvaluateOneOf(
-					[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) {
-						pv.Get(field, fieldValues);
-						if (fieldValues.empty()) throw Error(errLogic, "Calculating value of an empty field is impossible: %s", tok.text());
-						parser.next_token();
-						return fieldValues.front().As<double>();
-					},
-					[&](OneOf<KeyValueType::Bool, KeyValueType::String>) -> double {
-						throw Error(errLogic, kWrongFieldTypeError, tok.text());
-					},
-					[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null,
-							 KeyValueType::Uuid>) noexcept -> double {
-						assertrx(0);
-						abort();
-					});
-			}
-		} else {
-			pv.GetByJsonPath(tok.text(), tagsMatcher_, fieldValues, KeyValueType::Undefined{});
-			if (fieldValues.size() > 0) {
-				const auto type = fieldValues.front().Type();
-				if ((fieldValues.size() > 1) || (state_ == StateArrayConcat)) {
-					for (const Variant& v : fieldValues) {
-						arrayValues_.emplace_back(v);
-					}
-					parser.next_token();
-					return 0.0;
-				} else {
-					return type.EvaluateOneOf(
-						[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) {
-							parser.next_token();
-							return fieldValues.front().As<double>();
-						},
-						[&](OneOf<KeyValueType::String, KeyValueType::Bool, KeyValueType::Null, KeyValueType::Undefined,
-								  KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Uuid>) -> double {
-							throw Error(errLogic, kWrongFieldTypeError, tok.text());
-						});
-				}
-			} else {
-				SelectFuncStruct funcData = SelectFuncParser().ParseFunction(parser, true);
-				funcData.field = forField_;
-				return functionExecutor_.Execute(funcData, ctx).As<double>();
+		return {.value = std::nullopt, .type = PrimaryToken::Type::Array};
+	}
+	switch (outTok.type) {
+		case TokenNumber: {
+			try {
+				using double_conversion::StringToDoubleConverter;
+				static const StringToDoubleConverter converter{StringToDoubleConverter::NO_FLAGS, NAN, NAN, nullptr, nullptr};
+				int countOfCharsParsedAsDouble;
+				return {.value = converter.StringToDouble(outTok.text_.data(), outTok.text_.size(), &countOfCharsParsedAsDouble),
+						.type = PrimaryToken::Type::Scalar};
+			} catch (...) {
+				throw Error(errParams, "Unable to convert '%s' to double value", outTok.text());
 			}
 		}
-	} else {
-		throw Error(errLogic, "Only integral type non-array fields are supported in arithmetical expressions");
+		case TokenName:
+			return handleTokenName(parser, v, outTok, ctx);
+		case TokenString:
+			throwUnexpectedTokenError(parser, outTok);
+		case TokenEnd:
+		case TokenOp:
+		case TokenSymbol:
+		case TokenSign:
+			break;
 	}
-	return 0.0;
+	throw Error(errParams, "Unexpected token in expression: '%s'", outTok.text());
+}
+
+ExpressionEvaluator::PrimaryToken ExpressionEvaluator::handleTokenName(tokenizer& parser, const PayloadValue& v, token& outTok,
+																	   const NsContext& ctx) {
+	int field = 0;
+	VariantArray fieldValues;
+	ConstPayload pv(type_, v);
+	if (type_.FieldByName(outTok.text(), field)) {
+		if (type_.Field(field).IsArray()) {
+			pv.Get(field, fieldValues);
+			arrayValues_.MarkArray();
+			for (Variant& v : fieldValues) {
+				arrayValues_.emplace_back(std::move(v));
+			}
+			return (state_ == StateArrayConcat || fieldValues.size() != 1)
+					   ? PrimaryToken{.value = std::nullopt, .type = PrimaryToken::Type::Array}
+					   : type_.Field(field).Type().EvaluateOneOf(
+							 [this](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) -> PrimaryToken {
+								 return {.value = arrayValues_.back().As<double>(), .type = PrimaryToken::Type::Array};
+							 },
+							 [&, this](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid>) -> PrimaryToken {
+								 if rx_unlikely (state_ != StateArrayConcat &&
+												 parser.peek_token(tokenizer::flags::treat_sign_as_token).text() != "|"sv) {
+									 throw Error(errParams, kWrongFieldTypeError, outTok.text());
+								 }
+								 return {.value = std::nullopt, .type = PrimaryToken::Type::Array};
+							 },
+							 [](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept
+							 -> PrimaryToken {
+								 assertrx_throw(false);
+								 abort();
+							 });
+		}
+		return type_.Field(field).Type().EvaluateOneOf(
+			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) -> PrimaryToken {
+				pv.Get(field, fieldValues);
+				if rx_unlikely (fieldValues.empty()) {
+					throw Error(errParams, "Calculating value of an empty field is impossible: %s", outTok.text());
+				}
+				return {.value = fieldValues.front().As<double>(), .type = PrimaryToken::Type::Scalar};
+			},
+			[&, this](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid>) -> PrimaryToken {
+				throwUnexpectedTokenError(parser, outTok);
+			},
+			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> PrimaryToken {
+				assertrx_throw(false);
+				abort();
+			});
+	} else if rx_unlikely (outTok.text() == "true"sv || outTok.text() == "false"sv) {
+		throwUnexpectedTokenError(parser, outTok);
+	}
+
+	pv.GetByJsonPath(outTok.text(), tagsMatcher_, fieldValues, KeyValueType::Undefined{});
+
+	if (fieldValues.IsNullValue()) {
+		return {.value = std::nullopt, .type = PrimaryToken::Type::Null};
+	}
+
+	const bool isArrayField = fieldValues.IsArrayValue();
+	if (isArrayField) {
+		for (Variant& v : fieldValues) {
+			arrayValues_.emplace_back(std::move(v));
+		}
+		if ((state_ == StateArrayConcat) || (fieldValues.size() != 1)) {
+			return {.value = std::nullopt, .type = PrimaryToken::Type::Array};
+		}
+	}
+	if (fieldValues.size() == 1) {
+		const Variant* vptr = isArrayField ? &arrayValues_.back() : &fieldValues.front();
+		return vptr->Type().EvaluateOneOf(
+			[vptr, isArrayField](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double>) -> PrimaryToken {
+				return {.value = vptr->As<double>(), .type = isArrayField ? PrimaryToken::Type::Array : PrimaryToken::Type::Scalar};
+			},
+			[&, this](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Uuid>) -> PrimaryToken {
+				if (isArrayField) {
+					return {.value = std::nullopt, .type = PrimaryToken::Type::Array};
+				}
+				throwUnexpectedTokenError(parser, outTok);
+			},
+			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) -> PrimaryToken {
+				assertrx_throw(0);
+				abort();
+			});
+	} else if (parser.peek_token(tokenizer::flags::treat_sign_as_token).text() == "(") {
+		SelectFuncStruct funcData = SelectFuncParser().ParseFunction(parser, true, outTok);
+		funcData.field = std::string(forField_);
+		return {.value = functionExecutor_.Execute(funcData, ctx).As<double>(), .type = PrimaryToken::Type::Scalar};
+	}
+	return {.value = std::nullopt, .type = PrimaryToken::Type::Null};
 }
 
 double ExpressionEvaluator::performArrayConcatenation(tokenizer& parser, const PayloadValue& v, token& tok, const NsContext& ctx) {
-	double left = getPrimaryToken(parser, v, ctx);
+	token valueToken;
+	auto left = getPrimaryToken(parser, v, valueToken, ctx);
 	tok = parser.peek_token();
+	switch (left.type) {
+		case PrimaryToken::Type::Scalar:
+			if rx_unlikely (tok.text() == "|"sv) {
+				throw Error(errParams, kScalarsInConcatenationError, valueToken.text());
+			}
+			break;
+		case PrimaryToken::Type::Array:
+		case PrimaryToken::Type::Null:
+			if rx_unlikely (!left.value.has_value() && tok.text() != "|"sv) {
+				throw Error(errParams, "Unable to use array and null values outside of the arrays concatenation");
+			}
+			break;
+	}
+
 	while (tok.text() == "|"sv) {
 		parser.next_token();
 		tok = parser.next_token();
-		if (tok.text() != "|") throw Error(errLogic, "Expected '|', not %s", tok.text());
+		if rx_unlikely (tok.text() != "|") {
+			throw Error(errParams, "Expected '|', not %s", tok.text());
+		}
+		if rx_unlikely (state_ != StateArrayConcat && state_ != None) {
+			throw Error(errParams, "Unable to mix arrays concatenation and arithmetic operations. Got token: '%s'", tok.text());
+		}
 		state_ = StateArrayConcat;
-		getPrimaryToken(parser, v, ctx);
+		const auto right = getPrimaryToken(parser, v, valueToken, ctx);
+		if rx_unlikely (right.type == PrimaryToken::Type::Scalar) {
+			throw Error(errParams, kScalarsInConcatenationError, valueToken.text());
+		}
+		assertrx_throw(!right.value.has_value());
 		tok = parser.peek_token();
 	}
-	return left;
+	return left.value.has_value() ? left.value.value() : 0.0;
 }
 
 double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, const PayloadValue& v, token& tok, const NsContext& ctx) {
 	double left = performArrayConcatenation(parser, v, tok, ctx);
-	tok = parser.peek_token(true, true);
+	tok = parser.peek_token(tokenizer::flags::treat_sign_as_token);
 	while (tok.text() == "*"sv || tok.text() == "/"sv) {
+		if rx_unlikely (state_ == StateArrayConcat) {
+			throw Error(errParams, "Unable to mix arrays concatenation and arithmetic operations. Got token: '%s'", tok.text());
+		}
 		state_ = StateMultiplyAndDivide;
 		if (tok.text() == "*"sv) {
-			parser.next_token();
+			parser.next_token(tokenizer::flags::treat_sign_as_token);
 			left *= performMultiplicationAndDivision(parser, v, tok, ctx);
-		} else if (tok.text() == "/"sv) {
-			parser.next_token();
-			double val = performMultiplicationAndDivision(parser, v, tok, ctx);
+		} else {
+			// tok.text() == "/"sv
+			parser.next_token(tokenizer::flags::treat_sign_as_token);
+			const double val = performMultiplicationAndDivision(parser, v, tok, ctx);
 			if (val == 0) throw Error(errLogic, "Division by zero!");
 			left /= val;
 		}
@@ -150,35 +231,31 @@ double ExpressionEvaluator::performMultiplicationAndDivision(tokenizer& parser, 
 double ExpressionEvaluator::performSumAndSubtracting(tokenizer& parser, const PayloadValue& v, const NsContext& ctx) {
 	token tok;
 	double left = performMultiplicationAndDivision(parser, v, tok, ctx);
-	tok = parser.peek_token(true, true);
+	tok = parser.peek_token(tokenizer::flags::treat_sign_as_token);
 	while (tok.text() == "+"sv || tok.text() == "-"sv) {
+		if rx_unlikely (state_ == StateArrayConcat) {
+			throw Error(errParams, "Unable to mix arrays concatenation and arithmetic operations. Got token: '%s'", tok.text());
+		}
 		state_ = StateSumAndSubtract;
 		if (tok.text() == "+"sv) {
-			parser.next_token(true, true);
+			parser.next_token(tokenizer::flags::treat_sign_as_token);
 			left += performMultiplicationAndDivision(parser, v, tok, ctx);
-		} else if (tok.text() == "-"sv) {
-			parser.next_token(true, true);
+		} else {
+			// tok.text() == "-"sv
+			parser.next_token(tokenizer::flags::treat_sign_as_token);
 			left -= performMultiplicationAndDivision(parser, v, tok, ctx);
 		}
 	}
 	return left;
 }
 
-VariantArray ExpressionEvaluator::Evaluate(tokenizer& parser, const PayloadValue& v, std::string_view forField, const NsContext& ctx) {
-	forField_ = std::string(forField);
-	double expressionValue = performSumAndSubtracting(parser, v, ctx);
-	if (arrayValues_.empty()) {
-		return {Variant(expressionValue)};
-	} else {
-		arrayValues_.MarkArray();
-		return arrayValues_;
-	}
-}
-
 VariantArray ExpressionEvaluator::Evaluate(std::string_view expr, const PayloadValue& v, std::string_view forField, const NsContext& ctx) {
-	arrayValues_.clear();
+	arrayValues_.clear<false>();
 	tokenizer parser(expr);
-	return Evaluate(parser, v, forField, ctx);
+	forField_ = forField;
+	state_ = None;
+	const double expressionValue = performSumAndSubtracting(parser, v, ctx);
+	return (state_ == StateArrayConcat) ? std::move(arrayValues_).MarkArray() : VariantArray{Variant(expressionValue)};
 }
 
 }  // namespace reindexer

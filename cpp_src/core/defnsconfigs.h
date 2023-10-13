@@ -13,6 +13,7 @@ constexpr char kActivityStatsNamespace[] = "#activitystats";
 constexpr char kClientsStatsNamespace[] = "#clientsstats";
 constexpr char kClusterConfigNamespace[] = "#clusterconfig";
 const std::string_view kReplicationStatsNamespace = "#replicationstats";
+constexpr char kNsNameField[] = "name";
 
 const std::vector<std::string> kDefDBConfig = {
 	R"json({
@@ -99,7 +100,7 @@ const std::vector<NamespaceDef> kSystemNsDefs = {
 	NamespaceDef(kConfigNamespace, StorageOpts().Enabled().CreateIfMissing().DropOnFileFormatError())
 		.AddIndex("type", "hash", "string", IndexOpts().PK()),
 	NamespaceDef(kPerfStatsNamespace, StorageOpts())
-		.AddIndex("name", "hash", "string", IndexOpts().PK())
+		.AddIndex(kNsNameField, "hash", "string", IndexOpts().PK())
 		.AddIndex("updates.total_queries_count", "-", "int64", IndexOpts().Dense())
 		.AddIndex("updates.total_avg_latency_us", "-", "int64", IndexOpts().Dense())
 		.AddIndex("updates.last_sec_qps", "-", "int64", IndexOpts().Dense())
@@ -130,10 +131,10 @@ const std::vector<NamespaceDef> kSystemNsDefs = {
 		.AddIndex("last_sec_avg_latency_us", "-", "int64", IndexOpts().Dense())
 		.AddIndex("last_sec_avg_lock_time_us", "-", "int64", IndexOpts().Dense())
 		.AddIndex("latency_stddev", "-", "double", IndexOpts().Dense()),
-	NamespaceDef(kNamespacesNamespace, StorageOpts()).AddIndex("name", "hash", "string", IndexOpts().PK()),
-	NamespaceDef(kPerfStatsNamespace, StorageOpts()).AddIndex("name", "hash", "string", IndexOpts().PK()),
+	NamespaceDef(kNamespacesNamespace, StorageOpts()).AddIndex(kNsNameField, "hash", "string", IndexOpts().PK()),
+	NamespaceDef(kPerfStatsNamespace, StorageOpts()).AddIndex(kNsNameField, "hash", "string", IndexOpts().PK()),
 	NamespaceDef(kMemStatsNamespace, StorageOpts())
-		.AddIndex("name", "hash", "string", IndexOpts().PK())
+		.AddIndex(kNsNameField, "hash", "string", IndexOpts().PK())
 		.AddIndex("items_count", "-", "int64", IndexOpts().Dense())
 		.AddIndex("total.data_size", "-", "int64", IndexOpts().Dense())
 		.AddIndex("total.indexes_size", "-", "int64", IndexOpts().Dense())

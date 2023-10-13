@@ -358,6 +358,8 @@ const JsonNode &JsonNode::operator[](std::string_view key) const {
 	return empty_node;
 }
 
+JsonNode JsonNode::EmptyNode() noexcept { return {{JsonTag(JSON_EMPTY)}, nullptr, {}}; }
+
 bool JsonNode::empty() const noexcept { return this->value.u.tag == JsonTag(JSON_EMPTY); }
 
 JsonNode JsonParser::Parse(span<char> str, size_t *length) {
@@ -380,12 +382,20 @@ JsonNode JsonParser::Parse(std::string_view str, size_t *length) {
 	return Parse(span<char>(&tmp_[0], tmp_.size()), length);
 }
 
-bool isHomogeneousArray(const gason::JsonValue &v) {
-	int i = 0;
+inline bool haveEqualType(JsonTag lt, JsonTag rt) noexcept {
+	return lt == rt || (lt == JSON_TRUE && rt == JSON_FALSE) || (lt == JSON_FALSE && rt == JSON_TRUE);
+}
+
+bool isHomogeneousArray(const gason::JsonValue &v) noexcept {
+	bool hasTag = false;
 	gason::JsonTag prevTag;
-	for (auto elem : v) {
-		if (i++ && prevTag != elem->value.getTag()) return false;
-		prevTag = elem->value.getTag();
+	for (const auto &elem : v) {
+		if (hasTag) {
+			if (!haveEqualType(prevTag, elem.value.getTag())) return false;
+		} else {
+			hasTag = true;
+		}
+		prevTag = elem.value.getTag();
 	}
 	return true;
 }

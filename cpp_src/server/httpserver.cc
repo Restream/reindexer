@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <sstream>
 #include "base64/base64.h"
+#include "core/cjson/csvbuilder.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
@@ -15,6 +16,7 @@
 #include "core/schema.h"
 #include "core/type_consts.h"
 #include "gason/gason.h"
+#include "itoa/itoa.h"
 #include "loggerwrapper.h"
 #include "net/http/serverconnection.h"
 #include "net/listener.h"
@@ -243,9 +245,9 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 	if (sortDirection) {
 		std::sort(dbs.begin(), dbs.end(), [sortDirection](const std::string &lhs, const std::string &rhs) {
 			if (sortDirection > 0)
-				return collateCompare(lhs, rhs, CollateOpts(CollateASCII)) < 0;
+				return collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) < 0;
 			else
-				return collateCompare(lhs, rhs, CollateOpts(CollateASCII)) > 0;
+				return collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) > 0;
 		});
 	}
 
@@ -302,7 +304,13 @@ int HTTPServer::DeleteDatabase(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(http::StatusUnauthorized, status.what()));
 	}
 
-	status = dbMgr_.DropDatabase(*actx);
+	if (statsWatcher_) {
+		// Avoid database access from the stats collecting thread during database drop
+		auto statsSuspend = statsWatcher_->SuspendStatsThread();
+		status = dbMgr_.DropDatabase(*actx);
+	} else {
+		status = dbMgr_.DropDatabase(*actx);
+	}
 	if (!status.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
@@ -330,9 +338,9 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 	if (sortDirection) {
 		std::sort(nsDefs.begin(), nsDefs.end(), [sortDirection](const NamespaceDef &lhs, const NamespaceDef &rhs) {
 			if (sortDirection > 0)
-				return collateCompare(lhs.name, rhs.name, CollateOpts(CollateASCII)) < 0;
+				return collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) < 0;
 			else
-				return collateCompare(lhs.name, rhs.name, CollateOpts(CollateASCII)) > 0;
+				return collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) > 0;
 		});
 	}
 
@@ -495,7 +503,9 @@ int HTTPServer::GetItems(http::Context &ctx) {
 
 	reindexer::Query q;
 	q.FromSQL(querySer.Slice());
-	q.ReqTotal();
+	if (ctx.request->params.Get("format") != "csv-file"sv) {
+		q.ReqTotal();
+	}
 
 	int flags = kResultsCJson | kResultsWithPayloadTypes;
 	if (isParameterSetOn(shardIds)) {
@@ -1077,7 +1087,7 @@ int HTTPServer::modifyItemsJSON(http::Context &ctx, std::string &nsName, std::ve
 
 			if (item.GetID() != -1) {
 				++cnt;
-				if (!precepts.empty()) updatedItems.push_back(std::string(item.GetJSON()));
+				if (!precepts.empty()) updatedItems.emplace_back(item.GetJSON());
 			}
 		}
 		db.Commit(nsName);
@@ -1274,7 +1284,7 @@ int HTTPServer::modifyItemsTx(http::Context &ctx, ItemModifyMode mode) {
 	std::vector<std::string> precepts;
 	for (auto &p : ctx.request->params) {
 		if (p.name == "precepts"sv) {
-			precepts.push_back(urldecode2(p.val));
+			precepts.emplace_back(urldecode2(p.val));
 		}
 	}
 
@@ -1357,8 +1367,74 @@ int HTTPServer::queryResultsJSON(http::Context &ctx, reindexer::QueryResults &re
 
 	queryResultParams(builder, res, std::move(jsonData), isQueryResults, limit, withColumns, width);
 	builder.End();
-
 	return ctx.JSON(http::StatusOK, wrSer.DetachChunk());
+}
+
+int HTTPServer::queryResultsCSV(http::Context &ctx, reindexer::QueryResults &res, unsigned limit, unsigned offset) {
+	if (res.GetAggregationResults().size()) {
+		throw Error(errForbidden, "Aggregations are not supported in CSV");
+	}
+	if (res.GetExplainResults().size()) {
+		throw Error(errForbidden, "Explain is not supported in CSV");
+	}
+
+	const size_t kChunkMaxSize = 0x1000;
+	auto createChunk = [](const WrSerializer &from, WrSerializer &to) {
+		char szBuf[64];
+		size_t l = u32toax(from.Len(), szBuf) - szBuf;
+		to << std::string_view(szBuf, l);
+		to << "\r\n";
+		to << from.Slice();
+		to << "\r\n";
+	};
+
+	auto createCSVHeaders = [&res](WrSerializer &ser, const CsvOrdering &ordering) {
+		const auto &tm = res.GetTagsMatcher(0);
+		for (auto it = ordering.begin(); it != ordering.end(); ++it) {
+			if (it != ordering.begin()) {
+				ser << ',';
+			}
+			ser << tm.tag2name(*it);
+		}
+		if (res.ToLocalQr().joined_.empty()) {
+			ser << "\n";
+		} else {
+			ser << ",joined_namespaces\n";
+		}
+	};
+
+	WrSerializer wrSerRes(ctx.writer->GetChunk()), wrSerChunk;
+	wrSerChunk.Reserve(kChunkMaxSize);
+	auto schema = res.GetSchema(0);
+	bool withSchema = schema && !schema->IsEmpty();
+	if (!res.IsLocal() && !withSchema) {
+		throw Error(errLogic, "Uploads in csv format without a namespace scheme are allowed only for local queries");
+	}
+
+	auto ordering =
+		withSchema ? CsvOrdering{schema->MakeCsvTagOrdering(res.GetTagsMatcher(0))} : res.ToLocalQr().MakeCSVTagOrdering(limit, offset);
+
+	createCSVHeaders(wrSerChunk, ordering);
+	auto it = res.begin() + offset;
+	for (size_t i = 0; it != res.end() && i < limit; ++i, ++it) {
+		auto err = it.GetCSV(wrSerChunk, ordering);
+		if (!err.ok()) {
+			throw Error(err.code(), "Unable to get %d item as CSV: %s", i, err.what());
+		}
+
+		wrSerChunk << '\n';
+
+		if (wrSerChunk.Len() > kChunkMaxSize) {
+			createChunk(wrSerChunk, wrSerRes);
+			wrSerChunk.Reset();
+		}
+	}
+
+	if (wrSerChunk.Len()) {
+		createChunk(wrSerChunk, wrSerRes);
+	}
+
+	return ctx.CSV(http::StatusOK, wrSerRes.DetachChunk());
 }
 
 int HTTPServer::queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
@@ -1547,6 +1623,12 @@ int HTTPServer::queryResults(http::Context &ctx, reindexer::QueryResults &res, b
 		return queryResultsMsgPack(ctx, res, isQueryResults, limit, offset, withColumns, width);
 	} else if (format == "protobuf"sv) {
 		return queryResultsProtobuf(ctx, res, isQueryResults, limit, offset, withColumns, width);
+	} else if (format == "csv-file"sv) {
+		CounterGuardAIRL32 cg(currentCsvDownloads_);
+		if (currentCsvDownloads_.load() > kMaxConcurrentCsvDownloads) {
+			throw Error(errForbidden, "Unable to start new CSV download. Limit of concurrent downloads is %d", kMaxConcurrentCsvDownloads);
+		}
+		return queryResultsCSV(ctx, res, limit, offset);
 	} else {
 		return queryResultsJSON(ctx, res, isQueryResults, limit, offset, withColumns, width);
 	}
@@ -1656,7 +1738,8 @@ Reindexer HTTPServer::getDB(http::Context &ctx, UserRole role, std::string *dbNa
 		throw http::HttpStatus(status);
 	}
 	assertrx(db);
-	return db->NeedTraceActivity() ? db->WithActivityTracer(ctx.request->clientAddr, ctx.request->headers.Get("User-Agent")) : *db;
+	return db->NeedTraceActivity() ? db->WithActivityTracer(ctx.request->clientAddr, std::string(ctx.request->headers.Get("User-Agent")))
+								   : *db;
 }
 
 std::string HTTPServer::getNameFromJson(std::string_view json) {

@@ -247,7 +247,7 @@ void ClusterDataReplicator::clusterControlRoutine(int serverId) {
 
 	RaftInfo raftInfo;
 	while (!terminate_) {
-		onRoleChanged(RaftInfo::Role::Candidate, raftInfo.role == RaftInfo::Role::Leader ? serverId : raftManager_.GetLeaderId());
+		onRoleChanged(RaftInfo::Role::Candidate, raftInfo.role == RaftInfo::Role::Leader ? serverId : raftInfo.leaderId);
 		raftInfo.role = RaftInfo::Role::Candidate;
 		restartElections_ = false;
 

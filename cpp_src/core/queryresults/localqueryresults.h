@@ -19,6 +19,7 @@ struct ResultFetchOpts;
 struct ItemImplRawData;
 class SelectFunctionsHolder;
 class NamespaceImpl;
+struct CsvOrdering;
 
 namespace joins {
 class NamespaceResults;
@@ -32,6 +33,8 @@ class ItemIterator;
 
 class LocalQueryResults {
 public:
+	using NamespaceImplPtr = intrusive_ptr<NamespaceImpl>;
+
 	LocalQueryResults();
 	LocalQueryResults(const ItemRefVector::const_iterator &b, const ItemRefVector::const_iterator &e);
 	LocalQueryResults(std::initializer_list<ItemRef> l);
@@ -55,6 +58,7 @@ public:
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return !nonCacheableData; }
 	void SetOutputShardId(int shardId) noexcept { outputShardId = shardId; }
+	CsvOrdering MakeCSVTagOrdering(unsigned limit, unsigned offset) const;
 
 	class Iterator {
 	public:
@@ -62,6 +66,8 @@ public:
 		Error GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetMsgPack(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetProtobuf(WrSerializer &wrser, bool withHdrLen = true);
+		[[nodiscard]] Error GetCSV(WrSerializer &wrser, CsvOrdering &ordering) noexcept;
+
 		// use enableHold = false only if you are sure that the item will be destroyed before the LocalQueryResults
 		Item GetItem(bool enableHold = true);
 		joins::ItemIterator GetJoined();
@@ -95,7 +101,7 @@ public:
 
 	struct Context;
 	// precalc context size
-	static constexpr int kSizeofContext = 208;	// sizeof(PayloadType) + sizeof(TagsMatcher) + sizeof(FieldsSet) + sizeof(shared_ptr);
+	static constexpr int kSizeofContext = 264;	// sizeof(PayloadType) + sizeof(TagsMatcher) + sizeof(FieldsSet) + sizeof(shared_ptr);
 
 	// Order of storing contexts for namespaces:
 	// [0]      - main NS context
@@ -120,10 +126,15 @@ public:
 
 	void SaveRawData(ItemImplRawData &&);
 
-	void AddNamespace(std::shared_ptr<NamespaceImpl> ns, bool noLock, const RdxContext &);
+	// Add owning ns pointer
+	// noLock has always to be 'true' (i.e. this method can only be called unders Namespace's lock)
+	void AddNamespace(NamespaceImplPtr, bool noLock);
+	// Add non-owning ns pointer
+	// noLock has always to be 'true' (i.e. this method can only be called unders Namespace's lock)
+	void AddNamespace(NamespaceImpl *, bool noLock);
 	void RemoveNamespace(const NamespaceImpl *ns);
 	bool IsNamespaceAdded(const NamespaceImpl *ns) const noexcept {
-		return std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder &nsData) { return nsData.ns.get() == ns; }) !=
+		return std::find_if(nsData_.cbegin(), nsData_.cend(), [ns](const NsDataHolder &nsData) { return nsData.ns == ns; }) !=
 			   nsData_.cend();
 	}
 
@@ -138,17 +149,23 @@ private:
 	ItemRefVector items_;
 	std::vector<ItemImplRawData> rawDataHolder_;
 	friend SelectFunctionsHolder;
-	struct NsDataHolder {
-		NsDataHolder(std::shared_ptr<NamespaceImpl> &&ns_, StringsHolderPtr &&strHldr) noexcept
-			: ns{std::move(ns_)}, strHolder{std::move(strHldr)} {}
+	class NsDataHolder {
+	public:
+		NsDataHolder(NamespaceImplPtr &&_ns, StringsHolderPtr &&strHldr) noexcept;
+		NsDataHolder(NamespaceImpl *_ns, StringsHolderPtr &&strHldr) noexcept;
 		NsDataHolder(const NsDataHolder &) = delete;
 		NsDataHolder(NsDataHolder &&) noexcept = default;
 		NsDataHolder &operator=(const NsDataHolder &) = delete;
 		NsDataHolder &operator=(NsDataHolder &&) = default;
 
-		std::shared_ptr<NamespaceImpl> ns;
+	private:
+		NamespaceImplPtr nsPtr_;
+
+	public:
+		NamespaceImpl *ns;
 		StringsHolderPtr strHolder;
 	};
+
 	h_vector<NsDataHolder, 1> nsData_;
 	std::vector<key_string> stringsHolder_;
 };

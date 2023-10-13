@@ -8,4 +8,6 @@ double randBinDouble(long long min, long long max) noexcept {
 	return static_cast<double>((rand() % (max - min)) + min) / static_cast<double>(divider);
 }
 
-reindexer::Point randPoint(long long range) noexcept { return {randBinDouble(-range, range), randBinDouble(-range, range)}; }
+reindexer::Point randPoint(long long range) noexcept {
+	return reindexer::Point{randBinDouble(-range, range), randBinDouble(-range, range)};
+}

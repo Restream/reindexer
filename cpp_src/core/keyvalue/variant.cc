@@ -23,9 +23,13 @@ Variant::Variant(PayloadValue &&v) : variant_{0, 1, KeyValueType::Composite{}} {
 
 Variant::Variant(const std::string &v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
 
+Variant::Variant(std::string &&v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(std::move(v))); }
+
 Variant::Variant(std::string_view v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
 
 Variant::Variant(const key_string &v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(v); }
+
+Variant::Variant(key_string &&v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(std::move(v)); }
 
 Variant::Variant(const char *v) : Variant(p_string(v)) {}
 
@@ -64,7 +68,7 @@ Variant::Variant(Uuid uuid) noexcept : uuid_() {
 	}
 }
 
-static void serialize(WrSerializer &, const std::tuple<>) noexcept {}
+static void serialize(WrSerializer &, const std::tuple<> &) noexcept {}
 
 template <typename... Ts>
 void serialize(WrSerializer &ser, const std::tuple<Ts...> &v) {
@@ -174,10 +178,11 @@ std::string Variant::As<std::string>() const {
 			[&](KeyValueType::Int64) { return std::to_string(variant_.value_int64); },
 			[&](KeyValueType::Double) { return std::to_string(variant_.value_double); },
 			[&](KeyValueType::String) {
-				if (this->operator p_string().type() == p_string::tagCxxstr || this->operator p_string().type() == p_string::tagKeyString) {
-					return *(this->operator p_string().getCxxstr());
+				const auto pstr = this->operator p_string();
+				if (pstr.type() == p_string::tagCxxstr || pstr.type() == p_string::tagKeyString) {
+					return *(pstr.getCxxstr());
 				}
-				return this->operator p_string().toString();
+				return pstr.toString();
 			},
 			[&](KeyValueType::Null) { return "null"s; }, [&](KeyValueType::Composite) { return std::string(); },
 			[&](KeyValueType::Tuple) {
@@ -226,10 +231,14 @@ std::string Variant::As<std::string>(const PayloadType &pt, const FieldsSet &fie
 
 template <typename T>
 std::optional<T> tryParseAs(std::string_view str) noexcept {
-	const auto end = str.data() + str.size();
+	auto begin = str.data();
+	const auto end = begin + str.size();
+	while (begin != end && std::isspace(*begin)) {
+		++begin;
+	}
 	T res;
-	auto [ptr, err] = std::from_chars(str.data(), end, res);
-	if (ptr == str.data() || err == std::errc::invalid_argument || err == std::errc::result_out_of_range) {
+	auto [ptr, err] = std::from_chars(begin, end, res);
+	if (ptr == begin || err == std::errc::invalid_argument || err == std::errc::result_out_of_range) {
 		return std::nullopt;
 	}
 	for (; ptr != end; ++ptr) {
@@ -358,7 +367,7 @@ int Variant::Compare(const Variant &other, const CollateOpts &collateOpts) const
 					   : (variant_.value_double > other.variant_.value_double) ? 1
 																			   : -1;
 			},
-			[&](KeyValueType::Tuple) { return getCompositeValues() == other.getCompositeValues() ? 0 : 1; },
+			[&](KeyValueType::Tuple) -> int { throw Error(errParams, "KeyValueType::Tuple comparison is not implemented"); },
 			[&](KeyValueType::String) { return collateCompare(this->operator p_string(), other.operator p_string(), collateOpts); },
 			[&](KeyValueType::Uuid) { return Uuid{*this}.Compare(Uuid{other}); },
 			[](KeyValueType::Null) -> int {
@@ -538,7 +547,8 @@ size_t Variant::Hash() const noexcept {
 
 void Variant::EnsureUTF8() const {
 	if (!isUuid() && variant_.type.Is<KeyValueType::String>()) {
-		if (!utf8::is_valid(operator p_string().data(), operator p_string().data() + operator p_string().size())) {
+		const auto pstr = this->operator p_string();
+		if (!utf8::is_valid(pstr.data(), pstr.data() + pstr.size())) {
 			throw Error(errParams, "Invalid UTF8 string passed to index with CollateUTF8 mode");
 		}
 	}
@@ -610,7 +620,7 @@ void Variant::convertToComposite(const PayloadType *payloadType, const FieldsSet
 
 	for (auto field : *fields) {
 		if (field != IndexValueType::SetByJsonPath) {
-			pl.Set(field, {ser.GetVariant()});
+			pl.Set(field, ser.GetVariant());
 		} else {
 			// TODO: will have to implement SetByJsonPath in PayloadIFace
 			// or this "mixed" composite queries (by ordinary indexes + indexes
@@ -687,6 +697,7 @@ void Variant::Dump(T &os) const {
 
 template void Variant::Dump(WrSerializer &) const;
 template void Variant::Dump(std::ostream &) const;
+template void Variant::Dump(std::stringstream &) const;
 
 template <typename T>
 void VariantArray::Dump(T &os) const {
@@ -700,17 +711,18 @@ void VariantArray::Dump(T &os) const {
 
 template void VariantArray::Dump(WrSerializer &) const;
 template void VariantArray::Dump(std::ostream &) const;
+template void VariantArray::Dump(std::stringstream &) const;
 
 VariantArray::VariantArray(Point p) noexcept {
-	emplace_back(p.x);
-	emplace_back(p.y);
+	emplace_back(p.X());
+	emplace_back(p.Y());
 }
 
 VariantArray::operator Point() const {
 	if (size() != 2) {
 		throw Error(errParams, "Can't convert array of %d elements to Point", size());
 	}
-	return {(*this)[0].As<double>(), (*this)[1].As<double>()};
+	return Point{(*this)[0].As<double>(), (*this)[1].As<double>()};
 }
 
 template <WithString withString>

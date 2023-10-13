@@ -5,6 +5,7 @@
 #include "aggregation.h"
 #include "api_tv_composite.h"
 #include "api_tv_simple.h"
+#include "api_tv_simple_comparators.h"
 #include "geometry.h"
 #include "join_items.h"
 #include "tools/reporter.h"
@@ -20,10 +21,13 @@ using reindexer::Reindexer;
 
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN)
 const int kItemsInBenchDataset = 5'000;
+const int kItemsInComparatorsBenchDataset = 5'000;
 #elif defined(RX_WITH_STDLIB_DEBUG)
 const int kItemsInBenchDataset = 50'000;
+const int kItemsInComparatorsBenchDataset = 30'000;
 #else
 const int kItemsInBenchDataset = 500'000;
+const int kItemsInComparatorsBenchDataset = 100'000;
 #endif
 
 int main(int argc, char** argv) {
@@ -39,11 +43,15 @@ int main(int argc, char** argv) {
 
 	JoinItems joinItems(DB.get(), 500);
 	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple", kItemsInBenchDataset);
+	ApiTvSimpleComparators apiTvSimpleComparators(DB.get(), "ApiTvSimpleComparators", kItemsInComparatorsBenchDataset);
 	ApiTvComposite apiTvComposite(DB.get(), "ApiTvComposite", kItemsInBenchDataset);
 	Geometry geometry(DB.get(), "Geometry", kItemsInBenchDataset);
 	Aggregation aggregation(DB.get(), "Aggregation", kItemsInBenchDataset);
 
 	auto err = apiTvSimple.Initialize();
+	if (!err.ok()) return err.code();
+
+	err = apiTvSimpleComparators.Initialize();
 	if (!err.ok()) return err.code();
 
 	err = joinItems.Initialize();
@@ -63,6 +71,7 @@ int main(int argc, char** argv) {
 
 	joinItems.RegisterAllCases();
 	apiTvSimple.RegisterAllCases();
+	apiTvSimpleComparators.RegisterAllCases();
 	apiTvComposite.RegisterAllCases();
 	geometry.RegisterAllCases();
 	aggregation.RegisterAllCases();

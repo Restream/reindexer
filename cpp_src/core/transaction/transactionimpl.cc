@@ -158,7 +158,7 @@ bool TransactionImpl::IsTagsUpdated() const noexcept {
 	return data_->IsTagsUpdated();
 }
 
-void TransactionImpl::SetShardingRouter(std::shared_ptr<sharding::LocatorService> shardingRouter) {
+void TransactionImpl::SetShardingRouter(sharding::LocatorServiceAdapter shardingRouter) {
 	std::lock_guard lck(mtx_);
 	assertrx(!shardingRouter_);
 	shardingRouter_ = std::move(shardingRouter);
@@ -197,7 +197,7 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl &
 		return res;
 	} else if (auto *localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		try {
-			result.AddQr(LocalQueryResults(), shardingRouter_ ? shardingRouter_->ActualShardId() : ShardingKeyType::ProxyOff);
+			result.AddQr(LocalQueryResults(), shardingRouter_ ? shardingRouter_.ActualShardId() : ShardingKeyType::ProxyOff);
 			status_ = kErrCommited;
 			LocalTransaction ltx(std::move(data_), std::move(*localTx), Error());
 			tx_ = Empty{};
@@ -236,7 +236,7 @@ void TransactionImpl::updateShardIdIfNecessary(int shardId) {
 		shardId_ = shardId;
 		Error status;
 		assertrx(data_);
-		if (auto connection = shardingRouter_->GetShardConnection(data_->nsName, shardId, status)) {
+		if (auto connection = shardingRouter_.GetShardConnection(data_->nsName, shardId, status)) {
 			if (status.ok()) {
 				tx_ = std::make_unique<ProxiedTransaction>(connection->NewTransaction(data_->nsName), true);
 			}
@@ -256,7 +256,7 @@ void TransactionImpl::updateShardIdIfNecessary(int shardId) {
 
 void TransactionImpl::lazyInit(const Query &q) {
 	if (shardingRouter_) {
-		const auto ids = shardingRouter_->GetShardId(q);
+		const auto ids = shardingRouter_.GetShardId(q);
 		if (ids.size() != 1) {
 			Error status(errLogic, "Transaction query must correspond to exactly one shard (%d corresponding shards found)", ids.size());
 			status_ = status;
@@ -290,7 +290,7 @@ void TransactionImpl::initProxiedTxIfRequired() {
 
 void TransactionImpl::lazyInit(const Item &item) {
 	if (shardingRouter_) {
-		updateShardIdIfNecessary(shardingRouter_->GetShardId(data_->nsName, item));
+		updateShardIdIfNecessary(shardingRouter_.GetShardId(data_->nsName, item));
 	} else {
 		initProxiedTxIfRequired();
 	}

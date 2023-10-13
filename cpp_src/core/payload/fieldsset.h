@@ -10,38 +10,37 @@
 namespace reindexer {
 
 class TagsMatcher;
-static constexpr int maxIndexes = 64;
+static constexpr int kMaxIndexes = 256;	 // 'tuple'-index always occupies 1 slot
 
-using base_fields_set = h_vector<int8_t, 6>;
+using base_fields_set = h_vector<int16_t, 6>;
+static_assert(std::numeric_limits<base_fields_set::value_type>::max() >= kMaxIndexes,
+			  "base_fields_set must be able to store any indexed field number");
+static_assert(std::numeric_limits<base_fields_set::value_type>::min() <= SetByJsonPath,
+			  "base_fields_set must be able to store non-indexed fields");
+static_assert(sizeof(std::bitset<kMaxIndexes>) == 32, "Expecting no overhead from std::bitset");
 using FieldsPath = std::variant<TagsPath, IndexedTagsPath>;
+
+using ScalarIndexesSetT = std::bitset<kMaxIndexes>;
 
 class IndexesFieldsSet {
 public:
 	IndexesFieldsSet() noexcept = default;
-	IndexesFieldsSet(std::initializer_list<int> l) {
-		for (auto i : l) {
-			push_back(i);
-		}
-	}
-	bool contains(int f) const noexcept { return f >= 0 && f <= maxIndexes && (mask_ & (1ULL << f)); }
+	IndexesFieldsSet(int f) { push_back(f); }
+	bool contains(int f) const noexcept { return f >= 0 && f < kMaxIndexes && mask_.test(unsigned(f)); }
 	void push_back(int f) {
 		if (f < 0) return;
-		if (f > maxIndexes) {
+		if (f >= kMaxIndexes) {
 			throwMaxValueError(f);
 		}
-		if (!contains(f)) {
-			mask_ |= 1ULL << f;
-			++count_;
-		}
+		mask_.set(unsigned(f));
 	}
-	uint64_t mask() const noexcept { return mask_; }
-	unsigned size() const noexcept { return count_; }
+	const std::bitset<kMaxIndexes> &mask() const &noexcept { return mask_; }
+	const std::bitset<kMaxIndexes> &mask() const && = delete;
+	unsigned count() const noexcept { return mask_.count(); }
 
 private:
 	[[noreturn]] void throwMaxValueError(int f);
-
-	uint64_t mask_ = 0;
-	unsigned count_ = 0;
+	std::bitset<kMaxIndexes> mask_;
 };
 
 class FieldsSet : protected base_fields_set {
@@ -53,13 +52,14 @@ public:
 	using base_fields_set::empty;
 	using base_fields_set::operator[];
 	FieldsSet(const TagsMatcher &, const h_vector<std::string, 1> &fields);
-	FieldsSet(std::initializer_list<int> l) : mask_(0) {
+	FieldsSet(int f) { push_back(f); }
+	FieldsSet(std::initializer_list<int> l) {
 		for (auto f : l) push_back(f);
 	}
-	FieldsSet(std::initializer_list<TagsPath> l) : mask_(0) {
+	FieldsSet(std::initializer_list<TagsPath> l) {
 		for (const TagsPath &tagsPath : l) push_back(tagsPath);
 	}
-	FieldsSet(std::initializer_list<IndexedTagsPath> l) : mask_(0) {
+	FieldsSet(std::initializer_list<IndexedTagsPath> l) {
 		for (const IndexedTagsPath &tagsPath : l) push_back(tagsPath);
 	}
 	FieldsSet() = default;
@@ -115,38 +115,42 @@ public:
 	}
 
 	void push_back(int f) {
-		if (f == IndexValueType::SetByJsonPath) return;
-		assertrx(f < maxIndexes);
+		if (f < 0) return;
+		if (f >= kMaxIndexes) {
+			throwMaxValueError(f);
+		}
 		if (!contains(f)) {
-			mask_ |= 1ULL << f;
+			mask_.set(unsigned(f));
 			base_fields_set::push_back(f);
 		}
 	}
 	void push_front(int f) {
-		if (f == IndexValueType::SetByJsonPath) return;
-		assertrx(f < maxIndexes);
+		if (f < 0) return;
+		if (f >= kMaxIndexes) {
+			throwMaxValueError(f);
+		}
 		if (!contains(f)) {
-			mask_ |= 1ULL << f;
+			mask_.set(unsigned(f));
 			base_fields_set::insert(begin(), f);
 		}
 	}
 
 	void erase(int f) {
-		bool byJsonPath = (f == IndexValueType::SetByJsonPath);
+		const bool byJsonPath = (f < 0);
 		if (byJsonPath || contains(f)) {
 			auto it = std::find(begin(), end(), f);
 			assertrx(it != end());
 			base_fields_set::erase(it);
-			if (!byJsonPath) mask_ &= ~(1ULL << f);
+			if (!byJsonPath) mask_.reset(unsigned(f));
 		}
 	}
 
-	bool contains(int f) const noexcept { return mask_ & (1ULL << f); }
-	bool contains(const FieldsSet &f) const noexcept { return mask_ && ((mask_ & f.mask_) == f.mask_); }
-	bool contains(const std::string &jsonPath) const noexcept {
+	bool contains(int f) const noexcept { return f >= 0 && f < kMaxIndexes && mask_.test(unsigned(f)); }
+	bool contains(const FieldsSet &f) const noexcept { return (mask_ & f.mask_) == f.mask_; }
+	bool contains(std::string_view jsonPath) const noexcept {
 		return std::find(jsonPaths_.begin(), jsonPaths_.end(), jsonPath) != jsonPaths_.end();
 	}
-	bool contains(const IndexesFieldsSet &f) const noexcept { return mask_ && ((mask_ & f.mask()) == f.mask()); }
+	bool contains(const IndexesFieldsSet &f) const noexcept { return (mask_ & f.mask()) == f.mask(); }
 	bool contains(const TagsPath &tagsPath) const noexcept {
 		for (const FieldsPath &path : tagsPaths_) {
 			if (path.index() == 0) {
@@ -194,7 +198,7 @@ public:
 		base_fields_set::clear();
 		tagsPaths_.clear();
 		jsonPaths_.clear();
-		mask_ = 0;
+		mask_.reset();
 	}
 
 	size_t getTagsPathsLength() const noexcept { return tagsPaths_.size(); }
@@ -204,9 +208,12 @@ public:
 		assertrx(idx < tagsPaths_.size());
 		return (tagsPaths_[idx].index() == 1);
 	}
-	const TagsPath &getTagsPath(size_t idx) const { return std::get<TagsPath>(tagsPaths_[idx]); }
-	const IndexedTagsPath &getIndexedTagsPath(size_t idx) const { return std::get<IndexedTagsPath>(tagsPaths_[idx]); }
-	const std::string &getJsonPath(size_t idx) const { return jsonPaths_[idx]; }
+	const TagsPath &getTagsPath(size_t idx) const & { return std::get<TagsPath>(tagsPaths_[idx]); }
+	const TagsPath &getTagsPath(size_t idx) const && = delete;
+	const IndexedTagsPath &getIndexedTagsPath(size_t idx) const & { return std::get<IndexedTagsPath>(tagsPaths_[idx]); }
+	const IndexedTagsPath &getIndexedTagsPath(size_t idx) const && = delete;
+	const std::string &getJsonPath(size_t idx) const &noexcept { return jsonPaths_[idx]; }
+	const std::string &getJsonPath(size_t idx) const && = delete;
 
 	bool operator==(const FieldsSet &f) const noexcept {
 		return (mask_ == f.mask_) && (tagsPaths_ == f.tagsPaths_) && (jsonPaths_ == jsonPaths_);
@@ -221,7 +228,7 @@ public:
 			if (it != b) os << ", ";
 			os << *it;
 		}
-		os << "], mask: " << std::bitset<64>{mask_} << ", tagsPaths: [";
+		os << "], mask: " << mask_ << ", tagsPaths: [";
 		for (auto b = tagsPaths_.cbegin(), it = b, e = tagsPaths_.cend(); it != e; ++it) {
 			if (it != b) os << ", ";
 			std::visit(fieldsPathDumper, *it);
@@ -243,8 +250,9 @@ protected:
 		}
 		return (i == count);
 	}
+	[[noreturn]] void throwMaxValueError(int f);
 
-	uint64_t mask_ = 0;
+	std::bitset<kMaxIndexes> mask_;
 	h_vector<FieldsPath, 1> tagsPaths_;
 	/// Json paths to non indexed fields.
 	/// Necessary only for composite full text

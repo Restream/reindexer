@@ -14,7 +14,7 @@
 
 namespace reindexer {
 
-const std::string kMD5CryptDelimiter = "$";
+constexpr std::string_view kMD5CryptDelimiter = "$";
 
 std::string MD5crypt(const std::string &passwd, const std::string &salt) noexcept {
 	static unsigned const char cov2char[64] = {
@@ -32,9 +32,9 @@ std::string MD5crypt(const std::string &passwd, const std::string &salt) noexcep
 	{
 		MD5 md;
 		md.add(passwd.c_str(), passwd.size());
-		md.add(kMD5CryptDelimiter.c_str(), kMD5CryptDelimiter.size());
+		md.add(kMD5CryptDelimiter.data(), kMD5CryptDelimiter.size());
 		md.add(reindexer::kMD5CryptMagic.data(), reindexer::kMD5CryptMagic.size());
-		md.add(kMD5CryptDelimiter.c_str(), kMD5CryptDelimiter.size());
+		md.add(kMD5CryptDelimiter.data(), kMD5CryptDelimiter.size());
 		md.add(trunkatedSalt, saltLen);
 
 		MD5 md2;

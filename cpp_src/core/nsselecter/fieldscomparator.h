@@ -19,17 +19,18 @@ public:
 		bool hasNonIdxFields = true;
 		if (ctx_.size()) {
 			if (ctx_[0].lCtx_.fields_.getTagsPathsLength() > 0) {
-				cost += expectedIterations * kNonIdxFieldComparatorCostMultiplier;
+				cost += double(expectedIterations) * kNonIdxFieldComparatorCostMultiplier;
 				hasNonIdxFields = false;
 			}
 			if (ctx_[0].rCtx_.fields_.getTagsPathsLength() > 0) {
-				cost += expectedIterations * kNonIdxFieldComparatorCostMultiplier;
+				cost += double(expectedIterations) * kNonIdxFieldComparatorCostMultiplier;
 				hasNonIdxFields = false;
 			}
 		}
-		return hasNonIdxFields ? cost : expectedIterations + cost;
+		return hasNonIdxFields ? cost : double(expectedIterations) + cost;
 	}
-	const std::string& Name() const noexcept { return name_; }
+	const std::string& Name() const& noexcept { return name_; }
+	const std::string& Name() const&& = delete;
 	std::string Dump() const { return Name(); }
 	int GetMatchedCount() const noexcept { return matchedCount_; }
 	void SetLeftField(const TagsPath& tpath) {

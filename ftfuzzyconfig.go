@@ -45,6 +45,9 @@ type FtFuzzyConfig struct {
 	LogLevel int `json:"log_level"`
 	// Extra symbols, which will be threated as parts of word to addition to letters and digits
 	ExtraWordSymbols string `json:"extra_word_symbols"`
+	// Config for subterm rank multiplier
+	FtBaseRankingConfig *FtBaseRanking `json:"base_ranking,omitempty"`
+
 }
 
 func DefaultFtFuzzyConfig() FtFuzzyConfig {
@@ -66,5 +69,6 @@ func DefaultFtFuzzyConfig() FtFuzzyConfig {
 		EnableKbLayout:       true,
 		LogLevel:             0,
 		ExtraWordSymbols:     "/-+",
+		FtBaseRankingConfig:  &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin:10, Typo:85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit:90, Synonyms:95},
 	}
 }

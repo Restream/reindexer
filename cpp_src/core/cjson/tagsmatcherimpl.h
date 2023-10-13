@@ -50,7 +50,7 @@ public:
 					fieldTags.clear();
 					return fieldTags;
 				}
-				fieldTags.push_back(static_cast<int16_t>(fieldTag));
+				fieldTags.emplace_back(static_cast<int16_t>(fieldTag));
 			}
 		}
 		return fieldTags;
@@ -251,9 +251,9 @@ public:
 		return modified;
 	}
 
-	size_t size() const { return tags2names_.size(); }
-	int version() const { return version_; }
-	int stateToken() const { return stateToken_; }
+	size_t size() const noexcept { return tags2names_.size(); }
+	int version() const noexcept { return version_; }
+	int stateToken() const noexcept { return stateToken_; }
 
 	void clear() {
 		names2tags_.clear();

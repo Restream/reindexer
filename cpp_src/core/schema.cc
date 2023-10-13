@@ -260,13 +260,13 @@ Error Schema::FromJSON(std::string_view json) {
 		gason::JsonParser parser;
 		auto node = parser.Parse(json);
 		parseJsonNode(node, path, true);
-		if (json != "{}") {
-			protobufNsNumber_ = node["x-protobuf-ns-number"].As<int>(-1);
-			if (protobufNsNumber_ == -1) {
-				protobufNsNumber_ = counter++;
-			}
+		protobufNsNumber_ = node["x-protobuf-ns-number"].As<int>(-1);
+		if (protobufNsNumber_ == -1 && json != "{}") {
+			protobufNsNumber_ = counter++;
+			originalJson_ = AppendProtobufNumber(json, protobufNsNumber_);
+		} else {
+			originalJson_.assign(json);
 		}
-		originalJson_ = AppendProtobufNumber(json, protobufNsNumber_);
 	} catch (const gason::Exception& ex) {
 		return Error(errParseJson, "Schema: %s\nJson: %s", ex.what(), originalJson_);
 	} catch (const Error& err) {
@@ -347,5 +347,31 @@ void Schema::parseJsonNode(const gason::JsonNode& node, PrefixTree::PathT& split
 		}
 	}
 }
+
+std::vector<int> Schema::MakeCsvTagOrdering(const TagsMatcher& tm) const {
+	if (paths_.root_.children.empty()) {
+		return {};
+	}
+
+	gason::JsonParser parser;
+	auto tags0lvl = parser.Parse(std::string_view(originalJson_))["required"];
+
+	if (tags0lvl.value.getTag() != gason::JsonTag::JSON_ARRAY) {
+		throw Error(errParams, "Incorrect type of \"required\" tag in namespace json-schema");
+	}
+
+	std::vector<int> result;
+	for (const auto& tagNode : tags0lvl.value) {
+		const auto& tagName = tagNode.As<std::string_view>();
+		auto tag = tm.name2tag(tagName);
+		if (tag == 0) {
+			throw Error(errParams, "Tag %s not found in tagsmatcher", tagName);
+		}
+		result.emplace_back(tag);
+	}
+	return result;
+}
+
+bool Schema::IsEmpty() const noexcept { return paths_.root_.children.empty(); }
 
 }  // namespace reindexer

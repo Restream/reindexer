@@ -17,7 +17,7 @@ static void throwParseError(std::string_view sortExpr, char const* const pos, st
 }
 
 static inline double distance(reindexer::Point p1, reindexer::Point p2) noexcept {
-	return std::sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y));
+	return std::sqrt((p1.X() - p2.X()) * (p1.X() - p2.X()) + (p1.Y() - p2.Y()) * (p1.Y() - p2.Y()));
 }
 
 static reindexer::VariantArray getFieldValues(reindexer::ConstPayload pv, reindexer::TagsMatcher& tagsMatcher, int index,
@@ -314,7 +314,7 @@ static Point parsePoint(std::string_view& expr, std::string_view funcName, std::
 	skipSpaces();
 	if (expr.empty() || expr[0] != ')') throwParseError(fullExpr, expr.data(), "Expected ')'.");
 	expr.remove_prefix(1);
-	return {x, y};
+	return Point{x, y};
 }
 
 template <typename T, typename SkipSW>
@@ -668,6 +668,7 @@ void SortExpression::PrepareIndexes(const NamespaceImpl& ns) {
 void SortExpression::PrepareSortIndex(std::string& column, int& index, const NamespaceImpl& ns) {
 	assertrx(!column.empty());
 	index = IndexValueType::SetByJsonPath;
+	// FIXME: Sparse index will not be found if jsonpath does not equal to index name
 	if (ns.getIndexByNameOrJsonPath(column, index) && ns.indexes_[index]->Opts().IsSparse()) {
 		if (index < ns.indexes_.firstCompositePos()) {
 			const auto& fields = ns.indexes_[index]->Fields();
@@ -714,9 +715,11 @@ void SortExpression::dump(const_iterator begin, const_iterator end, WrSerializer
 			},
 			[&ser](const Value& v) { ser << v.value; }, [&ser](const SortExprFuncs::Index& i) { ser << i.column; },
 			[&ser](const JoinedIndex& i) { ser << "joined " << i.nsIdx << ' ' << i.column; }, [&ser](const Rank&) { ser << "rank()"; },
-			[&ser](const DistanceFromPoint& i) { ser << "ST_Distance(" << i.column << ", [" << i.point.x << ", " << i.point.y << "])"; },
+			[&ser](const DistanceFromPoint& i) {
+				ser << "ST_Distance(" << i.column << ", [" << i.point.X() << ", " << i.point.Y() << "])";
+			},
 			[&ser](const DistanceJoinedIndexFromPoint& i) {
-				ser << "ST_Distance(joined " << i.nsIdx << ' ' << i.column << ", [" << i.point.x << ", " << i.point.y << "])";
+				ser << "ST_Distance(joined " << i.nsIdx << ' ' << i.column << ", [" << i.point.X() << ", " << i.point.Y() << "])";
 			},
 			[&ser](const DistanceBetweenIndexes& i) { ser << "ST_Distance(" << i.column1 << ", " << i.column2 << ')'; },
 			[&ser](const DistanceBetweenIndexAndJoinedIndex& i) {
@@ -769,7 +772,7 @@ void ProxiedSortExpression::dump(const_iterator begin, const_iterator end, WrSer
 			[&ser](const Value& v) { ser << v.value; }, [&ser](const SortExprFuncs::ProxiedField& i) { ser << i.json; },
 			[&ser](const Rank&) { ser << "rank()"; },
 			[&ser](const ProxiedDistanceFromPoint& i) {
-				ser << "ST_Distance(" << i.json << ", [" << i.point.x << ", " << i.point.y << "])";
+				ser << "ST_Distance(" << i.json << ", [" << i.point.X() << ", " << i.point.Y() << "])";
 			},
 			[&ser](const ProxiedDistanceBetweenFields& i) { ser << "ST_Distance(" << i.json2 << ", " << i.json2 << ')'; });
 		if (it->operation.negative) ser << ')';

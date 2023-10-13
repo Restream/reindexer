@@ -1,11 +1,14 @@
 #include "client/cororeindexer.h"
 #include "client/itemimpl.h"
 #include "client/rpcclient.h"
+#include "tools/cpucheck.h"
 
 namespace reindexer {
 namespace client {
 
-CoroReindexer::CoroReindexer(const ReindexerConfig& config) : impl_(new RPCClient(config, nullptr)), owner_(true), ctx_() {}
+CoroReindexer::CoroReindexer(const ReindexerConfig& config) : impl_(new RPCClient(config, nullptr)), owner_(true), ctx_() {
+	reindexer::CheckRequiredSSESupport();
+}
 CoroReindexer::~CoroReindexer() {
 	if (owner_) {
 		delete impl_;
@@ -102,6 +105,10 @@ int64_t CoroReindexer::AddConnectionStateObserver(CoroReindexer::ConnectionState
 	return impl_->AddConnectionStateObserver(std::move(callback));
 }
 Error CoroReindexer::RemoveConnectionStateObserver(int64_t id) { return impl_->RemoveConnectionStateObserver(id); }
+
+[[nodiscard]] Error CoroReindexer::ShardingControlRequest(const sharding::ShardingControlRequestData& request) noexcept {
+	return impl_->ShardingControlRequest(request, ctx_);
+}
 
 }  // namespace client
 }  // namespace reindexer

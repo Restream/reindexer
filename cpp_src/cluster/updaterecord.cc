@@ -45,6 +45,11 @@ UpdateRecord::UpdateRecord(UpdateRecord::Type _type, std::string _nsName, int _e
 		case Type::NodeNetworkCheck:
 		case Type::SetTagsMatcher:
 		case Type::SetTagsMatcherTx:
+		case Type::SaveShardingConfig:
+		case Type::ApplyShardingConfig:
+		case Type::ResetOldShardingConfig:
+		case Type::ResetCandidateConfig:
+		case Type::RollbackCandidateConfig:
 			assert(false);
 	}
 }
@@ -86,6 +91,11 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::SetTagsMatcher:
 		case Type::SetTagsMatcherTx:
 		case Type::EmptyUpdate:
+		case Type::SaveShardingConfig:
+		case Type::ApplyShardingConfig:
+		case Type::ResetOldShardingConfig:
+		case Type::ResetCandidateConfig:
+		case Type::RollbackCandidateConfig:
 			assert(false);
 	}
 }
@@ -132,6 +142,11 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::SetTagsMatcher:
 		case Type::SetTagsMatcherTx:
 		case Type::EmptyUpdate:
+		case Type::SaveShardingConfig:
+		case Type::ApplyShardingConfig:
+		case Type::ResetOldShardingConfig:
+		case Type::ResetCandidateConfig:
+		case Type::RollbackCandidateConfig:
 			assert(false);
 	}
 }
@@ -175,6 +190,11 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::SetTagsMatcher:
 		case Type::SetTagsMatcherTx:
 		case Type::EmptyUpdate:
+		case Type::SaveShardingConfig:
+		case Type::ApplyShardingConfig:
+		case Type::ResetOldShardingConfig:
+		case Type::ResetCandidateConfig:
+		case Type::RollbackCandidateConfig:
 			assert(false);
 	}
 }
@@ -225,6 +245,11 @@ UpdateRecord::UpdateRecord(UpdateRecord::Type _type, std::string _nsName, lsn_t 
 		case Type::ResyncOnUpdatesDrop:
 		case Type::NodeNetworkCheck:
 		case Type::EmptyUpdate:
+		case Type::SaveShardingConfig:
+		case Type::ApplyShardingConfig:
+		case Type::ResetOldShardingConfig:
+		case Type::ResetCandidateConfig:
+		case Type::RollbackCandidateConfig:
 			assert(false);
 	}
 }
@@ -270,6 +295,11 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _n
 		case Type::SetTagsMatcher:
 		case Type::SetTagsMatcherTx:
 		case Type::EmptyUpdate:
+		case Type::SaveShardingConfig:
+		case Type::ApplyShardingConfig:
+		case Type::ResetOldShardingConfig:
+		case Type::ResetCandidateConfig:
+		case Type::RollbackCandidateConfig:
 			assert(false);
 	}
 }
@@ -312,6 +342,11 @@ UpdateRecord::UpdateRecord(Type _type, std::string _nsName, lsn_t _nsVersion, in
 		case Type::SetTagsMatcher:
 		case Type::SetTagsMatcherTx:
 		case Type::EmptyUpdate:
+		case Type::SaveShardingConfig:
+		case Type::ApplyShardingConfig:
+		case Type::ResetOldShardingConfig:
+		case Type::ResetCandidateConfig:
+		case Type::RollbackCandidateConfig:
 			assert(false);
 	}
 }
@@ -355,6 +390,106 @@ UpdateRecord::UpdateRecord(UpdateRecord::Type _type, std::string _nsName, lsn_t 
 		case Type::SetTagsMatcher:
 		case Type::SetTagsMatcherTx:
 		case Type::EmptyUpdate:
+		case Type::SaveShardingConfig:
+		case Type::ApplyShardingConfig:
+		case Type::ResetOldShardingConfig:
+		case Type::ResetCandidateConfig:
+		case Type::RollbackCandidateConfig:
+			assert(false);
+	}
+}
+
+UpdateRecord::UpdateRecord(Type _type, int _emmiterServerId, std::string _data, int64_t sourceId)
+	: type(_type), emmiterServerId(_emmiterServerId) {
+	switch (type) {
+		case Type::SaveShardingConfig:
+			data.emplace<std::unique_ptr<SaveNewShardingCfgRecord>>(new SaveNewShardingCfgRecord{std::move(_data), sourceId});
+			break;
+		case Type::PutMeta:
+		case Type::PutMetaTx:
+		case Type::IndexAdd:
+		case Type::IndexDrop:
+		case Type::IndexUpdate:
+		case Type::None:
+		case Type::ItemUpdate:
+		case Type::ItemUpsert:
+		case Type::ItemDelete:
+		case Type::ItemInsert:
+		case Type::ItemUpdateTx:
+		case Type::ItemUpsertTx:
+		case Type::ItemDeleteTx:
+		case Type::ItemInsertTx:
+		case Type::UpdateQuery:
+		case Type::DeleteQuery:
+		case Type::UpdateQueryTx:
+		case Type::DeleteQueryTx:
+		case Type::SetSchema:
+		case Type::Truncate:
+		case Type::BeginTx:
+		case Type::CommitTx:
+		case Type::AddNamespace:
+		case Type::DropNamespace:
+		case Type::CloseNamespace:
+		case Type::RenameNamespace:
+		case Type::ResyncNamespaceGeneric:
+		case Type::ResyncNamespaceLeaderInit:
+		case Type::ResyncOnUpdatesDrop:
+		case Type::NodeNetworkCheck:
+		case Type::SetTagsMatcher:
+		case Type::SetTagsMatcherTx:
+		case Type::EmptyUpdate:
+		case Type::ApplyShardingConfig:
+		case Type::ResetOldShardingConfig:
+		case Type::ResetCandidateConfig:
+		case Type::RollbackCandidateConfig:
+			assert(false);
+	}
+}
+
+UpdateRecord::UpdateRecord(Type _type, int _emmiterServerId, int64_t sourceId) : type(_type), emmiterServerId(_emmiterServerId) {
+	switch (type) {
+		case Type::ApplyShardingConfig:
+			data.emplace<std::unique_ptr<ApplyNewShardingCfgRecord>>(new ApplyNewShardingCfgRecord{sourceId});
+			break;
+		case Type::ResetOldShardingConfig:
+		case Type::ResetCandidateConfig:
+		case Type::RollbackCandidateConfig:
+			data.emplace<std::unique_ptr<ResetShardingCfgRecord>>(new ResetShardingCfgRecord{sourceId});
+			break;
+		case Type::PutMeta:
+		case Type::PutMetaTx:
+		case Type::IndexAdd:
+		case Type::IndexDrop:
+		case Type::IndexUpdate:
+		case Type::None:
+		case Type::ItemUpdate:
+		case Type::ItemUpsert:
+		case Type::ItemDelete:
+		case Type::ItemInsert:
+		case Type::ItemUpdateTx:
+		case Type::ItemUpsertTx:
+		case Type::ItemDeleteTx:
+		case Type::ItemInsertTx:
+		case Type::UpdateQuery:
+		case Type::DeleteQuery:
+		case Type::UpdateQueryTx:
+		case Type::DeleteQueryTx:
+		case Type::SetSchema:
+		case Type::Truncate:
+		case Type::BeginTx:
+		case Type::CommitTx:
+		case Type::AddNamespace:
+		case Type::DropNamespace:
+		case Type::CloseNamespace:
+		case Type::RenameNamespace:
+		case Type::ResyncNamespaceGeneric:
+		case Type::ResyncNamespaceLeaderInit:
+		case Type::ResyncOnUpdatesDrop:
+		case Type::NodeNetworkCheck:
+		case Type::SetTagsMatcher:
+		case Type::SetTagsMatcherTx:
+		case Type::EmptyUpdate:
+		case Type::SaveShardingConfig:
 			assert(false);
 	}
 }
@@ -403,6 +538,14 @@ size_t UpdateRecord::DataSize() const noexcept {
 		case Type::SetTagsMatcher:
 		case Type::SetTagsMatcherTx:
 			return std::get<std::unique_ptr<TagsMatcherReplicationRecord>>(data)->Size();
+		case Type::SaveShardingConfig:
+			return std::get<std::unique_ptr<SaveNewShardingCfgRecord>>(data)->Size();
+		case Type::ApplyShardingConfig:
+			return std::get<std::unique_ptr<ApplyNewShardingCfgRecord>>(data)->Size();
+		case Type::ResetOldShardingConfig:
+		case Type::ResetCandidateConfig:
+		case Type::RollbackCandidateConfig:
+			return std::get<std::unique_ptr<ResetShardingCfgRecord>>(data)->Size();
 		case Type::None:
 		default:
 			std::abort();

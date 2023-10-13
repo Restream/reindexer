@@ -200,6 +200,19 @@ public:
 	/// @param state - result state
 	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state);
 
+	/// Process new sharding config
+	/// @param config - New sharding config
+	/// @param sourceId - Unique identifier for operations with a specific config candidate
+	[[nodiscard]] Error SaveNewShardingConfig(std::string_view config, int64_t sourceId) noexcept;
+	/// Resetting the old sharding config before applying the new one
+	[[nodiscard]] Error ResetOldShardingConfig(int64_t sourceId) noexcept;
+	/// Resetting sharding config candidates if there were errors when saving of candidates on other nodes
+	[[nodiscard]] Error ResetShardingConfigCandidate(int64_t sourceId) noexcept;
+	/// Rollback config candidate if there were errors when trying to apply candidates on other nodes
+	[[nodiscard]] Error RollbackShardingConfigCandidate(int64_t sourceId) noexcept;
+	/// Apply new sharding config on all shards
+	[[nodiscard]] Error ApplyNewShardingConfig(int64_t sourceId) noexcept;
+
 	/// Add cancelable context
 	/// @param cancelCtx - context pointer
 	Reindexer WithContext(const IRdxCancelContext *cancelCtx) { return Reindexer(impl_, ctx_.WithCancelContext(cancelCtx)); }

@@ -14,6 +14,7 @@ class TagsMatcher;
 class JsonBuilder;
 class MsgPackBuilder;
 class ProtobufBuilder;
+class CsvBuilder;
 
 class IEncoderDatasourceWithJoins {
 public:
@@ -49,6 +50,7 @@ public:
 protected:
 	using IndexedTagsPathInternalT = IndexedTagsPathImpl<16>;
 	constexpr static bool kWithTagsPathTracking = std::is_same_v<ProtobufBuilder, Builder>;
+	constexpr static bool kWithFieldExtractor = std::is_same_v<FieldsExtractor, Builder>;
 
 	struct DummyTagsPathScope {
 		DummyTagsPathScope(TagsPath & /*tagsPath*/, int16_t /*tagName*/) noexcept {}
@@ -63,18 +65,19 @@ protected:
 	std::string_view getPlTuple(ConstPayload &pl);
 
 	const TagsMatcher *tagsMatcher_;
-	int fieldsoutcnt_[maxIndexes];
+	int fieldsoutcnt_[kMaxIndexes];
 	const FieldsSet *filter_;
 	WrSerializer tmpPlTuple_;
 	TagsPath curTagsPath_;
 	IndexedTagsPathInternalT indexedTagsPath_;
 	TagsLengths tagsLengths_;
-	uint64_t objectScalarIndexes_ = 0;
+	ScalarIndexesSetT objectScalarIndexes_;
 };
 
 using JsonEncoder = BaseEncoder<JsonBuilder>;
 using CJsonEncoder = BaseEncoder<CJsonBuilder>;
 using MsgPackEncoder = BaseEncoder<MsgPackBuilder>;
 using ProtobufEncoder = BaseEncoder<ProtobufBuilder>;
+using CsvEncoder = BaseEncoder<CsvBuilder>;
 
 }  // namespace reindexer

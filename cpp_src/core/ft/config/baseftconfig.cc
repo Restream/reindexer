@@ -31,14 +31,26 @@ void BaseFTConfig::parseBase(const gason::JsonNode &root) {
 	auto &stemmersNode = root["stemmers"];
 	if (!stemmersNode.empty()) {
 		stemmers.clear();
-		for (auto &st : stemmersNode) stemmers.push_back(st.As<std::string>());
+		for (auto &st : stemmersNode) stemmers.emplace_back(st.As<std::string>());
 	}
 	synonyms.clear();
 	for (auto &se : root["synonyms"]) {
 		Synonym synonym;
-		for (auto &ae : se["alternatives"]) synonym.alternatives.push_back(ae.As<std::string>());
-		for (auto &te : se["tokens"]) synonym.tokens.push_back(te.As<std::string>());
-		synonyms.push_back(std::move(synonym));
+		for (auto &ae : se["alternatives"]) synonym.alternatives.emplace_back(ae.As<std::string>());
+		for (auto &te : se["tokens"]) synonym.tokens.emplace_back(te.As<std::string>());
+		synonyms.emplace_back(std::move(synonym));
+	}
+	const auto &baseRankingConfigNode = root["base_ranking"];
+	if (!baseRankingConfigNode.empty()) {
+		rankingConfig.fullMatch = baseRankingConfigNode["full_match_proc"].As<>(rankingConfig.fullMatch, 0, 500);
+		rankingConfig.prefixMin = baseRankingConfigNode["prefix_min_proc"].As<>(rankingConfig.prefixMin, 0, 500);
+		rankingConfig.suffixMin = baseRankingConfigNode["suffix_min_proc"].As<>(rankingConfig.suffixMin, 0, 500);
+		rankingConfig.typo = baseRankingConfigNode["base_typo_proc"].As<>(rankingConfig.typo, 0, 500);
+		rankingConfig.typoPenalty = baseRankingConfigNode["typo_proc_penalty"].As<>(rankingConfig.typoPenalty, 0, 500);
+		rankingConfig.stemmerPenalty = baseRankingConfigNode["stemmer_proc_penalty"].As<>(rankingConfig.stemmerPenalty, 0, 500);
+		rankingConfig.kblayout = baseRankingConfigNode["kblayout_proc"].As<>(rankingConfig.kblayout, 0, 500);
+		rankingConfig.translit = baseRankingConfigNode["translit_proc"].As<>(rankingConfig.translit, 0, 500);
+		rankingConfig.synonyms = baseRankingConfigNode["synonyms_proc"].As<>(rankingConfig.synonyms, 0, 500);
 	}
 }
 
@@ -70,6 +82,18 @@ void BaseFTConfig::getJson(JsonBuilder &jsonBuilder) const {
 		for (const auto &sw : stopWords) {
 			stopWordsNode.Put(nullptr, sw);
 		}
+	}
+	{
+		auto baseRankingConfigNode = jsonBuilder.Object("base_ranking");
+		baseRankingConfigNode.Put("full_match_proc", rankingConfig.fullMatch);
+		baseRankingConfigNode.Put("prefix_min_proc", rankingConfig.prefixMin);
+		baseRankingConfigNode.Put("suffix_min_proc", rankingConfig.suffixMin);
+		baseRankingConfigNode.Put("base_typo_proc", rankingConfig.typo);
+		baseRankingConfigNode.Put("typo_proc_penalty", rankingConfig.typoPenalty);
+		baseRankingConfigNode.Put("stemmer_proc_penalty", rankingConfig.stemmerPenalty);
+		baseRankingConfigNode.Put("kblayout_proc", rankingConfig.kblayout);
+		baseRankingConfigNode.Put("translit_proc", rankingConfig.translit);
+		baseRankingConfigNode.Put("synonyms_proc", rankingConfig.synonyms);
 	}
 }
 

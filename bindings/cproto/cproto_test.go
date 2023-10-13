@@ -77,7 +77,7 @@ func TestCprotoPool(t *testing.T) {
 		u, err := url.Parse(dsn)
 		require.NoError(t, err)
 		c := new(NetCProto)
-		err = c.Init([]url.URL{*u})
+		err = c.Init([]url.URL{*u}, reindexer.WithConnPoolLoadBalancing(bindings.LBRoundRobin))
 		require.NoError(t, err)
 
 		conns := make(map[connection]bool)

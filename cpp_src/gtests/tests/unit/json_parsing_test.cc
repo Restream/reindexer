@@ -1,25 +1,31 @@
-#include "json_parsing_test.h"
+#include <gtest/gtest.h>
+#include "core/reindexer.h"
 
 #include "core/cjson/jsonbuilder.h"
 
-TEST_F(JSONParsingTest, EmptyDocument) {
-	Error err = rt.reindexer->OpenNamespace(default_namespace);
+TEST(JSONParsingTest, EmptyDocument) {
+	reindexer::Reindexer rx;
+	constexpr std::string_view kNsName("json_empty_doc_test");
+	auto err = rx.OpenNamespace(kNsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	Item item(rt.reindexer->NewItem(default_namespace));
+	reindexer::Item item(rx.NewItem(kNsName));
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	err = item.FromJSON("\n");
 	EXPECT_EQ(err.code(), errParseJson);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	err = item.FromJSON("\t");
 	EXPECT_EQ(err.code(), errParseJson);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 	err = item.FromJSON(" ");
 	EXPECT_EQ(err.code(), errParseJson);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 }
 
-TEST_F(JSONParsingTest, NestedNodesRead) {
+TEST(JSONParsingTest, NestedNodesRead) {
 	constexpr std::string_view jsonTest{R"json({
 								"type":"replication",
 								"replication":{
@@ -37,7 +43,7 @@ TEST_F(JSONParsingTest, NestedNodesRead) {
 	EXPECT_ANY_THROW(root["no-node"]["server_id"].As<int>());
 }
 
-TEST_F(JSONParsingTest, Strings) {
+TEST(JSONParsingTest, Strings) {
 	const std::vector<unsigned> lens = {0, 100, 8 < 10, 2 << 20, 8 << 20, 16 << 20, 32 << 20, 60 << 20};
 	for (auto len : lens) {
 		std::string strs[2];
@@ -63,7 +69,7 @@ TEST_F(JSONParsingTest, Strings) {
 	}
 }
 
-TEST_F(JSONParsingTest, LargeAllocations) {
+TEST(JSONParsingTest, LargeAllocations) {
 	constexpr int64_t kArrElemsCnt = 50000;
 	// Create json
 	reindexer::WrSerializer ser;
@@ -71,7 +77,7 @@ TEST_F(JSONParsingTest, LargeAllocations) {
 	jb.Put("mode", "mode");
 	auto arr = jb.Array("array");
 	for (int64_t i = 0; i < kArrElemsCnt; ++i) {
-		arr.Put(nullptr, Variant{i});
+		arr.Put(nullptr, reindexer::Variant{i});
 	}
 	arr.End();
 	jb.End();

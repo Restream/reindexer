@@ -19,7 +19,7 @@ RUN cd /src && \
 FROM debian:stable-slim
 COPY --from=build /usr/local /usr/local
 COPY --from=build /entrypoint.sh /entrypoint.sh
-RUN apt update -y && apt install -y libleveldb1d libunwind8 libjemalloc2 libgrpc++1 && rm -rf /var/lib/apt
+RUN apt update -y && apt install -y libleveldb1d libunwind8 libjemalloc2 libgrpc++1.51 && rm -rf /var/lib/apt
 
 ENV RX_DATABASE /db
 ENV RX_CORELOG stdout

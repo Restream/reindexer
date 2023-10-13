@@ -4,6 +4,7 @@
 #include <string_view>
 #include <thread>
 #include "tools/assertrx.h"
+#include "tools/errors.h"
 
 namespace reindexer {
 
@@ -15,8 +16,27 @@ public:
 	void unlock_shared() const noexcept {}
 };
 
-enum class MutexMark : unsigned { DbManager = 1u, IndexText, Namespace, Reindexer, ReindexerStorage };
-std::string_view DescribeMutexMark(MutexMark);
+enum class MutexMark : unsigned { DbManager = 0u, IndexText, Namespace, Reindexer, ReindexerStats, CloneNs, AsyncStorage };
+inline std::string_view DescribeMutexMark(MutexMark mark) {
+	using namespace std::string_view_literals;
+	switch (mark) {
+		case MutexMark::DbManager:
+			return "Database Manager"sv;
+		case MutexMark::IndexText:
+			return "Fulltext Index"sv;
+		case MutexMark::Namespace:
+			return "Namespace"sv;
+		case MutexMark::Reindexer:
+			return "Database"sv;
+		case MutexMark::ReindexerStats:
+			return "Reindexer Stats"sv;
+		case MutexMark::CloneNs:
+			return "Clone namespace"sv;
+		case MutexMark::AsyncStorage:
+			return "Async storage copy"sv;
+	}
+	throw Error(errLogic, "Unknown mutex type");
+}
 
 template <typename Mutex, MutexMark m>
 class MarkedMutex : public Mutex {

@@ -49,7 +49,15 @@ public:
 						completionFunction(clientCount, clientCompl, clientErrors, shardId, mtx, cv, err);
 					});
 
-				Error err = std::invoke(f, results.back().connection, std::forward<Args>(args)...);
+				auto &conn = results.back().connection;
+				auto invokeWrap = [&f, &conn](auto &&...args) { return std::invoke(f, conn, std::forward<decltype(args)>(args)...); };
+
+				Error err;
+				// check whether it is necessary to pass the ShardId to the function
+				if constexpr (std::is_invocable_v<Func, client::Reindexer &, Args..., int>)
+					err = invokeWrap(std::forward<Args>(args)..., shardId);
+				else
+					err = invokeWrap(std::forward<Args>(args)...);
 
 				if (!err.ok()) {
 					std::lock_guard lck(mtx);

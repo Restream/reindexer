@@ -57,10 +57,15 @@ public:
 	}
 
 	int WaitForVanishing() {
+#if !defined(REINDEXER_WITH_TSAN) && !defined(REINDEX_WITH_ASAN)
+		constexpr auto kStep = std::chrono::milliseconds(100);
+#else	// !defined (REINDEXER_WITH_TSAN) && !defined(REINDEX_WITH_ASAN)
+		constexpr auto kStep = std::chrono::milliseconds(300);
+#endif	// !defined (REINDEXER_WITH_TSAN) && !defined(REINDEX_WITH_ASAN)
 		size_t count = GetItemsCount();
 		if (count > 0) {
 			for (size_t i = 0; i < 10; ++i) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+				std::this_thread::sleep_for(kStep);
 				count = GetItemsCount();
 				if (count == 0) break;
 			}

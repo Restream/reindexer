@@ -105,6 +105,37 @@ TEST(StringFunctions, IsLikeSqlPattern) {
 	}
 }
 
+// test to check
+// 1. equality of character length in bytes for uppercase and lowercase letters
+// 2. character length equality after the substitution function 'check_for_replacement'
+
+TEST(StringFunctions, ToLowerUTF8ByteLen) {
+	for (wchar_t a = 0; a < UINT16_MAX; ++a) {
+		auto utf8ByteSize = [](wchar_t a) {
+			std::string symUtf8;
+			std::wstring symIn;
+			symIn += a;
+			reindexer::utf16_to_utf8(symIn, symUtf8);
+			return symUtf8.size();
+		};
+		ASSERT_EQ(utf8ByteSize(a), utf8ByteSize(reindexer::ToLower(a)));
+		{
+			wchar_t replaceChar = a;
+			reindexer::check_for_replacement(replaceChar);
+			if (replaceChar != a) {
+				ASSERT_EQ(utf8ByteSize(a), utf8ByteSize(replaceChar));
+			}
+		}
+		{
+			uint32_t replaceChar = a;
+			reindexer::check_for_replacement(replaceChar);
+			if (replaceChar != uint32_t(a)) {
+				ASSERT_EQ(utf8ByteSize(a), utf8ByteSize(replaceChar));
+			}
+		}
+	}
+}
+
 // Make sure 'Like' operator does not work with FT indexes
 TEST_F(ReindexerApi, LikeWithFullTextIndex) {
 	// Define structure of the Namespace, where one of
@@ -113,7 +144,7 @@ TEST_F(ReindexerApi, LikeWithFullTextIndex) {
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = rt.reindexer->AddIndex(default_namespace, {"id", {"id"}, "hash", "int", IndexOpts().PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
-	err = rt.reindexer->AddIndex(default_namespace, {"name", {"name", "text"}, "text", "string", IndexOpts()});
+	err = rt.reindexer->AddIndex(default_namespace, {"name", {"name"}, "text", "string", IndexOpts()});
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	// Insert 100 items to newly created Namespace

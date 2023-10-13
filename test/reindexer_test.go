@@ -2,6 +2,7 @@ package reindexer
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"math/rand"
 	"net/url"
@@ -96,7 +97,7 @@ func TestMain(m *testing.M) {
 		DB.DropNamespace(k)
 
 		if err := DB.OpenNamespace(k, reindexer.DefaultNamespaceOptions(), v); err != nil {
-			panic(err)
+			panic(fmt.Sprintf("Namespace: %s, err: %s", k, err.Error()))
 		}
 	}
 
@@ -189,8 +190,8 @@ func randFloat(min int, max int) float64 {
 	return float64(rand.Intn(max-min)+min) / float64(divider)
 }
 
-func randPoint() [2]float64 {
-	return [2]float64{randFloat(-10, 10), randFloat(-10, 10)}
+func randPoint() reindexer.Point {
+	return reindexer.Point{randFloat(-10, 10), randFloat(-10, 10)}
 }
 
 func randIntArr(cnt int, start int, rng int) (arr []int) {

@@ -21,9 +21,7 @@ class IndexText : public IndexUnordered<T> {
 public:
 	IndexText(const IndexText<T>& other);
 	IndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields)
-		: IndexUnordered<T>(idef, std::move(payloadType), fields),
-		  cache_ft_(std::make_shared<FtIdSetCache>()),
-		  preselected_cache_ft_(std::make_shared<PreselectedFtIdSetCache>()) {
+		: IndexUnordered<T>(idef, std::move(payloadType), fields), cache_ft_(std::make_shared<FtIdSetCache>()) {
 		this->selectKeyType_ = KeyValueType::String{};
 		initSearchers();
 	}
@@ -33,7 +31,7 @@ public:
 	SelectKeyResults SelectKey(const VariantArray& keys, CondType, Index::SelectOpts, const BaseFunctionCtx::Ptr&, FtPreselectT&&,
 							   const RdxContext&) override;
 	void UpdateSortedIds(const UpdateSortedContext&) override {}
-	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, bool mergeStatusesEmpty,
+	virtual IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, FtUseExternStatuses,
 							  const RdxContext&) = 0;
 	void SetOpts(const IndexOpts& opts) override;
 	void Commit() override final {
@@ -42,7 +40,6 @@ public:
 	}
 	void CommitFulltext() override final {
 		cache_ft_ = std::make_shared<FtIdSetCache>();
-		preselected_cache_ft_ = std::make_shared<PreselectedFtIdSetCache>();
 		commitFulltextImpl();
 		this->isBuilt_ = true;
 	}
@@ -51,12 +48,8 @@ public:
 	void ClearCache() override {
 		Base::ClearCache();
 		cache_ft_.reset();
-		preselected_cache_ft_.reset();
 	}
-	void ClearCache(const std::bitset<64>& s) override {
-		Base::ClearCache(s);
-		if (preselected_cache_ft_) preselected_cache_ft_->Clear();
-	}
+	void ClearCache(const std::bitset<kMaxIndexes>& s) override { Base::ClearCache(s); }
 	void MarkBuilt() noexcept override { assertrx(0); }
 	bool IsFulltext() const noexcept override { return true; }
 
@@ -65,18 +58,15 @@ protected:
 
 	virtual void commitFulltextImpl() = 0;
 	FtCtx::Ptr prepareFtCtx(const BaseFunctionCtx::Ptr&);
-	template <typename Cache>
-	SelectKeyResults doSelectKey(const VariantArray& keys, Cache&, std::optional<typename Cache::Key>, FtMergeStatuses&&,
-								 bool inTransaction, FtCtx::Ptr, const RdxContext&);
-	template <typename CacheIt>
-	SelectKeyResults resultFromCache(const VariantArray& keys, const CacheIt&, const FtCtx::Ptr&);
+	SelectKeyResults doSelectKey(const VariantArray& keys, const std::optional<IdSetCacheKey>&, FtMergeStatuses&&,
+								 FtUseExternStatuses useExternSt, bool inTransaction, FtCtx::Ptr, const RdxContext&);
+	SelectKeyResults resultFromCache(const VariantArray& keys, FtIdSetCache::Iterator&&, FtCtx::Ptr&);
 	void build(const RdxContext& rdxCtx);
 
 	void initSearchers();
 	FieldsGetter Getter();
 
 	std::shared_ptr<FtIdSetCache> cache_ft_;
-	std::shared_ptr<PreselectedFtIdSetCache> preselected_cache_ft_;
 
 	RHashMap<std::string, int> ftFields_;
 	std::unique_ptr<BaseFTConfig> cfg_;

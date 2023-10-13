@@ -1,9 +1,8 @@
 #include "explaincalc.h"
+
 #include <sstream>
-#include "core/cbinding/reindexer_ctypes.h"
+
 #include "core/cjson/jsonbuilder.h"
-#include "core/namespace/namespaceimpl.h"
-#include "core/query/sql/sqlencoder.h"
 #include "nsselecter.h"
 #include "tools/logger.h"
 
@@ -36,9 +35,9 @@ void ExplainCalc::LogDump(int logLevel) {
 		if (jselectors_) {
 			for (auto &js : *jselectors_) {
 				if (js.Type() == JoinType::LeftJoin || js.Type() == JoinType::Merge) {
-					logPrintf(LogInfo, "%s %s: called %d", SQLEncoder::JoinTypeName(js.Type()), js.RightNsName(), js.Called());
+					logPrintf(LogInfo, "%s %s: called %d", JoinTypeName(js.Type()), js.RightNsName(), js.Called());
 				} else {
-					logPrintf(LogInfo, "%s %s: called %d, matched %d", SQLEncoder::JoinTypeName(js.Type()), js.RightNsName(), js.Called(),
+					logPrintf(LogInfo, "%s %s: called %d, matched %d", JoinTypeName(js.Type()), js.RightNsName(), js.Called(),
 							  js.Matched());
 				}
 			}
@@ -46,7 +45,7 @@ void ExplainCalc::LogDump(int logLevel) {
 	}
 }
 
-static const char *joinTypeName(JoinType type) {
+constexpr inline const char *joinTypeName(JoinType type) noexcept {
 	switch (type) {
 		case JoinType::InnerJoin:
 			return "inner_join ";
@@ -61,7 +60,7 @@ static const char *joinTypeName(JoinType type) {
 	}
 }
 
-static const char *opName(OpType op, bool first = true) {
+constexpr inline const char *opName(OpType op, bool first = true) {
 	switch (op) {
 		case OpAnd:
 			return first ? "" : "and ";
@@ -70,17 +69,32 @@ static const char *opName(OpType op, bool first = true) {
 		case OpNot:
 			return "not ";
 		default:
-			abort();
+			throw Error(errLogic, "Unexpected op type %d", int(op));
+	}
+}
+
+constexpr std::string_view fieldKind(IteratorFieldKind fk) {
+	using namespace std::string_view_literals;
+	switch (fk) {
+		case IteratorFieldKind::NonIndexed:
+			return "non-indexed"sv;
+		case IteratorFieldKind::Indexed:
+			return "indexed"sv;
+		case IteratorFieldKind::None:
+			return ""sv;
+		default:
+			throw Error(errLogic, "Unexpected field type %d", int(fk));
 	}
 }
 
 static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpType op = OpAnd) {
+	using namespace std::string_view_literals;
 	auto jsonSel = builder.Object();
 	std::string name{joinTypeName(js.Type()) + js.RightNsName()};
-	jsonSel.Put("field", opName(op) + name);
-	jsonSel.Put("matched", js.Matched());
-	jsonSel.Put("selects_count", js.Called());
-	jsonSel.Put("join_select_total", ExplainCalc::To_us(js.PreResult()->selectTime));
+	jsonSel.Put("field"sv, opName(op) + name);
+	jsonSel.Put("matched"sv, js.Matched());
+	jsonSel.Put("selects_count"sv, js.Called());
+	jsonSel.Put("join_select_total"sv, ExplainCalc::To_us(js.PreResult()->selectTime));
 	switch (js.Type()) {
 		case JoinType::InnerJoin:
 		case JoinType::OrInnerJoin:
@@ -88,25 +102,25 @@ static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpT
 			assertrx(js.PreResult());
 			switch (js.PreResult()->dataMode) {
 				case JoinPreResult::ModeValues:
-					jsonSel.Put("method", "preselected_values");
-					jsonSel.Put("keys", js.PreResult()->values.size());
+					jsonSel.Put("method"sv, "preselected_values"sv);
+					jsonSel.Put("keys"sv, js.PreResult()->values.size());
 					break;
 				case JoinPreResult::ModeIdSet:
-					jsonSel.Put("method", "preselected_rows");
-					jsonSel.Put("keys", js.PreResult()->ids.size());
+					jsonSel.Put("method"sv, "preselected_rows"sv);
+					jsonSel.Put("keys"sv, js.PreResult()->ids.size());
 					break;
 				case JoinPreResult::ModeIterators:
-					jsonSel.Put("method", "no_preselect");
-					jsonSel.Put("keys", js.PreResult()->iterators.Size());
+					jsonSel.Put("method"sv, "no_preselect"sv);
+					jsonSel.Put("keys"sv, js.PreResult()->iterators.Size());
 					break;
 				default:
 					break;
 			}
 			if (!js.PreResult()->explainPreSelect.empty()) {
-				jsonSel.Raw("explain_preselect", js.PreResult()->explainPreSelect);
+				jsonSel.Raw("explain_preselect"sv, js.PreResult()->explainPreSelect);
 			}
 			if (!js.PreResult()->explainOneSelect.empty()) {
-				jsonSel.Raw("explain_select", js.PreResult()->explainOneSelect);
+				jsonSel.Raw("explain_select"sv, js.PreResult()->explainOneSelect);
 			}
 			break;
 		case JoinType::Merge:
@@ -115,31 +129,101 @@ static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpT
 	return name;
 }
 
+static void addToJSON(JsonBuilder &builder, const ConditionInjection &injCond) {
+	auto jsonSel = builder.Object();
+	using namespace std::string_view_literals;
+	using namespace std::string_literals;
+
+	jsonSel.Put("condition"sv, injCond.initCond);
+	jsonSel.Put("total_time_us"sv, ExplainCalc::To_us(injCond.totalTime_));
+	jsonSel.Put("success"sv, injCond.succeed);
+	if (!injCond.succeed) {
+		if (injCond.reason.empty()) {
+			if (injCond.orChainPart_) {
+				jsonSel.Put("reason"sv, "Skipped as Or-chain part."sv);
+			} else {
+				jsonSel.Put("reason"sv, "Unknown"sv);
+			}
+		} else {
+			std::string reason{injCond.reason};
+			if (injCond.orChainPart_) {
+				reason += " Or-chain part.";
+			}
+			jsonSel.Put("reason"sv, reason);
+		}
+	}
+
+	if (!injCond.explain.empty()) {
+		jsonSel.Raw("explain_select"sv, injCond.explain);
+	}
+	if (injCond.aggType != AggType::AggUnknown) {
+		jsonSel.Put("agg_type"sv, AggTypeToStr(injCond.aggType));
+	}
+	jsonSel.Put("values_count"sv, injCond.valuesCount);
+	jsonSel.Put("new_condition"sv, injCond.newCond);
+}
+
+static std::string addToJSON(JsonBuilder &builder, const JoinOnInjection &injCond) {
+	auto jsonSel = builder.Object();
+	std::string name{injCond.rightNsName};
+	using namespace std::string_view_literals;
+
+	jsonSel.Put("namespace"sv, injCond.rightNsName);
+	jsonSel.Put("on_condition"sv, injCond.joinCond);
+	jsonSel.Put("type"sv, injCond.type == JoinOnInjection::ByValue ? "by_value"sv : "select"sv);
+	jsonSel.Put("total_time_us"sv, ExplainCalc::To_us(injCond.totalTime_));
+	jsonSel.Put("success"sv, injCond.succeed);
+	if (!injCond.reason.empty()) {
+		jsonSel.Put("reason"sv, injCond.reason);
+	}
+	jsonSel.Put("injected_condition"sv, injCond.injectedCond.Slice());
+	if (!injCond.conditions.empty()) {
+		auto jsonCondInjections = jsonSel.Array("conditions"sv);
+		for (const auto &cond : injCond.conditions) {
+			addToJSON(jsonCondInjections, cond);
+		}
+	}
+
+	return name;
+}
+
 std::string ExplainCalc::GetJSON() {
+	using namespace std::string_view_literals;
 	WrSerializer ser;
 	{
 		JsonBuilder json(ser);
 		if (enabled_) {
-			json.Put("total_us", To_us(total_));
-			json.Put("prepare_us", To_us(prepare_));
-			json.Put("indexes_us", To_us(select_));
-			json.Put("postprocess_us", To_us(postprocess_));
-			json.Put("loop_us", To_us(loop_));
-			json.Put("general_sort_us", To_us(sort_));
+			json.Put("total_us"sv, To_us(total_));
+			json.Put("preselect_us"sv, To_us(preselect_));
+			json.Put("prepare_us"sv, To_us(prepare_));
+			json.Put("indexes_us"sv, To_us(select_));
+			json.Put("postprocess_us"sv, To_us(postprocess_));
+			json.Put("loop_us"sv, To_us(loop_));
+			json.Put("general_sort_us"sv, To_us(sort_));
 		}
-		json.Put("sort_index", sortIndex_);
-		json.Put("sort_by_uncommitted_index", sortOptimization_);
+		json.Put("sort_index"sv, sortIndex_);
+		json.Put("sort_by_uncommitted_index"sv, sortOptimization_);
 
-		auto jsonSelArr = json.Array("selectors");
+		{
+			auto jsonSelArr = json.Array("selectors"sv);
 
-		if (selectors_) {
-			selectors_->ExplainJSON(iters_, jsonSelArr, jselectors_);
+			if (selectors_) {
+				selectors_->ExplainJSON(iters_, jsonSelArr, jselectors_);
+			}
+
+			if (jselectors_) {
+				// adding explain for LeftJoin-s and Merge subqueries
+				for (const JoinedSelector &js : *jselectors_) {
+					if (js.Type() == JoinType::InnerJoin || js.Type() == JoinType::OrInnerJoin) continue;
+					addToJSON(jsonSelArr, js);
+				}
+			}
 		}
 
-		if (jselectors_) {
-			for (JoinedSelector &js : *jselectors_) {
-				if (js.Type() == JoinType::InnerJoin || js.Type() == JoinType::OrInnerJoin) continue;
-				addToJSON(jsonSelArr, js);
+		if (onInjections_ && !onInjections_->empty()) {
+			auto jsonOnInjections = json.Array("on_conditions_injections"sv);
+			for (const JoinOnInjection &injCond : *onInjections_) {
+				addToJSON(jsonOnInjections, injCond);
 			}
 		}
 	}
@@ -150,6 +234,8 @@ std::string ExplainCalc::GetJSON() {
 std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_iterator end, int iters, JsonBuilder &builder,
 												 const JoinedSelectors *jselectors) {
 	using namespace std::string_literals;
+	using namespace std::string_view_literals;
+
 	std::stringstream name;
 	name << '(';
 	for (const_iterator it = begin; it != end; ++it) {
@@ -157,26 +243,29 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 		it->InvokeAppropriate<void>(
 			[&](const SelectIteratorsBracket &) {
 				auto jsonSel = builder.Object();
-				auto jsonSelArr = jsonSel.Array("selectors");
+				auto jsonSelArr = jsonSel.Array("selectors"sv);
 				const std::string brName{explainJSON(it.cbegin(), it.cend(), iters, jsonSelArr, jselectors)};
 				jsonSelArr.End();
-				jsonSel.Put("field", opName(it->operation) + brName);
+				jsonSel.Put("field"sv, opName(it->operation) + brName);
 				name << opName(it->operation, it == begin) << brName;
 			},
 			[&](const SelectIterator &siter) {
 				auto jsonSel = builder.Object();
-				const bool isScanIterator{std::string_view(siter.name) == "-scan"};
+				const bool isScanIterator{std::string_view(siter.name) == "-scan"sv};
 				if (!isScanIterator) {
-					jsonSel.Put("keys", siter.size());
-					jsonSel.Put("comparators", siter.comparators_.size());
-					jsonSel.Put("cost", siter.Cost(iters));
+					jsonSel.Put("keys"sv, siter.size());
+					jsonSel.Put("comparators"sv, siter.comparators_.size());
+					jsonSel.Put("cost"sv, siter.Cost(iters));
 				} else {
-					jsonSel.Put("items", siter.GetMaxIterations(iters));
+					jsonSel.Put("items"sv, siter.GetMaxIterations(iters));
 				}
-				jsonSel.Put("field", opName(it->operation) + siter.name);
-				jsonSel.Put("matched", siter.GetMatchedCount());
-				jsonSel.Put("method", isScanIterator || siter.comparators_.size() ? "scan" : "index");
-				jsonSel.Put("type", siter.TypeName());
+				jsonSel.Put("field"sv, opName(it->operation) + siter.name);
+				if (siter.fieldKind != IteratorFieldKind::None) {
+					jsonSel.Put("field_type"sv, fieldKind(siter.fieldKind));
+				}
+				jsonSel.Put("matched"sv, siter.GetMatchedCount());
+				jsonSel.Put("method"sv, isScanIterator || siter.comparators_.size() ? "scan"sv : "index"sv);
+				jsonSel.Put("type"sv, siter.TypeName());
 				name << opName(it->operation, it == begin) << siter.name;
 			},
 			[&](const JoinSelectIterator &jiter) {
@@ -186,71 +275,66 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 			},
 			[&](const FieldsComparator &c) {
 				auto jsonSel = builder.Object();
-				jsonSel.Put("comparators", 1);
-				jsonSel.Put("field", opName(it->operation) + c.Name());
-				jsonSel.Put("cost", c.Cost(iters));
-				jsonSel.Put("method", "scan");
-				jsonSel.Put("items", iters);
-				jsonSel.Put("matched", c.GetMatchedCount());
-				jsonSel.Put("type", "TwoFieldsComparison");
+				jsonSel.Put("comparators"sv, 1);
+				jsonSel.Put("field"sv, opName(it->operation) + c.Name());
+				jsonSel.Put("cost"sv, c.Cost(iters));
+				jsonSel.Put("method"sv, "scan"sv);
+				jsonSel.Put("items"sv, iters);
+				jsonSel.Put("matched"sv, c.GetMatchedCount());
+				jsonSel.Put("type"sv, "TwoFieldsComparison"sv);
 				name << opName(it->operation, it == begin) << c.Name();
 			},
 			[&](const AlwaysFalse &) {
 				auto jsonSkiped = builder.Object();
-				jsonSkiped.Put("type", "Skipped");
-				jsonSkiped.Put("description", "always "s + (it->operation == OpNot ? "true" : "false"));
-				name << opName(it->operation == OpNot ? OpAnd : it->operation, it == begin) << "Always"
-					 << (it->operation == OpNot ? "True" : "False");
+				jsonSkiped.Put("type"sv, "Skipped"sv);
+				jsonSkiped.Put("description"sv, "always "s + (it->operation == OpNot ? "true" : "false"));
+				name << opName(it->operation == OpNot ? OpAnd : it->operation, it == begin) << "Always"sv
+					 << (it->operation == OpNot ? "True"sv : "False"sv);
 			});
 	}
 	name << ')';
 	return name.str();
 }
 
-ExplainCalc::Duration ExplainCalc::lap() {
+ExplainCalc::Duration ExplainCalc::lap() noexcept {
 	auto now = Clock::now();
 	Duration d = now - last_point_;
 	last_point_ = now;
 	return d;
 }
 
-int ExplainCalc::To_us(const ExplainCalc::Duration &d) { return duration_cast<microseconds>(d).count(); }
+int ExplainCalc::To_us(const ExplainCalc::Duration &d) noexcept { return duration_cast<microseconds>(d).count(); }
 
-void reindexer::ExplainCalc::StartTiming() {
+void ExplainCalc::StartTiming() noexcept {
 	if (enabled_) lap();
 }
 
-void reindexer::ExplainCalc::StopTiming() {
-	if (enabled_) total_ = prepare_ + select_ + postprocess_ + loop_;
+void ExplainCalc::StopTiming() noexcept {
+	if (enabled_) total_ = preselect_ + prepare_ + select_ + postprocess_ + loop_;
 }
 
-void reindexer::ExplainCalc::AddPrepareTime() {
+void ExplainCalc::AddPrepareTime() noexcept {
 	if (enabled_) prepare_ += lap();
 }
 
-void reindexer::ExplainCalc::AddSelectTime() {
+void ExplainCalc::AddSelectTime() noexcept {
 	if (enabled_) select_ += lap();
 }
 
-void reindexer::ExplainCalc::AddPostprocessTime() {
+void ExplainCalc::AddPostprocessTime() noexcept {
 	if (enabled_) postprocess_ += lap();
 }
 
-void reindexer::ExplainCalc::AddLoopTime() {
+void ExplainCalc::AddLoopTime() noexcept {
 	if (enabled_) loop_ += lap();
 }
 
-void reindexer::ExplainCalc::StartSort() {
+void ExplainCalc::StartSort() noexcept {
 	if (enabled_) sort_start_point_ = Clock::now();
 }
 
-void reindexer::ExplainCalc::StopSort() {
+void ExplainCalc::StopSort() noexcept {
 	if (enabled_) sort_ = Clock::now() - sort_start_point_;
 }
-
-void reindexer::ExplainCalc::AddIterations(int iters) { iters_ += iters; }
-void reindexer::ExplainCalc::PutSortIndex(std::string_view index) { sortIndex_ = index; }
-void ExplainCalc::PutSelectors(SelectIteratorContainer *qres) { selectors_ = qres; }
-void ExplainCalc::PutJoinedSelectors(JoinedSelectors *jselectors) { jselectors_ = jselectors; }
 
 }  // namespace reindexer

@@ -11,7 +11,7 @@
 namespace reindexer {
 namespace debug {
 
-void terminate_handler() {
+static void terminate_handler() {
 	std::ostringstream sout;
 	std::exception_ptr exptr = std::current_exception();
 	if (exptr) {

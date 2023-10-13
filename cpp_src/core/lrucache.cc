@@ -13,16 +13,17 @@ const int kMaxHitCountToCache = 1024;
 
 template <typename K, typename V, typename hash, typename equal>
 typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(const K &key) {
-	if (cacheSizeLimit_ == 0) return Iterator();
+	if rx_unlikely (cacheSizeLimit_ == 0) return Iterator();
 
-	std::lock_guard<std::mutex> lk(lock_);
+	std::lock_guard lk(lock_);
 
-	auto it = items_.find(key);
-	if (it == items_.end()) {
-		it = items_.emplace(key, Entry{}).first;
+	auto [it, emplaced] = items_.try_emplace(key);
+	if (emplaced) {
 		totalCacheSize_ += kElemSizeOverhead + sizeof(Entry) + key.Size();
 		it->second.lruPos = lru_.insert(lru_.end(), &it->first);
-		if (!eraseLRU()) return Iterator();
+		if rx_unlikely (!eraseLRU()) {
+			return Iterator();
+		}
 	} else if (std::next(it->second.lruPos) != lru_.end()) {
 		lru_.splice(lru_.end(), lru_, it->second.lruPos, std::next(it->second.lruPos));
 		it->second.lruPos = std::prev(lru_.end());
@@ -40,9 +41,9 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 
 template <typename K, typename V, typename hash, typename equal>
 void LRUCache<K, V, hash, equal>::Put(const K &key, V &&v) {
-	if (cacheSizeLimit_ == 0) return;
+	if rx_unlikely (cacheSizeLimit_ == 0) return;
 
-	std::lock_guard<std::mutex> lk(lock_);
+	std::lock_guard lk(lock_);
 	auto it = items_.find(key);
 	if (it == items_.end()) return;
 
@@ -55,7 +56,7 @@ void LRUCache<K, V, hash, equal>::Put(const K &key, V &&v) {
 
 	eraseLRU();
 
-	if (eraseCount_ && putCount_ * 16 > getCount_) {
+	if rx_unlikely (putCount_ * 16 > getCount_ && eraseCount_) {
 		logPrintf(LogWarning, "IdSetCache::eraseLRU () cache invalidates too fast eraseCount=%d,putCount=%d,getCount=%d", eraseCount_,
 				  putCount_, eraseCount_);
 		eraseCount_ = 0;
@@ -66,29 +67,29 @@ void LRUCache<K, V, hash, equal>::Put(const K &key, V &&v) {
 }
 
 template <typename K, typename V, typename hash, typename equal>
-bool LRUCache<K, V, hash, equal>::eraseLRU() {
+RX_ALWAYS_INLINE bool LRUCache<K, V, hash, equal>::eraseLRU() {
 	typename LRUList::iterator it = lru_.begin();
 
 	while (totalCacheSize_ > cacheSizeLimit_) {
 		// just to save us if totalCacheSize_ >0 and lru is empty
 		// someone can make bad key or val with wrong size
-		if (lru_.empty()) {
+		// TODO: Probably we should remove this logic, since there is no access to sizes outside of the lrucache
+		if rx_unlikely (lru_.empty()) {
 			clearAll();
 			logPrintf(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_=%d", totalCacheSize_);
 			return false;
 		}
 		auto mIt = items_.find(**it);
-		assertrx(mIt != items_.end());
+		assertrx_throw(mIt != items_.end());
 
-		size_t oldSize = sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size();
+		const size_t oldSize = sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size();
 
-		if (oldSize > totalCacheSize_) {
+		if rx_unlikely (oldSize > totalCacheSize_) {
 			clearAll();
 			logPrintf(LogError, "IdSetCache::eraseLRU () Cache restarted because wrong cache size totalCacheSize_=%d,oldSize=%d",
 					  totalCacheSize_, oldSize);
 			return false;
 		}
-
 		totalCacheSize_ = totalCacheSize_ - oldSize;
 		items_.erase(mIt);
 		it = lru_.erase(it);
@@ -97,15 +98,10 @@ bool LRUCache<K, V, hash, equal>::eraseLRU() {
 
 	return !lru_.empty();
 }
-template <typename K, typename V, typename hash, typename equal>
-bool LRUCache<K, V, hash, equal>::Clear() {
-	std::lock_guard<std::mutex> lk(lock_);
-	return clearAll();
-}
 
 template <typename K, typename V, typename hash, typename equal>
 bool LRUCache<K, V, hash, equal>::clearAll() {
-	bool res = !items_.empty();
+	const bool res = !items_.empty();
 	totalCacheSize_ = 0;
 	std::unordered_map<K, Entry, hash, equal>().swap(items_);
 	LRUList().swap(lru_);
@@ -117,8 +113,9 @@ bool LRUCache<K, V, hash, equal>::clearAll() {
 
 template <typename K, typename V, typename hash, typename equal>
 LRUCacheMemStat LRUCache<K, V, hash, equal>::GetMemStat() {
-	std::lock_guard<std::mutex> lk(lock_);
 	LRUCacheMemStat ret;
+
+	std::lock_guard lk(lock_);
 	ret.totalSize = totalCacheSize_;
 	ret.itemsCount = items_.size();
 	// for (auto &item : items_) {
@@ -133,6 +130,5 @@ template class LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equa
 template class LRUCache<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
 template class LRUCache<QueryCacheKey, QueryTotalCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
 template class LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
-template class LRUCache<QueryCacheKey, FtIdSetCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
 
 }  // namespace reindexer

@@ -70,6 +70,25 @@ struct NodeNetworkCheckRecord {
 	bool online;
 };
 
+struct SaveNewShardingCfgRecord {
+	size_t Size() const noexcept { return sizeof(SaveNewShardingCfgRecord) + config.size(); }
+
+	std::string config;
+	int64_t sourceId;
+};
+
+struct ApplyNewShardingCfgRecord {
+	size_t Size() const noexcept { return sizeof(ApplyNewShardingCfgRecord); }
+
+	int64_t sourceId;
+};
+
+struct ResetShardingCfgRecord {
+	size_t Size() const noexcept { return sizeof(ResetShardingCfgRecord); }
+
+	int64_t sourceId;
+};
+
 struct UpdateRecord {
 	enum class Type {
 		None = 0,
@@ -104,7 +123,12 @@ struct UpdateRecord {
 		EmptyUpdate = 29,
 		NodeNetworkCheck = 30,
 		SetTagsMatcher = 31,
-		SetTagsMatcherTx = 32
+		SetTagsMatcherTx = 32,
+		SaveShardingConfig = 33,
+		ApplyShardingConfig = 34,
+		ResetOldShardingConfig = 35,
+		ResetCandidateConfig = 36,
+		RollbackCandidateConfig = 37,
 	};
 
 	UpdateRecord() = default;
@@ -117,11 +141,15 @@ struct UpdateRecord {
 	UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, IndexDef _idef);
 	UpdateRecord(Type _type, std::string _nsName, lsn_t _nsVersion, int _emmiterServerId, NamespaceDef _def, int64_t _stateToken);
 	UpdateRecord(Type _type, std::string _nsName, lsn_t _lsn, lsn_t _nsVersion, int _emmiterServerId, std::string _k, std::string _v);
+	UpdateRecord(Type _type, int _emmiterServerId, std::string _data, int64_t sourceId);
+	UpdateRecord(Type _type, int _emmiterServerId, int64_t sourceId);
 
 	const std::string& GetNsName() const noexcept { return nsName; }
 	bool IsDbRecord() const noexcept {
 		return type == Type::AddNamespace || type == Type::DropNamespace || type == Type::CloseNamespace || type == Type::RenameNamespace ||
-			   type == Type::ResyncNamespaceGeneric || type == Type::ResyncNamespaceLeaderInit;
+			   type == Type::ResyncNamespaceGeneric || type == Type::ResyncNamespaceLeaderInit || type == Type::SaveShardingConfig ||
+			   type == Type::ApplyShardingConfig || type == Type::ResetOldShardingConfig || type == Type::RollbackCandidateConfig ||
+			   type == Type::ResetCandidateConfig;
 	}
 	bool IsRequiringTmUpdate() const noexcept {
 		return type == Type::IndexAdd || type == Type::SetSchema || type == Type::IndexDrop || type == Type::IndexUpdate || IsDbRecord();
@@ -169,6 +197,11 @@ struct UpdateRecord {
 			case Type::NodeNetworkCheck:
 			case Type::SetTagsMatcher:
 			case Type::SetTagsMatcherTx:
+			case Type::SaveShardingConfig:
+			case Type::ApplyShardingConfig:
+			case Type::ResetOldShardingConfig:
+			case Type::ResetCandidateConfig:
+			case Type::RollbackCandidateConfig:
 			default:
 				return false;
 		}
@@ -184,7 +217,9 @@ struct UpdateRecord {
 	std::variant<std::unique_ptr<ItemReplicationRecord>, std::unique_ptr<IndexReplicationRecord>, std::unique_ptr<MetaReplicationRecord>,
 				 std::unique_ptr<QueryReplicationRecord>, std::unique_ptr<SchemaReplicationRecord>,
 				 std::unique_ptr<AddNamespaceReplicationRecord>, std::unique_ptr<RenameNamespaceReplicationRecord>,
-				 std::unique_ptr<NodeNetworkCheckRecord>, std::unique_ptr<TagsMatcherReplicationRecord>>
+				 std::unique_ptr<NodeNetworkCheckRecord>, std::unique_ptr<TagsMatcherReplicationRecord>,
+				 std::unique_ptr<SaveNewShardingCfgRecord>, std::unique_ptr<ApplyNewShardingCfgRecord>,
+				 std::unique_ptr<ResetShardingCfgRecord>>
 		data;
 	int emmiterServerId = -1;
 };

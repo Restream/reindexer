@@ -17,6 +17,10 @@ struct SnapshotOpts;
 struct ReplicationStateV2;
 struct ClusterizationStatus;
 
+namespace sharding {
+struct ShardingControlRequestData;
+}
+
 namespace client {
 
 class RPCClient;
@@ -234,6 +238,10 @@ public:
 	/// Remove observer by it's ID
 	/// @param id - observer's ID
 	Error RemoveConnectionStateObserver(int64_t id);
+
+	/// Execute sharding control request during the sharding config change
+	/// @param request - control params
+	[[nodiscard]] Error ShardingControlRequest(const sharding::ShardingControlRequestData &request) noexcept;
 
 	/// Add cancelable context
 	/// @param cancelCtx - context pointer

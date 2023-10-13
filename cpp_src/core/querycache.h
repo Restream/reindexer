@@ -10,42 +10,39 @@ namespace reindexer {
 
 struct QueryTotalCountCacheVal {
 	QueryTotalCountCacheVal() = default;
-	QueryTotalCountCacheVal(const size_t& total) : total_count(total) {}
+	QueryTotalCountCacheVal(size_t total) noexcept : total_count(total) {}
 
-	size_t Size() const { return 0; }
+	size_t Size() const noexcept { return 0; }
 
 	int total_count = -1;
 };
 
 struct QueryCacheKey {
-	QueryCacheKey() {}
-	QueryCacheKey(const QueryCacheKey& other) : buf(other.buf) {}
-	QueryCacheKey& operator=(const QueryCacheKey& other) {
-		if (this != &other) {
-			buf = other.buf;
-		}
-		return *this;
-	}
+	QueryCacheKey() = default;
+	QueryCacheKey(QueryCacheKey&& other) = default;
+	QueryCacheKey(const QueryCacheKey& other) = default;
+	QueryCacheKey& operator=(QueryCacheKey&& other) = default;
+	QueryCacheKey& operator=(const QueryCacheKey& other) = delete;
 	QueryCacheKey(const Query& q) {
 		WrSerializer ser;
 		q.Serialize(ser, (SkipJoinQueries | SkipMergeQueries | SkipLimitOffset));
 		buf.reserve(ser.Len());
 		buf.assign(ser.Buf(), ser.Buf() + ser.Len());
 	}
-	size_t Size() const { return sizeof(QueryCacheKey) + (buf.is_hdata() ? 0 : buf.size()); }
+	size_t Size() const noexcept { return sizeof(QueryCacheKey) + (buf.is_hdata() ? 0 : buf.size()); }
 
 	QueryCacheKey(WrSerializer& ser) : buf(ser.Buf(), ser.Buf() + ser.Len()) {}
 	h_vector<uint8_t, 256> buf;
 };
 
 struct EqQueryCacheKey {
-	bool operator()(const QueryCacheKey& lhs, const QueryCacheKey& rhs) const {
+	bool operator()(const QueryCacheKey& lhs, const QueryCacheKey& rhs) const noexcept {
 		return (lhs.buf.size() == rhs.buf.size()) && (memcmp(lhs.buf.data(), rhs.buf.data(), lhs.buf.size()) == 0);
 	}
 };
 
 struct HashQueryCacheKey {
-	size_t operator()(const QueryCacheKey& q) const {
+	size_t operator()(const QueryCacheKey& q) const noexcept {
 		uint64_t hash[2];
 		MurmurHash3_x64_128(q.buf.data(), q.buf.size(), 0, &hash);
 		return hash[0];

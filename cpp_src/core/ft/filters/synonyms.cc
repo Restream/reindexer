@@ -5,9 +5,7 @@
 
 namespace reindexer {
 
-constexpr int kSynonymProc = 95;
-
-void Synonyms::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result) {
+void Synonyms::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result, int proc) {
 	if (one2one_.empty()) return;
 
 	auto it = one2one_.find(data);
@@ -15,7 +13,7 @@ void Synonyms::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& 
 		return;
 	}
 	for (const auto& ait : *it->second) {
-		result.emplace_back(ait, kSynonymProc);
+		result.emplace_back(ait, proc);
 	}
 }
 
@@ -31,18 +29,18 @@ void Synonyms::addDslEntries(std::vector<SynonymsDsl>& synonymsDsl, const Multip
 	}
 }
 
-static FtDslOpts makeOptsForAlternatives(const FtDslOpts& termOpts) {
+static FtDslOpts makeOptsForAlternatives(const FtDslOpts& termOpts, int proc) {
 	FtDslOpts result;
 	result.op = OpAnd;
-	result.boost = termOpts.boost * kSynonymProc / 100.0;
+	result.boost = termOpts.boost * proc / 100.0;
 	result.termLenBoost = termOpts.termLenBoost;
 	result.fieldsOpts = termOpts.fieldsOpts;
 	result.qpos = termOpts.qpos;
 	return result;
 }
 
-static void addOptsForAlternatives(FtDslOpts& opts, const FtDslOpts& termOpts) {
-	opts.boost += termOpts.boost * kSynonymProc / 100.0;
+static void addOptsForAlternatives(FtDslOpts& opts, const FtDslOpts& termOpts, int proc) {
+	opts.boost += termOpts.boost * proc / 100.0;
 	opts.termLenBoost += termOpts.termLenBoost;
 	assertrx(opts.fieldsOpts.size() == termOpts.fieldsOpts.size());
 	for (size_t i = 0, end = opts.fieldsOpts.size(); i != end; ++i) {
@@ -60,7 +58,8 @@ static void divOptsForAlternatives(FtDslOpts& opts, size_t size) {
 	opts.qpos /= size;
 }
 
-void Synonyms::PostProcess(const FtDSLEntry& term, const FtDSLQuery& dsl, size_t termIdx, std::vector<SynonymsDsl>& synonymsDsl) const {
+void Synonyms::PostProcess(const FtDSLEntry& term, const FtDSLQuery& dsl, size_t termIdx, std::vector<SynonymsDsl>& synonymsDsl,
+						   int proc) const {
 	if (term.opts.groupNum != -1) {
 		// Skip multiword synonyms for phrase search
 		return;
@@ -70,13 +69,13 @@ void Synonyms::PostProcess(const FtDSLEntry& term, const FtDSLQuery& dsl, size_t
 		return;
 	}
 
-	const auto opts = makeOptsForAlternatives(term.opts);
+	const auto opts = makeOptsForAlternatives(term.opts, proc);
 
 	assertrx(it->second);
 	addDslEntries(synonymsDsl, *it->second, opts, {termIdx}, dsl);
 }
 
-void Synonyms::PreProcess(const FtDSLQuery& dsl, std::vector<SynonymsDsl>& synonymsDsl) const {
+void Synonyms::PreProcess(const FtDSLQuery& dsl, std::vector<SynonymsDsl>& synonymsDsl, int proc) const {
 	for (const auto& multiSynonyms : many2any_) {
 		bool match = !multiSynonyms.first.empty();
 		FtDslOpts opts;
@@ -91,9 +90,9 @@ void Synonyms::PreProcess(const FtDSLQuery& dsl, std::vector<SynonymsDsl>& synon
 				break;
 			} else {
 				if (termIt == multiSynonyms.first.cbegin()) {
-					opts = makeOptsForAlternatives(dslIt->opts);
+					opts = makeOptsForAlternatives(dslIt->opts, proc);
 				} else {
-					addOptsForAlternatives(opts, dslIt->opts);
+					addOptsForAlternatives(opts, dslIt->opts, proc);
 				}
 				size_t idx = dslIt - dsl.cbegin();
 				termsIdx.push_back(idx);

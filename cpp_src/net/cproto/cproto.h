@@ -40,6 +40,8 @@ enum CmdCode : uint16_t {
 	kCmdFetchResults = 50,
 	kCmdCloseResults = 51,
 
+	kShardingControlRequest = 55,
+
 	kCmdGetMeta = 64,
 	kCmdPutMeta = 65,
 	kCmdEnumMeta = 66,
@@ -73,7 +75,7 @@ enum CmdCode : uint16_t {
 
 };
 
-std::string_view CmdName(uint16_t code);
+std::string_view CmdName(uint16_t cmd) noexcept;
 
 // Maximum number of active queries per client
 const uint32_t kMaxConcurentQueries = 256;

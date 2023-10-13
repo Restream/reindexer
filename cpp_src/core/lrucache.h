@@ -16,14 +16,14 @@ template <typename K, typename V, typename hash, typename equal>
 class LRUCache {
 public:
 	using Key = K;
-	LRUCache(size_t sizeLimit = kDefaultCacheSizeLimit, int hitCount = kDefaultHitCountToCache)
+	LRUCache(size_t sizeLimit = kDefaultCacheSizeLimit, int hitCount = kDefaultHitCountToCache) noexcept
 		: totalCacheSize_(0), cacheSizeLimit_(sizeLimit), hitCountToCache_(hitCount) {}
 	struct Iterator {
 		Iterator(bool k = false, const V &v = V()) : valid(k), val(v) {}
 		Iterator(const Iterator &other) = delete;
 		Iterator &operator=(const Iterator &other) = delete;
-		Iterator(Iterator &&other) : valid(other.valid), val(std::move(other.val)) { other.valid = false; }
-		Iterator &operator=(Iterator &&other) {
+		Iterator(Iterator &&other) noexcept : valid(other.valid), val(std::move(other.val)) { other.valid = false; }
+		Iterator &operator=(Iterator &&other) noexcept {
 			if (this != &other) {
 				valid = other.valid;
 				val = std::move(other.val);
@@ -41,7 +41,10 @@ public:
 
 	LRUCacheMemStat GetMemStat();
 
-	bool Clear();
+	bool Clear() {
+		std::lock_guard lk(lock_);
+		return clearAll();
+	}
 
 	template <typename T>
 	void Dump(T &os, std::string_view step, std::string_view offset) const {
@@ -75,7 +78,7 @@ public:
 
 	template <typename F>
 	void Clear(const F &cond) {
-		std::lock_guard lock{lock_};
+		std::lock_guard lock(lock_);
 		for (auto it = lru_.begin(); it != lru_.end();) {
 			if (!cond(**it)) {
 				++it;
@@ -84,7 +87,7 @@ public:
 			auto mIt = items_.find(**it);
 			assertrx(mIt != items_.end());
 			const size_t oldSize = sizeof(Entry) + kElemSizeOverhead + mIt->first.Size() + mIt->second.val.Size();
-			if (oldSize > totalCacheSize_) {
+			if rx_unlikely (oldSize > totalCacheSize_) {
 				clearAll();
 				return;
 			}
@@ -96,12 +99,7 @@ public:
 	}
 
 protected:
-	bool eraseLRU();
-
-	bool clearAll();
-
 	typedef std::list<const K *> LRUList;
-
 	struct Entry {
 		V val;
 		typename LRUList::iterator lruPos;
@@ -112,14 +110,17 @@ protected:
 		}
 	};
 
+	bool eraseLRU();
+	bool clearAll();
+
 	std::unordered_map<K, Entry, hash, equal> items_;
 	LRUList lru_;
 	mutable std::mutex lock_;
 	size_t totalCacheSize_;
-	size_t cacheSizeLimit_;
+	const size_t cacheSizeLimit_;
 	int hitCountToCache_;
 
-	int getCount_ = 0, putCount_ = 0, eraseCount_ = 0;
+	uint64_t getCount_ = 0, putCount_ = 0, eraseCount_ = 0;
 };
 
 }  // namespace reindexer

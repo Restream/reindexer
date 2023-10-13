@@ -15,7 +15,7 @@ const int kJsonShiftWidth = 4;
 void jsonValueToString(gason::JsonValue o, WrSerializer &ser, int shift = kJsonShiftWidth, int indent = 0, bool escapeStrings = true);
 void prettyPrintJSON(span<char> json, WrSerializer &ser, int shift = kJsonShiftWidth);
 
-std::string stringifyJson(const gason::JsonNode &elem);
+std::string stringifyJson(const gason::JsonNode &elem, bool escapeStrings = true);
 
 namespace details {
 /**
@@ -34,12 +34,12 @@ namespace details {
  * 	- Error{errOK} - \p valueName read successfuly, \p value updated;
  * 	- Error{...} - in case of read errors (inspect Error.what() for details), \p value left unchanged.
  */
-template <bool required, typename T, typename... Args>
+template <bool required, typename T, typename JsonT, typename... Args>
 Error tryReadJsonValue(std::string *errLog, const gason::JsonNode &parent, std::string_view valueName, T &value, Args &&...args) {
 	Error result;
 	if (!parent[valueName].empty()) {
 		try {
-			value = parent[valueName].As<T>(value, std::forward<Args>(args)...);
+			value = parent[valueName].As<JsonT>(value, std::forward<Args>(args)...);
 		} catch (const gason::Exception &ex) {
 			result = Error(errParseJson, "%s", ex.what());
 		}
@@ -57,13 +57,23 @@ Error tryReadJsonValue(std::string *errLog, const gason::JsonNode &parent, std::
 /// @brief Safely reads optional JSON value
 template <typename T, typename... Args>
 Error tryReadOptionalJsonValue(std::string *errLog, const gason::JsonNode &parent, std::string_view valueName, T &value, Args &&...args) {
-	return details::tryReadJsonValue<false, T, Args...>(errLog, parent, valueName, value, std::forward<Args>(args)...);
+	return details::tryReadJsonValue<false, T, T, Args...>(errLog, parent, valueName, value, std::forward<Args>(args)...);
+}
+template <typename T, typename... Args>
+Error tryReadOptionalJsonValue(std::string *errLog, const gason::JsonNode &parent, std::string_view valueName, std::atomic<T> &value,
+							   Args &&...args) {
+	return details::tryReadJsonValue<false, std::atomic<T>, T, Args...>(errLog, parent, valueName, value, std::forward<Args>(args)...);
 }
 
 /// @brief Safely reads required JSON value
 template <typename T, typename... Args>
 Error tryReadRequiredJsonValue(std::string *errLog, const gason::JsonNode &parent, std::string_view valueName, T &value, Args &&...args) {
-	return details::tryReadJsonValue<true, T, Args...>(errLog, parent, valueName, value, std::forward<Args>(args)...);
+	return details::tryReadJsonValue<true, T, T, Args...>(errLog, parent, valueName, value, std::forward<Args>(args)...);
+}
+template <typename T, typename... Args>
+Error tryReadRequiredJsonValue(std::string *errLog, const gason::JsonNode &parent, std::string_view valueName, std::atomic<T> &value,
+							   Args &&...args) {
+	return details::tryReadJsonValue<true, std::atomic<T>, T, Args...>(errLog, parent, valueName, value, std::forward<Args>(args)...);
 }
 
 }  // namespace reindexer

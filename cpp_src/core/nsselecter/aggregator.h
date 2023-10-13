@@ -3,6 +3,7 @@
 #include <optional>
 #include <unordered_set>
 #include "core/index/payload_map.h"
+#include "core/query/queryentry.h"
 #include "estl/one_of.h"
 #include "vendor/cpp-btree/btree_map.h"
 
@@ -19,7 +20,8 @@ public:
 	};
 
 	Aggregator(const PayloadType &, const FieldsSet &, AggType aggType, const h_vector<std::string, 1> &names,
-			   const h_vector<SortingEntry, 1> &sort = {}, size_t limit = UINT_MAX, size_t offset = 0, bool compositeIndexFields = false);
+			   const h_vector<SortingEntry, 1> &sort = {}, size_t limit = QueryEntry::kDefaultLimit,
+			   size_t offset = QueryEntry::kDefaultOffset, bool compositeIndexFields = false);
 	Aggregator();
 	Aggregator(Aggregator &&) noexcept;
 	~Aggregator();
@@ -52,8 +54,8 @@ private:
 	int hitCount_ = 0;
 	AggType aggType_;
 	h_vector<std::string, 1> names_;
-	size_t limit_ = UINT_MAX;
-	size_t offset_ = 0;
+	size_t limit_ = QueryEntry::kDefaultLimit;
+	size_t offset_ = QueryEntry::kDefaultOffset;
 
 	std::unique_ptr<Facets> facets_;
 

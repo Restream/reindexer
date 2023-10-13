@@ -48,7 +48,7 @@ yum update
 yum install reindexer-server
 ```
 
-Available distros: `centos-7`, `fedora-36`, `fedora-37`.
+Available distros: `centos-7`, `fedora-36`, `fedora-37`, `redos-7`.
 
 To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 
@@ -61,7 +61,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-buster`, `debian-bullseye`, `ubuntu-bionic`, `ubuntu-focal`, `ubuntu-jammy`
+Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-bionic`, `ubuntu-focal`, `ubuntu-jammy`
 
 To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 

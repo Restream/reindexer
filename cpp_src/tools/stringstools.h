@@ -19,9 +19,9 @@ std::string unescapeString(std::string_view str);
 KeyValueType detectValueType(std::string_view value);
 Variant stringToVariant(std::string_view value);
 
-inline bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
-inline bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
-inline char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
+[[nodiscard]] RX_ALWAYS_INLINE bool isalpha(char c) noexcept { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); }
+[[nodiscard]] RX_ALWAYS_INLINE bool isdigit(char c) noexcept { return (c >= '0' && c <= '9'); }
+[[nodiscard]] RX_ALWAYS_INLINE char tolower(char c) noexcept { return (c >= 'A' && c <= 'Z') ? c + 'a' - 'A' : c; }
 std::string toLower(std::string_view src);
 inline std::string_view skipSpace(std::string_view str) {
 	size_t i = 0;
@@ -31,7 +31,7 @@ inline std::string_view skipSpace(std::string_view str) {
 }
 
 template <typename Container>
-Container& split(const typename Container::value_type& str, const std::string& delimiters, bool trimEmpty, Container& tokens) {
+Container& split(const typename Container::value_type& str, std::string_view delimiters, bool trimEmpty, Container& tokens) {
 	tokens.resize(0);
 
 	for (size_t pos, lastPos = 0;; lastPos = pos + 1) {
@@ -40,8 +40,9 @@ Container& split(const typename Container::value_type& str, const std::string& d
 			pos = str.length();
 			if (pos != lastPos || !trimEmpty) tokens.push_back(str.substr(lastPos, pos - lastPos));
 			break;
-		} else if (pos != lastPos || !trimEmpty)
+		} else if (pos != lastPos || !trimEmpty) {
 			tokens.push_back(str.substr(lastPos, pos - lastPos));
+		}
 	}
 	return tokens;
 }
@@ -97,7 +98,33 @@ struct WordPosition {
 template <typename Pos>
 [[nodiscard]] Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::string& extraWordSymbols);
 
-int collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts& collateOpts);
+template <CollateMode collateMode>
+[[nodiscard]] int collateCompare(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable& sortOrderTable);
+template <>
+[[nodiscard]] int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+template <>
+[[nodiscard]] int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+template <>
+[[nodiscard]] int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+template <>
+[[nodiscard]] int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+template <>
+[[nodiscard]] int collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+[[nodiscard]] inline int collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts& collateOpts) {
+	switch (collateOpts.mode) {
+		case CollateASCII:
+			return collateCompare<CollateASCII>(lhs, rhs, collateOpts.sortOrderTable);
+		case CollateUTF8:
+			return collateCompare<CollateUTF8>(lhs, rhs, collateOpts.sortOrderTable);
+		case CollateNumeric:
+			return collateCompare<CollateNumeric>(lhs, rhs, collateOpts.sortOrderTable);
+		case CollateCustom:
+			return collateCompare<CollateCustom>(lhs, rhs, collateOpts.sortOrderTable);
+		case CollateNone:
+			return collateCompare<CollateNone>(lhs, rhs, collateOpts.sortOrderTable);
+	}
+	return collateCompare<CollateNone>(lhs, rhs, collateOpts.sortOrderTable);
+}
 
 std::wstring utf8_to_utf16(std::string_view src);
 std::string utf16_to_utf8(const std::wstring& src);
@@ -116,18 +143,45 @@ int64_t stoll(std::string_view sl);
 
 [[nodiscard]] bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
 [[nodiscard]] bool validateUserNsName(std::string_view name) noexcept;
+RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return name.size() && name[0] == '#'; }
 LogLevel logLevelFromString(std::string_view strLogLevel);
 const std::string& logLevelToString(LogLevel level);
 StrictMode strictModeFromString(std::string_view strStrictMode);
 const std::string& strictModeToString(StrictMode mode);
 
-bool iequals(std::string_view lhs, std::string_view rhs) noexcept;
-bool iless(std::string_view lhs, std::string_view rhs) noexcept;
-bool checkIfStartsWith(std::string_view pattern, std::string_view src, bool casesensitive = false) noexcept;
-bool checkIfEndsWith(std::string_view pattern, std::string_view src, bool casesensitive = false) noexcept;
-bool endsWith(std::string const& source, std::string_view ending) noexcept;
+inline bool iequals(std::string_view lhs, std::string_view rhs) noexcept {
+	if (lhs.size() != rhs.size()) return false;
+	for (auto itl = lhs.begin(), itr = rhs.begin(); itl != lhs.end() && itr != rhs.end();) {
+		if (tolower(*itl++) != tolower(*itr++)) return false;
+	}
+	return true;
+}
+inline bool iless(std::string_view lhs, std::string_view rhs) noexcept {
+	const auto len = std::min(lhs.size(), rhs.size());
+	for (size_t i = 0; i < len; ++i) {
+		if (const auto l = tolower(lhs[i]), r = tolower(rhs[i]); l != r) {
+			return l < r;
+		}
+	}
+	return lhs.size() < rhs.size();
+}
+
+enum class CaseSensitive : bool { No, Yes };
+template <CaseSensitive sensitivity>
+bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept;
+RX_ALWAYS_INLINE bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept {
+	return checkIfStartsWith<CaseSensitive::No>(pattern, src);
+}
+
+template <CaseSensitive sensitivity>
+bool checkIfEndsWith(std::string_view pattern, std::string_view src) noexcept;
+RX_ALWAYS_INLINE bool checkIfEndsWith(std::string_view pattern, std::string_view src) noexcept {
+	return checkIfEndsWith<CaseSensitive::No>(pattern, src);
+}
+
 bool isPrintable(std::string_view str) noexcept;
 bool isBlank(std::string_view token) noexcept;
+bool endsWith(std::string const& source, std::string_view ending) noexcept;
 std::string& ensureEndsWith(std::string& source, std::string_view ending);
 
 Error cursosPosToBytePos(std::string_view str, size_t line, size_t charPos, size_t& bytePos);
@@ -146,7 +200,7 @@ struct nocase_equal_str {
 struct nocase_less_str {
 	using is_transparent = void;
 
-	bool operator()(std::string_view lhs, std::string_view rhs) const { return iless(lhs, rhs); }
+	bool operator()(std::string_view lhs, std::string_view rhs) const noexcept { return iless(lhs, rhs); }
 	bool operator()(std::string_view lhs, const std::string& rhs) const noexcept { return iless(lhs, rhs); }
 	bool operator()(const std::string& lhs, std::string_view rhs) const noexcept { return iless(lhs, rhs); }
 	bool operator()(const std::string& lhs, const std::string& rhs) const noexcept { return iless(lhs, rhs); }
@@ -155,8 +209,8 @@ struct nocase_less_str {
 struct nocase_hash_str {
 	using is_transparent = void;
 
-	size_t operator()(std::string_view hs) const noexcept { return collateHash(hs, CollateASCII); }
-	size_t operator()(const std::string& hs) const noexcept { return collateHash(hs, CollateASCII); }
+	size_t operator()(std::string_view hs) const noexcept { return collateHash<CollateASCII>(hs); }
+	size_t operator()(const std::string& hs) const noexcept { return collateHash<CollateASCII>(hs); }
 };
 
 struct less_str {
@@ -180,8 +234,8 @@ struct equal_str {
 struct hash_str {
 	using is_transparent = void;
 
-	size_t operator()(std::string_view hs) const noexcept { return collateHash(hs, CollateNone); }
-	size_t operator()(const std::string& hs) const noexcept { return collateHash(hs, CollateNone); }
+	size_t operator()(std::string_view hs) const noexcept { return collateHash<CollateNone>(hs); }
+	size_t operator()(const std::string& hs) const noexcept { return collateHash<CollateNone>(hs); }
 };
 
 inline void deepCopy(std::string& dst, const std::string& src) {

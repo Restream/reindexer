@@ -131,7 +131,7 @@ func parseIndexesImpl(indexDefs *[]bindings.IndexDef, st reflect.Type, subArray 
 
 		if idxType == "rtree" {
 			if t.Kind() != reflect.Array || t.Len() != 2 || t.Elem().Kind() != reflect.Float64 {
-				return fmt.Errorf("'rtree' index allowed only for [2]float64 field type")
+				return fmt.Errorf("'rtree' index allowed only for [2]float64 or reindexer.Point field type")
 			}
 		}
 		if parseByKeyWord(&idxSettings, "composite") {

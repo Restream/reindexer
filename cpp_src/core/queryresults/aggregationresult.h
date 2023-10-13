@@ -50,8 +50,9 @@ private:
 };
 
 struct FacetResult {
-	FacetResult(const h_vector<std::string, 1> &v, int c) : values(v), count(c) {}
-	FacetResult() : count(0) {}
+	FacetResult(const h_vector<std::string, 1> &v, int c) noexcept : values(v), count(c) {}
+	FacetResult() noexcept : count(0) {}
+
 	h_vector<std::string, 1> values;
 	int count;
 };
@@ -130,6 +131,20 @@ struct AggregationResult {
 		auto fieldsArray = builder.Array(parametersFields.Fields(), fields.size());
 		for (auto &v : fields) fieldsArray.Put(0, v);
 		fieldsArray.End();
+	}
+	template <typename S>
+	S &DumpFields(S &os) {
+		os << '[';
+		bool first = true;
+		for (const auto &f : fields) {
+			if (!first) {
+				os << ", ";
+			}
+			first = false;
+			os << f;
+		}
+		os << ']';
+		return os;
 	}
 
 private:

@@ -24,28 +24,6 @@ type TestCompositeSubstitutionStruct struct {
 	_ struct{} `reindex:"first1+third,,composite"`
 }
 
-type TestItemCompositeNoSubstitution struct {
-	ID     int      `reindex:"id,hash,pk"`
-	First  int      `reindex:"first,-"`
-	Second int      `json:"second"`
-	_      struct{} `reindex:"id+second,,composite"`
-}
-
-type TestItemPkCompositeNoSubstitution struct {
-	ID     int      `reindex:"id,-"`
-	First  int      `reindex:"first,-"`
-	Second int      `json:"second"`
-	_      struct{} `reindex:"first+second,,composite,pk"`
-}
-
-type TestUpdCompositeSubstituitionStruct struct {
-	ID     int `reindex:"id,,pk"`
-	First1 int `json:"first1"`
-	First2 int `json:"first2"`
-
-	_ struct{} `reindex:"first1+first2,,composite"`
-}
-
 type TestItemMultipleCompositeSubindexes struct {
 	ID     int      `reindex:"id,hash,pk"`
 	First  int      `reindex:"first,-"`
@@ -57,18 +35,25 @@ type TestItemMultipleCompositeSubindexes struct {
 	_      struct{} `reindex:"first+second+third+fourth,,composite"`
 }
 
+type TestItemCompositesLimit struct {
+	ID     int      `reindex:"id,hash,pk"`
+	First  int      `reindex:"first,-"`
+	Second int      `reindex:"second,-"`
+	Third  int      `reindex:"third,-"`
+	Fourth int      `reindex:"fourth,-"`
+	_      struct{} `reindex:"first+second,,composite"`
+	_      struct{} `reindex:"first+second+third,,composite"`
+	_      struct{} `reindex:"first+second+fourth,,composite"`
+}
+
 const testCompositeIndexesSubstitutionNs = "test_composite_indexes_substitution"
-const testCompositeIndexesNoSubstitutionNs = "test_composite_indexes_no_substitution"
-const testPkCompositeIndexesNoSubstitutionNs = "test_pk_composite_indexes_no_substitution"
-const testCompositeIndexesFieldssetUpdateNs = "test_composite_indexes_fieldsset_update"
 const testMultipleCompositeSubindexes = "test_composite_indexes_multiple_subindexes"
+const testCompositesLimit = "test_composites_limit"
 
 func init() {
 	tnamespaces[testCompositeIndexesSubstitutionNs] = TestCompositeSubstitutionStruct{}
-	tnamespaces[testCompositeIndexesNoSubstitutionNs] = TestItemCompositeNoSubstitution{}
-	tnamespaces[testPkCompositeIndexesNoSubstitutionNs] = TestItemPkCompositeNoSubstitution{}
-	tnamespaces[testCompositeIndexesFieldssetUpdateNs] = TestUpdCompositeSubstituitionStruct{}
 	tnamespaces[testMultipleCompositeSubindexes] = TestItemMultipleCompositeSubindexes{}
+	tnamespaces[testCompositesLimit] = TestItemCompositesLimit{}
 }
 
 func printExplainRes(res *reindexer.ExplainResults) {
@@ -104,10 +89,11 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -127,10 +113,11 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -150,10 +137,11 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+third",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+third",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -173,10 +161,11 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -197,16 +186,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "id",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "id",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -227,16 +218,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "id",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "id",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -257,16 +250,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "id",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "id",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -288,16 +283,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "second1+second2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "second1+second2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -320,22 +317,25 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "id",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "id",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "second1+second2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "second1+second2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -358,22 +358,25 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "id",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "id",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "second1+second2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "second1+second2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -396,22 +399,25 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "second1+second2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "second1+second2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "id",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "id",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -436,22 +442,25 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "second1+second2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "second1+second2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "id",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "id",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -479,6 +488,7 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 			},
 			{
 				Field:       "first2 or first1",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 2,
 				Matched:     1,
@@ -516,12 +526,14 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Selectors: []expectedExplain{
 					{
 						Field:       "first2",
+						FieldType:   "indexed",
 						Method:      "scan",
 						Comparators: 1,
 						Matched:     1,
 					},
 					{
 						Field:       "second2",
+						FieldType:   "indexed",
 						Method:      "scan",
 						Comparators: 1,
 						Matched:     1,
@@ -533,12 +545,14 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Selectors: []expectedExplain{
 					{
 						Field:       "second1",
+						FieldType:   "indexed",
 						Method:      "scan",
 						Comparators: 1,
 						Matched:     0,
 					},
 					{
 						Field:       "first1",
+						FieldType:   "indexed",
 						Method:      "scan",
 						Comparators: 1,
 						Matched:     0,
@@ -580,16 +594,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Field: "(id and first1+first2)",
 				Selectors: []expectedExplain{
 					{
-						Field:   "id",
-						Method:  "index",
-						Keys:    1,
-						Matched: 1,
+						Field:     "id",
+						FieldType: "indexed",
+						Method:    "index",
+						Keys:      1,
+						Matched:   1,
 					},
 					{
-						Field:   "first1+first2",
-						Method:  "index",
-						Keys:    1,
-						Matched: 1,
+						Field:     "first1+first2",
+						FieldType: "indexed",
+						Method:    "index",
+						Keys:      1,
+						Matched:   1,
 					},
 				},
 			},
@@ -597,16 +613,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 				Field: "or (second1+second2 and id)",
 				Selectors: []expectedExplain{
 					{
-						Field:   "second1+second2",
-						Method:  "index",
-						Keys:    1,
-						Matched: 0,
+						Field:     "second1+second2",
+						FieldType: "indexed",
+						Method:    "index",
+						Keys:      1,
+						Matched:   0,
 					},
 					{
-						Field:   "id",
-						Method:  "index",
-						Keys:    1,
-						Matched: 0,
+						Field:     "id",
+						FieldType: "indexed",
+						Method:    "index",
+						Keys:      1,
+						Matched:   0,
 					},
 				},
 			},
@@ -638,18 +656,21 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 			},
 			{
 				Field:       "first1",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
 			},
 			{
 				Field:       "first2 or second2",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 2,
 				Matched:     1,
 			},
 			{
 				Field:       "second1",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
@@ -675,13 +696,15 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
 				Field:       "second2 or second1",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 2,
 				Matched:     1,
@@ -709,13 +732,15 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
 				Field:       "second2 or second1",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 2,
 				Matched:     1,
@@ -746,16 +771,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "second1+second2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "second1+second2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -787,16 +814,18 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:   "second1+second2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "second1+second2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -828,22 +857,24 @@ func TestCompositeIndexesSubstitution(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "second1+second2",
-				Method:  "index",
-				Keys:    0,
-				Matched: 0,
+				Field:     "second1+second2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      0,
+				Matched:   0,
 			},
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 0,
+				Field:     "first1+first2",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   0,
 			},
 		}, "")
 	})
 }
 
-func TestCompositeIndexesBestSubstituition(t *testing.T) {
+func TestCompositeIndexesBestSubstitution(t *testing.T) {
 	t.Parallel()
 
 	const ns = testMultipleCompositeSubindexes
@@ -869,10 +900,11 @@ func TestCompositeIndexesBestSubstituition(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first+second+third",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first+second+third",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -898,10 +930,11 @@ func TestCompositeIndexesBestSubstituition(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first+second+third+fourth",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first+second+third+fourth",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})
@@ -925,13 +958,15 @@ func TestCompositeIndexesBestSubstituition(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first+second+third",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first+second+third",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
 				Field:       "fourth or id",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
@@ -958,13 +993,15 @@ func TestCompositeIndexesBestSubstituition(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first+second",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first+second",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
 				Field:       "fourth or third",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 2,
 				Matched:     1,
@@ -990,13 +1027,15 @@ func TestCompositeIndexesBestSubstituition(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first+second",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first+second",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
 				Field:       "fourth or third",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 2,
 				Matched:     1,
@@ -1028,18 +1067,21 @@ func TestCompositeIndexesBestSubstituition(t *testing.T) {
 			},
 			{
 				Field:       "fourth",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
 			},
 			{
 				Field:       "second or third",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 2,
 				Matched:     1,
 			},
 			{
 				Field:       "first",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
@@ -1048,255 +1090,44 @@ func TestCompositeIndexesBestSubstituition(t *testing.T) {
 	})
 }
 
-func TestCompositeIndexNoSubstitutionWithoutSomeIndexes(t *testing.T) {
-	t.Parallel()
-
-	const ns = testCompositeIndexesNoSubstitutionNs
-	item := TestItemCompositeNoSubstitution{
-		ID: rand.Intn(100), First: rand.Intn(1000), Second: rand.Intn(1000),
+func appendRandInts(arr []int, skipValue int, size int) []int {
+	for len(arr) < size {
+		v := rand.Intn(3000)
+		if v == skipValue {
+			continue
+		}
+		arr = append(arr, v)
 	}
-
-	err := DB.Upsert(ns, item)
-	require.NoError(t, err)
-
-	t.Run("no substitution idx and not idxed composited field", func(t *testing.T) {
-		it := DB.Query(ns).
-			Where("first", reindexer.EQ, item.First).
-			Where("second", reindexer.EQ, item.Second).
-			Explain().Exec(t)
-		require.NoError(t, it.Error())
-		defer it.Close()
-		require.Equal(t, it.Count(), 1)
-		explainRes, err := it.GetExplainResults()
-		require.NoError(t, err)
-		require.NotNil(t, explainRes)
-
-		printExplainRes(explainRes)
-		checkExplain(t, explainRes.Selectors, []expectedExplain{
-			{
-				Field:   "-scan",
-				Method:  "scan",
-				Keys:    0,
-				Matched: 1,
-			},
-			{
-				Field:       "first",
-				Method:      "scan",
-				Keys:        0,
-				Matched:     1,
-				Comparators: 1,
-			},
-			{
-				Field:       "second",
-				Method:      "scan",
-				Keys:        0,
-				Matched:     1,
-				Comparators: 1,
-			},
-		}, "")
-	})
-
-	t.Run("no substitution composited idx and not idxed composited field", func(t *testing.T) {
-		it := DB.Query(ns).
-			Where("id", reindexer.EQ, item.ID).
-			Where("second", reindexer.EQ, item.Second).
-			Explain().Exec(t)
-		require.NoError(t, it.Error())
-		defer it.Close()
-		require.Equal(t, it.Count(), 1)
-		explainRes, err := it.GetExplainResults()
-		require.NoError(t, err)
-		require.NotNil(t, explainRes)
-
-		printExplainRes(explainRes)
-		checkExplain(t, explainRes.Selectors, []expectedExplain{
-			{
-				Field:       "id",
-				Method:      "index",
-				Keys:        1,
-				Matched:     1,
-				Comparators: 0,
-			},
-			{
-				Field:       "second",
-				Method:      "scan",
-				Keys:        0,
-				Matched:     1,
-				Comparators: 1,
-			},
-		}, "")
-	})
-
-	t.Run("no substitution composited idx and not composited idx", func(t *testing.T) {
-		it := DB.Query(ns).
-			Where("id", reindexer.EQ, item.ID).
-			Where("first", reindexer.EQ, item.First).
-			Explain().Exec(t)
-		require.NoError(t, it.Error())
-		defer it.Close()
-		require.Equal(t, it.Count(), 1)
-		explainRes, err := it.GetExplainResults()
-		require.NoError(t, err)
-		require.NotNil(t, explainRes)
-
-		printExplainRes(explainRes)
-		checkExplain(t, explainRes.Selectors, []expectedExplain{
-			{
-				Field:       "id",
-				Method:      "index",
-				Keys:        1,
-				Matched:     1,
-				Comparators: 0,
-			},
-			{
-				Field:       "first",
-				Method:      "scan",
-				Keys:        0,
-				Matched:     1,
-				Comparators: 1,
-			},
-		}, "")
-	})
+	return arr
 }
 
-func TestPkCompositeIndexNoSubstitutionWithoutSomeIndexes(t *testing.T) {
-	t.Parallel()
-
-	const ns = testPkCompositeIndexesNoSubstitutionNs
-	item := TestItemPkCompositeNoSubstitution{
-		ID: rand.Intn(100), First: rand.Intn(1000), Second: rand.Intn(1000),
-	}
-
-	err := DB.Upsert(ns, item)
-	require.NoError(t, err)
-
-	t.Run("no substitution composited idx and not idxed composited field", func(t *testing.T) {
-		it := DB.Query(ns).
-			Where("first", reindexer.EQ, item.First).
-			Where("second", reindexer.EQ, item.Second).
-			Explain().Exec(t)
-		require.NoError(t, it.Error())
-		defer it.Close()
-		require.Equal(t, it.Count(), 1)
-		explainRes, err := it.GetExplainResults()
-		require.NoError(t, err)
-		require.NotNil(t, explainRes)
-
-		printExplainRes(explainRes)
-		checkExplain(t, explainRes.Selectors, []expectedExplain{
-			{
-				Field:   "-scan",
-				Method:  "scan",
-				Keys:    0,
-				Matched: 1,
-			},
-			{
-				Field:       "first",
-				Method:      "scan",
-				Keys:        0,
-				Matched:     1,
-				Comparators: 1,
-			},
-			{
-				Field:       "second",
-				Method:      "scan",
-				Keys:        0,
-				Matched:     1,
-				Comparators: 1,
-			},
-		}, "")
-	})
-
-	t.Run("no substitution idx and not idxed composited field", func(t *testing.T) {
-		it := DB.Query(ns).
-			Where("id", reindexer.EQ, item.ID).
-			Where("second", reindexer.EQ, item.Second).
-			Explain().Exec(t)
-		require.NoError(t, it.Error())
-		defer it.Close()
-		require.Equal(t, it.Count(), 1)
-		explainRes, err := it.GetExplainResults()
-		require.NoError(t, err)
-		require.NotNil(t, explainRes)
-
-		printExplainRes(explainRes)
-		checkExplain(t, explainRes.Selectors, []expectedExplain{
-			{
-				Field:   "-scan",
-				Method:  "scan",
-				Keys:    0,
-				Matched: 1,
-			},
-			{
-				Field:       "id",
-				Method:      "scan",
-				Keys:        0,
-				Matched:     1,
-				Comparators: 1,
-			},
-			{
-				Field:       "second",
-				Method:      "scan",
-				Keys:        0,
-				Matched:     1,
-				Comparators: 1,
-			},
-		}, "")
-	})
-
-	t.Run("no substitution idx and composited idx", func(t *testing.T) {
-		it := DB.Query(ns).
-			Where("id", reindexer.EQ, item.ID).
-			Where("first", reindexer.EQ, item.First).
-			Explain().Exec(t)
-		require.NoError(t, it.Error())
-		defer it.Close()
-		require.Equal(t, it.Count(), 1)
-		explainRes, err := it.GetExplainResults()
-		require.NoError(t, err)
-		require.NotNil(t, explainRes)
-
-		printExplainRes(explainRes)
-		checkExplain(t, explainRes.Selectors, []expectedExplain{
-			{
-				Field:   "-scan",
-				Method:  "scan",
-				Keys:    0,
-				Matched: 1,
-			},
-			{
-				Field:       "id",
-				Method:      "scan",
-				Keys:        0,
-				Matched:     1,
-				Comparators: 1,
-			},
-			{
-				Field:       "first",
-				Method:      "scan",
-				Keys:        0,
-				Matched:     1,
-				Comparators: 1,
-			},
-		}, "")
-	})
+func createRandIntArrayWithValue(val int, size int) []int {
+	arr := make([]int, 0, size)
+	arr = append(arr, val)
+	return appendRandInts(arr, val, size)
 }
 
-func TestCompositeIndexesFieldsSetUpdate(t *testing.T) {
+func TestCompositeSubstitutionLimit(t *testing.T) {
 	t.Parallel()
 
-	const ns = testCompositeIndexesFieldssetUpdateNs
-	item := TestUpdCompositeSubstituitionStruct{
-		ID: rand.Intn(100), First1: rand.Intn(1000), First2: rand.Intn(1000),
+	const ns = testCompositesLimit
+	item := TestItemCompositesLimit{
+		ID: rand.Intn(100), First: rand.Intn(1000), Second: rand.Intn(1000), Third: rand.Intn(1000), Fourth: rand.Intn(1000),
 	}
-
 	err := DB.Upsert(ns, item)
 	require.NoError(t, err)
 
-	t.Run("no substitution without indexes", func(t *testing.T) {
+	t.Run("substitution of the 3 parts composite within limit (first index)", func(t *testing.T) {
+		first := createRandIntArrayWithValue(item.First, 20)
+		second := createRandIntArrayWithValue(item.Second, 20)
+		third := createRandIntArrayWithValue(item.Third, 10)
+		fourth := createRandIntArrayWithValue(item.Fourth, 2)
+
 		it := DB.Query(ns).
-			Where("first1", reindexer.EQ, item.First1).
-			Where("first2", reindexer.EQ, item.First2).
+			Where("first", reindexer.SET, first).
+			Where("second", reindexer.SET, second).
+			Where("third", reindexer.SET, third).
+			Where("fourth", reindexer.SET, fourth).
 			Explain().Exec(t)
 		require.NoError(t, it.Error())
 		defer it.Close()
@@ -1308,18 +1139,15 @@ func TestCompositeIndexesFieldsSetUpdate(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "-scan",
-				Method:  "scan",
-				Matched: 1,
+				Field:     "first+second+fourth",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 			{
-				Field:       "first1",
-				Method:      "scan",
-				Comparators: 1,
-				Matched:     1,
-			},
-			{
-				Field:       "first2",
+				Field:       "third",
+				FieldType:   "indexed",
 				Method:      "scan",
 				Comparators: 1,
 				Matched:     1,
@@ -1327,15 +1155,17 @@ func TestCompositeIndexesFieldsSetUpdate(t *testing.T) {
 		}, "")
 	})
 
-	err = DB.AddIndex(ns, reindexer.IndexDef{Name: "first1", JSONPaths: []string{"first1"}, IndexType: "-", FieldType: "int"})
-	require.NoError(t, err)
-	err = DB.AddIndex(ns, reindexer.IndexDef{Name: "first2", JSONPaths: []string{"first2"}, IndexType: "-", FieldType: "int"})
-	require.NoError(t, err)
+	t.Run("substitution of the 3 parts composite within limit (second index)", func(t *testing.T) {
+		first := createRandIntArrayWithValue(item.First, 20)
+		second := createRandIntArrayWithValue(item.Second, 20)
+		third := createRandIntArrayWithValue(item.Third, 2)
+		fourth := createRandIntArrayWithValue(item.Fourth, 10)
 
-	t.Run("substitution works after indexes addition", func(t *testing.T) {
 		it := DB.Query(ns).
-			Where("first1", reindexer.EQ, item.First1).
-			Where("first2", reindexer.EQ, item.First2).
+			Where("first", reindexer.SET, first).
+			Where("second", reindexer.SET, second).
+			Where("third", reindexer.SET, third).
+			Where("fourth", reindexer.SET, fourth).
 			Explain().Exec(t)
 		require.NoError(t, it.Error())
 		defer it.Close()
@@ -1347,10 +1177,92 @@ func TestCompositeIndexesFieldsSetUpdate(t *testing.T) {
 		printExplainRes(explainRes)
 		checkExplain(t, explainRes.Selectors, []expectedExplain{
 			{
-				Field:   "first1+first2",
-				Method:  "index",
-				Keys:    1,
-				Matched: 1,
+				Field:     "first+second+third",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
+			},
+			{
+				Field:       "fourth",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+		}, "")
+	})
+
+	t.Run("substitution of the 2 parts composite when 3 parts indexes' value sets are too large", func(t *testing.T) {
+		first := createRandIntArrayWithValue(item.First, 20)
+		second := createRandIntArrayWithValue(item.Second, 10)
+		third := createRandIntArrayWithValue(item.Third, 20)
+		fourth := createRandIntArrayWithValue(item.Fourth, 20)
+
+		it := DB.Query(ns).
+			Where("first", reindexer.SET, first).
+			Where("second", reindexer.SET, second).
+			Where("third", reindexer.SET, third).
+			Where("fourth", reindexer.SET, fourth).
+			Explain().Exec(t)
+		require.NoError(t, it.Error())
+		defer it.Close()
+		require.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		require.NoError(t, err)
+		require.NotNil(t, explainRes)
+
+		printExplainRes(explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:     "first+second",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
+			},
+			{
+				Field:       "third",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+			{
+				Field:       "fourth",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Comparators: 1,
+				Matched:     1,
+			},
+		}, "")
+	})
+
+	t.Run("substitution of the 3 parts composite with single value set exceeding the limit", func(t *testing.T) {
+		first := createRandIntArrayWithValue(item.First, 4000)
+		second := createRandIntArrayWithValue(item.Second, 1)
+		third := createRandIntArrayWithValue(item.Third, 1)
+
+		it := DB.Query(ns).
+			Where("first", reindexer.SET, first).
+			Where("second", reindexer.SET, second).
+			Where("third", reindexer.SET, third).
+			Explain().Exec(t)
+		require.NoError(t, it.Error())
+		defer it.Close()
+		require.Equal(t, it.Count(), 1)
+		explainRes, err := it.GetExplainResults()
+		require.NoError(t, err)
+		require.NotNil(t, explainRes)
+
+		printExplainRes(explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:     "first+second+third",
+				FieldType: "indexed",
+				Method:    "index",
+				Keys:      1,
+				Matched:   1,
 			},
 		}, "")
 	})

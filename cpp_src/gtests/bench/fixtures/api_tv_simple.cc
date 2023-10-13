@@ -13,8 +13,8 @@ using benchmark::AllocsTracker;
 using reindexer::Query;
 using reindexer::QueryResults;
 
-std::string randString(size_t size) {
-	const static std::string ch{"qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"};
+static std::string randString(size_t size) {
+	constexpr static std::string_view ch{"qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM"};
 	std::string ret(size, ' ');
 	for (size_t i = 0; i < size; ++i) ret[i] = ch[rand() % ch.size()];
 	return ret;
@@ -133,11 +133,11 @@ reindexer::Error ApiTvSimple::Initialize() {
 
 	countryLikePatterns_.reserve(countries_.size());
 	for (const auto& country : countries_) {
-		countryLikePatterns_.push_back(reindexer::makeLikePattern(country));
+		countryLikePatterns_.emplace_back(reindexer::makeLikePattern(country));
 	}
 	uuids_.reserve(1000);
 	for (size_t i = 0; i < 1000; ++i) {
-		uuids_.push_back(randStrUuid());
+		uuids_.emplace_back(randStrUuid());
 	}
 
 	locations_ = {"mos", "ct", "dv", "sth", "vlg", "sib", "ural"};
@@ -180,7 +180,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 	err = db_->AddNamespace(strNsDef);
 	if (!err.ok()) return err;
 
-	for (size_t i = 0; i < 100000; ++i) {
+	for (size_t i = 0; i < kTotalItemsStringSelectNs; ++i) {
 		auto item = MakeStrItem();
 		if (!item.Status().ok()) return item.Status();
 		err = db_->Insert(stringSelectNs_, item);

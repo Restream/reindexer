@@ -26,8 +26,9 @@ public:
 
 	int set_nonblock();
 	int set_nodelay();
-	int fd() const { return fd_; }
-	bool valid() const { return fd_ >= 0; }
+	int fd() const noexcept { return fd_; }
+	bool valid() const noexcept { return fd_ >= 0; }
+	bool has_pending_data() const noexcept;
 
 	static int last_error();
 	static bool would_block(int error);

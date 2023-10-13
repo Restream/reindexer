@@ -8,7 +8,7 @@ class Translit : public ITokenFilter {
 public:
 	Translit();
 
-	virtual void GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &result) override final;
+	virtual void GetVariants(const std::wstring &data, std::vector<FtDSLVariant> &result, int proc) override final;
 
 private:
 	void PrepareRussian();

@@ -83,6 +83,8 @@ private:
 	}
 
 public:
+	using NamespaceImplPtr = intrusive_ptr<NamespaceImpl>;
+
 	QueryResults(int flags = 0);
 	~QueryResults();
 	QueryResults(QueryResults &&);
@@ -220,6 +222,8 @@ public:
 		Error GetCJSON(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetMsgPack(WrSerializer &wrser, bool withHdrLen = true);
 		Error GetProtobuf(WrSerializer &wrser, bool withHdrLen = true);
+		[[nodiscard]] Error GetCSV(WrSerializer &wrser, CsvOrdering &ordering) noexcept;
+
 		// use enableHold = false only if you are sure that the item will be destroyed before the LocalQueryResults
 		Item GetItem(bool enableHold = true);
 		joins::ItemIterator GetJoined(std::vector<ItemRefCache> *storage = nullptr);

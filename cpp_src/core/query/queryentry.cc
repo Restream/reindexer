@@ -1,6 +1,9 @@
 #include "queryentry.h"
+
 #include <cstdlib>
 #include <unordered_set>
+#include "core/nsselecter/joinedselector.h"
+#include "core/nsselecter/joinedselectormock.h"
 #include "core/payload/payloadiface.h"
 #include "query.h"
 #include "tools/serializer.h"
@@ -8,6 +11,44 @@
 #include "tools/stringstools.h"
 
 namespace reindexer {
+
+template <typename JS>
+std::string JoinQueryEntry::Dump(const std::vector<JS> &joinedSelectors) const {
+	WrSerializer ser;
+	const auto &js = joinedSelectors.at(joinIndex);
+	const auto &q = js.JoinQuery();
+	ser << js.Type() << " (" << q.GetSQL() << ") ON ";
+	ser << '(';
+	for (const auto &jqe : q.joinEntries_) {
+		if (&jqe != &q.joinEntries_.front()) {
+			ser << ' ' << jqe.op_ << ' ';
+		} else {
+			assertrx(jqe.op_ == OpAnd);
+		}
+		ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << InvertJoinCondition(jqe.condition_) << ' ' << jqe.index_;
+	}
+	ser << ')';
+	return std::string{ser.Slice()};
+}
+template std::string JoinQueryEntry::Dump(const JoinedSelectors &) const;
+template std::string JoinQueryEntry::Dump(const std::vector<JoinedSelectorMock> &) const;
+
+template <typename JS>
+std::string JoinQueryEntry::DumpOnCondition(const std::vector<JS> &joinedSelectors) const {
+	WrSerializer ser;
+	const auto &js = joinedSelectors.at(joinIndex);
+	const auto &q = js.JoinQuery();
+	ser << js.Type() << " ON (";
+	for (const auto &jqe : q.joinEntries_) {
+		if (&jqe != &q.joinEntries_.front()) {
+			ser << ' ' << jqe.op_ << ' ';
+		}
+		ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << InvertJoinCondition(jqe.condition_) << ' ' << jqe.index_;
+	}
+	ser << ')';
+	return std::string{ser.Slice()};
+}
+template std::string JoinQueryEntry::DumpOnCondition(const JoinedSelectors &) const;
 
 bool QueryEntry::operator==(const QueryEntry &obj) const {
 	return condition == obj.condition && index == obj.index && idxNo == obj.idxNo && distinct == obj.distinct &&
@@ -29,6 +70,20 @@ std::string QueryEntry::Dump() const {
 		if (severalValues) ser << ')';
 	}
 	return std::string{ser.Slice()};
+}
+
+std::string QueryEntry::DumpBrief() const {
+	WrSerializer ser;
+	{
+		ser << index << ' ' << condition << ' ';
+		const bool severalValues = (values.size() > 1);
+		if (severalValues) {
+			ser << "(...)";
+		} else {
+			ser << '\'' << values.front().As<std::string>() << '\'';
+		}
+	}
+	return std::string(ser.Slice());
 }
 
 AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1> fields, SortingEntries sort, unsigned limit, unsigned offset)
@@ -65,7 +120,7 @@ AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1> fields, So
 		case AggAvg:
 		case AggCount:
 		case AggCountCached:
-			if (limit_ != kDefaultLimit || offset_ != kDefaultOffset) {
+			if (limit_ != QueryEntry::kDefaultLimit || offset_ != QueryEntry::kDefaultOffset) {
 				throw Error(errQueryExec, "Limit or offset are not available for aggregation %s", AggTypeToStr(type_));
 			}
 			if (!sortingEntries_.empty()) {
@@ -141,13 +196,13 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 					ser.PutVarUint(3);
 					if (entry.values[0].Type().Is<KeyValueType::Tuple>()) {
 						const Point point = static_cast<Point>(entry.values[0]);
-						ser.PutDouble(point.x);
-						ser.PutDouble(point.y);
+						ser.PutDouble(point.X());
+						ser.PutDouble(point.Y());
 						ser.PutVariant(entry.values[1]);
 					} else {
 						const Point point = static_cast<Point>(entry.values[1]);
-						ser.PutDouble(point.x);
-						ser.PutDouble(point.y);
+						ser.PutDouble(point.X());
+						ser.PutDouble(point.Y());
 						ser.PutVariant(entry.values[0]);
 					}
 				} else {
@@ -314,7 +369,7 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 				if (matchLikePattern(std::string_view(v), std::string_view(rValues[0]))) return true;
 			}
 			return false;
-		case CondType::CondDWithin:
+		case CondType::CondDWithin: {
 			if (rValues.size() != 2) {
 				throw Error(errLogic, "Condition DWithin must have exact 2 value, but %d values was provided", rValues.size());
 			}
@@ -328,6 +383,7 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 				distance = rValues[0].As<double>();
 			}
 			return DWithin(static_cast<Point>(lValues), point, distance);
+		}
 		default:
 			assertrx(0);
 	}

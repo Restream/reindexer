@@ -91,11 +91,12 @@ protected:
 	int queryResults(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults = false, unsigned limit = kDefaultLimit,
 					 unsigned offset = kDefaultOffset);
 	int queryResultsMsgPack(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
-							bool withColumns, int width);
+							bool withColumns, int width = 0);
 	int queryResultsProtobuf(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
-							 bool withColumns, int width);
+							 bool withColumns, int width = 0);
 	int queryResultsJSON(http::Context &ctx, reindexer::QueryResults &res, bool isQueryResults, unsigned limit, unsigned offset,
 						 bool withColumns, int width = 0);
+	int queryResultsCSV(http::Context &ctx, reindexer::QueryResults &res, unsigned limit, unsigned offset);
 	template <typename Builder>
 	void queryResultParams(Builder &builder, reindexer::QueryResults &res, std::vector<std::string> &&jsonData, bool isQueryResults,
 						   unsigned limit, bool withColumns, int width);
@@ -143,6 +144,9 @@ protected:
 
 	static const int kDefaultLimit = INT_MAX;
 	static const int kDefaultOffset = 0;
+
+	constexpr static int32_t kMaxConcurrentCsvDownloads = 2;
+	std::atomic<int32_t> currentCsvDownloads_ = {0};
 
 private:
 	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, http::Context &ctx);

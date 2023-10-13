@@ -18,13 +18,15 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 		txStatsCounter_.Count(tx);
 	}
 	bool wasCopied = false;	 // NOLINT(*deadcode.DeadStores)
-	QueryStatCalculator statCalculator(
-		long_actions::Logger<LocalTransaction>{tx, longTxLoggingParams_.load(std::memory_order_relaxed), wasCopied});
+	auto params = longTxLoggingParams_.load(std::memory_order_relaxed);
+	QueryStatCalculator statCalculator(long_actions::MakeLogger(tx, params, wasCopied), params.thresholdUs >= 0);
 
 	PerfStatCalculatorMT txCommitCalc(commitStatsCounter_, enablePerfCounters);
 	if (needNamespaceCopy(nsl, tx)) {
 		PerfStatCalculatorMT calc(nsl->updatePerfCounter_, enablePerfCounters);
-		contexted_unique_lock<Mutex, const RdxContext> clonerLck(clonerMtx_, &ctx.rdxContext);
+
+		auto clonerLck = statCalculator.CreateLock<contexted_unique_lock>(clonerMtx_, &ctx.rdxContext);
+
 		nsl = ns_;
 		if (needNamespaceCopy(nsl, tx)) {
 			PerfStatCalculatorMT nsCopyCalc(copyStatsCounter_, enablePerfCounters);
@@ -34,14 +36,15 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 			hasCopy_.store(true, std::memory_order_release);
 			CounterGuardAIR32 cg(nsl->cancelCommitCnt_);
 			try {
-				auto nsRlck = nsl->rLock(ctx.rdxContext);
-				auto storageLock = nsl->storage_.FullLock();
+				auto nsRlck = statCalculator.CreateLock(*nsl, &NamespaceImpl::rLock, ctx.rdxContext);
+				auto storageLock = statCalculator.CreateLock(nsl->storage_, &AsyncStorage::FullLock);
+
 				cg.Reset();
 				nsCopy_.reset(new NamespaceImpl(*nsl, storageLock));
 				nsCopyCalc.HitManualy();
 				NsContext nsCtx(ctx);
 				nsCtx.CopiedNsRequest();
-				nsCopy_->CommitTransaction(tx, result, nsCtx);
+				nsCopy_->CommitTransaction(tx, result, nsCtx, statCalculator);
 				nsCopy_->optimizeIndexes(nsCtx);
 				nsCopy_->warmupFtIndexes();
 				try {
@@ -90,14 +93,14 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 			if (clonerLck.owns_lock()) {
 				nsl = ns_;
 				clonerLck.unlock();
-				nsl->storage_.TryForceFlush();
+				statCalculator.LogFlushDuration(nsl->storage_, &AsyncStorage::TryForceFlush);
 			} else {
-				getMainNs()->storage_.TryForceFlush();
+				statCalculator.LogFlushDuration(getMainNs()->storage_, &AsyncStorage::TryForceFlush);
 			}
 			return;
 		}
 	}
-	handleInvalidation(NamespaceImpl::CommitTransaction)(tx, result, ctx);
+	handleInvalidation(NamespaceImpl::CommitTransaction)(tx, result, ctx, statCalculator);
 }
 
 NamespacePerfStat Namespace::GetPerfStat(const RdxContext& ctx) {
@@ -161,7 +164,7 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 			}
 		}
 		dstNs->checkClusterRole(ctx);
-		dbpath = dstNs->storage_.Path();
+		dbpath = dstNs->storage_.GetPath();
 	} else if (newName == srcNs.name_) {
 		return;
 	}
@@ -175,9 +178,9 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 
 	const bool hadStorage = (srcNs.storage_.IsValid());
 	auto storageType = StorageType::LevelDB;
-	const auto srcDbpath = srcNs.storage_.Path();
+	const auto srcDbpath = srcNs.storage_.GetPath();
 	if (hadStorage) {
-		storageType = srcNs.storage_.Type();
+		storageType = srcNs.storage_.GetType();
 		srcNs.storage_.Close();
 		fs::RmDirAll(dbpath);
 		int renameRes = fs::Rename(srcDbpath, dbpath);

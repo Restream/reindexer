@@ -50,7 +50,7 @@ struct ClientData {
 
 struct Context;
 struct IRPCCall {
-	void (*Get)(IRPCCall *, CmdCode &, Args &);
+	void (*Get)(IRPCCall *, CmdCode &, std::string_view &nsName, Args &);
 	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> data_;
 };
 
@@ -59,15 +59,15 @@ public:
 	virtual ~Writer() = default;
 	virtual void WriteRPCReturn(Context &ctx, const Args &args, const Error &status) = 0;
 	virtual void CallRPC(const IRPCCall &call) = 0;
-	virtual void SetClientData(std::unique_ptr<ClientData> data) = 0;
-	virtual ClientData *GetClientData() = 0;
-	virtual std::shared_ptr<reindexer::net::connection_stat> GetConnectionStat() = 0;
+	virtual void SetClientData(std::unique_ptr<ClientData> &&data) noexcept = 0;
+	virtual ClientData *GetClientData() noexcept = 0;
+	virtual std::shared_ptr<reindexer::net::connection_stat> GetConnectionStat() noexcept = 0;
 };
 
 struct Context {
 	void Return(const Args &args, const Error &status = Error()) { writer->WriteRPCReturn(*this, args, status); }
-	void SetClientData(std::unique_ptr<ClientData> data) { writer->SetClientData(std::move(data)); }
-	ClientData *GetClientData() { return writer->GetClientData(); }
+	void SetClientData(std::unique_ptr<ClientData> &&data) noexcept { writer->SetClientData(std::move(data)); }
+	ClientData *GetClientData() noexcept { return writer->GetClientData(); }
 
 	std::string_view clientAddr;
 	RPCCall *call;

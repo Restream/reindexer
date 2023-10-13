@@ -362,4 +362,25 @@ std::ostream& operator<<(std::ostream& os, FieldType ft) {
 	return os;
 }
 
+reindexer::KeyValueType ToKeyValueType(FieldType ft) {
+	switch (ft) {
+		case FieldType::Bool:
+			return reindexer::KeyValueType::Bool{};
+		case FieldType::Int:
+			return reindexer::KeyValueType::Int{};
+		case FieldType::Int64:
+			return reindexer::KeyValueType::Int64{};
+		case FieldType::Double:
+			return reindexer::KeyValueType::Double{};
+		case FieldType::String:
+			return reindexer::KeyValueType::String{};
+		case FieldType::Uuid:
+			return reindexer::KeyValueType::Uuid{};
+		case FieldType::Point:
+		case FieldType::Struct:
+		default:
+			assertrx(0);
+	}
+}
+
 }  // namespace fuzzing

@@ -1,6 +1,10 @@
 #include "clusterproxy.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/defnsconfigs.h"
 #include "estl/shared_mutex.h"
+
+#include "namespacedef.h"
+#include "tools/catch_and_return.h"
 
 namespace reindexer {
 
@@ -181,6 +185,58 @@ bool ClusterProxy::shouldProxyQuery(const Query &q) {
 		throw Error(errParams, kConditionError);
 	}
 	return isClusterReplQuery;
+}
+
+[[nodiscard]] Error ClusterProxy::ResetShardingConfig(std::optional<cluster::ShardingConfig> config) noexcept {
+	try {
+		impl_.shardingConfig_.Set(std::move(config));
+		return impl_.tryLoadShardingConf();
+	}
+	CATCH_AND_RETURN
+}
+
+#ifdef _MSC_VER
+#define REINDEXER_FUNC_NAME __FUNCSIG__
+#else
+#define REINDEXER_FUNC_NAME __PRETTY_FUNCTION__
+#endif
+
+template <auto ClientMethod, auto ImplMethod, typename... Args>
+[[nodiscard]] Error ClusterProxy::shardingConfigCandidateAction(const RdxContext &ctx, Args &&...args) noexcept {
+	try {
+		const auto action = [this](const RdxContext &c, LeaderRefT l, Args &&...aa) {
+			return baseFollowerAction<decltype(ClientMethod), ClientMethod>(c, l, std::forward<Args>(aa)...);
+		};
+
+		clusterProxyLog(LogTrace, "[%d proxy] %s", getServerIDRel(), REINDEXER_FUNC_NAME);
+		// kReplicationStatsNamespace required for impl_.NamespaceIsInClusterConfig(nsName) in proxyCall was true always
+		return proxyCall<decltype(ImplMethod), ImplMethod, Error>(ctx, kReplicationStatsNamespace, action, std::forward<Args>(args)...);
+	}
+	CATCH_AND_RETURN
+}
+
+[[nodiscard]] Error ClusterProxy::SaveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext &ctx) noexcept {
+	return shardingConfigCandidateAction<&client::Reindexer::SaveNewShardingConfig, &ReindexerImpl::saveShardingCfgCandidate>(ctx, config,
+																															  sourceId);
+}
+
+[[nodiscard]] Error ClusterProxy::ApplyShardingCfgCandidate(int64_t sourceId, const RdxContext &ctx) noexcept {
+	return shardingConfigCandidateAction<&client::Reindexer::ApplyNewShardingConfig, &ReindexerImpl::applyShardingCfgCandidate>(ctx,
+																																sourceId);
+}
+
+[[nodiscard]] Error ClusterProxy::ResetOldShardingConfig(int64_t sourceId, const RdxContext &ctx) noexcept {
+	return shardingConfigCandidateAction<&client::Reindexer::ResetOldShardingConfig, &ReindexerImpl::resetOldShardingConfig>(ctx, sourceId);
+}
+
+[[nodiscard]] Error ClusterProxy::ResetShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept {
+	return shardingConfigCandidateAction<&client::Reindexer::ResetShardingConfigCandidate, &ReindexerImpl::resetShardingConfigCandidate>(
+		ctx, sourceId);
+}
+
+[[nodiscard]] Error ClusterProxy::RollbackShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept {
+	return shardingConfigCandidateAction<&client::Reindexer::RollbackShardingConfigCandidate,
+										 &ReindexerImpl::rollbackShardingConfigCandidate>(ctx, sourceId);
 }
 
 }  // namespace reindexer

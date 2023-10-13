@@ -92,7 +92,7 @@ void ProtobufSchemaBuilder::Field(std::string_view name, int tagName, const Fiel
 
 ProtobufSchemaBuilder ProtobufSchemaBuilder::Object(int tagName, std::string_view name, bool buildTypesOnly,
 													const std::function<void(ProtobufSchemaBuilder& self)>& filler) {
-	fieldsTypes_->tagsPath_.push_back(tagName);
+	fieldsTypes_->tagsPath_.emplace_back(tagName);
 	fieldsTypes_->AddObject(std::string{name});
 	ProtobufSchemaBuilder obj(buildTypesOnly ? nullptr : ser_, fieldsTypes_, ObjType::TypeObject, name, pt_, tm_);
 	if (filler) {

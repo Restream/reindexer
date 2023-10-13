@@ -15,14 +15,14 @@ class BtreeIndexIteratorImpl {
 public:
 	enum class IdsetType { Plain = 0, Btree };
 
-	explicit BtreeIndexIteratorImpl(const T& idxMap) : idxMap_(idxMap){};
-	virtual ~BtreeIndexIteratorImpl(){};
+	explicit BtreeIndexIteratorImpl(const T& idxMap) : idxMap_(idxMap) {}
+	virtual ~BtreeIndexIteratorImpl() = default;
 
-	virtual bool isOver() const = 0;
-	virtual void shiftToBegin() = 0;
-	virtual void next() = 0;
+	virtual bool isOver() const noexcept = 0;
+	virtual void shiftToBegin() noexcept = 0;
+	virtual void next() noexcept = 0;
 
-	bool shiftToNextIdset() {
+	bool shiftToNextIdset() noexcept {
 		if (isOver()) return false;
 		for (next(); !isOver() && getCurrentIdsetSize() == 0;) {
 			next();
@@ -54,7 +54,7 @@ public:
 				break;
 		}
 	}
-	bool isIdsetOver() const {
+	bool isIdsetOver() const noexcept {
 		switch (currentIdsetType_) {
 			case IdsetType::Btree:
 				return isBtreeIdsetOver();
@@ -64,7 +64,7 @@ public:
 				std::abort();
 		}
 	}
-	void updateCurrentValue() {
+	void updateCurrentValue() noexcept {
 		switch (currentIdsetType_) {
 			case IdsetType::Btree:
 				currVal_ = getBtreeIdsetCurrentValue();
@@ -76,13 +76,13 @@ public:
 				std::abort();
 		}
 	}
-	bool finishIteration() {
+	bool finishIteration() noexcept {
 		currVal_ = INT_MAX;
 		return false;
 	}
 
 	template <typename TIdSet>
-	void detectCurrentIdsetType(const TIdSet& idset) {
+	void detectCurrentIdsetType(const TIdSet& idset) noexcept {
 		if (std::is_same<TIdSet, IdSet>() && !idset.IsCommited()) {
 			currentIdsetType_ = IdsetType::Btree;
 		} else {
@@ -90,8 +90,8 @@ public:
 		}
 	}
 
-	size_t getSize() const { return idxMap_.size(); }
-	size_t getCurrentIdsetSize() const {
+	size_t getSize() const noexcept { return idxMap_.size(); }
+	size_t getCurrentIdsetSize() const noexcept {
 		switch (currentIdsetType_) {
 			case IdsetType::Btree:
 				return getBtreeIdsetSize();
@@ -138,9 +138,9 @@ public:
 		this->idxMapItEnd_ = last;
 		this->idxMapIt_ = this->idxMapItBegin_;
 	}
-	~BtreeIndexForwardIteratorImpl() override {}
+	~BtreeIndexForwardIteratorImpl() override = default;
 
-	void shiftToBegin() override {
+	void shiftToBegin() noexcept override {
 		this->idxMapIt_ = this->idxMapItBegin_;
 		if (this->getSize() > 0) {
 			this->detectCurrentIdsetType(this->idxMapIt_->second.Unsorted());
@@ -148,33 +148,39 @@ public:
 		}
 	}
 
-	void next() override {
+	void next() noexcept override {
 		++this->idxMapIt_;
 		if (!isOver()) {
 			this->detectCurrentIdsetType(this->idxMapIt_->second.Unsorted());
 		}
 	}
 
-	void shiftPlainIdsetToNext() override {
+	void shiftPlainIdsetToNext() noexcept override {
 		const auto& idset = this->idxMapIt_->second.Unsorted();
 		for (; it_ != idset.end() && *it_ <= this->currVal_; ++it_) {
 		}
 	}
-	void shiftBtreeIdsetToNext() override {
+	void shiftBtreeIdsetToNext() noexcept override {
 		const IdSet& sortedIdset = static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted());
 		for (; itset_ != sortedIdset.set_->end() && *itset_ <= this->currVal_; ++itset_) {
 		}
 	}
 
-	bool isOver() const override { return this->idxMapIt_ == this->idxMapItEnd_; }
-	void shiftPlainIdsetToBegin() override { it_ = this->idxMapIt_->second.Unsorted().begin(); }
-	void shiftBtreeIdsetToBegin() override { itset_ = static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted()).set_->begin(); }
-	bool isPlainIdsetOver() const override { return it_ == this->idxMapIt_->second.Unsorted().end(); }
-	bool isBtreeIdsetOver() const override { return itset_ == static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted()).set_->end(); }
-	IdType getPlainIdsetCurrentValue() const override { return *it_; }
-	IdType getBtreeIdsetCurrentValue() const override { return *itset_; }
-	size_t getPlainIdsetSize() const override { return this->idxMapIt_->second.Unsorted().size(); }
-	size_t getBtreeIdsetSize() const override { return static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted()).set_->size(); }
+	bool isOver() const noexcept override { return this->idxMapIt_ == this->idxMapItEnd_; }
+	void shiftPlainIdsetToBegin() noexcept override { it_ = this->idxMapIt_->second.Unsorted().begin(); }
+	void shiftBtreeIdsetToBegin() noexcept override {
+		itset_ = static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted()).set_->begin();
+	}
+	bool isPlainIdsetOver() const noexcept override { return it_ == this->idxMapIt_->second.Unsorted().end(); }
+	bool isBtreeIdsetOver() const noexcept override {
+		return itset_ == static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted()).set_->end();
+	}
+	IdType getPlainIdsetCurrentValue() const noexcept override { return *it_; }
+	IdType getBtreeIdsetCurrentValue() const noexcept override { return *itset_; }
+	size_t getPlainIdsetSize() const noexcept override { return this->idxMapIt_->second.Unsorted().size(); }
+	size_t getBtreeIdsetSize() const noexcept override {
+		return static_cast<const IdSet&>(this->idxMapIt_->second.Unsorted()).set_->size();
+	}
 	size_t getMaxIterations(size_t limitIters) noexcept {
 		size_t cnt = 0;
 		for (auto it = idxMapItBegin_; cnt < limitIters && it != idxMapItEnd_; ++it) {
@@ -219,9 +225,9 @@ public:
 		idxMapRit_ = idxMapRitBegin_;
 	}
 
-	~BtreeIndexReverseIteratorImpl() override {}
+	~BtreeIndexReverseIteratorImpl() override = default;
 
-	void shiftToBegin() override {
+	void shiftToBegin() noexcept override {
 		this->idxMapRit_ = this->idxMapRitBegin_;
 		if (this->getSize() > 0) {
 			this->detectCurrentIdsetType(this->idxMapRit_->second.Unsorted());
@@ -229,36 +235,40 @@ public:
 		}
 	}
 
-	void shiftPlainIdsetToNext() override {
+	void shiftPlainIdsetToNext() noexcept override {
 		const auto& idset = this->idxMapRit_->second.Unsorted();
 		for (; rit_ != idset.rend() && *rit_ >= this->currVal_; ++rit_) {
 		}
 	}
 
-	void shiftBtreeIdsetToNext() override {
+	void shiftBtreeIdsetToNext() noexcept override {
 		const IdSet& sortedIdset = static_cast<const IdSet&>(this->idxMapRit_->second.Unsorted());
 		for (; ritset_ != sortedIdset.set_->rend() && *ritset_ >= this->currVal_; ++ritset_) {
 		}
 	}
 
-	void next() override {
+	void next() noexcept override {
 		++this->idxMapRit_;
 		if (!isOver()) {
 			this->detectCurrentIdsetType(this->idxMapRit_->second.Unsorted());
 		}
 	}
 
-	bool isOver() const override { return idxMapRit_ == idxMapRitEnd_; }
-	void shiftPlainIdsetToBegin() override { rit_ = this->idxMapRit_->second.Unsorted().rbegin(); }
-	void shiftBtreeIdsetToBegin() override { ritset_ = static_cast<const IdSet&>(this->idxMapRit_->second.Unsorted()).set_->rbegin(); }
-	bool isPlainIdsetOver() const override { return rit_ == this->idxMapRit_->second.Unsorted().rend(); }
-	bool isBtreeIdsetOver() const override {
+	bool isOver() const noexcept override { return idxMapRit_ == idxMapRitEnd_; }
+	void shiftPlainIdsetToBegin() noexcept override { rit_ = this->idxMapRit_->second.Unsorted().rbegin(); }
+	void shiftBtreeIdsetToBegin() noexcept override {
+		ritset_ = static_cast<const IdSet&>(this->idxMapRit_->second.Unsorted()).set_->rbegin();
+	}
+	bool isPlainIdsetOver() const noexcept override { return rit_ == this->idxMapRit_->second.Unsorted().rend(); }
+	bool isBtreeIdsetOver() const noexcept override {
 		return ritset_ == static_cast<const IdSet&>(this->idxMapRit_->second.Unsorted()).set_->rend();
 	}
-	IdType getPlainIdsetCurrentValue() const override { return *rit_; }
-	IdType getBtreeIdsetCurrentValue() const override { return *ritset_; }
-	size_t getPlainIdsetSize() const override { return this->idxMapRit_->second.Unsorted().size(); }
-	size_t getBtreeIdsetSize() const override { return static_cast<const IdSet&>(this->idxMapRit_->second.Unsorted()).set_->size(); }
+	IdType getPlainIdsetCurrentValue() const noexcept override { return *rit_; }
+	IdType getBtreeIdsetCurrentValue() const noexcept override { return *ritset_; }
+	size_t getPlainIdsetSize() const noexcept override { return this->idxMapRit_->second.Unsorted().size(); }
+	size_t getBtreeIdsetSize() const noexcept override {
+		return static_cast<const IdSet&>(this->idxMapRit_->second.Unsorted()).set_->size();
+	}
 
 private:
 	union {

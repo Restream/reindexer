@@ -8,9 +8,6 @@
 
 namespace reindexer {
 
-Item::FieldRef::FieldRef(int field, ItemImpl *itemImpl) noexcept : itemImpl_(itemImpl), field_(field) {}
-Item::FieldRef::FieldRef(std::string_view jsonPath, ItemImpl *itemImpl) noexcept : itemImpl_(itemImpl), jsonPath_(jsonPath), field_(-1) {}
-
 Item &Item::operator=(Item &&other) noexcept {
 	if (&other != this) {
 		if (impl_) {
@@ -29,6 +26,13 @@ Item &Item::operator=(Item &&other) noexcept {
 	return *this;
 }
 
+KeyValueType Item::GetIndexType(int field) const noexcept {
+	if (!impl_ || field < 0 || field >= impl_->Type().NumFields()) {
+		return KeyValueType::Undefined{};
+	}
+	return impl_->Type().Field(field).Type();
+}
+
 std::string_view Item::FieldRef::Name() const { return field_ >= 0 ? itemImpl_->Type().Field(field_).Name() : jsonPath_; }
 
 Item::FieldRef::operator Variant() const {
@@ -45,12 +49,12 @@ Item::FieldRef::operator Variant() const {
 }
 
 Item::FieldRef::operator VariantArray() const {
-	VariantArray kr;
-	if (field_ >= 0)
+	if (field_ >= 0) {
+		VariantArray kr;
 		itemImpl_->GetPayload().Get(field_, kr);
-	else
-		kr = itemImpl_->GetValueByJSONPath(jsonPath_);
-	return kr;
+		return kr;
+	}
+	return itemImpl_->GetValueByJSONPath(jsonPath_);
 }
 
 Item::FieldRef &Item::FieldRef::operator=(Variant kr) {
@@ -115,10 +119,10 @@ Item::~Item() {
 		auto ns = impl_->GetNamespace();
 		if (ns) {
 			ns->ToPool(impl_);
-			impl_ = nullptr;
+		} else {
+			delete impl_;
 		}
 	}
-	delete impl_;
 }
 
 Error Item::FromJSON(std::string_view slice, char **endp, bool pkOnly) &noexcept {
@@ -147,18 +151,17 @@ Error Item::GetMsgPack(WrSerializer &wrser) &noexcept { RETURN_RESULT_NOEXCEPT(i
 Error Item::GetProtobuf(WrSerializer &wrser) &noexcept { RETURN_RESULT_NOEXCEPT(impl_->GetProtobuf(wrser)); }
 
 int Item::NumFields() const { return impl_->Type().NumFields(); }
-Item::FieldRef Item::operator[](int field) const noexcept {
-	assertrx(field >= 0 && field < impl_->Type().NumFields());
+
+Item::FieldRef Item::operator[](int field) const {
+	if (rx_unlikely(field < 0 || field >= impl_->Type().NumFields())) {
+		throw Error(errLogic, "Item::operator[] requires indexed field. Values range: [0; %d]", impl_->Type().NumFields());
+	}
 	return FieldRef(field, impl_);
 }
 
 Item::FieldRef Item::operator[](std::string_view name) const noexcept {
 	int field = 0;
-	if (impl_->Type().FieldByName(name, field)) {
-		return FieldRef(field, impl_);
-	} else {
-		return FieldRef(name, impl_);
-	}
+	return (impl_->Type().FieldByName(name, field)) ? FieldRef(field, impl_) : FieldRef(name, impl_);
 }
 
 int Item::GetFieldTag(std::string_view name) const { return impl_->NameTag(name); }

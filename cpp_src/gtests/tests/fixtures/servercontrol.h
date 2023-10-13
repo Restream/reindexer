@@ -236,6 +236,9 @@ public:
 		std::string GetClusterConfigFilePath() const {
 			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kClusterConfigFilename);
 		}
+		std::string GetShardingConfigFilePath() const {
+			return reindexer::fs::JoinPath(reindexer::fs::JoinPath(config_.storagePath, config_.dbName), kClusterShardingFilename);
+		}
 
 		reindexer_server::Server srv;
 #ifndef _WIN32

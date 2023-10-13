@@ -40,16 +40,18 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	void addCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const IndexOpts& opts) {
+	Error tryAddCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const IndexOpts& opts) {
 		reindexer::IndexDef indexDeclr;
 		indexDeclr.name_ = getCompositeIndexName(indexes);
 		indexDeclr.indexType_ = indexTypeToName(type);
 		indexDeclr.fieldType_ = "composite";
 		indexDeclr.opts_ = opts;
 		indexDeclr.jsonPaths_ = reindexer::JsonPaths(indexes);
-		Error err = rt.reindexer->AddIndex(default_namespace, indexDeclr);
-		EXPECT_TRUE(err.ok()) << err.what();
-		err = rt.reindexer->Commit(default_namespace);
+		return rt.reindexer->AddIndex(default_namespace, indexDeclr);
+	}
+
+	void addCompositeIndex(std::initializer_list<std::string> indexes, CompositeIndexType type, const IndexOpts& opts) {
+		Error err = tryAddCompositeIndex(std::move(indexes), type, opts);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 

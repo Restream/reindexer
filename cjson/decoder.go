@@ -26,6 +26,8 @@ type Decoder struct {
 	logger     Logger
 }
 
+const MaxIndexes = 256
+
 func fieldByTag(t reflect.Type, tag string) (result reflect.StructField, ok bool) {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
@@ -674,7 +676,7 @@ func (dec *Decoder) DecodeCPtr(cptr uintptr, dest interface{}) (err error) {
 		}
 	}()
 
-	fieldsoutcnt := make([]int, 64, 64)
+	fieldsoutcnt := make([]int, MaxIndexes)
 	ctagsPath := make([]int, 0, 8)
 
 	dec.decodeValue(pl, ser, reflect.ValueOf(dest), fieldsoutcnt, ctagsPath)
@@ -709,7 +711,7 @@ func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
 		}
 	}()
 
-	fieldsoutcnt := make([]int, 64, 64)
+	fieldsoutcnt := make([]int, MaxIndexes)
 	ctagsPath := make([]int, 0, 8)
 
 	dec.decodeValue(nil, ser, reflect.ValueOf(dest), fieldsoutcnt, ctagsPath)

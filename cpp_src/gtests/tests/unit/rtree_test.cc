@@ -19,8 +19,8 @@ struct Compare;
 template <>
 struct Compare<reindexer::Point> {
 	bool operator()(reindexer::Point lhs, reindexer::Point rhs) const noexcept {
-		if (lhs.x == rhs.x) return lhs.y < rhs.y;
-		return lhs.x < rhs.x;
+		if (lhs.X() == rhs.X()) return lhs.Y() < rhs.Y();
+		return lhs.X() < rhs.X();
 	}
 };
 
@@ -291,7 +291,7 @@ TEST_F(ReindexerApi, EmptyRTreeSparseValues) {
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 
 		wrser.Reset();
-		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+		reindexer::JsonBuilder jsonBuilder(wrser, reindexer::ObjType::TypeObject);
 		jsonBuilder.Put("id", reindexer::Variant(i));
 		jsonBuilder.Null("point1");
 		jsonBuilder.Null("point2");

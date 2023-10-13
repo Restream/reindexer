@@ -77,5 +77,21 @@ Error Reindexer::CommitTransaction(Transaction& tr, QueryResults& result) { retu
 Error Reindexer::RollBackTransaction(Transaction& tr) { return impl_->RollBackTransaction(tr, ctx_); }
 Error Reindexer::GetReplState(std::string_view nsName, ReplicationStateV2& state) { return impl_->GetReplState(nsName, state, ctx_); }
 
+[[nodiscard]] Error Reindexer::SaveNewShardingConfig(std::string_view config, int64_t sourceId) noexcept {
+	return impl_->SaveNewShardingConfig(config, sourceId, ctx_);
+}
+
+[[nodiscard]] Error Reindexer::ResetShardingConfigCandidate(int64_t sourceId) noexcept {
+	return impl_->ResetShardingConfigCandidate(sourceId, ctx_);
+}
+
+[[nodiscard]] Error Reindexer::ResetOldShardingConfig(int64_t sourceId) noexcept { return impl_->ResetOldShardingConfig(sourceId, ctx_); }
+
+[[nodiscard]] Error Reindexer::RollbackShardingConfigCandidate(int64_t sourceId) noexcept {
+	return impl_->RollbackShardingConfigCandidate(sourceId, ctx_);
+}
+
+[[nodiscard]] Error Reindexer::ApplyNewShardingConfig(int64_t sourceId) noexcept { return impl_->ApplyNewShardingConfig(sourceId, ctx_); }
+
 }  // namespace client
 }  // namespace reindexer

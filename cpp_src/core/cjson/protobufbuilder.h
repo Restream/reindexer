@@ -25,7 +25,7 @@ enum ProtobufTypes {
 
 class ProtobufBuilder {
 public:
-	ProtobufBuilder()
+	ProtobufBuilder() noexcept
 		: type_(ObjType::TypePlain),
 		  ser_(nullptr),
 		  tm_(nullptr),
@@ -48,23 +48,23 @@ public:
 	ProtobufBuilder& operator=(const ProtobufBuilder&) = delete;
 	~ProtobufBuilder() { End(); }
 
-	void SetTagsMatcher(const TagsMatcher* tm) { tm_ = tm; }
-	void SetTagsPath(const TagsPath* tagsPath) { tagsPath_ = tagsPath; }
+	void SetTagsMatcher(const TagsMatcher* tm) noexcept { tm_ = tm; }
+	void SetTagsPath(const TagsPath* tagsPath) noexcept { tagsPath_ = tagsPath; }
 
 	template <typename T>
-	ProtobufBuilder& Put(int fieldIdx, const T& val) {
+	ProtobufBuilder& Put(int fieldIdx, const T& val, int /*offset*/ = 0) {
 		put(fieldIdx, val);
 		return *this;
 	}
 
 	template <typename T>
-	ProtobufBuilder& Put(std::string_view tagName, const T& val) {
+	ProtobufBuilder& Put(std::string_view tagName, const T& val, int /*offset*/ = 0) {
 		put(tm_->name2tag(tagName), val);
 		return *this;
 	}
 
 	template <typename T>
-	ProtobufBuilder& Null(T) {
+	ProtobufBuilder& Null(T) noexcept {
 		return *this;
 	}
 

@@ -9,10 +9,7 @@
 namespace reindexer {
 
 template <typename T>
-IndexText<T>::IndexText(const IndexText<T> &other)
-	: IndexUnordered<T>(other),
-	  cache_ft_(std::make_shared<FtIdSetCache>()),
-	  preselected_cache_ft_(std::make_shared<PreselectedFtIdSetCache>()) {
+IndexText<T>::IndexText(const IndexText<T> &other) : IndexUnordered<T>(other), cache_ft_(std::make_shared<FtIdSetCache>()) {
 	initSearchers();
 }
 // Generic implemetation for string index
@@ -26,10 +23,17 @@ void IndexText<T>::initSearchers() {
 			auto fieldIdx = this->fields_[i];
 			if (fieldIdx == IndexValueType::SetByJsonPath) {
 				assertrx(jsonPathIdx < this->fields_.getJsonPathsLength());
-				ftFields_.insert({this->fields_.getJsonPath(jsonPathIdx++), i});
+				ftFields_.emplace(this->fields_.getJsonPath(jsonPathIdx++), i);
 			} else {
-				ftFields_.insert({this->payloadType_->Field(fieldIdx).Name(), i});
+				ftFields_.emplace(this->payloadType_->Field(fieldIdx).Name(), i);
 			}
+		}
+		if rx_unlikely (ftFields_.size() != this->fields_.size()) {
+			throw Error(errParams, "Composite fulltext index '%s' contains duplicated fields", this->name_);
+		}
+		if rx_unlikely (ftFields_.size() > kMaxFtCompositeFields) {
+			throw Error(errParams, "Unable to create composite fulltext '%s' index with %d fields. Fileds count limit is %d", this->name_,
+						ftFields_.size(), kMaxFtCompositeFields);
 		}
 	}
 }
@@ -54,7 +58,7 @@ void IndexText<T>::SetOpts(const IndexOpts &opts) {
 template <typename T>
 FtCtx::Ptr IndexText<T>::prepareFtCtx(const BaseFunctionCtx::Ptr &ctx) {
 	FtCtx::Ptr ftctx = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
-	if (!ftctx) {
+	if rx_unlikely (!ftctx) {
 		throw Error(errParams, "Full text index (%s) may not be used without context", Index::Name());
 	}
 	ftctx->PrepareAreas(ftFields_, this->name_);
@@ -79,7 +83,7 @@ template <typename T>
 SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType condition, SortType, Index::SelectOpts opts,
 										 const BaseFunctionCtx::Ptr &ctx, const RdxContext &rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
+	if rx_unlikely (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index (%s) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
 	}
 
@@ -89,37 +93,38 @@ SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType cond
 	IdSetCacheKey ckey{keys, condition, 0};
 	auto cache_ft = cache_ft_->Get(ckey);
 	if (cache_ft.valid) {
-		if (!cache_ft.val.ids->size() || (ftctx->NeedArea() && !cache_ft.val.ctx->need_area_)) {
+		if (!cache_ft.val.ids) {
+			needPutCache = true;
+		} else if (ftctx->NeedArea() && (!cache_ft.val.ctx || !cache_ft.val.ctx->need_area_)) {
 			needPutCache = true;
 		} else {
-			return resultFromCache(keys, cache_ft, std::move(ftctx));
+			return resultFromCache(keys, std::move(cache_ft), ftctx);
 		}
 	}
-	return doSelectKey(keys, *cache_ft_, needPutCache ? std::optional{std::move(ckey)} : std::nullopt, std::move(mergeStatuses),
-					   opts.inTransaction, std::move(ftctx), rdxCtx);
+	return doSelectKey(keys, needPutCache ? std::optional{std::move(ckey)} : std::nullopt, std::move(mergeStatuses),
+					   FtUseExternStatuses::No, opts.inTransaction, std::move(ftctx), rdxCtx);
 }
 
 template <typename T>
-template <typename CacheIt>
-SelectKeyResults IndexText<T>::resultFromCache(const VariantArray &keys, const CacheIt &it, const FtCtx::Ptr &ftctx) {
-	if (cfg_->logLevel >= LogInfo) {
+SelectKeyResults IndexText<T>::resultFromCache(const VariantArray &keys, FtIdSetCache::Iterator &&it, FtCtx::Ptr &ftctx) {
+	if rx_unlikely (cfg_->logLevel >= LogInfo) {
 		logPrintf(LogInfo, "Get search results for '%s' in '%s' from cache", keys[0].As<std::string>(),
 				  this->payloadType_ ? this->payloadType_->Name() : "");
 	}
-	SelectKeyResult res;
-	res.push_back(SingleSelectKeyResult(it.val.ids));
-	SelectKeyResults r(std::move(res));
+	SelectKeyResults r;
+	auto &res = r.emplace_back();
+	res.emplace_back(std::move(it.val.ids));
+
 	assertrx(it.val.ctx);
-	ftctx->SetData(it.val.ctx);
+	ftctx->SetData(std::move(it.val.ctx));
 	return r;
 }
 
 template <typename T>
-template <typename Cache>
-SelectKeyResults IndexText<T>::doSelectKey(const VariantArray &keys, Cache &cache, std::optional<typename Cache::Key> ckey,
-										   FtMergeStatuses &&mergeStatuses, bool inTransaction, FtCtx::Ptr ftctx,
-										   const RdxContext &rdxCtx) {
-	if (cfg_->logLevel >= LogInfo) {
+SelectKeyResults IndexText<T>::doSelectKey(const VariantArray &keys, const std::optional<IdSetCacheKey> &ckey,
+										   FtMergeStatuses &&mergeStatuses, FtUseExternStatuses useExternSt, bool inTransaction,
+										   FtCtx::Ptr ftctx, const RdxContext &rdxCtx) {
+	if rx_unlikely (cfg_->logLevel >= LogInfo) {
 		logPrintf(LogInfo, "Searching for '%s' in '%s' %s", keys[0].As<std::string>(), this->payloadType_ ? this->payloadType_->Name() : "",
 				  ckey ? "(will cache)" : "");
 	}
@@ -128,10 +133,10 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray &keys, Cache &cach
 	FtDSLQuery dsl(this->ftFields_, this->cfg_->stopWords, this->cfg_->extraWordSymbols);
 	dsl.parse(keys[0].As<std::string>());
 
-	auto mergedIds = Select(ftctx, std::move(dsl), inTransaction, std::move(mergeStatuses), std::is_same_v<Cache, FtIdSetCache>, rdxCtx);
+	IdSet::Ptr mergedIds = Select(ftctx, std::move(dsl), inTransaction, std::move(mergeStatuses), useExternSt, rdxCtx);
 	SelectKeyResult res;
 	if (mergedIds) {
-		bool need_put = ckey.has_value();
+		bool need_put = (useExternSt == FtUseExternStatuses::No) && ckey.has_value();
 		if (ftctx->NeedArea() && need_put && mergedIds->size()) {
 			auto config = dynamic_cast<FtFastConfig *>(cfg_.get());
 			if (config && config->maxTotalAreasToCache >= 0) {
@@ -153,10 +158,10 @@ SelectKeyResults IndexText<T>::doSelectKey(const VariantArray &keys, Cache &cach
 					d->area_[area.second].Commit();
 				}
 			}
-			cache.Put(*ckey, FtIdSetCacheVal{mergedIds, std::move(d)});
+			cache_ft_->Put(*ckey, FtIdSetCacheVal{IdSet::Ptr(mergedIds), std::move(d)});
 		}
 
-		res.push_back(SingleSelectKeyResult(std::move(mergedIds)));
+		res.emplace_back(std::move(mergedIds));
 	}
 	return SelectKeyResults(std::move(res));
 }
@@ -165,19 +170,10 @@ template <typename T>
 SelectKeyResults IndexText<T>::SelectKey(const VariantArray &keys, CondType condition, Index::SelectOpts opts,
 										 const BaseFunctionCtx::Ptr &ctx, FtPreselectT &&preselect, const RdxContext &rdxCtx) {
 	const auto indexWard(rdxCtx.BeforeIndexWork());
-	if (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
+	if rx_unlikely (keys.size() < 1 || (condition != CondEq && condition != CondSet)) {
 		throw Error(errParams, "Full text index (%s) support only EQ or SET condition with 1 or 2 parameter", Index::Name());
 	}
-
-	FtCtx::Ptr ftctx = prepareFtCtx(ctx);
-	auto res = std::visit(overloaded{[&](FtMergeStatuses &mergeStatuses) {
-										 auto ckey = std::move(mergeStatuses.cacheKey);
-										 return doSelectKey(keys, *preselected_cache_ft_, std::move(ckey), std::move(mergeStatuses),
-															opts.inTransaction, std::move(ftctx), rdxCtx);
-									 },
-									 [&](PreselectedFtIdSetCache::Iterator &it) { return resultFromCache(keys, it, std::move(ftctx)); }},
-						  preselect);
-	return res;
+	return doSelectKey(keys, std::nullopt, std::move(preselect), FtUseExternStatuses::Yes, opts.inTransaction, prepareFtCtx(ctx), rdxCtx);
 }
 
 template <typename T>

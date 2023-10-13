@@ -110,6 +110,8 @@ public:
 	Error FetchSnapshot(cproto::Context &ctx, int id, int64_t offset);
 	Error ApplySnapshotChunk(cproto::Context &ctx, p_string ns, p_string rec);
 
+	[[nodiscard]] Error ShardingControlRequest(cproto::Context &ctx, p_string data) noexcept;
+
 	Error GetMeta(cproto::Context &ctx, p_string ns, p_string key, std::optional<int> options);
 	Error PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_string data);
 	Error EnumMeta(cproto::Context &ctx, p_string ns);

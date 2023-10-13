@@ -1,5 +1,6 @@
 #include "core/reindexer.h"
 #include "core/shardingproxy.h"
+#include "tools/cpucheck.h"
 
 namespace reindexer {
 
@@ -26,7 +27,10 @@ static WrSerializer& printPkFields(const Item& item, WrSerializer& ser) {
 	return ser;
 }
 
-Reindexer::Reindexer(ReindexerConfig cfg) : impl_(new ShardingProxy(cfg)), owner_(true) {}
+Reindexer::Reindexer(ReindexerConfig cfg) : impl_(new ShardingProxy(cfg)), owner_(true) {
+	//
+	reindexer::CheckRequiredSSESupport();
+}
 
 Reindexer::~Reindexer() {
 	if (owner_) {
@@ -37,7 +41,7 @@ Reindexer::~Reindexer() {
 Reindexer::Reindexer(const Reindexer& rdx) noexcept : impl_(rdx.impl_), owner_(false), ctx_(rdx.ctx_) {}
 Reindexer::Reindexer(Reindexer&& rdx) noexcept : impl_(rdx.impl_), owner_(rdx.owner_), ctx_(std::move(rdx.ctx_)) { rdx.owner_ = false; }
 
-bool Reindexer::NeedTraceActivity() const { return impl_->NeedTraceActivity(); }
+bool Reindexer::NeedTraceActivity() const noexcept { return impl_->NeedTraceActivity(); }
 
 Error Reindexer::Connect(const std::string& dsn, ConnectOpts opts) { return impl_->Connect(dsn, opts); }
 
@@ -255,6 +259,10 @@ Error Reindexer::Status() { return impl_->Status(); }
 Error Reindexer::DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index) {
 	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "DUMP INDEX " << index << " ON " << nsName; });
 	return impl_->DumpIndex(os, nsName, index, rdxCtx);
+}
+
+[[nodiscard]] Error Reindexer::ShardingControlRequest(const sharding::ShardingControlRequestData& request) noexcept {
+	return impl_->ShardingControlRequest(request, impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "SHARDING CONTROL REQUEST"; }));
 }
 
 }  // namespace reindexer

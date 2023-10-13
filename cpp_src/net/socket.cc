@@ -206,6 +206,26 @@ int socket::set_nodelay() {
 	return setsockopt(fd_, SOL_TCP, TCP_NODELAY, reinterpret_cast<char *>(&flag), sizeof(flag));
 }
 
+bool socket::has_pending_data() const noexcept {
+	if (!valid()) {
+		return false;
+	}
+#ifndef _WIN32
+	int count;
+	if (ioctl(fd(), FIONREAD, &count) < 0) {
+		perror("ioctl(FIONREAD)");
+		return false;
+	}
+#else
+	u_long count = -1;
+	if (ioctlsocket(fd(), FIONREAD, &count) < 0) {
+		perror("ioctlsocket(FIONREAD)");
+		return false;
+	}
+#endif
+	return count > 0;
+}
+
 int socket::last_error() {
 #ifndef _WIN32
 	return errno;

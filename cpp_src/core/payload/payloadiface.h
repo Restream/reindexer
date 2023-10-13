@@ -54,7 +54,29 @@ public:
 
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
-	void Set(int field, const VariantArray &keys, bool append = false);
+	void Set(int field, const VariantArray &keys, bool append = false) {
+		if (!t_.Field(field).IsArray() && keys.size() >= 1) {
+			Field(field).Set(keys[0]);
+		} else {
+			setArray(field, keys, append);
+		}
+	}
+	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
+	void Set(int field, const Variant &key, bool append = false) {
+		if (t_.Field(field).IsArray()) {
+			Set(field, VariantArray{key}, append);
+			return;
+		}
+		Field(field).Set(key);
+	}
+	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
+	void Set(int field, Variant &&key, bool append = false) {
+		if (t_.Field(field).IsArray()) {
+			Set(field, VariantArray{std::move(key)}, append);
+			return;
+		}
+		Field(field).Set(std::move(key));
+	}
 
 	// Set non-array element by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
@@ -62,7 +84,17 @@ public:
 
 	// Set element or array by field index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
-	void Set(std::string_view field, const VariantArray &keys, bool append = false);
+	void Set(std::string_view field, const VariantArray &keys, bool append = false) {
+		return Set(t_.FieldByName(field), keys, append);
+	}
+	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
+	void Set(std::string_view field, const Variant &key, bool append = false) {
+		return Set(t_.FieldByName(field), key, append);
+	}
+	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
+	void Set(std::string_view field, Variant &&key, bool append = false) {
+		return Set(t_.FieldByName(field), std::move(key), append);
+	}
 
 	// Set element or array by field index and element index
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
@@ -80,7 +112,7 @@ public:
 	void GetByJsonPath(std::string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
 	void GetByJsonPath(const TagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
 	void GetByJsonPath(const IndexedTagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
-	VariantArray GetIndexedArrayData(const IndexedTagsPath &jsonPath, int &offset, int &size) const;
+	VariantArray GetIndexedArrayData(const IndexedTagsPath &jsonPath, int field, int &offset, int &size) const;
 
 	// Get fields count
 	int NumFields() const noexcept { return t_.NumFields(); }
@@ -113,7 +145,7 @@ public:
 				TagsMatcher &rtm, bool lForceByJsonPath, bool rForceByJsonPath) const;
 
 	// Get PayloadFieldValue by field index
-	PayloadFieldValue Field(int field) const noexcept;
+	PayloadFieldValue Field(int field) const noexcept { return PayloadFieldValue(t_.Field(field), v_->Ptr() + t_.Field(field).Offset()); }
 
 	// Add refs to strings - make payload value complete self holding
 	void AddRefStrings() noexcept;
@@ -138,6 +170,8 @@ private:
 	T CopyWithRemovedFields(PayloadType t);
 	template <typename StrHolder>
 	void copyOrMoveStrings(int field, StrHolder &dest, bool copy);
+	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
+	void setArray(int field, const VariantArray &keys, bool append);
 
 	// Array of elements types , not owning
 	const PayloadTypeImpl &t_;

@@ -124,10 +124,10 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::ValueFlag<std::string> webRootF(netGroup, "PATH", "web root. This path if set overrides linked-in resources", {'w', "webroot"},
 										  WebRoot, args::Options::Single);
 	args::ValueFlag<int> httpReadTimeoutF(netGroup, "", "timeout (s) for HTTP read operations (i.e. selects, get meta and others)",
-										  {"http-read-timeout"}, args::Options::Single);
-	args::ValueFlag<int> httpWriteTimeoutF(netGroup, "",
-										   "timeout (s) for HTTP write operations (i.e. selects, get meta and others). May not be set to 0",
-										   {"http-write-timeout"}, args::Options::Single);
+										  {"http-read-timeout"}, HttpReadTimeout.count(), args::Options::Single);
+	args::ValueFlag<int> httpWriteTimeoutF(
+		netGroup, "", "timeout (s) for HTTP write operations (i.e. update, delete, put meta, add index and others). May not be set to 0",
+		{"http-write-timeout"}, kDefaultHttpWriteTimeout.count(), args::Options::Single);
 	args::ValueFlag<size_t> maxUpdatesSizeF(netGroup, "", "Maximum cached updates size", {"updatessize"}, MaxUpdatesSize,
 											args::Options::Single);
 	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});

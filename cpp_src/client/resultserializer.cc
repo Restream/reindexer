@@ -62,11 +62,12 @@ void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, Option
 						ret.aggResults.emplace();
 						ret.explainResults.emplace();
 					}
-					ret.aggResults->emplace_back();
+					// firstLazyData guaranties, that aggResults will be non-'nullopt'
+					ret.aggResults->emplace_back();	 // NOLINT(bugprone-unchecked-optional-access)
 					if ((ret.flags & kResultsFormatMask) == kResultsMsgPack) {
-						ret.aggResults->back().FromMsgPack(data);
+						ret.aggResults->back().FromMsgPack(data);  // NOLINT(bugprone-unchecked-optional-access)
 					} else {
-						ret.aggResults->back().FromJSON(giftStr(data));
+						ret.aggResults->back().FromJSON(giftStr(data));	 // NOLINT(bugprone-unchecked-optional-access)
 					}
 				}
 				break;

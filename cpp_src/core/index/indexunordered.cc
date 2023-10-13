@@ -251,10 +251,6 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 			break;
 		// Get set of keys or single key
 		case CondEq:
-			if (keys.size() == 0) {
-				throw Error(errParams, "Condition EQ must have at least 1 argument, but provided 0");
-			}
-			[[fallthrough]];
 		case CondSet: {
 			struct {
 				T *i_map;
@@ -466,9 +462,10 @@ static std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadTy
 		case IndexTtl:
 		case IndexRTree:
 		case IndexUuidHash:
-		default:
-			abort();
+		case IndexUuidStore:
+			break;
 	}
+	std::abort();
 }
 
 // NOLINTBEGIN(*cplusplus.NewDeleteLeaks)

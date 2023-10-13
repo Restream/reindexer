@@ -334,6 +334,7 @@ public:
 	void set(dynamic_loop &loop_) noexcept { loop.loop_ = &loop_; }
 	void start(double t, double p = 0) {
 		period_ = p;
+		t_ = t;
 		loop.set(this, t);
 	}
 	void stop() { loop.stop(this); }
@@ -346,6 +347,8 @@ public:
 	void set(std::function<void(timer &, int)> func) noexcept { func_ = std::move(func); }
 
 	bool is_active() const noexcept { return loop.is_active(this); }
+	double last_delay() const noexcept { return t_; }
+	bool has_period() const noexcept { return period_ > 0.00000001; }
 
 	loop_ref loop;
 	std::chrono::time_point<std::chrono::steady_clock> deadline_;
@@ -361,7 +364,7 @@ protected:
 			func(*this, tv);  // Timer is deallocated after this call
 		} else {
 			func_(*this, tv);
-			if (period_ > 0.00000001) {
+			if (has_period()) {
 				loop.set(this, period_);
 			}
 		}
@@ -369,6 +372,7 @@ protected:
 
 	std::function<void(timer &watcher, int t)> func_ = nullptr;
 	double period_ = 0;
+	double t_ = 0;
 	bool in_coro_storage_ = false;
 };
 

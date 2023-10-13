@@ -24,6 +24,7 @@ option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
 option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
 option (ENABLE_GRPC "Enable GRPC service" OFF)
+option (ENABLE_SSE "Enable SSE instructions" ON)
 option (ENABLE_SERVER_AS_PROCESS_IN_TEST "Enable run reindexer server as separate process in tests" OFF)
 
 if (NOT GRPC_PACKAGE_PROVIDER)
@@ -36,7 +37,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "4.11.0")
+set (REINDEXER_VERSION_DEFAULT "4.12.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -53,12 +54,13 @@ include (TargetArch)
 target_architecture(COMPILER_TARGET_ARCH)
 
 # Configure compile options
-string( REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+string(REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
+string(REPLACE "-O2" "-O3" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+string(REPLACE "-O2" "-O3" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
 if (NOT ${COMPILER_TARGET_ARCH} STREQUAL "e2k")
     string(REPLACE "-g" "-g1" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
 else()
     string(REPLACE "-g" "-g0" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
-    string(REPLACE "-O2" "-O3" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 endif()
 
 if (${COMPILER_TARGET_ARCH} STREQUAL "e2k")
@@ -226,6 +228,16 @@ else ()
 endif ()
 list(APPEND SRCS ${CONTEXT_ASM_SRCS})
 
+if (ENABLE_SSE)
+  if (NOT MSVC AND NOT APPLE AND (${COMPILER_TARGET_ARCH} STREQUAL "x86_64" OR ${COMPILER_TARGET_ARCH} STREQUAL "i386"))
+    add_definitions(-DREINDEXER_WITH_SSE=1)
+    message ("Building with SSE support...")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -msse -msse2 -msse3 -mssse3 -msse4 -msse4.1 -msse4.2 -mpopcnt")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -msse -msse2 -msse3 -mssse3 -msse4 -msse4.1 -msse4.2 -mpopcnt")
+  else ()
+    message ("SSE compiler flags were disabled for the current platform")
+  endif ()
+endif ()
 
 include_directories(${REINDEXER_SOURCE_PATH})
 include_directories(${REINDEXER_SOURCE_PATH}/vendor)
@@ -696,7 +708,7 @@ if (NOT WIN32)
     "estl/cow.h" "core/shardedmeta.h" "estl/overloaded.h" "estl/one_of.h"
     "core/queryresults/localqueryresults.h"
     "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h" "estl/span.h" "estl/chunk.h"
-    "estl/fast_hash_traits.h" "estl/debug_macros.h"
+    "estl/fast_hash_traits.h" "estl/debug_macros.h" "estl/defines.h"
     "client/item.h" "client/resultserializer.h"
     "client/internalrdxcontext.h" "client/reindexer.h" "client/reindexerconfig.h"
     "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h" "client/connectopts.h"

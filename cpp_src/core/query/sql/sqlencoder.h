@@ -22,11 +22,6 @@ public:
 	/// @param stripArgs - replace condition values with '?'.
 	void DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripArgs) const;
 
-	/// Get  readaby Join Type
-	/// @param type - join tyoe
-	/// @return string with join type name
-	static const char *JoinTypeName(JoinType type);
-
 protected:
 	/// Builds print version of a query with join in sql format.
 	/// @param ser - serializer to store SQL string

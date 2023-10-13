@@ -26,6 +26,9 @@ class SnapshotChunk;
 struct SnapshotOpts;
 struct ClusterControlRequestData;
 
+namespace sharding {
+struct ShardingControlRequestData;
+}
 namespace client {
 
 class Snapshot;
@@ -163,6 +166,8 @@ public:
 	const cproto::CoroClientConnection *GetConnPtr() const noexcept { return &conn_; }
 
 	typedef CoroQueryResults QueryResultsT;
+
+	[[nodiscard]] Error ShardingControlRequest(const sharding::ShardingControlRequestData &request, const InternalRdxContext &ctx) noexcept;
 
 protected:
 	Error selectImpl(const Query &query, CoroQueryResults &result, milliseconds netTimeout, const InternalRdxContext &ctx);

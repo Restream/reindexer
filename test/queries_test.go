@@ -67,6 +67,7 @@ type TestItem struct {
 	Tmp           string          `reindex:"tmp,-"`
 	Nested        StrictTestNest  `reindex:"-" json:"nested"`
 	Uuid          string          `reindex:"uuid,hash,uuid" json:"uuid"`
+	UuidStore     string          `reindex:"uuid_store,-,uuid" json:"uuid_store"`
 	UuidArray     []string        `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
 	_             struct{}        `reindex:"id+tmp,,composite,pk"`
 	_             struct{}        `reindex:"age+genre,,composite"`
@@ -102,11 +103,9 @@ type TestItemIDOnly struct {
 	StartTime     int             `json:"start_time"`
 	Tmp           string          `reindex:"tmp,-"`
 	Uuid          string          `reindex:"uuid,hash,uuid" json:"uuid"`
+	UuidStore     string          `reindex:"uuid_store,-,uuid" json:"uuid_store"`
 	UuidArray     []string        `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
 	_             struct{}        `reindex:"id+tmp,,composite,pk"`
-	_             struct{}        `reindex:"age+genre,,composite"`
-	_             struct{}        `reindex:"location+rate,,composite"`
-	_             struct{}        `reindex:"uuid+age,,composite"`
 }
 
 // TestItemWithSparse test case for sparse indexes
@@ -136,6 +135,7 @@ type TestItemWithSparse struct {
 	StartTime     int             `reindex:"start_time,tree"`
 	Tmp           string          `reindex:"tmp,-"`
 	Uuid          string          `reindex:"uuid,hash,uuid" json:"uuid"`
+	UuidStore     string          `reindex:"uuid_store,-,uuid" json:"uuid_store"`
 	UuidArray     []string        `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
 	_             struct{}        `reindex:"id+tmp,,composite,pk"`
 	_             struct{}        `reindex:"age+genre,,composite"`
@@ -151,12 +151,18 @@ type TestItemSimple struct {
 }
 
 type TestItemGeom struct {
-	ID                  int        `reindex:"id,,pk"`
-	PointRTreeLinear    [2]float64 `reindex:"point_rtree_linear,rtree,linear"`
-	PointRTreeQuadratic [2]float64 `reindex:"point_rtree_quadratic,rtree,quadratic"`
-	PointRTreeGreene    [2]float64 `reindex:"point_rtree_greene,rtree,greene"`
-	PointRTreeRStar     [2]float64 `reindex:"point_rtree_rstar,rtree,rstar"`
-	PointNonIndex       [2]float64 `json:"point_non_index"`
+	ID                  int             `reindex:"id,,pk"`
+	PointRTreeLinear    reindexer.Point `reindex:"point_rtree_linear,rtree,linear"`
+	PointRTreeQuadratic reindexer.Point `reindex:"point_rtree_quadratic,rtree,quadratic"`
+	PointRTreeGreene    reindexer.Point `reindex:"point_rtree_greene,rtree,greene"`
+	PointRTreeRStar     reindexer.Point `reindex:"point_rtree_rstar,rtree,rstar"`
+	PointNonIndex       reindexer.Point `json:"point_non_index"`
+}
+
+type TestItemGeomSimple struct {
+	ID                  int             `reindex:"id,,pk"`
+	PointRTreeLinear    reindexer.Point `reindex:"point_rtree_linear,rtree,linear"`
+	PointRTreeQuadratic reindexer.Point `reindex:"point_rtree_quadratic,rtree,quadratic"`
 }
 
 type TestItemCustom struct {
@@ -227,6 +233,7 @@ func init() {
 
 	tnamespaces["test_items_simple"] = TestItemSimple{}
 	tnamespaces["test_items_geom"] = TestItemGeom{}
+	tnamespaces["test_items_st_distance"] = TestItemGeomSimple{}
 	tnamespaces["test_items_simple_cmplx_pk"] = TestItemSimpleCmplxPK{}
 	tnamespaces["test_items_not"] = TestItemSimple{}
 	tnamespaces["test_items_delete_query"] = TestItem{}
@@ -282,8 +289,9 @@ func newTestItem(id int, pkgsCount int) interface{} {
 		Actor: Actor{
 			Name: randString(),
 		},
-		Uuid:          randUuid(),
-		UuidArray:     randUuidArray(rand.Int() % 20),
+		Uuid:      randUuid(),
+		UuidStore: randUuid(),
+		UuidArray: randUuidArray(rand.Int() % 20),
 	}
 }
 
@@ -303,6 +311,14 @@ func newTestItemGeom(id int, pkgsCount int) interface{} {
 		PointRTreeGreene:    randPoint(),
 		PointRTreeRStar:     randPoint(),
 		PointNonIndex:       randPoint(),
+	}
+}
+
+func newTestItemGeomSimple(id int, pkgsCount int) interface{} {
+	return &TestItemGeomSimple{
+		ID:                  mkID(id),
+		PointRTreeLinear:    randPoint(),
+		PointRTreeQuadratic: randPoint(),
 	}
 }
 
@@ -331,8 +347,9 @@ func newTestItemIDOnly(id int, pkgsCount int) interface{} {
 		Actor: Actor{
 			Name: randString(),
 		},
-		Uuid:          randUuid(),
-		UuidArray:     randUuidArray(rand.Int() % 20),
+		Uuid:      randUuid(),
+		UuidStore: randUuid(),
+		UuidArray: randUuidArray(rand.Int() % 20),
 	}
 }
 
@@ -361,8 +378,9 @@ func newTestItemWithSparse(id int, pkgsCount int) interface{} {
 		Actor: Actor{
 			Name: randString(),
 		},
-		Uuid:          randUuid(),
-		UuidArray:     randUuidArray(rand.Int() % 20),
+		Uuid:      randUuid(),
+		UuidStore: randUuid(),
+		UuidArray: randUuidArray(rand.Int() % 20),
 	}
 }
 
@@ -558,6 +576,38 @@ func TestQueries(t *testing.T) {
 		CheckTestItemsQueries(t, testCaseWithSparseIndexes)
 	})
 
+}
+
+func TestSTDistanceWrappers(t *testing.T) {
+	t.Parallel()
+
+	ns := "test_items_st_distance"
+	field1 := "point_rtree_linear"
+	field2 := "point_rtree_quadratic"
+	FillTestItemsWithFunc(ns, 0, 10000, 0, newTestItemGeomSimple)
+	t.Run("ST_Distance between field and point", func(t *testing.T) {
+		for i := 0; i < 10; i++ {
+			searchPoint := randPoint()
+			distance := randFloat(0, 2)
+			sortPoint := randPoint()
+			it1, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).SortStPointDistance(field1, sortPoint, false).ExecToJson().FetchAll()
+			require.NoError(t, err)
+			it2, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).Sort(fmt.Sprintf("ST_Distance(%s, ST_GeomFromText('point(%f %f)'))", field1, sortPoint[0], sortPoint[1]), false).ExecToJson().FetchAll()
+			require.NoError(t, err)
+			require.Equal(t, string(it1), string(it2))
+		}
+	})
+	t.Run("ST_Distance between fields", func(t *testing.T) {
+		for i := 0; i < 10; i++ {
+			searchPoint := randPoint()
+			distance := randFloat(0, 2)
+			it1, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).SortStFieldDistance(field1, field2, true).ExecToJson().FetchAll()
+			require.NoError(t, err)
+			it2, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).Sort(fmt.Sprintf("ST_Distance(%s, %s)", field1, field2), true).ExecToJson().FetchAll()
+			require.NoError(t, err)
+			require.Equal(t, string(it1), string(it2))
+		}
+	})
 }
 
 func TestWALQueries(t *testing.T) {
@@ -1059,12 +1109,28 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 		WhereUuid("uuid", reindexer.LT, randUuid()).
 		ExecAndVerify(t)
 
-	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
-		Not().Where("uuid_array", reindexer.SET, randUuidArray(rand.Int() % 10)).
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).Debug(reindexer.TRACE).
+		WhereUuid("uuid", reindexer.SET, randUuidArray(rand.Int()%10)...).
 		ExecAndVerify(t)
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
-		WhereUuid("uuid_array", reindexer.SET, randUuidArray(rand.Int() % 10)...).
+		Not().Where("uuid_store", reindexer.EQ, randUuid()).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).Debug(reindexer.TRACE).
+		WhereUuid("uuid_store", reindexer.LT, randUuid()).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		WhereUuid("uuid_store", reindexer.SET, randUuidArray(rand.Int()%10)...).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		WhereUuid("uuid_array", reindexer.SET, randUuidArray(rand.Int()%10)...).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
+		Not().Where("uuid_array", reindexer.SET, randUuidArray(rand.Int()%10)).
 		ExecAndVerify(t)
 
 	if !testComposite {

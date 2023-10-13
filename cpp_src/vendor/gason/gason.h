@@ -143,6 +143,7 @@ struct JsonNode {
 	const JsonNode &operator[](std::string_view sv) const;
 	bool empty() const noexcept;
 	JsonNode *toNode() const;
+	static JsonNode EmptyNode() noexcept;
 };
 
 struct JsonIterator {
@@ -155,7 +156,7 @@ struct JsonIterator {
 
 	void operator++() noexcept { p = p->next; }
 	bool operator!=(const JsonIterator &x) const noexcept { return p != x.p; }
-	JsonNode *operator*() const noexcept { return p; }
+	JsonNode &operator*() const noexcept { return *p; }
 	JsonNode *operator->() const noexcept { return p; }
 };
 
@@ -225,7 +226,7 @@ public:
 	void deallocate() noexcept;
 };
 
-bool isHomogeneousArray(const JsonValue &v);
+bool isHomogeneousArray(const JsonValue &v) noexcept;
 
 // Parser wrapper
 class JsonParser {

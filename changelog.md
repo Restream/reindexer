@@ -1,3 +1,45 @@
+# Version 4.12.0 *beta* (13.10.2023)
+## Sharding
+- [fea] Added [commands](sharding.md#runtime-sharding-configuration) for the runtime sharding configuration (on the empty namespaces)
+
+## Go connector
+- [fix] Fixed potential deadlock in builtin binding, when `SetLogger` method is called multiple
+
+## Ported
+- [fea/fix] Ported all the fixes from [v3.17.0](https://github.com/Restream/reindexer/releases/tag/v3.17.0), [v3.18.0](https://github.com/Restream/reindexer/releases/tag/v3.18.0) and [v3.19.0](https://github.com/Restream/reindexer/releases/tag/v3.19.0)
+
+## Face
+- [fea] Improved the drop-down section behavior on the Query builder page
+- [fea] Added a link to the online documentation
+- [fea] Added new proc settings to the Index config
+- [fea] Changed the scale window icon for textareas
+- [fea] Added the background color to the Close icon in the search history on the Namespace page
+- [fea] Improved the buttons' behavior on the Query builder page
+- [fea] Added the database name size limit
+- [fea] Added the ability to use spaces for JSON paths
+- [fea] Changed the numeric values position in the Grid
+- [fix] Fixed the columns' settings resetting after the Perfstats page reloading
+- [fix] Removed the double requests on the Perfstats page
+- [fix] Fixed the JSON Paths tooltip description
+- [fix] Fixed the pie chart position in Safari
+- [fix] Fixed the popup window size for the long text
+- [fix] Fixed the bottom padding on the statistics legend window
+- [fix] Fixed the modal window to inform about disabled memory statistics
+- [fix] Fixed the filter removal
+- [fix] Fixed the filter result page when the filter is removed
+- [fix] Fixed the redirect to the wrong page after all items were removed
+- [fix] Fixed the Statistics chart for undefined replication.wal_size
+- [fix] Fixed the column set for the namespace items during the namespace switching
+- [fix] Fixed the JSON paths view for values included spaces
+- [fix] Changed the value format for width on the integer for sqlquery 
+- [fix] Fixed the bug related to the query history on the Namespace Items list 
+- [fix] Fixed the column titles in the table settings menu on the Performance page
+- [fix] Added the validation of the negative values for the index settings
+- [fix] Fixed the SQL query result table
+- [fix] Fixed the aggrigation panel
+- [fix] Fixed the items sorting 
+- [fix] Fixed the last column settings
+
 # Version 4.11.0 *beta* (09.06.2023)
 ## Server
 - [fix] Fixed HTTP-transactions timeout handling
@@ -1668,6 +1710,4 @@ Storages for v3 and v4 are compatible in both ways.
 - [fix] Limit cgo execution to 2K goroutines to avoid exceed of OS threads limit 
 - [ref] EnableStorage method was deprecated
 - [fix] Query builder did not reset opOR after InnerJoin
-
-## Misc
 

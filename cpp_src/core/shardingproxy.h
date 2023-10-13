@@ -1,8 +1,18 @@
 #pragma once
 
+#include <shared_mutex>
 #include "clusterproxy.h"
 
 namespace reindexer {
+
+namespace sharding {
+struct ShardingControlRequestData;
+struct SaveConfigCommand;
+struct ResetConfigCommand;
+struct ApplyConfigCommand;
+class LocatorServiceAdapter;
+class LocatorService;
+}  // namespace sharding
 
 class ShardingProxy {
 public:
@@ -61,7 +71,7 @@ public:
 	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus &status, const RdxContext &ctx) {
 		return impl_.SetClusterizationStatus(nsName, status, ctx);
 	}
-	bool NeedTraceActivity() { return impl_.NeedTraceActivity(); }
+	bool NeedTraceActivity() const noexcept { return impl_.NeedTraceActivity(); }
 	Error EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck, const RdxContext &ctx) {
 		return impl_.EnableStorage(storagePath, skipPlaceholderCheck, ctx);
 	}
@@ -116,6 +126,8 @@ public:
 		return baseCtx.CreateRdxContext(""sv, activities_, results);
 	}
 
+	[[nodiscard]] Error ShardingControlRequest(const sharding::ShardingControlRequestData &request, const RdxContext &ctx) noexcept;
+
 private:
 	using ItemModifyFT = Error (client::Reindexer::*)(std::string_view, client::Item &);
 	using ItemModifyQrFT = Error (client::Reindexer::*)(std::string_view, client::Item &, client::QueryResults &);
@@ -124,68 +136,178 @@ private:
 		thread_local static WrSerializer ser;
 		return ser;
 	}
-	bool isSharderQuery(const Query &q) const;
-	bool isWithSharding(const Query &q, const RdxContext &ctx) const {
-		if (q.local_) {
-			if (q.Type() != QuerySelect) {
-				throw Error{errParams, "Only SELECT query could be LOCAL"};
-			}
-			return false;
-		}
-		if (q.count == 0 && q.calcTotal == ModeNoTotal && !q.joinQueries_.size() && !q.mergeQueries_.size()) {
-			return false;  // Special case for tagsmatchers selects
-		}
-		if (q.IsWALQuery()) {
-			return false;  // WAL queries are always local
-		}
-		if (!isWithSharding(ctx)) {
-			return false;
-		}
-		return isSharderQuery(q);
-	}
-	bool isWithSharding(std::string_view nsName, const RdxContext &ctx) const noexcept {
-		if (nsName.size() && (nsName[0] == '#' || nsName[0] == '@')) {
-			return false;
-		}
-		if (!isShardingInitialized() || !isSharded(nsName)) {
-			return false;
-		}
-		return isWithSharding(ctx);
-	}
-	bool isWithSharding(const RdxContext &ctx) const noexcept {
-		if (int(ctx.ShardId()) == ShardingKeyType::ProxyOff) {
-			return false;
-		}
-		return ctx.GetOriginLSN().isEmpty() && !ctx.HasEmmiterServer() && impl_.GetShardingConfig() && shardingRouter_ &&
-			   int(ctx.ShardId()) == ShardingKeyType::NotSetShard;
-	}
-	bool isSharded(std::string_view nsName) const noexcept;
+
+	auto isWithSharding(const Query &q, const RdxContext &ctx, int &actualShardId) const;
+	auto isWithSharding(std::string_view nsName, const RdxContext &ctx) const;
+
+	bool isWithSharding(const RdxContext &ctx) const noexcept;
+
+	template <typename ShardingRouterLock>
+	bool isSharderQuery(const Query &q, const ShardingRouterLock &shLockShardingRouter) const;
+
+	template <typename ShardingRouterLock>
+	bool isSharded(std::string_view nsName, const ShardingRouterLock &shLockShardingRouter) const noexcept;
 
 	void calculateNewLimitOfsset(size_t count, size_t totalCount, unsigned &limit, unsigned &offset);
-	void addEmptyLocalQrWithShardID(const Query &query, QueryResults &result);
 	reindexer::client::Item toClientItem(std::string_view ns, client::Reindexer *connection, reindexer::Item &item);
-	template <typename ClientF, typename LocalF, typename T, typename Predicate, typename... Args>
-	Error collectFromShardsByNs(const RdxContext &, const ClientF &, const LocalF &, std::vector<T> &result, const Predicate &,
-								std::string_view nsName, Args &&...);
-	template <typename Func, typename FLocal, typename... Args>
-	Error delegateToShards(const RdxContext &, const Func &f, const FLocal &local, Args &&...args);
-	template <typename Func, typename FLocal, typename... Args>
-	Error delegateToShardsByNs(const RdxContext &, const Func &f, const FLocal &local, std::string_view nsName, Args &&...args);
-	template <ItemModifyFT fn, typename LocalFT>
-	Error modifyItemOnShard(const RdxContext &ctx, std::string_view nsName, Item &item, const LocalFT &localFn);
-	template <ItemModifyQrFT fn, typename LocalFT>
-	Error modifyItemOnShard(const RdxContext &ctx, std::string_view nsName, Item &item, QueryResults &result, const LocalFT &localFn);
-	template <typename LocalFT>
-	Error executeQueryOnShard(const Query &query, QueryResults &result, unsigned proxyFetchLimit, const RdxContext &, LocalFT &&) noexcept;
+	template <typename LockedRouter, typename ClientF, typename LocalF, typename T, typename Predicate, typename... Args>
+	Error collectFromShardsByNs(LockedRouter &, const RdxContext &, const ClientF &, const LocalF &, std::vector<T> &result,
+								const Predicate &, std::string_view nsName, Args &&...);
+	template <typename LockedRouter, typename Func, typename FLocal, typename... Args>
+	Error delegateToShards(LockedRouter &, const RdxContext &, const Func &f, const FLocal &local, Args &&...args);
+	template <typename LockedRouter, typename Func, typename FLocal, typename... Args>
+	Error delegateToShardsByNs(LockedRouter &, const RdxContext &, const Func &f, const FLocal &local, std::string_view nsName,
+							   Args &&...args);
+	template <ItemModifyFT fn, typename LockedRouter, typename LocalFT>
+	Error modifyItemOnShard(LockedRouter &, const RdxContext &ctx, std::string_view nsName, Item &item, const LocalFT &localFn);
+	template <ItemModifyQrFT fn, typename LockedRouter, typename LocalFT>
+	Error modifyItemOnShard(LockedRouter &, const RdxContext &ctx, std::string_view nsName, Item &item, QueryResults &result,
+							const LocalFT &localFn);
+	template <typename LockedRouter, typename LocalFT>
+	Error executeQueryOnShard(LockedRouter &, const Query &query, QueryResults &result, unsigned proxyFetchLimit, const RdxContext &,
+							  LocalFT &&) noexcept;
 	template <typename CalucalteFT>
 	Error executeQueryOnClient(client::Reindexer &connection, const Query &q, client::QueryResults &qrClient,
 							   const CalucalteFT &limitOffsetCalc);
-	bool isShardingInitialized() const noexcept { return shardingInitialized_.load(std::memory_order_acquire) && shardingRouter_; }
+
+	[[nodiscard]] Error handleNewShardingConfig(const gason::JsonNode &config, const RdxContext &ctx) noexcept;
+	[[nodiscard]] Error handleNewShardingConfigLocaly(const gason::JsonNode &config, const RdxContext &ctx) noexcept;
+	template <typename ConfigType>
+	[[nodiscard]] Error handleNewShardingConfigLocaly(const ConfigType &rawConfig, const RdxContext &ctx) noexcept;
+
+	void saveShardingCfgCandidate(const sharding::SaveConfigCommand &requestData, const RdxContext &ctx);
+	void saveShardingCfgCandidateImpl(cluster::ShardingConfig config, int64_t sourceId, const RdxContext &ctx);
+	// Resetting saved candidate after unsuccessful saveShardingCfgCandidate on other shards
+	void resetConfigCandidate(const sharding::ResetConfigCommand &data, const RdxContext &ctx);
+	void applyNewShardingConfig(const sharding::ApplyConfigCommand &requestData, const RdxContext &ctx);
+
+	bool needProxyWithinCluster(const RdxContext &ctx);
+	template <auto RequestType, typename Request>
+	void shardingControlRequestAction(const Request &request, const RdxContext &ctx);
+
+	enum class ConfigResetFlag { RollbackApplied = 0, ResetExistent = 1 };
+	// Resetting the existing sharding configs on other shards before applying the new one OR
+	// Rollback (perhaps) applied candidate after unsuccessful applyNewShardingConfig on other shards
+	template <ConfigResetFlag resetFlag>
+	void resetOrRollbackShardingConfig(const sharding::ResetConfigCommand &data, const RdxContext &ctx);
+	template <ConfigResetFlag resetFlag>
+	[[nodiscard]] Error resetShardingConfigs(int64_t sourceId, const RdxContext &ctx) noexcept;
+	void obtainConfigForResetRouting(std::optional<cluster::ShardingConfig> &config, ConfigResetFlag resetFlag,
+									 const RdxContext &ctx) const;
+
+	void checkNamespacesEmpty(const cluster::ShardingConfig &config, const RdxContext &ctx);
+	void checkSyncCluster(const cluster::ShardingConfig &config);
 
 	ClusterProxy impl_;
-	std::shared_ptr<sharding::LocatorService> shardingRouter_;
+
+	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
+	using RLocker = contexted_shared_lock<Mutex, const RdxContext>;
+	using WLocker = contexted_unique_lock<Mutex, const RdxContext>;
+
+	struct ShardingRouter {
+	private:
+		template <typename Locker, typename LocatorServiceSharedPtr>
+		struct ShardingRouterTSWrapper {
+			const auto &operator->() const { return locatorService_; }
+			ShardingRouterTSWrapper(Locker lock, LocatorServiceSharedPtr &locatorService)
+				: lock_(std::move(lock)), locatorService_(locatorService) {}
+
+			void Reset(typename LocatorServiceSharedPtr::element_type *prt = nullptr) noexcept { locatorService_.reset(prt); }
+			ShardingRouterTSWrapper &operator=(LocatorServiceSharedPtr sharedPrt) noexcept {
+				if (sharedPrt == locatorService_) return *this;
+
+				locatorService_ = sharedPrt;
+				return *this;
+			}
+
+			void Unlock() { lock_.unlock(); }
+
+			operator bool() const noexcept { return (bool)locatorService_; }
+
+		private:
+			Locker lock_;
+			LocatorServiceSharedPtr &locatorService_;
+		};
+
+	public:
+		auto SharedLock(const RdxContext &ctx) const { return ShardingRouterTSWrapper{RLocker(mtx_, &ctx), locatorService_}; }
+		auto SharedLock() const { return ShardingRouterTSWrapper{shared_lock(mtx_), locatorService_}; }
+
+		auto UniqueLock(const RdxContext &ctx) { return ShardingRouterTSWrapper{WLocker(mtx_, &ctx), locatorService_}; }
+		auto UniqueLock() { return ShardingRouterTSWrapper{std::unique_lock(mtx_), locatorService_}; }
+
+		auto SharedPtr(const RdxContext &ctx) const;
+
+	private:
+		mutable Mutex mtx_;
+		std::shared_ptr<sharding::LocatorService> locatorService_;
+	};
+
+	ShardingRouter shardingRouter_;
+
+	struct ConfigCandidate {
+	private:
+		template <typename Locker, typename ConfigCandidateType>
+		struct ConfigCandidateTSWrapper {
+			ConfigCandidateTSWrapper(Locker lock, ConfigCandidateType &configCandidate)
+				: lock_(std::move(lock)), configCandidate_(configCandidate) {}
+
+			auto &SourceId() const { return configCandidate_.sourceId_; }
+			auto &Config() const { return configCandidate_.config_; }
+			auto &Reseter() const { return configCandidate_.reseter_; }
+			void EnableReseter(bool enable = true) noexcept { configCandidate_.reseterEnabled_ = enable; }
+
+		private:
+			Locker lock_;
+			ConfigCandidateType &configCandidate_;
+		};
+
+	public:
+		auto SharedLock(const RdxContext &ctx) const { return ConfigCandidateTSWrapper{RLocker(mtx_, &ctx), *this}; }
+		auto UniqueLock(const RdxContext &ctx) { return ConfigCandidateTSWrapper{WLocker(mtx_, &ctx), *this}; }
+
+		auto SharedLock() const { return ConfigCandidateTSWrapper{shared_lock(mtx_), *this}; }
+		auto UniqueLock() { return ConfigCandidateTSWrapper{std::unique_lock(mtx_), *this}; }
+
+		bool NeedStopReseter() const {
+			if (!reseterEnabled_) return true;
+
+			if (auto lock = std::unique_lock(mtx_, std::try_to_lock_t{})) return !config_;
+
+			return false;
+		}
+
+		bool TryResetConfig() {
+			if (!reseterEnabled_) return true;
+
+			if (auto lock = std::unique_lock(mtx_, std::try_to_lock_t{})) {
+				config_ = std::nullopt;
+				logPrintf(LogWarning, "Timeout for applying the new sharding config. Config candidate removed. Source - %d", sourceId_);
+				return true;
+			}
+
+			return false;
+		}
+
+		~ConfigCandidate() {
+			if (reseter_.joinable()) reseter_.join();
+		}
+
+	private:
+		mutable Mutex mtx_;
+		std::optional<cluster::ShardingConfig> config_;
+		int64_t sourceId_;
+		std::thread reseter_;
+		std::atomic<bool> reseterEnabled_ = true;
+	};
+
+	ConfigCandidate configCandidate_;
+
 	std::atomic_bool shardingInitialized_ = {false};
 	ActivityContainer activities_;
+
+	// this is required because newConfig process methods are private
+	struct ShardingProxyMethods;
 };
 
 }  // namespace reindexer

@@ -25,9 +25,9 @@ struct connection_stat {
 
 class connection_stats_collector {
 public:
-	connection_stats_collector();
+	connection_stats_collector() : stat_(std::make_shared<connection_stat>()) {}
 
-	std::shared_ptr<connection_stat> get_stat() noexcept { return stat_; }
+	std::shared_ptr<connection_stat> get_stat() const noexcept { return stat_; }
 
 	void attach(ev::dynamic_loop &loop) noexcept;
 	void detach() noexcept;

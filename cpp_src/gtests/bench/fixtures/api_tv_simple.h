@@ -85,8 +85,6 @@ private:
 	void query2CondIdSet(State& state, const std::vector<std::vector<int>>& idsets);
 	reindexer::Error prepareCJsonBench();
 
-	constexpr static unsigned kTotalItemsMainJoinNs = 1000000;
-
 	std::vector<std::string> countries_;
 	std::vector<std::string> countryLikePatterns_;
 	std::vector<std::string> locations_;
@@ -95,8 +93,12 @@ private:
 	std::vector<std::vector<int>> priceIDs_;
 	std::vector<std::string> uuids_;
 #if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
+	constexpr static unsigned kTotalItemsStringSelectNs = 100'000;
+	constexpr static unsigned kTotalItemsMainJoinNs = 1'000'000;
 	constexpr static unsigned idsetsSz_[] = {10, 100, 500, 2000, 20000};
 #else	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
+	constexpr static unsigned kTotalItemsStringSelectNs = 20'000;
+	constexpr static unsigned kTotalItemsMainJoinNs = 50'000;
 	constexpr static unsigned idsetsSz_[] = {100, 500};
 #endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	std::unordered_map<unsigned, std::vector<std::vector<int>>> idsets_;

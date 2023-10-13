@@ -54,7 +54,7 @@ bool Highlight::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStru
 	res.Value().Clone();
 
 	if (func.tagsPath.empty()) {
-		pl.Set(func.field, VariantArray{Variant{stringsHolder.back()}});
+		pl.Set(func.field, Variant{stringsHolder.back()});
 	} else {
 		throw Error(errConflict, "SetByJsonPath is not implemented yet!");
 	}

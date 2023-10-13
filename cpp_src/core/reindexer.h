@@ -27,6 +27,10 @@ struct NodeData;
 struct RaftInfo;
 }  // namespace cluster
 
+namespace sharding {
+struct ShardingControlRequestData;
+}
+
 /// The main Reindexer interface. Holds database object<br>
 /// *Thread safety*: All methods of Reindexer are thread safe. <br>
 /// *Resources lifetime*: All resources aquired from Reindexer, e.g Item or QueryResults are uses Copy-On-Write
@@ -289,6 +293,10 @@ public:
 	/// @param tm - New tagsmatcher
 	Error SetTagsMatcher(std::string_view nsName, TagsMatcher &&tm);
 
+	/// Execute sharding control request
+	/// @param request - control params
+	[[nodiscard]] Error ShardingControlRequest(const sharding::ShardingControlRequestData &request) noexcept;
+
 	/// Add cancelable context
 	/// @param ctx - context pointer
 	Reindexer WithContext(const IRdxCancelContext *ctx) const { return Reindexer(impl_, ctx_.WithCancelParent(ctx)); }
@@ -303,32 +311,60 @@ public:
 	Reindexer WithEmmiterServerId(unsigned int id) { return Reindexer(impl_, ctx_.WithEmmiterServerId(id)); }
 	/// Add shard id
 	/// @param id - shard id
-	Reindexer WithShardId(unsigned int id, bool parallel) { return Reindexer(impl_, ctx_.WithShardId(id, parallel)); }
+	/// @param distributed - 'true' means, that we are executing distributed sharding query part
+	Reindexer WithShardId(unsigned int id, bool distributed) { return Reindexer(impl_, ctx_.WithShardId(id, distributed)); }
 	/// Add completion
 	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
 	Reindexer WithCompletion(Completion cmpl) const { return Reindexer(impl_, ctx_.WithCompletion(std::move(cmpl))); }
 	/// Add activityTracer
+	/// This With* should be the last one, because it creates strings, that will be copied on each next With* statement
 	/// @param activityTracer - name of activity tracer
 	/// @param user - user identifying information
 	/// @param connectionId - unique identifier for the connection
-	Reindexer WithActivityTracer(std::string_view activityTracer, std::string_view user, int connectionId) const {
-		return Reindexer(impl_, ctx_.WithActivityTracer(activityTracer, user, connectionId));
+	Reindexer WithActivityTracer(std::string_view activityTracer, std::string &&user, int connectionId) const {
+		return Reindexer(impl_, ctx_.WithActivityTracer(activityTracer, std::move(user), connectionId));
 	}
-	Reindexer WithActivityTracer(std::string_view activityTracer, std::string_view user) const {
-		return Reindexer(impl_, ctx_.WithActivityTracer(activityTracer, user));
+	Reindexer WithActivityTracer(std::string_view activityTracer, std::string &&user) const {
+		return Reindexer(impl_, ctx_.WithActivityTracer(activityTracer, std::move(user)));
+	}
+	/// Allows to set multiple context params at once
+	/// @param timeout - Execution timeout
+	/// @param lsn - origin LSN value (required for replicated requests)
+	/// @param emmiterServerId - server ID of the emmiter node (required for synchronously replicated requests)
+	/// @param shardId - expected shard ID for this node (non empty for proxied sharding requests)
+	/// @param distributed - 'true' means, that we are executing distributed sharding query part
+	Reindexer WithContextParams(milliseconds timeout, lsn_t lsn, int emmiterServerId, unsigned int shardId, bool distributed) const {
+		return Reindexer(impl_, ctx_.WithContextParams(timeout, lsn, emmiterServerId, shardId, distributed));
+	}
+	/// Allows to set multiple context params at once
+	/// @param timeout - Execution timeout
+	/// @param lsn - origin LSN value (required for replicated requests)
+	/// @param emmiterServerId - server ID of the emmiter node (required for synchronously replicated requests)
+	/// @param shardId - expected shard ID for this node (non empty for proxied sharding requests)
+	/// @param distributed - 'true' means, that we are executing distributed sharding query part
+	/// @param activityTracer - name of activity tracer
+	/// @param user - user identifying information
+	/// @param connectionId - unique identifier for the connection
+	Reindexer WithContextParams(milliseconds timeout, lsn_t lsn, int emmiterServerId, unsigned int shardId, bool distributed,
+								std::string_view activityTracer, std::string user, int connectionId) const {
+		return Reindexer(impl_, ctx_.WithContextParams(timeout, lsn, emmiterServerId, shardId, distributed, activityTracer, std::move(user),
+													   connectionId));
 	}
 
 	/// Set activityTracer to current DB
 	/// @param activityTracer - name of activity tracer
 	/// @param user - user identifying information
-	void SetActivityTracer(std::string_view activityTracer, std::string_view user) { ctx_.SetActivityTracer(activityTracer, user); }
-	void SetActivityTracer(std::string_view activityTracer, std::string_view user, int connectionId) {
-		ctx_.SetActivityTracer(activityTracer, user, connectionId);
+	/// @param connectionId - unique identifier for the connection
+	void SetActivityTracer(std::string &&activityTracer, std::string &&user, int connectionId) {
+		ctx_.SetActivityTracer(std::move(activityTracer), std::move(user), connectionId);
+	}
+	void SetActivityTracer(std::string &&activityTracer, std::string &&user) {
+		ctx_.SetActivityTracer(std::move(activityTracer), std::move(user));
 	}
 
 	void ShutdownCluster();
 
-	bool NeedTraceActivity() const;
+	bool NeedTraceActivity() const noexcept;
 
 	typedef QueryResults QueryResultsT;
 	typedef Item ItemT;
@@ -336,7 +372,7 @@ public:
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index);
 
 private:
-	Reindexer(ShardingProxy *impl, InternalRdxContext &&ctx) : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
+	Reindexer(ShardingProxy *impl, InternalRdxContext &&ctx) noexcept : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}
 
 	ShardingProxy *impl_;
 	bool owner_;

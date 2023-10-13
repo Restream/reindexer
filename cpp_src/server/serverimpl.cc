@@ -29,9 +29,9 @@
 #endif
 #ifdef LINK_RESOURCES
 #include <cmrc/cmrc.hpp>
-void init_resources() { CMRC_INIT(reindexer_server_resources); }
+static void init_resources() { CMRC_INIT(reindexer_server_resources); }
 #else
-void init_resources() {}
+static void init_resources() {}
 #endif
 
 #if defined(WITH_GRPC)
@@ -47,7 +47,7 @@ namespace reindexer_server {
 using reindexer::fs::GetDirPath;
 using reindexer::logLevelFromString;
 
-ServerImpl::ServerImpl([[maybe_unused]] ServerMode mode)
+ServerImpl::ServerImpl(ServerMode mode)
 	:
 #ifdef REINDEX_WITH_GPERFTOOLS
 	  config_(alloc_ext::TCMallocIsAvailable()),
@@ -56,12 +56,8 @@ ServerImpl::ServerImpl([[maybe_unused]] ServerMode mode)
 #endif
 	  coreLogLevel_(LogNone),
 	  storageLoaded_(false),
-	  running_(false)
-#ifndef REINDEX_WITH_ASAN
-	  ,
-	  mode_(mode)
-#endif	// REINDEX_WITH_ASAN
-{
+	  running_(false),
+	  mode_(mode) {
 	async_.set(loop_);
 }
 
@@ -313,7 +309,7 @@ int ServerImpl::run() {
 		std::unique_ptr<StatsCollector> statsCollector;
 		if (config_.EnablePrometheus) {
 			prometheus.reset(new Prometheus);
-			statsCollector.reset(new StatsCollector(prometheus.get(), config_.PrometheusCollectPeriod));
+			statsCollector.reset(new StatsCollector(*dbMgr_, prometheus.get(), config_.PrometheusCollectPeriod, logger_));
 		}
 
 		LoggerWrapper httpLogger("http");
@@ -367,7 +363,7 @@ int ServerImpl::run() {
 			sig.loop.break_loop();
 		};
 
-		if (statsCollector) statsCollector->Start(*dbMgr_);
+		if (statsCollector) statsCollector->Start();
 
 		ev::sig sterm, sint, shup;
 
@@ -523,7 +519,9 @@ void ServerImpl::initCoreLogger() {
 			}
 		}
 	};
-	if (coreLogLevel_ && logger.lock()) reindexer::logInstallWriter(callback);
+	if (coreLogLevel_ && logger.lock()) {
+		reindexer::logInstallWriter(callback, mode_ == ServerMode::Standalone ? LoggerPolicy::WithoutLocks : LoggerPolicy::WithLocks);
+	}
 }
 
 ServerImpl::~ServerImpl() {
@@ -532,7 +530,9 @@ ServerImpl::~ServerImpl() {
 		rxAllowNamespaceLeak = true;
 	}
 #endif
-	if (coreLogLevel_) reindexer::logInstallWriter(nullptr);
+	if (coreLogLevel_) {
+		logInstallWriter(nullptr, mode_ == ServerMode::Standalone ? LoggerPolicy::WithoutLocks : LoggerPolicy::WithLocks);
+	}
 	async_.reset();
 }
 

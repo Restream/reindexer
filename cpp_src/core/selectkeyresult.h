@@ -20,7 +20,7 @@ class SingleSelectKeyResult {
 	friend class SelectKeyResult;
 
 public:
-	SingleSelectKeyResult() {}
+	SingleSelectKeyResult() noexcept {}
 	SingleSelectKeyResult(IndexIterator::Ptr indexForwardIter) : indexForwardIter_(std::move(indexForwardIter)) {
 		assertrx(indexForwardIter_ != nullptr);
 	}
@@ -35,10 +35,10 @@ public:
 			useBtree_ = true;
 		}
 	}
-	explicit SingleSelectKeyResult(IdSet::Ptr ids) : tempIds_(std::move(ids)), ids_(*tempIds_) {}
-	explicit SingleSelectKeyResult(const IdSetRef &ids) : ids_(ids) {}
-	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
-	SingleSelectKeyResult(const SingleSelectKeyResult &other)
+	explicit SingleSelectKeyResult(IdSet::Ptr ids) noexcept : tempIds_(std::move(ids)), ids_(*tempIds_) {}
+	explicit SingleSelectKeyResult(const IdSetRef &ids) noexcept : ids_(ids) {}
+	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) noexcept : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
+	SingleSelectKeyResult(const SingleSelectKeyResult &other) noexcept
 		: tempIds_(other.tempIds_),
 		  ids_(other.ids_),
 		  set_(other.set_),
@@ -65,7 +65,7 @@ public:
 			}
 		}
 	}
-	SingleSelectKeyResult &operator=(const SingleSelectKeyResult &other) {
+	SingleSelectKeyResult &operator=(const SingleSelectKeyResult &other) noexcept {
 		if (&other != this) {
 			tempIds_ = other.tempIds_;
 			ids_ = other.ids_;
@@ -150,6 +150,14 @@ public:
 	static size_t GetGenericSortCost(size_t idsCount) noexcept { return idsCount * log2(idsCount) + 2 * idsCount; }
 	static bool IsGenericSortRecommended(size_t idsetsCount, size_t idsCount, size_t maxIterations) noexcept {
 		return idsetsCount >= 30 && idsCount && GetGenericSortCost(idsCount) < GetMergeSortCost(maxIterations, idsetsCount);
+	}
+	static size_t CostWithDefferedSort(size_t idsetsCount, size_t idsCount, size_t maxIterations) noexcept {
+		const auto genSortCost = GetGenericSortCost(idsCount);
+		if (idsetsCount < 30 || !idsCount) {
+			return genSortCost;
+		}
+		const auto mrgSortCost = GetMergeSortCost(maxIterations, idsetsCount);
+		return std::min(genSortCost, mrgSortCost);
 	}
 
 	void ClearDistinct() {

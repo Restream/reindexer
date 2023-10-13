@@ -6,8 +6,7 @@ CompositeArrayComparator::CompositeArrayComparator() {}
 
 void CompositeArrayComparator::BindField(int field, const VariantArray &values, CondType condType) {
 	fields_.push_back(field);
-	ctx_.push_back(Context());
-	Context &ctx = ctx_.back();
+	Context &ctx = ctx_.emplace_back();
 
 	ctx.cond = condType;
 	ctx.cmpBool.SetValues(condType, values);
@@ -22,8 +21,7 @@ void CompositeArrayComparator::BindField(int field, const VariantArray &values, 
 
 void CompositeArrayComparator::BindField(const TagsPath &tagsPath, const VariantArray &values, CondType condType) {
 	fields_.push_back(tagsPath);
-	ctx_.push_back(Context());
-	Context &ctx = ctx_.back();
+	Context &ctx = ctx_.emplace_back();
 
 	ctx.cond = condType;
 	ctx.cmpBool.SetValues(condType, values);
@@ -40,16 +38,17 @@ bool CompositeArrayComparator::Compare(const PayloadValue &pv, const ComparatorV
 
 	h_vector<VariantArray, 2> vals;
 	size_t tagsPathIdx = 0;
+	vals.reserve(fields_.size());
 	for (size_t j = 0; j < fields_.size(); ++j) {
-		vals.push_back({});
+		auto &v = vals.emplace_back();
 		bool isRegularIndex = fields_[j] != IndexValueType::SetByJsonPath && fields_[j] < vars.payloadType_.NumFields();
 		if (isRegularIndex) {
-			pl.Get(fields_[j], vals.back());
+			pl.Get(fields_[j], v);
 		} else {
 			assertrx(tagsPathIdx < fields_.getTagsPathsLength());
-			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), vals.back(), KeyValueType::Undefined{});
+			pl.GetByJsonPath(fields_.getTagsPath(tagsPathIdx++), v, KeyValueType::Undefined{});
 		}
-		if (vals.back().size() < len) len = vals.back().size();
+		if (v.size() < len) len = vals.back().size();
 	}
 
 	for (size_t i = 0; i < len; ++i) {

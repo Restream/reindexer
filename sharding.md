@@ -9,6 +9,7 @@ Reindexer supports sharding by index values and currently this is the only mode.
 - [Known issues and constraints](#known-issues-and-constraints)
 - [Usage](#usage)
   - [Configuration](#configuration)
+  - [Runtime sharding configuration](#runtime-sharding-configuration)
   - [Example](#example)
   - [Combining sharding and synchronous replication](#combining-sharding-and-synchronous-replication)
   - [Dump, restore and resharding](#dump-restore-and-resharding)
@@ -94,6 +95,197 @@ On startup reindexer_server (or builtin server) reads replication and sharding c
 
 `sharding.conf` sets specific sharding parameters (description may be found in sample). This file has to have the same content on each node of the cluster (here 'cluster' means combination of all sharded nodes and synchorous clusters for each shard).
 
+### Runtime sharding configuration
+
+You can change the configuration of the sharding in runtime using
+`apply_sharding_config`-command through the mechanism of actions in `#config`-table via reindexer tool:
+```SQL
+Reindexer> \upsert #config  {"type":"action","action":{"command":"apply_sharding_config","config": __JSON_WITH_NEW_CONFIG__ }}
+```
+where `__JSON_WITH_NEW_CONFIG__` might look like this
+```JSON
+
+{
+    "version": 1,
+    "namespaces":
+    [
+        {
+            "namespace": "ns",
+            "default_shard": 0,
+            "index": "id",
+            "keys":
+            [
+                {
+                    "shard_id": 1,
+                    "values":
+                    [
+                        0,
+                        1,
+                        2,
+                        3,
+                        4
+                    ]
+                },
+                {
+                    "shard_id": 2,
+                    "values":
+                    [
+                        10,
+                        11,
+                        12,
+                        13,
+                        14
+                    ]
+                },
+                {
+                    "shard_id": 3,
+                    "values":
+                    [
+                        20,
+                        21,
+                        22,
+                        23,
+                        24
+                    ]
+                }
+            ]
+        }
+    ],
+    "shards":
+    [
+        {
+            "shard_id": 0,
+            "dsns":
+            [
+                "cproto://127.0.0.1:7010/base_test"
+            ]
+        },
+        {
+            "shard_id": 1,
+            "dsns":
+            [
+                "cproto://127.0.0.1:7011/base_test"
+            ]
+        },
+        {
+            "shard_id": 2,
+            "dsns":
+            [
+                "cproto://127.0.0.1:7012/base_test"
+            ]
+        },
+        {
+            "shard_id": 3,
+            "dsns":
+            [
+                "cproto://127.0.0.1:7013/base_test"
+            ]
+        }
+    ],
+    "this_shard_id": -1
+}
+```
+OR
+```JSON
+{
+    "version": 1,
+    "namespaces":
+    [
+        {
+            "namespace": "ns",
+            "default_shard": 0,
+            "index": "id",
+            "keys":
+            [
+                {
+                    "shard_id": 1,
+                    "values":
+                    [
+                        0,
+                        1,
+                        2,
+                        3,
+                        4
+                    ]
+                },
+                {
+                    "shard_id": 2,
+                    "values":
+                    [
+                        10,
+                        11,
+                        12,
+                        13,
+                        14
+                    ]
+                },
+                {
+                    "shard_id": 3,
+                    "values":
+                    [
+                        20,
+                        21,
+                        22,
+                        23,
+                        24
+                    ]
+                }
+            ]
+        }
+    ],
+    "shards":
+    [
+        {
+            "shard_id": 0,
+            "dsns":
+            [
+                "cproto://127.0.0.1:7000/base_test",
+                "cproto://127.0.0.1:7001/base_test",
+                "cproto://127.0.0.1:7002/base_test"
+            ]
+        },
+        {
+            "shard_id": 1,
+            "dsns":
+            [
+                "cproto://127.0.0.1:7010/base_test",
+                "cproto://127.0.0.1:7011/base_test",
+                "cproto://127.0.0.1:7012/base_test"
+            ]
+        },
+        {
+            "shard_id": 2,
+            "dsns":
+            [
+                "cproto://127.0.0.1:7020/base_test",
+                "cproto://127.0.0.1:7021/base_test",
+                "cproto://127.0.0.1:7022/base_test"
+            ]
+        },
+        {
+            "shard_id": 3,
+            "dsns":
+            [
+                "cproto://127.0.0.1:7030/base_test",
+                "cproto://127.0.0.1:7031/base_test",
+                "cproto://127.0.0.1:7032/base_test"
+            ]
+        }
+    ],
+    "this_shard_id": -1
+}
+
+```
+for a synchronous cluster in the second case.
+
+The value of the `"this_shard_id"`-parameter doesn't matter in the passed config.  It will be calculated automatically in accordance with the `"shards"`-section in the config and correctly inserted into the config on the corresponding node.
+
+The sharding config will be successfully applied only if:
+- All nodes of the old and new sharding configs are available (to be more precise, consensus is needed for the cluster, and availability is needed for single nodes),
+- Either all nodes listed in the `"shards"`-section for a specific `shard_id` must be nodes of the same synchronous cluster, and there should be no nodes in the cluster that are not part of the shard, or the shard is a separate node that is not part of the synchronous cluster,
+- The namespaces of the new config either do not exist or do not contain data.
+
+At the current stage of implementation, do not try to insert any data into namespaces participating in the new sharding config until it is applied to all nodes, otherwise you may get a non-consistent state and a non-working sharding.
 
 ### Example
 

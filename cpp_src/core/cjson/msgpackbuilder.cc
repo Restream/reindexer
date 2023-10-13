@@ -30,8 +30,6 @@ MsgPackBuilder::MsgPackBuilder(msgpack_packer &packer, const TagsLengths *tagsLe
 	init(KUnknownFieldSize);
 }
 
-MsgPackBuilder::~MsgPackBuilder() { End(); }
-
 void MsgPackBuilder::Array(int tagName, Serializer &ser, TagType tagType, int count) {
 	checkIfCorrectArray(tagName);
 	skipTag();
@@ -111,15 +109,15 @@ void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNo
 	auto type = obj.value.getTag();
 	switch (type) {
 		case gason::JSON_STRING: {
-			Put(name, obj.As<std::string_view>());
+			Put(name, obj.As<std::string_view>(), 0);
 			break;
 		}
 		case gason::JSON_NUMBER: {
-			Put(name, obj.As<int64_t>());
+			Put(name, obj.As<int64_t>(), 0);
 			break;
 		}
 		case gason::JSON_DOUBLE: {
-			Put(name, obj.As<double>());
+			Put(name, obj.As<double>(), 0);
 			break;
 		}
 		case gason::JSON_OBJECT:
@@ -143,11 +141,11 @@ void MsgPackBuilder::appendJsonObject(std::string_view name, const gason::JsonNo
 			break;
 		}
 		case gason::JSON_TRUE: {
-			Put(std::string_view(obj.key), true);
+			Put(std::string_view(obj.key), true, 0);
 			break;
 		}
 		case gason::JSON_FALSE: {
-			Put(std::string_view(obj.key), false);
+			Put(std::string_view(obj.key), false, 0);
 			break;
 		}
 		case gason::JSON_NULL: {

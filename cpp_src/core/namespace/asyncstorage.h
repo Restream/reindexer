@@ -4,6 +4,7 @@
 #include <mutex>
 #include "core/storage/idatastorage.h"
 #include "estl/h_vector.h"
+#include "estl/mutex.h"
 #include "tools/assertrx.h"
 #include "tools/flagguard.h"
 
@@ -39,6 +40,7 @@ public:
 	using AdviceGuardT = CounterGuardAIRL32;
 	using ClockT = std::chrono::system_clock;
 	using TimepointT = ClockT::time_point;
+	using Mutex = MarkedMutex<std::mutex, MutexMark::AsyncStorage>;
 
 	struct Status {
 		bool isEnabled = false;
@@ -47,7 +49,7 @@ public:
 
 	class ConstCursor {
 	public:
-		ConstCursor(std::unique_lock<std::mutex>&& lck, std::unique_ptr<datastorage::Cursor>&& c) noexcept
+		ConstCursor(std::unique_lock<Mutex>&& lck, std::unique_ptr<datastorage::Cursor>&& c) noexcept
 			: lck_(std::move(lck)), c_(std::move(c)) {
 			assertrx(lck_.owns_lock());
 			assertrx(c_);
@@ -58,13 +60,13 @@ public:
 		// NOTE: Cursor owns unique storage lock. I.e. nobody is able to read stroage or write into it, while cursor exists.
 		// Currently the only place, where it matter is EnumMeta method. However, we should to consider switching to shared_mutex, if
 		// the number of such concurrent Cursors will grow.
-		std::unique_lock<std::mutex> lck_;
+		std::unique_lock<Mutex> lck_;
 		std::unique_ptr<datastorage::Cursor> c_;
 	};
 
 	class Cursor : public ConstCursor {
 	public:
-		Cursor(std::unique_lock<std::mutex>&& lck, std::unique_ptr<datastorage::Cursor>&& c, AsyncStorage& storage) noexcept
+		Cursor(std::unique_lock<Mutex>&& lck, std::unique_ptr<datastorage::Cursor>&& c, AsyncStorage& storage) noexcept
 			: ConstCursor(std::move(lck), std::move(c)), storage_(&storage) {}
 
 		void RemoveThisKey(const StorageOpts& opts) {
@@ -78,24 +80,19 @@ public:
 
 	class FullLockT {
 	public:
-		FullLockT(std::mutex& flushMtx, std::mutex& updatesMtx) : flushLck_(flushMtx), storageLck_(updatesMtx) {}
-		~FullLockT() {
-			if (flushLck_.owns_lock()) {
-				assertrx(storageLck_.owns_lock());
-				unlock();
-			}
-		}
+		using MutexType = Mutex;
+		FullLockT(MutexType& flushMtx, MutexType& updatesMtx) : flushLck_(flushMtx), storageLck_(updatesMtx) {}
 		void unlock() {
 			// Specify unlock order
 			storageLck_.unlock();
 			flushLck_.unlock();
 		}
-		bool OwnsThisFlushMutex(std::mutex& mtx) const noexcept { return flushLck_.owns_lock() && flushLck_.mutex() == &mtx; }
-		bool OwnsThisStorageMutex(std::mutex& mtx) const noexcept { return storageLck_.owns_lock() && storageLck_.mutex() == &mtx; }
+		bool OwnsThisFlushMutex(MutexType& mtx) const noexcept { return flushLck_.owns_lock() && flushLck_.mutex() == &mtx; }
+		bool OwnsThisStorageMutex(MutexType& mtx) const noexcept { return storageLck_.owns_lock() && storageLck_.mutex() == &mtx; }
 
 	private:
-		std::unique_lock<std::mutex> flushLck_;
-		std::unique_lock<std::mutex> storageLck_;
+		std::unique_lock<MutexType> flushLck_;
+		std::unique_lock<MutexType> storageLck_;
 	};
 
 	AsyncStorage() = default;
@@ -136,17 +133,15 @@ public:
 			}
 		}
 	}
-	bool IsValid() const {
+	bool IsValid() const noexcept {
 		std::lock_guard lck(storageMtx_);
 		return storage_.get();
 	}
-	Status GetStatus() const {
-		std::lock_guard lck(storageMtx_);
-		return Status{storage_.get() != nullptr, lastFlushError_};
-	}
+	Status GetStatusCached() const noexcept { return statusCache_.GetStatus(); }
 	FullLockT FullLock() { return FullLockT{flushMtx_, storageMtx_}; }
-	std::string Path() const noexcept;
-	datastorage::StorageType Type() const noexcept;
+	std::string GetPathCached() const noexcept { return statusCache_.GetPath(); }
+	std::string GetPath() const noexcept;
+	datastorage::StorageType GetType() const noexcept;
 	void InheritUpdatesFrom(AsyncStorage& src, AsyncStorage::FullLockT& storageLock);
 	AdviceGuardT AdviceBatching() noexcept { return AdviceGuardT(batchingAdvices_); }
 	void SetForceFlushLimit(uint32_t limit) noexcept { forceFlushLimit_.store(limit, std::memory_order_relaxed); }
@@ -244,8 +239,8 @@ private:
 
 	UpdatesPtrT createUpdatesCollection() noexcept;
 	void recycleUpdatesCollection(UpdatesPtrT&& p) noexcept;
-	void scheduleFilesReopen(Error&& e) {
-		lastFlushError_ = std::move(e);
+	void scheduleFilesReopen(Error&& e) noexcept {
+		setLastFlushError(std::move(e));
 		reopenTs_ = ClockT::now() + kStorageReopenPeriod;
 	}
 	void reset() noexcept {
@@ -254,16 +249,52 @@ private:
 		lastFlushError_ = Error();
 		reopenTs_ = TimepointT();
 		lastBatchWithSyncUpdates_ = -1;
+		updateStatusCache();
 	}
 	void tryReopenStorage();
+	void updateStatusCache() noexcept { statusCache_.Update(Status{bool(storage_.get()), lastFlushError_}, path_); }
+	void setLastFlushError(Error&& e) {
+		lastFlushError_ = std::move(e);
+		updateStatusCache();
+	}
 
+	class StatusCache {
+	public:
+		void Update(Status&& st, std::string path) noexcept {
+			std::lock_guard lck(mtx_);
+			status_ = std::move(st);
+			path_ = std::move(path);
+		}
+		void UpdatePart(bool isEnabled, std::string path) noexcept {
+			std::lock_guard lck(mtx_);
+			status_.isEnabled = isEnabled;
+			path_ = std::move(path);
+		}
+		Status GetStatus() const noexcept {
+			std::lock_guard lck(mtx_);
+			return status_;
+		}
+		std::string GetPath() const noexcept {
+			std::lock_guard lck(mtx_);
+			return path_;
+		}
+
+	private:
+		mutable std::mutex mtx_;
+		Status status_;
+		std::string path_;
+	};
+
+	StatusCache statusCache_;  // Status cache to avoid any long locks
 	std::deque<UpdatesPtrT> finishedUpdateChuncks_;
 	UpdatesPtrT curUpdatesChunck_;
 	std::atomic<uint32_t> totalUpdatesCount_ = {0};
+	// path_ value and storage_ pointer may be changed under full lock only, so it's valid to read their values under any of flushMtx_ or
+	// storageMtx_ locks
 	shared_ptr<datastorage::IDataStorage> storage_;
-	mutable std::mutex storageMtx_;
-	mutable std::mutex flushMtx_;
 	std::string path_;
+	mutable Mutex storageMtx_;
+	mutable Mutex flushMtx_;
 	bool isCopiedNsStorage_ = false;
 	h_vector<UpdatesPtrT, kMaxRecycledChunks> recycled_;
 	std::atomic<int32_t> batchingAdvices_ = {0};

@@ -53,10 +53,10 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 	try {
 		switch (mode) {
 			case FieldModeSet:
-				cjsonModifier.SetFieldValue(cjson, tagsPath, keys, ser_);
+				cjsonModifier.SetFieldValue(cjson, tagsPath, keys, ser_, pl);
 				break;
 			case FieldModeSetJson:
-				cjsonModifier.SetObject(cjson, tagsPath, keys, ser_, &pl);
+				cjsonModifier.SetObject(cjson, tagsPath, keys, ser_, pl);
 				break;
 			case FieldModeDrop:
 				cjsonModifier.RemoveField(cjson, tagsPath, ser_);
@@ -72,7 +72,7 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 	}
 
 	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
+	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get()))));
 }
 
 void ItemImpl::SetField(std::string_view jsonPath, const VariantArray &keys, const IndexExpressionEvaluator &ev) {
@@ -85,7 +85,7 @@ void ItemImpl::GetField(int field, VariantArray &values) { GetPayload().Get(fiel
 Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 	Payload pl = GetPayload();
 	if (!msgPackDecoder_) {
-		msgPackDecoder_.reset(new MsgPackDecoder(&tagsMatcher_));
+		msgPackDecoder_.reset(new MsgPackDecoder(tagsMatcher_));
 	}
 
 	ser_.Reset();
@@ -93,7 +93,7 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 	Error err = msgPackDecoder_->Decode(buf, pl, ser_, offset);
 	if (err.ok()) {
 		tupleData_ = ser_.DetachLStr();
-		pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
+		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get()))));
 	}
 	return err;
 }
@@ -108,7 +108,7 @@ Error ItemImpl::FromProtobuf(std::string_view buf) {
 	Error err = decoder.Decode(buf, pl, ser_);
 	if (err.ok()) {
 		tupleData_ = ser_.DetachLStr();
-		pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
+		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get()))));
 	}
 	return err;
 }
@@ -122,7 +122,7 @@ Error ItemImpl::GetMsgPack(WrSerializer &wrser) {
 
 	MsgPackBuilder msgpackBuilder(wrser, &tagsLengths, &startTag, ObjType::TypePlain, &tagsMatcher_);
 	msgpackEncoder.Encode(pl, msgpackBuilder);
-	return errOK;
+	return Error();
 }
 
 Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
@@ -131,7 +131,7 @@ Error ItemImpl::GetProtobuf(WrSerializer &wrser) {
 	ProtobufBuilder protobufBuilder(&wrser, ObjType::TypePlain, schema_.get(), &tagsMatcher_);
 	ProtobufEncoder protobufEncoder(&tagsMatcher_);
 	protobufEncoder.Encode(pl, protobufBuilder);
-	return errOK;
+	return Error();
 }
 
 // Construct item from compressed json
@@ -165,7 +165,7 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder *recoder) 
 	if (!rdser.Eof()) throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
 
 	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
+	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get()))));
 }
 
 Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
@@ -216,7 +216,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 
 	// Put tuple to field[0]
 	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, {Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())))});
+	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get()))));
 	return err;
 }
 

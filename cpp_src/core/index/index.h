@@ -102,7 +102,7 @@ public:
 		assertrx(0);
 		abort();
 	}
-	virtual reindexer::FtPreselectT FtPreselect(const QueryEntries&, int /*idxNo*/, const SelectFunction&, const RdxContext&) {
+	virtual reindexer::FtPreselectT FtPreselect(const RdxContext&) {
 		assertrx(0);
 		abort();
 	}
@@ -120,7 +120,7 @@ public:
 	}
 	virtual bool HoldsStrings() const noexcept = 0;
 	virtual void ClearCache() {}
-	virtual void ClearCache(const std::bitset<64>&) {}
+	virtual void ClearCache(const std::bitset<kMaxIndexes>&) {}
 	virtual bool IsBuilt() const noexcept { return isBuilt_; }
 	virtual void MarkBuilt() noexcept { isBuilt_ = true; }
 	virtual void EnableUpdatesCountingMode(bool) noexcept {}

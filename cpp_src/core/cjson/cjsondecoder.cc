@@ -7,10 +7,6 @@
 
 namespace reindexer {
 
-CJsonDecoder::CJsonDecoder(TagsMatcher &tagsMatcher) : tagsMatcher_(tagsMatcher), filter_(nullptr) {}
-CJsonDecoder::CJsonDecoder(TagsMatcher &tagsMatcher, const FieldsSet *filter, Recoder *recoder)
-	: tagsMatcher_(tagsMatcher), filter_(filter), recoder_{recoder} {}
-
 bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrser, bool match) {
 	const ctag tag = rdser.GetCTag();
 	if (tag == kCTagEnd) {
@@ -23,7 +19,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 		(void)tagsMatcher_.tag2name(tagName);
 		tagsPath_.emplace_back(tagName);
 	}
-	if (tag.Field() >= 0) {
+	if rx_unlikely (tag.Field() >= 0) {
 		throw Error(errLogic, "Reference tag was found in transport CJSON for field %d[%s] in ns [%s]", tag.Field(),
 					tagsMatcher_.tag2name(tagName), pl.Type().Name());
 	}
@@ -56,6 +52,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 	if (field >= 0) {
 		if (match) {
 			if (tagType == TAG_NULL) {
+				objectScalarIndexes_.set(field);
 				wrser.PutCTag(ctag{TAG_NULL, tagName});
 			} else if (recoder) {
 				recoder->Recode(rdser, pl, tagName, wrser);
@@ -63,7 +60,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 				const auto &fieldRef{pl.Type().Field(field)};
 				const KeyValueType fieldType{fieldRef.Type()};
 				if (tagType == TAG_ARRAY) {
-					if (!fieldRef.IsArray()) {
+					if rx_unlikely (!fieldRef.IsArray()) {
 						throw Error(errLogic, "Error parsing cjson field '%s' - got array, expected scalar %s", fieldRef.Name(),
 									fieldType.Name());
 					}
@@ -77,11 +74,10 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 					}
 					wrser.PutCTag(ctag{TAG_ARRAY, tagName, field});
 					wrser.PutVarUint(count);
-				} else if (isInArray() && !fieldRef.IsArray()) {
-					throw Error(errLogic, "Error parsing cjson field '%s' - got value in the nested array, but expected scalar %s",
-								fieldRef.Name(), fieldType.Name());
 				} else {
-					pl.Set(field, {cjsonValueToVariant(tagType, rdser, fieldType)}, true);
+					validateNonArrayFieldRestrictions(objectScalarIndexes_, pl, fieldRef, field, isInArray(), "cjson");
+					objectScalarIndexes_.set(field);
+					pl.Set(field, cjsonValueToVariant(tagType, rdser, fieldType), true);
 					fieldType.EvaluateOneOf(
 						[&](OneOf<KeyValueType::Int, KeyValueType::Int64>) {
 							wrser.PutCTag(ctag{TAG_VARINT, tagName, field});
@@ -93,6 +89,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 				}
 			}
 		} else {
+			// objectScalarIndexes_.set(field); - do not change objectScalarIndexes_ value for the filtered out fields
 			skipCjsonTag(tag, rdser);
 		}
 	} else {

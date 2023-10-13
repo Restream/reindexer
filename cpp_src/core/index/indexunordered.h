@@ -41,7 +41,7 @@ public:
 	void SetSortedIdxCount(int sortedIdxCount) override;
 	bool HoldsStrings() const noexcept override;
 	void ClearCache() override { cache_.reset(); }
-	void ClearCache(const std::bitset<64> &s) override {
+	void ClearCache(const std::bitset<kMaxIndexes> &s) override {
 		if (cache_) cache_->ClearSorted(s);
 	}
 	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }

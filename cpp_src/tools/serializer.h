@@ -362,8 +362,10 @@ public:
 		return *this;
 	}
 
-	void PrintJsonString(std::string_view str);
+	enum class PrintJsonStringMode { Default = 0, QuotedQuote = 1 };
+	void PrintJsonString(std::string_view str, PrintJsonStringMode mode = PrintJsonStringMode::Default);
 	void PrintJsonUuid(Uuid);
+
 	void PrintHexDump(std::string_view str);
 	void Fill(char c, size_t count) {
 		grow(count);

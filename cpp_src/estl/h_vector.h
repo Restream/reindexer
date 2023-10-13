@@ -6,7 +6,6 @@
 #include <string>
 #include <type_traits>
 #include "debug_macros.h"
-#include "tools/assertrx.h"
 #include "trivial_reverse_iterator.h"
 
 namespace reindexer {
@@ -43,8 +42,8 @@ public:
 	explicit h_vector(size_type size) : h_vector() { resize(size); }
 	h_vector(size_type size, const T& v) : h_vector() {
 		reserve(size);
-		const pointer p = ptr();
-		for (size_type i = 0; i < size; ++i) new (p + i) T(v);
+		const iterator p = ptr();
+		std::uninitialized_fill(p, p + size, v);
 		size_ = size;
 	}
 	h_vector(std::initializer_list<T> l) : e_{0, 0}, size_(0), is_hdata_(1) { insert(begin(), l.begin(), l.end()); }
@@ -239,7 +238,6 @@ public:
 	void reserve(size_type sz) {
 		if (sz > capacity()) {
 			if (sz <= holdSize) {
-				assertrx(false);
 				throw std::logic_error("Unexpected reserved size");
 			}
 			// NOLINTNEXTLINE(bugprone-sizeof-expression)
@@ -272,13 +270,15 @@ public:
 		size_++;
 	}
 	template <typename... Args>
-	void emplace_back(Args&&... args) {
+	reference emplace_back(Args&&... args) {
 		grow(size_ + 1);
-		new (ptr() + size_) T(std::forward<Args>(args)...);
-		size_++;
+		auto p = ptr() + size_;
+		new (p) T(std::forward<Args>(args)...);
+		++size_;
+		return *p;
 	}
 	void pop_back() {
-		assertrx(size_);
+		rx_debug_check_nonempty();
 		if constexpr (!std::is_trivially_destructible<T>::value) {
 			ptr()[--size_].~T();
 		} else {
@@ -290,7 +290,7 @@ public:
 		if (i == size()) {
 			push_back(v);
 		} else {
-			assertrx(i < size());
+			rx_debug_check_subscript(i);
 			grow(size_ + 1);
 			const pointer p = ptr();
 			new (p + size_) T(std::move(p[size_ - 1]));
@@ -307,7 +307,7 @@ public:
 		if (i == size()) {
 			push_back(std::move(v));
 		} else {
-			assertrx(i < size());
+			rx_debug_check_subscript(i);
 			grow(size_ + 1);
 			const pointer p = ptr();
 			new (p + size_) T(std::move(p[size_ - 1]));
@@ -322,7 +322,7 @@ public:
 	iterator insert(const_iterator pos, difference_type count, const T& v) {
 		if (count == 0) return const_cast<iterator>(pos);
 		difference_type i = pos - begin();
-		assertrx(i <= size());
+		rx_debug_check_subscript_le(i);
 		grow(size_ + count);
 		const pointer p = ptr();
 		difference_type j = size_ + count - 1;
@@ -347,7 +347,7 @@ public:
 		if (i == size()) {
 			emplace_back(std::forward<Args>(args)...);
 		} else {
-			assertrx(i < size());
+			rx_debug_check_subscript(i);
 			grow(size_ + 1);
 			const pointer p = ptr();
 			new (p + size_) T(std::move(p[size_ - 1]));
@@ -362,7 +362,7 @@ public:
 	iterator erase(const_iterator it) {
 		pointer p = ptr();
 		const size_type i = it - p;
-		assertrx(i < size_);
+		rx_debug_check_subscript(i);
 
 		auto firstPtr = p + i;
 		std::move(firstPtr + 1, p + size_, firstPtr);
@@ -374,11 +374,11 @@ public:
 	}
 	template <class InputIt>
 	iterator insert(const_iterator pos, InputIt first, InputIt last) {
-		assertrx(last >= first);
+		rx_debug_check_valid_range(first, last);
 		const difference_type cnt = last - first;
 		if (cnt == 0) return const_cast<iterator>(pos);
 		const difference_type i = pos - begin();
-		assertrx(i <= size());
+		rx_debug_check_subscript_le(i);
 		grow(size_ + cnt);
 		const pointer p = ptr();
 		difference_type j = size_ + cnt - 1;
@@ -395,8 +395,7 @@ public:
 			p[j] = *--last;
 		}
 		size_ += cnt;
-		assertrx(p == begin());
-		return p + i;
+		return begin() + i;
 	}
 	template <class InputIt>
 	void assign(InputIt first, InputIt last) {
@@ -404,16 +403,16 @@ public:
 		insert(begin(), first, last);
 	}
 	iterator erase(const_iterator first, const_iterator last) {
-		assertrx(last >= first);
+		rx_debug_check_valid_range(first, last);
 		pointer p = ptr();
 		const size_type i = first - p;
 		const auto cnt = last - first;
 		auto firstPtr = p + i;
 		if (cnt == 0) {
-			assertrx(i <= size_);
+			rx_debug_check_subscript_le(i);
 			return firstPtr;
 		}
-		assertrx(i < size_);
+		rx_debug_check_subscript(i);
 
 		std::move(firstPtr + cnt, p + size_, firstPtr);
 		const auto newSize = size_ - cnt;

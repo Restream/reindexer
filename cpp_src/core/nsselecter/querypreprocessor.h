@@ -9,16 +9,17 @@
 
 namespace reindexer {
 
-class Index;
 class NamespaceImpl;
-class SelectIteratorContainer;
+class QresExplainHolder;
 
 class QueryPreprocessor : private QueryEntries {
 public:
-	QueryPreprocessor(QueryEntries &&, const Query &, NamespaceImpl *, bool reqMatchedOnce, bool inTransaction);
+	QueryPreprocessor(QueryEntries &&, NamespaceImpl *, const SelectCtx &);
 	const QueryEntries &GetQueryEntries() const noexcept { return *this; }
 	bool LookupQueryIndexes() {
-		const size_t merged = lookupQueryIndexes(0, 0, container_.size() - queryEntryAddedByForcedSortOptimization_);
+		const unsigned lookupEnd = queryEntryAddedByForcedSortOptimization_ ? container_.size() - 1 : container_.size();
+		assertrx_throw(lookupEnd <= uint32_t(std::numeric_limits<uint16_t>::max() - 1));
+		const size_t merged = lookupQueryIndexes(0, 0, lookupEnd);
 		if (queryEntryAddedByForcedSortOptimization_) {
 			container_[container_.size() - merged - 1] = std::move(container_.back());
 		}
@@ -41,24 +42,23 @@ public:
 	}
 	void ConvertWhereValues() { convertWhereValues(begin(), end()); }
 	void AddDistinctEntries(const h_vector<Aggregator, 4> &);
-	bool NeedNextEvaluation(unsigned start, unsigned count, bool &matchedAtLeastOnce) noexcept;
+	bool NeedNextEvaluation(unsigned start, unsigned count, bool &matchedAtLeastOnce, QresExplainHolder &qresHolder) noexcept;
 	unsigned Start() const noexcept { return start_; }
 	unsigned Count() const noexcept { return count_; }
 	bool MoreThanOneEvaluation() const noexcept { return queryEntryAddedByForcedSortOptimization_; }
 	bool AvailableSelectBySortIndex() const noexcept { return !queryEntryAddedByForcedSortOptimization_ || !forcedStage(); }
-	void InjectConditionsFromJoins(JoinedSelectors &js, const RdxContext &rdxCtx) {
-		injectConditionsFromJoins(0, container_.size(), js, rdxCtx);
-	}
+	void InjectConditionsFromJoins(JoinedSelectors &js, OnConditionInjections &expalainOnInjections, const RdxContext &rdxCtx);
 	void Reduce(bool isFt);
 	void InitIndexNumbers();
 	using QueryEntries::Size;
 	using QueryEntries::Dump;
+	using QueryEntries::ToDsl;
 	[[nodiscard]] SortingEntries GetSortingEntries(const SelectCtx &ctx) const;
 	bool IsFtExcluded() const noexcept { return ftEntry_.has_value(); }
-	void ExcludeFtQuery(const SelectFunction &, const RdxContext &);
+	void ExcludeFtQuery(const RdxContext &);
 	FtMergeStatuses &GetFtMergeStatuses() noexcept {
 		assertrx(ftPreselect_);
-		return std::get<FtMergeStatuses>(*ftPreselect_);
+		return *ftPreselect_;
 	}
 	FtPreselectT &&MoveFtPreselect() noexcept {
 		assertrx(ftPreselect_);
@@ -80,7 +80,7 @@ private:
 
 	[[nodiscard]] SortingEntries detectOptimalSortOrder() const;
 	bool forcedStage() const noexcept { return evaluationsCount_ == (desc_ ? 1 : 0); }
-	size_t lookupQueryIndexes(size_t dst, size_t srcBegin, size_t srcEnd);
+	size_t lookupQueryIndexes(uint16_t dst, uint16_t srcBegin, uint16_t srcEnd);
 	size_t substituteCompositeIndexes(size_t from, size_t to);
 	bool mergeQueryEntries(size_t lhs, size_t rhs);
 	const std::vector<int> *getCompositeIndex(int field) const;
@@ -89,9 +89,13 @@ private:
 	[[nodiscard]] const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
 	void findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end,
 					  h_vector<FoundIndexInfo, 32> &foundIndexes) const;
-	void injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &, const RdxContext &);
-	void fillQueryEntryFromOnCondition(QueryEntry &, NamespaceImpl &rightNs, Query joinQuery, std::string joinIndex, CondType condition,
-									   KeyValueType, const RdxContext &);
+	/** @brief recurrently checks and injects Join ON conditions
+	 *  @returns injected conditions and EntryBrackets count
+	 */
+	template <typename ExplainPolicy>
+	size_t injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &, OnConditionInjections &, const RdxContext &);
+	void fillQueryEntryFromOnCondition(QueryEntry &, std::string &outExplainStr, AggType &, NamespaceImpl &rightNs, Query joinQuery,
+									   std::string joinIndex, CondType condition, KeyValueType, const RdxContext &);
 	template <bool byJsonPath>
 	void fillQueryEntryFromOnCondition(QueryEntry &, std::string_view joinIndex, CondType condition, const JoinedSelector &, KeyValueType,
 									   int rightIdxNo, const CollateOpts &);
@@ -100,16 +104,19 @@ private:
 	size_t removeBrackets(size_t begin, size_t end);
 	bool canRemoveBracket(size_t i) const;
 
+	template <typename JS>
+	void briefDump(size_t from, size_t to, const std::vector<JS> &joinedSelectors, WrSerializer &ser) const;
+
 	NamespaceImpl &ns_;
+	const Query &query_;
 	StrictMode strictMode_;
 	size_t evaluationsCount_ = 0;
-	unsigned start_ = 0;
-	unsigned count_ = UINT_MAX;
+	unsigned start_ = QueryEntry::kDefaultOffset;
+	unsigned count_ = QueryEntry::kDefaultLimit;
 	bool queryEntryAddedByForcedSortOptimization_ = false;
 	bool desc_ = false;
 	bool forcedSortOrder_ = false;
 	bool reqMatchedOnce_ = false;
-	const Query &query_;
 	std::optional<QueryEntry> ftEntry_;
 	std::optional<FtPreselectT> ftPreselect_;
 };

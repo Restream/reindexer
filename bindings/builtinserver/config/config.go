@@ -14,11 +14,10 @@ type StorageConf struct {
 }
 
 type NetConf struct {
-	HTTPAddr    string `yaml:"httpaddr"`
-	RPCAddr     string `yaml:"rpcaddr"`
-	WebRoot     string `yaml:"webroot"`
-	Security    bool   `yaml:"security"`
-	RAFTCluster bool   `yaml:"enable_cluster"`
+	HTTPAddr string `yaml:"httpaddr"`
+	RPCAddr  string `yaml:"rpcaddr"`
+	WebRoot  string `yaml:"webroot"`
+	Security bool   `yaml:"security"`
 }
 
 type LoggerConf struct {
@@ -71,10 +70,9 @@ func DefaultServerConfig() *ServerConfig {
 			Autorepair:      false,
 		},
 		Net: NetConf{
-			HTTPAddr:    "0.0.0.0:9088",
-			RPCAddr:     "0.0.0.0:6534",
-			Security:    false,
-			RAFTCluster: false,
+			HTTPAddr: "0.0.0.0:9088",
+			RPCAddr:  "0.0.0.0:6534",
+			Security: false,
 		},
 		Logger: LoggerConf{
 			ServerLog: "stdout",

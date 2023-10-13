@@ -9,9 +9,9 @@
 namespace reindexer {
 class JsonBuilder {
 public:
-	JsonBuilder() : ser_(nullptr), tm_(nullptr) {}
+	JsonBuilder() noexcept : ser_(nullptr), tm_(nullptr) {}
 	JsonBuilder(WrSerializer &ser, ObjType type = ObjType::TypeObject, const TagsMatcher *tm = nullptr);
-	~JsonBuilder();
+	~JsonBuilder() { End(); }
 	JsonBuilder(const JsonBuilder &) = delete;
 	JsonBuilder(JsonBuilder &&other) : ser_(other.ser_), tm_(other.tm_), type_(other.type_), count_(other.count_) {
 		other.type_ = ObjType::TypePlain;
@@ -19,7 +19,7 @@ public:
 	JsonBuilder &operator=(const JsonBuilder &) = delete;
 	JsonBuilder &operator=(JsonBuilder &&) = delete;
 
-	void SetTagsMatcher(const TagsMatcher *tm) { tm_ = tm; }
+	void SetTagsMatcher(const TagsMatcher *tm) noexcept { tm_ = tm; }
 
 	/// Start new object
 	JsonBuilder Object(std::string_view name = {}, int size = KUnknownFieldSize);
@@ -50,21 +50,21 @@ public:
 		while (count--) node.Put({}, ser.GetRawVariant(KeyValueType{tagType}));
 	}
 
-	JsonBuilder &Put(std::string_view name, const Variant &arg);
-	JsonBuilder &Put(std::nullptr_t, const Variant &arg) { return Put(std::string_view{}, arg); }
-	JsonBuilder &Put(std::string_view name, std::string_view arg);
-	JsonBuilder &Put(std::string_view name, Uuid arg);
-	JsonBuilder &Put(std::nullptr_t, std::string_view arg) { return Put(std::string_view{}, arg); }
-	JsonBuilder &Put(std::string_view name, const char *arg) { return Put(name, std::string_view(arg)); }
+	JsonBuilder &Put(std::string_view name, const Variant &arg, int offset = 0);
+	JsonBuilder &Put(std::nullptr_t, const Variant &arg, int offset = 0) { return Put(std::string_view{}, arg, offset); }
+	JsonBuilder &Put(std::string_view name, std::string_view arg, int offset = 0);
+	JsonBuilder &Put(std::string_view name, Uuid arg, int offset = 0);
+	JsonBuilder &Put(std::nullptr_t, std::string_view arg, int offset = 0) { return Put(std::string_view{}, arg, offset); }
+	JsonBuilder &Put(std::string_view name, const char *arg, int offset = 0) { return Put(name, std::string_view(arg), offset); }
 	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value>::type * = nullptr>
-	JsonBuilder &Put(std::string_view name, const T &arg) {
+	JsonBuilder &Put(std::string_view name, const T &arg, int /*offset*/ = 0) {
 		putName(name);
 		(*ser_) << arg;
 		return *this;
 	}
 	template <typename T>
-	JsonBuilder &Put(int tagName, const T &arg) {
-		return Put(getNameByTag(tagName), arg);
+	JsonBuilder &Put(int tagName, const T &arg, int offset = 0) {
+		return Put(getNameByTag(tagName), arg, offset);
 	}
 
 	JsonBuilder &Raw(int tagName, std::string_view arg) { return Raw(getNameByTag(tagName), arg); }

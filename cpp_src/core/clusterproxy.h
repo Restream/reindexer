@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include "client/itemimpl.h"
 #include "client/reindexer.h"
+#include "cluster/config.h"
 #include "cluster/consts.h"
 #include "core/reindexerimpl.h"
 #include "tools/clusterproxyloghelper.h"
@@ -217,7 +218,7 @@ public:
 	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus &status, const RdxContext &ctx) {
 		return impl_.SetClusterizationStatus(nsName, status, ctx);
 	}
-	bool NeedTraceActivity() { return impl_.NeedTraceActivity(); }
+	bool NeedTraceActivity() const noexcept { return impl_.NeedTraceActivity(); }
 	Error EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck, const RdxContext &ctx) {
 		return impl_.EnableStorage(storagePath, skipPlaceholderCheck, ctx);
 	}
@@ -260,10 +261,23 @@ public:
 		resetLeader();
 	}
 
-	const atomic_unique_ptr<cluster::ShardingConfig> &GetShardingConfig() const noexcept { return impl_.shardingConfig_; }
+	intrusive_ptr<intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>> GetShardingConfig() const noexcept {
+		return impl_.shardingConfig_.Get();
+	}
 	Namespace::Ptr GetNamespacePtr(std::string_view nsName, const RdxContext &ctx) { return impl_.getNamespace(nsName, ctx); }
+	Namespace::Ptr GetNamespacePtrNoThrow(std::string_view nsName, const RdxContext &ctx) { return impl_.getNamespaceNoThrow(nsName, ctx); }
+
 	PayloadType GetPayloadType(std::string_view nsName) { return impl_.getPayloadType(nsName); }
 	std::set<std::string> GetFTIndexes(std::string_view nsName) { return impl_.getFTIndexes(nsName); }
+
+	[[nodiscard]] Error ResetShardingConfig(std::optional<cluster::ShardingConfig> config = std::nullopt) noexcept;
+	void SaveNewShardingConfigFile(const cluster::ShardingConfig &config) const { impl_.saveNewShardingConfigFile(config); }
+
+	[[nodiscard]] Error SaveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext &ctx) noexcept;
+	[[nodiscard]] Error ApplyShardingCfgCandidate(int64_t sourceId, const RdxContext &ctx) noexcept;
+	[[nodiscard]] Error ResetOldShardingConfig(int64_t sourceId, const RdxContext &ctx) noexcept;
+	[[nodiscard]] Error ResetShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept;
+	[[nodiscard]] Error RollbackShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept;
 
 private:
 	static constexpr auto kReplicationStatsTimeout = std::chrono::seconds(10);
@@ -367,6 +381,9 @@ private:
 			r = std::move(err);
 		}
 	}
+
+	template <auto ClientMethod, auto ImplMethod, typename... Args>
+	[[nodiscard]] Error shardingConfigCandidateAction(const RdxContext &ctx, Args &&...args) noexcept;
 
 #if RX_ENABLE_CLUSTERPROXY_LOGS
 

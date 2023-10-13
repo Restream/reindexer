@@ -3,7 +3,7 @@
 
 namespace reindexer {
 
-void KbLayout::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result) {
+void KbLayout::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& result, int proc) {
 	std::wstring result_string;
 	result_string.reserve(data.length());
 
@@ -20,7 +20,7 @@ void KbLayout::GetVariants(const std::wstring& data, std::vector<FtDSLVariant>& 
 			result_string.push_back(sym);
 		}
 	}
-	result.emplace_back(std::move(result_string), 90);
+	result.emplace_back(std::move(result_string), proc);
 }
 
 void KbLayout::setEnLayout(wchar_t sym, wchar_t data) {

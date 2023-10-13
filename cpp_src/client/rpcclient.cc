@@ -5,10 +5,13 @@
 #include "client/rpcclient.h"
 #include "client/snapshot.h"
 #include "cluster/clustercontrolrequest.h"
+#include "cluster/sharding/shardingcontrolrequest.h"
 #include "core/namespace/namespacestat.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "core/namespacedef.h"
 #include "gason/gason.h"
+#include "tools/catch_and_return.h"
+#include "tools/cpucheck.h"
 #include "tools/errors.h"
 #include "vendor/gason/gason.h"
 
@@ -19,6 +22,8 @@ using reindexer::net::cproto::CoroRPCAnswer;
 
 RPCClient::RPCClient(const ReindexerConfig& config, INamespaces::PtrT sharedNamespaces)
 	: namespaces_(sharedNamespaces ? std::move(sharedNamespaces) : INamespaces::PtrT(new NamespacesImpl<dummy_mutex>())), config_(config) {
+	reindexer::CheckRequiredSSESupport();
+
 	conn_.SetConnectionStateHandler([this](Error err) { onConnectionState(std::move(err)); });
 }
 
@@ -557,7 +562,7 @@ Error RPCClient::Status(bool forceCheck, const InternalRdxContext& ctx) {
 	if (!conn_.IsRunning()) {
 		return Error(errParams, "Client is not running");
 	}
-	return conn_.Status(forceCheck, config_.NetTimeout, ctx.execTimeout(), ctx.getCancelCtx());
+	return conn_.Status(forceCheck, std::max(config_.NetTimeout, ctx.execTimeout()), ctx.execTimeout(), ctx.getCancelCtx());
 }
 
 Namespace* RPCClient::getNamespace(std::string_view nsName) { return namespaces_->Get(nsName); }
@@ -747,6 +752,16 @@ Error RPCClient::GetRaftInfo(RaftInfo& info, const InternalRdxContext& ctx) {
 		}
 	}
 	return ret.Status();
+}
+
+[[nodiscard]] Error RPCClient::ShardingControlRequest(const sharding::ShardingControlRequestData& request,
+													  const InternalRdxContext& ctx) noexcept {
+	try {
+		WrSerializer ser;
+		request.GetJSON(ser);
+		return conn_.Call(mkCommand(cproto::kShardingControlRequest, &ctx), ser.Slice()).Status();
+	}
+	CATCH_AND_RETURN
 }
 
 }  // namespace client

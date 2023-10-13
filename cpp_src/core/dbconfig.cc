@@ -111,7 +111,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 		// Applying entire configuration only if no read errors
 		if (errLogString.empty()) {
 			if (typesChanged.find(ProfilingConf) != typesChanged.end()) {
-				profilingData_ = std::move(profilingDataSafe);
+				profilingData_ = profilingDataSafe;
 			}
 			if (typesChanged.find(NamespaceDataConf) != typesChanged.end()) {
 				namespacesData_ = std::move(namespacesData);
@@ -180,7 +180,7 @@ Error DBConfigProvider::GetConfigParseErrors() const {
 }
 
 void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> handler) {
-	smart_lock<shared_timed_mutex> lk(mtx_, true);
+	std::lock_guard<shared_timed_mutex> lk(mtx_);
 	handlers_[cfgType] = std::move(handler);
 }
 
@@ -196,33 +196,8 @@ void DBConfigProvider::unsetHandler(int id) {
 	replicationConfigDataHandlers_.erase(id);
 }
 
-ProfilingConfigData DBConfigProvider::GetProfilingConfig() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
-	return profilingData_;
-}
-
-LongQueriesLoggingParams DBConfigProvider::GetSelectLoggingParams() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
-	return profilingData_.longSelectLoggingParams;
-}
-
-LongQueriesLoggingParams DBConfigProvider::GetUpdDelLoggingParams() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
-	return profilingData_.longUpdDelLoggingParams;
-}
-
-LongTxLoggingParams DBConfigProvider::GetTxLoggingParams() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
-	return profilingData_.longTxLoggingParams;
-}
-
-bool DBConfigProvider::ActivityStatsEnabled() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
-	return profilingData_.activityStats;
-}
-
 ReplicationConfigData DBConfigProvider::GetReplicationConfig() {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
+	shared_lock<shared_timed_mutex> lk(mtx_);
 	return replicationData_;
 }
 
@@ -232,7 +207,7 @@ cluster::AsyncReplConfigData DBConfigProvider::GetAsyncReplicationConfig() {
 }
 
 bool DBConfigProvider::GetNamespaceConfig(const std::string &nsName, NamespaceConfigData &data) {
-	smart_lock<shared_timed_mutex> lk(mtx_, false);
+	shared_lock<shared_timed_mutex> lk(mtx_);
 	auto it = namespacesData_.find(nsName);
 	if (it == namespacesData_.end()) {
 		it = namespacesData_.find("*");
@@ -249,7 +224,7 @@ Error ProfilingConfigData::FromJSON(const gason::JsonNode &v) {
 	using namespace std::string_view_literals;
 	std::string errorString;
 	tryReadOptionalJsonValue(&errorString, v, "queriesperfstats"sv, queriesPerfStats);
-	tryReadOptionalJsonValue(&errorString, v, "queries_threshold_us"sv, queriedThresholdUS);
+	tryReadOptionalJsonValue(&errorString, v, "queries_threshold_us"sv, queriesThresholdUS);
 	tryReadOptionalJsonValue(&errorString, v, "perfstats"sv, perfStats);
 	tryReadOptionalJsonValue(&errorString, v, "memstats"sv, memStats);
 	tryReadOptionalJsonValue(&errorString, v, "activitystats"sv, activityStats);
@@ -258,25 +233,33 @@ Error ProfilingConfigData::FromJSON(const gason::JsonNode &v) {
 	if (!longQueriesLogging.empty()) {
 		auto &select = longQueriesLogging["select"sv];
 		if (!select.empty()) {
-			tryReadOptionalJsonValue(&errorString, select, "threshold_us"sv, longSelectLoggingParams.thresholdUs);
-			tryReadOptionalJsonValue(&errorString, select, "normalized"sv, longSelectLoggingParams.normalized);
+			const auto p = longSelectLoggingParams.load(std::memory_order_relaxed);
+			int32_t thresholdUs = p.thresholdUs;
+			bool normalized = p.normalized;
+			tryReadOptionalJsonValue(&errorString, select, "threshold_us"sv, thresholdUs);
+			tryReadOptionalJsonValue(&errorString, select, "normalized"sv, normalized);
+			longSelectLoggingParams.store(LongQueriesLoggingParams(thresholdUs, normalized), std::memory_order_relaxed);
 		}
 
 		auto &updateDelete = longQueriesLogging["update_delete"sv];
 		if (!updateDelete.empty()) {
-			tryReadOptionalJsonValue(&errorString, updateDelete, "threshold_us"sv, longUpdDelLoggingParams.thresholdUs);
-			tryReadOptionalJsonValue(&errorString, updateDelete, "normalized"sv, longUpdDelLoggingParams.normalized);
+			const auto p = longUpdDelLoggingParams.load(std::memory_order_relaxed);
+			int32_t thresholdUs = p.thresholdUs;
+			bool normalized = p.normalized;
+			tryReadOptionalJsonValue(&errorString, updateDelete, "threshold_us"sv, thresholdUs);
+			tryReadOptionalJsonValue(&errorString, updateDelete, "normalized"sv, normalized);
+			longUpdDelLoggingParams.store(LongQueriesLoggingParams(thresholdUs, normalized), std::memory_order_relaxed);
 		}
 
 		auto &transaction = longQueriesLogging["transaction"sv];
 		if (!transaction.empty()) {
-			int32_t value = longTxLoggingParams.thresholdUs;
-			tryReadOptionalJsonValue(&errorString, transaction, "threshold_us"sv, value);
-			longTxLoggingParams.thresholdUs = value;
+			const auto p = longTxLoggingParams.load(std::memory_order_relaxed);
+			int32_t thresholdUs = p.thresholdUs;
+			tryReadOptionalJsonValue(&errorString, transaction, "threshold_us"sv, thresholdUs);
 
-			value = longTxLoggingParams.avgTxStepThresholdUs;
-			tryReadOptionalJsonValue(&errorString, transaction, "avg_step_threshold_us"sv, value);
-			longTxLoggingParams.avgTxStepThresholdUs = value;
+			int32_t avgTxStepThresholdUs = p.avgTxStepThresholdUs;
+			tryReadOptionalJsonValue(&errorString, transaction, "avg_step_threshold_us"sv, avgTxStepThresholdUs);
+			longTxLoggingParams.store(LongTxLoggingParams(thresholdUs, avgTxStepThresholdUs), std::memory_order_relaxed);
 		}
 	}
 

@@ -36,7 +36,6 @@ public:
 
 private:
 	bool getHostIdForQuery(const Query &, int &currentId) const;
-	const cluster::ShardingConfig &config_;
 	ShardingKeys keys_;
 };
 
@@ -50,6 +49,10 @@ public:
 		  reconnectTs(obj.reconnectTs),
 		  status(std::move(obj.status)),
 		  shutdown(obj.shutdown) {}
+
+	Connections(const Connections &obj) noexcept
+		: base(obj), actualIndex(obj.actualIndex), reconnectTs(obj.reconnectTs), status(obj.status), shutdown(obj.shutdown) {}
+
 	void Shutdown() {
 		std::lock_guard lck(m);
 		if (!shutdown) {
@@ -116,8 +119,8 @@ private:
 
 class LocatorService {
 public:
-	LocatorService(ClusterProxy &rx, const cluster::ShardingConfig &config);
-	~LocatorService() = default;
+	LocatorService(ClusterProxy &rx, cluster::ShardingConfig config);
+	~LocatorService() { Shutdown(); }
 	LocatorService(const LocatorService &) = delete;
 	LocatorService(LocatorService &&) = delete;
 	LocatorService &operator=(const LocatorService &) = delete;
@@ -133,6 +136,7 @@ public:
 	ConnectionsPtr GetShardsConnections(std::string_view ns, int shardId, Error &status);
 	ConnectionsPtr GetShardsConnectionsWithId(const Query &q, Error &status);
 	ConnectionsPtr GetShardsConnections(Error &status) { return GetShardsConnections("", -1, status); }
+	ConnectionsPtr GetAllShardsConnections(Error &status);
 	ShardConnection GetShardConnectionWithId(std::string_view ns, const Item &item, Error &status) {
 		int shardId = routingStrategy_.GetHostId(ns, item);
 		return ShardConnection(GetShardConnection(ns, shardId, status), shardId);
@@ -145,7 +149,7 @@ private:
 	ConnectionsPtr rebuildConnectionsVector(std::string_view ns, int shardId, Error &status);
 	ConnectionsPtr getConnectionsFromCache(std::string_view ns, int shardId, bool &requiresRebuild);
 	std::shared_ptr<client::Reindexer> getShardConnection(int shardId, Error &status);
-	std::shared_ptr<client::Reindexer> peekHostForShard(Connections &connections, int shardId, Error &status) {
+	std::shared_ptr<client::Reindexer> peekHostForShard(Connections &connections, int shardId, Error &status) const {
 		return ConnectStrategy(config_, connections, ActualShardId()).Connect(shardId, status);
 	}
 	Error validateConfig();

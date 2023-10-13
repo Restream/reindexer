@@ -1,6 +1,8 @@
 #include "client/reindexerimpl.h"
 #include "client/connectionspool.h"
 #include "client/itemimpl.h"
+#include "cluster/sharding/shardingcontrolrequest.h"
+#include "tools/catch_and_return.h"
 
 namespace reindexer {
 namespace client {
@@ -210,6 +212,27 @@ Error ReindexerImpl::RollBackTransaction(Transaction &tr, const InternalRdxConte
 Error ReindexerImpl::GetReplState(std::string_view nsName, ReplicationStateV2 &state, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdGetReplState, ctx, std::move(nsName), state);
 }
+
+[[nodiscard]] Error ReindexerImpl::SaveNewShardingConfig(std::string_view config, int64_t sourceId,
+														 const InternalRdxContext &ctx) noexcept {
+	RETURN_RESULT_NOEXCEPT(
+		sendCommand<Error, std::string_view, int64_t>(DbCmdSaveNewShardingCfg, ctx, std::move(config), std::move(sourceId)))
+}
+
+[[nodiscard]] Error ReindexerImpl::ResetShardingConfigCandidate(int64_t sourceId, const InternalRdxContext &ctx) noexcept {
+	RETURN_RESULT_NOEXCEPT(sendCommand<Error, int64_t>(DbCmdResetConfigCandidate, ctx, std::move(sourceId)))
+}
+
+[[nodiscard]] Error ReindexerImpl::ResetOldShardingConfig(int64_t sourceId, const InternalRdxContext &ctx) noexcept {
+	RETURN_RESULT_NOEXCEPT(sendCommand<Error, int64_t>(DbCmdResetOldShardingCfg, ctx, std::move(sourceId)))
+}
+
+[[nodiscard]] Error ReindexerImpl::RollbackShardingConfigCandidate(int64_t sourceId, const InternalRdxContext &ctx) noexcept {
+	RETURN_RESULT_NOEXCEPT(sendCommand<Error, int64_t>(DbCmdRollbackConfigCandidate, ctx, std::move(sourceId)))
+}
+
+[[nodiscard]] Error ReindexerImpl::ApplyNewShardingConfig(int64_t sourceId, const InternalRdxContext &ctx) noexcept {
+	RETURN_RESULT_NOEXCEPT(sendCommand<Error, int64_t>(DbCmdApplyNewShardingCfg, ctx, std::move(sourceId)))}
 
 Error ReindexerImpl::fetchResults(int flags, int offset, int limit, QueryResults &result) {
 	return sendCommand<true, Error>(result.coroConnection(), DbCmdFetchResultsParametrized, InternalRdxContext(), std::move(flags),
@@ -694,6 +717,41 @@ void ReindexerImpl::coroInterpreter(Connection<DatabaseCommand> &conn, Connectio
 			case DbCmdGetReplState: {
 				execCommand(cmd, [&conn, &cmd](std::string_view nsName, ReplicationStateV2 &state) {
 					return conn.rx.GetReplState(nsName, state, cmd->ctx);
+				});
+				break;
+			}
+			case DbCmdSaveNewShardingCfg: {
+				execCommand(cmd, [&conn, &cmd](std::string_view config, int64_t sourceId) {
+					return conn.rx.ShardingControlRequest(
+						sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::SaveCandidate>(config, sourceId), cmd->ctx);
+				});
+				break;
+			}
+			case DbCmdResetOldShardingCfg: {
+				execCommand(cmd, [&conn, &cmd](int64_t sourceId) {
+					return conn.rx.ShardingControlRequest(
+						sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetOldSharding>(sourceId), cmd->ctx);
+				});
+				break;
+			}
+			case DbCmdRollbackConfigCandidate: {
+				execCommand(cmd, [&conn, &cmd](int64_t sourceId) {
+					return conn.rx.ShardingControlRequest(
+						sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::RollbackCandidate>(sourceId), cmd->ctx);
+				});
+				break;
+			}
+			case DbCmdResetConfigCandidate: {
+				execCommand(cmd, [&conn, &cmd](int64_t sourceId) {
+					return conn.rx.ShardingControlRequest(
+						sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ResetCandidate>(sourceId), cmd->ctx);
+				});
+				break;
+			}
+			case DbCmdApplyNewShardingCfg: {
+				execCommand(cmd, [&conn, &cmd](int64_t sourceId) {
+					return conn.rx.ShardingControlRequest(
+						sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ApplyNew>(sourceId), cmd->ctx);
 				});
 				break;
 			}

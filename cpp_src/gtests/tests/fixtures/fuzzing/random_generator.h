@@ -10,6 +10,7 @@ namespace reindexer {
 
 class Query;
 class Uuid;
+class KeyValueType;
 
 }  // namespace reindexer
 
@@ -19,6 +20,7 @@ struct Index;
 class NsScheme;
 
 enum class FieldType { Bool, Int, Int64, Double, String, Uuid, Point, Struct, END = Struct };
+reindexer::KeyValueType ToKeyValueType(FieldType);
 std::ostream& operator<<(std::ostream&, FieldType);
 using FieldPath = std::vector<size_t>;
 

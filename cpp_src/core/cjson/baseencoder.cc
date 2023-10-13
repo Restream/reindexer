@@ -4,6 +4,7 @@
 #include "cjsonbuilder.h"
 #include "cjsontools.h"
 #include "core/keyvalue/p_string.h"
+#include "csvbuilder.h"
 #include "jsonbuilder.h"
 #include "msgpackbuilder.h"
 #include "protobufbuilder.h"
@@ -13,10 +14,7 @@
 namespace reindexer {
 
 template <typename Builder>
-BaseEncoder<Builder>::BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSet* filter) : tagsMatcher_(tagsMatcher), filter_(filter) {
-	static_assert(std::numeric_limits<decltype(objectScalarIndexes_)>::digits >= maxIndexes,
-				  "objectScalarIndexes_ needs to provide 'maxIndexes' bits or more");
-}
+BaseEncoder<Builder>::BaseEncoder(const TagsMatcher* tagsMatcher, const FieldsSet* filter) : tagsMatcher_(tagsMatcher), filter_(filter) {}
 
 template <typename Builder>
 void BaseEncoder<Builder>::Encode(std::string_view tuple, Builder& builder, const h_vector<IAdditionalDatasource<Builder>*, 2>& dss) {
@@ -49,7 +47,8 @@ void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, const h_ve
 	if (rdser.Eof()) {
 		return;
 	}
-	objectScalarIndexes_ = 0;
+
+	objectScalarIndexes_.reset();
 	std::fill_n(std::begin(fieldsoutcnt_), pl.NumFields(), 0);
 	builder.SetTagsMatcher(tagsMatcher_);
 	if constexpr (kWithTagsPathTracking) {
@@ -80,7 +79,7 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEnco
 		[[maybe_unused]] const ctag beginTag = rdser.GetCTag();
 		assertrx(beginTag.Type() == TAG_OBJECT);
 
-		tagsLengths_.reserve(maxIndexes);
+		tagsLengths_.reserve(kMaxIndexes);
 		tagsLengths_.push_back(StartObject);
 
 		while (collectTagsSizes(pl, rdser)) {
@@ -128,7 +127,16 @@ void BaseEncoder<Builder>::encodeJoinedItems(Builder& builder, IEncoderDatasourc
 template <typename Builder>
 bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& builder, bool visible) {
 	const ctag tag = rdser.GetCTag();
+
 	if (tag == kCTagEnd) {
+		if constexpr (kWithFieldExtractor) {
+			if (visible && filter_ && indexedTagsPath_.size() && indexedTagsPath_.back().IsWithIndex()) {
+				const auto field = builder.TargetField();
+				if (field >= 0 && !builder.IsHavingOffset() && filter_->match(indexedTagsPath_)) {
+					builder.OnScopeEnd(fieldsoutcnt_[field]);
+				}
+			}
+		}
 		return false;
 	}
 
@@ -145,14 +153,10 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 	// get field from indexed field
 	if (tagField >= 0) {
 		if (!pl) throw Error(errParams, "Trying to encode index field %d without payload", tagField);
-		if ((objectScalarIndexes_ & (1ULL << tagField)) && (tagType != TAG_ARRAY)) {
-			std::string fieldName;
-			if (tagName && tagsMatcher_) {
-				fieldName = tagsMatcher_->tag2name(tagName);
-			}
-			throw Error(errParams, "Non-array field '%s' [%d] from '%s' can only be encoded once.", fieldName, tagField, pl->Type().Name());
+		const auto& f = pl->Type().Field(tagField);
+		if (!f.IsArray() && objectScalarIndexes_.test(tagField)) {
+			throw Error(errParams, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), tagField, pl->Type().Name());
 		}
-		objectScalarIndexes_ |= (1ULL << tagField);
 		assertrx(tagField < pl->NumFields());
 		int* cnt = &fieldsoutcnt_[tagField];
 		switch (tagType) {
@@ -175,6 +179,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				break;
 			}
 			case TAG_NULL:
+				objectScalarIndexes_.set(tagField);
 				if (visible) builder.Null(tagName);
 				break;
 			case TAG_VARINT:
@@ -184,7 +189,8 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			case TAG_END:
 			case TAG_OBJECT:
 			case TAG_UUID:
-				if (visible) builder.Put(tagName, pl->Get(tagField, (*cnt)));
+				objectScalarIndexes_.set(tagField);
+				if (visible) builder.Put(tagName, pl->Get(tagField, (*cnt)), *cnt);
 				++(*cnt);
 				break;
 		}
@@ -216,7 +222,6 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 				break;
 			}
 			case TAG_OBJECT: {
-				objectScalarIndexes_ = 0;
 				if (visible) {
 					auto objNode = builder.Object(tagName);
 					while (encode(pl, rdser, objNode, true))
@@ -237,7 +242,7 @@ bool BaseEncoder<Builder>::encode(ConstPayload* pl, Serializer& rdser, Builder& 
 			case TAG_UUID:
 				if (visible) {
 					Variant value = rdser.GetRawVariant(KeyValueType{tagType});
-					builder.Put(tagName, std::move(value));
+					builder.Put(tagName, std::move(value), 0);
 				} else {
 					rdser.SkipRawVariant(KeyValueType{tagType});
 				}
@@ -345,5 +350,6 @@ template class BaseEncoder<CJsonBuilder>;
 template class BaseEncoder<MsgPackBuilder>;
 template class BaseEncoder<ProtobufBuilder>;
 template class BaseEncoder<FieldsExtractor>;
+template class BaseEncoder<CsvBuilder>;
 
 }  // namespace reindexer

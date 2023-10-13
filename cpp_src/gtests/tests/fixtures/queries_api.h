@@ -11,6 +11,7 @@
 #include "core/keyvalue/geometry.h"
 #include "core/nsselecter/joinedselectormock.h"
 #include "core/queryresults/joinresults.h"
+#include "core/type_consts_helpers.h"
 #include "core/sorting/sortexpression.h"
 #include "gtests/tools.h"
 #include "queries_verifier.h"
@@ -39,34 +40,39 @@ public:
 
 		err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
-		DefineNamespaceDataset(
-			default_namespace,
-			{
-				IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameGenre, "tree", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNamePackages, "hash", "int", IndexOpts{}.Array(), 0},
-				IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameCountries, "tree", "string", IndexOpts{}.Array(), 0},
-				IndexDeclaration{kFieldNameAge, "hash", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameRate, "tree", "double", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameIsDeleted, "-", "bool", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameActor, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
-				IndexDeclaration{kFieldNamePriceId, "hash", "int", IndexOpts{}.Array(), 0},
-				IndexDeclaration{kFieldNameLocation, "tree", "string", IndexOpts{}.SetCollateMode(CollateNone), 0},
-				IndexDeclaration{kFieldNameEndTime, "hash", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameBtreeIdsets, "hash", "int", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameTemp, "tree", "string", IndexOpts{}.SetCollateMode(CollateASCII), 0},
-				IndexDeclaration{kFieldNameNumeric, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
-				IndexDeclaration{kFieldNameUuid, "hash", "uuid", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameUuidArr, "hash", "uuid", IndexOpts{}.Array(), 0},
-				IndexDeclaration{(kFieldNameId + compositePlus + kFieldNameTemp).c_str(), "tree", "composite", IndexOpts{}.PK(), 0},
-				IndexDeclaration{(kFieldNameAge + compositePlus + kFieldNameGenre).c_str(), "hash", "composite", IndexOpts{}, 0},
-				IndexDeclaration{(kFieldNameUuid + compositePlus + kFieldNameName).c_str(), "hash", "composite", IndexOpts{}, 0},
-				IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts{}.Sparse(), 0},
-			});
+		DefineNamespaceDataset(default_namespace,
+							   {
+								   IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameGenre, "tree", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNamePackages, "hash", "int", IndexOpts{}.Array(), 0},
+								   IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameCountries, "tree", "string", IndexOpts{}.Array(), 0},
+								   IndexDeclaration{kFieldNameAge, "hash", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameRate, "tree", "double", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameIsDeleted, "-", "bool", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameActor, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
+								   IndexDeclaration{kFieldNamePriceId, "hash", "int", IndexOpts{}.Array(), 0},
+								   IndexDeclaration{kFieldNameLocation, "tree", "string", IndexOpts{}.SetCollateMode(CollateNone), 0},
+								   IndexDeclaration{kFieldNameEndTime, "hash", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameBtreeIdsets, "hash", "int", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameTemp, "tree", "string", IndexOpts{}.SetCollateMode(CollateASCII), 0},
+								   IndexDeclaration{kFieldNameNumeric, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
+								   IndexDeclaration{kFieldNameUuid, "hash", "uuid", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameUuidArr, "hash", "uuid", IndexOpts{}.Array(), 0},
+								   IndexDeclaration{kCompositeFieldIdTemp, "tree", "composite", IndexOpts{}.PK(), 0},
+								   IndexDeclaration{kCompositeFieldAgeGenre, "hash", "composite", IndexOpts{}, 0},
+								   IndexDeclaration{kCompositeFieldUuidName, "hash", "composite", IndexOpts{}, 0},
+								   IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts{}.Sparse(), 0},
+							   });
+		addIndexFields(default_namespace, kCompositeFieldIdTemp,
+					   {{kFieldNameId, reindexer::KeyValueType::Int{}}, {kFieldNameTemp, reindexer::KeyValueType::String{}}});
+		addIndexFields(default_namespace, kCompositeFieldAgeGenre,
+					   {{kFieldNameAge, reindexer::KeyValueType::Int{}}, {kFieldNameGenre, reindexer::KeyValueType::Int{}}});
+		addIndexFields(default_namespace, kCompositeFieldUuidName,
+					   {{kFieldNameUuid, reindexer::KeyValueType::Uuid{}}, {kFieldNameName, reindexer::KeyValueType::String{}}});
 
 		err = rt.reindexer->OpenNamespace(joinNs);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -74,6 +80,7 @@ public:
 										IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameAge, "tree", "int", IndexOpts(), 0},
 										IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts(), 0},
+										IndexDeclaration{kFieldNameDescription, "text", "string", IndexOpts{}, 0},
 										IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts().Sparse(), 0}});
 
 		err = rt.reindexer->OpenNamespace(testSimpleNs);
@@ -94,12 +101,21 @@ public:
 								IndexDeclaration{kFieldNamePages, "hash", "int", IndexOpts(), 0},
 								IndexDeclaration{kFieldNamePrice, "hash", "int", IndexOpts(), 0},
 								IndexDeclaration{kFieldNameName, "text", "string", IndexOpts(), 0},
-								IndexDeclaration{kCompositeFieldPricePages.c_str(), "hash", "composite", IndexOpts(), 0},
-								IndexDeclaration{kCompositeFieldTitleName.c_str(), "tree", "composite", IndexOpts(), 0},
-								IndexDeclaration{kCompositeFieldPriceTitle.c_str(), "hash", "composite", IndexOpts(), 0},
-								IndexDeclaration{kCompositeFieldPagesTitle.c_str(), "hash", "composite", IndexOpts(), 0},
-								IndexDeclaration{(std::string(kFieldNameBookid) + "+" + kFieldNameBookid2).c_str(), "hash", "composite",
-												 IndexOpts().PK(), 0}});
+								IndexDeclaration{kCompositeFieldPricePages, "hash", "composite", IndexOpts(), 0},
+								IndexDeclaration{kCompositeFieldTitleName, "tree", "composite", IndexOpts(), 0},
+								IndexDeclaration{kCompositeFieldPriceTitle, "hash", "composite", IndexOpts(), 0},
+								IndexDeclaration{kCompositeFieldPagesTitle, "hash", "composite", IndexOpts(), 0},
+								IndexDeclaration{kCompositeFieldBookidBookid2, "hash", "composite", IndexOpts().PK(), 0}});
+		addIndexFields(compositeIndexesNs, kCompositeFieldPricePages,
+					   {{kFieldNamePrice, reindexer::KeyValueType::Int{}}, {kFieldNamePages, reindexer::KeyValueType::Int{}}});
+		addIndexFields(compositeIndexesNs, kCompositeFieldTitleName,
+					   {{kFieldNameTitle, reindexer::KeyValueType::String{}}, {kFieldNameName, reindexer::KeyValueType::String{}}});
+		addIndexFields(compositeIndexesNs, kCompositeFieldPriceTitle,
+					   {{kFieldNamePrice, reindexer::KeyValueType::Int{}}, {kFieldNameTitle, reindexer::KeyValueType::String{}}});
+		addIndexFields(compositeIndexesNs, kCompositeFieldPagesTitle,
+					   {{kFieldNamePages, reindexer::KeyValueType::Int{}}, {kFieldNameTitle, reindexer::KeyValueType::String{}}});
+		addIndexFields(compositeIndexesNs, kCompositeFieldBookidBookid2,
+					   {{kFieldNameBookid, reindexer::KeyValueType::Int{}}, {kFieldNameBookid2, reindexer::KeyValueType::Int{}}});
 
 		err = rt.reindexer->OpenNamespace(comparatorsNs);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -132,7 +148,14 @@ public:
 		ASSERT_TRUE(err.ok()) << err.what();
 		DefineNamespaceDataset(btreeIdxOptNs, {IndexDeclaration{kFieldNameId, "tree", "int", IndexOpts().PK(), 0},
 											   IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts(), 0}});
+		initConditionsNs();
 	}
+
+	void initConditionsNs();
+	void FillConditionsNs();
+	void CheckConditions();
+	enum class NullAllowed : bool { Yes = true, No = false };
+	void checkAllConditions(const std::string& fieldName, reindexer::KeyValueType fieldType, NullAllowed);
 
 	template <typename... T>
 	void ExecuteAndVerify(const Query& query, T... args) {
@@ -270,6 +293,7 @@ protected:
 			item[kFieldNameAge] = rand() % 50;
 			item[kFieldNameName] = RandString().c_str();
 			item[kFieldNameGenre] = rand() % 50;
+			item[kFieldNameDescription] = RandString();
 			if (rand() % 4 != 0) {
 				item[kFieldNameYearSparse] = std::to_string(rand() % 50 + 2000);
 			}
@@ -313,27 +337,27 @@ protected:
 				bld.Put(kFieldNameId, id);
 
 				reindexer::Point point{randPoint(10)};
-				double arr[]{point.x, point.y};
+				double arr[]{point.X(), point.Y()};
 				bld.Array(kFieldNamePointQuadraticRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				arr[0] = point.x;
-				arr[1] = point.y;
+				arr[0] = point.X();
+				arr[1] = point.Y();
 				bld.Array(kFieldNamePointLinearRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				arr[0] = point.x;
-				arr[1] = point.y;
+				arr[0] = point.X();
+				arr[1] = point.Y();
 				bld.Array(kFieldNamePointGreeneRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				arr[0] = point.x;
-				arr[1] = point.y;
+				arr[0] = point.X();
+				arr[1] = point.Y();
 				bld.Array(kFieldNamePointRStarRTree, reindexer::span<double>{arr, 2});
 
 				point = randPoint(10);
-				arr[0] = point.x;
-				arr[1] = point.y;
+				arr[0] = point.X();
+				arr[1] = point.Y();
 				bld.Array(kFieldNamePointNonIndex, reindexer::span<double>{arr, 2});
 			}
 			auto item = NewItem(geomNs);
@@ -503,9 +527,12 @@ protected:
 	}
 
 	int GetcurrBtreeIdsetsValue(int id) {
-		std::lock_guard<std::mutex> l(m_);
-		if (id % 200) currBtreeIdsetsValue = rand() % 10000;
-		return currBtreeIdsetsValue;
+		if (id % 200) {
+			auto newValue = rand() % 10000;
+			currBtreeIdsetsValue.store(newValue, std::memory_order_relaxed);
+			return newValue;
+		}
+		return currBtreeIdsetsValue.load(std::memory_order_relaxed);
 	}
 
 	std::vector<std::string> RandStrVector(size_t count) {
@@ -561,13 +588,21 @@ protected:
 		return item;
 	}
 
-	static std::string pointToSQL(reindexer::Point point, bool escape = false) {
-		std::ostringstream res;
-		res.precision(std::numeric_limits<double>::digits10 + 1);
-		std::string quote = escape ? "\\'" : "'";
-		res << "ST_GeomFromText(" << quote << "point(" << point.x << ' ' << point.y << ')' << quote << ')';
-		return res.str();
+	void RandVariantArray(size_t size, size_t max, VariantArray& arr) {
+		arr.clear<false>();
+		arr.reserve(size);
+		for (size_t i = 0; i < size; ++i) {
+			arr.emplace_back(int(rand() % max));
+		}
 	}
+
+	static std::string pointToSQL(reindexer::Point point, bool escape = false) {
+		return escape ? fmt::sprintf("ST_GeomFromText(\\'point(%.12f %.12f)\\')", point.X(), point.Y())
+					  : fmt::sprintf("ST_GeomFromText('point(%.12f %.12f)')", point.X(), point.Y());
+	}
+
+	void CheckMergeQueriesWithLimit();
+	void CheckMergeQueriesWithAggregation();
 
 	void CheckGeomQueries() {
 		for (size_t i = 0; i < 10; ++i) {
@@ -577,10 +612,13 @@ protected:
 			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointGreeneRTree, randPoint(10), randBinDouble(0, 1)));
 			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointRStarRTree, randPoint(10), randBinDouble(0, 1)));
 			ExecuteAndVerify(Query(geomNs).DWithin(kFieldNamePointNonIndex, randPoint(10), randBinDouble(0, 1)));
+			ExecuteAndVerify(Query(geomNs)
+								 .DWithin(kFieldNamePointLinearRTree, randPoint(10), randBinDouble(0, 1))
+								 .SortStDistance(kFieldNamePointNonIndex, kFieldNamePointLinearRTree, false));
 			ExecuteAndVerify(
 				Query(geomNs)
 					.DWithin(kFieldNamePointLinearRTree, randPoint(10), randBinDouble(0, 1))
-					.Sort(std::string("ST_Distance(") + kFieldNamePointNonIndex + ", " + pointToSQL(randPoint(10)) + ')', false)
+					.SortStDistance(kFieldNamePointNonIndex, randPoint(10), false)
 					.Sort(std::string("ST_Distance(") + pointToSQL(randPoint(10)) + ", " + kFieldNamePointGreeneRTree + ')', false));
 			ExecuteAndVerify(Query(geomNs)
 								 .DWithin(kFieldNamePointQuadraticRTree, randPoint(10), randBinDouble(0, 1))
@@ -636,14 +674,22 @@ protected:
 		}
 	}
 
-	static std::vector<int> Range(int start, int end) {
-		const int step = start > end ? -1 : 1;
-		std::vector<int> result;
-		result.reserve(step * (end - start));
-		for (; start != end; start += step) {
-			result.push_back(start);
+	void CheckConditionsMergingQueries() {
+		// Check merging of conditions by the same index with large sets of values
+		VariantArray arr1, arr2, emptyArr;
+		for (size_t i = 0; i < 3; ++i) {
+			RandVariantArray(500, 1000, arr1);
+			RandVariantArray(100, 1000, arr2);
+			arr2.insert(arr2.end(), arr1.begin(), arr1.begin() + 100);
+
+			ExecuteAndVerifyWithSql(
+				Query(default_namespace).Where(kFieldNameNumeric, CondSet, arr1).Where(kFieldNameNumeric, CondSet, arr2));
+
+			ExecuteAndVerifyWithSql(Query(default_namespace)
+										.Where(kFieldNameNumeric, CondSet, arr1)
+										.Where(kFieldNameNumeric, CondSet, emptyArr)
+										.Where(kFieldNameNumeric, CondSet, arr2));
 		}
-		return result;
 	}
 
 	void CheckStandartQueries() {
@@ -1422,6 +1468,7 @@ protected:
 								.Distinct(distinct));
 
 						for (CondType cond : {CondEq, CondSet, CondLt, CondLe, CondGt, CondGe}) {
+							const bool multyArgCond = cond == CondEq || cond == CondSet;
 							ExecuteAndVerify(Query(default_namespace)
 												 .Where(kFieldNameUuid, cond, randUuid())
 												 .Distinct(distinct.c_str())
@@ -1432,12 +1479,13 @@ protected:
 												 .Distinct(distinct.c_str())
 												 .Sort(sortIdx, sortOrder));
 
-							ExecuteAndVerify(
-								Query(default_namespace)
-									.Where(kFieldNameUuid, cond,
-										   VariantArray::Create(randUuid(), randStrUuid(), randUuid(), randStrUuid(), randUuid()))
-									.Distinct(distinct.c_str())
-									.Sort(sortIdx, sortOrder));
+							ExecuteAndVerify(Query(default_namespace)
+												 .Where(kFieldNameUuid, cond,
+														multyArgCond ? VariantArray::Create(randUuid(), randStrUuid(), randUuid(),
+																							randStrUuid(), randUuid())
+																	 : VariantArray::Create(randUuid()))
+												 .Distinct(distinct.c_str())
+												 .Sort(sortIdx, sortOrder));
 
 							ExecuteAndVerify(Query(default_namespace)
 												 .Where(kFieldNameUuidArr, cond, randUuid())
@@ -1451,27 +1499,37 @@ protected:
 
 							ExecuteAndVerify(Query(default_namespace)
 												 .Where(kFieldNameUuidArr, cond,
-														VariantArray::Create(randUuid(), randStrUuid(), randUuid(), randStrUuid(),
-																			 randUuid(), randStrUuid()))
+														multyArgCond ? VariantArray::Create(randUuid(), randStrUuid(), randUuid(),
+																							randStrUuid(), randUuid(), randStrUuid())
+																	 : VariantArray::Create(randUuid()))
 												 .Distinct(distinct.c_str())
 												 .Sort(sortIdx, sortOrder));
 
-							ExecuteAndVerify(
-								Query(default_namespace)
-									.WhereComposite(
-										kFieldNameUuid + compositePlus + kFieldNameName, cond,
-										{VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString()), VariantArray::Create(randStrUuid(), RandString()),
-										 VariantArray::Create(randUuid(), RandString())})
-									.Distinct(distinct.c_str())
-									.Sort(sortIdx, sortOrder));
+							ExecuteAndVerify(Query(default_namespace)
+												 .WhereComposite(kFieldNameUuid + compositePlus + kFieldNameName, cond,
+																 multyArgCond
+																	 ? std::vector{VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString()),
+																				   VariantArray::Create(randStrUuid(), RandString()),
+																				   VariantArray::Create(randUuid(), RandString())}
+																	 : std::vector{VariantArray::Create(randUuid(), RandString())})
+												 .Distinct(distinct.c_str())
+												 .Sort(sortIdx, sortOrder));
 						}
 
 						ExecuteAndVerify(Query(default_namespace)
@@ -1585,7 +1643,7 @@ protected:
 			objNode.End();
 			bld.End();
 			auto item = NewItem(nsWithObject);
-			const auto err = item.FromJSON(ser.Slice());
+			const auto err = item.Unsafe(true).FromJSON(ser.Slice());
 			ASSERT_TRUE(err.ok()) << err.what();
 			Upsert(nsWithObject, item);
 		}
@@ -1796,32 +1854,34 @@ protected:
 		// ----------
 		reindexer::Point point{randPoint(10)};
 		double distance = randBinDouble(0, 1);
-		std::string dslQuery =
-			std::string(R"({"namespace":")") + geomNs +
-			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
-			kFieldNamePointLinearRTree + R"(","value":[[)" + toString(point.x) + ',' + toString(point.y) + "]," + toString(distance) +
-			R"(]}],"merge_queries":[],"aggregations":[]})";
+		std::string dslQuery = fmt::sprintf(
+			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":"%s","value":[[%f, %f], %f]}],"merge_queries":[],"aggregations":[]})",
+			geomNs, kFieldNamePointLinearRTree, point.X(), point.Y(), distance);
 		const Query checkQuery1{Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance)};
 		checkDslQuery(dslQuery, checkQuery1);
 
 		// ----------
 		point = randPoint(10);
 		distance = randBinDouble(0, 1);
-		dslQuery =
-			std::string(R"({"namespace":")") + geomNs +
-			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
-			kFieldNamePointLinearRTree + R"(","value":[)" + toString(distance) + ",[" + toString(point.x) + ',' + toString(point.y) +
-			R"(]]}],"merge_queries":[],"aggregations":[]})";
+		dslQuery = fmt::sprintf(
+			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":"%s","value":[%f,[%f,%f]]}],"merge_queries":[],"aggregations":[]})",
+			geomNs, kFieldNamePointLinearRTree, distance, point.X(), point.Y());
 		const Query checkQuery2{Query(geomNs).DWithin(kFieldNamePointLinearRTree, point, distance)};
 		checkDslQuery(dslQuery, checkQuery2);
 
 		// ----------
-		dslQuery =
-			R"({"namespace":")"s + default_namespace +
-			R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"gt","first_field":")" +
-			kFieldNameStartTime + R"(","second_field":")" + kFieldNamePackages + R"("}],"merge_queries":[],"aggregations":[]})";
+		dslQuery = fmt::sprintf(
+			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"gt","first_field":"%s","second_field":"%s"}],"merge_queries":[],"aggregations":[]})",
+			default_namespace, kFieldNameStartTime, kFieldNamePackages);
 		const Query checkQuery3{Query{default_namespace}.WhereBetweenFields(kFieldNameStartTime, CondGt, kFieldNamePackages)};
 		checkDslQuery(dslQuery, checkQuery3);
+
+		// -------
+		dslQuery = fmt::sprintf(
+			R"({"namespace":"%s","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"SET","field":"%s","Value":["1", " 10 ", "100 ", " 1000"]}],"merge_queries":[],"aggregations":[]})",
+			default_namespace, kFieldNameId);
+		const Query checkQuery4{Query{default_namespace}.Where(kFieldNameId, CondSet, {1, 10, 100, 1000})};
+		checkDslQuery(dslQuery, checkQuery4);
 	}
 
 	void CheckSqlQueries() {
@@ -1909,8 +1969,7 @@ protected:
 		CompareQueryResults(sqlQuery, sqlQr5, checkQr5);
 		Verify(checkQr5, checkQuery5, *rt.reindexer);
 
-		sqlQuery =
-			std::string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId + " * 5' DESC LIMIT 10000000";
+		sqlQuery = fmt::sprintf("SELECT ID FROM test_namespace ORDER BY '%s + %s * 5' DESC LIMIT 10000000", kFieldNameYear, kFieldNameId);
 		const Query checkQuery6{
 			Query(default_namespace, 0, 10000000).Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", true)};
 
@@ -1925,8 +1984,8 @@ protected:
 		CompareQueryResults(sqlQuery, sqlQr6, checkQr6);
 		Verify(checkQr6, checkQuery6, *rt.reindexer);
 
-		sqlQuery = std::string("SELECT ID FROM test_namespace ORDER BY '") + kFieldNameYear + " + " + kFieldNameId +
-				   " * 5' DESC ORDER BY '2 * " + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ")' ASC LIMIT 10000000";
+		sqlQuery = fmt::sprintf("SELECT ID FROM test_namespace ORDER BY '%s + %s * 5' DESC ORDER BY '2 * %s / (1 + %s)' ASC LIMIT 10000000",
+								kFieldNameYear, kFieldNameId, kFieldNameGenre, kFieldNameIsDeleted);
 		const Query checkQuery7{Query(default_namespace, 0, 10000000)
 									.Sort(kFieldNameYear + std::string(" + ") + kFieldNameId + " * 5", true)
 									.Sort(std::string("2 * ") + kFieldNameGenre + " / (1 + " + kFieldNameIsDeleted + ')', false)};
@@ -1945,8 +2004,8 @@ protected:
 		// Checks that SQL queries with DWithin and sort by Distance work and compares the result with the result of corresponding C++ query
 		reindexer::Point point = randPoint(10);
 		double distance = randBinDouble(0, 1);
-		sqlQuery = std::string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex + ", " + pointToSQL(point) +
-				   ", " + toString(distance) + ");";
+		sqlQuery = fmt::sprintf("SELECT * FROM %s WHERE ST_DWithin(%s, %s, %s);", geomNs, kFieldNamePointNonIndex, pointToSQL(point),
+								toString(distance));
 		const Query checkQuery8{Query(geomNs).DWithin(kFieldNamePointNonIndex, point, distance)};
 
 		QueryResults sqlQr8;
@@ -1962,9 +2021,8 @@ protected:
 
 		point = randPoint(10);
 		distance = randBinDouble(0, 1);
-		sqlQuery = std::string("SELECT * FROM ") + geomNs + " WHERE ST_DWithin(" + pointToSQL(point) + ", " + kFieldNamePointNonIndex +
-				   ", " + toString(distance) + ") ORDER BY 'ST_Distance(" + kFieldNamePointLinearRTree + ", " + pointToSQL(point, true) +
-				   ")';";
+		sqlQuery = fmt::sprintf("SELECT * FROM %s WHERE ST_DWithin(%s, %s, %s) ORDER BY 'ST_Distance(%s, %s)';", geomNs, pointToSQL(point),
+								kFieldNamePointNonIndex, toString(distance), kFieldNamePointLinearRTree, pointToSQL(point, true));
 		const Query checkQuery9{
 			Query(geomNs)
 				.DWithin(kFieldNamePointNonIndex, point, distance)
@@ -1981,7 +2039,7 @@ protected:
 		CompareQueryResults(sqlQuery, sqlQr9, checkQr9);
 		Verify(checkQr9, checkQuery9, *rt.reindexer);
 
-		sqlQuery = "SELECT * FROM "s + default_namespace + " WHERE " + kFieldNameGenre + " >= " + kFieldNameRate + ';';
+		sqlQuery = fmt::sprintf("SELECT * FROM %s WHERE %s >= %s;", default_namespace, kFieldNameGenre, kFieldNameRate);
 		const Query checkQuery10{Query(default_namespace).WhereBetweenFields(kFieldNameGenre, CondGe, kFieldNameRate)};
 
 		QueryResults sqlQr10;
@@ -2062,6 +2120,7 @@ protected:
 		ExecuteAndVerify(Query(comparatorsNs).Where("columnInt64", CondLe, {Variant(static_cast<int64_t>(10000))}));
 
 		std::vector<double> doubleSet;
+		doubleSet.reserve(1010);
 		for (size_t i = 0; i < 1010; i++) {
 			doubleSet.emplace_back(static_cast<double>(rand()) / RAND_MAX);
 		}
@@ -2076,6 +2135,7 @@ protected:
 		ExecuteAndVerify(Query(comparatorsNs).Where("columnString", CondEq, std::string("test_string3")));
 
 		std::vector<std::string> stringSet;
+		stringSet.reserve(1010);
 		for (size_t i = 0; i < 1010; i++) {
 			stringSet.emplace_back(RandString());
 		}
@@ -2103,7 +2163,7 @@ protected:
 	}
 	void sortByNsDifferentTypesImpl(std::string_view fillingNs, const reindexer::Query& q, const std::string& sortPrefix);
 
-	const char* kFieldNameId = "id";
+	const std::string kFieldNameId = "id";
 	const char* kFieldNameGenre = "genre";
 	const char* kFieldNameYear = "year";
 	const char* kFieldNameYearSparse = "year_sparse";
@@ -2120,10 +2180,10 @@ protected:
 	const char* kFieldNameEndTime = "end_time";
 	const char* kFieldNameStartTime = "start_time";
 	const char* kFieldNamePhone = "phone";
-	const char* kFieldNameTemp = "tmp";
+	const std::string kFieldNameTemp = "tmp";
 	const char* kFieldNameNumeric = "numeric";
-	const char* kFieldNameBookid = "bookid";
-	const char* kFieldNameBookid2 = "bookid2";
+	const std::string kFieldNameBookid = "bookid";
+	const std::string kFieldNameBookid2 = "bookid2";
 	const char* kFieldNameTitle = "title";
 	const char* kFieldNamePages = "pages";
 	const char* kFieldNamePrice = "price";
@@ -2137,7 +2197,7 @@ protected:
 	const char* kFieldNamePointNonIndex = "point_field_non_index";
 
 	const char* kFieldNameColumnInt = "columnInt";
-	const char* kFieldNameColumnInt64 = "columnInt64";
+	const std::string kFieldNameColumnInt64 = "columnInt64";
 	const char* kFieldNameColumnDouble = "columnDouble";
 	const char* kFieldNameColumnString = "columnString";
 	const char* kFieldNameColumnFullText = "columnFullText";
@@ -2147,7 +2207,6 @@ protected:
 	const char* kFieldNameColumnTree = "columnTree";
 	const char* kFieldNameObjectField = "object";
 
-	const std::string compositePlus = "+";
 	const std::string testSimpleNs = "test_simple_namespace";
 	const std::string joinNs = "join_namespace";
 	const std::string compositeIndexesNs = "composite_indexes_namespace";
@@ -2156,18 +2215,23 @@ protected:
 	const std::string nsWithObject = "namespace_with_object";
 	const std::string geomNs = "geom_namespace";
 	const std::string btreeIdxOptNs = "btree_idx_opt_namespace";
+	const std::string conditionsNs = "conditions_namespace";
 
+	const std::string compositePlus = "+";
+	const std::string kCompositeFieldIdTemp = kFieldNameId + compositePlus + kFieldNameTemp;
+	const std::string kCompositeFieldAgeGenre = kFieldNameAge + compositePlus + kFieldNameGenre;
+	const std::string kCompositeFieldUuidName = kFieldNameUuid + compositePlus + kFieldNameName;
 	const std::string kCompositeFieldPricePages = kFieldNamePrice + compositePlus + kFieldNamePages;
 	const std::string kCompositeFieldTitleName = kFieldNameTitle + compositePlus + kFieldNameName;
 	const std::string kCompositeFieldPriceTitle = kFieldNamePrice + compositePlus + kFieldNameTitle;
 	const std::string kCompositeFieldPagesTitle = kFieldNamePages + compositePlus + kFieldNameTitle;
+	const std::string kCompositeFieldBookidBookid2 = kFieldNameBookid + compositePlus + kFieldNameBookid2;
 
-	std::mutex m_;
-
-	int currBtreeIdsetsValue = rand() % 10000;
+	std::atomic<int> currBtreeIdsetsValue = rand() % 10000;
 	static constexpr size_t forcedSortOffsetNsSize = 1000;
 	static constexpr int forcedSortOffsetMaxValue = 1000;
 	static constexpr size_t geomNsSize = 10000;
 	static constexpr int btreeIdxOptNsSize = 10000;
+	size_t conditionsNsSize = 0;
 	std::vector<std::pair<int, int>> forcedSortOffsetValues;
 };

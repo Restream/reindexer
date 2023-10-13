@@ -16,6 +16,8 @@ import (
 type ExplainSelector struct {
 	// Field or index name
 	Field string `json:"field"`
+	// Field type enum: indexed, non-indexed
+	FieldType string `json:"field_type,omitempty"`
 	// Method, used to process condition
 	Method string `json:"method"`
 	// Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching
@@ -39,6 +41,8 @@ type ExplainSelector struct {
 type ExplainResults struct {
 	// Total query execution time
 	TotalUs int `json:"total_us"`
+	// Query preselect build and select time
+	PreselectUs int `json:"preselect_us"`
 	// Query prepare and optimize time
 	PrepareUs int `json:"prepare_us"`
 	// Indexes keys selection time
@@ -55,6 +59,48 @@ type ExplainResults struct {
 	SortByUncommittedIndex bool `json:"sort_by_uncommitted_index"`
 	// Filter selectors, used to proccess query conditions
 	Selectors []ExplainSelector `json:"selectors"`
+	// Explaining attempts to inject Join queries ON-conditions into the Main Query WHERE clause
+	OnConditionsInjections []ExplainJoinOnInjections `json:"on_conditions_injections,omitempty"`
+}
+
+// Describes the process of a single JOIN-query ON-conditions injection into the Where clause of a main query
+type ExplainJoinOnInjections struct {
+	// joinable ns name
+	RightNsName string `json:"namespace"`
+	// original ON-conditions clause. SQL-like string
+	JoinOnCondition string `json:"on_condition"`
+	// total amount of time spent on checking and substituting all conditions
+	TotalTimeUs int `json:"total_time_us"`
+	// result of injection attempt
+	Succeed bool `json:"success"`
+	// optional{succeed==false}. Explains condition injection failure
+	Reason string `json:"reason,omitempty"`
+	// by_value or select
+	Type string `json:"type"`
+	// Injected condition. SQL-like string
+	InjectedCondition string `json:"injected_condition"`
+	// individual conditions processing results
+	Conditions []ExplainConditionInjection `json:"conditions,omitempty"`
+}
+
+// Describes an injection attempt of a single condition from the ON-clause of a JOIN-query
+type ExplainConditionInjection struct {
+	// single condition from Join ON section. SQL-like string
+	InitialCondition string `json:"condition"`
+	// total time elapsed from injection attempt start till the end of substitution or rejection
+	TotalTime int `json:"total_time_us"`
+	// optoinal{JoinOnInjection.type == Select}. Explain raw string from Select subquery
+	Explain *ExplainResults `json:"explain_select,omitempty"`
+	// Optional. Aggregation type used in subquery
+	AggType string `json:"agg_type,omitempty"`
+	// result of injection attempt
+	Succeed bool `json:"success"`
+	// optional{succeed==false}. Explains condition injection failure
+	Reason string `json:"reason,omitempty"`
+	// substituted condition in QueryEntry. SQL-like string
+	NewCondition string `json:"new_condition"`
+	// resulting size of query values set
+	ValuesCount int `json:"values_count"`
 }
 
 func errIterator(err error) *Iterator {

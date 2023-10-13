@@ -500,10 +500,10 @@ TEST_F(JoinSelectsApi, JoinPreResultStoreValuesOptimizationStressTest) {
 	for (auto& th : threads) th.join();
 }
 
-bool checkForAllowedJsonTags(const std::vector<std::string>& tags, gason::JsonValue jsonValue) {
+static bool checkForAllowedJsonTags(const std::vector<std::string>& tags, gason::JsonValue jsonValue) {
 	size_t count = 0;
-	for (auto elem : jsonValue) {
-		if (std::find(tags.begin(), tags.end(), std::string(elem->key)) == tags.end()) {
+	for (const auto& elem : jsonValue) {
+		if (std::find(tags.begin(), tags.end(), std::string_view(elem.key)) == tags.end()) {
 			return false;
 		}
 		++count;
@@ -598,6 +598,37 @@ TEST_F(JoinSelectsApi, TestMergeWithJoins) {
 
 		++rowId;
 	}
+}
+
+// Check JOINs nested into the other JOINs (expecting errors)
+TEST_F(JoinSelectsApi, TestNestedJoinsError) {
+	constexpr char sqlPattern[] =
+		R"(select * from books_namespace %s (select * from authors_namespace %s (select * from books_namespace) on authors_namespace.authorid = books_namespace.authorid_fk) on authors_namespace.authorid = books_namespace.authorid_fk)";
+	auto joinTypes = {"inner join", "join", "left join"};
+	for (auto& firstJoin : joinTypes) {
+		for (auto& secondJoin : joinTypes) {
+			auto sql = fmt::sprintf(sqlPattern, firstJoin, secondJoin);
+			ValidateQueryError(sql, errParams, "JOINs nested into the other JOINs are not supported");
+		}
+	}
+}
+
+// Check MERGEs nested into the JOINs (expecting errors)
+TEST_F(JoinSelectsApi, TestNestedMergesInJoinsError) {
+	constexpr char sqlPattern[] =
+		R"(select * from books_namespace %s (select * from authors_namespace  merge (select * from books_namespace)) on authors_namespace.authorid = books_namespace.authorid_fk)";
+	auto joinTypes = {"inner join", "join", "left join"};
+	for (auto& join : joinTypes) {
+		auto sql = fmt::sprintf(sqlPattern, join);
+		ValidateQueryError(sql, errParams, "MERGEs nested into the JOINs are not supported");
+	}
+}
+
+// Check MERGEs nested into the MERGEs (expecting errors)
+TEST_F(JoinSelectsApi, TestNestedMergesInMergesError) {
+	constexpr char sql[] =
+		R"(select * from books_namespace merge (select * from authors_namespace  merge (select * from books_namespace)))";
+	ValidateQueryError(sql, errParams, "MERGEs nested into the MERGEs are not supported");
 }
 
 TEST_F(JoinOnConditionsApi, TestGeneralConditions) {

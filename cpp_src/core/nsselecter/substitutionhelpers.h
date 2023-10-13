@@ -7,19 +7,35 @@ namespace reindexer {
 
 namespace composite_substitution_helpers {
 
+class CompositeValuesCountLimits {
+public:
+	uint32_t operator[](uint32_t fieldsCount) const noexcept {
+		if rx_unlikely (fieldsCount >= limits_.size()) {
+			return kMaxValuesCount;
+		}
+		return limits_[fieldsCount];
+	}
+
+private:
+	constexpr static uint32_t kMaxValuesCount = 4000;
+
+	std::array<uint32_t, 6> limits_ = {0, 0, 300, 1000, 2000, 4000};
+};
+
 class CompositeSearcher {
 public:
 	struct IndexData {
-		IndexData(int field, int _idx, unsigned entry) : fields{field}, idx{_idx}, entries{entry} {}
+		IndexData(int field, int _idx, uint16_t entry) : fields(field), idx(_idx), entries{entry} {}
 
 		IndexesFieldsSet fields;
 		int idx;
-		h_vector<unsigned, 6> entries;
+		h_vector<uint16_t, 8> entries;
 	};
 
 	CompositeSearcher(const NamespaceImpl &ns) noexcept : ns_(ns) {}
 
 	void Add(int field, const std::vector<int> &composites, unsigned entry) {
+		assertrx_throw(entry < std::numeric_limits<uint16_t>::max());
 		for (auto composite : composites) {
 			const auto idxType = ns_.indexes_[composite]->Type();
 			if (idxType != IndexCompositeBTree && idxType != IndexCompositeHash) {
@@ -46,9 +62,10 @@ public:
 			auto &data = d_[i];
 			const auto &idxFields = ns_.indexes_[data.idx]->Fields();
 			// If all of the composite fields were found in query
-			if (data.fields.size() == idxFields.size() && idxFields.contains(data.fields)) {
-				if (data.fields.size() > maxSize) {
-					maxSize = data.fields.size();
+			const auto dfCnt = data.fields.count();
+			if (dfCnt == idxFields.size() && idxFields.contains(data.fields)) {
+				if (dfCnt > maxSize) {
+					maxSize = dfCnt;
 					res = i;
 				}
 			} else {
@@ -57,22 +74,32 @@ public:
 		}
 		return res;
 	}
-	int RemoveAndGetNext(unsigned curId) noexcept {
+	int RemoveUnusedAndGetNext(uint16_t curId) noexcept {
+		if (unsigned(curId) + 1 != d_.size()) {
+			std::swap(d_[curId], d_.back());
+		}
+		d_.pop_back();
+		return GetResult();
+	}
+	int RemoveUsedAndGetNext(uint16_t curId) noexcept {
 		int res = -1;
 		unsigned deleted = 1;
 		unsigned maxSize = 0;
-		if (curId + 1 != d_.size()) {
+		if (unsigned(curId) + 1 != d_.size()) {
 			std::swap(d_[curId], d_.back());
 		}
 		const auto &cur = d_.back();
-		for (unsigned i = 0; i < d_.size() - deleted; ++i) {
+		for (unsigned i = 0, sz = d_.size(); i < sz - deleted; ++i) {
 			auto &data = d_[i];
 			if (haveIntersection(data.entries, cur.entries)) {
-				std::swap(data, d_[d_.size() - ++deleted]);
+				std::swap(data, d_[sz - ++deleted]);
 				--i;
-			} else if (data.fields.size() > maxSize) {
-				res = i;
-				maxSize = data.fields.size();
+			} else {
+				const auto dfCnt = data.fields.count();
+				if (dfCnt > maxSize) {
+					res = i;
+					maxSize = dfCnt;
+				}
 			}
 		}
 		while (deleted--) {
@@ -80,16 +107,16 @@ public:
 		}
 		return res;
 	}
-	const IndexData &operator[](unsigned i) const noexcept { return d_[i]; }
+	const IndexData &operator[](uint16_t i) const noexcept { return d_[i]; }
 
 private:
-	void remove(unsigned i) noexcept {
-		if (i + 1 != d_.size()) {
+	void remove(uint16_t i) noexcept {
+		if (unsigned(i) + 1 != d_.size()) {
 			std::swap(d_[i], d_.back());
 		}
 		d_.pop_back();
 	}
-	static bool haveIntersection(const h_vector<unsigned, 6> &lEntries, const h_vector<unsigned, 6> &rEntries) noexcept {
+	static bool haveIntersection(const h_vector<uint16_t, 8> &lEntries, const h_vector<uint16_t, 8> &rEntries) noexcept {
 		for (auto lit = lEntries.begin(), rit = rEntries.begin(); lit != lEntries.end() && rit != rEntries.end();) {
 			if (*lit < *rit) {
 				++lit;
@@ -102,20 +129,20 @@ private:
 		return false;
 	}
 
-	h_vector<IndexData, 8> d_;
+	h_vector<IndexData, 6> d_;
 	const NamespaceImpl &ns_;
 };
 
 // EntriesRange - query entries range. [from; to)
 class EntriesRange {
 public:
-	EntriesRange(unsigned from, unsigned to) : from_(from), to_(to) {
+	EntriesRange(uint16_t from, uint16_t to) : from_(from), to_(to) {
 		if (to_ <= from_) {
 			throw Error(errLogic, "Unexpected range boarders during indexes substitution: [%u,%u)", from_, to_);
 		}
 	}
-	unsigned From() const noexcept { return from_; }
-	unsigned To() const noexcept { return to_; }
+	uint16_t From() const noexcept { return from_; }
+	uint16_t To() const noexcept { return to_; }
 	void ExtendRight() noexcept { ++to_; }
 	void ExtendLeft() {
 		if (!from_) {
@@ -130,11 +157,11 @@ public:
 		}
 		return false;
 	}
-	unsigned Size() const noexcept { return to_ - from_; }
+	uint16_t Size() const noexcept { return to_ - from_; }
 
 private:
-	unsigned from_;
-	unsigned to_;
+	uint16_t from_;
+	uint16_t to_;
 };
 
 // EntriesRanges - contains ordered vector of entries ranges. Ranges can not intercept with each other
@@ -145,7 +172,7 @@ public:
 	Base::const_reverse_iterator rbegin() const noexcept { return Base::rbegin(); }
 	Base::const_reverse_iterator rend() const noexcept { return Base::rend(); }
 
-	void Add(span<unsigned> entries) {
+	void Add(span<uint16_t> entries) {
 		for (auto entry : entries) {
 			auto insertionPos = Base::end();
 			bool wasMerged = false;
@@ -188,7 +215,7 @@ public:
 				}
 			}
 			if (!wasMerged) {
-				Base::insert(insertionPos, EntriesRange{entry, entry + 1});
+				Base::insert(insertionPos, EntriesRange{entry, uint16_t(entry + 1)});
 			}
 		}
 	}

@@ -29,4 +29,14 @@ private:
 	int shardId_;
 };
 
+class AdditionalDatasourceCSV : public IAdditionalDatasource<CsvBuilder> {
+public:
+	AdditionalDatasourceCSV(IEncoderDatasourceWithJoins *jds) : joinsDs_(jds) {}
+	void PutAdditionalFields(CsvBuilder &) const final {}
+	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return joinsDs_; }
+
+private:
+	IEncoderDatasourceWithJoins *joinsDs_;
+};
+
 }  // namespace reindexer
