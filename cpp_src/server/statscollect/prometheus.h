@@ -37,12 +37,14 @@ public:
 		setMetricValue(itemsCount_, count, currentEpoch_, db, ns);
 	}
 	void RegisterAllocatedMemory(size_t memoryConsumationBytes) { setMetricValue(memory_, memoryConsumationBytes, prometheus::kNoEpoch); }
-	void RegisterRPCClients(const std::string &db, size_t count) { setMetricValue(rpcClients_, count, currentEpoch_, db); }
-	void RegisterInputTraffic(const std::string &db, std::string_view type, size_t bytes) {
-		setMetricValue(inputTraffic_, bytes, prometheus::kNoEpoch, db, type);
+	void RegisterRPCClients(const std::string &db, std::string_view protocol, size_t count) {
+		setNetMetricValue(rpcClients_, count, currentEpoch_, db, std::string_view(), protocol);
 	}
-	void RegisterOutputTraffic(const std::string &db, std::string_view type, size_t bytes) {
-		setMetricValue(outputTraffic_, bytes, prometheus::kNoEpoch, db, type);
+	void RegisterInputTraffic(const std::string &db, std::string_view type, std::string_view protocol, size_t bytes) {
+		setNetMetricValue(inputTraffic_, bytes, prometheus::kNoEpoch, db, type, protocol);
+	}
+	void RegisterOutputTraffic(const std::string &db, std::string_view type, std::string_view protocol, size_t bytes) {
+		setNetMetricValue(outputTraffic_, bytes, prometheus::kNoEpoch, db, type, protocol);
 	}
 	void RegisterStorageStatus(const std::string &db, const std::string &ns, bool isOK) {
 		setMetricValue(storageStatus_, isOK ? 1.0 : 0.0, prometheus::kNoEpoch, db, ns);
@@ -51,9 +53,11 @@ public:
 	void NextEpoch();
 
 private:
-	static void setMetricValue(PFamily<PGauge> *metricFamily, double value, int64_t epoch, const std::string &db = "",
-							   const std::string &ns = "", std::string_view queryType = "");
-	static void setMetricValue(PFamily<PGauge> *metricFamily, double value, int64_t epoch, const std::string &db, std::string_view type);
+	static void setMetricValue(PFamily<PGauge> *metricFamily, double value, int64_t epoch);
+	static void setMetricValue(PFamily<PGauge> *metricFamily, double value, int64_t epoch, const std::string &db, const std::string &ns,
+							   std::string_view queryType = "");
+	static void setNetMetricValue(PFamily<PGauge> *metricFamily, double value, int64_t epoch, const std::string &db, std::string_view type,
+								  std::string_view protocol);
 	void fillRxInfo();
 	int collect(http::Context &ctx);
 

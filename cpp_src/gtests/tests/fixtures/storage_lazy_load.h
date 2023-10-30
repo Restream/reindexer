@@ -86,7 +86,10 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	void dropNs() { rt.reindexer->DropNamespace(default_namespace); }
+	void dropNs() {
+		const auto err = rt.reindexer->DropNamespace(default_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
 
 	int64_t getItemsCount(bool& storageLoaded) {
 		QueryResults qr;

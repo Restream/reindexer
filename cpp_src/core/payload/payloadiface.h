@@ -112,6 +112,9 @@ public:
 	void GetByJsonPath(std::string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
 	void GetByJsonPath(const TagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
 	void GetByJsonPath(const IndexedTagsPath &jsonPath, VariantArray &, KeyValueType expectedType) const;
+	void GetByFieldsSet(const FieldsSet &, VariantArray &, KeyValueType expectedType,
+						const std::vector<KeyValueType> &expectedCompositeTypes) const;
+	[[nodiscard]] Variant GetComposite(const FieldsSet &, const std::vector<KeyValueType> &expectedTypes) const;
 	VariantArray GetIndexedArrayData(const IndexedTagsPath &jsonPath, int field, int &offset, int &size) const;
 
 	// Get fields count
@@ -167,6 +170,8 @@ private:
 	T CopyWithRemovedFields(PayloadType t);
 	template <typename StrHolder>
 	void copyOrMoveStrings(int field, StrHolder &dest, bool copy);
+	template <typename P>
+	void getByJsonPath(const P &path, VariantArray &, KeyValueType expectedType) const;
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
 	void setArray(int field, const VariantArray &keys, bool append);
 

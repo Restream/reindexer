@@ -120,7 +120,7 @@ type TxCtx struct {
 	UserCtx context.Context
 }
 
-// FetchMore interface for partial loading results (used in cproto)
+// FetchMore interface for partial loading results (used in cproto/ucproto)
 type FetchMore interface {
 	Fetch(ctx context.Context, offset, limit int, asJson bool) (err error)
 }
@@ -128,6 +128,12 @@ type FetchMore interface {
 // Logger interface for reindexer
 type Logger interface {
 	Printf(level int, fmt string, msg ...interface{})
+}
+
+type NullLogger struct {
+}
+
+func (NullLogger) Printf(level int, fmt string, msg ...interface{}) {
 }
 
 func NewError(text string, code int) error {
@@ -196,6 +202,7 @@ type RawBinding interface {
 	Commit(ctx context.Context, namespace string) error
 	EnableLogger(logger Logger)
 	DisableLogger()
+	GetLogger() Logger
 	ReopenLogFiles() error
 	Ping(ctx context.Context) error
 	Finalize() error
@@ -248,7 +255,7 @@ const (
 	LBPowerOfTwoChoices
 )
 
-// OptionConnPoolLoadBalancing sets algorithm, which will be used to choose connection for cproto requests' balancing
+// OptionConnPoolLoadBalancing sets algorithm, which will be used to choose connection for cproto/ucproto requests' balancing
 type OptionConnPoolLoadBalancing struct {
 	Algorithm LoadBalancingAlgorithm
 }

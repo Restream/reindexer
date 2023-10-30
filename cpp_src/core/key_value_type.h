@@ -228,7 +228,7 @@ public:
 		return v.value_ == value_;
 	}
 	[[nodiscard]] bool IsSame(KeyValueType other) const noexcept { return value_ == other.value_; }
-	[[nodiscard]] TagType ToTagType() const {
+	[[nodiscard]] TagType ToTagType() const noexcept {
 		switch (value_) {
 			case KVT::Int64:
 			case KVT::Int:

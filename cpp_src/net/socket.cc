@@ -1,8 +1,7 @@
 #include "socket.h"
-#include <assert.h>
-#include <errno.h>
-#include <memory.h>
-#include <stdio.h>
+#include <cassert>
+#include <cerrno>
+#include <cstdio>
 #include <memory>
 #include <string>
 #include "estl/h_vector.h"
@@ -11,59 +10,62 @@
 namespace reindexer {
 namespace net {
 
-int socket::bind(std::string_view addr) {
-	struct addrinfo *results = nullptr;
-	int ret = create(addr, &results);
-	if (!ret) {
-		assertrx(results != nullptr);
-		if (::bind(fd_, results->ai_addr, results->ai_addrlen) != 0) {	// -V595
-			perror("bind error");
-			close();
-		}
-	}
-	if (results) {
-		freeaddrinfo(results);
-	}
-	return ret;
+#ifdef _WIN32
+static int print_not_supported() {
+	fprintf(stderr, "Unix domain socket are not supported on windows\n");
+	return -1;
 }
+#endif	// _WIN32
 
-int socket::connect(std::string_view addr) noexcept {
-	struct addrinfo *results = nullptr;
-	int ret = create(addr, &results);
-	if (!ret) {
-		assertrx(results != nullptr);
-		if (::connect(fd_, results->ai_addr, results->ai_addrlen) != 0) {  // -V595
-			if (!would_block(last_error())) {
+int socket::connect(std::string_view addr, socket_domain t) {
+	int ret = 0;
+	type_ = t;
+	if (domain() == socket_domain::tcp) {
+		struct addrinfo *results = nullptr;
+		ret = create(addr, &results);
+		if rx_likely (!ret) {
+			assertrx(results != nullptr);
+			if rx_unlikely (::connect(fd_, results->ai_addr, results->ai_addrlen) != 0) {  // -V595
+				if rx_unlikely (!would_block(last_error())) {
+					perror("connect error");
+					close();
+				}
+				ret = -1;
+			}
+		}
+		if rx_likely (results) {
+			freeaddrinfo(results);
+		}
+	} else {
+#ifdef _WIN32
+		return print_not_supported();
+#else	// _WIN32
+		if rx_unlikely (create(addr, nullptr) < 0) {
+			return -1;
+		}
+
+		struct sockaddr_un address;
+		address.sun_family = AF_UNIX;
+		memcpy(address.sun_path, addr.data(), addr.size());
+		address.sun_path[addr.size()] = 0;
+
+		if rx_unlikely (::connect(fd_, reinterpret_cast<struct sockaddr *>(&address), sizeof(address)) != 0) {	// -V595
+			if rx_unlikely (!would_block(last_error())) {
 				perror("connect error");
 				close();
 			}
-			ret = -1;
+			return -1;
 		}
-	}
-	if (results) {
-		freeaddrinfo(results);
+#endif	// _WIN32
 	}
 	return ret;
-}
-
-int socket::listen(int backlog) {
-#ifdef __linux__
-	int enable = 1;
-
-	if (setsockopt(fd_, SOL_TCP, TCP_DEFER_ACCEPT, &enable, sizeof(enable)) < 0) {
-		perror("setsockopt(TCP_DEFER_ACCEPT) failed");
-	}
-	if (setsockopt(fd_, SOL_TCP, TCP_QUICKACK, &enable, sizeof(enable)) < 0) {
-		perror("setsockopt(TCP_QUICKACK) failed");
-	}
-#endif
-	return ::listen(fd_, backlog);
 }
 
 ssize_t socket::recv(span<char> buf) {
 	//
 	return ::recv(fd_, buf.data(), buf.size(), 0);
 }
+
 ssize_t socket::send(span<char> buf) {
 	//
 	return ::send(fd_, buf.data(), buf.size(), 0);
@@ -83,7 +85,7 @@ ssize_t socket::send(span<chunk> chunks) {
 
 	return res == 0 ? numberOfBytesSent : -1;
 }
-#else
+#else	// _WIN32
 ssize_t socket::send(span<chunk> chunks) {
 	h_vector<iovec, 64> iov;
 	iov.resize(chunks.size());
@@ -94,116 +96,113 @@ ssize_t socket::send(span<chunk> chunks) {
 	}
 	return ::writev(fd_, iov.data(), iov.size());
 }
-#endif
-
-int socket::close() {
-	int fd = fd_;
-	fd_ = -1;
-#ifndef _WIN32
-	return ::close(fd);
-#else
-	return ::closesocket(fd);
-#endif
-}
+#endif	// _WIN32
 
 int socket::create(std::string_view addr, struct addrinfo **presults) {
 	assertrx(!valid());
 
-	struct addrinfo hints, *results = nullptr;
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_flags = AI_PASSIVE;
-	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_protocol = IPPROTO_TCP;
-	*presults = nullptr;
+	if (domain() == socket_domain::tcp) {
+		struct addrinfo hints, *results = nullptr;
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_flags = AI_PASSIVE;
+		hints.ai_family = AF_UNSPEC;
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_protocol = IPPROTO_TCP;
+		*presults = nullptr;
 
-	std::string saddr(addr);
-	char *paddr = &saddr[0];
+		std::string saddr(addr);
+		char *paddr = &saddr[0];
 
-	char *pport = strchr(paddr, ':');
-	if (pport == nullptr) {
-		pport = paddr;
-		paddr = nullptr;
+		char *pport = strchr(paddr, ':');
+		if (pport == nullptr) {
+			pport = paddr;
+			paddr = nullptr;
+		} else {
+			*pport = 0;
+			if (*paddr == 0) paddr = nullptr;
+			pport++;
+		}
+
+		int ret = ::getaddrinfo(paddr, pport, &hints, &results);
+		if rx_unlikely (ret != 0) {
+			fprintf(stderr, "getaddrinfo failed: %s\n", gai_strerror(ret));
+			return -1;
+		}
+		assertrx(results != nullptr);
+		*presults = results;
+
+		if rx_unlikely ((fd_ = ::socket(results->ai_family, results->ai_socktype, results->ai_protocol)) < 0) {
+			perror("socket error");
+			return -1;
+		}
+
+		int enable = 1;
+		if rx_unlikely (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&enable), sizeof(enable)) < 0) {
+			perror("setsockopt(SO_REUSEADDR) failed");
+		}
 	} else {
-		*pport = 0;
-		if (*paddr == 0) paddr = nullptr;
-		pport++;
+#ifdef _WIN32
+		return print_not_supported();
+#else	// _WIN32
+		(void)addr;
+		(void)presults;
+		assertrx(!presults);
+
+		if rx_unlikely ((fd_ = ::socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+			perror("socket error");
+			return -1;
+		}
+#endif	// _WIN32
 	}
 
-	int ret = ::getaddrinfo(paddr, pport, &hints, &results);
-	if (ret != 0) {
-		fprintf(stderr, "getaddrinfo failed: %s\n", gai_strerror(ret));
-		return -1;
+	if rx_unlikely (set_nodelay() < 0) {
+		perror("set_nodelay() failed");
 	}
-	assertrx(results != nullptr);
-	*presults = results;
-
-	if ((fd_ = ::socket(results->ai_family, results->ai_socktype, results->ai_protocol)) < 0) {
-		perror("socket error");
-		return -1;
+	if rx_unlikely (set_nonblock() < 0) {
+		perror("set_nonblock() failed");
 	}
-	set_nonblock();
-
-	int enable = 1;
-	if (::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&enable), sizeof(enable)) < 0) {
-		perror("setsockopt(SO_REUSEADDR) failed");
-	}
-
-	set_nodelay();
 
 	return 0;
 }
 
 std::string socket::addr() const {
-	struct sockaddr_storage saddr;
-	struct sockaddr *paddr = reinterpret_cast<sockaddr *>(&saddr);
-	socklen_t len = sizeof(saddr);
-	if (::getpeername(fd_, paddr, &len) == 0) {
-		char buf[INET_ADDRSTRLEN] = {};
-		auto port = ntohs(reinterpret_cast<sockaddr_in *>(paddr)->sin_port);
-		if (getnameinfo(paddr, len, buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST) == 0) {
-			return std::string(buf) + ":" + std::to_string(port);
+	if (domain() == socket_domain::tcp) {
+		struct sockaddr_storage saddr;
+		struct sockaddr *paddr = reinterpret_cast<sockaddr *>(&saddr);
+		socklen_t len = sizeof(saddr);
+		if rx_likely (::getpeername(fd_, paddr, &len) == 0) {
+			char buf[INET_ADDRSTRLEN] = {};
+			auto port = ntohs(reinterpret_cast<sockaddr_in *>(paddr)->sin_port);
+			if rx_likely (getnameinfo(paddr, len, buf, INET_ADDRSTRLEN, NULL, 0, NI_NUMERICHOST) == 0) {
+				return std::string(buf) + ':' + std::to_string(port);
+			} else {
+				perror("getnameinfo error");
+			}
 		} else {
-			perror("getnameinfo");
+			perror("getpeername error");
 		}
+		return std::string();
 	} else {
-		perror("getpeername");
+		return std::string("unx_dmn");
 	}
-	return std::string();
-}
-
-socket socket::accept() {
-	struct sockaddr client_addr;
-	memset(&client_addr, 0, sizeof(client_addr));
-	socklen_t client_len = sizeof(client_addr);
-
-#ifdef __linux__
-	socket client = ::accept4(fd_, &client_addr, &client_len, SOCK_NONBLOCK);
-
-#else
-	socket client = ::accept(fd_, &client_addr, &client_len);
-	if (client.valid()) {
-		client.set_nonblock();
-	}
-#endif
-	if (client.valid()) {
-		client.set_nodelay();
-	}
-	return client;
 }
 
 int socket::set_nonblock() {
 #ifndef _WIN32
 	return fcntl(fd_, F_SETFL, fcntl(fd_, F_GETFL, 0) | O_NONBLOCK);
-#else
+#else	// _WIN32
 	u_long flag = 1;
 	return ioctlsocket(fd_, FIONBIO, &flag);
-#endif
+#endif	// _WIN32
 }
 
-int socket::set_nodelay() {
-	int flag = 1;
-	return setsockopt(fd_, SOL_TCP, TCP_NODELAY, reinterpret_cast<char *>(&flag), sizeof(flag));
+int socket::set_nodelay() noexcept {
+	if (domain() == socket_domain::tcp) {
+		int flag = 1;
+		return setsockopt(fd_, SOL_TCP, TCP_NODELAY, reinterpret_cast<char *>(&flag), sizeof(flag));
+	} else {
+		return 0;
+	}
 }
 
 bool socket::has_pending_data() const noexcept {
@@ -213,32 +212,181 @@ bool socket::has_pending_data() const noexcept {
 #ifndef _WIN32
 	int count;
 	if (ioctl(fd(), FIONREAD, &count) < 0) {
-		perror("ioctl(FIONREAD)");
+		perror("ioctl(FIONREAD) error");
 		return false;
 	}
-#else
+#else	// _WIN32
 	u_long count = -1;
 	if (ioctlsocket(fd(), FIONREAD, &count) < 0) {
-		perror("ioctlsocket(FIONREAD)");
+		perror("ioctlsocket(FIONREAD) error");
 		return false;
 	}
-#endif
+#endif	// _WIN32
 	return count > 0;
 }
 
-int socket::last_error() {
+int socket::last_error() noexcept {
 #ifndef _WIN32
 	return errno;
 #else
 	return WSAGetLastError();
 #endif
 }
-bool socket::would_block(int error) {
+
+bool socket::would_block(int error) noexcept {
 #ifndef _WIN32
 	return error == EAGAIN || error == EWOULDBLOCK || error == EINPROGRESS;
 #else
 	return error == EAGAIN || error == EWOULDBLOCK || error == WSAEWOULDBLOCK || error == EINPROGRESS;
 #endif
+}
+
+int socket::close() {
+#ifndef _WIN32
+	int ret = ::close(fd_);
+#else
+	int ret = ::closesocket(fd_);
+#endif
+	if (ret < 0) {
+		perror("close() error");
+	}
+	fd_ = -1;
+	return ret;
+}
+
+int lst_socket::bind(std::string_view addr, socket_domain t) {
+	assertrx(!valid());
+	int ret = 0;
+	sock_.domain(t);
+	if (domain() == socket_domain::tcp) {
+		struct addrinfo *results = nullptr;
+		ret = sock_.create(addr, &results);
+		if rx_unlikely (!ret) {
+			assertrx(results != nullptr);
+			ret = ::bind(sock_.fd(), results->ai_addr, results->ai_addrlen);
+			if rx_unlikely (ret != 0) {
+				perror("bind error");
+				close();
+			}
+		}
+		if (results) {
+			freeaddrinfo(results);
+		}
+	} else {
+#ifdef _WIN32
+		return print_not_supported();
+#else	// _WIN32
+		if (sock_.create(addr, nullptr) < 0) {
+			return -1;
+		}
+
+		struct sockaddr_un address;
+		address.sun_family = AF_UNIX;
+		memcpy(address.sun_path, addr.data(), addr.size());
+		address.sun_path[addr.size()] = 0;
+
+		unPath_ = addr;
+		unLock_ = unPath_ + ".LOCK";
+		assertrx(lockFd_ < 0);
+		lockFd_ = ::open(unLock_.c_str(), O_WRONLY | O_CREAT | O_APPEND, S_IRWXU);	// open(unLock_.c_str(), O_RDONLY | O_CREAT, 0600);
+		if (lockFd_ < 0) {
+			perror("open(lock) error");
+			close();
+			return -1;
+		}
+
+		struct flock lock;
+		memset(&lock, 0, sizeof(struct flock));
+		lock.l_type = F_WRLCK;
+		lock.l_start = 0;
+		lock.l_whence = SEEK_SET;
+		lock.l_len = 0;
+		lock.l_pid = getpid();
+
+		if rx_unlikely (fcntl(lockFd_, F_SETLK, &lock) < 0) {
+			fprintf(stderr, "Unable to get LOCK for %s\n", unLock_.c_str());
+			perror("fcntl(F_SETLK) error");
+			close();
+			return -1;
+		}
+		unlink(unPath_.c_str());
+
+		if rx_unlikely (::bind(sock_.fd(), reinterpret_cast<struct sockaddr *>(&address), sizeof(address)) < 0) {
+			perror("bind() error");
+			close();
+			return -1;
+		}
+#endif	// _WIN32
+	}
+	return ret;
+}
+
+int lst_socket::listen(int backlog) noexcept {
+	if (domain() == socket_domain::tcp) {
+#ifdef __linux__
+		int enable = 1;
+
+		if (setsockopt(sock_.fd(), SOL_TCP, TCP_DEFER_ACCEPT, &enable, sizeof(enable)) < 0) {
+			perror("setsockopt(TCP_DEFER_ACCEPT) failed");
+		}
+		if (setsockopt(sock_.fd(), SOL_TCP, TCP_QUICKACK, &enable, sizeof(enable)) < 0) {
+			perror("setsockopt(TCP_QUICKACK) failed");
+		}
+#endif
+	}
+#ifdef _WIN32
+	else {
+		return print_not_supported();
+	}
+#endif	// _WIN32
+	return ::listen(sock_.fd(), backlog);
+}
+
+int lst_socket::close() {
+	int ret = sock_.close();
+
+	if (domain() == socket_domain::unx) {
+		if (!unPath_.empty() && (unlink(unPath_.c_str()) != 0)) {
+			perror("unix socket unlink error");
+		}
+		if (::close(lockFd_) != 0) {
+			perror("close(lock) error");
+			ret = -1;
+		} else {
+			if (::unlink(unLock_.c_str()) != 0) {
+				perror("lock file unlink error");
+				ret = -1;
+			}
+		}
+		unPath_.clear();
+		unLock_.clear();
+		lockFd_ = -1;
+	}
+	return ret;
+}
+
+socket lst_socket::accept() {
+	struct sockaddr client_addr;
+	memset(&client_addr, 0, sizeof(client_addr));
+	socklen_t client_len = sizeof(client_addr);
+
+#ifdef __linux__
+	socket client(::accept4(sock_.fd(), &client_addr, &client_len, SOCK_NONBLOCK), domain());
+
+#else	// __linux__
+	socket client(::accept(sock_.fd(), &client_addr, &client_len), domain());
+	if (client.valid()) {
+		if rx_unlikely (client.set_nonblock() < 0) {
+			perror("client.set_nonblock() error");
+		}
+	}
+#endif	// __linux__
+	if rx_likely (client.valid()) {
+		if rx_unlikely (client.set_nodelay() != 0) {
+			perror("client.set_nodelay() error");
+		}
+	}
+	return client;
 }
 
 #ifdef _WIN32

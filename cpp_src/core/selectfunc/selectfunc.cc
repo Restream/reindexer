@@ -9,38 +9,36 @@
 
 namespace reindexer {
 
-static inline void ltrim(std::string &s) {
+inline void ltrim(std::string &s) {
 	s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int ch) { return !std::isspace(ch); }));
 }
 
 // trim from end (in place)
-static inline void rtrim(std::string &s) {
+inline void rtrim(std::string &s) {
 	s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
 }
 
 // trim from both ends (in place)
-static inline void trim(std::string &s) {
+inline void trim(std::string &s) {
 	ltrim(s);
 	rtrim(s);
 }
 
-SelectFunction::Ptr SelectFunctionsHolder::AddNamespace(const Query &q, const NamespaceImpl &nm, bool force) {
+SelectFunction::Ptr SelectFunctionsHolder::AddNamespace(const Query &q, const NamespaceImpl &nm, uint32_t nsid, bool force) {
 	if (q.selectFunctions_.empty() && !force) {
 		return nullptr;
 	} else if (!q.selectFunctions_.empty()) {
 		force_only_ = false;
 	}
 
-	if (!querys_) {
-		querys_.reset(new fast_hash_map<std::string, SelectFunction::Ptr>);
+	if (queries_.size() <= nsid) {
+		queries_.resize(nsid + 1);
 	}
-
-	NsSelectFuncInterface nm_interface(nm);
-	SelectFunction::Ptr func = std::make_shared<SelectFunction>(q, nm_interface);
-	return querys_->emplace(nm_interface.GetName(), func).first->second;
+	queries_[nsid] = std::make_shared<SelectFunction>(q, NsSelectFuncInterface(nm));
+	return queries_[nsid];
 }
 
-SelectFunction::SelectFunction(const Query &q, NsSelectFuncInterface &nm) : nm_(nm), currCjsonFieldIdx_(nm.getIndexesCount()) {
+SelectFunction::SelectFunction(const Query &q, NsSelectFuncInterface &&nm) : nm_(std::move(nm)), currCjsonFieldIdx_(nm.getIndexesCount()) {
 	functions_.reserve(q.selectFunctions_.size());
 	for (auto &func : q.selectFunctions_) {
 		SelectFuncParser parser;
@@ -145,7 +143,7 @@ BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
 	}
 
 	BaseFunctionCtx::Ptr ctx;
-	IndexType indexType = nm_.getIndexType(indexNo);
+	const IndexType indexType = nm_.getIndexType(indexNo);
 
 	if (IsComposite(indexType)) {
 		int fieldNo = 0;
@@ -163,22 +161,33 @@ BaseFunctionCtx::Ptr SelectFunction::CreateCtx(int indexNo) {
 		auto it = functions_.find(indexNo);
 		if (it != functions_.end()) {
 			it->second.fieldNo = 0;
-			ctx = createCtx(it->second, ctx, nm_.getIndexType(indexNo));
+			ctx = createCtx(it->second, ctx, indexType);
 		}
 	}
-	if (!ctx && IsFullText(nm_.getIndexType(indexNo))) {
+	if (!ctx && IsFullText(indexType)) {
 		return createFuncForProc(indexNo);
 	}
 	return ctx;
 }
 void SelectFunctionsHolder::Process(QueryResults &res) {
-	if (!querys_ || querys_->empty() || force_only_) return;
+	if (queries_.empty() || force_only_) return;
+	bool hasFuncs = false;
+	for (auto &q : queries_) {
+		if (q) {
+			hasFuncs = true;
+			break;
+		}
+	}
+	if (!hasFuncs) return;
+
 	bool changed = false;
-	for (size_t i = 0; i < res.Count(); ++i) {
-		auto &pl_type = res.getPayloadType(res.Items()[i].Nsid());
-		auto it = querys_->find(pl_type.Name());
-		if (it != querys_->end()) {
-			if (it->second->ProcessItem(res.Items()[i], pl_type, res.stringsHolder_)) changed = true;
+	for (auto &item : res.Items()) {
+		const auto nsid = item.Nsid();
+		if (queries_.size() <= nsid) {
+			continue;
+		}
+		if (auto &funcPtr = queries_[nsid]; funcPtr && funcPtr->ProcessItem(item, res.getPayloadType(nsid), res.stringsHolder_)) {
+			changed = true;
 		}
 	}
 	res.nonCacheableData = changed;
@@ -186,8 +195,8 @@ void SelectFunctionsHolder::Process(QueryResults &res) {
 bool SelectFunction::ProcessItem(ItemRef &res, PayloadType &pl_type, std::vector<key_string> &stringsHolder) {
 	bool changed = false;
 	for (auto &func : functions_) {
-		if (!func.second.ctx) continue;
-		if (std::visit([&](auto &f) -> bool { return f.Process(res, pl_type, func.second, stringsHolder); }, func.second.func)) {
+		if (func.second.ctx &&
+			std::visit([&](auto &f) -> bool { return f.Process(res, pl_type, func.second, stringsHolder); }, func.second.func)) {
 			changed = true;
 		}
 	}

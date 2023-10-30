@@ -8,7 +8,6 @@
 #include "query.h"
 #include "tools/serializer.h"
 #include "tools/string_regexp_functions.h"
-#include "tools/stringstools.h"
 
 namespace reindexer {
 
@@ -21,11 +20,11 @@ std::string JoinQueryEntry::Dump(const std::vector<JS> &joinedSelectors) const {
 	ser << '(';
 	for (const auto &jqe : q.joinEntries_) {
 		if (&jqe != &q.joinEntries_.front()) {
-			ser << ' ' << jqe.op_ << ' ';
+			ser << ' ' << jqe.Operation() << ' ';
 		} else {
-			assertrx(jqe.op_ == OpAnd);
+			assertrx(jqe.Operation() == OpAnd);
 		}
-		ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << InvertJoinCondition(jqe.condition_) << ' ' << jqe.index_;
+		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << InvertJoinCondition(jqe.Condition()) << ' ' << jqe.LeftFieldName();
 	}
 	ser << ')';
 	return std::string{ser.Slice()};
@@ -41,30 +40,133 @@ std::string JoinQueryEntry::DumpOnCondition(const std::vector<JS> &joinedSelecto
 	ser << js.Type() << " ON (";
 	for (const auto &jqe : q.joinEntries_) {
 		if (&jqe != &q.joinEntries_.front()) {
-			ser << ' ' << jqe.op_ << ' ';
+			ser << ' ' << jqe.Operation() << ' ';
 		}
-		ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << InvertJoinCondition(jqe.condition_) << ' ' << jqe.index_;
+		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << InvertJoinCondition(jqe.Condition()) << ' ' << jqe.LeftFieldName();
 	}
 	ser << ')';
 	return std::string{ser.Slice()};
 }
 template std::string JoinQueryEntry::DumpOnCondition(const JoinedSelectors &) const;
 
-bool QueryEntry::operator==(const QueryEntry &obj) const {
-	return condition == obj.condition && index == obj.index && idxNo == obj.idxNo && distinct == obj.distinct &&
-		   values.RelaxCompare<WithString::Yes>(obj.values) == 0;
+bool QueryField::operator==(const QueryField &other) const noexcept {
+	if (fieldName_ != other.fieldName_ || idxNo_ != other.idxNo_ || fieldsSet_ != other.fieldsSet_ ||
+		!fieldType_.IsSame(other.fieldType_) || !selectType_.IsSame(other.selectType_) ||
+		compositeFieldsTypes_.size() != other.compositeFieldsTypes_.size()) {
+		return false;
+	}
+	for (size_t i = 0, s = compositeFieldsTypes_.size(); i < s; ++i) {
+		if (!compositeFieldsTypes_[i].IsSame(other.compositeFieldsTypes_[i])) {
+			return false;
+		}
+	}
+	return true;
 }
+
+void QueryField::SetField(FieldsSet &&fields) & {
+	assertrx_throw(fields.size() == 1);
+	assertrx_throw(fields[0] == IndexValueType::SetByJsonPath);
+	assertrx_throw(idxNo_ == IndexValueType::NotSet);
+	idxNo_ = IndexValueType::SetByJsonPath;
+	fieldsSet_ = std::move(fields);
+}
+
+static void checkIndexData([[maybe_unused]] int idxNo, [[maybe_unused]] const FieldsSet &fields, KeyValueType fieldType,
+						   [[maybe_unused]] const std::vector<KeyValueType> &compositeFieldsTypes) {
+	assertrx_throw(idxNo >= 0);
+	if (fieldType.Is<KeyValueType::Composite>()) {
+		assertrx_throw(fields.size() == compositeFieldsTypes.size());
+	} else {
+		assertrx_throw(fields.size() == 1);
+		assertrx_throw(compositeFieldsTypes.empty());
+	}
+}
+
+void QueryField::SetIndexData(int idxNo, FieldsSet &&fields, KeyValueType fieldType, KeyValueType selectType,
+							  std::vector<KeyValueType> &&compositeFieldsTypes) & {
+	checkIndexData(idxNo, fields, fieldType, compositeFieldsTypes);
+	idxNo_ = idxNo;
+	fieldsSet_ = std::move(fields);
+	fieldType_ = fieldType;
+	selectType_ = selectType;
+	compositeFieldsTypes_ = std::move(compositeFieldsTypes);
+}
+
+bool QueryField::HaveEmptyField() const noexcept {
+	size_t tagsNo = 0;
+	for (auto f : Fields()) {
+		if (f == IndexValueType::SetByJsonPath) {
+			if (Fields().getTagsPath(tagsNo).empty()) {
+				return true;
+			}
+			++tagsNo;
+		}
+	}
+	return Fields().empty();
+}
+
+bool QueryEntry::operator==(const QueryEntry &other) const noexcept {
+	return QueryField::operator==(other) && condition_ == other.condition_ && distinct_ == other.distinct_ &&
+		   values_.RelaxCompare<WithString::Yes>(other.values_) == 0;
+}
+
+template <unsigned flags>
+void QueryEntry::verify(CondType cond, const VariantArray &values) {
+	if constexpr (flags & kIgnoreEmptyValues) {
+		if (values.empty()) {
+			return;
+		}
+	}
+	const auto checkArgsCount = [&](size_t argsCountReq) {
+		if (values.size() != argsCountReq) {
+			throw Error{errLogic, "Condition %s must have exact %d argument, but %d arguments was provided", CondTypeToStr(cond),
+						argsCountReq, values.size()};
+		}
+	};
+	switch (cond) {
+		case CondEq:
+		case CondSet:
+		case CondAllSet:
+			break;
+		case CondAny:
+		case CondEmpty:
+			if (!values.empty() && !(values.size() == 1 && values[0].Type().Is<KeyValueType::Null>())) {
+				throw Error{errLogic, "Condition %s must have no argument or single null argument, but %d not null arguments was provided",
+							CondTypeToStr(cond), values.size()};
+			}
+			break;
+		case CondGe:
+		case CondGt:
+		case CondLt:
+		case CondLe:
+			checkArgsCount(1);
+			break;
+		case CondLike:
+			checkArgsCount(1);
+			if (!values[0].Type().Is<KeyValueType::String>()) {
+				throw Error{errLogic, "Condition %s must have string argument, but %d argument was provided", CondTypeToStr(cond),
+							values[0].Type().Name()};
+			}
+			break;
+		case CondRange:
+		case CondDWithin:
+			checkArgsCount(2);
+			break;
+	}
+}
+template void QueryEntry::verify<0u>(CondType, const VariantArray &);
+template void QueryEntry::verify<QueryEntry::kIgnoreEmptyValues>(CondType, const VariantArray &);
 
 std::string QueryEntry::Dump() const {
 	WrSerializer ser;
-	if (distinct) {
-		ser << "Distinct index: " << index;
+	if (Distinct()) {
+		ser << "Distinct index: " << FieldName();
 	} else {
-		ser << index << ' ' << condition << ' ';
-		const bool severalValues = (values.size() > 1);
+		ser << FieldName() << ' ' << condition_ << ' ';
+		const bool severalValues = (Values().size() > 1);
 		if (severalValues) ser << '(';
-		for (auto &v : values) {
-			if (&v != &*values.begin()) ser << ',';
+		for (auto &v : Values()) {
+			if (&v != &*Values().begin()) ser << ',';
 			ser << '\'' << v.As<std::string>() << '\'';
 		}
 		if (severalValues) ser << ')';
@@ -75,18 +177,18 @@ std::string QueryEntry::Dump() const {
 std::string QueryEntry::DumpBrief() const {
 	WrSerializer ser;
 	{
-		ser << index << ' ' << condition << ' ';
-		const bool severalValues = (values.size() > 1);
+		ser << FieldName() << ' ' << Condition() << ' ';
+		const bool severalValues = (Values().size() > 1);
 		if (severalValues) {
 			ser << "(...)";
 		} else {
-			ser << '\'' << values.front().As<std::string>() << '\'';
+			ser << '\'' << Values().front().As<std::string>() << '\'';
 		}
 	}
 	return std::string(ser.Slice());
 }
 
-AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1> fields, SortingEntries sort, unsigned limit, unsigned offset)
+AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1> &&fields, SortingEntries &&sort, unsigned limit, unsigned offset)
 	: type_(type), fields_(std::move(fields)), sortingEntries_{std::move(sort)}, limit_(limit), offset_(offset) {
 	switch (type_) {
 		case AggFacet:
@@ -134,7 +236,7 @@ AggregateEntry::AggregateEntry(AggType type, h_vector<std::string, 1> fields, So
 	}
 }
 
-void AggregateEntry::AddSortingEntry(SortingEntry sorting) {
+void AggregateEntry::AddSortingEntry(SortingEntry &&sorting) {
 	if (type_ != AggFacet) {
 		throw Error(errQueryExec, "Sort is not available for aggregation %s", AggTypeToStr(type_));
 	}
@@ -155,21 +257,13 @@ void AggregateEntry::SetOffset(unsigned o) {
 	offset_ = o;
 }
 
-BetweenFieldsQueryEntry::BetweenFieldsQueryEntry(std::string fstIdx, CondType cond, std::string sndIdx)
-	: firstIndex{std::move(fstIdx)}, secondIndex{std::move(sndIdx)}, condition_{cond} {
-	if (condition_ == CondAny || condition_ == CondEmpty || condition_ == CondDWithin) {
-		throw Error{errLogic, "Condition '%s' is inapplicable between two fields", std::string{CondTypeToStr(condition_)}};
-	}
-}
-
 bool BetweenFieldsQueryEntry::operator==(const BetweenFieldsQueryEntry &other) const noexcept {
-	return firstIdxNo == other.firstIdxNo && secondIdxNo == other.secondIdxNo && Condition() == other.Condition() &&
-		   firstIndex == other.firstIndex && secondIndex == other.secondIndex;
+	return leftField_ == other.leftField_ && rightField_ == other.rightField_ && Condition() == other.Condition();
 }
 
 std::string BetweenFieldsQueryEntry::Dump() const {
 	WrSerializer ser;
-	ser << firstIndex << ' ' << Condition() << ' ' << secondIndex;
+	ser << LeftFieldName() << ' ' << Condition() << ' ' << RightFieldName();
 	return std::string{ser.Slice()};
 }
 
@@ -184,30 +278,31 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 				ser.PutVarUint(QueryCloseBracket);
 			},
 			[&ser, op](const QueryEntry &entry) {
-				entry.distinct ? ser.PutVarUint(QueryDistinct) : ser.PutVarUint(QueryCondition);
-				ser.PutVString(entry.index);
-				if (entry.distinct) return;
+				entry.Distinct() ? ser.PutVarUint(QueryDistinct) : ser.PutVarUint(QueryCondition);
+				ser.PutVString(entry.FieldName());
+				if (entry.Distinct()) return;
 				ser.PutVarUint(op);
-				ser.PutVarUint(entry.condition);
-				if (entry.condition == CondDWithin) {
-					if (entry.values.size() != 2) {
-						throw Error(errLogic, "Condition DWithin must have exact 2 value, but %d values was provided", entry.values.size());
+				ser.PutVarUint(entry.Condition());
+				if (entry.Condition() == CondDWithin) {
+					if (entry.Values().size() != 2) {
+						throw Error(errLogic, "Condition DWithin must have exact 2 value, but %d values was provided",
+									entry.Values().size());
 					}
 					ser.PutVarUint(3);
-					if (entry.values[0].Type().Is<KeyValueType::Tuple>()) {
-						const Point point = static_cast<Point>(entry.values[0]);
+					if (entry.Values()[0].Type().Is<KeyValueType::Tuple>()) {
+						const Point point = static_cast<Point>(entry.Values()[0]);
 						ser.PutDouble(point.X());
 						ser.PutDouble(point.Y());
-						ser.PutVariant(entry.values[1]);
+						ser.PutVariant(entry.Values()[1]);
 					} else {
-						const Point point = static_cast<Point>(entry.values[1]);
+						const Point point = static_cast<Point>(entry.Values()[1]);
 						ser.PutDouble(point.X());
 						ser.PutDouble(point.Y());
-						ser.PutVariant(entry.values[0]);
+						ser.PutVariant(entry.Values()[0]);
 					}
 				} else {
-					ser.PutVarUint(entry.values.size());
-					for (auto &kv : entry.values) ser.PutVariant(kv);
+					ser.PutVarUint(entry.Values().size());
+					for (auto &kv : entry.Values()) ser.PutVariant(kv);
 				}
 			},
 			[&ser, op](const JoinQueryEntry &jqe) {
@@ -218,9 +313,9 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 			[&ser, op](const BetweenFieldsQueryEntry &entry) {
 				ser.PutVarUint(QueryBetweenFieldsCondition);
 				ser.PutVarUint(op);
-				ser.PutVString(entry.firstIndex);
+				ser.PutVString(entry.LeftFieldName());
 				ser.PutVarUint(entry.Condition());
-				ser.PutVString(entry.secondIndex);
+				ser.PutVString(entry.RightFieldName());
 			},
 			[&ser, op](const AlwaysFalse &) {
 				ser.PutVarUint(QueryAlwaysFalseCondition);
@@ -233,13 +328,8 @@ bool UpdateEntry::operator==(const UpdateEntry &obj) const noexcept {
 	return isExpression_ == obj.isExpression_ && column_ == obj.column_ && mode_ == obj.mode_ && values_ == obj.values_;
 }
 
-bool QueryJoinEntry::operator==(const QueryJoinEntry &obj) const noexcept {
-	if (op_ != obj.op_) return false;
-	if (static_cast<unsigned>(condition_) != obj.condition_) return false;
-	if (index_ != obj.index_) return false;
-	if (joinIndex_ != obj.joinIndex_) return false;
-	if (idxNo != obj.idxNo) return false;
-	return true;
+bool QueryJoinEntry::operator==(const QueryJoinEntry &other) const noexcept {
+	return op_ == other.op_ && condition_ == other.condition_ && leftField_ == other.leftField_ && rightField_ == other.rightField_;
 }
 
 bool AggregateEntry::operator==(const AggregateEntry &obj) const noexcept {
@@ -254,7 +344,7 @@ bool SortingEntry::operator==(const SortingEntry &obj) const noexcept {
 	return true;
 }
 
-bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload &pl, TagsMatcher &tagsMatcher) {
+bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload &pl) {
 	assertrx(begin != end && begin->operation != OpOr);
 	bool result = true;
 	for (auto it = begin; it != end; ++it) {
@@ -264,40 +354,26 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 			break;
 		}
 		const bool lastResult = it->InvokeAppropriate<bool>(
-			[&it, &pl, &tagsMatcher](const QueryEntriesBracket &) {
-				return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl, tagsMatcher);
-			},
-			[&pl, &tagsMatcher](const QueryEntry &qe) { return checkIfSatisfyCondition(qe, pl, tagsMatcher); },
-			[&pl, &tagsMatcher](const BetweenFieldsQueryEntry &qe) { return checkIfSatisfyCondition(qe, pl, tagsMatcher); },
+			[&it, &pl](const QueryEntriesBracket &) { return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl); },
+			[&pl](const QueryEntry &qe) { return checkIfSatisfyCondition(qe, pl); },
+			[&pl](const BetweenFieldsQueryEntry &qe) { return checkIfSatisfyCondition(qe, pl); },
 			[](const JoinQueryEntry &) -> bool { abort(); }, [](const AlwaysFalse &) { return false; });
 		result = (lastResult != (it->operation == OpNot));
 	}
 	return result;
 }
 
-bool QueryEntries::checkIfSatisfyCondition(const QueryEntry &qEntry, const ConstPayload &pl, TagsMatcher &tagsMatcher) {
+bool QueryEntries::checkIfSatisfyCondition(const QueryEntry &qEntry, const ConstPayload &pl) {
 	VariantArray values;
-	if (qEntry.idxNo == IndexValueType::SetByJsonPath) {
-		pl.GetByJsonPath(qEntry.index, tagsMatcher, values, KeyValueType::Undefined{});
-	} else {
-		pl.Get(qEntry.idxNo, values);
-	}
-	return checkIfSatisfyCondition(values, qEntry.condition, qEntry.values);
+	pl.GetByFieldsSet(qEntry.Fields(), values, qEntry.FieldType(), qEntry.CompositeFieldsTypes());
+	return checkIfSatisfyCondition(values, qEntry.Condition(), qEntry.Values());
 }
 
-bool QueryEntries::checkIfSatisfyCondition(const BetweenFieldsQueryEntry &qEntry, const ConstPayload &pl, TagsMatcher &tagsMatcher) {
+bool QueryEntries::checkIfSatisfyCondition(const BetweenFieldsQueryEntry &qEntry, const ConstPayload &pl) {
 	VariantArray lValues;
-	if (qEntry.firstIdxNo == IndexValueType::SetByJsonPath) {
-		pl.GetByJsonPath(qEntry.firstIndex, tagsMatcher, lValues, KeyValueType::Undefined{});
-	} else {
-		pl.Get(qEntry.firstIdxNo, lValues);
-	}
+	pl.GetByFieldsSet(qEntry.LeftFields(), lValues, qEntry.LeftFieldType(), qEntry.LeftCompositeFieldsTypes());
 	VariantArray rValues;
-	if (qEntry.secondIdxNo == IndexValueType::SetByJsonPath) {
-		pl.GetByJsonPath(qEntry.secondIndex, tagsMatcher, rValues, KeyValueType::Undefined{});
-	} else {
-		pl.Get(qEntry.secondIdxNo, rValues);
-	}
+	pl.GetByFieldsSet(qEntry.RightFields(), rValues, qEntry.RightFieldType(), qEntry.RightCompositeFieldsTypes());
 	return checkIfSatisfyCondition(lValues, qEntry.Condition(), rValues);
 }
 
@@ -350,18 +426,11 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 			return false;
 		}
 		case CondType::CondRange:
-			if (rValues.size() != 2) throw Error(errParams, "For ranged query reuqired 2 arguments, but provided %d", rValues.size());
 			for (const auto &v : lValues) {
 				if (v.RelaxCompare<WithString::Yes>(rValues[0]) < 0 || v.RelaxCompare<WithString::Yes>(rValues[1]) > 0) return false;
 			}
 			return true;
 		case CondType::CondLike:
-			if (rValues.size() != 1) {
-				throw Error(errLogic, "Condition LIKE must have exact 1 value, but %d values was provided", rValues.size());
-			}
-			if (!rValues[0].Type().Is<KeyValueType::String>()) {
-				throw Error(errLogic, "Condition LIKE must have value of string type, but %s value was provided", rValues[0].Type().Name());
-			}
 			for (const auto &v : lValues) {
 				if (!v.Type().Is<KeyValueType::String>()) {
 					throw Error(errLogic, "Condition LIKE must be applied to data of string type, but %s was provided", v.Type().Name());
@@ -370,9 +439,6 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 			}
 			return false;
 		case CondType::CondDWithin: {
-			if (rValues.size() != 2) {
-				throw Error(errLogic, "Condition DWithin must have exact 2 value, but %d values was provided", rValues.size());
-			}
 			Point point;
 			double distance;
 			if (rValues[0].Type().Is<KeyValueType::Tuple>()) {
@@ -388,6 +454,58 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 			assertrx(0);
 	}
 	return false;
+}
+
+template <typename JS>
+std::string QueryJoinEntry::DumpCondition(const JS &joinedSelector, bool needOp) const {
+	WrSerializer ser;
+	const auto &q = joinedSelector.JoinQuery();
+	if (needOp) {
+		ser << ' ' << op_ << ' ';
+	}
+	ser << q.NsName() << '.' << RightFieldName() << ' ' << InvertJoinCondition(condition_) << ' ' << LeftFieldName();
+	return std::string{ser.Slice()};
+}
+template std::string QueryJoinEntry::DumpCondition(const JoinedSelector &, bool) const;
+
+void QueryEntries::dumpEqualPositions(size_t level, WrSerializer &ser, const EqualPositions_t &equalPositions) {
+	for (const auto &eq : equalPositions) {
+		for (size_t i = 0; i < level; ++i) {
+			ser << "   ";
+		}
+		ser << "equal_poisition(";
+		for (size_t i = 0, s = eq.size(); i < s; ++i) {
+			if (i != 0) ser << ", ";
+			ser << eq[i];
+		}
+		ser << ")\n";
+	}
+}
+
+template <typename JS>
+void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS> &joinedSelectors, WrSerializer &ser) {
+	for (const_iterator it = begin; it != end; ++it) {
+		for (size_t i = 0; i < level; ++i) {
+			ser << "   ";
+		}
+		if (it != begin || it->operation != OpAnd) {
+			ser << it->operation << ' ';
+		}
+		it->InvokeAppropriate<void>(
+			[&](const QueryEntriesBracket &b) {
+				ser << "(\n";
+				dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, ser);
+				dumpEqualPositions(level + 1, ser, b.equalPositions);
+				for (size_t i = 0; i < level; ++i) {
+					ser << "   ";
+				}
+				ser << ")\n";
+			},
+			[&ser](const QueryEntry &qe) { ser << qe.Dump() << '\n'; },
+			[&joinedSelectors, &ser](const JoinQueryEntry &jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
+			[&ser](const BetweenFieldsQueryEntry &qe) { ser << qe.Dump() << '\n'; },
+			[&ser](const AlwaysFalse &) { ser << "AlwaysFalse" << 'n'; });
+	}
 }
 
 }  // namespace reindexer

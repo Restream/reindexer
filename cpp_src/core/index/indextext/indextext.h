@@ -8,7 +8,6 @@
 #include "core/ft/ftsetcashe.h"
 #include "core/index/indexunordered.h"
 #include "core/selectfunc/ctx/ftctx.h"
-#include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
 #include "fieldsgetter.h"
 
@@ -20,8 +19,11 @@ class IndexText : public IndexUnordered<T> {
 
 public:
 	IndexText(const IndexText<T>& other);
-	IndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields)
-		: IndexUnordered<T>(idef, std::move(payloadType), fields), cache_ft_(std::make_shared<FtIdSetCache>()) {
+	IndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
+		: IndexUnordered<T>(idef, std::move(payloadType), std::move(fields), cacheCfg),
+		  cache_ft_(std::make_unique<FtIdSetCache>(cacheCfg.ftIdxCacheSize, cacheCfg.ftIdxHitsToCache)),
+		  cacheMaxSize_(cacheCfg.ftIdxCacheSize),
+		  hitsToCache_(cacheCfg.ftIdxHitsToCache) {
 		this->selectKeyType_ = KeyValueType::String{};
 		initSearchers();
 	}
@@ -39,7 +41,7 @@ public:
 		// Rebuild will be done on first select
 	}
 	void CommitFulltext() override final {
-		cache_ft_ = std::make_shared<FtIdSetCache>();
+		cache_ft_ = std::make_unique<FtIdSetCache>(cacheMaxSize_, hitsToCache_);
 		commitFulltextImpl();
 		this->isBuilt_ = true;
 	}
@@ -51,7 +53,8 @@ public:
 	}
 	void ClearCache(const std::bitset<kMaxIndexes>& s) override { Base::ClearCache(s); }
 	void MarkBuilt() noexcept override { assertrx(0); }
-	bool IsFulltext() const noexcept override { return true; }
+	bool IsFulltext() const noexcept override final { return true; }
+	void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) override final;
 
 protected:
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::IndexText>;
@@ -66,7 +69,9 @@ protected:
 	void initSearchers();
 	FieldsGetter Getter();
 
-	std::shared_ptr<FtIdSetCache> cache_ft_;
+	std::unique_ptr<FtIdSetCache> cache_ft_;
+	size_t cacheMaxSize_;
+	uint32_t hitsToCache_;
 
 	RHashMap<std::string, int> ftFields_;
 	std::unique_ptr<BaseFTConfig> cfg_;

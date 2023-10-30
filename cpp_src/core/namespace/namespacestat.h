@@ -22,14 +22,6 @@ struct LRUCacheMemStat {
 	size_t itemsCount = 0;
 	size_t emptyCount = 0;
 	size_t hitCountLimit = 0;
-
-	LRUCacheMemStat &operator+=(const LRUCacheMemStat &other) noexcept {
-		totalSize += other.totalSize;
-		itemsCount += other.itemsCount;
-		emptyCount += other.emptyCount;
-		hitCountLimit += other.hitCountLimit;
-		return *this;
-	}
 };
 
 struct IndexMemStat {

@@ -42,12 +42,14 @@ inline std::string_view to_string_view(const uint8_t *p) noexcept {
 		const auto len = length<true>(p);
 		uintptr_t uptr;
 		static_assert(sizeof(uintptr_t) == 8 || sizeof(uintptr_t) == 4, "Expecting sizeof uintptr to be equal 4 or 8 bytes");
-		if constexpr (sizeof(uintptr_t) == 8) {
-			uptr = uintptr_t(p[-2]) | (uintptr_t(p[-3]) << 8) | (uintptr_t(p[-4]) << 16) | (uintptr_t(p[-5]) << 24) |
-				   (uintptr_t(p[-6]) << 32) | (uintptr_t(p[-7]) << 40) | (uintptr_t(p[-8]) << 48) | (uintptr_t(p[-9]) << 56);
-		} else {
-			uptr = uintptr_t(p[-2]) | (uintptr_t(p[-3]) << 8) | (uintptr_t(p[-4]) << 16) | (uintptr_t(p[-5]) << 24);
-		}
+#if UINTPTR_MAX == 0xFFFFFFFF
+		uptr = uintptr_t(p[-2]) | (uintptr_t(p[-3]) << 8) | (uintptr_t(p[-4]) << 16) | (uintptr_t(p[-5]) << 24);
+#elif UINTPTR_MAX == 0xFFFFFFFFFFFFFFFF
+		uptr = uintptr_t(p[-2]) | (uintptr_t(p[-3]) << 8) | (uintptr_t(p[-4]) << 16) | (uintptr_t(p[-5]) << 24) | (uintptr_t(p[-6]) << 32) |
+			   (uintptr_t(p[-7]) << 40) | (uintptr_t(p[-8]) << 48) | (uintptr_t(p[-9]) << 56);
+#else
+		static_assert(false, "Unexpected uintptr_t size");
+#endif
 		return std::string_view(reinterpret_cast<const char *>(uptr), len);
 	}
 	const auto len = length<false>(p);

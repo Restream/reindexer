@@ -110,11 +110,11 @@ void assertf_fmt(const char *fmt, const Args &...args) {
 	fmt::fprintf(std::cerr, fmt, args...);
 }
 
-#define assertf(e, fmt, ...)                                                                     \
-	if (!(e)) {                                                                                  \
-		assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__); \
-		debug::print_crash_query(std::cerr);                                                     \
-		abort();                                                                                 \
+#define assertf(e, fmt, ...)                                                                                \
+	if rx_unlikely (!(e)) {                                                                                 \
+		reindexer::assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__); \
+		reindexer::debug::print_crash_query(std::cerr);                                                     \
+		abort();                                                                                            \
 	}
 #endif	// NDEBUG
 #endif	// REINDEX_CORE_BUILD

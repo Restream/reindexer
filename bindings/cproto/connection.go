@@ -198,12 +198,20 @@ func (c *connection) deadlineTicker() {
 }
 
 func (c *connection) connect(ctx context.Context) (err error) {
+	dsn := c.owner.getActiveDSN()
 	var d net.Dialer
-	c.conn, err = d.DialContext(ctx, "tcp", c.owner.getActiveDSN().Host)
-	if err != nil {
-		return err
+	if dsn.Scheme == "cproto" {
+		if c.conn, err = d.DialContext(ctx, "tcp", dsn.Host); err != nil {
+			return err
+		}
+		c.conn.(*net.TCPConn).SetNoDelay(true)
+	} else {
+		d.LocalAddr = nil
+		if c.conn, err = d.DialContext(ctx, "unix", dsn.Host); err != nil {
+			return err
+		}
 	}
-	c.conn.(*net.TCPConn).SetNoDelay(true)
+
 	c.rdBuf = bufio.NewReaderSize(c.conn, bufsCap)
 
 	go c.writeLoop()

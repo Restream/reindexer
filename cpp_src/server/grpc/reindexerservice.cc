@@ -980,7 +980,7 @@ Error ReindexerService::execSqlQueryByType(QueryResults& res, const SelectSqlReq
 				return rx->Update(q, res);
 			}
 			case QueryTruncate: {
-				return rx->TruncateNamespace(q._namespace);
+				return rx->TruncateNamespace(q.NsName());
 			}
 			default:
 				return Error(errParams, "unknown query type %d", q.Type());

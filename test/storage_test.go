@@ -10,7 +10,11 @@ import (
 
 	"github.com/restream/reindexer/v3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+const TestWalNs = "test_wal"
+const TestItemsStorageNs = "test_items_storage"
 
 type SubStruct struct {
 	F5 string `reindex:"f5"`
@@ -75,12 +79,15 @@ type TestItemV6 struct {
 }
 
 func init() {
-	tnamespaces["test_items_storage"] = TestItemV1{}
+	tnamespaces[TestItemsStorageNs] = TestItemV1{}
+	tnamespaces[TestWalNs] = TestItem{}
 }
 
 func TestStorageChangeFormat(t *testing.T) {
-	tx := DB.MustBeginTx("test_items_storage")
 
+	const ns = TestItemsStorageNs
+
+	tx := DB.MustBeginTx(ns)
 	tx.Upsert(&TestItemV1{
 		ID: 1,
 		F1: 100,
@@ -95,82 +102,127 @@ func TestStorageChangeFormat(t *testing.T) {
 		T0: "t0val",
 		T6: "t6val",
 	})
-
 	beforeUpdate := time.Now().UTC()
-
 	tx.MustCommit()
-
 	afterUpdate := time.Now().UTC()
 
-	// Test2
-	assert.NoError(t, DB.CloseNamespace("test_items_storage"))
-	assert.NoError(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV2{}))
+	t.Run("Test storage", func(t *testing.T) {
+		assert.NoError(t, DB.CloseNamespace(ns))
+		assert.NoError(t, DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemV2{}))
 
-	stat, err := DB.GetNamespaceMemStat("test_items_storage")
-	assert.NoError(t, err)
+		stat, err := DB.GetNamespaceMemStat(ns)
+		assert.NoError(t, err)
+		updatedAt := time.Unix(0, stat.Replication.UpdatedUnixNano).UTC()
+		assert.False(t, beforeUpdate.Before(updatedAt) && afterUpdate.After(updatedAt), "%v must be between %v and %v", updatedAt, beforeUpdate, afterUpdate)
+		item, ok := DB.Query(ns).WhereInt("id", reindexer.EQ, 1).Get()
+		if !ok {
+			j, _ := DB.Query(ns).ExecToJson().FetchAll()
+			fmt.Printf("%s", string(j))
+			panic(fmt.Errorf("Not found test item after update fields struct"))
+		}
 
-	updatedAt := time.Unix(0, stat.Replication.UpdatedUnixNano).UTC()
-	assert.False(t, beforeUpdate.Before(updatedAt) && afterUpdate.After(updatedAt), "%v must be between %v and %v", updatedAt, beforeUpdate, afterUpdate)
+		itemv2 := item.(*TestItemV2)
+		if itemv2.ID != 1 || itemv2.F1 != 100 || itemv2.F2 != "f2val" || itemv2.B1 != true {
+			j, _ := DB.Query(ns).ExecToJson().FetchAll()
+			fmt.Printf("%s", string(j))
+			panic(fmt.Errorf("%v", *itemv2))
+		}
 
-	item, ok := DB.Query("test_items_storage").WhereInt("id", reindexer.EQ, 1).Get()
+		// Check there are right items after update fields struct
+		assert.NoError(t, DB.CloseNamespace(ns))
+		assert.NoError(t, DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemV3{}))
 
-	if !ok {
-		j, _ := DB.Query("test_items_storage").ExecToJson().FetchAll()
-		fmt.Printf("%s", string(j))
-		panic(fmt.Errorf("Not found test item after update fields struct"))
-	}
-	itemv2 := item.(*TestItemV2)
+		item, ok = DB.Query(ns).WhereInt("id", reindexer.EQ, 1).Get()
+		assert.True(t, ok, "Not found test item after update fields struct")
+		itemv3 := item.(*TestItemV3)
+		assert.False(t, itemv3.ID != 1 || itemv3.F1 != 100 || itemv3.F3 != 300 || itemv3.T2.F5 != "f5val" ||
+			itemv3.T2.F7[0] != 1 || itemv3.T2.F7[1] != 2 ||
+			itemv3.T2.F8[0] != 7 || itemv3.T2.F8[1] != 8, "%v", *itemv2)
+	})
 
-	if itemv2.ID != 1 || itemv2.F1 != 100 || itemv2.F2 != "f2val" || itemv2.B1 != true {
-		j, _ := DB.Query("test_items_storage").ExecToJson().FetchAll()
-		fmt.Printf("%s", string(j))
-		panic(fmt.Errorf("%v", *itemv2))
-	}
+	t.Run("Check storage error on index conflict", func(t *testing.T) {
+		assert.NoError(t, DB.CloseNamespace(ns))
+		assert.Error(t, DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemV4{}), "expected storage error on index conflict")
+	})
 
-	// Test3
-	assert.NoError(t, DB.CloseNamespace("test_items_storage"))
-	assert.NoError(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV3{}))
+	t.Run("Open namespace with different non indexed field type", func(t *testing.T) {
+		DB.CloseNamespace(ns)
+		assert.NoError(t, DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions(), TestItemV5{}))
 
-	item, ok = DB.Query("test_items_storage").WhereInt("id", reindexer.EQ, 1).Get()
+		iterator := DB.Query(ns).WhereInt("id", reindexer.EQ, 1).DeepReplEqual().Exec(t)
+		assert.NoError(t, iterator.Error())
+		assert.Equal(t, iterator.Count(), 1, "Expecting 1 item, found %d ", iterator.Count())
+		iterator.Next()
+		assert.Error(t, iterator.Error(), "expecting iterator error on wrong type cast, but it's ok")
+		iterator.Close()
+	})
 
-	assert.True(t, ok, "Not found test item after update fields struct")
+	t.Run("Check that NamespaceMemStat has 0 items after Open namespace", func(t *testing.T) {
+		assert.NoError(t, DB.CloseNamespace(ns))
+		assert.NoError(t, DB.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), TestItemV6{}))
 
-	itemv3 := item.(*TestItemV3)
+		stat, err := DB.GetNamespaceMemStat(ns)
+		assert.NoError(t, err)
+		assert.Equal(t, int(stat.ItemsCount), 0, "expected 0 items in ns,found %d", stat.ItemsCount)
+	})
 
-	assert.False(t, itemv3.ID != 1 || itemv3.F1 != 100 || itemv3.F3 != 300 || itemv3.T2.F5 != "f5val" ||
-		itemv3.T2.F7[0] != 1 || itemv3.T2.F7[1] != 2 ||
-		itemv3.T2.F8[0] != 7 || itemv3.T2.F8[1] != 8, "%v", *itemv2)
+	t.Run("Can't create DB on existing file path", func(t *testing.T) {
+		udsn, err := url.Parse(*dsn)
+		assert.NoError(t, err)
+		if udsn.Scheme == "builtin" {
+			ioutil.WriteFile(udsn.Path+"blocked_storage", []byte{}, os.ModePerm)
+			assert.Error(t, DB.OpenNamespace("blocked_storage", reindexer.DefaultNamespaceOptions(), TestItemV1{}), "Expecting storage error, but it's ok")
+		}
+	})
+}
 
-	// Test4
-	assert.NoError(t, DB.CloseNamespace("test_items_storage"))
-	assert.Error(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV4{}), "expecting storage error on index conflict, but it's ok")
+func getLastLsnCounter(t *testing.T, ns string) int64 {
+	stat, err := DB.GetNamespaceMemStat(ns)
+	require.NoError(t, err)
+	return stat.Replication.LastLSN.Counter
+}
 
-	// Test5
-	// Open namespace with different non indexed field type
-	DB.CloseNamespace("test_items_storage")
-	assert.NoError(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions(), TestItemV5{}))
+func TestWal(t *testing.T) {
 
-	iterator := DB.Query("test_items_storage").WhereInt("id", reindexer.EQ, 1).DeepReplEqual().Exec(t)
-	assert.NoError(t, iterator.Error())
-	assert.Equal(t, iterator.Count(), 1, "Expecting 1 item, found %d ", iterator.Count())
-	iterator.Next()
-	assert.Error(t, iterator.Error(), "expecting iterator error on wrong type cast, but it's ok")
-	iterator.Close()
-	// Test6
-	assert.NoError(t, DB.CloseNamespace("test_items_storage"))
-	assert.NoError(t, DB.OpenNamespace("test_items_storage", reindexer.DefaultNamespaceOptions().DropOnIndexesConflict(), TestItemV6{}))
-	stat, err = DB.GetNamespaceMemStat("test_items_storage")
-	assert.NoError(t, err)
+	const ns = TestWalNs
 
-	assert.Equal(t, int(stat.ItemsCount), 0, "expected 0 items in ns,found %d", stat.ItemsCount)
+	t.Run("AddIndex method doesn't create new entries in WAL if index already exists", func(t *testing.T) {
+		lastLsn0 := getLastLsnCounter(t, ns)
+		index := reindexer.IndexDef{
+			Name:      "new_index",
+			JSONPaths: []string{"new_index"},
+			IndexType: "hash",
+			FieldType: "string",
+		}
+		// add new index - lsn counter increased
+		err := DB.AddIndex(ns, index)
+		require.NoError(t, err)
+		lastLsn1 := getLastLsnCounter(t, ns)
+		require.Equal(t, lastLsn0+1, lastLsn1)
+		// try to add the same index - no lsn counter increase
+		err = DB.AddIndex(ns, index)
+		require.NoError(t, err)
+		lastLsn2 := getLastLsnCounter(t, ns)
+		require.Equal(t, lastLsn1, lastLsn2)
+	})
 
-	udsn, err := url.Parse(*dsn)
-	assert.NoError(t, err)
-
-	if udsn.Scheme == "builtin" {
-		// Test7
-		// Try to create DB on exists file path - must fail
-		ioutil.WriteFile(udsn.Path+"blocked_storage", []byte{}, os.ModePerm)
-		assert.Error(t, DB.OpenNamespace("blocked_storage", reindexer.DefaultNamespaceOptions(), TestItemV1{}), "Expecting storage error, but it's ok")
-	}
+	t.Run("UpdateIndex method doesn't create new entries in WAL if update to the same index", func(t *testing.T) {
+		lastLsn0 := getLastLsnCounter(t, ns)
+		index := reindexer.IndexDef{
+			Name:      "name",
+			JSONPaths: []string{"name"},
+			IndexType: "hash",
+			FieldType: "string",
+		}
+		// there is index update - lsn counter increased
+		err := DB.UpdateIndex(ns, index)
+		require.NoError(t, err)
+		lastLsn1 := getLastLsnCounter(t, ns)
+		require.Equal(t, lastLsn0+1, lastLsn1)
+		// update to the same index - no lsn counter increase
+		err = DB.UpdateIndex(ns, index)
+		require.NoError(t, err)
+		lastLsn2 := getLastLsnCounter(t, ns)
+		require.Equal(t, lastLsn1, lastLsn2)
+	})
 }

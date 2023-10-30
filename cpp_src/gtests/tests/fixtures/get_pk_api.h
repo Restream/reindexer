@@ -90,7 +90,7 @@ public:
 		Error err = db_->Select(query, qres);
 		if (!err.ok()) return ResultType(err, QueryResults{});
 
-		if (print) printQueryResults(query._namespace, qres);
+		if (print) printQueryResults(query.NsName(), qres);
 		return ResultType(err, std::move(qres));
 	}
 

@@ -46,9 +46,9 @@ void ItemImpl::FromCJSON(std::string_view slice) {
 	}
 
 	Payload pl = GetPayload();
-	CJsonDecoder decoder(tagsMatcher_);
+	CJsonDecoder decoder(tagsMatcher_, holder_);
 	ser_.Reset();
-	decoder.Decode(pl, rdser, ser_);
+	decoder.Decode<>(pl, rdser, ser_);
 
 	if (!rdser.Eof() && rdser.Pos() != tmOffset) {
 		throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());

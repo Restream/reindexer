@@ -26,7 +26,7 @@ public:
 	QueryResults(int fetchFlags = 0);
 	QueryResults(const QueryResults&) = delete;
 	QueryResults(QueryResults&&) noexcept;
-	~QueryResults();
+	~QueryResults() = default;
 	QueryResults& operator=(const QueryResults&) = delete;
 	QueryResults& operator=(QueryResults&& obj) noexcept;
 
@@ -40,10 +40,10 @@ public:
 		bool IsRaw();
 		std::string_view GetRaw();
 		Iterator& operator++();
-		Error Status() { return qr_->status_; }
-		bool operator!=(const Iterator&) const;
-		bool operator==(const Iterator&) const;
-		Iterator& operator*() { return *this; }
+		Error Status() const noexcept { return qr_->status_; }
+		bool operator==(const Iterator& other) const noexcept { return idx_ == other.idx_; }
+		bool operator!=(const Iterator& other) const noexcept { return !operator==(other); }
+		Iterator& operator*() noexcept { return *this; }
 		void readNext();
 		void getJSONFromCJSON(std::string_view cjson, WrSerializer& wrser, bool withHdrLen = true);
 
@@ -55,13 +55,15 @@ public:
 	Iterator begin() const { return Iterator{this, 0, 0, 0, {}}; }
 	Iterator end() const { return Iterator{this, queryParams_.qcount, 0, 0, {}}; }
 
-	size_t Count() const { return queryParams_.qcount; }
-	int TotalCount() const { return queryParams_.totalcount; }
-	bool HaveRank() const { return queryParams_.flags & kResultsWithRank; }
-	bool NeedOutputRank() const { return queryParams_.flags & kResultsNeedOutputRank; }
-	const std::string& GetExplainResults() const { return queryParams_.explainResults; }
-	const std::vector<AggregationResult>& GetAggregationResults() const { return queryParams_.aggResults; }
-	Error Status() { return status_; }
+	size_t Count() const noexcept { return queryParams_.qcount; }
+	int TotalCount() const noexcept { return queryParams_.totalcount; }
+	bool HaveRank() const noexcept { return queryParams_.flags & kResultsWithRank; }
+	bool NeedOutputRank() const noexcept { return queryParams_.flags & kResultsNeedOutputRank; }
+	const std::string& GetExplainResults() const& noexcept { return queryParams_.explainResults; }
+	const std::string& GetExplainResults() const&& = delete;
+	const std::vector<AggregationResult>& GetAggregationResults() const& noexcept { return queryParams_.aggResults; }
+	const std::vector<AggregationResult>& GetAggregationResults() const&& = delete;
+	Error Status() const noexcept { return status_; }
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return queryParams_.flags & kResultsWithItemID; }
 

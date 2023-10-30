@@ -5,7 +5,7 @@ info:
     Reindexer's goal is to provide fast search with complex queries.
     The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
     Reindexer is fast.
-  version: "3.19.0"
+  version: "3.20.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -54,6 +54,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -83,6 +85,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -111,6 +115,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -144,6 +150,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     get:
@@ -178,6 +186,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -211,6 +221,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     delete:
@@ -242,6 +254,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -273,6 +287,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -310,6 +326,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -369,6 +387,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -407,6 +427,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -446,6 +468,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -498,6 +522,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     post:
@@ -557,6 +583,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     put:
@@ -616,6 +644,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -676,6 +706,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     get:
@@ -744,6 +776,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -777,6 +811,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     post:
@@ -813,6 +849,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     put:
@@ -849,6 +887,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -886,6 +926,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -923,6 +965,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     get:
@@ -953,6 +997,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -989,6 +1035,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1052,6 +1100,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     post:
@@ -1104,6 +1154,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     put:
@@ -1134,6 +1186,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     delete:
@@ -1164,6 +1218,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1204,6 +1260,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1233,6 +1291,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1262,6 +1322,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1313,6 +1375,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     post:
@@ -1371,6 +1435,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     put:
@@ -1429,6 +1495,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     patch:
@@ -1487,6 +1555,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1538,6 +1608,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
     delete:
@@ -1579,6 +1651,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1610,7 +1684,7 @@ paths:
         in: query
         type: integer
         description: "Cursor line for suggest"
-        required: false
+        required: true
       responses:
         200:
           description: "successful operation"
@@ -1622,6 +1696,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1676,6 +1752,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1697,6 +1775,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1724,6 +1804,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1752,6 +1834,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1779,6 +1863,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1806,6 +1892,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1833,6 +1921,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1860,6 +1950,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1895,6 +1987,8 @@ paths:
           $ref: "#/responses/Forbidden"
         404:
           $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
         500:
           $ref: "#/responses/UnexpectedError"
 
@@ -1905,6 +1999,10 @@ responses:
       $ref: "#/definitions/StatusResponse"
   BadRequest:
     description: "Invalid arguments supplied"
+    schema:
+      $ref: "#/definitions/StatusResponse"
+  RequestTimeout:
+    description: "Context timeout"
     schema:
       $ref: "#/definitions/StatusResponse"
   Forbidden:
@@ -3109,6 +3207,12 @@ definitions:
             field:
               type: string
               description: "Field or index name"
+            field_type:
+              type: string
+              enum:
+                - "non-indexed"
+                - "indexed"
+              description: "Shows which kind of the field was used for the filtration. Non-indexed fields are usually really slow for 'scan' and should be avoided"
             items:
               type: integer
               description: "Count of scanned documents by this selector"
@@ -3130,7 +3234,7 @@ definitions:
             explain_select:
               description: "One of selects in joined namespace execution explainings"
               $ref: "#/definitions/ExplainDef"
-      join_on_conditions:
+      on_conditions_injections:
         type: array
         description: "Describes Join ON conditions injections"
         items:
@@ -3262,32 +3366,9 @@ definitions:
     properties:
       success:
         type: boolean
-        description: "Status of operation"
       response_code:
         type: integer
-        enum: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
-        description: >
-          Error code:
-           * 0 - errOK
-           * 1 - errParseSQL
-           * 2 - errQueryExec
-           * 3 - errParams
-           * 4 - errLogic
-           * 5 - errParseJson
-           * 6 - errParseDSL
-           * 7 - errConflict
-           * 8 - errParseBin
-           * 9 - errForbidden
-           * 10 - errWasRelock
-           * 11 - errNotValid
-           * 12 - errNetwork
-           * 13 - errNotFound
-           * 14 - errStateInvalidated
-           * 15 - errBadTransaction
-           * 16 - errOutdatedWAL
-           * 17	- errNoWAL
-           * 18 - errDataHashMismatch
-
+        description: "Duplicates HTTP response code"
       description:
         type: string
         description: "Text description of error details"
@@ -3834,6 +3915,50 @@ definitions:
         default: 20000
         minimun: 0
         description: "Enables synchronous storage flush inside write-calls, if async updates count is more than sync_storage_flush_limit. 0 - disables synchronous storage flush, in this case storage will be flushed in background thread only"
+      cache:
+        type: object
+        properties:
+          index_idset_cache_size:
+            type: integer
+            default: 134217728
+            minimun: 0
+            description: "Max size of the index IdSets cache in bytes (per index). Each index has it's own independant cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)"
+          index_idset_hits_to_cache:
+            type: integer
+            default: 2
+            minimun: 0
+            description: "Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast"
+          ft_index_cache_size:
+            type: integer
+            default: 134217728
+            minimun: 0
+            description: "Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independant cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)"
+          ft_index_hits_to_cache:
+            type: integer
+            default: 2
+            minimun: 0
+            description: "Default 'hits to cache' for fulltext index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast"
+          joins_preselect_cache_size:
+            type: integer
+            default: 268435456
+            minimun: 0
+            description: "Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)"
+          joins_preselect_hit_to_cache:
+            type: integer
+            default: 2
+            minimun: 0
+            description: "Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast"
+          query_count_cache_size:
+            type: integer
+            default: 134217728
+            minimun: 0
+            description: "Max size of the cache for COUNT_CACHED() aggreagetion in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations"
+          query_count_hit_to_cache:
+            type: integer
+            default: 2
+            minimun: 0
+            description: "Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast"
+
 
   ReplicationConfig:
     type: object

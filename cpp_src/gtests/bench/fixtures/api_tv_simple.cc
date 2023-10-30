@@ -108,7 +108,9 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2CondIdSet20000", &ApiTvSimple::Query2CondIdSet20000, this);
 #endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	Register("FromCJSON", &ApiTvSimple::FromCJSON, this);
+	Register("FromCJSONPKOnly", &ApiTvSimple::FromCJSONPKOnly, this);
 	Register("GetCJSON", &ApiTvSimple::GetCJSON, this);
+	Register("ExtractField", &ApiTvSimple::ExtractField, this);
 	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
@@ -263,12 +265,13 @@ reindexer::Error ApiTvSimple::prepareCJsonBench() {
 	auto err = db_->AddNamespace(cjsonNsDef);
 	if (!err.ok()) return err;
 
+	fieldsToExtract_.clear();
 	itemForCjsonBench_ = std::make_unique<reindexer::Item>(db_->NewItem(cjsonNsName_));
 	if (!itemForCjsonBench_->Status().ok()) return itemForCjsonBench_->Status();
 	wrSer_.Reset();
 	reindexer::JsonBuilder bld(wrSer_);
 	constexpr size_t len = 10;
-	bld.Put("id", 0);
+	bld.Put("id", kCjsonBenchItemID);
 	bld.Put("bool_-_index", rand() % 2);
 	bld.Put("int_-_index", rand());
 	bld.Put("int_hash_index", rand());
@@ -296,20 +299,29 @@ reindexer::Error ApiTvSimple::prepareCJsonBench() {
 	bld.Array("string_tree_array_index", randStringArray<len>());
 	for (size_t i = 0; i < 10; ++i) {
 		const std::string i_str = std::to_string(i);
+		fieldsToExtract_.emplace_back("bool_field_" + i_str);
 		bld.Put("bool_field_" + i_str, rand() % 2);
+		fieldsToExtract_.emplace_back("int_field_" + i_str);
 		bld.Put("int_field_" + i_str, rand());
+		fieldsToExtract_.emplace_back("double_field_" + i_str);
 		bld.Put("double_field_" + i_str, rand() / double(rand() + 1));
+		fieldsToExtract_.emplace_back("string_field_" + i_str);
 		bld.Put("string_field_" + i_str, randString(len));
 		bld.Array("bool_array_field_" + i_str, randBoolArray<len>());
 		bld.Array("int_array_field_" + i_str, randIntArray<len>());
 		bld.Array("double_array_field_" + i_str, randDoubleArray<len>());
 		bld.Array("string_array_field_" + i_str, randStringArray<len>());
 		{
-			auto obj = bld.Object("nested_obj_" + i_str);
+			const std::string nestedBase("nested_obj_" + i_str);
+			auto obj = bld.Object(nestedBase);
 			obj.Put("bool_field", rand() % 2);
+			fieldsToExtract_.emplace_back(nestedBase + ".bool_field");
 			obj.Put("int_field", rand());
+			fieldsToExtract_.emplace_back(nestedBase + ".int_field");
 			obj.Put("double_field", rand() / double(rand() + 1));
+			fieldsToExtract_.emplace_back(nestedBase + ".double_field");
 			obj.Put("string_field", randString(len));
+			fieldsToExtract_.emplace_back(nestedBase + ".string_field");
 			obj.Array("bool_array_field", randBoolArray<len>());
 			obj.Array("int_array_field", randIntArray<len>());
 			obj.Array("double_array_field", randDoubleArray<len>());
@@ -450,6 +462,30 @@ void ApiTvSimple::FromCJSON(benchmark::State& state) {
 		const auto err = item.FromCJSON(cjsonOfItem_);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+	}
+}
+
+void ApiTvSimple::FromCJSONPKOnly(benchmark::State& state) {
+	reindexer::Item item = db_->NewItem(cjsonNsName_);
+	{
+		AllocsTracker allocsTracker(state);
+		for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+			const auto err = item.FromCJSON(cjsonOfItem_, true);
+			if (!err.ok()) state.SkipWithError(err.what().c_str());
+			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+		}
+	}
+	assertrx(item["id"].Get<int>() == kCjsonBenchItemID);
+}
+
+void ApiTvSimple::ExtractField(benchmark::State& state) {
+	assertrx(itemForCjsonBench_);
+	assertrx(fieldsToExtract_.size());
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		const auto& fieldName = fieldsToExtract_[rand() % fieldsToExtract_.size()];
+		const auto va = VariantArray((*itemForCjsonBench_)[fieldName]);
+		if (va.size() != 1) state.SkipWithError(fmt::sprintf("Unexpected result size: %d", va.size()).c_str());
 	}
 }
 

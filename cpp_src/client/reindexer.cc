@@ -29,7 +29,7 @@ Error Reindexer::Connect(const std::string& dsn, const client::ConnectOpts& opts
 Error Reindexer::Connect(const std::vector<std::pair<std::string, client::ConnectOpts>>& connectData) {
 	return impl_->Connect(connectData);
 }
-Error Reindexer::Stop() { return impl_->Stop(); }
+void Reindexer::Stop() { impl_->Stop(); }
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef) { return impl_->AddNamespace(nsDef, ctx_); }
 Error Reindexer::OpenNamespace(std::string_view nsName, const StorageOpts& storage) { return impl_->OpenNamespace(nsName, ctx_, storage); }
 Error Reindexer::DropNamespace(std::string_view nsName) { return impl_->DropNamespace(nsName, ctx_); }

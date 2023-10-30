@@ -151,7 +151,7 @@ import (
 	// choose how the Reindexer binds to the app (in this case "builtin," which means link Reindexer as a static library)
 	_ "github.com/restream/reindexer/v3/bindings/builtin"
 
-	// OR use Reindexer as standalone server and connect to it via TCP.
+	// OR use Reindexer as standalone server and connect to it via TCP or unix domain socket (if available).
 	// _ "github.com/restream/reindexer/v3/bindings/cproto"
 
 	// OR link Reindexer as static library with bundled server.
@@ -172,10 +172,16 @@ func main() {
 	// Init a database instance and choose the binding (builtin)
 	db := reindexer.NewReindex("builtin:///tmp/reindex/testdb")
 
-	// OR - Init a database instance and choose the binding (connect to server)
+	// OR - Init a database instance and choose the binding (connect to server via TCP sockets)
 	// Database should be created explicitly via reindexer_tool or via WithCreateDBIfMissing option:
 	// If server security mode is enabled, then username and password are mandatory
 	// db := reindexer.NewReindex("cproto://user:pass@127.0.0.1:6534/testdb", reindexer.WithCreateDBIfMissing())
+
+	// OR - Init a database instance and choose the binding (connect to server via unix domain sockets)
+	// Unix domain sockets are available on the unix systems only (socket file has to be explicitly set on the server's side with '--urpcaddr' option)
+	// Database should be created explicitly via reindexer_tool or via WithCreateDBIfMissing option:
+	// If server security mode is enabled, then username and password are mandatory
+	// db := reindexer.NewReindex("ucproto://user:pass@/tmp/reindexer.socket:/testdb", reindexer.WithCreateDBIfMissing())
 
 	// OR - Init a database instance and choose the binding (builtin, with bundled server)
 	// serverConfig := config.DefaultServerConfig ()
@@ -284,8 +290,8 @@ Reindexer can run in 3 different modes:
 
 - `embedded (builtin)` Reindexer is embedded into application as static library, and does not reuqire separate server proccess.
 - `embedded with server (builtinserver)` Reindexer is embedded into application as static library, and start server. In this mode other
-  clients can connect to application via cproto or http.
-- `standalone` Reindexer run as standalone server, application connects to Reindexer via network
+  clients can connect to application via cproto, ucproto or http.
+- `standalone` Reindexer run as standalone server, application connects to Reindexer via network or unix domain sockets.
 
 ### Installation for server mode
 
@@ -432,10 +438,12 @@ type BaseItem struct {
 
 type ComplexItem struct {
 	BaseItem         // Index fields of BaseItem will be added to reindex
-	actor    []Actor // Index fields of Actor will be added to reindex as arrays
-	Name     string  `reindex:"name"`
-	Year     int     `reindex:"year,tree"`
-	parent   *Item   `reindex:"-"` // Index fields of parent will NOT be added to reindex
+	Actor    []Actor // Index fields of Actor will be added to reindex as arrays
+	Name     string  `reindex:"name"`      // Hash-index for "name"
+	Year     int     `reindex:"year,tree"` // Tree-index for "year"
+	Value    int     `reindex:"value,-"`   // Store(column)-index for "value"
+	Metainfo int     `json:"-"`            // Field "MetaInfo" will not be stored in reindexer
+	Parent   *Item   `reindex:"-"`         // Index fields of parent will NOT be added to reindex
 }
 ```
 
@@ -545,7 +553,7 @@ Go example:
 ```go
 	query := db.Query("items").
 		Where("field", reindexer.LIKE, "pattern")
-
+```
 SQL example:
 ```sql
 	SELECT * FROM items WHERE fields LIKE 'pattern'
@@ -1226,6 +1234,8 @@ to OpenNamespace. e.g.
 	// Set object cache limit to 4096 items
 	db.OpenNamespace("items_with_huge_cache", reindexer.DefaultNamespaceOptions().ObjCacheSize(4096), Item{})
 ```
+
+!This cache should not be used for the namespaces, which were replicated from the other nodes: it may be inconsistant for those replica's namespaces.
 
 ### Geometry
 

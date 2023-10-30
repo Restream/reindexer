@@ -83,8 +83,11 @@ struct hash_idset_cache_key {
 	size_t operator()(const IdSetCacheKey &s) const { return (s.cond << 8) ^ (s.sort << 16) ^ s.keys->Hash(); }
 };
 
-class IdSetCache : public LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key> {
+using IdSetCacheBase = LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
+
+class IdSetCache : public IdSetCacheBase {
 public:
+	IdSetCache(size_t sizeLimit, uint32_t hitCount) : IdSetCacheBase(sizeLimit, hitCount) {}
 	void ClearSorted(const std::bitset<kMaxIndexes> &s) {
 		if (s.any()) {
 			Clear([&s](const IdSetCacheKey &k) { return s.test(k.sort); });

@@ -283,9 +283,10 @@ class ExpressionTree {
 		};
 
 	public:
-		Node() : storage_{SubTree{1}} {}
+		Node() : storage_{std::in_place_type<SubTree>, 1} {}
 		template <typename... Args>
-		Node(OperationType op, size_t s, Args&&... args) : storage_{SubTree{s, std::forward<Args>(args)...}}, operation{op} {}
+		Node(OperationType op, size_t s, Args&&... args)
+			: storage_{std::in_place_type<SubTree>, s, std::forward<Args>(args)...}, operation{op} {}
 		template <typename T>
 		Node(OperationType op, T&& v) : storage_{std::forward<T>(v)}, operation{op} {}
 		Node(const Node& other) : storage_{other.storage_}, operation{other.operation} {}
@@ -362,6 +363,10 @@ class ExpressionTree {
 		template <typename T>
 		void SetValue(T&& v) {
 			storage_ = std::forward<T>(v);
+		}
+		template <typename T, typename... Args>
+		void Emplace(Args&&... args) {
+			storage_.template emplace<T>(std::forward<Args>(args)...);
 		}
 
 	private:
@@ -442,6 +447,15 @@ public:
 			container_[i].Append();
 		}
 		container_.emplace_back(op, v);
+	}
+	/// Appends value to the last openned subtree
+	template <typename T, typename... Args>
+	void Append(OperationType op, Args&&... args) {
+		for (unsigned i : activeBrackets_) {
+			assertrx(i < container_.size());
+			container_[i].Append();
+		}
+		container_.emplace_back(op, T{std::forward<Args>(args)...});
 	}
 	class const_iterator;
 	/// Appends all nodes from the interval to the last openned subtree

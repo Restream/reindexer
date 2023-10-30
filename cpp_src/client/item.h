@@ -60,13 +60,13 @@ public:
 	/// Get status of item
 	/// @return data slice with JSON. Returned slice is allocated in temporary Item's buffer, and can be invalidated by any next operation
 	/// with Item
-	Error Status() { return status_; }
+	Error Status() const noexcept { return status_; }
 	/// Get internal ID of item
 	/// @return ID of item
 	int GetID() const noexcept { return id_; }
-	/// Get internal version of item
-	/// @return version of item
-	int NumFields();
+	/// Get count of indexed fields
+	/// @return count of indexed fields
+	int NumFields() const noexcept;
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
 	void SetPrecepts(const std::vector<std::string> &precepts);

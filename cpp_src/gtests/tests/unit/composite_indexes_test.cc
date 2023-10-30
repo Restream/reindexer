@@ -46,11 +46,13 @@ TEST_F(CompositeIndexesApi, AddIndexWithExistingCompositeIndex) {
 static void selectAll(reindexer::Reindexer* reindexer, const std::string& ns) {
 	QueryResults qr;
 	Error err = reindexer->Select(Query(ns, 0, 1000, ModeAccurateTotal), qr);
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 
 	for (auto it : qr) {
+		ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 		reindexer::WrSerializer wrser;
-		it.GetJSON(wrser, false);
+		err = it.GetJSON(wrser, false);
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 }
 
@@ -64,7 +66,7 @@ TEST_F(CompositeIndexesApi, DropTest2) {
 
 	for (int i = 0; i < 1000; ++i) {
 		Item item = NewItem(test_ns);
-		EXPECT_TRUE(!!item);
+		EXPECT_FALSE(!item);
 		EXPECT_TRUE(item.Status().ok()) << item.Status().what();
 
 		item["id"] = i + 1;
@@ -118,7 +120,7 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 
 	auto qr = execAndCompareQuery(
 		Query(default_namespace).WhereComposite(compositeIndexName.c_str(), CondEq, {{Variant(priceValue), Variant(pagesValue)}}));
-	EXPECT_TRUE(qr.Count() == 1);
+	ASSERT_EQ(qr.Count(), 1);
 
 	Item pricePageRow = qr.begin().GetItem(false);
 	Variant selectedPrice = pricePageRow[kFieldNamePrice];
@@ -129,8 +131,8 @@ TEST_F(CompositeIndexesApi, CompositeIndexesSelectTest) {
 	Item titleNameRow = qr.begin().GetItem(false);
 	Variant selectedTitle = titleNameRow[kFieldNameTitle];
 	Variant selectedName = titleNameRow[kFieldNameName];
-	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedTitle)->compare(std::string(titleValue)) == 0);
-	EXPECT_TRUE(static_cast<reindexer::key_string>(selectedName)->compare(std::string(nameValue)) == 0);
+	EXPECT_EQ(static_cast<reindexer::key_string>(selectedTitle)->compare(std::string(titleValue)), 0);
+	EXPECT_EQ(static_cast<reindexer::key_string>(selectedName)->compare(std::string(nameValue)), 0);
 
 	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondLt, {{Variant(priceValue), Variant(pagesValue)}}));
 	execAndCompareQuery(Query(default_namespace).WhereComposite(compositeIndexName, CondLe, {{Variant(priceValue), Variant(pagesValue)}}));

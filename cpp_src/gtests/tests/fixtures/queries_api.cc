@@ -281,6 +281,7 @@ void QueriesApi::initConditionsNs() {
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = rt.reindexer->AddIndex(conditionsNs, {kFieldNameId, "hash", "int", IndexOpts{}.PK()});
 	ASSERT_TRUE(err.ok()) << err.what();
+	addIndexFields(conditionsNs, kFieldNameId, {{kFieldNameId, reindexer::KeyValueType::Int{}}});
 	for (const auto& fit : fieldIndexTypes) {
 		for (const auto& it : fit.indexTypes) {
 			for (const bool isArray : {true, false}) {
@@ -291,13 +292,34 @@ void QueriesApi::initConditionsNs() {
 					const std::string fieldType{fit.fieldType.Name()};
 					const std::string indexName{createIndexName(fieldType, it, isArray, isSparse)};
 					err = rt.reindexer->AddIndex(conditionsNs, {indexName, it, fieldType, IndexOpts{}.Array(isArray).Sparse(isSparse)});
-					addIndexFields(conditionsNs, indexName, {{indexName, fit.fieldType}});
 					ASSERT_TRUE(err.ok()) << err.what();
+					addIndexFields(conditionsNs, indexName, {{indexName, fit.fieldType}});
 				}
 			}
 		}
 	}
 	setPkFields(conditionsNs, {kFieldNameId});
+}
+
+void QueriesApi::initUUIDNs() {
+	const auto err = rt.reindexer->OpenNamespace(uuidNs);
+	ASSERT_TRUE(err.ok()) << err.what();
+	DefineNamespaceDataset(
+		uuidNs,
+		{
+			IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}.PK(), 0},
+			IndexDeclaration{kFieldNameUuid, "hash", "uuid", IndexOpts{}, 0},
+			/*IndexDeclaration{kFieldNameUuidSparse, "hash", "uuid", IndexOpts{}.Sparse(), 0}, // TODO uncomment this #1470
+			IndexDeclaration{kFieldNameUuidNotIndex2, "hash", "uuid", IndexOpts{}, 0},
+			IndexDeclaration{kFieldNameUuidNotIndex3, "hash", "uuid", IndexOpts{}.Sparse(), 0},*/
+			IndexDeclaration{kFieldNameUuidArr, "hash", "uuid", IndexOpts{}.Array(), 0},
+			// IndexDeclaration{kFieldNameUuidArrSparse, "hash", "uuid", IndexOpts{}.Array().Sparse(), 0} // TODO uncomment this #1470
+		});
+	for (const auto& idx :
+		 {kFieldNameUuid, kFieldNameUuidArr /*, kFieldNameUuidSparse, kFieldNameUuidArrSparse*/}) {	 // TODO uncomment this #1470
+		addIndexFields(uuidNs, idx, {{idx, reindexer::KeyValueType::Uuid{}}});
+	}
+	setPkFields(uuidNs, {kFieldNameId});
 }
 
 static reindexer::Variant createRandValue(int id, reindexer::KeyValueType fieldType) {
@@ -376,41 +398,19 @@ static reindexer::VariantArray createRandArrValues(size_t min, size_t max, int i
 }
 
 void QueriesApi::checkAllConditions(const std::string& fieldName, reindexer::KeyValueType fieldType, NullAllowed nullAllowed) {
-	for (const auto cond : {CondEq, CondSet, CondAllSet, CondLt, CondLe, CondGt, CondGe, CondRange, CondAny, CondEmpty, CondLike}) {
-		size_t min = 0, max = rand() % kMaxArraySize;
-		switch (cond) {
-			case CondEq:
-			case CondSet:
-			case CondAllSet:
-				break;
-			case CondLike:
-				if (!fieldType.Is<reindexer::KeyValueType::String>()) {
-					continue;
-				}
-				[[fallthrough]];
-			case CondLt:
-			case CondLe:
-			case CondGt:
-			case CondGe:
-				min = max = 1;
-				break;
-			case CondRange:
-				min = max = 2;
-				break;
-			case CondAny:
-			case CondEmpty:
-				if (nullAllowed == NullAllowed::No) {
-					continue;
-				}
-				min = max = 0;
-				break;
-			case CondDWithin:  // TODO #1352
-				assert(0);
+	for (const auto cond : {CondEq, CondSet, CondAllSet, CondLt, CondLe, CondGt, CondGe, CondRange, CondAny, CondEmpty,
+							CondLike}) {  // TODO CondDWithin #1352
+		if (cond == CondLike && !fieldType.Is<reindexer::KeyValueType::String>()) {
+			continue;
 		}
+		if (nullAllowed == NullAllowed::No && (cond == CondAny || cond == CondEmpty)) {
+			continue;
+		}
+		const auto argsCount = minMaxArgs(cond, 20);
 		for (size_t i = 0; i < 3; ++i) {
-			ExecuteAndVerify(
-				reindexer::Query{conditionsNs}.Where(fieldName, cond, createRandArrValues(min, max, rand() % conditionsNsSize, fieldType)));
-			if (min <= 1 && max >= 1) {
+			ExecuteAndVerify(reindexer::Query{conditionsNs}.Where(
+				fieldName, cond, createRandArrValues(argsCount.min, argsCount.max, rand() % conditionsNsSize, fieldType)));
+			if (argsCount.min <= 1 && argsCount.max >= 1) {
 				ExecuteAndVerify(
 					reindexer::Query{conditionsNs}.Where(fieldName, cond, createRandValue(rand() % conditionsNsSize, fieldType)));
 			}
@@ -437,5 +437,101 @@ void QueriesApi::CheckConditions() {
 		}
 		checkAllConditions(fieldType, fit.fieldType, NullAllowed::Yes);
 		checkAllConditions(fieldType + "_array", fit.fieldType, NullAllowed::Yes);
+	}
+}
+
+void QueriesApi::FillUUIDNs() {
+	static size_t lastId = 0;
+	reindexer::WrSerializer ser;
+	for (size_t i = lastId; i < uuidNsSize + lastId; ++i) {
+		Item item = rt.reindexer->NewItem(uuidNs);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		if (rand() % 2) {
+			ser.Reset();
+			{
+				reindexer::JsonBuilder json{ser};
+				json.Put(kFieldNameId, i);
+				json.Put(kFieldNameUuid, randStrUuid());
+				/*if (rand() % 2) {
+					json.Put(kFieldNameUuidSparse, randStrUuid()); // TODO uncomment this #1470
+				}*/
+				{
+					auto arr = json.Array(kFieldNameUuidArr);
+					for (size_t j = 0, s = rand() % 10; j < s; ++j) {
+						arr.Put({}, randStrUuid());
+					}
+				}
+				/*if (rand() % 2) {
+					auto arr = json.Array(kFieldNameUuidArrSparse); // TODO uncomment this #1470
+					for (size_t j = 0, s = rand() % 10; j < s; ++j) {
+						arr.Put({}, randStrUuid());
+					}
+				}*/
+				if (rand() % 2) {
+					json.Put(kFieldNameUuidNotIndex, randStrUuid());
+				}
+				/*json.Put(kFieldNameUuidNotIndex2, randStrUuid()); // TODO uncomment this #1470
+				if (rand() % 2) {
+					json.Put(kFieldNameUuidNotIndex3, randStrUuid());
+				}*/
+				if (rand() % 2) {
+					json.Put(kFieldNameRndString, RandString());
+				}
+			}
+			const auto err = item.FromJSON(ser.Slice());
+			ASSERT_TRUE(err.ok()) << err.what();
+		} else {
+			item[kFieldNameId] = int(i);
+			if (rand() % 2) {
+				item[kFieldNameUuid] = randUuid();
+			} else {
+				item[kFieldNameUuid] = randStrUuid();
+			}
+			/*if (rand() % 2) {
+				item[kFieldNameUuidSparse] = randUuid(); // TODO uncomment this #1470
+			}*/
+			item[kFieldNameUuidArr] = randHeterogeneousUuidArray(0, 20);
+			/*if (rand() % 2) {
+				item[kFieldNameUuidArrSparse] = randHeterogeneousUuidArray(0, 20); // TODO uncomment this #1470
+			}
+			if (rand() % 2) {
+				item[kFieldNameUuidNotIndex2] = randUuid();
+			} else {
+				item[kFieldNameUuidNotIndex2] = randStrUuid();
+			}
+			if (rand() % 2) {
+				if (rand() % 2) {
+					item[kFieldNameUuidNotIndex3] = randUuid();
+				} else {
+					item[kFieldNameUuidNotIndex3] = randStrUuid();
+				}
+			}*/
+		}
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Upsert(uuidNs, item);
+		saveItem(std::move(item), uuidNs);
+	}
+	const auto err = Commit(uuidNs);
+	ASSERT_TRUE(err.ok()) << err.what();
+	lastId += uuidNsSize;
+}
+
+void QueriesApi::CheckUUIDQueries() {
+	for (size_t i = 0; i < 10; ++i) {
+		for (const auto& field : {
+				 kFieldNameUuid, kFieldNameUuidArr, kFieldNameUuidNotIndex, kFieldNameRndString /*,
+				  kFieldNameUuidSparse, kFieldNameUuidArrSparse, kFieldNameUuidNotIndex2, kFieldNameUuidNotIndex3*/
+			 }) {																				// TODO uncomment this #1470
+			for (auto cond : {CondEq, CondLe, CondLt, CondSet, CondGe, CondGt, CondAllSet, CondRange}) {
+				const auto argsCount = minMaxArgs(cond, 20);
+				if (argsCount.min <= 1 && argsCount.max >= 1) {
+					ExecuteAndVerify(Query(uuidNs).Where(field, cond, randUuid()));
+					ExecuteAndVerify(Query(uuidNs).Where(field, cond, randStrUuid()));
+				}
+				ExecuteAndVerify(Query(uuidNs).Where(field, cond, randUuidArray(argsCount.min, argsCount.max)));
+				ExecuteAndVerify(Query(uuidNs).Where(field, cond, randStrUuidArray(argsCount.min, argsCount.max)));
+				ExecuteAndVerify(Query(uuidNs).Where(field, cond, randHeterogeneousUuidArray(argsCount.min, argsCount.max)));
+			}
+		}
 	}
 }

@@ -76,31 +76,34 @@ StatsWatcherSuspend StatsCollector::SuspendStatsThread() {
 	return StatsWatcherSuspend(std::move(lck), *this, false);
 }
 
-void StatsCollector::OnInputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept {
+void StatsCollector::OnInputTraffic(const std::string& db, std::string_view source, std::string_view protocol, size_t bytes) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
 		std::lock_guard lck(countersMtx_);
-		getCounters(db, source).inputTraffic += bytes;
+		getCounters(db, source, protocol).inputTraffic += bytes;
 	}
 }
 
-void StatsCollector::OnOutputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept {
+void StatsCollector::OnOutputTraffic(const std::string& db, std::string_view source, std::string_view protocol, size_t bytes) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
 		std::lock_guard lck(countersMtx_);
-		getCounters(db, source).outputTraffic += bytes;
+		getCounters(db, source, protocol).outputTraffic += bytes;
 	}
 }
 
-void StatsCollector::OnClientConnected(const std::string& db, std::string_view source) noexcept {
+void StatsCollector::OnClientConnected(const std::string& db, std::string_view source, std::string_view protocol) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
 		std::lock_guard lck(countersMtx_);
-		++(getCounters(db, source).clients);
+		++(getCounters(db, source, protocol).clients);
 	}
 }
 
-void StatsCollector::OnClientDisconnected(const std::string& db, std::string_view source) noexcept {
+void StatsCollector::OnClientDisconnected(const std::string& db, std::string_view source, std::string_view protocol) noexcept {
 	if (prometheus_ && enabled_.load(std::memory_order_acquire)) {
 		std::lock_guard lck(countersMtx_);
-		--(getCounters(db, source).clients);
+		auto& counters = getCounters(db, source, protocol);
+		if (counters.clients) {
+			--counters.clients;
+		}
 	}
 }
 
@@ -151,9 +154,10 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 
 		constexpr static auto kPerfstatsNs = "#perfstats"sv;
 		constexpr static auto kMemstatsNs = "#memstats"sv;
+		static const auto kPerfstatsQuery = Query(std::string(kPerfstatsNs));
 		QueryResults qr;
-		status = db->Select(Query(std::string(kPerfstatsNs)), qr);
-		if (status.ok() && qr.Count()) {
+		status = db->Select(kPerfstatsQuery, qr);
+		if (status.ok()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
 				auto item = it.GetItem(false);
 				std::string nsName = item["name"].As<std::string>();
@@ -171,8 +175,9 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 		}
 
 		qr.Clear();
-		status = db->Select(Query(std::string(kMemstatsNs)), qr);
-		if (status.ok() && qr.Count()) {
+		static const auto kMemstatsQuery = Query(std::string(kMemstatsNs));
+		status = db->Select(kMemstatsQuery, qr);
+		if (status.ok()) {
 			for (auto it = qr.begin(); it != qr.end(); ++it) {
 				auto item = it.GetItem(false);
 				auto nsName = item["name"].As<std::string>();
@@ -207,12 +212,12 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 	{
 		std::lock_guard lck(countersMtx_);
 		for (const auto& dbCounters : counters_) {
-			for (const auto& counter : dbCounters.second) {
-				if (std::string_view(dbCounters.first) == "rpc"sv) {
-					prometheus_->RegisterRPCClients(counter.first, counter.second.clients);
+			for (const auto& counter : dbCounters.counters) {
+				if (std::string_view(dbCounters.source) == "rpc"sv) {
+					prometheus_->RegisterRPCClients(counter.first, dbCounters.protocol, counter.second.clients);
 				}
-				prometheus_->RegisterInputTraffic(counter.first, dbCounters.first, counter.second.inputTraffic);
-				prometheus_->RegisterOutputTraffic(counter.first, dbCounters.first, counter.second.outputTraffic);
+				prometheus_->RegisterInputTraffic(counter.first, dbCounters.source, dbCounters.protocol, counter.second.inputTraffic);
+				prometheus_->RegisterOutputTraffic(counter.first, dbCounters.source, dbCounters.protocol, counter.second.outputTraffic);
 			}
 		}
 	}
@@ -220,15 +225,15 @@ void StatsCollector::collectStats(DBManager& dbMngr) {
 	prometheus_->NextEpoch();
 }
 
-StatsCollector::DBCounters& StatsCollector::getCounters(const std::string& db, std::string_view source) {
+StatsCollector::DBCounters& StatsCollector::getCounters(const std::string& db, std::string_view source, std::string_view protocol) {
 	for (auto& el : counters_) {
-		if (std::string_view(el.first) == source) {
-			return el.second[db];
+		if (std::string_view(el.source) == source && std::string_view(el.protocol) == protocol) {
+			return el.counters[db];
 		}
 	}
-	counters_.emplace_back(std::string(source), CountersByDB());
-	auto& sourceMap = counters_.back().second;
-	return sourceMap[db];
+	return counters_
+		.emplace_back(SourceCounters{.source = std::string(source), .protocol = std::string(protocol), .counters = CountersByDB()})
+		.counters[db];
 }
 
 }  // namespace reindexer_server

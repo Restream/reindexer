@@ -21,7 +21,7 @@ void ItemImpl::SetField(int field, const VariantArray &krs) {
 		!payloadType_.Field(field).Type().Is<KeyValueType::Uuid>()) {
 		VariantArray krsCopy;
 		krsCopy.reserve(krs.size());
-		if (!holder_) holder_.reset(new std::deque<std::string>);
+		if (!holder_) holder_ = std::make_unique<std::deque<std::string>>();
 		for (auto &kr : krs) {
 			holder_->push_back(kr.As<std::string>());
 			krsCopy.emplace_back(p_string{&holder_->back()});
@@ -158,10 +158,23 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder *recoder) 
 	Serializer rdser(data);
 
 	Payload pl = GetPayload();
-	CJsonDecoder decoder(tagsMatcher_, pkOnly ? &pkFields_ : nullptr, recoder);
+	if (!holder_) holder_ = std::make_unique<std::deque<std::string>>();
+	CJsonDecoder decoder(tagsMatcher_, *holder_);
+
 	ser_.Reset();
 	ser_.PutUInt32(0);
-	decoder.Decode(pl, rdser, ser_);
+	if (pkOnly && !pkFields_.empty()) {
+		if rx_unlikely (recoder) {
+			throw Error(errParams, "ItemImpl::FromCJSON: pkOnly mode is not compatible with non-null recoder");
+		}
+		decoder.Decode(pl, rdser, ser_, CJsonDecoder::RestrictingFilter(pkFields_));
+	} else {
+		if (recoder) {
+			decoder.Decode(pl, rdser, ser_, CJsonDecoder::DummyFilter(), CJsonDecoder::DefaultRecoder(*recoder));
+		} else {
+			decoder.Decode<>(pl, rdser, ser_);
+		}
+	}
 
 	if (!rdser.Eof()) throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
 
@@ -208,7 +221,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 	}
 
 	// Split parsed json into indexes and tuple
-	JsonDecoder decoder(tagsMatcher_, pkOnly ? &pkFields_ : nullptr);
+	JsonDecoder decoder(tagsMatcher_, pkOnly && !pkFields_.empty() ? &pkFields_ : nullptr);
 	Payload pl = GetPayload();
 
 	ser_.Reset();

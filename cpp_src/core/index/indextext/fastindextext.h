@@ -2,8 +2,6 @@
 
 #include "core/ft/config/ftfastconfig.h"
 #include "core/ft/ft_fast/dataholder.h"
-#include "core/ft/ft_fast/dataprocessor.h"
-#include "core/ft/typos.h"
 #include "indextext.h"
 
 namespace reindexer {
@@ -22,10 +20,11 @@ public:
 		this->CommitFulltext();
 	}
 
-	FastIndexText(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields) : Base(idef, std::move(payloadType), fields) {
+	FastIndexText(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields, const NamespaceCacheConfigData& cacheCfg)
+		: Base(idef, std::move(payloadType), std::move(fields), cacheCfg) {
 		initConfig();
 	}
-	std::unique_ptr<Index> Clone() const override { return std::unique_ptr<Index>{new FastIndexText<T>(*this)}; }
+	std::unique_ptr<Index> Clone() const override { return std::make_unique<FastIndexText<T>>(*this); }
 	IdSet::Ptr Select(FtCtx::Ptr fctx, FtDSLQuery&& dsl, bool inTransaction, FtMergeStatuses&&, FtUseExternStatuses,
 					  const RdxContext&) override final;
 	IndexMemStat GetMemStat(const RdxContext&) override final;
@@ -40,7 +39,7 @@ public:
 	reindexer::FtPreselectT FtPreselect(const RdxContext& rdxCtx) override final;
 	bool EnablePreselectBeforeFt() const override final { return getConfig()->enablePreselectBeforeFt; }
 
-protected:
+private:
 	void commitFulltextImpl() override final;
 	FtFastConfig* getConfig() const noexcept { return dynamic_cast<FtFastConfig*>(this->cfg_.get()); }
 	void initConfig(const FtFastConfig* = nullptr);
@@ -53,6 +52,7 @@ protected:
 	std::unique_ptr<IDataHolder> holder_;
 };
 
-std::unique_ptr<Index> FastIndexText_New(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields);
+std::unique_ptr<Index> FastIndexText_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+										 const NamespaceCacheConfigData& cacheCfg);
 
 }  // namespace reindexer

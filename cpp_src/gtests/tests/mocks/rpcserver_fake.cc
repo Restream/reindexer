@@ -124,8 +124,9 @@ bool RPCServerFake::Start(const std::string &addr, ev::dynamic_loop &loop, Error
 
 	dispatcher_.Middleware(this, &RPCServerFake::CheckAuth);
 
-	listener_.reset(new Listener<ListenerType::Mixed>(loop, cproto::ServerConnection::NewFactory(dispatcher_, false, 1024 * 1024 * 1024)));
-	return listener_->Bind(addr);
+	listener_ =
+		std::make_unique<Listener<ListenerType::Mixed>>(loop, cproto::ServerConnection::NewFactory(dispatcher_, false, 1024 * 1024 * 1024));
+	return listener_->Bind(addr, socket_domain::tcp);
 }
 
 RPCServerStatus RPCServerFake::Status() const { return state_; }

@@ -1,17 +1,97 @@
 #include "random_generator.h"
+#include <gtest/gtest.h>
+#include <algorithm>
 #include <chrono>
+#include <fstream>
+#include "core/payload/fieldsset.h"
 #include "core/query/query.h"
+#include "index.h"
 #include "ns_scheme.h"
 
 namespace fuzzing {
 
-RandomGenerator::RandomGenerator(std::ostream& os, ErrFactorType errorFactor)
-	: gen_(std::chrono::system_clock::now().time_since_epoch().count()), errFactor_{errorFactor} {
+std::string& RandomGenerator::out() noexcept {
+	static std::string outStr;
+	return outStr;
+}
+
+std::unique_ptr<std::ifstream>& RandomGenerator::in() noexcept {
+	static std::unique_ptr<std::ifstream> f;
+	return f;
+}
+
+void RandomGenerator::SetOut(std::string o) {
+	ASSERT_TRUE(out().empty());
+	ASSERT_FALSE(in());
+	out() = std::move(o);
+	{
+		std::ifstream f{out()};
+		ASSERT_FALSE(f.is_open()) << "File '" << out() << "' already exists";
+	}
+}
+
+void RandomGenerator::SetIn(const std::string& i) {
+	ASSERT_FALSE(in());
+	ASSERT_TRUE(out().empty());
+	in() = std::make_unique<std::ifstream>(i);
+	ASSERT_TRUE(in()->is_open()) << "Cannot open file '" << i << '\'';
+	in()->exceptions(std::ios_base::badbit | std::ios_base::failbit | std::ios_base::eofbit);
+}
+
+RandomGenerator::RandomEngine RandomGenerator::createRandomEngine() {
+	if (in()) {
+		RandomEngine ret;
+		std::string buf;
+		std::getline(*in(), buf);
+		std::istringstream ss{buf};
+		ss >> ret;
+		return ret;
+	} else {
+		RandomEngine ret(std::chrono::system_clock::now().time_since_epoch().count());
+		if (!out().empty()) {
+			std::ofstream file{out(), std::ios_base::app};
+			if (file.is_open()) {
+				file.exceptions(std::ios_base::badbit | std::ios_base::failbit | std::ios_base::eofbit);
+				file << ret << std::endl;
+			} else {
+				EXPECT_TRUE(false) << "Cannot open file '" << out() << '\'';
+			}
+		}
+		return ret;
+	}
+}
+
+RandomGenerator::RandomGenerator(ErrFactorType errorFactor) : gen_{createRandomEngine()}, errFactor_{errorFactor} {
 	assertrx(errFactor_.first < errFactor_.second);
 	errParams_ = {static_cast<double>(errFactor_.second - errFactor_.first), static_cast<double>(errFactor_.first)};
-	os << gen_ << std::endl;
 }
-RandomGenerator::RandomGenerator(std::istream& is) { is >> gen_; }
+
+size_t RandomGenerator::FieldsCount(bool firstLevel) {
+	if (RndErr()) {
+		enum Err : uint8_t { Zero, TooMany, END = TooMany };
+		switch (RndWhich<Err, 1, 1>()) {
+			case Zero:
+				return 0;
+			case TooMany:
+				return RndInt(0, 10'000);
+			default:
+				assertrx(0);
+		}
+	}
+	if (firstLevel) {
+		enum Size : uint8_t { Normal, Long, END = Long };
+		switch (RndWhich<Size, 10'000, 1>()) {
+			case Normal:
+				return RndInt(1, 9);
+			case Long:
+				return RndInt(10, 100);
+			default:
+				assertrx(false);
+				std::abort();
+		}
+	}
+	return RndInt(1, 5);
+}
 
 std::string RandomGenerator::FieldName(std::unordered_set<std::string>& generatedNames) {  // TODO
 	static constexpr char alfas[] = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -148,7 +228,7 @@ FieldPath RandomGenerator::RndScalarField(const NsScheme& nsScheme) {
 		const int end = idx + size;
 		while (idx < end) {
 			res.back() = idx % size;
-			if (!nsScheme.IsArray(res) && !nsScheme.IsPoint(res)) break;
+			if (nsScheme.IsArray(res) == IsArray::No && !nsScheme.IsPoint(res)) break;
 			++idx;
 		}
 		if (idx == end) return {};
@@ -156,7 +236,7 @@ FieldPath RandomGenerator::RndScalarField(const NsScheme& nsScheme) {
 	return res;
 }
 
-std::string RandomGenerator::IndexFieldType(fuzzing::FieldType ft) {
+std::string RandomGenerator::IndexFieldType(FieldType ft) {
 	static const std::string types[] = {"bool", "int", "int64", "double", "string", "uuid", "point", "composite"};
 	if (RndErr()) {
 		// TODO rnd string
@@ -167,52 +247,158 @@ std::string RandomGenerator::IndexFieldType(fuzzing::FieldType ft) {
 	return types[i];
 }
 
-std::string RandomGenerator::RndIndexType(fuzzing::FieldType ft, bool pk) {
-	static const std::string types[] = {"-", "hash", "tree", "ttl", "text", "fuzzytext", "rtree"};
-	static const std::vector<size_t> availableTypes[] = {
-		{0},				   // Bool
-		{0, 1, 2},			   // Int
-		{0, 1, 2, 3},		   // Int64
-		{0, 2},				   // Double
-		{0, 1, 2 /*, 4, 5*/},  // String // TODO FT indexes
-		{1},				   // Uuid
-		{6},				   // Point
-		{1, 2 /*, 4, 5*/}	   // Struct // TODO FT indexes
-	};
-	static const std::vector<size_t> availablePkTypes[] = {
-		{},			// Bool
-		{1, 2},		// Int
-		{1, 2, 3},	// Int64
-		{2},		// Double
-		{1, 2},		// String
-		{1},		// Uuid
-		{},			// Point
-		{1, 2}		// Struct
-	};
+IndexType RandomGenerator::RndIndexType(IndexType it) {
+	if (RndErr()) {
+		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1, 1>();	// TODO
+	}
+	return it;
+}
+
+template <size_t N, const std::vector<IndexType>* Availables>
+IndexType RandomGenerator::rndIndexType(const std::vector<FieldType>& fieldTypes) {
 	if (RndErr()) {
 		// TODO rnd string
-		return RndWhich(types);
+		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1, 1>();	// TODO
 	}
-	const size_t i = static_cast<size_t>(ft);
-	size_t n;
-	if (pk) {
-		assertrx(i < std::size(availablePkTypes));
-		if (availablePkTypes[i].empty()) {
-			return RndWhich(types);
-		}
-		n = RndWhich(availablePkTypes[i]);
+	assertrx(!fieldTypes.empty());
+	std::vector<IndexType> availables;
+	{
+		const size_t f = static_cast<size_t>(fieldTypes[0]);
+		assertrx(f < N);
+		availables = Availables[f];
+	}
+	for (size_t i = 1, s = fieldTypes.size(); i < s; ++i) {
+		const size_t f = static_cast<size_t>(fieldTypes[i]);
+		std::vector<IndexType> tmp;
+		tmp.reserve(availables.size());
+		assertrx(f < N);
+		std::set_intersection(availables.begin(), availables.end(), Availables[f].begin(), Availables[f].end(), std::back_inserter(tmp));
+		availables = tmp;
+	}
+	if (availables.empty()) {
+		return RndWhich<IndexType, 1, 1, 1, 1, 1, 1, 1>();	// TODO
 	} else {
-		assertrx(i < std::size(availableTypes));
-		n = RndWhich(availableTypes[i]);
+		return RndWhich(availables);
 	}
-	assertrx(n < std::size(types));
-	return types[n];
+}
+
+IndexType RandomGenerator::RndIndexType(const std::vector<FieldType>& fieldTypes) {
+	static const std::vector<IndexType> availableTypes[] = {
+		{IndexType::Store},													   // Bool
+		{IndexType::Store, IndexType::Hash, IndexType::Tree},				   // Int
+		{IndexType::Store, IndexType::Hash, IndexType::Tree, IndexType::Ttl},  // Int64
+		{IndexType::Store, IndexType::Tree},								   // Double
+		{IndexType::Store, IndexType::Hash, IndexType::Tree},				   // String // TODO IndexType::FastFT IndexType::FuzzyFT
+		{IndexType::Hash},													   // Uuid
+		{IndexType::RTree},													   // Point
+		{IndexType::Hash, IndexType::Tree}									   // Struct // TODO  IndexType::FastFT IndexType::FuzzyFT
+	};
+	return rndIndexType<std::extent_v<decltype(availableTypes)>, availableTypes>(fieldTypes);
+}
+
+IndexType RandomGenerator::RndPkIndexType(const std::vector<FieldType>& fieldTypes) {
+	static const std::vector<IndexType> availablePkTypes[] = {
+		{},													 // Bool
+		{IndexType::Hash, IndexType::Tree},					 // Int
+		{IndexType::Hash, IndexType::Tree, IndexType::Ttl},	 // Int64
+		{IndexType::Tree},									 // Double
+		{IndexType::Hash, IndexType::Tree},					 // String
+		{IndexType::Hash},									 // Uuid
+		{},													 // Point
+		{IndexType::Hash, IndexType::Tree}					 // Struct
+	};
+	return rndIndexType<std::extent_v<decltype(availablePkTypes)>, availablePkTypes>(fieldTypes);
+}
+
+size_t RandomGenerator::ArraySize() {
+	if (RndErr()) return RndInt(0, 100'000);
+	enum Size : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
+	switch (RndWhich<Size, 10'000, 100'000, 10, 1>()) {
+		case Short:
+			return RndInt(0, 5);
+		case Normal:
+			return RndInt(6, 20);
+		case Long:
+			return RndInt(21, 200);
+		case VeryLong:
+			return RndInt(201, 10'000);
+		default:
+			assertrx(false);
+			std::abort();
+	}
+}
+
+size_t RandomGenerator::IndexesCount() {
+	if (RndErr()) {
+		enum Err : uint8_t { Zero, TooMany, END = TooMany };
+		switch (RndWhich<Err, 1, 1>()) {
+			case Zero:
+				return 0;
+			case TooMany:
+				return RndInt(reindexer::kMaxIndexes, 5 + reindexer::kMaxIndexes);
+			default:
+				assertrx(0);
+		}
+	}
+	enum Count : uint8_t { Few, Normal, Many, TooMany, END = TooMany };
+	switch (RndWhich<Count, 500, 1'000, 10, 1>()) {
+		case Few:
+			return RndInt(1, 3);
+		case Normal:
+			return RndInt(4, 20);
+		case Many:
+			return RndInt(21, 63);
+		case TooMany:
+			return RndInt(64, reindexer::kMaxIndexes);
+		default:
+			assertrx(false);
+			std::abort();
+	}
+}
+
+size_t RandomGenerator::compositeIndexSize(size_t scalarIndexesCount) {
+	if (RndErr()) {
+		enum Err : uint8_t { Zero, /*One,*/ TooMany, END = TooMany };
+		switch (RndWhich<Err, 1, /*1,*/ 1>()) {
+			case Zero:
+				return 0;
+			/*case One:
+				return 1;*/
+			case TooMany:
+				return RndInt(0, 10'000);
+			default:
+				assertrx(0);
+		}
+	}
+	assertrx(scalarIndexesCount >= 1);
+	return RndInt(1, scalarIndexesCount);
+}
+
+std::vector<size_t> RandomGenerator::RndFieldsForCompositeIndex(const std::vector<size_t>& scalarIndexes) {
+	std::vector<size_t> result;
+	const size_t count = compositeIndexSize(scalarIndexes.size());
+	result.reserve(count);
+	const bool uniqueFields = count <= scalarIndexes.size() && !RndErr();
+	// TODO unexisted and not indexed fields
+	if (uniqueFields) {
+		auto scalars = scalarIndexes;
+		while (result.size() < count) {
+			const size_t idx = rndSize(0, scalars.size() - 1);
+			result.push_back(scalars[idx]);
+			scalars.erase(scalars.begin() + idx);
+		}
+	} else {
+		while (result.size() < count) {
+			result.push_back(scalarIndexes[rndSize(0, scalarIndexes.size() - 1)]);
+		}
+	}
+	return result;
 }
 
 template <>
 constexpr size_t RandomGenerator::itemsCount<CondType> = CondType::CondDWithin + 1;
 
-CondType RandomGenerator::rndCond(fuzzing::FieldType ft) {	// TODO array
+CondType RandomGenerator::rndCond(FieldType ft) {  // TODO array
 	if (RndErr()) {
 		return RndWhich<CondType, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1>();
 	}
@@ -240,8 +426,6 @@ std::string RandomGenerator::rndStrUuidValue(bool noErrors) {
 	if (!noErrors && RndErr()) {
 		err = RndWhich<Err, 0, 1, 1, 1, 1, 1, 1>();
 	}
-	std::string res;
-	if (err == Empty) return res;
 	size_t size = 32;
 	switch (err) {
 		case Short:
@@ -253,15 +437,17 @@ std::string RandomGenerator::rndStrUuidValue(bool noErrors) {
 		case TooLong:
 			size = RndInt(51, 100'000);
 			break;
-		case NoErrors:
 		case Empty:
+			return {};
+		case NoErrors:
 		case WrongVariant:
 		case WrongChar:
 			break;
 		default:
-			assert(0);
+			assertrx(0);
 			abort();
 	}
+	std::string res;
 	res.reserve(size + 4);
 	if (RndBool(0.001)) {
 		res = std::string(std::string::size_type{size}, '0');
@@ -293,94 +479,127 @@ std::string RandomGenerator::rndStrUuidValue(bool noErrors) {
 
 reindexer::Uuid RandomGenerator::rndUuidValue() { return reindexer::Uuid{rndStrUuidValue(true)}; }
 
-void RandomGenerator::RndWhere(reindexer::Query& query, const std::string& field,
-							   const std::vector<fuzzing::FieldType>& types) {	// TODO array
+int64_t RandomGenerator::RndTtlValue() {
+	const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	// TODO uncomment this after TTL subscribe done
+	/*enum Size : uint8_t { Negative, FarPast, Past, Now, Future, FarFuture, AnyShort, Any, END = Any };
+	switch (RndWhich<Size, 1, 1>()) { case Negative: return rndInt64(std::numeric_limits<int64_t>::min(), 0); case FarPast:
+			return rndInt64(0, now - 10'000);
+		case Past:
+			return rndInt64(now - 10'000, now - 10);
+		case Now:
+			return rndInt64(now - 10, now + 10);
+		case Future:
+			return rndInt64(now + 10, now + 10'000);
+		case FarFuture:
+			return rndInt64(now + 10'000, std::numeric_limits<int64_t>::max());
+		case AnyShort:
+			return rndInt64(-50, 50);
+		case Any:
+			return rndInt64(std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max());
+		default:
+			assertrx(false);
+			std::abort();
+	}*/
+	return rndInt64(now + 10'000, std::numeric_limits<int64_t>::max());
+}
+
+void RandomGenerator::RndWhere(reindexer::Query& query, const std::string& field, FieldType fieldType,
+							   std::optional<IndexType> indexType) {  // TODO array
+	if (RndErr()) {
+		return RndWhereComposite(query, field, RndFieldTypesArray({fieldType}), indexType);
+	}
 	std::unordered_set<std::string> generatedNames;
-	assertrx(!types.empty());
 	const std::string fldName = FieldName(field, generatedNames);
-	const auto type = types.size() > 1 ? fuzzing::FieldType::Struct : types[0];
-	const auto cond = rndCond(type);
-	switch (RndFieldType(type)) {
-		case fuzzing::FieldType::Bool:
+	const auto cond = rndCond(fieldType);
+	switch (RndFieldType(fieldType)) {
+		case FieldType::Bool:
 			query.Where(fldName, cond, RndBool(0.5));
 			break;
-		case fuzzing::FieldType::Int:
+		case FieldType::Int:
 			query.Where(fldName, cond, RndIntValue());
 			break;
-		case fuzzing::FieldType::Int64:
-			query.Where(fldName, cond, RndInt64Value());
+		case FieldType::Int64:
+			if (indexType == IndexType::Ttl) {
+				query.Where(fldName, cond, RndTtlValue());
+			} else {
+				query.Where(fldName, cond, RndInt64Value());
+			}
 			break;
-		case fuzzing::FieldType::Double:
+		case FieldType::Double:
 			query.Where(fldName, cond, RndDoubleValue());
 			break;
-		case fuzzing::FieldType::String:
+		case FieldType::String:
 			query.Where(fldName, cond, RndStringValue());
 			break;
-		case fuzzing::FieldType::Uuid:
+		case FieldType::Uuid:
 			if (RndBool(0.5)) {
 				query.Where(fldName, cond, rndUuidValue());
 			} else {
 				query.Where(fldName, cond, rndStrUuidValue(false));
 			}
 			break;
-		case fuzzing::FieldType::Point:
+		case FieldType::Point:
 			query.Where(fldName, cond,
 						{reindexer::Variant{reindexer::Point{RndDoubleValue(), RndDoubleValue()}},
 						 reindexer::Variant{RndErr() ? RndDoubleValue() : std::abs(RndDoubleValue())}});
 			break;
-		case fuzzing::FieldType::Struct:  // TODO
-			if (type == fuzzing::FieldType::Struct) {
-			} else {
-			}
+		case FieldType::Struct:	 // TODO
 			break;
 		default:
 			assertrx(0);
 	}
 }
 
-std::ostream& operator<<(std::ostream& os, FieldType ft) {
-	switch (ft) {
-		case FieldType::Bool:
-			return os << "bool";
-		case FieldType::Int:
-			return os << "int";
-		case FieldType::Int64:
-			return os << "int64";
-		case FieldType::Double:
-			return os << "double";
-		case FieldType::String:
-			return os << "string";
-		case FieldType::Uuid:
-			return os << "uuid";
-		case FieldType::Point:
-			return os << "point";
-		case FieldType::Struct:
-			return os << "struct";
-		default:
-			assertrx(0);
+void RandomGenerator::RndWhereComposite(reindexer::Query& query, const std::string& field, std::vector<FieldType>&& fieldTypes,
+										std::optional<IndexType> indexType) {  // TODO array
+	if (RndErr()) {
+		return RndWhere(query, field, RndFieldType(), indexType);
 	}
-	return os;
-}
-
-reindexer::KeyValueType ToKeyValueType(FieldType ft) {
-	switch (ft) {
-		case FieldType::Bool:
-			return reindexer::KeyValueType::Bool{};
-		case FieldType::Int:
-			return reindexer::KeyValueType::Int{};
-		case FieldType::Int64:
-			return reindexer::KeyValueType::Int64{};
-		case FieldType::Double:
-			return reindexer::KeyValueType::Double{};
-		case FieldType::String:
-			return reindexer::KeyValueType::String{};
-		case FieldType::Uuid:
-			return reindexer::KeyValueType::Uuid{};
-		case FieldType::Point:
-		case FieldType::Struct:
-		default:
-			assertrx(0);
+	std::unordered_set<std::string> generatedNames;
+	const std::string fldName = FieldName(field, generatedNames);
+	fieldTypes = RndFieldTypesArray(std::move(fieldTypes));
+	const auto cond = rndCond(FieldType::Struct);
+	reindexer::VariantArray keys;
+	keys.reserve(fieldTypes.size());
+	for (const FieldType ft : fieldTypes) {
+		switch (ft) {
+			case FieldType::Bool:
+				keys.emplace_back(RndBool(0.5));
+				break;
+			case FieldType::Int:
+				keys.emplace_back(RndIntValue());
+				break;
+			case FieldType::Int64:
+				if (indexType == IndexType::Ttl) {
+					keys.emplace_back(RndTtlValue());
+				} else {
+					keys.emplace_back(RndInt64Value());
+				}
+				break;
+			case FieldType::Double:
+				keys.emplace_back(RndDoubleValue());
+				break;
+			case FieldType::String:
+				keys.emplace_back(RndStringValue());
+				break;
+			case FieldType::Uuid:
+				if (RndBool(0.5)) {
+					keys.emplace_back(rndUuidValue());
+				} else {
+					keys.emplace_back(rndStrUuidValue(false));
+				}
+				break;
+			case FieldType::Point:
+				keys.emplace_back(reindexer::Point{RndDoubleValue(), RndDoubleValue()});
+				break;
+			case FieldType::Struct:	 // TODO
+				break;
+			default:
+				assertrx(0);
+		}
 	}
+	query.WhereComposite(fldName, cond, {std::move(keys)});
 }
 
 }  // namespace fuzzing

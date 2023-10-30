@@ -56,7 +56,17 @@ const std::vector<std::string> kDefDBConfig = {
 				"max_preselect_size":1000,
 				"max_preselect_part":0.1,
 				"index_updates_counting_mode":false,
-				"sync_storage_flush_limit":20000
+				"sync_storage_flush_limit":20000,
+				"cache":{
+					"index_idset_cache_size":134217728,
+					"index_idset_hits_to_cache":2,
+					"ft_index_cache_size":134217728,
+					"ft_index_hits_to_cache":2,
+					"joins_preselect_cache_size":268435456,
+					"joins_preselect_hit_to_cache":2,
+					"query_count_cache_size":134217728,
+					"query_count_hit_to_cache":2
+				}
 			}
 		]
 	})json",
@@ -114,7 +124,6 @@ const std::vector<NamespaceDef> kSystemNsDefs = {
 		.AddIndex("last_sec_avg_lock_time_us", "-", "int64", IndexOpts().Dense())
 		.AddIndex("latency_stddev", "-", "double", IndexOpts().Dense()),
 	NamespaceDef(kNamespacesNamespace, StorageOpts()).AddIndex(kNsNameField, "hash", "string", IndexOpts().PK()),
-	NamespaceDef(kPerfStatsNamespace, StorageOpts()).AddIndex(kNsNameField, "hash", "string", IndexOpts().PK()),
 	NamespaceDef(kMemStatsNamespace, StorageOpts())
 		.AddIndex(kNsNameField, "hash", "string", IndexOpts().PK())
 		.AddIndex("items_count", "-", "int64", IndexOpts().Dense())

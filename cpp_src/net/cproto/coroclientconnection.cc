@@ -6,6 +6,7 @@
 #include "reindexer_version.h"
 #include "server/rpcqrwatcher.h"
 #include "tools/serializer.h"
+#include "tools/stringstools.h"
 
 #include <functional>
 
@@ -32,7 +33,7 @@ CoroClientConnection::CoroClientConnection()
 	  wrCh_(kWrChannelSize),
 	  seqNums_(kMaxParallelRPCCalls),
 	  updatesCh_(kUpdatesChannelSize),
-	  conn_(-1, kReadBufReserveSize, false) {
+	  conn_(kReadBufReserveSize, false) {
 	recycledChuncks_.reserve(kMaxRecycledChuncks);
 	errSyncCh_.close();
 	seqNums_.close();
@@ -231,14 +232,28 @@ Error CoroClientConnection::login(std::vector<char> &buf) {
 	if (conn_.state() == manual_connection::conn_state::init) {
 		readWg_.wait();
 		lastError_ = errOK;
-		std::string port = connectData_.uri.port().length() ? connectData_.uri.port() : std::string("6534");
-		int ret = conn_.async_connect(connectData_.uri.hostname() + ":" + port);
+		int ret = 0;
+		std::string dbName;
+		if (connectData_.uri.scheme() == "cproto") {
+			dbName = connectData_.uri.path();
+			std::string port = connectData_.uri.port().length() ? connectData_.uri.port() : std::string("6534");
+			ret = conn_.async_connect(connectData_.uri.hostname() + ":" + port, socket_domain::tcp);
+		} else {
+			std::vector<std::string_view> pathParts;
+			split(std::string_view(connectData_.uri.path()), ":", true, pathParts);
+			if (pathParts.size() >= 2) {
+				dbName = pathParts.back();
+				ret = conn_.async_connect(connectData_.uri.path().substr(0, connectData_.uri.path().size() - dbName.size() - 1),
+										  socket_domain::unx);
+			} else {
+				ret = conn_.async_connect(connectData_.uri.path(), socket_domain::unx);
+			}
+		}
 		if (ret < 0) {
 			// unable to connect
 			return Error(errNetwork, "Connect error");
 		}
 
-		std::string dbName = connectData_.uri.path();
 		std::string userName = connectData_.uri.username();
 		std::string password = connectData_.uri.password();
 		if (dbName[0] == '/') dbName = dbName.substr(1);
@@ -304,15 +319,14 @@ chunk CoroClientConnection::getChunk() noexcept {
 	chunk ch;
 	if (recycledChuncks_.size()) {
 		ch = std::move(recycledChuncks_.back());
-		ch.len_ = 0;
-		ch.offset_ = 0;
+		ch.clear();
 		recycledChuncks_.pop_back();
 	}
 	return ch;
 }
 
 void CoroClientConnection::recycleChunk(chunk &&ch) noexcept {
-	if (ch.cap_ <= kMaxChunckSizeToRecycle && recycledChuncks_.size() < kMaxRecycledChuncks) {
+	if (ch.capacity() <= kMaxChunckSizeToRecycle && recycledChuncks_.size() < kMaxRecycledChuncks) {
 		recycledChuncks_.emplace_back(std::move(ch));
 	}
 }

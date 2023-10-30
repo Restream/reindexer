@@ -39,7 +39,36 @@ int RmDirAll(const std::string &path) noexcept {
 	return nftw(
 		path.c_str(), [](const char *fpath, const struct stat *, int, struct FTW *) { return ::remove(fpath); }, 64, FTW_DEPTH | FTW_PHYS);
 #else
-	(void)path;
+	WIN32_FIND_DATA entry;
+	if (HANDLE hFind = FindFirstFile((path + "/*.*").c_str(), &entry); hFind != INVALID_HANDLE_VALUE) {
+		std::string dirPath;
+		do {
+			if (strncmp(entry.cFileName, ".", 2) == 0 || strncmp(entry.cFileName, "..", 3) == 0) {
+				continue;
+			}
+			const bool isDir = entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
+			dirPath.clear();
+			dirPath.append(path).append("/").append(entry.cFileName);
+			if (isDir) {
+				if (int ret = RmDirAll(dirPath); ret < 0) {
+					FindClose(hFind);
+					return ret;
+				}
+			} else {
+				if (!DeleteFile(dirPath.c_str())) {
+					FindClose(hFind);
+					fprintf(stderr, "Unable to remove file '%s'\n", dirPath.c_str());
+					return -1;
+				}
+			}
+		} while (FindNextFile(hFind, &entry));
+		FindClose(hFind);
+		if (!RemoveDirectory(path.c_str())) {
+			fprintf(stderr, "Unable to remove directory '%s'\n", path.c_str());
+			return -1;
+		}
+	}
+
 	return 0;
 #endif
 }

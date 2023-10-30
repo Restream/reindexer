@@ -41,7 +41,7 @@ public:
 
 	Error Connect(const std::string &dsn, const client::ConnectOpts &opts);
 	Error Connect(const std::vector<std::pair<std::string, client::ConnectOpts>> &connectData);
-	Error Stop();
+	void Stop();
 
 	Error OpenNamespace(std::string_view nsName, const InternalRdxContext &ctx,
 						const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing());

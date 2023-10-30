@@ -1,9 +1,9 @@
 #pragma once
 
 #include "core/transaction.h"
+#include "core/transactionimpl.h"
 #include "namespace/namespacestat.h"
 #include "perfstatcounter.h"
-#include "tools/stringstools.h"
 
 namespace reindexer {
 

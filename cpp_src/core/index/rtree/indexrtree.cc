@@ -78,7 +78,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Upsert(VariantArra
 	if (keyIt->second.Unsorted().Add(id, this->opts_.IsPK() ? IdSet::Ordered : IdSet::Auto, this->sortedIdxCount_)) {
 		this->isBuilt_ = false;
 		// reset cache
-		if (this->cache_) this->cache_.reset();
+		this->cache_.reset();
 		clearCache = true;
 	}
 	this->tracker_.markUpdated(this->idx_map, keyIt);
@@ -99,7 +99,7 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	const Point point = static_cast<Point>(keys);
 	typename Map::iterator keyIt = this->idx_map.find(point);
 	if (keyIt == this->idx_map.end()) return;
-	if (this->cache_) this->cache_.reset();
+	this->cache_.reset();
 	clearCache = true;
 	this->isBuilt_ = false;
 
@@ -108,8 +108,8 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	(void)delcnt;
 	// TODO: we have to implement removal of composite indexes (doesn't work right now)
 	assertf(this->Opts().IsSparse() || delcnt, "Delete unexists id from index '%s' id=%d,key=%s (%s)", this->name_, id,
-			Variant(keys).template As<std::string>(this->payloadType_, this->fields_),
-			Variant(keyIt->first).As<std::string>(this->payloadType_, this->fields_));
+			Variant(keys).template As<std::string>(this->payloadType_, this->Fields()),
+			Variant(keyIt->first).As<std::string>(this->payloadType_, this->Fields()));
 
 	if (keyIt->second.Unsorted().IsEmpty()) {
 		this->tracker_.markDeleted(keyIt);
@@ -120,41 +120,44 @@ void IndexRTree<KeyEntryT, Splitter, MaxEntries, MinEntries>::Delete(const Varia
 	}
 }
 
-std::unique_ptr<Index> IndexRTree_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
+std::unique_ptr<Index> IndexRTree_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
+									  const NamespaceCacheConfigData &cacheCfg) {
 	switch (idef.opts_.RTreeType()) {
 		case IndexOpts::Linear:
 			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
-				return std::unique_ptr<Index>{
-					new IndexRTree<Index::KeyEntryPlain, LinearSplitter, 32, 4>(idef, std::move(payloadType), fields)};
+				return std::make_unique<IndexRTree<Index::KeyEntryPlain, LinearSplitter, 32, 4>>(idef, std::move(payloadType),
+																								 std::move(fields), cacheCfg);
 			} else {
-				return std::unique_ptr<Index>{new IndexRTree<Index::KeyEntry, LinearSplitter, 32, 4>(idef, std::move(payloadType), fields)};
+				return std::make_unique<IndexRTree<Index::KeyEntry, LinearSplitter, 32, 4>>(idef, std::move(payloadType), std::move(fields),
+																							cacheCfg);
 			}
 		case IndexOpts::Quadratic:
 			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
-				return std::unique_ptr<Index>{
-					new IndexRTree<Index::KeyEntryPlain, QuadraticSplitter, 32, 4>(idef, std::move(payloadType), fields)};
-			} else {
-				return std::unique_ptr<Index>{
-					new IndexRTree<Index::KeyEntry, QuadraticSplitter, 32, 4>(idef, std::move(payloadType), fields)};
+				return std::make_unique<IndexRTree<Index::KeyEntryPlain, QuadraticSplitter, 32, 4>>(idef, std::move(payloadType),
+																									std::move(fields), cacheCfg);
 			}
+			return std::make_unique<IndexRTree<Index::KeyEntry, QuadraticSplitter, 32, 4>>(idef, std::move(payloadType), std::move(fields),
+																						   cacheCfg);
 		case IndexOpts::Greene:
 			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
-				return std::unique_ptr<Index>{
-					new IndexRTree<Index::KeyEntryPlain, GreeneSplitter, 16, 4>(idef, std::move(payloadType), fields)};
+				return std::make_unique<IndexRTree<Index::KeyEntryPlain, GreeneSplitter, 16, 4>>(idef, std::move(payloadType),
+																								 std::move(fields), cacheCfg);
 			} else {
-				return std::unique_ptr<Index>{new IndexRTree<Index::KeyEntry, GreeneSplitter, 16, 4>(idef, std::move(payloadType), fields)};
+				return std::make_unique<IndexRTree<Index::KeyEntry, GreeneSplitter, 16, 4>>(idef, std::move(payloadType), std::move(fields),
+																							cacheCfg);
 			}
 		case IndexOpts::RStar:
 			if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
-				return std::unique_ptr<Index>{
-					new IndexRTree<Index::KeyEntryPlain, RStarSplitter, 32, 4>(idef, std::move(payloadType), fields)};
+				return std::make_unique<IndexRTree<Index::KeyEntryPlain, RStarSplitter, 32, 4>>(idef, std::move(payloadType),
+																								std::move(fields), cacheCfg);
 			} else {
-				return std::unique_ptr<Index>{new IndexRTree<Index::KeyEntry, RStarSplitter, 32, 4>(idef, std::move(payloadType), fields)};
+				return std::make_unique<IndexRTree<Index::KeyEntry, RStarSplitter, 32, 4>>(idef, std::move(payloadType), std::move(fields),
+																						   cacheCfg);
 			}
-		default:
-			assertrx(0);
-			abort();
 	}
+
+	assertrx(0);
+	std::abort();
 }
 
 template class IndexRTree<Index::KeyEntry, LinearSplitter, 32, 4>;

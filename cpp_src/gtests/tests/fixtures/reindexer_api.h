@@ -6,16 +6,12 @@
 #include <tuple>
 
 #include <iostream>
-#include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/query/query.h"
 #include "core/reindexer.h"
 #include "reindexertestapi.h"
 #include "servercontrol.h"
 #include "tools/errors.h"
-#include "tools/serializer.h"
-#include "tools/stringstools.h"
-#include "vendor/utf8cpp/utf8.h"
 
 using reindexer::Error;
 using reindexer::Item;

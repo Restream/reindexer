@@ -2,6 +2,7 @@
 
 #ifdef REINDEX_WITH_LEVELDB
 
+#include <leveldb/env.h>
 #include <leveldb/iterator.h>
 #include <leveldb/write_batch.h>
 #include "basestorage.h"

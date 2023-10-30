@@ -427,18 +427,6 @@ Item QueryResults::Iterator::GetItem(bool enableHold) {
 	return item;
 }
 
-QueryResults::Iterator &QueryResults::Iterator::operator++() {
-	idx_++;
-	return *this;
-}
-QueryResults::Iterator &QueryResults::Iterator::operator+(int val) {
-	idx_ += val;
-	return *this;
-}
-
-bool QueryResults::Iterator::operator!=(const Iterator &other) const { return idx_ != other.idx_; }
-bool QueryResults::Iterator::operator==(const Iterator &other) const { return idx_ == other.idx_; }
-
 void QueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 	auto ritem = item.impl_;
 	if (item.GetID() != -1) {

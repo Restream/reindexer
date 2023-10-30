@@ -188,46 +188,15 @@ void SelectIteratorContainer::SetExpectMaxIterations(int expectedIterations) {
 SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe, const NamespaceImpl &ns, StrictMode strictMode) {
 	SelectKeyResults selectResults;
 
-	FieldsSet fields;
-	TagsPath tagsPath = ns.tagsMatcher_.path2tag(qe.index);
-
-	// TODO: it may be necessary to remove or change this switch after QueryEntry refactoring
-	switch (qe.condition) {
-		case CondAny:
-		case CondEmpty:
-		case CondAllSet:
-		case CondEq:
-		case CondSet:
-			break;
-		case CondRange:
-		case CondDWithin:
-			if (qe.values.size() != 2) {
-				throw Error(errParams, "For condition %s required exactly 2 arguments, but provided %d", CondTypeToStr(qe.condition),
-							qe.values.size());
-			}
-			break;
-		case CondLt:
-		case CondLe:
-		case CondGt:
-		case CondGe:
-		case CondLike:
-			if (qe.values.size() != 1) {
-				throw Error(errParams, "For condition %s required exactly 1 argument, but provided %d", CondTypeToStr(qe.condition),
-							qe.values.size());
-			}
-			break;
-	}
-
-	if (!tagsPath.empty()) {
+	if (!qe.HaveEmptyField()) {
 		SelectKeyResult comparisonResult;
-		fields.push_back(tagsPath);
-		comparisonResult.comparators_.emplace_back(qe.condition, KeyValueType::Null{}, qe.values, false, qe.distinct, ns.payloadType_,
-												   fields, nullptr, CollateOpts());
+		comparisonResult.comparators_.emplace_back(qe.Condition(), KeyValueType::Null{}, qe.Values(), false, qe.Distinct(), ns.payloadType_,
+												   qe.Fields(), nullptr, CollateOpts());
 		selectResults.emplace_back(std::move(comparisonResult));
 	} else if (strictMode == StrictModeNone) {
 		SelectKeyResult res;
 		// Ignore non-index/non-existing fields
-		if (qe.condition == CondEmpty) {
+		if (qe.Condition() == CondEmpty) {
 			res.emplace_back(SingleSelectKeyResult(IdType(0), IdType(ns.items_.size())));
 		} else {
 			res.emplace_back(SingleSelectKeyResult(IdType(0), IdType(0)));
@@ -237,33 +206,30 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 		throw Error(
 			errParams,
 			"Current query strict mode allows filtering by existing fields only. There are no fields with name '%s' in namespace '%s'",
-			qe.index, ns.name_);
+			qe.FieldName(), ns.name_);
 	}
 
 	return selectResults;
 }
 
 template <bool left>
-void SelectIteratorContainer::processField(FieldsComparator &fc, std::string_view field, int idxNo, const NamespaceImpl &ns) const {
-	const bool nonIndexField = (idxNo == IndexValueType::SetByJsonPath);
-	if (nonIndexField) {
-		TagsPath tagsPath = ns.tagsMatcher_.path2tag(field);
-		if (tagsPath.empty()) {
-			throw Error{errQueryExec, "Only existing fields can be compared. There are no fields with name '%s' in namespace '%s'", field,
-						ns.name_};
-		}
-		if constexpr (left) {
-			fc.SetLeftField(tagsPath);
-		} else {
-			fc.SetRightField(tagsPath);
-		}
-	} else {
-		auto &index = ns.indexes_[idxNo];
+void SelectIteratorContainer::processField(FieldsComparator &fc, const QueryField &field, const NamespaceImpl &ns) const {
+	if (field.IsFieldIndexed()) {
+		auto &index = ns.indexes_[field.IndexNo()];
 		if constexpr (left) {
 			fc.SetCollateOpts(index->Opts().collateOpts_);
-			fc.SetLeftField(index->Fields(), index->KeyType(), index->Opts().IsArray());
+			fc.SetLeftField(field.Fields(), field.FieldType(), index->Opts().IsArray());
 		} else {
-			fc.SetRightField(index->Fields(), index->KeyType(), index->Opts().IsArray());
+			fc.SetRightField(field.Fields(), field.FieldType(), index->Opts().IsArray());
+		}
+	} else if (field.HaveEmptyField()) {
+		throw Error{errQueryExec, "Only existing fields can be compared. There are no fields with name '%s' in namespace '%s'",
+					field.FieldName(), ns.name_};
+	} else {
+		if constexpr (left) {
+			fc.SetLeftField(field.Fields());
+		} else {
+			fc.SetRightField(field.Fields());
 		}
 	}
 }
@@ -272,7 +238,7 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 															unsigned sortId, bool isQueryFt, SelectFunction::Ptr &selectFnc,
 															bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &ftCtx,
 															QueryPreprocessor &qPreproc, const RdxContext &rdxCtx) {
-	auto &index = ns.indexes_[qe.idxNo];
+	auto &index = ns.indexes_[qe.IndexNo()];
 	isIndexFt = IsFullText(index->Type());
 	isIndexSparse = index->Opts().IsSparse();
 
@@ -289,31 +255,31 @@ SelectKeyResults SelectIteratorContainer::processQueryEntry(const QueryEntry &qe
 			opts.forceComparator = 1;
 		}
 	}
-	if (qe.distinct) {
+	if (qe.Distinct()) {
 		opts.distinct = 1;
 	}
 	opts.maxIterations = GetMaxIterations();
 	opts.indexesNotOptimized = !ctx_->sortingContext.enableSortOrders;
 	opts.inTransaction = ctx_->inTransaction;
 
-	auto ctx = selectFnc ? selectFnc->CreateCtx(qe.idxNo) : BaseFunctionCtx::Ptr{};
+	auto ctx = selectFnc ? selectFnc->CreateCtx(qe.IndexNo()) : BaseFunctionCtx::Ptr{};
 	if (ctx && ctx->type == BaseFunctionCtx::kFtCtx) ftCtx = reindexer::reinterpret_pointer_cast<FtCtx>(ctx);
 
 	if (index->Opts().GetCollateMode() == CollateUTF8 || isIndexFt) {
-		for (auto &key : qe.values) key.EnsureUTF8();
+		for (auto &key : qe.Values()) key.EnsureUTF8();
 	}
 	PerfStatCalculatorMT calc(index->GetSelectPerfCounter(), ns.enablePerfCounters_);
 	if (qPreproc.IsFtPreselected()) {
-		return index->SelectKey(qe.values, qe.condition, opts, ctx, qPreproc.MoveFtPreselect(), rdxCtx);
+		return index->SelectKey(qe.Values(), qe.Condition(), opts, ctx, qPreproc.MoveFtPreselect(), rdxCtx);
 	} else {
-		return index->SelectKey(qe.values, qe.condition, sortId, opts, ctx, rdxCtx);
+		return index->SelectKey(qe.Values(), qe.Condition(), sortId, opts, ctx, rdxCtx);
 	}
 }
 
 void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry &jqe, OpType op) {
 	auto &js = (*ctx_->joinedSelectors)[jqe.joinIndex];
 	if (js.JoinQuery().joinEntries_.empty()) throw Error(errQueryExec, "Join without ON conditions");
-	if (js.JoinQuery().joinEntries_[0].op_ == OpOr) throw Error(errQueryExec, "The first ON condition cannot have OR operation");
+	if (js.JoinQuery().joinEntries_[0].Operation() == OpOr) throw Error(errQueryExec, "The first ON condition cannot have OR operation");
 	if (js.Type() != InnerJoin && js.Type() != OrInnerJoin) throw Error(errLogic, "Not INNER JOIN in QueryEntry");
 	if (js.Type() == OrInnerJoin) {
 		if (op == OpNot) throw Error(errQueryExec, "NOT operator with or_inner_join");
@@ -327,7 +293,7 @@ void SelectIteratorContainer::processJoinEntry(const JoinQueryEntry &jqe, OpType
 }
 
 void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectResults, OpType op, const NamespaceImpl &ns,
-													   const QueryEntry &qe, bool isIndexFt, bool isIndexSparse, bool nonIndexField,
+													   const QueryEntry &qe, bool isIndexFt, bool isIndexSparse,
 													   std::optional<OpType> nextOp) {
 	if (selectResults.empty()) {
 		if (op == OpAnd) {
@@ -340,19 +306,19 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 			case OpOr: {
 				const iterator last = lastAppendedOrClosed();
 				if (last == this->end()) {
-					throw Error(errQueryExec, "OR operator in first condition or after left join ");
+					throw Error(errQueryExec, "OR operator in first condition or after left join");
 				}
 				if (last->HoldsOrReferTo<SelectIterator>() && !last->Value<SelectIterator>().distinct && last->operation != OpNot) {
 					if (last->IsRef()) {
 						last->SetValue(last->Value<SelectIterator>());
 					}
 					SelectIterator &it = last->Value<SelectIterator>();
-					if (nonIndexField || isIndexSparse) {
+					if (!qe.IsFieldIndexed() || isIndexSparse) {
 						it.Append(res);
 					} else {
-						it.AppendAndBind(res, ns.payloadType_, qe.idxNo);
+						it.AppendAndBind(res, ns.payloadType_, qe.IndexNo());
 					}
-					it.name += " or " + qe.index;
+					it.name += " or " + qe.FieldName();
 					break;
 				}
 			}
@@ -360,16 +326,16 @@ void SelectIteratorContainer::processQueryEntryResults(SelectKeyResults &selectR
 			case OpNot:
 			case OpAnd:
 				// Iterator Field Kind: Query entry results. Field known.
-				Append(op, SelectIterator(res, qe.distinct, qe.index,
-										  qe.idxNo < 0 ? IteratorFieldKind::NonIndexed : IteratorFieldKind::Indexed, isIndexFt));
-				if (!nonIndexField && !isIndexSparse) {
+				Append<SelectIterator>(op, res, qe.Distinct(), qe.FieldName(),
+									   qe.IndexNo() < 0 ? IteratorFieldKind::NonIndexed : IteratorFieldKind::Indexed, isIndexFt);
+				if (qe.IsFieldIndexed() && !isIndexSparse) {
 					// last appended is always a SelectIterator
 					const auto lastAppendedIt = lastAppendedOrClosed();
 					if (lastAppendedIt->IsRef()) {
 						lastAppendedIt->SetValue(lastAppendedIt->Value<SelectIterator>());
 					}
 					SelectIterator &lastAppended = lastAppendedIt->Value<SelectIterator>();
-					lastAppended.Bind(ns.payloadType_, qe.idxNo);
+					lastAppended.Bind(ns.payloadType_, qe.IndexNo());
 					lastAppended.SetNotOperationFlag(op == OpNot);
 					const auto maxIterations = lastAppended.GetMaxIterations();
 					const int cur = op == OpNot ? ns.items_.size() - maxIterations : maxIterations;
@@ -393,25 +359,23 @@ void SelectIteratorContainer::processEqualPositions(const std::vector<EqualPosit
 													const QueryEntries &queries) {
 	for (const auto &eqPos : equalPositions) {
 		const QueryEntry &firstQe{queries.Get<QueryEntry>(eqPos.queryEntriesPositions[0])};
-		if (firstQe.condition == CondEmpty || (firstQe.condition == CondSet && firstQe.values.empty())) {
+		if (firstQe.Condition() == CondEmpty || (firstQe.Condition() == CondSet && firstQe.Values().empty())) {
 			throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 		}
 
-		const KeyValueType type = firstQe.values.size() ? firstQe.values[0].Type() : KeyValueType::Null{};
-		Comparator cmp(firstQe.condition, type, firstQe.values, true, firstQe.distinct, ns.payloadType_, FieldsSet({firstQe.idxNo}));
+		const KeyValueType type = firstQe.Values().size() ? firstQe.Values()[0].Type() : KeyValueType::Null{};
+		Comparator cmp{firstQe.Condition(), type, firstQe.Values(), true, firstQe.Distinct(), ns.payloadType_, firstQe.Fields()};
 
 		for (size_t i = 0; i < eqPos.queryEntriesPositions.size(); ++i) {
 			const QueryEntry &qe = queries.Get<QueryEntry>(eqPos.queryEntriesPositions[i]);
-			if (qe.condition == CondEmpty || (qe.condition == CondSet && qe.values.empty())) {
+			if (qe.Condition() == CondEmpty || (qe.Condition() == CondSet && qe.Values().empty())) {
 				throw Error(errLogic, "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!");
 			}
-			if (qe.idxNo == IndexValueType::SetByJsonPath) {
-				cmp.BindEqualPosition(ns.tagsMatcher_.path2tag(qe.index), qe.values, qe.condition);
-			} else if (ns.indexes_[qe.idxNo]->Opts().IsSparse()) {
-				const TagsPath &tp = ns.indexes_[qe.idxNo]->Fields().getTagsPath(0);
-				cmp.BindEqualPosition(tp, qe.values, qe.condition);
+			assertrx_throw(qe.Fields().size() == 1);
+			if (qe.Fields()[0] == IndexValueType::SetByJsonPath) {
+				cmp.BindEqualPosition(qe.Fields().getFieldsPath(0), qe.Values(), qe.Condition());
 			} else {
-				cmp.BindEqualPosition(qe.idxNo, qe.values, qe.condition);
+				cmp.BindEqualPosition(qe.Fields()[0], qe.Values(), qe.Condition());
 			}
 		}
 
@@ -450,33 +414,33 @@ std::vector<SelectIteratorContainer::EqualPositions> SelectIteratorContainer::pr
 			queries.InvokeAppropriate<void>(
 				j, Skip<QueryEntriesBracket, JoinQueryEntry, AlwaysFalse>{},
 				[&](const QueryEntry &eq) {
-					if (foundFields.find(eq.index) != foundFields.end()) {
+					if (foundFields.find(eq.FieldName()) != foundFields.end()) {
 						throw Error(errParams, "Equal position field '%s' found twice in enclosing bracket; equal position fields: [%s]",
-									eq.index, getEpFieldsStr());
+									eq.FieldName(), getEpFieldsStr());
 					}
-					const auto it = epFields.find(eq.index);
+					const auto it = epFields.find(eq.FieldName());
 					if (it == epFields.end()) return;
 					if (queries.GetOperation(j) != OpAnd || (next < end && queries.GetOperation(next) == OpOr)) {
 						throw Error(errParams,
 									"Only AND operation allowed for equal position; equal position field with not AND operation: '%s'; "
 									"equal position fields: [%s]",
-									eq.index, getEpFieldsStr());
+									eq.FieldName(), getEpFieldsStr());
 					}
 					result[i].queryEntriesPositions.push_back(j);
 					foundFields.insert(epFields.extract(it));
 				},
 				[&](const BetweenFieldsQueryEntry &eq) {  // TODO equal positions for BetweenFieldsQueryEntry #1092
-					if (epFields.find(eq.firstIndex) != epFields.end()) {
+					if (epFields.find(eq.LeftFieldName()) != epFields.end()) {
 						throw Error(
 							errParams,
 							"Equal positions for conditions between fields are not supported; field: '%s'; equal position fields: [%s]",
-							eq.firstIndex, getEpFieldsStr());
+							eq.LeftFieldName(), getEpFieldsStr());
 					}
-					if (epFields.find(eq.secondIndex) != epFields.end()) {
+					if (epFields.find(eq.RightFieldName()) != epFields.end()) {
 						throw Error(
 							errParams,
 							"Equal positions for conditions between fields are not supported; field: '%s'; equal position fields: [%s]",
-							eq.secondIndex, getEpFieldsStr());
+							eq.RightFieldName(), getEpFieldsStr());
 					}
 				});
 		}
@@ -517,28 +481,16 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &q
 							return contFT;
 						},
 						[&](const QueryEntry &qe) {
-							const bool isFT = qe.idxNo != IndexValueType::SetByJsonPath && IsFullText(ns.indexes_[qe.idxNo]->Type());
+							const bool isFT = qe.IsFieldIndexed() && IsFullText(ns.indexes_[qe.IndexNo()]->Type());
 							if (isFT && (op == OpOr || (next < end && queries.GetOperation(next) == OpOr))) {
 								throw Error(errLogic, "OR operation is not allowed with fulltext index");
 							}
 							SelectKeyResults selectResults;
 
 							bool isIndexFt = false, isIndexSparse = false;
-							const bool nonIndexField = (qe.idxNo == IndexValueType::SetByJsonPath);
-
-							if (nonIndexField) {
-								auto strictMode = ns.config_.strictMode;
-								if (ctx_) {
-									if (ctx_->inTransaction) {
-										strictMode = StrictModeNone;
-									} else if (ctx_->query.strictMode != StrictModeNotSet) {
-										strictMode = ctx_->query.strictMode;
-									}
-								}
-								selectResults = processQueryEntry(qe, ns, strictMode);
-							} else {
-								bool enableSortIndexOptimize = (ctx_->sortingContext.uncommitedIndex == qe.idxNo) && !sortIndexFound &&
-															   (op == OpAnd) && !qe.distinct && (begin == 0) &&
+							if (qe.IsFieldIndexed()) {
+								bool enableSortIndexOptimize = (ctx_->sortingContext.uncommitedIndex == qe.IndexNo()) && !sortIndexFound &&
+															   (op == OpAnd) && !qe.Distinct() && (begin == 0) &&
 															   (next == end || queries.GetOperation(next) != OpOr);
 								if (enableSortIndexOptimize) {
 									if (!IsExpectingOrderedResults(qe)) {
@@ -549,12 +501,22 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &q
 								}
 								selectResults = processQueryEntry(qe, enableSortIndexOptimize, ns, sortId, isQueryFt, selectFnc, isIndexFt,
 																  isIndexSparse, ftCtx, qPreproc, rdxCtx);
+							} else {
+								auto strictMode = ns.config_.strictMode;
+								if (ctx_) {
+									if (ctx_->inTransaction) {
+										strictMode = StrictModeNone;
+									} else if (ctx_->query.strictMode != StrictModeNotSet) {
+										strictMode = ctx_->query.strictMode;
+									}
+								}
+								selectResults = processQueryEntry(qe, ns, strictMode);
 							}
 							std::optional<OpType> nextOp;
 							if (next != end) {
 								nextOp = queries.GetOperation(next);
 							}
-							processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nonIndexField, nextOp);
+							processQueryEntryResults(selectResults, op, ns, qe, isIndexFt, isIndexSparse, nextOp);
 							if (op != OpOr) {
 								for (auto &ep : equalPositions) {
 									const auto lastPosition = ep.queryEntriesPositions.back();
@@ -574,9 +536,9 @@ bool SelectIteratorContainer::prepareIteratorsForSelectLoop(QueryPreprocessor &q
 							return false;
 						},
 						[&](const BetweenFieldsQueryEntry &qe) {
-							FieldsComparator fc{qe.firstIndex, qe.Condition(), qe.secondIndex, ns.payloadType_};
-							processField<true>(fc, qe.firstIndex, qe.firstIdxNo, ns);
-							processField<false>(fc, qe.secondIndex, qe.secondIdxNo, ns);
+							FieldsComparator fc{qe.LeftFieldName(), qe.Condition(), qe.RightFieldName(), ns.payloadType_};
+							processField<true>(fc, qe.LeftFieldData(), ns);
+							processField<false>(fc, qe.RightFieldData(), ns);
 							Append(op, std::move(fc));
 							return false;
 						},
@@ -759,11 +721,11 @@ void JoinSelectIterator::Dump(WrSerializer &ser, const std::vector<JoinedSelecto
 	ser << '(';
 	for (const auto &jqe : q.joinEntries_) {
 		if (&jqe != &q.joinEntries_.front()) {
-			ser << ' ' << jqe.op_ << ' ';
+			ser << ' ' << jqe.Operation() << ' ';
 		} else {
-			assertrx(jqe.op_ == OpAnd);
+			assertrx(jqe.Operation() == OpAnd);
 		}
-		ser << q._namespace << '.' << jqe.joinIndex_ << ' ' << jqe.condition_ << ' ' << jqe.index_;
+		ser << q.NsName() << '.' << jqe.RightFieldName() << ' ' << jqe.Condition() << ' ' << jqe.LeftFieldName();
 	}
 	ser << ')';
 }

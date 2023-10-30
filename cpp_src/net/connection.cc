@@ -5,28 +5,34 @@ namespace reindexer {
 namespace net {
 
 template <typename Mutex>
-Connection<Mutex>::Connection(int fd, ev::dynamic_loop &loop, bool enableStat, size_t readBufSize, size_t writeBufSize)
-	: sock_(fd), curEvents_(0), wrBuf_(writeBufSize), rdBuf_(readBufSize), stats_(enableStat ? new connection_stats_collector : nullptr) {
+Connection<Mutex>::Connection(socket &&s, ev::dynamic_loop &loop, bool enableStat, size_t readBufSize, size_t writeBufSize, int idleTimeout)
+	: sock_(std::move(s)),
+	  curEvents_(0),
+	  wrBuf_(writeBufSize),
+	  rdBuf_(readBufSize),
+	  stats_(enableStat ? new connection_stats_collector : nullptr),
+	  kIdleCheckPeriod_(idleTimeout) {
 	attach(loop);
+	restartIdleCheckTimer();
 }
 
 template <typename Mutex>
 Connection<Mutex>::~Connection() {
-	if (sock_.valid()) {
-		io_.stop();
-		sock_.close();
-	}
+	io_.stop();
 }
 
 template <typename Mutex>
-void Connection<Mutex>::restart(int fd) {
+void Connection<Mutex>::restart(socket &&s) {
 	assertrx(!sock_.valid());
-	sock_ = fd;
+	sock_ = std::move(s);
 	wrBuf_.clear();
 	rdBuf_.clear();
 	curEvents_ = 0;
 	closeConn_ = false;
-	if (stats_) stats_->restart();
+	if (stats_) {
+		stats_->restart();
+	}
+	restartIdleCheckTimer();
 }
 
 template <typename Mutex>
@@ -42,7 +48,10 @@ void Connection<Mutex>::attach(ev::dynamic_loop &loop) {
 	timeout_.set(loop);
 	async_.set<Connection, &Connection::async_cb>(this);
 	async_.set(loop);
-	if (stats_) stats_->attach(loop);
+	if (stats_) {
+		stats_->attach(loop);
+	}
+	restartIdleCheckTimer();
 	attached_ = true;
 }
 
@@ -55,7 +64,9 @@ void Connection<Mutex>::detach() {
 	timeout_.reset();
 	async_.stop();
 	async_.reset();
-	if (stats_) stats_->detach();
+	if (stats_) {
+		stats_->detach();
+	}
 	attached_ = false;
 }
 
@@ -64,7 +75,9 @@ void Connection<Mutex>::closeConn() {
 	io_.loop.break_loop();
 	if (sock_.valid()) {
 		io_.stop();
-		sock_.close();
+		if rx_unlikely (sock_.close() != 0) {
+			perror("sock_.close() error");
+		}
 	}
 	timeout_.stop();
 	async_.stop();
@@ -77,6 +90,7 @@ void Connection<Mutex>::closeConn() {
 template <typename Mutex>
 void Connection<Mutex>::callback(ev::io & /*watcher*/, int revents) {
 	if (ev::ERROR & revents) return;
+	++rwCounter_;
 
 	if (revents & ev::READ) {
 		const auto res = read_cb();
@@ -147,7 +161,9 @@ typename Connection<Mutex>::ReadResT Connection<Mutex>::read_cb() {
 			closeConn();
 			return ReadResT::Default;
 		} else if (nread > 0) {
-			if (stats_) stats_->update_read_stats(nread);
+			if (stats_) {
+				stats_->update_read_stats(nread);
+			}
 			rdBuf_.advance_head(nread);
 			if (!closeConn_) {
 				if (onRead() == ReadResT::Rebalanced) {
@@ -160,15 +176,17 @@ typename Connection<Mutex>::ReadResT Connection<Mutex>::read_cb() {
 	return ReadResT::Default;
 }
 template <typename Mutex>
-void Connection<Mutex>::timeout_cb(ev::periodic &watcher, int /*time*/) {
+void Connection<Mutex>::timeout_cb(ev::periodic & /*watcher*/, int /*time*/) {
+	const bool isActive = lastCheckRWCounter_ != rwCounter_;
+	lastCheckRWCounter_ = rwCounter_;
+	if (isActive) {
+		return;
+	}
 	if (sock_.has_pending_data()) {
 		fprintf(stdout,
 				"Connection got idle timeout, but socket has pending data. Do not dropping the connection\nThis probably means, that "
 				"there are some very long queries in some of the connections, which may affect the other connections. Consider to use "
 				"dedicated threads for them\n");
-		if (!watcher.has_period()) {
-			watcher.start(watcher.last_delay());
-		}
 		return;
 	}
 
@@ -180,7 +198,8 @@ void Connection<Mutex>::async_cb(ev::async &) {
 	callback(io_, ev::WRITE);
 }
 
-template class Connection<std::mutex>;
 template class Connection<reindexer::dummy_mutex>;
+template class Connection<std::mutex>;
+
 }  // namespace net
 }  // namespace reindexer

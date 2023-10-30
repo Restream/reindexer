@@ -202,10 +202,8 @@ func (db *reindexerImpl) getStatus(ctx context.Context) bindings.Status {
 // setLogger sets logger interface for output reindexer logs
 func (db *reindexerImpl) setLogger(log Logger) {
 	if log != nil {
-		logger = log
 		db.binding.EnableLogger(log)
 	} else {
-		logger = &nullLogger{}
 		db.binding.DisableLogger()
 	}
 }
@@ -816,7 +814,7 @@ func (db *reindexerImpl) addFilterDSL(filter *dsl.Filter, q *Query) error {
 	if err != nil {
 		return err
 	}
-	if filter.Value != nil {
+	if filter.Value != nil || cond == bindings.ANY || cond == bindings.EMPTY {
 		// Skip filter if value is nil (for backwards compatibility reasons)
 		q.Where(filter.Field, cond, filter.Value)
 	} else {

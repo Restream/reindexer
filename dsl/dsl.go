@@ -305,7 +305,10 @@ func (f *Filter) parseValue(data string) error {
 		f.Value, err = f.parseValuesArray(rawValues)
 		return err
 	case "any", "empty":
-		f.Value = 0
+		if len(data) != 0 && data != `""` && data != "null" {
+			return fmt.Errorf("filter expects no arguments or null for '%s' condition", f.Cond)
+		}
+		f.Value = nil
 	default:
 		return fmt.Errorf("cond type '%s' not found", f.Cond)
 	}

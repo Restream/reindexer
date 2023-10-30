@@ -16,7 +16,7 @@ public:
 	};
 
 	FieldsExtractor() = default;
-	FieldsExtractor(VariantArray *va, KeyValueType expectedType, int expectedPathDepth, FieldsSet *filter = nullptr,
+	FieldsExtractor(VariantArray *va, KeyValueType expectedType, int expectedPathDepth, const FieldsSet *filter,
 					FieldParams *params = nullptr) noexcept
 		: values_(va), expectedType_(expectedType), expectedPathDepth_(expectedPathDepth), filter_(filter), params_(params) {}
 	FieldsExtractor(FieldsExtractor &&other) = default;
@@ -176,7 +176,7 @@ private:
 	VariantArray *values_ = nullptr;
 	KeyValueType expectedType_{KeyValueType::Undefined{}};
 	int expectedPathDepth_ = 0;
-	FieldsSet *filter_;
+	const FieldsSet *filter_;
 	FieldParams *params_;
 };
 

@@ -125,7 +125,7 @@ IndexMemStat FastIndexText<T>::GetMemStat(const RdxContext &ctx) {
 
 	contexted_shared_lock lck(this->mtx_, &ctx);
 	ret.fulltextSize = this->holder_->GetMemStat();
-	if (this->cache_ft_) ret.idsetCache = this->cache_ft_->GetMemStat();
+	ret.idsetCache = this->cache_ft_ ? this->cache_ft_->GetMemStat() : LRUCacheMemStat();
 	return ret;
 }
 
@@ -135,7 +135,7 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 	fctx->GetData()->extraWordSymbols_ = this->getConfig()->extraWordSymbols;
 	fctx->GetData()->isWordPositions_ = true;
 
-	auto mergeData = this->holder_->Select(std::move(dsl), this->fields_.size(), fctx->NeedArea(), getConfig()->maxAreasInDoc,
+	auto mergeData = this->holder_->Select(std::move(dsl), this->Fields().size(), fctx->NeedArea(), getConfig()->maxAreasInDoc,
 										   inTransaction, std::move(statuses.statuses), useExternSt, rdxCtx);
 	// convert vids(uniq documents id) to ids (real ids)
 	IdSet::Ptr mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
@@ -232,7 +232,7 @@ void FastIndexText<T>::commitFulltextImpl() {
 	}
 	auto tm1 = high_resolution_clock::now();
 
-	this->holder_->Process(this->fields_.size(), !this->opts_.IsDense());
+	this->holder_->Process(this->Fields().size(), !this->opts_.IsDense());
 	if (this->holder_->NeedClear(this->tracker_.isCompleteUpdated())) {
 		this->tracker_.clear();
 	}
@@ -373,12 +373,15 @@ reindexer::FtPreselectT FastIndexText<T>::FtPreselect(const RdxContext &rdxCtx) 
 						   std::vector<bool>(holder_->rowId2Vdoc_.size(), false), &holder_->rowId2Vdoc_};
 }
 
-std::unique_ptr<Index> FastIndexText_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
+std::unique_ptr<Index> FastIndexText_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
+										 const NamespaceCacheConfigData &cacheCfg) {
 	switch (idef.Type()) {
 		case IndexFastFT:
-			return std::unique_ptr<Index>{new FastIndexText<unordered_str_map<FtKeyEntry>>(idef, std::move(payloadType), fields)};
+			return std::make_unique<FastIndexText<unordered_str_map<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
+																				  cacheCfg);
 		case IndexCompositeFastFT:
-			return std::unique_ptr<Index>{new FastIndexText<unordered_payload_map<FtKeyEntry, true>>(idef, std::move(payloadType), fields)};
+			return std::make_unique<FastIndexText<unordered_payload_map<FtKeyEntry, true>>>(idef, std::move(payloadType), std::move(fields),
+																							cacheCfg);
 		case IndexStrHash:
 		case IndexStrBTree:
 		case IndexIntBTree:

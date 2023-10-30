@@ -11,7 +11,7 @@ enum class IsMergeQuery : bool { Yes = true, No = false };
 enum class IsFTQuery { Yes, No, NotSet };
 
 struct SelectCtx {
-	explicit SelectCtx(const Query &query_, const Query *parentQuery_) : query(query_), parentQuery(parentQuery_) {}
+	explicit SelectCtx(const Query &query_, const Query *parentQuery_) noexcept : query(query_), parentQuery(parentQuery_) {}
 	const Query &query;
 	JoinedSelectors *joinedSelectors = nullptr;
 	SelectFunctionsHolder *functions = nullptr;
@@ -28,6 +28,7 @@ struct SelectCtx {
 	bool inTransaction = false;
 	IsMergeQuery isMergeQuery = IsMergeQuery::No;
 	IsFTQuery isFtQuery = IsFTQuery::NotSet;
+	QueryType crashReporterQueryType = QuerySelect;
 
 	const Query *parentQuery = nullptr;
 	ExplainCalc explain;
@@ -80,7 +81,7 @@ private:
 	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
 						 QueryResults &result, bool preselectForFt);
 
-	h_vector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry>& aggEntrys, StrictMode strictMode) const;
+	h_vector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry> &aggEntrys, StrictMode strictMode) const;
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
 	void prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, bool isFt, bool availableSelectBySortIndex);
 	static void prepareSortIndex(const NamespaceImpl &, std::string_view column, int &index, bool &skipSortingEntry, StrictMode);

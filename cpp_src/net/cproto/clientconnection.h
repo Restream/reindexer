@@ -9,6 +9,7 @@
 #include "estl/atomic_unique_ptr.h"
 #include "estl/h_vector.h"
 #include "net/connection.h"
+#include "tools/flagguard.h"
 #include "urlparser/urlparser.h"
 
 namespace reindexer {
@@ -137,17 +138,33 @@ public:
 
 		RPCAnswer ret;
 		std::atomic_bool set(false);
-		call(
+		auto callRet = call(
 			[&ret, &set](RPCAnswer &&ans, ClientConnection * /*conn*/) {
 				ret = std::move(ans);
 				ret.EnsureHold();
 				set = true;
 			},
 			opts, args, argss...);
+		const auto until =
+			opts.netTimeout.count() ? (std::chrono::system_clock::now() + 2 * opts.netTimeout) : std::chrono::system_clock::time_point();
 		std::unique_lock<std::mutex> lck(mtx_);
-		bufWait_++;
-		bufCond_.wait(lck, [&set]() { return set.load(); });
-		bufWait_--;
+		CounterGuardIR32 cg(bufWait_);
+		if (opts.netTimeout.count()) {
+			if (!bufCond_.wait_until(lck, until, [&set]() { return set.load(); })) {
+				// Fallback timeout to avoid stucking on wait.
+				// Usually this should never happen, however, we've seen it once on the production environment
+				assertrx_dbg(false);
+				if (callRet.cmpl && callRet.cmpl == &completions_[callRet.seq % completions_.size()]) {
+					callRet.cmpl->used = false;
+				}
+				fprintf(stderr, "RxClientConnection: unexpected RPC client timeout (cmd: %d, network timeout: %d secs)\n", int(opts.cmd),
+						int(opts.netTimeout.count()));
+				ret = RPCAnswer(Error(errTimeout, "Fallback network timeout"));
+			}
+		} else {
+			bufCond_.wait(lck, [&set]() { return set.load(); });
+		}
+		cg.Reset();
 
 		return ret;
 	}
@@ -177,28 +194,6 @@ protected:
 	void failInternal(const Error &error);
 	void disconnect();
 
-	template <typename... Argss>
-	inline void call(const Completion &cmpl, const CommandParams &opts, Args &args, const std::string_view &val, Argss... argss) {
-		args.push_back(Variant(p_string(&val)));
-		return call(cmpl, opts, args, argss...);
-	}
-	template <typename... Argss>
-	inline void call(const Completion &cmpl, const CommandParams &opts, Args &args, const std::string &val, Argss... argss) {
-		args.push_back(Variant(p_string(&val)));
-		return call(cmpl, opts, args, argss...);
-	}
-	template <typename T, typename... Argss>
-	inline void call(const Completion &cmpl, const CommandParams &opts, Args &args, const T &val, Argss... argss) {
-		args.push_back(Variant(val));
-		return call(cmpl, opts, args, argss...);
-	}
-
-	void call(const Completion &cmpl, const CommandParams &opts, const Args &args);
-	chunk packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs);
-
-	ReadResT onRead() override;
-	void onClose() override;
-
 	struct RPCCompletion {
 		RPCCompletion() : cmd(kCmdPing), seq(0), next(nullptr), used(false), deadline(0), cancelCtx(nullptr) {}
 		CmdCode cmd;
@@ -209,13 +204,40 @@ protected:
 		seconds deadline;
 		const reindexer::IRdxCancelContext *cancelCtx;
 	};
+	struct CallReturn {
+		explicit CallReturn(RPCCompletion *c = nullptr, uint32_t s = 0) noexcept : cmpl(c), seq(s) {}
+
+		RPCCompletion *cmpl;
+		uint32_t seq;
+	};
+
+	template <typename... Argss>
+	inline CallReturn call(const Completion &cmpl, const CommandParams &opts, Args &args, const std::string_view &val, Argss... argss) {
+		args.emplace_back(p_string(&val));
+		return call(cmpl, opts, args, argss...);
+	}
+	template <typename... Argss>
+	inline CallReturn call(const Completion &cmpl, const CommandParams &opts, Args &args, const std::string &val, Argss... argss) {
+		args.emplace_back(p_string(&val));
+		return call(cmpl, opts, args, argss...);
+	}
+	template <typename T, typename... Argss>
+	inline CallReturn call(const Completion &cmpl, const CommandParams &opts, Args &args, const T &val, Argss... argss) {
+		args.emplace_back(val);
+		return call(cmpl, opts, args, argss...);
+	}
+	CallReturn call(const Completion &cmpl, const CommandParams &opts, const Args &args);
+	chunk packRPC(CmdCode cmd, uint32_t seq, const Args &args, const Args &ctxArgs);
+
+	ReadResT onRead() override;
+	void onClose() override;
 
 	State state_;
 	// Lock free map seq -> completion
 	std::vector<RPCCompletion> completions_;
 	std::condition_variable connectCond_, bufCond_, closingCond_;
 	std::atomic<uint32_t> seq_;
-	std::atomic<int32_t> bufWait_;
+	int32_t bufWait_;
 	std::mutex mtx_;
 	std::thread::id loopThreadID_;
 	Error lastError_;

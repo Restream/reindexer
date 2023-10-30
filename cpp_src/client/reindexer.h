@@ -41,14 +41,15 @@ public:
 	Reindexer &operator=(Reindexer &&) noexcept;
 
 	/// Connect - connect to reindexer server
-	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`
+	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname` or
+	/// `ucproto://user@password:/tmp/reindexer.sock:/dbname`
 	/// @param opts - Connect options. May contaion any of <br>
 	Error Connect(const std::string &dsn, const client::ConnectOpts &opts = client::ConnectOpts());
 	/// Connect - connect to reindexer server
 	/// @param connectData - list of server dsn + it's ConnectOpts
 	Error Connect(const std::vector<std::pair<std::string, client::ConnectOpts>> &connectData);
 	/// Stop - shutdown connector
-	Error Stop();
+	void Stop();
 	/// Open or create namespace
 	/// @param nsName - Name of namespace
 	/// @param opts - Storage options. Can be one of <br>

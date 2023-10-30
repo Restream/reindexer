@@ -108,7 +108,7 @@ Error SyncCoroReindexerImpl::GetMeta(std::string_view nsName, const std::string 
 }
 Error SyncCoroReindexerImpl::PutMeta(std::string_view nsName, const std::string &key, std::string_view data,
 									 const InternalRdxContext &ctx) {
-	return sendCommand<Error>(DbCmdPutMeta, std::forward<std::string_view>(nsName), key, data, ctx);
+	return sendCommand<Error>(DbCmdPutMeta, std::forward<std::string_view>(nsName), key, std::forward<std::string_view>(data), ctx);
 }
 Error SyncCoroReindexerImpl::EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdEnumMeta, std::forward<std::string_view>(nsName), keys, ctx);

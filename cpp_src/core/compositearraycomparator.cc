@@ -2,37 +2,29 @@
 #include <limits.h>
 namespace reindexer {
 
-CompositeArrayComparator::CompositeArrayComparator() {}
+void EqualPositionComparator::BindField(int field, const VariantArray &values, CondType cond) { bindField(field, values, cond); }
 
-void CompositeArrayComparator::BindField(int field, const VariantArray &values, CondType condType) {
+void EqualPositionComparator::BindField(const FieldsPath &fieldPath, const VariantArray &values, CondType cond) {
+	bindField(fieldPath, values, cond);
+}
+
+template <typename F>
+void EqualPositionComparator::bindField(F field, const VariantArray &values, CondType cond) {
 	fields_.push_back(field);
 	Context &ctx = ctx_.emplace_back();
 
-	ctx.cond = condType;
-	ctx.cmpBool.SetValues(condType, values);
-	ctx.cmpInt.SetValues(condType, values);
-	ctx.cmpInt64.SetValues(condType, values);
-	ctx.cmpString.SetValues(condType, values, CollateOpts());
-	ctx.cmpDouble.SetValues(condType, values);
-	ctx.cmpUuid.SetValues(condType, values);
+	ctx.cond = cond;
+	ctx.cmpBool.SetValues(cond, values);
+	ctx.cmpInt.SetValues(cond, values);
+	ctx.cmpInt64.SetValues(cond, values);
+	ctx.cmpString.SetValues(cond, values, CollateOpts());
+	ctx.cmpDouble.SetValues(cond, values);
+	ctx.cmpUuid.SetValues(cond, values);
 
 	assertrx(ctx_.size() == fields_.size());
 }
 
-void CompositeArrayComparator::BindField(const TagsPath &tagsPath, const VariantArray &values, CondType condType) {
-	fields_.push_back(tagsPath);
-	Context &ctx = ctx_.emplace_back();
-
-	ctx.cond = condType;
-	ctx.cmpBool.SetValues(condType, values);
-	ctx.cmpInt.SetValues(condType, values);
-	ctx.cmpInt64.SetValues(condType, values);
-	ctx.cmpString.SetValues(condType, values, CollateOpts());
-	ctx.cmpDouble.SetValues(condType, values);
-	ctx.cmpUuid.SetValues(condType, values);
-}
-
-bool CompositeArrayComparator::Compare(const PayloadValue &pv, const ComparatorVars &vars) {
+bool EqualPositionComparator::Compare(const PayloadValue &pv, const ComparatorVars &vars) {
 	ConstPayload pl(vars.payloadType_, pv);
 	size_t len = INT_MAX;
 
@@ -64,7 +56,7 @@ bool CompositeArrayComparator::Compare(const PayloadValue &pv, const ComparatorV
 	return false;
 }
 
-bool CompositeArrayComparator::compareField(size_t field, const Variant &v, const ComparatorVars &vars) {
+bool EqualPositionComparator::compareField(size_t field, const Variant &v, const ComparatorVars &vars) {
 	return v.Type().EvaluateOneOf(
 		[&](KeyValueType::Bool) { return ctx_[field].cmpBool.Compare(ctx_[field].cond, static_cast<bool>(v)); },
 		[&](KeyValueType::Int) { return ctx_[field].cmpInt.Compare(ctx_[field].cond, static_cast<int>(v)); },

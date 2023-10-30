@@ -35,6 +35,8 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 			CounterGuardAIR32 cg(nsl->cancelCommitCnt_);
 			try {
 				auto rlck = statCalculator.CreateLock(*nsl, &NamespaceImpl::rLock, ctx);
+				tx.ValidatePK(nsl->pkFields());
+
 				auto storageLock = statCalculator.CreateLock(nsl->storage_, &AsyncStorage::FullLock);
 
 				cg.Reset();
@@ -105,10 +107,14 @@ bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const Transactio
 void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, const std::string& storagePath, const RdxContext& ctx) {
 	std::string dbpath;
 	const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
-	awaitMainNs(ctx)->storage_.Flush(flushOpts);
 	auto lck = handleInvalidation(NamespaceImpl::wLock)(ctx);
-	auto& srcNs = *atomicLoadMainNs();	// -V758
-	srcNs.storage_.Flush(flushOpts);	// Repeat flush, to raise any disk errors before attempt to close storage
+	auto srcNsPtr = atomicLoadMainNs();
+	auto& srcNs = *srcNsPtr;
+	srcNs.storage_.Flush(flushOpts);  // Repeat flush, to raise any disk errors before attempt to close storage
+	auto storageStatus = srcNs.storage_.GetStatusCached();
+	if (!storageStatus.err.ok()) {
+		throw Error(storageStatus.err.code(), "Unable to flush storage before rename: %s", storageStatus.err.what());
+	}
 	NamespaceImpl::Mutex* dstMtx = nullptr;
 	NamespaceImpl::Ptr dstNs;
 	if (dst) {

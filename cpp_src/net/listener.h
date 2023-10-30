@@ -18,9 +18,10 @@ class IListener {
 public:
 	virtual ~IListener() = default;
 	/// Bind listener to specified host:port
-	/// @param addr - tcp host:port for bind
+	/// @param addr - tcp host:port for bind or file path for the unix domain socket
+	/// @param type - socket's type: tcp or unix
 	/// @return true - if bind successful, false - on bind error
-	virtual bool Bind(std::string addr) = 0;
+	virtual bool Bind(std::string addr, socket_domain type) = 0;
 	/// Stop synchroniusly stops listener
 	virtual void Stop() = 0;
 };
@@ -38,14 +39,8 @@ struct ConnPtrEqual {
 struct ConnPtrHash {
 	using transparent_key_equal = ConnPtrEqual;
 
-	bool operator()(const IServerConnection *ptr) const noexcept {
-		std::hash<uintptr_t> h;
-		return h(uintptr_t(ptr));
-	}
-	bool operator()(const std::unique_ptr<IServerConnection> &ptr) const noexcept {
-		std::hash<uintptr_t> h;
-		return h(uintptr_t(ptr.get()));
-	}
+	size_t operator()(const IServerConnection *ptr) const noexcept { return std::hash<uintptr_t>()(uintptr_t(ptr)); }
+	size_t operator()(const std::unique_ptr<IServerConnection> &ptr) const noexcept { return std::hash<uintptr_t>()(uintptr_t(ptr.get())); }
 };
 
 enum class ListenerType {
@@ -65,20 +60,21 @@ enum class ListenerType {
 
 /// Network listener implementation
 template <ListenerType LT>
-class Listener : public IListener {
+class Listener final : public IListener {
 public:
 	/// Constructs new listner object.
 	/// @param loop - ev::loop of caller's thread, listener's socket will be binded to that loop.
 	/// @param connFactory - Connection factory, will create objects with IServerConnection interface implementation.
 	/// @param maxListeners - Maximum number of threads, which listener will utilize. std::thread::hardware_concurrency() by default
 	Listener(ev::dynamic_loop &loop, ConnectionFactory &&connFactory, int maxListeners = 0);
-	~Listener();
+	~Listener() override;
 	/// Bind listener to specified host:port
-	/// @param addr - tcp host:port for bind
+	/// @param addr - tcp host:port for bind or file path for the unix domain socket
+	/// @param type - socket's type: tcp or unix
 	/// @return true - if bind successful, false - on bind error
-	bool Bind(std::string addr);
+	bool Bind(std::string addr, socket_domain type) override;
 	/// Stop synchroniusly stops listener
-	void Stop();
+	void Stop() override;
 
 protected:
 	void reserve_stack();
@@ -111,7 +107,7 @@ protected:
 
 		Shared(ConnectionFactory &&connFactory, int maxListeners);
 		~Shared();
-		socket sock_;
+		lst_socket sock_;
 		const int maxListeners_;
 		std::atomic<int> listenersCount_ = {0};
 		std::atomic<int> connCount_ = {0};
@@ -159,19 +155,20 @@ protected:
 };
 
 /// Network listener implementation
-class ForkedListener : public IListener {
+class ForkedListener final : public IListener {
 public:
 	/// Constructs new listner object.
 	/// @param loop - ev::loop of caller's thread, listener's socket will be binded to that loop.
 	/// @param connFactory - Connection factory, will create objects with IServerConnection interface implementation.
 	ForkedListener(ev::dynamic_loop &loop, ConnectionFactory &&connFactory);
-	~ForkedListener();
+	~ForkedListener() override;
 	/// Bind listener to specified host:port
-	/// @param addr - tcp host:port for bind
+	/// @param addr - tcp host:port for bind or file path for the unix domain socket
+	/// @param type - socket's type: tcp or unix
 	/// @return true - if bind successful, false - on bind error
-	bool Bind(std::string addr);
+	bool Bind(std::string addr, socket_domain type) override;
 	/// Stop synchroniusly stops listener
-	void Stop();
+	void Stop() override;
 
 protected:
 	void io_accept(ev::io &watcher, int revents);
@@ -192,7 +189,7 @@ protected:
 		ev::async *async;
 	};
 
-	socket sock_;
+	lst_socket sock_;
 	std::mutex mtx_;
 	ConnectionFactory connFactory_;
 	std::atomic<bool> terminating_{false};

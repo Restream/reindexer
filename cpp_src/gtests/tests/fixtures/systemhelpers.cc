@@ -34,7 +34,7 @@ pid_t StartProcess(const std::string& program, const std::vector<std::string>& p
 		if (isMainThread) {	 // prctl sends signal on thread termination, so this call may lead to unexpected process termination
 			int r = prctl(PR_SET_PDEATHSIG, SIGTERM);
 			if (r == -1) {
-				perror("prctl error\n");
+				perror("prctl error");
 				exit(1);
 			}
 		}
@@ -44,7 +44,7 @@ pid_t StartProcess(const std::string& program, const std::vector<std::string>& p
 		}
 		int ret = execv(program.c_str(), &paramsPointers[0]);
 		if (ret) {
-			perror("exec error\n");
+			perror("exec error");
 			exit(1);
 		}
 	}

@@ -17,7 +17,7 @@ class JoinedSelectorMock {
 public:
 	JoinedSelectorMock(JoinType jt, reindexer::JoinedQuery q) : query_{std::move(q)}, qr_{}, joinType_{jt} {}
 	const reindexer::JoinedQuery& JoinQuery() const noexcept { return query_; }
-	const std::string& RightNsName() const noexcept { return query_._namespace; }
+	const std::string& RightNsName() const noexcept { return query_.NsName(); }
 	reindexer::QueryResults& QueryResults() noexcept { return qr_; }
 	const reindexer::QueryResults& QueryResults() const noexcept { return qr_; }
 	JoinType Type() const noexcept { return joinType_; }

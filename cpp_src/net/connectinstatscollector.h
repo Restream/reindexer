@@ -35,10 +35,19 @@ public:
 	void detach() noexcept;
 	void restart();
 	void stop() noexcept;
-	void update_read_stats(ssize_t nread) noexcept;
-	void update_write_stats(ssize_t written, size_t send_buf_size) noexcept;
-	void update_pended_updates(size_t) noexcept;
-	void update_send_buf_size(size_t) noexcept;
+	void update_read_stats(ssize_t nread) noexcept {
+		stat_->recv_bytes.fetch_add(nread, std::memory_order_relaxed);
+		auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+		stat_->last_recv_ts.store(now.count(), std::memory_order_relaxed);
+	}
+	void update_write_stats(ssize_t written, size_t send_buf_size) noexcept {
+		stat_->sent_bytes.fetch_add(written, std::memory_order_relaxed);
+		auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+		stat_->last_send_ts.store(now.count(), std::memory_order_relaxed);
+		stat_->send_buf_bytes.store(send_buf_size, std::memory_order_relaxed);
+	}
+	void update_pended_updates(size_t count) noexcept { stat_->pended_updates.store(count, std::memory_order_relaxed); }
+	void update_send_buf_size(size_t size) noexcept { stat_->send_buf_bytes.store(size, std::memory_order_relaxed); }
 
 protected:
 	void stats_check_cb(ev::periodic &watcher, int) noexcept;

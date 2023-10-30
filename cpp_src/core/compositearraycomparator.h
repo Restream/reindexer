@@ -5,17 +5,19 @@
 
 namespace reindexer {
 
-class CompositeArrayComparator {
+class EqualPositionComparator {
 public:
-	CompositeArrayComparator();
+	EqualPositionComparator() noexcept = default;
 
-	void BindField(int field, const VariantArray &values, CondType condType);
-	void BindField(const TagsPath &tagsPath, const VariantArray &values, CondType condType);
-	bool Compare(const PayloadValue &pv, const ComparatorVars &vars);
+	void BindField(int field, const VariantArray &, CondType);
+	void BindField(const FieldsPath &, const VariantArray &, CondType);
+	bool Compare(const PayloadValue &, const ComparatorVars &);
 	bool IsBinded() { return !ctx_.empty(); }
 
 private:
-	bool compareField(size_t field, const Variant &v, const ComparatorVars &vars);
+	bool compareField(size_t field, const Variant &, const ComparatorVars &);
+	template <typename F>
+	void bindField(F field, const VariantArray &, CondType);
 
 	struct Context {
 		CondType cond;

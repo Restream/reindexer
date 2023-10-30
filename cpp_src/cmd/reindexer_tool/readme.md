@@ -21,7 +21,7 @@ Reindexer command line tool is an client utility to work with database.
 reindexer_tool {OPTIONS}
 
 Options
-  -d[DSN],      --dsn=[DSN]              DSN to 'reindexer', like 'cproto://127.0.0.1:6534/dbname' or 'builtin:///var/lib/reindexer/dbname'
+  -d[DSN],      --dsn=[DSN]              DSN to 'reindexer', like 'cproto://127.0.0.1:6534/dbname', 'builtin:///var/lib/reindexer/dbname' or `ucproto://user@password:/tmp/reindexer.sock:/dbname`
   -f[FILENAME], --filename=[FILENAME]    execute commands from file, then exit
   -c[COMMAND],  --command=[COMMAND]      run only single command (SQL or internal) and exit
   -o[FILENAME], --output=[FILENAME]      send query results to file

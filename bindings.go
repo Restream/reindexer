@@ -58,7 +58,7 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 
 		rdSer := newSerializer(out.GetBuf())
 		rawQueryParams := rdSer.readRawQueryParams(func(nsid int) {
-			ns.cjsonState.ReadPayloadType(&rdSer.Serializer)
+			ns.cjsonState.ReadPayloadType(&rdSer.Serializer, db.binding, ns.name)
 		})
 
 		if rawQueryParams.count == 0 {
@@ -71,7 +71,7 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 
 		if len(precepts) > 0 && (resultp.cptr != 0 || resultp.data != nil) && reflect.TypeOf(item).Kind() == reflect.Ptr {
 			nsArrEntry := nsArrayEntry{ns, ns.cjsonState.Copy()}
-			if _, err := unpackItem(&nsArrEntry, &resultp, false, true, item); err != nil {
+			if _, err := unpackItem(db.binding, &nsArrEntry, &resultp, false, true, item); err != nil {
 				return 0, err
 			}
 		}
@@ -123,7 +123,7 @@ func (db *reindexerImpl) getNS(namespace string) (*reindexerNamespace, error) {
 	return ns, nil
 }
 
-func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool, nonCacheableData bool, item interface{}) (interface{}, error) {
+func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool, nonCacheableData bool, item interface{}) (interface{}, error) {
 	useCache := item == nil && (ns.deepCopyIface || allowUnsafe) && !nonCacheableData
 	needCopy := ns.deepCopyIface && !allowUnsafe
 	var err error
@@ -133,7 +133,7 @@ func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool,
 			item = citem.item
 		} else {
 			item = reflect.New(ns.rtype).Interface()
-			dec := ns.localCjsonState.NewDecoder(item, logger)
+			dec := ns.localCjsonState.NewDecoder(item, bin)
 			if params.cptr != 0 {
 				err = dec.DecodeCPtr(params.cptr, item)
 			} else if params.data != nil {
@@ -159,7 +159,7 @@ func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool,
 		if item == nil {
 			item = reflect.New(ns.rtype).Interface()
 		}
-		dec := ns.localCjsonState.NewDecoder(item, logger)
+		dec := ns.localCjsonState.NewDecoder(item, bin)
 		if params.cptr != 0 {
 			err = dec.DecodeCPtr(params.cptr, item)
 		} else if params.data != nil {
@@ -425,7 +425,7 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 	ser := newSerializer(result.GetBuf())
 	// skip total count
 	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
-		ns.cjsonState.ReadPayloadType(&ser.Serializer)
+		ns.cjsonState.ReadPayloadType(&ser.Serializer, db.binding, ns.name)
 	})
 
 	for i := 0; i < rawQueryParams.count; i++ {

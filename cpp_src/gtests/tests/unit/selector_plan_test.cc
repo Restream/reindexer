@@ -421,7 +421,7 @@ TEST_F(SelectorPlanTest, ConditionsMergeIntoEmptyCondition) {
 						   .Where("id", CondSet, {32, 33, 34})
 						   .Where("id", CondEq, 310)
 						   .Where("id", CondSet, {35, 36, 37})
-						   .Where("value", CondAny, 0)
+						   .Where("value", CondAny, {})
 						   .Explain();
 		QueryResults qr;
 		err = rt.reindexer->Select(q, qr);
@@ -439,7 +439,7 @@ TEST_F(SelectorPlanTest, ConditionsMergeIntoEmptyCondition) {
 						   .Where("id", CondEq, 39)
 						   .Where("id", CondSet, {32, 39, 34})
 						   .Where("id", CondSet, {})
-						   .Where("value", CondAny, 0)
+						   .Where("value", CondAny, {})
 						   .Explain();
 		QueryResults qr;
 		err = rt.reindexer->Select(q, qr);
@@ -454,7 +454,7 @@ TEST_F(SelectorPlanTest, ConditionsMergeIntoEmptyCondition) {
 	{
 		// Query with multiple empty sets
 		const auto q =
-			Query(nsName).Where("id", CondEq, 45).Where("id", CondSet, {}).Where("id", CondSet, {}).Where("value", CondAny, 0).Explain();
+			Query(nsName).Where("id", CondEq, 45).Where("id", CondSet, {}).Where("id", CondSet, {}).Where("value", CondAny, {}).Explain();
 		QueryResults qr;
 		err = rt.reindexer->Select(q, qr);
 		ASSERT_TRUE(err.ok()) << err.what();

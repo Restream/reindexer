@@ -91,16 +91,24 @@ public:
 		QueryResults qr;
 		auto err = rt.reindexer->Select(query, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
+		assert(err.ok());
 
 		QueryResults qrSql;
 		auto sqlQuery = query.GetSQL();
 		err = rt.reindexer->Select(query.GetSQL(), qrSql);
 		EXPECT_TRUE(err.ok()) << err.what();
+		assert(err.ok());
 		EXPECT_EQ(qr.Count(), qrSql.Count()) << "SQL: " << sqlQuery;
 		for (auto it = qr.begin(), itSql = qrSql.begin(); it != qr.end() && itSql != qrSql.end(); ++it, ++itSql) {
+			EXPECT_TRUE(it.Status().ok()) << it.Status().what();
+			assert(it.Status().ok());
 			reindexer::WrSerializer ser, serSql;
-			it.GetCJSON(ser);
-			itSql.GetCJSON(serSql);
+			err = it.GetCJSON(ser);
+			EXPECT_TRUE(err.ok()) << err.what();
+			assert(err.ok());
+			err = itSql.GetCJSON(serSql);
+			EXPECT_TRUE(err.ok()) << err.what();
+			assert(err.ok());
 			EXPECT_EQ(ser.Slice(), serSql.Slice()) << "SQL: " << sqlQuery;
 		}
 		return qr;

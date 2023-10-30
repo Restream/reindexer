@@ -200,7 +200,7 @@ private:
 
 	void updateAlternatingNs(reindexer::WrSerializer&, benchmark::State&);
 	reindexer::Error readDictFile(const std::string& fileName, std::vector<std::string>& words);
-	const char* alternatingNs_ = "FtAlternatingUpdatesAndSelects";
+	const std::string alternatingNs_ = "FtAlternatingUpdatesAndSelects";
 
 	size_t raw_data_sz_ = 0;
 	std::mt19937 randomEngine_{1};

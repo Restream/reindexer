@@ -89,11 +89,14 @@ TEST_F(ReindexerApi, RenameNamespace) {
 
 	auto getRowsInJSON = [&](const std::string& namespaceName, std::vector<std::string>& resStrings) {
 		QueryResults result;
-		rt.reindexer->Select(Query(namespaceName), result);
+		auto err = rt.reindexer->Select(Query(namespaceName), result);
+		ASSERT_TRUE(err.ok()) << err.what();
 		resStrings.clear();
 		for (auto it = result.begin(); it != result.end(); ++it) {
+			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 			reindexer::WrSerializer sr;
-			it.GetJSON(sr, false);
+			err = it.GetJSON(sr, false);
+			ASSERT_TRUE(err.ok()) << err.what();
 			std::string_view sv = sr.Slice();
 			resStrings.emplace_back(sv.data(), sv.size());
 		}
@@ -246,8 +249,7 @@ TEST_F(ReindexerApi, DistinctCompositeIndex) {
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 
-	Query q;
-	q._namespace = default_namespace;
+	Query q{default_namespace};
 	q.Distinct("v1+v2");
 	{
 		QueryResults qr;
@@ -1333,15 +1335,15 @@ TEST_F(ReindexerApi, DistinctQueriesEncodingTest) {
 	std::string dsl = q1.GetJSON();
 	Query q2;
 	q2.FromJSON(dsl);
-	EXPECT_TRUE(q1 == q2);
+	EXPECT_EQ(q1, q2) << "q1: " << q1.GetSQL() << "\nq2: " << q2.GetSQL();
 
 	Query q3{Query(default_namespace).Distinct("name").Distinct("city").Where("id", CondGt, static_cast<int64_t>(10))};
 	std::string sql2 = q3.GetSQL();
 
 	Query q4;
 	q4.FromSQL(sql2);
-	EXPECT_TRUE(q3 == q4);
-	EXPECT_TRUE(sql2 == q4.GetSQL());
+	EXPECT_EQ(q3, q4) << "q3: " << q3.GetSQL() << "\nq4: " << q4.GetSQL();
+	EXPECT_EQ(sql2, q4.GetSQL());
 }
 
 TEST_F(ReindexerApi, ContextCancelingTest) {
@@ -1800,4 +1802,136 @@ TEST_F(ReindexerApi, InsertIncorrectItemWithJsonPathsDuplication) {
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.Count(), 0);
 	}
+}
+
+TEST_F(ReindexerApi, UpdateDoublesItemByPKIndex) {
+	rt.SetVerbose(true);
+
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "tree", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(default_namespace, {"v1", "tree", "int", IndexOpts().Sparse()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(default_namespace, {"v2", "tree", "string", IndexOpts()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	struct ItemData {
+		ItemData() = default;
+		ItemData(unsigned int _id, unsigned int _v1, const std::string& _v2) : id(_id), v1(_v1), v2(_v2) {}
+		unsigned int id = 0;
+		unsigned int v1 = 0;
+		std::string v2;
+	};
+	constexpr size_t kItemsCount = 4;
+	std::vector<ItemData> data;
+	std::string checkUuid;
+	for (unsigned i = 0; i < kItemsCount; i++) {
+		Item item(rt.reindexer->NewItem(default_namespace));
+		ASSERT_TRUE(!!item);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		data.emplace_back(ItemData{i, i + 100, RandString()});
+		item["id"] = int(data.back().id);
+		item["v1"] = int(data.back().v1);
+		item["v2"] = data.back().v2;
+		err = rt.reindexer->Insert(default_namespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	{
+		reindexer::QueryResults qr;
+		Query query;
+		const std::string sql = "UPDATE test_namespace SET v1=125, id = 3 WHERE id = 2";
+		query.FromSQL(sql);
+		err = rt.reindexer->Update(query, qr);
+		ASSERT_FALSE(err.ok());
+	}
+
+	{
+		reindexer::QueryResults qr;
+		err = rt.reindexer->Select(Query(default_namespace).Sort("id", false), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), kItemsCount);
+
+		unsigned int i = 0;
+		for (auto it : qr) {
+			auto item = it.GetItem();
+			ASSERT_EQ(item["id"].As<int>(), data[i].id);
+			ASSERT_EQ(item["v1"].As<int>(), data[i].v1);
+			ASSERT_EQ(item["v2"].As<std::string>(), data[i].v2);
+			i++;
+		}
+	}
+}
+TEST_F(ReindexerApi, IntFieldConvertToStringIndexTest) {
+	Error err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	static int id = 0;
+	enum class Order { InsertThenAddIndex, AddIndexThenUpdate };
+
+	auto testImpl = [this](Order order) {
+		std::srand(std::time(0));
+		int value = std::rand();
+		auto indexName = fmt::sprintf("data_%d", id);
+		auto indexPaths = order == Order::AddIndexThenUpdate ? reindexer::JsonPaths{"n." + indexName} : reindexer::JsonPaths{indexName};
+		auto insert = [this](const char* tmplt, auto&&... args) {
+			Item item(rt.reindexer->NewItem(default_namespace));
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			auto err = item.FromJSON(fmt::sprintf(tmplt, std::forward<decltype(args)>(args)...));
+			ASSERT_TRUE(err.ok()) << err.what();
+			err = rt.reindexer->Insert(default_namespace, item);
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			ASSERT_TRUE(err.ok()) << err.what();
+		};
+
+		auto update = [&] {
+			QueryResults qr;
+			auto err = rt.reindexer->Select(
+				fmt::sprintf("UPDATE %s SET n = {\"%s\":%d} where id = %d", default_namespace, indexName, value, id), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), 1);
+		};
+
+		auto addIndex = [&] {
+			auto err = rt.reindexer->AddIndex(default_namespace, {indexName, std::move(indexPaths), "hash", "string", IndexOpts()});
+			ASSERT_TRUE(err.ok()) << err.what();
+		};
+
+		auto checkResult = [&](const std::string& searchIndex, const std::string& searchValue) {
+			QueryResults qr;
+			auto err = rt.reindexer->Select(Query(default_namespace).Where(searchIndex, CondEq, searchValue), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+
+			ASSERT_EQ(qr.Count(), 1);
+
+			auto item = qr.begin().GetItem();
+			ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+			ASSERT_TRUE(Variant(item[indexName]).Type().Is<reindexer::KeyValueType::String>()) << Variant(item[indexName]).Type().Name();
+			ASSERT_EQ(item[indexName].As<std::string>(), std::to_string(value));
+		};
+
+		switch (order) {
+			case Order::InsertThenAddIndex: {
+				insert("{\"id\":%d,\"%s\":%d})", id, indexName, value);
+				addIndex();
+				break;
+			}
+			case Order::AddIndexThenUpdate: {
+				addIndex();
+				insert("{\"id\":%d}", id);
+				update();
+				break;
+			}
+		}
+		checkResult("id", std::to_string(id));
+		checkResult(indexName, std::to_string(value));
+		id++;
+	};
+
+	testImpl(Order::InsertThenAddIndex);
+	testImpl(Order::AddIndexThenUpdate);
 }

@@ -11,8 +11,8 @@ class IndexRTree : public IndexUnordered<GeometryMap<KeyEntryT, Splitter, MaxEnt
 	using Map = GeometryMap<KeyEntryT, Splitter, MaxEntries, MinEntries>;
 
 public:
-	IndexRTree(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields)
-		: IndexUnordered<Map>{idef, std::move(payloadType), fields} {}
+	IndexRTree(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields, const NamespaceCacheConfigData &cacheCfg)
+		: IndexUnordered<Map>{idef, std::move(payloadType), std::move(fields), cacheCfg} {}
 
 	SelectKeyResults SelectKey(const VariantArray &keys, CondType, SortType, Index::SelectOpts, const BaseFunctionCtx::Ptr &,
 							   const RdxContext &) override;
@@ -21,9 +21,10 @@ public:
 	using IndexUnordered<Map>::Delete;
 	void Delete(const VariantArray &keys, IdType id, StringsHolder &, bool &clearCache) override;
 
-	std::unique_ptr<Index> Clone() const override { return std::unique_ptr<Index>{new IndexRTree(*this)}; }
+	std::unique_ptr<Index> Clone() const override { return std::make_unique<IndexRTree>(*this); }
 };
 
-std::unique_ptr<Index> IndexRTree_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields);
+std::unique_ptr<Index> IndexRTree_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
+									  const NamespaceCacheConfigData &cacheCfg);
 
 }  // namespace reindexer

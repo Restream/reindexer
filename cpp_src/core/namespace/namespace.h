@@ -131,7 +131,12 @@ public:
 	}
 	void OnConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx) {
 		NamespaceConfigData configData;
-		configProvider.GetNamespaceConfig(GetName(ctx), configData);
+		const auto nsName = GetName(ctx);
+		std::string_view realNsName(nsName);
+		if (isTmpNamespaceNameFast(nsName)) {
+			realNsName = demangleTmpNamespaceName(realNsName);
+		}
+		configProvider.GetNamespaceConfig(realNsName, configData);
 		startCopyPolicyTxSize_.store(configData.startCopyPolicyTxSize, std::memory_order_relaxed);
 		copyPolicyMultiplier_.store(configData.copyPolicyMultiplier, std::memory_order_relaxed);
 		txSizeToAlwaysCopy_.store(configData.txSizeToAlwaysCopy, std::memory_order_relaxed);
@@ -211,7 +216,7 @@ private:
 					ns->tryForceFlush(std::move(locker));
 				} else if constexpr (std::is_same_v<T, const Query>) {
 					auto params = longUpdDelLoggingParams_.load(std::memory_order_relaxed);
-					const bool isEnabled = params.thresholdUs >= 0 && !isSystemNamespaceNameFast(v._namespace);
+					const bool isEnabled = params.thresholdUs >= 0 && !isSystemNamespaceNameFast(v.NsName());
 					auto statCalculator = QueryStatCalculator(long_actions::MakeLogger<enumVal>(v, std::move(params)), isEnabled);
 					auto locker = statCalculator.CreateLock(*ns, &NamespaceImpl::wLock, ctx.rdxContext);
 					calc.LockHit();

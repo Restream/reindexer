@@ -18,13 +18,13 @@
 #include "core/querycache.h"
 #include "core/rollback.h"
 #include "core/schema.h"
+#include "core/selectkeyresult.h"
 #include "core/storage/idatastorage.h"
 #include "core/storage/storagetype.h"
-#include "core/transactionimpl.h"
+#include "core/transaction.h"
 #include "estl/contexted_locks.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
-#include "estl/smart_lock.h"
 #include "estl/syncpool.h"
 #include "replicator/updatesobserver.h"
 #include "replicator/waltracker.h"
@@ -258,8 +258,10 @@ public:
 
 	int getIndexByName(std::string_view index) const;
 	int getIndexByNameOrJsonPath(std::string_view name) const;
+	int getScalarIndexByName(std::string_view name) const;
 	bool getIndexByName(std::string_view name, int &index) const;
 	bool getIndexByNameOrJsonPath(std::string_view name, int &index) const;
+	bool getScalarIndexByName(std::string_view name, int &index) const;
 	bool getSparseIndexByJsonPath(std::string_view jsonPath, int &index) const;
 
 	void FillResult(QueryResults &result, const IdSet &ids) const;
@@ -281,6 +283,12 @@ public:
 	int getNsNumber() const { return schema_ ? schema_->GetProtobufNsNumber() : 0; }
 	IndexesCacheCleaner GetIndexesCacheCleaner() { return IndexesCacheCleaner{*this}; }
 	void SetDestroyFlag() { dbDestroyed_ = true; }
+	Error FlushStorage(const RdxContext &ctx) {
+		const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
+		auto lck = rLock(ctx);
+		storage_.Flush(flushOpts);
+		return storage_.GetStatusCached().err;
+	}
 
 private:
 	struct SysRecordsVersions {
@@ -313,6 +321,12 @@ private:
 		std::atomic<bool> readonly_ = {false};
 	};
 
+	struct PKModifyRevertData {
+		PKModifyRevertData(PayloadValue &p, lsn_t l) : pv(p), lsn(l) {}
+		PayloadValue &pv;
+		lsn_t lsn;
+	};
+
 	ReplicationState getReplState() const;
 	std::string sysRecordName(std::string_view sysTag, uint64_t version);
 	void writeSysRecToStorage(std::string_view data, std::string_view sysTag, uint64_t &version, bool direct);
@@ -342,20 +356,21 @@ private:
 	void doDelete(IdType id);
 	void optimizeIndexes(const NsContext &);
 	[[nodiscard]] RollBack_insertIndex insertIndex(std::unique_ptr<Index> newIndex, int idxNo, const std::string &realName);
-	void addIndex(const IndexDef &indexDef);
+	bool addIndex(const IndexDef &indexDef);
 	void addCompositeIndex(const IndexDef &indexDef);
 	template <typename PathsT, typename JsonPathsContainerT>
-	void createFieldsSet(const std::string &idxName, IndexType type, const PathsT &paths, FieldsSet &fields);
+	void createCompositeFieldsSet(const std::string &idxName, const PathsT &paths, FieldsSet &fields);
 	void verifyCompositeIndex(const IndexDef &indexDef) const;
 	template <typename GetNameF>
 	void verifyAddIndex(const IndexDef &indexDef, GetNameF &&) const;
 	void verifyUpdateIndex(const IndexDef &indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
-	void updateIndex(const IndexDef &indexDef);
+	bool updateIndex(const IndexDef &indexDef);
 	void dropIndex(const IndexDef &index);
 	void addToWAL(const IndexDef &indexDef, WALRecType type, const RdxContext &ctx);
 	void addToWAL(std::string_view json, WALRecType type, const RdxContext &ctx);
-	void replicateItem(IdType itemId, const NsContext &ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity);
+	void replicateItem(IdType itemId, const NsContext &ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity,
+					   std::optional<PKModifyRevertData> &&modifyData);
 	void removeExpiredItems(RdxActivityContext *);
 	void removeExpiredStrings(RdxActivityContext *);
 	Item newItem();
@@ -370,6 +385,11 @@ private:
 	void putMeta(const std::string &key, std::string_view data, const RdxContext &ctx);
 
 	std::pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &);
+
+	RX_ALWAYS_INLINE SelectKeyResult getPkDocs(const ConstPayload &cpl, bool inTransaction, const RdxContext &ctx);
+	RX_ALWAYS_INLINE VariantArray getPkKeys(const ConstPayload &cpl, Index *pkIndex, int fieldNum);
+	void checkUniquePK(const ConstPayload &cpl, bool inTransaction, const RdxContext &ctx);
+
 	int getSortedIdxCount() const noexcept;
 	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
@@ -413,8 +433,6 @@ private:
 
 	std::unordered_map<std::string, std::string> meta_;
 
-	shared_ptr<QueryTotalCountCache> queryTotalCountCache_;
-
 	int sparseIndexesCount_ = 0;
 	VariantArray krefs, skrefs;
 
@@ -431,7 +449,7 @@ private:
 
 	NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &storageLock);
 
-	bool isSystem() const { return !name_.empty() && name_[0] == '#'; }
+	bool isSystem() const { return isSystemNamespaceNameFast(name_); }
 	IdType createItem(size_t realSize);
 	void checkApplySlaveUpdate(bool v);
 
@@ -450,12 +468,12 @@ private:
 		}
 	}
 
-	JoinCache::Ptr joinCache_;
-
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic<bool> enablePerfCounters_;
 
 	NamespaceConfigData config_;
+	std::unique_ptr<QueryCountCache> queryCountCache_;
+	std::unique_ptr<JoinCache> joinCache_;
 	// Replication variables
 	WALTracker wal_;
 	ReplicationState repl_;

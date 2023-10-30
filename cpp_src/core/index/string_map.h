@@ -2,14 +2,12 @@
 
 #include "core/keyvalue/key_string.h"
 #include "core/keyvalue/uuid.h"
-#include "core/payload/payloadtype.h"
+#include "core/namespace/stringsholder.h"
 #include "cpp-btree/btree_map.h"
 #include "sparse-map/sparse_map.h"
 #include "tools/stringstools.h"
 
 namespace reindexer {
-
-class FieldsSet;
 
 struct less_key_string {
 	using is_transparent = void;

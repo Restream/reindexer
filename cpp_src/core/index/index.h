@@ -12,7 +12,6 @@
 #include "core/payload/payloadiface.h"
 #include "core/perfstatcounter.h"
 #include "core/selectkeyresult.h"
-#include "core/type_consts_helpers.h"
 #include "ft_preselect.h"
 #include "indexiterator.h"
 
@@ -46,7 +45,7 @@ public:
 	using KeyEntry = reindexer::KeyEntry<IdSet>;
 	using KeyEntryPlain = reindexer::KeyEntry<IdSetPlain>;
 
-	Index(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields);
+	Index(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields);
 	Index(const Index&);
 	Index& operator=(const Index&) = delete;
 	virtual ~Index() = default;
@@ -82,20 +81,24 @@ public:
 	virtual bool IsDestroyPartSupported() const noexcept { return false; }
 	virtual void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue&) {}
 
-	const PayloadType& GetPayloadType() const { return payloadType_; }
-	void UpdatePayloadType(PayloadType payloadType) { payloadType_ = std::move(payloadType); }
+	const PayloadType& GetPayloadType() const& { return payloadType_; }
+	const PayloadType& GetPayloadType() const&& = delete;
+	void UpdatePayloadType(PayloadType&& payloadType) { payloadType_ = std::move(payloadType); }
 
-	static std::unique_ptr<Index> New(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields_);
+	static std::unique_ptr<Index> New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields_,
+									  const NamespaceCacheConfigData& cacheCfg);
 
 	KeyValueType KeyType() const { return keyType_; }
 	KeyValueType SelectKeyType() const { return selectKeyType_; }
-	const FieldsSet& Fields() const { return fields_; }
-	const std::string& Name() const { return name_; }
+	const FieldsSet& Fields() const& noexcept { return fields_; }
+	const FieldsSet& Fields() const&& = delete;
+	const std::string& Name() const& noexcept { return name_; }
+	const std::string& Name() const&& = delete;
 	IndexType Type() const { return type_; }
 	const std::vector<IdType>& SortOrders() const { return sortOrders_; }
 	const IndexOpts& Opts() const { return opts_; }
 	virtual void SetOpts(const IndexOpts& opts) { opts_ = opts; }
-	virtual void SetFields(FieldsSet&& fields) { fields_ = std::move(fields); }
+	void SetFields(FieldsSet&& fields) { fields_ = std::move(fields); }
 	[[nodiscard]] SortType SortId() const noexcept { return sortId_; }
 	virtual void SetSortedIdxCount(int sortedIdxCount) { sortedIdxCount_ = sortedIdxCount; }
 	virtual FtMergeStatuses GetFtMergeStatuses(const RdxContext&) {
@@ -124,6 +127,7 @@ public:
 	virtual bool IsBuilt() const noexcept { return isBuilt_; }
 	virtual void MarkBuilt() noexcept { isBuilt_ = true; }
 	virtual void EnableUpdatesCountingMode(bool) noexcept {}
+	virtual void ReconfigureCache(const NamespaceCacheConfigData& cacheCfg) = 0;
 
 	virtual void Dump(std::ostream& os, std::string_view step = "  ", std::string_view offset = "") const { dump(os, step, offset); }
 
@@ -140,8 +144,12 @@ protected:
 	IndexOpts opts_;
 	// Payload type of items
 	mutable PayloadType payloadType_;
-	// Fields in index. Valid only for composite indexes
+
+private:
+	// Fields in index
 	FieldsSet fields_;
+
+protected:
 	// Perfstat counter
 	PerfStatCounterMT commitPerfCounter_;
 	PerfStatCounterMT selectPerfCounter_;

@@ -32,7 +32,7 @@ public:
 
 	reindexer::QueryResults SimpleSelect3(std::string word);
 
-	void Delete(int id);
+	reindexer::Error Delete(int id);
 	reindexer::QueryResults SimpleCompositeSelect(std::string word);
 	reindexer::QueryResults CompositeSelectField(const std::string& field, std::string word);
 	reindexer::QueryResults StressSelect(std::string word);

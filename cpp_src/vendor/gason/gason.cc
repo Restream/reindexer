@@ -379,7 +379,7 @@ JsonNode JsonParser::Parse(std::string_view str, size_t *length) {
 	return Parse(span<char>(&tmp_[0], tmp_.size()), length);
 }
 
-inline bool haveEqualType(JsonTag lt, JsonTag rt) noexcept {
+static inline bool haveEqualType(JsonTag lt, JsonTag rt) noexcept {
 	return lt == rt || (lt == JSON_TRUE && rt == JSON_FALSE) || (lt == JSON_FALSE && rt == JSON_TRUE);
 }
 

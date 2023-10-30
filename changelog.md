@@ -1,3 +1,59 @@
+# Version 3.20.0 (30.10.2023)
+## Core
+- [fea] Added crash query report for Update/Delete queries
+- [fea] Added configs for LRU index cache size (check section `cache` in the `namespaces` entity of the `#config`-namespace)
+- [fea] Optimized CJSON deserialization
+- [fea] Optimized WAL size (unchaged indexes and schemas will not be added into the WAL anymore)
+- [fea] Added atomic rollback for multiple field UPDATE-queries in case of errors during query execution (currently it is atomic on the level of the individual document)
+- [fix] Fixed column indexes optimization (some of the comparators have become noticeably more effective)
+- [fix] Added PK check for UPDATE-queries
+- [fix] Fixed JOINs on composite indexes
+- [fix] Fixed select functions with MERGE queries for cases when the same namespace is merged multiple times
+- [fix] Fixed non-indexed string/int fields convertion on index creation in cases when index type is not equal to the field type
+- [fix] Disabled leveldb's log files (in rare cases those logs could lead to the problems with storage reopenning)
+- [fix] Disable background indexes optimization for the temporary namespaces
+- [fix] Removed attempts to reopen storage with flush errors befors it's destruction
+- [fix] Some of the storage flushes were moved outside of the unique namespaces lock
+- [fix] Fixed directories deletion for Windows
+
+## Replication
+- [fea] Reduced memory consumptio for online-updates
+- [fix] Fixed updates size calculation during max allowed updates size check (now it checks actual allocated memory, not the data size)
+- [fix] Namespaces config applying after FORCE-sync replication
+- [fix] Fixed some rare tagsmatcher conflicts in replicated namespaces in case when namespace was not replicted previously and had some data in it
+- [fix] Fixed some unnecessary force syncs after go clients connection
+- [fix] Fixed documents duplication after PK change in UPDATE-query
+- [fix] Fixed logical race in cascade replication resync
+
+## Reindexer server
+- [fea] Added support for UNIX domain sockets for RPC-server. Disabled by default (check `urpcaddr`-flag in server's config)
+- [fea] Added support for default timeouts in HTTP-server (support for `http-write-timeout` and `http-read-timeout` options in server's config)
+- [fea] Added support for `Request-Timeout` header in HTTP-requests to setup individual timeout for each request
+
+## Reindexer tool
+- [fea] Added support for UNIX domain sockets (dsn format: `ucproto://<socket_path>:/<dbname>`, example: `ucproto:///tmp/reindexer.sock:/my_db`)
+
+## Go connector
+- [fea] Added support for UNIX domain sockets in cproto-binding (dsn format: `ucproto://<socket_path>:/<dbname>`, example: `ucproto:///tmp/reindexer.sock:/my_db`)
+- [fix] Fixed deadlock in `EnableLogger` method betweenn Go and C++ mutexes
+
+## Face
+- [fea] Added the ability to use hot keys to navigate over the UI
+- [fea] Added the link to the documentation to the left bar menu
+- [fea] Changed the column filter with the case sensitive one
+- [fea] Added validation of the JSON paths field to the Index Config page
+- [fea] Added the wal_size field to the Namespace config
+- [fea] Added the preselect_us and field_type sections fto the Explain page
+- [fix] Fixed the horizontal scroll for the Grid view
+- [fix] Fixed the data sorting on the Items page during the namespace changing
+- [fix] Fixed the "undefined items" error during the db changing
+- [fix] Fixed the console issues for the ttl index
+- [fix] Made the Namespace refactoring
+- [fix] Fixed the operations with the last column for the Grid view
+
+## Build
+- [fea] Added support for almalinux-9 builds in [dependencies.sh](dependencies.sh)
+
 # Version 3.19.0 (16.09.2023)
 ## Core
 - [fea] Added background namespaces deleteion. Previously in some cases atomic transactions could cause the namespace's deletion in the querie's execution thread, which lead to the latency spike
@@ -1904,6 +1960,4 @@
 - [fix] Limit cgo execution to 2K goroutines to avoid exceed of OS threads limit 
 - [ref] EnableStorage method was deprecated
 - [fix] Query builder did not reset opOR after InnerJoin
-
-## Misc
 

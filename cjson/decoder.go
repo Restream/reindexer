@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"time"
 	"unsafe"
+
+	"github.com/restream/reindexer/v3/bindings"
 )
 
 var (
@@ -15,15 +17,15 @@ var (
 	ifaceSliceType = reflect.TypeOf(ifaceSlice)
 )
 
-type Logger interface {
-	Printf(level int, fmt string, msg ...interface{})
+type LoggerOwner interface {
+	GetLogger() bindings.Logger
 }
 
 type Decoder struct {
-	ser        *Serializer
-	state      *State
-	ctagsCache *ctagsCache
-	logger     Logger
+	ser         *Serializer
+	state       *State
+	ctagsCache  *ctagsCache
+	loggerOwner LoggerOwner
 }
 
 const MaxIndexes = 256
@@ -658,19 +660,23 @@ func (dec *Decoder) DecodeCPtr(cptr uintptr, dest interface{}) (err error) {
 
 	defer func() {
 		if ret := recover(); ret != nil {
-			if dec.logger != nil {
-				dec.logger.Printf(1,
-					"Interface: %#v\nRead position: %d\nTags(v%d): %v\nPayload Type: %+v\nPayload Value: %v\nTags cache: %+v\nData dump:\n%s\nError: %v\n",
-					dest,
-					ser.Pos(),
-					dec.state.Version,
-					dec.state.tagsMatcher.Names,
-					dec.state.payloadType.Fields,
-					pl.getAsMap(),
-					dec.state.structCache,
-					hex.Dump(ser.Bytes()),
-					ret,
-				)
+			if dec.loggerOwner != nil {
+				if logger := dec.loggerOwner.GetLogger(); logger != nil {
+					logger.Printf(1,
+						"Interface: %#v\nRead position: %d\nTags(v%d): %v\nPayload Type: %+v\nPayload Value: %v\nTags cache: %+v\nData dump:\n%s\nError: %v\nTagsMatcher: { state_token: 0x%08X, version: %d }\n",
+						dest,
+						ser.Pos(),
+						dec.state.Version,
+						dec.state.tagsMatcher.Names,
+						dec.state.payloadType.Fields,
+						pl.getAsMap(),
+						dec.state.structCache,
+						hex.Dump(ser.Bytes()),
+						ret,
+						uint32(dec.state.StateToken),
+						dec.state.Version,
+					)
+				}
 			}
 			err = ret.(error)
 		}
@@ -695,23 +701,27 @@ func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
 
 	defer func() {
 		if ret := recover(); ret != nil {
-			if dec.logger != nil {
-				dec.logger.Printf(1,
-					"Interface: %#v\nRead position: %d\nTags(v%d): %v\nTags cache: %+v\nData dump:\n%s\nError: %v\n",
-					dest,
-					ser.Pos(),
-					dec.state.Version,
-					dec.state.tagsMatcher.Names,
-					dec.state.structCache,
-					hex.Dump(ser.Bytes()),
-					ret,
-				)
+			if dec.loggerOwner != nil {
+				if logger := dec.loggerOwner.GetLogger(); logger != nil {
+					logger.Printf(1,
+						"Interface: %#v\nRead position: %d\nTags(v%d): %v\nTags cache: %+v\nData dump:\n%s\nError: %v\nTagsMatcher: { state_token: 0x%08X, version: %d }\n",
+						dest,
+						ser.Pos(),
+						dec.state.Version,
+						dec.state.tagsMatcher.Names,
+						dec.state.structCache,
+						hex.Dump(ser.Bytes()),
+						ret,
+						uint32(dec.state.StateToken),
+						dec.state.Version,
+					)
+				}
 			}
 			err = ret.(error)
 		}
 	}()
 
-	fieldsoutcnt := make([]int, 64, 64)
+	fieldsoutcnt := make([]int, MaxIndexes)
 	ctagsPath := make([]int, 0, 8)
 
 	dec.decodeValue(nil, ser, reflect.ValueOf(dest), fieldsoutcnt, ctagsPath)

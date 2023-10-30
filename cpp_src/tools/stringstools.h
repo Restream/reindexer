@@ -3,6 +3,7 @@
 #include <time.h>
 #include <cctype>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -26,6 +27,12 @@ inline std::string_view skipSpace(std::string_view str) {
 		;
 	return str.substr(i);
 }
+
+template <typename Str>
+bool strEmpty(const Str& str) noexcept {
+	return str.empty();
+}
+inline bool strEmpty(const char* str) noexcept { return str[0] == '\0'; }
 
 template <typename Container>
 Container& split(const typename Container::value_type& str, std::string_view delimiters, bool trimEmpty, Container& tokens) {
@@ -136,11 +143,12 @@ int fast_strftime(char* buf, const tm* tm);
 std::string urldecode2(std::string_view str);
 
 int stoi(std::string_view sl);
+std::optional<int> try_stoi(std::string_view sl);
 int64_t stoll(std::string_view sl);
 
 bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
 bool validateUserNsName(std::string_view name) noexcept;
-RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return name.size() && name[0] == '#'; }
+RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && name[0] == '#'; }
 LogLevel logLevelFromString(const std::string& strLogLevel);
 StrictMode strictModeFromString(const std::string& strStrictMode);
 std::string_view strictModeToString(StrictMode mode);
@@ -167,6 +175,9 @@ template <CaseSensitive sensitivity>
 bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept;
 RX_ALWAYS_INLINE bool checkIfStartsWith(std::string_view pattern, std::string_view src) noexcept {
 	return checkIfStartsWith<CaseSensitive::No>(pattern, src);
+}
+RX_ALWAYS_INLINE bool checkIfStartsWithCS(std::string_view pattern, std::string_view src) noexcept {
+	return checkIfStartsWith<CaseSensitive::Yes>(pattern, src);
 }
 
 template <CaseSensitive sensitivity>
@@ -232,9 +243,29 @@ struct hash_str {
 	size_t operator()(const std::string& hs) const noexcept { return collateHash<CollateNone>(hs); }
 };
 
-inline void deepCopy(std::string& dst, const std::string& src) {
+RX_ALWAYS_INLINE void deepCopy(std::string& dst, const std::string& src) {
 	dst.resize(src.size());
 	std::memcpy(&dst[0], &src[0], src.size());
+}
+
+constexpr size_t kTmpNsPostfixLen = 20;
+constexpr std::string_view kTmpNsSuffix = "_tmp_";
+constexpr char kTmpNsPrefix = '@';
+RX_ALWAYS_INLINE bool isTmpNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && name[0] == kTmpNsPrefix; }
+[[nodiscard]] inline std::string createTmpNamespaceName(std::string_view baseName) {
+	return std::string({kTmpNsPrefix}).append(baseName).append(kTmpNsSuffix).append(randStringAlph(kTmpNsPostfixLen));
+}
+[[nodiscard]] inline std::string_view demangleTmpNamespaceName(std::string_view tmpNsName) noexcept {
+	if (tmpNsName.size() < kTmpNsPostfixLen + kTmpNsSuffix.size() + 1) {
+		return tmpNsName;
+	}
+	if (tmpNsName[0] != kTmpNsPrefix) {
+		return tmpNsName;
+	}
+	if (tmpNsName.substr(tmpNsName.size() - kTmpNsPostfixLen - kTmpNsSuffix.size(), kTmpNsSuffix.size()) != kTmpNsSuffix) {
+		return tmpNsName;
+	}
+	return tmpNsName.substr(1, tmpNsName.size() - kTmpNsPostfixLen - 1 - kTmpNsSuffix.size());
 }
 
 }  // namespace reindexer

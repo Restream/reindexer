@@ -44,6 +44,8 @@ func TestMain(m *testing.M) {
 		os.RemoveAll("/tmp/reindex_test/")
 	} else if udsn.Scheme == "cproto" {
 		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression(), reindexer.WithAppName("RxTestInstance")}
+	} else if udsn.Scheme == "ucproto" {
+		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithAppName("RxTestInstance")}
 	}
 
 	DB = NewReindexWrapper(*dsn, opts...)

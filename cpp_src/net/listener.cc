@@ -42,14 +42,14 @@ Listener<LT>::~Listener() {
 }
 
 template <ListenerType LT>
-bool Listener<LT>::Bind(std::string addr) {
+bool Listener<LT>::Bind(std::string addr, socket_domain type) {
 	if (shared_->sock_.valid()) {
 		return false;
 	}
 
 	shared_->addr_ = std::move(addr);
 
-	if (shared_->sock_.bind(shared_->addr_) < 0) {
+	if (shared_->sock_.bind(shared_->addr_, type) < 0) {
 		return false;
 	}
 
@@ -90,7 +90,6 @@ void Listener<LT>::io_accept(ev::io & /*watcher*/, int revents) {
 	}
 
 	if (shared_->terminating_) {
-		client.close();
 		logPrintf(LogWarning, "Can't accept connection. Listener is terminating!");
 		return;
 	}
@@ -103,10 +102,10 @@ void Listener<LT>::io_accept(ev::io & /*watcher*/, int revents) {
 		shared_->idle_.pop_back();
 		lck.unlock();
 		conn->Attach(loop_);
-		conn->Restart(client.fd());
+		conn->Restart(std::move(client));
 	} else {
 		lck.unlock();
-		conn = std::unique_ptr<IServerConnection>(shared_->connFactory_(loop_, client.fd(), LT == ListenerType::Mixed));
+		conn = std::unique_ptr<IServerConnection>(shared_->connFactory_(loop_, std::move(client), LT == ListenerType::Mixed));
 		connIsActive = !conn->IsFinished();
 	}
 
@@ -422,11 +421,10 @@ Listener<LT>::Shared::Shared(ConnectionFactory &&connFactory, int maxListeners)
 
 template <ListenerType LT>
 Listener<LT>::Shared::~Shared() {
-	sock_.close();
+	if rx_unlikely (sock_.close() != 0) {
+		perror("sock_.close() error");
+	}
 }
-
-template class Listener<ListenerType::Mixed>;
-template class Listener<ListenerType::Shared>;
 
 ForkedListener::ForkedListener(ev::dynamic_loop &loop, ConnectionFactory &&connFactory)
 	: connFactory_(std::move(connFactory)), loop_(loop) {
@@ -442,17 +440,19 @@ ForkedListener::~ForkedListener() {
 	if (!terminating_ || runningThreadsCount_) {
 		ForkedListener::Stop();
 	}
-	sock_.close();
+	if rx_unlikely (sock_.close() != 0) {
+		perror("sock_.close() error");
+	}
 }
 
-bool ForkedListener::Bind(std::string addr) {
+bool ForkedListener::Bind(std::string addr, socket_domain type) {
 	if (sock_.valid()) {
 		return false;
 	}
 
 	addr_ = std::move(addr);
 
-	if (sock_.bind(addr_) < 0) {
+	if (sock_.bind(addr_, type) < 0) {
 		return false;
 	}
 
@@ -481,13 +481,12 @@ void ForkedListener::io_accept(ev::io & /*watcher*/, int revents) {
 	}
 
 	if (terminating_) {
-		client.close();
 		logPrintf(LogWarning, "Can't accept connection. Listener is terminating!");
 		return;
 	}
 	++runningThreadsCount_;
 
-	std::thread th([this, client]() noexcept {
+	std::thread th([this, client = std::move(client)]() mutable noexcept {
 		try {
 #if REINDEX_WITH_GPERFTOOLS
 			if (alloc_ext::TCMallocIsAvailable()) {
@@ -500,7 +499,7 @@ void ForkedListener::io_accept(ev::io & /*watcher*/, int revents) {
 			async.set(loop);
 			async.start();
 
-			Worker w(std::unique_ptr<IServerConnection>(connFactory_(loop, client.fd(), false)), async);
+			Worker w(std::unique_ptr<IServerConnection>(connFactory_(loop, std::move(client), false)), async);
 			auto pc = w.conn.get();
 			if (pc->IsFinished()) {	 // Connection may be closed inside Worker construction
 				pc->Detach();
@@ -552,6 +551,9 @@ void ForkedListener::Stop() {
 		lck.lock();
 	}
 }
+
+template class Listener<ListenerType::Mixed>;
+template class Listener<ListenerType::Shared>;
 
 }  // namespace net
 }  // namespace reindexer

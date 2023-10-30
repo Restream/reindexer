@@ -114,8 +114,6 @@ void QueryResults::fetchNextResults() {
 	rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
 }
 
-QueryResults::~QueryResults() {}
-
 h_vector<std::string_view, 1> QueryResults::GetNamespaces() const {
 	h_vector<std::string_view, 1> ret;
 	ret.reserve(nsArray_.size());
@@ -309,9 +307,6 @@ QueryResults::Iterator &QueryResults::Iterator::operator++() {
 
 	return *this;
 }
-
-bool QueryResults::Iterator::operator!=(const Iterator &other) const { return idx_ != other.idx_; }
-bool QueryResults::Iterator::operator==(const Iterator &other) const { return idx_ == other.idx_; }
 
 }  // namespace client
 }  // namespace reindexer

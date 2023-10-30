@@ -41,12 +41,13 @@ public:
 	CoroReindexer &operator=(CoroReindexer &&) noexcept;
 
 	/// Connect - connect to reindexer server
-	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname`
+	/// @param dsn - uri of server and database, like: `cproto://user@password:127.0.0.1:6534/dbname` or
+	/// `ucproto://user@password:/tmp/reindexer.sock:/dbname`
 	/// @param loop - event loop for connections and coroutines handling
 	/// @param opts - Connect options. May contaion any of <br>
 	Error Connect(const std::string &dsn, dynamic_loop &loop, const client::ConnectOpts &opts = client::ConnectOpts());
 	/// Stop - shutdown connector
-	Error Stop();
+	void Stop();
 	/// Open or create namespace
 	/// @param nsName - Name of namespace
 	/// @param opts - Storage options. Can be one of <br>

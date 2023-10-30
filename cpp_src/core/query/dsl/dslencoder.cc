@@ -114,10 +114,10 @@ void encodeAggregationFunctions(const Query& query, JsonBuilder& builder) {
 }
 
 void encodeJoinEntry(const QueryJoinEntry& joinEntry, JsonBuilder& builder) {
-	builder.Put("left_field", joinEntry.index_);
-	builder.Put("right_field", joinEntry.joinIndex_);
-	builder.Put("cond", get(cond_map, joinEntry.condition_));
-	builder.Put("op", get(op_map, joinEntry.op_));
+	builder.Put("left_field", joinEntry.LeftFieldName());
+	builder.Put("right_field", joinEntry.RightFieldName());
+	builder.Put("cond", get(cond_map, joinEntry.Condition()));
+	builder.Put("op", get(op_map, joinEntry.Operation()));
 }
 
 void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder) {
@@ -125,9 +125,9 @@ void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder) {
 	auto node = builder.Object("join_query"sv);
 
 	node.Put("type", get(join_types, joinQuery.joinType));
-	node.Put("namespace", joinQuery._namespace);
-	node.Put("limit", joinQuery.count);
-	node.Put("offset", joinQuery.start);
+	node.Put("namespace", joinQuery.NsName());
+	node.Put("limit", joinQuery.Limit());
+	node.Put("offset", joinQuery.Offset());
 
 	encodeFilters(joinQuery, node);
 	encodeSorting(joinQuery.sortingEntries_, node);
@@ -147,18 +147,18 @@ void encodeSingleJoinQuery(const JoinedQuery& joinQuery, JsonBuilder& builder) {
 }
 
 void encodeFilter(const QueryEntry& qentry, JsonBuilder& builder) {
-	if (qentry.distinct) return;
-	builder.Put("cond", get(cond_map, CondType(qentry.condition)));
-	builder.Put("field", qentry.index);
+	if (qentry.Distinct()) return;
+	builder.Put("cond", get(cond_map, CondType(qentry.Condition())));
+	builder.Put("field", qentry.FieldName());
 
-	if (qentry.values.empty()) return;
-	if (qentry.values.size() > 1 || qentry.values[0].Type().Is<KeyValueType::Tuple>()) {
+	if (qentry.Values().empty()) return;
+	if (qentry.Values().size() > 1 || qentry.Values()[0].Type().Is<KeyValueType::Tuple>()) {
 		auto arrNode = builder.Array("value");
-		for (const Variant& kv : qentry.values) {
+		for (const Variant& kv : qentry.Values()) {
 			arrNode.Put(nullptr, kv);
 		}
 	} else {
-		builder.Put("value", qentry.values[0]);
+		builder.Put("value", qentry.Values()[0]);
 	}
 }
 
@@ -201,10 +201,10 @@ void encodeUpdateFields(const Query& query, JsonBuilder& builder) {
 void toDsl(const Query& query, JsonBuilder& builder) {
 	switch (query.Type()) {
 		case QueryType::QuerySelect: {
-			builder.Put("namespace", query._namespace);
-			builder.Put("limit", query.count);
-			builder.Put("offset", query.start);
-			builder.Put("req_total", get(reqtotal_values, query.calcTotal));
+			builder.Put("namespace", query.NsName());
+			builder.Put("limit", query.Limit());
+			builder.Put("offset", query.Offset());
+			builder.Put("req_total", get(reqtotal_values, query.CalcTotal()));
 			builder.Put("explain", query.explain_);
 			builder.Put("type", "select");
 			auto strictMode = strictModeToString(query.strictMode);
@@ -222,7 +222,7 @@ void toDsl(const Query& query, JsonBuilder& builder) {
 			break;
 		}
 		case QueryType::QueryUpdate: {
-			builder.Put("namespace", query._namespace);
+			builder.Put("namespace", query.NsName());
 			builder.Put("explain", query.explain_);
 			builder.Put("type", "update");
 			encodeFilters(query, builder);
@@ -244,14 +244,14 @@ void toDsl(const Query& query, JsonBuilder& builder) {
 			break;
 		}
 		case QueryType::QueryDelete: {
-			builder.Put("namespace", query._namespace);
+			builder.Put("namespace", query.NsName());
 			builder.Put("explain", query.explain_);
 			builder.Put("type", "delete");
 			encodeFilters(query, builder);
 			break;
 		}
 		case QueryType::QueryTruncate: {
-			builder.Put("namespace", query._namespace);
+			builder.Put("namespace", query.NsName());
 			builder.Put("type", "truncate");
 			break;
 		}
@@ -283,7 +283,7 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 				dsl::encodeEqualPositions(bracket.equalPositions, arrNode);
 			},
 			[&node](const QueryEntry& qe) {
-				if (qe.distinct) return;
+				if (qe.Distinct()) return;
 				dsl::encodeFilter(qe, node);
 			},
 			[&node, &parentQuery](const JoinQueryEntry& jqe) {
@@ -292,8 +292,8 @@ void QueryEntries::toDsl(const_iterator it, const_iterator to, const Query& pare
 			},
 			[&node](const BetweenFieldsQueryEntry& qe) {
 				node.Put("cond", dsl::get(dsl::cond_map, CondType(qe.Condition())));
-				node.Put("first_field", qe.firstIndex);
-				node.Put("second_field", qe.secondIndex);
+				node.Put("first_field", qe.LeftFieldName());
+				node.Put("second_field", qe.RightFieldName());
 			});
 	}
 }

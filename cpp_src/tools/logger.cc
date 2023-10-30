@@ -45,11 +45,6 @@ void logInstallWriter(LogWriter writer, LoggerPolicy policy) {
 #if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
 		std::abort();
 #else
-		lck.unlock();
-		if (writer) {
-			errorText.append(". THIS logger is not active");
-			writer(LogError, &errorText[0]);
-		}
 		return;
 #endif
 	}

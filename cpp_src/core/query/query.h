@@ -71,8 +71,10 @@ public:
 	/// @param start - number of the first row to get from selected set. Analog to sql OFFSET Offset.
 	/// @param count - number of rows to get from result set. Analog to sql LIMIT RowsCount.
 	/// @param calcTotal - calculation mode.
-	explicit Query(const std::string &nsName, unsigned start = QueryEntry::kDefaultOffset, unsigned count = QueryEntry::kDefaultLimit,
-				   CalcTotalMode calcTotal = ModeNoTotal);
+	template <typename T>
+	explicit Query(T nsName, unsigned start = QueryEntry::kDefaultOffset, unsigned count = QueryEntry::kDefaultLimit,
+				   CalcTotalMode calcTotal = ModeNoTotal)
+		: namespace_(std::forward<T>(nsName)), start_(start), count_(count), calcTotal_(calcTotal) {}
 
 	/// Creates an empty object.
 	Query() = default;
@@ -94,6 +96,11 @@ public:
 	/// @return Query in SQL format
 	std::string GetSQL(bool stripArgs = false) const;
 
+	/// Logs query in 'Select field1, ... field N from namespace ...' format.
+	/// @param realType - replaces original query's type
+	/// @return Query in SQL format
+	std::string GetSQL(QueryType realType) const;
+
 	/// Parses JSON dsl set.
 	/// @param dsl - dsl set.
 	/// @return always returns errOk or throws an exception.
@@ -112,79 +119,75 @@ public:
 	Query &&Explain(bool on = true) && { return std::move(Explain(on)); }
 
 	/// Adds a condition with a single value. Analog to sql Where clause.
-	/// @param idx - index used in condition clause.
+	/// @param field - field used in condition clause.
 	/// @param cond - type of condition.
 	/// @param val - value of index to be compared with.
 	/// @return Query object ready to be executed.
-	template <typename Input>
-	Query &Where(const std::string &idx, CondType cond, Input val) & {
-		return Where(idx, cond, {val});
+	template <typename Str, typename Input>
+	Query &Where(Str &&field, CondType cond, Input val) & {
+		return Where(std::forward<Str>(field), cond, {std::forward<Input>(val)});
 	}
-	template <typename Input>
-	Query &&Where(const std::string &idx, CondType cond, Input val) && {
-		return std::move(Where<Input>(idx, cond, {val}));
+	template <typename Str, typename Input>
+	Query &&Where(Str &&field, CondType cond, Input val) && {
+		return std::move(Where<Str, Input>(std::forward<Str>(field), cond, {std::move(val)}));
 	}
 
 	/// Adds a condition with several values. Analog to sql Where clause.
-	/// @param idx - index used in condition clause.
+	/// @param field - field used in condition clause.
 	/// @param cond - type of condition.
 	/// @param l - list of index values to be compared with.
 	/// @return Query object ready to be executed.
-	template <typename T>
-	Query &Where(const std::string &idx, CondType cond, std::initializer_list<T> l) & {
-		QueryEntry qe;
-		qe.condition = cond;
-		qe.index = idx;
-		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(Variant(*it));
-		entries.Append(nextOp_, std::move(qe));
+	template <typename Str, typename T>
+	Query &Where(Str &&field, CondType cond, std::initializer_list<T> l) & {
+		VariantArray values;
+		values.reserve(l.size());
+		for (auto it = l.begin(); it != l.end(); it++) values.emplace_back(*it);
+		entries.Append<QueryEntry>(nextOp_, std::forward<Str>(field), cond, std::move(values));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename T>
-	Query &&Where(const std::string &idx, CondType cond, std::initializer_list<T> l) && {
-		return std::move(Where<T>(idx, cond, std::move(l)));
+	template <typename Str, typename T>
+	Query &&Where(Str &&field, CondType cond, std::initializer_list<T> l) && {
+		return std::move(Where<Str, T>(std::forward<Str>(field), cond, std::move(l)));
 	}
 
 	/// Adds a condition with several values. Analog to sql Where clause.
-	/// @param idx - index used in condition clause.
+	/// @param field - field used in condition clause.
 	/// @param cond - type of condition.
 	/// @param l - vector of index values to be compared with.
 	/// @return Query object ready to be executed.
-	template <typename T>
-	Query &Where(const std::string &idx, CondType cond, const std::vector<T> &l) & {
-		QueryEntry qe;
-		qe.condition = cond;
-		qe.index = idx;
-		qe.values.reserve(l.size());
-		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(Variant(*it));
-		entries.Append(nextOp_, std::move(qe));
+	template <typename Str, typename T>
+	Query &Where(Str &&field, CondType cond, const std::vector<T> &l) & {
+		VariantArray values;
+		values.reserve(l.size());
+		for (auto it = l.begin(); it != l.end(); it++) values.emplace_back(*it);
+		entries.Append<QueryEntry>(nextOp_, std::forward<Str>(field), cond, std::move(values));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	template <typename T>
-	Query &&Where(const std::string &idx, CondType cond, const std::vector<T> &l) && {
-		return std::move(Where<T>(idx, cond, l));
+	template <typename Str, typename T>
+	Query &&Where(Str &&field, CondType cond, const std::vector<T> &l) && {
+		return std::move(Where<Str, T>(std::forward<Str>(field), cond, l));
 	}
 
 	/// Adds a condition with several values. Analog to sql Where clause.
-	/// @param idx - index used in condition clause.
+	/// @param field - field used in condition clause.
 	/// @param cond - type of condition.
 	/// @param l - vector of index values to be compared with.
 	/// @return Query object ready to be executed.
-	Query &Where(const std::string &idx, CondType cond, const VariantArray &l) & {
-		QueryEntry qe;
-		qe.condition = cond;
-		qe.index = idx;
-		qe.values.reserve(l.size());
-		for (auto it = l.begin(); it != l.end(); it++) qe.values.push_back(Variant(*it));
-		entries.Append(nextOp_, std::move(qe));
+	template <typename Str>
+	Query &Where(Str &&field, CondType cond, VariantArray l) & {
+		entries.Append<QueryEntry>(nextOp_, std::forward<Str>(field), cond, std::move(l));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	Query &&Where(const std::string &idx, CondType cond, const VariantArray &l) && { return std::move(Where(idx, cond, l)); }
+	template <typename Str>
+	Query &&Where(Str &&field, CondType cond, VariantArray l) && {
+		return std::move(Where(std::forward<Str>(field), cond, std::move(l)));
+	}
 
 	/// Adds a condition with several values to a composite index.
-	/// @param idx - index name.
+	/// @param idx - composite index name.
 	/// @param cond - type of condition.
 	/// @param l - list of values to be compared according to the order
 	/// of indexes in composite index name.
@@ -194,172 +197,192 @@ public:
 	/// in case of CondRange) belongs to "bookid" and l[0][1] (and l[1][1] in case of CondRange)
 	/// belongs to "price" indexes.
 	/// @return Query object ready to be executed.
-	Query &WhereComposite(const std::string &idx, CondType cond, std::initializer_list<VariantArray> l) & {
-		QueryEntry qe;
-		qe.condition = cond;
-		qe.index = idx;
-		qe.values.reserve(l.size());
+	template <typename Str>
+	Query &WhereComposite(Str &&idx, CondType cond, std::initializer_list<VariantArray> l) & {
+		VariantArray values;
+		values.reserve(l.size());
 		for (auto it = l.begin(); it != l.end(); it++) {
-			qe.values.push_back(Variant(*it));
+			values.emplace_back(*it);
 		}
-		entries.Append(nextOp_, std::move(qe));
+		entries.Append<QueryEntry>(nextOp_, std::forward<Str>(idx), cond, std::move(values));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	Query &&WhereComposite(const std::string &idx, CondType cond, std::initializer_list<VariantArray> l) && {
-		return std::move(WhereComposite(idx, cond, l));
+	template <typename Str>
+	Query &&WhereComposite(Str &&idx, CondType cond, std::initializer_list<VariantArray> l) && {
+		return std::move(WhereComposite(std::forward<Str>(idx), cond, std::move(l)));
 	}
-	Query &WhereComposite(const std::string &idx, CondType cond, const std::vector<VariantArray> &v) & {
-		QueryEntry qe;
-		qe.condition = cond;
-		qe.index = idx;
-		qe.values.reserve(v.size());
+	template <typename Str>
+	Query &WhereComposite(Str &&idx, CondType cond, const std::vector<VariantArray> &v) & {
+		VariantArray values;
+		values.reserve(v.size());
 		for (auto it = v.begin(); it != v.end(); it++) {
-			qe.values.push_back(Variant(*it));
+			values.emplace_back(*it);
 		}
-		entries.Append(nextOp_, std::move(qe));
+		entries.Append<QueryEntry>(nextOp_, std::forward<Str>(idx), cond, std::move(values));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	Query &&WhereComposite(const std::string &idx, CondType cond, const std::vector<VariantArray> &v) && {
-		return std::move(WhereComposite(idx, cond, v));
+	template <typename Str>
+	Query &&WhereComposite(Str &&idx, CondType cond, const std::vector<VariantArray> &v) && {
+		return std::move(WhereComposite(std::forward<Str>(idx), cond, v));
 	}
-	Query &WhereBetweenFields(std::string firstIdx, CondType cond, std::string secondIdx) & {
-		entries.Append(nextOp_, BetweenFieldsQueryEntry{std::move(firstIdx), cond, std::move(secondIdx)});
+	template <typename Str1, typename Str2>
+	Query &WhereBetweenFields(Str1 &&firstIdx, CondType cond, Str2 &&secondIdx) & {
+		entries.Append<BetweenFieldsQueryEntry>(nextOp_, std::forward<Str1>(firstIdx), cond, std::forward<Str2>(secondIdx));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	Query &&WhereBetweenFields(std::string firstIdx, CondType cond, std::string secondIdx) && {
-		return std::move(WhereBetweenFields(std::move(firstIdx), cond, std::move(secondIdx)));
+	template <typename Str1, typename Str2>
+	Query &&WhereBetweenFields(Str1 &&firstIdx, CondType cond, Str2 &&secondIdx) && {
+		return std::move(WhereBetweenFields(std::forward<Str1>(firstIdx), cond, std::forward<Str2>(secondIdx)));
 	}
 
-	Query &DWithin(const std::string &idx, Point p, double distance) & {
-		QueryEntry qe;
-		qe.condition = CondDWithin;
-		qe.index = idx;
-		qe.values.reserve(2);
-		qe.values.emplace_back(p);
-		qe.values.emplace_back(distance);
-		entries.Append(nextOp_, std::move(qe));
+	template <typename Str>
+	Query &DWithin(Str &&field, Point p, double distance) & {
+		entries.Append<QueryEntry>(nextOp_, std::forward<Str>(field), CondDWithin, VariantArray::Create(p, distance));
 		nextOp_ = OpAnd;
 		return *this;
 	}
-	Query &&DWithin(const std::string &idx, Point p, double distance) && { return std::move(DWithin(idx, p, distance)); }
+	template <typename Str>
+	Query &&DWithin(Str &&field, Point p, double distance) && {
+		return std::move(DWithin(std::forward<Str>(field), p, distance));
+	}
 
 	/// Sets a new value for a field.
 	/// @param field - field name.
 	/// @param value - new value.
 	/// @param hasExpressions - true: value has expresions in it
-	template <typename ValueType>
-	Query &Set(std::string field, ValueType value, bool hasExpressions = false) & {
-		return Set(std::move(field), {value}, hasExpressions);
+	template <typename Str, typename ValueType>
+	Query &Set(Str &&field, ValueType value, bool hasExpressions = false) & {
+		return Set(std::forward<Str>(field), {value}, hasExpressions);
 	}
-	template <typename ValueType>
-	Query &&Set(std::string field, ValueType value, bool hasExpressions = false) && {
-		return std::move(Set<ValueType>(std::move(field), std::move(value), hasExpressions));
-	}
-	/// Sets a new value for a field.
-	/// @param field - field name.
-	/// @param l - new value.
-	/// @param hasExpressions - true: value has expresions in it
-	template <typename ValueType>
-	Query &Set(std::string field, std::initializer_list<ValueType> l, bool hasExpressions = false) & {
-		VariantArray value;
-		value.reserve(l.size());
-		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(*it);
-		return Set(std::move(field), std::move(value), hasExpressions);
-	}
-	template <typename ValueType>
-	Query &&Set(std::string field, std::initializer_list<ValueType> l, bool hasExpressions = false) && {
-		return std::move(Set<ValueType>(std::move(field), std::move(l), hasExpressions));
+	template <typename Str, typename ValueType>
+	Query &&Set(Str &&field, ValueType value, bool hasExpressions = false) && {
+		return std::move(Set<Str, ValueType>(std::forward<Str>(field), std::move(value), hasExpressions));
 	}
 	/// Sets a new value for a field.
 	/// @param field - field name.
 	/// @param l - new value.
 	/// @param hasExpressions - true: value has expresions in it
-	template <typename T>
-	Query &Set(std::string field, const std::vector<T> &l, bool hasExpressions = false) & {
+	template <typename Str, typename ValueType>
+	Query &Set(Str &&field, std::initializer_list<ValueType> l, bool hasExpressions = false) & {
 		VariantArray value;
 		value.reserve(l.size());
 		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(*it);
-		return Set(std::move(field), std::move(value.MarkArray()), hasExpressions);
+		return Set(std::forward<Str>(field), std::move(value), hasExpressions);
 	}
-	template <typename T>
-	Query &&Set(std::string field, const std::vector<T> &l, bool hasExpressions = false) && {
-		return std::move(Set<T>(std::move(field), l, hasExpressions));
+	template <typename Str, typename ValueType>
+	Query &&Set(Str &&field, std::initializer_list<ValueType> l, bool hasExpressions = false) && {
+		return std::move(Set<Str, ValueType>(std::forward<Str>(field), std::move(l), hasExpressions));
+	}
+	/// Sets a new value for a field.
+	/// @param field - field name.
+	/// @param l - new value.
+	/// @param hasExpressions - true: value has expresions in it
+	template <typename Str, typename T>
+	Query &Set(Str &&field, const std::vector<T> &l, bool hasExpressions = false) & {
+		VariantArray value;
+		value.reserve(l.size());
+		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(*it);
+		return Set(std::forward<Str>(field), std::move(value.MarkArray()), hasExpressions);
+	}
+	template <typename Str, typename T>
+	Query &&Set(Str &&field, const std::vector<T> &l, bool hasExpressions = false) && {
+		return std::move(Set<Str, T>(std::forward<Str>(field), l, hasExpressions));
 	}
 	/// Sets a new value for a field.
 	/// @param field - field name.
 	/// @param value - new value.
 	/// @param hasExpressions - true: value has expresions in it
-	Query &Set(std::string field, VariantArray value, bool hasExpressions = false) & {
-		updateFields_.emplace_back(std::move(field), std::move(value), FieldModeSet, hasExpressions);
+	template <typename Str>
+	Query &Set(Str &&field, VariantArray value, bool hasExpressions = false) & {
+		updateFields_.emplace_back(std::forward<Str>(field), std::move(value), FieldModeSet, hasExpressions);
 		return *this;
 	}
-	Query &&Set(std::string field, VariantArray value, bool hasExpressions = false) && {
-		return std::move(Set(std::move(field), std::move(value), hasExpressions));
+	template <typename Str>
+	Query &&Set(Str &&field, VariantArray value, bool hasExpressions = false) && {
+		return std::move(Set(std::forward<Str>(field), std::move(value), hasExpressions));
 	}
 	/// Sets a value for a field as an object.
 	/// @param field - field name.
 	/// @param value - new value.
 	/// @param hasExpressions - true: value has expresions in it
-	template <typename ValueType>
-	Query &SetObject(std::string field, ValueType value, bool hasExpressions = false) & {
-		return SetObject(std::move(field), {value}, hasExpressions);
+	template <typename Str, typename ValueType>
+	Query &SetObject(Str &&field, ValueType value, bool hasExpressions = false) & {
+		return SetObject(std::forward<Str>(field), {value}, hasExpressions);
 	}
-	template <typename ValueType>
-	Query &&SetObject(std::string field, ValueType value, bool hasExpressions = false) && {
-		return std::move(SetObject<ValueType>(std::move(field), std::move(value), hasExpressions));
-	}
-	/// Sets a new value for a field as an object.
-	/// @param field - field name.
-	/// @param l - new value.
-	/// @param hasExpressions - true: value has expresions in it
-	template <typename ValueType>
-	Query &SetObject(std::string field, std::initializer_list<ValueType> l, bool hasExpressions = false) & {
-		VariantArray value;
-		value.reserve(l.size());
-		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(Variant(*it));
-		return SetObject(std::move(field), std::move(value), hasExpressions);
-	}
-	template <typename ValueType>
-	Query &&SetObject(std::string field, std::initializer_list<ValueType> l, bool hasExpressions = false) && {
-		return std::move(SetObject<ValueType>(std::move(field), std::move(l), hasExpressions));
+	template <typename Str, typename ValueType>
+	Query &&SetObject(Str &&field, ValueType value, bool hasExpressions = false) && {
+		return std::move(SetObject<Str, ValueType>(std::forward<Str>(field), std::move(value), hasExpressions));
 	}
 	/// Sets a new value for a field as an object.
 	/// @param field - field name.
 	/// @param l - new value.
 	/// @param hasExpressions - true: value has expresions in it
-	template <typename T>
-	Query &SetObject(std::string field, const std::vector<T> &l, bool hasExpressions = false) & {
+	template <typename Str, typename ValueType>
+	Query &SetObject(Str &&field, std::initializer_list<ValueType> l, bool hasExpressions = false) & {
+		VariantArray value;
+		value.reserve(l.size());
+		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(*it);
+		return SetObject(std::forward<Str>(field), std::move(value), hasExpressions);
+	}
+	template <typename Str, typename ValueType>
+	Query &&SetObject(Str &&field, std::initializer_list<ValueType> l, bool hasExpressions = false) && {
+		return std::move(SetObject<Str, ValueType>(std::forward<Str>(field), std::move(l), hasExpressions));
+	}
+	/// Sets a new value for a field as an object.
+	/// @param field - field name.
+	/// @param l - new value.
+	/// @param hasExpressions - true: value has expresions in it
+	template <typename Str, typename T>
+	Query &SetObject(Str &&field, const std::vector<T> &l, bool hasExpressions = false) & {
 		VariantArray value;
 		value.reserve(l.size());
 		for (auto it = l.begin(); it != l.end(); it++) value.emplace_back(Variant(*it));
-		return SetObject(std::move(field), std::move(value.MarkArray()), hasExpressions);
+		return SetObject(std::forward<Str>(field), std::move(value.MarkArray()), hasExpressions);
 	}
-	template <typename T>
-	Query &&SetObject(std::string field, const std::vector<T> &l, bool hasExpressions = false) && {
-		return std::move(SetObject<T>(std::move(field), l, hasExpressions));
+	template <typename Str, typename T>
+	Query &&SetObject(Str &&field, const std::vector<T> &l, bool hasExpressions = false) && {
+		return std::move(SetObject<Str, T>(std::forward<Str>(field), l, hasExpressions));
 	}
 	/// Sets a value for a field as an object.
 	/// @param field - field name.
 	/// @param value - new value.
 	/// @param hasExpressions - true: value has expresions in it
-	Query &SetObject(std::string field, VariantArray value, bool hasExpressions = false) &;
-	Query &&SetObject(std::string field, VariantArray value, bool hasExpressions = false) && {
-		return std::move(SetObject(std::move(field), std::move(value), hasExpressions));
+	template <typename Str>
+	Query &SetObject(Str &&field, VariantArray value, bool hasExpressions = false) & {
+		for (auto &it : value) {
+			if (!it.Type().Is<KeyValueType::String>()) {
+				throw Error(errLogic, "Unexpected variant type in SetObject: %s. Expecting KeyValueType::String with JSON-content",
+							it.Type().Name());
+			}
+		}
+		updateFields_.emplace_back(std::forward<Str>(field), std::move(value), FieldModeSetJson, hasExpressions);
+		return *this;
+	}
+	template <typename Str>
+	Query &&SetObject(Str &&field, VariantArray value, bool hasExpressions = false) && {
+		return std::move(SetObject(std::forward<Str>(field), std::move(value), hasExpressions));
 	}
 	/// Drops a value for a field.
 	/// @param field - field name.
-	Query &Drop(std::string field) & {
-		updateFields_.emplace_back(std::move(field), VariantArray(), FieldModeDrop);
+	template <typename Str>
+	Query &Drop(Str &&field) & {
+		updateFields_.emplace_back(std::forward<Str>(field), VariantArray(), FieldModeDrop);
 		return *this;
 	}
-	Query &&Drop(std::string field) && { return std::move(Drop(std::move(field))); }
+	template <typename Str>
+	Query &&Drop(Str &&field) && {
+		return std::move(Drop(std::forward<Str>(field)));
+	}
 
 	/// Add sql-function to query.
 	/// @param function - function declaration.
-	void AddFunction(std::string function) { selectFunctions_.emplace_back(std::move(function)); }
+	template <typename Str>
+	void AddFunction(Str &&function) {
+		selectFunctions_.emplace_back(std::forward<Str>(function));
+	}
 
 	/// Adds equal position fields to arrays queries.
 	/// @param equalPosition - list of fields with equal array index position.
@@ -387,19 +410,21 @@ public:
 
 	/// Joins namespace with another namespace. Analog to sql JOIN.
 	/// @param joinType - type of Join (Inner, Left or OrInner).
-	/// @param index - name of the field in the namespace of this Query object.
-	/// @param joinIndex - name of the field in the namespace of qr Query object.
+	/// @param leftField - name of the field in the namespace of this Query object.
+	/// @param rightField - name of the field in the namespace of qr Query object.
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param op - operation type (and, or, not).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &Join(JoinType joinType, const std::string &index, const std::string &joinIndex, CondType cond, OpType op, Query &&qr) &;
-	Query &&Join(JoinType joinType, const std::string &index, const std::string &joinIndex, CondType cond, OpType op, Query &&qr) && {
-		return std::move(Join(joinType, index, joinIndex, cond, op, std::move(qr)));
+	Query &Join(JoinType joinType, std::string leftField, std::string rightField, CondType cond, OpType op, Query &&qr) &;
+	template <typename StrL, typename StrR>
+	Query &&Join(JoinType joinType, StrL &&leftField, StrR &&rightField, CondType cond, OpType op, Query &&qr) && {
+		return std::move(Join(joinType, std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, op, std::move(qr)));
 	}
-	Query &Join(JoinType joinType, const std::string &index, const std::string &joinIndex, CondType cond, OpType op, const Query &qr) &;
-	Query &&Join(JoinType joinType, const std::string &index, const std::string &joinIndex, CondType cond, OpType op, const Query &qr) && {
-		return std::move(Join(joinType, index, joinIndex, cond, op, qr));
+	Query &Join(JoinType joinType, std::string leftField, std::string rightField, CondType cond, OpType op, const Query &qr) &;
+	template <typename StrL, typename StrR>
+	Query &&Join(JoinType joinType, StrL &&leftField, StrR &&rightField, CondType cond, OpType op, const Query &qr) && {
+		return std::move(Join(joinType, std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, op, qr));
 	}
 
 	OnHelper Join(JoinType joinType, Query &&q) &;
@@ -409,60 +434,72 @@ public:
 
 	/// @public
 	/// Inner Join of this namespace with another one.
-	/// @param index - name of the field in the namespace of this Query object.
-	/// @param joinIndex - name of the field in the namespace of qr Query object.
+	/// @param leftField - name of the field in the namespace of this Query object.
+	/// @param rightField - name of the field in the namespace of qr Query object.
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &InnerJoin(const std::string &index, const std::string &joinIndex, CondType cond, Query &&qr) & {	 // -V1071
-		return Join(JoinType::InnerJoin, index, joinIndex, cond, OpAnd, std::move(qr));
+	template <typename StrL, typename StrR>
+	Query &InnerJoin(StrL &&leftField, StrR &&rightField, CondType cond, Query &&qr) & {  // -V1071
+		return Join(JoinType::InnerJoin, std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, OpAnd, std::move(qr));
 	}
-	Query &&InnerJoin(const std::string &index, const std::string &joinIndex, CondType cond, Query &&qr) && {
-		return std::move(InnerJoin(index, joinIndex, cond, std::move(qr)));
+	template <typename StrL, typename StrR>
+	Query &&InnerJoin(StrL &&leftField, StrR &&rightField, CondType cond, Query &&qr) && {
+		return std::move(InnerJoin(std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, std::move(qr)));
 	}
-	Query &InnerJoin(const std::string &index, const std::string &joinIndex, CondType cond, const Query &qr) & {
-		return Join(JoinType::InnerJoin, index, joinIndex, cond, OpAnd, qr);
+	template <typename StrL, typename StrR>
+	Query &InnerJoin(StrL &&leftField, StrR &&rightField, CondType cond, const Query &qr) & {
+		return Join(JoinType::InnerJoin, std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, OpAnd, qr);
 	}
-	Query &&InnerJoin(const std::string &index, const std::string &joinIndex, CondType cond, const Query &qr) && {
-		return std::move(InnerJoin(index, joinIndex, cond, qr));
+	template <typename StrL, typename StrR>
+	Query &&InnerJoin(StrL &&leftField, StrR &&rightField, CondType cond, const Query &qr) && {
+		return std::move(InnerJoin(std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, qr));
 	}
 
 	/// Left Join of this namespace with another one.
-	/// @param index - name of the field in the namespace of this Query object.
-	/// @param joinIndex - name of the field in the namespace of qr Query object.
+	/// @param leftField - name of the field in the namespace of this Query object.
+	/// @param rightField - name of the field in the namespace of qr Query object.
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return Query object ready to be executed.
-	Query &LeftJoin(const std::string &index, const std::string &joinIndex, CondType cond, Query &&qr) & {
-		return Join(JoinType::LeftJoin, index, joinIndex, cond, OpAnd, std::move(qr));
+	template <typename StrL, typename StrR>
+	Query &LeftJoin(StrL &&leftField, StrR &&rightField, CondType cond, Query &&qr) & {
+		return Join(JoinType::LeftJoin, std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, OpAnd, std::move(qr));
 	}
-	Query &&LeftJoin(const std::string &index, const std::string &joinIndex, CondType cond, Query &&qr) && {
-		return std::move(LeftJoin(index, joinIndex, cond, std::move(qr)));
+	template <typename StrL, typename StrR>
+	Query &&LeftJoin(StrL &&leftField, StrR &&rightField, CondType cond, Query &&qr) && {
+		return std::move(LeftJoin(std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, std::move(qr)));
 	}
-	Query &LeftJoin(const std::string &index, const std::string &joinIndex, CondType cond, const Query &qr) & {
-		return Join(JoinType::LeftJoin, index, joinIndex, cond, OpAnd, qr);
+	template <typename StrL, typename StrR>
+	Query &LeftJoin(StrL &&leftField, StrR &&rightField, CondType cond, const Query &qr) & {
+		return Join(JoinType::LeftJoin, std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, OpAnd, qr);
 	}
-	Query &&LeftJoin(const std::string &index, const std::string &joinIndex, CondType cond, const Query &qr) && {
-		return std::move(LeftJoin(index, joinIndex, cond, qr));
+	template <typename StrL, typename StrR>
+	Query &&LeftJoin(StrL &&leftField, StrR &&rightField, CondType cond, const Query &qr) && {
+		return std::move(LeftJoin(std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, qr));
 	}
 
 	/// OrInnerJoin of this namespace with another one.
-	/// @param index - name of the field in the namespace of this Query object.
-	/// @param joinIndex - name of the field in the namespace of qr Query object.
+	/// @param leftField - name of the field in the namespace of this Query object.
+	/// @param rightField - name of the field in the namespace of qr Query object.
 	/// @param cond - condition type (Eq, Leq, Geq, etc).
 	/// @param qr - query of the namespace that is going to be joined with this one.
 	/// @return a reference to a query object ready to be executed.
-	Query &OrInnerJoin(const std::string &index, const std::string &joinIndex, CondType cond, Query &&qr) & {
-		return Join(JoinType::OrInnerJoin, index, joinIndex, cond, OpAnd, std::move(qr));
+	template <typename StrL, typename StrR>
+	Query &OrInnerJoin(StrL &&leftField, StrR &&rightField, CondType cond, Query &&qr) & {
+		return Join(JoinType::OrInnerJoin, std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, OpAnd, std::move(qr));
 	}
-	Query &&OrInnerJoin(const std::string &index, const std::string &joinIndex, CondType cond, Query &&qr) && {
-		return std::move(OrInnerJoin(index, joinIndex, cond, std::move(qr)));
+	template <typename StrL, typename StrR>
+	Query &&OrInnerJoin(StrL &&leftField, StrR &&rightField, CondType cond, Query &&qr) && {
+		return std::move(OrInnerJoin(std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, std::move(qr)));
 	}
-	Query &OrInnerJoin(const std::string &index, const std::string &joinIndex, CondType cond, const Query &qr) & {
-		return Join(JoinType::OrInnerJoin, index, joinIndex, cond, OpAnd, qr);
+	template <typename StrL, typename StrR>
+	Query &OrInnerJoin(StrL &&leftField, StrR &&rightField, CondType cond, const Query &qr) & {
+		return Join(JoinType::OrInnerJoin, std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, OpAnd, qr);
 	}
-	Query &&OrInnerJoin(const std::string &index, const std::string &joinIndex, CondType cond, const Query &qr) && {
-		return std::move(OrInnerJoin(index, joinIndex, cond, qr));
+	template <typename StrL, typename StrR>
+	Query &&OrInnerJoin(StrL &&leftField, StrR &&rightField, CondType cond, const Query &qr) && {
+		return std::move(OrInnerJoin(std::forward<StrL>(leftField), std::forward<StrR>(rightField), cond, qr));
 	}
 	Query &Merge(const Query &q) &;
 	Query &&Merge(const Query &q) && { return std::move(Merge(q)); }
@@ -491,11 +528,15 @@ public:
 	/// @param sort - sorting column name.
 	/// @param desc - is sorting direction descending or ascending.
 	/// @return Query object.
-	Query &Sort(std::string sort, bool desc) & {  // -V1071
-		if (sort.length()) sortingEntries_.emplace_back(std::move(sort), desc);
+	template <typename Str>
+	Query &Sort(Str &&sort, bool desc) & {	// -V1071
+		if (!strEmpty(sort)) sortingEntries_.emplace_back(std::forward<Str>(sort), desc);
 		return *this;
 	}
-	Query &&Sort(std::string sort, bool desc) && { return std::move(Sort(std::move(sort), desc)); }
+	template <typename Str>
+	Query &&Sort(Str &&sort, bool desc) && {
+		return std::move(Sort(std::forward<Str>(sort), desc));
+	}
 
 	/// Performs sorting by ST_Distance() expressions for geometry index. Sorting function will use distance between field and target point.
 	/// @param field - field's name. This field must contain Point.
@@ -519,17 +560,17 @@ public:
 	/// @param desc - is sorting direction descending or ascending.
 	/// @param forcedSortOrder - list of values for forced sort order.
 	/// @return Query object.
-	template <typename T>
-	Query &Sort(std::string sort, bool desc, std::initializer_list<T> forcedSortOrder) & {
+	template <typename Str, typename T>
+	Query &Sort(Str &&sort, bool desc, std::initializer_list<T> forcedSortOrder) & {
 		if (!sortingEntries_.empty() && !std::empty(forcedSortOrder))
 			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
-		sortingEntries_.emplace_back(std::move(sort), desc);
+		sortingEntries_.emplace_back(std::forward<Str>(sort), desc);
 		for (const T &v : forcedSortOrder) forcedSortOrder_.emplace_back(v);
 		return *this;
 	}
-	template <typename T>
-	Query &&Sort(std::string sort, bool desc, std::initializer_list<T> forcedSortOrder) && {
-		return std::move(Sort<T>(std::move(sort), desc, std::move(forcedSortOrder)));
+	template <typename Str, typename T>
+	Query &&Sort(Str &&sort, bool desc, std::initializer_list<T> forcedSortOrder) && {
+		return std::move(Sort<Str, T>(std::forward<Str>(sort), desc, std::move(forcedSortOrder)));
 	}
 
 	/// Performs sorting by certain column. Analog to sql ORDER BY.
@@ -537,28 +578,32 @@ public:
 	/// @param desc - is sorting direction descending or ascending.
 	/// @param forcedSortOrder - list of values for forced sort order.
 	/// @return Query object.
-	template <typename T>
-	Query &Sort(std::string sort, bool desc, const T &forcedSortOrder) & {
+	template <typename Str, typename T>
+	Query &Sort(Str &&sort, bool desc, const T &forcedSortOrder) & {
 		if (!sortingEntries_.empty() && !forcedSortOrder.empty())
 			throw Error(errParams, "Forced sort order is allowed for the first sorting entry only");
-		sortingEntries_.emplace_back(std::move(sort), desc);
+		sortingEntries_.emplace_back(std::forward<Str>(sort), desc);
 		for (const auto &v : forcedSortOrder) forcedSortOrder_.emplace_back(v);
 		return *this;
 	}
-	template <typename T>
-	Query &&Sort(std::string sort, bool desc, const T &forcedSortOrder) && {
-		return std::move(Sort<T>(std::move(sort), desc, forcedSortOrder));
+	template <typename Str, typename T>
+	Query &&Sort(Str &&sort, bool desc, const T &forcedSortOrder) && {
+		return std::move(Sort<Str, T>(std::forward<Str>(sort), desc, forcedSortOrder));
 	}
 
 	/// Performs distinct for a certain index.
 	/// @param indexName - name of index for distict operation.
-	Query &Distinct(std::string indexName) & {
-		if (indexName.length()) {
-			aggregations_.emplace_back(AggDistinct, h_vector<std::string, 1>{std::move(indexName)});
+	template <typename Str>
+	Query &Distinct(Str &&indexName) & {
+		if (!strEmpty(indexName)) {
+			aggregations_.emplace_back(AggDistinct, h_vector<std::string, 1>{std::forward<Str>(indexName)});
 		}
 		return *this;
 	}
-	Query &&Distinct(std::string indexName) && { return std::move(Distinct(std::move(indexName))); }
+	template <typename Str>
+	Query &&Distinct(Str &&indexName) && {
+		return std::move(Distinct(std::forward<Str>(indexName)));
+	}
 
 	/// Sets list of columns in this namespace to be finally selected.
 	/// @param l - list of columns to be selected.
@@ -636,7 +681,7 @@ public:
 	/// @param limit - number of rows to get from result set.
 	/// @return Query object.
 	Query &Limit(unsigned limit) &noexcept {
-		count = limit;
+		count_ = limit;
 		return *this;
 	}
 	Query &&Limit(unsigned limit) &&noexcept { return std::move(Limit(limit)); }
@@ -646,7 +691,7 @@ public:
 	/// @param offset - index of the first row to get from result set.
 	/// @return Query object.
 	Query &Offset(unsigned offset) &noexcept {
-		start = offset;
+		start_ = offset;
 		return *this;
 	}
 	Query &&Offset(unsigned offset) &&noexcept { return std::move(Offset(offset)); }
@@ -654,7 +699,7 @@ public:
 	/// Set the total count calculation mode to Accurate
 	/// @return Query object
 	Query &ReqTotal() &noexcept {
-		calcTotal = ModeAccurateTotal;
+		calcTotal_ = ModeAccurateTotal;
 		return *this;
 	}
 	Query &&ReqTotal() &&noexcept { return std::move(ReqTotal()); }
@@ -663,7 +708,7 @@ public:
 	/// It will be use LRUCache for total count result
 	/// @return Query object
 	Query &CachedTotal() &noexcept {
-		calcTotal = ModeCachedTotal;
+		calcTotal_ = ModeCachedTotal;
 		return *this;
 	}
 	Query &&CachedTotal() &&noexcept { return std::move(CachedTotal()); }
@@ -696,38 +741,47 @@ public:
 
 	void WalkNested(bool withSelf, bool withMerged, const std::function<void(const Query &q)> &visitor) const;
 
-	bool HasLimit() const noexcept { return count != QueryEntry::kDefaultLimit; }
-	bool HasOffset() const noexcept { return start != QueryEntry::kDefaultOffset; }
+	bool HasLimit() const noexcept { return count_ != QueryEntry::kDefaultLimit; }
+	bool HasOffset() const noexcept { return start_ != QueryEntry::kDefaultOffset; }
 	bool IsWALQuery() const noexcept;
 	const std::vector<UpdateEntry> &UpdateFields() const noexcept { return updateFields_; }
 	QueryType Type() const noexcept { return type_; }
+	const std::string &NsName() const &noexcept { return namespace_; }
+	template <typename T>
+	void SetNsName(T &&nsName) &noexcept {
+		namespace_ = std::forward<T>(nsName);
+	}
+	unsigned Limit() const noexcept { return count_; }
+	unsigned Offset() const noexcept { return start_; }
+	CalcTotalMode CalcTotal() const noexcept { return calcTotal_; }
+	void CalcTotal(CalcTotalMode calcTotal) noexcept { calcTotal_ = calcTotal; }
 
-protected:
-	void deserialize(Serializer &ser, bool &hasJoinConditions);
-
-public:
-	std::string _namespace;						  /// Name of the namespace.
-	unsigned start = QueryEntry::kDefaultOffset;  /// First row index from result set.
-	unsigned count = QueryEntry::kDefaultLimit;	  /// Number of rows from result set.
-	int debugLevel = 0;							  /// Debug level.
-	StrictMode strictMode = StrictModeNotSet;	  /// Strict mode.
-	bool explain_ = false;						  /// Explain query if true
-	CalcTotalMode calcTotal = ModeNoTotal;		  /// Calculation mode.
-	QueryType type_ = QuerySelect;				  /// Query type
-	OpType nextOp_ = OpAnd;						  /// Next operation constant.
-	SortingEntries sortingEntries_;				  /// Sorting data.
-	std::vector<Variant> forcedSortOrder_;		  /// Keys that always go first - before any ordered values.
-	std::vector<JoinedQuery> joinQueries_;		  /// List of queries for join.
-	std::vector<JoinedQuery> mergeQueries_;		  /// List of merge queries.
-	h_vector<std::string, 1> selectFilter_;		  /// List of columns in a final result set.
-	std::vector<std::string> selectFunctions_;	  /// List of sql functions
+	int debugLevel = 0;							/// Debug level.
+	StrictMode strictMode = StrictModeNotSet;	/// Strict mode.
+	bool explain_ = false;						/// Explain query if true
+	QueryType type_ = QuerySelect;				/// Query type
+	OpType nextOp_ = OpAnd;						/// Next operation constant.
+	SortingEntries sortingEntries_;				/// Sorting data.
+	std::vector<Variant> forcedSortOrder_;		/// Keys that always go first - before any ordered values.
+	std::vector<JoinedQuery> joinQueries_;		/// List of queries for join.
+	std::vector<JoinedQuery> mergeQueries_;		/// List of merge queries.
+	h_vector<std::string, 1> selectFilter_;		/// List of columns in a final result set.
+	std::vector<std::string> selectFunctions_;	/// List of sql functions
 
 	QueryEntries entries;
 
 	std::vector<AggregateEntry> aggregations_;
 
+	auto NsName() const && = delete;
+
 private:
-	std::vector<UpdateEntry> updateFields_;	 /// List of fields (and values) for update.
+	void deserialize(Serializer &ser, bool &hasJoinConditions);
+
+	std::string namespace_;						   /// Name of the namespace.
+	unsigned start_ = QueryEntry::kDefaultOffset;  /// First row index from result set.
+	unsigned count_ = QueryEntry::kDefaultLimit;   /// Number of rows from result set.
+	CalcTotalMode calcTotal_ = ModeNoTotal;		   /// Calculation mode.
+	std::vector<UpdateEntry> updateFields_;		   /// List of fields (and values) for update.
 	bool withRank_ = false;
 	friend class SQLParser;
 };

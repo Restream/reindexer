@@ -1,4 +1,3 @@
-
 #include "walselecter.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/namespace/namespaceimpl.h"
@@ -15,8 +14,8 @@ WALSelecter::WALSelecter(const NamespaceImpl *ns) : ns_(ns) {}
 void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 	using namespace std::string_view_literals;
 	const Query &q = params.query;
-	int count = q.count;
-	int start = q.start;
+	int count = q.Limit();
+	int start = q.Offset();
 	result.totalCount = 0;
 
 	if (!q.IsWALQuery()) {
@@ -31,20 +30,20 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 		q.entries.InvokeAppropriate<void>(
 			i,
 			[&lsnIdx, &versionIdx, i](const QueryEntry &qe) {
-				if ("#lsn"sv == qe.index) {
+				if ("#lsn"sv == qe.FieldName()) {
 					lsnIdx = i;
-				} else if ("#slave_version"sv == qe.index) {
+				} else if ("#slave_version"sv == qe.FieldName()) {
 					versionIdx = i;
 				} else {
-					throw Error(errLogic, "Unexpected index in WAL select query: %s", qe.index);
+					throw Error(errLogic, "Unexpected index in WAL select query: %s", qe.FieldName());
 				}
 			},
 			[&q](const auto &) { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
 	}
-	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries.Get<QueryEntry>(versionIdx).values[0].As<std::string>());
+	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries.Get<QueryEntry>(versionIdx).Values()[0].As<std::string>());
 	auto &lsnEntry = q.entries.Get<QueryEntry>(lsnIdx);
-	if (lsnEntry.values.size() == 1 && lsnEntry.condition == CondGt) {
-		lsn_t fromLSN = lsn_t(std::min(lsnEntry.values[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
+	if (lsnEntry.Values().size() == 1 && lsnEntry.Condition() == CondGt) {
+		lsn_t fromLSN = lsn_t(std::min(lsnEntry.Values()[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
 		if (fromLSN.Server() != ns_->serverId_)
 			throw Error(errOutdatedWAL, "Query to WAL with incorrect LSN %ld, LSN counter %ld", int64_t(fromLSN), ns_->wal_.LSNCounter());
 		if (ns_->wal_.LSNCounter() != (fromLSN.Counter() + 1) && ns_->wal_.is_outdated(fromLSN.Counter() + 1) && count)
@@ -73,7 +72,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 					if (versionIdx < 0) {
 						break;
 					}
-					if (q.entries.Get<QueryEntry>(versionIdx).condition != CondEq || slaveVersion < kMinUnknownReplSupportRxVersion) {
+					if (q.entries.Get<QueryEntry>(versionIdx).Condition() != CondEq || slaveVersion < kMinUnknownReplSupportRxVersion) {
 						break;
 					}
 					// fall-through
@@ -110,7 +109,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 					std::abort();
 			}
 		}
-	} else if (lsnEntry.condition == CondAny) {
+	} else if (lsnEntry.Condition() == CondAny) {
 		if (start == 0 && !(slaveVersion < kMinUnknownReplSupportRxVersion)) {
 			auto addSpRecord = [&result](const WALRecord &wrec) {
 				PackedWALRecord wr;

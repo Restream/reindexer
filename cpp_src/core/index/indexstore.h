@@ -8,7 +8,8 @@ namespace reindexer {
 template <typename T>
 class IndexStore : public Index {
 public:
-	IndexStore(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) : Index(idef, std::move(payloadType), fields) {
+	IndexStore(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields)
+		: Index(idef, std::move(payloadType), std::move(fields)) {
 		static T a;
 		keyType_ = selectKeyType_ = Variant(a).Type();
 	}
@@ -21,13 +22,14 @@ public:
 							   const BaseFunctionCtx::Ptr &ctx, const RdxContext &) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext & /*ctx*/) override {}
-	std::unique_ptr<Index> Clone() const override { return std::unique_ptr<Index>{new IndexStore<T>(*this)}; }
+	std::unique_ptr<Index> Clone() const override { return std::make_unique<IndexStore<T>>(*this); }
 	IndexMemStat GetMemStat(const RdxContext &) override;
 	bool HoldsStrings() const noexcept override { return std::is_same_v<T, key_string> || std::is_same_v<T, key_string_with_hash>; }
 	void Dump(std::ostream &os, std::string_view step = "  ", std::string_view offset = "") const override { dump(os, step, offset); }
 	virtual void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &) override;
 	virtual bool IsDestroyPartSupported() const noexcept override { return true; }
 	virtual bool IsUuid() const noexcept override final { return std::is_same_v<T, Uuid>; }
+	virtual void ReconfigureCache(const NamespaceCacheConfigData &) override {}
 
 	template <typename, typename = void>
 	struct HasAddTask : std::false_type {};
@@ -46,8 +48,8 @@ private:
 };
 
 template <>
-IndexStore<Point>::IndexStore(const IndexDef &, PayloadType, const FieldsSet &);
+IndexStore<Point>::IndexStore(const IndexDef &, PayloadType &&, FieldsSet &&);
 
-std::unique_ptr<Index> IndexStore_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields_);
+std::unique_ptr<Index> IndexStore_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&);
 
 }  // namespace reindexer

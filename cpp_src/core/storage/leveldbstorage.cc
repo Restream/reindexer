@@ -5,7 +5,9 @@
 #include <leveldb/comparator.h>
 #include <leveldb/db.h>
 #include <leveldb/slice.h>
+#include "leveldblogger.h"
 #include "tools/assertrx.h"
+#include "tools/fsops.h"
 
 namespace reindexer {
 namespace datastorage {
@@ -125,6 +127,7 @@ Error LevelDbStorage::doOpen(const std::string& path, const StorageOpts& opts) {
 	leveldb::Options options;
 	options.create_if_missing = opts.IsCreateIfMissing();
 	options.max_open_files = 50;
+	SetDummyLogger(options);
 
 	leveldb::DB* db;
 	leveldb::Status status = leveldb::DB::Open(options, path, &db);
@@ -144,7 +147,11 @@ void LevelDbStorage::doDestroy(const std::string& path) {
 	db_.reset();
 	leveldb::Status status = leveldb::DestroyDB(path.c_str(), options);
 	if (!status.ok()) {
-		printf("Cannot destroy DB: %s, %s\n", path.c_str(), status.ToString().c_str());
+		fprintf(stderr, "Cannot destroy LevelDB's storage: %s, %s. Trying to remove files by the backup mechanism...\n", path.c_str(),
+				status.ToString().c_str());
+		if (fs::RmDirAll(path) != 0) {
+			fprintf(stderr, "Unable to remove LevelDB's storage: %s, %s", path.c_str(), strerror(errno));
+		}
 	}
 }
 

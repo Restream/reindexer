@@ -6,7 +6,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 
-//#define _CRT_SECURE_NO_WARNINGS
+// #define _CRT_SECURE_NO_WARNINGS
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -40,6 +40,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+#include <sys/un.h>
 #include <unistd.h>
 #endif
 

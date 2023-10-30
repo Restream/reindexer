@@ -23,6 +23,7 @@ func TestBuiltinServer(t *testing.T) {
 
 	os.RemoveAll(cfg1.Storage.Path)
 	rx1 := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg1))
+	defer rx1.Close()
 	assert.NoError(t, rx1.Status().Err)
 	assert.NoError(t, rx1.OpenNamespace("testns", reindexer.DefaultNamespaceOptions(), &ScvTestItem{}))
 
@@ -33,15 +34,29 @@ func TestBuiltinServer(t *testing.T) {
 
 	os.RemoveAll(cfg2.Storage.Path)
 	rx2 := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg2))
+	defer rx2.Close()
 	assert.NoError(t, rx2.Status().Err)
 	assert.NoError(t, rx2.OpenNamespace("testns", reindexer.DefaultNamespaceOptions(), &ScvTestItem{}))
 
 	rx3 := reindexer.NewReindex("cproto://127.0.0.1:26535/xxx")
+	defer rx3.Close()
 	assert.NoError(t, rx3.Status().Err)
 	assert.NoError(t, rx3.OpenNamespace("testns", reindexer.DefaultNamespaceOptions(), &ScvTestItem{}))
 
-	rx3.Close()
-	rx2.Close()
-	rx1.Close()
+	cfg4 := config.DefaultServerConfig()
+	cfg4.Net.HTTPAddr = "0:29090"
+	cfg4.Net.RPCAddr = "0:26536"
+	cfg4.Storage.Path = "/tmp/rx_builtinserver_test4"
+	cfg4.Net.UnixRPCAddr = "/tmp/reindexer_builtinserver_test.sock"
 
+	os.RemoveAll(cfg4.Storage.Path)
+	rx4 := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg4))
+	defer rx4.Close()
+	assert.NoError(t, rx4.Status().Err)
+	assert.NoError(t, rx4.OpenNamespace("testns", reindexer.DefaultNamespaceOptions(), &ScvTestItem{}))
+
+	rx5 := reindexer.NewReindex("ucproto:///tmp/reindexer_builtinserver_test.sock:/xxx")
+	defer rx5.Close()
+	assert.NoError(t, rx5.Status().Err)
+	assert.NoError(t, rx5.OpenNamespace("testns", reindexer.DefaultNamespaceOptions(), &ScvTestItem{}))
 }

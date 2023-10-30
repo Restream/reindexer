@@ -149,24 +149,18 @@ private:
 
 class WrSerializer {
 public:
-	WrSerializer() noexcept : buf_(inBuf_), len_(0), cap_(sizeof(inBuf_)) {}  // -V730
+	WrSerializer() noexcept : buf_(inBuf_), len_(0), cap_(sizeof(inBuf_)) {}
 	template <unsigned N>
-	WrSerializer(uint8_t (&buf)[N]) : buf_(buf), len_(0), cap_(N), hasExternalBuf_(true) {}	 // -V730
-	WrSerializer(chunk &&ch) noexcept														 // -V730
-		: buf_(ch.data_), len_(ch.len_), cap_(ch.cap_) {
+	WrSerializer(uint8_t (&buf)[N]) noexcept : buf_(buf), len_(0), cap_(N), hasExternalBuf_(true) {}
+	WrSerializer(chunk &&ch) noexcept : buf_(ch.release()), len_(ch.len()), cap_(ch.capacity()) {
 		if (!buf_) {
 			buf_ = inBuf_;
 			cap_ = sizeof(inBuf_);
 			len_ = 0;
 		}
-		ch.data_ = nullptr;
-		ch.len_ = 0;
-		ch.cap_ = 0;
-		ch.offset_ = 0;
 	}
 	WrSerializer(const WrSerializer &) = delete;
-	WrSerializer(WrSerializer &&other) noexcept	 // -V730
-		: len_(other.len_), cap_(other.cap_), hasExternalBuf_(other.hasExternalBuf_) {
+	WrSerializer(WrSerializer &&other) noexcept : len_(other.len_), cap_(other.cap_), hasExternalBuf_(other.hasExternalBuf_) {
 		if (other.buf_ == other.inBuf_) {
 			buf_ = inBuf_;
 			memcpy(buf_, other.buf_, other.len_ * sizeof(other.inBuf_[0]));
@@ -210,7 +204,6 @@ public:
 	bool HasAllocatedBuffer() const noexcept { return buf_ != inBuf_ && !hasExternalBuf_; }
 
 	void PutKeyValueType(KeyValueType t) { PutVarUint(t.toNumber()); }
-	// Put variant
 	void PutVariant(const Variant &kv) {
 		PutKeyValueType(kv.Type());
 		kv.Type().EvaluateOneOf(
@@ -222,19 +215,17 @@ public:
 				}
 			},
 			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::String,
-					  KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Uuid>) { putRawVariant(kv); });
-	}
-
-private:
-	void putRawVariant(const Variant &kv) {
-		kv.Type().EvaluateOneOf([&](KeyValueType::Bool) { PutBool(bool(kv)); }, [&](KeyValueType::Int64) { PutVarint(int64_t(kv)); },
-								[&](KeyValueType::Int) { PutVarint(int(kv)); }, [&](KeyValueType::Double) { PutDouble(double(kv)); },
-								[&](KeyValueType::String) { PutVString(std::string_view(kv)); }, [&](KeyValueType::Null) noexcept {},
-								[&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
-								[&](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
-									fprintf(stderr, "Unknown keyType %s\n", kv.Type().Name().data());
-									abort();
-								});
+					  KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Uuid>) {
+				kv.Type().EvaluateOneOf(
+					[&](KeyValueType::Bool) { PutBool(bool(kv)); }, [&](KeyValueType::Int64) { PutVarint(int64_t(kv)); },
+					[&](KeyValueType::Int) { PutVarint(int(kv)); }, [&](KeyValueType::Double) { PutDouble(double(kv)); },
+					[&](KeyValueType::String) { PutVString(std::string_view(kv)); }, [&](KeyValueType::Null) noexcept {},
+					[&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
+					[&](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
+						fprintf(stderr, "Unknown keyType %s\n", kv.Type().Name().data());
+						abort();
+					});
+			});
 	}
 
 public:
@@ -356,9 +347,13 @@ public:
 	}
 	WrSerializer &operator<<(double v);
 	WrSerializer &operator<<(Uuid uuid) {
-		grow(Uuid::kStrFormLen);
+		grow(Uuid::kStrFormLen + 2);
+		buf_[len_] = '\'';
+		++len_;
 		uuid.PutToStr(span<char>{reinterpret_cast<char *>(&buf_[len_]), Uuid::kStrFormLen});
 		len_ += Uuid::kStrFormLen;
+		buf_[len_] = '\'';
+		++len_;
 		return *this;
 	}
 
@@ -439,11 +434,9 @@ public:
 	chunk DetachChunk() {
 		chunk ch;
 		if (!HasAllocatedBuffer()) {
-			ch.append(Slice());
+			ch.append_strict(Slice());
 		} else {
-			ch.data_ = buf_;
-			ch.cap_ = cap_;
-			ch.len_ = len_;
+			ch = chunk(buf_, len_, cap_);
 		}
 		buf_ = inBuf_;
 		cap_ = sizeof(inBuf_);

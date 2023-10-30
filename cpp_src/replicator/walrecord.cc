@@ -1,7 +1,6 @@
 
 #include "walrecord.h"
 #include "core/cjson/baseencoder.h"
-#include "core/transactionimpl.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
 
@@ -148,7 +147,7 @@ static std::string_view wrecType2Str(WALRecType t) {
 	}
 }
 
-WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string(std::string_view)>& cjsonViewer) const {
+WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string(std::string_view)> &cjsonViewer) const {
 	ser << wrecType2Str(type);
 	if (inTransaction) ser << " InTransaction";
 	switch (type) {
@@ -182,7 +181,7 @@ WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string
 	return ser;
 }
 
-void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)>& cjsonViewer) const {
+void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)> &cjsonViewer) const {
 	jb.Put("type", wrecType2Str(type));
 	jb.Put("in_transaction", inTransaction);
 
@@ -241,6 +240,7 @@ SharedWALRecord WALRecord::GetShared(int64_t lsn, int64_t upstreamLSN, std::stri
 	return shared_;
 }
 SharedWALRecord::SharedWALRecord(int64_t lsn, int64_t originLSN, std::string_view nsName, const WALRecord &rec) {
+	const size_t kCapToSizeRelation = 4;
 	WrSerializer ser;
 	ser.PutVarint(lsn);
 	ser.PutVarint(originLSN);
@@ -249,7 +249,11 @@ SharedWALRecord::SharedWALRecord(int64_t lsn, int64_t originLSN, std::string_vie
 		auto sl = ser.StartSlice();
 		rec.Pack(ser);
 	}
-	packed_.reset(new intrusive_atomic_rc_wrapper<chunk>(ser.DetachChunk()));
+
+	auto ch = ser.DetachChunk();
+	ch.shrink(kCapToSizeRelation);
+
+	packed_ = make_intrusive<intrusive_atomic_rc_wrapper<chunk>>(std::move(ch));
 }
 
 SharedWALRecord::Unpacked SharedWALRecord::Unpack() {

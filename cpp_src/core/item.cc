@@ -3,7 +3,6 @@
 #include "core/itemimpl.h"
 #include "core/keyvalue/p_string.h"
 #include "core/namespace/namespace.h"
-#include "core/rdxcontext.h"
 #include "tools/catch_and_return.h"
 
 namespace reindexer {
@@ -96,7 +95,7 @@ Item::FieldRef &Item::FieldRef::operator=(span<T> arr) {
 				pl.Set(field_, pos++, Variant(elem));
 			}
 		} else {
-			if (!itemImpl_->holder_) itemImpl_->holder_.reset(new std::deque<std::string>);
+			if (!itemImpl_->holder_) itemImpl_->holder_ = std::make_unique<std::deque<std::string>>();
 			for (auto &elem : arr) {
 				if constexpr (std::is_same_v<T, p_string>) {
 					itemImpl_->holder_->push_back(elem.toString());

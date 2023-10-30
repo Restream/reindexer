@@ -31,10 +31,10 @@ private:
 
 struct IStatsWatcher {
 	[[nodiscard]] virtual StatsWatcherSuspend SuspendStatsThread() = 0;
-	virtual void OnInputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept = 0;
-	virtual void OnOutputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept = 0;
-	virtual void OnClientConnected(const std::string& db, std::string_view source) noexcept = 0;
-	virtual void OnClientDisconnected(const std::string& db, std::string_view source) noexcept = 0;
+	virtual void OnInputTraffic(const std::string& db, std::string_view source, std::string_view protocol, size_t bytes) noexcept = 0;
+	virtual void OnOutputTraffic(const std::string& db, std::string_view source, std::string_view protocol, size_t bytes) noexcept = 0;
+	virtual void OnClientConnected(const std::string& db, std::string_view source, std::string_view protocol) noexcept = 0;
+	virtual void OnClientDisconnected(const std::string& db, std::string_view source, std::string_view protocol) noexcept = 0;
 	virtual ~IStatsWatcher() noexcept = default;
 };
 

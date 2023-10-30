@@ -4,12 +4,12 @@
 #include <sstream>
 #include <string>
 
-#include "core/keyvalue/key_string.h"
 #include "core/payload/payloadtype.h"
 #include "core/payload/payloadtypeimpl.h"
 #include "ctag.h"
 #include "tagspath.h"
 #include "tagspathcache.h"
+#include "tools/randomgenerator.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
@@ -17,9 +17,9 @@ namespace reindexer {
 
 class TagsMatcherImpl {
 public:
-	TagsMatcherImpl() : version_(0), stateToken_(rand()) {}
-	TagsMatcherImpl(PayloadType payloadType) : payloadType_(std::move(payloadType)), version_(0), stateToken_(rand()) {}
-	~TagsMatcherImpl() {}
+	TagsMatcherImpl() : version_(0), stateToken_(tools::RandomGenerator::gets32()) {}
+	TagsMatcherImpl(PayloadType &&payloadType)
+		: payloadType_(std::move(payloadType)), version_(0), stateToken_(tools::RandomGenerator::gets32()) {}
 
 	TagsPath path2tag(std::string_view jsonPath) const {
 		bool updated = false;
@@ -75,25 +75,29 @@ public:
 					if (content == "*"sv) {
 						node.MarkAllItems(true);
 					} else {
-						int index = stoi(content);
-						if (index == 0 && content != "0"sv && ev) {
-							VariantArray values = ev(content);
-							if (values.size() != 1) {
-								throw Error(errParams, "Index expression_ has wrong syntax: '%s'", content);
+						auto index = try_stoi(content);
+						if (!index) {
+							if (ev) {
+								VariantArray values = ev(content);
+								if (values.size() != 1) {
+									throw Error(errParams, "Index expression_ has wrong syntax: '%s'", content);
+								}
+								values.front().Type().EvaluateOneOf(
+									[](OneOf<KeyValueType::Double, KeyValueType::Int, KeyValueType::Int64>) noexcept {},
+									[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite,
+											  KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Uuid>) {
+										throw Error(errParams, "Wrong type of index: '%s'", content);
+									});
+								node.SetExpression(content);
+								index = values.front().As<int>();
+							} else {
+								throw Error(errParams, "Can't convert '%s' to number", content);
 							}
-							values.front().Type().EvaluateOneOf(
-								[](OneOf<KeyValueType::Double, KeyValueType::Int, KeyValueType::Int64>) noexcept {},
-								[&](OneOf<KeyValueType::Bool, KeyValueType::String, KeyValueType::Tuple, KeyValueType::Composite,
-										  KeyValueType::Null, KeyValueType::Undefined, KeyValueType::Uuid>) {
-									throw Error(errParams, "Wrong type of index: '%s'", content);
-								});
-							node.SetExpression(content);
-							index = values.front().As<int>();
 						}
 						if (index < 0) {
 							throw Error(errLogic, "Array index value cannot be negative");
 						}
-						node.SetIndex(index);
+						node.SetIndex(*index);
 					}
 					field = field.substr(0, openBracketPos);
 				}
@@ -140,7 +144,7 @@ public:
 		return tags2names_[tag - 1];
 	}
 
-	int tags2field(const int16_t *path, size_t pathLen) const {
+	int tags2field(const int16_t *path, size_t pathLen) const noexcept {
 		if (!pathLen) return -1;
 		return pathCache_.lookup(path, pathLen);
 	}

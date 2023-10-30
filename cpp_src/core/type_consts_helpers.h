@@ -11,6 +11,18 @@ namespace reindexer {
 [[nodiscard]] std::string_view TagTypeToStr(TagType);
 [[nodiscard]] std::string_view AggTypeToStr(AggType t) noexcept;
 
+constexpr bool IsComposite(IndexType type) noexcept {
+	return type == IndexCompositeBTree || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT || type == IndexCompositeHash;
+}
+
+constexpr bool IsFullText(IndexType type) noexcept {
+	return type == IndexFastFT || type == IndexFuzzyFT || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT;
+}
+
+constexpr bool IsFastFullText(IndexType type) noexcept { return type == IndexFastFT || type == IndexCompositeFastFT; }
+
+}  // namespace reindexer
+
 /// Get readable Join Type
 /// @param type - join type
 /// @returns string with join type name
@@ -132,15 +144,3 @@ T& operator<<(T& os, CollateMode m) {
 	}
 	std::abort();
 }
-
-constexpr bool IsComposite(IndexType type) noexcept {
-	return type == IndexCompositeBTree || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT || type == IndexCompositeHash;
-}
-
-constexpr bool IsFullText(IndexType type) noexcept {
-	return type == IndexFastFT || type == IndexFuzzyFT || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT;
-}
-
-constexpr bool IsFastFullText(IndexType type) noexcept { return type == IndexFastFT || type == IndexCompositeFastFT; }
-
-}  // namespace reindexer

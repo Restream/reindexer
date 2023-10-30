@@ -349,10 +349,12 @@ public:
 	void SetValues(CondType cond, const VariantArray &values, const ComparatorVars &vars) {
 		if (cond == CondSet) {
 			valuesSet_.reset(new intrusive_atomic_rc_wrapper<unordered_payload_set>(
-				values.size(), hash_composite(vars.payloadType_, vars.fields_), equal_composite(vars.payloadType_, vars.fields_)));
+				values.size(), hash_composite(PayloadType{vars.payloadType_}, FieldsSet{vars.fields_}),
+				equal_composite(PayloadType{vars.payloadType_}, FieldsSet{vars.fields_})));
 		} else if (cond == CondAllSet) {
 			valuesSet_.reset(new intrusive_atomic_rc_wrapper<unordered_payload_set>(
-				values.size(), hash_composite(vars.payloadType_, vars.fields_), equal_composite(vars.payloadType_, vars.fields_)));
+				values.size(), hash_composite(PayloadType{vars.payloadType_}, FieldsSet{vars.fields_}),
+				equal_composite(PayloadType{vars.payloadType_}, FieldsSet{vars.fields_})));
 			allSetValuesSet_.reset(new intrusive_atomic_rc_wrapper<std::unordered_set<const PayloadValue *>>{});
 		}
 

@@ -48,7 +48,7 @@ public:
 	~CommandsExecutor() { stop(true); }
 	template <typename... Args>
 	Error Run(const std::string& dsn, const Args&... args);
-	void GetSuggestions(const std::string& input, std::vector<std::string>& suggestions);
+	Error GetSuggestions(const std::string& input, std::vector<std::string>& suggestions);
 	Error Stop();
 	Error Process(const std::string& command);
 	Error FromFile(std::istream& in);
@@ -78,8 +78,8 @@ protected:
 								  std::vector<std::string>& suggestions);
 
 	Error processImpl(const std::string& command) noexcept;
-	Error stop(bool terminate);
-	void getSuggestions(const std::string& input, std::vector<std::string>& suggestions);
+	void stop(bool terminate);
+	Error getSuggestions(const std::string& input, std::vector<std::string>& suggestions);
 	Error commandSelect(const std::string& command);
 	Error commandUpsert(const std::string& command);
 	Error commandUpdateSQL(const std::string& command);

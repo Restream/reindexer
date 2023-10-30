@@ -1,3 +1,4 @@
+#include "itoa.h"
 #include <stdint.h>
 
 static const char gDigitsLut[200] = {
@@ -236,7 +237,7 @@ char *i64toa(int64_t value, char *buffer) {
 	return u64toa(u, buffer);
 }
 
-char hex_lut[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+static char hex_lut[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
 
 char *u32toax(uint32_t value, char *buffer, int n) {
 	if (!n) {

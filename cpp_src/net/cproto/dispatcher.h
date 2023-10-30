@@ -60,20 +60,13 @@ struct Context {
 	bool respSent;
 };
 
-class ServerConnection;
-
 /// Reindexer cproto RPC dispatcher implementation.
 class Dispatcher {
-	friend class ServerConnection;
-
 public:
-	Dispatcher() : handlers_(kCmdCodeMax, nullptr) {}
-
 	/// Add handler for command.
 	/// @param cmd - Command code
 	/// @param object - handler class object
 	/// @param func - handler
-	/// @param hasOptionalArgs - has to be true if func has optional args
 	template <class K, typename... Args>
 	void Register(CmdCode cmd, K *object, Error (K::*func)(Context &, Args... args)) {
 		handlers_[cmd] = FuncWrapper<K, Args...>{object, func};
@@ -111,9 +104,35 @@ public:
 		onResponse_ = [=](Context &ctx) { (static_cast<K *>(object)->*func)(ctx); };
 	}
 
-protected:
-	Error handle(Context &ctx);
+	/// Get reference to the current logger functor
+	/// @return Log handler reference
+	const std::function<void(Context &ctx, const Error &err, const Args &args)> &LoggerRef() const noexcept { return logger_; }
+	/// Get reference to the current OnClose() functor
+	/// @return OnClose callback reference
+	const std::function<void(Context &ctx, const Error &err)> &OnCloseRef() const noexcept { return onClose_; }
+	/// Get reference to the current OnResponse() functor
+	/// @return OnResponse callback reference
+	const std::function<void(Context &ctx)> &OnResponseRef() const noexcept { return onResponse_; }
 
+	/// Handle RPC fron the context
+	/// @param ctx - RPC context
+	Error Handle(Context &ctx) {
+		if rx_likely (uint32_t(ctx.call->cmd) < uint32_t(handlers_.size())) {
+			for (auto &middleware : middlewares_) {
+				auto ret = middleware(ctx);
+				if (!ret.ok()) {
+					return ret;
+				}
+			}
+			auto handler = handlers_[ctx.call->cmd];
+			if rx_likely (handler) {
+				return handler(ctx);
+			}
+		}
+		return Error(errParams, "Invalid RPC call. CmdCode %08X\n", int(ctx.call->cmd));
+	}
+
+private:
 	template <typename>
 	struct is_optional : public std::false_type {};
 
@@ -149,7 +168,7 @@ protected:
 
 	using Handler = std::function<Error(Context &)>;
 
-	std::vector<Handler> handlers_;
+	std::array<Handler, kCmdCodeMax> handlers_;
 	std::vector<Handler> middlewares_;
 
 	std::function<void(Context &ctx, const Error &err, const Args &args)> logger_;

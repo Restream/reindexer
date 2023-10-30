@@ -61,7 +61,10 @@ reindexer::Error FTApi::SetFTConfig(const reindexer::FtFastConfig& ftCfg, const 
 		fieldsMap.emplace(fields[i], i);
 	}
 	std::vector<reindexer::NamespaceDef> nses;
-	rt.reindexer->EnumNamespaces(nses, reindexer::EnumNamespacesOpts().WithFilter(ns));
+	auto err = rt.reindexer->EnumNamespaces(nses, reindexer::EnumNamespacesOpts().WithFilter(ns));
+	if (!err.ok()) {
+		return err;
+	}
 	const auto it = std::find_if(nses[0].indexes.begin(), nses[0].indexes.end(),
 								 [&index](const reindexer::IndexDef& idef) { return idef.name_ == index; });
 	it->opts_.SetConfig(ftCfg.GetJson(fieldsMap));
@@ -174,11 +177,11 @@ reindexer::QueryResults FTApi::SimpleSelect3(std::string word) {
 	return res;
 }
 
-void FTApi::Delete(int id) {
+reindexer::Error FTApi::Delete(int id) {
 	reindexer::Item item = rt.NewItem("nm1");
 	item["id"] = id;
 
-	this->rt.reindexer->Delete("nm1", item);
+	return this->rt.reindexer->Delete("nm1", item);
 }
 
 reindexer::QueryResults FTApi::SimpleCompositeSelect(std::string word) {

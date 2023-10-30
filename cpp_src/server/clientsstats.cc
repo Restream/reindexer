@@ -29,6 +29,7 @@ void ClientsStats::GetClientInfo(std::vector<reindexer::ClientStat>& datas) {
 		reindexer::deepCopy(d.dbName, c.second.dbName);
 		reindexer::deepCopy(d.ip, c.second.ip);
 		reindexer::deepCopy(d.userName, c.second.userName);
+		d.protocol = c.second.protocol;
 		reindexer::deepCopy(d.userRights, c.second.userRights);
 		reindexer::deepCopy(d.clientVersion, c.second.clientVersion);
 		reindexer::deepCopy(d.appName, c.second.appName);

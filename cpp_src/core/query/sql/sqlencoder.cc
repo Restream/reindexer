@@ -1,7 +1,7 @@
 #include "core/query/sql/sqlencoder.h"
 
 #include "core/keyvalue/geometry.h"
-#include "core/nsselecter/sortexpression.h"
+#include "core/keyvalue/p_string.h"
 #include "core/queryresults/aggregationresult.h"
 #include "core/type_consts_helpers.h"
 #include "tools/serializer.h"
@@ -16,7 +16,7 @@ static void indexToSql(const std::string &index, WrSerializer &ser) {
 	}
 }
 
-static WrSerializer &stringToSql(const std::string &str, WrSerializer &ser) {
+static WrSerializer &stringToSql(std::string_view str, WrSerializer &ser) {
 	ser << '\'';
 	for (auto c : str) {
 		switch (c) {
@@ -48,15 +48,12 @@ static WrSerializer &stringToSql(const std::string &str, WrSerializer &ser) {
 	ser << '\'';
 	return ser;
 }
-
-SQLEncoder::SQLEncoder(const Query &q) : query_(q) {}
-
 void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripArgs) const {
 	assertrx(idx < query_.joinQueries_.size());
 	const auto &jq = query_.joinQueries_[idx];
 	ser << ' ' << jq.joinType;
-	if (jq.entries.Empty() && jq.count == QueryEntry::kDefaultLimit && jq.sortingEntries_.empty()) {
-		ser << ' ' << jq._namespace << " ON ";
+	if (jq.entries.Empty() && !jq.HasLimit() && jq.sortingEntries_.empty()) {
+		ser << ' ' << jq.NsName() << " ON ";
 	} else {
 		ser << " (";
 		jq.GetSQL(ser, stripArgs);
@@ -65,13 +62,13 @@ void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripAr
 	if (jq.joinEntries_.size() != 1) ser << "(";
 	for (auto &e : jq.joinEntries_) {
 		if (&e != &*jq.joinEntries_.begin()) {
-			ser << ' ' << e.op_ << ' ';
+			ser << ' ' << e.Operation() << ' ';
 		}
-		if (e.reverseNamespacesOrder) {
-			ser << jq._namespace << '.' << e.joinIndex_ << ' ' << InvertJoinCondition(e.condition_) << ' ' << query_._namespace << '.'
-				<< e.index_;
+		if (e.ReverseNamespacesOrder()) {
+			ser << jq.NsName() << '.' << e.RightFieldName() << ' ' << InvertJoinCondition(e.Condition()) << ' ' << query_.NsName() << '.'
+				<< e.LeftFieldName();
 		} else {
-			ser << query_._namespace << '.' << e.index_ << ' ' << e.condition_ << ' ' << jq._namespace << '.' << e.joinIndex_;
+			ser << query_.NsName() << '.' << e.LeftFieldName() << ' ' << e.Condition() << ' ' << jq.NsName() << '.' << e.RightFieldName();
 		}
 	}
 	if (jq.joinEntries_.size() != 1) ser << ')';
@@ -137,7 +134,7 @@ void SQLEncoder::dumpEqualPositions(WrSerializer &ser, const EqualPositions_t &e
 }
 
 WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
-	switch (query_.type_) {
+	switch (realQueryType_) {
 		case QuerySelect: {
 			ser << "SELECT ";
 			bool needComma = false;
@@ -171,10 +168,10 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					distinctIndex = query_.aggregations_[0].Fields()[0];
 				}
 				if (query_.selectFilter_.empty()) {
-					if (query_.count != 0 || query_.calcTotal == ModeNoTotal) {
+					if (query_.Limit() != 0 || query_.CalcTotal() == ModeNoTotal) {
 						if (needComma) ser << ", ";
 						ser << '*';
-						if (query_.calcTotal != ModeNoTotal) {
+						if (query_.CalcTotal() != ModeNoTotal) {
 							needComma = true;
 						}
 					}
@@ -190,19 +187,19 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					}
 				}
 			}
-			if (query_.calcTotal != ModeNoTotal) {
+			if (query_.CalcTotal() != ModeNoTotal) {
 				if (needComma) ser << ", ";
-				if (query_.calcTotal == ModeAccurateTotal) ser << "COUNT(*)";
-				if (query_.calcTotal == ModeCachedTotal) ser << "COUNT_CACHED(*)";
+				if (query_.CalcTotal() == ModeAccurateTotal) ser << "COUNT(*)";
+				if (query_.CalcTotal() == ModeCachedTotal) ser << "COUNT_CACHED(*)";
 			}
-			ser << " FROM " << query_._namespace;
+			ser << " FROM " << query_.NsName();
 		} break;
 		case QueryDelete:
-			ser << "DELETE FROM " << query_._namespace;
+			ser << "DELETE FROM " << query_.NsName();
 			break;
 		case QueryUpdate: {
 			if (query_.UpdateFields().empty()) break;
-			ser << "UPDATE " << query_._namespace;
+			ser << "UPDATE " << query_.NsName();
 			FieldModifyMode mode = query_.UpdateFields().front().Mode();
 			bool isUpdate = (mode == FieldModeSet || mode == FieldModeSetJson);
 			if (isUpdate) {
@@ -219,11 +216,19 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					if (isArray) ser << '[';
 					for (const Variant &v : field.Values()) {
 						if (&v != &*field.Values().begin()) ser << ',';
-						if (v.Type().Is<KeyValueType::String>() && !field.IsExpression() && (mode != FieldModeSetJson)) {
-							stringToSql(v.As<std::string>(), ser);
-						} else {
-							ser << v.As<std::string>();
-						}
+						v.Type().EvaluateOneOf(overloaded{
+							[&](KeyValueType::String) {
+								if (!field.IsExpression() && mode != FieldModeSetJson) {
+									stringToSql(v.As<p_string>(), ser);
+								} else {
+									ser << v.As<std::string>();
+								}
+							},
+							[&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
+							[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Null,
+									  KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
+								ser << v.As<std::string>();
+							}});
 					}
 					if (isArray) ser << "]";
 				}
@@ -231,7 +236,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 			break;
 		}
 		case QueryTruncate:
-			ser << "TRUNCATE " << query_._namespace;
+			ser << "TRUNCATE " << query_.NsName();
 			break;
 		default:
 			throw Error(errParams, "Not implemented");
@@ -242,8 +247,8 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 	dumpMerged(ser, stripArgs);
 	dumpOrderBy(ser, stripArgs);
 
-	if (query_.start != QueryEntry::kDefaultOffset && !stripArgs) ser << " OFFSET " << query_.start;
-	if (query_.count != QueryEntry::kDefaultLimit && !stripArgs) ser << " LIMIT " << query_.count;
+	if (query_.HasOffset() && !stripArgs) ser << " OFFSET " << query_.Offset();
+	if (query_.HasLimit() && !stripArgs) ser << " LIMIT " << query_.Limit();
 	return ser;
 }
 
@@ -274,41 +279,43 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 				if (encodedEntries) {
 					ser << opNames[op] << ' ';
 				}
-				if (entry.condition == CondDWithin) {
+				if (entry.Condition() == CondDWithin) {
 					ser << "ST_DWithin(";
-					indexToSql(entry.index, ser);
+					indexToSql(entry.FieldName(), ser);
 					if (stripArgs) {
 						ser << ", ?, ?)";
 					} else {
-						assertrx(entry.values.size() == 2);
+						assertrx(entry.Values().size() == 2);
 						Point point;
 						double distance;
-						if (entry.values[0].Type().Is<KeyValueType::Tuple>()) {
-							point = static_cast<Point>(entry.values[0]);
-							distance = entry.values[1].As<double>();
+						if (entry.Values()[0].Type().Is<KeyValueType::Tuple>()) {
+							point = static_cast<Point>(entry.Values()[0]);
+							distance = entry.Values()[1].As<double>();
 						} else {
-							point = static_cast<Point>(entry.values[1]);
-							distance = entry.values[0].As<double>();
+							point = static_cast<Point>(entry.Values()[1]);
+							distance = entry.Values()[0].As<double>();
 						}
 						ser << ", ST_GeomFromText('POINT(" << point.X() << ' ' << point.Y() << ")'), " << distance << ')';
 					}
 				} else {
-					indexToSql(entry.index, ser);
-					ser << ' ' << entry.condition << ' ';
-					if (entry.condition == CondEmpty || entry.condition == CondAny) {
+					indexToSql(entry.FieldName(), ser);
+					ser << ' ' << entry.Condition() << ' ';
+					if (entry.Condition() == CondEmpty || entry.Condition() == CondAny) {
 					} else if (stripArgs) {
 						ser << '?';
 					} else {
-						if (entry.values.size() != 1) ser << '(';
-						for (auto &v : entry.values) {
-							if (&v != &entry.values[0]) ser << ',';
-							if (v.Type().Is<KeyValueType::String>()) {
-								stringToSql(v.As<std::string>(), ser);
-							} else {
-								ser << v.As<std::string>();
-							}
+						if (entry.Values().size() != 1) ser << '(';
+						for (auto &v : entry.Values()) {
+							if (&v != &entry.Values()[0]) ser << ',';
+							v.Type().EvaluateOneOf(overloaded{
+								[&](KeyValueType::String) { stringToSql(v.As<p_string>(), ser); },
+								[&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
+								[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
+										  KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
+									ser << v.As<std::string>();
+								}});
 						}
-						if (entry.values.size() != 1) ser << ")";
+						if (entry.Values().size() != 1) ser << ")";
 					}
 				}
 			},
@@ -319,9 +326,9 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 				SQLEncoder(query_).DumpSingleJoinQuery(jqe.joinIndex, ser, stripArgs);
 			},
 			[&ser](const BetweenFieldsQueryEntry &entry) {
-				indexToSql(entry.firstIndex, ser);
+				indexToSql(entry.LeftFieldName(), ser);
 				ser << ' ' << entry.Condition() << ' ';
-				indexToSql(entry.secondIndex, ser);
+				indexToSql(entry.RightFieldName(), ser);
 			});
 		++encodedEntries;
 	}

@@ -1,10 +1,12 @@
 #pragma once
 
-#include <cassert>
+#include <memory>
+#include <optional>
 #include <random>
 #include <unordered_set>
 #include "core/type_consts.h"
 #include "tools/assertrx.h"
+#include "types.h"
 
 namespace reindexer {
 
@@ -16,137 +18,69 @@ class KeyValueType;
 
 namespace fuzzing {
 
-struct Index;
 class NsScheme;
-
-enum class FieldType { Bool, Int, Int64, Double, String, Uuid, Point, Struct, END = Struct };
-reindexer::KeyValueType ToKeyValueType(FieldType);
-std::ostream& operator<<(std::ostream&, FieldType);
-using FieldPath = std::vector<size_t>;
 
 class RandomGenerator {
 	using ErrFactorInt = uint32_t;
 
 public:
 	using ErrFactorType = std::pair<ErrFactorInt, ErrFactorInt>;
-	RandomGenerator(std::ostream&, ErrFactorType errorFactor);
-	RandomGenerator(std::istream&);
+	RandomGenerator(ErrFactorType errorFactor);
 
-	size_t FieldsCount(bool firstLevel) {
-		if (RndErr()) {
-			enum Err : uint8_t { Zero, TooMany, END = TooMany };
-			switch (RndWhich<Err, 1, 1>()) {
-				case Zero:
-					return 0;
-				case TooMany:
-					return RndInt(0, 10'000);
-				default:
-					assertrx(0);
-			}
-		}
-		if (firstLevel) {
-			enum Size : uint8_t { Normal, Long, END = Long };
-			switch (RndWhich<Size, 10'000, 1>()) {
-				case Normal:
-					return RndInt(1, 9);
-				case Long:
-					return RndInt(10, 100);
-				default:
-					assertrx(false);
-					std::abort();
-			}
-		}
-		return RndInt(1, 5);
-	}
-	fuzzing::FieldType RndFieldType(unsigned level) {
+	size_t FieldsCount(bool firstLevel);
+	FieldType RndFieldType(unsigned level) {
 		const bool withoutStruct = level > 2 && (level > 5 || !RndBool(1.0 / (2 << (2 * level))));
-		return static_cast<fuzzing::FieldType>(
-			RndInt(static_cast<int>(fuzzing::FieldType::Bool), static_cast<int>(fuzzing::FieldType::Struct) - withoutStruct));
+		return static_cast<FieldType>(RndInt(static_cast<int>(FieldType::Bool), static_cast<int>(FieldType::Struct) - withoutStruct));
 	}
-	fuzzing::FieldType RndFieldType() {
-		return static_cast<fuzzing::FieldType>(
-			RndInt(static_cast<int>(fuzzing::FieldType::Bool), static_cast<int>(fuzzing::FieldType::Point)));
+	FieldType RndFieldType() {
+		return static_cast<FieldType>(RndInt(static_cast<int>(FieldType::Bool), static_cast<int>(FieldType::Point)));
 	}
-	fuzzing::FieldType RndPkIndexFieldType() {
-		return static_cast<fuzzing::FieldType>(
-			RndInt(static_cast<int>(fuzzing::FieldType::Int), static_cast<int>(fuzzing::FieldType::Uuid)));
+	FieldType RndPkIndexFieldType() {
+		return static_cast<FieldType>(RndInt(static_cast<int>(FieldType::Int), static_cast<int>(FieldType::Uuid)));
 	}
-	std::string IndexFieldType(fuzzing::FieldType);
-	fuzzing::FieldType RndFieldType(fuzzing::FieldType type) {
+	std::string IndexFieldType(FieldType);
+	FieldType RndFieldType(FieldType type) {
 		if (RndErr()) {
-			return RndWhich<fuzzing::FieldType, 1, 1, 1, 1, 1, 1, 1, 1>();
+			return RndWhich<FieldType, 1, 1, 1, 1, 1, 1, 1, 1>();
 		}
 		return type;
 	}
-	std::string RndIndexType(fuzzing::FieldType, bool pk);
-	bool RndArrayField() { return RndBool(0.2); }
-	bool RndArrayField(bool array) { return RndErr() ? !array : array; }
-	size_t ArraySize() {
-		if (RndErr()) return RndInt(0, 100'000);
-		enum Size : uint8_t { Short, Normal, Long, VeryLong, END = VeryLong };
-		switch (RndWhich<Size, 10'000, 100'000, 10, 1>()) {
-			case Short:
-				return RndInt(0, 5);
-			case Normal:
-				return RndInt(6, 20);
-			case Long:
-				return RndInt(21, 200);
-			case VeryLong:
-				return RndInt(201, 10'000);
-			default:
-				assertrx(false);
-				std::abort();
+	std::vector<FieldType> RndFieldTypesArray(std::vector<FieldType>&& types) {
+		if (!RndErr()) {
+			return std::move(types);
 		}
+		if (RndBool(0.5)) {
+			types.resize(compositeIndexSize(types.size()));
+		}
+		for (auto& t : types) {
+			t = RndFieldType();
+		}
+		return std::move(types);
 	}
+	IndexType RndIndexType(const std::vector<FieldType>&);
+	IndexType RndPkIndexType(const std::vector<FieldType>&);
+	IndexType RndIndexType(IndexType);
+	IsArray RndArrayField() { return RndBool(0.2) ? IsArray::Yes : IsArray::No; }
+	IsArray RndArrayField(IsArray array) {
+		if (RndErr()) {
+			return array == IsArray::Yes ? IsArray::No : IsArray::Yes;
+		}
+		return array;
+	}
+	size_t ArraySize();
 	bool PkIndex(bool pk) { return RndErr() ? RndBool(0.5) : pk; }
-	bool SparseIndex(bool pk) { return pk ? RndErr() : RndBool(0.2); }
+	IsSparse RndSparseIndex(FieldType fldType) {
+		const bool couldBeSparse = fldType != FieldType::Struct && fldType != FieldType::Uuid;	// TODO remove uuid #1470
+		return (couldBeSparse ? RndBool(0.2) : RndErr()) ? IsSparse::Yes : IsSparse::No;
+	}
+	bool RndSparseIndex(IsSparse isSparse) { return (isSparse == IsSparse::Yes) != RndErr(); }
 	bool DenseIndex() { return RndBool(0.2); }
 	int64_t ExpiredIndex() { return RndInt(0, 100'000); }  // TODO
-	size_t IndexesCount() {
-		if (RndErr()) {
-			enum Err : uint8_t { Zero, TooMany, END = TooMany };
-			switch (RndWhich<Err, 1, 1>()) {
-				case Zero:
-					return 0;
-				case TooMany:
-					return RndInt(0, 1'000);
-				default:
-					assertrx(0);
-			}
-		}
-		enum Count : uint8_t { Few, Normal, Many, TooMany, END = TooMany };
-		switch (RndWhich<Count, 500, 1'000, 10, 1>()) {
-			case Few:
-				return RndInt(1, 3);
-			case Normal:
-				return RndInt(4, 6);
-			case Many:
-				return RndInt(7, 20);
-			case TooMany:
-				return RndInt(21, 63);
-			default:
-				assertrx(false);
-				std::abort();
-		}
-	}
-	bool CompositeIndex() { return RndBool(0.2); }
+	size_t IndexesCount();
+	bool CompositeIndex(size_t scalarIndexesCount) { return scalarIndexesCount < 1 ? RndErr() : RndBool(0.2); }
 	bool UniqueName() { return RndBool(0.5); }
-	size_t CompositeIndexSize() {
-		if (RndErr()) {
-			enum Err : uint8_t { Zero, One, TooMany, END = TooMany };
-			switch (RndWhich<Err, 1, 1, 1>()) {
-				case Zero:
-					return 0;
-				case One:
-					return 1;
-				case TooMany:
-					return RndInt(0, 10'000);
-				default:
-					assertrx(0);
-			}
-		}
-		return RndInt(2, 5);
-	}
+	size_t compositeIndexSize(size_t scalarIndexesCount);
+	std::vector<size_t> RndFieldsForCompositeIndex(const std::vector<size_t>& scalarIndexes);
 	std::string FieldName(std::unordered_set<std::string>& generatedNames);
 	std::string FieldName(const std::string& fieldName, std::unordered_set<std::string>& generatedNames) {
 		if (RndErr()) return FieldName(generatedNames);
@@ -155,9 +89,12 @@ public:
 	FieldPath RndField(const NsScheme&);
 	FieldPath RndScalarField(const NsScheme&);
 	std::string IndexName(std::unordered_set<std::string>& generatedNames) { return FieldName(generatedNames); }  // TODO
-	std::string NsName(std::unordered_set<std::string>& generatedNames) { return FieldName(generatedNames); }	  // TODO
-	std::string NsName(const std::string& nsName, std::unordered_set<std::string>& generatedNames) {
-		if (RndErr()) return NsName(generatedNames);
+	std::string GenerateNsName() {																				  // TODO
+		std::unordered_set<std::string> generatedNames;
+		return FieldName(generatedNames);
+	}
+	std::string NsName(const std::string& nsName) {
+		if (RndErr()) return GenerateNsName();
 		return nsName;
 	}
 	int RndInt(int min, int max) { return rndInt_(gen_, IntRndParams(min, max)); }
@@ -200,7 +137,7 @@ public:
 		return err;
 	}
 	char RndChar() { return rndChar_(gen_); }
-	bool NeedThisNode(bool sparse) { return sparse ? RndBool(0.5) : !RndErr(); }
+	bool NeedThisNode(IsSparse sparse) { return sparse == IsSparse::Yes ? RndBool(0.5) : !RndErr(); }
 	int RndIntValue() {
 		enum Size : uint8_t { Short, Long, END = Long };
 		switch (RndWhich<Size, 1, 1>()) {
@@ -225,6 +162,7 @@ public:
 				std::abort();
 		}
 	}
+	int64_t RndTtlValue();
 	bool RndBool(double p) { return rndBool_(gen_, BoolRndParams{p}); }
 	double RndDoubleValue() {
 		enum Size : uint8_t { Short, Long, END = Long };
@@ -273,14 +211,19 @@ public:
 	}
 	template <typename Cont>
 	const auto& RndWhich(const Cont& cont) {
-		assert(!std::empty(cont));
+		assertrx(!std::empty(cont));
 		auto it = std::begin(cont);
 		std::advance(it, rndSize(0, std::size(cont) - 1));
 		return *it;
 	}
-	void RndWhere(reindexer::Query&, const std::string& field, const std::vector<fuzzing::FieldType>&);
+	void RndWhere(reindexer::Query&, const std::string& field, FieldType, std::optional<IndexType>);
+	void RndWhereComposite(reindexer::Query&, const std::string& field, std::vector<FieldType>&&, std::optional<IndexType>);
+
+	static void SetOut(std::string);
+	static void SetIn(const std::string&);
 
 private:
+	using RandomEngine = std::default_random_engine;
 	using IntRndParams = std::uniform_int_distribution<>::param_type;
 	using SizeRndParams = std::uniform_int_distribution<size_t>::param_type;
 	using Int64RndParams = std::uniform_int_distribution<int64_t>::param_type;
@@ -291,11 +234,16 @@ private:
 	int rndInt(IntRndParams params) { return rndInt_(gen_, params); }
 	int64_t rndInt64(int64_t min, int64_t max) { return rndInt64_(gen_, Int64RndParams(min, max)); }
 	size_t rndSize(size_t min, size_t max) { return rndSize_(gen_, SizeRndParams(min, max)); }
-	CondType rndCond(fuzzing::FieldType);
+	CondType rndCond(FieldType);
 	std::string rndStrUuidValue(bool noErrors);
 	reindexer::Uuid rndUuidValue();
+	template <size_t N, const std::vector<IndexType>* Availables>
+	IndexType rndIndexType(const std::vector<FieldType>&);
+	static std::string& out() noexcept;
+	static std::unique_ptr<std::ifstream>& in() noexcept;
+	static RandomEngine createRandomEngine();
 
-	std::default_random_engine gen_;
+	RandomEngine gen_;
 	ErrFactorType errFactor_;
 	ErrorParams errParams_;
 	std::uniform_int_distribution<> rndInt_;

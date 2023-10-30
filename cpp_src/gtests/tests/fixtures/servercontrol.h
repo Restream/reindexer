@@ -112,8 +112,9 @@ public:
 		void WriteServerConfig(const std::string& configYaml);
 		// set server's WAL size
 		void SetWALSize(int64_t size, std::string_view nsName);
-
+		void SetTxAlwaysCopySize(int64_t size, std::string_view nsName);
 		void SetOptmizationSortWorkers(size_t cnt, std::string_view nsName);
+		void EnableAllProfilings();
 
 		reindexer_server::Server srv;
 #ifndef _WIN32

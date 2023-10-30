@@ -15,11 +15,13 @@ void UpdateExpireAfter(Index *i, int64_t v) {
 	}
 }
 
-std::unique_ptr<Index> TtlIndex_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields) {
+std::unique_ptr<Index> TtlIndex_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
+									const NamespaceCacheConfigData &cacheCfg) {
 	if (idef.opts_.IsPK() || idef.opts_.IsDense()) {
-		return std::unique_ptr<Index>{new TtlIndex<number_map<int64_t, Index::KeyEntryPlain>>(idef, std::move(payloadType), fields)};
+		return std::make_unique<TtlIndex<number_map<int64_t, Index::KeyEntryPlain>>>(idef, std::move(payloadType), std::move(fields),
+																					 cacheCfg);
 	}
-	return std::unique_ptr<Index>{new TtlIndex<number_map<int64_t, Index::KeyEntry>>(idef, std::move(payloadType), fields)};
+	return std::make_unique<TtlIndex<number_map<int64_t, Index::KeyEntry>>>(idef, std::move(payloadType), std::move(fields), cacheCfg);
 }
 
 }  // namespace reindexer

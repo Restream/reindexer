@@ -52,10 +52,12 @@ public:
 	void AddItem(Item &item, bool withData = false, bool enableHold = true);
 	std::string Dump() const;
 	void Erase(ItemRefVector::iterator begin, ItemRefVector::iterator end);
-	size_t Count() const { return items_.size(); }
-	size_t TotalCount() const { return totalCount; }
-	const std::string &GetExplainResults() const { return explainResults; }
-	const std::vector<AggregationResult> &GetAggregationResults() const { return aggregationResults; }
+	size_t Count() const noexcept { return items_.size(); }
+	size_t TotalCount() const noexcept { return totalCount; }
+	const std::string &GetExplainResults() const &noexcept { return explainResults; }
+	const std::string &GetExplainResults() const && = delete;
+	const std::vector<AggregationResult> &GetAggregationResults() const &noexcept { return aggregationResults; }
+	const std::vector<AggregationResult> &GetAggregationResults() const && = delete;
 	void Clear();
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	bool IsCacheEnabled() const { return !nonCacheableData; }
@@ -77,12 +79,19 @@ public:
 		int64_t GetLSN() const { return qr_->items_[idx_].Value().GetLSN(); }
 		bool IsRaw() const;
 		std::string_view GetRaw() const;
-		Iterator &operator++();
-		Iterator &operator+(int delta);
-		const Error &Status() const noexcept { return err_; }
-		bool operator!=(const Iterator &) const;
-		bool operator==(const Iterator &) const;
-		Iterator &operator*() { return *this; }
+		Iterator &operator++() noexcept {
+			idx_++;
+			return *this;
+		}
+		Iterator &operator+(int delta) noexcept {
+			idx_ += delta;
+			return *this;
+		}
+
+		Error Status() const noexcept { return err_; }
+		bool operator==(const Iterator &other) const noexcept { return idx_ == other.idx_; }
+		bool operator!=(const Iterator &other) const noexcept { return !operator==(other); }
+		Iterator &operator*() noexcept { return *this; }
 
 		const QueryResults *qr_;
 		int idx_;

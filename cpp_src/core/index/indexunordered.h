@@ -26,7 +26,7 @@ public:
 															typename T::key_type>::type>::type>::type;
 	using key_type = StoreIndexKeyType<T>;
 
-	IndexUnordered(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields);
+	IndexUnordered(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields, const NamespaceCacheConfigData &cacheCfg);
 	IndexUnordered(const IndexUnordered &other);
 
 	Variant Upsert(const Variant &key, IdType id, bool &chearCache) override;
@@ -35,7 +35,7 @@ public:
 							   const BaseFunctionCtx::Ptr &ctx, const RdxContext &) override;
 	void Commit() override;
 	void UpdateSortedIds(const UpdateSortedContext &) override;
-	std::unique_ptr<Index> Clone() const override { return std::unique_ptr<Index>{new IndexUnordered<T>(*this)}; }
+	std::unique_ptr<Index> Clone() const override { return std::make_unique<IndexUnordered<T>>(*this); }
 	IndexMemStat GetMemStat(const RdxContext &) override;
 	size_t Size() const noexcept override final { return idx_map.size(); }
 	void SetSortedIdxCount(int sortedIdxCount) override;
@@ -49,6 +49,7 @@ public:
 
 	void AddDestroyTask(tsl::detail_sparse_hash::ThreadTaskQueue &) override;
 	bool IsDestroyPartSupported() const noexcept override { return true; }
+	void ReconfigureCache(const NamespaceCacheConfigData &cacheCfg) override;
 
 protected:
 	bool tryIdsetCache(const VariantArray &keys, CondType condition, SortType sortId,
@@ -60,6 +61,8 @@ protected:
 	T idx_map;
 	// Merged idsets cache
 	atomic_unique_ptr<IdSetCache> cache_;
+	size_t cacheMaxSize_;
+	uint32_t hitsToCache_;
 	// Empty ids
 	Index::KeyEntry empty_ids_;
 	// Tracker of updates
@@ -70,8 +73,9 @@ private:
 	void dump(S &os, std::string_view step, std::string_view offset) const;
 };
 
-constexpr inline unsigned maxSelectivityPercentForIdset() noexcept { return 30u; }
+constexpr unsigned maxSelectivityPercentForIdset() noexcept { return 30u; }
 
-std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadType payloadType, const FieldsSet &fields);
+std::unique_ptr<Index> IndexUnordered_New(const IndexDef &idef, PayloadType &&payloadType, FieldsSet &&fields,
+										  const NamespaceCacheConfigData &cacheCfg);
 
 }  // namespace reindexer

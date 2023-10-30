@@ -21,15 +21,14 @@ Item TransactionImpl::GetItem(TransactionStep &&st) {
 	return Item(new ItemImpl(payloadType_, tagsMatcher_, pkFields_, schema_, std::move(st.itemData_)));
 }
 
-TransactionImpl::TransactionImpl(const std::string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
-								 std::shared_ptr<const Schema> schema)
-	: payloadType_(pt),
-	  tagsMatcher_(tm),
-	  pkFields_(pf),
-	  schema_(std::move(schema)),
-	  nsName_(nsName),
-	  tagsUpdated_(false),
-	  startTime_(std::chrono::high_resolution_clock::now()) {}
+void TransactionImpl::ValidatePK(const FieldsSet &pkFields) {
+	std::lock_guard lck(mtx_);
+	if (hasDeleteItemSteps_ && rx_unlikely(pkFields != pkFields_)) {
+		throw Error(
+			errNotValid,
+			"Transaction has Delete-calls and it's PK metadata is outdated (probably PK has been change during the transaction creation)");
+	}
+}
 
 void TransactionImpl::UpdateTagsMatcherFromItem(ItemImpl *ritem) {
 	if (ritem->Type().get() != payloadType_.get() || (ritem->tagsMatcher().isUpdated() && !tagsMatcher_.try_merge(ritem->tagsMatcher()))) {
@@ -76,6 +75,7 @@ void TransactionImpl::Delete(Item &&item) {
 void TransactionImpl::Modify(Item &&item, ItemModifyMode mode) {
 	std::unique_lock<std::mutex> lock(mtx_);
 	checkTagsMatcher(item);
+	hasDeleteItemSteps_ = hasDeleteItemSteps_ || (mode == ModeDelete);
 	steps_.emplace_back(TransactionStep{std::move(item), mode});
 }
 

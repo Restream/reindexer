@@ -45,8 +45,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 					LongTxLoggingParams{profilingNode["long_queries_logging"]["transaction"]["threshold_us"].As<int32_t>(),
 										profilingNode["long_queries_logging"]["transaction"]["avg_step_threshold_us"].As<int32_t>()});
 			}
-			auto it = handlers_.find(ProfilingConf);
-			if (it != handlers_.end()) (it->second)();
+			if (handlers_[ProfilingConf]) (handlers_[ProfilingConf])();
 		}
 
 		auto &namespacesNode = root["namespaces"];
@@ -73,10 +72,29 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 				data.maxPreselectPart = nsNode["max_preselect_part"].As<double>(data.maxPreselectPart, 0.0, 1.0);
 				data.idxUpdatesCountingMode = nsNode["index_updates_counting_mode"].As<bool>(data.idxUpdatesCountingMode);
 				data.syncStorageFlushLimit = nsNode["sync_storage_flush_limit"].As<int>(data.syncStorageFlushLimit, 0);
+
+				auto cacheConfig = nsNode["cache"];
+				if (!cacheConfig.empty()) {
+					data.cacheConfig.idxIdsetCacheSize =
+						cacheConfig["index_idset_cache_size"].As<size_t>(data.cacheConfig.idxIdsetCacheSize, 0);
+					data.cacheConfig.idxIdsetHitsToCache =
+						cacheConfig["index_idset_hits_to_cache"].As<size_t>(data.cacheConfig.idxIdsetHitsToCache, 0);
+					data.cacheConfig.ftIdxCacheSize = cacheConfig["ft_index_cache_size"].As<size_t>(data.cacheConfig.ftIdxCacheSize, 0);
+					data.cacheConfig.ftIdxHitsToCache =
+						cacheConfig["ft_index_hits_to_cache"].As<size_t>(data.cacheConfig.ftIdxHitsToCache, 0);
+					data.cacheConfig.joinCacheSize =
+						cacheConfig["joins_preselect_cache_size"].As<size_t>(data.cacheConfig.joinCacheSize, 0);
+					data.cacheConfig.joinHitsToCache =
+						cacheConfig["joins_preselect_hit_to_cache"].As<size_t>(data.cacheConfig.joinHitsToCache, 0);
+					data.cacheConfig.queryCountCacheSize =
+						cacheConfig["query_count_cache_size"].As<size_t>(data.cacheConfig.queryCountCacheSize, 0);
+					data.cacheConfig.queryCountHitsToCache =
+						cacheConfig["query_count_hit_to_cache"].As<size_t>(data.cacheConfig.queryCountHitsToCache, 0);
+				}
+
 				namespacesData_.emplace(nsNode["namespace"].As<std::string>(), std::move(data));  // NOLINT(performance-move-const-arg)
 			}
-			auto it = handlers_.find(NamespaceDataConf);
-			if (it != handlers_.end()) (it->second)();
+			if (handlers_[NamespaceDataConf]) (handlers_[NamespaceDataConf])();
 		}
 
 		auto &replicationNode = root["replication"];
@@ -84,8 +102,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root) {
 			auto err = replicationData_.FromJSON(replicationNode);
 			if (!err.ok()) return err;
 
-			auto it = handlers_.find(ReplicationConf);
-			if (it != handlers_.end()) (it->second)();
+			if (handlers_[ReplicationConf]) (handlers_[ReplicationConf])();
 		}
 		return errOK;
 	} catch (const Error &err) {
@@ -105,11 +122,11 @@ ReplicationConfigData DBConfigProvider::GetReplicationConfig() {
 	return replicationData_;
 }
 
-bool DBConfigProvider::GetNamespaceConfig(const std::string &nsName, NamespaceConfigData &data) {
+bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConfigData &data) {
 	shared_lock<shared_timed_mutex> lk(mtx_);
 	auto it = namespacesData_.find(nsName);
 	if (it == namespacesData_.end()) {
-		it = namespacesData_.find("*");
+		it = namespacesData_.find(std::string_view("*"));
 	}
 	if (it == namespacesData_.end()) {
 		data = {};

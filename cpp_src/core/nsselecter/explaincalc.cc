@@ -45,7 +45,7 @@ void ExplainCalc::LogDump(int logLevel) {
 	}
 }
 
-constexpr inline const char *joinTypeName(JoinType type) noexcept {
+constexpr static inline const char *joinTypeName(JoinType type) noexcept {
 	switch (type) {
 		case JoinType::InnerJoin:
 			return "inner_join ";
@@ -60,7 +60,7 @@ constexpr inline const char *joinTypeName(JoinType type) noexcept {
 	}
 }
 
-constexpr inline const char *opName(OpType op, bool first = true) {
+constexpr static inline const char *opName(OpType op, bool first = true) {
 	switch (op) {
 		case OpAnd:
 			return first ? "" : "and ";

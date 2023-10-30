@@ -395,12 +395,14 @@ func (qt *queryTest) DeepReplEqual() *queryTest {
 func (qt *queryTest) where(index string, condition int, keys interface{}) *queryTest {
 	qte := queryTestEntry{index: index, condition: condition, ikeys: keys}
 
-	if reflect.TypeOf(keys).Kind() == reflect.Slice || reflect.TypeOf(keys).Kind() == reflect.Array {
-		for i := 0; i < reflect.ValueOf(keys).Len(); i++ {
-			qte.keys = append(qte.keys, reflect.ValueOf(keys).Index(i))
+	if keys != nil {
+		if reflect.TypeOf(keys).Kind() == reflect.Slice || reflect.TypeOf(keys).Kind() == reflect.Array {
+			for i := 0; i < reflect.ValueOf(keys).Len(); i++ {
+				qte.keys = append(qte.keys, reflect.ValueOf(keys).Index(i))
+			}
+		} else {
+			qte.keys = append(qte.keys, reflect.ValueOf(keys))
 		}
-	} else {
-		qte.keys = append(qte.keys, reflect.ValueOf(keys))
 	}
 	qte.fieldIdx, _ = qt.ns.getField(index)
 	qt.entries.addEntry(qte, qt.nextOp)
@@ -1338,6 +1340,13 @@ func likeValues(v1 reflect.Value, v2 reflect.Value) bool {
 
 func min(a, b int) int {
 	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
 		return a
 	}
 	return b

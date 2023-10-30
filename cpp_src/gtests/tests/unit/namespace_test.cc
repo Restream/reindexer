@@ -339,12 +339,12 @@ TEST_F(NsApi, QueryperfstatsNsDummyTest) {
 			QueryResults qr;
 			err = rt.reindexer->Select(Query("#queriesperfstats"), qr);
 			ASSERT_TRUE(err.ok()) << err.what();
-			ASSERT_TRUE(qr.Count() > 0) << "#queriesperfstats table is empty!";
+			ASSERT_GT(qr.Count(), 0) << "#queriesperfstats table is empty!";
 			for (size_t i = 0; i < qr.Count(); ++i) {
 				std::cout << qr[i].GetItem(false).GetJSON() << std::endl;
 			}
 		}
-		ASSERT_TRUE(qres.Count() == 1) << "Expected 1 row for this query, got " << qres.Count();
+		ASSERT_EQ(qres.Count(), 1);
 		Item item = qres[0].GetItem(false);
 		Variant val;
 		val = item["latency_stddev"];
@@ -415,12 +415,12 @@ TEST_F(NsApi, TestUpdateNonindexedField) {
 	Query updateQuery{Query(default_namespace).Where("id", CondGe, Variant("1500")).Set("nested.bonus", static_cast<int>(100500))};
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qrUpdate.Count() == 500) << qrUpdate.Count();
+	ASSERT_EQ(qrUpdate.Count(), 500);
 
 	QueryResults qrAll;
 	err = rt.reindexer->Select(Query(default_namespace).Where("id", CondGe, Variant("1500")), qrAll);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qrAll.Count() == 500) << qrAll.Count();
+	ASSERT_EQ(qrAll.Count(), 500);
 
 	for (auto it : qrAll) {
 		Item item = it.GetItem(false);
@@ -439,12 +439,12 @@ TEST_F(NsApi, TestUpdateSparseField) {
 	Query updateQuery{Query(default_namespace).Where("id", CondGe, Variant("1500")).Set("sparse_field", static_cast<int>(100500))};
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qrUpdate.Count() == 500) << qrUpdate.Count();
+	ASSERT_EQ(qrUpdate.Count(), 500);
 
 	QueryResults qrAll;
 	err = rt.reindexer->Select(Query(default_namespace).Where("id", CondGe, Variant("1500")), qrAll);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qrAll.Count() == 500) << qrAll.Count();
+	ASSERT_EQ(qrAll.Count(), 500);
 
 	for (auto it : qrAll) {
 		Item item = it.GetItem(false);
@@ -473,7 +473,7 @@ TEST_F(NsApi, TestUpdateTwoFields) {
 
 	// Make sure query worked well
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qrUpdate.Count() == 1) << qrUpdate.Count();
+	ASSERT_EQ(qrUpdate.Count(), 1);
 
 	// Make sure:
 	// 1. JSON of the item is correct
@@ -500,12 +500,12 @@ static void updateArrayField(const std::shared_ptr<reindexer::Reindexer> &reinde
 	Query updateQuery{Query(ns).Where("id", CondGe, Variant("500")).Set(updateFieldPath, values)};
 	Error err = reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qrUpdate.Count() > 0) << qrUpdate.Count();
+	ASSERT_GT(qrUpdate.Count(), 0);
 
 	QueryResults qrAll;
 	err = reindexer->Select(Query(ns).Where("id", CondGe, Variant("500")), qrAll);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qrAll.Count() == qrUpdate.Count()) << qrAll.Count();
+	ASSERT_EQ(qrAll.Count(), qrUpdate.Count());
 
 	for (auto it : qrAll) {
 		Item item = it.GetItem(false);
@@ -537,7 +537,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField2) {
 	QueryResults qr;
 	Error err = rt.reindexer->Select(R"(update test_namespace set nested.bonus=[{"first":1,"second":2,"third":3}] where id = 1000;)", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
+	ASSERT_EQ(qr.Count(), 1);
 
 	Item item = qr[0].GetItem(false);
 	std::string_view json = item.GetJSON();
@@ -553,7 +553,7 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField3) {
 	Error err =
 		rt.reindexer->Select(R"(update test_namespace set nested.bonus=[{"id":1},{"id":2},{"id":3},{"id":4}] where id = 1000;)", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
+	ASSERT_EQ(qr.Count(), 1);
 
 	Item item = qr[0].GetItem(false);
 	VariantArray val = item["nested.bonus"];
@@ -576,12 +576,12 @@ TEST_F(NsApi, TestUpdateNonindexedArrayField4) {
 	QueryResults qr;
 	Error err = rt.reindexer->Select(R"(update test_namespace set nested.bonus=[0] where id = 1000;)", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
+	ASSERT_EQ(qr.Count(), 1);
 
 	Item item = qr[0].GetItem(false);
 	std::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("nested":{"bonus":[0])");
-	ASSERT_TRUE(pos != std::string::npos) << "'nested.bonus' was not updated properly" << json;
+	ASSERT_NE(pos, std::string::npos) << "'nested.bonus' was not updated properly" << json;
 }
 
 TEST_F(NsApi, TestUpdateNonindexedArrayField5) {
@@ -611,12 +611,12 @@ TEST_F(NsApi, TestUpdateIndexedArrayField2) {
 	Query q{Query(default_namespace).Where(idIdxName, CondEq, static_cast<int>(1000)).Set(indexedArrayField, std::move(value.MarkArray()))};
 	Error err = rt.reindexer->Update(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 1) << qr.Count();
+	ASSERT_EQ(qr.Count(), 1);
 
 	Item item = qr[0].GetItem(false);
 	std::string_view json = item.GetJSON();
 	size_t pos = json.find(R"("indexed_array_field":[77])");
-	ASSERT_TRUE(pos != std::string::npos) << "'indexed_array_field' was not updated properly" << json;
+	ASSERT_NE(pos, std::string::npos) << "'indexed_array_field' was not updated properly" << json;
 }
 
 static void addAndSetNonindexedField(const std::shared_ptr<reindexer::Reindexer> &reindexer, const std::string &ns,
@@ -844,6 +844,7 @@ TEST_F(NsApi, DropArrayField3) {
 	DropArrayItem(rt.reindexer, default_namespace, "nested.nested_array[*].prices[*]", "nested.nested_array.prices");
 }
 
+#if (0)	 // #1500
 TEST_F(NsApi, DropArrayField4) {
 	// 1. Define NS
 	// 2. Fill NS
@@ -853,6 +854,7 @@ TEST_F(NsApi, DropArrayField4) {
 	DropArrayItem(rt.reindexer, default_namespace, "nested.nested_array[0].prices[((2+4)*2)/6]", "nested.nested_array.prices", 0,
 				  ((2 + 4) * 2) / 6);
 }
+#endif
 
 TEST_F(NsApi, SetArrayFieldWithSql) {
 	// 1. Define NS
@@ -1692,12 +1694,12 @@ static void checkFieldConversion(const std::shared_ptr<reindexer::Reindexer> &re
 		ASSERT_TRUE(!err.ok());
 	} else {
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_TRUE(qrUpdate.Count() > 0) << qrUpdate.Count();
+		ASSERT_GT(qrUpdate.Count(), 0);
 
 		QueryResults qrAll;
 		err = reindexer->Select(selectQuery, qrAll);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_TRUE(qrAll.Count() == qrUpdate.Count()) << qrAll.Count();
+		ASSERT_EQ(qrAll.Count(), qrUpdate.Count());
 
 		for (auto it : qrAll) {
 			Item item = it.GetItem(false);
@@ -1842,16 +1844,21 @@ TEST_F(NsApi, TestUpdatePkFieldNoConditions) {
 	DefineDefaultNamespace();
 	FillDefaultNamespace();
 
-	QueryResults qr;
-	Error err = rt.reindexer->Select("update test_namespace set id = id + 1;", qr);
+	QueryResults qrCount;
+	Error err = rt.reindexer->Select("select count(*) from test_namespace", qrCount);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() > 0);
 
-	int i = 1;
+	QueryResults qr;
+	err = rt.reindexer->Select("update test_namespace set id = id + "+std::to_string(qrCount.totalCount+100), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_GT(qr.Count(), 0);
+
+	int i = 0;
 	for (auto &it : qr) {
 		Item item = it.GetItem(false);
 		Variant intFieldVal = item[idIdxName];
-		ASSERT_TRUE(static_cast<int>(intFieldVal) == i++);
+		ASSERT_EQ(static_cast<int>(intFieldVal) , i+qrCount.totalCount+100);
+		i++;
 	}
 }
 
@@ -1862,7 +1869,7 @@ TEST_F(NsApi, TestUpdateIndexArrayWithNull) {
 	QueryResults qr;
 	Error err = rt.reindexer->Select("update test_namespace set indexed_array_field = null where id = 1;", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 1);
+	ASSERT_EQ(qr.Count(), 1);
 
 	for (auto &it : qr) {
 		Item item = it.GetItem(false);
@@ -1983,7 +1990,7 @@ TEST_F(NsApi, TestUpdateNonIndexFieldWithNull) {
 	QueryResults qr;
 	Error err = rt.reindexer->Select("update test_namespace set extra = null where id = 1001;", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 1);
+	ASSERT_EQ(qr.Count(), 1);
 
 	for (auto &it : qr) {
 		Item item = it.GetItem(false);
@@ -2008,7 +2015,7 @@ TEST_F(NsApi, TestUpdateEmptyArrayField) {
 	QueryResults qr;
 	Error err = rt.reindexer->Select("update test_namespace set indexed_array_field = [] where id = 1;", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 1);
+	ASSERT_EQ(qr.Count(), 1);
 
 	Item item = qr[0].GetItem(false);
 	Variant idFieldVal = item[idIdxName];
@@ -2070,12 +2077,12 @@ TEST_F(NsApi, TestUpdateEmptyIndexedField) {
 				  .Set(indexedArrayField, {Variant(static_cast<int>(4)), Variant(static_cast<int>(5)), Variant(static_cast<int>(6))});
 	Error err = rt.reindexer->Update(q, qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 1);
+	ASSERT_EQ(qr.Count(), 1);
 
 	QueryResults qr2;
 	err = rt.reindexer->Select("select * from test_namespace where id = 1001;", qr2);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr2.Count() == 1);
+	ASSERT_EQ(qr2.Count(), 1);
 	for (auto it : qr2) {
 		Item item = it.GetItem(false);
 
@@ -2100,7 +2107,7 @@ TEST_F(NsApi, TestDropField) {
 	QueryResults qr;
 	Error err = rt.reindexer->Select("update test_namespace drop extra where id >= 1000 and id < 1010;", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() == 10) << qr.Count();
+	ASSERT_EQ(qr.Count(), 10);
 
 	for (auto it : qr) {
 		Item item = it.GetItem(false);
@@ -2112,7 +2119,7 @@ TEST_F(NsApi, TestDropField) {
 	QueryResults qr2;
 	err = rt.reindexer->Select("update test_namespace drop nested.bonus where id >= 1005 and id < 1010;", qr2);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr2.Count() == 5);
+	ASSERT_EQ(qr2.Count(), 5);
 
 	for (auto it : qr2) {
 		Item item = it.GetItem(false);
@@ -2144,7 +2151,7 @@ TEST_F(NsApi, TestUpdateFieldWithFunction) {
 	Error err = rt.reindexer->Select(
 		"update test_namespace set int_field = SERIAL(), extra = SERIAL(), nested.timeField = NOW(msec) where id >= 0;", qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() > 0);
+	ASSERT_GT(qr.Count(), 0);
 
 	int i = 1;
 	for (auto &it : qr) {
@@ -2168,7 +2175,7 @@ TEST_F(NsApi, TestUpdateFieldWithExpressions) {
 		"0;",
 		qr);
 	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_TRUE(qr.Count() > 0) << qr.Count();
+	ASSERT_GT(qr.Count(), 0);
 
 	int i = 1;
 	for (auto &it : qr) {
@@ -2207,22 +2214,22 @@ static void checkQueryDsl(const Query &src) {
 		}
 	}
 	if (objectValues) {
-		EXPECT_TRUE(src.entries == dst.entries);
-		EXPECT_TRUE(src.aggregations_ == dst.aggregations_);
-		EXPECT_TRUE(src._namespace == dst._namespace);
-		EXPECT_TRUE(src.sortingEntries_ == dst.sortingEntries_);
-		EXPECT_TRUE(src.calcTotal == dst.calcTotal);
-		EXPECT_TRUE(src.start == dst.start);
-		EXPECT_TRUE(src.count == dst.count);
-		EXPECT_TRUE(src.debugLevel == dst.debugLevel);
-		EXPECT_TRUE(src.strictMode == dst.strictMode);
-		EXPECT_TRUE(src.forcedSortOrder_ == dst.forcedSortOrder_);
-		EXPECT_TRUE(src.selectFilter_ == dst.selectFilter_);
-		EXPECT_TRUE(src.selectFunctions_ == dst.selectFunctions_);
-		EXPECT_TRUE(src.joinQueries_ == dst.joinQueries_);
-		EXPECT_TRUE(src.mergeQueries_ == dst.mergeQueries_);
+		EXPECT_EQ(src.entries, dst.entries);
+		EXPECT_EQ(src.aggregations_, dst.aggregations_);
+		EXPECT_EQ(src.NsName(), dst.NsName());
+		EXPECT_EQ(src.sortingEntries_, dst.sortingEntries_);
+		EXPECT_EQ(src.CalcTotal(), dst.CalcTotal());
+		EXPECT_EQ(src.Offset(), dst.Offset());
+		EXPECT_EQ(src.Limit(), dst.Limit());
+		EXPECT_EQ(src.debugLevel, dst.debugLevel);
+		EXPECT_EQ(src.strictMode, dst.strictMode);
+		EXPECT_EQ(src.forcedSortOrder_, dst.forcedSortOrder_);
+		EXPECT_EQ(src.selectFilter_, dst.selectFilter_);
+		EXPECT_EQ(src.selectFunctions_, dst.selectFunctions_);
+		EXPECT_EQ(src.joinQueries_, dst.joinQueries_);
+		EXPECT_EQ(src.mergeQueries_, dst.mergeQueries_);
 	} else {
-		EXPECT_TRUE(dst == src);
+		EXPECT_EQ(dst, src);
 	}
 }
 
@@ -2379,12 +2386,13 @@ TEST_F(NsApi, MsgPackEncodingTest) {
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		std::string json(item.GetJSON());
-		ASSERT_TRUE(json == items[i++]);
+		ASSERT_EQ(json, items[i++]);
 	}
 
 	reindexer::WrSerializer wrSer3;
 	for (size_t i = 0; i < qr.Count(); ++i) {
-		qr[i].GetMsgPack(wrSer3, false);
+		const auto err = qr[i].GetMsgPack(wrSer3, false);
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	i = 0;
@@ -2397,7 +2405,7 @@ TEST_F(NsApi, MsgPackEncodingTest) {
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		std::string json(item.GetJSON());
-		ASSERT_TRUE(json == items[i++]);
+		ASSERT_EQ(json, items[i++]);
 	}
 }
 

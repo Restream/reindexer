@@ -22,8 +22,9 @@ IndexOpts::IndexOpts(uint8_t flags, CollateMode mode, RTreeIndexType rtreeType)
 IndexOpts::IndexOpts(const std::string& sortOrderUTF8, uint8_t flags, RTreeIndexType rtreeType)
 	: options(flags), collateOpts_(sortOrderUTF8), rtreeType_(rtreeType) {}
 
-bool IndexOpts::IsEqual(const IndexOpts& other, bool skipConfig) const {
-	return options == other.options && (skipConfig || config == other.config) && collateOpts_.mode == other.collateOpts_.mode &&
+bool IndexOpts::IsEqual(const IndexOpts& other, IndexComparison cmpType) const noexcept {
+	return options == other.options && (cmpType == IndexComparison::SkipConfig || config == other.config) &&
+		   collateOpts_.mode == other.collateOpts_.mode &&
 		   collateOpts_.sortOrderTable.GetSortOrderCharacters() == other.collateOpts_.sortOrderTable.GetSortOrderCharacters() &&
 		   rtreeType_ == other.rtreeType_;
 }

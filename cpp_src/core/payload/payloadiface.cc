@@ -5,7 +5,6 @@
 #include "core/keyvalue/p_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/namespace/stringsholder.h"
-#include "itoa/itoa.h"
 #include "payloadiface.h"
 #include "payloadvalue.h"
 
@@ -77,27 +76,75 @@ void PayloadIface<T>::GetByJsonPath(std::string_view jsonPath, TagsMatcher &tags
 }
 
 template <typename T>
-void PayloadIface<T>::GetByJsonPath(const TagsPath &jsonPath, VariantArray &krefs, KeyValueType expectedType) const {
-	ConstPayload pl(t_, *v_);
-	FieldsSet filter({jsonPath});
-	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
+template <typename P>
+void PayloadIface<T>::getByJsonPath(const P &path, VariantArray &krefs, KeyValueType expectedType) const {
 	krefs.clear<false>();
-	if (!jsonPath.empty()) {
-		FieldsExtractor extractor(&krefs, expectedType, jsonPath.size());
-		encoder.Encode(pl, extractor);
+	if (path.empty()) {
+		return;
 	}
+	const FieldsSet filter{{path}};
+	ConstPayload pl(t_, *v_);
+	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
+	FieldsExtractor extractor(&krefs, expectedType, path.size(), &filter);
+	encoder.Encode(pl, extractor);
+}
+
+template <typename T>
+void PayloadIface<T>::GetByJsonPath(const TagsPath &tagsPath, VariantArray &krefs, KeyValueType expectedType) const {
+	getByJsonPath(tagsPath, krefs, expectedType);
 }
 
 template <typename T>
 void PayloadIface<T>::GetByJsonPath(const IndexedTagsPath &tagsPath, VariantArray &krefs, KeyValueType expectedType) const {
-	ConstPayload pl(t_, *v_);
-	FieldsSet filter({tagsPath});
-	BaseEncoder<FieldsExtractor> encoder(nullptr, &filter);
-	krefs.Clear();
-	if (!tagsPath.empty()) {
-		FieldsExtractor extractor(&krefs, expectedType, tagsPath.size(), &filter);
-		encoder.Encode(pl, extractor);
+	getByJsonPath(tagsPath, krefs, expectedType);
+}
+
+template <typename T>
+void PayloadIface<T>::GetByFieldsSet(const FieldsSet &fields, VariantArray &kvs, KeyValueType expectedType,
+									 const std::vector<KeyValueType> &expectedCompositeTypes) const {
+	if (expectedType.Is<KeyValueType::Composite>()) {
+		kvs.Clear();
+		kvs.emplace_back(GetComposite(fields, expectedCompositeTypes));
+	} else {
+		assertrx_throw(fields.size() == 1);
+		if (fields[0] == IndexValueType::SetByJsonPath) {
+			assertrx_throw(fields.getTagsPathsLength() == 1);
+			if (fields.isTagsPathIndexed(0)) {
+				getByJsonPath(fields.getIndexedTagsPath(0), kvs, expectedType);
+			} else {
+				getByJsonPath(fields.getTagsPath(0), kvs, expectedType);
+			}
+		} else {
+			Get(fields[0], kvs);
+		}
 	}
+}
+
+template <typename T>
+Variant PayloadIface<T>::GetComposite(const FieldsSet &fields, const std::vector<KeyValueType> &expectedTypes) const {
+	thread_local VariantArray buffer;
+	buffer.clear<false>();
+	assertrx_throw(fields.size() == expectedTypes.size());
+	size_t jsonFieldIdx{0};
+	[[maybe_unused]] const size_t maxJsonFieldIdx{fields.getTagsPathsLength()};
+	VariantArray buf;
+	for (size_t i = 0, s = fields.size(); i < s; ++i) {
+		buf.clear<false>();
+		if (fields[i] == IndexValueType::SetByJsonPath) {
+			assertrx_throw(jsonFieldIdx < maxJsonFieldIdx);
+			if (fields.isTagsPathIndexed(jsonFieldIdx)) {
+				getByJsonPath(fields.getIndexedTagsPath(jsonFieldIdx), buf, expectedTypes[i]);
+			} else {
+				getByJsonPath(fields.getTagsPath(jsonFieldIdx), buf, expectedTypes[i]);
+			}
+			++jsonFieldIdx;
+		} else {
+			Get(fields[i], buf);
+		}
+		assertrx_throw(buf.size() == 1);
+		buffer.emplace_back(std::move(buf[0]));
+	}
+	return Variant{buffer};
 }
 
 template <typename T>
@@ -199,8 +246,13 @@ void PayloadIface<T>::SerializeFields(WrSerializer &ser, const FieldsSet &fields
 	for (int field : fields) {
 		if (field == IndexValueType::SetByJsonPath) {
 			assertrx(tagPathIdx < fields.getTagsPathsLength());
-			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx);
-			GetByJsonPath(tagsPath, varr, KeyValueType::Undefined{});
+			if (fields.isTagsPathIndexed(tagPathIdx)) {
+				const IndexedTagsPath &tagsPath = fields.getIndexedTagsPath(tagPathIdx);
+				GetByJsonPath(tagsPath, varr, KeyValueType::Undefined{});
+			} else {
+				const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx);
+				GetByJsonPath(tagsPath, varr, KeyValueType::Undefined{});
+			}
 			if (varr.empty()) {
 				throw Error(errParams, "PK serializing error: field [%s] cannot not be empty", fields.getJsonPath(tagPathIdx));
 			}
@@ -281,8 +333,13 @@ size_t PayloadIface<T>::GetHash(const FieldsSet &fields) const {
 				ret ^= Field(field).Hash();
 		} else {
 			assertrx(tagPathIdx < fields.getTagsPathsLength());
-			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{});
+			if (fields.isTagsPathIndexed(tagPathIdx)) {
+				const IndexedTagsPath &tagsPath = fields.getIndexedTagsPath(tagPathIdx++);
+				GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{});
+			} else {
+				const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
+				GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{});
+			}
 			ret ^= keys1.Hash();
 		}
 	}
@@ -333,9 +390,15 @@ bool PayloadIface<T>::IsEQ(const T &other, const FieldsSet &fields) const {
 				if (!Field(field).IsEQ(o.Field(field))) return false;
 			}
 		} else {
-			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{});
-			o.GetByJsonPath(tagsPath, keys2, KeyValueType::Undefined{});
+			if (fields.isTagsPathIndexed(tagPathIdx)) {
+				const IndexedTagsPath &tagsPath = fields.getIndexedTagsPath(tagPathIdx++);
+				GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{});
+				o.GetByJsonPath(tagsPath, keys2, KeyValueType::Undefined{});
+			} else {
+				const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
+				GetByJsonPath(tagsPath, keys1, KeyValueType::Undefined{});
+				o.GetByJsonPath(tagsPath, keys2, KeyValueType::Undefined{});
+			}
 			if (keys1 != keys2) {
 				return false;
 			}
@@ -355,35 +418,44 @@ int PayloadIface<T>::Compare(const T &other, const FieldsSet &fields, size_t &fi
 	bool commonOpts = (collateOpts.size() == 1);
 
 	for (size_t i = 0; i < fields.size(); ++i) {
-		int cmpRes = 0;
 		const auto field(fields[i]);
 		const CollateOpts *opts(commonOpts ? collateOpts[0] : collateOpts[i]);
 		if (field != IndexValueType::SetByJsonPath) {
-			cmpRes = Field(field).Get().Compare(o.Field(field).Get(), opts ? *opts : CollateOpts());
+			int cmpRes = Field(field).Get().Compare(o.Field(field).Get(), opts ? *opts : CollateOpts());
+			if (cmpRes) {
+				firstDifferentFieldIdx = i;
+				return cmpRes;
+			}
 		} else {
 			assertrx(tagPathIdx < fields.getTagsPathsLength());
-			const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
-			GetByJsonPath(tagsPath, krefs1, KeyValueType::Undefined{});
-			o.GetByJsonPath(tagsPath, krefs2, KeyValueType::Undefined{});
+			if (fields.isTagsPathIndexed(tagPathIdx)) {
+				const IndexedTagsPath &tagsPath = fields.getIndexedTagsPath(tagPathIdx++);
+				GetByJsonPath(tagsPath, krefs1, KeyValueType::Undefined{});
+				o.GetByJsonPath(tagsPath, krefs2, KeyValueType::Undefined{});
+			} else {
+				const TagsPath &tagsPath = fields.getTagsPath(tagPathIdx++);
+				GetByJsonPath(tagsPath, krefs1, KeyValueType::Undefined{});
+				o.GetByJsonPath(tagsPath, krefs2, KeyValueType::Undefined{});
+			}
 
 			size_t length = std::min(krefs1.size(), krefs2.size());
 			for (size_t j = 0; j < length; ++j) {
-				cmpRes = krefs1[j].RelaxCompare<withString>(krefs2[j], opts ? *opts : CollateOpts());
-				if (cmpRes) break;
-			}
-			if (cmpRes == 0) {
-				if (krefs1.size() < krefs2.size()) {
-					cmpRes = -1;
-				} else if (krefs1.size() > krefs2.size()) {
-					cmpRes = 1;
+				int cmpRes = krefs1[j].RelaxCompare<withString>(krefs2[j], opts ? *opts : CollateOpts());
+				if (cmpRes) {
+					firstDifferentFieldIdx = i;
+					return cmpRes;
 				}
 			}
+
+			if (krefs1.size() < krefs2.size()) {
+				firstDifferentFieldIdx = i;
+				return -1;
+			}
+			if (krefs1.size() > krefs2.size()) {
+				firstDifferentFieldIdx = i;
+				return 1;
+			}
 		}
-
-		firstDifferentFieldIdx = i;
-
-		if (cmpRes > 0) return 1;
-		if (cmpRes < 0) return -1;
 	}
 	return 0;
 }

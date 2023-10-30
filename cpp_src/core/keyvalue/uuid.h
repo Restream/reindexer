@@ -89,7 +89,7 @@ private:
 	uint64_t data_[2];
 };
 
-inline std::ostream& operator<<(std::ostream& os, const Uuid& uuid) { return os << std::string{uuid}; }
+inline std::ostream& operator<<(std::ostream& os, const Uuid& uuid) { return os << '\'' << std::string{uuid} << '\''; }
 
 }  // namespace reindexer
 

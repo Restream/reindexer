@@ -1,6 +1,7 @@
 #pragma once
 
 #include <condition_variable>
+#include "core/itemimpl.h"
 #include "namespaceimpl.h"
 
 namespace reindexer {

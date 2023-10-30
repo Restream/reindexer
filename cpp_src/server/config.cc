@@ -13,8 +13,10 @@ void ServerConfig::Reset() {
 	StorageEngine = "leveldb";
 	HTTPAddr = "0.0.0.0:9088";
 	RPCAddr = "0.0.0.0:6534";
+	RPCUnixAddr = "";
 	GRPCAddr = "0.0.0.0:16534";
 	RPCThreadingMode = kSharedThreading;
+	RPCUnixThreadingMode = kSharedThreading;
 	HttpThreadingMode = kSharedThreading;
 	LogLevel = "info";
 	ServerLog = "stdout";
@@ -43,6 +45,8 @@ void ServerConfig::Reset() {
 	EnableConnectionsStats = true;
 	TxIdleTimeout = std::chrono::seconds(600);
 	RPCQrIdleTimeout = std::chrono::seconds(600);
+	HttpReadTimeout = std::chrono::seconds(0);
+	HttpWriteTimeout = std::chrono::seconds(0);
 	MaxUpdatesSize = 1024 * 1024 * 1024;
 	EnableGRPC = false;
 	MaxHttpReqSize = 2 * 1024 * 1024;
@@ -52,7 +56,6 @@ void ServerConfig::Reset() {
 
 const std::string ServerConfig::kDedicatedThreading = "dedicated";
 const std::string ServerConfig::kSharedThreading = "shared";
-const std::string ServerConfig::kPoolThreading = "pool";
 
 reindexer::Error ServerConfig::ParseYaml(const std::string &yaml) {
 	Error err;
@@ -108,10 +111,19 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<std::string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
 	args::ValueFlag<std::string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
-	args::ValueFlag<std::string> rpcThreadingModeF(netGroup, "RTHREADING", "RPC connections threading mode: shared or dedicated",
-												   {'X', "rpc-threading"}, RPCThreadingMode, args::Options::Single);
+#ifndef _WIN32
+	args::ValueFlag<std::string> rpcUnixAddrF(netGroup, "URPORT", "RPC listen path (unix domain socket)", {"urpcaddr"}, RPCUnixAddr,
+											  args::Options::Single);
+#endif	// !_WIN32
 	args::ValueFlag<std::string> httpThreadingModeF(netGroup, "HTHREADING", "HTTP connections threading mode: shared or dedicated",
 													{"http-threading"}, HttpThreadingMode, args::Options::Single);
+	args::ValueFlag<std::string> rpcThreadingModeF(netGroup, "RTHREADING", "RPC connections threading mode: shared or dedicated",
+												   {'X', "rpc-threading"}, RPCThreadingMode, args::Options::Single);
+#ifndef _WIN32
+	args::ValueFlag<std::string> rpcUnixThreadingModeF(netGroup, "URTHREADING",
+													   "RPC connections threading mode: shared or dedicated (unix domain socket)",
+													   {"urpc-threading"}, RPCUnixThreadingMode, args::Options::Single);
+#endif	// _WIN32
 	args::ValueFlag<size_t> MaxHttpReqSizeF(
 		netGroup, "", "Max HTTP request size in bytes. Default value is 2 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
 		{"max-http-req"}, MaxHttpReqSize, args::Options::Single);
@@ -121,6 +133,11 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 #endif
 	args::ValueFlag<std::string> webRootF(netGroup, "PATH", "web root. This path if set overrides linked-in resources", {'w', "webroot"},
 										  WebRoot, args::Options::Single);
+	args::ValueFlag<int> httpReadTimeoutF(netGroup, "", "timeout (s) for HTTP read operations (i.e. selects, get meta and others)",
+										  {"http-read-timeout"}, HttpReadTimeout.count(), args::Options::Single);
+	args::ValueFlag<int> httpWriteTimeoutF(netGroup, "",
+										   "timeout (s) for HTTP write operations (i.e. update, delete, put meta, add index and others)",
+										   {"http-write-timeout"}, HttpWriteTimeout.count(), args::Options::Single);
 	args::ValueFlag<size_t> maxUpdatesSizeF(netGroup, "", "Maximum cached updates size", {"updatessize"}, MaxUpdatesSize,
 											args::Options::Single);
 	args::Flag pprofF(netGroup, "", "Enable pprof http handler", {'f', "pprof"});
@@ -203,6 +220,8 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (webRootF) WebRoot = args::get(webRootF);
 	if (MaxHttpReqSizeF) MaxHttpReqSize = args::get(MaxHttpReqSizeF);
 #ifndef _WIN32
+	if (rpcUnixAddrF) RPCUnixAddr = args::get(rpcUnixAddrF);
+	if (rpcUnixThreadingModeF) RPCUnixThreadingMode = args::get(rpcUnixThreadingModeF);
 	if (userF) UserName = args::get(userF);
 	if (daemonizeF) Daemonize = args::get(daemonizeF);
 	if (daemonPidFileF) DaemonPidFile = args::get(daemonPidFileF);
@@ -231,6 +250,8 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (prometheusF) EnablePrometheus = args::get(prometheusF);
 	if (prometheusPeriodF) PrometheusCollectPeriod = std::chrono::milliseconds(args::get(prometheusPeriodF));
 	if (clientsConnectionsStatF) EnableConnectionsStats = args::get(clientsConnectionsStatF);
+	if (httpReadTimeoutF) HttpReadTimeout = std::chrono::seconds(args::get(httpReadTimeoutF));
+	if (httpWriteTimeoutF) HttpWriteTimeout = std::chrono::seconds(args::get(httpWriteTimeoutF));
 	if (logAllocsF) DebugAllocs = args::get(logAllocsF);
 	if (txIdleTimeoutF) TxIdleTimeout = std::chrono::seconds(args::get(txIdleTimeoutF));
 	if (rpcQrIdleTimeoutF) RPCQrIdleTimeout = std::chrono::seconds(args::get(rpcQrIdleTimeoutF));
@@ -261,12 +282,16 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
 		EnableGRPC = root["net"]["grpc"].as<bool>(EnableGRPC);
 		GRPCAddr = root["net"]["grpcaddr"].as<std::string>(GRPCAddr);
 		TxIdleTimeout = std::chrono::seconds(root["net"]["tx_idle_timeout"].as<int>(TxIdleTimeout.count()));
+		HttpReadTimeout = std::chrono::seconds(root["net"]["http_read_timeout"].as<int>(HttpReadTimeout.count()));
+		HttpWriteTimeout = std::chrono::seconds(root["net"]["http_write_timeout"].as<int>(HttpWriteTimeout.count()));
 		RPCQrIdleTimeout = std::chrono::seconds(root["net"]["rpc_qr_idle_timeout"].as<int>(RPCQrIdleTimeout.count()));
 		MaxHttpReqSize = root["net"]["max_http_body_size"].as<std::size_t>(MaxHttpReqSize);
 		EnablePrometheus = root["metrics"]["prometheus"].as<bool>(EnablePrometheus);
 		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].as<int>(PrometheusCollectPeriod.count()));
 		EnableConnectionsStats = root["metrics"]["clientsstats"].as<bool>(EnableConnectionsStats);
 #ifndef _WIN32
+		RPCUnixAddr = root["net"]["urpcaddr"].as<std::string>(RPCUnixAddr);
+		RPCUnixThreadingMode = root["net"]["urpc_threading"].as<std::string>(RPCUnixThreadingMode);
 		UserName = root["system"]["user"].as<std::string>(UserName);
 		Daemonize = root["system"]["daemonize"].as<bool>(Daemonize);
 		DaemonPidFile = root["system"]["pidfile"].as<std::string>(DaemonPidFile);

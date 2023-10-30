@@ -45,13 +45,12 @@ public:
 			assertrx(head_ != tail_);
 			chunk &cur = ring_[tail_];
 			if (cur.size() > nread) {
-				cur.offset_ += nread;
+				cur.shift(nread);
 				break;
 			}
 			nread -= cur.size();
-			cur.len_ = 0;
-			cur.offset_ = 0;
-			if (free_.size() < ring_.size() && cur.cap_ < 0x10000)
+			cur.clear();
+			if (free_.size() < ring_.size() && cur.capacity() < 0x10000)
 				free_.push_back(std::move(cur));
 			else
 				cur = chunk();

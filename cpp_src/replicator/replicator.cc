@@ -15,15 +15,14 @@ namespace reindexer {
 using namespace net;
 using namespace std::string_view_literals;
 
-static constexpr size_t kTmpNsPostfixLen = 20;
-
 Replicator::Replicator(ReindexerImpl *slave)
 	: slave_(slave),
 	  resyncUpdatesLostFlag_(false),
 	  terminate_(false),
 	  state_(StateInit),
 	  enabled_(false),
-	  dummyCtx_(true, LSNPair(lsn_t(), lsn_t())) {
+	  dummyCtx_(true, LSNPair(lsn_t(), lsn_t())),
+	  syncQueue_(syncMtx_) {
 	stop_.set(loop_);
 	resync_.set(loop_);
 	resyncTimer_.set(loop_);
@@ -130,12 +129,16 @@ void Replicator::run() {
 		// check status of namespace
 		NamespaceDef nsDef;
 		bool forced;
-		while (syncQuery_.Pop(nsDef, forced)) {
-			if (forced) {
-				subscribeUpdatesIfRequired(nsDef.name);
-				syncNamespaceForced(nsDef, "Upstream node call force sync.");
-			} else {
-				syncNamespaceByWAL(nsDef);
+		while (syncQueue_.Get(nsDef, forced)) {
+			subscribeUpdatesIfRequired(nsDef.name);
+			auto err = syncNamespace(nsDef, forced ? "Upstream node call force sync" : std::string_view(), &syncQueue_);
+			if (!err.ok()) {
+				if (!terminate_) {
+					resync_.send();
+				}
+				logPrintf(LogError, "[repl:%s]:%d Error on namespace downstream resync: %s. %s", nsDef.name, config_.serverId, err.what(),
+						  terminate_ ? "Skipping full resync - replicator is already terminating" : "Full database resync was scheduled");
+				return;
 			}
 		}
 	});
@@ -233,9 +236,15 @@ static bool shouldUpdateLsn(const WALRecord &wrec) {
 	return wrec.type != WalNamespaceDrop && (!wrec.inTransaction || wrec.type == WalCommitTransaction);
 }
 
-Error Replicator::syncNamespace(const NamespaceDef &ns, std::string_view forceSyncReason) {
+Error Replicator::syncNamespace(const NamespaceDef &ns, std::string_view forceSyncReason, SyncQueue *sourceQueue) {
 	Error err = errOK;
-	logPrintf(LogTrace, "[repl:%s:%s] ===Starting WAL synchronization.====", ns.name, slave_->storagePath_);
+	logPrintf(LogInfo, "[repl:%s:%s] ===Starting WAL synchronization.====", ns.name, slave_->storagePath_);
+	auto onPendedUpdatesApplied = [this, sourceQueue](std::string_view nsName, const std::unique_lock<std::mutex> &lck) noexcept {
+		pendedUpdates_.erase(nsName);
+		if (sourceQueue) {
+			sourceQueue->Pop(nsName, lck);
+		}
+	};
 	do {
 		// Perform startup sync
 		if (forceSyncReason.empty()) {
@@ -259,14 +268,14 @@ Error Replicator::syncNamespace(const NamespaceDef &ns, std::string_view forceSy
 						if (updatesIt.value().UpdatesLost) {
 							err = Error(errUpdatesLost, "Updates Lost %s", ns.name);
 							logPrintf(LogWarning, "[repl:%s]: Updates Lost", ns.name);
-							pendedUpdates_.erase(ns.name);
+							onPendedUpdatesApplied(ns.name, lck);
 							break;
 						}
 						std::swap(walUpdates, updatesIt.value().container);
 					}
 					logPrintf(LogTrace, "[repl:%s:%s]: %d new updates", ns.name, slave_->storagePath_, walUpdates.size());
 					if (walUpdates.empty()) {
-						pendedUpdates_.erase(ns.name);
+						onPendedUpdatesApplied(ns.name, lck);
 						if (replState.replicatorEnabled)
 							slaveNs->SetSlaveReplStatus(ReplicationState::Status::Idle, errOK, dummyCtx_);
 						else {
@@ -329,7 +338,8 @@ Error Replicator::syncNamespace(const NamespaceDef &ns, std::string_view forceSy
 		}
 	} while (err.ok() && !forceSyncReason.empty() && !terminate_);
 
-	logPrintf(LogTrace, "[repl:%s:%s] ===End WAL synchronization.====", ns.name, slave_->storagePath_);
+	logPrintf(LogInfo, "[repl:%s:%s] ===End %s synchronization.====", ns.name, slave_->storagePath_,
+			  forceSyncReason.empty() ? "WAL" : "FORCE");
 	return err;
 }
 
@@ -346,6 +356,7 @@ Error Replicator::syncDatabase() {
 		syncedNamespaces_.clear();
 		currentSyncNs_.clear();
 		pendedUpdates_.clear();
+		syncQueue_.Clear();
 	}
 
 	Error err = master_->EnumNamespaces(nses, EnumNamespacesOpts());
@@ -428,7 +439,7 @@ Error Replicator::syncDatabase() {
 		}
 
 		do {
-			err = syncNamespace(ns, forceSyncReason);
+			err = syncNamespace(ns, forceSyncReason, nullptr);
 		} while (err.code() == errUpdatesLost);
 
 		if (!err.ok()) {
@@ -515,9 +526,9 @@ Error Replicator::syncNamespaceByWAL(const NamespaceDef &nsDef) {
 		case errQrUIDMissmatch:
 		case errSystem:
 		case errAssert:
-		default:
-			return err;
+			break;
 	}
+	return err;
 }
 
 // Forced namespace sync
@@ -535,7 +546,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 		tmpNsDef.storage = StorageOpts().SlaveMode();
 	}
 
-	tmpNsDef.name = "@" + ns.name + "_tmp_" + randStringAlph(kTmpNsPostfixLen);
+	tmpNsDef.name = createTmpNamespaceName(ns.name);
 	auto dropTmpNs = [this, &tmpNsDef] {
 		auto tmpNs = slave_->getNamespaceNoThrow(tmpNsDef.name, dummyCtx_);
 		if (tmpNs) {
@@ -632,10 +643,11 @@ Error Replicator::applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, co
 	ReplicationState slaveState = slaveNs->GetReplState(dummyCtx_);
 
 	// Check data hash, if operation successfull
-	if (!stat.masterState.lastLsn.isEmpty() && stat.lastError.ok() && !terminate_ && slaveState.dataHash != stat.masterState.dataHash) {
-		stat.lastError =
-			Error(errDataHashMismatch, "[repl:%s]:%d dataHash mismatch with master %u != %u; itemsCount %d %d;", nsName, config_.serverId,
-				  stat.masterState.dataHash, slaveState.dataHash, stat.masterState.dataCount, slaveState.dataCount);
+	if (!stat.masterState.lastLsn.isEmpty() && stat.lastError.ok() && !terminate_ &&
+		(slaveState.dataHash != stat.masterState.dataHash || slaveState.dataCount != stat.masterState.dataCount)) {
+		stat.lastError = Error(
+			errDataHashMismatch, "[repl:%s]:%d dataHash mismatch with master (m: %u; s: %u) or data count missmatch (m: %d; s: %d)", nsName,
+			config_.serverId, stat.masterState.dataHash, slaveState.dataHash, stat.masterState.dataCount, slaveState.dataCount);
 	}
 
 	if (stat.lastError.ok() && !terminate_) {
@@ -737,7 +749,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 	auto sendSyncAsync = [this](const WALRecord &rec, bool forced) {
 		NamespaceDef nsDef;
 		nsDef.FromJSON(giftStr(rec.data));
-		syncQuery_.Push(nsDef.name, std::move(nsDef), forced);
+		syncQueue_.Push(nsDef.name, std::move(nsDef), forced);
 		walSyncAsync_.send();
 	};
 
@@ -814,9 +826,11 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			break;
 		// force sync namespace
 		case WalForceSync:
+			logPrintf(LogTrace, "[repl:%s]:%d WalForceSync: Scheduling force-sync for the namepsace", nsName, config_.serverId);
 			sendSyncAsync(rec, true);
 			break;
 		case WalWALSync:
+			logPrintf(LogTrace, "[repl:%s]:%d WalWALSync: Scheduling WAL-sync for the namespace", nsName, config_.serverId);
 			sendSyncAsync(rec, false);
 			break;
 
@@ -833,7 +847,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			break;
 		}
 		case WalSetSchema:
-			slaveNs->SetSchema(rec.data, dummyCtx_);
+			slaveNs->SetSchema(rec.data, rdxContext);
 			stat.schemasSet++;
 			break;
 		case WalEmpty:
@@ -854,6 +868,20 @@ Error Replicator::unpackItem(Item &item, lsn_t lsn, std::string_view cjson, cons
 	}
 	item.setLSN(int64_t(lsn));
 	return item.FromCJSON(cjson);
+}
+
+void Replicator::pushPendingUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec) {
+	PackedWALRecord pwrec;
+	pwrec.Pack(wrec);
+	auto updatesIt = pendedUpdates_.find(nsName);
+	if (updatesIt == pendedUpdates_.end()) {
+		UpdatesData updates;
+		updates.container.emplace_back(std::make_pair(LSNs, std::move(pwrec)));
+		pendedUpdates_.emplace(std::string(nsName), std::move(updates));
+	} else {
+		auto &updates = updatesIt.value().container;
+		updates.emplace_back(std::make_pair(LSNs, std::move(pwrec)));
+	}
 }
 
 Error Replicator::modifyItem(LSNPair LSNs, Namespace::Ptr &slaveNs, std::string_view cjson, int modifyMode, const TagsMatcher &tm,
@@ -989,8 +1017,8 @@ void Replicator::OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRec
 		err = e;
 	}
 	if (err.ok()) {
-		if (slaveNs && shouldUpdateLsn(wrec)) {
-			if (!LSNs.upstreamLSN_.isEmpty()) slaveNs->SetReplLSNs(LSNs, dummyCtx_);
+		if (slaveNs && shouldUpdateLsn(wrec) && !LSNs.upstreamLSN_.isEmpty()) {
+			slaveNs->SetReplLSNs(LSNs, dummyCtx_);
 		}
 	} else {
 		if (slaveNs) {
@@ -1062,42 +1090,54 @@ bool Replicator::canApplyUpdate(LSNPair LSNs, std::string_view nsName, const WAL
 	if (!isSyncEnabled(nsName)) return false;
 
 	if (terminate_.load(std::memory_order_acquire)) {
-		logPrintf(LogTrace, "[repl:%s]:%d Skipping update due to replicator shutdown is in progress upstreamLSN %s", nsName,
-				  config_.serverId, LSNs.upstreamLSN_);
+		logPrintf(LogTrace, "[repl:%s]:%d Skipping update due to replicator shutdown is in progress upstreamLSN %s (%d)", nsName,
+				  config_.serverId, LSNs.upstreamLSN_, int(wrec.type));
 		return false;
 	}
 
-	if (state_.load(std::memory_order_acquire) == StateIdle && !resyncUpdatesLostFlag_) {
-		logPrintf(LogTrace, "[repl:%s]:%d apply update upstreamLSN %s", nsName, config_.serverId, LSNs.upstreamLSN_);
+	if (state_.load(std::memory_order_acquire) == StateIdle && !resyncUpdatesLostFlag_ && syncQueue_.Size() == 0) {
+		logPrintf(LogTrace, "[repl:%s]:%d apply update upstreamLSN %s (%d)", nsName, config_.serverId, LSNs.upstreamLSN_, int(wrec.type));
 		return true;
 	}
 
-	std::unique_lock<std::mutex> lck(syncMtx_);
+	std::lock_guard lck(syncMtx_);
+	if (syncQueue_.Size() != 0 && syncQueue_.Contains(nsName)) {
+		logPrintf(LogTrace,
+				  "[repl:%s]:%d Skipping update due to scheduled namespace resync %s (%d). Pushin this update to the pending queue", nsName,
+				  config_.serverId, LSNs.upstreamLSN_, int(wrec.type));
+		pushPendingUpdate(LSNs, nsName, wrec);
+		return false;
+	}
+
 	auto state = state_.load(std::memory_order_acquire);
 	if (state == StateIdle) {
 		if (!resyncUpdatesLostFlag_) {
-			logPrintf(LogTrace, "[repl:%s]:%d apply update upstreamLSN %s", nsName, config_.serverId, LSNs.upstreamLSN_);
+			logPrintf(LogTrace, "[repl:%s]:%d apply update upstreamLSN %s (%d)", nsName, config_.serverId, LSNs.upstreamLSN_,
+					  int(wrec.type));
 			return true;
 		} else {
 			auto it = pendedUpdates_.find(nsName);
 			if (it != pendedUpdates_.end()) {
 				if (it->second.UpdatesLost) {
-					logPrintf(LogTrace, "[repl:%s]:%d NOT APPLY update lost %s", nsName, config_.serverId, LSNs.upstreamLSN_);
+					logPrintf(LogTrace, "[repl:%s]:%d NOT APPLY update lost %s (%d)", nsName, config_.serverId, LSNs.upstreamLSN_,
+							  int(wrec.type));
 					return false;
 				} else {
-					logPrintf(LogTrace, "[repl:%s]:%d apply update pendeded not empty  %s", nsName, config_.serverId, LSNs.upstreamLSN_);
+					logPrintf(LogTrace, "[repl:%s]:%d apply update pendeded not empty %s (%d)", nsName, config_.serverId, LSNs.upstreamLSN_,
+							  int(wrec.type));
 					return true;
 				}
 			} else {
-				logPrintf(LogTrace, "[repl:%s]:%d apply update pendeded empty  %s", nsName, config_.serverId, LSNs.upstreamLSN_);
+				logPrintf(LogTrace, "[repl:%s]:%d apply update pendeded empty %s (%d)", nsName, config_.serverId, LSNs.upstreamLSN_,
+						  int(wrec.type));
 				return true;
 			}
 		}
 	}
 	bool terminate = terminate_.load(std::memory_order_acquire);
 	if (state == StateInit || terminate) {
-		logPrintf(LogTrace, "[repl:%s]:%d Skipping update due to replicator %s is in progress upstreamLSN %s", nsName, config_.serverId,
-				  terminate ? "shutdown" : "startup", LSNs.upstreamLSN_);
+		logPrintf(LogTrace, "[repl:%s]:%d Skipping update due to replicator %s is in progress upstreamLSN %s (%d)", nsName,
+				  config_.serverId, terminate ? "shutdown" : "startup", LSNs.upstreamLSN_, int(wrec.type));
 		return false;
 	}
 
@@ -1107,11 +1147,12 @@ bool Replicator::canApplyUpdate(LSNPair LSNs, std::string_view nsName, const WAL
 
 	if (std::string_view(currentSyncNs_) != nsName) {
 		if (syncedNamespaces_.find(nsName) != syncedNamespaces_.end()) {
-			logPrintf(LogTrace, "[repl:%s]:%d applying update for synced ns  %s", nsName, config_.serverId, LSNs.upstreamLSN_);
+			logPrintf(LogTrace, "[repl:%s]:%d applying update for synced ns %s (%d)", nsName, config_.serverId, LSNs.upstreamLSN_,
+					  int(wrec.type));
 			return true;
 		} else {
-			logPrintf(LogTrace, "[repl:%s]:%d Skipping update - namespace was not synced yet, upstreamLSN %s", nsName, config_.serverId,
-					  LSNs.upstreamLSN_);
+			logPrintf(LogTrace, "[repl:%s]:%d Skipping update - namespace was not synced yet, upstreamLSN %s (%d)", nsName,
+					  config_.serverId, LSNs.upstreamLSN_, int(wrec.type));
 			if (wrec.type == WalNamespaceAdd || wrec.type == WalNamespaceDrop || wrec.type == WalNamespaceRename) {
 				logPrintf(LogInfo, "[repl:%s]:%d Scheduling resync due to concurrent ns add/delete: %d", nsName, config_.serverId,
 						  int(wrec.type));
@@ -1122,17 +1163,7 @@ bool Replicator::canApplyUpdate(LSNPair LSNs, std::string_view nsName, const WAL
 	}
 	logPrintf(LogTrace, "[repl:%s:%s]:%d Pending update due to concurrent sync upstreamLSN %s", nsName, slave_->storagePath_,
 			  config_.serverId, LSNs.upstreamLSN_);
-	PackedWALRecord pwrec;
-	pwrec.Pack(wrec);
-	auto updatesIt = pendedUpdates_.find(nsName);
-	if (updatesIt == pendedUpdates_.end()) {
-		UpdatesData updates;
-		updates.container.emplace_back(std::make_pair(LSNs, std::move(pwrec)));
-		pendedUpdates_.emplace(std::string(nsName), std::move(updates));
-	} else {
-		auto &updates = updatesIt.value().container;
-		updates.emplace_back(std::make_pair(LSNs, std::move(pwrec)));
-	}
+	pushPendingUpdate(LSNs, nsName, wrec);
 	return false;
 }
 
@@ -1147,22 +1178,46 @@ bool Replicator::isSyncEnabled(std::string_view nsName) {
 	return true;
 }
 
-void Replicator::SyncQuery::Push(const std::string &nsName, NamespaceDef &&nsDef, bool forced) {
-	std::unique_lock<std::mutex> lock(mtx_);
-	auto &val = query_[nsName];
+void Replicator::SyncQueue::Push(const std::string &nsName, NamespaceDef &&nsDef, bool forced) {
+	std::lock_guard lock(mtx_);
+	auto &val = queue_[nsName];
 	val = recordData(std::move(nsDef), val.forced || forced);
+	size_.fetch_add(1, std::memory_order_release);
 }
 
-bool Replicator::SyncQuery::Pop(NamespaceDef &def, bool &forced) {
-	std::unique_lock<std::mutex> lock(mtx_);
-	if (!query_.empty()) {
-		auto it = query_.begin();
+bool Replicator::SyncQueue::Get(NamespaceDef &def, bool &forced) const {
+	std::lock_guard lock(mtx_);
+	if (!queue_.empty()) {
+		auto it = queue_.begin();
 		def = it->second.def;
 		forced = it->second.forced;
-		query_.erase(it);
 		return true;
 	}
 	return false;
+}
+
+bool Replicator::SyncQueue::Pop(std::string_view nsName, const std::unique_lock<std::mutex> &replicatorLock) noexcept {
+	std::lock_guard lock(mtx_);
+	// Pop() must be called under top level replicator's sync mutex
+	assertrx(replicatorLock.owns_lock());
+	assertrx(replicatorLock.mutex() == &replicatorMtx_);
+	(void)replicatorLock;
+	auto cnt = queue_.erase(nsName);
+	if (cnt) {
+		size_.fetch_sub(cnt, std::memory_order_release);
+	}
+	return false;
+}
+
+bool Replicator::SyncQueue::Contains(std::string_view nsName) noexcept {
+	std::lock_guard lock(mtx_);
+	return queue_.find(nsName) != queue_.end();
+}
+
+void Replicator::SyncQueue::Clear() noexcept {
+	std::lock_guard lock(mtx_);
+	queue_.clear();
+	size_.store(0, std::memory_order_release);
 }
 
 }  // namespace reindexer

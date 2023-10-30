@@ -2,9 +2,7 @@
 
 #include <functional>
 #include "core/schema.h"
-#include "estl/fast_hash_map.h"
 #include "sqlparser.h"
-#include "tools/stringstools.h"
 
 namespace reindexer {
 

@@ -133,10 +133,12 @@ public:
 
 	Error FromJSON(std::string_view json);
 	void GetJSON(WrSerializer&) const;
+	std::string_view GetJSON() const noexcept { return originalJson_; }
 	Error BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt);
 	Error GetProtobufSchema(WrSerializer& schema) const;
 	int GetProtobufNsNumber() const { return protobufNsNumber_; }
 	const PrefixTree::PrefixTreeNode* GetRoot() const { return &paths_.root_; }
+	static std::string AppendProtobufNumber(std::string_view j, int protobufNsNumber);
 
 	std::vector<int> MakeCsvTagOrdering(const TagsMatcher& tm) const;
 	bool IsEmpty() const noexcept;

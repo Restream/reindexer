@@ -37,7 +37,7 @@ Error RPCClientMock::Delete(const Query& query, QueryResults& result, const Inte
 	auto conn = getConn();
 
 	NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
+	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
 
@@ -69,7 +69,7 @@ Error RPCClientMock::Update(const Query& query, QueryResults& result, const Inte
 	auto conn = getConn();
 
 	NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
+	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
 
@@ -308,7 +308,7 @@ Error RPCClientMock::selectImpl(const Query& query, QueryResults& result, cproto
 
 	NsArray nsArray;
 	query.Serialize(qser);
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
+	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 	h_vector<int32_t, 4> vers;
 	for (auto& ns : nsArray) {
 		shared_lock<shared_timed_mutex> lck(ns->lck_);

@@ -26,27 +26,6 @@ void connection_stats_collector::restart() {
 
 void connection_stats_collector::stop() noexcept { stats_update_timer_.stop(); }
 
-void connection_stats_collector::update_read_stats(ssize_t nread) noexcept {
-	stat_->recv_bytes.fetch_add(nread, std::memory_order_relaxed);
-	auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-	stat_->last_recv_ts.store(now.count(), std::memory_order_relaxed);
-}
-
-void connection_stats_collector::update_write_stats(ssize_t written, size_t send_buf_size) noexcept {
-	stat_->sent_bytes.fetch_add(written, std::memory_order_relaxed);
-	auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
-	stat_->last_send_ts.store(now.count(), std::memory_order_relaxed);
-	stat_->send_buf_bytes.store(send_buf_size, std::memory_order_relaxed);
-}
-
-void connection_stats_collector::update_pended_updates(size_t count) noexcept {
-	stat_->pended_updates.store(count, std::memory_order_relaxed);
-}
-
-void connection_stats_collector::update_send_buf_size(size_t size) noexcept {
-	stat_->send_buf_bytes.store(size, std::memory_order_relaxed);
-}
-
 void connection_stats_collector::stats_check_cb(ev::periodic&, int) noexcept {
 	assertrx(stat_);
 	const uint64_t kAvgPeriod = 10;

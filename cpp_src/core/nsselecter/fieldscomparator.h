@@ -18,13 +18,13 @@ public:
 	const std::string& Name() const&& = delete;
 	std::string Dump() const { return Name(); }
 	int GetMatchedCount() const noexcept { return matchedCount_; }
-	void SetLeftField(const TagsPath& tpath) {
-		setField(tpath, ctx_[0].lCtx_);
+	void SetLeftField(const FieldsSet& fields) {
+		setField(fields, ctx_[0].lCtx_);
 		leftFieldSet = true;
 	}
-	void SetRightField(const TagsPath& tpath) {
+	void SetRightField(const FieldsSet& fields) {
 		assertrx(leftFieldSet);
-		setField(tpath, ctx_[0].rCtx_);
+		setField(fields, ctx_[0].rCtx_);
 	}
 	void SetLeftField(const FieldsSet& fset, KeyValueType type, bool isArray) {
 		if (type.Is<KeyValueType::Composite>()) {
@@ -67,6 +67,11 @@ private:
 	};
 
 	void setField(const TagsPath& tpath, FieldContext& fctx) { fctx.fields_.push_back(tpath); }
+	void setField(const FieldsSet& fields, FieldContext& fctx) {
+		assertrx_throw(fields.size() == 1);
+		assertrx_throw(fields[0] == IndexValueType::SetByJsonPath);
+		setField(fields.getTagsPath(0), fctx);
+	}
 	void setField(FieldContext& fctx, FieldsSet fset, KeyValueType type, bool isArray) {
 		fctx.fields_ = std::move(fset);
 		fctx.type_ = type;

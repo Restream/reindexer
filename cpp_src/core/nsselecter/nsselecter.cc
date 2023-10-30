@@ -1,6 +1,5 @@
 #include "nsselecter.h"
 
-#include "core/cjson/jsonbuilder.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/queryresults/joinresults.h"
 #include "crashqueryreporter.h"
@@ -48,13 +47,13 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	bool containAggCount = containSomeAggCount(AggCount);
 	bool containAggCountCached = containAggCount ? false : containSomeAggCount(AggCountCached);
 
-	bool needCalcTotal = aggregationQueryRef.calcTotal == ModeAccurateTotal || containAggCount;
+	bool needCalcTotal = aggregationQueryRef.CalcTotal() == ModeAccurateTotal || containAggCount;
 
 	QueryCacheKey ckey;
-	if (aggregationQueryRef.calcTotal == ModeCachedTotal || containAggCountCached) {
+	if (aggregationQueryRef.CalcTotal() == ModeCachedTotal || containAggCountCached) {
 		ckey = QueryCacheKey{ctx.query};
 
-		auto cached = ns_->queryTotalCountCache_->Get(ckey);
+		auto cached = ns_->queryCountCache_->Get(ckey);
 		if (cached.valid && cached.val.total_count >= 0) {
 			result.totalCount += cached.val.total_count;
 			logPrintf(LogTrace, "[%s] using value from cache: %d", ns_->name_, result.totalCount);
@@ -92,7 +91,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	}
 	// Prepare data for select functions
 	if (ctx.functions) {
-		fnc_ = ctx.functions->AddNamespace(ctx.query, *ns_, isFt);
+		fnc_ = ctx.functions->AddNamespace(ctx.query, *ns_, ctx.nsid, isFt);
 	}
 
 	if (!ctx.skipIndexesLookup) {
@@ -362,10 +361,10 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		}
 	}
 	//	Put count/count_cached to aggretions
-	if (aggregationQueryRef.calcTotal != ModeNoTotal || containAggCount || containAggCountCached) {
+	if (aggregationQueryRef.CalcTotal() != ModeNoTotal || containAggCount || containAggCountCached) {
 		AggregationResult ret;
 		ret.fields = {"*"};
-		ret.type = (aggregationQueryRef.calcTotal == ModeAccurateTotal || containAggCount) ? AggCount : AggCountCached;
+		ret.type = (aggregationQueryRef.CalcTotal() == ModeAccurateTotal || containAggCount) ? AggCount : AggCountCached;
 		if (ctx.isMergeQuerySubQuery()) {
 			assertrx_throw(!result.aggregationResults.empty());
 			auto &agg = result.aggregationResults.back();
@@ -404,7 +403,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 	if (needPutCachedTotal) {
 		logPrintf(LogTrace, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
-		ns_->queryTotalCountCache_->Put(ckey, {static_cast<size_t>(result.totalCount - initTotalCount)});
+		ns_->queryCountCache_->Put(ckey, {static_cast<size_t>(result.totalCount - initTotalCount)});
 	}
 	if (ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
 		switch (ctx.preResult->dataMode) {
@@ -783,7 +782,7 @@ It NsSelecter::applyForcedSortImpl(NamespaceImpl &ns, It begin, It end, const It
 			// implementation for composite indexes
 			const auto &payloadType = ns.payloadType_;
 			const FieldsSet &fields = ns.indexes_[idx]->Fields();
-			unordered_payload_map<ItemRefVector::difference_type, false> sortMap(0, payloadType, fields);
+			unordered_payload_map<ItemRefVector::difference_type, false> sortMap(0, PayloadType{payloadType}, FieldsSet{fields});
 			ForcedMapInserter inserter{sortMap};
 			for (auto value : forcedSortOrder) {
 				value.convert(fieldType, &payloadType, &fields);
@@ -1323,7 +1322,7 @@ void NsSelecter::prepareSortJoinedIndex(size_t nsIdx, std::string_view column, i
 		.FieldByName(std::string{column}, index);
 	if (index == IndexValueType::SetByJsonPath) {
 		skipSortingEntry |= !validateField(
-			strictMode, column, js.joinQuery_._namespace,
+			strictMode, column, js.joinQuery_.NsName(),
 			js.preResult_->dataMode == JoinPreResult::ModeValues ? js.preResult_->values.tagsMatcher : js.rightNs_->tagsMatcher_);
 	}
 }
@@ -1565,11 +1564,11 @@ size_t NsSelecter::calculateNormalCost(const QueryEntries &qentries, SelectCtx &
 			[&costCalculator](const JoinQueryEntry &) { costCalculator.MarkInapposite(); },
 			[&costCalculator](const BetweenFieldsQueryEntry &) { costCalculator.MarkInapposite(); },
 			[&](const QueryEntry &qe) {
-				if (qe.idxNo < 0) {
+				if (!qe.IsFieldIndexed()) {
 					costCalculator.MarkInapposite();
 					return;
 				}
-				if (qe.idxNo == ctx.sortingContext.uncommitedIndex) {
+				if (qe.IndexNo() == ctx.sortingContext.uncommitedIndex) {
 					if (sortIndexSearchState == SortIndexNotFound) {
 						const bool isExpectingIdSet =
 							qentries.GetOperation(i) == OpAnd && (next == sz || qentries.GetOperation(next) != OpOr);
@@ -1591,7 +1590,7 @@ size_t NsSelecter::calculateNormalCost(const QueryEntries &qentries, SelectCtx &
 					return;
 				}
 
-				auto &index = ns_->indexes_[qe.idxNo];
+				auto &index = ns_->indexes_[qe.IndexNo()];
 				if (IsFullText(index->Type())) {
 					costCalculator.MarkInapposite();
 					return;
@@ -1604,8 +1603,8 @@ size_t NsSelecter::calculateNormalCost(const QueryEntries &qentries, SelectCtx &
 				opts.inTransaction = ctx.inTransaction;
 
 				try {
-					SelectKeyResults reslts = index->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
-					costCalculator.Add(reslts, qe.idxNo == ctx.sortingContext.uncommitedIndex);
+					SelectKeyResults reslts = index->SelectKey(qe.Values(), qe.Condition(), 0, opts, nullptr, rdxCtx);
+					costCalculator.Add(reslts, qe.IndexNo() == ctx.sortingContext.uncommitedIndex);
 				} catch (const Error &) {
 					costCalculator.MarkInapposite();
 				}
@@ -1632,7 +1631,7 @@ size_t NsSelecter::calculateOptimizedCost(size_t costNormal, const QueryEntries 
 			[&costCalculator](const JoinQueryEntry &) { costCalculator.MarkInapposite(); },
 			[&costCalculator](const BetweenFieldsQueryEntry &) { costCalculator.MarkInapposite(); },
 			[&](const QueryEntry &qe) {
-				if (qe.idxNo < 0 || qe.idxNo != ctx.sortingContext.uncommitedIndex) {
+				if (!qe.IsFieldIndexed() || qe.IndexNo() != ctx.sortingContext.uncommitedIndex) {
 					costCalculator.MarkInapposite();
 					return;
 				}
@@ -1645,7 +1644,7 @@ size_t NsSelecter::calculateOptimizedCost(size_t costNormal, const QueryEntries 
 				opts.inTransaction = ctx.inTransaction;
 
 				try {
-					SelectKeyResults reslts = ns_->indexes_[qe.idxNo]->SelectKey(qe.values, qe.condition, 0, opts, nullptr, rdxCtx);
+					SelectKeyResults reslts = ns_->indexes_[qe.IndexNo()]->SelectKey(qe.Values(), qe.Condition(), 0, opts, nullptr, rdxCtx);
 					costCalculator.Add(reslts);
 				} catch (const Error &) {
 					costCalculator.MarkInapposite();
@@ -1662,7 +1661,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 	}
 	if (qentries.Size() == 1 && qentries.HoldsOrReferTo<QueryEntry>(0)) {
 		const auto &qe = qentries.Get<QueryEntry>(0);
-		if (qe.idxNo == ctx.sortingContext.uncommitedIndex) {
+		if (qe.IndexNo() == ctx.sortingContext.uncommitedIndex) {
 			return SelectIteratorContainer::IsExpectingOrderedResults(qe);
 		}
 	}
@@ -1696,8 +1695,8 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 		// TODO: It's possible to evaluate this multiplier, based on the query conditions, but the only way to avoid corner cases is to
 		// allow user to hint this optimization.
 		const size_t limitMultiplier = std::max(size_t(20), size_t(totalItemsCount / expectedMaxIterationsNormal) * 4);
-		const auto offset = ctx.query.HasOffset() ? ctx.query.start : 1;
-		costOptimized = limitMultiplier * (ctx.query.count + offset);
+		const auto offset = ctx.query.HasOffset() ? ctx.query.Offset() : 1;
+		costOptimized = limitMultiplier * (ctx.query.Limit() + offset);
 	}
 	return costOptimized <= costNormal;
 }

@@ -36,7 +36,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.19.0")
+set (REINDEXER_VERSION_DEFAULT "3.20.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -88,6 +88,10 @@ else()
 endif ()
 
 set (EXTRA_FLAGS "")
+
+if (WITH_ASAN AND WITH_TSAN)
+  message(FATAL_ERROR "You cannot use the ASAN and TSAN options at the same time, CMake will exit.")
+endif()
 
 if (WITH_ASAN)
   set (EXTRA_FLAGS "-fsanitize=address")
@@ -271,6 +275,9 @@ if (${COMPILER_TARGET_ARCH} STREQUAL "e2k")
 else()
   list(APPEND SRCS ${KOISHI_PATH}/fcontext/fcontext.c ${KOISHI_PATH}/fcontext/fcontext.hpp)
 endif()
+
+# Static LevelDB v1.23 is built with -fno-rtti by default. To inherit our logger from leveldb's logger, this file must be built with -fno-rtti to
+set_source_files_properties(${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger.cc PROPERTIES COMPILE_FLAGS "-fno-rtti")
 
 list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
@@ -695,6 +702,7 @@ if (NOT WIN32)
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
     "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
+    "tools/verifying_updater.h"
     "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
     "core/rdxcontext.h" "core/activity_context.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"
@@ -702,8 +710,8 @@ if (NOT WIN32)
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
     "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h" "core/key_value_type.h" "core/keyvalue/uuid.h"
     "core/expressiontree.h" "core/lsn.h" "core/cjson/tagspath.h" "core/cjson/ctag.h"
-	"estl/cow.h" "estl/overloaded.h" "estl/one_of.h" "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h"
-	"estl/span.h" "estl/chunk.h" "estl/fast_hash_traits.h" "estl/debug_macros.h" "estl/defines.h"
+    "estl/cow.h" "estl/overloaded.h" "estl/one_of.h" "estl/h_vector.h" "estl/mutex.h" "estl/intrusive_ptr.h" "estl/trivial_reverse_iterator.h"
+    "estl/span.h" "estl/chunk.h" "estl/fast_hash_traits.h" "estl/debug_macros.h" "estl/defines.h"
     "client/reindexer.h" "client/item.h" "client/reindexerconfig.h" "client/queryresults.h" "client/resultserializer.h"
     "client/internalrdxcontext.h" "client/transaction.h"
     "client/cororeindexer.h" "client/coroqueryresults.h" "client/corotransaction.h"

@@ -42,6 +42,7 @@ public:
 	const std::vector<TransactionStep> &GetSteps() const;
 	bool IsTagsUpdated() const;
 	time_point GetStartTime() const;
+	void ValidatePK(const FieldsSet &pkFields);
 
 protected:
 	std::unique_ptr<TransactionImpl> impl_;

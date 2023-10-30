@@ -76,8 +76,8 @@ Error RPCClient::Connect(const std::vector<std::pair<std::string, client::Connec
 	return startWorkers();
 }
 
-Error RPCClient::Stop() {
-	if (!connections_.size()) return errOK;
+void RPCClient::Stop() {
+	if (!connections_.size()) return;
 	for (auto& worker : workers_) {
 		worker.stop_.send();
 		if (worker.thread_.joinable()) {
@@ -85,7 +85,6 @@ Error RPCClient::Stop() {
 		}
 	}
 	connections_.clear();
-	return errOK;
 }
 
 void RPCClient::run(size_t thIdx) {
@@ -118,7 +117,6 @@ void RPCClient::run(size_t thIdx) {
 		bool doTerminate = terminate;
 		if (doTerminate) {
 			for (size_t i = thIdx; int(i) < config_.ConnPoolSize; i += config_.WorkerThreads) {
-				logPrintf(LogInfo, "Set terminate flag %d/%d %X", i, config_.ConnPoolSize, int64_t(connections_[i].get()));
 				connections_[i]->SetTerminateFlag();
 				if (connections_[i]->PendingCompletions()) {
 					doTerminate = false;
@@ -383,7 +381,7 @@ Error RPCClient::Delete(const Query& query, QueryResults& result, const Internal
 	auto conn = getConn();
 
 	NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
+	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
 
@@ -410,7 +408,7 @@ Error RPCClient::Update(const Query& query, QueryResults& result, const Internal
 	auto conn = getConn();
 
 	NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
+	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
 
@@ -486,7 +484,7 @@ Error RPCClient::selectImpl(const Query& query, QueryResults& result, cproto::Cl
 	}
 	NsArray nsArray;
 	query.Serialize(qser);
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
+	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 	h_vector<int32_t, 4> vers;
 	for (auto& ns : nsArray) {
 		shared_lock<shared_timed_mutex> lck(ns->lck_);

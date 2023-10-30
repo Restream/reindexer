@@ -52,7 +52,6 @@ void AsyncStorage::Destroy() {
 	throwOnStorageCopy();
 
 	if (storage_) {
-		tryReopenStorage();
 		clearUpdates();
 		storage_->Destroy(path_);
 		reset();
