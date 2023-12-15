@@ -60,20 +60,20 @@ public:
 	IndexType RndIndexType(const std::vector<FieldType>&);
 	IndexType RndPkIndexType(const std::vector<FieldType>&);
 	IndexType RndIndexType(IndexType);
-	IsArray RndArrayField() { return RndBool(0.2) ? IsArray::Yes : IsArray::No; }
-	IsArray RndArrayField(IsArray array) {
+	IsArrayT RndArrayField() { return RndBool(0.2) ? IsArrayT::Yes : IsArrayT::No; }
+	IsArrayT RndArrayField(IsArrayT array) {
 		if (RndErr()) {
-			return array == IsArray::Yes ? IsArray::No : IsArray::Yes;
+			return array == IsArrayT::Yes ? IsArrayT::No : IsArrayT::Yes;
 		}
 		return array;
 	}
 	size_t ArraySize();
 	bool PkIndex(bool pk) { return RndErr() ? RndBool(0.5) : pk; }
-	IsSparse RndSparseIndex(FieldType fldType) {
+	IsSparseT RndSparseIndex(FieldType fldType) {
 		const bool couldBeSparse = fldType != FieldType::Struct && fldType != FieldType::Uuid;	// TODO remove uuid #1470
-		return (couldBeSparse ? RndBool(0.2) : RndErr()) ? IsSparse::Yes : IsSparse::No;
+		return (couldBeSparse ? RndBool(0.2) : RndErr()) ? IsSparseT::Yes : IsSparseT::No;
 	}
-	bool RndSparseIndex(IsSparse isSparse) { return (isSparse == IsSparse::Yes) != RndErr(); }
+	bool RndSparseIndex(IsSparseT isSparse) { return (isSparse == IsSparseT::Yes) != RndErr(); }
 	bool DenseIndex() { return RndBool(0.2); }
 	int64_t ExpiredIndex() { return RndInt(0, 100'000); }  // TODO
 	size_t IndexesCount();
@@ -137,7 +137,7 @@ public:
 		return err;
 	}
 	char RndChar() { return rndChar_(gen_); }
-	bool NeedThisNode(IsSparse sparse) { return sparse == IsSparse::Yes ? RndBool(0.5) : !RndErr(); }
+	bool NeedThisNode(IsSparseT sparse) { return sparse == IsSparseT::Yes ? RndBool(0.5) : !RndErr(); }
 	int RndIntValue() {
 		enum Size : uint8_t { Short, Long, END = Long };
 		switch (RndWhich<Size, 1, 1>()) {

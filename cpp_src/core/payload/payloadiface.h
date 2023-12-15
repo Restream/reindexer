@@ -182,6 +182,11 @@ private:
 };
 
 template <>
+int PayloadIface<PayloadValue>::ResizeArray(int, int, bool);
+template <>
+int PayloadIface<const PayloadValue>::ResizeArray(int, int, bool) = delete;
+
+template <>
 void PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher &, WrSerializer &);
 template <>
 std::string PayloadIface<const PayloadValue>::GetJSON(const TagsMatcher &);

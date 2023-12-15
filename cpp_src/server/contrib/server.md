@@ -110,6 +110,8 @@
   * [SelectPerfStats](#selectperfstats)
   * [SortDef](#sortdef)
   * [StatusResponse](#statusresponse)
+  * [SubQuery](#subquery)
+  * [SubQueryAggregationsDef](#subqueryaggregationsdef)
   * [SuggestItems](#suggestitems)
   * [SysInfo](#sysinfo)
   * [SystemConfigItem](#systemconfigitem)
@@ -130,7 +132,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 3.20.0
+*Version* : 3.21.0
 
 
 ### License information
@@ -2246,6 +2248,7 @@ If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not co
 
 |Name|Description|Schema|
 |---|---|---|
+|**always**  <br>*optional*|Boolean constant|boolean|
 |**cond**  <br>*optional*|Condition operator|enum (EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN)|
 |**equal_positions**  <br>*optional*|Array of array fields to be searched with equal array indexes|< [EqualPositionDef](#equalpositiondef) > array|
 |**field**  <br>*optional*|Field json path or index name for filter|string|
@@ -2254,6 +2257,7 @@ If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not co
 |**join_query**  <br>*optional*||[JoinedDef](#joineddef)|
 |**op**  <br>*optional*|Logic operator|enum (AND, OR, NOT)|
 |**second_field**  <br>*optional*|Second field json path or index name for filter by two fields|string|
+|**subquery**  <br>*optional*|Subquery to compare its result|[SubQuery](#subquery)|
 |**value**  <br>*optional*|Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5],5.0]' for DWITHIN|object|
 
 
@@ -2284,7 +2288,7 @@ Fulltext Index configuration
 |**max_total_areas_to_cache**  <br>*optional*|Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited  <br>**Maximum value** : `1000000000`|number|
 |**max_typo_len**  <br>*optional*|Maximum word length for building and matching variants with typos.  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|
 |**max_typos**  <br>*optional*|Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 2 possible typo -It will seriously increase RAM usage, and decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `4`|integer|
-|**merge_limit**  <br>*optional*|Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `65535`|integer|
+|**merge_limit**  <br>*optional*|Maximum documents count which will be processed in merge query results. Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `65000`|integer|
 |**min_relevancy**  <br>*optional*|Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned  <br>**Default** : `0.05`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**optimization**  <br>*optional*|Optimize the index by memory or by cpu  <br>**Default** : `"Memory"`|enum (Memory, CPU)|
 |**partial_match_decrease**  <br>*optional*|Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|
@@ -2793,6 +2797,7 @@ Performance statistics per each query
 |**master_dsn**  <br>*optional*|DSN to master. Only cproto schema is supported|string|
 |**namespaces**  <br>*optional*|List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave|< string > array|
 |**role**  <br>*optional*|Replication role|enum (none, slave, master)|
+|**server_id**  <br>*optional*|Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases  <br>**Maximum value** : `999`|integer|
 |**timeout_sec**  <br>*optional*|Network timeout for communication with master, in seconds|integer|
 
 
@@ -2897,6 +2902,32 @@ Specifies results sorting order
 |**description**  <br>*optional*|Text description of error details|string|
 |**response_code**  <br>*optional*|Duplicates HTTP response code|integer|
 |**success**  <br>*optional*||boolean|
+
+
+
+### SubQuery
+Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched againts 'is null'/'is not null conditions'
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**aggregations**  <br>*optional*|Ask query calculate aggregation|< [SubQueryAggregationsDef](#subqueryaggregationsdef) > array|
+|**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
+|**limit**  <br>*optional*|Maximum count of returned items|integer|
+|**namespace**  <br>*required*|Namespace name|string|
+|**offset**  <br>*optional*|Offset of first returned item|integer|
+|**req_total**  <br>*optional*|Ask query to calculate total documents, match condition  <br>**Default** : `"disabled"`|enum (disabled, enabled, cached)|
+|**select_filter**  <br>*optional*|Filter fields of returned document. Can be dot separated, e.g 'subobject.field'|< string > array|
+|**sort**  <br>*optional*|Specifies results sorting order|< [SortDef](#sortdef) > array|
+
+
+
+### SubQueryAggregationsDef
+
+|Name|Description|Schema|
+|---|---|---|
+|**fields**  <br>*required*|Fields or indexes names for aggregation function|< string > array|
+|**type**  <br>*required*|Aggregation function|enum (SUM, AVG, MIN, MAX)|
 
 
 

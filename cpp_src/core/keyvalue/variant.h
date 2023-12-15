@@ -3,7 +3,6 @@
 #include "core/indexopts.h"
 #include "core/key_value_type.h"
 #include "estl/h_vector.h"
-#include "tools/errors.h"
 
 namespace reindexer {
 
@@ -255,6 +254,15 @@ public:
 	template <typename... Ts>
 	static VariantArray Create(Ts &&...vs) {
 		return VariantArray{Variant{std::forward<Ts>(vs)}...};
+	}
+	template <typename T>
+	static VariantArray Create(std::initializer_list<T> vs) {
+		VariantArray res;
+		res.reserve(vs.size());
+		for (auto &v : vs) {
+			res.emplace_back(std::move(v));
+		}
+		return res;
 	}
 	void Clear() noexcept {
 		clear<false>();

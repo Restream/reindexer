@@ -110,9 +110,9 @@ bool QueryEntry::operator==(const QueryEntry &other) const noexcept {
 		   values_.RelaxCompare<WithString::Yes>(other.values_) == 0;
 }
 
-template <unsigned flags>
-void QueryEntry::verify(CondType cond, const VariantArray &values) {
-	if constexpr (flags & kIgnoreEmptyValues) {
+template <VerifyQueryEntryFlags flags>
+void VerifyQueryEntryValues(CondType cond, const VariantArray &values) {
+	if constexpr (flags & VerifyQueryEntryFlags::ignoreEmptyValues) {
 		if (values.empty()) {
 			return;
 		}
@@ -154,8 +154,8 @@ void QueryEntry::verify(CondType cond, const VariantArray &values) {
 			break;
 	}
 }
-template void QueryEntry::verify<0u>(CondType, const VariantArray &);
-template void QueryEntry::verify<QueryEntry::kIgnoreEmptyValues>(CondType, const VariantArray &);
+template void VerifyQueryEntryValues<VerifyQueryEntryFlags::null>(CondType, const VariantArray &);
+template void VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(CondType, const VariantArray &);
 
 std::string QueryEntry::Dump() const {
 	WrSerializer ser;
@@ -267,14 +267,55 @@ std::string BetweenFieldsQueryEntry::Dump() const {
 	return std::string{ser.Slice()};
 }
 
-void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer &ser) {
+void QueryEntries::serialize(CondType cond, const VariantArray &values, WrSerializer &ser) {
+	ser.PutVarUint(cond);
+	if (cond == CondDWithin) {
+		assertrx_throw(values.size() == 2);
+		ser.PutVarUint(3);
+		if (values[0].Type().Is<KeyValueType::Tuple>()) {
+			const Point point = static_cast<Point>(values[0]);
+			ser.PutDouble(point.X());
+			ser.PutDouble(point.Y());
+			ser.PutVariant(values[1]);
+		} else {
+			const Point point = static_cast<Point>(values[1]);
+			ser.PutDouble(point.X());
+			ser.PutDouble(point.Y());
+			ser.PutVariant(values[0]);
+		}
+	} else {
+		ser.PutVarUint(values.size());
+		for (auto &kv : values) ser.PutVariant(kv);
+	}
+}
+
+void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer &ser, const std::vector<Query> &subQueries) {
 	for (; it != to; ++it) {
 		const OpType op = it->operation;
 		it->InvokeAppropriate<void>(
-			[&ser, op, &it](const QueryEntriesBracket &) {
+			[&ser, op, &subQueries](const SubQueryEntry &sqe) {
+				ser.PutVarUint(QuerySubQueryCondition);
+				ser.PutVarUint(op);
+				{
+					const auto sizePosSaver = ser.StartVString();
+					subQueries.at(sqe.QueryIndex()).Serialize(ser);
+				}
+				serialize(sqe.Condition(), sqe.Values(), ser);
+			},
+			[&ser, op, &subQueries](const SubQueryFieldEntry &sqe) {
+				ser.PutVarUint(QueryFieldSubQueryCondition);
+				ser.PutVarUint(op);
+				ser.PutVString(sqe.FieldName());
+				ser.PutVarUint(sqe.Condition());
+				{
+					const auto sizePosSaver = ser.StartVString();
+					subQueries.at(sqe.QueryIndex()).Serialize(ser);
+				}
+			},
+			[&](const QueryEntriesBracket &) {
 				ser.PutVarUint(QueryOpenBracket);
 				ser.PutVarUint(op);
-				serialize(it.cbegin(), it.cend(), ser);
+				serialize(it.cbegin(), it.cend(), ser, subQueries);
 				ser.PutVarUint(QueryCloseBracket);
 			},
 			[&ser, op](const QueryEntry &entry) {
@@ -282,28 +323,7 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 				ser.PutVString(entry.FieldName());
 				if (entry.Distinct()) return;
 				ser.PutVarUint(op);
-				ser.PutVarUint(entry.Condition());
-				if (entry.Condition() == CondDWithin) {
-					if (entry.Values().size() != 2) {
-						throw Error(errLogic, "Condition DWithin must have exact 2 value, but %d values was provided",
-									entry.Values().size());
-					}
-					ser.PutVarUint(3);
-					if (entry.Values()[0].Type().Is<KeyValueType::Tuple>()) {
-						const Point point = static_cast<Point>(entry.Values()[0]);
-						ser.PutDouble(point.X());
-						ser.PutDouble(point.Y());
-						ser.PutVariant(entry.Values()[1]);
-					} else {
-						const Point point = static_cast<Point>(entry.Values()[1]);
-						ser.PutDouble(point.X());
-						ser.PutDouble(point.Y());
-						ser.PutVariant(entry.Values()[0]);
-					}
-				} else {
-					ser.PutVarUint(entry.Values().size());
-					for (auto &kv : entry.Values()) ser.PutVariant(kv);
-				}
+				serialize(entry.Condition(), entry.Values(), ser);
 			},
 			[&ser, op](const JoinQueryEntry &jqe) {
 				ser.PutVarUint(QueryJoinCondition);
@@ -319,6 +339,10 @@ void QueryEntries::serialize(const_iterator it, const_iterator to, WrSerializer 
 			},
 			[&ser, op](const AlwaysFalse &) {
 				ser.PutVarUint(QueryAlwaysFalseCondition);
+				ser.PutVarUint(op);
+			},
+			[&ser, op](const AlwaysTrue &) {
+				ser.PutVarUint(QueryAlwaysTrueCondition);
 				ser.PutVarUint(op);
 			});
 	}
@@ -354,10 +378,19 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 			break;
 		}
 		const bool lastResult = it->InvokeAppropriate<bool>(
+			[](const SubQueryEntry &) -> bool {
+				assertrx_throw(0);
+				abort();
+			},
+			[](const SubQueryFieldEntry &) -> bool {
+				assertrx_throw(0);
+				abort();
+			},
 			[&it, &pl](const QueryEntriesBracket &) { return checkIfSatisfyConditions(it.cbegin(), it.cend(), pl); },
 			[&pl](const QueryEntry &qe) { return checkIfSatisfyCondition(qe, pl); },
 			[&pl](const BetweenFieldsQueryEntry &qe) { return checkIfSatisfyCondition(qe, pl); },
-			[](const JoinQueryEntry &) -> bool { abort(); }, [](const AlwaysFalse &) { return false; });
+			[](const JoinQueryEntry &) -> bool { abort(); }, [](const AlwaysFalse &) noexcept { return false; },
+			[](const AlwaysTrue &) noexcept { return true; });
 		result = (lastResult != (it->operation == OpNot));
 	}
 	return result;
@@ -366,7 +399,7 @@ bool QueryEntries::checkIfSatisfyConditions(const_iterator begin, const_iterator
 bool QueryEntries::checkIfSatisfyCondition(const QueryEntry &qEntry, const ConstPayload &pl) {
 	VariantArray values;
 	pl.GetByFieldsSet(qEntry.Fields(), values, qEntry.FieldType(), qEntry.CompositeFieldsTypes());
-	return checkIfSatisfyCondition(values, qEntry.Condition(), qEntry.Values());
+	return CheckIfSatisfyCondition(values, qEntry.Condition(), qEntry.Values());
 }
 
 bool QueryEntries::checkIfSatisfyCondition(const BetweenFieldsQueryEntry &qEntry, const ConstPayload &pl) {
@@ -374,10 +407,10 @@ bool QueryEntries::checkIfSatisfyCondition(const BetweenFieldsQueryEntry &qEntry
 	pl.GetByFieldsSet(qEntry.LeftFields(), lValues, qEntry.LeftFieldType(), qEntry.LeftCompositeFieldsTypes());
 	VariantArray rValues;
 	pl.GetByFieldsSet(qEntry.RightFields(), rValues, qEntry.RightFieldType(), qEntry.RightCompositeFieldsTypes());
-	return checkIfSatisfyCondition(lValues, qEntry.Condition(), rValues);
+	return CheckIfSatisfyCondition(lValues, qEntry.Condition(), rValues);
 }
 
-bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType condition, const VariantArray &rValues) {
+bool QueryEntries::CheckIfSatisfyCondition(const VariantArray &lValues, CondType condition, const VariantArray &rValues) {
 	switch (condition) {
 		case CondType::CondAny:
 			return !lValues.empty();
@@ -402,29 +435,33 @@ bool QueryEntries::checkIfSatisfyCondition(const VariantArray &lValues, CondType
 			}
 			return true;
 		case CondType::CondLt:
-		case CondType::CondLe: {
-			auto lit = lValues.cbegin();
-			auto rit = rValues.cbegin();
-			for (; lit != lValues.cend() && rit != rValues.cend(); ++lit, ++rit) {
-				const int res = lit->RelaxCompare<WithString::Yes>(*rit);
-				if (res < 0) return true;
-				if (res > 0) return false;
+			for (const auto &lhs : lValues) {
+				for (const auto &rhs : rValues) {
+					if (lhs.RelaxCompare<WithString::Yes>(rhs) < 0) return true;
+				}
 			}
-			if (lit == lValues.cend() && ((rit == rValues.cend()) == (condition == CondType::CondLe))) return true;
 			return false;
-		}
+		case CondType::CondLe:
+			for (const auto &lhs : lValues) {
+				for (const auto &rhs : rValues) {
+					if (lhs.RelaxCompare<WithString::Yes>(rhs) <= 0) return true;
+				}
+			}
+			return false;
 		case CondType::CondGt:
-		case CondType::CondGe: {
-			auto lit = lValues.cbegin();
-			auto rit = rValues.cbegin();
-			for (; lit != lValues.cend() && rit != rValues.cend(); ++lit, ++rit) {
-				const int res = lit->RelaxCompare<WithString::Yes>(*rit);
-				if (res > 0) return true;
-				if (res < 0) return false;
+			for (const auto &lhs : lValues) {
+				for (const auto &rhs : rValues) {
+					if (lhs.RelaxCompare<WithString::Yes>(rhs) > 0) return true;
+				}
 			}
-			if (rit == rValues.cend() && ((lit == lValues.cend()) == (condition == CondType::CondGe))) return true;
 			return false;
-		}
+		case CondType::CondGe:
+			for (const auto &lhs : lValues) {
+				for (const auto &rhs : rValues) {
+					if (lhs.RelaxCompare<WithString::Yes>(rhs) >= 0) return true;
+				}
+			}
+			return false;
 		case CondType::CondRange:
 			for (const auto &v : lValues) {
 				if (v.RelaxCompare<WithString::Yes>(rValues[0]) < 0 || v.RelaxCompare<WithString::Yes>(rValues[1]) > 0) return false;
@@ -482,8 +519,27 @@ void QueryEntries::dumpEqualPositions(size_t level, WrSerializer &ser, const Equ
 	}
 }
 
+std::string SubQueryEntry::Dump(const std::vector<Query> &subQueries) const {
+	std::stringstream ss;
+	ss << '(' << subQueries.at(QueryIndex()).GetSQL() << ") " << Condition() << ' ';
+	if (Values().size() > 1) ss << '[';
+	for (size_t i = 0, s = Values().size(); i != s; ++i) {
+		if (i != 0) ss << ',';
+		ss << '\'' << Values()[i].As<std::string>() << '\'';
+	}
+	if (Values().size() > 1) ss << ']';
+	return ss.str();
+}
+
+std::string SubQueryFieldEntry::Dump(const std::vector<Query> &subQueries) const {
+	std::stringstream ss;
+	ss << FieldName() << ' ' << Condition() << " (" << subQueries.at(QueryIndex()).GetSQL() << ')';
+	return ss.str();
+}
+
 template <typename JS>
-void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS> &joinedSelectors, WrSerializer &ser) {
+void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS> &joinedSelectors,
+						const std::vector<Query> &subQueries, WrSerializer &ser) {
 	for (const_iterator it = begin; it != end; ++it) {
 		for (size_t i = 0; i < level; ++i) {
 			ser << "   ";
@@ -491,20 +547,22 @@ void QueryEntries::dump(size_t level, const_iterator begin, const_iterator end, 
 		if (it != begin || it->operation != OpAnd) {
 			ser << it->operation << ' ';
 		}
-		it->InvokeAppropriate<void>(
-			[&](const QueryEntriesBracket &b) {
-				ser << "(\n";
-				dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, ser);
-				dumpEqualPositions(level + 1, ser, b.equalPositions);
-				for (size_t i = 0; i < level; ++i) {
-					ser << "   ";
-				}
-				ser << ")\n";
-			},
-			[&ser](const QueryEntry &qe) { ser << qe.Dump() << '\n'; },
-			[&joinedSelectors, &ser](const JoinQueryEntry &jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
-			[&ser](const BetweenFieldsQueryEntry &qe) { ser << qe.Dump() << '\n'; },
-			[&ser](const AlwaysFalse &) { ser << "AlwaysFalse" << 'n'; });
+		it->InvokeAppropriate<void>([&ser, subQueries](const SubQueryEntry &sqe) { ser << sqe.Dump(subQueries); },
+									[&ser, subQueries](const SubQueryFieldEntry &sqe) { ser << sqe.Dump(subQueries); },
+									[&](const QueryEntriesBracket &b) {
+										ser << "(\n";
+										dump(level + 1, it.cbegin(), it.cend(), joinedSelectors, ser);
+										dumpEqualPositions(level + 1, ser, b.equalPositions);
+										for (size_t i = 0; i < level; ++i) {
+											ser << "   ";
+										}
+										ser << ")\n";
+									},
+									[&ser](const QueryEntry &qe) { ser << qe.Dump() << '\n'; },
+									[&joinedSelectors, &ser](const JoinQueryEntry &jqe) { ser << jqe.Dump(joinedSelectors) << '\n'; },
+									[&ser](const BetweenFieldsQueryEntry &qe) { ser << qe.Dump() << '\n'; },
+									[&ser](const AlwaysFalse &) { ser << "AlwaysFalse" << 'n'; },
+									[&ser](const AlwaysTrue &) { ser << "AlwaysTrue" << 'n'; });
 	}
 }
 

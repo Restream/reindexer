@@ -13,58 +13,53 @@ class JsonBuilder;
 // SSS        NNN NNN NNN NNN NNN (18 decimal digits)
 
 struct lsn_t {
-	static const int64_t digitCountLSNMult = 1000000000000000ll;
+private:
+	static constexpr int16_t kMinServerIDValue = 0;
+	static constexpr int16_t kMaxServerIDValue = 999;
 
-	static const int64_t kCounterbitCount = 48;
-	static const int64_t kCounterMask = (1ull << kCounterbitCount) - 1ull;
+	static constexpr int64_t kMaxCounter = 1000000000000000ll;
+	static constexpr int64_t kDefaultCounter = kMaxCounter - 1;
 
+public:
 	void GetJSON(JsonBuilder &builder) const;
 
 	void FromJSON(const gason::JsonNode &root) {
-		int server = root["server_id"].As<int>(0);
-		int64_t counter = root["counter"].As<int64_t>(digitCountLSNMult - 1ll);
+		const int server = root["server_id"].As<int>(0);
+		const int64_t counter = root["counter"].As<int64_t>(kDefaultCounter);
 		payload_ = int64_t(lsn_t(counter, server));
 	}
 
-	lsn_t() {}
-	explicit lsn_t(int64_t v) {
-		if ((v & kCounterMask) == kCounterMask)	 // init -1
-			payload_ = digitCountLSNMult - 1ll;
-		else {
-			payload_ = v;
-		}
-	}
-	lsn_t(int64_t counter, uint8_t server) {
-		if ((counter & kCounterMask) == kCounterMask) counter = digitCountLSNMult - 1ll;
-		int64_t s = server * digitCountLSNMult;
-		payload_ = s + counter;
+	lsn_t() noexcept = default;
+	lsn_t(const lsn_t &) noexcept = default;
+	lsn_t(lsn_t &&) noexcept = default;
+	lsn_t &operator=(const lsn_t &) noexcept = default;
+	lsn_t &operator=(lsn_t &&) noexcept = default;
+	explicit lsn_t(int64_t v) : lsn_t(v % kMaxCounter, v / kMaxCounter) {}
+	lsn_t(int64_t counter, int16_t server) {
+		validateCounter(counter);
+		validateServerId(server);
+		payload_ = server * kMaxCounter + counter;
 	}
 	explicit operator int64_t() const { return payload_; }
 
-	bool operator==(lsn_t o) { return payload_ == o.payload_; }
-	bool operator!=(lsn_t o) { return payload_ != o.payload_; }
+	bool operator==(lsn_t o) const noexcept { return payload_ == o.payload_; }
+	bool operator!=(lsn_t o) const noexcept { return payload_ != o.payload_; }
 
-	int64_t SetServer(short s) {
-		if (s > 999) throw Error(errLogic, "Server id > 999");
-		int64_t server = s * digitCountLSNMult;
-		int64_t serverOld = payload_ / digitCountLSNMult;
-		payload_ = payload_ - serverOld * digitCountLSNMult + server;
+	int64_t SetServer(short server) {
+		validateServerId(server);
+		payload_ = server * kMaxCounter + Counter();
 		return payload_;
 	}
-	int64_t SetCounter(int64_t c) {
-		if (c >= digitCountLSNMult) throw Error(errLogic, "LSN Counter > digitCountLSNMult");
-		int64_t server = payload_ / digitCountLSNMult;
-		payload_ = server * digitCountLSNMult + c;
+	int64_t SetCounter(int64_t counter) {
+		validateCounter(counter);
+		payload_ = Server() * kMaxCounter + counter;
 		return payload_;
 	}
-	int64_t Counter() const {
-		int64_t server = payload_ / digitCountLSNMult;
-		return payload_ - server * digitCountLSNMult;
-	}
-	short Server() const { return payload_ / digitCountLSNMult; }
-	bool isEmpty() const { return Counter() == digitCountLSNMult - 1ll; }
+	int64_t Counter() const noexcept { return payload_ % kMaxCounter; }
+	int16_t Server() const noexcept { return payload_ / kMaxCounter; }
+	bool isEmpty() const noexcept { return Counter() == kDefaultCounter; }
 
-	int compare(lsn_t o) {
+	int compare(lsn_t o) const {
 		if (Server() != o.Server()) throw Error(errLogic, "Compare lsn from different server");
 		if (Counter() < o.Counter())
 			return -1;
@@ -73,13 +68,28 @@ struct lsn_t {
 		return 0;
 	}
 
-	bool operator<(lsn_t o) { return compare(o) == -1; }
-	bool operator<=(lsn_t o) { return compare(o) <= 0; }
-	bool operator>(lsn_t o) { return compare(o) == 1; }
-	bool operator>=(lsn_t o) { return compare(o) >= 0; }
+	bool operator<(lsn_t o) const { return compare(o) == -1; }
+	bool operator<=(lsn_t o) const { return compare(o) <= 0; }
+	bool operator>(lsn_t o) const { return compare(o) == 1; }
+	bool operator>=(lsn_t o) const { return compare(o) >= 0; }
 
-protected:
-	int64_t payload_ = digitCountLSNMult - 1ll;
+private:
+	int64_t payload_ = kDefaultCounter;
+	static void validateServerId(int16_t server) {
+		if (server < kMinServerIDValue) {
+			throwValidation(errLogic, "Server id < %d", kMinServerIDValue);
+		}
+		if (server > kMaxServerIDValue) {
+			throwValidation(errLogic, "Server id > %d", kMaxServerIDValue);
+		}
+	}
+	static void validateCounter(int64_t counter) {
+		if (counter > kDefaultCounter) {
+			throwValidation(errLogic, "LSN Counter > Default LSN (%d)", kMaxCounter);
+		}
+	}
+
+	[[noreturn]] static void throwValidation(ErrorCode, const char *, int64_t);
 };
 
 struct LSNPair {

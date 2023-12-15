@@ -102,11 +102,11 @@ public:
 		addField(field);
 	}
 	void SortAndUnique() {
-		boost::sort::pdqsort(pos_.begin(), pos_.end());
+		boost::sort::pdqsort_branchless(pos_.begin(), pos_.end());
 		auto last = std::unique(pos_.begin(), pos_.end());
 		pos_.resize(last - pos_.begin());
 	}
-	void Clear() {
+	void Clear() noexcept {
 		usedFieldsMask_ = 0;
 #ifdef REINDEXER_FT_EXTRA_DEBUG
 		pos_.clear<false>();
@@ -116,7 +116,11 @@ public:
 	}
 	size_t Size() const noexcept { return pos_.size(); }
 	size_t size() const noexcept { return pos_.size(); }
-	void SimpleCommit();
+	void SimpleCommit() noexcept {
+		boost::sort::pdqsort_branchless(
+			pos_.begin(), pos_.end(),
+			[](const IdRelType::PosType& lhs, const IdRelType::PosType& rhs) noexcept { return lhs.pos() < rhs.pos(); });
+	}
 	const RVector<PosType, 3>& Pos() const noexcept { return pos_; }
 	uint64_t UsedFieldsMask() const noexcept { return usedFieldsMask_; }
 	size_t HeapSize() const noexcept { return heapSize(pos_); }
@@ -141,7 +145,7 @@ private:
 class IdRelSet : public std::vector<IdRelType> {
 public:
 	int Add(VDocIdType id, int pos, int field);
-	void SimpleCommit() {
+	void SimpleCommit() noexcept {
 		for (auto& val : *this) val.SimpleCommit();
 	}
 

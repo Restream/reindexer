@@ -37,6 +37,7 @@ TimeStats StatTime(const std::string &path);
 std::string GetCwd();
 std::string GetDirPath(const std::string &path);
 std::string GetTempDir();
+void SetTempDir(std::string &&dir) noexcept;
 std::string GetHomeDir();
 std::string GetRelativePath(const std::string &path, unsigned maxUp = 1024);
 inline int Rename(const std::string &from, const std::string &to) { return rename(from.c_str(), to.c_str()); }

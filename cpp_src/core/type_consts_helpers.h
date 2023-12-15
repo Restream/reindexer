@@ -72,6 +72,19 @@ auto& operator<<(T& os, OpType op) {
 	std::abort();
 }
 
+inline std::string_view OpTypeToStr(OpType op) {
+	using namespace std::string_view_literals;
+	switch (op) {
+		case OpOr:
+			return "OR"sv;
+		case OpAnd:
+			return "AND"sv;
+		case OpNot:
+			return "NOT"sv;
+	}
+	std::abort();
+}
+
 template <typename T>
 auto& operator<<(T& os, JoinType jt) {
 	return os << JoinTypeName(jt);

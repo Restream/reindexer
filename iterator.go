@@ -292,7 +292,10 @@ func (it *Iterator) readItem(toObj interface{}) (item interface{}, rank int) {
 		}
 
 		it.current.joinObj[nsIndex] = subitems
-		it.join(nsIndex, nsIndexOffset, params.nsid, item)
+		it.err = it.join(nsIndex, nsIndexOffset, params.nsid, item)
+		if it.err != nil {
+			return
+		}
 	}
 	return
 }
@@ -346,7 +349,7 @@ func (it *Iterator) fetchResults() {
 	}
 }
 
-func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{}) {
+func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{}) error {
 	var field string
 	var handler JoinHandler
 	if parentNsID == 0 {
@@ -360,19 +363,24 @@ func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{
 	subitems := it.current.joinObj[nsIndex]
 	if handler != nil {
 		if !handler(field, item, subitems) {
-			return
+			return nil
 		}
 	}
 	if joinable, ok := item.(Joinable); ok {
 		joinable.Join(field, subitems, it.queryContext)
+	} else if it.query.db.strictJoinHandlers {
+		if handler == nil {
+			return bindings.NewError(fmt.Sprintf("join handler is missing. Field tag: '%s', struct: '%s', joined namespace: '%s'",
+				field, it.nsArray[0].rtype, it.nsArray[nsIndex+nsIndexOffset].name), ErrCodeStrictMode)
+		} else {
+			return bindings.NewError(fmt.Sprintf("join handler was found, but returned 'true' and the field was handled via reflection. Field tag: '%s', struct: '%s', joined namespace: '%s'",
+				field, it.nsArray[0].rtype, it.nsArray[nsIndex+nsIndexOffset].name), ErrCodeStrictMode)
+		}
 	} else {
-
 		v := getJoinedField(reflect.ValueOf(item), it.nsArray[parentNsID].joined, field)
 		if !v.IsValid() {
-			panic(fmt.Errorf("Can't find field with tag '%s' in struct '%s' for put join results from '%s'",
-				field,
-				it.nsArray[0].rtype,
-				it.nsArray[nsIndex+nsIndexOffset].name))
+			return bindings.NewError(fmt.Sprintf("can not find field with tag '%s' in struct '%s' for put join results from '%s'",
+				field, it.nsArray[0].rtype, it.nsArray[nsIndex+nsIndexOffset].name), ErrCodeLogic)
 		}
 		if v.IsNil() {
 			v.Set(reflect.MakeSlice(reflect.SliceOf(reflect.PtrTo(it.nsArray[nsIndex+nsIndexOffset].rtype)), 0, len(subitems)))
@@ -381,6 +389,7 @@ func (it *Iterator) join(nsIndex, nsIndexOffset, parentNsID int, item interface{
 			v.Set(reflect.Append(v, reflect.ValueOf(subitem)))
 		}
 	}
+	return nil
 }
 
 // Object returns current object.

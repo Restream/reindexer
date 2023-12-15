@@ -17,6 +17,7 @@
 class GrpcClientApi : public ReindexerApi {
 public:
 	void SetUp() {
+		reindexer::fs::RmDirAll(kStoragePath);
 		YAML::Node y;
 		y["storage"]["path"] = kStoragePath;
 		y["logger"]["loglevel"] = "none";
@@ -27,7 +28,6 @@ public:
 		y["net"]["rpcaddr"] = "0.0.0.0:4443";
 		y["net"]["grpc"] = true;
 
-		reindexer::fs::RmDirAll(kStoragePath);
 		auto err = srv_.InitFromYAML(YAML::Dump(y));
 		EXPECT_TRUE(err.ok()) << err.what();
 
@@ -42,7 +42,7 @@ public:
 			std::this_thread::sleep_for(std::chrono::milliseconds(20));
 		}
 
-		for (int i = 0; i < 5; i++) {
+		for (int i = 0; i < 10; i++) {
 			auto channel = grpc::CreateChannel("127.0.0.1:16534", grpc::InsecureChannelCredentials());
 			if (channel->WaitForConnected(std::chrono::system_clock::now() + std::chrono::seconds(1))) {
 				rx_ = reindexer::grpc::Reindexer::NewStub(channel);
@@ -351,7 +351,7 @@ protected:
 	std::unique_ptr<reindexer::grpc::Reindexer::Stub> rx_;
 	uint64_t lastLsn_ = 0, lastRowId_ = INT_MAX;
 
-	const std::string kStoragePath = "/tmp/reindex_grpc_test/";
+	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_grpc_test");
 };
 
 #endif

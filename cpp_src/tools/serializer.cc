@@ -3,7 +3,6 @@
 #include "core/keyvalue/p_string.h"
 #include "estl/span.h"
 #include "tools/errors.h"
-#include "vendor/double-conversion/double-conversion.h"
 #include "vendor/itoa/itoa.h"
 
 namespace reindexer {
@@ -79,19 +78,6 @@ void WrSerializer::VStringHelper::End() {
 		}
 		ser_ = nullptr;
 	}
-}
-
-WrSerializer &WrSerializer::operator<<(double v) {
-	grow(32);
-	double_conversion::StringBuilder builder(reinterpret_cast<char *>(buf_ + len_), 32);
-	int flags =
-		double_conversion::DoubleToStringConverter::UNIQUE_ZERO | double_conversion::DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN;
-	double_conversion::DoubleToStringConverter dc(flags, NULL, NULL, 'e', -6, 21, 0, 0);
-
-	dc.ToShortest(v, &builder);
-	len_ += builder.position();
-
-	return *this;
 }
 
 void WrSerializer::PrintJsonString(std::string_view str, PrintJsonStringMode mode) {

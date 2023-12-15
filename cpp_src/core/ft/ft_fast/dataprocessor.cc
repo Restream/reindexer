@@ -149,13 +149,16 @@ size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
 	auto &vdocs = holder_.vdocs_;
 	const int fieldscount = fieldSize_;
 	size_t offset = holder_.vdocsOffset_;
+	auto cycleSize = vdocsTexts.size() / maxIndexWorkers + (vdocsTexts.size() % maxIndexWorkers ? 1 : 0);
 	// build words map parallel in maxIndexWorkers threads
-	auto worker = [this, &ctxs, &vdocsTexts, offset, maxIndexWorkers, fieldscount, &cfg, &vdocs](int i) {
+	auto worker = [this, &ctxs, &vdocsTexts, offset, cycleSize, fieldscount, &cfg, &vdocs](int i) {
 		auto ctx = &ctxs[i];
 		std::string word, str;
 		std::vector<const char *> wrds;
 		std::vector<std::string> virtualWords;
-		for (VDocIdType j = i, sz = VDocIdType(vdocsTexts.size()); j < sz; j += maxIndexWorkers) {
+		size_t start = cycleSize * i;
+		size_t fin = std::min(cycleSize * (i + 1), vdocsTexts.size());
+		for (VDocIdType j = start; j < fin; ++j) {
 			const size_t vdocId = offset + j;
 			auto &vdoc = vdocs[vdocId];
 			vdoc.wordsCount.insert(vdoc.wordsCount.begin(), fieldscount, 0.0);

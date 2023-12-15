@@ -9,6 +9,7 @@
 #include "estl/shared_mutex.h"
 #include "reindexertestapi.h"
 #include "server/server.h"
+#include "tools/fsops.h"
 #include "tools/stringstools.h"
 
 #ifdef REINDEXER_WITH_SC_AS_PROCESS
@@ -44,6 +45,8 @@ struct ReplicationConfigTest {
 			   namespaces_ == config.namespaces_ && serverId_ == config.serverId_;
 	}
 
+	std::string GetJSON() const;
+
 	std::string role_;
 	bool forceSyncOnLogicError_;
 	bool forceSyncOnWrongDataHash_;
@@ -67,7 +70,7 @@ class ServerControl {
 public:
 	const std::string kReplicationConfigFilename = "replication.conf";
 	const std::string kConfigNs = "#config";
-	const std::string kStoragePath = "/tmp/reindex_repl_test/";
+	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test");
 	const unsigned short kDefaultHttpPort = 5555;
 
 	const size_t kMaxServerStartTimeSec = 20;

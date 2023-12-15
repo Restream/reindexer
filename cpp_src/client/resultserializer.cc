@@ -50,6 +50,8 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, con
 			case QueryResultExplain:
 				ret.explainResults = std::string(data);
 				break;
+			default:
+				throw Error(errLogic, "Unexpected Query tag: %d", tag);
 		}
 	}
 }

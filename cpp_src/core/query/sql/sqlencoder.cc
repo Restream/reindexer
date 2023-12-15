@@ -4,19 +4,21 @@
 #include "core/keyvalue/p_string.h"
 #include "core/queryresults/aggregationresult.h"
 #include "core/type_consts_helpers.h"
+#include "tools/logger.h"
 #include "tools/serializer.h"
 
-namespace reindexer {
+enum class NeedQuote : bool { No = false, Yes = true };
 
-static void indexToSql(const std::string &index, WrSerializer &ser) {
-	if (index.find('+') == std::string::npos) {
+template <NeedQuote needQuote>
+static void indexToSql(std::string_view index, reindexer::WrSerializer &ser) {
+	if (needQuote == NeedQuote::No || index.find('+') == std::string::npos) {
 		ser << index;
 	} else {
 		ser << '"' << index << '"';
 	}
 }
 
-static WrSerializer &stringToSql(std::string_view str, WrSerializer &ser) {
+static reindexer::WrSerializer &stringToSql(std::string_view str, reindexer::WrSerializer &ser) {
 	ser << '\'';
 	for (auto c : str) {
 		switch (c) {
@@ -48,11 +50,14 @@ static WrSerializer &stringToSql(std::string_view str, WrSerializer &ser) {
 	ser << '\'';
 	return ser;
 }
+
+namespace reindexer {
+
 void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripArgs) const {
-	assertrx(idx < query_.joinQueries_.size());
-	const auto &jq = query_.joinQueries_[idx];
+	assertrx(idx < query_.GetJoinQueries().size());
+	const auto &jq = query_.GetJoinQueries()[idx];
 	ser << ' ' << jq.joinType;
-	if (jq.entries.Empty() && !jq.HasLimit() && jq.sortingEntries_.empty()) {
+	if (jq.Entries().Empty() && !jq.HasLimit() && jq.sortingEntries_.empty()) {
 		ser << ' ' << jq.NsName() << " ON ";
 	} else {
 		ser << " (";
@@ -75,15 +80,15 @@ void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripAr
 }
 
 void SQLEncoder::dumpJoined(WrSerializer &ser, bool stripArgs) const {
-	for (size_t i = 0; i < query_.joinQueries_.size(); ++i) {
-		if (query_.joinQueries_[i].joinType == JoinType::LeftJoin) {
+	for (size_t i = 0; i < query_.GetJoinQueries().size(); ++i) {
+		if (query_.GetJoinQueries()[i].joinType == JoinType::LeftJoin) {
 			DumpSingleJoinQuery(i, ser, stripArgs);
 		}
 	}
 }
 
 void SQLEncoder::dumpMerged(WrSerializer &ser, bool stripArgs) const {
-	for (auto &me : query_.mergeQueries_) {
+	for (auto &me : query_.GetMergeQueries()) {
 		ser << ' ' << me.joinType << "( ";
 		me.GetSQL(ser, stripArgs);
 		ser << ')';
@@ -167,16 +172,16 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					assertrx(query_.aggregations_[0].Fields().size() == 1);
 					distinctIndex = query_.aggregations_[0].Fields()[0];
 				}
-				if (query_.selectFilter_.empty()) {
-					if (query_.Limit() != 0 || query_.CalcTotal() == ModeNoTotal) {
+				if (query_.SelectFilters().empty()) {
+					if (query_.Limit() != 0 || !query_.HasCalcTotal()) {
 						if (needComma) ser << ", ";
 						ser << '*';
-						if (query_.CalcTotal() != ModeNoTotal) {
+						if (query_.HasCalcTotal()) {
 							needComma = true;
 						}
 					}
 				} else {
-					for (const auto &filter : query_.selectFilter_) {
+					for (const auto &filter : query_.SelectFilters()) {
 						if (filter == distinctIndex) continue;
 						if (needComma) {
 							ser << ", ";
@@ -187,7 +192,7 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 					}
 				}
 			}
-			if (query_.CalcTotal() != ModeNoTotal) {
+			if (query_.HasCalcTotal()) {
 				if (needComma) ser << ", ";
 				if (query_.CalcTotal() == ModeAccurateTotal) ser << "COUNT(*)";
 				if (query_.CalcTotal() == ModeCachedTotal) ser << "COUNT_CACHED(*)";
@@ -254,6 +259,61 @@ WrSerializer &SQLEncoder::GetSQL(WrSerializer &ser, bool stripArgs) const {
 
 static const char *opNames[] = {"-", "OR", "AND", "AND NOT"};
 
+template <NeedQuote needQuote>
+static void dumpCondWithValues(WrSerializer &ser, std::string_view fieldName, CondType cond, const VariantArray &values, bool stripArgs) {
+	switch (cond) {
+		case CondDWithin:
+			ser << "ST_DWithin(";
+			indexToSql<needQuote>(fieldName, ser);
+			if (stripArgs) {
+				ser << ", ?, ?)";
+			} else {
+				assertrx(values.size() == 2);
+				Point point;
+				double distance;
+				if (values[0].Type().Is<KeyValueType::Tuple>()) {
+					point = static_cast<Point>(values[0]);
+					distance = values[1].As<double>();
+				} else {
+					point = static_cast<Point>(values[1]);
+					distance = values[0].As<double>();
+				}
+				ser << ", ST_GeomFromText('POINT(" << point.X() << ' ' << point.Y() << ")'), " << distance << ')';
+			}
+			break;
+		case CondAny:
+		case CondEmpty:
+			indexToSql<needQuote>(fieldName, ser);
+			ser << ' ' << cond;
+			break;
+		case CondGt:
+		case CondGe:
+		case CondLt:
+		case CondLe:
+		case CondEq:
+		case CondSet:
+		case CondAllSet:
+		case CondRange:
+		case CondLike:
+			indexToSql<needQuote>(fieldName, ser);
+			ser << ' ' << cond << ' ';
+			if (stripArgs) {
+				ser << '?';
+			} else {
+				if (values.size() != 1) ser << '(';
+				for (auto &v : values) {
+					if (&v != &values[0]) ser << ',';
+					v.Type().EvaluateOneOf(overloaded{
+						[&](KeyValueType::String) { stringToSql(v.As<p_string>(), ser); },
+						[&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
+						[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Null,
+								  KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) { ser << v.As<std::string>(); }});
+				}
+				if (values.size() != 1) ser << ")";
+			}
+	}
+}
+
 void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntries::const_iterator to, WrSerializer &ser,
 								  bool stripArgs) const {
 	int encodedEntries = 0;
@@ -265,7 +325,29 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 			ser << "NOT ";
 		}
 		it->InvokeAppropriate<void>(
-			Skip<AlwaysFalse>{},
+			[&ser](const AlwaysTrue &) {
+				logPrintf(LogTrace, "Not normalized query to dsl");
+				ser << "true";
+			},
+			[&ser](const AlwaysFalse &) {
+				logPrintf(LogTrace, "Not normalized query to dsl");
+				ser << "false";
+			},
+			[&](const SubQueryEntry &sqe) {
+				if (encodedEntries) {
+					ser << opNames[op] << ' ';
+				}
+				dumpCondWithValues<NeedQuote::No>(ser, '(' + query_.GetSubQuery(sqe.QueryIndex()).GetSQL(stripArgs) + ')', sqe.Condition(),
+												  sqe.Values(), stripArgs);
+			},
+			[&](const SubQueryFieldEntry &sqe) {
+				if (encodedEntries) {
+					ser << opNames[op] << ' ';
+				}
+				ser << sqe.FieldName() << ' ' << sqe.Condition() << " (";
+				SQLEncoder{query_.GetSubQuery(sqe.QueryIndex())}.GetSQL(ser, stripArgs);
+				ser << ')';
+			},
 			[&](const QueryEntriesBracket &bracket) {
 				if (encodedEntries) {
 					ser << opNames[op] << ' ';
@@ -279,66 +361,31 @@ void SQLEncoder::dumpWhereEntries(QueryEntries::const_iterator from, QueryEntrie
 				if (encodedEntries) {
 					ser << opNames[op] << ' ';
 				}
-				if (entry.Condition() == CondDWithin) {
-					ser << "ST_DWithin(";
-					indexToSql(entry.FieldName(), ser);
-					if (stripArgs) {
-						ser << ", ?, ?)";
-					} else {
-						assertrx(entry.Values().size() == 2);
-						Point point;
-						double distance;
-						if (entry.Values()[0].Type().Is<KeyValueType::Tuple>()) {
-							point = static_cast<Point>(entry.Values()[0]);
-							distance = entry.Values()[1].As<double>();
-						} else {
-							point = static_cast<Point>(entry.Values()[1]);
-							distance = entry.Values()[0].As<double>();
-						}
-						ser << ", ST_GeomFromText('POINT(" << point.X() << ' ' << point.Y() << ")'), " << distance << ')';
-					}
-				} else {
-					indexToSql(entry.FieldName(), ser);
-					ser << ' ' << entry.Condition() << ' ';
-					if (entry.Condition() == CondEmpty || entry.Condition() == CondAny) {
-					} else if (stripArgs) {
-						ser << '?';
-					} else {
-						if (entry.Values().size() != 1) ser << '(';
-						for (auto &v : entry.Values()) {
-							if (&v != &entry.Values()[0]) ser << ',';
-							v.Type().EvaluateOneOf(overloaded{
-								[&](KeyValueType::String) { stringToSql(v.As<p_string>(), ser); },
-								[&](KeyValueType::Uuid) { ser << '\'' << v.As<std::string>() << '\''; },
-								[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double,
-										  KeyValueType::Null, KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
-									ser << v.As<std::string>();
-								}});
-						}
-						if (entry.Values().size() != 1) ser << ")";
-					}
-				}
+				dumpCondWithValues<NeedQuote::Yes>(ser, entry.FieldName(), entry.Condition(), entry.Values(), stripArgs);
 			},
 			[&](const JoinQueryEntry &jqe) {
-				if (encodedEntries && query_.joinQueries_[jqe.joinIndex].joinType != JoinType::OrInnerJoin) {
+				if (encodedEntries && query_.GetJoinQueries()[jqe.joinIndex].joinType != JoinType::OrInnerJoin) {
 					ser << opNames[op] << ' ';
 				}
 				SQLEncoder(query_).DumpSingleJoinQuery(jqe.joinIndex, ser, stripArgs);
 			},
-			[&ser](const BetweenFieldsQueryEntry &entry) {
-				indexToSql(entry.LeftFieldName(), ser);
+			[&](const BetweenFieldsQueryEntry &entry) {
+				if (encodedEntries) {
+					ser << opNames[op] << ' ';
+				}
+				indexToSql<NeedQuote::Yes>(entry.LeftFieldName(), ser);
 				ser << ' ' << entry.Condition() << ' ';
-				indexToSql(entry.RightFieldName(), ser);
+				indexToSql<NeedQuote::Yes>(entry.RightFieldName(), ser);
 			});
 		++encodedEntries;
 	}
 }
 
 void SQLEncoder::dumpSQLWhere(WrSerializer &ser, bool stripArgs) const {
-	if (query_.entries.Empty()) return;
+	if (query_.Entries().Empty()) return;
 	ser << " WHERE ";
-	dumpWhereEntries(query_.entries.cbegin(), query_.entries.cend(), ser, stripArgs);
-	dumpEqualPositions(ser, query_.entries.equalPositions);
+	dumpWhereEntries(query_.Entries().cbegin(), query_.Entries().cend(), ser, stripArgs);
+	dumpEqualPositions(ser, query_.Entries().equalPositions);
 }
 
 }  // namespace reindexer

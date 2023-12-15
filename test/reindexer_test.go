@@ -30,6 +30,8 @@ var benchmarkSeedCount = flag.Int("seedcount", 500000, "count of items for bench
 var benchmarkSeedCPU = flag.Int("seedcpu", 1, "number threads of for seeding")
 var benchmarkSeed = flag.Int64("seed", time.Now().Unix(), "seed number for random")
 
+var testLogger *TestLogger
+
 func TestMain(m *testing.M) {
 
 	flag.Parse()
@@ -37,6 +39,10 @@ func TestMain(m *testing.M) {
 	udsn, err := url.Parse(*dsn)
 	if err != nil {
 		panic(err)
+	}
+
+	if testing.Verbose() {
+		testLogger = &TestLogger{}
 	}
 
 	opts := []interface{}{}
@@ -58,9 +64,7 @@ func TestMain(m *testing.M) {
 		DB.AddSlave(*dsnSlave, *slaveCount, reindexer.WithCreateDBIfMissing())
 	}
 
-	if testing.Verbose() {
-		DB.SetLogger(&TestLogger{})
-	}
+	DB.SetLogger(testLogger)
 	for k, v := range tnamespaces {
 		DB.DropNamespace(k)
 

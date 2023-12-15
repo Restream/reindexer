@@ -71,12 +71,15 @@ inline void encode(uint8_t *p, uint64_t l, std::vector<std::unique_ptr<char[]>> 
 		p[-3] = (uptr >> 8) & 0xFF;
 		p[-4] = (uptr >> 16) & 0xFF;
 		p[-5] = (uptr >> 24) & 0xFF;
-		if constexpr (sizeof(uintptr_t) == 8) {
-			p[-6] = (uptr >> 32) & 0xFF;
-			p[-7] = (uptr >> 40) & 0xFF;
-			p[-8] = (uptr >> 48) & 0xFF;
-			p[-9] = (uptr >> 56) & 0xFF;
-		}
+#if UINTPTR_MAX == 0xFFFFFFFF
+#elif UINTPTR_MAX == 0xFFFFFFFFFFFFFFFF
+		p[-6] = (uptr >> 32) & 0xFF;
+		p[-7] = (uptr >> 40) & 0xFF;
+		p[-8] = (uptr >> 48) & 0xFF;
+		p[-9] = (uptr >> 56) & 0xFF;
+#else
+		static_assert(false, "Unexpected uintptr_t size");
+#endif
 	} else {
 		// Put length
 		p[0] = l & 0xFF;

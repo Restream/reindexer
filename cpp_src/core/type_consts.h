@@ -68,6 +68,9 @@ typedef enum QueryItemType {
 	QueryUpdateFieldV2 = 25,
 	QueryBetweenFieldsCondition = 26,
 	QueryAlwaysFalseCondition = 27,
+	QueryAlwaysTrueCondition = 28,
+	QuerySubQueryCondition = 29,
+	QueryFieldSubQueryCondition = 30,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {

@@ -9,8 +9,6 @@
 #include "core/cjson/msgpackdecoder.h"
 #include "core/cjson/protobufbuilder.h"
 #include "core/cjson/protobufschemabuilder.h"
-#include "core/itemimpl.h"
-#include "core/namespace/namespace.h"
 #include "core/queryresults/tableviewbuilder.h"
 #include "core/schema.h"
 #include "core/type_consts.h"
@@ -24,12 +22,12 @@
 #include "resources_wrapper.h"
 #include "statscollect/istatswatcher.h"
 #include "statscollect/prometheus.h"
-#include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
+#include "tools/flagguard.h"
 #include "tools/fsops.h"
-#include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
+#include "vendor/sort/pdqsort.hpp"
 
 #include "outputparameters.h"
 
@@ -51,8 +49,7 @@ HTTPServer::HTTPServer(DBManager &dbMgr, LoggerWrapper &logger, const ServerConf
 	  startTs_(std::chrono::system_clock::now()) {}
 
 Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, http::Context &ctx) {
-	reindexer::Query q;
-	q.FromSQL(sqlQuery);
+	const auto q = reindexer::Query::FromSQL(sqlQuery);
 	switch (q.Type()) {
 		case QuerySelect:
 			return getDB<kRoleDataRead>(ctx).Select(q, res);
@@ -226,11 +223,9 @@ int HTTPServer::GetDatabases(http::Context &ctx) {
 	}
 
 	if (sortDirection) {
-		std::sort(dbs.begin(), dbs.end(), [sortDirection](const std::string &lhs, const std::string &rhs) {
-			if (sortDirection > 0)
-				return collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) < 0;
-			else
-				return collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) > 0;
+		boost::sort::pdqsort(dbs.begin(), dbs.end(), [sortDirection](const std::string &lhs, const std::string &rhs) {
+			return (sortDirection > 0) ? (collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) < 0)
+									   : (collateCompare<CollateASCII>(lhs, rhs, SortingPrioritiesTable()) > 0);
 		});
 	}
 
@@ -320,11 +315,9 @@ int HTTPServer::GetNamespaces(http::Context &ctx) {
 	}
 
 	if (sortDirection) {
-		std::sort(nsDefs.begin(), nsDefs.end(), [sortDirection](const NamespaceDef &lhs, const NamespaceDef &rhs) {
-			if (sortDirection > 0)
-				return collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) < 0;
-			else
-				return collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) > 0;
+		boost::sort::pdqsort(nsDefs.begin(), nsDefs.end(), [sortDirection](const NamespaceDef &lhs, const NamespaceDef &rhs) {
+			return (sortDirection > 0) ? (collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) < 0)
+									   : (collateCompare<CollateASCII>(lhs.name, rhs.name, SortingPrioritiesTable()) > 0);
 		});
 	}
 
@@ -483,9 +476,7 @@ int HTTPServer::GetItems(http::Context &ctx) {
 		querySer << " OFFSET " << prepareOffset(offsetParam);
 	}
 
-	reindexer::Query q;
-
-	q.FromSQL(querySer.Slice());
+	reindexer::Query q = Query::FromSQL(querySer.Slice());
 	if (ctx.request->params.Get("format") != "csv-file"sv) {
 		q.ReqTotal();
 	}
@@ -543,9 +534,9 @@ int HTTPServer::GetMetaList(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
 	if (sortDirection == Asc) {
-		std::sort(keys.begin(), keys.end());
+		boost::sort::pdqsort(keys.begin(), keys.end());
 	} else if (sortDirection == Desc) {
-		std::sort(keys.begin(), keys.end(), std::greater<std::string>());
+		boost::sort::pdqsort(keys.begin(), keys.end(), std::greater<std::string>());
 	}
 	auto keysIt = keys.begin();
 	auto keysEnd = keys.end();
@@ -1638,10 +1629,10 @@ unsigned HTTPServer::prepareOffset(std::string_view offsetParam, int offsetDefau
 int HTTPServer::modifyQueryTxImpl(http::Context &ctx, const std::string &dbName, std::string_view txId, Query &q) {
 	reindexer::QueryResults res;
 	auto tx = getTx(dbName, txId);
-	if (!q.mergeQueries_.empty()) {
+	if (!q.GetMergeQueries().empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Merged subqueries are not allowed inside TX"));
 	}
-	if (!q.joinQueries_.empty()) {
+	if (!q.GetJoinQueries().empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Joined subqueries are not allowed inside TX"));
 	}
 	tx->Modify(std::move(q));
@@ -1890,8 +1881,7 @@ int HTTPServer::GetSQLQueryTx(http::Context &ctx) {
 	}
 
 	try {
-		Query q;
-		q.FromSQL(sqlQuery);
+		auto q = Query::FromSQL(sqlQuery);
 		switch (q.type_) {
 			case QueryDelete:
 			case QueryUpdate:

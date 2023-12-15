@@ -1,3 +1,43 @@
+# Version 3.21.0 (15.12.2023)
+## Core
+- [fea] Added [subqueries](#subqueries-nested-queries) support (`explain` for subqueries will be implement in the next releases)
+- [fea] Added backtraces/minidump support for Windows platform
+- [fea] Added query crash tracker support for Windows platform
+- [fix] Added explicit error for aggregations in joined queries
+- [fix] Fixed UPDATE-queries for array-indexes with multiple JSON-paths
+- [fix] Fixed UPSERT/UPDATE for sparse arrays with null-values
+- [fix] Optimized tagsmatcher's updates in UPDATE-queries
+
+## Replication
+- [fea] Added some temporary replication fixes for v4-compatibility (one of the next v4 releases will contain v3-v4 compatibility mode for migration)
+
+## Reindexer server
+- [fea] Added HTTP DSL for subqueries
+
+## Go connector
+- [fea] Added Go API and DSL-convertor for subqueries
+- [fea] Changed CJSON-to-object convetrion logic for slices: now the single JSON values and fields with multiple JSON-paths will be concatenated together in the target field
+- [fea] Added `WithStrictJoinHandlers`. This option allows to validate JoinHandlers usage in runtime
+- [fix] Fixed panic handling in the CJSON deserialization
+- [fix] Fixed logging in `cproto`-binding. Error messages will no longer be redirected to stdout instead of user's logger
+
+## Face 
+- [fea] Saved the scroll position on the sorting
+- [fea] Changed the Server ID range
+- [fea] Improved the notification about the supported browsers
+- [fea] Added the default values to the config form when the default config is using
+- [fix] Fixed the wrong redirect to a fake database
+- [fix] Fixed the column order changing on the data sorting
+- [fix] Fixed the horizontal scroll on the data sorting
+- [fix] Fixed the wrong data filtering in the Statistics tables
+- [fix] Fixed the modal window with the notification about the JSON-tags clearing
+- [fix] Fixed the "+/-" buttons for the inputs
+- [fix] Fixed the console issue appeared on the array data sorting
+- [fix] Fixed the layout of the Performance page
+- [fix] Fixed the pagination buttons
+- [fix] Fixed the misprint in Config
+
+
 # Version 3.20.0 (30.10.2023)
 ## Core
 - [fea] Added crash query report for Update/Delete queries

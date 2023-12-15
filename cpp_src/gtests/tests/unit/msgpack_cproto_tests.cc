@@ -124,8 +124,7 @@ TEST_F(MsgPackCprotoApi, ModifyItemsTest) {
 
 TEST_F(MsgPackCprotoApi, UpdateTest) {
 	const std::string_view sql = "update test_namespace set a1 = 7 where id >= 10 and id <= 100";
-	Query q;
-	q.FromSQL(sql);
+	Query q = Query::FromSQL(sql);
 
 	reindexer::client::QueryResults qr;
 	Error err = client_->Update(q, qr, ctx_, FormatMsgPack);
@@ -153,8 +152,7 @@ TEST_F(MsgPackCprotoApi, UpdateTest) {
 
 TEST_F(MsgPackCprotoApi, DeleteTest) {
 	const std::string_view sql = "delete from test_namespace where id >= 100 and id <= 110";
-	Query q;
-	q.FromSQL(sql);
+	Query q = Query::FromSQL(sql);
 
 	reindexer::client::QueryResults qr;
 	Error err = client_->Delete(q, qr, ctx_, FormatMsgPack);

@@ -31,7 +31,7 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &que
 		ctx.skipIndexesLookup = true;
 		ctx.functions = &selectFunctions_;
 		rightNs_->Select(joinItemR, ctx, rdxCtx_);
-		if (query.explain_) {
+		if (query.GetExplain()) {
 			preResult_->explainOneSelect = joinItemR.explainResults;
 		}
 
@@ -54,7 +54,7 @@ void JoinedSelector::selectFromPreResultValues(QueryResults &joinItemR, const Qu
 	for (const ItemRef &item : preResult_->values) {
 		auto &v = item.Value();
 		assertrx(!v.IsFree());
-		if (query.entries.CheckIfSatisfyConditions({preResult_->values.payloadType, v})) {
+		if (query.Entries().CheckIfSatisfyConditions({preResult_->values.payloadType, v})) {
 			if (++matched > query.Limit()) break;
 			found = true;
 			joinItemR.Add(item);
@@ -73,21 +73,21 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, bool 
 	const auto startTime = ExplainCalc::Clock::now();
 	// Put values to join conditions
 	size_t i = 0;
-	if (itemQuery_.explain_ && !preResult_->explainOneSelect.empty()) itemQuery_.explain_ = false;
+	if (itemQuery_.GetExplain() && !preResult_->explainOneSelect.empty()) itemQuery_.Explain(false);
 	std::unique_ptr<Query> itemQueryCopy;
 	Query *itemQueryPtr = &itemQuery_;
 	for (auto &je : joinQuery_.joinEntries_) {
-		QueryEntry &qentry = itemQueryPtr->entries.Get<QueryEntry>(i);
+		QueryEntry &qentry = itemQueryPtr->GetUpdatableEntry<QueryEntry>(i);
 		{
 			auto keyValues = qentry.UpdatableValues(QueryEntry::IgnoreEmptyValues{});
 			payload.GetByFieldsSet(je.LeftFields(), keyValues, je.LeftFieldType(), je.LeftCompositeFieldsTypes());
 		}
 		if (qentry.Values().empty()) {
 			if (itemQueryPtr == &itemQuery_) {
-				itemQueryCopy = std::unique_ptr<Query>{new Query(itemQuery_)};
+				itemQueryCopy = std::make_unique<Query>(itemQuery_);
 				itemQueryPtr = itemQueryCopy.get();
 			}
-			itemQueryPtr->entries.SetValue(i, AlwaysFalse{});
+			itemQueryPtr->SetEntry<AlwaysFalse>(i);
 		}
 		++i;
 	}
@@ -188,7 +188,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 		return;
 	}
 	unsigned optimized = 0;
-	assertrx_throw(preResult_->dataMode != JoinPreResult::ModeValues || itemQuery_.entries.Size() == joinQuery_.joinEntries_.size());
+	assertrx_throw(preResult_->dataMode != JoinPreResult::ModeValues || itemQuery_.Entries().Size() == joinQuery_.joinEntries_.size());
 	for (size_t i = 0; i < joinQuery_.joinEntries_.size(); ++i) {
 		const QueryJoinEntry &joinEntry = joinQuery_.joinEntries_[i];
 		if (!joinEntry.IsLeftFieldIndexed() || joinEntry.Operation() != OpAnd ||

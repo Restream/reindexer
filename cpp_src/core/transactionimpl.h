@@ -5,22 +5,46 @@
 
 namespace reindexer {
 
+struct TransactionItemStep {
+	ItemModifyMode mode;
+	bool hadTmUpdate;
+	ItemImplRawData data;
+};
+
+struct TransactionQueryStep {
+	std::unique_ptr<Query> query;
+};
+
+struct TransactionMetaStep {
+	std::string key;
+	std::string value;
+};
+
+struct TransactionTmStep {
+	TagsMatcher tm;
+};
+
 class TransactionStep {
 public:
-	TransactionStep(Item &&item, ItemModifyMode modifyMode) : itemData_(std::move(*item.impl_)), modifyMode_(modifyMode), query_(nullptr) {
+	enum class Type : uint8_t { Nop, ModifyItem, Query, PutMeta, SetTM };
+
+	TransactionStep(Item &&item, ItemModifyMode modifyMode)
+		: data_(TransactionItemStep{modifyMode, item.IsTagsUpdated(), std::move(*item.impl_)}), type_(Type::ModifyItem) {
 		delete item.impl_;
 		item.impl_ = nullptr;
 	}
-	TransactionStep(Query &&query) : modifyMode_(ModeUpdate), query_(new Query(std::move(query))) {}
+	TransactionStep(TagsMatcher &&tm) : data_(TransactionTmStep{std::move(tm)}), type_(Type::SetTM) {}
+	TransactionStep(Query &&query) : data_(TransactionQueryStep{std::make_unique<Query>(std::move(query))}), type_(Type::Query) {}
+	TransactionStep(std::string_view key, std::string_view value)
+		: data_(TransactionMetaStep{std::string(key), std::string(value)}), type_(Type::PutMeta) {}
 
 	TransactionStep(const TransactionStep &) = delete;
 	TransactionStep &operator=(const TransactionStep &) = delete;
-	TransactionStep(TransactionStep && /*rhs*/) noexcept = default;
-	TransactionStep &operator=(TransactionStep && /*rhs*/) = default;
+	TransactionStep(TransactionStep && /*rhs*/) = default;
+	TransactionStep &operator=(TransactionStep && /*rhs*/) = delete;
 
-	ItemImplRawData itemData_;
-	ItemModifyMode modifyMode_;
-	std::unique_ptr<Query> query_;
+	std::variant<TransactionItemStep, TransactionQueryStep, TransactionMetaStep, TransactionTmStep> data_;
+	Type type_;
 };
 
 class TransactionImpl {
@@ -34,7 +58,9 @@ public:
 		  nsName_(nsName),
 		  tagsUpdated_(false),
 		  hasDeleteItemSteps_(false),
-		  startTime_(std::chrono::high_resolution_clock::now()) {}
+		  startTime_(std::chrono::high_resolution_clock::now()) {
+		tagsMatcher_.clearUpdated();
+	}
 
 	void Insert(Item &&item);
 	void Update(Item &&item);
@@ -42,8 +68,9 @@ public:
 	void Delete(Item &&item);
 	void Modify(Item &&item, ItemModifyMode mode);
 	void Modify(Query &&item);
+	void PutMeta(std::string_view key, std::string_view value);
+	void SetTagsMatcher(TagsMatcher &&tm);
 
-	void UpdateTagsMatcherFromItem(ItemImpl *ritem);
 	Item NewItem();
 	Item GetItem(TransactionStep &&st);
 	void ValidatePK(const FieldsSet &pkFields);

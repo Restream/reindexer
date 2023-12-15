@@ -112,8 +112,16 @@ private:
 
 ItemModifier::FieldData::FieldData(const UpdateEntry &entry, NamespaceImpl &ns)
 	: entry_(entry), tagsPathWithLastIndex_{std::nullopt}, arrayIndex_(IndexValueType::NotSet), isIndex_(false) {
-	if (ns.getIndexByName(entry_.Column(), fieldIndex_)) {
+	if (ns.tryGetIndexByName(entry_.Column(), fieldIndex_)) {
 		isIndex_ = true;
+		auto jsonPathsSize = (ns.indexes_[fieldIndex_]->Opts().IsSparse() || static_cast<int>(fieldIndex_) >= ns.payloadType_.NumFields())
+								 ? ns.indexes_[fieldIndex_]->Fields().size()
+								 : ns.payloadType_.Field(fieldIndex_).JsonPaths().size();
+
+		if (jsonPathsSize != 1) {
+			throw Error(errParams, "Ambiguity when updating field with several json paths by index name: '%s'", entry_.Column());
+		}
+
 		if (!entry.IsExpression()) {
 			const auto &fields{ns.indexes_[fieldIndex_]->Fields()};
 			if (fields.size() != 1) {
@@ -126,11 +134,7 @@ ItemModifier::FieldData::FieldData(const UpdateEntry &entry, NamespaceImpl &ns)
 					tagsPath_ = IndexedTagsPath{fields.getTagsPath(0)};
 				}
 			} else {
-				const auto &fld{ns.payloadType_.Field(fieldIndex_)};
-				for (const auto &jp : fld.JsonPaths()) {
-					tagsPath_ = ns.tagsMatcher_.path2indexedtag(jp, nullptr, true);
-					if (!tagsPath_.empty()) break;
-				}
+				tagsPath_ = ns.tagsMatcher_.path2indexedtag(ns.payloadType_.Field(fieldIndex_).JsonPaths()[0], nullptr, true);
 			}
 			if (tagsPath_.empty()) {
 				throw Error(errParams, "Cannot find field by json: '%s'", entry_.Column());
@@ -467,7 +471,6 @@ void ItemModifier::modifyField(IdType itemId, FieldData &field, Payload &pl, Var
 			tupleValue = tupleIdx->Upsert(item.GetField(0), itemId, needClearCache);
 			if (needClearCache && tupleIdx->IsOrdered()) indexesCacheCleaner.Add(tupleIdx->SortId());
 			pl.Set(0, std::move(tupleValue));
-			ns_.tagsMatcher_.try_merge(item.tagsMatcher());
 			if (exception) {
 				std::rethrow_exception(exception);
 			}
@@ -575,6 +578,26 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, Vari
 		} else {
 			pl.Get(field.index(), ns_.skrefs, true);
 		}
+
+		// Required when updating index array field with several tagpaths
+		VariantArray concatValues;
+		int offset = -1, length = -1;
+		pl.GetIndexedArrayData(field.tagspathWithLastIndex(), field.index(), offset, length);
+		const bool kConcatIndexValues =
+			index.Opts().IsArray() && !updateArrayPart &&
+			(length < int(ns_.skrefs.size()));	//  (length < int(ns_.skrefs.size()) - condition to avoid coping
+												//  when length and ns_.skrefs.size() are equal; then concatValues == values
+		if (kConcatIndexValues) {
+			if (offset < 0 || length < 0) {
+				concatValues = ns_.skrefs;
+				concatValues.insert(concatValues.end(), values.begin(), values.end());
+			} else {
+				concatValues.insert(concatValues.end(), ns_.skrefs.begin(), ns_.skrefs.begin() + offset);
+				concatValues.insert(concatValues.end(), values.begin(), values.end());
+				concatValues.insert(concatValues.end(), ns_.skrefs.begin() + offset + length, ns_.skrefs.end());
+			}
+		}
+
 		if (!ns_.skrefs.empty()) {
 			bool needClearCache{false};
 			rollBackIndexData_.IndexChanged(field.index(), index.Opts().IsPK());
@@ -584,7 +607,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, Vari
 
 		bool needClearCache{false};
 		rollBackIndexData_.IndexChanged(field.index(), index.Opts().IsPK());
-		index.Upsert(ns_.krefs, values, itemId, needClearCache);
+		index.Upsert(ns_.krefs, kConcatIndexValues ? concatValues : values, itemId, needClearCache);
 		if (needClearCache && index.IsOrdered()) indexesCacheCleaner.Add(index.SortId());
 		if (!index.Opts().IsSparse()) {
 			pl.Set(field.index(), ns_.krefs);

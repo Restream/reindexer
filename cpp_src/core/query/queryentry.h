@@ -48,11 +48,11 @@ public:
 	[[nodiscard]] int IndexNo() const noexcept { return idxNo_; }
 	[[nodiscard]] bool IsFieldIndexed() const noexcept { return idxNo_ >= 0; }
 	[[nodiscard]] bool FieldsHaveBeenSet() const noexcept { return idxNo_ != IndexValueType::NotSet; }
-	[[nodiscard]] const FieldsSet &Fields() const &noexcept { return fieldsSet_; }
-	[[nodiscard]] const std::string &FieldName() const &noexcept { return fieldName_; }
+	[[nodiscard]] const FieldsSet &Fields() const & noexcept { return fieldsSet_; }
+	[[nodiscard]] const std::string &FieldName() const & noexcept { return fieldName_; }
 	[[nodiscard]] KeyValueType FieldType() const noexcept { return fieldType_; }
 	[[nodiscard]] KeyValueType SelectType() const noexcept { return selectType_; }
-	[[nodiscard]] const std::vector<KeyValueType> &CompositeFieldsTypes() const &noexcept { return compositeFieldsTypes_; }
+	[[nodiscard]] const std::vector<KeyValueType> &CompositeFieldsTypes() const & noexcept { return compositeFieldsTypes_; }
 	[[nodiscard]] bool HaveEmptyField() const noexcept;
 	void SetField(FieldsSet &&fields) &;
 	void SetIndexData(int idxNo, FieldsSet &&fields, KeyValueType fieldType, KeyValueType selectType,
@@ -72,9 +72,18 @@ private:
 	std::vector<KeyValueType> compositeFieldsTypes_;
 };
 
-class QueryEntry : private QueryField {
-	static constexpr unsigned kIgnoreEmptyValues = 1u;
+enum class VerifyQueryEntryFlags : unsigned { null = 0u, ignoreEmptyValues = 1u };
+[[nodiscard]] RX_ALWAYS_INLINE constexpr bool operator&(VerifyQueryEntryFlags lhs, VerifyQueryEntryFlags rhs) noexcept {
+	using UnderlyingType = std::underlying_type_t<VerifyQueryEntryFlags>;
+	return static_cast<UnderlyingType>(lhs) & static_cast<UnderlyingType>(rhs);
+}
 
+template <VerifyQueryEntryFlags = VerifyQueryEntryFlags::null>
+void VerifyQueryEntryValues(CondType, const VariantArray &);
+extern template void VerifyQueryEntryValues<VerifyQueryEntryFlags::null>(CondType, const VariantArray &);
+extern template void VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(CondType, const VariantArray &);
+
+class QueryEntry : private QueryField {
 public:
 	struct DistinctTag {};
 	struct IgnoreEmptyValues {};
@@ -98,9 +107,9 @@ public:
 		verifyIgnoringEmptyValues();
 	}
 	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
-	[[nodiscard]] const VariantArray &Values() const &noexcept { return values_; }
-	[[nodiscard]] VariantArray &&Values() &&noexcept { return std::move(values_); }
-	[[nodiscard]] auto UpdatableValues(IgnoreEmptyValues) &noexcept {
+	[[nodiscard]] const VariantArray &Values() const & noexcept { return values_; }
+	[[nodiscard]] VariantArray &&Values() && noexcept { return std::move(values_); }
+	[[nodiscard]] auto UpdatableValues(IgnoreEmptyValues) & noexcept {
 		return VerifyingUpdater<QueryEntry, VariantArray, &QueryEntry::values_, &QueryEntry::verifyIgnoringEmptyValues>{*this};
 	}
 	[[nodiscard]] bool Distinct() const noexcept { return distinct_; }
@@ -117,13 +126,13 @@ public:
 	using QueryField::SetIndexData;
 	using QueryField::HaveEmptyField;
 	void SetCondAndValues(CondType cond, VariantArray &&values) {
-		verify(cond, values);
+		VerifyQueryEntryValues(cond, values);
 		condition_ = cond;
 		values_ = std::move(values);
 	}
 
-	const QueryField &FieldData() const &noexcept { return static_cast<const QueryField &>(*this); }
-	QueryField &FieldData() &noexcept { return static_cast<QueryField &>(*this); }
+	const QueryField &FieldData() const & noexcept { return static_cast<const QueryField &>(*this); }
+	QueryField &FieldData() & noexcept { return static_cast<QueryField &>(*this); }
 	void ConvertValuesToFieldType() & {
 		for (Variant &v : values_) {
 			v.convert(SelectType());
@@ -137,7 +146,7 @@ public:
 			v.convert(SelectType(), &pt, &Fields());
 		}
 	}
-	void Verify() const { verify(condition_, values_); }
+	void Verify() const { VerifyQueryEntryValues(condition_, values_); }
 
 	[[nodiscard]] bool operator==(const QueryEntry &) const noexcept;
 	[[nodiscard]] bool operator!=(const QueryEntry &other) const noexcept { return !operator==(other); }
@@ -149,16 +158,12 @@ public:
 	auto FieldData() const && = delete;
 
 private:
-	template <unsigned flags = 0u>
-	static void verify(CondType, const VariantArray &);
-	void verifyIgnoringEmptyValues() const { verify<kIgnoreEmptyValues>(condition_, values_); }
+	void verifyIgnoringEmptyValues() const { VerifyQueryEntryValues<VerifyQueryEntryFlags::ignoreEmptyValues>(condition_, values_); }
 
 	VariantArray values_;
 	CondType condition_;
 	bool distinct_{false};
 };
-extern template void QueryEntry::verify<0u>(CondType, const VariantArray &);
-extern template void QueryEntry::verify<QueryEntry::kIgnoreEmptyValues>(CondType, const VariantArray &);
 
 class BetweenFieldsQueryEntry {
 public:
@@ -176,20 +181,20 @@ public:
 	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
 	[[nodiscard]] int LeftIdxNo() const noexcept { return leftField_.IndexNo(); }
 	[[nodiscard]] int RightIdxNo() const noexcept { return rightField_.IndexNo(); }
-	[[nodiscard]] const std::string &LeftFieldName() const &noexcept { return leftField_.FieldName(); }
-	[[nodiscard]] const std::string &RightFieldName() const &noexcept { return rightField_.FieldName(); }
-	[[nodiscard]] const FieldsSet &LeftFields() const &noexcept { return leftField_.Fields(); }
-	[[nodiscard]] const FieldsSet &RightFields() const &noexcept { return rightField_.Fields(); }
+	[[nodiscard]] const std::string &LeftFieldName() const & noexcept { return leftField_.FieldName(); }
+	[[nodiscard]] const std::string &RightFieldName() const & noexcept { return rightField_.FieldName(); }
+	[[nodiscard]] const FieldsSet &LeftFields() const & noexcept { return leftField_.Fields(); }
+	[[nodiscard]] const FieldsSet &RightFields() const & noexcept { return rightField_.Fields(); }
 	[[nodiscard]] KeyValueType LeftFieldType() const noexcept { return leftField_.FieldType(); }
 	[[nodiscard]] KeyValueType RightFieldType() const noexcept { return rightField_.FieldType(); }
-	[[nodiscard]] const std::vector<KeyValueType> &LeftCompositeFieldsTypes() const &noexcept { return leftField_.CompositeFieldsTypes(); }
-	[[nodiscard]] const std::vector<KeyValueType> &RightCompositeFieldsTypes() const &noexcept {
+	[[nodiscard]] const std::vector<KeyValueType> &LeftCompositeFieldsTypes() const & noexcept { return leftField_.CompositeFieldsTypes(); }
+	[[nodiscard]] const std::vector<KeyValueType> &RightCompositeFieldsTypes() const & noexcept {
 		return rightField_.CompositeFieldsTypes();
 	}
-	[[nodiscard]] const QueryField &LeftFieldData() const &noexcept { return leftField_; }
-	[[nodiscard]] QueryField &LeftFieldData() &noexcept { return leftField_; }
-	[[nodiscard]] const QueryField &RightFieldData() const &noexcept { return rightField_; }
-	[[nodiscard]] QueryField &RightFieldData() &noexcept { return rightField_; }
+	[[nodiscard]] const QueryField &LeftFieldData() const & noexcept { return leftField_; }
+	[[nodiscard]] QueryField &LeftFieldData() & noexcept { return leftField_; }
+	[[nodiscard]] const QueryField &RightFieldData() const & noexcept { return rightField_; }
+	[[nodiscard]] QueryField &RightFieldData() & noexcept { return rightField_; }
 	[[nodiscard]] bool FieldsHaveBeenSet() const noexcept { return leftField_.FieldsHaveBeenSet() && rightField_.FieldsHaveBeenSet(); }
 	[[nodiscard]] bool IsLeftFieldIndexed() const noexcept { return leftField_.IsFieldIndexed(); }
 	[[nodiscard]] bool IsRightFieldIndexed() const noexcept { return rightField_.IsFieldIndexed(); }
@@ -212,6 +217,8 @@ private:
 
 struct AlwaysFalse {};
 constexpr bool operator==(AlwaysFalse, AlwaysFalse) noexcept { return true; }
+struct AlwaysTrue {};
+constexpr bool operator==(AlwaysTrue, AlwaysTrue) noexcept { return true; }
 
 class JsonBuilder;
 
@@ -226,9 +233,60 @@ struct QueryEntriesBracket : public Bracket {
 	EqualPositions_t equalPositions;
 };
 
-class QueryEntries
-	: public ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse> {
-	using Base = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse>;
+class SubQueryEntry {
+public:
+	SubQueryEntry(CondType cond, size_t qIdx, VariantArray &&values) : condition_{cond}, queryIndex_{qIdx}, values_{std::move(values)} {
+		VerifyQueryEntryValues(condition_, values_);
+	}
+	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
+	[[nodiscard]] size_t QueryIndex() const noexcept { return queryIndex_; }
+	[[nodiscard]] const VariantArray &Values() const & noexcept { return values_; }
+	[[nodiscard]] bool operator==(const SubQueryEntry &other) const noexcept {
+		return condition_ == other.condition_ && queryIndex_ == other.queryIndex_;
+	}
+	[[nodiscard]] bool operator!=(const SubQueryEntry &other) const noexcept { return !operator==(other); }
+	[[nodiscard]] std::string Dump(const std::vector<Query> &subQueries) const;
+
+	auto Values() const && = delete;
+
+private:
+	CondType condition_;
+	// index of Query in Query::subQueries_
+	size_t queryIndex_;
+	VariantArray values_;
+};
+
+class SubQueryFieldEntry {
+public:
+	template <typename Str>
+	SubQueryFieldEntry(Str &&field, CondType cond, size_t qIdx) : field_{std::forward<Str>(field)}, condition_{cond}, queryIndex_{qIdx} {
+		if (cond == CondAny || cond == CondEmpty) {
+			throw Error{errQueryExec, "Condition %s with field and subquery", cond == CondAny ? "Any" : "Empty"};
+		}
+	}
+	[[nodiscard]] const std::string &FieldName() const & noexcept { return field_; }
+	[[nodiscard]] std::string &&FieldName() && noexcept { return std::move(field_); }
+	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
+	[[nodiscard]] size_t QueryIndex() const noexcept { return queryIndex_; }
+	[[nodiscard]] bool operator==(const SubQueryFieldEntry &other) const noexcept {
+		return field_ == other.field_ && condition_ == other.condition_ && queryIndex_ == other.queryIndex_;
+	}
+	[[nodiscard]] bool operator!=(const SubQueryFieldEntry &other) const noexcept { return !operator==(other); }
+	[[nodiscard]] std::string Dump(const std::vector<Query> &subQueries) const;
+
+	auto FieldName() const && = delete;
+
+private:
+	std::string field_;
+	CondType condition_;
+	// index of Query in Query::subQueries_
+	size_t queryIndex_;
+};
+
+class QueryEntries : public ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
+										   AlwaysTrue, SubQueryEntry, SubQueryFieldEntry> {
+	using Base = ExpressionTree<OpType, QueryEntriesBracket, 4, QueryEntry, JoinQueryEntry, BetweenFieldsQueryEntry, AlwaysFalse,
+								AlwaysTrue, SubQueryEntry, SubQueryFieldEntry>;
 	QueryEntries(Base &&b) : Base{std::move(b)} {}
 
 public:
@@ -236,16 +294,16 @@ public:
 	QueryEntries(QueryEntries &&) = default;
 	QueryEntries(const QueryEntries &) = default;
 	QueryEntries &operator=(QueryEntries &&) = default;
-	QueryEntries MakeLazyCopy() & { return {makeLazyCopy()}; }
 
 	void ToDsl(const Query &parentQuery, JsonBuilder &builder) const { return toDsl(cbegin(), cend(), parentQuery, builder); }
 	void WriteSQLWhere(const Query &parentQuery, WrSerializer &, bool stripArgs) const;
-	void Serialize(WrSerializer &ser) const { serialize(cbegin(), cend(), ser); }
+	void Serialize(WrSerializer &ser, const std::vector<Query> &subQueries) const { serialize(cbegin(), cend(), ser, subQueries); }
 	bool CheckIfSatisfyConditions(const ConstPayload &pl) const { return checkIfSatisfyConditions(cbegin(), cend(), pl); }
+	static bool CheckIfSatisfyCondition(const VariantArray &lValues, CondType, const VariantArray &rValues);
 	template <typename JS>
-	std::string Dump(const std::vector<JS> &joinedSelectors) const {
+	std::string Dump(const std::vector<JS> &joinedSelectors, const std::vector<Query> &subQueries) const {
 		WrSerializer ser;
-		dump(0, cbegin(), cend(), joinedSelectors, ser);
+		dump(0, cbegin(), cend(), joinedSelectors, subQueries, ser);
 		dumpEqualPositions(0, ser, equalPositions);
 		return std::string{ser.Slice()};
 	}
@@ -255,16 +313,17 @@ public:
 private:
 	static void toDsl(const_iterator it, const_iterator to, const Query &parentQuery, JsonBuilder &);
 	static void writeSQL(const Query &parentQuery, const_iterator from, const_iterator to, WrSerializer &, bool stripArgs);
-	static void serialize(const_iterator it, const_iterator to, WrSerializer &);
+	static void serialize(const_iterator it, const_iterator to, WrSerializer &, const std::vector<Query> &subQueries);
+	static void serialize(CondType, const VariantArray &values, WrSerializer &);
 	static bool checkIfSatisfyConditions(const_iterator begin, const_iterator end, const ConstPayload &);
 	static bool checkIfSatisfyCondition(const QueryEntry &, const ConstPayload &);
 	static bool checkIfSatisfyCondition(const BetweenFieldsQueryEntry &, const ConstPayload &);
-	static bool checkIfSatisfyCondition(const VariantArray &lValues, CondType, const VariantArray &rValues);
 
 protected:
 	static void dumpEqualPositions(size_t level, WrSerializer &, const EqualPositions_t &);
 	template <typename JS>
-	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS> &joinedSelectors, WrSerializer &);
+	static void dump(size_t level, const_iterator begin, const_iterator end, const std::vector<JS> &joinedSelectors,
+					 const std::vector<Query> &subQueries, WrSerializer &);
 };
 
 class UpdateEntry {
@@ -303,23 +362,23 @@ public:
 	[[nodiscard]] bool IsRightFieldIndexed() const noexcept { return rightField_.IsFieldIndexed(); }
 	[[nodiscard]] int LeftIdxNo() const noexcept { return leftField_.IndexNo(); }
 	[[nodiscard]] int RightIdxNo() const noexcept { return rightField_.IndexNo(); }
-	[[nodiscard]] const FieldsSet &LeftFields() const &noexcept { return leftField_.Fields(); }
-	[[nodiscard]] const FieldsSet &RightFields() const &noexcept { return rightField_.Fields(); }
+	[[nodiscard]] const FieldsSet &LeftFields() const & noexcept { return leftField_.Fields(); }
+	[[nodiscard]] const FieldsSet &RightFields() const & noexcept { return rightField_.Fields(); }
 	[[nodiscard]] KeyValueType LeftFieldType() const noexcept { return leftField_.FieldType(); }
 	[[nodiscard]] KeyValueType RightFieldType() const noexcept { return rightField_.FieldType(); }
-	[[nodiscard]] const std::vector<KeyValueType> &LeftCompositeFieldsTypes() const &noexcept { return leftField_.CompositeFieldsTypes(); }
-	[[nodiscard]] const std::vector<KeyValueType> &RightCompositeFieldsTypes() const &noexcept {
+	[[nodiscard]] const std::vector<KeyValueType> &LeftCompositeFieldsTypes() const & noexcept { return leftField_.CompositeFieldsTypes(); }
+	[[nodiscard]] const std::vector<KeyValueType> &RightCompositeFieldsTypes() const & noexcept {
 		return rightField_.CompositeFieldsTypes();
 	}
 	[[nodiscard]] OpType Operation() const noexcept { return op_; }
 	[[nodiscard]] CondType Condition() const noexcept { return condition_; }
-	[[nodiscard]] const std::string &LeftFieldName() const &noexcept { return leftField_.FieldName(); }
-	[[nodiscard]] const std::string &RightFieldName() const &noexcept { return rightField_.FieldName(); }
+	[[nodiscard]] const std::string &LeftFieldName() const & noexcept { return leftField_.FieldName(); }
+	[[nodiscard]] const std::string &RightFieldName() const & noexcept { return rightField_.FieldName(); }
 	[[nodiscard]] bool ReverseNamespacesOrder() const noexcept { return reverseNamespacesOrder_; }
-	[[nodiscard]] const QueryField &LeftFieldData() const &noexcept { return leftField_; }
-	[[nodiscard]] QueryField &LeftFieldData() &noexcept { return leftField_; }
-	[[nodiscard]] const QueryField &RightFieldData() const &noexcept { return rightField_; }
-	[[nodiscard]] QueryField &RightFieldData() &noexcept { return rightField_; }
+	[[nodiscard]] const QueryField &LeftFieldData() const & noexcept { return leftField_; }
+	[[nodiscard]] QueryField &LeftFieldData() & noexcept { return leftField_; }
+	[[nodiscard]] const QueryField &RightFieldData() const & noexcept { return rightField_; }
+	[[nodiscard]] QueryField &RightFieldData() & noexcept { return rightField_; }
 	void SetLeftIndexData(int idxNo, FieldsSet &&fields, KeyValueType fieldType, KeyValueType selectType,
 						  std::vector<KeyValueType> &&compositeFieldsTypes) & {
 		leftField_.SetIndexData(idxNo, std::move(fields), fieldType, selectType, std::move(compositeFieldsTypes));

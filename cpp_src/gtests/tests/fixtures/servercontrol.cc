@@ -12,6 +12,27 @@
 
 using namespace reindexer;
 
+std::string ReplicationConfigTest::GetJSON() const {
+	WrSerializer ser;
+	{
+		JsonBuilder builder(ser);
+
+		builder.Put("role", role_);
+		builder.Put("server_id", serverId_);
+		builder.Put("dsn", dsn_);
+		builder.Put("app_name", appName_);
+		builder.Put("force_sync_on_logic_error", forceSyncOnLogicError_);
+		builder.Put("force_sync_on_wrong_datahash", forceSyncOnWrongDataHash_);
+		{
+			auto jsn = builder.Array("namespaces");
+			for (auto& ns : namespaces_) {
+				jsn.Put(nullptr, ns);
+			}
+		}
+	}
+	return std::string(ser.Slice());
+}
+
 ServerControl::Interface::~Interface() {
 	Stop();
 	if (tr) {

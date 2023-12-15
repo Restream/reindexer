@@ -85,7 +85,7 @@ type CacheMemStat struct {
 type LsnT struct {
 	// Operation counter
 	Counter int64 `json:"counter"`
-	// Node identifyer
+	// Node identifier
 	ServerId int `json:"server_id"`
 }
 

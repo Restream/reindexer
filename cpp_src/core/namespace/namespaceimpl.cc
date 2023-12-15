@@ -358,8 +358,10 @@ public:
 				if (idx->HoldsStrings()) {
 					ns_.strHolder_->Add(std::move(idx));
 				}
+				// NOLINTBEGIN(bugprone-empty-catch)
 			} catch (...) {
 			}
+			// NOLINTEND(bugprone-empty-catch)
 		}
 	}
 	void RollBack() noexcept {
@@ -657,6 +659,7 @@ void NamespaceImpl::SetSchema(std::string_view schema, const RdxContext& ctx) {
 		}
 	}
 
+	const auto initTmVer = tagsMatcher_.version();
 	schema_ = std::make_shared<Schema>(schema);
 	auto fields = schema_->GetPaths();
 	for (auto& field : fields) {
@@ -667,6 +670,19 @@ void NamespaceImpl::SetSchema(std::string_view schema, const RdxContext& ctx) {
 
 	saveSchemaToStorage();
 	addToWAL(schema, WalSetSchema, ctx);
+	if (initTmVer != tagsMatcher_.version()) {
+		const lsn_t lsn(wal_.Add(WALRecord(WalEmpty), lsn_t()), serverId_);
+		if (!ctx.fromReplication_) repl_.lastSelfLSN = lsn;
+		if (!repl_.temporary) {
+			WrSerializer wser;
+			wser.PutVarint(tagsMatcher_.version());
+			wser.PutVarint(tagsMatcher_.stateToken());
+			tagsMatcher_.serialize(wser);
+			// This record is matter for the online replication only
+			observers_->OnWALUpdate(LSNPair(lsn, ctx.fromReplication_ ? ctx.LSNs_.originLSN_ : lsn), name_,
+									WALRecord(WalTagsMatcher, wser.Slice()));
+		}
+	}
 }
 
 std::string NamespaceImpl::GetSchema(int format, const RdxContext& ctx) {
@@ -789,7 +805,7 @@ void NamespaceImpl::verifyCompositeIndex(const IndexDef& indexDef) const {
 	}
 	for (const auto& jp : indexDef.jsonPaths_) {
 		int idx;
-		if (!getIndexByName(jp, idx)) {
+		if (!tryGetIndexByName(jp, idx)) {
 			if (!IsFullText(indexDef.Type())) {
 				throw Error(errParams,
 							"Composite indexes over non-indexed field ('%s') are not supported yet (except for full-text indexes). Create "
@@ -924,14 +940,18 @@ public:
 		if (insertedIdxName_) {
 			try {
 				ns_.indexesNames_.erase(*insertedIdxName_);
+				// NOLINTBEGIN(bugprone-empty-catch)
 			} catch (...) {
 			}
+			// NOLINTEND(bugprone-empty-catch)
 		}
 		if (pkIndexNameInserted_) {
 			try {
 				ns_.indexesNames_.erase(kPKIndexName);
+				// NOLINTBEGIN(bugprone-empty-catch)
 			} catch (...) {
 			}
+			// NOLINTEND(bugprone-empty-catch)
 		}
 		for (auto& n : ns_.indexesNames_) {
 			if (n.second > insertedIdxNo_) {
@@ -940,8 +960,10 @@ public:
 		}
 		try {
 			ns_.indexes_.erase(insertedIndex_);
+			// NOLINTBEGIN(bugprone-empty-catch)
 		} catch (...) {
 		}
+		// NOLINTEND(bugprone-empty-catch)
 		Disable();
 	}
 	void PkIndexNameInserted() noexcept { pkIndexNameInserted_ = true; }
@@ -1219,7 +1241,7 @@ int NamespaceImpl::getIndexByName(std::string_view index) const {
 
 int NamespaceImpl::getIndexByNameOrJsonPath(std::string_view index) const {
 	int idx;
-	if (getIndexByName(index, idx)) {
+	if (tryGetIndexByName(index, idx)) {
 		return idx;
 	}
 	idx = payloadType_.FieldByJsonPath(index);
@@ -1232,7 +1254,7 @@ int NamespaceImpl::getIndexByNameOrJsonPath(std::string_view index) const {
 
 int NamespaceImpl::getScalarIndexByName(std::string_view index) const {
 	int idx;
-	if (getIndexByName(index, idx)) {
+	if (tryGetIndexByName(index, idx)) {
 		if (idx < indexes_.firstCompositePos()) {
 			return idx;
 		}
@@ -1240,7 +1262,7 @@ int NamespaceImpl::getScalarIndexByName(std::string_view index) const {
 	throw Error(errParams, "Index '%s' not found in '%s'", index, name_);
 }
 
-bool NamespaceImpl::getIndexByName(std::string_view name, int& index) const {
+bool NamespaceImpl::tryGetIndexByName(std::string_view name, int& index) const {
 	auto it = indexesNames_.find(name);
 	if (it == indexesNames_.end()) return false;
 	index = it->second;
@@ -1248,7 +1270,7 @@ bool NamespaceImpl::getIndexByName(std::string_view name, int& index) const {
 }
 
 bool NamespaceImpl::getIndexByNameOrJsonPath(std::string_view name, int& index) const {
-	if (getIndexByName(name, index)) {
+	if (tryGetIndexByName(name, index)) {
 		return true;
 	}
 	const auto idx = payloadType_.FieldByJsonPath(name);
@@ -1261,7 +1283,7 @@ bool NamespaceImpl::getIndexByNameOrJsonPath(std::string_view name, int& index) 
 
 bool NamespaceImpl::getScalarIndexByName(std::string_view name, int& index) const {
 	int idx;
-	if (getIndexByName(name, idx)) {
+	if (tryGetIndexByName(name, idx)) {
 		if (idx < indexes_.firstCompositePos()) {
 			index = idx;
 			return true;
@@ -1346,8 +1368,7 @@ void NamespaceImpl::doUpdate(const Query& query, QueryResults& result, const NsC
 
 	if (statementReplication) {
 		WrSerializer ser;
-		const_cast<Query&>(query).type_ = QueryUpdate;
-		WALRecord wrec(WalUpdateQuery, query.GetSQL(ser).Slice(), ctx.inTransaction);
+		WALRecord wrec(WalUpdateQuery, query.GetSQL(ser, QueryUpdate).Slice(), ctx.inTransaction);
 		lsn_t lsn(wal_.Add(wrec), serverId_);
 		if (!ctx.rdxContext.fromReplication_) repl_.lastSelfLSN = lsn;
 		for (ItemRef& item : result.Items()) {
@@ -1358,7 +1379,7 @@ void NamespaceImpl::doUpdate(const Query& query, QueryResults& result, const NsC
 		if (!ctx.rdxContext.fromReplication_) setReplLSNs(LSNPair(lsn_t(), lsn));
 	}
 
-	if (query.debugLevel >= LogInfo) {
+	if (query.GetDebugLevel() >= LogInfo) {
 		logPrintf(LogInfo, "Updated %d items in %d µs", result.Count(),
 				  duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count());
 	}
@@ -1499,9 +1520,9 @@ void NamespaceImpl::doDelete(IdType id) {
 	markUpdated(true);
 }
 
-void NamespaceImpl::doDelete(const Query& q, QueryResults& result, const NsContext& ctx) {
+void NamespaceImpl::doDelete(const Query& query, QueryResults& result, const NsContext& ctx) {
 	NsSelecter selecter(this);
-	SelectCtx selCtx(q, nullptr);
+	SelectCtx selCtx(query, nullptr);
 	selCtx.contextCollectingMode = true;
 	selCtx.requiresCrashTracking = true;
 	selCtx.inTransaction = ctx.inTransaction;
@@ -1510,7 +1531,7 @@ void NamespaceImpl::doDelete(const Query& q, QueryResults& result, const NsConte
 	selCtx.functions = &func;
 	selecter(result, selCtx, ctx.rdxContext);
 
-	ActiveQueryScope queryScope(q, QueryDelete, optimizationState_, strHolder_.get());
+	ActiveQueryScope queryScope(query, QueryDelete, optimizationState_, strHolder_.get());
 	assertrx(result.IsNamespaceAdded(this));
 	const auto tmStart = high_resolution_clock::now();
 
@@ -1522,10 +1543,9 @@ void NamespaceImpl::doDelete(const Query& q, QueryResults& result, const NsConte
 		doDelete(r.Id());
 	}
 
-	if (!q.HasLimit() && !q.HasOffset() && result.Count() >= kWALStatementItemsThreshold) {
+	if (!query.HasLimit() && !query.HasOffset() && result.Count() >= kWALStatementItemsThreshold) {
 		WrSerializer ser;
-		const_cast<Query&>(q).type_ = QueryDelete;
-		WALRecord wrec(WalUpdateQuery, q.GetSQL(ser).Slice(), ctx.inTransaction);
+		WALRecord wrec(WalUpdateQuery, query.GetSQL(ser, QueryDelete).Slice(), ctx.inTransaction);
 		processWalRecord(wrec, ctx.rdxContext);
 	} else {
 		WrSerializer cjson;
@@ -1537,7 +1557,7 @@ void NamespaceImpl::doDelete(const Query& q, QueryResults& result, const NsConte
 			processWalRecord(wrec, ctx.rdxContext);
 		}
 	}
-	if (q.debugLevel >= LogInfo) {
+	if (query.GetDebugLevel() >= LogInfo) {
 		logPrintf(LogInfo, "Deleted %d items in %d µs", result.Count(),
 				  duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count());
 	}
@@ -1698,20 +1718,41 @@ void NamespaceImpl::CommitTransaction(Transaction& tx, QueryResults& result, NsC
 		storageAdvice = storage_.AdviceBatching();
 	}
 
-	for (auto& step : tx.GetSteps()) {
-		if (step.query_) {
-			QueryResults qr;
-			qr.AddNamespace(this, true);
-			if (step.query_->type_ == QueryDelete) {
-				doDelete(*step.query_, qr, ctx);
-			} else {
-				doUpdate(*step.query_, qr, ctx);
+	for (auto&& step : tx.GetSteps()) {
+		switch (step.type_) {
+			case TransactionStep::Type::ModifyItem: {
+				const auto mode = std::get<TransactionItemStep>(step.data_).mode;
+				Item item = tx.GetItem(std::move(step));
+				modifyItem(item, mode, ctx);
+				result.AddItem(item);
+				break;
 			}
-		} else {
-			const auto modifyMode = step.modifyMode_;
-			Item item = tx.GetItem(std::move(step));
-			modifyItem(item, modifyMode, ctx);
-			result.AddItem(item);
+			case TransactionStep::Type::Query: {
+				QueryResults qr;
+				qr.AddNamespace(this, true);
+				auto& data = std::get<TransactionQueryStep>(step.data_);
+				if (data.query->type_ == QueryDelete) {
+					doDelete(*data.query, qr, ctx);
+				} else {
+					doUpdate(*data.query, qr, ctx);
+				}
+				break;
+			}
+			case TransactionStep::Type::Nop:
+				break;
+			case TransactionStep::Type::PutMeta: {
+				auto& data = std::get<TransactionMetaStep>(step.data_);
+				putMeta(data.key, data.value, ctx.rdxContext);
+				break;
+			}
+			case TransactionStep::Type::SetTM: {
+				auto& data = std::get<TransactionTmStep>(step.data_);
+				auto tmCopy = data.tm;
+				setTagsMatcher(std::move(tmCopy), ctx);
+				break;
+			}
+			default:
+				std::abort();
 		}
 	}
 
@@ -1810,7 +1851,7 @@ void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate) {
 			} else {
 				pl.Get(field, krefs, index.Opts().IsArray());
 			}
-			if (krefs == skrefs) continue;
+			if ((krefs.ArrayType().Is<KeyValueType::Null>() && skrefs.ArrayType().Is<KeyValueType::Null>()) || krefs == skrefs) continue;
 			bool needClearCache{false};
 			index.Delete(krefs, id, *strHolder_, needClearCache);
 			if (needClearCache && index.IsOrdered()) indexesCacheCleaner.Add(index.SortId());
@@ -2567,6 +2608,11 @@ std::shared_ptr<const Schema> NamespaceImpl::GetSchemaPtr(const RdxContext& ctx)
 	return schema_;
 }
 
+void NamespaceImpl::SetTagsMatcher(TagsMatcher&& tm, const RdxContext& ctx) {
+	auto wlck = wLock(ctx);
+	setTagsMatcher(std::move(tm), ctx);
+}
+
 void NamespaceImpl::LoadFromStorage(unsigned threadsCount, const RdxContext& ctx) {
 	auto wlck = wLock(ctx);
 	FlagGuardT nsLoadingGuard(nsIsLoading_);
@@ -2624,7 +2670,8 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext* ctx) {
 			index->GetTTLValue();
 		QueryResults qr;
 		qr.AddNamespace(this, true);
-		doDelete(Query(name_).Where(index->Name(), CondLt, expirationthreshold), qr, rdxCtx);
+		auto q = Query(name_).Where(index->Name(), CondLt, expirationthreshold);
+		doDelete(q, qr, rdxCtx);
 	}
 	tryForceFlush(std::move(wlck));
 }
@@ -2645,6 +2692,31 @@ void NamespaceImpl::removeExpiredStrings(RdxActivityContext* ctx) {
 		strHoldersWaitingToBeDeleted_.push_back(std::move(strHolder_));
 		strHolder_ = makeStringsHolder();
 	}
+}
+
+void NamespaceImpl::setTagsMatcher(TagsMatcher&& tm, const NsContext& ctx) {
+	// NOTE: In v4 tm tokens here are always the same, but in v3 those tokens are not synchronized. Probably it should workd anyway
+	//	if (tm.stateToken() != tagsMatcher_.stateToken()) {
+	//		throw Error(errParams, "Tagsmatcher have different statetokens: %08X vs %08X", tagsMatcher_.stateToken(), tm.stateToken());
+	//	}
+	if (!ctx.rdxContext.fromReplication_) {
+		throw Error(errParams, "Tagsmatcher can be set from replication only");
+	}
+	tagsMatcher_ = tm;
+	tagsMatcher_.UpdatePayloadType(payloadType_, false);
+	tagsMatcher_.setUpdated();
+
+	const lsn_t lsn(wal_.Add(WALRecord(WalEmpty, 0, ctx.inTransaction)), serverId_);
+	if (!repl_.temporary) {
+		WrSerializer ser;
+		ser.PutVarint(tagsMatcher_.version());
+		ser.PutVarint(tagsMatcher_.stateToken());
+		tagsMatcher_.serialize(ser);
+		observers_->OnWALUpdate(LSNPair(lsn, ctx.rdxContext.LSNs_.originLSN_), name_,
+								WALRecord(WalTagsMatcher, ser.Slice(), ctx.inTransaction));
+	}
+
+	saveTagsMatcherToStorage(true);
 }
 
 void NamespaceImpl::BackgroundRoutine(RdxActivityContext* ctx) {

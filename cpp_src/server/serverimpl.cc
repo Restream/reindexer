@@ -202,6 +202,10 @@ void ServerImpl::ReopenLogFiles() {
 #endif
 }
 
+std::string ServerImpl::GetCoreLogPath() const {
+	return GetDirPath(config_.CoreLog); 
+}
+
 int ServerImpl::run() {
 	loggerConfigure();
 

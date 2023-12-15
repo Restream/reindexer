@@ -199,18 +199,20 @@ public:
 			size_t actualSize = 0;
 			ids.resize(idsCount);
 			auto rit = ids.begin();
-			for (auto it = begin(); it != end(); ++it) {
+			for (auto it = begin(), endIt = end(); it != endIt; ++it) {
 				if (it->isRange_) {
 					throw Error(errLogic, "Unable to merge 'range' idset ('generic sort mode')");
 				}
 				if (it->useBtree_) {
-					actualSize += it->set_->size();
+					const auto sz = it->set_->size();
+					actualSize += sz;
 					std::copy(it->set_->begin(), it->set_->end(), rit);
-					rit += it->set_->size();
+					rit += sz;
 				} else {
-					actualSize += it->ids_.size();
+					const auto sz = it->ids_.size();
+					actualSize += sz;
 					std::copy(it->ids_.begin(), it->ids_.end(), rit);
-					rit += it->ids_.size();
+					rit += sz;
 				}
 			}
 			assertrx(idsCount == actualSize);
@@ -218,7 +220,7 @@ public:
 		} else {
 			mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 			mergedIds->reserve(idsCount);
-			for (auto it = begin(); it != end(); ++it) {
+			for (auto it = begin(), endIt = end(); it != endIt; ++it) {
 				if (it->isRange_) {
 					throw Error(errLogic, "Unable to merge 'range' idset ('merge sort mode')");
 				}
@@ -231,7 +233,7 @@ public:
 			for (;;) {
 				const int min = mergedIds->size() ? mergedIds->back() : INT_MIN;
 				int curMin = INT_MAX;
-				for (auto it = begin(); it != end(); it++) {
+				for (auto it = begin(), endIt = end(); it != endIt; ++it) {
 					if (it->useBtree_) {
 						const auto end = it->set_->end();
 						for (; it->itset_ != end && *it->itset_ <= min; ++it->itset_) {
@@ -250,8 +252,8 @@ public:
 			mergedIds->shrink_to_fit();
 		}
 		clear();
-		emplace_back(SingleSelectKeyResult(mergedIds));
 		deferedExplicitSort = false;
+		emplace_back(mergedIds);
 		return mergedIds;
 	}
 };

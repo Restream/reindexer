@@ -5,13 +5,11 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
-#include "core/itemimpl.h"
 #include "estl/span.h"
 #include "ns_api.h"
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "vendor/gason/gason.h"
-#include "vendor/msgpack/msgpack.h"
 
 TEST_F(NsApi, IndexDrop) {
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
@@ -494,6 +492,44 @@ TEST_F(NsApi, TestUpdateTwoFields) {
 	}
 }
 
+TEST_F(NsApi, TestUpdateNewFieldCheckTmVersion) {
+	DefineDefaultNamespace();
+	FillDefaultNamespace();
+
+	auto check = [this](const Query &query, int tmVersion) {
+		QueryResults qrUpdate;
+		auto err = rt.reindexer->Update(query, qrUpdate);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qrUpdate.Count(), 1);
+		ASSERT_EQ(qrUpdate.getTagsMatcher(0).version(), tmVersion);
+	};
+
+	QueryResults qr;
+	Error err = rt.reindexer->Select(Query(default_namespace).Where(idIdxName, CondEq, 1), qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+	auto tmVersion = qr.getTagsMatcher(0).version();
+	Query updateQuery = Query(default_namespace).Where(idIdxName, CondEq, 1).Set("some_new_field", "some_value");
+
+	// Make sure the version increases by 1 when one new tag with non-object content is added
+	check(updateQuery, ++tmVersion);
+
+	// Make sure the version not change when the same update query applied
+	check(updateQuery, tmVersion);
+
+	updateQuery.SetObject("new_obj_field", R"({"id":111, "name":"successfully updated!"})");
+
+	// Make sure that tm version updates correctly when new tags are added:
+	// +1 by tag very_nested,
+	// +1 by all new tags processed in ItemModifier::modifyCJSON for SetObject-method
+	// +1 by merge of two corresponded tagsmatchers
+	check(updateQuery, tmVersion += 3);
+
+	// Make sure that if no new tags were added to the tagsmatcher during the update,
+	// then the version of the tagsmatcher will not change
+	check(updateQuery, tmVersion);
+}
+
 static void updateArrayField(const std::shared_ptr<reindexer::Reindexer> &reindexer, const std::string &ns,
 							 const std::string &updateFieldPath, const VariantArray &values) {
 	QueryResults qrUpdate;
@@ -863,8 +899,7 @@ TEST_F(NsApi, SetArrayFieldWithSql) {
 	AddUnindexedData();
 
 	// 3. Set all items of array to 777
-	Query updateQuery;
-	updateQuery.FromSQL("update test_namespace set nested.nested_array[1].prices[*] = 777");
+	Query updateQuery = Query::FromSQL("update test_namespace set nested.nested_array[1].prices[*] = 777");
 	QueryResults qrUpdate;
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -889,8 +924,7 @@ TEST_F(NsApi, DropArrayFieldWithSql) {
 	AddUnindexedData();
 
 	// 3. Drop all items of array nested.nested_array[1].prices
-	Query updateQuery;
-	updateQuery.FromSQL("update test_namespace drop nested.nested_array[1].prices[*]");
+	Query updateQuery = Query::FromSQL("update test_namespace drop nested.nested_array[1].prices[*]");
 	QueryResults qrUpdate;
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -913,8 +947,7 @@ TEST_F(NsApi, ExtendArrayFromTopWithSql) {
 	AddUnindexedData();
 
 	// Append the following items: [88, 88, 88] to the top of the array array_field
-	Query updateQuery;
-	updateQuery.FromSQL("update test_namespace set array_field = [88,88,88] || array_field");
+	Query updateQuery = Query::FromSQL("update test_namespace set array_field = [88,88,88] || array_field");
 	QueryResults qrUpdate;
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -940,8 +973,8 @@ TEST_F(NsApi, AppendToArrayWithSql) {
 	AddUnindexedData();
 
 	// 3. Extend array_field with expression substantially
-	Query updateQuery;
-	updateQuery.FromSQL("update test_namespace set array_field = array_field || objects.more[1].array[4] || [22,22,22] || [11]");
+	Query updateQuery =
+		Query::FromSQL("update test_namespace set array_field = array_field || objects.more[1].array[4] || [22,22,22] || [11]");
 	QueryResults qrUpdate;
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -1122,8 +1155,8 @@ TEST_F(NsApi, UpdateObjectsArray) {
 	AddUnindexedData();
 
 	// 3. Update object array and change one of it's items
-	Query updateQuery;
-	updateQuery.FromSQL(R"(update test_namespace set nested.nested_array[1] = {"id":1,"name":"modified", "prices":[4,5,6]})");
+	Query updateQuery =
+		Query::FromSQL(R"(update test_namespace set nested.nested_array[1] = {"id":1,"name":"modified", "prices":[4,5,6]})");
 	QueryResults qrUpdate;
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -1143,8 +1176,7 @@ TEST_F(NsApi, UpdateObjectsArray2) {
 	AddUnindexedData();
 
 	// 3. Set all items of the object array to a new value
-	Query updateQuery;
-	updateQuery.FromSQL(R"(update test_namespace set nested.nested_array[*] = {"ein":1,"zwei":2, "drei":3})");
+	Query updateQuery = Query::FromSQL(R"(update test_namespace set nested.nested_array[*] = {"ein":1,"zwei":2, "drei":3})");
 	QueryResults qrUpdate;
 	Error err = rt.reindexer->Update(updateQuery, qrUpdate);
 	ASSERT_TRUE(err.ok()) << err.what();
@@ -1439,6 +1471,112 @@ TEST_F(NsApi, UpdateObjectsArray4) {
 				indexTypeMsg, description);
 		}
 	}
+}
+
+TEST_F(NsApi, UpdateArrayIndexFieldWithSeveralJsonPaths) {
+	struct Values {
+		std::vector<std::string> valsList, newValsList;
+	};
+	const int fieldsCnt = 5;
+	const int valsPerFieldCnt = 4;
+	std::vector<Values> fieldsValues(fieldsCnt);
+	for (int i = 0; i < fieldsCnt; ++i) {
+		for (int j = 0; j < valsPerFieldCnt; ++j) {
+			fieldsValues[i].valsList.emplace_back(fmt::sprintf("data%d%d", i, j));
+			fieldsValues[i].newValsList.emplace_back(fmt::sprintf("data%d%d", i, j + i));
+		}
+	}
+
+	enum class OpT { Insert, Update };
+
+	auto makeFieldsList = [&fieldsValues](const reindexer::fast_hash_set<int> &indexes, OpT type) {
+		auto quote = type == OpT::Insert ? '"' : '\'';
+		std::vector<std::string> Values::*list = type == OpT::Insert ? &Values::valsList : &Values::newValsList;
+		const auto fieldsListTmplt = type == OpT::Insert ? R"("%sfield%d": [%s])" : R"(%sfield%d = [%s])";
+		std::string fieldsList;
+		for (int idx : indexes) {
+			std::string fieldList;
+			for (const auto &data : fieldsValues[idx].*list) {
+				fieldList += std::string(fieldList.empty() ? "" : ", ") + quote + data + quote;
+			}
+			fieldsList += fmt::sprintf(fieldsListTmplt, fieldsList.empty() ? "" : ", ", idx, fieldList);
+		}
+		return fieldsList;
+	};
+
+	auto makeItem = [&makeFieldsList](int id, const reindexer::fast_hash_set<int> &indexes) {
+		auto list = makeFieldsList(indexes, OpT::Insert);
+		return fmt::sprintf(R"({"id": %d%s})", id, (list.empty() ? "" : ", ") + list);
+	};
+
+	auto makeUpdate = [this, &makeFieldsList](int id, const reindexer::fast_hash_set<int> &indexes) {
+		return fmt::sprintf("UPDATE %s SET %s WHERE id = %d", default_namespace, makeFieldsList(indexes, OpT::Update), id);
+	};
+
+	struct TestCase {
+		reindexer::fast_hash_set<int> insertIdxs, updateIdxs;
+		auto expected() const {
+			auto res = insertIdxs;
+			res.insert(updateIdxs.begin(), updateIdxs.end());
+			return res;
+		}
+	};
+
+	std::vector<TestCase> testCases{
+		{{}, {0}},
+		{{}, {2}},
+		{{}, {0, 1, 2}},
+		{{2, 3, 4}, {0}},
+		{{3}, {0, 2, 4}},
+		{{0, 3, 4}, {2, 1}},
+		{{0, 1, 2, 3}, {4}},
+		{{0, 1, 2}, {3, 4}},
+		{{0, 2, 3}, {1, 4}},
+		{{4}, {0, 1, 2, 3}},
+		{{3, 4}, {0, 2, 1}},
+		{{}, {0, 1, 2, 3, 4}},
+		{{0, 1, 2, 3, 4}, {0}},
+		{{0, 3, 4}, {0, 3, 4}},
+		{{0, 1, 2}, {2, 3, 1}},
+		{{0, 3, 4}, {2, 3, 4}},
+		{{0, 1, 3}, {0, 1, 2, 3, 4}},
+		{{0, 1, 2, 3, 4}, {0, 1, 2, 3, 4}},
+	};
+
+	Error err = rt.reindexer->OpenNamespace(default_namespace);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	err = rt.reindexer->AddIndex(default_namespace, {"id", "hash", "int", IndexOpts().PK()});
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = rt.reindexer->AddIndex(default_namespace, {"array_index", reindexer::JsonPaths{"field0", "field1", "field2", "field3", "field4"},
+													 "hash", "string", IndexOpts().Array()});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	for (size_t i = 0; i < testCases.size(); ++i) {
+		AddItemFromJSON(default_namespace, makeItem(i, testCases[i].insertIdxs));
+		{
+			QueryResults qr;
+			err = rt.reindexer->Select(makeUpdate(i, testCases[i].updateIdxs), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), 1);
+
+			auto item = qr.begin().GetItem(false);
+			for (auto idx : testCases[i].expected()) {
+				int varArrCnt = 0;
+				for (auto &&var : VariantArray(item[fmt::sprintf("field%d", idx)])) {
+					const auto &data = testCases[i].updateIdxs.count(idx) ? fieldsValues[idx].newValsList : fieldsValues[idx].valsList;
+					ASSERT_EQ(var.As<std::string>(), data[varArrCnt++]);
+				}
+			}
+		}
+	}
+
+	// Check that prohibited updating an index array field with several json paths by index name
+	QueryResults qr;
+	err = rt.reindexer->Select(fmt::sprintf(R"(UPDATE %s SET array_index = ['data0', 'data1', 'data2'] WHERE id = 0)", default_namespace),
+							   qr);
+	ASSERT_FALSE(err.ok());
+	ASSERT_EQ(err.what(), "Ambiguity when updating field with several json paths by index name: 'array_index'");
 }
 
 TEST_F(NsApi, UpdateWithObjectAndFieldsDuplication) {
@@ -1849,7 +1987,7 @@ TEST_F(NsApi, TestUpdatePkFieldNoConditions) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	QueryResults qr;
-	err = rt.reindexer->Select("update test_namespace set id = id + "+std::to_string(qrCount.totalCount+100), qr);
+	err = rt.reindexer->Select("update test_namespace set id = id + " + std::to_string(qrCount.totalCount + 100), qr);
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_GT(qr.Count(), 0);
 
@@ -1857,7 +1995,7 @@ TEST_F(NsApi, TestUpdatePkFieldNoConditions) {
 	for (auto &it : qr) {
 		Item item = it.GetItem(false);
 		Variant intFieldVal = item[idIdxName];
-		ASSERT_EQ(static_cast<int>(intFieldVal) , i+qrCount.totalCount+100);
+		ASSERT_EQ(static_cast<int>(intFieldVal), i + qrCount.totalCount + 100);
 		i++;
 	}
 }
@@ -2214,20 +2352,20 @@ static void checkQueryDsl(const Query &src) {
 		}
 	}
 	if (objectValues) {
-		EXPECT_EQ(src.entries, dst.entries);
+		EXPECT_EQ(src.Entries(), dst.Entries());
 		EXPECT_EQ(src.aggregations_, dst.aggregations_);
 		EXPECT_EQ(src.NsName(), dst.NsName());
 		EXPECT_EQ(src.sortingEntries_, dst.sortingEntries_);
 		EXPECT_EQ(src.CalcTotal(), dst.CalcTotal());
 		EXPECT_EQ(src.Offset(), dst.Offset());
 		EXPECT_EQ(src.Limit(), dst.Limit());
-		EXPECT_EQ(src.debugLevel, dst.debugLevel);
-		EXPECT_EQ(src.strictMode, dst.strictMode);
+		EXPECT_EQ(src.GetDebugLevel(), dst.GetDebugLevel());
+		EXPECT_EQ(src.GetStrictMode(), dst.GetStrictMode());
 		EXPECT_EQ(src.forcedSortOrder_, dst.forcedSortOrder_);
-		EXPECT_EQ(src.selectFilter_, dst.selectFilter_);
+		EXPECT_EQ(src.SelectFilters(), dst.SelectFilters());
 		EXPECT_EQ(src.selectFunctions_, dst.selectFunctions_);
-		EXPECT_EQ(src.joinQueries_, dst.joinQueries_);
-		EXPECT_EQ(src.mergeQueries_, dst.mergeQueries_);
+		EXPECT_EQ(src.GetJoinQueries(), dst.GetJoinQueries());
+		EXPECT_EQ(src.GetMergeQueries(), dst.GetMergeQueries());
 	} else {
 		EXPECT_EQ(dst, src);
 	}
@@ -2237,45 +2375,38 @@ TEST_F(NsApi, TestModifyQueriesSqlEncoder) {
 	const std::string sqlUpdate =
 		"UPDATE ns SET field1 = 'mrf',field2 = field2+1,field3 = ['one','two','three','four','five'] WHERE a = true AND location = "
 		"'msk'";
-	Query q1;
-	q1.FromSQL(sqlUpdate);
+	Query q1 = Query::FromSQL(sqlUpdate);
 	EXPECT_EQ(q1.GetSQL(), sqlUpdate);
 	checkQueryDsl(q1);
 
 	const std::string sqlDrop = "UPDATE ns DROP field1,field2 WHERE a = true AND location = 'msk'";
-	Query q2;
-	q2.FromSQL(sqlDrop);
+	Query q2 = Query::FromSQL(sqlDrop);
 	EXPECT_EQ(q2.GetSQL(), sqlDrop);
 	checkQueryDsl(q2);
 
 	const std::string sqlUpdateWithObject =
 		R"(UPDATE ns SET field = {"id":0,"name":"apple","price":1000,"nested":{"n_id":1,"desription":"good","array":[{"id":1,"description":"first"},{"id":2,"description":"second"},{"id":3,"description":"third"}]},"bonus":7} WHERE a = true AND location = 'msk')";
-	Query q3;
-	q3.FromSQL(sqlUpdateWithObject);
+	Query q3 = Query::FromSQL(sqlUpdateWithObject);
 	EXPECT_EQ(q3.GetSQL(), sqlUpdateWithObject);
 	checkQueryDsl(q3);
 
 	const std::string sqlTruncate = R"(TRUNCATE ns)";
-	Query q4;
-	q4.FromSQL(sqlTruncate);
+	Query q4 = Query::FromSQL(sqlTruncate);
 	EXPECT_EQ(q4.GetSQL(), sqlTruncate);
 	checkQueryDsl(q4);
 
 	const std::string sqlArrayAppend = R"(UPDATE ns SET array = array||[1,2,3]||array2||objects[0].nested.prices[0])";
-	Query q5;
-	q5.FromSQL(sqlArrayAppend);
+	Query q5 = Query::FromSQL(sqlArrayAppend);
 	EXPECT_EQ(q5.GetSQL(), sqlArrayAppend);
 	checkQueryDsl(q5);
 
 	const std::string sqlIndexUpdate = R"(UPDATE ns SET objects[0].nested.prices[*] = 'NE DOROGO!')";
-	Query q6;
-	q6.FromSQL(sqlIndexUpdate);
+	Query q6 = Query::FromSQL(sqlIndexUpdate);
 	EXPECT_EQ(q6.GetSQL(), sqlIndexUpdate);
 	checkQueryDsl(q6);
 
 	const std::string sqlSpeccharsUpdate = R"(UPDATE ns SET f1 = 'HELLO\n\r\b\f',f2 = '\t',f3 = '\"')";
-	Query q7;
-	q7.FromSQL(sqlSpeccharsUpdate);
+	Query q7 = Query::FromSQL(sqlSpeccharsUpdate);
 	EXPECT_EQ(q7.GetSQL(), sqlSpeccharsUpdate);
 	checkQueryDsl(q7);
 }

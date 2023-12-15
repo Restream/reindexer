@@ -7,6 +7,7 @@
 #include "estl/chunk.h"
 #include "estl/one_of.h"
 #include "estl/span.h"
+#include "tools/stringstools.h"
 #include "tools/varint.h"
 
 char *i32toa(int32_t value, char *buffer);
@@ -228,7 +229,6 @@ public:
 			});
 	}
 
-public:
 	// Put slice with 4 bytes len header
 	void PutSlice(std::string_view slice) {
 		PutUInt32(slice.size());
@@ -237,7 +237,9 @@ public:
 		len_ += slice.size();
 	}
 
-	struct SliceHelper {
+private:
+	class [[nodiscard]] SliceHelper {
+	public:
 		SliceHelper(WrSerializer *ser, size_t pos) noexcept : ser_(ser), pos_(pos) {}
 		SliceHelper(const SliceHelper &) = delete;
 		SliceHelper operator=(const SliceHelper &) = delete;
@@ -258,11 +260,14 @@ public:
 			ser_ = nullptr;
 		}
 
+	private:
 		WrSerializer *ser_;
 		size_t pos_;
 	};
 
-	struct VStringHelper {
+public:
+	class [[nodiscard]] VStringHelper {
+	public:
 		VStringHelper() noexcept : ser_(nullptr), pos_(0) {}
 		VStringHelper(WrSerializer *ser, size_t pos) noexcept : ser_(ser), pos_(pos) {}
 		VStringHelper(const VStringHelper &) = delete;
@@ -277,9 +282,9 @@ public:
 			return *this;
 		}
 		~VStringHelper() { End(); }
-
 		void End();
 
+	private:
 		WrSerializer *ser_;
 		size_t pos_;
 	};
@@ -310,6 +315,10 @@ public:
 		grow(sizeof(v));
 		memcpy(&buf_[len_], &v, sizeof(v));
 		len_ += sizeof(v);
+	}
+	void PutDoubleStrNoTrailing(double v) {
+		grow(32);
+		len_ += double_to_str_no_trailing(v, reinterpret_cast<char *>(buf_ + len_), 32);
 	}
 
 	template <typename T, typename std::enable_if<sizeof(T) == 8 && std::is_integral<T>::value>::type * = nullptr>
@@ -345,7 +354,11 @@ public:
 		Write(v ? "true"sv : "false"sv);
 		return *this;
 	}
-	WrSerializer &operator<<(double v);
+	WrSerializer &operator<<(double v) {
+		grow(32);
+		len_ += double_to_str(v, reinterpret_cast<char *>(buf_ + len_), 32);
+		return *this;
+	}
 	WrSerializer &operator<<(Uuid uuid) {
 		grow(Uuid::kStrFormLen + 2);
 		buf_[len_] = '\'';

@@ -86,14 +86,14 @@ public:
 	Error StartTransaction(cproto::Context &ctx, p_string nsName);
 
 	Error AddTxItem(cproto::Context &ctx, int format, p_string itemData, int mode, p_string percepsPack, int stateToken, int64_t txID);
-	Error DeleteQueryTx(cproto::Context &ctx, p_string query, int64_t txID);
-	Error UpdateQueryTx(cproto::Context &ctx, p_string query, int64_t txID);
+	Error DeleteQueryTx(cproto::Context &ctx, p_string query, int64_t txID) noexcept;
+	Error UpdateQueryTx(cproto::Context &ctx, p_string query, int64_t txID) noexcept;
 
 	Error CommitTx(cproto::Context &ctx, int64_t txId, std::optional<int> flags);
 	Error RollbackTx(cproto::Context &ctx, int64_t txId);
 
-	Error DeleteQuery(cproto::Context &ctx, p_string query, std::optional<int> flags);
-	Error UpdateQuery(cproto::Context &ctx, p_string query, std::optional<int> flags);
+	Error DeleteQuery(cproto::Context &ctx, p_string query, std::optional<int> flags) noexcept;
+	Error UpdateQuery(cproto::Context &ctx, p_string query, std::optional<int> flags) noexcept;
 
 	Error Select(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
 	Error SelectSQL(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
@@ -112,7 +112,7 @@ public:
 	void OnResponse(cproto::Context &ctx);
 
 protected:
-	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, cproto::Context &ctx);
+	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, cproto::Context &ctx) noexcept;
 	Error sendResults(cproto::Context &ctx, QueryResults &qr, RPCQrId id, const ResultFetchOpts &opts);
 	Error processTxItem(DataFormat format, std::string_view itemData, Item &item, ItemModifyMode mode, int stateToken) const noexcept;
 

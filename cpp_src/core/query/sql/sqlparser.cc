@@ -14,9 +14,11 @@ namespace reindexer {
 
 using namespace std::string_view_literals;
 
-int SQLParser::Parse(std::string_view q) {
+Query SQLParser::Parse(std::string_view q) {
 	tokenizer parser(q);
-	return Parse(parser);
+	Query query;
+	SQLParser{query}.Parse(parser);
+	return query;
 }
 
 bool SQLParser::reachedAutocompleteToken(tokenizer &parser, const token &tok) {
@@ -47,7 +49,7 @@ int SQLParser::Parse(tokenizer &parser) {
 	parser.skip_space();
 	token tok = peekSqlToken(parser, Start);
 	if (tok.text() == "explain"sv) {
-		query_.explain_ = true;
+		query_.Explain(true);
 		parser.next_token();
 		tok = peekSqlToken(parser, StartAfterExplain);
 	}
@@ -84,6 +86,7 @@ int SQLParser::selectParse(tokenizer &parser) {
 	// Get filter
 	token tok;
 	bool wasSelectFilter = false;
+	std::vector<std::string> selectFilters;
 	while (!parser.end()) {
 		auto nameWithCase = peekSqlToken(parser, SingleSelectFieldSqlToken, false);
 		auto name = parser.next_token();
@@ -168,7 +171,7 @@ int SQLParser::selectParse(tokenizer &parser) {
 			if (!query_.CanAddSelectFilter()) {
 				throw Error(errConflict, kAggregationWithSelectFieldsMsgError);
 			}
-			query_.selectFilter_.emplace_back(nameWithCase.text());
+			selectFilters.emplace_back(nameWithCase.text());
 			query_.Limit(QueryEntry::kDefaultLimit);
 			wasSelectFilter = true;
 		} else if (name.text() == "*"sv) {
@@ -177,10 +180,13 @@ int SQLParser::selectParse(tokenizer &parser) {
 			}
 			query_.Limit(QueryEntry::kDefaultLimit);
 			wasSelectFilter = true;
-			query_.selectFilter_.clear();
+			selectFilters.clear();
 		}
 		if (tok.text() != ","sv) break;
 		tok = parser.next_token();
+	}
+	if (wasSelectFilter) {
+		query_.Select(std::move(selectFilters));
 	}
 
 	peekSqlToken(parser, FromSqlToken);
@@ -228,15 +234,15 @@ int SQLParser::selectParse(tokenizer &parser) {
 			if (parser.next_token().text() != "join") {
 				throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text(), parser.where());
 			}
-			auto jtype = (query_.nextOp_ == OpOr) ? JoinType::OrInnerJoin : JoinType::InnerJoin;
-			query_.nextOp_ = OpAnd;
+			auto jtype = (query_.NextOp() == OpOr) ? JoinType::OrInnerJoin : JoinType::InnerJoin;
+			query_.And();
 			parseJoin(jtype, parser);
 		} else if (tok.text() == "merge"sv) {
 			parser.next_token();
 			parseMerge(parser);
 		} else if (tok.text() == "or"sv) {
 			parser.next_token();
-			query_.nextOp_ = OpOr;
+			query_.Or();
 		} else {
 			break;
 		}
@@ -506,7 +512,7 @@ UpdateEntry SQLParser::parseUpdateField(tokenizer &parser) {
 		updateField.Values().MarkArray();
 		for (;;) {
 			tok = parser.next_token(tokenizer::flags::no_flags);
-			if (tok.text() == "]") {
+			if (tok.text() == "]"sv) {
 				if (updateField.Values().empty()) break;
 				throw Error(errParseSQL, "Expected field value, but found ']' in query, %s", parser.where());
 			}
@@ -554,7 +560,7 @@ int SQLParser::updateParse(tokenizer &parser) {
 	if (tok.text() == "set"sv) {
 		parser.next_token();
 		while (!parser.end()) {
-			query_.updateFields_.emplace_back(parseUpdateField(parser));
+			query_.UpdateField(parseUpdateField(parser));
 			tok = parser.peek_token();
 			if (tok.text() != ","sv) break;
 			parser.next_token();
@@ -593,6 +599,89 @@ int SQLParser::truncateParse(tokenizer &parser) {
 	return 0;
 }
 
+bool isCondition(std::string_view text) noexcept {
+	return text == "="sv || text == "=="sv || text == "<>"sv || iequals(text, "is"sv) || text == ">"sv || text == ">="sv || text == "<"sv ||
+		   text == "<="sv || iequals(text, "in"sv) || iequals(text, "range"sv) || iequals(text, "like"sv) || iequals(text, "allset"sv);
+}
+
+Query SQLParser::parseSubQuery(tokenizer &parser) {
+	Query subquery;
+	SQLParser subparser(subquery);
+	if (ctx_.autocompleteMode) {
+		subparser.ctx_.suggestionsPos = ctx_.suggestionsPos;
+		subparser.ctx_.autocompleteMode = true;
+	}
+	// skip select
+	auto tok = parser.next_token();
+	nestedSelectParse(subparser, parser);
+	tok = parser.next_token();
+	if (tok.text() != ")"sv) {
+		throw Error(errParseSQL, "Expected ')', but found %s, %s", tok.text(), parser.where());
+	}
+	return subquery;
+}
+
+template <typename T>
+void SQLParser::parseWhereCondition(tokenizer &parser, T &&firstArg, OpType op) {
+	// Operator
+	CondType condition;
+	auto tok = peekSqlToken(parser, ConditionSqlToken);
+	if (tok.text() == "<>"sv) {
+		condition = CondEq;
+		if (op == OpAnd)
+			op = OpNot;
+		else if (op == OpNot)
+			op = OpAnd;
+		else {
+			throw Error(errParseSQL, "<> condition with OR is not supported, %s", parser.where());
+		}
+	} else {
+		condition = getCondType(tok.text());
+	}
+	parser.next_token();
+
+	// Value
+	if (ctx_.autocompleteMode) peekSqlToken(parser, WhereFieldValueSqlToken, false);
+	tok = parser.next_token();
+	if (iequals(tok.text(), "null"sv) || iequals(tok.text(), "empty"sv)) {
+		query_.NextOp(op).Where(std::forward<T>(firstArg), CondEmpty, VariantArray{});
+	} else if (iequals(tok.text(), "not"sv)) {
+		tok = peekSqlToken(parser, WhereFieldNegateValueSqlToken, false);
+		if (!iequals(tok.text(), "null"sv) && !iequals(tok.text(), "empty"sv)) {
+			throw Error(errParseSQL, "Expected NULL, but found '%s' in query, %s", tok.text(), parser.where());
+		}
+		query_.NextOp(op).Where(std::forward<T>(firstArg), CondAny, VariantArray{});
+		tok = parser.next_token(false);
+	} else if (tok.text() == "("sv) {
+		if constexpr (!std::is_same_v<T, Query>) {
+			if (iequals(parser.peek_token().text(), "select"sv) && !isCondition(parser.peek_second_token().text())) {
+				query_.NextOp(op).Where(std::forward<T>(firstArg), condition, parseSubQuery(parser));
+				return;
+			}
+		}
+		VariantArray values;
+		for (;;) {
+			tok = parser.next_token();
+			if (tok.text() == ")"sv && tok.type == TokenSymbol) break;
+			values.push_back(token2kv(tok, parser, true));
+			tok = parser.next_token();
+			if (tok.text() == ")"sv) break;
+			if (tok.text() != ","sv)
+				throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text(), parser.where());
+		}
+		query_.NextOp(op).Where(std::forward<T>(firstArg), condition, std::move(values));
+	} else if (tok.type != TokenName || iequals(tok.text(), "true"sv) || iequals(tok.text(), "false"sv)) {
+		query_.NextOp(op).Where(std::forward<T>(firstArg), condition, {token2kv(tok, parser, true)});
+	} else {
+		if constexpr (std::is_same_v<T, Query>) {
+			throw Error(errParseSQL, "Field cannot be after subquery. (text = '%s'  location = %s)", tok.text(), parser.where());
+		} else {
+			// Second field
+			query_.NextOp(op).WhereBetweenFields(std::forward<T>(firstArg), condition, std::string{tok.text()});
+		}
+	}
+}
+
 int SQLParser::parseWhere(tokenizer &parser) {
 	token tok;
 	OpType nextOp = OpAnd;
@@ -610,15 +699,21 @@ int SQLParser::parseWhere(tokenizer &parser) {
 		tok = peekSqlToken(parser, WhereFieldSqlToken, false);
 		parser.next_token(false);
 		if (tok.text() == "("sv) {
-			query_.entries.OpenBracket(nextOp);
-			++openBracketsCount;
-			lastBracketPosition = query_.entries.Size();
 			tok = peekSqlToken(parser, WhereFieldSqlToken, false);
-			if (iequals(tok.text(), "not"sv)) {
-				nextOp = OpNot;
-				parser.next_token();
-			} else {
+			if (iequals(tok.text(), "select"sv) && !isCondition(parser.peek_second_token().text())) {
+				parseWhereCondition(parser, parseSubQuery(parser), nextOp);
 				nextOp = OpAnd;
+			} else {
+				query_.NextOp(nextOp);
+				query_.OpenBracket();
+				++openBracketsCount;
+				lastBracketPosition = query_.Entries().Size();
+				if (iequals(tok.text(), "not"sv)) {
+					nextOp = OpNot;
+					parser.next_token();
+				} else {
+					nextOp = OpAnd;
+				}
 			}
 			continue;
 		}
@@ -644,62 +739,13 @@ int SQLParser::parseWhere(tokenizer &parser) {
 					throw Error(errParseSQL, "Expected JOIN, but found '%s' in query, %s", tok.text(), parser.where());
 				}
 				auto jtype = nextOp == OpOr ? JoinType::OrInnerJoin : JoinType::InnerJoin;
-				query_.nextOp_ = OpAnd;
+				query_.And();
 				parseJoin(jtype, parser);
 			} else if (iequals(tok.text(), "st_dwithin"sv)) {
 				parseDWithin(parser, nextOp);
 				nextOp = OpAnd;
 			} else {
-				// Index name
-				std::string index{tok.text()};
-
-				// Operator
-				CondType condition;
-				tok = peekSqlToken(parser, ConditionSqlToken);
-				if (tok.text() == "<>"sv) {
-					condition = CondEq;
-					if (nextOp == OpAnd)
-						nextOp = OpNot;
-					else if (nextOp == OpNot)
-						nextOp = OpAnd;
-					else {
-						throw Error(errParseSQL, "<> condition with OR is not supported, %s", parser.where());
-					}
-				} else {
-					condition = getCondType(tok.text());
-				}
-				parser.next_token();
-
-				// Value
-				if (ctx_.autocompleteMode) peekSqlToken(parser, WhereFieldValueSqlToken, false);
-				tok = parser.next_token();
-				if (iequals(tok.text(), "null"sv) || iequals(tok.text(), "empty"sv)) {
-					query_.entries.Append(nextOp, QueryEntry{std::move(index), CondEmpty, {}});
-				} else if (iequals(tok.text(), "not"sv)) {
-					tok = peekSqlToken(parser, WhereFieldNegateValueSqlToken, false);
-					if (!iequals(tok.text(), "null"sv) && !iequals(tok.text(), "empty"sv)) {
-						throw Error(errParseSQL, "Expected NULL, but found '%s' in query, %s", tok.text(), parser.where());
-					}
-					query_.entries.Append(nextOp, QueryEntry{std::move(index), CondAny, {}});
-					tok = parser.next_token(false);
-				} else if (tok.text() == "("sv) {
-					VariantArray values;
-					for (;;) {
-						tok = parser.next_token();
-						if (tok.text() == ")"sv && tok.type == TokenSymbol) break;
-						values.push_back(token2kv(tok, parser, true));
-						tok = parser.next_token();
-						if (tok.text() == ")"sv) break;
-						if (tok.text() != ","sv)
-							throw Error(errParseSQL, "Expected ')' or ',', but found '%s' in query, %s", tok.text(), parser.where());
-					}
-					query_.entries.Append(nextOp, QueryEntry{std::move(index), condition, std::move(values)});
-				} else if (tok.type != TokenName || toLower(tok.text()) == "true" || toLower(tok.text()) == "false") {
-					query_.entries.Append(nextOp, QueryEntry{std::move(index), condition, {token2kv(tok, parser, true)}});
-					// Second field
-				} else {
-					query_.entries.Append(nextOp, BetweenFieldsQueryEntry{std::move(index), condition, std::string{tok.text()}});
-				}
+				parseWhereCondition(parser, std::string{tok.text()}, nextOp);
 				nextOp = OpAnd;
 			}
 		}
@@ -711,7 +757,7 @@ int SQLParser::parseWhere(tokenizer &parser) {
 		}
 
 		while (openBracketsCount > 0 && tok.text() == ")"sv) {
-			query_.entries.CloseBracket();
+			query_.CloseBracket();
 			--openBracketsCount;
 			parser.next_token();
 			tok = parser.peek_token();
@@ -736,15 +782,15 @@ int SQLParser::parseWhere(tokenizer &parser) {
 			break;
 		}
 	}
-	for (auto &&eqPos : equalPositions) {
+	for (auto &eqPos : equalPositions) {
 		if (eqPos.first == 0) {
-			query_.entries.equalPositions.emplace_back(std::move(eqPos.second));
+			query_.SetEqualPositions(std::move(eqPos.second));
 		} else {
-			query_.entries.Get<QueryEntriesBracket>(eqPos.first - 1).equalPositions.emplace_back(std::move(eqPos.second));
+			query_.SetEqualPositions(eqPos.first - 1, std::move(eqPos.second));
 		}
 	}
 
-	if (query_.entries.Empty()) {
+	if (query_.Entries().Empty()) {
 		throw Error(errParseSQL, "Expected condition after 'WHERE'");
 	}
 
@@ -766,8 +812,8 @@ void SQLParser::parseEqualPositions(tokenizer &parser, std::vector<std::pair<siz
 			throw Error(errParseSQL, "Expected name, but found '%s' in query, %s", tok.text(), parser.where());
 		}
 		bool validField = false;
-		for (auto it = query_.entries.begin_of_current_bracket(); it != query_.entries.end(); ++it) {
-			if (it->HoldsOrReferTo<QueryEntry>() && nameWithCase.text() == it->Value<QueryEntry>().FieldName()) {
+		for (auto it = query_.Entries().begin_of_current_bracket(); it != query_.Entries().end(); ++it) {
+			if (it->Is<QueryEntry>() && nameWithCase.text() == it->Value<QueryEntry>().FieldName()) {
 				validField = true;
 				break;
 			}
@@ -940,11 +986,7 @@ void SQLParser::parseJoin(JoinType type, tokenizer &parser) {
 	jquery.joinType = type;
 	jparser.parseJoinEntries(parser, query_.NsName(), jquery);
 
-	if (type != JoinType::LeftJoin) {
-		query_.entries.Append((type == JoinType::InnerJoin) ? OpAnd : OpOr, JoinQueryEntry(query_.joinQueries_.size()));
-	}
-
-	query_.joinQueries_.emplace_back(std::move(jquery));
+	query_.Join(std::move(jquery));
 }
 
 void SQLParser::parseMerge(tokenizer &parser) {
@@ -971,7 +1013,7 @@ void SQLParser::parseMerge(tokenizer &parser) {
 	}
 	mquery.joinType = JoinType::Merge;
 
-	query_.mergeQueries_.emplace_back(std::move(mquery));
+	query_.Merge(std::move(mquery));
 }
 
 std::string SQLParser::parseJoinedFieldName(tokenizer &parser, std::string &name) {
@@ -1010,11 +1052,11 @@ void SQLParser::parseJoinEntries(tokenizer &parser, const std::string &mainNs, J
 	while (!parser.end()) {
 		auto tok = peekSqlToken(parser, OpSqlToken);
 		if (tok.text() == "or"sv) {
-			jquery.nextOp_ = OpOr;
+			jquery.Or();
 			parser.next_token();
 			tok = parser.peek_token();
 		} else if (tok.text() == "and"sv) {
-			jquery.nextOp_ = OpAnd;
+			jquery.And();
 			parser.next_token();
 			tok = parser.peek_token();
 		}
@@ -1041,15 +1083,15 @@ void SQLParser::parseJoinEntries(tokenizer &parser, const std::string &mainNs, J
 			}
 		}
 
-		jquery.joinEntries_.emplace_back(jquery.nextOp_, condition, std::move(fld1), std::move(fld2), reverseNamespacesOrder);
-		jquery.nextOp_ = OpAnd;
+		jquery.joinEntries_.emplace_back(jquery.NextOp(), condition, std::move(fld1), std::move(fld2), reverseNamespacesOrder);
+		jquery.And();
 		if (!braces) {
 			return;
 		}
 	}
 }
 CondType SQLParser::getCondType(std::string_view cond) {
-	if (cond == "="sv || cond == "=="sv || cond == "is"sv) {
+	if (cond == "="sv || cond == "=="sv || iequals(cond, "is"sv)) {
 		return CondEq;
 	} else if (cond == ">"sv) {
 		return CondGt;

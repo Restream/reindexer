@@ -18,7 +18,7 @@ public:
 	void Append() noexcept { ++size_; }
 	/// Decrease space occupied by children
 	void Erase(size_t length) noexcept {
-		assertrx(size_ > length);
+		assertrx_throw(size_ > length);
 		size_ -= length;
 	}
 	void CopyPayloadFrom(const Bracket&) const noexcept {}
@@ -37,18 +37,6 @@ struct Skip {};
 /// For detailed documentation see expressiontree.md
 template <typename OperationType, typename SubTree, int holdSize, typename... Ts>
 class ExpressionTree {
-	template <typename T>
-	class Ref {
-	public:
-		explicit Ref(T& v) noexcept : ptr_{&v} {}
-		operator T&() noexcept { return *ptr_; }
-		operator const T&() const noexcept { return *ptr_; }
-		bool operator==(const Ref& other) const noexcept(noexcept(std::declval<T>() == std::declval<T>())) { return *ptr_ == *other.ptr_; }
-
-	private:
-		T* ptr_;
-	};
-
 	template <typename R, typename T, typename... TT>
 	struct OverloadResolutionHelper : private OverloadResolutionHelper<R, TT...> {
 		constexpr static T resolve(std::function<R(T&)>) noexcept;
@@ -77,11 +65,6 @@ class ExpressionTree {
 		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Arg>(arg)))) {
 			return functor_(std::forward<Arg>(arg));
 		}
-		R operator()(const Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) { return functor_(arg); }
-		R operator()(Ref<Arg>&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Ref<Arg>>(arg)))) {
-			return functor_(std::forward<Ref<Arg>>(arg));
-		}
 
 	private:
 		F functor_;
@@ -101,18 +84,6 @@ class ExpressionTree {
 		template <typename Arg>
 		R operator()(Arg&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Arg>(arg)))) {
 			return functor_(std::forward<Arg>(arg));
-		}
-		template <typename Arg>
-		R operator()(const Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) {
-			return functor_(arg);
-		}
-		template <typename Arg>
-		R operator()(Ref<Arg>& arg) const noexcept(noexcept(std::declval<F>()(arg))) {
-			return functor_(arg);
-		}
-		template <typename Arg>
-		R operator()(Ref<Arg>&& arg) const noexcept(noexcept(std::declval<F>()(std::forward<Ref<Arg>>(arg)))) {
-			return functor_(std::forward<Ref<Arg>>(arg));
 		}
 
 	private:
@@ -142,9 +113,6 @@ class ExpressionTree {
 		void operator()(const T&) const noexcept {}
 		void operator()(T&) const noexcept {}
 		void operator()(T&&) const noexcept {}
-		void operator()(const Ref<T>&) const noexcept {}
-		void operator()(Ref<T>&) const noexcept {}
-		void operator()(Ref<T>&&) const noexcept {}
 	};
 	template <typename T>
 	class SkipHelper<T> {
@@ -152,9 +120,6 @@ class ExpressionTree {
 		void operator()(const T&) const noexcept {}
 		void operator()(T&) const noexcept {}
 		void operator()(T&&) const noexcept {}
-		void operator()(const Ref<T>&) const noexcept {}
-		void operator()(Ref<T>&) const noexcept {}
-		void operator()(Ref<T>&&) const noexcept {}
 	};
 	template <typename... TT, typename... Fs>
 	class VisitorHelper<void, Skip<TT...>, Fs...> : private SkipHelper<TT...>, private VisitorHelper<void, Fs...> {
@@ -190,7 +155,7 @@ class ExpressionTree {
 	class Node {
 		friend ExpressionTree;
 
-		using Storage = std::variant<SubTree, Ts..., Ref<Ts>...>;
+		using Storage = std::variant<SubTree, Ts...>;
 
 		struct SizeVisitor {
 			template <typename T>
@@ -203,20 +168,18 @@ class ExpressionTree {
 		template <typename T>
 		struct GetVisitor {
 			T& operator()(T& v) const noexcept { return v; }
-			T& operator()(Ref<T>& r) const noexcept { return r; }
 			template <typename U>
 			T& operator()(U&) const noexcept {
-				assertrx(0);
+				assertrx_throw(0);
 				abort();
 			}
 		};
 		template <typename T>
 		struct GetVisitor<T const> {
 			const T& operator()(const T& v) const noexcept { return v; }
-			const T& operator()(const Ref<T>& r) const noexcept { return r; }
 			template <typename U>
 			const T& operator()(const U&) const noexcept {
-				assertrx(0);
+				assertrx_throw(0);
 				abort();
 			}
 		};
@@ -225,60 +188,23 @@ class ExpressionTree {
 			bool operator()(const T& lhs, const T& rhs) const noexcept(noexcept(lhs == rhs)) {
 				return lhs == rhs;
 			}
-			template <typename T>
-			bool operator()(const Ref<T>& lhs, const T& rhs) const noexcept(noexcept(rhs == rhs)) {
-				return static_cast<const T&>(lhs) == rhs;
-			}
-			template <typename T>
-			bool operator()(const T& lhs, const Ref<T>& rhs) const noexcept(noexcept(lhs == lhs)) {
-				return lhs == static_cast<const T&>(rhs);
-			}
 			template <typename T, typename U>
 			bool operator()(const T&, const U&) const noexcept {
 				return false;
 			}
 		};
-		struct LazyCopyVisitor {
-			Storage operator()(SubTree& st) const noexcept { return st; }
-			template <typename T>
-			Storage operator()(Ref<T>& r) const {
-				return r;
-			}
-			template <typename T>
-			Storage operator()(T& v) const {
-				return Ref<T>{v};
-			}
-		};
-		struct DeepCopyVisitor {
+		struct CopyVisitor {
 			Storage operator()(const SubTree& st) const noexcept { return st; }
-			template <typename T>
-			Storage operator()(const Ref<T>& r) const {
-				return static_cast<const T&>(r);
-			}
 			template <typename T>
 			Storage operator()(const T& v) const {
 				return v;
 			}
 		};
-		struct DeepRValueCopyVisitor {
+		struct MoveVisitor {
 			Storage operator()(SubTree&& st) const noexcept { return std::move(st); }
-			template <typename T>
-			Storage operator()(Ref<T>&& r) const {
-				return static_cast<const T&>(r);
-			}
 			template <typename T>
 			Storage operator()(T&& v) const {
 				return std::forward<T>(v);
-			}
-		};
-		struct IsRefVisitor {
-			template <typename T>
-			bool operator()(const T&) const noexcept {
-				return false;
-			}
-			template <typename T>
-			bool operator()(const Ref<T>&) const noexcept {
-				return true;
 			}
 		};
 
@@ -325,12 +251,8 @@ class ExpressionTree {
 		bool IsSubTree() const noexcept { return storage_.index() == 0; }
 		bool IsLeaf() const noexcept { return !IsSubTree(); }
 		template <typename T>
-		bool Holds() const noexcept {
+		bool Is() const noexcept {
 			return std::holds_alternative<T>(storage_);
-		}
-		template <typename T>
-		bool HoldsOrReferTo() const noexcept {
-			return std::holds_alternative<T>(storage_) || std::holds_alternative<Ref<T>>(storage_);
 		}
 		void Append() { std::get<SubTree>(storage_).Append(); }
 		void Erase(size_t length) { std::get<SubTree>(storage_).Erase(length); }
@@ -344,21 +266,13 @@ class ExpressionTree {
 			return std::visit(Visitor<R, Fs...>{std::forward<Fs>(funcs)...}, storage_);
 		}
 
-		Node MakeLazyCopy() & {
-			static const LazyCopyVisitor visitor;
+		Node Copy() const& {
+			static const CopyVisitor visitor;
 			return {operation, std::visit(visitor, storage_)};
 		}
-		Node MakeDeepCopy() const& {
-			static const DeepCopyVisitor visitor;
-			return {operation, std::visit(visitor, storage_)};
-		}
-		Node MakeDeepCopy() && {
-			static const DeepRValueCopyVisitor visitor;
+		Node Move() && {
+			static const MoveVisitor visitor;
 			return {operation, std::visit(visitor, std::move(storage_))};
-		}
-		bool IsRef() const {
-			static const IsRefVisitor visitor;
-			return std::visit(visitor, storage_);
 		}
 		template <typename T>
 		void SetValue(T&& v) {
@@ -385,13 +299,13 @@ public:
 	ExpressionTree& operator=(ExpressionTree&&) = default;
 	ExpressionTree(const ExpressionTree& other) : activeBrackets_{other.activeBrackets_} {
 		container_.reserve(other.container_.size());
-		for (const Node& n : other.container_) container_.emplace_back(n.MakeDeepCopy());
+		for (const Node& n : other.container_) container_.emplace_back(n.Copy());
 	}
 	ExpressionTree& operator=(const ExpressionTree& other) {
 		if (this == &other) return *this;
 		container_.clear();
 		container_.reserve(other.container_.size());
-		for (const Node& n : other.container_) container_.emplace_back(n.MakeDeepCopy());
+		for (const Node& n : other.container_) container_.emplace_back(n.Copy());
 		activeBrackets_ = other.activeBrackets_;
 		return *this;
 	}
@@ -407,9 +321,9 @@ public:
 	/// Insert value at the position
 	template <typename T>
 	void Insert(size_t pos, OperationType op, T&& v) {
-		assertrx(pos < container_.size());
+		assertrx_throw(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
-			assertrx(b < container_.size());
+			assertrx_throw(b < container_.size());
 			if (b >= pos) ++b;
 		}
 		for (size_t i = 0; i < pos; ++i) {
@@ -420,9 +334,9 @@ public:
 	/// Insert value after the position
 	template <typename T>
 	void InsertAfter(size_t pos, OperationType op, T&& v) {
-		assertrx(pos < container_.size());
+		assertrx_throw(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
-			assertrx(b < container_.size());
+			assertrx_throw(b < container_.size());
 			if (b > pos) ++b;
 		}
 		for (size_t i = 0; i < pos; ++i) {
@@ -434,7 +348,7 @@ public:
 	template <typename T>
 	void Append(OperationType op, T&& v) {
 		for (unsigned i : activeBrackets_) {
-			assertrx(i < container_.size());
+			assertrx_throw(i < container_.size());
 			container_[i].Append();
 		}
 		container_.emplace_back(op, std::forward<T>(v));
@@ -443,7 +357,7 @@ public:
 	template <typename T>
 	void Append(OperationType op, const T& v) {
 		for (unsigned i : activeBrackets_) {
-			assertrx(i < container_.size());
+			assertrx_throw(i < container_.size());
 			container_[i].Append();
 		}
 		container_.emplace_back(op, v);
@@ -452,7 +366,7 @@ public:
 	template <typename T, typename... Args>
 	void Append(OperationType op, Args&&... args) {
 		for (unsigned i : activeBrackets_) {
-			assertrx(i < container_.size());
+			assertrx_throw(i < container_.size());
 			container_[i].Append();
 		}
 		container_.emplace_back(op, T{std::forward<Args>(args)...});
@@ -463,11 +377,6 @@ public:
 		container_.reserve(container_.size() + (end.PlainIterator() - begin.PlainIterator()));
 		append(begin, end);
 	}
-	class iterator;
-	void LazyAppend(iterator begin, iterator end) {
-		container_.reserve(container_.size() + (end.PlainIterator() - begin.PlainIterator()));
-		lazyAppend(begin, end);
-	}
 
 	/// Appends value as first child of the root
 	template <typename T>
@@ -475,13 +384,24 @@ public:
 		for (unsigned& i : activeBrackets_) ++i;
 		container_.emplace(container_.begin(), op, std::forward<T>(v));
 	}
+	void PopBack() {
+		assertrx_throw(!container_.empty());
+		for (unsigned i : activeBrackets_) {
+			assertrx_throw(i < container_.size());
+			container_[i].Erase(1);
+		}
+		if (container_.back().IsSubTree() && !activeBrackets_.empty() && activeBrackets_.back() == container_.size() - 1) {
+			activeBrackets_.pop_back();
+		}
+		container_.pop_back();
+	}
 	/// Enclose area in brackets
 	template <typename... Args>
 	void EncloseInBracket(size_t from, size_t to, OperationType op, Args&&... args) {
-		assertrx(to > from);
-		assertrx(to <= container_.size());
+		assertrx_throw(to > from);
+		assertrx_throw(to <= container_.size());
 		for (unsigned& b : activeBrackets_) {
-			assertrx(b < container_.size());
+			assertrx_throw(b < container_.size());
 			if (b >= from) ++b;
 		}
 		for (size_t i = 0; i < from; ++i) {
@@ -490,14 +410,14 @@ public:
 				if (bracketEnd >= to) {
 					container_[i].Append();
 				} else {
-					assertrx(bracketEnd <= from);
+					assertrx_throw(bracketEnd <= from);
 				}
 			}
 		}
 #ifndef NDEBUG
 		for (size_t i = from; i < to; ++i) {
 			if (container_[i].IsSubTree()) {
-				assertrx(Next(i) <= to);
+				assertrx_throw(Next(i) <= to);
 			}
 		}
 #endif
@@ -507,7 +427,7 @@ public:
 	template <typename... Args>
 	void OpenBracket(OperationType op, Args&&... args) {
 		for (unsigned i : activeBrackets_) {
-			assertrx(i < container_.size());
+			assertrx_throw(i < container_.size());
 			container_[i].Append();
 		}
 		activeBrackets_.push_back(container_.size());
@@ -525,55 +445,55 @@ public:
 	void Reserve(size_t s) { container_.reserve(s); }
 	/// @return size of leaf of subtree beginning from i
 	size_t Size(size_t i) const noexcept {
-		assertrx(i < Size());
+		assertrx_throw(i < Size());
 		return container_[i].Size();
 	}
 	/// @return beginning of next children of the same parent
 	size_t Next(size_t i) const noexcept {
-		assertrx(i < Size());
+		assertrx_throw(i < Size());
 		return i + Size(i);
 	}
 	template <typename T>
-	bool HoldsOrReferTo(size_t i) const noexcept {
-		assertrx(i < Size());
-		return container_[i].template HoldsOrReferTo<T>();
+	bool Is(size_t i) const noexcept {
+		assertrx_throw(i < Size());
+		return container_[i].template Is<T>();
 	}
 	bool IsSubTree(size_t i) const noexcept {
-		assertrx(i < Size());
+		assertrx_throw(i < Size());
 		return container_[i].IsSubTree();
 	}
 	OperationType GetOperation(size_t i) const noexcept {
-		assertrx(i < Size());
+		assertrx_throw(i < Size());
 		return container_[i].operation;
 	}
 	void SetOperation(OperationType op, size_t i) noexcept {
-		assertrx(i < Size());
+		assertrx_throw(i < Size());
 		container_[i].operation = op;
 	}
 	template <typename T>
 	T& Get(size_t i) {
-		assertrx(i < Size());
+		assertrx_throw(i < Size());
 		return container_[i].template Value<T>();
 	}
 	template <typename T>
 	const T& Get(size_t i) const {
-		assertrx(i < Size());
+		assertrx_throw(i < Size());
 		return container_[i].template Value<T>();
 	}
 	template <typename T>
 	void SetValue(size_t i, T&& v) {
-		assertrx(i < Size());
+		assertrx_throw(i < Size());
 		return container_[i].template SetValue<T>(std::forward<T>(v));
 	}
 	void Erase(size_t from, size_t to) {
-		assertrx(to >= from);
+		assertrx_throw(to >= from);
 		const size_t count = to - from;
 		for (size_t i = 0; i < from; ++i) {
 			if (container_[i].IsSubTree()) {
 				if (Next(i) >= to) {
 					container_[i].Erase(count);
 				} else {
-					assertrx(Next(i) <= from);
+					assertrx_throw(Next(i) <= from);
 				}
 			}
 		}
@@ -588,12 +508,12 @@ public:
 	/// Execute appropriate functor depending on content type
 	template <typename R, typename... Fs>
 	R InvokeAppropriate(size_t i, Fs&&... funcs) {
-		assertrx(i < container_.size());
+		assertrx_throw(i < container_.size());
 		return container_[i].template InvokeAppropriate<R, Fs...>(std::forward<Fs>(funcs)...);
 	}
 	template <typename R, typename... Fs>
 	R InvokeAppropriate(size_t i, Fs&&... funcs) const {
-		assertrx(i < container_.size());
+		assertrx_throw(i < container_.size());
 		return container_[i].template InvokeAppropriate<R, Fs...>(std::forward<Fs>(funcs)...);
 	}
 	/// Execute appropriate functor depending on content type for each node, skip if no appropriate functor
@@ -623,12 +543,12 @@ public:
 			return *this;
 		}
 		const_iterator cbegin() const noexcept {
-			assertrx(it_->IsSubTree());
+			assertrx_throw(it_->IsSubTree());
 			return it_ + 1;
 		}
 		const_iterator begin() const noexcept { return cbegin(); }
 		const_iterator cend() const noexcept {
-			assertrx(it_->IsSubTree());
+			assertrx_throw(it_->IsSubTree());
 			return it_ + it_->Size();
 		}
 		const_iterator end() const noexcept { return cend(); }
@@ -653,12 +573,12 @@ public:
 		}
 		operator const_iterator() const noexcept { return const_iterator(it_); }
 		iterator begin() const noexcept {
-			assertrx(it_->IsSubTree());
+			assertrx_throw(it_->IsSubTree());
 			return it_ + 1;
 		}
 		const_iterator cbegin() const noexcept { return begin(); }
 		iterator end() const noexcept {
-			assertrx(it_->IsSubTree());
+			assertrx_throw(it_->IsSubTree());
 			return it_ + it_->Size();
 		}
 		const_iterator cend() const noexcept { return end(); }
@@ -706,7 +626,7 @@ protected:
 
 	/// @return the last appended leaf or last closed subtree or last openned subtree if it is empty
 	size_t lastAppendedElement() const noexcept {
-		assertrx(!container_.empty());
+		assertrx_throw(!container_.empty());
 		size_t start = 0;  // start of last openned subtree;
 		if (!activeBrackets_.empty()) {
 			start = activeBrackets_.back() + 1;
@@ -728,28 +648,6 @@ protected:
 				},
 				[this, op](const auto& v) -> void { this->Append(op, v); });
 		}
-	}
-
-	void lazyAppend(iterator begin, iterator end) {
-		for (; begin != end; ++begin) {
-			const OpType op = begin->operation;
-			begin->template InvokeAppropriate<void>(
-				[this, &begin, op](const SubTree& b) {
-					OpenBracket(op);
-					std::get<SubTree>(container_.back().storage_).CopyPayloadFrom(b);
-					lazyAppend(begin.begin(), begin.end());
-					CloseBracket();
-				},
-				[this, op](auto& v) -> void { this->Append(op, Ref<std::decay_t<decltype(v)>>{v}); });
-		}
-	}
-
-	ExpressionTree makeLazyCopy() & {
-		ExpressionTree result;
-		result.container_.reserve(container_.size());
-		for (Node& n : container_) result.container_.emplace_back(n.MakeLazyCopy());
-		result.activeBrackets_ = activeBrackets_;
-		return result;
 	}
 };
 

@@ -99,7 +99,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 				usedIndexNames.insert(name);
 			}
 
-			indexes_.emplace_back(std::move(name), indexType, rndGen_.RndArrayField(array ? IsArray::Yes : IsArray::No), IsSparse::No,
+			indexes_.emplace_back(std::move(name), indexType, rndGen_.RndArrayField(array ? IsArrayT::Yes : IsArrayT::No), IsSparseT::No,
 								  std::move(children));
 		} else {
 			FieldPath fldPath;
@@ -113,8 +113,8 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 				if (!rndGen_.RndErr()) continue;
 				const auto fldType = rndGen_.RndFieldType();
 				indexes_.emplace_back(rndGen_.IndexName(usedIndexNames), rndGen_.RndIndexType({fldType}),
-									  rndGen_.RndBool(0.5) ? IsArray::Yes : IsArray::No,
-									  rndGen_.RndBool(0.5) ? IsSparse::Yes : IsSparse::No, Index::Child{fldType, std::move(fldPath)});
+									  rndGen_.RndBool(0.5) ? IsArrayT::Yes : IsArrayT::No,
+									  rndGen_.RndBool(0.5) ? IsSparseT::Yes : IsSparseT::No, Index::Child{fldType, std::move(fldPath)});
 			} else {
 				const auto fldType = scheme_.GetFieldType(fldPath);
 				const auto isArray = scheme_.IsArray(fldPath);
@@ -132,7 +132,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 									  rndGen_.RndSparseIndex(fldType), Index::Child{fldType, std::move(fldPath)});
 			}
 			if (const auto& idx = indexes_.back();
-				!idx.IsArray() && idx.IsSparse() == IsSparse::No &&
+				!idx.IsArray() && idx.IsSparse() == IsSparseT::No &&
 				std::get<Index::Child>(idx.Content()).type != FieldType::Point) {  // TODO remove point check after #1352
 				scalarIndexes.push_back(indexes_.size() - 1);
 			}
@@ -145,7 +145,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 	std::vector<size_t> ii;
 	for (size_t i = 0, s = indexes_.size(); i < s; ++i) {
 		const auto& idx = indexes_[i];
-		if (!idx.IsArray() && idx.IsSparse() == IsSparse::No && availablePkIndexType(idx.Type()) &&
+		if (!idx.IsArray() && idx.IsSparse() == IsSparseT::No && availablePkIndexType(idx.Type()) &&
 			(std::holds_alternative<Index::Children>(idx.Content()) || availablePkFieldType(std::get<Index::Child>(idx.Content()).type))) {
 			ii.push_back(i);
 		}
@@ -163,7 +163,7 @@ Ns::Ns(std::string name, RandomGenerator::ErrFactorType errorFactor)
 				usedIndexNames.insert(name);
 			}
 		}
-		indexes_.emplace_back(std::move(name), rndGen_.RndPkIndexType({fldType}), IsArray::No, IsSparse::No,
+		indexes_.emplace_back(std::move(name), rndGen_.RndPkIndexType({fldType}), IsArrayT::No, IsSparseT::No,
 							  Index::Child{fldType, std::move(path)});
 		indexes_.back().SetPk();
 	} else {

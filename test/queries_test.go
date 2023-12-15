@@ -589,9 +589,12 @@ func TestSTDistanceWrappers(t *testing.T) {
 			searchPoint := randPoint()
 			distance := randFloat(0, 2)
 			sortPoint := randPoint()
-			it1, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).SortStPointDistance(field1, sortPoint, false).ExecToJson().FetchAll()
+			it1, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).SortStPointDistance(field1, sortPoint, false).
+				ExecToJson().FetchAll()
 			require.NoError(t, err)
-			it2, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).Sort(fmt.Sprintf("ST_Distance(%s, ST_GeomFromText('point(%f %f)'))", field1, sortPoint[0], sortPoint[1]), false).ExecToJson().FetchAll()
+			it2, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).Sort(fmt.Sprintf("ST_Distance(%s, ST_GeomFromText('point(%s %s)'))",
+				field1, strconv.FormatFloat(sortPoint[0], 'f', -1, 64), strconv.FormatFloat(sortPoint[1], 'f', -1, 64)), false).
+				ExecToJson().FetchAll()
 			require.NoError(t, err)
 			require.Equal(t, string(it1), string(it2))
 		}
@@ -1112,6 +1115,27 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
 		Not().Where("uuid_array", reindexer.SET, randUuidArray(rand.Int()%10)).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		WhereQuery(t, newTestQuery(DB, namespace).Where("id", reindexer.EQ, mkID(rand.Int()%5000)),
+		reindexer.ANY, nil).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		WhereQuery(t, newTestQuery(DB, namespace).Select("id").Where("id", reindexer.GT, mkID(rand.Int()%5000)).Limit(10), reindexer.LT, mkID(rand.Int()%5000)).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		WhereQuery(t, newTestQuery(DB, namespace).Where("id", reindexer.GT, mkID(rand.Int()%5000)).AggregateAvg("id"), reindexer.LT, mkID(rand.Int()%5000)).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("id", reindexer.SET, newTestQuery(DB, namespace).Select("id").Where("id", reindexer.GT, mkID(rand.Int()%5000)).Limit(10)).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("id", reindexer.LE, newTestQuery(DB, namespace).AggregateAvg("id").Where("id", reindexer.LT, mkID(rand.Int()%5000+5))).
 		ExecAndVerify(t)
 
 	if !testComposite {
@@ -1979,6 +2003,7 @@ func TestQrIdleTimeout(t *testing.T) {
 
 	t.Run("check if qr wil be correctly reused after connections drop", func(t *testing.T) {
 		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1), reindexer.WithDedicatedServerThreads())
+		db.SetLogger(testLogger)
 		err := db.RegisterNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 		const qrCount = 32
@@ -2017,6 +2042,7 @@ func TestQrIdleTimeout(t *testing.T) {
 	t.Run("concurrent query results timeouts", func(t *testing.T) {
 		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(16), reindexer.WithDedicatedServerThreads())
 		defer db.Close()
+		db.SetLogger(testLogger)
 		err := db.RegisterNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 		const fillingRoutines = 5
@@ -2078,6 +2104,9 @@ func TestQrIdleTimeout(t *testing.T) {
 		_, err = qrs[qrCount].FetchAll()
 		assert.NoError(t, err)
 
+		if testLogger != nil {
+			testLogger.Printf(reindexer.ERROR, "----- Expecting a lot of query results timeout errors after this line -----")
+		}
 		for i := 1; i < qrCount; i++ {
 			_, err = qrs[i].FetchAll()
 			assert.Error(t, err, "i = %d", i)
@@ -2085,11 +2114,15 @@ func TestQrIdleTimeout(t *testing.T) {
 
 		atomic.AddInt32(&stop, 1)
 		wg.Wait()
+		if testLogger != nil {
+			testLogger.Printf(reindexer.ERROR, "----- No more query results timeout errors after this line -----")
+		}
 	})
 
 	t.Run("check if timed out query results will be reused after client's qr buffer overflow", func(t *testing.T) {
 		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1), reindexer.WithDedicatedServerThreads())
 		defer db.Close()
+		db.SetLogger(testLogger)
 		err := db.RegisterNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 		const qrCount = 256
@@ -2110,6 +2143,10 @@ func TestQrIdleTimeout(t *testing.T) {
 			qrs = append(qrs, it)
 		}
 
+		if testLogger != nil {
+			testLogger.Printf(reindexer.ERROR, "----- Expecting connection drop and a lot of query results EOF errors after this line -----")
+		}
+
 		// Actual overflow. Connect must be dropped
 		it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()
 		assert.Error(t, it.Error())
@@ -2118,6 +2155,10 @@ func TestQrIdleTimeout(t *testing.T) {
 		for i := 0; i < 2*qrCount; i++ {
 			_, err = qrs[i].FetchAll()
 			assert.Error(t, err, "i = %d", i)
+		}
+
+		if testLogger != nil {
+			testLogger.Printf(reindexer.ERROR, "----- No more query results EOF errors after this line -----")
 		}
 
 		// Trying to create new QRs after connection drop

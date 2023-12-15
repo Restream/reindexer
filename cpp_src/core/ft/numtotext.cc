@@ -45,8 +45,9 @@ static std::string_view getNumorder(int numorder, int i) {
 			return sextillion[i];
 		case Septillion:
 			return septillion[i];
+		default:
+			throw Error(errParams, "Incorrect order [%s]: too big", numorder);
 	}
-	throw Error(errParams, "Incorrect order [%s]: too big", numorder);
 }
 
 RX_ALWAYS_INLINE int ansiCharacterToDigit(char ch) noexcept { return static_cast<int>(ch - 48); }
@@ -73,6 +74,8 @@ static std::vector<std::string> getOrders(std::string_view str) {
 					tempString += numStr[i + 1];
 					tempString += numStr[i];
 					break;
+				default:
+					throw Error(errLogic, "Unexpected lost characters number: %d", lostChars);
 			}
 		}
 		orders.emplace_back(std::move(tempString));

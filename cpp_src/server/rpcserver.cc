@@ -7,6 +7,7 @@
 #include "net/cproto/cproto.h"
 #include "net/cproto/serverconnection.h"
 #include "reindexer_version.h"
+#include "tools/catch_and_return.h"
 #include "vendor/msgpack/msgpack.h"
 
 namespace reindexer_server {
@@ -175,8 +176,10 @@ void RPCServer::OnClose(cproto::Context &ctx, const Error &err) {
 			if (qrId.main >= 0) {
 				try {
 					qrWatcher_.FreeQueryResults(qrId, false);
+					// NOLINTBEGIN(bugprone-empty-catch)
 				} catch (...) {
 				}
+				// NOLINTEND(bugprone-empty-catch)
 			}
 		}
 	}
@@ -196,10 +199,9 @@ void RPCServer::OnResponse(cproto::Context &ctx) {
 	}
 }
 
-Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults &res, cproto::Context &ctx) {
+Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults &res, cproto::Context &ctx) noexcept {
 	try {
-		reindexer::Query q;
-		q.FromSQL(sqlQuery);
+		const auto q = Query::FromSQL(sqlQuery);
 		switch (q.Type()) {
 			case QuerySelect:
 				return getDB(ctx, kRoleDataRead).Select(q, res);
@@ -211,9 +213,8 @@ Error RPCServer::execSqlQueryByType(std::string_view sqlQuery, QueryResults &res
 				return getDB(ctx, kRoleDBAdmin).TruncateNamespace(q.NsName());
 		}
 		return Error(errParams, "unknown query type %d", q.Type());
-	} catch (Error &e) {
-		return e;
 	}
+	CATCH_AND_RETURN;
 }
 
 void RPCServer::Logger(cproto::Context &ctx, const Error &err, const cproto::Args &ret) {
@@ -391,36 +392,32 @@ Error RPCServer::AddTxItem(cproto::Context &ctx, int format, p_string itemData, 
 	return err;
 }
 
-Error RPCServer::DeleteQueryTx(cproto::Context &ctx, p_string queryBin, int64_t txID) {
-	auto db = getDB(ctx, kRoleDataWrite);
-
-	Transaction &tr = getTx(ctx, txID);
-	Query query;
-	Serializer ser(queryBin.data(), queryBin.size());
+Error RPCServer::DeleteQueryTx(cproto::Context &ctx, p_string queryBin, int64_t txID) noexcept {
 	try {
-		query.Deserialize(ser);
-	} catch (Error &err) {
-		return err;
+		auto db = getDB(ctx, kRoleDataWrite);
+
+		Transaction &tr = getTx(ctx, txID);
+		Serializer ser(queryBin.data(), queryBin.size());
+		Query query = Query::Deserialize(ser);
+		query.type_ = QueryDelete;
+		tr.Modify(std::move(query));
+		return errOK;
 	}
-	query.type_ = QueryDelete;
-	tr.Modify(std::move(query));
-	return errOK;
+	CATCH_AND_RETURN;
 }
 
-Error RPCServer::UpdateQueryTx(cproto::Context &ctx, p_string queryBin, int64_t txID) {
-	auto db = getDB(ctx, kRoleDataWrite);
-
-	Transaction &tr = getTx(ctx, txID);
-	Query query;
-	Serializer ser(queryBin.data(), queryBin.size());
+Error RPCServer::UpdateQueryTx(cproto::Context &ctx, p_string queryBin, int64_t txID) noexcept {
 	try {
-		query.Deserialize(ser);
-	} catch (Error &err) {
-		return err;
+		auto db = getDB(ctx, kRoleDataWrite);
+
+		Transaction &tr = getTx(ctx, txID);
+		Serializer ser(queryBin.data(), queryBin.size());
+		Query query = Query::Deserialize(ser);
+		query.type_ = QueryUpdate;
+		tr.Modify(std::move(query));
+		return errOK;
 	}
-	query.type_ = QueryUpdate;
-	tr.Modify(std::move(query));
-	return errOK;
+	CATCH_AND_RETURN;
 }
 
 Error RPCServer::CommitTx(cproto::Context &ctx, int64_t txId, std::optional<int> flagsOpts) {
@@ -534,6 +531,8 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 			case ModeDelete:
 				err = db.WithTimeout(execTimeout).Delete(ns, item, qres);
 				break;
+			default:
+				return Error(errParams, "Unexpected ItemModifyMode: %d", mode);
 		}
 		if (!err.ok()) return err;
 	} else {
@@ -550,6 +549,8 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 			case ModeDelete:
 				err = db.WithTimeout(execTimeout).Delete(ns, item);
 				break;
+			default:
+				return Error(errParams, "Unexpected ItemModifyMode: %d", mode);
 		}
 		if (!err.ok()) return err;
 		qres.AddItem(item);
@@ -577,51 +578,49 @@ Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_str
 	return sendResults(ctx, qres, RPCQrId(), opts);
 }
 
-Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, std::optional<int> flagsOpts) {
-	Query query;
-	Serializer ser(queryBin.data(), queryBin.size());
+Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, std::optional<int> flagsOpts) noexcept {
 	try {
-		query.Deserialize(ser);
-	} catch (Error &err) {
-		return err;
-	}
-	query.type_ = QueryDelete;
+		Serializer ser(queryBin.data(), queryBin.size());
+		Query query = Query::Deserialize(ser);
+		query.type_ = QueryDelete;
 
-	QueryResults qres;
-	auto err = getDB(ctx, kRoleDataWrite).Delete(query, qres);
-	if (!err.ok()) {
-		return err;
+		QueryResults qres;
+		auto err = getDB(ctx, kRoleDataWrite).Delete(query, qres);
+		if (!err.ok()) {
+			return err;
+		}
+		int flags = kResultsWithItemID;
+		if (flagsOpts) {
+			flags = *flagsOpts;
+		}
+		int32_t ptVersion = -1;
+		ResultFetchOpts opts{
+			.flags = flags, .ptVersions = {&ptVersion, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
+		return sendResults(ctx, qres, RPCQrId(), opts);
 	}
-	int flags = kResultsWithItemID;
-	if (flagsOpts) {
-		flags = *flagsOpts;
-	}
-	int32_t ptVersion = -1;
-	ResultFetchOpts opts{.flags = flags, .ptVersions = {&ptVersion, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
-	return sendResults(ctx, qres, RPCQrId(), opts);
+	CATCH_AND_RETURN;
 }
 
-Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, std::optional<int> flagsOpts) {
-	Query query;
-	Serializer ser(queryBin.data(), queryBin.size());
+Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, std::optional<int> flagsOpts) noexcept {
 	try {
-		query.Deserialize(ser);
-	} catch (Error &err) {
-		return err;
-	}
-	query.type_ = QueryUpdate;
+		Serializer ser(queryBin.data(), queryBin.size());
+		Query query = Query::Deserialize(ser);
+		query.type_ = QueryUpdate;
 
-	QueryResults qres;
-	auto err = getDB(ctx, kRoleDataWrite).Update(query, qres);
-	if (!err.ok()) {
-		return err;
-	}
+		QueryResults qres;
+		auto err = getDB(ctx, kRoleDataWrite).Update(query, qres);
+		if (!err.ok()) {
+			return err;
+		}
 
-	int32_t ptVersion = -1;
-	int flags = kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson;
-	if (flagsOpts) flags = *flagsOpts;
-	ResultFetchOpts opts{.flags = flags, .ptVersions = {&ptVersion, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
-	return sendResults(ctx, qres, RPCQrId(), opts);
+		int32_t ptVersion = -1;
+		int flags = kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson;
+		if (flagsOpts) flags = *flagsOpts;
+		ResultFetchOpts opts{
+			.flags = flags, .ptVersions = {&ptVersion, 1}, .fetchOffset = 0, .fetchLimit = INT_MAX, .withAggregations = true};
+		return sendResults(ctx, qres, RPCQrId(), opts);
+	}
+	CATCH_AND_RETURN;
 }
 
 Reindexer RPCServer::getDB(cproto::Context &ctx, UserRole role) {
@@ -659,8 +658,10 @@ Error RPCServer::sendResults(cproto::Context &ctx, QueryResults &qres, RPCQrId i
 				freeQueryResults(ctx, id);
 				id.main = -1;
 				id.uid = RPCQrWatcher::kUninitialized;
+				// NOLINTBEGIN(bugprone-empty-catch)
 			} catch (...) {
 			}
+			// NOLINTEND(bugprone-empty-catch)
 		}
 		return err;
 	}
@@ -801,7 +802,7 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 	Query query;
 	Serializer ser(queryBin);
 	try {
-		query.Deserialize(ser);
+		query = Query::Deserialize(ser);
 	} catch (Error &err) {
 		return err;
 	}

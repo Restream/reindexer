@@ -75,6 +75,7 @@ const std::vector<std::string> kDefDBConfig = {
 		"replication":{
 			"role":"none",
 			"master_dsn":"cproto://127.0.0.1:6534/db",
+			"server_id":0,
 			"cluster_id":2,
 			"force_sync_on_logic_error": false,
 			"force_sync_on_wrong_data_hash": false,

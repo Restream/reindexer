@@ -3,9 +3,11 @@
 
 namespace reindexer {
 
-void lsn_t::GetJSON(JsonBuilder &builder) const {
+void lsn_t::GetJSON(JsonBuilder& builder) const {
 	builder.Put("server_id", Server());
 	builder.Put("counter", Counter());
 }
 
-} // namespace reindexer
+[[noreturn]] void lsn_t::throwValidation(ErrorCode code, const char* fmt, int64_t value) { throw Error(code, fmt, value); }
+
+}  // namespace reindexer

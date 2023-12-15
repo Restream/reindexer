@@ -30,6 +30,10 @@ enum WALRecType {
 	WalForceSync = 14,
 	WalSetSchema = 15,
 	WalWALSync = 16,
+	WalTagsMatcher = 17,
+	WalResetLocalWal = 18,
+	WalRawItem = 19,
+	WalShallowItem = 20,
 };
 
 class WrSerializer;
@@ -57,8 +61,8 @@ struct WALRecord {
 	explicit WALRecord(WALRecType _type, std::string_view key, std::string_view value) : type(_type), putMeta{key, value} {}
 	explicit WALRecord(WALRecType _type, std::string_view cjson, int tmVersion, int modifyMode, bool inTx = false)
 		: type(_type), itemModify{cjson, tmVersion, modifyMode}, inTransaction(inTx) {}
-	WrSerializer &Dump(WrSerializer &ser, const std::function<std::string(std::string_view)>& cjsonViewer) const;
-	void GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)>& cjsonViewer) const;
+	WrSerializer &Dump(WrSerializer &ser, const std::function<std::string(std::string_view)> &cjsonViewer) const;
+	void GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)> &cjsonViewer) const;
 	void Pack(WrSerializer &ser) const;
 	SharedWALRecord GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const;
 
@@ -75,6 +79,10 @@ struct WALRecord {
 			std::string_view key;
 			std::string_view value;
 		} putMeta;
+		struct {
+			IdType id;
+			std::string_view itemCJson;
+		} rawItem;
 	};
 	bool inTransaction = false;
 	mutable SharedWALRecord shared_;

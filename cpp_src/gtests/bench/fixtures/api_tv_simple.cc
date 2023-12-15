@@ -81,9 +81,9 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2CondLeftJoin", &ApiTvSimple::Query2CondLeftJoin, this);
 	Register("Query2CondLeftJoinTotal", &ApiTvSimple::Query2CondLeftJoinTotal, this);
 	Register("Query2CondLeftJoinCachedTotal", &ApiTvSimple::Query2CondLeftJoinCachedTotal, this);
-	Register("Query0CondInnerJoinUnlimit", &ApiTvSimple::Query0CondInnerJoinUnlimit, this);
-	Register("Query0CondInnerJoinUnlimitLowSelectivity", &ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity, this);
-	Register("Query0CondInnerJoinPreResultStoreValues", &ApiTvSimple::Query0CondInnerJoinPreResultStoreValues, this);
+	Register("Query0CondInnerJoinUnlimit", &ApiTvSimple::Query0CondInnerJoinUnlimit, this)->Iterations(500);
+	Register("Query0CondInnerJoinUnlimitLowSelectivity", &ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity, this)->Iterations(500);
+	Register("Query0CondInnerJoinPreResultStoreValues", &ApiTvSimple::Query0CondInnerJoinPreResultStoreValues, this)->Iterations(500);
 	Register("Query2CondInnerJoin", &ApiTvSimple::Query2CondInnerJoin, this);
 	Register("Query2CondInnerJoinTotal", &ApiTvSimple::Query2CondInnerJoinTotal, this);
 	Register("Query2CondInnerJoinCachedTotal", &ApiTvSimple::Query2CondInnerJoinCachedTotal, this);
@@ -95,9 +95,9 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query4Cond", &ApiTvSimple::Query4Cond, this);
 	Register("Query4CondTotal", &ApiTvSimple::Query4CondTotal, this);
 	Register("Query4CondCachedTotal", &ApiTvSimple::Query4CondCachedTotal, this);
-	Register("Query4CondRange", &ApiTvSimple::Query4CondRange, this);
-	Register("Query4CondRangeTotal", &ApiTvSimple::Query4CondRangeTotal, this);
-	Register("Query4CondRangeCachedTotal", &ApiTvSimple::Query4CondRangeCachedTotal, this);
+	Register("Query4CondRange", &ApiTvSimple::Query4CondRange, this)->Iterations(1000);
+	Register("Query4CondRangeTotal", &ApiTvSimple::Query4CondRangeTotal, this)->Iterations(1000);
+	Register("Query4CondRangeCachedTotal", &ApiTvSimple::Query4CondRangeCachedTotal, this)->Iterations(1000);
 #if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	Register("Query2CondIdSet10", &ApiTvSimple::Query2CondIdSet10, this);
 #endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
@@ -111,7 +111,12 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("FromCJSONPKOnly", &ApiTvSimple::FromCJSONPKOnly, this);
 	Register("GetCJSON", &ApiTvSimple::GetCJSON, this);
 	Register("ExtractField", &ApiTvSimple::ExtractField, this);
-	// NOLINTEND(*cplusplus.NewDeleteLeaks)
+
+	// Those benches should be last, because they are recreating indexes cache
+	Register("Query4CondRangeDropCache", &ApiTvSimple::Query4CondRangeDropCache, this)->Iterations(1000);
+	Register("Query4CondRangeDropCacheTotal", &ApiTvSimple::Query4CondRangeDropCacheTotal, this)->Iterations(1000);
+	Register("Query4CondRangeDropCacheCachedTotal", &ApiTvSimple::Query4CondRangeDropCacheCachedTotal, this)->Iterations(1000);
+	//  NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
 reindexer::Error ApiTvSimple::Initialize() {
@@ -142,6 +147,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 		uuids_.emplace_back(randStrUuid());
 	}
 
+	devices_ = {"iphone", "android", "smarttv", "stb", "ottstb"};
 	locations_ = {"mos", "ct", "dv", "sth", "vlg", "sib", "ural"};
 
 	for (int i = 0; i < 10; i++) packages_.emplace_back(randomNumArray<int>(20, 10000, 10));
@@ -774,18 +780,25 @@ void ApiTvSimple::Query2CondLeftJoinCachedTotal(benchmark::State& state) {
 
 void ApiTvSimple::Query0CondInnerJoinUnlimit(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
+	size_t num = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 		q.ReqTotal().Limit(1);
 
-		q4join.Where("device", CondEq, "ottstb").Where("location", CondEq, "mos");
+		// Results depend on the joined query expected results size. If preselect is disabled, then
+		// timing will be much higher. To stabilize benchmark result we are using all combinations of 'device' and 'location'
+		size_t deviceId = num % devices_.size();
+		size_t locationId = (num / devices_.size()) % locations_.size();
+
+		q4join.Where("device", CondEq, devices_[deviceId]).Where("location", CondEq, locations_[locationId]);
 
 		q.InnerJoin("price_id", "id", CondSet, std::move(q4join));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		++num;
 	}
 }
 
@@ -1064,7 +1077,7 @@ void ApiTvSimple::Query4CondCachedTotal(benchmark::State& state) {
 void ApiTvSimple::Query4CondRange(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		int startTime = random<int>(0, 50000);
+		int startTime = random<int>(0, 30000);
 		int endTime = startTime + 10000;
 		Query q(nsdef_.name);
 		q.Limit(20)
@@ -1083,7 +1096,7 @@ void ApiTvSimple::Query4CondRange(benchmark::State& state) {
 void ApiTvSimple::Query4CondRangeTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		int startTime = random<int>(0, 50000);
+		int startTime = random<int>(0, 30000);
 		int endTime = startTime + 10000;
 		Query q(nsdef_.name);
 		q.Limit(20)
@@ -1103,7 +1116,72 @@ void ApiTvSimple::Query4CondRangeTotal(benchmark::State& state) {
 void ApiTvSimple::Query4CondRangeCachedTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		int startTime = random<int>(0, 50000);
+		int startTime = random<int>(0, 30000);
+		int endTime = startTime + 10000;
+		Query q(nsdef_.name);
+		q.Limit(20)
+			.Sort("year", false)
+			.Where("genre", CondEq, 5)
+			.Where("year", CondRange, {2010, 2016})
+			.Where("start_time", CondGt, startTime)
+			.Where("end_time", CondLt, endTime)
+			.CachedTotal();
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query4CondRangeDropCache(benchmark::State& state) {
+	IndexCacheSetter cacheDropper(*db_);
+
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		int startTime = random<int>(0, 30000);
+		int endTime = startTime + 10000;
+		Query q(nsdef_.name);
+		q.Limit(20)
+			.Sort("year", false)
+			.Where("genre", CondEq, 5)
+			.Where("year", CondRange, {2010, 2016})
+			.Where("start_time", CondGt, startTime)
+			.Where("end_time", CondLt, endTime);
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query4CondRangeDropCacheTotal(benchmark::State& state) {
+	IndexCacheSetter cacheDropper(*db_);
+
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		int startTime = random<int>(0, 30000);
+		int endTime = startTime + 10000;
+		Query q(nsdef_.name);
+		q.Limit(20)
+			.Sort("year", false)
+			.Where("genre", CondEq, 5)
+			.Where("year", CondRange, {2010, 2016})
+			.Where("start_time", CondGt, startTime)
+			.Where("end_time", CondLt, endTime)
+			.ReqTotal();
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query4CondRangeDropCacheCachedTotal(benchmark::State& state) {
+	IndexCacheSetter cacheDropper(*db_);
+
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		int startTime = random<int>(0, 30000);
 		int endTime = startTime + 10000;
 		Query q(nsdef_.name);
 		q.Limit(20)

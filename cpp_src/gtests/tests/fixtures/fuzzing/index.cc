@@ -13,7 +13,7 @@ reindexer::IndexDef Index::IndexDef(RandomGenerator& rnd, const NsScheme& scheme
 	IndexOpts opts;
 	const bool pk = rnd.PkIndex(isPk_);
 	opts.PK(pk);
-	opts.Array(rnd.RndArrayField(isArray_) == IsArray::Yes);
+	opts.Array(rnd.RndArrayField(isArray_) == IsArrayT::Yes);
 	opts.Sparse(rnd.RndSparseIndex(isSparse_));
 	opts.Dense(rnd.DenseIndex());
 	opts.RTreeType(static_cast<IndexOpts::RTreeIndexType>(rnd.RndInt(IndexOpts::Linear, IndexOpts::RStar)));
@@ -58,7 +58,7 @@ void Index::Dump(std::ostream& os, const NsScheme& scheme, size_t offset) const 
 	for (size_t i = 0; i <= offset; ++i) os << "  ";
 	os << "array: " << std::boolalpha << IsArray() << '\n';
 	for (size_t i = 0; i <= offset; ++i) os << "  ";
-	os << "sparse: " << std::boolalpha << (IsSparse() == IsSparse::Yes) << '\n';
+	os << "sparse: " << std::boolalpha << (IsSparse() == IsSparseT::Yes) << '\n';
 	for (size_t i = 0; i <= offset; ++i) os << "  ";
 	std::visit(reindexer::overloaded{[&](const Child& child) {
 										 os << "composite: false\n";

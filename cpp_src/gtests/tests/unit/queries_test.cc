@@ -1,5 +1,7 @@
 #include <gmock/gmock.h>
+
 #include <thread>
+
 #include "core/cjson/csvbuilder.h"
 #include "core/schema.h"
 #include "csv2jsonconverter.h"
@@ -230,6 +232,16 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		 Query{"test_namespace"}.Sort("index", true, {"str1", "str2", "str3"})},
 		{"SELECT * FROM test_namespace ORDER BY FIELD(index, {10, 'str1'}, {20, 'str2'}, {30, 'str3'})",
 		 Query{"test_namespace"}.Sort("index", false, std::vector<std::tuple<int, std::string>>{{10, "str1"}, {20, "str2"}, {30, "str3"}})},
+		{"SELECT * FROM main_ns WHERE (SELECT * FROM second_ns WHERE id < 10 LIMIT 0) IS NOT NULL",
+		 Query{"main_ns"}.Where(Query{"second_ns"}.Where("id", CondLt, 10), CondAny, VariantArray{})},
+		{"SELECT * FROM main_ns WHERE id = (SELECT id FROM second_ns WHERE id < 10)",
+		 Query{"main_ns"}.Where("id", CondEq, Query{"second_ns"}.Select({"id"}).Where("id", CondLt, 10))},
+		{"SELECT * FROM main_ns WHERE (SELECT max(id) FROM second_ns WHERE id < 10) > 18",
+		 Query{"main_ns"}.Where(Query{"second_ns"}.Aggregate(AggMax, {"id"}).Where("id", CondLt, 10), CondGt, {18})},
+		{"SELECT * FROM main_ns WHERE id > (SELECT avg(id) FROM second_ns WHERE id < 10)",
+		 Query{"main_ns"}.Where("id", CondGt, Query{"second_ns"}.Aggregate(AggAvg, {"id"}).Where("id", CondLt, 10))},
+		{"SELECT * FROM main_ns WHERE id > (SELECT COUNT(*) FROM second_ns WHERE id < 10 LIMIT 0)",
+		 Query{"main_ns"}.Where("id", CondGt, Query{"second_ns"}.Where("id", CondLt, 10).ReqTotal())},
 	};
 
 	for (const auto& [sql, expected, direction] : cases) {
@@ -239,20 +251,18 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 				EXPECT_EQ(q.GetSQL(), sql);
 			}
 			if (direction & PARSE) {
-				Query parsed;
 				try {
-					parsed.FromSQL(sql);
+					Query parsed = Query::FromSQL(sql);
+					EXPECT_EQ(parsed, q) << sql;
 				} catch (const Error& err) {
 					ADD_FAILURE() << "Unexpected error: " << err.what() << "\nSQL: " << sql;
 					continue;
 				}
-				EXPECT_EQ(parsed, q) << sql;
 			}
 		} else {
 			const Error& expectedErr = std::get<Error>(expected);
-			Query parsed;
 			try {
-				parsed.FromSQL(sql);
+				Query parsed = Query::FromSQL(sql);
 				ADD_FAILURE() << "Expected error: " << expectedErr.what() << "\nSQL: " << sql;
 			} catch (const Error& err) {
 				EXPECT_EQ(err.what(), expectedErr.what()) << "\nSQL: " << sql;
@@ -268,25 +278,302 @@ TEST_F(QueriesApi, DslGenerateParse) {
 		std::string dsl;
 		std::variant<Query, Error> expected;
 		Direction direction = BOTH;
-	} cases[]{
-		{R"({"namespace":")"s + geomNs +
-			 R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"dwithin","field":")" +
-			 kFieldNamePointLinearRTree + R"(","value":[[-9.2,-0.145],0.581]}],"merge_queries":[],"aggregations":[]})",
-		 Query{geomNs}.DWithin(kFieldNamePointLinearRTree, reindexer::Point{-9.2, -0.145}, 0.581)},
-		{R"({"namespace":")"s + default_namespace +
-			 R"(","limit":-1,"offset":0,"req_total":"disabled","explain":false,"type":"select","select_with_rank":false,"select_filter":[],"select_functions":[],"sort":[],"filters":[{"op":"and","cond":"gt","first_field":")" +
-			 kFieldNameStartTime + R"(","second_field":")" + kFieldNamePackages + R"("}],"merge_queries":[],"aggregations":[]})",
-		 Query{Query(default_namespace).WhereBetweenFields(kFieldNameStartTime, CondGt, kFieldNamePackages)}}};
+	} cases[]{{fmt::sprintf(
+				   R"({
+   "namespace": "%s",
+   "limit": -1,
+   "offset": 0,
+   "req_total": "disabled",
+   "explain": false,
+   "type": "select",
+   "select_with_rank": false,
+   "select_filter": [],
+   "select_functions": [],
+   "sort": [],
+   "filters": [
+      {
+         "op": "and",
+         "always": true
+      }
+   ],
+   "merge_queries": [],
+   "aggregations": []
+})",
+				   geomNs),
+			   Query{geomNs}.AppendQueryEntry<reindexer::AlwaysTrue>(OpAnd)},
+			  {fmt::sprintf(
+				   R"({
+   "namespace": "%s",
+   "limit": -1,
+   "offset": 0,
+   "req_total": "disabled",
+   "explain": false,
+   "type": "select",
+   "select_with_rank": false,
+   "select_filter": [],
+   "select_functions": [],
+   "sort": [],
+   "filters": [
+      {
+         "op": "and",
+         "cond": "dwithin",
+         "field": "%s",
+         "value": [
+            [
+               -9.2,
+               -0.145
+            ],
+            0.581
+         ]
+      }
+   ],
+   "merge_queries": [],
+   "aggregations": []
+})",
+				   geomNs, kFieldNamePointLinearRTree),
+			   Query{geomNs}.DWithin(kFieldNamePointLinearRTree, reindexer::Point{-9.2, -0.145}, 0.581)},
+			  {fmt::sprintf(
+				   R"({
+   "namespace": "%s",
+   "limit": -1,
+   "offset": 0,
+   "req_total": "disabled",
+   "explain": false,
+   "type": "select",
+   "select_with_rank": false,
+   "select_filter": [],
+   "select_functions": [],
+   "sort": [],
+   "filters": [
+      {
+         "op": "and",
+         "cond": "gt",
+         "first_field": "%s",
+         "second_field": "%s"
+      }
+   ],
+   "merge_queries": [],
+   "aggregations": []
+})",
+				   default_namespace, kFieldNameStartTime, kFieldNamePackages),
+			   Query(default_namespace).WhereBetweenFields(kFieldNameStartTime, CondGt, kFieldNamePackages)},
+			  {fmt::sprintf(
+				   R"({
+   "namespace": "%s",
+   "limit": -1,
+   "offset": 0,
+   "req_total": "disabled",
+   "explain": false,
+   "type": "select",
+   "select_with_rank": false,
+   "select_filter": [],
+   "select_functions": [],
+   "sort": [],
+   "filters": [
+      {
+         "op": "and",
+         "cond": "gt",
+         "subquery": {
+            "namespace": "%s",
+            "limit": 10,
+            "offset": 10,
+            "req_total": "disabled",
+            "select_filter": [],
+            "sort": [],
+            "filters": [],
+            "aggregations": [
+               {
+                  "type": "max",
+                  "fields": [
+                     "%s"
+                  ]
+               }
+            ]
+         },
+         "value": 18
+      }
+   ],
+   "merge_queries": [],
+   "aggregations": []
+})",
+				   default_namespace, joinNs, kFieldNameAge),
+			   Query(default_namespace).Where(Query(joinNs).Aggregate(AggMax, {kFieldNameAge}).Limit(10).Offset(10), CondGt, {18})},
+			  {fmt::sprintf(
+				   R"({
+   "namespace": "%s",
+   "limit": -1,
+   "offset": 0,
+   "req_total": "disabled",
+   "explain": false,
+   "type": "select",
+   "select_with_rank": false,
+   "select_filter": [],
+   "select_functions": [],
+   "sort": [],
+   "filters": [
+      {
+         "op": "and",
+         "cond": "any",
+         "subquery": {
+            "namespace": "%s",
+            "limit": 0,
+            "offset": 0,
+            "req_total": "disabled",
+            "select_filter": [],
+            "sort": [],
+            "filters": [
+               {
+                  "op": "and",
+                  "cond": "eq",
+                  "field": "%s",
+                  "value": 1
+               }
+            ],
+            "aggregations": []
+         }
+      }
+   ],
+   "merge_queries": [],
+   "aggregations": []
+})",
+				   default_namespace, joinNs, kFieldNameId),
+			   Query(default_namespace).Where(Query(joinNs).Where(kFieldNameId, CondEq, 1), CondAny, {})},
+			  {fmt::sprintf(
+				   R"({
+   "namespace": "%s",
+   "limit": -1,
+   "offset": 0,
+   "req_total": "disabled",
+   "explain": false,
+   "type": "select",
+   "select_with_rank": false,
+   "select_filter": [],
+   "select_functions": [],
+   "sort": [],
+   "filters": [
+      {
+         "op": "and",
+         "cond": "eq",
+         "field": "%s",
+         "subquery": {
+            "namespace": "%s",
+            "limit": -1,
+            "offset": 0,
+            "req_total": "disabled",
+            "select_filter": [
+               "%s"
+            ],
+            "sort": [],
+            "filters": [
+               {
+                  "op": "and",
+                  "cond": "set",
+                  "field": "%s",
+                  "value": [
+                     1,
+                     10,
+                     100
+                  ]
+               }
+            ],
+            "aggregations": []
+         }
+      }
+   ],
+   "merge_queries": [],
+   "aggregations": []
+})",
+				   default_namespace, kFieldNameName, joinNs, kFieldNameName, kFieldNameId),
+			   Query(default_namespace)
+				   .Where(kFieldNameName, CondEq, Query(joinNs).Select({kFieldNameName}).Where(kFieldNameId, CondSet, {1, 10, 100}))},
+			  {fmt::sprintf(
+				   R"({
+   "namespace": "%s",
+   "limit": -1,
+   "offset": 0,
+   "req_total": "disabled",
+   "explain": false,
+   "type": "select",
+   "select_with_rank": false,
+   "select_filter": [],
+   "select_functions": [],
+   "sort": [],
+   "filters": [
+      {
+         "op": "and",
+         "cond": "gt",
+         "field": "%s",
+         "subquery": {
+            "namespace": "%s",
+            "limit": -1,
+            "offset": 0,
+            "req_total": "disabled",
+            "select_filter": [],
+            "sort": [],
+            "filters": [],
+            "aggregations": [
+               {
+                  "type": "avg",
+                  "fields": [
+                     "%s"
+                  ]
+               }
+            ]
+         }
+      }
+   ],
+   "merge_queries": [],
+   "aggregations": []
+})",
+				   default_namespace, kFieldNameId, joinNs, kFieldNameId),
+			   Query(default_namespace).Where(kFieldNameId, CondGt, Query(joinNs).Aggregate(AggAvg, {kFieldNameId}))},
+			  {fmt::sprintf(
+				   R"({
+   "namespace": "%s",
+   "limit": -1,
+   "offset": 0,
+   "req_total": "disabled",
+   "explain": false,
+   "type": "select",
+   "select_with_rank": false,
+   "select_filter": [],
+   "select_functions": [],
+   "sort": [],
+   "filters": [
+      {
+         "op": "and",
+         "cond": "gt",
+         "field": "%s",
+         "subquery": {
+            "namespace": "%s",
+            "limit": 0,
+            "offset": 0,
+            "req_total": "enabled",
+            "select_filter": [],
+            "sort": [],
+            "filters": [],
+            "aggregations": []
+         }
+      }
+   ],
+   "merge_queries": [],
+   "aggregations": []
+})",
+				   default_namespace, kFieldNameId, joinNs, kFieldNameId),
+			   Query(default_namespace).Where(kFieldNameId, CondGt, Query(joinNs).ReqTotal())}};
 	for (const auto& [dsl, expected, direction] : cases) {
 		if (std::holds_alternative<Query>(expected)) {
 			const Query& q = std::get<Query>(expected);
 			if (direction & GEN) {
-				EXPECT_EQ(q.GetJSON(), dsl);
+				reindexer::WrSerializer ser;
+				reindexer::prettyPrintJSON(q.GetJSON(), ser, 3);
+				EXPECT_EQ(ser.Slice(), dsl);
 			}
 			if (direction & PARSE) {
 				Query parsed;
 				try {
-					parsed.FromJSON(dsl);
+					const auto err = parsed.FromJSON(dsl);
+					ASSERT_TRUE(err.ok()) << err.what() << "\nDSL: " << dsl;
 				} catch (const Error& err) {
 					ADD_FAILURE() << "Unexpected error: " << err.what() << "\nDSL: " << dsl;
 					continue;
@@ -297,7 +584,8 @@ TEST_F(QueriesApi, DslGenerateParse) {
 			const Error& expectedErr = std::get<Error>(expected);
 			Query parsed;
 			try {
-				parsed.FromJSON(dsl);
+				const auto err = parsed.FromJSON(dsl);
+				ASSERT_TRUE(err.ok()) << err.what();
 				ADD_FAILURE() << "Expected error: " << expectedErr.what() << "\nDSL: " << dsl;
 			} catch (const Error& err) {
 				EXPECT_EQ(err.what(), expectedErr.what()) << "\nDSL: " << dsl;
@@ -306,7 +594,7 @@ TEST_F(QueriesApi, DslGenerateParse) {
 	}
 }
 
-std::vector<int> generateForcedSortOrder(int maxValue, size_t size) {
+static std::vector<int> generateForcedSortOrder(int maxValue, size_t size) {
 	std::set<int> res;
 	while (res.size() < size) res.insert(rand() % maxValue);
 	return {res.cbegin(), res.cend()};
@@ -352,7 +640,7 @@ TEST_F(QueriesApi, StrictModeTest) {
 	const std::string kNotExistingField = "some_random_name123";
 	QueryResults qr;
 	{
-		Query query = Query(testSimpleNs).Where(kNotExistingField, CondEmpty, {});
+		Query query = Query(testSimpleNs).Where(kNotExistingField, CondEmpty, VariantArray{});
 		Error err = rt.reindexer->Select(query.Strict(StrictModeNames), qr);
 		EXPECT_EQ(err.code(), errQueryExec);
 		qr.Clear();
@@ -409,18 +697,16 @@ TEST_F(QueriesApi, SQLLeftJoinSerialize) {
 			}
 
 			{
-				Query qSql;
 				std::string sqlQ = createQuery(tLeft, tRight, iLeft, iRight, c.first);
-				qSql.FromSQL(sqlQ);
+				Query qSql = Query::FromSQL(sqlQ);
 
 				reindexer::WrSerializer wrSer;
 				qSql.GetSQL(wrSer);
 				ASSERT_EQ(sqlQ, std::string(wrSer.c_str()));
 			}
 			{
-				Query qSql;
 				std::string sqlQ = createQuery(tRight, tLeft, iRight, iLeft, c.second);
-				qSql.FromSQL(sqlQ);
+				Query qSql = Query::FromSQL(sqlQ);
 				ASSERT_EQ(q.GetJSON(), qSql.GetJSON());
 				reindexer::WrSerializer wrSer;
 				qSql.GetSQL(wrSer);
@@ -972,4 +1258,73 @@ TEST_F(QueriesApi, SortByFieldWithDifferentTypes) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	sortByNsDifferentTypesImpl(nsName, Query{nsName}, "");
+}
+
+TEST_F(QueriesApi, SerializeDeserialize) {
+	Query queries[]{
+		Query(default_namespace).Where(Query(default_namespace), CondAny, {}),
+		Query(default_namespace).Where(kFieldNameUuidArr, CondRange, randHeterogeneousUuidArray(2, 2)),
+		Query(default_namespace)
+			.WhereComposite(kCompositeFieldUuidName, CondRange,
+							{VariantArray::Create(nilUuid(), RandString()), VariantArray::Create(randUuid(), RandString())}),
+		Query(default_namespace).Where(Query(default_namespace).Where(kFieldNameId, CondEq, 10), CondAny, {}),
+		Query(default_namespace).Not().Where(Query(default_namespace), CondEmpty, {}),
+		Query(default_namespace).Where(kFieldNameId, CondLt, Query(default_namespace).Aggregate(AggAvg, {kFieldNameId})),
+		Query(default_namespace)
+			.Where(kFieldNameGenre, CondSet, Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40})),
+
+		Query(default_namespace).Where(Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondGt, 10), CondSet, {10, 20, 30, 40}),
+		Query(default_namespace)
+			.Where(Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondGt, 10).Offset(1), CondSet, {10, 20, 30, 40}),
+		Query(default_namespace)
+			.Where(Query(joinNs).Where(kFieldNameId, CondGt, 10).Aggregate(AggMax, {kFieldNameGenre}), CondRange, {48, 50}),
+		Query(default_namespace).Where(Query(joinNs).Where(kFieldNameId, CondGt, 10).ReqTotal(), CondGt, {50}),
+		Query(default_namespace)
+			.Debug(LogTrace)
+			.Where(kFieldNameGenre, CondEq, 5)
+			.Not()
+			.Where(Query(default_namespace).Where(kFieldNameGenre, CondEq, 5), CondAny, {})
+			.Or()
+			.Where(kFieldNameGenre, CondSet, Query(joinNs).Select({kFieldNameGenre}).Where(kFieldNameId, CondSet, {10, 20, 30, 40}))
+			.Not()
+			.OpenBracket()
+			.Where(kFieldNameYear, CondRange, {2001, 2020})
+			.Or()
+			.Where(kFieldNameName, CondLike, RandLikePattern())
+			.Or()
+			.Where(Query(joinNs).Where(kFieldNameYear, CondEq, 2000 + rand() % 210), CondEmpty, {})
+			.CloseBracket()
+			.Or()
+			.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+			.OpenBracket()
+			.Where(kFieldNameNumeric, CondLt, std::to_string(600))
+			.Not()
+			.OpenBracket()
+			.Where(kFieldNamePackages, CondSet, RandIntVector(5, 10000, 50))
+			.Where(kFieldNameGenre, CondLt, 6)
+			.Or()
+			.Where(kFieldNameId, CondLt, Query(default_namespace).Aggregate(AggAvg, {kFieldNameId}))
+			.CloseBracket()
+			.Not()
+			.Where(Query(joinNs).Where(kFieldNameId, CondGt, 10).Aggregate(AggMax, {kFieldNameGenre}), CondRange, {48, 50})
+			.Or()
+			.Where(kFieldNameYear, CondEq, 10)
+			.CloseBracket(),
+
+		Query(default_namespace)
+			.Where(kCompositeFieldIdTemp, CondEq, Query(default_namespace).Select({kCompositeFieldIdTemp}).Where(kFieldNameId, CondGt, 10)),
+		Query(default_namespace)
+			.Where(Query(default_namespace).Select({kCompositeFieldUuidName}).Where(kFieldNameId, CondGt, 10), CondRange,
+				   {VariantArray::Create(nilUuid(), RandString()), VariantArray::Create(randUuid(), RandString())}),
+		Query(default_namespace)
+			.Where(Query(default_namespace).Select({kCompositeFieldAgeGenre}).Where(kFieldNameId, CondGt, 10).Limit(10), CondLe,
+				   {Variant(VariantArray::Create(rand() % 50, rand() % 50))}),
+	};
+	for (Query& q : queries) {
+		reindexer::WrSerializer wser;
+		q.Serialize(wser);
+		reindexer::Serializer rser(wser.Slice());
+		const auto deserializedQuery = Query::Deserialize(rser);
+		EXPECT_EQ(q, deserializedQuery) << "Origin query:\n" << q.GetSQL() << "\nDeserialized query:\n" << deserializedQuery.GetSQL();
+	}
 }

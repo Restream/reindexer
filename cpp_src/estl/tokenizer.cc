@@ -16,8 +16,9 @@ void tokenizer::skip_space() noexcept {
 				cur_++;
 				pos_++;
 			}
-		} else
+		} else {
 			return;
+		}
 	}
 }
 

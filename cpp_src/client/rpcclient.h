@@ -90,6 +90,7 @@ protected:
 		ev::async stop_;
 		std::atomic_bool running;
 	};
+
 	Error selectImpl(std::string_view query, QueryResults &result, cproto::ClientConnection *, seconds netTimeout,
 					 const InternalRdxContext &ctx);
 	Error selectImpl(const Query &query, QueryResults &result, cproto::ClientConnection *, seconds netTimeout,
@@ -122,6 +123,7 @@ protected:
 	UpdatesObservers observers_;
 	std::atomic<net::cproto::ClientConnection *> updatesConn_;
 	std::vector<net::cproto::RPCAnswer> delayedUpdates_;
+	uint64_t serialDelays_ = 0;
 	cproto::ClientConnection::ConnectData connectData_;
 };
 

@@ -127,7 +127,7 @@ TEST_P(FTGenericApi, MergeWithSameNSAndSelectFunctions) {
 			auto mqr{reindexer::Query("nm1").Where("ft3", CondEq, std::move(dsl))};
 			mqr.AddFunction(field + " = snippet(<xxx>,\"\"</xf>,3,2,,d)");
 
-			qr.mergeQueries_.emplace_back(Merge, std::move(mqr));
+			qr.Merge(std::move(mqr));
 			qr.AddFunction(field + " = highlight(<b>,</b>)");
 			auto err = rt.reindexer->Select(qr, res);
 			EXPECT_TRUE(err.ok()) << err.what();

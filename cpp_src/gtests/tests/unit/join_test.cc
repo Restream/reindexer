@@ -63,8 +63,7 @@ TEST_F(JoinSelectsApi, JoinsAsWhereConditionsTest2) {
 		"OR INNER JOIN (SELECT *FROM authors_namespace WHERE authorid >= 300 AND authorid <= 400) ON authors_namespace.authorid = "
 		"books_namespace.authorid_fk LIMIT 50";
 
-	Query query;
-	query.FromSQL(sql);
+	Query query = Query::FromSQL(sql);
 	QueryWatcher watcher{query};
 	reindexer::QueryResults qr;
 	Error err = rt.reindexer->Select(query, qr);
@@ -82,23 +81,20 @@ TEST_F(JoinSelectsApi, SqlPasringTest) {
 		"(authorid >= 10 AND authorid <= 20) limit 100) on "
 		"authors_namespace.authorid = books_namespace.authorid_fk) or pages == 3 limit 20";
 
-	Query srcQuery;
-	srcQuery.FromSQL(sql);
+	Query srcQuery = Query::FromSQL(sql);
 	QueryWatcher watcher{srcQuery};
 
 	reindexer::WrSerializer wrser;
 	srcQuery.GetSQL(wrser);
 
-	Query dstQuery;
-	dstQuery.FromSQL(wrser.Slice());
+	Query dstQuery = Query::FromSQL(wrser.Slice());
 
 	ASSERT_EQ(srcQuery, dstQuery);
 
 	wrser.Reset();
 	srcQuery.Serialize(wrser);
-	Query deserializedQuery;
 	reindexer::Serializer ser(wrser.Buf(), wrser.Len());
-	deserializedQuery.Deserialize(ser);
+	Query deserializedQuery = Query::Deserialize(ser);
 	ASSERT_EQ(srcQuery, deserializedQuery) << "Original query:\n"
 										   << srcQuery.GetSQL() << "\nDeserialized query:\n"
 										   << deserializedQuery.GetSQL();
@@ -513,13 +509,12 @@ static void checkForAllowedJsonTags(const std::vector<std::string>& tags, gason:
 }
 
 TEST_F(JoinSelectsApi, JoinWithSelectFilter) {
-	Query queryAuthors(authors_namespace);
-	queryAuthors.selectFilter_.emplace_back(name);
-	queryAuthors.selectFilter_.emplace_back(age);
+	Query queryAuthors = Query(authors_namespace).Select({name, age});
 
-	Query queryBooks{Query(books_namespace).Where(pages, CondGe, 100).InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors))};
-	queryBooks.selectFilter_.emplace_back(title);
-	queryBooks.selectFilter_.emplace_back(price);
+	Query queryBooks{Query(books_namespace)
+						 .Where(pages, CondGe, 100)
+						 .InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors))
+						 .Select({title, price})};
 
 	QueryResults qr;
 	Error err = rt.reindexer->Select(queryBooks, qr);
@@ -563,7 +558,7 @@ TEST_F(JoinSelectsApi, TestMergeWithJoins) {
 	// Build the 2nd query (with join) with 'authors_namespace' as the main NS.
 	Query queryAuthors = Query(authors_namespace);
 	queryAuthors.LeftJoin(locationid_fk, locationid, CondEq, Query(location_namespace));
-	queryBooks.mergeQueries_.emplace_back(Merge, std::move(queryAuthors));
+	queryBooks.Merge(std::move(queryAuthors));
 
 	// Execute it
 	QueryResults qr;
@@ -640,8 +635,7 @@ TEST_F(JoinOnConditionsApi, TestGeneralConditions) {
 	const std::string sqlTemplate =
 		R"(select * from books_namespace inner join books_namespace on (books_namespace.authorid_fk = books_namespace.authorid_fk and books_namespace.pages %s books_namespace.pages);)";
 	for (CondType condition : {CondLt, CondLe, CondGt, CondGe, CondEq}) {
-		Query queryBooks;
-		queryBooks.FromSQL(GetSql(sqlTemplate, condition));
+		Query queryBooks = Query::FromSQL(GetSql(sqlTemplate, condition));
 		QueryResults qr;
 		Error err = rt.reindexer->Select(queryBooks, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -678,14 +672,12 @@ TEST_F(JoinOnConditionsApi, TestComparisonConditions) {
 	for (size_t i = 0; i < sqlTemplates.size(); ++i) {
 		const auto& sqlTemplate = sqlTemplates[i];
 		for (const auto& condition : conditions) {
-			Query query1;
-			query1.FromSQL(GetSql(sqlTemplate.first, condition.first));
+			Query query1 = Query::FromSQL(GetSql(sqlTemplate.first, condition.first));
 			QueryResults qr1;
 			Error err = rt.reindexer->Select(query1, qr1);
 			ASSERT_TRUE(err.ok()) << err.what();
 
-			Query query2;
-			query2.FromSQL(GetSql(sqlTemplate.second, condition.second));
+			Query query2 = Query::FromSQL(GetSql(sqlTemplate.second, condition.second));
 			QueryResults qr2;
 			err = rt.reindexer->Select(query2, qr2);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -770,8 +762,7 @@ TEST_F(JoinOnConditionsApi, TestLeftJoinOnCondSet) {
 	}
 
 	auto sqlTestCase = [execQuery](const std::string& s) {
-		Query q;
-		q.FromSQL(s);
+		Query q = Query::FromSQL(s);
 		execQuery(q);
 	};
 
@@ -788,8 +779,7 @@ TEST_F(JoinOnConditionsApi, TestInvalidConditions) {
 		R"(select * from books_namespace inner join authors_namespace on (books_namespace.authorid_fk = books_namespace.authorid_fk and books_namespace.pages in(1, 50, 100, 500, 1000, 1500));)",
 	};
 	for (const std::string& sql : sqls) {
-		Query queryBooks;
-		EXPECT_THROW(queryBooks.FromSQL(sql), Error);
+		EXPECT_THROW((void)Query::FromSQL(sql), Error);
 	}
 	QueryResults qr;
 	Error err = rt.reindexer->Select(Query(books_namespace).InnerJoin(authorid_fk, authorid, CondAllSet, Query(authors_namespace)), qr);

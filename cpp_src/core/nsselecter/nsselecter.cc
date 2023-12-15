@@ -23,12 +23,10 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	// std::cout << sql << std::endl;
 	const size_t resultInitSize = result.Count();
 	ctx.sortingContext.enableSortOrders = ns_->SortOrdersBuilt();
-	if (ns_->config_.logLevel > ctx.query.debugLevel) {
-		const_cast<Query *>(&ctx.query)->debugLevel = ns_->config_.logLevel;
-	}
+	const LogLevel logLevel = std::max(ns_->config_.logLevel, LogLevel(ctx.query.GetDebugLevel()));
 
 	auto &explain = ctx.explain;
-	explain = ExplainCalc(ctx.query.explain_ || ctx.query.debugLevel >= LogInfo);
+	explain = ExplainCalc(ctx.query.GetExplain() || logLevel >= LogInfo);
 	ActiveQueryScope queryScope(ctx, ns_->optimizationState_, explain, ns_->locker_.IsReadOnly(), ns_->strHolder_.get());
 
 	explain.SetPreselectTime(ctx.preResultTimeTotal);
@@ -65,15 +63,12 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	}
 
 	OnConditionInjections explainInjectedOnConditions;
-	QueryPreprocessor qPreproc((ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeExecute)
-								   ? const_cast<QueryEntries *>(&ctx.query.entries)->MakeLazyCopy()
-								   : QueryEntries{ctx.query.entries},
-							   ns_, ctx);
+	QueryPreprocessor qPreproc(QueryEntries{ctx.query.Entries()}, ns_, ctx);
 	if (ctx.joinedSelectors) {
-		qPreproc.InjectConditionsFromJoins(*ctx.joinedSelectors, explainInjectedOnConditions, rdxCtx);
+		qPreproc.InjectConditionsFromJoins(*ctx.joinedSelectors, explainInjectedOnConditions, logLevel, rdxCtx);
 		explain.PutOnConditionInjections(&explainInjectedOnConditions);
 	}
-	auto aggregators = getAggregators(aggregationQueryRef.aggregations_, aggregationQueryRef.strictMode);
+	auto aggregators = getAggregators(aggregationQueryRef.aggregations_, aggregationQueryRef.GetStrictMode());
 
 	qPreproc.AddDistinctEntries(aggregators);
 	const bool aggregationsOnly = aggregators.size() > 1 || (aggregators.size() == 1 && aggregators[0].Type() != AggDistinct);
@@ -106,7 +101,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	explain.AddPrepareTime();
 
 	if (ctx.contextCollectingMode) {
-		result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, ctx.query.selectFilter_), ns_->schema_);
+		result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, ctx.query.SelectFilters()), ns_->schema_);
 	}
 
 	if (isFt) result.haveRank = true;
@@ -119,8 +114,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	}
 
 	SelectIteratorContainer qres(ns_->payloadType_, &ctx);
-	QresExplainHolder qresHolder(qres, (explain.IsEnabled() || ctx.query.debugLevel >= LogTrace) ? QresExplainHolder::ExplainEnabled::Yes
-																								 : QresExplainHolder::ExplainEnabled::No);
+	QresExplainHolder qresHolder(qres, (explain.IsEnabled() || logLevel >= LogTrace) ? QresExplainHolder::ExplainEnabled::Yes
+																					 : QresExplainHolder::ExplainEnabled::No);
 	LoopCtx lctx(qres, ctx, qPreproc, aggregators, explain);
 	if (!ctx.query.forcedSortOrder_.empty() && !qPreproc.MoreThanOneEvaluation()) {
 		ctx.isForceAll = true;
@@ -182,7 +177,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 					qres.Append(OpAnd, SelectIterator(std::move(res), false, pr, IteratorFieldKind::None));
 				} break;
 				case JoinPreResult::ModeIterators:
-					qres.LazyAppend(ctx.preResult->iterators.begin(), ctx.preResult->iterators.end());
+					qres.Append(ctx.preResult->iterators.begin(), ctx.preResult->iterators.end());
 					break;
 				case JoinPreResult::ModeValues:
 					assertrx(0);
@@ -211,7 +206,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 							!ctx.sortingContext.sortIndex())				   // 2. We have sorted query, by unordered index
 						   || ctx.preResult->btreeIndexOptimizationEnabled) {  // 3. We have btree-index that is not committed yet
 					ctx.preResult->iterators.Append(qres.cbegin(), qres.cend());
-					if rx_unlikely (ctx.query.debugLevel >= LogInfo) {
+					if rx_unlikely (logLevel >= LogInfo) {
 						logPrintf(LogInfo, "Built preResult (expected %d iterations) with %d iterators, q='%s'", maxIterations, qres.Size(),
 								  ctx.query.GetSQL());
 					}
@@ -246,9 +241,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 		bool hasComparators = false;
 		qres.ExecuteAppropriateForEach(
-			Skip<JoinSelectIterator, SelectIteratorsBracket, AlwaysFalse>{},
-			[&hasComparators](const FieldsComparator &) { hasComparators = true; },
-			[&hasComparators](const SelectIterator &it) {
+			Skip<JoinSelectIterator, SelectIteratorsBracket, AlwaysFalse, AlwaysTrue>{},
+			[&hasComparators](const FieldsComparator &) noexcept { hasComparators = true; },
+			[&hasComparators](const SelectIterator &it) noexcept {
 				if (it.comparators_.size()) hasComparators = true;
 			});
 
@@ -280,7 +275,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		qres.CheckFirstQuery();
 
 		// Rewind all results iterators
-		qres.ExecuteAppropriateForEach(Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysFalse>{},
+		qres.ExecuteAppropriateForEach(Skip<JoinSelectIterator, SelectIteratorsBracket, FieldsComparator, AlwaysFalse, AlwaysTrue>{},
 									   [reverse, maxIterations](SelectIterator &it) { it.Start(reverse, maxIterations); });
 
 		// Let iterators choose most effecive algorith
@@ -325,7 +320,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 		// Get total count for simple query with 1 condition and 1 idset
 		if (needCalcTotal && !lctx.calcTotal) {
-			if (!ctx.query.entries.Empty()) {
+			if (!ctx.query.Entries().Empty()) {
 				result.totalCount += qres.Get<SelectIterator>(0).GetMaxIterations();
 			} else {
 				result.totalCount += ns_->items_.size() - ns_->free_.size();
@@ -361,7 +356,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		}
 	}
 	//	Put count/count_cached to aggretions
-	if (aggregationQueryRef.CalcTotal() != ModeNoTotal || containAggCount || containAggCountCached) {
+	if (aggregationQueryRef.HasCalcTotal() || containAggCount || containAggCountCached) {
 		AggregationResult ret;
 		ret.fields = {"*"};
 		ret.type = (aggregationQueryRef.CalcTotal() == ModeAccurateTotal || containAggCount) ? AggCount : AggCountCached;
@@ -386,18 +381,18 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	explain.PutSelectors(&qresHolder.GetResultsRef());
 	explain.PutJoinedSelectors(ctx.joinedSelectors);
 
-	if rx_unlikely (ctx.query.debugLevel >= LogInfo) {
+	if rx_unlikely (logLevel >= LogInfo) {
 		logPrintf(LogInfo, "%s", ctx.query.GetSQL());
-		explain.LogDump(ctx.query.debugLevel);
+		explain.LogDump(logLevel);
 	}
-	if (ctx.query.explain_) {
+	if (ctx.query.GetExplain()) {
 		if (ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
 			ctx.preResult->explainPreSelect = explain.GetJSON();
 		} else {
 			result.explainResults = explain.GetJSON();
 		}
 	}
-	if rx_unlikely (ctx.query.debugLevel >= LogTrace) {
+	if rx_unlikely (logLevel >= LogTrace) {
 		logPrintf(LogInfo, "Query returned: [%s]; total=%d", result.Dump(), result.totalCount);
 	}
 
@@ -408,13 +403,13 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	if (ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
 		switch (ctx.preResult->dataMode) {
 			case JoinPreResult::ModeIdSet:
-				if rx_unlikely (ctx.query.debugLevel >= LogInfo) {
+				if rx_unlikely (logLevel >= LogInfo) {
 					logPrintf(LogInfo, "Built idset preResult (expected %d iterations) with %d ids, q = '%s'", explain.Iterations(),
 							  ctx.preResult->ids.size(), ctx.query.GetSQL());
 				}
 				break;
 			case JoinPreResult::ModeValues:
-				if rx_unlikely (ctx.query.debugLevel >= LogInfo) {
+				if rx_unlikely (logLevel >= LogInfo) {
 					logPrintf(LogInfo, "Built values preResult (expected %d iterations) with %d values, q = '%s'", explain.Iterations(),
 							  ctx.preResult->values.size(), ctx.query.GetSQL());
 				}
@@ -487,7 +482,7 @@ private:
 template <bool desc, bool multiColumnSort, typename It>
 It NsSelecter::applyForcedSort(It begin, It end, const ItemComparator &compare, const SelectCtx &ctx, const joins::NamespaceResults *jr) {
 	assertrx_throw(!ctx.sortingContext.entries.empty());
-	if (ctx.query.mergeQueries_.size() > 1) throw Error(errLogic, "Force sort could not be applied to 'merged' queries.");
+	if (ctx.query.GetMergeQueries().size() > 1) throw Error(errLogic, "Force sort could not be applied to 'merged' queries.");
 	return std::visit(overloaded{
 						  [](const SortingContext::ExpressionEntry &) -> It {
 							  throw Error(errLogic, "Force sort could not be performed by expression.");
@@ -627,65 +622,64 @@ private:
 							  static_cast<const Base &>(*this));
 		}
 		const auto &operator*() const {
-			return std::visit(overloaded{[](MultiMap::Iterator it) -> const auto &{ return *it;
-		}
-		, [](SingleTypeMap::const_iterator it) -> const auto & { return *it; }},
+			return std::visit(overloaded{[](MultiMap::Iterator it) -> const auto & { return *it; },
+										 [](SingleTypeMap::const_iterator it) -> const auto & { return *it; }},
 							  static_cast<const Base &>(*this));
-}
-};	// namespace reindexer
+		}
+	};
 
 public:
-ForcedSortMap(Variant k, mapped_type v, size_t size)
-	: data_{k.Type().Is<KeyValueType::String>() || k.Type().Is<KeyValueType::Uuid>() || k.Type().IsNumeric()
-				? DataType{MultiMap{size}}
-				: DataType{SingleTypeMap{{}, k.Type()}}} {
-	std::visit(overloaded{[&](MultiMap &m) { m.insert(std::move(k), v); }, [&](SingleTypeMap &m) { m.emplace(std::move(k), v); }}, data_);
-}
-std::pair<Iterator, bool> emplace(Variant k, mapped_type v) & {
-	return std::visit(overloaded{[&](MultiMap &m) {
-									 const auto [iter, success] = m.insert(std::move(k), v);
-									 return std::make_pair(Iterator{iter}, success);
-								 },
-								 [&](SingleTypeMap &m) {
-									 if (!m.type_.IsSame(k.Type())) {
-										 throw Error{errQueryExec, "Items of different types in forced sort list"};
-									 }
-									 const auto [iter, success] = m.emplace(std::move(k), v);
-									 return std::make_pair(Iterator{iter}, success);
-								 }},
-					  data_);
-}
-bool contain(const Variant &k) const {
-	return std::visit(overloaded{[&k](const MultiMap &m) { return m.find(k) != m.cend(); },
-								 [&k](const SingleTypeMap &m) {
-									 if (!m.type_.IsSame(k.Type())) {
-										 throw Error{errQueryExec, "Items of different types in forced sort list"};
-									 }
-									 return m.find(k) != m.end();
-								 }},
-					  data_);
-}
-mapped_type get(const Variant &k) const {
-	return std::visit(overloaded{[&k](const MultiMap &m) {
-									 const auto it = m.find(k);
-									 assertrx_throw(it != m.cend());
-									 return it->second;
-								 },
-								 [&k](const SingleTypeMap &m) {
-									 if (!m.type_.IsSame(k.Type())) {
-										 throw Error{errQueryExec, "Items of different types in forced sort list"};
-									 }
-									 const auto it = m.find(k);
-									 assertrx_throw(it != m.end());
-									 return it->second;
-								 }},
-					  data_);
-}
+	ForcedSortMap(Variant k, mapped_type v, size_t size)
+		: data_{k.Type().Is<KeyValueType::String>() || k.Type().Is<KeyValueType::Uuid>() || k.Type().IsNumeric()
+					? DataType{MultiMap{size}}
+					: DataType{SingleTypeMap{{}, k.Type()}}} {
+		std::visit(overloaded{[&](MultiMap &m) { m.insert(std::move(k), v); }, [&](SingleTypeMap &m) { m.emplace(std::move(k), v); }},
+				   data_);
+	}
+	std::pair<Iterator, bool> emplace(Variant k, mapped_type v) & {
+		return std::visit(overloaded{[&](MultiMap &m) {
+										 const auto [iter, success] = m.insert(std::move(k), v);
+										 return std::make_pair(Iterator{iter}, success);
+									 },
+									 [&](SingleTypeMap &m) {
+										 if (!m.type_.IsSame(k.Type())) {
+											 throw Error{errQueryExec, "Items of different types in forced sort list"};
+										 }
+										 const auto [iter, success] = m.emplace(std::move(k), v);
+										 return std::make_pair(Iterator{iter}, success);
+									 }},
+						  data_);
+	}
+	bool contain(const Variant &k) const {
+		return std::visit(overloaded{[&k](const MultiMap &m) { return m.find(k) != m.cend(); },
+									 [&k](const SingleTypeMap &m) {
+										 if (!m.type_.IsSame(k.Type())) {
+											 throw Error{errQueryExec, "Items of different types in forced sort list"};
+										 }
+										 return m.find(k) != m.end();
+									 }},
+						  data_);
+	}
+	mapped_type get(const Variant &k) const {
+		return std::visit(overloaded{[&k](const MultiMap &m) {
+										 const auto it = m.find(k);
+										 assertrx_throw(it != m.cend());
+										 return it->second;
+									 },
+									 [&k](const SingleTypeMap &m) {
+										 if (!m.type_.IsSame(k.Type())) {
+											 throw Error{errQueryExec, "Items of different types in forced sort list"};
+										 }
+										 const auto it = m.find(k);
+										 assertrx_throw(it != m.end());
+										 return it->second;
+									 }},
+						  data_);
+	}
 
 private:
-DataType data_;
-}
-;
+	DataType data_;
+};
 
 template <typename Map>
 class ForcedMapInserter {
@@ -886,7 +880,7 @@ It NsSelecter::applyForcedSortImpl(NamespaceImpl &ns, It begin, It end, const It
 
 template <typename It>
 void NsSelecter::applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator &comparator, const SelectCtx &ctx) {
-	if (ctx.query.mergeQueries_.size() > 1) {
+	if (ctx.query.GetMergeQueries().size() > 1) {
 		throw Error(errLogic, "Sorting cannot be applied to merged queries.");
 	}
 
@@ -1040,7 +1034,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &rd
 			// Exclude last sets of id from each query result, so duplicated keys will
 			// be removed
 			for (auto &it : qres) {
-				if (it.HoldsOrReferTo<SelectIterator>() && it.Value<SelectIterator>().distinct) {
+				if (it.Is<SelectIterator>() && it.Value<SelectIterator>().distinct) {
 					it.Value<SelectIterator>().ExcludeLastSet(pv, rowId, properRowId);
 				}
 			}
@@ -1214,7 +1208,7 @@ void NsSelecter::addSelectResult(uint8_t proc, IdType rowId, IdType properRowId,
 
 void NsSelecter::checkStrictModeAgg(StrictMode strictMode, const std::string &name, const std::string &nsName,
 									const TagsMatcher &tagsMatcher) const {
-	if (int index = IndexValueType::SetByJsonPath; ns_->getIndexByName(name, index)) return;
+	if (int index = IndexValueType::SetByJsonPath; ns_->tryGetIndexByName(name, index)) return;
 
 	if (strictMode == StrictModeIndexes) {
 		throw Error(errParams,
@@ -1351,8 +1345,9 @@ static void removeQuotesFromExpression(std::string &expression) {
 
 void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, bool isFt, bool availableSelectBySortIndex) {
 	using namespace SortExprFuncs;
-	const auto strictMode =
-		ctx.inTransaction ? StrictModeNone : ((ctx.query.strictMode == StrictModeNotSet) ? ns_->config_.strictMode : ctx.query.strictMode);
+	const auto strictMode = ctx.inTransaction
+								? StrictModeNone
+								: ((ctx.query.GetStrictMode() == StrictModeNotSet) ? ns_->config_.strictMode : ctx.query.GetStrictMode());
 	static const JoinedSelectors emptyJoinedSelectors;
 	const auto &joinedSelectors = ctx.joinedSelectors ? *ctx.joinedSelectors : emptyJoinedSelectors;
 	ctx.sortingContext.entries.clear();
@@ -1401,7 +1396,7 @@ void NsSelecter::prepareSortingContext(SortingEntries &sortBy, SelectCtx &ctx, b
 				ctx.isForceAll = true;
 			}
 		} else {
-			if (!ctx.query.mergeQueries_.empty()) {
+			if (!ctx.query.GetMergeQueries().empty()) {
 				throw Error(errLogic, "Sorting by expression cannot be applied to merged queries.");
 			}
 			struct {
@@ -1560,9 +1555,10 @@ size_t NsSelecter::calculateNormalCost(const QueryEntries &qentries, SelectCtx &
 		next = qentries.Next(i);
 		const bool calculateEntry = costCalculator.OnNewEntry(qentries, i, next);
 		qentries.InvokeAppropriate<void>(
-			i, Skip<AlwaysFalse>{}, [&costCalculator](const QueryEntriesBracket &) { costCalculator.MarkInapposite(); },
-			[&costCalculator](const JoinQueryEntry &) { costCalculator.MarkInapposite(); },
-			[&costCalculator](const BetweenFieldsQueryEntry &) { costCalculator.MarkInapposite(); },
+			i, [](const SubQueryEntry &) { assertrx_throw(0); }, [](const SubQueryFieldEntry &) { assertrx_throw(0); },
+			Skip<AlwaysFalse, AlwaysTrue>{}, [&costCalculator](const QueryEntriesBracket &) noexcept { costCalculator.MarkInapposite(); },
+			[&costCalculator](const JoinQueryEntry &) noexcept { costCalculator.MarkInapposite(); },
+			[&costCalculator](const BetweenFieldsQueryEntry &) noexcept { costCalculator.MarkInapposite(); },
 			[&](const QueryEntry &qe) {
 				if (!qe.IsFieldIndexed()) {
 					costCalculator.MarkInapposite();
@@ -1627,9 +1623,11 @@ size_t NsSelecter::calculateOptimizedCost(size_t costNormal, const QueryEntries 
 			continue;
 		}
 		qentries.InvokeAppropriate<void>(
-			i, Skip<AlwaysFalse>{}, [&costCalculator](const QueryEntriesBracket &) { costCalculator.MarkInapposite(); },
-			[&costCalculator](const JoinQueryEntry &) { costCalculator.MarkInapposite(); },
-			[&costCalculator](const BetweenFieldsQueryEntry &) { costCalculator.MarkInapposite(); },
+			i, Skip<AlwaysFalse, AlwaysTrue>{}, [](const SubQueryEntry &) { assertrx_throw(0); },
+			[](const SubQueryFieldEntry &) { assertrx_throw(0); },
+			[&costCalculator](const QueryEntriesBracket &) noexcept { costCalculator.MarkInapposite(); },
+			[&costCalculator](const JoinQueryEntry &) noexcept { costCalculator.MarkInapposite(); },
+			[&costCalculator](const BetweenFieldsQueryEntry &) noexcept { costCalculator.MarkInapposite(); },
 			[&](const QueryEntry &qe) {
 				if (!qe.IsFieldIndexed() || qe.IndexNo() != ctx.sortingContext.uncommitedIndex) {
 					costCalculator.MarkInapposite();
@@ -1659,7 +1657,7 @@ bool NsSelecter::isSortOptimizatonEffective(const QueryEntries &qentries, Select
 	if (qentries.Size() == 0) {
 		return true;
 	}
-	if (qentries.Size() == 1 && qentries.HoldsOrReferTo<QueryEntry>(0)) {
+	if (qentries.Size() == 1 && qentries.Is<QueryEntry>(0)) {
 		const auto &qe = qentries.Get<QueryEntry>(0);
 		if (qe.IndexNo() == ctx.sortingContext.uncommitedIndex) {
 			return SelectIteratorContainer::IsExpectingOrderedResults(qe);

@@ -4,7 +4,7 @@
 
 class JoinOnConditionsApi : public JoinSelectsApi {
 public:
-	void SetUp() override { JoinSelectsApi::Init("/tmp/join_on_conditions_test/"); }
+	void SetUp() override { JoinSelectsApi::Init(reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "join_on_conditions_test")); }
 
 	void CreateCondSetTable(const std::string& leftNs, const std::string& rightNs, const std::vector<int>& leftNsData,
 							const std::vector<std::vector<int>>& rightNsData) {

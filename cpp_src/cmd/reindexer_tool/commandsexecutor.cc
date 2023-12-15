@@ -6,6 +6,7 @@
 #include "coroutine/waitgroup.h"
 #include "executorscommand.h"
 #include "tableviewscroller.h"
+#include "tools/catch_and_return.h"
 #include "tools/fsops.h"
 #include "tools/jsontools.h"
 #include "tools/stringstools.h"
@@ -191,7 +192,43 @@ Error CommandsExecutor<DBInterface>::runImpl(const std::string& dsn, Args&&... a
 	using reindexer::net::ev::sig;
 	assertrx(!executorThr_.joinable());
 
-	auto fn = [this](const std::string& dsn, Args&&... args) {
+	auto fnLoop = [this](const std::string& dsn, Args&&... args) {
+		std::string outputMode;
+		Error err;
+		if (reindexer::fs::ReadFile(reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile), outputMode) > 0) {
+			try {
+				gason::JsonParser jsonParser;
+				gason::JsonNode value = jsonParser.Parse(reindexer::giftStr(outputMode));
+				for (auto node : value) {
+					WrSerializer ser;
+					reindexer::jsonValueToString(node.value, ser, 0, 0, false);
+					variables_[kVariableOutput] = std::string(ser.Slice());
+				}
+			} catch (const gason::Exception& e) {
+				err = Error(errParseJson, "Unable to parse output mode: %s", e.what());
+			}
+		}
+		if (err.ok() && variables_.empty()) {
+			variables_[kVariableOutput] = kOutputModeJson;
+		}
+		if (err.ok() && !uri_.parse(dsn)) {
+			err = Error(errNotValid, "Cannot connect to DB: Not a valid uri");
+		}
+		if (err.ok()) err = db().Connect(dsn, std::forward<Args>(args)...);
+		if (err.ok()) {
+			loop_.spawn(
+				[this] {
+					// This coroutine should prevent loop from stopping for core::Reindexer
+					stopCh_.pop();
+				},
+				k8KStack);
+		}
+		std::lock_guard<std::mutex> lck(mtx_);
+		status_.running = err.ok();
+		status_.err = std::move(err);
+	};
+
+	auto fnThread = [this, &fnLoop](const std::string& dsn, Args&&... args) {
 		sig sint;
 		sint.set(loop_);
 		sint.set([this](sig&) { cancelCtx_.Cancel(); });
@@ -214,49 +251,13 @@ Error CommandsExecutor<DBInterface>::runImpl(const std::string& dsn, Args&&... a
 			});
 		});
 		cmdAsync_.start();
-
-		auto fn = [this](const std::string& dsn, Args&&... args) {
-			std::string outputMode;
-			Error err;
-			if (reindexer::fs::ReadFile(reindexer::fs::JoinPath(reindexer::fs::GetHomeDir(), kConfigFile), outputMode) > 0) {
-				try {
-					gason::JsonParser jsonParser;
-					gason::JsonNode value = jsonParser.Parse(reindexer::giftStr(outputMode));
-					for (auto node : value) {
-						WrSerializer ser;
-						reindexer::jsonValueToString(node.value, ser, 0, 0, false);
-						variables_[kVariableOutput] = std::string(ser.Slice());
-					}
-				} catch (const gason::Exception& e) {
-					err = Error(errParseJson, "Unable to parse output mode: %s", e.what());
-				}
-			}
-			if (err.ok() && variables_.empty()) {
-				variables_[kVariableOutput] = kOutputModeJson;
-			}
-			if (err.ok() && !uri_.parse(dsn)) {
-				err = Error(errNotValid, "Cannot connect to DB: Not a valid uri");
-			}
-			if (err.ok()) err = db().Connect(dsn, std::forward<Args>(args)...);
-			if (err.ok()) {
-				loop_.spawn(
-					[this] {
-						// This coroutine should prevent loop from stopping for core::Reindexer
-						stopCh_.pop();
-					},
-					k8KStack);
-			}
-			std::lock_guard<std::mutex> lck(mtx_);
-			status_.running = err.ok();
-			status_.err = std::move(err);
-		};
-		loop_.spawn(std::bind(fn, std::cref(dsn), std::forward<Args>(args)...));
+		loop_.spawn(std::bind(fnLoop, std::cref(dsn), std::forward<Args>(args)...));
 
 		loop_.run();
 	};
 
 	setStatus(Status());
-	executorThr_ = std::thread(std::bind(fn, std::cref(dsn), std::forward<Args>(args)...));
+	executorThr_ = std::thread(std::bind(fnThread, std::cref(dsn), std::forward<Args>(args)...));
 	auto status = GetStatus();
 	while (!status.running && status.err.ok()) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -518,116 +519,114 @@ Error CommandsExecutor<DBInterface>::getSuggestions(const std::string& input, st
 }
 
 template <typename DBInterface>
-Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) {
-	typename DBInterface::QueryResultsT results(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-	Query q;
+Error CommandsExecutor<DBInterface>::commandSelect(const std::string& command) noexcept {
 	try {
-		q.FromSQL(command);
-	} catch (const Error& err) {
+		typename DBInterface::QueryResultsT results(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
+		const auto q = Query::FromSQL(command);
+
+		auto err = db().Select(q, results);
+
+		if (err.ok()) {
+			if (results.Count()) {
+				auto& outputType = variables_[kVariableOutput];
+				if (outputType == kOutputModeTable) {
+					auto isCanceled = [this]() -> bool { return cancelCtx_.IsCancelled(); };
+					reindexer::TableViewBuilder<typename DBInterface::QueryResultsT> tableResultsBuilder(results);
+					if (output_.IsCout() && !reindexer::isStdoutRedirected()) {
+						TableViewScroller<typename DBInterface::QueryResultsT> resultsScroller(results, tableResultsBuilder,
+																							   reindexer::getTerminalSize().height - 1);
+						resultsScroller.Scroll(output_, isCanceled);
+					} else {
+						tableResultsBuilder.Build(output_(), isCanceled);
+					}
+				} else {
+					if (!cancelCtx_.IsCancelled()) {
+						output_() << "[" << std::endl;
+						err = queryResultsToJson(output_(), results, q.IsWALQuery(), !output_.IsCout());
+						output_() << "]" << std::endl;
+					}
+				}
+			}
+
+			const std::string& explain = results.GetExplainResults();
+			if (!explain.empty() && !cancelCtx_.IsCancelled()) {
+				output_() << "Explain: " << std::endl;
+				if (variables_[kVariableOutput] == kOutputModePretty) {
+					WrSerializer ser;
+					prettyPrintJSON(reindexer::giftStr(explain), ser);
+					output_() << ser.Slice() << std::endl;
+				} else {
+					output_() << explain << std::endl;
+				}
+			}
+			if (!cancelCtx_.IsCancelled()) {
+				output_() << "Returned " << results.Count() << " rows";
+				if (results.TotalCount()) output_() << ", total count " << results.TotalCount();
+				output_() << std::endl;
+			}
+
+			auto& aggResults = results.GetAggregationResults();
+			if (aggResults.size() && !cancelCtx_.IsCancelled()) {
+				output_() << "Aggregations: " << std::endl;
+				for (auto& agg : aggResults) {
+					switch (agg.type) {
+						case AggFacet: {
+							assertrx(!agg.fields.empty());
+							reindexer::h_vector<int, 1> maxW;
+							maxW.reserve(agg.fields.size());
+							for (const auto& field : agg.fields) {
+								maxW.emplace_back(field.length());
+							}
+							for (auto& row : agg.facets) {
+								assertrx(row.values.size() == agg.fields.size());
+								for (size_t i = 0; i < row.values.size(); ++i) {
+									maxW.at(i) = std::max(maxW.at(i), int(row.values[i].length()));
+								}
+							}
+							int rowWidth = 8 + (maxW.size() - 1) * 2;
+							for (auto& mW : maxW) {
+								mW += 3;
+								rowWidth += mW;
+							}
+							for (size_t i = 0; i < agg.fields.size(); ++i) {
+								if (i != 0) output_() << "| ";
+								output_() << std::left << std::setw(maxW.at(i)) << agg.fields[i];
+							}
+							output_() << "| count" << std::endl;
+							output_() << std::left << std::setw(rowWidth) << std::setfill('-') << "" << std::endl << std::setfill(' ');
+							for (auto& row : agg.facets) {
+								for (size_t i = 0; i < row.values.size(); ++i) {
+									if (i != 0) output_() << "| ";
+									output_() << std::left << std::setw(maxW.at(i)) << row.values[i];
+								}
+								output_() << "| " << row.count << std::endl;
+							}
+						} break;
+						case AggDistinct:
+							assertrx(agg.fields.size() == 1);
+							output_() << "Distinct (" << agg.fields.front() << ")" << std::endl;
+							for (auto& v : agg.distincts) {
+								output_() << v.template As<std::string>(agg.payloadType, agg.distinctsFields) << std::endl;
+							}
+							output_() << "Returned " << agg.distincts.size() << " values" << std::endl;
+							break;
+						case AggSum:
+						case AggAvg:
+						case AggMin:
+						case AggMax:
+						case AggCount:
+						case AggCountCached:
+						case AggUnknown:
+							assertrx(agg.fields.size() == 1);
+							output_() << reindexer::AggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.GetValueOrZero()
+									  << std::endl;
+					}
+				}
+			}
+		}
 		return err;
 	}
-
-	auto err = db().Select(q, results);
-
-	if (err.ok()) {
-		if (results.Count()) {
-			auto& outputType = variables_[kVariableOutput];
-			if (outputType == kOutputModeTable) {
-				auto isCanceled = [this]() -> bool { return cancelCtx_.IsCancelled(); };
-				reindexer::TableViewBuilder<typename DBInterface::QueryResultsT> tableResultsBuilder(results);
-				if (output_.IsCout() && !reindexer::isStdoutRedirected()) {
-					TableViewScroller<typename DBInterface::QueryResultsT> resultsScroller(results, tableResultsBuilder,
-																						   reindexer::getTerminalSize().height - 1);
-					resultsScroller.Scroll(output_, isCanceled);
-				} else {
-					tableResultsBuilder.Build(output_(), isCanceled);
-				}
-			} else {
-				if (!cancelCtx_.IsCancelled()) {
-					output_() << "[" << std::endl;
-					err = queryResultsToJson(output_(), results, q.IsWALQuery(), !output_.IsCout());
-					output_() << "]" << std::endl;
-				}
-			}
-		}
-
-		const std::string& explain = results.GetExplainResults();
-		if (!explain.empty() && !cancelCtx_.IsCancelled()) {
-			output_() << "Explain: " << std::endl;
-			if (variables_[kVariableOutput] == kOutputModePretty) {
-				WrSerializer ser;
-				prettyPrintJSON(reindexer::giftStr(explain), ser);
-				output_() << ser.Slice() << std::endl;
-			} else {
-				output_() << explain << std::endl;
-			}
-		}
-		if (!cancelCtx_.IsCancelled()) {
-			output_() << "Returned " << results.Count() << " rows";
-			if (results.TotalCount()) output_() << ", total count " << results.TotalCount();
-			output_() << std::endl;
-		}
-
-		auto& aggResults = results.GetAggregationResults();
-		if (aggResults.size() && !cancelCtx_.IsCancelled()) {
-			output_() << "Aggregations: " << std::endl;
-			for (auto& agg : aggResults) {
-				switch (agg.type) {
-					case AggFacet: {
-						assertrx(!agg.fields.empty());
-						reindexer::h_vector<int, 1> maxW;
-						maxW.reserve(agg.fields.size());
-						for (const auto& field : agg.fields) {
-							maxW.emplace_back(field.length());
-						}
-						for (auto& row : agg.facets) {
-							assertrx(row.values.size() == agg.fields.size());
-							for (size_t i = 0; i < row.values.size(); ++i) {
-								maxW.at(i) = std::max(maxW.at(i), int(row.values[i].length()));
-							}
-						}
-						int rowWidth = 8 + (maxW.size() - 1) * 2;
-						for (auto& mW : maxW) {
-							mW += 3;
-							rowWidth += mW;
-						}
-						for (size_t i = 0; i < agg.fields.size(); ++i) {
-							if (i != 0) output_() << "| ";
-							output_() << std::left << std::setw(maxW.at(i)) << agg.fields[i];
-						}
-						output_() << "| count" << std::endl;
-						output_() << std::left << std::setw(rowWidth) << std::setfill('-') << "" << std::endl << std::setfill(' ');
-						for (auto& row : agg.facets) {
-							for (size_t i = 0; i < row.values.size(); ++i) {
-								if (i != 0) output_() << "| ";
-								output_() << std::left << std::setw(maxW.at(i)) << row.values[i];
-							}
-							output_() << "| " << row.count << std::endl;
-						}
-					} break;
-					case AggDistinct:
-						assertrx(agg.fields.size() == 1);
-						output_() << "Distinct (" << agg.fields.front() << ")" << std::endl;
-						for (auto& v : agg.distincts) {
-							output_() << v.template As<std::string>(agg.payloadType, agg.distinctsFields) << std::endl;
-						}
-						output_() << "Returned " << agg.distincts.size() << " values" << std::endl;
-						break;
-					case AggSum:
-					case AggAvg:
-					case AggMin:
-					case AggMax:
-					case AggCount:
-					case AggCountCached:
-					case AggUnknown:
-						assertrx(agg.fields.size() == 1);
-						output_() << reindexer::AggTypeToStr(agg.type) << "(" << agg.fields.front() << ") = " << agg.GetValueOrZero()
-								  << std::endl;
-				}
-			}
-		}
-	}
-	return err;
+	CATCH_AND_RETURN;
 }
 
 template <typename DBInterface>
@@ -661,21 +660,19 @@ Error CommandsExecutor<DBInterface>::commandUpsert(const std::string& command) {
 }
 
 template <typename DBInterface>
-Error CommandsExecutor<DBInterface>::commandUpdateSQL(const std::string& command) {
-	typename DBInterface::QueryResultsT results;
-	Query q;
+Error CommandsExecutor<DBInterface>::commandUpdateSQL(const std::string& command) noexcept {
 	try {
-		q.FromSQL(command);
-	} catch (const Error& err) {
+		typename DBInterface::QueryResultsT results;
+		Query q = Query::FromSQL(command);
+
+		auto err = db().Update(q, results);
+
+		if (err.ok()) {
+			output_() << "Updated " << results.Count() << " documents" << std::endl;
+		}
 		return err;
 	}
-
-	auto err = db().Update(q, results);
-
-	if (err.ok()) {
-		output_() << "Updated " << results.Count() << " documents" << std::endl;
-	}
-	return err;
+	CATCH_AND_RETURN;
 }
 
 template <typename DBInterface>
@@ -695,20 +692,18 @@ Error CommandsExecutor<DBInterface>::commandDelete(const std::string& command) {
 }
 
 template <typename DBInterface>
-Error CommandsExecutor<DBInterface>::commandDeleteSQL(const std::string& command) {
-	typename DBInterface::QueryResultsT results;
-	Query q;
+Error CommandsExecutor<DBInterface>::commandDeleteSQL(const std::string& command) noexcept {
 	try {
-		q.FromSQL(command);
-	} catch (const Error& err) {
+		typename DBInterface::QueryResultsT results;
+		Query q = Query::FromSQL(command);
+		auto err = db().Delete(q, results);
+
+		if (err.ok()) {
+			output_() << "Deleted " << results.Count() << " documents" << std::endl;
+		}
 		return err;
 	}
-	auto err = db().Delete(q, results);
-
-	if (err.ok()) {
-		output_() << "Deleted " << results.Count() << " documents" << std::endl;
-	}
-	return err;
+	CATCH_AND_RETURN;
 }
 
 template <typename DBInterface>

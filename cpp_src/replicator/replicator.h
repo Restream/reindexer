@@ -94,7 +94,8 @@ protected:
 	// Push update to the queue to apply it later
 	void pushPendingUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec);
 
-	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &walRec) override final;
+	void OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec) override final;
+	void onWALUpdateImpl(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec);
 	void OnUpdatesLost(std::string_view nsName) override final;
 	void OnConnectionState(const Error &err) override final;
 

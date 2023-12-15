@@ -37,7 +37,7 @@ Error RPCClientMock::Delete(const Query& query, QueryResults& result, const Inte
 	auto conn = getConn();
 
 	NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
 
@@ -69,7 +69,7 @@ Error RPCClientMock::Update(const Query& query, QueryResults& result, const Inte
 	auto conn = getConn();
 
 	NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
 
@@ -289,10 +289,10 @@ Error RPCClientMock::selectImpl(const Query& query, QueryResults& result, cproto
 		flags = result.fetchFlags_ ? result.fetchFlags_ : (kResultsWithPayloadTypes | kResultsCJson);
 	}
 
-	bool hasJoins = !query.joinQueries_.empty();
+	bool hasJoins = !query.GetJoinQueries().empty();
 	if (!hasJoins) {
-		for (auto& mq : query.mergeQueries_) {
-			if (!mq.joinQueries_.empty()) {
+		for (auto& mq : query.GetMergeQueries()) {
+			if (!mq.GetJoinQueries().empty()) {
 				hasJoins = true;
 				break;
 			}
@@ -308,7 +308,7 @@ Error RPCClientMock::selectImpl(const Query& query, QueryResults& result, cproto
 
 	NsArray nsArray;
 	query.Serialize(qser);
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 	h_vector<int32_t, 4> vers;
 	for (auto& ns : nsArray) {
 		shared_lock<shared_timed_mutex> lck(ns->lck_);

@@ -107,42 +107,42 @@ const hexChars = "0123456789abcdef"
 
 func createUuid(v [2]uint64) string {
 	buf := make([]byte, 36)
-	buf[0] = hexChars[(v[0] >> 60) & 0xF];
-	buf[1] = hexChars[(v[0] >> 56) & 0xF];
-	buf[2] = hexChars[(v[0] >> 52) & 0xF];
-	buf[3] = hexChars[(v[0] >> 48) & 0xF];
-	buf[4] = hexChars[(v[0] >> 44) & 0xF];
-	buf[5] = hexChars[(v[0] >> 40) & 0xF];
-	buf[6] = hexChars[(v[0] >> 36) & 0xF];
-	buf[7] = hexChars[(v[0] >> 32) & 0xF];
-	buf[8] = '-';
-	buf[9] = hexChars[(v[0] >> 28) & 0xF];
-	buf[10] = hexChars[(v[0] >> 24) & 0xF];
-	buf[11] = hexChars[(v[0] >> 20) & 0xF];
-	buf[12] = hexChars[(v[0] >> 16) & 0xF];
-	buf[13] = '-';
-	buf[14] = hexChars[(v[0] >> 12) & 0xF];
-	buf[15] = hexChars[(v[0] >> 8) & 0xF];
-	buf[16] = hexChars[(v[0] >> 4) & 0xF];
-	buf[17] = hexChars[v[0] & 0xF];
-	buf[18] = '-';
-	buf[19] = hexChars[(v[1] >> 60) & 0xF];
-	buf[20] = hexChars[(v[1] >> 56) & 0xF];
-	buf[21] = hexChars[(v[1] >> 52) & 0xF];
-	buf[22] = hexChars[(v[1] >> 48) & 0xF];
-	buf[23] = '-';
-	buf[24] = hexChars[(v[1] >> 44) & 0xF];
-	buf[25] = hexChars[(v[1] >> 40) & 0xF];
-	buf[26] = hexChars[(v[1] >> 36) & 0xF];
-	buf[27] = hexChars[(v[1] >> 32) & 0xF];
-	buf[28] = hexChars[(v[1] >> 28) & 0xF];
-	buf[29] = hexChars[(v[1] >> 24) & 0xF];
-	buf[30] = hexChars[(v[1] >> 20) & 0xF];
-	buf[31] = hexChars[(v[1] >> 16) & 0xF];
-	buf[32] = hexChars[(v[1] >> 12) & 0xF];
-	buf[33] = hexChars[(v[1] >> 8) & 0xF];
-	buf[34] = hexChars[(v[1] >> 4) & 0xF];
-	buf[35] = hexChars[v[1] & 0xF];
+	buf[0] = hexChars[(v[0]>>60)&0xF]
+	buf[1] = hexChars[(v[0]>>56)&0xF]
+	buf[2] = hexChars[(v[0]>>52)&0xF]
+	buf[3] = hexChars[(v[0]>>48)&0xF]
+	buf[4] = hexChars[(v[0]>>44)&0xF]
+	buf[5] = hexChars[(v[0]>>40)&0xF]
+	buf[6] = hexChars[(v[0]>>36)&0xF]
+	buf[7] = hexChars[(v[0]>>32)&0xF]
+	buf[8] = '-'
+	buf[9] = hexChars[(v[0]>>28)&0xF]
+	buf[10] = hexChars[(v[0]>>24)&0xF]
+	buf[11] = hexChars[(v[0]>>20)&0xF]
+	buf[12] = hexChars[(v[0]>>16)&0xF]
+	buf[13] = '-'
+	buf[14] = hexChars[(v[0]>>12)&0xF]
+	buf[15] = hexChars[(v[0]>>8)&0xF]
+	buf[16] = hexChars[(v[0]>>4)&0xF]
+	buf[17] = hexChars[v[0]&0xF]
+	buf[18] = '-'
+	buf[19] = hexChars[(v[1]>>60)&0xF]
+	buf[20] = hexChars[(v[1]>>56)&0xF]
+	buf[21] = hexChars[(v[1]>>52)&0xF]
+	buf[22] = hexChars[(v[1]>>48)&0xF]
+	buf[23] = '-'
+	buf[24] = hexChars[(v[1]>>44)&0xF]
+	buf[25] = hexChars[(v[1]>>40)&0xF]
+	buf[26] = hexChars[(v[1]>>36)&0xF]
+	buf[27] = hexChars[(v[1]>>32)&0xF]
+	buf[28] = hexChars[(v[1]>>28)&0xF]
+	buf[29] = hexChars[(v[1]>>24)&0xF]
+	buf[30] = hexChars[(v[1]>>20)&0xF]
+	buf[31] = hexChars[(v[1]>>16)&0xF]
+	buf[32] = hexChars[(v[1]>>12)&0xF]
+	buf[33] = hexChars[(v[1]>>8)&0xF]
+	buf[34] = hexChars[(v[1]>>4)&0xF]
+	buf[35] = hexChars[v[1]&0xF]
 	return string(buf)
 }
 
@@ -201,6 +201,15 @@ func (pl *payloadIface) getArrayLen(field int) int {
 func (pl *payloadIface) getValue(field int, idx int, v reflect.Value) {
 
 	k := v.Type().Kind()
+	if k == reflect.Slice {
+		el := reflect.New(v.Type().Elem()).Elem()
+		extSlice := reflect.Append(v, el)
+		v.Set(extSlice)
+		v = v.Index(v.Len() - 1)
+		k = v.Type().Kind()
+	} else if k == reflect.Array {
+		panic(fmt.Errorf("can not put single indexed value into the fixed size array"))
+	}
 	switch pl.t.Fields[field].Type {
 	case valueBool:
 		v.SetBool(pl.getBool(field, idx))
@@ -229,7 +238,7 @@ func (pl *payloadIface) getValue(field int, idx int, v reflect.Value) {
 	case valueUuid:
 		v.SetString(pl.getUuid(field, idx))
 	default:
-		panic(fmt.Errorf("Unknown key value type %d", pl.t.Fields[field].Type))
+		panic(fmt.Errorf("unknown key value type '%d'", pl.t.Fields[field].Type))
 	}
 }
 
@@ -241,218 +250,362 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 
 	ptr := pl.ptr(field, startIdx, pl.t.Fields[field].Type)
 	l := pl.getArrayLen(field) - startIdx
+	i := 0
 
 	switch pl.t.Fields[field].Type {
 	case valueInt:
-		pi := (*[1 << 27]Cint)(ptr)[:l:l]
-		pu := (*[1 << 27]Cunsigned)(ptr)[:l:l]
+		pi := (*[1 << 27]Cint)(ptr)[:cnt:cnt]
+		pu := (*[1 << 27]Cunsigned)(ptr)[:cnt:cnt]
 		switch a := v.Addr().Interface().(type) {
 		case *[]int:
-			*a = make([]int, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = int(pi[i])
+			if len(*a) == 0 {
+				*a = make([]int, cnt)
+			} else {
+				i = len(*a)
+				var tmp []int
+				tmp, *a = *a, make([]int, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = int(pi[j])
 			}
 		case *[]uint:
-			*a = make([]uint, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = uint(pu[i])
+			if len(*a) == 0 {
+				*a = make([]uint, cnt)
+			} else {
+				i = len(*a)
+				var tmp []uint
+				tmp, *a = *a, make([]uint, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = uint(pu[j])
 			}
 		case *[]int16:
-			*a = make([]int16, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = int16(pi[i])
+			if len(*a) == 0 {
+				*a = make([]int16, cnt)
+			} else {
+				i = len(*a)
+				var tmp []int16
+				tmp, *a = *a, make([]int16, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = int16(pi[j])
 			}
 		case *[]uint16:
-			*a = make([]uint16, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = uint16(pu[i])
+			if len(*a) == 0 {
+				*a = make([]uint16, cnt)
+			} else {
+				i = len(*a)
+				var tmp []uint16
+				tmp, *a = *a, make([]uint16, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = uint16(pu[j])
 			}
 		case *[]int32:
-			*a = make([]int32, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = int32(pi[i])
+			if len(*a) == 0 {
+				*a = make([]int32, cnt)
+			} else {
+				i = len(*a)
+				var tmp []int32
+				tmp, *a = *a, make([]int32, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = int32(pi[j])
 			}
 		case *[]uint32:
-			*a = make([]uint32, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = uint32(pu[i])
+			if len(*a) == 0 {
+				*a = make([]uint32, cnt)
+			} else {
+				i = len(*a)
+				var tmp []uint32
+				tmp, *a = *a, make([]uint32, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = uint32(pu[j])
 			}
 		case *[]int8:
-			*a = make([]int8, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = int8(pi[i])
+			if len(*a) == 0 {
+				*a = make([]int8, cnt)
+			} else {
+				i = len(*a)
+				var tmp []int8
+				tmp, *a = *a, make([]int8, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = int8(pi[j])
 			}
 		case *[]uint8:
-			*a = make([]uint8, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = uint8(pu[i])
+			if len(*a) == 0 {
+				*a = make([]uint8, cnt)
+			} else {
+				i = len(*a)
+				var tmp []uint8
+				tmp, *a = *a, make([]uint8, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = uint8(pu[j])
 			}
 		case *[]bool:
-			*a = make([]bool, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = bool(pi[i] != 0)
+			if len(*a) == 0 {
+				*a = make([]bool, cnt)
+			} else {
+				i = len(*a)
+				var tmp []bool
+				tmp, *a = *a, make([]bool, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = bool(pi[j] != 0)
 			}
 		default:
-			slice := reflect.MakeSlice(v.Type(), cnt, cnt)
+			var slice reflect.Value
+			if v.Len() == 0 {
+				slice = reflect.MakeSlice(v.Type(), cnt, cnt)
+			} else {
+				i = v.Len()
+				slice = reflect.Append(v, reflect.MakeSlice(v.Type(), cnt, cnt))
+			}
 			switch v.Type().Elem().Kind() {
 			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-				for i := 0; i < cnt; i++ {
+				for j := 0; j < cnt; i, j = i+1, j+1 {
 					sv := slice.Index(i)
 					if sv.Type().Kind() == reflect.Ptr {
 						el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
-						el.Elem().SetUint(uint64(pu[i]))
+						el.Elem().SetUint(uint64(pu[j]))
 						sv.Set(el)
 					} else {
-						sv.SetUint(uint64(pu[i]))
+						sv.SetUint(uint64(pu[j]))
 					}
 				}
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				for i := 0; i < cnt; i++ {
+				for j := 0; j < cnt; i, j = i+1, j+1 {
 					sv := slice.Index(i)
 					if sv.Type().Kind() == reflect.Ptr {
 						el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
-						el.Elem().SetInt(int64(pi[i]))
+						el.Elem().SetInt(int64(pi[j]))
 						sv.Set(el)
 					} else {
-						sv.SetInt(int64(pi[i]))
+						sv.SetInt(int64(pi[j]))
 					}
 				}
 			default:
-				panic(fmt.Errorf("Can't set []int to []%s", v.Type().Elem().Kind().String()))
+				panic(fmt.Errorf("can not convert '[]%s' to '[]int'", v.Type().Elem().Kind().String()))
 			}
 			v.Set(slice)
 		}
 	case valueInt64:
 		switch a := v.Addr().Interface().(type) {
 		case *[]int64:
-			pi := (*[1 << 27]int64)(ptr)[:l:l]
-			*a = make([]int64, cnt, cnt)
-			copy(*a, pi)
+			pi := (*[1 << 27]int64)(ptr)[:cnt:cnt]
+			if len(*a) == 0 {
+				*a = make([]int64, cnt)
+				copy(*a, pi)
+			} else {
+				*a = append(*a, pi...)
+			}
 		case *[]uint64:
-			pi := (*[1 << 27]uint64)(ptr)[:l:l]
-			*a = make([]uint64, cnt, cnt)
-			copy(*a, pi)
+			pi := (*[1 << 27]uint64)(ptr)[:cnt:cnt]
+			if len(*a) == 0 {
+				*a = make([]uint64, cnt)
+				copy(*a, pi)
+			} else {
+				*a = append(*a, pi...)
+			}
 		case *[]int:
-			pi := (*[1 << 27]int64)(ptr)[:l:l]
-			*a = make([]int, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = int(pi[i])
+			pi := (*[1 << 27]int64)(ptr)[:cnt:cnt]
+			i := len(*a)
+			if i == 0 {
+				*a = make([]int, cnt)
+			} else {
+				var tmp []int
+				tmp, *a = *a, make([]int, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = int(pi[j])
 			}
 		case *[]uint:
-			pi := (*[1 << 27]uint64)(ptr)[:l:l]
-			*a = make([]uint, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = uint(pi[i])
+			pi := (*[1 << 27]uint64)(ptr)[:cnt]
+			i := len(*a)
+			if i == 0 {
+				*a = make([]uint, cnt)
+			} else {
+				var tmp []uint
+				tmp, *a = *a, make([]uint, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = uint(pi[j])
 			}
 		default:
-			slice := reflect.MakeSlice(v.Type(), cnt, cnt)
+			var slice reflect.Value
+			i := v.Len()
+			if i == 0 {
+				slice = reflect.MakeSlice(v.Type(), cnt, cnt)
+			} else {
+				slice = reflect.Append(v, reflect.MakeSlice(v.Type(), cnt, cnt))
+			}
 			switch v.Type().Elem().Kind() {
 			case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-				pi := (*[1 << 27]uint64)(ptr)[:l:l]
-				for i := 0; i < cnt; i++ {
+				pi := (*[1 << 27]uint64)(ptr)[:cnt:cnt]
+				for j := 0; j < cnt; i, j = i+1, j+1 {
 					sv := slice.Index(i)
 					if sv.Type().Kind() == reflect.Ptr {
 						el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
-						el.Elem().SetUint(uint64(pi[i]))
+						el.Elem().SetUint(uint64(pi[j]))
 						sv.Set(el)
 					} else {
-						sv.SetUint(uint64(pi[i]))
+						sv.SetUint(uint64(pi[j]))
 					}
 				}
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				pi := (*[1 << 27]int64)(ptr)[:l:l]
-				for i := 0; i < cnt; i++ {
+				pi := (*[1 << 27]int64)(ptr)[:cnt:cnt]
+				for j := 0; j < cnt; i, j = i+1, j+1 {
 					sv := slice.Index(i)
 					if sv.Type().Kind() == reflect.Ptr {
 						el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
-						el.Elem().SetInt(int64(pi[i]))
+						el.Elem().SetInt(int64(pi[j]))
 						sv.Set(el)
 					} else {
-						sv.SetInt(int64(pi[i]))
+						sv.SetInt(int64(pi[j]))
 					}
 				}
 			default:
-				panic(fmt.Errorf("Can't set []int64 to []%s", v.Type().Elem().Kind().String()))
+				panic(fmt.Errorf("can not convert '[]%s' to '[]int64'", v.Type().Elem().Kind().String()))
 			}
 			v.Set(slice)
 		}
 	case valueDouble:
-		pi := (*[1 << 27]Cdouble)(ptr)[:l:l]
+		pi := (*[1 << 27]Cdouble)(ptr)[:cnt:cnt]
 		if v.Kind() == reflect.Array {
 			if v.Len() < cnt {
-				panic(fmt.Errorf("Can't set %d values to array of %d elements", cnt, v.Len()))
+				panic(fmt.Errorf("can not set %d values to array of %d elements", cnt, v.Len()))
 			}
 			switch v.Type().Elem().Kind() {
 			case reflect.Float32:
-				for i := 0; i < cnt; i++ {
+				for i = 0; i < cnt; i++ {
 					v.Index(i).SetFloat(float64(float32(pi[i])))
 				}
 			case reflect.Float64:
-				for i := 0; i < cnt; i++ {
+				for i = 0; i < cnt; i++ {
 					v.Index(i).SetFloat(float64(pi[i]))
 				}
 			default:
-				panic(fmt.Errorf("Can't set []double to []%s", v.Type().Elem().Kind().String()))
+				panic(fmt.Errorf("can not convert '[]%s' to '[]double'", v.Type().Elem().Kind().String()))
 			}
 		} else {
 			switch a := v.Addr().Interface().(type) {
 			case *[]float64:
-				*a = make([]float64, cnt, cnt)
-				for i := 0; i < cnt; i++ {
-					(*a)[i] = float64(pi[i])
+				if len(*a) == 0 {
+					*a = make([]float64, cnt)
+				} else {
+					i = len(*a)
+					var tmp []float64
+					tmp, *a = *a, make([]float64, len(*a)+cnt)
+					copy(*a, tmp)
+				}
+				for j := 0; j < cnt; i, j = i+1, j+1 {
+					(*a)[i] = float64(pi[j])
 				}
 			case *[]float32:
-				*a = make([]float32, cnt, cnt)
-				for i := 0; i < cnt; i++ {
-					(*a)[i] = float32(pi[i])
+				if len(*a) == 0 {
+					*a = make([]float32, cnt)
+				} else {
+					i = len(*a)
+					var tmp []float32
+					tmp, *a = *a, make([]float32, len(*a)+cnt)
+					copy(*a, tmp)
+				}
+				for j := 0; j < cnt; i, j = i+1, j+1 {
+					(*a)[i] = float32(pi[j])
 				}
 			default:
-				slice := reflect.MakeSlice(v.Type(), cnt, cnt)
-				for i := 0; i < cnt; i++ {
+				var slice reflect.Value
+				if v.Len() == 0 {
+					slice = reflect.MakeSlice(v.Type(), cnt, cnt)
+				} else {
+					i = v.Len()
+					slice = reflect.Append(v, reflect.MakeSlice(v.Type(), cnt, cnt))
+				}
+				for j := 0; j < cnt; i, j = i+1, j+1 {
 					sv := slice.Index(i)
 					if sv.Type().Kind() == reflect.Ptr {
 						el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
-						el.Elem().SetFloat(float64(pi[i]))
+						el.Elem().SetFloat(float64(pi[j]))
 						sv.Set(el)
 					} else {
-						sv.SetFloat(float64(pi[i]))
+						sv.SetFloat(float64(pi[j]))
 					}
 				}
 				v.Set(slice)
 			}
 		}
 	case valueBool:
-		pb := (*[1 << 27]Cbool)(ptr)[:l:l]
+		pb := (*[1 << 27]Cbool)(ptr)[:cnt:cnt]
 		switch a := v.Addr().Interface().(type) {
 		case *[]bool:
-			*a = make([]bool, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = bool(pb[i] != 0)
+			if len(*a) == 0 {
+				*a = make([]bool, cnt)
+			} else {
+				i = len(*a)
+				var tmp []bool
+				tmp, *a = *a, make([]bool, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = bool(pb[j] != 0)
 			}
 		default:
-			slice := reflect.MakeSlice(v.Type(), cnt, cnt)
-			for i := 0; i < cnt; i++ {
+			var slice reflect.Value
+			if v.Len() == 0 {
+				slice = reflect.MakeSlice(v.Type(), cnt, cnt)
+			} else {
+				i = v.Len()
+				slice = reflect.Append(v, reflect.MakeSlice(v.Type(), cnt, cnt))
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
 				sv := slice.Index(i)
 				if sv.Type().Kind() == reflect.Ptr {
 					el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
-					el.Elem().SetBool(bool(pb[i] != 0))
+					el.Elem().SetBool(bool(pb[j] != 0))
 					sv.Set(el)
 				} else {
-					sv.SetBool(bool(pb[i] != 0))
+					sv.SetBool(bool(pb[j] != 0))
 				}
 			}
 			v.Set(slice)
 		}
 	case valueString:
 		if a, ok := v.Addr().Interface().(*[]string); ok {
-			*a = make([]string, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = pl.getString(field, i+startIdx)
+			if len(*a) == 0 {
+				*a = make([]string, cnt)
+			} else {
+				i = len(*a)
+				var tmp []string
+				tmp, *a = *a, make([]string, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = pl.getString(field, j+startIdx)
 			}
 		} else {
-			slice := reflect.MakeSlice(v.Type(), cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				s := pl.getString(field, i+startIdx)
+			var slice reflect.Value
+			if v.Len() == 0 {
+				slice = reflect.MakeSlice(v.Type(), cnt, cnt)
+			} else {
+				i = v.Len()
+				slice = reflect.Append(v, reflect.MakeSlice(v.Type(), cnt, cnt))
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				s := pl.getString(field, j+startIdx)
 				sv := slice.Index(i)
 				if sv.Type().Kind() == reflect.Ptr {
 					el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
@@ -465,28 +618,41 @@ func (pl *payloadIface) getArray(field int, startIdx int, cnt int, v reflect.Val
 			v.Set(slice)
 		}
 	case valueUuid:
-		pi := (*[1 << 27]uint64)(ptr)[:l * 2:l * 2]
+		pi := (*[1 << 27]uint64)(ptr)[: l*2 : l*2]
 		if a, ok := v.Addr().Interface().(*[]string); ok {
-			*a = make([]string, cnt, cnt)
-			for i := 0; i < cnt; i++ {
-				(*a)[i] = createUuid([2]uint64{pi[i * 2], pi[i * 2 + 1]})
+			if len(*a) == 0 {
+				*a = make([]string, cnt)
+			} else {
+				i = len(*a)
+				var tmp []string
+				tmp, *a = *a, make([]string, len(*a)+cnt)
+				copy(*a, tmp)
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
+				(*a)[i] = createUuid([2]uint64{pi[j*2], pi[j*2+1]})
 			}
 		} else {
-			slice := reflect.MakeSlice(v.Type(), cnt, cnt)
-			for i := 0; i < cnt; i++ {
+			var slice reflect.Value
+			if v.Len() == 0 {
+				slice = reflect.MakeSlice(v.Type(), cnt, cnt)
+			} else {
+				i = v.Len()
+				slice = reflect.Append(v, reflect.MakeSlice(v.Type(), cnt, cnt))
+			}
+			for j := 0; j < cnt; i, j = i+1, j+1 {
 				sv := slice.Index(i)
 				if sv.Type().Kind() == reflect.Ptr {
 					el := reflect.New(reflect.New(sv.Type().Elem()).Elem().Type())
-					el.Elem().SetString(createUuid([2]uint64{pi[i * 2], pi[i * 2 + 1]}))
+					el.Elem().SetString(createUuid([2]uint64{pi[j*2], pi[j*2+1]}))
 					sv.Set(el)
 				} else {
-					sv.SetString(createUuid([2]uint64{pi[i * 2], pi[i * 2 + 1]}))
+					sv.SetString(createUuid([2]uint64{pi[j*2], pi[j*2+1]}))
 				}
 			}
 			v.Set(slice)
 		}
 	default:
-		panic(fmt.Errorf("Got C array with elements of unknown C type %d in field '%s' for go type '%s'", pl.t.Fields[field].Type, pl.t.Fields[field].Name, v.Type().Elem().Kind().String()))
+		panic(fmt.Errorf("got C array with elements of unknown C type %d in field '%s' for go type '%s'", pl.t.Fields[field].Type, pl.t.Fields[field].Name, v.Type().Elem().Kind().String()))
 	}
 }
 

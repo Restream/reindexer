@@ -48,12 +48,14 @@ const (
 
 // Aggregation funcs
 const (
-	AggAvg      = bindings.AggAvg
-	AggSum      = bindings.AggSum
-	AggFacet    = bindings.AggFacet
-	AggMin      = bindings.AggMin
-	AggMax      = bindings.AggMax
-	AggDistinct = bindings.AggDistinct
+	AggAvg         = bindings.AggAvg
+	AggSum         = bindings.AggSum
+	AggFacet       = bindings.AggFacet
+	AggMin         = bindings.AggMin
+	AggMax         = bindings.AggMax
+	AggDistinct    = bindings.AggDistinct
+	AggCount       = bindings.AggCount
+	AggCountCached = bindings.AggCountCached
 )
 
 // Reindexer error codes
@@ -74,6 +76,7 @@ const (
 	ErrCodeNotFound         = bindings.ErrNotFound
 	ErrCodeStateInvalidated = bindings.ErrStateInvalidated
 	ErrCodeTimeout          = bindings.ErrTimeout
+	ErrCodeStrictMode       = bindings.ErrStrictMode
 )
 
 // Reindexer The reindxer state struct
@@ -127,7 +130,6 @@ var (
 	errNsNotFound          = bindings.NewError("rq: Namespace is not found", ErrCodeNotFound)
 	errNsExists            = bindings.NewError("rq: Namespace is already exists", ErrCodeParams)
 	errInvalidReflection   = bindings.NewError("rq: Invalid reflection type of index", ErrCodeParams)
-	errStorageNotEnabled   = bindings.NewError("rq: Storage is not enabled, can't save", ErrCodeLogic)
 	errIteratorNotReady    = bindings.NewError("rq: Iterator not ready. Next() must be called before", ErrCodeLogic)
 	errJoinUnexpectedField = bindings.NewError("rq: Unexpected join field", ErrCodeParams)
 	ErrEmptyNamespace      = bindings.NewError("rq: empty namespace name", ErrCodeParams)

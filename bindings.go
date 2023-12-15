@@ -542,3 +542,7 @@ func WithPrometheusMetrics() interface{} {
 func WithOpenTelemetry() interface{} {
 	return bindings.OptionOpenTelemetry{EnableTracing: true}
 }
+
+func WithStrictJoinHandlers() interface{} {
+	return bindings.OptionStrictJoinHandlers{EnableStrictJoinHandlers: true}
+}

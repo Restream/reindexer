@@ -5,7 +5,7 @@
 #include "core/itemimpl.h"
 #include "core/namespace/namespaceimpl.h"
 #include "core/namespacedef.h"
-#include "core/reindexerimpl.h"
+#include "core/reindexer_impl/reindexerimpl.h"
 #include "tools/logger.h"
 #include "tools/stringstools.h"
 #include "walrecord.h"
@@ -581,7 +581,7 @@ Error Replicator::syncNamespaceForced(const NamespaceDef &ns, std::string_view r
 
 	//  Make query to complete master's namespace data
 	client::QueryResults qr(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID | kResultsWithRaw);
-	if (err.ok()) err = master_->Select(Query(ns.name).Where("#lsn", CondAny, {}), qr);
+	if (err.ok()) err = master_->Select(Query(ns.name).Where("#lsn", CondAny, VariantArray{}), qr);
 	if (err.ok()) err = tmpNs->ReplaceTagsMatcher(qr.getTagsMatcher(0), dummyCtx_);
 	if (err.ok()) {
 		err = applyWAL(tmpNs, qr, &ns);
@@ -682,8 +682,7 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 		// Update query
 		case WalUpdateQuery: {
 			QueryResults result;
-			Query q;
-			q.FromSQL(rec.data);
+			Query q = Query::FromSQL(rec.data);
 			std::lock_guard<std::mutex> lck(syncMtx_);
 			Transaction &tx = transactions_[slaveNs.get()];
 			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
@@ -705,6 +704,20 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			slaveNs->CommitTransaction(tx, res, rdxContext);
 			tx = Transaction{};
 		} break;
+		case WalTagsMatcher: {
+			std::lock_guard<std::mutex> lck(syncMtx_);
+			Transaction &tx = transactions_[slaveNs.get()];
+			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
+
+			TagsMatcher tm;
+			Serializer ser(rec.data.data(), rec.data.size());
+			const auto version = ser.GetVarint();
+			const auto stateToken = ser.GetVarint();
+			tm.deserialize(ser, version, stateToken);
+			logPrintf(LogInfo, "[repl:%s]:%d Got new tagsmatcher replicated via tx: { state_token: %08X, version: %d }", nsName,
+					  config_.serverId, stateToken, version);
+			tx.SetTagsMatcher(std::move(tm));
+		} break;
 		case WalEmpty:
 		case WalReplState:
 		case WalItemUpdate:
@@ -718,6 +731,9 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 		case WalForceSync:
 		case WalSetSchema:
 		case WalWALSync:
+		case WalResetLocalWal:
+		case WalRawItem:
+		case WalShallowItem:
 			return Error(errLogic, "Unexpected for transaction WAL rec type %d\n", int(rec.type));
 	}
 	return {};
@@ -794,8 +810,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			logPrintf(LogTrace, "[repl:%s]:%d WalUpdateQuery", nsName, config_.serverId);
 			checkNoOpenedTransaction(nsName, slaveNs);
 			QueryResults result;
-			Query q;
-			q.FromSQL(rec.data);
+			Query q = Query::FromSQL(rec.data);
 			switch (q.type_) {
 				case QueryDelete:
 					slaveNs->Delete(q, result, rdxContext);
@@ -850,10 +865,24 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			slaveNs->SetSchema(rec.data, rdxContext);
 			stat.schemasSet++;
 			break;
+		case WalTagsMatcher: {
+			checkNoOpenedTransaction(nsName, slaveNs);
+			TagsMatcher tm;
+			Serializer ser(rec.data.data(), rec.data.size());
+			const auto version = ser.GetVarint();
+			const auto stateToken = ser.GetVarint();
+			tm.deserialize(ser, version, stateToken);
+			logPrintf(LogInfo, "[repl:%s]:%d Got new tagsmatcher replicated via single record: { state_token: %08X, version: %d }", nsName,
+					  config_.serverId, stateToken, version);
+			slaveNs->SetTagsMatcher(std::move(tm), rdxContext);
+		} break;
 		case WalEmpty:
 		case WalItemUpdate:
 		case WalInitTransaction:
 		case WalCommitTransaction:
+		case WalResetLocalWal:
+		case WalRawItem:
+		case WalShallowItem:
 			return Error(errLogic, "Unexpected WAL rec type %d\n", int(rec.type));
 	}
 	return err;
@@ -982,6 +1011,24 @@ Error Replicator::syncMetaForced(Namespace::Ptr &slaveNs, std::string_view nsNam
 
 // Callback from WAL updates pusher
 void Replicator::OnWALUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec) {
+	try {
+		onWALUpdateImpl(LSNs, nsName, wrec);
+	} catch (Error &e) {
+		logPrintf(LogError, "[repl:%s]:%d Exception on WAL update: %s", nsName, config_.serverId, e.what());
+		assertrx_dbg(false);
+		resync_.send();
+	} catch (std::exception &e) {
+		logPrintf(LogError, "[repl:%s]:%d Exception on WAL update (std::exception): %s", nsName, config_.serverId, e.what());
+		assertrx_dbg(false);
+		resync_.send();
+	} catch (...) {
+		logPrintf(LogError, "[repl:%s]:%d Exception on WAL update: <unknow exception type>", nsName, config_.serverId);
+		assertrx_dbg(false);
+		resync_.send();
+	}
+}
+
+void Replicator::onWALUpdateImpl(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec) {
 	auto sId = LSNs.originLSN_.Server();
 	if (sId != 0) {	 // sId = 0 for configurations without specifying a server id
 		if (sId == config_.serverId) {
@@ -1201,6 +1248,7 @@ bool Replicator::SyncQueue::Pop(std::string_view nsName, const std::unique_lock<
 	// Pop() must be called under top level replicator's sync mutex
 	assertrx(replicatorLock.owns_lock());
 	assertrx(replicatorLock.mutex() == &replicatorMtx_);
+	(void)replicatorMtx_;
 	(void)replicatorLock;
 	auto cnt = queue_.erase(nsName);
 	if (cnt) {

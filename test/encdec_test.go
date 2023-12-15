@@ -2,7 +2,9 @@ package reindexer
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/rand"
+	"reflect"
 	"testing"
 	"time"
 
@@ -115,6 +117,34 @@ type HeterogeneousArrayItem struct {
 	Interface interface{}
 }
 
+type SingleElemSliceItem struct {
+	ID               int       `json:"id" reindex:"id,,pk"`
+	IdxStrSlice      []string  `json:"idx_str_slice" reindex:"idx_str_slice"`
+	IdxIntSlice      []int64   `json:"idx_int_slice" reindex:"idx_int_slice"`
+	IdxFloatSlice    []float64 `json:"idx_float_slice" reindex:"idx_float_slice"`
+	IdxBoolSlice     []bool    `json:"idx_bool_slice" reindex:"idx_bool_slice"`
+	NonIdxStrSlice   []string  `json:"non_idx_str_slice"`
+	NonIdxIntSlice   []int64   `json:"non_idx_int_slice"`
+	NonIdxFloatSlice []float64 `json:"non_idx_float_slice"`
+	NonIdxBoolSlice  []bool    `json:"non_idx_bool_slice"`
+}
+
+type SlicesConcatenationItem struct {
+	ID                 int           `json:"id" reindex:"id,,pk"`
+	IdxStrSlice        []string      `json:"idx_str_slice" reindex:"idx_str_slice"`
+	IdxInt64Slice      []int64       `json:"idx_int64_slice" reindex:"idx_int64_slice"`
+	IdxInt32Slice      []int32       `json:"idx_int32_slice" reindex:"idx_int32_slice"`
+	IdxInt16Slice      []int16       `json:"idx_int16_slice" reindex:"idx_int16_slice"`
+	IdxInt8Slice       []int8        `json:"idx_int8_slice" reindex:"idx_int8_slice"`
+	IdxFloat64Slice    []float64     `json:"idx_float64_slice" reindex:"idx_float64_slice"`
+	IdxBoolSlice       []bool        `json:"idx_bool_slice" reindex:"idx_bool_slice,-"`
+	NonIdxStrSlice     []string      `json:"non_idx_str_slice"`
+	NonIdxIntSlice     []int         `json:"non_idx_int_slice"`
+	NonIdxFloat32Slice []float32     `json:"non_idx_float32_slice"`
+	NonIdxBoolSlice    []bool        `json:"non_idx_bool_slice"`
+	NonIdxIfaceSlice   []interface{} `json:"non_idx_iface_slice"`
+}
+
 func FillHeteregeneousArrayItem() {
 	item := &HeterogeneousArrayItem{
 		ID:        1,
@@ -131,6 +161,8 @@ func FillHeteregeneousArrayItem() {
 func init() {
 	tnamespaces["test_items_encdec"] = TestItemEncDec{}
 	tnamespaces["test_array_encdec"] = HeterogeneousArrayItem{}
+	tnamespaces["test_single_elem_slice"] = SingleElemSliceItem{}
+	tnamespaces["test_slices_concatenation"] = SlicesConcatenationItem{}
 }
 
 func FillTestItemsEncDec(start int, count int, pkgsCount int, asJson bool) {
@@ -295,4 +327,149 @@ func TestEncDec(t *testing.T) {
 		iitems = append(iitems, item)
 	}
 	q.Verify(t, iitems, []reindexer.AggregationResult{}, true)
+}
+
+func TestSingleElemToSlice(t *testing.T) {
+	ns := "test_single_elem_slice"
+	item := SingleElemSliceItem{
+		ID:               1,
+		IdxStrSlice:      []string{"str1"},
+		IdxIntSlice:      []int64{999},
+		IdxFloatSlice:    []float64{10.0},
+		IdxBoolSlice:     []bool{true},
+		NonIdxStrSlice:   []string{"str2"},
+		NonIdxIntSlice:   []int64{888},
+		NonIdxFloatSlice: []float64{20.0},
+		NonIdxBoolSlice:  []bool{false},
+	}
+	err := DB.Upsert(ns,
+		[]byte(fmt.Sprintf(`{"id":%v, "idx_str_slice":"%v", "idx_int_slice":%v,"idx_float_slice":%v,"idx_bool_slice":%v,
+			"non_idx_str_slice":"%v","non_idx_int_slice":%v,"non_idx_float_slice":%v,"non_idx_bool_slice":%v}`,
+			item.ID, item.IdxStrSlice[0], item.IdxIntSlice[0], item.IdxFloatSlice[0], item.IdxBoolSlice[0],
+			item.NonIdxStrSlice[0], item.NonIdxIntSlice[0], item.NonIdxFloatSlice[0], item.NonIdxBoolSlice[0])),
+	)
+	require.NoError(t, err)
+
+	resItems, err := newTestQuery(DB, ns).MustExec(t).FetchAll()
+	require.NoError(t, err)
+	require.Equal(t, len(resItems), 1)
+	resItem, ok := resItems[0].(*SingleElemSliceItem)
+	require.True(t, ok)
+	require.Equal(t, *resItem, item)
+}
+
+func TestSlicesConcatenation(t *testing.T) {
+	ns := "test_slices_concatenation"
+	item := SlicesConcatenationItem{
+		ID:                 1,
+		IdxStrSlice:        []string{"str10", "str11", "str12", "str13"},
+		IdxInt64Slice:      []int64{110, 120, 130, 140, 150, 160},
+		IdxInt32Slice:      []int32{310, 320, 330, 340, 350, 360},
+		IdxInt16Slice:      []int16{210, 420, 430, 440, 450, 460},
+		IdxInt8Slice:       []int8{10, 20, 30, 40, 50, 60},
+		IdxFloat64Slice:    []float64{120.0, 140.5, 160.0, 170.5, 180.92},
+		IdxBoolSlice:       []bool{true, true, false, true},
+		NonIdxStrSlice:     []string{"str20", "str21", "str22", "str23"},
+		NonIdxIntSlice:     []int{10, 20, 30, 40, 50, 60},
+		NonIdxFloat32Slice: []float32{20.0, 40.5, 60.0, 70.5, 80.92},
+		NonIdxBoolSlice:    []bool{false, false, true, false},
+		NonIdxIfaceSlice:   []interface{}{"istr1", "istr2", 11, 22.4, true, false},
+	}
+	appendInterface := func(slice []interface{}, a interface{}) []interface{} {
+		ra := reflect.ValueOf(a)
+		if ra.Kind() == reflect.Slice {
+			for i := 0; i < ra.Len(); i++ {
+				slice = append(slice, ra.Index(i).Interface())
+			}
+			return slice
+		}
+		return append(slice, a)
+	}
+	sl := make([]interface{}, 0)
+	rv := reflect.ValueOf(item)
+	for i := 0; i < rv.NumField(); i++ {
+		field := rv.Field(i).Interface()
+		sl = appendInterface(sl, field)
+	}
+
+	t.Run("slices concatenation variant 1", func(t *testing.T) {
+		err := DB.Upsert(ns,
+			[]byte(fmt.Sprintf(`{"id":%v,
+			"idx_str_slice":"%v", "idx_str_slice":["%v","%v"], "idx_str_slice":"%v",
+			"idx_int64_slice":%v, "idx_int64_slice":[%v,%v,%v], "idx_int64_slice":[%v], "idx_int64_slice":%v,
+			"idx_int32_slice":%v, "idx_int32_slice":[%v,%v,%v], "idx_int32_slice":[%v], "idx_int32_slice":%v,
+			"idx_int16_slice":%v, "idx_int16_slice":[%v,%v,%v], "idx_int16_slice":[%v], "idx_int16_slice":%v,
+			"idx_int8_slice":%v, "idx_int8_slice":[%v,%v,%v], "idx_int8_slice":[%v], "idx_int8_slice":%v,
+			"idx_float64_slice":%v, "idx_float64_slice":[%v,%v,%v], "idx_float64_slice":%v,
+			"idx_bool_slice":%v, "idx_bool_slice":[%v,%v], "idx_bool_slice":%v,
+			"non_idx_str_slice":"%v", "non_idx_str_slice":["%v","%v"], "non_idx_str_slice":"%v",
+			"non_idx_int_slice":%v, "non_idx_int_slice":[%v,%v,%v], "non_idx_int_slice":[%v], "non_idx_int_slice":%v,
+			"non_idx_float32_slice":%v, "non_idx_float32_slice":[%v,%v,%v], "non_idx_float32_slice":%v,
+			"non_idx_bool_slice":%v, "non_idx_bool_slice":[%v,%v], "non_idx_bool_slice":%v,
+			"non_idx_iface_slice":"%v", "non_idx_iface_slice":"%v", "non_idx_iface_slice":%v, "non_idx_iface_slice":%v, "non_idx_iface_slice":%v, "non_idx_iface_slice":%v}`,
+				sl...)),
+		)
+		require.NoError(t, err)
+
+		resItems, err := newTestQuery(DB, ns).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		require.Equal(t, len(resItems), 1)
+		resItem, ok := resItems[0].(*SlicesConcatenationItem)
+		require.True(t, ok)
+		require.Equal(t, *resItem, item)
+	})
+
+	t.Run("slices concatenation variant 2", func(t *testing.T) {
+		err := DB.Upsert(ns,
+			[]byte(fmt.Sprintf(`{"id":%v,
+			"idx_str_slice":["%v","%v"], "idx_str_slice":"%v", "idx_str_slice":"%v",
+			"idx_int64_slice":[%v,%v,%v], "idx_int64_slice":%v, "idx_int64_slice":[%v], "idx_int64_slice":%v,
+			"idx_int32_slice":[%v,%v,%v], "idx_int32_slice":%v, "idx_int32_slice":[%v], "idx_int32_slice":%v,
+			"idx_int16_slice":[%v,%v,%v], "idx_int16_slice":%v, "idx_int16_slice":[%v], "idx_int16_slice":%v,
+			"idx_int8_slice":[%v,%v,%v], "idx_int8_slice":%v, "idx_int8_slice":[%v], "idx_int8_slice":%v,
+			"idx_float64_slice":[%v,%v,%v], "idx_float64_slice":%v, "idx_float64_slice":%v,
+			"idx_bool_slice":[%v,%v], "idx_bool_slice":%v, "idx_bool_slice":%v,
+			"non_idx_str_slice":["%v","%v"], "non_idx_str_slice":"%v", "non_idx_str_slice":"%v",
+			"non_idx_int_slice":[%v,%v,%v], "non_idx_int_slice":%v, "non_idx_int_slice":[%v], "non_idx_int_slice":%v,
+			"non_idx_float32_slice":[%v,%v,%v], "non_idx_float32_slice":%v, "non_idx_float32_slice":%v,
+			"non_idx_bool_slice":[%v,%v], "non_idx_bool_slice":%v, "non_idx_bool_slice":%v,
+			"non_idx_iface_slice":["%v","%v"], "non_idx_iface_slice":%v, "non_idx_iface_slice":%v, "non_idx_iface_slice":[%v,%v]}`,
+				sl...)),
+		)
+		require.NoError(t, err)
+
+		resItems, err := newTestQuery(DB, ns).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		require.Equal(t, len(resItems), 1)
+		resItem, ok := resItems[0].(*SlicesConcatenationItem)
+		require.True(t, ok)
+		require.Equal(t, *resItem, item)
+	})
+
+	t.Run("slices concatenation variant 3", func(t *testing.T) {
+		err := DB.Upsert(ns,
+			[]byte(fmt.Sprintf(`{"id":%v,
+			"idx_str_slice":["%v","%v"], "idx_str_slice":["%v","%v"],
+			"idx_int64_slice":[%v,%v,%v], "idx_int64_slice":[%v,%v,%v],
+			"idx_int32_slice":[%v,%v,%v], "idx_int32_slice":[%v,%v,%v],
+			"idx_int16_slice":[%v,%v,%v], "idx_int16_slice":[%v,%v,%v],
+			"idx_int8_slice":[%v,%v,%v], "idx_int8_slice":[%v,%v,%v],
+			"idx_float64_slice":[%v,%v,%v], "idx_float64_slice":[%v,%v],
+			"idx_bool_slice":[%v,%v], "idx_bool_slice":[%v,%v],
+			"non_idx_str_slice":["%v","%v"], "non_idx_str_slice":["%v","%v"],
+			"non_idx_int_slice":[%v,%v,%v], "non_idx_int_slice":[%v,%v,%v],
+			"non_idx_float32_slice":[%v,%v,%v], "non_idx_float32_slice":[%v,%v],
+			"non_idx_bool_slice":[%v,%v], "non_idx_bool_slice":[%v,%v],
+			"non_idx_iface_slice":["%v","%v"], "non_idx_iface_slice":[%v,%v], "non_idx_iface_slice":[%v,%v]}`,
+				sl...)),
+		)
+		require.NoError(t, err)
+
+		resItems, err := newTestQuery(DB, ns).MustExec(t).FetchAll()
+		require.NoError(t, err)
+		require.Equal(t, len(resItems), 1)
+		resItem, ok := resItems[0].(*SlicesConcatenationItem)
+		require.True(t, ok)
+		require.Equal(t, *resItem, item)
+	})
 }

@@ -7,6 +7,7 @@
 #include "client/reindexer.h"
 #include "replicator/updatesobserver.h"
 #include "server/server.h"
+#include "tools/fsops.h"
 
 #include "client/cororeindexer.h"
 
@@ -107,7 +108,7 @@ protected:
 	void FillData(reindexer::client::Reindexer& rx, std::string_view nsName, int from, int count);
 	void FillData(reindexer::client::CoroReindexer& rx, std::string_view nsName, int from, int count);
 
-	const std::string_view kDbPrefix{"/tmp/reindex/rpc_client_test"};
+	const std::string kDbPrefix{reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/rpc_client_test")};
 
 private:
 	struct ServerData {

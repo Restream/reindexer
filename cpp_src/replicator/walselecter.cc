@@ -22,12 +22,12 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 		throw Error(errLogic, "Query to WAL should contain only 1 condition '#lsn > number'");
 	}
 
-	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, q.selectFilter_), ns_->schema_);
+	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, q.SelectFilters()), ns_->schema_);
 
 	int lsnIdx = -1;
 	int versionIdx = -1;
-	for (size_t i = 0; i < q.entries.Size(); ++i) {
-		q.entries.InvokeAppropriate<void>(
+	for (size_t i = 0; i < q.Entries().Size(); ++i) {
+		q.Entries().InvokeAppropriate<void>(
 			i,
 			[&lsnIdx, &versionIdx, i](const QueryEntry &qe) {
 				if ("#lsn"sv == qe.FieldName()) {
@@ -40,8 +40,8 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 			},
 			[&q](const auto &) { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
 	}
-	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries.Get<QueryEntry>(versionIdx).Values()[0].As<std::string>());
-	auto &lsnEntry = q.entries.Get<QueryEntry>(lsnIdx);
+	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.Entries().Get<QueryEntry>(versionIdx).Values()[0].As<std::string>());
+	auto &lsnEntry = q.Entries().Get<QueryEntry>(lsnIdx);
 	if (lsnEntry.Values().size() == 1 && lsnEntry.Condition() == CondGt) {
 		lsn_t fromLSN = lsn_t(std::min(lsnEntry.Values()[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
 		if (fromLSN.Server() != ns_->serverId_)
@@ -72,7 +72,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 					if (versionIdx < 0) {
 						break;
 					}
-					if (q.entries.Get<QueryEntry>(versionIdx).Condition() != CondEq || slaveVersion < kMinUnknownReplSupportRxVersion) {
+					if (q.Entries().Get<QueryEntry>(versionIdx).Condition() != CondEq || slaveVersion < kMinUnknownReplSupportRxVersion) {
 						break;
 					}
 					// fall-through
@@ -106,6 +106,10 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 				case WalNamespaceRename:
 				case WalForceSync:
 				case WalWALSync:
+				case WalRawItem:
+				case WalShallowItem:
+				case WalTagsMatcher:
+				case WalResetLocalWal:
 					std::abort();
 			}
 		}

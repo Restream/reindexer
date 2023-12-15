@@ -19,7 +19,7 @@ func TestBuiltinServer(t *testing.T) {
 	cfg1 := config.DefaultServerConfig()
 	cfg1.Net.HTTPAddr = "0:29088"
 	cfg1.Net.RPCAddr = "0:26534"
-	cfg1.Storage.Path = "/tmp/rx_builtinserver_test1"
+	cfg1.Storage.Path = "/tmp/reindex_builtinserver_test1"
 
 	os.RemoveAll(cfg1.Storage.Path)
 	rx1 := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg1))
@@ -30,7 +30,7 @@ func TestBuiltinServer(t *testing.T) {
 	cfg2 := config.DefaultServerConfig()
 	cfg2.Net.HTTPAddr = "0:29089"
 	cfg2.Net.RPCAddr = "0:26535"
-	cfg2.Storage.Path = "/tmp/rx_builtinserver_test2"
+	cfg2.Storage.Path = "/tmp/reindex_builtinserver_test2"
 
 	os.RemoveAll(cfg2.Storage.Path)
 	rx2 := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg2))
@@ -46,7 +46,7 @@ func TestBuiltinServer(t *testing.T) {
 	cfg4 := config.DefaultServerConfig()
 	cfg4.Net.HTTPAddr = "0:29090"
 	cfg4.Net.RPCAddr = "0:26536"
-	cfg4.Storage.Path = "/tmp/rx_builtinserver_test4"
+	cfg4.Storage.Path = "/tmp/reindex_builtinserver_test4"
 	cfg4.Net.UnixRPCAddr = "/tmp/reindexer_builtinserver_test.sock"
 
 	os.RemoveAll(cfg4.Storage.Path)

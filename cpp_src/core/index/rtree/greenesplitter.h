@@ -1,6 +1,7 @@
 #pragma once
 
 #include "splitter.h"
+#include "vendor/sort/pdqsort.hpp"
 
 namespace reindexer {
 
@@ -53,7 +54,7 @@ public:
 				if (firstSeedBoundRect.Left() + firstSeedBoundRect.Right() > secondSeedBoundRect.Left() + secondSeedBoundRect.Right()) {
 					std::swap(seeds.first, seeds.second);
 				}
-				std::sort(std::begin(indexes), std::end(indexes), [&src, this](size_t lhs, size_t rhs) {
+				boost::sort::pdqsort(std::begin(indexes), std::end(indexes), [&src, this](size_t lhs, size_t rhs) {
 					return Base::getBoundRect(lhs < MaxEntries ? src[lhs] : this->appendingEntry_).Left() <
 						   Base::getBoundRect(rhs < MaxEntries ? src[rhs] : this->appendingEntry_).Left();
 				});
@@ -61,7 +62,7 @@ public:
 				if (firstSeedBoundRect.Bottom() + firstSeedBoundRect.Top() > secondSeedBoundRect.Bottom() + secondSeedBoundRect.Top()) {
 					std::swap(seeds.first, seeds.second);
 				}
-				std::sort(std::begin(indexes), std::end(indexes), [&src, this](size_t lhs, size_t rhs) {
+				boost::sort::pdqsort(std::begin(indexes), std::end(indexes), [&src, this](size_t lhs, size_t rhs) {
 					return Base::getBoundRect(lhs < MaxEntries ? src[lhs] : this->appendingEntry_).Bottom() <
 						   Base::getBoundRect(rhs < MaxEntries ? src[rhs] : this->appendingEntry_).Bottom();
 				});

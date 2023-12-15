@@ -1,7 +1,6 @@
 #pragma once
 
 #include "aggregator.h"
-#include "core/ft/ftsetcashe.h"
 #include "core/index/ft_preselect.h"
 #include "core/query/queryentry.h"
 #include "estl/h_vector.h"
@@ -47,7 +46,7 @@ public:
 	unsigned Count() const noexcept { return count_; }
 	bool MoreThanOneEvaluation() const noexcept { return queryEntryAddedByForcedSortOptimization_; }
 	bool AvailableSelectBySortIndex() const noexcept { return !queryEntryAddedByForcedSortOptimization_ || !forcedStage(); }
-	void InjectConditionsFromJoins(JoinedSelectors &js, OnConditionInjections &expalainOnInjections, const RdxContext &rdxCtx);
+	void InjectConditionsFromJoins(JoinedSelectors &js, OnConditionInjections &expalainOnInjections, LogLevel, const RdxContext &rdxCtx);
 	void Reduce(bool isFt);
 	void InitIndexNumbers();
 	using QueryEntries::Size;

@@ -415,17 +415,17 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 	ns := "test_uuid_builtinserver_connect"
 
 	t.Run("test add uuid index on non-indexed string", func(t *testing.T) {
-		path1 := "/tmp/rx_uuid11"
+		path1 := "/tmp/reindex_uuid11"
 		rx1 := configureAndStartServer("0:29188", "0:26634", path1)
 		defer rx1.Close()
 		{
-			f, err := os.OpenFile("/tmp/rx_uuid11"+"/uudb/replication.conf", os.O_RDWR|os.O_CREATE, 0644)
+			f, err := os.OpenFile("/tmp/reindex_uuid11"+"/uudb/replication.conf", os.O_RDWR|os.O_CREATE, 0644)
 			assert.NoError(t, err)
 			_, err = f.Write([]byte(masterConfig))
 			assert.NoError(t, err)
 		}
 
-		path2 := "/tmp/rx_uuid12"
+		path2 := "/tmp/reindex_uuid12"
 		rx2 := configureAndStartServer("0:29189", "0:26635", path2)
 		defer rx2.Close()
 		{
@@ -486,7 +486,7 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 	})
 
 	t.Run("test update index from string to uuid", func(t *testing.T) {
-		path1 := "/tmp/rx_uuid11"
+		path1 := "/tmp/reindex_uuid11"
 		rx1 := configureAndStartServer("0:29188", "0:26634", path1)
 		defer rx1.Close()
 		{
@@ -496,7 +496,7 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 			assert.NoError(t, err)
 		}
 
-		path2 := "/tmp/rx_uuid12"
+		path2 := "/tmp/reindex_uuid12"
 		rx2 := configureAndStartServer("0:29189", "0:26635", path2)
 		defer rx2.Close()
 		{

@@ -873,16 +873,16 @@ TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
 }
 
 TEST_F(ReplicationSlaveSlaveApi, RestrictUpdates) {
-	// 1. create master node,
-	// 2. set max updates size 1024 * 5
-	// 3. add 10000 rows
-	// 4. start inser thread
-	// 5. start slave node
-	// 6. wait sync
-	reindexer::fs::RmDirAll("/tmp/RestrictUpdates");
+	//  1. create master node,
+	//  2. set max updates size 1024 * 5
+	//  3. add 10000 rows
+	//  4. start inser thread
+	//  5. start slave node
+	//  6. wait sync
+	const std::string kBaseStoragePath = reindexer::fs::JoinPath(kBaseTestsetDbPath, "RestrictUpdates");
 	std::string upDsn = "cproto://127.0.0.1:7770/db";
 	ServerControl master;
-	master.InitServer(0, 7770, 7880, "/tmp/RestrictUpdates/master", "db", true, 1024 * 5);
+	master.InitServer(0, 7770, 7880, reindexer::fs::JoinPath(kBaseStoragePath, "master"), "db", true, 1024 * 5);
 
 	master.Get()->MakeMaster(ReplicationConfigTest("master", "appMaster"));
 	TestNamespace1 testns1(master, "ns1");
@@ -906,7 +906,7 @@ TEST_F(ReplicationSlaveSlaveApi, RestrictUpdates) {
 	std::thread insertThread(ThreadAdd);
 
 	ServerControl slave;
-	slave.InitServer(0, 7771, 7881, "/tmp/RestrictUpdates/slave", "db", true);
+	slave.InitServer(0, 7771, 7881, reindexer::fs::JoinPath(kBaseStoragePath, "slave"), "db", true);
 	ReplicationConfigTest configSlave("slave", false, true, 0, upDsn, "slave");
 	slave.Get()->MakeSlave(0, configSlave);
 

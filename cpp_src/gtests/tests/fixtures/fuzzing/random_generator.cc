@@ -228,7 +228,7 @@ FieldPath RandomGenerator::RndScalarField(const NsScheme& nsScheme) {
 		const int end = idx + size;
 		while (idx < end) {
 			res.back() = idx % size;
-			if (nsScheme.IsArray(res) == IsArray::No && !nsScheme.IsPoint(res)) break;
+			if (nsScheme.IsArray(res) == IsArrayT::No && !nsScheme.IsPoint(res)) break;
 			++idx;
 		}
 		if (idx == end) return {};

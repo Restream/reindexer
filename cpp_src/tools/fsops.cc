@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <memory>
+#include <mutex>
 
 #include "errors.h"
 #include "tools/oscompat.h"
@@ -177,7 +178,16 @@ std::string GetCwd() {
 	return std::string(getcwd(buff, FILENAME_MAX));
 }
 
+static std::string tmpDir;
+static std::mutex tmpDirMtx;
+
 std::string GetTempDir() {
+	{
+		std::lock_guard lck(tmpDirMtx);
+		if (!tmpDir.empty()) {
+			return tmpDir;
+		}
+	}
 #ifdef _WIN32
 	char tmpBuf[512];
 	*tmpBuf = 0;
@@ -188,6 +198,11 @@ std::string GetTempDir() {
 	if (tmpDir && *tmpDir) return tmpDir;
 	return "/tmp";
 #endif
+}
+
+void SetTempDir(std::string &&dir) noexcept {
+	std::lock_guard lck(tmpDirMtx);
+	tmpDir = std::move(dir);
 }
 
 std::string GetHomeDir() {
@@ -355,5 +370,6 @@ std::string GetRelativePath(const std::string &path, unsigned maxUp) {
 	rpath.append(path.begin() + same, path.end());
 	return rpath;
 }
+
 }  // namespace fs
 }  // namespace reindexer

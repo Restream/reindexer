@@ -28,6 +28,43 @@ public:
 	reindexer::Error Initialize() override;
 
 private:
+	class IndexCacheSetter {
+	public:
+		constexpr static unsigned kVeryLargeHitsValue = 1000000;
+
+		IndexCacheSetter(reindexer::Reindexer& db, unsigned hitsCount = kVeryLargeHitsValue) : db_(db) {
+			shrinkCache();
+			setHitsCount(hitsCount);
+		}
+		~IndexCacheSetter() { setHitsCount(kDefaultCacheHits); }
+
+	private:
+		constexpr static int64_t kDefaultCacheSize = 134217728;
+		constexpr static int64_t kDefaultCacheHits = 2;
+
+		void shrinkCache() {
+			// Shrink cache size to force cache invalidation
+			auto q = reindexer::Query("#config").Set("namespaces.cache.index_idset_cache_size", 1024).Where("type", CondEq, "namespaces");
+			reindexer::QueryResults qr;
+			auto err = db_.Update(q, qr);
+			assertrx(err.ok());
+			assertrx(qr.Count() == 1);
+		}
+		void setHitsCount(unsigned hitsCount) {
+			// Set required hits count and default cache size
+			auto q = reindexer::Query("#config")
+						 .Set("namespaces.cache.index_idset_cache_size", kDefaultCacheSize)
+						 .Set("namespaces.cache.index_idset_hits_to_cache", int64_t(hitsCount))
+						 .Where("type", CondEq, "namespaces");
+			reindexer::QueryResults qr;
+			auto err = db_.Update(q, qr);
+			assertrx(err.ok());
+			assertrx(qr.Count() == 1);
+		}
+
+		reindexer::Reindexer& db_;
+	};
+
 	reindexer::Item MakeItem(benchmark::State&) override;
 	reindexer::Item MakeStrItem();
 
@@ -83,6 +120,9 @@ private:
 	void FromCJSONPKOnly(State&);
 	void GetCJSON(State&);
 	void ExtractField(State&);
+	void Query4CondRangeDropCache(State& state);
+	void Query4CondRangeDropCacheTotal(State& state);
+	void Query4CondRangeDropCacheCachedTotal(State& state);
 
 	void query2CondIdSet(State& state, const std::vector<std::vector<int>>& idsets);
 	reindexer::Error prepareCJsonBench();
@@ -90,6 +130,7 @@ private:
 	std::vector<std::string> countries_;
 	std::vector<std::string> countryLikePatterns_;
 	std::vector<std::string> locations_;
+	std::vector<std::string> devices_;
 	std::vector<int> start_times_;
 	std::vector<std::vector<int>> packages_;
 	std::vector<std::vector<int>> priceIDs_;

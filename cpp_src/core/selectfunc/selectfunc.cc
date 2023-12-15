@@ -38,7 +38,7 @@ SelectFunction::Ptr SelectFunctionsHolder::AddNamespace(const Query &q, const Na
 	return queries_[nsid];
 }
 
-SelectFunction::SelectFunction(const Query &q, NsSelectFuncInterface &&nm) : nm_(std::move(nm)), currCjsonFieldIdx_(nm.getIndexesCount()) {
+SelectFunction::SelectFunction(const Query &q, NsSelectFuncInterface &&nm) : nm_(std::move(nm)), currCjsonFieldIdx_(nm_.getIndexesCount()) {
 	functions_.reserve(q.selectFunctions_.size());
 	for (auto &func : q.selectFunctions_) {
 		SelectFuncParser parser;

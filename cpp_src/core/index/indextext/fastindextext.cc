@@ -123,7 +123,7 @@ template <typename T>
 IndexMemStat FastIndexText<T>::GetMemStat(const RdxContext &ctx) {
 	auto ret = IndexUnordered<T>::GetMemStat(ctx);
 
-	contexted_shared_lock lck(this->mtx_, &ctx);
+	contexted_shared_lock lck(this->mtx_, ctx);
 	ret.fulltextSize = this->holder_->GetMemStat();
 	ret.idsetCache = this->cache_ft_ ? this->cache_ft_->GetMemStat() : LRUCacheMemStat();
 	return ret;

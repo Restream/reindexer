@@ -107,6 +107,7 @@ inline UtfIntroCharType IntroCharTypeOf(std::istream::int_type ch) {
 			return uictFE;
 		case 0xFF:
 			return uictFF;
+		default:;
 	}
 
 	if ((ch > 0) && (ch < 0xFF)) {

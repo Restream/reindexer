@@ -11,8 +11,7 @@ public:
 	void SetFilepath(std::string filepath, bool enable = false) noexcept {
 		assertrx(!hasFilepath_.load(std::memory_order_acquire));
 		filepath_ = std::move(filepath);
-		auto stat = fs::StatTime(filepath_);
-		lastReplConfMTime_.store(stat.mtime, std::memory_order_relaxed);
+		lastReplConfMTime_.store(fs::StatTime(filepath_).mtime, std::memory_order_relaxed);
 		hasFilepath_.store(true, std::memory_order_release);
 		if (enable) {
 			isEnabled_.store(true, std::memory_order_release);
@@ -31,18 +30,21 @@ public:
 		if (!isEnabled_.load(std::memory_order_acquire) || !hasFilepath_.load(std::memory_order_acquire)) {
 			return false;
 		}
-		auto stat = fs::StatTime(filepath_);
-		if (stat.mtime > 0) {
-			auto lastReplConfMTime = lastReplConfMTime_.load(std::memory_order_acquire);
-			if (lastReplConfMTime != stat.mtime) {
-				if (lastReplConfMTime_.compare_exchange_strong(lastReplConfMTime, stat.mtime, std::memory_order_acq_rel)) {
-					auto res = fs::ReadFile(filepath_, content);
-					if (res < 0) {
-						content.clear();
-					}
-					std::lock_guard<std::mutex> lck(mtx_);
-					if (content != expectedContent_) {
-						return true;
+		auto mtime = fs::StatTime(filepath_).mtime;
+		if (mtime > 0) {
+			if (lastReplConfMTime_.load(std::memory_order_acquire) != mtime) {
+				std::lock_guard<std::mutex> lck(mtx_);
+				mtime = fs::StatTime(filepath_).mtime;
+				if (mtime > 0) {
+					if (lastReplConfMTime_.load(std::memory_order_relaxed) != mtime) {
+						lastReplConfMTime_.store(mtime, std::memory_order_release);
+						auto res = fs::ReadFile(filepath_, content);
+						if (res < 0) {
+							content.clear();
+						}
+						if (content != expectedContent_) {
+							return true;
+						}
 					}
 				}
 			}
@@ -53,18 +55,18 @@ public:
 	template <typename PredicatT>
 	Error RewriteFile(std::string content, PredicatT hasSameContent) {
 		if (!isEnabled_.load(std::memory_order_acquire) || !hasFilepath_.load(std::memory_order_acquire)) {
-			return errOK;
+			return Error();
 		}
 
-		std::string tmpPath = filepath_ + ".tmp";
 		std::string curContent;
 		auto res = fs::ReadFile(filepath_, curContent);
 		if (res < 0) {
-			return errOK;
+			return Error();
 		}
 		if (hasSameContent(curContent)) {
-			return errOK;
+			return Error();
 		}
+		const std::string tmpPath = filepath_ + ".tmp";
 		std::lock_guard<std::mutex> lck(mtx_);
 		res = fs::WriteFile(tmpPath, content);
 		if (res < 0 || static_cast<size_t>(res) != content.size()) {
@@ -75,7 +77,11 @@ public:
 			return Error(errParams, "Unable to rename tmp file from [%s] to [%s]. Reason: %s", tmpPath, filepath_, strerror(errno));
 		}
 		expectedContent_ = std::move(content);
-		return errOK;
+		auto stat = fs::StatTime(filepath_);
+		if (stat.mtime > 0) {
+			lastReplConfMTime_.store(stat.mtime, std::memory_order_release);
+		}
+		return Error();
 	}
 
 private:

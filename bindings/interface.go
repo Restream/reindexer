@@ -320,6 +320,12 @@ type OptionOpenTelemetry struct {
 	EnableTracing bool
 }
 
+// OptionStrictJoinHandlers - enables join handlers check.
+// If enabled, queries without required join handlers or Joinable interface will return error after execution.
+type OptionStrictJoinHandlers struct {
+	EnableStrictJoinHandlers bool
+}
+
 type Status struct {
 	Err     error
 	CProto  StatusCProto

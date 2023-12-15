@@ -119,13 +119,13 @@
                 "1": {
                     "user": {
                         "id": 19,
-                        "price": 424,
-                        "oldPrice": 424
+                        "price": 424.0,
+                        "oldPrice": 424.0
                     },
                     "guest": {
                         "id": 20,
-                        "price": 424,
-                        "oldPrice": 424
+                        "price": 424.0,
+                        "oldPrice": 424.0
                     }
                 }
             },
@@ -200,13 +200,13 @@
                 "1": {
                     "user": {
                         "id": 29,
-                        "price": 623,
-                        "oldPrice": 623
+                        "price": 623.0,
+                        "oldPrice": 623.0
                     },
                     "guest": {
                         "id": 30,
-                        "price": 623,
-                        "oldPrice": 623
+                        "price": 623.0,
+                        "oldPrice": 623.0
                     }
                 }
             },
@@ -416,13 +416,13 @@
                 "1": {
                     "user": {
                         "id": 55,
-                        "price": 371,
-                        "oldPrice": 371
+                        "price": 371.0,
+                        "oldPrice": 371.0
                     },
                     "guest": {
                         "id": 56,
-                        "price": 371,
-                        "oldPrice": 371
+                        "price": 371.0,
+                        "oldPrice": 371.0
                     }
                 }
             },
@@ -470,13 +470,13 @@
                 "1": {
                     "user": {
                         "id": 23,
-                        "price": 371,
-                        "oldPrice": 371
+                        "price": 371.0,
+                        "oldPrice": 371.0
                     },
                     "guest": {
                         "id": 24,
-                        "price": 371,
-                        "oldPrice": 371
+                        "price": 371.0,
+                        "oldPrice": 371.0
                     }
                 }
             },
@@ -631,3 +631,4 @@
         }
     ]
 }
+

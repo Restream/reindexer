@@ -190,7 +190,7 @@ reindexer::QueryResults FTApi::SimpleCompositeSelect(std::string word) {
 	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, std::move(word))};
 	mqr.AddFunction("ft1 = snippet(<b>,\"\"</b>,3,2,,d)");
 
-	qr.mergeQueries_.emplace_back(Merge, std::move(mqr));
+	qr.Merge(std::move(mqr));
 	qr.AddFunction("ft3 = highlight(<b>,</b>)");
 	auto err = rt.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -205,7 +205,7 @@ reindexer::QueryResults FTApi::CompositeSelectField(const std::string& field, st
 	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, std::move(word))};
 	mqr.AddFunction(field + " = snippet(<b>,\"\"</b>,3,2,,d)");
 
-	qr.mergeQueries_.emplace_back(Merge, std::move(mqr));
+	qr.Merge(std::move(mqr));
 	qr.AddFunction(field + " = highlight(<b>,</b>)");
 	auto err = rt.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();

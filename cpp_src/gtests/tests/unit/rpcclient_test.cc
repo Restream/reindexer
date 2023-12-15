@@ -1046,3 +1046,72 @@ TEST_F(RPCClientTestApi, AggregationsFetching) {
 
 	loop.run();
 }
+
+TEST_F(RPCClientTestApi, SubQuery) {
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+	using reindexer::coroutine::wait_group;
+	using reindexer::coroutine::wait_group_guard;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+
+	loop.spawn([&loop, this]() noexcept {
+		const std::string kLeftNsName = "left_ns";
+		const std::string kRightNsName = "right_ns";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		reindexer::client::ReindexerConfig cfg;
+		constexpr auto kFetchCount = 50;
+		constexpr auto kNsSize = kFetchCount * 3;
+		cfg.FetchAmount = kFetchCount;
+		CoroReindexer rx(cfg);
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CreateNamespace(rx, kLeftNsName);
+		CreateNamespace(rx, kRightNsName);
+
+		auto upsertFn = [&rx](const std::string& nsName) {
+			for (size_t i = 0; i < kNsSize; ++i) {
+				auto item = rx.NewItem(nsName);
+				ASSERT_TRUE(item.Status().ok()) << nsName << " " << item.Status().what();
+
+				WrSerializer wrser;
+				JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+				jsonBuilder.Put("id", i);
+				jsonBuilder.Put("value", "value_" + std::to_string(i));
+				jsonBuilder.End();
+				char* endp = nullptr;
+				auto err = item.Unsafe().FromJSON(wrser.Slice(), &endp);
+				ASSERT_TRUE(err.ok()) << nsName << " " << err.what();
+				err = rx.Upsert(nsName, item);
+				ASSERT_TRUE(err.ok()) << nsName << " " << err.what();
+			}
+		};
+
+		upsertFn(kLeftNsName);
+		upsertFn(kRightNsName);
+
+		const auto kHalfSize = kNsSize / 2;
+		{
+			client::CoroQueryResults qr;
+			err = rx.Select(Query(kLeftNsName).Where("id", CondSet, Query(kRightNsName).Select({"id"}).Where("id", CondLt, kHalfSize)), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), kHalfSize);
+		}
+		{
+			const int limit = 10;
+			client::CoroQueryResults qr;
+			err = rx.Select(
+				Query(kLeftNsName).Where(Query(kRightNsName).Where("id", CondLt, kHalfSize).ReqTotal(), CondEq, {kHalfSize}).Limit(limit),
+				qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), limit);
+		}
+		rx.Stop();
+	});
+
+	loop.run();
+}

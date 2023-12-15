@@ -63,7 +63,8 @@ int getUTF8StringCharactersCount(std::string_view str) noexcept;
 
 class Word2PosHelper {
 public:
-	Word2PosHelper(std::string_view data, const std::string& extraWordSymbols);
+	Word2PosHelper(std::string_view data, const std::string& extraWordSymbols) noexcept
+		: data_(data), lastWordPos_(0), lastOffset_(0), extraWordSymbols_(extraWordSymbols) {}
 	std::pair<int, int> convert(int wordPos, int endPos);
 
 protected:
@@ -145,12 +146,15 @@ std::string urldecode2(std::string_view str);
 int stoi(std::string_view sl);
 std::optional<int> try_stoi(std::string_view sl);
 int64_t stoll(std::string_view sl);
+int double_to_str(double v, char* buf, int capacity);
+int double_to_str_no_trailing(double v, char* buf, int capacity);
+std::string double_to_str(double v);
 
 bool validateObjectName(std::string_view name, bool allowSpecialChars) noexcept;
 bool validateUserNsName(std::string_view name) noexcept;
 RX_ALWAYS_INLINE bool isSystemNamespaceNameFast(std::string_view name) noexcept { return !name.empty() && name[0] == '#'; }
-LogLevel logLevelFromString(const std::string& strLogLevel);
-StrictMode strictModeFromString(const std::string& strStrictMode);
+LogLevel logLevelFromString(std::string_view strLogLevel);
+StrictMode strictModeFromString(std::string_view strStrictMode);
 std::string_view strictModeToString(StrictMode mode);
 
 inline bool iequals(std::string_view lhs, std::string_view rhs) noexcept {

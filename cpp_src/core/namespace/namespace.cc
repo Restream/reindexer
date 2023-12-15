@@ -1,13 +1,10 @@
 #include "namespace.h"
 #include "core/querystat.h"
-#include "core/storage/storagefactory.h"
 #include "tools/flagguard.h"
 #include "tools/fsops.h"
 #include "tools/logger.h"
 
 namespace reindexer {
-
-#define handleInvalidation(Fn) nsFuncWrapper<decltype(&Fn), &Fn>
 
 void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const RdxContext& ctx) {
 	auto nsl = atomicLoadMainNs();
@@ -23,7 +20,7 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 	if (needNamespaceCopy(nsl, tx)) {
 		PerfStatCalculatorMT calc(nsl->updatePerfCounter_, enablePerfCounters);
 
-		auto lck = statCalculator.CreateLock<contexted_unique_lock>(clonerMtx_, &ctx);
+		auto lck = statCalculator.CreateLock<contexted_unique_lock>(clonerMtx_, ctx);
 
 		nsl = ns_;
 		if (needNamespaceCopy(nsl, tx)) {
@@ -76,11 +73,11 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 			return;
 		}
 	}
-	handleInvalidation(NamespaceImpl::CommitTransaction)(tx, result, NsContext(ctx), statCalculator);
+	nsFuncWrapper<&NamespaceImpl::CommitTransaction>(tx, result, NsContext(ctx), statCalculator);
 }
 
 NamespacePerfStat Namespace::GetPerfStat(const RdxContext& ctx) {
-	NamespacePerfStat stats = handleInvalidation(NamespaceImpl::GetPerfStat)(ctx);
+	NamespacePerfStat stats = nsFuncWrapper<&NamespaceImpl::GetPerfStat>(ctx);
 	stats.transactions = txStatsCounter_.Get();
 	auto copyStats = copyStatsCounter_.Get<PerfStat>();
 	stats.transactions.totalCopyCount = copyStats.totalHitCount;
@@ -107,7 +104,7 @@ bool Namespace::needNamespaceCopy(const NamespaceImpl::Ptr& ns, const Transactio
 void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, const std::string& storagePath, const RdxContext& ctx) {
 	std::string dbpath;
 	const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
-	auto lck = handleInvalidation(NamespaceImpl::wLock)(ctx);
+	auto lck = nsFuncWrapper<&NamespaceImpl::wLock>(ctx);
 	auto srcNsPtr = atomicLoadMainNs();
 	auto& srcNs = *srcNsPtr;
 	srcNs.storage_.Flush(flushOpts);  // Repeat flush, to raise any disk errors before attempt to close storage

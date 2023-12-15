@@ -134,11 +134,12 @@ class NamespaceImpl : public intrusive_atomic_rc_base {	 // NOLINT(*performance.
 	friend SortExpression;
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	friend class ReindexerImpl;
+	friend class RxSelector;
 	friend QueryResults;
 	friend class ItemsLoader;
 	friend class IndexInserters;
 
-	class NSUpdateSortedContext : public UpdateSortedContext {
+	class NSUpdateSortedContext final : public UpdateSortedContext {
 	public:
 		NSUpdateSortedContext(const NamespaceImpl &ns, SortType curSortId)
 			: ns_(ns), sorted_indexes_(ns_.getSortedIdxCount()), curSortId_(curSortId) {
@@ -259,7 +260,7 @@ public:
 	int getIndexByName(std::string_view index) const;
 	int getIndexByNameOrJsonPath(std::string_view name) const;
 	int getScalarIndexByName(std::string_view name) const;
-	bool getIndexByName(std::string_view name, int &index) const;
+	bool tryGetIndexByName(std::string_view name, int &index) const;
 	bool getIndexByNameOrJsonPath(std::string_view name, int &index) const;
 	bool getScalarIndexByName(std::string_view name, int &index) const;
 	bool getSparseIndexByJsonPath(std::string_view jsonPath, int &index) const;
@@ -282,6 +283,9 @@ public:
 	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext &ctx) const;
 	int getNsNumber() const { return schema_ ? schema_->GetProtobufNsNumber() : 0; }
 	IndexesCacheCleaner GetIndexesCacheCleaner() { return IndexesCacheCleaner{*this}; }
+	// Separate method for the v3/v4 replication compatibility.
+	// It should not be used outside of this scenario
+	void SetTagsMatcher(TagsMatcher &&tm, const RdxContext &ctx);
 	void SetDestroyFlag() { dbDestroyed_ = true; }
 	Error FlushStorage(const RdxContext &ctx) {
 		const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
@@ -303,10 +307,10 @@ private:
 		typedef contexted_shared_lock<Mutex, const RdxContext> RLockT;
 		typedef contexted_unique_lock<Mutex, const RdxContext> WLockT;
 
-		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, &ctx); }
+		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, ctx); }
 		WLockT WLock(const RdxContext &ctx) const {
 			using namespace std::string_view_literals;
-			WLockT lck(mtx_, &ctx);
+			WLockT lck(mtx_, ctx);
 			if (readonly_.load(std::memory_order_acquire)) {
 				throw Error(errNamespaceInvalidated, "NS invalidated"sv);
 			}
@@ -373,6 +377,7 @@ private:
 					   std::optional<PKModifyRevertData> &&modifyData);
 	void removeExpiredItems(RdxActivityContext *);
 	void removeExpiredStrings(RdxActivityContext *);
+	void setTagsMatcher(TagsMatcher &&tm, const NsContext &ctx);
 	Item newItem();
 
 	template <NeedRollBack needRollBack>

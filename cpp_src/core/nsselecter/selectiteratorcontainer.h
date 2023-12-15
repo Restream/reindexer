@@ -28,9 +28,10 @@ struct SelectIteratorsBracket : private Bracket {
 	bool haveJoins = false;
 };
 
-class SelectIteratorContainer
-	: public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysFalse> {
-	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysFalse>;
+class SelectIteratorContainer : public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator,
+													  FieldsComparator, AlwaysFalse, AlwaysTrue> {
+	using Base =
+		ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue>;
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr)
@@ -49,11 +50,11 @@ public:
 
 	bool IsSelectIterator(size_t i) const noexcept {
 		assertrx(i < Size());
-		return container_[i].HoldsOrReferTo<SelectIterator>();
+		return container_[i].Is<SelectIterator>();
 	}
 	bool IsJoinIterator(size_t i) const noexcept {
 		assertrx(i < container_.size());
-		return container_[i].HoldsOrReferTo<JoinSelectIterator>();
+		return container_[i].Is<JoinSelectIterator>();
 	}
 	void ExplainJSON(int iters, JsonBuilder &builder, const std::vector<JoinedSelector> *js) const {
 		explainJSON(cbegin(), cend(), iters, builder, js);

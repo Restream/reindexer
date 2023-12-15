@@ -3,18 +3,125 @@
 #include <cctype>
 #include <locale>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "atoi/atoi.h"
+#include "estl/fast_hash_map.h"
 #include "itoa/itoa.h"
 #include "tools/assertrx.h"
 #include "tools/customlocal.h"
 #include "tools/randomgenerator.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
+#include "vendor/double-conversion/double-conversion.h"
 
 namespace reindexer {
+
+namespace stringtools_impl {
+
+static int double_to_str(double v, char *buf, int capacity, int flags) {
+	double_conversion::StringBuilder builder(buf, capacity);
+	double_conversion::DoubleToStringConverter dc(flags, NULL, NULL, 'e', -6, 21, 0, 0);
+
+	if (!dc.ToShortest(v, &builder)) {
+		// NaN/Inf are not allowed here
+		throw Error(errParams, "Unable to convert '%f' to string", v);
+	}
+	return builder.position();
+}
+
+static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, const std::string &extraWordSymbols) {
+	auto wordStartIt = str.begin();
+	auto wordEndIt = str.begin();
+	auto it = str.begin();
+	assertrx(endPos > wordPos);
+	int numWords = endPos - (wordPos + 1);
+	for (; it != str.end();) {
+		auto ch = utf8::unchecked::next(it);
+
+		while (it != str.end() && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
+			wordStartIt = it;
+			ch = utf8::unchecked::next(it);
+		}
+
+		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
+			wordEndIt = it;
+			if (it == str.end()) break;
+			ch = utf8::unchecked::next(it);
+		}
+
+		if (wordStartIt != it) {
+			if (!wordPos)
+				break;
+			else {
+				wordPos--;
+				wordStartIt = it;
+			}
+		}
+	}
+
+	for (; numWords != 0 && it != str.end(); numWords--) {
+		auto ch = utf8::unchecked::next(it);
+
+		while (it != str.end() && !IsAlpha(ch) && !IsDigit(ch)) {
+			ch = utf8::unchecked::next(it);
+		}
+
+		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
+			wordEndIt = it;
+			if (it == str.end()) break;
+			ch = utf8::unchecked::next(it);
+		}
+	}
+
+	return {int(std::distance(str.begin(), wordStartIt)), int(std::distance(str.begin(), wordEndIt))};
+}
+
+static std::string_view urldecode2(char *buf, std::string_view str) {
+	char a, b;
+	const char *src = str.data();
+	char *dst = buf;
+
+	for (size_t l = 0; l < str.length(); l++) {
+		if (l + 2 < str.length() && (*src == '%') && ((a = src[1]) && (b = src[2])) && (isxdigit(a) && isxdigit(b))) {
+			if (a >= 'a') a -= 'a' - 'A';
+			if (a >= 'A')
+				a -= ('A' - 10);
+			else
+				a -= '0';
+			if (b >= 'a') b -= 'a' - 'A';
+			if (b >= 'A')
+				b -= ('A' - 10);
+			else
+				b -= '0';
+			*dst++ = 16 * a + b;
+			src += 3;
+			l += 2;
+		} else if (*src == '+') {
+			*dst++ = ' ';
+			src++;
+		} else {
+			*dst++ = *src++;
+		}
+	}
+	*dst = '\0';
+	return std::string_view(buf, dst - buf);
+}
+
+// Sat Jul 15 14 : 18 : 56 2017 GMT
+
+static const char *kDaysOfWeek[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+static const char *kMonths[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+
+inline static char *strappend(char *dst, const char *src) noexcept {
+	while (*src) *dst++ = *src++;
+	return dst;
+}
+
+static fast_hash_map<std::string_view, StrictMode> kStrictModes = {
+	{"", StrictModeNotSet}, {"none", StrictModeNone}, {"names", StrictModeNames}, {"indexes", StrictModeIndexes}};
+
+}  // namespace stringtools_impl
 
 std::string toLower(std::string_view src) {
 	std::string ret;
@@ -238,63 +345,13 @@ Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::stri
 template WordPositionEx wordToByteAndCharPos<WordPositionEx>(std::string_view str, int wordPosition, const std::string &extraWordSymbols);
 template WordPosition wordToByteAndCharPos<WordPosition>(std::string_view str, int wordPosition, const std::string &extraWordSymbols);
 
-static std::pair<int, int> word2Pos(std::string_view str, int wordPos, int endPos, const std::string &extraWordSymbols) {
-	auto wordStartIt = str.begin();
-	auto wordEndIt = str.begin();
-	auto it = str.begin();
-	assertrx(endPos > wordPos);
-	int numWords = endPos - (wordPos + 1);
-	for (; it != str.end();) {
-		auto ch = utf8::unchecked::next(it);
-
-		while (it != str.end() && extraWordSymbols.find(ch) == std::string::npos && !IsAlpha(ch) && !IsDigit(ch)) {
-			wordStartIt = it;
-			ch = utf8::unchecked::next(it);
-		}
-
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
-			wordEndIt = it;
-			if (it == str.end()) break;
-			ch = utf8::unchecked::next(it);
-		}
-
-		if (wordStartIt != it) {
-			if (!wordPos)
-				break;
-			else {
-				wordPos--;
-				wordStartIt = it;
-			}
-		}
-	}
-
-	for (; numWords != 0 && it != str.end(); numWords--) {
-		auto ch = utf8::unchecked::next(it);
-
-		while (it != str.end() && !IsAlpha(ch) && !IsDigit(ch)) {
-			ch = utf8::unchecked::next(it);
-		}
-
-		while (IsAlpha(ch) || IsDigit(ch) || extraWordSymbols.find(ch) != std::string::npos) {
-			wordEndIt = it;
-			if (it == str.end()) break;
-			ch = utf8::unchecked::next(it);
-		}
-	}
-
-	return {int(std::distance(str.begin(), wordStartIt)), int(std::distance(str.begin(), wordEndIt))};
-}
-
-Word2PosHelper::Word2PosHelper(std::string_view data, const std::string &extraWordSymbols)
-	: data_(data), lastWordPos_(0), lastOffset_(0), extraWordSymbols_(extraWordSymbols) {}
-
 std::pair<int, int> Word2PosHelper::convert(int wordPos, int endPos) {
 	if (wordPos < lastWordPos_) {
 		lastWordPos_ = 0;
 		lastOffset_ = 0;
 	}
 
-	auto ret = word2Pos(data_.substr(lastOffset_), wordPos - lastWordPos_, endPos - lastWordPos_, extraWordSymbols_);
+	auto ret = stringtools_impl::word2Pos(data_.substr(lastOffset_), wordPos - lastWordPos_, endPos - lastWordPos_, extraWordSymbols_);
 	ret.first += lastOffset_;
 	ret.second += lastOffset_;
 	lastOffset_ = ret.first;
@@ -453,62 +510,23 @@ int collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, cons
 	return res ? res : ((l1 < l2) ? -1 : (l1 > l2) ? 1 : 0);
 }
 
-static std::string_view urldecode2(char *buf, std::string_view str) {
-	char a, b;
-	const char *src = str.data();
-	char *dst = buf;
-
-	for (size_t l = 0; l < str.length(); l++) {
-		if (l + 2 < str.length() && (*src == '%') && ((a = src[1]) && (b = src[2])) && (isxdigit(a) && isxdigit(b))) {
-			if (a >= 'a') a -= 'a' - 'A';
-			if (a >= 'A')
-				a -= ('A' - 10);
-			else
-				a -= '0';
-			if (b >= 'a') b -= 'a' - 'A';
-			if (b >= 'A')
-				b -= ('A' - 10);
-			else
-				b -= '0';
-			*dst++ = 16 * a + b;
-			src += 3;
-			l += 2;
-		} else if (*src == '+') {
-			*dst++ = ' ';
-			src++;
-		} else {
-			*dst++ = *src++;
-		}
-	}
-	*dst = '\0';
-	return std::string_view(buf, dst - buf);
-}
-
 std::string urldecode2(std::string_view str) {
 	std::string ret(str.length(), ' ');
-	std::string_view sret = urldecode2(&ret[0], str);
+	std::string_view sret = stringtools_impl::urldecode2(&ret[0], str);
 	ret.resize(sret.size());
 	return ret;
-}
-
-// Sat Jul 15 14 : 18 : 56 2017 GMT
-
-static const char *daysOfWeek[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-static const char *months[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-
-inline static char *strappend(char *dst, const char *src) noexcept {
-	while (*src) *dst++ = *src++;
-	return dst;
 }
 
 int fast_strftime(char *buf, const tm *tm) {
 	char *d = buf;
 
-	if (unsigned(tm->tm_wday) < sizeof(daysOfWeek) / sizeof daysOfWeek[0]) d = strappend(d, daysOfWeek[tm->tm_wday]);
-	d = strappend(d, ", ");
+	if (unsigned(tm->tm_wday) < sizeof(stringtools_impl::kDaysOfWeek) / sizeof stringtools_impl::kDaysOfWeek[0])
+		d = stringtools_impl::strappend(d, stringtools_impl::kDaysOfWeek[tm->tm_wday]);
+	d = stringtools_impl::strappend(d, ", ");
 	d = i32toa(tm->tm_mday, d);
 	*d++ = ' ';
-	if (unsigned(tm->tm_mon) < sizeof(months) / sizeof months[0]) d = strappend(d, months[tm->tm_mon]);
+	if (unsigned(tm->tm_mon) < sizeof(stringtools_impl::kMonths) / sizeof stringtools_impl::kMonths[0])
+		d = stringtools_impl::strappend(d, stringtools_impl::kMonths[tm->tm_mon]);
 	*d++ = ' ';
 	d = i32toa(tm->tm_year + 1900, d);
 	*d++ = ' ';
@@ -517,7 +535,7 @@ int fast_strftime(char *buf, const tm *tm) {
 	d = i32toa(tm->tm_min, d);
 	*d++ = ':';
 	d = i32toa(tm->tm_sec, d);
-	d = strappend(d, " GMT");
+	d = stringtools_impl::strappend(d, " GMT");
 	*d = 0;
 	return d - buf;
 }
@@ -546,8 +564,8 @@ bool validateUserNsName(std::string_view name) noexcept {
 	return true;
 }
 
-LogLevel logLevelFromString(const std::string &strLogLevel) {
-	static std::unordered_map<std::string, LogLevel> levels = {
+LogLevel logLevelFromString(std::string_view strLogLevel) {
+	static fast_hash_map<std::string_view, LogLevel> levels = {
 		{"none", LogNone}, {"warning", LogWarning}, {"error", LogError}, {"info", LogInfo}, {"trace", LogTrace}};
 
 	auto configLevelIt = levels.find(strLogLevel);
@@ -557,25 +575,21 @@ LogLevel logLevelFromString(const std::string &strLogLevel) {
 	return LogNone;
 }
 
-static std::unordered_map<std::string, StrictMode> strictModes = {
-	{"", StrictModeNotSet}, {"none", StrictModeNone}, {"names", StrictModeNames}, {"indexes", StrictModeIndexes}};
-
-StrictMode strictModeFromString(const std::string &strStrictMode) {
-	auto configModeIt = strictModes.find(strStrictMode);
-	if (configModeIt != strictModes.end()) {
+StrictMode strictModeFromString(std::string_view strStrictMode) {
+	auto configModeIt = stringtools_impl::kStrictModes.find(strStrictMode);
+	if (configModeIt != stringtools_impl::kStrictModes.end()) {
 		return configModeIt->second;
 	}
 	return StrictModeNotSet;
 }
 
 std::string_view strictModeToString(StrictMode mode) {
-	for (auto &it : strictModes) {
+	for (auto &it : stringtools_impl::kStrictModes) {
 		if (it.second == mode) {
 			return it.first;
 		}
 	}
-	static std::string_view empty{""};
-	return empty;
+	return std::string_view();
 }
 
 bool isPrintable(std::string_view str) noexcept {
@@ -633,6 +647,26 @@ int64_t stoll(std::string_view sl) {
 		throw Error(errParams, "Can't convert '%s' to number", sl);
 	}
 	return ret;
+}
+
+int double_to_str(double v, char *buf, int capacity) {
+	const int flags = double_conversion::DoubleToStringConverter::UNIQUE_ZERO |
+					  double_conversion::DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN |
+					  double_conversion::DoubleToStringConverter::EMIT_TRAILING_DECIMAL_POINT |
+					  double_conversion::DoubleToStringConverter::EMIT_TRAILING_ZERO_AFTER_POINT;
+	return stringtools_impl::double_to_str(v, buf, capacity, flags);
+}
+int double_to_str_no_trailing(double v, char *buf, int capacity) {
+	const int flags =
+		double_conversion::DoubleToStringConverter::UNIQUE_ZERO | double_conversion::DoubleToStringConverter::EMIT_POSITIVE_EXPONENT_SIGN;
+	return stringtools_impl::double_to_str(v, buf, capacity, flags);
+}
+std::string double_to_str(double v) {
+	std::string res;
+	res.resize(32);
+	auto len = double_to_str(v, res.data(), res.size());
+	res.resize(len);
+	return res;
 }
 
 std::string randStringAlph(size_t len) {

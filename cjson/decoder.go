@@ -121,7 +121,7 @@ func skipTag(rdser *Serializer, tagType int) {
 	case TAG_UUID:
 		rdser.GetUuid()
 	default:
-		panic(fmt.Errorf("Can't skip tagType %s", tagTypeName(tagType)))
+		panic(fmt.Errorf("can not skip tagType '%s'", tagTypeName(tagType)))
 	}
 }
 
@@ -134,7 +134,7 @@ func asInt(rdser *Serializer, tagType int) int64 {
 	case TAG_DOUBLE:
 		return int64(rdser.GetDouble())
 	default:
-		panic(fmt.Errorf("Can't convert tagType %s to int", tagTypeName(tagType)))
+		panic(fmt.Errorf("can not convert tagType '%s' to 'int'", tagTypeName(tagType)))
 	}
 }
 
@@ -145,7 +145,7 @@ func asFloat(rdser *Serializer, tagType int) float64 {
 	case TAG_DOUBLE:
 		return rdser.GetDouble()
 	default:
-		panic(fmt.Errorf("Can't convert tagType %s to float", tagTypeName(tagType)))
+		panic(fmt.Errorf("can not convert tagType '%s' to 'float'", tagTypeName(tagType)))
 	}
 }
 
@@ -156,7 +156,7 @@ func asString(rdser *Serializer, tagType int) string {
 	case TAG_UUID:
 		return rdser.GetUuid()
 	default:
-		panic(fmt.Errorf("Can't convert tagType %s to string", tagTypeName(tagType)))
+		panic(fmt.Errorf("can not convert tagType '%s' to 'string'", tagTypeName(tagType)))
 	}
 }
 
@@ -183,43 +183,105 @@ func asIface(rdser *Serializer, tagType int) interface{} {
 	case TAG_UUID:
 		return rdser.GetUuid()
 	default:
-		panic(fmt.Errorf("Can't convert tagType %s to iface", tagTypeName(tagType)))
+		panic(fmt.Errorf("can not convert tagType '%s' to 'interface'", tagTypeName(tagType)))
 	}
 }
 
-func mkSlice(v *reflect.Value, count int) {
+func mkSlice(v *reflect.Value, count int) (offset int) {
+	offset = v.Len()
 	switch a := v.Addr().Interface().(type) {
 	case *[]string:
-		*a = make([]string, count, count)
+		if offset == 0 {
+			*a = make([]string, count)
+		} else {
+			*a = append(*a, make([]string, count)...)
+		}
 	case *[]int:
-		*a = make([]int, count, count)
+		if offset == 0 {
+			*a = make([]int, count)
+		} else {
+			*a = append(*a, make([]int, count)...)
+		}
 	case *[]int64:
-		*a = make([]int64, count, count)
+		if offset == 0 {
+			*a = make([]int64, count)
+		} else {
+			*a = append(*a, make([]int64, count)...)
+		}
 	case *[]int32:
-		*a = make([]int32, count, count)
+		if offset == 0 {
+			*a = make([]int32, count)
+		} else {
+			*a = append(*a, make([]int32, count)...)
+		}
 	case *[]int16:
-		*a = make([]int16, count, count)
+		if offset == 0 {
+			*a = make([]int16, count)
+		} else {
+			*a = append(*a, make([]int16, count)...)
+		}
 	case *[]int8:
-		*a = make([]int8, count, count)
+		if offset == 0 {
+			*a = make([]int8, count)
+		} else {
+			*a = append(*a, make([]int8, count)...)
+		}
 	case *[]uint:
-		*a = make([]uint, count, count)
+		if offset == 0 {
+			*a = make([]uint, count)
+		} else {
+			*a = append(*a, make([]uint, count)...)
+		}
 	case *[]uint64:
-		*a = make([]uint64, count, count)
+		if offset == 0 {
+			*a = make([]uint64, count)
+		} else {
+			*a = append(*a, make([]uint64, count)...)
+		}
 	case *[]uint32:
-		*a = make([]uint32, count, count)
+		if offset == 0 {
+			*a = make([]uint32, count)
+		} else {
+			*a = append(*a, make([]uint32, count)...)
+		}
 	case *[]uint16:
-		*a = make([]uint16, count, count)
+		if offset == 0 {
+			*a = make([]uint16, count)
+		} else {
+			*a = append(*a, make([]uint16, count)...)
+		}
 	case *[]uint8:
-		*a = make([]uint8, count, count)
+		if offset == 0 {
+			*a = make([]uint8, count)
+		} else {
+			*a = append(*a, make([]uint8, count)...)
+		}
 	case *[]float64:
-		*a = make([]float64, count, count)
+		if offset == 0 {
+			*a = make([]float64, count)
+		} else {
+			*a = append(*a, make([]float64, count)...)
+		}
 	case *[]float32:
-		*a = make([]float32, count, count)
+		if offset == 0 {
+			*a = make([]float32, count)
+		} else {
+			*a = append(*a, make([]float32, count)...)
+		}
 	case *[]bool:
-		*a = make([]bool, count, count)
+		if offset == 0 {
+			*a = make([]bool, count)
+		} else {
+			*a = append(*a, make([]bool, count)...)
+		}
 	default:
-		v.Set(reflect.MakeSlice(v.Type(), count, count))
+		if offset == 0 {
+			v.Set(reflect.MakeSlice(v.Type(), count, count))
+		} else {
+			v.Set(reflect.AppendSlice(*v, reflect.MakeSlice(v.Type(), count, count)))
+		}
 	}
+	return
 }
 
 func mkValue(ctagType int) (v reflect.Value) {
@@ -237,7 +299,7 @@ func mkValue(ctagType int) (v reflect.Value) {
 	case TAG_ARRAY:
 		v = reflect.New(ifaceSliceType).Elem()
 	default:
-		panic(fmt.Errorf("Invalid ctagType=%d", ctagType))
+		panic(fmt.Errorf("invalid ctagType=%d", ctagType))
 	}
 	return v
 }
@@ -251,22 +313,25 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 	var ptr unsafe.Pointer
 
 	k := v.Kind()
+	offset := 0
 	switch k {
 	case reflect.Slice:
-		mkSlice(v, count)
+		offset = mkSlice(v, count)
 		ptr = unsafe.Pointer(v.Pointer())
 	case reflect.Interface:
 		origV = *v
 		*v = reflect.ValueOf(reflect.New(ifaceSliceType).Interface()).Elem()
-		mkSlice(v, count)
+		offset = mkSlice(v, count)
 		ptr = unsafe.Pointer(v.Pointer())
 	case reflect.Array:
 		if v.Len() < count {
-			panic(fmt.Errorf("Array bounds overflow need %d, len=%d", count, v.Len()))
+			panic(fmt.Errorf("array bounds overflow. Required %d, but array len is %d", count, v.Len()))
 		}
 		ptr = unsafe.Pointer(v.Index(0).Addr().Pointer())
+		// offset is 0
+		// No concatenation for the fixed size arrays
 	default:
-		panic(fmt.Errorf("Can't set array to %s", v.Type().Kind().String()))
+		panic(fmt.Errorf("can not convert '%s' to 'array'", v.Type().Kind().String()))
 	}
 
 	if subtag != TAG_OBJECT {
@@ -279,12 +344,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 		switch k {
 		case reflect.Int:
 			if !isPtr {
-				sl := (*[1 << 28]int)(ptr)[:count:count]
+				sl := (*[1 << 28]int)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = int(asInt(rdser, subtag))
 				}
 			} else {
-				sl := (*[1 << 28]*int)(ptr)[:count:count]
+				sl := (*[1 << 28]*int)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					u := int(asInt(rdser, subtag))
 					sl[i] = &u
@@ -292,12 +357,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Uint:
 			if !isPtr {
-				sl := (*[1 << 28]uint)(ptr)[:count:count]
+				sl := (*[1 << 28]uint)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = uint(asInt(rdser, subtag))
 				}
 			} else {
-				sl := (*[1 << 28]*uint)(ptr)[:count:count]
+				sl := (*[1 << 28]*uint)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					u := uint(asInt(rdser, subtag))
 					sl[i] = &u
@@ -305,12 +370,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Int64:
 			if !isPtr {
-				sl := (*[1 << 27]int64)(ptr)[:count:count]
+				sl := (*[1 << 27]int64)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = int64(asInt(rdser, subtag))
 				}
 			} else {
-				sl := (*[1 << 28]*int64)(ptr)[:count:count]
+				sl := (*[1 << 28]*int64)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					u := int64(asInt(rdser, subtag))
 					sl[i] = &u
@@ -318,12 +383,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Uint64:
 			if !isPtr {
-				sl := (*[1 << 27]uint64)(ptr)[:count:count]
+				sl := (*[1 << 27]uint64)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = uint64(asInt(rdser, subtag))
 				}
 			} else {
-				sl := (*[1 << 28]*uint64)(ptr)[:count:count]
+				sl := (*[1 << 28]*uint64)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					u := uint64(asInt(rdser, subtag))
 					sl[i] = &u
@@ -331,12 +396,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Int32:
 			if !isPtr {
-				sl := (*[1 << 28]int32)(ptr)[:count:count]
+				sl := (*[1 << 28]int32)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = int32(asInt(rdser, subtag))
 				}
 			} else {
-				sl := (*[1 << 28]*int32)(ptr)[:count:count]
+				sl := (*[1 << 28]*int32)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					u := int32(asInt(rdser, subtag))
 					sl[i] = &u
@@ -344,12 +409,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Uint32:
 			if !isPtr {
-				sl := (*[1 << 28]uint32)(ptr)[:count:count]
+				sl := (*[1 << 28]uint32)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = uint32(asInt(rdser, subtag))
 				}
 			} else {
-				sl := (*[1 << 28]*uint32)(ptr)[:count:count]
+				sl := (*[1 << 28]*uint32)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					u := uint32(asInt(rdser, subtag))
 					sl[i] = &u
@@ -357,12 +422,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Int16:
 			if !isPtr {
-				sl := (*[1 << 29]int16)(ptr)[:count:count]
+				sl := (*[1 << 29]int16)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = int16(asInt(rdser, subtag))
 				}
 			} else {
-				sl := (*[1 << 28]*int16)(ptr)[:count:count]
+				sl := (*[1 << 28]*int16)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					u := int16(asInt(rdser, subtag))
 					sl[i] = &u
@@ -370,12 +435,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Uint16:
 			if !isPtr {
-				sl := (*[1 << 29]uint16)(ptr)[:count:count]
+				sl := (*[1 << 29]uint16)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = uint16(asInt(rdser, subtag))
 				}
 			} else {
-				sl := (*[1 << 28]*uint16)(ptr)[:count:count]
+				sl := (*[1 << 28]*uint16)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					u := uint16(asInt(rdser, subtag))
 					sl[i] = &u
@@ -383,12 +448,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Int8:
 			if !isPtr {
-				sl := (*[1 << 30]int8)(ptr)[:count:count]
+				sl := (*[1 << 30]int8)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = int8(asInt(rdser, subtag))
 				}
 			} else {
-				sl := (*[1 << 28]*int8)(ptr)[:count:count]
+				sl := (*[1 << 28]*int8)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					u := int8(asInt(rdser, subtag))
 					sl[i] = &u
@@ -396,12 +461,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Uint8:
 			if !isPtr {
-				sl := (*[1 << 30]uint8)(ptr)[:count:count]
+				sl := (*[1 << 30]uint8)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = uint8(asInt(rdser, subtag))
 				}
 			} else {
-				sl := (*[1 << 28]*uint8)(ptr)[:count:count]
+				sl := (*[1 << 28]*uint8)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					u := uint8(asInt(rdser, subtag))
 					sl[i] = &u
@@ -409,12 +474,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Float32:
 			if !isPtr {
-				sl := (*[1 << 28]float32)(ptr)[:count:count]
+				sl := (*[1 << 28]float32)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = float32(asFloat(rdser, subtag))
 				}
 			} else {
-				sl := (*[1 << 28]*float32)(ptr)[:count:count]
+				sl := (*[1 << 28]*float32)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					f := float32(asFloat(rdser, subtag))
 					sl[i] = &f
@@ -422,12 +487,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Float64:
 			if !isPtr {
-				sl := (*[1 << 27]float64)(ptr)[:count:count]
+				sl := (*[1 << 27]float64)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = asFloat(rdser, subtag)
 				}
 			} else {
-				sl := (*[1 << 28]*float64)(ptr)[:count:count]
+				sl := (*[1 << 28]*float64)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					f := asFloat(rdser, subtag)
 					sl[i] = &f
@@ -435,12 +500,12 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.Bool:
 			if !isPtr {
-				sl := (*[1 << 27]bool)(ptr)[:count:count]
+				sl := (*[1 << 27]bool)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = rdser.GetVarUInt() != 0
 				}
 			} else {
-				sl := (*[1 << 28]*bool)(ptr)[:count:count]
+				sl := (*[1 << 28]*bool)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					b := rdser.GetVarUInt() != 0
 					sl[i] = &b
@@ -448,27 +513,27 @@ func (dec *Decoder) decodeSlice(pl *payloadIface, rdser *Serializer, v *reflect.
 			}
 		case reflect.String:
 			if !isPtr {
-				sl := (*[1 << 27]string)(ptr)[:count:count]
+				sl := (*[1 << 27]string)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					sl[i] = asString(rdser, subtag)
 				}
 			} else {
-				sl := (*[1 << 28]*string)(ptr)[:count:count]
+				sl := (*[1 << 28]*string)(ptr)[offset : offset+count : offset+count]
 				for i := 0; i < count; i++ {
 					s := asString(rdser, subtag)
 					sl[i] = &s
 				}
 			}
 		case reflect.Interface:
-			sl := (*[1 << 27]interface{})(ptr)[:count:count]
+			sl := (*[1 << 27]interface{})(ptr)[offset : offset+count : offset+count]
 			for i := 0; i < count; i++ {
 				sl[i] = asIface(rdser, subtag)
 			}
 		default:
-			panic(fmt.Errorf("Internal error - can't decode array of type %s", v.Type().Elem().Kind().String()))
+			panic(fmt.Errorf("internal error - can't decode array of type %s", v.Type().Elem().Kind().String()))
 		}
 	} else {
-		for i := 0; i < count; i++ {
+		for i := offset; i < offset+count; i++ {
 			dec.decodeValue(pl, rdser, v.Index(i), fieldsoutcnt, cctagsPath)
 		}
 	}
@@ -552,7 +617,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 				return dec.skipStruct(pl, rdser, fieldsoutcnt, ctag)
 			}
 		} else {
-			panic(fmt.Errorf("Err: intf=%s, name='%s' %s", v.Type().Name(), dec.state.tagsMatcher.tag2name(ctagName), ctag.Dump()))
+			panic(fmt.Errorf("err: intf=%s, name='%s' %s", v.Type().Name(), dec.state.tagsMatcher.tag2name(ctagName), ctag.Dump()))
 		}
 		k = v.Kind()
 		if k == reflect.Ptr {
@@ -597,20 +662,50 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 			case k == reflect.String:
 				v.SetString(str)
 			case k == reflect.Slice, k == reflect.Array:
-				b, e := base64.StdEncoding.DecodeString(str)
-				if e != nil {
-					panic(fmt.Errorf("Can't base64 decode %s", str))
+				elemK := v.Type().Elem().Kind()
+				if elemK == reflect.String {
+					if k == reflect.Slice {
+						el := reflect.New(v.Type().Elem()).Elem()
+						el.SetString(str)
+						extSlice := reflect.Append(v, el)
+						v.Set(extSlice)
+					} else {
+						panic(fmt.Errorf("can not put single value into the fixed size array of strings '%s'", str))
+					}
+				} else if elemK == reflect.Interface {
+					if k == reflect.Slice {
+						el := reflect.New(v.Type().Elem()).Elem()
+						el.Set(reflect.ValueOf(str))
+						extSlice := reflect.Append(v, el)
+						v.Set(extSlice)
+					} else {
+						panic(fmt.Errorf("can not put single value into the fixed size array of interfaces '%s'", str))
+					}
+				} else {
+					b, e := base64.StdEncoding.DecodeString(str)
+					if e != nil {
+						panic(fmt.Errorf("can not decode base64 '%s': %v", str, e))
+					}
+					v.SetBytes(b)
 				}
-				v.SetBytes(b)
 			case k == reflect.Interface:
 				v.Set(reflect.ValueOf(str))
 			case k == reflect.Struct && v.Type().String() == "time.Time":
 				tm, _ := time.Parse(time.RFC3339Nano, str)
 				v.Set(reflect.ValueOf(tm))
 			default:
-				panic(fmt.Errorf("Can't set string to %s", v.Type().Kind().String()))
+				panic(fmt.Errorf("can not convert '%s' to 'string'", v.Type().Kind().String()))
 			}
 		default:
+			if k == reflect.Slice {
+				el := reflect.New(v.Type().Elem()).Elem()
+				extSlice := reflect.Append(v, el)
+				v.Set(extSlice)
+				v = v.Index(v.Len() - 1)
+				k = v.Type().Kind()
+			} else if k == reflect.Array {
+				panic(fmt.Errorf("can not put single value into the fixed size array"))
+			}
 			switch k {
 			case reflect.Float32, reflect.Float64:
 				v.SetFloat(asFloat(rdser, ctagType))
@@ -641,7 +736,7 @@ func (dec *Decoder) decodeValue(pl *payloadIface, rdser *Serializer, v reflect.V
 		case reflect.String:
 			mv.SetMapIndex(reflect.ValueOf(name), v)
 		default:
-			panic(fmt.Errorf("Unsuported map key type %s", mv.Type().Key().Kind().String()))
+			panic(fmt.Errorf("unsuported map key type '%s'", mv.Type().Key().Kind().String()))
 		}
 	}
 
@@ -662,7 +757,7 @@ func (dec *Decoder) DecodeCPtr(cptr uintptr, dest interface{}) (err error) {
 		if ret := recover(); ret != nil {
 			if dec.loggerOwner != nil {
 				if logger := dec.loggerOwner.GetLogger(); logger != nil {
-					logger.Printf(1,
+					logger.Printf(bindings.ERROR,
 						"Interface: %#v\nRead position: %d\nTags(v%d): %v\nPayload Type: %+v\nPayload Value: %v\nTags cache: %+v\nData dump:\n%s\nError: %v\nTagsMatcher: { state_token: 0x%08X, version: %d }\n",
 						dest,
 						ser.Pos(),
@@ -678,7 +773,12 @@ func (dec *Decoder) DecodeCPtr(cptr uintptr, dest interface{}) (err error) {
 					)
 				}
 			}
-			err = ret.(error)
+			switch v := ret.(type) {
+			case error:
+				err = v
+			default:
+				err = fmt.Errorf("rq: DecodeCPtr error: %v", ret)
+			}
 		}
 	}()
 
@@ -687,7 +787,7 @@ func (dec *Decoder) DecodeCPtr(cptr uintptr, dest interface{}) (err error) {
 
 	dec.decodeValue(pl, ser, reflect.ValueOf(dest), fieldsoutcnt, ctagsPath)
 	if !ser.Eof() {
-		panic(fmt.Errorf("Internal error - left unparsed data"))
+		panic(fmt.Errorf("internal error - left unparsed data"))
 	}
 	return err
 }
@@ -703,7 +803,7 @@ func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
 		if ret := recover(); ret != nil {
 			if dec.loggerOwner != nil {
 				if logger := dec.loggerOwner.GetLogger(); logger != nil {
-					logger.Printf(1,
+					logger.Printf(bindings.ERROR,
 						"Interface: %#v\nRead position: %d\nTags(v%d): %v\nTags cache: %+v\nData dump:\n%s\nError: %v\nTagsMatcher: { state_token: 0x%08X, version: %d }\n",
 						dest,
 						ser.Pos(),
@@ -717,7 +817,12 @@ func (dec *Decoder) Decode(cjson []byte, dest interface{}) (err error) {
 					)
 				}
 			}
-			err = ret.(error)
+			switch v := ret.(type) {
+			case error:
+				err = v
+			default:
+				err = fmt.Errorf("rq: Decode error: %v", ret)
+			}
 		}
 	}()
 

@@ -130,7 +130,7 @@ public:
 		assertrx(num);
 		auto srv = GetSrv(num);
 		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::File);
-		EXPECT_TRUE(config == curConfig);
+		EXPECT_TRUE(config == curConfig) << "config:\n" << config.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
 	}
 	void CheckSlaveConfigNamespace(size_t num, const ReplicationConfigTest &config, std::chrono::seconds awaitTime) {
 		assertrx(num);
@@ -142,7 +142,8 @@ public:
 			}
 			std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
-		EXPECT_TRUE(config == srv->GetServerConfig(ServerControl::ConfigType::Namespace));
+		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::Namespace);
+		EXPECT_TRUE(config == curConfig) << "config:\n" << config.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
 	}
 	std::atomic_bool stop;
 

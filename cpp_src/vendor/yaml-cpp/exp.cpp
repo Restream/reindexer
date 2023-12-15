@@ -121,6 +121,7 @@ std::string Escape(Stream& in) {
 			return Escape(in, 4);
 		case 'U':
 			return Escape(in, 8);
+		default:;
 	}
 
 	std::stringstream msg;

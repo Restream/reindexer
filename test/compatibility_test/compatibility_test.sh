@@ -39,19 +39,19 @@ test_outdated_instance() {
 	echo "====Master: ${master_cmd}"
 	echo "====Slave: ${slave_cmd}"
 	init_storages
-	${master_cmd} --db "${master_db_path}" -l0 --serverlog=\"\" --corelog=\"\" --httplog=\"\" --rpclog=\"\" &
+	${master_cmd} --db "${master_db_path}" -l0 --serverlog=\"reindexer_master_$3.1.log\" --corelog=\"reindexer_master_$3.1.log\" --httplog=\"\" --rpclog=\"\" &
 	master_pid=$!
 	sleep 4
 	go run ${script_dir}/filler.go --dsn "${master_dsn}/${db_name}" --offset 0
 	echo "====Force sync"
-	${slave_cmd} --db "${slave_db_path}" -p 9089 -r 6535 -l0 --serverlog=\"\" --corelog=\"\" --httplog=\"\" --rpclog=\"\" &
+	${slave_cmd} --db "${slave_db_path}" -p 9089 -r 6535 -l0 --serverlog=\"reindexer_slave_$3.1.log\" --corelog=\"reindexer_slave_$3.1.log\" --httplog=\"\" --rpclog=\"\" &
 	slave_pid=$!
 	sleep 5
 	kill $slave_pid
     wait $slave_pid
 	go run ${script_dir}/filler.go --dsn "${master_dsn}/${db_name}" --offset 100
 	echo "====Sync by WAL"
-	${slave_cmd} --db "${slave_db_path}" -p 9089 -r 6535 -l0 --serverlog=\"\" --corelog=\"\" --httplog=\"\" --rpclog=\"\" &
+	${slave_cmd} --db "${slave_db_path}" -p 9089 -r 6535 -l0 --serverlog=\"reindexer_slave_$3.2.log\" --corelog=\"reindexer_slave_$3.2.log\" --httplog=\"\" --rpclog=\"\" &
 	slave_pid=$!
 	sleep 5
 	echo "====Online sync"
@@ -71,8 +71,8 @@ echo "====Installing reindexer package===="
 echo "====URL: ${rpm_url}"
 yum install -y ${rpm_url} > /dev/null || true
 echo "====Checking outdated slave===="
-test_outdated_instance "build/cpp_src/cmd/reindexer_server/reindexer_server" "reindexer_server"
+test_outdated_instance "build/cpp_src/cmd/reindexer_server/reindexer_server" "reindexer_server" "1"
 echo "====Checking outdated master===="
-test_outdated_instance "reindexer_server" "build/cpp_src/cmd/reindexer_server/reindexer_server"
+test_outdated_instance "reindexer_server" "build/cpp_src/cmd/reindexer_server/reindexer_server" "2"
 clear_artifacts
 

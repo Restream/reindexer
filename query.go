@@ -56,6 +56,9 @@ const (
 	queryUpdateFieldV2          = bindings.QueryUpdateFieldV2
 	queryBetweenFieldsCondition = bindings.QueryBetweenFieldsCondition
 	queryAlwaysFalseCondition   = bindings.QueryAlwaysFalseCondition
+	queryAlwaysTrueCondition    = bindings.QueryAlwaysTrueCondition
+	querySubQueryCondition      = bindings.QuerySubQueryCondition
+	queryFieldSubQueryCondition = bindings.QueryFieldSubQueryCondition
 )
 
 // Constants for calc total
@@ -262,9 +265,47 @@ func (q *Query) Where(index string, condition int, keys interface{}) *Query {
 	t := reflect.TypeOf(keys)
 	v := reflect.ValueOf(keys)
 
-	q.ser.PutVarCUInt(queryCondition)
-	q.ser.PutVString(index)
+	if keys != nil && (t == reflect.TypeOf((*Query)(nil)).Elem() || (t.Kind() == reflect.Ptr && t.Elem() == reflect.TypeOf((*Query)(nil)).Elem())) {
+		q.ser.PutVarCUInt(queryFieldSubQueryCondition)
+		q.ser.PutVarCUInt(q.nextOp)
+		q.ser.PutVString(index)
+		q.ser.PutVarCUInt(condition)
+		if t.Kind() == reflect.Ptr {
+			q.ser.PutVBytes(v.Interface().(*Query).ser.Bytes())
+		} else {
+			subQuery := v.Interface().(Query)
+			q.ser.PutVBytes(subQuery.ser.Bytes())
+		}
+	} else {
+		q.ser.PutVarCUInt(queryCondition)
+		q.ser.PutVString(index)
+		q.ser.PutVarCUInt(q.nextOp)
+		q.ser.PutVarCUInt(condition)
+
+		if keys == nil {
+			q.ser.PutVarUInt(0)
+		} else if t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+			q.ser.PutVarCUInt(v.Len())
+			for i := 0; i < v.Len(); i++ {
+				q.putValue(v.Index(i))
+			}
+		} else {
+			q.ser.PutVarCUInt(1)
+			q.putValue(v)
+		}
+	}
+	q.queriesCount++
+	q.nextOp = opAND
+	return q
+}
+
+func (q *Query) WhereQuery(subQuery *Query, condition int, keys interface{}) *Query {
+	t := reflect.TypeOf(keys)
+	v := reflect.ValueOf(keys)
+
+	q.ser.PutVarCUInt(querySubQueryCondition)
 	q.ser.PutVarCUInt(q.nextOp)
+	q.ser.PutVBytes(subQuery.ser.Bytes())
 	q.ser.PutVarCUInt(condition)
 	q.nextOp = opAND
 	q.queriesCount++
@@ -731,9 +772,6 @@ func (q *Query) ExecCtx(ctx context.Context) *Iterator {
 	if q.executed {
 		q.panicTrace("Exec call on already executed query. You should create new Query")
 	}
-	// if q.tx != nil {
-	// 	panic(errors.New("For tx query only Update or Delete operations are supported"))
-	// }
 
 	q.executed = true
 
@@ -756,9 +794,6 @@ func (q *Query) ExecToJsonCtx(ctx context.Context, jsonRoots ...string) *JSONIte
 	if q.executed {
 		q.panicTrace("Exec call on already executed query. You should create new Query")
 	}
-	// if q.tx != nil {
-	// 	panic(errors.New("For tx query only Update or Delete operations are supported"))
-	// }
 
 	q.executed = true
 
@@ -1090,7 +1125,17 @@ func (q *Query) LeftJoin(q2 *Query, field string) *Query {
 }
 
 // JoinHandler registers join handler that will be called when join, registered on `field` value, finds a match
+// Handler will be always set to the main query
 func (q *Query) JoinHandler(field string, handler JoinHandler) *Query {
+	if q.root != nil {
+		// Joined queries can not have JoinHandlers themselfs. Routing this call to the root query if current query is joined
+		for _, jq := range q.root.joinQueries {
+			if q == jq {
+				q.root.JoinHandler(field, handler)
+				return q
+			}
+		}
+	}
 	index := -1
 	for i := range q.joinToFields {
 		if strings.EqualFold(q.joinToFields[i], field) {

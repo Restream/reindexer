@@ -106,7 +106,7 @@ protected:
 	const char* kFieldId = "id";
 	const char* kFieldRandomName = "random_name";
 	const char* kConfigNamespace = "#config";
-	const std::string kStoragePath = "/tmp/reindex/lazy_load_test";
+	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/lazy_load_test");
 	const char* jsonConfigTemplate = R"json({
                                             "type":"namespaces",
                                             "namespaces":[

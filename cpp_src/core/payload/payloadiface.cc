@@ -190,9 +190,8 @@ void PayloadIface<T>::Set(int field, int idx, const Variant &v) {
 	pv.Set(v);
 }
 
-template <typename T>
-// template <typename U, typename std::enable_if<!std::is_const<U>::value>::type *>
-int PayloadIface<T>::ResizeArray(int field, int count, bool append) {
+template <>
+int PayloadIface<PayloadValue>::ResizeArray(int field, int count, bool append) {
 	assertrx(t_.Field(field).IsArray());
 
 	size_t realSize = RealSize();
@@ -209,7 +208,7 @@ int PayloadIface<T>::ResizeArray(int field, int count, bool append) {
 
 	assertrx(insert <= realSize);
 
-	const_cast<PayloadValue *>(v_)->Resize(realSize, realSize + grow - strip);
+	v_->Resize(realSize, realSize + grow - strip);
 	memmove(v_->Ptr() + insert + grow - strip, v_->Ptr() + insert, realSize - insert);
 
 	arr = reinterpret_cast<PayloadFieldValue::Array *>(Field(field).p_);

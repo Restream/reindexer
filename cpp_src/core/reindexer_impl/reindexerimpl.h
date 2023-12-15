@@ -5,21 +5,19 @@
 #include <string>
 #include <thread>
 
+#include "core/dbconfig.h"
 #include "core/namespace/namespace.h"
-#include "core/nsselecter/nsselecter.h"
+#include "core/querystat.h"
 #include "core/rdxcontext.h"
-#include "dbconfig.h"
+#include "core/reindexerconfig.h"
+#include "core/transaction.h"
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
-#include "estl/smart_lock.h"
 #include "net/ev/ev.h"
-#include "querystat.h"
-#include "reindexerconfig.h"
 #include "replicator/updatesobserver.h"
 #include "tools/errors.h"
 #include "tools/filecontentwatcher.h"
 #include "tools/tcmallocheapwathcher.h"
-#include "transaction.h"
 
 namespace reindexer {
 
@@ -30,12 +28,6 @@ class ProtobufSchema;
 class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StatsSelectMutex = MarkedMutex<std::timed_mutex, MutexMark::ReindexerStats>;
-	struct NsLockerItem {
-		NsLockerItem(NamespaceImpl::Ptr ins = {}) : ns(std::move(ins)), count(1) {}
-		NamespaceImpl::Ptr ns;
-		NamespaceImpl::Locker::RLockT nsLck;
-		unsigned count = 1;
-	};
 	template <bool needUpdateSystemNs, typename MakeCtxStrFn, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg,
 			  typename... Args>
 	Error applyNsFunction(std::string_view nsName, const InternalRdxContext &ctx, const MakeCtxStrFn &makeCtxStr, Arg arg, Args... args);
@@ -100,68 +92,10 @@ public:
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index,
 					const InternalRdxContext &ctx = InternalRdxContext());
 
-protected:
+private:
 	typedef contexted_shared_lock<Mutex, const RdxContext> SLock;
 	typedef contexted_unique_lock<Mutex, const RdxContext> ULock;
 	using FilterNsNamesT = std::optional<h_vector<std::string, 6>>;
-
-	template <typename Context>
-	class NsLocker : private h_vector<NsLockerItem, 4> {
-	public:
-		NsLocker(const Context &context) : context_(context) {}
-		~NsLocker() {
-			// Unlock first
-			for (auto it = rbegin(); it != rend(); ++it) {
-				// Some of the namespaces may be in unlocked statet in case of the exception during Lock() call
-				if (it->nsLck.owns_lock()) {
-					it->nsLck.unlock();
-				} else {
-					assertrx(!locked_);
-				}
-			}
-			// Clean (ns may releases, if locker holds last ref)
-		}
-
-		void Add(NamespaceImpl::Ptr ns) {
-			assertrx(!locked_);
-			for (auto it = begin(); it != end(); ++it) {
-				if (it->ns.get() == ns.get()) {
-					++(it->count);
-					return;
-				}
-			}
-
-			emplace_back(std::move(ns));
-			return;
-		}
-		void Delete(const NamespaceImpl::Ptr &ns) {
-			for (auto it = begin(); it != end(); ++it) {
-				if (it->ns.get() == ns.get()) {
-					if (!--(it->count)) erase(it);
-					return;
-				}
-			}
-			assertrx(0);
-		}
-		void Lock() {
-			std::sort(begin(), end(), [](const NsLockerItem &lhs, const NsLockerItem &rhs) { return lhs.ns.get() < rhs.ns.get(); });
-			for (auto it = begin(); it != end(); ++it) {
-				it->nsLck = it->ns->rLock(context_);
-			}
-			locked_ = true;
-		}
-
-		NamespaceImpl::Ptr Get(const std::string &name) {
-			for (auto it = begin(); it != end(); it++) {
-				if (iequals(it->ns->name_, name)) return it->ns;
-			}
-			return nullptr;
-		}
-
-	protected:
-		bool locked_ = false;
-		const Context &context_;
-	};
 
 	class BackgroundThread {
 	public:
@@ -199,15 +133,6 @@ protected:
 	private:
 		std::unordered_map<std::string_view, StatsSelectMutex, nocase_hash_str, nocase_equal_str> mtxMap_;
 	};
-
-	template <typename T, typename QueryType>
-	void doSelect(const Query &q, QueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func, const RdxContext &ctx,
-				  QueryStatCalculator<QueryType> &queryStatCalculator);
-	struct QueryResultsContext;
-	template <typename T>
-	JoinedSelectors prepareJoinedSelectors(const Query &q, QueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func,
-										   std::vector<QueryResultsContext> &, const RdxContext &ctx);
-	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns, const Query &mainQ);
 
 	FilterNsNamesT detectFilterNsNames(const Query &q);
 	[[nodiscard]] StatsLocker::StatsLockT syncSystemNamespaces(std::string_view sysNsName, const FilterNsNamesT &, const RdxContext &);

@@ -158,7 +158,7 @@ Error CoroRPCClient::modifyItem(std::string_view nsName, Item& item, int mode, s
 			}
 			CoroQueryResults qr;
 			InternalRdxContext ctxCompl = ctx.WithCompletion(nullptr);
-			auto ret = selectImpl(Query(std::string(nsName)).Limit(0), qr, netTimeout, ctxCompl);
+			auto ret = selectImpl(Query(nsName).Limit(0), qr, netTimeout, ctxCompl);
 			if (ret.code() == errTimeout) {
 				return Error(errTimeout, "Request timeout");
 			}
@@ -242,7 +242,7 @@ Error CoroRPCClient::Delete(const Query& query, CoroQueryResults& result, const 
 	query.Serialize(ser);
 
 	NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	result = CoroQueryResults(&conn_, std::move(nsArray), 0, config_.FetchAmount, config_.RequestTimeout);
 
@@ -263,7 +263,7 @@ Error CoroRPCClient::Update(const Query& query, CoroQueryResults& result, const 
 	query.Serialize(ser);
 
 	NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	result = CoroQueryResults(&conn_, std::move(nsArray), 0, config_.FetchAmount, config_.RequestTimeout);
 
@@ -313,10 +313,10 @@ Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, se
 	WrSerializer qser, pser;
 	int flags = result.fetchFlags_ ? result.fetchFlags_ : (kResultsWithPayloadTypes | kResultsCJson);
 	flags |= kResultsSupportIdleTimeout;
-	bool hasJoins = !query.joinQueries_.empty();
+	bool hasJoins = !query.GetJoinQueries().empty();
 	if (!hasJoins) {
-		for (auto& mq : query.mergeQueries_) {
-			if (!mq.joinQueries_.empty()) {
+		for (auto& mq : query.GetMergeQueries()) {
+			if (!mq.GetJoinQueries().empty()) {
 				hasJoins = true;
 				break;
 			}
@@ -328,7 +328,7 @@ Error CoroRPCClient::selectImpl(const Query& query, CoroQueryResults& result, se
 	}
 	NsArray nsArray;
 	query.Serialize(qser);
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 	h_vector<int32_t, 4> vers;
 	for (auto& ns : nsArray) {
 		vers.push_back(ns->tagsMatcher_.version() ^ ns->tagsMatcher_.stateToken());

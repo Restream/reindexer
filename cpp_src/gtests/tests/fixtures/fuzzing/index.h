@@ -22,9 +22,9 @@ public:
 	};
 	using Children = std::vector<Child>;
 
-	Index(std::string name, IndexType type, IsArray isArray, IsSparse isSparse, Children content) noexcept
+	Index(std::string name, IndexType type, IsArrayT isArray, IsSparseT isSparse, Children content) noexcept
 		: name_{std::move(name)}, type_{type}, content_{std::move(content)}, isArray_{isArray}, isSparse_{isSparse} {}
-	Index(std::string name, IndexType type, IsArray isArray, IsSparse isSparse, Child content) noexcept
+	Index(std::string name, IndexType type, IsArrayT isArray, IsSparseT isSparse, Child content) noexcept
 		: name_{std::move(name)}, type_{type}, content_{std::move(content)}, isArray_{isArray}, isSparse_{isSparse} {}
 
 	const std::string& Name() const& noexcept { return name_; }
@@ -34,7 +34,7 @@ public:
 	const auto& Content() const&& = delete;
 	bool IsPk() const noexcept { return isPk_; }
 	void SetPk() noexcept { isPk_ = true; }
-	bool IsArray() const noexcept { return isArray_ == IsArray::Yes; }
+	bool IsArray() const noexcept { return isArray_ == IsArrayT::Yes; }
 	auto IsSparse() const noexcept { return isSparse_; }
 
 	reindexer::IndexDef IndexDef(RandomGenerator&, const NsScheme&, const std::vector<Index>&) const;
@@ -46,8 +46,8 @@ private:
 	IndexType type_;
 	std::variant<Child, Children> content_;
 	bool isPk_{false};
-	enum IsArray isArray_ { IsArray::No };
-	enum IsSparse isSparse_ { IsSparse::No };
+	IsArrayT isArray_{IsArrayT::No};
+	IsSparseT isSparse_{IsSparseT::No};
 };
 
 }  // namespace fuzzing

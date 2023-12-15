@@ -26,6 +26,9 @@ func init() {
 }
 
 func TestAutogen(t *testing.T) {
+
+	currentSerial := 0
+
 	t.Run("field should be updated with current timestamp using NOW() function", func(t *testing.T) {
 		precepts := []string{"updated_time=NOW()"}
 		item := TestItemAutogen{}
@@ -51,9 +54,10 @@ func TestAutogen(t *testing.T) {
 		item := TestItemAutogen{}
 		err := DB.Upsert(ns, &item, precepts...)
 		require.NoError(t, err)
+		currentSerial += 1
 
-		assert.Equal(t, 1, item.Age)
-		assert.Equal(t, int64(1), item.Genre)
+		assert.Equal(t, currentSerial, item.Age)
+		assert.Equal(t, int64(currentSerial), item.Genre)
 
 		t.Run("serial field should be increased by 5 after 5 iterations (must be equal 6 after previous test)", func(t *testing.T) {
 			precepts := []string{"genre=SERIAL()", "age=serial()"}
@@ -61,70 +65,84 @@ func TestAutogen(t *testing.T) {
 			for i := 0; i < 5; i++ {
 				err := DB.Upsert(ns, &item, precepts...)
 				require.NoError(t, err)
+				currentSerial += 1
 			}
 
-			assert.Equal(t, 6, item.Age)
-			assert.Equal(t, int64(6), item.Genre)
+			assert.Equal(t, currentSerial, item.Age)
+			assert.Equal(t, int64(currentSerial), item.Genre)
 		})
 	})
 
 	t.Run("fill on insert, update, upsert", func(t *testing.T) {
-		precepts := []string{"updated_time=NOW()"}
+		precepts := []string{"updated_time=NOW()", "age=SERIAL()"}
 
 		item := TestItemAutogen{ID: rand.Intn(100000000)}
 		_, err := DB.Insert(ns, &item, precepts...)
 		require.NoError(t, err)
+		currentSerial += 1
 		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
 		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
+		assert.Equal(t, currentSerial, item.Age)
 
 		item = TestItemAutogen{}
 		err = DB.Upsert(ns, &item, precepts...)
 		require.NoError(t, err)
+		currentSerial += 1
 		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
 		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
+		assert.Equal(t, currentSerial, item.Age)
 
 		item = TestItemAutogen{}
 		_, err = DB.Update(ns, &item, precepts...)
 		require.NoError(t, err)
+		currentSerial += 1
 		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
 		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
+		assert.Equal(t, currentSerial, item.Age)
 	})
 
-	t.Run("fill on upsert not exist item", func(t *testing.T) {
-		precepts := []string{"updated_time=NOW()"}
+	t.Run("fill on upsert nonexist item", func(t *testing.T) {
+		precepts := []string{"updated_time=NOW()", "age=SERIAL()"}
 		item := TestItemAutogen{ID: rand.Intn(100000000)}
 
 		err := DB.Upsert(ns, &item, precepts...)
 		require.NoError(t, err)
+		currentSerial += 1
 		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
 		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
+		assert.Equal(t, currentSerial, item.Age)
 	})
 
-	t.Run("not fill on update not exist item", func(t *testing.T) {
-		precepts := []string{"updated_time=NOW()"}
+	t.Run("doesn't fill on update nonexist item", func(t *testing.T) {
+		precepts := []string{"updated_time=NOW()", "age=SERIAL()"}
 		item := TestItemAutogen{ID: rand.Intn(100000000)}
 
 		count, err := DB.Update(ns, &item, precepts...)
 		require.NoError(t, err)
+		currentSerial += 1 // remove after 1602
 		assert.Equal(t, 0, count)
 		assert.Equal(t, int64(0), item.UpdatedTime)
+		assert.Equal(t, 0, item.Age)
 	})
 
-	t.Run("not fill on insert exist item", func(t *testing.T) {
-		precepts := []string{"updated_time=NOW()"}
+	t.Run("doesn't fill on insert exist item", func(t *testing.T) {
+		precepts := []string{"updated_time=NOW()", "age=SERIAL()"}
 		id := rand.Intn(100000000)
 		item := TestItemAutogen{ID: id}
 
 		count, err := DB.Insert(ns, &item, precepts...)
 		require.NoError(t, err)
+		currentSerial += 1
 		assert.Equal(t, 1, count)
 		assert.GreaterOrEqual(t, item.UpdatedTime, time.Now().Unix()-1)
 		assert.LessOrEqual(t, item.UpdatedTime, time.Now().Unix())
+		assert.Equal(t, currentSerial, item.Age)
 
 		item = TestItemAutogen{ID: id}
 		count, err = DB.Insert(ns, &item, precepts...)
 		require.NoError(t, err)
 		assert.Equal(t, 0, count)
 		assert.Equal(t, int64(0), item.UpdatedTime)
+		assert.Equal(t, 0, item.Age)
 	})
 }

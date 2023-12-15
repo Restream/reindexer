@@ -1,5 +1,5 @@
 #include "core/reindexer.h"
-#include "core/reindexerimpl.h"
+#include "core/reindexer_impl/reindexerimpl.h"
 #include "tools/cpucheck.h"
 
 namespace reindexer {

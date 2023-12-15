@@ -44,7 +44,8 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 	ser_.Reset();
 	ser_.PutUInt32(0);
 	WrSerializer generatedCjson;
-	std::string_view cjson(pl.Get(0, 0));
+	const auto cjsonV = pl.Get(0, 0);
+	std::string_view cjson(cjsonV);
 	if (cjson.empty()) {
 		buildPayloadTuple(pl, &tagsMatcher_, generatedCjson);
 		cjson = generatedCjson.Slice();

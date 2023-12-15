@@ -47,7 +47,25 @@ const (
 	oneFieldEntry = iota
 	twoFieldsEntry
 	bracket
+	alwaysTrue
+	alwaysFalse
 )
+
+const (
+	aggSum   = reindexer.AggSum
+	aggAvg   = reindexer.AggAvg
+	aggMin   = reindexer.AggMin
+	aggMax   = reindexer.AggMax
+	aggFacet = reindexer.AggFacet
+)
+
+var aggNames = map[int]string{
+	aggSum:   "SUM",
+	aggAvg:   "AVG",
+	aggMin:   "MIN",
+	aggMax:   "MAX",
+	aggFacet: "FACET",
+}
 
 type queryTestEntryContainer struct {
 	op       int
@@ -76,6 +94,11 @@ type queryBetweenFieldsTestEntry struct {
 	secondFieldIdx [][]int
 }
 
+type aggTest struct {
+	fields  []string
+	aggType int
+}
+
 // Test Query to DB object
 type queryTest struct {
 	q               *reindexer.Query
@@ -97,7 +120,10 @@ type queryTest struct {
 	deepReplEqual   bool
 	needVerify      bool
 	handClose       bool
+	selectFilters   []string
+	aggregations    []aggTest
 }
+
 type testNamespace struct {
 	items     map[string]interface{}
 	pkIdx     [][]int
@@ -132,6 +158,8 @@ func newTestQuery(db *ReindexerWrapper, namespace string, needVerify ...bool) *q
 		qt.limitItems = 0
 		qt.startOffset = 0
 		qt.reqTotalCount = false
+		qt.selectFilters = qt.selectFilters[:0]
+		qt.aggregations = qt.aggregations[:0]
 	}
 	qt.q = db.GetBaseQuery(namespace)
 	qt.deepReplEqual = false
@@ -275,6 +303,23 @@ func (tx *txTest) Query() *queryTest {
 
 }
 
+func (entry *queryTestEntry) toString() (ret string) {
+	ret += entry.index + " " + queryNames[entry.condition] + " "
+	if len(entry.keys) > 1 {
+		ret += "("
+	}
+	for i, c := range entry.keys {
+		if i != 0 {
+			ret += ","
+		}
+		ret += fmt.Sprintf("%v", c.Interface())
+	}
+	if len(entry.keys) > 1 {
+		ret += ")"
+	}
+	return ret
+}
+
 func (qt *queryTestEntryTree) toString() (ret string) {
 	if len(qt.data) < 1 {
 		return ret
@@ -298,29 +343,43 @@ func (qt *queryTestEntryTree) toString() (ret string) {
 		case bracket:
 			ret += "(" + d.data.(*queryTestEntryTree).toString() + ")"
 		case oneFieldEntry:
-			entry := d.data.(*queryTestEntry)
-			ret += entry.index + " " + queryNames[entry.condition] + " "
-			if len(entry.keys) > 1 {
-				ret += "("
-			}
-			for i, c := range entry.keys {
-				if i != 0 {
-					ret += ","
-				}
-				ret += fmt.Sprintf("%v", c.Interface())
-			}
-			if len(entry.keys) > 1 {
-				ret += ")"
-			}
+			ret += d.data.(*queryTestEntry).toString()
 		case twoFieldsEntry:
 			entry := d.data.(*queryBetweenFieldsTestEntry)
 			ret += entry.firstField + " " + queryNames[entry.condition] + " " + entry.secondField
+		case alwaysTrue, alwaysFalse:
+			ret += d.data.(string)
 		}
 	}
 	return ret
 }
 
 func (qt *queryTest) toString() (ret string) {
+	for i, dIdx := range qt.distinctIndexes {
+		if i != 0 {
+			ret += ", "
+		}
+		ret += "DISTINCT(" + dIdx + ")"
+	}
+	for i, idx := range qt.selectFilters {
+		if i != 0 || len(qt.distinctIndexes) != 0 {
+			ret += ", "
+		}
+		ret += idx
+	}
+	for i, agg := range qt.aggregations {
+		if i != 0 || len(qt.distinctIndexes) != 0 || len(qt.selectFilters) != 0 {
+			ret += ", "
+		}
+		ret += aggNames[agg.aggType] + "("
+		for j, f := range agg.fields {
+			if j != 0 {
+				ret += ", "
+			}
+			ret += f
+		}
+		ret += ")"
+	}
 	ret += " FROM " + qt.q.Namespace
 	if len(qt.entries.data) > 0 {
 		ret += " WHERE " + qt.entries.toString()
@@ -351,12 +410,6 @@ func (qt *queryTest) toString() (ret string) {
 	if qt.startOffset != 0 {
 		ret += " OFFSET " + strconv.Itoa(qt.startOffset)
 	}
-	for i, dIdx := range qt.distinctIndexes {
-		if i != 0 {
-			ret += ","
-		}
-		ret += " DISTINCT(" + dIdx + ")"
-	}
 
 	return ret
 }
@@ -366,6 +419,22 @@ func (qt *queryTestEntryTree) addEntry(entry queryTestEntry, op int) {
 		qt.data[qt.activeChild-1].data.(*queryTestEntryTree).addEntry(entry, op)
 	} else {
 		qt.data = append(qt.data, queryTestEntryContainer{op, &entry, oneFieldEntry})
+	}
+}
+
+func (qt *queryTestEntryTree) addAlwaysTrue(op int, s string) {
+	if qt.activeChild > 0 {
+		qt.data[qt.activeChild-1].data.(*queryTestEntryTree).addAlwaysTrue(op, s)
+	} else {
+		qt.data = append(qt.data, queryTestEntryContainer{op, s, alwaysTrue})
+	}
+}
+
+func (qt *queryTestEntryTree) addAlwaysFalse(op int, s string) {
+	if qt.activeChild > 0 {
+		qt.data[qt.activeChild-1].data.(*queryTestEntryTree).addAlwaysFalse(op, s)
+	} else {
+		qt.data = append(qt.data, queryTestEntryContainer{op, s, alwaysFalse})
 	}
 }
 
@@ -392,29 +461,83 @@ func (qt *queryTest) DeepReplEqual() *queryTest {
 	return qt
 }
 
-func (qt *queryTest) where(index string, condition int, keys interface{}) *queryTest {
-	qte := queryTestEntry{index: index, condition: condition, ikeys: keys}
-
+func keysFromInterface(keys interface{}) []reflect.Value {
+	res := []reflect.Value{}
 	if keys != nil {
 		if reflect.TypeOf(keys).Kind() == reflect.Slice || reflect.TypeOf(keys).Kind() == reflect.Array {
 			for i := 0; i < reflect.ValueOf(keys).Len(); i++ {
-				qte.keys = append(qte.keys, reflect.ValueOf(keys).Index(i))
+				res = append(res, reflect.ValueOf(keys).Index(i))
 			}
 		} else {
-			qte.keys = append(qte.keys, reflect.ValueOf(keys))
+			res = append(res, reflect.ValueOf(keys))
 		}
 	}
+	return res
+}
+
+func (qt *queryTest) newQueryTestEntry(index string, condition int, keys interface{}) queryTestEntry {
+	qte := queryTestEntry{index: index, condition: condition, ikeys: keys}
+
+	qte.keys = keysFromInterface(keys)
 	qte.fieldIdx, _ = qt.ns.getField(index)
+	return qte
+}
+
+func (qt *queryTest) where(index string, condition int, keys interface{}) *queryTest {
+	qte := qt.newQueryTestEntry(index, condition, keys)
 	qt.entries.addEntry(qte, qt.nextOp)
 	qt.nextOp = opAND
 
 	return qt
 }
 
+func (qt *queryTest) fieldSubQueryToString(index string, condition int, subQuery *queryTest) string {
+	qte := qt.newQueryTestEntry(index, condition, "(" + subQuery.toString() + ")")
+	return qte.toString()
+}
+
+func (qt *queryTest) whereFieldQuery(index string, condition int, subQuery *queryTest) *queryTest {
+	it := subQuery.q.Exec()
+	defer it.Close()
+	if aggRes := it.AggResults(); len(aggRes) == 0 {
+		if len(subQuery.selectFilters) == 0 {
+			panic(fmt.Errorf("Broken subQuery"))
+		}
+		var vals []interface{}
+		fieldIdx, _ := qt.ns.getField(index)
+		for it.Next() {
+			vv := getValues(it.Object(), fieldIdx)
+			for _, v := range vv {
+				vals = append(vals, v.Interface())
+			}
+		}
+		qt.where(index, condition, vals)
+	} else {
+		if aggRes[0].Value == nil {
+			qt.entries.addAlwaysFalse(qt.nextOp, qt.fieldSubQueryToString(index, condition, subQuery))
+			qt.nextOp = opAND
+		} else {
+			qt.where(index, condition, *aggRes[0].Value)
+		}
+	}
+	return qt
+}
+
 // Where - Add where condition to DB query
 func (qt *queryTest) Where(index string, condition int, keys interface{}) *queryTest {
-	qt.q.Where(index, condition, keys)
-	return qt.where(index, condition, keys)
+	t := reflect.TypeOf(keys)
+	if t == reflect.TypeOf((*queryTest)(nil)).Elem() {
+		subQuery := keys.(queryTest)
+		qt.q.Where(index, condition, subQuery.q)
+		return qt.whereFieldQuery(index, condition, &subQuery)
+	} else if keys != nil && t.Kind() == reflect.Ptr && t.Elem() == reflect.TypeOf((*queryTest)(nil)).Elem() {
+		subQuery := keys.(*queryTest)
+		qt.q.Where(index, condition, subQuery.q)
+		return qt.whereFieldQuery(index, condition, subQuery)
+	} else {
+		qt.q.Where(index, condition, keys)
+		return qt.where(index, condition, keys)
+	}
 }
 
 // WhereUUID - Add where condition with UUID args.
@@ -423,6 +546,48 @@ func (qt *queryTest) Where(index string, condition int, keys interface{}) *query
 func (qt *queryTest) WhereUuid(index string, condition int, keys ...string) *queryTest {
 	qt.q.WhereUuid(index, condition, keys...)
 	return qt.where(index, condition, keys)
+}
+
+func (qt *queryTest) subQueryToString(subQuery *queryTest, condition int, keys interface{}) string {
+	qte := qt.newQueryTestEntry("(" + subQuery.toString() + ")", condition, keys)
+	return qte.toString()
+}
+
+func (qt *queryTest) whereQuery(t *testing.T, subQuery *queryTest, condition int, keys interface{}) *queryTest {
+	if condition == reindexer.ANY || condition == reindexer.EMPTY {
+		subQuery.Limit(1)
+	}
+	it := subQuery.Exec(t)
+	defer it.Close()
+	res := false
+	if condition == reindexer.ANY || condition == reindexer.EMPTY {
+		res = (it.Count() != 0) == (condition == reindexer.ANY)
+	} else if aggRes := it.AggResults(); len(aggRes) == 0 {
+		require.NotEmpty(t, subQuery.selectFilters, "Broken subquery")
+		for it.Next() {
+			qte := qt.newQueryTestEntry(subQuery.selectFilters[0], condition, keys)
+			if checkCondition(t, subQuery.ns, &qte, it.Object()) {
+				res = true
+				break
+			}
+		}
+	} else {
+		if aggRes[0].Value != nil {
+			res = checkValue(t, reflect.ValueOf(*aggRes[0].Value), condition, keysFromInterface(keys))
+		}
+	}
+	if res {
+		qt.entries.addAlwaysTrue(qt.nextOp, qt.subQueryToString(subQuery, condition, keys))
+	} else {
+		qt.entries.addAlwaysFalse(qt.nextOp, qt.subQueryToString(subQuery, condition, keys))
+	}
+	qt.nextOp = opAND
+	return qt
+}
+
+func (qt *queryTest) WhereQuery(t *testing.T, subQuery *queryTest, condition int, keys interface{}) *queryTest {
+	qt.q.WhereQuery(subQuery.q, condition, keys)
+	return qt.whereQuery(t, subQuery, condition, keys)
 }
 
 func (qt *queryTest) WhereBetweenFields(firstField string, condition int, secondField string) *queryTest {
@@ -629,6 +794,7 @@ func (qt *queryTest) Explain() *queryTest {
 // SelectFilter
 func (qt *queryTest) Select(filters ...string) *queryTest {
 	qt.q.Select(filters...)
+	qt.selectFilters = filters
 	return qt
 }
 
@@ -716,25 +882,33 @@ func (qt *queryTest) JoinHandler(field string, handler reindexer.JoinHandler) *q
 	return qt
 }
 
-func (qt *queryTest) AggregateSum(field string) {
+func (qt *queryTest) AggregateSum(field string) *queryTest {
 	qt.q.AggregateSum(field)
+	qt.aggregations = append(qt.aggregations, aggTest{[]string{field}, aggSum})
+	return qt
 }
 
-func (qt *queryTest) AggregateAvg(field string) {
+func (qt *queryTest) AggregateAvg(field string) *queryTest {
 	qt.q.AggregateAvg(field)
+	qt.aggregations = append(qt.aggregations, aggTest{[]string{field}, aggAvg})
+	return qt
 }
 
-func (qt *queryTest) AggregateMin(field string) {
+func (qt *queryTest) AggregateMin(field string) *queryTest {
 	qt.q.AggregateMin(field)
+	qt.aggregations = append(qt.aggregations, aggTest{[]string{field}, aggMin})
+	return qt
 }
 
-func (qt *queryTest) AggregateMax(field string) {
+func (qt *queryTest) AggregateMax(field string) *queryTest {
+	qt.aggregations = append(qt.aggregations, aggTest{[]string{field}, aggMax})
 	qt.q.AggregateMax(field)
+	return qt
 }
 
 func (qt *queryTest) AggregateFacet(fields ...string) *reindexer.AggregateFacetRequest {
+	qt.aggregations = append(qt.aggregations, aggTest{fields, aggFacet})
 	return qt.q.AggregateFacet(fields...)
-
 }
 
 // Merge 2 queries
@@ -1201,6 +1375,9 @@ func getValues(item interface{}, fieldIdx [][]int) (ret []reflect.Value) {
 }
 
 func compareValues(t *testing.T, v1 reflect.Value, v2 reflect.Value) int {
+	if v2.Type().Kind() == reflect.Interface {
+		v2 = reflect.ValueOf(v2.Interface())
+	}
 
 	switch v1.Type().Kind() {
 	case reflect.String:
@@ -1376,7 +1553,7 @@ func (qt *queryTestEntryTree) getEntryByIndexName(index string) *queryTestEntry 
 			if entry := d.data.(*queryTestEntry); entry.index == index {
 				return entry
 			}
-		case twoFieldsEntry:
+		case twoFieldsEntry, alwaysTrue, alwaysFalse:
 			return nil
 		case bracket:
 			t := d.data.(*queryTestEntryTree)
@@ -1494,6 +1671,47 @@ func checkDWithin(point1 reindexer.Point, point2 reindexer.Point, distance float
 	return (diffX*diffX + diffY*diffY) <= (distance * distance)
 }
 
+func checkValue(t *testing.T, v reflect.Value, cond int, keys []reflect.Value) bool {
+	if cond == reindexer.RANGE {
+		if len(keys) != 2 {
+			panic("expected 2 keys in range condition")
+		}
+		return compareValues(t, v, keys[0]) >= 0 && compareValues(t, v, keys[1]) <= 0
+	} else {
+		for _, k := range keys {
+			switch cond {
+			case reindexer.EQ, reindexer.SET:
+				if  compareValues(t, v, k) == 0 {
+					return true
+				}
+			case reindexer.GT:
+				if compareValues(t, v, k) > 0 {
+					return true
+				}
+			case reindexer.GE:
+				if compareValues(t, v, k) >= 0 {
+					return true
+				}
+			case reindexer.LT:
+				if compareValues(t, v, k) < 0 {
+					return true
+				}
+			case reindexer.LE:
+				if compareValues(t, v, k) <= 0 {
+					return true
+				}
+			case reindexer.LIKE:
+				if likeValues(v, k) {
+					return true
+				}
+			default:
+				panic("Unsupported condition")
+			}
+		}
+	}
+	return false
+}
+
 func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item interface{}) bool {
 	vals := getValues(item, cond.fieldIdx)
 
@@ -1512,36 +1730,8 @@ func checkCondition(t *testing.T, ns *testNamespace, cond *queryTestEntry, item 
 	}
 
 	for _, v := range vals {
-		if cond.condition == reindexer.RANGE {
-			if len(cond.keys) != 2 {
-				panic("expected 2 keys in range condition")
-			}
-			if compareValues(t, v, cond.keys[0]) >= 0 && compareValues(t, v, cond.keys[1]) <= 0 {
-				return true
-			}
-		} else {
-			for _, k := range cond.keys {
-				var found bool
-				switch cond.condition {
-				case reindexer.EQ, reindexer.SET:
-					found = compareValues(t, v, k) == 0
-				case reindexer.GT:
-					found = compareValues(t, v, k) > 0
-				case reindexer.GE:
-					found = compareValues(t, v, k) >= 0
-				case reindexer.LT:
-					found = compareValues(t, v, k) < 0
-				case reindexer.LE:
-					found = compareValues(t, v, k) <= 0
-				case reindexer.LIKE:
-					found = likeValues(v, k)
-				default:
-					panic("Unsupported condition")
-				}
-				if found {
-					return true
-				}
-			}
+		if checkValue(t, v, cond.condition, cond.keys) {
+			return true
 		}
 	}
 	return false
@@ -1686,6 +1876,10 @@ func (qt *queryTestEntryTree) verifyConditions(t *testing.T, ns *testNamespace, 
 		case bracket:
 			tree := cond.data.(*queryTestEntryTree)
 			curFound = tree.verifyConditions(t, ns, item)
+		case alwaysTrue:
+			curFound = true
+		case alwaysFalse:
+			curFound = false
 		}
 		switch cond.op {
 		case opNOT:

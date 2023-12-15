@@ -40,6 +40,7 @@ public:
 	bool IsReady() const noexcept { return storageLoaded_.load(); }
 	bool IsRunning() const noexcept { return running_.load(); }
 	void ReopenLogFiles();
+	std::string GetCoreLogPath() const;
 
 protected:
 	int run();

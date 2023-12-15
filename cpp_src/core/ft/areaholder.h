@@ -39,7 +39,8 @@ public:
 	[[nodiscard]] bool Empty() const noexcept { return data_.empty(); }
 	void Commit() {
 		if (!data_.empty()) {
-			boost::sort::pdqsort(data_.begin(), data_.end(), [](const Area &rhs, const Area &lhs) { return rhs.start < lhs.start; });
+			boost::sort::pdqsort_branchless(data_.begin(), data_.end(),
+											[](const Area &rhs, const Area &lhs) noexcept { return rhs.start < lhs.start; });
 			for (auto vit = data_.begin() + 1; vit != data_.end(); ++vit) {
 				auto prev = vit - 1;
 				if (vit->Concat(*prev)) {

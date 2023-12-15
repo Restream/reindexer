@@ -44,14 +44,15 @@ Storages are compatible between those versions, hovewer, replication configs are
   - [Nested Structs](#nested-structs)
   - [Sort](#sort)
   - [Text pattern search with LIKE condition](#text-pattern-search-with-like-condition)
+  - [Update queries](#update-queries)
+  - [Transactions and batch update](#transactions-and-batch-update)
+    - [Synchronous mode](#synchronous-mode)
+    - [Async batch mode](#async-batch-mode)
+    - [Transactions commit strategies](#transactions-commit-strategies)
+    - [Implementation notes](#implementation-notes)
   - [Join](#join)
     - [Joinable interface](#joinable-interface)
-    - [Update queries](#update-queries)
-    - [Transactions and batch update](#transactions-and-batch-update)
-      - [Synchronous mode](#synchronous-mode)
-      - [Async batch mode](#async-batch-mode)
-      - [Transactions commit strategies](#transactions-commit-strategies)
-      - [Implementation notes](#implementation-notes)
+  - [Subqueries (nested queries)](#subqueries-nested-queries)
   - [Complex Primary Keys and Composite Indexes](#complex-primary-keys-and-composite-indexes)
   - [Aggregations](#aggregations)
   - [Search in array fields with matching array indexes](#search-in-array-fields-with-matching-array-indexes)
@@ -71,14 +72,18 @@ Storages are compatible between those versions, hovewer, replication configs are
   - [Debug queries](#debug-queries)
   - [Custom allocators support](#custom-allocators-support)
   - [Profiling](#profiling)
+    - [Heap profiling](#heap-profiling)
+    - [CPU profiling](#cpu-profiling)
+    - [Known profiling issues](#known-profiling-issues)
   - [Tracing](#tracing)
 - [Integration with other program languages](#integration-with-other-program-languages)
-  - [Reindexer-for-python](#reindexer-for-python)
-  - [Reindexer-for-java](#reindexer-for-java)
+  - [Reindexer for python](#pyreindexer-for-python)
+  - [Reindexer for java](#reindexer-for-java)
+    - [Spring wrapper](#spring-wrapper)
   - [3rd party open source connectors](#3rd-party-open-source-connectors)
     - [PHP](#php)
     - [Rust](#rust)
-    - [.NET](#.net)
+    - [.NET](#net)
 - [Limitations and known issues](#limitations-and-known-issues)
 - [Getting help](#getting-help)
 - [References](#references)
@@ -261,13 +266,11 @@ Please note, that Query builder interface is preferable way: It have more featur
 String literals should be enclosed in single quotes.
 
 Composite indexes should be enclosed in double quotes.
-
 ```sql
 	SELECT * FROM items WHERE "field1+field2" = 'Vasya'
 ```
 
 If the field name does not start with alpha, '_' or '#' it must be enclosed in double quotes, examples:
-
 ```sql
 	UPDATE items DROP "123"
 ```
@@ -282,6 +285,29 @@ If the field name does not start with alpha, '_' or '#' it must be enclosed in d
 
 ```sql
 	DELETE FROM ns WHERE "123abc123" = 111
+```
+
+Simple Joins may be done via default SQL syntax:
+```sql
+SELECT * FROM ns INNER JOIN ns2 ON ns2.id = ns.fk_id WHERE a > 0
+```
+
+Joins with condition on the left namespace must use subquery-like syntax:
+```sql
+SELECT * FROM ns WHERE a > 0 AND INNER JOIN (SELECT * FROM ns2 WHERE b > 10 AND c = 1) ON ns2.id = ns.fk_id
+```
+
+Subquery can also be a part of the WHERE-condition:
+```sql
+SELECT * FROM ns WHERE (SELECT * FROM ns2 WHERE id < 10 LIMIT 0) IS NOT NULL
+```
+
+```sql
+SELECT * FROM ns WHERE id = (SELECT id FROM ns2 WHERE id < 10)
+```
+
+```sql
+SELECT * FROM ns WHERE (SELECT COUNT(*) FROM ns2 WHERE id < 10) > 18
 ```
 
 ## Installation
@@ -545,7 +571,7 @@ type SortModeCustomItem struct {
 
 The very first character in this list has the highest priority, priority of the last character is the smallest one. It means that sorting algorithm will put items that start with the first character before others. If some characters are skipped their priorities would have their usual values (according to characters in the list).
 
-## Text pattern search with LIKE condition
+### Text pattern search with LIKE condition
 
 For simple searching text pattern in string fields condition `LIKE` can be used. It search strings which match a pattern. In the pattern `_` means any char and `%` means any sequence of chars.
 
@@ -875,6 +901,55 @@ func (item *ItemWithJoin) Join(field string, subitems []interface{}, context int
 }
 ```
 
+### Subqueries (nested queries)
+
+A condition could be applied to result of another query (subquery) included into the current query.
+The condition may either be on resulting rows of the subquery:
+
+```go
+query := db.Query("main_ns").
+	WhereQuery(db.Query("second_ns").Select("id").Where("age", reindexer.GE, 18), reindexer.GE, 100)
+```
+or between a field of main query's namespace and result of the subquery:
+```go
+query := db.Query("main_ns").
+	Where("id", reindexer.EQ, db.Query("second_ns").Select("id").Where("age", reindexer.GE, 18))
+```
+Result of the subquery may either be a certain field pointed by `Select` method (in this case it must set the single field filter):
+```go
+query1 := db.Query("main_ns").
+	WhereQuery(db.Query("second_ns").Select("id").Where("age", reindexer.GE, 18), reindexer.GE, 100)
+query2 := db.Query("main_ns").
+	Where("id", reindexer.EQ, db.Query("second_ns").Select("id").Where("age", reindexer.GE, 18))
+```
+or count of items satisfying to the subquery required by `ReqTotal` or `CachedTotal` methods:
+```go
+query1 := db.Query("main_ns").
+	WhereQuery(db.Query("second_ns").Where("age", reindexer.GE, 18).ReqTotal(), reindexer.GE, 100)
+query2 := db.Query("main_ns").
+	Where("id", reindexer.EQ, db.Query("second_ns").Where("age", reindexer.GE, 18).CachedTotal())
+```
+or aggregation:
+```go
+query1 := db.Query("main_ns").
+	WhereQuery(db.Query("second_ns").Where("age", reindexer.GE, 18).AggregateMax("age"), reindexer.GE, 33)
+query2 := db.Query("main_ns").
+	Where("age", reindexer.GE, db.Query("second_ns").Where("age", reindexer.GE, 18).AggregateAvg("age"))
+```
+`Min`, `Max`, `Avg`, `Sum`, `Count` and `CountCached` aggregations are allowed only. Subquery can not contain multiple aggregations at the same time.
+
+Subquery can be applied to the same namespace or to the another one.
+
+Subquery can not contain another subquery, join or merge.
+
+If you want to check if at least one of the items is satisfying to the subqueries, you may use `ANY` or `EMPTY` condition:
+```go
+query1 := db.Query("main_ns").
+	WhereQuery(db.Query("second_ns").Where("age", reindexer.GE, 18), reindexer.ANY, nil)
+query2 := db.Query("main_ns").
+		WhereQuery(db.Query("second_ns").Where("age", reindexer.LE, 18), reindexer.EMPTY, nil)
+```
+
 ### Complex Primary Keys and Composite Indexes
 
 A Document can have multiple fields as a primary key. To enable this feature add composite index to struct.
@@ -1199,8 +1274,6 @@ func (item *Item) DeepCopy () interface {} {
 }
 ```
 
-There are available code generation tool [gencopy](../gencopy), which can automatically generate DeepCopy interface for structs.
-
 #### Get shared objects from object cache (USE WITH CAUTION)
 
 To speed up queries and do not allocate new objects per each query it is possible ask query return objects directly from object cache. For enable this behavior, call `AllowUnsafe(true)` on `Iterator`.
@@ -1377,7 +1450,7 @@ go func() {
 pprof -symbolize remote http://localhost:6060/debug/pprof/profile?seconds=10
 ```
 
-#### Known issues
+#### Known profiling issues
 
 Due to internal Golang's specific it's not recommended to try to get CPU and heap profiles simultaneously, because it may cause deadlock inside the profiler.
 
@@ -1429,9 +1502,11 @@ For install run:
 pip3 install pyreindexer
 ```
 
-https://github.com/Restream/reindexer-py
-https://pypi.org/project/pyreindexer/
-Python version >=3.6 is required).
+URLs:
+- https://github.com/Restream/reindexer-py
+- https://pypi.org/project/pyreindexer/
+
+Python version >=3.6 is required.
 
 ### Reindexer for Java
 
@@ -1443,31 +1518,33 @@ Reindexer for java is official connector, and maintained by Reindexer's team. It
 For enable builtin mode support reindexer-dev (version >= 3.1.0) should be installed. See [installation instructions](cpp_src/readme.md#Installation) for details.
 
 For install reindexer to Java or Kotlin project add the following lines to maven project file
-````
+```
 <dependency>
     <groupId>com.github.restream</groupId>
     <artifactId>rx-connector</artifactId>
     <version>[LATEST_VERSION]</version>
 </dependency>
-````
-https://github.com/Restream/reindexer-java   
+```
+URL: https://github.com/Restream/reindexer-java
+
 Note: Java version >= 1.8 is required.
+
 #### Spring wrapper
 Spring wrapper for Java-connector: https://github.com/evgeniycheban/spring-data-reindexer
 
 ### 3rd party open source connectors
 #### PHP
-https://github.com/Smolevich/reindexer-client
+URL: https://github.com/Smolevich/reindexer-client
 - *Support modes:* standalone only
 - *API Used:* HTTP REST API
 - *Dependency on reindexer library (reindexer-dev package):* no
 #### Rust
-https://github.com/coinrust/reindexer-rs
+URL: https://github.com/coinrust/reindexer-rs
 - *Support modes:* standalone, builtin
 - *API Used:* binary ABI, cproto
 - *Dependency on reindexer library (reindexer-dev package):* yes
 #### .NET
-https://github.com/oruchreis/ReindexerNet
+URL: https://github.com/oruchreis/ReindexerNet
 - *Support modes:* builtin
 - *API Used:* binary ABI
 - *Dependency on reindexer library (reindexer-dev package):* yes
@@ -1492,4 +1569,3 @@ Landing: https://reindexer.io/
 Packages repo: https://repo.reindexer.io/
 
 More documentation (RU): https://reindexer.io/reindexer-docs/
-

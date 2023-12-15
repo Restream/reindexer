@@ -943,9 +943,8 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 
 Error ReindexerService::execSqlQueryByType(QueryResults& res, const SelectSqlRequest& request) {
 	try {
-		reindexer::Query q;
 		reindexer_server::UserRole requiredRole;
-		q.FromSQL(request.sql());
+		reindexer::Query q = reindexer::Query::FromSQL(request.sql());
 		switch (q.Type()) {
 			case QuerySelect: {
 				requiredRole = reindexer_server::kRoleDataRead;

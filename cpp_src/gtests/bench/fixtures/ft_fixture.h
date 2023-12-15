@@ -19,7 +19,7 @@ public:
 	FullText(Reindexer* db, const std::string& name, size_t maxItems);
 
 	virtual reindexer::Error Initialize() override;
-	void RegisterAllCases(size_t iterationCount = -1);
+	void RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount);
 
 private:
 	virtual reindexer::Item MakeItem(benchmark::State&) override;
@@ -101,18 +101,16 @@ private:
 
 	class RegisterWrapper {
 	public:
-		//-1 test iteration limit - time
-		RegisterWrapper(size_t iterationCoun = -1) : iterationCoun_(iterationCoun) {}
-		Benchmark* SetOptions(Benchmark* b) {
-			b = b->Unit(benchmark::kMicrosecond);
-			if (iterationCoun_ != size_t(-1)) {
-				b = b->Iterations(iterationCoun_);
+		RegisterWrapper(std::optional<size_t> iterationCoun) noexcept : iterationCoun_(iterationCoun) {}
+		void SetOptions(Benchmark* b) {
+			if (iterationCoun_.has_value()) {
+				b = b->Iterations(*iterationCoun_);
 			}
-			return b;
+			b->Unit(benchmark::kMicrosecond);
 		}
 
 	private:
-		size_t iterationCoun_;
+		std::optional<size_t> iterationCoun_;
 	};
 #ifdef ENABLE_TIME_TRACKER
 #define TIMETRACKER(fileName) TimeTracker timeTracker(fileName);

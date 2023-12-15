@@ -80,11 +80,11 @@ protected:
 	Error processImpl(const std::string& command) noexcept;
 	void stop(bool terminate);
 	Error getSuggestions(const std::string& input, std::vector<std::string>& suggestions);
-	Error commandSelect(const std::string& command);
+	Error commandSelect(const std::string& command) noexcept;
 	Error commandUpsert(const std::string& command);
-	Error commandUpdateSQL(const std::string& command);
+	Error commandUpdateSQL(const std::string& command) noexcept;
 	Error commandDelete(const std::string& command);
-	Error commandDeleteSQL(const std::string& command);
+	Error commandDeleteSQL(const std::string& command) noexcept;
 	Error commandDump(const std::string& command);
 	Error commandNamespaces(const std::string& command);
 	Error commandMeta(const std::string& command);

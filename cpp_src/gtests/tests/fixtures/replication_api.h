@@ -23,8 +23,6 @@ const auto kMaxForceSyncCmdTime = std::chrono::seconds(10);
 
 class ReplicationApi : public ::testing::Test {
 public:
-	static const std::string kStoragePath;
-	static const std::string kReplicationConfigFilename;
 	static const std::string kConfigNs;
 
 	void SetUp();
@@ -55,6 +53,7 @@ public:
 	shared_timed_mutex restartMutex_;
 
 private:
+	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test/");
 	std::vector<ServerControl> svc_;
 	mutable std::mutex m_;
 };

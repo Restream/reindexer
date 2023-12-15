@@ -29,7 +29,8 @@ void ExplainCalc::LogDump(int logLevel) {
 				[this](const FieldsComparator &c) {
 					logPrintf(LogInfo, "%s: cost %g, matched %d, %s", c.Name(), c.Cost(iters_), c.GetMatchedCount(), c.Dump());
 				},
-				[](const AlwaysFalse &) { logPrintf(LogInfo, "AlwaysFalse"); });
+				[](const AlwaysFalse &) { logPrintf(LogInfo, "AlwaysFalse"); },
+				[](const AlwaysTrue &) { logPrintf(LogInfo, "AlwaysTrue"); });
 		}
 
 		if (jselectors_) {
@@ -192,6 +193,7 @@ std::string ExplainCalc::GetJSON() {
 	WrSerializer ser;
 	{
 		JsonBuilder json(ser);
+		json.EmitTrailingForFloat(false);
 		if (enabled_) {
 			json.Put("total_us"sv, To_us(total_));
 			json.Put("preselect_us"sv, To_us(preselect_));
@@ -290,6 +292,13 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				jsonSkiped.Put("description"sv, "always "s + (it->operation == OpNot ? "true" : "false"));
 				name << opName(it->operation == OpNot ? OpAnd : it->operation, it == begin) << "Always"sv
 					 << (it->operation == OpNot ? "True"sv : "False"sv);
+			},
+			[&](const AlwaysTrue &) {
+				auto jsonSkiped = builder.Object();
+				jsonSkiped.Put("type"sv, "Skipped"sv);
+				jsonSkiped.Put("description"sv, "always "s + (it->operation == OpNot ? "false" : "true"));
+				name << opName(it->operation == OpNot ? OpAnd : it->operation, it == begin) << "Always"sv
+					 << (it->operation == OpNot ? "False"sv : "True"sv);
 			});
 	}
 	name << ')';

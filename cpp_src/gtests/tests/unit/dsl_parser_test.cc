@@ -33,8 +33,8 @@ TEST_F(JoinSelectsApi, MergedQueriesDSLTest) {
 	Query firstMergedQuery{Query(books_namespace, 10, 100).Where(pages, CondLe, 250)};
 	Query secondMergedQuery{Query(books_namespace, 100, 50).Where(bookid, CondGe, 100)};
 
-	mainBooksQuery.mergeQueries_.emplace_back(Merge, std::move(firstMergedQuery));
-	mainBooksQuery.mergeQueries_.emplace_back(Merge, std::move(secondMergedQuery));
+	mainBooksQuery.Merge(std::move(firstMergedQuery));
+	mainBooksQuery.Merge(std::move(secondMergedQuery));
 	checkQueryDslParse(mainBooksQuery);
 }
 
@@ -47,21 +47,14 @@ TEST_F(JoinSelectsApi, AggregateFunctonsDSLTest) {
 }
 
 TEST_F(JoinSelectsApi, SelectFilterDSLTest) {
-	Query query{Query(books_namespace, 10, 100).Where(pages, CondGe, 150)};
-	query.selectFilter_.push_back(price);
-	query.selectFilter_.push_back(pages);
-	query.selectFilter_.push_back(title);
+	Query query{Query(books_namespace, 10, 100).Where(pages, CondGe, 150).Select({price, pages, title})};
 	checkQueryDslParse(query);
 }
 
 TEST_F(JoinSelectsApi, SelectFilterInJoinDSLTest) {
-	Query queryBooks(books_namespace, 0, 10);
-	queryBooks.selectFilter_.push_back(price);
-	queryBooks.selectFilter_.push_back(title);
+	Query queryBooks = Query(books_namespace, 0, 10).Select({price, title});
 	{
-		Query queryAuthors(authors_namespace);
-		queryAuthors.selectFilter_.push_back(authorid);
-		queryAuthors.selectFilter_.push_back(age);
+		Query queryAuthors = Query(authors_namespace).Select({authorid, age});
 
 		queryBooks.LeftJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors));
 	}
@@ -100,11 +93,9 @@ TEST_F(JoinSelectsApi, GeneralDSLTest) {
 	Query innerJoinQuery = queryBooks.InnerJoin(authorid_fk, authorid, CondEq, std::move(queryAuthors));
 
 	Query testDslQuery = innerJoinQuery.OrInnerJoin(genreId_fk, genreid, CondEq, std::move(queryGenres));
-	testDslQuery.mergeQueries_.emplace_back(Merge, std::move(queryBooks));
-	testDslQuery.mergeQueries_.emplace_back(Merge, std::move(innerJoinQuery));
-	testDslQuery.selectFilter_.push_back(genreid);
-	testDslQuery.selectFilter_.push_back(bookid);
-	testDslQuery.selectFilter_.push_back(authorid_fk);
+	testDslQuery.Merge(std::move(queryBooks));
+	testDslQuery.Merge(std::move(innerJoinQuery));
+	testDslQuery.Select({genreid, bookid, authorid_fk});
 	testDslQuery.AddFunction("f1()");
 	testDslQuery.AddFunction("f2()");
 	testDslQuery.aggregations_.push_back({AggDistinct, {bookid}});

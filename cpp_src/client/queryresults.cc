@@ -250,9 +250,10 @@ Item QueryResults::Iterator::GetItem() {
 		if (err.ok()) {
 			return item;
 		}
+		return Item();
 	} catch (const Error &) {
+		return Item();
 	}
-	return Item();
 }
 
 int64_t QueryResults::Iterator::GetLSN() {

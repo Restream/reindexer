@@ -1,7 +1,7 @@
 #pragma once
 
 namespace leveldb {
-class Options;
+struct Options;
 }
 
 namespace reindexer {

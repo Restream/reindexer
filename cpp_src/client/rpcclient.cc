@@ -3,6 +3,7 @@
 #include <functional>
 #include "client/itemimpl.h"
 #include "core/namespacedef.h"
+#include "core/schema.h"
 #include "gason/gason.h"
 #include "tools/cpucheck.h"
 #include "tools/errors.h"
@@ -98,6 +99,7 @@ void RPCClient::run(size_t thIdx) {
 
 	workers_[thIdx].stop_.start();
 	delayedUpdates_.clear();
+	serialDelays_ = 0;
 
 	for (size_t i = thIdx; int(i) < config_.ConnPoolSize; i += config_.WorkerThreads) {
 		connections_[i].reset(new cproto::ClientConnection(workers_[thIdx].loop_, &connectData_,
@@ -381,7 +383,7 @@ Error RPCClient::Delete(const Query& query, QueryResults& result, const Internal
 	auto conn = getConn();
 
 	NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
 
@@ -408,7 +410,7 @@ Error RPCClient::Update(const Query& query, QueryResults& result, const Internal
 	auto conn = getConn();
 
 	NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	result = QueryResults(conn, std::move(nsArray), nullptr, 0, config_.FetchAmount, config_.RequestTimeout);
 
@@ -469,10 +471,10 @@ Error RPCClient::selectImpl(const Query& query, QueryResults& result, cproto::Cl
 							const InternalRdxContext& ctx) {
 	WrSerializer qser, pser;
 	int flags = result.fetchFlags_ ? result.fetchFlags_ : (kResultsWithPayloadTypes | kResultsCJson);
-	bool hasJoins = !query.joinQueries_.empty();
+	bool hasJoins = !query.GetJoinQueries().empty();
 	if (!hasJoins) {
-		for (auto& mq : query.mergeQueries_) {
-			if (!mq.joinQueries_.empty()) {
+		for (auto& mq : query.GetMergeQueries()) {
+			if (!mq.GetJoinQueries().empty()) {
 				hasJoins = true;
 				break;
 			}
@@ -484,7 +486,7 @@ Error RPCClient::selectImpl(const Query& query, QueryResults& result, cproto::Cl
 	}
 	NsArray nsArray;
 	query.Serialize(qser);
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 	h_vector<int32_t, 4> vers;
 	for (auto& ns : nsArray) {
 		shared_lock<shared_timed_mutex> lck(ns->lck_);
@@ -717,21 +719,39 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 			// If tagsMatcher has been updated but there is no bundled tagsMatcher in cjson
 			// then we need to ask server to send tagsMatcher.
 
+			++serialDelays_;
 			// Delay this update and all the further updates until we get responce from server.
 			ans.EnsureHold();
 			delayedUpdates_.emplace_back(std::move(ans));
 
 			QueryResults* qr = new QueryResults;
 			Select(Query(std::string(nsName)).Limit(0), *qr,
-				   InternalRdxContext(nullptr,
-									  [=](const Error& err) {
-										  delete qr;
-										  // If there are delayed updates then send them to client
-										  auto uq = std::move(delayedUpdates_);
-										  delayedUpdates_.clear();
-										  if (err.ok())
-											  for (auto& a1 : uq) onUpdates(a1, conn);
-									  }),
+				   InternalRdxContext(
+					   nullptr,
+					   [this, qr, conn](const Error& err) {
+						   delete qr;
+						   // If there are delayed updates then send them to client
+						   auto uq = std::move(delayedUpdates_);
+						   delayedUpdates_.clear();
+
+						   if (!err.ok() || serialDelays_ > 1) {
+							   // This update was already dealyed, but was not able to synchronize tagsmatcher.
+							   // Such situation usually means, that master's namespace was recreated and must be synchronized via force
+							   // sync.
+							   // Current fix is suboptimal and in some cases even incorrect (but still better, than previous
+							   // implementation) - proper fix requires some versioning info about namespaces, which exists
+							   // in v4 only
+							   std::string_view nsName(std::string_view(uq.front().GetArgs(1)[1]));
+							   logPrintf(
+								   LogWarning,
+								   "[repl:%s] Unable to sync tags matcher via online-replication (err: '%s'). Calling UpdatesLost fallback",
+								   nsName, err.what());
+							   serialDelays_ = 0;
+							   observers_.OnUpdatesLost(nsName);
+						   } else {
+							   for (auto& a1 : uq) onUpdates(a1, conn);
+						   }
+					   }),
 				   conn);
 			return;
 		} else {
@@ -748,7 +768,17 @@ void RPCClient::onUpdates(net::cproto::RPCAnswer& ans, cproto::ClientConnection*
 				ns->tagsMatcher_.deserialize(rdser, wrec.itemModify.tmVersion, ns->tagsMatcher_.stateToken());
 			}
 		}
+	} else if (wrec.type == WalTagsMatcher) {
+		TagsMatcher tm;
+		Serializer ser(wrec.data.data(), wrec.data.size());
+		const auto version = ser.GetVarint();
+		const auto stateToken = ser.GetVarint();
+		tm.deserialize(ser, version, stateToken);
+		auto ns = getNamespace(nsName);
+		std::lock_guard lck(ns->lck_);
+		ns->tagsMatcher_ = std::move(tm);
 	}
+	serialDelays_ = 0;
 	observers_.OnWALUpdate(LSNPair(lsn, originLSN), nsName, wrec);
 }
 

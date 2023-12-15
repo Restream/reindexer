@@ -186,7 +186,6 @@ public:
 			names2tags_.emplace(name, tag);
 			tags2names_[tag] = name;
 		}
-		version_++;
 		// assert(ser.Eof());
 	}
 	void deserialize(Serializer &ser, int version, int stateToken) {

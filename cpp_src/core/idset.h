@@ -108,7 +108,7 @@ public:
 		return *this;
 	}
 	static Ptr BuildFromUnsorted(base_idset &&ids) {
-		boost::sort::pdqsort(ids.begin(), ids.end());
+		boost::sort::pdqsort_branchless(ids.begin(), ids.end());
 		ids.erase(std::unique(ids.begin(), ids.end()), ids.end());	// TODO: It would be better to integrate unique into sort
 		return make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>(std::move(ids));
 	}
