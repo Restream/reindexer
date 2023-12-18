@@ -1,6 +1,6 @@
 # Version 3.21.0 (15.12.2023)
 ## Core
-- [fea] Added [subqueries](#subqueries-nested-queries) support (`explain` for subqueries will be implement in the next releases)
+- [fea] Added [subqueries](#subqueries-nested-queries) support (`explain` for subqueries will be implemented in the next releases)
 - [fea] Added backtraces/minidump support for Windows platform
 - [fea] Added query crash tracker support for Windows platform
 - [fix] Added explicit error for aggregations in joined queries
@@ -16,8 +16,8 @@
 
 ## Go connector
 - [fea] Added Go API and DSL-convertor for subqueries
-- [fea] Changed CJSON-to-object convetrion logic for slices: now the single JSON values and fields with multiple JSON-paths will be concatenated together in the target field
-- [fea] Added `WithStrictJoinHandlers`. This option allows to validate JoinHandlers usage in runtime
+- [fea] Changed CJSON-to-object conversion logic for slices: now the single JSON values and fields with multiple JSON-paths will be concatenated together in the target field
+- [fea] Added `WithStrictJoinHandlers`. This option allows to validate JoinHandlers usage at runtime
 - [fix] Fixed panic handling in the CJSON deserialization
 - [fix] Fixed logging in `cproto`-binding. Error messages will no longer be redirected to stdout instead of user's logger
 
@@ -25,7 +25,7 @@
 - [fea] Saved the scroll position on the sorting
 - [fea] Changed the Server ID range
 - [fea] Improved the notification about the supported browsers
-- [fea] Added the default values to the config form when the default config is using
+- [fea] Added the default values to the config form when the default config is used
 - [fix] Fixed the wrong redirect to a fake database
 - [fix] Fixed the column order changing on the data sorting
 - [fix] Fixed the horizontal scroll on the data sorting
