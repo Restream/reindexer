@@ -19,15 +19,15 @@ using namespace std::string_view_literals;
 static const std::string_view kStrEOL = "\r\n"sv;
 extern std::unordered_map<int, std::string_view> kHTTPCodes;
 
-ServerConnection::ServerConnection(int fd, ev::dynamic_loop &loop, Router &router, size_t maxRequestSize)
-	: ConnectionST(fd, loop, false, maxRequestSize < kConnReadbufSize ? maxRequestSize : kConnReadbufSize),
+ServerConnection::ServerConnection(socket &&s, ev::dynamic_loop &loop, Router &router, size_t maxRequestSize)
+	: ConnectionST(std::move(s), loop, false, maxRequestSize < kConnReadbufSize ? maxRequestSize : kConnReadbufSize),
 	  router_(router),
 	  maxRequestSize_(maxRequestSize) {
 	callback(io_, ev::READ);
 }
 
-bool ServerConnection::Restart(int fd) {
-	restart(fd);
+bool ServerConnection::Restart(socket &&s) {
+	restart(std::move(s));
 	bodyLeft_ = 0;
 	formData_ = false;
 	enableHttp11_ = false;
@@ -331,7 +331,7 @@ ssize_t ServerConnection::ResponseWriter::Write(chunk &&chunk, Writer::WriteMode
 		respSend_ = true;
 	}
 
-	size_t len = chunk.len_;
+	size_t len = chunk.len();
 	if (isChunkedResponse() && mode == WriteMode::Default) {
 		size_t l = u32toax(len, szBuf) - szBuf;
 		conn_->wrBuf_.write({szBuf, l});

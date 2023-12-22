@@ -33,7 +33,7 @@ CoroReindexer& CoroReindexer::operator=(CoroReindexer&& rdx) noexcept {
 Error CoroReindexer::Connect(const std::string& dsn, net::ev::dynamic_loop& loop, const ConnectOpts& opts) {
 	return impl_->Connect(dsn, loop, opts);
 }
-Error CoroReindexer::Stop() { return impl_->Stop(); }
+void CoroReindexer::Stop() { impl_->Stop(); }
 Error CoroReindexer::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts) {
 	return impl_->AddNamespace(nsDef, ctx_, replOpts);
 }

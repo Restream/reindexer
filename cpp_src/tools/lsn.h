@@ -18,19 +18,20 @@ struct LSNUnpacked {
 };
 
 struct lsn_t {
-	static constexpr int64_t kDigitCountLSNMult = 1000000000000000ll;
-
-	static constexpr int64_t kCounterbitCount = 48;
-	static constexpr int64_t kCounterMask = (1ull << kCounterbitCount) - 1ull;
-
+private:
 	static constexpr int16_t kMinServerIDValue = 0;
 	static constexpr int16_t kMaxServerIDValue = 999;
+
+	static constexpr int64_t kMaxCounter = 1000000000000000ll;
+
+public:
+	static constexpr int64_t kDefaultCounter = kMaxCounter - 1;
 
 	void GetJSON(JsonBuilder &builder) const;
 
 	void FromJSON(const gason::JsonNode &root) {
 		const int server = root["server_id"].As<int>(0);
-		const int64_t counter = root["counter"].As<int64_t>(kDigitCountLSNMult - 1ll);
+		const int64_t counter = root["counter"].As<int64_t>(kDefaultCounter);
 		payload_ = int64_t(lsn_t(counter, server));
 	}
 
@@ -39,18 +40,11 @@ struct lsn_t {
 	lsn_t(lsn_t &&) noexcept = default;
 	lsn_t &operator=(const lsn_t &) noexcept = default;
 	lsn_t &operator=(lsn_t &&) noexcept = default;
-	explicit lsn_t(int64_t v) noexcept {
-		if ((v & kCounterMask) == kCounterMask)	 // init -1
-			payload_ = kDigitCountLSNMult - 1ll;
-		else {
-			payload_ = v;
-		}
-	}
+	explicit lsn_t(int64_t v) : lsn_t(v % kMaxCounter, v / kMaxCounter) {}
 	lsn_t(int64_t counter, int16_t server) {
+		validateCounter(counter);
 		validateServerId(server);
-		if ((counter & kCounterMask) == kCounterMask) counter = kDigitCountLSNMult - 1ll;
-		const int64_t s = server * kDigitCountLSNMult;
-		payload_ = s + counter;
+		payload_ = server * kMaxCounter + counter;
 	}
 	explicit operator int64_t() const noexcept { return payload_; }
 	explicit operator uint64_t() const noexcept { return static_cast<uint64_t>(payload_); }
@@ -71,35 +65,22 @@ struct lsn_t {
 	bool operator==(lsn_t o) const noexcept { return payload_ == o.payload_; }
 	bool operator!=(lsn_t o) const noexcept { return payload_ != o.payload_; }
 
-	int64_t SetServer(int16_t s) {
-		validateServerId(s);
-		const int64_t server = s * kDigitCountLSNMult;
-		const int64_t serverOld = payload_ / kDigitCountLSNMult;
-		payload_ = payload_ - serverOld * kDigitCountLSNMult + server;
+	int64_t SetServer(int16_t server) {
+		validateServerId(server);
+		payload_ = server * kMaxCounter + Counter();
 		return payload_;
 	}
-	int64_t SetCounter(int64_t c) {
-		if (c >= kDigitCountLSNMult) {
-			throw Error(errLogic, "LSN Counter > digitCountLSNMult");
-		}
-		const int64_t server = payload_ / kDigitCountLSNMult;
-		payload_ = server * kDigitCountLSNMult + c;
+	int64_t SetCounter(int64_t counter) {
+		validateCounter(counter);
+		payload_ = Server() * kMaxCounter + counter;
 		return payload_;
 	}
-	int64_t Counter() const noexcept {
-		const int64_t server = payload_ / kDigitCountLSNMult;
-		return payload_ - server * kDigitCountLSNMult;
-	}
-	int16_t Server() const noexcept { return payload_ / kDigitCountLSNMult; }
-	LSNUnpacked Unpack() const noexcept {
-		LSNUnpacked unpacked;
-		unpacked.server = payload_ / kDigitCountLSNMult;
-		unpacked.counter = payload_ - int64_t(unpacked.server) * kDigitCountLSNMult;
-		return unpacked;
-	}
-	bool isEmpty() const noexcept { return Counter() == kDigitCountLSNMult - 1ll; }
+	int64_t Counter() const noexcept { return payload_ % kMaxCounter; }
+	int16_t Server() const noexcept { return payload_ / kMaxCounter; }
+	LSNUnpacked Unpack() const noexcept { return {.server = Server(), .counter = Counter()}; }
+	bool isEmpty() const noexcept { return Counter() == kDefaultCounter; }
 
-	int compare(lsn_t o) {
+	int compare(lsn_t o) const {
 		if (Server() != o.Server()) throw Error(errLogic, "Compare lsn from different server");
 		if (Counter() < o.Counter())
 			return -1;
@@ -108,14 +89,28 @@ struct lsn_t {
 		return 0;
 	}
 
-	bool operator<(lsn_t o) { return compare(o) == -1; }
-	bool operator<=(lsn_t o) { return compare(o) <= 0; }
-	bool operator>(lsn_t o) { return compare(o) == 1; }
-	bool operator>=(lsn_t o) { return compare(o) >= 0; }
+	bool operator<(lsn_t o) const { return compare(o) == -1; }
+	bool operator<=(lsn_t o) const { return compare(o) <= 0; }
+	bool operator>(lsn_t o) const { return compare(o) == 1; }
+	bool operator>=(lsn_t o) const { return compare(o) >= 0; }
 
-protected:
-	int64_t payload_ = kDigitCountLSNMult - 1ll;
-	void validateServerId(int16_t server);
+private:
+	int64_t payload_ = kDefaultCounter;
+	static void validateServerId(int16_t server) {
+		if (server < kMinServerIDValue) {
+			throwValidation(errLogic, "Server id < %d", kMinServerIDValue);
+		}
+		if (server > kMaxServerIDValue) {
+			throwValidation(errLogic, "Server id > %d", kMaxServerIDValue);
+		}
+	}
+	static void validateCounter(int64_t counter) {
+		if (counter > kDefaultCounter) {
+			throwValidation(errLogic, "LSN Counter > Default LSN (%d)", kMaxCounter);
+		}
+	}
+
+	[[noreturn]] static void throwValidation(ErrorCode, const char *, int64_t);
 };
 
 inline static std::ostream &operator<<(std::ostream &o, const reindexer::lsn_t &sv) {
@@ -148,5 +143,14 @@ private:
 	lsn_t nsVersion_;
 	lsn_t lsn_;
 };
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+struct LSNPair {
+	LSNPair() = default;
+	LSNPair(lsn_t upstreamLSN, lsn_t originLSN) noexcept : upstreamLSN_(upstreamLSN), originLSN_(originLSN) {}
+	lsn_t upstreamLSN_;
+	lsn_t originLSN_;
+};
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 }  // namespace reindexer

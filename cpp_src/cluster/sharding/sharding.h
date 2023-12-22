@@ -143,6 +143,7 @@ public:
 	}
 
 	int ActualShardId() const noexcept { return actualShardId; }
+	int64_t SourceId() const noexcept { return config_.sourceId; }
 	void Shutdown();
 
 private:

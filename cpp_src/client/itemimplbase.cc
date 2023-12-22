@@ -17,9 +17,8 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 	GetPayload().Reset();
 	std::string_view data = slice;
 	if (!unsafe_) {
-		holder_.reset(new char[slice.size()]);
-		std::copy(slice.begin(), slice.end(), holder_.get());
-		data = std::string_view(holder_.get(), slice.size());
+		holder_.clear();
+		data = holder_.emplace_back(data);
 	}
 
 	Serializer rdser(data);
@@ -36,7 +35,7 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 	}
 
 	Payload pl = GetPayload();
-	CJsonDecoder decoder(tagsMatcher_);
+	CJsonDecoder decoder(tagsMatcher_, holder_);
 	ser_.Reset();
 	try {
 		decoder.Decode(pl, rdser, ser_);
@@ -48,7 +47,7 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 			}
 			ser_.Reset();
 			rdser.SetPos(0);
-			CJsonDecoder decoder(tagsMatcher_);
+			CJsonDecoder decoder(tagsMatcher_, holder_);
 			decoder.Decode(pl, rdser, ser_);
 		}
 	}
@@ -66,9 +65,8 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 Error ItemImplBase::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
 	std::string_view data = slice;
 	if (!unsafe_ && endp == nullptr) {
-		holder_.reset(new char[slice.size()]);
-		std::copy(slice.begin(), slice.end(), holder_.get());
-		data = std::string_view(holder_.get(), slice.size());
+		holder_.clear();
+		data = holder_.emplace_back(data);
 	}
 
 	payloadValue_.Clone();
@@ -108,9 +106,8 @@ Error ItemImplBase::FromMsgPack(std::string_view buf, size_t &offset) {
 
 	std::string_view data = buf;
 	if (!unsafe_) {
-		holder_.reset(new char[buf.size()]);
-		std::copy(buf.begin(), buf.end(), holder_.get());
-		data = std::string_view(holder_.get(), buf.size());
+		holder_.clear();
+		data = holder_.emplace_back(data);
 	}
 
 	ser_.Reset();

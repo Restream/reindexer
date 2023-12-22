@@ -1,45 +1,53 @@
 #pragma once
 #include <tuple>
 
+namespace reindexer {
 namespace meta {
-template <typename...>
-class Map;
-
-template <auto... Args>
-using Values2Types = std::tuple<std::integral_constant<decltype(Args), Args>...>;
-
-template <auto... Enums, typename... Types>
-class Map<Values2Types<Enums...>, std::tuple<Types...>> {
-	using Keys = Values2Types<Enums...>;
-	using Values = std::tuple<Types...>;
-
-	template <auto type, std::size_t N = 0>
+template <typename... Pairs>
+class Map {
+	template <auto key_value, std::size_t N = 0>
 	static constexpr auto get() {
-		static_assert(N >= 0, "N should be non-negative.");
-		static_assert(N < sizeof...(Enums), "Type not found.");
-		if constexpr (type == std::get<N>(Keys{})) {
-			return std::get<N>(Values{});
+		static_assert(N < sizeof...(Pairs), "Type not found.");
+
+		using P = std::decay_t<decltype(std::get<N>(std::tuple<Pairs...>{}))>;
+		using Key = typename P::Type;
+		using Value = typename P::Value;
+		if constexpr (key_value == Key::value) {
+			return Value{};
 		} else {
-			return get<type, N + 1>();
+			return get<key_value, N + 1>();
 		}
 	}
 
-	template <auto type>
-	using type_ = std::enable_if_t<sizeof...(Enums) == sizeof...(Types), decltype(get<type>())>;
-
-public:
 	// to satisfy clang-tidy when use GetType-using and avoid false-positive error private method access
 	// and don't make the get-method public
-	template <auto t_>
-	static constexpr type_<t_> GetTypeImpl();
+	template <auto key_value>
+	struct GetTypeImpl {
+		using type = decltype(get<key_value>());
+	};
 
-	template <auto type>
+public:
+	template <auto key_value>
+	using GetType = typename GetTypeImpl<key_value>::type;
+
+	template <auto key_value>
 	static constexpr auto GetValue() {
-		type_<type> res;
+		GetType<key_value> res;
 		return res.value;
 	}
-
-	template <auto type>
-	using GetType = decltype(Map::template GetTypeImpl<type>());
 };
+
+template <auto K, typename V>
+struct Pair {
+	using Type = std::integral_constant<decltype(K), K>;
+	using Value = V;
+};
+
+template <auto K, auto V>
+constexpr Pair<K, std::integral_constant<decltype(V), V>> MakePair();
+template <auto K, typename V>
+constexpr Pair<K, V> MakePair();
 }  // namespace meta
+}  // namespace reindexer
+
+#define RDX_META_PAIR(Key, Value) decltype(meta::MakePair<Key, Value>())

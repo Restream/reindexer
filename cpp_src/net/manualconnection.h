@@ -24,14 +24,14 @@ public:
 
 	enum class conn_state { init, connecting, connected };
 
-	manual_connection(int fd, size_t rd_buf_size, bool enable_stat);
-	virtual ~manual_connection();
+	manual_connection(size_t rd_buf_size, bool enable_stat);
+	virtual ~manual_connection() = default;
 
 	void set_connect_timeout(std::chrono::milliseconds timeout) noexcept { connect_timeout_ = timeout; }
 	void close_conn(int err);
 	void attach(ev::dynamic_loop &loop) noexcept;
 	void detach() noexcept;
-	void restart(int fd);
+	void restart(socket &&s);
 
 	template <typename buf_t>
 	void async_read(buf_t &data, size_t cnt, async_cb_t cb) {
@@ -59,7 +59,7 @@ public:
 		};
 		return async_write_impl<buf_t, decltype(l), suspend_switch_policy>(data, std::move(l), send_now);
 	}
-	int async_connect(std::string_view addr) noexcept;
+	int async_connect(std::string_view addr, socket_domain type) noexcept;
 	conn_state state() const noexcept { return state_; }
 	int socket_last_error() const noexcept { return sock_.last_error(); }
 

@@ -8,14 +8,11 @@
 
 #include "cgocancelcontextpool.h"
 #include "core/cjson/baseencoder.h"
-#include "core/selectfunc/selectfuncparser.h"
-#include "debug/allocdebug.h"
 #include "estl/syncpool.h"
 #include "reindexer_version.h"
 #include "resultserializer.h"
 #include "tools/logger.h"
 #include "tools/semversion.h"
-#include "tools/stringstools.h"
 
 using namespace reindexer;
 const int kQueryResultsPoolSize = 1024;
@@ -28,6 +25,7 @@ static Error err_not_init(errNotValid, "Reindexer db has not initialized");
 static Error err_too_many_queries(errLogic, "Too many parallel queries");
 
 static std::atomic<BindingCapabilities> bindingCaps;
+static_assert(std::atomic<BindingCapabilities>::is_always_lock_free, "Expected lockfree structure here");
 
 static reindexer_error error2c(const Error& err_) {
 	reindexer_error err;
@@ -266,6 +264,9 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 						case ModeDelete:
 							err = rdxKeeper.db().Delete(ns, item, *res);
 							break;
+						default:
+							err = Error(errParams, "Unexpected ItemModifyMode: %d", mode);
+							break;
 					}
 				} else {
 					switch (mode) {
@@ -280,6 +281,9 @@ reindexer_ret reindexer_modify_item_packed(uintptr_t rx, reindexer_buffer args, 
 							break;
 						case ModeDelete:
 							err = rdxKeeper.db().Delete(ns, item);
+							break;
+						default:
+							err = Error(errParams, "Unexpected ItemModifyMode: %d", mode);
 							break;
 					}
 					if (err.ok()) {
@@ -461,15 +465,6 @@ reindexer_error reindexer_set_schema(uintptr_t rx, reindexer_string nsName, rein
 	return error2c(res);
 }
 
-reindexer_error reindexer_enable_storage(uintptr_t rx, reindexer_string path, reindexer_ctx_info ctx_info) {
-	Error res = err_not_init;
-	if (rx) {
-		CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
-		res = rdxKeeper.db().EnableStorage(str2c(path));
-	}
-	return error2c(res);
-}
-
 // TODO: Rename this method, when all the connectors will support new version of connect
 reindexer_error reindexer_connect_v4(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers,
 									 BindingCapabilities caps) {
@@ -539,17 +534,14 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 			Serializer ser(in.data, in.len);
 			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
-			Query q;
-			q.Deserialize(ser);
+			Query q = Query::Deserialize(ser);
 			while (!ser.Eof()) {
-				JoinedQuery q1;
-				q1.joinType = JoinType(ser.GetVarUint());
-				q1.Deserialize(ser);
-				q1.debugLevel = q.debugLevel;
+				const auto joinType = JoinType(ser.GetVarUint());
+				JoinedQuery q1{joinType, Query::Deserialize(ser)};
 				if (q1.joinType == JoinType::Merge) {
-					q.mergeQueries_.emplace_back(std::move(q1));
+					q.Merge(std::move(q1));
 				} else {
-					q.joinQueries_.emplace_back(std::move(q1));
+					q.AddJoinQuery(std::move(q1));
 				}
 			}
 
@@ -558,7 +550,7 @@ reindexer_ret reindexer_select_query(uintptr_t rx, struct reindexer_buffer in, i
 				return ret2c(err_too_many_queries, out);
 			}
 			err = rdxKeeper.db().Select(q, *result);
-			if (q.debugLevel >= LogError && err.code() != errOK) logPrintf(LogError, "Query error %s", err.what());
+			if (q.GetDebugLevel() >= LogError && err.code() != errOK) logPrintf(LogError, "Query error %s", err.what());
 			if (err.ok()) {
 				results2c(std::move(result), &out, as_json, pt_versions, pt_versions_count);
 			} else {
@@ -583,16 +575,15 @@ reindexer_ret reindexer_delete_query(uintptr_t rx, reindexer_buffer in, reindexe
 			Serializer ser(in.data, in.len);
 			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
-			Query q;
+			Query q = Query::Deserialize(ser);
 			q.type_ = QueryDelete;
-			q.Deserialize(ser);
 
 			auto result{new_results(false)};
 			if (!result) {
 				return ret2c(err_too_many_queries, out);
 			}
 			res = rdxKeeper.db().Delete(q, *result);
-			if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
+			if (q.GetDebugLevel() >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
 			if (res.ok()) {
 				results2c(std::move(result), &out);
 			}
@@ -612,15 +603,14 @@ reindexer_ret reindexer_update_query(uintptr_t rx, reindexer_buffer in, reindexe
 			Serializer ser(in.data, in.len);
 			CGORdxCtxKeeper rdxKeeper(rx, ctx_info, ctx_pool);
 
-			Query q;
-			q.Deserialize(ser);
+			Query q = Query::Deserialize(ser);
 			q.type_ = QueryUpdate;
 			auto result{new_results(false)};
 			if (!result) {
 				return ret2c(err_too_many_queries, out);
 			}
 			res = rdxKeeper.db().Update(q, *result);
-			if (q.debugLevel >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
+			if (q.GetDebugLevel() >= LogError && res.code() != errOK) logPrintf(LogError, "Query error %s", res.what());
 			if (res.ok()) {
 				int32_t ptVers = -1;
 				results2c(std::move(result), &out, 0, &ptVers, 1);
@@ -642,9 +632,8 @@ reindexer_error reindexer_delete_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 		return error2c(errOK);
 	}
 	Serializer ser(in.data, in.len);
-	Query q;
 	try {
-		q.Deserialize(ser);
+		Query q = Query::Deserialize(ser);
 		q.type_ = QueryDelete;
 
 		Error err = trw->tr_.Modify(std::move(q));
@@ -664,9 +653,8 @@ reindexer_error reindexer_update_query_tx(uintptr_t rx, uintptr_t tr, reindexer_
 		return error2c(errOK);
 	}
 	Serializer ser(in.data, in.len);
-	Query q;
 	try {
-		q.Deserialize(ser);
+		Query q = Query::Deserialize(ser);
 		q.type_ = QueryUpdate;
 
 		Error err = trw->tr_.Modify(std::move(q));

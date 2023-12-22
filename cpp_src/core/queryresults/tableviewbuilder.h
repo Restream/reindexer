@@ -2,15 +2,13 @@
 
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <list>
 #include <string>
 #include <unordered_map>
 #include <vector>
 #include "estl/span.h"
-#include "tools/errors.h"
 #include "tools/terminalutils.h"
-
-#include <numeric>
 
 namespace reindexer {
 

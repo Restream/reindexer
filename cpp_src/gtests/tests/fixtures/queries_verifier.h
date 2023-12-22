@@ -26,10 +26,13 @@ protected:
 		std::string name;
 		reindexer::KeyValueType type;
 	};
-	void Verify(const reindexer::QueryResults& qr, const reindexer::Query& query, reindexer::Reindexer& rx) {
-		Verify(qr.ToLocalQr(), query, rx);
+	using IndexesData = std::unordered_map<std::string, std::vector<FieldData>>;
+
+	void Verify(const reindexer::QueryResults& qr, reindexer::Query&& q, reindexer::Reindexer& rx) {
+		Verify(qr.ToLocalQr(), std::move(q), rx);
 	}
-	void Verify(const reindexer::LocalQueryResults& qr, const reindexer::Query& query, reindexer::Reindexer& rx) {
+	void Verify(const reindexer::LocalQueryResults& qr, reindexer::Query&& q, reindexer::Reindexer& rx) {
+		auto query = std::move(q);
 		std::unordered_set<std::vector<reindexer::VariantArray>, PkHash> pks;
 		std::unordered_map<std::string, std::unordered_set<std::string>> distincts;
 		QueryWatcher watcher{query};
@@ -37,20 +40,88 @@ protected:
 		reindexer::VariantArray lastSortedColumnValues;
 		lastSortedColumnValues.resize(query.sortingEntries_.size());
 
+		for (size_t i = 0; i < query.Entries().Size(); ++i) {
+			query.Entries().InvokeAppropriate<void>(
+				i,
+				reindexer::Skip<reindexer::QueryEntry, reindexer::QueryEntriesBracket, reindexer::BetweenFieldsQueryEntry,
+								reindexer::JoinQueryEntry, reindexer::AlwaysTrue, reindexer::AlwaysFalse>{},
+				[&](const reindexer::SubQueryEntry& sqe) {
+					auto subQuery = query.GetSubQuery(sqe.QueryIndex());
+					if (sqe.Condition() == CondAny || sqe.Condition() == CondEmpty) {
+						subQuery.Limit(1);
+					}
+					reindexer::QueryResults qr;
+					const auto err = rx.Select(subQuery, qr);
+					ASSERT_TRUE(err.ok()) << err.what();
+					bool res = false;
+					if (sqe.Condition() == CondAny || sqe.Condition() == CondEmpty) {
+						res = ((qr.Count() != 0) == (sqe.Condition() == CondAny));
+					} else if (qr.GetAggregationResults().empty()) {
+						assert(!subQuery.SelectFilters().empty());
+						reindexer::QueryEntry qe{subQuery.SelectFilters()[0], sqe.Condition(), reindexer::VariantArray(sqe.Values())};
+						const auto& indexesFields = indexesFields_[subQuery.NsName()];
+						for (auto it : qr) {
+							ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+							if (checkCondition(it.GetItem(), qe, indexesFields)) {
+								res = true;
+								break;
+							}
+						}
+					} else {
+						const auto aggRes = qr.GetAggregationResults()[0].GetValue();
+						if (aggRes) {
+							res = compareValue<BetweenFields::No>(reindexer::Variant(*aggRes), sqe.Condition(), sqe.Values(), CollateOpts(),
+																  reindexer::KeyValueType::Double{});
+						}
+					}
+					if (res) {
+						query.SetEntry<reindexer::AlwaysTrue>(i);
+					} else {
+						query.SetEntry<reindexer::AlwaysFalse>(i);
+					}
+				},
+				[&](const reindexer::SubQueryFieldEntry& sqe) {
+					auto& subQuery = query.GetSubQuery(sqe.QueryIndex());
+					reindexer::QueryResults qr;
+					const auto err = rx.Select(subQuery, qr);
+					ASSERT_TRUE(err.ok()) << err.what();
+					reindexer::VariantArray values;
+					if (qr.GetAggregationResults().empty()) {
+						ASSERT_FALSE(subQuery.SelectFilters().empty());
+						const auto& indexesFields = indexesFields_[subQuery.NsName()];
+						if (isIndexComposite(subQuery.SelectFilters()[0], indexesFields)) {
+							const auto fields = getCompositeFields(subQuery.SelectFilters()[0], indexesFields);
+							for (auto it : qr) {
+								ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+								values.emplace_back(getValues(it.GetItem(), fields));
+							}
+						} else {
+							for (auto it : qr) {
+								ASSERT_TRUE(it.Status().ok()) << it.Status().what();
+								values.emplace_back(it.GetItem()[subQuery.SelectFilters()[0]]);
+							}
+						}
+					} else {
+						ASSERT_TRUE(qr.GetAggregationResults()[0].GetValue().has_value());
+						values.emplace_back(*qr.GetAggregationResults()[0].GetValue());
+					}
+					query.SetEntry<reindexer::QueryEntry>(i, sqe.FieldName(), sqe.Condition(), std::move(values));
+				});
+		}
 		auto joinedSelectors = getJoinedSelectors(query);
 		for (auto& js : joinedSelectors) {
 			const reindexer::Error err = rx.Select(js.JoinQuery(), js.QueryResults());
 			ASSERT_TRUE(err.ok()) << err.what();
-			Verify(js.QueryResults().ToLocalQr(), js.JoinQuery(), rx);
+			Verify(js.QueryResults().ToLocalQr(), reindexer::Query(static_cast<const reindexer::Query&>(js.JoinQuery())), rx);
 		}
-		const auto& indexesFields = indexesFields_[query._namespace];
+		const auto& indexesFields = indexesFields_[query.NsName()];
 		for (size_t i = 0; i < qr.Count(); ++i) {
 			reindexer::Item itemr(qr[i].GetItem(false));
 
-			auto pk = getPk(itemr, query._namespace);
+			auto pk = getPk(itemr, query.NsName());
 			EXPECT_TRUE(pks.insert(pk).second) << "Duplicated primary key: " + getPkString(pk);
 
-			InsertedItemsByPk& insertedItemsByPk = insertedItems_[query._namespace];
+			InsertedItemsByPk& insertedItemsByPk = insertedItems_[query.NsName()];
 			auto itInsertedItem = insertedItemsByPk.find(pk);
 			EXPECT_NE(itInsertedItem, insertedItemsByPk.end()) << "Item with such PK has not been inserted yet: " + getPkString(pk);
 			if (itInsertedItem != insertedItemsByPk.end()) {
@@ -63,7 +134,8 @@ protected:
 																   << "explain: " << qr.GetExplainResults();
 			}
 
-			bool conditionsSatisfied = checkConditions(itemr, query.entries.cbegin(), query.entries.cend(), joinedSelectors, indexesFields);
+			bool conditionsSatisfied =
+				checkConditions(itemr, query.Entries().cbegin(), query.Entries().cend(), joinedSelectors, indexesFields);
 			if (!conditionsSatisfied) {
 				std::stringstream ss;
 				ss << "Item doesn't match conditions: " << itemr.GetJSON() << std::endl;
@@ -80,7 +152,7 @@ protected:
 				ss << "explain: " << qr.GetExplainResults();
 				EXPECT_TRUE(conditionsSatisfied) << ss.str();
 				TEST_COUT << query.GetSQL() << std::endl;
-				printFailedQueryEntries(query.entries, joinedSelectors);
+				printFailedQueryEntries(query.Entries(), joinedSelectors, query.GetSubQueries());
 			}
 			EXPECT_TRUE(checkDistincts(itemr, query, distincts, indexesFields)) << "Distinction check failed";
 
@@ -145,17 +217,17 @@ protected:
 		// Check non found items, to not match conditions
 
 		// If query has limit and offset, skip verification
-		if (query.start != 0 || query.count != reindexer::QueryEntry::kDefaultLimit) return;
+		if (query.HasOffset() || query.HasLimit()) return;
 
 		// If query has distinct, skip verification
 		for (const auto& agg : query.aggregations_) {
 			if (agg.Type() == AggDistinct) return;
 		}
 
-		for (auto& insertedItem : insertedItems_[query._namespace]) {
+		for (auto& insertedItem : insertedItems_[query.NsName()]) {
 			if (pks.find(insertedItem.first) != pks.end()) continue;
 			bool conditionsSatisfied =
-				checkConditions(insertedItem.second, query.entries.cbegin(), query.entries.cend(), joinedSelectors, indexesFields);
+				checkConditions(insertedItem.second, query.Entries().cbegin(), query.Entries().cend(), joinedSelectors, indexesFields);
 
 			EXPECT_FALSE(conditionsSatisfied) << "Item match conditions (found " << qr.Count()
 											  << " items), but not found: " << insertedItem.second.GetJSON() << std::endl
@@ -164,7 +236,7 @@ protected:
 		}
 
 		auto aggResults = qr.GetAggregationResults();
-		if (query.calcTotal != ModeNoTotal) {
+		if (query.HasCalcTotal()) {
 			// calcTotal from version 3.0.2  also return total count in aggregations, so we have remove it from here for
 			// clean compare aggresults with aggregations
 			aggResults.pop_back();
@@ -235,13 +307,15 @@ protected:
 private:
 	bool checkConditions(const reindexer::Item& item, reindexer::QueryEntries::const_iterator it,
 						 reindexer::QueryEntries::const_iterator to, const std::vector<JoinedSelectorMock>& joinedSelectors,
-						 const std::unordered_map<std::string, std::vector<FieldData>>& indexesFields) {
+						 const IndexesData& indexesFields) {
 		bool result = true;
 		for (; it != to; ++it) {
 			OpType op = it->operation;
 			if (op != OpOr && !result) return false;
 			bool skip = false;
 			bool const iterationResult = it->InvokeAppropriate<bool>(
+				[](const reindexer::SubQueryEntry&) -> bool { assertrx(0); },
+				[](const reindexer::SubQueryFieldEntry&) -> bool { assertrx(0); },
 				[&](const reindexer::QueryEntriesBracket&) {
 					if (op == OpOr && result && !containsJoins(it.cbegin(), it.cend())) {
 						skip = true;
@@ -250,7 +324,7 @@ private:
 					return checkConditions(item, it.cbegin(), it.cend(), joinedSelectors, indexesFields);
 				},
 				[&](const reindexer::QueryEntry& qe) {
-					if ((op == OpOr && result) || qe.distinct) {
+					if ((op == OpOr && result) || qe.Distinct()) {
 						skip = true;
 						return false;
 					}
@@ -273,7 +347,7 @@ private:
 					}
 					return checkCondition(item, qe, indexesFields);
 				},
-				[](const reindexer::AlwaysFalse&) { return false; });
+				[](const reindexer::AlwaysFalse&) noexcept { return false; }, [](const reindexer::AlwaysTrue&) noexcept { return true; });
 			if (skip) continue;
 			switch (op) {
 				case OpNot:
@@ -290,8 +364,7 @@ private:
 		return result;
 	}
 
-	static std::string getFieldName(const std::string& indexName,
-									const std::unordered_map<std::string, std::vector<FieldData>>& indexesFields) {
+	static std::string getFieldName(const std::string& indexName, const IndexesData& indexesFields) {
 		if (const auto it = indexesFields.find(indexName); it == indexesFields.end()) {
 			return indexName;
 		} else {
@@ -303,15 +376,15 @@ private:
 
 	static bool checkDistincts(reindexer::Item& item, const reindexer::Query& qr,
 							   std::unordered_map<std::string, std::unordered_set<std::string>>& distincts,
-							   const std::unordered_map<std::string, std::vector<FieldData>>& indexesFields) {
+							   const IndexesData& indexesFields) {
 		bool result = true;
 		// check only on root level
-		for (auto it = qr.entries.cbegin(); it != qr.entries.cend(); ++it) {
-			if (!it->HoldsOrReferTo<reindexer::QueryEntry>()) continue;
+		for (auto it = qr.Entries().cbegin(); it != qr.Entries().cend(); ++it) {
+			if (!it->Is<reindexer::QueryEntry>()) continue;
 			const reindexer::QueryEntry& qentry = it->Value<reindexer::QueryEntry>();
-			if (!qentry.distinct) continue;
+			if (!qentry.Distinct()) continue;
 
-			const std::string fieldName = getFieldName(qentry.index, indexesFields);
+			const std::string fieldName = getFieldName(qentry.FieldName(), indexesFields);
 			reindexer::VariantArray fieldValue = item[fieldName];
 			EXPECT_EQ(fieldValue.size(), 1) << "Distinct field's size cannot be > 1";
 			if (fieldValue.empty()) return false;
@@ -319,30 +392,30 @@ private:
 			std::unordered_set<std::string>& values = distincts[fieldName];
 			reindexer::Variant keyValue(fieldValue[0]);
 			bool inserted = values.insert(keyValue.As<std::string>()).second;
-			EXPECT_TRUE(inserted) << "Duplicate distinct item for index: " << keyValue.As<std::string>() << ", " << qentry.idxNo;
+			EXPECT_TRUE(inserted) << "Duplicate distinct item for index: " << keyValue.As<std::string>() << ", " << qentry.FieldName()
+								  << " (" << qentry.IndexNo() << ')';
 			result &= inserted;
 		}
 		return result;
 	}
 
-	bool checkCondition(const reindexer::Item& item, const JoinedSelectorMock& joinedSelector,
-						const std::unordered_map<std::string, std::vector<FieldData>>& leftIndexesFields,
-						const std::unordered_map<std::string, std::vector<FieldData>>& rightIndexesFields) {
+	bool checkCondition(const reindexer::Item& item, const JoinedSelectorMock& joinedSelector, const IndexesData& leftIndexesFields,
+						const IndexesData& rightIndexesFields) {
 		for (auto it : joinedSelector.QueryResults()) {
 			const reindexer::Item& rightItem = it.GetItem(false);
 			bool result = true;
 			const auto& joinEntries{joinedSelector.JoinQuery().joinEntries_};
 			assertrx(!joinEntries.empty());
-			assertrx(joinEntries[0].op_ != OpOr);
+			assertrx(joinEntries[0].Operation() != OpOr);
 			for (const auto& je : joinEntries) {
-				if (je.op_ == OpOr) {
+				if (je.Operation() == OpOr) {
 					if (result) continue;
 				} else if (!result) {
 					break;
 				}
-				const bool curResult =
-					checkOnCondition(item, rightItem, je.index_, je.joinIndex_, je.condition_, leftIndexesFields, rightIndexesFields);
-				switch (je.op_) {
+				const bool curResult = checkOnCondition(item, rightItem, je.LeftFieldName(), je.RightFieldName(), je.Condition(),
+														leftIndexesFields, rightIndexesFields);
+				switch (je.Operation()) {
 					case OpAnd:
 						result = curResult;
 						break;
@@ -362,9 +435,8 @@ private:
 	}
 
 	bool checkOnCondition(const reindexer::Item& leftItem, const reindexer::Item& rightItem, const std::string& leftIndexName,
-						  const std::string& rightIndexName, CondType cond,
-						  const std::unordered_map<std::string, std::vector<FieldData>>& leftIndexesFields,
-						  const std::unordered_map<std::string, std::vector<FieldData>>& rightIndexesFields) {
+						  const std::string& rightIndexName, CondType cond, const IndexesData& leftIndexesFields,
+						  const IndexesData& rightIndexesFields) {
 		const CollateOpts& collate = indexesCollates[leftIndexName];
 		const std::string leftFieldName = getFieldName(leftIndexName, leftIndexesFields);
 		const std::string rightFieldName = getFieldName(rightIndexName, rightIndexesFields);
@@ -378,21 +450,20 @@ private:
 		return false;
 	}
 
-	bool checkCondition(const reindexer::Item& item, const reindexer::QueryEntry& qentry,
-						const std::unordered_map<std::string, std::vector<FieldData>>& indexesFields) {
+	bool checkCondition(const reindexer::Item& item, const reindexer::QueryEntry& qentry, const IndexesData& indexesFields) {
 		EXPECT_GT(item.NumFields(), 0);
-		if (isGeomConditions(qentry.condition)) {
+		if (isGeomConditions(qentry.Condition())) {
 			return checkGeomConditions(item, qentry, indexesFields);
 		}
-		const CollateOpts& collate = indexesCollates[qentry.index];
+		const CollateOpts& collate = indexesCollates[qentry.FieldName()];
 
-		if (isIndexComposite(item, qentry)) {
-			return checkCompositeValues(item, qentry, collate, indexesFields);
+		if (isIndexComposite(qentry.FieldName(), indexesFields)) {
+			return checkCompositeCondition(item, qentry, collate, indexesFields);
 		} else {
 			std::string fieldName;
 			reindexer::KeyValueType fieldType = reindexer::KeyValueType::Undefined{};
-			if (const auto it = indexesFields.find(qentry.index); it == indexesFields.end()) {
-				fieldName = qentry.index;
+			if (const auto it = indexesFields.find(qentry.FieldName()); it == indexesFields.end()) {
+				fieldName = qentry.FieldName();
 			} else {
 				EXPECT_EQ(it->second.size(), 1);
 				assertrx(!it->second.empty());
@@ -400,13 +471,13 @@ private:
 				fieldType = it->second[0].type;
 			}
 			reindexer::VariantArray fieldValues = item[fieldName];
-			switch (qentry.condition) {
+			switch (qentry.Condition()) {
 				case CondEmpty:
 					return fieldValues.size() == 0;
 				case CondAny:
 					return fieldValues.size() > 0;
 				case CondAllSet:
-					return checkAllSet<BetweenFields::No>(fieldValues, qentry.values, collate, fieldType);
+					return checkAllSet<BetweenFields::No>(fieldValues, qentry.Values(), collate, fieldType);
 				case CondEq:
 				case CondLt:
 				case CondLe:
@@ -417,7 +488,9 @@ private:
 				case CondLike:
 				case CondDWithin:
 					for (const reindexer::Variant& fieldValue : fieldValues) {
-						if (compareValue<BetweenFields::No>(fieldValue, qentry.condition, qentry.values, collate, fieldType)) return true;
+						if (compareValue<BetweenFields::No>(fieldValue, qentry.Condition(), qentry.Values(), collate, fieldType)) {
+							return true;
+						}
 					}
 			}
 		}
@@ -427,16 +500,15 @@ private:
 
 	static bool isGeomConditions(CondType cond) noexcept { return cond == CondType::CondDWithin; }
 
-	static bool checkGeomConditions(const reindexer::Item& item, const reindexer::QueryEntry& qentry,
-									const std::unordered_map<std::string, std::vector<FieldData>>& indexesFields) {
-		assertrx(qentry.values.size() == 2);
-		const reindexer::VariantArray coordinates = item[getFieldName(qentry.index, indexesFields)];
+	static bool checkGeomConditions(const reindexer::Item& item, const reindexer::QueryEntry& qentry, const IndexesData& indexesFields) {
+		assertrx(qentry.Values().size() == 2);
+		const reindexer::VariantArray coordinates = item[getFieldName(qentry.FieldName(), indexesFields)];
 		if (coordinates.empty()) return false;
 		assertrx(coordinates.size() == 2);
 		const double x = coordinates[0].As<double>();
 		const double y = coordinates[1].As<double>();
-		if (qentry.condition == CondDWithin) {
-			return DWithin(reindexer::Point{x, y}, qentry.values[0].As<reindexer::Point>(), qentry.values[1].As<double>());
+		if (qentry.Condition() == CondDWithin) {
+			return DWithin(reindexer::Point{x, y}, qentry.Values()[0].As<reindexer::Point>(), qentry.Values()[1].As<double>());
 		} else {
 			assertrx(0);
 			abort();
@@ -451,25 +523,24 @@ private:
 		return kvalues;
 	}
 
-	static std::vector<FieldData> getCompositeFields(const std::string& indexName,
-													 const std::unordered_map<std::string, std::vector<FieldData>>& indexesFields) {
+	static const std::vector<FieldData>& getCompositeFields(const std::string& indexName, const IndexesData& indexesFields) {
 		const auto it = indexesFields.find(indexName);
 		assert(it != indexesFields.end());
 		return it->second;
 	}
 
-	static bool checkCompositeValues(const reindexer::Item& item, const reindexer::QueryEntry& qentry, const CollateOpts& opts,
-									 const std::unordered_map<std::string, std::vector<FieldData>>& indexesFields) {
-		const auto fields = getCompositeFields(qentry.index, indexesFields);
+	static bool checkCompositeCondition(const reindexer::Item& item, const reindexer::QueryEntry& qentry, const CollateOpts& opts,
+										const IndexesData& indexesFields) {
+		const auto fields = getCompositeFields(qentry.FieldName(), indexesFields);
 
 		const reindexer::VariantArray& indexesValues = getValues(item, fields);
-		const reindexer::VariantArray& keyValues = qentry.values;
+		const reindexer::VariantArray& keyValues = qentry.Values();
 
-		switch (qentry.condition) {
+		switch (qentry.Condition()) {
 			case CondEmpty:
-				return indexesValues.size() == 0;
+				return indexesValues.empty();
 			case CondAny:
-				return indexesValues.size() > 0;
+				return !indexesValues.empty();
 			case CondGe:
 				assert(!keyValues.empty());
 				return compareCompositeValues(indexesValues, keyValues[0], opts) >= 0;
@@ -493,10 +564,10 @@ private:
 				}
 				return false;
 			case CondAllSet:
-				for (const reindexer::Variant& kv : indexesValues) {
+				for (const reindexer::Variant& kv : keyValues) {
 					if (compareCompositeValues(indexesValues, kv, opts) != 0) return false;
 				}
-				return !indexesValues.empty();
+				return !keyValues.empty();
 			case CondLike:
 			case CondDWithin:
 			default:
@@ -643,51 +714,42 @@ private:
 	}
 
 	bool checkCompositeCondition(const reindexer::Item& item, const reindexer::BetweenFieldsQueryEntry& qentry,
-								 const std::unordered_map<std::string, std::vector<FieldData>>& indexesFields) {
-		const auto firstFields = getCompositeFields(qentry.firstIndex, indexesFields);
-		const auto secondFields = getCompositeFields(qentry.secondIndex, indexesFields);
+								 const IndexesData& indexesFields) {
+		const auto& firstFields = getCompositeFields(qentry.LeftFieldName(), indexesFields);
+		const auto& secondFields = getCompositeFields(qentry.RightFieldName(), indexesFields);
 		assertrx(firstFields.size() == secondFields.size());
 
-		reindexer::BetweenFieldsQueryEntry qe{qentry};
 		for (size_t i = 0; i < firstFields.size(); ++i) {
-			qe.firstIndex = firstFields[i].name;
-			qe.secondIndex = secondFields[i].name;
-			if (!checkCondition(item, qe, indexesFields)) return false;
+			if (!checkCondition(item,
+								reindexer::BetweenFieldsQueryEntry{std::string{firstFields[i].name}, qentry.Condition(),
+																   std::string{secondFields[i].name}},
+								indexesFields))
+				return false;
 		}
 		return !firstFields.empty();
 	}
 
-	static bool isIndexComposite(const reindexer::BetweenFieldsQueryEntry& qe,
-								 const std::unordered_map<std::string, std::vector<FieldData>>& indexesFields) {
-		if (qe.firstIndex.find('+') != std::string::npos || qe.secondIndex.find('+') != std::string::npos) return true;
-		if (const auto it = indexesFields.find(qe.firstIndex); it != indexesFields.end() && it->second.size() > 1) return true;
-		if (const auto it = indexesFields.find(qe.secondIndex); it != indexesFields.end() && it->second.size() > 1) return true;
-		return false;
+	static bool isIndexComposite(const std::string& indexName, const IndexesData& indexesFields) {
+		const auto it = indexesFields.find(indexName);
+		return it != indexesFields.end() && it->second.size() > 1;
 	}
 
-	static bool isIndexComposite(const reindexer::Item& item, const reindexer::QueryEntry& qentry) {
-		if (qentry.values.empty()) return false;
-		if (qentry.idxNo < 0) {
-			return qentry.values.size() && (qentry.values[0].Type().Is<reindexer::KeyValueType::Composite>() ||
-											qentry.values[0].Type().Is<reindexer::KeyValueType::Tuple>());
-		}
-		const auto indexType = item.GetIndexType(qentry.idxNo);
-		return indexType.Is<reindexer::KeyValueType::Composite>() || indexType.Is<reindexer::KeyValueType::Tuple>();
+	static bool isIndexComposite(const reindexer::BetweenFieldsQueryEntry& qe, const IndexesData& indexesFields) {
+		return isIndexComposite(qe.LeftFieldName(), indexesFields) || isIndexComposite(qe.RightFieldName(), indexesFields);
 	}
 
-	bool checkCondition(const reindexer::Item& item, const reindexer::BetweenFieldsQueryEntry& qentry,
-						const std::unordered_map<std::string, std::vector<FieldData>>& indexesFields) {
+	bool checkCondition(const reindexer::Item& item, const reindexer::BetweenFieldsQueryEntry& qentry, const IndexesData& indexesFields) {
 		EXPECT_GT(item.NumFields(), 0);
 		assertrx(!isGeomConditions(qentry.Condition()));
 
-		const CollateOpts& collate = indexesCollates[qentry.firstIndex];
+		const CollateOpts& collate = indexesCollates[qentry.LeftFieldName()];
 
 		if (isIndexComposite(qentry, indexesFields)) {
 			return checkCompositeCondition(item, qentry, indexesFields);
 		}
 
-		const std::string firstField = getFieldName(qentry.firstIndex, indexesFields);
-		const std::string secondField = getFieldName(qentry.secondIndex, indexesFields);
+		const std::string firstField = getFieldName(qentry.LeftFieldName(), indexesFields);
+		const std::string secondField = getFieldName(qentry.RightFieldName(), indexesFields);
 		reindexer::VariantArray lValues = item[firstField];
 		reindexer::VariantArray rValues = item[secondField];
 		switch (qentry.Condition()) {
@@ -801,9 +863,14 @@ private:
 	static bool containsJoins(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator end) noexcept {
 		for (; it != end; ++it) {
 			if (it->InvokeAppropriate<bool>(
-					[&it](const reindexer::QueryEntriesBracket&) { return containsJoins(it.cbegin(), it.cend()); },
-					[](const reindexer::JoinQueryEntry&) { return true; }, [](const reindexer::QueryEntry&) { return false; },
-					[](const reindexer::BetweenFieldsQueryEntry&) { return false; }, [](const reindexer::AlwaysFalse&) { return false; })) {
+					[&it](const reindexer::QueryEntriesBracket&) noexcept { return containsJoins(it.cbegin(), it.cend()); },
+					[](const reindexer::JoinQueryEntry&) noexcept { return true; },
+					[](const reindexer::QueryEntry&) noexcept { return false; },
+					[](const reindexer::BetweenFieldsQueryEntry&) noexcept { return false; },
+					[](const reindexer::AlwaysFalse&) noexcept { return false; },
+					[](const reindexer::AlwaysTrue&) noexcept { return true; },
+					[](const reindexer::SubQueryEntry&) noexcept { return false; },
+					[](const reindexer::SubQueryFieldEntry&) noexcept { return false; })) {
 				return true;
 			}
 		}
@@ -812,10 +879,10 @@ private:
 
 	static std::vector<JoinedSelectorMock> getJoinedSelectors(const reindexer::Query& query) {
 		std::vector<JoinedSelectorMock> result;
-		result.reserve(query.joinQueries_.size());
-		for (auto jq : query.joinQueries_) {
-			jq.count = reindexer::QueryEntry::kDefaultLimit;
-			jq.start = reindexer::QueryEntry::kDefaultOffset;
+		result.reserve(query.GetJoinQueries().size());
+		for (auto jq : query.GetJoinQueries()) {
+			jq.Limit(reindexer::QueryEntry::kDefaultLimit);
+			jq.Offset(reindexer::QueryEntry::kDefaultOffset);
 			jq.sortingEntries_.clear();
 			jq.forcedSortOrder_.clear();
 			result.emplace_back(InnerJoin, std::move(jq));
@@ -856,23 +923,31 @@ private:
 		return it->second;
 	}
 
-	static void printFailedQueryEntries(const reindexer::QueryEntries& failedEntries, const std::vector<JoinedSelectorMock>& js) {
+	static void printFailedQueryEntries(const reindexer::QueryEntries& failedEntries, const std::vector<JoinedSelectorMock>& js,
+										const std::vector<reindexer::Query>& subQueries) {
 		TestCout() << "Failed entries: ";
-		printQueryEntries(failedEntries.cbegin(), failedEntries.cend(), js);
+		printQueryEntries(failedEntries.cbegin(), failedEntries.cend(), js, subQueries);
 		TestCout() << std::endl << std::endl;
 	}
 
 	static void printQueryEntries(reindexer::QueryEntries::const_iterator it, reindexer::QueryEntries::const_iterator to,
-								  const std::vector<JoinedSelectorMock>& js) {
+								  const std::vector<JoinedSelectorMock>& js, const std::vector<reindexer::Query>& subQueries) {
 		TestCout() << "(";
 		for (; it != to; ++it) {
 			TestCout() << (it->operation == OpAnd ? "AND" : (it->operation == OpOr ? "OR" : "NOT"));
 			it->InvokeAppropriate<void>(
-				[&it, &js](const reindexer::QueryEntriesBracket&) { printQueryEntries(it.cbegin(), it.cend(), js); },
+				[&](const reindexer::QueryEntriesBracket&) { printQueryEntries(it.cbegin(), it.cend(), js, subQueries); },
 				[](const reindexer::QueryEntry& qe) { TestCout() << qe.Dump(); },
 				[&js](const reindexer::JoinQueryEntry& jqe) { TestCout() << jqe.Dump(js); },
 				[](const reindexer::BetweenFieldsQueryEntry& qe) { TestCout() << qe.Dump(); },
-				[](const reindexer::AlwaysFalse&) { TestCout() << "Always False"; });
+				[&subQueries](const reindexer::SubQueryEntry& sqe) {
+					TestCout() << '(' << subQueries.at(sqe.QueryIndex()).GetSQL() << ") " << sqe.Condition();
+				},
+				[&subQueries](const reindexer::SubQueryFieldEntry& sqe) {
+					TestCout() << sqe.FieldName() << ' ' << sqe.Condition() << " (" << subQueries.at(sqe.QueryIndex()).GetSQL() << ')';
+				},
+				[](const reindexer::AlwaysFalse&) { TestCout() << "Always False"; },
+				[](const reindexer::AlwaysTrue&) { TestCout() << "Always True"; });
 		}
 		TestCout() << ")";
 	}
@@ -918,5 +993,5 @@ private:
 	}
 
 	std::unordered_map<std::string, std::vector<std::string>> ns2pk_;
-	std::unordered_map<std::string, std::unordered_map<std::string, std::vector<FieldData>>> indexesFields_;
+	std::unordered_map<std::string, IndexesData> indexesFields_;
 };

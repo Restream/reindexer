@@ -6,7 +6,7 @@
 
 namespace reindexer_server {
 
-class ClientsStats : public reindexer::IClientsStats {
+class ClientsStats final : public reindexer::IClientsStats {
 public:
 	void GetClientInfo(std::vector<reindexer::ClientStat>& datas) override final;
 	void AddConnection(int64_t connectionId, reindexer::ClientConnectionStat&& conn) override final;

@@ -176,8 +176,7 @@ TEST_F(SnapshotTestApi, SnapshotInvalidation) {
 		auto err = rxClient.GetSnapshot(kNsName, SnapshotOpts(), sn);
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		err = rxClient.Stop();
-		ASSERT_TRUE(err.ok()) << err.what();
+		rxClient.Stop();
 		Connect(loop, rxClient);
 		err = rxClient.Status(true);
 		ASSERT_TRUE(err.ok()) << err.what();

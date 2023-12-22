@@ -1,6 +1,7 @@
 #pragma once
 
 #include "splitter.h"
+#include "vendor/sort/pdqsort.hpp"
 
 namespace reindexer {
 
@@ -19,12 +20,12 @@ public:
 			sortedByX[i] = i;
 			sortedByY[i] = i;
 		}
-		std::sort(std::begin(sortedByX), std::end(sortedByX), [this](size_t lhs, size_t rhs) {
+		boost::sort::pdqsort(std::begin(sortedByX), std::end(sortedByX), [this](size_t lhs, size_t rhs) {
 			const auto lbr = getBoundRect(lhs);
 			const auto rbr = getBoundRect(rhs);
 			return (approxEqual(lbr.Left(), rbr.Left()) && lbr.Right() < rbr.Right()) || lbr.Left() < rbr.Left();
 		});
-		std::sort(std::begin(sortedByY), std::end(sortedByY), [this](size_t lhs, size_t rhs) {
+		boost::sort::pdqsort(std::begin(sortedByY), std::end(sortedByY), [this](size_t lhs, size_t rhs) {
 			const auto lbr = getBoundRect(lhs);
 			const auto rbr = getBoundRect(rhs);
 			return (approxEqual(lbr.Bottom(), rbr.Bottom()) && lbr.Top() < rbr.Top()) || lbr.Bottom() < rbr.Bottom();

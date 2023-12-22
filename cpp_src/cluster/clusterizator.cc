@@ -1,7 +1,7 @@
 #include "clusterizator.h"
 #include <assert.h>
 #include <unordered_set>
-#include "core/reindexerimpl.h"
+#include "core/reindexer_impl/reindexerimpl.h"
 
 namespace reindexer {
 namespace cluster {

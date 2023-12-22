@@ -454,7 +454,7 @@ void ApiTvSimpleComparators::Query4CondCachedTotal(benchmark::State& state) {
 void ApiTvSimpleComparators::Query4CondRange(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		int startTime = random<int>(0, 50000);
+		int startTime = random<int>(0, 30000);
 		int endTime = startTime + 10000;
 		Query q(nsdef_.name);
 		q.Limit(20)
@@ -473,7 +473,7 @@ void ApiTvSimpleComparators::Query4CondRange(benchmark::State& state) {
 void ApiTvSimpleComparators::Query4CondRangeTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		int startTime = random<int>(0, 50000);
+		int startTime = random<int>(0, 30000);
 		int endTime = startTime + 10000;
 		Query q(nsdef_.name);
 		q.Limit(20)
@@ -493,7 +493,7 @@ void ApiTvSimpleComparators::Query4CondRangeTotal(benchmark::State& state) {
 void ApiTvSimpleComparators::Query4CondRangeCachedTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		int startTime = random<int>(0, 50000);
+		int startTime = random<int>(0, 30000);
 		int endTime = startTime + 10000;
 		Query q(nsdef_.name);
 		q.Limit(20)

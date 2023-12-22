@@ -68,7 +68,10 @@ typedef enum QueryItemType {
 	QueryUpdateFieldV2 = 25,
 	QueryBetweenFieldsCondition = 26,
 	QueryAlwaysFalseCondition = 27,
-	QueryLocal = 28,
+	QueryAlwaysTrueCondition = 28,
+	QuerySubQueryCondition = 29,
+	QueryFieldSubQueryCondition = 30,
+	QueryLocal = 31,
 } QueryItemType;
 
 typedef enum QuerySerializeMode {
@@ -158,7 +161,8 @@ enum QueryResultItemType {
 	QueryResultAggregation = 1,
 	QueryResultExplain = 2,
 	QueryResultShardingVersion = 3,
-	QueryResultShardId = 4
+	QueryResultShardId = 4,
+	QueryResultIncarnationTags = 5,
 };
 
 enum CacheMode { CacheModeOn = 0, CacheModeAggressive = 1, CacheModeOff = 2 };
@@ -355,6 +359,7 @@ enum ShardingAlgorithmType { ByValue, ByRange };
 enum BindingCapability {
 	kBindingCapabilityQrIdleTimeouts = 1,
 	kBindingCapabilityResultsWithShardIDs = 1 << 1,
+	kBindingCapabilityIncarnationTags = 1 << 2,
 };
 
 typedef struct BindingCapabilities {
@@ -362,22 +367,15 @@ typedef struct BindingCapabilities {
 	constexpr BindingCapabilities(int64_t c = 0) noexcept : caps(c) {}
 
 	bool HasQrIdleTimeouts() const noexcept { return caps & kBindingCapabilityQrIdleTimeouts; }
-	BindingCapabilities& WithQrIdleTimeouts(bool value = true) noexcept {
-		caps = value ? caps | kBindingCapabilityQrIdleTimeouts : caps & ~int64_t(kBindingCapabilityQrIdleTimeouts);
-		return *this;
-	}
 	bool HasResultsWithShardIDs() const noexcept { return caps & kBindingCapabilityResultsWithShardIDs; }
-	BindingCapabilities& WithResultsWithShardIDs(bool value = true) noexcept {
-		caps = value ? caps | kBindingCapabilityResultsWithShardIDs : caps & ~int64_t(kBindingCapabilityResultsWithShardIDs);
-		return *this;
-	}
+	bool HasIncarnationTags() const noexcept { return caps & kBindingCapabilityIncarnationTags; }
 #endif
 	int64_t caps;
 } BindingCapabilities;
 
 typedef struct RPCQrId {
 #ifdef __cplusplus
-	explicit RPCQrId(int m = -1, int64_t u = -1) : main(m), uid(u) {}
+	explicit RPCQrId(int m = -1, int64_t u = -1) noexcept : main(m), uid(u) {}
 #endif
 	int main;
 	int64_t uid;
@@ -387,6 +385,28 @@ typedef struct RPCQrId {
 namespace ShardingKeyType {
 enum ShardingKey { ProxyOff = -2, NotSetShard = -1, NotSharded = -3 };
 }
+namespace ShardingSourceId {
+enum SourceId { NotSet = -1 };
+}
 #endif
 
 static const char kSerialPrefix[] = "_SERIAL_";
+
+// REINDEX_WITH_V3_FOLLOWERS
+enum SubscriptionOpt {
+	kSubscriptionOptIncrementSubscription = 1 << 0,
+};
+
+typedef struct SubscriptionOpts {
+#ifdef __cplusplus
+	SubscriptionOpts() : options(0) {}
+
+	bool IsIncrementSubscription() const { return options & kSubscriptionOptIncrementSubscription; }
+	SubscriptionOpts& IncrementSubscription(bool value = true) {
+		options = value ? options | kSubscriptionOptIncrementSubscription : options & ~(kSubscriptionOptIncrementSubscription);
+		return *this;
+	}
+#endif
+	uint16_t options;
+} SubscriptionOpts;
+// REINDEX_WITH_V3_FOLLOWERS

@@ -33,12 +33,13 @@ error_msg() {
 # declare dependencies arrays for systems
 osx_deps="gperftools leveldb snappy cmake git"
 centos8_debs="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
+almalinux9_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 fedora_debs=" gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 centos7_debs="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 debian_debs="build-essential g++ libunwind-dev libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
 alpine_apks="g++ snappy-dev leveldb-dev libexecinfo-dev make curl cmake unzip git"
 arch_pkgs="gcc snappy leveldb make curl cmake unzip git"
-redos_rpms="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip git cmake rpm-build"
+redos_rpms="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip git cmake rpm-build python-srpm-macros"
 
 cmake_installed () {
     info_msg "Check for installed cmake ..... "
@@ -91,6 +92,27 @@ install_osx() {
         fi
     done
     return
+}
+
+install_almalinux9() {
+    yum install -y epel-release >/dev/null 2>&1 || true
+    sed -i 's/enabled=0/enabled=1/g' /etc/yum.repos.d/almalinux-crb.repo || true
+    for pkg in ${almalinux9_rpms}
+    do
+        if rpm -qa | grep -qw ${pkg} ; then
+            info_msg "Package '$pkg' already installed. Skip ....."
+        else
+            info_msg "Installing '$pkg' package ....."
+            yum install -y ${pkg} > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                success_msg "Package '$pkg' was installed successfully."
+            else
+                error_msg "Could not install '$pkg' package. Try 'yum update && yum install $pkg'" && return 1
+            fi
+        fi
+    done
+    cmake_installed || install_cmake_linux
+    return $?
 }
 
 install_centos8() {
@@ -249,8 +271,12 @@ detect_installer() {
         local OS=$(echo ${ID} | tr '[:upper:]' '[:lower:]')
         if [ "$OS" = "ubuntu" -o "$OS" = "debian" -o "$OS" = "linuxmint" ]; then
             OS_TYPE="debian" && return
+        elif [ "$OS" = "almalinux" -a "$(echo ${ALMALINUX_MANTISBT_PROJECT} | tr '[:upper:]' '[:lower:]')" = "almalinux-9" ]; then
+            OS_TYPE="almalinux9" && return
         elif [ "$OS" = "centos" -o "$OS" = "rhel" ]; then
-            if [ "$VERSION_ID" = "8" ]; then
+            if [ "$VERSION_ID" = "9" ]; then
+                return 1
+            elif [ "$VERSION_ID" = "8" ]; then
                 OS_TYPE="centos8"
             else
                 OS_TYPE="centos7"
@@ -269,7 +295,7 @@ detect_installer() {
             return 1
         fi
     elif [ -f /etc/centos-release ]; then
-            return 1
+        return 1
     elif [ "$(uname)" == "Darwin" ]; then
         OS_TYPE="osx" && return
     else

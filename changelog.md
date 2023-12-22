@@ -1,3 +1,21 @@
+# Version 4.13.0 *beta* (22.12.2023)
+
+## Core
+- [ref] Deprecated `EnableStorage` API was removed
+
+## Replication
+- [fea] Added compatibility mode for the replication. If reindexer v4 was built with `ENABLE_V3_FOLLOWERS` cmake option, it is able to replicate to the reindexer v3 followers (v3.21.0 or newer)
+
+## Sharding
+- [fea] Sharding configuration [command](sharding.md#runtime-sharding-configuration) is now works with RAFT-cluster shards (on the empty namespaces)
+- [fix] Fixed #config-namespace rollback on the sharding configuration errors
+
+## Go connector
+- [fea] Go object cache (LRU) is now able to work with sharded clusters, RAFT-clusters and async replicas 
+
+## Ported
+- [fea/fix] Ported all the fixes from [v3.20.0](https://github.com/Restream/reindexer/releases/tag/v3.20.0) and [v3.21.0](https://github.com/Restream/reindexer/releases/tag/v3.21.0)
+
 # Version 4.12.0 *beta* (13.10.2023)
 ## Sharding
 - [fea] Added [commands](sharding.md#runtime-sharding-configuration) for the runtime sharding configuration (on the empty namespaces)

@@ -12,7 +12,7 @@ Reindexer::Reindexer(const ReindexerConfig& config, uint32_t connCount, uint32_t
 Reindexer::~Reindexer() = default;
 
 Error Reindexer::Connect(const std::string& dsn, const client::ConnectOpts& opts) { return impl_->Connect(dsn, opts); }
-Error Reindexer::Stop() { return impl_->Stop(); }
+void Reindexer::Stop() { impl_->Stop(); }
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts) {
 	return impl_->AddNamespace(nsDef, ctx_, replOpts);
 }

@@ -111,9 +111,9 @@ IndexDef::IndexDef(std::string name, JsonPaths jsonPaths, IndexType type, IndexO
 	this->FromType(type);
 }
 
-bool IndexDef::IsEqual(const IndexDef &other, bool skipConfig) const {
+bool IndexDef::IsEqual(const IndexDef &other, IndexComparison cmpType) const {
 	return name_ == other.name_ && jsonPaths_ == other.jsonPaths_ && Type() == other.Type() && fieldType_ == other.fieldType_ &&
-		   opts_.IsEqual(other.opts_, skipConfig) && expireAfter_ == other.expireAfter_;
+		   opts_.IsEqual(other.opts_, cmpType) && expireAfter_ == other.expireAfter_;
 }
 
 IndexType IndexDef::Type() const {

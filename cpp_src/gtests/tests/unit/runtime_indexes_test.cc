@@ -185,6 +185,9 @@ TEST_F(RuntimeIndexesApi, RuntimePKCompositeIndexesTest) {
 }
 
 TEST_F(RuntimeIndexesApi, RuntimeIndexesRemoveAndSelect) {
+	using reindexer::randPoint;
+	using reindexer::randBinDouble;
+
 	FillNamespaces(0, 100);
 
 	for (int i = 0; i < 5; ++i) {

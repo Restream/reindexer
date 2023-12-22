@@ -8,6 +8,7 @@ void ClientStat::GetJSON(WrSerializer& ser) const {
 	JsonBuilder builder(ser);
 	builder.Put("connection_id", connectionId);
 	builder.Put("ip", ip);
+	builder.Put("protocol", protocol);
 	builder.Put("user_name", userName);
 	builder.Put("db_name", dbName);
 	builder.Put("current_activity", currentActivity);

@@ -13,32 +13,27 @@ using std::adopt_lock_t;
 
 namespace reindexer {
 
-const milliseconds kDefaultCondChkTime = milliseconds(20);
+constexpr milliseconds kDefaultCondChkTime = milliseconds(20);
 
 template <typename _Mutex, typename Context>
 class contexted_unique_lock {
 public:
 	using MutexType = _Mutex;
 
-	explicit contexted_unique_lock() : _M_mtx(nullptr), _M_owns(false), _M_context(nullptr), _M_chkTimeout(kDefaultCondChkTime) {}
-	explicit contexted_unique_lock(MutexType& __mtx, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
-		: _M_mtx(&__mtx), _M_owns(false), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assertrx(_M_context);
+	explicit contexted_unique_lock() noexcept : _M_mtx(nullptr), _M_owns(false), _M_context(nullptr), _M_chkTimeout(kDefaultCondChkTime) {}
+	explicit contexted_unique_lock(MutexType& __mtx, Context& __context, milliseconds __chkTimeout = kDefaultCondChkTime)
+		: _M_mtx(&__mtx), _M_owns(false), _M_context(&__context), _M_chkTimeout(__chkTimeout) {
 		lock();
 	}
-	explicit contexted_unique_lock(MutexType& __mtx, defer_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
-		: _M_mtx(&__mtx), _M_owns(false), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assertrx(_M_context);
-	}
-	explicit contexted_unique_lock(MutexType& __mtx, adopt_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
-		: _M_mtx(&__mtx), _M_owns(true), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assertrx(_M_context);
-	}
-	explicit contexted_unique_lock(MutexType& __mtx, try_to_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
-		: _M_mtx(&__mtx), _M_owns(__mtx.try_lock()), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assertrx(_M_context);
-	}
-	contexted_unique_lock(contexted_unique_lock&& lck)
+	explicit contexted_unique_lock(MutexType& __mtx, defer_lock_t, Context& __context,
+								   milliseconds __chkTimeout = kDefaultCondChkTime) noexcept
+		: _M_mtx(&__mtx), _M_owns(false), _M_context(&__context), _M_chkTimeout(__chkTimeout) {}
+	explicit contexted_unique_lock(MutexType& __mtx, adopt_lock_t, Context& __context,
+								   milliseconds __chkTimeout = kDefaultCondChkTime) noexcept
+		: _M_mtx(&__mtx), _M_owns(true), _M_context(&__context), _M_chkTimeout(__chkTimeout) {}
+	explicit contexted_unique_lock(MutexType& __mtx, try_to_lock_t, Context& __context, milliseconds __chkTimeout = kDefaultCondChkTime)
+		: _M_mtx(&__mtx), _M_owns(__mtx.try_lock()), _M_context(&__context), _M_chkTimeout(__chkTimeout) {}
+	contexted_unique_lock(contexted_unique_lock&& lck) noexcept
 		: _M_mtx(lck._M_mtx), _M_owns(lck._M_owns), _M_context(lck._M_context), _M_chkTimeout(lck._M_chkTimeout) {
 		lck._M_owns = false;
 		lck._M_mtx = nullptr;
@@ -50,7 +45,7 @@ public:
 
 	contexted_unique_lock(const contexted_unique_lock&) = delete;
 	contexted_unique_lock& operator=(const contexted_unique_lock&) = delete;
-	contexted_unique_lock& operator=(contexted_unique_lock&& lck) {
+	contexted_unique_lock& operator=(contexted_unique_lock&& lck) noexcept {
 		if (this != &lck) {
 			if (_M_owns) unlock();
 			_M_mtx = lck._M_mtx;
@@ -102,7 +97,7 @@ public:
 	MutexType* mutex() const noexcept { return _M_mtx; }
 
 private:
-	void _M_lockable() const {
+	void _M_lockable() const noexcept {
 		if (_M_mtx == nullptr) assertrx(0);
 		if (_M_owns) assertrx(0);
 	}
@@ -118,21 +113,17 @@ class contexted_shared_lock {
 public:
 	using MutexType = _Mutex;
 
-	explicit contexted_shared_lock() : _M_mtx(nullptr), _M_owns(false), _M_context(nullptr), _M_chkTimeout(kDefaultCondChkTime) {}
-	explicit contexted_shared_lock(MutexType& __mtx, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
-		: _M_mtx(&__mtx), _M_owns(false), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assertrx(_M_context);
+	explicit contexted_shared_lock() noexcept : _M_mtx(nullptr), _M_owns(false), _M_context(nullptr), _M_chkTimeout(kDefaultCondChkTime) {}
+	explicit contexted_shared_lock(MutexType& __mtx, Context& __context, milliseconds __chkTimeout = kDefaultCondChkTime)
+		: _M_mtx(&__mtx), _M_owns(false), _M_context(&__context), _M_chkTimeout(__chkTimeout) {
 		lock();
 	}
-	explicit contexted_shared_lock(MutexType& __mtx, adopt_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
-		: _M_mtx(&__mtx), _M_owns(true), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assertrx(_M_context);
-	}
-	explicit contexted_shared_lock(MutexType& __mtx, try_to_lock_t, Context* __context, milliseconds __chkTimeout = kDefaultCondChkTime)
-		: _M_mtx(&__mtx), _M_owns(__mtx.try_lock()), _M_context(__context), _M_chkTimeout(__chkTimeout) {
-		assertrx(_M_context);
-	}
-	contexted_shared_lock(contexted_shared_lock&& lck)
+	explicit contexted_shared_lock(MutexType& __mtx, adopt_lock_t, Context& __context,
+								   milliseconds __chkTimeout = kDefaultCondChkTime) noexcept
+		: _M_mtx(&__mtx), _M_owns(true), _M_context(&__context), _M_chkTimeout(__chkTimeout) {}
+	explicit contexted_shared_lock(MutexType& __mtx, try_to_lock_t, Context& __context, milliseconds __chkTimeout = kDefaultCondChkTime)
+		: _M_mtx(&__mtx), _M_owns(__mtx.try_lock()), _M_context(&__context), _M_chkTimeout(__chkTimeout) {}
+	contexted_shared_lock(contexted_shared_lock&& lck) noexcept
 		: _M_mtx(lck._M_mtx), _M_owns(lck._M_owns), _M_context(lck._M_context), _M_chkTimeout(lck._M_chkTimeout) {
 		lck._M_owns = false;
 		lck._M_mtx = nullptr;
@@ -144,7 +135,7 @@ public:
 
 	contexted_shared_lock(const contexted_shared_lock&) = delete;
 	contexted_shared_lock& operator=(const contexted_shared_lock&) = delete;
-	contexted_shared_lock& operator=(contexted_shared_lock&& lck) {
+	contexted_shared_lock& operator=(contexted_shared_lock&& lck) noexcept {
 		if (this != &lck) {
 			if (_M_owns) unlock();
 			_M_mtx = lck._M_mtx;
@@ -196,7 +187,7 @@ public:
 	MutexType* mutex() const noexcept { return _M_mtx; }
 
 private:
-	void _M_lockable() const {
+	void _M_lockable() const noexcept {
 		if (_M_mtx == nullptr) assertrx(0);
 		if (_M_owns) assertrx(0);
 	}

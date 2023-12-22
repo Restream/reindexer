@@ -36,7 +36,7 @@ const std::vector<AggregationResult> &CoroQueryResults::GetAggregationResults() 
 	if (!i_.queryParams_.aggResults.has_value()) {
 		parseExtraData();
 		if (!i_.queryParams_.aggResults.has_value()) {
-			throw Error(errLogic, "Lazy aggregations in QueryResults was not initialized");
+			throw Error(errLogic, "Lazy aggregations in QueryResults were not initialized");
 		}
 	}
 	return i_.queryParams_.aggResults.value();
@@ -60,10 +60,10 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query 
 
 	if (q) {
 		QueryData data;
-		data.joinedSize = uint16_t(q->joinQueries_.size());
-		data.mergedJoinedSizes.reserve(q->mergeQueries_.size());
-		for (const auto &mq : q->mergeQueries_) {
-			data.mergedJoinedSizes.emplace_back(mq.joinQueries_.size());
+		data.joinedSize = uint16_t(q->GetJoinQueries().size());
+		data.mergedJoinedSizes.reserve(q->GetMergeQueries().size());
+		for (const auto &mq : q->GetMergeQueries()) {
+			data.mergedJoinedSizes.emplace_back(mq.GetJoinQueries().size());
 		}
 		i_.qData_.emplace(std::move(data));
 	} else {
@@ -138,6 +138,7 @@ void CoroQueryResults::parseExtraData() {
 		ResultSerializer ser(rawResult);
 		i_.queryParams_.aggResults.emplace();
 		i_.queryParams_.explainResults.emplace();
+		i_.queryParams_.nsIncarnationTags.clear<false>();
 		ser.GetExtraParams(i_.queryParams_, ResultSerializer::Options{});
 	} else {
 		throw Error(errLogic, "Unable to parse clients explain or aggregation results (lazy parsing mode was expected)");

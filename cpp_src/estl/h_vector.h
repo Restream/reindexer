@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
+#include <iostream>
 #include <string>
 #include <type_traits>
 #include "debug_macros.h"
@@ -123,7 +124,7 @@ public:
 		return *this;
 	}
 
-	bool operator==(const h_vector& other) const noexcept {
+	bool operator==(const h_vector& other) const noexcept(noexcept(std::declval<value_type>() == std::declval<value_type>())) {
 		if (&other != this) {
 			if (size() != other.size()) return false;
 			for (size_t i = 0; i < size(); ++i) {
@@ -133,7 +134,9 @@ public:
 		}
 		return true;
 	}
-	bool operator!=(const h_vector& other) const noexcept { return !operator==(other); }
+	bool operator!=(const h_vector& other) const noexcept(noexcept(std::declval<h_vector>() == std::declval<h_vector>())) {
+		return !operator==(other);
+	}
 
 	template <bool FreeHeapMemory = true>
 	void clear() noexcept {

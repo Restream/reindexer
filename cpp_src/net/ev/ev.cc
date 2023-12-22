@@ -37,7 +37,7 @@ void loop_posix_base::enable_asyncs() {
 	if (async_fd_ < 0) {
 		async_fd_ = eventfd(0, EFD_NONBLOCK);
 		if (async_fd_ < 0) {
-			perror("eventfd:");
+			perror("eventfd error");
 		}
 		owner_->set(async_fd_, nullptr, READ);
 	}
@@ -72,7 +72,7 @@ loop_posix_base::~loop_posix_base() {
 void loop_posix_base::enable_asyncs() {
 	if (async_fds_[0] < 0) {
 		if (pipe(async_fds_) < 0) {
-			perror("pipe:");
+			perror("pipe error");
 		}
 		owner_->set(async_fds_[0], nullptr, READ);
 	}
@@ -104,16 +104,16 @@ public:
 };
 
 loop_select_backend::loop_select_backend() : private_(new loop_select_backend_private) {}
-loop_select_backend::~loop_select_backend() {}
+loop_select_backend::~loop_select_backend() = default;
 
-void loop_select_backend::init(dynamic_loop *owner) {
+void loop_select_backend::init(dynamic_loop *owner) noexcept {
 	owner_ = owner;
 	private_->maxfd_ = -1;
 	FD_ZERO(&private_->rfds_);
 	FD_ZERO(&private_->wfds_);
 }
 
-void loop_select_backend::set(int fd, int events, int /*oldevents*/) {
+void loop_select_backend::set(int fd, int events, int /*oldevents*/) noexcept {
 	assertrx(fd < capacity());
 
 	if (fd > private_->maxfd_) private_->maxfd_ = fd;
@@ -131,7 +131,7 @@ void loop_select_backend::set(int fd, int events, int /*oldevents*/) {
 	}
 }
 
-void loop_select_backend::stop(int fd) {
+void loop_select_backend::stop(int fd) noexcept {
 	FD_CLR(fd, &private_->rfds_);
 	FD_CLR(fd, &private_->wfds_);
 
@@ -159,7 +159,7 @@ int loop_select_backend::runonce(int64_t t) {
 	return ret;
 }
 
-int loop_select_backend::capacity() { return FD_SETSIZE; }
+int loop_select_backend::capacity() noexcept { return FD_SETSIZE; }
 
 #endif
 
@@ -251,7 +251,7 @@ void loop_epoll_backend::init(dynamic_loop *owner) {
 	owner_ = owner;
 	private_->ctlfd_ = epoll_create1(EPOLL_CLOEXEC);
 	if (private_->ctlfd_ < 0) {
-		perror("epoll_create");
+		perror("epoll_create error");
 	}
 	private_->events_.reserve(2048);
 	private_->events_.resize(1);
@@ -263,7 +263,7 @@ void loop_epoll_backend::set(int fd, int events, int oldevents) {
 	ev.events = ((events & READ) ? int(EPOLLIN) | int(EPOLLHUP) : 0) | ((events & WRITE) ? int(EPOLLOUT) : 0) /*| EPOLLET*/;
 	ev.data.fd = fd;
 	if (epoll_ctl(private_->ctlfd_, oldevents == 0 ? EPOLL_CTL_ADD : EPOLL_CTL_MOD, fd, &ev) < 0) {
-		perror("epoll_ctl EPOLL_CTL_MOD");
+		perror("epoll_ctl EPOLL_CTL_MOD error");
 	}
 	if (oldevents == 0) {
 		private_->events_.emplace_back();
@@ -274,7 +274,7 @@ void loop_epoll_backend::stop(int fd) {
 	epoll_event ev;
 	ev.data.fd = fd;
 	if (epoll_ctl(private_->ctlfd_, EPOLL_CTL_DEL, fd, &ev) < 0) {
-		perror("epoll_ctl EPOLL_CTL_DEL");
+		perror("epoll_ctl EPOLL_CTL_DEL error");
 	}
 	private_->events_.pop_back();
 }
@@ -371,7 +371,7 @@ int loop_wsa_backend::runonce(int64_t t) {
 	int ret = WaitForMultipleObjects(ecount, objs, FALSE, t != -1 ? t / 1000 : INFINITE);
 
 	if (ret < 0) {
-		perror("WaitForMultipleObjects");
+		perror("WaitForMultipleObjects error");
 		return ret;
 	}
 
@@ -409,7 +409,7 @@ int loop_wsa_backend::capacity() { return WSA_MAXIMUM_WAIT_EVENTS - 2; }
 
 static std::atomic<int> signalsMask;
 
-extern "C" void net_ev_sighandler(int signum) {
+static void net_ev_sighandler(int signum) {
 	signalsMask |= (1 << signum);
 #ifdef _WIN32
 	SetEvent(gSigEvent);
@@ -557,7 +557,7 @@ void dynamic_loop::stop(timer *watcher) {
 void dynamic_loop::set(sig *watcher) {
 	auto it = std::find(sigs_.begin(), sigs_.end(), watcher);
 	if (it != sigs_.end()) {
-		printf("sig %d already set\n", watcher->signum_);
+		fprintf(stderr, "sig %d already set\n", watcher->signum_);
 		return;
 	}
 	sigs_.push_back(watcher);
@@ -569,7 +569,7 @@ void dynamic_loop::set(sig *watcher) {
 
 	auto res = sigaction(watcher->signum_, &new_action, &old_action);
 	if (res < 0) {
-		printf("sigaction error: %d\n", res);
+		fprintf(stderr, "sigaction error: %d\n", res);
 		return;
 	}
 	watcher->old_action_ = old_action;
@@ -581,14 +581,14 @@ void dynamic_loop::set(sig *watcher) {
 void dynamic_loop::stop(sig *watcher) {
 	auto it = std::find(sigs_.begin(), sigs_.end(), watcher);
 	if (it == sigs_.end()) {
-		printf("sig %d is not set\n", watcher->signum_);
+		fprintf(stderr, "sig %d is not set\n", watcher->signum_);
 		return;
 	}
 	sigs_.erase(it);
 #ifndef _WIN32
 	auto res = sigaction(watcher->signum_, &(watcher->old_action_), 0);
 	if (res < 0) {
-		printf("sigaction error: %d\n", res);
+		fprintf(stderr, "sigaction error: %d\n", res);
 		return;
 	}
 #else

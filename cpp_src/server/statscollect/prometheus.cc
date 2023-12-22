@@ -32,13 +32,17 @@ void Prometheus::Attach(http::Router& router) {
 
 void Prometheus::NextEpoch() { registry_.RemoveOutdated(currentEpoch_++ - 1); }
 
+void Prometheus::setMetricValue(PFamily<Prometheus::PGauge>* metricFamily, double value, int64_t epoch) {
+	if (metricFamily) {
+		metricFamily->Add(std::map<std::string, std::string>{}, epoch).Set(value);
+	}
+}
+
 void Prometheus::setMetricValue(PFamily<Prometheus::PGauge>* metricFamily, double value, int64_t epoch, const std::string& db,
 								const std::string& ns, std::string_view queryType) {
 	if (metricFamily) {
 		std::map<std::string, std::string> labels;
-		if (!db.empty()) {
-			labels.emplace("db", db);
-		}
+		labels.emplace("db", db);
 		if (!ns.empty()) {
 			labels.emplace("ns", ns);
 		}
@@ -49,14 +53,16 @@ void Prometheus::setMetricValue(PFamily<Prometheus::PGauge>* metricFamily, doubl
 	}
 }
 
-void Prometheus::setMetricValue(PFamily<PGauge>* metricFamily, double value, int64_t epoch, const std::string& db, std::string_view type) {
+void Prometheus::setNetMetricValue(PFamily<PGauge>* metricFamily, double value, int64_t epoch, const std::string& db, std::string_view type,
+								   std::string_view protocol) {
 	if (metricFamily) {
 		std::map<std::string, std::string> labels;
-		if (!db.empty()) {
-			labels.emplace("db", std::string(db));
-		}
+		labels.emplace("db", db);
 		if (!type.empty()) {
 			labels.emplace("type", std::string(type));
+		}
+		if (!protocol.empty()) {
+			labels.emplace("protocol_domain", std::string(protocol));
 		}
 		metricFamily->Add(std::move(labels), epoch).Set(value);
 	}

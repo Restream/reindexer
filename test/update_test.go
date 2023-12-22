@@ -13,13 +13,20 @@ import (
 )
 
 const (
-	fieldsUpdateNs = "test_items_fields_update"
-	truncateNs     = "test_truncate"
-	removeItemsNs  = "test_remove_items"
+	fieldsUpdateNs  = "test_items_fields_update"
+	truncateNs      = "test_truncate"
+	removeItemsNs   = "test_remove_items"
+	sparseArrItemNs = "sparse_array_updates"
 )
+
+type ItemWithSparseArray struct {
+	ID    int64   `json:"id" reindex:"id,hash,pk"`
+	Array []int64 `json:"array_idx" reindex:"array_idx,hash,sparse"`
+}
 
 func init() {
 	tnamespaces["test_items_insert_update"] = TestItemSimple{}
+	tnamespaces[sparseArrItemNs] = ItemWithSparseArray{}
 }
 
 var checkInsertUpdateExistsData = []*TestItemSimple{
@@ -1016,4 +1023,29 @@ func TestTruncateNamespace(t *testing.T) {
 	require.NoError(t, DB.CloseNamespace(truncateNs))
 	require.NoError(t, DB.OpenNamespace(truncateNs, nsOpts, TestItemComplexObject{}))
 	checkItemsCount(t, truncateNs, 0)
+}
+
+func TestUpdateSparseArrayIndex(t *testing.T) {
+	emptyItem := &ItemWithSparseArray{
+		ID: int64(2),
+	}
+
+	item := &ItemWithSparseArray{
+		ID:    int64(2),
+		Array: []int64{1, 2, 3},
+	}
+
+	require.NoError(t, DB.Upsert(sparseArrItemNs, emptyItem))
+
+	require.NoError(t, DB.Upsert(sparseArrItemNs, emptyItem))
+	results := DB.ExecSQL("SELECT * FROM " + sparseArrItemNs + " WHERE id = 2")
+	checkResultItem(t, results, emptyItem)
+
+	require.NoError(t, DB.Upsert(sparseArrItemNs, item))
+	results = DB.ExecSQL("SELECT * FROM " + sparseArrItemNs + " WHERE id = 2")
+	checkResultItem(t, results, item)
+
+	require.NoError(t, DB.Upsert(sparseArrItemNs, emptyItem))
+	results = DB.ExecSQL("SELECT * FROM " + sparseArrItemNs + " WHERE id = 2")
+	checkResultItem(t, results, emptyItem)
 }

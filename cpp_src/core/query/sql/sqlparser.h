@@ -13,16 +13,16 @@ class JoinedQuery;
 struct SortingEntries;
 class UpdateEntry;
 using EqualPosition_t = h_vector<std::string, 2>;
+
 class SQLParser {
 public:
-	explicit SQLParser(Query &q) noexcept : query_(q) {}
-
 	/// Parses pure sql select query and initializes Query object data members as a result.
 	/// @param q - sql query.
-	/// @return always returns 0.
-	int Parse(std::string_view q);
+	/// @return parsed query
+	[[nodiscard]] static Query Parse(std::string_view sql);
 
 protected:
+	explicit SQLParser(Query &q) noexcept : query_(q) {}
 	/// Sql parser context
 	struct SqlParsingCtx {
 		struct SuggestionData {
@@ -89,6 +89,8 @@ protected:
 
 	/// Parse where entries
 	int parseWhere(tokenizer &parser);
+	template <typename T>
+	void parseWhereCondition(tokenizer &, T &&firstArg, OpType);
 
 	/// Parse order by
 	int parseOrderBy(tokenizer &parser, SortingEntries &, std::vector<Variant> &forcedSortOrder);
@@ -113,6 +115,8 @@ protected:
 
 	/// Parse merge entries
 	void parseMerge(tokenizer &parser);
+
+	Query parseSubQuery(tokenizer &);
 
 	static CondType getCondType(std::string_view cond);
 	SqlParsingCtx ctx_;

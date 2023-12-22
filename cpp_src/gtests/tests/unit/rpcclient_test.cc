@@ -29,17 +29,17 @@ TEST_F(RPCClientTestApi, CoroRequestTimeout) {
 		config.NetTimeout = seconds(1);
 		reindexer::client::CoroReindexer rx(config);
 		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 		const std::string kNamespaceName = "MyNamespace";
 		err = rx.AddNamespace(reindexer::NamespaceDef(kNamespaceName));
 		EXPECT_EQ(err.code(), errTimeout);
 		loop.sleep(std::chrono::seconds(4));
 		err = rx.DropNamespace(kNamespaceName);
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 	});
 	loop.run();
 	Error err = StopServer();
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 static std::chrono::seconds GetMaxTimeForCoroSelectTimeout(unsigned requests, std::chrono::seconds delay) {
@@ -112,16 +112,16 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 								[&] { return server.CloseQRRequestsCount() >= kCorCount * kQueriesCount; });
 			EXPECT_EQ(server.CloseQRRequestsCount(), kCorCount * kQueriesCount);
 			err = rx.AddNamespace(reindexer::NamespaceDef(kNamespaceName + std::to_string(index)));
-			EXPECT_TRUE(err.ok()) << err.what();
+			ASSERT_TRUE(err.ok()) << err.what();
 			finished[index] = true;
 		});
 	}
 	loop.run();
 	for (size_t i = 0; i < kCorCount; ++i) {
-		EXPECT_TRUE(finished[i]);
+		ASSERT_TRUE(finished[i]);
 	}
 	Error const err = StopServer();
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(RPCClientTestApi, CoroRequestCancels) {
@@ -132,7 +132,7 @@ TEST_F(RPCClientTestApi, CoroRequestCancels) {
 	loop.spawn([&loop]() noexcept {
 		reindexer::client::CoroReindexer rx;
 		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 
 		{
 			CancelRdxContext ctx;
@@ -156,7 +156,7 @@ TEST_F(RPCClientTestApi, CoroRequestCancels) {
 	});
 	loop.run();
 	Error err = StopServer();
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(RPCClientTestApi, CoroSuccessfullRequestWithTimeout) {
@@ -169,13 +169,13 @@ TEST_F(RPCClientTestApi, CoroSuccessfullRequestWithTimeout) {
 		config.NetTimeout = seconds(6);
 		reindexer::client::CoroReindexer rx(config);
 		auto err = rx.Connect(std::string("cproto://") + kDefaultRPCServerAddr + "/test_db", loop);
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 		err = rx.AddNamespace(reindexer::NamespaceDef("MyNamespace"));
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 	});
 	loop.run();
 	Error err = StopServer();
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(RPCClientTestApi, CoroErrorLoginResponse) {
@@ -192,7 +192,7 @@ TEST_F(RPCClientTestApi, CoroErrorLoginResponse) {
 	});
 	loop.run();
 	Error err = StopServer();
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 TEST_F(RPCClientTestApi, CoroStatus) {
@@ -212,7 +212,7 @@ TEST_F(RPCClientTestApi, CoroStatus) {
 			err = rx.Status();
 			ASSERT_TRUE(err.ok()) << err.what();
 			err = StopServer();
-			EXPECT_TRUE(err.ok()) << err.what();
+			ASSERT_TRUE(err.ok()) << err.what();
 			loop.sleep(std::chrono::milliseconds(20));	// Allow reading coroutine to handle disconnect
 			err = rx.Status();
 			ASSERT_EQ(err.code(), errNetwork) << err.what();
@@ -322,8 +322,7 @@ TEST_F(RPCClientTestApi, CoroUpserts) {
 		for (auto& it : qr) {
 			ASSERT_TRUE(it.Status().ok()) << it.Status().what();
 		}
-		err = rx.Stop();
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx.Stop();
 	});
 
 	loop.run();
@@ -352,8 +351,7 @@ void ReconnectTest(RxT& rx, RPCClientTestApi& api, size_t dataCount, const std::
 	ASSERT_TRUE(err.ok()) << err.what();
 	ASSERT_EQ(qr.Count(), dataCount);
 
-	err = rx.Stop();
-	ASSERT_TRUE(err.ok()) << err.what();
+	rx.Stop();
 }
 
 TEST_F(RPCClientTestApi, Reconnect) {
@@ -496,8 +494,7 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 			ready = true;
 			wg.wait();
 
-			err = rx.Stop();
-			ASSERT_TRUE(err.ok()) << err.what();
+			rx.Stop();
 		});
 
 		loop.run();
@@ -509,7 +506,7 @@ TEST_F(RPCClientTestApi, ServerRestart) {
 	// Shutdown server
 	step = Step::ShutdownInProgress;
 	Error err = StopServer();
-	EXPECT_TRUE(err.ok()) << err.what();
+	ASSERT_TRUE(err.ok()) << err.what();
 	step = Step::ShutdownDone;
 	std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
@@ -553,8 +550,7 @@ TEST_F(RPCClientTestApi, TemporaryNamespaceAutoremove) {
 		ASSERT_EQ(nsList[0].name, tmpNsName);
 
 		// Reconnect
-		err = rx.Stop();
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx.Stop();
 		err = rx.Connect(dsn, loop, opts);
 		ASSERT_TRUE(err.ok()) << err.what();
 
@@ -570,8 +566,7 @@ TEST_F(RPCClientTestApi, TemporaryNamespaceAutoremove) {
 			ASSERT_TRUE(false);
 		}
 
-		err = rx.Stop();
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx.Stop();
 	});
 
 	loop.run();
@@ -776,8 +771,7 @@ TEST_F(RPCClientTestApi, FetchingWithJoin) {
 			EXPECT_EQ(ser.Slice(), expected);
 			i++;
 		}
-		err = rx.Stop();
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx.Stop();
 	});
 
 	loop.run();
@@ -843,8 +837,7 @@ TEST_F(RPCClientTestApi, QRWithMultipleIterationLoops) {
 			}
 			++id;
 		}
-		err = rx.Stop();
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx.Stop();
 	});
 
 	loop.run();
@@ -904,8 +897,7 @@ TEST_F(RPCClientTestApi, AggregationsFetching) {
 			}
 		}
 
-		err = rx.Stop();
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx.Stop();
 	});
 
 	loop.run();
@@ -985,8 +977,7 @@ TEST_F(RPCClientTestApi, AggregationsFetchingWithLazyMode) {
 			EXPECT_EQ(qr.TotalCount(), kItemsCount);  // Total count is still available
 		}
 
-		err = rx.Stop();
-		ASSERT_TRUE(err.ok()) << err.what();
+		rx.Stop();
 	});
 
 	loop.run();
@@ -1008,6 +999,75 @@ TEST_F(RPCClientTestApi, AggregationsWithStrictModeTest) {
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		QueryAggStrictModeTest(rx);
+	});
+
+	loop.run();
+}
+
+TEST_F(RPCClientTestApi, SubQuery) {
+	using namespace reindexer::client;
+	using namespace reindexer::net::ev;
+	using reindexer::coroutine::wait_group;
+	using reindexer::coroutine::wait_group_guard;
+
+	StartDefaultRealServer();
+	dynamic_loop loop;
+
+	loop.spawn([&loop, this]() noexcept {
+		const std::string kLeftNsName = "left_ns";
+		const std::string kRightNsName = "right_ns";
+		const std::string dsn = "cproto://" + kDefaultRPCServerAddr + "/db1";
+		reindexer::client::ConnectOpts opts;
+		opts.CreateDBIfMissing();
+		reindexer::client::ReindexerConfig cfg;
+		constexpr auto kFetchCount = 50;
+		constexpr auto kNsSize = kFetchCount * 3;
+		cfg.FetchAmount = kFetchCount;
+		CoroReindexer rx(cfg);
+		auto err = rx.Connect(dsn, loop, opts);
+		ASSERT_TRUE(err.ok()) << err.what();
+
+		CreateNamespace(rx, kLeftNsName);
+		CreateNamespace(rx, kRightNsName);
+
+		auto upsertFn = [&rx](const std::string& nsName) {
+			for (size_t i = 0; i < kNsSize; ++i) {
+				auto item = rx.NewItem(nsName);
+				ASSERT_TRUE(item.Status().ok()) << nsName << " " << item.Status().what();
+
+				WrSerializer wrser;
+				JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
+				jsonBuilder.Put("id", i);
+				jsonBuilder.Put("value", "value_" + std::to_string(i));
+				jsonBuilder.End();
+				char* endp = nullptr;
+				auto err = item.Unsafe().FromJSON(wrser.Slice(), &endp);
+				ASSERT_TRUE(err.ok()) << nsName << " " << err.what();
+				err = rx.Upsert(nsName, item);
+				ASSERT_TRUE(err.ok()) << nsName << " " << err.what();
+			}
+		};
+
+		upsertFn(kLeftNsName);
+		upsertFn(kRightNsName);
+
+		const auto kHalfSize = kNsSize / 2;
+		{
+			client::CoroQueryResults qr;
+			err = rx.Select(Query(kLeftNsName).Where("id", CondSet, Query(kRightNsName).Select({"id"}).Where("id", CondLt, kHalfSize)), qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), kHalfSize);
+		}
+		{
+			const int limit = 10;
+			client::CoroQueryResults qr;
+			err = rx.Select(
+				Query(kLeftNsName).Where(Query(kRightNsName).Where("id", CondLt, kHalfSize).ReqTotal(), CondEq, {kHalfSize}).Limit(limit),
+				qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), limit);
+		}
+		rx.Stop();
 	});
 
 	loop.run();

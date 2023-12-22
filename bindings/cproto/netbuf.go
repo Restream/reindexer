@@ -2,7 +2,6 @@ package cproto
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/restream/reindexer/v4/bindings"
@@ -98,7 +97,7 @@ func (buf *NetBuffer) close() {
 		buf.reqID = -1
 		buf.uid = -1
 		if err != nil {
-			fmt.Printf("rx: query close error: %v\n", err)
+			buf.conn.logMsg(bindings.ERROR, "rq: query close error: %v\n", err)
 		}
 		closeBuf.Free()
 	}

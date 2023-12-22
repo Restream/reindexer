@@ -113,6 +113,54 @@ TEST_P(FTGenericApi, CompositeSelectWithFields) {
 	}
 }
 
+TEST_P(FTGenericApi, MergeWithSameNSAndSelectFunctions) {
+	Init(GetDefaultConfig());
+	AddInBothFields("An entity is something|"sv, "| that in exists entity as itself"sv);
+	AddInBothFields("In law, a legal entity is|"sv, "|an entity that is capable of something bearing legal rights"sv);
+	AddInBothFields("In politics, entity is used as|"sv, "| term for entity territorial divisions of some countries"sv);
+
+	for (const auto& query : CreateAllPermutatedQueries("", {"*entity", "somethin*"}, "")) {
+		for (const auto& field : {std::string("ft1"), std::string("ft2")}) {
+			auto dsl = std::string("@").append(field).append(" ").append(query);
+			auto qr{reindexer::Query("nm1").Where("ft3", CondEq, dsl)};
+			reindexer::QueryResults res;
+			auto mqr{reindexer::Query("nm1").Where("ft3", CondEq, std::move(dsl))};
+			mqr.AddFunction(field + " = snippet(<xxx>,\"\"</xf>,3,2,,d)");
+
+			qr.Merge(std::move(mqr));
+			qr.AddFunction(field + " = highlight(<b>,</b>)");
+			auto err = rt.reindexer->Select(qr, res);
+			EXPECT_TRUE(err.ok()) << err.what();
+
+			std::unordered_set<std::string_view> data{"An <b>entity</b> is <b>something</b>|"sv,
+													  "An <xxx>entity</xf> is <xxx>something</xf>|d"sv,
+													  "| that in exists <b>entity</b> as itself"sv,
+													  "In law, a legal <b>entity</b> is|"sv,
+													  "|an <b>entity</b> that is capable of <b>something</b> bearing legal rights"sv,
+													  "an <xxx>entity</xf> tdof <xxx>something</xf> bd"sv,
+													  "al <xxx>entity</xf> id"sv,
+													  "In politics, <b>entity</b> is used as|"sv,
+													  "| term for <b>entity</b> territorial divisions of some countries"sv,
+													  "ts <xxx>entity</xf> ad"sv,
+													  "s, <xxx>entity</xf> id"sv,
+													  "or <xxx>entity</xf> td"sv};
+
+			rt.PrintQueryResults("nm1", res);
+			for (auto it : res) {
+				auto ritem(it.GetItem(false));
+				for (auto idx = 1; idx < ritem.NumFields(); idx++) {
+					auto curField = ritem[idx].Name();
+					if (curField != field) continue;
+					auto it = data.find(ritem[curField].As<std::string>());
+					ASSERT_TRUE(it != data.end());
+					data.erase(it);
+				}
+			}
+			EXPECT_TRUE(data.empty());
+		}
+	}
+}
+
 TEST_P(FTGenericApi, SelectWithPlus) {
 	Init(GetDefaultConfig());
 
@@ -534,7 +582,8 @@ TEST_P(FTGenericApi, DeleteTest) {
 	//  Delete(data[1].first);
 	// Delete(data[1].first);
 
-	Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
+	const auto err = Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
+	ASSERT_TRUE(err.ok()) << err.what();
 	res = SimpleSelect("entity");
 
 	// for (auto it : res) {
@@ -572,7 +621,8 @@ TEST_P(FTGenericApi, RebuildAfterDeletion) {
 	auto res = selectF("entity");
 	ASSERT_EQ(res.Count(), 3);
 
-	Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
+	err = Delete(data.find("In law, a legal entity is an entity that is capable of bearing legal rights")->second);
+	ASSERT_TRUE(err.ok()) << err.what();
 	res = selectF("entity");
 	ASSERT_EQ(res.Count(), 2);
 }

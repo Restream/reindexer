@@ -11,6 +11,8 @@ void ResultSerializer::GetRawQueryParams(ResultSerializer::QueryParams& ret, con
 	ret.totalcount = GetVarUint();
 	ret.qcount = GetVarUint();
 	ret.count = GetVarUint();
+	ret.nsIncarnationTags.clear();
+	ret.shardingConfigVersion = ShardingSourceId::NotSet;
 	if (opts.IsWithClearAggs()) {
 		if (opts.IsWithLazyMode()) {
 			ret.aggResults = std::nullopt;
@@ -52,8 +54,9 @@ void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, Option
 	bool firstLazyData = true;
 	for (;;) {
 		const int tag = GetVarUint();
-		if (tag == QueryResultEnd) break;
 		switch (tag) {
+			case QueryResultEnd:
+				return;
 			case QueryResultAggregation: {
 				std::string_view data = GetSlice();
 				if (!opts.IsWithLazyMode()) {
@@ -92,6 +95,24 @@ void ResultSerializer::GetExtraParams(ResultSerializer::QueryParams& ret, Option
 				ret.shardId = GetVarUint();
 				break;
 			}
+			case QueryResultIncarnationTags: {
+				const auto size = GetVarUint();
+				if (size) {
+					ret.nsIncarnationTags.reserve(size);
+					for (size_t i = 0; i < size; ++i) {
+						auto& shardTags = ret.nsIncarnationTags.emplace_back();
+						shardTags.shardId = GetVarint();
+						const auto tagsSize = GetVarUint();
+						shardTags.tags.reserve(tagsSize);
+						for (size_t j = 0; j < tagsSize; ++j) {
+							shardTags.tags.emplace_back(GetVarint());
+						}
+					}
+				}
+				break;
+			}
+			default:
+				throw Error(errLogic, "Unexpected Query tag: %d", tag);
 		}
 	}
 }

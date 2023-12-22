@@ -116,14 +116,15 @@ public:
 	};
 
 	LeaderSyncThread(const Config& cfg, LeaderSyncQueue& syncQueue, SharedSyncState<>& sharedSyncState, ReindexerImpl& thisNode,
-					 ReplicationStatsCollector statsCollector, const Logger& l)
+					 ReplicationStatsCollector statsCollector, const Logger& l, std::once_flag& actShardingCfg)
 		: cfg_(cfg),
 		  syncQueue_(syncQueue),
 		  sharedSyncState_(sharedSyncState),
 		  thisNode_(thisNode),
 		  statsCollector_(statsCollector),
 		  client_(client::ReindexerConfig{10000, 0, cfg_.netTimeout, cfg_.enableCompression, true, "cluster_leader_syncer"}),
-		  log_(l) {
+		  log_(l),
+		  actShardingCfg_(actShardingCfg) {
 		terminateAsync_.set(loop_);
 		terminateAsync_.set([this](net::ev::async&) { client_.Stop(); });
 		thread_ = std::thread([this]() noexcept { sync(); });
@@ -141,6 +142,7 @@ public:
 private:
 	void sync();
 	void syncNamespaceImpl(bool forced, const LeaderSyncQueue::Entry& syncEntry, std::string& tmpNsName);
+	void actualizeShardingConfig();
 	static constexpr std::string_view logModuleName() noexcept { return std::string_view("leadersyncer_t"); }
 
 	const Config& cfg_;
@@ -155,6 +157,7 @@ private:
 	net::ev::async terminateAsync_;
 	net::ev::dynamic_loop loop_;
 	const Logger& log_;
+	std::once_flag& actShardingCfg_;
 };
 
 class LeaderSyncer {

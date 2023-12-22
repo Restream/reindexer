@@ -210,7 +210,7 @@ func TestConnectDSN(t *testing.T) {
 			appName:           fx.appName,
 			enableCompression: fx.compression.EnableCompression,
 		}
-		fx.mockConnFactory.expect().newConnection(ctx, params).Return(conn, int64(0), nil)
+		fx.mockConnFactory.expect().newConnection(ctx, params, nil).Return(conn, int64(0), nil)
 
 		err := fx.connectDSN(ctx, connCount, bindings.LBRoundRobin)
 		require.NoError(t, err)
@@ -233,7 +233,7 @@ func TestGetConn(t *testing.T) {
 				appName:           fx.appName,
 				enableCompression: fx.compression.EnableCompression,
 			}
-			fx.mockConnFactory.expect().newConnection(ctx, params).Return(conn, int64(0), nil)
+			fx.mockConnFactory.expect().newConnection(ctx, params, nil).Return(conn, int64(0), nil)
 		}
 
 		fx.mockConns[1].expect().hasError().Return(true)
@@ -264,7 +264,7 @@ func TestGetConn(t *testing.T) {
 				appName:           fx.appName,
 				enableCompression: fx.compression.EnableCompression,
 			}
-			fx.mockConnFactory.expect().newConnection(ctx, params).Return(conn, int64(0), nil)
+			fx.mockConnFactory.expect().newConnection(ctx, params, nil).Return(conn, int64(0), nil)
 		}
 
 		fx.mockConns[1].expect().hasError().Return(true)

@@ -206,14 +206,19 @@ inline void Node::Assign(const std::string& rhs) {
 	m_pNode->set_scalar(rhs);
 }
 
-inline void Node::Assign(const char* rhs) {
+inline void Node::Assign(std::string_view rhs) {
 	EnsureNodeExists();
 	m_pNode->set_scalar(rhs);
 }
 
+inline void Node::Assign(const char* rhs) {
+	EnsureNodeExists();
+	m_pNode->set_scalar(std::string_view(rhs));
+}
+
 inline void Node::Assign(char* rhs) {
 	EnsureNodeExists();
-	m_pNode->set_scalar(rhs);
+	m_pNode->set_scalar(std::string_view(rhs));
 }
 
 inline void Node::AssignData(const Node& rhs) {

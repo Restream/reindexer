@@ -15,17 +15,21 @@ public:
 	struct dataHeader {
 		dataHeader() noexcept : refcount(1), cap(0), lsn(-1) {}
 
-		~dataHeader() { assertrx(refcount.load() == 0); }
+		~dataHeader() { assertrx(refcount.load(std::memory_order_acquire) == 0); }
 		refcounter refcount;
 		unsigned cap;
 		lsn_t lsn;
 	};
 
 	PayloadValue() noexcept : p_(nullptr) {}
-	PayloadValue(const PayloadValue &) noexcept;
+	PayloadValue(const PayloadValue &other) noexcept : p_(other.p_) {
+		if (p_) {
+			header()->refcount.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
 	// Alloc payload store with size, and copy data from another array
 	PayloadValue(size_t size, const uint8_t *ptr = nullptr, size_t cap = 0);
-	~PayloadValue();
+	~PayloadValue() { release(); }
 	PayloadValue &operator=(const PayloadValue &other) noexcept {
 		if (&other != this) {
 			release();

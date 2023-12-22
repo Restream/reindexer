@@ -4,6 +4,15 @@ project(reindexer_tool)
 
 set(TARGET reindexer_tool)
 
+if (WITH_CPPTRACE)
+  list(APPEND REINDEXER_LIBRARIES cpptrace ${REINDEXER_LIBRARIES})
+endif()
+
+if(MSVC)
+  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -DEBUG")
+endif()
+
+
 if (NOT WITH_STDLIB_DEBUG)
   find_library(ReplXX_LIBRARY NAMES ${ReplXX_NAMES} replxx)
   find_path(ReplXX_INCLUDE_DIR NAMES replxx.hxx HINTS /opt/local/include /usr/local/include /usr/include)
@@ -45,6 +54,10 @@ install(TARGETS ${TARGET}
   LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
   ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
 )
+
+if(MSVC)
+  install(FILES $<TARGET_PDB_FILE:${PROJECT_NAME}> DESTINATION ${CMAKE_INSTALL_BINDIR} OPTIONAL)
+endif()
 
 get_cmake_property(CPACK_COMPONENTS_ALL COMPONENTS)
 list(REMOVE_ITEM CPACK_COMPONENTS_ALL "leveldb_lib" "replxx_lib" "snappy_lib")

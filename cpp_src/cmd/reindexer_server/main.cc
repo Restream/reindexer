@@ -20,6 +20,10 @@ int main(int argc, char* argv[]) {
 		std::cerr << err.what() << std::endl;
 		return EXIT_FAILURE;
 	}
+#if defined(WIN32) && defined(REINDEX_WITH_CPPTRACE)
+	reindexer::debug::set_minidump_path(svc.GetCoreLogPath());
+#endif
+
 	svc.EnableHandleSignals();
 	int ret = svc.Start();
 	spdlog::drop_all();

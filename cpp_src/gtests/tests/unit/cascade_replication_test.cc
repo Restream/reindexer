@@ -348,6 +348,105 @@ TEST_F(CascadeReplicationApi, TransactionTest) {
 	}
 }
 
+TEST_F(CascadeReplicationApi, TransactionCopyPolicyForceSync) {
+	// Check transactions copy policy after force sync
+	/*
+			l
+			|
+			1
+			|
+			2
+	*/
+	constexpr std::string_view kJsonCfgNss = R"=({
+		"namespaces": [
+		{
+			"namespace": "*",
+			"start_copy_policy_tx_size": 10000,
+			"copy_policy_multiplier": 5,
+			"tx_size_to_always_copy": 100000
+		},
+		{
+			"namespace": "ns1",
+			"start_copy_policy_tx_size": 10000,
+			"copy_policy_multiplier": 5,
+			"tx_size_to_always_copy": 1
+		}
+		],
+		"type": "namespaces"
+	})=";
+	constexpr int port = 9999;
+	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "TransactionCopyPolicyForceSync"));
+	const std::string kDbPathMaster(kBaseDbPath + "/test_");
+	constexpr int serverId = 5;
+	constexpr size_t kRows = 100;
+	const std::string nsName("ns1");
+
+	std::vector<int> slaveConfiguration = {-1, port, port + 1};
+	std::vector<ServerControl> nodes;
+	for (size_t i = 0; i < slaveConfiguration.size(); i++) {
+		nodes.emplace_back();
+		nodes.back().InitServer(
+			ServerControlConfig(serverId + i, port + i, port + 1000 + i, kDbPathMaster + std::to_string(i), "db", true));
+		nodes.back().Get()->EnableAllProfilings();
+	}
+
+	// Set tx copy policy for the node '2' to 'always copy'
+	{
+		auto item = nodes[2].Get()->api.reindexer->NewItem("#config");
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		auto err = item.FromJSON(kJsonCfgNss);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = nodes[2].Get()->api.reindexer->Upsert("#config", item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+
+	for (size_t i = 0; i < slaveConfiguration.size(); i++) {
+		if (i == 0) {
+			nodes[i].Get()->MakeLeader();
+		} else {
+			nodes[i].Get()->MakeFollower();
+			nodes[0].Get()->AddFollower(fmt::format("cproto://127.0.0.1:{}/db", nodes[i].Get()->RpcPort()));
+		}
+	}
+	nodes[2].Drop();
+
+	auto leader = nodes[0].Get();
+	TestNamespace1 ns1(leader, nsName);
+	WaitSync(leader, nodes[1].Get(), nsName);
+
+	// Restart node '2'
+	nodes[2].InitServer(ServerControlConfig(serverId + 2, port + 2, port + 1000 + 2, kDbPathMaster + std::to_string(2), "db", true));
+	nodes[2].Get()->MakeFollower();
+	WaitSync(leader, nodes[2].Get(), nsName);
+
+	// Apply tx
+	auto tr = leader->api.reindexer->NewTransaction(nsName);
+	for (unsigned int i = 0; i < kRows; i++) {
+		reindexer::client::Item item = tr.NewItem();
+		auto err = item.FromJSON("{\"id\":" + std::to_string(i + kRows * 10) + "}");
+		ASSERT_TRUE(err.ok()) << err.what();
+		tr.Upsert(std::move(item));
+	}
+	client::QueryResults qr;
+	auto err = leader->api.reindexer->CommitTransaction(tr, qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	WaitSync(leader, nodes[2].Get(), nsName);
+
+	// Check copy tx event in the perfstats
+	qr = client::QueryResults();
+	err = nodes[2].Get()->api.reindexer->Select("select * from #perfstats", qr);
+	ASSERT_TRUE(err.ok()) << err.what();
+	ASSERT_EQ(qr.Count(), 1);
+	WrSerializer ser;
+	err = qr.begin().GetJSON(ser, false);
+	ASSERT_TRUE(err.ok()) << err.what();
+	gason::JsonParser parser;
+	auto resJS = parser.Parse(ser.Slice());
+	ASSERT_EQ(resJS["transactions"]["total_copy_count"].As<int>(-1), 1) << ser.Slice();
+
+	for (auto& node : nodes) node.Stop();
+}
+
 TEST_F(CascadeReplicationApi, ForceSync3Node) {
 	// Check force-sync for cascade setup
 	/*

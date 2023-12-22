@@ -5,7 +5,7 @@
 #include "client/reindexer.h"
 #include "cluster/config.h"
 #include "cluster/consts.h"
-#include "core/reindexerimpl.h"
+#include "core/reindexer_impl/reindexerimpl.h"
 #include "tools/clusterproxyloghelper.h"
 
 namespace reindexer {
@@ -124,7 +124,7 @@ public:
 			return resultFollowerAction<&client::Reindexer::Update>(ctx, clientToLeader, q, qr);
 		};
 		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Update query", getServerIDRel());
-		return proxyCall<LocalQueryActionFT, &ReindexerImpl::Update, Error>(ctx, q._namespace, action, q, qr);
+		return proxyCall<LocalQueryActionFT, &ReindexerImpl::Update, Error>(ctx, q.NsName(), action, q, qr);
 	}
 	Error Upsert(std::string_view nsName, Item &item, const RdxContext &ctx) {
 		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName, Item &item) {
@@ -156,7 +156,7 @@ public:
 			return resultFollowerAction<&client::Reindexer::Delete>(ctx, clientToLeader, q, qr);
 		};
 		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Delete QUERY", getServerIDRel());
-		return proxyCall<LocalQueryActionFT, &ReindexerImpl::Delete, Error>(ctx, q._namespace, action, q, qr);
+		return proxyCall<LocalQueryActionFT, &ReindexerImpl::Delete, Error>(ctx, q.NsName(), action, q, qr);
 	}
 	Error Select(const Query &q, LocalQueryResults &qr, const RdxContext &ctx) {
 		using namespace std::placeholders;
@@ -171,7 +171,7 @@ public:
 			return resultFollowerAction<&client::Reindexer::Select>(ctx, clientToLeader, q, qr);
 		};
 		clusterProxyLog(LogTrace, "[%d proxy] ClusterProxy::Select query proxied", getServerIDRel());
-		return proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q._namespace, action, q, qr);
+		return proxyCall<LocalQueryActionFT, &ReindexerImpl::Select, Error>(rdxDeadlineCtx, q.NsName(), action, q, qr);
 	}
 	Error Commit(std::string_view nsName) { return impl_.Commit(nsName); }
 	Item NewItem(std::string_view nsName, const RdxContext &ctx) { return impl_.NewItem(nsName, ctx); }
@@ -180,7 +180,7 @@ public:
 		using LocalFT = LocalTransaction (ReindexerImpl::*)(std::string_view, const RdxContext &);
 		auto action = [this](const RdxContext &ctx, LeaderRefT clientToLeader, std::string_view nsName) {
 			try {
-				client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(getServerID());
+				client::Reindexer l = clientToLeader->WithLSN(ctx.GetOriginLSN()).WithEmmiterServerId(GetServerID());
 				return Transaction(impl_.NewTransaction(nsName, ctx), std::move(l));
 			} catch (const Error &err) {
 				return Transaction(err);
@@ -190,9 +190,9 @@ public:
 		return proxyCall<LocalFT, &ReindexerImpl::NewTransaction, Transaction>(ctx, nsName, action, nsName);
 	}
 	Error CommitTransaction(Transaction &tr, QueryResults &qr, bool txExpectsSharding, const RdxContext &ctx) {
-		return tr.commit(getServerID(), txExpectsSharding, impl_, qr, ctx);
+		return tr.commit(GetServerID(), txExpectsSharding, impl_, qr, ctx);
 	}
-	Error RollBackTransaction(Transaction &tr, const RdxContext &ctx) { return tr.rollback(getServerID(), ctx); }
+	Error RollBackTransaction(Transaction &tr, const RdxContext &ctx) { return tr.rollback(GetServerID(), ctx); }
 
 	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const RdxContext &ctx) {
 		return impl_.GetMeta(nsName, key, data, ctx);
@@ -219,9 +219,6 @@ public:
 		return impl_.SetClusterizationStatus(nsName, status, ctx);
 	}
 	bool NeedTraceActivity() const noexcept { return impl_.NeedTraceActivity(); }
-	Error EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck, const RdxContext &ctx) {
-		return impl_.EnableStorage(storagePath, skipPlaceholderCheck, ctx);
-	}
 	Error InitSystemNamespaces() { return impl_.InitSystemNamespaces(); }
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch, const RdxContext &ctx) {
 		return impl_.ApplySnapshotChunk(nsName, ch, ctx);
@@ -278,6 +275,13 @@ public:
 	[[nodiscard]] Error ResetOldShardingConfig(int64_t sourceId, const RdxContext &ctx) noexcept;
 	[[nodiscard]] Error ResetShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept;
 	[[nodiscard]] Error RollbackShardingConfigCandidate(int64_t sourceId, const RdxContext &ctx) noexcept;
+
+	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts) {
+		return impl_.SubscribeUpdates(observer, filters, opts);
+	}
+	Error UnsubscribeUpdates(IUpdatesObserver *observer) { return impl_.UnsubscribeUpdates(observer); }
+	// REINDEX_WITH_V3_FOLLOWERS
+	int GetServerID() const noexcept { return sId_.load(std::memory_order_acquire); }
 
 private:
 	static constexpr auto kReplicationStatsTimeout = std::chrono::seconds(10);
@@ -367,7 +371,6 @@ private:
 	std::mutex processPingEventMutex_;
 	int lastPingLeaderId_ = -1;
 
-	int getServerID() const noexcept { return sId_.load(std::memory_order_acquire); }
 	int getServerIDRel() const noexcept { return sId_.load(std::memory_order_relaxed); }
 	std::shared_ptr<client::Reindexer> getLeader(const cluster::RaftInfo &info);
 	void resetLeader();
@@ -564,8 +567,8 @@ private:
 			if (!err.ok()) {
 				return err;
 			}
-			if (!query.joinQueries_.empty() || !query.mergeQueries_.empty()) {
-				return Error(errLogic, "Unable to proxy query with JOIN or MERGE");
+			if (!query.GetJoinQueries().empty() || !query.GetMergeQueries().empty() || !query.GetSubQueries().empty()) {
+				return Error(errLogic, "Unable to proxy query with JOIN, MERGE or SUBQUERY");
 			}
 			clientToCoreQueryResults(clientResults, qr);
 			return err;

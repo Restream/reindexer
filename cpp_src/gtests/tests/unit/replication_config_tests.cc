@@ -35,7 +35,7 @@ public:
 	enum class ConfigType { File, Namespace };
 
 	const std::chrono::milliseconds kReplicationConfLoadDelay = std::chrono::milliseconds(1200);
-	const std::string kSimpleReplConfigStoragePath = "/tmp/reindex/simple_replicationConf_tests/";
+	const std::string kSimpleReplConfigStoragePath = fs::JoinPath(fs::GetTempDir(), "reindex/simple_replicationConf_tests/");
 	const std::string kStoragePath = kSimpleReplConfigStoragePath;
 	const std::string kBuiltin = "builtin://" + kStoragePath;
 	const std::string kConfigNs = "#config";

@@ -192,10 +192,10 @@ CoroTransaction ReindexerImpl::NewTransaction(std::string_view nsName, const Int
 
 Error ReindexerImpl::CommitTransaction(Transaction &tr, QueryResults &results, const InternalRdxContext &ctx) {
 	if (tr.IsFree()) {
-		return Error(errBadTransaction, "commit free transaction");
+		return Error(errBadTransaction, "Attempt to commit empty transaction");
 	}
 	if (tr.rx_.get() != this) {
-		return Error(errTxInvalidLeader, "Commit transaction to incorrect leader");
+		return Error(errTxInvalidLeader, "Attempt to commit transaction to the incorrect leader");
 	}
 	return sendCommand<true, Error, CoroTransaction &, CoroQueryResults &>(tr.coroConnection(), DbCmdCommitTransaction, ctx, tr.tr_,
 																		   results.results_);
@@ -204,7 +204,7 @@ Error ReindexerImpl::CommitTransaction(Transaction &tr, QueryResults &results, c
 Error ReindexerImpl::RollBackTransaction(Transaction &tr, const InternalRdxContext &ctx) {
 	if (tr.IsFree()) return tr.Status();
 	if (tr.rx_.get() != this) {
-		return Error(errLogic, "RollBack transaction to incorrect leader");
+		return Error(errLogic, "Attempt to rollback transaction on the incorrect leader");
 	}
 	return sendCommand<true, Error, CoroTransaction &>(tr.coroConnection(), DbCmdRollBackTransaction, ctx, tr.tr_);
 }

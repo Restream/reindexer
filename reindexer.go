@@ -48,12 +48,14 @@ const (
 
 // Aggregation funcs
 const (
-	AggAvg      = bindings.AggAvg
-	AggSum      = bindings.AggSum
-	AggFacet    = bindings.AggFacet
-	AggMin      = bindings.AggMin
-	AggMax      = bindings.AggMax
-	AggDistinct = bindings.AggDistinct
+	AggAvg         = bindings.AggAvg
+	AggSum         = bindings.AggSum
+	AggFacet       = bindings.AggFacet
+	AggMin         = bindings.AggMin
+	AggMax         = bindings.AggMax
+	AggDistinct    = bindings.AggDistinct
+	AggCount       = bindings.AggCount
+	AggCountCached = bindings.AggCountCached
 )
 
 // Reindexer error codes
@@ -74,9 +76,8 @@ const (
 	ErrCodeNotFound         = bindings.ErrNotFound
 	ErrCodeStateInvalidated = bindings.ErrStateInvalidated
 	ErrCodeTimeout          = bindings.ErrTimeout
+	ErrCodeStrictMode       = bindings.ErrStrictMode
 )
-
-var logger Logger = &nullLogger{}
 
 // Reindexer The reindxer state struct
 type Reindexer struct {
@@ -129,7 +130,6 @@ var (
 	errNsNotFound          = bindings.NewError("rq: Namespace is not found", ErrCodeNotFound)
 	errNsExists            = bindings.NewError("rq: Namespace is already exists", ErrCodeParams)
 	errInvalidReflection   = bindings.NewError("rq: Invalid reflection type of index", ErrCodeParams)
-	errStorageNotEnabled   = bindings.NewError("rq: Storage is not enabled, can't save", ErrCodeLogic)
 	errIteratorNotReady    = bindings.NewError("rq: Iterator not ready. Next() must be called before", ErrCodeLogic)
 	errJoinUnexpectedField = bindings.NewError("rq: Unexpected join field", ErrCodeParams)
 	ErrEmptyNamespace      = bindings.NewError("rq: empty namespace name", ErrCodeParams)
@@ -385,12 +385,6 @@ func (db *Reindexer) GetStats() bindings.Stats {
 // Deprecated: no longer used.
 func (db *Reindexer) ResetStats() {
 	db.impl.resetStats()
-}
-
-// EnableStorage enables persistent storage of data
-// Deprecated: storage path should be passed as DSN part to reindexer.NewReindex (""), e.g. reindexer.NewReindexer ("builtin:///tmp/reindex").
-func (db *Reindexer) EnableStorage(storagePath string) error {
-	return db.impl.enableStorage(db.ctx, storagePath)
 }
 
 func (db *Reindexer) PutMeta(namespace, key string, data []byte) error {

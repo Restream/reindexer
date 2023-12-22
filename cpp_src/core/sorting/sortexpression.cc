@@ -84,12 +84,12 @@ VariantArray SortExpression::GetJoinedFieldValues(IdType rowId, const joins::Nam
 
 bool SortExpression::ByField() const noexcept {
 	static constexpr SortExpressionOperation noOperation;
-	return Size() == 1 && container_[0].HoldsOrReferTo<SortExprFuncs::Index>() && GetOperation(0) == noOperation;
+	return Size() == 1 && container_[0].Is<SortExprFuncs::Index>() && GetOperation(0) == noOperation;
 }
 
 bool SortExpression::ByJoinedField() const noexcept {
 	static constexpr SortExpressionOperation noOperation;
-	return Size() == 1 && container_[0].HoldsOrReferTo<JoinedIndex>() && GetOperation(0) == noOperation;
+	return Size() == 1 && container_[0].Is<JoinedIndex>() && GetOperation(0) == noOperation;
 }
 
 SortExprFuncs::JoinedIndex& SortExpression::GetJoinedIndex() noexcept {

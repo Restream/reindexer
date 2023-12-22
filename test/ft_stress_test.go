@@ -35,17 +35,6 @@ func readDict() ([]string, error) {
 	return lines, scanner.Err()
 }
 
-const charset = "abcdefghijklmnopqrstuvwxyz" +
-	"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-func trueRandWord(length int) string {
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
-	}
-	return string(b)
-}
-
 func dictRandWord() string {
 	return dictWords[rand.Intn(len(dictWords))]
 }

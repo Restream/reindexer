@@ -6,9 +6,6 @@
 #include "gason/gason.h"
 #include "reindexer_api.h"
 
-using reindexer::Item;
-using reindexer::ItemImpl;
-
 class ItemMoveSemanticsApi : public ReindexerApi {
 protected:
 	const std::string pkField = "bookid";
@@ -18,14 +15,22 @@ protected:
 
 	void SetUp() override {
 		ReindexerApi::SetUp();
-		rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
-		rt.reindexer->AddIndex(default_namespace, {"bookid", "hash", "int", IndexOpts().PK()});
-		rt.reindexer->AddIndex(default_namespace, {"title", "text", "string", IndexOpts()});
-		rt.reindexer->AddIndex(default_namespace, {"pages", "hash", "int", IndexOpts().PK()});
-		rt.reindexer->AddIndex(default_namespace, {"price", "hash", "int", IndexOpts().PK()});
-		rt.reindexer->AddIndex(default_namespace, {"genreid_fk", "hash", "int", IndexOpts().PK()});
-		rt.reindexer->AddIndex(default_namespace, {"authorid_fk", "hash", "int", IndexOpts().PK()});
-		rt.reindexer->Commit(default_namespace);
+		auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->AddIndex(default_namespace, {"bookid", "hash", "int", IndexOpts().PK()});
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->AddIndex(default_namespace, {"title", "text", "string", IndexOpts()});
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->AddIndex(default_namespace, {"pages", "hash", "int", IndexOpts()});
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->AddIndex(default_namespace, {"price", "hash", "int", IndexOpts()});
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->AddIndex(default_namespace, {"genreid_fk", "hash", "int", IndexOpts()});
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->AddIndex(default_namespace, {"authorid_fk", "hash", "int", IndexOpts()});
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rt.reindexer->Commit(default_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	void prepareItems() {
@@ -48,7 +53,8 @@ protected:
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_NO_THROW(gason::JsonParser().Parse(item.GetJSON()));
 		}
-		rt.reindexer->Commit(default_namespace);
+		const auto err = rt.reindexer->Commit(default_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	Item getItemById(int id) {

@@ -56,7 +56,7 @@ void FuzzyIndexText<T>::commitFulltextImpl() {
 }
 
 template <typename T>
-void FuzzyIndexText<T>::CreateConfig(const FtFuzzyConfig* cfg) {
+void FuzzyIndexText<T>::createConfig(const FtFuzzyConfig* cfg) {
 	if (cfg) {
 		this->cfg_.reset(new FtFuzzyConfig(*cfg));
 		return;
@@ -65,13 +65,15 @@ void FuzzyIndexText<T>::CreateConfig(const FtFuzzyConfig* cfg) {
 	this->cfg_->parse(this->opts_.config, this->ftFields_);
 }
 
-std::unique_ptr<Index> FuzzyIndexText_New(const IndexDef& idef, PayloadType payloadType, const FieldsSet& fields) {
+std::unique_ptr<Index> FuzzyIndexText_New(const IndexDef& idef, PayloadType&& payloadType, FieldsSet&& fields,
+										  const NamespaceCacheConfigData& cacheCfg) {
 	switch (idef.Type()) {
 		case IndexFuzzyFT:
-			return std::unique_ptr<Index>{new FuzzyIndexText<unordered_str_map<FtKeyEntry>>(idef, std::move(payloadType), fields)};
+			return std::make_unique<FuzzyIndexText<unordered_str_map<FtKeyEntry>>>(idef, std::move(payloadType), std::move(fields),
+																				   cacheCfg);
 		case IndexCompositeFuzzyFT:
-			return std::unique_ptr<Index>{
-				new FuzzyIndexText<unordered_payload_map<FtKeyEntry, true>>(idef, std::move(payloadType), fields)};
+			return std::make_unique<FuzzyIndexText<unordered_payload_map<FtKeyEntry, true>>>(idef, std::move(payloadType),
+																							 std::move(fields), cacheCfg);
 		case IndexStrHash:
 		case IndexStrBTree:
 		case IndexIntBTree:

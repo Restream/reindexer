@@ -14,6 +14,17 @@ struct JsonNode;
 }
 namespace reindexer::sharding {
 
+struct ApplyLeaderConfigCommand {
+	ApplyLeaderConfigCommand() = default;
+	ApplyLeaderConfigCommand(std::string_view config, std::optional<int64_t> sourceId) noexcept : config(config), sourceId(sourceId) {}
+
+	std::string_view config;
+	std::optional<int64_t> sourceId;
+
+	void GetJSON(JsonBuilder& json) const;
+	void FromJSON(const gason::JsonNode& payload);
+};
+
 struct SaveConfigCommand {
 	SaveConfigCommand() = default;
 	SaveConfigCommand(std::string_view config, int64_t sourceId) noexcept : config(config), sourceId(sourceId) {}
@@ -56,11 +67,13 @@ struct ShardingControlRequestData {
 	};
 
 private:
-	using CommandDataType = std::variant<SaveConfigCommand, ApplyConfigCommand, ResetConfigCommand>;
-	using Enum2Type = meta::Map<
-		meta::Values2Types<Type::SaveCandidate, Type::ResetOldSharding, Type::ResetCandidate, Type::RollbackCandidate, Type::ApplyNew,
-						   Type::ApplyLeaderConfig>,
-		std::tuple<SaveConfigCommand, ResetConfigCommand, ResetConfigCommand, ResetConfigCommand, ApplyConfigCommand, SaveConfigCommand>>;
+	using CommandDataType = std::variant<SaveConfigCommand, ApplyConfigCommand, ResetConfigCommand, ApplyLeaderConfigCommand>;
+	using Enum2Type = meta::Map<RDX_META_PAIR(Type::SaveCandidate, sharding::SaveConfigCommand),
+								RDX_META_PAIR(Type::ResetOldSharding, sharding::ResetConfigCommand),
+								RDX_META_PAIR(Type::ApplyNew, sharding::ApplyConfigCommand),
+								RDX_META_PAIR(Type::ResetCandidate, sharding::ResetConfigCommand),
+								RDX_META_PAIR(Type::RollbackCandidate, sharding::ResetConfigCommand),
+								RDX_META_PAIR(Type::ApplyLeaderConfig, sharding::ApplyLeaderConfigCommand)>;
 
 	template <Type type, typename... Args>
 	friend ShardingControlRequestData MakeRequestData(Args&&... args) noexcept;

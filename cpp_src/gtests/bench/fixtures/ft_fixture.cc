@@ -7,6 +7,7 @@
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/config/ftfastconfig.h"
+#include "tools/errors.h"
 #include "tools/stringstools.h"
 
 #include <dlfcn.h>
@@ -111,51 +112,50 @@ reindexer::Error FullText::Initialize() {
 	return {};
 }
 
-void FullText::RegisterAllCases(size_t iterationCount) {
+void FullText::RegisterAllCases(std::optional<size_t> fastIterationCount, std::optional<size_t> slowIterationCount) {
 	constexpr static auto Mem = reindexer::FtFastConfig::Optimization::Memory;
 	constexpr static auto CPU = reindexer::FtFastConfig::Optimization::CPU;
 
-	RegisterWrapper wrap(iterationCount);  //-1 test limit - default time
+	RegisterWrapper wrapSlow(slowIterationCount);  // std::numeric_limits<size_t>::max() test limit - default time
+	RegisterWrapper wrapFast(fastIterationCount);
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	Register("BuildAndInsertNs2", &FullText::BuildAndInsertLowWordsDiversityNs, this)->Iterations(1000)->Unit(benchmark::kMicrosecond);
-	wrap.SetOptions(Register("Fast3PhraseLowDiversity", &FullText::Fast3PhraseLowDiversity, this));
-	wrap.SetOptions(Register("Fast3WordsLowDiversity", &FullText::Fast3WordsLowDiversity, this));
+	wrapSlow.SetOptions(Register("Fast3PhraseLowDiversity", &FullText::Fast3PhraseLowDiversity, this));
+	wrapSlow.SetOptions(Register("Fast3WordsLowDiversity", &FullText::Fast3WordsLowDiversity, this));
 
-	wrap.SetOptions(Register("Fast3WordsWithAreasLowDiversity", &FullText::Fast3WordsWithAreasLowDiversity, this));
-	wrap.SetOptions(Register("Fast3PhraseWithAreasLowDiversity", &FullText::Fast3PhraseWithAreasLowDiversity, this));
+	wrapSlow.SetOptions(Register("Fast3WordsWithAreasLowDiversity", &FullText::Fast3WordsWithAreasLowDiversity, this));
+	wrapSlow.SetOptions(Register("Fast3PhraseWithAreasLowDiversity", &FullText::Fast3PhraseWithAreasLowDiversity, this));
 
-	wrap.SetOptions(Register("Fast2PhraseLowDiversity", &FullText::Fast2PhraseLowDiversity, this));
-	wrap.SetOptions(Register("Fast2AndWordLowDiversity", &FullText::Fast2AndWordLowDiversity, this));
+	wrapFast.SetOptions(Register("Fast2PhraseLowDiversity", &FullText::Fast2PhraseLowDiversity, this));
+	wrapFast.SetOptions(Register("Fast2AndWordLowDiversity", &FullText::Fast2AndWordLowDiversity, this));
 
 	Register("Insert", &FullText::Insert, this)->Iterations(id_seq_->Count())->Unit(benchmark::kMicrosecond);
 
-	// Register("BuildCommonIndexes", &FullText::BuildCommonIndexes, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 	Register("BuildFastTextIndex", &FullText::BuildFastTextIndex, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
-	// Register("BuildFuzzyTextIndex", &FullText::BuildFuzzyTextIndex, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 
-	wrap.SetOptions(Register("Fast1WordMatch.OptByMem", &FullText::Fast1WordMatch, this));
-	wrap.SetOptions(Register("Fast2WordsMatch.OptByMem", &FullText::Fast2WordsMatch, this));
-	wrap.SetOptions(Register("Fast1PrefixMatch.OptByMem", &FullText::Fast1PrefixMatch, this));
-	wrap.SetOptions(Register("Fast2PrefixMatch.OptByMem", &FullText::Fast2PrefixMatch, this));
-	wrap.SetOptions(Register("Fast1SuffixMatch.OptByMem", &FullText::Fast1SuffixMatch, this));
-
-	wrap.SetOptions(Register("Fast2SuffixMatch.OptByMem", &FullText::Fast2SuffixMatch, this));
-
-	wrap.SetOptions(Register("Fast1TypoWordMatch.OptByMem", &FullText::Fast1TypoWordMatch, this));
-	wrap.SetOptions(Register("Fast2TypoWordMatch.OptByMem", &FullText::Fast2TypoWordMatch, this));
-	wrap.SetOptions(Register("Fast1WordWithAreaHighDiversity.optByMem", &FullText::Fast1WordWithAreaHighDiversity, this));
+	wrapFast.SetOptions(Register("Fast1WordMatch.OptByMem", &FullText::Fast1WordMatch, this));
+	wrapFast.SetOptions(Register("Fast2WordsMatch.OptByMem", &FullText::Fast2WordsMatch, this));
+	wrapSlow.SetOptions(Register("Fast1PrefixMatch.OptByMem", &FullText::Fast1PrefixMatch, this));
+	wrapSlow.SetOptions(Register("Fast2PrefixMatch.OptByMem", &FullText::Fast2PrefixMatch, this));
+	wrapSlow.SetOptions(Register("Fast1SuffixMatch.OptByMem", &FullText::Fast1SuffixMatch, this));
+	wrapSlow.SetOptions(Register("Fast2SuffixMatch.OptByMem", &FullText::Fast2SuffixMatch, this));
+	wrapFast.SetOptions(Register("Fast1TypoWordMatch.OptByMem", &FullText::Fast1TypoWordMatch, this));
+	wrapFast.SetOptions(Register("Fast2TypoWordMatch.OptByMem", &FullText::Fast2TypoWordMatch, this));
+	wrapFast.SetOptions(Register("Fast1WordWithAreaHighDiversity.OptByMem", &FullText::Fast1WordWithAreaHighDiversity, this));
 
 	Register("SetOptimizationByCPU", &FullText::UpdateIndex<CPU>, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 
-	wrap.SetOptions(Register("Fast1WordMatch.OptByCPU", &FullText::Fast1WordMatch, this));
+	wrapFast.SetOptions(Register("Fast1WordMatch.OptByCPU", &FullText::Fast1WordMatch, this));
+	wrapFast.SetOptions(Register("Fast2WordsMatch.OptByCPU", &FullText::Fast2WordsMatch, this));
+	wrapSlow.SetOptions(Register("Fast1PrefixMatch.OptByCPU", &FullText::Fast1PrefixMatch, this));
+	wrapSlow.SetOptions(Register("Fast2PrefixMatch.OptByCPU", &FullText::Fast2PrefixMatch, this));
+	wrapSlow.SetOptions(Register("Fast1SuffixMatch.OptByCPU", &FullText::Fast1SuffixMatch, this));
+	wrapSlow.SetOptions(Register("Fast2SuffixMatch.OptByCPU", &FullText::Fast2SuffixMatch, this));
+	wrapFast.SetOptions(Register("Fast1TypoWordMatch.OptByCPU", &FullText::Fast1TypoWordMatch, this));
+	wrapFast.SetOptions(Register("Fast2TypoWordMatch.OptByCPU", &FullText::Fast2TypoWordMatch, this));
+	wrapFast.SetOptions(Register("Fast1WordWithAreaHighDiversity.OptByCPU", &FullText::Fast1WordWithAreaHighDiversity, this));
 
-	wrap.SetOptions(Register("Fast2WordsMatch.OptByCPU", &FullText::Fast2WordsMatch, this));
-	wrap.SetOptions(Register("Fast1PrefixMatch.OptByCPU", &FullText::Fast1PrefixMatch, this));
-	wrap.SetOptions(Register("Fast2PrefixMatch.OptByCPU", &FullText::Fast2PrefixMatch, this));
-	wrap.SetOptions(Register("Fast1SuffixMatch.OptByCPU", &FullText::Fast1SuffixMatch, this));
-	wrap.SetOptions(Register("Fast2SuffixMatch.OptByCPU", &FullText::Fast2SuffixMatch, this));
-	wrap.SetOptions(Register("Fast1TypoWordMatch.OptByCPU", &FullText::Fast1TypoWordMatch, this));
-	wrap.SetOptions(Register("Fast2TypoWordMatch.OptByCPU", &FullText::Fast2TypoWordMatch, this));
+	// Register("BuildFuzzyTextIndex", &FullText::BuildFuzzyTextIndex, this)->Iterations(1)->Unit(benchmark::kMicrosecond);
 
 	// Register("Fuzzy1WordMatch", &FullText::Fuzzy1WordMatch, this)->Unit(benchmark::kMicrosecond);
 	// Register("Fuzzy2WordsMatch", &FullText::Fuzzy2WordsMatch, this)->Unit(benchmark::kMicrosecond);
@@ -197,17 +197,19 @@ void FullText::RegisterAllCases(size_t iterationCount) {
 	Register("InitForAlternatingUpdatesAndSelects.OptByMem", &FullText::InitForAlternatingUpdatesAndSelects<Mem>, this)
 		->Iterations(1)
 		->Unit(benchmark::kMicrosecond);
-	wrap.SetOptions(Register("AlternatingUpdatesAndSelects.OptByMem", &FullText::AlternatingUpdatesAndSelects, this));
-	wrap.SetOptions(Register("AlternatingUpdatesAndSelectsByComposite.OptByMem", &FullText::AlternatingUpdatesAndSelectsByComposite, this));
-	wrap.SetOptions(Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields.OptByMem",
-							 &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields, this));
+	wrapFast.SetOptions(Register("AlternatingUpdatesAndSelects.OptByMem", &FullText::AlternatingUpdatesAndSelects, this));
+	wrapFast.SetOptions(
+		Register("AlternatingUpdatesAndSelectsByComposite.OptByMem", &FullText::AlternatingUpdatesAndSelectsByComposite, this));
+	wrapFast.SetOptions(Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields.OptByMem",
+								 &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields, this));
 	Register("InitForAlternatingUpdatesAndSelects.OptByCPU", &FullText::InitForAlternatingUpdatesAndSelects<CPU>, this)
 		->Iterations(1)
 		->Unit(benchmark::kMicrosecond);
-	wrap.SetOptions(Register("AlternatingUpdatesAndSelects.OptByCPU", &FullText::AlternatingUpdatesAndSelects, this));
-	wrap.SetOptions(Register("AlternatingUpdatesAndSelectsByComposite.OptByCPU", &FullText::AlternatingUpdatesAndSelectsByComposite, this));
-	wrap.SetOptions(Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields.OptByCPU",
-							 &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields, this));
+	wrapFast.SetOptions(Register("AlternatingUpdatesAndSelects.OptByCPU", &FullText::AlternatingUpdatesAndSelects, this));
+	wrapFast.SetOptions(
+		Register("AlternatingUpdatesAndSelectsByComposite.OptByCPU", &FullText::AlternatingUpdatesAndSelectsByComposite, this));
+	wrapFast.SetOptions(Register("AlternatingUpdatesAndSelectsByCompositeByNotIndexFields.OptByCPU",
+								 &FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields, this));
 	// NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
@@ -241,18 +243,33 @@ reindexer::Item FullText::MakeItem(benchmark::State&) {
 void FullText::BuildInsertSteps(State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 
-	db_->DropNamespace(nsdef_.name);
+	auto err = db_->DropNamespace(nsdef_.name);
+	if (!err.ok()) {
+		state.SkipWithError(err.what().c_str());
+		assertf(err.ok(), "%s", err.what());
+	}
 	id_seq_->Reset();
 
-	auto err = BaseFixture::Initialize();
+	err = BaseFixture::Initialize();
+	if (!err.ok()) {
+		state.SkipWithError(err.what().c_str());
+		assertf(err.ok(), "%s", err.what());
+	}
 	size_t i = 0;
 	size_t mem = 0;
 
+	assert(!words_.empty());
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeSpecialItem();
-		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+		if (!item.Status().ok()) {
+			state.SkipWithError(item.Status().what().c_str());
+			assertf(item.Status().ok(), "%s", item.Status().what());
+		}
 		err = db_->Insert(nsdef_.name, item);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+			assertf(err.ok(), "%s", err.what());
+		}
 
 		if (i % 12000 == 0) {
 			Query q(nsdef_.name);
@@ -279,7 +296,10 @@ void FullText::Insert(State& state) {
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		auto item = MakeItem(state);
-		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+		if (!item.Status().ok()) {
+			state.SkipWithError(item.Status().what().c_str());
+			continue;
+		}
 
 		auto err = db_->Insert(nsdef_.name, item);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
@@ -290,10 +310,11 @@ void FullText::Insert(State& state) {
 }
 
 void FullText::BuildCommonIndexes(benchmark::State& state) {
+	using namespace std::string_view_literals;
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		q.Where("year", CondRange, {2010, 2016}).Limit(20).Sort("year", false);
+		q.Where("year"sv, CondRange, {2010, 2016}).Limit(20).Sort("year"sv, false);
 		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
 		QueryResults qres;
@@ -325,7 +346,10 @@ void FullText::BuildAndInsertLowWordsDiversityNs(State& state) {
 		item["description1"] = d1;
 		item["description2"] = d2;
 
-		if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+		if (!item.Status().ok()) {
+			state.SkipWithError(item.Status().what().c_str());
+			continue;
+		}
 
 		auto err = db_->Insert(lowWordsDiversityNsDef_.name, item);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
@@ -908,7 +932,13 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 	ftCfg.optimization = opt;
 	ftIndexOpts.config = ftCfg.GetJSON({});
 	AllocsTracker allocsTracker(state, printFlags);
-	db_->DropNamespace(alternatingNs_);
+	auto err = db_->DropNamespace(alternatingNs_);
+	if (!err.ok()) {
+		if (err.code() != errNotFound || err.what() != "Namespace '" + alternatingNs_ + "' does not exist") {
+			state.SkipWithError(err.what().c_str());
+			assertf(err.ok(), "%s", err.what());
+		}
+	}
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		NamespaceDef nsDef{alternatingNs_};
 		nsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
@@ -918,7 +948,10 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 			.AddIndex("search_comp", {"search1", "search2"}, "text", "composite", ftIndexOpts)
 			.AddIndex("search_comp_not_index_fields", {"field1", "field2"}, "text", "composite", ftIndexOpts);
 		auto err = db_->AddNamespace(nsDef);
-		if (!err.ok()) state.SkipWithError(err.what().c_str());
+		if (!err.ok()) {
+			state.SkipWithError(err.what().c_str());
+			assertf(err.ok(), "%s", err.what());
+		}
 		values_.clear();
 		values_.reserve(kNsSize);
 		reindexer::WrSerializer ser;
@@ -934,42 +967,51 @@ void FullText::InitForAlternatingUpdatesAndSelects(State& state) {
 			bld.Put("rand", rand());
 			bld.End();
 			auto item = db_->NewItem(alternatingNs_);
-			if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+			if (!item.Status().ok()) {
+				state.SkipWithError(item.Status().what().c_str());
+				continue;
+			}
 			err = item.FromJSON(ser.Slice());
-			if (!err.ok()) state.SkipWithError(err.what().c_str());
+			if (!err.ok()) {
+				state.SkipWithError(err.what().c_str());
+				continue;
+			}
 			err = db_->Insert(alternatingNs_, item);
 			if (!err.ok()) state.SkipWithError(err.what().c_str());
 		}
 	}
 
-	auto err = db_->Commit(alternatingNs_);
+	err = db_->Commit(alternatingNs_);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 
 	// Init index build
-	Query q =
+	assert(!values_.empty());
+	const Query q1 =
 		Query(alternatingNs_)
 			.Where("search1", CondEq,
 				   values_[randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)})]
 					   .search1);
 	QueryResults qres;
-	err = db_->Select(q, qres);
+	err = db_->Select(q1, qres);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 
 	size_t index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
-	q = Query(alternatingNs_).Where("search_comp", CondEq, values_[index].search1 + ' ' + values_[index].search2);
+	const Query q2 = Query(alternatingNs_).Where("search_comp", CondEq, values_[index].search1 + ' ' + values_[index].search2);
 	qres.Clear();
-	err = db_->Select(q, qres);
+	err = db_->Select(q2, qres);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 
 	index = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
-	q = Query(alternatingNs_).Where("search_comp_not_index_fields", CondEq, values_[index].field1 + ' ' + values_[index].field2);
+	const Query q3 =
+		Query(alternatingNs_).Where("search_comp_not_index_fields", CondEq, values_[index].field1 + ' ' + values_[index].field2);
 	qres.Clear();
-	err = db_->Select(q, qres);
+	err = db_->Select(q3, qres);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 }
 
 void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::State& state) {
 	using namespace std::string_literals;
+	assert(!values_.empty());
 	const int i = randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(values_.size() - 1)});
 	ser.Reset();
 	reindexer::JsonBuilder bld(ser);
@@ -982,9 +1024,15 @@ void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::Stat
 	bld.End();
 	auto item = db_->NewItem(alternatingNs_);
 	item.Unsafe(false);
-	if (!item.Status().ok()) state.SkipWithError(item.Status().what().c_str());
+	if (!item.Status().ok()) {
+		state.SkipWithError(item.Status().what().c_str());
+		return;
+	}
 	auto err = item.FromJSON(ser.Slice());
-	if (!err.ok()) state.SkipWithError(err.what().c_str());
+	if (!err.ok()) {
+		state.SkipWithError(err.what().c_str());
+		return;
+	}
 	err = db_->Update(alternatingNs_, item);
 	if (!err.ok()) state.SkipWithError(err.what().c_str());
 
@@ -997,6 +1045,7 @@ void FullText::updateAlternatingNs(reindexer::WrSerializer& ser, benchmark::Stat
 }
 
 void FullText::AlternatingUpdatesAndSelects(benchmark::State& state) {
+	assert(!values_.empty());
 	reindexer::WrSerializer ser;
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
@@ -1015,6 +1064,7 @@ void FullText::AlternatingUpdatesAndSelects(benchmark::State& state) {
 }
 
 void FullText::AlternatingUpdatesAndSelectsByComposite(benchmark::State& state) {
+	assert(!values_.empty());
 	reindexer::WrSerializer ser;
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
@@ -1030,6 +1080,7 @@ void FullText::AlternatingUpdatesAndSelectsByComposite(benchmark::State& state) 
 }
 
 void FullText::AlternatingUpdatesAndSelectsByCompositeByNotIndexFields(benchmark::State& state) {
+	assert(!values_.empty());
 	reindexer::WrSerializer ser;
 	AllocsTracker allocsTracker(state, printFlags);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)

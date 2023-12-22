@@ -159,8 +159,30 @@ void ServerControl::Interface::WriteShardingConfig(const std::string& configYaml
 
 void ServerControl::Interface::SetWALSize(int64_t size, std::string_view nsName) { setNamespaceConfigItem(nsName, "wal_size", size); }
 
+void ServerControl::Interface::SetTxAlwaysCopySize(int64_t size, std::string_view nsName) {
+	setNamespaceConfigItem(nsName, "tx_size_to_always_copy", size);
+}
+
 void ServerControl::Interface::SetOptmizationSortWorkers(size_t cnt, std::string_view nsName) {
 	setNamespaceConfigItem(nsName, "optimization_sort_workers", cnt);
+}
+
+void ServerControl::Interface::EnableAllProfilings() {
+	constexpr std::string_view kJsonCfgProfiling = R"json({
+		"type":"profiling",
+		"profiling":{
+			"queriesperfstats":true,
+			"queries_threshold_us":0,
+			"perfstats":true,
+			"memstats":true
+		}
+	})json";
+	auto item = api.reindexer->NewItem(kConfigNs);
+	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	auto err = item.FromJSON(kJsonCfgProfiling);
+	ASSERT_TRUE(err.ok()) << err.what();
+	err = api.reindexer->Upsert(kConfigNs, item);
+	ASSERT_TRUE(err.ok()) << err.what();
 }
 
 cluster::ReplicationStats ServerControl::Interface::GetReplicationStats(std::string_view type) {

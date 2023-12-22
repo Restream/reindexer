@@ -95,9 +95,7 @@ TEST_F(ShardingExtrasApi, LocalQuery) {
 	for (const char *localPreffix : {"local", "local explain", "explain local"}) {
 		for (size_t i = 0; i < NodesCount(); ++i) {
 			client::QueryResults localQr;
-			Query localQuery;
-			localQuery.FromSQL(localPreffix + " select * from "s + default_namespace);
-			auto err = getNode(i)->api.reindexer->Select(localQuery, localQr);
+			auto err = getNode(i)->api.reindexer->Select(Query::FromSQL(localPreffix + " select * from "s + default_namespace), localQr);
 			EXPECT_TRUE(err.ok()) << err.what();
 
 			client::QueryResults shardQr;
@@ -112,14 +110,14 @@ TEST_F(ShardingExtrasApi, LocalQuery) {
 		Query localQuery;
 		bool failed = false;
 		try {
-			localQuery.FromSQL("local update " + default_namespace);
+			localQuery = Query::FromSQL("local update " + default_namespace);
 		} catch (const Error &err) {
 			failed = true;
 			EXPECT_EQ(err.what(), "Syntax error at or near 'update', line: 1 column: 6 27; only SELECT query could be LOCAL");
 		}
 		EXPECT_TRUE(failed);
 		localQuery = Query{default_namespace};
-		localQuery.local_ = true;
+		localQuery.Local(true);
 		client::QueryResults localQr;
 		const auto err = getNode(0)->api.reindexer->Update(localQuery, localQr);
 		EXPECT_FALSE(err.ok());
@@ -246,7 +244,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 			err = rx->Select(q, qr);
 			if (!local) {
 				ASSERT_EQ(err.code(), errLogic) << err.what() << "; i = " << i;
-				ASSERT_EQ(err.what(), "Query to all shard can't contain JOIN or MERGE") << "; i = " << i;
+				ASSERT_EQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY") << "; i = " << i;
 			} else if (getSCIdxs(i).first == kShardWithLocalNs) {
 				ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i;
 				ASSERT_EQ(qr.Count(), kExpectedJoinResults2.size()) << "; i = " << i;
@@ -316,7 +314,7 @@ TEST_F(ShardingExtrasApi, JoinBetweenShardedAndNonSharded) {
 			err = rx->Select(q, qr);
 			if (!local) {
 				ASSERT_EQ(err.code(), errLogic) << err.what() << "; i = " << i;
-				ASSERT_EQ(err.what(), "Query to all shard can't contain JOIN or MERGE") << "; i = " << i;
+				ASSERT_EQ(err.what(), "Query to all shard can't contain JOIN, MERGE or SUBQUERY") << "; i = " << i;
 			} else if (getSCIdxs(i).first == kShardWithLocalNs) {
 				ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i;
 				ASSERT_EQ(qr.Count(), kExpectedJoinResults2.size()) << "; i = " << i;
@@ -460,13 +458,12 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 		const bool isExpectingID = hasIDFn(flags);
 
 		TestCout() << "Checking select queries" << std::endl;
+		const Query q(default_namespace);
 		for (unsigned int k = 0; k < kShardCount; k++) {
 			std::shared_ptr<client::Reindexer> rxSel = svc_[k][0].Get()->api.reindexer;
 			{
 				lsnsByShard.clear();
 				lsnsByShard.resize(kShards);
-				Query q;
-				q.FromSQL("select * from " + default_namespace);
 				client::QueryResults qr(flags);
 
 				err = rxSel->Select(q, qr);
@@ -500,10 +497,9 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 			lsnsByShard.clear();
 			lsnsByShard.resize(kShards);
 			for (unsigned int l = 0; l < kShardCount; l++) {
-				Query q;
-				q.FromSQL("select * from " + default_namespace + " where " + kFieldLocation + " = 'key" + std::to_string(l) + "'");
 				client::QueryResults qr(flags);
-				err = rxSel->Select(q, qr);
+				err = rxSel->Select(
+					Query::FromSQL(fmt::sprintf("select * from %s where %s = 'key%d'", default_namespace, kFieldLocation, l)), qr);
 				ASSERT_TRUE(err.ok()) << err.what() << "; " << l;
 				for (auto i = qr.begin(); i != qr.end(); ++i) {
 					auto item = i.GetItem();
@@ -527,11 +523,10 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 		for (unsigned int k = 0; k < kShardCount; k++) {
 			std::shared_ptr<client::Reindexer> rxUpdate = svc_[k][0].Get()->api.reindexer;
 			for (int l = 0; l < 3; l++) {
-				Query q;
-				q.FromSQL("update " + default_namespace + " set " + kFieldData + "='datanew' where " + kFieldLocation + " = 'key" +
-						  std::to_string(l) + "'");
 				client::QueryResults qr(flags);
-				err = rxUpdate->Update(q, qr);
+				err = rxUpdate->Update(Query::FromSQL(fmt::sprintf("update %s set %s='datanew' where %s='key%d'", default_namespace,
+																   kFieldData, kFieldLocation, l)),
+									   qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				for (auto i = qr.begin(); i != qr.end(); ++i) {
 					auto item = i.GetItem();
@@ -557,10 +552,9 @@ TEST_F(ShardingExtrasApi, QrContainCorrectShardingId) {
 		for (unsigned int k = 0; k < kShardCount; k++) {
 			std::shared_ptr<client::Reindexer> rxDelete = svc_[k][0].Get()->api.reindexer;
 			for (unsigned int l = 0; l < kShardCount; l++) {
-				Query q;
-				q.FromSQL("Delete from " + default_namespace + " where " + kFieldLocation + " = 'key" + std::to_string(l) + "'");
 				client::QueryResults qr(flags);
-				err = rxDelete->Delete(q, qr);
+				err = rxDelete->Delete(
+					Query::FromSQL(fmt::sprintf("Delete from %s where %s = 'key%d'", default_namespace, kFieldLocation, l)), qr);
 				ASSERT_TRUE(err.ok()) << err.what();
 				ASSERT_EQ(qr.Count(), kMaxCountOnShard);
 				for (auto i = qr.begin(); i != qr.end(); ++i) {

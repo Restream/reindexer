@@ -24,7 +24,7 @@ lsn_t WALTracker::Add(const WALRecord &rec, lsn_t originLsn, lsn_t oldLsn) {
 }
 
 lsn_t WALTracker::Add(WALRecType type, const PackedWALRecord &rec, lsn_t originLsn) {
-	return add(rec, originLsn, type != WalItemUpdate && type != WalEmpty);
+	return add(rec, originLsn, type != WalItemUpdate);
 }  // TODO: Check storage write condition
 
 bool WALTracker::Set(const WALRecord &rec, lsn_t lsn, bool ignoreServer) {
@@ -99,7 +99,7 @@ void WALTracker::Reset() {
 		StorageOpts opts;
 		auto dbIter = storage_->GetCursor(opts);
 		for (dbIter->Seek(kStorageWALPrefix);
-			 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageWALPrefix "\xFF")) < 0;
+			 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageWALPrefix "\xFF\xFF\xFF\xFF")) < 0;
 			 dbIter->Next()) {
 			dbIter.RemoveThisKey(opts);
 		}
@@ -107,12 +107,12 @@ void WALTracker::Reset() {
 }
 
 void WALTracker::Init(int64_t sz, int64_t minLSN, int64_t maxLSN, AsyncStorage &storage) {
-	logPrintf(LogTrace, "WALTracker::Init minLSN=%ld, maxLSN=%ld, size=%ld", minLSN, maxLSN, sz);
 	storage_ = &storage;
 
 	// input maxLSN of namespace Item or -1 if namespace is empty
 	auto data = readFromStorage(maxLSN);  // return maxLSN of wal record or input value
 										  // new table
+	logPrintf(LogTrace, "WALTracker::Init minLSN=%ld, maxLSN=%ld, size=%ld", minLSN, maxLSN, sz);
 	initPositions(sz, minLSN, maxLSN);
 	// Fill records from storage
 	for (auto &rec : data) {
@@ -150,11 +150,7 @@ bool WALTracker::available(lsn_t lsn, bool ignoreServer) const {
 	auto counter = lsnCounter_.Counter();
 	if (lsnUnp.counter < counter && counter - lsnUnp.counter <= size()) {
 		int64_t pos = lsnUnp.counter % walSize_;
-		if (records_[pos].server == lsnUnp.server || ignoreServer) {
-			return true;  // Record matches
-		}
-		return records_[pos].server == 0 &&
-			   WALRecord(records_[pos]).type == WalEmpty;  // true if empty record was loaded from storage without server ID
+		return (records_[pos].server == lsnUnp.server || ignoreServer);
 	}
 	return false;
 }
@@ -183,15 +179,16 @@ std::vector<std::pair<lsn_t, std::string>> WALTracker::readFromStorage(int64_t &
 
 	auto dbIter = storage_->GetCursor(opts);
 	for (dbIter->Seek(kStorageWALPrefix);
-		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageWALPrefix "\xFF")) < 0;
+		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageWALPrefix "\xFF\xFF\xFF\xFF")) < 0;
 		 dbIter->Next()) {
 		std::string_view dataSlice = dbIter->Value();
 		if (dataSlice.size() >= sizeof(int64_t)) {
 			// Read LSN
-			lsn_t lsn(*reinterpret_cast<const int64_t *>(dataSlice.data()));
+			Serializer ser(dataSlice);
+			lsn_t lsn(int64_t(ser.GetUInt64()));
 			assertrx(lsn.Counter() >= 0);
 			maxLSN = std::max(maxLSN, lsn.Counter());
-			dataSlice = dataSlice.substr(sizeof(int64_t));
+			dataSlice = dataSlice.substr(ser.Pos());
 			data.push_back({lsn_t(lsn), std::string(dataSlice)});
 		}
 	}
@@ -243,6 +240,9 @@ lsn_t WALTracker::add(RecordT &&rec, lsn_t originLsn, bool toStorage, lsn_t oldL
 	put(lastLsn_, std::forward<RecordT>(rec));
 	if (!oldLsn.isEmpty() && available(oldLsn)) {
 		put(oldLsn, WALRecord());
+		if (oldLsn.Server()) {
+			writeToStorage(oldLsn);	 // Write empty record to the storage to preserve it's server ID
+		}
 	}
 	if (toStorage) {
 		writeToStorage(lastLsn_);

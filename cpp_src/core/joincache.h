@@ -54,14 +54,8 @@ struct JoinCacheVal {
 	bool inited = false;
 	std::shared_ptr<JoinPreResult> preResult;
 };
-typedef LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key> MainLruCache;
 
-class JoinCache : public MainLruCache {
-public:
-	JoinCache() : MainLruCache(kDefaultCacheSizeLimit * 2, 2) {}
-
-	typedef std::shared_ptr<JoinCache> Ptr;
-};
+using JoinCache = LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
 
 struct JoinCacheRes {
 	bool haveData = false;

@@ -113,23 +113,23 @@ type TestItemWithSparse struct {
 	Prices        []*TestJoinItem `reindex:"prices,,joined"`
 	Pricesx       []*TestJoinItem `reindex:"pricesx,,joined"`
 	ID            int             `reindex:"id,-"`
-	Genre         int64           `reindex:"genre,tree,sparse"`
+	Genre         int64           `reindex:"genre,tree"`
 	Year          int             `reindex:"year,tree,sparse"`
 	Packages      []int           `reindex:"packages,hash,sparse"`
 	Name          string          `reindex:"name,tree,sparse"`
 	Countries     []string        `reindex:"countries,tree,sparse"`
-	Age           int             `reindex:"age,hash,sparse"`
+	Age           int             `reindex:"age,hash"`
 	AgeLimit      int64           `json:"age_limit" reindex:"age_limit,hash,sparse"`
 	CompanyName   string          `json:"company_name" reindex:"company_name,hash,sparse"`
 	Address       string          `json:"address"`
 	PostalCode    int             `json:"postal_code"`
 	Description   string          `reindex:"description,fuzzytext"`
-	Rate          float64         `reindex:"rate,tree,sparse"`
+	Rate          float64         `reindex:"rate,tree"`
 	ExchangeRate  float64         `json:"exchange_rate"`
 	PollutionRate float32         `json:"pollution_rate"`
 	IsDeleted     bool            `reindex:"isdeleted,-"`
 	Actor         Actor           `reindex:"actor"`
-	PricesIDs     []int           `reindex:"price_id"`
+	PricesIDs     []int           `reindex:"price_id,,sparse"`
 	LocationID    string          `reindex:"location"`
 	EndTime       int             `reindex:"end_time,-"`
 	StartTime     int             `reindex:"start_time,tree"`
@@ -590,9 +590,12 @@ func TestSTDistanceWrappers(t *testing.T) {
 			searchPoint := randPoint()
 			distance := randFloat(0, 2)
 			sortPoint := randPoint()
-			it1, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).SortStPointDistance(field1, sortPoint, false).ExecToJson().FetchAll()
+			it1, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).SortStPointDistance(field1, sortPoint, false).
+				ExecToJson().FetchAll()
 			require.NoError(t, err)
-			it2, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).Sort(fmt.Sprintf("ST_Distance(%s, ST_GeomFromText('point(%f %f)'))", field1, sortPoint[0], sortPoint[1]), false).ExecToJson().FetchAll()
+			it2, err := DBD.Query(ns).DWithin(field1, searchPoint, distance).Sort(fmt.Sprintf("ST_Distance(%s, ST_GeomFromText('point(%s %s)'))",
+				field1, strconv.FormatFloat(sortPoint[0], 'f', -1, 64), strconv.FormatFloat(sortPoint[1], 'f', -1, 64)), false).
+				ExecToJson().FetchAll()
 			require.NoError(t, err)
 			require.Equal(t, string(it1), string(it2))
 		}
@@ -638,7 +641,7 @@ func TestWALQueries(t *testing.T) {
 	})
 
 	t.Run("JSON WAL query with ANY", func(t *testing.T) {
-		jsonIt := DBD.Query(ns).Where("#lsn", reindexer.ANY, 0).ExecToJson()
+		jsonIt := DBD.Query(ns).Where("#lsn", reindexer.ANY, nil).ExecToJson()
 		validateJson(t, jsonIt)
 	})
 
@@ -649,7 +652,7 @@ func TestWALQueries(t *testing.T) {
 	})
 
 	t.Run("CJSON WAL query with ANY (expecting error)", func(t *testing.T) {
-		it := DBD.Query(ns).Where("#lsn", reindexer.ANY, 0).Exec()
+		it := DBD.Query(ns).Where("#lsn", reindexer.ANY, nil).Exec()
 		assert.Error(t, it.Error())
 	})
 }
@@ -892,8 +895,8 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 	newTestQuery(DB, namespace).Where("name", reindexer.LIKE, makeLikePattern(randString())).ExecAndVerify(t)
 
 	newTestQuery(DB, namespace).Where("packages", reindexer.SET, randIntArr(10, 10000, 50)).Distinct(distinct).Sort(sort, desc).ExecAndVerify(t)
-	newTestQuery(DB, namespace).Where("packages", reindexer.EMPTY, 0).Distinct(distinct).Sort(sort, desc).ExecAndVerify(t)
-	newTestQuery(DB, namespace).Where("packages", reindexer.ANY, 0).Distinct(distinct).Sort(sort, desc).ExecAndVerify(t)
+	newTestQuery(DB, namespace).Where("packages", reindexer.EMPTY, nil).Distinct(distinct).Sort(sort, desc).ExecAndVerify(t)
+	newTestQuery(DB, namespace).Where("packages", reindexer.ANY, nil).Distinct(distinct).Sort(sort, desc).ExecAndVerify(t)
 
 	newTestQuery(DB, namespace).Where("isdeleted", reindexer.EQ, true).Distinct(distinct).Sort(sort, desc).ExecAndVerify(t)
 
@@ -948,12 +951,12 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
 		Where("genre", reindexer.SET, []int{5, 1, 7}).
 		Where("year", reindexer.LT, 2010).Or().Where("genre", reindexer.EQ, 3).
-		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).Or().Where("packages", reindexer.EMPTY, 0).Debug(reindexer.TRACE).
+		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).Or().Where("packages", reindexer.EMPTY, nil).Debug(reindexer.TRACE).
 		ExecAndVerify(t)
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
 		Where("genre", reindexer.SET, []int{5, 1, 7}).
-		Where("year", reindexer.LT, 2010).Or().Where("packages", reindexer.ANY, 0).
+		Where("year", reindexer.LT, 2010).Or().Where("packages", reindexer.ANY, nil).
 		Where("packages", reindexer.SET, randIntArr(5, 10000, 50)).Debug(reindexer.TRACE).
 		ExecAndVerify(t)
 
@@ -1131,6 +1134,27 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().Debug(reindexer.TRACE).
 		Not().Where("uuid_array", reindexer.SET, randUuidArray(rand.Int()%10)).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		WhereQuery(t, newTestQuery(DB, namespace).Where("id", reindexer.EQ, mkID(rand.Int()%5000)),
+			reindexer.ANY, nil).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		WhereQuery(t, newTestQuery(DB, namespace).Select("id").Where("id", reindexer.GT, mkID(rand.Int()%5000)).Limit(10), reindexer.LT, mkID(rand.Int()%5000)).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		WhereQuery(t, newTestQuery(DB, namespace).Where("id", reindexer.GT, mkID(rand.Int()%5000)).AggregateAvg("id"), reindexer.LT, mkID(rand.Int()%5000)).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("id", reindexer.SET, newTestQuery(DB, namespace).Select("id").Where("id", reindexer.GT, mkID(rand.Int()%5000)).Sort("id", false).Limit(10)).
+		ExecAndVerify(t)
+
+	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
+		Where("id", reindexer.LE, newTestQuery(DB, namespace).AggregateAvg("id").Where("id", reindexer.LT, mkID(rand.Int()%5000+5))).
 		ExecAndVerify(t)
 
 	if !testComposite {
@@ -1368,12 +1392,12 @@ func CheckTestItemsDSLQueries(t *testing.T) {
 			{
 				Field: "PACKAGES",
 				Cond:  "ANY",
-				Value: 0,
+				Value: nil,
 			},
 			{
 				Field: "countries",
 				Cond:  "EMPTY",
-				Value: 0,
+				Value: nil,
 			},
 			{
 				Field: "isdeleted",
@@ -1400,8 +1424,8 @@ func CheckTestItemsDSLQueries(t *testing.T) {
 		newTestQuery(DB, "test_items").
 			Where("year", reindexer.GT, 2016).
 			Where("genre", reindexer.SET, []int{1, 2, 3}).
-			Where("packages", reindexer.ANY, 0).
-			Where("countries", reindexer.EMPTY, 0).
+			Where("packages", reindexer.ANY, nil).
+			Where("countries", reindexer.EMPTY, nil).
 			Where("isdeleted", reindexer.EQ, true).
 			Where("company_name", reindexer.LIKE, likePattern).
 			Sort("year", true).
@@ -1719,13 +1743,13 @@ func TestStrictMode(t *testing.T) {
 
 	t.Run("Strict filtering/sort by folded fields (empty namespace)", func(t *testing.T) {
 		{
-			itNames := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNames).Where("nested.Name", reindexer.ANY, 0).Sort("nested.Name", false).MustExec()
+			itNames := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNames).Where("nested.Name", reindexer.ANY, nil).Sort("nested.Name", false).MustExec()
 			assert.Equal(t, itNames.Count(), 0)
 			itNames.Close()
-			itNone := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNone).Where("nested.Name", reindexer.ANY, 0).Sort("nested.Name", false).MustExec()
+			itNone := DBD.Query(namespace).Strict(reindexer.QueryStrictModeNone).Where("nested.Name", reindexer.ANY, nil).Sort("nested.Name", false).MustExec()
 			assert.Equal(t, itNone.Count(), 0)
 			itNone.Close()
-			itIndexes := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).Where("nested.Name", reindexer.ANY, 0).Sort("nested.Name", false).Exec()
+			itIndexes := DBD.Query(namespace).Strict(reindexer.QueryStrictModeIndexes).Where("nested.Name", reindexer.ANY, nil).Sort("nested.Name", false).Exec()
 			assert.Error(t, itIndexes.Error())
 			itIndexes.Close()
 		}
@@ -1852,25 +1876,25 @@ func TestStrictMode(t *testing.T) {
 			assert.Error(t, itIndexes1.Error())
 			itIndexes1.Close()
 
-			itNone3 := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
+			itNone3 := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, nil).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
 			assert.Equal(t, itNone3.Count(), itemsCount)
 			itNone3.Close()
 		}
 
 		{
-			itNames := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
+			itNames := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, nil).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNames).Exec()
 			assert.Error(t, itNames.Error())
 			itNames.Close()
-			itNone := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
+			itNone := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, nil).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
 			itNone.Close()
 			itAll := DBD.Query(namespace).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeNone).MustExec()
 			assert.Equal(t, itNone.Count(), itAll.Count())
 			itAll.Close()
-			itIndexes := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, 0).Sort("year", true).
+			itIndexes := DBD.Query(namespace).Where("unknown_field", reindexer.EMPTY, nil).Sort("year", true).
 				Sort("name", false).Strict(reindexer.QueryStrictModeIndexes).Exec()
 			assert.Error(t, itIndexes.Error())
 			itIndexes.Close()
@@ -1998,6 +2022,7 @@ func TestQrIdleTimeout(t *testing.T) {
 
 	t.Run("check if qr wil be correctly reused after connections drop", func(t *testing.T) {
 		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1), reindexer.WithDedicatedServerThreads())
+		db.SetLogger(testLogger)
 		err := db.RegisterNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 		const qrCount = 32
@@ -2036,6 +2061,7 @@ func TestQrIdleTimeout(t *testing.T) {
 	t.Run("concurrent query results timeouts", func(t *testing.T) {
 		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(16), reindexer.WithDedicatedServerThreads())
 		defer db.Close()
+		db.SetLogger(testLogger)
 		err := db.RegisterNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 		const fillingRoutines = 5
@@ -2097,6 +2123,9 @@ func TestQrIdleTimeout(t *testing.T) {
 		_, err = qrs[qrCount].FetchAll()
 		assert.NoError(t, err)
 
+		if testLogger != nil {
+			testLogger.Printf(reindexer.ERROR, "----- Expecting a lot of query results timeout errors after this line -----")
+		}
 		for i := 1; i < qrCount; i++ {
 			_, err = qrs[i].FetchAll()
 			assert.Error(t, err, "i = %d", i)
@@ -2104,11 +2133,15 @@ func TestQrIdleTimeout(t *testing.T) {
 
 		atomic.AddInt32(&stop, 1)
 		wg.Wait()
+		if testLogger != nil {
+			testLogger.Printf(reindexer.ERROR, "----- No more query results timeout errors after this line -----")
+		}
 	})
 
 	t.Run("check if timed out query results will be reused after client's qr buffer overflow", func(t *testing.T) {
 		db := reindexer.NewReindex(*dsn, reindexer.WithConnPoolSize(1), reindexer.WithDedicatedServerThreads())
 		defer db.Close()
+		db.SetLogger(testLogger)
 		err := db.RegisterNamespace(namespace, reindexer.DefaultNamespaceOptions(), TestItemSimple{})
 		require.NoError(t, err)
 		const qrCount = 256
@@ -2129,6 +2162,10 @@ func TestQrIdleTimeout(t *testing.T) {
 			qrs = append(qrs, it)
 		}
 
+		if testLogger != nil {
+			testLogger.Printf(reindexer.ERROR, "----- Expecting connection drop and a lot of query results EOF errors after this line -----")
+		}
+
 		// Actual overflow. Connect must be dropped
 		it := db.Query(namespace).FetchCount(fetchCount).Limit(fetchCount * 2).Exec()
 		assert.Error(t, it.Error())
@@ -2137,6 +2174,10 @@ func TestQrIdleTimeout(t *testing.T) {
 		for i := 0; i < 2*qrCount; i++ {
 			_, err = qrs[i].FetchAll()
 			assert.Error(t, err, "i = %d", i)
+		}
+
+		if testLogger != nil {
+			testLogger.Printf(reindexer.ERROR, "----- No more query results EOF errors after this line -----")
 		}
 
 		// Trying to create new QRs after connection drop

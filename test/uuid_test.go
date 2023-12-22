@@ -395,9 +395,9 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 	ns := "test_uuid_builtinserver_connect"
 
 	t.Run("test add uuid index on non-indexed string", func(t *testing.T) {
-		rx1 := configureAndStartServer("0:29188", "0:26634", "/tmp/rx_uuid11")
+		rx1 := configureAndStartServer("0:29188", "0:26634", "/tmp/reindex_uuid11")
 		defer rx1.Close()
-		rx2 := configureAndStartServer("0:29189", "0:26635", "/tmp/rx_uuid12")
+		rx2 := configureAndStartServer("0:29189", "0:26635", "/tmp/reindex_uuid12")
 		defer rx2.Close()
 		helpers.ConfigureReplication(t, rx1, "leader", nil, []reindexer.DBAsyncReplicationNode{{DSN: "cproto://127.0.0.1:26635/uudb", Namespaces: nil}})
 		helpers.ConfigureReplication(t, rx2, "follower", nil, nil)
@@ -456,9 +456,9 @@ func TestUuidClientBuiltinserver(t *testing.T) {
 	})
 
 	t.Run("test update index from string to uuid", func(t *testing.T) {
-		rx1 := configureAndStartServer("0:29188", "0:26634", "/tmp/rx_uuid21")
+		rx1 := configureAndStartServer("0:29188", "0:26634", "/tmp/reindex_uuid11")
 		defer rx1.Close()
-		rx2 := configureAndStartServer("0:29189", "0:26635", "/tmp/rx_uuid22")
+		rx2 := configureAndStartServer("0:29189", "0:26635", "/tmp/reindex_uuid12")
 		defer rx2.Close()
 		helpers.ConfigureReplication(t, rx1, "leader", nil, []reindexer.DBAsyncReplicationNode{{DSN: "cproto://127.0.0.1:26635/uudb", Namespaces: nil}})
 		helpers.ConfigureReplication(t, rx2, "follower", nil, nil)

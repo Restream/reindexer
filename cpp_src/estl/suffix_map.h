@@ -203,6 +203,6 @@ protected:
 	std::vector<V> mapped_;
 	std::vector<CharT> text_;
 	bool built_ = false;
-};	// namespace reindexer
+};
 
 }  // namespace reindexer

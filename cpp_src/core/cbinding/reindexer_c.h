@@ -17,7 +17,6 @@ reindexer_error reindexer_connect_v4(uintptr_t rx, reindexer_string dsn, Connect
 reindexer_error reindexer_connect(uintptr_t rx, reindexer_string dsn, ConnectOpts opts, reindexer_string client_vers);
 reindexer_error reindexer_ping(uintptr_t rx);
 
-reindexer_error reindexer_enable_storage(uintptr_t rx, reindexer_string path, reindexer_ctx_info ctx_info);
 reindexer_error reindexer_init_system_namespaces(uintptr_t rx);
 
 reindexer_error reindexer_open_namespace(uintptr_t rx, reindexer_string nsName, StorageOpts opts, reindexer_ctx_info ctx_info);

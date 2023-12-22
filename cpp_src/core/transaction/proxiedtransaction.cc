@@ -17,8 +17,8 @@ Error ProxiedTransaction::Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
 			std::unique_lock lck(mtx_);
 			if (itemCache_.isValid) {
 				itemFromCache = true;
-				clientItem = client::Item(new client::ItemImpl<client::ReindexerImpl>(itemCache_.pt, itemCache_.tm, nullptr,
-																							  std::chrono::milliseconds()));
+				clientItem = client::Item(
+					new client::ItemImpl<client::ReindexerImpl>(itemCache_.pt, itemCache_.tm, nullptr, std::chrono::milliseconds()));
 			} else {
 				lck.unlock();
 				clientItem = tx_.NewItem();

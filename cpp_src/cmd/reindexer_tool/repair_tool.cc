@@ -5,12 +5,16 @@
 #include "iotools.h"
 #include "tools/fsops.h"
 
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+#include "replv3/updatesobserver.h"
+#endif	// REINDEX_WITH_V3_FOLLOWERS
+
 namespace reindexer_tool {
 
 const char kStoragePlaceholderFilename[] = ".reindexer.storage";
 constexpr unsigned kStorageLoadingThreads = 6;
 
-Error RepairTool::RepairStorage(const std::string& dsn) noexcept {
+Error RepairTool::RepairStorage(const std::string &dsn) noexcept {
 	if (dsn.compare(0, 10, "builtin://") != 0) {
 		return Error(errParams, "Invalid DSN format for repair: %s. Must begin from builtin://", dsn);
 	}
@@ -25,14 +29,14 @@ Error RepairTool::RepairStorage(const std::string& dsn) noexcept {
 		std::unique_ptr<reindexer::datastorage::IDataStorage> storage;
 		try {
 			storage.reset(reindexer::datastorage::StorageFactory::create(storageType));
-		} catch (std::exception& ex) {
+		} catch (std::exception &ex) {
 			return Error(errParams, "Skiping DB at '%s' - ", path, ex.what());
 		}
 		std::vector<reindexer::fs::DirEntry> foundNs;
 		if (reindexer::fs::ReadDir(path, foundNs) < 0) {
 			return Error(errParams, "Can't read dir to repair: %s", path);
 		}
-		for (auto& ns : foundNs) {
+		for (auto &ns : foundNs) {
 			if (ns.isDir && reindexer::validateObjectName(ns.name, true)) {
 				auto err = repairNamespace(storage.get(), path, ns.name, storageType);
 				if (!err.ok()) {
@@ -48,7 +52,7 @@ Error RepairTool::RepairStorage(const std::string& dsn) noexcept {
 	return hasErrors ? Error(errParams, "Some of namespaces had repair errors") : errOK;
 }
 
-Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& storagePath, const std::string& name,
+Error RepairTool::repairNamespace(IDataStorage *storage, const std::string &storagePath, const std::string &name,
 								  StorageType storageType) noexcept {
 	auto nsPath = reindexer::fs::JoinPath(storagePath, name);
 	std::cout << "Repairing " << nsPath << "..." << std::endl;
@@ -61,13 +65,36 @@ Error RepairTool::repairNamespace(IDataStorage* storage, const std::string& stor
 		if (!reindexer::validateObjectName(name, true)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
 		}
-		reindexer::NamespaceImpl ns(name, {}, nullptr);
+		class DummyClusterizator final : public reindexer::cluster::INsDataReplicator {
+			Error Replicate(reindexer::cluster::UpdateRecord &&, std::function<void()> f, const reindexer::RdxContext &) override {
+				f();
+				return {};
+			}
+			Error Replicate(reindexer::cluster::UpdatesContainer &&, std::function<void()> f, const reindexer::RdxContext &) override {
+				f();
+				return {};
+			}
+			Error ReplicateAsync(reindexer::cluster::UpdateRecord &&, const reindexer::RdxContext &) override { return {}; }
+			Error ReplicateAsync(reindexer::cluster::UpdatesContainer &&, const reindexer::RdxContext &) override { return {}; }
+			void AwaitInitialSync(std::string_view, const reindexer::RdxContext &) const override {}
+			void AwaitInitialSync(const reindexer::RdxContext &) const override {}
+			bool IsInitialSyncDone(std::string_view) const override { return true; }
+			bool IsInitialSyncDone() const override { return true; }
+		};
+		DummyClusterizator dummyClusterizator;
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+		reindexer::UpdatesObservers observers;
+		reindexer::NamespaceImpl ns(name, {}, dummyClusterizator, observers);
+#else	// REINDEX_WITH_V3_FOLLOWERS
+		reindexer::NamespaceImpl ns(name, {}, dummyClusterizator);
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 		StorageOpts storageOpts;
 		reindexer::RdxContext dummyCtx;
 		std::cout << "Loading " << name << std::endl;
 		ns.EnableStorage(storagePath, storageOpts.Enabled(true), storageType, dummyCtx);
 		ns.LoadFromStorage(kStorageLoadingThreads, dummyCtx);
-	} catch (const Error& err) {
+	} catch (const Error &err) {
 		std::cout << "Namespace was not repaired: " << err.what() << ". Should it be deleted? y/N" << std::endl;
 		for (;;) {
 			std::string input;

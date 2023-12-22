@@ -19,6 +19,11 @@ option (WITH_ASAN "Enable AddressSanitized build" OFF)
 option (WITH_TSAN "Enable ThreadSanitized build" OFF)
 option (WITH_GCOV "Enable instrumented code coverage build" OFF)
 option (WITH_STDLIB_DEBUG "Enable compiler's debug flags for stdlib behaviour validation (gcc/clang)" OFF)
+
+if (WIN32)
+    option (WITH_CPPTRACE "Enable CppTrace" ON)
+endif()
+
 option (ENABLE_LIBUNWIND "Enable libunwind" ON)
 option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
@@ -26,6 +31,8 @@ option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
 option (ENABLE_GRPC "Enable GRPC service" OFF)
 option (ENABLE_SSE "Enable SSE instructions" ON)
 option (ENABLE_SERVER_AS_PROCESS_IN_TEST "Enable run reindexer server as separate process in tests" OFF)
+option (ENABLE_V3_FOLLOWERS "Enable compatibility mode with reindexer v3 followers. This is temporary flag and will be removed in further releases" OFF)
+
 
 if (NOT GRPC_PACKAGE_PROVIDER)
    set (GRPC_PACKAGE_PROVIDER "CONFIG")
@@ -37,7 +44,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "4.12.0")
+set (REINDEXER_VERSION_DEFAULT "4.13.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -54,25 +61,28 @@ include (TargetArch)
 target_architecture(COMPILER_TARGET_ARCH)
 
 # Configure compile options
-string(REPLACE "-DNDEBUG" "" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
-string(REPLACE "-O2" "-O3" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
-string(REPLACE "-O2" "-O3" CMAKE_C_FLAGS "${CMAKE_C_FLAGS}")
-if (NOT ${COMPILER_TARGET_ARCH} STREQUAL "e2k")
-    string(REPLACE "-g" "-g1" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
-else()
-    string(REPLACE "-g" "-g0" CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO}")
-endif()
-
+if (MSVC)
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -Zi")
+  set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -Zi")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
+  set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG -Zi")
+else ()
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g1")
+  set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O3 -g1")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+  set(CMAKE_C_FLAGS_RELEASE "-O3 -DNDEBUG")
+endif ()
 if (${COMPILER_TARGET_ARCH} STREQUAL "e2k")
+  set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O3 -g0")
   add_definitions(-D__E2K__)
   add_definitions(-D__LCC__)
-endif()
+endif ()
 
 if (NOT MSVC AND NOT APPLE)
   check_linker_flag (-gz cxx_linker_supports_gz)
   if (cxx_linker_supports_gz) 
-     set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -gz")
-   endif ()
+    set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -gz")
+  endif ()
 endif ()
 
 if (MSVC)
@@ -89,6 +99,14 @@ else()
 endif ()
 
 set (EXTRA_FLAGS "")
+
+if (WITH_ASAN AND WITH_TSAN)
+  message(FATAL_ERROR "You cannot use the ASAN and TSAN options at the same time, CMake will exit.")
+endif()
+
+if (ENABLE_V3_FOLLOWERS)
+  add_definitions(-DREINDEX_WITH_V3_FOLLOWERS)
+endif ()
 
 if (WITH_ASAN)
   set (EXTRA_FLAGS "-fsanitize=address")
@@ -134,6 +152,7 @@ file (
   ${REINDEXER_SOURCE_PATH}/wal/*
   ${REINDEXER_SOURCE_PATH}/coroutine/*
   ${REINDEXER_SOURCE_PATH}/cluster/*
+  ${REINDEXER_SOURCE_PATH}/replv3/*
 )
 
 string(REGEX REPLACE "([][+*()^])" "\\\\\\1" BASE_CORO_CONTEXT_DIR "${REINDEXER_SOURCE_PATH}/vendor/koishi")
@@ -271,6 +290,9 @@ if (${COMPILER_TARGET_ARCH} STREQUAL "e2k")
 else()
   list(APPEND SRCS ${KOISHI_PATH}/fcontext/fcontext.c ${KOISHI_PATH}/fcontext/fcontext.hpp)
 endif()
+
+# Static LevelDB v1.23 is built with -fno-rtti by default. To inherit our logger from leveldb's logger, this file must be built with -fno-rtti to
+set_source_files_properties(${REINDEXER_SOURCE_PATH}/core/storage/leveldblogger.cc PROPERTIES COMPILE_FLAGS "-fno-rtti")
 
 list(APPEND REINDEXER_LIBRARIES reindexer)
 add_library(${TARGET} STATIC ${HDRS} ${SRCS} ${VENDORS})
@@ -430,6 +452,25 @@ add_definitions(-DREINDEX_WITH_LEVELDB)
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED ON)
 list(APPEND REINDEXER_LIBRARIES ${CMAKE_THREAD_LIBS_INIT} )
+
+if (WITH_CPPTRACE)
+  ExternalProject_Add(
+    cpptrace_lib
+    GIT_REPOSITORY "https://github.com/jeremy-rifkin/cpptrace.git"
+    GIT_TAG "main"
+    CMAKE_ARGS -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}	
+      -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
+      -DCPPTRACE_STATIC=On
+      -DCPPTRACE_GET_SYMBOLS_WITH_DBGHELP=On
+      -DCPPTRACE_UNWIND_WITH_DBGHELP=On
+      -DCPPTRACE_DEMANGLE_WITH_WINAPI=On	
+  )
+  add_definitions(-DREINDEX_WITH_CPPTRACE)
+  add_dependencies(reindexer cpptrace_lib)
+  list(APPEND REINDEXER_LIBRARIES cpptrace ${REINDEXER_LIBRARIES})
+
+endif()
+
 
 # librt
 find_library(LIBRT rt)
@@ -655,7 +696,6 @@ if (GO_BUILTIN_EXPORT_PKG_PATH AND NOT IS_ABSOLUTE ${GO_BUILTIN_EXPORT_PKG_PATH}
   set (GO_BUILTIN_EXPORT_PKG_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${GO_BUILTIN_EXPORT_PKG_PATH}")
 endif ()
 
-if (NOT WIN32)
   function(generate_libs_list INPUT_LIBS OUTPUT_LIST_NAME)
     set (flibs ${${OUTPUT_LIST_NAME}})
     foreach(lib ${INPUT_LIBS})
@@ -678,6 +718,8 @@ if (NOT WIN32)
     set (${OUTPUT_LIST_NAME} ${flibs} PARENT_SCOPE)
   endfunction (generate_libs_list)
 
+
+if (NOT WIN32)
   if (GO_BUILTIN_EXPORT_PKG_PATH AND EXISTS "${GO_BUILTIN_EXPORT_PKG_PATH}/posix_config.go.in")
     ProcessorCount (cgo_proc_count)
     set (cgo_cxx_flags "-I../../cpp_src ${EXTRA_FLAGS}")
@@ -698,12 +740,14 @@ if (NOT WIN32)
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
     "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
+    "tools/verifying_updater.h"
     "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
     "core/rdxcontext.h" "core/activity_context.h" "core/activity.h" "core/activitylog.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"
     "core/cbinding/reindexer_c.h" "core/cbinding/reindexer_ctypes.h" "core/transaction/transaction.h" "core/payload/payloadfieldtype.h" "core/reindexerconfig.h"
     "core/query/query.h" "core/query/queryentry.h" "core/queryresults/queryresults.h" "core/indexdef.h" "core/queryresults/aggregationresult.h"
     "core/queryresults/itemref.h" "core/namespace/stringsholder.h" "core/keyvalue/key_string.h" "core/keyvalue/uuid.h" "core/key_value_type.h"
+    "core/namespace/incarnationtags.h"
     "core/itemimplrawdata.h" "core/expressiontree.h" "tools/lsn.h" "core/cjson/tagspath.h" "core/cjson/ctag.h"
     "estl/cow.h" "core/shardedmeta.h" "estl/overloaded.h" "estl/one_of.h"
     "core/queryresults/localqueryresults.h"
@@ -778,6 +822,18 @@ if (NOT WIN32)
   install(DIRECTORY ${PROJECT_BINARY_DIR}/pkgconfig DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT dev)
   install(FILES ${PROJECT_BINARY_DIR}/pkgconfig/reindexer-config.cmake DESTINATION ${CMAKE_INSTALL_LIBDIR}/reindexer COMPONENT dev)
   install(FILES ${PROJECT_BINARY_DIR}/pkgconfig/reindexer-config-version.cmake DESTINATION ${CMAKE_INSTALL_LIBDIR}/reindexer COMPONENT dev)
+else()
+  if (GO_BUILTIN_EXPORT_PKG_PATH AND EXISTS "${GO_BUILTIN_EXPORT_PKG_PATH}/windows_config.go.in")
+    set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/ ${EXTRA_FLAGS}")
+    generate_libs_list("${REINDEXER_LIBRARIES}" cgo_ld_flags)
+    string(REPLACE ";" "" cgo_ld_flags "${cgo_ld_flags}")
+    configure_file (
+      "${GO_BUILTIN_EXPORT_PKG_PATH}/windows_config.go.in"
+      "${GO_BUILTIN_EXPORT_PKG_PATH}/builtin_windows.go"
+      @ONLY
+    )
+    unset (cgo_ld_flags)
+  endif ()
 endif ()
 
 add_subdirectory(server)

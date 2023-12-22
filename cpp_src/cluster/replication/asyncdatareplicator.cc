@@ -1,6 +1,6 @@
 #include "asyncdatareplicator.h"
 #include "cluster/clusterizator.h"
-#include "core/reindexerimpl.h"
+#include "core/reindexer_impl/reindexerimpl.h"
 
 namespace reindexer {
 namespace cluster {

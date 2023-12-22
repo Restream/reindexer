@@ -13,11 +13,20 @@ type StorageConf struct {
 	Autorepair      bool   `yaml:"autorepair"`
 }
 
+const ServerThreadingDedicated = "dedicated"
+const ServerThreadingShared = "shared"
+
 type NetConf struct {
-	HTTPAddr string `yaml:"httpaddr"`
-	RPCAddr  string `yaml:"rpcaddr"`
-	WebRoot  string `yaml:"webroot"`
-	Security bool   `yaml:"security"`
+	HTTPAddr            string `yaml:"httpaddr"`
+	HTTPThreading       string `yaml:"http_threading"` // "dedicated" or "shared"
+	RPCAddr             string `yaml:"rpcaddr"`
+	RPCThreading        string `yaml:"rpc_threading"` // "dedicated" or "shared"
+	UnixRPCAddr         string `yaml:"urpcaddr"`
+	UnixRPCThreading    string `yaml:"urpc_threading"` // "dedicated" or "shared"
+	WebRoot             string `yaml:"webroot"`
+	Security            bool   `yaml:"security"`
+	HttpReadTimeoutSec  int    `yaml:"http_read_timeout,omitempty"`
+	HttpWriteTimeoutSec int    `yaml:"http_write_timeout,omitempty"`
 }
 
 type LoggerConf struct {
@@ -70,9 +79,11 @@ func DefaultServerConfig() *ServerConfig {
 			Autorepair:      false,
 		},
 		Net: NetConf{
-			HTTPAddr: "0.0.0.0:9088",
-			RPCAddr:  "0.0.0.0:6534",
-			Security: false,
+			HTTPAddr:      "0.0.0.0:9088",
+			HTTPThreading: "shared",
+			RPCAddr:       "0.0.0.0:6534",
+			RPCThreading:  "shared",
+			Security:      false,
 		},
 		Logger: LoggerConf{
 			ServerLog: "stdout",

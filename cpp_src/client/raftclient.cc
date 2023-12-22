@@ -25,7 +25,7 @@ RaftClient& RaftClient::operator=(RaftClient&& rdx) noexcept {
 Error RaftClient::Connect(const std::string& dsn, net::ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
 	return impl_->Connect(dsn, loop, opts);
 }
-Error RaftClient::Stop() { return impl_->Stop(); }
+void RaftClient::Stop() { impl_->Stop(); }
 
 Error RaftClient::SuggestLeader(const NodeData& suggestion, NodeData& response) { return impl_->SuggestLeader(suggestion, response, ctx_); }
 

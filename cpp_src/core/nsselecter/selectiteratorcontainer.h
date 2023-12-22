@@ -28,9 +28,10 @@ struct SelectIteratorsBracket : private Bracket {
 	bool haveJoins = false;
 };
 
-class SelectIteratorContainer
-	: public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysFalse> {
-	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysFalse>;
+class SelectIteratorContainer : public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator,
+													  FieldsComparator, AlwaysFalse, AlwaysTrue> {
+	using Base =
+		ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue>;
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr)
@@ -49,11 +50,11 @@ public:
 
 	bool IsSelectIterator(size_t i) const noexcept {
 		assertrx(i < Size());
-		return container_[i].HoldsOrReferTo<SelectIterator>();
+		return container_[i].Is<SelectIterator>();
 	}
 	bool IsJoinIterator(size_t i) const noexcept {
 		assertrx(i < container_.size());
-		return container_[i].HoldsOrReferTo<JoinSelectIterator>();
+		return container_[i].Is<JoinSelectIterator>();
 	}
 	void ExplainJSON(int iters, JsonBuilder &builder, const std::vector<JoinedSelector> *js) const {
 		explainJSON(cbegin(), cend(), iters, builder, js);
@@ -67,7 +68,7 @@ public:
 	int GetMaxIterations(bool withZero = false) { return (withZero && wasZeroIterations_) ? 0 : maxIterations_; }
 	std::string Dump() const;
 	static bool IsExpectingOrderedResults(const QueryEntry &qe) noexcept {
-		return IsOrderedCondition(qe.condition) || (qe.condition != CondAny && qe.values.size() <= 1);
+		return IsOrderedCondition(qe.Condition()) || (qe.Condition() != CondAny && qe.Values().size() <= 1);
 	}
 
 private:
@@ -101,10 +102,10 @@ private:
 									   bool isQueryFt, SelectFunction::Ptr &selectFnc, bool &isIndexFt, bool &isIndexSparse, FtCtx::Ptr &,
 									   QueryPreprocessor &qPreproc, const RdxContext &);
 	template <bool left>
-	void processField(FieldsComparator &, std::string_view field, int idxNo, const NamespaceImpl &ns) const;
+	void processField(FieldsComparator &, const QueryField &, const NamespaceImpl &) const;
 	void processJoinEntry(const JoinQueryEntry &, OpType);
 	void processQueryEntryResults(SelectKeyResults &selectResults, OpType, const NamespaceImpl &ns, const QueryEntry &qe, bool isIndexFt,
-								  bool isIndexSparse, bool nonIndexField, std::optional<OpType> nextOp);
+								  bool isIndexSparse, std::optional<OpType> nextOp);
 	struct EqualPositions {
 		h_vector<size_t, 4> queryEntriesPositions;
 		size_t positionToInsertIterator = 0;

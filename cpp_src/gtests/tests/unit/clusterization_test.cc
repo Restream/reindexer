@@ -4,6 +4,7 @@
 #include "client/raftclient.h"
 #include "clusterization_api.h"
 #include "core/cjson/jsonbuilder.h"
+#include "yaml-cpp/yaml.h"
 
 TEST_F(ClusterizationApi, LeaderElections) {
 	// Check leader election on deffirent conditions

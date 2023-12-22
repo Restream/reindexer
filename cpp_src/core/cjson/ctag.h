@@ -14,7 +14,6 @@
 namespace reindexer {
 class Serializer;
 class WrSerializer;
-}  // namespace reindexer
 
 class ctag {
 	friend class reindexer::Serializer;
@@ -52,8 +51,8 @@ public:
 	[[nodiscard]] constexpr bool operator!=(ctag other) const noexcept { return !operator==(other); }
 
 private:
-	explicit constexpr ctag(uint32_t tag) noexcept : ctag{typeImpl(tag), nameImpl(tag), fieldImpl(tag)} { assertrx(tag == tag_); }
-	explicit constexpr ctag(uint64_t tag) noexcept : ctag{typeImpl(tag), nameImpl(tag), fieldImpl(tag)} { assertrx(tag == tag_); }
+	explicit constexpr ctag(uint32_t tag) noexcept : ctag{typeImpl(tag), nameImpl(tag), fieldImpl(tag)} { assertrx_dbg(tag == tag_); }
+	explicit constexpr ctag(uint64_t tag) noexcept : ctag{typeImpl(tag), nameImpl(tag), fieldImpl(tag)} { assertrx_dbg(tag == tag_); }
 	[[nodiscard]] constexpr static TagType typeImpl(uint32_t tag) noexcept {
 		return static_cast<TagType>((tag & kTypeMask) | ((tag >> kType1Offset) & kInvertedTypeMask));
 	}
@@ -90,7 +89,7 @@ public:
 	[[nodiscard]] constexpr bool operator!=(carraytag other) const noexcept { return !operator==(other); }
 
 private:
-	explicit constexpr carraytag(uint32_t atag) noexcept : carraytag{countImpl(atag), typeImpl(atag)} { assertrx(atag == atag_); }
+	explicit constexpr carraytag(uint32_t atag) noexcept : carraytag{countImpl(atag), typeImpl(atag)} { assertrx_dbg(atag == atag_); }
 	[[nodiscard]] constexpr uint32_t asNumber() const noexcept { return atag_; }
 	[[nodiscard]] static constexpr TagType typeImpl(uint32_t atag) noexcept {
 		return static_cast<TagType>((atag >> kCountBits) & kTypeMask);
@@ -99,3 +98,5 @@ private:
 
 	uint32_t atag_;
 };
+
+}  // namespace reindexer

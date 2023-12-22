@@ -63,7 +63,7 @@ enum HttpMethod : int {
 typedef std::string_view UrlParam;
 
 struct HttpStatus {
-	HttpStatus() { code = StatusOK; }
+	HttpStatus() noexcept : code(StatusOK) {}
 	HttpStatus(HttpStatusCode httpcode, std::string httpwhat) : code(httpcode), what(std::move(httpwhat)) {}
 	explicit HttpStatus(const Error &err) : what(err.what()) { code = errCodeToHttpStatus(err.code()); }
 

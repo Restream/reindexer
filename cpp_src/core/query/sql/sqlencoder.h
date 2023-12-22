@@ -2,7 +2,6 @@
 
 #include <stdlib.h>
 #include "core/query/query.h"
-#include "core/type_consts.h"
 
 /// @namespace reindexer
 /// The base namespace
@@ -12,7 +11,8 @@ class WrSerializer;
 
 class SQLEncoder {
 public:
-	SQLEncoder(const Query &q);
+	SQLEncoder(const Query &q) noexcept : SQLEncoder(q, q.Type()) {}
+	SQLEncoder(const Query &q, QueryType queryType) noexcept : query_(q), realQueryType_(queryType) {}
 
 	WrSerializer &GetSQL(WrSerializer &ser, bool stripArgs = false) const;
 
@@ -40,8 +40,8 @@ protected:
 
 	/// Builds a print version of all equal_position() functions in query.
 	/// @param ser - serializer to store SQL string
-	/// @param parenthesisIndex - index of current parenthesis
-	void dumpEqualPositions(WrSerializer &ser, const EqualPositions_t &) const;
+	/// @param equalPositions - equal positions array
+	void dumpEqualPositions(WrSerializer &ser, const EqualPositions_t &equalPositions) const;
 
 	/// Builds a print version of all where condition entries.
 	/// @param from - iterator to first entry
@@ -52,6 +52,7 @@ protected:
 	void dumpSQLWhere(WrSerializer &ser, bool stripArgs) const;
 
 	const Query &query_;
+	const QueryType realQueryType_;
 };
 
 }  // namespace reindexer

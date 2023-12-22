@@ -83,7 +83,7 @@ private:
 		Composite,
 		Tuple,
 		Uuid
-	} value_;
+	} value_{KVT::Undefined};
 	constexpr explicit KeyValueType(KVT v) noexcept : value_{v} {}
 
 	[[nodiscard]] static KeyValueType fromNumber(int n) {
@@ -144,8 +144,9 @@ public:
 			case TAG_ARRAY:
 			case TAG_OBJECT:
 			case TAG_END:
-				throw Error(errParams, "Invalid tag type value for KeyValueType: " + std::string{TagTypeToStr(t)});
+				break;
 		}
+		throw Error(errParams, "Invalid tag type value for KeyValueType: " + std::string{TagTypeToStr(t)});
 	}
 
 	template <typename... Fs>
@@ -228,7 +229,7 @@ public:
 		return v.value_ == value_;
 	}
 	[[nodiscard]] bool IsSame(KeyValueType other) const noexcept { return value_ == other.value_; }
-	[[nodiscard]] TagType ToTagType() const {
+	[[nodiscard]] TagType ToTagType() const noexcept {
 		switch (value_) {
 			case KVT::Int64:
 			case KVT::Int:

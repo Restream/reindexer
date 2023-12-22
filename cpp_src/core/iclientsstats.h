@@ -6,11 +6,15 @@
 
 namespace reindexer {
 
+constexpr std::string_view kTcpProtocolName = "tcp";
+constexpr std::string_view kUnixProtocolName = "unix";
+
 class WrSerializer;
 
 struct ClientStat {
 	void GetJSON(WrSerializer& ser) const;
 	int connectionId = 0;
+	std::string_view protocol = kTcpProtocolName;
 	std::string ip;
 	std::string userName;
 	std::string dbName;
@@ -37,6 +41,7 @@ struct ClientConnectionStat {
 	std::shared_ptr<reindexer::net::connection_stat> connectionStat;
 	std::shared_ptr<reindexer::TxStats> txStats;
 	std::string ip;
+	std::string_view protocol = kTcpProtocolName;
 	std::string userName;
 	std::string dbName;
 	std::string userRights;

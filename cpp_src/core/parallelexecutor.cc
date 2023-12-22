@@ -5,7 +5,7 @@ namespace reindexer {
 
 Error ParallelExecutor::createIntegralError(h_vector<std::pair<Error, int>, 8> &errors, size_t clientCount) {
 	if (errors.empty()) {
-		return errOK;
+		return {};
 	}
 	std::string descr;
 	bool eqErr = true;
@@ -16,12 +16,12 @@ Error ParallelExecutor::createIntegralError(h_vector<std::pair<Error, int>, 8> &
 			eqErr = false;
 		}
 		if (e.first.code() == errStrictMode) {
-			errStrictModeCounter++;
+			++errStrictModeCounter;
 		}
 		descr += fmt::format("[ shard:{} err:{} ]", e.second, e.first.what());
 	}
 	if (errStrictModeCounter == errors.size() && errors.size() < clientCount) {
-		return errOK;
+		return {};
 	}
 	if (eqErr) {
 		return errors[0].first;
@@ -46,26 +46,23 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 	auto ward = ctx.BeforeShardingProxy();
 
 	size_t clientCount = countClientConnection(connections);
-
 	for (auto itr = connections.rbegin(); itr != connections.rend(); ++itr) {
-		auto &connection = *itr;
-		int shardId = connection.ShardId();
-		if (connection) {
-			clientResults.emplace_back(connection.ShardId());
-			clientResults.back().results = client::QueryResults{result.Flags()};
-			clientResults.back().connection =
+		if (auto &connection = *itr; connection) {
+			const int shardId = connection.ShardId();
+			auto &clientData = clientResults.emplace_back(connection.ShardId());
+			clientData.results = client::QueryResults{result.Flags()};
+			clientData.connection =
 				connection->WithShardingParallelExecution(connections.size() > 1)
 					.WithCompletion([clientCount, &clientCompl, &clientErrors, shardId, &mtx, &cv, this](const Error &err) {
 						completionFunction(clientCount, clientCompl, clientErrors, shardId, mtx, cv, err);
 					})
 					.WithContext(ctx.GetCancelCtx());
 
-			Error err = clientResults.back().connection.Select(query, clientResults.back().results);
+			Error err = clientData.connection.Select(query, clientData.results);
 			if (!err.ok()) {
 				std::lock_guard lck(mtx);
 				clientErrors.emplace_back(std::move(err), shardId);
 			}
-
 		} else {
 			const auto shCtx = ctx.WithShardId(localShardId_, true);
 			LocalQueryResults lqr;
@@ -75,7 +72,7 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 				result.AddQr(std::move(lqr), localShardId_, false);
 			} else {
 				std::lock_guard lck(mtx);
-				clientErrors.emplace_back(std::move(status), shardId);
+				clientErrors.emplace_back(std::move(status), localShardId_);
 			}
 		}
 	}
@@ -86,8 +83,24 @@ Error ParallelExecutor::ExecSelect(const Query &query, QueryResults &result, con
 		if (!status.ok()) {
 			return status;
 		}
+		const auto shardingVersion = result.GetShardingConfigVersion();
 		for (size_t i = 0; i < clientResults.size(); ++i) {
-			result.AddQr(std::move(clientResults[i].results), clientResults[i].shardId, (i + 1) == clientResults.size());
+			bool hasError = false;
+			auto &clientData = clientResults[i];
+			for (auto &ep : clientErrors) {
+				if (ep.second == clientData.shardId) {
+					hasError = true;
+					break;
+				}
+			}
+			if rx_likely (!hasError) {
+				if rx_unlikely (clientData.results.GetShardingConfigVersion() != shardingVersion) {
+					return Error(errLogic,
+								 "Distributed parallel query: local and remote sharding versions (source IDs) are different: %d vs %d",
+								 shardingVersion, clientData.results.GetShardingConfigVersion());
+				}
+				result.AddQr(std::move(clientData.results), clientData.shardId, (i + 1) == clientResults.size());
+			}
 		}
 		return status;
 	}
@@ -99,7 +112,7 @@ void ParallelExecutor::completionFunction(size_t clientCount, size_t &clientComp
 	std::lock_guard lck(mtx);
 	clientCompl++;
 	if (!err.ok()) {
-		clientErrors.push_back(std::make_pair(err, shardId));
+		clientErrors.emplace_back(err, shardId);
 	}
 	if (clientCompl == clientCount) {
 		cv.notify_one();

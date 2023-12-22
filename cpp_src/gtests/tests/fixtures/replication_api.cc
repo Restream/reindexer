@@ -6,7 +6,6 @@
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
 
-const std::string ReplicationApi::kStoragePath = "/tmp/reindex_repl_test/";
 const std::string ReplicationApi::kConfigNs = "#config";
 
 bool ReplicationApi::StopServer(size_t id) {

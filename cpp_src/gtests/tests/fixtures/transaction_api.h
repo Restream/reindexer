@@ -50,9 +50,9 @@ public:
 
 	int GetItemsCount(Reindexer& reindexer) {
 		QueryResults qr;
-		Error err = reindexer.Select(Query(default_namespace), qr);
+		Error err = reindexer.Select(Query(default_namespace).CachedTotal().Limit(0), qr);
 		EXPECT_TRUE(err.ok()) << err.what();
-		return qr.Count();
+		return qr.TotalCount();
 	}
 
 	void SelectData(Reindexer& reindexer, int fromMax, int tillMax) {

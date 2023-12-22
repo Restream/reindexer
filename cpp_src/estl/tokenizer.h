@@ -13,8 +13,8 @@ public:
 	token(token_type t = TokenSymbol) noexcept : type(t) {}
 	token(const token &) = delete;
 	token &operator=(const token &) = delete;
-	token(token &&other) = default;
-	token &operator=(token &&other) = default;
+	token(token &&) noexcept = default;
+	token &operator=(token &&) noexcept = default;
 
 	std::string_view text() const noexcept { return std::string_view(text_.data(), text_.size()); }
 	void to_lower() noexcept {
@@ -45,10 +45,21 @@ public:
 
 	tokenizer(std::string_view query) noexcept : q_(query), cur_(query.begin()) {}
 	token next_token(flags f = flags(flags::to_lower));
-	token peek_token(flags f = flags(flags::to_lower)) {
+	[[nodiscard]] token peek_token(flags f = flags(flags::to_lower)) {
 		auto save_cur = cur_;
 		auto save_pos = pos_;
 		auto res = next_token(f);
+		cur_ = save_cur;
+		pos_ = save_pos;
+		return res;
+	}
+	[[nodiscard]] token peek_second_token(flags f = flags(flags::to_lower)) {
+		auto save_cur = cur_;
+		auto save_pos = pos_;
+		auto res = next_token(f);
+		if (res.type != TokenEnd) {
+			res = next_token(f);
+		}
 		cur_ = save_cur;
 		pos_ = save_pos;
 		return res;
@@ -65,7 +76,7 @@ public:
 	size_t length() const noexcept { return q_.length(); }
 	const char *begin() const noexcept { return q_.data(); }
 
-protected:
+private:
 	std::string_view q_;
 	std::string_view::const_iterator cur_;
 	size_t pos_ = 0;

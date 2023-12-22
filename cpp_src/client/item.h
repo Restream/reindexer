@@ -82,9 +82,9 @@ public:
 	/// Get internal shardId of item
 	/// @return shardId of item
 	int GetShardID() const noexcept { return shardId_; }
-	/// Get internal version of item
-	/// @return version of item
-	int NumFields();
+	/// Get count of indexed fields
+	/// @return count of indexed fields
+	int NumFields() const noexcept;
 	/// Set additional percepts for modify operation
 	/// @param precepts - strings in format "fieldName=Func()"
 	void SetPrecepts(std::vector<std::string> precepts);

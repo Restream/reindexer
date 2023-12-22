@@ -1,7 +1,7 @@
 #include "clusterreplthread.h"
 #include "client/snapshot.h"
 #include "core/namespace/namespacestat.h"
-#include "core/reindexerimpl.h"
+#include "core/reindexer_impl/reindexerimpl.h"
 #include "net/cproto/cproto.h"
 
 namespace reindexer {

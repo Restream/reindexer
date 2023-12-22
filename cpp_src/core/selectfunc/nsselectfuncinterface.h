@@ -1,7 +1,6 @@
 #pragma once
 #include <core/cjson/tagsmatcher.h>
 #include <core/type_consts.h>
-#include <string>
 
 namespace reindexer {
 class NamespaceImpl;
@@ -10,15 +9,15 @@ class FieldsSet;
 
 class NsSelectFuncInterface {
 public:
-	NsSelectFuncInterface(const NamespaceImpl& nm) : nm_(nm) {}
-	const std::string& GetName() const;
-	int getIndexByName(const std::string& index) const;
-	bool getIndexByName(const std::string& name, int& index) const;
-	int getIndexesCount() const;
-	const std::string& getIndexName(int id) const;
-	IndexType getIndexType(int id) const;
-	const FieldsSet& getIndexFields(int id) const;
-	TagsPath getTagsPathForField(const std::string& jsonPath) const;
+	explicit NsSelectFuncInterface(const NamespaceImpl& nm) noexcept : nm_(nm) {}
+	const std::string& GetName() const noexcept;
+	int getIndexByName(std::string_view index) const noexcept;
+	bool getIndexByName(std::string_view name, int& index) const noexcept;
+	int getIndexesCount() const noexcept;
+	const std::string& getIndexName(int id) const noexcept;
+	IndexType getIndexType(int id) const noexcept;
+	const FieldsSet& getIndexFields(int id) const noexcept;
+	TagsPath getTagsPathForField(std::string_view jsonPath) const noexcept;
 
 private:
 	const NamespaceImpl& nm_;

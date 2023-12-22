@@ -50,7 +50,7 @@ public:
 	~CommandsExecutor() { stop(true); }
 	template <typename... Args>
 	Error Run(const std::string& dsn, const Args&... args);
-	void GetSuggestions(const std::string& input, std::vector<std::string>& suggestions);
+	Error GetSuggestions(const std::string& input, std::vector<std::string>& suggestions);
 	Error Stop();
 	Error Process(const std::string& command);
 	Error FromFile(std::istream& in);
@@ -83,13 +83,13 @@ protected:
 								  std::vector<std::string>& suggestions);
 
 	Error processImpl(const std::string& command) noexcept;
-	Error stop(bool terminate);
-	void getSuggestions(const std::string& input, std::vector<std::string>& suggestions);
-	Error commandSelect(const std::string& command);
+	void stop(bool terminate);
+	Error getSuggestions(const std::string& input, std::vector<std::string>& suggestions);
+	Error commandSelect(const std::string& command) noexcept;
 	Error commandUpsert(const std::string& command);
-	Error commandUpdateSQL(const std::string& command);
+	Error commandUpdateSQL(const std::string& command) noexcept;
 	Error commandDelete(const std::string& command);
-	Error commandDeleteSQL(const std::string& command);
+	Error commandDeleteSQL(const std::string& command) noexcept;
 	Error commandDump(const std::string& command);
 	Error commandNamespaces(const std::string& command);
 	Error commandMeta(const std::string& command);
@@ -216,13 +216,34 @@ protected:
     };
 	// clang-format on
 
+	class URI {
+	public:
+		bool parse(const std::string& dsn) { return uri_.parse(dsn); }
+		const std::string& scheme() const { return uri_.scheme(); }
+		const std::string& path() const { return uri_.path(); }
+		const std::string& username() const { return uri_.username(); }
+		const std::string& password() const { return uri_.password(); }
+		const std::string& hostname() const { return uri_.hostname(); }
+		const std::string& port() const { return uri_.port(); }
+		std::string db() const {
+			if (uri_.scheme() == "ucproto") {
+				return getDBFromUCproto();
+			}
+			return uri_.db();
+		}
+		std::string getDBFromUCproto() const;
+
+	private:
+		httpparser::UrlParser uri_;
+	};
+
 	reindexer::net::ev::dynamic_loop loop_;
 	CancelContext cancelCtx_;
 	DBInterface db_;
 	Output output_;
 	int numThreads_;
 	std::unordered_map<std::string, std::string> variables_;
-	httpparser::UrlParser uri_;
+	URI uri_;
 	reindexer::net::ev::async cmdAsync_;
 	std::mutex mtx_;
 	std::condition_variable condVar_;

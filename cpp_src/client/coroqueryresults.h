@@ -4,6 +4,7 @@
 #include <optional>
 #include "client/item.h"
 #include "client/resultserializer.h"
+#include "core/namespace/incarnationtags.h"
 #include "tools/lsn.h"
 
 namespace reindexer {
@@ -110,10 +111,13 @@ public:
 	bool HaveRank() const noexcept { return i_.queryParams_.flags & kResultsWithRank; }
 	bool NeedOutputRank() const noexcept { return i_.queryParams_.flags & kResultsNeedOutputRank; }
 	bool NeedOutputShardId() const noexcept { return i_.fetchFlags_ & kResultsNeedOutputShardId; }
+	int64_t GetShardingConfigVersion() const noexcept { return i_.queryParams_.shardingConfigVersion; }
 	const std::string& GetExplainResults();
 	const std::vector<AggregationResult>& GetAggregationResults();
 	Error Status() const noexcept { return i_.status_; }
 	h_vector<std::string_view, 1> GetNamespaces() const;
+	const NsShardsIncarnationTags& GetIncarnationTags() const& noexcept { return i_.queryParams_.nsIncarnationTags; }
+	const NsShardsIncarnationTags& GetIncarnationTags() && = delete;
 	size_t GetNamespacesCount() const noexcept { return i_.nsArray_.size(); }
 	bool IsCacheEnabled() const noexcept { return i_.queryParams_.flags & kResultsWithItemID; }
 	int GetMergedNSCount() const noexcept { return i_.nsArray_.size(); }
@@ -202,7 +206,6 @@ private:
 		bool lazyMode_ = false;
 		bool isBound_ = false;
 		Error status_;
-		int64_t shardingConfigVersion_ = -1;
 		std::chrono::steady_clock::time_point sessionTs_;
 		std::optional<QueryData> qData_;
 	};

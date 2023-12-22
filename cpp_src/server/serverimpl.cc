@@ -202,6 +202,10 @@ void ServerImpl::ReopenLogFiles() {
 #endif
 }
 
+std::string ServerImpl::GetCoreLogPath() const {
+	return GetDirPath(config_.CoreLog); 
+}
+
 int ServerImpl::run() {
 	loggerConfigure();
 
@@ -290,10 +294,9 @@ int ServerImpl::run() {
 		logger_.info("HTTP write timeout was not set explicitly. The default value will be used: {0} seconds",
 					 config_.HttpWriteTimeout().count());
 	}
-	std::unique_ptr<ClientsStats> clientsStats;
-	if (config_.EnableConnectionsStats) clientsStats.reset(new ClientsStats());
+	const auto clientsStats = config_.EnableConnectionsStats ? std::make_unique<ClientsStats>() : std::unique_ptr<ClientsStats>();
 	try {
-		dbMgr_.reset(new DBManager(config_, clientsStats.get()));
+		dbMgr_ = std::make_unique<DBManager>(config_, clientsStats.get());
 
 		auto status = dbMgr_->Init();
 		if (!status.ok()) {
@@ -302,8 +305,13 @@ int ServerImpl::run() {
 		}
 		storageLoaded_ = true;
 
-		logger_.info("Starting reindexer_server ({0}) on {1} HTTP, {2} RPC, with db '{3}'", REINDEX_VERSION, config_.HTTPAddr,
-					 config_.RPCAddr, config_.StoragePath);
+		if (config_.RPCUnixAddr.empty()) {
+			logger_.info("Starting reindexer_server ({0}) on {1} HTTP, {2} RPC(TCP), with db '{3}'", REINDEX_VERSION, config_.HTTPAddr,
+						 config_.RPCAddr, config_.StoragePath);
+		} else {
+			logger_.info("Starting reindexer_server ({0}) on {1} HTTP, {2} RPC(TCP), {3} RPC(Unix), with db '{4}'", REINDEX_VERSION,
+						 config_.HTTPAddr, config_.RPCAddr, config_.RPCUnixAddr, config_.StoragePath);
+		}
 
 		std::unique_ptr<Prometheus> prometheus;
 		std::unique_ptr<StatsCollector> statsCollector;
@@ -320,10 +328,22 @@ int ServerImpl::run() {
 		}
 
 		LoggerWrapper rpcLogger("rpc");
-		std::unique_ptr<RPCServer> rpcServer =
-			std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
-		if (!rpcServer->Start(config_.RPCAddr, loop_)) {
-			logger_.error("Can't listen RPC on '{0}'", config_.RPCAddr);
+		auto rpcServerTCP = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
+		std::unique_ptr<RPCServer> rpcServerUnix;
+		if (!config_.RPCUnixAddr.empty()) {
+#ifdef _WIN32
+			logger_.warn("Unable to startup RPC(Unix) on '{0}' (unix domain socket are not supported on Windows platforms)",
+						 config_.RPCUnixAddr);
+#else	// _WIN32
+			rpcServerUnix = std::make_unique<RPCServer>(*dbMgr_, rpcLogger, clientsStats.get(), config_, statsCollector.get());
+			if (!rpcServerUnix->Start(config_.RPCUnixAddr, loop_, RPCSocketT::Unx, config_.RPCUnixThreadingMode)) {
+				logger_.error("Can't listen RPC(Unix) on '{0}'", config_.RPCUnixAddr);
+				return EXIT_FAILURE;
+			}
+#endif	// _WIN32
+		}
+		if (!rpcServerTCP->Start(config_.RPCAddr, loop_, RPCSocketT::TCP, config_.RPCThreadingMode)) {
+			logger_.error("Can't listen RPC(TCP) on '{0}'", config_.RPCAddr);
 			return EXIT_FAILURE;
 		}
 
@@ -400,8 +420,12 @@ int ServerImpl::run() {
 		logger_.info("Clusterization shutdown completed.");
 		httpServer.Stop();
 		logger_.info("HTTP Server shutdown completed.");
-		rpcServer->Stop();
-		logger_.info("RPC Server shutdown completed.");
+		if (rpcServerUnix) {
+			rpcServerUnix->Stop();
+			logger_.info("RPC Server(Unix) shutdown completed.");
+		}
+		rpcServerTCP->Stop();
+		logger_.info("RPC Server(TCP) shutdown completed.");
 #ifdef WITH_GRPC
 #if REINDEX_WITH_LIBDL
 		if (hGRPCServiceLib && config_.EnableGRPC) {

@@ -7,6 +7,15 @@ set(TARGET reindexer_server)
 file (GLOB_RECURSE SRCS "main.cc")
 add_executable(${TARGET} ${SRCS})
 list(APPEND REINDEXER_LIBRARIES reindexer_server_library reindexer ${REINDEXER_LIBRARIES})
+
+if (WITH_CPPTRACE)
+  list(APPEND REINDEXER_LIBRARIES cpptrace ${REINDEXER_LIBRARIES})
+endif()
+
+if(MSVC)
+  set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -DEBUG")
+endif()
+
 include_directories(${PROJECT_SOURCE_DIR})
 add_dependencies(${TARGET} reindexer_server_library)
 
@@ -57,6 +66,7 @@ if (WIN32)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP true)
     include(InstallRequiredSystemLibraries)
     install(FILES ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES $<TARGET_PDB_FILE:${PROJECT_NAME}> DESTINATION ${CMAKE_INSTALL_BINDIR} OPTIONAL)
   else()
     get_filename_component(MINGW_DLL_DIR ${CMAKE_CXX_COMPILER} PATH)
     install(FILES

@@ -25,12 +25,12 @@ public:
 		const int res = impl_->name2tag(name);
 		return res ? res : impl_.clone()->name2tag(name, canAdd, updated_);
 	}
-	int tags2field(const int16_t* path, size_t pathLen) const { return impl_->tags2field(path, pathLen); }
+	int tags2field(const int16_t* path, size_t pathLen) const noexcept { return impl_->tags2field(path, pathLen); }
 	const std::string& tag2name(int tag) const { return impl_->tag2name(tag); }
 	TagsPath path2tag(std::string_view jsonPath) const { return impl_->path2tag(jsonPath); }
 	TagsPath path2tag(std::string_view jsonPath, bool canAdd) {
-		auto res = path2tag(jsonPath);
 		if (jsonPath.empty()) return TagsPath();
+		auto res = path2tag(jsonPath);
 		return res.empty() && canAdd ? impl_.clone()->path2tag(jsonPath, canAdd, updated_) : res;
 	}
 	IndexedTagsPath path2indexedtag(std::string_view jsonPath, const IndexExpressionEvaluator& ev) const {

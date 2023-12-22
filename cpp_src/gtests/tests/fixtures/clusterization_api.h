@@ -1,37 +1,27 @@
 ﻿#pragma once
 
-#include <mutex>
-#include "client/cororeindexer.h"
 #include "client/raftclient.h"
-#include "debug/backtrace.h"
-#include "estl/fast_hash_set.h"
+#include "cluster/config.h"
+#include "net/ev/ev.h"
 #include "reindexer_api.h"
-#include "reindexertestapi.h"
-#include "server/dbmanager.h"
-#include "server/server.h"
-#include "thread"
 #include "tools/fsops.h"
-#include "tools/logger.h"
-#include "tools/serializer.h"
-#include "yaml-cpp/yaml.h"
 
-using namespace reindexer_server;
-using std::shared_ptr;
+using namespace reindexer;
 
 class ClusterizationApi : public ::testing::Test {
 public:
-	static const std::string kConfigNs;
-	static const std::chrono::seconds kMaxServerStartTime;
-	static const std::chrono::seconds kMaxSyncTime;
-	static const std::chrono::seconds kMaxElectionsTime;
+	static constexpr std::string_view kConfigNs = "#config";
+	static constexpr auto kMaxServerStartTime = std::chrono::seconds(15);
+	static constexpr auto kMaxSyncTime = std::chrono::seconds(15);
+	static constexpr auto kMaxElectionsTime = std::chrono::seconds(12);
 
-	static const std::string kIdField;
-	static const std::string kStringField;
-	static const std::string kIntField;
-	static const std::string kFTField;
+	static constexpr std::string_view kIdField = "id";
+	static constexpr std::string_view kStringField = "string";
+	static constexpr std::string_view kIntField = "int";
+	static constexpr std::string_view kFTField = "ft_str";
 
-	void SetUp();
-	void TearDown();
+	void SetUp() { fs::RmDirAll(GetDefaults().baseTestsetDbPath); }
+	void TearDown() { fs::RmDirAll(GetDefaults().baseTestsetDbPath); }
 
 	struct Defaults {
 		size_t defaultRpcPort;

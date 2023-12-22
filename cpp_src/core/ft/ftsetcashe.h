@@ -17,6 +17,6 @@ struct FtIdSetCacheVal {
 	FtCtx::Data::Ptr ctx;
 };
 
-class FtIdSetCache : public LRUCache<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key> {};
+using FtIdSetCache = LRUCache<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
 
 }  // namespace reindexer

@@ -1,6 +1,8 @@
 #include "clusterization_extras_api.h"
 #include "core/cjson/jsonbuilder.h"
 
+using namespace reindexer;
+
 TEST_F(ClusterizationExtrasApi, SpecifyClusterNamespaceList) {
 	// Check if with specified cluster namespaces list we are able to write into follower's non-cluster namespaces
 	net::ev::dynamic_loop loop;

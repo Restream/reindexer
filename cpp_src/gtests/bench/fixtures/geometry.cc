@@ -1,6 +1,6 @@
 #include "geometry.h"
 #include "core/cjson/jsonbuilder.h"
-#include "tools/random.h"
+#include "tools/randompoint.h"
 
 namespace {
 
@@ -30,7 +30,7 @@ void Geometry::GetDWithin(benchmark::State& state) {
 	benchmark::AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		reindexer::Query q(nsdef_.name);
-		q.DWithin("point", randPoint(kRange), kRange / N);
+		q.DWithin("point", reindexer::randPoint(kRange), kRange / N);
 		reindexer::QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
@@ -117,7 +117,7 @@ reindexer::Item Geometry::MakeItem(benchmark::State& state) {
 	wrSer_.Reset();
 	reindexer::JsonBuilder bld(wrSer_);
 	bld.Put("id", id_++);
-	const reindexer::Point point = randPoint(kRange);
+	const reindexer::Point point = reindexer::randPoint(kRange);
 	double coords[]{point.X(), point.Y()};
 	bld.Array("point", reindexer::span<double>(coords, 2));
 	bld.End();

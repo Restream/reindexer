@@ -1,7 +1,7 @@
 #include "transactionimpl.h"
 #include "client/reindexerimpl.h"
 #include "cluster/sharding/sharding.h"
-#include "core/reindexerimpl.h"
+#include "core/reindexer_impl/reindexerimpl.h"
 #include "tools/clusterproxyloghelper.h"
 
 namespace reindexer {
@@ -139,7 +139,10 @@ Error TransactionImpl::SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) {
 
 Item TransactionImpl::NewItem() {
 	std::lock_guard lck(mtx_);
-	return Item(new ItemImpl(data_->GetPayloadType(), data_->GetTagsMatcher(), data_->GetPKFileds(), data_->GetSchema()));
+	assertrx(data_);
+	Item item(new ItemImpl(data_->GetPayloadType(), data_->GetTagsMatcher(), data_->GetPKFileds(), data_->GetSchema()));
+	item.impl_->tagsMatcher().clearUpdated();
+	return item;
 }
 
 Error TransactionImpl::Status() const noexcept {
@@ -193,11 +196,19 @@ Error TransactionImpl::Commit(int serverId, bool expectSharding, ReindexerImpl &
 	if (auto *proxiedTx = std::get_if<ProxiedTxPtr>(&tx_); proxiedTx && *proxiedTx) {
 		const auto ward = ctx.BeforeClusterProxy();
 		auto res = (*proxiedTx)->Commit(serverId, shardId_, result, ctx);
+		if (res.ok() && shardingRouter_) {
+			result.SetShardingConfigVersion(shardingRouter_.SourceId());
+		}
 		status_ = kErrCommited;
 		return res;
 	} else if (auto *localTx = std::get_if<TxStepsPtr>(&tx_); localTx && *localTx) {
 		try {
-			result.AddQr(LocalQueryResults(), shardingRouter_ ? shardingRouter_.ActualShardId() : ShardingKeyType::ProxyOff);
+			if (shardingRouter_) {
+				result.AddQr(LocalQueryResults(), shardingRouter_.ActualShardId());
+				result.SetShardingConfigVersion(shardingRouter_.SourceId());
+			} else {
+				result.AddQr(LocalQueryResults(), shardingRouter_ ? shardingRouter_.ActualShardId() : ShardingKeyType::ProxyOff);
+			}
 			status_ = kErrCommited;
 			LocalTransaction ltx(std::move(data_), std::move(*localTx), Error());
 			tx_ = Empty{};

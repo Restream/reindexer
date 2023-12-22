@@ -37,6 +37,8 @@ std::string EncodeBase64(const unsigned char *data, std::size_t size) {
 			*out++ = encoding[((data[1] & 0xf) << 2)];
 			*out++ = PAD;
 			break;
+		default:
+			std::abort();
 	}
 
 	ret.resize(out - &ret[0]);

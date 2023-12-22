@@ -45,10 +45,6 @@ bool Reindexer::NeedTraceActivity() const noexcept { return impl_->NeedTraceActi
 
 Error Reindexer::Connect(const std::string& dsn, ConnectOpts opts) { return impl_->Connect(dsn, opts); }
 
-Error Reindexer::EnableStorage(const std::string& storagePath, bool skipPlaceholderCheck) {
-	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "ENABLE STORAGE "sv << storagePath; });
-	return impl_->EnableStorage(storagePath, skipPlaceholderCheck, rdxCtx);
-}
 Error Reindexer::AddNamespace(const NamespaceDef& nsDef, const NsReplicationOpts& replOpts) {
 	if (!validateUserNsName(nsDef.name)) {
 		return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed");
@@ -264,5 +260,12 @@ Error Reindexer::DumpIndex(std::ostream& os, std::string_view nsName, std::strin
 [[nodiscard]] Error Reindexer::ShardingControlRequest(const sharding::ShardingControlRequestData& request) noexcept {
 	return impl_->ShardingControlRequest(request, impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "SHARDING CONTROL REQUEST"; }));
 }
+
+// REINDEX_WITH_V3_FOLLOWERS
+Error Reindexer::SubscribeUpdates(IUpdatesObserver* observer, const UpdatesFilters& filters, SubscriptionOpts opts) {
+	return impl_->SubscribeUpdates(observer, filters, opts);
+}
+Error Reindexer::UnsubscribeUpdates(IUpdatesObserver* observer) { return impl_->UnsubscribeUpdates(observer); }
+// REINDEX_WITH_V3_FOLLOWERS
 
 }  // namespace reindexer

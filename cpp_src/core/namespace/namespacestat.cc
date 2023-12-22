@@ -183,6 +183,13 @@ void ReplicationState::FromJSON(span<char> json) {
 		if (!clStatusNode.empty()) {
 			clusterStatus.FromJSON(clStatusNode);
 		}
+		{
+			// v3 legacy
+			lsn_t lastUpstreamLSN;
+			wasV3ReplicatedNS = LoadLsn(lastUpstreamLSN, root["last_upstream_lsn"]) && !lastUpstreamLSN.isEmpty();
+			wasV3ReplicatedNS = wasV3ReplicatedNS || root["slave_mode"].As<bool>(false);
+		}
+
 	} catch (const gason::Exception &ex) {
 		throw Error(errParseJson, "ReplicationState: %s", ex.what());
 	}

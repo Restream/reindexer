@@ -3,6 +3,7 @@
 #include <iostream>
 #include <mutex>
 #include <sstream>
+#include "tools/fsops.h"
 #ifndef WIN32
 #include <signal.h>
 #include <unistd.h>
@@ -193,6 +194,8 @@ void backtrace_init() noexcept {
 	sigaction(SIGBUS, &sa, nullptr);
 }
 
+void set_minidump_path(const std::string &) { assert(false); }
+
 void backtrace_set_writer(backtrace_writer_t writer) {
 	std::lock_guard lck(g_mutex);
 	g_writer = std::move(writer);
@@ -213,6 +216,102 @@ crash_query_reporter_t backtrace_get_crash_query_reporter() {
 }  // namespace debug
 }  // namespace reindexer
 
+#elif defined(WIN32) && defined(REINDEX_WITH_CPPTRACE)
+#include <windows.h>
+#include <dbghelp.h>
+#include <chrono>
+#undef min
+#undef max
+#include <csignal>
+#include "cpptrace/cpptrace.hpp"
+
+namespace reindexer {
+namespace debug {
+static std::recursive_mutex g_mutex;
+static crash_query_reporter_t g_crash_query_reporter = [](std::ostream &) {};
+static backtrace_writer_t g_writer = [](std::string_view sv) { std::cerr << sv; };
+static std::string g_pathMiniDump;
+
+void outputDebugInfo(const backtrace_writer_t &writer, EXCEPTION_POINTERS *ExceptionInfo) {
+	std::ostringstream sout;
+	print_crash_query(sout);
+	writer(sout.str());
+	sout.str(std::string());
+	sout.clear();
+	print_backtrace(sout, nullptr, 0);
+	writer(sout.str());
+
+	const auto tm = std::chrono::system_clock::now();
+	const auto duration = tm.time_since_epoch();
+	int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+
+	std::string fileName = fs::JoinPath(g_pathMiniDump, std::string("crash") + std::to_string(now) + ".dmp");
+	HANDLE hFile = CreateFile(fileName.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	std::shared_ptr<void> fileClose{hFile, CloseHandle};
+	if (ExceptionInfo) {
+		MINIDUMP_EXCEPTION_INFORMATION mei;
+		mei.ThreadId = GetCurrentThreadId();
+		mei.ClientPointers = TRUE;
+		mei.ExceptionPointers = ExceptionInfo;
+		MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, MiniDumpNormal, &mei, NULL, NULL);
+	} else {
+		MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, MiniDumpNormal, NULL, NULL, NULL);
+	}
+
+	sout.clear();
+	sout << "MiniDump file " << fileName.c_str() << std::endl;
+	writer(sout.str());
+}
+
+LONG WINAPI exceptionHandler(PEXCEPTION_POINTERS pExceptionInfo) {
+	const auto writer = backtrace_get_writer();
+	std::ostringstream sout;
+	sout << "*** Backtrace on: " << std::hex << pExceptionInfo->ExceptionRecord->ExceptionCode << std::dec << " ***" << std::endl;
+	writer(sout.str());
+	outputDebugInfo(writer, pExceptionInfo);
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void signalAbortHandler(int /*signal*/) {
+	const auto writer = backtrace_get_writer();
+	std::ostringstream sout;
+	sout << "*** Backtrace on: abort SIGNAL ***" << std::endl;
+	writer(sout.str());
+	outputDebugInfo(writer, nullptr);
+}
+
+void backtrace_init() noexcept {
+	std::signal(SIGABRT, signalAbortHandler);
+	SetUnhandledExceptionFilter(exceptionHandler);
+}
+
+void set_minidump_path(const std::string &p) { g_pathMiniDump = p; }
+
+void backtrace_set_writer(backtrace_writer_t writer) {
+	std::lock_guard lck(g_mutex);
+	g_writer = std::move(writer);
+}
+int backtrace_internal(void **, size_t, void *, std::string_view &) { return 0; }
+void backtrace_set_crash_query_reporter(crash_query_reporter_t reporter) {
+	std::lock_guard lck(g_mutex);
+	g_crash_query_reporter = std::move(reporter);
+}
+backtrace_writer_t backtrace_get_writer() {
+	std::lock_guard lck(g_mutex);
+	return g_writer;
+}
+crash_query_reporter_t backtrace_get_crash_query_reporter() {
+	std::lock_guard lck(g_mutex);
+	return g_crash_query_reporter;
+}
+void print_backtrace(std::ostream &sout, void *, int) { cpptrace::generate_trace().print(sout, false); }
+void print_crash_query(std::ostream &sout) {
+	auto reporter = backtrace_get_crash_query_reporter();
+	if (reporter) reporter(sout);
+}
+
+}  // namespace debug
+}  // namespace reindexer
 #else
 namespace reindexer {
 namespace debug {
@@ -221,6 +320,7 @@ static crash_query_reporter_t g_crash_query_reporter = [](std::ostream &) {};
 static backtrace_writer_t g_writer = [](std::string_view sv) { std::cerr << sv; };
 
 void backtrace_init() noexcept {}
+void set_minidump_path(const std::string &) { assert(false); }
 void backtrace_set_writer(backtrace_writer_t) {}
 int backtrace_internal(void **, size_t, void *, std::string_view &) { return 0; }
 void backtrace_set_crash_query_reporter(crash_query_reporter_t reporter) {
@@ -243,5 +343,4 @@ void print_crash_query(std::ostream &sout) {
 
 }  // namespace debug
 }  // namespace reindexer
-
 #endif

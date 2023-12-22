@@ -124,6 +124,7 @@ private:
 
 	template <typename T>
 	void Assign(const T& rhs);
+	void Assign(std::string_view rhs);
 	void Assign(const char* rhs);
 	void Assign(char* rhs);
 

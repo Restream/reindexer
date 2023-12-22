@@ -21,7 +21,7 @@ void WALRecord::Pack(WrSerializer &ser) const {
 		case WalItemUpdate:
 		case WalShallowItem:
 			ser.PutUInt32(id);
-			break;
+			return;
 		case WalUpdateQuery:
 		case WalIndexAdd:
 		case WalIndexDrop:
@@ -33,33 +33,30 @@ void WALRecord::Pack(WrSerializer &ser) const {
 		case WalSetSchema:
 		case WalTagsMatcher:
 			ser.PutVString(data);
-			break;
+			return;
 		case WalPutMeta:
 			ser.PutVString(putMeta.key);
 			ser.PutVString(putMeta.value);
-			break;
+			return;
 		case WalItemModify:
 			ser.PutVString(itemModify.itemCJson);
 			ser.PutVarUint(itemModify.modifyMode);
 			ser.PutVarUint(itemModify.tmVersion);
-			break;
+			return;
 		case WalRawItem:
 			ser.PutUInt32(rawItem.id);
 			ser.PutVString(rawItem.itemCJson);
-			break;
+			return;
 		case WalEmpty:
-			ser.Reset();
-			break;
 		case WalNamespaceAdd:
 		case WalNamespaceDrop:
 		case WalInitTransaction:
 		case WalCommitTransaction:
 		case WalResetLocalWal:
-			break;
-		default:
-			fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
-			std::abort();
+			return;
 	}
+	fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
+	std::abort();
 }
 
 WALRecord::WALRecord(span<uint8_t> packed) {
@@ -80,7 +77,7 @@ WALRecord::WALRecord(span<uint8_t> packed) {
 		case WalItemUpdate:
 		case WalShallowItem:
 			id = ser.GetUInt32();
-			break;
+			return;
 		case WalUpdateQuery:
 		case WalIndexAdd:
 		case WalIndexDrop:
@@ -92,31 +89,29 @@ WALRecord::WALRecord(span<uint8_t> packed) {
 		case WalSetSchema:
 		case WalTagsMatcher:
 			data = ser.GetVString();
-			break;
+			return;
 		case WalPutMeta:
 			putMeta.key = ser.GetVString();
 			putMeta.value = ser.GetVString();
-			break;
+			return;
 		case WalItemModify:
 			itemModify.itemCJson = ser.GetVString();
 			itemModify.modifyMode = ItemModifyMode(ser.GetVarUint());
 			itemModify.tmVersion = ser.GetVarUint();
-			break;
+			return;
 		case WalRawItem:
 			rawItem.id = ser.GetUInt32();
 			rawItem.itemCJson = ser.GetVString();
-			break;
+			return;
 		case WalEmpty:
 		case WalNamespaceAdd:
 		case WalNamespaceDrop:
 		case WalInitTransaction:
 		case WalCommitTransaction:
 		case WalResetLocalWal:
-			break;
-		default:
-			logPrintf(LogWarning, "Unexpected WAL rec type %d\n", int(type));
-			break;
+			return;
 	}
+	logPrintf(LogError, "Unexpected WAL rec type %d\n", int(type));
 }
 
 static std::string_view wrecType2Str(WALRecType t) {
@@ -156,13 +151,16 @@ static std::string_view wrecType2Str(WALRecType t) {
 			return "WalWALSync"sv;
 		case WalSetSchema:
 			return "WalSetSchema"sv;
-		case WalTagsMatcher:
-		case WalResetLocalWal:
 		case WalRawItem:
+			return "WalRawItem"sv;
 		case WalShallowItem:
-		default:
-			return "<Unknown>"sv;
+			return "WalShallowItem"sv;
+		case WalTagsMatcher:
+			return "WalTagsMatcher"sv;
+		case WalResetLocalWal:
+			return "WalResetLocalWal"sv;
 	}
+	return "<Unknown>"sv;
 }
 
 WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string(std::string_view)> &cjsonViewer) const {
@@ -174,10 +172,13 @@ WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string
 		case WalNamespaceDrop:
 		case WalInitTransaction:
 		case WalCommitTransaction:
+		case WalResetLocalWal:
 			return ser;
 		case WalItemUpdate:
+		case WalShallowItem:
 			return ser << " rowId=" << id;
 		case WalNamespaceRename:
+		case WalTagsMatcher:
 			return ser << ' ' << data;
 		case WalUpdateQuery:
 		case WalIndexAdd:
@@ -192,13 +193,11 @@ WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string
 			return ser << ' ' << putMeta.key << "=" << putMeta.value;
 		case WalItemModify:
 			return ser << (itemModify.modifyMode == ModeDelete ? " Delete " : " Update ") << cjsonViewer(itemModify.itemCJson);
-		case WalTagsMatcher:
-		case WalResetLocalWal:
 		case WalRawItem:
-		case WalShallowItem:
-		default:
-			return ser << " <unhandled record of type " << int(type) << '>';
+			return ser << (" rowId=") << rawItem.id << ": " << cjsonViewer(rawItem.itemCJson);
 	}
+	fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
+	std::abort();
 }
 
 void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)> &cjsonViewer) const {
@@ -211,8 +210,10 @@ void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::st
 		case WalNamespaceDrop:
 		case WalInitTransaction:
 		case WalCommitTransaction:
+		case WalResetLocalWal:
 			return;
 		case WalItemUpdate:
+		case WalShallowItem:
 			jb.Put("row_id", id);
 			return;
 		case WalUpdateQuery:
@@ -244,14 +245,16 @@ void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::st
 		case WalSetSchema:
 			jb.Raw("schema", data);
 			return;
-		case WalTagsMatcher:
-		case WalResetLocalWal:
 		case WalRawItem:
-		case WalShallowItem:
-			fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
-			std::abort();
+			jb.Put("row_id", rawItem.id);
+			jb.Raw("item", cjsonViewer(rawItem.itemCJson));
+			return;
+		case WalTagsMatcher:
+			jb.Put("tagsmatcher", data);
+			return;
 	}
-	return;
+	fprintf(stderr, "Unexpected WAL rec type %d\n", int(type));
+	std::abort();
 }
 
 WALRecord::WALRecord(std::string_view data) : WALRecord(span<uint8_t>(reinterpret_cast<const uint8_t *>(data.data()), data.size())) {}
@@ -260,5 +263,39 @@ void MarkedPackedWALRecord::Pack(int16_t _server, const WALRecord &rec) {
 	server = _server;
 	PackedWALRecord::Pack(rec);
 }
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+SharedWALRecord WALRecord::GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const {
+	if (!shared_.packed_) {
+		shared_ = SharedWALRecord(lsn, upstreamLSN, nsName, *this);
+	}
+	return shared_;
+}
+SharedWALRecord::SharedWALRecord(int64_t lsn, int64_t originLSN, std::string_view nsName, const WALRecord &rec) {
+	const size_t kCapToSizeRelation = 4;
+	WrSerializer ser;
+	ser.PutVarint(lsn);
+	ser.PutVarint(originLSN);
+	ser.PutVString(nsName);
+	{
+		auto sl = ser.StartSlice();
+		rec.Pack(ser);
+	}
+
+	auto ch = ser.DetachChunk();
+	ch.shrink(kCapToSizeRelation);
+
+	packed_ = make_intrusive<intrusive_atomic_rc_wrapper<chunk>>(std::move(ch));
+}
+
+SharedWALRecord::Unpacked SharedWALRecord::Unpack() {
+	Serializer rdser(packed_->data(), packed_->size());
+	int64_t lsn = rdser.GetVarint();
+	int64_t originLSN = rdser.GetVarint();
+	p_string nsName = rdser.GetPVString();
+	p_string pwal = rdser.GetPSlice();
+	return {lsn, originLSN, nsName, pwal};
+}
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 }  // namespace reindexer

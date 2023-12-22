@@ -42,10 +42,10 @@ public:
 
 private:
 	void resetUnknownFlags() noexcept;
-	void putQueryParams(QueryResults* query);
+	void putQueryParams(const BindingCapabilities& caps, QueryResults* query);
 	template <typename ItT>
 	void putItemParams(ItT& it, int shardId, QueryResults::ProxiedRefsStorage* storage, const QueryResults* result);
-	void putExtraParams(QueryResults* query);
+	void putExtraParams(const BindingCapabilities& caps, QueryResults* query);
 	static void putPayloadTypes(WrSerializer& ser, const QueryResults* results, const ResultFetchOpts& opts, int cnt, int totalCnt);
 	std::pair<int, int> getPtUpdatesCount(const QueryResults* results);
 	ResultFetchOpts opts_;

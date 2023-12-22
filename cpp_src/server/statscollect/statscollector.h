@@ -15,7 +15,7 @@ namespace reindexer_server {
 class DBManager;
 class Prometheus;
 
-class StatsCollector : public IStatsWatcher, public IStatsStarter {
+class StatsCollector final : public IStatsWatcher, public IStatsStarter {
 public:
 	StatsCollector(DBManager& dbMngr, Prometheus* prometheus, std::chrono::milliseconds collectPeriod, LoggerWrapper logger)
 		: dbMngr_(dbMngr),
@@ -26,14 +26,14 @@ public:
 		  logger_(std::move(logger)) {}
 	~StatsCollector() override { Stop(); }
 	void Start();
-	void Restart(std::unique_lock<std::mutex>&& lck) noexcept override final;
+	void Restart(std::unique_lock<std::mutex>&& lck) noexcept override;
 	void Stop();
 
-	[[nodiscard]] StatsWatcherSuspend SuspendStatsThread() override final;
-	void OnInputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept override final;
-	void OnOutputTraffic(const std::string& db, std::string_view source, size_t bytes) noexcept override final;
-	void OnClientConnected(const std::string& db, std::string_view source) noexcept override final;
-	void OnClientDisconnected(const std::string& db, std::string_view source) noexcept override final;
+	[[nodiscard]] StatsWatcherSuspend SuspendStatsThread() override;
+	void OnInputTraffic(const std::string& db, std::string_view source, std::string_view protocol, size_t bytes) noexcept override;
+	void OnOutputTraffic(const std::string& db, std::string_view source, std::string_view protocol, size_t bytes) noexcept override;
+	void OnClientConnected(const std::string& db, std::string_view source, std::string_view protocol) noexcept override;
+	void OnClientDisconnected(const std::string& db, std::string_view source, std::string_view protocol) noexcept override;
 
 private:
 	void startImpl();
@@ -45,11 +45,17 @@ private:
 		uint64_t inputTraffic{0};
 		uint64_t outputTraffic{0};
 	};
+
 	using CountersByDB = std::unordered_map<std::string, DBCounters, reindexer::nocase_hash_str, reindexer::nocase_equal_str>;
-	using Counters = std::vector<std::pair<std::string, CountersByDB>>;
+	struct SourceCounters {
+		std::string source;
+		std::string protocol;
+		CountersByDB counters;
+	};
+	using Counters = std::vector<SourceCounters>;
 
 	void collectStats(DBManager& dbMngr);
-	DBCounters& getCounters(const std::string& db, std::string_view source);
+	DBCounters& getCounters(const std::string& db, std::string_view source, std::string_view protocol);
 
 	DBManager& dbMngr_;
 	Prometheus* prometheus_;

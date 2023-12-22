@@ -4,20 +4,18 @@
 #include <list>
 #include <mutex>
 #include <unordered_map>
+#include "dbconfig.h"
 #include "namespace/namespacestat.h"
 
 namespace reindexer {
 
-constexpr size_t kDefaultCacheSizeLimit = 1024 * 1024 * 128;
-constexpr int kDefaultHitCountToCache = 2;
 constexpr size_t kElemSizeOverhead = 256;
 
 template <typename K, typename V, typename hash, typename equal>
 class LRUCache {
 public:
 	using Key = K;
-	LRUCache(size_t sizeLimit = kDefaultCacheSizeLimit, int hitCount = kDefaultHitCountToCache) noexcept
-		: totalCacheSize_(0), cacheSizeLimit_(sizeLimit), hitCountToCache_(hitCount) {}
+	LRUCache(size_t sizeLimit, uint32_t hitCount) noexcept : totalCacheSize_(0), cacheSizeLimit_(sizeLimit), hitCountToCache_(hitCount) {}
 	struct Iterator {
 		Iterator(bool k = false, const V &v = V()) : valid(k), val(v) {}
 		Iterator(const Iterator &other) = delete;
@@ -118,7 +116,7 @@ protected:
 	mutable std::mutex lock_;
 	size_t totalCacheSize_;
 	const size_t cacheSizeLimit_;
-	int hitCountToCache_;
+	uint32_t hitCountToCache_;
 
 	uint64_t getCount_ = 0, putCount_ = 0, eraseCount_ = 0;
 };

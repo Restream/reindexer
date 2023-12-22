@@ -6,27 +6,32 @@
 #include <thread>
 
 #include "cluster/config.h"
+#include "core/dbconfig.h"
 #include "core/namespace/namespace.h"
-#include "core/nsselecter/nsselecter.h"
+#include "core/querystat.h"
 #include "core/rdxcontext.h"
-#include "dbconfig.h"
+#include "core/reindexerconfig.h"
+#include "core/transaction/transaction.h"
 #include "estl/atomic_unique_ptr.h"
 #include "estl/fast_hash_map.h"
 #include "estl/h_vector.h"
-#include "estl/smart_lock.h"
 #include "net/ev/ev.h"
-#include "querystat.h"
-#include "reindexerconfig.h"
 #include "tools/errors.h"
 #include "tools/filecontentwatcher.h"
 #include "tools/nsversioncounter.h"
 #include "tools/tcmallocheapwathcher.h"
-#include "transaction/transaction.h"
+
+#include "replv3/updatesobserver.h"
 
 namespace reindexer {
 
 class IClientsStats;
 struct ClusterControlRequestData;
+
+// REINDEX_WITH_V3_FOLLOWERS
+class IUpdatesObserver;
+class UpdatesFilters;
+// REINDEX_WITH_V3_FOLLOWERS
 
 namespace cluster {
 struct NodeData;
@@ -43,12 +48,6 @@ struct RaftInfo;
 class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
 	using StatsSelectMutex = MarkedMutex<std::timed_mutex, MutexMark::ReindexerStats>;
-	struct NsLockerItem {
-		NsLockerItem(NamespaceImpl::Ptr ins = {}) : ns(std::move(ins)), count(1) {}
-		NamespaceImpl::Ptr ns;
-		NamespaceImpl::Locker::RLockT nsLck;
-		unsigned count = 1;
-	};
 	template <bool needUpdateSystemNs, typename MemFnType, MemFnType Namespace::*MemFn, typename Arg, typename... Args>
 	Error applyNsFunction(std::string_view nsName, const RdxContext &ctx, Arg arg, Args &&...args);
 	template <auto MemFn, typename Arg, typename... Args>
@@ -57,15 +56,33 @@ class ReindexerImpl {
 public:
 	using Completion = std::function<void(const Error &err)>;
 
-	using CallbackFT = std::function<void(const gason::JsonNode &action, const RdxContext &ctx)>;
-	using CallbackMap = fast_hash_map<std::string_view, CallbackFT>;
+	struct CallbackT {
+		enum class Type { System, User };
+		struct EmptyT {};
+		struct SourceIdT {
+			int64_t sourceId;
+		};
+		using ExtrasT = std::variant<EmptyT, SourceIdT>;
+		using Value = std::function<void(const gason::JsonNode &action, const ExtrasT &extras, const RdxContext &ctx)>;
+		struct Key {
+			std::string_view key;
+			Type type;
+
+			bool operator==(const Key &other) const noexcept { return key == other.key && type == other.type; }
+			bool operator<(const Key &other) const noexcept { return key < other.key && type < other.type; }
+		};
+		struct Hash {
+			std::size_t operator()(Key key) const noexcept { return std::hash<std::string_view>{}(key.key); }
+		};
+	};
+
+	using CallbackMap = fast_hash_map<CallbackT::Key, CallbackT::Value, CallbackT::Hash>;
 
 	ReindexerImpl(ReindexerConfig cfg, ActivityContainer &activities, CallbackMap &&proxyCallbacks);
 
 	~ReindexerImpl();
 
 	Error Connect(const std::string &dsn, ConnectOpts opts = ConnectOpts());
-	Error EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck = false, const RdxContext &ctx = RdxContext());
 	Error OpenNamespace(std::string_view nsName, const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing(),
 						const NsReplicationOpts &replOpts = NsReplicationOpts(), const RdxContext &ctx = RdxContext());
 	Error AddNamespace(const NamespaceDef &nsDef, std::optional<NsReplicationOpts> replOpts = NsReplicationOpts{},
@@ -123,66 +140,13 @@ public:
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index, const RdxContext &ctx);
 	bool NamespaceIsInClusterConfig(std::string_view nsName);
 
-protected:
+	// REINDEX_WITH_V3_FOLLOWERS
+	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts);
+	Error UnsubscribeUpdates(IUpdatesObserver *observer);
+	// REINDEX_WITH_V3_FOLLOWERS
+
+private:
 	using FilterNsNamesT = std::optional<h_vector<std::string, 6>>;
-
-	template <typename Context>
-	class NsLocker : private h_vector<NsLockerItem, 4> {
-	public:
-		NsLocker(const Context &context) : context_(context) {}
-		~NsLocker() {
-			// Unlock first
-			for (auto it = rbegin(); it != rend(); ++it) {
-				// Some of the namespaces may be in unlocked statet in case of the exception during Lock() call
-				if (it->nsLck.owns_lock()) {
-					it->nsLck.unlock();
-				} else {
-					assertrx(!locked_);
-				}
-			}
-			// Clean (ns may releases, if locker holds last ref)
-		}
-
-		void Add(NamespaceImpl::Ptr ns) {
-			assertrx(!locked_);
-			for (auto it = begin(); it != end(); ++it) {
-				if (it->ns.get() == ns.get()) {
-					++(it->count);
-					return;
-				}
-			}
-
-			emplace_back(std::move(ns));
-			return;
-		}
-		void Delete(const NamespaceImpl::Ptr &ns) {
-			for (auto it = begin(); it != end(); ++it) {
-				if (it->ns.get() == ns.get()) {
-					if (!--(it->count)) erase(it);
-					return;
-				}
-			}
-			assertrx(0);
-		}
-		void Lock() {
-			std::sort(begin(), end(), [](const NsLockerItem &lhs, const NsLockerItem &rhs) { return lhs.ns.get() < rhs.ns.get(); });
-			for (auto it = begin(); it != end(); ++it) {
-				it->nsLck = it->ns->rLock(context_);
-			}
-			locked_ = true;
-		}
-
-		NamespaceImpl::Ptr Get(const std::string &name) {
-			for (auto it = begin(); it != end(); it++) {
-				if (iequals(it->ns->name_, name)) return it->ns;
-			}
-			return nullptr;
-		}
-
-	protected:
-		bool locked_ = false;
-		const Context &context_;
-	};
 
 	class BackgroundThread {
 	public:
@@ -225,7 +189,7 @@ protected:
 	public:
 		class NsWLock {
 		public:
-			NsWLock(Mutex &mtx, const RdxContext &ctx, bool isCL) : impl_(mtx, &ctx), isClusterLck_(isCL) {}
+			NsWLock(Mutex &mtx, const RdxContext &ctx, bool isCL) : impl_(mtx, ctx), isClusterLck_(isCL) {}
 			void lock() { impl_.lock(); }
 			void unlock() { impl_.unlock(); }
 			bool owns_lock() const { return impl_.owns_lock(); }
@@ -238,9 +202,9 @@ protected:
 		typedef contexted_shared_lock<Mutex, const RdxContext> RLockT;
 		typedef NsWLock WLockT;
 
-		Locker(cluster::INsDataReplicator &clusterizator, ReindexerImpl &owner) : clusterizator_(clusterizator), owner_(owner) {}
+		Locker(cluster::INsDataReplicator &clusterizator, ReindexerImpl &owner) noexcept : clusterizator_(clusterizator), owner_(owner) {}
 
-		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, &ctx); }
+		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, ctx); }
 		WLockT DataWLock(const RdxContext &ctx) const {
 			const bool requireSync = !ctx.NoWaitSync() && ctx.GetOriginLSN().isEmpty();
 			WLockT lck(mtx_, ctx, true);
@@ -263,15 +227,6 @@ protected:
 		cluster::INsDataReplicator &clusterizator_;
 		ReindexerImpl &owner_;
 	};
-
-	template <typename T, typename QueryType>
-	void doSelect(const Query &q, LocalQueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func, const RdxContext &ctx,
-				  QueryStatCalculator<QueryType> &queryStatCalculator);
-	struct QueryResultsContext;
-	template <typename T>
-	JoinedSelectors prepareJoinedSelectors(const Query &q, LocalQueryResults &result, NsLocker<T> &locks, SelectFunctionsHolder &func,
-										   std::vector<QueryResultsContext> &, const RdxContext &ctx);
-	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns, const Query &mainQ);
 
 	Error insertDontUpdateSystemNS(std::string_view nsName, Item &item, const RdxContext &ctx);
 	FilterNsNamesT detectFilterNsNames(const Query &q);
@@ -314,6 +269,7 @@ protected:
 	void checkClusterRole(std::string_view nsName, lsn_t originLsn) const;
 	void setClusterizationStatus(ClusterizationStatus &&status, const RdxContext &ctx);
 	std::string generateTemporaryNamespaceName(std::string_view baseName);
+	Error enableStorage(const std::string &storagePath);
 
 	[[nodiscard]] Error saveShardingCfgCandidate(std::string_view config, int64_t sourceId, const RdxContext &ctx) noexcept;
 	[[nodiscard]] Error applyShardingCfgCandidate(int64_t sourceId, const RdxContext &ctx) noexcept;
@@ -360,7 +316,7 @@ protected:
 
 	private:
 		mutable spinlock m;
-		intrusive_ptr<intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>> config;
+		intrusive_ptr<intrusive_atomic_rc_wrapper<const cluster::ShardingConfig>> config = nullptr;
 	} shardingConfig_;
 
 	std::deque<FileContetWatcher> configWatchers_;
@@ -374,8 +330,8 @@ protected:
 	ActivityContainer &activities_;
 
 	StorageType storageType_;
-	bool autorepairEnabled_ = false;
-	bool replicationEnabled_ = true;
+	std::atomic<bool> autorepairEnabled_ = {false};
+	std::atomic<bool> replicationEnabled_ = {true};
 	std::atomic<bool> connected_ = {false};
 
 	ReindexerConfig config_;
@@ -383,6 +339,10 @@ protected:
 	NsVersionCounter nsVersion_;
 
 	const CallbackMap proxyCallbacks_;
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+	UpdatesObservers observers_;
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 	friend class Replicator;
 	friend class cluster::DataReplicator;

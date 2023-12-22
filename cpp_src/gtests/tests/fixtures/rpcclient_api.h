@@ -5,6 +5,7 @@
 #include "client/cororeindexer.h"
 #include "rpcserver_fake.h"
 #include "server/server.h"
+#include "tools/fsops.h"
 
 class RPCClientTestApi : public ::testing::Test {
 public:
@@ -66,7 +67,7 @@ public:
 	void CreateNamespace(reindexer::client::CoroReindexer& rx, std::string_view nsName);
 	void FillData(reindexer::client::CoroReindexer& rx, std::string_view nsName, int from, int count);
 
-	static const std::string kDbPrefix;
+	const std::string kDbPrefix{reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/rpc_client_test")};
 	static const uint16_t kDefaultRPCPort = 25673;
 	static const std::string kDefaultRPCServerAddr;
 	static const uint16_t kDefaultHttpPort = 33333;

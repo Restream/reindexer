@@ -4,6 +4,7 @@
 #include <set>
 #include "client/queryresults.h"
 #include "core/itemimplrawdata.h"
+#include "core/namespace/incarnationtags.h"
 #include "localqueryresults.h"
 
 namespace reindexer_server {
@@ -130,7 +131,7 @@ public:
 		return local_->qr;
 	}
 	int Flags() const noexcept { return flags_; }
-	const std::string &GetExplainResults() {
+	const std::string &GetExplainResults() & {
 		switch (type_) {
 			case Type::Local:
 				return local_->qr.GetExplainResults();
@@ -155,11 +156,90 @@ public:
 			}
 		}
 	}
-	int GetMergedNSCount() const noexcept;
-	const std::vector<AggregationResult> &GetAggregationResults();
+	const std::string &GetExplainResults() && = delete;
+	int GetMergedNSCount() const noexcept {
+		switch (type_) {
+			case Type::None: {
+				return 0;
+			}
+			case Type::Local: {
+				return local_->qr.getMergedNSCount();
+			}
+			case Type::SingleRemote: {
+				return remote_[0].qr.GetMergedNSCount();
+			}
+			case Type::MultipleRemote:
+			case Type::Mixed:
+			default:
+				return 1;  // No joined/merged nss in distributed qr
+		}
+	}
+	const std::vector<AggregationResult> &GetAggregationResults() &;
+	const std::vector<AggregationResult> &GetAggregationResults() && = delete;
 	h_vector<std::string_view, 1> GetNamespaces() const;
+	NsShardsIncarnationTags GetIncarnationTags() const {
+		NsShardsIncarnationTags ret;
+		switch (type_) {
+			case Type::None:
+				return ret;
+			case Type::Local: {
+				auto localTags = local_->qr.GetIncarnationTags();
+				if (localTags.empty()) {
+					return ret;
+				}
+				if (localTags.size() != 1) {
+					throw Error(errLogic, "Unexpected shards count in the local query results");
+				}
+				localTags[0].shardId = local_->shardID;
+				ret.emplace_back(std::move(localTags[0]));
+				return ret;
+			}
+			case Type::SingleRemote: {
+				auto &remote = remote_[0];
+				auto &remoteTags = remote.qr.GetIncarnationTags();
+				if (remoteTags.empty()) {
+					return ret;
+				}
+				if (remoteTags.size() != 1) {
+					throw Error(errLogic, "Unexpected shards count in the remote query results");
+				}
+				auto &tags = ret.emplace_back(remoteTags[0]);
+				tags.shardId = remote.shardID;
+				return ret;
+			}
+			case Type::Mixed: {
+				auto localTags = local_->qr.GetIncarnationTags();
+				if (!localTags.empty()) {
+					if (localTags.size() != 1) {
+						throw Error(errLogic, "Unexpected shards count in the local query results");
+					}
+					localTags[0].shardId = local_->shardID;
+					ret.emplace_back(std::move(localTags[0]));
+				}
+			}
+				[[fallthrough]];
+			case Type::MultipleRemote:
+				for (auto &r : remote_) {
+					auto &remoteTags = r.qr.GetIncarnationTags();
+					if (remoteTags.empty()) {
+						continue;
+					}
+					if (remoteTags.size() != 1) {
+						throw Error(errLogic, "Unexpected shards count in the remote query results");
+					}
+					auto &tags = ret.emplace_back(remoteTags[0]);
+					tags.shardId = r.shardID;
+				}
+				return ret;
+		}
+		throw Error(errLogic, "Unknown query results type");
+	}
 	bool IsCacheEnabled() const noexcept;
 	int64_t GetShardingConfigVersion() const noexcept { return shardingConfigVersion_; }
+	void SetShardingConfigVersion(int64_t v) noexcept {
+		assertrx_dbg(shardingConfigVersion_ == ShardingSourceId::NotSet);  // Do not set version multiple times
+		shardingConfigVersion_ = v;
+	}
 	bool IsLocal() const noexcept { return type_ == Type::Local; }
 	bool HasProxiedResults() const noexcept { return type_ == Type::SingleRemote || type_ == Type::Mixed || type_ == Type::MultipleRemote; }
 	bool IsDistributed() const noexcept { return type_ == Type::Mixed || type_ == Type::MultipleRemote; }
@@ -435,7 +515,7 @@ private:
 		h_vector<uint16_t, 8> mergedJoinedSizes;
 	};
 
-	int64_t shardingConfigVersion_ = -1;
+	int64_t shardingConfigVersion_ = ShardingSourceId::NotSet;
 	std::unique_ptr<MergedData> mergedData_;  // Merged data of distributed query results
 	std::unique_ptr<QrMetaData<LocalQueryResults>> local_;
 	std::deque<QrMetaData<client::QueryResults>> remote_;

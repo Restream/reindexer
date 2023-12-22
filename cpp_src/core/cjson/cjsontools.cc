@@ -93,15 +93,21 @@ void copyCJsonValue(TagType tagType, Serializer &rdser, WrSerializer &wrser) {
 }
 
 void skipCjsonTag(ctag tag, Serializer &rdser, std::array<unsigned, kMaxIndexes> *fieldsArrayOffsets) {
-	const auto field = tag.Field();
-	const bool embeddedField = (field < 0);
 	switch (tag.Type()) {
 		case TAG_ARRAY: {
+			const auto field = tag.Field();
+			const bool embeddedField = (field < 0);
 			if (embeddedField) {
 				const carraytag atag = rdser.GetCArrayTag();
-				for (size_t i = 0, count = atag.Count(); i < count; ++i) {
-					const ctag t = atag.Type() != TAG_OBJECT ? ctag{atag.Type()} : rdser.GetCTag();
-					skipCjsonTag(t, rdser);
+				const auto count = atag.Count();
+				if (atag.Type() == TAG_OBJECT) {
+					for (size_t i = 0; i < count; ++i) {
+						skipCjsonTag(rdser.GetCTag(), rdser);
+					}
+				} else {
+					for (size_t i = 0; i < count; ++i) {
+						skipCjsonTag(ctag{atag.Type()}, rdser);
+					}
 				}
 			} else {
 				const auto len = rdser.GetVarUint();
@@ -110,7 +116,6 @@ void skipCjsonTag(ctag tag, Serializer &rdser, std::array<unsigned, kMaxIndexes>
 				}
 			}
 		} break;
-
 		case TAG_OBJECT:
 			for (ctag otag{rdser.GetCTag()}; otag != kCTagEnd; otag = rdser.GetCTag()) {
 				skipCjsonTag(otag, rdser, fieldsArrayOffsets);
@@ -122,12 +127,15 @@ void skipCjsonTag(ctag tag, Serializer &rdser, std::array<unsigned, kMaxIndexes>
 		case TAG_END:
 		case TAG_BOOL:
 		case TAG_NULL:
-		case TAG_UUID:
+		case TAG_UUID: {
+			const auto field = tag.Field();
+			const bool embeddedField = (field < 0);
 			if (embeddedField) {
 				rdser.SkipRawVariant(KeyValueType{tag.Type()});
 			} else if (fieldsArrayOffsets) {
 				(*fieldsArrayOffsets)[field] += 1;
 			}
+		}
 	}
 }
 
@@ -159,5 +167,14 @@ void buildPayloadTuple(const PayloadIface<T> &pl, const TagsMatcher *tagsMatcher
 
 template void buildPayloadTuple<const PayloadValue>(const PayloadIface<const PayloadValue> &, const TagsMatcher *, WrSerializer &);
 template void buildPayloadTuple<PayloadValue>(const PayloadIface<PayloadValue> &, const TagsMatcher *, WrSerializer &);
+
+void throwUnexpectedNestedArrayError(std::string_view parserName, const PayloadFieldType &f) {
+	throw Error(errLogic, "Error parsing %s field '%s' - got value nested into the array, but expected scalar %s", parserName, f.Name(),
+				f.Type().Name());
+}
+
+void throwScalarMultipleEncodesError(const Payload &pl, const PayloadFieldType &f, int field) {
+	throw Error(errLogic, "Non-array field '%s' [%d] from '%s' can only be encoded once.", f.Name(), field, pl.Type().Name());
+}
 
 }  // namespace reindexer

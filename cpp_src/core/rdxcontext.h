@@ -20,23 +20,24 @@ struct IRdxCancelContext {
 	virtual ~IRdxCancelContext() = default;
 };
 
+constexpr std::string_view kDefaultTimeoutError = "Context timeout";
+constexpr std::string_view kDefaultCancelError = "Context was canceled";
+
 template <typename Context>
 void ThrowOnCancel(const Context& ctx, std::string_view errMsg = std::string_view()) {
 	if (!ctx.IsCancelable()) return;
 
-	using namespace std::string_view_literals;
-	auto cancel = ctx.CheckCancel();
+	const auto cancel = ctx.CheckCancel();
 	switch (cancel) {
 		case CancelType::Explicit:
-			throw Error(errCanceled, errMsg.empty() ? "Request was canceled by context"sv : errMsg);
+			throw Error(errCanceled, errMsg.empty() ? kDefaultCancelError : errMsg);
 		case CancelType::Timeout:
-			throw Error(errTimeout, errMsg.empty() ? "Request was canceled on timeout"sv : errMsg);
+			throw Error(errTimeout, errMsg.empty() ? kDefaultTimeoutError : errMsg);
 		case CancelType::None:
 			return;
-		default:
-			assertrx(false);
-			throw Error(errCanceled, errMsg.empty() ? "Request was canceled by unknown reason"sv : errMsg);
 	}
+	assertrx(false);
+	throw Error(errCanceled, errMsg.empty() ? kDefaultCancelError : errMsg);
 }
 
 class RdxDeadlineContext : public IRdxCancelContext {
@@ -242,12 +243,11 @@ public:
 	InternalRdxContext WithShardId(unsigned int id, bool parallel) const noexcept {
 		return InternalRdxContext(cmpl_, deadlineCtx_, activityTracer_, user_, connectionId_, lsn_, emmiterServerId_, id, parallel);
 	}
-	InternalRdxContext WithContextParams(milliseconds timeout, lsn_t lsn, int emmiterServerId, unsigned int shardId,
-										 bool distributed) const {
+	InternalRdxContext WithContextParams(milliseconds timeout, lsn_t lsn, int emmiterServerId, int shardId, bool distributed) const {
 		return InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()), activityTracer_, user_, connectionId_, lsn,
 								  emmiterServerId, shardId, distributed);
 	}
-	InternalRdxContext WithContextParams(milliseconds timeout, lsn_t lsn, int emmiterServerId, unsigned int shardId, bool distributed,
+	InternalRdxContext WithContextParams(milliseconds timeout, lsn_t lsn, int emmiterServerId, int shardId, bool distributed,
 										 std::string_view activityTracer, std::string&& user, int connectionId) const {
 		return activityTracer.empty()
 				   ? InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()), activityTracer_, user_, connectionId_,
@@ -256,6 +256,15 @@ public:
 										activityTracer_.empty() ? std::string(activityTracer)
 																: std::string(activityTracer_).append("/").append(activityTracer),
 										std::move(user), connectionId, lsn, emmiterServerId, shardId, distributed);
+	}
+	InternalRdxContext WithContextParams(milliseconds timeout, std::string_view activityTracer, std::string&& user) const {
+		return activityTracer.empty()
+				   ? InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()), activityTracer_, user_, connectionId_,
+										lsn_, emmiterServerId_, shardId_, shardingParallelExecution_)
+				   : InternalRdxContext(cmpl_, RdxDeadlineContext(timeout, deadlineCtx_.parent()),
+										activityTracer_.empty() ? std::string(activityTracer)
+																: std::string(activityTracer_).append("/").append(activityTracer),
+										std::move(user), connectionId_, lsn_, emmiterServerId_, shardId_, shardingParallelExecution_);
 	}
 	void SetActivityTracer(std::string&& activityTracer, std::string&& user, int connectionId = kNoConnectionId) noexcept {
 		activityTracer_ = std::move(activityTracer);

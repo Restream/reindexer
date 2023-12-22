@@ -1,6 +1,5 @@
 #include "namespace.h"
 #include "core/querystat.h"
-#include "core/storage/storagefactory.h"
 #include "snapshot/snapshothandler.h"
 #include "snapshot/snapshotrecord.h"
 #include "tools/flagguard.h"
@@ -8,8 +7,6 @@
 #include "tools/logger.h"
 
 namespace reindexer {
-
-#define handleInvalidation(Fn) nsFuncWrapper<decltype(&Fn), &Fn>
 
 void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& result, const NsContext& ctx) {
 	auto nsl = atomicLoadMainNs();
@@ -25,7 +22,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 	if (needNamespaceCopy(nsl, tx)) {
 		PerfStatCalculatorMT calc(nsl->updatePerfCounter_, enablePerfCounters);
 
-		auto clonerLck = statCalculator.CreateLock<contexted_unique_lock>(clonerMtx_, &ctx.rdxContext);
+		auto clonerLck = statCalculator.CreateLock<contexted_unique_lock>(clonerMtx_, ctx.rdxContext);
 
 		nsl = ns_;
 		if (needNamespaceCopy(nsl, tx)) {
@@ -37,6 +34,8 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 			CounterGuardAIR32 cg(nsl->cancelCommitCnt_);
 			try {
 				auto nsRlck = statCalculator.CreateLock(*nsl, &NamespaceImpl::rLock, ctx.rdxContext);
+				tx.ValidatePK(nsl->pkFields());
+
 				auto storageLock = statCalculator.CreateLock(nsl->storage_, &AsyncStorage::FullLock);
 
 				cg.Reset();
@@ -62,7 +61,7 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 				hasCopy_.store(false, std::memory_order_release);
 				if (!nsl->repl_.temporary && !nsCtx.inSnapshot) {
 					// If commit happens in ns copy, than the copier have to handle replication
-					auto err = ns_->clusterizator_->Replicate(
+					auto err = ns_->clusterizator_.Replicate(
 						cluster::UpdateRecord{cluster::UpdateRecord::Type::CommitTx, ns_->name_, ns_->wal_.LastLSN(), ns_->repl_.nsVersion,
 											  ctx.rdxContext.EmmiterServerId()},
 						[&clonerLck, &storageLock, &nsRlck]() {
@@ -100,11 +99,11 @@ void Namespace::CommitTransaction(LocalTransaction& tx, LocalQueryResults& resul
 			return;
 		}
 	}
-	handleInvalidation(NamespaceImpl::CommitTransaction)(tx, result, ctx, statCalculator);
+	nsFuncWrapper<&NamespaceImpl::CommitTransaction>(tx, result, ctx, statCalculator);
 }
 
 NamespacePerfStat Namespace::GetPerfStat(const RdxContext& ctx) {
-	NamespacePerfStat stats = handleInvalidation(NamespaceImpl::GetPerfStat)(ctx);
+	NamespacePerfStat stats = nsFuncWrapper<&NamespaceImpl::GetPerfStat>(ctx);
 	stats.transactions = txStatsCounter_.Get();
 	auto copyStats = copyStatsCounter_.Get<PerfStat>();
 	stats.transactions.totalCopyCount = copyStats.totalHitCount;
@@ -121,7 +120,7 @@ NamespacePerfStat Namespace::GetPerfStat(const RdxContext& ctx) {
 
 void Namespace::ApplySnapshotChunk(const SnapshotChunk& ch, bool isInitialLeaderSync, const RdxContext& ctx) {
 	if (!ch.IsTx() || ch.IsShallow() || !ch.IsWAL()) {
-		return handleInvalidation(NamespaceImpl::ApplySnapshotChunk)(ch, isInitialLeaderSync, ctx);
+		return nsFuncWrapper<&NamespaceImpl::ApplySnapshotChunk>(ch, isInitialLeaderSync, ctx);
 	} else {
 		SnapshotTxHandler handler(*this);
 		handler.ApplyChunk(ch, isInitialLeaderSync, ctx);
@@ -142,11 +141,14 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 	logPrintf(LogTrace, "[rename] Trying to rename namespace '%s'...", GetName(ctx));
 	std::string dbpath;
 	const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
-	awaitMainNs(ctx)->storage_.Flush(flushOpts);
-	auto lck = handleInvalidation(NamespaceImpl::dataWLock)(ctx, true);
-	auto& srcNs = *atomicLoadMainNs();	// -V758
-	srcNs.storage_.Flush(flushOpts);	// Repeat flush, to raise any disk errors before attempt to close storage
-	logPrintf(LogTrace, "[rename] All the flushes done for '%s'...", srcNs.name_);
+	auto lck = nsFuncWrapper<&NamespaceImpl::dataWLock>(ctx, true);
+	auto srcNsPtr = atomicLoadMainNs();
+	auto& srcNs = *srcNsPtr;
+	srcNs.storage_.Flush(flushOpts);  // Repeat flush, to raise any disk errors before attempt to close storage
+	auto storageStatus = srcNs.storage_.GetStatusCached();
+	if (!storageStatus.err.ok()) {
+		throw Error(storageStatus.err.code(), "Unable to flush storage before rename: %s", storageStatus.err.what());
+	}
 	NamespaceImpl::Locker::WLockT dstLck;
 	NamespaceImpl::Ptr dstNs;
 	if (dst) {

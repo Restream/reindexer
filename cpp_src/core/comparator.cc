@@ -82,16 +82,11 @@ void Comparator::Bind(const PayloadType &type, int field) {
 	}
 }
 
-void Comparator::BindEqualPosition(int field, const VariantArray &val, CondType cond) { cmpEqualPosition.BindField(field, val, cond); }
-
-void Comparator::BindEqualPosition(const TagsPath &tagsPath, const VariantArray &val, CondType cond) {
-	cmpEqualPosition.BindField(tagsPath, val, cond);
-}
-
 bool Comparator::isNumericComparison(const VariantArray &values) const {
 	if (valuesType_.Is<KeyValueType::Undefined>() || values.empty()) return false;
 	const KeyValueType keyType{values.front().Type()};
-	return !valuesType_.IsSame(keyType) && (valuesType_.Is<KeyValueType::String>() || keyType.Is<KeyValueType::String>());
+	return !valuesType_.IsSame(keyType) && ((valuesType_.Is<KeyValueType::String>() && !keyType.Is<KeyValueType::Uuid>()) ||
+											(keyType.Is<KeyValueType::String>() && !valuesType_.Is<KeyValueType::Uuid>()));
 }
 
 bool Comparator::Compare(const PayloadValue &data, int rowId) {
@@ -191,7 +186,7 @@ void Comparator::ExcludeDistinct(const PayloadValue &data, int rowId) {
 	} else {
 		// Exclude field from payload by offset (fast path)
 
-		assertrx(!type_.Is<KeyValueType::Composite>());
+		assertrx_throw(!type_.Is<KeyValueType::Composite>());
 
 		// Check if we have column (rawData_), then go to fastest path with column
 		if (rawData_) return excludeDistinct(rawData_ + rowId * sizeof_);

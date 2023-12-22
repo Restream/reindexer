@@ -55,17 +55,24 @@ public:
 
 class TransactionSteps {
 public:
-	void Insert(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(item), ModeInsert, lsn}); }
-	void Update(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(item), ModeUpdate, lsn}); }
-	void Upsert(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(item), ModeUpsert, lsn}); }
-	void Delete(Item &&item, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(item), ModeDelete, lsn}); }
-	void Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(item), mode, lsn}); }
-	void Modify(Query &&query, lsn_t lsn) { steps_.emplace_back(TransactionStep(std::move(query), lsn)); }
-	void Nop(lsn_t lsn) { steps_.emplace_back(TransactionStep{lsn}); }
-	void PutMeta(std::string_view key, std::string_view value, lsn_t lsn) { steps_.emplace_back(TransactionStep{key, value, lsn}); }
-	void SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) { steps_.emplace_back(TransactionStep{std::move(tm), lsn}); }
+	void Insert(Item &&item, lsn_t lsn) { steps.emplace_back(std::move(item), ModeInsert, lsn); }
+	void Update(Item &&item, lsn_t lsn) { steps.emplace_back(std::move(item), ModeUpdate, lsn); }
+	void Upsert(Item &&item, lsn_t lsn) { steps.emplace_back(std::move(item), ModeUpsert, lsn); }
+	void Delete(Item &&item, lsn_t lsn) { steps.emplace_back(std::move(item), ModeDelete, lsn); }
+	void Modify(Item &&item, ItemModifyMode mode, lsn_t lsn) {
+		hasDeleteItemSteps_ = hasDeleteItemSteps_ || (mode == ModeDelete);
+		steps.emplace_back(std::move(item), mode, lsn);
+	}
+	void Modify(Query &&query, lsn_t lsn) { steps.emplace_back(std::move(query), lsn); }
+	void Nop(lsn_t lsn) { steps.emplace_back(lsn); }
+	void PutMeta(std::string_view key, std::string_view value, lsn_t lsn) { steps.emplace_back(key, value, lsn); }
+	void SetTagsMatcher(TagsMatcher &&tm, lsn_t lsn) { steps.emplace_back(std::move(tm), lsn); }
+	bool HasDeleteItemSteps() const noexcept { return hasDeleteItemSteps_; }
 
-	std::vector<TransactionStep> steps_;
+	std::vector<TransactionStep> steps;
+
+private:
+	bool hasDeleteItemSteps_ = false;
 };
 
 }  // namespace reindexer

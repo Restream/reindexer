@@ -33,12 +33,14 @@ public:
 		auto idsAsc = Sorted(ctx.getCurSortId());
 
 		size_t idx = 0;
+		const auto& ids2Sorts = ctx.ids2Sorts();
+		[[maybe_unused]] const IdType maxRowId = IdType(ids2Sorts.size());
 		// For all ids of current key
 		for (auto rowid : ids_) {
-			assertf(rowid < int(ctx.ids2Sorts().size()), "id=%d,ctx.ids2Sorts().size()=%d", rowid, ctx.ids2Sorts().size());
-			idsAsc[idx++] = ctx.ids2Sorts()[rowid];
+			assertf(rowid < maxRowId, "id=%d,ctx.ids2Sorts().size()=%d", rowid, maxRowId);
+			idsAsc[idx++] = ids2Sorts[rowid];
 		}
-		boost::sort::pdqsort(idsAsc.begin(), idsAsc.end());
+		boost::sort::pdqsort_branchless(idsAsc.begin(), idsAsc.end());
 	}
 	void Dump(std::ostream& os, std::string_view step, std::string_view offset) const {
 		std::string newOffset;

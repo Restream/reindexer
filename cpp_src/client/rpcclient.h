@@ -83,7 +83,7 @@ public:
 	~RPCClient();
 
 	Error Connect(const std::string &dsn, ev::dynamic_loop &loop, const ConnectOpts &opts);
-	Error Stop();
+	void Stop();
 
 	Error OpenNamespace(std::string_view nsName, const InternalRdxContext &ctx,
 						const StorageOpts &opts = StorageOpts().Enabled().CreateIfMissing(),

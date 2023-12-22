@@ -39,7 +39,9 @@ struct ServerConfig {
 	std::string StorageEngine;
 	std::string HTTPAddr;
 	std::string RPCAddr;
+	std::string RPCUnixAddr;
 	std::string RPCThreadingMode;
+	std::string RPCUnixThreadingMode;
 	std::string HttpThreadingMode;
 	std::string LogLevel;
 	std::string ServerLog;

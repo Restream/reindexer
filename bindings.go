@@ -58,7 +58,7 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 
 		rdSer := newSerializer(out.GetBuf())
 		rawQueryParams := rdSer.readRawQueryParams(func(nsid int) {
-			ns.cjsonState.ReadPayloadType(&rdSer.Serializer)
+			ns.cjsonState.ReadPayloadType(&rdSer.Serializer, db.binding, ns.name)
 		})
 
 		if rawQueryParams.count == 0 {
@@ -67,11 +67,9 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 
 		resultp := rdSer.readRawtItemParams(rawQueryParams.shardId)
 
-		ns.cacheItems.Remove(cacheKey{resultp.id, resultp.shardid})
-
 		if len(precepts) > 0 && (resultp.cptr != 0 || resultp.data != nil) && reflect.TypeOf(item).Kind() == reflect.Ptr {
 			nsArrEntry := nsArrayEntry{ns, ns.cjsonState.Copy()}
-			if _, err := unpackItem(&nsArrEntry, &resultp, false, true, item); err != nil {
+			if _, err := unpackItem(db.binding, &nsArrEntry, &rawQueryParams, &resultp, false, true, item); err != nil {
 				return 0, err
 			}
 		}
@@ -122,49 +120,58 @@ func (db *reindexerImpl) getNS(namespace string) (*reindexerNamespace, error) {
 	return ns, nil
 }
 
-func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool, nonCacheableData bool, item interface{}) (interface{}, error) {
+func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, rqparams *rawResultQueryParams, params *rawResultItemParams, allowUnsafe bool, nonCacheableData bool, item interface{}) (interface{}, error) {
 	useCache := item == nil && (ns.deepCopyIface || allowUnsafe) && !nonCacheableData
 	needCopy := ns.deepCopyIface && !allowUnsafe
 	var err error
+	useCache = useCache && ns.cacheItems != nil && !params.version.IsEmpty()
+	var nsTag int64
+	if useCache {
+		if nsTagData, ok := rqparams.nsIncarnationTags[params.shardid]; ok && len(nsTagData) > params.nsid {
+			nsTag = nsTagData[params.nsid]
+		} else {
+			useCache = false
+		}
+	}
 
-	if useCache && ns.cacheItems != nil && !params.version.IsEmpty() {
-		if citem, ok := ns.cacheItems.Get(cacheKey{params.id, params.shardid}); ok && citem.version == params.version {
+	if useCache {
+		cacheKey := cacheKey{id: params.id, shardID: params.shardid, nsTag: nsTag}
+		citem, found := ns.cacheItems.Get(cacheKey)
+		if found && citem.itemVersion == params.version.Counter && citem.shardingVersion == rqparams.shardingConfigVersion {
 			item = citem.item
 		} else {
 			item = reflect.New(ns.rtype).Interface()
-			dec := ns.localCjsonState.NewDecoder(item, logger)
+			dec := ns.localCjsonState.NewDecoder(item, bin)
 			if params.cptr != 0 {
 				err = dec.DecodeCPtr(params.cptr, item)
 			} else if params.data != nil {
 				err = dec.Decode(params.data, item)
 			} else {
-				panic(fmt.Errorf("Internal error while decoding item id %d from ns %s: cptr and data are both null", params.id, ns.name))
+				panic(fmt.Errorf("rq: internal error while decoding item id %d from ns %s: cptr and data are both null", params.id, ns.name))
 			}
 			if err != nil {
 				return item, err
 			}
 
-			if citem, ok := ns.cacheItems.Get(cacheKey{params.id, params.shardid}); ok {
-				if citem.version == params.version {
-					item = citem.item
-				} else if !params.version.IsCompatibleWith(citem.version) || params.version.IsNewerThen(citem.version) {
-					ns.cacheItems.Add(cacheKey{params.id, params.shardid}, &cacheItem{item: item, version: params.version})
-				}
-			} else {
-				ns.cacheItems.Add(cacheKey{params.id, params.shardid}, &cacheItem{item: item, version: params.version})
+			if !found || params.version.Counter > citem.itemVersion || citem.shardingVersion != rqparams.shardingConfigVersion {
+				ns.cacheItems.Add(cacheKey, &cacheItem{
+					item:            item,
+					itemVersion:     params.version.Counter,
+					shardingVersion: rqparams.shardingConfigVersion,
+				})
 			}
 		}
 	} else {
 		if item == nil {
 			item = reflect.New(ns.rtype).Interface()
 		}
-		dec := ns.localCjsonState.NewDecoder(item, logger)
+		dec := ns.localCjsonState.NewDecoder(item, bin)
 		if params.cptr != 0 {
 			err = dec.DecodeCPtr(params.cptr, item)
 		} else if params.data != nil {
 			err = dec.Decode(params.data, item)
 		} else {
-			panic(fmt.Errorf("Internal error while decoding item id %d from ns %s: cptr and data are both null", params.id, ns.name))
+			panic(fmt.Errorf("rq: internal error while decoding item id %d from ns %s: cptr and data are both null", params.id, ns.name))
 		}
 		if err != nil {
 			return item, err
@@ -177,19 +184,19 @@ func unpackItem(ns *nsArrayEntry, params *rawResultItemParams, allowUnsafe bool,
 		if deepCopy, ok := item.(DeepCopy); ok {
 			item = deepCopy.DeepCopy()
 		} else {
-			panic(fmt.Errorf("Internal error %s must implement DeepCopy interface", reflect.TypeOf(item).Name()))
+			panic(fmt.Errorf("rq: internal error %s must implement DeepCopy interface", reflect.TypeOf(item).Name()))
 		}
 	}
 
 	return item, err
 }
 
-func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, totalName string, initJson []byte, initOffsets []int) (json []byte, offsets []int, explain []byte, err error) {
+func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, totalName string, initJson []byte, initOffsets []int, namespace string) (json []byte, offsets []int, explain []byte, err error) {
 
 	ser := newSerializer(rawResult)
 	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
 		var state cjson.State
-		state.ReadPayloadType(&ser.Serializer)
+		state.ReadPayloadType(&ser.Serializer, db.binding, namespace)
 	})
 	explain = rawQueryParams.explainResults
 
@@ -228,7 +235,7 @@ func (db *reindexerImpl) rawResultToJson(rawResult []byte, jsonName string, tota
 		jsonBuf.Write(item.data)
 
 		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
-			panic("Sorry, not implemented: Can't return join query results as json")
+			panic("rq: sorry, not implemented: can not return join query results as json")
 		}
 	}
 	jsonBuf.WriteString("]}")
@@ -300,7 +307,7 @@ func (db *reindexerImpl) prepareQuery(ctx context.Context, q *Query, asJson bool
 	result, err = db.binding.SelectQuery(ctx, ser.Bytes(), asJson, q.ptVersions, fetchCount)
 
 	if err == nil && result.GetBuf() == nil {
-		panic(fmt.Errorf("result.Buffer is nil"))
+		panic(fmt.Errorf("rq: result.Buffer is nil"))
 	}
 	return
 }
@@ -338,7 +345,7 @@ func (db *reindexerImpl) execToJsonQuery(ctx context.Context, q *Query, jsonRoot
 	}
 	defer result.Free()
 	var explain []byte
-	q.json, q.jsonOffsets, explain, err = db.rawResultToJson(result.GetBuf(), jsonRoot, q.totalName, q.json, q.jsonOffsets)
+	q.json, q.jsonOffsets, explain, err = db.rawResultToJson(result.GetBuf(), jsonRoot, q.totalName, q.json, q.jsonOffsets, q.Namespace)
 	if err != nil {
 		return errJSONIterator(err)
 	}
@@ -388,16 +395,14 @@ func (db *reindexerImpl) deleteQuery(ctx context.Context, q *Query) (int, error)
 	ser := newSerializer(result.GetBuf())
 	// skip total count
 	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
-		ns.cjsonState.ReadPayloadType(&ser.Serializer)
+		ns.cjsonState.ReadPayloadType(&ser.Serializer, db.binding, ns.name)
 	})
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		params := ser.readRawtItemParams(rawQueryParams.shardId)
+		_ = ser.readRawtItemParams(rawQueryParams.shardId)
 		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
 			panic("Internal error: joined items in delete query result")
 		}
-		// Update cache
-		ns.cacheItems.Remove(cacheKey{params.id, params.shardid})
 	}
 	if !ser.Eof() {
 		panic("Internal error: data after end of delete query result")
@@ -429,16 +434,14 @@ func (db *reindexerImpl) updateQuery(ctx context.Context, q *Query) *Iterator {
 	ser := newSerializer(result.GetBuf())
 	// skip total count
 	rawQueryParams := ser.readRawQueryParams(func(nsid int) {
-		ns.cjsonState.ReadPayloadType(&ser.Serializer)
+		ns.cjsonState.ReadPayloadType(&ser.Serializer, db.binding, ns.name)
 	})
 
 	for i := 0; i < rawQueryParams.count; i++ {
-		params := ser.readRawtItemParams(rawQueryParams.shardId)
+		_ = ser.readRawtItemParams(rawQueryParams.shardId)
 		if (rawQueryParams.flags&bindings.ResultsWithJoined) != 0 && ser.GetVarUInt() != 0 {
 			panic("Internal error: joined items in update query result")
 		}
-		// Update cache
-		ns.cacheItems.Remove(cacheKey{params.id, params.shardid})
 	}
 
 	if !ser.Eof() {
@@ -545,6 +548,10 @@ func WithPrometheusMetrics() interface{} {
 
 func WithOpenTelemetry() interface{} {
 	return bindings.OptionOpenTelemetry{EnableTracing: true}
+}
+
+func WithStrictJoinHandlers() interface{} {
+	return bindings.OptionStrictJoinHandlers{EnableStrictJoinHandlers: true}
 }
 
 // WithReconnectionStrategy allows to configure the behavior during reconnect after error.

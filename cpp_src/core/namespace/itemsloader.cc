@@ -49,7 +49,7 @@ void ItemsLoader::reading() {
 	auto dbIter = ns_.storage_.GetCursor(opts);
 	unsigned sliceId = 0;
 	for (dbIter->Seek(kRxStorageItemPrefix);
-		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kRxStorageItemPrefix "\xFF")) < 0;
+		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kRxStorageItemPrefix "\xFF\xFF\xFF\xFF")) < 0;
 		 dbIter->Next()) {
 		std::string_view dataSlice = dbIter->Value();
 		if (dataSlice.size() > 0) {

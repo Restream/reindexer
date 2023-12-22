@@ -67,10 +67,16 @@ public:
 	int TotalCount() const noexcept { return results_.TotalCount(); }
 	bool HaveRank() const noexcept { return results_.HaveRank(); }
 	bool NeedOutputRank() const noexcept { return results_.NeedOutputRank(); }
-	const std::string& GetExplainResults() { return results_.GetExplainResults(); }
-	const std::vector<AggregationResult>& GetAggregationResults() { return results_.GetAggregationResults(); }
+	int64_t GetShardingConfigVersion() const noexcept { return results_.GetShardingConfigVersion(); }
+	const std::string& GetExplainResults() & { return results_.GetExplainResults(); }
+	const std::string& GetExplainResults() && = delete;
+	const std::vector<AggregationResult>& GetAggregationResults() & { return results_.GetAggregationResults(); }
+	const std::vector<AggregationResult>& GetAggregationResults() && = delete;
+
 	Error Status() const noexcept { return results_.Status(); }
 	h_vector<std::string_view, 1> GetNamespaces() const { return results_.GetNamespaces(); }
+	const NsShardsIncarnationTags& GetIncarnationTags() const& noexcept { return results_.GetIncarnationTags(); }
+	const NsShardsIncarnationTags& GetIncarnationTags() && = delete;
 	size_t GetNamespacesCount() const noexcept { return results_.GetNamespacesCount(); }
 	bool IsCacheEnabled() const noexcept { return results_.IsCacheEnabled(); }
 

@@ -32,6 +32,7 @@ bool IsAnchorChar(int ch) {	 // test for ns-anchor-char
 			return false;
 		case 0x85:
 			return true;
+		default:;
 	}
 
 	if (ch < 0x20) {

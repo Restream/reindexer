@@ -72,9 +72,6 @@ public:
 		return impl_.SetClusterizationStatus(nsName, status, ctx);
 	}
 	bool NeedTraceActivity() const noexcept { return impl_.NeedTraceActivity(); }
-	Error EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck, const RdxContext &ctx) {
-		return impl_.EnableStorage(storagePath, skipPlaceholderCheck, ctx);
-	}
 	Error InitSystemNamespaces() { return impl_.InitSystemNamespaces(); }
 	Error GetSnapshot(std::string_view nsName, const SnapshotOpts &opts, Snapshot &snapshot, const RdxContext &ctx) {
 		return impl_.GetSnapshot(nsName, opts, snapshot, ctx);
@@ -128,6 +125,13 @@ public:
 
 	[[nodiscard]] Error ShardingControlRequest(const sharding::ShardingControlRequestData &request, const RdxContext &ctx) noexcept;
 
+	// REINDEX_WITH_V3_FOLLOWERS
+	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts) {
+		return impl_.SubscribeUpdates(observer, filters, opts);
+	}
+	Error UnsubscribeUpdates(IUpdatesObserver *observer) { return impl_.UnsubscribeUpdates(observer); }
+	// REINDEX_WITH_V3_FOLLOWERS
+
 private:
 	using ItemModifyFT = Error (client::Reindexer::*)(std::string_view, client::Item &);
 	using ItemModifyQrFT = Error (client::Reindexer::*)(std::string_view, client::Item &, client::QueryResults &);
@@ -137,7 +141,7 @@ private:
 		return ser;
 	}
 
-	auto isWithSharding(const Query &q, const RdxContext &ctx, int &actualShardId) const;
+	auto isWithSharding(const Query &q, const RdxContext &ctx, int &actualShardId, int64_t &cfgSourceId) const;
 	auto isWithSharding(std::string_view nsName, const RdxContext &ctx) const;
 
 	bool isWithSharding(const RdxContext &ctx) const noexcept;
@@ -171,9 +175,11 @@ private:
 							   const CalucalteFT &limitOffsetCalc);
 
 	[[nodiscard]] Error handleNewShardingConfig(const gason::JsonNode &config, const RdxContext &ctx) noexcept;
-	[[nodiscard]] Error handleNewShardingConfigLocaly(const gason::JsonNode &config, const RdxContext &ctx) noexcept;
+	[[nodiscard]] Error handleNewShardingConfigLocally(const gason::JsonNode &config, std::optional<int64_t> externalSourceId,
+													   const RdxContext &ctx) noexcept;
 	template <typename ConfigType>
-	[[nodiscard]] Error handleNewShardingConfigLocaly(const ConfigType &rawConfig, const RdxContext &ctx) noexcept;
+	[[nodiscard]] Error handleNewShardingConfigLocally(const ConfigType &rawConfig, std::optional<int64_t> externalSourceId,
+													   const RdxContext &ctx) noexcept;
 
 	void saveShardingCfgCandidate(const sharding::SaveConfigCommand &requestData, const RdxContext &ctx);
 	void saveShardingCfgCandidateImpl(cluster::ShardingConfig config, int64_t sourceId, const RdxContext &ctx);
@@ -197,6 +203,8 @@ private:
 
 	void checkNamespacesEmpty(const cluster::ShardingConfig &config, const RdxContext &ctx);
 	void checkSyncCluster(const cluster::ShardingConfig &config);
+
+	int64_t generateSourceId() const;
 
 	ClusterProxy impl_;
 
@@ -230,10 +238,10 @@ private:
 		};
 
 	public:
-		auto SharedLock(const RdxContext &ctx) const { return ShardingRouterTSWrapper{RLocker(mtx_, &ctx), locatorService_}; }
+		auto SharedLock(const RdxContext &ctx) const { return ShardingRouterTSWrapper{RLocker(mtx_, ctx), locatorService_}; }
 		auto SharedLock() const { return ShardingRouterTSWrapper{shared_lock(mtx_), locatorService_}; }
 
-		auto UniqueLock(const RdxContext &ctx) { return ShardingRouterTSWrapper{WLocker(mtx_, &ctx), locatorService_}; }
+		auto UniqueLock(const RdxContext &ctx) { return ShardingRouterTSWrapper{WLocker(mtx_, ctx), locatorService_}; }
 		auto UniqueLock() { return ShardingRouterTSWrapper{std::unique_lock(mtx_), locatorService_}; }
 
 		auto SharedPtr(const RdxContext &ctx) const;
@@ -263,8 +271,8 @@ private:
 		};
 
 	public:
-		auto SharedLock(const RdxContext &ctx) const { return ConfigCandidateTSWrapper{RLocker(mtx_, &ctx), *this}; }
-		auto UniqueLock(const RdxContext &ctx) { return ConfigCandidateTSWrapper{WLocker(mtx_, &ctx), *this}; }
+		auto SharedLock(const RdxContext &ctx) const { return ConfigCandidateTSWrapper{RLocker(mtx_, ctx), *this}; }
+		auto UniqueLock(const RdxContext &ctx) { return ConfigCandidateTSWrapper{WLocker(mtx_, ctx), *this}; }
 
 		auto SharedLock() const { return ConfigCandidateTSWrapper{shared_lock(mtx_), *this}; }
 		auto UniqueLock() { return ConfigCandidateTSWrapper{std::unique_lock(mtx_), *this}; }

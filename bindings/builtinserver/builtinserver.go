@@ -160,10 +160,6 @@ func (server *BuiltinServer) RenameNamespace(ctx context.Context, srcNs string, 
 	return server.builtin.RenameNamespace(ctx, srcNs, dstNs)
 }
 
-func (server *BuiltinServer) EnableStorage(ctx context.Context, namespace string) error {
-	return server.builtin.EnableStorage(ctx, namespace)
-}
-
 func (server *BuiltinServer) AddIndex(ctx context.Context, namespace string, indexDef bindings.IndexDef) error {
 	return server.builtin.AddIndex(ctx, namespace, indexDef)
 }
@@ -247,6 +243,10 @@ func (server *BuiltinServer) EnableLogger(logger bindings.Logger) {
 
 func (server *BuiltinServer) DisableLogger() {
 	server.builtin.DisableLogger()
+}
+
+func (server *BuiltinServer) GetLogger() bindings.Logger {
+	return server.builtin.GetLogger()
 }
 
 func (server *BuiltinServer) ReopenLogFiles() error {

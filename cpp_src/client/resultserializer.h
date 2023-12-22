@@ -1,6 +1,7 @@
 #pragma once
 #include <functional>
 #include <optional>
+#include "core/namespace/incarnationtags.h"
 #include "core/queryresults/aggregationresult.h"
 #include "tools/lsn.h"
 #include "tools/serializer.h"
@@ -42,7 +43,8 @@ public:
 		int flags = 0;
 		std::optional<std::vector<AggregationResult>> aggResults;
 		std::optional<std::string> explainResults;
-		int64_t shardingConfigVersion = -1;
+		NsShardsIncarnationTags nsIncarnationTags;
+		int64_t shardingConfigVersion = ShardingSourceId::NotSet;
 		int shardId = ShardingKeyType::ProxyOff;
 	};
 

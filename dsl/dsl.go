@@ -1,12 +1,15 @@
 package dsl
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 /*
@@ -25,28 +28,46 @@ rxDB := reindexer.NewReindex(...)
 jsonDSL := "{...}" // Contains JSON string, corresponding the DSL's format
 var dslQ dsl.DSL
 err := json.Unmarshal([]byte(jsonDSL), &dslQ)
+// OR: dslQ, err := dsl.DecodeJSON([]byte(jsonDSL))
+// DecodeJSON allows to use dsl's strict mode for the main json object (json.Unmarshal performs strict checks for the internal objects only)
 q, err := rxDB.QueryFrom(dslQ)
 
+
+Use dsl.EnabeStrictMode and dsl.DisableStrictMode to control dsl parsing strict mode. If strict mode is enabled, any unknow field in the JSON DSL will cause unmarshling error.
+Strict mode is disabled by default.
 */
+
+const (
+	AggSum         = "sum"
+	AggAvg         = "avg"
+	AggMin         = "min"
+	AggMax         = "max"
+	AggCount       = "count"
+	AggCountCached = "count_cached"
+	AggFacet       = "facet"
+	AggDistinct    = "distinct"
+)
+
+var dslStrictMode = int32(0)
 
 type DSL struct {
 	Namespace    string        `json:"namespace"`
-	Offset       int           `json:"offset"`
-	Limit        int           `json:"limit"`
-	Distinct     string        `json:"distinct"` // deprecated, use aggregation with type AggDistinct instead
-	Sort         Sort          `json:"sort"`
-	Filters      []Filter      `json:"filters"`
+	Offset       int           `json:"offset,omitempty"`
+	Limit        int           `json:"limit,omitempty"`
+	Distinct     string        `json:"distinct,omitempty"` // deprecated, use aggregation with type AggDistinct instead
+	Sort         Sort          `json:"sort,omitempty"`
+	Filters      []Filter      `json:"filters,omitempty"`
 	Explain      bool          `json:"explain,omitempty"`
 	ReqTotal     bool          `json:"req_total,omitempty"`
 	WithRank     bool          `json:"select_with_rank,omitempty"`
-	Aggregations []Aggregation `json:"aggregations"`
+	Aggregations []Aggregation `json:"aggregations,omitempty"`
 }
 
 type Aggregation struct {
-	AggType int      `json:"type"`
-	Sort    []Sort   `json:"sort"`
-	Limit   int      `json:"limit"`
-	Offset  int      `json:"offset"`
+	AggType string   `json:"type"`
+	Sort    []Sort   `json:"sort,omitempty"`
+	Limit   int      `json:"limit,omitempty"`
+	Offset  int      `json:"offset,omitempty"`
 	Fields  []string `json:"fields"`
 }
 
@@ -59,45 +80,66 @@ type Sort struct {
 }
 
 type Filter struct {
-	Op      string
-	Field   string
-	Joined  *JoinQuery `json:"Joined,omitempty"`
-	Cond    string
-	Value   interface{}
-	Filters []Filter `json:"Filters,omitempty"`
+	Op      string      `json:"op,omitempty"`
+	Field   string      `json:"field,omitempty"`
+	Joined  *JoinQuery  `json:"join_query,omitempty"`
+	SubQ    *SubQuery   `json:"subquery,omitempty"`
+	Cond    string      `json:"cond,omitempty"`
+	Value   interface{} `json:"value,omitempty"`
+	Filters []Filter    `json:"filters,omitempty"`
 }
 
 type JoinOnCondition struct {
 	LeftField  string `json:"left_field"`
 	RightField string `json:"right_field"`
-	Op         string `json:"op"`
+	Op         string `json:"op,omitempty"`
 	Cond       string `json:"cond"`
 }
 
-type JoinQuery struct {
-	Namespace string
-	Type      string
-	Sort      Sort
-	Filters   []Filter
-	Offset    int
-	Limit     int
-	On        []JoinOnCondition
-}
-
-type joinQuery struct {
+type joinQueryBase struct {
 	Namespace string            `json:"namespace"`
 	Type      string            `json:"type,omitempty"`
 	Sort      Sort              `json:"sort,omitempty"`
-	Filters   []filter          `json:"filters,omitempty"`
 	Offset    int               `json:"offset,omitempty"`
 	Limit     int               `json:"limit,omitempty"`
 	On        []JoinOnCondition `json:"on"`
 }
 
+type JoinQuery struct {
+	joinQueryBase
+	Filters []Filter `json:"filters,omitempty"`
+}
+
+type joinQuery struct {
+	joinQueryBase
+	Filters []filter `json:"filters,omitempty"`
+}
+
+type SubQueryBase struct {
+	Namespace    string        `json:"namespace"`
+	Offset       int           `json:"offset,omitempty"`
+	Limit        int           `json:"limit,omitempty"`
+	Sort         Sort          `json:"sort,omitempty"`
+	ReqTotal     bool          `json:"req_total,omitempty"`
+	Aggregations []Aggregation `json:"aggregations,omitempty"`
+	SelectFilter []string      `json:"select_filter,omitempty"`
+}
+
+type subQuery struct {
+	SubQueryBase
+	Filters []filter `json:"filters,omitempty"`
+}
+
+type SubQuery struct {
+	SubQueryBase
+	Filters []Filter `json:"filters,omitempty"`
+}
+
 type filter struct {
-	Op      string     `json:"op"`
+	Op      string     `json:"op,omitempty"`
 	Field   string     `json:"field,omitempty"`
 	Joined  *joinQuery `json:"join_query,omitempty"`
+	SubQ    *subQuery  `json:"subquery,omitempty"`
 	Cond    string     `json:"cond,omitempty"`
 	Value   value      `json:"value,omitempty"`
 	Filters []filter   `json:"filters,omitempty"`
@@ -107,9 +149,38 @@ type value struct {
 	data string
 }
 
+func EnabeStrictMode() {
+	atomic.StoreInt32(&dslStrictMode, 1)
+}
+func DisableStrictMode() {
+	atomic.StoreInt32(&dslStrictMode, 0)
+}
+func DecodeJSON(data []byte) (*DSL, error) {
+	var dslQ DSL
+	var err error
+	if atomic.LoadInt32(&dslStrictMode) == 1 {
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.DisallowUnknownFields()
+		err = dec.Decode(&dslQ)
+	} else {
+		err = json.Unmarshal(data, &dslQ)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &dslQ, nil
+}
+
 func (s *Sort) UnmarshalJSON(data []byte) error {
 	sort := sort{}
-	err := json.Unmarshal(data, &sort)
+	var err error
+	if atomic.LoadInt32(&dslStrictMode) == 1 {
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.DisallowUnknownFields()
+		err = dec.Decode(&sort)
+	} else {
+		err = json.Unmarshal(data, &sort)
+	}
 	if err != nil {
 		return err
 	}
@@ -146,10 +217,10 @@ func (f *Filter) fillFilter(flt *filter) error {
 	f.Cond = flt.Cond
 	f.Field = flt.Field
 	if flt.Joined != nil {
-		f.Joined = &JoinQuery{Namespace: flt.Joined.Namespace,
+		f.Joined = &JoinQuery{joinQueryBase: joinQueryBase{Namespace: flt.Joined.Namespace,
 			Type: flt.Joined.Type, Sort: flt.Joined.Sort,
 			Limit: flt.Joined.Limit, Offset: flt.Joined.Offset,
-			On: flt.Joined.On}
+			On: flt.Joined.On}}
 		f.Joined.Filters = make([]Filter, len(flt.Joined.Filters))
 		for i := range f.Joined.Filters {
 			err := f.Joined.Filters[i].fillFilter(&flt.Joined.Filters[i])
@@ -158,24 +229,54 @@ func (f *Filter) fillFilter(flt *filter) error {
 			}
 		}
 	}
+	if flt.SubQ != nil {
+		f.SubQ = &SubQuery{SubQueryBase: SubQueryBase{Namespace: flt.SubQ.Namespace,
+			Limit: flt.SubQ.Limit, Offset: flt.SubQ.Offset,
+			ReqTotal: flt.SubQ.ReqTotal}}
+		f.SubQ.Filters = make([]Filter, len(flt.SubQ.Filters))
+		for i := range f.SubQ.Filters {
+			err := f.SubQ.Filters[i].fillFilter(&flt.SubQ.Filters[i])
+			if err != nil {
+				return err
+			}
+		}
+		f.SubQ.Aggregations = make([]Aggregation, len(flt.SubQ.Aggregations))
+		copy(f.SubQ.Aggregations, flt.SubQ.Aggregations)
+		f.SubQ.SelectFilter = make([]string, len(flt.SubQ.SelectFilter))
+		copy(f.SubQ.SelectFilter, flt.SubQ.SelectFilter)
+	}
 	if len(flt.Filters) != 0 {
 		f.Filters = make([]Filter, len(flt.Filters))
 		for i := range f.Filters {
-			f.Filters[i].fillFilter(&flt.Filters[i])
+			err := f.Filters[i].fillFilter(&flt.Filters[i])
+			if err != nil {
+				return err
+			}
 		}
 	}
-	if f.Field != "" {
+	if f.Field != "" || f.SubQ != nil {
 		err := f.parseValue(flt.Value.data)
 		if err != nil {
 			return err
 		}
+	} else if !checkValueIsEmpty(flt.Value.data) {
+		return errors.New("unable to use Value without Field/Subquery")
+	} else if flt.Cond != "" {
+		return errors.New("unable to use Cond without Field/Subquery/Value")
 	}
 	return nil
 }
 
 func (f *Filter) UnmarshalJSON(data []byte) error {
 	flt := filter{}
-	err := json.Unmarshal(data, &flt)
+	var err error
+	if atomic.LoadInt32(&dslStrictMode) == 1 {
+		dec := json.NewDecoder(bytes.NewReader(data))
+		dec.DisallowUnknownFields()
+		err = dec.Decode(&flt)
+	} else {
+		err = json.Unmarshal(data, &flt)
+	}
 	if err != nil {
 		return err
 	}
@@ -217,6 +318,15 @@ func (f *Filter) parseValuesArray(rawValues []interface{}) (interface{}, error) 
 	default:
 		return nil, fmt.Errorf("unexpected array type: %s", reflect.TypeOf(rawValues[0]).Name())
 	}
+}
+
+var emptyArrayRegex = regexp.MustCompile(`\[\s*\]`)
+
+func checkValueIsEmpty(data string) bool {
+	if len(data) != 0 && data != `""` && data != "null" && data != "[]" && !emptyArrayRegex.MatchString(data) {
+		return false
+	}
+	return true
 }
 
 func (f *Filter) parseValue(data string) error {
@@ -282,7 +392,7 @@ func (f *Filter) parseValue(data string) error {
 			f.Value = v
 		}
 	case "set", "range", "allset":
-		if len(data) == 0 || data == `[]` || data == "null" {
+		if len(data) == 0 || data == "[]" || data == "null" || emptyArrayRegex.MatchString(data) {
 			f.Value = nil
 			break
 		}
@@ -305,7 +415,10 @@ func (f *Filter) parseValue(data string) error {
 		f.Value, err = f.parseValuesArray(rawValues)
 		return err
 	case "any", "empty":
-		f.Value = 0
+		if !checkValueIsEmpty(data) {
+			return fmt.Errorf("filter expects no arguments or null for '%s' condition", f.Cond)
+		}
+		f.Value = nil
 	default:
 		return fmt.Errorf("cond type '%s' not found", f.Cond)
 	}

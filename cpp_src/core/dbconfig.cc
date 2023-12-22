@@ -1,6 +1,7 @@
 #include "dbconfig.h"
 
 #include <limits.h>
+#include <bitset>
 #include <fstream>
 #include <string>
 #include <string_view>
@@ -28,7 +29,7 @@ static CacheMode str2cacheMode(std::string_view mode) {
 }
 
 Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) {
-	std::set<ConfigType> typesChanged;
+	std::bitset<kConfigTypesTotalCount> typesChanged;
 
 	std::string errLogString;
 	try {
@@ -40,13 +41,13 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 			profilingDataLoadResult_ = profilingDataSafe.FromJSON(profilingNode);
 
 			if (profilingDataLoadResult_.ok()) {
-				typesChanged.emplace(ProfilingConf);
+				typesChanged.set(ProfilingConf);
 			} else {
 				errLogString += profilingDataLoadResult_.what();
 			}
 		}
 
-		std::unordered_map<std::string, NamespaceConfigData> namespacesData;
+		fast_hash_map<std::string, NamespaceConfigData, hash_str, equal_str, less_str> namespacesData;
 		auto &namespacesNode = root["namespaces"];
 		if (!namespacesNode.empty()) {
 			std::string namespacesErrLogString;
@@ -72,7 +73,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 
 			if (!nssHaveErrors) {
 				namespacesDataLoadResult_ = errOK;
-				typesChanged.emplace(NamespaceDataConf);
+				typesChanged.set(NamespaceDataConf);
 			} else {
 				namespacesDataLoadResult_ = Error(errParseJson, namespacesErrLogString);
 				ensureEndsWith(errLogString, "\n") += "NamespacesConfig: JSON parsing error: " + namespacesErrLogString;
@@ -85,7 +86,7 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 			asyncReplicationDataLoadResult_ = asyncReplConfigDataSafe.FromJSON(asyncReplicationNode);
 
 			if (asyncReplicationDataLoadResult_.ok()) {
-				typesChanged.emplace(AsyncReplicationConf);
+				typesChanged.set(AsyncReplicationConf);
 			} else {
 				ensureEndsWith(errLogString, "\n") += asyncReplicationDataLoadResult_.what();
 			}
@@ -98,28 +99,28 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 				replicationDataLoadResult_ = replicationDataSafe.FromJSON(replicationNode);
 
 				if (replicationDataLoadResult_.ok()) {
-					typesChanged.emplace(ReplicationConf);
+					typesChanged.set(ReplicationConf);
 				} else {
 					ensureEndsWith(errLogString, "\n") += replicationDataLoadResult_.what();
 				}
 			} else {
 				replicationDataSafe.FromJSONWithCorrection(replicationNode, replicationDataLoadResult_);
-				typesChanged.emplace(ReplicationConf);
+				typesChanged.set(ReplicationConf);
 			}
 		}
 
 		// Applying entire configuration only if no read errors
 		if (errLogString.empty()) {
-			if (typesChanged.find(ProfilingConf) != typesChanged.end()) {
+			if (typesChanged.test(ProfilingConf)) {
 				profilingData_ = profilingDataSafe;
 			}
-			if (typesChanged.find(NamespaceDataConf) != typesChanged.end()) {
+			if (typesChanged.test(NamespaceDataConf)) {
 				namespacesData_ = std::move(namespacesData);
 			}
-			if (typesChanged.find(AsyncReplicationConf) != typesChanged.end()) {
+			if (typesChanged.test(AsyncReplicationConf)) {
 				asyncReplicationData_ = std::move(asyncReplConfigDataSafe);
 			}
-			if (typesChanged.find(ReplicationConf) != typesChanged.end()) {
+			if (typesChanged.test(ReplicationConf)) {
 				replicationData_ = std::move(replicationDataSafe);
 			}
 		}
@@ -137,11 +138,13 @@ Error DBConfigProvider::FromJSON(const gason::JsonNode &root, bool autoCorrect) 
 		// notifying handlers under shared_lock so none of them go out of scope
 		smart_lock<shared_timed_mutex> lk(mtx_, false);
 
-		for (auto changedType : typesChanged) {
-			auto it = handlers_.find(changedType);
-			if (it != handlers_.end()) {
+		for (unsigned changedType = 0; changedType < typesChanged.size(); ++changedType) {
+			if (!typesChanged.test(changedType)) {
+				continue;
+			}
+			if (handlers_[changedType]) {
 				try {
-					(it->second)();
+					handlers_[changedType]();
 				} catch (const Error &err) {
 					logPrintf(LogError, "DBConfigProvider: Error processing event handler: '%s'", err.what());
 				}
@@ -186,9 +189,8 @@ void DBConfigProvider::setHandler(ConfigType cfgType, std::function<void()> hand
 
 int DBConfigProvider::setHandler(std::function<void(ReplicationConfigData)> handler) {
 	smart_lock<shared_timed_mutex> lk(mtx_, true);
-	HandlersCounter_++;
-	replicationConfigDataHandlers_[HandlersCounter_] = std::move(handler);
-	return HandlersCounter_;
+	replicationConfigDataHandlers_[++handlersCounter_] = std::move(handler);
+	return handlersCounter_;
 }
 
 void DBConfigProvider::unsetHandler(int id) {
@@ -206,11 +208,11 @@ cluster::AsyncReplConfigData DBConfigProvider::GetAsyncReplicationConfig() {
 	return asyncReplicationData_;
 }
 
-bool DBConfigProvider::GetNamespaceConfig(const std::string &nsName, NamespaceConfigData &data) {
+bool DBConfigProvider::GetNamespaceConfig(std::string_view nsName, NamespaceConfigData &data) {
 	shared_lock<shared_timed_mutex> lk(mtx_);
 	auto it = namespacesData_.find(nsName);
 	if (it == namespacesData_.end()) {
-		it = namespacesData_.find("*");
+		it = namespacesData_.find(std::string_view("*"));
 	}
 	if (it == namespacesData_.end()) {
 		data = {};
@@ -367,7 +369,7 @@ Error NamespaceConfigData::FromJSON(const gason::JsonNode &v) {
 	tryReadOptionalJsonValue(&errorString, v, "lazyload"sv, lazyLoad);
 	tryReadOptionalJsonValue(&errorString, v, "unload_idle_threshold"sv, noQueryIdleThreshold);
 
-	std::string stringVal = logLevelToString(logLevel);
+	std::string stringVal(logLevelToString(logLevel));
 	if (tryReadOptionalJsonValue(&errorString, v, "log_level"sv, stringVal).ok()) {
 		logLevel = logLevelFromString(stringVal);
 	}
@@ -402,6 +404,20 @@ Error NamespaceConfigData::FromJSON(const gason::JsonNode &v) {
 	tryReadOptionalJsonValue(&errorString, v, "max_preselect_part"sv, maxPreselectPart, 0.0, 1.0);
 	tryReadOptionalJsonValue(&errorString, v, "index_updates_counting_mode"sv, idxUpdatesCountingMode);
 	tryReadOptionalJsonValue(&errorString, v, "sync_storage_flush_limit"sv, syncStorageFlushLimit, 0);
+
+	auto cacheNode = v["cache"];
+	if (!cacheNode.empty()) {
+		tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
+		tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_hits_to_cache"sv, cacheConfig.idxIdsetHitsToCache, 0);
+		tryReadOptionalJsonValue(&errorString, cacheNode, "ft_index_cache_size"sv, cacheConfig.ftIdxCacheSize, 0);
+		tryReadOptionalJsonValue(&errorString, cacheNode, "ft_index_hits_to_cache"sv, cacheConfig.ftIdxHitsToCache, 0);
+		tryReadOptionalJsonValue(&errorString, cacheNode, "joins_preselect_cache_size"sv, cacheConfig.joinCacheSize, 0);
+		tryReadOptionalJsonValue(&errorString, cacheNode, "joins_preselect_hit_to_cache"sv, cacheConfig.joinHitsToCache, 0);
+		tryReadOptionalJsonValue(&errorString, cacheNode, "query_count_cache_size"sv, cacheConfig.queryCountCacheSize, 0);
+		tryReadOptionalJsonValue(&errorString, cacheNode, "query_count_hit_to_cache"sv, cacheConfig.queryCountHitsToCache, 0);
+		tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
+		tryReadOptionalJsonValue(&errorString, cacheNode, "index_idset_cache_size"sv, cacheConfig.idxIdsetCacheSize, 0);
+	}
 
 	if (!errorString.empty()) {
 		return Error(errParseJson, "NamespaceConfigData: JSON parsing error: '%s'", errorString);

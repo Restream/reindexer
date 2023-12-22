@@ -43,6 +43,8 @@ var benchmarkSeedCPU = flag.Int("seedcpu", 1, "number threads of for seeding")
 var benchmarkSeed = flag.Int64("seed", time.Now().Unix(), "seed number for random")
 var legacyServerBinary = flag.String("legacyserver", "", "legacy server binary for compatibility check")
 
+var testLogger *TestLogger
+
 func TestMain(m *testing.M) {
 
 	flag.Var(&cluster, "cluster", "array of reindex db dsn")
@@ -53,11 +55,17 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
+	if testing.Verbose() {
+		testLogger = &TestLogger{}
+	}
+
 	opts := []interface{}{}
 	if udsn.Scheme == "builtin" {
 		os.RemoveAll("/tmp/reindex_test/")
 	} else if udsn.Scheme == "cproto" {
 		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithNetCompression(), reindexer.WithAppName("RxTestInstance")}
+	} else if udsn.Scheme == "ucproto" {
+		opts = []interface{}{reindexer.WithCreateDBIfMissing(), reindexer.WithAppName("RxTestInstance")}
 	}
 
 	DB = NewReindexWrapper(*dsn, cluster, 0, opts...)
@@ -90,9 +98,7 @@ func TestMain(m *testing.M) {
 		DB.AddClusterNodes(clusterDsns)
 	}
 
-	if testing.Verbose() {
-		DB.SetLogger(&TestLogger{})
-	}
+	DB.SetLogger(testLogger)
 	for k, v := range tnamespaces {
 		DB.DropNamespace(k)
 
@@ -158,6 +164,17 @@ func randSearchString() string {
 	}
 	return names[rand.Int()%len(names)]
 
+}
+
+const charset = "abcdefghijklmnopqrstuvwxyz" +
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func trueRandWord(length int) string {
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(b)
 }
 
 func randStringArr(cnt int) []string {

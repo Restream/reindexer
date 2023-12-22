@@ -1,26 +1,18 @@
 #include "payloadvalue.h"
-#include <chrono>
+#include <iostream>
 #include "core/keyvalue/p_string.h"
-#include "string.h"
-#include "tools/errors.h"
+
 namespace reindexer {
 
 PayloadValue::PayloadValue(size_t size, const uint8_t *ptr, size_t cap) : p_(nullptr) {
 	p_ = alloc((cap != 0) ? cap : size);
 
-	if (ptr)
+	if (ptr) {
 		memcpy(Ptr(), ptr, size);
-	else
+	} else {
 		memset(Ptr(), 0, size);
-}
-
-PayloadValue::PayloadValue(const PayloadValue &other) noexcept : p_(other.p_) {
-	if (p_) {
-		header()->refcount.fetch_add(1, std::memory_order_relaxed);
 	}
 }
-
-PayloadValue::~PayloadValue() { release(); }
 
 uint8_t *PayloadValue::alloc(size_t cap) {
 	auto pn = reinterpret_cast<uint8_t *>(operator new(cap + sizeof(dataHeader)));
@@ -44,7 +36,7 @@ void PayloadValue::release() noexcept {
 
 void PayloadValue::Clone(size_t size) {
 	// If we have exclusive data - just up lsn
-	if (p_ && header()->refcount.load() == 1) {
+	if (p_ && header()->refcount.load(std::memory_order_acquire) == 1) {
 		return;
 	}
 	assertrx(size || p_);
@@ -64,7 +56,7 @@ void PayloadValue::Clone(size_t size) {
 
 void PayloadValue::Resize(size_t oldSize, size_t newSize) {
 	assertrx(p_);
-	assertrx(header()->refcount.load() == 1);
+	assertrx(header()->refcount.load(std::memory_order_acquire) == 1);
 
 	if (newSize <= header()->cap) return;
 

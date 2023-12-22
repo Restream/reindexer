@@ -12,14 +12,14 @@ namespace net {
 namespace http {
 
 const ssize_t kHttpMaxHeaders = 128;
-class ServerConnection : public IServerConnection, public ConnectionST {
+class ServerConnection final : public IServerConnection, public ConnectionST {
 public:
-	ServerConnection(int fd, ev::dynamic_loop &loop, Router &router, size_t maxRequestSize);
+	ServerConnection(socket &&s, ev::dynamic_loop &loop, Router &router, size_t maxRequestSize);
 
 	static ConnectionFactory NewFactory(Router &router, size_t maxRequestSize) {
-		return [&router, maxRequestSize](ev::dynamic_loop &loop, int fd, bool allowCustomBalancing) {
+		return [&router, maxRequestSize](ev::dynamic_loop &loop, socket &&s, bool allowCustomBalancing) {
 			(void)allowCustomBalancing;
-			return new ServerConnection(fd, loop, router, maxRequestSize);
+			return new ServerConnection(std::move(s), loop, router, maxRequestSize);
 		};
 	}
 
@@ -28,7 +28,7 @@ public:
 	void SetRebalanceCallback(std::function<void(IServerConnection *, BalancingType)> cb) override final { (void)cb; }
 	bool HasPendingData() const noexcept override final { return false; }
 	void HandlePendingData() override final {}
-	bool Restart(int fd) override final;
+	bool Restart(socket &&s) override final;
 	void Detach() override final;
 	void Attach(ev::dynamic_loop &loop) override final;
 

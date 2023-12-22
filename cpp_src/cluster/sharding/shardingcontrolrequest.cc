@@ -22,8 +22,10 @@ void ShardingControlRequestData::GetJSON(WrSerializer& ser) const {
 
 		switch (commandType) {
 			case Type::SaveCandidate:
-			case Type::ApplyLeaderConfig:
 				data = SaveConfigCommand{};
+				break;
+			case Type::ApplyLeaderConfig:
+				data = ApplyLeaderConfigCommand{};
 				break;
 			case Type::ApplyNew:
 				data = ApplyConfigCommand{};
@@ -43,6 +45,19 @@ void ShardingControlRequestData::GetJSON(WrSerializer& ser) const {
 	}
 	CATCH_AND_RETURN
 	return errOK;
+}
+
+void ApplyLeaderConfigCommand::GetJSON(JsonBuilder& json) const {
+	json.Put("config", config);
+	if (sourceId.has_value()) {
+		json.Put("source_id", *sourceId);
+	}
+}
+
+void ApplyLeaderConfigCommand::FromJSON(const gason::JsonNode& payload) {
+	config = payload["config"].As<std::string_view>();
+	auto& sourceIdNode = payload["source_id"];
+	sourceId = sourceIdNode.empty() ? std::optional<int64_t>() : sourceIdNode.As<int64_t>();
 }
 
 void SaveConfigCommand::GetJSON(JsonBuilder& json) const {

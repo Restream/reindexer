@@ -1,4 +1,3 @@
-
 #include "idrelset.h"
 #include <algorithm>
 #include "estl/h_vector.h"
@@ -82,11 +81,6 @@ int IdRelSet::Add(VDocIdType id, int pos, int field) {
 	}
 	back().Add(pos, field);
 	return back().Size();
-}
-
-void IdRelType::SimpleCommit() {
-	boost::sort::pdqsort(pos_.begin(), pos_.end(),
-						 [](const IdRelType::PosType& lhs, const IdRelType::PosType& rhs) { return lhs.pos() < rhs.pos(); });
 }
 
 }  // namespace reindexer

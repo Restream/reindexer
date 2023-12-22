@@ -3,7 +3,8 @@
 
 namespace reindexer {
 
-JsonBuilder::JsonBuilder(WrSerializer &ser, ObjType type, const TagsMatcher *tm) : ser_(&ser), tm_(tm), type_(type) {
+JsonBuilder::JsonBuilder(WrSerializer &ser, ObjType type, const TagsMatcher *tm, bool emitTrailingForFloat)
+	: ser_(&ser), tm_(tm), type_(type), emitTrailingForFloat_(emitTrailingForFloat) {
 	switch (type_) {
 		case ObjType::TypeArray:
 			(*ser_) << '[';
@@ -38,12 +39,12 @@ JsonBuilder &JsonBuilder::End() {
 
 JsonBuilder JsonBuilder::Object(std::string_view name, int /*size*/) {
 	putName(name);
-	return JsonBuilder(*ser_, ObjType::TypeObject, tm_);
+	return JsonBuilder(*ser_, ObjType::TypeObject, tm_, emitTrailingForFloat_);
 }
 
 JsonBuilder JsonBuilder::Array(std::string_view name, int /*size*/) {
 	putName(name);
-	return JsonBuilder(*ser_, ObjType::TypeArray, tm_);
+	return JsonBuilder(*ser_, ObjType::TypeArray, tm_, emitTrailingForFloat_);
 }
 
 void JsonBuilder::putName(std::string_view name) {

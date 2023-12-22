@@ -19,31 +19,53 @@ import (
 )
 
 func MakeLeader(t *testing.T, serverConfig *config.ServerConfig, serverID int, followerDSNs ...string) *reindexer.Reindexer {
-	return MakeNode(t, serverConfig, serverID, true, followerDSNs...)
+	return MakeNode(t, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: true}, followerDSNs...)
+}
+
+func MakeLeaderNoStorageCleanup(t *testing.T, serverConfig *config.ServerConfig, serverID int, followerDSNs ...string) *reindexer.Reindexer {
+	return MakeNode(t, serverConfig, &startupConfig{removeStorage: false, serverID: serverID, isLeader: true}, followerDSNs...)
 }
 
 func MakeFollower(t *testing.T, serverConfig *config.ServerConfig, serverID int, followerDSNs ...string) *reindexer.Reindexer {
-	return MakeNode(t, serverConfig, serverID, false, followerDSNs...)
+	return MakeNode(t, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: false}, followerDSNs...)
 }
 
-func MakeNode(t *testing.T, serverConfig *config.ServerConfig, serverID int, isLeader bool, followerDSNs ...string) *reindexer.Reindexer {
-	os.RemoveAll(serverConfig.Storage.Path)
-	rx := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, serverConfig))
+func MakeFollowerNoStorageCleanup(t *testing.T, serverConfig *config.ServerConfig, serverID int, followerDSNs ...string) *reindexer.Reindexer {
+	return MakeNode(t, serverConfig, &startupConfig{removeStorage: false, serverID: serverID, isLeader: false}, followerDSNs...)
+}
+
+func MakeNode(t *testing.T, serverConfig *config.ServerConfig, startupCfg *startupConfig, followerDSNs ...string) *reindexer.Reindexer {
+	if startupCfg.removeStorage {
+		err := os.RemoveAll(serverConfig.Storage.Path)
+		require.NoError(t, err)
+	}
+	dbPath := serverConfig.Storage.Path + "/xxx/"
 	{
-		f, err := os.OpenFile(serverConfig.Storage.Path+"/xxx/replication.conf", os.O_RDWR|os.O_CREATE, 0644)
+		err := os.MkdirAll(dbPath, os.ModePerm)
+		require.NoError(t, err)
+		f, err := os.OpenFile(dbPath+".reindexer.storage", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 		require.NoError(t, err)
 		defer f.Close()
-		config := "server_id: " + strconv.Itoa(serverID) + "\n" +
+		_, err = f.Write(([]byte)("leveldb"))
+		require.NoError(t, err)
+		err = f.Sync()
+		require.NoError(t, err)
+	}
+	{
+		f, err := os.OpenFile(dbPath+"replication.conf", os.O_RDWR|os.O_CREATE, 0644)
+		require.NoError(t, err)
+		defer f.Close()
+		config := "server_id: " + strconv.Itoa(startupCfg.serverID) + "\n" +
 			"cluster_id: 1\n"
 		_, err = f.Write([]byte(config))
 		require.NoError(t, err)
 	}
 	{
-		f, err := os.OpenFile(serverConfig.Storage.Path+"/xxx/async_replication.conf", os.O_RDWR|os.O_CREATE, 0644)
+		f, err := os.OpenFile(dbPath+"async_replication.conf", os.O_RDWR|os.O_CREATE, 0644)
 		require.NoError(t, err)
 		defer f.Close()
 		role := "leader"
-		if !isLeader {
+		if !startupCfg.isLeader {
 			role = "follower"
 		}
 		config := `retry_sync_interval_msec: 3000
@@ -52,6 +74,9 @@ syncs_per_thread: 2
 app_name: node_1
 force_sync_on_logic_error: true
 force_sync_on_wrong_data_hash: false
+batching_routines_count: 50
+sync_threads: 2
+log_level: info
 namespaces: []`
 		if len(followerDSNs) > 0 {
 			config += "\nnodes:\n"
@@ -62,7 +87,7 @@ namespaces: []`
 		_, err = f.Write([]byte(config))
 		require.NoError(t, err)
 	}
-	return rx
+	return reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, serverConfig))
 }
 
 func FillData(t *testing.T, rx *reindexer.Reindexer, count int) {
@@ -84,7 +109,7 @@ func GetData(t *testing.T, rx *reindexer.Reindexer) []interface{} {
 func GetDataFromNodes(t *testing.T, rxLeader *reindexer.Reindexer, rxFollower *reindexer.Reindexer, useLegacySync bool) []interface{} {
 	dataLeader := GetData(t, rxLeader)
 	if useLegacySync {
-		WaitForSyncWithMasterLegacy(t, rxLeader, rxFollower)
+		helpers.WaitForSyncWithMasterV3V3(t, rxLeader, rxFollower)
 	} else {
 		helpers.WaitForSyncWithMaster(t, rxLeader, rxFollower)
 	}
@@ -98,111 +123,6 @@ func GetDataFromNodesNoSync(t *testing.T, rxLeader *reindexer.Reindexer, rxFollo
 	dataFollower := GetData(t, rxFollower)
 	assert.Equal(t, dataLeader, dataFollower, "Data in tables does not equal\n%s\n%s", dataLeader, dataFollower)
 	return dataLeader
-}
-
-func GetLegacyNamespacesMemStat(db *reindexer.Reindexer) ([]*LegacyNamespaceMemStat, error) {
-	result := []*LegacyNamespaceMemStat{}
-
-	descs, err := db.Query("#memstats").Exec().FetchAll()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, desc := range descs {
-		nsdesc, ok := desc.(*LegacyNamespaceMemStat)
-		if ok {
-			result = append(result, nsdesc)
-		}
-	}
-
-	return result, nil
-}
-
-func WaitForSyncWithMasterLegacy(t *testing.T, master *reindexer.Reindexer, slave *reindexer.Reindexer) {
-	complete := true
-
-	var nameBad string
-	var masterBadLsn reindexer.LsnT
-	var slaveBadLsn reindexer.LsnT
-
-	for i := 0; i < 600*5; i++ {
-
-		complete = true
-
-		masterStats, err := GetLegacyNamespacesMemStat(master)
-		require.NoError(t, err)
-
-		masterMemStatMap := make(map[string]LegacyNamespaceMemStat)
-		for _, st := range masterStats {
-			masterMemStatMap[st.Name] = *st
-		}
-
-		slaveStats, err := GetLegacyNamespacesMemStat(slave)
-		require.NoError(t, err)
-
-		slaveMemStatMap := make(map[string]LegacyNamespaceMemStat)
-		for _, st := range slaveStats {
-			slaveMemStatMap[st.Name] = *st
-		}
-
-		configItemNs, found := slave.Query("#config").Where("type", reindexer.EQ, "replication").Get()
-		var namespaces []string
-		if found {
-			replication := configItemNs.(*LegacyDBConfigItem)
-			namespaces = replication.Replication.Namespaces
-		}
-
-		checkNsMap := make(map[string]bool)
-		if len(namespaces) > 0 {
-			for _, s := range namespaces {
-				checkNsMap[s] = true
-			}
-		} else {
-			for _, st := range masterStats {
-				if len(st.Name) == 0 || st.Name[0] == '#' {
-					continue
-				}
-				checkNsMap[st.Name] = true
-			}
-		}
-
-		for nsName, _ := range checkNsMap { // loop sync namespaces list (all or defined)
-			masterNsData, ok := masterMemStatMap[nsName]
-
-			if ok {
-				if slaveNsData, ok := slaveMemStatMap[nsName]; ok {
-					if slaveNsData.Replication.LastUpstreamLSN != masterNsData.Replication.LastLSN { //slave != master
-						complete = false
-						nameBad = nsName
-						masterBadLsn = masterNsData.Replication.LastLSN
-						slaveBadLsn = slaveNsData.Replication.LastUpstreamLSN
-						break
-					}
-				} else {
-					complete = false
-					nameBad = nsName
-					masterBadLsn.ServerId = 0
-					masterBadLsn.Counter = 0
-					slaveBadLsn.ServerId = 0
-					slaveBadLsn.Counter = 0
-					break
-				}
-			}
-		}
-		if complete {
-			for nsName, _ := range checkNsMap {
-				slaveNsData, _ := slaveMemStatMap[nsName]
-				masterNsData, _ := masterMemStatMap[nsName]
-				if slaveNsData.Replication.DataHash != masterNsData.Replication.DataHash {
-					t.Fatalf("Can't sync slave ns with master: ns \"%s\" slave dataHash: %d , master dataHash %d", nsName, slaveNsData.Replication.DataHash, masterNsData.Replication.DataHash)
-				}
-			}
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	t.Fatalf("Can't sync slave ns with master: ns \"%s\" masterlsn: %+v , slavelsn %+v", nameBad, masterBadLsn, slaveBadLsn)
 }
 
 func AwaitServerStartup(t *testing.T, dsn string) (*reindexer.Reindexer, error) {
@@ -240,94 +160,45 @@ func StartupServerFromBinary(t *testing.T, serverConfig *config.ServerConfig, cp
 	}
 	err = rx.CloseNamespace("#memstats")
 	require.NoError(t, err)
-	err = rx.RegisterNamespace("#memstats", reindexer.DefaultNamespaceOptions(), LegacyNamespaceMemStat{})
+	err = rx.RegisterNamespace("#memstats", reindexer.DefaultNamespaceOptions(), helpers.LegacyNamespaceMemStat{})
 	require.NoError(t, err)
 	err = rx.CloseNamespace("#config")
 	require.NoError(t, err)
-	err = rx.RegisterNamespace("#config", reindexer.DefaultNamespaceOptions(), LegacyDBConfigItem{})
+	err = rx.RegisterNamespace("#config", reindexer.DefaultNamespaceOptions(), helpers.LegacyDBConfigItem{})
 	require.NoError(t, err)
 	return rx, terminateF
 }
 
 func MakeLegacyLeader(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int) (*reindexer.Reindexer, func()) {
-	return MakeLegacyNode(t, cprotoDSN, serverConfig, serverID, true, "")
+	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: true, masterDSN: ""})
 }
 
 func MakeLegacyFollower(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, masterDSN string) (*reindexer.Reindexer, func()) {
-	return MakeLegacyNode(t, cprotoDSN, serverConfig, serverID, false, masterDSN)
+	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: true, serverID: serverID, isLeader: false, masterDSN: masterDSN})
 }
 
-type LegacyDBConfigItem struct {
-	Type        string                          `json:"type"`
-	Profiling   *reindexer.DBProfilingConfig    `json:"profiling,omitempty"`
-	Namespaces  *[]reindexer.DBNamespacesConfig `json:"namespaces,omitempty"`
-	Replication *LegacyDBReplicationConfig      `json:"replication,omitempty"`
+func MakeLegacyFollowerNoStorageCleanup(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, masterDSN string) (*reindexer.Reindexer, func()) {
+	return MakeLegacyNode(t, cprotoDSN, serverConfig, &startupConfig{removeStorage: false, serverID: serverID, isLeader: false, masterDSN: masterDSN})
 }
 
-type LegacyDBReplicationConfig struct {
-	// Replication role. One of  none, slave, master
-	Role string `yaml:"role"`
-	// DSN to master. Only cproto schema is supported
-	MasterDSN string `yaml:"master_dsn",omitempty`
-	// Cluster ID - must be same for client and for master
-	ClusterID int `json:"cluster_id"`
-	// force resync on logic error conditions
-	ForceSyncOnLogicError bool `json:"force_sync_on_logic_error"`
-	// force resync on wrong data hash conditions
-	ForceSyncOnWrongDataHash bool `json:"force_sync_on_wrong_data_hash"`
-	// List of namespaces for replication. If emply, all namespaces. All replicated namespaces will become read only for slave
-	Namespaces []string `json:"namespaces"`
+type startupConfig struct {
+	removeStorage bool
+	serverID      int
+	isLeader      bool
+	masterDSN     string
 }
 
-type LegacyNamespaceMemStat struct {
-	// Name of namespace
-	Name string `json:"name"`
-	// Replication status of namespace
-	Replication struct {
-		// Last Log Sequence Number (LSN) of applied namespace modification
-		LastLSN reindexer.LsnT `json:"last_lsn_v2"`
-		// If true, then namespace is in slave mode
-		SlaveMode bool `json:"slave_mode"`
-		// True enable replication
-		ReplicatorEnabled bool `json:"replicator_enabled"`
-		// Temporary namespace flag
-		Temporary bool `json:"temporary"`
-		// Number of storage's master <-> slave switches
-		IncarnationCounter int64 `json:"incarnation_counter"`
-		// Hashsum of all records in namespace
-		DataHash uint64 `json:"data_hash"`
-		// Data count
-		DataCount int `json:"data_count"`
-		// Write Ahead Log (WAL) records count
-		WalCount int64 `json:"wal_count"`
-		// Total memory consumption of Write Ahead Log (WAL)
-		WalSize int64 `json:"wal_size"`
-		// Data updated timestamp
-		UpdatedUnixNano int64 `json:"updated_unix_nano"`
-		// Current replication status
-		Status string `json:"status"`
-		// Origin LSN of last replication operation
-		OriginLSN reindexer.LsnT `json:"origin_lsn"`
-		// Last LSN of api operation (not from replication)
-		LastSelfLSN reindexer.LsnT `json:"last_self_lsn"`
-		// Last Log Sequence Number (LSN) of applied namespace modification
-		LastUpstreamLSN reindexer.LsnT `json:"last_upstream_lsn"`
-		// Last replication error code
-		ErrorCode int64 `json:"error_code"`
-		// Last replication error message
-		ErrorMessage string `json:"error_message"`
-	} `json:"replication"`
-}
-
-func MakeLegacyNode(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, serverID int, isLeader bool, masterDSN string) (*reindexer.Reindexer, func()) {
-	err := os.RemoveAll(serverConfig.Storage.Path)
-	require.NoError(t, err)
+func MakeLegacyNode(t *testing.T, cprotoDSN string, serverConfig *config.ServerConfig, startupCfg *startupConfig) (*reindexer.Reindexer, func()) {
+	if startupCfg.removeStorage {
+		err := os.RemoveAll(serverConfig.Storage.Path)
+		require.NoError(t, err)
+	}
 	dbPath := serverConfig.Storage.Path + "/xxx/"
 	writeConfigs := func() {
 		{
 			err := os.MkdirAll(dbPath, os.ModePerm)
 			require.NoError(t, err)
-			f, err := os.OpenFile(dbPath+".reindexer.storage", os.O_RDWR|os.O_CREATE, 0644)
+			f, err := os.OpenFile(dbPath+".reindexer.storage", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 			require.NoError(t, err)
 			defer f.Close()
 			_, err = f.Write(([]byte)("leveldb"))
@@ -336,14 +207,14 @@ func MakeLegacyNode(t *testing.T, cprotoDSN string, serverConfig *config.ServerC
 			require.NoError(t, err)
 		}
 		{
-			f, err := os.OpenFile(dbPath+"replication.conf", os.O_RDWR|os.O_CREATE, 0644)
+			f, err := os.OpenFile(dbPath+"replication.conf", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
 			require.NoError(t, err)
 			defer f.Close()
 			role := "master"
-			if !isLeader {
+			if !startupCfg.isLeader {
 				role = "slave"
 			}
-			config := LegacyDBReplicationConfig{Role: role, MasterDSN: masterDSN, ClusterID: 1, ForceSyncOnLogicError: true, ForceSyncOnWrongDataHash: true}
+			config := helpers.LegacyDBReplicationConfig{ServerID: startupCfg.serverID, Role: role, MasterDSN: startupCfg.masterDSN, ClusterID: 1, ForceSyncOnLogicError: true, ForceSyncOnWrongDataHash: true}
 			yaml, err := yaml.Marshal(config)
 			require.NoError(t, err)
 			_, err = f.Write(yaml)

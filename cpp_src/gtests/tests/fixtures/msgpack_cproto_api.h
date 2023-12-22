@@ -24,7 +24,7 @@ public:
 		using reindexer::client::RPCDataFormat;
 		reindexer::fs::RmDirAll(kDbPath);
 		YAML::Node y;
-		y["storage"]["path"] = "/tmp/reindex/" + kDbPath;
+		y["storage"]["path"] = kDbPath;
 		y["logger"]["loglevel"] = "none";
 		y["logger"]["rpclog"] = "none";
 		y["logger"]["serverlog"] = "none";
@@ -44,7 +44,7 @@ public:
 		}
 
 		client_.reset(new reindexer::client::RPCTestClient());
-		err = client_->Connect("cproto://127.0.0.1:25677/" + kDbPath, reindexer::client::ConnectOpts().CreateDBIfMissing());
+		err = client_->Connect("cproto://127.0.0.1:25677/" + kDbName, reindexer::client::ConnectOpts().CreateDBIfMissing());
 		ASSERT_TRUE(err.ok()) << err.what();
 
 		err = client_->OpenNamespace(default_namespace, StorageOpts().CreateIfMissing());
@@ -86,11 +86,12 @@ public:
 	void TearDown() {
 		if (server_.IsRunning()) {
 			server_.Stop();
-			if (serverThread_->joinable()) {
-				serverThread_->join();
-			}
 		}
-		client_->Stop();
+		client_.reset();
+		if (serverThread_->joinable()) {
+			serverThread_->join();
+		}
+		serverThread_.reset();
 	}
 
 	void checkItem(reindexer::client::QueryResults::Iterator& it) {
@@ -110,7 +111,8 @@ public:
 	}
 
 protected:
-	const std::string kDbPath = "cproto_msgpack_test";
+	const std::string kDbName = "cproto_msgpack_test";
+	const std::string kDbPath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/" + kDbName);
 	const std::string kFieldId = "id";
 	const std::string kFieldA1 = "a1";
 	const std::string kFieldA2 = "a2";

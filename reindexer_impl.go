@@ -38,13 +38,14 @@ type reindexerNamespace struct {
 
 // reindexerImpl The reindxer state struct
 type reindexerImpl struct {
-	lock          sync.RWMutex
-	ns            map[string]*reindexerNamespace
-	storagePath   string
-	binding       bindings.RawBinding
-	debugLevels   map[string]int
-	nsHashCounter int
-	status        error
+	lock               sync.RWMutex
+	ns                 map[string]*reindexerNamespace
+	storagePath        string
+	binding            bindings.RawBinding
+	debugLevels        map[string]int
+	nsHashCounter      int
+	strictJoinHandlers bool
+	status             error
 
 	promMetrics *reindexerPrometheusMetrics
 
@@ -57,9 +58,30 @@ type cacheItems struct {
 	items *lru.Cache
 }
 
+// Motivation:
+// Key:
+// - id + shardID - unique logic identifier of the document in the sharded cluster;
+// - nsTag - required to handled FORCE-syncs in the clusters. Int64 representation of the LsnT. Contains server ID and timestamp part. Using it as the part of the key to avoid
+// recaching during force-sync (those syncs could apear under the heavy load). Timestamp is required to hadn;e nodes' restarts in the sharded cluster (currenty items' IDs are not consistant between restarts)
+// Item:
+// - itemVersion - LSN's counter (does not contain server ID). Represents incremental document's version. Outdated documents will be removed from cache
+// and will not be cached multiple times.
+// - shardingVersion - source ID of the sharding config. It is not incremental, so it can not work as version. Multiple recaching of the same item is possible,
+// but expecting, that sharding config version should be changed very rarelly and probably even in some kind of the maintenance mode.
+
 type cacheKey struct {
 	id      int
-	shardid int
+	shardID int
+	nsTag   int64
+}
+
+type cacheItem struct {
+	// cached data
+	item interface{}
+	// version of the item
+	itemVersion int64
+	// version of the sharding config
+	shardingVersion int64
 }
 
 func (ci *cacheItems) Reset() {
@@ -102,13 +124,6 @@ func (ci *cacheItems) Get(key cacheKey) (*cacheItem, bool) {
 	return nil, false
 }
 
-type cacheItem struct {
-	// cached data
-	item interface{}
-	// version of item
-	version LsnT
-}
-
 func newCacheItems(count uint64) (*cacheItems, error) {
 	cache, err := lru.New(int(count))
 	if err != nil {
@@ -142,7 +157,6 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 			if v.EnablePrometheusMetrics {
 				rx.promMetrics = newPrometheusMetrics(dsnParsed)
 			}
-
 		case bindings.OptionOpenTelemetry:
 			if v.EnableTracing {
 				rx.otelTracer = otel.Tracer(
@@ -153,6 +167,8 @@ func newReindexImpl(dsn interface{}, options ...interface{}) *reindexerImpl {
 					otelattr.String("rx.dsn", dsnString(dsnParsed)),
 				}
 			}
+		case bindings.OptionStrictJoinHandlers:
+			rx.strictJoinHandlers = v.EnableStrictJoinHandlers
 		}
 	}
 
@@ -298,11 +314,9 @@ func (db *reindexerImpl) getStatus(ctx context.Context) bindings.Status {
 
 // setLogger sets logger interface for output reindexer logs
 func (db *reindexerImpl) setLogger(log Logger) {
-	if log != nil {
-		logger = log
+	if log != nil && (reflect.ValueOf(log).Kind() != reflect.Ptr || !reflect.ValueOf(log).IsNil()) {
 		db.binding.EnableLogger(log)
 	} else {
-		logger = &nullLogger{}
 		db.binding.DisableLogger()
 	}
 }
@@ -545,8 +559,7 @@ func (db *reindexerImpl) renameNamespace(ctx context.Context, srcNsName string, 
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("RenameNamespace", srcNsName)).ObserveDuration()
 	}
 
-	err := db.binding.RenameNamespace(ctx, srcNsName, dstNsName)
-	if err != nil {
+	if err := db.binding.RenameNamespace(ctx, srcNsName, dstNsName); err != nil {
 		return err
 	}
 	db.lock.Lock()
@@ -559,7 +572,7 @@ func (db *reindexerImpl) renameNamespace(ctx context.Context, srcNsName string, 
 	} else {
 		delete(db.ns, dstNsName)
 	}
-	return err
+	return nil
 }
 
 // closeNamespace - close namespace, but keep storage
@@ -882,7 +895,7 @@ func (db *reindexerImpl) execSQLToJSON(ctx context.Context, query string) *JSONI
 
 	defer result.Free()
 
-	json, jsonOffsets, explain, err := db.rawResultToJson(result.GetBuf(), namespace, "total", nil, nil)
+	json, jsonOffsets, explain, err := db.rawResultToJson(result.GetBuf(), namespace, "total", nil, nil, namespace)
 	if err != nil {
 		return errJSONIterator(err)
 	}
@@ -938,7 +951,7 @@ func (db *reindexerImpl) addFilterDSL(filter *dsl.Filter, q *Query) error {
 	if err != nil {
 		return err
 	}
-	if filter.Value != nil {
+	if filter.Value != nil || cond == bindings.ANY || cond == bindings.EMPTY {
 		// Skip filter if value is nil (for backwards compatibility reasons)
 		q.Where(filter.Field, cond, filter.Value)
 	} else {
@@ -950,7 +963,7 @@ func (db *reindexerImpl) addFilterDSL(filter *dsl.Filter, q *Query) error {
 
 func (db *reindexerImpl) addJoinedDSL(joined *dsl.JoinQuery, resultField string, q *Query) error {
 	if joined.Namespace == "" {
-		return ErrEmptyNamespace
+		return bindings.NewError("rq: empty namespace name in joined query", ErrCodeParams)
 	}
 
 	jq := db.query(joined.Namespace).Offset(joined.Offset)
@@ -960,9 +973,7 @@ func (db *reindexerImpl) addJoinedDSL(joined *dsl.JoinQuery, resultField string,
 	if joined.Sort.Field != "" {
 		jq.Sort(joined.Sort.Field, joined.Sort.Desc, joined.Sort.Values...)
 	}
-
-	_, err := db.handleFiltersDSL(joined.Filters, nil, jq)
-	if err != nil {
+	if _, err := db.handleFiltersDSL(joined.Filters, nil, jq); err != nil {
 		return err
 	}
 
@@ -1006,8 +1017,99 @@ func (db *reindexerImpl) addJoinedDSL(joined *dsl.JoinQuery, resultField string,
 	return nil
 }
 
+func (db *reindexerImpl) addSubqueryDSL(filter *dsl.Filter, q *Query) error {
+	if filter.SubQ.Namespace == "" {
+		return bindings.NewError("rq: empty namespace name in subquery", ErrCodeParams)
+	}
+	if filter.Field != "" && filter.Value != nil {
+		return bindings.NewError("rq: filter: both field name and value in filter with subquery are not empty (expecting exactly one of them)", ErrCodeParams)
+	}
+	cond, err := GetCondType(filter.Cond)
+	if err != nil {
+		return err
+	}
+	if len(filter.SubQ.SelectFilter) > 1 {
+		return bindings.NewError(fmt.Sprintf("rq: subquery can not have multiple select_filter's: %v", filter.SubQ.SelectFilter), ErrCodeParams)
+	}
+	if cond == EMPTY || cond == ANY {
+		if filter.SubQ.Limit > 0 {
+			return bindings.NewError("rq: filter: subquery with condition Any or Empty can not contain limit", ErrCodeParams)
+		}
+		if filter.SubQ.Offset > 0 {
+			return bindings.NewError("rq: filter: subquery with condition Any or Empty can not contain offset", ErrCodeParams)
+		}
+		if filter.SubQ.ReqTotal {
+			return bindings.NewError("rq: filter: subquery with condition Any or Empty can not contain ReqTotal", ErrCodeParams)
+		}
+		if len(filter.SubQ.Aggregations) > 0 {
+			return bindings.NewError("rq: filter: subquery with condition Any or Empty can not contain aggregations", ErrCodeParams)
+		}
+		if len(filter.SubQ.SelectFilter) > 0 {
+			return bindings.NewError("rq: filter: subquery with condition Any or Empty can not contain select filter", ErrCodeParams)
+		}
+	} else {
+		for _, agg := range filter.SubQ.Aggregations {
+			switch strings.ToLower(agg.AggType) {
+			case dsl.AggSum, dsl.AggAvg, dsl.AggMin, dsl.AggMax, dsl.AggCount, dsl.AggCountCached:
+				// Skip
+			default:
+				return bindings.NewError(fmt.Sprintf("rq: filter: unsupported aggregation for subquery: '%s'", agg.AggType), ErrCodeParams)
+			}
+		}
+		totalAggs := len(filter.SubQ.Aggregations)
+		if filter.SubQ.ReqTotal {
+			totalAggs++
+		}
+		if totalAggs > 1 {
+			return bindings.NewError("rq: filter: subquery can not contain more than 1 aggregation / count request", ErrCodeParams)
+		}
+		if totalAggs == 1 && len(filter.SubQ.SelectFilter) > 0 {
+			return bindings.NewError("rq: subquery can not have select_filter and aggregations at the same time", ErrCodeParams)
+		}
+		if totalAggs == 0 && len(filter.SubQ.SelectFilter) != 1 {
+			return bindings.NewError(fmt.Sprintf("rq: subquery with Cond '%s' and without aggregations must have exactly 1 select_filter", filter.Cond), ErrCodeParams)
+		}
+	}
+
+	sq := db.query(filter.SubQ.Namespace).Offset(filter.SubQ.Offset).Select(filter.SubQ.SelectFilter...)
+	if filter.SubQ.Limit > 0 {
+		sq.Limit(filter.SubQ.Limit)
+	}
+	if filter.SubQ.ReqTotal {
+		sq.ReqTotal()
+	}
+	if filter.SubQ.Sort.Field != "" {
+		sq.Sort(filter.SubQ.Sort.Field, filter.SubQ.Sort.Desc, filter.SubQ.Sort.Values...)
+	}
+	if err = db.addAggregationsDSL(sq, filter.SubQ.Aggregations); err != nil {
+		return err
+	}
+	if _, err = db.handleFiltersDSL(filter.SubQ.Filters, nil, sq); err != nil {
+		return err
+	}
+
+	if filter.Field != "" {
+		// Subquery with field
+		if cond == EMPTY || cond == ANY {
+			return bindings.NewError("rq: filter: subquery with condition Any or Empty can not have Field in the filter", ErrCodeParams)
+		}
+		q.Where(filter.Field, cond, sq)
+	} else {
+		if (cond == EMPTY || cond == ANY) && filter.Value != nil {
+			return bindings.NewError("rq: filter: subquery with condition Any or Empty can not have non-nil target Value", ErrCodeParams)
+		}
+		if cond != EMPTY && cond != ANY && filter.Value == nil {
+			return bindings.NewError(fmt.Sprintf("rq: filter: subquery with condition %v can not have nil target Value and empty field name", filter.Cond), ErrCodeParams)
+		}
+		// Subquery with explicit values
+		q.WhereQuery(sq, cond, filter.Value)
+
+	}
+	return nil
+}
+
 func (db *reindexerImpl) handleFiltersDSL(filters []dsl.Filter, joinIDs *map[string]int, q *Query) (*Query, error) {
-	for fi, _ := range filters {
+	for fi := range filters {
 		filter := &filters[fi]
 		switch strings.ToLower(filters[fi].Op) {
 		case "":
@@ -1019,18 +1121,27 @@ func (db *reindexerImpl) handleFiltersDSL(filters []dsl.Filter, joinIDs *map[str
 		case "not":
 			q.Not()
 		default:
-			return nil, bindings.NewError("rq: dsl filter op is invalid", ErrCodeParams)
+			return nil, bindings.NewError(fmt.Sprintf("rq: dsl filter op is invalid: '%s'", filters[fi].Op), ErrCodeParams)
 		}
 
 		if filter.Joined != nil {
 			if joinIDs == nil {
 				return nil, bindings.NewError("rq: nested join quieries are not supported", ErrCodeParams)
 			}
-			if filter.Field != "" || filter.Cond != "" {
+			if filter.Field != "" {
 				return nil, bindings.NewError("rq: dsl filter can not contain both 'field' and 'join_query' at the same time", ErrCodeParams)
 			}
+			if filter.Cond != "" {
+				return nil, bindings.NewError("rq: dsl filter can not contain both 'cond' and 'join_query' at the same time", ErrCodeParams)
+			}
+			if filter.Value != nil {
+				return nil, bindings.NewError("rq: dsl filter can not contain both 'value' and 'join_query' at the same time", ErrCodeParams)
+			}
 			if len(filter.Filters) != 0 {
-				return nil, bindings.NewError("rq: dsl filter can not contain both 'fielters' and 'join_query' at the same time", ErrCodeParams)
+				return nil, bindings.NewError("rq: dsl filter can not contain both 'filters' and 'join_query' at the same time", ErrCodeParams)
+			}
+			if filter.SubQ != nil {
+				return nil, bindings.NewError("rq: dsl filter can not contain both 'subquery' and 'join_query' at the same time", ErrCodeParams)
 			}
 
 			var joinedFieldName string
@@ -1041,31 +1152,74 @@ func (db *reindexerImpl) handleFiltersDSL(filters []dsl.Filter, joinIDs *map[str
 				joinedFieldName = fmt.Sprintf("_dsl_joined_%s", filter.Joined.Namespace)
 				(*joinIDs)[filter.Joined.Namespace] = 0
 			}
-			err := db.addJoinedDSL(filter.Joined, joinedFieldName, q)
-			if err != nil {
+			if err := db.addJoinedDSL(filter.Joined, joinedFieldName, q); err != nil {
 				return nil, err
 			}
 			continue
-		}
-
-		if len(filter.Filters) != 0 {
+		} else if len(filter.Filters) != 0 {
 			if len(filter.Field) != 0 || len(filter.Cond) != 0 {
 				return nil, bindings.NewError("rq: dsl filter can not contain both 'field' and 'filters' at the same time", ErrCodeParams)
 			}
+			if filter.SubQ != nil {
+				return nil, bindings.NewError("rq: dsl filter can not contain both 'subquery' and 'filters' at the same time", ErrCodeParams)
+			}
+			if filter.Cond != "" {
+				return nil, bindings.NewError("rq: dsl filter can not contain both 'cond' and 'filters' at the same time", ErrCodeParams)
+			}
+			if filter.Value != nil {
+				return nil, bindings.NewError("rq: dsl filter can not contain both 'value' and 'filters' at the same time", ErrCodeParams)
+			}
 			q.OpenBracket()
-			_, err := db.handleFiltersDSL(filter.Filters, joinIDs, q)
-			if err != nil {
+			if _, err := db.handleFiltersDSL(filter.Filters, joinIDs, q); err != nil {
 				return nil, err
 			}
 			q.CloseBracket()
 			continue
+		} else if filter.SubQ != nil {
+			if err := db.addSubqueryDSL(filter, q); err != nil {
+				return nil, err
+			}
+			continue
 		}
-		err := db.addFilterDSL(filter, q)
-		if err != nil {
+		if err := db.addFilterDSL(filter, q); err != nil {
 			return nil, err
 		}
 	}
 	return q, nil
+}
+
+func (db *reindexerImpl) addAggregationsDSL(q *Query, aggs []dsl.Aggregation) error {
+	for _, agg := range aggs {
+		if len(agg.Fields) == 0 {
+			return ErrEmptyAggFieldName
+		}
+		switch strings.ToLower(agg.AggType) {
+		case dsl.AggSum:
+			q.AggregateSum(agg.Fields[0])
+		case dsl.AggAvg:
+			q.AggregateAvg(agg.Fields[0])
+		case dsl.AggFacet:
+			aggReq := q.AggregateFacet(agg.Fields...).Limit(agg.Limit).Offset(agg.Offset)
+			for _, sort := range agg.Sort {
+				aggReq.Sort(sort.Field, sort.Desc)
+			}
+		case dsl.AggMin:
+			q.AggregateMin(agg.Fields[0])
+		case dsl.AggMax:
+			q.AggregateMax(agg.Fields[0])
+		case dsl.AggDistinct:
+			q.Distinct(agg.Fields[0])
+		case dsl.AggCount:
+			if len(agg.Fields) == 1 && (agg.Fields[0] == "" || agg.Fields[0] == "*") {
+				q.ReqTotal()
+			} else {
+				q.ReqTotal(agg.Fields...)
+			}
+		default:
+			return bindings.NewError(fmt.Sprintf("rq: unsupported aggregation type: '%s'", agg.AggType), ErrCodeParams)
+		}
+	}
+	return nil
 }
 
 func (db *reindexerImpl) queryFrom(d *dsl.DSL) (*Query, error) {
@@ -1084,29 +1238,8 @@ func (db *reindexerImpl) queryFrom(d *dsl.DSL) (*Query, error) {
 		q.Distinct(d.Distinct)
 	}
 
-	for _, agg := range d.Aggregations {
-		if len(agg.Fields) == 0 {
-			return nil, ErrEmptyAggFieldName
-		}
-		switch agg.AggType {
-		case AggSum:
-			q.AggregateSum(agg.Fields[0])
-		case AggAvg:
-			q.AggregateAvg(agg.Fields[0])
-		case AggFacet:
-			aggReq := q.AggregateFacet(agg.Fields...).Limit(agg.Limit).Offset(agg.Offset)
-			for _, sort := range agg.Sort {
-				aggReq.Sort(sort.Field, sort.Desc)
-			}
-		case AggMin:
-			q.AggregateMin(agg.Fields[0])
-		case AggMax:
-			q.AggregateMax(agg.Fields[0])
-		case AggDistinct:
-			q.Distinct(agg.Fields[0])
-		default:
-			return nil, ErrAggInvalid
-		}
+	if err := db.addAggregationsDSL(q, d.Aggregations); err != nil {
+		return nil, err
 	}
 
 	if d.Sort.Field != "" {
@@ -1178,11 +1311,4 @@ func (db *reindexerImpl) getStats() bindings.Stats {
 // ResetStats Reset local thread reindexer usage stats
 // Deprecated: no longer used.
 func (db *reindexerImpl) resetStats() {
-}
-
-// enableStorage enables persistent storage of data
-// Deprecated: storage path should be passed as DSN part to reindexer.NewReindex (""), e.g. reindexer.NewReindexer ("builtin:///tmp/reindex").
-func (db *reindexerImpl) enableStorage(ctx context.Context, storagePath string) error {
-	log.Println("Deprecated function reindexer.EnableStorage call")
-	return db.binding.EnableStorage(ctx, storagePath)
 }

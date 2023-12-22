@@ -56,8 +56,16 @@ int main(int argc, char* argv[]) {
 	args::HelpFlag help(parser, "help", "show this message", {'h', "help"});
 
 	args::Group progOptions("options");
-	args::ValueFlag<std::string> dbDsn(progOptions, "DSN", "DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>' or 'builtin://<path>'",
-								  {'d', "dsn"}, "", Options::Single | Options::Global);
+#ifdef _WIN32
+	args::ValueFlag<std::string> dbDsn(progOptions, "DSN",
+									   "DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>' or 'builtin://<path>'", {'d', "dsn"}, "",
+									   Options::Single | Options::Global);
+#else	// _WIN32
+	args::ValueFlag<std::string> dbDsn(
+		progOptions, "DSN",
+		"DSN to 'reindexer'. Can be 'cproto://<ip>:<port>/<dbname>', 'builtin://<path>' or 'ucproto://<unix.socket.path>:/<dbname>'",
+		{'d', "dsn"}, "", Options::Single | Options::Global);
+#endif	// _WIN32
 	args::ValueFlag<std::string> fileName(progOptions, "FILENAME", "execute commands from file, then exit", {'f', "filename"}, "",
 									 Options::Single | Options::Global);
 	args::ValueFlag<std::string> command(progOptions, "COMMAND", "run only single command (SQL or internal) and exit'", {'c', "command"}, "",
@@ -106,6 +114,8 @@ int main(int argc, char* argv[]) {
 	signal(SIGPIPE, SIG_IGN);
 #endif
 
+	using namespace std::string_view_literals;
+	using reindexer::checkIfStartsWithCS;
 	std::string db;
 	if (dsn.empty()) {
 		db = args::get(dbName);
@@ -113,7 +123,15 @@ int main(int argc, char* argv[]) {
 			std::cerr << "Error: --dsn either database name should be set as a first argument" << std::endl;
 			return 2;
 		}
-		if (db.substr(0, 9) == "cproto://" || db.substr(0, 10) == "builtin://") {
+
+		if (checkIfStartsWithCS("cproto://"sv, db) || checkIfStartsWithCS("ucproto://"sv, db) || checkIfStartsWithCS("builtin://"sv, db)) {
+#ifdef _WIN32
+			if (checkIfStartsWithCS("ucproto://"sv, db) == 0) {
+				std::cerr << "Invalid DSN: ucproto:// is not supported on the Windows platform. Use cproto:// or builtin:// instead"
+						  << std::endl;
+				return 2;
+			}
+#endif	// _WIN32
 			dsn = db;
 		} else {
 			dsn = "cproto://reindexer:reindexer@127.0.0.1:6534/" + db;
@@ -133,7 +151,14 @@ int main(int argc, char* argv[]) {
 		std::cout << "Reindexer command line tool version " << REINDEX_VERSION << std::endl;
 	}
 
-	if (dsn.compare(0, 9, "cproto://") == 0) {
+	if (checkIfStartsWithCS("cproto://"sv, dsn) || checkIfStartsWithCS("ucproto://"sv, dsn)) {
+#ifdef _WIN32
+		if (checkIfStartsWithCS("ucproto://"sv, dsn)) {
+			std::cerr << "Invalid DSN: ucproto:// is not supported on the Windows platform. Use cproto:// or builtin:// instead"
+					  << std::endl;
+			return 2;
+		}
+#endif	// _WIN32
 		reindexer::client::ReindexerConfig config;
 		config.EnableCompression = true;
 		config.AppName = args::get(appName);
@@ -141,13 +166,17 @@ int main(int argc, char* argv[]) {
 																			  args::get(connThreads), config);
 		err = commandsProcessor.Connect(dsn, reindexer::client::ConnectOpts().CreateDBIfMissing(createDBF && args::get(createDBF)));
 		if (err.ok()) ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
-	} else if (dsn.compare(0, 10, "builtin://") == 0) {
+	} else if (checkIfStartsWithCS("builtin://"sv, dsn)) {
 		reindexer::Reindexer db;
 		CommandsProcessor<reindexer::Reindexer> commandsProcessor(args::get(outFileName), args::get(fileName), args::get(connThreads));
 		err = commandsProcessor.Connect(dsn, ConnectOpts().DisableReplication());
 		if (err.ok()) ok = commandsProcessor.Run(args::get(command), args::get(dumpMode));
 	} else {
+#ifdef _WIN32
 		std::cerr << "Invalid DSN format: " << dsn << " Must begin from cproto:// or builtin://" << std::endl;
+#else	// _WIN32
+		std::cerr << "Invalid DSN format: " << dsn << " Must begin from cproto://, ucproto:// or builtin://" << std::endl;
+#endif	// _WIN32
 	}
 	if (!err.ok()) {
 		std::cerr << "ERROR: " << err.what() << std::endl;

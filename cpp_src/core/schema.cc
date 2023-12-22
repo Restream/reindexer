@@ -277,8 +277,6 @@ Error Schema::FromJSON(std::string_view json) {
 
 void Schema::GetJSON(WrSerializer& ser) const { ser << originalJson_; }
 
-std::string_view Schema::GetJSON() const noexcept { return originalJson_; }
-
 KeyValueType Schema::GetFieldType(const TagsPath& fieldPath, bool& isArray) const {
 	return paths_.fieldsTypes_.GetField(fieldPath, isArray);
 }
@@ -298,7 +296,6 @@ Error Schema::GetProtobufSchema(WrSerializer& schema) const {
 std::string Schema::AppendProtobufNumber(std::string_view j, int protobufNsNumber) {
 	std::string json(j);
 	if (protobufNsNumber != -1 && j != "{}") {
-		// TODO: fix it
 		auto pos = json.find_last_of('}');
 		if (pos != std::string::npos) {
 			json.erase(pos);

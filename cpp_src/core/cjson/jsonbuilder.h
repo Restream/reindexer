@@ -10,16 +10,18 @@ namespace reindexer {
 class JsonBuilder {
 public:
 	JsonBuilder() noexcept : ser_(nullptr), tm_(nullptr) {}
-	JsonBuilder(WrSerializer &ser, ObjType type = ObjType::TypeObject, const TagsMatcher *tm = nullptr);
+	JsonBuilder(WrSerializer &ser, ObjType type = ObjType::TypeObject, const TagsMatcher *tm = nullptr, bool emitTrailingForFloat = true);
 	~JsonBuilder() { End(); }
 	JsonBuilder(const JsonBuilder &) = delete;
-	JsonBuilder(JsonBuilder &&other) : ser_(other.ser_), tm_(other.tm_), type_(other.type_), count_(other.count_) {
+	JsonBuilder(JsonBuilder &&other) noexcept
+		: ser_(other.ser_), tm_(other.tm_), type_(other.type_), count_(other.count_), emitTrailingForFloat_(other.emitTrailingForFloat_) {
 		other.type_ = ObjType::TypePlain;
 	}
 	JsonBuilder &operator=(const JsonBuilder &) = delete;
 	JsonBuilder &operator=(JsonBuilder &&) = delete;
 
 	void SetTagsMatcher(const TagsMatcher *tm) noexcept { tm_ = tm; }
+	void EmitTrailingForFloat(bool val) noexcept { emitTrailingForFloat_ = val; }
 
 	/// Start new object
 	JsonBuilder Object(std::string_view name = {}, int size = KUnknownFieldSize);
@@ -56,10 +58,20 @@ public:
 	JsonBuilder &Put(std::string_view name, Uuid arg, int offset = 0);
 	JsonBuilder &Put(std::nullptr_t, std::string_view arg, int offset = 0) { return Put(std::string_view{}, arg, offset); }
 	JsonBuilder &Put(std::string_view name, const char *arg, int offset = 0) { return Put(name, std::string_view(arg), offset); }
-	template <typename T, typename std::enable_if<std::is_integral<T>::value || std::is_floating_point<T>::value>::type * = nullptr>
+	template <typename T, typename std::enable_if<std::is_integral<T>::value>::type * = nullptr>
 	JsonBuilder &Put(std::string_view name, const T &arg, int /*offset*/ = 0) {
 		putName(name);
 		(*ser_) << arg;
+		return *this;
+	}
+	template <typename T, typename std::enable_if<std::is_floating_point<T>::value>::type * = nullptr>
+	JsonBuilder &Put(std::string_view name, const T &arg, int /*offset*/ = 0) {
+		putName(name);
+		if (emitTrailingForFloat_) {
+			(*ser_) << arg;
+		} else {
+			ser_->PutDoubleStrNoTrailing(arg);
+		}
 		return *this;
 	}
 	template <typename T>
@@ -86,6 +98,7 @@ protected:
 	const TagsMatcher *tm_;
 	ObjType type_ = ObjType::TypePlain;
 	int count_ = 0;
+	bool emitTrailingForFloat_ = true;
 };
 
 }  // namespace reindexer

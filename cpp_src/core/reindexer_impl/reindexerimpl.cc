@@ -1,24 +1,25 @@
-#include "core/reindexerimpl.h"
+#include "reindexerimpl.h"
 
 #include <stdio.h>
 #include <chrono>
 #include <thread>
-#include "cjson/jsonbuilder.h"
 #include "cluster/clustercontrolrequest.h"
 #include "cluster/clusterizator.h"
-#include "core/cjson/jsondecoder.h"
+#include "core/cjson/jsonbuilder.h"
 #include "core/cjson/protobufschemabuilder.h"
+#include "core/defnsconfigs.h"
 #include "core/iclientsstats.h"
 #include "core/index/index.h"
 #include "core/itemimpl.h"
 #include "core/nsselecter/crashqueryreporter.h"
+#include "core/nsselecter/nsselecter.h"
+#include "core/nsselecter/querypreprocessor.h"
 #include "core/query/sql/sqlsuggester.h"
+#include "core/queryresults/joinresults.h"
 #include "core/selectfunc/selectfunc.h"
 #include "core/type_consts_helpers.h"
-#include "defnsconfigs.h"
-#include "estl/contexted_locks.h"
 #include "estl/defines.h"
-#include "queryresults/joinresults.h"
+#include "rx_selector.h"
 #include "server/outputparameters.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/catch_and_return.h"
@@ -125,13 +126,13 @@ ReindexerImpl::StatsLocker::StatsLocker() {
 ReindexerImpl::StatsLocker::StatsLockT ReindexerImpl::StatsLocker::LockIfRequired(std::string_view sysNsName, const RdxContext& ctx) {
 	auto found = mtxMap_.find(sysNsName);
 	if (found != mtxMap_.end()) {
-		return StatsLockT(found->second, &ctx);
+		return StatsLockT(found->second, ctx);
 	}
 	// Do not create any lock, if namespace does not preset in the map
 	return StatsLockT();
 }
 
-Error ReindexerImpl::EnableStorage(const std::string& storagePath, bool skipPlaceholderCheck, const RdxContext& ctx) {
+Error ReindexerImpl::enableStorage(const std::string& storagePath) {
 	if (!storagePath_.empty()) {
 		return Error(errParams, "Storage already enabled");
 	}
@@ -154,7 +155,7 @@ Error ReindexerImpl::EnableStorage(const std::string& storagePath, bool skipPlac
 		if (entry.name == kConfigNamespace) isHaveConfig = true;
 	}
 
-	if (!isEmpty && !skipPlaceholderCheck) {
+	if (!isEmpty) {
 		std::string content;
 		int res = fs::ReadFile(fs::JoinPath(storagePath, kStoragePlaceholderFilename), content);
 		if (res > 0) {
@@ -197,7 +198,7 @@ Error ReindexerImpl::EnableStorage(const std::string& storagePath, bool skipPlac
 
 	Error res;
 	if (isHaveConfig) {
-		res = openNamespace(kConfigNamespace, true, StorageOpts().Enabled().CreateIfMissing(), {}, ctx);
+		res = openNamespace(kConfigNamespace, true, StorageOpts().Enabled().CreateIfMissing(), {}, RdxContext());
 	}
 	for (auto& watcher : configWatchers_) {
 		watcher.SetDirectory(storagePath_);
@@ -229,8 +230,6 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 		path = dsn.substr(10);
 	}
 
-	std::vector<reindexer::fs::DirEntry> foundNs;
-
 	switch (opts.StorageType()) {
 		case kStorageTypeOptLevelDB:
 			storageType_ = StorageType::LevelDB;
@@ -243,9 +242,10 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 	autorepairEnabled_ = opts.IsAutorepair();
 	replicationEnabled_ = !opts.IsReplicationDisabled();
 
-	bool enableStorage = (path.length() > 0 && path != "/");
-	if (enableStorage) {
-		auto err = EnableStorage(path);
+	std::vector<reindexer::fs::DirEntry> foundNs;
+	const bool storageEnable = (path.length() > 0 && path != "/");
+	if (storageEnable) {
+		auto err = enableStorage(path);
 		if (!err.ok()) return err;
 		if (fs::ReadDir(path, foundNs) < 0) {
 			return Error(errParams, "Can't read database dir %s", path);
@@ -255,9 +255,10 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 	Error err = InitSystemNamespaces();
 	if (!err.ok()) return err;
 
-	if (enableStorage && opts.IsOpenNamespaces()) {
-		std::sort(foundNs.begin(), foundNs.end(),
-				  [](const fs::DirEntry& ld, const fs::DirEntry& rd) { return ld.internalFilesCount > rd.internalFilesCount; });
+	if (storageEnable && opts.IsOpenNamespaces()) {
+		boost::sort::pdqsort_branchless(foundNs.begin(), foundNs.end(), [](const fs::DirEntry& ld, const fs::DirEntry& rd) noexcept {
+			return ld.internalFilesCount > rd.internalFilesCount;
+		});
 		const size_t maxLoadWorkers = ConcurrentNamespaceLoaders();
 		std::unique_ptr<std::thread[]> thrs(new std::thread[maxLoadWorkers]);
 		std::atomic_flag hasNsErrors = ATOMIC_FLAG_INIT;
@@ -269,7 +270,7 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 					 idx = nsIdx.fetch_add(1, std::memory_order_relaxed)) {
 					auto& de = foundNs[idx];
 					if (de.isDir && validateObjectName(de.name, true)) {
-						if (de.name[0] == '@') {
+						if (de.name[0] == kTmpNsPrefix) {
 							const std::string tmpPath = fs::JoinPath(storagePath_, de.name);
 							logPrintf(LogWarning, "Dropping tmp namespace '%s'", de.name);
 							if (fs::RmDirAll(tmpPath) < 0) {
@@ -279,9 +280,9 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 							}
 							continue;
 						}
-						auto status = openNamespace(de.name, true, StorageOpts().Enabled(), {}, RdxContext());
+						RdxContext dummyCtx;
+						auto status = openNamespace(de.name, true, StorageOpts().Enabled(), {}, dummyCtx);
 						if (status.ok()) {
-							RdxContext dummyCtx;
 							auto ns = getNamespace(de.name, dummyCtx);
 							auto replState = ns->GetReplStateV2(dummyCtx);
 							int64_t maxVer = maxNsVersion.load();
@@ -305,6 +306,23 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 		if (!opts.IsAllowNamespaceErrors() && hasNsErrors.test_and_set(std::memory_order_relaxed)) {
 			return Error(errNotValid, "Namespaces load error");
 		}
+
+		RdxContext dummyCtx;
+		auto nss = getNamespaces(dummyCtx);
+		for (auto& ns : nss) {
+			const auto replState = ns.second->GetReplState(dummyCtx);
+			if (replState.nsVersion.isEmpty()) {
+				// Do not set version for the v3 follower namespaces to guarantee force sync for them
+				if (!replState.wasV3ReplicatedNS) {
+					const auto nsVersion = nsVersion_.GetNext();
+					logPrintf(LogTrace, "%s: Ns version was empty. Generating new one: %d", ns.first, nsVersion);
+					ns.second->SetNsVersion(nsVersion, dummyCtx);
+				} else {
+					logPrintf(LogTrace, "%s: Ns version was empty (namespaces was replicated in v3). Keeping empty value", ns.first);
+				}
+			}
+		}
+
 		logPrintf(LogTrace, "%s: All of the namespaces were opened", storagePath_);
 	}
 
@@ -357,8 +375,13 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 		}
 		const bool readyToLoadStorage = (nsDef.storage.IsEnabled() && !storagePath_.empty());
 		assertrx(clusterizator_);
+#ifdef REINDEX_WITH_V3_FOLLOWERS
 		ns = std::make_shared<Namespace>(nsDef.name, replOpts.has_value() ? replOpts->tmStateToken : std::optional<int32_t>(),
-										 clusterizator_.get(), bgDeleter_);
+										 *clusterizator_, bgDeleter_, observers_);
+#else	// REINDEX_WITH_V3_FOLLOWERS
+		ns = std::make_shared<Namespace>(nsDef.name, replOpts.has_value() ? replOpts->tmStateToken : std::optional<int32_t>(),
+										 *clusterizator_, bgDeleter_);
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 		if (nsDef.isTemporary) {
 			ns->awaitMainNs(rdxCtx)->setTemporary();
 		}
@@ -393,6 +416,9 @@ Error ReindexerImpl::AddNamespace(const NamespaceDef& nsDef, std::optional<NsRep
 				NamespaceDef def;
 				def.name = nsDef.name;
 				def.storage = nsDef.storage;  // Indexes and schema will be replicate later
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+				observers_.OnWALUpdate(LSNPair(), nsDef.name, WALRecord(WalNamespaceAdd));
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 				auto err = clusterizator_->Replicate(
 					{UpdateRecord::Type::AddNamespace, nsDef.name, version, rdxCtx.EmmiterServerId(), std::move(def), stateToken},
 					[&wlck] {
@@ -468,7 +494,6 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 		auto wlck = nsLock_.DataWLock(ctx);
 
 		auto nsIt = namespaces_.find(nsName);
-
 		if (nsIt == namespaces_.end()) {
 			return Error(errNotFound, "Namespace '%s' does not exist", nsName);
 		}
@@ -495,6 +520,11 @@ Error ReindexerImpl::closeNamespace(std::string_view nsName, const RdxContext& c
 
 		namespaces_.erase(nsIt);
 		if (!isTemporary) {
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+			if (dropStorage) {
+				observers_.OnWALUpdate(LSNPair(), nsName, WALRecord(WalNamespaceDrop));
+			}
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 			auto err = clusterizator_->Replicate(
 				{dropStorage ? UpdateRecord::Type::DropNamespace : UpdateRecord::Type::CloseNamespace, std::string(nsName), lsn_t(0, 0),
 				 lsn_t(0, 0), ctx.EmmiterServerId()},
@@ -537,8 +567,13 @@ Error ReindexerImpl::openNamespace(std::string_view name, bool skipNameCheck, co
 		}
 		NamespaceDef nsDef(std::string(name), storageOpts);
 		assertrx(clusterizator_);
+#ifdef REINDEX_WITH_V3_FOLLOWERS
 		auto ns = std::make_shared<Namespace>(nsDef.name, replOpts.has_value() ? replOpts->tmStateToken : std::optional<int32_t>(),
-											  clusterizator_.get(), bgDeleter_);
+											  *clusterizator_, bgDeleter_, observers_);
+#else	// REINDEX_WITH_V3_FOLLOWERS
+		auto ns = std::make_shared<Namespace>(nsDef.name, replOpts.has_value() ? replOpts->tmStateToken : std::optional<int32_t>(),
+											  *clusterizator_, bgDeleter_);
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 		if (storageOpts.IsEnabled() && !storagePath_.empty()) {
 			auto opts = storageOpts;
 			ns->EnableStorage(storagePath_, opts.Autorepair(autorepairEnabled_), storageType_, rdxCtx);
@@ -563,6 +598,11 @@ Error ReindexerImpl::openNamespace(std::string_view name, bool skipNameCheck, co
 			const lsn_t version = setNsVersion(ns, replOpts, rdxCtx);
 
 			namespaces_.insert({nsDef.name, std::move(ns)});
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+			if (!nsDef.isTemporary) {
+				observers_.OnWALUpdate(LSNPair(), nsDef.name, WALRecord(WalNamespaceAdd));
+			}
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 			auto err = clusterizator_->Replicate(
 				{UpdateRecord::Type::AddNamespace, std::string(name), version, rdxCtx.EmmiterServerId(), std::move(nsDef), stateToken},
 				[&wlck] {
@@ -626,11 +666,30 @@ bool ReindexerImpl::NamespaceIsInClusterConfig(std::string_view nsName) {
 	return clusterizator_ && clusterizator_->NamespaceIsInClusterConfig(nsName);
 }
 
+Error ReindexerImpl::SubscribeUpdates([[maybe_unused]] IUpdatesObserver* observer, [[maybe_unused]] const UpdatesFilters& filters,
+									  [[maybe_unused]] SubscriptionOpts opts) {
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+	return observers_.Add(observer, filters, opts);
+#else	// REINDEX_WITH_V3_FOLLOWERS
+	return Error(errForbidden, "Reindexer was built without v3 followers compatibility");
+#endif	// REINDEX_WITH_V3_FOLLOWERS
+}
+
+Error ReindexerImpl::UnsubscribeUpdates([[maybe_unused]] IUpdatesObserver* observer) {
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+	return observers_.Delete(observer);
+#else	// REINDEX_WITH_V3_FOLLOWERS
+	return Error(errForbidden, "Reindexer was built without v3 followers compatibility");
+#endif	// REINDEX_WITH_V3_FOLLOWERS
+}
+
 Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::string& dstNsName, bool fromReplication, bool skipResync,
 									 const RdxContext& rdxCtx) {
 	Namespace::Ptr dstNs, srcNs;
 	try {
-		if (std::string_view(dstNsName) == srcNsName) return errOK;
+		if (std::string_view(dstNsName) == srcNsName.data()) {
+			return {};
+		}
 		if (isSystemNamespaceNameStrict(srcNsName)) {
 			return Error(errParams, "Can't rename system namespace (%s)", srcNsName);
 		}
@@ -639,6 +698,22 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 		}
 		if (!validateUserNsName(dstNsName)) {
 			return Error(errParams, "Namespace name contains invalid character. Only alphas, digits,'_','-', are allowed (%s)", dstNsName);
+		}
+
+		{
+			// Perform namespace flushes to minimize chances of the flush under lock
+			auto rlock = nsLock_.RLock(rdxCtx);
+			auto srcIt = namespaces_.find(srcNsName);
+			srcNs = (srcIt != namespaces_.end()) ? srcIt->second : Namespace::Ptr();
+			rlock.unlock();
+
+			if (srcNs) {
+				auto err = srcNs->awaitMainNs(rdxCtx)->FlushStorage(rdxCtx);
+				if (!err.ok()) {
+					return Error(err.code(), "Unable to flush storage before rename: %s", err.what());
+				}
+				srcNs.reset();
+			}
 		}
 
 		rdxCtx.WithNoWaitSync(fromReplication);
@@ -701,6 +776,17 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 			} else {
 				srcNs->Rename(dstNsName, storagePath_, replicateCb, rdxCtx);
 			}
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+			if (needWalUpdate) {
+				observers_.OnWALUpdate(LSNPair(), srcNsName, WALRecord(WalNamespaceRename, dstNsName));
+			} else if (!skipResync) {
+				WrSerializer ser;
+				auto nsDef = srcNs->GetDefinition(rdxCtx);
+				nsDef.GetJSON(ser);
+				ser.PutBool(true);
+				observers_.OnWALUpdate(LSNPair(), dstNsName, WALRecord(WalForceSync, ser.Slice()));
+			}
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 		} catch (...) {
 			auto actualName = srcNs->GetName(rdxCtx);
 			if (actualName != dstNsName) {
@@ -712,7 +798,7 @@ Error ReindexerImpl::renameNamespace(std::string_view srcNsName, const std::stri
 	} catch (const Error& err) {
 		return err;
 	}
-	return errOK;
+	return {};
 }
 
 Error ReindexerImpl::readClusterConfigFile() {
@@ -729,13 +815,6 @@ Error ReindexerImpl::readClusterConfigFile() {
 		if (clusterConfig_.compare_exchange_strong(nullptr, confPtr.get())) {
 			confPtr.release();	// NOLINT(bugprone-unused-return-value) Moved to clusterConfig_ ptr
 			clusterizator_->Configure(*clusterConfig_);
-			if (clusterizator_->IsExpectingClusterStartup()) {
-				logPrintf(LogTrace, "%s: Starting clusterizator right after config read", storagePath_);
-				err = clusterizator_->StartClusterRepl();
-				if (!err.ok()) {
-					logPrintf(LogError, "Error on cluster start: %s", err.what());
-				}
-			}
 		}
 	} else {
 		logPrintf(LogError, "Error parsing cluster config YML: %s", err.what());
@@ -866,7 +945,8 @@ Error ReindexerImpl::Update(std::string_view nsName, Item& item, LocalQueryResul
 
 Error ReindexerImpl::Update(const Query& q, LocalQueryResults& result, const RdxContext& rdxCtx) {
 	try {
-		auto ns = getNamespace(q._namespace, rdxCtx);
+		q.VerifyForUpdate();
+		auto ns = getNamespace(q.NsName(), rdxCtx);
 		ns->Update(q, result, rdxCtx);
 		if (ns->IsSystem(rdxCtx)) {
 			const std::string kNsName = ns->GetName(rdxCtx);
@@ -936,7 +1016,8 @@ Error ReindexerImpl::Delete(std::string_view nsName, Item& item, LocalQueryResul
 }
 
 Error ReindexerImpl::Delete(const Query& q, LocalQueryResults& result, const RdxContext& ctx) {
-	const std::string_view nsName = q.Namespace();
+	q.VerifyForUpdate();
+	const std::string_view nsName = q.NsName();
 	APPLY_NS_FUNCTION2(false, Delete, q, result);
 }
 
@@ -954,9 +1035,9 @@ struct ItemRefLess {
 
 Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const RdxContext& rdxCtx) {
 	try {
-		NsLocker<const RdxContext> locks(rdxCtx);
+		RxSelector::NsLocker<const RdxContext> locks(rdxCtx);
 
-		auto mainNsWrp = getNamespace(q._namespace, rdxCtx);
+		auto mainNsWrp = getNamespace(q.NsName(), rdxCtx);
 		auto mainNs = q.IsWALQuery() ? mainNsWrp->awaitMainNs(rdxCtx) : mainNsWrp->getMainNs();
 
 		const auto queriesPerfStatsEnabled = configProvider_.QueriesPerfStatsEnabled();
@@ -982,7 +1063,7 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 		}
 		: std::function<void(bool, std::chrono::microseconds)>{};
 
-		const bool isSystemNsRequest = isSystemNamespaceNameFast(q._namespace);
+		const bool isSystemNsRequest = isSystemNamespaceNameFast(q.NsName());
 		QueryStatCalculator statCalculator(
 			std::move(hitter), std::chrono::microseconds(queriesThresholdUS),
 			queriesPerfStatsEnabled || configProvider_.GetSelectLoggingParams().thresholdUs >= 0,
@@ -991,13 +1072,13 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 
 		StatsLocker::StatsLockT statsSelectLck;
 		if (isSystemNsRequest) {
-			statsSelectLck = syncSystemNamespaces(q._namespace, detectFilterNsNames(q), rdxCtx);
+			statsSelectLck = syncSystemNamespaces(q.NsName(), detectFilterNsNames(q), rdxCtx);
 		}
 		// Lookup and lock namespaces_
 		mainNs->updateSelectTime();
 		locks.Add(mainNs);
-		q.WalkNested(false, true, [this, &locks, &rdxCtx](const Query& q) {
-			auto nsWrp = getNamespace(q._namespace, rdxCtx);
+		q.WalkNested(false, true, true, [this, &locks, &rdxCtx](const Query& q) {
+			auto nsWrp = getNamespace(q.NsName(), rdxCtx);
 			auto ns = q.IsWALQuery() ? nsWrp->awaitMainNs(rdxCtx) : nsWrp->getMainNs();
 			ns->updateSelectTime();
 			locks.Add(ns);
@@ -1014,7 +1095,7 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 
 		const auto ward = rdxCtx.BeforeSimpleState(Activity::InProgress);
 		SelectFunctionsHolder func;
-		doSelect(q, result, locks, func, rdxCtx, statCalculator);
+		RxSelector::DoSelect(q, result, locks, func, rdxCtx, statCalculator);
 		func.Process(result);
 	} catch (const Error& err) {
 		if (rdxCtx.Compl()) rdxCtx.Compl()(err);
@@ -1022,324 +1103,6 @@ Error ReindexerImpl::Select(const Query& q, LocalQueryResults& result, const Rdx
 	}
 	if (rdxCtx.Compl()) rdxCtx.Compl()(errOK);
 	return Error();
-}
-
-struct ReindexerImpl::QueryResultsContext {
-	QueryResultsContext() = default;
-	QueryResultsContext(PayloadType type, TagsMatcher tagsMatcher, const FieldsSet& fieldsFilter, std::shared_ptr<const Schema> schema)
-		: type_(std::move(type)), tagsMatcher_(std::move(tagsMatcher)), fieldsFilter_(fieldsFilter), schema_(std::move(schema)) {}
-
-	PayloadType type_;
-	TagsMatcher tagsMatcher_;
-	FieldsSet fieldsFilter_;
-	std::shared_ptr<const Schema> schema_;
-};
-
-[[nodiscard]] static bool byJoinedField(std::string_view sortExpr, std::string_view joinedNs) {
-	static const fast_hash_set<char> allowedSymbolsInIndexName{
-		'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
-		'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R',
-		'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '_', '.', '+'};
-	std::string_view::size_type i = 0;
-	const auto s = sortExpr.size();
-	while (i < s && isspace(sortExpr[i])) ++i;
-	bool inQuotes = false;
-	if (i < s && sortExpr[i] == '"') {
-		++i;
-		inQuotes = true;
-	}
-	while (i < s && isspace(sortExpr[i])) ++i;
-	std::string_view::size_type j = 0, s2 = joinedNs.size();
-	for (; j < s2 && i < s; ++i, ++j) {
-		if (sortExpr[i] != joinedNs[j]) return false;
-	}
-	if (i >= s || sortExpr[i] != '.') return false;
-	for (++i; i < s; ++i) {
-		if (allowedSymbolsInIndexName.find(sortExpr[i]) == allowedSymbolsInIndexName.end()) {
-			if (isspace(sortExpr[i])) break;
-			if (inQuotes && sortExpr[i] == '"') {
-				inQuotes = false;
-				++i;
-				break;
-			}
-			return false;
-		}
-	}
-	while (i < s && isspace(sortExpr[i])) ++i;
-	if (inQuotes && i < s && sortExpr[i] == '"') ++i;
-	while (i < s && isspace(sortExpr[i])) ++i;
-	return i == s;
-}
-
-bool ReindexerImpl::isPreResultValuesModeOptimizationAvailable(const Query& jItemQ, const NamespaceImpl::Ptr& jns, const Query& mainQ) {
-	bool result = true;
-	jItemQ.entries.ExecuteAppropriateForEach(
-		Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse>{},
-		[&jns, &result](const QueryEntry& qe) {
-			if (qe.idxNo >= 0) {
-				assertrx(jns->indexes_.size() > static_cast<size_t>(qe.idxNo));
-				const IndexType indexType = jns->indexes_[qe.idxNo]->Type();
-				if (IsComposite(indexType) || IsFullText(indexType)) result = false;
-			}
-		},
-		[&jns, &result](const BetweenFieldsQueryEntry& qe) {
-			if (qe.firstIdxNo >= 0) {
-				assertrx(jns->indexes_.size() > static_cast<size_t>(qe.firstIdxNo));
-				const IndexType indexType = jns->indexes_[qe.firstIdxNo]->Type();
-				if (IsComposite(indexType) || IsFullText(indexType)) result = false;
-			}
-			if (qe.secondIdxNo >= 0) {
-				assertrx(jns->indexes_.size() > static_cast<size_t>(qe.secondIdxNo));
-				if (IsComposite(jns->indexes_[qe.secondIdxNo]->Type())) result = false;
-			}
-		});
-	if (!result) return false;
-	for (const auto& se : mainQ.sortingEntries_) {
-		if (byJoinedField(se.expression, jItemQ._namespace)) return false;	// TODO maybe allow #1410
-	}
-	return true;
-}
-
-template <typename T>
-JoinedSelectors ReindexerImpl::prepareJoinedSelectors(const Query& q, LocalQueryResults& result, NsLocker<T>& locks,
-													  SelectFunctionsHolder& func, std::vector<QueryResultsContext>& queryResultsContexts,
-													  const RdxContext& rdxCtx) {
-	JoinedSelectors joinedSelectors;
-	if (q.joinQueries_.empty()) return joinedSelectors;
-	auto ns = locks.Get(q._namespace);
-	assertrx(ns);
-
-	// For each joined queries
-	uint32_t joinedSelectorsCount = uint32_t(q.joinQueries_.size());
-	for (auto& jq : q.joinQueries_) {
-		if rx_unlikely (isSystemNamespaceNameFast(jq._namespace)) {
-			throw Error(errParams, "Queries to system namespaces ('%s') are not supported inside JOIN statement", jq._namespace);
-		}
-		if (rx_unlikely(!jq.joinQueries_.empty())) {
-			throw Error(errParams, "JOINs nested into the other JOINs are not supported");
-		}
-		if (rx_unlikely(!jq.mergeQueries_.empty())) {
-			throw Error(errParams, "MERGEs nested into the JOINs are not supported");
-		}
-
-		// Get common results from joined namespaces_
-		auto jns = locks.Get(jq._namespace);
-		assertrx(jns);
-
-		// Do join for each item in main result
-		Query jItemQ(jq._namespace);
-		jItemQ.explain_ = q.explain_;
-		jItemQ.Debug(jq.debugLevel).Limit(jq.count);
-		jItemQ.Strict(q.strictMode);
-		for (size_t i = 0; i < jq.sortingEntries_.size(); ++i) {
-			jItemQ.Sort(jq.sortingEntries_[i].expression, jq.sortingEntries_[i].desc);
-		}
-
-		jItemQ.entries.Reserve(jq.joinEntries_.size());
-
-		// Construct join conditions
-		for (auto& je : jq.joinEntries_) {
-			int joinIdx = IndexValueType::NotSet;
-			if (!jns->getIndexByName(je.joinIndex_, joinIdx)) {
-				joinIdx = IndexValueType::SetByJsonPath;
-			}
-			QueryEntry qe(InvertJoinCondition(je.condition_), je.joinIndex_, joinIdx);
-			if (!ns->getIndexByName(je.index_, const_cast<QueryJoinEntry&>(je).idxNo)) {
-				const_cast<QueryJoinEntry&>(je).idxNo = IndexValueType::SetByJsonPath;
-			}
-			jItemQ.entries.Append(je.op_, std::move(qe));
-		}
-
-		Query jjq(jq);
-		JoinPreResult::Ptr preResult = std::make_shared<JoinPreResult>();
-		uint32_t joinedFieldIdx = uint32_t(joinedSelectors.size());
-		JoinCacheRes joinRes;
-		jns->getFromJoinCache(jq, joinRes);
-		jjq.explain_ = q.explain_;
-		jjq.Strict(q.strictMode);
-		if (!jjq.entries.Empty() && !joinRes.haveData) {
-			LocalQueryResults jr;
-			jjq.Limit(QueryEntry::kDefaultLimit);
-			SelectCtx ctx(jjq, &q);
-			ctx.preResult = preResult;
-			ctx.preResult->executionMode = JoinPreResult::ModeBuild;
-			ctx.preResult->enableStoredValues = isPreResultValuesModeOptimizationAvailable(jItemQ, jns, q);
-			ctx.functions = &func;
-			ctx.requiresCrashTracking = true;
-			jns->Select(jr, ctx, rdxCtx);
-			assertrx(ctx.preResult->executionMode == JoinPreResult::ModeExecute);
-		}
-		if (joinRes.haveData) {
-			preResult = joinRes.it.val.preResult;
-		} else if (joinRes.needPut) {
-			jns->putToJoinCache(joinRes, preResult);
-		}
-
-		queryResultsContexts.emplace_back(jns->payloadType_, jns->tagsMatcher_, FieldsSet(jns->tagsMatcher_, jq.selectFilter_),
-										  jns->schema_);
-
-		result.AddNamespace(jns, true);
-		if (preResult->dataMode == JoinPreResult::ModeValues) {
-			jItemQ.entries.ExecuteAppropriateForEach(
-				Skip<JoinQueryEntry, QueryEntriesBracket, AlwaysFalse>{},
-				[&jns](QueryEntry& qe) {
-					if (qe.idxNo != IndexValueType::SetByJsonPath) {
-						assertrx(qe.idxNo >= 0 && static_cast<size_t>(qe.idxNo) < jns->indexes_.size());
-						if (jns->indexes_[qe.idxNo]->Opts().IsSparse()) qe.idxNo = IndexValueType::SetByJsonPath;
-					}
-				},
-				[&jns](BetweenFieldsQueryEntry& qe) {
-					if (qe.firstIdxNo != IndexValueType::SetByJsonPath) {
-						assertrx(qe.firstIdxNo >= 0 && static_cast<size_t>(qe.firstIdxNo) < jns->indexes_.size());
-						if (jns->indexes_[qe.firstIdxNo]->Opts().IsSparse()) qe.firstIdxNo = IndexValueType::SetByJsonPath;
-					}
-					if (qe.secondIdxNo != IndexValueType::SetByJsonPath) {
-						assertrx(qe.secondIdxNo >= 0 && static_cast<size_t>(qe.secondIdxNo) < jns->indexes_.size());
-						if (jns->indexes_[qe.secondIdxNo]->Opts().IsSparse()) qe.secondIdxNo = IndexValueType::SetByJsonPath;
-					}
-				});
-			preResult->values.PreselectAllowed(static_cast<size_t>(jns->Config().maxPreselectSize) >= preResult->values.size());
-			if (!preResult->values.Locked()) preResult->values.Lock();	// If not from cache
-			locks.Delete(jns);
-			jns.reset();
-		}
-		joinedSelectors.emplace_back(jq.joinType, ns, std::move(jns), std::move(joinRes), std::move(jItemQ), result, jq, preResult,
-									 joinedFieldIdx, func, joinedSelectorsCount, false, rdxCtx);
-		ThrowOnCancel(rdxCtx);
-	}
-	return joinedSelectors;
-}
-
-template <typename T, typename QueryType>
-void ReindexerImpl::doSelect(const Query& q, LocalQueryResults& result, NsLocker<T>& locks, SelectFunctionsHolder& func,
-							 const RdxContext& ctx, QueryStatCalculator<QueryType>& queryStatCalculator) {
-	auto ns = locks.Get(q._namespace);
-	if rx_unlikely (!ns) {
-		throw Error(errParams, "Namespace '%s' does not exist", q._namespace);
-	}
-	std::vector<QueryResultsContext> joinQueryResultsContexts;
-	bool thereAreJoins = !q.joinQueries_.empty();
-	if (!thereAreJoins) {
-		for (const Query& mq : q.mergeQueries_) {
-			if (!mq.joinQueries_.empty()) {
-				thereAreJoins = true;
-				break;
-			}
-		}
-	}
-
-	JoinedSelectors mainJoinedSelectors;
-	ExplainCalc::Duration preselectTimeTotal{0};
-	if (thereAreJoins) {
-		const auto preselectStartTime = ExplainCalc::Clock::now();
-		mainJoinedSelectors = prepareJoinedSelectors(q, result, locks, func, joinQueryResultsContexts, ctx);
-		result.joined_.resize(1 + q.mergeQueries_.size());
-		preselectTimeTotal = ExplainCalc::Clock::now() - preselectStartTime;
-	}
-	IsFTQuery isFtQuery{IsFTQuery::NotSet};
-	{
-		SelectCtx selCtx(q, nullptr);
-		selCtx.joinedSelectors = mainJoinedSelectors.size() ? &mainJoinedSelectors : nullptr;
-		selCtx.preResultTimeTotal = preselectTimeTotal;
-		selCtx.contextCollectingMode = true;
-		selCtx.functions = &func;
-		selCtx.nsid = 0;
-		if (!q.mergeQueries_.empty()) {
-			selCtx.isMergeQuery = IsMergeQuery::Yes;
-			if rx_unlikely (!q.sortingEntries_.empty()) {
-				throw Error{errNotValid, "Sorting in merge query is not implemented yet"};	// TODO #1449
-			}
-			for (const auto& a : q.aggregations_) {
-				switch (a.Type()) {
-					case AggCount:
-					case AggCountCached:
-					case AggSum:
-					case AggMin:
-					case AggMax:
-						continue;
-					case AggAvg:
-					case AggFacet:
-					case AggDistinct:
-					case AggUnknown:
-						throw Error{errNotValid, "Aggregation '%s' in merge query is not implemented yet",
-									AggTypeToStr(a.Type())};  // TODO #1506
-				}
-			}
-		}
-		selCtx.requiresCrashTracking = true;
-		ns->Select(result, selCtx, ctx);
-		result.AddNamespace(ns, true);
-		isFtQuery = selCtx.isFtQuery;
-		if (selCtx.explain.IsEnabled()) {
-			queryStatCalculator.AddExplain(selCtx.explain);
-		}
-	}
-	// should be destroyed after results.lockResults()
-	std::vector<JoinedSelectors> mergeJoinedSelectors;
-	if (!q.mergeQueries_.empty()) {
-		mergeJoinedSelectors.reserve(q.mergeQueries_.size());
-		uint8_t counter = 0;
-
-		auto hasUnsupportedAggreagations = [](const std::vector<AggregateEntry>& aggVector, AggType& t) -> bool {
-			for (const auto& a : aggVector) {
-				if (a.Type() != AggCount || a.Type() != AggCountCached) {
-					t = a.Type();
-					return true;
-				}
-			}
-			t = AggUnknown;
-			return false;
-		};
-		AggType errType;
-		if (rx_unlikely((q.HasLimit() || q.HasOffset()) && hasUnsupportedAggreagations(q.aggregations_, errType))) {
-			throw Error(errParams, "Limit and offset are not supported for aggregations '%s'", AggTypeToStr(errType));
-		}
-		for (auto& mq : q.mergeQueries_) {
-			if rx_unlikely (isSystemNamespaceNameFast(mq._namespace)) {
-				throw Error(errParams, "Queries to system namespaces ('%s') are not supported inside MERGE statement", mq._namespace);
-			}
-			if rx_unlikely (!mq.sortingEntries_.empty()) {
-				throw Error(errParams, "Sorting in inner merge query is not allowed");
-			}
-			if rx_unlikely (!mq.aggregations_.empty() || mq.calcTotal != ModeNoTotal) {
-				throw Error(errParams, "Aggregations in inner merge query is not allowed");
-			}
-			if rx_unlikely (mq.HasLimit() || mq.HasOffset()) {
-				throw Error(errParams, "Limit and offset in inner merge query is not allowed");
-			}
-			if rx_unlikely (!mq.mergeQueries_.empty()) {
-				throw Error(errParams, "MERGEs nested into the MERGEs are not supported");
-			}
-
-			auto mns = locks.Get(mq._namespace);
-			assertrx(mns);
-			SelectCtx mctx(mq, &q);
-			mctx.nsid = ++counter;
-			mctx.isMergeQuery = IsMergeQuery::Yes;
-			mctx.isFtQuery = isFtQuery;
-			mctx.functions = &func;
-			mctx.contextCollectingMode = true;
-			mergeJoinedSelectors.emplace_back(prepareJoinedSelectors(mq, result, locks, func, joinQueryResultsContexts, ctx));
-			mctx.joinedSelectors = mergeJoinedSelectors.back().size() ? &mergeJoinedSelectors.back() : nullptr;
-			mctx.requiresCrashTracking = true;
-			mns->Select(result, mctx, ctx);
-			result.AddNamespace(std::move(mns), true);
-		}
-		ItemRefVector& itemRefVec = result.Items();
-		if (static_cast<size_t>(q.start) >= itemRefVec.size()) {
-			result.Erase(itemRefVec.begin(), itemRefVec.end());
-			return;
-		}
-		std::sort(itemRefVec.begin(), itemRefVec.end(), ItemRefLess());
-		if (q.start > QueryEntry::kDefaultOffset) {
-			result.Erase(itemRefVec.begin(), itemRefVec.begin() + q.start);
-		}
-		if (itemRefVec.size() > q.count) {
-			result.Erase(itemRefVec.begin() + q.count, itemRefVec.end());
-		}
-	}
-	// Adding context to LocalQueryResults
-	for (const auto& jctx : joinQueryResultsContexts) result.addNSContext(jctx.type_, jctx.tagsMatcher_, jctx.fieldsFilter_, jctx.schema_);
 }
 
 Error ReindexerImpl::Commit(std::string_view /*_namespace*/) {
@@ -1354,7 +1117,6 @@ Error ReindexerImpl::Commit(std::string_view /*_namespace*/) {
 }
 
 std::set<std::string> ReindexerImpl::getFTIndexes(std::string_view nsName) {
-	InternalRdxContext ctx;
 	const RdxContext rdxCtx;
 	auto rlck = nsLock_.RLock(rdxCtx);
 	auto it = namespaces_.find(nsName);
@@ -1366,7 +1128,6 @@ std::set<std::string> ReindexerImpl::getFTIndexes(std::string_view nsName) {
 }
 
 PayloadType ReindexerImpl::getPayloadType(std::string_view nsName) {
-	InternalRdxContext ctx;
 	const RdxContext rdxCtx;
 	auto rlck = nsLock_.RLock(rdxCtx);
 	auto it = namespaces_.find(nsName);
@@ -1380,7 +1141,6 @@ PayloadType ReindexerImpl::getPayloadType(std::string_view nsName) {
 Namespace::Ptr ReindexerImpl::getNamespace(std::string_view nsName, const RdxContext& ctx) {
 	auto rlck = nsLock_.RLock(ctx);
 	auto nsIt = namespaces_.find(nsName);
-
 	if (nsIt == namespaces_.end()) {
 		throw Error(errNotFound, "Namespace '%s' does not exist", nsName);
 	}
@@ -1491,20 +1251,26 @@ Error ReindexerImpl::EnumNamespaces(std::vector<NamespaceDef>& defs, EnumNamespa
 						if (namespaces_.find(d.name) != namespaces_.end()) continue;
 					}
 					assertrx(clusterizator_);
-					std::unique_ptr<NamespaceImpl> tmpNs{new NamespaceImpl(d.name, {}, clusterizator_.get())};
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+					std::unique_ptr<NamespaceImpl> tmpNs{new NamespaceImpl(d.name, {}, *clusterizator_, observers_)};
+#else	// REINDEX_WITH_V3_FOLLOWERS
+					std::unique_ptr<NamespaceImpl> tmpNs{new NamespaceImpl(d.name, {}, *clusterizator_)};
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 					try {
 						tmpNs->EnableStorage(storagePath_, StorageOpts(), storageType_, rdxCtx);
 						if (opts.IsHideTemporary() && tmpNs->IsTemporary(rdxCtx)) {
 							continue;
 						}
 						defs.push_back(tmpNs->GetDefinition(rdxCtx));
-					} catch (reindexer::Error) {
+						// NOLINTBEGIN(bugprone-empty-catch)
+					} catch (const Error&) {
 					}
+					// NOLINTEND(bugprone-empty-catch)
 				}
 			}
 		}
-	} catch (reindexer::Error err) {
-		return err.code();
+	} catch (const Error& err) {
+		return err;
 	}
 	return errOK;
 }
@@ -1844,12 +1610,15 @@ void ReindexerImpl::updateToSystemNamespace(std::string_view nsName, Item& item,
 			const auto& actionNode = configJson[kActionConfigType];
 			handleConfigAction(actionNode, namespaces, ctx);
 
-			if (replicationEnabled_ && clusterizator_->IsExpectingAsyncReplStartup()) {
-				if (Error err = clusterizator_->StartAsyncRepl()) throw err;
+			if (replicationEnabled_ && !dbDestroyed_) {
+				if (clusterizator_->IsExpectingAsyncReplStartup()) {
+					if (Error err = clusterizator_->StartAsyncRepl()) throw err;
+				}
+				if (clusterizator_->IsExpectingClusterStartup()) {
+					if (Error err = clusterizator_->StartClusterRepl()) throw err;
+				}
 			}
-			if (replicationEnabled_ && !dbDestroyed_ && clusterizator_->IsExpectingClusterStartup()) {
-				if (Error err = clusterizator_->StartClusterRepl()) throw err;
-			}
+
 			if (Error err = configProvider_.GetConfigParseErrors()) throw err;
 		} catch (gason::Exception& e) {
 			throw Error(errParseJson, "JSON parsing error: %s", e.what());
@@ -1919,7 +1688,9 @@ void ReindexerImpl::handleConfigAction(const gason::JsonNode& action, const std:
 			}
 		}
 
-		if (const auto it = proxyCallbacks_.find(command); it != proxyCallbacks_.end()) it->second(action, ctx);
+		if (const auto it = proxyCallbacks_.find({command, CallbackT::Type::User}); it != proxyCallbacks_.end()) {
+			it->second(action, CallbackT::EmptyT{}, ctx);
+		}
 	}
 }
 
@@ -1952,10 +1723,7 @@ void ReindexerImpl::updateConfFile(const ConfigT& newConf, std::string_view file
 		auto err = watcher.RewriteFile(std::string(ser.Slice()), [&newConf](const std::string& content) {
 			ConfigT config;
 			Error err = config.FromYAML(content);
-			if (err.ok()) {
-				return config == newConf;
-			}
-			return false;
+			return err.ok() && (config == newConf);
 		});
 		if (!err.ok()) {
 			throw err;
@@ -1972,15 +1740,15 @@ ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(const Query& q)
 	};
 
 	h_vector<BracketRange, 4> notBrackets;
-	const auto& entries = q.entries;
+	const auto& entries = q.Entries();
 	for (uint32_t i = 0, sz = entries.Size(); i < sz; ++i) {
 		const auto op = entries.GetOperation(i);
 		if (op == OpOr) {
 			return std::nullopt;
 		}
-		if (entries.HoldsOrReferTo<QueryEntry>(i)) {
+		if (entries.Is<QueryEntry>(i)) {
 			auto& qe = entries.Get<QueryEntry>(i);
-			if (qe.index == kNsNameField) {
+			if (qe.FieldName() == kNsNameField) {
 				if (op == OpNot) {
 					return std::nullopt;
 				}
@@ -1988,31 +1756,31 @@ ReindexerImpl::FilterNsNamesT ReindexerImpl::detectFilterNsNames(const Query& q)
 								 [i](const BracketRange& br) noexcept { return i >= br.begin && i < br.end; }) != notBrackets.end()) {
 					return std::nullopt;
 				}
-				if (qe.condition != CondSet && qe.condition != CondEq) {
+				if (qe.Condition() != CondSet && qe.Condition() != CondEq) {
 					return std::nullopt;
 				}
 				if (res.has_value()) {
 					return std::nullopt;
 				}
 				res.emplace();
-				res->reserve(qe.values.size());
-				for (auto& v : qe.values) {
+				res->reserve(qe.Values().size());
+				for (auto& v : qe.Values()) {
 					if (!v.Type().Is<KeyValueType::String>()) {
 						return std::nullopt;
 					}
 					res->emplace_back(v.As<std::string>());
 				}
 			}
-		} else if (entries.HoldsOrReferTo<BetweenFieldsQueryEntry>(i)) {
+		} else if (entries.Is<BetweenFieldsQueryEntry>(i)) {
 			auto& qe = entries.Get<BetweenFieldsQueryEntry>(i);
-			if (qe.firstIndex == kNsNameField || qe.secondIndex == kNsNameField) {
+			if (qe.LeftFieldName() == kNsNameField || qe.RightFieldName() == kNsNameField) {
 				return std::nullopt;
 			}
 		} else if (op == OpNot && entries.IsSubTree(i)) {
 			notBrackets.emplace_back(BracketRange{.begin = i, .end = uint32_t(entries.Size(i))});
 		}
 	}
-	for (auto& jq : q.joinQueries_) {
+	for (auto& jq : q.GetJoinQueries()) {
 		if (jq.joinType == OrInnerJoin) {
 			return std::nullopt;
 		}
@@ -2177,11 +1945,9 @@ void ReindexerImpl::onProfiligConfigLoad() {
 
 Error ReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string>& suggestions,
 									   const RdxContext& rdxCtx) {
-	Query query;
-	SQLSuggester suggester(query);
 	std::vector<NamespaceDef> nses;
 
-	suggestions = suggester.GetSuggestions(
+	suggestions = SQLSuggester::GetSuggestions(
 		sqlQuery, pos,
 		[&, this](EnumNamespacesOpts opts) {
 			EnumNamespaces(nses, opts, rdxCtx);
@@ -2339,7 +2105,7 @@ Error ReindexerImpl::ApplySnapshotChunk(std::string_view nsName, const SnapshotC
 	return errOK;
 }
 
-[[nodiscard]] bool ReindexerImpl::isSystemNamespaceNameStrict(std::string_view name) noexcept {
+bool ReindexerImpl::isSystemNamespaceNameStrict(std::string_view name) noexcept {
 	return std::find_if(kSystemNsDefs.begin(), kSystemNsDefs.end(),
 						[name](const NamespaceDef& nsDef) { return iequals(nsDef.name, name); }) != kSystemNsDefs.end();
 }
@@ -2403,7 +2169,7 @@ static auto makeUpdateRecord(Tuple&& t, std::index_sequence<I...>) {
 }
 
 template <typename PreReplFunc, typename... Args>
-[[nodiscard]] Error ReindexerImpl::shardingConfigReplAction(const RdxContext& ctx, PreReplFunc func, Args&&... args) noexcept {
+Error ReindexerImpl::shardingConfigReplAction(const RdxContext& ctx, PreReplFunc func, Args&&... args) noexcept {
 	try {
 		auto wlck = nsLock_.DataWLock(ctx);
 		if (!clusterizator_) {
@@ -2422,8 +2188,7 @@ template <typename PreReplFunc, typename... Args>
 }
 
 template <typename... Args>
-[[nodiscard]] Error ReindexerImpl::shardingConfigReplAction(const RdxContext& ctx, cluster::UpdateRecord::Type type,
-															Args&&... args) noexcept {
+Error ReindexerImpl::shardingConfigReplAction(const RdxContext& ctx, cluster::UpdateRecord::Type type, Args&&... args) noexcept {
 	return shardingConfigReplAction(
 		ctx, [&ctx, &type](Args&&... aargs) { return std::make_tuple(type, ctx.EmmiterServerId(), std::forward<Args>(aargs)...); },
 		std::forward<Args>(args)...);
@@ -2458,15 +2223,15 @@ Error ReindexerImpl::applyShardingCfgCandidate(int64_t sourceId, const RdxContex
 	return shardingConfigReplAction(ctx, UpdateRecord::Type::ApplyShardingConfig, sourceId);
 }
 
-[[nodiscard]] Error ReindexerImpl::resetOldShardingConfig(int64_t sourceId, const RdxContext& ctx) noexcept {
+Error ReindexerImpl::resetOldShardingConfig(int64_t sourceId, const RdxContext& ctx) noexcept {
 	return shardingConfigReplAction(ctx, UpdateRecord::Type::ResetOldShardingConfig, sourceId);
 }
 
-[[nodiscard]] Error ReindexerImpl::resetShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept {
+Error ReindexerImpl::resetShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept {
 	return shardingConfigReplAction(ctx, UpdateRecord::Type::ResetCandidateConfig, sourceId);
 }
 
-[[nodiscard]] Error ReindexerImpl::rollbackShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept {
+Error ReindexerImpl::rollbackShardingConfigCandidate(int64_t sourceId, const RdxContext& ctx) noexcept {
 	return shardingConfigReplAction(ctx, UpdateRecord::Type::RollbackCandidateConfig, sourceId);
 }
 

@@ -19,7 +19,7 @@ protected:
 	using QueryResultRow = std::map<FieldName, reindexer::VariantArray>;
 	using QueryResultRows = std::map<BookId, QueryResultRow>;
 
-	void Init(const std::string& dbName = "/tmp/join_test/") {
+	void Init(const std::string& dbName = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "join_test")) {
 		Error err;
 
 		reindexer::fs::RmDirAll(dbName);
@@ -236,7 +236,7 @@ protected:
 			auto joinedFieldIt = itemIt.begin();
 			LocalQueryResults jres = joinedFieldIt.ToQueryResults();
 			auto& lqr = qr.ToLocalQr();
-			jres.addNSContext(lqr.getPayloadType(1), lqr.getTagsMatcher(1), lqr.getFieldsFilter(1), lqr.getSchema(1));
+			jres.addNSContext(lqr.getPayloadType(1), lqr.getTagsMatcher(1), lqr.getFieldsFilter(1), lqr.getSchema(1), reindexer::lsn_t());
 			for (auto it : jres) {
 				Item joinedItem = it.GetItem(false);
 				FillQueryResultFromItem(joinedItem, resultRow);
@@ -400,8 +400,7 @@ protected:
 		}
 		{
 			QueryResults qr;
-			Query q;
-			q.FromSQL(sql);
+			Query q = Query::FromSQL(sql);
 			auto err = rt.reindexer->Select(q, qr);
 			EXPECT_EQ(err.code(), expectedCode) << sql;
 			EXPECT_EQ(err.what(), expectedText) << sql;

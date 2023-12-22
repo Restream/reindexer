@@ -4,7 +4,6 @@
 #include "tools/stringstools.h"
 #include "yaml-cpp/yaml.h"
 
-const std::string RPCClientTestApi::kDbPrefix = "/tmp/reindex/rpc_client_test";
 const std::string RPCClientTestApi::kDefaultRPCServerAddr = "127.0.0.1:" + std::to_string(RPCClientTestApi::kDefaultRPCPort);
 
 void RPCClientTestApi::TestServer::Start(const std::string& addr, Error errOnLogin) {

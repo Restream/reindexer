@@ -7,14 +7,15 @@
 #include "yaml-cpp/yaml.h"
 
 struct InitShardingConfig {
+	using ShardingConfig = reindexer::cluster::ShardingConfig;
 	class Namespace {
 	public:
 		Namespace(std::string n, bool wd = false) : name(std::move(n)), withData(wd) {}
 
 		std::string name;
 		bool withData;
-		std::function<reindexer::cluster::ShardingConfig::Key(int shard)> keyValuesNodeCreation = [](int shard) {
-			reindexer::cluster::ShardingConfig::Key key;
+		std::function<ShardingConfig::Key(int shard)> keyValuesNodeCreation = [](int shard) {
+			ShardingConfig::Key key;
 			key.values.emplace_back(Variant(std::string("key") + std::to_string(shard)));
 			key.values.emplace_back(Variant(std::string("key") + std::to_string(shard) + "_" + std::to_string(shard)));
 			key.shardId = shard;
@@ -40,7 +41,9 @@ struct InitShardingConfig {
 
 class ShardingApi : public ReindexerApi {
 public:
+	using ShardingConfig = reindexer::cluster::ShardingConfig;
 	static const std::string configTemplate;
+	enum class ApplyType : bool { Shared, Local };
 
 	void Init(InitShardingConfig c = InitShardingConfig()) {
 		std::vector<InitShardingConfig::Namespace> namespaces = std::move(c.additionalNss);
@@ -107,6 +110,7 @@ public:
 			config_.proxyConnThreads = 3;
 			config_.proxyConnConcurrency = 8;
 			config_.reconnectTimeout = std::chrono::milliseconds(6000);
+			config_.sourceId = 999;	 // Some test value
 			for (size_t idx = startId, node = 0; idx < startId + kNodesInCluster; ++idx, ++node) {
 				YAML::Node replConf;
 				replConf["cluster_id"] = shard;
@@ -383,6 +387,8 @@ public:
 	}
 	size_t NodesCount() const { return kShards * kNodesInCluster; }
 
+	void MultyThreadApplyConfigTest(ApplyType type);
+
 protected:
 	class CompareShardId;
 	struct Defaults {
@@ -390,6 +396,7 @@ protected:
 		size_t defaultHttpPort;
 		std::string baseTestsetDbPath;
 	};
+
 	virtual const Defaults& GetDefaults() const {
 		static Defaults def{19000, 20000, fs::JoinPath(fs::GetTempDir(), "rx_test/ShardingBaseApi")};
 		return def;
@@ -411,7 +418,7 @@ protected:
 		assert(j < svc_[i].size());
 		return svc_[i][j].Get();
 	}
-	void CheckTransactionErrors(client::Reindexer& rx, std::string_view nsName);
+	void checkTransactionErrors(client::Reindexer& rx, std::string_view nsName);
 
 	void runSelectTest(std::string_view nsName);
 	void runUpdateTest(std::string_view nsName);
@@ -428,21 +435,24 @@ protected:
 	void fillWithDistribData(const std::map<int, std::set<T>>& shardDataDistrib, const std::string& kNsName, const std::string& kFieldId);
 
 	template <typename T>
-	void runLocalSelectTestForRanges(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib);
+	void runLocalSelectTest(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib);
 	template <typename T>
-	void runSelectTestForRanges(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib);
-	void runTransactionsTestForRanges(std::string_view nsName, const std::map<int, std::set<int>>& shardDataDistrib);
+	void runSelectTest(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib);
+	void runTransactionsTest(std::string_view nsName, const std::map<int, std::set<int>>& shardDataDistrib);
 
 	template <typename T>
-	reindexer::cluster::ShardingConfig makeShardingConfigByDistrib(std::string_view nsName,
-																   const std::map<int, std::set<T>>& shardDataDistrib, int shards = 3,
-																   int nodes = 3) const;
+	ShardingConfig makeShardingConfigByDistrib(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib, int shards = 3,
+											   int nodes = 3) const;
 
-	Error applyNewShardingConfig(const std::shared_ptr<client::Reindexer>& rx, const reindexer::cluster::ShardingConfig& config,
-								 bool locally = false) const;
+	Error applyNewShardingConfig(const std::shared_ptr<client::Reindexer>& rx, const ShardingConfig& config, ApplyType type,
+								 std::optional<int64_t> sourceId = std::optional<int64_t>()) const;
 
-	void MultyThreadApplyConfigTest(bool locally = false);
-	void CheckConfig(const ServerControl::Interface::Ptr& server, const cluster::ShardingConfig& config);
+	void checkConfig(const ServerControl::Interface::Ptr& server, const cluster::ShardingConfig& config);
+	void checkConfigThrow(const ServerControl::Interface::Ptr& server, const cluster::ShardingConfig& config);
+	int64_t getSourceIdFrom(const ServerControl::Interface::Ptr& server);
+	std::optional<ShardingConfig> getShardingConfigFrom(reindexer::client::Reindexer& rx);
+
+	void changeClusterLeader(int shardId);
 
 	size_t kShards = 3;
 	size_t kNodesInCluster = 3;
@@ -468,6 +478,6 @@ protected:
 	const std::string kSparseFieldDataString = "sparse_data_string";
 	const std::string kSparseIndexDataString = "sparse_data_string_index";
 
-	reindexer::cluster::ShardingConfig config_;
+	ShardingConfig config_;
 	std::vector<std::vector<ServerControl>> svc_;  //[shard][nodeId]
 };

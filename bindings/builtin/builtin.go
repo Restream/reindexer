@@ -34,9 +34,11 @@ type Logger interface {
 // Separate mutexes for logger object itself and for reindexer_enable_logger call:
 // logMtx provides safe access to the logger
 // logEnableMtx provides atomic logic for (enable + set) and (disable + reset) procedures
+// This logger is global to easily export it into CGO (however it may lead to some confusion if there are multiple builtin instances in the app)
 var logMtx sync.RWMutex
 var logEnableMtx sync.Mutex
 var logger Logger
+var emptyLogger bindings.NullLogger
 
 var enableDebug bool
 
@@ -235,7 +237,10 @@ func (binding *Builtin) Init(u []url.URL, options ...interface{}) error {
 		options: C.uint16_t(connectOptions.Opts),
 	}
 
-	caps := *bindings.DefaultBindingCapabilities().WithResultsWithShardIDs(true).WithQrIdleTimeouts(true)
+	caps := *bindings.DefaultBindingCapabilities().
+		WithResultsWithShardIDs(true).
+		WithQrIdleTimeouts(true).
+		WithIncarnationTags(true)
 	ccaps := C.BindingCapabilities{
 		caps: C.int64_t(caps.Value),
 	}
@@ -397,21 +402,6 @@ func (binding *Builtin) RenameNamespace(ctx context.Context, srcNs string, dstNs
 	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
 
 	return err2go(C.reindexer_rename_namespace(binding.rx, str2c(srcNs), str2c(dstNs), ctxInfo.cCtx))
-}
-
-func (binding *Builtin) EnableStorage(ctx context.Context, path string) error {
-	l := len(path)
-	if l > 0 && path[l-1] != '/' {
-		path += "/"
-	}
-
-	ctxInfo, err := binding.StartWatchOnCtx(ctx)
-	if err != nil {
-		return err
-	}
-	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
-
-	return err2go(C.reindexer_enable_storage(binding.rx, str2c(path), ctxInfo.cCtx))
 }
 
 func (binding *Builtin) AddIndex(ctx context.Context, namespace string, indexDef bindings.IndexDef) error {
@@ -628,6 +618,15 @@ func (binding *Builtin) DisableLogger() {
 	defer logEnableMtx.Unlock()
 	C.reindexer_disable_go_logger()
 	binding.setLogger(nil)
+}
+
+func (binding *Builtin) GetLogger() bindings.Logger {
+	logMtx.RLock()
+	defer logMtx.RUnlock()
+	if logger != nil {
+		return logger
+	}
+	return &emptyLogger
 }
 
 func (binding *Builtin) ReopenLogFiles() error {

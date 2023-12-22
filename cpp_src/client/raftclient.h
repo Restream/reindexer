@@ -38,7 +38,7 @@ public:
 	/// @param opts - Connect options. May contaion any of <br>
 	Error Connect(const std::string &dsn, net::ev::dynamic_loop &loop, const client::ConnectOpts &opts = client::ConnectOpts());
 	/// Stop - shutdown connector
-	Error Stop();
+	void Stop();
 	/// SuggestLeader - send cluster leader suggestion
 	/// @param suggestion - node, suggested as a leader
 	/// @param response - node, which has to be come leader according to remote server

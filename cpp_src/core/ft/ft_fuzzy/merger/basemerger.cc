@@ -93,7 +93,7 @@ SearchResult BaseMerger::Merge(MergeCtx& ctx, bool inTransaction, const reindexe
 			data_set.AddData(it->Id(), id_ctx);
 		}
 	}
-	boost::sort::pdqsort(data_set.data_->begin(), data_set.data_->end(), [](const MergedData& lhs, const MergedData& rhs) {
+	boost::sort::pdqsort(data_set.data_->begin(), data_set.data_->end(), [](const MergedData& lhs, const MergedData& rhs) noexcept {
 		if (lhs.proc_ == rhs.proc_) {
 			return lhs.id_ < rhs.id_;
 		}

@@ -3,7 +3,6 @@
 #include "core/indexopts.h"
 #include "core/key_value_type.h"
 #include "estl/h_vector.h"
-#include "tools/errors.h"
 
 namespace reindexer {
 
@@ -19,6 +18,7 @@ class Point;
 class Uuid;
 
 enum class WithString : bool { No = false, Yes = true };
+enum class CheckIsStringPrintable : bool { No = false, Yes = true };
 
 class Variant {
 	friend Uuid;
@@ -64,7 +64,7 @@ public:
 		if (!isUuid() && variant_.hold != 0) free();
 	}
 
-	Variant &operator=(Variant &&other) &noexcept {
+	Variant &operator=(Variant &&other) & noexcept {
 		if (this == &other) return *this;
 		if (isUuid()) {
 			if (other.isUuid()) {
@@ -142,11 +142,11 @@ public:
 	bool IsNullValue() const noexcept { return Type().Is<KeyValueType::Null>(); }
 
 	template <typename T>
-	void Dump(T &os) const;
+	void Dump(T &os, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 
 private:
 	bool isUuid() const noexcept { return uuid_.isUuid != 0; }
-	void convertToComposite(const PayloadType *, const FieldsSet *);
+	void convertToComposite(const PayloadType &, const FieldsSet &);
 	void free() noexcept;
 	void copy(const Variant &other);
 	template <typename T>
@@ -214,6 +214,8 @@ template <>
 std::string Variant::As<std::string>() const;
 
 class VariantArray : public h_vector<Variant, 2> {
+	using Base = h_vector<Variant, 2>;
+
 public:
 	VariantArray() noexcept = default;
 	VariantArray(const VariantArray &) = default;
@@ -221,30 +223,30 @@ public:
 	VariantArray &operator=(const VariantArray &) = default;
 	VariantArray &operator=(VariantArray &&) = default;
 
-	template <typename T>
-	VariantArray(std::initializer_list<T> l) {
-		reserve(l.size());
-		for (auto &v : l) {
-			emplace_back(std::move(v));
-		}
-	}
 	explicit VariantArray(Point) noexcept;
 	explicit operator Point() const;
-	VariantArray &MarkArray(bool v = true) &noexcept {
+	VariantArray &MarkArray(bool v = true) & noexcept {
 		isArrayValue = v;
 		return *this;
 	}
-	VariantArray &&MarkArray(bool v = true) &&noexcept {
+	VariantArray &&MarkArray(bool v = true) && noexcept {
 		isArrayValue = v;
 		return std::move(*this);
 	}
 	void MarkObject() noexcept { isObjectValue = true; }
-	using h_vector<Variant, 2>::h_vector;
-	using h_vector<Variant, 2>::operator==;
-	using h_vector<Variant, 2>::operator!=;
+	using Base::Base;
+	using Base::operator==;
+	using Base::operator!=;
+	template <bool FreeHeapMemory = true>
+	void clear() noexcept {
+		isArrayValue = isObjectValue = false;
+		Base::clear<FreeHeapMemory>();
+	}
 	size_t Hash() const noexcept {
 		size_t ret = this->size();
-		for (size_t i = 0; i < this->size(); ++i) ret = (ret * 127) ^ this->at(i).Hash();
+		for (auto &v : *this) {
+			ret = (ret * 127) ^ v.Hash();
+		}
 		return ret;
 	}
 	bool IsArrayValue() const noexcept { return isArrayValue || (!isObjectValue && size() > 1); }
@@ -252,7 +254,7 @@ public:
 	bool IsNullValue() const noexcept { return size() == 1 && front().IsNullValue(); }
 	KeyValueType ArrayType() const noexcept { return empty() ? KeyValueType::Null{} : front().Type(); }
 	template <typename T>
-	void Dump(T &os) const;
+	void Dump(T &os, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
 	template <WithString>
 	int RelaxCompare(const VariantArray &other, const CollateOpts & = CollateOpts{}) const;
 	void EnsureHold() {
@@ -261,6 +263,15 @@ public:
 	template <typename... Ts>
 	static VariantArray Create(Ts &&...vs) {
 		return VariantArray{Variant{std::forward<Ts>(vs)}...};
+	}
+	template <typename T>
+	static VariantArray Create(std::initializer_list<T> vs) {
+		VariantArray res;
+		res.reserve(vs.size());
+		for (auto &v : vs) {
+			res.emplace_back(std::move(v));
+		}
+		return res;
 	}
 	void Clear() noexcept {
 		clear<false>();

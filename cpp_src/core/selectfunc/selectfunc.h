@@ -12,7 +12,7 @@ class NamespaceImpl;
 class SelectFunction {
 public:
 	typedef std::shared_ptr<SelectFunction> Ptr;
-	SelectFunction(const Query& q, NsSelectFuncInterface& nm);
+	SelectFunction(const Query& q, NsSelectFuncInterface&& nm);
 
 	/// Processes selected item to apply sql function.
 	/// @param res - ItemRef containing payload value.
@@ -48,18 +48,21 @@ public:
 	/// Creates SelectFunction object for a query.
 	/// @param q - query that contains sql function.
 	/// @param nm - namespace of the query to be executed.
+	/// @param nsid - unique ns ID in the query.
 	/// @param force - forces to create SelectFunction object
 	/// even if the list of sql-functions in this query is empty.
 	/// @return pointer to SelectFunction object or nullptr in case of error.
-	SelectFunction::Ptr AddNamespace(const Query& q, const NamespaceImpl& nm, bool force);
+	SelectFunction::Ptr AddNamespace(const Query& q, const NamespaceImpl& nm, uint32_t nsid, bool force);
 	/// Processing of results of an executed query.
 	/// @param res - results of query execution.
 	void Process(LocalQueryResults& res);
 
 private:
+	using MapT = h_vector<SelectFunction::Ptr, 4>;
+
 	/// Indicates if object is empty and was created wuth flag force = true.
 	bool force_only_ = true;
 	/// Container of sql functions for every namespace.
-	std::unique_ptr<fast_hash_map<std::string, SelectFunction::Ptr>> querys_;
+	MapT queries_;
 };
 }  // namespace reindexer

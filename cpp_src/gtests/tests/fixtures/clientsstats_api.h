@@ -24,7 +24,7 @@ public:
 
 	void SetProfilingFlag(bool val, const std::string& column, reindexer::client::CoroReindexer& c);
 
-	const std::string kdbPath = "/tmp/testdb/";
+	const std::string kdbPath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "clientstats_test");
 	const std::string kdbName = "test";
 	const std::string kipaddress = "127.0.0.1";
 	const uint16_t kPortI = 7777;

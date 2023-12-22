@@ -36,7 +36,7 @@ struct AsyncReplicationConfigTest {
 			if (nsList) {
 				for (const auto& ns : *nsList) arrNode.Put(nullptr, ns);
 			}
-		};
+		}
 
 		std::string dsn;
 		std::optional<NsSet> nsList;
@@ -73,6 +73,12 @@ struct AsyncReplicationConfigTest {
 	}
 	bool operator!=(const AsyncReplicationConfigTest& config) const { return !(this->operator==(config)); }
 
+	std::string GetJSON() const {
+		reindexer::WrSerializer wser;
+		reindexer::JsonBuilder jb(wser);
+		GetJSON(jb);
+		return std::string(wser.Slice());
+	}
 	void GetJSON(reindexer::JsonBuilder& jb) const {
 		jb.Put("app_name", appName);
 		jb.Put("server_id", serverId);
@@ -94,7 +100,7 @@ struct AsyncReplicationConfigTest {
 				node.GetJSON(obj);
 			}
 		}
-	};
+	}
 
 	std::string role;
 	std::string mode;
@@ -157,7 +163,7 @@ struct ServerControlConfig {
 class ServerControl {
 public:
 	const std::string kConfigNs = "#config";
-	const std::string kStoragePath = "/tmp/reindex_repl_test/";
+	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex_repl_test");
 	const unsigned short kDefaultHttpPort = 5555;
 
 	const size_t kMaxServerStartTimeSec = 20;
@@ -221,6 +227,8 @@ public:
 		void SetWALSize(int64_t size, std::string_view nsName);
 		// set optimization sort workers count
 		void SetOptmizationSortWorkers(size_t cnt, std::string_view nsName);
+		void SetTxAlwaysCopySize(int64_t size, std::string_view nsName);
+		void EnableAllProfilings();
 		// get replication stats for specified replication type
 		reindexer::cluster::ReplicationStats GetReplicationStats(std::string_view type);
 

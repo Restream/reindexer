@@ -39,7 +39,8 @@ int main(int argc, char** argv) {
 	}
 
 	shared_ptr<Reindexer> DB = std::make_shared<Reindexer>();
-	DB->Connect("builtin://" + kStoragePath);
+	auto err = DB->Connect("builtin://" + kStoragePath);
+	if (!err.ok()) return err.code();
 
 	JoinItems joinItems(DB.get(), 500);
 	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple", kItemsInBenchDataset);
@@ -48,7 +49,7 @@ int main(int argc, char** argv) {
 	Geometry geometry(DB.get(), "Geometry", kItemsInBenchDataset);
 	Aggregation aggregation(DB.get(), "Aggregation", kItemsInBenchDataset);
 
-	auto err = apiTvSimple.Initialize();
+	err = apiTvSimple.Initialize();
 	if (!err.ok()) return err.code();
 
 	err = apiTvSimpleComparators.Initialize();

@@ -46,7 +46,7 @@ func TestBasicCheckItemsTtlExpired(t *testing.T) {
 
 type ItemExpireTTL struct {
 	ID        string `json:"id" reindex:"id,,pk"`
-	CreatedAt int64  `json:"created_at" reindex:"created_at,ttl,,expire_after=100"`
+	CreatedAt int64  `json:"created_at" reindex:"created_at,ttl,,expire_after=200"`
 }
 
 type ItemExpireTTL2 struct {
@@ -69,7 +69,7 @@ func TestExpireTTL(t *testing.T) {
 	assert.NoError(t, err)
 
 	countItems := 0
-	for i := 1; i < 10; i++ {
+	for i := 1; i < 20; i++ {
 		time.Sleep(1 * time.Second)
 		q := DB.Query(testNamespace)
 		it := q.Exec(t)

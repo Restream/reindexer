@@ -80,7 +80,7 @@ protected:
 
 	std::vector<std::string> precepts_;
 	bool unsafe_ = false;
-	std::unique_ptr<char[]> holder_;
+	std::deque<std::string> holder_;
 	std::vector<std::unique_ptr<char[]>> largeJSONStrings_;
 };
 

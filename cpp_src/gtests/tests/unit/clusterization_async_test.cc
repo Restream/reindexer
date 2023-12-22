@@ -1,5 +1,7 @@
 #include "clusterization_async_api.h"
 
+using namespace reindexer;
+
 TEST_F(ClusterizationAsyncApi, AsyncReplicationForClusterNamespaces) {
 	//       async1     async2
 	//         \         /
@@ -25,8 +27,6 @@ TEST_F(ClusterizationAsyncApi, AsyncReplicationForClusterNamespaces) {
 		std::vector<AsyncNode> asyncNodes(kClusterSize);
 		for (size_t i = 0; i < kClusterSize; ++i) {
 			const int id = kClusterSize + 1 + i;
-			auto storagePath = fs::JoinPath(defaults.baseTestsetDbPath, "node/" + std::to_string(id));
-
 			ServerControlConfig scConfig(id, defaults.defaultRpcPort + id, defaults.defaultHttpPort + id,
 										 fs::JoinPath(defaults.baseTestsetDbPath, "node/" + std::to_string(id)),
 										 "node" + std::to_string(id), true);

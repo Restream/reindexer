@@ -3,6 +3,8 @@
 #include "clusterization_proxy.h"
 #include "core/cjson/jsonbuilder.h"
 
+using namespace reindexer;
+
 static std::string itemData(int id, std::string_view valueData, std::string_view modifyValueData) {
 	WrSerializer ser;
 	JsonBuilder jb(ser);
@@ -89,9 +91,7 @@ TEST_F(ClusterizationProxyApi, Transaction) {
 				tx.Delete(std::move(item));
 			}
 			// remove items using SQL query
-			Query qModify;
-			qModify.FromSQL("delete from " + kNsName + " where id>=10");
-			tx.Modify(std::move(qModify));
+			tx.Modify(Query::FromSQL("delete from " + kNsName + " where id>=10"));
 
 			// commit transaction
 			BaseApi::QueryResultsType qrTx;
@@ -485,10 +485,9 @@ static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, i
 
 	{
 		// update item
-		reindexer::Query q;
-		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
+		Error err =
+			cluster.GetNode(followerId)->api.reindexer->Select("select * from " + kNsName + " where id=" + std::to_string(pk), qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
@@ -504,10 +503,9 @@ static void CheckInsertUpsertUpdateDelete(ClusterizationApi::Cluster& cluster, i
 
 	{
 		// delete item
-		reindexer::Query q;
-		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
+		Error err =
+			cluster.GetNode(followerId)->api.reindexer->Select("select * from " + kNsName + " where id=" + std::to_string(pk), qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
@@ -568,10 +566,8 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 
 	{
 		// update item
-		reindexer::Query q;
-		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
+		Error err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
@@ -593,10 +589,8 @@ static void CheckInsertUpsertUpdateDeleteItemQR(ClusterizationApi::Cluster& clus
 
 	{
 		// delete item
-		reindexer::Query q;
-		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
+		Error err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
@@ -707,10 +701,8 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 
 	{
 		// update item
-		reindexer::Query q;
-		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
+		Error err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
@@ -756,10 +748,8 @@ static void CheckInsertUpsertUpdateItemQRSerial(ClusterizationApi::Cluster& clus
 	}
 	{
 		// delete item
-		reindexer::Query q;
-		q.FromSQL("select * from " + kNsName + " where id=" + std::to_string(pk));
 		BaseApi::QueryResultsType qres(kResultsWithPayloadTypes | kResultsCJson | kResultsWithItemID);
-		Error err = cluster.GetNode(followerId)->api.reindexer->Select(q, qres);
+		Error err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName).Where("id", CondEq, std::to_string(pk)), qres);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qres.Count(), 1);
 		auto itsel = qres.begin().GetItem();
@@ -826,7 +816,7 @@ static void CheckSQL(ClusterizationApi::Cluster& cluster, int followerId, int le
 	// select all (one) items from namespace
 	{
 		BaseApi::QueryResultsType qresSelectTmp;
-		err = cluster.GetNode(followerId)->api.reindexer->Select("select * from " + kNsName, qresSelectTmp);
+		err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName), qresSelectTmp);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qresSelectTmp.Count() == 1) << "select count = " << qresSelectTmp.Count();
 	}
@@ -843,7 +833,7 @@ static void CheckSQL(ClusterizationApi::Cluster& cluster, int followerId, int le
 	{
 		// check the correctness of the update
 		BaseApi::QueryResultsType qresSelect;
-		err = cluster.GetNode(followerId)->api.reindexer->Select("select name from " + kNsName, qresSelect);
+		err = cluster.GetNode(followerId)->api.reindexer->Select(Query(kNsName), qresSelect);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(qresSelect.Count() == 1) << "select count = " << qresSelect.Count();
 
@@ -932,13 +922,12 @@ TEST_F(ClusterizationProxyApi, DeleteSelect) {
 		cluster.WaitSync(kNsName);
 
 		auto followerNode = cluster.GetNode(followerId);
+		const auto selQ = Query(kNsName).Where("id", CondLt, 5);
 		for (int k = 0; k < 10; k++) {
 			// delete rows
 			{
-				Query qDel;
-				qDel.FromSQL("select * from " + kNsName + " where id<5");
 				BaseApi::QueryResultsType delResult;
-				Error err = followerNode->api.reindexer->Select(qDel, delResult);
+				Error err = followerNode->api.reindexer->Select(selQ, delResult);
 				ASSERT_EQ(delResult.Count(), 5) << "incorect count for delete";
 				for (auto& it : delResult) {
 					auto item = it.GetItem();
@@ -948,10 +937,8 @@ TEST_F(ClusterizationProxyApi, DeleteSelect) {
 			}
 			// check delete correctness
 			{
-				Query qSel;
-				qSel.FromSQL("select * from " + kNsName + " where id<5");
 				BaseApi::QueryResultsType selResult;
-				Error err = followerNode->api.reindexer->Select(qSel, selResult);
+				Error err = followerNode->api.reindexer->Select(selQ, selResult);
 				ASSERT_TRUE(selResult.Count() == 0) << "incorrect count =" << selResult.Count();
 			}
 			{

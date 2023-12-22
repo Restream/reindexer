@@ -15,37 +15,46 @@ using namespace std::string_view_literals;
 void ClusterProxy::clientToCoreQueryResults(client::QueryResults &clientResults, LocalQueryResults &result) {
 	QueryResults qr;
 	if (clientResults.HaveJoined()) {
-		throw Error(errLogic, "JOIN queries are not supported bu Cluster Proxy");
+		throw Error(errLogic, "JOIN queries are not supported by Cluster Proxy");
 	}
 	if (clientResults.GetMergedNSCount() > 1) {
-		throw Error(errLogic, "MERGE queries are not supported bu Cluster Proxy");
+		throw Error(errLogic, "MERGE queries are not supported by Cluster Proxy");
 	}
 	if (result.getMergedNSCount() != 0 || result.totalCount != 0) {
-		throw Error(errLogic, "Query results merging is not supported bu Cluster Proxy");
+		throw Error(errLogic, "Query results merging is not supported by Cluster Proxy");
 	}
 
-	for (int i = 0; i < clientResults.GetMergedNSCount(); ++i) {
-		result.addNSContext(clientResults.GetPayloadType(i), clientResults.GetTagsMatcher(i), FieldsSet(), nullptr);
+	const auto itemsCnt = clientResults.Count();
+	if (clientResults.GetMergedNSCount() > 0) {
+		auto &incTags = clientResults.GetIncarnationTags()[0].tags;
+		if (itemsCnt || incTags.size()) {
+			result.addNSContext(clientResults.GetPayloadType(0), clientResults.GetTagsMatcher(0), FieldsSet(), nullptr,
+								incTags.size() ? incTags[0] : lsn_t());
+		}
 	}
-	if (clientResults.GetExplainResults().size() > 0) {
-		result.explainResults = clientResults.GetExplainResults();
-	}
-	if (clientResults.GetAggregationResults().size() > 0) {
-		result.aggregationResults = clientResults.GetAggregationResults();
+	result.explainResults = clientResults.GetExplainResults();
+	result.aggregationResults = clientResults.GetAggregationResults();
+	result.totalCount = clientResults.TotalCount();
+	if (!itemsCnt) {
+		return;
 	}
 
-	for (auto it = clientResults.begin(); it != clientResults.end(); ++it) {
+	RdxContext dummyCtx;
+	auto &localPt = result.getPayloadType(0);
+	auto &localTm = result.getTagsMatcher(0);
+	auto cNamespaces = clientResults.GetNamespaces();
+	for (auto it = clientResults.begin(), itEnd = clientResults.end(); it != itEnd; ++it) {
 		auto item = it.GetItem();
 		if (!item.Status().ok()) {
 			throw item.Status();
 		}
 		if (!item) {
-			Item itemServer = impl_.NewItem(clientResults.GetNamespaces()[0], RdxContext());
+			Item itemServer = impl_.NewItem(cNamespaces[0], dummyCtx);
 			result.AddItem(itemServer);
 			continue;
 		}
 
-		ItemImpl itemimpl(result.getPayloadType(0), result.getTagsMatcher(0));
+		ItemImpl itemimpl(localPt, localTm);
 		Error err = itemimpl.FromJSON(item.GetJSON());
 		if (!err.ok()) {
 			throw err;
@@ -55,13 +64,12 @@ void ClusterProxy::clientToCoreQueryResults(client::QueryResults &clientResults,
 			WrSerializer wrser;
 			itemimpl.tagsMatcher().serialize(wrser);
 			Serializer ser(wrser.Slice());
-			result.getTagsMatcher(0).deserialize(ser, itemimpl.tagsMatcher().version(), itemimpl.tagsMatcher().stateToken());
+			localTm.deserialize(ser, itemimpl.tagsMatcher().version(), itemimpl.tagsMatcher().stateToken());
 		}
 		itemimpl.Value().SetLSN(item.GetLSN());
 		result.Add(ItemRef(it.itemParams_.id, itemimpl.Value(), it.itemParams_.proc, it.itemParams_.nsid, true));
 		result.SaveRawData(std::move(itemimpl));
 	}
-	result.totalCount = clientResults.TotalCount();
 }
 
 template <>
@@ -96,7 +104,7 @@ std::shared_ptr<client::Reindexer> ClusterProxy::getLeader(const cluster::RaftIn
 	leader_.reset();
 	leaderId_ = -1;
 	std::string leaderDsn;
-	Error err = impl_.GetLeaderDsn(leaderDsn, getServerID(), info);
+	Error err = impl_.GetLeaderDsn(leaderDsn, GetServerID(), info);
 	if (!err.ok()) {
 		throw err;
 	}
@@ -143,31 +151,31 @@ Error ClusterProxy::Connect(const std::string &dsn, ConnectOpts opts) {
 
 bool ClusterProxy::shouldProxyQuery(const Query &q) {
 	assertrx(q.Type() == QuerySelect);
-	if (kReplicationStatsNamespace != q._namespace) {
+	if (kReplicationStatsNamespace != q.NsName()) {
 		return false;
 	}
 	if (q.HasLimit()) {
 		return false;
 	}
-	if (q.joinQueries_.size() || q.mergeQueries_.size()) {
-		throw Error(errParams, "Joins and merges are not allowed for #replicationstats queries");
+	if (q.GetJoinQueries().size() || q.GetMergeQueries().size() || q.GetSubQueries().size()) {
+		throw Error(errParams, "Joins, merges and subqueries are not allowed for #replicationstats queries");
 	}
 	bool hasTypeCond = false;
 	bool isAsyncReplQuery = false;
 	bool isClusterReplQuery = false;
 	constexpr auto kConditionError =
 		"Query to #replicationstats has to contain one of the following conditions: type='async' or type='cluster'"sv;
-	for (auto it = q.entries.cbegin(), end = q.entries.cend(); it != end; ++it) {
-		if (it->HoldsOrReferTo<QueryEntry>() && it->Value<QueryEntry>().index == "type"sv) {
+	for (auto it = q.Entries().cbegin(), end = q.Entries().cend(); it != end; ++it) {
+		if (it->Is<QueryEntry>() && it->Value<QueryEntry>().FieldName() == "type"sv) {
 			auto nextIt = it;
 			++nextIt;
 			auto &entry = it->Value<QueryEntry>();
-			if (hasTypeCond || entry.condition != CondEq || entry.values.size() != 1 ||
-				!entry.values[0].Type().Is<KeyValueType::String>() || it->operation != OpAnd ||
+			if (hasTypeCond || entry.Condition() != CondEq || entry.Values().size() != 1 ||
+				!entry.Values()[0].Type().Is<KeyValueType::String>() || it->operation != OpAnd ||
 				(nextIt != end && nextIt->operation == OpOr)) {
 				throw Error(errParams, kConditionError);
 			}
-			auto str = entry.values[0].As<std::string>();
+			auto str = entry.Values()[0].As<std::string>();
 			if (str == cluster::kAsyncReplStatsType) {
 				isAsyncReplQuery = true;
 			} else if (str == cluster::kClusterReplStatsType) {
@@ -187,7 +195,7 @@ bool ClusterProxy::shouldProxyQuery(const Query &q) {
 	return isClusterReplQuery;
 }
 
-[[nodiscard]] Error ClusterProxy::ResetShardingConfig(std::optional<cluster::ShardingConfig> config) noexcept {
+Error ClusterProxy::ResetShardingConfig(std::optional<cluster::ShardingConfig> config) noexcept {
 	try {
 		impl_.shardingConfig_.Set(std::move(config));
 		return impl_.tryLoadShardingConf();

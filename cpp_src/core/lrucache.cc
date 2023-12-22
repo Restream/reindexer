@@ -9,7 +9,7 @@
 
 namespace reindexer {
 
-const int kMaxHitCountToCache = 1024;
+constexpr uint32_t kMaxHitCountToCache = 1024;
 
 template <typename K, typename V, typename hash, typename equal>
 typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(const K &key) {
@@ -29,7 +29,7 @@ typename LRUCache<K, V, hash, equal>::Iterator LRUCache<K, V, hash, equal>::Get(
 		it->second.lruPos = std::prev(lru_.end());
 	}
 
-	if (++it->second.hitCount < hitCountToCache_) {
+	if (++it->second.hitCount < int(hitCountToCache_)) {
 		return Iterator();
 	}
 	++getCount_;
@@ -57,10 +57,10 @@ void LRUCache<K, V, hash, equal>::Put(const K &key, V &&v) {
 	eraseLRU();
 
 	if rx_unlikely (putCount_ * 16 > getCount_ && eraseCount_) {
-		logPrintf(LogWarning, "IdSetCache::eraseLRU () cache invalidates too fast eraseCount=%d,putCount=%d,getCount=%d", eraseCount_,
-				  putCount_, eraseCount_);
+		logPrintf(LogWarning, "IdSetCache::eraseLRU () cache invalidates too fast eraseCount=%d,putCount=%d,getCount=%d,hitCountToCache=%d",
+				  eraseCount_, putCount_, eraseCount_, hitCountToCache_);
 		eraseCount_ = 0;
-		hitCountToCache_ = std::min(hitCountToCache_ * 2, kMaxHitCountToCache);
+		hitCountToCache_ = hitCountToCache_ ? std::min(hitCountToCache_ * 2, kMaxHitCountToCache) : 2;
 		putCount_ = 0;
 		getCount_ = 0;
 	}
@@ -128,7 +128,7 @@ LRUCacheMemStat LRUCache<K, V, hash, equal>::GetMemStat() {
 }
 template class LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
 template class LRUCache<IdSetCacheKey, FtIdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;
-template class LRUCache<QueryCacheKey, QueryTotalCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
+template class LRUCache<QueryCacheKey, QueryCountCacheVal, HashQueryCacheKey, EqQueryCacheKey>;
 template class LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;
 
 }  // namespace reindexer

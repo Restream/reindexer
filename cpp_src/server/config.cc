@@ -13,8 +13,10 @@ void ServerConfig::Reset() {
 	StorageEngine = "leveldb";
 	HTTPAddr = "0.0.0.0:9088";
 	RPCAddr = "0.0.0.0:6534";
+	RPCUnixAddr = "";
 	GRPCAddr = "0.0.0.0:16534";
 	RPCThreadingMode = kSharedThreading;
+	RPCUnixThreadingMode = kSharedThreading;
 	HttpThreadingMode = kSharedThreading;
 	LogLevel = "info";
 	ServerLog = "stdout";
@@ -109,11 +111,20 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	args::Group netGroup(parser, "Network options");
 	args::ValueFlag<std::string> httpAddrF(netGroup, "PORT", "http listen host:port", {'p', "httpaddr"}, HTTPAddr, args::Options::Single);
 	args::ValueFlag<std::string> rpcAddrF(netGroup, "RPORT", "RPC listen host:port", {'r', "rpcaddr"}, RPCAddr, args::Options::Single);
+#ifndef _WIN32
+	args::ValueFlag<std::string> rpcUnixAddrF(netGroup, "URPORT", "RPC listen path (unix domain socket)", {"urpcaddr"}, RPCUnixAddr,
+											  args::Options::Single);
+#endif	// !_WIN32
 	args::Flag enableClusterF(netGroup, "", "***deprecated***. Will be ignored by reindexer", {"enable-cluster"});
-	args::ValueFlag<std::string> rpcThreadingModeF(netGroup, "RTHREADING", "RPC connections threading mode: shared or dedicated",
-												   {'X', "rpc-threading"}, RPCThreadingMode, args::Options::Single);
 	args::ValueFlag<std::string> httpThreadingModeF(netGroup, "HTHREADING", "HTTP connections threading mode: shared or dedicated",
 													{"http-threading"}, HttpThreadingMode, args::Options::Single);
+	args::ValueFlag<std::string> rpcThreadingModeF(netGroup, "RTHREADING", "RPC connections threading mode: shared or dedicated",
+												   {'X', "rpc-threading"}, RPCThreadingMode, args::Options::Single);
+#ifndef _WIN32
+	args::ValueFlag<std::string> rpcUnixThreadingModeF(netGroup, "URTHREADING",
+													   "RPC connections threading mode: shared or dedicated (unix domain socket)",
+													   {"urpc-threading"}, RPCUnixThreadingMode, args::Options::Single);
+#endif	// _WIN32
 	args::ValueFlag<size_t> MaxHttpReqSizeF(
 		netGroup, "", "Max HTTP request size in bytes. Default value is 2 MB. 0 is 'unlimited', hovewer, stream mode is not supported",
 		{"max-http-req"}, MaxHttpReqSize, args::Options::Single);
@@ -210,6 +221,8 @@ Error ServerConfig::ParseCmd(int argc, char *argv[]) {
 	if (webRootF) WebRoot = args::get(webRootF);
 	if (MaxHttpReqSizeF) MaxHttpReqSize = args::get(MaxHttpReqSizeF);
 #ifndef _WIN32
+	if (rpcUnixAddrF) RPCUnixAddr = args::get(rpcUnixAddrF);
+	if (rpcUnixThreadingModeF) RPCUnixThreadingMode = args::get(rpcUnixThreadingModeF);
 	if (userF) UserName = args::get(userF);
 	if (daemonizeF) Daemonize = args::get(daemonizeF);
 	if (daemonPidFileF) DaemonPidFile = args::get(daemonPidFileF);
@@ -289,6 +302,8 @@ reindexer::Error ServerConfig::fromYaml(YAML::Node &root) {
 		PrometheusCollectPeriod = std::chrono::milliseconds(root["metrics"]["collect_period"].as<int>(PrometheusCollectPeriod.count()));
 		EnableConnectionsStats = root["metrics"]["clientsstats"].as<bool>(EnableConnectionsStats);
 #ifndef _WIN32
+		RPCUnixAddr = root["net"]["urpcaddr"].as<std::string>(RPCUnixAddr);
+		RPCUnixThreadingMode = root["net"]["urpc_threading"].as<std::string>(RPCUnixThreadingMode);
 		UserName = root["system"]["user"].as<std::string>(UserName);
 		Daemonize = root["system"]["daemonize"].as<bool>(Daemonize);
 		DaemonPidFile = root["system"]["pidfile"].as<std::string>(DaemonPidFile);

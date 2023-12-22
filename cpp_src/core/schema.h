@@ -133,7 +133,7 @@ public:
 
 	Error FromJSON(std::string_view json);
 	void GetJSON(WrSerializer&) const;
-	std::string_view GetJSON() const noexcept;
+	std::string_view GetJSON() const noexcept { return originalJson_; }
 	Error BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt);
 	Error GetProtobufSchema(WrSerializer& schema) const;
 	int GetProtobufNsNumber() const noexcept { return protobufNsNumber_; }

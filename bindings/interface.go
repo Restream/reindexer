@@ -136,6 +136,16 @@ func (bc *BindingCapabilities) WithResultsWithShardIDs(value bool) *BindingCapab
 	return bc
 }
 
+// Enable namespaces timestamps support
+func (bc *BindingCapabilities) WithIncarnationTags(value bool) *BindingCapabilities {
+	if value {
+		bc.Value |= int64(BindingCapabilityNamespaceIncarnations)
+	} else {
+		bc.Value &= ^int64(BindingCapabilityNamespaceIncarnations)
+	}
+	return bc
+}
+
 // go interface to reindexer_c.h interface
 type RawBuffer interface {
 	GetBuf() []byte
@@ -149,7 +159,7 @@ type TxCtx struct {
 	UserCtx context.Context
 }
 
-// FetchMore interface for partial loading results (used in cproto)
+// FetchMore interface for partial loading results (used in cproto/ucproto)
 type FetchMore interface {
 	Fetch(ctx context.Context, offset, limit int, asJson bool) (err error)
 }
@@ -157,6 +167,12 @@ type FetchMore interface {
 // Logger interface for reindexer
 type Logger interface {
 	Printf(level int, fmt string, msg ...interface{})
+}
+
+type NullLogger struct {
+}
+
+func (NullLogger) Printf(level int, fmt string, msg ...interface{}) {
 }
 
 func NewError(text string, code int) error {
@@ -202,7 +218,6 @@ type RawBinding interface {
 	DropNamespace(ctx context.Context, namespace string) error
 	TruncateNamespace(ctx context.Context, namespace string) error
 	RenameNamespace(ctx context.Context, srcNs string, dstNs string) error
-	EnableStorage(ctx context.Context, namespace string) error
 	AddIndex(ctx context.Context, namespace string, indexDef IndexDef) error
 	SetSchema(ctx context.Context, namespace string, schema SchemaDef) error
 	UpdateIndex(ctx context.Context, namespace string, indexDef IndexDef) error
@@ -225,6 +240,7 @@ type RawBinding interface {
 	Commit(ctx context.Context, namespace string) error
 	EnableLogger(logger Logger)
 	DisableLogger()
+	GetLogger() Logger
 	ReopenLogFiles() error
 	Ping(ctx context.Context) error
 	Finalize() error
@@ -282,7 +298,7 @@ const (
 	LBPowerOfTwoChoices
 )
 
-// OptionConnPoolLoadBalancing sets algorithm, which will be used to choose connection for cproto requests' balancing
+// OptionConnPoolLoadBalancing sets algorithm, which will be used to choose connection for cproto/ucproto requests' balancing
 type OptionConnPoolLoadBalancing struct {
 	Algorithm LoadBalancingAlgorithm
 }
@@ -345,6 +361,12 @@ type OptionPrometheusMetrics struct {
 // OptionOpenTelemetry - enables OpenTelemetry integration.
 type OptionOpenTelemetry struct {
 	EnableTracing bool
+}
+
+// OptionStrictJoinHandlers - enables join handlers check.
+// If enabled, queries without required join handlers or Joinable interface will return error after execution.
+type OptionStrictJoinHandlers struct {
+	EnableStrictJoinHandlers bool
 }
 
 // Strategy - Strategy used for reconnect to server on connection error

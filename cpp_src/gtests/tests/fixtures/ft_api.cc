@@ -61,7 +61,10 @@ reindexer::Error FTApi::SetFTConfig(const reindexer::FtFastConfig& ftCfg, const 
 		fieldsMap.emplace(fields[i], i);
 	}
 	std::vector<reindexer::NamespaceDef> nses;
-	rt.reindexer->EnumNamespaces(nses, reindexer::EnumNamespacesOpts().WithFilter(ns));
+	auto err = rt.reindexer->EnumNamespaces(nses, reindexer::EnumNamespacesOpts().WithFilter(ns));
+	if (!err.ok()) {
+		return err;
+	}
 	const auto it = std::find_if(nses[0].indexes.begin(), nses[0].indexes.end(),
 								 [&index](const reindexer::IndexDef& idef) { return idef.name_ == index; });
 	it->opts_.SetConfig(ftCfg.GetJSON(fieldsMap));
@@ -174,11 +177,11 @@ reindexer::QueryResults FTApi::SimpleSelect3(std::string word) {
 	return res;
 }
 
-void FTApi::Delete(int id) {
+reindexer::Error FTApi::Delete(int id) {
 	reindexer::Item item = rt.NewItem("nm1");
 	item["id"] = id;
 
-	this->rt.reindexer->Delete("nm1", item);
+	return this->rt.reindexer->Delete("nm1", item);
 }
 
 reindexer::QueryResults FTApi::SimpleCompositeSelect(std::string word) {
@@ -187,7 +190,7 @@ reindexer::QueryResults FTApi::SimpleCompositeSelect(std::string word) {
 	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, std::move(word))};
 	mqr.AddFunction("ft1 = snippet(<b>,\"\"</b>,3,2,,d)");
 
-	qr.mergeQueries_.emplace_back(Merge, std::move(mqr));
+	qr.Merge(std::move(mqr));
 	qr.AddFunction("ft3 = highlight(<b>,</b>)");
 	auto err = rt.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();
@@ -202,7 +205,7 @@ reindexer::QueryResults FTApi::CompositeSelectField(const std::string& field, st
 	auto mqr{reindexer::Query("nm2").Where("ft3", CondEq, std::move(word))};
 	mqr.AddFunction(field + " = snippet(<b>,\"\"</b>,3,2,,d)");
 
-	qr.mergeQueries_.emplace_back(Merge, std::move(mqr));
+	qr.Merge(std::move(mqr));
 	qr.AddFunction(field + " = highlight(<b>,</b>)");
 	auto err = rt.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();

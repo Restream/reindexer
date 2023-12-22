@@ -11,7 +11,8 @@ namespace reindexer {
 
 class Point {
 public:
-	explicit Point(double x = 0.0, double y = 0.0) : x_(x), y_(y) {
+	Point() noexcept : x_(0.0), y_(0.0) {}
+	explicit Point(double x, double y) : x_(x), y_(y) {
 		validate(x, "x");
 		validate(y, "y");
 	}

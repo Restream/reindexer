@@ -1,21 +1,23 @@
 #pragma once
 
-#include "index.h"
 #include "ns_scheme.h"
 #include "random_generator.h"
 
 namespace fuzzing {
 
+class Index;
+
 class Ns {
 public:
-	Ns(std::string name, std::ostream&, RandomGenerator::ErrFactorType errorFactor);
-	std::vector<Index>& GetIndexes() noexcept { return indexes_; }
+	Ns(std::string name, RandomGenerator::ErrFactorType errorFactor);
+	const std::vector<Index>& GetIndexes() const& noexcept { return indexes_; }
+	std::vector<Index>& GetIndexes() & noexcept { return indexes_; }
+	const std::vector<Index>& GetIndexes() const&& = delete;
 	const std::string& GetName() const noexcept { return name_; }
 	const NsScheme& GetScheme() const noexcept { return scheme_; }
 	RandomGenerator& GetRandomGenerator() noexcept { return rndGen_; }
-	void AddIndex(Index&, bool isSparse);
-	void NewItem(reindexer::WrSerializer& ser) { scheme_.NewItem(ser, rndGen_); }
-	const std::vector<Index>& GetIndexes() const noexcept { return indexes_; }
+	void AddIndexToScheme(const Index&, size_t indexNumber);
+	void NewItem(reindexer::WrSerializer& ser) { scheme_.NewItem(ser, rndGen_, indexes_); }
 	void Dump(std::ostream&) const;
 
 private:

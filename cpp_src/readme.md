@@ -48,7 +48,7 @@ yum update
 yum install reindexer-server
 ```
 
-Available distros: `centos-7`, `fedora-36`, `fedora-37`, `redos-7`.
+Available distros: `centos-7`, `fedora-38`, `fedora-39`.
 
 To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 
@@ -61,7 +61,7 @@ apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-bionic`, `ubuntu-focal`, `ubuntu-jammy`
+Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-focal`, `ubuntu-jammy`
 
 To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package should be used.
 
@@ -185,7 +185,7 @@ http.Handle("/metrics", promhttp.Handler())
 
 All of the metricts will be exported into `DefaultRegistry`. Check [this](https://github.com/prometheus/client_golang/blob/main/prometheus/promauto/auto.go#L57-L85) for basic prometheus usage example.
 
-Both server-side and client-side metrics contain 'latency', however, client-side latency will also count all the time consumed by the binding's queue, network communication (for cproto) and deseriallization.
+Both server-side and client-side metrics contain 'latency', however, client-side latency will also count all the time consumed by the binding's queue, network communication (for cproto/ucproto) and deseriallization.
 So client-side latency may be more rellevant for user's applications the server-side latency.
 
 ## Maintenance

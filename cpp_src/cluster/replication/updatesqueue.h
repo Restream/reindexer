@@ -2,6 +2,7 @@
 
 #include <deque>
 #include <optional>
+#include <unordered_map>
 #include "cluster/logger.h"
 #include "cluster/stats/relicationstatscollector.h"
 #include "core/rdxcontext.h"

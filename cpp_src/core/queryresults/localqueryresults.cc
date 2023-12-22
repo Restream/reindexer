@@ -43,13 +43,19 @@ void LocalQueryResults::RemoveNamespace(const NamespaceImpl *ns) {
 
 struct LocalQueryResults::Context {
 	Context() = default;
-	Context(PayloadType type, TagsMatcher tagsMatcher, const FieldsSet &fieldsFilter, std::shared_ptr<const Schema> schema)
-		: type_(std::move(type)), tagsMatcher_(std::move(tagsMatcher)), fieldsFilter_(fieldsFilter), schema_(std::move(schema)) {}
+	Context(PayloadType type, TagsMatcher tagsMatcher, const FieldsSet &fieldsFilter, std::shared_ptr<const Schema> schema,
+			lsn_t nsIncarnationTag)
+		: type_(std::move(type)),
+		  tagsMatcher_(std::move(tagsMatcher)),
+		  fieldsFilter_(fieldsFilter),
+		  schema_(std::move(schema)),
+		  nsIncarnationTag_(nsIncarnationTag) {}
 
 	PayloadType type_;
 	TagsMatcher tagsMatcher_;
 	FieldsSet fieldsFilter_;
 	std::shared_ptr<const Schema> schema_;
+	lsn_t nsIncarnationTag_;
 };
 
 static_assert(LocalQueryResults::kSizeofContext >= sizeof(LocalQueryResults::Context),
@@ -107,6 +113,16 @@ h_vector<std::string_view, 1> LocalQueryResults::GetNamespaces() const {
 	return ret;
 }
 
+NsShardsIncarnationTags LocalQueryResults::GetIncarnationTags() const {
+	NsShardsIncarnationTags ret;
+	auto &shardTags = ret.emplace_back();
+	shardTags.tags.reserve(ctxs.size());
+	for (auto &ctx : ctxs) {
+		shardTags.tags.emplace_back(ctx.nsIncarnationTag_);
+	}
+	return ret;
+}
+
 int LocalQueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
 	int ctxIndex = joined_.size();
 	for (int ns = 0; ns < nsid; ++ns) {
@@ -117,7 +133,7 @@ int LocalQueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
 
 class LocalQueryResults::EncoderDatasourceWithJoins : public IEncoderDatasourceWithJoins {
 public:
-	EncoderDatasourceWithJoins(const joins::ItemIterator &joinedItemIt, const ContextsVector &ctxs, int ctxIdx)
+	EncoderDatasourceWithJoins(const joins::ItemIterator &joinedItemIt, const ContextsVector &ctxs, int ctxIdx) noexcept
 		: joinedItemIt_(joinedItemIt), ctxs_(ctxs), ctxId_(ctxIdx) {}
 	~EncoderDatasourceWithJoins() override = default;
 
@@ -379,27 +395,17 @@ Item LocalQueryResults::Iterator::GetItem(bool enableHold) {
 	return item;
 }
 
-LocalQueryResults::Iterator &LocalQueryResults::Iterator::operator++() noexcept {
-	idx_++;
-	return *this;
-}
-LocalQueryResults::Iterator &LocalQueryResults::Iterator::operator+(int val) noexcept {
-	idx_ += val;
-	return *this;
-}
-
-bool LocalQueryResults::Iterator::operator!=(const Iterator &other) const noexcept { return idx_ != other.idx_; }
-bool LocalQueryResults::Iterator::operator==(const Iterator &other) const noexcept { return idx_ == other.idx_; }
-
 void LocalQueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 	auto ritem = item.impl_;
 	if (item.GetID() != -1) {
+		auto ns = ritem->GetNamespace();
 		if (ctxs.empty()) {
-			ctxs.push_back(Context(ritem->Type(), ritem->tagsMatcher(), FieldsSet(), ritem->GetSchema()));
+			ctxs.emplace_back(ritem->Type(), ritem->tagsMatcher(), FieldsSet(), ritem->GetSchema(),
+							  ns ? ns->ns_->incarnationTag_ : lsn_t());
 		}
 		Add(ItemRef(item.GetID(), withData ? (ritem->RealValue().IsFree() ? ritem->Value() : ritem->RealValue()) : PayloadValue()));
 		if (withData && enableHold) {
-			if (auto ns{ritem->GetNamespace()}; ns) {
+			if (ns) {
 				Payload{ns->ns_->payloadType_, items_.back().Value()}.CopyStrings(stringsHolder_);
 			} else {
 				assertrx(ctxs.size() == 1);
@@ -426,13 +432,16 @@ int LocalQueryResults::getNsNumber(int nsid) const noexcept {
 	return ctxs[nsid].schema_->GetProtobufNsNumber();
 }
 
-int LocalQueryResults::getMergedNSCount() const noexcept { return ctxs.size(); }
-
 void LocalQueryResults::addNSContext(const PayloadType &type, const TagsMatcher &tagsMatcher, const FieldsSet &filter,
-									 std::shared_ptr<const Schema> schema) {
-	if (filter.getTagsPathsLength()) nonCacheableData = true;
+									 std::shared_ptr<const Schema> schema, lsn_t nsIncarnationTag) {
+	nonCacheableData = nonCacheableData || filter.getTagsPathsLength();
 
-	ctxs.push_back(Context(type, tagsMatcher, filter, std::move(schema)));
+	ctxs.emplace_back(type, tagsMatcher, filter, std::move(schema), std::move(nsIncarnationTag));
+}
+
+void LocalQueryResults::addNSContext(const QueryResults &baseQr, size_t nsid, lsn_t nsIncarnationTag) {
+	addNSContext(baseQr.GetPayloadType(nsid), baseQr.GetTagsMatcher(nsid), baseQr.GetFieldsFilter(nsid), baseQr.GetSchema(nsid),
+				 std::move(nsIncarnationTag));
 }
 
 LocalQueryResults::NsDataHolder::NsDataHolder(LocalQueryResults::NamespaceImplPtr &&_ns, StringsHolderPtr &&strHldr) noexcept

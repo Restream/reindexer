@@ -103,7 +103,7 @@ type CacheMemStat struct {
 type LsnT struct {
 	// Operation counter
 	Counter int64 `json:"counter"`
-	// Node identifyer
+	// Node identifier
 	ServerId int `json:"server_id"`
 }
 
@@ -444,6 +444,50 @@ type DBProfilingConfig struct {
 	LongQueryLogging *LongQueryLoggingConfig `json:"long_queries_logging,omitempty"`
 }
 
+type NamespaceCacheConfig struct {
+	// Max size of the index IdSets cache in bytes (per index)
+	// Each index has it's own independant cache
+	// This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)
+	// Default value is 134217728 (128 MB). Min value is 0
+	IdxIdsetCacheSize uint64 `json:"index_idset_cache_size"`
+	// Default 'hits to cache' for index IdSets caches
+	// This value determines how many requests required to put results into cache
+	// For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results
+	// This value may be automatically increased if cache is invalidation too fast
+	// Default value is 2. Min value is 0
+	IdxIdsetHitsToCache uint32 `json:"index_idset_hits_to_cache"`
+	// Max size of the fulltext indexes IdSets cache in bytes (per index)
+	// Each fulltext index has it's own independant cache
+	// This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)
+	// Default value is 134217728 (128 MB). Min value is 0
+	FTIdxCacheSize uint64 `json:"ft_index_cache_size"`
+	// Default 'hits to cache' for fulltext index IdSets caches.
+	// This value determines how many requests required to put results into cache
+	// For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+	// Default value is 2. Min value is 0
+	FTIdxHitsToCache uint32 `json:"ft_index_hits_to_cache"`
+	// Max size of the index IdSets cache in bytes for each namespace
+	// This cache will be enabled only if 'join_cache_mode' property is not 'off'
+	// It stores resulting IDs and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)
+	// Default value is 268435456 (256 MB). Min value is 0
+	JoinCacheSize uint64 `json:"joins_preselect_cache_size"`
+	// Default 'hits to cache' for joins preselect cache of the current namespace
+	// This value determines how many requests required to put results into cache
+	// For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results
+	// This value may be automatically increased if cache is invalidation too fast
+	// Default value is 2. Min value is 0
+	JoinHitsToCache uint32 `json:"joins_preselect_hit_to_cache"`
+	// Max size of the cache for COUNT_CACHED() aggreagetion in bytes for each namespace
+	// This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations
+	// Default value is 134217728 (128 MB). Min value is 0
+	QueryCountCacheSize uint64 `json:"query_count_cache_size"`
+	// Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace
+	// This value determines how many requests required to put results into cache
+	// For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast
+	// Default value is 2. Min value is 0
+	QueryCountHitsToCache uint32 `json:"query_count_hit_to_cache"`
+}
+
 // DBNamespacesConfig is part of reindexer configuration contains namespaces options
 type DBNamespacesConfig struct {
 	// Name of namespace, or `*` for setting to all namespaces
@@ -480,6 +524,8 @@ type DBNamespacesConfig struct {
 	// 0 - disables synchronous storage flush. In this case storage will be flushed in background thread only
 	// Default value is 20000
 	SyncStorageFlushLimit int `json:"sync_storage_flush_limit"`
+	// Namespaces' cache configs
+	CacheConfig *NamespaceCacheConfig `json:"cache,omitempty"`
 }
 
 // DBAsyncReplicationNode

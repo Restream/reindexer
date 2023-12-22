@@ -189,6 +189,9 @@ constexpr uint32_t kDefaultShardingProxyCoroPerConn = 8;
 constexpr uint32_t kDefaultShardingProxyConnThreads = 4;
 
 struct ShardingConfig {
+	static constexpr unsigned serverIdPos = 53;
+	static constexpr int64_t serverIdMask = (((1ll << 10) - 1) << serverIdPos);	 // 01111111111000...000
+
 	struct Key {
 		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<std::string>>& shards, KeyValueType& valuesType,
 					   std::vector<sharding::Segment<Variant>>& checkVal);
@@ -236,8 +239,10 @@ struct ShardingConfig {
 	int proxyConnCount = kDefaultShardingProxyConnCount;
 	int proxyConnConcurrency = kDefaultShardingProxyCoroPerConn;
 	int proxyConnThreads = kDefaultShardingProxyConnThreads;
+	int64_t sourceId = ShardingSourceId::NotSet;
 };
 bool operator==(const ShardingConfig&, const ShardingConfig&);
+inline bool operator!=(const ShardingConfig& l, const ShardingConfig& r) { return !(l == r); }
 bool operator==(const ShardingConfig::Key&, const ShardingConfig::Key&);
 bool operator==(const ShardingConfig::Namespace&, const ShardingConfig::Namespace&);
 

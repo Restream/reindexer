@@ -1,7 +1,7 @@
 #include "roleswitcher.h"
 #include "client/snapshot.h"
 #include "cluster/logger.h"
-#include "core/reindexerimpl.h"
+#include "core/reindexer_impl/reindexerimpl.h"
 #include "coroutine/tokens_pool.h"
 #include "net/cproto/cproto.h"
 #include "tools/logger.h"

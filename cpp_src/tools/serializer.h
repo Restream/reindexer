@@ -7,6 +7,7 @@
 #include "estl/chunk.h"
 #include "estl/one_of.h"
 #include "estl/span.h"
+#include "tools/stringstools.h"
 #include "tools/varint.h"
 
 char *i32toa(int32_t value, char *buffer);
@@ -149,24 +150,18 @@ private:
 
 class WrSerializer {
 public:
-	WrSerializer() noexcept : buf_(inBuf_), len_(0), cap_(sizeof(inBuf_)) {}  // -V730
+	WrSerializer() noexcept : buf_(inBuf_), len_(0), cap_(sizeof(inBuf_)) {}
 	template <unsigned N>
-	WrSerializer(uint8_t (&buf)[N]) : buf_(buf), len_(0), cap_(N), hasExternalBuf_(true) {}	 // -V730
-	WrSerializer(chunk &&ch) noexcept														 // -V730
-		: buf_(ch.data_), len_(ch.len_), cap_(ch.cap_) {
+	WrSerializer(uint8_t (&buf)[N]) noexcept : buf_(buf), len_(0), cap_(N), hasExternalBuf_(true) {}
+	WrSerializer(chunk &&ch) noexcept : buf_(ch.release()), len_(ch.len()), cap_(ch.capacity()) {
 		if (!buf_) {
 			buf_ = inBuf_;
 			cap_ = sizeof(inBuf_);
 			len_ = 0;
 		}
-		ch.data_ = nullptr;
-		ch.len_ = 0;
-		ch.cap_ = 0;
-		ch.offset_ = 0;
 	}
 	WrSerializer(const WrSerializer &) = delete;
-	WrSerializer(WrSerializer &&other) noexcept	 // -V730
-		: len_(other.len_), cap_(other.cap_), hasExternalBuf_(other.hasExternalBuf_) {
+	WrSerializer(WrSerializer &&other) noexcept : len_(other.len_), cap_(other.cap_), hasExternalBuf_(other.hasExternalBuf_) {
 		if (other.buf_ == other.inBuf_) {
 			buf_ = inBuf_;
 			memcpy(buf_, other.buf_, other.len_ * sizeof(other.inBuf_[0]));
@@ -210,7 +205,6 @@ public:
 	bool HasAllocatedBuffer() const noexcept { return buf_ != inBuf_ && !hasExternalBuf_; }
 
 	void PutKeyValueType(KeyValueType t) { PutVarUint(t.toNumber()); }
-	// Put variant
 	void PutVariant(const Variant &kv) {
 		PutKeyValueType(kv.Type());
 		kv.Type().EvaluateOneOf(
@@ -222,22 +216,19 @@ public:
 				}
 			},
 			[&](OneOf<KeyValueType::Int, KeyValueType::Int64, KeyValueType::Bool, KeyValueType::Double, KeyValueType::String,
-					  KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Uuid>) { putRawVariant(kv); });
+					  KeyValueType::Composite, KeyValueType::Undefined, KeyValueType::Null, KeyValueType::Uuid>) {
+				kv.Type().EvaluateOneOf(
+					[&](KeyValueType::Bool) { PutBool(bool(kv)); }, [&](KeyValueType::Int64) { PutVarint(int64_t(kv)); },
+					[&](KeyValueType::Int) { PutVarint(int(kv)); }, [&](KeyValueType::Double) { PutDouble(double(kv)); },
+					[&](KeyValueType::String) { PutVString(std::string_view(kv)); }, [&](KeyValueType::Null) noexcept {},
+					[&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
+					[&](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
+						fprintf(stderr, "Unknown keyType %s\n", kv.Type().Name().data());
+						abort();
+					});
+			});
 	}
 
-private:
-	void putRawVariant(const Variant &kv) {
-		kv.Type().EvaluateOneOf([&](KeyValueType::Bool) { PutBool(bool(kv)); }, [&](KeyValueType::Int64) { PutVarint(int64_t(kv)); },
-								[&](KeyValueType::Int) { PutVarint(int(kv)); }, [&](KeyValueType::Double) { PutDouble(double(kv)); },
-								[&](KeyValueType::String) { PutVString(std::string_view(kv)); }, [&](KeyValueType::Null) noexcept {},
-								[&](KeyValueType::Uuid) { PutUuid(Uuid{kv}); },
-								[&](OneOf<KeyValueType::Composite, KeyValueType::Tuple, KeyValueType::Undefined>) {
-									fprintf(stderr, "Unknown keyType %s\n", kv.Type().Name().data());
-									abort();
-								});
-	}
-
-public:
 	// Put slice with 4 bytes len header
 	void PutSlice(std::string_view slice) {
 		PutUInt32(slice.size());
@@ -246,7 +237,9 @@ public:
 		len_ += slice.size();
 	}
 
-	struct SliceHelper {
+private:
+	class [[nodiscard]] SliceHelper {
+	public:
 		SliceHelper(WrSerializer *ser, size_t pos) noexcept : ser_(ser), pos_(pos) {}
 		SliceHelper(const SliceHelper &) = delete;
 		SliceHelper operator=(const SliceHelper &) = delete;
@@ -267,11 +260,14 @@ public:
 			ser_ = nullptr;
 		}
 
+	private:
 		WrSerializer *ser_;
 		size_t pos_;
 	};
 
-	struct VStringHelper {
+public:
+	class [[nodiscard]] VStringHelper {
+	public:
 		VStringHelper() noexcept : ser_(nullptr), pos_(0) {}
 		VStringHelper(WrSerializer *ser, size_t pos) noexcept : ser_(ser), pos_(pos) {}
 		VStringHelper(const VStringHelper &) = delete;
@@ -286,9 +282,9 @@ public:
 			return *this;
 		}
 		~VStringHelper() { End(); }
-
 		void End();
 
+	private:
 		WrSerializer *ser_;
 		size_t pos_;
 	};
@@ -319,6 +315,10 @@ public:
 		grow(sizeof(v));
 		memcpy(&buf_[len_], &v, sizeof(v));
 		len_ += sizeof(v);
+	}
+	void PutDoubleStrNoTrailing(double v) {
+		grow(32);
+		len_ += double_to_str_no_trailing(v, reinterpret_cast<char *>(buf_ + len_), 32);
 	}
 
 	template <typename T, typename std::enable_if<sizeof(T) == 8 && std::is_integral<T>::value>::type * = nullptr>
@@ -354,11 +354,19 @@ public:
 		Write(v ? "true"sv : "false"sv);
 		return *this;
 	}
-	WrSerializer &operator<<(double v);
+	WrSerializer &operator<<(double v) {
+		grow(32);
+		len_ += double_to_str(v, reinterpret_cast<char *>(buf_ + len_), 32);
+		return *this;
+	}
 	WrSerializer &operator<<(Uuid uuid) {
-		grow(Uuid::kStrFormLen);
+		grow(Uuid::kStrFormLen + 2);
+		buf_[len_] = '\'';
+		++len_;
 		uuid.PutToStr(span<char>{reinterpret_cast<char *>(&buf_[len_]), Uuid::kStrFormLen});
 		len_ += Uuid::kStrFormLen;
+		buf_[len_] = '\'';
+		++len_;
 		return *this;
 	}
 
@@ -439,11 +447,9 @@ public:
 	chunk DetachChunk() {
 		chunk ch;
 		if (!HasAllocatedBuffer()) {
-			ch.append(Slice());
+			ch.append_strict(Slice());
 		} else {
-			ch.data_ = buf_;
-			ch.cap_ = cap_;
-			ch.len_ = len_;
+			ch = chunk(buf_, len_, cap_);
 		}
 		buf_ = inBuf_;
 		cap_ = sizeof(inBuf_);

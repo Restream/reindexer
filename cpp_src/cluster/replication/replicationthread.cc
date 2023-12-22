@@ -4,7 +4,7 @@
 #include "clusterreplthread.h"
 #include "core/defnsconfigs.h"
 #include "core/namespace/snapshot/snapshot.h"
-#include "core/reindexerimpl.h"
+#include "core/reindexer_impl/reindexerimpl.h"
 #include "tools/catch_and_return.h"
 #include "tools/flagguard.h"
 #include "updatesbatcher.h"
@@ -294,14 +294,16 @@ template <>
 
 			logInfo("%d:%d Start applying leader's sharding config locally", serverId_, node.uid);
 			std::string config;
+			std::optional<int64_t> sourceId;
 			if (auto configPtr = thisNode.shardingConfig_.Get()) {
 				config = configPtr->GetJSON();
+				sourceId = configPtr->sourceId;
 			}
 
 			return node.client.WithLSN(lsn_t(0, serverId_))
 				.ShardingControlRequest(
-					sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ApplyLeaderConfig>(config, -1));
-		};
+					sharding::MakeRequestData<sharding::ShardingControlRequestData::Type::ApplyLeaderConfig>(config, std::move(sourceId)));
+		}
 		return Error(errTimeout, "%d:%d DB role switch waiting timeout", serverId_, node.uid);
 	}
 	CATCH_AND_RETURN
@@ -1027,16 +1029,12 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 			case UpdateRecord::Type::UpdateQuery: {
 				auto& data = std::get<std::unique_ptr<QueryReplicationRecord>>(rec.data);
 				client::CoroQueryResults qr;
-				Query q;
-				q.FromSQL(data->sql);
-				return UpdateApplyStatus(client.WithLSN(lsn).Update(q, qr), rec.type);
+				return UpdateApplyStatus(client.WithLSN(lsn).Update(Query::FromSQL(data->sql), qr), rec.type);
 			}
 			case UpdateRecord::Type::DeleteQuery: {
 				auto& data = std::get<std::unique_ptr<QueryReplicationRecord>>(rec.data);
 				client::CoroQueryResults qr;
-				Query q;
-				q.FromSQL(data->sql);
-				return UpdateApplyStatus(client.WithLSN(lsn).Delete(q, qr), rec.type);
+				return UpdateApplyStatus(client.WithLSN(lsn).Delete(Query::FromSQL(data->sql), qr), rec.type);
 			}
 			case UpdateRecord::Type::SetSchema: {
 				auto& data = std::get<std::unique_ptr<SchemaReplicationRecord>>(rec.data);
@@ -1120,9 +1118,7 @@ UpdateApplyStatus ReplThread<BehaviourParamT>::applyUpdate(const UpdateRecord& r
 					return UpdateApplyStatus(Error(errLogic, "Tx is empty"), rec.type);
 				}
 				auto& data = std::get<std::unique_ptr<QueryReplicationRecord>>(rec.data);
-				Query q;
-				q.FromSQL(data->sql);
-				return UpdateApplyStatus(nsData.tx.Modify(std::move(q), lsn), rec.type);
+				return UpdateApplyStatus(nsData.tx.Modify(Query::FromSQL(data->sql), lsn), rec.type);
 			}
 			case UpdateRecord::Type::SetTagsMatcherTx: {
 				if (nsData.tx.IsFree()) {

@@ -248,15 +248,13 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 	}
 	{
 		QueryResults qr;
-		Query q;
-		q.FromSQL("SELECT * FROM ns2 WHERE a1=10 AND a2=20 equal_position(a1, a2)");
+		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1=10 AND a2=20 equal_position(a1, a2)");
 		err = rt.reindexer->Select(q, qr);
 		EXPECT_TRUE(err.ok()) << err.what();
 	}
 	{
 		QueryResults qr;
-		Query q;
-		q.FromSQL("SELECT * FROM ns2 WHERE a1 IS NULL AND a2=20 equal_position(a1, a2)");
+		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IS NULL AND a2=20 equal_position(a1, a2)");
 		err = rt.reindexer->Select(q, qr);
 		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
 			<< err.what();
@@ -264,8 +262,7 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 	}
 	{
 		QueryResults qr;
-		Query q;
-		q.FromSQL("SELECT * FROM ns2 WHERE a1 =10 AND a2 IS EMPTY equal_position(a1, a2)");
+		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 =10 AND a2 IS EMPTY equal_position(a1, a2)");
 		err = rt.reindexer->Select(q, qr);
 		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
 			<< err.what();
@@ -273,8 +270,7 @@ TEST_F(EqualPositionApi, EmptyCompOpErr) {
 	}
 	{
 		QueryResults qr;
-		Query q;
-		q.FromSQL("SELECT * FROM ns2 WHERE a1 IN () AND a2 IS EMPTY equal_position(a1, a2)");
+		Query q = Query::FromSQL("SELECT * FROM ns2 WHERE a1 IN () AND a2 IS EMPTY equal_position(a1, a2)");
 		err = rt.reindexer->Select(q, qr);
 		EXPECT_TRUE(err.what() == "Condition IN(with empty parameter list), IS NULL, IS EMPTY not allowed for equal position!")
 			<< err.what();
@@ -302,8 +298,7 @@ TEST_F(EqualPositionApi, SamePositionFromSql) {
 	QueryResults qr;
 	// SQL query contains equal_position() for field 'a1' twice
 	const std::string_view sql = "select * from test_namespace where a1 > 0 and a1 < 10 equal_position(a1, a1)";
-	Query q;
-	q.FromSQL(sql);
+	Query q = Query::FromSQL(sql);
 	// Make sure processing this query leads to error
 	const Error err = rt.reindexer->Select(q, qr);
 	EXPECT_FALSE(err.ok());

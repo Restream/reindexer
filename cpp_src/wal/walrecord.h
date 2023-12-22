@@ -39,6 +39,22 @@ enum WALRecType {
 class WrSerializer;
 class JsonBuilder;
 struct WALRecord;
+class SharedWALRecord;
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+struct SharedWALRecord {
+	struct Unpacked {
+		int64_t upstreamLSN;
+		int64_t originLSN;
+		p_string nsName, pwalRec;
+	};
+	SharedWALRecord(intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed = nullptr) : packed_(std::move(packed)) {}
+	SharedWALRecord(int64_t upstreamLSN, int64_t originLSN, std::string_view nsName, const WALRecord &rec);
+	Unpacked Unpack();
+
+	intrusive_ptr<intrusive_atomic_rc_wrapper<chunk>> packed_;
+};
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 struct WALRecord {
 	explicit WALRecord(span<uint8_t>);
@@ -53,6 +69,12 @@ struct WALRecord {
 	WrSerializer &Dump(WrSerializer &ser, const std::function<std::string(std::string_view)> &cjsonViewer) const;
 	void GetJSON(JsonBuilder &jb, const std::function<std::string(std::string_view)> &cjsonViewer) const;
 	void Pack(WrSerializer &ser) const;
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+	SharedWALRecord GetShared(int64_t lsn, int64_t upstreamLSN, std::string_view nsName) const;
+
+	mutable SharedWALRecord shared_;
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 	WALRecType type;
 	union {

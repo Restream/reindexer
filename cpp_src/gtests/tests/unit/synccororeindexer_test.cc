@@ -259,12 +259,12 @@ TEST(SyncCoroRx, DISABLED_TestCoroRxNCoroutine) {
 }
 
 TEST(SyncCoroRx, RxClientNThread) {
-	reindexer::fs::RmDirAll("/tmp/RxClientNThread");
+	const auto kStoragePath = fs::JoinPath(fs::GetTempDir(), "reindex/RxClientNThread");
+	reindexer::fs::RmDirAll(kStoragePath);
 	const std::string kDbName = "db";
 	const std::string kNsName = "ns_test";
 	ServerControl server;
-	server.InitServer(
-		ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, "/tmp/RxClientNThread", kDbName));
+	server.InitServer(ServerControlConfig(0, kSyncCoroRxTestDefaultRpcPort, kSyncCoroRxTestDefaultHttpPort, kStoragePath, kDbName));
 	constexpr size_t kConns = 3;
 	constexpr size_t kThreads = 10;
 	const size_t kSyncCoroRxThreads = 2;
@@ -503,8 +503,7 @@ TEST(SyncCoroRx, AsyncCompletionsStop) {
 		err = client->WithCompletion([&](const Error&) { ++counter; }).Upsert(kNsNames, items[i]);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-	err = client->Stop();
-	ASSERT_TRUE(err.ok()) << err.what();
+	client->Stop();
 	ASSERT_EQ(counter.load(), kItemsCount);
 }
 
@@ -532,7 +531,7 @@ TEST(SyncCoroRx, TxInvalidation) {
 		auto item = client->NewItem(kNsNames);
 		item.FromJSON(kItemContent);
 		// Special test case. Use after move is expected
-		// NOLINTNEXTLINE(bugprone-use-after-move)
+		// NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
 		err = originalTx.Insert(std::move(item));
 		EXPECT_EQ(err.code(), errBadTransaction);
 		client::QueryResults qr;
@@ -546,8 +545,7 @@ TEST(SyncCoroRx, TxInvalidation) {
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	err = client->Stop();
-	ASSERT_TRUE(err.ok()) << err.what();
+	client->Stop();
 	err = client->Connect(server.Get()->kRPCDsn);
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = client->Status(true);
@@ -624,13 +622,12 @@ TEST(SyncCoroRx, QrInvalidation) {
 
 	// Check if original qr does not affect moved qr
 	// Special test case. Use after move is expected
-	// NOLINTNEXTLINE(bugprone-use-after-move)
+	// NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
 	for (auto& it : originalQr) {
 		(void)it;
 	}
 
-	err = client->Stop();
-	ASSERT_TRUE(err.ok()) << err.what();
+	client->Stop();
 	err = client->Connect(server.Get()->kRPCDsn);
 	ASSERT_TRUE(err.ok()) << err.what();
 	err = client->Status(true);
@@ -712,6 +709,5 @@ TEST(SyncCoroRx, QRWithMultipleIterationLoops) {
 		}
 		++id;
 	}
-	err = rx.Stop();
-	ASSERT_TRUE(err.ok()) << err.what();
+	rx.Stop();
 }

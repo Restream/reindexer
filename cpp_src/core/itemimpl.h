@@ -88,6 +88,7 @@ public:
 	std::shared_ptr<const Schema> GetSchema() const noexcept { return schema_; }
 
 	TagsMatcher &tagsMatcher() noexcept { return tagsMatcher_; }
+	std::shared_ptr<const Schema> &schema() noexcept { return schema_; }
 
 	void SetPrecepts(std::vector<std::string> &&precepts) {
 		precepts_ = std::move(precepts);

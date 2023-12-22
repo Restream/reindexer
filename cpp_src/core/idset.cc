@@ -1,17 +1,7 @@
 #include "core/idset.h"
-#include <algorithm>
 #include "tools/errors.h"
 
 namespace reindexer {
-
-void IdSet::Commit() {
-	if (!size() && set_) {
-		resize(0);
-		for (auto id : *set_) push_back(id);
-	}
-
-	usingBtree_.store(false, std::memory_order_release);
-}
 
 std::string IdSetPlain::Dump() const {
 	std::string buf = "[";

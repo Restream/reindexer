@@ -21,7 +21,7 @@ constexpr int kKnownResultsFlagsMask = int(GetKnownFlagsBitMask(kResultsFlagMaxV
 
 void WrResultSerializer::resetUnknownFlags() noexcept { opts_.flags &= kKnownResultsFlagsMask; }
 
-void WrResultSerializer::putQueryParams(QueryResults* results) {
+void WrResultSerializer::putQueryParams(const BindingCapabilities& caps, QueryResults* results) {
 	// Flags of present objects
 	PutVarUint(opts_.flags);
 	// Total
@@ -33,18 +33,19 @@ void WrResultSerializer::putQueryParams(QueryResults* results) {
 
 	if (opts_.flags & kResultsWithPayloadTypes) {
 		assertrx(opts_.ptVersions.data());
-		if (int(opts_.ptVersions.size()) != results->GetMergedNSCount()) {
+		const auto mergedNsCount = results->GetMergedNSCount();
+		if (int(opts_.ptVersions.size()) != mergedNsCount) {
 			logPrintf(LogWarning, "ptVersionsCount != results->GetMergedNSCount: %d != %d. Client's meta data can become incosistent.",
-					  opts_.ptVersions.size(), results->GetMergedNSCount());
+					  opts_.ptVersions.size(), mergedNsCount);
 		}
 		auto cntP = getPtUpdatesCount(results);
 		putPayloadTypes(*this, results, opts_, cntP.first, cntP.second);
 	}
 
-	putExtraParams(results);
+	putExtraParams(caps, results);
 }
 
-void WrResultSerializer::putExtraParams(QueryResults* results) {
+void WrResultSerializer::putExtraParams(const BindingCapabilities& caps, QueryResults* results) {
 	if (opts_.withAggregations) {
 		for (const AggregationResult& aggregationRes : results->GetAggregationResults()) {
 			PutVarUint(QueryResultAggregation);
@@ -68,11 +69,23 @@ void WrResultSerializer::putExtraParams(QueryResults* results) {
 			PutVarUint(results->GetCommonShardID());
 			opts_.flags &= ~kResultsWithShardId;  // not set shardId for item
 		}
+	}
 
+	if (caps.HasIncarnationTags()) {
 		int64_t shardingConfVer = results->GetShardingConfigVersion();
 		if (shardingConfVer != -1) {
 			PutVarUint(QueryResultShardingVersion);
 			PutVarUint(shardingConfVer);
+		}
+		PutVarUint(QueryResultIncarnationTags);
+		auto tags = results->GetIncarnationTags();
+		PutVarUint(tags.size());
+		for (auto& shardTags : tags) {
+			PutVarint(shardTags.shardId);
+			PutVarUint(shardTags.tags.size());
+			for (auto& t : shardTags.tags) {
+				PutVarint(int64_t(t));
+			}
 		}
 	}
 
@@ -181,11 +194,12 @@ void WrResultSerializer::putPayloadTypes(WrSerializer& ser, const QueryResults* 
 std::pair<int, int> WrResultSerializer::getPtUpdatesCount(const QueryResults* results) {
 	if (opts_.flags & kResultsWithPayloadTypes) {
 		assertrx(opts_.ptVersions.data());
-		if (int(opts_.ptVersions.size()) != results->GetMergedNSCount()) {
+		const auto mergedNsCount = results->GetMergedNSCount();
+		if (int(opts_.ptVersions.size()) != mergedNsCount) {
 			logPrintf(LogWarning, "ptVersionsCount != results->GetMergedNSCount: %d != %d. Client's meta data can become incosistent.",
-					  opts_.ptVersions.size(), results->GetMergedNSCount());
+					  opts_.ptVersions.size(), mergedNsCount);
 		}
-		int cnt = 0, totalCnt = std::min(results->GetMergedNSCount(), int(opts_.ptVersions.size()));
+		int cnt = 0, totalCnt = std::min(mergedNsCount, int(opts_.ptVersions.size()));
 
 		for (int i = 0; i < totalCnt; i++) {
 			const TagsMatcher& tm = results->GetTagsMatcher(i);
@@ -234,7 +248,7 @@ bool WrResultSerializer::PutResults(QueryResults* result, const BindingCapabilit
 		}
 	}
 
-	putQueryParams(result);
+	putQueryParams(caps, result);
 	size_t saveLen = len_;
 	const bool storeAsPointers = (opts_.flags & kResultsFormatMask) == kResultsPtrs;
 	auto ptrStorage = storeAsPointers ? storage : nullptr;
@@ -255,8 +269,7 @@ bool WrResultSerializer::PutResults(QueryResults* result, const BindingCapabilit
 					PutVarUint(it.ItemsCount());
 					if (it.ItemsCount() == 0) continue;
 					LocalQueryResults qr = it.ToQueryResults();
-					qr.addNSContext(result->GetPayloadType(joinedField), result->GetTagsMatcher(joinedField),
-									result->GetFieldsFilter(joinedField), result->GetSchema(joinedField));
+					qr.addNSContext(*result, joinedField, lsn_t());
 					for (auto& jit : qr) putItemParams(jit, rowIt.GetShardId(), storage, nullptr);
 				}
 			}

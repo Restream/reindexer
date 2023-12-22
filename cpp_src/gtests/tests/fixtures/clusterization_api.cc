@@ -1,33 +1,6 @@
 #include "clusterization_api.h"
 
-#include <fstream>
-#include <thread>
-
-#include "core/cjson/jsonbuilder.h"
-#include "core/dbconfig.h"
-#include "tools/fsops.h"
-#include "vendor/gason/gason.h"
-
-const std::string ClusterizationApi::kConfigNs = "#config";
-const std::chrono::seconds ClusterizationApi::kMaxServerStartTime = std::chrono::seconds(15);
-const std::chrono::seconds ClusterizationApi::kMaxSyncTime = std::chrono::seconds(15);
-const std::chrono::seconds ClusterizationApi::kMaxElectionsTime = std::chrono::seconds(12);
-
-const std::string ClusterizationApi::kIdField = "id";
-const std::string ClusterizationApi::kStringField = "string";
-const std::string ClusterizationApi::kIntField = "int";
-const std::string ClusterizationApi::kFTField = "ft_str";
-
-void ClusterizationApi::SetUp() {
-	const auto def = GetDefaults();
-	reindexer::fs::RmDirAll(def.baseTestsetDbPath);
-}
-
-void ClusterizationApi::TearDown()	// -V524
-{
-	const auto def = GetDefaults();
-	reindexer::fs::RmDirAll(def.baseTestsetDbPath);
-}
+#include "yaml-cpp/yaml.h"
 
 void ClusterizationApi::Cluster::initCluster(size_t count, size_t initialServerId, const YAML::Node& clusterConf) {
 	for (size_t i = 0; i < count; ++i) {
@@ -38,8 +11,7 @@ void ClusterizationApi::Cluster::initCluster(size_t count, size_t initialServerI
 		svc_.emplace_back();
 		InitServer(i, clusterConf, replConf, initialServerId);
 
-		clients_.emplace_back();
-		clients_.back().Connect(svc_.back().Get(false)->kRPCDsn, loop_);
+		clients_.emplace_back().Connect(svc_.back().Get(false)->kRPCDsn, loop_);
 	}
 }
 
@@ -65,38 +37,34 @@ ClusterizationApi::Cluster::Cluster(net::ev::dynamic_loop& loop, size_t initialS
 
 ClusterizationApi::Cluster::~Cluster() {
 	StopClients();
-	for (size_t i = 0; i < svc_.size(); ++i) {
-		if (svc_[i].IsRunning()) {
-			svc_[i].Get()->Stop();
+	for (auto& sv : svc_) {
+		if (sv.IsRunning()) {
+			sv.Get()->Stop();
 		}
 	}
 }
 
 void ClusterizationApi::Cluster::InitNs(size_t id, std::string_view nsName) {
-	auto opt = StorageOpts().Enabled(true);
-
 	// until we use shared ptr it will be not destroyed
 	assert(id < svc_.size());
 	auto srv = svc_[id].Get();
 	auto& api = srv->api;
 
-	Error err = api.reindexer->OpenNamespace(nsName, opt);
+	Error err = api.reindexer->OpenNamespace(nsName, StorageOpts().Enabled(true));
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	api.DefineNamespaceDataset(std::string(nsName), {
-														IndexDeclaration{kIdField.c_str(), "hash", "int", IndexOpts().PK(), 0},
-														IndexDeclaration{kIntField.c_str(), "tree", "int", IndexOpts(), 0},
-														IndexDeclaration{kStringField.c_str(), "hash", "string", IndexOpts(), 0},
-														IndexDeclaration{kFTField.c_str(), "text", "string", IndexOpts(), 0},
+														IndexDeclaration{kIdField, "hash", "int", IndexOpts().PK(), 0},
+														IndexDeclaration{kIntField, "tree", "int", IndexOpts(), 0},
+														IndexDeclaration{kStringField, "hash", "string", IndexOpts(), 0},
+														IndexDeclaration{kFTField, "text", "string", IndexOpts(), 0},
 													});
 }
 
 void ClusterizationApi::Cluster::DropNs(size_t id, std::string_view nsName) {
 	// until we use shared ptr it will be not destroyed
 	assert(id < svc_.size());
-	auto srv = svc_[id].Get();
-	auto& api = srv->api;
-	Error err = api.reindexer->DropNamespace(nsName);
+	Error err = svc_[id].Get()->api.reindexer->DropNamespace(nsName);
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
@@ -163,8 +131,6 @@ size_t ClusterizationApi::Cluster::InitServer(size_t id, const YAML::Node& clust
 	assert(id < svc_.size());
 	auto& server = svc_[id];
 	id += offset;
-	auto storagePath = fs::JoinPath(defaults_.baseTestsetDbPath, "node/" + std::to_string(id));
-
 	ServerControlConfig scConfig(id, defaults_.defaultRpcPort + id, defaults_.defaultHttpPort + id,
 								 fs::JoinPath(defaults_.baseTestsetDbPath, "node/" + std::to_string(id)), "node" + std::to_string(id), true,
 								 maxUpdatesSize_);
@@ -230,7 +196,7 @@ void ClusterizationApi::Cluster::StopServers(const std::vector<size_t>& ids) {
 int ClusterizationApi::Cluster::AwaitLeader(std::chrono::seconds timeout, bool fulltime) {
 	auto beg = std::chrono::high_resolution_clock::now();
 	auto end = beg;
-	int leaderId = -1;
+	int leaderId;
 	do {
 		leaderId = -1;
 		for (size_t i = 0; i < clients_.size(); ++i) {
@@ -340,8 +306,7 @@ void ClusterizationApi::Cluster::PrintClusterNsList(const std::vector<Clusteriza
 
 void ClusterizationApi::Cluster::StopClients() {
 	for (auto& client : clients_) {
-		auto err = client.Stop();
-		ASSERT_TRUE(err.ok()) << err.what();
+		client.Stop();
 	}
 }
 
@@ -371,6 +336,7 @@ void ClusterizationApi::Cluster::ValidateNamespaceList(const std::vector<Cluster
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(100);
 	size_t syncedCnt = 0;
+	std::vector<NamespaceDef> nsDefs;
 	while (syncedCnt != svc_.size()) {
 		now += pause;
 		if (now >= kMaxSyncTime) {
@@ -380,7 +346,7 @@ void ClusterizationApi::Cluster::ValidateNamespaceList(const std::vector<Cluster
 		syncedCnt = 0;
 		for (auto& node : svc_) {
 			if (node.IsRunning()) {
-				std::vector<NamespaceDef> nsDefs;
+				nsDefs.clear();
 				node.Get(false)->api.reindexer->EnumNamespaces(nsDefs, EnumNamespacesOpts().HideSystem().WithClosed().OnlyNames());
 				if (namespaces.size() != nsDefs.size()) {
 					continue;
@@ -416,8 +382,7 @@ size_t ClusterizationApi::Cluster::GetSynchronizedNodesCount(size_t nodeId) {
 }
 
 void ClusterizationApi::Cluster::EnablePerfStats(size_t nodeId) {
-	auto node = GetNode(nodeId);
-	auto rx = node->api.reindexer;
+	auto rx = GetNode(nodeId)->api.reindexer;
 	auto item = rx->NewItem(kConfigNs);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	auto err = item.FromJSON(
@@ -443,8 +408,8 @@ void ClusterizationApi::Cluster::AddAsyncNode(size_t nodeId, const std::string& 
 void ClusterizationApi::Cluster::AwaitLeaderBecomeAvailable(size_t nodeId, std::chrono::milliseconds awaitTime) {
 	auto now = std::chrono::milliseconds(0);
 	const auto pause = std::chrono::milliseconds(100);
+	const Query q = Query("#replicationstats").Where("type", CondEq, "cluster");
 	while (now < awaitTime) {
-		Query q = Query("#replicationstats").Where("type", CondEq, Variant("cluster"));
 		BaseApi::QueryResultsType qr;
 		auto err = GetNode(nodeId)->api.reindexer->WithTimeout(pause).Select(q, qr);
 		if (err.ok()) {
@@ -461,6 +426,7 @@ YAML::Node ClusterizationApi::Cluster::CreateClusterConfigStatic(size_t initialS
 																 std::chrono::milliseconds resyncTimeout, int maxSyncCount,
 																 int syncThreadsCount) {
 	std::vector<size_t> nodeIds;
+	nodeIds.reserve(count);
 	for (size_t id = initialServerId; id < initialServerId + count; ++id) {
 		nodeIds.emplace_back(id);
 	}

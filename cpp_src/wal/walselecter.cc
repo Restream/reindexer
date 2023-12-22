@@ -1,4 +1,3 @@
-
 #include "walselecter.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/namespace/namespaceimpl.h"
@@ -15,43 +14,49 @@ WALSelecter::WALSelecter(const NamespaceImpl *ns, bool allowTxWithoutBegining) :
 void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool snapshot) {
 	using namespace std::string_view_literals;
 	const Query &q = params.query;
-	int count = q.count;
-	int start = q.start;
+	int count = q.Limit();
+	int start = q.Offset();
 	result.totalCount = 0;
 
 	if (!q.IsWALQuery()) {
 		throw Error(errLogic, "Query to WAL should contain only 1 condition '#lsn > number'");
 	}
 
-	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, q.selectFilter_), ns_->schema_);
+	result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, q.SelectFilters()), ns_->schema_,
+						ns_->incarnationTag_);
 
 	int lsnIdx = -1;
 	int versionIdx = -1;
-	for (size_t i = 0; i < q.entries.Size(); ++i) {
-		q.entries.InvokeAppropriate<void>(
+	for (size_t i = 0; i < q.Entries().Size(); ++i) {
+		q.Entries().InvokeAppropriate<void>(
 			i,
 			[&lsnIdx, &versionIdx, i](const QueryEntry &qe) {
-				if ("#lsn"sv == qe.index) {
+				if ("#lsn"sv == qe.FieldName()) {
 					lsnIdx = i;
-				} else if ("#slave_version"sv == qe.index) {
+				} else if ("#slave_version"sv == qe.FieldName()) {
 					versionIdx = i;
 				} else {
-					throw Error(errLogic, "Unexpected index in WAL select query: %s", qe.index);
+					throw Error(errLogic, "Unexpected index in WAL select query: %s", qe.FieldName());
 				}
 			},
 			[&q](const auto &) { throw Error(errLogic, "Unexpected WAL select query: %s", q.GetSQL()); });
 	}
-	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.entries.Get<QueryEntry>(versionIdx).values[0].As<std::string>());
-	auto &lsnEntry = q.entries.Get<QueryEntry>(lsnIdx);
-	if (lsnEntry.values.size() == 1 && (lsnEntry.condition == CondGt || lsnEntry.condition == CondGe)) {
-		lsn_t fromLSN = lsn_t(std::min(lsnEntry.values[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
-		if (fromLSN.isEmpty()) throw Error(errOutdatedWAL, "Query to WAL with empty LSN, LSN counter %ld", ns_->wal_.LSNCounter());
-		if (lsnEntry.condition == CondGt && ns_->wal_.LSNCounter() != (fromLSN.Counter() + 1) && ns_->wal_.is_outdated(fromLSN) && count)
+	auto slaveVersion = versionIdx < 0 ? SemVersion() : SemVersion(q.Entries().Get<QueryEntry>(versionIdx).Values()[0].As<std::string>());
+	auto &lsnEntry = q.Entries().Get<QueryEntry>(lsnIdx);
+	if (lsnEntry.Values().size() == 1 && (lsnEntry.Condition() == CondGt || lsnEntry.Condition() == CondGe)) {
+		lsn_t fromLSN = lsn_t(std::min(lsnEntry.Values()[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
+		if (fromLSN.isEmpty()) {
+			throw Error(errOutdatedWAL, "Query to WAL with empty LSN, LSN counter %ld", ns_->wal_.LSNCounter());
+		}
+		if (lsnEntry.Condition() == CondGt && ns_->wal_.LSNCounter() != (fromLSN.Counter() + 1) && ns_->wal_.is_outdated(fromLSN) &&
+			count) {
 			throw Error(errOutdatedWAL, "Query (gt) to WAL with outdated LSN %ld, LSN counter %ld, walSize = %d, count = %d",
 						int64_t(fromLSN), ns_->wal_.LSNCounter(), ns_->wal_.size(), count);
-		else if (lsnEntry.condition == CondGe && ns_->wal_.is_outdated(fromLSN) && count)
+		}
+		if (lsnEntry.Condition() == CondGe && ns_->wal_.is_outdated(fromLSN) && count) {
 			throw Error(errOutdatedWAL, "Query (ge) to WAL with outdated LSN %ld, LSN counter %ld, walSize = %d, count = %d",
 						int64_t(fromLSN), ns_->wal_.LSNCounter(), ns_->wal_.size(), count);
+		}
 
 		const auto walEnd = ns_->wal_.end();
 		auto putWalRecord = [&result](WALTracker::iterator it, const WALRecord &rec) {
@@ -61,7 +66,7 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 			pv.SetLSN(it.GetLSN());
 			result.Add(ItemRef(rec.id, pv, 0, 0, true));
 		};
-		const auto firstIt = lsnEntry.condition == CondGt ? ns_->wal_.upper_bound(fromLSN) : ns_->wal_.inclusive_upper_bound(fromLSN);
+		const auto firstIt = lsnEntry.Condition() == CondGt ? ns_->wal_.upper_bound(fromLSN) : ns_->wal_.inclusive_upper_bound(fromLSN);
 		if (firstIt != walEnd) {
 			WALRecord firstRec = *firstIt;
 			if (!allowTxWithoutBegining_ && firstRec.inTransaction && firstRec.type != WalInitTransaction) {
@@ -97,7 +102,8 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 						if (versionIdx < 0) {
 							break;
 						}
-						if (q.entries.Get<QueryEntry>(versionIdx).condition != CondEq || slaveVersion < kMinUnknownReplSupportRxVersion) {
+						if (q.Entries().Get<QueryEntry>(versionIdx).Condition() != CondEq ||
+							slaveVersion < kMinUnknownReplSupportRxVersion) {
 							break;
 						}
 					}
@@ -124,7 +130,7 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 					if (snapshot) {
 						assertrx(!start);
 						assertrx(count < 0);
-						putWalRecord(it, rec);	// TODO: Check if it's possible to remove empty records fro, snapshot
+						putWalRecord(it, rec);	// TODO: Check if it's possible to remove empty records from, snapshot
 					}
 					break;
 				case WalReplState:
@@ -140,7 +146,7 @@ void WALSelecter::operator()(LocalQueryResults &result, SelectCtx &params, bool 
 					std::abort();
 			}
 		}
-	} else if (lsnEntry.condition == CondAny) {
+	} else if (lsnEntry.Condition() == CondAny) {
 		bool enableSpecialRecords = snapshot || !(slaveVersion < kMinUnknownReplSupportRxVersion);
 		if (start == 0 && enableSpecialRecords) {
 			auto addSpRecord = [&result](const WALRecord &wrec) {

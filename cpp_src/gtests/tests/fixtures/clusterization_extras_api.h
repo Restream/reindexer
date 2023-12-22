@@ -5,12 +5,10 @@
 class ClusterizationExtrasApi : public ClusterizationApi {
 public:
 	void SetUp() override {	 // -V524
-		const auto def = GetDefaults();
-		reindexer::fs::RmDirAll(def.baseTestsetDbPath);
+		fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 	}
 	void TearDown() override {	// -V524
-		const auto def = GetDefaults();
-		reindexer::fs::RmDirAll(def.baseTestsetDbPath);
+		fs::RmDirAll(GetDefaults().baseTestsetDbPath);
 	}
 	const Defaults& GetDefaults() const override {
 		static Defaults defs{14300, 16300, fs::JoinPath(fs::GetTempDir(), "rx_test/ClusterizationExtrasApi")};
@@ -28,8 +26,8 @@ protected:
 			awaitTime -= step;
 			std::this_thread::sleep_for(step);
 		}
-		auto stats = cluster.GetNode(leaderId)->GetReplicationStats(cluster::kClusterReplStatsType);
-		WrSerializer wser;
+		auto stats = cluster.GetNode(leaderId)->GetReplicationStats(reindexer::cluster::kClusterReplStatsType);
+		reindexer::WrSerializer wser;
 		stats.GetJSON(wser);
 		ASSERT_TRUE(false) << "Stats: " << wser.Slice();
 	}

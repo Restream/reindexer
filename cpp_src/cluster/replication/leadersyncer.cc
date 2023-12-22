@@ -1,7 +1,8 @@
 #include "leadersyncer.h"
 #include "client/snapshot.h"
 #include "cluster/logger.h"
-#include "core/reindexerimpl.h"
+#include "core/defnsconfigs.h"
+#include "core/reindexer_impl/reindexerimpl.h"
 
 namespace reindexer {
 namespace cluster {
@@ -14,8 +15,9 @@ Error LeaderSyncer::Sync(std::list<LeaderSyncQueue::Entry>&& entries, SharedSync
 	std::unique_lock lck(mtx_);
 	syncQueue_.Refill(std::move(entries));
 	assert(threads_.empty());
+	std::once_flag onceUpdShardingCfg;
 	for (size_t i = 0; i < cfg_.threadsCount; ++i) {
-		threads_.emplace_back(thCfg, syncQueue_, sharedSyncState, thisNode, statsCollector, log_);
+		threads_.emplace_back(thCfg, syncQueue_, sharedSyncState, thisNode, statsCollector, log_, onceUpdShardingCfg);
 	}
 	lck.unlock();
 
@@ -42,7 +44,96 @@ Error LeaderSyncer::Sync(std::list<LeaderSyncQueue::Entry>&& entries, SharedSync
 	return err;
 }
 
+template <typename T>
+static auto makeClusterSet(const std::vector<T>& cluster) {
+	std::vector<std::string_view> res(cluster.size());
+	for (size_t i = 0; i < cluster.size(); ++i) {
+		if constexpr (std::is_same_v<T, cluster::ClusterNodeConfig>) {
+			res[i] = cluster[i].dsn;
+		} else {
+			res[i] = cluster[i];
+		}
+	}
+	std::sort(res.begin(), res.end());
+	return res;
+}
+
+void LeaderSyncThread::actualizeShardingConfig() {
+	auto cluster = makeClusterSet(thisNode_.clusterConfig_->nodes);
+	auto isClusterEqualSomeShard = [&cluster](const cluster::ShardingConfig& config) {
+		return std::any_of(config.shards.begin(), config.shards.end(),
+						   [&cluster](const auto& pair) { return cluster == makeClusterSet(pair.second); });
+	};
+
+	cluster::ShardingConfig config;
+	if (auto configPtr = thisNode_.shardingConfig_.Get()) {
+		config = *configPtr;
+	}
+
+	bool updated = false;
+	for (const auto& dsn : cfg_.dsns) {
+		loop_.spawn([&]() noexcept {
+			try {
+				client::CoroReindexer client;
+				auto err = client.Connect(dsn, loop_, client::ConnectOpts().WithExpectedClusterID(cfg_.clusterId));
+				if (!err.ok()) {
+					logWarn("%s: Actualization sharding config error: %s", dsn, err.what());
+					return;
+				}
+
+				cluster::ShardingConfig nodeConfig;
+				client::CoroQueryResults qr;
+				err = client.Select(Query(kConfigNamespace).Where("type", CondEq, "sharding"), qr);
+				if (!err.ok()) {
+					logWarn("%s: Actualization sharding config error: %s", dsn, err.what());
+					return;
+				}
+
+				if (qr.Count() != 1) {
+					logWarn("%s: Unexpected count of sharding config query results", dsn);
+					return;
+				}
+
+				auto item = qr.begin().GetItem();
+				gason::JsonParser parser;
+				err = nodeConfig.FromJSON(parser.Parse(item.GetJSON())["sharding"]);
+
+				if (!err.ok()) {
+					logWarn("%s: Actualization sharding config error: %s", dsn, err.what());
+					return;
+				}
+
+				if (!isClusterEqualSomeShard(nodeConfig)) {
+					logWarn("%s: Different sets of nodes of the obtained config and the current cluster", dsn);
+					return;
+				}
+
+				if ((nodeConfig.sourceId & ~cluster::ShardingConfig::serverIdMask) >
+					(config.sourceId & ~cluster::ShardingConfig::serverIdMask)) {
+					config = std::move(nodeConfig);
+					updated = true;
+				}
+			} catch (const Error& err) {
+				logWarn("%s: Actualization sharding config error: %s", dsn, err.what());
+			} catch (...) {
+				logWarn("%s: Unexpected exception during actualization sharding config", dsn);
+			}
+		});
+	}
+
+	loop_.run();
+
+	if (updated) {
+		using CallbackT = ReindexerImpl::CallbackT;
+		gason::JsonParser parser;
+		this->thisNode_.proxyCallbacks_.at({"leader_config_process", CallbackT::Type::System})(parser.Parse(span<char>(config.GetJSON())),
+																							   CallbackT::SourceIdT{config.sourceId}, {});
+	}
+}
+
 void LeaderSyncThread::sync() {
+	std::call_once(actShardingCfg_, &LeaderSyncThread::actualizeShardingConfig, this);
+
 	loop_.spawn([this] {
 		LeaderSyncQueue::Entry entry;
 		uint32_t nodeId = 0;

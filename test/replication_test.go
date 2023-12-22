@@ -31,7 +31,7 @@ func TestSlaveEmptyStorage(t *testing.T) {
 	cfgMaster := rxConfig.DefaultServerConfig()
 	cfgMaster.Net.HTTPAddr = "0:29088"
 	cfgMaster.Net.RPCAddr = "0:26534"
-	cfgMaster.Storage.Path = "/tmp/rx_master1"
+	cfgMaster.Storage.Path = "/tmp/reindex_master1"
 	os.RemoveAll(cfgMaster.Storage.Path)
 	rxMaster := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgMaster))
 	{
@@ -63,7 +63,7 @@ nodes:
 	cfgSlave := rxConfig.DefaultServerConfig()
 	cfgSlave.Net.HTTPAddr = "0:29089"
 	cfgSlave.Net.RPCAddr = "0:26535"
-	cfgSlave.Storage.Path = "/tmp/rx_slave2"
+	cfgSlave.Storage.Path = "/tmp/reindex_slave2"
 	os.RemoveAll(cfgSlave.Storage.Path)
 	rxSlave := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfgSlave))
 

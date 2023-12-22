@@ -114,6 +114,8 @@
   * [SelectPerfStats](#selectperfstats)
   * [SortDef](#sortdef)
   * [StatusResponse](#statusresponse)
+  * [SubQuery](#subquery)
+  * [SubQueryAggregationsDef](#subqueryaggregationsdef)
   * [SuggestItems](#suggestitems)
   * [SysInfo](#sysinfo)
   * [SystemConfigItem](#systemconfigitem)
@@ -134,7 +136,7 @@ Reindexer is fast.
 
 
 ### Version information
-*Version* : 4.12.0
+*Version* : 4.13.0
 
 
 ### License information
@@ -194,6 +196,7 @@ This operation will output list of all available databases
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -228,6 +231,7 @@ This operation will create new database. If database is already exists, then err
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -264,6 +268,7 @@ Can not be undone. USE WITH CAUTION.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -300,6 +305,7 @@ If database is not exists, then error will be returned.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -336,6 +342,7 @@ If namespace is already exists, then operation do not nothing.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -371,6 +378,7 @@ This operation will return specified namespace description, including options of
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -408,6 +416,7 @@ Can not be undone. USE WITH CAUTION.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -443,6 +452,7 @@ This operation will delete all items from namespace.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -479,6 +489,7 @@ This operation will rename namespace.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -518,6 +529,7 @@ This operation will return list of keys of all meta of specified namespace
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -554,6 +566,7 @@ This operation will return value of namespace's meta with specified key
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -590,6 +603,7 @@ This operation will set namespace's meta with specified key and value
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -634,6 +648,7 @@ This operation will select documents from namespace with specified filters, and 
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -678,6 +693,7 @@ Each document should be in request body as separate JSON object, e.g.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -722,6 +738,7 @@ Each document should be in request body as separate JSON object, e.g.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -765,6 +782,7 @@ Each document should be in request body as separate JSON object, e.g.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -809,6 +827,7 @@ Each document should be in request body as separate JSON object, e.g.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -844,6 +863,7 @@ This operation will return list of available indexes, from specified database an
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -881,6 +901,7 @@ Operation  is synchronious, so it can take long time, if namespace contains bunc
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -918,6 +939,7 @@ Operation is synchronious, so it can take long time, if namespace contains bunch
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -955,6 +977,7 @@ Operation  is synchronious, so it can take long time, if namespace contains bunc
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -990,6 +1013,7 @@ This operation will return current schema from specified database and namespace
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1026,6 +1050,7 @@ This operation will set namespace schema (information about available fields and
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1061,6 +1086,7 @@ This operation allows to get client/server communication parameters as google pr
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1109,6 +1135,7 @@ then `limit` and `offset` from http request.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1144,6 +1171,7 @@ This operation updates documents in namespace by DSL query.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1182,6 +1210,7 @@ This operation queries documents from namespace by DSL query.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1217,6 +1246,7 @@ This operation removes documents from namespace by DSL query.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1249,6 +1279,7 @@ POST /db/{database}/namespaces/{name}/transactions/begin
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1280,6 +1311,7 @@ POST /db/{database}/transactions/{tx_id}/commit
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1311,6 +1343,7 @@ POST /db/{database}/transactions/{tx_id}/rollback
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1356,6 +1389,7 @@ Each document should be in request body as separate JSON object, e.g.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1401,6 +1435,7 @@ Each document should be in request body as separate JSON object, e.g.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1445,6 +1480,7 @@ Each document should be in request body as separate JSON object, e.g.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1490,6 +1526,7 @@ Each document should be in request body as separate JSON object, e.g.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1529,6 +1566,7 @@ This query UPDATEs/DELETEs documents from namespace
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1567,6 +1605,7 @@ DELETE query removes documents from namespace by DSL query.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1591,7 +1630,7 @@ This operation pareses SQL query, and suggests autocompletion variants
 |Type|Name|Description|Schema|
 |---|---|---|---|
 |**Path**|**database**  <br>*required*|Database name|string|
-|**Query**|**line**  <br>*optional*|Cursor line for suggest|integer|
+|**Query**|**line**  <br>*required*|Cursor line for suggest|integer|
 |**Query**|**pos**  <br>*required*|Cursor position for suggest|integer|
 |**Query**|**q**  <br>*required*|SQL query|string|
 
@@ -1604,6 +1643,7 @@ This operation pareses SQL query, and suggests autocompletion variants
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1642,6 +1682,7 @@ This operation queries documents from namespace by SQL query. Query can be prece
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1669,6 +1710,7 @@ This operation will return system informatiom about server version, uptime, and 
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1712,6 +1754,7 @@ This operation will return memory usage informatiom from tcmalloc allocator.
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1746,6 +1789,7 @@ This operation will return detailed informatiom about current activity of all co
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1780,6 +1824,7 @@ This operation will return detailed informatiom about all connections on the ser
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1849,6 +1894,7 @@ This operation will return detailed informatiom about database memory consumptio
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1883,6 +1929,7 @@ This operation will return detailed informatiom about database performance timin
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1917,6 +1964,7 @@ This operation will return detailed informatiom about database memory consumptio
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -1954,6 +2002,7 @@ This operation will update system configuration:
 |**400**|Invalid arguments supplied|[StatusResponse](#statusresponse)|
 |**403**|Forbidden|[StatusResponse](#statusresponse)|
 |**404**|Entry not found|[StatusResponse](#statusresponse)|
+|**408**|Context timeout|[StatusResponse](#statusresponse)|
 |**500**|Unexpected internal error|[StatusResponse](#statusresponse)|
 
 
@@ -2192,8 +2241,8 @@ Query execution explainings
 |---|---|---|
 |**general_sort_us**  <br>*optional*|Result sort time|integer|
 |**indexes_us**  <br>*optional*|Indexes keys selection time|integer|
-|**join_on_conditions**  <br>*optional*|Describes Join ON conditions injections|< [join_on_conditions](#explaindef-join_on_conditions) > array|
 |**loop_us**  <br>*optional*|Intersection loop time|integer|
+|**on_conditions_injections**  <br>*optional*|Describes Join ON conditions injections|< [on_conditions_injections](#explaindef-on_conditions_injections) > array|
 |**postprocess_us**  <br>*optional*|Query post process time|integer|
 |**prepare_us**  <br>*optional*|Query prepare and optimize time|integer|
 |**preselect_us**  <br>*optional*|Query preselect processing time|integer|
@@ -2203,7 +2252,7 @@ Query execution explainings
 |**total_us**  <br>*optional*|Total query execution time|integer|
 
 
-**join_on_conditions**
+**on_conditions_injections**
 
 |Name|Description|Schema|
 |---|---|---|
@@ -2239,6 +2288,7 @@ Query execution explainings
 |**explain_preselect**  <br>*optional*|Preselect in joined namespace execution explainings|[ExplainDef](#explaindef)|
 |**explain_select**  <br>*optional*|One of selects in joined namespace execution explainings|[ExplainDef](#explaindef)|
 |**field**  <br>*optional*|Field or index name|string|
+|**field_type**  <br>*optional*|Shows which kind of the field was used for the filtration. Non-indexed fields are usually really slow for 'scan' and should be avoided|enum (non-indexed, indexed)|
 |**items**  <br>*optional*|Count of scanned documents by this selector|integer|
 |**keys**  <br>*optional*|Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching|integer|
 |**matched**  <br>*optional*|Count of processed documents, matched this selector|integer|
@@ -2252,6 +2302,7 @@ If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not co
 
 |Name|Description|Schema|
 |---|---|---|
+|**always**  <br>*optional*|Boolean constant|boolean|
 |**cond**  <br>*optional*|Condition operator|enum (EQ, GT, GE, LE, LT, SET, ALLSET, EMPTY, RANGE, LIKE, DWITHIN)|
 |**equal_positions**  <br>*optional*|Array of array fields to be searched with equal array indexes|< [EqualPositionDef](#equalpositiondef) > array|
 |**field**  <br>*optional*|Field json path or index name for filter|string|
@@ -2260,6 +2311,7 @@ If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not co
 |**join_query**  <br>*optional*||[JoinedDef](#joineddef)|
 |**op**  <br>*optional*|Logic operator|enum (AND, OR, NOT)|
 |**second_field**  <br>*optional*|Second field json path or index name for filter by two fields|string|
+|**subquery**  <br>*optional*|Subquery to compare its result|[SubQuery](#subquery)|
 |**value**  <br>*optional*|Value of filter. Single integer or string for EQ, GT, GE, LE, LT condition, array of 2 elements for RANGE condition, variable len array for SET and ALLSET conditions, or something like that: '[[1, -3.5],5.0]' for DWITHIN|object|
 
 
@@ -2290,7 +2342,7 @@ Fulltext Index configuration
 |**max_total_areas_to_cache**  <br>*optional*|Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited  <br>**Maximum value** : `1000000000`|number|
 |**max_typo_len**  <br>*optional*|Maximum word length for building and matching variants with typos.  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|
 |**max_typos**  <br>*optional*|Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 2 possible typo -It will seriously increase RAM usage, and decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `4`|integer|
-|**merge_limit**  <br>*optional*|Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `65535`|integer|
+|**merge_limit**  <br>*optional*|Maximum documents count which will be processed in merge query results. Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed  <br>**Minimum value** : `0`  <br>**Maximum value** : `65000`|integer|
 |**min_relevancy**  <br>*optional*|Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned  <br>**Default** : `0.05`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**optimization**  <br>*optional*|Optimize the index by memory or by cpu  <br>**Default** : `"Memory"`|enum (Memory, CPU)|
 |**partial_match_decrease**  <br>*optional*|Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)  <br>**Minimum value** : `0`  <br>**Maximum value** : `100`|integer|
@@ -2678,6 +2730,7 @@ List of meta info of the specified namespace
 
 |Name|Description|Schema|
 |---|---|---|
+|**cache**  <br>*optional*||[cache](#namespacesconfig-cache)|
 |**copy_policy_multiplier**  <br>*optional*|Disables copy policy if namespace size is greater than copy_policy_multiplier * start_copy_policy_tx_size|integer|
 |**index_updates_counting_mode**  <br>*optional*|Enables 'simple counting mode' for index updates tracker. This will increase index optimization time, however may reduce insertion time|boolean|
 |**join_cache_mode**  <br>*optional*|Join cache mode|enum (aggressive)|
@@ -2694,6 +2747,20 @@ List of meta info of the specified namespace
 |**tx_size_to_always_copy**  <br>*optional*|Force namespace copying for transaction with steps count greater than this value|integer|
 |**unload_idle_threshold**  <br>*optional*|Unload namespace data from RAM after this idle timeout in seconds. If 0, then data should not be unloaded|integer|
 |**wal_size**  <br>*optional*|Maximum WAL size for this namespace (maximum count of WAL records)|integer|
+
+
+**cache**
+
+|Name|Description|Schema|
+|---|---|---|
+|**ft_index_cache_size**  <br>*optional*|Max size of the fulltext indexes IdSets cache in bytes (per index). Each fulltext index has it's own independant cache. This cache is used in any selections to store resulting sets of internal document IDs, FT ranks and highlighted areas (it does not stores documents' content itself)|integer|
+|**ft_index_hits_to_cache**  <br>*optional*|Default 'hits to cache' for fulltext index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast|integer|
+|**index_idset_cache_size**  <br>*optional*|Max size of the index IdSets cache in bytes (per index). Each index has it's own independant cache. This cache is used in any selections to store resulting sets of internal document IDs (it does not stores documents' content itself)|integer|
+|**index_idset_hits_to_cache**  <br>*optional*|Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast|integer|
+|**joins_preselect_cache_size**  <br>*optional*|Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)|integer|
+|**joins_preselect_hit_to_cache**  <br>*optional*|Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast|integer|
+|**query_count_cache_size**  <br>*optional*|Max size of the cache for COUNT_CACHED() aggreagetion in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations|integer|
+|**query_count_hit_to_cache**  <br>*optional*|Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast|integer|
 
 
 
@@ -2823,7 +2890,7 @@ Performance statistics per each query
 |Name|Description|Schema|
 |---|---|---|
 |**cluster_id**  <br>*optional*|Cluser ID - must be same for client and for master|integer|
-|**server_id**  <br>*optional*|ID of the current node. Must be unique for each node in cluster|integer|
+|**server_id**  <br>*optional*|Node identifier. Should be unique for each node in the replicated cluster (non-unique IDs are also allowed, but may lead to the inconsistency in some cases  <br>**Maximum value** : `999`|integer|
 
 
 
@@ -2935,8 +3002,34 @@ Specifies results sorting order
 |Name|Description|Schema|
 |---|---|---|
 |**description**  <br>*optional*|Text description of error details|string|
-|**response_code**  <br>*optional*|Error code:<br> * 0 - errOK<br> * 1 - errParseSQL<br> * 2 - errQueryExec<br> * 3 - errParams<br> * 4 - errLogic<br> * 5 - errParseJson<br> * 6 - errParseDSL<br> * 7 - errConflict<br> * 8 - errParseBin<br> * 9 - errForbidden<br> * 10 - errWasRelock<br> * 11 - errNotValid<br> * 12 - errNetwork<br> * 13 - errNotFound<br> * 14 - errStateInvalidated<br> * 15 - errBadTransaction<br> * 16 - errOutdatedWAL<br> * 17	- errNoWAL<br> * 18 - errDataHashMismatch|integer|
-|**success**  <br>*optional*|Status of operation|boolean|
+|**response_code**  <br>*optional*|Duplicates HTTP response code|integer|
+|**success**  <br>*optional*||boolean|
+
+
+
+### SubQuery
+Subquery object. It must contain either 'select_filters' for the single field, single aggregation or must be matched againts 'is null'/'is not null conditions'
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**aggregations**  <br>*optional*|Ask query calculate aggregation|< [SubQueryAggregationsDef](#subqueryaggregationsdef) > array|
+|**filters**  <br>*optional*|Filter for results documents|< [FilterDef](#filterdef) > array|
+|**limit**  <br>*optional*|Maximum count of returned items|integer|
+|**namespace**  <br>*required*|Namespace name|string|
+|**offset**  <br>*optional*|Offset of first returned item|integer|
+|**req_total**  <br>*optional*|Ask query to calculate total documents, match condition  <br>**Default** : `"disabled"`|enum (disabled, enabled, cached)|
+|**select_filter**  <br>*optional*|Filter fields of returned document. Can be dot separated, e.g 'subobject.field'|< string > array|
+|**sort**  <br>*optional*|Specifies results sorting order|< [SortDef](#sortdef) > array|
+
+
+
+### SubQueryAggregationsDef
+
+|Name|Description|Schema|
+|---|---|---|
+|**fields**  <br>*required*|Fields or indexes names for aggregation function|< string > array|
+|**type**  <br>*required*|Aggregation function|enum (SUM, AVG, MIN, MAX)|
 
 
 

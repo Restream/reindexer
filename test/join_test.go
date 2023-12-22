@@ -6,8 +6,10 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/restream/reindexer/v4"
+	"github.com/restream/reindexer/v4/bindings/builtinserver/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -743,5 +745,94 @@ func TestExplainJoin(t *testing.T) {
 				},
 			},
 		},
+	})
+}
+
+type strictJoinHandlerNs struct {
+	Id         int                    `reindex:"id,,pk"`
+	Data       int                    `reindex:"data"`
+	JoinedData []*strictJoinHandlerNs `reindex:"joined_data,,joined"`
+}
+
+func initNsForStrictJoinHandlers(t *testing.T, db *reindexer.Reindexer, ns string, count int) {
+	db.DropNamespace(ns)
+	err := db.OpenNamespace(ns, reindexer.DefaultNamespaceOptions().NoStorage(), strictJoinHandlerNs{})
+	assert.NoError(t, err)
+	tx := db.MustBeginTx(ns)
+	for i := 0; i < count; i++ {
+		err = tx.Upsert(strictJoinHandlerNs{i, i, nil})
+		assert.NoError(t, err)
+	}
+	tx.MustCommit()
+}
+
+func TestStrictJoinHandlers(t *testing.T) {
+	if len(DB.slaveList) > 0 {
+		t.Skip()
+	}
+	t.Parallel()
+
+	nsMain := "strict_join_handlers_main"
+	nsJoined := "strict_join_handlers_joined"
+
+	cfg := config.DefaultServerConfig()
+	cfg.Net.HTTPAddr = "0:17173"
+	cfg.Net.RPCAddr = "0:17174"
+	cfg.Storage.Path = ""
+
+	db := reindexer.NewReindex("builtinserver://xxx", reindexer.WithServerConfig(time.Second*100, cfg), reindexer.WithStrictJoinHandlers())
+	defer db.Close()
+	assert.NoError(t, db.Status().Err)
+
+	initNsForStrictJoinHandlers(t, db, nsMain, 5)
+	initNsForStrictJoinHandlers(t, db, nsJoined, 20)
+
+	t.Run("expecting error without join handler", func(t *testing.T) {
+		qjoin := db.Query(nsJoined).Where("data", reindexer.GT, 0)
+		_, err := db.Query(nsMain).
+			InnerJoin(qjoin, "joined_data").
+			On("id", reindexer.EQ, "id").
+			Exec().FetchAll()
+		require.ErrorContains(t, err, "join handler is missing.")
+	})
+
+	t.Run("expecting error with join handler returning 'true'", func(t *testing.T) {
+		mainQ := db.Query(nsMain)
+		qjoin := db.Query(nsJoined).Where("data", reindexer.GT, 0)
+		mainQ.InnerJoin(qjoin, "joined_data").On("id", reindexer.EQ, "id")
+		_, err := mainQ.
+			JoinHandler("joined_data", func(field string, item interface{}, subitems []interface{}) bool { return true }).
+			Exec().FetchAll()
+		require.ErrorContains(t, err, "join handler was found, but returned 'true' and the field was handled via reflection.")
+	})
+
+	t.Run("expecting success with join handler returning 'false'", func(t *testing.T) {
+		mainQ := db.Query(nsMain)
+		qjoin := db.Query(nsJoined).Where("data", reindexer.GT, 0)
+		mainQ.InnerJoin(qjoin, "joined_data").On("id", reindexer.EQ, "id")
+		_, err := mainQ.
+			JoinHandler("joined_data", func(field string, item interface{}, subitems []interface{}) bool { return false }).
+			Exec().FetchAll()
+		require.NoError(t, err)
+	})
+
+	t.Run("expecting success with join handler returning 'false' set via joined query", func(t *testing.T) {
+		qjoin := db.Query(nsJoined).Where("data", reindexer.GT, 0)
+		_, err := db.Query(nsMain).
+			InnerJoin(qjoin, "joined_data").
+			On("id", reindexer.EQ, "id").
+			JoinHandler("joined_data", func(field string, item interface{}, subitems []interface{}) bool { return false }).
+			Exec().FetchAll()
+		require.NoError(t, err)
+	})
+
+	t.Run("expecting error with join handler set before the actual join", func(t *testing.T) {
+		qjoin := db.Query(nsJoined).Where("data", reindexer.GT, 0)
+		_, err := db.Query(nsMain).
+			JoinHandler("joined_data", func(field string, item interface{}, subitems []interface{}) bool { return false }).
+			InnerJoin(qjoin, "joined_data").
+			On("id", reindexer.EQ, "id").
+			Exec().FetchAll()
+		require.ErrorContains(t, err, "join handler is missing.")
 	})
 }

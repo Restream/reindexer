@@ -15,6 +15,8 @@
 #include "statscollect/istatswatcher.h"
 #include "tools/semversion.h"
 
+#include "replv3/rpcupdatespusher.h"
+
 namespace reindexer {
 struct TxStats;
 }
@@ -24,7 +26,9 @@ namespace reindexer_server {
 using namespace reindexer::net;
 using namespace reindexer;
 
-struct RPCClientData : public cproto::ClientData {
+enum class RPCSocketT : bool { Unx, TCP };
+
+struct RPCClientData final : public cproto::ClientData {
 	~RPCClientData();
 	h_vector<RPCQrId, 8> results;
 	h_vector<std::pair<Snapshot, bool>, 1> snapshots;
@@ -36,6 +40,11 @@ struct RPCClientData : public cproto::ClientData {
 	int connID;
 	SemVersion rxVersion;
 	BindingCapabilities caps;
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+	cproto::RPCUpdatesPusher pusher;
+	bool subscribed;
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 };
 
 class RPCServer {
@@ -44,7 +53,7 @@ public:
 			  IStatsWatcher *statsCollector = nullptr);
 	~RPCServer();
 
-	bool Start(const std::string &addr, ev::dynamic_loop &loop);
+	bool Start(const std::string &addr, ev::dynamic_loop &loop, RPCSocketT sockDomain, std::string_view threadingMode);
 	void Stop() {
 		terminate_ = true;
 		if (qrWatcherThread_.joinable()) {
@@ -88,16 +97,16 @@ public:
 	Error StartTransaction(cproto::Context &ctx, p_string nsName);
 
 	Error AddTxItem(cproto::Context &ctx, int format, p_string itemData, int mode, p_string percepsPack, int stateToken, int64_t txID);
-	Error DeleteQueryTx(cproto::Context &ctx, p_string query, int64_t txID);
-	Error UpdateQueryTx(cproto::Context &ctx, p_string query, int64_t txID);
-	Error PutMetaTx(cproto::Context &ctx, p_string key, p_string data, int64_t txID);
-	Error SetTagsMatcherTx(cproto::Context &ctx, int64_t statetoken, int64_t version, p_string data, int64_t txID);
+	Error DeleteQueryTx(cproto::Context &ctx, p_string query, int64_t txID) noexcept;
+	Error UpdateQueryTx(cproto::Context &ctx, p_string query, int64_t txID) noexcept;
+	Error PutMetaTx(cproto::Context &ctx, p_string key, p_string data, int64_t txID) noexcept;
+	Error SetTagsMatcherTx(cproto::Context &ctx, int64_t statetoken, int64_t version, p_string data, int64_t txID) noexcept;
 
 	Error CommitTx(cproto::Context &ctx, int64_t txId, std::optional<int> flags);
 	Error RollbackTx(cproto::Context &ctx, int64_t txId);
 
-	Error DeleteQuery(cproto::Context &ctx, p_string query, std::optional<int> flags);
-	Error UpdateQuery(cproto::Context &ctx, p_string query, std::optional<int> flags);
+	Error DeleteQuery(cproto::Context &ctx, p_string query, std::optional<int> flags) noexcept;
+	Error UpdateQuery(cproto::Context &ctx, p_string query, std::optional<int> flags) noexcept;
 
 	Error Select(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
 	Error SelectSQL(cproto::Context &ctx, p_string query, int flags, int limit, p_string ptVersions);
@@ -129,7 +138,7 @@ public:
 	void OnResponse(cproto::Context &ctx);
 
 protected:
-	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, int fetchLimit, cproto::Context &ctx);
+	Error execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, int fetchLimit, cproto::Context &ctx) noexcept;
 	Error sendResults(cproto::Context &ctx, QueryResults &qr, RPCQrId id, const ResultFetchOpts &opts);
 	Error processTxItem(DataFormat format, std::string_view itemData, Item &item, ItemModifyMode mode, int stateToken) const noexcept;
 
@@ -144,7 +153,7 @@ protected:
 
 	Reindexer getDB(cproto::Context &ctx, UserRole role);
 	void cleanupTmpNamespaces(RPCClientData &clientData, std::string_view activity = "tmp_ns_cleanup_on_close");
-	constexpr static std::string_view statsSourceName() { return std::string_view{"rpc"}; }
+	constexpr static std::string_view statsSourceName() noexcept { return std::string_view{"rpc"}; }
 
 	DBManager &dbMgr_;
 	cproto::Dispatcher dispatcher_;
@@ -161,6 +170,7 @@ protected:
 	RPCQrWatcher qrWatcher_;
 	std::atomic<bool> terminate_ = {false};
 	ev::async qrWatcherTerminateAsync_;
+	std::string_view protocolName_;
 };
 
 }  // namespace reindexer_server

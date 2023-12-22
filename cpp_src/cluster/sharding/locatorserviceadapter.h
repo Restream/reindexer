@@ -27,6 +27,7 @@ public:
 	}
 	std::shared_ptr<client::Reindexer> GetShardConnection(std::string_view ns, int shardId, Error &status);
 	int ActualShardId() const noexcept;
+	int64_t SourceId() const noexcept;
 	int GetShardId(std::string_view ns, const Item &item) const;
 	ShardIDsContainer GetShardId(const Query &q) const;
 

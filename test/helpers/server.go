@@ -244,6 +244,7 @@ func ConfigureReplication(t *testing.T, rx *reindexer.Reindexer, role string, ns
 			Namespaces:        ns,
 			Nodes:             nodes,
 			RetrySyncInterval: 100,
+			LogLevel:          "info",
 		},
 	})
 	require.NoError(t, err)

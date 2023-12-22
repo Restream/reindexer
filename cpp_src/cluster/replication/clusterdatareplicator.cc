@@ -1,6 +1,6 @@
 #include "clusterdatareplicator.h"
 #include "core/defnsconfigs.h"
-#include "core/reindexerimpl.h"
+#include "core/reindexer_impl/reindexerimpl.h"
 #include "tools/randomgenerator.h"
 
 namespace reindexer {

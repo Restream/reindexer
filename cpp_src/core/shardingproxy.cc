@@ -18,16 +18,17 @@ void ShardingProxy::ShutdownCluster() {
 	}
 }
 
-auto ShardingProxy::isWithSharding(const Query &q, const RdxContext &ctx, int &actualShardId) const {
+auto ShardingProxy::isWithSharding(const Query &q, const RdxContext &ctx, int &actualShardId, int64_t &cfgSourceId) const {
 	using ret_type = std::optional<decltype(shardingRouter_.SharedLock(ctx))>;
 
-	if (q.local_) {
+	if (q.IsLocal()) {
 		if (q.Type() != QuerySelect) {
 			throw Error{errParams, "Only SELECT query could be LOCAL"};
 		}
 		return ret_type{};
 	}
-	if (q.count == 0 && q.calcTotal == ModeNoTotal && !q.joinQueries_.size() && !q.mergeQueries_.size()) {
+	if (q.Limit() == 0 && q.CalcTotal() == ModeNoTotal && q.GetJoinQueries().empty() && q.GetMergeQueries().empty() &&
+		q.GetSubQueries().empty()) {
 		return ret_type{};	// Special case for tagsmatchers selects
 	}
 	if (q.IsWALQuery()) {
@@ -44,6 +45,7 @@ auto ShardingProxy::isWithSharding(const Query &q, const RdxContext &ctx, int &a
 	}
 
 	actualShardId = lockedShardingRouter->ActualShardId();
+	cfgSourceId = lockedShardingRouter->SourceId();
 
 	if (!isWithSharding(ctx)) {
 		return ret_type{};
@@ -79,16 +81,36 @@ bool ShardingProxy::isWithSharding(const RdxContext &ctx) const noexcept {
 		   int(ctx.ShardId()) == ShardingKeyType::NotSetShard;
 }
 
-ShardingProxy::ShardingProxy(ReindexerConfig cfg)
-	: impl_(std::move(cfg), activities_, {{"apply_sharding_config", [this](const gason::JsonNode &action, const RdxContext &ctx) {
-											   auto localy = action["locally"];
-											   Error (ShardingProxy::*method)(const gason::JsonNode &, const RdxContext &) noexcept =
-												   &ShardingProxy::handleNewShardingConfigLocaly;
-											   auto err = std::invoke(localy.empty() ? &ShardingProxy::handleNewShardingConfig : method,
-																	  this, action["config"], ctx);
+using ImplCallBackT = ReindexerImpl::CallbackT;
 
-											   if (!err.ok()) throw err;
-										   }}}) {}
+ShardingProxy::ShardingProxy(ReindexerConfig cfg)
+	: impl_(std::move(cfg), activities_,
+			{{{"apply_sharding_config", ImplCallBackT::Type::User},
+			  [this](const gason::JsonNode &action, const ImplCallBackT::ExtrasT &, const RdxContext &ctx) {
+				  auto &locallyNode = action["locally"];
+				  const bool locally = !locallyNode.empty() && locallyNode.As<bool>();
+				  if (locally) {
+					  const std::optional<int64_t> externalSourceId =
+						  action["source_id"].empty() ? std::optional<int64_t>() : action["source_id"].As<int64_t>();
+					  Error (ShardingProxy::*method)(const gason::JsonNode &, std::optional<int64_t>, const RdxContext &) noexcept =
+						  &ShardingProxy::handleNewShardingConfigLocally;
+					  auto err = std::invoke(method, this, action["config"], externalSourceId, ctx);
+					  if (!err.ok()) throw err;
+				  } else {
+					  auto err = std::invoke(&ShardingProxy::handleNewShardingConfig, this, action["config"], ctx);
+					  if (!err.ok()) throw err;
+				  }
+			  }},
+			 {{"leader_config_process", ImplCallBackT::Type::System},
+			  [this](const gason::JsonNode &config, const ImplCallBackT::ExtrasT &extras, const RdxContext &ctx) {
+				  auto *sourceIdPtr = std::get_if<ImplCallBackT::SourceIdT>(&extras);
+				  std::optional<int64_t> externalSourceId;
+				  if (sourceIdPtr) {
+					  externalSourceId = sourceIdPtr->sourceId;
+				  }
+				  auto err = handleNewShardingConfigLocally<>(config, externalSourceId, ctx);
+				  if (!err.ok()) throw err;
+			  }}}) {}
 
 Error ShardingProxy::Connect(const std::string &dsn, ConnectOpts opts) {
 	try {
@@ -116,7 +138,7 @@ Error ShardingProxy::Connect(const std::string &dsn, ConnectOpts opts) {
 }
 
 template <ShardingProxy::ConfigResetFlag resetFlag>
-[[nodiscard]] Error ShardingProxy::resetShardingConfigs(int64_t sourceId, const RdxContext &ctx) noexcept {
+Error ShardingProxy::resetShardingConfigs(int64_t sourceId, const RdxContext &ctx) noexcept {
 	try {
 		// To avoid connection errors, it is necessary to copy the connections from the current ShardingConfig
 		// since ParallelExecutor consistently calls the functions that disconnect shards
@@ -178,7 +200,19 @@ void ShardingProxy::obtainConfigForResetRouting(std::optional<cluster::ShardingC
 	}
 }
 
-[[nodiscard]] Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode &configJSON, const RdxContext &ctx) noexcept {
+int64_t ShardingProxy::generateSourceId() const {
+	using namespace std::chrono;
+	int64_t sourceId = duration_cast<microseconds>(system_clock().now().time_since_epoch()).count();
+	sourceId &= ~cluster::ShardingConfig::serverIdMask;
+	int64_t serverId = impl_.GetServerID();
+	if (serverId < 0 || serverId >= 1000) {
+		throw Error(errParams, "Incorrect serverId(%d) for sharding config sourceId generation.", serverId);
+	}
+	sourceId |= (serverId << cluster::ShardingConfig::serverIdPos);
+	return sourceId;
+}
+
+Error ShardingProxy::handleNewShardingConfig(const gason::JsonNode &configJSON, const RdxContext &ctx) noexcept {
 	try {
 		if (stringifyJson(configJSON).empty()) return Error(errParams, "New sharding config is empty");
 
@@ -196,7 +230,7 @@ void ShardingProxy::obtainConfigForResetRouting(std::optional<cluster::ShardingC
 		auto connections = router.GetAllShardsConnections(err);
 		if (!err.ok()) return err;
 
-		int64_t sourceId = tools::RandomGenerator::gets64(int64_t{0}, std::numeric_limits<int64_t>::max());
+		auto sourceId = generateSourceId();
 
 		ParallelExecutor execNodes(router.ActualShardId());
 
@@ -234,15 +268,17 @@ void ShardingProxy::obtainConfigForResetRouting(std::optional<cluster::ShardingC
 			ctx, std::move(connections), &client::Reindexer::ApplyNewShardingConfig, [](int64_t) { return Error(); }, sourceId);
 
 		// Rollback config candidates or applied configs if any errors occured on ApplyNewShardingConfig stage
-		if (!err.ok())
+		if (!err.ok()) {
 			return Error(err.code(), err.what() + ".\n" + resetShardingConfigs<ConfigResetFlag::RollbackApplied>(sourceId, ctx).what());
+		}
 
 		return Error();
 	}
 	CATCH_AND_RETURN
 }
 
-[[nodiscard]] Error ShardingProxy::handleNewShardingConfigLocaly(const gason::JsonNode &configJSON, const RdxContext &ctx) noexcept {
+Error ShardingProxy::handleNewShardingConfigLocally(const gason::JsonNode &configJSON, std::optional<int64_t> externalSourceId,
+													const RdxContext &ctx) noexcept {
 	try {
 		if (configJSON.empty()) {
 			if (auto lockedConfigCandidate = configCandidate_.SharedLock(ctx); lockedConfigCandidate.Config())
@@ -258,20 +294,27 @@ void ShardingProxy::obtainConfigForResetRouting(std::optional<cluster::ShardingC
 			return Error();
 		}
 
-		return handleNewShardingConfigLocaly<>(configJSON, ctx);
+		return handleNewShardingConfigLocally<>(configJSON, externalSourceId, ctx);
 	}
 	CATCH_AND_RETURN
 }
 
 template <typename ConfigType>
-[[nodiscard]] Error ShardingProxy::handleNewShardingConfigLocaly(const ConfigType &rawConfig, const RdxContext &ctx) noexcept {
+Error ShardingProxy::handleNewShardingConfigLocally(const ConfigType &rawConfig, std::optional<int64_t> externalSourceId,
+													const RdxContext &ctx) noexcept {
 	try {
 		cluster::ShardingConfig config;
 		auto err = config.FromJSON(rawConfig);
 		if (!err.ok()) return err;
 
-		int64_t sourceId = tools::RandomGenerator::gets64(int64_t{0}, std::numeric_limits<int64_t>::max());
-		logPrintf(LogInfo, "Start attempt applying sharding config locally. Source - %d", sourceId);
+		int64_t sourceId;
+		if (externalSourceId.has_value()) {
+			sourceId = externalSourceId.value();
+			logPrintf(LogInfo, "Start attempt applying sharding config locally. Forced source id - %d", sourceId);
+		} else {
+			sourceId = generateSourceId();
+			logPrintf(LogInfo, "Start attempt applying sharding config locally. Generated source id - %d", sourceId);
+		}
 
 		saveShardingCfgCandidateImpl(std::move(config), sourceId, ctx);
 		applyNewShardingConfig({sourceId}, ctx);
@@ -302,26 +345,27 @@ bool ShardingProxy::needProxyWithinCluster(const RdxContext &ctx) {
 }
 
 namespace {
-using ShardingReqType = sharding::ShardingControlRequestData::Type;
-using EnumsOrder = meta::Values2Types<ShardingReqType::SaveCandidate, ShardingReqType::ResetOldSharding, ShardingReqType::ApplyNew,
-									  ShardingReqType::ResetCandidate, ShardingReqType::RollbackCandidate>;
+using ReqT = sharding::ShardingControlRequestData::Type;
+using ClusterProxyMethods = meta::Map<RDX_META_PAIR(ReqT::SaveCandidate, &ClusterProxy::SaveShardingCfgCandidate),
+									  RDX_META_PAIR(ReqT::ResetOldSharding, &ClusterProxy::ResetOldShardingConfig),
+									  RDX_META_PAIR(ReqT::ApplyNew, &ClusterProxy::ApplyShardingCfgCandidate),
+									  RDX_META_PAIR(ReqT::ResetCandidate, &ClusterProxy::ResetShardingConfigCandidate),
+									  RDX_META_PAIR(ReqT::RollbackCandidate, &ClusterProxy::RollbackShardingConfigCandidate)>;
 
-using ClusterProxyMethods =
-	meta::Map<EnumsOrder, meta::Values2Types<&ClusterProxy::SaveShardingCfgCandidate, &ClusterProxy::ResetOldShardingConfig,
-											 &ClusterProxy::ApplyShardingCfgCandidate, &ClusterProxy::ResetShardingConfigCandidate,
-											 &ClusterProxy::RollbackShardingConfigCandidate>>;
-
-using RequestEnum2Types =
-	meta::Map<EnumsOrder, std::tuple<sharding::SaveConfigCommand, sharding::ResetConfigCommand, sharding::ApplyConfigCommand,
-									 sharding::ResetConfigCommand, sharding::ResetConfigCommand>>;
+using RequestEnum2Types = meta::Map<
+	RDX_META_PAIR(ReqT::SaveCandidate, sharding::SaveConfigCommand), RDX_META_PAIR(ReqT::ResetOldSharding, sharding::ResetConfigCommand),
+	RDX_META_PAIR(ReqT::ApplyNew, sharding::ApplyConfigCommand), RDX_META_PAIR(ReqT::ResetCandidate, sharding::ResetConfigCommand),
+	RDX_META_PAIR(ReqT::RollbackCandidate, sharding::ResetConfigCommand)>;
 
 }  // namespace
 
 struct ShardingProxy::ShardingProxyMethods {
-	using Map = meta::Map<EnumsOrder, meta::Values2Types<&ShardingProxy::saveShardingCfgCandidate,
-														 &ShardingProxy::resetOrRollbackShardingConfig<ConfigResetFlag::ResetExistent>,
-														 &ShardingProxy::applyNewShardingConfig, &ShardingProxy::resetConfigCandidate,
-														 &ShardingProxy::resetOrRollbackShardingConfig<ConfigResetFlag::RollbackApplied>>>;
+	using Map =
+		meta::Map<RDX_META_PAIR(ReqT::SaveCandidate, &ShardingProxy::saveShardingCfgCandidate),
+				  RDX_META_PAIR(ReqT::ResetOldSharding, &ShardingProxy::resetOrRollbackShardingConfig<ConfigResetFlag::ResetExistent>),
+				  RDX_META_PAIR(ReqT::ApplyNew, &ShardingProxy::applyNewShardingConfig),
+				  RDX_META_PAIR(ReqT::ResetCandidate, &ShardingProxy::resetConfigCandidate),
+				  RDX_META_PAIR(ReqT::RollbackCandidate, &ShardingProxy::resetOrRollbackShardingConfig<ConfigResetFlag::RollbackApplied>)>;
 };
 
 template <auto RequestType, typename Request>
@@ -344,8 +388,7 @@ void ShardingProxy::shardingControlRequestAction(const Request &request, const R
 	(this->*ShardingProxyMethods::Map::GetValue<RequestType>())(std::move(data), ctx);
 }
 
-[[nodiscard]] Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlRequestData &request,
-														  const RdxContext &ctx) noexcept {
+Error ShardingProxy::ShardingControlRequest(const sharding::ShardingControlRequestData &request, const RdxContext &ctx) noexcept {
 	try {
 		using Type = sharding::ShardingControlRequestData::Type;
 
@@ -372,12 +415,12 @@ void ShardingProxy::shardingControlRequestAction(const Request &request, const R
 			}
 			case Type::ApplyLeaderConfig: {
 				assertrx(!ctx.GetOriginLSN().isEmpty());
-				const auto &data = std::get<sharding::SaveConfigCommand>(request.data);
-				return data.config.empty() ? handleNewShardingConfigLocaly(gason::JsonNode::EmptyNode(), ctx)
-										   : handleNewShardingConfigLocaly(data.config, ctx);
+				const auto &data = std::get<sharding::ApplyLeaderConfigCommand>(request.data);
+				return data.config.empty() ? handleNewShardingConfigLocally(gason::JsonNode::EmptyNode(), std::optional<int64_t>(), ctx)
+										   : handleNewShardingConfigLocally<>(data.config, data.sourceId, ctx);
 			}
 			default:
-				throw Error(errLogic, "Unsupported sharding request command");
+				throw Error(errLogic, "Unsupported sharding request command: %d", int(request.type));
 		}
 	}
 	CATCH_AND_RETURN
@@ -408,12 +451,12 @@ void ShardingProxy::saveShardingCfgCandidateImpl(cluster::ShardingConfig config,
 					"Config candidate is busy already (when trying to save a new config). Received Source - %d. Current sourceId - %d",
 					sourceId, lockedConfigCandidate.SourceId());
 	}
+	config.sourceId = sourceId;
 
 	lockedConfigCandidate.EnableReseter(false);
 	if (lockedConfigCandidate.Reseter().joinable()) lockedConfigCandidate.Reseter().join();
 	lockedConfigCandidate.EnableReseter();
 
-	impl_.SaveNewShardingConfigFile(config);
 	lockedConfigCandidate.SourceId() = sourceId;
 	lockedConfigCandidate.Config() = std::move(config);
 
@@ -510,6 +553,8 @@ void ShardingProxy::applyNewShardingConfig(const sharding::ApplyConfigCommand &d
 	}
 
 	auto lockedShardingRouter = shardingRouter_.UniqueLock(ctx);
+
+	impl_.SaveNewShardingConfigFile(*config);
 
 	auto err = impl_.ResetShardingConfig(std::move(*config));
 	// TODO: after allowing actions to upsert #config namespace, make ApplyNewShardingConfig returned void, allow except here
@@ -809,10 +854,12 @@ Error ShardingProxy::Update(const Query &query, QueryResults &result, const RdxC
 		auto updateFn = [this](const Query &q, LocalQueryResults &qr, const RdxContext &ctx) { return impl_.Update(q, qr, ctx); };
 
 		int actualShardId = ShardingKeyType::NotSharded;
+		int64_t shardingVersion = -1;
 		result.SetQuery(&query);
-		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId)) {
+		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId, shardingVersion)) {
 			return executeQueryOnShard(*lckRouterOpt, query, result, 0, ctx, std::move(updateFn));
 		}
+		result.SetShardingConfigVersion(shardingVersion);
 		result.AddQr(LocalQueryResults{}, actualShardId);
 		return updateFn(query, result.ToLocalQr(false), ctx);
 	} catch (Error &e) {
@@ -884,9 +931,11 @@ Error ShardingProxy::Delete(const Query &query, QueryResults &result, const RdxC
 
 		result.SetQuery(&query);
 		int actualShardId = ShardingKeyType::NotSharded;
-		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId)) {
+		int64_t shardingVersion = -1;
+		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId, shardingVersion)) {
 			return executeQueryOnShard(*lckRouterOpt, query, result, 0, ctx, std::move(deleteFn));
 		}
+		result.SetShardingConfigVersion(shardingVersion);
 		result.AddQr(LocalQueryResults{}, actualShardId);
 		return deleteFn(query, result.ToLocalQr(false), ctx);
 	} catch (Error &e) {
@@ -896,8 +945,7 @@ Error ShardingProxy::Delete(const Query &query, QueryResults &result, const RdxC
 
 Error ShardingProxy::Select(std::string_view sql, QueryResults &result, unsigned proxyFetchLimit, const RdxContext &ctx) {
 	try {
-		Query query;
-		query.FromSQL(sql);
+		const Query query = Query::FromSQL(sql);
 		switch (query.type_) {
 			case QuerySelect: {
 				return Select(query, result, proxyFetchLimit, ctx);
@@ -909,7 +957,7 @@ Error ShardingProxy::Select(std::string_view sql, QueryResults &result, unsigned
 				return Update(query, result, ctx);
 			}
 			case QueryTruncate: {
-				return TruncateNamespace(query.Namespace(), ctx);
+				return TruncateNamespace(query.NsName(), ctx);
 			}
 			default:
 				return Error(errLogic, "Incorrect sql type %d", query.type_);
@@ -927,11 +975,13 @@ Error ShardingProxy::Select(const Query &query, QueryResults &result, unsigned p
 
 		result.SetQuery(&query);
 		int actualShardId = ShardingKeyType::NotSharded;
-		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId)) {
+		int64_t shardingVersion = -1;
+		if (auto lckRouterOpt = isWithSharding(query, ctx, actualShardId, shardingVersion)) {
 			return executeQueryOnShard(
 				*lckRouterOpt, query, result, proxyFetchLimit, ctx,
 				[this](const Query &q, LocalQueryResults &qr, const RdxContext &ctx) { return impl_.Select(q, qr, ctx); });
 		}
+		result.SetShardingConfigVersion(shardingVersion);
 		result.AddQr(LocalQueryResults{}, actualShardId);
 		return impl_.Select(query, result.ToLocalQr(false), ctx);
 	} catch (const Error &err) {
@@ -1042,16 +1092,21 @@ Error ShardingProxy::EnumMeta(std::string_view nsName, std::vector<std::string> 
 
 template <typename ShardingRouterLock>
 bool ShardingProxy::isSharderQuery(const Query &q, const ShardingRouterLock &shLockShardingRouter) const {
-	if (isSharded(q.Namespace(), shLockShardingRouter)) {
+	if (isSharded(q.NsName(), shLockShardingRouter)) {
 		return true;
 	}
-	for (const auto &jq : q.joinQueries_) {
-		if (isSharded(jq.Namespace(), shLockShardingRouter)) {
+	for (const auto &jq : q.GetJoinQueries()) {
+		if (isSharded(jq.NsName(), shLockShardingRouter)) {
 			return true;
 		}
 	}
-	for (const auto &mq : q.mergeQueries_) {
-		if (isSharded(mq.Namespace(), shLockShardingRouter)) {
+	for (const auto &mq : q.GetMergeQueries()) {
+		if (isSharded(mq.NsName(), shLockShardingRouter)) {
+			return true;
+		}
+	}
+	for (const auto &sq : q.GetSubQueries()) {
+		if (isSharded(sq.NsName(), shLockShardingRouter)) {
 			return true;
 		}
 	}
@@ -1220,6 +1275,7 @@ Error ShardingProxy::modifyItemOnShard(LockedRouter &lockedShardingRouter, const
 	if (!status.ok()) {
 		return status;
 	}
+	result.SetShardingConfigVersion(lockedShardingRouter->SourceId());
 	if (connection) {
 		client::Item clientItem = toClientItem(nsName, connection.get(), item);
 		client::QueryResults qrClient(result.Flags(), 0);
@@ -1240,11 +1296,7 @@ Error ShardingProxy::modifyItemOnShard(LockedRouter &lockedShardingRouter, const
 		return status;
 	}
 	result.AddQr(LocalQueryResults(), actualShardId);
-	status = localFn(nsName, item, result.ToLocalQr(false));
-	if (!status.ok()) {
-		return status;
-	}
-	return status;
+	return localFn(nsName, item, result.ToLocalQr(false));
 }
 
 template <typename LockedRouter, typename LocalFT>
@@ -1270,6 +1322,8 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter &lockedShardingRouter, con
 			return Error(errLogic, "Delete request can be executed on one node only.");
 		}
 
+		const auto shardingVersion = lockedShardingRouter->SourceId();
+		result.SetShardingConfigVersion(shardingVersion);
 		const bool isDistributedQuery = connections.size() > 1;
 		if (!isDistributedQuery) {
 			assert(connections.size() == 1);
@@ -1287,6 +1341,11 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter &lockedShardingRouter, con
 				client::QueryResults qrClient(result.Flags(), proxyFetchLimit, client::LazyQueryResultsMode{});
 				status = executeQueryOnClient(connection, query, qrClient, [](size_t, size_t) {});
 				if (status.ok()) {
+					if (qrClient.GetShardingConfigVersion() != shardingVersion) {
+						return Error(errLogic,
+									 "Proxied query: local and remote sharding versions (config source IDs) are different: %d vs %d",
+									 shardingVersion, qrClient.GetShardingConfigVersion());
+					}
 					result.AddQr(std::move(qrClient), connections[0].ShardId(), true);
 				}
 
@@ -1300,22 +1359,23 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter &lockedShardingRouter, con
 				}
 			}
 			return status;
-		} else if (query.count == UINT_MAX && query.start == 0 && query.sortingEntries_.empty()) {
+		} else if (query.Limit() == QueryEntry::kDefaultLimit && query.Offset() == QueryEntry::kDefaultOffset &&
+				   query.sortingEntries_.empty()) {
 			ParallelExecutor exec(actualShardId);
 			return exec.ExecSelect(query, result, connections, ctx, std::forward<LocalFT>(localAction));
 		} else {
-			unsigned limit = query.count;
-			unsigned offset = query.start;
+			unsigned limit = query.Limit();
+			unsigned offset = query.Offset();
 
 			Query distributedQuery(query);
 			if (!distributedQuery.sortingEntries_.empty()) {
-				const auto ns = impl_.GetNamespacePtr(distributedQuery.Namespace(), ctx)->getMainNs();
+				const auto ns = impl_.GetNamespacePtr(distributedQuery.NsName(), ctx)->getMainNs();
 				result.SetOrdering(distributedQuery, *ns, ctx);
 			}
-			if (distributedQuery.count != UINT_MAX && !distributedQuery.sortingEntries_.empty()) {
-				distributedQuery.Limit(distributedQuery.start + distributedQuery.count);
+			if (distributedQuery.Limit() != QueryEntry::kDefaultLimit && !distributedQuery.sortingEntries_.empty()) {
+				distributedQuery.Limit(distributedQuery.Offset() + distributedQuery.Limit());
 			}
-			if (distributedQuery.start != 0) {
+			if (distributedQuery.Offset() != QueryEntry::kDefaultOffset) {
 				if (distributedQuery.sortingEntries_.empty()) {
 					distributedQuery.ReqTotal();
 				} else {
@@ -1348,6 +1408,12 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter &lockedShardingRouter, con
 													  calculateNewLimitOfsset(count, totalCount, limit, offset);
 												  });
 					if (status.ok()) {
+						if (qrClient.GetShardingConfigVersion() != shardingVersion) {
+							return Error(
+								errLogic,
+								"Distributed query: local and remote sharding versions (config source IDs) are different: %d vs %d",
+								shardingVersion, qrClient.GetShardingConfigVersion());
+						}
 						result.AddQr(std::move(qrClient), connections[i].ShardId(), (i + 1) == connections.size());
 					}
 				} else {
@@ -1367,7 +1433,7 @@ Error ShardingProxy::executeQueryOnShard(LockedRouter &lockedShardingRouter, con
 						return status;
 					}
 				}
-				if (distributedQuery.calcTotal == ModeNoTotal && limit == 0 && (i + 1) != connections.size()) {
+				if (distributedQuery.CalcTotal() == ModeNoTotal && limit == 0 && (i + 1) != connections.size()) {
 					result.RebuildMergedData();
 					break;
 				}

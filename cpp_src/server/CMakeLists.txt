@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.0)
 project(reindexer_server_library)
 
 set (SWAGGER_VERSION "2.x")
-set (GH_FACE_VERSION "4.12.0")
+set (GH_FACE_VERSION "4.13.0")
 set (GH_FACE_TAG "v${GH_FACE_VERSION}")
 set (TARGET reindexer_server_library)
 set (SERVER_LIB_DIR ${PROJECT_BINARY_DIR} PARENT_SCOPE)
@@ -112,6 +112,7 @@ file(GLOB SRCS
   pprof/*
   statscollect/*
   cbinding/*
+  replv3/*
 )
 list(APPEND REINDEXER_LIBRARIES m)
 add_library(${TARGET} STATIC ${SRCS})
@@ -190,4 +191,16 @@ if (NOT WIN32)
       ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
   )
   install(DIRECTORY ${PROJECT_BINARY_DIR}/pkgconfig DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT dev)
+else()
+    if (GO_BUILTIN_EXPORT_PKG_PATH AND EXISTS "${GO_BUILTIN_EXPORT_PKG_PATH}/windows_config.go.in")
+      set (cgo_ld_flags "-L\${SRCDIR}/../../build/cpp_src/ -lreindexer_server_library ${EXTRA_FLAGS}")
+      generate_libs_list("${REINDEXER_LIBRARIES}" cgo_ld_flags)
+      string(REPLACE ";" "" cgo_ld_flags "${cgo_ld_flags}")
+      configure_file (
+        "${GO_BUILTIN_SERVER_EXPORT_PKG_PATH}/windows_config.go.in"
+        "${GO_BUILTIN_SERVER_EXPORT_PKG_PATH}/builtinserver_windows.go"
+        @ONLY
+      )
+      unset (cgo_ld_flags)
+    endif ()
 endif ()

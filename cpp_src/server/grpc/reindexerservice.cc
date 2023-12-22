@@ -527,8 +527,7 @@ Error ReindexerService::buildItems(WrSerializer& wrser, reindexer::QueryResults&
 						wrser.PutVarUint(it.ItemsCount());
 						if (it.ItemsCount() == 0) continue;
 						LocalQueryResults jqr = it.ToQueryResults();
-						jqr.addNSContext(qr.GetPayloadType(joinedField), qr.GetTagsMatcher(joinedField), qr.GetFieldsFilter(joinedField),
-										 qr.GetSchema(joinedField));
+						jqr.addNSContext(qr, joinedField, lsn_t());
 						for (size_t i = 0; i < jqr.Count(); i++) packCJSONItem(wrser, jqr.begin() + i, opts);
 					}
 				}
@@ -936,9 +935,8 @@ Error ReindexerService::getTx(uint64_t id, TxData& txData) {
 
 Error ReindexerService::execSqlQueryByType(QueryResults& res, const SelectSqlRequest& request) {
 	try {
-		reindexer::Query q;
 		reindexer_server::UserRole requiredRole;
-		q.FromSQL(request.sql());
+		reindexer::Query q = reindexer::Query::FromSQL(request.sql());
 		switch (q.Type()) {
 			case QuerySelect: {
 				requiredRole = reindexer_server::kRoleDataRead;
@@ -973,7 +971,7 @@ Error ReindexerService::execSqlQueryByType(QueryResults& res, const SelectSqlReq
 				return rx->Update(q, res);
 			}
 			case QueryTruncate: {
-				return rx->TruncateNamespace(q._namespace);
+				return rx->TruncateNamespace(q.NsName());
 			}
 			default:
 				return Error(errParams, "unknown query type %d", q.Type());

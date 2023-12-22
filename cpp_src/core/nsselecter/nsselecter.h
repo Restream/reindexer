@@ -11,7 +11,7 @@ enum class IsMergeQuery : bool { Yes = true, No = false };
 enum class IsFTQuery { Yes, No, NotSet };
 
 struct SelectCtx {
-	explicit SelectCtx(const Query &query_, const Query *parentQuery_) : query(query_), parentQuery(parentQuery_) {}
+	explicit SelectCtx(const Query &query_, const Query *parentQuery_) noexcept : query(query_), parentQuery(parentQuery_) {}
 	const Query &query;
 	JoinedSelectors *joinedSelectors = nullptr;
 	SelectFunctionsHolder *functions = nullptr;
@@ -28,6 +28,7 @@ struct SelectCtx {
 	bool inTransaction = false;
 	IsMergeQuery isMergeQuery = IsMergeQuery::No;
 	IsFTQuery isFtQuery = IsFTQuery::NotSet;
+	QueryType crashReporterQueryType = QuerySelect;
 
 	const Query *parentQuery = nullptr;
 	ExplainCalc explain;

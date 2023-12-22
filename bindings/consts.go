@@ -2,7 +2,7 @@ package bindings
 
 const CInt32Max = int(^uint32(0) >> 1)
 
-const ReindexerVersion = "v4.12.0"
+const ReindexerVersion = "v4.13.0"
 
 // public go consts from type_consts.h and reindexer_ctypes.h
 const (
@@ -24,12 +24,14 @@ const (
 	INFO    = 3
 	TRACE   = 4
 
-	AggSum      = 0
-	AggAvg      = 1
-	AggFacet    = 2
-	AggMin      = 3
-	AggMax      = 4
-	AggDistinct = 5
+	AggSum         = 0
+	AggAvg         = 1
+	AggFacet       = 2
+	AggMin         = 3
+	AggMax         = 4
+	AggDistinct    = 5
+	AggCount       = 6
+	AggCountCached = 7
 
 	CollateNone    = 0
 	CollateASCII   = 1
@@ -83,6 +85,9 @@ const (
 	QueryUpdateFieldV2          = 25
 	QueryBetweenFieldsCondition = 26
 	QueryAlwaysFalseCondition   = 27
+	QueryAlwaysTrueCondition    = 28
+	QuerySubQueryCondition      = 29
+	QueryFieldSubQueryCondition = 30
 
 	LeftJoin    = 0
 	InnerJoin   = 1
@@ -110,6 +115,7 @@ const (
 	QueryResultExplain         = 2
 	QueryResultShardingVersion = 3
 	QueryResultShardId         = 4
+	QueryResultIncarnationTags = 5
 
 	QueryStrictModeNotSet  = 0
 	QueryStrictModeNone    = 1
@@ -145,8 +151,9 @@ const (
 	ConnectOptAutorepair           = 1 << 2
 	ConnectOptWarnVersion          = 1 << 4
 
-	BindingCapabilityQrIdleTimeouts      = 1
-	BindingCapabilityResultsWithShardIDs = 1 << 1
+	BindingCapabilityQrIdleTimeouts        = 1
+	BindingCapabilityResultsWithShardIDs   = 1 << 1
+	BindingCapabilityNamespaceIncarnations = 1 << 2
 
 	ErrOK                   = 0
 	ErrParseSQL             = 1
@@ -191,5 +198,7 @@ const (
 )
 
 const (
+	ShardingNotSet   = -1
 	ShardingProxyOff = -2
+	NotSharded       = -3
 )

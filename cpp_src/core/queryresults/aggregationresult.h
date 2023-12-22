@@ -151,4 +151,4 @@ private:
 	std::optional<double> value_ = std::nullopt;
 };
 
-};	// namespace reindexer
+}  // namespace reindexer

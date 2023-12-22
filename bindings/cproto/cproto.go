@@ -9,6 +9,8 @@ import (
 	"math/rand"
 	"net"
 	"net/url"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -53,16 +55,18 @@ const (
 	replicationTypeAsync   = "async_replication"
 )
 
-var logger Logger
-var logMtx sync.RWMutex
+var emptyLogger bindings.NullLogger
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 	bindings.RegisterBinding("cproto", new(NetCProto))
+	if runtime.GOOS != "windows" {
+		bindings.RegisterBinding("ucproto", new(NetCProto))
+	}
 }
 
-type Logger interface {
-	Printf(level int, fmt string, msg ...interface{})
+type LoggerOwner interface {
+	GetLogger() bindings.Logger
 }
 
 type NetCProto struct {
@@ -81,6 +85,8 @@ type NetCProto struct {
 	appName            string
 	termCh             chan struct{}
 	lock               sync.RWMutex
+	logger             bindings.Logger
+	logMtx             sync.RWMutex
 }
 
 type dsn struct {
@@ -265,7 +271,10 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 	connPoolSize := defConnPoolSize
 	connPoolLBAlgorithm := defConnPoolLBAlgorithm
 	binding.appName = defAppName
-	binding.caps = *bindings.DefaultBindingCapabilities().WithQrIdleTimeouts(true).WithResultsWithShardIDs(true)
+	binding.caps = *bindings.DefaultBindingCapabilities().
+		WithQrIdleTimeouts(true).
+		WithResultsWithShardIDs(true).
+		WithIncarnationTags(true)
 
 	for _, option := range options {
 		switch v := option.(type) {
@@ -319,6 +328,16 @@ func (binding *NetCProto) Init(u []url.URL, options ...interface{}) (err error) 
 
 	binding.dsn.connFactory = &connFactoryImpl{}
 	binding.dsn.urls = u
+	for i := 0; i < len(binding.dsn.urls); i++ {
+		if binding.dsn.urls[i].Scheme == "ucproto" {
+			addrs := strings.Split(binding.dsn.urls[i].Path, ":")
+			if len(addrs) != 2 {
+				return fmt.Errorf("rq: unexpected URL format for ucproto: '%s'. Expecting '<unix socket>:/<db name>", binding.dsn.urls[i].Path)
+			}
+			binding.dsn.urls[i].Host = addrs[0]
+			binding.dsn.urls[i].Path = addrs[1]
+		}
+	}
 	binding.connectDSN(context.Background(), connPoolSize, connPoolLBAlgorithm)
 	binding.termCh = make(chan struct{})
 	go binding.pinger()
@@ -353,6 +372,7 @@ func (binding *NetCProto) newPool(ctx context.Context, connPoolSize int, connPoo
 					requestDedicatedThread: binding.dedicatedThreads.DedicatedThreads,
 					caps:                   binding.caps,
 				},
+				binding,
 			)
 
 			if serverStartTS > 0 {
@@ -612,23 +632,28 @@ func (binding *NetCProto) GetReplicationStat(f func(ctx context.Context) (*bindi
 }
 
 func (binding *NetCProto) EnableLogger(log bindings.Logger) {
-	logMtx.Lock()
-	defer logMtx.Unlock()
-	logger = log
+	binding.logMtx.Lock()
+	defer binding.logMtx.Unlock()
+	binding.logger = log
 }
 
 func (binding *NetCProto) DisableLogger() {
-	logMtx.Lock()
-	defer logMtx.Unlock()
-	logger = nil
-}
-func (binding *NetCProto) ReopenLogFiles() error {
-	fmt.Println("cproto binding ReopenLogFiles method is dummy")
-	return nil
+	binding.logMtx.Lock()
+	defer binding.logMtx.Unlock()
+	binding.logger = nil
 }
 
-func (binding *NetCProto) EnableStorage(ctx context.Context, path string) error {
-	fmt.Println("cproto binding EnableStorage method is dummy")
+func (binding *NetCProto) GetLogger() bindings.Logger {
+	binding.logMtx.RLock()
+	defer binding.logMtx.RUnlock()
+	if binding.logger != nil {
+		return binding.logger
+	}
+	return &emptyLogger
+}
+
+func (binding *NetCProto) ReopenLogFiles() error {
+	fmt.Println("cproto binding ReopenLogFiles method is dummy")
 	return nil
 }
 
@@ -687,10 +712,10 @@ func (binding *NetCProto) getAllConns() []connection {
 }
 
 func (binding *NetCProto) logMsg(level int, fmt string, msg ...interface{}) {
-	logMtx.RLock()
-	defer logMtx.RUnlock()
-	if logger != nil {
-		logger.Printf(level, fmt, msg)
+	binding.logMtx.RLock()
+	defer binding.logMtx.RUnlock()
+	if binding.logger != nil {
+		binding.logger.Printf(level, fmt, msg)
 	}
 }
 

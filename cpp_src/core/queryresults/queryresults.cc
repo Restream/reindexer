@@ -257,25 +257,7 @@ void QueryResults::RebuildMergedData() {
 
 void QueryResults::Clear() { *this = QueryResults(); }
 
-int QueryResults::GetMergedNSCount() const noexcept {
-	switch (type_) {
-		case Type::None: {
-			return 0;
-		}
-		case Type::Local: {
-			return local_->qr.getMergedNSCount();
-		}
-		case Type::SingleRemote: {
-			return remote_[0].qr.GetMergedNSCount();
-		}
-		case Type::MultipleRemote:
-		case Type::Mixed:
-		default:
-			return 1;  // No joined/merged nss in distributed qr
-	}
-}
-
-const std::vector<AggregationResult>& QueryResults::GetAggregationResults() {
+const std::vector<AggregationResult>& QueryResults::GetAggregationResults() & {
 	switch (type_) {
 		case Type::None: {
 			static std::vector<AggregationResult> kEmpty;
@@ -450,10 +432,10 @@ void QueryResults::SetQuery(const Query* q) {
 	if (q) {
 		QueryData data;
 		data.isWalQuery = q->IsWALQuery();
-		data.joinedSize = uint16_t(q->joinQueries_.size());
-		data.mergedJoinedSizes.reserve(q->mergeQueries_.size());
-		for (const auto& mq : q->mergeQueries_) {
-			data.mergedJoinedSizes.emplace_back(mq.joinQueries_.size());
+		data.joinedSize = uint16_t(q->GetJoinQueries().size());
+		data.mergedJoinedSizes.reserve(q->GetMergeQueries().size());
+		for (const auto& mq : q->GetMergeQueries()) {
+			data.mergedJoinedSizes.emplace_back(mq.GetJoinQueries().size());
 		}
 		qData_.emplace(std::move(data));
 	} else {
@@ -921,7 +903,7 @@ public:
 			if (expr.ByField()) {
 				int index = IndexValueType::SetByJsonPath;
 				std::string field;
-				if (ns.getIndexByName(se.expression, index) && index < ns.indexes_.firstCompositePos() &&
+				if (ns.tryGetIndexByName(se.expression, index) && index < ns.indexes_.firstCompositePos() &&
 					ns.indexes_[index]->Opts().IsSparse()) {
 					const auto& fields = ns.indexes_[index]->Fields();
 					assertrx(fields.getJsonPathsLength() == 1);
@@ -1014,8 +996,8 @@ void QueryResults::SetOrdering(const Query& q, const NamespaceImpl& ns, const Rd
 		Comparator comparator{*this, q, ns};
 		lock.unlock();
 		orderedQrs_ = std::make_unique<std::set<int, Comparator>>(std::move(comparator));
-		limit = q.count;
-		offset = q.start;
+		limit = q.Limit();
+		offset = q.Offset();
 	}
 }
 

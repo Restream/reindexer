@@ -1,7 +1,6 @@
 #pragma once
 
 #include "aggregator.h"
-#include "core/ft/ftsetcashe.h"
 #include "core/index/ft_preselect.h"
 #include "core/query/queryentry.h"
 #include "estl/h_vector.h"
@@ -47,7 +46,7 @@ public:
 	unsigned Count() const noexcept { return count_; }
 	bool MoreThanOneEvaluation() const noexcept { return queryEntryAddedByForcedSortOptimization_; }
 	bool AvailableSelectBySortIndex() const noexcept { return !queryEntryAddedByForcedSortOptimization_ || !forcedStage(); }
-	void InjectConditionsFromJoins(JoinedSelectors &js, OnConditionInjections &expalainOnInjections, const RdxContext &rdxCtx);
+	void InjectConditionsFromJoins(JoinedSelectors &js, OnConditionInjections &expalainOnInjections, LogLevel, const RdxContext &rdxCtx);
 	void Reduce(bool isFt);
 	void InitIndexNumbers();
 	using QueryEntries::Size;
@@ -65,6 +64,7 @@ public:
 		return std::move(*ftPreselect_);
 	}
 	bool IsFtPreselected() const noexcept { return ftPreselect_ && !ftEntry_; }
+	static void SetQueryField(QueryField &, const NamespaceImpl &);
 
 private:
 	struct FoundIndexInfo {
@@ -78,6 +78,7 @@ private:
 		uint64_t isFitForSortOptimization : 1;
 	};
 
+	static void setQueryIndex(QueryField &, int idxNo, const NamespaceImpl &);
 	[[nodiscard]] SortingEntries detectOptimalSortOrder() const;
 	bool forcedStage() const noexcept { return evaluationsCount_ == (desc_ ? 1 : 0); }
 	size_t lookupQueryIndexes(uint16_t dst, uint16_t srcBegin, uint16_t srcEnd);
@@ -85,7 +86,7 @@ private:
 	bool mergeQueryEntries(size_t lhs, size_t rhs);
 	const std::vector<int> *getCompositeIndex(int field) const;
 	void convertWhereValues(QueryEntries::iterator begin, QueryEntries::iterator end) const;
-	void convertWhereValues(QueryEntry *) const;
+	void convertWhereValues(QueryEntry &) const;
 	[[nodiscard]] const Index *findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end) const;
 	void findMaxIndex(QueryEntries::const_iterator begin, QueryEntries::const_iterator end,
 					  h_vector<FoundIndexInfo, 32> &foundIndexes) const;
@@ -94,12 +95,13 @@ private:
 	 */
 	template <typename ExplainPolicy>
 	size_t injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &, OnConditionInjections &, const RdxContext &);
-	void fillQueryEntryFromOnCondition(QueryEntry &, std::string &outExplainStr, AggType &, NamespaceImpl &rightNs, Query joinQuery,
-									   std::string joinIndex, CondType condition, KeyValueType, const RdxContext &);
-	template <bool byJsonPath>
-	void fillQueryEntryFromOnCondition(QueryEntry &, std::string_view joinIndex, CondType condition, const JoinedSelector &, KeyValueType,
-									   int rightIdxNo, const CollateOpts &);
-	void checkStrictMode(const std::string &index, int idxNo) const;
+	[[nodiscard]] std::pair<CondType, VariantArray> queryValuesFromOnCondition(std::string &outExplainStr, AggType &,
+																			   NamespaceImpl &rightNs, Query joinQuery,
+																			   const QueryJoinEntry &, CondType condition,
+																			   const RdxContext &);
+	[[nodiscard]] std::pair<CondType, VariantArray> queryValuesFromOnCondition(CondType condition, const QueryJoinEntry &,
+																			   const JoinedSelector &, const CollateOpts &);
+	void checkStrictMode(const QueryField &) const;
 	bool removeBrackets();
 	size_t removeBrackets(size_t begin, size_t end);
 	bool canRemoveBracket(size_t i) const;

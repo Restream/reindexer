@@ -22,6 +22,10 @@ class Snapshot;
 struct SnapshotOpts;
 struct ClusterControlRequestData;
 
+// REINDEX_WITH_V3_FOLLOWERS
+class IUpdatesObserver;
+class UpdatesFilters;
+
 namespace cluster {
 struct NodeData;
 struct RaftInfo;
@@ -63,11 +67,6 @@ public:
 	/// ConnectOpts::AllowNamespaceErrors() - true: Ignore errors during existing NS's load; false: Return error occured during NS's load
 	/// ConnectOpts::OpenNamespaces() - true: Need to open all the namespaces; false: Don't open namespaces
 	Error Connect(const std::string &dsn, ConnectOpts opts = ConnectOpts());
-
-	/// Enable storage. Must be called before InitSystemNamespaces
-	/// @param storagePath - file system path to database storage
-	/// @param skipPlaceholderCheck - If set, then reindexer will not check folder for placeholder
-	Error EnableStorage(const std::string &storagePath, bool skipPlaceholderCheck = false);
 
 	/// Open or create namespace
 	/// @param nsName - Name of namespace
@@ -333,7 +332,7 @@ public:
 	/// @param emmiterServerId - server ID of the emmiter node (required for synchronously replicated requests)
 	/// @param shardId - expected shard ID for this node (non empty for proxied sharding requests)
 	/// @param distributed - 'true' means, that we are executing distributed sharding query part
-	Reindexer WithContextParams(milliseconds timeout, lsn_t lsn, int emmiterServerId, unsigned int shardId, bool distributed) const {
+	Reindexer WithContextParams(milliseconds timeout, lsn_t lsn, int emmiterServerId, int shardId, bool distributed) const {
 		return Reindexer(impl_, ctx_.WithContextParams(timeout, lsn, emmiterServerId, shardId, distributed));
 	}
 	/// Allows to set multiple context params at once
@@ -345,10 +344,17 @@ public:
 	/// @param activityTracer - name of activity tracer
 	/// @param user - user identifying information
 	/// @param connectionId - unique identifier for the connection
-	Reindexer WithContextParams(milliseconds timeout, lsn_t lsn, int emmiterServerId, unsigned int shardId, bool distributed,
+	Reindexer WithContextParams(milliseconds timeout, lsn_t lsn, int emmiterServerId, int shardId, bool distributed,
 								std::string_view activityTracer, std::string user, int connectionId) const {
 		return Reindexer(impl_, ctx_.WithContextParams(timeout, lsn, emmiterServerId, shardId, distributed, activityTracer, std::move(user),
 													   connectionId));
+	}
+	/// Allows to set multiple context params at once
+	/// @param timeout - Execution timeout
+	/// @param activityTracer - name of activity tracer
+	/// @param user - user identifying information
+	Reindexer WithContextParams(milliseconds timeout, std::string_view activityTracer, std::string user) const {
+		return Reindexer(impl_, ctx_.WithContextParams(timeout, activityTracer, std::move(user)));
 	}
 
 	/// Set activityTracer to current DB
@@ -370,6 +376,19 @@ public:
 	typedef Item ItemT;
 
 	Error DumpIndex(std::ostream &os, std::string_view nsName, std::string_view index);
+
+	/// REINDEX_WITH_V3_FOLLOWERS
+	/// THIS METHOD IS TEMPORARY AND WILL BE REMOVED
+	/// Subscribe to updates of database
+	/// @param observer - Observer interface, which will receive updates
+	/// @param filters - Subscription filters set
+	/// @param opts - Subscription options (allows to either add new filters or reset them)
+	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts = SubscriptionOpts());
+	/// THIS METHOD IS TEMPORARY AND WILL BE REMOVED
+	/// Unsubscribe from updates of database
+	/// Cancelation context doesn't affect this call
+	/// @param observer - Observer interface, which will be unsubscribed updates
+	Error UnsubscribeUpdates(IUpdatesObserver *observer);
 
 private:
 	Reindexer(ShardingProxy *impl, InternalRdxContext &&ctx) noexcept : impl_(impl), owner_(false), ctx_(std::move(ctx)) {}

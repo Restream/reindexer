@@ -86,7 +86,10 @@ protected:
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
-	void dropNs() { rt.reindexer->DropNamespace(default_namespace); }
+	void dropNs() {
+		const auto err = rt.reindexer->DropNamespace(default_namespace);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
 
 	int64_t getItemsCount(bool& storageLoaded) {
 		QueryResults qr;
@@ -103,7 +106,7 @@ protected:
 	const char* kFieldId = "id";
 	const char* kFieldRandomName = "random_name";
 	const char* kConfigNamespace = "#config";
-	const std::string kStoragePath = "/tmp/reindex/lazy_load_test";
+	const std::string kStoragePath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "reindex/lazy_load_test");
 	const char* jsonConfigTemplate = R"json({
                                             "type":"namespaces",
                                             "namespaces":[

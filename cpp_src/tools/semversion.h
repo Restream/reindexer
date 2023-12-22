@@ -20,6 +20,7 @@ public:
 	bool operator!=(const SemVersion &rVersion) const { return (versionDigits_ != rVersion.versionDigits_); }
 
 	const std::string &StrippedString() const { return versionStr_; }
+	int16_t Major() const noexcept { return versionDigits_.size() ? versionDigits_[0] : 0; }
 
 private:
 	void parse(std::string_view input) {

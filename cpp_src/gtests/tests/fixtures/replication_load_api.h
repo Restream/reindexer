@@ -105,7 +105,7 @@ public:
 		SCOPED_TRACE("Checking config from file");
 		auto srv = GetSrv(num);
 		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::File);
-		EXPECT_EQ(expConfig, curConfig);
+		EXPECT_EQ(expConfig, curConfig) << "expConfig:\n" << expConfig.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
 	}
 	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest &expConfig, std::chrono::seconds awaitTime) {
 		SCOPED_TRACE("Checking config from namespace with timeout");
@@ -117,7 +117,8 @@ public:
 			}
 			std::this_thread::sleep_for(std::chrono::seconds(1));
 		}
-		EXPECT_EQ(expConfig, srv->GetServerConfig(ServerControl::ConfigType::Namespace));
+		auto curConfig = srv->GetServerConfig(ServerControl::ConfigType::Namespace);
+		EXPECT_EQ(expConfig, curConfig) << "config:\n" << expConfig.GetJSON() << "\ncurConfig:\n" << curConfig.GetJSON();
 	}
 	void CheckReplicationConfigNamespace(size_t num, const AsyncReplicationConfigTest &expConfig) {
 		SCOPED_TRACE("Checking config from namespace");

@@ -20,7 +20,8 @@ public:
 	ItemModifier(ItemModifier &&) = delete;
 	ItemModifier &operator=(ItemModifier &&) = delete;
 
-	void Modify(IdType itemId, const RdxContext &ctx, h_vector<cluster::UpdateRecord, 2> &pendedRepl);
+	[[nodiscard]] bool Modify(IdType itemId, const NsContext &ctx, h_vector<cluster::UpdateRecord, 2> &pendedRepl);
+	PayloadValue &GetPayloadValueBackup() { return rollBackIndexData_.GetPayloadValueBackup(); }
 
 private:
 	struct FieldData {
@@ -64,14 +65,50 @@ private:
 	};
 
 	void modifyField(IdType itemId, FieldData &field, Payload &pl, VariantArray &values);
-	void modifyCJSON(PayloadValue &pv, IdType itemId, FieldData &field, VariantArray &values,
-					 h_vector<cluster::UpdateRecord, 2> &pendedRepl, const RdxContext &);
+	void modifyCJSON(IdType itemId, FieldData &field, VariantArray &values, h_vector<cluster::UpdateRecord, 2> &pendedRepl,
+					 const NsContext &);
 	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl);
 
 	NamespaceImpl &ns_;
 	const std::vector<UpdateEntry> &updateEntries_;
 	std::vector<FieldData> fieldsToModify_;
 	CJsonCache cjsonCache_;
+
+	class RollBack_ModifiedPayload;
+
+	class IndexRollBack {
+	public:
+		IndexRollBack(int indexCount) { data_.resize(indexCount); }
+		void Reset(PayloadValue &pv) {
+			pvSave_ = pv;
+			pvSave_.Clone();
+			std::fill(data_.begin(), data_.end(), false);
+			cjsonChanged_ = false;
+			pkModified_ = false;
+		}
+		void IndexChanged(size_t index, bool isPk) noexcept {
+			data_[index] = true;
+			pkModified_ = pkModified_ || isPk;
+		}
+		void IndexAndCJsonChanged(size_t index, bool isPk) noexcept {
+			data_[index] = true;
+			cjsonChanged_ = true;
+			pkModified_ = pkModified_ || isPk;
+		}
+		void CjsonChanged() noexcept { cjsonChanged_ = true; }
+		PayloadValue &GetPayloadValueBackup() noexcept { return pvSave_; }
+		const std::vector<bool> &IndexStatus() const noexcept { return data_; }
+		bool IsCjsonChanged() const noexcept { return cjsonChanged_; }
+		bool IsPkModified() const noexcept { return pkModified_; }
+
+	private:
+		std::vector<bool> data_;
+		PayloadValue pvSave_;
+		bool cjsonChanged_ = false;
+		bool pkModified_ = false;
+	};
+
+	IndexRollBack rollBackIndexData_;
 };
 
 }  // namespace reindexer

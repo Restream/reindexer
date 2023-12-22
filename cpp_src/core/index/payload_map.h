@@ -12,7 +12,7 @@ namespace reindexer {
 class PayloadValueWithHash : public PayloadValue {
 public:
 	PayloadValueWithHash() noexcept : PayloadValue() {}
-	PayloadValueWithHash(PayloadValue pv, const PayloadType &pt, const FieldsSet &fields)
+	PayloadValueWithHash(PayloadValue &&pv, const PayloadType &pt, const FieldsSet &fields)
 		: PayloadValue(std::move(pv)), hash_(ConstPayload(pt, *static_cast<PayloadValue *>(this)).GetHash(fields)) {}
 	PayloadValueWithHash(const PayloadValueWithHash &o) noexcept : PayloadValue(o), hash_(o.hash_) {}
 	PayloadValueWithHash(PayloadValueWithHash &&o) noexcept : PayloadValue(std::move(o)), hash_(o.hash_) {}
@@ -29,7 +29,8 @@ private:
 struct equal_composite {
 	using is_transparent = void;
 
-	equal_composite(PayloadType type, const FieldsSet &fields) : type_(std::move(type)), fields_(fields) {}
+	template <typename PT, typename FS>
+	equal_composite(PT &&type, FS &&fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {}
 	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
 		assertrx(type_);
 		return ConstPayload(type_, lhs).IsEQ(rhs, fields_);
@@ -50,7 +51,8 @@ struct equal_composite {
 	FieldsSet fields_;
 };
 struct hash_composite {
-	hash_composite(PayloadType type, const FieldsSet &fields) : type_(std::move(type)), fields_(fields) {}
+	template <typename PT, typename FS>
+	hash_composite(PT &&type, FS &&fields) : type_(std::forward<PT>(type)), fields_(std::forward<FS>(fields)) {}
 	size_t operator()(const PayloadValueWithHash &s) const { return s.GetHash(); }
 	size_t operator()(const PayloadValue &s) const {
 		assertrx(type_);
@@ -61,7 +63,7 @@ struct hash_composite {
 };
 
 struct less_composite {
-	less_composite(PayloadType type, const FieldsSet &fields) : type_(std::move(type)), fields_(fields) {}
+	less_composite(PayloadType &&type, FieldsSet &&fields) : type_(std::move(type)), fields_(std::move(fields)) {}
 	bool operator()(const PayloadValue &lhs, const PayloadValue &rhs) const {
 		assertrx(type_);
 		assertrx(!lhs.IsFree());
@@ -78,7 +80,7 @@ class payload_str_fields_helper;
 template <>
 class payload_str_fields_helper<true> {
 protected:
-	payload_str_fields_helper(PayloadType payloadType, const FieldsSet &fields) : payload_type_(std::move(payloadType)) {
+	payload_str_fields_helper(PayloadType &&payloadType, const FieldsSet &fields) : payload_type_(std::move(payloadType)) {
 		if (fields.getTagsPathsLength() || fields.getJsonPathsLength()) {
 			str_fields_.push_back(0);
 		}
@@ -153,13 +155,13 @@ public:
 
 	static_assert(std::is_nothrow_move_constructible<std::pair<PayloadValueWithHash, T1>>::value,
 				  "Nothrow movebale key and value required");
-	unordered_payload_map(size_t size, PayloadType pt, const FieldsSet &f)
-		: base_hash_map(size, hash_composite(pt, f), equal_composite(pt, f)),
-		  payload_str_fields_helper<hold>(pt, f),
+	unordered_payload_map(size_t size, PayloadType &&pt, FieldsSet &&f)
+		: base_hash_map(size, hash_composite(PayloadType{pt}, FieldsSet{f}), equal_composite(PayloadType{pt}, FieldsSet{f})),
+		  payload_str_fields_helper<hold>(PayloadType{pt}, f),
 		  payloadType_(std::move(pt)),
-		  fields_(f) {}
+		  fields_(std::move(f)) {}
 
-	unordered_payload_map(PayloadType pt, const FieldsSet &f) : unordered_payload_map(1000, std::move(pt), f) {}
+	unordered_payload_map(PayloadType &&pt, FieldsSet &&f) : unordered_payload_map(1000, std::move(pt), std::move(f)) {}
 
 	unordered_payload_map(const unordered_payload_map &other)
 		: base_hash_map(other), payload_str_fields_helper<hold>(other), payloadType_(other.payloadType_), fields_(other.fields_) {
@@ -185,7 +187,7 @@ public:
 	}
 	template <typename V>
 	std::pair<iterator, bool> emplace(const PayloadValue &pl, V &&v) {
-		PayloadValueWithHash key(pl, payloadType_, fields_);
+		PayloadValueWithHash key(PayloadValue{pl}, payloadType_, fields_);
 		auto res = base_hash_map::emplace(std::move(key), std::forward<V>(v));
 		if (res.second) this->add_ref(res.first->first);
 		return res;
@@ -207,7 +209,7 @@ public:
 	}
 
 	T1 &operator[](const PayloadValue &k) {
-		PayloadValueWithHash key(k, payloadType_, fields_);
+		PayloadValueWithHash key(PayloadValue{k}, payloadType_, fields_);
 		return base_hash_map::operator[](std::move(key));
 	}
 	T1 &operator[](PayloadValue &&k) {
@@ -247,7 +249,8 @@ public:
 	using payload_str_fields_helper<hold>::have_str_fields;
 
 	payload_map(PayloadType payloadType, const FieldsSet &fields)
-		: base_tree_map(less_composite(payloadType, fields)), payload_str_fields_helper<hold>(std::move(payloadType), fields) {}
+		: base_tree_map(less_composite(PayloadType{payloadType}, FieldsSet{fields})),
+		  payload_str_fields_helper<hold>(std::move(payloadType), fields) {}
 	payload_map(const payload_map &other) : base_tree_map(other), payload_str_fields_helper<hold>(other) {
 		for (auto &item : *this) this->add_ref(const_cast<PayloadValue &>(item.first));
 	}

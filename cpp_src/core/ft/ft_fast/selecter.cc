@@ -335,8 +335,8 @@ void Selecter<IdCont>::processLowRelVariants(FtSelectContext& ctx, const FtMerge
 								 return false;
 							 });
 	} else {
-		boost::sort::pdqsort(ctx.lowRelVariants.begin(), ctx.lowRelVariants.end(),
-							 [](FtBoundVariantEntry& l, FtBoundVariantEntry& r) noexcept { return l.proc > r.proc; });
+		boost::sort::pdqsort_branchless(ctx.lowRelVariants.begin(), ctx.lowRelVariants.end(),
+										[](FtBoundVariantEntry& l, FtBoundVariantEntry& r) noexcept { return l.proc > r.proc; });
 	}
 
 	auto lastVariantLen = ctx.lowRelVariants.size() ? ctx.lowRelVariants[0].GetLenCached() : -1;
@@ -790,7 +790,7 @@ std::pair<double, int> Selecter<IdCont>::calcTermRank(const TextSearchResults& r
 	if (!termRank) return std::make_pair(termRank, field);
 
 	if (holder_.cfg_->summationRanksByFieldsRatio > 0) {
-		std::sort(ranksInFields.begin(), ranksInFields.end());
+		boost::sort::pdqsort_branchless(ranksInFields.begin(), ranksInFields.end());
 		double k = holder_.cfg_->summationRanksByFieldsRatio;
 		for (auto rank : ranksInFields) {
 			termRank += (k * rank);
@@ -921,9 +921,10 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 			mergedPosInfo.rank = 0;
 		} else {
 			auto& posTmp = mergedPosInfo.posTmp;
-			boost::sort::pdqsort(
-				posTmp.begin(), posTmp.end(),
-				[](const std::pair<IdRelType::PosType, int>& l, const std::pair<IdRelType::PosType, int>& r) { return l.first < r.first; });
+			boost::sort::pdqsort_branchless(posTmp.begin(), posTmp.end(),
+											[](const std::pair<IdRelType::PosType, int>& l,
+											   const std::pair<IdRelType::PosType, int>& r) noexcept { return l.first < r.first; });
+
 			auto last = std::unique(posTmp.begin(), posTmp.end());
 			posTmp.resize(last - posTmp.begin());
 
@@ -984,9 +985,9 @@ void Selecter<IdCont>::mergeResultsPart(std::vector<TextSearchResults>& rawResul
 			merged.maxRank = m.proc;
 		}
 	}
-
-	boost::sort::pdqsort(merged.begin(), merged.end(),
-						 [](const IDataHolder::MergeInfo& lhs, const IDataHolder::MergeInfo& rhs) { return lhs.proc > rhs.proc; });
+	boost::sort::pdqsort_branchless(
+		merged.begin(), merged.end(),
+		[](const IDataHolder::MergeInfo& lhs, const IDataHolder::MergeInfo& rhs) noexcept { return lhs.proc > rhs.proc; });
 }
 
 template <typename IdCont>
@@ -1244,12 +1245,11 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextS
 	std::vector<IDataHolder::MergedIdRel> merged_rd;
 
 	std::vector<IDataHolder::MergedOffsetT> idoffsets;
-
 	for (auto& rawRes : rawResults) {
-		boost::sort::pdqsort(rawRes.begin(), rawRes.end(),
-							 [](const TextSearchResult& lhs, const TextSearchResult& rhs) { return lhs.proc_ > rhs.proc_; });
+		boost::sort::pdqsort_branchless(
+			rawRes.begin(), rawRes.end(),
+			[](const TextSearchResult& lhs, const TextSearchResult& rhs) noexcept { return lhs.proc_ > rhs.proc_; });
 	}
-
 	const auto maxMergedSize = std::min(size_t(holder_.cfg_->mergeLimit), totalORVids);
 	merged.reserve(maxMergedSize);
 
@@ -1332,8 +1332,9 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextS
 		}
 	}
 
-	boost::sort::pdqsort(merged.begin(), merged.end(),
-						 [](const IDataHolder::MergeInfo& lhs, const IDataHolder::MergeInfo& rhs) { return lhs.proc > rhs.proc; });
+	boost::sort::pdqsort_branchless(
+		merged.begin(), merged.end(),
+		[](const IDataHolder::MergeInfo& lhs, const IDataHolder::MergeInfo& rhs) noexcept { return lhs.proc > rhs.proc; });
 	return merged;
 }
 

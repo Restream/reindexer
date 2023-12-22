@@ -348,6 +348,88 @@ TEST_F(ReplicationLoadApi, ConfigReadingOnStartup) {
 	CheckReplicationConfigNamespace(kTestServerID, config);
 }
 
+TEST_F(ReplicationLoadApi, DuplicatePKFollowerTest) {
+	InitNs();
+	const unsigned int kItemCount = 5;
+	auto srv = GetSrv(masterId_);
+	auto& api = srv->api;
+
+	std::string changedIds;
+	const unsigned int kChangedCount = 2;
+	std::unordered_set<int> ids;
+	for (unsigned i = 0; i < kChangedCount; ++i) {
+		ids.insert(std::rand() % kItemCount);
+	}
+
+	bool isFirst = true;
+	for (const auto id : ids) {
+		if (!isFirst) changedIds += ", ";
+		changedIds += std::to_string(id);
+		isFirst = false;
+	}
+
+	std::unordered_map<int, std::pair<std::string, std::string>> items;
+	Error err;
+	for (size_t i = 0; i < kItemCount; ++i) {
+		std::string jsonChange;
+		BaseApi::ItemType item = api.NewItem("some");
+		auto json = fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", i, i + 100, std::to_string(1 + 1000), nilUUID);
+		err = item.FromJSON(json);
+		api.Upsert("some", item);
+		jsonChange = json;
+		int idNew = i;
+		if (ids.find(i) != ids.end()) {
+			jsonChange = fmt::sprintf(R"json({"id":%d,"int":%d,"string":"%s","uuid":"%s"})json", kItemCount * 2 + i, i + 100,
+									  std::to_string(1 + 1000), nilUUID);
+			idNew = kItemCount * 2 + i;
+		}
+		items.emplace(idNew, std::make_pair(json, jsonChange));
+	}
+
+	WaitSync("some");
+	{
+		BaseApi::QueryResultsType qr;
+		err = api.reindexer->Select("Update some set id=id+" + std::to_string(kItemCount * 2) + " where id in(" + changedIds + ")", qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		WaitSync("some");
+	}
+
+	for (size_t k = 0; k < GetServersCount(); k++) {
+		auto server = GetSrv(k);
+		{
+			BaseApi::QueryResultsType qr;
+			err = server->api.reindexer->Select("select * from some order by id", qr);
+			ASSERT_TRUE(err.ok()) << err.what();
+			ASSERT_EQ(qr.Count(), items.size());
+			for (auto i : qr) {
+				WrSerializer ser;
+				err = i.GetJSON(ser, false);
+				gason::JsonParser parser;
+				auto root = parser.Parse(ser.Slice());
+				int id = root["id"].As<int>();
+				ASSERT_TRUE(err.ok()) << err.what();
+				ASSERT_EQ(ser.Slice(), items[id].second);
+			}
+		}
+		{
+			for (auto id : ids) {
+				BaseApi::QueryResultsType qr;
+				err = server->api.reindexer->Select("select * from some where id=" + std::to_string(id), qr);
+				ASSERT_TRUE(err.ok()) << err.what();
+				ASSERT_EQ(qr.Count(), 0);
+			}
+		}
+		{
+			for (auto id : ids) {
+				BaseApi::QueryResultsType qr;
+				err = server->api.reindexer->Select("select * from some where id=" + std::to_string(id + kItemCount * 2), qr);
+				ASSERT_TRUE(err.ok()) << err.what();
+				ASSERT_EQ(qr.Count(), 1);
+			}
+		}
+	}
+}
+
 TEST_F(ReplicationLoadApi, ConfigSync) {
 	// Check automatic replication config file and #config namespace sync
 	using ReplNode = AsyncReplicationConfigTest::Node;

@@ -78,6 +78,7 @@ Error RaftManager::SendDesiredLeaderId(int nextServerId) {
 					errString += "[" + err.what() + "]";
 				}
 			} catch (...) {
+				logInfo("%d: Unable to send desired leader: got unknonw exception", serverId_);
 			}
 		});
 	}

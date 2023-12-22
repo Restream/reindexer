@@ -24,11 +24,11 @@ public:
 	}
 	std::vector<TransactionStep> &GetSteps() noexcept {
 		assertrx(tx_);
-		return tx_->steps_;
+		return tx_->steps;
 	}
 	const std::vector<TransactionStep> &GetSteps() const noexcept {
 		assertrx(tx_);
-		return tx_->steps_;
+		return tx_->steps;
 	}
 	Transaction::TimepointT GetStartTime() const noexcept {
 		assertrx(data_);
@@ -43,6 +43,14 @@ public:
 		return data_->nsName;
 	}
 	Error Status() const noexcept { return err_; }
+	void ValidatePK(const FieldsSet &pkFields) {
+		assertrx(data_);
+		if (tx_ && tx_->HasDeleteItemSteps() && rx_unlikely(pkFields != data_->GetPKFileds())) {
+			throw Error(errNotValid,
+						"Transaction has Delete-calls and it's PK metadata is outdated (probably PK has been change during the transaction "
+						"creation)");
+		}
+	}
 
 private:
 	LocalTransaction(std::unique_ptr<SharedTransactionData> &&d, std::unique_ptr<TransactionSteps> &&tx, Error &&e)

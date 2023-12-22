@@ -12,6 +12,8 @@ struct CollateOpts {
 	void Dump(T& os) const;
 };
 
+enum class IndexComparison { WithConfig, SkipConfig };
+
 /// Cpp version of IndexOpts: includes
 /// sort order table which is not possible
 /// to link in C-GO version because of templates
@@ -37,8 +39,7 @@ struct IndexOpts {
 	IndexOpts& SetConfig(const std::string& config);
 	CollateMode GetCollateMode() const noexcept;
 
-	bool operator==(const IndexOpts& other) const { return IsEqual(other, false); }
-	bool IsEqual(const IndexOpts& other, bool skipConfig) const;
+	bool IsEqual(const IndexOpts& other, IndexComparison cmpType) const noexcept;
 
 	template <typename T>
 	void Dump(T& os) const;
@@ -60,7 +61,6 @@ T& operator<<(T& os, IndexOpts::RTreeIndexType t) {
 			return os << "Greene";
 		case IndexOpts::RStar:
 			return os << "RStar";
-		default:
-			abort();
 	}
+	std::abort();
 }

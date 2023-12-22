@@ -51,9 +51,12 @@ HttpStatusCode HttpStatus::errCodeToHttpStatus(int errCode) {
 		case errParams:
 		case errParseSQL:
 		case errParseDSL:
+		case errQueryExec:
 			return StatusBadRequest;
 		case errForbidden:
 			return StatusForbidden;
+		case errTimeout:
+			return StatusRequestTimeout;
 		default:
 			return StatusInternalServerError;
 	}
@@ -68,7 +71,7 @@ int Context::JSON(int code, std::string_view slice) {
 }
 
 int Context::JSON(int code, chunk &&chunk) {
-	writer->SetContentLength(chunk.len_);
+	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/json; charset=utf-8"sv});
 	writer->Write(std::move(chunk));
@@ -86,7 +89,7 @@ int Context::CSV(int code, chunk &&chunk) {
 }
 
 int Context::MSGPACK(int code, chunk &&chunk) {
-	writer->SetContentLength(chunk.len_);
+	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/x-msgpack; charset=utf-8"sv});
 	writer->Write(std::move(chunk));
@@ -94,7 +97,7 @@ int Context::MSGPACK(int code, chunk &&chunk) {
 }
 
 int Context::Protobuf(int code, chunk &&chunk) {
-	writer->SetContentLength(chunk.len_);
+	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "application/protobuf; charset=utf-8"sv});
 	writer->Write(std::move(chunk));
@@ -110,7 +113,7 @@ int Context::String(int code, std::string_view slice) {
 }
 
 int Context::String(int code, chunk &&chunk) {
-	writer->SetContentLength(chunk.len_);
+	writer->SetContentLength(chunk.len());
 	writer->SetRespCode(code);
 	writer->SetHeader(http::Header{"Content-Type"sv, "text/plain; charset=utf-8"sv});
 	writer->Write(std::move(chunk));

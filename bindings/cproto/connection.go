@@ -79,13 +79,13 @@ const (
 )
 
 type connFactory interface {
-	newConnection(ctx context.Context, params newConnParams) (connection, int64, error)
+	newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner) (connection, int64, error)
 }
 
 type connFactoryImpl struct{}
 
-func (cf *connFactoryImpl) newConnection(ctx context.Context, params newConnParams) (connection, int64, error) {
-	return newConnection(ctx, params)
+func (cf *connFactoryImpl) newConnection(ctx context.Context, params newConnParams, loggerOwner LoggerOwner) (connection, int64, error) {
+	return newConnection(ctx, params, loggerOwner)
 }
 
 type requestInfo struct {
@@ -110,6 +110,7 @@ type connection interface {
 	getConnection() net.Conn
 	getSeqs() chan uint32
 	getRequestTimeout() uint32
+	logMsg(level int, fmt string, msg ...interface{})
 }
 
 type connectionImpl struct {
@@ -136,7 +137,7 @@ type connectionImpl struct {
 	requestTimeout         time.Duration
 	enableCompression      bool
 	requestDedicatedThread bool
-	logger                 Logger
+	loggerOwner            LoggerOwner
 }
 
 type newConnParams struct {
@@ -152,8 +153,7 @@ type newConnParams struct {
 
 func newConnection(
 	ctx context.Context,
-	params newConnParams,
-) (
+	params newConnParams, loggerOwner LoggerOwner) (
 	connection,
 	int64,
 	error,
@@ -168,6 +168,7 @@ func newConnection(
 		requestTimeout:         params.requestTimeout,
 		enableCompression:      params.enableCompression,
 		requestDedicatedThread: params.requestDedicatedThread,
+		loggerOwner:            loggerOwner,
 	}
 	for i := 0; i < queueSize; i++ {
 		c.seqs <- uint32(i)
@@ -203,10 +204,10 @@ func seqNumIsValid(seqNum uint32) bool {
 }
 
 func (c *connectionImpl) logMsg(level int, fmt string, msg ...interface{}) {
-	logMtx.RLock()
-	defer logMtx.RUnlock()
-	if logger != nil {
-		logger.Printf(level, fmt, msg)
+	if c.loggerOwner != nil {
+		if logger := c.loggerOwner.GetLogger(); logger != nil {
+			logger.Printf(level, fmt, msg)
+		}
 	}
 }
 
@@ -256,11 +257,18 @@ func (c *connectionImpl) deadlineTicker() {
 
 func (c *connectionImpl) connect(ctx context.Context, dsn *url.URL) (err error) {
 	var d net.Dialer
-	c.conn, err = d.DialContext(ctx, "tcp", dsn.Host)
-	if err != nil {
-		return err
+	if dsn.Scheme == "cproto" {
+		if c.conn, err = d.DialContext(ctx, "tcp", dsn.Host); err != nil {
+			return err
+		}
+		c.conn.(*net.TCPConn).SetNoDelay(true)
+	} else {
+		d.LocalAddr = nil
+		if c.conn, err = d.DialContext(ctx, "unix", dsn.Host); err != nil {
+			return err
+		}
 	}
-	c.conn.(*net.TCPConn).SetNoDelay(true)
+
 	c.rdBuf = bufio.NewReaderSize(c.conn, bufsCap)
 
 	go c.writeLoop()

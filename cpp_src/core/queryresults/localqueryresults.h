@@ -2,6 +2,7 @@
 
 #include "aggregationresult.h"
 #include "core/item.h"
+#include "core/namespace/incarnationtags.h"
 #include "core/namespace/stringsholder.h"
 #include "core/payload/payloadvalue.h"
 #include "core/rdxcontext.h"
@@ -52,10 +53,13 @@ public:
 	void Erase(ItemRefVector::iterator begin, ItemRefVector::iterator end);
 	size_t Count() const noexcept { return items_.size(); }
 	size_t TotalCount() const noexcept { return totalCount; }
-	const std::string &GetExplainResults() const { return explainResults; }
-	const std::vector<AggregationResult> &GetAggregationResults() const { return aggregationResults; }
+	const std::string &GetExplainResults() const & noexcept { return explainResults; }
+	const std::string &GetExplainResults() const &&;
+	const std::vector<AggregationResult> &GetAggregationResults() const & noexcept { return aggregationResults; }
+	const std::vector<AggregationResult> &GetAggregationResults() const && = delete;
 	void Clear();
 	h_vector<std::string_view, 1> GetNamespaces() const;
+	NsShardsIncarnationTags GetIncarnationTags() const;
 	bool IsCacheEnabled() const { return !nonCacheableData; }
 	void SetOutputShardId(int shardId) noexcept { outputShardId = shardId; }
 	CsvOrdering MakeCSVTagOrdering(unsigned limit, unsigned offset) const;
@@ -75,11 +79,17 @@ public:
 		lsn_t GetLSN() const noexcept { return qr_->items_[idx_].Value().GetLSN(); }
 		bool IsRaw() const noexcept;
 		std::string_view GetRaw() const noexcept;
-		Iterator &operator++() noexcept;
-		Iterator &operator+(int delta) noexcept;
+		Iterator &operator++() noexcept {
+			idx_++;
+			return *this;
+		}
+		Iterator &operator+(int delta) noexcept {
+			idx_ += delta;
+			return *this;
+		}
 		const Error &Status() const noexcept { return err_; }
-		bool operator!=(const Iterator &) const noexcept;
-		bool operator==(const Iterator &) const noexcept;
+		bool operator!=(const Iterator &other) const noexcept { return idx_ != other.idx_; }
+		bool operator==(const Iterator &other) const noexcept { return idx_ == other.idx_; }
 		Iterator &operator*() noexcept { return *this; }
 
 		const LocalQueryResults *qr_;
@@ -101,7 +111,8 @@ public:
 
 	struct Context;
 	// precalc context size
-	static constexpr int kSizeofContext = 264;	// sizeof(PayloadType) + sizeof(TagsMatcher) + sizeof(FieldsSet) + sizeof(shared_ptr);
+	// sizeof(PayloadType) + sizeof(TagsMatcher) + sizeof(FieldsSet) + sizeof(shared_ptr) + sizeof(int64);
+	static constexpr int kSizeofContext = 272;
 
 	// Order of storing contexts for namespaces:
 	// [0]      - main NS context
@@ -111,7 +122,8 @@ public:
 	ContextsVector ctxs;
 
 	void addNSContext(const PayloadType &type, const TagsMatcher &tagsMatcher, const FieldsSet &fieldsFilter,
-					  std::shared_ptr<const Schema> schema);
+					  std::shared_ptr<const Schema> schema, lsn_t nsIncarnationTag);
+	void addNSContext(const QueryResults &baseQr, size_t nsid, lsn_t nsIncarnationTag);
 	const TagsMatcher &getTagsMatcher(int nsid) const noexcept;
 	const PayloadType &getPayloadType(int nsid) const noexcept;
 	const FieldsSet &getFieldsFilter(int nsid) const noexcept;
@@ -119,7 +131,7 @@ public:
 	PayloadType &getPayloadType(int nsid) noexcept;
 	std::shared_ptr<const Schema> getSchema(int nsid) const noexcept;
 	int getNsNumber(int nsid) const noexcept;
-	int getMergedNSCount() const noexcept;
+	int getMergedNSCount() const noexcept { return ctxs.size(); }
 	ItemRefVector &Items() noexcept { return items_; }
 	const ItemRefVector &Items() const noexcept { return items_; }
 	int GetJoinedNsCtxIndex(int nsid) const noexcept;

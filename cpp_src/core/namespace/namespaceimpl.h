@@ -19,13 +19,13 @@
 #include "core/querycache.h"
 #include "core/rollback.h"
 #include "core/schema.h"
+#include "core/selectkeyresult.h"
 #include "core/storage/idatastorage.h"
 #include "core/storage/storagetype.h"
 #include "core/transaction/localtransaction.h"
 #include "estl/contexted_locks.h"
 #include "estl/fast_hash_map.h"
 #include "estl/shared_mutex.h"
-#include "estl/smart_lock.h"
 #include "estl/syncpool.h"
 #include "stringsholder.h"
 #include "wal/waltracker.h"
@@ -56,6 +56,10 @@ class LocalQueryResults;
 class SnapshotRecord;
 class Snapshot;
 struct SnapshotOpts;
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+class UpdatesObservers;
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 
 namespace long_actions {
 template <typename T>
@@ -158,6 +162,7 @@ class NamespaceImpl : public intrusive_atomic_rc_base {	 // NOLINT(*performance.
 	friend ProxiedSortExpression;
 	friend SortExprFuncs::DistanceBetweenJoinedIndexesSameNs;
 	friend class ReindexerImpl;
+	friend class RxSelector;
 	friend LocalQueryResults;
 	friend class SnapshotHandler;
 	friend class FieldComparator;
@@ -165,7 +170,7 @@ class NamespaceImpl : public intrusive_atomic_rc_base {	 // NOLINT(*performance.
 	friend class ItemsLoader;
 	friend class IndexInserters;
 
-	class NSUpdateSortedContext : public UpdateSortedContext {
+	class NSUpdateSortedContext final : public UpdateSortedContext {
 	public:
 		NSUpdateSortedContext(const NamespaceImpl &ns, SortType curSortId)
 			: ns_(ns), sorted_indexes_(ns_.getSortedIdxCount()), curSortId_(curSortId) {
@@ -234,7 +239,7 @@ public:
 			using MutexType = Mutex;
 
 			NsWLock() = default;
-			NsWLock(MutexType &mtx, const RdxContext &ctx, bool isCL) : impl_(mtx, &ctx), isClusterLck_(isCL) {}
+			NsWLock(MutexType &mtx, const RdxContext &ctx, bool isCL) : impl_(mtx, ctx), isClusterLck_(isCL) {}
 			void lock() { impl_.lock(); }
 			void unlock() { impl_.unlock(); }
 			bool owns_lock() const { return impl_.owns_lock(); }
@@ -247,30 +252,30 @@ public:
 		typedef contexted_shared_lock<Mutex, const RdxContext> RLockT;
 		typedef NsWLock WLockT;
 
-		Locker(cluster::INsDataReplicator *clusterizator, NamespaceImpl &owner) : clusterizator_(clusterizator), owner_(owner) {}
+		Locker(cluster::INsDataReplicator &clusterizator, NamespaceImpl &owner) : clusterizator_(clusterizator), owner_(owner) {}
 
-		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, &ctx); }
+		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, ctx); }
 		WLockT DataWLock(const RdxContext &ctx, bool skipClusterStatusCheck) const {
 			using namespace std::string_view_literals;
 			WLockT lck(mtx_, ctx, true);
 			if (readonly_.load(std::memory_order_acquire)) {
 				throw Error(errNamespaceInvalidated, "NS invalidated"sv);
 			}
-			const bool requireSync = clusterizator_ && !ctx.NoWaitSync() && ctx.GetOriginLSN().isEmpty() && !owner_.isSystem();
+			const bool requireSync = !ctx.NoWaitSync() && ctx.GetOriginLSN().isEmpty() && !owner_.isSystem();
 			const bool isFollowerNS = owner_.repl_.clusterStatus.role == ClusterizationStatus::Role::SimpleReplica ||
 									  owner_.repl_.clusterStatus.role == ClusterizationStatus::Role::ClusterReplica;
-			bool synchronized = isFollowerNS || !requireSync || clusterizator_->IsInitialSyncDone(owner_.name_);
+			bool synchronized = isFollowerNS || !requireSync || clusterizator_.IsInitialSyncDone(owner_.name_);
 			while (!synchronized) {
 				// This is required in case of rename during sync wait
 				auto name = owner_.name_;
 
 				lck.unlock();
-				clusterizator_->AwaitInitialSync(name, ctx);
+				clusterizator_.AwaitInitialSync(name, ctx);
 				lck.lock();
 				if (readonly_.load(std::memory_order_acquire)) {
 					throw Error(errNamespaceInvalidated, "NS invalidated"sv);
 				}
-				synchronized = clusterizator_->IsInitialSyncDone(owner_.name_);
+				synchronized = clusterizator_.IsInitialSyncDone(owner_.name_);
 			}
 
 			if (!skipClusterStatusCheck) {
@@ -302,11 +307,16 @@ public:
 		mutable Mutex mtx_;
 		mutable std::mutex storageMtx_;
 		std::atomic<bool> readonly_ = {false};
-		cluster::INsDataReplicator *clusterizator_;
+		cluster::INsDataReplicator &clusterizator_;
 		NamespaceImpl &owner_;
 	};
 
-	NamespaceImpl(const std::string &_name, std::optional<int32_t> stateToken, cluster::INsDataReplicator *clusterizator);
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+	NamespaceImpl(const std::string &_name, std::optional<int32_t> stateToken, cluster::INsDataReplicator &clusterizator,
+				  UpdatesObservers &);
+#else
+	NamespaceImpl(const std::string &_name, std::optional<int32_t> stateToken, cluster::INsDataReplicator &clusterizator);
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 	NamespaceImpl &operator=(const NamespaceImpl &) = delete;
 	~NamespaceImpl();
 
@@ -366,8 +376,10 @@ public:
 
 	int getIndexByName(std::string_view index) const;
 	int getIndexByNameOrJsonPath(std::string_view name) const;
-	bool getIndexByName(std::string_view name, int &index) const;
+	int getScalarIndexByName(std::string_view name) const;
+	bool tryGetIndexByName(std::string_view name, int &index) const;
 	bool getIndexByNameOrJsonPath(std::string_view name, int &index) const;
+	bool getScalarIndexByName(std::string_view name, int &index) const;
 	bool getSparseIndexByJsonPath(std::string_view jsonPath, int &index) const;
 	PayloadType getPayloadType(const RdxContext &ctx) const;
 
@@ -387,6 +399,12 @@ public:
 	void GetSnapshot(Snapshot &snapshot, const SnapshotOpts &opts, const RdxContext &ctx);
 	void SetTagsMatcher(TagsMatcher &&tm, const RdxContext &ctx);
 	void SetDestroyFlag() noexcept { dbDestroyed_ = true; }
+	Error FlushStorage(const RdxContext &ctx) {
+		const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
+		auto lck = rLock(ctx);
+		storage_.Flush(flushOpts);
+		return storage_.GetStatusCached().err;
+	}
 
 private:
 	struct SysRecordsVersions {
@@ -394,6 +412,12 @@ private:
 		uint64_t tagsVersion{0};
 		uint64_t replVersion{0};
 		uint64_t schemaVersion{0};
+	};
+
+	struct PKModifyRevertData {
+		PKModifyRevertData(PayloadValue &p, lsn_t l) : pv(p), lsn(l) {}
+		PayloadValue &pv;
+		lsn_t lsn;
 	};
 
 	ReplicationState getReplState() const;
@@ -429,16 +453,16 @@ private:
 	void addIndex(const IndexDef &indexDef, bool disableTmVersionInc, bool skipEqualityCheck = false);
 	void doAddIndex(const IndexDef &indexDef, bool skipEqualityCheck, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void addCompositeIndex(const IndexDef &indexDef);
-	bool checkIfSameIndexExists(const IndexDef &indexDef, bool discardConfig, bool *requireTtlUpdate = nullptr);
+	bool checkIfSameIndexExists(const IndexDef &indexDef, bool *requireTtlUpdate);
 	template <typename PathsT, typename JsonPathsContainerT>
-	void createFieldsSet(const std::string &idxName, IndexType type, const PathsT &paths, FieldsSet &fields);
+	void createCompositeFieldsSet(const std::string &idxName, const PathsT &paths, FieldsSet &fields);
 	void verifyCompositeIndex(const IndexDef &indexDef) const;
 	template <typename GetNameF>
 	void verifyAddIndex(const IndexDef &indexDef, GetNameF &&) const;
 	void verifyUpdateIndex(const IndexDef &indexDef) const;
 	void verifyUpdateCompositeIndex(const IndexDef &indexDef) const;
-	void updateIndex(const IndexDef &indexDef, bool disableTmVersionInc);
-	void doUpdateIndex(const IndexDef &indexDef, UpdatesContainer &pendedRepl, const NsContext &ctx);
+	bool updateIndex(const IndexDef &indexDef, bool disableTmVersionInc);
+	bool doUpdateIndex(const IndexDef &indexDef, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void dropIndex(const IndexDef &index, bool disableTmVersionInc);
 	void doDropIndex(const IndexDef &index, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void addToWAL(const IndexDef &indexDef, WALRecType type, const NsContext &ctx);
@@ -448,7 +472,7 @@ private:
 	void setSchema(std::string_view schema, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void setTagsMatcher(TagsMatcher &&tm, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	void replicateItem(IdType itemId, const NsContext &ctx, bool statementReplication, uint64_t oldPlHash, size_t oldItemCapacity,
-					   int oldTmVersion, UpdatesContainer &pendedRepl);
+					   int oldTmVersion, std::optional<PKModifyRevertData> &&modifyData, UpdatesContainer &pendedRepl);
 
 	template <NeedRollBack needRollBack>
 	[[nodiscard]] RollBack_recreateCompositeIndexes<needRollBack> recreateCompositeIndexes(size_t startIdx, size_t endIdx);
@@ -459,6 +483,11 @@ private:
 	std::string getMeta(const std::string &key) const;
 	void putMeta(const std::string &key, std::string_view data, UpdatesContainer &pendedRepl, const NsContext &ctx);
 	std::pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &);
+
+	RX_ALWAYS_INLINE SelectKeyResult getPkDocs(const ConstPayload &cpl, bool inTransaction, const RdxContext &ctx);
+	RX_ALWAYS_INLINE VariantArray getPkKeys(const ConstPayload &cpl, Index *pkIndex, int fieldNum);
+	void checkUniquePK(const ConstPayload &cpl, bool inTransaction, const RdxContext &ctx);
+
 	int getSortedIdxCount() const noexcept;
 	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem, UpdatesContainer &replUpdates, const NsContext &ctx);
@@ -509,8 +538,6 @@ private:
 
 	std::unordered_map<std::string, std::string> meta_;
 
-	shared_ptr<QueryTotalCountCache> queryTotalCountCache_;
-
 	int sparseIndexesCount_ = 0;
 	VariantArray krefs, skrefs;
 
@@ -528,7 +555,7 @@ private:
 
 	NamespaceImpl(const NamespaceImpl &src, AsyncStorage::FullLockT &storageLock);
 
-	bool isSystem() const noexcept { return !name_.empty() && name_[0] == '#'; }
+	bool isSystem() const noexcept { return isSystemNamespaceNameFast(name_); }
 	IdType createItem(size_t realSize, IdType suggestedId);
 
 	void processWalRecord(WALRecord &&wrec, const NsContext &ctx, lsn_t itemLsn = lsn_t(), Item *item = nullptr);
@@ -539,7 +566,7 @@ private:
 				   QueryStatsCalculatorT &&statCalculator, const NsContext &ctx) {
 		if (!repl_.temporary) {
 			assertrx(!ctx.isCopiedNsRequest);
-			auto err = clusterizator_->Replicate(
+			auto err = clusterizator_.Replicate(
 				std::move(recs),
 				[&wlck]() {
 					assertrx(wlck.isClusterLck());
@@ -575,12 +602,12 @@ private:
 		}
 	}
 
-	JoinCache::Ptr joinCache_;
-
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic<bool> enablePerfCounters_;
 
 	NamespaceConfigData config_;
+	std::unique_ptr<QueryCountCache> queryCountCache_;
+	std::unique_ptr<JoinCache> joinCache_;
 	// Replication variables
 	WALTracker wal_;
 	ReplicationState repl_;
@@ -603,7 +630,12 @@ private:
 	std::deque<StringsHolderPtr> strHoldersWaitingToBeDeleted_;
 	std::chrono::seconds lastExpirationCheckTs_;
 	mutable std::atomic<int64_t> nsUpdateSortedContextMemory_ = {0};
-	cluster::INsDataReplicator *clusterizator_;
+	cluster::INsDataReplicator &clusterizator_;
 	std::atomic<bool> dbDestroyed_{false};
+	lsn_t incarnationTag_;	// Determines unique namespace incarnation for the correct go cache invalidation
+
+#ifdef REINDEX_WITH_V3_FOLLOWERS
+	UpdatesObservers &observers_;
+#endif	// REINDEX_WITH_V3_FOLLOWERS
 };
 }  // namespace reindexer

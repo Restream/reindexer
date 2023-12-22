@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <fstream>
+#include <unordered_map>
 #include "clusterization_api.h"
 #include "spdlog/fmt/fmt.h"
 #include "tools/timetools.h"
@@ -110,7 +111,7 @@ public:
 		}
 		void Validate(reindexer::client::QueryResults& qr) {
 			bool validateOk = true;
-			WrSerializer ser;
+			reindexer::WrSerializer ser;
 			for (auto& it : qr) {
 				ser.Reset();
 				it.GetJSON(ser, false);

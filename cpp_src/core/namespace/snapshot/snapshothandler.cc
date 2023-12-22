@@ -42,7 +42,7 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 
 		LocalQueryResults fullQr;
 		{
-			Query q = Query(ns_.name_).Where("#lsn", CondAny, {});
+			Query q = Query(ns_.name_).Where("#lsn", CondAny, VariantArray{});
 			SelectCtx selCtx(q, nullptr);
 			SelectFunctionsHolder func;
 			selCtx.functions = &func;
@@ -171,8 +171,7 @@ Error SnapshotHandler::applyRealRecord(lsn_t lsn, const SnapshotRecord& snRec, c
 		// Update query
 		case WalUpdateQuery: {
 			LocalQueryResults result;
-			Query q;
-			q.FromSQL(rec.data);
+			const Query q = Query::FromSQL(rec.data);
 			switch (q.type_) {
 				case QueryDelete:
 					result.AddNamespace(&ns_, true);
@@ -275,9 +274,7 @@ void SnapshotTxHandler::ApplyChunk(const SnapshotChunk& ch, bool isInitialLeader
 				break;
 			}
 			case WalUpdateQuery: {
-				Query q;
-				q.FromSQL(wrec.data);
-				auto err = tx.Modify(std::move(q), lsn);
+				auto err = tx.Modify(Query::FromSQL(wrec.data), lsn);
 				if (!err.ok()) throw err;
 				break;
 			}

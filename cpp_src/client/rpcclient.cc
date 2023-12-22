@@ -9,6 +9,7 @@
 #include "core/namespace/namespacestat.h"
 #include "core/namespace/snapshot/snapshot.h"
 #include "core/namespacedef.h"
+#include "core/schema.h"
 #include "gason/gason.h"
 #include "tools/catch_and_return.h"
 #include "tools/cpucheck.h"
@@ -30,6 +31,8 @@ RPCClient::RPCClient(const ReindexerConfig& config, INamespaces::PtrT sharedName
 RPCClient::~RPCClient() { Stop(); }
 
 Error RPCClient::Connect(const std::string& dsn, ev::dynamic_loop& loop, const client::ConnectOpts& opts) {
+	using namespace std::string_view_literals;
+
 	std::lock_guard lck(mtx_);
 	if (conn_.IsRunning()) {
 		return Error(errLogic, "Client is already started (%s)", dsn);
@@ -39,9 +42,16 @@ Error RPCClient::Connect(const std::string& dsn, ev::dynamic_loop& loop, const c
 	if (!connectData.uri.parse(dsn)) {
 		return Error(errParams, "%s is not valid uri", dsn);
 	}
-	if (connectData.uri.scheme() != "cproto") {
+#ifdef _WIN32
+	if (connectData.uri.scheme() != "cproto"sv) {
 		return Error(errParams, "Scheme must be cproto");
 	}
+#else
+	if (connectData.uri.scheme() != "cproto"sv && connectData.uri.scheme() != "ucproto"sv) {
+		return Error(errParams, "Scheme must be either cproto or ucproto");
+	}
+#endif
+
 	connectData.opts = cproto::CoroClientConnection::Options(
 		config_.NetTimeout, config_.NetTimeout, opts.IsCreateDBIfMissing(), opts.HasExpectedClusterID(), opts.ExpectedClusterID(),
 		config_.ReconnectAttempts, config_.EnableCompression, config_.RequestDedicatedThread, config_.AppName);
@@ -50,7 +60,7 @@ Error RPCClient::Connect(const std::string& dsn, ev::dynamic_loop& loop, const c
 	return errOK;
 }
 
-Error RPCClient::Stop() {
+void RPCClient::Stop() {
 	if (conn_.IsRunning()) {
 		std::lock_guard lck(mtx_);
 		terminate_ = true;
@@ -58,7 +68,6 @@ Error RPCClient::Stop() {
 		loop_ = nullptr;
 		terminate_ = false;
 	}
-	return errOK;
 }
 
 Error RPCClient::AddNamespace(const NamespaceDef& nsDef, const InternalRdxContext& ctx, const NsReplicationOpts& replOpts) {
@@ -364,7 +373,7 @@ Error RPCClient::Delete(const Query& query, CoroQueryResults& result, const Inte
 	query.Serialize(ser);
 
 	CoroQueryResults::NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	const int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 	result = CoroQueryResults(&conn_, std::move(nsArray), flags, config_.FetchAmount, config_.NetTimeout, result.i_.lazyMode_);
@@ -385,7 +394,7 @@ Error RPCClient::Update(const Query& query, CoroQueryResults& result, const Inte
 	query.Serialize(ser);
 
 	CoroQueryResults::NsArray nsArray;
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 
 	const int flags = result.i_.fetchFlags_ ? result.i_.fetchFlags_ : (kResultsWithItemID | kResultsWithPayloadTypes | kResultsCJson);
 	result = CoroQueryResults(&conn_, std::move(nsArray), flags, config_.FetchAmount, config_.NetTimeout, result.i_.lazyMode_);
@@ -409,8 +418,7 @@ void vec2pack(const h_vector<int32_t, 4>& vec, WrSerializer& ser) {
 
 Error RPCClient::Select(std::string_view querySQL, CoroQueryResults& result, const InternalRdxContext& ctx) {
 	try {
-		Query query;
-		query.FromSQL(querySQL);
+		auto query = Query::FromSQL(querySQL);
 		switch (query.type_) {
 			case QuerySelect:
 				return Select(query, result, ctx);
@@ -419,7 +427,7 @@ Error RPCClient::Select(std::string_view querySQL, CoroQueryResults& result, con
 			case QueryUpdate:
 				return Update(query, result, ctx);
 			case QueryTruncate:
-				return TruncateNamespace(query._namespace, ctx);
+				return TruncateNamespace(query.NsName(), ctx);
 			default:
 				return Error(errParams, "Incorrect qyery type");
 		}
@@ -433,7 +441,7 @@ Error RPCClient::selectImpl(const Query& query, CoroQueryResults& result, millis
 	CoroQueryResults::NsArray nsArray;
 	WrSerializer qser;
 	query.Serialize(qser);
-	query.WalkNested(true, true, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q._namespace)); });
+	query.WalkNested(true, true, false, [this, &nsArray](const Query& q) { nsArray.push_back(getNamespace(q.NsName())); });
 	h_vector<int32_t, 4> vers;
 	for (auto& ns : nsArray) {
 		auto tm = ns->GetTagsMatcher();

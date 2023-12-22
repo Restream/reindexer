@@ -30,6 +30,7 @@ static void terminate_handler() {
 		} catch (Error &err) {
 			sout << ": " << err.what();
 		} catch (...) {
+			sout << ": <unknown exception>";
 		}
 		sout << " ***" << std::endl;
 	} else {

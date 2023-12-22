@@ -472,7 +472,7 @@ void AsyncReplConfigData::GetYAML(WrSerializer &ser) const {
 			"# Replication log level on replicator's startup. May be changed either via this config (with replication restart) or via config-action\n"
 			"# (upsert '{ \"type\":\"action\", \"action\": { \"command\": \"set_log_level\", \"type\": \"async_replication\", \"level\": \"info\" } }' into #config-namespace).\n"
 			"# Possible values: none, error, warning, info, trace.\n"
-			"log_level: " + logLevelToString(logLevel) + "\n"
+			"log_level: " + std::string(logLevelToString(logLevel)) + "\n"
 			"# List of namespaces for replication. If emply, all namespaces\n"
 			"# All replicated namespaces will become read only for followers\n"
 			"# It should be written as YAML sequence, JSON-style arrays are not supported\n"
@@ -869,6 +869,7 @@ Error ShardingConfig::FromYAML(const std::string &yaml) {
 		proxyConnCount = root["proxy_conn_count"].as<int>(proxyConnCount);
 		proxyConnConcurrency = root["proxy_conn_concurrency"].as<int>(proxyConnConcurrency);
 		proxyConnThreads = root["proxy_conn_threads"].as<int>(proxyConnThreads);
+		sourceId = root["source_id"].as<int64_t>(ShardingSourceId::NotSet);
 		return Validate();
 	} catch (const YAML::Exception &ex) {
 		return Error(errParseYAML, "yaml parsing error: '%s'", ex.what());
@@ -924,6 +925,7 @@ Error ShardingConfig::FromJSON(const gason::JsonNode &root) {
 		proxyConnCount = root["proxy_conn_count"].As<int>(proxyConnCount);
 		proxyConnConcurrency = root["proxy_conn_concurrency"].As<int>(proxyConnConcurrency);
 		proxyConnThreads = root["proxy_conn_threads"].As<int>(proxyConnThreads);
+		sourceId = root["source_id"].As<int64_t>(ShardingSourceId::NotSet);
 	} catch (const Error &err) {
 		return err;
 	} catch (const gason::Exception &ex) {
@@ -936,7 +938,7 @@ bool operator==(const ShardingConfig &lhs, const ShardingConfig &rhs) {
 	return lhs.namespaces == rhs.namespaces && lhs.thisShardId == rhs.thisShardId && lhs.shards == rhs.shards &&
 		   lhs.reconnectTimeout == rhs.reconnectTimeout && lhs.shardsAwaitingTimeout == rhs.shardsAwaitingTimeout &&
 		   lhs.proxyConnCount == rhs.proxyConnCount && lhs.proxyConnConcurrency == rhs.proxyConnConcurrency &&
-		   rhs.proxyConnThreads == lhs.proxyConnThreads;
+		   rhs.proxyConnThreads == lhs.proxyConnThreads && rhs.sourceId == lhs.sourceId;
 }
 bool operator==(const ShardingConfig::Key &lhs, const ShardingConfig::Key &rhs) {
 	return lhs.shardId == rhs.shardId && lhs.algorithmType == rhs.algorithmType && lhs.RelaxCompare(rhs.values) == 0;
@@ -973,6 +975,9 @@ YAML::Node ShardingConfig::GetYAMLObj() const {
 	yaml["proxy_conn_count"] = proxyConnCount;
 	yaml["proxy_conn_concurrency"] = proxyConnConcurrency;
 	yaml["proxy_conn_threads"] = proxyConnThreads;
+	if (sourceId != ShardingSourceId::NotSet) {
+		yaml["source_id"] = sourceId;
+	}
 	return yaml;
 }
 
@@ -1013,6 +1018,9 @@ void ShardingConfig::GetJSON(JsonBuilder &jb) const {
 	jb.Put("proxy_conn_count", proxyConnCount);
 	jb.Put("proxy_conn_concurrency", proxyConnConcurrency);
 	jb.Put("proxy_conn_threads", proxyConnThreads);
+	if (sourceId != ShardingSourceId::NotSet) {
+		jb.Put("source_id", sourceId);
+	}
 }
 
 Error ShardingConfig::Validate() const {

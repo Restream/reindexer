@@ -1,7 +1,7 @@
 
 #include "sqlsuggester.h"
 #include "core/namespacedef.h"
-#include "core/schema.h"
+#include "core/query/query.h"
 #include "sqltokentype.h"
 
 #include <set>
@@ -9,27 +9,32 @@
 
 namespace reindexer {
 
-bool checkIfTokenStartsWith(std::string_view src, std::string_view pattern) {
+static bool checkIfTokenStartsWith(std::string_view src, std::string_view pattern) {
 	return checkIfStartsWith(src, pattern) && src.length() < pattern.length();
 }
 
 std::vector<std::string> SQLSuggester::GetSuggestions(std::string_view q, size_t pos, EnumNamespacesF enumNamespaces,
 													  GetSchemaF getSchema) {
-	ctx_.suggestionsPos = pos;
-	ctx_.autocompleteMode = true;
-	enumNamespaces_ = std::move(enumNamespaces);
-	getSchema_ = std::move(getSchema);
+	Query query;
+	SQLSuggester suggester{query};
+	suggester.ctx_.suggestionsPos = pos;
+	suggester.ctx_.autocompleteMode = true;
+	suggester.enumNamespaces_ = std::move(enumNamespaces);
+	suggester.getSchema_ = std::move(getSchema);
 
 	try {
-		Parse(q);
+		tokenizer tokens{q};
+		(void)(suggester.Parse(tokens));
+		// NOLINTBEGIN(bugprone-empty-catch)
 	} catch (const Error &) {
 	}
+	// NOLINTEND(bugprone-empty-catch)
 
-	for (SqlParsingCtx::SuggestionData &item : ctx_.suggestions) {
-		checkForTokenSuggestions(item);
+	for (SqlParsingCtx::SuggestionData &item : suggester.ctx_.suggestions) {
+		suggester.checkForTokenSuggestions(item);
 	}
 
-	for (auto &it : ctx_.suggestions) {
+	for (auto &it : suggester.ctx_.suggestions) {
 		if (!it.variants.empty()) {
 			return it.variants;
 		}

@@ -17,11 +17,7 @@ type rawResultItemParams struct {
 	data    []byte
 }
 
-type rawResultsExtraParam struct {
-	Tag  int
-	Name string
-	Data []byte
-}
+type nsTagsMap map[int][]int64
 
 type rawResultQueryParams struct {
 	flags                 int
@@ -30,6 +26,7 @@ type rawResultQueryParams struct {
 	count                 int
 	aggResults            [][]byte
 	explainResults        []byte
+	nsIncarnationTags     nsTagsMap
 	shardingConfigVersion int64
 	shardId               int
 }
@@ -62,11 +59,13 @@ func (s *resultSerializer) readRawtItemParams(shardId int) (v rawResultItemParam
 	}
 
 	if (s.flags & bindings.ResultsWithShardId) != 0 {
-		if shardId != bindings.ShardingProxyOff {
+		if shardId != bindings.ShardingNotSet {
 			v.shardid = shardId
 		} else {
 			v.shardid = int(s.GetVarUInt())
 		}
+	} else {
+		v.shardid = bindings.NotSharded
 	}
 
 	switch s.flags & bindings.ResultsFormatMask {
@@ -110,7 +109,7 @@ func (s *resultSerializer) readRawQueryParams(updatePayloadType ...updatePayload
 func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
 	firstAgg := true
 	v.shardingConfigVersion = -1
-	v.shardId = bindings.ShardingProxyOff
+	v.shardId = bindings.ShardingNotSet
 	for {
 		tag := s.GetVarUInt()
 		if tag == bindings.QueryResultEnd {
@@ -131,6 +130,20 @@ func (s *resultSerializer) readExtraResults(v *rawResultQueryParams) {
 			v.shardingConfigVersion = s.GetVarInt()
 		case bindings.QueryResultShardId:
 			v.shardId = int(s.GetVarUInt())
+		case bindings.QueryResultIncarnationTags:
+			shardsCnt := uint(s.GetVarUInt())
+			v.nsIncarnationTags = make(nsTagsMap)
+			for i := uint(0); i < shardsCnt; i++ {
+				shardID := int(s.GetVarInt())
+				nsCnt := uint(s.GetVarUInt())
+				if nsCnt > 0 {
+					sl := make([]int64, nsCnt)
+					for j := uint(0); j < nsCnt; j++ {
+						sl[j] = s.GetVarInt()
+					}
+					v.nsIncarnationTags[shardID] = sl
+				}
+			}
 		}
 	}
 }

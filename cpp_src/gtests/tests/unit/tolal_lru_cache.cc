@@ -12,9 +12,9 @@
 using reindexer::Query;
 using reindexer::WrSerializer;
 using reindexer::Serializer;
-using reindexer::QueryTotalCountCache;
+using reindexer::QueryCountCache;
 using reindexer::QueryCacheKey;
-using reindexer::QueryTotalCountCacheVal;
+using reindexer::QueryCountCacheVal;
 using reindexer::EqQueryCacheKey;
 
 TEST(LruCache, SimpleTest) {
@@ -31,7 +31,7 @@ TEST(LruCache, SimpleTest) {
 		qs.emplace_back(Query("namespace" + idx), false);
 	}
 
-	QueryTotalCountCache cache;
+	QueryCountCache cache(reindexer::kDefaultCacheSizeLimit, reindexer::kDefaultHitCountToCache);
 	auto keyComparator = EqQueryCacheKey();
 
 	PRINTF("checking query cache ...\n");
@@ -48,7 +48,7 @@ TEST(LruCache, SimpleTest) {
 			ASSERT_TRUE(keyComparator(k, ckey)) << "queries are not EQUAL!\n";
 		} else {
 			size_t total = static_cast<size_t>(rand() % 1000);
-			cache.Put(ckey, QueryTotalCountCacheVal{total});
+			cache.Put(ckey, QueryCountCacheVal{total});
 			qs[idx].second = true;
 		}
 	}
@@ -69,7 +69,7 @@ TEST(LruCache, StressTest) {
 	allocdebug_init_mt();
 	size_t memoryCheckpoint = get_alloc_size();
 
-	QueryTotalCountCache cache(cacheSize);
+	QueryCountCache cache(cacheSize, reindexer::kDefaultHitCountToCache);
 
 	PRINTF("preparing queries for caching ...\n");
 	for (auto i = 0; i < nsCount; i++) {
@@ -94,7 +94,7 @@ TEST(LruCache, StressTest) {
 					ASSERT_TRUE(EqQueryCacheKey()(qs[idx], ckey)) << "queries are not EQUAL!\n";
 				} else {
 					size_t total = static_cast<size_t>(rand() % 1000);
-					cache.Put(ckey, QueryTotalCountCacheVal{total});
+					cache.Put(ckey, QueryCountCacheVal{total});
 				}
 			}
 		});
