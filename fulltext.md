@@ -388,7 +388,7 @@ Several parameters of full text search engine can be configured from application
 The list item can be either a string or a structure containing a string (the stopword) and a bool attribute (`is_morpheme`) indicating whether the stopword can be part of a word that can be shown in query-results.
 If the stopword is set as a string, then the `is_morpheme` attribute is `false` by default and following entries are equivalent:
 ```json
-"StopWords":[
+"stop_words":[
     {
         "word": "some_word",
         "is_morpheme": false
@@ -398,7 +398,7 @@ If the stopword is set as a string, then the `is_morpheme` attribute is `false` 
 ``` 
 ,
 ```json
-"StopWords":[
+"stop_words":[
     "some_word",
     ///...
 ]
@@ -407,7 +407,7 @@ If the stopword is set as a string, then the `is_morpheme` attribute is `false` 
 #### Example:
 If the list of stopwords looks like this:
 ```json
-"StopWords":[
+"stop_words":[
     {
         "word": "under",
         "is_morpheme": true
