@@ -54,8 +54,8 @@ public:
 	void Resize(size_t oldSize, size_t newSize);
 	// Get data pointer
 	uint8_t *Ptr() const noexcept { return p_ + sizeof(dataHeader); }
-	void SetLSN(int64_t lsn) { header()->lsn = lsn; }
-	int64_t GetLSN() const { return p_ ? header()->lsn : 0; }
+	void SetLSN(int64_t lsn) noexcept { header()->lsn = lsn; }
+	int64_t GetLSN() const noexcept { return p_ ? header()->lsn : 0; }
 	bool IsFree() const noexcept { return bool(p_ == nullptr); }
 	void Free() noexcept { release(); }
 	size_t GetCapacity() const noexcept { return header()->cap; }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <string_view>
 #include "core/cjson/ctag.h"
 #include "core/keyvalue/uuid.h"

@@ -1,6 +1,46 @@
+# Version 3.22.0 (02.02.2024)
+## Core
+- [fea] Added `explain` results for the [subqueries](readme.md#subqueries-nested-queries)
+- [fea] Added support for limit/offset in `Delete` and `Update` queries
+- [fea] Optimized ordered indexes' cache logic to achive more cache hits and more compact cache size
+- [fea] Added support for `COUNT_CACHED(*)`/`CachedTotal()` aggregation in the queries with INNER JOINS. Now it's possible to cache total count results for such queries
+- [fix] Fixed SQL parsing for combintaions of the [subqueries](readme.md#subqueries-nested-queries) and other conditions in the main query
+- [fix] Fixed [select functions](fulltext.md#using-select-functions) with '.' delimiter. Previously those functios were actually expected '=' as a delimiter
+
+## Fulltext
+- [fea] Reworked logic for the stop-words. [More details](fulltext.md#stopwords-details)
+- [fea] Added config for the base ranking algorithm. Check `bm25_config` field in the [fulltext settings](fulltext.md#base-config-parameters)
+
+## Replication
+- [fea] Fixed sync logic to allow runtime server ID changing
+
+## Reindexer server
+- [fix] Fixed SQL suggests for subqueries and some kinds of the JOIN-queries
+
+## Docker
+- [fea] Base docker image was updated to alpine 3.19
+
+## Build
+- [fix] Fixed dependencies and build for alpine 3.15+
+- [fix] Fixed Release build with GCC 13.2
+
+## Face
+- [fea] Added the subqueries field to the explain mode
+- [fea] Upgraded the Webpack to 5.х
+- [fea] Added the default values to the NS config during the mode changing
+- [fix] Fixed the message about the outdated browser version after Chrome upgraded to v120.
+- [fix] Fixed the settings panel layout on the Performance page, which was overlapped by the message about the outdated browser version
+- [fix] Fixed the table columns auto resizing
+- [fix] Fixed the table header width issue that appeared on the table resizing
+- [fix] Fixed the table layout that crashed on scrolling
+- [fix] Fixed the empty space between the last NS and the Total section on the Memory page
+- [fix] Fixed the title changing on the NS page during a new NS creating
+- [fix] Fixed the tooltip position in the sidebar menu
+- [fix] Fixed the "+" button for the Expire after field 
+
 # Version 3.21.0 (15.12.2023)
 ## Core
-- [fea] Added [subqueries](#subqueries-nested-queries) support (`explain` for subqueries will be implemented in the next releases)
+- [fea] Added [subqueries](readme.md#subqueries-nested-queries) support (`explain` for subqueries will be implement in the next releases)
 - [fea] Added backtraces/minidump support for Windows platform
 - [fea] Added query crash tracker support for Windows platform
 - [fix] Added explicit error for aggregations in joined queries
@@ -16,8 +56,8 @@
 
 ## Go connector
 - [fea] Added Go API and DSL-convertor for subqueries
-- [fea] Changed CJSON-to-object conversion logic for slices: now the single JSON values and fields with multiple JSON-paths will be concatenated together in the target field
-- [fea] Added `WithStrictJoinHandlers`. This option allows to validate JoinHandlers usage at runtime
+- [fea] Changed CJSON-to-object convetrion logic for slices: now the single JSON values and fields with multiple JSON-paths will be concatenated together in the target field
+- [fea] Added `WithStrictJoinHandlers`. This option allows to validate JoinHandlers usage in runtime
 - [fix] Fixed panic handling in the CJSON deserialization
 - [fix] Fixed logging in `cproto`-binding. Error messages will no longer be redirected to stdout instead of user's logger
 
@@ -25,7 +65,7 @@
 - [fea] Saved the scroll position on the sorting
 - [fea] Changed the Server ID range
 - [fea] Improved the notification about the supported browsers
-- [fea] Added the default values to the config form when the default config is used
+- [fea] Added the default values to the config form when the default config is using
 - [fix] Fixed the wrong redirect to a fake database
 - [fix] Fixed the column order changing on the data sorting
 - [fix] Fixed the horizontal scroll on the data sorting

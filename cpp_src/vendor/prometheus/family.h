@@ -157,7 +157,7 @@ T& Family<T>::Add(std::map<std::string, std::string>&& labels, int64_t epoch, Ar
 	auto metrics_iter = metrics_.find(hash);
 
 	if (metrics_iter != metrics_.end()) {
-#ifndef NDEBUG
+#if !defined(NDEBUG) && defined(WITH_STDLIB_DEBUG)
 		auto labels_iter = labels_.find(hash);
 		assertrx(labels_iter != labels_.end());
 		const auto& old_labels = labels_iter->second;
@@ -166,7 +166,7 @@ T& Family<T>::Add(std::map<std::string, std::string>&& labels, int64_t epoch, Ar
 		metrics_iter->second.epoch = epoch;
 		return *metrics_iter->second.ptr;
 	} else {
-#ifndef NDEBUG
+#if !defined(NDEBUG) && defined(WITH_STDLIB_DEBUG)
 		for (auto& label_pair : labels) {
 			auto& label_name = label_pair.first;
 			assertrx(CheckLabelName(label_name));

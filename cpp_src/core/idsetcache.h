@@ -75,12 +75,12 @@ T &operator<<(T &os, const IdSetCacheVal &v) {
 }
 
 struct equal_idset_cache_key {
-	bool operator()(const IdSetCacheKey &lhs, const IdSetCacheKey &rhs) const {
+	bool operator()(const IdSetCacheKey &lhs, const IdSetCacheKey &rhs) const noexcept {
 		return lhs.cond == rhs.cond && lhs.sort == rhs.sort && *lhs.keys == *rhs.keys;
 	}
 };
 struct hash_idset_cache_key {
-	size_t operator()(const IdSetCacheKey &s) const { return (s.cond << 8) ^ (s.sort << 16) ^ s.keys->Hash(); }
+	size_t operator()(const IdSetCacheKey &s) const noexcept { return (size_t(s.cond) << 8) ^ (size_t(s.sort) << 16) ^ s.keys->Hash(); }
 };
 
 using IdSetCacheBase = LRUCache<IdSetCacheKey, IdSetCacheVal, hash_idset_cache_key, equal_idset_cache_key>;

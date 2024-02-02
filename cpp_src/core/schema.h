@@ -136,7 +136,7 @@ public:
 	std::string_view GetJSON() const noexcept { return originalJson_; }
 	Error BuildProtobufSchema(TagsMatcher& tm, PayloadType& pt);
 	Error GetProtobufSchema(WrSerializer& schema) const;
-	int GetProtobufNsNumber() const { return protobufNsNumber_; }
+	int GetProtobufNsNumber() const noexcept { return protobufNsNumber_; }
 	const PrefixTree::PrefixTreeNode* GetRoot() const { return &paths_.root_; }
 	static std::string AppendProtobufNumber(std::string_view j, int protobufNsNumber);
 

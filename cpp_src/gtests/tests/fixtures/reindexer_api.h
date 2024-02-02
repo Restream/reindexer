@@ -47,6 +47,9 @@ public:
 
 	[[nodiscard]] Error Commit(std::string_view ns) { return rt.Commit(ns); }
 	void Upsert(std::string_view ns, Item &item) { rt.Upsert(ns, item); }
+	size_t Update(const Query &q) { return rt.Update(q); }
+	void Delete(std::string_view ns, Item &item) { rt.Delete(ns, item); }
+	size_t Delete(const Query &q) { return rt.Delete(q); }
 
 	void PrintQueryResults(const std::string &ns, const QueryResults &res) { rt.PrintQueryResults(ns, res); }
 

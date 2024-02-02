@@ -271,6 +271,9 @@ bool Snippet::Process(ItemRef &res, PayloadType &pl_type, const SelectFuncStruct
 
 	VariantArray kr;
 	pl.Get(func.field, kr);
+	if (kr.empty() || !kr[0].Type().IsSame(KeyValueType::String{})) {
+		throw Error(errLogic, "Unable to apply snippet function to the non-string field '%s'", func.field);
+	}
 
 	const std::string *data = p_string(kr[0]).getCxxstr();
 	auto pva = dataFtCtx->area_[it->second].GetAreas(func.fieldNo);

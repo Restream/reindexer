@@ -14,6 +14,9 @@ class Namespace {
 		while (true) {
 			try {
 				auto ns = atomicLoadMainNs();
+				if (!ns) {
+					throw Error(errLogic, "Ns is nullptr");
+				}
 				return (*ns.*fn)(std::forward<Args>(args)...);
 			} catch (const Error &e) {
 				if (e.code() != errNamespaceInvalidated) {
@@ -214,7 +217,6 @@ public:
 	void DumpIndex(std::ostream &os, std::string_view index, const RdxContext &ctx) {
 		return nsFuncWrapper<&NamespaceImpl::DumpIndex>(os, index, ctx);
 	}
-	void SetDestroyFlag() { return nsFuncWrapper<&NamespaceImpl::SetDestroyFlag>(); }
 
 protected:
 	friend class ReindexerImpl;

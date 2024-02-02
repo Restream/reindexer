@@ -27,6 +27,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 	auto &explain = ctx.explain;
 	explain = ExplainCalc(ctx.query.GetExplain() || logLevel >= LogInfo);
+	explain.SetSubQueriesExplains(std::move(ctx.subQueriesExplains));
 	ActiveQueryScope queryScope(ctx, ns_->optimizationState_, explain, ns_->locker_.IsReadOnly(), ns_->strHolder_.get());
 
 	explain.SetPreselectTime(ctx.preResultTimeTotal);
@@ -49,16 +50,20 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 	QueryCacheKey ckey;
 	if (aggregationQueryRef.CalcTotal() == ModeCachedTotal || containAggCountCached) {
-		ckey = QueryCacheKey{ctx.query};
+		ckey = QueryCacheKey{ctx.query, kCountCachedKeyMode, ctx.joinedSelectors};
 
 		auto cached = ns_->queryCountCache_->Get(ckey);
 		if (cached.valid && cached.val.total_count >= 0) {
 			result.totalCount += cached.val.total_count;
-			logPrintf(LogTrace, "[%s] using value from cache: %d", ns_->name_, result.totalCount);
+			if (logLevel >= LogTrace) {
+				logPrintf(LogInfo, "[%s] using total count value from cache: %d", ns_->name_, result.totalCount);
+			}
 		} else {
 			needPutCachedTotal = cached.valid;
-			logPrintf(LogTrace, "[%s] value for cache will be calculated by query", ns_->name_);
 			needCalcTotal = true;
+			if (logLevel >= LogTrace) {
+				logPrintf(LogTrace, "[%s] total count value for cache will be calculated by query", ns_->name_);
+			}
 		}
 	}
 

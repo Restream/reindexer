@@ -120,16 +120,33 @@ public:
 		Query qr = Query(nsName_).Sort("id", false);
 		BaseApi::QueryResultsType res(node.Get()->api.reindexer.get());
 		auto err = node.Get()->api.reindexer->Select(qr, res);
-		EXPECT_TRUE(err.ok()) << err.what();
+		ASSERT_TRUE(err.ok()) << err.what();
 		for (auto it : res) {
 			WrSerializer ser;
-			auto err = it.GetJSON(ser, false);
-			EXPECT_TRUE(err.ok()) << err.what();
+			err = it.GetJSON(ser, false);
+			ASSERT_TRUE(err.ok()) << err.what();
 			gason::JsonParser parser;
 			auto root = parser.Parse(ser.Slice());
 			ids.push_back(root["id"].As<int>());
 		}
 	}
+	void GetDataWithStrings(ServerControl& node, std::map<int64_t, std::string>& ids) {
+		Query qr = Query(nsName_).Sort("id", false);
+		BaseApi::QueryResultsType res(node.Get()->api.reindexer.get());
+		auto err = node.Get()->api.reindexer->Select(qr, res);
+		ASSERT_TRUE(err.ok()) << err.what();
+		for (auto it : res) {
+			WrSerializer ser;
+			err = it.GetJSON(ser, false);
+			ASSERT_TRUE(err.ok()) << err.what();
+			gason::JsonParser parser;
+			auto root = parser.Parse(ser.Slice());
+			int id = root["id"].As<int>();
+			std::string s = root["data"].As<std::string>();
+			ids[id] = s;
+		}
+	}
+
 	const std::string nsName_;
 };
 
@@ -1105,3 +1122,175 @@ TEST_F(ReplicationSlaveSlaveApi, WriteIntoSlaveNsAfterReconfiguration) {
 	validateItemsCount(nodes[1], kNs2, 3 * n);
 	for (auto& node : nodes) node.Stop();
 }
+
+struct DataStore {
+	void Add(int64_t id, const std::string& s) {
+		std::unique_lock l(mtx);
+		data[id] = s;
+	}
+	bool Check(const std::map<int64_t, std::string>& r) {
+		std::unique_lock l(mtx);
+		return data == r;
+	}
+	int64_t Size() {
+		std::unique_lock l(mtx);
+		return data.size();
+	}
+
+private:
+	std::mutex mtx;
+	std::map<int64_t, std::string> data;
+};
+
+class ServerIdChange : public ReplicationSlaveSlaveApi, public ::testing::WithParamInterface<int> {
+protected:
+	void SetUp() { fs::RmDirAll(kBaseTestsetDbPathServerIdChange); }
+
+	void TearDown() {}
+
+public:
+	void AddFun(ServerControl& master, DataStore& dataStore, int fromId, unsigned int dn) {
+		for (unsigned int i = 0; i < dn; i++) {
+			reindexer::client::Item item = master.Get()->api.NewItem("ns1");
+			int64_t id = fromId + i;
+			std::string ss = reindexer::randStringAlph(10);
+			dataStore.Add(id, ss);
+			auto err = item.FromJSON("{\"id\":" + std::to_string(id) + ",\"data\":\"" + ss + "\"" + "}");
+			ASSERT_TRUE(err.ok()) << err.what();
+			master.Get()->api.Upsert("ns1", item);
+		}
+	};
+
+	void ChangeServerId(bool isMaster, ServerControl& node, int newServerId, int port) {
+		if (isMaster) {
+			ReplicationConfigTest config("master");
+			config.serverId_ = newServerId;
+			node.Get()->MakeMaster(config);
+		} else {
+			std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(port) + "/db";
+			ReplicationConfigTest config("slave", false, true, newServerId, masterDsn);
+			node.Get()->MakeSlave(0, config);
+		}
+	}
+
+protected:
+	const std::string kBaseTestsetDbPathServerIdChange = fs::JoinPath(fs::GetTempDir(), "rx_test/ServerIdChange");
+};
+
+TEST_P(ServerIdChange, UpdateServerId) {
+	const int port = 10100;
+	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPathServerIdChange, "UpdateServerId"));
+	const std::string kDbPathMaster(kBaseDbPath + "/test_");
+	std::vector<ServerControl> nodes;
+	DataStore dataStore;
+
+	/*
+			m
+		   / \
+		  1   2
+		  |
+		  3
+	*/
+
+	std::vector<int> slaveConfiguration = {-1, port, port, port + 1};
+	for (size_t i = 0; i < slaveConfiguration.size(); i++) {
+		nodes.emplace_back().InitServer(i, port + i, port + 1000 + i, kDbPathMaster + std::to_string(i), "db", true);
+		ChangeServerId(i == 0, nodes.back(), 0, slaveConfiguration[i]);
+	}
+
+	ServerControl& master = nodes[0];
+	TestNamespace1 ns(master);
+
+	const int startId = 0;
+	const int n2 = 20000;
+	const int dn = 10;
+
+	AddFun(master, dataStore, startId, n2);
+
+	for (size_t i = 1; i < nodes.size(); i++) {
+		WaitSync(nodes[0], nodes[i], "ns1");
+	}
+	for (auto& n : nodes) {
+		n.Get()->SetWALSize(GetParam(), "ns1");
+	}
+
+	auto changeConfig = [this, &nodes, &slaveConfiguration, &ns, &dataStore](bool isMaster, int configurationIndex, int newServerId,
+																			 int from) {
+		std::atomic_bool stopInsertThread = false;
+		std::mutex m;
+		std::condition_variable cv;
+		bool startChange = false;
+
+		auto AddThreadFun = [this, &startChange, &m, &stopInsertThread, &nodes, &dataStore, &cv]() {
+			bool isFirst = true;
+			while (!stopInsertThread) {
+				int64_t fromId = rand() % 1'000'000;
+				AddFun(nodes[0], dataStore, fromId, 10);
+				if (isFirst) {
+					{
+						std::unique_lock lk(m);
+						startChange = true;
+					}
+					cv.notify_all();
+				}
+				std::this_thread::sleep_for(std::chrono::microseconds(10));
+				isFirst = false;
+			}
+		};
+
+		std::unique_lock lk(m);
+		std::thread insertThread(AddThreadFun);
+		cv.wait(lk, [&startChange] { return startChange; });
+		lk.unlock();
+
+		ChangeServerId(isMaster, nodes[configurationIndex], newServerId, slaveConfiguration[configurationIndex]);
+		AddFun(nodes[0], dataStore, from, dn);
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		stopInsertThread = true;
+		insertThread.join();
+
+		for (size_t i = 1; i < nodes.size(); i++) {
+			WaitSync(nodes[0], nodes[i], "ns1");
+		}
+
+		std::vector<std::map<int64_t, std::string>> results;
+
+		Query qr = Query("ns1").Sort("id", true);
+
+		for (size_t i = 0; i < nodes.size(); i++) {
+			results.emplace_back();
+			ns.GetDataWithStrings(nodes[i], results.back());
+			ASSERT_EQ(results.back().size(), dataStore.Size()) << " nodeIndex=" << i;
+		}
+
+		for (size_t i = 1; i < results.size(); ++i) {
+			ASSERT_TRUE(dataStore.Check(results[i]));
+		}
+	};
+
+	std::unordered_set<int> usedId;
+	for (int i = 0; i < 10; i++) {
+		int sId = 0;
+		while (true) {
+			sId = rand() % 100 + 300;
+			if (usedId.find(sId) == usedId.end()) {
+				usedId.insert(sId);
+				break;
+			}
+		}
+
+		bool isMaster = rand() % 2;
+		int configurationIndex = 0;
+		if (!isMaster) {
+			configurationIndex = rand() % 3 + 1;
+		}
+		changeConfig(isMaster, configurationIndex, sId, startId + n2 + dn * (i + 1));
+	}
+
+	for (auto& node : nodes) {
+		node.Stop();
+	}
+}
+
+INSTANTIATE_TEST_SUITE_P(WalSize, ServerIdChange, ::testing::Values(1, 4000000));

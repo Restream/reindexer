@@ -288,12 +288,6 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider& configProvider, const RdxC
 	if (isSystem()) return;
 
 	if (serverId_ != replicationConf.serverId) {
-		if (itemsCount_ != 0) {
-			serverIdChanged_ = true;
-			repl_.slaveMode = true;
-			repl_.replicatorEnabled = false;
-			logPrintf(LogWarning, "Change serverId on non empty ns [%s]. Set read only mode.", name_);
-		}
 		serverId_ = replicationConf.serverId;
 		logPrintf(LogWarning, "[repl:%s]:%d Change serverId", name_, serverId_);
 		replStateUpdates_.fetch_add(1, std::memory_order_release);
@@ -566,7 +560,7 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 		for (auto fieldIdx : changedFields) {
 			auto& index = *indexes_[fieldIdx];
 			if ((fieldIdx == 0) || deltaFields <= 0) {
-				oldValue.Get(fieldIdx, skrefsDel, true);
+				oldValue.Get(fieldIdx, skrefsDel, Variant::hold_t{});
 				bool needClearCache{false};
 				index.Delete(skrefsDel, rowId, *strHolder_, needClearCache);
 				if (needClearCache && index.IsOrdered()) indexesCacheCleaner.Add(index.SortId());
@@ -1500,9 +1494,12 @@ void NamespaceImpl::doDelete(IdType id) {
 		if (index.Opts().IsSparse()) {
 			assertrx(index.Fields().getTagsPathsLength() > 0);
 			pl.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
+		} else if (index.Opts().IsArray()) {
+			pl.Get(field, skrefs, Variant::hold_t{});
 		} else {
-			pl.Get(field, skrefs, index.Opts().IsArray());
+			pl.Get(field, skrefs);
 		}
+
 		// Delete value from index
 		bool needClearCache{false};
 		index.Delete(skrefs, id, *strHolder_, needClearCache);
@@ -1848,8 +1845,10 @@ void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate) {
 				} catch (const Error&) {
 					krefs.resize(0);
 				}
+			} else if (index.Opts().IsArray()) {
+				pl.Get(field, krefs, Variant::hold_t{});
 			} else {
-				pl.Get(field, krefs, index.Opts().IsArray());
+				pl.Get(field, krefs);
 			}
 			if ((krefs.ArrayType().Is<KeyValueType::Null>() && skrefs.ArrayType().Is<KeyValueType::Null>()) || krefs == skrefs) continue;
 			bool needClearCache{false};
@@ -2070,7 +2069,6 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 	// If optimizationState_ == OptimizationCompleted is true, then indexes are completely built.
 	// In this case reset optimizationState_ and/or any idset's and sort orders builds are allowed only protected by write lock
 	if (optimizationState_.load(std::memory_order_relaxed) == OptimizationCompleted) return;
-	int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	auto lastUpdateTime = lastUpdateTime_.load(std::memory_order_acquire);
 
 	Locker::RLockT rlck;
@@ -2078,15 +2076,20 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 		rlck = rLock(ctx.rdxContext);
 	}
 
-	if (isSystem() || repl_.temporary || !indexes_.size()) {
+	if (isSystem() || repl_.temporary || !indexes_.size() || !lastUpdateTime || !config_.optimizationTimeout) {
 		return;
 	}
-	if (!lastUpdateTime || !config_.optimizationTimeout || now - lastUpdateTime < config_.optimizationTimeout) {
+	const auto optState{optimizationState_.load(std::memory_order_acquire)};
+	if (optState == OptimizationCompleted || cancelCommitCnt_.load(std::memory_order_relaxed)) {
 		return;
 	}
 
-	const auto optState{optimizationState_.load(std::memory_order_acquire)};
-	if (optState == OptimizationCompleted || cancelCommitCnt_.load(std::memory_order_relaxed)) return;
+	using namespace std::chrono;
+	const int64_t now = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+	if (now - lastUpdateTime < config_.optimizationTimeout) {
+		return;
+	}
+
 	const bool forceBuildAllIndexes = optState == NotOptimized;
 
 	logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) enter", name_);
@@ -2141,13 +2144,13 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 	if (cancelCommitCnt_.load(std::memory_order_relaxed)) {
 		logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) done", name_);
 	} else {
-		lastUpdateTime_.store(0, std::memory_order_release);
 		logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) was cancelled by concurent update", name_);
 	}
 }
 
 void NamespaceImpl::markUpdated(bool forceOptimizeAllIndexes) {
 	using namespace std::string_view_literals;
+	using namespace std::chrono;
 	itemsCount_.store(items_.size(), std::memory_order_relaxed);
 	itemsCapacity_.store(items_.capacity(), std::memory_order_relaxed);
 	if (forceOptimizeAllIndexes) {
@@ -2158,19 +2161,16 @@ void NamespaceImpl::markUpdated(bool forceOptimizeAllIndexes) {
 	}
 	queryCountCache_->Clear();
 	joinCache_->Clear();
-	lastUpdateTime_.store(
-		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
-		std::memory_order_release);
+	lastUpdateTime_.store(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(), std::memory_order_release);
 	if (!nsIsLoading_) {
 		repl_.updatedUnixNano = getTimeNow("nsec"sv);
 	}
 }
 
 void NamespaceImpl::updateSelectTime() {
-	lastSelectTime_ = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	using namespace std::chrono;
+	lastSelectTime_ = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
 }
-
-int64_t NamespaceImpl::getLastSelectTime() const { return lastSelectTime_; }
 
 void NamespaceImpl::Select(QueryResults& result, SelectCtx& params, const RdxContext& ctx) {
 	if (!params.query.IsWALQuery()) {

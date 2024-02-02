@@ -46,18 +46,29 @@ yum update
 yum install reindexer-server
 ```
 
-Available distros: `centos-7`, `fedora-38`, `fedora-39`, `redos-7`
+Available distros: `centos-7`, `fedora-38`, `fedora-39`.
 
 ### Ubuntu/Debian
 
 ```bash
-curl https://repo.reindexer.io/RX-KEY.GPG | apt-key add
+wget https://repo.reindexer.io/RX-KEY.GPG -O /etc/apt/trusted.gpg.d/reindexer.asc
 echo "deb https://repo.reindexer.io/<distro> /" >> /etc/apt/sources.list
 apt update
 apt install reindexer-server
 ```
 
-Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-bionic`, `ubuntu-focal`, `ubuntu-jammy`
+Available distros: `debian-bookworm`, `debian-bullseye`, `ubuntu-focal`, `ubuntu-jammy`
+
+### Redos
+
+```bash
+rpm --import https://repo.reindexer.io/RX-KEY.GPG
+dnf config-manager --add-repo https://repo.reindexer.io/<distro>/x86_64/
+dnf update
+dnf install reindexer-server
+```
+
+Available distros: `redos-7`.
 
 ## OSX brew
 
@@ -110,7 +121,7 @@ service start reindexer
 ## HTTP REST API
 
 The simplest way to use reindexer with any program language - is using REST API. The
-[complete REST API documentation is here](server/contrib/server.md).  
+[complete REST API documentation is here](server/contrib/server.md).
 [Or explore interactive version of Reindexer's swagger documentation](https://editor.swagger.io/?url=https://raw.githubusercontent.com/Restream/reindexer/master/cpp_src/server/contrib/server.yml)
 
 ## GRPC API

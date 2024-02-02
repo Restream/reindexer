@@ -471,6 +471,7 @@ type expectedExplain struct {
 	Field       string
 	FieldType   string
 	Method      string
+	Description string
 	Keys        int
 	Comparators int
 	Matched     int
@@ -499,6 +500,13 @@ type expectedExplainJoinOnInjections struct {
 	Conditions        []expectedExplainConditionInjection
 }
 
+type expectedExplainSubQuery struct {
+	Namespace string
+	Keys      int
+	Field     string
+	Selectors []expectedExplain
+}
+
 func checkExplain(t *testing.T, res []reindexer.ExplainSelector, expected []expectedExplain, fieldName string) {
 	require.Equal(t, len(expected), len(res))
 	for i := 0; i < len(expected); i++ {
@@ -514,6 +522,7 @@ func checkExplain(t *testing.T, res []reindexer.ExplainSelector, expected []expe
 			assert.Equalf(t, expected[i].Matched, res[i].Matched, fieldName+expected[i].Field)
 			assert.Equalf(t, expected[i].Keys, res[i].Keys, fieldName+expected[i].Field)
 			assert.Equalf(t, expected[i].Comparators, res[i].Comparators, fieldName+expected[i].Field)
+			assert.Equalf(t, expected[i].Description, res[i].Description, fieldName+expected[i].Field)
 			if len(expected[i].Preselect) == 0 {
 				assert.Nil(t, res[i].ExplainPreselect, fieldName+expected[i].Field)
 			} else {
@@ -558,6 +567,16 @@ func checkExplainJoinOnInjections(t *testing.T, res []reindexer.ExplainJoinOnInj
 		} else {
 			checkExplainConditionInjection(t, res[i].Conditions, expected[i].Conditions)
 		}
+	}
+}
+
+func checkExplainSubqueries(t *testing.T, res []reindexer.ExplainSubQuery, expected []expectedExplainSubQuery) {
+	require.Equal(t, len(expected), len(res))
+	for i := 0; i < len(expected); i++ {
+		assert.Equal(t, expected[i].Namespace, res[i].Namespace)
+		assert.Equal(t, expected[i].Field, res[i].Field)
+		assert.Equal(t, expected[i].Keys, res[i].Keys)
+		checkExplain(t, res[i].Explain.Selectors, expected[i].Selectors, "")
 	}
 }
 

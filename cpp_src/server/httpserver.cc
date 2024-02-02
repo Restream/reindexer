@@ -22,6 +22,7 @@
 #include "resources_wrapper.h"
 #include "statscollect/istatswatcher.h"
 #include "statscollect/prometheus.h"
+#include "tools/alloc_ext/je_malloc_extension.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
 #include "tools/flagguard.h"
 #include "tools/fsops.h"

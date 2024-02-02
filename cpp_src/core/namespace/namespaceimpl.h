@@ -281,12 +281,12 @@ public:
 	void OnConfigUpdated(DBConfigProvider &configProvider, const RdxContext &ctx);
 	StorageOpts GetStorageOpts(const RdxContext &);
 	std::shared_ptr<const Schema> GetSchemaPtr(const RdxContext &ctx) const;
-	int getNsNumber() const { return schema_ ? schema_->GetProtobufNsNumber() : 0; }
+	int getNsNumber() const noexcept { return schema_ ? schema_->GetProtobufNsNumber() : 0; }
 	IndexesCacheCleaner GetIndexesCacheCleaner() { return IndexesCacheCleaner{*this}; }
 	// Separate method for the v3/v4 replication compatibility.
 	// It should not be used outside of this scenario
 	void SetTagsMatcher(TagsMatcher &&tm, const RdxContext &ctx);
-	void SetDestroyFlag() { dbDestroyed_ = true; }
+	void SetDestroyFlag() noexcept { dbDestroyed_ = true; }
 	Error FlushStorage(const RdxContext &ctx) {
 		const auto flushOpts = StorageFlushOpts().WithImmediateReopen();
 		auto lck = rLock(ctx);
@@ -405,6 +405,7 @@ private:
 	void getFromJoinCache(const Query &, JoinCacheRes &out) const;
 	void getFromJoinCacheImpl(JoinCacheRes &out) const;
 	void getIndsideFromJoinCache(JoinCacheRes &ctx) const;
+	int64_t lastUpdateTimeNano() const noexcept { return repl_.updatedUnixNano; }
 
 	const FieldsSet &pkFields();
 
@@ -412,7 +413,6 @@ private:
 
 	void warmupFtIndexes();
 	void updateSelectTime();
-	int64_t getLastSelectTime() const;
 	void markReadOnly() { locker_.MarkReadOnly(); }
 	Locker::WLockT wLock(const RdxContext &ctx) const { return locker_.WLock(ctx); }
 	Locker::RLockT rLock(const RdxContext &ctx) const { return locker_.RLock(ctx); }

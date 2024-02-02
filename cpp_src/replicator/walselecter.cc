@@ -44,11 +44,9 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 	auto &lsnEntry = q.Entries().Get<QueryEntry>(lsnIdx);
 	if (lsnEntry.Values().size() == 1 && lsnEntry.Condition() == CondGt) {
 		lsn_t fromLSN = lsn_t(std::min(lsnEntry.Values()[0].As<int64_t>(), std::numeric_limits<int64_t>::max() - 1));
-		if (fromLSN.Server() != ns_->serverId_)
-			throw Error(errOutdatedWAL, "Query to WAL with incorrect LSN %ld, LSN counter %ld", int64_t(fromLSN), ns_->wal_.LSNCounter());
 		if (ns_->wal_.LSNCounter() != (fromLSN.Counter() + 1) && ns_->wal_.is_outdated(fromLSN.Counter() + 1) && count)
-			throw Error(errOutdatedWAL, "Query to WAL with outdated LSN %ld, LSN counter %ld walSize = %d count = %d", int64_t(fromLSN),
-						ns_->wal_.LSNCounter(), ns_->wal_.size(), count);
+			throw Error(errOutdatedWAL, "Query to WAL with outdated LSN %ld, LSN counter %ld walSize = %d count = %d",
+						int64_t(fromLSN.Counter()), ns_->wal_.LSNCounter(), ns_->wal_.size(), count);
 
 		const auto walEnd = ns_->wal_.end();
 		for (auto it = ns_->wal_.upper_bound(fromLSN.Counter()); count && it != walEnd; ++it) {

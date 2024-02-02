@@ -29,7 +29,8 @@ option (ENABLE_TCMALLOC "Enable tcmalloc extensions" ON)
 option (ENABLE_JEMALLOC "Enable jemalloc extensions" ON)
 option (ENABLE_ROCKSDB "Enable rocksdb storage" ON)
 option (ENABLE_GRPC "Enable GRPC service" OFF)
-option (ENABLE_SSE "Enable SSE instructions" ON)
+option(ENABLE_SSE "Enable SSE instructions" ON)
+option(ENABLE_SERVER_AS_PROCESS_IN_TEST "Enable server as process" OFF)
 
 
 if (NOT GRPC_PACKAGE_PROVIDER)
@@ -42,7 +43,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.21.0")
+set (REINDEXER_VERSION_DEFAULT "3.22.0")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -731,7 +732,7 @@ if (NOT WIN32)
   SET(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME "server")
   SET(DIST_INCLUDE_FILES
     "tools/errors.h" "tools/serializer.h" "tools/varint.h" "tools/stringstools.h" "tools/customhash.h" "tools/assertrx.h" "tools/jsonstring.h"
-    "tools/verifying_updater.h"
+    "tools/verifying_updater.h" "tools/customlocal.h"
     "core/reindexer.h" "core/type_consts.h" "core/item.h" "core/payload/payloadvalue.h" "core/payload/payloadiface.h" "core/indexopts.h"
     "core/namespacedef.h" "core/keyvalue/variant.h" "core/keyvalue/geometry.h" "core/sortingprioritiestable.h"
     "core/rdxcontext.h" "core/activity_context.h" "core/type_consts_helpers.h" "core/payload/fieldsset.h" "core/payload/payloadtype.h"

@@ -293,7 +293,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				Debug(ser.GetVarUint());
 				break;
 			case QueryStrictMode:
-				strictMode_ = StrictMode(ser.GetVarUint());
+				Strict(StrictMode(ser.GetVarUint()));
 				break;
 			case QueryLimit:
 				count_ = ser.GetVarUint();
@@ -305,7 +305,7 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				calcTotal_ = CalcTotalMode(ser.GetVarUint());
 				break;
 			case QuerySelectFilter:
-				selectFilter_.push_back(std::string(ser.GetVString()));
+				selectFilter_.emplace_back(ser.GetVString());
 				break;
 			case QueryEqualPosition: {
 				const unsigned bracketPosition = ser.GetVarUint();
@@ -315,16 +315,16 @@ void Query::deserialize(Serializer &ser, bool &hasJoinConditions) {
 				break;
 			}
 			case QueryExplain:
-				explain_ = true;
+				Explain(true);
 				break;
 			case QueryWithRank:
 				withRank_ = true;
 				break;
 			case QuerySelectFunction:
-				selectFunctions_.push_back(std::string(ser.GetVString()));
+				selectFunctions_.emplace_back(ser.GetVString());
 				break;
 			case QueryDropField: {
-				Drop(std::string(ser.GetVString()));
+				Drop(ser.GetVString());
 				break;
 			}
 			case QueryUpdateFieldV2: {
@@ -416,35 +416,39 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 	ser.PutVString(NsName());
 	entries_.Serialize(ser, subQueries_);
 
-	for (const auto &agg : aggregations_) {
-		ser.PutVarUint(QueryAggregation);
-		ser.PutVarUint(agg.Type());
-		ser.PutVarUint(agg.Fields().size());
-		for (const auto &field : agg.Fields()) {
-			ser.PutVString(field);
-		}
-		for (const auto &se : agg.Sorting()) {
-			ser.PutVarUint(QueryAggregationSort);
-			ser.PutVString(se.expression);
-			ser.PutVarUint(se.desc);
-		}
-		if (agg.Limit() != QueryEntry::kDefaultLimit) {
-			ser.PutVarUint(QueryAggregationLimit);
-			ser.PutVarUint(agg.Limit());
-		}
-		if (agg.Offset() != QueryEntry::kDefaultOffset) {
-			ser.PutVarUint(QueryAggregationOffset);
-			ser.PutVarUint(agg.Offset());
+	if (!(mode & SkipAggregations)) {
+		for (const auto &agg : aggregations_) {
+			ser.PutVarUint(QueryAggregation);
+			ser.PutVarUint(agg.Type());
+			ser.PutVarUint(agg.Fields().size());
+			for (const auto &field : agg.Fields()) {
+				ser.PutVString(field);
+			}
+			for (const auto &se : agg.Sorting()) {
+				ser.PutVarUint(QueryAggregationSort);
+				ser.PutVString(se.expression);
+				ser.PutVarUint(se.desc);
+			}
+			if (agg.Limit() != QueryEntry::kDefaultLimit) {
+				ser.PutVarUint(QueryAggregationLimit);
+				ser.PutVarUint(agg.Limit());
+			}
+			if (agg.Offset() != QueryEntry::kDefaultOffset) {
+				ser.PutVarUint(QueryAggregationOffset);
+				ser.PutVarUint(agg.Offset());
+			}
 		}
 	}
 
-	for (const auto &sortginEntry : sortingEntries_) {
-		ser.PutVarUint(QuerySortIndex);
-		ser.PutVString(sortginEntry.expression);
-		ser.PutVarUint(sortginEntry.desc);
-		int cnt = forcedSortOrder_.size();
-		ser.PutVarUint(cnt);
-		for (auto &kv : forcedSortOrder_) ser.PutVariant(kv);
+	if (!(mode & SkipSortEntries)) {
+		for (const auto &sortingEntry : sortingEntries_) {
+			ser.PutVarUint(QuerySortIndex);
+			ser.PutVString(sortingEntry.expression);
+			ser.PutVarUint(sortingEntry.desc);
+			int cnt = forcedSortOrder_.size();
+			ser.PutVarUint(cnt);
+			for (auto &kv : forcedSortOrder_) ser.PutVariant(kv);
+		}
 	}
 
 	if (mode & WithJoinEntries) {
@@ -475,12 +479,14 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		}
 	}
 
-	ser.PutVarUint(QueryDebugLevel);
-	ser.PutVarUint(debugLevel_);
+	if (!(mode & SkipExtraParams)) {
+		ser.PutVarUint(QueryDebugLevel);
+		ser.PutVarUint(debugLevel_);
 
-	if (strictMode_ != StrictModeNotSet) {
-		ser.PutVarUint(QueryStrictMode);
-		ser.PutVarUint(int(strictMode_));
+		if (strictMode_ != StrictModeNotSet) {
+			ser.PutVarUint(QueryStrictMode);
+			ser.PutVarUint(int(strictMode_));
+		}
 	}
 
 	if (!(mode & SkipLimitOffset)) {
@@ -494,22 +500,24 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 		}
 	}
 
-	if (HasCalcTotal()) {
-		ser.PutVarUint(QueryReqTotal);
-		ser.PutVarUint(CalcTotal());
-	}
+	if (!(mode & SkipExtraParams)) {
+		if (HasCalcTotal()) {
+			ser.PutVarUint(QueryReqTotal);
+			ser.PutVarUint(CalcTotal());
+		}
 
-	for (const auto &sf : selectFilter_) {
-		ser.PutVarUint(QuerySelectFilter);
-		ser.PutVString(sf);
-	}
+		for (const auto &sf : selectFilter_) {
+			ser.PutVarUint(QuerySelectFilter);
+			ser.PutVString(sf);
+		}
 
-	if (explain_) {
-		ser.PutVarUint(QueryExplain);
-	}
+		if (explain_) {
+			ser.PutVarUint(QueryExplain);
+		}
 
-	if (withRank_) {
-		ser.PutVarUint(QueryWithRank);
+		if (withRank_) {
+			ser.PutVarUint(QueryWithRank);
+		}
 	}
 
 	for (const auto &field : updateFields_) {
@@ -534,15 +542,17 @@ void Query::Serialize(WrSerializer &ser, uint8_t mode) const {
 
 	if (!(mode & SkipJoinQueries)) {
 		for (const auto &jq : joinQueries_) {
-			ser.PutVarUint(static_cast<int>(jq.joinType));
-			jq.Serialize(ser, WithJoinEntries);
+			if (!(mode & SkipLeftJoinQueries) || jq.joinType != JoinType::LeftJoin) {
+				ser.PutVarUint(static_cast<int>(jq.joinType));
+				jq.Serialize(ser, WithJoinEntries);
+			}
 		}
 	}
 
 	if (!(mode & SkipMergeQueries)) {
 		for (const auto &mq : mergeQueries_) {
 			ser.PutVarUint(static_cast<int>(mq.joinType));
-			mq.Serialize(ser, mode | WithJoinEntries);
+			mq.Serialize(ser, (mode | WithJoinEntries) & (~SkipSortEntries));
 		}
 	}
 }

@@ -54,9 +54,10 @@ public:
 	void Erase(ItemRefVector::iterator begin, ItemRefVector::iterator end);
 	size_t Count() const noexcept { return items_.size(); }
 	size_t TotalCount() const noexcept { return totalCount; }
-	const std::string &GetExplainResults() const &noexcept { return explainResults; }
+	const std::string &GetExplainResults() const & noexcept { return explainResults; }
 	const std::string &GetExplainResults() const && = delete;
-	const std::vector<AggregationResult> &GetAggregationResults() const &noexcept { return aggregationResults; }
+	std::string &&MoveExplainResults() & noexcept { return std::move(explainResults); }
+	const std::vector<AggregationResult> &GetAggregationResults() const & noexcept { return aggregationResults; }
 	const std::vector<AggregationResult> &GetAggregationResults() const && = delete;
 	void Clear();
 	h_vector<std::string_view, 1> GetNamespaces() const;
@@ -75,10 +76,14 @@ public:
 		// use enableHold = false only if you are sure that the item will be destroyed before the queryResults
 		Item GetItem(bool enableHold = true);
 		joins::ItemIterator GetJoined();
-		const ItemRef &GetItemRef() const { return qr_->items_[idx_]; }
-		int64_t GetLSN() const { return qr_->items_[idx_].Value().GetLSN(); }
-		bool IsRaw() const;
-		std::string_view GetRaw() const;
+		const ItemRef &GetItemRef() const noexcept { return qr_->items_[idx_]; }
+		int64_t GetLSN() const noexcept { return qr_->items_[idx_].Value().GetLSN(); }
+		bool IsRaw() const noexcept { return qr_->items_[idx_].Raw(); }
+		std::string_view GetRaw() const noexcept {
+			auto &itemRef = qr_->items_[idx_];
+			assertrx(itemRef.Raw());
+			return std::string_view(reinterpret_cast<char *>(itemRef.Value().Ptr()), itemRef.Value().GetCapacity());
+		}
 		Iterator &operator++() noexcept {
 			idx_++;
 			return *this;
@@ -98,9 +103,9 @@ public:
 		Error err_;
 	};
 
-	Iterator begin() const { return Iterator{this, 0, errOK}; }
-	Iterator end() const { return Iterator{this, int(items_.size()), errOK}; }
-	Iterator operator[](int idx) const { return Iterator{this, idx, errOK}; }
+	Iterator begin() const noexcept { return Iterator{this, 0, errOK}; }
+	Iterator end() const noexcept { return Iterator{this, int(items_.size()), errOK}; }
+	Iterator operator[](int idx) const noexcept { return Iterator{this, idx, errOK}; }
 
 	std::vector<joins::NamespaceResults> joined_;
 	std::vector<AggregationResult> aggregationResults;
@@ -122,17 +127,17 @@ public:
 
 	void addNSContext(const PayloadType &type, const TagsMatcher &tagsMatcher, const FieldsSet &fieldsFilter,
 					  std::shared_ptr<const Schema> schema);
-	const TagsMatcher &getTagsMatcher(int nsid) const;
-	const PayloadType &getPayloadType(int nsid) const;
-	const FieldsSet &getFieldsFilter(int nsid) const;
-	TagsMatcher &getTagsMatcher(int nsid);
-	PayloadType &getPayloadType(int nsid);
-	std::shared_ptr<const Schema> getSchema(int nsid) const;
-	int getNsNumber(int nsid) const;
-	int getMergedNSCount() const;
-	ItemRefVector &Items() { return items_; }
+	const TagsMatcher &getTagsMatcher(int nsid) const noexcept;
+	const PayloadType &getPayloadType(int nsid) const noexcept;
+	const FieldsSet &getFieldsFilter(int nsid) const noexcept;
+	TagsMatcher &getTagsMatcher(int nsid) noexcept;
+	PayloadType &getPayloadType(int nsid) noexcept;
+	std::shared_ptr<const Schema> getSchema(int nsid) const noexcept;
+	int getNsNumber(int nsid) const noexcept;
+	int getMergedNSCount() const noexcept { return ctxs.size(); }
+	ItemRefVector &Items() noexcept { return items_; }
 	const ItemRefVector &Items() const { return items_; }
-	int GetJoinedNsCtxIndex(int nsid) const;
+	int GetJoinedNsCtxIndex(int nsid) const noexcept;
 	// Add owning ns pointer
 	// noLock has always to be 'true' (i.e. this method can only be called unders Namespace's lock)
 	void AddNamespace(NamespaceImplPtr, bool noLock);

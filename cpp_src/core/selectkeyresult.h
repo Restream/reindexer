@@ -21,11 +21,11 @@ class SingleSelectKeyResult {
 
 public:
 	SingleSelectKeyResult() noexcept {}
-	SingleSelectKeyResult(IndexIterator::Ptr indexForwardIter) : indexForwardIter_(std::move(indexForwardIter)) {
+	explicit SingleSelectKeyResult(IndexIterator::Ptr &&indexForwardIter) noexcept : indexForwardIter_(std::move(indexForwardIter)) {
 		assertrx(indexForwardIter_ != nullptr);
 	}
 	template <typename KeyEntryT>
-	explicit SingleSelectKeyResult(const KeyEntryT &ids, SortType sortId) {
+	explicit SingleSelectKeyResult(const KeyEntryT &ids, SortType sortId) noexcept {
 		if (ids.Unsorted().IsCommited()) {
 			ids_ = ids.Sorted(sortId);
 		} else {
@@ -35,7 +35,7 @@ public:
 			useBtree_ = true;
 		}
 	}
-	explicit SingleSelectKeyResult(IdSet::Ptr ids) noexcept : tempIds_(std::move(ids)), ids_(*tempIds_) {}
+	explicit SingleSelectKeyResult(IdSet::Ptr &&ids) noexcept : tempIds_(std::move(ids)), ids_(*tempIds_) {}
 	explicit SingleSelectKeyResult(const IdSetRef &ids) noexcept : ids_(ids) {}
 	explicit SingleSelectKeyResult(IdType rBegin, IdType rEnd) noexcept : rBegin_(rBegin), rEnd_(rEnd), isRange_(true) {}
 	SingleSelectKeyResult(const SingleSelectKeyResult &other) noexcept
@@ -253,7 +253,7 @@ public:
 		}
 		clear();
 		deferedExplicitSort = false;
-		emplace_back(mergedIds);
+		emplace_back(IdSet::Ptr(mergedIds));
 		return mergedIds;
 	}
 };

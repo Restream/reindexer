@@ -1047,7 +1047,7 @@ void Replicator::onWALUpdateImpl(LSNPair LSNs, std::string_view nsName, const WA
 	if (slaveNs && !LSNs.upstreamLSN_.isEmpty()) {
 		auto replState = slaveNs->GetReplState(dummyCtx_);
 		if (!replState.lastUpstreamLSN.isEmpty()) {
-			if (replState.lastUpstreamLSN >= LSNs.upstreamLSN_) {
+			if (replState.lastUpstreamLSN.Counter() >= LSNs.upstreamLSN_.Counter()) {
 				logPrintf(LogTrace,
 						  "[repl:%s:%s]:%d OnWALUpdate old record state = %d upstreamLSN = %s replState.lastUpstreamLSN=%d wrec.type = %d",
 						  nsName, slave_->storagePath_, config_.serverId, state_.load(std::memory_order_acquire), LSNs.upstreamLSN_,

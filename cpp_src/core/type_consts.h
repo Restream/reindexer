@@ -79,6 +79,10 @@ typedef enum QuerySerializeMode {
 	SkipMergeQueries = 0x02,
 	SkipLimitOffset = 0x04,
 	WithJoinEntries = 0x08,
+	SkipAggregations = 0x10,
+	SkipSortEntries = 0x20,
+	SkipExtraParams = 0x40,
+	SkipLeftJoinQueries = 0x80,
 } QuerySerializeMode;
 
 typedef enum CondType {

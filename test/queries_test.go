@@ -241,6 +241,8 @@ func init() {
 	tnamespaces["test_items_eqaul_position"] = TestItemEqualPosition{}
 	tnamespaces["test_items_strict"] = TestItem{}
 	tnamespaces["test_items_strict_joined"] = TestJoinItem{}
+
+	tnamespaces["test_items_explain"] = TestItemSimple{}
 }
 
 func FillTestItemsForNot() {
@@ -1119,7 +1121,7 @@ func callQueriesSequence(t *testing.T, namespace string, distinct []string, sort
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
 		WhereQuery(t, newTestQuery(DB, namespace).Where("id", reindexer.EQ, mkID(rand.Int()%5000)),
-		reindexer.ANY, nil).
+			reindexer.ANY, nil).
 		ExecAndVerify(t)
 
 	newTestQuery(DB, namespace).Distinct(distinct).Sort(sort, desc).ReqTotal().
@@ -2171,5 +2173,185 @@ func TestQrIdleTimeout(t *testing.T) {
 			_, err = qrs[i].FetchAll()
 			assert.NoError(t, err, "i = %d", i)
 		}
+	})
+}
+
+func TestQueryExplain(t *testing.T) {
+	t.Parallel()
+
+	ns := "test_items_explain"
+
+	tx := newTestTx(DB, ns)
+	for i := 0; i < 5; i++ {
+		tx.Upsert(TestItemSimple{ID: i, Year: i, Name: randString()})
+	}
+	tx.MustCommit()
+
+	t.Run("Subquery explain check (WhereQuery)", func(t *testing.T) {
+		q := DB.Query(ns).Explain().
+			WhereQuery(t, DB.Query(ns).Select("id").Where("year", reindexer.EQ, 1), reindexer.GE, 0)
+		it := q.MustExec(t)
+		defer it.Close()
+		explainRes, err := it.GetExplainResults()
+		require.NoError(t, err)
+		require.NotNil(t, explainRes)
+
+		printExplainRes(explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:       "-scan",
+				Method:      "scan",
+				Keys:        0,
+				Comparators: 0,
+				Matched:     5,
+			},
+			{
+				Description: "always true",
+				Keys:        0,
+				Comparators: 0,
+				Matched:     0,
+			},
+		}, "")
+		checkExplainSubqueries(t, explainRes.SubQueriesExplains, []expectedExplainSubQuery{
+			{
+				Namespace: ns,
+				Selectors: []expectedExplain{
+					{
+						Field:       "year",
+						FieldType:   "indexed",
+						Method:      "index",
+						Keys:        1,
+						Comparators: 0,
+						Matched:     1,
+					},
+					{
+						Field:       "id",
+						FieldType:   "indexed",
+						Method:      "scan",
+						Keys:        0,
+						Comparators: 1,
+						Matched:     1,
+					},
+				},
+			},
+		})
+	})
+
+	t.Run("Subquery explain check (Where)", func(t *testing.T) {
+		q := DB.Query(ns).Explain().
+			Where("id", reindexer.EQ, DB.Query(ns).Select("id").Where("year", reindexer.EQ, 3))
+		it := q.MustExec(t)
+		defer it.Close()
+		explainRes, err := it.GetExplainResults()
+		require.NoError(t, err)
+		require.NotNil(t, explainRes)
+
+		printExplainRes(explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:       "id",
+				FieldType:   "indexed",
+				Method:      "index",
+				Keys:        1,
+				Comparators: 0,
+				Matched:     1,
+			},
+		}, "")
+		checkExplainSubqueries(t, explainRes.SubQueriesExplains, []expectedExplainSubQuery{
+			{
+				Namespace: ns,
+				Field:     "id",
+				Selectors: []expectedExplain{
+					{
+						Field:       "year",
+						FieldType:   "indexed",
+						Method:      "index",
+						Keys:        1,
+						Comparators: 0,
+						Matched:     1,
+					},
+				},
+			},
+		})
+	})
+
+	t.Run("Subquery explain check (Where + WhereQuery)", func(t *testing.T) {
+		q := DB.Query(ns).Explain().
+			Where("id", reindexer.SET, DB.Query(ns).Select("id").Where("year", reindexer.SET, []int{1, 2})).
+			WhereQuery(t, DB.Query(ns).Select("id").Where("year", reindexer.EQ, 5), reindexer.LE, 10)
+		it := q.MustExec(t)
+		defer it.Close()
+		explainRes, err := it.GetExplainResults()
+		require.NoError(t, err)
+		require.NotNil(t, explainRes)
+
+		printExplainRes(explainRes)
+		checkExplain(t, explainRes.Selectors, []expectedExplain{
+			{
+				Field:       "-scan",
+				Method:      "scan",
+				Keys:        0,
+				Comparators: 0,
+				Matched:     1,
+			},
+			{
+				Description: "always false",
+				Keys:        0,
+				Comparators: 0,
+				Matched:     0,
+			},
+			{
+				Field:       "id",
+				FieldType:   "indexed",
+				Method:      "scan",
+				Keys:        0,
+				Comparators: 1,
+				Matched:     0,
+			},
+		}, "")
+		checkExplainSubqueries(t, explainRes.SubQueriesExplains, []expectedExplainSubQuery{
+			{
+				Namespace: ns,
+				Field:     "id",
+				Selectors: []expectedExplain{
+					{
+						Field:       "-scan",
+						Method:      "scan",
+						Keys:        0,
+						Comparators: 0,
+						Matched:     5,
+					},
+					{
+						Field:       "year",
+						FieldType:   "indexed",
+						Method:      "scan",
+						Keys:        0,
+						Comparators: 1,
+						Matched:     2,
+					},
+				},
+			},
+			{
+				Namespace: ns,
+				Selectors: []expectedExplain{
+					{
+						Field:       "year",
+						FieldType:   "indexed",
+						Method:      "index",
+						Keys:        0,
+						Comparators: 0,
+						Matched:     0,
+					},
+					{
+						Field:       "id",
+						FieldType:   "indexed",
+						Method:      "scan",
+						Keys:        0,
+						Comparators: 1,
+						Matched:     0,
+					},
+				},
+			},
+		})
 	})
 }

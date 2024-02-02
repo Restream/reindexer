@@ -1018,6 +1018,66 @@ TEST_P(FTGenericApi, MergeLimitConstraints) {
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
+TEST_P(FTGenericApi, ConfigBm25Coefficients) {
+	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
+	cfgDef.maxAreasInDoc = 100;
+	reindexer::FtFastConfig cfg = cfgDef;
+	cfg.bm25Config.bm25b = 0.0;
+	cfg.bm25Config.bm25Type = reindexer::FtFastConfig::Bm25Config::Bm25Type::rx;
+
+	Init(cfg);
+	Add("nm1"sv, "слово пусто слова пусто словами"sv, ""sv);
+	Add("nm1"sv, "слово пусто слово"sv, ""sv);
+	Add("nm1"sv, "otherword targetword"sv, ""sv);
+	Add("nm1"sv, "otherword targetword otherword targetword"sv, ""sv);
+	Add("nm1"sv, "otherword targetword otherword targetword targetword"sv, ""sv);
+	Add("nm1"sv,
+		"otherword targetword otherword otherword otherword targetword otherword targetword otherword targetword otherword otherword otherword otherword otherword otherword otherword otherword targetword"sv,
+		""sv);
+
+	CheckResults("targetword",
+				 {{"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! otherword otherword otherword otherword otherword otherword otherword otherword !targetword!", ""},
+								   {"otherword !targetword! otherword !targetword targetword!", ""},
+								   {"otherword !targetword! otherword !targetword!", ""},
+								   {"otherword !targetword!", ""}},
+				 true);
+
+	cfg = cfgDef;
+	cfg.bm25Config.bm25b = 0.75;
+	reindexer::Error err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	CheckResults("targetword",
+				 {
+					 {"otherword !targetword! otherword !targetword targetword!", ""},
+					 {"otherword !targetword! otherword !targetword!", ""},
+					 {"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! otherword otherword otherword otherword otherword otherword otherword otherword !targetword!", ""},
+					 {"otherword !targetword!", ""}
+				 },
+				 true);
+	cfg = cfgDef;
+	cfg.bm25Config.bm25Type = reindexer::FtFastConfig::Bm25Config::Bm25Type::wordCount;
+	cfg.fieldsCfg[0].positionWeight = 0.0;
+	cfg.fullMatchBoost=1.0;
+
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	CheckResults("targetword",
+				 {
+					 {"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! otherword otherword otherword otherword otherword otherword otherword otherword !targetword!", ""},
+					 {"otherword !targetword! otherword !targetword targetword!", ""},
+					 {"otherword !targetword! otherword !targetword!", ""},
+					 {"otherword !targetword!", ""},
+
+				 },
+				 true);
+
+	CheckResults("словах",{{"!слово! пусто !слово!",""},{"!слово! пусто !слова! пусто !словами!",""}},true);
+
+}
+
+
 TEST_P(FTGenericApi, ConfigFtProc) {
 	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
 	cfgDef.synonyms = {{{"тестов"}, {"задача"}}};
@@ -1309,6 +1369,87 @@ TEST_P(FTGenericApi, ExplainWithFtPreselect) {
 		ASSERT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.explainResults;
 		ASSERT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.explainResults;
 	}
+}
+
+TEST_P(FTGenericApi, StopWordsWithMorphemes) {
+	reindexer::FtFastConfig cfg = GetDefaultConfig();
+
+	Init(cfg);
+	Add("Шахматы из слоновой кости"sv);
+	Add("Мат в эфире "sv);
+	Add("Известняк"sv);
+	Add("Известия"sv);
+	Add("Изверг"sv);
+
+	Add("Подобрал подосиновики, положил в лубочек"sv);
+	Add("Подопытный кролик"sv);
+	Add("Шла Саша по шоссе"sv);
+
+	Add("Зайка серенький под елочкой скакал"sv);
+	Add("За Альянс! (с)"sv);
+	Add("Заноза в пальце"sv);
+
+	Add("На западном фронте без перемен"sv);
+	Add("Наливные яблочки"sv);
+	Add("Нарком СССР"sv);
+
+	CheckResults("*из*", {{"!Известняк!", ""}, {"!Известия!", ""}, {"!Изверг!", ""}}, false);
+	CheckResults("из", {}, false);
+
+	CheckResults("*под*", {{"!Подобрал подосиновики!, положил в лубочек", ""}, {"!Подопытный! кролик", ""}}, false);
+	CheckResults("под", {}, false);
+
+	CheckResults(
+		"*за*", {{"!Зайка! серенький под елочкой скакал", ""}, {"!Заноза! в пальце", ""}, {"На !западном! фронте без перемен", ""}}, false);
+	CheckResults("за", {}, false);
+
+	CheckResults("*на*",
+				 {
+					 {"!Наливные! яблочки", ""},
+					 {"!Нарком! СССР", ""},
+				 },
+				 false);
+	CheckResults("на", {}, false);
+
+	cfg.stopWords.clear();
+
+	cfg.stopWords.insert({"на"});
+	cfg.stopWords.insert({"мат", reindexer::StopWord::Type::Morpheme});
+
+	SetFTConfig(cfg);
+
+	CheckResults("*из*", {{"Шахматы !из! слоновой кости", ""}, {"!Известняк!", ""}, {"!Известия!", ""}, {"!Изверг!", ""}}, false);
+	CheckResults("из", {{"Шахматы !из! слоновой кости", ""}}, false);
+
+	CheckResults(
+		"*под*",
+		{{"!Подобрал подосиновики!, положил в лубочек", ""}, {"!Подопытный! кролик", ""}, {"Зайка серенький !под! елочкой скакал", ""}},
+		false);
+	CheckResults("под", {{"Зайка серенький !под! елочкой скакал", ""}}, false);
+
+	CheckResults("*по*",
+				 {{"Шла Саша !по! шоссе", ""},
+				  {"!Подобрал подосиновики, положил! в лубочек", ""},
+				  {"!Подопытный! кролик", ""},
+				  {"Зайка серенький !под! елочкой скакал", ""}},
+				 false);
+	CheckResults("по~", {{"Шла Саша !по! шоссе", ""}, {"Зайка серенький !под! елочкой скакал", ""}}, false);
+	CheckResults("по", {{"Шла Саша !по! шоссе", ""}}, false);
+
+	CheckResults("*мат*", {{"!Шахматы! из слоновой кости", ""}}, false);
+	CheckResults("мат", {}, false);
+
+	CheckResults("*за*",
+				 {{"!Зайка! серенький под елочкой скакал", ""},
+				  {"!Заноза! в пальце", ""},
+				  {"!За! Альянс! (с)", ""},
+				  {"На !западном! фронте без перемен", ""}},
+				 false);
+	CheckResults("за", {{"!За! Альянс! (с)", ""}}, false);
+
+	CheckResults("*на*", {}, false);
+	CheckResults("на~", {}, false);
+	CheckResults("на", {}, false);
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTGenericApi,

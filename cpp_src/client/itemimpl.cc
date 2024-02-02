@@ -54,7 +54,7 @@ void ItemImpl::FromCJSON(std::string_view slice) {
 		throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
 	}
 	tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
-	pl.Set(0, Variant(p_string(&tupleData_)));
+	pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
 }
 
 Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
@@ -88,7 +88,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
 	if (err.ok()) {
 		// Put tuple to field[0]
 		tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
-		pl.Set(0, Variant(p_string(&tupleData_)));
+		pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
 		ser_ = WrSerializer();
 	}
 	return err;
@@ -102,7 +102,7 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 	Error err = decoder.Decode(buf, pl, ser_, offset);
 	if (err.ok()) {
 		tupleData_.assign(ser_.Slice().data(), ser_.Slice().size());
-		pl.Set(0, Variant(p_string(&tupleData_)));
+		pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
 	}
 	return err;
 }

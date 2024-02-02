@@ -139,7 +139,7 @@ h_vector<std::string_view, 1> QueryResults::GetNamespaces() const {
 	return ret;
 }
 
-int QueryResults::GetJoinedNsCtxIndex(int nsid) const {
+int QueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
 	int ctxIndex = joined_.size();
 	for (int ns = 0; ns < nsid; ++ns) {
 		ctxIndex += joined_[ns].GetJoinedSelectorsCount();
@@ -396,16 +396,6 @@ Error QueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) {
 	return errOK;
 }
 
-bool QueryResults::Iterator::IsRaw() const {
-	auto &itemRef = qr_->items_[idx_];
-	return itemRef.Raw();
-}
-std::string_view QueryResults::Iterator::GetRaw() const {
-	auto &itemRef = qr_->items_[idx_];
-	assertrx(itemRef.Raw());
-	return std::string_view(reinterpret_cast<char *>(itemRef.Value().Ptr()), itemRef.Value().GetCapacity());
-}
-
 Item QueryResults::Iterator::GetItem(bool enableHold) {
 	auto &itemRef = qr_->items_[idx_];
 
@@ -445,24 +435,22 @@ void QueryResults::AddItem(Item &item, bool withData, bool enableHold) {
 	}
 }
 
-const TagsMatcher &QueryResults::getTagsMatcher(int nsid) const { return ctxs[nsid].tagsMatcher_; }
+const TagsMatcher &QueryResults::getTagsMatcher(int nsid) const noexcept { return ctxs[nsid].tagsMatcher_; }
 
-const PayloadType &QueryResults::getPayloadType(int nsid) const { return ctxs[nsid].type_; }
+const PayloadType &QueryResults::getPayloadType(int nsid) const noexcept { return ctxs[nsid].type_; }
 
-const FieldsSet &QueryResults::getFieldsFilter(int nsid) const { return ctxs[nsid].fieldsFilter_; }
+const FieldsSet &QueryResults::getFieldsFilter(int nsid) const noexcept { return ctxs[nsid].fieldsFilter_; }
 
-TagsMatcher &QueryResults::getTagsMatcher(int nsid) { return ctxs[nsid].tagsMatcher_; }
+TagsMatcher &QueryResults::getTagsMatcher(int nsid) noexcept { return ctxs[nsid].tagsMatcher_; }
 
-PayloadType &QueryResults::getPayloadType(int nsid) { return ctxs[nsid].type_; }
+PayloadType &QueryResults::getPayloadType(int nsid) noexcept { return ctxs[nsid].type_; }
 
-std::shared_ptr<const Schema> QueryResults::getSchema(int nsid) const { return ctxs[nsid].schema_; }
+std::shared_ptr<const Schema> QueryResults::getSchema(int nsid) const noexcept { return ctxs[nsid].schema_; }
 
-int QueryResults::getNsNumber(int nsid) const {
+int QueryResults::getNsNumber(int nsid) const noexcept {
 	assertrx(ctxs[nsid].schema_);
 	return ctxs[nsid].schema_->GetProtobufNsNumber();
 }
-
-int QueryResults::getMergedNSCount() const { return ctxs.size(); }
 
 void QueryResults::addNSContext(const PayloadType &type, const TagsMatcher &tagsMatcher, const FieldsSet &filter,
 								std::shared_ptr<const Schema> schema) {

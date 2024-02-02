@@ -32,7 +32,9 @@ Variant jsonValue2Variant(const gason::JsonValue &v, KeyValueType t, std::string
 					-> Variant { throw Error(errLogic, "Error parsing json field '%s' - got number, expected %s", fieldName, t.Name()); });
 		case gason::JSON_STRING:
 			return t.EvaluateOneOf(
-				[&](OneOf<KeyValueType::String, KeyValueType::Undefined>) { return Variant(p_string(json_string_ftr{v.sval.ptr})); },
+				[&](OneOf<KeyValueType::String, KeyValueType::Undefined>) {
+					return Variant(p_string(json_string_ftr{v.sval.ptr}), Variant::no_hold_t{});
+				},
 				[&](KeyValueType::Uuid) { return Variant{Uuid{v.toString()}}; },
 				[&](OneOf<KeyValueType::Bool, KeyValueType::Int, KeyValueType::Int64, KeyValueType::Double, KeyValueType::Tuple,
 						  KeyValueType::Composite, KeyValueType::Null>) -> Variant {
@@ -59,7 +61,7 @@ Variant jsonValue2Variant(const gason::JsonValue &v, KeyValueType t, std::string
 				[](KeyValueType::Double) noexcept { return Variant(0.0); }, [](KeyValueType::Bool) noexcept { return Variant(false); },
 				[](KeyValueType::Int) noexcept { return Variant(0); },
 				[](KeyValueType::Int64) noexcept { return Variant(static_cast<int64_t>(0)); },
-				[](KeyValueType::String) { return Variant(p_string(static_cast<const char *>(nullptr))); },
+				[](KeyValueType::String) { return Variant(static_cast<const char *>(nullptr)); },
 				[](KeyValueType::Uuid) noexcept { return Variant{Uuid{}}; },
 				[&](OneOf<KeyValueType::Undefined, KeyValueType::Tuple, KeyValueType::Composite, KeyValueType::Null>) -> Variant {
 					throw Error(errLogic, "Error parsing json field '%s' - got null, expected %s", fieldName, t.Name());

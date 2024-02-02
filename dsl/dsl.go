@@ -80,13 +80,13 @@ type Sort struct {
 }
 
 type Filter struct {
-	Op      string      `json:"op,omitempty"`
-	Field   string      `json:"field,omitempty"`
-	Joined  *JoinQuery  `json:"join_query,omitempty"`
-	SubQ    *SubQuery   `json:"subquery,omitempty"`
-	Cond    string      `json:"cond,omitempty"`
-	Value   interface{} `json:"value,omitempty"`
-	Filters []Filter    `json:"filters,omitempty"`
+	Op      string      `json:"Op,omitempty"`
+	Field   string      `json:"Field,omitempty"`
+	Joined  *JoinQuery  `json:"Join_Query,omitempty"`
+	SubQ    *SubQuery   `json:"Subquery,omitempty"`
+	Cond    string      `json:"Cond,omitempty"`
+	Value   interface{} `json:"Value,omitempty"`
+	Filters []Filter    `json:"Filters,omitempty"`
 }
 
 type JoinOnCondition struct {

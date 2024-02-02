@@ -2,8 +2,9 @@
 
 #include <array>
 #include <map>
-#include <memory>
 #include <string>
+#include "estl/intrusive_ptr.h"
+#include "tools/assertrx.h"
 #include "type_consts.h"
 
 namespace reindexer {
@@ -20,12 +21,17 @@ public:
 	explicit SortingPrioritiesTable(const std::string& sortOrderUTF8);
 
 	/// Returns priority of a character.
-	/// @param ch - character.
+	/// @param c - character
 	/// @returns int priority value
-	int GetPriority(wchar_t ch) const;
+	int GetPriority(wchar_t c) const noexcept {
+		assertrx(sortOrder_.get() != nullptr);
+		// assertrx(static_cast<uint32_t>(c) < tableSize);
+		uint16_t ch(static_cast<uint16_t>(c));
+		return sortOrder_->operator[](ch);
+	}
 
 	/// @returns string of sort order characters
-	const std::string& GetSortOrderCharacters() const;
+	const std::string& GetSortOrderCharacters() const noexcept { return sortOrderCharacters_; }
 
 private:
 	/// Checks whether ch is in existing ranges ir not.
@@ -34,10 +40,11 @@ private:
 	/// @returns true, if character is in one of existing ranges already.
 	bool checkForRangeIntersection(std::map<uint16_t, uint16_t>& ranges, wchar_t ch);
 
-	static const uint32_t tableSize = 0x10000;
-	using SortOrderTable = std::array<uint16_t, tableSize>;
-	using SortOrderTablePtr = std::shared_ptr<SortOrderTable>;
+	constexpr static uint32_t kTableSize = 0x10000;
+	using SortOrderTable = intrusive_atomic_rc_wrapper<std::array<uint16_t, kTableSize>>;
+	using SortOrderTablePtr = intrusive_ptr<SortOrderTable>;
 	SortOrderTablePtr sortOrder_;
 	std::string sortOrderCharacters_;
 };
+
 }  // namespace reindexer

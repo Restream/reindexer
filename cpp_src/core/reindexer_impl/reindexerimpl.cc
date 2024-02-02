@@ -77,7 +77,12 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg)
 
 ReindexerImpl::~ReindexerImpl() {
 	for (auto& ns : namespaces_) {
-		ns.second->SetDestroyFlag();
+		// Add extra checks to avoid GCC 13 warnings in Release build. Actually namespaces are never null
+		if (ns.second) {
+			if (auto mainNs = ns.second->getMainNs(); mainNs) {
+				mainNs->SetDestroyFlag();
+			}
+		}
 	}
 
 	dbDestroyed_ = true;

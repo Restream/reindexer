@@ -53,11 +53,19 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id) {
 				PayloadType("tmp").clone()->deserialize(ser);
 			},
 			ResultSerializer::AggsFlag::ClearAggregations);
+
+		auto copyStart = rawResult.begin() + ser.Pos();
+		if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rx_unlikely(rawResLen > int64_t(RawResBufT::max_size()))) {
+			throw Error(
+				errLogic,
+				"client::QueryResults::Bind: rawResult buffer overflow. Max size if %d bytes, but %d bytes requested. Try to reduce "
+				"fetch limit (current limit is %d)",
+				RawResBufT::max_size(), rawResLen, fetchAmount_);
+		}
+		rawResult_.assign(copyStart, rawResult.end());
 	} catch (const Error &err) {
 		status_ = err;
 	}
-
-	rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
 }
 
 void CoroQueryResults::fetchNextResults() {
@@ -79,7 +87,14 @@ void CoroQueryResults::fetchNextResults() {
 
 	ser.GetRawQueryParams(queryParams_, nullptr, ResultSerializer::AggsFlag::DontClearAggregations);
 
-	rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
+	auto copyStart = rawResult.begin() + ser.Pos();
+	if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rx_unlikely(rawResLen > int64_t(RawResBufT::max_size()))) {
+		throw Error(errLogic,
+					"client::QueryResults::fetchNextResults: rawResult buffer overflow. Max size if %d bytes, but %d bytes requested. Try "
+					"to reduce fetch limit (current limit is %d)",
+					RawResBufT::max_size(), rawResLen, fetchAmount_);
+	}
+	rawResult_.assign(copyStart, rawResult.end());
 }
 
 h_vector<std::string_view, 1> CoroQueryResults::GetNamespaces() const {

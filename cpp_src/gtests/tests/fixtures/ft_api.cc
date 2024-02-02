@@ -157,12 +157,12 @@ void FTApi::AddInBothFields(std::string_view ns, std::string_view w1, std::strin
 }
 
 reindexer::QueryResults FTApi::SimpleSelect(std::string word, bool withHighlight) {
-	auto qr{reindexer::Query("nm1").Where("ft3", CondEq, std::move(word))};
+	auto q{reindexer::Query("nm1").Where("ft3", CondEq, std::move(word)).WithRank()};
 	reindexer::QueryResults res;
 	if (withHighlight) {
-		qr.AddFunction("ft3 = highlight(!,!)");
+		q.AddFunction("ft3 = highlight(!,!)");
 	}
-	auto err = rt.reindexer->Select(qr, res);
+	auto err = rt.reindexer->Select(q, res);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	return res;

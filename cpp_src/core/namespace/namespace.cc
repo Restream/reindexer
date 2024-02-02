@@ -42,8 +42,8 @@ void Namespace::CommitTransaction(Transaction& tx, QueryResults& result, const R
 				NsContext nsCtx(ctx);
 				nsCtx.CopiedNsRequest();
 				nsCopy_->CommitTransaction(tx, result, nsCtx, statCalculator);
-				if (nsCopy_->lastUpdateTime_) {
-					nsCopy_->lastUpdateTime_ -= nsCopy_->config_.optimizationTimeout * 2;
+				if (nsCopy_->lastUpdateTime_.load(std::memory_order_relaxed)) {
+					nsCopy_->lastUpdateTime_.fetch_sub(nsCopy_->config_.optimizationTimeout * 2, std::memory_order_relaxed);
 					nsCopy_->optimizeIndexes(nsCtx);
 					nsCopy_->warmupFtIndexes();
 				}

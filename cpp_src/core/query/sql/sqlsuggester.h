@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <unordered_set>
 #include "core/schema.h"
 #include "sqlparser.h"
 
@@ -37,8 +38,8 @@ private:
 	/// Tries to find among possible namespaces.
 	[[nodiscard]] bool findInPossibleNamespaces(const std::string &tok);
 	/// Gets names of indexes that start with 'token'.
-	void getMatchingFieldsNames(const std::string &token, std::vector<std::string> &variants);
-	void getMatchingNamespacesNames(const std::string &token, std::vector<std::string> &variants);
+	void getMatchingFieldsNames(const std::string &token, std::unordered_set<std::string> &variants);
+	void getMatchingNamespacesNames(const std::string &token, std::unordered_set<std::string> &variants);
 	EnumNamespacesF enumNamespaces_;
 	GetSchemaF getSchema_;
 };

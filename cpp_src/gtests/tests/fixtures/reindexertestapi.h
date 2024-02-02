@@ -6,6 +6,7 @@
 #include <vector>
 #include "core/indexdef.h"
 #include "core/indexopts.h"
+#include "core/query/query.h"
 #include "gtests/tests/gtest_cout.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
@@ -73,6 +74,23 @@ public:
 		auto err = reindexer->Upsert(ns, item);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+	}
+	size_t Update(const reindexer::Query &q) {
+		QueryResultsType qr;
+		auto err = reindexer->Update(q, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		return qr.Count();
+	}
+	void Delete(std::string_view ns, ItemType &item) {
+		assertrx(!!item);
+		auto err = reindexer->Delete(ns, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	size_t Delete(const reindexer::Query &q) {
+		QueryResultsType qr;
+		auto err = reindexer->Delete(q, qr);
+		EXPECT_TRUE(err.ok()) << err.what();
+		return qr.Count();
 	}
 	reindexer::Error DumpIndex(std::ostream &os, std::string_view ns, std::string_view index) {
 		return reindexer->DumpIndex(os, ns, index);
