@@ -5,6 +5,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/msgpackbuilder.h"
 #include "core/cjson/msgpackdecoder.h"
+#include "estl/fast_hash_set.h"
 #include "estl/span.h"
 #include "ns_api.h"
 #include "tools/jsontools.h"

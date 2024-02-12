@@ -10,7 +10,7 @@ jobs:
       fail-fast: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Build Reindexer
         run: |
           mkdir build && cd build
@@ -27,7 +27,7 @@ jobs:
       fail-fast: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Build Reindexer
         run: |
           mkdir build && cd build
@@ -57,7 +57,7 @@ jobs:
       CXX: ${{matrix.cxx}}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Prepare Environment
         run: |
           ./.github/workflows/install_gtest.sh
@@ -94,7 +94,7 @@ jobs:
           rm -rf ./build/_CPack_Packages ./build/cpp_src/server/reindexer_server_resources
           tar -cvf artifacts.tar build/ bindings/builtin/builtin_posix.go bindings/builtinserver/builtinserver_posix.go dependencies.sh
       - name: Archive Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
           path: artifacts.tar
@@ -133,10 +133,10 @@ jobs:
     steps:
       - name: Checkout repository
         if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Download ${{matrix.os}}${{matrix.sanitizer}} Artifacts
         if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: ${{matrix.os}}${{matrix.sanitizer}}
       - name: 'Untar Artifacts'
@@ -183,7 +183,7 @@ jobs:
       OS: ${{matrix.os}}
     steps:
       - name: Download ${{matrix.os}} Artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: ${{matrix.os}}
       - name: 'Untar Artifacts'
@@ -217,7 +217,7 @@ jobs:
             cp ./usr/local/etc/reindexer.conf.pkg /usr/local/etc/reindexer.conf.pkg
           fi
       - name: Clone PyReindexer
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: restream/reindexer-py
       - name: Install PyReindexer

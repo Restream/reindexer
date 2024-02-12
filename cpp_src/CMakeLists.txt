@@ -43,7 +43,7 @@ else()
   option (LINK_RESOURCES "Link web resources as binary data" ON)
 endif()
 
-set (REINDEXER_VERSION_DEFAULT "3.22.0")
+set (REINDEXER_VERSION_DEFAULT "3.22.1")
 
 if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE "RelWithDebInfo")
@@ -449,7 +449,7 @@ if (WITH_CPPTRACE)
   ExternalProject_Add(
     cpptrace_lib
     GIT_REPOSITORY "https://github.com/jeremy-rifkin/cpptrace.git"
-    GIT_TAG "main"
+    GIT_TAG "v0.3.1"
     CMAKE_ARGS -DCMAKE_INSTALL_LIBDIR=${CMAKE_CURRENT_BINARY_DIR}	
       -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
       -DCPPTRACE_STATIC=On

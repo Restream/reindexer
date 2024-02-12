@@ -115,7 +115,7 @@ NamespaceImpl::NamespaceImpl(const std::string& name, UpdatesObservers& observer
 	  queryCountCache_(
 		  std::make_unique<QueryCountCache>(config_.cacheConfig.queryCountCacheSize, config_.cacheConfig.queryCountHitsToCache)),
 	  joinCache_(std::make_unique<JoinCache>(config_.cacheConfig.joinCacheSize, config_.cacheConfig.joinHitsToCache)),
-	  wal_(config_.walSize),
+	  wal_(getWalSize(config_)),
 	  observers_(&observers),
 	  lastSelectTime_{0},
 	  cancelCommitCnt_{0},
@@ -281,7 +281,7 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider& configProvider, const RdxC
 		updateSortedIdxCount();
 	}
 
-	if (wal_.Resize(config_.walSize)) {
+	if (wal_.Resize(getWalSize(config_))) {
 		logPrintf(LogInfo, "[%s] WAL has been resized lsn #%s, max size %ld", name_, repl_.lastLsn, wal_.Capacity());
 	}
 
@@ -2641,7 +2641,7 @@ void NamespaceImpl::LoadFromStorage(unsigned threadsCount, const RdxContext& ctx
 }
 
 void NamespaceImpl::initWAL(int64_t minLSN, int64_t maxLSN) {
-	wal_.Init(config_.walSize, minLSN, maxLSN, storage_);
+	wal_.Init(getWalSize(config_), minLSN, maxLSN, storage_);
 	// Fill existing records
 	for (IdType rowId = 0; rowId < IdType(items_.size()); rowId++) {
 		if (!items_[rowId].IsFree()) {

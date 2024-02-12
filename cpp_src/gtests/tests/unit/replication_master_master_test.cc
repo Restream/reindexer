@@ -1,26 +1,23 @@
 #include <gtest/gtest.h>
-#include <cstdio>
-#include <future>
-#include <thread>
-#include "core/cjson/jsonbuilder.h"
-#include "core/dbconfig.h"
-#include "core/keyvalue/p_string.h"
-#include "core/queryresults/queryresults.h"
-#include "server/server.h"
+#include "core/defnsconfigs.h"
 #include "servercontrol.h"
-#include "tools/fsops.h"
-#include "vendor/gason/gason.h"
 
 using namespace reindexer;
 
 class ReplicationSlaveSlaveApi : public ::testing::Test {
 protected:
-	void SetUp() { fs::RmDirAll(kBaseTestsetDbPath); }
+	void SetUp() override { fs::RmDirAll(kBaseTestsetDbPath); }
 
-	void TearDown() {}
+	void TearDown() override {}
 
 public:
-	ReplicationSlaveSlaveApi() {}
+	class ServerControlVec : public std::vector<ServerControl> {
+	public:
+		~ServerControlVec() {
+			for (auto& node : *this) node.Stop();
+		}
+	};
+
 	void WaitSync(ServerControl& s1, ServerControl& s2, const std::string& nsName) {
 		auto now = std::chrono::milliseconds(0);
 		const auto pause = std::chrono::milliseconds(100);
@@ -41,7 +38,7 @@ public:
 		}
 	}
 
-	void CreateConfiguration(std::vector<ServerControl>& nodes, const std::vector<int>& slaveConfiguration, int basePort, int baseServerId,
+	void CreateConfiguration(ServerControlVec& nodes, const std::vector<int>& slaveConfiguration, int basePort, int baseServerId,
 							 const std::string& dbPathMaster) {
 		for (size_t i = 0; i < slaveConfiguration.size(); i++) {
 			nodes.push_back(ServerControl());
@@ -52,12 +49,12 @@ public:
 			} else {
 				std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(slaveConfiguration[i]) + "/db";
 				ReplicationConfigTest config("slave", false, true, baseServerId + i, masterDsn);
-				nodes.back().Get()->MakeSlave(0, config);
+				nodes.back().Get()->MakeSlave(config);
 			}
 		}
 	}
 
-	void RestartServer(size_t id, std::vector<ServerControl>& nodes, int port, const std::string& dbPathMaster) {
+	void RestartServer(size_t id, ServerControlVec& nodes, int port, const std::string& dbPathMaster) {
 		assertrx(id < nodes.size());
 		if (nodes[id].Get()) {
 			nodes[id].Stop();
@@ -73,6 +70,29 @@ public:
 			}
 		}
 		nodes[id].InitServer(id, port + id, port + 1000 + id, dbPathMaster + std::to_string(id), "db", true);
+	}
+
+	void ApplyConfig(ServerControl& sc, std::string_view json) {
+		auto& rx = *sc.Get()->api.reindexer;
+		auto item = rx.NewItem(kConfigNamespace);
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		auto err = item.FromJSON(json);
+		ASSERT_TRUE(err.ok()) << err.what();
+		err = rx.Upsert(kConfigNamespace, item);
+		ASSERT_TRUE(err.ok()) << err.what();
+	}
+	void CheckTxCopyEventsCount(ServerControl& sc, int expectedCount) {
+		auto& rx = *sc.Get()->api.reindexer;
+		client::SyncCoroQueryResults qr(&rx);
+		auto err = rx.Select(Query(kPerfStatsNamespace), qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), 1);
+		WrSerializer ser;
+		err = qr.begin().GetJSON(ser, false);
+		ASSERT_TRUE(err.ok()) << err.what();
+		gason::JsonParser parser;
+		auto resJS = parser.Parse(ser.Slice());
+		ASSERT_EQ(resJS["transactions"]["total_copy_count"].As<int>(-1), expectedCount) << ser.Slice();
 	}
 
 protected:
@@ -101,6 +121,22 @@ public:
 			master->api.Upsert(nsName_, item);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
+	}
+
+	void AddRowsTx(ServerControl& masterControl, int from, unsigned int count, size_t dataLen = 8) {
+		auto& rx = *masterControl.Get()->api.reindexer;
+		reindexer::client::SyncCoroTransaction tr = rx.NewTransaction(nsName_);
+		ASSERT_TRUE(tr.Status().ok()) << tr.Status().what();
+		for (unsigned int i = 0; i < count; i++) {
+			reindexer::client::Item item = tr.NewItem();
+			auto err = item.FromJSON("{\"id\":" + std::to_string(from + i) +
+									 (dataLen ? (",\"data\":\"" + reindexer::randStringAlph(dataLen) + "\"") : "") + "}");
+			ASSERT_TRUE(err.ok()) << err.what();
+			err = tr.Upsert(std::move(item));
+			ASSERT_TRUE(err.ok()) << err.what();
+		}
+		auto err = rx.CommitTransaction(tr);
+		ASSERT_TRUE(err.ok()) << err.what();
 	}
 
 	std::function<void(ServerControl&, int, unsigned int, std::string)> AddRow1msSleep = [](ServerControl& masterControl, int from,
@@ -157,7 +193,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSyncByWalAddRow) {
 	const int port = 9999;
 
 	std::vector<int> slaveConfiguration = {-1, port};
-	std::vector<ServerControl> nodes;
+	ServerControlVec nodes;
 	CreateConfiguration(nodes, slaveConfiguration, port, 10, kDbPathMaster);
 
 	TestNamespace1 ns1(nodes[0]);
@@ -214,7 +250,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveStart) {
 	const int port = 9999;
 
 	std::vector<int> slaveConfiguration = {-1, port};
-	std::vector<ServerControl> nodes;
+	ServerControlVec nodes;
 	CreateConfiguration(nodes, slaveConfiguration, port, 10, kDbPathMaster);
 
 	// Insert 100 rows
@@ -264,7 +300,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSlave2) {
 		const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "MasterSlaveSlave2"));
 		const std::string kDbPathMaster(kBaseDbPath + "/test_");
 		int serverId = 5;
-		std::vector<ServerControl> nodes;
+		ServerControlVec nodes;
 
 		CreateConfiguration(nodes, slaveConfiguration, port, serverId, kDbPathMaster);
 
@@ -289,7 +325,6 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSlave2) {
 		for (size_t i = 1; i < results.size(); ++i) {
 			EXPECT_TRUE((results[0] == results[i]));
 		}
-		for (auto& node : nodes) node.Stop();
 	};
 
 	const int port = 9999;
@@ -329,7 +364,7 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSlaveReload) {
 	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "MasterSlaveSlaveReload"));
 	const std::string kDbPathMaster(kBaseDbPath + "/test_");
 	const int serverId = 5;
-	std::vector<ServerControl> nodes;
+	ServerControlVec nodes;
 	std::atomic_bool stopRestartServerThread(false);
 
 	/*
@@ -382,7 +417,6 @@ TEST_F(ReplicationSlaveSlaveApi, MasterSlaveSlaveReload) {
 	for (size_t i = 1; i < results.size(); ++i) {
 		EXPECT_TRUE((results[0] == results[i])) << i << "; size[0]: " << results[0].size() << "; size[i]: " << results[i].size();
 	}
-	for (auto& node : nodes) node.Stop();
 }
 
 #endif
@@ -407,7 +441,7 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionTest) {
 
 	std::vector<int> slaveConfiguration = {-1, port, port + 1, port + 2, port + 3};
 
-	std::vector<ServerControl> nodes;
+	ServerControlVec nodes;
 
 	CreateConfiguration(nodes, slaveConfiguration, port, serverId, kDbPathMaster);
 
@@ -423,14 +457,7 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionTest) {
 		WaitSync(nodes[0], nodes[i], nsName);
 	}
 
-	reindexer::client::SyncCoroTransaction tr = master.Get()->api.reindexer->NewTransaction(nsName);
-
-	for (unsigned int i = 0; i < kRows; i++) {
-		reindexer::client::Item item = tr.NewItem();
-		auto err = item.FromJSON("{\"id\":" + std::to_string(i + kRows * 10) + "}");
-		tr.Upsert(std::move(item));
-	}
-	master.Get()->api.reindexer->CommitTransaction(tr);
+	ns1.AddRowsTx(master, 0, kRows);
 
 	for (size_t i = 1; i < nodes.size(); i++) {
 		WaitSync(nodes[0], nodes[i], nsName);
@@ -445,7 +472,6 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionTest) {
 	for (size_t i = 1; i < results.size(); ++i) {
 		EXPECT_TRUE((results[0] == results[i]));
 	}
-	for (auto& node : nodes) node.Stop();
 }
 
 TEST_F(ReplicationSlaveSlaveApi, TransactionCopyPolicyForceSync) {
@@ -475,29 +501,20 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionCopyPolicyForceSync) {
 		"type": "namespaces"
 	})=";
 	constexpr int port = 9999;
-	const std::string kBaseDbPath(fs::JoinPath(kBaseTestsetDbPath, "TransactionCopyPolicyForceSync"));
-	const std::string kDbPathMaster(kBaseDbPath + "/test_");
+	const std::string kDbPathMaster(fs::JoinPath(fs::JoinPath(kBaseTestsetDbPath, "TransactionCopyPolicyForceSync"), "test_"));
 	constexpr int serverId = 5;
 	constexpr size_t kRows = 100;
 	const std::string nsName("ns1");
 
 	std::vector<int> slaveConfiguration = {-1, port, port + 1};
-	std::vector<ServerControl> nodes;
+	ServerControlVec nodes;
 	for (size_t i = 0; i < slaveConfiguration.size(); i++) {
-		nodes.emplace_back();
-		nodes.back().InitServer(i, port + i, port + 1000 + i, kDbPathMaster + std::to_string(i), "db", true);
+		nodes.emplace_back().InitServer(i, port + i, port + 1000 + i, kDbPathMaster + std::to_string(i), "db", true);
 		nodes.back().Get()->EnableAllProfilings();
 	}
 
 	// Set tx copy policy for the node '2' to 'always copy'
-	{
-		auto item = nodes[2].Get()->api.reindexer->NewItem("#config");
-		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
-		auto err = item.FromJSON(kJsonCfgNss);
-		ASSERT_TRUE(err.ok()) << err.what();
-		err = nodes[2].Get()->api.reindexer->Upsert("#config", item);
-		ASSERT_TRUE(err.ok()) << err.what();
-	}
+	ApplyConfig(nodes[2], kJsonCfgNss);
 
 	for (size_t i = 0; i < slaveConfiguration.size(); i++) {
 		if (i == 0) {
@@ -506,7 +523,7 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionCopyPolicyForceSync) {
 		} else {
 			std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(slaveConfiguration[i]) + "/db";
 			ReplicationConfigTest config("slave", false, true, serverId + i, masterDsn);
-			nodes[i].Get()->MakeSlave(slaveConfiguration[i], config);
+			nodes[i].Get()->MakeSlave(config);
 		}
 	}
 	nodes[2].Drop();
@@ -519,32 +536,79 @@ TEST_F(ReplicationSlaveSlaveApi, TransactionCopyPolicyForceSync) {
 	nodes[2].InitServer(2, port + 2, port + 1000 + 2, kDbPathMaster + std::to_string(2), "db", true);
 	std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(slaveConfiguration[2]) + "/db";
 	ReplicationConfigTest config("slave", false, true, serverId + 2, masterDsn);
-	nodes[2].Get()->MakeSlave(1, config);
+	nodes[2].Get()->MakeSlave(config);
 	WaitSync(nodes[0], nodes[2], nsName);
+
+	// Check copy tx event in the perfstats before tx
+	CheckTxCopyEventsCount(nodes[2], 0);
 
 	// Apply tx
-	reindexer::client::SyncCoroTransaction tr = master.Get()->api.reindexer->NewTransaction(nsName);
-	for (unsigned int i = 0; i < kRows; i++) {
-		reindexer::client::Item item = tr.NewItem();
-		auto err = item.FromJSON("{\"id\":" + std::to_string(i + kRows * 10) + "}");
-		tr.Upsert(std::move(item));
-	}
-	master.Get()->api.reindexer->CommitTransaction(tr);
+	ns1.AddRowsTx(master, 0, kRows);
 	WaitSync(nodes[0], nodes[2], nsName);
 
-	// Check copy tx event in the perfstats
-	client::SyncCoroQueryResults qr(nodes[2].Get()->api.reindexer.get());
-	auto err = nodes[2].Get()->api.reindexer->Select("select * from #perfstats", qr);
-	ASSERT_TRUE(err.ok()) << err.what();
-	ASSERT_EQ(qr.Count(), 1);
-	WrSerializer ser;
-	err = qr.begin().GetJSON(ser, false);
-	ASSERT_TRUE(err.ok()) << err.what();
-	gason::JsonParser parser;
-	auto resJS = parser.Parse(ser.Slice());
-	ASSERT_EQ(resJS["transactions"]["total_copy_count"].As<int>(-1), 1) << ser.Slice();
+	// Check copy tx event in the perfstats after tx
+	CheckTxCopyEventsCount(nodes[2], 1);
+}
 
-	for (auto& node : nodes) node.Stop();
+TEST_F(ReplicationSlaveSlaveApi, TransactionCopyPolicyWalSync) {
+	// Check transactions copy policy during the wal sync
+	/*
+			m
+			|
+			1
+	*/
+	constexpr std::string_view kJsonCfgNss = R"=({
+		"namespaces": [
+		{
+			"namespace": "*",
+			"start_copy_policy_tx_size": 10000,
+			"copy_policy_multiplier": 5,
+			"tx_size_to_always_copy": 100000
+		},
+		{
+			"namespace": "ns1",
+			"start_copy_policy_tx_size": 10000,
+			"copy_policy_multiplier": 5,
+			"tx_size_to_always_copy": 1
+		}
+		],
+		"type": "namespaces"
+	})=";
+	constexpr int port = 9999;
+	const std::string kDbPathMaster(fs::JoinPath(fs::JoinPath(kBaseTestsetDbPath, "TransactionCopyPolicyWalSync"), "test_"));
+	constexpr int serverId = 5;
+	constexpr size_t kRows = 100;
+	const std::string nsName("ns1");
+
+	std::vector<int> slaveConfiguration = {-1, port};
+	ServerControlVec nodes;
+	for (size_t i = 0; i < slaveConfiguration.size(); i++) {
+		nodes.emplace_back().InitServer(i, port + i, port + 1000 + i, kDbPathMaster + std::to_string(i), "db", true);
+		nodes.back().Get()->EnableAllProfilings();
+	}
+	const std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(slaveConfiguration[1]) + "/db";
+
+	// Set tx copy policy for the node '1' to 'always copy'
+	ApplyConfig(nodes[1], kJsonCfgNss);
+
+	nodes[0].Get()->MakeMaster(ReplicationConfigTest("master"));
+	nodes[1].Get()->MakeSlave(ReplicationConfigTest("slave", false, true, serverId + 1, masterDsn));
+
+	ServerControl& master = nodes[0];
+	TestNamespace1 ns1(master, nsName);
+	WaitSync(master, nodes[1], nsName);
+
+	nodes[1].Drop();
+	// Apply tx
+	ns1.AddRowsTx(master, 0, kRows);
+
+	// Restart node '1'
+	nodes[1].InitServer(1, port + 1, port + 1000 + 1, kDbPathMaster + std::to_string(1), "db", true);
+	nodes[1].Get()->MakeSlave(ReplicationConfigTest("slave", false, true, serverId + 1, masterDsn));
+	WaitSync(master, nodes[1], nsName);
+
+	// Check copy tx event in the perfstats
+	CheckTxCopyEventsCount(nodes[1], 1);
 }
 
 TEST_F(ReplicationSlaveSlaveApi, ForceSync3Node) {
@@ -577,15 +641,15 @@ TEST_F(ReplicationSlaveSlaveApi, ForceSync3Node) {
 	slave2.InitServer(2, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
 	std::string upDsn2 = "cproto://127.0.0.1:7771/db";
 	ReplicationConfigTest configSlave2("slave", false, true, 2, upDsn2);
-	slave2.Get()->MakeSlave(0, configSlave2);
+	slave2.Get()->MakeSlave(configSlave2);
 
 	ServerControl slave3;
 	slave3.InitServer(3, 7773, 7883, kBaseDbPath + "/slave3", "db", true);
 	std::string upDsn3 = "cproto://127.0.0.1:7772/db";
 	ReplicationConfigTest configSlave3("slave", false, true, 3, upDsn3);
-	slave3.Get()->MakeSlave(0, configSlave3);
+	slave3.Get()->MakeSlave(configSlave3);
 
-	slave1.Get()->MakeSlave(0, configSlave1);
+	slave1.Get()->MakeSlave(configSlave1);
 
 	WaitSync(master, slave1, "ns1");
 	WaitSync(master, slave2, "ns1");
@@ -628,7 +692,7 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs1) {
 	testns3.AddRows(slave, c1, n);
 	std::string upDsn = "cproto://127.0.0.1:7770/db";
 	ReplicationConfigTest configSlave("slave", false, true, 0, upDsn);
-	slave.Get()->MakeSlave(0, configSlave);
+	slave.Get()->MakeSlave(configSlave);
 	testns3.AddRows(slave, c2, n);
 
 	WaitSync(master, slave, "ns1");
@@ -688,7 +752,7 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs2) {
 	std::string upDsn = "cproto://127.0.0.1:7770/db";
 	ReplicationConfigTest::NsSet nsSet = {"ns1"};
 	ReplicationConfigTest configSlave("slave", false, true, 0, upDsn, "slave", nsSet);
-	slave.Get()->MakeSlave(0, configSlave);
+	slave.Get()->MakeSlave(configSlave);
 	testns3.AddRows(slave, c2, n);
 
 	WaitSync(master, slave, "ns1");
@@ -740,7 +804,7 @@ TEST_F(ReplicationSlaveSlaveApi, NodeWithMasterAndSlaveNs3) {
 	std::string upDsn = "cproto://127.0.0.1:7770/db";
 	ReplicationConfigTest::NsSet nsSet = {"ns1"};
 	ReplicationConfigTest configSlave("slave", false, true, 0, upDsn, "slave", nsSet);
-	slave.Get()->MakeSlave(0, configSlave);
+	slave.Get()->MakeSlave(configSlave);
 	testns3.AddRows(slave, c2, n);
 
 	WaitSync(master, slave, "ns1");
@@ -782,7 +846,7 @@ TEST_F(ReplicationSlaveSlaveApi, RenameSlaveNs) {
 	std::string upDsn = "cproto://127.0.0.1:7770/db";
 	ReplicationConfigTest::NsSet nsSet = {"ns1"};
 	ReplicationConfigTest configSlave("slave", false, true, 0, upDsn, "slave", nsSet);
-	slave.Get()->MakeSlave(0, configSlave);
+	slave.Get()->MakeSlave(configSlave);
 
 	WaitSync(master, slave, "ns1");
 
@@ -852,9 +916,9 @@ TEST_F(ReplicationSlaveSlaveApi, Node3ApplyWal) {
 			slave1.InitServer(1, 7771, 7881, kBaseDbPath + "/slave1", "db", true);
 			slave2.InitServer(2, 7772, 7882, kBaseDbPath + "/slave2", "db", true);
 			ReplicationConfigTest configSlave1("slave", false, true, 1, upDsn1, "slave1");
-			slave1.Get()->MakeSlave(0, configSlave1);
+			slave1.Get()->MakeSlave(configSlave1);
 			ReplicationConfigTest configSlave2("slave", false, true, 2, upDsn2, "slave2");
-			slave2.Get()->MakeSlave(0, configSlave2);
+			slave2.Get()->MakeSlave(configSlave2);
 			WaitSync(master, slave1, "ns1");
 			WaitSync(master, slave2, "ns1");
 		}
@@ -925,7 +989,7 @@ TEST_F(ReplicationSlaveSlaveApi, RestrictUpdates) {
 	ServerControl slave;
 	slave.InitServer(0, 7771, 7881, reindexer::fs::JoinPath(kBaseStoragePath, "slave"), "db", true);
 	ReplicationConfigTest configSlave("slave", false, true, 0, upDsn, "slave");
-	slave.Get()->MakeSlave(0, configSlave);
+	slave.Get()->MakeSlave(configSlave);
 
 	insertThread.join();
 	WaitSync(master, slave, "ns1");
@@ -948,7 +1012,7 @@ TEST_F(ReplicationSlaveSlaveApi, ConcurrentForceSync) {
 	const size_t kNsSyncCount = 3;
 	const int kBaseServerId = 5;
 
-	std::vector<ServerControl> nodes;
+	ServerControlVec nodes;
 	auto createSlave = [&kBaseDbPath, &kDbName, &nodes, &kNsList](const std::string& masterDsn) {
 		size_t id = nodes.size();
 		nodes.push_back(ServerControl());
@@ -958,7 +1022,7 @@ TEST_F(ReplicationSlaveSlaveApi, ConcurrentForceSync) {
 			nsSet.emplace(kNsList[i]);
 		}
 		ReplicationConfigTest config("slave", false, true, kBaseServerId + id, masterDsn, "slave" + std::to_string(id), nsSet);
-		nodes.back().Get()->MakeSlave(0, config);
+		nodes.back().Get()->MakeSlave(config);
 	};
 
 	// Create master
@@ -1019,7 +1083,6 @@ TEST_F(ReplicationSlaveSlaveApi, ConcurrentForceSync) {
 			EXPECT_EQ(nsDefs.size(), kNsSyncCount);
 		}
 	}
-	for (auto& node : nodes) node.Stop();
 }
 #endif
 
@@ -1032,7 +1095,7 @@ TEST_F(ReplicationSlaveSlaveApi, WriteIntoSlaveNsAfterReconfiguration) {
 	const std::string kNs1 = "ns1";
 	const std::string kNs2 = "ns2";
 	int manualItemId = 5;
-	std::vector<ServerControl> nodes;
+	ServerControlVec nodes;
 	CreateConfiguration(nodes, {-1, kBasePort}, kBasePort, kServerId, kBaseDbPath);
 	TestNamespace1 testns1(nodes[0], kNs1);
 	testns1.AddRows(nodes[0], 0, n);
@@ -1061,7 +1124,7 @@ TEST_F(ReplicationSlaveSlaveApi, WriteIntoSlaveNsAfterReconfiguration) {
 	{
 		ReplicationConfigTest::NsSet nsSet = {"ns2"};
 		ReplicationConfigTest configSlave("slave", false, true, kServerId + 1, kUpDsn, "slave", nsSet);
-		nodes[1].Get()->MakeSlave(0, configSlave);
+		nodes[1].Get()->MakeSlave(configSlave);
 	}
 
 	item = createItem(nodes[1], kNs1, manualItemId);
@@ -1100,7 +1163,7 @@ TEST_F(ReplicationSlaveSlaveApi, WriteIntoSlaveNsAfterReconfiguration) {
 	{
 		ReplicationConfigTest::NsSet nsSet = {"ns1", "ns2"};
 		ReplicationConfigTest configSlave("slave", false, true, kServerId + 1, kUpDsn, "slave", nsSet);
-		nodes[1].Get()->MakeSlave(0, configSlave);
+		nodes[1].Get()->MakeSlave(configSlave);
 		WaitSync(nodes[0], nodes[1], kNs1);
 		WaitSync(nodes[0], nodes[1], kNs2);
 	}
@@ -1120,7 +1183,6 @@ TEST_F(ReplicationSlaveSlaveApi, WriteIntoSlaveNsAfterReconfiguration) {
 	validateItemsCount(nodes[0], kNs2, 3 * n);
 	validateItemsCount(nodes[1], kNs1, 3 * n);
 	validateItemsCount(nodes[1], kNs2, 3 * n);
-	for (auto& node : nodes) node.Stop();
 }
 
 struct DataStore {
@@ -1169,7 +1231,7 @@ public:
 		} else {
 			std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(port) + "/db";
 			ReplicationConfigTest config("slave", false, true, newServerId, masterDsn);
-			node.Get()->MakeSlave(0, config);
+			node.Get()->MakeSlave(config);
 		}
 	}
 

@@ -3,8 +3,8 @@
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
 Reindexer's goal is to provide fast search with complex queries.
 
-The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
-Reindexer is fast. Up to 5x times faster, than mongodb, and 10x times than elastic search. See [benchmaks section](../benchmarks) for details.
+Reindexer is compact, fast and it does not have heavy dependencies.
+reindexer is up to 5x times faster, than mongodb, and 10x times than elastic search. See [benchmaks section](https://github.com/Restream/reindexer-benchmarks) for details.
 
 # Installation
 

@@ -43,9 +43,8 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 
 	bool needPutCachedTotal = false;
 	const auto initTotalCount = result.totalCount;
-	bool containAggCount = containSomeAggCount(AggCount);
-	bool containAggCountCached = containAggCount ? false : containSomeAggCount(AggCountCached);
-
+	const bool containAggCount = containSomeAggCount(AggCount);
+	const bool containAggCountCached = containAggCount ? false : containSomeAggCount(AggCountCached);
 	bool needCalcTotal = aggregationQueryRef.CalcTotal() == ModeAccurateTotal || containAggCount;
 
 	QueryCacheKey ckey;
@@ -100,6 +99,7 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	if (isFt) {
 		qPreproc.CheckUniqueFtQuery();
 		qPreproc.ExcludeFtQuery(rdxCtx);
+		result.haveRank = true;
 	}
 	qPreproc.ConvertWhereValues();
 
@@ -109,7 +109,6 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 		result.addNSContext(ns_->payloadType_, ns_->tagsMatcher_, FieldsSet(ns_->tagsMatcher_, ctx.query.SelectFilters()), ns_->schema_);
 	}
 
-	if (isFt) result.haveRank = true;
 	if (ctx.query.IsWithRank()) {
 		if (isFt) {
 			result.needOutputRank = true;
@@ -321,16 +320,17 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 			} else if (!reverse && !hasComparators && !aggregationsOnly) {
 				selectLoop<false, false, false>(lctx, result, rdxCtx);
 			}
-		}
 
-		// Get total count for simple query with 1 condition and 1 idset
-		if (needCalcTotal && !lctx.calcTotal) {
-			if (!ctx.query.Entries().Empty()) {
-				result.totalCount += qres.Get<SelectIterator>(0).GetMaxIterations();
-			} else {
-				result.totalCount += ns_->items_.size() - ns_->free_.size();
+			// Get total count for simple query with 1 condition and 1 idset
+			if (needCalcTotal && !lctx.calcTotal) {
+				if (!ctx.query.Entries().Empty()) {
+					result.totalCount += qres.Get<SelectIterator>(0).GetMaxIterations();
+				} else {
+					result.totalCount += ns_->items_.size() - ns_->free_.size();
+				}
 			}
 		}
+
 		explain.AddLoopTime();
 		explain.AddIterations(maxIterations);
 		if (!ctx.inTransaction) {
@@ -402,7 +402,9 @@ void NsSelecter::operator()(QueryResults &result, SelectCtx &ctx, const RdxConte
 	}
 
 	if (needPutCachedTotal) {
-		logPrintf(LogTrace, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
+		if rx_unlikely (logLevel >= LogTrace) {
+			logPrintf(LogInfo, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
+		}
 		ns_->queryCountCache_->Put(ckey, {static_cast<size_t>(result.totalCount - initTotalCount)});
 	}
 	if (ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
@@ -1018,7 +1020,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &rd
 	SelectIterator &firstIterator = qres.begin()->Value<SelectIterator>();
 	IdType rowId = firstIterator.Val();
 	while (firstIterator.Next(rowId) && !finish) {
-		if (!sctx.inTransaction && (rowId % kCancelCheckFrequency == 0)) ThrowOnCancel(rdxCtx);
+		if ((rowId % kCancelCheckFrequency == 0) && !sctx.inTransaction) ThrowOnCancel(rdxCtx);
 		rowId = firstIterator.Val();
 		IdType properRowId = rowId;
 
@@ -1082,8 +1084,10 @@ void NsSelecter::selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &rd
 						getSortIndexValue(sctx.sortingContext, properRowId, prevValues, proc,
 										  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors);
 				}
-				if (!ctx.count && !ctx.calcTotal && multiSortFinished) break;
-				if (ctx.calcTotal) result.totalCount++;
+				if (!ctx.count && !ctx.calcTotal && multiSortFinished) {
+					break;
+				}
+				result.totalCount += int(ctx.calcTotal);
 			} else {
 				assertf(static_cast<size_t>(properRowId) < result.rowId2Vdoc->size(),
 						"properRowId = %d; rowId = %d; result.rowId2Vdoc->size() = %d", properRowId, rowId, result.rowId2Vdoc->size());

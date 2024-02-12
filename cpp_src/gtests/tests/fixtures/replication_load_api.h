@@ -3,7 +3,6 @@
 #include "gtests/tools.h"
 #include "replication_api.h"
 #include "replicator/updatesobserver.h"
-#include "vendor/hopscotch/hopscotch_map.h"
 
 class ReplicationLoadApi : public ReplicationApi {
 public:
@@ -121,7 +120,7 @@ public:
 	void SetServerConfig(size_t num, const ReplicationConfigTest &config) {
 		auto srv = GetSrv(num);
 		if (num) {
-			srv->MakeSlave(0, config);
+			srv->MakeSlave(config);
 		} else {
 			srv->MakeMaster(config);
 		}

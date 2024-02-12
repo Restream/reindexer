@@ -27,6 +27,7 @@ Reindexer has builtin full text search engine. This document describes usage of 
     - [Stopwords details](#stopwords-details)
     - [Detailed typos config](#detailed-typos-config)
     - [Base ranking config](#base-ranking-config)
+    - [Basic document ranking algorithms](#basic-document-ranking-algorithms)
     - [Limitations and know issues](#limitations-and-know-issues)
 
 
@@ -378,11 +379,7 @@ Several parameters of full text search engine can be configured from application
 |   | MaxTotalAreasToCache  |    int   | Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited                                                                                                                                                                                                                     |      -1       |
 |   |     Optimization      |  string  | Optimize the index by 'memory' or by 'cpu'                                                                                                                                                                                                                                                                                        |   "memory"    |
 |   |     FtBaseRanking     |  struct  | Relevance of the word in different forms                                                                                                                                                                                                                                                                                          |               |
-|   |      Bm25Config       |  struct  | Document ranking function parameters                                                                                                                                                                                                                                                                                              |               |
-|   |   Bm25Config.Bm25k1   |   float  | Coefficient k1 in the formula for calculating bm25 (used only for rx_bm25, bm25). Сoefficient that sets the saturation threshold for the frequency of the term. The higher the coefficient, the higher the threshold and the lower the saturation rate.                                                                           |      2.0      |                                          	
-|   |   Bm25Config.Bm25b    |   float  | Coefficient b in the formula for calculating bm25 (used only for rx_bm25, bm25). If b is bigger, the effects of the length of the document compared to the average length are more amplified.                                                                                                                                     |     0.75      |                     
-|   |  Bm25Config.Bm25Type  |  string  | Formula for calculating document relevance (rx_bm25, bm25, word_count)                                                                                                                                                                                                                                                            |   "rx_bm25"   |                                   
-
+|   |      Bm25Config       |  struct  | Document ranking function parameters  [More...](#basic-document-ranking-algorithms)                                                                                                                                                                                                                                                        |               |
 
 ### Stopwords details
 The list item can be either a string or a structure containing a string (the stopword) and a bool attribute (`is_morpheme`) indicating whether the stopword can be part of a word that can be shown in query-results.
@@ -445,6 +442,47 @@ FtBaseRanking: config for the base relevancy of the word in different forms.
 |   | Kblayout                     |    int   | Relevancy of the match in incorrect kblayout                                                                                                                                                                                                              |       90      |
 |   | Translit                     |    int   | Relevancy of the match in translit                                                                                                                                                                                                                        |       90      |
 |   | Synonyms                     |    int   | Relevancy of synonyms match                                                                                                                                                                                                                               |       95      |
+
+### Basic document ranking algorithms
+
+For basic document ranking, one of the following algorithms can be used:
+
+- `bm25`
+- `bm25_rx`
+- `word_count`
+
+Calculation formula for `bm25`:
+
+```
+R = (log(totalDocCount / (matchedDocCount + 1)) + 1) * termCountInDoc / wordsInDoc * (k1 + 1.0) / (termCountInDoc / wordsInDoc + k1 * (1.0 - b_ + b_ * wordsInDoc / avgDocLen))
+```
+
+Calculation formula for `bm25_rx`:
+
+```
+R = (log(totalDocCount / (matchedDocCount + 1)) + 1) * termCountInDoc * (k1 + 1.0) / (termCountInDoc + k1 * (1.0 - b_ + b_ * wordsInDoc / avgDocLen))
+```
+
+Calculation formula for `word_count`:
+
+```
+R = termCountInDoc
+```
+
+- `totalDocCount` - total number of documents
+- `matchedDocCount` - number of documents in which a subform of the word was found
+- `termCountInDoc` - number of words found in the document for the query word subform
+- `wordsInDoc` - number of words in document
+- `k1` - free coefficient (Сoefficient that sets the saturation threshold for the frequency of the term. The higher the coefficient, the higher the threshold and the lower the saturation rate.)
+- `b` - free coefficient (If b is bigger, the effects of the length of the document compared to the average length are more amplified.) 
+
+|   |    Parameter name     |   Type   |                             Description                                                 | Default value |
+|---|:---------------------:|:--------:|:---------------------------------------------------------------------------------------:|:-------------:|
+|   |   Bm25k1              |   float  | Coefficient k1 in the formula for calculating bm25 (used only for rx_bm25, bm25).       |      2.0      |                                          	
+|   |   Bm25b               |   float  | Coefficient b in the formula for calculating bm25 (used only for rx_bm25, bm25).        |     0.75      |                     
+|   |  Bm25Type             |  string  | Formula for calculating document relevance (rx_bm25, bm25, word_count)                  |   "rx_bm25"   |                                   
+
+
 
 ### Limitations and know issues
 

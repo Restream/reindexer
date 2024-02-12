@@ -1,16 +1,10 @@
 #pragma once
 
-#include <atomic>
-#include <memory>
-#include <thread>
-#include <unordered_set>
 #include "client/synccororeindexer.h"
-#include "core/dbconfig.h"
 #include "estl/shared_mutex.h"
 #include "reindexertestapi.h"
 #include "server/server.h"
 #include "tools/fsops.h"
-#include "tools/stringstools.h"
 
 #ifdef REINDEXER_WITH_SC_AS_PROCESS
 const bool kAsServerProcess = true;
@@ -104,7 +98,7 @@ public:
 		// Make this server master
 		void MakeMaster(const ReplicationConfigTest& config = ReplicationConfigTest("master"));
 		// Make this server slave
-		void MakeSlave(size_t masterId, const ReplicationConfigTest& config);
+		void MakeSlave(const ReplicationConfigTest& config);
 		// check with master or slave that sync complete
 		ReplicationStateApi GetState(const std::string& ns);
 		// Force sync (restart slave's replicator)
@@ -130,7 +124,7 @@ public:
 	private:
 		template <typename ValueT>
 		void setNamespaceConfigItem(std::string_view nsName, std::string_view paramName, ValueT&& value);
-		void setReplicationConfig(size_t masterId, const ReplicationConfigTest& config);
+		void setReplicationConfig(const ReplicationConfigTest& config);
 
 		std::string getLogName(const std::string& log, bool core = false);
 		std::vector<std::string> getCLIParamArray(bool enableStats, size_t maxUpdatesSize);

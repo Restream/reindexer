@@ -472,6 +472,7 @@ private:
 			storage_.TryForceFlush();
 		}
 	}
+	size_t getWalSize(const NamespaceConfigData &cfg) const noexcept { return isSystem() ? int64_t(1) : std::max(cfg.walSize, int64_t(1)); }
 
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic<bool> enablePerfCounters_;

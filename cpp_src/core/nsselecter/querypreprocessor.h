@@ -119,6 +119,7 @@ private:
 	bool desc_ = false;
 	bool forcedSortOrder_ = false;
 	bool reqMatchedOnce_ = false;
+	const bool isMergeQuery_ = false;
 	std::optional<QueryEntry> ftEntry_;
 	std::optional<FtPreselectT> ftPreselect_;
 };

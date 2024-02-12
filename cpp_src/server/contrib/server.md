@@ -128,12 +128,11 @@
 ## Overview
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
 Reindexer's goal is to provide fast search with complex queries.
-The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
-Reindexer is fast.
+Reindexer is compact, fast and it does not have heavy dependencies.
 
 
 ### Version information
-*Version* : 3.22.0
+*Version* : 3.22.1
 
 
 ### License information

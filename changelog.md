@@ -1,21 +1,34 @@
+# Version 3.22.1 (12.02.2024)
+## Core
+- [fix] Fixed `COUNT()` for fulltext queries, when `preselect_before_ft` is enabled in the index config
+- [fix] Fixed `LIMIT`/`OFFSET` behavior for `MERGE`-queries, when `preselect_before_ft` is enabled in the index config
+- [fix] Disabled in-memory WAL for the system namespaces
+
+## Replication
+- [fix] Improved transactions replication via WAL queries: from now transactions will not be splitted into separate insert/updates on the follower
+
+## Face
+- [fix] Fixed the Check request 
+- [fix] Added bottom padding to the Performance Updates chart
+
 # Version 3.22.0 (02.02.2024)
 ## Core
 - [fea] Added `explain` results for the [subqueries](readme.md#subqueries-nested-queries)
 - [fea] Added support for limit/offset in `Delete` and `Update` queries
 - [fea] Optimized ordered indexes' cache logic to achive more cache hits and more compact cache size
 - [fea] Added support for `COUNT_CACHED(*)`/`CachedTotal()` aggregation in the queries with INNER JOINS. Now it's possible to cache total count results for such queries
-- [fix] Fixed SQL parsing for combintaions of the [subqueries](readme.md#subqueries-nested-queries) and other conditions in the main query
-- [fix] Fixed [select functions](fulltext.md#using-select-functions) with '.' delimiter. Previously those functios were actually expected '=' as a delimiter
+- [fix] Fixed SQL parsing for combinations of the [subqueries](readme.md#subqueries-nested-queries) and other conditions in the main query
+- [fix] Fixed [select functions](fulltext.md#using-select-functions) with '.' delimiter. Previously those functions actually expected '=' as a delimiter
 
 ## Fulltext
 - [fea] Reworked logic for the stop-words. [More details](fulltext.md#stopwords-details)
 - [fea] Added config for the base ranking algorithm. Check `bm25_config` field in the [fulltext settings](fulltext.md#base-config-parameters)
 
 ## Replication
-- [fea] Fixed sync logic to allow runtime server ID changing
+- [fea] Fixed sync logic to allow modification of the server's ID at runtime
 
 ## Reindexer server
-- [fix] Fixed SQL suggests for subqueries and some kinds of the JOIN-queries
+- [fix] Fixed SQL suggests for subqueries and certain types of JOIN-queries
 
 ## Docker
 - [fea] Base docker image was updated to alpine 3.19
@@ -26,7 +39,7 @@
 
 ## Face
 - [fea] Added the subqueries field to the explain mode
-- [fea] Upgraded the Webpack to 5.х
+- [fea] Upgraded Webpack to 5.х
 - [fea] Added the default values to the NS config during the mode changing
 - [fix] Fixed the message about the outdated browser version after Chrome upgraded to v120.
 - [fix] Fixed the settings panel layout on the Performance page, which was overlapped by the message about the outdated browser version

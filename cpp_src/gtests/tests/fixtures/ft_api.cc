@@ -1,5 +1,4 @@
 #include "ft_api.h"
-#include "core/cjson/jsonbuilder.h"
 
 void FTApi::Init(const reindexer::FtFastConfig& ftCfg, unsigned nses, const std::string& storage) {
 	rt.reindexer.reset(new reindexer::Reindexer);

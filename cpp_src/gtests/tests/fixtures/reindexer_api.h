@@ -1,17 +1,8 @@
 #pragma once
 
-#include <gtest/gtest.h>
-#include <memory>
-#include <string>
-#include <tuple>
-
-#include <iostream>
-#include "core/keyvalue/variant.h"
-#include "core/query/query.h"
 #include "core/reindexer.h"
 #include "reindexertestapi.h"
 #include "servercontrol.h"
-#include "tools/errors.h"
 
 using reindexer::Error;
 using reindexer::Item;

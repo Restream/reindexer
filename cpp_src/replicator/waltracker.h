@@ -46,16 +46,19 @@ public:
 	/// Iterator for WAL records
 	class iterator {
 	public:
-		iterator &operator++() { return idx_++, *this; }
-		bool operator!=(const iterator &other) const { return idx_ != other.idx_; }
+		iterator &operator++() noexcept {
+			++idx_;
+			return *this;
+		}
+		bool operator!=(const iterator &other) const noexcept { return idx_ != other.idx_; }
 		WALRecord operator*() const {
 			assertf(idx_ % wt_->walSize_ < int(wt_->records_.size()), "idx=%d,wt_->records_.size()=%d,lsnCounter=%d", idx_,
 					wt_->records_.size(), wt_->lsnCounter_);
 
 			return WALRecord(span<uint8_t>(wt_->records_[idx_ % wt_->walSize_]));
 		}
-		span<uint8_t> GetRaw() const { return wt_->records_[idx_ % wt_->walSize_]; }
-		int64_t GetLSN() const { return idx_; }
+		span<uint8_t> GetRaw() const noexcept { return wt_->records_[idx_ % wt_->walSize_]; }
+		int64_t GetLSN() const noexcept { return idx_; }
 		int64_t idx_;
 		const WALTracker *wt_;
 	};

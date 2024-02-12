@@ -1,16 +1,7 @@
 #pragma once
 
-#include <string>
-#include <thread>
-#include "core/dbconfig.h"
 #include "core/namespace/namespace.h"
-#include "core/namespace/namespacestat.h"
-#include "estl/atomic_unique_ptr.h"
-#include "estl/fast_hash_map.h"
 #include "net/ev/ev.h"
-#include "tools/errors.h"
-#include "updatesobserver.h"
-#include "vendor/hopscotch/hopscotch_set.h"
 
 namespace reindexer {
 namespace client {
@@ -90,6 +81,8 @@ protected:
 	void checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr &slaveNs);
 	// Apply single cjson item
 	Error modifyItem(LSNPair LSNs, Namespace::Ptr &ns, std::string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
+	// Add single cjson item into tx
+	Error modifyItemTx(LSNPair LSNs, Transaction &tx, std::string_view cjson, int modifyMode, const TagsMatcher &tm, SyncStat &stat);
 	static Error unpackItem(Item &, lsn_t, std::string_view cjson, const TagsMatcher &tm);
 	// Push update to the queue to apply it later
 	void pushPendingUpdate(LSNPair LSNs, std::string_view nsName, const WALRecord &wrec);

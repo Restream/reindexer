@@ -136,7 +136,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 				idsCount = 0;
 				res.reserve(count);
 				for (auto it = ctx.startIt; it != ctx.endIt; ++it) {
-					assertrx(it != ctx.i_map->end());  // FIXME: assertrx_dbg
+					assertrx_dbg(it != ctx.i_map->end());
 					idsCount += it->second.Unsorted().Size();
 					res.emplace_back(it->second, ctx.sortId);
 				}

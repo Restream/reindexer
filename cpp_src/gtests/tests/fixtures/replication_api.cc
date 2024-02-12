@@ -1,10 +1,4 @@
 ﻿#include "replication_api.h"
-#include <fstream>
-#include <thread>
-#include "core/cjson/jsonbuilder.h"
-#include "core/dbconfig.h"
-#include "tools/fsops.h"
-#include "vendor/gason/gason.h"
 
 const std::string ReplicationApi::kConfigNs = "#config";
 
@@ -112,7 +106,7 @@ void ReplicationApi::SwitchMaster(size_t id, const ReplicationConfigTest::NsSet&
 	for (size_t i = 0; i < svc_.size(); i++) {
 		std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + masterId_) + "/node" + std::to_string(masterId_);
 		ReplicationConfigTest config("slave", false, true, i, masterDsn, "server_" + std::to_string(i), namespaces);
-		if (i != masterId_) GetSrv(i)->MakeSlave(masterId_, config);
+		if (i != masterId_) GetSrv(i)->MakeSlave(config);
 	}
 }
 
@@ -148,7 +142,7 @@ void ReplicationApi::SetUp() {
 		} else {
 			std::string masterDsn = "cproto://127.0.0.1:" + std::to_string(kDefaultRpcPort + 0) + "/node" + std::to_string(0);
 			ReplicationConfigTest config("slave", false, true, i, masterDsn);
-			svc_.back().Get()->MakeSlave(0, config);
+			svc_.back().Get()->MakeSlave(config);
 		}
 	}
 }

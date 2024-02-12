@@ -144,7 +144,7 @@ void VerifyQueryEntryValues(CondType cond, const VariantArray &values) {
 		case CondLike:
 			checkArgsCount(1);
 			if (!values[0].Type().Is<KeyValueType::String>()) {
-				throw Error{errLogic, "Condition %s must have string argument, but %d argument was provided", CondTypeToStr(cond),
+				throw Error{errLogic, "Condition %s must have string argument, but %s argument was provided", CondTypeToStr(cond),
 							values[0].Type().Name()};
 			}
 			break;

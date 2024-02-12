@@ -1036,10 +1036,12 @@ TEST_P(FTGenericApi, ConfigBm25Coefficients) {
 		""sv);
 
 	CheckResults("targetword",
-				 {{"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! otherword otherword otherword otherword otherword otherword otherword otherword !targetword!", ""},
-								   {"otherword !targetword! otherword !targetword targetword!", ""},
-								   {"otherword !targetword! otherword !targetword!", ""},
-								   {"otherword !targetword!", ""}},
+				 {{"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! "
+				   "otherword otherword otherword otherword otherword otherword otherword otherword !targetword!",
+				   ""},
+				  {"otherword !targetword! otherword !targetword targetword!", ""},
+				  {"otherword !targetword! otherword !targetword!", ""},
+				  {"otherword !targetword!", ""}},
 				 true);
 
 	cfg = cfgDef;
@@ -1048,24 +1050,26 @@ TEST_P(FTGenericApi, ConfigBm25Coefficients) {
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	CheckResults("targetword",
-				 {
-					 {"otherword !targetword! otherword !targetword targetword!", ""},
-					 {"otherword !targetword! otherword !targetword!", ""},
-					 {"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! otherword otherword otherword otherword otherword otherword otherword otherword !targetword!", ""},
-					 {"otherword !targetword!", ""}
-				 },
+				 {{"otherword !targetword! otherword !targetword targetword!", ""},
+				  {"otherword !targetword! otherword !targetword!", ""},
+				  {"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! "
+				   "otherword otherword otherword otherword otherword otherword otherword otherword !targetword!",
+				   ""},
+				  {"otherword !targetword!", ""}},
 				 true);
 	cfg = cfgDef;
 	cfg.bm25Config.bm25Type = reindexer::FtFastConfig::Bm25Config::Bm25Type::wordCount;
 	cfg.fieldsCfg[0].positionWeight = 0.0;
-	cfg.fullMatchBoost=1.0;
+	cfg.fullMatchBoost = 1.0;
 
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
 
 	CheckResults("targetword",
 				 {
-					 {"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! otherword otherword otherword otherword otherword otherword otherword otherword !targetword!", ""},
+					 {"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! "
+					  "otherword otherword otherword otherword otherword otherword otherword otherword !targetword!",
+					  ""},
 					 {"otherword !targetword! otherword !targetword targetword!", ""},
 					 {"otherword !targetword! otherword !targetword!", ""},
 					 {"otherword !targetword!", ""},
@@ -1073,10 +1077,8 @@ TEST_P(FTGenericApi, ConfigBm25Coefficients) {
 				 },
 				 true);
 
-	CheckResults("словах",{{"!слово! пусто !слово!",""},{"!слово! пусто !слова! пусто !словами!",""}},true);
-
+	CheckResults("словах", {{"!слово! пусто !слово!", ""}, {"!слово! пусто !слова! пусто !словами!", ""}}, true);
 }
-
 
 TEST_P(FTGenericApi, ConfigFtProc) {
 	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
@@ -1368,6 +1370,100 @@ TEST_P(FTGenericApi, ExplainWithFtPreselect) {
 		ASSERT_EQ(selectors.size(), 2) << qr.explainResults;
 		ASSERT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.explainResults;
 		ASSERT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.explainResults;
+	}
+}
+
+TEST_P(FTGenericApi, TotalCountWithFtPreselect) {
+	using reindexer::Query;
+	using reindexer::QueryResults;
+	using reindexer::Variant;
+
+	auto cfg = GetDefaultConfig();
+	auto preselectIsEnabled = true;
+	cfg.enablePreselectBeforeFt = preselectIsEnabled;
+	Init(cfg);
+	const int firstId = counter_;
+	Add("word5"sv);
+	Add("word1 word2 word3"sv);
+	Add("word3 word4"sv);
+	Add("word2 word5 word7"sv);
+	const int lastId = counter_;
+
+	const std::string kJoinedNs = "ns_for_joins";
+	const std::string kMainNs = "nm1";
+	CreateAndFillSimpleNs(kJoinedNs, 0, 10, nullptr);
+
+	for (auto preselect : {true, false}) {
+		if (preselectIsEnabled != preselect) {
+			auto cfg = GetDefaultConfig();
+			preselectIsEnabled = preselect;
+			cfg.enablePreselectBeforeFt = preselectIsEnabled;
+			SetFTConfig(cfg);
+		}
+		std::string_view kPreselectStr = preselect ? " (with ft preselect) " : " (no ft preselect) ";
+
+		struct Case {
+			Query query;
+			int limit;
+			int expectedTotalCount;
+		};
+		std::vector<Case> cases = {{.query = Query(kMainNs).Where("ft3", CondEq, "word2 word4"), .limit = 2, .expectedTotalCount = 3},
+								   {.query = Query(kMainNs).Where("ft3", CondEq, "word2").Where("id", CondEq, {Variant{lastId - 3}}),
+									.limit = 0,
+									.expectedTotalCount = 1},
+								   {.query = Query(kMainNs)
+												 .Where("ft3", CondEq, "word2")
+												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 2).Limit(0)),
+									.limit = 0,
+									.expectedTotalCount = 1},
+								   {.query = Query(kMainNs)
+												 .Where("ft3", CondEq, "word2 word3")
+												 .OpenBracket()
+												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 2).Limit(0))
+												 .Or()
+												 .Where("id", CondSet, {Variant{lastId - 1}, Variant{lastId - 2}})
+												 .CloseBracket(),
+									.limit = 1,
+									.expectedTotalCount = 3},
+								   {.query = Query(kMainNs)
+												 .Where("ft3", CondEq, "word2 word3")
+												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, lastId).Limit(0))
+												 .Where("id", CondSet, {Variant{lastId - 1}, Variant{lastId - 2}}),
+									.limit = 1,
+									.expectedTotalCount = 2},
+								   {.query = Query(kMainNs)
+												 .OpenBracket()
+												 .Where("ft3", CondEq, "word2")
+												 .CloseBracket()
+												 .OpenBracket()
+												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 2))
+												 .Or()
+												 .Where("id", CondEq, lastId - 1)
+												 .CloseBracket(),
+									.limit = 0,
+									.expectedTotalCount = 2}};
+
+		for (auto& c : cases) {
+			c.query.ReqTotal();
+			// Execute initial query
+			{
+				QueryResults qr;
+				auto err = rt.reindexer->Select(c.query, qr);
+				ASSERT_TRUE(err.ok()) << kPreselectStr << err.what() << "\n" << c.query.GetSQL();
+				EXPECT_EQ(qr.Count(), c.expectedTotalCount) << kPreselectStr << c.query.GetSQL();
+				EXPECT_EQ(qr.TotalCount(), c.expectedTotalCount) << kPreselectStr << c.query.GetSQL();
+			}
+
+			// Execute query with limit
+			const Query q = Query(c.query).Limit(c.limit);
+			{
+				QueryResults qr;
+				auto err = rt.reindexer->Select(q, qr);
+				ASSERT_TRUE(err.ok()) << kPreselectStr << err.what() << "\n" << c.query.GetSQL();
+				EXPECT_EQ(qr.Count(), c.limit) << kPreselectStr << c.query.GetSQL();
+				EXPECT_EQ(qr.TotalCount(), c.expectedTotalCount) << kPreselectStr << c.query.GetSQL();
+			}
+		}
 	}
 }
 

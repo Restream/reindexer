@@ -1,6 +1,7 @@
 #include "servercontrol.h"
 #include <fstream>
 #include "core/cjson/jsonbuilder.h"
+#include "core/dbconfig.h"
 #include "systemhelpers.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
@@ -263,12 +264,12 @@ ServerControl::Interface::Interface(size_t id, std::atomic_bool& stopped, const 
 
 void ServerControl::Interface::MakeMaster(const ReplicationConfigTest& config) {
 	assertrx(config.role_ == "master");
-	setReplicationConfig(id_, config);
+	setReplicationConfig(config);
 }
-void ServerControl::Interface::MakeSlave(size_t masterId, const ReplicationConfigTest& config) {
+void ServerControl::Interface::MakeSlave(const ReplicationConfigTest& config) {
 	assertrx(config.role_ == "slave");
 	assertrx(!config.dsn_.empty());
-	setReplicationConfig(masterId, config);
+	setReplicationConfig(config);
 }
 
 template <typename ValueT>
@@ -297,8 +298,7 @@ void ServerControl::Interface::setNamespaceConfigItem(std::string_view nsName, s
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-void ServerControl::Interface::setReplicationConfig(size_t masterId, const ReplicationConfigTest& config) {
-	(void)masterId;
+void ServerControl::Interface::setReplicationConfig(const ReplicationConfigTest& config) {
 	auto item = api.NewItem(kConfigNs);
 	ASSERT_TRUE(item.Status().ok()) << item.Status().what();
 	WrSerializer ser;

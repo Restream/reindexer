@@ -1,14 +1,9 @@
-
 #include "replicator.h"
 #include "client/itemimpl.h"
 #include "client/reindexer.h"
-#include "core/itemimpl.h"
 #include "core/namespace/namespaceimpl.h"
-#include "core/namespacedef.h"
 #include "core/reindexer_impl/reindexerimpl.h"
 #include "tools/logger.h"
-#include "tools/stringstools.h"
-#include "walrecord.h"
 
 namespace reindexer {
 
@@ -33,7 +28,7 @@ Replicator::Replicator(ReindexerImpl *slave)
 Replicator::~Replicator() { Stop(); }
 
 Error Replicator::Start() {
-	std::lock_guard<std::mutex> lck(masterMtx_);
+	std::lock_guard lck(masterMtx_);
 	if (master_) {
 		return Error(errLogic, "Replicator is already started");
 	}
@@ -67,7 +62,7 @@ bool Replicator::Configure(const ReplicationConfigData &config) {
 	if (!enabled_.load(std::memory_order_acquire)) {
 		return false;
 	}
-	std::unique_lock<std::mutex> lck(masterMtx_);
+	std::unique_lock lck(masterMtx_);
 	bool changed = (config_ != config);
 
 	if (changed) {
@@ -79,7 +74,7 @@ bool Replicator::Configure(const ReplicationConfigData &config) {
 }
 
 void Replicator::Stop() {
-	std::unique_lock<std::mutex> lck(masterMtx_);
+	std::unique_lock lck(masterMtx_);
 	stop();
 }
 
@@ -118,7 +113,7 @@ void Replicator::run() {
 		}
 	}
 	{
-		std::lock_guard<std::mutex> lck(syncMtx_);
+		std::lock_guard lck(syncMtx_);
 		state_.store(StateInit, std::memory_order_release);
 	}
 
@@ -262,7 +257,7 @@ Error Replicator::syncNamespace(const NamespaceDef &ns, std::string_view forceSy
 			LSNPair lastLsn;
 			while (err.ok() && !terminate_) {
 				{
-					std::unique_lock<std::mutex> lck(syncMtx_);
+					std::unique_lock lck(syncMtx_);
 					auto updatesIt = pendedUpdates_.find(ns.name);
 					if (updatesIt != pendedUpdates_.end()) {
 						if (updatesIt.value().UpdatesLost) {
@@ -349,7 +344,7 @@ Error Replicator::syncDatabase() {
 			  state_.load());
 
 	{
-		std::lock_guard<std::mutex> lck(syncMtx_);
+		std::lock_guard lck(syncMtx_);
 		state_.store(StateSyncing, std::memory_order_release);
 		resyncUpdatesLostFlag_ = false;
 		transactions_.clear();
@@ -406,7 +401,7 @@ Error Replicator::syncDatabase() {
 		subscribeUpdatesIfRequired(ns.name);
 
 		{
-			std::lock_guard<std::mutex> lck(syncMtx_);
+			std::lock_guard lck(syncMtx_);
 			currentSyncNs_ = ns.name;
 		}
 
@@ -482,11 +477,10 @@ Error Replicator::syncNamespaceByWAL(const NamespaceDef &nsDef) {
 		case errOutdatedWAL:
 			// Check if WAL has been outdated, if yes, then force resync
 			return syncNamespaceForced(nsDef, err.what());
-		case errOK: {
-			auto err = applyWAL(slaveNs, qr);
+		case errOK:
+			err = applyWAL(slaveNs, qr);
 			if (err.ok()) slave_->syncDownstream(nsDef.name, false);
 			return err;
-		}
 		case errNoWAL:
 			terminate_ = true;
 			return err;
@@ -620,7 +614,15 @@ Error Replicator::applyWAL(Namespace::Ptr &slaveNs, client::QueryResults &qr, co
 					// Simple item updated
 					ser.Reset();
 					err = it.GetCJSON(ser, false);
-					if (err.ok()) err = modifyItem(LSNPair(), slaveNs, ser.Slice(), ModeUpsert, qr.getTagsMatcher(0), stat);
+					if (err.ok()) {
+						std::unique_lock lck(syncMtx_);
+						if (auto txIt = transactions_.find(slaveNs.get()); txIt == transactions_.end() || txIt->second.IsFree()) {
+							lck.unlock();
+							err = modifyItem(LSNPair(), slaveNs, ser.Slice(), ModeUpsert, qr.getTagsMatcher(0), stat);
+						} else {
+							err = modifyItemTx(LSNPair(), txIt->second, ser.Slice(), ModeUpsert, qr.getTagsMatcher(0), stat);
+						}
+					}
 				}
 			} catch (const Error &e) {
 				err = e;
@@ -671,7 +673,7 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 	switch (rec.type) {
 		// Modify item
 		case WalItemModify: {
-			std::lock_guard<std::mutex> lck(syncMtx_);
+			std::lock_guard lck(syncMtx_);
 			Transaction &tx = transactions_[slaveNs.get()];
 			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
 			Item item = tx.NewItem();
@@ -683,13 +685,13 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 		case WalUpdateQuery: {
 			QueryResults result;
 			Query q = Query::FromSQL(rec.data);
-			std::lock_guard<std::mutex> lck(syncMtx_);
+			std::lock_guard lck(syncMtx_);
 			Transaction &tx = transactions_[slaveNs.get()];
 			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
 			tx.Modify(std::move(q));
 		} break;
 		case WalInitTransaction: {
-			std::lock_guard<std::mutex> lck(syncMtx_);
+			std::lock_guard lck(syncMtx_);
 			Transaction &tx = transactions_[slaveNs.get()];
 			if (!tx.IsFree()) logPrintf(LogError, "[repl:%s]:%d Init transaction befor commit of previous one.", nsName, config_.serverId);
 			RdxContext rdxContext(true, LSNs);
@@ -697,7 +699,7 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 		} break;
 		case WalCommitTransaction: {
 			QueryResults res;
-			std::lock_guard<std::mutex> lck(syncMtx_);
+			std::lock_guard lck(syncMtx_);
 			Transaction &tx = transactions_[slaveNs.get()];
 			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Commit of transaction befor initiate it.", nsName, config_.serverId);
 			RdxContext rdxContext(true, LSNs);
@@ -705,10 +707,6 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			tx = Transaction{};
 		} break;
 		case WalTagsMatcher: {
-			std::lock_guard<std::mutex> lck(syncMtx_);
-			Transaction &tx = transactions_[slaveNs.get()];
-			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
-
 			TagsMatcher tm;
 			Serializer ser(rec.data.data(), rec.data.size());
 			const auto version = ser.GetVarint();
@@ -716,7 +714,19 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			tm.deserialize(ser, version, stateToken);
 			logPrintf(LogInfo, "[repl:%s]:%d Got new tagsmatcher replicated via tx: { state_token: %08X, version: %d }", nsName,
 					  config_.serverId, stateToken, version);
+
+			std::lock_guard lck(syncMtx_);
+			Transaction &tx = transactions_[slaveNs.get()];
+			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
+
 			tx.SetTagsMatcher(std::move(tm));
+		} break;
+		case WalPutMeta: {
+			std::lock_guard lck(syncMtx_);
+			Transaction &tx = transactions_[slaveNs.get()];
+			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
+
+			tx.PutMeta(std::string(rec.putMeta.key), rec.putMeta.value);
 		} break;
 		case WalEmpty:
 		case WalReplState:
@@ -724,7 +734,6 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 		case WalIndexAdd:
 		case WalIndexDrop:
 		case WalIndexUpdate:
-		case WalPutMeta:
 		case WalNamespaceAdd:
 		case WalNamespaceDrop:
 		case WalNamespaceRename:
@@ -740,11 +749,11 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 }
 
 void Replicator::checkNoOpenedTransaction(std::string_view nsName, Namespace::Ptr &slaveNs) {
-	std::lock_guard<std::mutex> lck(syncMtx_);
-	Transaction &tx = transactions_[slaveNs.get()];
-	if (!tx.IsFree()) {
+	std::lock_guard lck(syncMtx_);
+	auto txIt = transactions_.find(slaveNs.get());
+	if (txIt != transactions_.end() && !txIt->second.IsFree()) {
 		logPrintf(LogError, "[repl:%s]:%d Transaction started but not commited", nsName, config_.serverId);
-		tx = Transaction{};
+		throw Error(errLogic, "Transaction for '%s' was started but was not commited", nsName);
 	}
 }
 
@@ -760,7 +769,13 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 	if (rec.inTransaction) {
 		return applyTxWALRecord(LSNs, nsName, slaveNs, rec);
 	}
-	RdxContext rdxContext(true, LSNs);
+
+	if (firstRec && rec.type != WalIndexAdd) {	// compatibility with old version
+		err = syncIndexesForced(slaveNs, *firstRec);
+		logPrintf(LogInfo, "[repl:%s]:%d Sync indexes error '%s'", nsName, config_.serverId, err.what());
+		return err;
+	}
+	checkNoOpenedTransaction(nsName, slaveNs);
 
 	auto sendSyncAsync = [this](const WALRecord &rec, bool forced) {
 		NamespaceDef nsDef;
@@ -768,17 +783,10 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 		syncQueue_.Push(nsDef.name, std::move(nsDef), forced);
 		walSyncAsync_.send();
 	};
-
-	if (firstRec && rec.type != WalIndexAdd) {	// compatibility with old version
-		err = syncIndexesForced(slaveNs, *firstRec);
-		logPrintf(LogInfo, "[repl:%s]:%d Sync indexes error '%s'", nsName, config_.serverId, err.what());
-		return err;
-	}
-
+	RdxContext rdxContext(true, LSNs);
 	switch (rec.type) {
 		// Modify item
 		case WalItemModify:
-			checkNoOpenedTransaction(nsName, slaveNs);
 			err = modifyItem(LSNs, slaveNs, rec.itemModify.itemCJson, rec.itemModify.modifyMode,
 							 master_->NewItem(nsName).impl_->tagsMatcher(), stat);
 			break;
@@ -808,7 +816,6 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 		// Update query
 		case WalUpdateQuery: {
 			logPrintf(LogTrace, "[repl:%s]:%d WalUpdateQuery", nsName, config_.serverId);
-			checkNoOpenedTransaction(nsName, slaveNs);
 			QueryResults result;
 			Query q = Query::FromSQL(rec.data);
 			switch (q.type_) {
@@ -866,7 +873,6 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			stat.schemasSet++;
 			break;
 		case WalTagsMatcher: {
-			checkNoOpenedTransaction(nsName, slaveNs);
 			TagsMatcher tm;
 			Serializer ser(rec.data.data(), rec.data.size());
 			const auto version = ser.GetVarint();
@@ -939,6 +945,36 @@ Error Replicator::modifyItem(LSNPair LSNs, Namespace::Ptr &slaveNs, std::string_
 				break;
 			default:
 				return Error(errNotValid, "Unknown modify mode %d of item with lsn %ul", modifyMode, int64_t(LSNs.upstreamLSN_));
+		}
+	}
+	return err;
+}
+
+Error Replicator::modifyItemTx(LSNPair LSNs, Transaction &tx, std::string_view cjson, int modifyMode, const TagsMatcher &tm,
+							   SyncStat &stat) {
+	Item item = tx.NewItem();
+	Error err = unpackItem(item, LSNs.upstreamLSN_, cjson, tm);
+
+	if (err.ok()) {
+		switch (modifyMode) {
+			case ModeDelete:
+				tx.Delete(std::move(item));
+				stat.deleted++;
+				break;
+			case ModeInsert:
+				tx.Insert(std::move(item));
+				stat.updated++;
+				break;
+			case ModeUpsert:
+				tx.Upsert(std::move(item));
+				stat.updated++;
+				break;
+			case ModeUpdate:
+				tx.Update(std::move(item));
+				stat.updated++;
+				break;
+			default:
+				return Error(errNotValid, "Unknown modify mode %d of tx item with lsn %ul", modifyMode, int64_t(LSNs.upstreamLSN_));
 		}
 	}
 	return err;
@@ -1106,7 +1142,7 @@ void Replicator::onWALUpdateImpl(LSNPair LSNs, std::string_view nsName, const WA
 }
 
 void Replicator::OnUpdatesLost(std::string_view nsName) {
-	std::unique_lock<std::mutex> lck(syncMtx_);
+	std::unique_lock lck(syncMtx_);
 	auto updatesIt = pendedUpdates_.find(nsName);
 	if (updatesIt == pendedUpdates_.end()) {
 		UpdatesData updates;
@@ -1128,7 +1164,7 @@ void Replicator::OnConnectionState(const Error &err) {
 	} else {
 		logPrintf(LogInfo, "[repl:] OnConnectionState closed, reason: %s", err.what());
 	}
-	std::unique_lock<std::mutex> lck(syncMtx_);
+	std::unique_lock lck(syncMtx_);
 	state_.store(StateInit, std::memory_order_release);
 	resync_.send();
 }

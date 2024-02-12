@@ -56,7 +56,7 @@ endif ()
 
 set(GTEST_TIMEOUT 600)
 if (WITH_ASAN OR WITH_TSAN OR WITH_STDLIB_DEBUG)
-    set(GTEST_TIMEOUT 1200)
+    set(GTEST_TIMEOUT 2000)
 endif ()
 
 find_program(GTEST_PARALLEL "gtest-parallel")
