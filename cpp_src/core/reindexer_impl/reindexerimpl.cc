@@ -74,7 +74,6 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg, ActivityContainer& activities,
 	  nsLock_(*clusterizator_, *this),
 	  activities_(activities),
 	  storageType_(StorageType::LevelDB),
-	  connected_(false),
 	  config_(std::move(cfg)),
 	  proxyCallbacks_(std::move(proxyCallbacks)) {
 	configProvider_.setHandler(ProfilingConf, std::bind(&ReindexerImpl::onProfiligConfigLoad, this));
@@ -105,7 +104,12 @@ ReindexerImpl::ReindexerImpl(ReindexerConfig cfg, ActivityContainer& activities,
 
 ReindexerImpl::~ReindexerImpl() {
 	for (auto& ns : namespaces_) {
-		ns.second->SetDestroyFlag();
+		// Add extra checks to avoid GCC 13 warnings in Release build. Actually namespaces are never null
+		if (ns.second) {
+			if (auto mainNs = ns.second->getMainNs(); mainNs) {
+				mainNs->SetDestroyFlag();
+			}
+		}
 	}
 
 	dbDestroyed_ = true;
@@ -355,9 +359,7 @@ Error ReindexerImpl::Connect(const std::string& dsn, ConnectOpts opts) {
 		}
 	}
 
-	if (err.ok()) {
-		connected_.store(true, std::memory_order_release);
-	}
+	connected_.store(err.ok(), std::memory_order_release);
 	return err;
 }
 
@@ -2108,13 +2110,6 @@ Error ReindexerImpl::ApplySnapshotChunk(std::string_view nsName, const SnapshotC
 bool ReindexerImpl::isSystemNamespaceNameStrict(std::string_view name) noexcept {
 	return std::find_if(kSystemNsDefs.begin(), kSystemNsDefs.end(),
 						[name](const NamespaceDef& nsDef) { return iequals(nsDef.name, name); }) != kSystemNsDefs.end();
-}
-
-Error ReindexerImpl::Status() {
-	if (connected_.load(std::memory_order_acquire)) {
-		return errOK;
-	}
-	return Error(errNotValid, "DB is not connected"sv);
 }
 
 Error ReindexerImpl::SuggestLeader(const cluster::NodeData& suggestion, cluster::NodeData& response) {

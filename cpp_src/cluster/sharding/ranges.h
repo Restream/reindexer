@@ -42,15 +42,35 @@ std::vector<Segment<T>> getUnion(const std::vector<Segment<T>>& segments) {
 }
 
 template <typename T>
-bool intersected(const std::vector<Segment<T>>& segments, const Segment<T>& segment) {
-	auto intersected = [](const Segment<T>& s1, const Segment<T>& s2) {
-		const auto& [left, right] = s2.left >= s1.left ? std::tie(s1, s2) : std::tie(s2, s1);
-		return left.right >= right.left;
-	};
+bool intersected(const Segment<T>& s1, const Segment<T>& s2) {
+	const auto& [left, right] = s2.left >= s1.left ? std::tie(s1, s2) : std::tie(s2, s1);
+	return left.right >= right.left;
+}
 
-	for (const auto& s : segments)
-		if (intersected(s, segment)) return true;
-	return false;
+template <typename T>
+bool intersected(const std::vector<Segment<T>>& segments, const Segment<T>& check) {
+	return std::any_of(segments.begin(), segments.end(), [&check](const auto& segment) { return intersected(segment, check); });
+}
+
+template <typename T>
+bool intersected(const std::vector<Segment<T>>& segments, const std::vector<Segment<T>>& checks) {
+	return std::any_of(checks.begin(), checks.end(), [&segments](const auto& check) { return intersected(segments, check); });
+}
+
+template <typename T>
+bool contain(const std::vector<Segment<T>>& segments, const Segment<T>& check) {
+	return std::any_of(segments.begin(), segments.end(),
+					   [&check](const auto& segment) { return segment.left <= check.left && check.right <= segment.right; });
+}
+
+template <typename T>
+bool contain(const std::vector<Segment<T>>& segments, const std::vector<Segment<T>>& checks) {
+	return std::all_of(checks.begin(), checks.end(), [&segments](const auto& check) { return contain(segments, check); });
+}
+
+template <typename T>
+static bool operator<(const sharding::Segment<T>& lhs, const sharding::Segment<T>& rhs) noexcept {
+	return lhs.left < rhs.left;
 }
 
 }  // namespace reindexer::sharding

@@ -1,6 +1,5 @@
 #include "core/selectfunc/selectfuncparser.h"
 #include <ctime>
-#include <set>
 #include <string>
 #include "tools/errors.h"
 #include "tools/logger.h"
@@ -12,17 +11,23 @@ SelectFuncStruct &SelectFuncParser::Parse(const std::string &query) {
 
 	token tok = parser.next_token(tokenizer::flags::no_flags);
 
-	selectFuncStruct_.field = std::string(tok.text());
-
 	auto dotPos = tok.text().find('.');
-	if (dotPos == std::string_view::npos) {
+	if (dotPos == std::string_view::npos || (parser.peek_token(tokenizer::flags::no_flags).text() == "=")) {
+		selectFuncStruct_.field = std::string(tok.text());
 		tok = parser.next_token(tokenizer::flags::no_flags);
 		if (tok.text() != "=") {
-			throw Error(errParams, "`=` is expected, but found `%s`", tok.text());
+			if (tok.text() == ".") {
+				throw Error(errParams, "Unexpected space symbol before `.` (select function delimiter)");
+			}
+			throw Error(errParams, "Expected `=` or `.` as a select function delimiter, but found `%s`", tok.text());
 		}
 		token ftok;
 		ParseFunction(parser, false, ftok);
 	} else {
+		if (dotPos == tok.text_.size() - 1) {
+			throw Error(errParams, "Unexpected space symbol or token after `.` (select function delimiter): `%s`", tok.text());
+		}
+		selectFuncStruct_.field = std::string(tok.text_.begin(), tok.text_.begin() + dotPos);
 		token ftok(TokenName);
 		ftok.text_.assign(tok.text_.begin() + dotPos + 1, tok.text_.end());
 		ParseFunction(parser, false, ftok);
@@ -215,10 +220,12 @@ SelectFuncStruct &SelectFuncParser::ParseFunction(tokenizer &parser, bool partOf
 			}
 		}
 		if (!selectFuncStruct_.isFunction) {
-			throw Error(errParseDSL, "%s: The closing parenthesis is required, but found `%s`", selectFuncStruct_.funcName, tok.text());
+			throw Error(errParseDSL, "%s: The closing parenthesis is required, but found `%s`. Select function name: `%s`",
+						selectFuncStruct_.funcName, tok.text(), selectFuncStruct_.funcName);
 		}
 	} else {
-		throw Error(errParseDSL, "%s: An open parenthesis is required, but found `%s`", selectFuncStruct_.funcName, tok.text());
+		throw Error(errParseDSL, "%s: An open parenthesis is required, but found `%s`. Select function name: `%s`",
+					selectFuncStruct_.funcName, tok.text(), selectFuncStruct_.funcName);
 	}
 
 	return selectFuncStruct_;

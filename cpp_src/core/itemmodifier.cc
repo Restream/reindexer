@@ -365,8 +365,10 @@ void ItemModifier::modifyCJSON(IdType id, FieldData &field, VariantArray &values
 				} catch (const Error &) {
 					ns_.krefs.resize(0);
 				}
+			} else if (index.Opts().IsArray()) {
+				pl.Get(fieldIdx, ns_.krefs, Variant::hold_t{});
 			} else {
-				pl.Get(fieldIdx, ns_.krefs, index.Opts().IsArray());
+				pl.Get(fieldIdx, ns_.krefs);
 			}
 			if (ns_.krefs == ns_.skrefs) continue;
 			bool needClearCache{false};
@@ -581,7 +583,7 @@ void ItemModifier::modifyIndexValues(IdType itemId, const FieldData &field, Vari
 		if (index.Opts().IsSparse()) {
 			pl.GetByJsonPath(field.tagspathWithLastIndex(), ns_.skrefs, index.KeyType());
 		} else {
-			pl.Get(field.index(), ns_.skrefs, true);
+			pl.Get(field.index(), ns_.skrefs, Variant::hold_t{});
 		}
 
 		// Required when updating index array field with several tagpaths

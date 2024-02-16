@@ -73,7 +73,7 @@ void ItemImpl::ModifyField(const IndexedTagsPath &tagsPath, const VariantArray &
 	}
 
 	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get()))));
+	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())), Variant::no_hold_t{}));
 }
 
 void ItemImpl::SetField(std::string_view jsonPath, const VariantArray &keys, const IndexExpressionEvaluator &ev) {
@@ -94,7 +94,7 @@ Error ItemImpl::FromMsgPack(std::string_view buf, size_t &offset) {
 	Error err = msgPackDecoder_->Decode(buf, pl, ser_, offset);
 	if (err.ok()) {
 		tupleData_ = ser_.DetachLStr();
-		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get()))));
+		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())), Variant::no_hold_t{}));
 	}
 	return err;
 }
@@ -109,7 +109,7 @@ Error ItemImpl::FromProtobuf(std::string_view buf) {
 	Error err = decoder.Decode(buf, pl, ser_);
 	if (err.ok()) {
 		tupleData_ = ser_.DetachLStr();
-		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get()))));
+		pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())), Variant::no_hold_t{}));
 	}
 	return err;
 }
@@ -179,7 +179,7 @@ void ItemImpl::FromCJSON(std::string_view slice, bool pkOnly, Recoder *recoder) 
 	if (!rdser.Eof()) throw Error(errParseJson, "Internal error - left unparsed data %d", rdser.Pos());
 
 	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get()))));
+	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())), Variant::no_hold_t{}));
 }
 
 Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
@@ -230,7 +230,7 @@ Error ItemImpl::FromJSON(std::string_view slice, char **endp, bool pkOnly) {
 
 	// Put tuple to field[0]
 	tupleData_ = ser_.DetachLStr();
-	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get()))));
+	pl.Set(0, Variant(p_string(reinterpret_cast<l_string_hdr *>(tupleData_.get())), Variant::no_hold_t{}));
 	return err;
 }
 

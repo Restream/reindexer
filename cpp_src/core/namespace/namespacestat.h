@@ -52,6 +52,19 @@ struct ClusterizationStatus {
 
 	enum class Role { None, ClusterReplica, SimpleReplica };
 
+	std::string_view RoleStr() const noexcept {
+		using namespace std::string_view_literals;
+		switch (role) {
+			case Role::None:
+				return "none"sv;
+			case Role::ClusterReplica:
+				return "cluster_replica"sv;
+			case Role::SimpleReplica:
+				return "simple_replica"sv;
+		}
+		return "<unknown>"sv;
+	}
+
 	int leaderId = -1;
 	Role role = Role::None;
 };
@@ -86,6 +99,9 @@ struct ReplicationState {
 
 // TODO: Rename this
 struct ReplicationStateV2 {
+	constexpr static int64_t kNoDataCount = -1;
+
+	bool HasDataCount() const noexcept { return dataCount != kNoDataCount; }
 	void GetJSON(JsonBuilder &builder);
 	void FromJSON(span<char>);
 
@@ -93,6 +109,8 @@ struct ReplicationStateV2 {
 	// updated from WAL when querying the structure
 	lsn_t lastLsn;
 	uint64_t dataHash = 0;
+	// This field is optional - older rx versions do not have it
+	int64_t dataCount = kNoDataCount;
 	lsn_t nsVersion;
 	//
 	ClusterizationStatus clusterStatus;

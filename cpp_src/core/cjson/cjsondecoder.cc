@@ -127,7 +127,7 @@ bool CJsonDecoder::decodeCJson(Payload &pl, Serializer &rdser, WrSerializer &wrs
 [[nodiscard]] Variant CJsonDecoder::cjsonValueToVariant(TagType tagType, Serializer &rdser, KeyValueType fieldType) {
 	if (fieldType.Is<KeyValueType::String>() && tagType != TagType::TAG_STRING) {
 		storage_.emplace_back(rdser.GetRawVariant(KeyValueType{tagType}).As<std::string>());
-		return Variant(p_string(&storage_.back()), false);
+		return Variant(p_string(&storage_.back()), Variant::no_hold_t{});
 	} else {
 		return reindexer::cjsonValueToVariant(tagType, rdser, fieldType);
 	}

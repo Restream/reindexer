@@ -1,6 +1,7 @@
 #include "core/ft/ftdsl.h"
 #include <algorithm>
 #include <locale>
+#include "core/ft/config/baseftconfig.h"
 #include "tools/customlocal.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
@@ -30,7 +31,7 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 	bool inGroup = false;
 	bool hasAnythingExceptNot = false;
 	int groupCounter = 0;
-	int maxPatternLen = 1;
+	size_t maxPatternLen = 1;
 	h_vector<FtDslFieldOpts, 8> fieldsOpts;
 	std::string utf8str;
 	fieldsOpts.insert(fieldsOpts.end(), std::max(int(fields_.size()), 1), {1.0, false});
@@ -49,27 +50,26 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 			++it;
 		} else {
 			if (*it == '@') {
-				it++;
+				++it;
 				parseFields(utf16str, it, fieldsOpts);
 				continue;
 			}
 
 			if (*it == '-') {
 				fte.opts.op = OpNot;
-				it++;
+				++it;
 			} else if (*it == '+') {
 				fte.opts.op = OpAnd;
-				it++;
+				++it;
 			}
 			if (it != utf16str.end() && (*it == '\'' || *it == '\"')) {
 				inGroup = !inGroup;
-				it++;
+				++it;
 				// closing group
 				if (!inGroup) {
 					int distance = 1;
 					if (it != utf16str.end() && *it == '~') {
-						++it;
-						if (it == utf16str.end()) {
+						if (++it == utf16str.end()) {
 							throw Error(errParseDSL, "Expected digit after '~' operator in phrase, but found nothing");
 						}
 						if (!std::isdigit(*it)) {
@@ -96,17 +96,17 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 							fteIt->opts.groupNum = groupCounter;
 						}
 						groupTermCounter = 0;
-						groupCounter++;
+						++groupCounter;
 					}
 				}
 			}
 			if (it != utf16str.end() && *it == '=') {
 				fte.opts.exact = true;
-				it++;
+				++it;
 			}
 			if (it != utf16str.end() && *it == '*') {
 				fte.opts.suff = true;
-				it++;
+				++it;
 			}
 		}
 		auto begIt = it;
@@ -120,21 +120,21 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 			}
 		}
 		auto endIt = it;
-		for (; it != utf16str.end(); it++) {
+		for (; it != utf16str.end(); ++it) {
 			if (*it == '*') {
 				fte.opts.pref = true;
 			} else if (*it == '~') {
 				fte.opts.typos = true;
 			} else if (*it == '^') {
-				++it;
-				if (it == utf16str.end()) {
+				if (++it == utf16str.end()) {
 					throw Error(errParseDSL, "Expected digit after '^' operator in search query DSL, but found nothing");
 				}
 				wchar_t *end = nullptr, *start = &*it;
 				fte.opts.boost = wcstod(start, &end);
-				it += end - start - 1;
-				if (end == start)
+				if (end == start) {
 					throw Error(errParseDSL, "Expected digit after '^' operator in search query DSL, but found '%c' ", char(*start));
+				}
+				it += end - start - 1;
 			} else {
 				break;
 			}
@@ -143,18 +143,14 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 		if (endIt != begIt) {
 			fte.pattern.assign(begIt, endIt);
 			utf16_to_utf8(fte.pattern, utf8str);
-			if (is_number(utf8str)) fte.opts.number = true;
-			if (fte.opts.op != OpNot && groupTermCounter == 0) {
-				// Setting up this flag before stopWords check, to prevent error on DSL with stop word + NOT
-				hasAnythingExceptNot = true;
-			}
-			if (stopWords_.find(utf8str) != stopWords_.end()) {
+			fte.opts.number = is_number(utf8str);
+			// Setting up this flag before stopWords check, to prevent error on DSL with stop word + NOT
+			hasAnythingExceptNot = hasAnythingExceptNot || (fte.opts.op != OpNot && groupTermCounter == 0);
+			if (auto it = stopWords_.find(utf8str); it != stopWords_.end() && it->type == StopWord::Type::Stop) {
 				continue;
 			}
 
-			if (int(fte.pattern.length()) > maxPatternLen) {
-				maxPatternLen = fte.pattern.length();
-			}
+			maxPatternLen = (fte.pattern.length() > maxPatternLen) ? fte.pattern.length() : maxPatternLen;
 			emplace_back(std::move(fte));
 			if (inGroup) ++groupTermCounter;
 		}

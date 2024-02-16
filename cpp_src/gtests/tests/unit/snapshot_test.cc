@@ -79,6 +79,9 @@ TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 			auto err = rxClient.GetSnapshot(kNsName, SnapshotOpts(), crsn);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_TRUE(crsn.HasRawData());
+			ASSERT_TRUE(crsn.ClusterizationStat().has_value());
+			ASSERT_EQ(crsn.ClusterizationStat()->leaderId, -1);
+			ASSERT_EQ(crsn.ClusterizationStat()->role, reindexer::ClusterizationStatus::Role::None);
 
 			std::string tmpNsName;
 			err = localRx.WithLSN(lsn_t(0, 0)).CreateTemporaryNamespace(kNsName, tmpNsName, StorageOpts().Enabled(false));
@@ -104,6 +107,9 @@ TEST_F(SnapshotTestApi, ForceSyncFromRemoteToLocal) {
 			auto err = rxClient.GetSnapshot(kNsName, SnapshotOpts(ExtendedLsn(remoteState.nsVersion, remoteState.lsn)), crsn);
 			ASSERT_TRUE(err.ok()) << err.what();
 			ASSERT_FALSE(crsn.HasRawData());
+			ASSERT_TRUE(crsn.ClusterizationStat().has_value());
+			ASSERT_EQ(crsn.ClusterizationStat()->leaderId, -1);
+			ASSERT_EQ(crsn.ClusterizationStat()->role, reindexer::ClusterizationStatus::Role::None);
 			for (auto& it : crsn) {
 				auto& ch = it.Chunk();
 				ASSERT_TRUE(ch.IsWAL());

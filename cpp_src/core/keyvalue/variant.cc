@@ -17,9 +17,9 @@
 
 namespace reindexer {
 
-Variant::Variant(const PayloadValue &v) : variant_{0, 1, KeyValueType::Composite{}} { new (cast<void>()) PayloadValue(v); }
+Variant::Variant(const PayloadValue &v) noexcept : variant_{0, 1, KeyValueType::Composite{}} { new (cast<void>()) PayloadValue(v); }
 
-Variant::Variant(PayloadValue &&v) : variant_{0, 1, KeyValueType::Composite{}} { new (cast<void>()) PayloadValue(std::move(v)); }
+Variant::Variant(PayloadValue &&v) noexcept : variant_{0, 1, KeyValueType::Composite{}} { new (cast<void>()) PayloadValue(std::move(v)); }
 
 Variant::Variant(const std::string &v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
 
@@ -27,20 +27,23 @@ Variant::Variant(std::string &&v) : variant_{0, 1, KeyValueType::String{}} { new
 
 Variant::Variant(std::string_view v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(make_key_string(v)); }
 
-Variant::Variant(const key_string &v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(v); }
+Variant::Variant(const key_string &v) noexcept : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(v); }
 
-Variant::Variant(key_string &&v) : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(std::move(v)); }
+Variant::Variant(key_string &&v) noexcept : variant_{0, 1, KeyValueType::String{}} { new (cast<void>()) key_string(std::move(v)); }
 
-Variant::Variant(const char *v) : Variant(p_string(v)) {}
+Variant::Variant(const char *v) noexcept : Variant(p_string(v), Variant::no_hold_t{}) {}
 
-Variant::Variant(p_string v, bool enableHold) : variant_{0, 0, KeyValueType::String{}} {
-	if (v.type() == p_string::tagKeyString && enableHold) {
+Variant::Variant(p_string v, no_hold_t) noexcept : variant_{0, 0, KeyValueType::String{}} { *cast<p_string>() = v; }
+
+Variant::Variant(p_string v, hold_t) : variant_{0, 0, KeyValueType::String{}} {
+	if (v.type() == p_string::tagKeyString) {
 		variant_.hold = 1;
 		new (cast<void>()) key_string(v.getKeyString());
 	} else {
 		*cast<p_string>() = v;
 	}
 }
+Variant::Variant(p_string v) noexcept : Variant(v, no_hold_t{}) {}
 
 Variant::Variant(const VariantArray &values) : variant_{0, 1, KeyValueType::Tuple{}} {
 	WrSerializer ser;
@@ -51,7 +54,7 @@ Variant::Variant(const VariantArray &values) : variant_{0, 1, KeyValueType::Tupl
 	new (cast<void>()) key_string(make_key_string(ser.Slice()));
 }
 
-Variant::Variant(Point p) : Variant{VariantArray(p)} {}
+Variant::Variant(Point p) noexcept : Variant{VariantArray{p}} {}
 
 Variant::Variant(Uuid uuid) noexcept : uuid_() {
 	if (uuid.data_[0] == 0 && uuid.data_[1] == 0) {
@@ -476,7 +479,7 @@ int Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) 
 				return Uuid{*this}.Compare(*otherUuid);
 			} else {
 				Uuid{*this}.PutToStr(uuidStrBuf);
-				return -other.Compare(Variant{uuidStrBufPString, false});
+				return -other.Compare(Variant{uuidStrBufPString});
 			}
 		} else if constexpr (withString == WithString::Yes) {
 			Uuid{*this}.PutToStr(uuidStrBuf);
@@ -491,7 +494,7 @@ int Variant::RelaxCompare(const Variant &other, const CollateOpts &collateOpts) 
 				return uuid->Compare(Uuid{other});
 			} else {
 				Uuid{other}.PutToStr(uuidStrBuf);
-				return Compare(Variant{uuidStrBufPString, false});
+				return Compare(Variant{uuidStrBufPString});
 			}
 		} else if constexpr (withString == WithString::Yes) {
 			Uuid{other}.PutToStr(uuidStrBuf);

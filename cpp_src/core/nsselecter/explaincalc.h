@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 #include "core/type_consts.h"
@@ -17,6 +18,24 @@ struct ConditionInjection;
 typedef std::vector<JoinedSelector> JoinedSelectors;
 typedef std::vector<JoinOnInjection> OnConditionInjections;
 
+class SubQueryExplain {
+public:
+	SubQueryExplain(const std::string& ns, std::string&& exp) : explain_{std::move(exp)}, namespace_{ns} {}
+	[[nodiscard]] const std::string& NsName() const& noexcept { return namespace_; }
+	[[nodiscard]] const auto& FieldOrKeys() const& noexcept { return fieldOrKeys_; }
+	[[nodiscard]] const std::string& Explain() const& noexcept { return explain_; }
+	void SetFieldOrKeys(std::variant<std::string, size_t>&& fok) noexcept { fieldOrKeys_ = std::move(fok); }
+
+	auto NsName() const&& = delete;
+	auto FieldOrKeys() const&& = delete;
+	auto Explain() const&& = delete;
+
+private:
+	std::string explain_;
+	std::string namespace_;
+	std::variant<std::string, size_t> fieldOrKeys_{size_t(0)};
+};
+
 class ExplainCalc {
 public:
 	typedef std::chrono::high_resolution_clock Clock;
@@ -29,24 +48,40 @@ public:
 	ExplainCalc() = default;
 	ExplainCalc(bool enable) noexcept : enabled_(enable) {}
 
-	void StartTiming() noexcept;
-	void StopTiming() noexcept;
-
-	void AddPrepareTime() noexcept;
-	void AddSelectTime() noexcept;
-	void AddPostprocessTime() noexcept;
-	void AddLoopTime() noexcept;
+	void StartTiming() noexcept {
+		if (enabled_) lap();
+	}
+	void StopTiming() noexcept {
+		if (enabled_) total_ = preselect_ + prepare_ + select_ + postprocess_ + loop_;
+	}
+	void AddPrepareTime() noexcept {
+		if (enabled_) prepare_ += lap();
+	}
+	void AddSelectTime() noexcept {
+		if (enabled_) select_ += lap();
+	}
+	void AddPostprocessTime() noexcept {
+		if (enabled_) postprocess_ += lap();
+	}
+	void AddLoopTime() noexcept {
+		if (enabled_) loop_ += lap();
+	}
 	void AddIterations(int iters) noexcept { iters_ += iters; }
-	void StartSort() noexcept;
-	void StopSort() noexcept;
+	void StartSort() noexcept {
+		if (enabled_) sort_start_point_ = Clock::now();
+	}
+	void StopSort() noexcept {
+		if (enabled_) sort_ = Clock::now() - sort_start_point_;
+	}
 
 	void PutCount(int cnt) noexcept { count_ = cnt; }
 	void PutSortIndex(std::string_view index) noexcept { sortIndex_ = index; }
-	void PutSelectors(const SelectIteratorContainer *qres) noexcept { selectors_ = qres; }
-	void PutJoinedSelectors(const JoinedSelectors *jselectors) noexcept { jselectors_ = jselectors; }
+	void PutSelectors(const SelectIteratorContainer* qres) noexcept { selectors_ = qres; }
+	void PutJoinedSelectors(const JoinedSelectors* jselectors) noexcept { jselectors_ = jselectors; }
 	void SetPreselectTime(Duration preselectTime) noexcept { preselect_ = preselectTime; }
-	void PutOnConditionInjections(const OnConditionInjections *onCondInjections) noexcept { onInjections_ = onCondInjections; }
+	void PutOnConditionInjections(const OnConditionInjections* onCondInjections) noexcept { onInjections_ = onCondInjections; }
 	void SetSortOptimization(bool enable) noexcept { sortOptimization_ = enable; }
+	void SetSubQueriesExplains(std::vector<SubQueryExplain>&& subQueriesExpl) noexcept { subqueries_ = std::move(subQueriesExpl); }
 
 	void LogDump(int logLevel);
 	std::string GetJSON();
@@ -59,14 +94,21 @@ public:
 	Duration Sort() const noexcept { return sort_; }
 
 	size_t Iterations() const noexcept { return iters_; }
-	static int To_us(const Duration &d) noexcept;
 	bool IsEnabled() const noexcept { return enabled_; }
 
+	static int To_us(const Duration &d) noexcept;
+
 private:
-	Duration lap() noexcept;
+	Duration lap() noexcept {
+		const auto now = Clock::now();
+		Duration d = now - last_point_;
+		last_point_ = now;
+		return d;
+	}
 
 	time_point last_point_, sort_start_point_;
-	Duration total_, prepare_ = Duration::zero();
+	Duration total_ = Duration::zero();
+	Duration prepare_ = Duration::zero();
 	Duration preselect_ = Duration::zero();
 	Duration select_ = Duration::zero();
 	Duration postprocess_ = Duration::zero();
@@ -74,9 +116,10 @@ private:
 	Duration sort_ = Duration::zero();
 
 	std::string_view sortIndex_;
-	const SelectIteratorContainer *selectors_ = nullptr;
-	const JoinedSelectors *jselectors_ = nullptr;
-	const OnConditionInjections *onInjections_ = nullptr;  ///< Optional
+	const SelectIteratorContainer* selectors_ = nullptr;
+	const JoinedSelectors* jselectors_ = nullptr;
+	const OnConditionInjections* onInjections_ = nullptr;  ///< Optional
+	std::vector<SubQueryExplain> subqueries_;
 
 	int iters_ = 0;
 	int count_ = 0;

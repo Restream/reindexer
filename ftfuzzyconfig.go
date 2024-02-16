@@ -39,15 +39,15 @@ type FtFuzzyConfig struct {
 	EnableTranslit bool `json:"enable_translit"`
 	// Enable wrong keyboard layout variants processing
 	EnableKbLayout bool `json:"enable_kb_layout"`
-	// List of stop words. Words from this list will be ignored in documents and queries
-	StopWords []string `json:"stop_words"`
+	// List of objects of stop words. Words from this list will be ignored when building indexes
+	// but can be included in search results in queries such as 'word*', 'word~' etc. if for the stop-word attribute is_morpheme is true
+	StopWords []interface{} `json:"stop_words"`
 	// Log level of full text search engine
 	LogLevel int `json:"log_level"`
 	// Extra symbols, which will be threated as parts of word to addition to letters and digits
 	ExtraWordSymbols string `json:"extra_word_symbols"`
 	// Config for subterm rank multiplier
 	FtBaseRankingConfig *FtBaseRanking `json:"base_ranking,omitempty"`
-
 }
 
 func DefaultFtFuzzyConfig() FtFuzzyConfig {
@@ -69,6 +69,6 @@ func DefaultFtFuzzyConfig() FtFuzzyConfig {
 		EnableKbLayout:       true,
 		LogLevel:             0,
 		ExtraWordSymbols:     "/-+",
-		FtBaseRankingConfig:  &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin:10, Typo:85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit:90, Synonyms:95},
+		FtBaseRankingConfig:  &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95},
 	}
 }

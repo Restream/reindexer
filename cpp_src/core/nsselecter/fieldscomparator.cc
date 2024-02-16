@@ -41,8 +41,8 @@ public:
 			[&](reindexer::KeyValueType::Double) noexcept {
 				return reindexer::Variant{*reinterpret_cast<const double *>(ptr_ + sizeof_ * i)};
 			},
-			[&](reindexer::KeyValueType::String) {
-				return reindexer::Variant{*reinterpret_cast<const reindexer::p_string *>(ptr_ + sizeof_ * i), false};
+			[&](reindexer::KeyValueType::String) noexcept {
+				return reindexer::Variant{*reinterpret_cast<const reindexer::p_string *>(ptr_ + sizeof_ * i)};
 			},
 			[&](reindexer::KeyValueType::Bool) noexcept { return reindexer::Variant{*reinterpret_cast<const bool *>(ptr_ + sizeof_ * i)}; },
 			[&](reindexer::KeyValueType::Int) noexcept { return reindexer::Variant{*reinterpret_cast<const int *>(ptr_ + sizeof_ * i)}; },

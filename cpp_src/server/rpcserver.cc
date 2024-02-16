@@ -929,7 +929,7 @@ Snapshot &RPCServer::getSnapshot(cproto::Context &ctx, int &id) {
 	return data->snapshots[id].first;
 }
 
-Error RPCServer::fetchSnapshotRecords(cproto::Context &ctx, int id, int64_t offset, bool putHeader) {
+Error RPCServer::fetchSnapshotRecords(cproto::Context &ctx, int id, int64_t offset, bool putHeaders) {
 	cproto::Args args;
 	WrSerializer ser;
 	std::string_view resSlice;
@@ -944,7 +944,8 @@ Error RPCServer::fetchSnapshotRecords(cproto::Context &ctx, int id, int64_t offs
 		return e;
 	}
 
-	if (putHeader) {
+	if (putHeaders) {
+		// Put header
 		args.emplace_back(int(id));
 		args.emplace_back(int64_t(snapshot->Size()));
 		args.emplace_back(int64_t(snapshot->RawDataSize()));
@@ -956,6 +957,12 @@ Error RPCServer::fetchSnapshotRecords(cproto::Context &ctx, int id, int64_t offs
 		ch.Serilize(ser);
 		resSlice = ser.Slice();
 		args.emplace_back(p_string(&resSlice));
+	}
+	if (putHeaders) {
+		// Put extra opts at the end for backwards compatibility
+		const auto st = snapshot->ClusterizationStat();
+		args.emplace_back(st.leaderId);
+		args.emplace_back(int(st.role));
 	}
 	if (++it == snapshot->end()) {
 		freeSnapshot(ctx, id);

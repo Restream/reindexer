@@ -202,6 +202,16 @@ std::string ExplainCalc::GetJSON() {
 			json.Put("postprocess_us"sv, To_us(postprocess_));
 			json.Put("loop_us"sv, To_us(loop_));
 			json.Put("general_sort_us"sv, To_us(sort_));
+			if (!subqueries_.empty()) {
+				auto subQuries = json.Array("subqueries");
+				for (const auto &sq : subqueries_) {
+					auto s = subQuries.Object();
+					s.Put("namespace", sq.NsName());
+					s.Raw("explain", sq.Explain());
+					std::visit(overloaded{[&](size_t k) { s.Put("keys", k); }, [&](const std::string &f) { s.Put("field", f); }},
+							   sq.FieldOrKeys());
+				}
+			}
 		}
 		json.Put("sort_index"sv, sortIndex_);
 		json.Put("sort_by_uncommitted_index"sv, sortOptimization_);
@@ -305,45 +315,6 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 	return name.str();
 }
 
-ExplainCalc::Duration ExplainCalc::lap() noexcept {
-	auto now = Clock::now();
-	Duration d = now - last_point_;
-	last_point_ = now;
-	return d;
-}
-
 int ExplainCalc::To_us(const ExplainCalc::Duration &d) noexcept { return duration_cast<microseconds>(d).count(); }
-
-void ExplainCalc::StartTiming() noexcept {
-	if (enabled_) lap();
-}
-
-void ExplainCalc::StopTiming() noexcept {
-	if (enabled_) total_ = preselect_ + prepare_ + select_ + postprocess_ + loop_;
-}
-
-void ExplainCalc::AddPrepareTime() noexcept {
-	if (enabled_) prepare_ += lap();
-}
-
-void ExplainCalc::AddSelectTime() noexcept {
-	if (enabled_) select_ += lap();
-}
-
-void ExplainCalc::AddPostprocessTime() noexcept {
-	if (enabled_) postprocess_ += lap();
-}
-
-void ExplainCalc::AddLoopTime() noexcept {
-	if (enabled_) loop_ += lap();
-}
-
-void ExplainCalc::StartSort() noexcept {
-	if (enabled_) sort_start_point_ = Clock::now();
-}
-
-void ExplainCalc::StopSort() noexcept {
-	if (enabled_) sort_ = Clock::now() - sort_start_point_;
-}
 
 }  // namespace reindexer

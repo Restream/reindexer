@@ -55,12 +55,13 @@ public:
 	size_t TotalCount() const noexcept { return totalCount; }
 	const std::string &GetExplainResults() const & noexcept { return explainResults; }
 	const std::string &GetExplainResults() const &&;
+	std::string &&MoveExplainResults() & noexcept { return std::move(explainResults); }
 	const std::vector<AggregationResult> &GetAggregationResults() const & noexcept { return aggregationResults; }
 	const std::vector<AggregationResult> &GetAggregationResults() const && = delete;
 	void Clear();
 	h_vector<std::string_view, 1> GetNamespaces() const;
 	NsShardsIncarnationTags GetIncarnationTags() const;
-	bool IsCacheEnabled() const { return !nonCacheableData; }
+	bool IsCacheEnabled() const noexcept { return !nonCacheableData; }
 	void SetOutputShardId(int shardId) noexcept { outputShardId = shardId; }
 	CsvOrdering MakeCSVTagOrdering(unsigned limit, unsigned offset) const;
 
@@ -77,8 +78,12 @@ public:
 		joins::ItemIterator GetJoined();
 		const ItemRef &GetItemRef() const noexcept { return qr_->items_[idx_]; }
 		lsn_t GetLSN() const noexcept { return qr_->items_[idx_].Value().GetLSN(); }
-		bool IsRaw() const noexcept;
-		std::string_view GetRaw() const noexcept;
+		bool IsRaw() const noexcept { return qr_->items_[idx_].Raw(); }
+		std::string_view GetRaw() const noexcept {
+			auto &itemRef = qr_->items_[idx_];
+			assertrx(itemRef.Raw());
+			return std::string_view(reinterpret_cast<char *>(itemRef.Value().Ptr()), itemRef.Value().GetCapacity());
+		}
 		Iterator &operator++() noexcept {
 			idx_++;
 			return *this;
@@ -97,9 +102,9 @@ public:
 		Error err_;
 	};
 
-	Iterator begin() const { return Iterator{this, 0, errOK}; }
-	Iterator end() const { return Iterator{this, int(items_.size()), errOK}; }
-	Iterator operator[](int idx) const { return Iterator{this, idx, errOK}; }
+	Iterator begin() const noexcept { return Iterator{this, 0, Error()}; }
+	Iterator end() const noexcept { return Iterator{this, int(items_.size()), Error()}; }
+	Iterator operator[](int idx) const noexcept { return Iterator{this, idx, Error()}; }
 
 	std::vector<joins::NamespaceResults> joined_;
 	std::vector<AggregationResult> aggregationResults;

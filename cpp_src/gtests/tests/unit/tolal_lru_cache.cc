@@ -16,42 +16,101 @@ using reindexer::QueryCountCache;
 using reindexer::QueryCacheKey;
 using reindexer::QueryCountCacheVal;
 using reindexer::EqQueryCacheKey;
+using reindexer::kCountCachedKeyMode;
+
+struct CacheJoinedSelectorMock {
+	std::string_view RightNsName() const noexcept { return rightNsName; }
+	int64_t LastUpdateTime() const noexcept { return lastUpdateTime; }
+
+	std::string rightNsName;
+	int64_t lastUpdateTime;
+};
+using CacheJoinedSelectorsMock = std::vector<CacheJoinedSelectorMock>;
 
 TEST(LruCache, SimpleTest) {
-	const int nsCount = 10;
-	const int iterCount = 1000;
+	constexpr int kNsCount = 10;
+	constexpr int kSingleJoinNsCount = 5;
+	constexpr int kDoubleJoinNsCount = 5;
+	constexpr int kIterCount = 3000;
 
-	typedef std::pair<Query, bool> QueryCachePair;
+	struct QueryCacheData {
+		const CacheJoinedSelectorsMock* JoinedSelectorsPtr() const noexcept { return joinedSelectors.size() ? &joinedSelectors : nullptr; }
 
-	std::vector<QueryCachePair> qs;
+		Query q;
+		CacheJoinedSelectorsMock joinedSelectors = {};
+		bool cached = false;
+		int64_t expectedTotal = -1;
+	};
+	std::vector<QueryCacheData> qs;
 
 	PRINTF("preparing queries for caching ...\n");
-	for (auto i = 0; i < nsCount; i++) {
-		auto idx = std::to_string(i);
-		qs.emplace_back(Query("namespace" + idx), false);
+	int i = 0;
+	for (int j = 0; j < kNsCount; ++j, ++i) {
+		qs.emplace_back(QueryCacheData{.q = Query(fmt::sprintf("namespace_%d", i))});
+	}
+	for (int j = 0; j < kSingleJoinNsCount; ++j, ++i) {
+		const std::string kJoinedNsName = fmt::sprintf("joined_namespace_%d", j);
+		qs.emplace_back(QueryCacheData{
+			.q = Query(fmt::sprintf("namespace_%d", i))
+					 .InnerJoin(fmt::sprintf("joined_field_%d", j), fmt::sprintf("main_field_%d", j % 2), CondEq, Query(kJoinedNsName)),
+			.joinedSelectors = {CacheJoinedSelectorMock{kJoinedNsName, 123}}});
+	}
+	for (int j = 0; j < kDoubleJoinNsCount; ++j, ++i) {
+		const std::string kJoinedNsName1 = fmt::sprintf("second_joined_namespace_%d", j);
+		const std::string kJoinedNsName2 = fmt::sprintf("third_joined_namespace_%d", j);
+		constexpr int64_t kUpdateTime1 = 123;
+		constexpr int64_t kUpdateTime2 = 321;
+		if (j % 3 == 0) {
+			qs.emplace_back(QueryCacheData{
+				.q = Query(fmt::sprintf("namespace_%d", i))
+						 .InnerJoin(fmt::sprintf("joined_field_%d", j), fmt::sprintf("main_field_%d", j % 2), CondEq, Query(kJoinedNsName1))
+						 .OrInnerJoin(fmt::sprintf("joined_field_%d", j), fmt::sprintf("main_field_%d", j % 2), CondEq,
+									  Query(kJoinedNsName2)),
+				.joinedSelectors = {CacheJoinedSelectorMock{kJoinedNsName1, kUpdateTime1},
+									CacheJoinedSelectorMock{kJoinedNsName2, kUpdateTime2}}});
+		} else {
+			qs.emplace_back(QueryCacheData{
+				.q =
+					Query(fmt::sprintf("namespace_%d", i))
+						.InnerJoin(fmt::sprintf("joined_field_%d", j), fmt::sprintf("main_field_%d", j % 2), CondEq, Query(kJoinedNsName1))
+						.InnerJoin(fmt::sprintf("joined_field_%d", j), fmt::sprintf("main_field_%d", j % 2), CondEq, Query(kJoinedNsName2)),
+				.joinedSelectors = {CacheJoinedSelectorMock{kJoinedNsName1, kUpdateTime1},
+									CacheJoinedSelectorMock{kJoinedNsName2, kUpdateTime2}}});
+		}
 	}
 
 	QueryCountCache cache(reindexer::kDefaultCacheSizeLimit, reindexer::kDefaultHitCountToCache);
-	auto keyComparator = EqQueryCacheKey();
 
-	PRINTF("checking query cache ...\n");
-	for (auto i = 0; i < iterCount; i++) {
+	PRINTF("checking query cache...\n");
+	for (auto i = 0; i < kIterCount; i++) {
 		auto idx = rand() % qs.size();
-		auto const& qce = qs.at(idx);
-		QueryCacheKey ckey{qce.first};
+		auto& qce = qs.at(idx);
+		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.JoinedSelectorsPtr()};
 		auto cached = cache.Get(ckey);
-		bool exist = qce.second;
+		bool exist = qce.cached;
 
 		if (cached.valid) {
-			ASSERT_TRUE(exist) << "query missing in query cache!\n";
-			QueryCacheKey k(qs[idx].first);
-			ASSERT_TRUE(keyComparator(k, ckey)) << "queries are not EQUAL!\n";
+			ASSERT_TRUE(exist) << "query missing in query cache";
+			ASSERT_EQ(cached.val.total_count, qce.expectedTotal) << "cached data are not valid";
 		} else {
-			size_t total = static_cast<size_t>(rand() % 1000);
+			size_t total = static_cast<size_t>(rand() % 10000);
 			cache.Put(ckey, QueryCountCacheVal{total});
-			qs[idx].second = true;
+			qce.cached = true;
+			qce.expectedTotal = total;
 		}
 	}
+	PRINTF("checking query update time change...\n");
+	auto& qce = qs.back();
+	if (!qce.cached) {
+		QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.JoinedSelectorsPtr()};
+		auto cached = cache.Get(ckey);
+		ASSERT_FALSE(cached.valid) << "query missing in query cache";
+		cache.Put(ckey, QueryCountCacheVal{static_cast<size_t>(rand() % 10000)});
+	}
+	qce.joinedSelectors.back().lastUpdateTime += 100;
+	QueryCacheKey ckey{qce.q, kCountCachedKeyMode, qce.JoinedSelectorsPtr()};
+	auto cached = cache.Get(ckey);
+	ASSERT_FALSE(cached.valid) << "update time change did not affected the key";
 }
 
 TEST(LruCache, StressTest) {
@@ -87,11 +146,13 @@ TEST(LruCache, StressTest) {
 			for (auto i = 0; i < iterCount; i++) {
 				auto idx = rand() % qs.size();
 				auto const& qce = qs.at(idx);
-				QueryCacheKey ckey{qce};
+				QueryCacheKey ckey{qce, kCountCachedKeyMode, static_cast<const CacheJoinedSelectorsMock*>(nullptr)};
 				auto cached = cache.Get(ckey);
 
 				if (cached.valid) {
-					ASSERT_TRUE(EqQueryCacheKey()(qs[idx], ckey)) << "queries are not EQUAL!\n";
+					ASSERT_TRUE(EqQueryCacheKey()(
+						QueryCacheKey{qs[idx], kCountCachedKeyMode, static_cast<const CacheJoinedSelectorsMock*>(nullptr)}, ckey))
+						<< "queries are not EQUAL!\n";
 				} else {
 					size_t total = static_cast<size_t>(rand() % 1000);
 					cache.Put(ckey, QueryCountCacheVal{total});

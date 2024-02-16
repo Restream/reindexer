@@ -39,7 +39,7 @@ public:
 
 	IdSetPlain& Unsorted() noexcept { return impl_->Unsorted(); }
 	const IdSetPlain& Unsorted() const noexcept { return impl_->Unsorted(); }
-	IdSetRef Sorted(unsigned sortId) const { return impl_->Sorted(sortId); }
+	IdSetRef Sorted(unsigned sortId) const noexcept { return impl_->Sorted(sortId); }
 	void UpdateSortedIds(const UpdateSortedContext& ctx) { impl_->UpdateSortedIds(ctx); }
 	void SetVDocID(int vdoc_id) noexcept { impl_->SetVDocID(vdoc_id); }
 	const int& VDocID() const { return impl_->vdoc_id_; }

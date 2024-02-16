@@ -680,6 +680,11 @@ Error RPCClient::GetSnapshot(std::string_view nsName, const SnapshotOpts& opts, 
 			int64_t count = int64_t(args[1]);
 			snapshot = Snapshot(&conn_, int(args[0]), count, int64_t(args[2]), lsn_t(int64_t(args[3])),
 								count > 0 ? p_string(args[4]) : p_string(), config_.NetTimeout);
+			const unsigned nextArgNum = count > 0 ? 5 : 4;
+			if (args.size() >= nextArgNum + 1) {
+				snapshot.ClusterizationStat(ClusterizationStatus{.leaderId = int(args[nextArgNum]),
+																 .role = reindexer::ClusterizationStatus::Role(int(args[nextArgNum + 1]))});
+			}
 		}
 	} catch (const Error& err) {
 		return err;

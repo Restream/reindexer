@@ -87,14 +87,19 @@ void CoroQueryResults::Bind(std::string_view rawResult, RPCQrId id, const Query 
 				PayloadType("tmp").clone()->deserialize(ser);
 			},
 			opts, i_.parsingData_);
+
+		const auto copyStart = i_.lazyMode_ ? rawResult.begin() : (rawResult.begin() + ser.Pos());
+		if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rx_unlikely (rawResLen > QrRawBuffer::max_size())) {
+			throw Error(
+				errLogic,
+				"client::QueryResults::Bind: rawResult buffer overflow. Max size if %d bytes, but %d bytes requested. Try to reduce "
+				"fetch limit (current limit is %d)",
+				QrRawBuffer::max_size(), rawResLen, i_.fetchAmount_);
+		}
+
+		i_.rawResult_.assign(copyStart, rawResult.end());
 	} catch (const Error &err) {
 		i_.status_ = err;
-	}
-
-	if (i_.lazyMode_) {
-		i_.rawResult_.assign(rawResult.begin(), rawResult.end());
-	} else {
-		i_.rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
 	}
 }
 
@@ -120,11 +125,14 @@ void CoroQueryResults::handleFetchedBuf(net::cproto::CoroRPCAnswer &ans) {
 	ResultSerializer ser(rawResult);
 
 	ser.GetRawQueryParams(i_.queryParams_, nullptr, ResultSerializer::Options{}, i_.parsingData_);
-	if (i_.lazyMode_) {
-		i_.rawResult_.assign(rawResult.begin(), rawResult.end());
-	} else {
-		i_.rawResult_.assign(rawResult.begin() + ser.Pos(), rawResult.end());
+	const auto copyStart = i_.lazyMode_ ? rawResult.begin() : (rawResult.begin() + ser.Pos());
+	if (const auto rawResLen = std::distance(copyStart, rawResult.end()); rx_unlikely (rawResLen > QrRawBuffer::max_size())) {
+		throw Error(errLogic,
+					"client::QueryResults::fetchNextResults: rawResult buffer overflow. Max size if %d bytes, but %d bytes requested. Try "
+					"to reduce fetch limit (current limit is %d)",
+					QrRawBuffer::max_size(), rawResLen, i_.fetchAmount_);
 	}
+	i_.rawResult_.assign(copyStart, rawResult.end());
 	i_.status_ = Error();
 }
 

@@ -59,7 +59,7 @@ void ItemImplBase::FromCJSON(std::string_view slice) {
 	const auto tupleSize = ser_.Len();
 	tupleHolder_ = ser_.DetachBuf();
 	tupleData_ = std::string_view(reinterpret_cast<char *>(tupleHolder_.get()), tupleSize);
-	pl.Set(0, Variant(p_string(&tupleData_)));
+	pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
 }
 
 Error ItemImplBase::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*/) {
@@ -95,7 +95,7 @@ Error ItemImplBase::FromJSON(std::string_view slice, char **endp, bool /*pkOnly*
 		const auto tupleSize = ser_.Len();
 		tupleHolder_ = ser_.DetachBuf();
 		tupleData_ = std::string_view(reinterpret_cast<char *>(tupleHolder_.get()), tupleSize);
-		pl.Set(0, Variant(p_string(&tupleData_)));
+		pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
 	}
 	return err;
 }
@@ -116,7 +116,7 @@ Error ItemImplBase::FromMsgPack(std::string_view buf, size_t &offset) {
 		const auto tupleSize = ser_.Len();
 		tupleHolder_ = ser_.DetachBuf();
 		tupleData_ = std::string_view(reinterpret_cast<char *>(tupleHolder_.get()), tupleSize);
-		pl.Set(0, Variant(p_string(&tupleData_)));
+		pl.Set(0, Variant(p_string(&tupleData_), Variant::no_hold_t{}));
 	}
 	return err;
 }

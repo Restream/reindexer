@@ -4,7 +4,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/nsselecter/joinedselector.h"
 #include "core/reindexer.h"
-// #include "gtests/tools.h"
+#include "gtests/tools.h"
 #include "tools/string_regexp_functions.h"
 
 #include "helpers.h"
@@ -51,6 +51,7 @@ void ApiTvSimpleComparators::RegisterAllCases() {
 	Register("GetEqArrayInt", &ApiTvSimpleComparators::GetEqArrayInt, this);
 	Register("GetEqString", &ApiTvSimpleComparators::GetEqString, this);
 	Register("GetByRangeIDAndSort", &ApiTvSimpleComparators::GetByRangeIDAndSort, this);
+	Register("GetUuidStr", &ApiTvSimpleComparators::GetUuidStr, this);
 
 	Register("Query1Cond", &ApiTvSimpleComparators::Query1Cond, this);
 	Register("Query1CondTotal", &ApiTvSimpleComparators::Query1CondTotal, this);
@@ -92,6 +93,11 @@ reindexer::Error ApiTvSimpleComparators::Initialize() {
 				  "Croatia"};
 
 	locations_ = {"mos", "ct", "dv", "sth", "vlg", "sib", "ural"};
+
+	uuids_.reserve(1000);
+	for (size_t i = 0; i < 1000; ++i) {
+		uuids_.emplace_back(randStrUuid());
+	}
 
 	for (int i = 0; i < 10; i++) packages_.emplace_back(randomNumArray<int>(20, 10000, 10));
 
@@ -159,6 +165,7 @@ reindexer::Item ApiTvSimpleComparators::MakeItem(benchmark::State&) {
 	item["location"] = locations_.at(random<size_t>(0, locations_.size() - 1));
 	item["start_time"] = start_times_.at(random<size_t>(0, start_times_.size() - 1));
 	item["end_time"] = startTime + random<int>(1, 5) * 1000;
+	item["uuid_str"] = uuids_[rand() % uuids_.size()];
 
 	return item;
 }
@@ -233,6 +240,19 @@ void ApiTvSimpleComparators::GetByRangeIDAndSort(benchmark::State& state) {
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 
+		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
+	}
+}
+
+void ApiTvSimpleComparators::GetUuidStr(benchmark::State& state) {
+	const auto& uuid = uuids_[rand() % uuids_.size()];
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q(nsdef_.name);
+		q.Where("uuid_str", CondEq, uuid);
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
 		if (!qres.Count()) state.SkipWithError("Results does not contain any value");
 	}
 }

@@ -1,3 +1,47 @@
+# Version 4.14.0 *beta* (16.02.2024)
+
+## Core
+- [fea] In C++ `Reindexer::Connect`-call is now thread-safe
+
+## Replication
+- [fea] Added more data consistency checks for the force syncs
+- [fix] Fixed situation, when some of the concurrently written documents could be lost during RAFT leader resync in case of leader's switch
+- [fix] Fixed possible request timeouts on the user's `set_leader_node` command
+- [fix] Fixed logical race on the cluster's startup (when some of the user's requests could be handled, while RAFT layer is not initialized yet)
+
+## Sharding
+- [fea] Added namespaces' content check during sharding reconfiguration: now it is possible to set sharding config at runtime for non-empty namespace if contents of all the namespaces corresponds to sharding keys distribution
+- [fea] Added support for subqueries to the sharded namespaces
+- [fea] Added `config_rollback_timeout_sec` into `sharding.conf` (option for debug purposes)
+
+## Ported
+- [fea/fix] Ported all the fixes from [v3.22.0](https://github.com/Restream/reindexer/releases/tag/v3.22.0) and [v3.22.1](https://github.com/Restream/reindexer/releases/tag/v3.22.1)
+
+## Face
+- [fea] Added the ability to use hot keys to navigate over the UI
+- [fea] Changed the Server ID range
+- [fea] Added the default values to the config form when the default config is using
+- [fea] Upgraded Webpack to 5.х
+- [fea] Added the default values to the NS config during the mode changing
+- [fea] Added a new tooltip with the UTC converted date to the Timestamp data on the NS Grid 
+- [fea] Made yarn upgrade
+- [fea] Added Prettify button to the SQL Query
+- [fea] Added the subqueries field to the explain mode
+- [fix] Fixed Check request
+- [fix] Added bottom padding to the Performance Updates chart
+- [fix] Fixed the pagination on the SQL query result page
+- [fix] Fixed NS config popup opened from the Statistics page
+- [fix] Fixed the available column list in the grid settings after NS changing 
+- [fix] Fixed the message about the outdated browser version after Chrome upgraded to v120.
+- [fix] Fixed the settings panel layout on the Performance page, which was overlapped by the message about the outdated browser version
+- [fix] Fixed the table columns auto resizing
+- [fix] Fixed the table header width issue that appeared on the table resizing
+- [fix] Fixed the table layout that crashed on scrolling
+- [fix] Fixed the empty space between the last NS and the Total section on the Memory page
+- [fix] Fixed the title changing on the NS page during a new NS creating
+- [fix] Fixed the tooltip position in the sidebar menu
+- [fix] Fixed “+” button for the Expire after field
+
 # Version 4.13.0 *beta* (22.12.2023)
 
 ## Core

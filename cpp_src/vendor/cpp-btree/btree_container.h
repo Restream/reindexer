@@ -53,14 +53,14 @@ public:
 	btree_container(const self_type &x) : tree_(x.tree_) {}
 
 	// Iterator routines.
-	iterator begin() { return tree_.begin(); }
-	const_iterator begin() const { return tree_.begin(); }
-	iterator end() { return tree_.end(); }
-	const_iterator end() const { return tree_.end(); }
-	reverse_iterator rbegin() { return tree_.rbegin(); }
-	const_reverse_iterator rbegin() const { return tree_.rbegin(); }
-	reverse_iterator rend() { return tree_.rend(); }
-	const_reverse_iterator rend() const { return tree_.rend(); }
+	iterator begin() noexcept(noexcept(std::declval<Tree>().begin())) { return tree_.begin(); }
+	const_iterator begin() const noexcept(noexcept(std::declval<Tree>().begin())) { return tree_.begin(); }
+	iterator end() noexcept(noexcept(std::declval<Tree>().end())) { return tree_.end(); }
+	const_iterator end() const noexcept(noexcept(std::declval<Tree>().end())) { return tree_.end(); }
+	reverse_iterator rbegin() noexcept(noexcept(std::declval<Tree>().rbegin())) { return tree_.rbegin(); }
+	const_reverse_iterator rbegin() const noexcept(noexcept(std::declval<Tree>().rbegin())) { return tree_.rbegin(); }
+	reverse_iterator rend() noexcept(noexcept(std::declval<Tree>().rend())) { return tree_.rend(); }
+	const_reverse_iterator rend() const noexcept(noexcept(std::declval<Tree>().rend())) { return tree_.rend(); }
 
 	// Lookup routines.
 	iterator lower_bound(const key_type &key) { return tree_.lower_bound(key); }
@@ -102,18 +102,18 @@ public:
 	void verify() const { tree_.verify(); }
 
 	// Size routines.
-	size_type size() const { return tree_.size(); }
-	size_type max_size() const { return tree_.max_size(); }
-	bool empty() const { return tree_.empty(); }
-	size_type height() const { return tree_.height(); }
-	size_type internal_nodes() const { return tree_.internal_nodes(); }
-	size_type leaf_nodes() const { return tree_.leaf_nodes(); }
-	size_type nodes() const { return tree_.nodes(); }
-	size_type bytes_used() const { return tree_.bytes_used(); }
-	static double average_bytes_per_value() { return Tree::average_bytes_per_value(); }
-	double fullness() const { return tree_.fullness(); }
-	double overhead() const { return tree_.overhead(); }
-	const key_compare &key_comp() const { return tree_.key_comp(); }
+	size_type size() const noexcept(noexcept(std::declval<Tree>().size())) { return tree_.size(); }
+	size_type max_size() const noexcept(noexcept(std::declval<Tree>().max_size())) { return tree_.max_size(); }
+	bool empty() const noexcept(noexcept(std::declval<Tree>().empty())) { return tree_.empty(); }
+	size_type height() const noexcept(noexcept(std::declval<Tree>().height())) { return tree_.height(); }
+	size_type internal_nodes() const noexcept(noexcept(std::declval<Tree>().internal_nodes())) { return tree_.internal_nodes(); }
+	size_type leaf_nodes() const noexcept(noexcept(std::declval<Tree>().leaf_nodes())) { return tree_.leaf_nodes(); }
+	size_type nodes() const noexcept(noexcept(std::declval<Tree>().nodes())) { return tree_.nodes(); }
+	size_type bytes_used() const noexcept(noexcept(std::declval<Tree>().bytes_used())) { return tree_.bytes_used(); }
+	static double average_bytes_per_value() noexcept(noexcept(Tree::average_bytes_per_value())) { return Tree::average_bytes_per_value(); }
+	double fullness() const noexcept(noexcept(std::declval<Tree>().fullness())) { return tree_.fullness(); }
+	double overhead() const noexcept(noexcept(std::declval<Tree>().overhead())) { return tree_.overhead(); }
+	const key_compare &key_comp() const noexcept(noexcept(std::declval<Tree>().key_comp())) { return tree_.key_comp(); }
 
 	bool operator==(const self_type &x) const {
 		if (size() != x.size()) {
@@ -315,4 +315,4 @@ public:
 
 }  // namespace btree
 
-#endif  // UTIL_BTREE_BTREE_CONTAINER_H__
+#endif	// UTIL_BTREE_BTREE_CONTAINER_H__

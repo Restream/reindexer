@@ -92,13 +92,15 @@ public:
 	/// @param cond - type of condition.
 	/// @param val - value of index to be compared with.
 	/// @return Query object ready to be executed.
-	template <typename Str, typename Input, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>
-	Query &Where(Str &&field, CondType cond, Input val) & {
-		return Where(std::forward<Str>(field), cond, {std::forward<Input>(val)});
+	template <typename Str, typename Input, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr,
+			  std::enable_if_t<std::is_constructible_v<Variant, Input>> * = nullptr>
+	Query &Where(Str &&field, CondType cond, Input &&val) & {
+		return Where(std::forward<Str>(field), cond, VariantArray{Variant{std::forward<Input>(val)}});
 	}
-	template <typename Str, typename Input, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>
-	[[nodiscard]] Query &&Where(Str &&field, CondType cond, Input val) && {
-		return std::move(Where<Str, Input>(std::forward<Str>(field), cond, {std::move(val)}));
+	template <typename Str, typename Input, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr,
+			  std::enable_if_t<std::is_constructible_v<Variant, Input>> * = nullptr>
+	[[nodiscard]] Query &&Where(Str &&field, CondType cond, Input &&val) && {
+		return std::move(Where(std::forward<Str>(field), cond, VariantArray{Variant{std::forward<Input>(val)}}));
 	}
 
 	/// Adds a condition with several values. Analog to sql Where clause.
@@ -226,6 +228,7 @@ public:
 		} else {
 			q.checkSubQueryWithData();
 			if (!q.selectFilter_.empty() && !q.HasLimit() && !q.HasOffset()) {
+				// Transforms main query condition into subquerie's condition
 				q.sortingEntries_.clear();
 				q.Where(q.selectFilter_[0], cond, std::move(values));
 				q.selectFilter_.clear();
@@ -254,6 +257,14 @@ public:
 	template <typename T>
 	[[nodiscard]] Query &&Where(Query &&q, CondType cond, std::initializer_list<T> values) && {
 		return std::move(Where(std::move(q), cond, VariantArray::Create(values)));
+	}
+	template <typename Input, std::enable_if_t<std::is_constructible_v<Variant, Input>> * = nullptr>
+	[[nodiscard]] Query &Where(Query &&q, CondType cond, Input &&val) & {
+		return Where(std::move(q), cond, VariantArray{Variant{std::forward<Input>(val)}});
+	}
+	template <typename Input, std::enable_if_t<std::is_constructible_v<Variant, Input>> * = nullptr>
+	[[nodiscard]] Query &&Where(Query &&q, CondType cond, Input &&val) && {
+		return std::move(Where(std::move(q), cond, VariantArray{Variant{std::forward<Input>(val)}}));
 	}
 
 	template <typename Str, std::enable_if_t<std::is_constructible_v<std::string, Str>> * = nullptr>

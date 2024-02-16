@@ -10,8 +10,39 @@
 
 namespace reindexer {
 
+// Get element(s) by field index
 template <typename T>
-void PayloadIface<T>::Get(int field, VariantArray &keys, bool enableHold) const {
+void PayloadIface<T>::Get(int field, VariantArray &keys, Variant::hold_t h) const {
+	get(field, keys, h);
+}
+template <typename T>
+void PayloadIface<T>::Get(int field, VariantArray &keys) const {
+	get(field, keys, Variant::no_hold_t{});
+}
+
+// Get element by field and array index
+template <typename T>
+Variant PayloadIface<T>::Get(int field, int idx, Variant::hold_t h) const {
+	return get(field, idx, h);
+}
+template <typename T>
+Variant PayloadIface<T>::Get(int field, int idx) const {
+	return get(field, idx, Variant::no_hold_t{});
+}
+
+// Get element(s) by field name
+template <typename T>
+void PayloadIface<T>::Get(std::string_view field, VariantArray &kvs, Variant::hold_t h) const {
+	get(t_.FieldByName(field), kvs, h);
+}
+template <typename T>
+void PayloadIface<T>::Get(std::string_view field, VariantArray &kvs) const {
+	get(t_.FieldByName(field), kvs, Variant::no_hold_t{});
+}
+
+template <typename T>
+template <typename HoldT>
+void PayloadIface<T>::get(int field, VariantArray &keys, HoldT h) const {
 	assertrx(field < NumFields());
 	keys.clear<false>();
 	if (t_.Field(field).IsArray()) {
@@ -20,15 +51,16 @@ void PayloadIface<T>::Get(int field, VariantArray &keys, bool enableHold) const 
 
 		for (int i = 0; i < arr->len; i++) {
 			PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + i * t_.Field(field).ElemSizeof());
-			keys.push_back(pv.Get(enableHold));
+			keys.push_back(pv.Get(h));
 		}
 	} else {
-		keys.push_back(Field(field).Get(enableHold));
+		keys.push_back(Field(field).Get(h));
 	}
 }
 
 template <typename T>
-Variant PayloadIface<T>::Get(int field, int idx, bool enableHold) const {
+template <typename HoldT>
+Variant PayloadIface<T>::get(int field, int idx, HoldT h) const {
 	assertrx(field < NumFields());
 
 	if (t_.Field(field).IsArray()) {
@@ -36,18 +68,11 @@ Variant PayloadIface<T>::Get(int field, int idx, bool enableHold) const {
 		assertf(idx < arr->len, "Field '%s.%s' bound exceed idx %d > len %d", Type().Name(), Type().Field(field).Name(), idx, arr->len);
 
 		PayloadFieldValue pv(t_.Field(field), v_->Ptr() + arr->offset + idx * t_.Field(field).ElemSizeof());
-		return pv.Get(enableHold);
-
+		return pv.Get(h);
 	} else {
 		assertf(idx == 0, "Field '%s.%s' is not array, can't get idx %d", Type().Name(), Type().Field(field).Name(), idx);
-		return Field(field).Get(enableHold);
+		return Field(field).Get(h);
 	}
-}
-
-// Get element(s) by field index
-template <typename T>
-void PayloadIface<T>::Get(std::string_view field, VariantArray &kvs, bool enableHold) const {
-	Get(t_.FieldByName(field), kvs, enableHold);
 }
 
 template <typename T>

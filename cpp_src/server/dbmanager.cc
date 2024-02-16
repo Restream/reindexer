@@ -79,7 +79,7 @@ Error DBManager::OpenDatabase(const std::string &dbName, AuthContext &auth, bool
 		status = dbConnect(it->second.get());
 		if (!status.ok()) return status;
 		auth.db_ = it->second.get();
-		return errOK;
+		return Error();
 	}
 	lck.unlock();
 
@@ -99,7 +99,7 @@ Error DBManager::OpenDatabase(const std::string &dbName, AuthContext &auth, bool
 		status = dbConnect(it->second.get());
 		if (!status.ok()) return status;
 		auth.db_ = it->second.get();
-		return errOK;
+		return Error();
 	}
 
 	status = loadOrCreateDatabase(dbName, true, true, auth);
@@ -110,7 +110,7 @@ Error DBManager::OpenDatabase(const std::string &dbName, AuthContext &auth, bool
 	it = dbs_.find(dbName);
 	assertrx(it != dbs_.end());
 	auth.db_ = it->second.get();
-	return errOK;
+	return Error();
 }
 
 Error DBManager::loadOrCreateDatabase(const std::string &dbName, bool allowDBErrors, bool withAutorepair, const AuthContext &auth) {
@@ -121,7 +121,8 @@ Error DBManager::loadOrCreateDatabase(const std::string &dbName, bool allowDBErr
 	std::string storagePath = !config_.StoragePath.empty() ? fs::JoinPath(config_.StoragePath, dbName) : "";
 
 	logPrintf(LogInfo, "Loading database %s", dbName);
-	auto db = std::make_unique<reindexer::Reindexer>(reindexer::ReindexerConfig().WithClientStats(clientsStats_).WithUpdatesSize(config_.MaxUpdatesSize));
+	auto db = std::make_unique<reindexer::Reindexer>(
+		reindexer::ReindexerConfig().WithClientStats(clientsStats_).WithUpdatesSize(config_.MaxUpdatesSize));
 	StorageTypeOpt storageType = kStorageTypeOptLevelDB;
 	switch (storageType_) {
 		case datastorage::StorageType::LevelDB:

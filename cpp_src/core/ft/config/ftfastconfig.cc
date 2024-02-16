@@ -70,6 +70,12 @@ void FtFastConfig::parse(std::string_view json, const RHashMap<std::string, int>
 		maxStepSize = root["max_step_size"].As<>(maxStepSize, 5);
 		maxAreasInDoc = root["max_areas_in_doc"].As<int>(maxAreasInDoc);
 		maxTotalAreasToCache = root["max_total_areas_to_cache"].As<int>(maxTotalAreasToCache);
+
+		if (!root["bm25_config"].empty()) {
+			auto conf = root["bm25_config"];
+			bm25Config.parse(conf);
+		}
+
 		summationRanksByFieldsRatio = root["sum_ranks_by_fields_ratio"].As<>(summationRanksByFieldsRatio, 0.0, 1.0);
 
 		FtFastFieldConfig defaultFieldCfg;
@@ -148,6 +154,12 @@ std::string FtFastConfig::GetJSON(const fast_hash_map<std::string, int>& fields)
 	jsonBuilder.Put("sum_ranks_by_fields_ratio", summationRanksByFieldsRatio);
 	jsonBuilder.Put("max_areas_in_doc", maxAreasInDoc);
 	jsonBuilder.Put("max_total_areas_to_cache", maxTotalAreasToCache);
+
+	{
+		auto conf = jsonBuilder.Object("bm25_config");
+		bm25Config.getJson(conf);
+	}
+
 	switch (optimization) {
 		case Optimization::Memory:
 			jsonBuilder.Put("optimization", "Memory");
@@ -181,6 +193,37 @@ std::string FtFastConfig::GetJSON(const fast_hash_map<std::string, int>& fields)
 	}
 	jsonBuilder.End();
 	return std::string(wrser.Slice());
+}
+
+void FtFastConfig::Bm25Config::getJson(JsonBuilder& jsonBuilder) const {
+	jsonBuilder.Put("bm25_k1", bm25k1);
+	jsonBuilder.Put("bm25_b", bm25b);
+	switch (bm25Type) {
+		case Bm25Type::classic:
+			jsonBuilder.Put("bm25_type", "bm25");
+			break;
+		case Bm25Type::rx:
+			jsonBuilder.Put("bm25_type", "rx_bm25");
+			break;
+		case Bm25Type::wordCount:
+			jsonBuilder.Put("bm25_type", "word_count");
+			break;
+	}
+}
+
+void FtFastConfig::Bm25Config::parse(const gason::JsonNode& node) {
+	bm25k1 = node["bm25_k1"].As<double>(bm25k1, 0.0);
+	bm25b = node["bm25_b"].As<double>(bm25b, 0.0, 1.0);
+	const std::string bm25TypeStr = toLower(node["bm25_type"].As<std::string>("rx_bm25"));
+	if (bm25TypeStr == "rx_bm25") {
+		bm25Type = Bm25Type::rx;
+	} else if (bm25TypeStr == "bm25") {
+		bm25Type = Bm25Type::classic;
+	} else if (bm25TypeStr == "word_count") {
+		bm25Type = Bm25Type::wordCount;
+	} else {
+		throw Error(errParseJson, "FtFastConfig: unknown bm25Type value: %s", bm25TypeStr);
+	}
 }
 
 }  // namespace reindexer

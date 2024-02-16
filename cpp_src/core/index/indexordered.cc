@@ -60,14 +60,13 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 	auto startIt = this->idx_map.begin();
 	auto endIt = this->idx_map.end();
 	auto key1 = *keys.begin();
-
 	switch (condition) {
 		case CondLt:
 			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key1));
 			break;
 		case CondLe:
 			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key1));
-			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key1), endIt->first)) endIt++;
+			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key1), endIt->first)) ++endIt;
 			break;
 		case CondGt:
 			startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
@@ -83,12 +82,11 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			if (startIt == this->idx_map.end()) startIt = this->idx_map.upper_bound(static_cast<ref_type>(key1));
 
 			endIt = this->idx_map.lower_bound(static_cast<ref_type>(key2));
-			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key2), endIt->first)) endIt++;
+			if (endIt != this->idx_map.end() && !this->idx_map.key_comp()(static_cast<ref_type>(key2), endIt->first)) ++endIt;
 
 			if (endIt != this->idx_map.end() && this->idx_map.key_comp()(endIt->first, static_cast<ref_type>(key1))) {
 				return SelectKeyResults(std::move(res));
 			}
-
 		} break;
 		case CondAny:
 		case CondEq:
@@ -134,9 +132,11 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 				typename T::iterator startIt, endIt;
 			} ctx = {&this->idx_map, sortId, startIt, endIt};
 
-			auto selector = [&ctx](SelectKeyResult &res, size_t &idsCount) {
+			auto selector = [&ctx, count](SelectKeyResult &res, size_t &idsCount) {
 				idsCount = 0;
-				for (auto it = ctx.startIt; it != ctx.endIt && it != ctx.i_map->end(); ++it) {
+				res.reserve(count);
+				for (auto it = ctx.startIt; it != ctx.endIt; ++it) {
+					assertrx_dbg(it != ctx.i_map->end());
 					idsCount += it->second.Unsorted().Size();
 					res.emplace_back(it->second, ctx.sortId);
 				}
@@ -145,7 +145,11 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			};
 
 			if (count > 1 && !opts.distinct && !opts.disableIdSetCache) {
-				this->tryIdsetCache(keys, condition, sortId, std::move(selector), res);
+				// Using btree node pointers instead of the real values from the filter and range instead all of the contidions
+				// to increase cache hits count
+				VariantArray cacheKeys = {Variant{startIt == this->idx_map.end() ? int64_t(0) : int64_t(&(*startIt))},
+										  Variant{endIt == this->idx_map.end() ? int64_t(0) : int64_t(&(*endIt))}};
+				this->tryIdsetCache(cacheKeys, CondRange, sortId, std::move(selector), res);
 			} else {
 				size_t idsCount;
 				selector(res, idsCount);

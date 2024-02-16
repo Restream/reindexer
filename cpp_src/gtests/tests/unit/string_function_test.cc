@@ -1,4 +1,12 @@
+#if defined(__GNUC__) && (__GNUC__ == 12) && defined(REINDEX_WITH_ASAN)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #include <regex>
+#pragma GCC diagnostic pop
+#else  // REINDEX_WITH_ASAN
+#include <regex>
+#endif	// REINDEX_WITH_ASAN
+
 #include "gtest/gtest.h"
 #include "reindexer_api.h"
 #include "tools/customlocal.h"

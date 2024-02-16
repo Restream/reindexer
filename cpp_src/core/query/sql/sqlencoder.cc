@@ -57,7 +57,7 @@ namespace reindexer {
 void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripArgs) const {
 	assertrx(idx < query_.GetJoinQueries().size());
 	const auto &jq = query_.GetJoinQueries()[idx];
-	ser << ' ' << jq.joinType;
+	ser << jq.joinType;
 	if (jq.Entries().Empty() && !jq.HasLimit() && jq.sortingEntries_.empty()) {
 		ser << ' ' << jq.NsName() << " ON ";
 	} else {
@@ -83,6 +83,7 @@ void SQLEncoder::DumpSingleJoinQuery(size_t idx, WrSerializer &ser, bool stripAr
 void SQLEncoder::dumpJoined(WrSerializer &ser, bool stripArgs) const {
 	for (size_t i = 0; i < query_.GetJoinQueries().size(); ++i) {
 		if (query_.GetJoinQueries()[i].joinType == JoinType::LeftJoin) {
+			ser << ' ';
 			DumpSingleJoinQuery(i, ser, stripArgs);
 		}
 	}
@@ -96,7 +97,7 @@ void SQLEncoder::dumpMerged(WrSerializer &ser, bool stripArgs) const {
 	}
 }
 
-std::string escapeQuotes(std::string str) {
+static std::string escapeQuotes(std::string str) {
 	for (size_t i = 0; i < str.size(); ++i) {
 		if (str[i] == '\'' && (i == 0 || str[i - 1] != '\\')) str.insert(i++, 1, '\\');
 	}

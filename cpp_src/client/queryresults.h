@@ -81,10 +81,10 @@ public:
 	bool IsCacheEnabled() const noexcept { return results_.IsCacheEnabled(); }
 
 	int GetMergedNSCount() const noexcept { return results_.GetMergedNSCount(); }
-	TagsMatcher GetTagsMatcher(int nsid) const;
-	TagsMatcher GetTagsMatcher(std::string_view ns) const;
-	PayloadType GetPayloadType(int nsid) const { return results_.GetPayloadType(nsid); }
-	PayloadType GetPayloadType(std::string_view ns) const { return results_.GetPayloadType(ns); }
+	TagsMatcher GetTagsMatcher(int nsid) const noexcept;
+	TagsMatcher GetTagsMatcher(std::string_view ns) const noexcept;
+	PayloadType GetPayloadType(int nsid) const noexcept { return results_.GetPayloadType(nsid); }
+	PayloadType GetPayloadType(std::string_view ns) const noexcept { return results_.GetPayloadType(ns); }
 
 	int GetFormat() const noexcept { return results_.GetFormat(); }
 	int GetFlags() const noexcept { return results_.GetFlags(); }

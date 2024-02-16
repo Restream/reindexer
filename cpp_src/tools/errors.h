@@ -14,6 +14,38 @@
 
 namespace reindexer {
 
+#if defined(REINDEX_CORE_BUILD)
+template <typename... Args>
+void assertf_fmt(const char *fmt, const Args &...args) {
+	fmt::fprintf(std::cerr, fmt, args...);
+}
+#if defined(NDEBUG)
+#define assertf(...) ((void)0)
+#else
+// Using (void)fmt here to force ';' usage after the macro
+#define assertf(e, fmt, ...)                                                                                \
+	if rx_unlikely (!(e)) {                                                                                 \
+		reindexer::assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__); \
+		reindexer::debug::print_crash_query(std::cerr);                                                     \
+		abort();                                                                                            \
+	}                                                                                                       \
+	(void)fmt
+#endif	// NDEBUG
+
+#ifdef RX_WITH_STDLIB_DEBUG
+#define assertf_dbg(e, fmt, ...)                                                                            \
+	if rx_unlikely (!(e)) {                                                                                 \
+		reindexer::assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__); \
+		reindexer::debug::print_crash_query(std::cerr);                                                     \
+		abort();                                                                                            \
+	}                                                                                                       \
+	(void)fmt
+#else  // RX_WITH_STDLIB_DEBUG
+#define assertf_dbg(...) ((void)0)
+#endif	// RX_WITH_STDLIB_DEBUG
+
+#endif	// REINDEX_CORE_BUILD
+
 class Error {
 	using WhatT = intrusive_atomic_rc_wrapper<std::string>;
 	using WhatPtr = intrusive_ptr<WhatT>;
@@ -69,6 +101,7 @@ public:
 				try {
 					what_ = make_intrusive<WhatT>(fmt::sprintf(fmt, args...));
 				} catch (const fmt::FormatError &) {
+					assertf_dbg(false, "Incorrect error format: '%s'", fmt);
 					what_ = make_intrusive<WhatT>(fmt);
 				}
 			} catch (...) {
@@ -78,11 +111,11 @@ public:
 	}
 #endif	// REINDEX_CORE_BUILD
 
-	[[nodiscard]] const std::string &what() const &noexcept {
+	[[nodiscard]] const std::string &what() const & noexcept {
 		static const std::string noerr;
 		return what_ ? *what_ : noerr;
 	}
-	[[nodiscard]] std::string what() &&noexcept {
+	[[nodiscard]] std::string what() && noexcept {
 		if (what_) {
 			return std::move(*what_);
 		} else {
@@ -102,23 +135,5 @@ private:
 };
 
 std::ostream &operator<<(std::ostream &os, const Error &error);
-
-#if defined(REINDEX_CORE_BUILD)
-#if defined(NDEBUG)
-#define assertf(...) ((void)0)
-#else
-template <typename... Args>
-void assertf_fmt(const char *fmt, const Args &...args) {
-	fmt::fprintf(std::cerr, fmt, args...);
-}
-
-#define assertf(e, fmt, ...)                                                                                \
-	if rx_unlikely (!(e)) {                                                                                 \
-		reindexer::assertf_fmt("%s:%d: failed assertion '%s':\n" fmt, __FILE__, __LINE__, #e, __VA_ARGS__); \
-		reindexer::debug::print_crash_query(std::cerr);                                                     \
-		abort();                                                                                            \
-	}
-#endif	// NDEBUG
-#endif	// REINDEX_CORE_BUILD
 
 }  // namespace reindexer

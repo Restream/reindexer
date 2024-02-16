@@ -5,6 +5,7 @@
 #include "client/cororeindexer.h"
 #include "cluster/stats/relicationstatscollector.h"
 #include "cluster/stats/synchronizationlist.h"
+#include "core/namespace/namespacestat.h"
 #include "net/ev/ev.h"
 #include "sharedsyncstate.h"
 #include "tools/lsn.h"
@@ -20,6 +21,13 @@ class Logger;
 class LeaderSyncQueue {
 public:
 	struct Entry {
+		struct NodeData {
+			bool HasDataCount() const noexcept { return count != ReplicationStateV2::kNoDataCount; }
+
+			uint64_t hash = 0;
+			int64_t count = ReplicationStateV2::kNoDataCount;
+		};
+
 		bool IsLocal() const noexcept {
 			try {
 				return localLsn == latestLsn;
@@ -29,11 +37,11 @@ public:
 		}
 
 		std::vector<uint32_t> nodes;
-		std::vector<uint64_t> dataHashes;
+		std::vector<NodeData> data;
 		std::string_view nsName;
 		ExtendedLsn latestLsn;
 		ExtendedLsn localLsn;
-		uint64_t localDatahash = 0;
+		NodeData localData;
 	};
 
 	LeaderSyncQueue(size_t maxSyncsPerNode) : maxSyncsPerNode_(maxSyncsPerNode) {}
@@ -56,7 +64,7 @@ public:
 			--found->second;
 		}
 	}
-	bool TryToGetEntry(int32_t preferredNodeId, Entry& out, uint32_t& nodeId, uint64_t& dataHash) {
+	bool TryToGetEntry(int32_t preferredNodeId, Entry& out, uint32_t& outIdx) {
 		std::lock_guard lck(mtx_);
 		if (preferredNodeId >= 0) {
 			const auto found = currentSyncsPerNode_.find(uint32_t(preferredNodeId));
@@ -80,9 +88,8 @@ public:
 						isSyncAllowed = true;
 					}
 					if (isSyncAllowed) {
-						nodeId = n;
+						outIdx = idx;
 						out = std::move(*it);
-						dataHash = out.dataHashes[idx];
 						entries_.erase(it);
 						return true;
 					}

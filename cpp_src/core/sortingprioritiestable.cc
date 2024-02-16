@@ -1,14 +1,15 @@
 #include "sortingprioritiestable.h"
 #include <algorithm>
-#include "tools/assertrx.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 
-using namespace reindexer;
+namespace reindexer {
 
 SortingPrioritiesTable::SortingPrioritiesTable(const std::string& sortOrderUTF8)
-	: sortOrder_(std::make_shared<SortOrderTable>()), sortOrderCharacters_(sortOrderUTF8) {
-	if (sortOrderCharacters_.empty()) throw Error(errLogic, "Custom sort format string cannot be empty!");
+	: sortOrder_(make_intrusive<SortOrderTable>()), sortOrderCharacters_(sortOrderUTF8) {
+	if (sortOrderCharacters_.empty()) {
+		throw Error(errLogic, "Custom sort format string cannot be empty!");
+	}
 
 	wchar_t prevCh = 0;
 	uint16_t priority = 0;
@@ -47,7 +48,7 @@ SortingPrioritiesTable::SortingPrioritiesTable(const std::string& sortOrderUTF8)
 	if (!ranges.empty()) {
 		auto rangeIt = ranges.begin();
 		uint16_t outOfRangePriority = maxPriority;
-		for (size_t i = 0; i < tableSize;) {
+		for (size_t i = 0; i < kTableSize;) {
 			if ((rangeIt != ranges.end()) && (rangeIt->first == i)) {
 				i += rangeIt->second;
 				++rangeIt;
@@ -69,11 +70,4 @@ bool SortingPrioritiesTable::checkForRangeIntersection(std::map<uint16_t, uint16
 	return false;
 }
 
-int SortingPrioritiesTable::GetPriority(wchar_t c) const {
-	assertrx(sortOrder_.get() != nullptr);
-	// assertrx(static_cast<uint32_t>(c) < tableSize);
-	uint16_t ch(static_cast<uint16_t>(c));
-	return sortOrder_->operator[](ch);
-}
-
-const std::string& SortingPrioritiesTable::GetSortOrderCharacters() const { return sortOrderCharacters_; }
+}  // namespace reindexer

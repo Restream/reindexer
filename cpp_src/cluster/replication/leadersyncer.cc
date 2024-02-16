@@ -88,7 +88,10 @@ void LeaderSyncThread::actualizeShardingConfig() {
 					logWarn("%s: Actualization sharding config error: %s", dsn, err.what());
 					return;
 				}
-
+				if (qr.Count() == 0) {
+					logInfo("%s: No sharding found on the node. Skipping", dsn);
+					return;
+				}
 				if (qr.Count() != 1) {
 					logWarn("%s: Unexpected count of sharding config query results", dsn);
 					return;
@@ -136,16 +139,26 @@ void LeaderSyncThread::sync() {
 
 	loop_.spawn([this] {
 		LeaderSyncQueue::Entry entry;
-		uint32_t nodeId = 0;
+		uint32_t idx = 0;
 		int32_t preferredNodeId = -1;
-		uint64_t expectedDataHash = 0;
-		while (syncQueue_.TryToGetEntry(preferredNodeId, entry, nodeId, expectedDataHash)) {
+		while (syncQueue_.TryToGetEntry(preferredNodeId, entry, idx)) {
+			const uint32_t nodeId = entry.nodes[idx];
 			if (preferredNodeId != int32_t(nodeId)) {
 				preferredNodeId = int32_t(nodeId);
 				client_.Stop();
 			}
+			const auto& node = entry.data[idx];
+			const uint64_t expectedDataHash = node.hash;
+			const int64_t expectedDataCount = node.count;
 			logInfo("%d: Trying to sync ns '%s' from %d (TID: %d)", cfg_.serverId, entry.nsName, nodeId, std::this_thread::get_id());
 			std::string tmpNsName;
+			auto tryDropTmpNamespace = [this, &tmpNsName] {
+				if (!tmpNsName.empty()) {
+					logError("%d: Dropping '%s'...", cfg_.serverId, tmpNsName);
+					thisNode_.DropNamespace(tmpNsName, RdxContext());
+					logError("%d: '%s' was dropped", cfg_.serverId, tmpNsName);
+				}
+			};
 			try {
 				// 2) Recv most recent data
 				auto err = client_.Connect(cfg_.dsns[nodeId], loop_, client::ConnectOpts().WithExpectedClusterID(cfg_.clusterId));
@@ -156,12 +169,18 @@ void LeaderSyncThread::sync() {
 					const bool fullResync = retry > 0;
 					syncNamespaceImpl(fullResync, entry, tmpNsName);
 					ReplicationStateV2 state;
-					err = thisNode_.GetReplState(entry.nsName, state, RdxContext());
+					err = thisNode_.GetReplState(tmpNsName.empty() ? entry.nsName : tmpNsName, state, RdxContext());
 					if (!err.ok()) {
 						throw err;
 					}
 					const auto localLsn = ExtendedLsn(state.nsVersion, state.lastLsn);
-					if (state.dataHash == expectedDataHash) {
+					if (state.dataHash == expectedDataHash && (expectedDataCount < 0 || expectedDataCount == state.dataCount)) {
+						if (!tmpNsName.empty()) {
+							err = thisNode_.renameNamespace(tmpNsName, std::string(entry.nsName), true, true);
+							if (!err.ok()) {
+								throw err;
+							}
+						}
 						logInfo("%d: Local namespace '%s' was updated from node %d (ns version: %d, lsn: %d)", cfg_.serverId, entry.nsName,
 								nodeId, localLsn.NsVersion(), localLsn.LSN());
 						break;
@@ -169,32 +188,25 @@ void LeaderSyncThread::sync() {
 
 					if (fullResync) {
 						throw Error(errDataHashMismatch,
-									"%d: Datahash missmatch after full resync for local namespce '%s'. Expected: %d; actual: %d",
-									cfg_.serverId, entry.nsName, expectedDataHash, state.dataHash);
+									"%d: Datahash or datacount missmatch after full resync for local namespace '%s'. Expected: { datahash: "
+									"%d, datacount: %d }; actual: { datahash: %d, datacount: %d }",
+									cfg_.serverId, entry.nsName, expectedDataHash, expectedDataCount, state.dataHash, state.dataCount);
 					}
 					logWarn(
-						"%d: Datahash missmatch after local namespace '%s' sync. Expected: %d, actual: "
-						"%d. Forcing "
-						"full resync...",
-						cfg_.serverId, entry.nsName, expectedDataHash, state.dataHash);
+						"%d: Datahash missmatch after local namespace '%s' sync. Expected: { datahash: %d, datacount: %d }; actual: { "
+						"datahash: %d, datacount: %d }. Forcing full resync...",
+						cfg_.serverId, entry.nsName, expectedDataHash, expectedDataCount, state.dataHash, state.dataCount);
+					tryDropTmpNamespace();
 				}
 				sharedSyncState_.MarkSynchronized(std::string(entry.nsName));
 			} catch (const Error& err) {
 				lastError_ = err;
 				logError("%d: Unable to sync local namespace '%s': %s", cfg_.serverId, entry.nsName, lastError_.what());
-				if (!tmpNsName.empty()) {
-					logError("%d: Dropping '%s'...", cfg_.serverId, tmpNsName);
-					thisNode_.DropNamespace(tmpNsName, RdxContext());
-					logError("%d: '%s' was dropped", cfg_.serverId, tmpNsName);
-				}
+				tryDropTmpNamespace();
 			} catch (...) {
 				lastError_ = Error(errLogic, "Unexpected exception");
 				logError("%d: Unable to sync local namespace '%s': %s", cfg_.serverId, entry.nsName, lastError_.what());
-				if (!tmpNsName.empty()) {
-					logError("%d: Dropping '%s'...", cfg_.serverId, tmpNsName);
-					thisNode_.DropNamespace(tmpNsName, RdxContext());
-					logError("%d: '%s' was dropped", cfg_.serverId, tmpNsName);
-				}
+				tryDropTmpNamespace();
 			}
 			syncQueue_.SyncDone(nodeId);
 			client_.Stop();
@@ -211,6 +223,17 @@ void LeaderSyncThread::syncNamespaceImpl(bool forced, const LeaderSyncQueue::Ent
 								   snapshot);
 	if (!err.ok()) {
 		throw err;
+	}
+	if (const auto clStat = snapshot.ClusterizationStat(); clStat.has_value()) {
+		if (clStat->role != ClusterizationStatus::Role::ClusterReplica) {
+			throw Error(errReplParams, "Unable to sync leader's namespace %s via snapshot - target namespace has unexpected role: '%s'",
+						syncEntry.nsName, clStat->RoleStr());
+		}
+		if (clStat->leaderId != cfg_.serverId) {
+			throw Error(errReplParams,
+						"Unable to sync leader's namespace %s via snapshot - target namespace has unexpected leader: %d (%d was expected)",
+						syncEntry.nsName, clStat->leaderId, cfg_.serverId);
+		}
 	}
 
 	RdxContext ctx;
@@ -233,13 +256,6 @@ void LeaderSyncThread::syncNamespaceImpl(bool forced, const LeaderSyncQueue::Ent
 			return;
 		}
 		ns->ApplySnapshotChunk(ch.Chunk(), true, ctx);
-	}
-
-	if (!tmpNsName.empty()) {
-		err = thisNode_.renameNamespace(tmpNsName, std::string(syncEntry.nsName), true, true);
-		if (!err.ok()) {
-			throw err;
-		}
 	}
 }
 

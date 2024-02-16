@@ -17,6 +17,8 @@ public:
 	typedef trivial_reverse_iterator<const_iterator> const_reverse_iterator;
 	typedef trivial_reverse_iterator<iterator> reverse_iterator;
 	typedef size_t size_type;
+	static_assert(std::is_trivial_v<reverse_iterator>, "Expecting trivial reverse iterator");
+	static_assert(std::is_trivial_v<const_reverse_iterator>, "Expecting trivial const reverse iterator");
 
 	constexpr span() noexcept : data_(nullptr), size_(0) {}
 	constexpr span(const span& other) noexcept : data_(other.data_), size_(other.size_) {}
@@ -44,16 +46,8 @@ public:
 	constexpr span(T (&arr)[L]) noexcept : data_(arr), size_(L) {}
 	constexpr iterator begin() const noexcept { return data_; }
 	constexpr iterator end() const noexcept { return data_ + size_; }
-	/*constexpr*/ reverse_iterator rbegin() const noexcept {
-		reverse_iterator it;
-		it = end();
-		return it;
-	}
-	/*constexpr*/ reverse_iterator rend() const noexcept {
-		reverse_iterator it;
-		it = begin();
-		return it;
-	}
+	constexpr reverse_iterator rbegin() const noexcept { return end(); }
+	constexpr reverse_iterator rend() const noexcept { return begin(); }
 	constexpr size_type size() const noexcept { return size_; }
 	constexpr bool empty() const noexcept { return size_ == 0; }
 	constexpr const T& operator[](size_type pos) const noexcept { return data_[pos]; }

@@ -228,6 +228,7 @@ class NamespaceImpl : public intrusive_atomic_rc_base {	 // NOLINT(*performance.
 public:
 	using UpdatesContainer = h_vector<cluster::UpdateRecord, 2>;
 	enum OptimizationState : int { NotOptimized, OptimizedPartially, OptimizationCompleted };
+	enum class InvalidationType : int { Valid, Readonly, OverwrittenByUser, OverwrittenByReplicator };
 
 	using Ptr = intrusive_ptr<NamespaceImpl>;
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Namespace>;
@@ -256,11 +257,8 @@ public:
 
 		RLockT RLock(const RdxContext &ctx) const { return RLockT(mtx_, ctx); }
 		WLockT DataWLock(const RdxContext &ctx, bool skipClusterStatusCheck) const {
-			using namespace std::string_view_literals;
 			WLockT lck(mtx_, ctx, true);
-			if (readonly_.load(std::memory_order_acquire)) {
-				throw Error(errNamespaceInvalidated, "NS invalidated"sv);
-			}
+			checkInvalidation();
 			const bool requireSync = !ctx.NoWaitSync() && ctx.GetOriginLSN().isEmpty() && !owner_.isSystem();
 			const bool isFollowerNS = owner_.repl_.clusterStatus.role == ClusterizationStatus::Role::SimpleReplica ||
 									  owner_.repl_.clusterStatus.role == ClusterizationStatus::Role::ClusterReplica;
@@ -272,9 +270,7 @@ public:
 				lck.unlock();
 				clusterizator_.AwaitInitialSync(name, ctx);
 				lck.lock();
-				if (readonly_.load(std::memory_order_acquire)) {
-					throw Error(errNamespaceInvalidated, "NS invalidated"sv);
-				}
+				checkInvalidation();
 				synchronized = clusterizator_.IsInitialSyncDone(owner_.name_);
 			}
 
@@ -285,28 +281,44 @@ public:
 			return lck;
 		}
 		WLockT SimpleWLock(const RdxContext &ctx) const {
-			using namespace std::string_view_literals;
 			WLockT lck(mtx_, ctx, false);
-			if (readonly_.load(std::memory_order_acquire)) {
-				throw Error(errNamespaceInvalidated, "NS invalidated"sv);
-			}
+			checkInvalidation();
 			return lck;
 		}
 		std::unique_lock<std::mutex> StorageLock() const {
-			using namespace std::string_view_literals;
 			std::unique_lock<std::mutex> lck(storageMtx_);
-			if (readonly_.load(std::memory_order_acquire)) {
-				throw Error(errNamespaceInvalidated, "NS invalidated"sv);
-			}
+			checkInvalidation();
 			return lck;
 		}
-		void MarkReadOnly() { readonly_.store(true, std::memory_order_release); }
-		std::atomic_bool &IsReadOnly() { return readonly_; }
+		void MarkReadOnly() noexcept { invalidation_.store(int(InvalidationType::Readonly), std::memory_order_release); }
+		void MarkOverwrittenByUser() noexcept { invalidation_.store(int(InvalidationType::OverwrittenByUser), std::memory_order_release); }
+		void MarkOverwrittenByForceSync() noexcept {
+			invalidation_.store(int(InvalidationType::OverwrittenByReplicator), std::memory_order_release);
+		}
+		const std::atomic<int> &InvalidationType() const noexcept { return invalidation_; }
+		bool IsValid() const noexcept {
+			return NamespaceImpl::InvalidationType(invalidation_.load(std::memory_order_acquire)) == InvalidationType::Valid;
+		}
 
 	private:
+		void checkInvalidation() const {
+			using namespace std::string_view_literals;
+			switch (NamespaceImpl::InvalidationType(invalidation_.load(std::memory_order_acquire))) {
+				case InvalidationType::Readonly:
+					throw Error(errNamespaceInvalidated, "NS invalidated"sv);
+				case InvalidationType::OverwrittenByUser:
+					throw Error(errNamespaceOverwritten, "NS was overwritten via rename"sv);
+				case InvalidationType::OverwrittenByReplicator:
+					throw Error(errWrongReplicationData, "NS was overwritten via rename (force sync)"sv);
+				case InvalidationType::Valid:
+				default:
+					break;
+			}
+		}
+
 		mutable Mutex mtx_;
 		mutable std::mutex storageMtx_;
-		std::atomic<bool> readonly_ = {false};
+		std::atomic<int> invalidation_ = {int(InvalidationType::Valid)};
 		cluster::INsDataReplicator &clusterizator_;
 		NamespaceImpl &owner_;
 	};
@@ -498,6 +510,7 @@ private:
 	void getFromJoinCache(const Query &, JoinCacheRes &out) const;
 	void getFromJoinCacheImpl(JoinCacheRes &out) const;
 	void getIndsideFromJoinCache(JoinCacheRes &ctx) const;
+	int64_t lastUpdateTimeNano() const noexcept { return repl_.updatedUnixNano; }
 
 	const FieldsSet &pkFields();
 
@@ -505,7 +518,9 @@ private:
 
 	void warmupFtIndexes();
 	void updateSelectTime();
-	void markReadOnly() { locker_.MarkReadOnly(); }
+	void markReadOnly() noexcept { locker_.MarkReadOnly(); }
+	void markOverwrittenByUser() noexcept { locker_.MarkOverwrittenByUser(); }
+	void markOverwrittenByForceSync() noexcept { locker_.MarkOverwrittenByForceSync(); }
 	Locker::WLockT simpleWLock(const RdxContext &ctx) const { return locker_.SimpleWLock(ctx); }
 	Locker::WLockT dataWLock(const RdxContext &ctx, bool skipClusterStatusCheck = false) const {
 		return locker_.DataWLock(ctx, skipClusterStatusCheck);
@@ -601,6 +616,7 @@ private:
 			storage_.TryForceFlush();
 		}
 	}
+	size_t getWalSize(const NamespaceConfigData &cfg) const noexcept { return isSystem() ? int64_t(1) : std::max(cfg.walSize, int64_t(1)); }
 
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic<bool> enablePerfCounters_;

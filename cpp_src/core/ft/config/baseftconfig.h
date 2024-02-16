@@ -19,6 +19,12 @@ static constexpr int kMinMergeLimitValue = 0;
 
 class JsonBuilder;
 
+struct StopWord : std::string {
+	enum class Type { Stop, Morpheme };
+	StopWord(std::string base, Type type = Type::Stop) noexcept : std::string(std::move(base)), type(type) {}
+	Type type;
+};
+
 class BaseFTConfig {
 public:
 	struct Synonym {
@@ -39,7 +45,8 @@ public:
 	bool enableKbLayout = true;
 	bool enableNumbersSearch = false;
 	bool enableWarmupOnNsCopy = false;
-	fast_hash_set<std::string, hash_str, equal_str, less_str> stopWords;
+
+	fast_hash_set<StopWord, hash_str, equal_str, less_str> stopWords;
 	std::vector<Synonym> synonyms;
 	int logLevel = 0;
 	std::string extraWordSymbols = "-/+";  // word contains symbols (IsAlpa | IsDigit) {IsAlpa | IsDigit | IsExtra}

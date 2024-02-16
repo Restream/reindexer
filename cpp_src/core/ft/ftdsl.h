@@ -49,9 +49,11 @@ struct FtDSLVariant {
 	int proc = 0;
 };
 
+struct StopWord;
+
 class FtDSLQuery : public RVector<FtDSLEntry> {
 public:
-	FtDSLQuery(const RHashMap<std::string, int> &fields, const fast_hash_set<std::string, hash_str, equal_str, less_str> &stopWords,
+	FtDSLQuery(const RHashMap<std::string, int> &fields, const fast_hash_set<StopWord, hash_str, equal_str, less_str> &stopWords,
 			   const std::string &extraWordSymbols) noexcept
 		: fields_(fields), stopWords_(stopWords), extraWordSymbols_(extraWordSymbols) {}
 	void parse(std::wstring &utf16str);
@@ -64,7 +66,7 @@ protected:
 	std::function<int(const std::string &)> resolver_;
 
 	const RHashMap<std::string, int> &fields_;
-	const fast_hash_set<std::string, hash_str, equal_str, less_str> &stopWords_;
+	const fast_hash_set<StopWord, hash_str, equal_str, less_str> &stopWords_;
 	const std::string &extraWordSymbols_;
 };
 

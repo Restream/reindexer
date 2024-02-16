@@ -11,6 +11,7 @@
 #include "core/keyvalue/variant.h"
 #include "core/type_consts.h"
 #include "tools/customhash.h"
+#include "tools/customlocal.h"
 #include "tools/errors.h"
 
 namespace reindexer {
@@ -107,18 +108,18 @@ template <typename Pos>
 [[nodiscard]] Pos wordToByteAndCharPos(std::string_view str, int wordPosition, const std::string& extraWordSymbols);
 
 template <CollateMode collateMode>
-[[nodiscard]] int collateCompare(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable& sortOrderTable);
+[[nodiscard]] int collateCompare(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable& sortOrderTable) noexcept;
 template <>
-[[nodiscard]] int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+[[nodiscard]] int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+[[nodiscard]] int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+[[nodiscard]] int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
+[[nodiscard]] int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
 template <>
-[[nodiscard]] int collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&);
-[[nodiscard]] inline int collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts& collateOpts) {
+[[nodiscard]] int collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable&) noexcept;
+[[nodiscard]] inline int collateCompare(std::string_view lhs, std::string_view rhs, const CollateOpts& collateOpts) noexcept {
 	switch (collateOpts.mode) {
 		case CollateASCII:
 			return collateCompare<CollateASCII>(lhs, rhs, collateOpts.sortOrderTable);
@@ -139,9 +140,18 @@ std::string utf16_to_utf8(const std::wstring& src);
 std::wstring& utf8_to_utf16(std::string_view src, std::wstring& dst);
 std::string& utf16_to_utf8(const std::wstring& src, std::string& dst);
 
-void check_for_replacement(wchar_t& ch);
-void check_for_replacement(uint32_t& ch);
-bool is_number(std::string_view str);
+inline void check_for_replacement(wchar_t& ch) noexcept {
+	ch = (ch == 0x451) ? 0x435 : ch;  // 'ё' -> 'е'
+}
+inline void check_for_replacement(uint32_t& ch) noexcept {
+	ch = (ch == 0x451) ? 0x435 : ch;  // 'ё' -> 'е'
+}
+inline bool is_number(std::string_view str) noexcept {
+	uint16_t i = 0;
+	for (; (i < str.length() && IsDigit(str[i])); ++i)
+		;
+	return (i && i == str.length());
+}
 
 int fast_strftime(char* buf, const tm* tm);
 std::string urldecode2(std::string_view str);

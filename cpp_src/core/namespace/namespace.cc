@@ -199,6 +199,11 @@ void Namespace::doRename(const Namespace::Ptr& dst, const std::string& newName, 
 	if (dst) {
 		logPrintf(LogInfo, "[rename] Rename namespace '%s' to '%s'", srcNs.name_, dstNs->name_);
 		srcNs.name_ = dstNs->name_;
+		if (srcNs.repl_.temporary) {
+			dstNs->markOverwrittenByForceSync();
+		} else {
+			dstNs->markOverwrittenByUser();
+		}
 		assertrx(dstLck.owns_lock());
 		dstLck.unlock();
 	} else {

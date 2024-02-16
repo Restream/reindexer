@@ -81,22 +81,35 @@ public:
 	using reference = ItemRef&;
 	using const_reference = const ItemRef&;
 
-	JoinedFieldIterator(const NamespaceResults* parent, const ItemOffsets& offsets, uint8_t joinedFieldOrder);
+	JoinedFieldIterator(const NamespaceResults* parent, const ItemOffsets& offsets, uint8_t joinedFieldOrder) noexcept
+		: joinRes_(parent), offsets_(&offsets), order_(joinedFieldOrder) {
+		if (offsets_->size() > 0) updateOffset();
+	}
 
 	bool operator==(const JoinedFieldIterator& other) const;
-	bool operator!=(const JoinedFieldIterator& other) const;
+	bool operator!=(const JoinedFieldIterator& other) const { return !operator==(other); }
 
-	const_reference operator[](size_t idx) const;
-	reference operator[](size_t idx);
-	JoinedFieldIterator& operator++();
+	const_reference operator[](size_t idx) const noexcept {
+		assertrx(currOffset_ + idx < joinRes_->items_.size());
+		return joinRes_->items_[currOffset_ + idx];
+	}
+	reference operator[](size_t idx) noexcept {
+		assertrx(currOffset_ + idx < joinRes_->items_.size());
+		return const_cast<reference>(joinRes_->items_[currOffset_ + idx]);
+	}
+	JoinedFieldIterator& operator++() noexcept {
+		++order_;
+		updateOffset();
+		return *this;
+	}
 
 	ItemImpl GetItem(int itemIdx, const PayloadType& pt, const TagsMatcher& tm) const;
 	LocalQueryResults ToQueryResults() const;
 
-	int ItemsCount() const;
+	int ItemsCount() const noexcept;
 
 private:
-	void updateOffset();
+	void updateOffset() noexcept;
 	const NamespaceResults* joinRes_ = nullptr;
 	const ItemOffsets* offsets_ = nullptr;
 	uint8_t order_ = 0;
@@ -111,14 +124,14 @@ public:
 	ItemIterator(const NamespaceResults* parent, IdType rowid) noexcept : joinRes_(parent), rowid_(rowid) {}
 
 	JoinedFieldIterator at(uint8_t joinedField) const;
-	JoinedFieldIterator begin() const;
-	JoinedFieldIterator end() const;
+	JoinedFieldIterator begin() const noexcept;
+	JoinedFieldIterator end() const noexcept;
 
-	int getJoinedFieldsCount() const;
-	int getJoinedItemsCount() const;
+	int getJoinedFieldsCount() const noexcept { return joinRes_->GetJoinedSelectorsCount(); }
+	int getJoinedItemsCount() const noexcept;
 
-	static ItemIterator CreateFrom(const LocalQueryResults::Iterator& it);
-	static ItemIterator CreateEmpty();
+	static ItemIterator CreateFrom(const LocalQueryResults::Iterator& it) noexcept;
+	static ItemIterator CreateEmpty() noexcept;
 
 private:
 	const NamespaceResults* joinRes_;

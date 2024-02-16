@@ -7,9 +7,6 @@
 
 namespace reindexer {
 
-SelectIterator::SelectIterator(SelectKeyResult res, bool dist, std::string n, IteratorFieldKind fKind, bool forcedFirst)
-	: SelectKeyResult(std::move(res)), distinct(dist), name(std::move(n)), fieldKind(fKind), forcedFirst_(forcedFirst), type_(Forward) {}
-
 void SelectIterator::Bind(const PayloadType &type, int field) {
 	for (Comparator &cmp : comparators_) cmp.Bind(type, field);
 }
@@ -18,62 +15,69 @@ void SelectIterator::Start(bool reverse, int maxIterations) {
 	const bool explicitSort = applyDeferedSort(maxIterations);
 
 	isReverse_ = reverse;
-	lastIt_ = begin();
+	const auto begIt = begin();
+	lastIt_ = begIt;
 
-	for (auto it = begin(); it != end(); it++) {
+	for (auto it = begIt, endIt = end(); it != endIt; ++it) {
 		if (it->isRange_) {
 			if (isReverse_) {
-				auto rrBegin = it->rEnd_ - 1;
+				const auto rrBegin = it->rEnd_ - 1;
 				it->rrEnd_ = it->rBegin_ - 1;
 				it->rrBegin_ = rrBegin;
-				it->rrIt_ = it->rrBegin_;
+				it->rrIt_ = rrBegin;
 			} else {
 				it->rIt_ = it->rBegin_;
 			}
 		} else {
 			if (it->useBtree_) {
-				assertrx(it->set_);
+				assertrx_dbg(it->set_);
 				if (reverse) {
-					it->setrbegin_ = it->set_->rbegin();
+					const auto setRBegin = it->set_->rbegin();
+					it->ritset_ = setRBegin;
+					it->setrbegin_ = setRBegin;
 					it->setrend_ = it->set_->rend();
-					it->ritset_ = it->set_->rbegin();
 				} else {
-					it->setbegin_ = it->set_->begin();
+					const auto setBegin = it->set_->begin();
+					it->itset_ = setBegin;
+					it->setbegin_ = setBegin;
 					it->setend_ = it->set_->end();
-					it->itset_ = it->setbegin_;
 				}
 			} else {
 				if (isReverse_) {
-					it->rbegin_ = it->ids_.rbegin();
+					const auto idsRBegin = it->ids_.rbegin();
 					it->rend_ = it->ids_.rend();
-					it->rit_ = it->ids_.rbegin();
+					it->rit_ = idsRBegin;
+					it->rbegin_ = idsRBegin;
 				} else {
-					it->begin_ = it->ids_.begin();
+					const auto idsBegin = it->ids_.begin();
 					it->end_ = it->ids_.end();
-					it->it_ = it->ids_.begin();
+					it->it_ = idsBegin;
+					it->begin_ = idsBegin;
 				}
 			}
 		}
 	}
 
 	lastVal_ = isReverse_ ? INT_MAX : INT_MIN;
-	type_ = isReverse_ ? Reverse : Forward;
-	if (size() == 1 && begin()->indexForwardIter_) {
+
+	if (size() == 0) {
+		type_ = OnlyComparator;
+		lastVal_ = isReverse_ ? INT_MIN : INT_MAX;
+	} else if (size() == 1 && begIt->indexForwardIter_) {
 		type_ = UnbuiltSortOrdersIndex;
-		begin()->indexForwardIter_->Start(reverse);
+		begIt->indexForwardIter_->Start(reverse);
 	} else if (isUnsorted) {
 		type_ = Unsorted;
 	} else if (size() == 1) {
 		if (!isReverse_) {
-			type_ = begin()->isRange_ ? SingleRange : (explicitSort ? SingleIdSetWithDeferedSort : SingleIdset);
+			type_ = begIt->isRange_ ? SingleRange : (explicitSort ? SingleIdSetWithDeferedSort : SingleIdset);
 		} else {
-			type_ = begin()->isRange_ ? RevSingleRange : (explicitSort ? RevSingleIdSetWithDeferedSort : RevSingleIdset);
+			type_ = begIt->isRange_ ? RevSingleRange : (explicitSort ? RevSingleIdSetWithDeferedSort : RevSingleIdset);
 		}
+	} else {
+		type_ = isReverse_ ? Reverse : Forward;
 	}
-	if (size() == 0) {
-		type_ = OnlyComparator;
-		lastVal_ = isReverse_ ? INT_MIN : INT_MAX;
-	}
+
 	ClearDistinct();
 }
 
@@ -81,7 +85,7 @@ void SelectIterator::Start(bool reverse, int maxIterations) {
 bool SelectIterator::nextFwd(IdType minHint) noexcept {
 	if (minHint > lastVal_) lastVal_ = minHint - 1;
 	int minVal = INT_MAX;
-	for (auto it = begin(); it != end(); it++) {
+	for (auto it = begin(), endIt = end(); it != endIt; ++it) {
 		if (it->useBtree_) {
 			if (it->itset_ != it->setend_) {
 				it->itset_ = it->set_->upper_bound(lastVal_);
@@ -100,7 +104,7 @@ bool SelectIterator::nextFwd(IdType minHint) noexcept {
 				}
 
 			} else if (!it->isRange_ && it->it_ != it->end_) {
-				for (; it->it_ != it->end_ && *it->it_ <= lastVal_; it->it_++) {
+				for (; it->it_ != it->end_ && *it->it_ <= lastVal_; ++it->it_) {
 				}
 				if (it->it_ != it->end_ && *it->it_ < minVal) {
 					minVal = *it->it_;
@@ -117,7 +121,7 @@ bool SelectIterator::nextRev(IdType maxHint) noexcept {
 	if (maxHint < lastVal_) lastVal_ = maxHint + 1;
 
 	int maxVal = INT_MIN;
-	for (auto it = begin(); it != end(); it++) {
+	for (auto it = begin(), endIt = end(); it != endIt; ++it) {
 		if (it->useBtree_ && it->ritset_ != it->setrend_) {
 			for (; it->ritset_ != it->setrend_ && *it->ritset_ >= lastVal_; ++it->ritset_) {
 			}
@@ -133,7 +137,7 @@ bool SelectIterator::nextRev(IdType maxHint) noexcept {
 				lastIt_ = it;
 			}
 		} else if (!it->isRange_ && !it->useBtree_ && it->rit_ != it->rend_) {
-			for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal_; it->rit_++) {
+			for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal_; ++it->rit_) {
 			}
 			if (it->rit_ != it->rend_ && *it->rit_ > maxVal) {
 				maxVal = *it->rit_;
@@ -160,7 +164,7 @@ bool SelectIterator::nextFwdSingleIdset(IdType minHint) noexcept {
 				it->it_ = std::upper_bound(it->it_, it->end_, lastVal_);
 			}
 		} else {
-			for (; it->it_ != it->end_ && *it->it_ <= lastVal_; it->it_++) {
+			for (; it->it_ != it->end_ && *it->it_ <= lastVal_; ++it->it_) {
 			}
 		}
 		lastVal_ = (it->it_ != it->end_) ? *it->it_ : INT_MAX;
@@ -174,11 +178,11 @@ bool SelectIterator::nextRevSingleIdset(IdType maxHint) noexcept {
 	auto it = begin();
 
 	if (it->useBtree_) {
-		for (; it->ritset_ != it->setrend_ && *it->ritset_ >= lastVal_; it->ritset_++) {
+		for (; it->ritset_ != it->setrend_ && *it->ritset_ >= lastVal_; ++it->ritset_) {
 		}
 		lastVal_ = (it->ritset_ != it->setrend_) ? *it->ritset_ : INT_MIN;
 	} else {
-		for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal_; it->rit_++) {
+		for (; it->rit_ != it->rend_ && *it->rit_ >= lastVal_; ++it->rit_) {
 		}
 		lastVal_ = (it->rit_ != it->rend_) ? *it->rit_ : INT_MIN;
 	}
@@ -192,41 +196,44 @@ bool SelectIterator::nextUnbuiltSortOrders() noexcept { return begin()->indexFor
 bool SelectIterator::nextFwdSingleRange(IdType minHint) noexcept {
 	if (minHint > lastVal_) lastVal_ = minHint - 1;
 
-	if (lastVal_ < begin()->rBegin_) lastVal_ = begin()->rBegin_ - 1;
+	const auto begIt = begin();
+	if (lastVal_ < begIt->rBegin_) lastVal_ = begIt->rBegin_ - 1;
 
-	lastVal_ = (lastVal_ < begin()->rEnd_) ? lastVal_ + 1 : begin()->rEnd_;
-	if (lastVal_ == begin()->rEnd_) lastVal_ = INT_MAX;
+	lastVal_ = (lastVal_ < begIt->rEnd_) ? lastVal_ + 1 : begIt->rEnd_;
+	if (lastVal_ == begIt->rEnd_) lastVal_ = INT_MAX;
 	return (lastVal_ != INT_MAX);
 }
 
 bool SelectIterator::nextRevSingleRange(IdType maxHint) noexcept {
 	if (maxHint < lastVal_) lastVal_ = maxHint + 1;
 
-	if (lastVal_ > begin()->rrBegin_) lastVal_ = begin()->rrBegin_ + 1;
+	const auto begIt = begin();
+	if (lastVal_ > begIt->rrBegin_) lastVal_ = begIt->rrBegin_ + 1;
 
-	lastVal_ = (lastVal_ > begin()->rrEnd_) ? lastVal_ - 1 : begin()->rrEnd_;
-	if (lastVal_ == begin()->rrEnd_) lastVal_ = INT_MIN;
+	lastVal_ = (lastVal_ > begIt->rrEnd_) ? lastVal_ - 1 : begIt->rrEnd_;
+	if (lastVal_ == begIt->rrEnd_) lastVal_ = INT_MIN;
 	return (lastVal_ != INT_MIN);
 }
 
 // Unsorted next implementation
 bool SelectIterator::nextUnsorted() noexcept {
-	if (lastIt_ == end()) {
+	const auto endIt = end();
+	if (lastIt_ == endIt) {
 		return false;
 	} else if (lastIt_->it_ == lastIt_->end_) {
 		++lastIt_;
 
-		while (lastIt_ != end()) {
+		while (lastIt_ != endIt) {
 			if (lastIt_->it_ != lastIt_->end_) {
 				lastVal_ = *lastIt_->it_;
-				lastIt_->it_++;
+				++lastIt_->it_;
 				return true;
 			}
 			++lastIt_;
 		}
 	} else {
 		lastVal_ = *lastIt_->it_;
-		lastIt_->it_++;
+		++lastIt_->it_;
 		return true;
 	}
 
@@ -236,8 +243,9 @@ bool SelectIterator::nextUnsorted() noexcept {
 void SelectIterator::ExcludeLastSet(const PayloadValue &value, IdType rowId, IdType properRowId) {
 	for (auto &comp : comparators_) comp.ExcludeDistinct(value, properRowId);
 	if (type_ == UnbuiltSortOrdersIndex) {
-		if (begin()->indexForwardIter_->Value() == rowId) {
-			begin()->indexForwardIter_->ExcludeLastSet();
+		const auto begIt = begin();
+		if (begIt->indexForwardIter_->Value() == rowId) {
+			begIt->indexForwardIter_->ExcludeLastSet();
 		}
 	} else if (!End() && lastIt_ != end() && lastVal_ == rowId) {
 		assertrx(!lastIt_->isRange_);
@@ -285,12 +293,13 @@ double SelectIterator::Cost(int expectedIterations) const noexcept {
 		result = jsonPathComparators ? (kNonIdxFieldComparatorCostMultiplier * double(expectedIterations) + jsonPathComparators + 1)
 									 : (double(expectedIterations) + 1);
 	}
+	const auto sz = size();
 	if (distinct) {
-		result += size();
+		result += sz;
 	} else if (type_ != SingleIdSetWithDeferedSort && type_ != RevSingleIdSetWithDeferedSort && !deferedExplicitSort) {
-		result += static_cast<double>(GetMaxIterations()) * size();
+		result += static_cast<double>(GetMaxIterations()) * sz;
 	} else {
-		result += static_cast<double>(CostWithDefferedSort(size(), GetMaxIterations(), expectedIterations));
+		result += static_cast<double>(CostWithDefferedSort(sz, GetMaxIterations(), expectedIterations));
 	}
 	return isNotOperation_ ? expectedIterations + result : result;
 }

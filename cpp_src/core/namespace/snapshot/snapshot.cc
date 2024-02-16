@@ -1,20 +1,30 @@
 #include "snapshot.h"
 #include <sstream>
-#include "core/cbinding/resultserializer.h"
 #include "core/cjson/baseencoder.h"
-#include "core/cjson/jsonbuilder.h"
 
 namespace reindexer {
 
 static constexpr size_t kDefaultChunkSize = 500;
 
-Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion) : tm_(std::move(tm)), nsVersion_(nsVersion) {
+Snapshot::Snapshot(TagsMatcher tm, lsn_t nsVersion, uint64_t expectedDataHash, uint64_t expectedDataCount,
+				   ClusterizationStatus clusterStatus)
+	: tm_(std::move(tm)),
+	  expectedDataHash_(expectedDataHash),
+	  expectedDataCount_(expectedDataCount),
+	  clusterizationStatus_(std::move(clusterStatus)),
+	  nsVersion_(nsVersion) {
 	walData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));
 }
 
-Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDatahash, LocalQueryResults &&wal,
-				   LocalQueryResults &&raw)
-	: pt_(std::move(pt)), tm_(std::move(tm)), expectedDatahash_(expectedDatahash), lastLsn_(lastLsn), nsVersion_(nsVersion) {
+Snapshot::Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDataHash, uint64_t expectedDataCount,
+				   ClusterizationStatus clusterStatus, LocalQueryResults &&wal, LocalQueryResults &&raw)
+	: pt_(std::move(pt)),
+	  tm_(std::move(tm)),
+	  expectedDataHash_(expectedDataHash),
+	  expectedDataCount_(expectedDataCount),
+	  clusterizationStatus_(std::move(clusterStatus)),
+	  lastLsn_(lastLsn),
+	  nsVersion_(nsVersion) {
 	if (raw.Items().size()) {
 		rawData_.AddItem(ItemRef(-1, createTmItem(), 0, 0, true));
 	} else {
@@ -32,7 +42,9 @@ Snapshot &Snapshot::operator=(Snapshot &&other) noexcept {
 	tm_ = std::move(other.tm_);
 	rawData_ = std::move(other.rawData_);
 	walData_ = std::move(other.walData_);
-	expectedDatahash_ = other.expectedDatahash_;
+	expectedDataHash_ = other.expectedDataHash_;
+	expectedDataCount_ = other.expectedDataCount_;
+	clusterizationStatus_ = other.clusterizationStatus_;
 	lastLsn_ = other.lastLsn_;
 	nsVersion_ = other.nsVersion_;
 	return *this;
@@ -45,8 +57,9 @@ Snapshot::~Snapshot() {
 
 std::string Snapshot::Dump() {
 	std::stringstream ss;
-	ss << "Snapshot:\nNs version: " << nsVersion_ << "\nLast LSN: " << lastLsn_ << "\nDatahash: " << expectedDatahash_
-	   << "\nRaw data blocks: " << rawData_.Size() << "\nWAL data blocks: " << walData_.Size() << "\nWAL data:";
+	ss << "Snapshot:\nNs version: " << nsVersion_ << "\nLast LSN: " << lastLsn_ << "\nDatahash: " << expectedDataHash_
+	   << "\nDatacount: " << expectedDataCount_ << "\nRaw data blocks: " << rawData_.Size() << "\nWAL data blocks: " << walData_.Size()
+	   << "\nWAL data:";
 	size_t chNum = 0;
 	size_t itemNum = 0;
 	WrSerializer ser;

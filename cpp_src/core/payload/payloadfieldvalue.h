@@ -47,19 +47,36 @@ public:
 				abort();
 			});
 	}
-	Variant Get(bool enableHold = false) const {
+	Variant Get() noexcept { return Get(Variant::no_hold_t{}); }
+	template <typename HoldT>
+	Variant Get(HoldT h) const noexcept(noexcept(Variant(std::declval<p_string>(), h))) {
 		return t_.Type().EvaluateOneOf(
 			[&](KeyValueType::Bool) noexcept { return Variant(*reinterpret_cast<const bool *>(p_)); },
 			[&](KeyValueType::Int) noexcept { return Variant(*reinterpret_cast<const int *>(p_)); },
 			[&](KeyValueType::Int64) noexcept { return Variant(*reinterpret_cast<const int64_t *>(p_)); },
 			[&](KeyValueType::Double) noexcept { return Variant(*reinterpret_cast<const double *>(p_)); },
-			[&](KeyValueType::String) { return Variant(*reinterpret_cast<const p_string *>(p_), enableHold); },
+			[&](KeyValueType::String) noexcept(noexcept(Variant(std::declval<p_string>(), h))) {
+				return Variant(*reinterpret_cast<const p_string *>(p_), h);
+			},
 			[&](KeyValueType::Uuid) noexcept { return Variant(*reinterpret_cast<const Uuid *>(p_)); },
 			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept -> Variant {
 				assertrx(0);
 				abort();
 			});
 	}
+	//	Variant Get(Variant::hold_t) const noexcept {
+	//		return t_.Type().EvaluateOneOf(
+	//			[&](KeyValueType::Bool) noexcept { return Variant(*reinterpret_cast<const bool *>(p_)); },
+	//			[&](KeyValueType::Int) noexcept { return Variant(*reinterpret_cast<const int *>(p_)); },
+	//			[&](KeyValueType::Int64) noexcept { return Variant(*reinterpret_cast<const int64_t *>(p_)); },
+	//			[&](KeyValueType::Double) noexcept { return Variant(*reinterpret_cast<const double *>(p_)); },
+	//			[&](KeyValueType::String) noexcept { return Variant(*reinterpret_cast<const p_string *>(p_)); },
+	//			[&](KeyValueType::Uuid) noexcept { return Variant(*reinterpret_cast<const Uuid *>(p_)); },
+	//			[](OneOf<KeyValueType::Tuple, KeyValueType::Undefined, KeyValueType::Composite, KeyValueType::Null>) noexcept -> Variant {
+	//				assertrx(0);
+	//				abort();
+	//			});
+	//	}
 	size_t Hash() const noexcept {
 		return t_.Type().EvaluateOneOf(
 			[&](KeyValueType::Bool) noexcept { return std::hash<bool>()(*reinterpret_cast<const bool *>(p_)); },

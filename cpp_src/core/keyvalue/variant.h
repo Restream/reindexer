@@ -24,22 +24,27 @@ class Variant {
 	friend Uuid;
 
 public:
+	struct no_hold_t {};
+	struct hold_t {};
+
 	Variant() noexcept : variant_{0, 0, KeyValueType::Null{}, uint64_t{}} {}
 	explicit Variant(int v) noexcept : variant_{0, 0, KeyValueType::Int{}, v} {}
 	explicit Variant(bool v) noexcept : variant_{0, 0, KeyValueType::Bool{}, v} {}
 	explicit Variant(int64_t v) noexcept : variant_{0, 0, KeyValueType::Int64{}, v} {}
 	explicit Variant(double v) noexcept : variant_{0, 0, KeyValueType::Double{}, v} {}
-	explicit Variant(const char *v);
-	explicit Variant(p_string v, bool enableHold = true);
+	explicit Variant(const char *v) noexcept;
+	Variant(p_string v, no_hold_t) noexcept;
+	Variant(p_string v, hold_t);
+	explicit Variant(p_string v) noexcept;
 	explicit Variant(const std::string &v);
 	explicit Variant(std::string &&v);
 	explicit Variant(std::string_view v);
-	explicit Variant(const key_string &v);
-	explicit Variant(key_string &&v);
-	explicit Variant(const PayloadValue &v);
-	explicit Variant(PayloadValue &&v);
+	explicit Variant(const key_string &v) noexcept;
+	explicit Variant(key_string &&v) noexcept;
+	explicit Variant(const PayloadValue &v) noexcept;
+	explicit Variant(PayloadValue &&v) noexcept;
 	explicit Variant(const VariantArray &values);
-	explicit Variant(Point);
+	explicit Variant(Point) noexcept;
 	explicit Variant(Uuid) noexcept;
 	Variant(const Variant &other) : uuid_{other.uuid_} {
 		if (!isUuid()) {
@@ -116,6 +121,7 @@ public:
 	bool operator<(const Variant &other) const { return Compare(other) < 0; }
 	bool operator>(const Variant &other) const { return Compare(other) > 0; }
 	bool operator>=(const Variant &other) const { return Compare(other) >= 0; }
+	bool operator<=(const Variant &other) const { return Compare(other) <= 0; }
 
 	int Compare(const Variant &other, const CollateOpts &collateOpts = CollateOpts()) const;
 	template <WithString>

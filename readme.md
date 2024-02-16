@@ -54,6 +54,7 @@ Storages are compatible between those versions, hovewer, replication configs are
     - [Transactions commit strategies](#transactions-commit-strategies)
     - [Implementation notes](#implementation-notes)
   - [Join](#join)
+    - [Anti-join](#anti-join)
     - [Joinable interface](#joinable-interface)
   - [Subqueries (nested queries)](#subqueries-nested-queries)
   - [Complex Primary Keys and Composite Indexes](#complex-primary-keys-and-composite-indexes)
@@ -876,7 +877,7 @@ query := db.Query("items_with_join").Join(
 	"actors"
 ).On("actors_ids", reindexer.SET, "id")
 
-query.Exec ()
+it := query.Exec()
 ```
 
 In this example, Reindexer uses reflection under the hood to create Actor slice and copy Actor struct.
@@ -928,6 +929,30 @@ query3 := db.Query("items_with_join").
 
 Note that usually `Or` operator implements short-circuiting for `Where` conditions: if the previous condition is true the next one is not evaluated. But in case of `InnerJoin` it works differently: in `query1` (from the example above) both `InnerJoin` conditions are evaluated despite the result of `WhereInt`.
 `Limit(0)` as part of `InnerJoin` (`query3` from the example above) does not join any data - it works like a filter only to verify conditions.
+
+#### Anti-join
+
+Reindexer does not support `ANTI JOIN` SQL construction, hovewer, it supports logical operations with JOINs. In fact `NOT (INNER JOIN ...)` is totally equivalent to the `ANTI JOIN`:
+```go
+query := db.Query("items_with_join").
+	Not().
+	OpenBracket(). // Brackets are essential here for NOT to work
+		InnerJoin(
+		db.Query("actors").
+			WhereBool("is_visible", reindexer.EQ, true),
+		"actors").
+		On("id", reindexer.EQ, "id")
+	CloseBracket()
+```
+```SQL
+SELECT * FROM items_with_join
+WHERE
+	NOT (
+		INNER JOIN (
+			SELECT * FROM actors WHERE is_visible = true
+		) ON items_with_join.id = actors.id
+	)
+```
 
 #### Joinable interface
 
@@ -1616,3 +1641,4 @@ Landing: https://reindexer.io/
 Packages repo: https://repo.reindexer.io/
 
 More documentation (RU): https://reindexer.io/reindexer-docs/
+
