@@ -243,7 +243,7 @@ public:
 	/// @param suggestions - all the suggestions for 'pos' position in query.
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions);
 	/// Get curret connection status
-	Error Status() noexcept;
+	Error Status();
 
 	/// Init system namepaces, and load config from config namespace
 	/// Cancelation context doesn't affect this call

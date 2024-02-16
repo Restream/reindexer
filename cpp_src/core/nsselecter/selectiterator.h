@@ -24,13 +24,7 @@ public:
 	};
 
 	SelectIterator() = default;
-	SelectIterator(SelectKeyResult res, bool dist, std::string n, IteratorFieldKind fKind, bool forcedFirst = false) noexcept
-		: SelectKeyResult(std::move(res)),
-		  distinct(dist),
-		  name(std::move(n)),
-		  fieldKind(fKind),
-		  forcedFirst_(forcedFirst),
-		  type_(Forward) {}
+	SelectIterator(SelectKeyResult res, bool distinct, std::string name, IteratorFieldKind fieldKind, bool forcedFirst = false);
 
 	/// Starts iteration process: prepares
 	/// object for further work.

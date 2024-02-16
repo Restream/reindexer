@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "core/namespace/namespacestat.h"
 #include "servercontrol.h"
 #include "tools/fsops.h"
 
@@ -15,8 +16,6 @@ public:
 		TestNamespace1(const ServerPtr& srv, std::string nsName = std::string("ns1"));
 
 		void AddRows(const ServerPtr& srv, int from, unsigned int count, size_t dataLen = 0);
-		void AddRowsTx(const ServerPtr& srv, int from, unsigned int count, size_t dataLen = 8);
-
 		void GetData(const ServerPtr& node, std::vector<int>& ids);
 
 		const std::string nsName_;
@@ -24,8 +23,7 @@ public:
 
 	class Cluster {
 	public:
-		Cluster(int baseServerId, std::vector<ServerControl> nodes = std::vector<ServerControl>())
-			: nodes_(std::move(nodes)), baseServerId_(baseServerId) {}
+		Cluster(std::vector<ServerControl> nodes = std::vector<ServerControl>()) : nodes_(std::move(nodes)) {}
 		void RestartServer(size_t id, int port, const std::string& dbPathMaster);
 		void ShutdownServer(size_t id);
 		void InitServer(size_t id, unsigned short rpcPort, unsigned short httpPort, const std::string& storagePath,
@@ -39,7 +37,6 @@ public:
 
 	private:
 		std::vector<ServerControl> nodes_;
-		const int baseServerId_ = 0;
 	};
 
 	void WaitSync(const ServerPtr& s1, const ServerPtr& s2, const std::string& nsName) { ServerControl::WaitSync(s1, s2, nsName); }
@@ -57,9 +54,6 @@ public:
 	Cluster CreateConfiguration(const std::vector<int>& clusterConfig, int basePort, int baseServerId, const std::string& dbPathMaster);
 	Cluster CreateConfiguration(std::vector<FollowerConfig> clusterConfig, int basePort, int baseServerId, const std::string& dbPathMaster,
 								const AsyncReplicationConfigTest::NsSet& nsList);
-
-	void ApplyConfig(const ServerPtr& sc, std::string_view json);
-	void CheckTxCopyEventsCount(const ServerPtr& sc, int expectedCount);
 
 protected:
 	const std::string kBaseTestsetDbPath = reindexer::fs::JoinPath(reindexer::fs::GetTempDir(), "rx_test/CascadeReplicationApi");

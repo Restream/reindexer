@@ -126,7 +126,6 @@ func execDSLTwice(t *testing.T, testF func(*testing.T, *reindexer.Query), jsonDS
 		q, err := DBD.QueryFrom(dslQ)
 		require.NoError(t, err)
 		require.NotNil(t, q)
-		q.Debug(reindexer.TRACE)
 		testF(t, q)
 		marshaledJSON, err = json.Marshal(dslQ)
 		require.NoError(t, err)
@@ -139,7 +138,6 @@ func execDSLTwice(t *testing.T, testF func(*testing.T, *reindexer.Query), jsonDS
 		q, err := DBD.QueryFrom(dslQ)
 		require.NoError(t, err)
 		require.NotNil(t, q)
-		q.Debug(reindexer.TRACE)
 		testF(t, q)
 	}
 }
@@ -497,8 +495,8 @@ func TestDSLQueries(t *testing.T) {
 
 			expectedOrder := []string{"worm", "sword", "word"}
 			expectedRanks := []int{75, 75, 107}
-			assert.Equal(t, expectedOrder, getTesDSLFtItemsDescr(items))
-			assert.Equal(t, expectedRanks, ranks)
+			require.Equal(t, expectedOrder, getTesDSLFtItemsDescr(items))
+			require.Equal(t, expectedRanks, ranks)
 		}, jsonDSL)
 	})
 

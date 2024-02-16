@@ -21,15 +21,14 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 		selCtx.contextCollectingMode = true;
 		WALSelecter selecter(&ns_, false);
 		selecter(walQr, selCtx, true);
-		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), ns_.repl_.dataHash, ns_.ItemsCount(),
-						ns_.repl_.clusterStatus, std::move(walQr));
+		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), ns_.repl_.dataHash, std::move(walQr));
 	} catch (Error& err) {
 		if (err.code() != errOutdatedWAL) {
 			throw err;
 		}
 		const auto minLsn = ns_.wal_.LSNByOffset(opts.maxWalDepthOnForceSync);
 		if (minLsn.isEmpty()) {
-			return Snapshot(ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.repl_.dataHash, ns_.ItemsCount(), ns_.repl_.clusterStatus);
+			return Snapshot(ns_.tagsMatcher_, ns_.repl_.nsVersion);
 		}
 		{
 			Query q = Query(ns_.name_).Where("#lsn", CondGe, int64_t(minLsn));
@@ -52,8 +51,8 @@ Snapshot SnapshotHandler::CreateSnapshot(const SnapshotOpts& opts) const {
 			selecter(fullQr, selCtx, true);
 		}
 
-		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), ns_.repl_.dataHash, ns_.ItemsCount(),
-						ns_.repl_.clusterStatus, std::move(walQr), std::move(fullQr));
+		return Snapshot(ns_.payloadType_, ns_.tagsMatcher_, ns_.repl_.nsVersion, ns_.wal_.LastLSN(), ns_.repl_.dataHash, std::move(walQr),
+						std::move(fullQr));
 	}
 }
 

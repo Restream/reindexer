@@ -45,6 +45,6 @@ do
 	node=$((node+1))
 done
 
-go test ./test -bench . -benchmem -benchtime 100ms -dsn $DSN $CLUSTER -seedcount 50000 -seedcpu 8 -timeout 25m
+go test ./test -bench . -benchmem -benchtime 100ms -dsn $DSN $CLUSTER -seedcount 50000 -seedcpu 8 -timeout 15m
 
 KillServers

@@ -1,10 +1,11 @@
 #include "selecter.h"
+#include <map>
+#include "core/ft/bm25.h"
 #include "core/ft/typos.h"
 #include "core/rdxcontext.h"
 #include "estl/defines.h"
 #include "sort/pdqsort.hpp"
 #include "tools/logger.h"
-#include "core/ft/bm25.h"
 
 namespace {
 RX_ALWAYS_INLINE double pos2rank(int pos) {
@@ -210,19 +211,7 @@ RX_NO_INLINE IDataHolder::MergeData Selecter<IdCont>::Process(FtDSLQuery&& dsl, 
 	// Typos for terms with low relevancy will not be processed
 
 	for (auto& res : ctx.rawResults) results.emplace_back(std::move(res));
-	switch (holder_.cfg_->bm25Config.bm25Type) {
-		case FtFastConfig::Bm25Config::Bm25Type::rx:
-			return mergeResults<Bm25Rx>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, std::move(mergeStatuses),
-										rdxCtx);
-		case FtFastConfig::Bm25Config::Bm25Type::classic:
-			return mergeResults<Bm25Classic>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, std::move(mergeStatuses),
-											 rdxCtx);
-		case FtFastConfig::Bm25Config::Bm25Type::wordCount:
-			return mergeResults<TermCount>(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, std::move(mergeStatuses),
-										   rdxCtx);
-	}
-	assertrx(false);
-	return IDataHolder::MergeData();
+	return mergeResults(std::move(results), ctx.totalORVids, synonymsBounds, inTransaction, std::move(mergeStatuses), rdxCtx);
 }
 
 template <typename IdCont>
@@ -419,14 +408,14 @@ RX_ALWAYS_INLINE void Selecter<IdCont>::debugMergeStep(const char* msg, int vid,
 #endif
 }
 template <typename IdCont>
-template <typename Calculator>
-RX_ALWAYS_INLINE void Selecter<IdCont>::calcFieldBoost(const Calculator& bm25Calc, unsigned long long f, const IdRelType& relid,
-													   const FtDslOpts& opts, int termProc, double& termRank, double& normBm25,
-													   bool& dontSkipCurTermRank, h_vector<double, 4>& ranksInFields, int& field) {
+RX_ALWAYS_INLINE void Selecter<IdCont>::calcFieldBoost(double idf, unsigned long long f, const IdRelType& relid, const FtDslOpts& opts,
+													   int termProc, double& termRank, double& normBm25, bool& dontSkipCurTermRank,
+													   h_vector<double, 4>& ranksInFields, int& field) {
 	assertrx(f < holder_.cfg_->fieldsCfg.size());
 	const auto& fldCfg = holder_.cfg_->fieldsCfg[f];
 	// raw bm25
-	const double bm25 = bm25Calc.Get(relid.WordsInField(f), holder_.vdocs_[relid.Id()].wordsCount[f], holder_.avgWordsCount_[f]);
+	const double bm25 = idf * bm25score(relid.WordsInField(f), holder_.vdocs_[relid.Id()].mostFreqWordCount[f],
+										holder_.vdocs_[relid.Id()].wordsCount[f], holder_.avgWordsCount_[f]);
 
 	// normalized bm25
 	const double normBm25Tmp = bound(bm25, fldCfg.bm25Weight, fldCfg.bm25Boost);
@@ -562,7 +551,7 @@ void Selecter<IdCont>::subMergeLoop(std::vector<IDataHolder::MergeInfo>& subMerg
 }
 
 template <typename IdCont>
-template <typename PosType, typename Bm25T>
+template <typename PosType>
 void Selecter<IdCont>::mergeGroupResult(std::vector<TextSearchResults>& rawResults, size_t from, size_t to,
 										FtMergeStatuses::Statuses& mergeStatuses, IDataHolder::MergeData& merged,
 										std::vector<IDataHolder::MergedIdRel>& merged_rd, OpType op, const bool hasBeenAnd,
@@ -575,8 +564,7 @@ void Selecter<IdCont>::mergeGroupResult(std::vector<TextSearchResults>& rawResul
 	// expandable)
 	IDataHolder::MergeData subMerged;
 	std::vector<PosType> subMergedPositionData;
-
-	mergeResultsPart<PosType, Bm25T>(rawResults, from, to, subMerged, subMergedPositionData, inTransaction, rdxCtx);
+	mergeResultsPart(rawResults, from, to, subMerged, subMergedPositionData, inTransaction, rdxCtx);
 
 	switch (op) {
 		case OpOr: {
@@ -667,7 +655,6 @@ void Selecter<IdCont>::addAreas(IDataHolder::MergeData& merged, int32_t areaInde
 //  docRank=summ(max(subTermRank))*255/allmax
 //  allmax=max(docRank)
 template <typename IdCont>
-template<typename Bm25Type>
 void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
 									  IDataHolder::MergeData& merged, std::vector<IDataHolder::MergedIdRel>& merged_rd,
 									  std::vector<IDataHolder::MergedOffsetT>& idoffsets, std::vector<bool>& curExists,
@@ -696,9 +683,7 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 	// loop on subterm (word, translit, stemmmer,...)
 	for (auto& r : rawRes) {
 		if (!inTransaction) ThrowOnCancel(rdxCtx);
-		Bm25Calculator<Bm25Type> bm25{double(totalDocsCount), double(r.vids_->size()), holder_.cfg_->bm25Config.bm25k1,
-									  holder_.cfg_->bm25Config.bm25b};
-		static_assert(sizeof(bm25) <= 32, "Bm25Calculator<Bm25Type> size is greater than 32 bytes");
+		auto idf = IDF(totalDocsCount, r.vids_->size());
 		// cycle through the documents for the given subterm
 		for (auto&& relid : *r.vids_) {
 			static_assert((std::is_same_v<IdCont, IdRelVec> && std::is_same_v<decltype(relid), const IdRelType&>) ||
@@ -726,12 +711,12 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 			}
 
 			// Find field with max rank
-			auto [termRank, field] = calcTermRank(rawRes, bm25, relid, r.proc_);
+			auto [termRank, field] = calcTermRank(rawRes, idf, relid, r.proc_);
 			if (!termRank) {
 				continue;
 			}
 			if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, bm25.GetIDF(), rawRes.term.opts.termLenBoost);
+				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, rawRes.term.opts.termLenBoost);
 			}
 
 			if (simple) {  // one term
@@ -775,9 +760,7 @@ void Selecter<IdCont>::mergeIteration(TextSearchResults& rawRes, index_t rawResI
 	}
 }
 template <typename IdCont>
-template <typename Calculator>
-std::pair<double, int> Selecter<IdCont>::calcTermRank(const TextSearchResults& rawRes, Calculator bm25Calc, const IdRelType& relid,
-													  int proc) {
+std::pair<double, int> Selecter<IdCont>::calcTermRank(const TextSearchResults& rawRes, double idf, const IdRelType& relid, int proc) {
 	// Find field with max rank
 	int field = 0;
 	double termRank = 0.0;
@@ -800,7 +783,7 @@ std::pair<double, int> Selecter<IdCont>::calcTermRank(const TextSearchResults& r
 		assertrx(f < rawRes.term.opts.fieldsOpts.size());
 		const auto fboost = rawRes.term.opts.fieldsOpts[f].boost;
 		if (fboost) {
-			calcFieldBoost(bm25Calc, f, relid, rawRes.term.opts, proc, termRank, normBm25, dontSkipCurTermRank, ranksInFields, field);
+			calcFieldBoost(idf, f, relid, rawRes.term.opts, proc, termRank, normBm25, dontSkipCurTermRank, ranksInFields, field);
 		}
 	}
 
@@ -818,7 +801,7 @@ std::pair<double, int> Selecter<IdCont>::calcTermRank(const TextSearchResults& r
 }
 
 template <typename IdCont>
-template <typename P, typename Bm25Type>
+template <typename P>
 void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t rawResIndex, FtMergeStatuses::Statuses& mergeStatuses,
 										   IDataHolder::MergeData& merged, std::vector<P>& merged_rd,
 										   std::vector<IDataHolder::MergedOffsetT>& idoffsets, std::vector<bool>& present,
@@ -833,8 +816,7 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 	// loop on subterm (word, translit, stemmmer,...)
 	for (auto& r : rawRes) {
 		if (!inTransaction) ThrowOnCancel(rdxCtx);
-		Bm25Calculator<Bm25Type> bm25(totalDocsCount, r.vids_->size(), holder_.cfg_->bm25Config.bm25k1, holder_.cfg_->bm25Config.bm25b);
-		static_assert(sizeof(bm25) <= 32, "Bm25Calculator<Bm25Type> size is greater than 32 bytes");
+		double idf = IDF(totalDocsCount, r.vids_->size());
 		int vid = -1;
 		// cycle through the documents for the given subterm
 		for (auto&& relid : *r.vids_) {
@@ -853,11 +835,11 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 			if (!vdocs[vid].keyEntry) continue;
 
 			// Find field with max rank
-			auto [termRank, field] = calcTermRank(rawRes, bm25, relid, r.proc_);
+			auto [termRank, field] = calcTermRank(rawRes, idf, relid, r.proc_);
 			if (!termRank) continue;
 
 			if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
-				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, bm25.GetIDF(), rawRes.term.opts.termLenBoost);
+				logPrintf(LogInfo, "Pattern %s, idf %f, termLenBoost %f", r.pattern, idf, rawRes.term.opts.termLenBoost);
 			}
 
 			// match of 2-rd, and next terms
@@ -959,7 +941,7 @@ void Selecter<IdCont>::mergeIterationGroup(TextSearchResults& rawRes, index_t ra
 }
 
 template <typename IdCont>
-template <typename PosType, typename Bm25Type>
+template <typename PosType>
 void Selecter<IdCont>::mergeResultsPart(std::vector<TextSearchResults>& rawResults, size_t from, size_t to, IDataHolder::MergeData& merged,
 										std::vector<PosType>& mergedPos, const bool inTransaction, const RdxContext& rdxCtx) {
 	// Current implementation supports OpAnd only
@@ -980,7 +962,7 @@ void Selecter<IdCont>::mergeResultsPart(std::vector<TextSearchResults>& rawResul
 	std::vector<bool> exists;
 	bool firstTerm = true;
 	for (size_t i = from; i < to; ++i) {
-		mergeIterationGroup<PosType, Bm25Type>(rawResults[i], i, mergeStatuses, merged, mergedPos, idoffsets, exists, firstTerm, inTransaction, rdxCtx);
+		mergeIterationGroup(rawResults[i], i, mergeStatuses, merged, mergedPos, idoffsets, exists, firstTerm, inTransaction, rdxCtx);
 		firstTerm = false;
 		// set proc=0 (exclude) for document not containing term
 		for (auto& info : merged) {
@@ -1250,7 +1232,6 @@ bool Selecter<IdCont>::TyposHandler::isWordFitMaxLettPerm(const std::string_view
 }
 
 template <typename IdCont>
-template <typename Bm25T>
 typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextSearchResults>&& rawResults, size_t totalORVids,
 															   const std::vector<size_t>& synonymsBounds, bool inTransaction,
 															   FtMergeStatuses::Statuses&& mergeStatuses, const RdxContext& rdxCtx) {
@@ -1290,11 +1271,11 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextS
 				k++;
 			}
 			if (needArea_) {
-				mergeGroupResult<IDataHolder::MergedIdRelExArea, Bm25T>(rawResults, i, k, mergeStatuses, merged, merged_rd, op, hasBeenAnd,
-																		idoffsets, inTransaction, rdxCtx);
+				mergeGroupResult<IDataHolder::MergedIdRelExArea>(rawResults, i, k, mergeStatuses, merged, merged_rd, op, hasBeenAnd,
+																 idoffsets, inTransaction, rdxCtx);
 			} else {
-				mergeGroupResult<IDataHolder::MergedIdRelEx, Bm25T>(rawResults, i, k, mergeStatuses, merged, merged_rd, op, hasBeenAnd,
-																	idoffsets, inTransaction, rdxCtx);
+				mergeGroupResult<IDataHolder::MergedIdRelEx>(rawResults, i, k, mergeStatuses, merged, merged_rd, op, hasBeenAnd, idoffsets,
+															 inTransaction, rdxCtx);
 			}
 			if (op == OpAnd) {
 				hasBeenAnd = true;
@@ -1313,10 +1294,7 @@ typename IDataHolder::MergeData Selecter<IdCont>::mergeResults(std::vector<TextS
 				lastGroupStart = i;
 			}
 		}
-
-		mergeIteration<Bm25T>(rawResults[i], i, mergeStatuses, merged, merged_rd, idoffsets, exists[curExists], hasBeenAnd, inTransaction,
-							  rdxCtx);
-
+		mergeIteration(rawResults[i], i, mergeStatuses, merged, merged_rd, idoffsets, exists[curExists], hasBeenAnd, inTransaction, rdxCtx);
 		if (rawResults[i].term.opts.op == OpAnd && !exists[curExists].empty()) {
 			hasBeenAnd = true;
 			for (auto& info : merged) {

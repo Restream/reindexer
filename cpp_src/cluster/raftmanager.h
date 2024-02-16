@@ -5,7 +5,6 @@
 #include "cluster/config.h"
 #include "cluster/consts.h"
 #include "cluster/stats/relicationstatscollector.h"
-#include "tools/catch_and_return.h"
 
 namespace reindexer {
 
@@ -25,16 +24,17 @@ public:
 	void SetTerminateFlag(bool val) noexcept { terminate_ = val; }
 	void Configure(const ReplicationConfigData &, const ClusterConfigData &);
 	RaftInfo::Role Elections();
-	bool LeaderIsAvailable(ClockT::time_point now) const noexcept;
+	bool LeaderIsAvailable(ClockT::time_point now);
 	bool FollowersAreAvailable();
 	int32_t GetLeaderId() const { return getLeaderId(voteData_.load()); }
 	RaftInfo::Role GetRole() const { return getRole(voteData_.load()); }
 	int32_t GetTerm() const { return getTerm(voteData_.load()); }
 	Error SuggestLeader(const cluster::NodeData &suggestion, cluster::NodeData &response);
-	[[nodiscard]] Error SendDesiredLeaderId(int nextServerId) noexcept {
-		RETURN_RESULT_NOEXCEPT(DesiredLeaderIdSender(loop_, nodes_, serverId_, nextServerId, log_)())
+	Error SendDesiredLeaderId(int serverId);
+	void SetDesiredLeaderId(int serverId) {
+		nextServerId_.SetNextServerId(serverId);
+		lastLeaderPingTs_ = {ClockT::time_point()};
 	}
-	void SetDesiredLeaderId(int serverId);
 	int GetDesiredLeaderId() { return nextServerId_.GetNextServerId(); }
 	Error LeadersPing(const cluster::NodeData &);
 	void AwaitTermination();
@@ -74,36 +74,6 @@ private:
 		int serverId = -1;
 	};
 
-	class DesiredLeaderIdSender {
-	public:
-		DesiredLeaderIdSender(net::ev::dynamic_loop &, const std::vector<RaftNode> &, int serverId, int nextServerId, const Logger &);
-		~DesiredLeaderIdSender() {
-			coroutine::wait_group wgStop;
-			for (auto &client : clients_) {
-				loop_.spawn(wgStop, [&client]() { client.Stop(); });
-			}
-			wgStop.wait();
-		}
-
-		Error operator()();
-
-	private:
-		constexpr std::string_view logModuleName() noexcept { return std::string_view("raftmanager:leadersender"); }
-		Error sendDesiredServerIdToNode(size_t nodeId) {
-			auto client = clients_[nodeId].WithTimeout(kDesiredLeaderTimeout);
-			auto err = client.Status(true);
-			return !err.ok() ? err : client.SetDesiredLeaderId(nextServerId_);
-		}
-
-		net::ev::dynamic_loop &loop_;
-		std::vector<client::RaftClient> clients_;
-		const std::vector<RaftNode> &nodes_;
-		const Logger &log_;
-		const int thisServerId_;
-		const int nextServerId_;
-		size_t nextServerNodeIndex_;
-	};
-
 	constexpr std::string_view logModuleName() noexcept { return std::string_view("raftmanager"); }
 	void startPingRoutines();
 	static int32_t getLeaderId(int64_t voteData) { return int32_t(voteData & 0x00FFFFFF); }
@@ -116,8 +86,8 @@ private:
 	int32_t beginElectionsTerm(int presetLeader);
 	bool endElections(int32_t term, RaftInfo::Role result);
 	bool isConsensus(size_t num) const noexcept;
-	bool hasRecentLeadersPing(ClockT::time_point now) const noexcept;
-	client::ConnectOpts createConnectionOpts() const { return client::ConnectOpts().WithExpectedClusterID(clusterID_); }
+	Error sendDesiredServerIdToNode(size_t index, int nextServerId);
+	Error clientStatus(size_t index, std::chrono::seconds timeout);
 
 	net::ev::dynamic_loop &loop_;
 	ReplicationStatsCollector statsCollector_;

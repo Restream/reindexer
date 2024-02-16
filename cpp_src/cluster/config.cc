@@ -6,11 +6,14 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/indexdef.h"
 #include "core/type_consts.h"
+#include "core/type_consts_helpers.h"
 #include "gason/gason.h"
+#include "tools/json2kv.h"
 #include "tools/jsontools.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "vendor/urlparser/urlparser.h"
+#include "yaml-cpp/emitterstyle.h"
 #include "yaml-cpp/yaml.h"
 
 using namespace std::string_view_literals;
@@ -654,14 +657,13 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 
 			return sharding::Segment<Variant>{val, val};
 		}
-		case gason::JsonTag::JSON_OBJECT: {
+		case gason::JsonTag::JSON_ARRAY: {
 			algorithmType = ByRange;
-			const auto &range = json["range"];
-			if (auto dist = std::distance(begin(range), end(range)); dist != 2)
+			if (auto dist = std::distance(begin(json), end(json)); dist != 2)
 				throw Error(errParams, "Incorrect range for sharding key. Should contain 2 numbers but %d are received", dist);
 
-			auto left = stringToVariant(stringifyJson(*begin(range), false));
-			auto right = stringToVariant(stringifyJson(*begin(range)->next, false));
+			auto left = stringToVariant(stringifyJson(*begin(json), false));
+			auto right = stringToVariant(stringifyJson(*begin(json)->next, false));
 
 			if (!left.Type().IsSame(right.Type()))
 				throw Error(errParams, "Incorrect segment '[%s, %s]'. Type of left value is '%s', right type is '%s'",
@@ -669,10 +671,10 @@ sharding::Segment<Variant> ShardingConfig::Key::SegmentFromJSON(const gason::Jso
 
 			return sharding::Segment<Variant>{std::move(left), std::move(right)};
 		}
-		case gason::JsonTag::JSON_ARRAY:
+		case gason::JsonTag::JSON_OBJECT:
 		case gason::JsonTag::JSON_NULL:
 		default:
-			throw Error(errParams, "Incorrect JsonTag for sharding key");
+			throw Error(errParams, "Incorrect YAML::NodeType for sharding key");
 	}
 }
 
@@ -798,10 +800,9 @@ void ShardingConfig::Key::GetJSON(JsonBuilder &jb) const {
 		if (left == right) {
 			valuesNode.Put(0, left);
 		} else {
-			auto segmentNodeObj = valuesNode.Object();
-			auto segmentNodeArr = segmentNodeObj.Array("range");
-			segmentNodeArr.Put(0, left);
-			segmentNodeArr.Put(0, right);
+			auto segmentNode = valuesNode.Array(0);
+			segmentNode.Put(0, left);
+			segmentNode.Put(0, right);
 		}
 	}
 }
@@ -865,7 +866,6 @@ Error ShardingConfig::FromYAML(const std::string &yaml) {
 		thisShardId = root["this_shard_id"].as<int>();
 		reconnectTimeout = std::chrono::milliseconds(root["reconnect_timeout_msec"].as<int>(reconnectTimeout.count()));
 		shardsAwaitingTimeout = std::chrono::seconds(root["shards_awaiting_timeout_sec"].as<int>(shardsAwaitingTimeout.count()));
-		configRollbackTimeout = std::chrono::seconds(root["config_rollback_timeout_sec"].as<int>(configRollbackTimeout.count()));
 		proxyConnCount = root["proxy_conn_count"].as<int>(proxyConnCount);
 		proxyConnConcurrency = root["proxy_conn_concurrency"].as<int>(proxyConnConcurrency);
 		proxyConnThreads = root["proxy_conn_threads"].as<int>(proxyConnThreads);
@@ -922,7 +922,6 @@ Error ShardingConfig::FromJSON(const gason::JsonNode &root) {
 		thisShardId = root["this_shard_id"].As<int>();
 		reconnectTimeout = std::chrono::milliseconds(root["reconnect_timeout_msec"].As<int>(reconnectTimeout.count()));
 		shardsAwaitingTimeout = std::chrono::seconds(root["shards_awaiting_timeout_sec"].As<int>(shardsAwaitingTimeout.count()));
-		configRollbackTimeout = std::chrono::seconds(root["config_rollback_timeout_sec"].As<int>(configRollbackTimeout.count()));
 		proxyConnCount = root["proxy_conn_count"].As<int>(proxyConnCount);
 		proxyConnConcurrency = root["proxy_conn_concurrency"].As<int>(proxyConnConcurrency);
 		proxyConnThreads = root["proxy_conn_threads"].As<int>(proxyConnThreads);
@@ -938,9 +937,8 @@ Error ShardingConfig::FromJSON(const gason::JsonNode &root) {
 bool operator==(const ShardingConfig &lhs, const ShardingConfig &rhs) {
 	return lhs.namespaces == rhs.namespaces && lhs.thisShardId == rhs.thisShardId && lhs.shards == rhs.shards &&
 		   lhs.reconnectTimeout == rhs.reconnectTimeout && lhs.shardsAwaitingTimeout == rhs.shardsAwaitingTimeout &&
-		   lhs.configRollbackTimeout == rhs.configRollbackTimeout && lhs.proxyConnCount == rhs.proxyConnCount &&
-		   lhs.proxyConnConcurrency == rhs.proxyConnConcurrency && rhs.proxyConnThreads == lhs.proxyConnThreads &&
-		   rhs.sourceId == lhs.sourceId;
+		   lhs.proxyConnCount == rhs.proxyConnCount && lhs.proxyConnConcurrency == rhs.proxyConnConcurrency &&
+		   rhs.proxyConnThreads == lhs.proxyConnThreads && rhs.sourceId == lhs.sourceId;
 }
 bool operator==(const ShardingConfig::Key &lhs, const ShardingConfig::Key &rhs) {
 	return lhs.shardId == rhs.shardId && lhs.algorithmType == rhs.algorithmType && lhs.RelaxCompare(rhs.values) == 0;
@@ -974,7 +972,6 @@ YAML::Node ShardingConfig::GetYAMLObj() const {
 	yaml["this_shard_id"] = thisShardId;
 	yaml["reconnect_timeout_msec"] = reconnectTimeout.count();
 	yaml["shards_awaiting_timeout_sec"] = shardsAwaitingTimeout.count();
-	yaml["config_rollback_timeout_sec"] = configRollbackTimeout.count();
 	yaml["proxy_conn_count"] = proxyConnCount;
 	yaml["proxy_conn_concurrency"] = proxyConnConcurrency;
 	yaml["proxy_conn_threads"] = proxyConnThreads;
@@ -1018,7 +1015,6 @@ void ShardingConfig::GetJSON(JsonBuilder &jb) const {
 	jb.Put("this_shard_id", thisShardId);
 	jb.Put("reconnect_timeout_msec", reconnectTimeout.count());
 	jb.Put("shards_awaiting_timeout_sec", shardsAwaitingTimeout.count());
-	jb.Put("config_rollback_timeout_sec", configRollbackTimeout.count());
 	jb.Put("proxy_conn_count", proxyConnCount);
 	jb.Put("proxy_conn_concurrency", proxyConnConcurrency);
 	jb.Put("proxy_conn_threads", proxyConnThreads);

@@ -120,7 +120,10 @@ where `__JSON_WITH_NEW_CONFIG__` might look like this
                     "values":
                     [
                         0,
-                        {"range": [1,4]}
+                        1,
+                        2,
+                        3,
+                        4
                     ]
                 },
                 {
@@ -129,7 +132,9 @@ where `__JSON_WITH_NEW_CONFIG__` might look like this
                     [
                         10,
                         11,
-                        {"range": [12,14]}
+                        12,
+                        13,
+                        14
                     ]
                 },
                 {
@@ -197,7 +202,10 @@ OR
                     "values":
                     [
                         0,
-                        {"range": [1,4]}
+                        1,
+                        2,
+                        3,
+                        4
                     ]
                 },
                 {
@@ -206,14 +214,20 @@ OR
                     [
                         10,
                         11,
-                        {"range": [12,14]}
+                        12,
+                        13,
+                        14
                     ]
                 },
                 {
                     "shard_id": 3,
                     "values":
                     [
-                        {"range": [20,24]}
+                        20,
+                        21,
+                        22,
+                        23,
+                        24
                     ]
                 }
             ]
@@ -269,7 +283,7 @@ The value of the `"this_shard_id"`-parameter doesn't matter in the passed config
 The sharding config will be successfully applied only if:
 - All nodes of the old and new sharding configs are available (to be more precise, consensus is needed for the cluster, and availability is needed for single nodes),
 - Either all nodes listed in the `"shards"`-section for a specific `shard_id` must be nodes of the same synchronous cluster, and there should be no nodes in the cluster that are not part of the shard, or the shard is a separate node that is not part of the synchronous cluster,
-- The namespaces of the new config either do not exist or do not contain data or contain data that does not conflict with the keys of the new config.
+- The namespaces of the new config either do not exist or do not contain data.
 
 At the current stage of implementation, do not try to insert any data into namespaces participating in the new sharding config until it is applied to all nodes, otherwise you may get a non-consistent state and a non-working sharding.
 

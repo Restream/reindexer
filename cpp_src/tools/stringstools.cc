@@ -10,6 +10,7 @@
 #include "itoa/itoa.h"
 #include "stringstools.h"
 #include "tools/assertrx.h"
+#include "tools/customlocal.h"
 #include "tools/randomgenerator.h"
 #include "tools/stringstools.h"
 #include "utf8cpp/utf8.h"
@@ -295,6 +296,24 @@ std::pair<size_t, size_t> calcUtf8BeforeDelims(const char *str, int pos, size_t 
 	return std::make_pair(str + pos - ptr, charCounter);
 }
 
+void check_for_replacement(wchar_t &ch) {
+	if (ch == 0x451) {	// 'ё'
+		ch = 0x435;		// 'е'
+	}
+}
+
+void check_for_replacement(uint32_t &ch) {
+	if (ch == 0x451) {	// 'ё'
+		ch = 0x435;		// 'е'
+	}
+}
+
+bool is_number(std::string_view str) {
+	uint16_t i = 0;
+	while ((i < str.length() && IsDigit(str[i]))) i++;
+	return (i && i == str.length());
+}
+
 void split(std::string_view str, std::string &buf, std::vector<const char *> &words, const std::string &extraWordSymbols) {
 	// assuming that the 'ToLower' function and the 'check for replacement' function should not change the character size in bytes
 	buf.resize(str.length());
@@ -456,7 +475,7 @@ template bool checkIfEndsWith<CaseSensitive::Yes>(std::string_view pattern, std:
 template bool checkIfEndsWith<CaseSensitive::No>(std::string_view pattern, std::string_view src) noexcept;
 
 template <>
-int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) {
 	auto itl = lhs.begin();
 	auto itr = rhs.begin();
 
@@ -478,11 +497,11 @@ int collateCompare<CollateASCII>(std::string_view lhs, std::string_view rhs, con
 }
 
 template <>
-int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) {
 	auto itl = lhs.data();
 	auto itr = rhs.data();
 
-	for (auto lhsEnd = lhs.data() + lhs.size(), rhsEnd = rhs.size() + rhs.data(); itl != lhsEnd && itr != rhsEnd;) {
+	for (; itl != lhs.data() + lhs.size() && itr != rhs.size() + rhs.data();) {
 		auto chl = ToLower(utf8::unchecked::next(itl));
 		auto chr = ToLower(utf8::unchecked::next(itr));
 
@@ -499,7 +518,7 @@ int collateCompare<CollateUTF8>(std::string_view lhs, std::string_view rhs, cons
 }
 
 template <>
-int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) {
 	char *posl = nullptr;
 	char *posr = nullptr;
 
@@ -519,7 +538,7 @@ int collateCompare<CollateNumeric>(std::string_view lhs, std::string_view rhs, c
 }
 
 template <>
-int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &sortOrderTable) noexcept {
+int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &sortOrderTable) {
 	auto itl = lhs.data();
 	auto itr = rhs.data();
 
@@ -543,7 +562,7 @@ int collateCompare<CollateCustom>(std::string_view lhs, std::string_view rhs, co
 }
 
 template <>
-int collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) noexcept {
+int collateCompare<CollateNone>(std::string_view lhs, std::string_view rhs, const SortingPrioritiesTable &) {
 	size_t l1 = lhs.size();
 	size_t l2 = rhs.size();
 	int res = memcmp(lhs.data(), rhs.data(), std::min(l1, l2));
@@ -774,7 +793,7 @@ Error getBytePosInMultilineString(std::string_view str, const size_t line, const
 	}
 	if ((currLine == line) && (charPos == currCharPos)) {
 		bytePos = it - str.begin() - 1;
-		return Error();
+		return errOK;
 	}
 	return Error(errNotValid, "Wrong cursor position: line=%d, pos=%d", line, charPos);
 }

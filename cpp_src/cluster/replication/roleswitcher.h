@@ -69,7 +69,6 @@ private:
 	void switchNamespaces(const RaftInfo &state, const ContainerT &namespaces);
 	void handleInitialSync(RaftInfo::Role newRole);
 	void initialLeadersSync();
-	Error awaitRoleSwitchForNamespace(client::CoroReindexer &client, std::string_view nsName, ReplicationStateV2 &st);
 	Error getNodesListForNs(std::string_view nsName, std::list<reindexer::cluster::LeaderSyncQueue::Entry> &syncQueue);
 	NsNamesHashSetT collectNsNames();
 	template <typename RxT>

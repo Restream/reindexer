@@ -100,11 +100,7 @@ void ClusterDataReplicator::Run() {
 	syncList_.Init(std::vector<int64_t>(nodes.size(), SynchronizationList::kUnsynchronizedID));
 
 	updatesQueue_.ReinitSyncQueue(statsCollector_, std::optional<NsNamesHashSetT>(config_->namespaces), log_);
-	const bool isSyncCluster = config_->nodes.size() > 1;
-	sharedSyncState_.Reset(config_->namespaces, 1, isSyncCluster);
-	if (isSyncCluster) {
-		onRoleChanged(RaftInfo::Role::Candidate, -1);
-	}
+	sharedSyncState_.Reset(config_->namespaces, 1, config_->nodes.size() - 1);
 
 	assert(replThreads_.empty());
 	ReplThreadConfig threadsConfig(baseConfig_.value(), config_.value());

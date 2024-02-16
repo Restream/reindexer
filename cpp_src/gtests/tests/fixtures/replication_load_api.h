@@ -3,6 +3,8 @@
 #include "cluster/stats/replicationstats.h"
 #include "gtests/tools.h"
 #include "replication_api.h"
+#include "tools/errors.h"
+#include "vendor/hopscotch/hopscotch_map.h"
 
 class ReplicationLoadApi : public ReplicationApi {
 public:

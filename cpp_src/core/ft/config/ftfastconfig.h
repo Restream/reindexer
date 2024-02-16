@@ -1,6 +1,7 @@
 #pragma once
 
 #include "baseftconfig.h"
+#include "estl/h_vector.h"
 
 namespace reindexer {
 
@@ -38,21 +39,9 @@ struct FtFastConfig : public BaseFTConfig {
 	int maxRebuildSteps = 50;
 	int maxStepSize = 4000;
 
-	struct Bm25Config {
-		enum class Bm25Type { classic, rx, wordCount };
-		double bm25k1 = 2.0;
-		double bm25b = 0.75;
-		Bm25Type bm25Type = Bm25Type::rx;
-		void getJson(JsonBuilder& jsonBuilder) const;
-		void parse(const gason::JsonNode& root);
-	};
-
-	Bm25Config bm25Config;
-
 	double summationRanksByFieldsRatio = 0.0;
 	int maxAreasInDoc = 5;
 	int maxTotalAreasToCache = -1;
-
 	RVector<FtFastFieldConfig, 8> fieldsCfg;
 	enum class Optimization { CPU, Memory } optimization = Optimization::Memory;
 	bool enablePreselectBeforeFt = false;

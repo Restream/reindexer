@@ -36,13 +36,13 @@ struct InitShardingConfig {
 	int nodeIdInThread = -1;  // Allows to run one of the nodes in thread, instead fo process
 	uint8_t strlen = 0;		  // Strings len in items, which will be created during Fill()
 	// if it is necessary to explicitly set specific cluster nodes in shards
-	std::shared_ptr<std::map<int, std::vector<std::string>>> shardsMap;
+	std::optional<std::map<int, std::vector<std::string>>> shardsMap = std::nullopt;
 };
 
 class ShardingApi : public ReindexerApi {
 public:
 	using ShardingConfig = reindexer::cluster::ShardingConfig;
-	static const std::string_view kConfigTemplate;
+	static const std::string configTemplate;
 	enum class ApplyType : bool { Shared, Local };
 
 	void Init(InitShardingConfig c = InitShardingConfig()) {
@@ -62,7 +62,7 @@ public:
 		config_.namespaces.resize(namespaces.size());
 		for (size_t i = 0; i < namespaces.size(); ++i) {
 			config_.namespaces[i].ns = namespaces[i].name;
-			config_.namespaces[i].index = namespaces[i].indexName;
+			config_.namespaces[i].index = namespaces[i].indexName;	// kFieldLocation;
 			config_.namespaces[i].defaultShard = 0;
 		}
 		config_.shards.clear();
@@ -88,18 +88,13 @@ public:
 
 		for (size_t shard = 0; shard < kShards; ++shard) {
 			YAML::Node clusterConf;
+			clusterConf["app_name"] = "rx_node";
 			clusterConf["namespaces"] = YAML::Node(YAML::NodeType::Sequence);
 			clusterConf["sync_threads"] = syncThreadsCount;
 			clusterConf["enable_compression"] = true;
 			clusterConf["online_updates_timeout_sec"] = 20;
 			clusterConf["sync_timeout_sec"] = 60;
 			clusterConf["syncs_per_thread"] = maxSyncCount;
-			clusterConf["leader_sync_threads"] = 2;
-#ifdef REINDEX_WITH_TSAN
-			clusterConf["batching_routines_count"] = 20;
-#else
-			clusterConf["batching_routines_count"] = 50;
-#endif
 			clusterConf["retry_sync_interval_msec"] = resyncTimeout.count();
 			clusterConf["nodes"] = YAML::Node(YAML::NodeType::Sequence);
 			const size_t startId = shard * kNodesInCluster;
@@ -120,7 +115,6 @@ public:
 				YAML::Node replConf;
 				replConf["cluster_id"] = shard;
 				replConf["server_id"] = idx;
-				clusterConf["app_name"] = fmt::sprintf("rx_node_%d", idx);
 
 				std::string pathToDb =
 					fs::JoinPath(GetDefaults().baseTestsetDbPath, "shard" + std::to_string(shard) + "/" + std::to_string(idx));
@@ -134,7 +128,7 @@ public:
 			}
 		}
 
-		auto& rx = *getNode(0)->api.reindexer;
+		std::shared_ptr<client::Reindexer> rx = getNode(0)->api.reindexer;
 
 		for (auto& ns : namespaces) {
 			if (ns.withData) {
@@ -156,7 +150,7 @@ public:
 				} else {
 					nsDef.AddIndex(kFieldId, "hash", "int", IndexOpts().PK());
 				}
-				Error err = rx.AddNamespace(nsDef);
+				Error err = rx->AddNamespace(nsDef);
 				ASSERT_TRUE(err.ok()) << err.what() << "; ns: " << ns.name;
 			}
 		}
@@ -165,10 +159,6 @@ public:
 			if (ns.withData) {
 				size_t pos = 0;
 				for (size_t i = 0; i < kShards; ++i) {
-					if (kNodesInCluster > 1) {
-						auto err = svc_[i][0].Get()->api.reindexer->OpenNamespace(ns.name);
-						ASSERT_TRUE(err.ok()) << err.what();
-					}
 					Fill(ns.name, i, pos, c.rowsInTableOnShard, c.insertedItemsById);
 					pos += c.rowsInTableOnShard;
 				}
@@ -291,9 +281,9 @@ public:
 		return StopSC(svc_[i][j]);
 	}
 
-	client::Item CreateItem(std::string_view nsName, client::Reindexer& rx, std::string_view key, int index, WrSerializer& wrser,
-							uint8_t strlen = 0) {
-		client::Item item = rx.NewItem(nsName);
+	client::Item CreateItem(std::string_view nsName, std::shared_ptr<client::Reindexer> rx, std::string_view key, int index,
+							WrSerializer& wrser, uint8_t strlen = 0) {
+		client::Item item = rx->NewItem(nsName);
 		if (!item.Status().ok()) return item;
 		wrser.Reset();
 		reindexer::JsonBuilder jsonBuilder(wrser, ObjType::TypeObject);
@@ -316,7 +306,7 @@ public:
 		return item;
 	}
 
-	Error CreateAndUpsertItem(std::string_view nsName, client::Reindexer& rx, std::string_view key, int index,
+	Error CreateAndUpsertItem(std::string_view nsName, std::shared_ptr<client::Reindexer> rx, std::string_view key, int index,
 							  fast_hash_map<int, std::string>* insertedItemsById = nullptr, uint8_t strlen = 0) {
 		WrSerializer wrser;
 		client::Item item = CreateItem(nsName, rx, key, index, wrser, strlen);
@@ -333,21 +323,23 @@ public:
 		if (!err.ok()) {
 			return err;
 		}
-		return rx.Upsert(nsName, item);
+		return rx->Upsert(nsName, item);
 	}
 
 	void Fill(std::string_view nsName, size_t shard, const size_t from, const size_t count,
 			  fast_hash_map<int, std::string>* insertedItemsById = nullptr, uint8_t strlen = 0) {
 		assert(shard < svc_.size());
-		auto& rx = *svc_[shard][0].Get()->api.reindexer;
+		std::shared_ptr<client::Reindexer> rx = svc_[shard][0].Get()->api.reindexer;
+		Error err = rx->OpenNamespace(nsName);
+		ASSERT_TRUE(err.ok()) << err.what();
 		for (size_t index = from; index < from + count; ++index) {
-			auto err = CreateAndUpsertItem(nsName, rx, std::string("key" + std::to_string((index % kShards) + 1)), index, insertedItemsById,
-										   strlen);
+			err = CreateAndUpsertItem(nsName, rx, std::string("key" + std::to_string((index % kShards) + 1)), index, insertedItemsById,
+									  strlen);
 			ASSERT_TRUE(err.ok()) << err.what();
 		}
 	}
 
-	void Fill(std::string_view nsName, client::Reindexer& rx, std::string_view key, const size_t from, const size_t count) {
+	void Fill(std::string_view nsName, std::shared_ptr<client::Reindexer> rx, std::string_view key, const size_t from, const size_t count) {
 		for (size_t index = from; index < from + count; ++index) {
 			Error err = CreateAndUpsertItem(nsName, rx, key, index);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -359,7 +351,7 @@ public:
 		if (!srv) {
 			return Error(errNotValid, "Server is not running");
 		}
-		auto& rx = *srv->api.reindexer;
+		auto rx = srv->api.reindexer;
 		return CreateAndUpsertItem(nsName, rx, std::string("key" + std::to_string((index % kShards) + 1)), index);
 	}
 
@@ -440,10 +432,7 @@ protected:
 	void runTransactionsTest(std::string_view nsName);
 
 	template <typename T>
-	void fillShards(const std::map<int, std::set<T>>& shardDataDistrib, const std::string& kNsName, const std::string& kFieldId);
-
-	template <typename T>
-	void fillShard(int shard, const std::set<T>& shardData, const std::string& kNsName, const std::string& kFieldId);
+	void fillWithDistribData(const std::map<int, std::set<T>>& shardDataDistrib, const std::string& kNsName, const std::string& kFieldId);
 
 	template <typename T>
 	void runLocalSelectTest(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib);
@@ -455,7 +444,7 @@ protected:
 	ShardingConfig makeShardingConfigByDistrib(std::string_view nsName, const std::map<int, std::set<T>>& shardDataDistrib, int shards = 3,
 											   int nodes = 3) const;
 
-	Error applyNewShardingConfig(client::Reindexer& rx, const ShardingConfig& config, ApplyType type,
+	Error applyNewShardingConfig(const std::shared_ptr<client::Reindexer>& rx, const ShardingConfig& config, ApplyType type,
 								 std::optional<int64_t> sourceId = std::optional<int64_t>()) const;
 
 	void checkConfig(const ServerControl::Interface::Ptr& server, const cluster::ShardingConfig& config);

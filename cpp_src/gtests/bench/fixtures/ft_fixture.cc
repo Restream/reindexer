@@ -368,16 +368,16 @@ void FullText::Fast3PhraseLowDiversity(State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
+		std::string& w1 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
+		std::string& w2 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w3 =
+		std::string& w3 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
 		ftQuery.append("'").append(w1).append(" ").append(w2).append("' ").append(w3);
-		q.Where("search", CondEq, std::move(ftQuery));
+		q.Where("search", CondEq, ftQuery);
 		QueryResults qres;
 
 		auto err = db_->Select(q, qres);
@@ -394,16 +394,16 @@ void FullText::Fast3WordsLowDiversity(State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
+		std::string& w1 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
+		std::string& w2 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w3 =
+		std::string& w3 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
 		ftQuery.append("+").append(w1).append(" +").append(w2).append(" +").append(w3);
-		q.Where("search", CondEq, std::move(ftQuery));
+		q.Where("search", CondEq, ftQuery);
 		QueryResults qres;
 
 		auto err = db_->Select(q, qres);
@@ -420,14 +420,14 @@ void FullText::Fast2PhraseLowDiversity(State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
+		std::string& w1 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
+		std::string& w2 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + 32);
 		ftQuery.append("'").append(w1).append(" ").append(w2).append("'~50");
-		q.Where("search", CondEq, std::move(ftQuery));
+		q.Where("search", CondEq, ftQuery);
 		QueryResults qres;
 
 		auto err = db_->Select(q, qres);
@@ -444,14 +444,14 @@ void FullText::Fast2AndWordLowDiversity(State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
+		std::string& w1 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
+		std::string& w2 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + 32);
 		ftQuery.append("+").append(w1).append(" +").append(w2);
-		q.Where("search", CondEq, std::move(ftQuery));
+		q.Where("search", CondEq, ftQuery);
 		QueryResults qres;
 
 		auto err = db_->Select(q, qres);
@@ -468,16 +468,16 @@ void FullText::Fast3PhraseWithAreasLowDiversity(State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
+		std::string& w1 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
+		std::string& w2 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w3 =
+		std::string& w3 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
 		ftQuery.append("'").append(w1).append(" ").append(w2).append("' ").append(w3);
-		q.Where("search", CondEq, std::move(ftQuery));
+		q.Where("search", CondEq, ftQuery);
 		q.AddFunction("search = highlight(!,!)");
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -492,7 +492,7 @@ void FullText::Fast1WordWithAreaHighDiversity(State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		const std::string& word =
+		std::string& word =
 			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)}));
 		q.Where("searchfast", CondEq, word);
 		q.AddFunction("search = highlight(!,!)");
@@ -509,16 +509,16 @@ void FullText::Fast3WordsWithAreasLowDiversity(State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(lowWordsDiversityNsDef_.name);
-		const std::string& w1 =
+		std::string& w1 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w2 =
+		std::string& w2 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
-		const std::string& w3 =
+		std::string& w3 =
 			words2_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words2_.size() - 1)}));
 		std::string ftQuery;
 		ftQuery.reserve(w1.size() + w2.size() + w3.size() + 32);
 		ftQuery.append(w1).append(" ").append(w2).append(" ").append(w3);
-		q.Where("search", CondEq, std::move(ftQuery));
+		q.Where("search", CondEq, ftQuery);
 		q.AddFunction("search = highlight(!,!)");
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -603,7 +603,7 @@ void FullText::Fast2WordsMatch(benchmark::State& state) {
 			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})) + " " +
 			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)}));
 
-		q.Where("searchfast", CondEq, std::move(words));
+		q.Where("searchfast", CondEq, words);
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
@@ -639,7 +639,7 @@ void FullText::Fuzzy2WordsMatch(benchmark::State& state) {
 			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)})) + " " +
 			words_.at(randomGenerator_(randomEngine_, std::uniform_int_distribution<int>::param_type{0, int(words_.size() - 1)}));
 
-		q.Where("searchfuzzy", CondEq, std::move(words));
+		q.Where("searchfuzzy", CondEq, words);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -656,7 +656,9 @@ void FullText::Fast1PrefixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where("searchfast", CondEq, MakePrefixWord());
+
+		auto word = MakePrefixWord();
+		q.Where("searchfast", CondEq, word);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -673,7 +675,9 @@ void FullText::Fast2PrefixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where("searchfast", CondEq, MakePrefixWord().append(" ").append(MakePrefixWord()));
+
+		auto words = MakePrefixWord() + " " + MakePrefixWord();
+		q.Where("searchfast", CondEq, words);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -688,7 +692,9 @@ void FullText::Fuzzy1PrefixMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakePrefixWord());
+
+		auto word = MakePrefixWord();
+		q.Where("searchfuzzy", CondEq, word);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -703,7 +709,9 @@ void FullText::Fuzzy2PrefixMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakePrefixWord().append(" ").append(MakePrefixWord()));
+
+		std::string words = MakePrefixWord() + " " + MakePrefixWord();
+		q.Where("searchfuzzy", CondEq, words);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -720,7 +728,8 @@ void FullText::Fast1SuffixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where("searchfast", CondEq, MakeSuffixWord());
+		std::string word = MakeSuffixWord();
+		q.Where("searchfast", CondEq, word);
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
@@ -736,7 +745,9 @@ void FullText::Fast2SuffixMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where("searchfast", CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
+
+		std::string words = MakeSuffixWord() + " " + MakeSuffixWord();
+		q.Where("searchfast", CondEq, words);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -751,7 +762,9 @@ void FullText::Fuzzy1SuffixMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeSuffixWord());
+
+		std::string word = MakeSuffixWord();
+		q.Where("searchfuzzy", CondEq, word);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -766,7 +779,9 @@ void FullText::Fuzzy2SuffixMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeSuffixWord().append(" ").append(MakeSuffixWord()));
+
+		std::string words = MakeSuffixWord() + " " + MakeSuffixWord();
+		q.Where("searchfuzzy", CondEq, words);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -783,7 +798,9 @@ void FullText::Fast1TypoWordMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where("searchfast", CondEq, MakeTypoWord());
+
+		std::string word = MakeTypoWord();
+		q.Where("searchfast", CondEq, word);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -800,7 +817,9 @@ void FullText::Fast2TypoWordMatch(benchmark::State& state) {
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		TIMEMEASURE();
 		Query q(nsdef_.name);
-		q.Where("searchfast", CondEq, MakeTypoWord().append(" ").append(MakeTypoWord()));
+
+		std::string words = MakeTypoWord() + " " + MakeTypoWord();
+		q.Where("searchfast", CondEq, words);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -815,7 +834,9 @@ void FullText::Fuzzy1TypoWordMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeTypoWord());
+
+		std::string word = MakeTypoWord();
+		q.Where("searchfuzzy", CondEq, word);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -830,7 +851,9 @@ void FullText::Fuzzy2TypoWordMatch(benchmark::State& state) {
 	size_t cnt = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q(nsdef_.name);
-		q.Where("searchfuzzy", CondEq, MakeTypoWord().append(" ").append(MakeTypoWord()));
+
+		std::string words = MakeTypoWord() + " " + MakeTypoWord();
+		q.Where("searchfuzzy", CondEq, words);
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);

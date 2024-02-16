@@ -1,4 +1,10 @@
 ﻿#include "replication_api.h"
+#include <fstream>
+#include <thread>
+#include "core/cjson/jsonbuilder.h"
+#include "core/dbconfig.h"
+#include "tools/fsops.h"
+#include "vendor/gason/gason.h"
 
 const std::string ReplicationApi::kConfigNs = "#config";
 

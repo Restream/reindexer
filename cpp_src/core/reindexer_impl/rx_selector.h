@@ -85,15 +85,14 @@ private:
 	static JoinedSelectors prepareJoinedSelectors(const Query &q, LocalQueryResults &result, NsLocker<T> &locks,
 												  SelectFunctionsHolder &func, std::vector<QueryResultsContext> &, const RdxContext &ctx);
 	template <typename T>
-	[[nodiscard]] static std::vector<SubQueryExplain> preselectSubQueries(Query &mainQuery, std::vector<LocalQueryResults> &queryResultsHolder,
-																		  NsLocker<T> &, SelectFunctionsHolder &, const RdxContext &);
+	static void preselectSubQueries(Query &mainQuery, std::vector<LocalQueryResults> &queryResultsHolder, NsLocker<T> &,
+									SelectFunctionsHolder &, const RdxContext &);
 	template <typename T>
 	[[nodiscard]] static bool selectSubQuery(const Query &subQuery, const Query &mainQuery, NsLocker<T> &, SelectFunctionsHolder &,
-											 std::vector<SubQueryExplain> &, const RdxContext &);
+											 const RdxContext &);
 	template <typename T>
 	[[nodiscard]] static VariantArray selectSubQuery(const Query &subQuery, const Query &mainQuery, NsLocker<T> &, LocalQueryResults &,
-													 SelectFunctionsHolder &, std::variant<std::string, size_t> fieldOrKeys,
-													 std::vector<SubQueryExplain> &, const RdxContext &);
+													 SelectFunctionsHolder &, const RdxContext &);
 	static bool isPreResultValuesModeOptimizationAvailable(const Query &jItemQ, const NamespaceImpl::Ptr &jns, const Query &mainQ);
 };
 

@@ -11,17 +11,17 @@ namespace reindexer {
 struct QueryDebugContext {
 	const Query *mainQuery = nullptr;
 	const Query *parentQuery = nullptr;
-	const std::atomic<int> *nsOptimizationState = nullptr;
+	std::atomic<int> *nsOptimizationState = nullptr;
 	ExplainCalc *explainCalc = nullptr;
-	const std::atomic<int> *nsLockerState = nullptr;
+	std::atomic_bool *nsLockerState = nullptr;
 	StringsHolder *nsStrHolder = nullptr;
 	QueryType realQueryType = QuerySelect;
 };
 
 thread_local QueryDebugContext g_queryDebugCtx;
 
-ActiveQueryScope::ActiveQueryScope(SelectCtx &ctx, const std::atomic<int> &nsOptimizationState, ExplainCalc &explainCalc,
-								   const std::atomic<int> &nsLockerState, StringsHolder *strHolder) noexcept
+ActiveQueryScope::ActiveQueryScope(SelectCtx &ctx, std::atomic<int> &nsOptimizationState, ExplainCalc &explainCalc,
+								   std::atomic_bool &nsLockerState, StringsHolder *strHolder) noexcept
 	: isTrackedQuery_(ctx.requiresCrashTracking) {
 	if (isTrackedQuery_) {
 		g_queryDebugCtx.mainQuery = &ctx.query;
@@ -34,7 +34,7 @@ ActiveQueryScope::ActiveQueryScope(SelectCtx &ctx, const std::atomic<int> &nsOpt
 	}
 }
 
-ActiveQueryScope::ActiveQueryScope(const Query &q, QueryType realQueryType, const std::atomic<int> &nsOptimizationState,
+ActiveQueryScope::ActiveQueryScope(const Query &q, QueryType realQueryType, std::atomic<int> &nsOptimizationState,
 								   StringsHolder *strHolder) noexcept
 	: isTrackedQuery_(true) {
 	g_queryDebugCtx.mainQuery = &q;
@@ -75,22 +75,6 @@ static std::string_view nsOptimizationStateName(int state) {
 	}
 }
 
-static std::string_view nsInvalidationStateName(int state) {
-	using namespace std::string_view_literals;
-	switch (NamespaceImpl::InvalidationType(state)) {
-		case NamespaceImpl::InvalidationType::Valid:
-			return "Valid"sv;
-		case NamespaceImpl::InvalidationType::Readonly:
-			return "Readonly"sv;
-		case NamespaceImpl::InvalidationType::OverwrittenByUser:
-			return "Overwritten by user"sv;
-		case NamespaceImpl::InvalidationType::OverwrittenByReplicator:
-			return "Overwritten by replicator (force sync)"sv;
-		default:
-			return "<Unknown>"sv;
-	}
-}
-
 void PrintCrashedQuery(std::ostream &out) {
 	if (!g_queryDebugCtx.mainQuery && !g_queryDebugCtx.parentQuery) {
 		out << "*** No additional info from crash query tracker ***" << std::endl;
@@ -109,7 +93,11 @@ void PrintCrashedQuery(std::ostream &out) {
 	}
 	if (g_queryDebugCtx.nsLockerState) {
 		out << " NS.locker state: ";
-		nsInvalidationStateName(g_queryDebugCtx.nsLockerState->load());
+		if (g_queryDebugCtx.nsLockerState->load()) {
+			out << " readonly";
+		} else {
+			out << " regular";
+		}
 		out << std::endl;
 	}
 	if (g_queryDebugCtx.nsStrHolder) {

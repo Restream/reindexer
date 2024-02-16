@@ -1,6 +1,5 @@
 #pragma once
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <map>
 #include <sstream>
@@ -113,22 +112,8 @@ protected:
 
 		{
 			std::unique_lock<reindexer::shared_timed_mutex> lck(authorsMutex);
-			if (std::find_if(authorsIds.begin(), authorsIds.end(), [this](int id) { return DostoevskyAuthorId == id; }) ==
-				authorsIds.end()) {
-				authorsIds.push_back(DostoevskyAuthorId);
-			}
+			authorsIds.push_back(DostoevskyAuthorId);
 		}
-	}
-
-	void RemoveLastAuthors(int32_t count) {
-		VariantArray idsToRemove;
-		idsToRemove.reserve(std::min(size_t(count), authorsIds.size()));
-		auto rend = authorsIds.rbegin() + std::min(size_t(count), authorsIds.size());
-		for (auto ait = authorsIds.rbegin(); ait != rend; ++ait) {
-			idsToRemove.emplace_back(*ait);
-		}
-		const auto removed = Delete(Query(authors_namespace).Where(authorid, CondSet, idsToRemove));
-		ASSERT_EQ(removed, count);
 	}
 
 	void FillBooksNamespace(int32_t since, int32_t count) {
@@ -150,7 +135,7 @@ protected:
 				item[authorid_fk] = authorsIds[authorIdIdx];
 			}
 
-			item[genreId_fk] = genres[rand() % genres.size()].id;
+			item[genreId_fk] = genresIds[rand() % genresIds.size()];
 			Upsert(books_namespace, item);
 			const auto err = Commit(books_namespace);
 			ASSERT_TRUE(err.ok()) << err.what();
@@ -191,17 +176,9 @@ protected:
 		item[genreid] = id;
 		item[genrename] = name;
 		Upsert(genres_namespace, item);
-		auto found = std::find_if(genres.begin(), genres.end(), [id](const Genre& g) { return g.id == id; });
-		ASSERT_EQ(found, genres.end());
-		genres.push_back(Genre{id, name});
-	}
-	void RemoveGenre(int id) {
-		Item item = NewItem(genres_namespace);
-		item[genreid] = id;
-		Delete(genres_namespace, item);
 		const auto err = Commit(genres_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
-		genres.erase(std::remove_if(genres.begin(), genres.end(), [id](const Genre& g) { return g.id == id; }), genres.end());
+		genresIds.push_back(id);
 	}
 
 	void FillQueryResultFromItem(Item& item, QueryResultRow& resultRow) {
@@ -423,20 +400,11 @@ protected:
 		}
 		{
 			QueryResults qr;
-			const Query q = Query::FromSQL(sql);
+			Query q = Query::FromSQL(sql);
 			auto err = rt.reindexer->Select(q, qr);
 			EXPECT_EQ(err.code(), expectedCode) << sql;
 			EXPECT_EQ(err.what(), expectedText) << sql;
 		}
-	}
-	void ValidateQueryThrow(std::string_view sql, ErrorCode expectedCode, std::string_view expectedRegex) {
-		QueryResults qr;
-		{
-			auto err = rt.reindexer->Select(sql, qr);
-			EXPECT_EQ(err.code(), expectedCode) << sql;
-			EXPECT_THAT(err.what(), testing::ContainsRegex(expectedRegex)) << sql;
-		}
-		EXPECT_THROW(const Query q = Query::FromSQL(sql), Error) << sql;
 	}
 
 	static std::string addQuotes(const std::string& str) {
@@ -445,14 +413,6 @@ protected:
 		output += str;
 		output += "\"";
 		return output;
-	}
-
-	void SetQueriesCacheHitsCount(unsigned hitsCount) {
-		auto q = reindexer::Query("#config")
-					 .Set("namespaces.cache.query_count_hit_to_cache", int64_t(hitsCount))
-					 .Where("type", CondEq, "namespaces");
-		auto updated = Update(q);
-		ASSERT_EQ(updated, 1);
 	}
 
 	const char* id = "id";
@@ -482,13 +442,8 @@ protected:
 	const std::string location_namespace = "location_namespace";
 	const std::string config_namespace = "#config";
 
-	struct Genre {
-		int id;
-		std::string name;
-	};
-
 	std::vector<int> authorsIds;
-	std::vector<Genre> genres;
+	std::vector<int> genresIds;
 
 	// clang-format off
 	const std::vector<std::string> locations = {

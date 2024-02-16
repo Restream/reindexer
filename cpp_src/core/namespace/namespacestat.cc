@@ -269,9 +269,6 @@ void ClusterizationStatus::FromJSON(const gason::JsonNode &root) {
 void ReplicationStateV2::GetJSON(JsonBuilder &builder) {
 	builder.Put("last_lsn", int64_t(lastLsn));
 	builder.Put("data_hash", dataHash);
-	if (HasDataCount()) {
-		builder.Put("data_count", dataCount);
-	}
 	builder.Put("ns_version", int64_t(nsVersion));
 	auto clusterObj = builder.Object("cluster_status");
 	clusterStatus.GetJSON(clusterObj);
@@ -283,7 +280,6 @@ void ReplicationStateV2::FromJSON(span<char> json) {
 		auto root = parser.Parse(json);
 		lastLsn = lsn_t(root["last_lsn"].As<int64_t>());
 		dataHash = root["data_hash"].As<uint64_t>();
-		dataCount = root["data_count"].As<int64_t>(kNoDataCount);
 		nsVersion = lsn_t(root["ns_version"].As<int64_t>());
 		clusterStatus.FromJSON(root["cluster_status"]);
 	} catch (const gason::Exception &ex) {

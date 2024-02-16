@@ -251,7 +251,7 @@ Error Reindexer::SetTagsMatcher(std::string_view nsName, TagsMatcher&& tm) {
 	return impl_->SetTagsMatcher(nsName, std::move(tm), rdxCtx);
 }
 void Reindexer::ShutdownCluster() { impl_->ShutdownCluster(); }
-Error Reindexer::Status() noexcept { return impl_->Status(); }
+Error Reindexer::Status() { return impl_->Status(); }
 Error Reindexer::DumpIndex(std::ostream& os, std::string_view nsName, std::string_view index) {
 	const auto rdxCtx = impl_->CreateRdxContext(ctx_, [&](WrSerializer& s) { s << "DUMP INDEX " << index << " ON " << nsName; });
 	return impl_->DumpIndex(os, nsName, index, rdxCtx);

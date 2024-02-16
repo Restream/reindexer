@@ -10,8 +10,8 @@ namespace reindexer {
 template <class T>
 class BtreeIndexIterator final : public IndexIterator {
 public:
-	explicit BtreeIndexIterator(const T& idxMap) noexcept : idxMap_(idxMap), first_(idxMap.begin()), last_(idxMap.end()) {}
-	BtreeIndexIterator(const T& idxMap, const typename T::iterator& first, const typename T::iterator& last) noexcept
+	explicit BtreeIndexIterator(const T& idxMap) : idxMap_(idxMap), first_(idxMap.begin()), last_(idxMap.end()) {}
+	BtreeIndexIterator(const T& idxMap, const typename T::iterator& first, const typename T::iterator& last)
 		: idxMap_(idxMap), first_(first), last_(last) {}
 	~BtreeIndexIterator() override final = default;
 

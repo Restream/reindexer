@@ -33,10 +33,69 @@ void RaftManager::Configure(const ReplicationConfigData& baseConfig, const Clust
 	}
 }
 
-void RaftManager::SetDesiredLeaderId(int serverId) {
-	logInfo("%d Set (%d) as a desired leader", serverId_, serverId);
-	nextServerId_.SetNextServerId(serverId);
-	lastLeaderPingTs_ = {ClockT::time_point()};
+Error RaftManager::SendDesiredLeaderId(int nextServerId) {
+	logTrace("%d SendDesiredLeaderId nextLeaderId = %d", serverId_, nextServerId);
+	size_t nextServerNodeIndex = nodes_.size();
+	for (size_t i = 0; i < nodes_.size(); i++) {
+		if (nodes_[i].serverId == nextServerId) {
+			nextServerNodeIndex = i;
+			break;
+		}
+	}
+
+	std::shared_ptr<void> CloseConnection(nullptr, [this](void*) {
+		if (GetLeaderId() != serverId_) {  // leader node clients, used for pinging
+			coroutine::wait_group wgStop;
+			for (auto& node : nodes_) {
+				loop_.spawn(wgStop, [&node]() { node.client.Stop(); });
+			}
+			wgStop.wait();
+		}
+	});
+
+	if (nextServerNodeIndex != nodes_.size()) {
+		Error err = clientStatus(nextServerNodeIndex, kDesiredLeaderTimeout);
+		if (!err.ok()) {
+			return Error(err.code(), "Target node %s is not available.", nodes_[nextServerNodeIndex].dsn);
+		}
+	}
+
+	uint32_t okCount = 1;
+	coroutine::wait_group wg;
+	std::string errString;
+
+	for (size_t nodeId = 0; nodeId < nodes_.size(); ++nodeId) {
+		if (nodeId == nextServerNodeIndex) {
+			continue;
+		}
+
+		loop_.spawn(wg, [this, nodeId, nextServerId, &errString, &okCount] {
+			try {
+				const auto err = sendDesiredServerIdToNode(nodeId, nextServerId);
+				if (err.ok()) {
+					++okCount;
+				} else {
+					errString += "[" + err.what() + "]";
+				}
+			} catch (...) {
+				logInfo("%d: Unable to send desired leader: got unknonw exception", serverId_);
+			}
+		});
+	}
+	wg.wait();
+	if (nextServerNodeIndex != nodes_.size()) {
+		Error err = sendDesiredServerIdToNode(nextServerNodeIndex, nextServerId);
+		if (!err.ok()) {
+			return err;
+		}
+		okCount++;
+	}
+
+	if (okCount >= GetConsensusForN(nodes_.size() + 1)) {
+		return errOK;
+	}
+
+	return Error(errNetwork, "Can't send nextLeaderId to servers okCount %d err: %s", okCount, errString);
 }
 
 RaftInfo::Role RaftManager::Elections() {
@@ -44,14 +103,14 @@ RaftInfo::Role RaftManager::Elections() {
 	succeedRoutines.reserve(nodes_.size());
 	while (!terminate_.load()) {
 		const int nextServerId = nextServerId_.GetNextServerId();
-		const bool isDesiredLeader = (nextServerId == serverId_);
-		if (!isDesiredLeader && nextServerId != -1) {
-			endElections(GetTerm(), RaftInfo::Role::Follower);
+		int32_t term = beginElectionsTerm(nextServerId);
+		logInfo("Starting new elections term for %d. Term number: %d", serverId_, term);
+		if (nextServerId != -1 && nextServerId != serverId_) {
+			endElections(term, RaftInfo::Role::Follower);
 			logInfo("Skipping elections (desired leader id is %d)", serverId_, nextServerId);
 			return RaftInfo::Role::Follower;
 		}
-		int32_t term = beginElectionsTerm(nextServerId);
-		logInfo("Starting new elections term for %d. Term number: %d", serverId_, term);
+		const bool isDesiredLeader = (nextServerId == serverId_);
 		coroutine::wait_group wg;
 		succeedRoutines.resize(0);
 		struct {
@@ -63,7 +122,7 @@ RaftInfo::Role RaftManager::Elections() {
 			loop_.spawn(wg, [this, &electionsStat, nodeId, term, &succeedRoutines, isDesiredLeader] {
 				auto& node = nodes_[nodeId];
 				if (!node.client.Status().ok()) {
-					node.client.Connect(node.dsn, loop_, createConnectionOpts());
+					node.client.Connect(node.dsn, loop_, client::ConnectOpts().WithExpectedClusterID(clusterID_));
 				}
 				NodeData suggestion, result;
 				suggestion.serverId = serverId_;
@@ -100,8 +159,10 @@ RaftInfo::Role RaftManager::Elections() {
 
 				const bool leaderIsAvailable = !isDesiredLeader && LeaderIsAvailable(ClockT::now());
 				if (leaderIsAvailable || !isConsensus(electionsStat.succeedPhase1)) {
-					logInfo("%d: Skip leaders ping. Elections are outdated. leaderIsAvailable: %d. Successfull responses: %d", serverId_,
-							leaderIsAvailable ? 1 : 0, electionsStat.succeedPhase1);
+					logInfo(
+						"%d: Skip leaders ping. Elections are outdated. leaderIsAvailable: %d. Successfull "
+						"responses: %d",
+						serverId_, leaderIsAvailable ? 1 : 0, electionsStat.succeedPhase1);
 					return;	 // This elections are outdated
 				}
 				err = node.client.LeadersPing(suggestion);
@@ -140,8 +201,8 @@ RaftInfo::Role RaftManager::Elections() {
 	return RaftInfo::Role::Follower;
 }
 
-bool RaftManager::LeaderIsAvailable(ClockT::time_point now) const noexcept {
-	return hasRecentLeadersPing(now) || (GetRole() == RaftInfo::Role::Leader);
+bool RaftManager::LeaderIsAvailable(ClockT::time_point now) {
+	return ((now - lastLeaderPingTs_.load()) < kMinLeaderAwaitInterval) || (GetRole() == RaftInfo::Role::Leader);
 }
 
 bool RaftManager::FollowersAreAvailable() {
@@ -331,79 +392,24 @@ bool RaftManager::endElections(int32_t term, RaftInfo::Role result) {
 
 bool RaftManager::isConsensus(size_t num) const noexcept { return num >= GetConsensusForN(nodes_.size() + 1); }
 
-bool RaftManager::hasRecentLeadersPing(RaftManager::ClockT::time_point now) const noexcept {
-	return (now - lastLeaderPingTs_.load()) < kMinLeaderAwaitInterval;
+Error RaftManager::clientStatus(size_t index, std::chrono::seconds timeout) {
+	Error err;
+	if (!nodes_[index].client.WithTimeout(timeout).Status(true).ok()) {
+		err = nodes_[index].client.Connect(nodes_[index].dsn, loop_, client::ConnectOpts().WithExpectedClusterID(clusterID_));
+		if (err.ok()) {
+			err = nodes_[index].client.WithTimeout(timeout).Status(true);
+		}
+	}
+	return err;
 }
 
-RaftManager::DesiredLeaderIdSender::DesiredLeaderIdSender(net::ev::dynamic_loop& loop, const std::vector<RaftNode>& nodes, int serverId,
-														  int nextServerId, const Logger& log)
-	: loop_(loop), nodes_(nodes), log_(log), thisServerId_(serverId), nextServerId_(nextServerId), nextServerNodeIndex_(nodes_.size()) {
-	client::ReindexerConfig rpcCfg;
-	rpcCfg.AppName = "raft_manager_tmp";
-	rpcCfg.NetTimeout = kRaftTimeout;
-	rpcCfg.EnableCompression = false;
-	rpcCfg.RequestDedicatedThread = true;
-	clients_.reserve(nodes_.size());
-	for (size_t i = 0; i < nodes_.size(); ++i) {
-		auto& client = clients_.emplace_back(rpcCfg);
-		auto err = client.Connect(nodes_[i].dsn, loop_);
-		(void)err;	// Ignore connection errors. Handle them on the status phase
-		if (nodes_[i].serverId == nextServerId_) {
-			nextServerNodeIndex_ = i;
-			err = client.WithTimeout(kDesiredLeaderTimeout).Status(true);
-			if (!err.ok()) {
-				throw Error(err.code(), "Target node %s is not available.", nodes_[i].dsn);
-			}
-		}
+Error RaftManager::sendDesiredServerIdToNode(size_t index, int nextServerId) {
+	Error err = clientStatus(index, kDesiredLeaderTimeout);
+	if (!err.ok()) {
+		return err;
 	}
-}
-
-Error RaftManager::DesiredLeaderIdSender::operator()() {
-	uint32_t okCount = 1;
-	coroutine::wait_group wg;
-	std::string errString;
-
-	const bool thisNodeIsNext = (nextServerNodeIndex_ == nodes_.size());
-	if (!thisNodeIsNext) {
-		logTrace("%d Checking if node with desired server ID (%d) is available", thisServerId_, nextServerId_);
-		if (auto err = clients_[nextServerNodeIndex_].WithTimeout(kDesiredLeaderTimeout).Status(true); !err.ok()) {
-			return Error(err.code(), "Target node %s is not available.", nodes_[nextServerNodeIndex_].dsn);
-		}
-	}
-	for (size_t nodeId = 0; nodeId < clients_.size(); ++nodeId) {
-		if (nodeId == nextServerNodeIndex_) {
-			continue;
-		}
-
-		loop_.spawn(wg, [this, nodeId, &errString, &okCount] {
-			try {
-				logTrace("%d Sending desired server ID (%d) to node with server ID %d", thisServerId_, nextServerId_,
-						 nodes_[nodeId].serverId);
-				if (auto err = sendDesiredServerIdToNode(nodeId); err.ok()) {
-					++okCount;
-				} else {
-					errString += "[" + err.what() + "]";
-				}
-			} catch (...) {
-				logInfo("%d: Unable to send desired leader: got unknonw exception", thisServerId_);
-			}
-		});
-	}
-	wg.wait();
-
-	if (!thisNodeIsNext) {
-		logTrace("%d Sending desired server ID (%d) to node with server ID %d", thisServerId_, nextServerId_,
-				 nodes_[nextServerNodeIndex_].serverId);
-		if (auto err = sendDesiredServerIdToNode(nextServerNodeIndex_); !err.ok()) {
-			return err;
-		}
-		++okCount;
-	}
-
-	if (okCount < GetConsensusForN(nodes_.size() + 1)) {
-		return Error(errNetwork, "Can't send nextLeaderId to servers okCount %d err: %s", okCount, errString);
-	}
-	return Error();
+	logTrace("%d Sending desired server ID (%d) to node with server ID %d", serverId_, nextServerId, nodes_[index].serverId);
+	return nodes_[index].client.WithTimeout(kDesiredLeaderTimeout).SetDesiredLeaderId(nextServerId);
 }
 
 }  // namespace cluster

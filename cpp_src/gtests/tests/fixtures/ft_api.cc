@@ -1,4 +1,5 @@
 #include "ft_api.h"
+#include "core/cjson/jsonbuilder.h"
 
 void FTApi::Init(const reindexer::FtFastConfig& ftCfg, unsigned nses, const std::string& storage) {
 	rt.reindexer.reset(new reindexer::Reindexer);
@@ -156,12 +157,12 @@ void FTApi::AddInBothFields(std::string_view ns, std::string_view w1, std::strin
 }
 
 reindexer::QueryResults FTApi::SimpleSelect(std::string word, bool withHighlight) {
-	auto q{reindexer::Query("nm1").Where("ft3", CondEq, std::move(word)).WithRank()};
+	auto qr{reindexer::Query("nm1").Where("ft3", CondEq, std::move(word))};
 	reindexer::QueryResults res;
 	if (withHighlight) {
-		q.AddFunction("ft3 = highlight(!,!)");
+		qr.AddFunction("ft3 = highlight(!,!)");
 	}
-	auto err = rt.reindexer->Select(q, res);
+	auto err = rt.reindexer->Select(qr, res);
 	EXPECT_TRUE(err.ok()) << err.what();
 
 	return res;

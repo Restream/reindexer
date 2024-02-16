@@ -14,6 +14,8 @@
 namespace reindexer {
 namespace cluster {
 
+constexpr size_t kMaxRetriesOnRoleSwitchAwait = 50;
+constexpr auto kRoleSwitchStepTime = std::chrono::milliseconds(150);
 constexpr auto kAwaitNsCopyInterval = std::chrono::milliseconds(2000);
 constexpr auto kCoro32KStackSize = 32 * 1024;
 
@@ -284,7 +286,7 @@ template <>
 			if (replState.clusterStatus.role != ClusterizationStatus::Role::ClusterReplica ||
 				replState.clusterStatus.leaderId != serverId_) {
 				// Await transition
-				logTrace("%d:%d Awaiting role switch on the remote node", serverId_, node.uid);
+				logTrace("%d:%d Awaiting role switch on remote node", serverId_, node.uid);
 				loop.sleep(kRoleSwitchStepTime);
 				// TODO: Check if cluster is configured on remote node
 				continue;
@@ -609,34 +611,35 @@ Error ReplThread<BehaviourParamT>::syncNamespace(Node& node, const std::string& 
 				return err;
 			}
 		}
-
-		ReplicationStateV2 replState;
-		err = client.GetReplState(replNsName, replState);
-		if (!err.ok() && err.code() != errNotFound) return err;
-		logInfo(
-			"%d:%d:%s Sync done. { snapshot: { ns_version: %d, lsn: %d, data_hash: %d, data_count: %d }, remote: { ns_version: %d, lsn: "
-			"%d, data_hash: %d, data_count: %d } }",
-			serverId_, node.uid, nsName, snapshot.NsVersion(), snapshot.LastLSN(), snapshot.ExpectedDataHash(),
-			snapshot.ExpectedDataCount(), replState.nsVersion, replState.lastLsn, replState.dataHash, replState.dataCount);
-
-		const bool versionMissmatch = (!snapshot.LastLSN().isEmpty() && snapshot.LastLSN() != replState.lastLsn) ||
-									  (!snapshot.NsVersion().isEmpty() && snapshot.NsVersion() != replState.nsVersion);
-		if (versionMissmatch || snapshot.ExpectedDataHash() != replState.dataHash ||
-			(replState.HasDataCount() && snapshot.ExpectedDataCount() != uint64_t(replState.dataCount))) {
-			logInfo("%d:%d:%s Snapshot dump on data missmatch: %s", serverId_, node.uid, nsName, snapshot.Dump());
-			return Error(errDataHashMismatch,
-						 "%d:%d:%s: Datahash or datacount missmatcher after sync. Actual: { data_hash: %d, data_count: %d, ns_version: %d, "
-						 "lsn: %d }; expected: { data_hash: %d, data_count: %d, ns_version: %d, lsn: %d }",
-						 serverId_, node.uid, nsName, replState.dataHash, replState.dataCount, replState.nsVersion, replState.lastLsn,
-						 snapshot.ExpectedDataHash(), snapshot.ExpectedDataCount(), snapshot.NsVersion(), snapshot.LastLSN());
-		}
-
-		node.namespaceData[nsName].latestLsn = ExtendedLsn(replState.nsVersion, replState.lastLsn);
 		if (createTmpNamespace) {
-			logInfo("%d:%d:%s Renaming: %s -> %s", serverId_, node.uid, nsName, replNsName, nsName);
+			logTrace("%d:%d:%s Renaming: %s -> %s", serverId_, node.uid, nsName, replNsName, nsName);
 			err = client.WithLSN(lsn_t(0, serverId_)).RenameNamespace(replNsName, nsName);
 			if (!err.ok()) return err;
 			tmpNsGuard.tmpNsName.clear();
+		}
+
+		{
+			ReplicationStateV2 replState;
+			err = client.GetReplState(nsName, replState);
+			if (!err.ok() && err.code() != errNotFound) return err;
+			logInfo(
+				"%d:%d:%s Sync done. { snapshot: { ns_version: %d, lsn: %d, data_hash: %d }, remote: { "
+				"ns_version: %d, lsn: %d, data_hash: %d } }",
+				serverId_, node.uid, nsName, snapshot.NsVersion(), snapshot.LastLSN(), snapshot.ExpectedDatahash(), replState.nsVersion,
+				replState.lastLsn, replState.dataHash);
+
+			node.namespaceData[nsName].latestLsn = ExtendedLsn(replState.nsVersion, replState.lastLsn);
+
+			const bool dataMissmatch = (!snapshot.LastLSN().isEmpty() && snapshot.LastLSN() != replState.lastLsn) ||
+									   (!snapshot.NsVersion().isEmpty() && snapshot.NsVersion() != replState.nsVersion);
+			if (dataMissmatch || snapshot.ExpectedDatahash() != replState.dataHash) {
+				logInfo("%d:%d:%s Snapshot dump on data missmatch: %s", serverId_, node.uid, nsName, snapshot.Dump());
+				return Error(errDataHashMismatch,
+							 "%d:%d:%s: Datahash missmatcher after sync. Actual: { data_hash: %d, ns_version: %d, lsn: %d }; expected: { "
+							 "data_hash: %d, ns_version: %d, lsn: %d }",
+							 serverId_, node.uid, nsName, replState.dataHash, replState.nsVersion, replState.lastLsn,
+							 snapshot.ExpectedDatahash(), snapshot.NsVersion(), snapshot.LastLSN());
+			}
 		}
 	} catch (Error& err) {
 		return err;

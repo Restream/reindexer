@@ -126,12 +126,7 @@ public:
 	Error SetClusterizationStatus(std::string_view nsName, const ClusterizationStatus &status, const RdxContext &ctx);
 	Error GetSnapshot(std::string_view nsName, const SnapshotOpts &opts, Snapshot &snapshot, const RdxContext &ctx);
 	Error ApplySnapshotChunk(std::string_view nsName, const SnapshotChunk &ch, const RdxContext &ctx);
-	Error Status() noexcept {
-		if rx_likely (connected_.load(std::memory_order_acquire)) {
-			return {};
-		}
-		return Error(errNotValid, "DB is not connected");
-	}
+	Error Status();
 	Error SuggestLeader(const cluster::NodeData &suggestion, cluster::NodeData &response);
 	Error LeadersPing(const cluster::NodeData &);
 	Error GetRaftInfo(bool allowTransitState, cluster::RaftInfo &, const RdxContext &ctx);

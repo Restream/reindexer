@@ -24,8 +24,7 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, NamespaceImpl *ns, 
 	  start_(query_.Offset()),
 	  count_(query_.Limit()),
 	  forcedSortOrder_(!query_.forcedSortOrder_.empty()),
-	  reqMatchedOnce_(ctx.reqMatchedOnceFlag),
-	  isMergeQuery_(ctx.isMergeQuery == IsMergeQuery::Yes) {
+	  reqMatchedOnce_(ctx.reqMatchedOnceFlag) {
 	if (forcedSortOrder_ && (start_ > QueryEntry::kDefaultOffset || count_ < QueryEntry::kDefaultLimit)) {
 		assertrx_throw(!query_.sortingEntries_.empty());
 		static const std::vector<JoinedSelector> emptyJoinedSelectors;
@@ -42,7 +41,7 @@ QueryPreprocessor::QueryPreprocessor(QueryEntries &&queries, NamespaceImpl *ns, 
 			queryEntryAddedByForcedSortOptimization_ = true;
 		}
 	}
-	if (isMergeQuery_) {
+	if (ctx.isMergeQuery == IsMergeQuery::Yes) {
 		if (QueryEntry::kDefaultLimit - start_ > count_) {
 			count_ += start_;
 		} else {
@@ -85,17 +84,8 @@ bool QueryPreprocessor::NeedNextEvaluation(unsigned start, unsigned count, bool 
 	} else if (ftEntry_) {
 		if (!matchedAtLeastOnce) return false;
 		qresHolder.BackupContainer();
-		if (isMergeQuery_) {
-			if (QueryEntry::kDefaultLimit - query_.Offset() > query_.Limit()) {
-				count_ = query_.Limit() + query_.Offset();
-			} else {
-				count_ = QueryEntry::kDefaultLimit;
-			}
-			start_ = QueryEntry::kDefaultOffset;
-		} else {
-			start_ = query_.Offset();
-			count_ = query_.Limit();
-		}
+		start_ = query_.Offset();
+		count_ = query_.Limit();
 		forcedSortOrder_ = !query_.forcedSortOrder_.empty();
 		clear();
 		Append(OpAnd, std::move(*ftEntry_));

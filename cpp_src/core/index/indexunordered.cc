@@ -252,8 +252,6 @@ void IndexUnordered<T>::Delete(const Variant &key, IdType id, StringsHolder &str
 	}
 }
 
-// WARNING: 'keys' is a key for LRUCache and in some cases (for ordered indexes, for example) can contain values,
-// which are not correspond to the initial values from queries conditions
 template <typename T>
 bool IndexUnordered<T>::tryIdsetCache(const VariantArray &keys, CondType condition, SortType sortId,
 									  const std::function<bool(SelectKeyResult &, size_t &)> &selector, SelectKeyResult &res) {
@@ -273,7 +271,7 @@ bool IndexUnordered<T>::tryIdsetCache(const VariantArray &keys, CondType conditi
 				cache_->Put(ckey, res.MergeIdsets(res.deferedExplicitSort, idsCount));
 			}
 		} else {
-			res.emplace_back(std::move(cached.val.ids));
+			res.push_back(SingleSelectKeyResult(cached.val.ids));
 		}
 	} else {
 		scanWin = selector(res, idsCount);

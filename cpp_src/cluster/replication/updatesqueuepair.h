@@ -35,11 +35,11 @@ public:
 		return result;
 	}
 	std::shared_ptr<QueueT> GetSyncQueue() const {
-		shared_lock<MtxT> lck(mtx_);
+		shared_lock<MtxT> lck;
 		return syncQueue_;
 	}
 	std::shared_ptr<QueueT> GetAsyncQueue() const {
-		shared_lock<MtxT> lck(mtx_);
+		shared_lock<MtxT> lck;
 		return asyncQueue_;
 	}
 	template <typename ContainerT>

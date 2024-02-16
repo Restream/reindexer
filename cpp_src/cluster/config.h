@@ -27,8 +27,6 @@ namespace cluster {
 
 inline uint32_t GetConsensusForN(uint32_t n) noexcept { return n / 2 + 1; }
 constexpr auto kStatusCmdTimeout = std::chrono::seconds(3);
-constexpr size_t kMaxRetriesOnRoleSwitchAwait = 50;
-constexpr auto kRoleSwitchStepTime = std::chrono::milliseconds(150);
 
 struct NodeData {
 	int serverId = -1;
@@ -193,7 +191,6 @@ constexpr uint32_t kDefaultShardingProxyConnThreads = 4;
 struct ShardingConfig {
 	static constexpr unsigned serverIdPos = 53;
 	static constexpr int64_t serverIdMask = (((1ll << 10) - 1) << serverIdPos);	 // 01111111111000...000
-	static constexpr auto kDefaultRollbackTimeout = std::chrono::seconds(30);
 
 	struct Key {
 		Error FromYAML(const YAML::Node& yaml, const std::map<int, std::vector<std::string>>& shards, KeyValueType& valuesType,
@@ -239,7 +236,6 @@ struct ShardingConfig {
 	int thisShardId = ShardingKeyType::ProxyOff;
 	std::chrono::milliseconds reconnectTimeout = std::chrono::milliseconds(3000);
 	std::chrono::seconds shardsAwaitingTimeout = std::chrono::seconds(30);
-	std::chrono::seconds configRollbackTimeout = kDefaultRollbackTimeout;
 	int proxyConnCount = kDefaultShardingProxyConnCount;
 	int proxyConnConcurrency = kDefaultShardingProxyCoroPerConn;
 	int proxyConnThreads = kDefaultShardingProxyConnThreads;

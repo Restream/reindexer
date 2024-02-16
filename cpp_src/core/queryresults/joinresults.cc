@@ -7,6 +7,11 @@
 namespace reindexer {
 namespace joins {
 
+JoinedFieldIterator::JoinedFieldIterator(const NamespaceResults* parent, const ItemOffsets& offsets, uint8_t joinedFieldOrder)
+	: joinRes_(parent), offsets_(&offsets), order_(joinedFieldOrder) {
+	if (offsets_->size() > 0) updateOffset();
+}
+
 bool JoinedFieldIterator::operator==(const JoinedFieldIterator& other) const {
 	if (joinRes_ != other.joinRes_) throw Error(errLogic, "Comparising joined fields of different namespaces!");
 	if (offsets_ != other.offsets_) throw Error(errLogic, "Comparising joined fields of different items!");
@@ -14,7 +19,25 @@ bool JoinedFieldIterator::operator==(const JoinedFieldIterator& other) const {
 	return true;
 }
 
-void JoinedFieldIterator::updateOffset() noexcept {
+bool JoinedFieldIterator::operator!=(const JoinedFieldIterator& other) const { return !operator==(other); }
+
+JoinedFieldIterator::const_reference JoinedFieldIterator::operator[](size_t idx) const {
+	assertrx(currOffset_ + idx < joinRes_->items_.size());
+	return joinRes_->items_[currOffset_ + idx];
+}
+
+JoinedFieldIterator::reference JoinedFieldIterator::operator[](size_t idx) {
+	assertrx(currOffset_ + idx < joinRes_->items_.size());
+	return const_cast<reference>(joinRes_->items_[currOffset_ + idx]);
+}
+
+JoinedFieldIterator& JoinedFieldIterator::operator++() {
+	++order_;
+	updateOffset();
+	return *this;
+}
+
+void JoinedFieldIterator::updateOffset() {
 	currField_ = -1;
 	if (order_ == joinRes_->GetJoinedSelectorsCount()) return;
 
@@ -42,7 +65,7 @@ LocalQueryResults JoinedFieldIterator::ToQueryResults() const {
 	return LocalQueryResults(begin, end);
 }
 
-int JoinedFieldIterator::ItemsCount() const noexcept {
+int JoinedFieldIterator::ItemsCount() const {
 	assertrx(order_ < joinRes_->GetJoinedSelectorsCount());
 
 	if ((currField_ != -1) && (currField_ < uint8_t(offsets_->size()))) {
@@ -52,32 +75,33 @@ int JoinedFieldIterator::ItemsCount() const noexcept {
 	return 0;
 }
 
-static const ItemOffsets kEmptyOffsets;
-static const JoinedFieldIterator kNoJoinedDataIt(nullptr, kEmptyOffsets, 0);
+const JoinedFieldIterator noJoinedDataIt(nullptr, {}, 0);
 
-JoinedFieldIterator ItemIterator::begin() const noexcept {
+JoinedFieldIterator ItemIterator::begin() const {
 	auto it = joinRes_->offsets_.find(rowid_);
-	if (it == joinRes_->offsets_.end()) return kNoJoinedDataIt;
-	if (it->second.empty()) return kNoJoinedDataIt;
+	if (it == joinRes_->offsets_.end()) return noJoinedDataIt;
+	if (it->second.empty()) return noJoinedDataIt;
 	return JoinedFieldIterator(joinRes_, it->second, 0);
 }
 
 JoinedFieldIterator ItemIterator::at(uint8_t joinedField) const {
 	auto it = joinRes_->offsets_.find(rowid_);
-	if (it == joinRes_->offsets_.end()) return kNoJoinedDataIt;
-	if (it->second.empty()) return kNoJoinedDataIt;
+	if (it == joinRes_->offsets_.end()) return noJoinedDataIt;
+	if (it->second.empty()) return noJoinedDataIt;
 	assertrx(joinedField < joinRes_->GetJoinedSelectorsCount());
 	return JoinedFieldIterator(joinRes_, it->second, joinedField);
 }
 
-JoinedFieldIterator ItemIterator::end() const noexcept {
+JoinedFieldIterator ItemIterator::end() const {
 	auto it = joinRes_->offsets_.find(rowid_);
-	if (it == joinRes_->offsets_.end()) return kNoJoinedDataIt;
-	if (it->second.empty()) return kNoJoinedDataIt;
+	if (it == joinRes_->offsets_.end()) return noJoinedDataIt;
+	if (it->second.empty()) return noJoinedDataIt;
 	return JoinedFieldIterator(joinRes_, it->second, joinRes_->GetJoinedSelectorsCount());
 }
 
-int ItemIterator::getJoinedItemsCount() const noexcept {
+int ItemIterator::getJoinedFieldsCount() const { return joinRes_->GetJoinedSelectorsCount(); }
+
+int ItemIterator::getJoinedItemsCount() const {
 	if (joinedItemsCount_ == -1) {
 		joinedItemsCount_ = 0;
 		auto it = joinRes_->offsets_.find(rowid_);
@@ -89,14 +113,14 @@ int ItemIterator::getJoinedItemsCount() const noexcept {
 	return joinedItemsCount_;
 }
 
-ItemIterator ItemIterator::CreateFrom(const LocalQueryResults::Iterator& it) noexcept {
+ItemIterator ItemIterator::CreateFrom(const LocalQueryResults::Iterator& it) {
 	auto ret = ItemIterator::CreateEmpty();
 	auto& itemRef = it.qr_->Items()[it.idx_];
 	if ((itemRef.Nsid() >= it.qr_->joined_.size())) return ret;
 	return ItemIterator(&(it.qr_->joined_[itemRef.Nsid()]), itemRef.Id());
 }
 
-ItemIterator ItemIterator::CreateEmpty() noexcept {
+ItemIterator ItemIterator::CreateEmpty() {
 	static NamespaceResults empty;
 	static ItemIterator ret(&empty, 0);
 	return ret;

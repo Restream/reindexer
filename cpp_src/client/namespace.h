@@ -19,11 +19,11 @@ public:
 	template <typename ClientT>
 	Item NewItem(ClientT& client, std::chrono::milliseconds execTimeout);
 	void TryReplaceTagsMatcher(TagsMatcher&& tm, bool checkVersion = true);
-	TagsMatcher GetTagsMatcher() const noexcept {
+	TagsMatcher GetTagsMatcher() const {
 		shared_lock<shared_timed_mutex> lk(lck_);
 		return tagsMatcher_;
 	}
-	int GetStateToken() const noexcept {
+	int GetStateToken() const {
 		shared_lock<shared_timed_mutex> lk(lck_);
 		return int(tagsMatcher_.stateToken());
 	}

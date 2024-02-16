@@ -1,14 +1,16 @@
 
 #include "baseftconfig.h"
+#include <string.h>
 #include "core/cjson/jsonbuilder.h"
 #include "core/ft/stopwords/stop.h"
 #include "tools/errors.h"
+#include "tools/jsontools.h"
 
 namespace reindexer {
 
 BaseFTConfig::BaseFTConfig() {
-	for (const char **p = stop_words_en; *p != nullptr; p++) stopWords.insert({*p, StopWord::Type::Morpheme});
-	for (const char **p = stop_words_ru; *p != nullptr; p++) stopWords.insert({*p, StopWord::Type::Morpheme});
+	for (const char **p = stop_words_en; *p != nullptr; p++) stopWords.insert(*p);
+	for (const char **p = stop_words_ru; *p != nullptr; p++) stopWords.insert(*p);
 }
 
 void BaseFTConfig::parseBase(const gason::JsonNode &root) {
@@ -23,25 +25,7 @@ void BaseFTConfig::parseBase(const gason::JsonNode &root) {
 	auto &stopWordsNode = root["stop_words"];
 	if (!stopWordsNode.empty()) {
 		stopWords.clear();
-		for (auto &sw : stopWordsNode) {
-			std::string word;
-			StopWord::Type type = StopWord::Type::Stop;
-			if (sw.value.getTag() == gason::JsonTag::JSON_STRING) {
-				word = sw.As<std::string>();
-			} else if (sw.value.getTag() == gason::JsonTag::JSON_OBJECT) {
-				word = sw["word"].As<std::string>();
-				type = sw["is_morpheme"].As<bool>() ? StopWord::Type::Morpheme : StopWord::Type::Stop;
-			}
-
-			if (std::find_if(word.begin(), word.end(), [](const auto &symbol) { return std::isspace(symbol); }) != word.end()) {
-				throw Error(errParams, "Stop words can't contain spaces: %s", word);
-			}
-
-			auto [it, inserted] = stopWords.emplace(std::move(word), type);
-			if (!inserted && it->type != type) {
-				throw Error(errParams, "Duplicate stop-word with different morpheme attribute: %s", *it);
-			}
-		}
+		for (auto &sw : stopWordsNode) stopWords.insert(sw.As<std::string>());
 	}
 
 	auto &stemmersNode = root["stemmers"];
@@ -96,9 +80,7 @@ void BaseFTConfig::getJson(JsonBuilder &jsonBuilder) const {
 	{
 		auto stopWordsNode = jsonBuilder.Array("stop_words");
 		for (const auto &sw : stopWords) {
-			auto wordNode = stopWordsNode.Object(nullptr);
-			wordNode.Put("word", sw);
-			wordNode.Put("is_morpheme", sw.type == StopWord::Type::Morpheme);
+			stopWordsNode.Put(nullptr, sw);
 		}
 	}
 	{

@@ -142,12 +142,9 @@ Error ClusterProxy::Connect(const std::string &dsn, ConnectOpts opts) {
 	if (!err.ok()) {
 		return err;
 	}
-	if (!connected_.load(std::memory_order_relaxed)) {
-		if (impl_.clusterConfig_) {
-			clusterConns_.SetParams(impl_.clusterConfig_->proxyConnThreads, impl_.clusterConfig_->proxyConnCount,
-									impl_.clusterConfig_->proxyConnConcurrency);
-		}
-		connected_.store(err.ok(), std::memory_order_release);
+	if (impl_.clusterConfig_) {
+		clusterConns_.SetParams(impl_.clusterConfig_->proxyConnThreads, impl_.clusterConfig_->proxyConnCount,
+								impl_.clusterConfig_->proxyConnConcurrency);
 	}
 	return err;
 }
