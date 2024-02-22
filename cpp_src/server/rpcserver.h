@@ -148,7 +148,7 @@ protected:
 	int64_t addTx(cproto::Context &ctx, std::string_view nsName);
 	void clearTx(cproto::Context &ctx, uint64_t txId);
 	Snapshot &getSnapshot(cproto::Context &ctx, int &id);
-	Error fetchSnapshotRecords(cproto::Context &ctx, int id, int64_t offset, bool putHeader);
+	Error fetchSnapshotRecords(cproto::Context &ctx, int id, int64_t offset, bool putHeaders);
 	void freeSnapshot(cproto::Context &ctx, int id);
 
 	Reindexer getDB(cproto::Context &ctx, UserRole role);

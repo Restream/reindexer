@@ -1,20 +1,13 @@
 #pragma once
 
-#include <atomic>
-#include <memory>
-#include <ostream>
-#include <thread>
-#include <unordered_set>
 #include "client/reindexer.h"
 #include "cluster/stats/replicationstats.h"
 #include "core/cjson/jsonbuilder.h"
-#include "core/dbconfig.h"
 #include "core/namespace/namespacestat.h"
 #include "estl/shared_mutex.h"
 #include "reindexertestapi.h"
 #include "server/server.h"
 #include "tools/fsops.h"
-#include "tools/stringstools.h"
 
 #ifdef REINDEXER_WITH_SC_AS_PROCESS
 const bool kTestServersInSeparateProcesses = true;

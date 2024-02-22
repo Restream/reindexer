@@ -38,7 +38,7 @@ func createReindexDbInstance(rx *reindexer.Reindexer, namespace string, indexTyp
 	if indexType == "fuzzytext" {
 		// Disable non exact searchers, disable stop word dictionat
 		cfg := reindexer.DefaultFtFuzzyConfig()
-		cfg.StopWords = []string{}
+		cfg.StopWords = make([]interface{}, 0)
 		cfg.Stemmers = []string{}
 		cfg.EnableKbLayout = false
 		cfg.EnableTranslit = false
@@ -48,7 +48,7 @@ func createReindexDbInstance(rx *reindexer.Reindexer, namespace string, indexTyp
 		config = cfg
 	} else {
 		cfg := reindexer.DefaultFtFastConfig()
-		cfg.StopWords = []string{}
+		cfg.StopWords = make([]interface{}, 0)
 		cfg.Stemmers = []string{}
 		cfg.EnableKbLayout = false
 		cfg.EnableTranslit = false

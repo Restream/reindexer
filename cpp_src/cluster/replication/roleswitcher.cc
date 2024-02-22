@@ -253,7 +253,7 @@ void RoleSwitcher::initialLeadersSync() {
 		lck.unlock();
 		logInfo("%d: Syncing namespaces from remote nodes", cfg_.serverId);
 		lastErr = syncer_->Sync(std::move(syncQueue), sharedSyncState_, thisNode_, statsCollector_);
-		logInfo("%d: Sync namespaces from remote nodes done: %s", cfg_.serverId, lastErr.what());
+		logInfo("%d: Sync namespaces from remote nodes done: %s", cfg_.serverId, lastErr.ok() ? "OK" : lastErr.what());
 		lck.lock();
 		syncer_.reset();
 		lck.unlock();
@@ -268,6 +268,35 @@ void RoleSwitcher::initialLeadersSync() {
 		std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - roleSwitchTm_));
 }
 
+Error RoleSwitcher::awaitRoleSwitchForNamespace(client::CoroReindexer& client, std::string_view nsName, ReplicationStateV2& st) {
+	uint32_t step = 0;
+	const bool isDbStatus = nsName.empty();
+	do {
+		auto err = client.WithTimeout(kStatusCmdTimeout).GetReplState(nsName, st);
+		if (!err.ok()) {
+			return err;
+		}
+		if (st.clusterStatus.role == ClusterizationStatus::Role::ClusterReplica && st.clusterStatus.leaderId == cfg_.serverId) {
+			return {};
+		}
+		if (step++ >= kMaxRetriesOnRoleSwitchAwait) {
+			return Error(errTimeout, "Gave up on the remote node role switch awaiting for the '%s'",
+						 isDbStatus ? "whole database" : nsName);
+		}
+		logInfo("%d: Awaiting role switch on the remote node for the '%s'. Current status is { role: %s; leader: %d }", cfg_.serverId,
+				isDbStatus ? "whole database" : nsName, st.clusterStatus.RoleStr(), st.clusterStatus.leaderId);
+		loop_.sleep(kRoleSwitchStepTime);
+		auto [cur, next] = sharedSyncState_.GetRolesPair();
+		if (cur != next) {
+			return Error(errCanceled, "New role switch was scheduled (%s -> %s) during the sync", RaftInfo::RoleToStr(cur.role),
+						 RaftInfo::RoleToStr(next.role));
+		}
+		if (cur.role != RaftInfo::Role::Leader) {
+			return Error(errCanceled, "Role was switch to %s during the sync", RaftInfo::RoleToStr(cur.role));
+		}
+	} while (true);
+}
+
 Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderSyncQueue::Entry>& syncQueue) {
 	// 1) Find most recent data among all the followers
 	LeaderSyncQueue::Entry nsEntry;
@@ -277,19 +306,32 @@ Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderS
 		auto err = thisNode_.GetReplState(nsName, state, RdxContext());
 		if (err.ok()) {
 			nsEntry.localLsn = nsEntry.latestLsn = ExtendedLsn(state.nsVersion, state.lastLsn);
-			nsEntry.localDatahash = state.dataHash;
+			nsEntry.localData.hash = state.dataHash;
+			nsEntry.localData.count = state.dataCount;
 		}
 		logInfo("%d: Begin leader's sync for '%s'. Ns version: %d, lsn: %d", cfg_.serverId, nsName, nsEntry.localLsn.NsVersion(),
 				nsEntry.localLsn.LSN());
 	}
 	size_t responses = 1;
 	coroutine::wait_group lwg;
+
 	std::vector<std::pair<Error, ReplicationStateV2>> nodesStates(nodes_.size());
 	for (int id = 0; size_t(id) < nodes_.size(); ++id) {
+		loop_.spawn(lwg, [this, id, &nodesStates]() noexcept {
+			ReplicationStateV2 st;
+			nodesStates[id].first = awaitRoleSwitchForNamespace(nodes_[id].client, std::string_view(), st);
+		});
+	}
+	lwg.wait();
+
+	for (int id = 0; size_t(id) < nodes_.size(); ++id) {
 		loop_.spawn(lwg, [this, id, &nsName, &nsEntry, &responses, &nodesStates]() noexcept {
-			auto err = nodes_[id].client.WithTimeout(kStatusCmdTimeout).GetReplState(nsName, nodesStates[id].second);
-			const auto& state = nodesStates[id].second;
+			Error err = nodesStates[id].first;
 			if (err.ok()) {
+				err = awaitRoleSwitchForNamespace(nodes_[id].client, nsName, nodesStates[id].second);
+			}
+			if (err.ok()) {
+				const auto& state = nodesStates[id].second;
 				++responses;
 				logInfo("%d: Got ns version %d and lsn %d from node %d for '%s'", cfg_.serverId, state.nsVersion, state.lastLsn, id,
 						nsName);
@@ -300,13 +342,19 @@ Error RoleSwitcher::getNodesListForNs(std::string_view nsName, std::list<LeaderS
 					(!remoteLsn.NsVersion().isEmpty() && remoteLsn.NsVersion().Counter() > nsEntry.latestLsn.NsVersion().Counter())) {
 					nsEntry.nodes.clear();
 					nsEntry.nodes.emplace_back(id);
-					nsEntry.dataHashes.clear();
-					nsEntry.dataHashes.emplace_back(state.dataHash);
+					nsEntry.data.clear();
+					nsEntry.data.emplace_back(LeaderSyncQueue::Entry::NodeData{state.dataHash, state.dataCount});
 					nsEntry.latestLsn = remoteLsn;
-				} else if (nsEntry.latestLsn == remoteLsn && ((nsEntry.dataHashes.size() && nsEntry.dataHashes[0] == state.dataHash) ||
-															  nsEntry.localDatahash == state.dataHash)) {
-					nsEntry.nodes.emplace_back(id);
-					nsEntry.dataHashes.emplace_back(state.dataHash);
+				} else if (nsEntry.latestLsn == remoteLsn) {
+					const bool sameAsLocal =
+						(nsEntry.localData.hash == state.dataHash && (!state.HasDataCount() || nsEntry.localData.count == state.dataCount));
+					const bool sameAsRemote =
+						(nsEntry.data.size() && nsEntry.data[0].hash == state.dataHash &&
+						 (!nsEntry.data[0].HasDataCount() || !state.HasDataCount() || nsEntry.data[0].count == state.dataCount));
+					if (sameAsLocal || sameAsRemote) {
+						nsEntry.nodes.emplace_back(id);
+						nsEntry.data.emplace_back(LeaderSyncQueue::Entry::NodeData{state.dataHash, state.dataCount});
+					}
 				}
 			} else if (err.code() == errNotFound) {
 				++responses;

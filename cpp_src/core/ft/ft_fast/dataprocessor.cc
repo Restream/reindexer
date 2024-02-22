@@ -6,6 +6,7 @@
 #include "core/ft/numtotext.h"
 #include "core/ft/typos.h"
 
+#include "tools/hardware_concurrency.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
@@ -131,7 +132,7 @@ std::vector<WordIdType> DataProcessor<IdCont>::BuildSuffix(words_map &words_um, 
 
 template <typename IdCont>
 size_t DataProcessor<IdCont>::buildWordsMap(words_map &words_um) {
-	uint32_t maxIndexWorkers = multithread_ ? std::thread::hardware_concurrency() : 1;
+	uint32_t maxIndexWorkers = multithread_ ? hardware_concurrency() : 1;
 	if (!maxIndexWorkers) {
 		maxIndexWorkers = 1;
 	} else if (maxIndexWorkers > 8) {

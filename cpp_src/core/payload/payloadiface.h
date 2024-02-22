@@ -27,9 +27,11 @@ public:
 
 	void Reset() noexcept { memset(v_->Ptr(), 0, t_.TotalSize()); }
 	// Get element(s) by field index
-	void Get(int field, VariantArray &, bool enableHold = false) const;
+	void Get(int field, VariantArray &, Variant::hold_t) const;
+	void Get(int field, VariantArray &) const;
 	// Get element by field and array index
-	[[nodiscard]] Variant Get(int field, int idx, bool enableHold = false) const;
+	[[nodiscard]] Variant Get(int field, int idx, Variant::hold_t) const;
+	[[nodiscard]] Variant Get(int field, int idx) const;
 
 	// Get array as span of typed elements
 	template <typename Elem>
@@ -105,8 +107,9 @@ public:
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
 	T CopyTo(PayloadType t, bool newFields = true);
 
-	// Get element(s) by field index
-	void Get(std::string_view field, VariantArray &, bool enableHold = false) const;
+	// Get element(s) by field name
+	void Get(std::string_view field, VariantArray &, Variant::hold_t) const;
+	void Get(std::string_view field, VariantArray &) const;
 
 	// Get element(s) by json path
 	void GetByJsonPath(std::string_view jsonPath, TagsMatcher &tagsMatcher, VariantArray &, KeyValueType expectedType) const;
@@ -166,6 +169,7 @@ public:
 	void GetJSON(const TagsMatcher &tm, WrSerializer &ser);
 
 private:
+	enum class HoldPolicy : bool { Hold, NoHold };
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
 	T CopyWithNewOrUpdatedFields(PayloadType t);
 
@@ -177,6 +181,12 @@ private:
 	void getByJsonPath(const P &path, VariantArray &, KeyValueType expectedType) const;
 	template <typename U = T, typename std::enable_if<!std::is_const<U>::value>::type * = nullptr>
 	void setArray(int field, const VariantArray &keys, bool append);
+	template <typename HoldT>
+	void get(int field, VariantArray &, HoldT h) const;
+	template <typename HoldT>
+	[[nodiscard]] Variant get(int field, int idx, HoldT h) const;
+	template <typename HoldT>
+	void get(std::string_view field, VariantArray &, HoldT h) const;
 
 	// Array of elements types , not owning
 	const PayloadTypeImpl &t_;

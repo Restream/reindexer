@@ -13,9 +13,10 @@ class Query;
 
 class ActiveQueryScope {
 public:
-	ActiveQueryScope(SelectCtx &ctx, std::atomic<int> &nsOptimizationState, ExplainCalc &explainCalc, std::atomic_bool &nsLockerState,
+	ActiveQueryScope(SelectCtx &ctx, const std::atomic<int> &nsOptimizationState, ExplainCalc &explainCalc,
+					 const std::atomic<int> &nsLockerState, StringsHolder *strHolder) noexcept;
+	ActiveQueryScope(const Query &q, QueryType realQueryType, const std::atomic<int> &nsOptimizationState,
 					 StringsHolder *strHolder) noexcept;
-	ActiveQueryScope(const Query &q, QueryType realQueryType, std::atomic<int> &nsOptimizationState, StringsHolder *strHolder) noexcept;
 	~ActiveQueryScope();
 
 public:

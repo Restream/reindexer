@@ -1029,6 +1029,68 @@ TEST_P(FTGenericApi, MergeLimitConstraints) {
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
+TEST_P(FTGenericApi, ConfigBm25Coefficients) {
+	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
+	cfgDef.maxAreasInDoc = 100;
+	reindexer::FtFastConfig cfg = cfgDef;
+	cfg.bm25Config.bm25b = 0.0;
+	cfg.bm25Config.bm25Type = reindexer::FtFastConfig::Bm25Config::Bm25Type::rx;
+
+	Init(cfg);
+	Add("nm1"sv, "слово пусто слова пусто словами"sv, ""sv);
+	Add("nm1"sv, "слово пусто слово"sv, ""sv);
+	Add("nm1"sv, "otherword targetword"sv, ""sv);
+	Add("nm1"sv, "otherword targetword otherword targetword"sv, ""sv);
+	Add("nm1"sv, "otherword targetword otherword targetword targetword"sv, ""sv);
+	Add("nm1"sv,
+		"otherword targetword otherword otherword otherword targetword otherword targetword otherword targetword otherword otherword otherword otherword otherword otherword otherword otherword targetword"sv,
+		""sv);
+
+	CheckResults("targetword",
+				 {{"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! "
+				   "otherword otherword otherword otherword otherword otherword otherword otherword !targetword!",
+				   ""},
+				  {"otherword !targetword! otherword !targetword targetword!", ""},
+				  {"otherword !targetword! otherword !targetword!", ""},
+				  {"otherword !targetword!", ""}},
+				 true);
+
+	cfg = cfgDef;
+	cfg.bm25Config.bm25b = 0.75;
+	reindexer::Error err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	CheckResults("targetword",
+				 {{"otherword !targetword! otherword !targetword targetword!", ""},
+				  {"otherword !targetword! otherword !targetword!", ""},
+				  {"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! "
+				   "otherword otherword otherword otherword otherword otherword otherword otherword !targetword!",
+				   ""},
+				  {"otherword !targetword!", ""}},
+				 true);
+	cfg = cfgDef;
+	cfg.bm25Config.bm25Type = reindexer::FtFastConfig::Bm25Config::Bm25Type::wordCount;
+	cfg.fieldsCfg[0].positionWeight = 0.0;
+	cfg.fullMatchBoost = 1.0;
+
+	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	CheckResults("targetword",
+				 {
+					 {"otherword !targetword! otherword otherword otherword !targetword! otherword !targetword! otherword !targetword! "
+					  "otherword otherword otherword otherword otherword otherword otherword otherword !targetword!",
+					  ""},
+					 {"otherword !targetword! otherword !targetword targetword!", ""},
+					 {"otherword !targetword! otherword !targetword!", ""},
+					 {"otherword !targetword!", ""},
+
+				 },
+				 true);
+
+	CheckResults("словах", {{"!слово! пусто !слово!", ""}, {"!слово! пусто !слова! пусто !словами!", ""}}, true);
+}
+
 TEST_P(FTGenericApi, ConfigFtProc) {
 	reindexer::FtFastConfig cfgDef = GetDefaultConfig();
 	cfgDef.synonyms = {{{"тестов"}, {"задача"}}};
@@ -1326,6 +1388,181 @@ TEST_P(FTGenericApi, ExplainWithFtPreselect) {
 		ASSERT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.GetExplainResults();
 		ASSERT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.GetExplainResults();
 	}
+}
+
+TEST_P(FTGenericApi, TotalCountWithFtPreselect) {
+	using reindexer::Query;
+	using reindexer::QueryResults;
+	using reindexer::Variant;
+
+	auto cfg = GetDefaultConfig();
+	auto preselectIsEnabled = true;
+	cfg.enablePreselectBeforeFt = preselectIsEnabled;
+	Init(cfg);
+	const int firstId = counter_;
+	Add("word5"sv);
+	Add("word1 word2 word3"sv);
+	Add("word3 word4"sv);
+	Add("word2 word5 word7"sv);
+	const int lastId = counter_;
+
+	const std::string kJoinedNs = "ns_for_joins";
+	const std::string kMainNs = "nm1";
+	CreateAndFillSimpleNs(kJoinedNs, 0, 10, nullptr);
+
+	for (auto preselect : {true, false}) {
+		if (preselectIsEnabled != preselect) {
+			auto cfg = GetDefaultConfig();
+			preselectIsEnabled = preselect;
+			cfg.enablePreselectBeforeFt = preselectIsEnabled;
+			SetFTConfig(cfg);
+		}
+		std::string_view kPreselectStr = preselect ? " (with ft preselect) " : " (no ft preselect) ";
+
+		struct Case {
+			Query query;
+			int limit;
+			int expectedTotalCount;
+		};
+		std::vector<Case> cases = {{.query = Query(kMainNs).Where("ft3", CondEq, "word2 word4"), .limit = 2, .expectedTotalCount = 3},
+								   {.query = Query(kMainNs).Where("ft3", CondEq, "word2").Where("id", CondEq, {Variant{lastId - 3}}),
+									.limit = 0,
+									.expectedTotalCount = 1},
+								   {.query = Query(kMainNs)
+												 .Where("ft3", CondEq, "word2")
+												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 2).Limit(0)),
+									.limit = 0,
+									.expectedTotalCount = 1},
+								   {.query = Query(kMainNs)
+												 .Where("ft3", CondEq, "word2 word3")
+												 .OpenBracket()
+												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 2).Limit(0))
+												 .Or()
+												 .Where("id", CondSet, {Variant{lastId - 1}, Variant{lastId - 2}})
+												 .CloseBracket(),
+									.limit = 1,
+									.expectedTotalCount = 3},
+								   {.query = Query(kMainNs)
+												 .Where("ft3", CondEq, "word2 word3")
+												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, lastId).Limit(0))
+												 .Where("id", CondSet, {Variant{lastId - 1}, Variant{lastId - 2}}),
+									.limit = 1,
+									.expectedTotalCount = 2},
+								   {.query = Query(kMainNs)
+												 .OpenBracket()
+												 .Where("ft3", CondEq, "word2")
+												 .CloseBracket()
+												 .OpenBracket()
+												 .InnerJoin("id", "id", CondEq, Query(kJoinedNs).Where("id", CondLt, firstId + 2))
+												 .Or()
+												 .Where("id", CondEq, lastId - 1)
+												 .CloseBracket(),
+									.limit = 0,
+									.expectedTotalCount = 2}};
+
+		for (auto& c : cases) {
+			c.query.ReqTotal();
+			// Execute initial query
+			{
+				QueryResults qr;
+				auto err = rt.reindexer->Select(c.query, qr);
+				ASSERT_TRUE(err.ok()) << kPreselectStr << err.what() << "\n" << c.query.GetSQL();
+				EXPECT_EQ(qr.Count(), c.expectedTotalCount) << kPreselectStr << c.query.GetSQL();
+				EXPECT_EQ(qr.TotalCount(), c.expectedTotalCount) << kPreselectStr << c.query.GetSQL();
+			}
+
+			// Execute query with limit
+			const Query q = Query(c.query).Limit(c.limit);
+			{
+				QueryResults qr;
+				auto err = rt.reindexer->Select(q, qr);
+				ASSERT_TRUE(err.ok()) << kPreselectStr << err.what() << "\n" << c.query.GetSQL();
+				EXPECT_EQ(qr.Count(), c.limit) << kPreselectStr << c.query.GetSQL();
+				EXPECT_EQ(qr.TotalCount(), c.expectedTotalCount) << kPreselectStr << c.query.GetSQL();
+			}
+		}
+	}
+}
+
+TEST_P(FTGenericApi, StopWordsWithMorphemes) {
+	reindexer::FtFastConfig cfg = GetDefaultConfig();
+
+	Init(cfg);
+	Add("Шахматы из слоновой кости"sv);
+	Add("Мат в эфире "sv);
+	Add("Известняк"sv);
+	Add("Известия"sv);
+	Add("Изверг"sv);
+
+	Add("Подобрал подосиновики, положил в лубочек"sv);
+	Add("Подопытный кролик"sv);
+	Add("Шла Саша по шоссе"sv);
+
+	Add("Зайка серенький под елочкой скакал"sv);
+	Add("За Альянс! (с)"sv);
+	Add("Заноза в пальце"sv);
+
+	Add("На западном фронте без перемен"sv);
+	Add("Наливные яблочки"sv);
+	Add("Нарком СССР"sv);
+
+	CheckResults("*из*", {{"!Известняк!", ""}, {"!Известия!", ""}, {"!Изверг!", ""}}, false);
+	CheckResults("из", {}, false);
+
+	CheckResults("*под*", {{"!Подобрал подосиновики!, положил в лубочек", ""}, {"!Подопытный! кролик", ""}}, false);
+	CheckResults("под", {}, false);
+
+	CheckResults(
+		"*за*", {{"!Зайка! серенький под елочкой скакал", ""}, {"!Заноза! в пальце", ""}, {"На !западном! фронте без перемен", ""}}, false);
+	CheckResults("за", {}, false);
+
+	CheckResults("*на*",
+				 {
+					 {"!Наливные! яблочки", ""},
+					 {"!Нарком! СССР", ""},
+				 },
+				 false);
+	CheckResults("на", {}, false);
+
+	cfg.stopWords.clear();
+
+	cfg.stopWords.insert({"на"});
+	cfg.stopWords.insert({"мат", reindexer::StopWord::Type::Morpheme});
+
+	SetFTConfig(cfg);
+
+	CheckResults("*из*", {{"Шахматы !из! слоновой кости", ""}, {"!Известняк!", ""}, {"!Известия!", ""}, {"!Изверг!", ""}}, false);
+	CheckResults("из", {{"Шахматы !из! слоновой кости", ""}}, false);
+
+	CheckResults(
+		"*под*",
+		{{"!Подобрал подосиновики!, положил в лубочек", ""}, {"!Подопытный! кролик", ""}, {"Зайка серенький !под! елочкой скакал", ""}},
+		false);
+	CheckResults("под", {{"Зайка серенький !под! елочкой скакал", ""}}, false);
+
+	CheckResults("*по*",
+				 {{"Шла Саша !по! шоссе", ""},
+				  {"!Подобрал подосиновики, положил! в лубочек", ""},
+				  {"!Подопытный! кролик", ""},
+				  {"Зайка серенький !под! елочкой скакал", ""}},
+				 false);
+	CheckResults("по~", {{"Шла Саша !по! шоссе", ""}, {"Зайка серенький !под! елочкой скакал", ""}}, false);
+	CheckResults("по", {{"Шла Саша !по! шоссе", ""}}, false);
+
+	CheckResults("*мат*", {{"!Шахматы! из слоновой кости", ""}}, false);
+	CheckResults("мат", {}, false);
+
+	CheckResults("*за*",
+				 {{"!Зайка! серенький под елочкой скакал", ""},
+				  {"!Заноза! в пальце", ""},
+				  {"!За! Альянс! (с)", ""},
+				  {"На !западном! фронте без перемен", ""}},
+				 false);
+	CheckResults("за", {{"!За! Альянс! (с)", ""}}, false);
+
+	CheckResults("*на*", {}, false);
+	CheckResults("на~", {}, false);
+	CheckResults("на", {}, false);
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTGenericApi,

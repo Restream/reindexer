@@ -42,6 +42,8 @@
 
 #include "sparse_growth_policy.h"
 
+#include "tools/hardware_concurrency.h"
+
 #ifdef __INTEL_COMPILER
 #include <immintrin.h>	// For _popcnt32 and _popcnt64
 #endif
@@ -1084,10 +1086,11 @@ public:
 			m_sparse_buckets = m_sparse_buckets_data.empty() ? static_empty_sparse_bucket_ptr() : m_sparse_buckets_data.data();
 	}
 
-	sparse_hash(sparse_hash &&other) noexcept(
-		std::is_nothrow_move_constructible<Allocator>::value &&std::is_nothrow_move_constructible<Hash>::value
-			&&std::is_nothrow_move_constructible<KeyEqual>::value &&std::is_nothrow_move_constructible<GrowthPolicy>::value
-				&&std::is_nothrow_move_constructible<sparse_buckets_container>::value)
+	sparse_hash(sparse_hash &&other) noexcept(std::is_nothrow_move_constructible<Allocator>::value &&
+											  std::is_nothrow_move_constructible<Hash>::value &&
+											  std::is_nothrow_move_constructible<KeyEqual>::value &&
+											  std::is_nothrow_move_constructible<GrowthPolicy>::value &&
+											  std::is_nothrow_move_constructible<sparse_buckets_container>::value)
 		: Allocator(std::move(other)),
 		  Hash(std::move(other)),
 		  KeyEqual(std::move(other)),
@@ -1242,7 +1245,7 @@ public:
 				}
 			});
 		} else {
-			unsigned int partCount = std::thread::hardware_concurrency();
+			unsigned int partCount = reindexer::hardware_concurrency();
 			for (unsigned int i = 0; i < partCount; i++) {
 				size_t from = m_sparse_buckets_data.size() / partCount * i;
 				size_t to = i + 1 == partCount ? m_sparse_buckets_data.size() : m_sparse_buckets_data.size() / partCount * (i + 1);

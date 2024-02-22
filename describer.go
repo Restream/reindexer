@@ -477,7 +477,7 @@ type NamespaceCacheConfig struct {
 	// This value may be automatically increased if cache is invalidation too fast
 	// Default value is 2. Min value is 0
 	JoinHitsToCache uint32 `json:"joins_preselect_hit_to_cache"`
-	// Max size of the cache for COUNT_CACHED() aggreagetion in bytes for each namespace
+	// Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace
 	// This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations
 	// Default value is 134217728 (128 MB). Min value is 0
 	QueryCountCacheSize uint64 `json:"query_count_cache_size"`

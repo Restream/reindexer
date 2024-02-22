@@ -1,13 +1,19 @@
 
 #include "prometheus/check_names.h"
 
-#include <regex>
-
 #if defined(__GLIBCXX__) && __GLIBCXX__ <= 20150623
+#define STD_REGEX_IS_BROKEN
+#endif
+#if defined(__GNUC__) && (__GNUC__ == 12) && (__GNUC_MINOR__ == 2) && defined(REINDEX_WITH_ASAN)
+// regex header is broken in GCC 12.2 with ASAN
 #define STD_REGEX_IS_BROKEN
 #endif
 #if defined(_MSC_VER) && _MSC_VER < 1900
 #define STD_REGEX_IS_BROKEN
+#endif
+
+#ifndef STD_REGEX_IS_BROKEN
+#include <regex>
 #endif
 
 namespace prometheus {

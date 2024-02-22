@@ -210,7 +210,16 @@ public:
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions, const RdxContext &ctx) {
 		return impl_.GetSqlSuggestions(sqlQuery, pos, suggestions, ctx);
 	}
-	Error Status() { return impl_.Status(); }
+	Error Status() noexcept {
+		if (connected_.load(std::memory_order_acquire)) {
+			return {};
+		}
+		auto st = impl_.Status();
+		if (st.ok()) {
+			return Error(errNotValid, "Reindexer's cluster proxy layer was not initialized properly");
+		}
+		return st;
+	}
 	Error GetProtobufSchema(WrSerializer &ser, std::vector<std::string> &namespaces) { return impl_.GetProtobufSchema(ser, namespaces); }
 	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const RdxContext &ctx) {
 		return impl_.GetReplState(nsName, state, ctx);
@@ -308,7 +317,6 @@ private:
 										 : cluster::kDefaultClusterProxyCoroPerConn;
 		}
 		std::shared_ptr<client::Reindexer> Get(const std::string &dsn) {
-			std::shared_ptr<client::Reindexer> res;
 			{
 				shared_lock lck(mtx_);
 				if (shutdown_) {
@@ -316,25 +324,25 @@ private:
 				}
 				auto found = conns_.find(dsn);
 				if (found != conns_.end()) {
-					res = found->second;
+					return found->second;
 				}
 			}
 
 			client::ReindexerConfig cfg;
 			cfg.AppName = "cluster_proxy";
-			cfg.SyncRxCoroCount = clientConnConcurrency_;
 			cfg.EnableCompression = true;
 			cfg.RequestDedicatedThread = true;
 
 			std::lock_guard lck(mtx_);
+			cfg.SyncRxCoroCount = clientConnConcurrency_;
 			if (shutdown_) {
 				throw Error(errTerminated, "Proxy is already shut down");
 			}
 			auto found = conns_.find(dsn);
 			if (found != conns_.end()) {
-				return res;
+				return found->second;
 			}
-			res = std::make_shared<client::Reindexer>(cfg, clientConns_, clientThreads_);
+			auto res = std::make_shared<client::Reindexer>(cfg, clientConns_, clientThreads_);
 			auto err = res->Connect(dsn);
 			if (!err.ok()) {
 				throw err;
@@ -370,6 +378,7 @@ private:
 	std::condition_variable processPingEvent_;
 	std::mutex processPingEventMutex_;
 	int lastPingLeaderId_ = -1;
+	std::atomic_bool connected_ = false;
 
 	int getServerIDRel() const noexcept { return sId_.load(std::memory_order_relaxed); }
 	std::shared_ptr<client::Reindexer> getLeader(const cluster::RaftInfo &info);

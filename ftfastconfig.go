@@ -41,7 +41,6 @@ type FtTyposDetailedConfig struct {
 	MaxExtraLetters int `json:"max_extra_letters"`
 }
 
-
 type FtBaseRanking struct {
 	// Relevancy of full word match
 	// Values range: [0,500]
@@ -79,6 +78,21 @@ type FtBaseRanking struct {
 	// Values range: [0,500]
 	// Default: 95
 	Synonyms int `json:"synonyms_proc"`
+}
+
+type StopWord struct {
+	Word       string `json:"word"`
+	IsMorpheme bool   `json:"is_morpheme"`
+}
+
+type Bm25ConfigType struct {
+	// Coefficient k1 in the formula for calculating bm25
+	Bm25k1 float64 `json:"bm25_k1"`
+	// Coefficient b in the formula for calculating bm25
+	Bm25b float64 `json:"bm25_b"`
+	// Formula for calculating document relevance (rx, classic, word_count)
+	Bm25Type string `json:"bm25_type"`
+
 }
 
 // FtFastConfig configurarion of FullText search index
@@ -139,8 +153,10 @@ type FtFastConfig struct {
 	EnableTranslit bool `json:"enable_translit"`
 	// Enable wrong keyboard layout variants processing
 	EnableKbLayout bool `json:"enable_kb_layout"`
-	// List of stop words. Words from this list will be ignored in documents and queries
-	StopWords []string `json:"stop_words"`
+	// List of objects of stop words. Words from this list will be ignored when building indexes
+	// but can be included in search results in queries such as 'word*', 'word~' etc. if for the stop-word attribute is_morpheme is true.
+	// The list item can be either a reindexer.StopWord, or string
+	StopWords []interface{} `json:"stop_words"`
 	// List of synonyms for replacement
 	Synonyms []struct {
 		// List source tokens in query, which will be replaced with alternatives
@@ -170,6 +186,8 @@ type FtFastConfig struct {
 	EnablePreselectBeforeFt bool `json:"enable_preselect_before_ft"`
 	// Config for subterm rank multiplier
 	FtBaseRankingConfig *FtBaseRanking `json:"base_ranking,omitempty"`
+	// Config for document ranking
+	Bm25Config *Bm25ConfigType `json:"bm25_config,omitempty"`
 }
 
 func DefaultFtFastConfig() FtFastConfig {
@@ -201,8 +219,8 @@ func DefaultFtFastConfig() FtFastConfig {
 		MaxTotalAreasToCache:    -1,
 		Optimization:            "Memory",
 		EnablePreselectBeforeFt: false,
-		FtBaseRankingConfig:  &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin:10, Typo:85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit:90, Synonyms:95},
-
+		FtBaseRankingConfig:     &FtBaseRanking{FullMatch: 100, PrefixMin: 50, SuffixMin: 10, Typo: 85, TypoPenalty: 15, StemmerPenalty: 15, Kblayout: 90, Translit: 90, Synonyms: 95},
+		Bm25Config: &Bm25ConfigType{Bm25k1: 2.0, Bm25b: 0.75, Bm25Type: "rx_bm25"},
 	}
 }
 

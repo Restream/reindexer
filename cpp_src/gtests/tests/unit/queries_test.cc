@@ -100,14 +100,12 @@ TEST_F(QueriesApi, QueriesStandardTestSet) {
 		ASSERT_TRUE(false);
 	}
 }
-#endif
 
 TEST_F(QueriesApi, QueriesConditions) {
 	FillConditionsNs();
 	CheckConditions();
 }
 
-#if !defined(REINDEX_WITH_TSAN)
 TEST_F(QueriesApi, UuidQueries) {
 	FillUUIDNs();
 	// hack to obtain not index not string uuid fields
@@ -117,7 +115,7 @@ TEST_F(QueriesApi, UuidQueries) {
 	ASSERT_TRUE(err.ok()) << err.what();*/
 	CheckUUIDQueries();
 }
-#endif
+#endif	// !defined(REINDEX_WITH_TSAN)
 
 TEST_F(QueriesApi, IndexCacheInvalidationTest) {
 	std::vector<std::pair<int, int>> data{{0, 10}, {1, 9}, {2, 8}, {3, 7}, {4, 6},	{5, 5},
@@ -222,8 +220,8 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 			 .Or()
 			 .Where("age", CondSet, {"1", "2", "3", "4"})
 			 .Limit(10000000)},
-		{"SELECT * FROM test_namespace WHERE  INNER JOIN join_ns ON test_namespace.id = join_ns.id ORDER BY 'year + join_ns.year * (5 - "
-		 "rand())'",
+		{"SELECT * FROM test_namespace WHERE INNER JOIN join_ns ON test_namespace.id = join_ns.id "
+		 "ORDER BY 'year + join_ns.year * (5 - rand())'",
 		 Query{"test_namespace"}.InnerJoin("id", "id", CondEq, Query{"join_ns"}).Sort("year + join_ns.year * (5 - rand())", false)},
 		{"SELECT * FROM "s + geomNs + " WHERE ST_DWithin(" + kFieldNamePointNonIndex + ", ST_GeomFromText('POINT(1.25 -7.25)'), 0.5)",
 		 Query{geomNs}.DWithin(kFieldNamePointNonIndex, reindexer::Point{1.25, -7.25}, 0.5)},
@@ -242,6 +240,74 @@ TEST_F(QueriesApi, SqlParseGenerate) {
 		 Query{"main_ns"}.Where("id", CondGt, Query{"second_ns"}.Aggregate(AggAvg, {"id"}).Where("id", CondLt, 10))},
 		{"SELECT * FROM main_ns WHERE id > (SELECT COUNT(*) FROM second_ns WHERE id < 10 LIMIT 0)",
 		 Query{"main_ns"}.Where("id", CondGt, Query{"second_ns"}.Where("id", CondLt, 10).ReqTotal())},
+		{"SELECT * FROM main_ns WHERE (SELECT * FROM second_ns WHERE id < 10 LIMIT 0) IS NOT NULL AND value IN (5,4,1)",
+		 Query{"main_ns"}
+			 .Where(Query{"second_ns"}.Where("id", CondLt, 10), CondAny, {})
+			 .Where("value", CondSet, {Variant{5}, Variant{4}, Variant{1}})},
+		{"SELECT * FROM main_ns WHERE ((SELECT * FROM second_ns WHERE id < 10 LIMIT 0) IS NOT NULL) AND value IN (5,4,1)",
+		 Query{"main_ns"}
+			 .OpenBracket()
+			 .Where(Query{"second_ns"}.Where("id", CondLt, 10), CondAny, {})
+			 .CloseBracket()
+			 .Where("value", CondSet, {Variant{5}, Variant{4}, Variant{1}})},
+		{"SELECT * FROM main_ns WHERE id IN (SELECT id FROM second_ns WHERE id < 999) AND value >= 1000",
+		 Query{"main_ns"}.Where("id", CondSet, Query{"second_ns"}.Select({"id"}).Where("id", CondLt, 999)).Where("value", CondGe, 1000)},
+		{"SELECT * FROM main_ns WHERE (id IN (SELECT id FROM second_ns WHERE id < 999)) AND value >= 1000",
+		 Query{"main_ns"}
+			 .OpenBracket()
+			 .Where("id", CondSet, Query{"second_ns"}.Select({"id"}).Where("id", CondLt, 999))
+			 .CloseBracket()
+			 .Where("value", CondGe, 1000)},
+		{"SELECT * FROM main_ns "
+		 "WHERE (SELECT id FROM second_ns WHERE id < 999 AND xxx IS NULL ORDER BY 'value' DESC LIMIT 10) = 0 "
+		 "ORDER BY 'tree'",
+		 Query{"main_ns"}
+			 .Where(Query{"second_ns"}
+						.Select({"id"})
+						.Where("id", CondLt, 999)
+						.Where("xxx", CondEmpty, VariantArray{})
+						.Limit(10)
+						.Sort("value", true),
+					CondEq, 0)
+			 .Sort("tree", false)},
+		{"SELECT * FROM main_ns "
+		 "WHERE ((SELECT id FROM second_ns WHERE id < 999 AND xxx IS NULL ORDER BY 'value' DESC LIMIT 10) = 0) "
+		 "ORDER BY 'tree'",
+		 Query{"main_ns"}
+			 .OpenBracket()
+			 .Where(Query{"second_ns"}
+						.Select({"id"})
+						.Where("id", CondLt, 999)
+						.Where("xxx", CondEmpty, VariantArray{})
+						.Limit(10)
+						.Sort("value", true),
+					CondEq, 0)
+			 .CloseBracket()
+			 .Sort("tree", false)},
+		{"SELECT * FROM main_ns "
+		 "WHERE INNER JOIN (SELECT * FROM second_ns WHERE NOT val = 10) ON main_ns.id = second_ns.uid "
+		 "AND id IN (SELECT id FROM third_ns WHERE id < 999) "
+		 "AND INNER JOIN (SELECT * FROM fourth_ns WHERE val IS NOT NULL OFFSET 2 LIMIT 1) ON main_ns.uid = fourth_ns.id",
+		 Query{"main_ns"}
+			 .InnerJoin("id", "uid", CondEq, Query("second_ns").Not().Where("val", CondEq, 10))
+			 .Where("id", CondSet, Query{"third_ns"}.Select({"id"}).Where("id", CondLt, 999))
+			 .InnerJoin("uid", "id", CondEq, Query("fourth_ns").Where("val", CondAny, VariantArray{}).Limit(1).Offset(2))},
+		{"SELECT * FROM main_ns "
+		 "WHERE INNER JOIN (SELECT * FROM second_ns WHERE NOT val = 10 OFFSET 2 LIMIT 1) ON main_ns.id = second_ns.uid "
+		 "AND id IN (SELECT id FROM third_ns WHERE id < 999) "
+		 "LEFT JOIN (SELECT * FROM fourth_ns WHERE val IS NOT NULL) ON main_ns.uid = fourth_ns.id",
+		 Query{"main_ns"}
+			 .InnerJoin("id", "uid", CondEq, Query("second_ns").Not().Where("val", CondEq, 10).Limit(1).Offset(2))
+			 .Where("id", CondSet, Query{"third_ns"}.Select({"id"}).Where("id", CondLt, 999))
+			 .LeftJoin("uid", "id", CondEq, Query("fourth_ns").Where("val", CondAny, VariantArray{}))},
+		{"SELECT * FROM main_ns "
+		 "WHERE id IN (SELECT id FROM third_ns WHERE id < 999 OFFSET 7 LIMIT 5) "
+		 "LEFT JOIN (SELECT * FROM second_ns WHERE NOT val = 10 OFFSET 2 LIMIT 1) ON main_ns.id = second_ns.uid "
+		 "LEFT JOIN (SELECT * FROM fourth_ns WHERE val IS NOT NULL) ON main_ns.uid = fourth_ns.id",
+		 Query{"main_ns"}
+			 .LeftJoin("id", "uid", CondEq, Query("second_ns").Not().Where("val", CondEq, 10).Limit(1).Offset(2))
+			 .Where("id", CondSet, Query{"third_ns"}.Select({"id"}).Where("id", CondLt, 999).Limit(5).Offset(7))
+			 .LeftJoin("uid", "id", CondEq, Query("fourth_ns").Where("val", CondAny, VariantArray{}))},
 	};
 
 	for (const auto& [sql, expected, direction] : cases) {

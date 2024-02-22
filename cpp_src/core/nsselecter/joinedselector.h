@@ -72,7 +72,8 @@ class JoinedSelector {
 public:
 	JoinedSelector(JoinType joinType, NamespaceImpl::Ptr leftNs, NamespaceImpl::Ptr rightNs, JoinCacheRes &&joinRes, Query &&itemQuery,
 				   LocalQueryResults &result, const JoinedQuery &joinQuery, JoinPreResult::Ptr preResult, uint32_t joinedFieldIdx,
-				   SelectFunctionsHolder &selectFunctions, uint32_t joinedSelectorsCount, bool inTransaction, const RdxContext &rdxCtx)
+				   SelectFunctionsHolder &selectFunctions, uint32_t joinedSelectorsCount, bool inTransaction, int64_t lastUpdateTime,
+				   const RdxContext &rdxCtx)
 		: joinType_(joinType),
 		  called_(0),
 		  matched_(0),
@@ -88,7 +89,8 @@ public:
 		  joinedSelectorsCount_(joinedSelectorsCount),
 		  rdxCtx_(rdxCtx),
 		  optimized_(false),
-		  inTransaction_{inTransaction} {
+		  inTransaction_{inTransaction},
+		  lastUpdateTime_{lastUpdateTime} {
 #ifndef NDEBUG
 		for (const auto &jqe : joinQuery_.joinEntries_) {
 			assertrx_throw(jqe.FieldsHaveBeenSet());
@@ -105,6 +107,7 @@ public:
 	JoinType Type() const noexcept { return joinType_; }
 	void SetType(JoinType type) noexcept { joinType_ = type; }
 	const std::string &RightNsName() const noexcept { return itemQuery_.NsName(); }
+	int64_t LastUpdateTime() const noexcept { return lastUpdateTime_; }
 	const JoinedQuery &JoinQuery() const noexcept { return joinQuery_; }
 	int Called() const noexcept { return called_; }
 	int Matched() const noexcept { return matched_; }
@@ -136,8 +139,9 @@ private:
 	SelectFunctionsHolder &selectFunctions_;
 	uint32_t joinedSelectorsCount_;
 	const RdxContext &rdxCtx_;
-	bool optimized_{false};
-	bool inTransaction_{false};
+	bool optimized_ = false;
+	bool inTransaction_ = false;
+	int64_t lastUpdateTime_ = 0;
 };
 using JoinedSelectors = std::vector<JoinedSelector>;
 

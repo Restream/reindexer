@@ -15,11 +15,11 @@ import (
 
 type ExplainSelector struct {
 	// Field or index name
-	Field string `json:"field"`
+	Field string `json:"field,omitempty"`
 	// Field type enum: indexed, non-indexed
 	FieldType string `json:"field_type,omitempty"`
 	// Method, used to process condition
-	Method string `json:"method"`
+	Method string `json:"method,omitempty"`
 	// Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching
 	Keys int `json:"keys"`
 	// Count of comparators used, for this selector
@@ -30,11 +30,20 @@ type ExplainSelector struct {
 	Matched int `json:"matched"`
 	// Count of scanned documents by this selector
 	Items int `json:"items"`
+	Type string `json:"type,omitempty"`
+	Description string `json:"description,omitempty"`
 	// Preselect in joined namespace execution explainings
 	ExplainPreselect *ExplainResults `json:"explain_preselect,omitempty"`
 	// One of selects in joined namespace execution explainings
 	ExplainSelect *ExplainResults   `json:"explain_select,omitempty"`
 	Selectors     []ExplainSelector `json:"selectors,omitempty"`
+}
+
+type ExplainSubQuery struct {
+	Namespace string `json:"namespace"`
+	Explain ExplainResults `json:"explain"`
+	Keys int `json:"keys,omitempty"`
+	Field string `json:"field,omitempty"`
 }
 
 // ExplainResults presents query plan
@@ -61,6 +70,8 @@ type ExplainResults struct {
 	Selectors []ExplainSelector `json:"selectors"`
 	// Explaining attempts to inject Join queries ON-conditions into the Main Query WHERE clause
 	OnConditionsInjections []ExplainJoinOnInjections `json:"on_conditions_injections,omitempty"`
+	// Explaining of subqueries' preselect
+	SubQueriesExplains []ExplainSubQuery `json:"subqueries,omitempty"`
 }
 
 // Describes the process of a single JOIN-query ON-conditions injection into the Where clause of a main query

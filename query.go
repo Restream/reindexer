@@ -555,20 +555,24 @@ func (q *Query) DWithin(index string, point Point, distance float64) *Query {
 	return q
 }
 
-func (q *Query) AggregateSum(field string) {
+func (q *Query) AggregateSum(field string) *Query {
 	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggSum).PutVarCUInt(1).PutVString(field)
+	return q
 }
 
-func (q *Query) AggregateAvg(field string) {
+func (q *Query) AggregateAvg(field string) *Query {
 	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggAvg).PutVarCUInt(1).PutVString(field)
+	return q
 }
 
-func (q *Query) AggregateMin(field string) {
+func (q *Query) AggregateMin(field string) *Query {
 	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggMin).PutVarCUInt(1).PutVString(field)
+	return q
 }
 
-func (q *Query) AggregateMax(field string) {
+func (q *Query) AggregateMax(field string) *Query {
 	q.ser.PutVarCUInt(queryAggregation).PutVarCUInt(AggMax).PutVarCUInt(1).PutVString(field)
+	return q
 }
 
 type AggregateFacetRequest struct {

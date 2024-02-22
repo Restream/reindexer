@@ -102,7 +102,7 @@ Item::FieldRef &Item::FieldRef::operator=(span<T> arr) {
 				} else {
 					itemImpl_->holder_->push_back(elem);
 				}
-				pl.Set(field_, pos++, Variant(p_string{&itemImpl_->holder_->back()}));
+				pl.Set(field_, pos++, Variant(p_string{&itemImpl_->holder_->back()}, Variant::no_hold_t{}));
 			}
 		}
 	} else {

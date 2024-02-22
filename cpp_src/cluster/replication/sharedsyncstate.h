@@ -60,7 +60,12 @@ public:
 			if (next_.role == RaftInfo::Role::Follower) {
 				throw Error(errWrongReplicationData, "Node role was changed to follower");
 			}
-			cond_.wait(lck, ctx);
+			cond_.wait(
+				lck,
+				[this, hash, name]() noexcept {
+					return isInitialSyncDone(name, hash) || terminated_ || next_.role == RaftInfo::Role::Follower;
+				},
+				ctx);
 		}
 	}
 	template <typename ContextT>
@@ -73,7 +78,8 @@ public:
 			if (next_.role == RaftInfo::Role::Follower) {
 				throw Error(errWrongReplicationData, "Node role was changed to follower");
 			}
-			cond_.wait(lck, ctx);
+			cond_.wait(
+				lck, [this]() noexcept { return isInitialSyncDone() || terminated_ || next_.role == RaftInfo::Role::Follower; }, ctx);
 		}
 	}
 	bool IsInitialSyncDone(std::string_view name) const {

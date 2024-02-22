@@ -1,6 +1,5 @@
 #pragma once
 
-#include <shared_mutex>
 #include "clusterproxy.h"
 
 namespace reindexer {
@@ -63,7 +62,16 @@ public:
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions, const RdxContext &ctx) {
 		return impl_.GetSqlSuggestions(sqlQuery, pos, suggestions, ctx);
 	}
-	Error Status() { return impl_.Status(); }
+	Error Status() noexcept {
+		if (connected_.load(std::memory_order_acquire)) {
+			return {};
+		}
+		auto st = impl_.Status();
+		if (st.ok()) {
+			return Error(errNotValid, "Reindexer's sharding proxy layer was not initialized properly");
+		}
+		return st;
+	}
 	Error GetProtobufSchema(WrSerializer &ser, std::vector<std::string> &namespaces) { return impl_.GetProtobufSchema(ser, namespaces); }
 	Error GetReplState(std::string_view nsName, ReplicationStateV2 &state, const RdxContext &ctx) {
 		return impl_.GetReplState(nsName, state, ctx);
@@ -201,7 +209,19 @@ private:
 	void obtainConfigForResetRouting(std::optional<cluster::ShardingConfig> &config, ConfigResetFlag resetFlag,
 									 const RdxContext &ctx) const;
 
-	void checkNamespacesEmpty(const cluster::ShardingConfig &config, const RdxContext &ctx);
+	struct NamespaceDataChecker {
+		NamespaceDataChecker(const cluster::ShardingConfig::Namespace &ns, int thisShardId) noexcept : ns_(ns), thisShardId_(thisShardId) {}
+		void Check(ShardingProxy &proxy, const RdxContext &ctx);
+
+	private:
+		Query query() const;
+		bool needQueryCheck(const cluster::ShardingConfig &) const;
+
+		const cluster::ShardingConfig::Namespace &ns_;
+		int thisShardId_;
+	};
+
+	void checkNamespaces(const cluster::ShardingConfig &config, const RdxContext &ctx);
 	void checkSyncCluster(const cluster::ShardingConfig &config);
 
 	int64_t generateSourceId() const;
@@ -257,13 +277,26 @@ private:
 	private:
 		template <typename Locker, typename ConfigCandidateType>
 		struct ConfigCandidateTSWrapper {
-			ConfigCandidateTSWrapper(Locker lock, ConfigCandidateType &configCandidate)
+			ConfigCandidateTSWrapper(Locker &&lock, ConfigCandidateType &configCandidate) noexcept
 				: lock_(std::move(lock)), configCandidate_(configCandidate) {}
 
 			auto &SourceId() const { return configCandidate_.sourceId_; }
 			auto &Config() const { return configCandidate_.config_; }
-			auto &Reseter() const { return configCandidate_.reseter_; }
-			void EnableReseter(bool enable = true) noexcept { configCandidate_.reseterEnabled_ = enable; }
+			template <typename F>
+			void InitReseterThread(F &&f) const {
+				if (configCandidate_.reseter_.joinable()) {
+					throw Error(errLogic, "Sharding config candidate's reset thread is already running");
+				}
+
+				configCandidate_.reseter_ = std::thread(std::forward<F>(f));
+			}
+			void ShutdownReseter() noexcept {
+				if (configCandidate_.reseter_.joinable()) {
+					configCandidate_.reseterEnabled_ = false;
+					configCandidate_.reseter_.join();
+					configCandidate_.reseterEnabled_ = true;
+				}
+			}
 
 		private:
 			Locker lock_;
@@ -312,6 +345,8 @@ private:
 	ConfigCandidate configCandidate_;
 
 	std::atomic_bool shardingInitialized_ = {false};
+	std::atomic_bool connected_ = {false};
+	mutable shared_timed_mutex connectMtx_;
 	ActivityContainer activities_;
 
 	// this is required because newConfig process methods are private

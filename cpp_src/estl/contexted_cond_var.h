@@ -30,20 +30,6 @@ public:
 		}
 	}
 
-	template <typename _Lock, typename _ContextT>
-	void wait(_Lock& __lock, const _ContextT& __context) {
-		using namespace std::string_view_literals;
-		assert(_M_cond_var);
-		// const auto lockWard = _M_context->BeforeLock(_Mutex::mark);
-		if (_M_chk_timeout.count() > 0 && __context.IsCancelable()) {
-			while (_M_cond_var->wait_for(__lock, _M_chk_timeout) == std::cv_status::timeout) {
-				ThrowOnCancel(__context, "Context was canceled or timed out (condition variable)"sv);
-			}
-		} else {
-			_M_cond_var->wait(__lock);
-		}
-	}
-
 	void notify_all() {
 		assert(_M_cond_var);
 		_M_cond_var->notify_all();

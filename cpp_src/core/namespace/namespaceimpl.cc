@@ -24,6 +24,7 @@
 #include "tools/errors.h"
 #include "tools/flagguard.h"
 #include "tools/fsops.h"
+#include "tools/hardware_concurrency.h"
 #include "tools/logger.h"
 #include "tools/timetools.h"
 #include "wal/walselecter.h"
@@ -140,7 +141,7 @@ NamespaceImpl::NamespaceImpl(const std::string& name, std::optional<int32_t> sta
 	  queryCountCache_(
 		  std::make_unique<QueryCountCache>(config_.cacheConfig.queryCountCacheSize, config_.cacheConfig.queryCountHitsToCache)),
 	  joinCache_(std::make_unique<JoinCache>(config_.cacheConfig.joinCacheSize, config_.cacheConfig.joinHitsToCache)),
-	  wal_(config_.walSize),
+	  wal_(getWalSize(config_)),
 	  lastSelectTime_{0},
 	  cancelCommitCnt_{0},
 	  lastUpdateTime_{0},
@@ -181,7 +182,7 @@ NamespaceImpl::~NamespaceImpl() {
 		static constexpr double kDeleteNs = 0.25;
 
 		const double k = dbDestroyed_.load(std::memory_order_relaxed) ? kDeleteRxDestroy : kDeleteNs;
-		threadsCount = k * std::thread::hardware_concurrency();
+		threadsCount = k * hardware_concurrency();
 		if (threadsCount > indexes_.size() + 1) {
 			threadsCount = indexes_.size() + 1;
 		}
@@ -192,7 +193,7 @@ NamespaceImpl::~NamespaceImpl() {
 
 	auto flushStorage = [this]() {
 		try {
-			if (!locker_.IsReadOnly()) {
+			if (locker_.IsValid()) {
 				saveReplStateToStorage(false);
 				storage_.Flush(StorageFlushOpts().WithImmediateReopen());
 			}
@@ -319,7 +320,7 @@ void NamespaceImpl::OnConfigUpdated(DBConfigProvider& configProvider, const RdxC
 		updateSortedIdxCount();
 	}
 
-	if (wal_.Resize(config_.walSize)) {
+	if (wal_.Resize(getWalSize(config_))) {
 		logPrintf(LogInfo, "[%s] WAL has been resized lsn #%s, max size %ld", name_, repl_.lastLsn, wal_.Capacity());
 	}
 
@@ -575,7 +576,7 @@ NamespaceImpl::RollBack_updateItems<needRollBack> NamespaceImpl::updateItems(con
 		for (auto fieldIdx : changedFields) {
 			auto& index = *indexes_[fieldIdx];
 			if ((fieldIdx == 0) || deltaFields <= 0) {
-				oldValue.Get(fieldIdx, skrefsDel, true);
+				oldValue.Get(fieldIdx, skrefsDel, Variant::hold_t{});
 				bool needClearCache{false};
 				index.Delete(skrefsDel, rowId, *strHolder_, needClearCache);
 				if (needClearCache && index.IsOrdered()) indexesCacheCleaner.Add(index.SortId());
@@ -1408,9 +1409,12 @@ void NamespaceImpl::doDelete(IdType id) {
 		if (index.Opts().IsSparse()) {
 			assertrx(index.Fields().getTagsPathsLength() > 0);
 			pl.GetByJsonPath(index.Fields().getTagsPath(0), skrefs, index.KeyType());
+		} else if (index.Opts().IsArray()) {
+			pl.Get(field, skrefs, Variant::hold_t{});
 		} else {
-			pl.Get(field, skrefs, index.Opts().IsArray());
+			pl.Get(field, skrefs);
 		}
+
 		// Delete value from index
 		bool needClearCache{false};
 		index.Delete(skrefs, id, *strHolder_, needClearCache);
@@ -1529,6 +1533,7 @@ ReplicationStateV2 NamespaceImpl::GetReplStateV2(const RdxContext& ctx) const {
 	auto rlck = rLock(ctx);
 	state.lastLsn = wal_.LastLSN();
 	state.dataHash = repl_.dataHash;
+	state.dataCount = ItemsCount();
 	state.nsVersion = repl_.nsVersion;
 	state.clusterStatus = repl_.clusterStatus;
 	return state;
@@ -1733,8 +1738,10 @@ void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate) {
 				} catch (const Error&) {
 					krefs.resize(0);
 				}
+			} else if (index.Opts().IsArray()) {
+				pl.Get(field, krefs, Variant::hold_t{});
 			} else {
-				pl.Get(field, krefs, index.Opts().IsArray());
+				pl.Get(field, krefs);
 			}
 			if ((krefs.ArrayType().Is<KeyValueType::Null>() && skrefs.ArrayType().Is<KeyValueType::Null>()) || krefs == skrefs) continue;
 			bool needClearCache{false};
@@ -1870,6 +1877,7 @@ void NamespaceImpl::doModifyItem(Item& item, ItemModifyMode mode, UpdatesContain
 
 	item.setLSN(lsn);
 	item.setID(id);
+
 	doUpsert(itemImpl, id, exists);
 
 	WrSerializer cjson;
@@ -1975,12 +1983,11 @@ void NamespaceImpl::checkUniquePK(const ConstPayload& cpl, bool inTransaction, c
 }
 
 void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
-	static const auto kHardwareConcurrency = std::thread::hardware_concurrency();
+	static const auto kHardwareConcurrency = hardware_concurrency();
 	// This is read lock only atomics based implementation of rebuild indexes
 	// If optimizationState_ == OptimizationCompleted is true, then indexes are completely built.
 	// In this case reset optimizationState_ and/or any idset's and sort orders builds are allowed only protected by write lock
 	if (optimizationState_.load(std::memory_order_relaxed) == OptimizationCompleted) return;
-	int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 	auto lastUpdateTime = lastUpdateTime_.load(std::memory_order_acquire);
 
 	Locker::RLockT rlck;
@@ -1988,18 +1995,20 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 		rlck = rLock(ctx.rdxContext);
 	}
 
-	if (isSystem() || repl_.temporary || !indexes_.size()) {
+	if (isSystem() || repl_.temporary || !indexes_.size() || !lastUpdateTime || !config_.optimizationTimeout) {
 		return;
 	}
-	if (!lastUpdateTime || !config_.optimizationTimeout) {
+	const auto optState{optimizationState_.load(std::memory_order_acquire)};
+	if (optState == OptimizationCompleted || cancelCommitCnt_.load(std::memory_order_relaxed)) {
 		return;
 	}
+
+	using namespace std::chrono;
+	const int64_t now = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 	if (!ctx.isCopiedNsRequest && now - lastUpdateTime < config_.optimizationTimeout) {
 		return;
 	}
 
-	const auto optState{optimizationState_.load(std::memory_order_acquire)};
-	if (optState == OptimizationCompleted || cancelCommitCnt_.load(std::memory_order_relaxed)) return;
 	const bool forceBuildAllIndexes = optState == NotOptimized;
 
 	logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) enter", name_);
@@ -2014,9 +2023,7 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 
 	// Update sort orders and sort_id for each index
 	size_t currentSortId = 1;
-	const size_t maxIndexWorkers = kHardwareConcurrency
-									   ? std::min<size_t>(std::thread::hardware_concurrency(), config_.optimizationSortWorkers)
-									   : config_.optimizationSortWorkers;
+	const size_t maxIndexWorkers = std::min<size_t>(kHardwareConcurrency, config_.optimizationSortWorkers);
 	for (auto& idxIt : indexes_) {
 		if (idxIt->IsOrdered() && maxIndexWorkers != 0) {
 			NSUpdateSortedContext sortCtx(*this, currentSortId++);
@@ -2054,13 +2061,13 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 	if (cancelCommitCnt_.load(std::memory_order_relaxed)) {
 		logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) done", name_);
 	} else {
-		lastUpdateTime_.store(0, std::memory_order_release);
 		logPrintf(LogTrace, "Namespace::optimizeIndexes(%s) was cancelled by concurent update", name_);
 	}
 }
 
 void NamespaceImpl::markUpdated(bool forceOptimizeAllIndexes) {
 	using namespace std::string_view_literals;
+	using namespace std::chrono;
 	itemsCount_.store(items_.size(), std::memory_order_relaxed);
 	itemsCapacity_.store(items_.capacity(), std::memory_order_relaxed);
 	if (forceOptimizeAllIndexes) {
@@ -2071,9 +2078,7 @@ void NamespaceImpl::markUpdated(bool forceOptimizeAllIndexes) {
 	}
 	queryCountCache_->Clear();
 	joinCache_->Clear();
-	lastUpdateTime_.store(
-		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count(),
-		std::memory_order_release);
+	lastUpdateTime_.store(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(), std::memory_order_release);
 	if (!nsIsLoading_) {
 		repl_.updatedUnixNano = getTimeNow("nsec"sv);
 	}
@@ -2282,7 +2287,8 @@ void NamespaceImpl::doDelete(const Query& q, LocalQueryResults& result, UpdatesC
 }
 
 void NamespaceImpl::updateSelectTime() {
-	lastSelectTime_ = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	using namespace std::chrono;
+	lastSelectTime_ = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
 }
 
 void NamespaceImpl::checkClusterRole(lsn_t originLsn) const {
@@ -2846,7 +2852,7 @@ void NamespaceImpl::LoadFromStorage(unsigned threadsCount, const RdxContext& ctx
 }
 
 void NamespaceImpl::initWAL(int64_t minLSN, int64_t maxLSN) {
-	wal_.Init(config_.walSize, minLSN, maxLSN, storage_);
+	wal_.Init(getWalSize(config_), minLSN, maxLSN, storage_);
 	// Fill existing records
 	for (IdType rowId = 0; rowId < IdType(items_.size()); rowId++) {
 		if (!items_[rowId].IsFree()) {

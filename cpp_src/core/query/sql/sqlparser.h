@@ -1,8 +1,10 @@
 #pragma once
 
+#include <unordered_set>
 #include <vector>
 #include "core/keyvalue/variant.h"
 #include "estl/tokenizer.h"
+#include "sqltokentype.h"
 
 /// @namespace reindexer
 /// The base namespace
@@ -15,6 +17,9 @@ class UpdateEntry;
 using EqualPosition_t = h_vector<std::string, 2>;
 
 class SQLParser {
+	class ParserContextsAppendGuard;
+	enum class Nested : bool { Yes = true, No = false };
+
 public:
 	/// Parses pure sql select query and initializes Query object data members as a result.
 	/// @param q - sql query.
@@ -26,10 +31,10 @@ protected:
 	/// Sql parser context
 	struct SqlParsingCtx {
 		struct SuggestionData {
-			SuggestionData(std::string tok, int tokType) : token(std::move(tok)), tokenType(tokType) {}
+			SuggestionData(std::string tok, SqlTokenType tokType) : token(std::move(tok)), tokenType(tokType) {}
 			std::string token;
-			int tokenType = 0;
-			std::vector<std::string> variants;
+			SqlTokenType tokenType = Start;
+			std::unordered_set<std::string> variants;
 		};
 		void updateLinkedNs(const std::string &ns) {
 			if (autocompleteMode && (!foundPossibleSuggestions || possibleSuggestionDetectedInThisClause)) {
@@ -41,7 +46,7 @@ protected:
 		bool foundPossibleSuggestions = false;
 		bool possibleSuggestionDetectedInThisClause = false;
 		size_t suggestionsPos = 0;
-		std::vector<int> tokens;
+		std::vector<SqlTokenType> tokens;
 		std::vector<SuggestionData> suggestions;
 		std::string suggestionLinkedNs;
 	};
@@ -56,7 +61,7 @@ protected:
 	/// @param tokenType - token type.
 	/// @param toLower - transform to lower representation.
 	/// @return sql token object.
-	token peekSqlToken(tokenizer &parser, int tokenType, bool toLower = true);
+	token peekSqlToken(tokenizer &parser, SqlTokenType tokenType, bool toLower = true);
 
 	/// Is current token last in autocomplete mode?
 	bool reachedAutocompleteToken(tokenizer &parser, const token &tok);
@@ -64,13 +69,8 @@ protected:
 	/// Parses filter part of sql query.
 	/// @param parser - tokenizer object instance.
 	/// @return always returns zero.
+	template <Nested>
 	int selectParse(tokenizer &parser);
-
-	/// Parses filter part of sql query and gets suggestions from nested SQLParser
-	/// @param parser - nested parser object instance.
-	/// @param tok - tokenizer object instance.
-	/// @return always returns zero.
-	int nestedSelectParse(SQLParser &parser, tokenizer &tok);
 
 	/// Parses filter part of sql delete query.
 	/// @param parser - tokenizer object instance.
@@ -88,6 +88,7 @@ protected:
 	int truncateParse(tokenizer &parser);
 
 	/// Parse where entries
+	template <Nested>
 	int parseWhere(tokenizer &parser);
 	template <typename T>
 	void parseWhereCondition(tokenizer &, T &&firstArg, OpType);
@@ -115,6 +116,8 @@ protected:
 
 	/// Parse merge entries
 	void parseMerge(tokenizer &parser);
+
+	void parseModifyConditions(tokenizer &parser);
 
 	Query parseSubQuery(tokenizer &);
 

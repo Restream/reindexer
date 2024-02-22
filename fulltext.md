@@ -6,11 +6,11 @@ Reindexer has builtin full text search engine. This document describes usage of 
 - [Define full text index fields](#define-full-text-index-fields)
 - [Query to full text index](#query-to-full-text-index)
 - [Text query format](#text-query-format)
-	- [Patterns](#patterns)
-	- [Field selection](#field-selection)
-	- [Binary operators](#binary-operators)
-	- [Escape character](#escape-character)
-	- [Phrase search](#phrase-search)
+    - [Patterns](#patterns)
+    - [Field selection](#field-selection)
+    - [Binary operators](#binary-operators)
+    - [Escape character](#escape-character)
+    - [Phrase search](#phrase-search)
 - [Examples of text queris](#examples-of-text-queris)
 - [Natural language processing](#natural-language-processing)
 - [Merging queries results](#merging-queries-results)
@@ -24,9 +24,11 @@ Reindexer has builtin full text search engine. This document describes usage of 
 - [Performance and memory usage](#performance-and-memory-usage)
 - [Configuration](#configuration)
     - [Base config parameters](#base-config-parameters)
+    - [Stopwords details](#stopwords-details)
     - [Detailed typos config](#detailed-typos-config)
     - [Base ranking config](#base-ranking-config)
-	- [Limitations and know issues](#limitations-and-know-issues)
+    - [Basic document ranking algorithms](#basic-document-ranking-algorithms)
+    - [Limitations and know issues](#limitations-and-know-issues)
 
 
 ## LIKE
@@ -34,17 +36,17 @@ Reindexer has builtin full text search engine. This document describes usage of 
 For simple search in text can be used operator `LIKE`. It search strings which match a pattern. In the pattern `_` means any char and `%` means any sequence of chars.
 
 ```
-	In Go:
-	query := db.Query("items").
-		Where("field", reindexer.LIKE, "pattern")
+    In Go:
+    query := db.Query("items").
+        Where("field", reindexer.LIKE, "pattern")
 
-	In SQL:
-	SELECT * FROM items WHERE fields LIKE 'pattern'
+    In SQL:
+    SELECT * FROM items WHERE fields LIKE 'pattern'
 ```
 
 ```
-	'me_t' corresponds to 'meet', 'meat', 'melt' and so on
-	'%tion' corresponds to 'tion', 'condition', 'creation' and so on
+    'me_t' corresponds to 'meet', 'meat', 'melt' and so on
+    '%tion' corresponds to 'tion', 'condition', 'creation' and so on
 ```
 
 
@@ -54,8 +56,8 @@ Full text search is performed in fields marked with `text` tag:
 
 ```go
 type Item struct {
-	ID          int64  `reindex:"id,,pk"`
-	Description string `reindex:"description,text"`
+    ID          int64  `reindex:"id,,pk"`
+    Description string `reindex:"description,text"`
 }
 ```
 
@@ -63,10 +65,10 @@ Full text search is also available for multiple fields of composite index marked
 
 ```go
 type Item struct {
-	ID          int64  `reindex:"id,,pk"`
-	Name        string `reindex:"name,-"`
-	Description string `reindex:"description,-"`
-	_ struct{}         `reindex:"name+description=text_search,text,composite`
+    ID          int64  `reindex:"id,,pk"`
+    Name        string `reindex:"name,-"`
+    Description string `reindex:"description,-"`
+    _ struct{}         `reindex:"name+description=text_search,text,composite`
 }
 ```
 In this example full text index will include fields `name` and `description`,`text_search` is short alias of composite index name for using in Queries.
@@ -78,22 +80,22 @@ Full text index is case insensitive. The source text is tokenized to set of word
 Queries to full text index are constructed by usual query interface
 
 ```go
-	query := db.Query ("items").
-		Match ("name+description","text query","<stemmers>")
+    query := db.Query ("items").
+        Match ("name+description","text query","<stemmers>")
 ```
 Or equivalent query using name alias:
 
 ```go
-	query := db.Query ("items").
-		Match ("text_search","text query","<stemmers>")
+    query := db.Query ("items").
+        Match ("text_search","text query","<stemmers>")
 ```
 
 Queries to full text index can be combined with conditions on another fields. e.g:
 
 ```go
-	query := db.Query ("items").
-		Match ("description","text query").
-		WhereInt("year",reindexer.GT,2010)
+    query := db.Query ("items").
+        Match ("description","text query").
+        WhereInt("year",reindexer.GT,2010)
 ```
 
 Each result of query contains rank of match. Rank is integer from 0 to 255. 0 - lowest relevancy, 255 - best relevancy. The query Iterator has method `Rank()`, which returns rank of current result
@@ -160,38 +162,44 @@ Synonyms of multiple words are not supported in the phrase.
 
 There are built in stemmers support in full text search. It enables natural language search of words with same stem. For example, query `users` will also match `user`. Stemmer is language specific, so it is neccessary to specify language of used stemmer.
 
+All the available stemmers are in this [directory].(cpp_src/vendor/libstemmer/src_c)
+
 
 ## Merging queries results
 
 It is possible to merge multiple queries results and sort final result by relevancy.
 
 ```go
-	query := db.Query ("items").
-		Match ("description","text query1")
-	q2 := db.Query ("another_items").
-		Match ("description","text query2")
-	query.Merge (q2)
+    query := db.Query ("items").
+        Match ("description","text query1")
+    q2 := db.Query ("another_items").
+        Match ("description","text query2")
+    query.Merge (q2)
     iterator = query.Exec ()
-	// Check the error
-	if err := iterator.Error(); err != nil {
-		panic(err)
-	}
-	// Iterate over results
-	for iterator.Next() {
-		// Get the next document and cast it to a pointer
-		switch elem := iterator.Object().(type) {
-			case Item:
-				fmt.Printf ("%v,rank=%d\n",*elem,iterator.Rank())
-			case AnotherItem:
-				fmt.Printf ("%v,rank=%d\n",*elem,iterator.Rank())
-		}
-	}
+    // Check the error
+    if err := iterator.Error(); err != nil {
+        panic(err)
+    }
+    // Iterate over results
+    for iterator.Next() {
+        // Get the next document and cast it to a pointer
+        switch elem := iterator.Object().(type) {
+            case Item:
+                fmt.Printf ("%v,rank=%d\n",*elem,iterator.Rank())
+            case AnotherItem:
+                fmt.Printf ("%v,rank=%d\n",*elem,iterator.Rank())
+        }
+    }
 ```
 ## Using select functions
 It is possible to use select functions to process result data.
-For now you can use snippet, snippet_n and highlight. Those functions does not work for composite fulltext indexes.
+For now you can use snippet, snippet_n and highlight. For composite indexes the result of the function will be written in to corresponding subfields.
 You can not put [,)\0] symbols in functions params. If the value contains special characters, it must be enclosed
 in single quotes.
+
+Notice: although text indexes may be created over numeric fields, select functions can not be applied to any non-string field.
+
+For all the functions there are two types of supported syntax with the same behavior: `field.func_name(...)` and `field = func_name(...)`.
 
 ### Highlight
 This functions just highlights text area that was found.
@@ -319,58 +327,94 @@ Several parameters of full text search engine can be configured from application
 ```go
 ...
     ftconfig := reindexer.DefaultFtFastConfig()
-	// Setup configuration
-	ftconfig.LogLevel = reindexer.TRACE
-	// Setup another parameters
-	// ...
-	// Create index definition
-	indexDef := reindexer.IndexDef {
-		Name: "description",
-		JSONPaths: []string{"description"},
-		IndexType: "text",
-		FieldType: "string",
-		Config: ftconfig,
-	}
-	// Add index with configuration
-	return db.AddIndex ("items",indexDef)
+    // Setup configuration
+    ftconfig.LogLevel = reindexer.TRACE
+    // Setup another parameters
+    // ...
+    // Create index definition
+    indexDef := reindexer.IndexDef {
+        Name: "description",
+        JSONPaths: []string{"description"},
+        IndexType: "text",
+        FieldType: "string",
+        Config: ftconfig,
+    }
+    // Add index with configuration
+    return db.AddIndex ("items",indexDef)
 
 ```
 
 ### Base config parameters
 
-|   |       Parameter name         |   Type   |                                                                                                                        Description                                                                                                                        | Default value |
-|---|:----------------------------:|:--------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------:|
-|   | Bm25Boost                    |   float  | Boost of bm25 ranking                                                                                                                                                                                                                                     |       1       |
-|   | Bm25Weight                   |   float  | Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to fin l rank in 0 - 100% range.                                                                                                                                |      0.1      |
-|   | DistanceBoost                |   float  | Boost of search query term distance in found document.                                                                                                                                                                                                    |       1       |
-|   | DistanceWeight               |   float  | Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range.                                                                                    |      0.5      |
-|   | TermLenBoost                 |   float  | Boost of search query term length                                                                                                                                                                                                                         |       1       |
-|   | TermLenWeight                |   float  | Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range                                                                                                   |      0.3      |
-|   | PositionBoost                |   float  | Boost of search query term position                                                                                                                                                                                                                       |      1.0      |
-|   | PositionWeight               |   float  | Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range                                                                                             |      0.1      |
-|   | FullMatchBoost               |   float  | Boost of full match of search phrase with doc                                                                                                                                                                                                             |      1.1      |
-|   | PartialMatchDecrease         |    int   | Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)                                                                                                                               |       15      |
-|   | MinRelevancy                 |   float  | Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned                                                                                                                        |      0.05     |
-|   | MaxTypos                     |    int   | Maximum possible typos in word. 0: typos are disabled, words with typos will not match. N: words with N possible typos will match. Check [typos handling](#typos-handling-details) section for detailed description.                                              |       2       |
-|   | MaxTyposInWord               |    int   | Deprecated, use MaxTypos instead of this. Cannot be used with MaxTypos. Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed |       -       |
-|   | MaxTypoLen                   |    int   | Maximum word length for building and matching variants with typos.                                                                                                                                                                                        |       15      |
-|   | FtTyposDetailedConfig        |  struct  | Config for more precise typos algorithm tuning                                                                                                                                                                                                            |               | 
-|   | MaxRebuildSteps              |    int   | Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15.                                                                                                                                                     |       50      |
-|   | MaxStepSize                  |    int   | Maximum unique words to step                                                                                                                                                                                                                              |      4000     |
-|   | MergeLimit                   |    int   | Maximum documents count which will be processed in merge query results.  Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed                                                                    |     20000     |
-|   | Stemmers                     | []string | List of stemmers to use                                                                                                                                                                                                                                   |    "en","ru"  |
-|   | EnableTranslit               |   bool   | Enable russian translit variants processing. e.g. term "luntik" will match word "лунтик"                                                                                                                                                                  |      true     |
-|   | EnableKbLayout               |   bool   | Enable wrong keyboard layout variants processing. e.g. term "keynbr" will match word "лунтик"                                                                                                                                                             |      true     |
-|   | StopWords                    | []string | List of stop words. Words from this list will be ignored in documents and queries                                                                                                                                                                         |               |
-|   | SumRanksByFieldsRatio        |   float  | Ratio of summation of ranks of match one term in several fields                                                                                                                                                                                           |      0.0      |
-|   | LogLevel                     |    int   | Log level of full text search engine                                                                                                                                                                                                                      |       0       |
-|   | FieldsCfg                    | []struct | Configs for certain fields. Overlaps parameters from main config. Contains parameters: FieldName, Bm25Boost, Bm25Weight, TermLenBoost, TermLenWeight, PositionBoost, PositionWeight.                                                                      |     empty     |
-|   | EnableWarmupOnNsCopy         |   bool   | Enable automatic index warmup after transaction, which has performed namespace copy                                                                                                                                                                       |     false     |
-|   | ExtraWordSymbols             |  string  | Extra symbols, which will be threated as parts of word to addition to letters and digits                                                                                                                                                                  |     "+/-"     |
-|   | MaxAreasInDoc                |    int   | Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited                                                                                                                                     |       5       |
-|   | MaxTotalAreasToCache         |    int   | Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited                                                                                                                                             |      -1       |
-|   | Optimization                 |  string  | Optimize the index by 'memory' or by 'cpu'                                                                                                                                                                                                                |    "memory"   |
-|   | FtBaseRanking                |  struct  | Relevance of the word in different forms                                                                                                                                                                                                                  |               |
+|   |    Parameter name     |   Type   |                                                                                                                                                            Description                                                                                                                                                            | Default value |
+|---|:---------------------:|:--------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:|:-------------:|
+|   |       Bm25Boost       |   float  | Boost of bm25 ranking                                                                                                                                                                                                                                                                                                             |       1       |
+|   |      Bm25Weight       |   float  | Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to fin l rank in 0 - 100% range.                                                                                                                                                                                                        |      0.1      |
+|   |     DistanceBoost     |   float  | Boost of search query term distance in found document.                                                                                                                                                                                                                                                                            |       1       |
+|   |    DistanceWeight     |   float  | Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range.                                                                                                                                                            |      0.5      |
+|   |     TermLenBoost      |   float  | Boost of search query term length                                                                                                                                                                                                                                                                                                 |       1       |
+|   |     TermLenWeight     |   float  | Weight of search query term length in final rank. 0: term length will not change final rank. 1: term length will affect to final rank in 0 - 100% range                                                                                                                                                                           |      0.3      |
+|   |     PositionBoost     |   float  | Boost of search query term position                                                                                                                                                                                                                                                                                               |      1.0      |
+|   |    PositionWeight     |   float  | Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range                                                                                                                                                                     |      0.1      |
+|   |    FullMatchBoost     |   float  | Boost of full match of search phrase with doc                                                                                                                                                                                                                                                                                     |      1.1      |
+|   | PartialMatchDecrease  |    int   | Decrease of relevancy in case of partial match by value: partial_match_decrease * (non matched symbols) / (matched symbols)                                                                                                                                                                                                       |      15       |
+|   |     MinRelevancy      |   float  | Minimum rank of found documents. 0: all found documents will be returned 1: only documents with relevancy >= 100% will be returned                                                                                                                                                                                                |     0.05      |
+|   |       MaxTypos        |    int   | Maximum possible typos in word. 0: typos are disabled, words with typos will not match. N: words with N possible typos will match. Check [typos handling](#typos-handling-details) section for detailed description.                                                                                                              |       2       |
+|   |    MaxTyposInWord     |    int   | Deprecated, use MaxTypos instead of this. Cannot be used with MaxTypos. Maximum possible typos in word. 0: typos is disabled, words with typos will not match. N: words with N possible typos will match. It is not recommended to set more than 1 possible typo -It will seriously increase RAM usage, and decrease search speed |       -       |
+|   |      MaxTypoLen       |    int   | Maximum word length for building and matching variants with typos.                                                                                                                                                                                                                                                                |      15       |
+|   | FtTyposDetailedConfig |  struct  | Config for more precise typos algorithm tuning                                                                                                                                                                                                                                                                                    |               | 
+|   |    MaxRebuildSteps    |    int   | Maximum steps without full rebuild of ft - more steps faster commit slower select - optimal about 15.                                                                                                                                                                                                                             |      50       |
+|   |      MaxStepSize      |    int   | Maximum unique words to step                                                                                                                                                                                                                                                                                                      |     4000      |
+|   |      MergeLimit       |    int   | Maximum documents count which will be processed in merge query results. Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed                                                                                                                                             |     20000     |
+|   |       Stemmers        | []string | List of stemmers to use. Available values: "en", "ru", "nl", "fin", "de", "da", "fr", "it", "hu", "no", "pt", "ro", "es", "sv", "tr"                                                                                                                                                                                              |   "en","ru"   |
+|   |    EnableTranslit     |   bool   | Enable russian translit variants processing. e.g. term "luntik" will match word "лунтик"                                                                                                                                                                                                                                          |     true      |
+|   |    EnableKbLayout     |   bool   | Enable wrong keyboard layout variants processing. e.g. term "keynbr" will match word "лунтик"                                                                                                                                                                                                                                     |     true      |
+|   |       StopWords       | []struct | List of objects of stopwords. Words from this list will be ignored when building indexes, but may be used in fulltext queries (such as 'word*', 'word~' etc) and produce non-empty search results. [More...](#stopwords-details)                                                                                                  |               |
+|   | SumRanksByFieldsRatio |   float  | Ratio of summation of ranks of match one term in several fields                                                                                                                                                                                                                                                                   |      0.0      |
+|   |       LogLevel        |    int   | Log level of full text search engine                                                                                                                                                                                                                                                                                              |       0       |
+|   |       FieldsCfg       | []struct | Configs for certain fields. Overlaps parameters from main config. Contains parameters: FieldName, Bm25Boost, Bm25Weight, TermLenBoost, TermLenWeight, PositionBoost, PositionWeight.                                                                                                                                              |     empty     |
+|   | EnableWarmupOnNsCopy  |   bool   | Enable automatic index warmup after transaction, which has performed namespace copy                                                                                                                                                                                                                                               |     false     |
+|   |   ExtraWordSymbols    |  string  | Extra symbols, which will be threated as parts of word to addition to letters and digits                                                                                                                                                                                                                                          |     "+/-"     |
+|   |     MaxAreasInDoc     |    int   | Max number of highlighted areas for each field in each document (for snippet() and highlight()). '-1' means unlimited                                                                                                                                                                                                             |       5       |
+|   | MaxTotalAreasToCache  |    int   | Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited                                                                                                                                                                                                                     |      -1       |
+|   |     Optimization      |  string  | Optimize the index by 'memory' or by 'cpu'                                                                                                                                                                                                                                                                                        |   "memory"    |
+|   |     FtBaseRanking     |  struct  | Relevance of the word in different forms                                                                                                                                                                                                                                                                                          |               |
+|   |      Bm25Config       |  struct  | Document ranking function parameters  [More...](#basic-document-ranking-algorithms)                                                                                                                                                                                                                                                        |               |
+
+### Stopwords details
+The list item can be either a string or a structure containing a string (the stopword) and a bool attribute (`is_morpheme`) indicating whether the stopword can be part of a word that can be shown in query-results.
+If the stopword is set as a string, then the `is_morpheme` attribute is `false` by default and following entries are equivalent:
+```json
+"stop_words":[
+    {
+        "word": "some_word",
+        "is_morpheme": false
+    },
+    ///...
+]
+``` 
+,
+```json
+"stop_words":[
+    "some_word",
+    ///...
+]
+```
+
+#### Example:
+If the list of stopwords looks like this:
+```json
+"stop_words":[
+    {
+        "word": "under",
+        "is_morpheme": true
+    },
+    ///...
+]
+```
+and there are pair of documents containing this word: `{"...under the roof ..."}, {"... to understand and forgive..."}`. Then for the query 'under*' we will get as a result only document `{"... to understand and forgive..."}` and for the query 'under'  we will get nothing as a result.
+
+If the "StopWords" section is not specified in the config, then the [default](./cpp_src/core/ft/stopwords/stop_en.cc) stopwords list will be used, and if it is explicitly specified empty, it means that there are no stopwords.
 
 ### Detailed typos config
 
@@ -398,6 +442,47 @@ FtBaseRanking: config for the base relevancy of the word in different forms.
 |   | Kblayout                     |    int   | Relevancy of the match in incorrect kblayout                                                                                                                                                                                                              |       90      |
 |   | Translit                     |    int   | Relevancy of the match in translit                                                                                                                                                                                                                        |       90      |
 |   | Synonyms                     |    int   | Relevancy of synonyms match                                                                                                                                                                                                                               |       95      |
+
+### Basic document ranking algorithms
+
+For basic document ranking, one of the following algorithms can be used:
+
+- `bm25`
+- `bm25_rx`
+- `word_count`
+
+Calculation formula for `bm25`:
+
+```
+R = (log(totalDocCount / (matchedDocCount + 1)) + 1) * termCountInDoc / wordsInDoc * (k1 + 1.0) / (termCountInDoc / wordsInDoc + k1 * (1.0 - b_ + b_ * wordsInDoc / avgDocLen))
+```
+
+Calculation formula for `bm25_rx`:
+
+```
+R = (log(totalDocCount / (matchedDocCount + 1)) + 1) * termCountInDoc * (k1 + 1.0) / (termCountInDoc + k1 * (1.0 - b_ + b_ * wordsInDoc / avgDocLen))
+```
+
+Calculation formula for `word_count`:
+
+```
+R = termCountInDoc
+```
+
+- `totalDocCount` - total number of documents
+- `matchedDocCount` - number of documents in which a subform of the word was found
+- `termCountInDoc` - number of words found in the document for the query word subform
+- `wordsInDoc` - number of words in document
+- `k1` - free coefficient (Сoefficient that sets the saturation threshold for the frequency of the term. The higher the coefficient, the higher the threshold and the lower the saturation rate.)
+- `b` - free coefficient (If b is bigger, the effects of the length of the document compared to the average length are more amplified.) 
+
+|   |    Parameter name     |   Type   |                             Description                                                 | Default value |
+|---|:---------------------:|:--------:|:---------------------------------------------------------------------------------------:|:-------------:|
+|   |   Bm25k1              |   float  | Coefficient k1 in the formula for calculating bm25 (used only for rx_bm25, bm25).       |      2.0      |                                          	
+|   |   Bm25b               |   float  | Coefficient b in the formula for calculating bm25 (used only for rx_bm25, bm25).        |     0.75      |                     
+|   |  Bm25Type             |  string  | Formula for calculating document relevance (rx_bm25, bm25, word_count)                  |   "rx_bm25"   |                                   
+
+
 
 ### Limitations and know issues
 

@@ -10,6 +10,18 @@ import (
 	"github.com/restream/reindexer/v4"
 )
 
+type FtConfCheck struct {
+	ID int `reindex:"id,,pk"`
+}
+
+const (
+	ftCfgNsName = "ft_cfg_check"
+)
+
+func init() {
+	tnamespaces[ftCfgNsName] = FtConfCheck{}
+}
+
 func TestSetDefaultQueryDebug(t *testing.T) {
 	t.Run("set debug level to exist ns config", func(t *testing.T) {
 		ns := "ns_with_config"
@@ -87,5 +99,113 @@ func TestSetDefaultQueryDebug(t *testing.T) {
 		}
 
 		assert.True(t, found)
+	})
+}
+
+func TestFtConfigCompatibility(t *testing.T) {
+	config := reindexer.DefaultFtFastConfig()
+
+	addFtIndex := func(indexName string) reindexer.IndexDescription {
+		err := DB.AddIndex(ftCfgNsName, reindexer.IndexDef{
+			Name:      indexName,
+			JSONPaths: []string{indexName},
+			Config:    config,
+			IndexType: "text",
+			FieldType: "string",
+		})
+		assert.NoError(t, err)
+
+		item, err := DBD.Query(reindexer.NamespacesNamespaceName).Where("name", reindexer.EQ, ftCfgNsName).Exec().FetchOne()
+		assert.NoError(t, err)
+
+		indexes := item.(*reindexer.NamespaceDescription).Indexes
+		index := indexes[len(indexes)-1]
+		return index
+	}
+
+	checkStopWordsFtConfig := func(index reindexer.IndexDescription) {
+		conf := index.Config.(map[string]interface{})
+		cfgStopWords := conf["stop_words"].([]interface{})
+		assert.Equal(t, len(cfgStopWords), len(config.StopWords))
+
+		for idx, wordI := range config.StopWords {
+			switch wordI.(type) {
+			case string:
+				assert.Equal(t, wordI, cfgStopWords[idx])
+			case reindexer.StopWord:
+				word := wordI.(reindexer.StopWord)
+				assert.Equal(t, word.Word, cfgStopWords[idx].(map[string]interface{})["word"])
+				assert.Equal(t, word.IsMorpheme, cfgStopWords[idx].(map[string]interface{})["is_morpheme"])
+			}
+		}
+	}
+
+	t.Run("check string stop_words config with index create", func(t *testing.T) {
+		stopWordsStrs := append(make([]interface{}, 0), "под", "на", "из")
+		config.StopWords = stopWordsStrs
+		index := addFtIndex("idxStopWordsStrs")
+		checkStopWordsFtConfig(index)
+	})
+
+	t.Run("check object stop_words config with index create", func(t *testing.T) {
+		stopWordsObjs := append(make([]interface{}, 0),
+			reindexer.StopWord{
+				Word:       "пред",
+				IsMorpheme: true,
+			}, reindexer.StopWord{
+				Word:       "над",
+				IsMorpheme: true,
+			}, reindexer.StopWord{
+				Word:       "за",
+				IsMorpheme: false,
+			})
+		config.StopWords = stopWordsObjs
+		index := addFtIndex("idxStopWordsObjs")
+		checkStopWordsFtConfig(index)
+	})
+
+	t.Run("check mixed stop_words config with index create", func(t *testing.T) {
+		stopWordsMix := append(make([]interface{}, 0),
+			"под",
+			reindexer.StopWord{
+				Word:       "пред",
+				IsMorpheme: true,
+			},
+			reindexer.StopWord{
+				Word:       "за",
+				IsMorpheme: false,
+			},
+			"на",
+			reindexer.StopWord{
+				Word:       "над",
+				IsMorpheme: true,
+			},
+			"из")
+		config.StopWords = stopWordsMix
+		index := addFtIndex("idxStopWordsMix")
+		checkStopWordsFtConfig(index)
+	})
+
+	checkBm25FtConfig := func(index reindexer.IndexDescription, expectedBm25k1 float64,
+		expectedBm25b float64, expectedBm25Type string) {
+		conf := index.Config.(map[string]interface{})
+		rankFunConf := conf["bm25_config"].(map[string]interface{})
+		cfgBm25k1 := rankFunConf["bm25_k1"]
+		cfgBm25b := rankFunConf["bm25_b"]
+		cfgBm25Type := rankFunConf["bm25_type"]
+		assert.Equal(t, expectedBm25k1, cfgBm25k1)
+		assert.Equal(t, expectedBm25b, cfgBm25b)
+		assert.Equal(t, expectedBm25Type, cfgBm25Type)
+	}
+
+	t.Run("check bm25_k1, bm25_b, bm25_type configs with index create", func(t *testing.T) {
+		expectedBm25k1 := 1.53
+		expectedBm25b := 0.52
+		expectedBm25Type := "bm25"
+		config.Bm25Config.Bm25k1 = expectedBm25k1
+		config.Bm25Config.Bm25b = expectedBm25b
+		config.Bm25Config.Bm25Type = expectedBm25Type
+		index := addFtIndex("idxBm25")
+		checkBm25FtConfig(index, expectedBm25k1, expectedBm25b, expectedBm25Type)
 	})
 }

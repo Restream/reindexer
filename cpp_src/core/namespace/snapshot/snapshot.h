@@ -1,7 +1,8 @@
 #pragma once
 
 #include "core/cjson/tagsmatcher.h"
-#include "core/queryresults/queryresults.h"
+#include "core/namespace/namespacestat.h"
+#include "core/queryresults/localqueryresults.h"
 #include "snapshotrecord.h"
 
 namespace reindexer {
@@ -9,9 +10,9 @@ namespace reindexer {
 class Snapshot {
 public:
 	Snapshot() = default;
-	Snapshot(TagsMatcher tm, lsn_t nsVersion);
-	Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDatahash, LocalQueryResults &&wal,
-			 LocalQueryResults &&raw = LocalQueryResults());
+	Snapshot(TagsMatcher tm, lsn_t nsVersion, uint64_t expectedDataHash, uint64_t expectedDataCount, ClusterizationStatus clusterStatus);
+	Snapshot(PayloadType pt, TagsMatcher tm, lsn_t nsVersion, lsn_t lastLsn, uint64_t expectedDataHash, uint64_t expectedDataCount,
+			 ClusterizationStatus clusterStatus, LocalQueryResults &&wal, LocalQueryResults &&raw = LocalQueryResults());
 	Snapshot(const Snapshot &) = delete;
 	Snapshot(Snapshot &&) = default;
 	Snapshot &operator=(const Snapshot &) = delete;
@@ -46,7 +47,9 @@ public:
 	size_t Size() const noexcept { return rawData_.Size() + walData_.Size(); }
 	size_t RawDataSize() const noexcept { return rawData_.Size(); }
 	bool HasRawData() const noexcept { return rawData_.Size(); }
-	uint64_t ExpectedDatahash() const noexcept { return expectedDatahash_; }
+	uint64_t ExpectedDataHash() const noexcept { return expectedDataHash_; }
+	uint64_t ExpectedDataCount() const noexcept { return expectedDataCount_; }
+	ClusterizationStatus ClusterizationStat() const noexcept { return clusterizationStatus_; }
 	lsn_t LastLSN() const noexcept { return lastLsn_; }
 	lsn_t NsVersion() const noexcept { return nsVersion_; }
 	std::string Dump();
@@ -82,7 +85,9 @@ private:
 	TagsMatcher tm_;
 	ItemsContainer rawData_;
 	ItemsContainer walData_;
-	uint64_t expectedDatahash_ = 0;
+	uint64_t expectedDataHash_ = 0;
+	uint64_t expectedDataCount_ = 0;
+	ClusterizationStatus clusterizationStatus_;
 	lsn_t lastLsn_;
 	lsn_t nsVersion_;
 	friend class Iterator;

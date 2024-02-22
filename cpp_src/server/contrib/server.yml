@@ -3,9 +3,8 @@ info:
   description: |
     **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
     Reindexer's goal is to provide fast search with complex queries.
-    The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
-    Reindexer is fast.
-  version: "4.13.0"
+    Reindexer is compact, fast and it does not have heavy dependencies.
+  version: "4.14.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -2928,6 +2927,17 @@ definitions:
         description: "Descent or ascent sorting direction"
         type: boolean
 
+  FtStopWordObject:
+    type: object
+    properties:
+      word:
+        description: "Stop word"
+        type: string
+      is_morpheme:
+        type: boolean
+        description: "If the value is true, the word can be included in search results in queries such as 'word*', 'word~' etc."
+        default: false
+
   FulltextConfig:
     type: object
     description: "Fulltext Index configuration"
@@ -2966,9 +2976,9 @@ definitions:
         description: "List of symbols, which will be threated as word part, all other symbols will be thrated as wors separators"
       stop_words:
         type: array
-        description: "List of stop words. Words from this list will be ignored in documents and queries"
+        description: "List of objects of stop words. Words from this list will be ignored when building indexes"
         items:
-          type: string
+          $ref: "#/definitions/FtStopWordObject"
       stemmers:
         type: array
         default: ["en","ru"]
@@ -3136,6 +3146,31 @@ definitions:
         description: "Max total number of highlighted areas in ft result, when result still remains cacheable. '-1' means unlimited"
         default: -1
         maximum: 1000000000
+      bm25_config:
+        type: object
+        description: "Config for document ranking function"
+        properties:
+          bm25_k1:
+            type: number
+            format: "float"
+            description: "Coefficient k1 in the formula for calculating bm25. Сoefficient that sets the saturation threshold for the frequency of the term. The higher the coefficient, the higher the threshold and the lower the saturation rate."
+            default: 2.0
+            minimum: 0.0
+          bm25_b:
+            type: number
+            format: "float"
+            description: "Coefficient b in the formula for calculating bm25. If b is bigger, the effects of the length of the document compared to the average length are more amplified."
+            default: 0.75
+            minimum: 0.0
+            maximum: 1.0
+          bm25_type:
+            type: string
+            description: "Formula for calculating document relevance (rx_bm25, bm25, word_count)"
+            enum:
+              - "rx_bm25"
+              - "bm25"
+              - "word_count"
+            default: "rx_bm25"
       fields:
         type: array
         description: "Configuration for certian field if it differ from whole index configuration"
@@ -3448,6 +3483,12 @@ definitions:
             keys:
               type: integer
               description: "Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching"
+            type:
+              type: string
+              description: "Type of the selector"
+            description:
+              type: string
+              description: "Description of the selector"
             explain_preselect:
               description: "Preselect in joined namespace execution explainings"
               $ref: "#/definitions/ExplainDef"
@@ -3515,6 +3556,24 @@ definitions:
                   values_count:
                     type: integer
                     description: resulting size of query values set
+      subqueries:
+        type: array
+        description: "Explain of subqueries preselect"
+        items:
+          type: object
+          properties:
+            namespace:
+              type: string
+              description: "Subquery's namespace name"
+            keys:
+              type: integer
+              description: "Count of keys being compared with the subquery's result"
+            field:
+              type: string
+              description: "Name of field being compared with the subquery's result"
+            explain:
+              description: "Explain of the subquery's preselect"
+              $ref: "#/definitions/ExplainDef"
 
 
   AggregationResDef:
@@ -4174,7 +4233,7 @@ definitions:
             type: integer
             default: 134217728
             minimun: 0
-            description: "Max size of the cache for COUNT_CACHED() aggreagetion in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations"
+            description: "Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations"
           query_count_hit_to_cache:
             type: integer
             default: 2

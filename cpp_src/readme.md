@@ -3,8 +3,8 @@
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
 Reindexer's goal is to provide fast search with complex queries.
 
-The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
-Reindexer is fast. Up to 5x times faster, than mongodb, and 10x times than elastic search. See [benchmaks section](../benchmarks) for details.
+Reindexer is compact, fast and it does not have heavy dependencies.
+reindexer is up to 5x times faster, than mongodb, and 10x times than elastic search. See [benchmaks section](https://github.com/Restream/reindexer-benchmarks) for details.
 
 # Installation
 
@@ -55,7 +55,7 @@ To install reindexer v4.x.x `reindexer-4-server` or `reindexer-4-dev` package sh
 ### Ubuntu/Debian
 
 ```bash
-curl https://repo.reindexer.io/RX-KEY.GPG | apt-key add
+wget https://repo.reindexer.io/RX-KEY.GPG -O /etc/apt/trusted.gpg.d/reindexer.asc
 echo "deb https://repo.reindexer.io/<distro> /" >> /etc/apt/sources.list
 apt update
 apt install reindexer-server
@@ -129,7 +129,7 @@ service start reindexer
 ## HTTP REST API
 
 The simplest way to use reindexer with any program language - is using REST API. The
-[complete REST API documentation is here](server/contrib/server.md).  
+[complete REST API documentation is here](server/contrib/server.md).
 [Or explore interactive version of Reindexer's swagger documentation](https://editor.swagger.io/?url=https://raw.githubusercontent.com/Restream/reindexer/master/cpp_src/server/contrib/server.yml)
 
 ## GRPC API

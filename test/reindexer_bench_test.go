@@ -409,6 +409,31 @@ func Benchmark2CondQueryTotal(b *testing.B) {
 	}
 }
 
+func BenchmarkSubQueryEq(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		prices := priceIds[rand.Int()%len(priceIds)]
+		q := DBD.Query("test_items_bench").Where("price_id", reindexer.EQ, DBD.Query("test_join_items").Select("id").WhereInt32("id", reindexer.EQ, prices[rand.Int()%len(prices)])).Limit(20)
+		q.MustExec().FetchAll()
+	}
+}
+
+func BenchmarkSubQuerySet(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		prices := priceIds[rand.Int()%len(priceIds)]
+		rangeMin := prices[rand.Int()%len(prices)]
+		q := DBD.Query("test_items_bench").Where("price_id", reindexer.SET, DBD.Query("test_join_items").Select("id").WhereInt32("id", reindexer.RANGE, rangeMin, rangeMin + 500)).Limit(20)
+		q.MustExec().FetchAll()
+	}
+}
+
+func BenchmarkSubQueryAggregate(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		prices := priceIds[rand.Int()%len(priceIds)]
+		q := DBD.Query("test_items_bench").Where("price_id", reindexer.LT, DBD.Query("test_join_items").AggregateAvg("id").WhereInt32("id", reindexer.SET, prices...).Limit(500)).Limit(20)
+		q.MustExec().FetchAll()
+	}
+}
+
 func Benchmark2CondQueryLeftJoin(b *testing.B) {
 	ctx := &TestJoinCtx{}
 	for i := 0; i < b.N; i++ {

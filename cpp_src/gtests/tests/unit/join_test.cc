@@ -608,7 +608,7 @@ TEST_F(JoinSelectsApi, TestNestedJoinsError) {
 	for (auto& firstJoin : joinTypes) {
 		for (auto& secondJoin : joinTypes) {
 			auto sql = fmt::sprintf(sqlPattern, firstJoin, secondJoin);
-			ValidateQueryError(sql, errParams, "JOINs nested into the other JOINs are not supported");
+			ValidateQueryThrow(sql, errParseSQL, "Expected ')', but found .*, line: 1 column: .*");
 		}
 	}
 }
@@ -620,7 +620,7 @@ TEST_F(JoinSelectsApi, TestNestedMergesInJoinsError) {
 	auto joinTypes = {"inner join", "join", "left join"};
 	for (auto& join : joinTypes) {
 		auto sql = fmt::sprintf(sqlPattern, join);
-		ValidateQueryError(sql, errParams, "MERGEs nested into the JOINs are not supported");
+		ValidateQueryThrow(sql, errParseSQL, "Expected ')', but found 'merge', line: 1 column: .*");
 	}
 }
 
@@ -629,6 +629,112 @@ TEST_F(JoinSelectsApi, TestNestedMergesInMergesError) {
 	constexpr char sql[] =
 		R"(select * from books_namespace merge (select * from authors_namespace  merge (select * from books_namespace)))";
 	ValidateQueryError(sql, errParams, "MERGEs nested into the MERGEs are not supported");
+}
+
+TEST_F(JoinSelectsApi, CountCachedWithDifferentJoinConditions) {
+	// Test checks if cached total values is changing after inner join's condition change
+
+	const std::vector<Query> kBaseQueries = {
+		Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace)).Limit(10),
+		Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondLe, 100)).Limit(10),
+		Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 200)).Limit(10),
+		Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondLe, 400)).Limit(10),
+		Query(books_namespace).InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 400)).Limit(10)};
+
+	SetQueriesCacheHitsCount(1);
+	for (auto& bq : kBaseQueries) {
+		const Query cachedTotalNoCondQ = Query(bq).CachedTotal();
+		const Query totalCountNoCondQ = Query(bq).ReqTotal();
+		QueryResults qrRegular;
+		auto err = rt.reindexer->Select(totalCountNoCondQ, qrRegular);
+		ASSERT_TRUE(err.ok()) << err.what() << "; " << totalCountNoCondQ.GetSQL();
+		// Run all the queries with CountCached twice to check main and cached values
+		for (int i = 0; i < 2; ++i) {
+			QueryResults qrCached;
+			err = rt.reindexer->Select(cachedTotalNoCondQ, qrCached);
+			ASSERT_TRUE(err.ok()) << err.what() << "; i = " << i << "; " << cachedTotalNoCondQ.GetSQL();
+			EXPECT_EQ(qrCached.TotalCount(), qrRegular.TotalCount()) << " i = " << i << "; " << bq.GetSQL();
+		}
+	}
+}
+
+TEST_F(JoinSelectsApi, CountCachedWithJoinNsUpdates) {
+	const Genre kLastGenre = *genres.rbegin();
+	const std::vector<Query> kBaseQueries = {
+		Query(books_namespace)
+			.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 100))
+			.OrInnerJoin(genreId_fk, genreid, CondEq,
+						 Query(genres_namespace)
+							 .Where(genrename, CondSet,
+									{Variant{"non fiction"}, Variant{"poetry"}, Variant{"documentary"}, Variant{kLastGenre.name}}))
+			.Limit(10),
+		Query(books_namespace)
+			.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 100))
+			.InnerJoin(genreId_fk, genreid, CondEq,
+					   Query(genres_namespace)
+						   .Where(genrename, CondSet,
+								  {Variant{"non fiction"}, Variant{"poetry"}, Variant{"documentary"}, Variant{kLastGenre.name}}))
+			.Limit(10),
+		Query(books_namespace)
+			.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 100))
+			.OpenBracket()
+			.InnerJoin(genreId_fk, genreid, CondEq,
+					   Query(genres_namespace).Where(genrename, CondSet, {Variant{"non fiction"}, Variant{kLastGenre.name}}))
+			.OrInnerJoin(
+				genreId_fk, genreid, CondEq,
+				Query(genres_namespace).Where(genrename, CondSet, {Variant{"poetry"}, Variant{"documentary"}, Variant{kLastGenre.name}}))
+			.CloseBracket()
+			.Limit(10),
+		Query(books_namespace)
+			.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 100))
+			.OpenBracket()
+			.InnerJoin(genreId_fk, genreid, CondEq,
+					   Query(genres_namespace).Where(genrename, CondSet, {Variant{"non fiction"}, Variant{kLastGenre.name}}))
+			.InnerJoin(genreId_fk, genreid, CondEq, Query(genres_namespace))
+			.CloseBracket()
+			.Limit(10),
+		Query(books_namespace)
+			.InnerJoin(authorid_fk, authorid, CondEq, Query(authors_namespace).Where(authorid, CondGe, 100))
+			.OpenBracket()
+			.InnerJoin(genreId_fk, genreid, CondEq,
+					   Query(genres_namespace).Where(genrename, CondSet, {Variant{"non fiction"}, Variant{kLastGenre.name}}))
+			.OrInnerJoin(genreId_fk, genreid, CondEq, Query(genres_namespace))
+			.CloseBracket()
+			.Limit(10)};
+
+	SetQueriesCacheHitsCount(1);
+	for (auto& bq : kBaseQueries) {
+		const Query cachedTotalNoCondQ = Query(bq).CachedTotal();
+		const Query totalCountNoCondQ = Query(bq).ReqTotal();
+		auto checkQuery = [&](std::string_view step) {
+			// With Initial data
+			QueryResults qrRegular;
+			auto err = rt.reindexer->Select(totalCountNoCondQ, qrRegular);
+			ASSERT_TRUE(err.ok()) << err.what() << "; step: " << step << "; " << totalCountNoCondQ.GetSQL();
+			// Run all the queries with CountCached twice to check main and cached values
+			for (int i = 0; i < 2; ++i) {
+				QueryResults qrCached;
+				err = rt.reindexer->Select(cachedTotalNoCondQ, qrCached);
+				ASSERT_TRUE(err.ok()) << err.what() << "; step: " << step << "; i = " << i << "; " << cachedTotalNoCondQ.GetSQL();
+				EXPECT_EQ(qrCached.TotalCount(), qrRegular.TotalCount()) << "step: " << step << "; i = " << i << "; " << bq.GetSQL();
+			}
+		};
+
+		// Check query and create cache with initial data
+		checkQuery("initial data");
+
+		// Update data on the first joined namespace
+		RemoveLastAuthors(250);
+		checkQuery("first ns update (remove)");
+		FillAuthorsNamespace(250);
+		checkQuery("first ns update (add)");
+
+		// Update data on the second joined namespace
+		RemoveGenre(kLastGenre.id);
+		checkQuery("second ns update (remove)");
+		AddGenre(kLastGenre.id, kLastGenre.name);
+		checkQuery("second ns update (insert)");
+	}
 }
 
 TEST_F(JoinOnConditionsApi, TestGeneralConditions) {

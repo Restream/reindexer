@@ -33,6 +33,7 @@ struct SelectCtx {
 	const Query *parentQuery = nullptr;
 	ExplainCalc explain;
 	bool requiresCrashTracking = false;
+	std::vector<SubQueryExplain> subQueriesExplains;
 
 	RX_ALWAYS_INLINE bool isMergeQuerySubQuery() const noexcept { return isMergeQuery == IsMergeQuery::Yes && parentQuery; }
 };
@@ -47,7 +48,7 @@ class NsSelecter {
 	class JoinedNsValueGetter;
 
 public:
-	NsSelecter(NamespaceImpl *parent) : ns_(parent) {}
+	NsSelecter(NamespaceImpl *parent) noexcept : ns_(parent) {}
 
 	void operator()(LocalQueryResults &result, SelectCtx &ctx, const RdxContext &);
 

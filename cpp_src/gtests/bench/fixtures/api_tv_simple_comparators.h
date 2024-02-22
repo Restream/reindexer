@@ -19,7 +19,8 @@ public:
 			.AddIndex("price_id", "-", "int", IndexOpts().Array())
 			.AddIndex("location", "-", "string", IndexOpts())
 			.AddIndex("end_time", "-", "int", IndexOpts())
-			.AddIndex("start_time", "-", "int", IndexOpts());
+			.AddIndex("start_time", "-", "int", IndexOpts())
+			.AddIndex("uuid_str", "-", "string", IndexOpts());
 	}
 
 	void RegisterAllCases();
@@ -36,6 +37,7 @@ private:
 	void GetEqArrayInt(State& state);
 	void GetEqString(State& state);
 	void GetByRangeIDAndSort(State& state);
+	void GetUuidStr(State& state);
 
 	void Query1Cond(State& state);
 	void Query1CondTotal(State& state);
@@ -61,6 +63,7 @@ private:
 	std::vector<int> start_times_;
 	std::vector<std::vector<int>> packages_;
 	std::vector<std::vector<int>> priceIDs_;
+	std::vector<std::string> uuids_;
 #if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	constexpr static unsigned kTotalItemsStringSelectNs = 100'000;
 #else	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)

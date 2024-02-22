@@ -1,7 +1,7 @@
 #include "servercontrol.h"
 #include <fstream>
 #include "core/cjson/jsonbuilder.h"
-#include "core/queryresults/queryresults.h"
+#include "core/dbconfig.h"
 #include "systemhelpers.h"
 #include "tools/fsops.h"
 #include "vendor/gason/gason.h"
@@ -283,9 +283,6 @@ void ServerControl::Interface::Init() {
 			}
 			assertrx(res == EXIT_SUCCESS);
 		}));
-		while (!srv.IsRunning() || !srv.IsReady()) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(10));
-		}
 	}
 
 	// init client

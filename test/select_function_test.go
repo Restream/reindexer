@@ -1,54 +1,84 @@
 package reindexer
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/restream/reindexer/v4"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type TestSelectTextItem struct {
-	ID   int    `reindex:"id,,pk"`
-	Name string `reindex:"name,text"`
+	ID   int      `reindex:"id,,pk"`
+	Name string   `reindex:"name,text"`
+	_    struct{} `reindex:"id+name=comp_idx,text,composite"`
 }
+
+const testSelectFuncNs = "test_select_func"
 
 func init() {
-	tnamespaces["test_select_text_item"] = TestSelectTextItem{}
+	tnamespaces[testSelectFuncNs] = TestSelectTextItem{}
 }
 
-func FillTestSelectTextItemsTx(count int, tx *txTest) {
-	for i := 0; i < count; i++ {
-		if err := tx.Upsert(&TestSelectTextItem{
+func FillTestSelectTextItems(names []string) {
+	tx := newTestTx(DB, testSelectFuncNs)
+	for i := 0; i < len(names); i++ {
+		item := TestSelectTextItem{
 			ID:   mkID(i),
-			Name: randLangString(),
-		}); err != nil {
+			Name: names[i],
+		}
+		if err := tx.Upsert(&item); err != nil {
 			panic(err)
 		}
 	}
-}
-func FillTestSelectTextItems(count int) {
-	tx := newTestTx(DB, "test_select_text_item")
-	FillTestSelectTextItemsTx(count, tx)
 	tx.MustCommit()
 }
 
-func TestSelectFunction(t *testing.T) {
-	FillTestSelectTextItems(50)
-	CheckSelectItemsQueries(t)
+func checkSelectFunc(t *testing.T, qt *queryTest, expected string) {
+	res_slice, err := qt.MustExec(t).FetchAll()
+	require.NoError(t, err)
+	require.Len(t, res_slice, 1)
+	res := res_slice[0].(*TestSelectTextItem)
+	require.EqualValues(t, expected, res.Name)
 }
 
-func CheckSelectItemsQueries(t *testing.T) {
+func TestSelectFunctions(t *testing.T) {
+	t.Parallel()
 
-	first := randLangString()
+	const ns = testSelectFuncNs
+	words := []string{"some wordrx", "w(here rx fin)d", "somerxhere"}
+	FillTestSelectTextItems(words)
 
-	q1 := DB.Query("test_select_text_item").Where("name", reindexer.EQ, first).Functions("name.snippet(<b>,<b>,3,3)")
+	delimiters := []string{".", "=", " = "}
 
-	res, _, err := q1.MustExec(t).FetchAllWithRank()
-	assert.NoError(t, err)
+	t.Run("check select_function highlight", func(t *testing.T) {
+		for _, delim := range delimiters {
+			q := DB.Query(ns).Where("name", reindexer.EQ, "rx").
+				Functions(fmt.Sprintf("name%shighlight(<,>)", delim))
+			checkSelectFunc(t, q, "w(here <rx> fin)d")
+		}
+	})
 
-	for _, item := range res {
-		_, ok := item.(*TestSelectTextItem)
-		assert.True(t, ok, "Unknown type after merge ")
-	}
+	t.Run("check select_function snippet", func(t *testing.T) {
+		for _, delim := range delimiters {
+			q := DB.Query(ns).Where("name", reindexer.EQ, "rx").
+				Functions(fmt.Sprintf("name%ssnippet(<,>,2,3,'!','#')", delim))
+			checkSelectFunc(t, q, "!e <rx> fi#")
+		}
+	})
 
+	t.Run("check select_function snippet_n", func(t *testing.T) {
+		for _, delim := range delimiters {
+			q := DB.Query(ns).Where("name", reindexer.EQ, "rx").
+				Functions(fmt.Sprintf("name%ssnippet_n('<','>',10,2,pre_delim='[',post_delim=']',left_bound='(',right_bound=')',with_area=1)", delim))
+			checkSelectFunc(t, q, "[[2,11]here <rx> f]")
+		}
+	})
+
+	t.Run("check can't select_function snippet with composite nonstring idx field", func(t *testing.T) {
+		q := DB.Query(ns).Where("comp_idx", reindexer.EQ, "rx").Functions("comp_idx=snippet(<,>,3,3,'!','!')")
+		result, err := q.Exec(t).FetchAll()
+		require.ErrorContains(t, err, "Unable to apply snippet function to the non-string field 'id'")
+		require.Nil(t, result)
+	})
 }

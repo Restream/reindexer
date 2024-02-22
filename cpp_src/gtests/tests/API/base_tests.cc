@@ -1,10 +1,8 @@
-#include <fstream>
 #include <vector>
 #include "reindexer_api.h"
 #include "tools/errors.h"
 
 #include "core/item.h"
-#include "core/keyvalue/key_string.h"
 #include "core/keyvalue/variant.h"
 #include "core/queryresults/joinresults.h"
 #include "core/reindexer.h"
@@ -14,11 +12,9 @@
 
 #include <deque>
 #include <thread>
-#include "debug/backtrace.h"
 
 #include "core/cjson/jsonbuilder.h"
 #include "core/keyvalue/p_string.h"
-#include "gason/gason.h"
 #include "server/loggerwrapper.h"
 #include "tools/serializer.h"
 
@@ -102,7 +98,7 @@ TEST_F(ReindexerApi, RenameNamespace) {
 	err = rt.reindexer->OpenNamespace(existingNamespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	auto testInList = [&](const std::string& testNamespaceName, bool inList) {
+	auto testInList = [&](std::string_view testNamespaceName, bool inList) {
 		std::vector<reindexer::NamespaceDef> namespacesList;
 		err = rt.reindexer->EnumNamespaces(namespacesList, reindexer::EnumNamespacesOpts());
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -115,7 +111,7 @@ TEST_F(ReindexerApi, RenameNamespace) {
 		}
 	};
 
-	auto getRowsInJSON = [&](const std::string& namespaceName, std::vector<std::string>& resStrings) {
+	auto getRowsInJSON = [&](std::string_view namespaceName, std::vector<std::string>& resStrings) {
 		QueryResults result;
 		auto err = rt.reindexer->Select(Query(namespaceName), result);
 		ASSERT_TRUE(err.ok()) << err.what();
@@ -1114,7 +1110,7 @@ TEST_F(ReindexerApi, SortByUnorderedIndexes) {
 }
 
 TEST_F(ReindexerApi, SortByUnorderedIndexWithJoins) {
-	const std::string secondNamespace = "test_namespace_2";
+	constexpr std::string_view secondNamespace = "test_namespace_2";
 	std::vector<int> secondNamespacePKs;
 
 	auto err = rt.reindexer->OpenNamespace(default_namespace, StorageOpts().Enabled(false));
@@ -1371,7 +1367,7 @@ TEST_F(ReindexerApi, DslFieldsTest) {
 }
 
 TEST_F(ReindexerApi, DistinctQueriesEncodingTest) {
-	const std::string sql = "select distinct(country), distinct(city) from clients;";
+	constexpr std::string_view sql = "select distinct(country), distinct(city) from clients;";
 
 	Query q1 = Query::FromSQL(sql);
 	EXPECT_EQ(q1.Entries().Size(), 0);
@@ -1498,18 +1494,19 @@ TEST_F(ReindexerApi, ContextCancelingTest) {
 }
 
 TEST_F(ReindexerApi, JoinConditionsSqlParserTest) {
-	const std::string sql1 = "SELECT * FROM ns WHERE a > 0 AND  INNER JOIN (SELECT * FROM ns2 WHERE b > 10 AND c = 1) ON ns2.id = ns.fk_id";
+	constexpr std::string_view sql1 =
+		"SELECT * FROM ns WHERE a > 0 AND INNER JOIN (SELECT * FROM ns2 WHERE b > 10 AND c = 1) ON ns2.id = ns.fk_id";
 	const auto q1 = Query::FromSQL(sql1);
 	ASSERT_EQ(q1.GetSQL(), sql1);
 
-	const std::string sql2 =
-		"SELECT * FROM ns WHERE a > 0 AND  INNER JOIN (SELECT * FROM ns2 WHERE b > 10 AND c = 1 LIMIT 0) ON ns2.id = ns.fk_id";
+	constexpr std::string_view sql2 =
+		"SELECT * FROM ns WHERE a > 0 AND INNER JOIN (SELECT * FROM ns2 WHERE b > 10 AND c = 1 LIMIT 0) ON ns2.id = ns.fk_id";
 	const auto q2 = Query::FromSQL(sql2);
 	ASSERT_EQ(q2.GetSQL(), sql2);
 }
 
 TEST_F(ReindexerApi, UpdateWithBoolParserTest) {
-	const std::string sql = "UPDATE ns SET flag1 = true,flag2 = false WHERE id > 100";
+	constexpr std::string_view sql = "UPDATE ns SET flag1 = true,flag2 = false WHERE id > 100";
 	Query query = Query::FromSQL(sql);
 	ASSERT_EQ(query.UpdateFields().size(), 2);
 	EXPECT_EQ(query.UpdateFields().front().Column(), "flag1");
@@ -1526,7 +1523,7 @@ TEST_F(ReindexerApi, UpdateWithBoolParserTest) {
 }
 
 TEST_F(ReindexerApi, EqualPositionsSqlParserTest) {
-	const std::string sql =
+	constexpr std::string_view sql =
 		"SELECT * FROM ns WHERE (f1 = 1 AND f2 = 2 OR f3 = 3 equal_position(f1, f2) equal_position(f1, f3)) OR (f4 = 4 AND f5 > 5 "
 		"equal_position(f4, f5))";
 
@@ -1557,13 +1554,17 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 	Error err = rt.reindexer->OpenNamespace(default_namespace);
 	ASSERT_TRUE(err.ok()) << err.what();
 
+	err = rt.reindexer->OpenNamespace("second_ns");
+	ASSERT_TRUE(err.ok()) << err.what();
+
 	// clang-format off
-	const std::string jsonschema = R"xxx(
+	constexpr std::string_view jsonschema = R"xxx(
 	{
 	  "required": [
 		"Countries",
 		"Nest_fake",
-		"nested"
+		"nested",
+		"second_field"
 	  ],
 	  "properties": {
 		"Countries": {
@@ -1595,29 +1596,125 @@ TEST_F(ReindexerApi, SchemaSuggestions) {
 		  "additionalProperties": false,
 		  "type": "object"
 		}
+		"second_field": {
+		  "type": "number"
+		},
 	  },
 	  "additionalProperties": false,
 	  "type": "object"
 	})xxx";
 	// clang-format on
 
+	// clang-format off
+	constexpr std::string_view jsonschema2 = R"xxx(
+	{
+	  "required": [
+		"id",
+		"Field",
+	  ],
+	  "properties": {
+		"id": {
+		  "type": "number"
+		},
+		"Field": {
+		  "type": "number"
+		}
+	  },
+	  "additionalProperties": false,
+	  "type": "object"
+	})xxx";
+	// clang-format on
 	err = rt.reindexer->SetSchema(default_namespace, jsonschema);
 	ASSERT_TRUE(err.ok()) << err.what();
 
-	auto validateSuggestions = [this](std::string_view sql, const std::unordered_set<std::string>& expected) {
+	err = rt.reindexer->SetSchema("second_ns", jsonschema2);
+	ASSERT_TRUE(err.ok()) << err.what();
+
+	auto validateSuggestions = [this](std::string_view sql, const std::unordered_set<std::string_view>& expected, size_t position) {
 		std::vector<std::string> suggestions;
-		auto err = rt.reindexer->GetSqlSuggestions(sql, sql.size() - 1, suggestions);
+		auto err = rt.reindexer->GetSqlSuggestions(sql, position, suggestions);
 		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_EQ(suggestions.size(), expected.size()) << sql;
 		for (auto& sugg : suggestions) {
-			EXPECT_TRUE(expected.find(sugg) != expected.end()) << "Unexpected suggestion: " << sugg;
+			EXPECT_TRUE(expected.find(sugg) != expected.end()) << sql << '\n'
+															   << std::string(position, ' ') << "^\nUnexpected suggestion: " << sugg;
+		}
+		for (auto& expSugg : expected) {
+			EXPECT_TRUE(std::find(suggestions.begin(), suggestions.end(), expSugg) != suggestions.end())
+				<< sql << '\n'
+				<< std::string(position, ' ') << "^\nExpected but not found suggestion: " << expSugg;
 		}
 	};
 
-	validateSuggestions("select * from test_namespace where ne", {"Nest_fake", "nested"});
-	validateSuggestions("select * from test_namespace where nested", {});
-	validateSuggestions("select * from test_namespace where nested.", {".Name", ".Naame", ".Age"});
-	validateSuggestions("select * from test_namespace where nested.Na", {".Name", ".Naame"});
+	struct {
+		std::string_view sql;
+		std::unordered_set<std::string_view> expected;
+		size_t position = sql.empty() ? 0 : sql.size() - 1;
+	} testData[]{
+		{"select * from test_namespace where ne", {"Nest_fake", "nested"}},
+		{"select * from test_namespace where nested", {}},
+		{"select * from test_namespace where nested.", {".Name", ".Naame", ".Age"}},
+		{"select * from test_namespace where nested.Na", {".Name", ".Naame"}},
+
+		{"", {"explain", "local", "select", "delete", "update", "truncate"}},
+		{"s", {"select"}},
+		{"select", {}},
+		{"select ", {"*", "avg", "min", "max", "facet", "sum", "distinct", "rank", "count", "count_cached"}},
+		{"select *,", {}},
+		{"select *, ", {"*", "avg", "min", "max", "facet", "sum", "distinct", "rank", "count", "count_cached"}},
+		{"select *, f", {"facet", "Field"}},
+		{"select f", {"facet", "Field"}},
+		{"select * ", {"from"}},
+		{"select * f", {"from"}},
+		{"select * from ",
+		 {"test_namespace", "second_ns", "#memstats", "#activitystats", "#config", "#queriesperfstats", "#namespaces", "#perfstats",
+		  "#clientsstats", "#replicationstats"}},
+		{"select * from te", {"test_namespace"}},
+		{"select * from test_namespace ",
+		 {"where", ";", "equal_position", "inner", "join", "left", "limit", "merge", "offset", "or", "order"}},
+		{"select * from test_namespace w", {"where"}},
+		{"select * from test_namespace where ",
+		 {"second_field", "ST_DWithin", "Countries", "nested", "Nest_fake", "inner", "join", "left", "not", "equal_position"}},
+		{"select * from test_namespace where s", {"second_field", "ST_DWithin"}},
+		{"select * from second_ns where i", {"id", "inner"}},
+		{"select * from test_namespace where (", {}},
+		{"select * from test_namespace where (s", {"second_field", "ST_DWithin", "select"}},
+		{"select * from test_namespace where (select m", {"max", "min"}},
+		{"select * from test_namespace where (select i", {"id", "items_count", "ip"}},
+		{"select * from test_namespace where (select second_field f", {"from"}},
+		{"select * from test_namespace where (select id from s", {"second_ns"}},
+		{"select * from test_namespace where (select Field from second_ns where ", {"id", "ST_DWithin", "Field", "not", "equal_position"}},
+		{"select * from test_namespace where C", {"Countries"}},
+		{"select * from test_namespace where Countries == (", {}},
+		{"select * from test_namespace where Countries == (s", {"select"}},
+		{"select * from test_namespace where Countries == (select m", {"max", "min"}},
+		{"select * from test_namespace where Countries == (select i", {"id", "ip", "items_count"}},
+		{"select * from test_namespace where Countries == (select second_field f", {"from"}},
+		{"select * from test_namespace where Countries == (select second_field from ",
+		 {"test_namespace", "second_ns", "#memstats", "#activitystats", "#config", "#queriesperfstats", "#namespaces", "#perfstats",
+		  "#clientsstats", "#replicationstats"}},
+		{"select * from test_namespace where Countries == (select second_field from s", {"second_ns"}},
+		{"select * from test_namespace where i", {"inner"}},
+		{"select * from test_namespace where inner j", {"join"}},
+		{"select * from test_namespace where inner join s", {"second_ns"}},
+		{"select * from test_namespace where inner join (s", {"select"}},
+		{"select * from test_namespace where inner join (select m", {"min", "max"}},
+		{"select * from test_namespace where inner join (select i", {"id", "ip", "items_count"}},
+		{"select * from test_namespace where inner join (select second_field f", {"from"}},
+		{"select * from test_namespace where inner join (select second_field from s", {"second_ns"}},
+		{"SELECT * FROM ns WHERE id = ( ", {"null", "empty", "not", "select"}},
+	};
+
+	for (const auto& [sql, expected, position] : testData) {
+		if (sql.empty() || sql.back() == ' ') {
+			validateSuggestions(sql, expected, position);
+		} else {
+			for (const auto& td : testData) {
+				if (reindexer::checkIfStartsWith(sql, td.sql)) {
+					validateSuggestions(td.sql, expected, position);
+				}
+			}
+		}
+	}
 }
 
 TEST_F(ReindexerApi, LoggerWriteInterruptTest) {
@@ -1878,7 +1975,7 @@ TEST_F(ReindexerApi, UpdateDoublesItemByPKIndex) {
 
 	{
 		reindexer::QueryResults qr;
-		const std::string sql = "UPDATE test_namespace SET v1=125, id = 3 WHERE id = 2";
+		constexpr std::string_view sql = "UPDATE test_namespace SET v1=125, id = 3 WHERE id = 2";
 		Query query = Query::FromSQL(sql);
 		err = rt.reindexer->Update(query, qr);
 		ASSERT_EQ(err.code(), errLogic);

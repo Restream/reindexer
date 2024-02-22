@@ -7,6 +7,7 @@
 #include "net/http/serverconnection.h"
 #include "server/pprof/gperf_profiler.h"
 #include "tools/alloc_ext/tc_malloc_extension.h"
+#include "tools/hardware_concurrency.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -33,8 +34,7 @@ Listener<LT>::Listener(ev::dynamic_loop &loop, std::shared_ptr<Shared> shared)
 
 template <ListenerType LT>
 Listener<LT>::Listener(ev::dynamic_loop &loop, ConnectionFactory &&connFactory, int maxListeners)
-	: Listener(loop,
-			   std::make_shared<Shared>(std::move(connFactory), (maxListeners ? maxListeners : std::thread::hardware_concurrency()) + 1)) {}
+	: Listener(loop, std::make_shared<Shared>(std::move(connFactory), (maxListeners ? maxListeners : hardware_concurrency()) + 1)) {}
 
 template <ListenerType LT>
 Listener<LT>::~Listener() {

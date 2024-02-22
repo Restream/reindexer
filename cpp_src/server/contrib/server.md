@@ -76,6 +76,7 @@
   * [EqualPositionDef](#equalpositiondef)
   * [ExplainDef](#explaindef)
   * [FilterDef](#filterdef)
+  * [FtStopWordObject](#ftstopwordobject)
   * [FulltextConfig](#fulltextconfig)
   * [FulltextFieldConfig](#fulltextfieldconfig)
   * [FulltextSynonym](#fulltextsynonym)
@@ -131,12 +132,11 @@
 ## Overview
 **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
 Reindexer's goal is to provide fast search with complex queries.
-The Reindexer is compact and fast. It has not heavy dependencies. Complete reindexer docker image with all libraries and web interface size is just 15MB.
-Reindexer is fast.
+Reindexer is compact, fast and it does not have heavy dependencies.
 
 
 ### Version information
-*Version* : 4.13.0
+*Version* : 4.14.0
 
 
 ### License information
@@ -2249,6 +2249,7 @@ Query execution explainings
 |**selectors**  <br>*optional*|Filter selectors, used to proccess query conditions|< [selectors](#explaindef-selectors) > array|
 |**sort_by_uncommitted_index**  <br>*optional*|Optimization of sort by uncompleted index has been performed|boolean|
 |**sort_index**  <br>*optional*|Index, which used for sort results|string|
+|**subqueries**  <br>*optional*|Explain of subqueries preselect|< [subqueries](#explaindef-subqueries) > array|
 |**total_us**  <br>*optional*|Total query execution time|integer|
 
 
@@ -2285,6 +2286,7 @@ Query execution explainings
 |---|---|---|
 |**comparators**  <br>*optional*|Count of comparators used, for this selector|integer|
 |**cost**  <br>*optional*|Cost expectation of this selector|integer|
+|**description**  <br>*optional*|Description of the selector|string|
 |**explain_preselect**  <br>*optional*|Preselect in joined namespace execution explainings|[ExplainDef](#explaindef)|
 |**explain_select**  <br>*optional*|One of selects in joined namespace execution explainings|[ExplainDef](#explaindef)|
 |**field**  <br>*optional*|Field or index name|string|
@@ -2293,6 +2295,17 @@ Query execution explainings
 |**keys**  <br>*optional*|Number of uniq keys, processed by this selector (may be incorrect, in case of internal query optimization/caching|integer|
 |**matched**  <br>*optional*|Count of processed documents, matched this selector|integer|
 |**method**  <br>*optional*|Method, used to process condition|enum (scan, index, inner_join, left_join)|
+|**type**  <br>*optional*|Type of the selector|string|
+
+
+**subqueries**
+
+|Name|Description|Schema|
+|---|---|---|
+|**explain**  <br>*optional*|Explain of the subquery's preselect|[ExplainDef](#explaindef)|
+|**field**  <br>*optional*|Name of field being compared with the subquery's result|string|
+|**keys**  <br>*optional*|Count of keys being compared with the subquery's result|integer|
+|**namespace**  <br>*optional*|Subquery's namespace name|string|
 
 
 
@@ -2316,6 +2329,15 @@ If contains 'filters' then cannot contain 'cond', 'field' and 'value'. If not co
 
 
 
+### FtStopWordObject
+
+|Name|Description|Schema|
+|---|---|---|
+|**is_morpheme**  <br>*optional*|If the value is true, the word can be included in search results in queries such as 'word*', 'word~' etc.  <br>**Default** : `false`|boolean|
+|**word**  <br>*optional*|Stop word|string|
+
+
+
 ### FulltextConfig
 Fulltext Index configuration
 
@@ -2324,6 +2346,7 @@ Fulltext Index configuration
 |---|---|---|
 |**base_ranking**  <br>*optional*|Config for subterm proc rank.|[base_ranking](#fulltextconfig-base_ranking)|
 |**bm25_boost**  <br>*optional*|Boost of bm25 ranking  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
+|**bm25_config**  <br>*optional*|Config for document ranking function|[bm25_config](#fulltextconfig-bm25_config)|
 |**bm25_weight**  <br>*optional*|Weight of bm25 rank in final rank 0: bm25 will not change final rank. 1: bm25 will affect to finl rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**distance_boost**  <br>*optional*|Boost of search query term distance in found document  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**distance_weight**  <br>*optional*|Weight of search query terms distance in found document in final rank 0: distance will not change final rank. 1: distance will affect to final rank in 0 - 100% range  <br>**Default** : `0.5`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
@@ -2349,7 +2372,7 @@ Fulltext Index configuration
 |**position_boost**  <br>*optional*|Boost of search query term position  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
 |**position_weight**  <br>*optional*|Weight of search query term position in final rank. 0: term position will not change final rank. 1: term position will affect to final rank in 0 - 100% range  <br>**Default** : `0.1`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**stemmers**  <br>*optional*|List of stemmers to use|< string > array|
-|**stop_words**  <br>*optional*|List of stop words. Words from this list will be ignored in documents and queries|< string > array|
+|**stop_words**  <br>*optional*|List of objects of stop words. Words from this list will be ignored when building indexes|< [FtStopWordObject](#ftstopwordobject) > array|
 |**sum_ranks_by_fields_ratio**  <br>*optional*|Ratio to summation of ranks of match one term in several fields. For example, if value of this ratio is K, request is '@+f1,+f2,+f3 word', ranks of match in fields are R1, R2, R3 and R2 < R1 < R3, final rank will be R = R2 + K*R1 + K*K*R3  <br>**Default** : `0.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
 |**synonyms**  <br>*optional*|List of synonyms for replacement|< [FulltextSynonym](#fulltextsynonym) > array|
 |**term_len_boost**  <br>*optional*|Boost of search query term length  <br>**Default** : `1.0`  <br>**Minimum value** : `0`  <br>**Maximum value** : `10`|number (float)|
@@ -2370,6 +2393,15 @@ Fulltext Index configuration
 |**synonyms_proc**  <br>*optional*|Relevancy of the synonym match  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 |**translit_proc**  <br>*optional*|Relevancy of the match in translit  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
 |**typo_proc_penalty**  <br>*optional*|Extra penalty for each word's permutation (addition/deletion of the symbol) in typo algorithm  <br>**Minimum value** : `0`  <br>**Maximum value** : `500`|integer|
+
+
+**bm25_config**
+
+|Name|Description|Schema|
+|---|---|---|
+|**bm25_b**  <br>*optional*|Coefficient b in the formula for calculating bm25. If b is bigger, the effects of the length of the document compared to the average length are more amplified.  <br>**Default** : `0.75`  <br>**Minimum value** : `0`  <br>**Maximum value** : `1`|number (float)|
+|**bm25_k1**  <br>*optional*|Coefficient k1 in the formula for calculating bm25. Сoefficient that sets the saturation threshold for the frequency of the term. The higher the coefficient, the higher the threshold and the lower the saturation rate.  <br>**Default** : `2.0`  <br>**Minimum value** : `0`|number (float)|
+|**bm25_type**  <br>*optional*|Formula for calculating document relevance (rx_bm25, bm25, word_count)  <br>**Default** : `"rx_bm25"`|enum (rx_bm25, bm25, word_count)|
 
 
 **typos_detailed_config**
@@ -2759,7 +2791,7 @@ List of meta info of the specified namespace
 |**index_idset_hits_to_cache**  <br>*optional*|Default 'hits to cache' for index IdSets caches. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast|integer|
 |**joins_preselect_cache_size**  <br>*optional*|Max size of the index IdSets cache in bytes for each namespace. This cache will be enabled only if 'join_cache_mode' property is not 'off'. It stores resulting IDs, serialized JOINed queries and any other 'preselect' information for the JOIN queries (when target namespace is right namespace of the JOIN)|integer|
 |**joins_preselect_hit_to_cache**  <br>*optional*|Default 'hits to cache' for joins preselect cache of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast|integer|
-|**query_count_cache_size**  <br>*optional*|Max size of the cache for COUNT_CACHED() aggreagetion in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations|integer|
+|**query_count_cache_size**  <br>*optional*|Max size of the cache for COUNT_CACHED() aggregation in bytes for each namespace. This cache stores resulting COUNTs and serialized queries for the COUNT_CACHED() aggregations|integer|
 |**query_count_hit_to_cache**  <br>*optional*|Default 'hits to cache' for COUNT_CACHED() aggregation of the current namespace. This value determines how many requests required to put results into cache. For example with value of 2: first request will be executed without caching, second request will generate cache entry and put results into the cache and third request will get cached results. This value may be automatically increased if cache is invalidation too fast|integer|
 
 

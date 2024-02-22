@@ -27,7 +27,8 @@ void NsSelecter::operator()(LocalQueryResults &result, SelectCtx &ctx, const Rdx
 
 	auto &explain = ctx.explain;
 	explain = ExplainCalc(ctx.query.GetExplain() || logLevel >= LogInfo);
-	ActiveQueryScope queryScope(ctx, ns_->optimizationState_, explain, ns_->locker_.IsReadOnly(), ns_->strHolder_.get());
+	explain.SetSubQueriesExplains(std::move(ctx.subQueriesExplains));
+	ActiveQueryScope queryScope(ctx, ns_->optimizationState_, explain, ns_->locker_.InvalidationType(), ns_->strHolder_.get());
 
 	explain.SetPreselectTime(ctx.preResultTimeTotal);
 	explain.StartTiming();
@@ -42,23 +43,26 @@ void NsSelecter::operator()(LocalQueryResults &result, SelectCtx &ctx, const Rdx
 
 	bool needPutCachedTotal = false;
 	const auto initTotalCount = result.totalCount;
-	bool containAggCount = containSomeAggCount(AggCount);
-	bool containAggCountCached = containAggCount ? false : containSomeAggCount(AggCountCached);
-
+	const bool containAggCount = containSomeAggCount(AggCount);
+	const bool containAggCountCached = containAggCount ? false : containSomeAggCount(AggCountCached);
 	bool needCalcTotal = aggregationQueryRef.CalcTotal() == ModeAccurateTotal || containAggCount;
 
 	QueryCacheKey ckey;
 	if (aggregationQueryRef.CalcTotal() == ModeCachedTotal || containAggCountCached) {
-		ckey = QueryCacheKey{ctx.query};
+		ckey = QueryCacheKey{ctx.query, kCountCachedKeyMode, ctx.joinedSelectors};
 
 		auto cached = ns_->queryCountCache_->Get(ckey);
 		if (cached.valid && cached.val.total_count >= 0) {
 			result.totalCount += cached.val.total_count;
-			logPrintf(LogTrace, "[%s] using value from cache: %d", ns_->name_, result.totalCount);
+			if (logLevel >= LogTrace) {
+				logPrintf(LogInfo, "[%s] using total count value from cache: %d", ns_->name_, result.totalCount);
+			}
 		} else {
 			needPutCachedTotal = cached.valid;
-			logPrintf(LogTrace, "[%s] value for cache will be calculated by query", ns_->name_);
 			needCalcTotal = true;
+			if (logLevel >= LogTrace) {
+				logPrintf(LogTrace, "[%s] total count value for cache will be calculated by query", ns_->name_);
+			}
 		}
 	}
 
@@ -98,6 +102,7 @@ void NsSelecter::operator()(LocalQueryResults &result, SelectCtx &ctx, const Rdx
 	if (isFt) {
 		qPreproc.CheckUniqueFtQuery();
 		qPreproc.ExcludeFtQuery(rdxCtx);
+		result.haveRank = true;
 	}
 	qPreproc.ConvertWhereValues();
 
@@ -108,7 +113,6 @@ void NsSelecter::operator()(LocalQueryResults &result, SelectCtx &ctx, const Rdx
 							ns_->incarnationTag_);
 	}
 
-	if (isFt) result.haveRank = true;
 	if (ctx.query.IsWithRank()) {
 		if (isFt) {
 			result.needOutputRank = true;
@@ -320,16 +324,17 @@ void NsSelecter::operator()(LocalQueryResults &result, SelectCtx &ctx, const Rdx
 			} else if (!reverse && !hasComparators && !aggregationsOnly) {
 				selectLoop<false, false, false>(lctx, result, rdxCtx);
 			}
-		}
 
-		// Get total count for simple query with 1 condition and 1 idset
-		if (needCalcTotal && !lctx.calcTotal) {
-			if (!ctx.query.Entries().Empty()) {
-				result.totalCount += qres.Get<SelectIterator>(0).GetMaxIterations();
-			} else {
-				result.totalCount += ns_->items_.size() - ns_->free_.size();
+			// Get total count for simple query with 1 condition and 1 idset
+			if (needCalcTotal && !lctx.calcTotal) {
+				if (!ctx.query.Entries().Empty()) {
+					result.totalCount += qres.Get<SelectIterator>(0).GetMaxIterations();
+				} else {
+					result.totalCount += ns_->items_.size() - ns_->free_.size();
+				}
 			}
 		}
+
 		explain.AddLoopTime();
 		explain.AddIterations(maxIterations);
 		if (!ctx.inTransaction) {
@@ -401,7 +406,9 @@ void NsSelecter::operator()(LocalQueryResults &result, SelectCtx &ctx, const Rdx
 	}
 
 	if (needPutCachedTotal) {
-		logPrintf(LogTrace, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
+		if rx_unlikely (logLevel >= LogTrace) {
+			logPrintf(LogInfo, "[%s] put totalCount value into query cache: %d ", ns_->name_, result.totalCount);
+		}
 		ns_->queryCountCache_->Put(ckey, {static_cast<size_t>(result.totalCount - initTotalCount)});
 	}
 	if (ctx.preResult && ctx.preResult->executionMode == JoinPreResult::ModeBuild) {
@@ -1017,7 +1024,7 @@ void NsSelecter::selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &rd
 	SelectIterator &firstIterator = qres.begin()->Value<SelectIterator>();
 	IdType rowId = firstIterator.Val();
 	while (firstIterator.Next(rowId) && !finish) {
-		if (!sctx.inTransaction && (rowId % kCancelCheckFrequency == 0)) ThrowOnCancel(rdxCtx);
+		if ((rowId % kCancelCheckFrequency == 0) && !sctx.inTransaction) ThrowOnCancel(rdxCtx);
 		rowId = firstIterator.Val();
 		IdType properRowId = rowId;
 
@@ -1081,8 +1088,10 @@ void NsSelecter::selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &rd
 						getSortIndexValue(sctx.sortingContext, properRowId, prevValues, proc,
 										  sctx.nsid < result.joined_.size() ? &result.joined_[sctx.nsid] : nullptr, joinedSelectors);
 				}
-				if (!ctx.count && !ctx.calcTotal && multiSortFinished) break;
-				if (ctx.calcTotal) result.totalCount++;
+				if (!ctx.count && !ctx.calcTotal && multiSortFinished) {
+					break;
+				}
+				result.totalCount += int(ctx.calcTotal);
 			} else {
 				assertf(static_cast<size_t>(properRowId) < result.rowId2Vdoc->size(),
 						"properRowId = %d; rowId = %d; result.rowId2Vdoc->size() = %d", properRowId, rowId, result.rowId2Vdoc->size());

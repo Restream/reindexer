@@ -364,16 +364,6 @@ Error LocalQueryResults::Iterator::GetCJSON(WrSerializer &ser, bool withHdrLen) 
 	return errOK;
 }
 
-bool LocalQueryResults::Iterator::IsRaw() const noexcept {
-	auto &itemRef = qr_->items_[idx_];
-	return itemRef.Raw();
-}
-std::string_view LocalQueryResults::Iterator::GetRaw() const noexcept {
-	auto &itemRef = qr_->items_[idx_];
-	assertrx(itemRef.Raw());
-	return std::string_view(reinterpret_cast<char *>(itemRef.Value().Ptr()), itemRef.Value().GetCapacity());
-}
-
 Item LocalQueryResults::Iterator::GetItem(bool enableHold) {
 	auto &itemRef = qr_->items_[idx_];
 

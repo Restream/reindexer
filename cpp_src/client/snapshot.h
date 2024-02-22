@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/namespace/namespacestat.h"
 #include "core/namespace/snapshot/snapshotrecord.h"
 #include "net/cproto/coroclientconnection.h"
 
@@ -40,6 +41,8 @@ public:
 	Iterator end() noexcept { return Iterator{this, i_.count_}; }
 	size_t Size() const noexcept { return i_.count_; }
 	bool HasRawData() const noexcept { return i_.rawCount_; }
+	void ClusterizationStat(ClusterizationStatus &&clusterStatus) noexcept { i_.clusterStatus_ = std::move(clusterStatus); }
+	std::optional<ClusterizationStatus> ClusterizationStat() const noexcept { return i_.clusterStatus_; }
 
 private:
 	friend class RPCClient;
@@ -66,6 +69,7 @@ private:
 		net::cproto::CoroClientConnection *conn_;
 		std::chrono::milliseconds requestTimeout_;
 		std::chrono::steady_clock::time_point sessionTs_;
+		std::optional<ClusterizationStatus> clusterStatus_;
 	};
 
 	Impl i_;

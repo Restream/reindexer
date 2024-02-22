@@ -40,6 +40,6 @@ if(python3)
                    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/server/contrib
                    COMMENT "Generate query.json.h"
                    )
-            add_custom_target(query_json DEPENDS ${QUERY_SCHEMA})
+            add_custom_target(query_json ALL DEPENDS ${QUERY_SCHEMA})
     endif()
 endif ()

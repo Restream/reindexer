@@ -37,7 +37,7 @@ almalinux9_rpms="gcc-c++ make snappy-devel leveldb-devel gperftools-devel findut
 fedora_debs=" gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 centos7_debs="centos-release-scl devtoolset-10-gcc devtoolset-10-gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip rpm-build rpmdevtools git"
 debian_debs="build-essential g++ libunwind-dev libgoogle-perftools-dev libsnappy-dev libleveldb-dev make curl unzip git"
-alpine_apks="g++ snappy-dev leveldb-dev libexecinfo-dev make curl cmake unzip git"
+alpine_apks="g++ snappy-dev leveldb-dev libunwind-dev make curl cmake unzip git"
 arch_pkgs="gcc snappy leveldb make curl cmake unzip git"
 redos_rpms="gcc gcc-c++ make snappy-devel leveldb-devel gperftools-devel findutils curl tar unzip git cmake rpm-build python-srpm-macros"
 
@@ -237,7 +237,7 @@ install_alpine() {
             if [ $? -eq 0 ]; then
                 success_msg "Package '$pkg' was installed successfully."
             else
-                error_msg "Could not install '$pkg' package. Try 'apt-get update && apt-get install $pkg'" && return 1
+                error_msg "Could not install '$pkg' package. Try 'apk update && apk add $pkg'" && return 1
             fi
         fi
     done

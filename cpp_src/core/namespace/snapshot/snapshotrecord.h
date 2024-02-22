@@ -35,22 +35,29 @@ public:
 	void Deserialize(Serializer &ser);
 	void Serilize(WrSerializer &ser) const;
 
-	void MarkShallow(bool v = true) noexcept { opts = v ? opts | kShallowSnapshotChunk : opts & ~(kShallowSnapshotChunk); }
-	void MarkWAL(bool v = true) noexcept { opts = v ? opts | kWALSnapshotChunk : opts & ~(kWALSnapshotChunk); }
-	void MarkTx(bool v = true) noexcept { opts = v ? opts | kTxSnapshotChunk : opts & ~(kTxSnapshotChunk); }
-	void MarkLast(bool v = true) noexcept { opts = v ? opts | kLastSnapshotChunk : opts & ~(kLastSnapshotChunk); }
+	void MarkShallow(bool v = true) noexcept { opts_ = v ? opts_ | kShallowSnapshotChunk : opts_ & ~(kShallowSnapshotChunk); }
+	void MarkWAL(bool v = true) noexcept { opts_ = v ? opts_ | kWALSnapshotChunk : opts_ & ~(kWALSnapshotChunk); }
+	void MarkTx(bool v = true) noexcept { opts_ = v ? opts_ | kTxSnapshotChunk : opts_ & ~(kTxSnapshotChunk); }
+	void MarkLast(bool v = true) noexcept { opts_ = v ? opts_ | kLastSnapshotChunk : opts_ & ~(kLastSnapshotChunk); }
 
-	bool IsShallow() const noexcept { return opts & kShallowSnapshotChunk; }
-	bool IsWAL() const noexcept { return opts & kWALSnapshotChunk; }
-	bool IsTx() const noexcept { return opts & kTxSnapshotChunk; }
-	bool IsLastChunk() const noexcept { return opts & kLastSnapshotChunk; }
+	bool IsShallow() const noexcept { return opts_ & kShallowSnapshotChunk; }
+	bool IsWAL() const noexcept { return opts_ & kWALSnapshotChunk; }
+	bool IsTx() const noexcept { return opts_ & kTxSnapshotChunk; }
+	bool IsLastChunk() const noexcept { return opts_ & kLastSnapshotChunk; }
 
 	std::vector<SnapshotRecord> records;
-	uint16_t opts = 0;
+
+private:
+	uint16_t opts_ = 0;
+};
+
+enum SnapshotOptsEnum {
+	kSnapshotWithDataCount = 1 << 0,
+	kSnapshotWithClusterStatus = 1 << 1,
 };
 
 struct SnapshotOpts {
-	explicit SnapshotOpts(ExtendedLsn _from = ExtendedLsn(), int64_t _maxWalDepthOnForceSync = -1)
+	explicit SnapshotOpts(ExtendedLsn _from = ExtendedLsn(), int64_t _maxWalDepthOnForceSync = -1) noexcept
 		: from(_from), maxWalDepthOnForceSync(_maxWalDepthOnForceSync) {}
 
 	Error FromJSON(const gason::JsonNode &root);

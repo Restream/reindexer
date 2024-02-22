@@ -55,6 +55,14 @@ reindexer::span<std::string> randStringArray() {
 	return ret;
 }
 
+#if defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
+constexpr benchmark::IterationCount k0CondJoinIters = 8;
+constexpr benchmark::IterationCount kQuery4CondIters = 80;
+#else	// defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
+constexpr benchmark::IterationCount k0CondJoinIters = 500;
+constexpr benchmark::IterationCount kQuery4CondIters = 1000;
+#endif	// defined(REINDEX_WITH_ASAN) || defined(REINDEX_WITH_TSAN) || defined(RX_WITH_STDLIB_DEBUG)
+
 void ApiTvSimple::RegisterAllCases() {
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	BaseFixture::RegisterAllCases();
@@ -81,9 +89,11 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2CondLeftJoin", &ApiTvSimple::Query2CondLeftJoin, this);
 	Register("Query2CondLeftJoinTotal", &ApiTvSimple::Query2CondLeftJoinTotal, this);
 	Register("Query2CondLeftJoinCachedTotal", &ApiTvSimple::Query2CondLeftJoinCachedTotal, this);
-	Register("Query0CondInnerJoinUnlimit", &ApiTvSimple::Query0CondInnerJoinUnlimit, this)->Iterations(500);
-	Register("Query0CondInnerJoinUnlimitLowSelectivity", &ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity, this)->Iterations(500);
-	Register("Query0CondInnerJoinPreResultStoreValues", &ApiTvSimple::Query0CondInnerJoinPreResultStoreValues, this)->Iterations(500);
+	Register("Query0CondInnerJoinUnlimit", &ApiTvSimple::Query0CondInnerJoinUnlimit, this)->Iterations(k0CondJoinIters);
+	Register("Query0CondInnerJoinUnlimitLowSelectivity", &ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity, this)
+		->Iterations(k0CondJoinIters);
+	Register("Query0CondInnerJoinPreResultStoreValues", &ApiTvSimple::Query0CondInnerJoinPreResultStoreValues, this)
+		->Iterations(k0CondJoinIters);
 	Register("Query2CondInnerJoin", &ApiTvSimple::Query2CondInnerJoin, this);
 	Register("Query2CondInnerJoinTotal", &ApiTvSimple::Query2CondInnerJoinTotal, this);
 	Register("Query2CondInnerJoinCachedTotal", &ApiTvSimple::Query2CondInnerJoinCachedTotal, this);
@@ -95,9 +105,9 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query4Cond", &ApiTvSimple::Query4Cond, this);
 	Register("Query4CondTotal", &ApiTvSimple::Query4CondTotal, this);
 	Register("Query4CondCachedTotal", &ApiTvSimple::Query4CondCachedTotal, this);
-	Register("Query4CondRange", &ApiTvSimple::Query4CondRange, this)->Iterations(1000);
-	Register("Query4CondRangeTotal", &ApiTvSimple::Query4CondRangeTotal, this)->Iterations(1000);
-	Register("Query4CondRangeCachedTotal", &ApiTvSimple::Query4CondRangeCachedTotal, this)->Iterations(1000);
+	Register("Query4CondRange", &ApiTvSimple::Query4CondRange, this)->Iterations(kQuery4CondIters);
+	Register("Query4CondRangeTotal", &ApiTvSimple::Query4CondRangeTotal, this)->Iterations(kQuery4CondIters);
+	Register("Query4CondRangeCachedTotal", &ApiTvSimple::Query4CondRangeCachedTotal, this)->Iterations(kQuery4CondIters);
 #if !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN) && !defined(RX_WITH_STDLIB_DEBUG)
 	Register("Query2CondIdSet10", &ApiTvSimple::Query2CondIdSet10, this);
 #endif	// !defined(REINDEX_WITH_ASAN) && !defined(REINDEX_WITH_TSAN)
@@ -111,11 +121,14 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("FromCJSONPKOnly", &ApiTvSimple::FromCJSONPKOnly, this);
 	Register("GetCJSON", &ApiTvSimple::GetCJSON, this);
 	Register("ExtractField", &ApiTvSimple::ExtractField, this);
+	Register("SubQueryEq", &ApiTvSimple::SubQueryEq, this);
+	Register("SubQuerySet", &ApiTvSimple::SubQuerySet, this);
+	Register("SubQueryAggregate", &ApiTvSimple::SubQueryAggregate, this);
 
 	// Those benches should be last, because they are recreating indexes cache
-	Register("Query4CondRangeDropCache", &ApiTvSimple::Query4CondRangeDropCache, this)->Iterations(1000);
-	Register("Query4CondRangeDropCacheTotal", &ApiTvSimple::Query4CondRangeDropCacheTotal, this)->Iterations(1000);
-	Register("Query4CondRangeDropCacheCachedTotal", &ApiTvSimple::Query4CondRangeDropCacheCachedTotal, this)->Iterations(1000);
+	Register("Query4CondRangeDropCache", &ApiTvSimple::Query4CondRangeDropCache, this)->Iterations(kQuery4CondIters);
+	Register("Query4CondRangeDropCacheTotal", &ApiTvSimple::Query4CondRangeDropCacheTotal, this)->Iterations(kQuery4CondIters);
+	Register("Query4CondRangeDropCacheCachedTotal", &ApiTvSimple::Query4CondRangeDropCacheCachedTotal, this)->Iterations(kQuery4CondIters);
 	//  NOLINTEND(*cplusplus.NewDeleteLeaks)
 }
 
@@ -197,12 +210,14 @@ reindexer::Error ApiTvSimple::Initialize() {
 	err = db_->Commit(stringSelectNs_);
 	if (!err.ok()) return err;
 
-	NamespaceDef mainNsDef{innerJoinLowSelectivityMainNs_};
+	NamespaceDef mainNsDef{mainNs_};
 	mainNsDef.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex("field", "hash", "int", IndexOpts());
 	err = db_->AddNamespace(mainNsDef);
 	if (!err.ok()) return err;
-	NamespaceDef rightNsDef{innerJoinLowSelectivityRightNs_};
-	rightNsDef.AddIndex("id", "hash", "int", IndexOpts().PK()).AddIndex("field", "hash", "int", IndexOpts());
+	NamespaceDef rightNsDef{rightNs_};
+	rightNsDef.AddIndex("id", "hash", "int", IndexOpts().PK())
+		.AddIndex("field", "hash", "int", IndexOpts())
+		.AddIndex("id_tree", "tree", "int", IndexOpts());
 	err = db_->AddNamespace(rightNsDef);
 	if (!err.ok()) return err;
 
@@ -227,6 +242,7 @@ reindexer::Error ApiTvSimple::Initialize() {
 		reindexer::JsonBuilder bld2(wrSer_);
 		bld2.Put("id", i);
 		bld2.Put("field", i);
+		bld2.Put("id_tree", i);
 		bld2.End();
 		err = rItem.FromJSON(wrSer_.Slice());
 		if (!err.ok()) return err;
@@ -805,11 +821,48 @@ void ApiTvSimple::Query0CondInnerJoinUnlimit(benchmark::State& state) {
 void ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q4join(innerJoinLowSelectivityRightNs_);
+		Query q4join(rightNs_);
 		q4join.Where("id", CondLe, 250);
-		Query q(innerJoinLowSelectivityMainNs_);
+		Query q(mainNs_);
 		q.InnerJoin("id", "id", CondEq, std::move(q4join)).ReqTotal();
 
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::SubQueryEq(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q = Query(mainNs_).Where(
+			"id", CondEq, Query(rightNs_).Select({"field"}).Where("id", CondEq, VariantArray::Create(int(rand() % kTotalItemsMainJoinNs))));
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::SubQuerySet(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		const int rangeMin = rand() % (kTotalItemsMainJoinNs - 500);
+		Query q = Query(mainNs_).Where(
+			"id", CondSet, Query(rightNs_).Select({"id"}).Where("id_tree", CondRange, VariantArray::Create(rangeMin, rangeMin + 500)));
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::SubQueryAggregate(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q = Query(mainNs_).Where("id", CondEq,
+									   Query(rightNs_)
+										   .Aggregate(AggAvg, {"id"})
+										   .Where("id", CondLt, VariantArray::Create(int(rand() % kTotalItemsMainJoinNs)))
+										   .Limit(500));
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
@@ -1202,7 +1255,7 @@ void ApiTvSimple::query2CondIdSet(benchmark::State& state, const std::vector<std
 	AllocsTracker allocsTracker(state);
 	unsigned counter = 0;
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
-		Query q(innerJoinLowSelectivityRightNs_);
+		Query q(rightNs_);
 		q.Where("id", CondSet, idsets[counter++ % idsets.size()]).Where("field", CondGt, int(kTotalItemsMainJoinNs / 2)).Limit(20);
 
 		QueryResults qres;

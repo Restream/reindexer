@@ -16,7 +16,7 @@ void SnapshotRecord::Serilize(WrSerializer& ser) const {
 }
 
 void SnapshotChunk::Deserialize(Serializer& ser) {
-	opts = ser.GetVarUint();
+	opts_ = ser.GetVarUint();
 	auto size = ser.GetVarUint();
 	records.resize(size);
 	for (auto& rec : records) {
@@ -25,7 +25,7 @@ void SnapshotChunk::Deserialize(Serializer& ser) {
 }
 
 void SnapshotChunk::Serilize(WrSerializer& ser) const {
-	ser.PutVarUint(opts);
+	ser.PutVarUint(opts_);
 	ser.PutVarUint(records.size());
 	for (auto& rec : records) {
 		rec.Serilize(ser);

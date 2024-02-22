@@ -61,8 +61,8 @@ QueryResults::~QueryResults() {
 	results_.setClosed();
 }
 
-TagsMatcher QueryResults::GetTagsMatcher(int nsid) const { return results_.GetTagsMatcher(nsid); }
-TagsMatcher QueryResults::GetTagsMatcher(std::string_view ns) const { return results_.GetTagsMatcher(ns); }
+TagsMatcher QueryResults::GetTagsMatcher(int nsid) const noexcept { return results_.GetTagsMatcher(nsid); }
+TagsMatcher QueryResults::GetTagsMatcher(std::string_view ns) const noexcept { return results_.GetTagsMatcher(ns); }
 
 }  // namespace client
 }  // namespace reindexer
