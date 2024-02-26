@@ -8,6 +8,8 @@ int main(int argc, char *argv[]) {
 	srand(time(NULL));
 	::testing::InitGoogleTest(&argc, argv);
 
+	reindexer::debug::backtrace_init();
+
 #ifndef _WIN32
 	const char *tmpDir = getenv("REINDEXER_TEST_DB_ROOT");
 	if (tmpDir && *tmpDir) {
