@@ -135,7 +135,7 @@ protected:
 
 	IClientsStats *clientsStats_;
 
-	std::chrono::system_clock::time_point startTs_;
+	system_clock_w::time_point startTs_;
 	std::thread qrWatcherThread_;
 	RPCQrWatcher qrWatcher_;
 	std::atomic<bool> terminate_ = {false};

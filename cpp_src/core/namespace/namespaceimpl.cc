@@ -3,7 +3,6 @@
 #include <ctime>
 #include <memory>
 #include "core/cjson/cjsondecoder.h"
-#include "core/cjson/cjsontools.h"
 #include "core/cjson/jsonbuilder.h"
 #include "core/cjson/uuid_recoders.h"
 #include "core/index/index.h"
@@ -16,8 +15,8 @@
 #include "core/querystat.h"
 #include "core/rdxcontext.h"
 #include "core/selectfunc/functionexecutor.h"
+#include "core/transactionimpl.h"
 #include "itemsloader.h"
-#include "namespace.h"
 #include "replicator/updatesobserver.h"
 #include "replicator/walselecter.h"
 #include "threadtaskqueueimpl.h"
@@ -29,7 +28,6 @@
 #include "tools/timetools.h"
 
 using std::chrono::duration_cast;
-using std::chrono::high_resolution_clock;
 using std::chrono::microseconds;
 
 #define kStorageIndexesPrefix "indexes"
@@ -705,6 +703,11 @@ void NamespaceImpl::dumpIndex(std::ostream& os, std::string_view index) const {
 	indexes_[itIdxName->second]->Dump(os);
 }
 
+void NamespaceImpl::clearNamespaceCaches() {
+	queryCountCache_->Clear();
+	joinCache_->Clear();
+}
+
 void NamespaceImpl::dropIndex(const IndexDef& index) {
 	auto itIdxName = indexesNames_.find(index.name_);
 	if (itIdxName == indexesNames_.end()) {
@@ -1136,7 +1139,10 @@ bool NamespaceImpl::updateIndex(const IndexDef& indexDef) {
 		if (!indexDef.IsEqual(foundIndex, IndexComparison::WithConfig)) {
 			// Only index config changed
 			// Just call SetOpts
-			indexes_[getIndexByName(indexName)]->SetOpts(indexDef.opts_);
+			auto idxPtr = indexes_[getIndexByName(indexName)].get();
+			idxPtr->SetOpts(indexDef.opts_);
+			idxPtr->ClearCache();
+			clearNamespaceCaches();
 			return true;
 		}
 		return false;
@@ -1313,7 +1319,7 @@ void NamespaceImpl::doUpdate(const Query& query, QueryResults& result, const NsC
 	selecter(result, selCtx, ctx.rdxContext);
 
 	ActiveQueryScope queryScope(query, QueryUpdate, optimizationState_, strHolder_.get());
-	const auto tmStart = high_resolution_clock::now();
+	const auto tmStart = system_clock_w::now();
 
 	bool updateWithJson = false;
 	bool withExpressions = false;
@@ -1375,7 +1381,7 @@ void NamespaceImpl::doUpdate(const Query& query, QueryResults& result, const NsC
 
 	if (query.GetDebugLevel() >= LogInfo) {
 		logPrintf(LogInfo, "Updated %d items in %d µs", result.Count(),
-				  duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count());
+				  duration_cast<microseconds>(system_clock_w::now() - tmStart).count());
 	}
 }
 
@@ -1530,7 +1536,7 @@ void NamespaceImpl::doDelete(const Query& query, QueryResults& result, const NsC
 
 	ActiveQueryScope queryScope(query, QueryDelete, optimizationState_, strHolder_.get());
 	assertrx(result.IsNamespaceAdded(this));
-	const auto tmStart = high_resolution_clock::now();
+	const auto tmStart = system_clock_w::now();
 
 	AsyncStorage::AdviceGuardT storageAdvice;
 	if (result.Items().size() >= AsyncStorage::kLimitToAdviceBatching) {
@@ -1556,7 +1562,7 @@ void NamespaceImpl::doDelete(const Query& query, QueryResults& result, const NsC
 	}
 	if (query.GetDebugLevel() >= LogInfo) {
 		logPrintf(LogInfo, "Deleted %d items in %d µs", result.Count(),
-				  duration_cast<microseconds>(high_resolution_clock::now() - tmStart).count());
+				  duration_cast<microseconds>(system_clock_w::now() - tmStart).count());
 	}
 }
 
@@ -2085,7 +2091,7 @@ void NamespaceImpl::optimizeIndexes(const NsContext& ctx) {
 	}
 
 	using namespace std::chrono;
-	const int64_t now = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+	const int64_t now = duration_cast<milliseconds>(system_clock_w::now_coarse().time_since_epoch()).count();
 	if (now - lastUpdateTime < config_.optimizationTimeout) {
 		return;
 	}
@@ -2159,17 +2165,11 @@ void NamespaceImpl::markUpdated(bool forceOptimizeAllIndexes) {
 		int expected{OptimizationCompleted};
 		optimizationState_.compare_exchange_strong(expected, OptimizedPartially);
 	}
-	queryCountCache_->Clear();
-	joinCache_->Clear();
-	lastUpdateTime_.store(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(), std::memory_order_release);
+	clearNamespaceCaches();
+	lastUpdateTime_.store(duration_cast<milliseconds>(system_clock_w::now().time_since_epoch()).count(), std::memory_order_release);
 	if (!nsIsLoading_) {
 		repl_.updatedUnixNano = getTimeNow("nsec"sv);
 	}
-}
-
-void NamespaceImpl::updateSelectTime() {
-	using namespace std::chrono;
-	lastSelectTime_ = duration_cast<seconds>(system_clock::now().time_since_epoch()).count();
 }
 
 void NamespaceImpl::Select(QueryResults& result, SelectCtx& params, const RdxContext& ctx) {
@@ -2658,7 +2658,7 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext* ctx) {
 	if (repl_.slaveMode) {
 		return;
 	}
-	const auto now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch());
+	const auto now = std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now_coarse().time_since_epoch());
 	if (now == lastExpirationCheckTs_) {
 		return;
 	}
@@ -2666,7 +2666,7 @@ void NamespaceImpl::removeExpiredItems(RdxActivityContext* ctx) {
 	for (const std::unique_ptr<Index>& index : indexes_) {
 		if ((index->Type() != IndexTtl) || (index->Size() == 0)) continue;
 		const int64_t expirationthreshold =
-			std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count() -
+			std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now_coarse().time_since_epoch()).count() -
 			index->GetTTLValue();
 		QueryResults qr;
 		qr.AddNamespace(this, true);

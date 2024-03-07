@@ -12,6 +12,13 @@
 /* Define to 1 if you have the __atomic functions */
 #define HAVE_ATOMIC_FUNCTIONS 1
 
+/* Define to 1 if you have the `clock_gettime' function. */
+#define HAVE_CLOCK_GETTIME 1
+
+/* Define to 1 if you have the declaration of `getpagesize', and to 0 if you
+   don't. */
+#define HAVE_DECL_GETPAGESIZE 1
+
 /* Define to 1 if you have the declaration of `strnlen', and to 0 if you
    don't. */
 #define HAVE_DECL_STRNLEN 1
@@ -86,4 +93,9 @@
 /* Enable general extensions on Solaris.  */
 #ifndef __EXTENSIONS__
 #define __EXTENSIONS__ 1
+#endif
+
+/* Enable large inode numbers on Mac OS X 10.5.  */
+#ifndef _DARWIN_USE_64_BIT_INODE
+#define _DARWIN_USE_64_BIT_INODE 1
 #endif

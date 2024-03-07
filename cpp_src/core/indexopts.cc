@@ -36,38 +36,33 @@ bool IndexOpts::IsSparse() const noexcept { return options & kIndexOptSparse; }
 bool IndexOpts::hasConfig() const noexcept { return !config.empty(); }
 CollateMode IndexOpts::GetCollateMode() const noexcept { return static_cast<CollateMode>(collateOpts_.mode); }
 
-IndexOpts& IndexOpts::PK(bool value) noexcept {
+IndexOpts& IndexOpts::PK(bool value) & noexcept {
 	options = value ? options | kIndexOptPK : options & ~(kIndexOptPK);
 	return *this;
 }
 
-IndexOpts& IndexOpts::Array(bool value) noexcept {
+IndexOpts& IndexOpts::Array(bool value) & noexcept {
 	options = value ? options | kIndexOptArray : options & ~(kIndexOptArray);
 	return *this;
 }
 
-IndexOpts& IndexOpts::Dense(bool value) noexcept {
+IndexOpts& IndexOpts::Dense(bool value) & noexcept {
 	options = value ? options | kIndexOptDense : options & ~(kIndexOptDense);
 	return *this;
 }
 
-IndexOpts& IndexOpts::Sparse(bool value) noexcept {
+IndexOpts& IndexOpts::Sparse(bool value) & noexcept {
 	options = value ? options | kIndexOptSparse : options & ~(kIndexOptSparse);
 	return *this;
 }
 
-IndexOpts& IndexOpts::RTreeType(RTreeIndexType value) noexcept {
+IndexOpts& IndexOpts::RTreeType(RTreeIndexType value) & noexcept {
 	rtreeType_ = value;
 	return *this;
 }
 
-IndexOpts& IndexOpts::SetCollateMode(CollateMode mode) noexcept {
+IndexOpts& IndexOpts::SetCollateMode(CollateMode mode) & noexcept {
 	collateOpts_.mode = mode;
-	return *this;
-}
-
-IndexOpts& IndexOpts::SetConfig(const std::string& newConfig) {
-	config = newConfig;
 	return *this;
 }
 

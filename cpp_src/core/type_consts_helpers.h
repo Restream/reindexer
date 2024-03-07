@@ -6,10 +6,11 @@
 
 namespace reindexer {
 
-[[nodiscard]] CondType InvertJoinCondition(CondType cond);
+[[nodiscard]] CondType InvertJoinCondition(CondType);
+[[nodiscard]] CondType InvertNotCondition(CondType);
 [[nodiscard]] std::string_view CondTypeToStr(CondType);
 [[nodiscard]] std::string_view TagTypeToStr(TagType);
-[[nodiscard]] std::string_view AggTypeToStr(AggType t) noexcept;
+[[nodiscard]] std::string_view AggTypeToStr(AggType) noexcept;
 
 constexpr bool IsComposite(IndexType type) noexcept {
 	return type == IndexCompositeBTree || type == IndexCompositeFastFT || type == IndexCompositeFuzzyFT || type == IndexCompositeHash;

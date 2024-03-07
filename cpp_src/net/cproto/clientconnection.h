@@ -145,8 +145,7 @@ public:
 				set = true;
 			},
 			opts, args, argss...);
-		const auto until =
-			opts.netTimeout.count() ? (std::chrono::system_clock::now() + 2 * opts.netTimeout) : std::chrono::system_clock::time_point();
+		const auto until = opts.netTimeout.count() ? (system_clock_w::now_coarse() + 2 * opts.netTimeout) : system_clock_w::time_point();
 		std::unique_lock<std::mutex> lck(mtx_);
 		CounterGuardIR32 cg(bufWait_);
 		if (opts.netTimeout.count()) {

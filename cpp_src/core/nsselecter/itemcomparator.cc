@@ -120,107 +120,107 @@ private:
 
 template <typename Inserter>
 void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter insert, bool multiSort) {
-	std::visit(overloaded{[&](const SortingContext::ExpressionEntry &e) { insert.expr(e.data.desc); },
-						  [&](const SortingContext::JoinedFieldEntry &e) {
-							  if (joined_.size() <= e.nsIdx) {
-								  joined_.resize(e.nsIdx + 1);
-							  }
-							  if (joined_[e.nsIdx].joinedSelector == nullptr) {
-								  assertrx_throw(ctx_.joinedSelectors);
-								  assertrx_throw(ctx_.joinedSelectors->size() > e.nsIdx);
-								  joined_[e.nsIdx].joinedSelector = &(*ctx_.joinedSelectors)[e.nsIdx];
-							  }
-							  auto &jns = joined_[e.nsIdx];
-							  assertrx_throw(jns.joinedSelector->PreResult()->dataMode != JoinPreResult::ModeValues);
-							  const auto &ns = *jns.joinedSelector->RightNs();
-							  const int fieldIdx = e.index;
-							  if (fieldIdx == IndexValueType::SetByJsonPath || ns.indexes_[fieldIdx]->Opts().IsSparse()) {
-								  TagsPath tagsPath;
-								  if (fieldIdx != IndexValueType::SetByJsonPath) {
-									  const FieldsSet &fs = ns.indexes_[fieldIdx]->Fields();
-									  assertrx_throw(fs.getTagsPathsLength() > 0);
-									  tagsPath = fs.getTagsPath(0);
-								  } else {
-									  tagsPath = ns.tagsMatcher_.path2tag(e.field);
-								  }
-								  if (jns.fields.contains(tagsPath)) {
-									  throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
-								  }
-								  insert.fields(jns, std::move(tagsPath));
-								  insert.joined(e.nsIdx, e.data.desc);
-								  if (fieldIdx != IndexValueType::SetByJsonPath) {
-									  insert.collateOpts(jns, &ns.indexes_[fieldIdx]->Opts().collateOpts_);
-								  } else {
-									  insert.collateOpts(jns, nullptr);
-								  }
-							  } else {
-								  const auto &idx = *ns.indexes_[fieldIdx];
-								  if (idx.Opts().IsArray()) {
-									  throw Error(errQueryExec, "Sorting cannot be applied to array field.");
-								  }
-								  if (fieldIdx >= ns.indexes_.firstCompositePos()) {
-									  if (multiSort) {
-										  throw Error(errQueryExec, "Multicolumn sorting cannot be applied to composite fields: %s",
-													  e.field);
-									  }
-									  jns.fields = idx.Fields();
-									  assertrx_throw(comparators_.empty());
-									  comparators_.reserve(jns.fields.size());
-									  for (size_t i = 0, s = jns.fields.size(); i < s; ++i) {
-										  comparators_.emplace_back(CompareByJoinedField{e.nsIdx, e.data.desc});
-									  }
-								  } else {
-									  if (jns.fields.contains(fieldIdx)) {
-										  throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.field);
-									  }
-									  insert.fields(jns, fieldIdx);
-									  insert.joined(e.nsIdx, e.data.desc);
-								  }
-								  insert.collateOpts(jns, &idx.Opts().collateOpts_);
-							  }
-						  },
-						  [&](const SortingContext::FieldEntry &e) {
-							  const int fieldIdx = e.data.index;
-							  if (fieldIdx == IndexValueType::SetByJsonPath || ns_.indexes_[fieldIdx]->Opts().IsSparse()) {
-								  TagsPath tagsPath;
-								  if (fieldIdx != IndexValueType::SetByJsonPath) {
-									  const FieldsSet &fs = ns_.indexes_[fieldIdx]->Fields();
-									  assertrx_throw(fs.getTagsPathsLength() > 0);
-									  tagsPath = fs.getTagsPath(0);
-								  } else {
-									  tagsPath = ns_.tagsMatcher_.path2tag(e.data.expression);
-								  }
-								  if (fields_.contains(tagsPath)) {
-									  throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
-								  }
-								  insert.fields(std::move(tagsPath));
-								  insert.index(e.data.desc);
-							  } else {
-								  if (ns_.indexes_[fieldIdx]->Opts().IsArray()) {
-									  throw Error(errQueryExec, "Sorting cannot be applied to array field.");
-								  }
-								  if (fieldIdx >= ns_.indexes_.firstCompositePos()) {
-									  if (multiSort) {
-										  throw Error(errQueryExec, "Multicolumn sorting cannot be applied to composite fields: %s",
-													  e.data.expression);
-									  }
-									  fields_ = ns_.indexes_[fieldIdx]->Fields();
-									  assertrx_throw(comparators_.empty());
-									  comparators_.reserve(fields_.size());
-									  for (size_t i = 0, s = fields_.size(); i < s; ++i) {
-										  comparators_.emplace_back(CompareByField{e.data.desc});
-									  }
-								  } else {
-									  if (fields_.contains(fieldIdx)) {
-										  throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
-									  }
-									  insert.fields(fieldIdx);
-									  insert.index(e.data.desc);
-								  }
-							  }
-							  insert.collateOpts(e.opts);
-						  }},
-			   sortingEntry);
+	std::visit(
+		overloaded{[&](const SortingContext::ExpressionEntry &e) { insert.expr(e.data.desc); },
+				   [&](const SortingContext::JoinedFieldEntry &e) {
+					   if (joined_.size() <= e.nsIdx) {
+						   joined_.resize(e.nsIdx + 1);
+					   }
+					   if (joined_[e.nsIdx].joinedSelector == nullptr) {
+						   assertrx_throw(ctx_.joinedSelectors);
+						   assertrx_throw(ctx_.joinedSelectors->size() > e.nsIdx);
+						   joined_[e.nsIdx].joinedSelector = &(*ctx_.joinedSelectors)[e.nsIdx];
+					   }
+					   auto &jns = joined_[e.nsIdx];
+					   assertrx_throw(!std::holds_alternative<JoinPreResult::Values>(jns.joinedSelector->PreResult()->preselectedPayload));
+					   const auto &ns = *jns.joinedSelector->RightNs();
+					   const int fieldIdx = e.index;
+					   if (fieldIdx == IndexValueType::SetByJsonPath || ns.indexes_[fieldIdx]->Opts().IsSparse()) {
+						   TagsPath tagsPath;
+						   if (fieldIdx != IndexValueType::SetByJsonPath) {
+							   const FieldsSet &fs = ns.indexes_[fieldIdx]->Fields();
+							   assertrx_throw(fs.getTagsPathsLength() > 0);
+							   tagsPath = fs.getTagsPath(0);
+						   } else {
+							   tagsPath = ns.tagsMatcher_.path2tag(e.field);
+						   }
+						   if (jns.fields.contains(tagsPath)) {
+							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+						   }
+						   insert.fields(jns, std::move(tagsPath));
+						   insert.joined(e.nsIdx, e.data.desc);
+						   if (fieldIdx != IndexValueType::SetByJsonPath) {
+							   insert.collateOpts(jns, &ns.indexes_[fieldIdx]->Opts().collateOpts_);
+						   } else {
+							   insert.collateOpts(jns, nullptr);
+						   }
+					   } else {
+						   const auto &idx = *ns.indexes_[fieldIdx];
+						   if (idx.Opts().IsArray()) {
+							   throw Error(errQueryExec, "Sorting cannot be applied to array field.");
+						   }
+						   if (fieldIdx >= ns.indexes_.firstCompositePos()) {
+							   if (multiSort) {
+								   throw Error(errQueryExec, "Multicolumn sorting cannot be applied to composite fields: %s", e.field);
+							   }
+							   jns.fields = idx.Fields();
+							   assertrx_throw(comparators_.empty());
+							   comparators_.reserve(jns.fields.size());
+							   for (size_t i = 0, s = jns.fields.size(); i < s; ++i) {
+								   comparators_.emplace_back(CompareByJoinedField{e.nsIdx, e.data.desc});
+							   }
+						   } else {
+							   if (jns.fields.contains(fieldIdx)) {
+								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.field);
+							   }
+							   insert.fields(jns, fieldIdx);
+							   insert.joined(e.nsIdx, e.data.desc);
+						   }
+						   insert.collateOpts(jns, &idx.Opts().collateOpts_);
+					   }
+				   },
+				   [&](const SortingContext::FieldEntry &e) {
+					   const int fieldIdx = e.data.index;
+					   if (fieldIdx == IndexValueType::SetByJsonPath || ns_.indexes_[fieldIdx]->Opts().IsSparse()) {
+						   TagsPath tagsPath;
+						   if (fieldIdx != IndexValueType::SetByJsonPath) {
+							   const FieldsSet &fs = ns_.indexes_[fieldIdx]->Fields();
+							   assertrx_throw(fs.getTagsPathsLength() > 0);
+							   tagsPath = fs.getTagsPath(0);
+						   } else {
+							   tagsPath = ns_.tagsMatcher_.path2tag(e.data.expression);
+						   }
+						   if (fields_.contains(tagsPath)) {
+							   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+						   }
+						   insert.fields(std::move(tagsPath));
+						   insert.index(e.data.desc);
+					   } else {
+						   if (ns_.indexes_[fieldIdx]->Opts().IsArray()) {
+							   throw Error(errQueryExec, "Sorting cannot be applied to array field.");
+						   }
+						   if (fieldIdx >= ns_.indexes_.firstCompositePos()) {
+							   if (multiSort) {
+								   throw Error(errQueryExec, "Multicolumn sorting cannot be applied to composite fields: %s",
+											   e.data.expression);
+							   }
+							   fields_ = ns_.indexes_[fieldIdx]->Fields();
+							   assertrx_throw(comparators_.empty());
+							   comparators_.reserve(fields_.size());
+							   for (size_t i = 0, s = fields_.size(); i < s; ++i) {
+								   comparators_.emplace_back(CompareByField{e.data.desc});
+							   }
+						   } else {
+							   if (fields_.contains(fieldIdx)) {
+								   throw Error(errQueryExec, "You cannot sort by the same indexes twice: %s", e.data.expression);
+							   }
+							   insert.fields(fieldIdx);
+							   insert.index(e.data.desc);
+						   }
+					   }
+					   insert.collateOpts(e.opts);
+				   }},
+		sortingEntry);
 }
 
 void ItemComparator::BindForForcedSort() {

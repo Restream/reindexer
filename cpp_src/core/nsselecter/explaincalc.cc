@@ -29,7 +29,6 @@ void ExplainCalc::LogDump(int logLevel) {
 				[this](const FieldsComparator &c) {
 					logPrintf(LogInfo, "%s: cost %g, matched %d, %s", c.Name(), c.Cost(iters_), c.GetMatchedCount(), c.Dump());
 				},
-				[](const AlwaysFalse &) { logPrintf(LogInfo, "AlwaysFalse"); },
 				[](const AlwaysTrue &) { logPrintf(LogInfo, "AlwaysTrue"); });
 		}
 
@@ -101,22 +100,19 @@ static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpT
 		case JoinType::OrInnerJoin:
 		case JoinType::LeftJoin:
 			assertrx(js.PreResult());
-			switch (js.PreResult()->dataMode) {
-				case JoinPreResult::ModeValues:
-					jsonSel.Put("method"sv, "preselected_values"sv);
-					jsonSel.Put("keys"sv, js.PreResult()->values.size());
-					break;
-				case JoinPreResult::ModeIdSet:
-					jsonSel.Put("method"sv, "preselected_rows"sv);
-					jsonSel.Put("keys"sv, js.PreResult()->ids.size());
-					break;
-				case JoinPreResult::ModeIterators:
-					jsonSel.Put("method"sv, "no_preselect"sv);
-					jsonSel.Put("keys"sv, js.PreResult()->iterators.Size());
-					break;
-				default:
-					break;
-			}
+			std::visit(overloaded{[&](const JoinPreResult::Values &values) {
+									  jsonSel.Put("method"sv, "preselected_values"sv);
+									  jsonSel.Put("keys"sv, values.size());
+								  },
+								  [&](const IdSet &ids) {
+									  jsonSel.Put("method"sv, "preselected_rows"sv);
+									  jsonSel.Put("keys"sv, ids.size());
+								  },
+								  [&](const SelectIteratorContainer &iterators) {
+									  jsonSel.Put("method"sv, "no_preselect"sv);
+									  jsonSel.Put("keys"sv, iterators.Size());
+								  }},
+					   js.PreResult()->preselectedPayload);
 			if (!js.PreResult()->explainPreSelect.empty()) {
 				jsonSel.Raw("explain_preselect"sv, js.PreResult()->explainPreSelect);
 			}
@@ -295,13 +291,6 @@ std::string SelectIteratorContainer::explainJSON(const_iterator begin, const_ite
 				jsonSel.Put("matched"sv, c.GetMatchedCount());
 				jsonSel.Put("type"sv, "TwoFieldsComparison"sv);
 				name << opName(it->operation, it == begin) << c.Name();
-			},
-			[&](const AlwaysFalse &) {
-				auto jsonSkiped = builder.Object();
-				jsonSkiped.Put("type"sv, "Skipped"sv);
-				jsonSkiped.Put("description"sv, "always "s + (it->operation == OpNot ? "true" : "false"));
-				name << opName(it->operation == OpNot ? OpAnd : it->operation, it == begin) << "Always"sv
-					 << (it->operation == OpNot ? "True"sv : "False"sv);
 			},
 			[&](const AlwaysTrue &) {
 				auto jsonSkiped = builder.Object();

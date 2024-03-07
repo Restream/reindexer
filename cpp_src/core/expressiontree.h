@@ -321,6 +321,10 @@ public:
 	/// Insert value at the position
 	template <typename T>
 	void Insert(size_t pos, OperationType op, T&& v) {
+		if (pos == container_.size()) {
+			Append(op, std::forward<T>(v));
+			return;
+		}
 		assertrx_throw(pos < container_.size());
 		for (unsigned& b : activeBrackets_) {
 			assertrx_throw(b < container_.size());
@@ -330,6 +334,22 @@ public:
 			if (container_[i].IsSubTree() && Next(i) > pos) container_[i].Append();
 		}
 		container_.emplace(container_.begin() + pos, op, std::forward<T>(v));
+	}
+	template <typename T, typename... Args>
+	void Emplace(size_t pos, OperationType op, Args&&... args) {
+		if (pos == container_.size()) {
+			Append<T>(op, std::forward<Args>(args)...);
+			return;
+		}
+		assertrx_throw(pos < container_.size());
+		for (unsigned& b : activeBrackets_) {
+			assertrx_throw(b < container_.size());
+			if (b >= pos) ++b;
+		}
+		for (size_t i = 0; i < pos; ++i) {
+			if (container_[i].IsSubTree() && Next(i) > pos) container_[i].Append();
+		}
+		container_.emplace(container_.begin() + pos, op, T(std::forward<Args>(args)...));
 	}
 	/// Insert value after the position
 	template <typename T>
@@ -439,7 +459,7 @@ public:
 		activeBrackets_.pop_back();
 	}
 	/// Sets operation to last appended leaf or last closed subtree or last openned subtree if it is empty
-	void SetLastOperation(OperationType op) { container_[lastAppendedElement()].operation = op; }
+	void SetLastOperation(OperationType op) { container_[LastAppendedElement()].operation = op; }
 	bool Empty() const noexcept { return container_.empty(); }
 	size_t Size() const noexcept { return container_.size(); }
 	void Reserve(size_t s) { container_.reserve(s); }
@@ -614,18 +634,8 @@ public:
 		if (activeBrackets_.empty()) return nullptr;
 		return &container_[activeBrackets_.back()].template Value<SubTree>();
 	}
-
-protected:
-	Container container_;
-	/// stack of openned brackets (beginnigs of subtrees)
-	h_vector<unsigned, 2> activeBrackets_;
-	void clear() {
-		container_.clear();
-		activeBrackets_.clear();
-	}
-
 	/// @return the last appended leaf or last closed subtree or last openned subtree if it is empty
-	size_t lastAppendedElement() const noexcept {
+	size_t LastAppendedElement() const noexcept {
 		assertrx_throw(!container_.empty());
 		size_t start = 0;  // start of last openned subtree;
 		if (!activeBrackets_.empty()) {
@@ -634,6 +644,15 @@ protected:
 		}
 		while (Next(start) != container_.size()) start = Next(start);
 		return start;
+	}
+
+protected:
+	Container container_;
+	/// stack of openned brackets (beginnigs of subtrees)
+	h_vector<unsigned, 2> activeBrackets_;
+	void clear() {
+		container_.clear();
+		activeBrackets_.clear();
 	}
 
 	void append(const_iterator begin, const_iterator end) {

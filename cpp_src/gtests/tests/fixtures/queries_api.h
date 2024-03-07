@@ -32,37 +32,38 @@ public:
 		indexesCollates = {{kFieldNameActor, CollateOpts{CollateUTF8}},
 						   {kFieldNameLocation, CollateOpts{CollateNone}},
 						   {kFieldNameTemp, CollateOpts{CollateASCII}},
-						   {kFieldNameNumeric, CollateOpts{CollateUTF8}}};
+						   {kFieldNameNumeric, CollateOpts{CollateNumeric}}};
 
 		err = rt.reindexer->OpenNamespace(default_namespace);
 		ASSERT_TRUE(err.ok()) << err.what();
-		DefineNamespaceDataset(default_namespace,
-							   {
-								   IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameGenre, "tree", "int", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNamePackages, "hash", "int", IndexOpts{}.Array(), 0},
-								   IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameCountries, "tree", "string", IndexOpts{}.Array(), 0},
-								   IndexDeclaration{kFieldNameAge, "hash", "int", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameRate, "tree", "double", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameIsDeleted, "-", "bool", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameActor, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
-								   IndexDeclaration{kFieldNamePriceId, "hash", "int", IndexOpts{}.Array(), 0},
-								   IndexDeclaration{kFieldNameLocation, "tree", "string", IndexOpts{}.SetCollateMode(CollateNone), 0},
-								   IndexDeclaration{kFieldNameEndTime, "hash", "int", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameBtreeIdsets, "hash", "int", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameTemp, "tree", "string", IndexOpts{}.SetCollateMode(CollateASCII), 0},
-								   IndexDeclaration{kFieldNameNumeric, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
-								   IndexDeclaration{kFieldNameUuid, "hash", "uuid", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameUuidArr, "hash", "uuid", IndexOpts{}.Array(), 0},
-								   IndexDeclaration{kCompositeFieldIdTemp, "tree", "composite", IndexOpts{}.PK(), 0},
-								   IndexDeclaration{kCompositeFieldAgeGenre, "hash", "composite", IndexOpts{}, 0},
-								   IndexDeclaration{kCompositeFieldUuidName, "hash", "composite", IndexOpts{}, 0},
-								   IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts{}.Sparse(), 0},
-							   });
+		DefineNamespaceDataset(
+			default_namespace,
+			{
+				IndexDeclaration{kFieldNameId, "hash", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameGenre, "tree", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameYear, "tree", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNamePackages, "hash", "int", IndexOpts{}.Array(), 0},
+				IndexDeclaration{kFieldNameName, "tree", "string", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameCountries, "tree", "string", IndexOpts{}.Array(), 0},
+				IndexDeclaration{kFieldNameAge, "hash", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameDescription, "fuzzytext", "string", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameRate, "tree", "double", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameIsDeleted, "-", "bool", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameActor, "tree", "string", IndexOpts{}.SetCollateMode(CollateUTF8), 0},
+				IndexDeclaration{kFieldNamePriceId, "hash", "int", IndexOpts{}.Array(), 0},
+				IndexDeclaration{kFieldNameLocation, "tree", "string", IndexOpts{}.SetCollateMode(CollateNone), 0},
+				IndexDeclaration{kFieldNameEndTime, "hash", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameStartTime, "tree", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameBtreeIdsets, "hash", "int", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameTemp, "tree", "string", IndexOpts{}.SetCollateMode(CollateASCII), 0},
+				IndexDeclaration{kFieldNameNumeric, "tree", "string", IndexOpts{}.SetCollateMode(CollateNumeric).Sparse(), 0},
+				IndexDeclaration{kFieldNameUuid, "hash", "uuid", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameUuidArr, "hash", "uuid", IndexOpts{}.Array(), 0},
+				IndexDeclaration{kCompositeFieldIdTemp, "tree", "composite", IndexOpts{}.PK(), 0},
+				IndexDeclaration{kCompositeFieldAgeGenre, "hash", "composite", IndexOpts{}, 0},
+				IndexDeclaration{kCompositeFieldUuidName, "hash", "composite", IndexOpts{}, 0},
+				IndexDeclaration{kFieldNameYearSparse, "hash", "string", IndexOpts{}.Sparse(), 0},
+			});
 		addIndexFields(default_namespace, kFieldNameId, {{kFieldNameId, reindexer::KeyValueType::Int{}}});
 		addIndexFields(default_namespace, kFieldNameGenre, {{kFieldNameGenre, reindexer::KeyValueType::Int{}}});
 		addIndexFields(default_namespace, kFieldNameYear, {{kFieldNameYear, reindexer::KeyValueType::Int{}}});
@@ -651,11 +652,18 @@ protected:
 		return item;
 	}
 
-	void RandVariantArray(size_t size, size_t max, VariantArray& arr) {
+	VariantArray RandVariantArray(size_t size, size_t min, size_t range) {
+		VariantArray result;
+		RandVariantArray(size, min, min + range, result);
+		return result;
+	}
+
+	void RandVariantArray(size_t size, size_t min, size_t max, VariantArray& arr) {
+		assert(min < max);
 		arr.clear<false>();
 		arr.reserve(size);
 		for (size_t i = 0; i < size; ++i) {
-			arr.emplace_back(int(rand() % max));
+			arr.emplace_back(int(rand() % (max - min) + min));
 		}
 	}
 
@@ -740,20 +748,47 @@ protected:
 	}
 
 	void CheckConditionsMergingQueries() {
+		const auto randCond = [conds = {CondEq, CondLt, CondLe, CondGt, CondGe}]() noexcept {
+			return *(conds.begin() + rand() % std::size(conds));
+		};
 		// Check merging of conditions by the same index with large sets of values
-		VariantArray arr1, arr2, emptyArr;
+		int64_t tmp;
 		for (size_t i = 0; i < 3; ++i) {
-			RandVariantArray(500, 1000, arr1);
-			RandVariantArray(100, 1000, arr2);
-			arr2.insert(arr2.end(), arr1.begin(), arr1.begin() + 100);
-
-			ExecuteAndVerifyWithSql(
-				Query(default_namespace).Where(kFieldNameNumeric, CondSet, arr1).Where(kFieldNameNumeric, CondSet, arr2));
+			struct {
+				CondType cond;
+				VariantArray values;
+			} testData[]{
+				{CondSet, RandVariantArray(500, 0, 1000)},
+				{CondSet, RandVariantArray(100, 0, 1000)},
+				{CondSet, {}},
+				{CondSet, RandVariantArray(rand() % 4, rand() % 1000, rand() % 100 + 1)},
+				{CondRange, (tmp = rand() % 1000, VariantArray::Create(tmp, rand() % 1000 + tmp))},
+				{CondRange, (tmp = rand() % 1000, VariantArray::Create(tmp, (rand() % 2) * 100 + tmp))},
+			};
+			testData[1].values.insert(testData[1].values.end(), testData[0].values.begin(), testData[0].values.begin() + 100);
 
 			ExecuteAndVerifyWithSql(Query(default_namespace)
-										.Where(kFieldNameNumeric, CondSet, arr1)
-										.Where(kFieldNameNumeric, CondSet, emptyArr)
-										.Where(kFieldNameNumeric, CondSet, arr2));
+										.Where(kFieldNameNumeric, testData[0].cond, testData[0].values)
+										.Where(kFieldNameNumeric, testData[1].cond, testData[1].values));
+
+			ExecuteAndVerifyWithSql(Query(default_namespace)
+										.Where(kFieldNameNumeric, testData[0].cond, testData[0].values)
+										.Where(kFieldNameNumeric, testData[2].cond, testData[2].values)
+										.Where(kFieldNameNumeric, testData[1].cond, testData[1].values));
+			for (size_t j = 0; j < 10; ++j) {
+				Query q{default_namespace};
+				for (size_t l = 0, n = rand() % 10 + 2; l < n; ++l) {
+					const size_t testCase = rand() % (std::size(testData) * 2 + 1);
+					if (testCase < std::size(testData)) {
+						q.Where(kFieldNameNumeric, testData[testCase].cond, testData[testCase].values);
+					} else if (testCase == std::size(testData)) {
+						q.Where(kFieldNameNumeric, rand() % 2 ? CondAny : CondEmpty, VariantArray{});
+					} else {
+						q.Where(kFieldNameNumeric, randCond(), VariantArray::Create(rand() % 1000));
+					}
+				}
+				ExecuteAndVerifyWithSql(q);
+			}
 		}
 	}
 

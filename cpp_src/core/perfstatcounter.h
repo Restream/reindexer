@@ -1,10 +1,10 @@
 #pragma once
 
 #include <stdlib.h>
-#include <chrono>
 #include <mutex>
 #include <vector>
 #include "estl/mutex.h"
+#include "tools/clock.h"
 
 namespace reindexer {
 
@@ -18,7 +18,7 @@ public:
 	void Reset();
 	template <class T>
 	T Get() {
-		std::unique_lock<Mutex> lck(mtx_);
+		std::lock_guard<Mutex> lck(mtx_);
 		lap();
 		return T{totalHitCount,
 				 size_t(totalTime.count() / (totalHitCount ? totalHitCount : 1)),
@@ -49,7 +49,7 @@ protected:
 	size_t calcHitCount = 0;
 	std::chrono::microseconds calcTime = std::chrono::microseconds(0);
 	std::chrono::microseconds calcLockTime = std::chrono::microseconds(0);
-	std::chrono::time_point<std::chrono::high_resolution_clock> calcStartTime;
+	system_clock_w::time_point calcStartTime;
 	double stddev = 0.0;
 	std::chrono::microseconds minTime = defaultMinTime();
 	std::chrono::microseconds maxTime = std::chrono::microseconds(std::numeric_limits<size_t>::min());
@@ -64,26 +64,24 @@ using PerfStatCounterST = PerfStatCounter<dummy_mutex>;
 template <typename Mutex>
 class PerfStatCalculator {
 public:
-	PerfStatCalculator(PerfStatCounter<Mutex> &counter, bool enable) : counter_(&counter), enable_(enable) {
-		if (enable_) tmStart = std::chrono::high_resolution_clock::now();
+	PerfStatCalculator(PerfStatCounter<Mutex> &counter, bool enable) noexcept : counter_(&counter), enable_(enable) {
+		if (enable_) tmStart = system_clock_w::now();
 	}
 	~PerfStatCalculator() {
-		if (enable_)
-			counter_->Hit(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tmStart));
+		if (enable_) counter_->Hit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart));
 	}
 	void SetCounter(PerfStatCounter<Mutex> &counter) { counter_ = &counter; }
 	void LockHit() {
-		if (enable_)
-			counter_->LockHit(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tmStart));
+		if (enable_) counter_->LockHit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart));
 	}
 	void HitManualy() {
 		if (enable_) {
 			enable_ = false;
-			counter_->Hit(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - tmStart));
+			counter_->Hit(std::chrono::duration_cast<std::chrono::microseconds>(system_clock_w::now() - tmStart));
 		}
 	}
 
-	std::chrono::time_point<std::chrono::high_resolution_clock> tmStart;
+	system_clock_w::time_point tmStart;
 	PerfStatCounter<Mutex> *counter_;
 	bool enable_;
 };

@@ -13,11 +13,11 @@ constexpr double kTimerPeriod = 0.1;
 void RPCQrWatcher::Register(net::ev::dynamic_loop& loop, LoggerWrapper logger) {
 	timer_.set(loop);
 	timer_.set([this, logger = std::move(logger)](net::ev::timer&, int) {
-		thread_local static auto lastCbCallTime = std::chrono::steady_clock::now();
+		thread_local static auto lastCbCallTime = steady_clock_w::now_coarse();
 		constexpr auto secCount = std::chrono::duration_cast<std::chrono::seconds>(kTimeIncrementPeriod).count();
 		static_assert(secCount >= 1, "Minimal timer granularity is 1 second");
 
-		const auto realTime = std::chrono::steady_clock::now();
+		const auto realTime = steady_clock_w::now_coarse();
 		if (realTime - lastCbCallTime < kTimeIncrementPeriod) {
 			return;
 		}
@@ -44,10 +44,10 @@ void RPCQrWatcher::Register(net::ev::dynamic_loop& loop, LoggerWrapper logger) {
 				to = std::min(from + partSize, size);
 			}
 			prevToValue = (to == size) ? 0 : to;
-			const auto bt = std::chrono::high_resolution_clock::now();
+			const auto bt = steady_clock_w::now_coarse();
 			const auto cnt = removeExpired(now, from, to);
 			if (cnt) {
-				const auto et = std::chrono::high_resolution_clock::now();
+				const auto et = steady_clock_w::now_coarse();
 				logger.info("{} query results were removed due to idle timeout. Cleanup time: {} us", cnt,
 							std::chrono::duration_cast<std::chrono::microseconds>(et - bt).count());
 			}

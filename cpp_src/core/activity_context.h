@@ -1,8 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <cassert>
-#include <chrono>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -10,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 #include "estl/mutex.h"
+#include "tools/clock.h"
 
 namespace reindexer {
 
@@ -21,8 +20,8 @@ struct Activity {
 	std::string user;
 	std::string query;
 	int connectionId;
-	std::chrono::system_clock::time_point startTime;
 	enum State : unsigned { InProgress = 0, WaitLock, Sending, IndexesLookup, SelectLoop } state;
+	system_clock_w::time_point startTime;
 	std::string_view description;
 	void GetJSON(WrSerializer&) const;
 	static std::string_view DescribeState(State) noexcept;

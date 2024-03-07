@@ -59,6 +59,10 @@ func (s *Serializer) grow(sz int) {
 	s.buf = s.buf[0 : len(s.buf)+sz]
 }
 
+func (s *Serializer) Reset() {
+	s.buf = s.buf[:0]
+}
+
 func (s *Serializer) Append(s2 Serializer) {
 	sl := len(s2.buf)
 	l := len(s.buf)
@@ -105,11 +109,9 @@ func (s *Serializer) writeIntBits(v int64, sz uintptr) {
 }
 
 func (s *Serializer) WriteString(vx string) *Serializer {
-
 	v := []byte(vx)
 	s.Write(v)
 	return s
-
 }
 
 func (s *Serializer) PutVBytes(v []byte) *Serializer {
@@ -131,6 +133,48 @@ func (s *Serializer) Write(v []byte) (n int, err error) {
 		s.buf[i+l] = v[i]
 	}
 	return sl, nil
+}
+
+func (s *Serializer) WriteInts16(v []int16) (n int, err error) {
+	sl := len(v)
+	slBytes := sl * 2
+	l := len(s.buf)
+	s.grow(slBytes)
+	for i := 0; i < sl; i++ {
+		v64 := uint16(v[i])
+		s.buf[l] = byte(v64)
+		l += 1
+		s.buf[l] = byte(v64 >> 8)
+		l += 1
+	}
+	return slBytes, nil
+}
+
+func (s *Serializer) WriteInts(v []int) (n int, err error) {
+	sl := len(v)
+	slBytes := sl * 8
+	l := len(s.buf)
+	s.grow(slBytes)
+	for i := 0; i < sl; i++ {
+		v64 := uint64(v[i])
+		s.buf[l] = byte(v64)
+		l += 1
+		s.buf[l] = byte(v64 >> 8)
+		l += 1
+		s.buf[l] = byte(v64 >> 16)
+		l += 1
+		s.buf[l] = byte(v64 >> 24)
+		l += 1
+		s.buf[l] = byte(v64 >> 32)
+		l += 1
+		s.buf[l] = byte(v64 >> 40)
+		l += 1
+		s.buf[l] = byte(v64 >> 48)
+		l += 1
+		s.buf[l] = byte(v64 >> 56)
+		l += 1
+	}
+	return slBytes, nil
 }
 
 func (s *Serializer) PutVarInt(v int64) {

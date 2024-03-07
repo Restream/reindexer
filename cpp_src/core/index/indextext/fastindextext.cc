@@ -1,14 +1,10 @@
 ﻿#include "fastindextext.h"
-#include <chrono>
 #include <memory>
-#include "core/ft/bm25.h"
 #include "core/ft/filters/kblayout.h"
 #include "core/ft/filters/synonyms.h"
 #include "core/ft/filters/translit.h"
-#include "core/ft/ft_fast/selecter.h"
-#include "core/ft/numtotext.h"
-#include "core/selectfunc/selectfunc.h"
 #include "estl/contexted_locks.h"
+#include "tools/clock.h"
 #include "tools/logger.h"
 
 namespace {
@@ -20,7 +16,6 @@ namespace reindexer {
 
 using std::chrono::duration_cast;
 using std::chrono::milliseconds;
-using std::chrono::high_resolution_clock;
 
 template <typename T>
 void FastIndexText<T>::initHolder(FtFastConfig &cfg) {
@@ -223,14 +218,14 @@ template <typename T>
 void FastIndexText<T>::commitFulltextImpl() {
 	this->holder_->StartCommit(this->tracker_.isCompleteUpdated());
 
-	auto tm0 = high_resolution_clock::now();
+	auto tm0 = system_clock_w::now();
 
 	if (this->holder_->status_ == FullRebuild) {
 		buildVdocs(this->idx_map);
 	} else {
 		buildVdocs(this->tracker_.updated());
 	}
-	auto tm1 = high_resolution_clock::now();
+	auto tm1 = system_clock_w::now();
 
 	this->holder_->Process(this->Fields().size(), !this->opts_.IsDense());
 	if (this->holder_->NeedClear(this->tracker_.isCompleteUpdated())) {
@@ -250,7 +245,7 @@ void FastIndexText<T>::commitFulltextImpl() {
 		}
 	}
 	if rx_unlikely (getConfig()->logLevel >= LogInfo) {
-		auto tm2 = high_resolution_clock::now();
+		auto tm2 = system_clock_w::now();
 		logPrintf(LogInfo, "FastIndexText::Commit elapsed %d ms total [ build vdocs %d ms,  process data %d ms ]",
 				  duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
 				  duration_cast<milliseconds>(tm2 - tm1).count());

@@ -89,7 +89,7 @@ void Activity::GetJSON(WrSerializer& ser) const {
 	if (!user.empty()) builder.Put("user", user);
 	builder.Put("query", query);
 	builder.Put("query_id", id);
-	std::time_t t = system_clock::to_time_t(startTime);
+	std::time_t t = system_clock_w::to_time_t(startTime);
 	char buffer[80];
 	std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", std::localtime(&t));
 	std::stringstream ss;
@@ -102,8 +102,8 @@ void Activity::GetJSON(WrSerializer& ser) const {
 
 RdxActivityContext::RdxActivityContext(std::string_view activityTracer, std::string_view user, std::string_view query,
 									   ActivityContainer& parent, int ipConnectionId, bool clientState)
-	: data_{nextId(),		std::string(activityTracer),	  std::string(user),	std::string(query),
-			ipConnectionId, std::chrono::system_clock::now(), Activity::InProgress, ""sv},
+	: data_{nextId(),		std::string(activityTracer), std::string(user),		std::string(query),
+			ipConnectionId, Activity::InProgress,		 system_clock_w::now(), ""sv},
 	  state_(serializeState(clientState ? Activity::Sending : Activity::InProgress)),
 	  parent_(&parent)
 #ifndef NDEBUG

@@ -364,7 +364,7 @@ TEST_F(RPCClientTestApi, CoroSelectTimeout) {
 	testTimer.set([&](ev::timer&, int) {
 		// Just to print output on CI
 		ASSERT_TRUE(false) << fmt::sprintf("Test deadline exceeded. Closed count: %d. Expected: %d. %d|", server.CloseQRRequestsCount(),
-										   kCorCount * kQueriesCount, std::chrono::steady_clock::now().time_since_epoch().count());
+										   kCorCount * kQueriesCount, reindexer::steady_clock_w::now().time_since_epoch().count());
 	});
 	testTimer.set(loop);
 	const auto kMaxTime = GetMaxTimeForCoroSelectTimeout(kCorCount * kQueriesCount, kSelectDelay);

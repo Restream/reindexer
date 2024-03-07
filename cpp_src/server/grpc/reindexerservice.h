@@ -68,7 +68,7 @@ public:
 private:
 	struct TxData {
 		std::shared_ptr<Transaction> tx;
-		std::chrono::time_point<std::chrono::steady_clock> txDeadline;
+		steady_clock_w::time_point txDeadline;
 		std::string dbName, nsName;
 	};
 

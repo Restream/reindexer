@@ -9,6 +9,7 @@ namespace reindexer {
 struct JoinPreResult {
 	class Values : public std::vector<ItemRef> {
 	public:
+		Values(const PayloadType &pt, const TagsMatcher &tm) noexcept : payloadType{pt}, tagsMatcher{tm} {}
 		Values(Values &&other)
 			: std::vector<ItemRef>(std::move(other)),
 			  payloadType(std::move(other.payloadType)),
@@ -16,7 +17,7 @@ struct JoinPreResult {
 			  locked_(other.locked_) {
 			other.locked_ = false;
 		}
-		Values() : locked_(false) {}
+		Values() noexcept : locked_(false) {}
 		Values(const Values &) = delete;
 		Values &operator=(const Values &) = delete;
 		Values &operator=(Values &&) = delete;
@@ -44,16 +45,14 @@ struct JoinPreResult {
 
 	typedef std::shared_ptr<JoinPreResult> Ptr;
 	typedef std::shared_ptr<const JoinPreResult> CPtr;
-	IdSet ids;
-	SelectIteratorContainer iterators;
-	Values values;
-	enum { ModeEmpty, ModeBuild, ModeExecute } executionMode = ModeEmpty;
-	enum { ModeIterators, ModeIdSet, ModeValues } dataMode = ModeIterators;
+	std::variant<IdSet, SelectIteratorContainer, Values> preselectedPayload;
+	enum { ModeEmpty, ModeBuild, ModeExecute, ModeForInjection, ModeInjectionRejected } executionMode = ModeEmpty;
 	bool enableSortOrders = false;
 	bool btreeIndexOptimizationEnabled = true;
 	bool enableStoredValues = false;
 	std::string explainPreSelect, explainOneSelect;
 	ExplainCalc::Duration selectTime = ExplainCalc::Duration::zero();
+	int mainQueryMaxIterations;
 };
 
 class SortExpression;
@@ -114,11 +113,11 @@ public:
 	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &, int *maxIterations, unsigned sortId, const SelectFunction::Ptr &,
 											 const RdxContext &);
 	static constexpr int MaxIterationsForPreResultStoreValuesOptimization() noexcept { return 200; }
+	JoinPreResult::Ptr PreResult() noexcept { return preResult_; }
 	JoinPreResult::CPtr PreResult() const noexcept { return preResult_; }
 	const NamespaceImpl::Ptr &RightNs() const noexcept { return rightNs_; }
 
 private:
-	[[nodiscard]] VariantArray readValuesFromRightNs(const QueryJoinEntry &) const;
 	[[nodiscard]] VariantArray readValuesFromPreResult(const QueryJoinEntry &) const;
 	template <typename Cont, typename Fn>
 	[[nodiscard]] VariantArray readValuesOfRightNsFrom(const Cont &from, const Fn &createPayload, const QueryJoinEntry &,

@@ -1,4 +1,3 @@
-#include <chrono>
 #include <string_view>
 #include "core/cbinding/resultserializer.h"
 #include "core/cjson/ctag.h"
@@ -2284,7 +2283,7 @@ TEST_F(NsApi, TestUpdateFieldWithFunction) {
 	DefineDefaultNamespace();
 	FillDefaultNamespace();
 
-	int64_t updateTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	int64_t updateTime = std::chrono::duration_cast<std::chrono::milliseconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
 
 	QueryResults qr;
 	Error err = rt.reindexer->Select(

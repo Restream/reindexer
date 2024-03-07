@@ -2,6 +2,7 @@
 #include "coroutine/waitgroup.h"
 #include "gason/gason.h"
 #include "reindexer_version.h"
+#include "tools/clock.h"
 #include "tools/semversion.h"
 #include "tools/stringstools.h"
 
@@ -122,7 +123,7 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		err = reindexer.SubscribeUpdates(&observer, filters, SubscriptionOpts().IncrementSubscription());
 		ASSERT_TRUE(err.ok()) << err.what();
 
-		auto beginTs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		auto beginTs = std::chrono::duration_cast<std::chrono::milliseconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
 		loop.sleep(std::chrono::milliseconds(2000));  // Timeout to update send/recv rate
 		CoroQueryResults resultNs;
 		err = reindexer.Select(reindexer::Query("#namespaces"), resultNs);
@@ -137,7 +138,7 @@ TEST_F(ClientsStatsApi, ClientsStatsValues) {
 		reindexer::WrSerializer wrser;
 		err = it.GetJSON(wrser, false);
 		ASSERT_TRUE(err.ok()) << err.what();
-		auto endTs = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+		auto endTs = std::chrono::duration_cast<std::chrono::milliseconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
 
 		gason::JsonParser parser;
 		gason::JsonNode clientsStats = parser.Parse(wrser.Slice());

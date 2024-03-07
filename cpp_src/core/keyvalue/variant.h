@@ -67,7 +67,7 @@ public:
 	template <typename... Ts>
 	Variant(const std::tuple<Ts...> &);
 
-	Variant &operator=(Variant &&other) &noexcept {
+	Variant &operator=(Variant &&other) & noexcept {
 		if (this == &other) return *this;
 		if (isUuid()) {
 			if (other.isUuid()) {
@@ -119,6 +119,7 @@ public:
 	bool operator<(const Variant &other) const { return Compare(other) < 0; }
 	bool operator>(const Variant &other) const { return Compare(other) > 0; }
 	bool operator>=(const Variant &other) const { return Compare(other) >= 0; }
+	bool operator<=(const Variant &other) const { return Compare(other) <= 0; }
 
 	int Compare(const Variant &other, const CollateOpts &collateOpts = CollateOpts()) const;
 	template <WithString>
@@ -146,6 +147,24 @@ public:
 
 	template <typename T>
 	void Dump(T &os, CheckIsStringPrintable checkPrintableString = CheckIsStringPrintable::Yes) const;
+
+	class Less {
+	public:
+		Less(const CollateOpts &collate) noexcept : collate_{&collate} {}
+		[[nodiscard]] bool operator()(const Variant &lhs, const Variant &rhs) const { return lhs.Compare(rhs, *collate_) < 0; }
+
+	private:
+		const CollateOpts *collate_;
+	};
+
+	class EqualTo {
+	public:
+		EqualTo(const CollateOpts &collate) noexcept : collate_{&collate} {}
+		[[nodiscard]] bool operator()(const Variant &lhs, const Variant &rhs) const { return lhs.Compare(rhs, *collate_) == 0; }
+
+	private:
+		const CollateOpts *collate_;
+	};
 
 private:
 	bool isUuid() const noexcept { return uuid_.isUuid != 0; }
@@ -223,11 +242,11 @@ public:
 	VariantArray() noexcept = default;
 	explicit VariantArray(Point) noexcept;
 	explicit operator Point() const;
-	VariantArray &MarkArray(bool v = true) &noexcept {
+	VariantArray &MarkArray(bool v = true) & noexcept {
 		isArrayValue = v;
 		return *this;
 	}
-	VariantArray &&MarkArray(bool v = true) &&noexcept {
+	VariantArray &&MarkArray(bool v = true) && noexcept {
 		isArrayValue = v;
 		return std::move(*this);
 	}

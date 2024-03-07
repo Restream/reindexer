@@ -1,6 +1,5 @@
 #include "listener.h"
 #include <fcntl.h>
-#include <chrono>
 #include <cstdlib>
 #include <thread>
 #include "core/type_consts.h"
@@ -167,14 +166,14 @@ void Listener<LT>::timeout_cb(ev::periodic &, int) {
 
 			if (i != connections_.size() - 1) connections_[i] = std::move(connections_.back());
 			connections_.pop_back();
-			shared_->ts_ = std::chrono::steady_clock::now();
+			shared_->ts_ = steady_clock_w::now_coarse();
 		} else {
 			i++;
 		}
 	}
 
 	// Clear all idle connections, after 300 sec
-	if (shared_->idle_.size() && std::chrono::steady_clock::now() - shared_->ts_ > std::chrono::seconds(300)) {
+	if (shared_->idle_.size() && steady_clock_w::now_coarse() - shared_->ts_ > std::chrono::seconds(300)) {
 		logPrintf(LogInfo, "Cleanup idle connections. %d cleared", shared_->idle_.size());
 		shared_->idle_.clear();
 	}

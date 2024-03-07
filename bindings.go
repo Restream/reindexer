@@ -22,7 +22,7 @@ const (
 	modeDelete = bindings.ModeDelete
 )
 
-func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *reindexerNamespace, item interface{}, json []byte, mode int, precepts ...string) (count int, err error) {
+func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *reindexerNamespace, item interface{}, mode int, precepts ...string) (count int, err error) {
 
 	if ns == nil {
 		ns, err = db.getNS(namespace)
@@ -38,7 +38,7 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 		format := 0
 		stateToken := 0
 
-		if format, stateToken, err = packItem(ns, item, json, ser); err != nil {
+		if format, stateToken, err = packItem(ns, item, nil, ser); err != nil {
 			return
 		}
 
@@ -82,7 +82,6 @@ func (db *reindexerImpl) modifyItem(ctx context.Context, namespace string, ns *r
 }
 
 func packItem(ns *reindexerNamespace, item interface{}, json []byte, ser *cjson.Serializer) (format int, stateToken int, err error) {
-
 	if item != nil {
 		json, _ = item.([]byte)
 	}
@@ -134,6 +133,7 @@ func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, params *rawResultItem
 		} else {
 			item = reflect.New(ns.rtype).Interface()
 			dec := ns.localCjsonState.NewDecoder(item, bin)
+			defer dec.Finalize()
 			if params.cptr != 0 {
 				err = dec.DecodeCPtr(params.cptr, item)
 			} else if params.data != nil {
@@ -160,6 +160,7 @@ func unpackItem(bin bindings.RawBinding, ns *nsArrayEntry, params *rawResultItem
 			item = reflect.New(ns.rtype).Interface()
 		}
 		dec := ns.localCjsonState.NewDecoder(item, bin)
+		defer dec.Finalize()
 		if params.cptr != 0 {
 			err = dec.DecodeCPtr(params.cptr, item)
 		} else if params.data != nil {

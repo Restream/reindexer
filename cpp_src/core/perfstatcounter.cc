@@ -1,6 +1,4 @@
-
 #include "perfstatcounter.h"
-#include "estl/shared_mutex.h"
 
 #include <math.h>
 #include <numeric>
@@ -80,7 +78,7 @@ void PerfStatCounter<Mutex>::doCalculations() {
 
 template <typename Mutex>
 void PerfStatCounter<Mutex>::lap() {
-	auto now = std::chrono::high_resolution_clock::now();
+	auto now = system_clock_w::now();
 	std::chrono::microseconds elapsed = std::chrono::duration_cast<std::chrono::microseconds>(now - calcStartTime);
 	if (elapsed < std::chrono::microseconds(1000000)) return;
 	avgHitCount = calcHitCount;

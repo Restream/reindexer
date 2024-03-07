@@ -16,8 +16,8 @@ constexpr ssize_t kConnReadbufSize = 0x8000;
 constexpr ssize_t kConnWriteBufSize = 0x800;
 
 struct ConnectionStat {
-	ConnectionStat() {
-		startTime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	ConnectionStat() noexcept {
+		startTime = std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now_coarse().time_since_epoch()).count();
 	}
 	std::atomic_int_fast64_t recvBytes{0};
 	std::atomic_int_fast64_t lastRecvTs{0};

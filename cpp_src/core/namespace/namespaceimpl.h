@@ -412,7 +412,10 @@ private:
 	std::vector<std::string> enumMeta() const;
 
 	void warmupFtIndexes();
-	void updateSelectTime();
+	void updateSelectTime() noexcept {
+		using namespace std::chrono;
+		lastSelectTime_ = duration_cast<seconds>(system_clock_w::now().time_since_epoch()).count();
+	}
 	void markReadOnly() { locker_.MarkReadOnly(); }
 	Locker::WLockT wLock(const RdxContext &ctx) const { return locker_.WLock(ctx); }
 	Locker::RLockT rLock(const RdxContext &ctx) const { return locker_.RLock(ctx); }
@@ -473,6 +476,7 @@ private:
 		}
 	}
 	size_t getWalSize(const NamespaceConfigData &cfg) const noexcept { return isSystem() ? int64_t(1) : std::max(cfg.walSize, int64_t(1)); }
+	void clearNamespaceCaches();
 
 	PerfStatCounterMT updatePerfCounter_, selectPerfCounter_;
 	std::atomic<bool> enablePerfCounters_;

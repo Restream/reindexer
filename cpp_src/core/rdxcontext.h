@@ -40,18 +40,18 @@ void ThrowOnCancel(const Context& ctx, std::string_view errMsg = std::string_vie
 
 class RdxDeadlineContext : public IRdxCancelContext {
 public:
-	using ClockT = std::chrono::steady_clock;
+	using ClockT = steady_clock_w;
 	using time_point = typename ClockT::time_point;
 	using duration = typename ClockT::duration;
 
 	RdxDeadlineContext(time_point deadline = time_point(), const IRdxCancelContext* parent = nullptr) noexcept
 		: deadline_(deadline), parent_(parent) {}
 	RdxDeadlineContext(duration timeout, const IRdxCancelContext* parent = nullptr) noexcept
-		: deadline_((timeout.count() > 0) ? (ClockT::now() + timeout) : time_point()), parent_(parent) {}
+		: deadline_((timeout.count() > 0) ? (ClockT::now_coarse() + timeout) : time_point()), parent_(parent) {}
 
 	CancelType GetCancelType() const noexcept override final {
 		if ((deadline_.time_since_epoch().count() > 0) &&
-			(deadline_.time_since_epoch().count() < ClockT::now().time_since_epoch().count())) {
+			(deadline_.time_since_epoch().count() < ClockT::now_coarse().time_since_epoch().count())) {
 			return CancelType::Timeout;
 		}
 		if (parent_) {

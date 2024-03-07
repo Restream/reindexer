@@ -1,14 +1,13 @@
 #include <gtest/gtest.h>
 #include <chrono>
-#include <thread>
 
 #include <coroutine/channel.h>
 #include "gtests/tests/gtest_cout.h"
 #include "net/ev/ev.h"
+#include "tools/clock.h"
 
 using reindexer::net::ev::dynamic_loop;
 using std::chrono::duration_cast;
-using std::chrono::high_resolution_clock;
 using std::chrono::seconds;
 using std::chrono::milliseconds;
 using reindexer::coroutine::channel;
@@ -43,9 +42,9 @@ TEST(Coroutines, Timers) {
 			++counter;
 		});
 	}
-	auto beg = high_resolution_clock::now();
+	auto beg = reindexer::system_clock_w::now();
 	loop.run();
-	auto diff = high_resolution_clock::now() - beg;
+	auto diff = reindexer::system_clock_w::now() - beg;
 	ASSERT_TRUE(diff > kSleepTime) << "Diff: " << duration_cast<milliseconds>(diff).count() << " milliseconds";
 	ASSERT_TRUE(diff < 6 * kSleepTime) << "Diff: " << duration_cast<milliseconds>(diff).count() << " milliseconds";
 	ASSERT_EQ(counter, kCoroCount);

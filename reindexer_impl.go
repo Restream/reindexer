@@ -471,7 +471,7 @@ func (db *reindexerImpl) upsert(ctx context.Context, namespace string, item inte
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Upsert", namespace)).ObserveDuration()
 	}
 
-	_, err := db.modifyItem(ctx, namespace, nil, item, nil, modeUpsert, precepts...)
+	_, err := db.modifyItem(ctx, namespace, nil, item, modeUpsert, precepts...)
 	return err
 }
 
@@ -489,7 +489,7 @@ func (db *reindexerImpl) insert(ctx context.Context, namespace string, item inte
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Insert", namespace)).ObserveDuration()
 	}
 
-	return db.modifyItem(ctx, namespace, nil, item, nil, modeInsert, precepts...)
+	return db.modifyItem(ctx, namespace, nil, item, modeInsert, precepts...)
 }
 
 // update item to namespace by PK
@@ -506,7 +506,7 @@ func (db *reindexerImpl) update(ctx context.Context, namespace string, item inte
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Update", namespace)).ObserveDuration()
 	}
 
-	return db.modifyItem(ctx, namespace, nil, item, nil, modeUpdate, precepts...)
+	return db.modifyItem(ctx, namespace, nil, item, modeUpdate, precepts...)
 }
 
 // delete - remove single item from namespace by PK
@@ -522,7 +522,7 @@ func (db *reindexerImpl) delete(ctx context.Context, namespace string, item inte
 		defer prometheus.NewTimer(db.promMetrics.clientCallsLatency.WithLabelValues("Delete", namespace)).ObserveDuration()
 	}
 
-	_, err := db.modifyItem(ctx, namespace, nil, item, nil, modeDelete, precepts...)
+	_, err := db.modifyItem(ctx, namespace, nil, item, modeDelete, precepts...)
 	return err
 }
 

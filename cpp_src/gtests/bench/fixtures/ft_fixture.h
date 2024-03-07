@@ -9,6 +9,7 @@
 #include "core/ft/config/ftfastconfig.h"
 #include "core/ft/usingcontainer.h"
 #include "helpers.h"
+#include "tools/clock.h"
 #include "tools/fsops.h"
 
 // #define ENABLE_TIME_TRACKER
@@ -126,16 +127,16 @@ private:
 
 		class TimeMeasure {
 		public:
-			TimeMeasure(TimeTracker& t) : timeTracker_(t), t1_(std::chrono::high_resolution_clock::now()) {}
+			TimeMeasure(TimeTracker& t) : timeTracker_(t), t1_(reindexer::system_clock_w::now()) {}
 			~TimeMeasure() {
-				auto t2 = std::chrono::high_resolution_clock::now();
+				auto t2 = reindexer::system_clock_w::now();
 				int tUs = std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1_).count();
 				timeTracker_.timeOfTest_.push_back(tUs);
 			}
 
 		private:
 			TimeTracker& timeTracker_;
-			std::chrono::high_resolution_clock::time_point t1_;
+			reindexer::system_clock_w::time_point t1_;
 		};
 		friend class TimeMeasure;
 		~TimeTracker() {

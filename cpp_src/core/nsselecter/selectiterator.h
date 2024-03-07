@@ -83,7 +83,7 @@ public:
 	RX_ALWAYS_INLINE void SetUnsorted() noexcept { isUnsorted = true; }
 
 	/// Current rowId
-	IdType Val() const noexcept;
+	IdType Val() const noexcept { return (type_ == UnbuiltSortOrdersIndex) ? begin()->indexForwardIter_->Value() : lastVal_; }
 
 	/// Current rowId index since the beginning
 	/// of current SingleKeyValue object.

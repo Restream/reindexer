@@ -160,7 +160,7 @@ void AsyncStorage::flush(const StorageFlushOpts& opts) {
 		if (totalUpdatesCount_.load(std::memory_order_acquire)) {
 			std::unique_lock lck(storageMtx_, std::defer_lock_t());
 			if (!lastFlushError_.ok()) {
-				if (reopenTs_ > ClockT::now() && !opts.IsWithImmediateReopen()) {
+				if (reopenTs_ > ClockT::now_coarse() && !opts.IsWithImmediateReopen()) {
 					throw lastFlushError_;
 				} else {
 					tryReopenStorage();

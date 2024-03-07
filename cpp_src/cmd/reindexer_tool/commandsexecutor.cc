@@ -958,7 +958,7 @@ Error CommandsExecutor<DBInterface>::commandBench(const std::string& command) {
 	output_() << "Running " << benchTime << "s benchmark..." << std::endl;
 	std::this_thread::sleep_for(std::chrono::seconds(1));
 
-	auto deadline = std::chrono::system_clock::now() + std::chrono::seconds(benchTime);
+	auto deadline = reindexer::system_clock_w::now_coarse() + std::chrono::seconds(benchTime);
 	std::atomic<int> count(0), errCount(0);
 
 	auto worker = std::bind(getBenchWorkerFn(count, errCount), deadline);
@@ -1118,10 +1118,10 @@ Error CommandsExecutor<reindexer::Reindexer>::seedBenchItems() {
 }
 
 template <>
-std::function<void(std::chrono::system_clock::time_point)> CommandsExecutor<reindexer::client::CoroReindexer>::getBenchWorkerFn(
+std::function<void(reindexer::system_clock_w::time_point)> CommandsExecutor<reindexer::client::CoroReindexer>::getBenchWorkerFn(
 	std::atomic<int>& count, std::atomic<int>& errCount) {
 	using reindexer::coroutine::wait_group;
-	return [this, &count, &errCount](std::chrono::system_clock::time_point deadline) {
+	return [this, &count, &errCount](reindexer::system_clock_w::time_point deadline) {
 		reindexer::net::ev::dynamic_loop loop;
 		loop.spawn([this, &loop, deadline, &count, &errCount] {
 			reindexer::client::CoroReindexer rx;
@@ -1134,7 +1134,7 @@ std::function<void(std::chrono::system_clock::time_point)> CommandsExecutor<rein
 			}
 			auto selectFn = [&rx, deadline, &count, &errCount](wait_group& wg) {
 				reindexer::coroutine::wait_group_guard wgg(wg);
-				for (; std::chrono::system_clock::now() < deadline; ++count) {
+				for (; reindexer::system_clock_w::now_coarse() < deadline; ++count) {
 					Query q(kBenchNamespace);
 					q.Where(kBenchIndex, CondEq, count % kBenchItemsCount);
 					reindexer::client::CoroReindexer::QueryResultsT results;
@@ -1156,10 +1156,10 @@ std::function<void(std::chrono::system_clock::time_point)> CommandsExecutor<rein
 }
 
 template <>
-std::function<void(std::chrono::system_clock::time_point)> CommandsExecutor<reindexer::Reindexer>::getBenchWorkerFn(
+std::function<void(reindexer::system_clock_w::time_point)> CommandsExecutor<reindexer::Reindexer>::getBenchWorkerFn(
 	std::atomic<int>& count, std::atomic<int>& errCount) {
-	return [this, &count, &errCount](std::chrono::system_clock::time_point deadline) {
-		for (; (count % 1000) || std::chrono::system_clock::now() < deadline; count++) {
+	return [this, &count, &errCount](reindexer::system_clock_w::time_point deadline) {
+		for (; ((count & 0x3FF) == 0) || reindexer::system_clock_w::now_coarse() < deadline; count++) {
 			Query q(kBenchNamespace);
 			q.Where(kBenchIndex, CondEq, count % kBenchItemsCount);
 			auto results = new typename reindexer::Reindexer::QueryResultsT;

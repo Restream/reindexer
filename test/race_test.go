@@ -2,6 +2,7 @@ package reindexer
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/restream/reindexer/v3"
 	"github.com/restream/reindexer/v3/bindings/builtin"
@@ -21,18 +23,54 @@ func init() {
 	tnamespaces["test_join_items_race_tx"] = TestJoinItem{}
 }
 
+type TestItemWithExtraFields1 struct {
+	TestItem
+	SomeInt      int
+	RandomString string
+	Array        []int
+}
+
+type TestItemWithExtraFields2Nested1 struct {
+	SomeNestedInt      int
+	RandomNestedString string
+	NestedArray        []int
+}
+
+type TestItemWithExtraFields2Nested2 struct {
+	Nested2 TestItemWithExtraFields2Nested1
+}
+
+type TestItemWithExtraFields2 struct {
+	TestItem
+	Nested1 TestItemWithExtraFields2Nested2
+}
+
+func newTestItemWithExtraFields1(id int, pkgsCount int) interface{} {
+	return &TestItemWithExtraFields1{
+		TestItem:     *newTestItem(id, pkgsCount).(*TestItem),
+		SomeInt:      rand.Int()%50 + 2000,
+		RandomString: randString(),
+		Array:        randIntArr(10, 1000, 1000),
+	}
+}
+
+func newTestItemWithExtraFields2(id int, pkgsCount int) interface{} {
+	return &TestItemWithExtraFields2{
+		TestItem: *newTestItem(id, pkgsCount).(*TestItem),
+		Nested1: TestItemWithExtraFields2Nested2{
+			Nested2: TestItemWithExtraFields2Nested1{
+				SomeNestedInt:      rand.Int()%50 + 2000,
+				RandomNestedString: randString(),
+				NestedArray:        randIntArr(10, 1000, 1000)}},
+	}
+}
+
 func TestRaceConditions(t *testing.T) {
 	t.Parallel()
 	FillTestJoinItems(7000, 2000, "test_join_items_race")
 	done := make(chan bool)
 	wg := sync.WaitGroup{}
 	writer := func() {
-		defer func() {
-			if p := recover(); p != nil {
-				fmt.Println("Panic silenced:", p)
-				wg.Done()
-			}
-		}()
 		for {
 			select {
 			case <-done:
@@ -45,13 +83,35 @@ func TestRaceConditions(t *testing.T) {
 			}
 		}
 	}
-	reader := func() {
-		defer func() {
-			if p := recover(); p != nil {
-				fmt.Println("Panic silenced:", p)
+	writerJSON := func() {
+		counter := 0
+		for {
+			select {
+			case <-done:
 				wg.Done()
+				return
+			case <-time.After(time.Millisecond * 5):
+				// Check race conditions on the new field, added via JSON
+				var item interface{}
+				if counter%2 == 0 {
+					item = newTestItemWithExtraFields1(1000+rand.Intn(100), 5)
+				} else {
+					item = newTestItemWithExtraFields2(1000+rand.Intn(100), 5)
+				}
+				j, err := json.Marshal(item)
+				require.NoError(t, err)
+				counter += 1
+				ctx, cancel := context.WithCancel(context.Background())
+				err = DB.UpsertCtx(ctx, "test_items_race", j)
+				cancel()
+				if rerr, ok := err.(reindexer.Error); !ok ||
+					(rerr.Code() != reindexer.ErrCodeParams && rerr.Code() != reindexer.ErrCodeNotFound) {
+					require.NoError(t, err)
+				}
 			}
-		}()
+		}
+	}
+	reader := func() {
 		for {
 			select {
 			case <-done:
@@ -91,12 +151,6 @@ func TestRaceConditions(t *testing.T) {
 		}
 	}
 	openCloser := func() {
-		defer func() {
-			if p := recover(); p != nil {
-				fmt.Println("Panic silenced:", p)
-				wg.Done()
-			}
-		}()
 		for {
 			select {
 			case <-done:
@@ -115,6 +169,8 @@ func TestRaceConditions(t *testing.T) {
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
 		go writer()
+		wg.Add(1)
+		go writerJSON()
 		wg.Add(1)
 		go reader()
 		wg.Add(1)

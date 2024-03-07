@@ -32,12 +32,12 @@ func (tm *tagsMatcher) WriteUpdated(ser *Serializer) {
 	}
 }
 
-func (tm *tagsMatcher) tag2name(tag int) string {
+func (tm *tagsMatcher) tag2name(tag int16) string {
 	tag = tag & ((1 << 12) - 1)
 	if tag == 0 {
 		return ""
 	}
-	if tag-1 >= len(tm.Tags) {
+	if int(tag)-1 >= len(tm.Tags) {
 		panic(fmt.Errorf("Internal error - unknown tag %d\nKnown tags: %v", tag, tm.Names))
 	}
 

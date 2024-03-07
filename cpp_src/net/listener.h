@@ -1,7 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -117,7 +116,7 @@ protected:
 		std::atomic<bool> terminating_;
 		std::string addr_;
 		std::vector<std::unique_ptr<IServerConnection>> idle_;
-		std::chrono::time_point<std::chrono::steady_clock> ts_;
+		steady_clock_w::time_point ts_;
 		std::vector<Worker> dedicatedWorkers_;
 	};
 	class ListeningThreadData {

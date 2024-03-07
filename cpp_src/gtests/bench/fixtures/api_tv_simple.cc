@@ -86,17 +86,25 @@ void ApiTvSimple::RegisterAllCases() {
 	Register("Query2Cond", &ApiTvSimple::Query2Cond, this);
 	Register("Query2CondTotal", &ApiTvSimple::Query2CondTotal, this);
 	Register("Query2CondCachedTotal", &ApiTvSimple::Query2CondCachedTotal, this);
-	Register("Query2CondLeftJoin", &ApiTvSimple::Query2CondLeftJoin, this);
-	Register("Query2CondLeftJoinTotal", &ApiTvSimple::Query2CondLeftJoinTotal, this);
-	Register("Query2CondLeftJoinCachedTotal", &ApiTvSimple::Query2CondLeftJoinCachedTotal, this);
+	Register("Query2CondLeftJoin2Cond", &ApiTvSimple::Query2CondLeftJoin2Cond, this);
+	Register("Query2CondLeftJoin2CondTotal", &ApiTvSimple::Query2CondLeftJoin2CondTotal, this);
+	Register("Query2CondLeftJoin2CondCachedTotal", &ApiTvSimple::Query2CondLeftJoin2CondCachedTotal, this);
+	Register("Query2CondLeftJoin3Cond", &ApiTvSimple::Query2CondLeftJoin3Cond, this);
+	Register("Query2CondLeftJoin3CondTotal", &ApiTvSimple::Query2CondLeftJoin3CondTotal, this);
+	Register("Query2CondLeftJoin3CondCachedTotal", &ApiTvSimple::Query2CondLeftJoin3CondCachedTotal, this);
 	Register("Query0CondInnerJoinUnlimit", &ApiTvSimple::Query0CondInnerJoinUnlimit, this)->Iterations(k0CondJoinIters);
 	Register("Query0CondInnerJoinUnlimitLowSelectivity", &ApiTvSimple::Query0CondInnerJoinUnlimitLowSelectivity, this)
 		->Iterations(k0CondJoinIters);
 	Register("Query0CondInnerJoinPreResultStoreValues", &ApiTvSimple::Query0CondInnerJoinPreResultStoreValues, this)
 		->Iterations(k0CondJoinIters);
-	Register("Query2CondInnerJoin", &ApiTvSimple::Query2CondInnerJoin, this);
-	Register("Query2CondInnerJoinTotal", &ApiTvSimple::Query2CondInnerJoinTotal, this);
-	Register("Query2CondInnerJoinCachedTotal", &ApiTvSimple::Query2CondInnerJoinCachedTotal, this);
+	Register("InnerJoinInjectConditionFromMain", &ApiTvSimple::InnerJoinInjectConditionFromMain, this);
+	Register("InnerJoinRejectInjection", &ApiTvSimple::InnerJoinRejectInjection, this);
+	Register("Query2CondInnerJoin2Cond", &ApiTvSimple::Query2CondInnerJoin2Cond, this);
+	Register("Query2CondInnerJoin2CondTotal", &ApiTvSimple::Query2CondInnerJoin2CondTotal, this);
+	Register("Query2CondInnerJoin2CondCachedTotal", &ApiTvSimple::Query2CondInnerJoin2CondCachedTotal, this);
+	Register("Query2CondInnerJoin3Cond", &ApiTvSimple::Query2CondInnerJoin3Cond, this);
+	Register("Query2CondInnerJoin3CondTotal", &ApiTvSimple::Query2CondInnerJoin3CondTotal, this);
+	Register("Query2CondInnerJoin3CondCachedTotal", &ApiTvSimple::Query2CondInnerJoin3CondCachedTotal, this);
 	Register("Query3Cond", &ApiTvSimple::Query3Cond, this);
 	Register("Query3CondTotal", &ApiTvSimple::Query3CondTotal, this);
 	Register("Query3CondCachedTotal", &ApiTvSimple::Query3CondCachedTotal, this);
@@ -732,13 +740,13 @@ void ApiTvSimple::Query2CondCachedTotal(benchmark::State& state) {
 	}
 }
 
-void ApiTvSimple::Query2CondLeftJoin(benchmark::State& state) {
+void ApiTvSimple::Query2CondLeftJoin2Cond(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
-		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos", "dv", "sib"});
+		q4join.Where("device", CondEq, {"ottstb", "smarttv", "stb"}).Where("location", CondSet, {"mos", "dv", "sib", "ural"});
 
 		q.Limit(20)
 			.Sort("year", false)
@@ -751,14 +759,13 @@ void ApiTvSimple::Query2CondLeftJoin(benchmark::State& state) {
 		if (!err.ok()) state.SkipWithError(err.what().c_str());
 	}
 }
-
-void ApiTvSimple::Query2CondLeftJoinTotal(benchmark::State& state) {
+void ApiTvSimple::Query2CondLeftJoin2CondTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
-		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos", "dv", "sib"});
+		q4join.Where("device", CondEq, {"ottstb", "smarttv", "stb"}).Where("location", CondSet, {"mos", "dv", "sib", "ural"});
 
 		q.Limit(20)
 			.Sort("year", false)
@@ -773,13 +780,75 @@ void ApiTvSimple::Query2CondLeftJoinTotal(benchmark::State& state) {
 	}
 }
 
-void ApiTvSimple::Query2CondLeftJoinCachedTotal(benchmark::State& state) {
+void ApiTvSimple::Query2CondLeftJoin2CondCachedTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
-		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos", "dv", "sib"});
+		q4join.Where("device", CondEq, {"ottstb", "smarttv", "stb"}).Where("location", CondSet, {"mos", "dv", "sib", "ural"});
+
+		q.Limit(20)
+			.Sort("year", false)
+			.Where("genre", CondEq, 5)
+			.Where("year", CondRange, {2010, 2016})
+			.LeftJoin("price_id", "id", CondSet, std::move(q4join))
+			.CachedTotal();
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query2CondLeftJoin3Cond(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q4join("JoinItems");
+		Query q(nsdef_.name);
+
+		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos"}).Where("id", CondLt, 500);
+
+		q.Limit(20)
+			.Sort("year", false)
+			.Where("genre", CondEq, 5)
+			.Where("year", CondRange, {2010, 2016})
+			.LeftJoin("price_id", "id", CondSet, std::move(q4join));
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query2CondLeftJoin3CondTotal(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q4join("JoinItems");
+		Query q(nsdef_.name);
+
+		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos"}).Where("id", CondLt, 500);
+
+		q.Limit(20)
+			.Sort("year", false)
+			.Where("genre", CondEq, 5)
+			.Where("year", CondRange, {2010, 2016})
+			.LeftJoin("price_id", "id", CondSet, std::move(q4join))
+			.ReqTotal();
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query2CondLeftJoin3CondCachedTotal(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q4join("JoinItems");
+		Query q(nsdef_.name);
+
+		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos"}).Where("id", CondLt, 500);
 
 		q.Limit(20)
 			.Sort("year", false)
@@ -869,19 +938,68 @@ void ApiTvSimple::SubQueryAggregate(benchmark::State& state) {
 	}
 }
 
-void ApiTvSimple::Query2CondInnerJoin(benchmark::State& state) {
+void ApiTvSimple::Query2CondInnerJoin2Cond(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
-		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos", "dv", "sib"});
+		q4join.Where("device", CondSet, {"ottstb", "smarttv", "stb"}).Where("location", CondSet, {"mos", "dv", "sib", "ural"});
 
 		q.Limit(20)
 			.Sort("year", false)
 			.Where("genre", CondEq, 5)
 			.Where("year", CondRange, {2010, 2016})
 			.InnerJoin("price_id", "id", CondSet, std::move(q4join));
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query2CondInnerJoin3Cond(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q4join("JoinItems");
+		Query q(nsdef_.name);
+
+		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos"}).Where("id", CondLt, 500);
+
+		q.Limit(20)
+			.Sort("year", false)
+			.Where("genre", CondEq, 5)
+			.Where("year", CondRange, {2010, 2016})
+			.InnerJoin("price_id", "id", CondSet, std::move(q4join));
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::InnerJoinInjectConditionFromMain(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q4join("JoinItems");
+		Query q(nsdef_.name);
+
+		q.Where("price_id", CondSet, priceIDs_.at(random<size_t>(0, priceIDs_.size() - 1)))
+			.InnerJoin("price_id", "id", CondSet, std::move(q4join));
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::InnerJoinRejectInjection(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q4join("JoinItems");
+		Query q(nsdef_.name);
+
+		q.Where("id", CondEq, {-100}).InnerJoin("price_id", "id", CondSet, std::move(q4join));
 
 		QueryResults qres;
 		auto err = db_->Select(q, qres);
@@ -943,13 +1061,13 @@ void ApiTvSimple::Query0CondInnerJoinPreResultStoreValues(benchmark::State& stat
 	}
 }
 
-void ApiTvSimple::Query2CondInnerJoinTotal(benchmark::State& state) {
+void ApiTvSimple::Query2CondInnerJoin2CondTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
-		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos", "dv", "sib"});
+		q4join.Where("device", CondEq, {"ottstb", "smarttv", "stb"}).Where("location", CondSet, {"mos", "dv", "sib", "ural"});
 
 		q.Limit(20)
 			.Sort("year", false)
@@ -964,13 +1082,55 @@ void ApiTvSimple::Query2CondInnerJoinTotal(benchmark::State& state) {
 	}
 }
 
-void ApiTvSimple::Query2CondInnerJoinCachedTotal(benchmark::State& state) {
+void ApiTvSimple::Query2CondInnerJoin3CondTotal(benchmark::State& state) {
 	AllocsTracker allocsTracker(state);
 	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
 		Query q4join("JoinItems");
 		Query q(nsdef_.name);
 
-		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos", "dv", "sib"});
+		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos"}).Where("id", CondLt, 500);
+
+		q.Limit(20)
+			.Sort("year", false)
+			.Where("genre", CondEq, 5)
+			.Where("year", CondRange, {2010, 2016})
+			.InnerJoin("price_id", "id", CondSet, std::move(q4join))
+			.ReqTotal();
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query2CondInnerJoin2CondCachedTotal(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q4join("JoinItems");
+		Query q(nsdef_.name);
+
+		q4join.Where("device", CondEq, {"ottstb", "smarttv", "stb"}).Where("location", CondSet, {"mos", "dv", "sib", "ural"});
+
+		q.Limit(20)
+			.Sort("year", false)
+			.Where("genre", CondEq, 5)
+			.Where("year", CondRange, {2010, 2016})
+			.InnerJoin("price_id", "id", CondSet, std::move(q4join))
+			.CachedTotal();
+
+		QueryResults qres;
+		auto err = db_->Select(q, qres);
+		if (!err.ok()) state.SkipWithError(err.what().c_str());
+	}
+}
+
+void ApiTvSimple::Query2CondInnerJoin3CondCachedTotal(benchmark::State& state) {
+	AllocsTracker allocsTracker(state);
+	for (auto _ : state) {	// NOLINT(*deadcode.DeadStores)
+		Query q4join("JoinItems");
+		Query q(nsdef_.name);
+
+		q4join.Where("device", CondEq, "ottstb").Where("location", CondSet, {"mos"}).Where("id", CondLt, 500);
 
 		q.Limit(20)
 			.Sort("year", false)

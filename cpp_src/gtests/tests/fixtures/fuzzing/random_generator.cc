@@ -1,12 +1,12 @@
 #include "random_generator.h"
 #include <gtest/gtest.h>
 #include <algorithm>
-#include <chrono>
 #include <fstream>
 #include "core/payload/fieldsset.h"
 #include "core/query/query.h"
 #include "index.h"
 #include "ns_scheme.h"
+#include "tools/clock.h"
 
 namespace fuzzing {
 
@@ -47,7 +47,7 @@ RandomGenerator::RandomEngine RandomGenerator::createRandomEngine() {
 		ss >> ret;
 		return ret;
 	} else {
-		RandomEngine ret(std::chrono::system_clock::now().time_since_epoch().count());
+		RandomEngine ret(reindexer::system_clock_w::now().time_since_epoch().count());
 		if (!out().empty()) {
 			std::ofstream file{out(), std::ios_base::app};
 			if (file.is_open()) {
@@ -480,7 +480,7 @@ std::string RandomGenerator::rndStrUuidValue(bool noErrors) {
 reindexer::Uuid RandomGenerator::rndUuidValue() { return reindexer::Uuid{rndStrUuidValue(true)}; }
 
 int64_t RandomGenerator::RndTtlValue() {
-	const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	const int64_t now = std::chrono::duration_cast<std::chrono::seconds>(reindexer::system_clock_w::now().time_since_epoch()).count();
 	// TODO uncomment this after TTL subscribe done
 	/*enum Size : uint8_t { Negative, FarPast, Past, Now, Future, FarFuture, AnyShort, Any, END = Any };
 	switch (RndWhich<Size, 1, 1>()) { case Negative: return rndInt64(std::numeric_limits<int64_t>::min(), 0); case FarPast:

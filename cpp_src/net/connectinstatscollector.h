@@ -4,14 +4,15 @@
 #include <chrono>
 #include <memory>
 #include "net/ev/ev.h"
+#include "tools/clock.h"
 #include "tools/ssize_t.h"
 
 namespace reindexer {
 namespace net {
 
 struct connection_stat {
-	connection_stat() {
-		start_time = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+	connection_stat() noexcept {
+		start_time = std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now_coarse().time_since_epoch()).count();
 	}
 	std::atomic_int_fast64_t recv_bytes{0};
 	std::atomic_int_fast64_t last_recv_ts{0};
@@ -37,12 +38,12 @@ public:
 	void stop() noexcept;
 	void update_read_stats(ssize_t nread) noexcept {
 		stat_->recv_bytes.fetch_add(nread, std::memory_order_relaxed);
-		auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+		auto now = std::chrono::duration_cast<std::chrono::milliseconds>(system_clock_w::now_coarse().time_since_epoch());
 		stat_->last_recv_ts.store(now.count(), std::memory_order_relaxed);
 	}
 	void update_write_stats(ssize_t written, size_t send_buf_size) noexcept {
 		stat_->sent_bytes.fetch_add(written, std::memory_order_relaxed);
-		auto now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+		auto now = std::chrono::duration_cast<std::chrono::milliseconds>(system_clock_w::now_coarse().time_since_epoch());
 		stat_->last_send_ts.store(now.count(), std::memory_order_relaxed);
 		stat_->send_buf_bytes.store(send_buf_size, std::memory_order_relaxed);
 	}

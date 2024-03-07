@@ -47,7 +47,7 @@ HTTPServer::HTTPServer(DBManager &dbMgr, LoggerWrapper &logger, const ServerConf
 	  statsWatcher_(statsWatcher),
 	  webRoot_(reindexer::fs::JoinPath(serverConfig.WebRoot, "")),
 	  logger_(logger),
-	  startTs_(std::chrono::system_clock::now()) {}
+	  startTs_(system_clock_w::now()) {}
 
 Error HTTPServer::execSqlQueryByType(std::string_view sqlQuery, reindexer::QueryResults &res, http::Context &ctx) {
 	const auto q = reindexer::Query::FromSQL(sqlQuery);
@@ -785,7 +785,7 @@ int HTTPServer::Check(http::Context &ctx) {
 		builder.Put("version", REINDEX_VERSION);
 
 		size_t startTs = std::chrono::duration_cast<std::chrono::seconds>(startTs_.time_since_epoch()).count();
-		size_t uptime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - startTs_).count();
+		size_t uptime = std::chrono::duration_cast<std::chrono::seconds>(system_clock_w::now() - startTs_).count();
 		builder.Put("start_time", startTs);
 		builder.Put("uptime", uptime);
 		builder.Put("rpc_address", serverConfig_.RPCAddr);
@@ -1711,17 +1711,18 @@ std::shared_ptr<Transaction> HTTPServer::getTx(const std::string &dbName, std::s
 	if (!iequals(found.value().dbName, dbName)) {
 		throw http::HttpStatus(Error(errLogic, "Unexpected database name for this tx"sv));
 	}
-	found.value().txDeadline = TxDeadlineClock::now() + serverConfig_.TxIdleTimeout;
+	found.value().txDeadline = TxDeadlineClock::now_coarse() + serverConfig_.TxIdleTimeout;
 	return found.value().tx;
 }
 
 std::string HTTPServer::addTx(std::string dbName, Transaction &&tx) {
-	auto ts = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch());
+	const auto now = TxDeadlineClock::now_coarse();
+	auto ts = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch());
 	std::string txId = randStringAlph(kTxIdLen) + "_" + std::to_string(ts.count());
 	TxInfo txInfo;
 	txInfo.tx = std::make_shared<Transaction>(std::move(tx));
 	txInfo.dbName = std::move(dbName);
-	txInfo.txDeadline = TxDeadlineClock::now() + serverConfig_.TxIdleTimeout;
+	txInfo.txDeadline = now + serverConfig_.TxIdleTimeout;
 
 	std::lock_guard lck(txMtx_);
 	auto result = txMap_.try_emplace(txId, std::move(txInfo));
@@ -1741,7 +1742,7 @@ void HTTPServer::removeTx(const std::string &dbName, std::string_view txId) {
 }
 
 void HTTPServer::removeExpiredTx() {
-	const auto now = TxDeadlineClock::now();
+	const auto now = TxDeadlineClock::now_coarse();
 
 	std::lock_guard lck(txMtx_);
 	for (auto it = txMap_.begin(); it != txMap_.end();) {

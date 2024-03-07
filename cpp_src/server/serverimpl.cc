@@ -202,9 +202,7 @@ void ServerImpl::ReopenLogFiles() {
 #endif
 }
 
-std::string ServerImpl::GetCoreLogPath() const {
-	return GetDirPath(config_.CoreLog); 
-}
+std::string ServerImpl::GetCoreLogPath() const { return GetDirPath(config_.CoreLog); }
 
 int ServerImpl::run() {
 	loggerConfigure();
@@ -216,7 +214,7 @@ int ServerImpl::run() {
 			logger->info("{}", out);
 			logger->flush();
 		} else {
-			std::cerr << std::endl << out;
+			std::cerr << out << std::endl;
 		}
 	});
 	if (running_) {

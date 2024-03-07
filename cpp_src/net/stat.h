@@ -2,14 +2,13 @@
 
 #include <stdint.h>
 #include <stdlib.h>
-#include <atomic>
-#include <chrono>
+#include "tools/clock.h"
 
 namespace reindexer {
 
 class HandlerStat {
 public:
-	using ClockT = std::chrono::high_resolution_clock;
+	using ClockT = system_clock_w;
 
 	HandlerStat() noexcept : tmpoint_(ClockT::now()), time_us_(0), allocs_cnt_(0), allocs_bytes_(0) {}
 

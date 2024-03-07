@@ -2,6 +2,7 @@
 #include "core/nsselecter/nsselecter.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "core/queryresults/joinresults.h"
+#include "estl/restricted.h"
 #include "tools/logger.h"
 
 namespace reindexer {
@@ -381,7 +382,8 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, QueryResults&
 
 	// For each joined queries
 	uint32_t joinedSelectorsCount = uint32_t(q.GetJoinQueries().size());
-	for (auto& jq : q.GetJoinQueries()) {
+	for (size_t i = 0; i < q.GetJoinQueries().size(); ++i) {
+		const auto& jq = q.GetJoinQueries()[i];
 		if rx_unlikely (isSystemNamespaceNameFast(jq.NsName())) {
 			throw Error(errParams, "Queries to system namespaces ('%s') are not supported inside JOIN statement", jq.NsName());
 		}
@@ -429,18 +431,21 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, QueryResults&
 		uint32_t joinedFieldIdx = uint32_t(joinedSelectors.size());
 		JoinCacheRes joinRes;
 		jns->getFromJoinCache(jq, joinRes);
-		if (!jjq.Entries().Empty() && !joinRes.haveData) {
-			QueryResults jr;
-			jjq.Limit(QueryEntry::kDefaultLimit);
-			SelectCtx ctx(jjq, &q);
-			ctx.preResult = preResult;
-			ctx.preResult->executionMode = JoinPreResult::ModeBuild;
-			ctx.preResult->enableStoredValues = isPreResultValuesModeOptimizationAvailable(jItemQ, jns, q);
-			ctx.functions = &func;
-			ctx.requiresCrashTracking = true;
-			jns->Select(jr, ctx, rdxCtx);
-			assertrx_throw(ctx.preResult->executionMode == JoinPreResult::ModeExecute);
+		if (jq.joinType == InnerJoin || jq.joinType == OrInnerJoin) {
+			jjq.InjectConditionsFromOnConditions<InjectionDirection::FromMain>(jjq.Entries().Size(), jq.joinEntries_, q.Entries(), i,
+																			   &ns->indexes_);
 		}
+		QueryResults jr;
+		jjq.Offset(QueryEntry::kDefaultOffset);
+		jjq.Limit(QueryEntry::kDefaultLimit);
+		SelectCtx ctx(jjq, &q);
+		ctx.preResult = preResult;
+		ctx.preResult->executionMode = JoinPreResult::ModeBuild;
+		ctx.preResult->enableStoredValues = isPreResultValuesModeOptimizationAvailable(jItemQ, jns, q);
+		ctx.functions = &func;
+		ctx.requiresCrashTracking = true;
+		jns->Select(jr, ctx, rdxCtx);
+		assertrx_throw(ctx.preResult->executionMode == JoinPreResult::ModeExecute);
 		if (joinRes.haveData) {
 			preResult = joinRes.it.val.preResult;
 		} else if (joinRes.needPut) {
@@ -452,12 +457,14 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, QueryResults&
 
 		const auto nsUpdateTime = jns->lastUpdateTimeNano();
 		result.AddNamespace(jns, true);
-		if (preResult->dataMode == JoinPreResult::ModeValues) {
-			preResult->values.PreselectAllowed(static_cast<size_t>(jns->Config().maxPreselectSize) >= preResult->values.size());
-			if (!preResult->values.Locked()) preResult->values.Lock();	// If not from cache
-			locks.Delete(jns);
-			jns.reset();
-		}
+		std::visit(overloaded{[&](JoinPreResult::Values& values) {
+								  values.PreselectAllowed(static_cast<size_t>(jns->Config().maxPreselectSize) >= values.size());
+								  if (!values.Locked()) values.Lock();	// If not from cache
+								  locks.Delete(jns);
+								  jns.reset();
+							  },
+							  Restricted<IdSet, SelectIteratorContainer>{}([](const auto&) {})},
+				   preResult->preselectedPayload);
 		joinedSelectors.emplace_back(jq.joinType, ns, std::move(jns), std::move(joinRes), std::move(jItemQ), result, jq, preResult,
 									 joinedFieldIdx, func, joinedSelectorsCount, false, nsUpdateTime, rdxCtx);
 		ThrowOnCancel(rdxCtx);

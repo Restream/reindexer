@@ -1,6 +1,6 @@
 #include "tools/timetools.h"
 #include <chrono>
-#include <string>
+#include "tools/clock.h"
 #include "tools/errors.h"
 #include "tools/stringstools.h"
 
@@ -9,13 +9,12 @@ using std::chrono::microseconds;
 using std::chrono::milliseconds;
 using std::chrono::nanoseconds;
 using std::chrono::seconds;
-using std::chrono::system_clock;
 using namespace std::string_view_literals;
 
 namespace reindexer {
 
 int64_t getTimeNow(std::string_view mode) {
-	const auto tm = system_clock::now();
+	const auto tm = system_clock_w::now();
 	const auto duration = tm.time_since_epoch();
 
 	if (iequals(mode, "sec"sv)) {

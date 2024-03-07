@@ -1,5 +1,5 @@
 #pragma once
-#include "core/namespacedef.h"
+
 #include "core/query/query.h"
 #include "core/queryresults/queryresults.h"
 
@@ -13,7 +13,7 @@ class FieldsSet;
 
 class Transaction {
 public:
-	using time_point = std::chrono::time_point<std::chrono::high_resolution_clock>;
+	using time_point = system_clock_w::time_point;
 
 	Transaction(const std::string &nsName, const PayloadType &pt, const TagsMatcher &tm, const FieldsSet &pf,
 				std::shared_ptr<const Schema> schema);

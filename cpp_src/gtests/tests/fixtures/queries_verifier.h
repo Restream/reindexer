@@ -170,8 +170,10 @@ protected:
 				const auto sortExpr = reindexer::SortExpression::Parse(sortingEntry.expression, joinedSelectors);
 
 				reindexer::Variant sortedValue;
+				CollateOpts collate;
 				if (sortExpr.ByIndexField()) {
 					sortedValue = itemr[sortingEntry.expression];
+					collate = indexesCollates[sortingEntry.expression];
 				} else if (sortExpr.ByJoinedIndexField()) {
 					auto jItemIt = (qr.begin() + i).GetJoined();
 					EXPECT_EQ(jItemIt.getJoinedFieldsCount(), 1);
@@ -200,12 +202,12 @@ protected:
 							} else if (lastValIt > currValIt) {
 								cmpRes[0] = 1;
 							} else if (lastValIt == query.forcedSortOrder_.cend()) {
-								cmpRes[0] = lastSortedColumnValues[0].RelaxCompare<reindexer::WithString::Yes>(sortedValue);
+								cmpRes[0] = lastSortedColumnValues[0].RelaxCompare<reindexer::WithString::Yes>(sortedValue, collate);
 							} else {
 								cmpRes[0] = 0;
 							}
 						} else {
-							cmpRes[j] = lastSortedColumnValues[j].RelaxCompare<reindexer::WithString::Yes>(sortedValue);
+							cmpRes[j] = lastSortedColumnValues[j].RelaxCompare<reindexer::WithString::Yes>(sortedValue, collate);
 						}
 						bool sortOrderSatisfied =
 							(sortingEntry.desc && cmpRes[j] >= 0) || (!sortingEntry.desc && cmpRes[j] <= 0) || (cmpRes[j] == 0);

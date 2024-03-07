@@ -303,14 +303,6 @@ double SelectIterator::Cost(int expectedIterations) const noexcept {
 	return isNotOperation_ ? expectedIterations + result : result;
 }
 
-IdType SelectIterator::Val() const noexcept {
-	if (type_ == UnbuiltSortOrdersIndex) {
-		return begin()->indexForwardIter_->Value();
-	} else {
-		return lastVal_;
-	}
-}
-
 void SelectIterator::SetExpectMaxIterations(int expectedIterations) noexcept {
 	for (SingleSelectKeyResult &r : *this) {
 		if (!r.isRange_ && r.ids_.size() > 1) {

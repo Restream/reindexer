@@ -43,14 +43,14 @@ void TCMallocHeapWathcher::CheckHeapUsagePeriodic() {
 			"now: {5},\n first deadline: {6}",
 			cacheLimit_, maxCacheRatio_, std::chrono::duration_cast<std::chrono::milliseconds>(heapInspectionPeriod_).count(),
 			std::chrono::duration_cast<std::chrono::milliseconds>(heapChunkReleasePeriod_).count(), mallocExtention_ ? "true" : "false",
-			std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(),
+			std::chrono::duration_cast<std::chrono::milliseconds>(ClockT::now_coarse().time_since_epoch()).count(),
 			std::chrono::duration_cast<std::chrono::milliseconds>(deadline_.time_since_epoch()).count());
 	});
 
 	if (!mallocExtention_) return;
 
 	if ((cacheLimit_ > 0) || (maxCacheRatio_ > 0)) {
-		if (std::chrono::steady_clock::now() < deadline_) {
+		if (ClockT::now_coarse() < deadline_) {
 			return;
 		}
 
@@ -83,7 +83,7 @@ void TCMallocHeapWathcher::CheckHeapUsagePeriodic() {
 			mallocExtention_->ReleaseToSystem(static_cast<size_t>(sizeToRelease));
 		}
 
-		deadline_ = std::chrono::steady_clock::now() + delayDuration;
+		deadline_ = ClockT::now_coarse() + delayDuration;
 	}
 }
 

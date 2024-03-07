@@ -1,8 +1,9 @@
 #pragma once
 #include <chrono>
+#include <optional>
 #include "core/dbconfig.h"
 #include "estl/mutex.h"
-#include "optional"
+#include "tools/clock.h"
 
 namespace reindexer {
 
@@ -97,7 +98,7 @@ struct ActionWrapper<QueryEnum2Type<QueryType::QuerySelect>> : QueryParams {
 	void Add(const ExplainCalc&);
 
 private:
-	using ExplainMethodType = std::chrono::high_resolution_clock::duration (ExplainCalc::*)() const noexcept;
+	using ExplainMethodType = system_clock_w::duration (ExplainCalc::*)() const noexcept;
 	template <ExplainMethodType... methods>
 	void add(const ExplainCalc&);
 };

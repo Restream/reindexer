@@ -1,8 +1,6 @@
 #pragma once
 
 #include <atomic>
-#include <cassert>
-#include <chrono>
 #include <csignal>
 #include <memory>
 #include <thread>
@@ -10,6 +8,7 @@
 
 #include "coroutine/coroutine.h"
 #include "estl/h_vector.h"
+#include "tools/clock.h"
 
 // Thank's to windows.h include
 #ifdef ERROR
@@ -326,7 +325,7 @@ public:
 	bool has_period() const noexcept { return period_ > 0.00000001; }
 
 	loop_ref loop;
-	std::chrono::time_point<std::chrono::steady_clock> deadline_;
+	steady_clock_w::time_point deadline_;
 
 protected:
 	struct coro_t {};
@@ -455,7 +454,7 @@ protected:
 	std::atomic<bool> sent_;
 };
 
-extern bool gEnableBusyLoop;
+// extern bool gEnableBusyLoop;
 
 }  // namespace ev
 }  // namespace net

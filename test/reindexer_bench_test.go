@@ -181,6 +181,7 @@ func BenchmarkCJsonEncode(b *testing.B) {
 func BenchmarkCJsonDecode(b *testing.B) {
 
 	dec := cjsonState.NewDecoder(TestItem{}, nil)
+	defer dec.Finalize()
 	for i := 0; i < b.N; i++ {
 		ti := TestItem{}
 		dec.Decode(testItemsCJsonSeed[i%len(testItemsCJsonSeed)], &ti)
@@ -421,7 +422,7 @@ func BenchmarkSubQuerySet(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		prices := priceIds[rand.Int()%len(priceIds)]
 		rangeMin := prices[rand.Int()%len(prices)]
-		q := DBD.Query("test_items_bench").Where("price_id", reindexer.SET, DBD.Query("test_join_items").Select("id").WhereInt32("id", reindexer.RANGE, rangeMin, rangeMin + 500)).Limit(20)
+		q := DBD.Query("test_items_bench").Where("price_id", reindexer.SET, DBD.Query("test_join_items").Select("id").WhereInt32("id", reindexer.RANGE, rangeMin, rangeMin+500)).Limit(20)
 		q.MustExec().FetchAll()
 	}
 }

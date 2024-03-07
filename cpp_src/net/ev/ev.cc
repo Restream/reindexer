@@ -1,5 +1,4 @@
 #include "ev.h"
-#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <algorithm>
@@ -21,6 +20,8 @@
 namespace reindexer {
 namespace net {
 namespace ev {
+
+constexpr bool gEnableBusyLoop = false;
 
 #ifdef HAVE_POSIX_LOOP
 #ifdef HAVE_EVENT_FD
@@ -435,7 +436,7 @@ void dynamic_loop::run() {
 	}
 
 	break_ = false;
-	auto now = std::chrono::steady_clock::now();
+	auto now = steady_clock_w::now();
 	int count = 0;
 
 	set_coro_cb();
@@ -485,8 +486,8 @@ void dynamic_loop::run() {
 			}
 		}
 		if (ret >= 0 && timers_.size()) {
-			if (!gEnableBusyLoop || !(++count % 100)) {
-				now = std::chrono::steady_clock::now();
+			if (!gEnableBusyLoop || !(++count & 0x7F)) {
+				now = steady_clock_w::now();
 			}
 			while (timers_.size() && now >= timers_.front()->deadline_) {
 				auto tim = timers_.front();
@@ -527,7 +528,7 @@ void dynamic_loop::set(timer *watcher, double t) {
 		timers_.erase(it);
 	}
 
-	watcher->deadline_ = std::chrono::steady_clock::now();
+	watcher->deadline_ = steady_clock_w::now();
 	watcher->deadline_ += std::chrono::duration<int64_t, std::ratio<1, 1000000>>(int64_t(t * 1000000));
 	it = std::lower_bound(timers_.begin(), timers_.end(), watcher,
 						  [](const timer *lhs, const timer *rhs) { return lhs->deadline_ < rhs->deadline_; });
@@ -654,8 +655,6 @@ void dynamic_loop::remove_coro_cb() {
 	assertrx(res);
 	coro_cb_is_set_ = false;
 }
-
-bool gEnableBusyLoop = false;
 
 }  // namespace ev
 }  // namespace net

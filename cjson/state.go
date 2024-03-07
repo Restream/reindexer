@@ -63,6 +63,27 @@ func (state *State) NewEncoder() Encoder {
 	}
 }
 
+func (state *State) makeStructCache() {
+	state.sCacheLock.Lock()
+	defer state.sCacheLock.Unlock()
+	if state.structCache == nil {
+		state.structCache = make(map[reflect.Type]*ctagsCache, 1)
+	}
+}
+
+func initCtagsCache(dec *Decoder, item interface{}) {
+	cachePtr := &ctagsCache{missing: make(missingTagsCache)}
+
+	dec.state.sCacheLock.Lock()
+	defer dec.state.sCacheLock.Unlock()
+	if st, ok := dec.state.structCache[reflect.TypeOf(item)]; ok {
+		cachePtr = st
+	} else {
+		dec.state.structCache[reflect.TypeOf(item)] = cachePtr
+	}
+	dec.ctagsCache = cachePtr
+}
+
 func (state *State) NewDecoder(item interface{}, loggerOwner LoggerOwner) Decoder {
 	dec := Decoder{
 		state:       state,
@@ -72,11 +93,7 @@ func (state *State) NewDecoder(item interface{}, loggerOwner LoggerOwner) Decode
 	dec.state.sCacheLock.RLock()
 	if dec.state.structCache == nil {
 		dec.state.sCacheLock.RUnlock()
-		dec.state.sCacheLock.Lock()
-		if dec.state.structCache == nil {
-			dec.state.structCache = make(map[reflect.Type]*ctagsCache, 1)
-		}
-		dec.state.sCacheLock.Unlock()
+		dec.state.makeStructCache()
 		dec.state.sCacheLock.RLock()
 	}
 
@@ -84,16 +101,8 @@ func (state *State) NewDecoder(item interface{}, loggerOwner LoggerOwner) Decode
 		dec.ctagsCache = st
 		dec.state.sCacheLock.RUnlock()
 	} else {
-		cachePtr := &ctagsCache{}
 		dec.state.sCacheLock.RUnlock()
-		dec.state.sCacheLock.Lock()
-		if st, ok := dec.state.structCache[reflect.TypeOf(item)]; ok {
-			cachePtr = st
-		} else {
-			dec.state.structCache[reflect.TypeOf(item)] = cachePtr
-		}
-		dec.ctagsCache = cachePtr
-		dec.state.sCacheLock.Unlock()
+		initCtagsCache(&dec, item)
 	}
 
 	return dec

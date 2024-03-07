@@ -1,3 +1,37 @@
+# Version 3.23.0 (07.03.2024)
+
+## Core
+- [fea] Improved queries condition injection injection on the both directions: joined-to-main and main-to-joined
+- [fea] Improved heuristic for the joins preselect/condition injection. If query has some conditions with high selectivity, scheduler will try to avoid high cost preselect/injections attempts
+- [fea] Added logic for the intersecting conditions merge on the query preprocessing stage
+- [fea] Added clock wrapper to force [vDSO](https://ru.manpages.org/vdso/7) for the `clock_gettime`-calls. This gives up to 20% overall performance on the some operation systems, which using libstdc++ without vDSO (for example, on Centos7)
+- [fea] Updated bundled libbactrace to support DWARF-v5 debug info format
+- [fix] Fixed indexes/count cache drop on the indexes config update
+
+## Go connector
+- [fea] Optimized handling of the unknow fields in the Go binding (in cases, when some field exists in the database, but not in the go-struct)
+
+## Deploy
+- [fea] Updated Redos build/deploy image to v3.3.4
+
+## Face
+- [fea] Added Prettify feature to the SQL editor
+- [fea] Made yarn upgrade 
+- [fea] Added Cache settings to the NS config
+- [fea] Made the new UI component for the pagination
+- [fea] Added tooltips with the UTC dates for the timestamp dates in the Grid view of the Namespace
+- [fea] Added redirect to the created NS
+- [fea] Added new settings to the Full text config
+- [fea] Added Stop Words list to the Full text index
+- [fea] Improved layout of the Stop words and Synonyms lists
+- [fix] Fixed columns enabling/disabling in the Grid views
+- [fix] Fixed issue related to the previously NS current columns displaying for the NS
+- [fix] Fixed issue related to the empty config opening
+- [fix] Fixed issue related to the pagination on the Query result page
+- [fix] Removed eslint popup
+- [fix] Fixed "see & edit" link on the Queries Perfstats page
+- [fix] Fixed tooltips view
+
 # Version 3.22.1 (12.02.2024)
 ## Core
 - [fix] Fixed `COUNT()` for fulltext queries, when `preselect_before_ft` is enabled in the index config

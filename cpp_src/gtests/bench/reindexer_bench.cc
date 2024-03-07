@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
 	auto err = DB->Connect("builtin://" + kStoragePath);
 	if (!err.ok()) return err.code();
 
-	JoinItems joinItems(DB.get(), 500);
+	JoinItems joinItems(DB.get(), 50'000);
 	ApiTvSimple apiTvSimple(DB.get(), "ApiTvSimple", kItemsInBenchDataset);
 	ApiTvSimpleComparators apiTvSimpleComparators(DB.get(), "ApiTvSimpleComparators", kItemsInComparatorsBenchDataset);
 	ApiTvComposite apiTvComposite(DB.get(), "ApiTvComposite", kItemsInBenchDataset);

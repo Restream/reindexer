@@ -775,7 +775,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 			txData.dbName = request->dbname();
 			txData.nsName = request->nsname();
 			txData.tx = std::make_shared<Transaction>(std::move(tr));
-			txData.txDeadline = std::chrono::steady_clock::now() + txIdleTimeout_;
+			txData.txDeadline = steady_clock_w::now_coarse() + txIdleTimeout_;
 			std::lock_guard<std::mutex> lck(m_);
 			transactions_.emplace(txID, std::move(txData));
 		}
@@ -788,7 +788,7 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 }
 
 void ReindexerService::removeExpiredTxCb(reindexer::net::ev::periodic&, int) {
-	auto now = std::chrono::steady_clock::now();
+	auto now = steady_clock_w::now_coarse();
 	std::lock_guard<std::mutex> lck(m_);
 	for (auto it = transactions_.begin(); it != transactions_.end();) {
 		if (it->second.txDeadline <= now) {

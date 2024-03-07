@@ -876,6 +876,13 @@ public:
 	[[nodiscard]] const auto &SelectFilters() const & noexcept { return selectFilter_; }
 	void AddJoinQuery(JoinedQuery &&);
 	void VerifyForUpdate() const;
+	template <InjectionDirection injectionDirection>
+	size_t InjectConditionsFromOnConditions(size_t position, const h_vector<QueryJoinEntry, 1> &joinEntries,
+											const QueryEntries &joinedQueryEntries, size_t joinedQueryNo,
+											const std::vector<std::unique_ptr<Index>> *indexesFrom) {
+		return entries_.InjectConditionsFromOnConditions<injectionDirection>(position, joinEntries, joinedQueryEntries, joinedQueryNo,
+																			 indexesFrom);
+	}
 
 	auto GetSubQuery(size_t) const && = delete;
 	auto GetSubQueries() const && = delete;

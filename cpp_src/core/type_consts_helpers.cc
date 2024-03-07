@@ -29,6 +29,29 @@ namespace reindexer {
 	throw Error(errForbidden, "Not invertible conditional operator '%s(%d)' in query", CondTypeToStr(cond), cond);
 }
 
+[[nodiscard]] CondType InvertNotCondition(CondType cond) {
+	switch (cond) {
+		case CondGt:
+			return CondLe;
+		case CondLt:
+			return CondGe;
+		case CondGe:
+			return CondLt;
+		case CondLe:
+			return CondGt;
+		case CondSet:
+		case CondEq:
+		case CondAny:
+		case CondRange:
+		case CondAllSet:
+		case CondEmpty:
+		case CondLike:
+		case CondDWithin:
+			break;
+	}
+	throw Error(errForbidden, "Not invertible conditional operator '%s(%d)' in query", CondTypeToStr(cond), cond);
+}
+
 [[nodiscard]] std::string_view CondTypeToStr(CondType t) {
 	using namespace std::string_view_literals;
 	switch (t) {

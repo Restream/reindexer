@@ -58,7 +58,7 @@ public:
 		  nsName_(nsName),
 		  tagsUpdated_(false),
 		  hasDeleteItemSteps_(false),
-		  startTime_(std::chrono::high_resolution_clock::now()) {
+		  startTime_(system_clock_w::now()) {
 		tagsMatcher_.clearUpdated();
 	}
 

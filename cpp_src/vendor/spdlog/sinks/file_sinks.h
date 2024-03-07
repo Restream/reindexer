@@ -267,9 +267,11 @@ public:
 
 
 protected:
+using sink_clock = reindexer::system_clock_w;
+
     void _sink_it(const details::log_msg& msg) override
     {
-        if (std::chrono::system_clock::now() >= _rotation_tp)
+		if (sink_clock::now() >= _rotation_tp)
         {
             _file_helper.open(FileNameCalc::calc_filename(_base_filename));
             _rotation_tp = _next_rotation_tp();
@@ -283,15 +285,15 @@ protected:
     }
 
 private:
-    std::chrono::system_clock::time_point _next_rotation_tp()
+	sink_clock::time_point _next_rotation_tp()
     {
-        auto now = std::chrono::system_clock::now();
-        time_t tnow = std::chrono::system_clock::to_time_t(now);
+		auto now = sink_clock::now();
+		time_t tnow = sink_clock::to_time_t(now);
         tm date = spdlog::details::os::localtime(tnow);
         date.tm_hour = _rotation_h;
         date.tm_min = _rotation_m;
         date.tm_sec = 0;
-        auto rotation_time = std::chrono::system_clock::from_time_t(std::mktime(&date));
+		auto rotation_time = sink_clock::from_time_t(std::mktime(&date));
         if (rotation_time > now)
         {
             return rotation_time;
@@ -302,7 +304,7 @@ private:
     filename_t _base_filename;
     int _rotation_h;
     int _rotation_m;
-    std::chrono::system_clock::time_point _rotation_tp;
+	sink_clock::time_point _rotation_tp;
     details::file_helper _file_helper;
 };
 

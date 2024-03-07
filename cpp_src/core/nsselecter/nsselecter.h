@@ -103,6 +103,8 @@ private:
 							const TagsMatcher &tagsMatcher) const;
 
 	void writeAggregationResultMergeSubQuery(QueryResults &result, h_vector<Aggregator, 4> &aggregators, SelectCtx &ctx);
+	[[noreturn]] RX_NO_INLINE void throwIncorrectRowIdInSortOrders(int rowId, const Index &firstSortIndex,
+																   const SelectIterator &firstIterator);
 	NamespaceImpl *ns_;
 	SelectFunction::Ptr fnc_;
 	FtCtx::Ptr ft_ctx_;

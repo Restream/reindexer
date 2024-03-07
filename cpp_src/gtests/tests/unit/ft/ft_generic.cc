@@ -1344,8 +1344,8 @@ TEST_P(FTGenericApi, ExplainWithFtPreselect) {
 		auto selectors = root["selectors"];
 		ASSERT_TRUE(selectors.IsSequence()) << qr.explainResults;
 		ASSERT_EQ(selectors.size(), 2) << qr.explainResults;
-		ASSERT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.explainResults;
-		ASSERT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.explainResults;
+		EXPECT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.explainResults;
+		EXPECT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.explainResults;
 	}
 	{
 		// Check the same query with extra brackets over ft condition. Make sure, that ft-index was still move to the end of the query
@@ -1368,8 +1368,8 @@ TEST_P(FTGenericApi, ExplainWithFtPreselect) {
 		auto selectors = root["selectors"];
 		ASSERT_TRUE(selectors.IsSequence()) << qr.explainResults;
 		ASSERT_EQ(selectors.size(), 2) << qr.explainResults;
-		ASSERT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.explainResults;
-		ASSERT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.explainResults;
+		EXPECT_EQ(selectors[0]["field"].as<std::string>(), "(-scan and (id and inner_join ns_for_joins) or id)") << qr.explainResults;
+		EXPECT_EQ(selectors[1]["field"].as<std::string>(), "ft3") << qr.explainResults;
 	}
 }
 

@@ -90,17 +90,19 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_by_uncommitted_index", {false}));
 					ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 					const auto cost = GetJsonFieldValues<int64_t>(explain, "cost");
-					ASSERT_EQ(2, cost.size());
-					ASSERT_LE(cost[0], cost[1]);
-					if (searchByBtreeField) {
-						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {searchField}));
-						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 0}));
-						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
-					} else {
-						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
-						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 1}));
-						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
-						ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "OnlyComparator"}));
+					if (additionalSearchField != searchField) {
+						ASSERT_EQ(2, cost.size());
+						ASSERT_LE(cost[0], cost[1]);
+						if (searchByBtreeField) {
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {searchField}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 0}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
+						} else {
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {"-"}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 1}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
+							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "OnlyComparator"}));
+						}
 					}
 				}
 			}
@@ -170,19 +172,21 @@ TEST_F(SelectorPlanTest, SortByBtreeIndex) {
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldAbsent(explain, "items"));
 							ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "sort_index", {sortByBtreeField ? sortField : "-"}));
 							const auto cost = GetJsonFieldValues<int64_t>(explain, "cost");
-							ASSERT_EQ(2, cost.size());
-							ASSERT_LE(cost[0], cost[1]);
-							if (searchByBtreeField) {
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 0}));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
-							} else {
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 1}));
-								ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
-								if (sortByBtreeField) {
-									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(
-										explain, "type", {desc ? "RevSingleIdset" : "SingleIdset", "OnlyComparator"}));
+							if (additionalSearchField != searchField) {
+								ASSERT_EQ(2, cost.size());
+								ASSERT_LE(cost[0], cost[1]);
+								if (searchByBtreeField) {
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 0}));
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "index"}));
 								} else {
-									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "OnlyComparator"}));
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "comparators", {0, 1}));
+									ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "method", {"index", "scan"}));
+									if (sortByBtreeField) {
+										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(
+											explain, "type", {desc ? "RevSingleIdset" : "SingleIdset", "OnlyComparator"}));
+									} else {
+										ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(explain, "type", {"SingleIdset", "OnlyComparator"}));
+									}
 								}
 							}
 						}
@@ -229,6 +233,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 			}
 
 			for (const char* additionalSearchField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
+				if (additionalSearchField == searchField) continue;
 				for (const Query& query :
 					 {Query(unbuiltBtreeNs).Explain().Where(additionalSearchField, CondEq, RandInt()).Where(searchField, cond, RandInt()),
 					  Query(unbuiltBtreeNs)
@@ -335,6 +340,7 @@ TEST_F(SelectorPlanTest, SortByUnbuiltBtreeIndex) {
 					}
 
 					for (const char* additionalSearchField : {kFieldId, kFieldTree1, kFieldTree2, kFieldHash}) {
+						if (additionalSearchField == searchField) continue;
 						for (const Query& query : {Query(unbuiltBtreeNs)
 													   .Explain()
 													   .Where(additionalSearchField, CondEq, RandInt())
@@ -414,59 +420,33 @@ TEST_F(SelectorPlanTest, ConditionsMergeIntoEmptyCondition) {
 		Upsert(nsName, item);
 	}
 
-	{
-		// Query without intersection in CondEq/CondSet values
-		const auto q = Query(nsName)
-						   .Where("id", CondEq, 31)
-						   .Where("id", CondSet, {32, 33, 34})
-						   .Where("id", CondEq, 310)
-						   .Where("id", CondSet, {35, 36, 37})
-						   .Where("value", CondAny, VariantArray{})
-						   .Explain();
+	for (const Query& q : {Query(nsName)  // Query without intersection in CondEq/CondSet values
+							   .Where("id", CondEq, 31)
+							   .Where("id", CondSet, {32, 33, 34})
+							   .Where("id", CondEq, 310)
+							   .Where("id", CondSet, {35, 36, 37})
+							   .Where("value", CondAny, VariantArray{})
+							   .Explain(),
+						   Query(nsName)  // Query with empty set
+							   .Where("id", CondEq, 39)
+							   .Where("id", CondSet, {32, 39, 34})
+							   .Where("id", CondSet, VariantArray{})
+							   .Where("value", CondAny, VariantArray{})
+							   .Explain(),
+						   Query(nsName)  // Query with multiple empty sets
+							   .Where("id", CondEq, 45)
+							   .Where("id", CondSet, VariantArray{})
+							   .Where("id", CondSet, VariantArray{})
+							   .Where("value", CondAny, VariantArray{})
+							   .Explain()}) {
 		QueryResults qr;
 		err = rt.reindexer->Select(q, qr);
 		ASSERT_TRUE(err.ok()) << err.what();
 		ASSERT_EQ(qr.Count(), 0);
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "field", {"id", "value"}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "keys", {0, 0}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "matched", {0, 0}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "method", {"index", "scan"}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "type", {"OnlyComparator", "OnlyComparator"}));
-	}
-	{
-		// Query with empty set
-		const auto q = Query(nsName)
-						   .Where("id", CondEq, 39)
-						   .Where("id", CondSet, {32, 39, 34})
-						   .Where("id", CondSet, VariantArray{})
-						   .Where("value", CondAny, VariantArray{})
-						   .Explain();
-		QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_EQ(qr.Count(), 0);
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "field", {"id", "value"}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "keys", {0, 0}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "matched", {0, 0}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "method", {"index", "scan"}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "type", {"OnlyComparator", "OnlyComparator"}));
-	}
-	{
-		// Query with multiple empty sets
-		const auto q = Query(nsName)
-						   .Where("id", CondEq, 45)
-						   .Where("id", CondSet, VariantArray{})
-						   .Where("id", CondSet, VariantArray{})
-						   .Where("value", CondAny, VariantArray{})
-						   .Explain();
-		QueryResults qr;
-		err = rt.reindexer->Select(q, qr);
-		ASSERT_TRUE(err.ok()) << err.what();
-		ASSERT_EQ(qr.Count(), 0);
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "field", {"id", "value"}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "keys", {0, 0}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "matched", {0, 0}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "method", {"index", "scan"}));
-		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "type", {"OnlyComparator", "OnlyComparator"}));
+		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "field", {"always_false"}));
+		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "keys", {1}));
+		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "matched", {0}));
+		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "method", {"index"}));
+		ASSERT_NO_FATAL_FAILURE(AssertJsonFieldEqualTo(qr.GetExplainResults(), "type", {"SingleRange"}));
 	}
 }

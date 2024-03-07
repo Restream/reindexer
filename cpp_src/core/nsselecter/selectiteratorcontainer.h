@@ -28,10 +28,9 @@ struct SelectIteratorsBracket : private Bracket {
 	bool haveJoins = false;
 };
 
-class SelectIteratorContainer : public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator,
-													  FieldsComparator, AlwaysFalse, AlwaysTrue> {
-	using Base =
-		ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysFalse, AlwaysTrue>;
+class SelectIteratorContainer
+	: public ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue> {
+	using Base = ExpressionTree<OpType, SelectIteratorsBracket, 2, SelectIterator, JoinSelectIterator, FieldsComparator, AlwaysTrue>;
 
 public:
 	SelectIteratorContainer(PayloadType pt = PayloadType(), SelectCtx *ctx = nullptr)
@@ -65,7 +64,7 @@ public:
 		maxIterations_ = std::numeric_limits<int>::max();
 		wasZeroIterations_ = false;
 	}
-	int GetMaxIterations(bool withZero = false) { return (withZero && wasZeroIterations_) ? 0 : maxIterations_; }
+	int GetMaxIterations(bool withZero = false) const noexcept { return (withZero && wasZeroIterations_) ? 0 : maxIterations_; }
 	std::string Dump() const;
 	static bool IsExpectingOrderedResults(const QueryEntry &qe) noexcept {
 		return IsOrderedCondition(qe.Condition()) || (qe.Condition() != CondAny && qe.Values().size() <= 1);

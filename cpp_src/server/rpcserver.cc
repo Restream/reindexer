@@ -23,7 +23,7 @@ RPCServer::RPCServer(DBManager &dbMgr, LoggerWrapper &logger, IClientsStats *cli
 	  logger_(logger),
 	  statsWatcher_(statsCollector),
 	  clientsStats_(clientsStats),
-	  startTs_(std::chrono::system_clock::now()),
+	  startTs_(system_clock_w::now()),
 	  qrWatcher_(serverConfig_.RPCQrIdleTimeout) {}
 
 RPCServer::~RPCServer() {
@@ -461,16 +461,15 @@ Error RPCServer::RollbackTx(cproto::Context &ctx, int64_t txId) {
 
 Error RPCServer::ModifyItem(cproto::Context &ctx, p_string ns, int format, p_string itemData, int mode, p_string perceptsPack,
 							int stateToken, int /*txID*/) {
-	using std::chrono::steady_clock;
 	using std::chrono::milliseconds;
 	using std::chrono::duration_cast;
 
 	auto db = getDB(ctx, kRoleDataWrite);
 	auto execTimeout = ctx.call->execTimeout_;
-	auto beginT = steady_clock::now();
+	auto beginT = steady_clock_w::now_coarse();
 	auto item = Item(db.NewItem(ns));
 	if (execTimeout.count() > 0) {
-		execTimeout -= duration_cast<milliseconds>(beginT - steady_clock::now());
+		execTimeout -= duration_cast<milliseconds>(beginT - steady_clock_w::now_coarse());
 		if (execTimeout.count() <= 0) {
 			return errCanceled;
 		}

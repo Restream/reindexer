@@ -101,7 +101,7 @@ public:
 	using item_type = async_msg;
 	using q_type = details::mpmc_bounded_queue<item_type>;
 
-	using clock = std::chrono::steady_clock;
+	using clock = reindexer::steady_clock_w;
 
 	async_log_helper(formatter_ptr formatter, std::vector<sink_ptr> sinks, size_t queue_size, const log_err_handler err_handler,
 					 const async_overflow_policy overflow_policy = async_overflow_policy::block_retry,

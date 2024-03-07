@@ -26,6 +26,7 @@ using std::shared_lock;
 #include <errno.h>
 #include <pthread.h>
 #include "tools/assertrx.h"
+#include "tools/clock.h"
 
 namespace reindexer {
 
@@ -168,7 +169,7 @@ class shared_timed_mutex : public __shared_mutex_pthread {
 public:
 	template <class Rep, class Period>
 	bool try_lock_for(const std::chrono::duration<Rep, Period>& duration) {
-		return try_lock_until(__clock::now() + duration);
+		return try_lock_until(__clock::now_coarse() + duration);
 	}
 
 	template <class Rep, class Period>
@@ -195,7 +196,7 @@ public:
 
 	template <class Rep, class Period>
 	bool try_lock_shared_for(const std::chrono::duration<Rep, Period>& duration) {
-		return try_lock_shared_until(__clock::now() + duration);
+		return try_lock_shared_until(__clock::now_coarse() + duration);
 	}
 
 	template <class Clock, class Duration>
@@ -221,7 +222,7 @@ public:
 	}
 
 private:
-	using __clock = std::chrono::system_clock;
+	using __clock = system_clock_w;
 };
 }  // namespace reindexer
 

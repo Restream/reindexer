@@ -6,6 +6,7 @@
 #include "estl/h_vector.h"
 #include "estl/mutex.h"
 #include "tools/assertrx.h"
+#include "tools/clock.h"
 #include "tools/flagguard.h"
 
 namespace reindexer {
@@ -38,7 +39,7 @@ public:
 	static constexpr auto kStorageReopenPeriod = std::chrono::seconds(15);
 
 	using AdviceGuardT = CounterGuardAIRL32;
-	using ClockT = std::chrono::system_clock;
+	using ClockT = system_clock_w;
 	using TimepointT = ClockT::time_point;
 	using Mutex = MarkedMutex<std::mutex, MutexMark::AsyncStorage>;
 
@@ -212,7 +213,7 @@ private:
 	void recycleUpdatesCollection(UpdatesPtrT&& p) noexcept;
 	void scheduleFilesReopen(Error&& e) noexcept {
 		setLastFlushError(std::move(e));
-		reopenTs_ = ClockT::now() + kStorageReopenPeriod;
+		reopenTs_ = ClockT::now_coarse() + kStorageReopenPeriod;
 	}
 	void reset() noexcept {
 		storage_.reset();

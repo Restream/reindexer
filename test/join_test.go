@@ -531,6 +531,7 @@ func checkExplain(t *testing.T, res []reindexer.ExplainSelector, expected []expe
 			if len(expected[i].JoinSelect) == 0 {
 				assert.Nil(t, res[i].ExplainSelect, fieldName+expected[i].Field)
 			} else {
+				require.NotNil(t, res[i].ExplainSelect, fieldName+expected[i].Field)
 				checkExplain(t, res[i].ExplainSelect.Selectors, expected[i].JoinSelect, fieldName+expected[i].Field+" -> ")
 			}
 		}
@@ -548,6 +549,7 @@ func checkExplainConditionInjection(t *testing.T, resConditions []reindexer.Expl
 		if len(expectedConditions[i].ConditionSelectors) == 0 {
 			assert.Nil(t, resConditions[i].Explain)
 		} else {
+			require.NotNil(t, resConditions[i].Explain)
 			checkExplain(t, resConditions[i].Explain.Selectors, expectedConditions[i].ConditionSelectors, "")
 		}
 	}
@@ -586,7 +588,7 @@ func TestExplainJoin(t *testing.T) {
 	initNsForExplain(t, nsMain, 5)
 	initNsForExplain(t, nsJoined, 20)
 
-	qjoin1 := DB.Query(nsJoined).Where("data", reindexer.GT, 0)
+	qjoin1 := DB.Query(nsJoined).Where("data", reindexer.SET, []int{0, 2, 4})
 	qjoin2 := DB.Query(nsJoined).Where("data", reindexer.SET, []int{1, 2, 4})
 	qjoin3 := DB.Query(nsJoined).Where("data", reindexer.EQ, 1)
 	q := DB.Query(nsMain).Explain()
@@ -626,33 +628,25 @@ func TestExplainJoin(t *testing.T) {
 					Method:      "scan",
 					Keys:        0,
 					Comparators: 1,
-					Matched:     3,
+					Matched:     2,
 				},
 				{
 					Field:       "inner_join test_explain_joined",
-					Method:      "no_preselect",
-					Keys:        1,
+					Method:      "preselected_values",
+					Keys:        3,
 					Comparators: 0,
-					Matched:     3,
-					Preselect:   nil,
-					JoinSelect: []expectedExplain{
-						{
-							Field:       "id",
-							FieldType:   "indexed",
-							Method:      "index",
-							Keys:        1,
-							Comparators: 0,
-							Matched:     1,
-						},
+					Matched:     2,
+					Preselect: []expectedExplain{
 						{
 							Field:       "data",
 							FieldType:   "indexed",
-							Method:      "scan",
-							Keys:        0,
-							Comparators: 1,
-							Matched:     1,
+							Method:      "index",
+							Keys:        3,
+							Comparators: 0,
+							Matched:     3,
 						},
 					},
+					JoinSelect: nil,
 				},
 			},
 		},
@@ -693,7 +687,7 @@ func TestExplainJoin(t *testing.T) {
 			Method:      "index",
 			Keys:        1,
 			Comparators: 0,
-			Matched:     1,
+			Matched:     0,
 		},
 		{
 			Field:       "left_join test_explain_joined",
@@ -719,33 +713,14 @@ func TestExplainJoin(t *testing.T) {
 			RightNsName:       "test_explain_joined",
 			JoinOnCondition:   "INNER JOIN ON (test_explain_joined.id = id)",
 			Succeed:           true,
-			Type:              "select",
+			Type:              "by_value",
 			InjectedCondition: "(id IN (...) )",
 			Conditions: []expectedExplainConditionInjection{
 				{
 					InitialCondition: "test_explain_joined.id = id",
-					AggType:          "distinct",
 					Succeed:          true,
 					NewCondition:     "id IN (...)",
-					ValuesCount:      19,
-					ConditionSelectors: []expectedExplain{
-						{
-							Field:       "id",
-							FieldType:   "indexed",
-							Method:      "index",
-							Keys:        20,
-							Comparators: 0,
-							Matched:     20,
-						},
-						{
-							Field:       "data",
-							FieldType:   "indexed",
-							Method:      "scan",
-							Keys:        0,
-							Comparators: 1,
-							Matched:     19,
-						},
-					},
+					ValuesCount:      3,
 				},
 			},
 		},

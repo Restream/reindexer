@@ -131,12 +131,12 @@ protected:
 
 	LoggerWrapper logger_;
 
-	std::chrono::system_clock::time_point startTs_;
+	system_clock_w::time_point startTs_;
 
-	using TxDeadlineClock = std::chrono::steady_clock;
+	using TxDeadlineClock = steady_clock_w;
 	struct TxInfo {
 		std::shared_ptr<Transaction> tx;
-		std::chrono::time_point<TxDeadlineClock> txDeadline;
+		TxDeadlineClock::time_point txDeadline;
 		std::string dbName;
 	};
 	fast_hash_map<std::string, TxInfo, nocase_hash_str, nocase_equal_str, nocase_less_str> txMap_;

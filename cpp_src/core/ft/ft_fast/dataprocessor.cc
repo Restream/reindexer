@@ -1,16 +1,14 @@
-﻿
-#include "dataprocessor.h"
+﻿#include "dataprocessor.h"
 #include <chrono>
-#include <functional>
 #include <thread>
 #include "core/ft/numtotext.h"
 #include "core/ft/typos.h"
 
+#include "tools/clock.h"
 #include "tools/logger.h"
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 
-using std::chrono::high_resolution_clock;
 using std::chrono::duration_cast;
 using std::chrono::milliseconds;
 
@@ -23,9 +21,9 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	multithread_ = multithread;
 
 	words_map words_um;
-	auto tm0 = high_resolution_clock::now();
+	auto tm0 = system_clock_w::now();
 	size_t szCnt = buildWordsMap(words_um);
-	auto tm2 = high_resolution_clock::now();
+	auto tm2 = system_clock_w::now();
 	auto &words = holder_.GetWords();
 
 	holder_.SetWordsOffset(words.size());
@@ -36,10 +34,10 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 
 	// Step 4: Commit suffixes array. It runs in parallel with next step
 	auto &suffixes = holder_.GetSuffix();
-	auto tm3 = high_resolution_clock::now(), tm4 = high_resolution_clock::now();
+	auto tm3 = system_clock_w::now(), tm4 = system_clock_w::now();
 	auto sufBuildFun = [&suffixes, &tm3]() {
 		suffixes.build();
-		tm3 = high_resolution_clock::now();
+		tm3 = system_clock_w::now();
 	};
 	std::thread sufBuildThread(sufBuildFun);
 	// Step 5: Normalize and sort idrelsets. It runs in parallel with next step
@@ -68,7 +66,7 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 			keyIt->second.vids_.clear();
 			idsetcnt += word->vids_.heap_size();
 		}
-		tm4 = high_resolution_clock::now();
+		tm4 = system_clock_w::now();
 	};
 
 	std::thread idrelsetCommitThread(idrelsetCommitFun);
@@ -82,7 +80,7 @@ void DataProcessor<IdCont>::Process(bool multithread) {
 	buildTyposMap(wrdOffset, found);
 	// print(words_um);
 
-	auto tm5 = high_resolution_clock::now();
+	auto tm5 = system_clock_w::now();
 
 	logPrintf(LogInfo, "FastIndexText[%d] built with [%d uniq words, %d typos, %dKB text size, %dKB suffixarray size, %dKB idrelsets size]",
 			  holder_.steps.size(), words_um.size(), holder_.GetTyposHalf().size() + holder_.GetTyposMax().size(), szCnt / 1024,
