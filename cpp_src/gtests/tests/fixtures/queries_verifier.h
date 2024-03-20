@@ -322,8 +322,14 @@ private:
 			if (op != OpOr && !result) return false;
 			bool skip = false;
 			bool const iterationResult = it->InvokeAppropriate<bool>(
-				[](const reindexer::SubQueryEntry&) -> bool { assertrx(0); },
-				[](const reindexer::SubQueryFieldEntry&) -> bool { assertrx(0); },
+				[](const reindexer::SubQueryEntry&) -> bool {
+					assertrx(0);
+					std::abort();
+				},
+				[](const reindexer::SubQueryFieldEntry&) -> bool {
+					assertrx(0);
+					std::abort();
+				},
 				[&](const reindexer::QueryEntriesBracket&) {
 					if (op == OpOr && result && !containsJoins(it.cbegin(), it.cend())) {
 						skip = true;

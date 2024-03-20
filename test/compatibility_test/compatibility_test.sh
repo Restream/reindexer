@@ -41,22 +41,22 @@ test_outdated_instance() {
 	init_storages
 	${master_cmd} --db "${master_db_path}" -l0 --serverlog=\"reindexer_master_$3.1.log\" --corelog=\"reindexer_master_$3.1.log\" --httplog=\"\" --rpclog=\"\" &
 	master_pid=$!
-	sleep 4
+	sleep 8
 	go run ${script_dir}/filler.go --dsn "${master_dsn}/${db_name}" --offset 0
 	echo "====Force sync"
 	${slave_cmd} --db "${slave_db_path}" -p 9089 -r 6535 -l0 --serverlog=\"reindexer_slave_$3.1.log\" --corelog=\"reindexer_slave_$3.1.log\" --httplog=\"\" --rpclog=\"\" &
 	slave_pid=$!
-	sleep 5
+	sleep 8
 	kill $slave_pid
     wait $slave_pid
 	go run ${script_dir}/filler.go --dsn "${master_dsn}/${db_name}" --offset 100
 	echo "====Sync by WAL"
 	${slave_cmd} --db "${slave_db_path}" -p 9089 -r 6535 -l0 --serverlog=\"reindexer_slave_$3.2.log\" --corelog=\"reindexer_slave_$3.2.log\" --httplog=\"\" --rpclog=\"\" &
 	slave_pid=$!
-	sleep 5
+	sleep 12
 	echo "====Online sync"
 	go run ${script_dir}/filler.go --dsn "${master_dsn}/${db_name}" --offset 200
-	sleep 3
+	sleep 8
 	build/cpp_src/cmd/reindexer_tool/reindexer_tool --dsn "${master_dsn}/${db_name}" --command "\dump ${ns_name}" --output "${master_dump}"
 	build/cpp_src/cmd/reindexer_tool/reindexer_tool --dsn "${slave_dsn}/${db_name}" --command "\dump ${ns_name}" --output "${slave_dump}"
 	kill $slave_pid

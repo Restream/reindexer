@@ -216,39 +216,53 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 }
 template <typename T>
 void FastIndexText<T>::commitFulltextImpl() {
-	this->holder_->StartCommit(this->tracker_.isCompleteUpdated());
+	try {
+		this->holder_->StartCommit(this->tracker_.isCompleteUpdated());
 
-	auto tm0 = system_clock_w::now();
+		auto tm0 = system_clock_w::now();
 
-	if (this->holder_->status_ == FullRebuild) {
-		buildVdocs(this->idx_map);
-	} else {
-		buildVdocs(this->tracker_.updated());
-	}
-	auto tm1 = system_clock_w::now();
+		if (this->holder_->status_ == FullRebuild) {
+			buildVdocs(this->idx_map);
+		} else {
+			buildVdocs(this->tracker_.updated());
+		}
+		auto tm1 = system_clock_w::now();
 
-	this->holder_->Process(this->Fields().size(), !this->opts_.IsDense());
-	if (this->holder_->NeedClear(this->tracker_.isCompleteUpdated())) {
-		this->tracker_.clear();
-	}
-	this->holder_->rowId2Vdoc_.clear();
-	this->holder_->rowId2Vdoc_.reserve(this->holder_->vdocs_.size());
-	for (size_t i = 0, s = this->holder_->vdocs_.size(); i < s; ++i) {
-		const auto &vdoc = this->holder_->vdocs_[i];
-		if (vdoc.keyEntry) {
-			for (const auto id : vdoc.keyEntry->Unsorted()) {
-				if (static_cast<size_t>(id) >= this->holder_->rowId2Vdoc_.size()) {
-					this->holder_->rowId2Vdoc_.resize(id + 1, FtMergeStatuses::kEmpty);
+		this->holder_->Process(this->Fields().size(), !this->opts_.IsDense());
+		if (this->holder_->NeedClear(this->tracker_.isCompleteUpdated())) {
+			this->tracker_.clear();
+		}
+		this->holder_->rowId2Vdoc_.clear();
+		this->holder_->rowId2Vdoc_.reserve(this->holder_->vdocs_.size());
+		for (size_t i = 0, s = this->holder_->vdocs_.size(); i < s; ++i) {
+			const auto &vdoc = this->holder_->vdocs_[i];
+			if (vdoc.keyEntry) {
+				for (const auto id : vdoc.keyEntry->Unsorted()) {
+					if (static_cast<size_t>(id) >= this->holder_->rowId2Vdoc_.size()) {
+						this->holder_->rowId2Vdoc_.resize(id + 1, FtMergeStatuses::kEmpty);
+					}
+					this->holder_->rowId2Vdoc_[id] = i;
 				}
-				this->holder_->rowId2Vdoc_[id] = i;
 			}
 		}
-	}
-	if rx_unlikely (getConfig()->logLevel >= LogInfo) {
-		auto tm2 = system_clock_w::now();
-		logPrintf(LogInfo, "FastIndexText::Commit elapsed %d ms total [ build vdocs %d ms,  process data %d ms ]",
-				  duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
-				  duration_cast<milliseconds>(tm2 - tm1).count());
+		if rx_unlikely (getConfig()->logLevel >= LogInfo) {
+			auto tm2 = system_clock_w::now();
+			logPrintf(LogInfo, "FastIndexText::Commit elapsed %d ms total [ build vdocs %d ms,  process data %d ms ]",
+					  duration_cast<milliseconds>(tm2 - tm0).count(), duration_cast<milliseconds>(tm1 - tm0).count(),
+					  duration_cast<milliseconds>(tm2 - tm1).count());
+		}
+	} catch (Error &e) {
+		logPrintf(LogError, "FastIndexText::Commit exception: '%s'. Index will be rebuilt on the next query", e.what());
+		this->holder_->steps.clear();
+		throw;
+	} catch (std::exception &e) {
+		logPrintf(LogError, "FastIndexText::Commit exception: '%s'. Index will be rebuilt on the next query", e.what());
+		this->holder_->steps.clear();
+		throw;
+	} catch (...) {
+		logPrintf(LogError, "FastIndexText::Commit exception: <unknown error>. Index will be rebuilt on the next query");
+		this->holder_->steps.clear();
+		throw;
 	}
 }
 

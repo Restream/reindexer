@@ -51,7 +51,7 @@ void FTApi::SetFTConfig(const reindexer::FtFastConfig& ftCfg) {
 	ASSERT_TRUE(err.ok()) << err.what();
 }
 
-reindexer::Error FTApi::SetFTConfig(const reindexer::FtFastConfig& ftCfg, const std::string& ns, const std::string& index,
+reindexer::Error FTApi::SetFTConfig(const reindexer::FtFastConfig& ftCfg, std::string_view ns, const std::string& index,
 									const std::vector<std::string>& fields) {
 	assertrx(!ftCfg.fieldsCfg.empty());
 	assertrx(ftCfg.fieldsCfg.size() >= fields.size());

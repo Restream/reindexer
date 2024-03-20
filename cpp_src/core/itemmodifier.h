@@ -66,6 +66,10 @@ private:
 	void modifyCJSON(IdType itemId, FieldData &field, VariantArray &values);
 	void modifyIndexValues(IdType itemId, const FieldData &field, VariantArray &values, Payload &pl);
 
+	void deleteDataFromComposite(IdType itemId, FieldData &field, h_vector<bool, 32> &needUpdateCompIndexes);
+	void insertItemIntoCompositeIndexes(IdType itemId, int firstCompositePos, int totalIndexes,
+										const h_vector<bool, 32> &needUpdateCompIndexes);
+
 	NamespaceImpl &ns_;
 	const std::vector<UpdateEntry> &updateEntries_;
 	std::vector<FieldData> fieldsToModify_;

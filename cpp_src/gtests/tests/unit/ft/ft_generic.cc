@@ -1,6 +1,7 @@
 #include <gtest/gtest-param-test.h>
 #include <unordered_map>
 #include "core/cjson/jsonbuilder.h"
+#include "core/ft/limits.h"
 #include "ft_api.h"
 #include "tools/logger.h"
 #include "yaml-cpp/yaml.h"
@@ -1004,16 +1005,16 @@ TEST_P(FTGenericApi, SetFtFieldsCfgErrors) {
 TEST_P(FTGenericApi, MergeLimitConstraints) {
 	auto cfg = GetDefaultConfig();
 	Init(cfg);
-	cfg.mergeLimit = kMinMergeLimitValue - 1;
+	cfg.mergeLimit = reindexer::kMinMergeLimitValue - 1;
 	auto err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_EQ(err.code(), errParseJson);
-	cfg.mergeLimit = kMaxMergeLimitValue + 1;
+	cfg.mergeLimit = reindexer::kMaxMergeLimitValue + 1;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_EQ(err.code(), errParseJson);
-	cfg.mergeLimit = kMinMergeLimitValue;
+	cfg.mergeLimit = reindexer::kMinMergeLimitValue;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
-	cfg.mergeLimit = kMaxMergeLimitValue;
+	cfg.mergeLimit = reindexer::kMaxMergeLimitValue;
 	err = SetFTConfig(cfg, "nm1", "ft3", {"ft1", "ft2"});
 	ASSERT_TRUE(err.ok()) << err.what();
 }

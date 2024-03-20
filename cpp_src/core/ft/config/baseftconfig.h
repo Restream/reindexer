@@ -14,9 +14,6 @@ struct JsonNode;
 
 namespace reindexer {
 
-static constexpr int kMaxMergeLimitValue = 65000;
-static constexpr int kMinMergeLimitValue = 0;
-
 class JsonBuilder;
 
 struct StopWord : std::string {

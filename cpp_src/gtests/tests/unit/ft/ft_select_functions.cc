@@ -5,7 +5,7 @@ using namespace std::string_view_literals;
 
 class FTSelectFunctionsApi : public FTApi {
 protected:
-	std::string_view GetDefaultNamespace() noexcept override { return "ft_seletc_fn_default_namespace"; }
+	std::string_view GetDefaultNamespace() noexcept override { return "ft_select_fn_default_namespace"; }
 };
 
 TEST_P(FTSelectFunctionsApi, SnippetN) {

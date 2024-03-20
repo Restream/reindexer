@@ -492,7 +492,7 @@ func (qt *queryTest) where(index string, condition int, keys interface{}) *query
 }
 
 func (qt *queryTest) fieldSubQueryToString(index string, condition int, subQuery *queryTest) string {
-	qte := qt.newQueryTestEntry(index, condition, "(" + subQuery.toString() + ")")
+	qte := qt.newQueryTestEntry(index, condition, "("+subQuery.toString()+")")
 	return qte.toString()
 }
 
@@ -549,7 +549,7 @@ func (qt *queryTest) WhereUuid(index string, condition int, keys ...string) *que
 }
 
 func (qt *queryTest) subQueryToString(subQuery *queryTest, condition int, keys interface{}) string {
-	qte := qt.newQueryTestEntry("(" + subQuery.toString() + ")", condition, keys)
+	qte := qt.newQueryTestEntry("("+subQuery.toString()+")", condition, keys)
 	return qte.toString()
 }
 
@@ -557,7 +557,8 @@ func (qt *queryTest) whereQuery(t *testing.T, subQuery *queryTest, condition int
 	if condition == reindexer.ANY || condition == reindexer.EMPTY {
 		subQuery.Limit(1)
 	}
-	it := subQuery.Exec(t)
+	it := subQuery.ManualClose().Exec(t)
+	defer subQuery.close()
 	defer it.Close()
 	res := false
 	if condition == reindexer.ANY || condition == reindexer.EMPTY {
@@ -1681,7 +1682,7 @@ func checkValue(t *testing.T, v reflect.Value, cond int, keys []reflect.Value) b
 		for _, k := range keys {
 			switch cond {
 			case reindexer.EQ, reindexer.SET:
-				if  compareValues(t, v, k) == 0 {
+				if compareValues(t, v, k) == 0 {
 					return true
 				}
 			case reindexer.GT:

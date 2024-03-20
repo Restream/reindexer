@@ -1,4 +1,5 @@
 #include <gtest/gtest-param-test.h>
+#include "core/ft/limits.h"
 #include "ft_api.h"
 #include "tools/fsops.h"
 
@@ -124,13 +125,13 @@ TEST_P(FTStressApi, ConcurrencyCheck) {
 TEST_P(FTStressApi, LargeMergeLimit) {
 	// Check if results are bounded by merge limit
 	auto ftCfg = GetDefaultConfig();
-	ftCfg.mergeLimit = kMaxMergeLimitValue;
+	ftCfg.mergeLimit = reindexer::kMaxMergeLimitValue;
 	Init(ftCfg);
 	const std::string kBase1 = "aaaa";
 	const std::string kBase2 = "bbbb";
 
 	reindexer::fast_hash_set<std::string> strings1;
-	constexpr unsigned kPartLen = (kMaxMergeLimitValue + 15000) / 2;
+	constexpr unsigned kPartLen = (reindexer::kMaxMergeLimitValue + 15000) / 2;
 	for (unsigned i = 0; i < kPartLen; ++i) {
 		while (true) {
 			std::string val = kBase2 + rt.RandString(10, 10);

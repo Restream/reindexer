@@ -1470,7 +1470,11 @@ TEST_F(ReindexerApi, EqualPositionsSqlParserTest) {
 		"SELECT * FROM ns WHERE (f1 = 1 AND f2 = 2 OR f3 = 3 equal_position(f1, f2) equal_position(f1, f3)) OR (f4 = 4 AND f5 > 5 "
 		"equal_position(f4, f5))";
 
+// GCC 12 False positive warning in the expression tree
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic push
 	Query query = Query::FromSQL(sql);
+#pragma GCC diagnostic pop
 	EXPECT_EQ(query.GetSQL(), sql);
 	EXPECT_TRUE(query.Entries().equalPositions.empty());
 	ASSERT_EQ(query.Entries().Size(), 7);

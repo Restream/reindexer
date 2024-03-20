@@ -4,8 +4,8 @@
 #if defined(__GLIBCXX__) && __GLIBCXX__ <= 20150623
 #define STD_REGEX_IS_BROKEN
 #endif
-#if defined(__GNUC__) && (__GNUC__ == 12) && (__GNUC_MINOR__ == 2) && defined(REINDEX_WITH_ASAN)
-// regex header is broken in GCC 12.2 with ASAN
+#if defined(__GNUC__) && (__GNUC__ == 12) && (__GNUC_MINOR__ < 4) && defined(REINDEX_WITH_ASAN)
+// regex header is broken in GCC 12.0-12.3 with ASAN
 #define STD_REGEX_IS_BROKEN
 #endif
 #if defined(_MSC_VER) && _MSC_VER < 1900

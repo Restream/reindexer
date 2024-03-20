@@ -410,5 +410,5 @@ where both `self.namespaceName` and `it.WhichOneof('item')` represent a name of 
 # Optional dependencies
 
 - `Doxygen` package is also required for building a documentation of the project.
-- `gtest`,`gbenchmark` for run C++ tests and benchmarks
+- `gtest`,`gbenchmark` for run C++ tests and benchmarks (works for gbenchmark versions 1.7.x)
 - `gperftools` for memory and performance profiling

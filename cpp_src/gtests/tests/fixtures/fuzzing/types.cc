@@ -49,6 +49,7 @@ reindexer::KeyValueType ToKeyValueType(FieldType ft) {
 		case FieldType::Struct:
 		default:
 			assertrx(0);
+			std::abort();
 	}
 }
 
@@ -82,6 +83,7 @@ std::string_view ToText(IndexType it) {
 			return "rtree"sv;
 		default:
 			assertrx(0);
+			std::abort();
 	}
 }
 

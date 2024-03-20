@@ -8,8 +8,6 @@
 
 namespace reindexer {
 
-const unsigned kMultiValueLinkFlag = 0x80000000;
-
 template <typename CharT, typename V, bool Multi = false>
 class flat_str_map {
 protected:
@@ -86,10 +84,7 @@ public:
 	public:
 		base_iterator(map_iterator it, map_type *m, int multi_idx) : it_(it), m_(m), multi_idx_(multi_idx) {}
 		base_iterator(map_iterator it, map_type *m)
-			: it_(it),
-			  m_(m),
-			  multi_idx_((Multi && it_ != m_->map_->end() && it_->second & kMultiValueLinkFlag) ? it_->second & ~kMultiValueLinkFlag : -1) {
-		}
+			: it_(it), m_(m), multi_idx_((Multi && it_ != m_->map_->end() && it_->second.IsMultiValue()) ? it_->second.GetWordID() : -1) {}
 		base_iterator(const base_iterator &other) : it_(other.it_), m_(other.m_), multi_idx_(other.multi_idx_) {}
 		// NOLINTNEXTLINE(bugprone-unhandled-self-assignment)
 		base_iterator &operator=(const base_iterator &other) {
@@ -101,7 +96,7 @@ public:
 
 		value_type operator->() {
 			if constexpr (Multi) {
-				if (it_->second & kMultiValueLinkFlag) {
+				if (it_->second.IsMultiValue()) {
 					assertrx(multi_idx_ != -1);
 					return value_type(m_->holder_->get(it_->first), m_->multi_[multi_idx_].val);
 				}
@@ -111,7 +106,7 @@ public:
 
 		const value_type operator->() const {
 			if constexpr (Multi) {
-				if (it_->second & kMultiValueLinkFlag) {
+				if (it_->second.IsMultiValue()) {
 					assertrx(multi_idx_ != -1);
 					return value_type(m_->holder_->get(it_->first), m_->multi_[multi_idx_].val);
 				}
@@ -128,8 +123,8 @@ public:
 			}
 			++it_;
 			if constexpr (Multi) {
-				if (it_ != m_->map_->end() && it_->second & kMultiValueLinkFlag) {
-					multi_idx_ = it_->second & ~kMultiValueLinkFlag;
+				if (it_ != m_->map_->end() && it_->second.IsMultiValue()) {
+					multi_idx_ = it_->second.GetWordID();
 				}
 			}
 			return *this;
@@ -197,14 +192,15 @@ public:
 			holder_->resize(pos);
 			if constexpr (Multi) {
 				multi_pos = multi_.size();
-				if (!(res.first->second & kMultiValueLinkFlag)) {
+				if (!(res.first->second.IsMultiValue())) {
 					multi_.push_back({res.first->second, multi_pos + 1});
 					multi_.push_back({v, -1});
 				} else {
-					int old_multi_pos = res.first->second & ~kMultiValueLinkFlag;
+					int old_multi_pos = res.first->second.GetWordID();
 					multi_.push_back({v, old_multi_pos});
 				}
-				res.first->second = multi_pos | kMultiValueLinkFlag;
+				res.first->second.SetWordID(multi_pos);
+				res.first->second.SetMultiValueFlag(true);
 			}
 		}
 		return {iterator(res.first, this, multi_pos), res.second};

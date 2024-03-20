@@ -1,6 +1,6 @@
-
 #include "baseftconfig.h"
 #include "core/cjson/jsonbuilder.h"
+#include "core/ft/limits.h"
 #include "core/ft/stopwords/stop.h"
 #include "tools/errors.h"
 

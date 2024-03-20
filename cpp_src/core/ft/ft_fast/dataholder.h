@@ -5,6 +5,7 @@
 #include "core/ft/config/ftfastconfig.h"
 #include "core/ft/filters/itokenfilter.h"
 #include "core/ft/idrelset.h"
+#include "core/ft/limits.h"
 #include "core/ft/stemmer.h"
 #include "core/ft/typos.h"
 #include "core/ft/usingcontainer.h"
@@ -50,16 +51,17 @@ struct WordTypo {
 	WordTypo() = default;
 	explicit WordTypo(WordIdType w) noexcept : word(w) {}
 	explicit WordTypo(WordIdType w, const typos_context::TyposVec& p) noexcept : word(w), positions(p) {}
-	uint32_t operator&(uint32_t v) const noexcept { return uint32_t(word) & v; }
-	WordTypo& operator=(uint32_t v) noexcept {
-		word = v;
-		return *this;
-	}
+	bool IsMultiValue() const noexcept { return multiMapFlag; }
+	void SetMultiValueFlag(bool val) noexcept { multiMapFlag = val; }
+	int32_t GetWordID() const noexcept { return word.GetID(); }
+	void SetWordID(int32_t id) noexcept { word.SetID(id); }
 
 	WordIdType word;
 	typos_context::TyposVec positions;
+	uint8_t multiMapFlag = 0;
 };
-static_assert(sizeof(WordTypo) <= 16, "This size is matter for overall size of the typos map");
+
+static_assert(sizeof(WordTypo) <= 8, "This size is matter for overall size of the typos map");
 
 class IDataHolder {
 public:
@@ -140,23 +142,62 @@ public:
 	virtual void Clear() = 0;
 	virtual void StartCommit(bool complte_updated) = 0;
 	void SetConfig(FtFastConfig* cfg);
-	CommitStep& GetStep(WordIdType id);
-	const CommitStep& GetStep(WordIdType id) const;
-	bool NeedRebuild(bool complte_updated);
-	bool NeedRecomitLast();
-	void SetWordsOffset(uint32_t word_offset);
-	bool NeedClear(bool complte_updated);
+	CommitStep& GetStep(WordIdType id) noexcept {
+		assertrx(id.b.step_num < steps.size());
+		return steps[id.b.step_num];
+	}
+	const CommitStep& GetStep(WordIdType id) const noexcept {
+		assertrx(id.b.step_num < steps.size());
+		return steps[id.b.step_num];
+	}
+	bool NeedRebuild(bool complte_updated) const noexcept {
+		return steps.empty() || complte_updated || steps.size() >= size_t(cfg_->maxRebuildSteps) ||
+			   (steps.size() == 1 && steps.front().suffixes_.word_size() < size_t(cfg_->maxStepSize));
+	}
+	bool NeedRecomitLast() const noexcept { return steps.back().suffixes_.word_size() < size_t(cfg_->maxStepSize); }
+	void SetWordsOffset(uint32_t word_offset) noexcept {
+		assertrx(!steps.empty());
+		if (status_ == CreateNew) steps.back().wordOffset_ = word_offset;
+	}
+	bool NeedClear(bool complte_updated) const noexcept { return NeedRebuild(complte_updated) || !NeedRecomitLast(); }
 	suffix_map<char, WordIdType>& GetSuffix() noexcept { return steps.back().suffixes_; }
 	flat_str_multimap<char, WordTypo>& GetTyposHalf() noexcept { return steps.back().typosHalf_; }
 	flat_str_multimap<char, WordTypo>& GetTyposMax() noexcept { return steps.back().typosMax_; }
 	WordIdType findWord(std::string_view word);
 	uint32_t GetSuffixWordId(WordIdType id) const noexcept { return GetSuffixWordId(id, steps.back()); }
-	uint32_t GetSuffixWordId(WordIdType id, const CommitStep& step) const noexcept;
-	uint32_t GetWordsOffset();
+	uint32_t GetSuffixWordId(WordIdType id, const CommitStep& step) const noexcept {
+		assertrx(!id.IsEmpty());
+		assertrx(id.b.step_num < steps.size());
+
+		assertrx(id.b.id >= step.wordOffset_);
+		assertrx(id.b.id - step.wordOffset_ < step.suffixes_.word_size());
+		return id.b.id - step.wordOffset_;
+	}
+	uint32_t GetWordsOffset() const noexcept {
+		assertrx(!steps.empty());
+		return steps.back().wordOffset_;
+	}
 	// returns id and found or not found
-	WordIdType BuildWordId(uint32_t id);
+	WordIdType BuildWordId(uint32_t id) const {
+		WordIdType wId;
+		if rx_unlikely (id > kWordIdMaxIdVal) {
+			throwWordIdOverflow(id);
+		}
+		if rx_unlikely (steps.size() > kMaxStepsCount) {
+			throwStepsOverflow();
+		}
+
+		wId.b.id = id;
+		wId.b.step_num = steps.size() - 1;
+		return wId;
+	}
 	std::string Dump();
 
+private:
+	[[noreturn]] static void throwWordIdOverflow(uint32_t id);
+	[[noreturn]] void throwStepsOverflow() const;
+
+public:	 // TODO: #1688 Fix private class data isolation here
 	// language and corresponding stemmer object
 	std::unordered_map<std::string, stemmer> stemmers_;
 
@@ -192,8 +233,16 @@ public:
 	void StartCommit(bool complte_updated) override final;
 	void Clear() override final;
 	std::vector<PackedWordEntry<IdCont>>& GetWords() noexcept { return words_; }
-	PackedWordEntry<IdCont>& getWordById(WordIdType id) noexcept;
-	const PackedWordEntry<IdCont>& getWordById(WordIdType id) const noexcept;
+	PackedWordEntry<IdCont>& GetWordById(WordIdType id) noexcept {
+		assertrx(!id.IsEmpty());
+		assertrx(id.b.id < words_.size());
+		return words_[id.b.id];
+	}
+	const PackedWordEntry<IdCont>& GetWordById(WordIdType id) const noexcept {
+		assertrx(!id.IsEmpty());
+		assertrx(id.b.id < words_.size());
+		return words_[id.b.id];
+	}
 	std::vector<PackedWordEntry<IdCont>> words_;
 };
 

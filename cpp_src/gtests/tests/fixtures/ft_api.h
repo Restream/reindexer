@@ -14,7 +14,7 @@ public:
 
 	void SetFTConfig(const reindexer::FtFastConfig& ftCfg);
 
-	reindexer::Error SetFTConfig(const reindexer::FtFastConfig& ftCfg, const std::string& ns, const std::string& index,
+	reindexer::Error SetFTConfig(const reindexer::FtFastConfig& ftCfg, std::string_view ns, const std::string& index,
 								 const std::vector<std::string>& fields);
 
 	void FillData(int64_t count);
@@ -101,8 +101,6 @@ public:
 	std::vector<std::tuple<std::string, std::string>>& DelHighlightSign(std::vector<std::tuple<std::string, std::string>>& in);
 
 protected:
-	static constexpr int kMaxMergeLimitValue = 65000;
-	static constexpr int kMinMergeLimitValue = 0;
 	virtual std::string_view GetDefaultNamespace() noexcept = 0;
 
 	struct Data {

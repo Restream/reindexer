@@ -1,0 +1,10 @@
+# ASM files
+*/asm/*.S
+*yaml.cc
+# Generated stemmer files
+*/libstemmer/*/stem_UTF_8_*.c
+*/libstemmer/*/stem_UTF_8_*.h
+# Murmurhash
+*/murmurhash/MurmurHash3.cc
+# Backtrace library
+*/libbacktrace/*

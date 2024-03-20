@@ -55,8 +55,8 @@ jobs:
             cxx: g++-10
           - os: ubuntu-latest
             sanitizer: TSAN
-            cc: gcc-10
-            cxx: g++-10
+            cc: gcc-12
+            cxx: g++-12
       fail-fast: false
     runs-on: ${{matrix.os}}
     env:
@@ -124,8 +124,8 @@ jobs:
             test: 'GO'
 #         - os: ubuntu-latest
 #           sanitizer: TSAN
-#           cc: gcc-10
-#           cxx: g++-10
+#           cc: gcc-12
+#           cxx: g++-12
 #           test: 'C++'
           - os: ubuntu-latest
             sanitizer: TSAN
@@ -139,6 +139,12 @@ jobs:
       CXX: ${{matrix.cxx}}
       TEST: ${{matrix.test}}
     steps:
+      - name: Fix kernel mmap rnd bits
+        if: ${{ matrix.os != 'macos-latest' && matrix.sanitizer != '' }}
+        # Asan provided in ubuntu 22.04 is incompatible with
+        # high-entropy ASLR in much newer kernels that GitHub runners are
+        # using leading to random crashes: https://reviews.llvm.org/D148280
+        run: sudo sysctl vm.mmap_rnd_bits=28
       - name: Checkout repository
         if: ${{ matrix.os != 'macos-latest' || matrix.test == 'GO' }}
         uses: actions/checkout@v4

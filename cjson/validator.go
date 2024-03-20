@@ -35,7 +35,7 @@ func (enc *Validator) validateLevel(src reflect.Type, fieldName string, parsed *
 
 	for i := 0; i < src.NumField(); i++ {
 		field := src.Field(i)
-		tag, _, _ := splitStr(field.Tag.Get("json"), ',')
+		tag, _ := splitStr(field.Tag.Get("json"), ',')
 
 		if len(tag) == 0 && field.Name != "_" {
 			tag = field.Name

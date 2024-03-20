@@ -1,3 +1,19 @@
+# Version 3.23.1 (20.03.2024)
+
+## Core
+- [fix] Fixed crash in the incremental fulltext index during typos handling
+- [fix] Fixed crash in the UPDATE-query in the case when this query sets values for some array-field and composite index simultaneously
+
+## Go connector
+- [fix] Fixed `joined` and `composite` fields behavior: from now fields with those tags will not be created in the database
+
+## Build
+- [fix] Fixed `Release` build with GCC-12
+- [fix] Added version check for `Google Benchmark` library during the build
+
+## Deploy
+- [fea] Added `clang-tidy` configs into `GitHub` source tree
+
 # Version 3.23.0 (07.03.2024)
 
 ## Core

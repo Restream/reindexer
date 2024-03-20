@@ -96,33 +96,31 @@ func mkFieldInfo(v reflect.Value, ctagName int, sf reflect.StructField) fieldInf
 }
 
 // non allocating version of strings.Split
-func splitStr(in string, sep byte) (s1, s2, s3 string) {
-
-	out := []*string{&s1, &s2, &s3}
-
-	for i := 0; i < len(out); i++ {
-		pos := strings.IndexByte(in, sep)
-
-		if pos != -1 {
-			*out[i] = in[:pos]
-			in = in[pos+1:]
-		} else {
-			*out[i] = in
-			break
-		}
+func splitStr(in string, sep byte) (s1, s2 string) {
+	if pos := strings.IndexByte(in, sep); pos != -1 {
+		s1 = in[:pos]
+		s2 = in[pos+1:]
+	} else {
+		s1 = in
 	}
 	return
 }
 
 func parseStructField(sf reflect.StructField) (name string, skip, omitEmpty bool) {
-	name, opt, _ := splitStr(sf.Tag.Get("json"), ',')
+	name, opts := splitStr(sf.Tag.Get("json"), ',')
 	if name == "-" || len(sf.PkgPath) != 0 {
 		skip = true
 	} else if name == "" {
 		name = sf.Name
 	}
 
-	omitEmpty = (opt == "omitempty")
+	omitEmpty = strings.Contains(opts, "omitempty")
+
+	if !skip {
+		_, opts = splitStr(sf.Tag.Get("reindex"), ',')
+		skip = strings.Contains(opts, "joined") || strings.Contains(opts, "composite")
+	}
+
 	return
 }
 
@@ -589,9 +587,9 @@ func ParseUuid(str string) (res [2]uint64, err error) {
 		err = fmt.Errorf("UUID should consist of 32 hexadecimal digits: '%s'", str)
 		return
 	}
-	if (res[0] != 0 || res[1] != 0) && (res[1] >> 63) == 0 {
+	if (res[0] != 0 || res[1] != 0) && (res[1]>>63) == 0 {
 		err = fmt.Errorf("Variant 0 of UUID is unsupported: '%s'", str)
- 	}
+	}
 	return
 }
 

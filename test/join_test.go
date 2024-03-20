@@ -17,6 +17,7 @@ import (
 func init() {
 	tnamespaces["test_items_for_join"] = TestItem{}
 	tnamespaces["test_join_items"] = TestJoinItem{}
+	tnamespaces["test_joined_field"] = TestItemWithJoinedField{}
 }
 
 type TestJoinItem struct {
@@ -28,6 +29,11 @@ type TestJoinItem struct {
 	Price     int      `json:"price"`
 	Uuid      string   `reindex:"uuid,hash,uuid" json:"uuid"`
 	UuidArray []string `reindex:"uuid_array,hash,uuid" json:"uuid_array"`
+}
+
+type TestItemWithJoinedField struct {
+	Id          int             `reindex:"id,hash,pk"`
+	JoinedField []*TestJoinItem `reindex:"j,,joined"`
 }
 
 func (item *TestItem) Join(field string, subitems []interface{}, context interface{}) {
@@ -829,4 +835,20 @@ func TestStrictJoinHandlers(t *testing.T) {
 			Exec().FetchAll()
 		require.ErrorContains(t, err, "join handler is missing.")
 	})
+}
+
+func TestJoinedFieldUpsert(t *testing.T) {
+	t.Parallel()
+
+	const ns = "test_joined_field"
+	item := TestItemWithJoinedField{
+		Id: rand.Intn(100),
+	}
+	err := DB.Upsert(ns, item)
+	require.NoError(t, err)
+
+	j, err := DB.Query(ns).ExecToJson().FetchAll()
+	require.NoError(t, err)
+	require.Greater(t, len(j), 0)
+	require.NotContains(t, string(j), "JoinedField")
 }

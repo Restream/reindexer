@@ -256,7 +256,7 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 		}
 
 		const WordIdType glbwordId = keyIt->second;
-		const auto& hword = holder_.getWordById(glbwordId);
+		const auto& hword = holder_.GetWordById(glbwordId);
 
 		if constexpr (useExternSt == FtUseExternStatuses::Yes) {
 			bool excluded = true;
@@ -298,7 +298,7 @@ void Selecter<IdCont>::processStepVariants(FtSelectContext& ctx, typename DataHo
 			(*res.foundWords)[glbwordId] = std::make_pair(curRawResultIdx, res.size() - 1);
 			if rx_unlikely (holder_.cfg_->logLevel >= LogTrace) {
 				logPrintf(LogInfo, " matched %s '%s' of word '%s' (variant '%s'), %d vids, %d%%", suffixLen ? "suffix" : "prefix",
-						  keyIt->first, word, variant.pattern, holder_.getWordById(glbwordId).vids_.size(), proc);
+						  keyIt->first, word, variant.pattern, holder_.GetWordById(glbwordId).vids_.size(), proc);
 			}
 			++matched;
 			vids += vidsSize;
@@ -1062,7 +1062,7 @@ void Selecter<IdCont>::TyposHandler::operator()(std::vector<TextSearchResults>& 
 									 1);
 						const auto it = res.foundWords->find(wordTypo.word);
 						if (it == res.foundWords->end() || it->second.first != curRawResultIdx) {
-							const auto& hword = holder.getWordById(wordTypo.word);
+							const auto& hword = holder.GetWordById(wordTypo.word);
 							res.push_back({&hword.vids_, typoIt->first, proc, step.suffixes_.virtual_word_len(wordIdSfx)});
 							res.idsCnt_ += hword.vids_.size();
 							res.foundWords->emplace(wordTypo.word, std::make_pair(curRawResultIdx, res.size() - 1));

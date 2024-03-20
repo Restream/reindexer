@@ -9,13 +9,13 @@ static LogWriter g_logWriter;
 static read_write_spinlock g_LoggerMtx;
 static std::atomic<LoggerPolicy> g_MtLogger = {LoggerPolicy::NotInit};
 
-RX_ALWAYS_INLINE void write(int level, char *buf) {
+RX_ALWAYS_INLINE void write(int level, char* buf) {
 	if (g_logWriter) {
 		g_logWriter(level, buf);
 	}
 }
 
-void logPrint(int level, char *buf) {
+void logPrint(int level, char* buf) {
 	switch (g_MtLogger.load(std::memory_order_relaxed)) {
 		case LoggerPolicy::NotInit:
 		case LoggerPolicy::WithLocks: {

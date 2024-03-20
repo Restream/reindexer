@@ -28,7 +28,7 @@ public:
 
 	ReindexerTestApi() : reindexer(std::make_shared<DB>()) {}
 	template <typename FieldsT>
-	static void DefineNamespaceDataset(DB &rx, const std::string &ns, const FieldsT &fields) {
+	static void DefineNamespaceDataset(DB &rx, std::string_view ns, const FieldsT &fields) {
 		auto err = reindexer::Error();
 		for (const auto &field : fields) {
 			if (field.indexType != "composite") {
@@ -56,10 +56,10 @@ public:
 		err = rx.Commit(ns);
 		ASSERT_TRUE(err.ok()) << err.what();
 	}
-	void DefineNamespaceDataset(const std::string &ns, std::initializer_list<const IndexDeclaration> fields) {
+	void DefineNamespaceDataset(std::string_view ns, std::initializer_list<const IndexDeclaration> fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
-	void DefineNamespaceDataset(const std::string &ns, const std::vector<IndexDeclaration> &fields) {
+	void DefineNamespaceDataset(std::string_view ns, const std::vector<IndexDeclaration> &fields) {
 		DefineNamespaceDataset(*reindexer, ns, fields);
 	}
 
@@ -121,7 +121,7 @@ public:
 	}
 	std::string RandString(unsigned minLen = 4, unsigned maxRandLen = 4) {
 		std::string res;
-		uint8_t len = rand() % maxRandLen + minLen;
+		uint8_t len = maxRandLen ? (rand() % maxRandLen + minLen) : minLen;
 		res.resize(len);
 		for (int i = 0; i < len; ++i) {
 			int f = rand() % letters.size();
