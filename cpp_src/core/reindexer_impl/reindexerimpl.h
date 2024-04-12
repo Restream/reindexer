@@ -23,7 +23,6 @@ namespace reindexer {
 
 class Replicator;
 class IClientsStats;
-class ProtobufSchema;
 
 class ReindexerImpl {
 	using Mutex = MarkedMutex<shared_timed_mutex, MutexMark::Reindexer>;
@@ -75,10 +74,14 @@ public:
 	Error CommitTransaction(Transaction &tr, QueryResults &result, const InternalRdxContext &ctx = InternalRdxContext());
 	Error RollBackTransaction(Transaction &tr);
 
-	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx = InternalRdxContext());
+	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data,
+				  const InternalRdxContext &ctx = InternalRdxContext());
 	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data,
 				  const InternalRdxContext &ctx = InternalRdxContext());
-	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx = InternalRdxContext());
+	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys,
+				  const InternalRdxContext &ctx = InternalRdxContext());
+	Error DeleteMeta(std::string_view nsName, const std::string &key,
+					 const InternalRdxContext &ctx = InternalRdxContext());
 	Error InitSystemNamespaces();
 	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts);
 	Error UnsubscribeUpdates(IUpdatesObserver *observer);

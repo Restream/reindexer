@@ -145,7 +145,7 @@ SelectKeyResults IndexOrdered<T>::SelectKey(const VariantArray &keys, CondType c
 			};
 
 			if (count > 1 && !opts.distinct && !opts.disableIdSetCache) {
-				// Using btree node pointers instead of the real values from the filter and range instead all of the contidions
+				// Using btree node pointers instead of the real values from the filter and range instead all of the conditions
 				// to increase cache hits count
 				VariantArray cacheKeys = {Variant{startIt == this->idx_map.end() ? int64_t(0) : int64_t(&(*startIt))},
 										  Variant{endIt == this->idx_map.end() ? int64_t(0) : int64_t(&(*endIt))}};

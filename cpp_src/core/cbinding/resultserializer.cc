@@ -34,7 +34,7 @@ void WrResultSerializer::putQueryParams(const QueryResults* results) {
 	if (opts_.flags & kResultsWithPayloadTypes) {
 		assertrx(opts_.ptVersions.data());
 		if (int(opts_.ptVersions.size()) != results->getMergedNSCount()) {
-			logPrintf(LogWarning, "ptVersionsCount != results->getMergedNSCount: %d != %d. Client's meta data can become incosistent.",
+			logPrintf(LogWarning, "ptVersionsCount != results->getMergedNSCount: %d != %d. Client's metadata can become incosistent.",
 					  opts_.ptVersions.size(), results->getMergedNSCount());
 		}
 		int cnt = 0, totalCnt = std::min(results->getMergedNSCount(), int(opts_.ptVersions.size()));
@@ -197,7 +197,7 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 	putQueryParams(result);
 	size_t saveLen = len_;
 
-	for (unsigned i = 0; i < opts_.fetchLimit; ++i) {
+	for (unsigned i = 0, limit = opts_.fetchLimit; i < limit; ++i) {
 		// Put Item ID and version
 		putItemParams(result, i, true);
 
@@ -207,16 +207,16 @@ bool WrResultSerializer::PutResults(const QueryResults* result) {
 			PutVarUint(jIt.getJoinedItemsCount() > 0 ? jIt.getJoinedFieldsCount() : 0);
 			if (jIt.getJoinedItemsCount() > 0) {
 				size_t joinedField = rowIt.qr_->joined_.size();
-				for (size_t ns = 0; ns < rowIt.GetItemRef().Nsid(); ++ns) {
+				for (size_t ns = 0, itNsid = rowIt.GetItemRef().Nsid(); ns < itNsid; ++ns) {
 					joinedField += rowIt.qr_->joined_[ns].GetJoinedSelectorsCount();
 				}
-				for (auto it = jIt.begin(); it != jIt.end(); ++it, ++joinedField) {
+				for (auto it = jIt.begin(), end = jIt.end(); it != end; ++it, ++joinedField) {
 					PutVarUint(it.ItemsCount());
 					if (it.ItemsCount() == 0) continue;
 					QueryResults qr = it.ToQueryResults();
 					qr.addNSContext(result->getPayloadType(joinedField), result->getTagsMatcher(joinedField),
 									result->getFieldsFilter(joinedField), result->getSchema(joinedField));
-					for (size_t idx = 0; idx < qr.Count(); idx++) putItemParams(&qr, idx, false);
+					for (size_t idx = 0, qrCnt = qr.Count(); idx < qrCnt; ++idx) putItemParams(&qr, idx, false);
 				}
 			}
 		}

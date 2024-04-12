@@ -71,6 +71,8 @@ std::string_view CmdName(uint16_t cmd) noexcept {
 			return "PutMeta"sv;
 		case kCmdEnumMeta:
 			return "EnumMeta"sv;
+		case kCmdDeleteMeta:
+			return "DeleteMeta"sv;
 		case kCmdSetSchema:
 			return "SetSchema"sv;
 		case kCmdSubscribeUpdates:

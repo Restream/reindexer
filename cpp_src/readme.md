@@ -70,6 +70,18 @@ dnf install reindexer-server
 
 Available distros: `redos-7`.
 
+### AltLinux
+
+Packages `ca-certificates` and `apt-https` must be preinstalled to be able to use https repository.
+
+```bash
+echo "rpm https://repo.reindexer.io/altlinux <distro>/x86_64 reindexer" > /etc/apt/sources.list.d/reindexer.list
+apt-get update
+apt-get install reindexer-server
+```
+
+Available distros: `p10`.
+
 ## OSX brew
 
 ```bash

@@ -51,7 +51,12 @@ Error Reindexer::GetMeta(std::string_view nsName, const std::string& key, std::s
 Error Reindexer::PutMeta(std::string_view nsName, const std::string& key, std::string_view data) {
 	return impl_->PutMeta(nsName, key, data, ctx_);
 }
-Error Reindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& keys) { return impl_->EnumMeta(nsName, keys, ctx_); }
+Error Reindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& keys) {
+	return impl_->EnumMeta(nsName, keys, ctx_);
+}
+Error Reindexer::DeleteMeta(std::string_view nsName, const std::string& key) {
+	return impl_->DeleteMeta(nsName, key, ctx_);
+}
 Error Reindexer::Delete(const Query& q, QueryResults& result) { return impl_->Delete(q, result, ctx_); }
 Error Reindexer::Select(std::string_view query, QueryResults& result) { return impl_->Select(query, result, ctx_); }
 Error Reindexer::Select(const Query& q, QueryResults& result) { return impl_->Select(q, result, ctx_); }

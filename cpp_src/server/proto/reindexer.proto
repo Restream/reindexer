@@ -25,6 +25,7 @@ service Reindexer {
 	rpc GetMeta(GetMetaRequest) returns(MetadataResponse) {}
 	rpc PutMeta(PutMetaRequest) returns(ErrorResponse) {}
 	rpc EnumMeta(EnumMetaRequest) returns(MetadataKeysResponse) {}
+	rpc DeleteMeta(DeleteMetaRequest) returns(ErrorResponse) {}
 	rpc GetProtobufSchema(GetProtobufSchemaRequest) returns(ProtobufSchemaResponse) {}
 
 	rpc BeginTransaction(BeginTransactionRequest) returns(TransactionIdResponse) {}
@@ -346,7 +347,7 @@ message Metadata {
 	string nsName = 1;
 	// metadata key
 	string key = 2;
-	// metadata, for Get operation this field is supposed to be empty
+	// metadata, for Get and Delete operations this field is supposed to be empty
 	string value = 3;
 }
 
@@ -368,6 +369,12 @@ message PutMetaRequest {
 message EnumMetaRequest {
 	string dbName = 1;
 	string nsName = 2;
+}
+
+// Delete metadata by key
+message DeleteMetaRequest {
+	string dbName = 1;
+	Metadata metadata = 2;
 }
 
 // Metadata keys

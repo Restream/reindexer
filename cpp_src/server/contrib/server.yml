@@ -4,7 +4,7 @@ info:
     **Reindexer** is an embeddable, in-memory, document-oriented database with a high-level Query builder interface.
     Reindexer's goal is to provide fast search with complex queries.
     Reindexer is compact, fast and it does not have heavy dependencies.
-  version: "3.23.1"
+  version: "3.24.0"
   title: "Reindexer REST API"
   license:
     name: "Apache 2.0"
@@ -420,6 +420,42 @@ paths:
           description: "Successful operation"
           schema:
             $ref: "#/definitions/MetaByKeyResponse"
+        400:
+          $ref: "#/responses/BadRequest"
+        403:
+          $ref: "#/responses/Forbidden"
+        404:
+          $ref: "#/responses/NotFound"
+        408:
+          $ref: "#/responses/RequestTimeout"
+        500:
+          $ref: "#/responses/UnexpectedError"
+    delete:
+      tags:
+        - "namespaces"
+      summary: "Remove namespace's meta info for key"
+      description: |
+        This operation will remove meta with specified key from namespace
+      operationId: "deleteNamespaceMetaByKey"
+      parameters:
+        - name: "database"
+          in: path
+          type: string
+          description: "Database name"
+          required: true
+        - name: "name"
+          in: path
+          type: string
+          description: "Namespace name"
+          required: true
+        - name: "key"
+          in: path
+          required: true
+          description: "Meta key"
+          type: string
+      responses:
+        200:
+          $ref: "#/responses/OK"
         400:
           $ref: "#/responses/BadRequest"
         403:
@@ -2818,8 +2854,8 @@ definitions:
       merge_limit:
         type: integer
         default: 20000
-        minimum: 0
-        maximum: 65000
+        minimum: 1
+        maximum: 33554431
         description: "Maximum documents count which will be processed in merge query results. Increasing this value may refine ranking of queries with high frequency words, but will decrease search speed"
       extra_word_symbols:
         type: string

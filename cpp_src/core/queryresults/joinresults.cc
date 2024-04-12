@@ -1,10 +1,6 @@
 #include "joinresults.h"
 #include "core/cjson/tagsmatcher.h"
 #include "core/payload/payloadiface.h"
-#include "joinresults.h"
-#include "queryresults.h"
-
-#include <numeric>
 
 namespace reindexer {
 namespace joins {
@@ -59,23 +55,26 @@ static const JoinedFieldIterator kNoJoinedDataIt(nullptr, kEmptyOffsets, 0);
 
 JoinedFieldIterator ItemIterator::begin() const noexcept {
 	auto it = joinRes_->offsets_.find(rowid_);
-	if (it == joinRes_->offsets_.end()) return kNoJoinedDataIt;
-	if (it->second.empty()) return kNoJoinedDataIt;
+	if (it == joinRes_->offsets_.end() || it->second.empty()) {
+		return kNoJoinedDataIt;
+	}
 	return JoinedFieldIterator(joinRes_, it->second, 0);
 }
 
 JoinedFieldIterator ItemIterator::at(uint8_t joinedField) const {
 	auto it = joinRes_->offsets_.find(rowid_);
-	if (it == joinRes_->offsets_.end()) return kNoJoinedDataIt;
-	if (it->second.empty()) return kNoJoinedDataIt;
-	assertrx(joinedField < joinRes_->GetJoinedSelectorsCount());
+	if (it == joinRes_->offsets_.end() || it->second.empty()) {
+		return kNoJoinedDataIt;
+	}
+	assertrx_throw(joinedField < joinRes_->GetJoinedSelectorsCount());
 	return JoinedFieldIterator(joinRes_, it->second, joinedField);
 }
 
 JoinedFieldIterator ItemIterator::end() const noexcept {
 	auto it = joinRes_->offsets_.find(rowid_);
-	if (it == joinRes_->offsets_.end()) return kNoJoinedDataIt;
-	if (it->second.empty()) return kNoJoinedDataIt;
+	if (it == joinRes_->offsets_.end() || it->second.empty()) {
+		return kNoJoinedDataIt;
+	}
 	return JoinedFieldIterator(joinRes_, it->second, joinRes_->GetJoinedSelectorsCount());
 }
 
@@ -85,7 +84,9 @@ int ItemIterator::getJoinedItemsCount() const noexcept {
 		auto it = joinRes_->offsets_.find(rowid_);
 		if (it != joinRes_->offsets_.end()) {
 			const ItemOffsets& offsets = it->second;
-			for (size_t i = 0; i < offsets.size(); ++i) joinedItemsCount_ += offsets[i].size;
+			for (auto& offset : offsets) {
+				joinedItemsCount_ += offset.size;
+			}
 		}
 	}
 	return joinedItemsCount_;
@@ -100,7 +101,7 @@ ItemIterator ItemIterator::CreateFrom(const QueryResults::Iterator& it) noexcept
 }
 
 void NamespaceResults::Insert(IdType rowid, uint32_t fieldIdx, QueryResults&& qr) {
-	assertrx(fieldIdx < joinedSelectorsCount_);
+	assertrx_throw(fieldIdx < joinedSelectorsCount_);
 	ItemOffsets& offsets = offsets_[rowid];
 	if (offsets.empty()) {
 		offsets.reserve(joinedSelectorsCount_);

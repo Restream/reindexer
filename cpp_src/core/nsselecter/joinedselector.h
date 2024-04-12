@@ -28,7 +28,7 @@ struct JoinPreResult {
 		}
 		bool Locked() const { return locked_; }
 		void Lock() {
-			assertrx(!locked_);
+			assertrx_throw(!locked_);
 			for (size_t i = 0; i < size(); ++i) Payload{payloadType, (*this)[i].Value()}.AddRefStrings();
 			locked_ = true;
 		}
@@ -46,13 +46,50 @@ struct JoinPreResult {
 	typedef std::shared_ptr<JoinPreResult> Ptr;
 	typedef std::shared_ptr<const JoinPreResult> CPtr;
 	std::variant<IdSet, SelectIteratorContainer, Values> preselectedPayload;
-	enum { ModeEmpty, ModeBuild, ModeExecute, ModeForInjection, ModeInjectionRejected } executionMode = ModeEmpty;
 	bool enableSortOrders = false;
 	bool btreeIndexOptimizationEnabled = true;
 	bool enableStoredValues = false;
-	std::string explainPreSelect, explainOneSelect;
-	ExplainCalc::Duration selectTime = ExplainCalc::Duration::zero();
-	int mainQueryMaxIterations;
+	std::string explainPreSelect;
+};
+
+enum class JoinPreSelectMode { Empty, Build, Execute, ForInjection, InjectionRejected };
+
+class JoinPreResultBuildCtx {
+public:
+	explicit JoinPreResultBuildCtx(JoinPreResult::Ptr r) noexcept : result_{std::move(r)} {}
+	JoinPreResult &Result() & noexcept { return *result_; }
+	JoinPreSelectMode Mode() const noexcept { return JoinPreSelectMode::Build; }
+	const JoinPreResult::Ptr &ResultPtr() const & noexcept { return result_; }
+	auto ResultPtr() const && = delete;
+
+private:
+	JoinPreResult::Ptr result_;
+};
+
+class JoinPreResultExecuteCtx {
+public:
+	explicit JoinPreResultExecuteCtx(JoinPreResult::CPtr r) noexcept : result_{std::move(r)}, mode_{JoinPreSelectMode::Execute} {}
+	explicit JoinPreResultExecuteCtx(JoinPreResult::CPtr r, int maxIters) noexcept
+		: result_{std::move(r)}, mode_{JoinPreSelectMode::ForInjection}, mainQueryMaxIterations_{maxIters} {}
+	const JoinPreResult &Result() const & noexcept { return *result_; }
+	JoinPreSelectMode Mode() const noexcept { return mode_; }
+	int MainQueryMaxIterations() const {
+		assertrx_throw(mode_ == JoinPreSelectMode::ForInjection);
+		return mainQueryMaxIterations_;
+	}
+	const JoinPreResult::CPtr &ResultPtr() const & noexcept { return result_; }
+	void Reject() {
+		assertrx_throw(mode_ == JoinPreSelectMode::ForInjection);
+		mode_ = JoinPreSelectMode::InjectionRejected;
+	}
+
+	auto Result() const && = delete;
+	auto ResultPtr() const && = delete;
+
+private:
+	JoinPreResult::CPtr result_;
+	JoinPreSelectMode mode_;
+	int mainQueryMaxIterations_{0};
 };
 
 class SortExpression;
@@ -70,7 +107,7 @@ class JoinedSelector {
 
 public:
 	JoinedSelector(JoinType joinType, NamespaceImpl::Ptr leftNs, NamespaceImpl::Ptr rightNs, JoinCacheRes &&joinRes, Query &&itemQuery,
-				   QueryResults &result, const JoinedQuery &joinQuery, JoinPreResult::Ptr preResult, uint32_t joinedFieldIdx,
+				   QueryResults &result, const JoinedQuery &joinQuery, JoinPreResultExecuteCtx &&preSelCtx, uint32_t joinedFieldIdx,
 				   SelectFunctionsHolder &selectFunctions, uint32_t joinedSelectorsCount, bool inTransaction, int64_t lastUpdateTime,
 				   const RdxContext &rdxCtx)
 		: joinType_(joinType),
@@ -82,7 +119,7 @@ public:
 		  itemQuery_(std::move(itemQuery)),
 		  result_(result),
 		  joinQuery_(joinQuery),
-		  preResult_(std::move(preResult)),
+		  preSelectCtx_(std::move(preSelCtx)),
 		  joinedFieldIdx_(joinedFieldIdx),
 		  selectFunctions_(selectFunctions),
 		  joinedSelectorsCount_(joinedSelectorsCount),
@@ -113,9 +150,16 @@ public:
 	void AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &, int *maxIterations, unsigned sortId, const SelectFunction::Ptr &,
 											 const RdxContext &);
 	static constexpr int MaxIterationsForPreResultStoreValuesOptimization() noexcept { return 200; }
-	JoinPreResult::Ptr PreResult() noexcept { return preResult_; }
-	JoinPreResult::CPtr PreResult() const noexcept { return preResult_; }
+	const JoinPreResult &PreResult() const & noexcept { return preSelectCtx_.Result(); }
+	const JoinPreResult::CPtr &PreResultPtr() const & noexcept { return preSelectCtx_.ResultPtr(); }
+	JoinPreSelectMode PreSelectMode() const noexcept { return preSelectCtx_.Mode(); }
 	const NamespaceImpl::Ptr &RightNs() const noexcept { return rightNs_; }
+	ExplainCalc::Duration SelectTime() const noexcept { return selectTime_; }
+	const std::string &ExplainOneSelect() const & noexcept { return explainOneSelect_; }
+
+	auto ExplainOneSelect() const && = delete;
+	auto PreResult() const && = delete;
+	auto PreResultPtr() const && = delete;
 
 private:
 	[[nodiscard]] VariantArray readValuesFromPreResult(const QueryJoinEntry &) const;
@@ -133,7 +177,8 @@ private:
 	Query itemQuery_;
 	QueryResults &result_;
 	const JoinedQuery &joinQuery_;
-	JoinPreResult::Ptr preResult_;
+	JoinPreResultExecuteCtx preSelectCtx_;
+	std::string explainOneSelect_;
 	uint32_t joinedFieldIdx_;
 	SelectFunctionsHolder &selectFunctions_;
 	uint32_t joinedSelectorsCount_;
@@ -141,6 +186,7 @@ private:
 	bool optimized_ = false;
 	bool inTransaction_ = false;
 	int64_t lastUpdateTime_ = 0;
+	ExplainCalc::Duration selectTime_ = ExplainCalc::Duration::zero();
 };
 using JoinedSelectors = std::vector<JoinedSelector>;
 

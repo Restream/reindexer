@@ -103,15 +103,21 @@ Item SyncCoroReindexerImpl::NewItem(std::string_view nsName) {
 	return sendCommand<Item>(DbCmdNewItem, std::forward<std::string_view>(nsName));
 }
 
-Error SyncCoroReindexerImpl::GetMeta(std::string_view nsName, const std::string &key, std::string &data, const InternalRdxContext &ctx) {
+Error SyncCoroReindexerImpl::GetMeta(std::string_view nsName, const std::string &key, std::string &data,
+									 const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdGetMeta, std::forward<std::string_view>(nsName), key, data, ctx);
 }
 Error SyncCoroReindexerImpl::PutMeta(std::string_view nsName, const std::string &key, std::string_view data,
 									 const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdPutMeta, std::forward<std::string_view>(nsName), key, std::forward<std::string_view>(data), ctx);
 }
-Error SyncCoroReindexerImpl::EnumMeta(std::string_view nsName, std::vector<std::string> &keys, const InternalRdxContext &ctx) {
+Error SyncCoroReindexerImpl::EnumMeta(std::string_view nsName, std::vector<std::string> &keys,
+									  const InternalRdxContext &ctx) {
 	return sendCommand<Error>(DbCmdEnumMeta, std::forward<std::string_view>(nsName), keys, ctx);
+}
+Error SyncCoroReindexerImpl::DeleteMeta(std::string_view nsName, const std::string &key,
+										const InternalRdxContext &ctx) {
+	return sendCommand<Error>(DbCmdDeleteMeta, std::forward<std::string_view>(nsName), key, ctx);
 }
 Error SyncCoroReindexerImpl::GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions) {
 	return sendCommand<Error>(DbCmdGetSqlSuggestions, std::forward<std::string_view>(sqlQuery), std::forward<int>(pos), suggestions);
@@ -354,6 +360,12 @@ void SyncCoroReindexerImpl::coroInterpreter(reindexer::client::CoroRPCClient &rx
 			case DbCmdEnumMeta: {
 				std::function<Error(std::string_view, std::vector<std::string> &, const InternalRdxContext &)> f =
 					std::bind(&client::CoroRPCClient::EnumMeta, &rx, _1, _2, _3);
+				execCommand(v.first, f);
+				break;
+			}
+			case DbCmdDeleteMeta: {
+				std::function<Error(std::string_view, const std::string &, const InternalRdxContext &)> f =
+					std::bind(&client::CoroRPCClient::DeleteMeta, &rx, _1, _2, _3);
 				execCommand(v.first, f);
 				break;
 			}

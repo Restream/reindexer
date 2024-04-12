@@ -760,6 +760,18 @@ Error ReindexerService::executeQuery(const std::string& dbName, const Query& que
 	return ::grpc::Status::OK;
 }
 
+::grpc::Status ReindexerService::DeleteMeta(::grpc::ServerContext*, const DeleteMetaRequest* request, ErrorResponse* response) {
+	reindexer::Reindexer* rx = nullptr;
+	Error status = getDB(request->dbname(), reindexer_server::kRoleDataWrite, &rx);
+	if (status.ok()) {
+		assertrx(rx);
+		status = rx->DeleteMeta(request->metadata().nsname(), request->metadata().key());
+	}
+	response->set_code(ErrorResponse::ErrorCode(status.code()));
+	response->set_what(status.what());
+	return ::grpc::Status::OK;
+}
+
 ::grpc::Status ReindexerService::BeginTransaction(::grpc::ServerContext*, const BeginTransactionRequest* request,
 												  TransactionIdResponse* response) {
 	reindexer::Reindexer* rx = nullptr;

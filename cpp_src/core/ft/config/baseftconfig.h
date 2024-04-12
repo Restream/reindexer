@@ -36,7 +36,7 @@ public:
 	virtual void parse(std::string_view sv, const RHashMap<std::string, int>& fields) = 0;
 	virtual std::string GetJson(const fast_hash_map<std::string, int>& fields) const = 0;
 
-	int mergeLimit = 20000;
+	uint32_t mergeLimit = 20000;
 	std::vector<std::string> stemmers = {"en", "ru"};
 	bool enableTranslit = true;
 	bool enableKbLayout = true;

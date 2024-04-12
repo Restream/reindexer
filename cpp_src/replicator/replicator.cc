@@ -726,7 +726,7 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 			Transaction &tx = transactions_[slaveNs.get()];
 			if (tx.IsFree()) return Error(errLogic, "[repl:%s]:%d Transaction was not initiated.", nsName, config_.serverId);
 
-			tx.PutMeta(std::string(rec.putMeta.key), rec.putMeta.value);
+			tx.PutMeta(std::string(rec.itemMeta.key), rec.itemMeta.value);
 		} break;
 		case WalEmpty:
 		case WalReplState:
@@ -743,6 +743,7 @@ Error Replicator::applyTxWALRecord(LSNPair LSNs, std::string_view nsName, Namesp
 		case WalResetLocalWal:
 		case WalRawItem:
 		case WalShallowItem:
+		case WalDeleteMeta:
 			return Error(errLogic, "Unexpected for transaction WAL rec type %d\n", int(rec.type));
 	}
 	return {};
@@ -810,7 +811,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 			break;
 		// Metadata updated
 		case WalPutMeta:
-			slaveNs->PutMeta(std::string(rec.putMeta.key), rec.putMeta.value, dummyCtx_);
+			slaveNs->PutMeta(std::string(rec.itemMeta.key), rec.itemMeta.value, dummyCtx_);
 			stat.updatedMeta++;
 			break;
 		// Update query
@@ -889,6 +890,7 @@ Error Replicator::applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespac
 		case WalResetLocalWal:
 		case WalRawItem:
 		case WalShallowItem:
+		case WalDeleteMeta:
 			return Error(errLogic, "Unexpected WAL rec type %d\n", int(rec.type));
 	}
 	return err;

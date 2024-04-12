@@ -125,13 +125,14 @@ TEST_P(FTStressApi, ConcurrencyCheck) {
 TEST_P(FTStressApi, LargeMergeLimit) {
 	// Check if results are bounded by merge limit
 	auto ftCfg = GetDefaultConfig();
-	ftCfg.mergeLimit = reindexer::kMaxMergeLimitValue;
+	ftCfg.mergeLimit = 100'000;
 	Init(ftCfg);
 	const std::string kBase1 = "aaaa";
 	const std::string kBase2 = "bbbb";
 
 	reindexer::fast_hash_set<std::string> strings1;
-	constexpr unsigned kPartLen = (reindexer::kMaxMergeLimitValue + 15000) / 2;
+
+	constexpr unsigned kPartLen = 160000;
 	for (unsigned i = 0; i < kPartLen; ++i) {
 		while (true) {
 			std::string val = kBase2 + rt.RandString(10, 10);
@@ -155,9 +156,16 @@ TEST_P(FTStressApi, LargeMergeLimit) {
 			}
 		}
 	}
-
-	auto qr = SimpleSelect(fmt::sprintf("%s* %s*", kBase1, kBase2));
-	ASSERT_EQ(qr.Count(), ftCfg.mergeLimit);
+	{
+		auto qr = SimpleSelect(fmt::sprintf("%s* %s*", kBase1, kBase2));
+		ASSERT_EQ(qr.Count(), ftCfg.mergeLimit);
+	}
+	ftCfg.mergeLimit = 60'000;
+	SetFTConfig(ftCfg);
+	{
+		auto qr = SimpleSelect(fmt::sprintf("%s* %s*", kBase1, kBase2));
+		ASSERT_EQ(qr.Count(), ftCfg.mergeLimit);
+	}
 }
 
 INSTANTIATE_TEST_SUITE_P(, FTStressApi,

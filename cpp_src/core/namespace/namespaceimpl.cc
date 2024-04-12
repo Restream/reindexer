@@ -9,13 +9,13 @@
 #include "core/index/ttlindex.h"
 #include "core/itemimpl.h"
 #include "core/itemmodifier.h"
-#include "core/nsselecter/crashqueryreporter.h"
 #include "core/nsselecter/nsselecter.h"
 #include "core/payload/payloadiface.h"
 #include "core/querystat.h"
 #include "core/rdxcontext.h"
 #include "core/selectfunc/functionexecutor.h"
 #include "core/transactionimpl.h"
+#include "debug/crashqueryreporter.h"
 #include "itemsloader.h"
 #include "replicator/updatesobserver.h"
 #include "replicator/walselecter.h"
@@ -35,7 +35,6 @@ using std::chrono::microseconds;
 #define kStorageReplStatePrefix "repl"
 #define kStorageTagsPrefix "tags"
 #define kStorageMetaPrefix "meta"
-#define kStorageCachePrefix "cache"
 #define kTupleName "-tuple"
 
 static const std::string kPKIndexName = "#pk";
@@ -798,7 +797,7 @@ static void verifyConvertTypes(KeyValueType from, KeyValueType to, const Payload
 void NamespaceImpl::verifyCompositeIndex(const IndexDef& indexDef) const {
 	const auto type = indexDef.Type();
 	if (indexDef.opts_.IsSparse()) {
-		throw Error{errParams, "Composite index cannot be sparse. Use non-sparse composite instead"};
+		throw Error(errParams, "Composite index cannot be sparse. Use non-sparse composite instead");
 	}
 	for (const auto& jp : indexDef.jsonPaths_) {
 		int idx;
@@ -991,13 +990,13 @@ NamespaceImpl::RollBack_insertIndex NamespaceImpl::insertIndex(std::unique_ptr<I
 	}
 
 	if (isPK) {
-		if (const auto [it, ok] = indexesNames_.insert({kPKIndexName, idxNo}); ok) {
-			(void)it;
+		if (const auto [it2, ok] = indexesNames_.insert({kPKIndexName, idxNo}); ok) {
+			(void)it2;
 			rollbacker.PkIndexNameInserted();
 		}
 	}
-	if (const auto [it, ok] = indexesNames_.insert({realName, idxNo}); ok) {
-		rollbacker.InsertedIndexName(it);
+	if (const auto [it2, ok] = indexesNames_.insert({realName, idxNo}); ok) {
+		rollbacker.InsertedIndexName(it2);
 	}
 	return rollbacker;
 }
@@ -1309,7 +1308,7 @@ void NamespaceImpl::Update(Item& item, const RdxContext& ctx) { ModifyItem(item,
 
 void NamespaceImpl::doUpdate(const Query& query, QueryResults& result, const NsContext& ctx) {
 	NsSelecter selecter(this);
-	SelectCtx selCtx(query, nullptr);
+	SelectCtxWithJoinPreSelect selCtx(query, nullptr);
 	SelectFunctionsHolder func;
 	selCtx.functions = &func;
 	selCtx.contextCollectingMode = true;
@@ -1525,7 +1524,7 @@ void NamespaceImpl::doDelete(IdType id) {
 
 void NamespaceImpl::doDelete(const Query& query, QueryResults& result, const NsContext& ctx) {
 	NsSelecter selecter(this);
-	SelectCtx selCtx(query, nullptr);
+	SelectCtxWithJoinPreSelect selCtx(query, nullptr);
 	selCtx.contextCollectingMode = true;
 	selCtx.requiresCrashTracking = true;
 	selCtx.inTransaction = ctx.inTransaction;
@@ -1748,6 +1747,11 @@ void NamespaceImpl::CommitTransaction(Transaction& tx, QueryResults& result, NsC
 				putMeta(data.key, data.value, ctx.rdxContext);
 				break;
 			}
+			case TransactionStep::Type::DeleteMeta: {
+				auto& data = std::get<TransactionMetaStep>(step.data_);
+				deleteMeta(data.key, ctx.rdxContext);
+				break;
+			}
 			case TransactionStep::Type::SetTM: {
 				auto& data = std::get<TransactionTmStep>(step.data_);
 				auto tmCopy = data.tm;
@@ -1874,15 +1878,15 @@ void NamespaceImpl::doUpsert(ItemImpl* ritem, IdType id, bool doUpdate) {
 	} while (++field != borderIdx);
 
 	// Upsert to composite indexes
-	for (int field = indexes_.firstCompositePos(); field < indexes_.totalSize(); ++field) {
+	for (int field2 = indexes_.firstCompositePos(); field2 < indexes_.totalSize(); ++field2) {
 		bool needClearCache{false};
 		if (doUpdate) {
-			if (!needUpdateCompIndexes[field - indexes_.firstCompositePos()]) continue;
+			if (!needUpdateCompIndexes[field2 - indexes_.firstCompositePos()]) continue;
 			// Delete from composite indexes first
-			indexes_[field]->Delete(oldData, id, *strHolder_, needClearCache);
+			indexes_[field2]->Delete(oldData, id, *strHolder_, needClearCache);
 		}
-		indexes_[field]->Upsert(Variant{plData}, id, needClearCache);
-		if (needClearCache && indexes_[field]->IsOrdered()) indexesCacheCleaner.Add(indexes_[field]->SortId());
+		indexes_[field2]->Upsert(Variant{plData}, id, needClearCache);
+		if (needClearCache && indexes_[field2]->IsOrdered()) indexesCacheCleaner.Add(indexes_[field2]->SortId());
 	}
 	repl_.dataHash ^= pl.GetHash();
 	itemsDataSize_ += plData.GetCapacity() + sizeof(PayloadValue::dataHeader);
@@ -2172,7 +2176,8 @@ void NamespaceImpl::markUpdated(bool forceOptimizeAllIndexes) {
 	}
 }
 
-void NamespaceImpl::Select(QueryResults& result, SelectCtx& params, const RdxContext& ctx) {
+template <typename JoinPreResultCtx>
+void NamespaceImpl::Select(QueryResults& result, SelectCtxWithJoinPreSelect<JoinPreResultCtx>& params, const RdxContext& ctx) {
 	if (!params.query.IsWALQuery()) {
 		NsSelecter selecter(this);
 		selecter(result, params, ctx);
@@ -2182,6 +2187,9 @@ void NamespaceImpl::Select(QueryResults& result, SelectCtx& params, const RdxCon
 		result.MarkAsWALQuery();
 	}
 }
+template void NamespaceImpl::Select(QueryResults&, SelectCtxWithJoinPreSelect<void>&, const RdxContext&);
+template void NamespaceImpl::Select(QueryResults&, SelectCtxWithJoinPreSelect<JoinPreResultBuildCtx>&, const RdxContext&);
+template void NamespaceImpl::Select(QueryResults&, SelectCtxWithJoinPreSelect<JoinPreResultExecuteCtx>&, const RdxContext&);
 
 IndexDef NamespaceImpl::getIndexDefinition(size_t i) const {
 	assertrx(i < indexes_.size());
@@ -2375,7 +2383,7 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 	if (!status.ok() && status.code() != errNotFound) {
 		throw status;
 	}
-	if (def.size()) {
+	if (!def.empty()) {
 		Serializer ser(def.data(), def.size());
 		tagsMatcher_.deserialize(ser);
 		tagsMatcher_.clearUpdated();
@@ -2390,7 +2398,7 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 	if (!status.ok() && status.code() != errNotFound) {
 		throw status;
 	}
-	if (def.size()) {
+	if (!def.empty()) {
 		schema_ = std::make_shared<Schema>();
 		Serializer ser(def.data(), def.size());
 		status = schema_->FromJSON(ser.GetSlice());
@@ -2407,7 +2415,7 @@ bool NamespaceImpl::loadIndexesFromStorage() {
 		throw status;
 	}
 
-	if (def.size()) {
+	if (!def.empty()) {
 		Serializer ser(def.data(), def.size());
 		const uint32_t dbMagic = ser.GetUInt32();
 		const uint32_t dbVer = ser.GetUInt32();
@@ -2454,7 +2462,7 @@ void NamespaceImpl::loadReplStateFromStorage() {
 		throw status;
 	}
 
-	if (json.size()) {
+	if (!json.empty()) {
 		logPrintf(LogTrace, "[load_repl:%s]:%d Loading replication state(version %lld) of namespace %s: %s", name_, serverId_,
 				  sysRecordsVersions_.replVersion ? sysRecordsVersions_.replVersion - 1 : 0, name_, json);
 		repl_.FromJSON(giftStr(json));
@@ -2464,6 +2472,22 @@ void NamespaceImpl::loadReplStateFromStorage() {
 		JsonBuilder builder_log(ser_log, ObjType::TypePlain);
 		repl_.GetJSON(builder_log);
 		logPrintf(LogTrace, "[load_repl:%s]:%d Loading replication state %s", name_, serverId_, ser_log.c_str());
+	}
+}
+
+void NamespaceImpl::loadMetaFromStorage() {
+	StorageOpts opts;
+	opts.FillCache(false);
+	auto dbIter = storage_.GetCursor(opts);
+	size_t prefixLen = strlen(kStorageMetaPrefix);
+
+	for (dbIter->Seek(std::string_view(kStorageMetaPrefix));
+		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageMetaPrefix "\xFF")) < 0;
+		 dbIter->Next()) {
+		std::string_view keySlice = dbIter->Key();
+		if (keySlice.length() >= prefixLen) {
+			meta_.emplace(keySlice.substr(prefixLen), dbIter->Value());
+		}
 	}
 }
 
@@ -2574,6 +2598,7 @@ void NamespaceImpl::EnableStorage(const std::string& path, StorageOpts opts, Sto
 					throw Error(errLogic, "Cannot enable storage for namespace '%s' on path '%s': format error", name_, dbpath);
 				}
 				loadReplStateFromStorage();
+				loadMetaFromStorage();
 			}
 			if (!success && opts.IsDropOnFileFormatError()) {
 				logPrintf(LogWarning, "Dropping storage for namespace '%s' on path '%s' due to format error", name_, dbpath);
@@ -2793,36 +2818,33 @@ void NamespaceImpl::ToPool(ItemImpl* item) {
 	pool_.put(std::unique_ptr<ItemImpl>{item});
 }
 
-// Get meta data from storage by key
+// Get metadata from storage by key
 std::string NamespaceImpl::GetMeta(const std::string& key, const RdxContext& ctx) {
 	auto rlck = rLock(ctx);
 	return getMeta(key);
 }
 
 std::string NamespaceImpl::getMeta(const std::string& key) const {
+	if (key.empty()) {
+		throw Error(errParams, "Empty key is not supported");
+	}
+
 	auto it = meta_.find(key);
-	if (it != meta_.end()) {
-		return it->second;
-	}
-
-	std::string data;
-	Error status = storage_.Read(StorageOpts().FillCache(), std::string_view(kStorageMetaPrefix + key), data);
-	if (status.ok()) {
-		return data;
-	}
-
-	return std::string();
+	return it == meta_.end() ? std::string() : it->second;
 }
 
-// Put meta data to storage by key
+// Put metadata to storage by key
 void NamespaceImpl::PutMeta(const std::string& key, std::string_view data, const RdxContext& ctx) {
 	auto wlck = wLock(ctx);
 	checkApplySlaveUpdate(ctx.fromReplication_);
 	putMeta(key, data, ctx);
 }
 
-// Put meta data to storage by key
 void NamespaceImpl::putMeta(const std::string& key, std::string_view data, const RdxContext& ctx) {
+	if (key.empty()) {
+		throw Error(errParams, "Empty key is not supported");
+	}
+
 	meta_[key] = std::string(data);
 
 	storage_.WriteSync(StorageOpts().FillCache(), kStorageMetaPrefix + key, data);
@@ -2837,30 +2859,29 @@ std::vector<std::string> NamespaceImpl::EnumMeta(const RdxContext& ctx) {
 }
 
 std::vector<std::string> NamespaceImpl::enumMeta() const {
-	std::vector<std::string> ret;
-	ret.reserve(meta_.size());
-	for (auto& m : meta_) {
-		ret.push_back(m.first);
-	}
-	if (!storage_.IsValid()) return ret;
+	std::vector<std::string> keys(meta_.size());
+	transform(meta_.begin(), meta_.end(), keys.begin(), [](auto pair) { return pair.first; });
+	return keys;
+}
 
-	StorageOpts opts;
-	opts.FillCache(false);
-	auto dbIter = storage_.GetCursor(opts);
-	size_t prefixLen = strlen(kStorageMetaPrefix);
+// Delete metadata from storage by key
+void NamespaceImpl::DeleteMeta(const std::string& key, const RdxContext& ctx) {
+	auto wlck = wLock(ctx);
+	checkApplySlaveUpdate(ctx.fromReplication_);
+	deleteMeta(key, ctx);
+}
 
-	for (dbIter->Seek(std::string_view(kStorageMetaPrefix));
-		 dbIter->Valid() && dbIter->GetComparator().Compare(dbIter->Key(), std::string_view(kStorageMetaPrefix "\xFF")) < 0;
-		 dbIter->Next()) {
-		std::string_view keySlice = dbIter->Key();
-		if (keySlice.size() > prefixLen) {
-			std::string key(keySlice.substr(prefixLen));
-			if (meta_.find(key) == meta_.end()) {
-				ret.push_back(key);
-			}
-		}
+void NamespaceImpl::deleteMeta(const std::string& key, const RdxContext& ctx) {
+	if (key.empty()) {
+		throw Error(errParams, "Empty key is not supported");
 	}
-	return ret;
+
+	meta_.erase(key);
+
+	storage_.RemoveSync(StorageOpts().FillCache(), kStorageMetaPrefix + key);
+
+	WALRecord wrec(WalDeleteMeta, key, {});
+	processWalRecord(wrec, ctx);
 }
 
 void NamespaceImpl::warmupFtIndexes() {
@@ -3017,7 +3038,7 @@ void NamespaceImpl::getIndsideFromJoinCache(JoinCacheRes& ctx) const {
 	getFromJoinCacheImpl(ctx);
 }
 
-void NamespaceImpl::putToJoinCache(JoinCacheRes& res, JoinPreResult::Ptr preResult) const {
+void NamespaceImpl::putToJoinCache(JoinCacheRes& res, JoinPreResult::CPtr preResult) const {
 	JoinCacheVal joinCacheVal;
 	res.needPut = false;
 	joinCacheVal.inited = true;

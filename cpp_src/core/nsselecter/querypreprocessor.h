@@ -10,6 +10,8 @@ namespace reindexer {
 
 class NamespaceImpl;
 class QresExplainHolder;
+template <typename>
+struct SelectCtxWithJoinPreSelect;
 
 class QueryPreprocessor : private QueryEntries {
 public:
@@ -52,7 +54,21 @@ public:
 	using QueryEntries::Size;
 	using QueryEntries::Dump;
 	using QueryEntries::ToDsl;
-	[[nodiscard]] SortingEntries GetSortingEntries(const SelectCtx &ctx) const;
+	template <typename JoinPreResultCtx>
+	[[nodiscard]] SortingEntries GetSortingEntries(const SelectCtxWithJoinPreSelect<JoinPreResultCtx> &) const {
+		if (ftEntry_) return {};
+		// DO NOT use deducted sort order in the following cases:
+		// - query contains explicity specified sort order
+		// - query contains FullText query.
+		const bool disableOptimizedSortOrder =
+			!query_.sortingEntries_.empty() || ContainsFullTextIndexes() || !std::is_same_v<JoinPreResultCtx, void>;
+		// Queries with ordered indexes may have different selection plan depending on filters' values.
+		// This may lead to items reordering when SingleRange becomes main selection method.
+		// By default all the results are ordereb by internal IDs, but with SingleRange results will be ordered by values first.
+		// So we're trying to order results by values in any case, even if there are no SingleRange in selection plan.
+		return disableOptimizedSortOrder ? query_.sortingEntries_ : detectOptimalSortOrder();
+	}
+
 	bool IsFtExcluded() const noexcept { return ftEntry_.has_value(); }
 	void ExcludeFtQuery(const RdxContext &);
 	FtMergeStatuses &GetFtMergeStatuses() noexcept {
@@ -134,7 +150,7 @@ private:
 	size_t injectConditionsFromJoins(size_t from, size_t to, JoinedSelectors &, OnConditionInjections &, int embracedMaxIterations,
 									 h_vector<int, 256> &maxIterations, bool inTransaction, bool enableSortOrders, const RdxContext &);
 	[[nodiscard]] std::pair<CondType, VariantArray> queryValuesFromOnCondition(std::string &outExplainStr, AggType &,
-																			   NamespaceImpl &rightNs, Query joinQuery, JoinPreResult::Ptr,
+																			   NamespaceImpl &rightNs, Query joinQuery, JoinPreResult::CPtr,
 																			   const QueryJoinEntry &, CondType, int mainQueryMaxIterations,
 																			   const RdxContext &);
 	[[nodiscard]] std::pair<CondType, VariantArray> queryValuesFromOnCondition(CondType condition, const QueryJoinEntry &,

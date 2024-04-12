@@ -104,6 +104,7 @@ public:
 	Error GetMeta(cproto::Context &ctx, p_string ns, p_string key);
 	Error PutMeta(cproto::Context &ctx, p_string ns, p_string key, p_string data);
 	Error EnumMeta(cproto::Context &ctx, p_string ns);
+	Error DeleteMeta(cproto::Context &ctx, p_string ns, p_string key);
 	Error SubscribeUpdates(cproto::Context &ctx, int subscribe, std::optional<p_string> filterJson, std::optional<int> options);
 
 	Error CheckAuth(cproto::Context &ctx);

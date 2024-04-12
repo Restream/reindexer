@@ -1,3 +1,40 @@
+# Version 3.24.0 (12.04.2024)
+
+## Core
+- [fea] Added `array_remove` and `array_remove_once` functions for the UPDATE-queries. [Details](readme.md#remove-array-elements-by-values)
+- [fea] Increased limit for IdSet join preselect from 10'000 to 20'000 documents
+- [fea] Added C++ benchmarks for `sparse`-indexes
+- [fea] Disabled comparators for `sparse`-indexes. From now `sparse`-indexes always use more effective IdSets instead
+- [fea] Added `DeleteMeta` method and simplified meta storing/reading logic
+- [fix] Fixed race condition in the JOINS cache
+- [fix] Fixed results serialization for MERGE-queries with multiple JOINS in cases when some of the JOIN-queries have not joined any items
+- [fix] Fixed `distinct` result in cases when `WHERE`-condition contains duplicate values (e.g. `distinct(id) WHERE id IN (1,1,1,3)`)
+
+## Fulltext
+- [fea] Increased max `merge_limit` value (new values range is `[1, 0x1FFFFFFF]`)
+- [fix] Fixed [phrase search](fulltext.md#phrase-search) behavior for the phrases containig single word
+
+## Go connector
+- [fea] Added `EnumMeta` and `DeleteMeta` functions
+- [fix] Fixed `RenameNamespace` function - now upsert after namespace's renaming works properly
+
+## Reindexer server
+- [fea] Add `DELETE`-method for the `/metabykey` HTTP-endpoint
+
+## Deploy
+- [fea] Added [APT-repo](cpp_src/readme.md#altlinux) for `AltLinux P10`
+
+## Face
+- [fea] Added possibility to delete namespace's Meta data
+- [fea] Added Git documentation link for the Bm25 config
+- [fea] Added explicit null-values in the Grid view
+- [fix] Fixed the inform window that appeared on the Cancel button on the NS Config page
+- [fix] Fixed extra data uploading on the Performace page
+- [fix] Changed Git documentation link in the Main menu
+- [fix] Fixed console issues on the add/edit indexes
+- [fix] Fixed caching of the NS config 
+- [fix] Fixed layout issues on the Index form
+
 # Version 3.23.1 (20.03.2024)
 
 ## Core

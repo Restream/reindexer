@@ -108,9 +108,9 @@ TagsMatcher CoroQueryResults::getTagsMatcher(int nsid) const { return nsArray_[n
 
 class AdditionalRank : public IAdditionalDatasource<JsonBuilder> {
 public:
-	AdditionalRank(double r) : rank_(r) {}
-	void PutAdditionalFields(JsonBuilder &builder) const final { builder.Put("rank()", rank_); }
-	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return nullptr; }
+	AdditionalRank(double r) noexcept : rank_(r) {}
+	void PutAdditionalFields(JsonBuilder &builder) const override final { builder.Put("rank()", rank_); }
+	IEncoderDatasourceWithJoins *GetJoinsDatasource() noexcept override final { return nullptr; }
 
 private:
 	double rank_;

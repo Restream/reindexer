@@ -94,12 +94,11 @@ static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpT
 	jsonSel.Put("field"sv, opName(op) + name);
 	jsonSel.Put("matched"sv, js.Matched());
 	jsonSel.Put("selects_count"sv, js.Called());
-	jsonSel.Put("join_select_total"sv, ExplainCalc::To_us(js.PreResult()->selectTime));
+	jsonSel.Put("join_select_total"sv, ExplainCalc::To_us(js.SelectTime()));
 	switch (js.Type()) {
 		case JoinType::InnerJoin:
 		case JoinType::OrInnerJoin:
 		case JoinType::LeftJoin:
-			assertrx(js.PreResult());
 			std::visit(overloaded{[&](const JoinPreResult::Values &values) {
 									  jsonSel.Put("method"sv, "preselected_values"sv);
 									  jsonSel.Put("keys"sv, values.size());
@@ -112,12 +111,12 @@ static std::string addToJSON(JsonBuilder &builder, const JoinedSelector &js, OpT
 									  jsonSel.Put("method"sv, "no_preselect"sv);
 									  jsonSel.Put("keys"sv, iterators.Size());
 								  }},
-					   js.PreResult()->preselectedPayload);
-			if (!js.PreResult()->explainPreSelect.empty()) {
-				jsonSel.Raw("explain_preselect"sv, js.PreResult()->explainPreSelect);
+					   js.PreResult().preselectedPayload);
+			if (!js.PreResult().explainPreSelect.empty()) {
+				jsonSel.Raw("explain_preselect"sv, js.PreResult().explainPreSelect);
 			}
-			if (!js.PreResult()->explainOneSelect.empty()) {
-				jsonSel.Raw("explain_select"sv, js.PreResult()->explainOneSelect);
+			if (!js.ExplainOneSelect().empty()) {
+				jsonSel.Raw("explain_select"sv, js.ExplainOneSelect());
 			}
 			break;
 		case JoinType::Merge:

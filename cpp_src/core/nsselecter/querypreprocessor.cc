@@ -203,7 +203,7 @@ void QueryPreprocessor::InjectConditionsFromJoins(JoinedSelectors &js, OnConditi
 	h_vector<int, 256> maxIterations(Size());
 	span<int> maxItersSpan(maxIterations.data(), maxIterations.size());
 	const int maxIters = calculateMaxIterations(0, Size(), ns_.ItemsCount(), maxItersSpan, inTransaction, enableSortOrders, rdxCtx);
-	const bool needExplain = query_.GetExplain() || logLevel >= LogInfo;
+	const bool needExplain = query_.NeedExplain() || logLevel >= LogInfo;
 	if (needExplain) {
 		injectConditionsFromJoins<JoinOnExplainEnabled>(0, Size(), js, expalainOnInjections, maxIters, maxIterations, inTransaction,
 														enableSortOrders, rdxCtx);
@@ -509,19 +509,6 @@ bool QueryPreprocessor::ContainsFullTextIndexes() const {
 		}
 	}
 	return false;
-}
-
-[[nodiscard]] SortingEntries QueryPreprocessor::GetSortingEntries(const SelectCtx &ctx) const {
-	if (ftEntry_) return {};
-	// DO NOT use deducted sort order in the following cases:
-	// - query contains explicity specified sort order
-	// - query contains FullText query.
-	const bool disableOptimizedSortOrder = !query_.sortingEntries_.empty() || ContainsFullTextIndexes() || ctx.preResult;
-	// Queries with ordered indexes may have different selection plan depending on filters' values.
-	// This may lead to items reordering when SingleRange becomes main selection method.
-	// By default all the results are ordereb by internal IDs, but with SingleRange results will be ordered by values first.
-	// So we're trying to order results by values in any case, even if there are no SingleRange in selection plan.
-	return disableOptimizedSortOrder ? query_.sortingEntries_ : detectOptimalSortOrder();
 }
 
 const std::vector<int> *QueryPreprocessor::getCompositeIndex(int field) const noexcept {
@@ -1401,7 +1388,7 @@ void QueryPreprocessor::AddDistinctEntries(const h_vector<Aggregator, 4> &aggreg
 
 std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(std::string &explainStr, AggType &oAggType,
 																				NamespaceImpl &rightNs, Query joinQuery,
-																				JoinPreResult::Ptr joinPreresult,
+																				JoinPreResult::CPtr joinPreresult,
 																				const QueryJoinEntry &joinEntry, CondType condition,
 																				int mainQueryMaxIterations, const RdxContext &rdxCtx) {
 	size_t limit;
@@ -1414,7 +1401,7 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 		limit =
 			std::min(std::max<int64_t>(rNsCfg.minPreselectSize, rightNs.ItemsCount() * rNsCfg.maxPreselectPart), rNsCfg.maxPreselectSize);
 	}
-	joinQuery.Explain(query_.GetExplain());
+	joinQuery.Explain(query_.NeedExplain());
 	joinQuery.Limit(limit + 2);
 	joinQuery.Offset(QueryEntry::kDefaultOffset);
 	joinQuery.sortingEntries_.clear();
@@ -1446,23 +1433,9 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 	}
 
 	QueryResults qr;
-	SelectCtx ctx{joinQuery, nullptr};
-	ctx.preResult = std::move(joinPreresult);
-	class PreResultGuard {
-	public:
-		PreResultGuard(JoinPreResult &preResult, int mainQueryMaxIterations) noexcept : preResult_{preResult} {
-			prevMode_ = preResult_.executionMode;
-			preResult_.executionMode = JoinPreResult::ModeForInjection;
-			preResult_.mainQueryMaxIterations = mainQueryMaxIterations;
-		}
-		~PreResultGuard() { preResult_.executionMode = prevMode_; }
-
-	private:
-		JoinPreResult &preResult_;
-		decltype(preResult_.executionMode) prevMode_;
-	} preResultGuard{*ctx.preResult, mainQueryMaxIterations};
+	SelectCtxWithJoinPreSelect ctx{joinQuery, nullptr, JoinPreResultExecuteCtx{std::move(joinPreresult), mainQueryMaxIterations}};
 	rightNs.Select(qr, ctx, rdxCtx);
-	if (ctx.preResult->executionMode == JoinPreResult::ModeInjectionRejected || qr.Count() > limit) {
+	if (ctx.preSelect.Mode() == JoinPreSelectMode::InjectionRejected || qr.Count() > limit) {
 		return {CondAny, {}};
 	}
 	assertrx_throw(qr.aggregationResults.size() == 1);
@@ -1515,7 +1488,7 @@ std::pair<CondType, VariantArray> QueryPreprocessor::queryValuesFromOnCondition(
 		case CondLe:
 		case CondGt:
 		case CondGe: {
-			const JoinPreResult::Values &values = std::get<JoinPreResult::Values>(joinedSelector.preResult_->preselectedPayload);
+			const JoinPreResult::Values &values = std::get<JoinPreResult::Values>(joinedSelector.PreResult().preselectedPayload);
 			VariantArray buffer, keyValues;
 			for (const ItemRef &item : values) {
 				assertrx_throw(!item.Value().IsFree());
@@ -1598,9 +1571,8 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 				const auto joinIndex = jqe.joinIndex;
 				assertrx_throw(js.size() > joinIndex);
 				JoinedSelector &joinedSelector = js[joinIndex];
-				assertrx_throw(joinedSelector.PreResult());
-				JoinPreResult &preResult = *joinedSelector.PreResult();
-				assertrx_throw(preResult.executionMode == JoinPreResult::ModeExecute);
+				const JoinPreResult &preResult = joinedSelector.PreResult();
+				assertrx_throw(joinedSelector.PreSelectMode() == JoinPreSelectMode::Execute);
 				const bool byValues = std::holds_alternative<JoinPreResult::Values>(preResult.preselectedPayload);
 
 				auto explainJoinOn = ExplainPolicy::AppendJoinOnExplain(explainOnInjections);
@@ -1771,10 +1743,10 @@ size_t QueryPreprocessor::injectConditionsFromJoins(const size_t from, size_t to
 							std::tie(queryCondition, values) =
 								(!std::holds_alternative<SelectIteratorContainer>(preResult.preselectedPayload)
 									 ? queryValuesFromOnCondition(explainSelect, selectAggType, *joinedSelector.RightNs(),
-																  Query{joinedSelector.RightNsName()}, joinedSelector.PreResult(),
+																  Query{joinedSelector.RightNsName()}, joinedSelector.PreResultPtr(),
 																  joinEntry, condition, embracedMaxIterations, rdxCtx)
 									 : queryValuesFromOnCondition(explainSelect, selectAggType, *joinedSelector.RightNs(),
-																  joinedSelector.JoinQuery(), joinedSelector.PreResult(), joinEntry,
+																  joinedSelector.JoinQuery(), joinedSelector.PreResultPtr(), joinEntry,
 																  condition, embracedMaxIterations, rdxCtx));
 							explainEntry.ExplainSelect(std::move(explainSelect), selectAggType);
 						}

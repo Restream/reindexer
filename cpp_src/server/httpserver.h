@@ -62,6 +62,7 @@ public:
 	int GetMetaList(http::Context &ctx);
 	int GetMetaByKey(http::Context &ctx);
 	int PutMetaByKey(http::Context &ctx);
+	int DeleteMetaByKey(http::Context &ctx);
 	int DeleteIndex(http::Context &ctx);
 	int CheckAuth(http::Context &ctx);
 	int BeginTx(http::Context &ctx);

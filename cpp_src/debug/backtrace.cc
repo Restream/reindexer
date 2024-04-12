@@ -24,7 +24,7 @@ static void print_assertion_message(std::ostream &sout) {
 		std::lock_guard lck(g_mutex);
 		std::swap(msg, g_assertion_message);
 	}
-	sout << "Assetion message: " << msg << std::endl;
+	sout << "Assertion message: " << msg << std::endl;
 }
 }  // namespace debug
 }  // namespace reindexer

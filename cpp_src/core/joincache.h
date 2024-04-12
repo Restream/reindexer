@@ -52,7 +52,7 @@ struct JoinCacheVal {
 	IdSet::Ptr ids_;
 	bool matchedAtLeastOnce = false;
 	bool inited = false;
-	std::shared_ptr<JoinPreResult> preResult;
+	std::shared_ptr<const JoinPreResult> preResult;
 };
 
 using JoinCache = LRUCache<JoinCacheKey, JoinCacheVal, hash_join_cache_key, equal_join_cache_key>;

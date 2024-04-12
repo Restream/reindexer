@@ -18,22 +18,22 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &que
 
 	rightNs_->getIndsideFromJoinCache(joinRes_);
 	if (joinRes_.needPut) {
-		rightNs_->putToJoinCache(joinRes_, preResult_);
+		rightNs_->putToJoinCache(joinRes_, preSelectCtx_.ResultPtr());
 	}
 	if (joinResLong.haveData) {
 		found = joinResLong.it.val.ids_->size();
 		matchedAtLeastOnce = joinResLong.it.val.matchedAtLeastOnce;
 		rightNs_->FillResult(joinItemR, *joinResLong.it.val.ids_);
 	} else {
-		SelectCtx ctx(query, nullptr);
-		ctx.preResult = preResult_;
+		SelectCtxWithJoinPreSelect<JoinPreResultExecuteCtx> ctx(query, nullptr, preSelectCtx_);
 		ctx.matchedAtLeastOnce = false;
 		ctx.reqMatchedOnceFlag = true;
 		ctx.skipIndexesLookup = true;
 		ctx.functions = &selectFunctions_;
 		rightNs_->Select(joinItemR, ctx, rdxCtx_);
-		if (query.GetExplain()) {
-			preResult_->explainOneSelect = joinItemR.explainResults;
+		if (query.NeedExplain()) {
+			explainOneSelect_ = std::move(joinItemR.explainResults);
+			joinItemR.explainResults = {};
 		}
 
 		found = joinItemR.Count();
@@ -53,7 +53,7 @@ void JoinedSelector::selectFromRightNs(QueryResults &joinItemR, const Query &que
 void JoinedSelector::selectFromPreResultValues(QueryResults &joinItemR, const Query &query, bool &found, bool &matchedAtLeastOnce) const {
 	size_t matched = 0;
 	const auto &entries = query.Entries();
-	const JoinPreResult::Values &values = std::get<JoinPreResult::Values>(preResult_->preselectedPayload);
+	const JoinPreResult::Values &values = std::get<JoinPreResult::Values>(PreResult().preselectedPayload);
 	const auto &pt = values.payloadType;
 	for (const ItemRef &item : values) {
 		auto &v = item.Value();
@@ -77,7 +77,7 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, bool 
 	const auto startTime = ExplainCalc::Clock::now();
 	// Put values to join conditions
 	size_t i = 0;
-	if (itemQuery_.GetExplain() && !preResult_->explainOneSelect.empty()) itemQuery_.Explain(false);
+	if (itemQuery_.NeedExplain() && !explainOneSelect_.empty()) itemQuery_.Explain(false);
 	std::unique_ptr<Query> itemQueryCopy;
 	Query *itemQueryPtr = &itemQuery_;
 	for (auto &je : joinQuery_.joinEntries_) {
@@ -104,17 +104,15 @@ bool JoinedSelector::Process(IdType rowId, int nsId, ConstPayload payload, bool 
 		overloaded{[&](const JoinPreResult::Values &) { selectFromPreResultValues(joinItemR, *itemQueryPtr, found, matchedAtLeastOnce); },
 				   Restricted<IdSet, SelectIteratorContainer>{}(
 					   [&](const auto &) { selectFromRightNs(joinItemR, *itemQueryPtr, found, matchedAtLeastOnce); })},
-		preResult_->preselectedPayload);
+		PreResult().preselectedPayload);
 	if (match && found) {
-		if (nsId >= static_cast<int>(result_.joined_.size())) {
-			result_.joined_.resize(nsId + 1);
-		}
+		assertrx_throw(nsId < static_cast<int>(result_.joined_.size()));
 		joins::NamespaceResults &nsJoinRes = result_.joined_[nsId];
-		nsJoinRes.SetJoinedSelectorsCount(joinedSelectorsCount_);
+		assertrx_dbg(nsJoinRes.GetJoinedSelectorsCount());
 		nsJoinRes.Insert(rowId, joinedFieldIdx_, std::move(joinItemR));
 	}
 	if (matchedAtLeastOnce) ++matched_;
-	preResult_->selectTime += (ExplainCalc::Clock::now() - startTime);
+	selectTime_ += (ExplainCalc::Clock::now() - startTime);
 	return matchedAtLeastOnce;
 }
 
@@ -159,7 +157,7 @@ VariantArray JoinedSelector::readValuesOfRightNsFrom(const Cont &data, const Fn 
 }
 
 VariantArray JoinedSelector::readValuesFromPreResult(const QueryJoinEntry &entry) const {
-	const JoinPreResult::Values &values = std::get<JoinPreResult::Values>(preResult_->preselectedPayload);
+	const JoinPreResult::Values &values = std::get<JoinPreResult::Values>(PreResult().preselectedPayload);
 	return readValuesOfRightNsFrom(
 		values,
 		[&values](const ItemRef &item) noexcept {
@@ -170,16 +168,16 @@ VariantArray JoinedSelector::readValuesFromPreResult(const QueryJoinEntry &entry
 
 void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer &iterators, int *maxIterations, unsigned sortId,
 														 const SelectFunction::Ptr &selectFnc, const RdxContext &rdxCtx) {
-	if (joinType_ != JoinType::InnerJoin || preResult_->executionMode != JoinPreResult::ModeExecute ||
+	if (joinType_ != JoinType::InnerJoin || preSelectCtx_.Mode() != JoinPreSelectMode::Execute ||
 		std::visit(overloaded{[](const SelectIteratorContainer &) noexcept { return true; },
 							  Restricted<IdSet, JoinPreResult::Values>{}([maxIterations](const auto &v) noexcept {
 								  return v.size() > *maxIterations * kMaxIterationsScaleForInnerJoinOptimization;
 							  })},
-				   preResult_->preselectedPayload)) {
+				   PreResult().preselectedPayload)) {
 		return;
 	}
 	unsigned optimized = 0;
-	assertrx_throw(!std::holds_alternative<JoinPreResult::Values>(preResult_->preselectedPayload) ||
+	assertrx_throw(!std::holds_alternative<JoinPreResult::Values>(PreResult().preselectedPayload) ||
 				   itemQuery_.Entries().Size() == joinQuery_.joinEntries_.size());
 	for (size_t i = 0; i < joinQuery_.joinEntries_.size(); ++i) {
 		const QueryJoinEntry &joinEntry = joinQuery_.joinEntries_[i];
@@ -205,7 +203,7 @@ void JoinedSelector::AppendSelectIteratorOfJoinIndexData(SelectIteratorContainer
 															  assertrx_throw(0);
 															  abort();
 														  }},
-											   preResult_->preselectedPayload);
+											   PreResult().preselectedPayload);
 		auto ctx = selectFnc ? selectFnc->CreateCtx(joinEntry.LeftIdxNo()) : BaseFunctionCtx::Ptr{};
 		assertrx(!ctx || ctx->type != BaseFunctionCtx::kFtCtx);
 

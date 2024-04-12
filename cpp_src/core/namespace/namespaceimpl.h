@@ -40,16 +40,15 @@ namespace reindexer {
 using reindexer::datastorage::StorageType;
 
 class Index;
-struct SelectCtx;
+template <typename>
+struct SelectCtxWithJoinPreSelect;
 struct JoinPreResult;
 class QueryResults;
 class DBConfigProvider;
 class SelectLockUpgrader;
 class QueryPreprocessor;
-class SelectIteratorContainer;
 class RdxContext;
 class RdxActivityContext;
-class ItemComparator;
 class SortExpression;
 class ProtobufSchema;
 class QueryResults;
@@ -234,7 +233,8 @@ public:
 	void Truncate(const RdxContext &);
 	void Refill(std::vector<Item> &, const RdxContext &);
 
-	void Select(QueryResults &result, SelectCtx &params, const RdxContext &);
+	template <typename JoinPreResultCtx>
+	void Select(QueryResults &result, SelectCtxWithJoinPreSelect<JoinPreResultCtx> &params, const RdxContext &);
 	NamespaceDef GetDefinition(const RdxContext &ctx);
 	NamespaceMemStat GetMemStat(const RdxContext &);
 	NamespacePerfStat GetPerfStat(const RdxContext &);
@@ -251,10 +251,12 @@ public:
 
 	Item NewItem(const RdxContext &ctx);
 	void ToPool(ItemImpl *item);
-	// Get meta data from storage by key
+	// Get metadata from storage by key
 	std::string GetMeta(const std::string &key, const RdxContext &ctx);
-	// Put meta data to storage by key
-	void PutMeta(const std::string &key, std::string_view data, const RdxContext &);
+	// Put metadata to storage by key
+	void PutMeta(const std::string &key, std::string_view data, const RdxContext &ctx);
+	// Delete metadata from storage by key
+	void DeleteMeta(const std::string &key, const RdxContext &ctx);
 	int64_t GetSerial(const std::string &field);
 
 	int getIndexByName(std::string_view index) const;
@@ -341,6 +343,7 @@ private:
 	void saveReplStateToStorage(bool direct = true);
 	void saveTagsMatcherToStorage(bool clearUpdate);
 	void loadReplStateFromStorage();
+	void loadMetaFromStorage();
 
 	void initWAL(int64_t minLSN, int64_t maxLSN);
 
@@ -388,6 +391,7 @@ private:
 
 	std::string getMeta(const std::string &key) const;
 	void putMeta(const std::string &key, std::string_view data, const RdxContext &ctx);
+	void deleteMeta(const std::string &key, const RdxContext &ctx);
 
 	std::pair<IdType, bool> findByPK(ItemImpl *ritem, bool inTransaction, const RdxContext &);
 
@@ -399,7 +403,7 @@ private:
 	void updateSortedIdxCount();
 	void setFieldsBasedOnPrecepts(ItemImpl *ritem);
 
-	void putToJoinCache(JoinCacheRes &res, std::shared_ptr<JoinPreResult> preResult) const;
+	void putToJoinCache(JoinCacheRes &res, std::shared_ptr<const JoinPreResult> preResult) const;
 	void putToJoinCache(JoinCacheRes &res, JoinCacheVal &&val) const;
 	void getFromJoinCache(const Query &, const JoinedQuery &, JoinCacheRes &out) const;
 	void getFromJoinCache(const Query &, JoinCacheRes &out) const;

@@ -237,6 +237,10 @@ Error CoroRPCClient::EnumMeta(std::string_view nsName, std::vector<std::string>&
 	}
 }
 
+Error CoroRPCClient::DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx) {
+	return conn_.Call(mkCommand(cproto::kCmdDeleteMeta, &ctx), nsName, key).Status();
+}
+
 Error CoroRPCClient::Delete(const Query& query, CoroQueryResults& result, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	query.Serialize(ser);

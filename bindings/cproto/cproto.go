@@ -252,7 +252,7 @@ func (binding *NetCProto) UpdateQueryTx(txCtx *bindings.TxCtx, rawQuery []byte) 
 	return netBuffer.conn.rpcCallNoResults(txCtx.UserCtx, cmdUpdateQueryTx, uint32(binding.timeouts.RequestTimeout/time.Second), rawQuery, int64(txCtx.Id))
 }
 
-func (binding *NetCProto) ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
+func (binding *NetCProto) ModifyItem(ctx context.Context, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
 
 	var packedPercepts []byte
 	if len(precepts) != 0 {
@@ -336,12 +336,30 @@ func (binding *NetCProto) DropIndex(ctx context.Context, namespace, index string
 	return binding.rpcCallNoResults(ctx, opWr, cmdDropIndex, namespace, index)
 }
 
+func (binding *NetCProto) EnumMeta(ctx context.Context, namespace string) ([]string, error) {
+	buf, err := binding.rpcCall(ctx, opRd, cmdEnumMeta, namespace)
+	if err != nil {
+		return nil, err
+	}
+	defer buf.Free()
+
+	keys := make([]string, len(buf.args))
+	for i, item := range buf.args {
+		keys[i] = string(item.([]byte))
+	}
+	return keys, nil
+}
+
 func (binding *NetCProto) PutMeta(ctx context.Context, namespace, key, data string) error {
 	return binding.rpcCallNoResults(ctx, opWr, cmdPutMeta, namespace, key, data)
 }
 
 func (binding *NetCProto) GetMeta(ctx context.Context, namespace, key string) (bindings.RawBuffer, error) {
 	return binding.rpcCall(ctx, opRd, cmdGetMeta, namespace, key)
+}
+
+func (binding *NetCProto) DeleteMeta(ctx context.Context, namespace, key string) error {
+	return binding.rpcCallNoResults(ctx, opWr, cmdDeleteMeta, namespace, key)
 }
 
 func (binding *NetCProto) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
@@ -390,11 +408,11 @@ func (binding *NetCProto) SelectQuery(ctx context.Context, data []byte, asJson b
 	return buf, err
 }
 
-func (binding *NetCProto) DeleteQuery(ctx context.Context, nsHash int, data []byte) (bindings.RawBuffer, error) {
+func (binding *NetCProto) DeleteQuery(ctx context.Context, data []byte) (bindings.RawBuffer, error) {
 	return binding.rpcCall(ctx, opWr, cmdDeleteQuery, data)
 }
 
-func (binding *NetCProto) UpdateQuery(ctx context.Context, nsHash int, data []byte) (bindings.RawBuffer, error) {
+func (binding *NetCProto) UpdateQuery(ctx context.Context, data []byte) (bindings.RawBuffer, error) {
 	return binding.rpcCall(ctx, opWr, cmdUpdateQuery, data)
 }
 

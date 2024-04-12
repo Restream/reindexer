@@ -234,7 +234,7 @@ func CheckTestItemsMergeQueries(t *testing.T) {
 	assert.NoError(t, e3)
 	//TEST LEN
 	assert.Equal(t, len(r1)+len(r2)+len(r3), len(merge), "(%d+%d+%d) (%p, %p, %p)", len(r1), len(r2), len(r3), qs1, qs2, qs3)
-	assert.NotEqual(t, len(merge), 0, "Full text dosen't return any result - somthing bad happend")
+	assert.NotEqual(t, len(merge), 0, "Full text dosen't return any result - something bad happend")
 
 	var items []interface{}
 	check := make(map[string]interface{})

@@ -267,7 +267,7 @@ func (binding *Builtin) awaitLimiter(ctx context.Context) (withLimiter bool, err
 	return
 }
 
-func (binding *Builtin) ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
+func (binding *Builtin) ModifyItem(ctx context.Context, namespace string, format int, data []byte, mode int, precepts []string, stateToken int) (bindings.RawBuffer, error) {
 	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
 		return nil, err
 	} else if withLimiter {
@@ -470,6 +470,29 @@ func (binding *Builtin) DropIndex(ctx context.Context, namespace, index string) 
 	return err2go(C.reindexer_drop_index(binding.rx, str2c(namespace), str2c(index), ctxInfo.cCtx))
 }
 
+func (binding *Builtin) EnumMeta(ctx context.Context, namespace string) ([]string, error) {
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
+
+	data, err := ret2go(C.reindexer_enum_meta(binding.rx, str2c(namespace), ctxInfo.cCtx))
+	if err != nil {
+		return nil, err
+	}
+	defer data.Free()
+
+	ser := cjson.NewSerializer(data.GetBuf())
+
+	keyCnt := ser.GetVarUInt()
+	keys := make([]string, keyCnt)
+	for i := 0; i < int(keyCnt); i++ {
+		keys[i] = ser.GetVString()
+	}
+	return keys, nil
+}
+
 func (binding *Builtin) PutMeta(ctx context.Context, namespace, key, data string) error {
 	ctxInfo, err := binding.StartWatchOnCtx(ctx)
 	if err != nil {
@@ -488,6 +511,16 @@ func (binding *Builtin) GetMeta(ctx context.Context, namespace, key string) (bin
 	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
 
 	return ret2go(C.reindexer_get_meta(binding.rx, str2c(namespace), str2c(key), ctxInfo.cCtx))
+}
+
+func (binding *Builtin) DeleteMeta(ctx context.Context, namespace, key string) error {
+	ctxInfo, err := binding.StartWatchOnCtx(ctx)
+	if err != nil {
+		return err
+	}
+	defer binding.ctxWatcher.StopWatchOnCtx(ctxInfo)
+
+	return err2go(C.reindexer_delete_meta(binding.rx, str2c(namespace), str2c(key), ctxInfo.cCtx))
 }
 
 func (binding *Builtin) Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (bindings.RawBuffer, error) {
@@ -560,7 +593,7 @@ func (binding *Builtin) SelectQuery(ctx context.Context, data []byte, asJson boo
 	return ret2go(C.reindexer_select_query(binding.rx, buf2c(data), bool2cint(asJson), (*C.int32_t)(unsafe.Pointer(&ptVersions[0])), C.int(len(ptVersions)), ctxInfo.cCtx))
 }
 
-func (binding *Builtin) DeleteQuery(ctx context.Context, nsHash int, data []byte) (bindings.RawBuffer, error) {
+func (binding *Builtin) DeleteQuery(ctx context.Context, data []byte) (bindings.RawBuffer, error) {
 	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
 		return nil, err
 	} else if withLimiter {
@@ -576,7 +609,7 @@ func (binding *Builtin) DeleteQuery(ctx context.Context, nsHash int, data []byte
 	return ret2go(C.reindexer_delete_query(binding.rx, buf2c(data), ctxInfo.cCtx))
 }
 
-func (binding *Builtin) UpdateQuery(ctx context.Context, nsHash int, data []byte) (bindings.RawBuffer, error) {
+func (binding *Builtin) UpdateQuery(ctx context.Context, data []byte) (bindings.RawBuffer, error) {
 	if withLimiter, err := binding.awaitLimiter(ctx); err != nil {
 		return nil, err
 	} else if withLimiter {

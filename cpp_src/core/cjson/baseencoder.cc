@@ -56,7 +56,7 @@ void BaseEncoder<Builder>::Encode(ConstPayload& pl, Builder& builder, IAdditiona
 
 	if (ds) {
 		if (const auto joinsDs = ds->GetJoinsDatasource()) {
-			for (size_t i = 0; i < joinsDs->GetJoinedRowsCount(); ++i) {
+			for (size_t i = 0, cnt = joinsDs->GetJoinedRowsCount(); i < cnt; ++i) {
 				encodeJoinedItems(objNode, joinsDs, i);
 			}
 		}
@@ -79,7 +79,7 @@ const TagsLengths& BaseEncoder<Builder>::GetTagsMeasures(ConstPayload& pl, IEnco
 		}
 
 		if (ds && ds->GetJoinedRowsCount() > 0) {
-			for (size_t i = 0; i < ds->GetJoinedRowsCount(); ++i) {
+			for (size_t i = 0, rows = ds->GetJoinedRowsCount(); i < rows; ++i) {
 				collectJoinedItemsTagsSizes(ds, i);
 			}
 		}
@@ -95,7 +95,6 @@ void BaseEncoder<Builder>::collectJoinedItemsTagsSizes(IEncoderDatasourceWithJoi
 	const size_t itemsCount = ds->GetJoinedRowItemsCount(rowid);
 	if (!itemsCount) return;
 
-	std::string nsTagName("joined_" + ds->GetJoinedItemNamespace(rowid));
 	BaseEncoder<Builder> subEnc(&ds->GetJoinedItemTagsMatcher(rowid), &ds->GetJoinedItemFieldsFilter(rowid));
 	for (size_t i = 0; i < itemsCount; ++i) {
 		ConstPayload pl(ds->GetJoinedItemPayload(rowid, i));

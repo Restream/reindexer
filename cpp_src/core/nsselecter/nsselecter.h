@@ -16,7 +16,6 @@ struct SelectCtx {
 	JoinedSelectors *joinedSelectors = nullptr;
 	SelectFunctionsHolder *functions = nullptr;
 
-	JoinPreResult::Ptr preResult;
 	ExplainCalc::Duration preResultTimeTotal = ExplainCalc::Duration::zero();
 	SortingContext sortingContext;
 	uint8_t nsid = 0;
@@ -38,6 +37,19 @@ struct SelectCtx {
 	RX_ALWAYS_INLINE bool isMergeQuerySubQuery() const noexcept { return isMergeQuery == IsMergeQuery::Yes && parentQuery; }
 };
 
+template <typename JoinPreSelCtx>
+struct SelectCtxWithJoinPreSelect : public SelectCtx {
+	explicit SelectCtxWithJoinPreSelect(const Query &query, const Query *parentQuery, JoinPreSelCtx preSel) noexcept
+		: SelectCtx(query, parentQuery), preSelect{std::move(preSel)} {}
+	JoinPreSelCtx preSelect;
+};
+
+template <>
+struct SelectCtxWithJoinPreSelect<void> : public SelectCtx {
+	explicit SelectCtxWithJoinPreSelect(const Query &query, const Query *parentQuery) noexcept : SelectCtx(query, parentQuery) {}
+};
+SelectCtxWithJoinPreSelect(const Query &, const Query *) -> SelectCtxWithJoinPreSelect<void>;
+
 class ItemComparator;
 class ExplainCalc;
 class QueryPreprocessor;
@@ -50,15 +62,18 @@ class NsSelecter {
 public:
 	NsSelecter(NamespaceImpl *parent) noexcept : ns_(parent) {}
 
-	void operator()(QueryResults &result, SelectCtx &ctx, const RdxContext &);
+	template <typename JoinPreResultCtx>
+	void operator()(QueryResults &result, SelectCtxWithJoinPreSelect<JoinPreResultCtx> &ctx, const RdxContext &);
 
 private:
+	template <typename JoinPreResultCtx>
 	struct LoopCtx {
-		LoopCtx(SelectIteratorContainer &sIt, SelectCtx &ctx, const QueryPreprocessor &qpp, h_vector<Aggregator, 4> &agg, ExplainCalc &expl)
+		LoopCtx(SelectIteratorContainer &sIt, SelectCtxWithJoinPreSelect<JoinPreResultCtx> &ctx, const QueryPreprocessor &qpp,
+				h_vector<Aggregator, 4> &agg, ExplainCalc &expl)
 			: qres(sIt), sctx(ctx), qPreproc(qpp), aggregators(agg), explain(expl) {}
 		SelectIteratorContainer &qres;
 		bool calcTotal = false;
-		SelectCtx &sctx;
+		SelectCtxWithJoinPreSelect<JoinPreResultCtx> &sctx;
 		const QueryPreprocessor &qPreproc;
 		h_vector<Aggregator, 4> &aggregators;
 		ExplainCalc &explain;
@@ -67,8 +82,8 @@ private:
 		bool preselectForFt = false;
 	};
 
-	template <bool reverse, bool haveComparators, bool aggregationsOnly, typename ResultsT>
-	void selectLoop(LoopCtx &ctx, ResultsT &result, const RdxContext &);
+	template <bool reverse, bool haveComparators, bool aggregationsOnly, typename ResultsT, typename JoinPreResultCtx>
+	void selectLoop(LoopCtx<JoinPreResultCtx> &ctx, ResultsT &result, const RdxContext &);
 	template <bool desc, bool multiColumnSort, typename It>
 	It applyForcedSort(It begin, It end, const ItemComparator &, const SelectCtx &ctx, const joins::NamespaceResults *);
 	template <bool desc, bool multiColumnSort, typename It, typename ValueGetter>
@@ -78,9 +93,9 @@ private:
 	void applyGeneralSort(It itFirst, It itLast, It itEnd, const ItemComparator &, const SelectCtx &ctx);
 
 	void calculateSortExpressions(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &, const QueryResults &);
-	template <bool aggregationsOnly>
-	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtx &sctx, h_vector<Aggregator, 4> &aggregators,
-						 QueryResults &result, bool preselectForFt);
+	template <bool aggregationsOnly, typename JoinPreResultCtx>
+	void addSelectResult(uint8_t proc, IdType rowId, IdType properRowId, SelectCtxWithJoinPreSelect<JoinPreResultCtx> &sctx,
+						 h_vector<Aggregator, 4> &aggregators, QueryResults &result, bool preselectForFt);
 
 	h_vector<Aggregator, 4> getAggregators(const std::vector<AggregateEntry> &aggEntrys, StrictMode strictMode) const;
 	void setLimitAndOffset(ItemRefVector &result, size_t offset, size_t limit);
@@ -92,8 +107,9 @@ private:
 						   const JoinedSelectors &);
 	void processLeftJoins(QueryResults &qr, SelectCtx &sctx, size_t startPos, const RdxContext &);
 	bool checkIfThereAreLeftJoins(SelectCtx &sctx) const;
-	template <typename It>
-	void sortResults(LoopCtx &sctx, It begin, It end, const SortingOptions &sortingOptions, const joins::NamespaceResults *);
+	template <typename It, typename JoinPreResultCtx>
+	void sortResults(LoopCtx<JoinPreResultCtx> &sctx, It begin, It end, const SortingOptions &sortingOptions,
+					 const joins::NamespaceResults *);
 
 	size_t calculateNormalCost(const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);
 	size_t calculateOptimizedCost(size_t costNormal, const QueryEntries &qe, SelectCtx &ctx, const RdxContext &rdxCtx);

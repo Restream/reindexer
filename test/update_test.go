@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	fieldsUpdateNs  = "test_items_fields_update"
-	truncateNs      = "test_truncate"
-	removeItemsNs   = "test_remove_items"
-	sparseArrItemNs = "sparse_array_updates"
+	fieldsUpdateNs              = "test_items_fields_update"
+	truncateNs                  = "test_truncate"
+	removeItemsNs               = "test_remove_items"
+	sparseArrItemNs             = "sparse_array_updates"
+	TestUpdateWithExpressionsNs = "test_update_with_expressions_ns"
 )
 
 type ItemWithSparseArray struct {
@@ -27,6 +28,7 @@ type ItemWithSparseArray struct {
 func init() {
 	tnamespaces["test_items_insert_update"] = TestItemSimple{}
 	tnamespaces[sparseArrItemNs] = ItemWithSparseArray{}
+	tnamespaces[TestUpdateWithExpressionsNs] = ItemWithSparseArray{}
 }
 
 var checkInsertUpdateExistsData = []*TestItemSimple{
@@ -1048,4 +1050,34 @@ func TestUpdateSparseArrayIndex(t *testing.T) {
 	require.NoError(t, DB.Upsert(sparseArrItemNs, emptyItem))
 	results = DB.ExecSQL("SELECT * FROM " + sparseArrItemNs + " WHERE id = 2")
 	checkResultItem(t, results, emptyItem)
+}
+
+func TestUpdateWithExpressions(t *testing.T) {
+	t.Parallel()
+
+	const ns = TestUpdateWithExpressionsNs
+
+	item := &ItemWithSparseArray{ID: 1, Array: []int64{1, 2, 3, 4, 5, 1, 2, 3, 4, 5}}
+	require.NoError(t, DB.Upsert(ns, item))
+
+	t.Run("update with array_remove delete elements from array", func(t *testing.T) {
+		res_slice, err := DB.Query(ns).SetExpression("array_idx", "array_remove(array_idx, [2, 3]) || [50]").
+			Update().FetchAll()
+		require.NoError(t, err)
+		require.Len(t, res_slice, 1)
+		res := res_slice[0].(*ItemWithSparseArray)
+		expected := []int64{1, 4, 5, 1, 4, 5, 50}
+		require.EqualValues(t, expected, res.Array)
+	})
+
+	t.Run("update with array_remove_once delete elements from array", func(t *testing.T) {
+		res_slice, err := DB.Query(ns).SetExpression("array_idx", "array_remove_once(array_idx, [1, 1, 5])").
+			Update().FetchAll()
+		require.NoError(t, err)
+		require.Len(t, res_slice, 1)
+		res := res_slice[0].(*ItemWithSparseArray)
+		expected := []int64{4, 4, 5, 50}
+		require.EqualValues(t, expected, res.Array)
+	})
+
 }

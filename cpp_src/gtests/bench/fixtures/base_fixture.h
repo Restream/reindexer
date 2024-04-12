@@ -50,7 +50,15 @@ protected:
 
 	template <typename Fn, typename Cl>
 	Benchmark* Register(const std::string& name, Fn fn, Cl* cl) {
-		return benchmark::RegisterBenchmark(((useBenchamrkPrefixName_ ? nsdef_.name + "/" : "") + name).c_str(), std::bind(fn, cl, _1));
+		std::string tn(useBenchamrkPrefixName_ ? nsdef_.name + "/" : "");
+		tn += name;
+		return benchmark::RegisterBenchmark(tn.c_str(), std::bind(fn, cl, _1));
+	}
+
+	template <typename Fn, typename... Args>
+	Benchmark* RegisterF(const std::string& name, Fn&& f, Args&&... args) {
+		return benchmark::RegisterBenchmark(((useBenchamrkPrefixName_ ? nsdef_.name + "/" : "") + name).c_str(), std::forward<Fn>(f),
+											std::forward<Args>(args)...);
 	}
 
 	std::string RandString();

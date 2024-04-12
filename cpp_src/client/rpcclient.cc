@@ -377,6 +377,10 @@ Error RPCClient::EnumMeta(std::string_view nsName, std::vector<std::string>& key
 	}
 }
 
+Error RPCClient::DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx) {
+	return getConn()->Call(mkCommand(cproto::kCmdDeleteMeta, &ctx), nsName, key).Status();
+}
+
 Error RPCClient::Delete(const Query& query, QueryResults& result, const InternalRdxContext& ctx) {
 	WrSerializer ser;
 	query.Serialize(ser);

@@ -20,7 +20,7 @@ class UpdatesFilters;
 
 /// The main Reindexer interface. Holds database object<br>
 /// *Thread safety*: All methods of Reindexer are thread safe. <br>
-/// *Resources lifetime*: All resources aquired from Reindexer, e.g Item or QueryResults are uses Copy-On-Write
+/// *Resources lifetime*: All resources acquired from Reindexer, e.g Item or QueryResults are uses Copy-On-Write
 /// semantics, and have independent lifetime. Also them are thread safe against Reindexer<br>
 /// *Fork behavior*: Reindexer creates few service threads: for data flushing and normalization in background.
 /// If application calls `fork` after using Reindexer, then resources associated with that threads will leak
@@ -34,7 +34,7 @@ public:
 	/// @param cfg - general database options
 	Reindexer(ReindexerConfig cfg = ReindexerConfig());
 
-	/// Destrory Reindexer database object
+	/// Destroy Reindexer database object
 	~Reindexer();
 	/// Create not holding copy
 	Reindexer(const Reindexer &) noexcept;
@@ -42,11 +42,11 @@ public:
 	Reindexer &operator=(const Reindexer &) = delete;
 	Reindexer &operator=(Reindexer &&) = delete;
 
-	/// Connect - connect to reindexer database in embeded mode
-	/// Cancelation context doesn't affect this call
+	/// Connect - connect to reindexer database in embedded mode
+	/// Cancellation context doesn't affect this call
 	/// @param dsn - uri of database, like: `builtin:///var/lib/reindexer/dbname` or just `/var/lib/reindexer/dbname`
-	/// @param opts - Connect options. May contaion any of <br>
-	/// ConnectOpts::AllowNamespaceErrors() - true: Ignore errors during existing NS's load; false: Return error occured during NS's load
+	/// @param opts - Connect options. May contain any of <br>
+	/// ConnectOpts::AllowNamespaceErrors() - true: Ignore errors during existing NS's load; false: Return error occurred during NS's load
 	/// ConnectOpts::OpenNamespaces() - true: Need to open all the namespaces; false: Don't open namespaces
 	Error Connect(const std::string &dsn, ConnectOpts opts = ConnectOpts());
 
@@ -65,10 +65,10 @@ public:
 	/// Create new namespace. Will fail, if namespace already exists
 	/// @param nsDef - NamespaceDef with namespace initial parameters
 	Error AddNamespace(const NamespaceDef &nsDef);
-	/// Close namespace. Will free all memory resorces, associated with namespace. Forces sync changes to disk
+	/// Close namespace. Will free all memory resources, associated with namespace. Forces sync changes to disk
 	/// @param nsName - Name of namespace
 	Error CloseNamespace(std::string_view nsName);
-	/// Drop namespace. Will free all memory resorces, associated with namespace and erase all files from disk
+	/// Drop namespace. Will free all memory resources, associated with namespace and erase all files from disk
 	/// @param nsName - Name of namespace
 	Error DropNamespace(std::string_view nsName);
 	/// Delete all items from namespace
@@ -100,7 +100,7 @@ public:
 	/// @param schema - text representation of schema
 	Error GetSchema(std::string_view nsName, int format, std::string &schema);
 	/// Get list of all available namespaces
-	/// @param defs - std::vector of NamespaceDef of available namespaves
+	/// @param defs - std::vector of NamespaceDef of available namespaces
 	/// @param opts - Enumeration options
 	Error EnumNamespaces(std::vector<NamespaceDef> &defs, EnumNamespacesOpts opts);
 	/// Insert new Item to namespace. If item with same PK is already exists, when item.GetID will
@@ -157,7 +157,7 @@ public:
 	/// @param item - Item, obtained by call to NewItem of the same namespace
 	/// @param result - QueryResults with deleted item.
 	Error Delete(std::string_view nsName, Item &item, QueryResults &result);
-	/// Delete all items froms namespace, which matches provided Query
+	/// Delete all items from namespace, which matches provided Query
 	/// @param query - Query with conditions
 	/// @param result - QueryResults with IDs of deleted items
 	Error Delete(const Query &query, QueryResults &result);
@@ -172,15 +172,15 @@ public:
 	/// @param result - QueryResults with found items
 	Error Select(const Query &query, QueryResults &result);
 	/// Flush changes to storage
-	/// Cancelation context doesn't affect this call
+	/// Cancellation context doesn't affect this call
 	/// @param nsName - Name of namespace
 	Error Commit(std::string_view nsName);
 	/// Allocate new item for namespace
 	/// @param nsName - Name of namespace
-	/// @return Item ready for filling and futher Upsert/Insert/Delete/Update call
+	/// @return Item ready for filling and further Upsert/Insert/Delete/Update call
 	Item NewItem(std::string_view nsName);
 	/// Allocate new transaction for namespace
-	/// Cancelation context doesn't affect this call
+	/// Cancellation context doesn't affect this call
 	/// @param nsName - Name of namespace
 	Transaction NewTransaction(std::string_view nsName);
 	/// Commit transaction - transaction will be deleted after commit
@@ -188,44 +188,48 @@ public:
 	/// @param result - QueryResults with IDs of changed by tx items.
 	Error CommitTransaction(Transaction &tr, QueryResults &result);
 	/// RollBack transaction - transaction will be deleted after rollback
-	/// Cancelation context doesn't affect this call
+	/// Cancellation context doesn't affect this call
 	/// @param tr - transaction to rollback
 	Error RollBackTransaction(Transaction &tr);
-	/// Get meta data from storage by key
+	/// Get metadata from storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
-	/// @param data - output string with meta data
+	/// @param data - output string with metadata
 	Error GetMeta(std::string_view nsName, const std::string &key, std::string &data);
-	/// Put meta data to storage by key
+	/// Put metadata to storage by key
 	/// @param nsName - Name of namespace
 	/// @param key - string with meta key
-	/// @param data - string with meta data
+	/// @param data - string with metadata
 	Error PutMeta(std::string_view nsName, const std::string &key, std::string_view data);
-	/// Get list of all meta data keys
+	/// Get list of all metadata keys
 	/// @param nsName - Name of namespace
 	/// @param keys - std::vector filled with meta keys
 	Error EnumMeta(std::string_view nsName, std::vector<std::string> &keys);
+	/// Delete metadata from storage by key
+	/// @param nsName - Name of namespace
+	/// @param key - string with meta key
+	Error DeleteMeta(std::string_view nsName, const std::string &key);
 	/// Get possible suggestions for token (set by 'pos') in Sql query.
-	/// Cancelation context doesn't affect this call
+	/// Cancellation context doesn't affect this call
 	/// @param sqlQuery - sql query.
 	/// @param pos - position in sql query for suggestions.
 	/// @param suggestions - all the suggestions for 'pos' position in query.
 	Error GetSqlSuggestions(std::string_view sqlQuery, int pos, std::vector<std::string> &suggestions);
-	/// Get curret connection status
+	/// Get current connection status
 	Error Status();
 
-	/// Init system namepaces, and load config from config namespace
-	/// Cancelation context doesn't affect this call
+	/// Init system namespaces, and load config from config namespace
+	/// Cancellation context doesn't affect this call
 	Error InitSystemNamespaces();
 
 	/// Subscribe to updates of database
-	/// Cancelation context doesn't affect this call
+	/// Cancellation context doesn't affect this call
 	/// @param observer - Observer interface, which will receive updates
 	/// @param filters - Subscription filters set
 	/// @param opts - Subscription options (allows to either add new filters or reset them)
 	Error SubscribeUpdates(IUpdatesObserver *observer, const UpdatesFilters &filters, SubscriptionOpts opts = SubscriptionOpts());
 	/// Unsubscribe from updates of database
-	/// Cancelation context doesn't affect this call
+	/// Cancellation context doesn't affect this call
 	/// @param observer - Observer interface, which will be unsubscribed updates
 	Error UnsubscribeUpdates(IUpdatesObserver *observer);
 
@@ -241,7 +245,7 @@ public:
 	/// @param timeout - Execution timeout
 	Reindexer WithTimeout(milliseconds timeout) const { return Reindexer(impl_, ctx_.WithTimeout(timeout)); }
 	/// Add completion
-	/// @param cmpl - Optional async completion routine. If nullptr function will work syncronius
+	/// @param cmpl - Optional async completion routine. If nullptr function will work synchronously
 	Reindexer WithCompletion(Completion cmpl) const { return Reindexer(impl_, ctx_.WithCompletion(std::move(cmpl))); }
 	/// Add activityTracer
 	/// @param activityTracer - name of activity tracer

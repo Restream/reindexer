@@ -9,13 +9,13 @@
 #include "core/iclientsstats.h"
 #include "core/index/index.h"
 #include "core/itemimpl.h"
-#include "core/nsselecter/crashqueryreporter.h"
 #include "core/nsselecter/nsselecter.h"
 #include "core/nsselecter/querypreprocessor.h"
 #include "core/query/sql/sqlsuggester.h"
 #include "core/queryresults/joinresults.h"
 #include "core/selectfunc/selectfunc.h"
 #include "core/type_consts_helpers.h"
+#include "debug/crashqueryreporter.h"
 #include "estl/defines.h"
 #include "replicator/replicator.h"
 #include "rx_selector.h"
@@ -792,6 +792,13 @@ Error ReindexerImpl::PutMeta(std::string_view nsName, const std::string& key, st
 Error ReindexerImpl::EnumMeta(std::string_view nsName, std::vector<std::string>& keys, const InternalRdxContext& ctx) {
 	const auto makeCtxStr = [nsName](WrSerializer& ser) -> WrSerializer& { return ser << "SELECT META FROM " << nsName; };
 	return applyNsFunction<&Namespace::EnumMeta>(nsName, ctx, makeCtxStr, keys);
+}
+
+Error ReindexerImpl::DeleteMeta(std::string_view nsName, const std::string& key, const InternalRdxContext& ctx) {
+	const auto makeCtxStr = [nsName, &key](WrSerializer& ser) -> WrSerializer& {
+		return ser << "DELETE META FROM " << nsName << " WHERE KEY = '" << key << '\'';
+	};
+	return applyNsFunction<&Namespace::DeleteMeta>(nsName, ctx, makeCtxStr, key);
 }
 
 Error ReindexerImpl::Delete(std::string_view nsName, Item& item, const InternalRdxContext& ctx) {

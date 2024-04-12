@@ -26,7 +26,7 @@ struct TransactionTmStep {
 
 class TransactionStep {
 public:
-	enum class Type : uint8_t { Nop, ModifyItem, Query, PutMeta, SetTM };
+	enum class Type : uint8_t { Nop, ModifyItem, Query, PutMeta, DeleteMeta, SetTM };
 
 	TransactionStep(Item &&item, ItemModifyMode modifyMode)
 		: data_(TransactionItemStep{modifyMode, item.IsTagsUpdated(), std::move(*item.impl_)}), type_(Type::ModifyItem) {

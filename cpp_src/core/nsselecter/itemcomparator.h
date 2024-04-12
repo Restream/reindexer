@@ -49,7 +49,7 @@ private:
 	const SelectCtx &ctx_;
 	const joins::NamespaceResults *joinResults_;
 	FieldsSet fields_;
-	std::vector<Joined> joined_;
+	Joined joined_;
 	h_vector<const CollateOpts *, 1> collateOpts_;
 	h_vector<std::variant<CompareByField, CompareByJoinedField, CompareByExpression>, 4> comparators_;
 };

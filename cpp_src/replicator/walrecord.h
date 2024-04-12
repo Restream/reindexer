@@ -34,6 +34,7 @@ enum WALRecType {
 	WalResetLocalWal = 18,
 	WalRawItem = 19,
 	WalShallowItem = 20,
+	WalDeleteMeta = 21,
 };
 
 class WrSerializer;
@@ -58,7 +59,7 @@ struct WALRecord {
 	explicit WALRecord(std::string_view sv);
 	explicit WALRecord(WALRecType _type = WalEmpty, IdType _id = 0, bool inTx = false) : type(_type), id(_id), inTransaction(inTx) {}
 	explicit WALRecord(WALRecType _type, std::string_view _data, bool inTx = false) : type(_type), data(_data), inTransaction(inTx) {}
-	explicit WALRecord(WALRecType _type, std::string_view key, std::string_view value) : type(_type), putMeta{key, value} {}
+	explicit WALRecord(WALRecType _type, std::string_view key, std::string_view value) : type(_type), itemMeta{key, value} {}
 	explicit WALRecord(WALRecType _type, std::string_view cjson, int tmVersion, int modifyMode, bool inTx = false)
 		: type(_type), itemModify{cjson, tmVersion, modifyMode}, inTransaction(inTx) {}
 	WrSerializer &Dump(WrSerializer &ser, const std::function<std::string(std::string_view)> &cjsonViewer) const;
@@ -78,7 +79,7 @@ struct WALRecord {
 		struct {
 			std::string_view key;
 			std::string_view value;
-		} putMeta;
+		} itemMeta;
 		struct {
 			IdType id;
 			std::string_view itemCJson;

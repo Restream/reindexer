@@ -226,7 +226,7 @@ void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 			builder.Put("offset", query.Offset());
 			builder.Put("req_total", get(reqtotal_values, query.CalcTotal()));
 			if (scope != QueryScope::Subquery) {
-				builder.Put("explain", query.GetExplain());
+				builder.Put("explain", query.NeedExplain());
 				builder.Put("type", "select");
 				auto strictMode = strictModeToString(query.GetStrictMode());
 				if (!strictMode.empty()) {
@@ -249,7 +249,7 @@ void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 		}
 		case QueryType::QueryUpdate: {
 			builder.Put("namespace", query.NsName());
-			builder.Put("explain", query.GetExplain());
+			builder.Put("explain", query.NeedExplain());
 			builder.Put("type", "update");
 			encodeFilters(query, builder);
 			bool withDropEntries = false, withUpdateEntries = false;
@@ -271,7 +271,7 @@ void toDsl(const Query& query, QueryScope scope, JsonBuilder& builder) {
 		}
 		case QueryType::QueryDelete: {
 			builder.Put("namespace", query.NsName());
-			builder.Put("explain", query.GetExplain());
+			builder.Put("explain", query.NeedExplain());
 			builder.Put("type", "delete");
 			encodeFilters(query, builder);
 			break;

@@ -15,7 +15,7 @@ public:
 	using GetSchemaF = std::function<std::shared_ptr<const Schema>(std::string_view ns)>;
 
 	using SQLParser::SQLParser;
-	/// Gets suggestions for autocomplte
+	/// Gets suggestions for autocomplete
 	/// @param q - query to parse.
 	/// @param pos - pos of cursor in query.
 	/// @param enumNamespaces - functor which enums namespaces to be checked for existing fields.
@@ -28,7 +28,7 @@ private:
 	/// @param ctx - suggestion context.
 	void getSuggestionsForToken(SqlParsingCtx::SuggestionData &ctx);
 
-	/// Checks whether suggestion is neede for a token
+	/// Checks if token suggestion is required
 	void checkForTokenSuggestions(SqlParsingCtx::SuggestionData &data);
 
 	/// Tries to find token value among accepted tokens.

@@ -1396,3 +1396,44 @@ TEST_F(QueriesApi, SerializeDeserialize) {
 		EXPECT_EQ(q, deserializedQuery) << "Origin query:\n" << q.GetSQL() << "\nDeserialized query:\n" << deserializedQuery.GetSQL();
 	}
 }
+
+TEST_F(QueriesApi, DistinctWithDuplicatesWhereCondTest) {
+	for (int id = 0; id < 10; ++id) {
+		auto item = GenerateDefaultNsItem(id, 0);
+		item[kFieldNameAge] = id / 4;
+		ASSERT_TRUE(item.Status().ok()) << item.Status().what();
+		Upsert(default_namespace, item);
+	}
+
+	auto check = [this](auto&&... args) {
+		auto values = VariantArray::Create({std::forward<decltype(args)>(args)...});
+		auto q = Query(default_namespace).Distinct(kFieldNameAge).Where(kFieldNameAge, CondEq, values);
+		std::sort(values.begin(), values.end());
+		auto it = std::unique(values.begin(), values.end());
+		values.erase(it, values.end());
+
+		QueryResults qr;
+		auto err = rt.reindexer->Select(q, qr);
+		ASSERT_TRUE(err.ok()) << err.what();
+		ASSERT_EQ(qr.Count(), values.size());
+
+		auto distincts = qr.GetAggregationResults().front().distincts;
+		ASSERT_EQ(distincts.size(), values.size());
+
+		std::sort(distincts.begin(), distincts.end());
+		for (size_t i = 0; i < distincts.size(); ++i) {
+			ASSERT_EQ(distincts[i], values[i]);
+		}
+	};
+
+	check(1);
+	check(0, 1);
+	check(1, 0, 2);
+	check(0, 1, 2);
+	check(0, 0, 0, 0, 0);
+	check(0, 1, 1, 1, 2);
+	check(0, 0, 1, 1, 1, 1, 1, 1);
+	check(0, 0, 1, 1, 1, 1, 2, 1);
+	check(0, 0, 1, 1, 2, 1, 2, 1);
+	check(1, 2, 0, 2, 0, 1, 2, 2, 1, 0);
+}

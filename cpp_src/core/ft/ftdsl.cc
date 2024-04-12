@@ -85,18 +85,23 @@ void FtDSLQuery::parse(std::wstring &utf16str) {
 						}
 						it += end - start;
 					}
-					assertf(groupTermCounter <= int(size()), "groupTermCounter=%d,size=%d", groupTermCounter, size());
-					if (groupTermCounter > 1) {
-						auto fteIt = end();
-						while (--groupTermCounter >= 0) {
-							fteIt--;
-							if (groupTermCounter > 0) {
-								fteIt->opts.distance = distance;
+					assertrx_throw(groupTermCounter <= int(size()));
+					switch (groupTermCounter) {
+						case 0:
+							break;
+						case 1:
+							groupTermCounter = 0;
+							break;
+						default:
+							for (auto fteIt = end() - 1; --groupTermCounter >= 0; --fteIt) {
+								if (groupTermCounter > 0) {
+									fteIt->opts.distance = distance;
+								}
+								fteIt->opts.groupNum = groupCounter;
 							}
-							fteIt->opts.groupNum = groupCounter;
-						}
-						groupTermCounter = 0;
-						++groupCounter;
+							groupTermCounter = 0;
+							++groupCounter;
+							break;
 					}
 				}
 			}

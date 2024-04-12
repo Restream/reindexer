@@ -56,9 +56,11 @@ reindexer_error reindexer_free_buffers(reindexer_resbuffer *in, int count);
 
 reindexer_error reindexer_commit(uintptr_t rx, reindexer_string nsName);
 
+reindexer_ret reindexer_enum_meta(uintptr_t rx, reindexer_string ns, reindexer_ctx_info ctx_info);
 reindexer_error reindexer_put_meta(uintptr_t rx, reindexer_string ns, reindexer_string key, reindexer_string data,
 								   reindexer_ctx_info ctx_info);
 reindexer_ret reindexer_get_meta(uintptr_t rx, reindexer_string ns, reindexer_string key, reindexer_ctx_info ctx_info);
+reindexer_error reindexer_delete_meta(uintptr_t rx, reindexer_string ns, reindexer_string key, reindexer_ctx_info ctx_info);
 
 reindexer_error reindexer_cancel_context(reindexer_ctx_info ctx_info, ctx_cancel_type how);
 

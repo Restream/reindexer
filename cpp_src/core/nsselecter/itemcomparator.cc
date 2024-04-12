@@ -27,7 +27,7 @@ namespace reindexer {
 bool ItemComparator::operator()(const ItemRef &lhs, const ItemRef &rhs) const {
 	size_t expressionIndex{0};
 	FieldsCompRes mainNsRes;
-	std::vector<FieldsCompRes> joinedNsRes(joined_.size());
+	FieldsCompRes joinedNsRes;
 	for (const auto &comp : comparators_) {
 		const int res = std::visit(
 			overloaded{[&](CompareByExpression c) noexcept {
@@ -44,11 +44,8 @@ bool ItemComparator::operator()(const ItemRef &lhs, const ItemRef &rhs) const {
 						   }
 					   },
 					   [&](CompareByJoinedField c) {
-						   assertrx_throw(c.joinedNs < joinedNsRes.size());
-						   auto &res = joinedNsRes[c.joinedNs];
-						   if (res.firstDifferentFieldIdx == kNotComputed) {
-							   assertrx_throw(joined_.size() > c.joinedNs);
-							   const auto &jNs = joined_[c.joinedNs];
+						   if (joinedNsRes.firstDifferentFieldIdx == kNotComputed) {
+							   const auto &jNs = joined_;
 							   const auto &joinedSelector = *jNs.joinedSelector;
 							   const joins::ItemIterator ljIt{joinResults_, lhs.Id()};
 							   const joins::ItemIterator rjIt{joinResults_, rhs.Id()};
@@ -60,11 +57,11 @@ bool ItemComparator::operator()(const ItemRef &lhs, const ItemRef &rhs) const {
 							   if (ljfIt.ItemsCount() > 1 || rjfIt.ItemsCount() > 1) {
 								   throw Error(errQueryExec, "Found more than 1 value joined from ns %s", joinedSelector.RightNsName());
 							   }
-							   res.fieldsCmpRes =
+							   joinedNsRes.fieldsCmpRes =
 								   ConstPayload{joinedSelector.RightNs()->payloadType_, ljfIt[0].Value()}.Compare<WithString::No>(
-									   rjfIt[0].Value(), jNs.fields, res.firstDifferentFieldIdx, jNs.collateOpts);
+									   rjfIt[0].Value(), jNs.fields, joinedNsRes.firstDifferentFieldIdx, jNs.collateOpts);
 						   }
-						   return res.GetResult(c.desc);
+						   return joinedNsRes.GetResult(c.desc);
 					   },
 					   [&](CompareByField c) {
 						   if (mainNsRes.firstDifferentFieldIdx == kNotComputed) {
@@ -84,7 +81,7 @@ bool ItemComparator::operator()(const ItemRef &lhs, const ItemRef &rhs) const {
 
 class ItemComparator::BackInserter {
 public:
-	explicit BackInserter(ItemComparator &comparator) : comparator_(comparator) {}
+	explicit BackInserter(ItemComparator &comparator) noexcept : comparator_(comparator) {}
 	void expr(bool desc) { comparator_.comparators_.emplace_back(CompareByExpression{desc}); }
 	void fields(TagsPath &&tp) { comparator_.fields_.push_back(std::move(tp)); }
 	void fields(Joined &joined, TagsPath &&tp) { joined.fields.push_back(std::move(tp)); }
@@ -101,7 +98,7 @@ private:
 
 class ItemComparator::FrontInserter {
 public:
-	FrontInserter(ItemComparator &comparator) : comparator_(comparator) {}
+	FrontInserter(ItemComparator &comparator) noexcept : comparator_(comparator) {}
 	void expr(bool desc) { comparator_.comparators_.emplace(comparator_.comparators_.begin(), CompareByExpression{desc}); }
 	void fields(TagsPath &&tp) { comparator_.fields_.push_front(std::move(tp)); }
 	void fields(Joined &joined, TagsPath &&tp) { joined.fields.push_front(std::move(tp)); }
@@ -123,16 +120,15 @@ void ItemComparator::bindOne(const SortingContext::Entry &sortingEntry, Inserter
 	std::visit(
 		overloaded{[&](const SortingContext::ExpressionEntry &e) { insert.expr(e.data.desc); },
 				   [&](const SortingContext::JoinedFieldEntry &e) {
-					   if (joined_.size() <= e.nsIdx) {
-						   joined_.resize(e.nsIdx + 1);
-					   }
-					   if (joined_[e.nsIdx].joinedSelector == nullptr) {
+					   auto &jns = joined_;
+					   if (jns.joinedSelector == nullptr) {
 						   assertrx_throw(ctx_.joinedSelectors);
 						   assertrx_throw(ctx_.joinedSelectors->size() > e.nsIdx);
-						   joined_[e.nsIdx].joinedSelector = &(*ctx_.joinedSelectors)[e.nsIdx];
+						   jns.joinedSelector = &(*ctx_.joinedSelectors)[e.nsIdx];
+					   } else {
+						   assertrx_dbg(&(*ctx_.joinedSelectors)[e.nsIdx] == jns.joinedSelector);
 					   }
-					   auto &jns = joined_[e.nsIdx];
-					   assertrx_throw(!std::holds_alternative<JoinPreResult::Values>(jns.joinedSelector->PreResult()->preselectedPayload));
+					   assertrx_throw(!std::holds_alternative<JoinPreResult::Values>(jns.joinedSelector->PreResult().preselectedPayload));
 					   const auto &ns = *jns.joinedSelector->RightNs();
 					   const int fieldIdx = e.index;
 					   if (fieldIdx == IndexValueType::SetByJsonPath || ns.indexes_[fieldIdx]->Opts().IsSparse()) {

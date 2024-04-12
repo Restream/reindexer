@@ -4,6 +4,7 @@
 #include "core/cjson/jsonbuilder.h"
 #include "core/iclientsstats.h"
 #include "core/transactionimpl.h"
+#include "debug/crashqueryreporter.h"
 #include "net/cproto/cproto.h"
 #include "net/cproto/serverconnection.h"
 #include "reindexer_version.h"
@@ -583,6 +584,8 @@ Error RPCServer::DeleteQuery(cproto::Context &ctx, p_string queryBin, std::optio
 		Query query = Query::Deserialize(ser);
 		query.type_ = QueryDelete;
 
+		ActiveQueryScope scope(query, QueryDelete);
+
 		QueryResults qres;
 		auto err = getDB(ctx, kRoleDataWrite).Delete(query, qres);
 		if (!err.ok()) {
@@ -605,6 +608,8 @@ Error RPCServer::UpdateQuery(cproto::Context &ctx, p_string queryBin, std::optio
 		Serializer ser(queryBin.data(), queryBin.size());
 		Query query = Query::Deserialize(ser);
 		query.type_ = QueryUpdate;
+
+		ActiveQueryScope scope(query, QueryUpdate);
 
 		QueryResults qres;
 		auto err = getDB(ctx, kRoleDataWrite).Update(query, qres);
@@ -806,6 +811,8 @@ Error RPCServer::Select(cproto::Context &ctx, p_string queryBin, int flags, int 
 		return err;
 	}
 
+	ActiveQueryScope scope(query, QuerySelect);
+
 	if (query.IsWALQuery()) {
 		auto data = getClientDataSafe(ctx);
 		query.Where(std::string("#slave_version"sv), CondEq, data->rxVersion.StrippedString());
@@ -845,6 +852,9 @@ Error RPCServer::SelectSQL(cproto::Context &ctx, p_string querySql, int flags, i
 		}
 		throw;
 	}
+
+	ActiveQueryScope scope(querySql);
+
 	auto ret = execSqlQueryByType(querySql, *qres, ctx);
 	if (!ret.ok()) {
 		freeQueryResults(ctx, id);
@@ -932,6 +942,10 @@ Error RPCServer::EnumMeta(cproto::Context &ctx, p_string ns) {
 	return errOK;
 }
 
+Error RPCServer::DeleteMeta(cproto::Context &ctx, p_string ns, p_string key) {
+	return getDB(ctx, kRoleDataWrite).DeleteMeta(ns, key.toString());
+}
+
 Error RPCServer::SubscribeUpdates(cproto::Context &ctx, int flag, std::optional<p_string> filterJson, std::optional<int> options) {
 	UpdatesFilters filters;
 	Error ret;
@@ -998,6 +1012,7 @@ bool RPCServer::Start(const std::string &addr, ev::dynamic_loop &loop, RPCSocket
 	dispatcher_.Register(cproto::kCmdGetMeta, this, &RPCServer::GetMeta);
 	dispatcher_.Register(cproto::kCmdPutMeta, this, &RPCServer::PutMeta);
 	dispatcher_.Register(cproto::kCmdEnumMeta, this, &RPCServer::EnumMeta);
+	dispatcher_.Register(cproto::kCmdDeleteMeta, this, &RPCServer::DeleteMeta);
 	dispatcher_.Register(cproto::kCmdSubscribeUpdates, this, &RPCServer::SubscribeUpdates);
 	dispatcher_.Middleware(this, &RPCServer::CheckAuth);
 	dispatcher_.OnClose(this, &RPCServer::OnClose);

@@ -71,7 +71,7 @@ protected:
 	Error syncSchemaForced(Namespace::Ptr &slaveNs, const NamespaceDef &masterNsDef);
 	// Forced sync of namespace
 	Error syncNamespaceForced(const NamespaceDef &ns, std::string_view reason);
-	// Sync meta data
+	// Sync metadata
 	Error syncMetaForced(Namespace::Ptr &slaveNs, std::string_view nsName);
 	// Apply single WAL record
 	Error applyWALRecord(LSNPair LSNs, std::string_view nsName, Namespace::Ptr &ns, const WALRecord &wrec, SyncStat &stat,

@@ -6,6 +6,8 @@
 
 namespace reindexer {
 
+struct MergeData;
+
 template <typename T>
 class FastIndexText : public IndexText<T> {
 	using Base = IndexText<T>;
@@ -47,7 +49,7 @@ private:
 	template <class Data>
 	void buildVdocs(Data& data);
 	template <typename F>
-	void appendMergedIds(IDataHolder::MergeData& merged, size_t releventDocs, F&& appender);
+	void appendMergedIds(MergeData& merged, size_t releventDocs, F&& appender);
 
 	std::unique_ptr<IDataHolder> holder_;
 };

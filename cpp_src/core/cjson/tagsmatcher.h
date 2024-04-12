@@ -4,7 +4,6 @@
 #include "core/cjson/tagsmatcherimpl.h"
 #include "core/payload/payloadtype.h"
 #include "estl/cow.h"
-#include "tagspathcache.h"
 #include "tools/serializer.h"
 
 namespace reindexer {
@@ -72,7 +71,7 @@ public:
 
 	std::string dump() const { return impl_->dumpTags() + "\n" + impl_->dumpNames() + "\n" + impl_->dumpPaths(); }
 
-protected:
+private:
 	shared_cow_ptr<TagsMatcherImpl> impl_;
 	bool updated_;
 };

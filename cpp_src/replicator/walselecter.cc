@@ -78,6 +78,7 @@ void WALSelecter::operator()(QueryResults &result, SelectCtx &params) {
 				case WalIndexDrop:
 				case WalIndexUpdate:
 				case WalPutMeta:
+				case WalDeleteMeta:
 				case WalUpdateQuery:
 				case WalItemModify:
 				case WalSetSchema:

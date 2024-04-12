@@ -9,10 +9,8 @@
 
 namespace reindexer {
 
-class QueryResults;
 class PayloadType;
 class TagsMatcher;
-class FieldsSet;
 
 namespace joins {
 

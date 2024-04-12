@@ -40,6 +40,7 @@ enum CmdCode : uint16_t {
 	kCmdFetchResults = 50,
 	kCmdCloseResults = 51,
 
+	kCmdDeleteMeta = 63,
 	kCmdGetMeta = 64,
 	kCmdPutMeta = 65,
 	kCmdEnumMeta = 66,

@@ -3,6 +3,7 @@
 #include "core/ft/filters/kblayout.h"
 #include "core/ft/filters/synonyms.h"
 #include "core/ft/filters/translit.h"
+#include "core/ft/ft_fast/selecter.h"
 #include "estl/contexted_locks.h"
 #include "tools/clock.h"
 #include "tools/logger.h"
@@ -130,8 +131,34 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 	fctx->GetData()->extraWordSymbols_ = this->getConfig()->extraWordSymbols;
 	fctx->GetData()->isWordPositions_ = true;
 
-	auto mergeData = this->holder_->Select(std::move(dsl), this->Fields().size(), fctx->NeedArea(), getConfig()->maxAreasInDoc,
-										   inTransaction, std::move(statuses.statuses), useExternSt, rdxCtx);
+	MergeData mergeData;
+	switch (holder_->cfg_->optimization) {
+		case FtFastConfig::Optimization::Memory: {
+			DataHolder<PackedIdRelVec> *d = dynamic_cast<DataHolder<PackedIdRelVec> *>(holder_.get());
+			assertrx_throw(d);
+			Selecter<PackedIdRelVec> selecter{*d, this->Fields().size(), fctx->NeedArea(), holder_->cfg_->maxAreasInDoc};
+			if (useExternSt == FtUseExternStatuses::No) {
+				mergeData = selecter.Process<FtUseExternStatuses::No>(std::move(dsl), inTransaction, std::move(statuses.statuses), rdxCtx);
+			} else {
+				mergeData = selecter.Process<FtUseExternStatuses::Yes>(std::move(dsl), inTransaction, std::move(statuses.statuses), rdxCtx);
+			}
+			break;
+		}
+		case FtFastConfig::Optimization::CPU: {
+			DataHolder<IdRelVec> *d = dynamic_cast<DataHolder<IdRelVec> *>(holder_.get());
+			assertrx_throw(d);
+			Selecter<IdRelVec> selecter{*d, this->Fields().size(), fctx->NeedArea(), holder_->cfg_->maxAreasInDoc};
+			if (useExternSt == FtUseExternStatuses::No) {
+				mergeData = selecter.Process<FtUseExternStatuses::No>(std::move(dsl), inTransaction, std::move(statuses.statuses), rdxCtx);
+			} else {
+				mergeData = selecter.Process<FtUseExternStatuses::Yes>(std::move(dsl), inTransaction, std::move(statuses.statuses), rdxCtx);
+			}
+			break;
+		}
+		default:
+			assertrx_throw(0);
+	}
+
 	// convert vids(uniq documents id) to ids (real ids)
 	IdSet::Ptr mergedIds = make_intrusive<intrusive_atomic_rc_wrapper<IdSet>>();
 	auto &holder = *this->holder_;
@@ -161,35 +188,33 @@ IdSet::Ptr FastIndexText<T>::Select(FtCtx::Ptr fctx, FtDSLQuery &&dsl, bool inTr
 	if (!fctx->NeedArea()) {
 		if (useExternSt == FtUseExternStatuses::No) {
 			appendMergedIds(mergeData, releventDocs,
-							[&fctx, &mergedIds](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const IDataHolder::MergeInfo &vid) {
+							[&fctx, &mergedIds](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const MergeInfo &vid) {
 								fctx->Add(ebegin, eend, vid.proc);
+								mergedIds->Append(ebegin, eend, IdSet::Unordered);
+							});
+		} else {
+			appendMergedIds(mergeData, releventDocs,
+							[&fctx, &mergedIds, &statuses](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const MergeInfo &vid) {
+								fctx->Add(ebegin, eend, vid.proc, statuses.rowIds);
+								mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
+							});
+		}
+	} else {
+		if (useExternSt == FtUseExternStatuses::No) {
+			appendMergedIds(mergeData, releventDocs,
+							[&fctx, &mergedIds, &mergeData](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const MergeInfo &vid) {
+								assertrx_throw(vid.areaIndex != std::numeric_limits<uint32_t>::max());
+								fctx->Add(ebegin, eend, vid.proc, std::move(mergeData.vectorAreas[vid.areaIndex]));
 								mergedIds->Append(ebegin, eend, IdSet::Unordered);
 							});
 		} else {
 			appendMergedIds(
 				mergeData, releventDocs,
-				[&fctx, &mergedIds, &statuses](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const IDataHolder::MergeInfo &vid) {
-					fctx->Add(ebegin, eend, vid.proc, statuses.rowIds);
+				[&fctx, &mergedIds, &mergeData, &statuses](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const MergeInfo &vid) {
+					assertrx_throw(vid.areaIndex != std::numeric_limits<uint32_t>::max());
+					fctx->Add(ebegin, eend, vid.proc, statuses.rowIds, std::move(mergeData.vectorAreas[vid.areaIndex]));
 					mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
 				});
-		}
-	} else {
-		if (useExternSt == FtUseExternStatuses::No) {
-			appendMergedIds(
-				mergeData, releventDocs,
-				[&fctx, &mergedIds, &mergeData](IdSetRef::iterator ebegin, IdSetRef::iterator eend, const IDataHolder::MergeInfo &vid) {
-					assertrx_throw(vid.areaIndex != std::numeric_limits<uint32_t>::max());
-					fctx->Add(ebegin, eend, vid.proc, std::move(mergeData.vectorAreas[vid.areaIndex]));
-					mergedIds->Append(ebegin, eend, IdSet::Unordered);
-				});
-		} else {
-			appendMergedIds(mergeData, releventDocs,
-							[&fctx, &mergedIds, &mergeData, &statuses](IdSetRef::iterator ebegin, IdSetRef::iterator eend,
-																	   const IDataHolder::MergeInfo &vid) {
-								assertrx_throw(vid.areaIndex != std::numeric_limits<uint32_t>::max());
-								fctx->Add(ebegin, eend, vid.proc, statuses.rowIds, std::move(mergeData.vectorAreas[vid.areaIndex]));
-								mergedIds->Append(ebegin, eend, statuses.rowIds, IdSet::Unordered);
-							});
 		}
 	}
 	if rx_unlikely (getConfig()->logLevel >= LogInfo) {
@@ -321,7 +346,7 @@ void FastIndexText<T>::buildVdocs(Container &data) {
 
 template <typename T>
 template <typename F>
-RX_ALWAYS_INLINE void FastIndexText<T>::appendMergedIds(IDataHolder::MergeData &mergeData, size_t releventDocs, F &&appender) {
+RX_ALWAYS_INLINE void FastIndexText<T>::appendMergedIds(MergeData &mergeData, size_t releventDocs, F &&appender) {
 	auto &holder = *this->holder_;
 	for (size_t i = 0; i < releventDocs; ++i) {
 		auto &vid = mergeData[i];

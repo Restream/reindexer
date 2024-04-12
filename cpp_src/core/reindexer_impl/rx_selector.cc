@@ -67,11 +67,12 @@ void RxSelector::DoSelect(const Query& q, QueryResults& result, NsLocker<T>& loc
 		const auto preselectStartTime = ExplainCalc::Clock::now();
 		mainJoinedSelectors = prepareJoinedSelectors(query, result, locks, func, joinQueryResultsContexts, ctx);
 		result.joined_.resize(1 + query.GetMergeQueries().size());
+		result.joined_[0].SetJoinedSelectorsCount(mainJoinedSelectors.size());
 		preselectTimeTotal += ExplainCalc::Clock::now() - preselectStartTime;
 	}
 	IsFTQuery isFtQuery{IsFTQuery::NotSet};
 	{
-		SelectCtx selCtx(query, nullptr);
+		SelectCtxWithJoinPreSelect selCtx(query, nullptr);
 		selCtx.joinedSelectors = mainJoinedSelectors.size() ? &mainJoinedSelectors : nullptr;
 		selCtx.preResultTimeTotal = preselectTimeTotal;
 		selCtx.contextCollectingMode = true;
@@ -149,7 +150,7 @@ void RxSelector::DoSelect(const Query& q, QueryResults& result, NsLocker<T>& loc
 				mQueryCopy.emplace(mq);
 			}
 			const JoinedQuery& mQuery = mQueryCopy ? *mQueryCopy : mq;
-			SelectCtx mctx(mQuery, &query);
+			SelectCtxWithJoinPreSelect mctx(mQuery, &query);
 			if (!mq.GetSubQueries().empty()) {
 				// NOLINTNEXTLINE(bugprone-unchecked-optional-access)
 				mctx.subQueriesExplains = preselectSubQueries(*mQueryCopy, queryResultsHolder, locks, func, ctx);
@@ -162,8 +163,12 @@ void RxSelector::DoSelect(const Query& q, QueryResults& result, NsLocker<T>& loc
 			mctx.isFtQuery = isFtQuery;
 			mctx.functions = &func;
 			mctx.contextCollectingMode = true;
-			mergeJoinedSelectors.emplace_back(prepareJoinedSelectors(mQuery, result, locks, func, joinQueryResultsContexts, ctx));
-			mctx.joinedSelectors = mergeJoinedSelectors.back().size() ? &mergeJoinedSelectors.back() : nullptr;
+			if (thereAreJoins) {
+				auto& mjs =
+					mergeJoinedSelectors.emplace_back(prepareJoinedSelectors(mQuery, result, locks, func, joinQueryResultsContexts, ctx));
+				mctx.joinedSelectors = mjs.size() ? &mjs : nullptr;
+				result.joined_[mctx.nsid].SetJoinedSelectorsCount(mjs.size());
+			}
 			mctx.requiresCrashTracking = true;
 			mns->Select(result, mctx, ctx);
 			result.AddNamespace(mns, true);
@@ -257,7 +262,7 @@ bool RxSelector::selectSubQuery(const Query& subQuery, const Query& mainQuery, N
 	auto ns = locks.Get(subQuery.NsName());
 	assertrx_throw(ns);
 
-	SelectCtx sctx{subQuery, &mainQuery};
+	SelectCtxWithJoinPreSelect sctx{subQuery, &mainQuery};
 	sctx.nsid = 0;
 	sctx.requiresCrashTracking = true;
 	sctx.reqMatchedOnceFlag = true;
@@ -280,7 +285,7 @@ VariantArray RxSelector::selectSubQuery(const Query& subQuery, const Query& main
 	NamespaceImpl::Ptr ns = locks.Get(subQuery.NsName());
 	assertrx_throw(ns);
 
-	SelectCtx sctx{subQuery, &mainQuery};
+	SelectCtxWithJoinPreSelect sctx{subQuery, &mainQuery};
 	sctx.nsid = 0;
 	sctx.requiresCrashTracking = true;
 	sctx.contextCollectingMode = true;
@@ -409,7 +414,7 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, QueryResults&
 
 		// Do join for each item in main result
 		Query jItemQ(jq.NsName());
-		jItemQ.Explain(q.GetExplain());
+		jItemQ.Explain(q.NeedExplain());
 		jItemQ.Debug(jq.GetDebugLevel()).Limit(jq.Limit());
 		jItemQ.Strict(q.GetStrictMode());
 		for (size_t i = 0; i < jq.sortingEntries_.size(); ++i) {
@@ -427,29 +432,37 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, QueryResults&
 		}
 
 		Query jjq(static_cast<const Query&>(jq));
-		JoinPreResult::Ptr preResult = std::make_shared<JoinPreResult>();
 		uint32_t joinedFieldIdx = uint32_t(joinedSelectors.size());
-		JoinCacheRes joinRes;
-		jns->getFromJoinCache(jq, joinRes);
 		if (jq.joinType == InnerJoin || jq.joinType == OrInnerJoin) {
 			jjq.InjectConditionsFromOnConditions<InjectionDirection::FromMain>(jjq.Entries().Size(), jq.joinEntries_, q.Entries(), i,
 																			   &ns->indexes_);
 		}
-		QueryResults jr;
 		jjq.Offset(QueryEntry::kDefaultOffset);
 		jjq.Limit(QueryEntry::kDefaultLimit);
-		SelectCtx ctx(jjq, &q);
-		ctx.preResult = preResult;
-		ctx.preResult->executionMode = JoinPreResult::ModeBuild;
-		ctx.preResult->enableStoredValues = isPreResultValuesModeOptimizationAvailable(jItemQ, jns, q);
-		ctx.functions = &func;
-		ctx.requiresCrashTracking = true;
-		jns->Select(jr, ctx, rdxCtx);
-		assertrx_throw(ctx.preResult->executionMode == JoinPreResult::ModeExecute);
+		JoinCacheRes joinRes;
+		if (!jjq.NeedExplain()) {
+			jns->getFromJoinCache(jjq, joinRes);
+		}
+		JoinPreResult::CPtr preResult;
 		if (joinRes.haveData) {
 			preResult = joinRes.it.val.preResult;
-		} else if (joinRes.needPut) {
-			jns->putToJoinCache(joinRes, preResult);
+		} else {
+			SelectCtxWithJoinPreSelect ctx(jjq, &q, JoinPreResultBuildCtx{std::make_shared<JoinPreResult>()});
+			ctx.preSelect.Result().enableStoredValues = isPreResultValuesModeOptimizationAvailable(jItemQ, jns, q);
+			ctx.functions = &func;
+			ctx.requiresCrashTracking = true;
+			QueryResults jr;
+			jns->Select(jr, ctx, rdxCtx);
+			std::visit(overloaded{[&](JoinPreResult::Values& values) {
+									  values.PreselectAllowed(static_cast<size_t>(jns->Config().maxPreselectSize) >= values.size());
+									  values.Lock();
+								  },
+								  Restricted<IdSet, SelectIteratorContainer>{}([](const auto&) {})},
+					   ctx.preSelect.Result().preselectedPayload);
+			preResult = ctx.preSelect.ResultPtr();
+			if (joinRes.needPut) {
+				jns->putToJoinCache(joinRes, preResult);
+			}
 		}
 
 		queryResultsContexts.emplace_back(jns->payloadType_, jns->tagsMatcher_, FieldsSet(jns->tagsMatcher_, jq.SelectFilters()),
@@ -457,16 +470,15 @@ JoinedSelectors RxSelector::prepareJoinedSelectors(const Query& q, QueryResults&
 
 		const auto nsUpdateTime = jns->lastUpdateTimeNano();
 		result.AddNamespace(jns, true);
-		std::visit(overloaded{[&](JoinPreResult::Values& values) {
-								  values.PreselectAllowed(static_cast<size_t>(jns->Config().maxPreselectSize) >= values.size());
-								  if (!values.Locked()) values.Lock();	// If not from cache
+		std::visit(overloaded{[&](const JoinPreResult::Values&) {
 								  locks.Delete(jns);
 								  jns.reset();
 							  },
 							  Restricted<IdSet, SelectIteratorContainer>{}([](const auto&) {})},
 				   preResult->preselectedPayload);
-		joinedSelectors.emplace_back(jq.joinType, ns, std::move(jns), std::move(joinRes), std::move(jItemQ), result, jq, preResult,
-									 joinedFieldIdx, func, joinedSelectorsCount, false, nsUpdateTime, rdxCtx);
+		joinedSelectors.emplace_back(jq.joinType, ns, std::move(jns), std::move(joinRes), std::move(jItemQ), result, jq,
+									 JoinPreResultExecuteCtx{preResult}, joinedFieldIdx, func, joinedSelectorsCount, false, nsUpdateTime,
+									 rdxCtx);
 		ThrowOnCancel(rdxCtx);
 	}
 	return joinedSelectors;
@@ -476,7 +488,7 @@ template <typename T>
 std::vector<SubQueryExplain> RxSelector::preselectSubQueries(Query& mainQuery, std::vector<QueryResults>& queryResultsHolder,
 															 NsLocker<T>& locks, SelectFunctionsHolder& func, const RdxContext& ctx) {
 	std::vector<SubQueryExplain> explains;
-	if (mainQuery.GetExplain() || mainQuery.GetDebugLevel() >= LogInfo) {
+	if (mainQuery.NeedExplain() || mainQuery.GetDebugLevel() >= LogInfo) {
 		explains.reserve(mainQuery.GetSubQueries().size());
 	}
 	for (size_t i = 0, s = mainQuery.Entries().Size(); i < s; ++i) {

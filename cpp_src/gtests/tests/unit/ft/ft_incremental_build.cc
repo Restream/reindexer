@@ -186,6 +186,7 @@ public:
 		cfg.maxStepSize = 10;
 		cfg.maxRebuildSteps = GetStepsCount();
 		cfg.maxTypoLen = kMaxWordLen;
+		cfg.stopWords = {reindexer::StopWord{"no", reindexer::StopWord::Type::Morpheme}};
 		return cfg;
 	}
 

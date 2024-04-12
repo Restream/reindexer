@@ -79,7 +79,7 @@ public:
 		return *this;
 	}
 	[[nodiscard]] Query &&Explain(bool on = true) && noexcept { return std::move(Explain(on)); }
-	[[nodiscard]] bool GetExplain() const noexcept { return explain_; }
+	[[nodiscard]] bool NeedExplain() const noexcept { return explain_; }
 
 	/// Adds a condition with a single value. Analog to sql Where clause.
 	/// @param field - field used in condition clause.
@@ -953,7 +953,7 @@ private:
 	void checkSubQuery() const;
 	void walkNested(bool withSelf, bool withMerged, bool withSubQueries,
 					const std::function<void(Query &q)> &visitor) noexcept(noexcept(visitor(std::declval<Query &>())));
-	void adoptNested(Query &nq) const noexcept { nq.Strict(GetStrictMode()).Explain(GetExplain()).Debug(GetDebugLevel()); }
+	void adoptNested(Query &nq) const noexcept { nq.Strict(GetStrictMode()).Explain(NeedExplain()).Debug(GetDebugLevel()); }
 
 	std::string namespace_;						   /// Name of the namespace.
 	unsigned start_ = QueryEntry::kDefaultOffset;  /// First row index from result set.

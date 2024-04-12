@@ -129,17 +129,6 @@ void DataHolder<IdCont>::Process(size_t fieldSize, bool multithread) {
 	DataProcessor<IdCont>{*this, fieldSize}.Process(multithread);
 }
 
-template <typename IdCont>
-IDataHolder::MergeData DataHolder<IdCont>::Select(FtDSLQuery&& dsl, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
-												  FtMergeStatuses::Statuses&& mergeStatuses, FtUseExternStatuses useExternSt,
-												  const RdxContext& rdxCtx) {
-	if (useExternSt == FtUseExternStatuses::No) {
-		return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.template Process<FtUseExternStatuses::No>(
-			std::move(dsl), inTransaction, std::move(mergeStatuses), rdxCtx);
-	}
-	return Selecter<IdCont>{*this, fieldSize, needArea, maxAreasInDoc}.template Process<FtUseExternStatuses::Yes>(
-		std::move(dsl), inTransaction, std::move(mergeStatuses), rdxCtx);
-}
 template class DataHolder<PackedIdRelVec>;
 template class DataHolder<IdRelVec>;
 

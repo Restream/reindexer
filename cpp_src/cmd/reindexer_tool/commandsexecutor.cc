@@ -858,6 +858,10 @@ Error CommandsExecutor<DBInterface>::commandMeta(const std::string& command) {
 		std::string metaKey = reindexer::unescapeString(parser.NextToken());
 		std::string metaData = reindexer::unescapeString(parser.NextToken());
 		return db().PutMeta(nsName, metaKey, metaData);
+	} else if (iequals(subCommand, "delete")) {
+		std::string nsName = reindexer::unescapeString(parser.NextToken());
+		std::string metaKey = reindexer::unescapeString(parser.NextToken());
+		return db().DeleteMeta(nsName, metaKey);
 	} else if (iequals(subCommand, "list")) {
 		auto nsName = reindexer::unescapeString(parser.NextToken());
 		std::vector<std::string> allMeta;

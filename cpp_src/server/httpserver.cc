@@ -12,11 +12,13 @@
 #include "core/queryresults/tableviewbuilder.h"
 #include "core/schema.h"
 #include "core/type_consts.h"
+#include "debug/crashqueryreporter.h"
 #include "gason/gason.h"
 #include "itoa/itoa.h"
 #include "loggerwrapper.h"
 #include "net/http/serverconnection.h"
 #include "net/listener.h"
+#include "outputparameters.h"
 #include "reindexer_version.h"
 #include "replicator/walrecord.h"
 #include "resources_wrapper.h"
@@ -29,8 +31,6 @@
 #include "tools/serializer.h"
 #include "tools/stringstools.h"
 #include "vendor/sort/pdqsort.hpp"
-
-#include "outputparameters.h"
 
 using namespace std::string_view_literals;
 
@@ -76,6 +76,8 @@ int HTTPServer::GetSQLQuery(http::Context &ctx) {
 	if (sqlQuery.empty()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Missing `q` parameter"));
 	}
+
+	reindexer::ActiveQueryScope scope(sqlQuery);
 	reindexer::QueryResults res;
 	auto ret = execSqlQueryByType(sqlQuery, res, ctx);
 	if (!ret.ok()) {
@@ -138,6 +140,7 @@ int HTTPServer::PostSQLQuery(http::Context &ctx) {
 	if (!sqlQuery.length()) {
 		return status(ctx, http::HttpStatus(http::StatusBadRequest, "Query is empty"));
 	}
+	reindexer::ActiveQueryScope scope(sqlQuery);
 	auto ret = execSqlQueryByType(sqlQuery, res, ctx);
 	if (!ret.ok()) {
 		return status(ctx, http::HttpStatus(ret));
@@ -156,6 +159,7 @@ int HTTPServer::PostQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(err));
 	}
 
+	reindexer::ActiveQueryScope scope(q, QuerySelect);
 	err = db.Select(q, res);
 	if (!err.ok()) {
 		return jsonStatus(ctx, http::HttpStatus(err));
@@ -173,6 +177,7 @@ int HTTPServer::DeleteQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
+	reindexer::ActiveQueryScope scope(q, QueryDelete);
 	reindexer::QueryResults res;
 	status = db.Delete(q, res);
 	if (!status.ok()) {
@@ -196,6 +201,7 @@ int HTTPServer::UpdateQuery(http::Context &ctx) {
 		return jsonStatus(ctx, http::HttpStatus(status));
 	}
 
+	reindexer::ActiveQueryScope scope(q, QueryUpdate);
 	reindexer::QueryResults res;
 	status = db.Update(q, res);
 	if (!status.ok()) {
@@ -614,6 +620,21 @@ int HTTPServer::PutMetaByKey(http::Context &ctx) {
 	return jsonStatus(ctx);
 }
 
+int HTTPServer::DeleteMetaByKey(http::Context &ctx) {
+	auto db = getDB<kRoleDataWrite>(ctx);
+	const std::string nsName = urldecode2(ctx.request->urlParams[1]);
+	const std::string keyName = urldecode2(ctx.request->urlParams[2]);
+	if (!nsName.length()) {
+		return jsonStatus(ctx, http::HttpStatus(http::StatusBadRequest, "Namespace is not specified"));
+	}
+	const Error err = db.DeleteMeta(nsName, keyName);
+	if (!err.ok()) {
+		return jsonStatus(ctx, http::HttpStatus(err));
+	}
+
+	return jsonStatus(ctx);
+}
+
 int HTTPServer::GetIndexes(http::Context &ctx) {
 	auto db = getDB<kRoleDataRead>(ctx);
 
@@ -952,6 +973,7 @@ bool HTTPServer::Start(const std::string &addr, ev::dynamic_loop &loop) {
 	router_.GET<HTTPServer, &HTTPServer::GetMetaList>("/api/v1/db/:db/namespaces/:ns/metalist", this);
 	router_.GET<HTTPServer, &HTTPServer::GetMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey/:key", this);
 	router_.PUT<HTTPServer, &HTTPServer::PutMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey", this);
+	router_.DELETE<HTTPServer, &HTTPServer::DeleteMetaByKey>("/api/v1/db/:db/namespaces/:ns/metabykey/:key", this);
 
 	router_.POST<HTTPServer, &HTTPServer::BeginTx>("/api/v1/db/:db/namespaces/:ns/transactions/begin", this);
 	router_.POST<HTTPServer, &HTTPServer::CommitTx>("/api/v1/db/:db/transactions/:tx/commit", this);

@@ -203,7 +203,6 @@ bool Aggregator::SinglefieldComparator::operator()(const std::pair<Variant, int>
 	return false;
 }
 
-Aggregator::Aggregator() = default;
 Aggregator::Aggregator(Aggregator &&) noexcept = default;
 Aggregator::~Aggregator() = default;
 
@@ -215,6 +214,7 @@ Aggregator::Aggregator(const PayloadType &payloadType, const FieldsSet &fields, 
 	  names_(names),
 	  limit_(limit),
 	  offset_(offset),
+	  distinctChecker_(*this),
 	  compositeIndexFields_(compositeIndexFields) {
 	switch (aggType_) {
 		case AggFacet:

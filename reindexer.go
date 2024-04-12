@@ -393,12 +393,24 @@ func (db *Reindexer) EnableStorage(storagePath string) error {
 	return db.impl.enableStorage(db.ctx, storagePath)
 }
 
+// EnumMeta - get list of all metadata keys
+func (db *Reindexer) EnumMeta(namespace string) ([]string, error) {
+	return db.impl.enumMeta(db.ctx, namespace)
+}
+
+// PutMeta - put metadata to storage by key
 func (db *Reindexer) PutMeta(namespace, key string, data []byte) error {
 	return db.impl.putMeta(db.ctx, namespace, key, data)
 }
 
+// GetMeta - get metadata from storage by key
 func (db *Reindexer) GetMeta(namespace, key string) ([]byte, error) {
 	return db.impl.getMeta(db.ctx, namespace, key)
+}
+
+// DeleteMeta - delete metadata from storage by key
+func (db *Reindexer) DeleteMeta(namespace, key string) error {
+	return db.impl.deleteMeta(db.ctx, namespace, key)
 }
 
 // WithContext Add context to next method call

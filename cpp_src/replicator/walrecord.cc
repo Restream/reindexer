@@ -35,8 +35,11 @@ void WALRecord::Pack(WrSerializer &ser) const {
 			ser.PutVString(data);
 			return;
 		case WalPutMeta:
-			ser.PutVString(putMeta.key);
-			ser.PutVString(putMeta.value);
+			ser.PutVString(itemMeta.key);
+			ser.PutVString(itemMeta.value);
+			return;
+		case WalDeleteMeta:
+			ser.PutVString(itemMeta.key);
 			return;
 		case WalItemModify:
 			ser.PutVString(itemModify.itemCJson);
@@ -91,8 +94,11 @@ WALRecord::WALRecord(span<uint8_t> packed) {
 			data = ser.GetVString();
 			return;
 		case WalPutMeta:
-			putMeta.key = ser.GetVString();
-			putMeta.value = ser.GetVString();
+			itemMeta.key = ser.GetVString();
+			itemMeta.value = ser.GetVString();
+			return;
+		case WalDeleteMeta:
+			itemMeta.key = ser.GetVString();
 			return;
 		case WalItemModify:
 			itemModify.itemCJson = ser.GetVString();
@@ -133,6 +139,8 @@ static std::string_view wrecType2Str(WALRecType t) {
 			return "WalReplState"sv;
 		case WalPutMeta:
 			return "WalPutMeta"sv;
+		case WalDeleteMeta:
+			return "WalDeleteMeta"sv;
 		case WalNamespaceAdd:
 			return "WalNamespaceAdd"sv;
 		case WalNamespaceDrop:
@@ -190,7 +198,9 @@ WrSerializer &WALRecord::Dump(WrSerializer &ser, const std::function<std::string
 		case WalSetSchema:
 			return ser << ' ' << data;
 		case WalPutMeta:
-			return ser << ' ' << putMeta.key << "=" << putMeta.value;
+			return ser << ' ' << itemMeta.key << "=" << itemMeta.value;
+		case WalDeleteMeta:
+			return ser << ' ' << itemMeta.key;
 		case WalItemModify:
 			return ser << (itemModify.modifyMode == ModeDelete ? " Delete " : " Update ") << cjsonViewer(itemModify.itemCJson);
 		case WalRawItem:
@@ -235,8 +245,11 @@ void WALRecord::GetJSON(JsonBuilder &jb, const std::function<std::string(std::st
 			jb.Raw("state", data);
 			return;
 		case WalPutMeta:
-			jb.Put("key", putMeta.key);
-			jb.Put("value", putMeta.value);
+			jb.Put("key", itemMeta.key);
+			jb.Put("value", itemMeta.value);
+			return;
+		case WalDeleteMeta:
+			jb.Put("key", itemMeta.key);
 			return;
 		case WalItemModify:
 			jb.Put("mode", itemModify.modifyMode);

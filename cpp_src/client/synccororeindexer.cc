@@ -49,7 +49,12 @@ Error SyncCoroReindexer::GetMeta(std::string_view nsName, const std::string& key
 Error SyncCoroReindexer::PutMeta(std::string_view nsName, const std::string& key, std::string_view data) {
 	return impl_->PutMeta(nsName, key, data, ctx_);
 }
-Error SyncCoroReindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& keys) { return impl_->EnumMeta(nsName, keys, ctx_); }
+Error SyncCoroReindexer::EnumMeta(std::string_view nsName, std::vector<std::string>& keys) {
+	return impl_->EnumMeta(nsName, keys, ctx_);
+}
+Error SyncCoroReindexer::DeleteMeta(std::string_view nsName, const std::string& key) {
+	return impl_->DeleteMeta(nsName, key, ctx_);
+}
 Error SyncCoroReindexer::Delete(const Query& q, SyncCoroQueryResults& result) { return impl_->Delete(q, result, ctx_); }
 Error SyncCoroReindexer::Select(std::string_view query, SyncCoroQueryResults& result) { return impl_->Select(query, result, ctx_); }
 Error SyncCoroReindexer::Select(const Query& q, SyncCoroQueryResults& result) { return impl_->Select(q, result, ctx_); }

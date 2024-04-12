@@ -192,13 +192,15 @@ type RawBinding interface {
 	DeleteQueryTx(txCtx *TxCtx, rawQuery []byte) error
 	UpdateQueryTx(txCtx *TxCtx, rawQuery []byte) error
 
+	EnumMeta(ctx context.Context, namespace string) ([]string, error)
 	PutMeta(ctx context.Context, namespace, key, data string) error
 	GetMeta(ctx context.Context, namespace, key string) (RawBuffer, error)
-	ModifyItem(ctx context.Context, nsHash int, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (RawBuffer, error)
+	DeleteMeta(ctx context.Context, namespace, key string) error
+	ModifyItem(ctx context.Context, namespace string, format int, data []byte, mode int, percepts []string, stateToken int) (RawBuffer, error)
 	Select(ctx context.Context, query string, asJson bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
 	SelectQuery(ctx context.Context, rawQuery []byte, asJson bool, ptVersions []int32, fetchCount int) (RawBuffer, error)
-	DeleteQuery(ctx context.Context, nsHash int, rawQuery []byte) (RawBuffer, error)
-	UpdateQuery(ctx context.Context, nsHash int, rawQuery []byte) (RawBuffer, error)
+	DeleteQuery(ctx context.Context, rawQuery []byte) (RawBuffer, error)
+	UpdateQuery(ctx context.Context, rawQuery []byte) (RawBuffer, error)
 	Commit(ctx context.Context, namespace string) error
 	EnableLogger(logger Logger)
 	DisableLogger()

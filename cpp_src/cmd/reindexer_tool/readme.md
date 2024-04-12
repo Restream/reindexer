@@ -95,6 +95,8 @@ Switching to existing database
 ```
 \meta put <namespace> <key> <value>
 Put metadata key value
+\meta delete <namespace> <key>
+Delete metadata key value
 \meta list
 List all metadata in name
 ```

@@ -13,34 +13,6 @@ using benchmark::AllocsTracker;
 using reindexer::Query;
 using reindexer::QueryResults;
 
-template <size_t L>
-reindexer::span<bool> randBoolArray() {
-	static bool ret[L];
-	for (size_t i = 0; i < L; ++i) ret[i] = rand() % 2;
-	return ret;
-}
-
-template <size_t L>
-reindexer::span<int> randIntArray() {
-	static int ret[L];
-	for (size_t i = 0; i < L; ++i) ret[i] = rand();
-	return ret;
-}
-
-template <size_t L>
-reindexer::span<int64_t> randInt64Array() {
-	static int64_t ret[L];
-	for (size_t i = 0; i < L; ++i) ret[i] = rand();
-	return ret;
-}
-
-template <size_t L>
-reindexer::span<double> randDoubleArray() {
-	static double ret[L];
-	for (size_t i = 0; i < L; ++i) ret[i] = double(rand()) / (rand() + 1);
-	return ret;
-}
-
 void ApiTvSimpleComparators::RegisterAllCases() {
 	// NOLINTBEGIN(*cplusplus.NewDeleteLeaks)
 	BaseFixture::RegisterAllCases();

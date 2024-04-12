@@ -7,6 +7,7 @@
 
 #include "args/args.hpp"
 #include "ft_fixture.h"
+#include "ft_merge_limit.h"
 
 const std::string kStoragePath = "/tmp/reindex/ft_bench_test";
 
@@ -63,6 +64,12 @@ int main(int argc, char** argv) {
 		}
 	}
 	ft.RegisterAllCases(fastIterationCount, slowIterationCount);
+
+	// Disabled bench for large merge limits
+	// FullTextMergeLimit ftMergeLimit(DB.get(), "merge_limit", 100000);
+	// err = ftMergeLimit.Initialize();
+	// if (!err.ok()) return err.code();
+	// ftMergeLimit.RegisterAllCases();
 
 #ifdef _GLIBCXX_DEBUG
 	::benchmark::RunSpecifiedBenchmarks();

@@ -70,6 +70,7 @@ const (
 	cmdSelectSQL         = 49
 	cmdFetchResults      = 50
 	cmdCloseResults      = 51
+	cmdDeleteMeta        = 63
 	cmdGetMeta           = 64
 	cmdPutMeta           = 65
 	cmdEnumMeta          = 66

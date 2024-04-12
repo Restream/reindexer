@@ -131,7 +131,8 @@ public:
 		nsFuncWrapper<&NamespaceImpl::doDelete, QueryType::QueryDelete>(query, result, ctx);
 	}
 	void Truncate(const RdxContext &ctx) { nsFuncWrapper<&NamespaceImpl::Truncate>(ctx); }
-	void Select(QueryResults &result, SelectCtx &params, const RdxContext &ctx) {
+	template <typename JoinPreResultCtx>
+	void Select(QueryResults &result, SelectCtxWithJoinPreSelect<JoinPreResultCtx> &params, const RdxContext &ctx) {
 		nsFuncWrapper<&NamespaceImpl::Select>(result, params, ctx);
 	}
 	NamespaceDef GetDefinition(const RdxContext &ctx) { return nsFuncWrapper<&NamespaceImpl::GetDefinition>(ctx); }
@@ -165,6 +166,7 @@ public:
 	void PutMeta(const std::string &key, std::string_view data, const RdxContext &ctx) {
 		nsFuncWrapper<&NamespaceImpl::PutMeta>(key, data, ctx);
 	}
+	void DeleteMeta(const std::string &key, const RdxContext &ctx) { nsFuncWrapper<&NamespaceImpl::DeleteMeta>(key, ctx); }
 	int64_t GetSerial(const std::string &field) { return nsFuncWrapper<&NamespaceImpl::GetSerial>(field); }
 	int getIndexByName(std::string_view index) const { return nsFuncWrapper<&NamespaceImpl::getIndexByName>(index); }
 	bool getIndexByName(std::string_view name, int &index) const { return nsFuncWrapper<&NamespaceImpl::tryGetIndexByName>(name, index); }

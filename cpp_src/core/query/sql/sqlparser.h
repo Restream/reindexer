@@ -64,7 +64,7 @@ protected:
 	token peekSqlToken(tokenizer &parser, SqlTokenType tokenType, bool toLower = true);
 
 	/// Is current token last in autocomplete mode?
-	bool reachedAutocompleteToken(tokenizer &parser, const token &tok);
+	bool reachedAutocompleteToken(tokenizer &parser, const token &tok) const;
 
 	/// Parses filter part of sql query.
 	/// @param parser - tokenizer object instance.
@@ -94,7 +94,7 @@ protected:
 	void parseWhereCondition(tokenizer &, T &&firstArg, OpType);
 
 	/// Parse order by
-	int parseOrderBy(tokenizer &parser, SortingEntries &, std::vector<Variant> &forcedSortOrder);
+	int parseOrderBy(tokenizer &parser, SortingEntries &sortingEntries, std::vector<Variant> &forcedSortOrder);
 
 	/// Parse join entries
 	void parseJoin(JoinType type, tokenizer &tok);
@@ -119,7 +119,10 @@ protected:
 
 	void parseModifyConditions(tokenizer &parser);
 
-	Query parseSubQuery(tokenizer &);
+	Query parseSubQuery(tokenizer &parser);
+
+	void parseArray(tokenizer &parser, std::string_view tokText, UpdateEntry *updateField) const;
+	void parseCommand(tokenizer &parser) const;
 
 	static CondType getCondType(std::string_view cond);
 	SqlParsingCtx ctx_;

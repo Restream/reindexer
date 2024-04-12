@@ -147,33 +147,32 @@ int QueryResults::GetJoinedNsCtxIndex(int nsid) const noexcept {
 	return ctxIndex;
 }
 
-class QueryResults::EncoderDatasourceWithJoins : public IEncoderDatasourceWithJoins {
+class QueryResults::EncoderDatasourceWithJoins final : public IEncoderDatasourceWithJoins {
 public:
-	EncoderDatasourceWithJoins(const joins::ItemIterator &joinedItemIt, const ContextsVector &ctxs, int ctxIdx)
+	EncoderDatasourceWithJoins(const joins::ItemIterator &joinedItemIt, const ContextsVector &ctxs, int ctxIdx) noexcept
 		: joinedItemIt_(joinedItemIt), ctxs_(ctxs), ctxId_(ctxIdx) {}
 	~EncoderDatasourceWithJoins() override = default;
 
-	size_t GetJoinedRowsCount() const final { return joinedItemIt_.getJoinedFieldsCount(); }
-	size_t GetJoinedRowItemsCount(size_t rowId) const final {
+	size_t GetJoinedRowsCount() const noexcept override final { return joinedItemIt_.getJoinedFieldsCount(); }
+	size_t GetJoinedRowItemsCount(size_t rowId) const override final {
 		auto fieldIt = joinedItemIt_.at(rowId);
 		return fieldIt.ItemsCount();
 	}
-	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) const final {
+	ConstPayload GetJoinedItemPayload(size_t rowid, size_t plIndex) const override final {
 		auto fieldIt = joinedItemIt_.at(rowid);
 		const ItemRef &itemRef = fieldIt[plIndex];
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ConstPayload(ctx.type_, itemRef.Value());
 	}
-	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) final {
+	const TagsMatcher &GetJoinedItemTagsMatcher(size_t rowid) noexcept override final {
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.tagsMatcher_;
 	}
-	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t rowid) final {
+	virtual const FieldsSet &GetJoinedItemFieldsFilter(size_t rowid) noexcept override final {
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.fieldsFilter_;
 	}
-
-	const std::string &GetJoinedItemNamespace(size_t rowid) final {
+	const std::string &GetJoinedItemNamespace(size_t rowid) noexcept override final {
 		const Context &ctx = ctxs_[ctxId_ + rowid];
 		return ctx.type_->Name();
 	}
@@ -186,12 +185,12 @@ private:
 
 class AdditionalDatasource : public IAdditionalDatasource<JsonBuilder> {
 public:
-	AdditionalDatasource(double r, IEncoderDatasourceWithJoins *jds) : joinsDs_(jds), withRank_(true), rank_(r) {}
-	AdditionalDatasource(IEncoderDatasourceWithJoins *jds) : joinsDs_(jds), withRank_(false), rank_(0.0) {}
-	void PutAdditionalFields(JsonBuilder &builder) const final {
+	AdditionalDatasource(double r, IEncoderDatasourceWithJoins *jds) noexcept : joinsDs_(jds), withRank_(true), rank_(r) {}
+	AdditionalDatasource(IEncoderDatasourceWithJoins *jds) noexcept : joinsDs_(jds), withRank_(false), rank_(0.0) {}
+	void PutAdditionalFields(JsonBuilder &builder) const override final {
 		if (withRank_) builder.Put("rank()", rank_);
 	}
-	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return joinsDs_; }
+	IEncoderDatasourceWithJoins *GetJoinsDatasource() noexcept override final { return joinsDs_; }
 
 private:
 	IEncoderDatasourceWithJoins *joinsDs_;
@@ -201,9 +200,9 @@ private:
 
 class AdditionalDatasourceCSV : public IAdditionalDatasource<CsvBuilder> {
 public:
-	AdditionalDatasourceCSV(IEncoderDatasourceWithJoins *jds) : joinsDs_(jds) {}
-	void PutAdditionalFields(CsvBuilder &) const final {}
-	IEncoderDatasourceWithJoins *GetJoinsDatasource() final { return joinsDs_; }
+	AdditionalDatasourceCSV(IEncoderDatasourceWithJoins *jds) noexcept : joinsDs_(jds) {}
+	void PutAdditionalFields(CsvBuilder &) const override final {}
+	IEncoderDatasourceWithJoins *GetJoinsDatasource() noexcept override final { return joinsDs_; }
 
 private:
 	IEncoderDatasourceWithJoins *joinsDs_;

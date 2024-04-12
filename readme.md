@@ -19,7 +19,7 @@ about reindexer server and HTTP API refer to
 There are two LTS-versions of reindexer available: v3.x.x and v4.x.x.
 
 3.x.x is currently our mainstream branch and 4.x.x (release/4 branch) is beta-version with experimental RAFT-cluster and sharding support.
-Storages are compatible between those versions, hovewer, replication configs are totally different. Versions 3 and 4 are geting all the same bugfixes and features (except replication-related ones).
+Storages are compatible between those versions, however, replication configs are totally different. Versions 3 and 4 are geting all the same bugfixes and features (except replication-related ones).
 
 # Table of contents:
 
@@ -45,6 +45,11 @@ Storages are compatible between those versions, hovewer, replication configs are
   - [Sort](#sort)
   - [Text pattern search with LIKE condition](#text-pattern-search-with-like-condition)
   - [Update queries](#update-queries)
+    - [Update field with object](#update-field-with-object)
+    - [Remove field via update-query](#remove-field-via-update-query)
+    - [Update array elements by indexes](#update-array-elements-by-indexes)
+    - [Concatenate arrays](#concatenate-arrays)
+    - [Remove array elements by values](#remove-array-elements-by-values)
   - [Transactions and batch update](#transactions-and-batch-update)
     - [Synchronous mode](#synchronous-mode)
     - [Async batch mode](#async-batch-mode)
@@ -116,7 +121,7 @@ See benchmarking results and more details in [benchmarking repo](https://github.
 
 ### Memory Consumption
 
-Reindexer aims to consume as little memory as possible; most queries are processed without memory allocs at all.
+Reindexer aims to consume as little memory as possible; most queries are processed without any memory allocation at all.
 
 To achieve that, several optimizations are employed, both on the C++ and Go level:
 
@@ -129,7 +134,7 @@ To achieve that, several optimizations are employed, both on the C++ and Go leve
 - There is an object cache on the Go level for deserialized documents produced after query execution. Future queries use pre-deserialized documents, which cuts repeated deserialization and allocation costs
 
 - The Query interface uses `sync.Pool` for reusing internal structures and buffers.
-  Combining of these techings lets Reindexer execute most of queries without any allocations.
+  The combination of these technologies allows Reindexer to handle most queries without any allocations.
 
 ### Full text search
 
@@ -262,7 +267,7 @@ As alternative to Query builder Reindexer provides SQL compatible query interfac
     ...
 ```
 
-Please note, that Query builder interface is preferable way: It have more features, and faster than SQL interface
+Please note, that the Query Builder interface is preferred: it has more features and is faster than the SQL interface
 
 String literals should be enclosed in single quotes.
 
@@ -315,14 +320,14 @@ SELECT * FROM ns WHERE (SELECT COUNT(*) FROM ns2 WHERE id < 10) > 18
 
 Reindexer can run in 3 different modes:
 
-- `embedded (builtin)` Reindexer is embedded into application as static library, and does not reuqire separate server proccess.
+- `embedded (builtin)` Reindexer is embedded into application as static library, and does not require separate server process.
 - `embedded with server (builtinserver)` Reindexer is embedded into application as static library, and start server. In this mode other
   clients can connect to application via cproto, ucproto or http.
 - `standalone` Reindexer run as standalone server, application connects to Reindexer via network or unix domain sockets.
 
 ### Installation for server mode
 
-In this mode reindexer's Go-binding does not depend on reindexer's static library.
+In this mode Reindexer's Go-binding does not depend on reindexer's static library.
 
 1.  [Install Reindexer Server](cpp_src/readme.md#installation)
 2.  go get -a github.com/restream/reindexer/v3
@@ -345,7 +350,7 @@ Reindexer's core is written in C++17 and uses LevelDB as the storage backend, so
 
 To build Reindexer, g++ 8+, clang 7+ or [mingw64](https://sourceforge.net/projects/mingw-w64/) is required.
 
-In those modes reindexer's Go-binding depends on reindexer's static libraries (core, server and resource).
+In those modes Reindexer's Go-binding depends on reindexer's static libraries (core, server and resource).
 
 #### Get Reindexer using go.mod
 
@@ -363,7 +368,7 @@ go get -a github.com/restream/reindexer/v3
 
 #### Get Reindexer using go.mod and replace
 
-If you need modified reindexer's sources, you can use `replace` like that.
+If you need modified Reindexer's sources, you can use `replace` like that.
 
 1. Download and build reindexer:
 ```bash
@@ -377,7 +382,7 @@ go generate ./bindings/builtin
 go generate ./bindings/builtinserver
 ```
 
-2. Add reindexer's module into your application's go.mod and the replace it with local package:
+2. Add Reindexer's module to your application's go.mod and replace it with the local package:
 ```bash
 # Go to your app's directory
 cd /your/app/path
@@ -405,13 +410,13 @@ go generate -x ./vendor/github.com/restream/reindexer/v3/bindings/builtinserver
 
 #### Get Reindexer using go.mod (vendoring)
 
-Go does not support proper vendoring for CGO code (https://github.com/golang/go/issues/26366), however, it's possible to use [vend](https://github.com/nomad-software/vend) to copy reindexer's sources into vendor-directory.
+Go does not support proper vendoring for CGO code (https://github.com/golang/go/issues/26366), however, it's possible to use [vend](https://github.com/nomad-software/vend) to copy Reindexer's sources into vendor-directory.
 
 With `vend` you'll be able to call `go generate -mod=vendor` for `builtin` and `builtinserver`, placed in your vendor-directory.
 
-It's also possible to copy simply copy reindexer's sources into yout project, using `git clone`.
+It's also possible to copy simply copy reindexer's sources into youth project, using `git clone`.
 
-In this cases all the dependecies from reindexer's [go.mod](go.mod) must be installed manually with proper versions.
+In these cases all the dependencies from Reindexer's [go.mod](go.mod) must be installed manually with proper versions.
 
 ## Advanced Usage
 
@@ -439,19 +444,19 @@ Queries are possible only on the indexed fields, marked with `reindex` tag. The 
   - `composite` – create composite index. The field type must be an empty struct: `struct{}`.
   - `joined` – field is a recipient for join. The field type must be `[]*SubitemType`.
   - `dense` - reduce index size. For `hash` and `tree` it will save 8 bytes per unique key value. For `-` it will save 4-8 bytes per each element. Useful for indexes with high selectivity, but for `tree` and `hash` indexes with low selectivity can seriously decrease update performance. Also `dense` will slow down wide fullscan queries on `-` indexes, due to lack of CPU cache optimization.
-  - `sparse` - Row (document) contains a value of Sparse index only in case if it's set on purpose - there are no empty (or default) records of this type of indexes in the row (document). It allows to save RAM but it will cost you performance - it works a bit slower than regular indexes.
+  - `sparse` - Row (document) contains a value of Sparse index only in case if it's set on purpose - there are no empty (or default) records of this type of indexes in the row (document). It allows to save RAM, but it will cost you performance - it works a bit slower than regular indexes.
   - `collate_numeric` - create string index that provides values order in numeric sequence. The field type must be a string.
   - `collate_ascii` - create case-insensitive string index works with ASCII. The field type must be a string.
   - `collate_utf8` - create case-insensitive string index works with UTF8. The field type must be a string.
   - `collate_custom=<ORDER>` - create custom order string index. The field type must be a string. `<ORDER>` is sequence of letters, which defines sort order.
   - `linear`, `quadratic`, `greene` or `rstar` - specify algorithm for construction of `rtree` index (by default `rstar`). For details see [geometry subsection](#geometry).
-  - `uuid` - store this value as UUID. This is much more effective from the RAM/network consumation standpoint for UUIDs, than strings. Only `hash` and `-` index types are supported for UUIDs. Can be used with any UUID variant, except variant 0
+  - `uuid` - store this value as UUID. This is much more effective from the RAM/network consummation standpoint for UUIDs, than strings. Only `hash` and `-` index types are supported for UUIDs. Can be used with any UUID variant, except variant 0
 
 Fields with regular indexes are not nullable. Condition `is NULL` is supported only by `sparse` and `array` indexes.
 
 ### Nested Structs
 
-By default Reindexer scans all nested structs and adds their fields to the namespace (as well as indexes specified).
+By default, Reindexer scans all nested structs and adds their fields to the namespace (as well as indexes specified).
 
 ```go
 type Actor struct {
@@ -574,7 +579,7 @@ The very first character in this list has the highest priority, priority of the 
 
 ### Text pattern search with LIKE condition
 
-For simple searching text pattern in string fields condition `LIKE` can be used. It search strings which match a pattern. In the pattern `_` means any char and `%` means any sequence of chars.
+For simple searching text pattern in string fields condition `LIKE` can be used. It looks for strings matching the pattern. In the pattern `_` means any char and `%` means any sequence of chars.
 
 Go example:
 ```go
@@ -648,6 +653,8 @@ Example of using Update queries in golang code:
 db.Query("items").Where("id", reindexer.EQ, 40).Set("field1", values).Update()
 ```
 
+#### Update field with object
+
 Reindexer enables to update and add object fields. Object can be set by either a struct, a map or a byte array (that is a JSON version of object representation).
 
 ```go
@@ -676,6 +683,8 @@ Updating of object field by Sql statement:
 UPDATE clients SET client_data = {"Name":"John Doe","Age":40,"Address":"Fifth Avenue, Manhattan","Occupation":"Bank Manager","TaxYear":1999,"TaxConsultant":"Jane Smith"} where id = 100;
 ```
 
+#### Remove field via update-query
+
 UPDATE Sql-Syntax of queries that drop existing non-indexed fields:
 
 ```sql
@@ -687,6 +696,8 @@ WHERE condition;
 ```go
 db.Query("items").Where("id", reindexer.EQ, 40).Drop("field1").Update()
 ```
+
+#### Update array elements by indexes
 
 Reindexer update mechanism enables to modify array fields: to modify a certain item of an existing array or even to replace an entire field.
 
@@ -718,6 +729,14 @@ also like this
 db.Query("clients").Where("id", reindexer.EQ, 100).SetObject("extra.objects[0]", updatedValue).Update()
 ```
 
+To remove item by index you should do the following:
+
+```sql
+update ns drop array[5]
+```
+
+#### Concatenate arrays
+
 To add items to an existing array the following syntax is supported:
 
 ```sql
@@ -732,16 +751,56 @@ update ns set integer_array = [1,2,3,4,5] || integer_array
 
 The first one adds elements to the end of `integer_array`, the second one adds 5 items to the front of it. To make this code work in Golang `SetExpression()` should be used instead of `Set()`.
 
-To remove item by index you should do the following:
+#### Remove array elements by values
+
+To remove items by value into an existing array the following syntax is supported:
 
 ```sql
-update ns drop array[5]
+update ns set integer_array = array_remove(integer_array, [5,6,7,8])
+```
+
+and
+
+```sql
+update ns set integer_array = array_remove_once(integer_array, [5,6,7,8])
+```
+
+The first one removes all occurrences of the listed values in `integer_array`, the second one deletes only the first occurrence found. To make this code work in Golang `SetExpression()` should be used instead of `Set()`.
+If you need to remove one value, you still need to use square brackets `[5]`.
+
+```sql
+update ns set integer_array = array_remove(integer_array, [5])
+```
+
+Remove command can be combined with array concatenate:
+
+```sql
+update ns set integer_array = array_remove_once(integer_array, [5,6,7,8]) || [1,2,3]
+```
+
+also like this
+
+```golang
+db.Query("main_ns").SetExpression("integer_array", "array_remove(integer_array, [5,6,7,8]) || [1,2,3]").Update()
+```
+
+It is possible to remove the values of the second field from the values of the first field. And also add new values and etc
+
+```sql
+update ns set integer_array = [3] || array_remove(integer_array, integer_array2) || integer_array3 || array_remove_once(integer_array, [8,1]) || [2,4]
+```
+```sql
+update ns set integer_array = array_remove(integer_array, integer_array2) || array_remove(integer_array, integer_array3) || array_remove_once(integer_array, [33,777])
+```
+
+```golang
+db.Query("main_ns").SetExpression("integer_array", "[3] || array_remove(integer_array, integer_array2) || integer_array3 || array_remove(integer_array, [8,1]) || [2,4]").Update()
 ```
 
 ### Transactions and batch update
 
 Reindexer supports transactions. Transaction are performs atomic namespace update. There are synchronous and async transaction available. To start transaction method `db.BeginTx()` is used. This method creates transaction object, which provides usual Update/Upsert/Insert/Delete interface for application.
-For RPC clients there is transactions count limitation - each connection can't has more than 1024 opened transactions at the same time.
+For RPC clients there is transactions count limitation - each connection can't have more than 1024 open transactions at the same time.
 
 #### Synchronous mode
 
@@ -794,7 +853,7 @@ Depending on amount of changes in transaction there are 2 possible Commit strate
 - Locked atomic update. Reindexer locks namespace and applying all changes under common lock. This mode is used with small amounts of changes.
 - Copy & atomic replace. In this mode Reindexer makes namespace's snapshot, applying all changes to this snapshot, and atomically replaces namespace without lock
 
-Data amount for choosing Commit strategy can be choose in namespaces config. Check fields `StartCopyPolicyTxSize`, `CopyPolicyMultiplier` and `TxSizeToAlwaysCopy` in `struct DBNamespacesConfig`([describer.go](describer.go))
+The amount of data for selecting a Commit strategy can be selected in the namespace configuration. Check fields `StartCopyPolicyTxSize`, `CopyPolicyMultiplier` and `TxSizeToAlwaysCopy` in `struct DBNamespacesConfig`([describer.go](describer.go))
 
 #### Implementation notes
 
@@ -802,7 +861,7 @@ Data amount for choosing Commit strategy can be choose in namespaces config. Che
 2. Transaction object holds Reindexer's resources, therefore application should explicitly call Rollback or Commit, otherwise resources will leak;
 3. It is safe to call Rollback after Commit;
 4. It is possible to call Query from transaction by call `tx.Query("ns").Exec() ...`;
-5. Only serializable isolation is available, i.e. each transaction takes exclusive lock over the target namespace until all of the steps of the transaction commited.
+5. Only serializable isolation is available, i.e. each transaction takes exclusive lock over the target namespace until all the steps of the transaction committed.
 
 ### Join
 
@@ -885,7 +944,7 @@ Note that usually `Or` operator implements short-circuiting for `Where` conditio
 
 #### Anti-join
 
-Reindexer does not support `ANTI JOIN` SQL construction, hovewer, it supports logical operations with JOINs. In fact `NOT (INNER JOIN ...)` is totally equivalent to the `ANTI JOIN`:
+Reindexer does not support `ANTI JOIN` SQL construction, however, it supports logical operations with JOINs. In fact `NOT (INNER JOIN ...)` is totally equivalent to the `ANTI JOIN`:
 ```go
 query := db.Query("items_with_join").
 	Not().
@@ -1035,7 +1094,7 @@ For make query to the composite index, pass []interface{} to `.WhereComposite` f
 	query := db.Query("items").WhereComposite("rating+year", reindexer.EQ,[]interface{}{5,2010})
 ```
 
-All the fields in regular (non-fulltext) composite index must be indexed. I.e. to be able to create composite index `rating+year`, it is nessesary to create some kind of indexes for both `raiting` and `year` first:
+All the fields in regular (non-fulltext) composite index must be indexed. I.e. to be able to create composite index `rating+year`, it is necessary to create some kind of indexes for both `raiting` and `year` first:
 
 ```go
 type Item struct {
@@ -1066,7 +1125,7 @@ In order to support aggregation, `Query` has methods `AggregateAvg`, `AggregateS
 , `AggregateFacet` and `Distinct` those should be called before the `Query` execution: this will ask reindexer to
 calculate data aggregations.
 Aggregation Facet is applicable to multiple data columns and the result of that could be sorted by any data column or '
-count' and cutted off by offset and limit.
+count' and cut off by offset and limit.
 In order to support this functionality method `AggregateFacet` returns `AggregationFacetRequest` which has
 methods `Sort`, `Limit` and `Offset`.
 
@@ -1092,7 +1151,11 @@ Example code for aggregate `items` by `price` and `name`
 
 	aggMaxRes := iterator.AggResults()[0]
 
-	fmt.Printf ("max price = %d", aggMaxRes.Value)
+	if aggMaxRes.Value != nil {
+		fmt.Printf ("max price = %d\n", *aggMaxRes.Value)
+	} else {
+		fmt.Prinln ("no data to aggregate")
+	}
 
 	aggFacetRes := iterator.AggResults()[1]
 
@@ -1303,7 +1366,7 @@ func (item *Item) DeepCopy () interface {} {
 
 To speed up queries and do not allocate new objects per each query it is possible ask query return objects directly from object cache. For enable this behavior, call `AllowUnsafe(true)` on `Iterator`.
 
-WARNING: when used `AllowUnsafe(true)` queries returns shared pointers to structs in object cache. Therefore application MUST NOT modify returned objects.
+WARNING: when used `AllowUnsafe(true)` queries returns shared pointers to structs in object cache. Therefore, application MUST NOT modify returned objects.
 
 ```go
 	res, err := db.Query("items").WhereInt ("id",reindexer.EQ,1).Exec().AllowUnsafe(true).FetchAll()
@@ -1325,7 +1388,7 @@ WARNING: when used `AllowUnsafe(true)` queries returns shared pointers to struct
 
 #### Limit size of object cache
 
-By default maximum size of object cache is 256000 items for each namespace. To change maximum size use `ObjCacheSize` method of `NameapaceOptions`, passed
+By default, maximum size of object cache is 256000 items for each namespace. To change maximum size use `ObjCacheSize` method of `NameapaceOptions`, passed
 to OpenNamespace. e.g.
 
 ```go
@@ -1333,7 +1396,7 @@ to OpenNamespace. e.g.
 	db.OpenNamespace("items_with_huge_cache", reindexer.DefaultNamespaceOptions().ObjCacheSize(4096), Item{})
 ```
 
-!This cache should not be used for the namespaces, which were replicated from the other nodes: it may be inconsistant for those replica's namespaces.
+!This cache should not be used for the namespaces, which were replicated from the other nodes: it may be inconsistent for those replica's namespaces.
 
 ### Geometry
 
@@ -1392,7 +1455,7 @@ Reindexer supports logging of slow actions. It can be configured via `profiling.
 
 - Transactions:
   - `threshold_us (integer)`: Threshold value (in microseconds) for total transaction commit time, if `threshold_us` is -1 logging by total transaction commit time is disabled.
-  - `avg_step_threshold_us (integer)`: Threshold value (in microseconds) for the average step duration time in the transaction. If `avg_step_threshold_us` is -1 logging by average transaction's step duraction is disabled.
+  - `avg_step_threshold_us (integer)`: Threshold value (in microseconds) for the average step duration time in the transaction. If `avg_step_threshold_us` is -1 logging by average transaction's step duration is disabled.
 
 ### Debug queries
 
@@ -1419,7 +1482,7 @@ In `go:generate` builds and prebuilt packages reindexer has TCMalloc support, ho
 LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libtcmalloc_and_profiler.so ./my_executable
 ```
 
-Custom allocator may be handy to track memory consumation, profile heap/CPU or to improve general perforamnce.
+Custom allocator may be handy to track memory consummation, profile heap/CPU or to improve general performance.
 
 ### Profiling
 
@@ -1452,7 +1515,7 @@ pprof -symbolize remote http://localhost:6060/debug/cgo/pprof/heap
 
 #### CPU profiling
 
-Internal reindexer's profiler is based on gperf_tools library and unable to get CPU profile via Go runtime. However, [go profiler](https://golang.org/pkg/net/http/pprof/) may be used with symbolizer to retrieve C++ CPU usage.
+Internal Reindexer's profiler is based on gperf_tools library and unable to get CPU profile via Go runtime. However, [go profiler](https://golang.org/pkg/net/http/pprof/) may be used with symbolizer to retrieve C++ CPU usage.
 
 1. Add import:
 
@@ -1505,7 +1568,7 @@ will generate an OpenTelemetry span with the span name of `Reindexer.OpenNamespa
 - `rx.ns`: `items`
 
 Use [opentelemetry-go](https://opentelemetry.io/docs/instrumentation/go/getting-started/) in your client go application
-to export the information externally. For example, as a minumum, you will need to configure OpenTelemetry SDK exporter
+to export the information externally. For example, as a minimum, you will need to configure OpenTelemetry SDK exporter
 to expose the generated spans externally (see the `Getting Started` guide for more information).
 
 ## Integration with other program languages
@@ -1576,7 +1639,7 @@ URL: https://github.com/oruchreis/ReindexerNet
 
 ## Limitations and known issues
 
-Currently Reindexer is stable and production ready, but it is still a work in progress, so there are some limitations and issues:
+Currently, Reindexer is stable and production ready, but it is still a work in progress, so there are some limitations and issues:
 
 - Internal C++ API is not stabilized and is subject to change.
 

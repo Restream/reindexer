@@ -306,8 +306,9 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 				Index::SelectOpts opts;
 			} ctx = {&this->idx_map, keys, sortId, opts};
 			bool selectorWasSkipped = false;
+			bool isSparse = this->opts_.IsSparse();
 			// should return true, if fallback to comparator required
-			auto selector = [&ctx, &selectorWasSkipped](SelectKeyResult &res, size_t &idsCount) -> bool {
+			auto selector = [&ctx, &selectorWasSkipped, isSparse](SelectKeyResult &res, size_t &idsCount) -> bool {
 				idsCount = 0;
 				// Skip this index if there are some other indexes with potentially higher selectivity
 				if (!ctx.opts.distinct && ctx.keys.size() > 1 && 8 * ctx.keys.size() > size_t(ctx.opts.maxIterations) &&
@@ -326,7 +327,8 @@ SelectKeyResults IndexUnordered<T>::SelectKey(const VariantArray &keys, CondType
 
 				res.deferedExplicitSort = SelectKeyResult::IsGenericSortRecommended(res.size(), idsCount, idsCount);
 
-				if (!ctx.opts.itemsCountInNamespace) return false;
+				// avoid comparator for sparse index
+				if (isSparse || !ctx.opts.itemsCountInNamespace) return false;
 				// Check selectivity:
 				// if ids count too much (more than maxSelectivityPercentForIdset() of namespace),
 				// and index not optimized, or we have >4 other conditions

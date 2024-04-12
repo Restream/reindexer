@@ -19,7 +19,7 @@ using reindexer::Query;
 using reindexer::QueryResults;
 using reindexer::utf16_to_utf8;
 
-uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
+static uint8_t printFlags = AllocsTracker::kPrintAllocs | AllocsTracker::kPrintHold;
 
 FullText::FullText(Reindexer* db, const std::string& name, size_t maxItems)
 	: BaseFixture(db, name, maxItems, 1, false), lowWordsDiversityNsDef_("LowWordsDiversityNs") {

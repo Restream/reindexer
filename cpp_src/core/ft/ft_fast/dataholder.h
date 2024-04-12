@@ -90,53 +90,7 @@ public:
 		}
 	};
 
-	// Intermediate information about found document in current merge step. Used only for queries with 2 or more terms
-	struct MergedIdRel {
-		explicit MergedIdRel(IdRelType&& c, int r, int q) : next(std::move(c)), rank(r), qpos(q) {}
-		explicit MergedIdRel(int r, int q) : rank(r), qpos(q) {}
-		MergedIdRel(MergedIdRel&&) = default;
-		IdRelType cur;	 // Ids & pos of matched document of current step
-		IdRelType next;	 // Ids & pos of matched document of next step
-		int32_t rank;	 // Rank of curent matched document
-		int32_t qpos;	 // Position in query
-	};
-
-	struct MergedIdRelEx : public MergedIdRel {
-		explicit MergedIdRelEx(IdRelType&& c, int r, int q) : MergedIdRel(r, q), posTmp(std::move(c)) {}
-		MergedIdRelEx(MergedIdRelEx&&) = default;
-		IdRelType posTmp;  // For group only. Collect all positions for subpatterns and the index in the vector with which we merged
-	};
-
-	struct MergedIdRelExArea : public MergedIdRel {
-		MergedIdRelExArea(IdRelType&& c, int r, int q, RVector<std::pair<IdRelType::PosType, int>, 4>&& p)
-			: MergedIdRel(std::move(c), r, q), posTmp(std::move(p)) {}
-		MergedIdRelExArea(MergedIdRelExArea&&) = default;
-
-		RVector<std::pair<IdRelType::PosType, int>, 4>
-			posTmp;	 // For group only. Collect all positions for subpatterns and the index in the vector with which we merged
-		h_vector<RVector<std::pair<IdRelType::PosType, int>, 4>, 2> wordPosForChain;
-	};
-
-	using MergedOffsetT = uint16_t;
-	static_assert(std::numeric_limits<MergedOffsetT>::max() > kMaxMergeLimitValue,
-				  "Merged offset type must be able to hold any value up to kMaxMergeLimitValue");
-	// Final information about found document
-	struct MergeInfo {
-		IdType id;	   // Virtual id of merged document (index in vdocs)
-		int32_t proc;  // Rank of document
-		uint32_t areaIndex = std::numeric_limits<uint32_t>::max();
-		int8_t field;														 // Field index, where was match
-		MergedOffsetT indexAdd = std::numeric_limits<MergedOffsetT>::max();	 // index in merged_rd
-	};
-
-	struct MergeData : public std::vector<MergeInfo> {
-		int maxRank = 0;
-		std::vector<AreaHolder> vectorAreas;
-	};
-
 	virtual ~IDataHolder() = default;
-	virtual MergeData Select(FtDSLQuery&&, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
-							 FtMergeStatuses::Statuses&&, FtUseExternStatuses, const RdxContext&) = 0;
 	virtual void Process(size_t fieldSize, bool multithread) = 0;
 	virtual size_t GetMemStat() = 0;
 	virtual void Clear() = 0;
@@ -226,8 +180,6 @@ public:	 // TODO: #1688 Fix private class data isolation here
 template <typename IdCont>
 class DataHolder : public IDataHolder {
 public:
-	virtual MergeData Select(FtDSLQuery&&, size_t fieldSize, bool needArea, int maxAreasInDoc, bool inTransaction,
-							 FtMergeStatuses::Statuses&&, FtUseExternStatuses, const RdxContext&) override final;
 	void Process(size_t fieldSize, bool multithread) final;
 	size_t GetMemStat() override final;
 	void StartCommit(bool complte_updated) override final;
